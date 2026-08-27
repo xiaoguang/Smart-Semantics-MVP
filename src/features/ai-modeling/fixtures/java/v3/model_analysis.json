@@ -1,0 +1,767 @@
+{
+  "metadata" : {
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "source_sha256" : "sha256:102b3933bf897692d88f687542919fcf472cc9b069ae73b164c81821de9cb285",
+    "prompt_sha256" : "sha256:0280f6370e5d7a2f7c0ee416cdda50a0f3f1fdecc37d9be6239b7cdf96018893",
+    "llm_execution" : {
+      "route_sha256" : "sha256:908e491bf991fe94f1cc95c110c526783c9373f50aa21e9e00d734b6afe94e99",
+      "invocations" : [ {
+        "call_id" : "document_analysis-1",
+        "task_type" : "document_analysis",
+        "attempt_number" : 1,
+        "route_position" : 1,
+        "profile_name" : "local_context",
+        "provider_id" : "structured_process",
+        "provider_version" : "1",
+        "provider_artifact_sha256" : null,
+        "requested_model" : "gpt-5.6-sol",
+        "actual_model" : "gpt-5.6-sol",
+        "effective_parameters" : {
+          "settings" : {
+            "command" : [ "codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "--output-schema", "{schema_file}", "--output-last-message", "{response_file}", "--model", "{model}", "--config", "model_reasoning_effort=\"{parameter.reasoning_effort}\"", "-" ],
+            "output_mode" : "file",
+            "version_command" : [ "codex", "--version" ]
+          },
+          "parameters" : {
+            "reasoning_effort" : "xhigh"
+          }
+        },
+        "profile_sha256" : "sha256:f9c6a3a2e25e1a1f3296b4b81f94d5c38613f18779e17f3b9669c81454a87d53",
+        "request_sha256" : "sha256:81bf875803f6c440088116e882c629904d7ca1446e3e1fcea318962c5575a793",
+        "response_schema_sha256" : "sha256:da867493fe9a3dd76068fd0c94b5e2d942e0c53a0702550ff4588f6e5d90a129",
+        "response_sha256" : "sha256:76fb8fd99798e612c3499a84a44362c7701a04f04df8d98014ff05fca5f5d0c9",
+        "provider_request_id" : null,
+        "status" : "SUCCESS",
+        "error_category" : null,
+        "error_message" : null,
+        "input_tokens" : null,
+        "output_tokens" : null,
+        "total_tokens" : null,
+        "duration_millis" : 344273
+      } ]
+    }
+  },
+  "business_summary" : {
+    "system_name" : "数码产品销售仓储语义设计",
+    "business_goal" : "统一分析库存与出入库、订单履约、发货时效及维修服务，支持库存查询与预警、物流量趋势、订单欠货与履约跟踪，以及维修响应和完成 SLA 观察。",
+    "business_scope" : [ "共享主数据", "库存与出入库", "订单履约", "发货时效", "维修服务" ]
+  },
+  "example_questions" : [ {
+    "question_id" : "Q001",
+    "question" : "华南仓的 BT-X100 当前可用库存是多少？",
+    "evidence_ids" : [ "E013" ],
+    "related_object_ids" : [ "ENT001", "ENT002", "EVT001", "MET002", "DIM004" ]
+  }, {
+    "question_id" : "Q002",
+    "question" : "最近 30 天各品类的入库量和出库量是多少？",
+    "evidence_ids" : [ "E014" ],
+    "related_object_ids" : [ "EVT002", "EVT003", "MET004", "MET005", "DIM001", "DIM022" ]
+  }, {
+    "question_id" : "Q003",
+    "question" : "哪些商品低于安全库存数量？",
+    "evidence_ids" : [ "E015" ],
+    "related_object_ids" : [ "ENT001", "EVT001", "MET001" ]
+  }, {
+    "question_id" : "Q004",
+    "question" : "各仓库库龄超过 90 天的库存金额是多少？",
+    "evidence_ids" : [ "E016" ],
+    "related_object_ids" : [ "ENT002", "EVT001", "MET003", "MET006" ]
+  }, {
+    "question_id" : "Q005",
+    "question" : "订单 SO-20260801-001 已发货多少、还欠多少？",
+    "evidence_ids" : [ "E017" ],
+    "related_object_ids" : [ "EVT004", "EVT005", "MET008", "MET009", "DIM026" ]
+  }, {
+    "question_id" : "Q006",
+    "question" : "本月各仓库发货及时率是多少？",
+    "evidence_ids" : [ "E018" ],
+    "related_object_ids" : [ "ENT002", "EVT005", "MET010", "DIM022" ]
+  }, {
+    "question_id" : "Q007",
+    "question" : "哪些客户的欠货数量最高？",
+    "evidence_ids" : [ "E019" ],
+    "related_object_ids" : [ "ENT004", "EVT004", "MET009" ]
+  }, {
+    "question_id" : "Q008",
+    "question" : "各服务网点的维修响应达标率是多少？",
+    "evidence_ids" : [ "E020" ],
+    "related_object_ids" : [ "ENT005", "EVT006", "MET013", "UNR001", "UNR002", "UNR003", "UNR007" ]
+  }, {
+    "question_id" : "Q009",
+    "question" : "RM20260803001 从创建到完成用了多长时间？",
+    "evidence_ids" : [ "E021" ],
+    "related_object_ids" : [ "EVT006", "MET012", "DIM029", "UNR001", "UNR003" ]
+  } ],
+  "evidence_catalog" : [ {
+    "evidence_id" : "E001",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "文档标题",
+    "line_start" : 1,
+    "line_end" : 1,
+    "quote" : "# 数码产品销售仓储语义设计"
+  }, {
+    "evidence_id" : "E002",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "文档说明",
+    "line_start" : 5,
+    "line_end" : 9,
+    "quote" : "- 资料版本：v3\n- 建模范围：共享主数据、库存与出入库、订单履约、发货时效、维修服务\n- 数据更新：库存每小时快照，出入库、订单、发货和维修工单准实时更新\n- 使用部门：仓储、销售、客服、售后、供应链管理\n- 版本变化：在 v2 完整内容上增加维修工单及响应、完成 SLA 初稿"
+  }, {
+    "evidence_id" : "E003",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "业务目标",
+    "line_start" : 11,
+    "line_end" : 18,
+    "quote" : "## 2. 业务目标\n\n1. 查询任意商品在各仓库的可用库存、在库数量和库存金额。\n2. 按日、周、月分析商品入库量、出库量及库存变化。\n3. 识别低于安全库存和库龄超过 90 天的商品。\n4. 查询客户订单的订购、已发货、欠货数量和履约状态。\n5. 评估订单是否按承诺日期发货，并分析各仓库发货及时率。\n6. 查询维修工单进度，并观察维修响应和完成是否达到服务要求。"
+  }, {
+    "evidence_id" : "E004",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "业务对象",
+    "line_start" : 20,
+    "line_end" : 29,
+    "quote" : "## 3. 业务对象\n\n| 对象 | 业务键 | 主要属性 | 说明 |\n| --- | --- | --- | --- |\n| 商品 | 商品编码 | 商品名称、品类、系列、规格、标准成本 | 品类和系列作为商品属性，不单独建表 |\n| 仓库 | 仓库编码 | 仓库名称、仓库区域、仓库类型 | 一个仓库属于一个区域 |\n| 库位 | 库位编码 | 库位名称、库位类型、所属仓库编码 | 库位编码由 WMS 统一分配并在全部仓库中唯一 |\n| 客户 | 客户编码 | 客户名称、客户等级、销售区域 | 跨订单共享的客户主数据 |\n| 服务网点 | 服务网点编码 | 服务网点名称、服务区域、网点等级 | 承担维修服务的组织 |\n| 行政区域 | 行政区域编码 | 行政区域名称、区域级别、上级区域编码、行政区域成员 | 跨仓库、客户和服务网点复用的标准地域主数据 |"
+  }, {
+    "evidence_id" : "E005",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "业务活动",
+    "line_start" : 31,
+    "line_end" : 40,
+    "quote" : "## 4. 业务活动\n\n| 业务活动 | 业务粒度 | 发生时间 | 参与对象 | 说明 |\n| --- | --- | --- | --- | --- |\n| 库存快照 | 每个快照时点、仓库、库位、商品、批次一行 | 快照时间 | 商品、仓库、库位 | 保存实时库存状态 |\n| 商品入库 | 每张入库单的商品明细一行 | 入库完成时间 | 商品、仓库、库位 | 只统计已完成入库明细 |\n| 商品出库 | 每张出库单的商品明细一行 | 出库完成时间 | 商品、仓库、库位 | 只统计已完成出库明细 |\n| 销售订单履约 | 每张销售订单的商品明细一行 | 订单创建时间 | 客户、商品 | 保存订购数量、承诺发货日期和取消数量 |\n| 商品发货 | 每张发货单的订单商品明细一行 | 实际发货时间 | 客户、商品、仓库 | 一张订单明细可拆分多次发货 |\n| 维修工单处理 | 每张维修工单一行 | 工单创建时间 | 客户、商品、服务网点 | 记录首次响应和完成时间，用于 SLA 分析 |"
+  }, {
+    "evidence_id" : "E006",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "字段与维度：主对象",
+    "line_start" : 42,
+    "line_end" : 72,
+    "quote" : "## 5. 字段与维度\n\n| 所属对象或活动 | 字段 | 类型 | 单位 | 角色与分析方式 |\n| --- | --- | --- | --- | --- |\n| 商品 | 商品编码 | 字符串 | 无 | 业务键，可按商品筛选 |\n| 商品 | 商品名称 | 字符串 | 无 | 名称属性，可搜索 |\n| 商品 | 品类 | 字符串 | 无 | 分析维度，可分组 |\n| 商品 | 系列 | 字符串 | 无 | 分析维度，可分组 |\n| 商品 | 规格 | 字符串 | 无 | 描述属性 |\n| 商品 | 标准成本 | 小数 | 元/件 | 金额计算字段 |\n| 仓库 | 仓库编码 | 字符串 | 无 | 业务键 |\n| 仓库 | 仓库名称 | 字符串 | 无 | 分析维度 |\n| 仓库 | 仓库区域 | 字符串 | 无 | 分析维度，华北、华东、华南 |\n| 仓库 | 区县编码 | 字符串 | 无 | 外键，关联行政区域.行政区域编码 |\n| 库位 | 库位编码 | 字符串 | 无 | 业务键，在全部仓库中唯一 |\n| 库位 | 所属仓库编码 | 字符串 | 无 | 外键，关联仓库.仓库编码 |\n| 库位 | 库位名称 | 字符串 | 无 | 分析维度 |\n| 客户 | 客户编码 | 字符串 | 无 | 业务键 |\n| 客户 | 客户名称 | 字符串 | 无 | 分析维度 |\n| 客户 | 客户等级 | 字符串 | 无 | 分析维度 |\n| 客户 | 销售区域 | 字符串 | 无 | 分析维度 |\n| 客户 | 销售区域编码 | 字符串 | 无 | 外键，关联行政区域.行政区域编码 |\n| 服务网点 | 服务网点编码 | 字符串 | 无 | 业务键 |\n| 服务网点 | 服务网点名称 | 字符串 | 无 | 分析维度 |\n| 服务网点 | 服务区域 | 字符串 | 无 | 分析维度 |\n| 服务网点 | 城市编码 | 字符串 | 无 | 外键，关联行政区域中的市级成员 |\n| 行政区域 | 行政区域编码 | 字符串 | 无 | 业务键 |\n| 行政区域 | 行政区域名称 | 字符串 | 无 | 名称属性，可搜索和分组 |\n| 行政区域 | 区域级别 | 字符串 | 无 | 分析维度，取值为大区、省、市、区县 |\n| 行政区域 | 上级区域编码 | 字符串 | 无 | 同一行政区域维度内的成员父级引用 |\n| 行政区域 | 行政区域成员 | 字符串 | 无 | 成员层级字段，按大区→省→市→区县下钻 |"
+  }, {
+    "evidence_id" : "E007",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "字段与维度：业务活动",
+    "line_start" : 73,
+    "line_end" : 105,
+    "quote" : "| 库存快照 | 批次号 | 字符串 | 无 | 退化维度 |\n| 库存快照 | 在库数量 | 整数 | 件 | 可加度量 |\n| 库存快照 | 锁定数量 | 整数 | 件 | 可加度量 |\n| 库存快照 | 安全库存数量 | 整数 | 件 | 阈值字段 |\n| 库存快照 | 入库日期 | 日期 | 无 | 计算库龄 |\n| 库存快照 | 库存金额 | 小数 | 元 | 派生度量，逐行等于在库数量 × 商品标准成本 |\n| 商品入库 | 入库单号 | 字符串 | 无 | 退化维度 |\n| 商品入库 | 入库数量 | 整数 | 件 | 可加度量 |\n| 商品入库 | 入库类型 | 字符串 | 无 | 分析维度 |\n| 商品出库 | 出库单号 | 字符串 | 无 | 退化维度 |\n| 商品出库 | 出库数量 | 整数 | 件 | 可加度量 |\n| 商品出库 | 出库类型 | 字符串 | 无 | 分析维度 |\n| 销售订单履约 | 销售订单号 | 字符串 | 无 | 退化维度 |\n| 销售订单履约 | 订单行号 | 整数 | 无 | 与订单号组成业务键 |\n| 销售订单履约 | 订购数量 | 整数 | 件 | 可加度量 |\n| 销售订单履约 | 取消数量 | 整数 | 件 | 可加度量 |\n| 销售订单履约 | 承诺发货日期 | 日期 | 无 | 履约基准时间 |\n| 销售订单履约 | 订单状态 | 字符串 | 无 | 分析维度 |\n| 销售订单履约 | 欠货数量 | 整数 | 件 | 派生度量，逐订单行等于有效订购数量减累计已发货数量，最小为 0 |\n| 商品发货 | 发货单号 | 字符串 | 无 | 退化维度 |\n| 商品发货 | 发货数量 | 整数 | 件 | 可加度量 |\n| 商品发货 | 实际发货时间 | 日期时间 | 无 | 事件时间 |\n| 商品发货 | 承运商 | 字符串 | 无 | 分析维度 |\n| 商品发货 | 运单号 | 字符串 | 无 | 退化维度 |\n| 商品发货 | 按时发货标记 | 整数 | 次 | 派生度量，实际发货日期不晚于承诺日期记 1，否则记 0 |\n| 维修工单处理 | 维修单号 | 字符串 | 无 | 业务键和退化维度 |\n| 维修工单处理 | 工单创建时间 | 日期时间 | 无 | SLA 起点 |\n| 维修工单处理 | 首次响应时间 | 日期时间 | 无 | 响应 SLA 终点 |\n| 维修工单处理 | 维修完成时间 | 日期时间 | 无 | 完成 SLA 终点 |\n| 维修工单处理 | 维修状态 | 字符串 | 无 | 分析维度 |\n| 维修工单处理 | 故障类型 | 字符串 | 无 | 分析维度 |\n| 维修工单处理 | 响应目标 | 小数 | 待确认 | 目标阈值，单位尚未确定 |\n| 维修工单处理 | 完成目标 | 小数 | 待确认 | 目标阈值，单位尚未确定 |"
+  }, {
+    "evidence_id" : "E008",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "行政区域成员层级",
+    "line_start" : 107,
+    "line_end" : 115,
+    "quote" : "### 5.1 行政区域成员层级\n\n该层级是同一“行政区域”维度内部的成员树，不是跨实体关系。层级顺序固定为“大区 → 省 → 市 → 区县”；仓库关联区县，客户销售区域可关联任一级成员，服务网点关联城市。\n\n| 大区 | 省 | 市 | 区县 | 成员编码路径 |\n| --- | --- | --- | --- | --- |\n| 华东 | 江苏 | 南京 | 玄武区 | EAST / JS / NJ / XW |\n| 华东 | 浙江 | 杭州 | 无 | EAST / ZJ / HZ |\n| 华南 | 广东 | 深圳 | 南山区 | SOUTH / GD / SZ / NS |"
+  }, {
+    "evidence_id" : "E009",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "业务同义词：实体与主对象字段",
+    "line_start" : 117,
+    "line_end" : 130,
+    "quote" : "### 5.2 业务同义词\n\n同义词只采用下表明确词面；标准名称、技术编码、代理键和外键不作为同义词。\n\n| 目标类型 | 标准目标 | 明确同义词 |\n| --- | --- | --- |\n| 实体 | 商品；仓库；库位；客户；服务网点；行政区域 | 产品；库房；货位；买方；维修网点；地区 |\n| 事件 | 库存快照；库存移动；销售订单履约；商品发货；维修工单处理 | 库存时点；出入库流水；订单行履约；发运；售后工单 |\n| 字段 | 商品.商品编码；商品.商品名称；商品.品类；商品.系列；商品.规格；商品.标准成本 | 商品号；产品名称；类目；产品线；规格型号；单位成本 |\n| 字段 | 仓库.仓库编码；仓库.仓库名称；仓库.仓库区域；仓库.仓库类型 | 仓库号；库房名称；仓库大区；仓储类型 |\n| 字段 | 库位.库位编码；库位.库位名称；库位.库位类型 | 货位编码；储位名称；货位类型 |\n| 字段 | 客户.客户编码；客户.客户名称；客户.客户等级；客户.销售区域 | 客户号；买方名称；客户分层；销售大区 |\n| 字段 | 服务网点.服务网点编码；服务网点.服务网点名称；服务网点.服务区域；服务网点.网点等级 | 网点编号；服务站名称；网点覆盖区域；服务级别 |\n| 字段 | 行政区域.行政区域编码；行政区域.行政区域名称；行政区域.区域级别；行政区域.行政区域成员；行政区域.成员编码路径 | 地区编码；地区名称；行政级别；地域节点；行政区划路径 |"
+  }, {
+    "evidence_id" : "E010",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "业务同义词：活动字段、指标、维度与规则",
+    "line_start" : 131,
+    "line_end" : 138,
+    "quote" : "| 字段 | 库存快照.批次号；库存快照.在库数量；库存快照.锁定数量；库存快照.安全库存数量；库存快照.入库日期；库存快照.快照时间；库存快照.可用库存数量；库存快照.库存金额；库存快照.库龄天数 | 库存批号；现存量；占用量；安全库存；到库日期；库存时点；可售库存量；库存价值；批次库龄 |\n| 字段 | 库存移动.业务单号；库存移动.移动数量；库存移动.移动类型；库存移动.移动时间；库存移动.移动状态；库存移动.移动方向 | 出入库单号；变动数量；库存动作；出入库时间；流水状态；库存方向 |\n| 字段 | 销售订单履约.销售订单号；销售订单履约.订单行号；销售订单履约.订购数量；销售订单履约.取消数量；销售订单履约.承诺发货日期；销售订单履约.订单状态；销售订单履约.欠货数量；销售订单履约.订单创建时间 | 订单号；行项目号；下单数量；退订数量；应发日期；履约状态；未发数量；下单时间 |\n| 字段 | 商品发货.发货单号；商品发货.销售订单号；商品发货.订单行号；商品发货.发货数量；商品发货.实际发货时间；商品发货.承运商；商品发货.运单号；商品发货.按时发货标记；商品发货.发货状态 | 发运单号；发货关联订单号；发货关联行号；出货数量；出货时间；物流商；物流单号；准时发货标记；发运状态 |\n| 字段 | 维修工单处理.维修单号；维修工单处理.工单创建时间；维修工单处理.首次响应时间；维修工单处理.维修完成时间；维修工单处理.维修状态；维修工单处理.故障类型；维修工单处理.响应目标；维修工单处理.完成目标 | 售后单号；报修时间；首响时间；完修时间；工单状态；问题类型；首响目标；完修目标 |\n| 指标 | 在库数量；可用库存数量；库存金额；入库数量；出库数量；库龄天数；有效订购数量；已发货数量；欠货数量；发货及时率 | 现存库存；可售库存；库存价值；收货量；发出量；库存天龄；净订购量；已出货量；未履约数量；准时发货率 |\n| 维度 | 商品品类；商品系列；仓库区域；行政区域；客户等级；订单状态；承运商；维修状态；故障类型 | 产品类目；产品线；仓库地区；地域维度；客户分层；履约状态维度；物流商维度；工单状态维度；问题分类 |\n| 规则候选 | 最新库存快照规则；有效订单过滤规则；按时发货判断规则；维修SLA统计规则 | 最新时点库存；有效订单口径；准时出货规则；售后SLA口径 |"
+  }, {
+    "evidence_id" : "E011",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "对象关系",
+    "line_start" : 140,
+    "line_end" : 162,
+    "quote" : "## 6. 对象关系\n\n| 中文名称 | 起点 | 终点 | 基数 | 关联字段 | 依据 |\n| --- | --- | --- | --- | --- | --- |\n| 库位所属仓库 | 库位 | 仓库 | 多对一 | 所属仓库编码 | 库位必须归属一个仓库 |\n| 仓库位于区县 | 仓库 | 行政区域 | 多对一 | 区县编码 | 每个仓库按标准区县归属行政区域成员树 |\n| 客户归属销售区域 | 客户 | 行政区域 | 多对一 | 销售区域编码 | 客户销售区域引用行政区域任一级成员 |\n| 服务网点位于城市 | 服务网点 | 行政区域 | 多对一 | 城市编码 | 服务网点关联行政区域中的市级成员 |\n| 库存对应商品 | 库存快照 | 商品 | 多对一 | 商品编码 | 每条库存记录只对应一个商品 |\n| 库存所在仓库 | 库存快照 | 仓库 | 多对一 | 仓库编码 | 每条库存记录只对应一个仓库 |\n| 库存所在库位 | 库存快照 | 库位 | 多对一 | 库位编码 | WMS 库位编码全局唯一 |\n| 入库对应商品 | 商品入库 | 商品 | 多对一 | 商品编码 | 入库明细对应一个商品 |\n| 入库进入仓库 | 商品入库 | 仓库 | 多对一 | 仓库编码 | 入库明细进入一个仓库 |\n| 出库对应商品 | 商品出库 | 商品 | 多对一 | 商品编码 | 出库明细对应一个商品 |\n| 出库离开仓库 | 商品出库 | 仓库 | 多对一 | 仓库编码 | 出库明细离开一个仓库 |\n| 订单属于客户 | 销售订单履约 | 客户 | 多对一 | 客户编码 | 每张订单属于一个客户 |\n| 订单包含商品 | 销售订单履约 | 商品 | 多对一 | 商品编码 | 每行订单对应一个商品 |\n| 发货履行订单 | 商品发货 | 销售订单履约 | 多对一 | 销售订单号、订单行号 | 一行订单允许多次发货 |\n| 发货来自仓库 | 商品发货 | 仓库 | 多对一 | 仓库编码 | 每次发货来自一个仓库 |\n| 发货对应商品 | 商品发货 | 商品 | 多对一 | 商品编码 | 每次发货对应一个商品 |\n| 维修工单属于客户 | 维修工单处理 | 客户 | 多对一 | 客户编码 | 一张维修工单属于一个客户 |\n| 维修工单对应商品 | 维修工单处理 | 商品 | 多对一 | 商品编码 | 一张维修工单对应一个商品 |\n| 维修工单由网点处理 | 维修工单处理 | 服务网点 | 多对一 | 服务网点编码 | 一张维修工单由一个网点负责 |"
+  }, {
+    "evidence_id" : "E012",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "指标口径",
+    "line_start" : 164,
+    "line_end" : 181,
+    "quote" : "## 7. 指标口径\n\n| 指标 | 定义与公式 | 聚合方式 | 单位 | 所属活动 | 排除规则 |\n| --- | --- | --- | --- | --- | --- |\n| 在库数量 | `SUM(在库数量)` | 求和 | 件 | 库存快照 | 只取所选时间内最新快照 |\n| 可用库存数量 | `SUM(在库数量 - 锁定数量)` | 先逐行计算再求和 | 件 | 库存快照 | 不包含冻结库位 |\n| 库存金额 | `SUM(库存金额)`，其中库存金额逐行等于在库数量 × 商品标准成本 | 求和 | 元 | 库存快照 | 只取最新快照 |\n| 入库数量 | `SUM(入库数量)` | 求和 | 件 | 商品入库 | 仅已完成单据 |\n| 出库数量 | `SUM(出库数量)` | 求和 | 件 | 商品出库 | 仅已完成单据 |\n| 库龄天数 | `统计日期 - 入库日期` | 按库存批次计算，不跨批次相加 | 天 | 库存快照 | 无入库日期的记录不参与 |\n| 有效订购数量 | `SUM(订购数量 - 取消数量)` | 先逐行计算再求和 | 件 | 销售订单履约 | 排除已整单取消的订单 |\n| 已发货数量 | `SUM(发货数量)` | 求和 | 件 | 商品发货 | 排除已作废发货单 |\n| 欠货数量 | `SUM(欠货数量)`，欠货数量在订单行上预先按有效订购数量减累计已发货数量计算且最小为 0 | 求和 | 件 | 销售订单履约 | 已取消数量不计入欠货 |\n| 发货及时率 | `SUM(按时发货标记) / COUNT(有效发货订单行) × 100%` | 比率，先求和与计数再相除 | % | 商品发货 | 承诺日期为空或发货单作废时不参与 |\n| 维修响应时长 | `首次响应时间 - 工单创建时间` | 待确认 | 待确认 | 维修工单处理 | 暂未说明非工作时间是否排除 |\n| 维修完成时长 | `维修完成时间 - 工单创建时间` | 待确认 | 待确认 | 维修工单处理 | 暂未说明取消、重复打开工单如何处理 |\n| 维修响应达标率 | `维修响应时长不超过响应目标的工单数 / 工单数` | 待确认 | 待确认 | 维修工单处理 | 分母范围和空响应时间处理方式尚未确认 |\n| 维修完成达标率 | `维修完成时长不超过完成目标的工单数 / 工单数` | 待确认 | 待确认 | 维修工单处理 | 分母范围和未完成工单处理方式尚未确认 |"
+  }, {
+    "evidence_id" : "E013",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "示例问题",
+    "line_start" : 185,
+    "line_end" : 185,
+    "quote" : "1. 华南仓的 BT-X100 当前可用库存是多少？"
+  }, {
+    "evidence_id" : "E014",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "示例问题",
+    "line_start" : 186,
+    "line_end" : 186,
+    "quote" : "2. 最近 30 天各品类的入库量和出库量是多少？"
+  }, {
+    "evidence_id" : "E015",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "示例问题",
+    "line_start" : 187,
+    "line_end" : 187,
+    "quote" : "3. 哪些商品低于安全库存数量？"
+  }, {
+    "evidence_id" : "E016",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "示例问题",
+    "line_start" : 188,
+    "line_end" : 188,
+    "quote" : "4. 各仓库库龄超过 90 天的库存金额是多少？"
+  }, {
+    "evidence_id" : "E017",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "示例问题",
+    "line_start" : 189,
+    "line_end" : 189,
+    "quote" : "5. 订单 SO-20260801-001 已发货多少、还欠多少？"
+  }, {
+    "evidence_id" : "E018",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "示例问题",
+    "line_start" : 190,
+    "line_end" : 190,
+    "quote" : "6. 本月各仓库发货及时率是多少？"
+  }, {
+    "evidence_id" : "E019",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "示例问题",
+    "line_start" : 191,
+    "line_end" : 191,
+    "quote" : "7. 哪些客户的欠货数量最高？"
+  }, {
+    "evidence_id" : "E020",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "示例问题",
+    "line_start" : 192,
+    "line_end" : 192,
+    "quote" : "8. 各服务网点的维修响应达标率是多少？"
+  }, {
+    "evidence_id" : "E021",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "示例问题",
+    "line_start" : 193,
+    "line_end" : 193,
+    "quote" : "9. RM20260803001 从创建到完成用了多长时间？"
+  }, {
+    "evidence_id" : "E022",
+    "source_file" : "03-维修SLA初稿-v3.md",
+    "section" : "待确认事项",
+    "line_start" : 195,
+    "line_end" : 202,
+    "quote" : "## 9. 待确认事项\n\n1. 冻结库位清单由仓库主数据提供。\n2. 标准成本以商品主数据当前有效值计算，不回溯历史成本。\n3. 跨仓拆分发货按实际发货仓库分别统计及时率。\n4. 维修响应和完成时长的单位尚未确定。\n5. 维修达标率按日、按单还是按网点聚合尚未确定。\n6. 取消工单、重复打开工单、未响应和未完成工单是否进入分母尚未确定。"
+  } ],
+  "entity_candidates" : [ {
+    "candidate_id" : "ENT001",
+    "name" : "商品",
+    "definition" : "以商品编码稳定标识、具有名称、品类、系列、规格和标准成本，并被库存、出入库、订单、发货和维修活动复用的商品主对象。",
+    "evidence_ids" : [ "E004", "E011" ],
+    "confidence" : 1.0,
+    "entity_kind" : "core_entity"
+  }, {
+    "candidate_id" : "ENT002",
+    "name" : "仓库",
+    "definition" : "以仓库编码稳定标识、具有名称、区域和类型，并被库存、出入库及发货活动复用的仓储主对象。",
+    "evidence_ids" : [ "E004", "E011" ],
+    "confidence" : 1.0,
+    "entity_kind" : "core_entity"
+  }, {
+    "candidate_id" : "ENT003",
+    "name" : "库位",
+    "definition" : "由 WMS 统一分配全局唯一库位编码、归属仓库并被库存及出入库活动复用的稳定主对象。",
+    "evidence_ids" : [ "E004", "E006", "E011" ],
+    "confidence" : 1.0,
+    "entity_kind" : "core_entity"
+  }, {
+    "candidate_id" : "ENT004",
+    "name" : "客户",
+    "definition" : "以客户编码稳定标识并明确跨订单共享，同时参与订单履约、发货和维修活动的客户主数据。",
+    "evidence_ids" : [ "E004", "E011" ],
+    "confidence" : 1.0,
+    "entity_kind" : "core_entity"
+  }, {
+    "candidate_id" : "ENT005",
+    "name" : "服务网点",
+    "definition" : "以服务网点编码稳定标识、承担维修服务并被多张维修工单复用的服务组织。",
+    "evidence_ids" : [ "E004", "E011" ],
+    "confidence" : 1.0,
+    "entity_kind" : "core_entity"
+  }, {
+    "candidate_id" : "ENT006",
+    "name" : "行政区域",
+    "definition" : "以行政区域编码稳定标识、具有成员及父级引用，并跨仓库、客户和服务网点复用的标准地域主数据。",
+    "evidence_ids" : [ "E004", "E006", "E008", "E011" ],
+    "confidence" : 1.0,
+    "entity_kind" : "core_entity"
+  } ],
+  "event_candidates" : [ {
+    "candidate_id" : "EVT001",
+    "name" : "库存快照",
+    "definition" : "在快照时间观察并保存某仓库、库位、商品和批次库存状态的一次记录。",
+    "evidence_ids" : [ "E005", "E011" ],
+    "confidence" : 1.0,
+    "grain" : "每个快照时点、仓库、库位、商品、批次一行。"
+  }, {
+    "candidate_id" : "EVT002",
+    "name" : "商品入库",
+    "definition" : "在入库完成时间记录已完成入库单中某项商品明细的一次入库行为。",
+    "evidence_ids" : [ "E005", "E011" ],
+    "confidence" : 1.0,
+    "grain" : "每张入库单的商品明细一行。"
+  }, {
+    "candidate_id" : "EVT003",
+    "name" : "商品出库",
+    "definition" : "在出库完成时间记录已完成出库单中某项商品明细的一次出库行为。",
+    "evidence_ids" : [ "E005", "E011" ],
+    "confidence" : 1.0,
+    "grain" : "每张出库单的商品明细一行。"
+  }, {
+    "candidate_id" : "EVT004",
+    "name" : "销售订单履约",
+    "definition" : "在订单创建时产生的销售订单商品行履约记录，承载订购数量、取消数量、承诺发货日期和履约状态。",
+    "evidence_ids" : [ "E005", "E007", "E011" ],
+    "confidence" : 1.0,
+    "grain" : "每张销售订单的商品明细一行，由销售订单号和订单行号标识。"
+  }, {
+    "candidate_id" : "EVT005",
+    "name" : "商品发货",
+    "definition" : "在实际发货时间发生的订单商品明细发货行为；同一订单明细允许拆分为多次发货。",
+    "evidence_ids" : [ "E005", "E007", "E011" ],
+    "confidence" : 1.0,
+    "grain" : "每张发货单的订单商品明细一行；一张订单明细可对应多行发货。"
+  }, {
+    "candidate_id" : "EVT006",
+    "name" : "维修工单处理",
+    "definition" : "从工单创建开始并记录首次响应、维修完成及状态变化的一次维修工单处理过程；维修单号仅作为该次事件的业务键和退化维度。",
+    "evidence_ids" : [ "E005", "E007", "E011" ],
+    "confidence" : 1.0,
+    "grain" : "每张维修工单一行。"
+  } ],
+  "metric_candidates" : [ {
+    "candidate_id" : "MET001",
+    "name" : "在库数量",
+    "definition" : "所选时间内最新库存快照的在库数量合计；可沿商品、仓库、库位等维度求和，但不能跨快照时点直接累加。",
+    "evidence_ids" : [ "E003", "E012" ],
+    "confidence" : 1.0,
+    "formula" : "SUM(在库数量)",
+    "aggregation" : "semi_additive",
+    "unresolved_reason" : null
+  }, {
+    "candidate_id" : "MET002",
+    "name" : "可用库存数量",
+    "definition" : "在最新适用库存快照上逐行以在库数量减锁定数量，再排除冻结库位并求和。",
+    "evidence_ids" : [ "E003", "E012" ],
+    "confidence" : 1.0,
+    "formula" : "SUM(在库数量 - 锁定数量)",
+    "aggregation" : "semi_additive",
+    "unresolved_reason" : null
+  }, {
+    "candidate_id" : "MET003",
+    "name" : "库存金额",
+    "definition" : "最新库存快照的库存价值合计；逐行库存金额按在库数量乘商品当前有效标准成本计算，不跨快照时点直接累加。",
+    "evidence_ids" : [ "E007", "E012", "E022" ],
+    "confidence" : 1.0,
+    "formula" : "SUM(库存金额)，其中逐行库存金额 = 在库数量 × 商品标准成本",
+    "aggregation" : "semi_additive",
+    "unresolved_reason" : null
+  }, {
+    "candidate_id" : "MET004",
+    "name" : "入库数量",
+    "definition" : "已完成商品入库明细的入库数量合计。",
+    "evidence_ids" : [ "E005", "E012" ],
+    "confidence" : 1.0,
+    "formula" : "SUM(入库数量)",
+    "aggregation" : "sum",
+    "unresolved_reason" : null
+  }, {
+    "candidate_id" : "MET005",
+    "name" : "出库数量",
+    "definition" : "已完成商品出库明细的出库数量合计。",
+    "evidence_ids" : [ "E005", "E012" ],
+    "confidence" : 1.0,
+    "formula" : "SUM(出库数量)",
+    "aggregation" : "sum",
+    "unresolved_reason" : null
+  }, {
+    "candidate_id" : "MET006",
+    "name" : "库龄天数",
+    "definition" : "库存批次从入库日期至统计日期的天数；按批次计算且不能跨批次相加。",
+    "evidence_ids" : [ "E007", "E012" ],
+    "confidence" : 1.0,
+    "formula" : "统计日期 - 入库日期",
+    "aggregation" : "none",
+    "unresolved_reason" : null
+  }, {
+    "candidate_id" : "MET007",
+    "name" : "有效订购数量",
+    "definition" : "销售订单行订购数量扣除取消数量后的合计，并排除已整单取消的订单。",
+    "evidence_ids" : [ "E007", "E012" ],
+    "confidence" : 1.0,
+    "formula" : "SUM(订购数量 - 取消数量)",
+    "aggregation" : "sum",
+    "unresolved_reason" : null
+  }, {
+    "candidate_id" : "MET008",
+    "name" : "已发货数量",
+    "definition" : "未作废商品发货明细的发货数量合计。",
+    "evidence_ids" : [ "E007", "E012" ],
+    "confidence" : 1.0,
+    "formula" : "SUM(发货数量)",
+    "aggregation" : "sum",
+    "unresolved_reason" : null
+  }, {
+    "candidate_id" : "MET009",
+    "name" : "欠货数量",
+    "definition" : "订单行有效订购数量减累计已发货数量后的非负余额合计，已取消数量不计入欠货。",
+    "evidence_ids" : [ "E007", "E012" ],
+    "confidence" : 1.0,
+    "formula" : "SUM(MAX(有效订购数量 - 累计已发货数量, 0))",
+    "aggregation" : "sum",
+    "unresolved_reason" : null
+  }, {
+    "candidate_id" : "MET010",
+    "name" : "发货及时率",
+    "definition" : "有效发货订单行中按时发货行所占百分比；跨分组汇总时应按有效发货订单行数重新加权计算。",
+    "evidence_ids" : [ "E007", "E012", "E022" ],
+    "confidence" : 1.0,
+    "formula" : "SUM(按时发货标记) / COUNT(有效发货订单行) × 100%",
+    "aggregation" : "weighted_avg",
+    "unresolved_reason" : null
+  }, {
+    "candidate_id" : "MET011",
+    "name" : "维修响应时长",
+    "definition" : "维修工单从创建到首次响应的时间差。",
+    "evidence_ids" : [ "E007", "E012", "E022" ],
+    "confidence" : 0.76,
+    "formula" : "首次响应时间 - 工单创建时间",
+    "aggregation" : "none",
+    "unresolved_reason" : "时长单位、汇总方式以及是否排除非工作时间均未确定。"
+  }, {
+    "candidate_id" : "MET012",
+    "name" : "维修完成时长",
+    "definition" : "维修工单从创建到维修完成的时间差。",
+    "evidence_ids" : [ "E007", "E012", "E022" ],
+    "confidence" : 0.76,
+    "formula" : "维修完成时间 - 工单创建时间",
+    "aggregation" : "none",
+    "unresolved_reason" : "时长单位和汇总方式未确定，取消及重复打开工单的处理规则也未确认。"
+  }, {
+    "candidate_id" : "MET013",
+    "name" : "维修响应达标率",
+    "definition" : "维修响应时长不超过响应目标的工单占统计分母工单的比例。",
+    "evidence_ids" : [ "E012", "E022" ],
+    "confidence" : 0.62,
+    "formula" : "维修响应时长不超过响应目标的工单数 / 工单数",
+    "aggregation" : "none",
+    "unresolved_reason" : "聚合方式、单位、分母范围、空响应时间处理和响应目标的具体单位及适用范围均未确认。"
+  }, {
+    "candidate_id" : "MET014",
+    "name" : "维修完成达标率",
+    "definition" : "维修完成时长不超过完成目标的工单占统计分母工单的比例。",
+    "evidence_ids" : [ "E012", "E022" ],
+    "confidence" : 0.62,
+    "formula" : "维修完成时长不超过完成目标的工单数 / 工单数",
+    "aggregation" : "none",
+    "unresolved_reason" : "聚合方式、单位、分母范围、未完成工单处理和完成目标的具体单位及适用范围均未确认。"
+  } ],
+  "dimension_candidates" : [ {
+    "candidate_id" : "DIM001",
+    "name" : "商品品类",
+    "definition" : "商品的品类分析属性，可用于分组；文档明确其为商品属性而非独立实体。",
+    "evidence_ids" : [ "E004", "E006", "E010" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM002",
+    "name" : "商品系列",
+    "definition" : "商品的系列分析属性，可用于分组；文档明确其为商品属性而非独立实体。",
+    "evidence_ids" : [ "E004", "E006", "E010" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM003",
+    "name" : "仓库名称",
+    "definition" : "仓库的名称分析属性。",
+    "evidence_ids" : [ "E006" ],
+    "confidence" : 0.99
+  }, {
+    "candidate_id" : "DIM004",
+    "name" : "仓库区域",
+    "definition" : "仓库的区域分析属性，可按华北、华东、华南等值分组。",
+    "evidence_ids" : [ "E006", "E010" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM005",
+    "name" : "仓库类型",
+    "definition" : "仓库的类型属性，文档将其列为仓库主要属性并给出业务同义词。",
+    "evidence_ids" : [ "E004", "E009" ],
+    "confidence" : 0.88
+  }, {
+    "candidate_id" : "DIM006",
+    "name" : "库位名称",
+    "definition" : "库位的名称分析属性。",
+    "evidence_ids" : [ "E006" ],
+    "confidence" : 0.99
+  }, {
+    "candidate_id" : "DIM007",
+    "name" : "库位类型",
+    "definition" : "库位的类型属性，文档将其列为库位主要属性并给出业务同义词。",
+    "evidence_ids" : [ "E004", "E009" ],
+    "confidence" : 0.88
+  }, {
+    "candidate_id" : "DIM008",
+    "name" : "客户名称",
+    "definition" : "客户的名称分析属性。",
+    "evidence_ids" : [ "E006" ],
+    "confidence" : 0.99
+  }, {
+    "candidate_id" : "DIM009",
+    "name" : "客户等级",
+    "definition" : "客户等级分析属性，用于客户分层。",
+    "evidence_ids" : [ "E006", "E010" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM010",
+    "name" : "客户销售区域",
+    "definition" : "客户的销售区域分析属性，并可通过销售区域编码关联行政区域成员。",
+    "evidence_ids" : [ "E006", "E011" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM011",
+    "name" : "服务网点名称",
+    "definition" : "服务网点的名称分析属性，可用于按网点观察维修服务。",
+    "evidence_ids" : [ "E006", "E021" ],
+    "confidence" : 0.99
+  }, {
+    "candidate_id" : "DIM012",
+    "name" : "服务区域",
+    "definition" : "服务网点的服务区域分析属性。",
+    "evidence_ids" : [ "E006" ],
+    "confidence" : 0.99
+  }, {
+    "candidate_id" : "DIM013",
+    "name" : "网点等级",
+    "definition" : "服务网点的等级属性，文档将其列为主要属性并给出业务同义词。",
+    "evidence_ids" : [ "E004", "E009" ],
+    "confidence" : 0.88
+  }, {
+    "candidate_id" : "DIM014",
+    "name" : "行政区域",
+    "definition" : "跨仓库、客户和服务网点复用的标准地域分析维度；其内部成员树留待后续增强阶段处理。",
+    "evidence_ids" : [ "E004", "E008", "E010" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM015",
+    "name" : "行政区域级别",
+    "definition" : "行政区域成员的级别分析属性，取值为大区、省、市、区县。",
+    "evidence_ids" : [ "E006", "E008" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM016",
+    "name" : "入库类型",
+    "definition" : "商品入库活动的类型分析属性。",
+    "evidence_ids" : [ "E007" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM017",
+    "name" : "出库类型",
+    "definition" : "商品出库活动的类型分析属性。",
+    "evidence_ids" : [ "E007" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM018",
+    "name" : "订单状态",
+    "definition" : "销售订单履约的状态分析属性。",
+    "evidence_ids" : [ "E007", "E010" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM019",
+    "name" : "承运商",
+    "definition" : "商品发货活动的承运商分析属性。",
+    "evidence_ids" : [ "E007", "E010" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM020",
+    "name" : "维修状态",
+    "definition" : "维修工单处理的状态分析属性。",
+    "evidence_ids" : [ "E007", "E010" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM021",
+    "name" : "故障类型",
+    "definition" : "维修工单记录的故障分类分析属性。",
+    "evidence_ids" : [ "E007", "E010" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM022",
+    "name" : "业务时间",
+    "definition" : "按各活动的快照时间、完成时间、创建时间或实际发货时间进行日、周、月及时段分析的角色时间维度；承诺发货日期是发货时效的基准时间角色。",
+    "evidence_ids" : [ "E003", "E005", "E007" ],
+    "confidence" : 0.96
+  }, {
+    "candidate_id" : "DIM023",
+    "name" : "库存批次号",
+    "definition" : "库存快照行上的批次退化维度，用于批次库存和库龄分析。",
+    "evidence_ids" : [ "E007", "E012" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM024",
+    "name" : "入库单号",
+    "definition" : "商品入库活动的单据退化维度，不作为独立核心实体。",
+    "evidence_ids" : [ "E007" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM025",
+    "name" : "出库单号",
+    "definition" : "商品出库活动的单据退化维度，不作为独立核心实体。",
+    "evidence_ids" : [ "E007" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM026",
+    "name" : "销售订单行标识",
+    "definition" : "由销售订单号和订单行号标识的订单行退化维度，用于定位具体履约记录。",
+    "evidence_ids" : [ "E007", "E011" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM027",
+    "name" : "发货单号",
+    "definition" : "商品发货活动的发货单退化维度，不作为独立核心实体。",
+    "evidence_ids" : [ "E007" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM028",
+    "name" : "运单号",
+    "definition" : "商品发货活动的运单退化维度。",
+    "evidence_ids" : [ "E007" ],
+    "confidence" : 1.0
+  }, {
+    "candidate_id" : "DIM029",
+    "name" : "维修单号",
+    "definition" : "维修工单事件的业务键和退化维度，用于定位某次维修工单处理。",
+    "evidence_ids" : [ "E007", "E022" ],
+    "confidence" : 1.0
+  } ],
+  "grain_candidates" : [ {
+    "candidate_id" : "GRN001",
+    "name" : "库存快照粒度",
+    "definition" : "库存状态观察的最细记录单位，同时包含快照时点、仓库、库位、商品和批次。",
+    "evidence_ids" : [ "E005" ],
+    "confidence" : 1.0,
+    "event_candidate_id" : "EVT001",
+    "grain" : "每个快照时点、仓库、库位、商品、批次一行。"
+  }, {
+    "candidate_id" : "GRN002",
+    "name" : "商品入库明细粒度",
+    "definition" : "已完成入库单中的单个商品明细。",
+    "evidence_ids" : [ "E005" ],
+    "confidence" : 1.0,
+    "event_candidate_id" : "EVT002",
+    "grain" : "每张入库单的商品明细一行。"
+  }, {
+    "candidate_id" : "GRN003",
+    "name" : "商品出库明细粒度",
+    "definition" : "已完成出库单中的单个商品明细。",
+    "evidence_ids" : [ "E005" ],
+    "confidence" : 1.0,
+    "event_candidate_id" : "EVT003",
+    "grain" : "每张出库单的商品明细一行。"
+  }, {
+    "candidate_id" : "GRN004",
+    "name" : "销售订单履约行粒度",
+    "definition" : "销售订单中的单个商品行，由订单号和订单行号共同标识。",
+    "evidence_ids" : [ "E005", "E007" ],
+    "confidence" : 1.0,
+    "event_candidate_id" : "EVT004",
+    "grain" : "每张销售订单的商品明细一行。"
+  }, {
+    "candidate_id" : "GRN005",
+    "name" : "商品发货明细粒度",
+    "definition" : "发货单中履行某个订单商品行的一次明细；同一订单行可以出现多次。",
+    "evidence_ids" : [ "E005", "E011" ],
+    "confidence" : 1.0,
+    "event_candidate_id" : "EVT005",
+    "grain" : "每张发货单的订单商品明细一行。"
+  }, {
+    "candidate_id" : "GRN006",
+    "name" : "维修工单粒度",
+    "definition" : "从创建到响应和完成的一张维修工单处理记录。",
+    "evidence_ids" : [ "E005", "E007" ],
+    "confidence" : 1.0,
+    "event_candidate_id" : "EVT006",
+    "grain" : "每张维修工单一行。"
+  } ],
+  "hierarchy_candidates" : [ {
+    "candidate_id" : "HIE001",
+    "name" : "库位所属仓库",
+    "definition" : "库位必须归属一个仓库，支持从库位向所属仓库导航。",
+    "evidence_ids" : [ "E004", "E006", "E011" ],
+    "confidence" : 1.0,
+    "child_entity_id" : "ENT003",
+    "parent_entity_id" : "ENT002",
+    "inference_reason" : null
+  }, {
+    "candidate_id" : "HIE002",
+    "name" : "仓库位于行政区域",
+    "definition" : "仓库按标准区县归属行政区域成员树，支持从仓库向行政区域导航。",
+    "evidence_ids" : [ "E006", "E008", "E011" ],
+    "confidence" : 1.0,
+    "child_entity_id" : "ENT002",
+    "parent_entity_id" : "ENT006",
+    "inference_reason" : null
+  }, {
+    "candidate_id" : "HIE003",
+    "name" : "客户归属销售区域",
+    "definition" : "客户的销售区域引用行政区域任一级成员，支持从客户向行政区域导航。",
+    "evidence_ids" : [ "E006", "E008", "E011" ],
+    "confidence" : 1.0,
+    "child_entity_id" : "ENT004",
+    "parent_entity_id" : "ENT006",
+    "inference_reason" : null
+  }, {
+    "candidate_id" : "HIE004",
+    "name" : "服务网点位于城市",
+    "definition" : "服务网点关联行政区域中的市级成员，支持从网点向行政区域导航。",
+    "evidence_ids" : [ "E006", "E008", "E011" ],
+    "confidence" : 1.0,
+    "child_entity_id" : "ENT005",
+    "parent_entity_id" : "ENT006",
+    "inference_reason" : null
+  } ],
+  "unresolved" : [ {
+    "item_id" : "UNR001",
+    "topic" : "维修 SLA 时长单位",
+    "missing_information" : "需要确定维修响应时长、维修完成时长、响应目标和完成目标采用的时间单位。",
+    "impact" : "无法统一解释维修响应时长、维修完成时长及其目标阈值，也无法可靠比较工单是否达标。",
+    "evidence_ids" : [ "E007", "E012", "E022" ]
+  }, {
+    "item_id" : "UNR002",
+    "topic" : "维修达标率聚合方式",
+    "missing_information" : "需要确认维修达标率究竟按日、按单还是按网点聚合，以及跨分组汇总规则。",
+    "impact" : "无法确定维修达标率的最终聚合语义及按服务网点、日期等维度汇总时的计算方式。",
+    "evidence_ids" : [ "E012", "E022" ]
+  }, {
+    "item_id" : "UNR003",
+    "topic" : "维修 SLA 工单纳入规则",
+    "missing_information" : "需要确认取消、重复打开、未响应和未完成工单是否进入各达标率分母，以及如何进入分子。",
+    "impact" : "维修响应达标率和完成达标率的分子、分母可能因工单状态而变化，当前结果不可稳定复现。",
+    "evidence_ids" : [ "E012", "E022" ]
+  }, {
+    "item_id" : "UNR004",
+    "topic" : "维修响应工作时间口径",
+    "missing_information" : "需要确认计算维修响应时长时是否排除非工作时间，并提供适用的工作日历规则。",
+    "impact" : "维修响应时长在自然时间和工作时间口径下会产生不同结果。",
+    "evidence_ids" : [ "E012" ]
+  }, {
+    "item_id" : "UNR005",
+    "topic" : "库存移动与出入库事件边界",
+    "missing_information" : "业务活动将商品入库和商品出库分别列出，但同义词及字段章节使用统一的库存移动名称；需要确认库存移动只是二者的总称，还是应作为统一标准事件。",
+    "impact" : "可能影响后续事件模型是保留两个独立事件，还是增加统一库存移动事件及方向维度。",
+    "evidence_ids" : [ "E005", "E009", "E010" ]
+  }, {
+    "item_id" : "UNR006",
+    "topic" : "冻结库位排除清单",
+    "missing_information" : "需要提供仓库主数据中的冻结库位清单及其生效规则。",
+    "impact" : "在获得清单前，无法完整执行可用库存数量的冻结库位排除规则。",
+    "evidence_ids" : [ "E012", "E022" ]
+  }, {
+    "item_id" : "UNR007",
+    "topic" : "维修 SLA 目标值及适用范围",
+    "missing_information" : "需要提供响应目标和完成目标的具体数值，以及目标是否因网点等级、故障类型或其他范围而变化。",
+    "impact" : "即使时长能够计算，也无法可靠判断具体工单是否达到响应或完成目标。",
+    "evidence_ids" : [ "E007", "E012" ]
+  } ]
+}

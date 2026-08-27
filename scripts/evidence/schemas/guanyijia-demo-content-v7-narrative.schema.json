@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sourceId", "sections"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "sourceId": { "type": "string", "minLength": 1 },
+    "sections": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sectionId", "narrative"],
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "enum": [
+              "OVERVIEW",
+              "GOAL",
+              "OBJECT",
+              "ACTIVITY",
+              "FIELD",
+              "RELATION",
+              "METRIC",
+              "QUESTION",
+              "UNRESOLVED"
+            ]
+          },
+          "coverage": {
+            "type": "string",
+            "enum": ["SUPPORTED", "PARTIAL", "GAP"]
+          },
+          "narrative": { "type": "string", "minLength": 1 },
+          "gap": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["missing", "limitation", "nextStep"],
+            "properties": {
+              "missing": { "type": "string", "minLength": 1 },
+              "limitation": { "type": "string", "minLength": 1 },
+              "nextStep": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

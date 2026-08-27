@@ -1,0 +1,136 @@
+.responsive-data-view {
+  min-width: 0;
+}
+
+.responsive-data-view-desktop {
+  min-width: 0;
+}
+
+.responsive-data-view-mobile {
+  display: none;
+}
+
+.responsive-data-card-list {
+  display: grid;
+  gap: 10px;
+}
+
+.responsive-data-card {
+  overflow: hidden;
+  border: 1px solid var(--dh-border-subtle);
+  border-radius: var(--dh-radius-lg);
+  background: var(--dh-bg-card);
+  box-shadow: 0 1px 3px rgb(33 23 95 / 5%);
+}
+
+.responsive-data-card.is-selected {
+  border-color: var(--dh-primary);
+  box-shadow: inset 3px 0 0 var(--dh-primary);
+}
+
+.responsive-data-card-header {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 14px 10px;
+}
+
+.responsive-data-card-identity {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.responsive-data-card-identity strong {
+  min-width: 0;
+  color: var(--dh-text);
+  font-size: 14px;
+  line-height: 21px;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.responsive-data-card-identity > div {
+  min-width: 0;
+  color: var(--dh-text-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.responsive-data-card-status {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.responsive-data-card-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin: 0;
+  padding: 10px 14px 13px;
+  border-top: 1px solid var(--dh-border-subtle);
+  background: var(--dh-bg-surface);
+}
+
+.responsive-data-card-fields > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.responsive-data-card-fields > div.is-wide {
+  grid-column: 1 / -1;
+}
+
+.responsive-data-card-fields dt {
+  color: var(--dh-text-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.responsive-data-card-fields dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--dh-text-secondary);
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.responsive-data-card-actions {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--dh-border-subtle);
+}
+
+.responsive-data-pagination {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+@media (max-width: 720px) {
+  .responsive-data-view-desktop {
+    display: none;
+  }
+
+  .responsive-data-view-mobile {
+    display: block;
+  }
+}
+
+@media (max-width: 390px) {
+  .responsive-data-card-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .responsive-data-card-fields > div.is-wide {
+    grid-column: auto;
+  }
+}

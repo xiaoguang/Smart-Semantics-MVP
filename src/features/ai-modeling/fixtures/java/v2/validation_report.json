@@ -1,0 +1,19 @@
+{
+  "valid" : true,
+  "errors" : [ ],
+  "warnings" : [ ],
+  "stats" : {
+    "entity_count" : 5,
+    "event_count" : 4,
+    "field_count" : 78,
+    "relationship_count" : 15,
+    "metric_count" : 10,
+    "manual_evidence_count" : 0,
+    "active_field_count" : 78,
+    "draft_field_count" : 0,
+    "filterable_field_count" : 68,
+    "groupable_field_count" : 25,
+    "display_field_count" : 53,
+    "sortable_field_count" : 50
+  }
+}

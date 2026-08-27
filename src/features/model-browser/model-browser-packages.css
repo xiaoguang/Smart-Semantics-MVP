@@ -1,0 +1,43 @@
+.model-browser-packages {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.model-browser-packages button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 9px;
+  background: #fff;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.model-browser-packages button.selected {
+  border-color: #91caff;
+  background: #f0f8ff;
+}
+
+.model-browser-packages button:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
+}
+
+.model-browser-packages button div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.model-browser-packages button small {
+  overflow: hidden;
+  color: #7c89a3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

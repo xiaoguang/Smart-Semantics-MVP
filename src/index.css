@@ -1,0 +1,83 @@
+:root {
+  font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+  color: #374066;
+  background: #f5f6fa;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --dh-primary: #0078ad;
+  --dh-primary-hover: #006292;
+  --dh-brand: #00a5d9;
+  --dh-bg-page: #f5f6fa;
+  --dh-bg-card: #ffffff;
+  --dh-bg-surface: #f9fafc;
+  --dh-bg-selected: #e6f7fc;
+  --dh-text: #374066;
+  --dh-text-secondary: #5f6685;
+  --dh-text-tertiary: #8088a3;
+  --dh-border: #d9d9d9;
+  --dh-border-subtle: #ebecf0;
+  --dh-danger: #c4360b;
+  --dh-warning: #c77100;
+  --dh-success: #0d7543;
+  --dh-info: #09739a;
+  --dh-shadow-xs: 0 1px 2px rgb(33 23 95 / 4%);
+  --dh-shadow-sm: 0 2px 4px rgb(33 23 95 / 6%);
+  --dh-shadow-lg: 0 4px 28px rgb(9 1 61 / 14%);
+  --dh-radius-sm: 4px;
+  --dh-radius-md: 8px;
+  --dh-radius-lg: 12px;
+  --dh-sider-width: 248px;
+  --dh-header-height: 68px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--dh-bg-page);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+::selection {
+  color: var(--dh-primary);
+  background: var(--dh-bg-selected);
+}
+
+* {
+  scrollbar-color: rgb(163 167 185 / 30%) transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgb(163 167 185 / 30%);
+}

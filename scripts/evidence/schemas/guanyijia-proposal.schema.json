@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guanyijia-proposal.schema.json",
+  "title": "Guanyijia Evidence Proposal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "storyKey", "runId", "invocationEnvelopeSha256", "sourceProposals"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "GUANYIJIA_EVIDENCE_PROPOSAL" },
+    "storyKey": { "const": "guanyijia-five-source-v2" },
+    "runId": { "$ref": "#/$defs/nonblank" },
+    "invocationEnvelopeSha256": { "$ref": "#/$defs/sha256" },
+    "sourceProposals": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        { "$ref": "#/$defs/mysqlSourceProposal" },
+        { "$ref": "#/$defs/githubSourceProposal" },
+        { "$ref": "#/$defs/officialDocsSourceProposal" }
+      ],
+      "items": false
+    }
+  },
+  "$defs": {
+    "nonblank": { "type": "string", "minLength": 1, "maxLength": 65536 },
+    "sha256": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "positiveInteger": { "type": "integer", "minimum": 1 },
+    "sourceProposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceId", "snapshotId", "statements"],
+      "properties": {
+        "sourceId": { "enum": ["guanyijia_mysql", "guanyijia_github", "guanyijia_official_docs"] },
+        "snapshotId": { "$ref": "#/$defs/nonblank" },
+        "statements": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/statement" }
+        }
+      }
+    },
+    "mysqlSourceProposal": {
+      "allOf": [
+        { "$ref": "#/$defs/sourceProposal" },
+        { "properties": { "sourceId": { "const": "guanyijia_mysql" } } }
+      ]
+    },
+    "githubSourceProposal": {
+      "allOf": [
+        { "$ref": "#/$defs/sourceProposal" },
+        { "properties": { "sourceId": { "const": "guanyijia_github" } } }
+      ]
+    },
+    "officialDocsSourceProposal": {
+      "allOf": [
+        { "$ref": "#/$defs/sourceProposal" },
+        { "properties": { "sourceId": { "const": "guanyijia_official_docs" } } }
+      ]
+    },
+    "statement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proposalId", "section", "semanticKind", "stableCode", "label", "value", "statement", "evidenceStatus", "provenance", "affectedObjectRefs", "evidence"],
+      "properties": {
+        "proposalId": { "$ref": "#/$defs/nonblank" },
+        "section": { "enum": ["OVERVIEW", "GOAL", "OBJECT", "ACTIVITY", "FIELD", "RELATION", "METRIC", "QUESTION", "UNRESOLVED"] },
+        "semanticKind": { "enum": ["ENTITY", "EVENT", "FIELD", "RELATION", "DIMENSION", "METRIC", "HIERARCHY", "RULE", "ALIAS", "TIME_RULE", "GAP", "PENDING_ASSET", "EXCLUSION"] },
+        "stableCode": { "$ref": "#/$defs/nonblank" },
+        "label": { "$ref": "#/$defs/nonblank" },
+        "value": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["normalized", "text"],
+          "properties": {
+            "normalized": { "$ref": "#/$defs/nonblank" },
+            "text": { "$ref": "#/$defs/nonblank" }
+          }
+        },
+        "statement": { "$ref": "#/$defs/nonblank" },
+        "evidenceStatus": { "enum": ["FACT", "INFERENCE", "GAP", "CONFLICT"] },
+        "provenance": { "enum": ["OBSERVED", "INFERRED"] },
+        "affectedObjectRefs": {
+          "type": "array",
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/affectedObjectRef" }
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": { "oneOf": [
+            { "$ref": "#/$defs/observedCitation" },
+            { "$ref": "#/$defs/generatedTargetCitation" }
+          ] }
+        }
+      }
+    },
+    "affectedObjectRef": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scope", "documentVersion", "kind", "objectId"],
+          "properties": {
+            "scope": { "const": "RESULT" },
+            "documentVersion": { "$ref": "#/$defs/nonblank" },
+            "kind": { "$ref": "#/$defs/objectRefKind" },
+            "objectId": { "$ref": "#/$defs/nonblank" },
+            "ownerId": { "$ref": "#/$defs/nonblank" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scope", "catalogId", "kind", "objectId"],
+          "properties": {
+            "scope": { "const": "CATALOG" },
+            "catalogId": { "$ref": "#/$defs/nonblank" },
+            "kind": { "$ref": "#/$defs/objectRefKind" },
+            "objectId": { "$ref": "#/$defs/nonblank" },
+            "ownerId": { "$ref": "#/$defs/nonblank" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scope", "draftId", "kind", "objectId"],
+          "properties": {
+            "scope": { "const": "DRAFT" },
+            "draftId": { "$ref": "#/$defs/nonblank" },
+            "kind": { "$ref": "#/$defs/objectRefKind" },
+            "objectId": { "$ref": "#/$defs/nonblank" },
+            "ownerId": { "$ref": "#/$defs/nonblank" }
+          }
+        }
+      ]
+    },
+    "objectRefKind": { "enum": ["ENTITY", "EVENT", "FIELD", "RELATION", "DIMENSION", "METRIC", "HIERARCHY", "RULE", "ALIAS", "TIME_RULE"] },
+    "observedCitation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceKind", "evidenceRef", "title", "excerpt", "sourceId", "snapshotId", "artifactRef", "artifactSha256", "locator"],
+      "properties": {
+        "evidenceKind": { "const": "OBSERVED" },
+        "evidenceRef": { "$ref": "#/$defs/nonblank" },
+        "title": { "$ref": "#/$defs/nonblank" },
+        "excerpt": { "type": "string", "maxLength": 65536 },
+        "sourceId": { "enum": ["guanyijia_mysql", "guanyijia_github", "guanyijia_official_docs"] },
+        "snapshotId": { "$ref": "#/$defs/nonblank" },
+        "artifactRef": { "$ref": "#/$defs/nonblank" },
+        "artifactSha256": { "$ref": "#/$defs/sha256" },
+        "locator": { "$ref": "#/$defs/observedLocator" }
+      }
+    },
+    "generatedTargetCitation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceKind", "evidenceRef", "title", "excerpt", "locator"],
+      "properties": {
+        "evidenceKind": { "const": "GENERATED_TARGET" },
+        "evidenceRef": { "$ref": "#/$defs/nonblank" },
+        "title": { "$ref": "#/$defs/nonblank" },
+        "excerpt": { "$ref": "#/$defs/nonblank" },
+        "locator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "confirmationStatus"],
+          "properties": {
+            "kind": { "const": "GENERATED_TARGET" },
+            "confirmationStatus": { "const": "PENDING_HUMAN_CONFIRMATION" }
+          }
+        }
+      }
+    },
+    "observedLocator": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "path", "startLine", "endLine"],
+          "properties": {
+            "kind": { "const": "FILE_LINES" },
+            "path": { "$ref": "#/$defs/nonblank" },
+            "startLine": { "$ref": "#/$defs/positiveInteger" },
+            "endLine": { "$ref": "#/$defs/positiveInteger" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "path", "symbol", "startLine", "endLine"],
+          "properties": {
+            "kind": { "const": "SOURCE_SYMBOL" },
+            "path": { "$ref": "#/$defs/nonblank" },
+            "symbol": { "$ref": "#/$defs/nonblank" },
+            "startLine": { "$ref": "#/$defs/positiveInteger" },
+            "endLine": { "$ref": "#/$defs/positiveInteger" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "schema", "object", "symbol"],
+          "properties": {
+            "kind": { "const": "SQL" },
+            "schema": { "$ref": "#/$defs/nonblank" },
+            "object": { "$ref": "#/$defs/nonblank" },
+            "symbol": { "$ref": "#/$defs/nonblank" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "document", "section"],
+          "properties": {
+            "kind": { "const": "DOCUMENT_SECTION" },
+            "document": { "$ref": "#/$defs/nonblank" },
+            "section": { "$ref": "#/$defs/nonblank" },
+            "page": { "$ref": "#/$defs/positiveInteger" }
+          }
+        }
+      ]
+    }
+  }
+}

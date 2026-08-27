@@ -1,0 +1,11 @@
+{
+  "valid" : true,
+  "errors" : [ ],
+  "warnings" : [ ],
+  "stats" : {
+    "synonym_group_count" : 113,
+    "member_hierarchy_count" : 1,
+    "rule_candidate_count" : 4,
+    "dimension_count" : 9
+  }
+}

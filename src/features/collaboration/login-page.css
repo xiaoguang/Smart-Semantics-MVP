@@ -1,0 +1,20 @@
+.demo-login-page { min-height: 100vh; display: grid; place-items: center; padding: 32px 20px; background: radial-gradient(circle at 25% 10%, #e6f7fc 0, transparent 42%), #f5f6fa; }
+.demo-login-card { width: min(440px, 100%); padding: 36px; border: 1px solid #e6e8ef; border-radius: 18px; background: #fff; box-shadow: 0 18px 50px rgba(28, 44, 85, .12); }
+.demo-login-brand { display: flex; align-items: center; gap: 10px; color: #0078ad; font-size: 16px; font-weight: 700; margin-bottom: 22px; }
+.demo-login-card .ant-alert { margin-bottom: 24px; }
+.demo-login-card > .ant-btn-link { display: block; margin: 16px auto 0; }
+.demo-account-list { display: block; margin-top: 18px; }
+.demo-account-row { display: grid; grid-template-columns: minmax(130px, 1fr) 132px auto; gap: 10px; align-items: center; padding: 12px 0; border-bottom: 1px solid #eff1f5; }
+.demo-account-identity { min-width: 0; display: flex; flex-direction: column; }
+.demo-account-identity span { color: #747b94; font-size: 12px; }
+.demo-account-row code { color: #374066; white-space: nowrap; }
+.demo-account-actions { display: flex; min-width: 0; align-items: center; gap: 4px; }
+@media (max-width: 560px) {
+  .demo-login-card { padding: 26px 20px; }
+  .demo-account-row { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+  .demo-account-row code { grid-column: 1; max-width: 100%; overflow-x: auto; }
+  .demo-account-actions { width: 100%; flex-wrap: wrap; justify-content: flex-end; }
+  .demo-account-actions .ant-btn { min-width: 36px; flex: 0 0 auto; }
+  .demo-account-actions .ant-tooltip-open,
+  .demo-account-actions > * { min-width: 0; }
+}

@@ -1,0 +1,47 @@
+.model-browser { display: flex; width: clamp(360px, 32vw, 480px); min-width: 0; height: 100%; flex-direction: column; border-left: 1px solid #e5e7eb; background: #fff; }
+.model-browser > header { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid #e5e7eb; }
+.model-browser > header div { display: grid; gap: 3px; }
+.model-browser > header small { color: #64748b; }
+.model-browser-views, .model-browser-categories { display: grid; border-bottom: 1px solid #e5e7eb; }
+.model-browser-views { grid-template-columns: repeat(3, 1fr); }
+.model-browser-categories { grid-template-columns: repeat(6, minmax(0, 1fr)); margin-top: 14px; }
+.model-browser-views button, .model-browser-categories button { padding: 11px 8px; border: 0; color: #64748b; background: transparent; cursor: pointer; }
+.model-browser-views button.active, .model-browser-categories button.active { color: #0b7faf; box-shadow: inset 0 -2px #0b7faf; }
+.model-browser-categories button { display: flex; min-width: 0; align-items: center; justify-content: center; gap: 3px; padding-inline: 2px; white-space: nowrap; }
+.model-browser-body { min-height: 0; overflow: auto; padding: 16px; }
+.model-browser-list { display: grid; gap: 8px; margin-top: 12px; }
+.model-browser-object { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 9px; text-align: left; background: #fff; cursor: pointer; }
+.model-browser-object > span:first-child { display: grid; min-width: 0; gap: 3px; }
+.model-browser-object small { color: #7c89a3; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; white-space: normal; }
+.model-browser-table { overflow: hidden; border: 1px solid #e5e7eb; border-radius: 10px; }
+.model-browser-table > .model-browser-object { border: 0; border-radius: 0; }
+.model-browser-table .ant-collapse { border-top: 1px solid #eef0f3; }
+.model-browser-definition dl { display: grid; margin-top: 18px; }
+.model-browser-definition dl > div { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid #eef0f3; }
+.model-browser-definition dt { color: #7c89a3; }
+.model-browser-definition dd { margin: 0; }
+.model-browser-definition dd .ant-btn { margin-right: 8px; padding-inline: 0; }
+.model-browser-secondary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.model-browser-secondary button { display: flex; justify-content: space-between; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; cursor: pointer; }
+.model-browser-source-list, .model-browser-source-evidence-list { display: grid; gap: 8px; }
+.model-browser-source-list > button, .model-browser-source-evidence-list > button { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 11px 12px; border: 1px solid #e5e7eb; border-radius: 9px; text-align: left; background: #fff; cursor: pointer; }
+.model-browser-source-list > button > span, .model-browser-source-evidence-list > button { min-width: 0; }
+.model-browser-source-list strong, .model-browser-source-list small, .model-browser-source-evidence-list strong, .model-browser-source-evidence-list small { display: block; overflow-wrap: anywhere; }
+.model-browser-source-list small, .model-browser-source-evidence-list small { margin-top: 3px; color: #7c89a3; }
+.model-browser-source-detail-view > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.model-browser-source-detail-view > header small { display: block; margin-top: 3px; color: #7c89a3; overflow-wrap: anywhere; }
+.model-browser-source-detail-view dl { display: grid; }
+.model-browser-source-detail-view dl > div { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px solid #eef0f3; }
+.model-browser-source-detail-view dt { color: #7c89a3; }
+.model-browser-source-detail-view dd { margin: 0; overflow-wrap: anywhere; }
+.model-browser-field-group { overflow: hidden; border: 1px solid #e5e7eb; border-radius: 10px; }
+.model-browser-field-group > header { padding: 9px 12px; color: #64748b; background: #f8fafc; }
+.model-browser-field-group .model-browser-object { border: 0; border-top: 1px solid #eef0f3; border-radius: 0; }
+.model-browser-pagination { display: flex; justify-content: center; margin-top: 14px; }
+.model-browser-sources .ant-collapse-content-box, .model-browser-reconciliation .ant-collapse-content-box { padding-inline: 8px !important; }
+
+@media (max-width: 920px) {
+  .model-browser { position: fixed; z-index: 1300; inset: 0; width: 100%; max-width: none; border: 0; }
+  .model-browser-body { padding: 14px; }
+  .model-browser-categories button { font-size: 12px; }
+}

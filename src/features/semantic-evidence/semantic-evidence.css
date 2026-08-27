@@ -1,0 +1,27 @@
+.semantic-collection-panel { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--dh-border-subtle); border-radius: var(--dh-radius-md); background: var(--dh-bg-surface); }
+.semantic-collection-panel > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.semantic-collection-panel h5 { margin: 0 !important; }
+.semantic-collection-panel header > div { display: grid; gap: 3px; }
+.semantic-profile-grid { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 7px 16px !important; }
+.semantic-profile-grid > div { display: grid !important; grid-template-columns: 92px minmax(0, 1fr) !important; gap: 8px; }
+.semantic-profile-grid dd { white-space: normal !important; overflow-wrap: anywhere; }
+.semantic-empty-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.semantic-empty-steps span { padding: 9px 10px; border-radius: var(--dh-radius-sm); color: var(--dh-text-secondary); background: var(--dh-bg-card); }
+.semantic-package-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.semantic-package-summary > div:first-child { display: grid; }
+.semantic-package-summary small { color: var(--dh-text-tertiary); }
+.semantic-result-list { display: grid; max-height: 360px; gap: 7px; overflow: auto; }
+.semantic-result-list article { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--dh-border-subtle); border-radius: var(--dh-radius-sm); background: var(--dh-bg-card); }
+.semantic-result-list article > div { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.semantic-result-list article > div:first-child { display: grid; }
+.semantic-result-list small { color: var(--dh-text-tertiary); }
+.semantic-review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.semantic-review-book pre { overflow: auto; max-height: 360px; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 600px) {
+  .semantic-collection-panel > header, .semantic-package-summary { align-items: stretch; flex-direction: column; }
+  .semantic-profile-grid { grid-template-columns: 1fr !important; }
+  .semantic-empty-steps { grid-template-columns: 1fr 1fr; }
+  .semantic-collection-panel .ant-segmented-group { overflow-x: auto; }
+  .semantic-collection-panel .ant-segmented-item { min-width: max-content; }
+}

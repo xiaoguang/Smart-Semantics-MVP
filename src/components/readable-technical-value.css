@@ -1,0 +1,6 @@
+.readable-technical-value { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 4px 8px; }
+.readable-technical-value > small { grid-column: 1 / -1; color: var(--dh-text-tertiary); }
+.readable-technical-value code { min-width: 0; max-height: none; overflow-wrap: anywhere; white-space: pre-wrap; color: var(--dh-text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.readable-technical-value.collapsed code { max-height: 3.2em; overflow: hidden; }
+.technical-value-actions { display: flex; align-items: center; white-space: nowrap; }
+.technical-value-actions .ant-btn { height: auto; padding: 0 3px; }

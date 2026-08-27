@@ -1,0 +1,11 @@
+GUANYIJIA evidence proposal instructions
+
+Produce a structured evidence proposal only from the admitted source inputs and
+the supplied resolved citation material. Preserve every citation's evidenceRef,
+source identity, artifact digest, locator, and excerpt exactly; do not invent,
+normalize, or merge observed evidence.
+
+For unsupported claims, emit only a generated target with the explicit pending
+GAP or PENDING_ASSET contract. Do not present generated targets as facts and do
+not claim human confirmation. Return data that conforms exactly to the pinned
+GUANYIJIA proposal schema with no additional fields.

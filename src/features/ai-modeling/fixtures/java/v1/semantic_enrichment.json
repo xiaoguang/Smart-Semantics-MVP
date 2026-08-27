@@ -1,0 +1,891 @@
+{
+  "metadata" : {
+    "source_file" : "01-库存与出入库设计-v1.md",
+    "source_sha256" : "sha256:204e590e3b97ce6884e2143202cb839af0439d34e3ad5dacf4450dfaaacf6377",
+    "prompt_sha256" : "sha256:3e806e8f75b3415820c5bf9b4e0f75f3ae88b8773bfce52b6b31ef8a5d66f30d",
+    "llm_execution" : {
+      "route_sha256" : "sha256:d43f7a9f1963c320149995f24c0ded2446480d71b7a2692536a141fde3de6fba",
+      "invocations" : [ {
+        "call_id" : "semantic_enrichment-2",
+        "task_type" : "semantic_enrichment",
+        "attempt_number" : 1,
+        "route_position" : 1,
+        "profile_name" : "local_context",
+        "provider_id" : "structured_process",
+        "provider_version" : "1",
+        "provider_artifact_sha256" : null,
+        "requested_model" : "gpt-5.6-sol",
+        "actual_model" : "gpt-5.6-sol",
+        "effective_parameters" : {
+          "parameters" : {
+            "reasoning_effort" : "xhigh"
+          },
+          "settings" : {
+            "command" : [ "codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "--output-schema", "{schema_file}", "--output-last-message", "{response_file}", "--model", "{model}", "--config", "model_reasoning_effort=\"{parameter.reasoning_effort}\"", "-" ],
+            "output_mode" : "file",
+            "version_command" : [ "codex", "--version" ]
+          }
+        },
+        "profile_sha256" : "sha256:5137a18c377cb69b0c6ae318a46692daae3a49792b484966397936b4fb24b0a6",
+        "request_sha256" : "sha256:490662439e823abf8e1037d33cd3e1c8732f9688d7c08103f6221a8d72698ddd",
+        "response_schema_sha256" : "sha256:229a7f2fe3aea61b24c588bf230cf6b27a692dc787aa6e0e594b3f1e3637dd25",
+        "response_sha256" : "sha256:1d1d07cd7ab563f2f5c7a368ced360edca42c101669c79eb1b01b8c9283e3693",
+        "provider_request_id" : null,
+        "status" : "SUCCESS",
+        "error_category" : null,
+        "error_message" : null,
+        "input_tokens" : null,
+        "output_tokens" : null,
+        "total_tokens" : null,
+        "duration_millis" : 200834
+      } ]
+    }
+  },
+  "dimensions" : [ {
+    "dimension_id" : "dimension_product_category",
+    "name" : "商品品类",
+    "definition" : "以商品品类对库存与库存移动结果进行筛选和分组分析的业务维度。",
+    "target_type" : "FIELD",
+    "target_id" : "field_product_category",
+    "owner_id" : "entity_product",
+    "evidence_ids" : [ "E006", "E012", "E015" ],
+    "confidence" : 0.99
+  }, {
+    "dimension_id" : "dimension_product_series",
+    "name" : "商品系列",
+    "definition" : "以商品系列对库存与库存移动结果进行筛选和分组分析的业务维度。",
+    "target_type" : "FIELD",
+    "target_id" : "field_product_series",
+    "owner_id" : "entity_product",
+    "evidence_ids" : [ "E006", "E012" ],
+    "confidence" : 0.99
+  }, {
+    "dimension_id" : "dimension_warehouse_region",
+    "name" : "仓库区域",
+    "definition" : "以仓库所属业务区域对库存、入库和出库结果进行筛选和分组分析的业务维度。",
+    "target_type" : "FIELD",
+    "target_id" : "field_warehouse_region",
+    "owner_id" : "entity_warehouse",
+    "evidence_ids" : [ "E006", "E012", "E015" ],
+    "confidence" : 0.99
+  }, {
+    "dimension_id" : "dimension_administrative_region",
+    "name" : "行政区域",
+    "definition" : "用于按标准行政地域分组，并沿大区、省、市、区县成员树进行层级分析的业务维度。",
+    "target_type" : "ENTITY",
+    "target_id" : "entity_administrative_region",
+    "owner_id" : null,
+    "evidence_ids" : [ "E004", "E006", "E008", "E012", "E013" ],
+    "confidence" : 0.99
+  } ],
+  "rule_candidates" : [ {
+    "rule_id" : "rule_latest_inventory_snapshot",
+    "name" : "最新库存快照规则",
+    "definition" : "待结构化口径说明：库存快照型指标应在所选时间范围内只取最新快照；该说明当前不作为可执行规则。",
+    "target_type" : "EVENT",
+    "target_id" : "event_inventory_snapshot",
+    "owner_id" : null,
+    "evidence_ids" : [ "E012", "E014" ],
+    "confidence" : 0.95
+  }, {
+    "rule_id" : "rule_completed_document_filter",
+    "name" : "完成单据过滤规则",
+    "definition" : "待结构化口径说明：商品入库和商品出库只统计已完成的库存移动明细；实际完成状态值及编码映射尚未给出，该说明当前不作为可执行规则。",
+    "target_type" : "EVENT",
+    "target_id" : "event_inventory_movement",
+    "owner_id" : null,
+    "evidence_ids" : [ "E005", "E011", "E012", "E014" ],
+    "confidence" : 0.93
+  } ],
+  "member_hierarchies" : [ {
+    "hierarchy_id" : "hierarchy_administrative_region_members",
+    "name" : "行政区域成员层级",
+    "owner_table_id" : "entity_administrative_region",
+    "attribute_id" : "field_region_member_hierarchy",
+    "levels" : [ {
+      "level_id" : "level_region_area",
+      "name" : "大区",
+      "depth" : 1,
+      "parent_level_id" : null
+    }, {
+      "level_id" : "level_region_province",
+      "name" : "省",
+      "depth" : 2,
+      "parent_level_id" : "level_region_area"
+    }, {
+      "level_id" : "level_region_city",
+      "name" : "市",
+      "depth" : 3,
+      "parent_level_id" : "level_region_province"
+    }, {
+      "level_id" : "level_region_district",
+      "name" : "区县",
+      "depth" : 4,
+      "parent_level_id" : "level_region_city"
+    } ],
+    "members" : [ {
+      "member_id" : "member_region_east",
+      "name" : "华东",
+      "code" : "EAST",
+      "level_id" : "level_region_area",
+      "parent_member_id" : null
+    }, {
+      "member_id" : "member_region_south",
+      "name" : "华南",
+      "code" : "SOUTH",
+      "level_id" : "level_region_area",
+      "parent_member_id" : null
+    }, {
+      "member_id" : "member_region_js",
+      "name" : "江苏",
+      "code" : "JS",
+      "level_id" : "level_region_province",
+      "parent_member_id" : "member_region_east"
+    }, {
+      "member_id" : "member_region_zj",
+      "name" : "浙江",
+      "code" : "ZJ",
+      "level_id" : "level_region_province",
+      "parent_member_id" : "member_region_east"
+    }, {
+      "member_id" : "member_region_gd",
+      "name" : "广东",
+      "code" : "GD",
+      "level_id" : "level_region_province",
+      "parent_member_id" : "member_region_south"
+    }, {
+      "member_id" : "member_region_nj",
+      "name" : "南京",
+      "code" : "NJ",
+      "level_id" : "level_region_city",
+      "parent_member_id" : "member_region_js"
+    }, {
+      "member_id" : "member_region_hz",
+      "name" : "杭州",
+      "code" : "HZ",
+      "level_id" : "level_region_city",
+      "parent_member_id" : "member_region_zj"
+    }, {
+      "member_id" : "member_region_sz",
+      "name" : "深圳",
+      "code" : "SZ",
+      "level_id" : "level_region_city",
+      "parent_member_id" : "member_region_gd"
+    }, {
+      "member_id" : "member_region_xw",
+      "name" : "玄武区",
+      "code" : "XW",
+      "level_id" : "level_region_district",
+      "parent_member_id" : "member_region_nj"
+    }, {
+      "member_id" : "member_region_ns",
+      "name" : "南山区",
+      "code" : "NS",
+      "level_id" : "level_region_district",
+      "parent_member_id" : "member_region_sz"
+    } ],
+    "evidence_ids" : [ "E008" ],
+    "confidence" : 0.99
+  } ],
+  "synonym_groups" : [ {
+    "group_id" : "synonym_entity_product",
+    "target_type" : "ENTITY",
+    "target_id" : "entity_product",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "产品",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E009" ]
+    }, {
+      "text" : "SKU主数据",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E009" ]
+    } ]
+  }, {
+    "group_id" : "synonym_entity_warehouse",
+    "target_type" : "ENTITY",
+    "target_id" : "entity_warehouse",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "仓",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E009" ]
+    }, {
+      "text" : "库房",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E009" ]
+    } ]
+  }, {
+    "group_id" : "synonym_entity_storage_location",
+    "target_type" : "ENTITY",
+    "target_id" : "entity_storage_location",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "储位",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E009" ]
+    }, {
+      "text" : "货位",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E009" ]
+    } ]
+  }, {
+    "group_id" : "synonym_entity_administrative_region",
+    "target_type" : "ENTITY",
+    "target_id" : "entity_administrative_region",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "地区",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E009" ]
+    }, {
+      "text" : "地域",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E009" ]
+    } ]
+  }, {
+    "group_id" : "synonym_event_inventory_snapshot",
+    "target_type" : "EVENT",
+    "target_id" : "event_inventory_snapshot",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "库存时点",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E009" ]
+    }, {
+      "text" : "现存快照",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E009" ]
+    } ]
+  }, {
+    "group_id" : "synonym_event_inventory_movement",
+    "target_type" : "EVENT",
+    "target_id" : "event_inventory_movement",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "出入库流水",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E009" ]
+    }, {
+      "text" : "库存流水",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E009" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_product_code",
+    "target_type" : "FIELD",
+    "target_id" : "field_product_code",
+    "owner_id" : "entity_product",
+    "aliases" : [ {
+      "text" : "商品号",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "SKU编码",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_product_name",
+    "target_type" : "FIELD",
+    "target_id" : "field_product_name",
+    "owner_id" : "entity_product",
+    "aliases" : [ {
+      "text" : "产品名称",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "SKU名称",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_product_category",
+    "target_type" : "FIELD",
+    "target_id" : "field_product_category",
+    "owner_id" : "entity_product",
+    "aliases" : [ {
+      "text" : "产品品类",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "类目",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_product_series",
+    "target_type" : "FIELD",
+    "target_id" : "field_product_series",
+    "owner_id" : "entity_product",
+    "aliases" : [ {
+      "text" : "产品系列",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "产品线",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_product_specification",
+    "target_type" : "FIELD",
+    "target_id" : "field_product_specification",
+    "owner_id" : "entity_product",
+    "aliases" : [ {
+      "text" : "型号规格",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "规格型号",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_product_standard_cost",
+    "target_type" : "FIELD",
+    "target_id" : "field_product_standard_cost",
+    "owner_id" : "entity_product",
+    "aliases" : [ {
+      "text" : "单位成本",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "标准单位成本",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_warehouse_code",
+    "target_type" : "FIELD",
+    "target_id" : "field_warehouse_code",
+    "owner_id" : "entity_warehouse",
+    "aliases" : [ {
+      "text" : "仓库号",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "仓编码",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_warehouse_name",
+    "target_type" : "FIELD",
+    "target_id" : "field_warehouse_name",
+    "owner_id" : "entity_warehouse",
+    "aliases" : [ {
+      "text" : "仓名称",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "库房名称",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_warehouse_region",
+    "target_type" : "FIELD",
+    "target_id" : "field_warehouse_region",
+    "owner_id" : "entity_warehouse",
+    "aliases" : [ {
+      "text" : "仓库大区",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "仓库地区",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_warehouse_type",
+    "target_type" : "FIELD",
+    "target_id" : "field_warehouse_type",
+    "owner_id" : "entity_warehouse",
+    "aliases" : [ {
+      "text" : "仓类别",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "仓储类型",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_location_code",
+    "target_type" : "FIELD",
+    "target_id" : "field_location_code",
+    "owner_id" : "entity_storage_location",
+    "aliases" : [ {
+      "text" : "货位编码",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "储位号",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_location_name",
+    "target_type" : "FIELD",
+    "target_id" : "field_location_name",
+    "owner_id" : "entity_storage_location",
+    "aliases" : [ {
+      "text" : "货位名称",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "储位名称",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_location_type",
+    "target_type" : "FIELD",
+    "target_id" : "field_location_type",
+    "owner_id" : "entity_storage_location",
+    "aliases" : [ {
+      "text" : "储位类型",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "货位类型",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_region_code",
+    "target_type" : "FIELD",
+    "target_id" : "field_region_code",
+    "owner_id" : "entity_administrative_region",
+    "aliases" : [ {
+      "text" : "地区编码",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "行政区划码",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_region_name",
+    "target_type" : "FIELD",
+    "target_id" : "field_region_name",
+    "owner_id" : "entity_administrative_region",
+    "aliases" : [ {
+      "text" : "地区名称",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "行政区名称",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_region_level",
+    "target_type" : "FIELD",
+    "target_id" : "field_region_level",
+    "owner_id" : "entity_administrative_region",
+    "aliases" : [ {
+      "text" : "地区层级",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "行政级别",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_region_member_hierarchy",
+    "target_type" : "FIELD",
+    "target_id" : "field_region_member_hierarchy",
+    "owner_id" : "entity_administrative_region",
+    "aliases" : [ {
+      "text" : "地域节点",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    }, {
+      "text" : "地区成员",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E010" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_inventory_snapshot_time",
+    "target_type" : "FIELD",
+    "target_id" : "field_inventory_snapshot_time",
+    "owner_id" : "event_inventory_snapshot",
+    "aliases" : [ {
+      "text" : "库存时点",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    }, {
+      "text" : "采集时间",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_inventory_batch_number",
+    "target_type" : "FIELD",
+    "target_id" : "field_inventory_batch_number",
+    "owner_id" : "event_inventory_snapshot",
+    "aliases" : [ {
+      "text" : "库存批号",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    }, {
+      "text" : "批号",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_inventory_on_hand_quantity",
+    "target_type" : "FIELD",
+    "target_id" : "field_inventory_on_hand_quantity",
+    "owner_id" : "event_inventory_snapshot",
+    "aliases" : [ {
+      "text" : "现存量",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    }, {
+      "text" : "库存量",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_inventory_locked_quantity",
+    "target_type" : "FIELD",
+    "target_id" : "field_inventory_locked_quantity",
+    "owner_id" : "event_inventory_snapshot",
+    "aliases" : [ {
+      "text" : "占用量",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    }, {
+      "text" : "锁定库存",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_inventory_safety_quantity",
+    "target_type" : "FIELD",
+    "target_id" : "field_inventory_safety_quantity",
+    "owner_id" : "event_inventory_snapshot",
+    "aliases" : [ {
+      "text" : "安全库存",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    }, {
+      "text" : "库存下限",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_inventory_receipt_date",
+    "target_type" : "FIELD",
+    "target_id" : "field_inventory_receipt_date",
+    "owner_id" : "event_inventory_snapshot",
+    "aliases" : [ {
+      "text" : "到库日期",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    }, {
+      "text" : "收货日期",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_inventory_available_quantity",
+    "target_type" : "FIELD",
+    "target_id" : "field_inventory_available_quantity",
+    "owner_id" : "event_inventory_snapshot",
+    "aliases" : [ {
+      "text" : "可售库存量",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    }, {
+      "text" : "可用量",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_inventory_amount",
+    "target_type" : "FIELD",
+    "target_id" : "field_inventory_amount",
+    "owner_id" : "event_inventory_snapshot",
+    "aliases" : [ {
+      "text" : "库存价值",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    }, {
+      "text" : "存货金额",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_inventory_age_days",
+    "target_type" : "FIELD",
+    "target_id" : "field_inventory_age_days",
+    "owner_id" : "event_inventory_snapshot",
+    "aliases" : [ {
+      "text" : "库存天龄",
+      "confidence" : 0.95,
+      "evidence_ids" : [ "E012" ]
+    }, {
+      "text" : "存放天数",
+      "confidence" : 0.95,
+      "evidence_ids" : [ "E012" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_movement_document_number",
+    "target_type" : "FIELD",
+    "target_id" : "field_movement_document_number",
+    "owner_id" : "event_inventory_movement",
+    "aliases" : [ {
+      "text" : "出入库单号",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    }, {
+      "text" : "库存单号",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_movement_time",
+    "target_type" : "FIELD",
+    "target_id" : "field_movement_time",
+    "owner_id" : "event_inventory_movement",
+    "aliases" : [ {
+      "text" : "出入库时间",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    }, {
+      "text" : "库存变动时间",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_movement_direction",
+    "target_type" : "FIELD",
+    "target_id" : "field_movement_direction",
+    "owner_id" : "event_inventory_movement",
+    "aliases" : [ {
+      "text" : "出入库方向",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    }, {
+      "text" : "库存方向",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_movement_type",
+    "target_type" : "FIELD",
+    "target_id" : "field_movement_type",
+    "owner_id" : "event_inventory_movement",
+    "aliases" : [ {
+      "text" : "出入库类型",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    }, {
+      "text" : "库存动作",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_movement_status",
+    "target_type" : "FIELD",
+    "target_id" : "field_movement_status",
+    "owner_id" : "event_inventory_movement",
+    "aliases" : [ {
+      "text" : "出入库状态",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    }, {
+      "text" : "流水状态",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    } ]
+  }, {
+    "group_id" : "synonym_field_movement_quantity",
+    "target_type" : "FIELD",
+    "target_id" : "field_movement_quantity",
+    "owner_id" : "event_inventory_movement",
+    "aliases" : [ {
+      "text" : "出入库数量",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    }, {
+      "text" : "变动数量",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E011" ]
+    } ]
+  }, {
+    "group_id" : "synonym_metric_on_hand_quantity",
+    "target_type" : "METRIC",
+    "target_id" : "metric_on_hand_quantity",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "现存库存",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    }, {
+      "text" : "库存件数",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    } ]
+  }, {
+    "group_id" : "synonym_metric_available_inventory_quantity",
+    "target_type" : "METRIC",
+    "target_id" : "metric_available_inventory_quantity",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "可售库存",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    }, {
+      "text" : "可用量",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    } ]
+  }, {
+    "group_id" : "synonym_metric_inventory_amount",
+    "target_type" : "METRIC",
+    "target_id" : "metric_inventory_amount",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "库存价值",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    }, {
+      "text" : "存货金额",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    } ]
+  }, {
+    "group_id" : "synonym_metric_inbound_quantity",
+    "target_type" : "METRIC",
+    "target_id" : "metric_inbound_quantity",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "收货量",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    }, {
+      "text" : "入仓量",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    } ]
+  }, {
+    "group_id" : "synonym_metric_outbound_quantity",
+    "target_type" : "METRIC",
+    "target_id" : "metric_outbound_quantity",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "发出量",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    }, {
+      "text" : "出仓量",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    } ]
+  }, {
+    "group_id" : "synonym_metric_inventory_age_days",
+    "target_type" : "METRIC",
+    "target_id" : "metric_inventory_age_days",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "库存天龄",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    }, {
+      "text" : "存放天数",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    } ]
+  }, {
+    "group_id" : "synonym_dimension_product_category",
+    "target_type" : "DIMENSION",
+    "target_id" : "dimension_product_category",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "产品类目",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    }, {
+      "text" : "品类维度",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    } ]
+  }, {
+    "group_id" : "synonym_dimension_product_series",
+    "target_type" : "DIMENSION",
+    "target_id" : "dimension_product_series",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "产品线",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    }, {
+      "text" : "系列维度",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    } ]
+  }, {
+    "group_id" : "synonym_dimension_warehouse_region",
+    "target_type" : "DIMENSION",
+    "target_id" : "dimension_warehouse_region",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "仓库地区",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    }, {
+      "text" : "仓库大区",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    } ]
+  }, {
+    "group_id" : "synonym_dimension_administrative_region",
+    "target_type" : "DIMENSION",
+    "target_id" : "dimension_administrative_region",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "地域维度",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    }, {
+      "text" : "地区维度",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    } ]
+  }, {
+    "group_id" : "synonym_rule_latest_inventory_snapshot",
+    "target_type" : "RULE",
+    "target_id" : "rule_latest_inventory_snapshot",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "最新时点库存",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    }, {
+      "text" : "时点库存口径",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    } ]
+  }, {
+    "group_id" : "synonym_rule_completed_document_filter",
+    "target_type" : "RULE",
+    "target_id" : "rule_completed_document_filter",
+    "owner_id" : null,
+    "aliases" : [ {
+      "text" : "有效出入库",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    }, {
+      "text" : "已完成单据口径",
+      "confidence" : 0.99,
+      "evidence_ids" : [ "E012" ]
+    } ]
+  } ]
+}

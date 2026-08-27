@@ -1,0 +1,16 @@
+[Unit]
+Description=Linguan Prototype V2 static web service
+After=network.target
+
+[Service]
+Type=forking
+PIDFile=/opt/linguan-prototype-v2/logs/nginx.pid
+ExecStartPre=/usr/sbin/nginx -p /opt/linguan-prototype-v2/ -c nginx.conf -t
+ExecStart=/usr/sbin/nginx -p /opt/linguan-prototype-v2/ -c nginx.conf
+ExecReload=/usr/sbin/nginx -p /opt/linguan-prototype-v2/ -c nginx.conf -s reload
+ExecStop=/usr/sbin/nginx -p /opt/linguan-prototype-v2/ -c nginx.conf -s quit
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target
