@@ -81,8 +81,8 @@ async function readSource(page: Page, sourceName: keyof typeof sourceReviewTitle
   await expect(heading).toBeVisible({ timeout: 30_000 });
   const document = heading.locator('xpath=ancestor::section[contains(@class,"guanyijia-document-review")]');
   await expect(document).toBeVisible();
-  await expect(document.getByRole('tab', { name: '审阅清单', exact: true })).toHaveAttribute('aria-selected', 'true');
-  await expect(document.getByRole('region', { name: '审阅清单', exact: true })).toBeVisible();
+  await expect(document.getByRole('tab', { name: '审阅事项', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(document.getByRole('region', { name: '审阅事项', exact: true })).toBeVisible();
   return document;
 }
 
@@ -149,7 +149,8 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   // The database document is a Claim-driven review surface. Only its one
   // explicitly mapped script can change the current review revision.
   await expect(mysql).toContainText('30 / 95 张表');
-  await expect(mysql.getByRole('tab', { name: '审阅清单' })).toBeVisible();
+  await expect(mysql.getByRole('tab', { name: '审阅事项' })).toBeVisible();
+  await expect(mysql.getByRole('tab', { name: '审阅结论' })).toBeVisible();
   await expect(mysql.getByRole('tab', { name: '标准化文档' })).toBeVisible();
   await expect(mysql.getByRole('tab', { name: '依据追踪' })).toHaveCount(0);
   await expect(mysql.getByRole('button', { name: '修改识别结论' })).toHaveCount(0);
@@ -159,12 +160,17 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   await expect(mysql).toBeHidden();
 
   const github = await readSource(page, 'GitHub代码仓库');
+  const gapFindings = github.getByRole('region', { name: '审阅事项', exact: true })
+    .getByText('本次读取发现', { exact: true });
+  await expect(gapFindings).toBeVisible();
+  await expect(gapFindings).toContainText('不同版本记录不一致');
+  await github.getByRole('tab', { name: '审阅结论', exact: true }).click();
   const findings = github.getByText('本次读取发现', { exact: true });
   await expect(findings).toBeVisible();
   await expect(github).toContainText('互补资料');
   await expect(github).toContainText('结构差异');
-  await expect(github).toContainText('不同版本记录不一致');
-  const githubBlock = github.getByRole('region', { name: '审阅清单', exact: true })
+  await github.getByRole('tab', { name: '审阅事项', exact: true }).click();
+  const githubBlock = github.getByRole('region', { name: '审阅事项', exact: true })
     .locator('article').filter({ hasText: '负库存' });
   await expect(githubBlock).toBeVisible();
   await githubBlock.getByRole('button', { name: '采用推荐修改' }).click();
@@ -182,7 +188,7 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   await capture(page, '07-five-source-github-structured-preview');
   await editor.getByRole('button', { name: '确认修改' }).click();
   await expect(github).toContainText(revisedLabel);
-  await expect(page.locator('.guanyijia-review-live-region')).toHaveText('修改已确认，审阅清单和标准化文档已同步更新。');
+  await expect(page.locator('.guanyijia-review-live-region')).toHaveText('修改已确认，审阅事项、审阅结论和标准化文档已同步更新。');
   const persistedSurface = await page.evaluate(() => {
     const key = Object.keys(sessionStorage).find((candidate) => candidate.startsWith('linguan-review-surface-v1:'));
     return key ? JSON.parse(sessionStorage.getItem(key) ?? '{}') as {
@@ -197,13 +203,13 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   await openStandardization(page, 'DESKTOP');
   const restoredGithub = page.locator('section.guanyijia-document-review').last();
   await expect(restoredGithub).toBeVisible();
-  await expect(restoredGithub.getByRole('tab', { name: '审阅清单', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(restoredGithub.getByRole('tab', { name: '审阅事项', exact: true })).toHaveAttribute('aria-selected', 'true');
   await restoredGithub.getByRole('button', { name: '查看历史版本' }).click();
   const history = restoredGithub.getByLabel('历史版本');
   await expect(history).toContainText('第 1 版');
   await expect(history).toContainText('第 2 版');
   await expect(history).toContainText('历史版本');
-  await expect(restoredGithub.getByRole('tab', { name: '审阅清单', exact: true })).toBeVisible();
+  await expect(restoredGithub.getByRole('tab', { name: '审阅事项', exact: true })).toBeVisible();
   await expect(restoredGithub).toContainText(revisedLabel);
   await expect(restoredGithub.getByRole('button', { name: '采用推荐修改', exact: true })).toHaveCount(0);
 

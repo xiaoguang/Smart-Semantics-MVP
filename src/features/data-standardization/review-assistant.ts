@@ -98,14 +98,14 @@ export function answerReviewAssistant(input: {
     return {
       kind: 'BOUNDARY',
       title: '请在当前页面完成这一步',
-      body: ['本演示中的可修改内容会显示在“审阅清单”的建议核对任务中；来源差异和定版也需要在对应页面确认。我可以解释结论、定位来源并说明影响。'],
+      body: ['本演示中的可修改内容会显示在“审阅事项”的建议核对任务中；来源差异和定版也需要在对应页面确认。我可以解释结论、定位来源并说明影响。'],
     };
   }
   if (intent.kind === 'SUPPORTED_SCOPE') {
     return {
       kind: 'SUPPORTED_SCOPE',
       title: '我可以协助当前审阅',
-      body: ['可以问我当前结论、来源依据、资料差异或业务影响，也可以让我定位当前内容。本演示可修改的项目会直接显示在审阅清单中。'],
+      body: ['可以问我当前结论、来源依据、资料差异或业务影响，也可以让我定位当前内容。本演示可修改的项目会直接显示在审阅事项中。'],
     };
   }
   const source = sourceForSelection(knowledge, selection);

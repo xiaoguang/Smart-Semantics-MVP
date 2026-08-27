@@ -87,6 +87,7 @@ export default function AppLayout() {
   );
   const role = access.role;
   const projectOptions = useMemo(() => accessibleModelProjects(collaboration.workspaces)
+    .filter((project) => project.workspaceId !== 'retail_semantic_modeling')
     .map((project) => ({ value: project.systemCode, label: project.displayName })), [collaboration.workspaces]);
   useEffect(() => {
     setCurrent('standardization'); setTasksOpen(false); setSwitchOpen(false); setSubmitOpen(false);

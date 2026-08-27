@@ -11,7 +11,7 @@ async function readAndReview(page: Page, sourceName: string) {
   const document = page.locator('section.guanyijia-document-review').last();
   await expect(document).toBeVisible({ timeout: 30_000 });
   await expect(document).toContainText(sourceName);
-  await expect(document.getByRole('tab', { name: '审阅清单', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(document.getByRole('tab', { name: '审阅事项', exact: true })).toHaveAttribute('aria-selected', 'true');
   const keep = document.getByRole('button', { name: '保留当前结论', exact: true });
   if (await keep.count()) await keep.click();
   await document.getByRole('button', { name: /^完成.+审阅$/u }).click();

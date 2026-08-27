@@ -155,7 +155,7 @@ function validateStateCombinations(run: Record<string, unknown>) {
 
   let progress: 'ALIGNED_PREFIX' | 'CURRENT' | 'PENDING_SUFFIX' = 'ALIGNED_PREFIX';
   for (const status of statuses) {
-    if (status === 'ALIGNED') {
+    if (status === 'ALIGNED' || status === 'CONFLICT_BLOCKED') {
       if (progress !== 'ALIGNED_PREFIX') {
         metadataError(`来源状态必须保持ALIGNED前缀和PENDING后缀：${runId}`);
       }
@@ -183,22 +183,23 @@ function validateStateCombinations(run: Record<string, unknown>) {
 
   switch (run.status) {
   case 'READY':
-    if (!only('PENDING', 'ALIGNED') || count('PENDING') < 1) {
+    if (!only('PENDING', 'ALIGNED', 'CONFLICT_BLOCKED')
+      || (count('PENDING') < 1 && count('CONFLICT_BLOCKED') < 1)) {
       metadataError(`READY与来源状态不一致：${runId}`);
     }
     break;
   case 'READING_SOURCE':
-    if (!only('PENDING', 'READING', 'ALIGNED') || count('READING') !== 1) {
+    if (!only('PENDING', 'READING', 'ALIGNED', 'CONFLICT_BLOCKED') || count('READING') !== 1) {
       metadataError(`READING_SOURCE与来源状态不一致：${runId}`);
     }
     break;
   case 'REVIEWING_DOCUMENT':
-    if (!only('PENDING', 'DOCUMENT_READY', 'ALIGNED') || count('DOCUMENT_READY') !== 1) {
+    if (!only('PENDING', 'DOCUMENT_READY', 'ALIGNED', 'CONFLICT_BLOCKED') || count('DOCUMENT_READY') !== 1) {
       metadataError(`REVIEWING_DOCUMENT与来源状态不一致：${runId}`);
     }
     break;
   case 'CONFLICT_BLOCKED':
-    if (!only('PENDING', 'CONFLICT_BLOCKED', 'ALIGNED') || count('CONFLICT_BLOCKED') !== 1) {
+    if (!only('PENDING', 'CONFLICT_BLOCKED', 'ALIGNED') || count('CONFLICT_BLOCKED') < 1) {
       metadataError(`CONFLICT_BLOCKED与来源状态不一致：${runId}`);
     }
     break;
@@ -512,20 +513,23 @@ function validateSourceTimelineSemantics(run: Record<string, unknown>) {
   type Phase =
     | 'PENDING' | 'STARTED' | 'COMPLETED' | 'GENERATED' | 'CORROBORATED' | 'REVISED'
     | 'ASSISTANT_CONFIRMED' | 'REVIEWED' | 'FOUND' | 'RESOLVED';
-  let previousSourceLastIndex = -1;
   const semanticError = (sourceId: string, type: unknown) => {
     metadataError(`来源事件语义顺序无效：${runId}/${sourceId}/${String(type)}`);
   };
+
+  let nextSourceStart = 0;
+  for (const event of timeline) {
+    if (event.type !== 'SOURCE_READ_STARTED') continue;
+    const sourceIndex = sources.findIndex((source) => source.sourceId === event.sourceId);
+    if (sourceIndex !== nextSourceStart) semanticError(String(event.sourceId), event.type);
+    nextSourceStart += 1;
+  }
 
   for (const source of sources) {
     const sourceId = source.sourceId as string;
     const events = timeline.flatMap((event, index) => (
       event.sourceId === sourceId ? [{ event, index }] : []
     ));
-    if (events.length && events[0]!.index <= previousSourceLastIndex) {
-      semanticError(sourceId, events[0]!.event.type);
-    }
-    if (events.length) previousSourceLastIndex = events.at(-1)!.index;
 
     let phase: Phase = 'PENDING';
     for (const { event } of events) {
@@ -1836,8 +1840,9 @@ export function createStandardizationRunRuntime(input: {
         }
 
         case 'START_NEXT_SOURCE': {
-          if (run.status === 'CONFLICT_BLOCKED') throw new Error('仍有来源冲突未解决，不能读取下一来源');
-          if (run.status !== 'READY') throw new Error('当前来源文档尚未完成审阅，不能读取下一来源');
+          if (run.status !== 'READY' && run.status !== 'CONFLICT_BLOCKED') {
+            throw new Error('当前来源文档尚未完成审阅，不能读取下一来源');
+          }
           const source = run.sources.find((candidate) => candidate.status === 'PENDING');
           if (!source) throw new Error('没有待读取的来源');
           source.status = 'READING';
@@ -2015,7 +2020,9 @@ export function createStandardizationRunRuntime(input: {
 
         case 'RESOLVE_SOURCE_CONFLICT': {
           const blocked = run.sources.find((source) => source.status === 'CONFLICT_BLOCKED');
-          if (run.status !== 'CONFLICT_BLOCKED' || !blocked) throw new Error('当前没有待解决的来源冲突');
+          if ((run.status !== 'CONFLICT_BLOCKED' && run.status !== 'READY') || !blocked) {
+            throw new Error('当前没有待解决的来源冲突');
+          }
           if (blocked.sourceId !== command.sourceId) {
             throw new Error(`当前冲突来源不是 ${sourceLabel(run, command.sourceId)}`);
           }
@@ -2108,7 +2115,13 @@ export function createStandardizationRunRuntime(input: {
         }
 
         case 'MARK_DELIVERABLE_GENERATED': {
-          if (run.status !== 'READY_FOR_OUTPUT') throw new Error('全部来源对齐后才能生成标准化交付物');
+          if (run.status !== 'READY_FOR_OUTPUT') {
+            const hasUnresolvedDifference = run.sources.some((source) => source.introducedConflictIds
+              .some((conflictId) => !source.resolvedConflictIds.includes(conflictId)));
+            throw new Error(hasUnresolvedDifference
+              ? '仍有来源差异未解决，不能生成标准化交付物'
+              : '全部来源对齐后才能生成标准化交付物');
+          }
           if (run.deliverableId) throw new Error('标准化交付物已经生成');
           if (!command.deliverableId.trim()) throw new Error('标准化交付物标识不能为空');
           if (command.actor.userId !== run.createdBy) throw new Error('交付物必须由运行作者生成');

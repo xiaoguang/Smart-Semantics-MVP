@@ -209,7 +209,7 @@ test('review workspace makes claims primary and presents account DDL as a verifi
     scriptedDecisions: [],
   });
 
-  assert.deepEqual(workspace.tabs, ['审阅清单', 'Markdown 文档']);
+  assert.deepEqual(workspace.tabs, ['审阅事项', '审阅结论', '标准化文档']);
   assert.match(workspace.metadata.sourceDescription, /数据库结构、相关处理过程和查询条件/u);
   assert.match(workspace.metadata.sourceDescription, /没有实际查询结果/u);
   assert.equal(workspace.claims.some((claim) => claim.title.includes('文档说明')), false);
@@ -245,7 +245,7 @@ test('review workspace publishes one validated readable bundle with explicit cla
   };
 
   const bundle = workspace.contentBundle;
-  assert.ok(bundle, '审阅清单、Markdown 与依据必须来自同一份已校验阅读投影');
+  assert.ok(bundle, '审阅事项、审阅结论、标准化文档与依据必须来自同一份已校验阅读投影');
   assert.deepEqual(bundle.claims.map((claim) => claim.claimId), workspace.claims.map((claim) => claim.claimId));
   assert.equal(bundle.claims.every((claim) => (
     claim.sectionId.length > 0 && claim.sectionPurpose.length > 0 && claim.markdownAnchor.length > 0
@@ -326,7 +326,7 @@ test('review workspace separates actionable tasks, business conclusions, gaps, a
     };
   };
 
-  assert.deepEqual(workspace.tabs, ['审阅清单', 'Markdown 文档']);
+  assert.deepEqual(workspace.tabs, ['审阅事项', '审阅结论', '标准化文档']);
   assert.ok(workspace.checklist, '审阅页面必须使用有语义的清单投影');
   assert.ok(workspace.checklist.tasks.some((item) => item.claimId === 'claim:guanyijia_mysql:curated-e005'));
   assert.ok(workspace.checklist.keyConclusions.some((item) => item.title === '账户主数据（jsh_account）'));
@@ -423,7 +423,7 @@ test('all five sources expose the same two-tab source-review projection contract
   for (const review of [mysql, github, ...authored]) {
     assert.ok(review);
     const projection = projectSourceReviewDocument(review);
-    assert.deepEqual(projection.tabs, ['审阅清单', 'Markdown 文档']);
+    assert.deepEqual(projection.tabs, ['审阅事项', '审阅结论', '标准化文档']);
     assert.ok(projection.sections.length > 0, '只显示有实际审阅内容的章节');
     assert.equal(new Set(projection.sections.map((section) => section.title)).size, projection.sections.length);
     assert.ok(projection.items.length > 0);
@@ -686,7 +686,7 @@ test('a decided scripted task moves into one visible confirmed-conclusion entry'
     '已处理任务不应继续显示为待核对');
   assert.equal(workspace.checklist.keyConclusions.some((item) => (
     item.claimId === claimId && item.title === '库存单据表头（jsh_depot_head）'
-  )), true, '已确认结论应在审阅清单中保留当前文字');
+  )), true, '已确认结论应在审阅结论中保留当前文字');
   const occurrences = [
     ...workspace.checklist.tasks,
     ...workspace.checklist.keyConclusions,

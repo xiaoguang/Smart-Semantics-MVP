@@ -43,7 +43,10 @@ const uiKey = (userId: string) => `linguan:collaboration:ui:v1:${userId}`;
 const migrationKey = 'linguan:migration:collaboration-v1';
 
 function readUi(userId: string, fallback: string) {
-  try { return JSON.parse(localStorage.getItem(uiKey(userId)) ?? '{}').activeWorkspaceId ?? fallback; }
+  try {
+    const activeWorkspaceId = JSON.parse(localStorage.getItem(uiKey(userId)) ?? '{}').activeWorkspaceId;
+    return activeWorkspaceId === fallback ? activeWorkspaceId : fallback;
+  }
   catch { return fallback; }
 }
 

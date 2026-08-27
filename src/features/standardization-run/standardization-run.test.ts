@@ -469,7 +469,7 @@ test('读取事件载荷时独立复算 sha256 并拒绝与 payloadRef 不一致
   );
 });
 
-test('来源冲突必须逐项以完整Artifact解决，第一项后继续阻断且最后一项才对齐', async () => {
+test('来源冲突必须逐项以完整Artifact解决，未决差异不阻断后续来源且最后一项才对齐', async () => {
   const { runtime } = setup();
   const policySource = { sourceId: 'guanyijia_demo_policy', sourceName: '管伊佳演示制度 Markdown' };
   const nextSource = { sourceId: 'guanyijia_semantica_demo', sourceName: '管伊佳演示制度术语图' };
@@ -489,10 +489,24 @@ test('来源冲突必须逐项以完整Artifact解决，第一项后继续阻断
   assert.equal(run.status, 'CONFLICT_BLOCKED');
   assert.equal(run.sources[0]?.status, 'CONFLICT_BLOCKED');
   assert.deepEqual(run.timeline.slice(-2).map((event) => event.type), ['DOCUMENT_REVIEWED', 'CONFLICT_FOUND']);
-  await assert.rejects(() => runtime.execute({
-    type: 'START_NEXT_SOURCE', commandId: 'start-blocked', runId: run.runId,
+  run = await runtime.execute({
+    type: 'START_NEXT_SOURCE', commandId: 'start-after-unresolved-conflict', runId: run.runId,
     expectedRevision: 3, actor,
-  }), /仍有来源冲突未解决/);
+  });
+  assert.equal(run.status, 'READING_SOURCE');
+  assert.equal(run.sources[0]?.status, 'CONFLICT_BLOCKED');
+  assert.equal(run.sources[1]?.status, 'READING');
+  run = await completeCurrentSource(runtime, {
+    runId: run.runId, sourceId: nextSource.sourceId, expectedRevision: run.revision,
+    commandId: 'complete-semantica-after-unresolved-conflict',
+  });
+  run = await runtime.execute({
+    type: 'MARK_DOCUMENT_REVIEWED', commandId: 'review-semantica-after-unresolved-conflict',
+    runId: run.runId, expectedRevision: run.revision, actor, sourceId: nextSource.sourceId,
+  });
+  assert.equal(run.status, 'READY');
+  assert.equal(run.sources[0]?.status, 'CONFLICT_BLOCKED');
+  assert.equal(run.sources[1]?.status, 'ALIGNED');
   const negative = resolutionArtifactPayload({
     runId: run.runId, sourceId: policySource.sourceId, conflictId: 'gyj-conflict-negative-stock',
     strategy: 'MERGE', reason: '保留当前实现并登记制度落地缺口',
@@ -503,17 +517,17 @@ test('来源冲突必须逐项以完整Artifact解决，第一项后继续阻断
   });
   await assert.rejects(() => runtime.execute({
     type: 'RESOLVE_SOURCE_CONFLICT', commandId: 'resolve-status-out-of-order', runId: run.runId,
-    expectedRevision: 3, actor, sourceId: policySource.sourceId, conflictId: 'gyj-conflict-status-nine',
+    expectedRevision: 6, actor, sourceId: policySource.sourceId, conflictId: 'gyj-conflict-status-nine',
     strategy: 'DEFER_AS_GAP', reason: statusFirst.artifact.reason,
     expectedHunkSha256: statusFirst.artifact.hunk.hunkSha256, payload: statusFirst.payload,
   }), /必须按顺序解决第一项未决冲突/);
   run = await runtime.execute({
     type: 'RESOLVE_SOURCE_CONFLICT', commandId: 'resolve-negative', runId: run.runId,
-    expectedRevision: 3, actor, sourceId: policySource.sourceId, conflictId: 'gyj-conflict-negative-stock',
+    expectedRevision: 6, actor, sourceId: policySource.sourceId, conflictId: 'gyj-conflict-negative-stock',
     strategy: 'MERGE', reason: negative.artifact.reason,
     expectedHunkSha256: negative.artifact.hunk.hunkSha256, payload: negative.payload,
   });
-  assert.equal(run.status, 'CONFLICT_BLOCKED');
+  assert.equal(run.status, 'READY');
   assert.equal(run.sources[0]?.status, 'CONFLICT_BLOCKED');
   assert.deepEqual(run.sources[0]?.resolvedConflictIds, ['gyj-conflict-negative-stock']);
   assert.equal(run.timeline.at(-1)?.type, 'CONFLICT_RESOLVED');
@@ -530,18 +544,14 @@ test('来源冲突必须逐项以完整Artifact解决，第一项后继续阻断
   });
   run = await runtime.execute({
     type: 'RESOLVE_SOURCE_CONFLICT', commandId: 'resolve-status', runId: run.runId,
-    expectedRevision: 4, actor, sourceId: policySource.sourceId, conflictId: 'gyj-conflict-status-nine',
+    expectedRevision: 7, actor, sourceId: policySource.sourceId, conflictId: 'gyj-conflict-status-nine',
     strategy: 'DEFER_AS_GAP', reason: status.artifact.reason,
     expectedHunkSha256: status.artifact.hunk.hunkSha256, payload: status.payload,
   });
-  assert.equal(run.status, 'READY');
+  assert.equal(run.status, 'READY_FOR_OUTPUT');
   assert.equal(run.sources[0]?.status, 'ALIGNED');
   assert.deepEqual(run.timeline.slice(-2).map((event) => event.type), ['CONFLICT_RESOLVED', 'CONFLICT_RESOLVED']);
-  run = await runtime.execute({
-    type: 'START_NEXT_SOURCE', commandId: 'start-semantica', runId: run.runId,
-    expectedRevision: run.revision, actor,
-  });
-  assert.equal(run.sources[1]?.status, 'READING');
+  assert.equal(run.sources[1]?.status, 'ALIGNED');
 });
 
 test('定版前可以以新的不可变决定取代已保存差异，且原决定保持在时间线中', async () => {

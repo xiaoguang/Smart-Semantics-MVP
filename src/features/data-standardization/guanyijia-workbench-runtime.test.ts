@@ -587,7 +587,7 @@ test('source-loaded timeline receipt directs reviewers to the saved material ins
   const snapshot = await runtime.execute(command('READ_NEXT_SOURCE', started.run!.revision));
   const receipt = snapshot.timeline.find((item) => item.kind === 'SOURCE_READ_COMPLETED');
 
-  assert.equal(receipt?.summary, '固定快照已载入；可打开审阅清单查看已保存资料。');
+  assert.equal(receipt?.summary, '固定快照已载入；可打开审阅事项查看已保存资料。');
   assert.doesNotMatch(receipt?.summary ?? '', /个对象|条依据|Tenant|快照身份/);
 });
 

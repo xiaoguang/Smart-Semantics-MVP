@@ -80,11 +80,11 @@ async function openDocumentAndExerciseAssistant(
   } else {
     await expect(document).not.toHaveAttribute('role', 'dialog');
   }
-  await expect(document.getByRole('tab', { name: '审阅清单', exact: true })).toHaveAttribute('aria-selected', 'true');
-  const evidenceTrigger = document.getByRole('region', { name: '审阅清单' })
+  await expect(document.getByRole('tab', { name: '审阅事项', exact: true })).toHaveAttribute('aria-selected', 'true');
+  const evidenceTrigger = document.getByRole('region', { name: '审阅事项' })
     .getByRole('button', { name: '查看来源依据', exact: true }).first();
   await evidenceTrigger.click();
-  await expect(document.getByRole('region', { name: '审阅清单' }).getByRole('region', { name: '来源依据', exact: true }).first()).toBeVisible();
+  await expect(document.getByRole('region', { name: '审阅事项' }).getByRole('region', { name: '来源依据', exact: true }).first()).toBeVisible();
   // At mobile widths the document is the sole fullscreen surface. Its
   // sibling source-panel trigger is intentionally outside that modal and is
   // not part of this document interaction. Desktop widths exercise the
@@ -171,7 +171,7 @@ async function readAndReviewSource(page: Page, sourceName: keyof typeof sourceRe
     await expect(documentLayer).toHaveAttribute('aria-modal', 'true');
     await expect(document).not.toHaveAttribute('role', 'dialog');
   }
-  await expect(document.getByRole('tab', { name: '审阅清单', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(document.getByRole('tab', { name: '审阅事项', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(document.getByRole('tab', { name: '标准化文档', exact: true })).toBeVisible();
   await expect(document.getByRole('tab', { name: '依据追踪', exact: true })).toHaveCount(0);
   const retainCurrent = document.getByRole('button', { name: '保留当前结论', exact: true });
@@ -258,9 +258,9 @@ test('1440 inline Inspector、页内助手与文档保持唯一主操作', async
 test('1024 Inspector overlay trap focus、Escape逆序恢复anchor', async ({ page }) => {
   await bootstrap(page, { width: 1024, height: 900 }, 'DESKTOP');
   await enterMysqlDocument(page);
-  const evidenceTrigger = page.getByRole('region', { name: '审阅清单' }).locator('button[data-review-focus^="curated-evidence:"]').first();
+  const evidenceTrigger = page.getByRole('region', { name: '审阅事项' }).locator('button[data-review-focus^="curated-evidence:"]').first();
   await evidenceTrigger.click();
-  await expect(page.getByRole('region', { name: '审阅清单' }).getByRole('region', { name: '来源依据', exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('region', { name: '审阅事项' }).getByRole('region', { name: '来源依据', exact: true }).first()).toBeVisible();
   // The source panel is controlled by the single global toolbar toggle. It
   // is intentionally not duplicated inside the current-document surface.
   const documentSourceMaterials = page.locator('#guanyijia-inspector-trigger');

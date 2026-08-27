@@ -23,6 +23,7 @@ type CompactReviewChecklist = {
   tasks: ReviewChecklistItem[];
   gaps: ReviewChecklistItem[];
   completedTasks: ReviewChecklistItem[];
+  completedFormalDecisions?: Array<{ decisionId: string; title: string }>;
 };
 
 function readMysqlReview(): SourceReviewDocument {
@@ -37,11 +38,18 @@ function projectMysqlReview(input?: {
     definition: { editId: string };
     status: 'PENDING' | 'KEPT' | 'APPLIED';
   }>;
+  formalDecisions?: Array<{
+    decisionId: string;
+    sourceId: string;
+    title: string;
+    statement: string;
+  }>;
 }) {
   return projectSourceReviewWorkspace({
     sourceDocument: input?.sourceDocument ?? readMysqlReview(),
     currentBlocks: [],
     scriptedDecisions: input?.scriptedDecisions ?? [],
+    formalDecisions: input?.formalDecisions ?? [],
   });
 }
 
@@ -104,6 +112,28 @@ test('审阅事项分别保留待处理、资料缺口和已审阅内容', () =>
     completedChecklist.completedTasks.map((item) => item.claimId),
     ['claim:guanyijia_mysql:curated-e005'],
     '完成审阅后必须保留用户刚刚确认过的内容，不能从页面消失',
+  );
+
+  const formalChecklist = projectMysqlReview({
+    formalDecisions: [{
+      decisionId: 'resolution:debt-fields',
+      sourceId: 'guanyijia_mysql',
+      title: '欠款字段结构冲突',
+      statement: '已登记为资料缺口，等待进一步确认。',
+    }],
+  }).checklist as unknown as CompactReviewChecklist;
+  assert.deepEqual(
+    formalChecklist.completedFormalDecisions?.map((decision) => decision.decisionId),
+    ['resolution:debt-fields'],
+    '已保存的跨来源正式决定也必须作为已处理内容保留在审阅事项中',
+  );
+});
+
+test('跨来源的状态 9 资料缺口在 GitHub 文档就绪后可从审阅事项进入', () => {
+  assert.match(
+    workbenchSource,
+    /crossSourceGapFindings[\s\S]*?topic === 'DOCUMENT_STATUS'[\s\S]*?documentView === 'MATTERS'[\s\S]*?<CrossSourceFindingList/u,
+    '状态 9 的跨来源资料缺口不能只留在审阅结论中',
   );
 });
 

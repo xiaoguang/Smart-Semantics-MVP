@@ -136,27 +136,27 @@ test('390 审阅文档与底部对话共用一个移动工作区', async ({ page
   expect(layout[3].bottom).toBeLessThanOrEqual(layout[0].bottom + 1);
 });
 
-test('审阅清单不提供独立的来源材料统计或材料区域，依据只在结论内联', async ({ page }) => {
+test('审阅事项不提供独立的来源材料统计或材料区域，依据只在结论内联', async ({ page }) => {
   await bootstrap(page, 1440);
   const document = await startDatabaseReview(page);
-  const checklist = document.getByRole('region', { name: '审阅清单', exact: true });
+  const matters = document.getByRole('region', { name: '审阅事项', exact: true });
 
   await expect(document.getByRole('button', { name: /^来源材料 \d+$/u })).toHaveCount(0);
-  await expect(checklist.getByRole('region', { name: '来源材料', exact: true })).toHaveCount(0);
-  const firstClaim = checklist.locator('[data-review-claim]').first();
+  await expect(matters.getByRole('region', { name: '来源材料', exact: true })).toHaveCount(0);
+  const firstClaim = matters.locator('[data-review-claim]').first();
   await firstClaim.getByRole('button', { name: '查看来源依据', exact: true }).click();
   await expect(firstClaim.getByRole('region', { name: '来源依据', exact: true })).toBeVisible();
 });
 
-test('对象明细默认折叠，展开后才读取对象列表', async ({ page }) => {
+test('对象目录默认展开并直接读取对象列表', async ({ page }) => {
   await bootstrap(page, 1440);
   const document = await startDatabaseReview(page);
-  const checklist = document.getByRole('region', { name: '审阅清单', exact: true });
-  const objectDetails = checklist.locator('details[aria-label="对象明细"]');
+  await document.getByRole('tab', { name: '审阅结论', exact: true }).click();
+  const conclusions = document.getByRole('region', { name: '审阅结论', exact: true });
+  const objectDetails = conclusions.locator('details[aria-label="对象明细"]');
 
   await expect(objectDetails).toHaveCount(1);
-  await expect(objectDetails).not.toHaveAttribute('open', '');
-  await expect(objectDetails.locator('table')).toBeHidden();
-  await objectDetails.locator('summary').click();
+  await expect(objectDetails).toHaveAttribute('open', '');
+  await expect(objectDetails.locator('table')).toBeVisible();
   await expect(objectDetails.locator('tbody tr')).toHaveCount(31);
 });

@@ -242,8 +242,18 @@ export type ReviewChecklistGap = ReviewChecklistItem & {
   nextStep: string;
 };
 
+/** A saved, read-only cross-source decision associated with this source. */
+export type ReviewCompletedFormalDecision = {
+  decisionId: string;
+  sourceId: string;
+  title: string;
+  statement: string;
+};
+
 export type ReviewChecklistProjection = {
   tasks: ReviewChecklistItem[];
+  completedTasks: ReviewChecklistItem[];
+  completedFormalDecisions: ReviewCompletedFormalDecision[];
   keyConclusions: ReviewChecklistItem[];
   gaps: ReviewChecklistGap[];
   objectDetails: ReviewChecklistItem[];
@@ -281,7 +291,7 @@ export type ReviewTaskPresentation = {
 
 export type ReviewWorkspaceProjection = {
   /** Evidence stays validated in traceRows, but is shown inline beneath its claim. */
-  tabs: readonly ['审阅清单', 'Markdown 文档'];
+  tabs: readonly ['审阅事项', '审阅结论', '标准化文档'];
   metadata: ReviewDocumentMetadata;
   sections: SourceReviewSection[];
   claims: ReviewClaim[];
@@ -377,7 +387,7 @@ export type SourceStandardDocument = {
 };
 
 export type SourceReviewDocumentProjection = {
-  tabs: readonly ['审阅清单', 'Markdown 文档'];
+  tabs: readonly ['审阅事项', '审阅结论', '标准化文档'];
   sections: SourceReviewSection[];
   items: SourceReviewItem[];
   traceLinks: SourceReviewTrace[];
@@ -1551,6 +1561,7 @@ function projectChecklist(
   document: SourceReviewDocument,
   claims: ReviewClaim[],
   scriptedDecisions: readonly ScriptedDecisionState[],
+  formalDecisions: readonly ReviewCompletedFormalDecision[],
 ): ReviewChecklistProjection {
   const entries = claims.map((claim) => ({
     ...claim,
@@ -1567,6 +1578,12 @@ function projectChecklist(
     if (!editId) return false;
     return !resolvedScriptedEditIds.has(editId);
   });
+  const completedTasks = entries.filter((entry) => (
+    Boolean(entry.scriptedEditId) && resolvedScriptedEditIds.has(entry.scriptedEditId!)
+  ));
+  const completedFormalDecisions = formalDecisions.filter((decision) => (
+    decision.sourceId === document.sourceId
+  ));
   const pendingTaskIds = new Set(tasks.map((entry) => entry.claimId));
   const gaps = entries
     .filter((entry) => !pendingTaskIds.has(entry.claimId) && document.evidence
@@ -1590,7 +1607,7 @@ function projectChecklist(
   const keyConclusionIds = new Set(keyConclusions.map((entry) => entry.claimId));
   const objectDetails = entries.filter((entry) => !pendingTaskIds.has(entry.claimId)
     && !gapIds.has(entry.claimId) && !keyConclusionIds.has(entry.claimId));
-  return { tasks, keyConclusions, gaps, objectDetails };
+  return { tasks, completedTasks, completedFormalDecisions, keyConclusions, gaps, objectDetails };
 }
 
 function parseMysqlSchemaEvidence(evidence: SourceReviewEvidence, highlightedIdentifiers: readonly string[]): ReviewEvidenceView | undefined {
@@ -1972,6 +1989,7 @@ export function projectSourceReviewWorkspace(input: {
   sourceDocument: SourceReviewDocument;
   currentBlocks: readonly CurrentReviewBlock[];
   scriptedDecisions: readonly ScriptedDecisionState[];
+  formalDecisions?: readonly ReviewCompletedFormalDecision[];
 }): ReviewWorkspaceProjection {
   const revised = projectSourceReviewRevision(input.sourceDocument, input.currentBlocks);
   const metadata = reviewMetadata(revised);
@@ -2010,12 +2028,12 @@ export function projectSourceReviewWorkspace(input: {
   ];
   assertBusinessCopy([...reviewCopy, ...businessCopyForEvidenceViews(evidenceViews)]);
   return clone({
-    tabs: ['审阅清单', 'Markdown 文档'] as const,
+    tabs: ['审阅事项', '审阅结论', '标准化文档'] as const,
     metadata,
     sections,
     claims,
     tasks,
-    checklist: projectChecklist(revised, claims, input.scriptedDecisions),
+    checklist: projectChecklist(revised, claims, input.scriptedDecisions, input.formalDecisions ?? []),
     markdown: { content: markdown, sourceContent: markdown },
     evidenceViews,
     traceRows,
@@ -2034,7 +2052,7 @@ export function projectSourceReviewDocument(document: SourceReviewDocument): Sou
   );
   if (JSON.stringify(expectedItems) !== JSON.stringify(document.items)) failValidation();
   return clone({
-    tabs: ['审阅清单', 'Markdown 文档'] as const,
+    tabs: ['审阅事项', '审阅结论', '标准化文档'] as const,
     sections,
     items: document.items,
     traceLinks: document.traceLinks,

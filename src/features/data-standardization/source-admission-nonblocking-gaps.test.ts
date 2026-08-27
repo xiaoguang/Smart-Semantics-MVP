@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import test from 'node:test';
 import {
   projectSourceReviewVisibility,
@@ -16,6 +19,12 @@ const sourceSnapshots = {
   guanyijia_demo_policy: 'guanyijia-demo-policy-f6c6d209ffe3fd53',
   guanyijia_semantica_demo: 'guanyijia-semantica-demo-ff948845dc5bd778',
 } as const;
+
+const v6SystemConfigService = resolve(
+  process.cwd(),
+  '../modeling-evidence/guanyijia/demo-content/snapshots/guanyijia-demo-content-v6-20260826'
+    + '/sources/github/source/jshERP-boot/src/main/java/com/jsh/erp/service/SystemConfigService.java',
+);
 
 class MemoryStorage implements Pick<Storage, 'getItem' | 'setItem'> {
   private readonly values = new Map<string, string>();
@@ -60,6 +69,15 @@ test('GitHub DOCUMENT_READY immediately reveals the three exact stories and nega
   ));
   assert.ok(githubCode.length > 0,
     '负库存互补资料必须包含冻结源码中读取或使用 minus_stock_flag 的真实 Java 行，而不能只有 schema DDL');
+  const frozenSource = readFileSync(v6SystemConfigService, 'utf8');
+  const expectedExcerpt = frozenSource.split(/(?<=\n)/u).slice(510, 520).join('');
+  assert.equal(githubCode[0]?.locationValue,
+    'jshERP-boot/src/main/java/com/jsh/erp/service/SystemConfigService.java:L511-L520');
+  assert.equal(githubCode[0]?.excerpt, expectedExcerpt,
+    '投影的 Java 摘录必须与 V6 冻结源码的精确行段保持一致');
+  assert.equal(githubCode[0]?.artifactDigest,
+    `sha256:${createHash('sha256').update(frozenSource).digest('hex')}`,
+    '投影必须绑定 V6 冻结源码的完整文件摘要');
 
   const debt = projection.comparisonFindings.find((finding) => finding.topic === 'DEBT_FIELDS');
   assert.ok(debt?.evidence.some((evidence) => (
@@ -72,9 +90,11 @@ test('GitHub DOCUMENT_READY immediately reveals the three exact stories and nega
 });
 
 test('content gaps and pending formal differences do not block later sources; differences block finalization only', async () => {
+  const deliveryCapability = {};
   const runtime = createStandardizationRunRuntime({
     metadataStorage: new MemoryStorage(),
     contentStore: createMemoryContentStore(),
+    deliveryCapability,
     now: () => '2026-08-27T12:00:00.000Z',
   });
   let run = await runtime.execute({
@@ -166,7 +186,7 @@ test('content gaps and pending formal differences do not block later sources; di
   await assert.rejects(runtime.execute({
     type: 'MARK_DELIVERABLE_GENERATED', commandId: 'finalize-with-unresolved-difference', runId,
     expectedRevision: run.revision, actor,
-    deliverableId: 'deliverable-with-unresolved-difference', payload: '{}',
+    deliverableId: 'deliverable-with-unresolved-difference', payload: '{}', deliveryCapability,
   }), (error: unknown) => (
     error instanceof Error && /(?:差异|冲突|未决定|未解决)/.test(error.message)
   ));

@@ -43,14 +43,14 @@ test('内联资料区不渲染关闭按钮，覆盖层才拥有唯一图标关�
   assert.doesNotMatch(workbenchSource, /onClose=\{\(\) => closeLayer\('inspector'\)\}[\s\S]*?inspectorCollapsed/u);
 });
 
-test('审阅清单不再把来源材料提升为独立统计或独立阅读区域', () => {
+test('审阅事项不再把来源材料提升为独立统计或独立阅读区域', () => {
   assert.doesNotMatch(workbenchSource, /\['MATERIALS',\s*`来源材料 \$\{reviewSummary\.materials\.count\}`\]/u);
   assert.doesNotMatch(workbenchSource, /data-review-summary-group="MATERIALS"/u);
   assert.doesNotMatch(workbenchSource, /<h4>来源材料<\/h4>/u);
 });
 
-test('对象明细只有在有对象时渲染，并默认折叠到按需展开的详情里', () => {
-  assert.match(workbenchSource, /objectDetails\.length(?:\s*>\s*0)?\s*(?:\?|&&)\s*<details[^>]*aria-label="对象明细"[\s\S]*?<summary>对象明细<\/summary>[\s\S]*?<table>/u);
+test('对象明细只有在有对象时渲染，并默认展开为可追踪目录', () => {
+  assert.match(workbenchSource, /objectDetails\.length(?:\s*>\s*0)?\s*(?:\?|&&)\s*<details\s+open[^>]*aria-label="对象明细"[\s\S]*?<summary>对象目录 · \{curatedWorkspace\.checklist\.objectDetails\.length\} 个对象<\/summary>[\s\S]*?<table>/u);
 });
 
 test('结果与当前任务只保留业务标题，不再增加重复眉题', () => {

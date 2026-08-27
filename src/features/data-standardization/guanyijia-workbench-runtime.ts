@@ -1214,7 +1214,7 @@ function timelineFor(input: {
         kind: 'SOURCE_READ_COMPLETED',
         ...(event.sourceId ? { action: { type: 'OPEN_SOURCE_DETAILS' as const, sourceId: event.sourceId } } : {}),
         title: `${source ? displaySourceName(source.sourceId, source.sourceName) : '来源'}快照已载入`,
-        summary: '固定快照已载入；可打开审阅清单查看已保存资料。',
+        summary: '固定快照已载入；可打开审阅事项查看已保存资料。',
       });
     } else if (event.type === 'DOCUMENT_GENERATED' && compilation && document) {
       const generatedDocument = input.generatedEvents.get(event.eventId);
@@ -2629,7 +2629,7 @@ export function createGuanyijiaWorkbenchRuntime(input: {
       else if (event.type === 'SOURCE_READ_COMPLETED') result.push({
         ...base, kind: event.type, title: `${step ? displaySourceName(step.sourceId, step.sourceName) : '来源'}快照已载入`,
         ...(event.sourceId ? { action: { type: 'OPEN_SOURCE_DETAILS' as const, sourceId: event.sourceId } } : {}),
-        summary: '固定快照已载入；可打开审阅清单查看已保存资料。',
+        summary: '固定快照已载入；可打开审阅事项查看已保存资料。',
       });
       else if (event.type === 'DOCUMENT_GENERATED' || event.type === 'DOCUMENT_REVISED') {
         const document = documents.find((value) => value.documentId === event.sourceDocumentId)

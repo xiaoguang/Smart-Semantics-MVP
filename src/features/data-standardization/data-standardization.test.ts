@@ -208,10 +208,10 @@ test('来源材料只在对应结论内联展开，不再形成第二个材料�
   assert.match(workbench, /guanyijia-inline-evidence/u);
 });
 
-test('审阅结论统计只聚合可读结论与缺口，对象明细按需展开', () => {
+test('审阅事项与审阅结论分开呈现，对象明细默认展开', () => {
   const workbench = readFileSync(new URL('./guanyijia-standardization-workbench.tsx', import.meta.url), 'utf8');
-  assert.match(workbench, /data-review-summary-group="CONCLUSIONS"[\s\S]*?aria-label="关键业务结论"[\s\S]*?aria-label="资料缺口"/u);
-  assert.match(workbench, /objectDetails\.length\s*\?\s*<details[^>]*aria-label="对象明细"/u);
+  assert.match(workbench, /documentView === 'MATTERS'[\s\S]*?aria-label="资料缺口"[\s\S]*?aria-label="已处理"/u);
+  assert.match(workbench, /documentView === 'CONCLUSIONS'[\s\S]*?aria-label="关键业务结论"[\s\S]*?<details\s+open[^>]*aria-label="对象明细"/u);
 });
 
 test('内联依据不重复输出“支持结论”文案，并以中文显示数据库键类型', () => {
@@ -251,7 +251,7 @@ test('来源资料区和修改提示使用业务化文案，不暴露剧本或�
   const workbench = readFileSync(new URL('./guanyijia-standardization-workbench.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(inspector, /<dt>读取数量<\/dt>/u);
   assert.doesNotMatch(inspector, /\{model\.objectCount\} 个对象/u);
-  assert.match(workbench, /请在审阅清单中处理已列出的建议/u);
+  assert.match(workbench, /请在审阅事项中处理已列出的建议/u);
   assert.doesNotMatch(workbench, /剧本/u);
   assert.match(inspector, /该资料已准备好。/u);
   assert.doesNotMatch(inspector, /按当前流程到达后即可阅读|完成前一份资料审阅后/u);
@@ -297,11 +297,11 @@ test('来源文档页头只说明当前可读审阅范围，不把旧结构块�
   assert.doesNotMatch(workbench, /\$\{snapshot\.current\.compilationSummary\.blockCount\} 项识别结果/u);
   assert.doesNotMatch(workbench, /\$\{currentDocumentBlocks\.length\} 项识别结果/u);
   assert.match(workbench, /来源范围：\$\{curatedWorkspace\.metadata\.coverageLabel\}/u);
-  assert.match(workbench, /本次范围与限制/u);
+  assert.doesNotMatch(workbench, /本次范围与限制/u);
   assert.match(workbench, /来源审阅文档/u);
 });
 
-test('剧本修改选中正式映射后，来源仍停留在可读审阅清单而非旧结构块墙', () => {
+test('剧本修改选中正式映射后，来源仍停留在可读审阅事项而非旧结构块墙', () => {
   const workbench = readFileSync(new URL('./guanyijia-standardization-workbench.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(workbench, /showingMappedFormalBlocks/u);
   assert.match(workbench, /curatedReview \? curatedStructuredDiffOpen/u);

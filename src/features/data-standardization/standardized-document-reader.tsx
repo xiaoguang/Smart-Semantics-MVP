@@ -168,7 +168,7 @@ export default function StandardizedDocumentReader({
         <Button type={view === 'READING' ? 'primary' : 'default'} onClick={() => onViewChange('READING')}>阅读版</Button>
         <Button type={view === 'MARKDOWN_SOURCE' ? 'primary' : 'default'} onClick={() => onViewChange('MARKDOWN_SOURCE')}>Markdown 源文</Button>
         <Button type="link" onClick={() => void copyMarkdown()}>复制</Button>
-        {onReturn && <Button type="link" onClick={onReturn}>返回审阅清单</Button>}
+        {onReturn && <Button type="link" onClick={onReturn}>返回审阅内容</Button>}
       </div>
     </header>
     {view === 'READING' ? <div className="guanyijia-standardized-document-reading">

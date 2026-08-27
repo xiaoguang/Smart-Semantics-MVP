@@ -72,6 +72,7 @@ import {
   projectSourceStandardDocumentRevision,
   reviewEvidenceViewForClaim,
   type ReviewClaim,
+  type ReviewCompletedFormalDecision,
   type ReviewEvidenceView,
   type SourceReviewTrace,
 } from '../guanyijia-evidence-factory/source-review-document.ts';
@@ -126,11 +127,6 @@ import { CrossSourceFindingList } from './cross-source-finding-list.tsx';
 import { businessErrorMessage } from './business-error-message.ts';
 import { buildWorkbenchActions, sourceSnapshotAction } from './workbench-action-model.ts';
 import { projectReviewPrimaryAction, resolveReviewResultSection } from './review-workspace-actions.ts';
-import {
-  projectReviewSummary,
-  type ReviewSummaryFilter,
-  type ReviewSummaryProjection,
-} from './review-summary.ts';
 import ReviewAssistantPanel from './review-assistant-panel.tsx';
 import { classifyReviewAssistantIntent } from './review-assistant.ts';
 import type {
@@ -505,6 +501,7 @@ export default function GuanyijiaStandardizationWorkbench({
     claimId: string;
     label: string;
     scrollTop: number;
+    view: 'MATTERS' | 'CONCLUSIONS';
   } | undefined>(undefined);
   const documentWasOpenRef = useRef(false);
   const workflowLayerSeenRef = useRef<string | undefined>(undefined);
@@ -577,9 +574,8 @@ export default function GuanyijiaStandardizationWorkbench({
     containerWidth: 0,
   });
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
-  const [documentView, setDocumentView] = useState<'BLOCKS' | 'MARKDOWN'>('BLOCKS');
+  const [documentView, setDocumentView] = useState<'MATTERS' | 'CONCLUSIONS' | 'MARKDOWN'>('MATTERS');
   const [standardizedDocumentView, setStandardizedDocumentView] = useState<StandardizedDocumentView>('READING');
-  const [reviewSummaryFilter, setReviewSummaryFilter] = useState<ReviewSummaryFilter>();
   const [documentMarkdown, setDocumentMarkdown] = useState<string>();
   const [documentMarkdownLoading, setDocumentMarkdownLoading] = useState(false);
   const [documentMarkdownLoadKey, setDocumentMarkdownLoadKey] = useState<string>();
@@ -985,7 +981,7 @@ export default function GuanyijiaStandardizationWorkbench({
     documentMarkdownCurrentKeyRef.current = document
       ? `document:${document.documentId}:r${document.revision}`
       : undefined;
-    setDocumentView('BLOCKS');
+    setDocumentView('MATTERS');
     setStandardizedDocumentView('READING');
     setDocumentMarkdown(undefined);
     setDocumentMarkdownLoading(false);
@@ -1070,13 +1066,33 @@ export default function GuanyijiaStandardizationWorkbench({
   const scriptedReviewEdits = snapshot?.scriptedEdits ?? [];
   const pendingScriptedReviewEdits = scriptedReviewEdits.filter((edit) => edit.status === 'PENDING');
   const sourceReviewSupportsScriptedEdits = scriptedReviewEdits.length > 0;
+  const completedFormalReviewDecisions = useMemo<ReviewCompletedFormalDecision[]>(() => (
+    (snapshot?.resolutions ?? []).map((resolution) => {
+      const decision: BusinessConflictDecision = resolution.strategy === 'KEEP_CURRENT'
+        ? 'KEEP_CURRENT'
+        : resolution.strategy === 'ACCEPT_INCOMING'
+          ? 'ACCEPT_INCOMING'
+          : 'REGISTER_GAP';
+      const summary = resolutionSummaryForBusinessDecision({
+        conflictId: resolution.hunk.conflictId,
+        decision,
+      });
+      return {
+        decisionId: resolution.resolutionId,
+        sourceId: resolution.sourceId,
+        title: resolution.hunk.title,
+        statement: `${summary.title}。${summary.gap}`,
+      };
+    })
+  ), [snapshot?.resolutions]);
   const curatedWorkspace = useMemo(() => curatedReview
     ? projectSourceReviewWorkspace({
         sourceDocument: curatedReview,
         currentBlocks: currentDocumentBlocks ?? [],
         scriptedDecisions: scriptedReviewEdits,
+        formalDecisions: completedFormalReviewDecisions,
       })
-    : undefined, [curatedReview, currentDocumentBlocks, scriptedReviewEdits]);
+    : undefined, [completedFormalReviewDecisions, curatedReview, currentDocumentBlocks, scriptedReviewEdits]);
   const revisedSourceStandardDocument = useMemo(() => sourceStandardDocument
     ? projectSourceStandardDocumentRevision(sourceStandardDocument, currentDocumentBlocks ?? [])
     : undefined, [currentDocumentBlocks, sourceStandardDocument]);
@@ -1620,7 +1636,7 @@ export default function GuanyijiaStandardizationWorkbench({
       setHistoryOpen(false);
       revealReviewTarget(
         `[data-review-claim="${editingScriptedReviewEdit.definition.reviewClaimId}"]`,
-        '修改已确认，审阅清单和标准化文档已同步更新。',
+        '修改已确认，审阅事项、审阅结论和标准化文档已同步更新。',
       );
       message.success('建议修改已应用，已生成新的文档版本');
     } catch (cause) {
@@ -2217,7 +2233,7 @@ export default function GuanyijiaStandardizationWorkbench({
       setError(detail); message.error(detail); return;
     }
     if (curatedReview && intent.kind === 'PROPOSE_BLOCK_CHANGE') {
-      const detail = '当前来源只开放已列出的建议；请在审阅清单中处理已列出的建议';
+      const detail = '当前来源只开放已列出的建议；请在审阅事项中处理已列出的建议';
       setError(detail); message.error(detail); return;
     }
     if (intent.kind === 'PROPOSE_BLOCK_CHANGE' && !allowReviewMutation('PATCH')) return;
@@ -2715,28 +2731,18 @@ export default function GuanyijiaStandardizationWorkbench({
     return block ? [{ ...trace, linePrefix: block.label }] : [];
   }) : [];
   const candidateReviewsForSource = sourceReviewVisibility?.comparisonFindings ?? [];
+  const crossSourceGapFindings = candidateReviewsForSource.filter((finding) => (
+    finding.topic === 'DOCUMENT_STATUS' || finding.relation === 'UNSUPPORTED'
+  ));
+  const crossSourceConclusionFindings = candidateReviewsForSource.filter((finding) => (
+    !crossSourceGapFindings.includes(finding)
+  ));
   const pendingChecklistTasks = useMemo(() => {
     const pendingTaskIds = new Set(pendingScriptedReviewEdits.map((edit) => edit.definition.editId));
     return (curatedWorkspace?.tasks ?? []).filter((task) => pendingTaskIds.has(task.taskId));
   }, [curatedWorkspace?.tasks, pendingScriptedReviewEdits]);
-  const reviewSummary: ReviewSummaryProjection | undefined = useMemo(() => {
-    if (!curatedWorkspace || !snapshot?.run || !currentReviewSource) return undefined;
-    const admittedSourceIds = snapshot.run.sources
-      .filter((source) => ['DOCUMENT_READY', 'REVIEWED', 'ALIGNED', 'CONFLICT_BLOCKED'].includes(source.status))
-      .map((source) => source.sourceId);
-    const pendingTaskClaimIds = new Set(pendingChecklistTasks.map((task) => task.claimId));
-    return projectReviewSummary({
-      sourceId: currentReviewSource.sourceId,
-      admittedSourceIds,
-      claims: curatedWorkspace.claims.filter((claim) => !pendingTaskClaimIds.has(claim.claimId)),
-      materialClaims: curatedWorkspace.claims,
-      taskIds: pendingChecklistTasks.map((task) => task.taskId),
-      findings: candidateReviewsForSource.map((finding) => ({
-        findingId: finding.topic,
-        sourceIds: [...new Set(finding.evidence.map((evidence) => evidence.sourceId))],
-      })),
-    });
-  }, [candidateReviewsForSource, curatedWorkspace, currentReviewSource, pendingChecklistTasks, snapshot?.run]);
+  const completedChecklistTasks = curatedWorkspace?.checklist.completedTasks ?? [];
+  const completedFormalDecisions = curatedWorkspace?.checklist.completedFormalDecisions ?? [];
   const currentRevisionDiff = snapshot?.current?.revisionDiff
     ?? snapshot?.current?.revisionHistory?.find((diff) => (
       diff.afterDocumentId === snapshot.current?.document?.documentId
@@ -2768,12 +2774,22 @@ export default function GuanyijiaStandardizationWorkbench({
     setSelectedCandidateEvidenceRef(candidateReviewTopicForBlock(blockId)?.evidence[0]?.evidenceRef);
     setInteractionAnnouncement('已选中当前审阅结论的来源材料。');
   };
+  const reviewViewForClaim = (claimId: string): 'MATTERS' | 'CONCLUSIONS' => {
+    const checklist = curatedWorkspace?.checklist;
+    if (!checklist) return 'MATTERS';
+    return checklist.tasks.some((item) => item.claimId === claimId)
+      || checklist.completedTasks.some((item) => item.claimId === claimId)
+      || checklist.gaps.some((item) => item.claimId === claimId)
+      ? 'MATTERS'
+      : 'CONCLUSIONS';
+  };
   const focusCuratedTrace = (trace: SourceReviewTrace, claim?: Pick<ReviewClaim, 'claimId' | 'title'>) => {
     if (claim) {
       markdownReturnRef.current = {
         claimId: claim.claimId,
         label: claim.title,
         scrollTop: threadRef.current?.scrollTop ?? 0,
+        view: reviewViewForClaim(claim.claimId),
       };
     } else {
       markdownReturnRef.current = undefined;
@@ -2786,7 +2802,7 @@ export default function GuanyijiaStandardizationWorkbench({
   const returnToReviewClaim = () => {
     const target = markdownReturnRef.current;
     if (!target) return;
-    setDocumentView('BLOCKS');
+    setDocumentView(target.view);
     setStandardizedDocumentView('READING');
     setMarkdownAnchorToFocus(undefined);
     window.requestAnimationFrame(() => {
@@ -2799,28 +2815,12 @@ export default function GuanyijiaStandardizationWorkbench({
     });
   };
   const focusCuratedClaim = (claim: ReviewClaim) => {
-    setDocumentView('BLOCKS');
+    setDocumentView(reviewViewForClaim(claim.claimId));
     setSelectedCuratedTraceAnchor(claim.markdownAnchor);
     const trace = curatedReview?.traceLinks.find((candidate) => candidate.markdownAnchor === claim.markdownAnchor);
     const evidenceRef = claim.evidenceRefs[0];
     if (trace && evidenceRef) selectCuratedEvidence(evidenceRef, trace);
     revealReviewTarget(`[data-review-claim="${claim.claimId}"]`, `已定位到“${claim.title}”审阅结论。`);
-  };
-  const focusReviewSummary = (filter: ReviewSummaryFilter) => {
-    setReviewSummaryFilter((current) => current === filter ? undefined : filter);
-    // A summary filter is a new, exact reading set.  Do not carry an expanded
-    // item from a previous task into it: that would make the material count
-    // look like a mixed result rather than the set selected by this filter.
-    setSelectedCuratedEvidenceRef(undefined);
-    setSelectedCuratedTraceAnchor(undefined);
-    setDocumentView('BLOCKS');
-    if (filter === 'FINDINGS') {
-      window.requestAnimationFrame(() => shellRef.current?.querySelector<HTMLElement>('[data-review-summary-group="FINDINGS"]')
-        ?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
-      return;
-    }
-    window.requestAnimationFrame(() => shellRef.current?.querySelector<HTMLElement>(`[data-review-summary-group="${filter}"]`)
-      ?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
   };
   const reviewPrimaryAction = curatedWorkspace && snapshot?.current?.sourceStep.status === 'DOCUMENT_READY'
     ? projectReviewPrimaryAction({
@@ -2829,6 +2829,9 @@ export default function GuanyijiaStandardizationWorkbench({
         claimSections: new Map(curatedWorkspace.claims.map((claim) => [claim.claimId, claim.section])),
       })
     : undefined;
+  const reviewNextSourceAvailable = Boolean(curatedWorkspace
+    && ['REVIEWED', 'ALIGNED'].includes(snapshot?.current?.sourceStep.status ?? '')
+    && snapshot?.nextAction.type === 'READ_NEXT_SOURCE');
   const runReviewPrimaryAction = () => {
     if (!reviewPrimaryAction) return;
     if (reviewPrimaryAction.kind === 'OPEN_PENDING_CLAIM') {
@@ -2841,7 +2844,7 @@ export default function GuanyijiaStandardizationWorkbench({
   const focusRevisionBlock = (blockId: string) => {
     const block = currentDocumentBlocks?.find((candidate) => candidate.blockId === blockId)
       ?? documentEvidenceCompilation?.blocks.find((candidate) => candidate.blockId === blockId);
-    setDocumentView('BLOCKS');
+    setDocumentView('MATTERS');
     setSelectedBlockId(blockId);
     setSelectedCandidateEvidenceRef(undefined);
     if (isMysqlCuratedReview) setCuratedStructuredDiffOpen(true);
@@ -2891,13 +2894,11 @@ export default function GuanyijiaStandardizationWorkbench({
       }
       return;
     }
-    if (documentView === 'BLOCKS') {
-      if (sourceReviewTrace) {
-        setSelectedCuratedTraceAnchor(sourceReviewTrace.markdownAnchor);
-        setSelectedCuratedEvidenceRef(sourceReviewTrace.evidenceRefs[0]);
-      } else if (formalTrace) {
-        setSelectedBlockId(formalTrace.blockId);
-      }
+    if (sourceReviewTrace) {
+      setSelectedCuratedTraceAnchor(sourceReviewTrace.markdownAnchor);
+      setSelectedCuratedEvidenceRef(sourceReviewTrace.evidenceRefs[0]);
+    } else if (formalTrace) {
+      setSelectedBlockId(formalTrace.blockId);
       return;
     }
   };
@@ -3007,51 +3008,18 @@ export default function GuanyijiaStandardizationWorkbench({
             {snapshot.current.document.status === 'SUPERSEDED' ? '只读回看' : snapshot.current.sourceStep.status === 'ALIGNED' ? '已审阅' : '待审阅'}
           </Tag>
           <Tag>{sourceOriginLabel(snapshot.current.source.sourceId)}</Tag>
-          {pendingScriptedReviewEdits.length > 0 && <Tag className="guanyijia-scripted-review-count">{pendingScriptedReviewEdits.length}项建议核对</Tag>}
           <h2>{curatedWorkspace?.metadata.title ?? curatedReview?.title ?? `${displaySourceName(snapshot.current.source.sourceId, snapshot.current.source.sourceName)}来源文档`}</h2>
           <p>{curatedWorkspace
-            ? `来源范围：${curatedWorkspace.metadata.coverageLabel} · 本页 ${curatedWorkspace.claims.length} 条审阅结论`
-            : '当前可读内容已准备好；结论与来源材料会在审阅清单中逐项展开。'}</p>
+            ? `来源范围：${curatedWorkspace.metadata.coverageLabel}`
+            : '当前可读内容已准备好；结论与来源材料会在审阅事项和审阅结论中逐项展开。'}</p>
         </div>
         <div className="guanyijia-document-header-actions">
           {(snapshot.current.history?.length ?? 0) > 1 && <Button type="link" onClick={() => setHistoryOpen((open) => !open)}>{historyOpen ? '收起历史版本' : '查看历史版本'}</Button>}
           {reviewPrimaryAction && !editingBlockId && !editingScriptedEditId && !pendingAssistantProposal && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={runReviewPrimaryAction}>{reviewPrimaryAction.label}</Button>}
+          {!reviewPrimaryAction && reviewNextSourceAvailable && !editingBlockId && !editingScriptedEditId && !pendingAssistantProposal && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void execute('READ_NEXT_SOURCE')}>审阅下一个来源</Button>}
           {!curatedWorkspace && canCompleteReview && !editingBlockId && !editingScriptedEditId && !pendingAssistantProposal && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void execute('COMPLETE_CURRENT_DOCUMENT_REVIEW')}>完成{displaySourceName(snapshot.current.source.sourceId, snapshot.current.source.sourceName)}审阅</Button>}
         </div>
       </header>
-      {curatedWorkspace && <details className="guanyijia-review-scope">
-        <summary>本次范围与限制</summary>
-        <p>{curatedWorkspace.metadata.sourceDescription}</p>
-        {curatedWorkspace.metadata.limitations.length > 0 && <ul>{curatedWorkspace.metadata.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>}
-      </details>}
-      {reviewSummary && <nav className="guanyijia-review-summary" aria-label="当前审阅统计">
-        {([
-          {
-            filter: 'TASKS' as const,
-            count: reviewSummary.pendingTasks.count,
-            label: `待核对 ${reviewSummary.pendingTasks.count}`,
-            ids: reviewSummary.pendingTasks.taskIds,
-          },
-          {
-            filter: 'CONCLUSIONS' as const,
-            count: reviewSummary.conclusions.count,
-            label: `审阅结论 ${reviewSummary.conclusions.count}`,
-            ids: reviewSummary.conclusions.claimIds,
-          },
-          {
-            filter: 'FINDINGS' as const,
-            count: reviewSummary.findings.count,
-            label: `跨源发现 ${reviewSummary.findings.count}`,
-            ids: reviewSummary.findings.findingIds,
-          },
-        ]).filter((entry) => entry.count > 0).map((entry) => <button
-          type="button"
-          key={entry.filter}
-          aria-pressed={reviewSummaryFilter === entry.filter}
-          data-review-summary-ids={entry.ids.join(',')}
-          onClick={() => focusReviewSummary(entry.filter)}
-        >{entry.label}</button>)}
-      </nav>}
       {documentWindowFailure && <Alert
         className="guanyijia-document-recovery"
         type="error"
@@ -3061,7 +3029,7 @@ export default function GuanyijiaStandardizationWorkbench({
         action={<Button size="small" onClick={() => void recoverReviewWindowStream('DOCUMENT_BLOCKS')}>重新读取文档</Button>}
       />}
       <div className="guanyijia-document-tabs" role="tablist" aria-label="来源文档视图">
-        {([['BLOCKS', '审阅清单'], ['MARKDOWN', '标准化文档']] as const).map(([value, label]) => <button
+        {([['MATTERS', '审阅事项'], ['CONCLUSIONS', '审阅结论'], ['MARKDOWN', '标准化文档']] as const).map(([value, label]) => <button
           type="button" role="tab" aria-selected={documentView === value}
           className={documentView === value ? 'active' : ''} key={value}
           onClick={() => {
@@ -3124,15 +3092,15 @@ export default function GuanyijiaStandardizationWorkbench({
             }}
           /> : !documentMarkdownLoading && <Empty description="选择完整 Markdown 读取文档正文" />}</>}
       </div>}
-      {documentView === 'BLOCKS' && <div className="guanyijia-section-content">
-        {(reviewSummaryFilter === undefined || reviewSummaryFilter === 'FINDINGS') && candidateReviewsForSource.length > 0 && <section className="guanyijia-review-findings" data-review-summary-group="FINDINGS">
+      {documentView !== 'MARKDOWN' && <div className="guanyijia-section-content">
+        {documentView === 'CONCLUSIONS' && crossSourceConclusionFindings.length > 0 && <section className="guanyijia-review-findings">
           <CrossSourceFindingList
-            findings={candidateReviewsForSource}
+            findings={crossSourceConclusionFindings}
             expansionKey={`${snapshot.current.document.documentId}:${snapshot.current.document.revision}:${currentReviewSource?.sourceId ?? ''}`}
           />
         </section>}
         {curatedReview ? curatedStructuredDiffOpen ? <section className="guanyijia-curated-structured-diff" aria-label="原有结构化修改">
-          <header><div><span>本次修改</span><h3>审阅文档变化</h3></div><BackAction destination="审阅清单" onBack={() => setCuratedStructuredDiffOpen(false)} /></header>
+          <header><div><span>本次修改</span><h3>审阅文档变化</h3></div><BackAction destination="审阅事项" onBack={() => setCuratedStructuredDiffOpen(false)} /></header>
           <p>这里显示本次确认后更新的审阅结论。</p>
           {currentRevisionDiff?.blockChanges.length ? currentRevisionDiff.blockChanges.map((change) => {
             const block = change.after ?? change.before;
@@ -3148,9 +3116,9 @@ export default function GuanyijiaStandardizationWorkbench({
               <p><b>修改后：</b>{change.after ? blockText(change.after.value) : '不存在'}</p>
             </article>;
           }) : <Empty description="本次没有修改审阅结论。" />}
-        </section> : <section className="guanyijia-review-checklist" aria-label="审阅清单">
-          {(reviewSummaryFilter === undefined || reviewSummaryFilter === 'TASKS') && pendingChecklistTasks.length ? <section className="guanyijia-checklist-group" aria-label="待核对任务" data-review-summary-group="TASKS">
-            <header><h4>待核对任务</h4><small>{pendingChecklistTasks.length} 项需要处理</small></header>
+        </section> : <section className="guanyijia-review-checklist" aria-label={documentView === 'MATTERS' ? '审阅事项' : '审阅结论'}>
+          {documentView === 'MATTERS' && pendingChecklistTasks.length ? <section className="guanyijia-checklist-group" aria-label="待处理事项">
+            <header><h4>待处理事项</h4><small>{pendingChecklistTasks.length} 项需要处理</small></header>
             {pendingChecklistTasks.map((task) => {
               const claim = curatedWorkspace!.claims.find((candidate) => candidate.claimId === task.claimId);
               const scriptedEdit = scriptedReviewEdits.find((candidate) => candidate.definition.editId === task.taskId);
@@ -3193,8 +3161,8 @@ export default function GuanyijiaStandardizationWorkbench({
                 >
                   <header><div><span>建议核对</span><h4>可修改：{editableLabels}</h4></div></header>
                   <p>{curatedReview.sourceId === 'guanyijia_mysql'
-                    ? '保存后，审阅清单和标准化文档中的这条名称会更新。'
-                    : '保存后，审阅清单和标准化文档中的这条结论会同步更新。'}</p>
+                    ? '保存后，审阅事项、审阅结论和标准化文档中的这条名称会更新。'
+                    : '保存后，审阅事项、审阅结论和标准化文档中的这条结论会同步更新。'}</p>
                   {scriptedEdit.definition.editableFields.includes('label') && <label>
                     <span>{task.editableFields.find((field) => field.field === 'label')?.label ?? '名称'}</span><Input autoFocus value={scriptedEditLabel} onChange={(event) => { setScriptedEditLabel(event.target.value); clearPreview(); }} />
                   </label>}
@@ -3240,7 +3208,56 @@ export default function GuanyijiaStandardizationWorkbench({
               </article>;
             })}
           </section> : null}
-          {(reviewSummaryFilter === undefined || reviewSummaryFilter === 'CONCLUSIONS') && <section className="guanyijia-review-conclusion-set" data-review-summary-group="CONCLUSIONS">
+          {documentView === 'MATTERS' && <>
+          {(curatedWorkspace?.checklist.gaps.length || crossSourceGapFindings.length) ? <section className="guanyijia-checklist-group" aria-label="资料缺口">
+            <header><h4>资料缺口</h4></header>
+            {curatedWorkspace?.checklist.gaps.length ? <ul className="guanyijia-gap-list">{curatedWorkspace.checklist.gaps.map((gap) => {
+              const claim = curatedWorkspace.claims.find((candidate) => candidate.claimId === gap.claimId);
+              const trace = claim
+                ? curatedReview.traceLinks.find((candidate) => candidate.markdownAnchor === claim.markdownAnchor)
+                : undefined;
+              const evidenceRef = claim?.evidenceRefs[0];
+              const evidenceOpen = Boolean(claim && evidenceRef
+                && selectedCuratedTraceAnchor === claim.markdownAnchor
+                && selectedCuratedEvidenceRef === evidenceRef);
+              return <li key={gap.claimId} data-review-claim={gap.claimId} tabIndex={-1}>
+                <strong>{gap.title}</strong><p>{gap.statement}</p><small>下一步：{gap.nextStep}</small>
+                {claim && evidenceRef && <div><Button type="link" onClick={() => selectCuratedEvidence(evidenceRef, trace)}>{evidenceOpen ? '收起来源依据' : '查看来源依据'}</Button>{trace && <Button type="link" onClick={() => focusCuratedTrace(trace, claim)}>查看文档段落</Button>}</div>}
+                {claim && evidenceOpen && <section className="guanyijia-inline-evidence" aria-label={`${claim.title}的来源依据`} data-inline-evidence-ref={evidenceRef} tabIndex={-1}>{claim.evidenceRefs.map((reference) => {
+                  const evidence = curatedReview.evidence.find((entry) => entry.evidenceRef === reference);
+                  return evidence ? <SourceReviewEvidenceDetails key={`${claim.claimId}:${reference}`} source={evidence} view={reviewEvidenceViewForClaim(curatedWorkspace.evidenceViews, reference, claim.claimId)} /> : null;
+                })}</section>}
+              </li>;
+            })}</ul> : null}
+            {crossSourceGapFindings.length > 0 && <CrossSourceFindingList
+              findings={crossSourceGapFindings}
+              expansionKey={`${snapshot.current.document.documentId}:${snapshot.current.document.revision}:${currentReviewSource?.sourceId ?? ''}`}
+            />}
+          </section> : null}
+          {(completedChecklistTasks.length || completedFormalDecisions.length) ? <section className="guanyijia-checklist-group" aria-label="已处理">
+            <header><h4>已处理</h4><small>{completedChecklistTasks.length + completedFormalDecisions.length} 项已保存</small></header>
+            <ul className="guanyijia-key-conclusion-list">{completedChecklistTasks.map((task) => {
+              const claim = curatedWorkspace!.claims.find((candidate) => candidate.claimId === task.claimId);
+              const decision = scriptedReviewEdits.find((candidate) => candidate.definition.editId === task.scriptedEditId);
+              if (!claim || !decision) return null;
+              const trace = curatedReview.traceLinks.find((candidate) => candidate.markdownAnchor === claim.markdownAnchor);
+              const evidenceRef = claim.evidenceRefs[0];
+              const evidenceOpen = selectedCuratedTraceAnchor === claim.markdownAnchor
+                && selectedCuratedEvidenceRef === evidenceRef;
+              return <li key={task.claimId} data-review-claim={task.claimId} id={`guanyijia-review-claim:${task.claimId}`} tabIndex={-1}>
+                <div><strong>{task.title}</strong><p>{task.statement}</p><small>{decision.status === 'APPLIED' ? '已采用推荐修改。' : '已核对并保留当前结论。'}</small></div>
+                <div><Button type="link" onClick={() => selectCuratedEvidence(evidenceRef!, trace)}>{evidenceOpen ? '收起来源依据' : '查看来源依据'}</Button>{trace && <Button type="link" onClick={() => focusCuratedTrace(trace, claim)}>查看文档段落</Button>}</div>
+                {evidenceOpen && <section className="guanyijia-inline-evidence" aria-label={`${task.title}的来源依据`} data-inline-evidence-ref={evidenceRef} tabIndex={-1}>{claim.evidenceRefs.map((reference) => {
+                  const evidence = curatedReview.evidence.find((entry) => entry.evidenceRef === reference);
+                  return evidence ? <SourceReviewEvidenceDetails key={`${task.claimId}:${reference}`} source={evidence} view={reviewEvidenceViewForClaim(curatedWorkspace!.evidenceViews, reference, task.claimId)} /> : null;
+                })}</section>}
+              </li>;
+            })}{completedFormalDecisions.map((decision) => <li key={decision.decisionId} data-review-formal-decision={decision.decisionId} tabIndex={-1}>
+              <div><strong>{decision.title}</strong><p>{decision.statement}</p><small>已保存的跨来源决定。</small></div>
+            </li>)}</ul>
+          </section> : null}
+          </>}
+          {documentView === 'CONCLUSIONS' && <section className="guanyijia-review-conclusion-set">
           {curatedWorkspace?.checklist.keyConclusions.length ? <section className="guanyijia-checklist-group" aria-label="关键业务结论">
             <header><h4>关键业务结论</h4></header>
             <ul className="guanyijia-key-conclusion-list">{curatedWorkspace.checklist.keyConclusions.map((claim) => {
@@ -3264,30 +3281,8 @@ export default function GuanyijiaStandardizationWorkbench({
               </li>;
             })}</ul>
           </section> : null}
-          {curatedWorkspace?.checklist.gaps.length ? <section className="guanyijia-checklist-group" aria-label="资料缺口">
-            <header><h4>资料缺口</h4></header>
-            <ul className="guanyijia-gap-list">{curatedWorkspace.checklist.gaps.map((gap) => {
-              const claim = curatedWorkspace.claims.find((candidate) => candidate.claimId === gap.claimId);
-              const trace = claim
-                ? curatedReview.traceLinks.find((candidate) => candidate.markdownAnchor === claim.markdownAnchor)
-                : undefined;
-              const evidenceRef = claim?.evidenceRefs[0];
-              const evidenceOpen = Boolean(claim && evidenceRef
-                && selectedCuratedTraceAnchor === claim.markdownAnchor
-                && selectedCuratedEvidenceRef === evidenceRef);
-              return <li key={gap.claimId} data-review-claim={gap.claimId} tabIndex={-1}>
-                <strong>{gap.title}</strong><p>{gap.statement}</p><small>下一步：{gap.nextStep}</small>
-                {claim && evidenceRef && <div><Button type="link" onClick={() => selectCuratedEvidence(evidenceRef, trace)}>{evidenceOpen ? '收起来源依据' : '查看来源依据'}</Button>{trace && <Button type="link" onClick={() => focusCuratedTrace(trace, claim)}>查看文档段落</Button>}</div>}
-                {claim && evidenceOpen && <section className="guanyijia-inline-evidence" aria-label={`${claim.title}的来源依据`} data-inline-evidence-ref={evidenceRef} tabIndex={-1}>{claim.evidenceRefs.map((reference) => {
-                  const evidence = curatedReview.evidence.find((entry) => entry.evidenceRef === reference);
-                  return evidence ? <SourceReviewEvidenceDetails key={`${claim.claimId}:${reference}`} source={evidence} view={reviewEvidenceViewForClaim(curatedWorkspace.evidenceViews, reference, claim.claimId)} /> : null;
-                })}</section>}
-              </li>;
-            })}</ul>
-          </section> : null}
-          {curatedWorkspace?.checklist.objectDetails.length ? <details className="guanyijia-checklist-group guanyijia-object-details" aria-label="对象明细">
-            <summary>对象明细</summary>
-            <p>{curatedWorkspace.checklist.objectDetails.length} 项可追踪对象</p>
+          {curatedWorkspace?.checklist.objectDetails.length ? <details open className="guanyijia-checklist-group guanyijia-object-details" aria-label="对象明细">
+            <summary>对象目录 · {curatedWorkspace.checklist.objectDetails.length} 个对象</summary>
             <div className="guanyijia-object-details-scroll"><table><thead><tr><th>类型</th><th>中文名称</th><th>业务用途</th><th>重点字段／规则</th><th>来源</th></tr></thead><tbody>{curatedWorkspace?.checklist.objectDetails.map((claim) => {
               const evidence = curatedReview.evidence.find((entry) => entry.evidenceRef === claim.evidenceRefs[0]);
               const trace = curatedReview.traceLinks.find((candidate) => candidate.markdownAnchor === claim.markdownAnchor);
@@ -3604,7 +3599,7 @@ export default function GuanyijiaStandardizationWorkbench({
                 >审阅来源差异</Button>}
                 <h2 id={conflictWorkspaceOpen ? 'guanyijia-conflict-dialog-title' : undefined}>{isReplacingHistoricalDecision ? '重新处理来源差异' : workflowTitle}</h2>
                 <p>{nextAction?.type === 'START_RUN' ? '按固定顺序载入数据库、代码、业务文档、演示制度和术语图的固定快照。'
-                  : nextAction?.type === 'READ_NEXT_SOURCE' ? '载入固定演示快照，并打开审阅清单。'
+                  : nextAction?.type === 'READ_NEXT_SOURCE' ? '载入固定演示快照，并打开审阅事项。'
                     : nextAction?.type === 'REVIEW_DOCUMENT' ? '文档已就绪；点此继续审阅。'
                       : conflictWorkspaceOpen ? (isReplacingHistoricalDecision
                         ? '上一决定保留在历史中。选择新的处理方式后，请重新生成标准化结果。'

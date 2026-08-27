@@ -274,7 +274,7 @@ Markdown 段落或依据入口后，三向联动：
 | `READING` | “正在校验并载入固定快照” | 正文、关系和冲突 |
 | `DOCUMENT_READY` | 当前来源正文与所有参与来源均已准入的比较 | 尚未读入来源的任何内容；正式决定按钮 |
 | `REVIEWED` / `ALIGNED` | 已审阅正文、已发现关系和决定摘要 | 未决冲突操作 |
-| `CONFLICT_BLOCKED` | 当前未决差异、双方依据和决定操作 | 下一来源的正文或未准入关系 |
+| `CONFLICT_BLOCKED` | 当前未决差异、双方依据和决定操作；可按既定顺序启动下一来源 | 尚未准入来源的任何关系或正文 |
 
 关系的每个参与者必须同时满足精确的 `sourceId + snapshotId` 和已准入状态；身份不匹配只阻断该关系，不阻断本源文档阅读。`GENERATED_TARGET` 只在制度来源读入后显示，官方 `GAP` 只在官方资料读入后显示，Semantica 只在自身读入后显示派生佐证且不增加独立证据数。当前 Demo 的顺序是：MySQL 本源文档 → GitHub 的三项比较发现 → 官方资料的状态 9 GAP → 演示制度的目标制度及相关决定 → Semantica 的派生佐证。
 
@@ -287,7 +287,7 @@ Markdown 段落或依据入口后，三向联动：
 ### 负库存：互补资料与目标制度差异
 
 1. MySQL `jsh_system_config.minus_stock_flag` 的冻结 DDL 摘录是 `OBSERVED`；它能证明当前部署存在该配置字段。
-2. GitHub 浏览器包中的固定提交行段是 `SOURCE_NATIVE`，可按 commit、路径和行号回到保存源码；它只覆盖负库存读取链的节选，不能替代完整租户范围或完整实现。
+2. GitHub 的 V6 冻结源码摘录是 `SOURCE_NATIVE`，可按 `jshERP-boot/src/main/java/com/jsh/erp/service/SystemConfigService.java:L511-L520`、完整文件摘要和行段回到保存源码；它只覆盖负库存读取链的节选，不能替代完整租户范围、完整实现或负库存政策。
 3. 因此当前 Demo 将两者并列为同一治理议题的互补资料，而不是把 GitHub 节选误写成对数据库租户配置的第二份独立佐证。只有完成正式 Evidence 准入和范围校验后，才可重新判断是否 `CORROBORATES`。
 4. Luna 生成的“统一禁止负库存”制度是 `GENERATED_TARGET`，带 `PENDING_HUMAN_CONFIRMATION`。它与当前可配置现状不自动形成事实替换，而是呈现给人类保留、合并或延期。
 

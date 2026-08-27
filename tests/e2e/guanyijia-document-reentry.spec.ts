@@ -62,9 +62,9 @@ test('1440 启动自动打开数据库文档，时间线和来源资料均可再
 
   // The source opens on actionable review results. Source material remains
   // available from each claim rather than being an anonymous document preface.
-  const resultTab = document.getByRole('tab', { name: '审阅清单', exact: true });
+  const resultTab = document.getByRole('tab', { name: '审阅事项', exact: true });
   await expect(resultTab).toHaveAttribute('aria-selected', 'true');
-  const resultPanel = document.getByRole('region', { name: '审阅清单' });
+  const resultPanel = document.getByRole('region', { name: '审阅事项' });
   await expect(resultPanel).toBeVisible();
   const firstClaim = resultPanel.locator('[data-review-claim]').first();
   await expect(firstClaim).toBeVisible();
@@ -153,7 +153,7 @@ test('1024 同源依据只在结论下展开，不会强制打开来源资料抽
   if (await inspector.isVisible()) await inspector.getByRole('button', { name: '关闭来源资料' }).click();
   await expect(inspector).toBeHidden();
 
-  const firstClaim = document.getByRole('region', { name: '审阅清单', exact: true })
+  const firstClaim = document.getByRole('region', { name: '审阅事项', exact: true })
     .locator('[data-review-claim]').first();
   await firstClaim.getByRole('button', { name: '查看来源依据', exact: true }).click();
 
@@ -161,7 +161,7 @@ test('1024 同源依据只在结论下展开，不会强制打开来源资料抽
   await expect(inspector).toBeHidden();
 });
 
-test('390 审阅清单和标准化文档保持受控横向滚动', async ({ page }) => {
+test('390 审阅事项和标准化文档保持受控横向滚动', async ({ page }) => {
   await bootstrap(page, 390);
 
   await page.getByRole('button', { name: '开始资料整理' }).click();
@@ -172,9 +172,9 @@ test('390 审阅清单和标准化文档保持受控横向滚动', async ({ page
     exact: true,
   })).toBeVisible();
 
-  const resultTab = document.getByRole('tab', { name: '审阅清单', exact: true });
+  const resultTab = document.getByRole('tab', { name: '审阅事项', exact: true });
   await expect(resultTab).toHaveAttribute('aria-selected', 'true');
-  const resultPanel = document.getByRole('region', { name: '审阅清单' });
+  const resultPanel = document.getByRole('region', { name: '审阅事项' });
   await expect(resultPanel).toBeVisible();
   await document.getByRole('tab', { name: '标准化文档', exact: true }).click();
   const markdownPanel = document.getByRole('region', { name: '标准化文档' });

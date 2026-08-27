@@ -2,6 +2,7 @@ import type { StandardizationSourceStepStatus } from '../standardization-run/typ
 import {
   candidateReviewForConflict,
   candidateReviewForSource,
+  type CandidateReviewEvidence,
   type CandidateReviewProjection,
 } from './candidate-review-projection.ts';
 
@@ -45,6 +46,38 @@ const conflictIdByTopic: Readonly<Record<CandidateReviewProjection['topic'], str
   NEGATIVE_STOCK: 'gyj-conflict-negative-stock',
   DEBT_FIELDS: 'gyj-conflict-debt-schema',
   DOCUMENT_STATUS: 'gyj-conflict-status-nine',
+};
+
+// This is a display-only excerpt from the immutable V6 content sidecar, not
+// a change to the formal candidate bundle. Its complete file digest and
+// locator are verified by the source-admission regression test against the
+// frozen V6 tree.
+const v6NegativeStockCodeEvidence: CandidateReviewEvidence = {
+  evidenceRef: 'github:v6:SystemConfigService:getMinusStockFlag',
+  sourceId: 'guanyijia_github',
+  snapshotId: 'guanyijia-demo-content-v6-20260826',
+  evidenceClass: 'FROZEN_RECORD',
+  evidenceClassLabel: '固定版本源码节选',
+  title: '负库存标记读取',
+  excerpt: [
+    '    public boolean getMinusStockFlag() throws Exception {',
+    '        boolean minusStockFlag = false;',
+    '        List<SystemConfig> list = getSystemConfig();',
+    '        if(list.size()>0) {',
+    '            String flag = list.get(0).getMinusStockFlag();',
+    '            if(("1").equals(flag)) {',
+    '                minusStockFlag = true;',
+    '            }',
+    '        }',
+    '        return minusStockFlag;',
+    '',
+  ].join('\n'),
+  locationLabel: 'V6 固定版本源码行',
+  locationValue: 'jshERP-boot/src/main/java/com/jsh/erp/service/SystemConfigService.java:L511-L520',
+  sourceName: 'GitHub V6 固定版本源码',
+  supportedClaim: '冻结源码读取负库存配置标记。',
+  claimId: 'github-negative-stock-control',
+  artifactDigest: 'sha256:99d6c27e7705c724c5c2e03aa681ba259ea3e794d55b18627fc90f605baad886',
 };
 
 export type AdmittedSource = {
@@ -99,6 +132,19 @@ function prerequisitesMet(
   return required.every((sourceId) => admitted.has(sourceId));
 }
 
+function withV6NegativeStockCode(projection: CandidateReviewProjection): CandidateReviewProjection {
+  if (projection.topic !== 'NEGATIVE_STOCK') return projection;
+  return {
+    ...projection,
+    evidence: [
+      ...projection.evidence.filter((evidence) => evidence.sourceId !== 'guanyijia_github'),
+      v6NegativeStockCodeEvidence,
+    ],
+    relationExplanation: 'MySQL 只证明存在 minus_stock_flag 字段；GitHub 固定源码节选证明读取该标记。两者均不足以单独推断负库存政策。',
+    reviewGuidance: 'MySQL 只能证明字段存在，GitHub 只能证明读取该标记；是否允许或拦截负库存仍须通过正式决定确认。',
+  };
+}
+
 function findingsForSource(input: {
   currentSourceId: string;
   admitted: ReadonlySet<string>;
@@ -129,7 +175,7 @@ function findingsForSource(input: {
     // that this run has already admitted.
     const complete = candidateReviewForConflict(conflictIdByTopic[finding.topic]);
     const evidence = complete?.evidence.filter((item) => input.admitted.has(item.sourceId)) ?? finding.evidence;
-    return evidence.length ? [{ ...finding, evidence }] : [];
+    return evidence.length ? [withV6NegativeStockCode({ ...finding, evidence })] : [];
   });
 }
 
@@ -158,7 +204,10 @@ export function projectSourceReviewVisibility(input: {
     && input.currentConflictId
     && conflictPrerequisites
     && prerequisitesMet(conflictPrerequisites, admitted)
-    ? candidateReviewForConflict(input.currentConflictId)
+    ? (() => {
+      const projection = candidateReviewForConflict(input.currentConflictId);
+      return projection ? withV6NegativeStockCode(projection) : undefined;
+    })()
     : undefined;
 
   return structuredClone({ sourceDocument, comparisonFindings, actionableConflict });
