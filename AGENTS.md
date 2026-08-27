@@ -48,7 +48,12 @@
 - Only the explicit
   `npm run evidence:guanyijia:content:candidates:generate -- <sourceId>`
   maintenance command may invoke the logged-in Codex session. It handles one
-  explicit source per invocation and never retries automatically. A V7
+  explicit source per invocation; it never retries automatically or reruns all
+  five sources for one source. After an initial generation, allow at most two
+  explicit content-improvement rounds for that source. Infrastructure or
+  integrity failures are fatal: stop and preserve the receipt rather than
+  retrying. Length, style, and density findings are warnings only; they do not
+  authorize another generation round or block the candidate workflow. A V7
   candidate remains separate from a frozen sidecar until the maintainer creates
   a source-keyed selection with
   `npm run evidence:guanyijia:content:candidates:selection -- <selection.json>
@@ -139,6 +144,31 @@
 - Once permission is granted, use only the already-approved maintenance
   command, keep the ChatGPT-session/no-API-key constraint, and record the
   permission preflight result in the generation receipt.
+
+## Codex context safety and delegation
+
+- Treat long Codex conversations as an operational resource, not as the
+  durable project record. At a phase boundary, write a concise tracked
+  handoff containing the approved contract, Git state, completed work,
+  remaining work, and verification status, then continue in a fresh task.
+- Never delegate with full conversation history from a large task. Sub-agents
+  must start with no inherited history and receive only a bounded brief plus
+  repository file paths. Do not repeat screenshots, raw logs, generated
+  artifacts, or large command output in their prompts.
+- On a 16 GB development host, use at most two sub-agents concurrently, and
+  only for independent work that does not share core implementation files.
+  Integration, builds, Playwright, and other memory-heavy verification remain
+  serial.
+- Use bounded command output and narrow tests. Reference large evidence and
+  screenshots by local path instead of embedding or copying their contents.
+- Use conservative rollover guardrails: prepare a handoff when a task rollout
+  approaches 500 MB, and move work to a fresh task before it reaches 1 GB or
+  before starting another major phase. Automatic model-context compaction is
+  not a substitute for task rollover.
+- If the Codex core process shows sustained memory growth or exceeds roughly
+  half of host RAM, stop new delegation and heavy commands, preserve the
+  handoff, and restart in a fresh task. Do not delete session history or state
+  databases as an ad-hoc fix.
 
 ## UI and test rules
 
