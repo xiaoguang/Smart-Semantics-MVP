@@ -23,8 +23,13 @@ not regenerate the plan from conversation history.
 - Branch: `codex/data-standardization-review-ia`
 - Baseline on `main`: `6af9fac chore: establish linguan prototype baseline`
 - Committed RED contract tests: `eaf3516 test: define remaining review experience contracts`
-- The feature implementation is intentionally still uncommitted and requires
-  review and verification before its final commit and push.
+- Immutable feature start: `835b802 feat: finalize source review information architecture`.
+- Completed implementation commit: `261569c fix: preserve nonblocking review continuation`.
+- At the time this final record was prepared, local `HEAD` was `261569c` and
+  `origin/codex/data-standardization-review-ia` was `835b802` (`ahead 1`).
+  This record is committed immediately after that implementation commit; after
+  its own commit and push, `HEAD` is the final handoff record and the branch
+  must have no ahead/behind indicator.
 - Do not create a directory backup, force-push, deploy, call an LLM, generate
   V7, or modify frozen V6 content.
 
@@ -96,94 +101,124 @@ Fixed UX rules:
   normalize to Guanyijia. Hide `零售经营语义模型` from the visible selector but
   preserve retail V1/V2 data and fixtures.
 
-## Work completed before handoff
+## Final completion record
 
-1. Git baseline was committed and pushed to `main`; the feature branch was
-   created before implementation.
-2. Three RED contract test files were committed in `eaf3516`.
-3. Default-space implementation is present in the working tree:
-   persisted invalid/retail selections normalize to Guanyijia, the visible
-   retail selector entry is filtered, and `CONTEXT.md` was updated. The LLM
-   maintenance and Codex context-safety rules are committed together with this
-   handoff. A scoped read-only review reported PASS; its targeted policy test
-   recorded 5 passing tests.
-4. Nonblocking source advancement and negative-stock evidence changes are
-   present in the working tree. The producer ran its direct test group with
-   66 passing tests and no failures. Independent review was interrupted by the
-   memory incident and is still required.
-5. Three-tab UI/projection and directly conflicting test updates are present
-   in the working tree, but the producer did not leave a completion report.
-   Treat this area as incomplete until its diff is reviewed and the focused
-   tests pass.
-6. No final TypeScript/build/content/E2E verification has been run after the
-   combined implementation. Nothing in the uncommitted implementation should
-   be called complete yet.
+1. The three-tab surface is complete: `审阅事项` contains pending matters,
+   individual gaps and retained decisions; `审阅结论` contains mutually
+   exclusive core conclusions and a default-open object directory; `标准化文档`
+   continues to render the unchanged V6 nine-section reader and same-revision
+   Markdown source.
+2. The Workbench now separates current readable document from first unresolved
+   difference. Active `READING`/`DOCUMENT_READY` wins document selection;
+   otherwise the highest-order read document is retained. Difference selection
+   is stable by source order and introduced conflict order.
+3. `CONFLICT_BLOCKED` and `READY` continue with `READ_NEXT_SOURCE` whenever a
+   source remains pending. All five sources can be read before debt, negative
+   stock and status 9 decisions are saved; unresolved differences still reject
+   generation until the last decision transitions the run to `READY_FOR_OUTPUT`.
+4. Completing a source preserves its document, revision, tab and reading
+   position. Its only continuation action is the explicit `审阅下一个来源`.
+   A timeline-opened conflict uses a temporary Review Surface layer with only
+   `保存当前决定`; closing it restores the underlying source review. A saved
+   decision advances only to the next difference or the result stage, never
+   auto-loads a source.
+5. Direct browser contracts cover the completed-document re-entry, conflict
+   layer primary ownership, deferred five-source decisions, status-9 gap,
+   negative-stock source lines, narrow layout and real 200% zoom. Two stale
+   browser assumptions were updated: the status-9 finding belongs to review
+   matters rather than review conclusions, and a short document need not force
+   the outer workbench to scroll.
+6. Current product and architecture facts were updated in `README.md`, the
+   demo guide, content snapshot, UI action hierarchy, M3/M4 architecture and
+   multi-source evidence governance. No new authority design document was
+   created; the external plan and dated historical execution reports remain
+   unchanged.
 
-## Current modified implementation surface
+## Final implementation surface
 
-Use `git status --short` as the authority. At handoff it includes:
+`261569c` changes only the approved Workbench runtime/UI seam, its direct unit
+and browser contracts, one narrow reader overflow rule, and the six current
+fact documents. It does not change `CONTEXT.md`, generated content, V6,
+formal V1/V2 data, source snapshots or pinned browser content.
 
-- Review projection/workbench and related unit/E2E contracts.
-- Standardization runtime and nonblocking-gap tests.
-- Source-review visibility and verified GitHub negative-stock presentation.
-- Default workspace normalization and selector filtering.
-- `src/features/data-standardization/CONTEXT.md` and two existing architecture
-  contract documents. `AGENTS.md` and this handoff are committed separately
-  before the clean continuation task is created.
+No implementation work remains. The only delivery action after committing this
+record is to push `codex/data-standardization-review-ia`; do not merge, deploy,
+back up, amend `835b802`, rebase or force-push.
 
-The two architecture-document edits must be checked for scope: update current
-facts only; do not turn them into a new authority design or a cross-document
-rewrite.
+## Final targeted verification
 
-## Remaining work, in order
+All commands below were run serially on 2026-08-27 and passed:
 
-1. Review every uncommitted diff for scope and correctness. Pay special
-   attention to the incomplete three-tab work, runtime state combinations,
-   runtime absence of filesystem/source access, and the two architecture docs.
-2. Make the three compact RED tests green without changing V6 or the approved
-   page contract.
-3. Confirm `审阅事项` contains pending matters, individual gaps, and completed
-   decisions; confirm all relevant user-visible gaps are reachable there.
-4. Confirm `审阅结论` shows core conclusions and a default-open object
-   directory without duplicate descriptions or the old `31 项可追踪对象`
-   treatment.
-5. Confirm a reviewed source remains readable and `审阅下一个来源` advances
-   correctly.
-6. Confirm start-next is nonblocking while final delivery still rejects an
-   unresolved formal decision.
-7. Run the approved targeted verification serially, fix only failures directly
-   caused by this work, then perform a final diff/invariant review.
-8. Commit the implementation on this feature branch and push the branch. Do
-   not deploy or merge.
+```text
+node --experimental-strip-types --test \
+  src/features/data-standardization/review-information-architecture-compact-contract.test.ts
+  → 5 passed
 
-## Required targeted verification
+node --experimental-strip-types --test \
+  src/features/data-standardization/source-admission-nonblocking-gaps.test.ts
+  → 2 passed
 
-Run serially:
+node --experimental-strip-types --test \
+  src/features/model-projects/model-project-ui-policy.test.ts
+  → 5 passed
 
-```bash
-node --experimental-strip-types --test src/features/data-standardization/review-information-architecture-compact-contract.test.ts
-node --experimental-strip-types --test src/features/data-standardization/source-admission-nonblocking-gaps.test.ts
-node --experimental-strip-types --test src/features/model-projects/model-project-ui-policy.test.ts
+node --experimental-strip-types --test \
+  src/features/data-standardization/guanyijia-workbench-runtime.test.ts
+  → 47 passed
+
 npm run test:data-standardization
+  → 79 passed
+
 npm run test:standardization-run
+  → 59 passed
+
 npm run test:standardization-deliverable
+  → 24 passed
+
 npm run evidence:guanyijia:content:check
+  → V6 snapshot `guanyijia-demo-content-v6-20260826`, 5 source reviews
+
 npm run evidence:guanyijia:content:package:check
+  → V6 content and browser package checks passed
+
 npm run build
+  → TypeScript and Vite production build passed
 ```
 
-Then run only the directly relevant five-source, review/re-entry, and responsive
-Playwright stories at 1440, 1024, 390, and real 200% zoom. Do not run the full
-repository suite.
+`lsof -nP -iTCP:5202 -sTCP:LISTEN` returned no listener (exit 1), so no unknown
+process was stopped. The direct single-worker browser run then passed all 37
+tests in 8.4 minutes:
 
-## Invariants
+```bash
+node scripts/run-cp8-playwright.mjs \
+  tests/e2e/guanyijia-curated-review.spec.ts \
+  tests/e2e/guanyijia-document-reentry.spec.ts \
+  tests/e2e/guanyijia-five-source-story.spec.ts \
+  tests/e2e/information-subtraction.spec.ts \
+  tests/e2e/source-document-set-story.spec.ts \
+  tests/e2e/standardization-responsive.spec.ts \
+  tests/e2e/standardization-zoom.spec.ts
+```
 
-- Formal Guanyijia V1, retail V1/V2, Pinned Bundle, golden summaries, original
-  evidence, snapshots, and backups remain unchanged.
+It covered 1440, 1024, 390, 320, fullscreen breakpoints and real Chrome 200%
+zoom; no page error, unexpected console error or failure screenshot was
+reported. The runner printed `127.0.0.1:5202 closed` at both start and finish.
+
+Final pre-commit checks passed: `git diff --check`; `git diff --stat 835b802`;
+and `git diff --name-only 835b802`. The diff contains only the approved
+Workbench/UI/test/current-doc paths. No full repository suite was run.
+
+## Final invariant review
+
+- Confirmed unchanged by the final name-only diff: formal Guanyijia V1, retail
+  V1/V2, Pinned Bundle, golden summaries, original evidence and snapshots.
+  No backup, V7, deployment configuration or unrelated formatting change was
+  created.
 - V6 remains active and retains five source identities, nine sections per
   source, 30 MySQL tables, 6 procedures, 43 GitHub conclusions, 69 GitHub
   evidence fragments, 56 terms, and 80 relations.
-- Ordinary startup, tests, build, and demo do not access source systems, run a
-  scanner, or call Codex/LLM.
-- Do not add multi-tab concurrency correctness, AI/ontology copy review, or
-  other modules to this work unit.
+- The final V6 checks, tests, build and browser runner used only committed
+  resources; no source-system access, scanner or Codex/LLM call occurred.
+- `StandardizationRun` schema, persisted command shape and the
+  `READY_FOR_OUTPUT` deliverable gate are unchanged. Multi-tab concurrency,
+  AI/ontology copy review and other modules remain outside this work unit.
