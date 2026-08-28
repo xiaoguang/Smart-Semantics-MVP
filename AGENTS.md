@@ -205,3 +205,36 @@
 - Use TDD: a behavior test must fail for the intended missing behavior before
   the production implementation is written. Run only directly relevant tests
   unless the user asks for broader verification.
+
+## Design review and generative-content planning gates
+
+- Every implementation plan must explicitly inventory whether it invokes an
+  LLM or other generative model to produce product content, evidence
+  summaries, UI copy, documents, images, or other drift-prone artifacts.
+  State `none` explicitly when no such generation is planned.
+- Any new or changed user-facing design must be presented to the user before
+  implementation. Prefer a Markdown wireframe plus terminology, state and
+  interaction tables. Use a rendered page or visual prototype only when
+  Markdown cannot express the design adequately.
+- After approval, the exact accepted design must be written into the relevant
+  current design document before production implementation begins. Code,
+  tests and current-fact documentation must conform to that document. If
+  implementation requires a design change, stop, update the design artifact
+  and obtain review again before continuing.
+- Every plan task that invokes a generative model must declare: (1) exact
+  frozen inputs and output artifact; (2) ideal acceptance requirements; (3)
+  task-specific fatal errors that must never pass; (4) deterministic
+  validation or human review used after generation; (5) improvement round 1;
+  (6) improvement round 2; (7) the decision rule after round 2; and (8)
+  estimated execution time.
+- A generation task consists of one initial generation and at most two
+  explicit, bounded improvement rounds. Never retry automatically and never
+  rerun unrelated sources or artifacts because one item needs improvement.
+- Round 1 prioritizes factual correctness, source identity, required coverage,
+  schema and structural validity. Round 2 addresses remaining accuracy,
+  clarity, density and presentation findings without broadening the approved
+  scope.
+- After round 2, the task may continue when every task-specific fatal error has
+  been eliminated, even if non-fatal ideal-quality warnings remain. Record
+  those warnings honestly. If any fatal error remains, stop, preserve the
+  output and validation receipt, and discuss the next approach with the user.
