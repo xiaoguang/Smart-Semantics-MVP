@@ -191,7 +191,7 @@ test('GitHub 本来源建议保存后，可在完成来源审阅前处理首项�
   await editor.getByRole('button', { name: '预览修改', exact: true }).click();
   await editor.getByRole('button', { name: '确认修改', exact: true }).click();
 
-  const debt = github.getByRole('region', { name: '跨来源事项', exact: true })
+  const debt = github.getByRole('region', { name: '来源差异与比较', exact: true })
     .locator('[data-review-matter="DEBT_FIELDS"]');
   await expect(debt.getByRole('button', { name: '处理该项', exact: true })).toBeVisible();
   await debt.getByRole('button', { name: '处理该项', exact: true }).click();

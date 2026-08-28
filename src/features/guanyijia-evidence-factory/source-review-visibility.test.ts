@@ -15,11 +15,17 @@ const snapshots = {
 
 function sources(
   states: Partial<Record<keyof typeof snapshots, AdmittedSource['status']>>,
+  conflicts: Partial<Record<keyof typeof snapshots, {
+    introducedConflictIds?: string[];
+    resolvedConflictIds?: string[];
+  }>> = {},
 ): AdmittedSource[] {
   return Object.entries(snapshots).map(([sourceId, snapshotId]) => ({
     sourceId,
     snapshotId,
     status: states[sourceId as keyof typeof snapshots] ?? 'PENDING',
+    introducedConflictIds: conflicts[sourceId as keyof typeof snapshots]?.introducedConflictIds ?? [],
+    resolvedConflictIds: conflicts[sourceId as keyof typeof snapshots]?.resolvedConflictIds ?? [],
   }));
 }
 
@@ -157,4 +163,53 @@ test('formal decisions appear as soon as their required sources are admitted', (
   ]);
   assert.equal(policyReady.comparisonFindings.find((item) => item.topic === 'NEGATIVE_STOCK')?.target !== undefined, true);
   assert.equal(policyReady.comparisonFindings.find((item) => item.topic === 'DOCUMENT_STATUS')?.target !== undefined, true);
+});
+
+test('已引入的欠款字段正式差异始终成为审阅事项卡，而不是只留在时间线', () => {
+  const visibility = projectSourceReviewVisibility({
+    currentSourceId: 'guanyijia_github',
+    currentConflictId: 'gyj-conflict-debt-schema',
+    sources: sources({
+      guanyijia_mysql: 'REVIEWED', guanyijia_github: 'DOCUMENT_READY',
+    }, {
+      guanyijia_github: { introducedConflictIds: ['gyj-conflict-debt-schema'] },
+    }),
+  });
+  const projection = (visibility as typeof visibility & {
+    matterProjection?: {
+      items: Array<{ kind: string; conflictId?: string; state: string; stableId: string }>;
+      integrityIssues: unknown[];
+    };
+  }).matterProjection;
+
+  assert.deepEqual(projection?.items.filter((item) => item.kind === 'FORMAL_CONFLICT').map((item) => ({
+    stableId: item.stableId,
+    kind: item.kind,
+    conflictId: item.conflictId,
+    state: item.state,
+  })), [{
+    stableId: 'conflict:gyj-conflict-debt-schema',
+    kind: 'FORMAL_CONFLICT',
+    conflictId: 'gyj-conflict-debt-schema',
+    state: 'ACTIONABLE',
+  }]);
+  assert.deepEqual(projection?.integrityIssues, []);
+});
+
+test('未知的已引入差异必须显式报告完整性错误，不能静默从审阅事项消失', () => {
+  const visibility = projectSourceReviewVisibility({
+    currentSourceId: 'guanyijia_github',
+    sources: sources({
+      guanyijia_mysql: 'REVIEWED', guanyijia_github: 'DOCUMENT_READY',
+    }, {
+      guanyijia_github: { introducedConflictIds: ['gyj-conflict-missing-card'] },
+    }),
+  });
+  const projection = (visibility as typeof visibility & {
+    matterProjection?: { integrityIssues: Array<{ conflictId: string; reason: string }> };
+  }).matterProjection;
+
+  assert.deepEqual(projection?.integrityIssues, [{
+    conflictId: 'gyj-conflict-missing-card', reason: 'UNKNOWN_CONFLICT',
+  }]);
 });

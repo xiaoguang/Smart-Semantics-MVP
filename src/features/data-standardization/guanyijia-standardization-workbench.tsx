@@ -32,6 +32,7 @@ import { createStandardizationModelingProjector } from '../standardization-deliv
 import type {
   DeliverableSnapshot,
   MergedStandardizationDocument,
+  StandardizationDeliverablePreview,
   StandardizationRunReader,
   StandardizationModelingHandoffReceipt,
 } from '../standardization-deliverable/types.ts';
@@ -61,11 +62,10 @@ import type {
 import { createGuanyijiaStandardizationStory } from '../guanyijia-standardization-story/index.ts';
 import {
   candidateReviewTopicForBlock,
-  type CandidateReviewProjection,
 } from '../guanyijia-evidence-factory/candidate-review-projection.ts';
 import {
-  conflictIdForSourceReviewTopic,
   projectSourceReviewVisibility,
+  type SourceReviewMatter,
 } from '../guanyijia-evidence-factory/source-review-visibility.ts';
 import {
   projectSourceReviewWorkspace,
@@ -105,6 +105,7 @@ import {
 import StandardizationFactsInspector from './standardization-facts-inspector.tsx';
 import SourceDocumentReadable, { SourceReviewEvidenceDetails } from './source-document-readable.tsx';
 import StandardizedDocumentReader from './standardized-document-reader.tsx';
+import { projectReviewSupplementMatters } from './standardized-document-reading.ts';
 import {
   projectStandardizedDocument,
   type StandardizedDocumentClaim,
@@ -510,6 +511,11 @@ export default function GuanyijiaStandardizationWorkbench({
   const [snapshot, setSnapshot] = useState<GuanyijiaWorkbenchSnapshot | null>(null);
   const [runStateUnavailable, setRunStateUnavailable] = useState(false);
   const [deliverableSnapshot, setDeliverableSnapshot] = useState<DeliverableSnapshot>();
+  const [deliverablePreview, setDeliverablePreview] = useState<StandardizationDeliverablePreview>();
+  const [deliverablePreviewLoading, setDeliverablePreviewLoading] = useState(false);
+  const [deliverablePreviewError, setDeliverablePreviewError] = useState<string>();
+  const [deliverablePreviewTab, setDeliverablePreviewTab] = useState<'MATTERS' | 'CONCLUSIONS' | 'DOCUMENT'>('MATTERS');
+  const [deliverablePreviewDocumentView, setDeliverablePreviewDocumentView] = useState<'READING' | 'MARKDOWN'>('READING');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [interactionAnnouncement, setInteractionAnnouncement] = useState('');
@@ -781,6 +787,55 @@ export default function GuanyijiaStandardizationWorkbench({
       .catch((cause) => { if (!cancelled) setError(businessErrorMessage(cause, '标准化结果暂时无法读取，请刷新后重试。')); });
     return () => { cancelled = true; };
   }, [currentUser.userId, deliverables, snapshot?.run?.revision, snapshot?.run?.runId]);
+
+  // The result screen is intentionally a read-only, deterministic preview.
+  // Keep it in memory after generation so changing lifecycle status never
+  // replaces the three tab projections or their scroll positions.
+  useEffect(() => {
+    const run = snapshot?.run;
+    if (!run) {
+      setDeliverablePreview(undefined);
+      setDeliverablePreviewLoading(false);
+      setDeliverablePreviewError(undefined);
+      return;
+    }
+    const currentPreview = deliverablePreview
+      && deliverablePreview.runId === run.runId
+      && deliverablePreview.runRevision === run.revision
+      ? deliverablePreview
+      : undefined;
+    const canReadMergedPreview = run.status === 'READY_FOR_OUTPUT'
+      || deliverableSnapshot?.deliverable?.mode === 'MERGED_DOCUMENT';
+    if (!canReadMergedPreview) {
+      if (!currentPreview) setDeliverablePreview(undefined);
+      setDeliverablePreviewLoading(false);
+      setDeliverablePreviewError(undefined);
+      return;
+    }
+    if (currentPreview) {
+      setDeliverablePreviewLoading(false);
+      setDeliverablePreviewError(undefined);
+      return;
+    }
+    let cancelled = false;
+    setDeliverablePreviewLoading(true);
+    setDeliverablePreviewError(undefined);
+    deliverables.preview({
+      runId: run.runId,
+      actorUserId: currentUser.userId,
+      expectedRunRevision: run.revision,
+    }).then((next) => {
+      if (!cancelled) setDeliverablePreview(next);
+    }).catch((cause) => {
+      if (!cancelled) setDeliverablePreviewError(businessErrorMessage(
+        cause,
+        '完整合并预览暂时无法读取，请重新检查资料和已保存决定。',
+      ));
+    }).finally(() => {
+      if (!cancelled) setDeliverablePreviewLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [currentUser.userId, deliverablePreview, deliverableSnapshot?.deliverable, deliverables, snapshot?.run]);
 
   useEffect(() => {
     const element = shellRef.current;
@@ -1057,6 +1112,9 @@ export default function GuanyijiaStandardizationWorkbench({
   const sourceStandardDocument = sourceStandardDocumentRead.document;
   const standardizedDocumentValidationFailed = sourceStandardDocumentRead.validationFailed;
   const currentReviewSource = sourceReviewSource;
+  const scriptedReviewEdits = snapshot?.scriptedEdits ?? [];
+  const pendingScriptedReviewEdits = scriptedReviewEdits.filter((edit) => edit.status === 'PENDING');
+  const sourceReviewSupportsScriptedEdits = scriptedReviewEdits.length > 0;
   const sourceReviewVisibility = useMemo(() => snapshot?.run && currentReviewSource
     ? projectSourceReviewVisibility({
         currentSourceId: currentReviewSource.sourceId,
@@ -1065,14 +1123,18 @@ export default function GuanyijiaStandardizationWorkbench({
           sourceId: step.sourceId,
           snapshotId: step.snapshotId ?? '',
           status: step.status,
+          introducedConflictIds: step.introducedConflictIds,
+          resolvedConflictIds: step.resolvedConflictIds,
         })),
+        localSuggestionPending: pendingScriptedReviewEdits.length > 0,
       })
-    : undefined, [currentReviewSource, snapshot?.currentConflict?.conflictId, snapshot?.run]);
+    : undefined, [currentReviewSource, pendingScriptedReviewEdits.length, snapshot?.currentConflict?.conflictId, snapshot?.run]);
+  const sourceReviewMatters = sourceReviewVisibility?.matterProjection.items ?? [];
+  const crossSourceMatters = sourceReviewMatters.filter((matter) => matter.state !== 'RESOLVED');
+  const sourceReviewIntegrityIssues = sourceReviewVisibility?.matterProjection.integrityIssues ?? [];
+  const sourceReviewIntegrityBlocked = sourceReviewIntegrityIssues.length > 0;
   const usesCuratedReview = Boolean(curatedReview);
   const isMysqlCuratedReview = curatedReview?.sourceId === 'guanyijia_mysql';
-  const scriptedReviewEdits = snapshot?.scriptedEdits ?? [];
-  const pendingScriptedReviewEdits = scriptedReviewEdits.filter((edit) => edit.status === 'PENDING');
-  const sourceReviewSupportsScriptedEdits = scriptedReviewEdits.length > 0;
   const completedFormalReviewDecisions = useMemo<ReviewCompletedFormalDecision[]>(() => (
     (snapshot?.resolutions ?? []).map((resolution) => {
       const decision: BusinessConflictDecision = resolution.strategy === 'KEEP_CURRENT'
@@ -1191,6 +1253,19 @@ export default function GuanyijiaStandardizationWorkbench({
       claims,
     });
   }, [curatedReview?.standardSections, curatedWorkspace, revisedSourceStandardDocument, snapshot?.current?.document]);
+  const reviewSupplementMatters = useMemo(() => {
+    const document = snapshot?.current?.document;
+    if (!standardizedDocument || !currentReviewSource || !document) return [];
+    return projectReviewSupplementMatters({
+      source: {
+        sourceId: currentReviewSource.sourceId,
+        sourceName: displaySourceName(currentReviewSource.sourceId, currentReviewSource.sourceName),
+        documentId: document.documentId,
+        documentRevision: document.revision,
+      },
+      document: standardizedDocument,
+    });
+  }, [currentReviewSource, snapshot?.current?.document, standardizedDocument]);
   const editingScriptedReviewEdit = scriptedReviewEdits.find((edit) => edit.definition.editId === editingScriptedEditId);
   const selectedInspectorMatchesCurrentSource = !selectedInspectorSourceId
     || selectedInspectorSourceId === snapshot?.current?.source.sourceId;
@@ -1410,12 +1485,26 @@ export default function GuanyijiaStandardizationWorkbench({
     setBusy(true); setError(undefined);
     try {
       const current = deliverableSnapshot?.deliverable;
+      const currentPreview = deliverablePreview
+        && deliverablePreview.runId === snapshot.run.runId
+        && deliverablePreview.runRevision === snapshot.run.revision
+        ? deliverablePreview
+        : undefined;
+      if (type === 'GENERATE_DELIVERABLE' && !currentPreview) {
+        throw new Error('完整合并预览尚未就绪或已过期，请重新核对后再生成标准化结果。');
+      }
       const common = {
         type, runId: snapshot.run.runId, actorUserId: currentUser.userId,
         commandId: `${snapshot.storyId}:${currentUser.userId}:${type}:run-r${snapshot.run.revision}:deliverable-r${current?.revision ?? 0}`,
       } as const;
       const next = type === 'GENERATE_DELIVERABLE'
-        ? await deliverables.execute({ ...common, type, mode: 'MERGED_DOCUMENT', expectedRunRevision: snapshot.run.revision })
+        ? await deliverables.execute({
+          ...common,
+          type,
+          mode: 'MERGED_DOCUMENT',
+          expectedRunRevision: snapshot.run.revision,
+          expectedPreviewSha256: currentPreview!.previewSha256,
+        })
         : await deliverables.execute({
             ...common, type, deliverableId: current!.deliverableId,
             expectedDeliverableRevision: current!.revision,
@@ -2458,6 +2547,12 @@ export default function GuanyijiaStandardizationWorkbench({
     ? modelingEligibility.excludedCandidateIds.length
       + modelingEligibility.conclusions.filter((item) => !item.candidateId && item.eligibility !== 'ELIGIBLE').length
     : 0;
+  const deliverablePreviewForRun = deliverablePreview?.runId === snapshot?.run?.runId
+    ? deliverablePreview
+    : undefined;
+  const readyDeliverablePreview = deliverablePreviewForRun?.runRevision === snapshot?.run?.revision
+    ? deliverablePreviewForRun
+    : undefined;
   const deliveryPhase = Boolean(deliverable) || ['READY_FOR_OUTPUT', 'FROZEN', 'HANDED_OFF']
     .includes(snapshot?.run?.status ?? '');
   const isDeliverableAuthor = deliverable?.authorUserId === currentUser.userId
@@ -2471,7 +2566,9 @@ export default function GuanyijiaStandardizationWorkbench({
   const assistantPatchLayer = reviewSurface.state.layers.findLast((layer) => layer.kind === 'ASSISTANT_PATCH');
   const deliverableLayer = reviewSurface.state.layers.findLast((layer) => layer.kind === 'DELIVERABLE');
   const blockingReviewFailures = blockingReviewWindowFailures(reviewWindowErrors);
-  const reviewMutationBlocked = blockingReviewFailures.length > 0 || curatedValidationFailed;
+  const reviewMutationBlocked = blockingReviewFailures.length > 0
+    || curatedValidationFailed
+    || sourceReviewIntegrityBlocked;
   const documentWindowFailure = reviewWindowErrors.DOCUMENT_BLOCKS;
   const documentRecoveryMessage = curatedValidationFailed
     ? '真实审阅文档校验失败'
@@ -2510,6 +2607,12 @@ export default function GuanyijiaStandardizationWorkbench({
   function allowReviewMutation(
     mutation: Parameters<typeof assertReviewMutationAllowed>[1],
   ) {
+    if (sourceReviewIntegrityBlocked) {
+      const detail = '来源差异完整性错误尚未排除；为防止正式差异被遗漏，当前不能保存、完成或生成标准化结果。';
+      setError(detail);
+      message.error(detail);
+      return false;
+    }
     if (historicalDocumentOpen) {
       const detail = '当前正在查看历史文档，请返回当前审阅后再修改或完成审阅。';
       setError(detail);
@@ -2751,10 +2854,6 @@ export default function GuanyijiaStandardizationWorkbench({
     const block = documentEvidenceCompilation.blocks.find((candidate) => candidate.blockId === trace.blockId);
     return block ? [{ ...trace, linePrefix: block.label }] : [];
   }) : [];
-  const crossSourceMatters = sourceReviewVisibility?.comparisonFindings ?? [];
-  const crossSourceSupplements = crossSourceMatters.filter((finding) => (
-    finding.evidence.some((evidence) => evidence.evidenceClass === 'GAP')
-  ));
   const pendingChecklistTasks = useMemo(() => {
     const pendingTaskIds = new Set(pendingScriptedReviewEdits.map((edit) => edit.definition.editId));
     return (curatedWorkspace?.tasks ?? []).filter((task) => pendingTaskIds.has(task.taskId));
@@ -2787,13 +2886,24 @@ export default function GuanyijiaStandardizationWorkbench({
       inlineEvidence?.focus({ preventScroll: true });
     }));
   };
-  const actionForCrossSourceMatter = (finding: CandidateReviewProjection) => {
-    const conflictId = conflictIdForSourceReviewTopic(finding.topic);
+  const actionForCrossSourceMatter = (matter: SourceReviewMatter) => {
+    const finding = matter.finding;
+    if (matter.kind === 'PRELIMINARY_COMPARISON') {
+      return { description: '等待更多来源。' };
+    }
+    const conflictId = matter.conflictId;
+    if (!conflictId) return { description: '差异身份不完整，暂不能处理。' };
     const conflictStep = snapshot?.run?.sources.find((step) => (
       step.introducedConflictIds.includes(conflictId)
         && !step.resolvedConflictIds.includes(conflictId)
     ));
     if (!conflictStep) return { description: '等待更多来源。' };
+    if (matter.state === 'BLOCKED_BY_LOCAL_SUGGESTION') {
+      return { description: '请先核对本来源建议。' };
+    }
+    if (matter.state === 'BLOCKED_BY_PREVIOUS_CONFLICT') {
+      return { description: '请先保存前一项来源差异。' };
+    }
     if (snapshot?.currentConflict?.conflictId !== conflictId) {
       return { description: '请先保存前一项来源差异。' };
     }
@@ -3158,8 +3268,10 @@ export default function GuanyijiaStandardizationWorkbench({
             </article>;
           }) : <Empty description="本次没有修改审阅结论。" />}
         </section> : <section className="guanyijia-review-checklist" aria-label={documentView === 'MATTERS' ? '审阅事项' : '审阅结论'}>
-          {documentView === 'MATTERS' && (pendingChecklistTasks.length || crossSourceMatters.length) ? <section className="guanyijia-checklist-group guanyijia-pending-matters" aria-label="待确认事项">
-            <header><h4>待确认事项</h4><small>{pendingChecklistTasks.length + crossSourceMatters.length} 项待确认</small></header>
+          {documentView === 'MATTERS' && (pendingChecklistTasks.length || crossSourceMatters.length || sourceReviewIntegrityIssues.length) ? <>
+            <header className="guanyijia-review-matters-heading" aria-label="待确认事项"><h4>待确认事项</h4><small>{pendingChecklistTasks.length + crossSourceMatters.length} 项待确认</small></header>
+            {pendingChecklistTasks.length > 0 && <section className="guanyijia-checklist-group guanyijia-local-suggestions" aria-label="本来源建议">
+              <header><h5>本来源建议</h5><small>{pendingChecklistTasks.length} 项待确认</small></header>
             {pendingChecklistTasks.map((task) => {
               const claim = curatedWorkspace!.claims.find((candidate) => candidate.claimId === task.claimId);
               const scriptedEdit = scriptedReviewEdits.find((candidate) => candidate.definition.editId === task.taskId);
@@ -3247,16 +3359,30 @@ export default function GuanyijiaStandardizationWorkbench({
                   </section>}
                 </section>}
               </article>;
-            })}
+            })}</section>}
             {crossSourceMatters.length > 0 && <CrossSourceFindingList
               findings={crossSourceMatters}
+              className="guanyijia-cross-source-matters"
               actionForFinding={actionForCrossSourceMatter}
               expansionKey={`${snapshot.run?.runId ?? 'pending'}:${snapshot.run?.revision ?? 0}`}
             />}
-          </section> : null}
+            {sourceReviewIntegrityIssues.length > 0 && <section className="guanyijia-source-review-integrity" aria-label="来源差异完整性错误">
+              <h5>来源差异完整性错误</h5>
+              {sourceReviewIntegrityIssues.map((issue) => <Alert
+                key={`${issue.conflictId}:${issue.reason}`}
+                data-review-integrity-error={issue.conflictId}
+                type="error"
+                showIcon
+                message={`无法构造来源差异卡：${issue.conflictId}`}
+                description={issue.reason === 'UNKNOWN_CONFLICT'
+                  ? '运行记录包含未知的正式差异身份。为防止差异被静默遗漏，当前不能完成相关写操作或生成标准化结果。'
+                  : '运行记录中的正式差异缺少当前准入资料对应的候选投影。为防止差异被静默遗漏，当前不能完成相关写操作或生成标准化结果。'}
+              />)}
+            </section>}
+          </> : null}
           {documentView === 'MATTERS' && <>
-          {(curatedWorkspace?.checklist.gaps.length || crossSourceSupplements.length) ? <section className="guanyijia-checklist-group" aria-label="待补充资料">
-            <header><h4>待补充资料</h4><small>{(curatedWorkspace?.checklist.gaps.length ?? 0) + crossSourceSupplements.length} 项待补充</small></header>
+          {(curatedWorkspace?.checklist.gaps.length || reviewSupplementMatters.length) ? <section className="guanyijia-checklist-group" aria-label="待补充资料">
+            <header><h4>待补充资料</h4><small>{(curatedWorkspace?.checklist.gaps.length ?? 0) + reviewSupplementMatters.length} 项待补充</small></header>
             {curatedWorkspace?.checklist.gaps.length ? <ul className="guanyijia-gap-list">{curatedWorkspace.checklist.gaps.map((gap) => {
               const claim = curatedWorkspace.claims.find((candidate) => candidate.claimId === gap.claimId);
               const trace = claim
@@ -3275,16 +3401,20 @@ export default function GuanyijiaStandardizationWorkbench({
                 })}</section>}
               </li>;
             })}</ul> : null}
-            {crossSourceSupplements.length > 0 && <ul className="guanyijia-gap-list">{crossSourceSupplements.map((finding) => <li
-              key={`supplement:${finding.topic}`}
-              data-review-supplement={finding.topic}
+            {reviewSupplementMatters.length > 0 && <ul className="guanyijia-gap-list">{reviewSupplementMatters.map((matter) => <li
+              key={matter.stableId}
+              data-review-supplement={matter.stableId}
               tabIndex={-1}
             >
-              <strong>{finding.topic === 'DOCUMENT_STATUS' ? '状态 9 的正式业务含义' : finding.heading}</strong>
-              <p>{finding.topic === 'DOCUMENT_STATUS'
-                ? '当前可信资料尚未说明状态 9 的正式业务含义。'
-                : finding.reviewGuidance}</p>
+              <strong>{matter.sourceName} · 待补充资料 {matter.ordinal}</strong>
+              <p>{matter.text}</p>
+              {matter.relatedConflictIds.length > 0 && <small>关联：{matter.relatedConflictIds.join('、')}</small>}
               <small>下一步：补充官方资料或由业务负责人确认。</small>
+              {matter.markdownAnchor && <div><Button type="link" onClick={() => {
+                setDocumentView('MARKDOWN');
+                setStandardizedDocumentView('READING');
+                setMarkdownAnchorToFocus(matter.markdownAnchor);
+              }}>查看标准化文档对应段落</Button></div>}
             </li>)}</ul>}
           </section> : null}
           {(completedChecklistTasks.length || completedFormalDecisions.length) ? <section className="guanyijia-checklist-group" aria-label="已处理事项">
@@ -3447,6 +3577,89 @@ export default function GuanyijiaStandardizationWorkbench({
     </section>
     : null;
 
+  const deliverablePreviewPanel = deliverablePreviewForRun ? <section
+    className="guanyijia-merged-preview"
+    aria-label="完整合并标准化结果预览"
+    data-merged-preview-sha={deliverablePreviewForRun.previewSha256}
+  >
+    <header className="guanyijia-merged-preview-header">
+      <div>
+        <span>同一份完整合并文档</span>
+        <p>{deliverablePreviewForRun.sourceManifest.sources.length}/5 已读取 · {reviewedCount}/5 已审阅 · {deliverablePreviewForRun.decisionManifest.decisions.length}/3 来源差异已保存</p>
+      </div>
+      <code>Preview SHA256：{deliverablePreviewForRun.previewSha256}</code>
+    </header>
+    <div className="guanyijia-document-tabs guanyijia-merged-preview-tabs" role="tablist" aria-label="完整标准化结果视图">
+      {([['MATTERS', '审阅事项'], ['CONCLUSIONS', '审阅结论'], ['DOCUMENT', '标准化文档']] as const).map(([value, label]) => <button
+        type="button"
+        role="tab"
+        aria-selected={deliverablePreviewTab === value}
+        className={deliverablePreviewTab === value ? 'active' : ''}
+        key={value}
+        onClick={() => setDeliverablePreviewTab(value)}
+      >{label}</button>)}
+    </div>
+    {deliverablePreviewTab === 'MATTERS' && <div className="guanyijia-merged-preview-content guanyijia-review-checklist">
+      <section className="guanyijia-checklist-group" aria-label="待确认事项">
+        <header><h4>待确认事项</h4><small>0 项待确认</small></header>
+        <p>五份来源均已审阅，三项正式差异均已保存；当前没有需要继续决定的事项。</p>
+      </section>
+      <section className="guanyijia-checklist-group" aria-label="待补充资料">
+        <header><h4>待补充资料</h4><small>{deliverablePreviewForRun.reviewProjection.supplements.length} 项待补充</small></header>
+        {deliverablePreviewForRun.reviewProjection.supplements.length > 0 ? <ul className="guanyijia-gap-list">
+          {deliverablePreviewForRun.reviewProjection.supplements.map((matter) => <li
+            key={matter.stableId}
+            data-merged-review-supplement={matter.stableId}
+          >
+            <strong>{matter.sourceName} · 待补充资料 {matter.ordinal}</strong>
+            <p>{matter.text}</p>
+            {matter.relatedConflictIds.length > 0 && <small>关联：{matter.relatedConflictIds.join('、')}</small>}
+          </li>)}
+        </ul> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前没有待补充资料" />}
+      </section>
+      <section className="guanyijia-checklist-group" aria-label="已处理事项">
+        <header><h4>已处理事项</h4><small>{deliverablePreviewForRun.reviewProjection.decisions.length} 项正式差异已保存</small></header>
+        <ul className="guanyijia-key-conclusion-list">
+          {deliverablePreviewForRun.reviewProjection.decisions.map((decision) => <li
+            key={decision.conflictId}
+            data-merged-review-decision={decision.conflictId}
+          >
+            <div><strong>{decision.title}</strong><p>{decision.reason}</p><small>已保存的来源差异决定。</small></div>
+          </li>)}
+        </ul>
+      </section>
+    </div>}
+    {deliverablePreviewTab === 'CONCLUSIONS' && <div className="guanyijia-merged-preview-content guanyijia-merged-preview-conclusions">
+      {deliverablePreviewForRun.reviewProjection.chapters.map((chapter) => <section
+        className="guanyijia-checklist-group guanyijia-merged-preview-chapter"
+        key={chapter.section}
+        aria-label={chapter.heading}
+      >
+        <header><h4>{chapter.heading}</h4><small>{chapter.sources.length} 个来源区段</small></header>
+        {chapter.sources.map((source) => <article key={`${chapter.section}:${source.sourceId}`}>
+          <header><span>来源 {source.order}</span><strong>{displaySourceName(source.sourceId, source.sourceName)}</strong></header>
+          <pre className="guanyijia-merged-source-markdown">{source.markdown}</pre>
+        </article>)}
+      </section>)}
+    </div>}
+    {deliverablePreviewTab === 'DOCUMENT' && <div className="guanyijia-merged-preview-content guanyijia-readable-markdown-panel">
+      <div className="guanyijia-markdown-reader-toolbar">
+        <div><strong>完整固定九章</strong><small>阅读版和 Markdown 源文来自同一 Preview SHA256。</small></div>
+        <div className="guanyijia-merged-preview-document-actions">
+          <Button type={deliverablePreviewDocumentView === 'READING' ? 'primary' : 'default'} onClick={() => setDeliverablePreviewDocumentView('READING')}>阅读版</Button>
+          <Button type={deliverablePreviewDocumentView === 'MARKDOWN' ? 'primary' : 'default'} onClick={() => setDeliverablePreviewDocumentView('MARKDOWN')}>Markdown 源文</Button>
+          <Button type="link" onClick={() => {
+            void navigator.clipboard?.writeText(deliverablePreviewForRun.mergedDocument.markdown);
+            setInteractionAnnouncement('已复制完整合并 Markdown。');
+          }}>复制 Markdown</Button>
+        </div>
+      </div>
+      {deliverablePreviewDocumentView === 'READING'
+        ? <SourceDocumentReadable content={deliverablePreviewForRun.mergedDocument.markdown} />
+        : <pre className="guanyijia-markdown-source">{deliverablePreviewForRun.mergedDocument.markdown}</pre>}
+    </div>}
+  </section> : null;
+
   const sourcePanelToggleLabel = inspectorLayered || inspectorCollapsed
     ? '来源资料'
     : '收起来源资料';
@@ -3595,16 +3808,24 @@ export default function GuanyijiaStandardizationWorkbench({
                 }, event.currentTarget)}
                 >查看标准化结果</Button>}
                 <h2>{pendingDeliverableCommand ? '上一步未完成'
-                  : !deliverable ? '标准化结果尚未生成'
+                  : !deliverable ? '标准化结果预览'
                   : deliverable.status === 'GENERATED_AWAITING_AUTHOR' ? '标准化结果待定版'
                     : deliverable.status === 'AWAITING_INDEPENDENT_REVIEW' ? '历史结果待定版'
                       : deliverable.status === 'FROZEN' ? '标准化结果已定版'
                       : '标准化文档已交给 AI 建模'}</h2>
                   <p>{pendingDeliverableCommand ? '上一步的内容已经保存；可以继续完成当前流程。'
-                  : !deliverable ? '基于已审阅资料和已保存决定生成标准化结果。'
+                  : !deliverable ? '先核对完整合并文档；确认 Preview SHA256 后再生成标准化结果。'
                     : deliverable.status === 'HANDED_OFF'
                     ? '完整标准化文档已交接；资料缺口不会进入模型候选。'
                       : '定版前会确认本次资料审阅和差异决定已完整保存。'}</p>
+                {deliverablePreviewLoading && <Spin size="small" tip="正在构造完整合并预览" />}
+                {deliverablePreviewError && <Alert
+                  type="error"
+                  showIcon
+                  message="完整合并预览无法验证"
+                  description={`${deliverablePreviewError} 为防止生成与预览不一致的文档，当前已隐藏生成操作。`}
+                />}
+                {deliverablePreviewPanel}
                 {deliverable && <dl className="guanyijia-deliverable-facts">
                   <div><dt>可用于建模</dt><dd>{eligibleConclusionCount} 项已确认结论</dd></div>
                   <div><dt>已排除</dt><dd>{excludedConclusionCount} 项缺口或无法确定内容</dd></div>
@@ -3614,7 +3835,8 @@ export default function GuanyijiaStandardizationWorkbench({
                   完整文档保留所有结论和缺口；AI 建模只读取可用于建模的已确认结论。
                 </p>}
                 {pendingDeliverableCommand?.actorUserId === currentUser.userId && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void resumePendingDeliverable()}>继续完成上一步</Button>}
-                {!pendingDeliverableCommand && !deliverable && canAuthorDeliverable && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void executeDeliverable('GENERATE_DELIVERABLE')}>生成标准化结果</Button>}
+                {!pendingDeliverableCommand && !deliverable && canAuthorDeliverable && readyDeliverablePreview
+                  && !deliverablePreviewLoading && !deliverablePreviewError && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void executeDeliverable('GENERATE_DELIVERABLE')}>生成标准化结果</Button>}
                 {!pendingDeliverableCommand && (deliverable?.status === 'GENERATED_AWAITING_AUTHOR' || deliverable?.status === 'AWAITING_INDEPENDENT_REVIEW') && canAuthorFreezeDeliverable && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void executeDeliverable('AUTHOR_CONFIRM_AND_FREEZE')}>确认结果并定版</Button>}
                 {!pendingDeliverableCommand && deliverable?.status === 'FROZEN' && canHandoffDeliverable && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void executeDeliverable('HANDOFF_STANDARDIZATION_DOCUMENT_TO_MODELING')}>前往 AI 建模</Button>}
                 {!pendingDeliverableCommand && deliverable?.status === 'HANDED_OFF' && <Button type="link" onClick={() => deliverableSnapshot && void openStandardizationHandoff(deliverableSnapshot)}>查看定版文档</Button>}

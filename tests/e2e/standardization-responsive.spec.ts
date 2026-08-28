@@ -311,11 +311,11 @@ test('1024 Inspector overlay trap focus、Escape逆序恢复anchor', async ({ pa
   await capture(page, '02-1024-inspector-overlay-closed');
 });
 
-test('1280 跨来源事项在审阅事项中保持可见且不依赖横向滚动', async ({ page }) => {
+test('1280 来源差异与比较在审阅事项中保持可见且不依赖横向滚动', async ({ page }) => {
   await bootstrap(page, { width: 1280, height: 900 }, 'DESKTOP');
   const github = await enterGithubDocument(page);
   const matters = github.getByRole('region', { name: '审阅事项', exact: true });
-  const findings = matters.getByRole('region', { name: '跨来源事项', exact: true });
+  const findings = matters.getByRole('region', { name: '来源差异与比较', exact: true });
   await expect(findings.locator('[data-review-matter]')).toHaveCount(3);
   const buttons = findings.locator('button[aria-controls^="finding-materials:"]:visible');
   await expect(buttons).toHaveCount(3);

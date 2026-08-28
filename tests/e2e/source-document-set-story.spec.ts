@@ -69,6 +69,13 @@ test('来源文档集合可连续审阅、登记治理缺口并由作者直接�
   await expect(page.getByLabel('当前来源差异')).toContainText('状态 9 业务含义冲突');
   await resolve(page, '登记为缺口');
 
+  const preview = page.getByLabel('完整合并标准化结果预览', { exact: true });
+  await expect(preview).toBeVisible();
+  await expect(preview.getByRole('tab', { name: '审阅事项', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(preview.locator('[data-merged-review-decision]')).toHaveCount(3);
+  await preview.getByRole('tab', { name: '标准化文档', exact: true }).click();
+  await expect(preview.getByRole('button', { name: 'Markdown 源文', exact: true })).toBeVisible();
+  await expect(preview).toContainText('完整固定九章');
   await page.getByRole('button', { name: '生成标准化结果' }).click();
   await expect(page.getByRole('button', { name: '确认结果并定版' })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('button', { name: /独立审核|审批意见/u })).toHaveCount(0);

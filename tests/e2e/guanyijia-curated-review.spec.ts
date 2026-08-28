@@ -66,10 +66,11 @@ test('数据库先展示审阅事项，页头动作能定位到待确认事项',
 
   await document.getByRole('button', { name: '核对 1 项建议', exact: true }).click();
   const matters = document.getByRole('region', { name: '审阅事项', exact: true });
-  const tasks = matters.getByRole('region', { name: '待确认事项', exact: true });
+  const tasks = matters.getByRole('region', { name: '本来源建议', exact: true });
   const depotHead = tasks.locator('article[data-review-claim="claim:guanyijia_mysql:curated-e005"]');
   await expect(depotHead).toBeVisible();
-  await expect(tasks.getByRole('heading', { name: '待确认事项', exact: true })).toBeVisible();
+  await expect(matters.getByRole('heading', { name: '待确认事项', exact: true })).toBeVisible();
+  await expect(tasks.getByRole('heading', { name: '本来源建议', exact: true })).toBeVisible();
   await expect(depotHead.getByRole('button', { name: '采用推荐修改', exact: true })).toBeVisible();
   // The primary action takes the reviewer directly to the suggested change and
   // expands its supporting material.  The available action is therefore to
@@ -196,8 +197,10 @@ test('全部跨来源比较留在审阅事项，并以三列卡片保留可处�
   const mysql = await openCuratedReview(page);
   const github = await completeDatabaseAndOpenGithub(page, mysql);
   const matters = github.getByRole('region', { name: '审阅事项', exact: true });
-  const pending = matters.getByRole('region', { name: '待确认事项', exact: true });
-  const findings = pending.getByRole('region', { name: '跨来源事项', exact: true });
+  const suggestions = matters.getByRole('region', { name: '本来源建议', exact: true });
+  const findings = matters.getByRole('region', { name: '来源差异与比较', exact: true });
+  await expect(suggestions).toBeVisible();
+  await expect(findings).toBeVisible();
   await expect(findings).toContainText('负库存配置');
   await expect(findings).toContainText('欠款字段');
   await expect(findings).toContainText('单据状态');
@@ -222,7 +225,7 @@ test('全部跨来源比较留在审阅事项，并以三列卡片保留可处�
   await expect(findings.getByRole('heading', { name: '参与判断的来源材料', exact: true })).toBeVisible();
 
   await github.getByRole('tab', { name: '审阅结论', exact: true }).click();
-  await expect(github.getByRole('region', { name: '跨来源事项', exact: true })).toHaveCount(0);
+  await expect(github.getByRole('region', { name: '来源差异与比较', exact: true })).toHaveCount(0);
   await expect(github.locator('.candidate-evidence-review')).toHaveCount(0);
 });
 

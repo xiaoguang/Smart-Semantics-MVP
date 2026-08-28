@@ -1,4 +1,9 @@
 import { sha256HexSync } from '../ai-modeling/sha256.ts';
+import {
+  presentReviewSupplementText,
+  projectReviewSupplementSegments,
+  type ReviewSupplementMatter,
+} from '../data-standardization/standardized-document-reading.ts';
 import type { ConflictResolutionArtifact } from '../guanyijia-standardization-story/types.ts';
 import {
   assertModelingDocumentIntegrity,
@@ -27,6 +32,7 @@ import type {
   ResolutionDecisionManifest,
   SourceCollectionManifest,
   StandardizationDeliverable,
+  StandardizationDeliverablePreview,
   StandardizationDeliverableRuntime,
   StandardizationDeliverableRuntimeInput,
   StandardizationDocumentHandoffReceipt,
@@ -61,6 +67,14 @@ type LoadedSourceEntry = {
   assertions: StructuredModelingAssertion[];
   blocks: SourceDocumentBlock[];
   markdown: string;
+};
+
+type PreviewBuild = {
+  preview: StandardizationDeliverablePreview;
+  baseline: ProtectedBaseline;
+  resolutions: ConflictResolutionArtifact[];
+  sourceEntries: LoadedSourceEntry[];
+  governanceAppendix: GovernanceEvidenceAppendix;
 };
 
 const emptyState = (): StoredState => ({
@@ -390,6 +404,7 @@ export function createStandardizationDeliverableRuntime(
     if (actual !== expected) throw new Error('内容寻址存储返回了错误引用');
     return actual;
   };
+  const contentReferenceFor = (value: unknown) => asRef(canonicalModelingJson(jsonValue(value)));
   const findDeliverableById = (state: StoredState, deliverableId: string) => (
     state.deliverables.find((item) => item.deliverableId === deliverableId) ?? null
   );
@@ -555,6 +570,152 @@ export function createStandardizationDeliverableRuntime(
       sourceSnapshotIds: sourceEntries.map(({ document }) => document.sourceSnapshotId),
       sections,
       markdown: mergedMarkdown(sections),
+    };
+  };
+  const decisionManifestFor = (
+    run: StandardizationRun,
+    resolutions: ConflictResolutionArtifact[],
+  ): ResolutionDecisionManifest => ({
+    schemaVersion: 1,
+    runId: run.runId,
+    decisions: resolutions.map((resolution) => ({
+      conflictId: resolution.hunk.conflictId,
+      resolutionId: resolution.resolutionId,
+      sourceId: resolution.sourceId,
+      strategy: resolution.strategy,
+      reason: resolution.reason,
+      actorUserId: resolution.actorUserId,
+      decidedAt: resolution.decidedAt,
+      previewSha256: resolution.previewSha256,
+      hunkSha256: resolution.hunk.hunkSha256,
+      affectedObjectIds: resolution.hunk.affectedObjectRefs.map((ref) => ref.objectId).sort(),
+    })),
+  });
+  const reviewSupplementsFor = (
+    sourceEntries: LoadedSourceEntry[],
+    resolutions: ConflictResolutionArtifact[],
+  ): ReviewSupplementMatter[] => {
+    const conflictIdsBySourceBlock = new Map<string, string[]>();
+    const addConflict = (input: {
+      sourceId: string;
+      documentId: string;
+      blockId: string;
+      conflictId: string;
+    }) => {
+      const key = `${input.sourceId}:${input.documentId}:${input.blockId}`;
+      const values = conflictIdsBySourceBlock.get(key) ?? [];
+      if (!values.includes(input.conflictId)) values.push(input.conflictId);
+      conflictIdsBySourceBlock.set(key, values);
+    };
+    for (const resolution of resolutions) {
+      for (const side of [resolution.hunk.current, resolution.hunk.incoming, ...resolution.hunk.corroborating]) {
+        addConflict({
+          sourceId: side.sourceId,
+          documentId: side.documentId,
+          blockId: side.block.blockId,
+          conflictId: resolution.hunk.conflictId,
+        });
+      }
+    }
+
+    return sourceEntries.flatMap(({ source, document, sections, blocks }) => {
+      const chapterEntries = blocks.filter((block) => block.section === 'UNRESOLVED');
+      const entries = chapterEntries.length > 0
+        ? chapterEntries.map((block) => ({
+            blockId: block.blockId,
+            text: valueText(block.value),
+            semanticKind: block.semanticKind,
+            label: block.label,
+          }))
+        : [{ blockId: 'section:UNRESOLVED', text: sections.UNRESOLVED, semanticKind: undefined, label: undefined }];
+      return entries.flatMap((entry) => {
+        const segments = projectReviewSupplementSegments(entry.text)
+          .filter((segment): segment is Extract<ReturnType<typeof projectReviewSupplementSegments>[number], { kind: 'SUPPLEMENT' }> => (
+            segment.kind === 'SUPPLEMENT'
+          ));
+        // Legacy structured source documents have no textual marker in every
+        // GAP block. Their semantic kind is an equally exact, persisted
+        // identity, so retain the whole block as one supplement rather than
+        // hiding it or inferring a smaller sentence from its wording.
+        if (segments.length === 0 && entry.semanticKind === 'GAP') {
+          segments.push({ kind: 'SUPPLEMENT', ordinal: 1, text: entry.label
+            ? `${entry.label}：${entry.text}`
+            : entry.text });
+        }
+        return segments.map((segment, index) => ({
+          stableId: `supplement:${source.sourceId}:${document.documentId}:r${document.revision}:${entry.blockId}:${index + 1}`,
+          sourceId: source.sourceId,
+          sourceName: source.sourceName,
+          documentId: document.documentId,
+          documentRevision: document.revision,
+          section: 'UNRESOLVED' as const,
+          ordinal: segment.ordinal,
+          text: presentReviewSupplementText(segment.text),
+          relatedConflictIds: [...(conflictIdsBySourceBlock.get(
+            `${source.sourceId}:${document.documentId}:${entry.blockId}`,
+          ) ?? [])],
+        }));
+      });
+    });
+  };
+  const reviewProjectionFor = (
+    sourceEntries: LoadedSourceEntry[],
+    resolutions: ConflictResolutionArtifact[],
+  ): StandardizationDeliverablePreview['reviewProjection'] => ({
+    chapters: standardSectionOrder.map(({ key, heading }) => ({
+      section: key,
+      heading,
+      sources: sourceEntries.map(({ source, sections, assertions, blocks }, index) => ({
+        order: index + 1,
+        sourceId: source.sourceId,
+        sourceName: source.sourceName,
+        markdown: sections[key],
+        assertions: structuredClone(assertions.filter((assertion) => assertion.section === key)),
+        blocks: structuredClone(blocks.filter((block) => block.section === key)),
+      })),
+    })),
+    supplements: reviewSupplementsFor(sourceEntries, resolutions),
+    decisions: resolutions.map((resolution) => ({
+      conflictId: resolution.hunk.conflictId,
+      title: resolution.hunk.title,
+      sourceId: resolution.sourceId,
+      strategy: resolution.strategy,
+      reason: resolution.reason,
+    })),
+  });
+  const buildPreview = async (run: StandardizationRun): Promise<PreviewBuild> => {
+    const baseline = await input.baselineProvider.resolve(run.scenarioKey);
+    if (!baseline) throw new Error('当前故事没有受保护基线');
+    validateBaseline(baseline, run);
+    const resolutions = validateResolutions(run, await input.conflictResolutions.list(run));
+    const sourceEntries = await readSourceEntries(run, baseline);
+    const sourceManifest = sourceManifestFor(run, sourceEntries);
+    const mergedDocument = mergedDocumentFor(run, sourceEntries, resolutions);
+    const decisionManifest = decisionManifestFor(run, resolutions);
+    const governanceAppendix = governanceAppendixFor(run.runId, sourceManifest, decisionManifest);
+    const reviewProjection = reviewProjectionFor(sourceEntries, resolutions);
+    const previewSha256 = contentReferenceFor({
+      sourceManifest,
+      decisionManifest,
+      mergedDocument,
+      reviewProjection,
+    });
+    return {
+      preview: {
+        schemaVersion: 1,
+        runId: run.runId,
+        runRevision: run.revision,
+        previewSha256,
+        mergedDocumentRef: contentReferenceFor(mergedDocument),
+        sourceManifest,
+        decisionManifest,
+        mergedDocument,
+        reviewProjection,
+      },
+      baseline,
+      resolutions,
+      sourceEntries,
+      governanceAppendix,
     };
   };
   const generatedEventPayloadFor = (deliverable: StandardizationDeliverable) => canonicalModelingJson({
@@ -990,6 +1151,24 @@ export function createStandardizationDeliverableRuntime(
       };
     },
 
+    async preview({ runId, actorUserId, expectedRunRevision }) {
+      const run = await input.runReader.read(runId);
+      if (!run) throw new Error('标准化运行不存在');
+      await requireAccess(actorUserId, run.projectId);
+      if (run.revision !== expectedRunRevision) throw new Error('标准化运行 revision 已变化');
+      const { state } = await load();
+      const existingDeliverable = findDeliverable(state, run);
+      const canReopenMergedPreview = existingDeliverable?.mode === 'MERGED_DOCUMENT';
+      if (run.status !== 'READY_FOR_OUTPUT' && !canReopenMergedPreview) {
+        throw new Error('只有 READY_FOR_OUTPUT 运行可以预览完整合并标准化文档');
+      }
+      const preview = (await buildPreview(run)).preview;
+      if (existingDeliverable && existingDeliverable.mergedDocumentRef !== preview.mergedDocumentRef) {
+        throw new Error('已登记交付物与完整合并预览 identity 不一致');
+      }
+      return clone(preview);
+    },
+
     async readContent({ contentRef, actorUserId, cursor, limit = 20 }) {
       if (!refPattern.test(contentRef)) throw new Error('contentRef格式无效');
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new Error('limit必须在1到1000之间');
@@ -1192,30 +1371,19 @@ export function createStandardizationDeliverableRuntime(
       }
       if (findDeliverable(initial.state, run)) throw new Error('当前运行已经生成交付物');
 
-      const baseline = await input.baselineProvider.resolve(run.scenarioKey);
-      if (!baseline) throw new Error('当前故事没有受保护基线');
-      validateBaseline(baseline, run);
-      const resolutions = validateResolutions(run, await input.conflictResolutions.list(run));
-      const sourceEntries = await readSourceEntries(run, baseline);
-      const sourceManifest = sourceManifestFor(run, sourceEntries);
-      const mergedDocument = mergedDocumentFor(run, sourceEntries, resolutions);
-      const decisionManifest: ResolutionDecisionManifest = {
-        schemaVersion: 1,
-        runId: run.runId,
-        decisions: resolutions.map((resolution) => ({
-          conflictId: resolution.hunk.conflictId,
-          resolutionId: resolution.resolutionId,
-          sourceId: resolution.sourceId,
-          strategy: resolution.strategy,
-          reason: resolution.reason,
-          actorUserId: resolution.actorUserId,
-          decidedAt: resolution.decidedAt,
-          previewSha256: resolution.previewSha256,
-          hunkSha256: resolution.hunk.hunkSha256,
-          affectedObjectIds: resolution.hunk.affectedObjectRefs.map((ref) => ref.objectId).sort(),
-        })),
-      };
-      const governanceAppendix = governanceAppendixFor(run.runId, sourceManifest, decisionManifest);
+      const mode = command.mode ?? 'MERGED_DOCUMENT';
+      if (mode !== 'SOURCE_DOCUMENT_SET' && mode !== 'MERGED_DOCUMENT') {
+        throw new Error('交付物展示模式无效');
+      }
+      if (command.mode === 'MERGED_DOCUMENT' && !command.expectedPreviewSha256) {
+        throw new Error('MERGED_DOCUMENT 生成必须绑定完整合并预览 SHA');
+      }
+      const builtPreview = await buildPreview(run);
+      const { preview, baseline, resolutions, governanceAppendix } = builtPreview;
+      if (command.expectedPreviewSha256 && command.expectedPreviewSha256 !== preview.previewSha256) {
+        throw new Error('完整合并预览 SHA 已变化，请重新核对后再生成标准化结果');
+      }
+      const { sourceManifest, mergedDocument, decisionManifest } = preview;
       const projected = await input.modelingProjector.project({ run, baseline, resolutions, mergedDocument });
       if (modelingDocumentSemanticPayloadSha256(projected.semanticPayload)
         !== projected.artifact.semanticPayload?.sha256) {
@@ -1234,6 +1402,9 @@ export function createStandardizationDeliverableRuntime(
         put(sourceManifest), put(mergedDocument), put(decisionManifest), put(governanceAppendix),
         put(projected.artifact), put(projected.zeroDeltaReport), put(modelingEligibility),
       ]);
+      if (mergedDocumentRef !== preview.mergedDocumentRef) {
+        throw new Error('实际保存的合并标准化文档与预览 identity 不一致');
+      }
       const coreSha256 = asRef(canonicalModelingJson(coreFor({
         runId: run.runId, scenarioKey: run.scenarioKey,
         sourceManifestRef, mergedDocumentRef, decisionManifestRef, governanceAppendixRef,
@@ -1241,10 +1412,6 @@ export function createStandardizationDeliverableRuntime(
       }, baseline)));
       const deliverableId = `standardization-deliverable-${coreSha256.slice(7, 23)}`;
       const createdAt = now();
-      const mode = command.mode ?? 'MERGED_DOCUMENT';
-      if (mode !== 'SOURCE_DOCUMENT_SET' && mode !== 'MERGED_DOCUMENT') {
-        throw new Error('交付物展示模式无效');
-      }
       const deliverable: StandardizationDeliverable = {
         schemaVersion: 1,
         deliverableId,

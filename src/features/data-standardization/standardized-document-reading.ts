@@ -22,7 +22,42 @@ export type ReviewSupplementSegment =
   | { kind: 'PROSE'; text: string }
   | { kind: 'SUPPLEMENT'; ordinal: number; text: string };
 
+/**
+ * A reviewer-facing, source-bound item derived from one explicit marker in
+ * chapter nine.  This is intentionally a read-only projection: its identity
+ * lets the review surface link back to the exact frozen document claim
+ * without changing that Markdown, its revision, or its digest.
+ */
+export type ReviewSupplementMatter = {
+  stableId: string;
+  sourceId: string;
+  sourceName: string;
+  documentId: string;
+  documentRevision: number;
+  section: 'UNRESOLVED';
+  ordinal: number;
+  text: string;
+  markdownAnchor?: string;
+  relatedConflictIds: string[];
+};
+
+export type ReviewSupplementSource = Pick<ReviewSupplementMatter,
+  'sourceId' | 'sourceName' | 'documentId' | 'documentRevision'>;
+
 const reviewSupplementMarker = /(?:GAP\s*(\d+)?|资料缺口|待确认)\s*[：:]/giu;
+
+/**
+ * User-facing review projections use the approved Chinese vocabulary even
+ * when frozen prose refers to the historical internal `GAP` category inside
+ * a sentence. The source Markdown is never changed; callers use this only
+ * after they have selected a reader-facing segment.
+ */
+export function presentReviewSupplementText(value: string): string {
+  return value
+    .replace(/([\u3400-\u9fff])\s*\bGAP\b/giu, '$1待补充资料')
+    .replace(/\bGAP\b\s*(?=[\u3400-\u9fff])/giu, '待补充资料')
+    .replace(/\bGAP\b/giu, '待补充资料');
+}
 
 export function projectReviewSupplementSegments(value: string): ReviewSupplementSegment[] {
   const matches = [...value.matchAll(reviewSupplementMarker)];
@@ -60,10 +95,54 @@ export function projectReviewSupplementSegments(value: string): ReviewSupplement
 export function projectReviewSupplementText(value: string): string {
   return projectReviewSupplementSegments(value)
     .map((segment) => segment.kind === 'SUPPLEMENT'
-      ? `待补充资料 ${segment.ordinal}：${segment.text}`
-      : segment.text)
-    .join('\n\n')
-    .replace(/\bGAP\b/giu, '待补充资料');
+      ? `待补充资料 ${segment.ordinal}：${presentReviewSupplementText(segment.text)}`
+      : presentReviewSupplementText(segment.text))
+    .join('\n\n');
+}
+
+/**
+ * Turns only the explicit, marked chapter-nine claims of an already exact
+ * source document into individual review matters.  It never scans rendered
+ * DOM text or tries to infer extra semantic boundaries from prose.  An
+ * unmarked claim remains in the reader exactly as saved, while every marked
+ * segment stays independently addressable in the review-items tab.
+ */
+export function projectReviewSupplementMatters(input: {
+  source: ReviewSupplementSource;
+  document: StandardizedDocumentProjection;
+  /**
+   * Callers may supply an explicit source/claim/ordinal association recorded
+   * by the review domain.  The projection deliberately does not guess these
+   * associations from wording.
+   */
+  relatedConflictIdsByLocator?: Readonly<Record<string, readonly string[]>>;
+}): ReviewSupplementMatter[] {
+  const unresolved = input.document.sections.find((section) => section.id === 'UNRESOLVED');
+  if (!unresolved) return [];
+
+  const matters: ReviewSupplementMatter[] = [];
+  for (const entry of unresolved.entries) {
+    const supplements = projectReviewSupplementSegments(entry.statement)
+      .filter((segment): segment is Extract<ReviewSupplementSegment, { kind: 'SUPPLEMENT' }> => (
+        segment.kind === 'SUPPLEMENT'
+      ));
+    for (const [segmentIndex, segment] of supplements.entries()) {
+      const locator = `${input.source.sourceId}:${entry.claimId}:${segment.ordinal}`;
+      matters.push({
+        stableId: `supplement:${input.source.sourceId}:${input.source.documentId}:r${input.source.documentRevision}:${entry.claimId}:${segmentIndex + 1}`,
+        sourceId: input.source.sourceId,
+        sourceName: input.source.sourceName,
+        documentId: input.source.documentId,
+        documentRevision: input.source.documentRevision,
+        section: 'UNRESOLVED',
+        ordinal: segment.ordinal,
+        text: presentReviewSupplementText(segment.text),
+        ...(entry.markdownAnchor ? { markdownAnchor: entry.markdownAnchor } : {}),
+        relatedConflictIds: [...(input.relatedConflictIdsByLocator?.[locator] ?? [])],
+      });
+    }
+  }
+  return matters;
 }
 
 function normalizedSectionHeading(value: string): string {

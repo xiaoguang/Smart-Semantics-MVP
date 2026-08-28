@@ -15,6 +15,7 @@ import type {
 import type { StandardizationRun } from '../standardization-run/types.ts';
 import type { ProjectionContext } from '../modeling-document-projector/index.ts';
 import type { StandardizationModelingEligibilityProjection } from './modeling-eligibility.ts';
+import type { ReviewSupplementMatter } from '../data-standardization/standardized-document-reading.ts';
 
 export type DeliverableStatus =
   | 'GENERATED_AWAITING_AUTHOR'
@@ -34,6 +35,12 @@ export type DeliverableCommand =
       type: 'GENERATE_DELIVERABLE'; commandId: string; runId: string;
       actorUserId: string; expectedRunRevision: number;
       mode?: StandardizationDeliverableMode;
+      /**
+       * Bound by the workbench to the exact read-only merged preview. Legacy
+       * commands without an explicit MERGED_DOCUMENT mode remain readable for
+       * idempotent recovery.
+       */
+      expectedPreviewSha256?: ContentReference;
     }
   | {
       type: 'AUTHOR_CONFIRM'; commandId: string; runId: string; deliverableId: string;
@@ -218,6 +225,43 @@ export type DeliverableSnapshot = {
   pendingCommand?: DeliverableCommand;
 };
 
+/**
+ * A read-only, deterministic pre-generation identity. The three final review
+ * tabs consume this one value rather than assembling independent summaries.
+ */
+export type StandardizationDeliverablePreview = {
+  schemaVersion: 1;
+  runId: string;
+  runRevision: number;
+  previewSha256: ContentReference;
+  mergedDocumentRef: ContentReference;
+  sourceManifest: SourceCollectionManifest;
+  decisionManifest: ResolutionDecisionManifest;
+  mergedDocument: MergedStandardizationDocument;
+  reviewProjection: {
+    chapters: Array<{
+      section: ModelingDocumentSection;
+      heading: string;
+      sources: Array<{
+        order: number;
+        sourceId: string;
+        sourceName: string;
+        markdown: string;
+        assertions: StructuredModelingAssertion[];
+        blocks: SourceDocumentBlock[];
+      }>;
+    }>;
+    supplements: ReviewSupplementMatter[];
+    decisions: Array<{
+      conflictId: string;
+      title: string;
+      sourceId: string;
+      strategy: ConflictResolutionArtifact['strategy'];
+      reason: string;
+    }>;
+  };
+};
+
 export type ContentPage = {
   contentRef: ContentReference;
   items: string[];
@@ -299,6 +343,11 @@ export type MembershipReader = {
 
 export type StandardizationDeliverableRuntime = {
   read(input: { runId: string; actorUserId: string }): Promise<DeliverableSnapshot>;
+  preview(input: {
+    runId: string;
+    actorUserId: string;
+    expectedRunRevision: number;
+  }): Promise<StandardizationDeliverablePreview>;
   readContent(input: {
     contentRef: string; actorUserId: string; cursor?: string; limit?: number;
   }): Promise<ContentPage>;

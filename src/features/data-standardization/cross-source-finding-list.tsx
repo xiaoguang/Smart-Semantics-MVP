@@ -1,6 +1,7 @@
 import { Button } from 'antd';
 import { useEffect, useState } from 'react';
 import type { CandidateReviewEvidence, CandidateReviewProjection } from '../guanyijia-evidence-factory/candidate-review-projection.ts';
+import type { SourceReviewMatter } from '../guanyijia-evidence-factory/source-review-visibility.ts';
 import { toggleFindingExpansion } from './finding-expansion.ts';
 
 type FindingMaterial = {
@@ -77,6 +78,14 @@ export type CrossSourceFindingAction = {
   onAction?(): void;
 };
 
+function stateLabel(matter: SourceReviewMatter): string {
+  if (matter.state === 'ACTIONABLE') return '待决定';
+  if (matter.state === 'BLOCKED_BY_LOCAL_SUGGESTION') return '先核对本来源建议';
+  if (matter.state === 'BLOCKED_BY_PREVIOUS_CONFLICT') return '请先处理上一项';
+  if (matter.state === 'RESOLVED') return '已保存';
+  return '等待更多来源';
+}
+
 /**
  * Cross-source material is intentionally local to the finding. Opening it
  * never redirects the reviewer to the source rail or changes their selection.
@@ -84,30 +93,32 @@ export type CrossSourceFindingAction = {
  * this avoids treating an unresolved comparison as a conclusion.
  */
 export function CrossSourceFindingList(input: {
-  findings: readonly CandidateReviewProjection[];
+  findings: readonly SourceReviewMatter[];
   expansionKey?: string;
-  actionForFinding?(finding: CandidateReviewProjection): CrossSourceFindingAction;
+  className?: string;
+  actionForFinding?(matter: SourceReviewMatter): CrossSourceFindingAction;
 }) {
   const [expandedFindingId, setExpandedFindingId] = useState<string>();
   useEffect(() => setExpandedFindingId(undefined), [input.expansionKey]);
 
-  return <section className="guanyijia-cross-source-findings" aria-label="跨来源事项">
+  return <section className={`guanyijia-cross-source-findings ${input.className ?? ''}`.trim()} aria-label="来源差异与比较">
     <header>
       <h3>来源差异与比较</h3>
       <p>依据当前已准入的资料显示；未具备决定条件的事项会明确说明下一步。</p>
     </header>
-    {input.findings.map((finding) => {
+    {input.findings.map((matter) => {
+      const finding = matter.finding;
       const materials = materialsForFinding(finding);
-      const expanded = expandedFindingId === finding.topic;
-      const controlsId = `finding-materials:${finding.topic}`;
-      const action = input.actionForFinding?.(finding);
-      return <article key={finding.topic} data-review-matter={finding.topic} tabIndex={-1}>
-        <header><strong>{finding.heading}</strong><span>{finding.relationLabel}</span></header>
+      const expanded = expandedFindingId === matter.stableId;
+      const controlsId = `finding-materials:${matter.stableId}`;
+      const action = input.actionForFinding?.(matter);
+      return <article key={matter.stableId} data-review-matter={finding.topic} data-conflict-id={matter.conflictId} tabIndex={-1}>
+        <header><strong>{finding.heading}</strong><span>{stateLabel(matter)}</span></header>
         <div><span>当前资料</span><MaterialSummary material={materials[0]} /></div>
         <div><span>新来源资料</span><MaterialSummary material={materials[1]} /></div>
         <div><span>为什么需要确认</span><p>{finding.relationExplanation}</p></div>
         <footer>
-          <FindingToggle expanded={expanded} controlsId={controlsId} onToggle={() => setExpandedFindingId((current) => toggleFindingExpansion(current, finding.topic))} />
+          <FindingToggle expanded={expanded} controlsId={controlsId} onToggle={() => setExpandedFindingId((current) => toggleFindingExpansion(current, matter.stableId))} />
           {action?.onAction && <Button type="link" size="small" onClick={action.onAction}>{action.label ?? '处理该项'}</Button>}
           <small>{action?.description ?? finding.reviewGuidance}</small>
         </footer>

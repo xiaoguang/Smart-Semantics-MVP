@@ -88,6 +88,31 @@ export type AdmittedSource = {
   sourceId: string;
   snapshotId: string;
   status: StandardizationSourceStepStatus;
+  /** Formal run facts, distinct from the candidate-evidence adapter. */
+  introducedConflictIds?: readonly string[];
+  resolvedConflictIds?: readonly string[];
+};
+
+export type SourceReviewMatter = {
+  stableId: string;
+  topic: CandidateReviewProjection['topic'];
+  kind: 'FORMAL_CONFLICT' | 'PRELIMINARY_COMPARISON';
+  state:
+    | 'ACTIONABLE'
+    | 'BLOCKED_BY_LOCAL_SUGGESTION'
+    | 'BLOCKED_BY_PREVIOUS_CONFLICT'
+    | 'WAITING_FOR_SOURCES'
+    | 'RESOLVED';
+  conflictId?: string;
+  finding: CandidateReviewProjection;
+};
+
+export type SourceReviewMatterProjection = {
+  items: SourceReviewMatter[];
+  integrityIssues: Array<{
+    conflictId: string;
+    reason: 'UNKNOWN_CONFLICT' | 'MISSING_CANDIDATE_PROJECTION';
+  }>;
 };
 
 export type SourceOnlyReviewProjection = {
@@ -98,6 +123,7 @@ export type SourceOnlyReviewProjection = {
 export type SourceReviewVisibility = {
   sourceDocument: SourceOnlyReviewProjection;
   comparisonFindings: CandidateReviewProjection[];
+  matterProjection: SourceReviewMatterProjection;
   actionableConflict?: CandidateReviewProjection;
 };
 
@@ -205,6 +231,99 @@ export function projectSourceReviewMatters(input: {
   return [...byTopic.values()];
 }
 
+const formalConflictOrder = [
+  'gyj-conflict-debt-schema',
+  'gyj-conflict-negative-stock',
+  'gyj-conflict-status-nine',
+] as const;
+
+function compareFormalConflictIds(left: string, right: string) {
+  const leftIndex = formalConflictOrder.indexOf(left as typeof formalConflictOrder[number]);
+  const rightIndex = formalConflictOrder.indexOf(right as typeof formalConflictOrder[number]);
+  const normalizedLeft = leftIndex < 0 ? Number.MAX_SAFE_INTEGER : leftIndex;
+  const normalizedRight = rightIndex < 0 ? Number.MAX_SAFE_INTEGER : rightIndex;
+  return normalizedLeft - normalizedRight || left.localeCompare(right);
+}
+
+function exactProjectionForConflict(input: {
+  conflictId: string;
+  admitted: ReadonlySet<string>;
+}): CandidateReviewProjection | undefined {
+  const candidate = candidateReviewForConflict(input.conflictId);
+  if (!candidate) return undefined;
+  const evidence = candidate.evidence.filter((item) => input.admitted.has(item.sourceId));
+  return evidence.length ? withV6NegativeStockCode({ ...candidate, evidence }) : undefined;
+}
+
+/**
+ * Formal conflict membership belongs to the run, not to whichever source is
+ * currently visible. Candidate records enrich a known conflict with cards and
+ * exact evidence; they must never decide whether an introduced conflict is
+ * displayed. This keeps the timeline, review items and conflict layer in
+ * lock-step even after the reader moves on to another source.
+ */
+export function projectSourceReviewMatterProjection(input: {
+  sources: readonly AdmittedSource[];
+  currentConflictId?: string;
+  localSuggestionPending?: boolean;
+}): SourceReviewMatterProjection {
+  const admitted = exactAdmittedSources(input.sources);
+  const comparisons = projectSourceReviewMatters({ sources: input.sources });
+  const comparisonByConflictId = new Map(comparisons.map((finding) => [
+    conflictIdForSourceReviewTopic(finding.topic), finding,
+  ]));
+  const introduced = new Set<string>();
+  const resolved = new Set<string>();
+  for (const source of input.sources) {
+    for (const conflictId of source.introducedConflictIds ?? []) introduced.add(conflictId);
+    for (const conflictId of source.resolvedConflictIds ?? []) resolved.add(conflictId);
+  }
+
+  const integrityIssues: SourceReviewMatterProjection['integrityIssues'] = [];
+  const formal = [...introduced]
+    .sort(compareFormalConflictIds)
+    .flatMap((conflictId): SourceReviewMatter[] => {
+      const candidate = candidateReviewForConflict(conflictId);
+      if (!candidate) {
+        integrityIssues.push({ conflictId, reason: 'UNKNOWN_CONFLICT' });
+        return [];
+      }
+      const finding = exactProjectionForConflict({ conflictId, admitted })
+        ?? comparisonByConflictId.get(conflictId);
+      if (!finding) {
+        integrityIssues.push({ conflictId, reason: 'MISSING_CANDIDATE_PROJECTION' });
+        return [];
+      }
+      const state: SourceReviewMatter['state'] = resolved.has(conflictId)
+        ? 'RESOLVED'
+        : input.localSuggestionPending
+          ? 'BLOCKED_BY_LOCAL_SUGGESTION'
+          : input.currentConflictId === conflictId
+            ? 'ACTIONABLE'
+            : 'BLOCKED_BY_PREVIOUS_CONFLICT';
+      return [{
+        stableId: `conflict:${conflictId}`,
+        topic: finding.topic,
+        kind: 'FORMAL_CONFLICT',
+        state,
+        conflictId,
+        finding,
+      }];
+    });
+
+  const preliminary = comparisons
+    .filter((finding) => !introduced.has(conflictIdForSourceReviewTopic(finding.topic)))
+    .map((finding): SourceReviewMatter => ({
+      stableId: `comparison:${finding.topic}`,
+      topic: finding.topic,
+      kind: 'PRELIMINARY_COMPARISON',
+      state: 'WAITING_FOR_SOURCES',
+      finding,
+    }));
+
+  return { items: [...formal, ...preliminary], integrityIssues };
+}
+
 /**
  * The only bridge from immutable candidate evidence to a live five-source
  * run. A snapshot being bundled locally is merely AVAILABLE; it becomes
@@ -214,11 +333,17 @@ export function projectSourceReviewVisibility(input: {
   currentSourceId: string;
   sources: readonly AdmittedSource[];
   currentConflictId?: string;
+  localSuggestionPending?: boolean;
 }): SourceReviewVisibility {
   const current = input.sources.find((source) => source.sourceId === input.currentSourceId);
   const admitted = exactAdmittedSources(input.sources);
   const sourceDocument = sourceDocumentProjection(current);
   const comparisonFindings = projectSourceReviewMatters({ sources: input.sources });
+  const matterProjection = projectSourceReviewMatterProjection({
+    sources: input.sources,
+    ...(input.currentConflictId ? { currentConflictId: input.currentConflictId } : {}),
+    ...(input.localSuggestionPending ? { localSuggestionPending: true } : {}),
+  });
 
   const conflictPrerequisites = input.currentConflictId
     ? conflictSources[input.currentConflictId]
@@ -233,5 +358,5 @@ export function projectSourceReviewVisibility(input: {
     })()
     : undefined;
 
-  return structuredClone({ sourceDocument, comparisonFindings, actionableConflict });
+  return structuredClone({ sourceDocument, comparisonFindings, matterProjection, actionableConflict });
 }

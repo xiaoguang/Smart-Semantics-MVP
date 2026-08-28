@@ -136,17 +136,51 @@ test('审阅事项分别保留待处理、资料缺口和已审阅内容', () =>
 test('所有跨来源比较都留在审阅事项，审阅结论不再承担冲突或资料不足', () => {
   assert.match(
     workbenchSource,
-    /const crossSourceMatters = sourceReviewVisibility\?\.comparisonFindings \?\? \[\][\s\S]*?documentView === 'MATTERS'[\s\S]*?aria-label="待确认事项"[\s\S]*?<CrossSourceFindingList/u,
-    '全部跨来源比较必须在审阅事项的待确认事项分组中保持可见',
+    /const sourceReviewMatters = sourceReviewVisibility\?\.matterProjection\.items \?\? \[\][\s\S]*?documentView === 'MATTERS'[\s\S]*?aria-label="待确认事项"[\s\S]*?<CrossSourceFindingList/u,
+    '全部跨来源比较必须由运行级正式事项投影并在审阅事项中保持可见',
   );
   assert.doesNotMatch(workbenchSource, /crossSourceConclusionFindings/u,
     '审阅结论只能展示核心业务结论和对象目录，不能再承载跨来源比较');
 });
 
 test('待确认事项使用稳定 class 恢复宽屏三列卡片，而不是中文 aria-label 选择器', () => {
-  assert.match(workbenchSource, /guanyijia-pending-matters/u);
-  assert.match(workbenchCss, /\.guanyijia-pending-matters > article/u);
+  assert.match(workbenchSource, /guanyijia-local-suggestions/u);
+  assert.match(workbenchCss, /\.guanyijia-local-suggestions > article/u);
   assert.doesNotMatch(workbenchCss, /\[aria-label=['"]待核对任务['"]\]/u);
+});
+
+test('本来源建议与来源差异与比较使用两个同级 Box，不能再共享待确认事项的黄色外框', () => {
+  assert.match(workbenchSource, /guanyijia-local-suggestions/u,
+    '本来源建议需要稳定的独立容器');
+  assert.match(workbenchSource, /guanyijia-cross-source-matters/u,
+    '来源差异与比较需要稳定的独立容器');
+  assert.match(workbenchCss, /\.guanyijia-local-suggestions/u);
+  assert.match(workbenchCss, /\.guanyijia-cross-source-matters/u);
+  assert.doesNotMatch(workbenchCss, /\.guanyijia-pending-matters\s*>\s*article/u,
+    '三列卡片只属于各自 Box，父区域不得再直接承载两类不同事项');
+});
+
+test('当前来源第九章的逐项补充资料会进入审阅事项，而不是只停留在标准化文档阅读版', () => {
+  assert.match(workbenchSource, /projectReviewSupplementMatters/u,
+    '工作台必须使用结构化补充资料投影');
+  assert.match(workbenchSource, /data-review-supplement=/u,
+    '每个逐项补充资料必须有稳定的审阅事项身份');
+});
+
+test('五源审阅完成后，三个页签必须绑定同一份完整合并预览再允许生成', () => {
+  assert.match(workbenchSource, /deliverables\.preview\(/u,
+    'READY_FOR_OUTPUT 应先读取只读合并预览，不能直接写入交付物');
+  assert.match(workbenchSource, /data-merged-preview-sha=/u,
+    '三页签必须公开同一份预览身份，不能各自拼接内容');
+  assert.match(workbenchSource, /Preview SHA256/u);
+  assert.match(workbenchSource, /expectedPreviewSha256: currentPreview!\.previewSha256/u,
+    '生成命令必须绑定用户刚刚核对过的预览 SHA');
+  assert.match(workbenchSource, /deliverablePreviewTab === 'MATTERS'/u);
+  assert.match(workbenchSource, /deliverablePreviewTab === 'CONCLUSIONS'/u);
+  assert.match(workbenchSource, /deliverablePreviewTab === 'DOCUMENT'/u);
+  assert.match(workbenchSource, /guanyijia-merged-source-markdown/u,
+    '单章来源区段必须作为完整文本展示，不能误交给要求九章输入的完整 Markdown 阅读器');
+  assert.doesNotMatch(workbenchSource, /<SourceDocumentReadable content=\{source\.markdown\}/u);
 });
 
 test('核心结论与对象目录互不重复，且对象目录默认展开', () => {

@@ -492,6 +492,118 @@ test('真实五源Run确定性生成四类内容、独立Artifact与零变化报
   assert.equal(repeated.deliverable?.modelingArtifactRef, generated.deliverable?.modelingArtifactRef);
 });
 
+test('READY_FOR_OUTPUT 先返回同一份完整九章合并预览，预览不写入内容仓库', async () => {
+  const fixture = readyFixture('2026-08-18T11:05:00.000Z');
+  const contentCountBefore = fixture.contentStore.values.size;
+  const preview = await fixture.runtime.preview({
+    runId: prepared.runId,
+    actorUserId: 'user_bo_gao',
+    expectedRunRevision: prepared.runRevision,
+  });
+
+  assert.equal(fixture.contentStore.values.size, contentCountBefore,
+    '预览是只读投影，不能在内容仓库写入候选交付物');
+  assert.equal(preview.runId, prepared.runId);
+  assert.equal(preview.runRevision, prepared.runRevision);
+  assert.match(preview.previewSha256, /^sha256:[0-9a-f]{64}$/u);
+  assert.match(preview.mergedDocumentRef, /^sha256:[0-9a-f]{64}$/u);
+  assert.deepEqual(preview.sourceManifest.sources.map((source) => source.sourceId), baseline.expectedSourceIds);
+  assert.deepEqual(preview.reviewProjection.chapters.map((chapter) => chapter.section), [
+    'OVERVIEW', 'GOAL', 'OBJECT', 'ACTIVITY', 'FIELD', 'RELATION', 'METRIC', 'QUESTION', 'UNRESOLVED',
+  ]);
+  assert.ok(preview.reviewProjection.chapters.every((chapter) => chapter.sources.length === 5),
+    '每个固定章节都必须保留五份来源，不能做语义去重或静默删减');
+  assert.ok(preview.reviewProjection.chapters.every((chapter) => (
+    canonicalModelingJson(chapter.sources.map((source) => source.sourceId))
+      === canonicalModelingJson(baseline.expectedSourceIds)
+  )), '每章内来源顺序必须固定为数据库、GitHub、业务说明、ERP制度、企业术语图');
+  assert.deepEqual(preview.reviewProjection.decisions.map((decision) => decision.conflictId), [
+    'gyj-conflict-debt-schema', 'gyj-conflict-negative-stock', 'gyj-conflict-status-nine',
+  ]);
+  assert.ok(preview.reviewProjection.supplements.length > 0,
+    '完整预览必须带回各来源第九章的逐项待补充资料');
+  assert.equal(
+    new Set(preview.reviewProjection.supplements.map((matter) => matter.stableId)).size,
+    preview.reviewProjection.supplements.length,
+    '逐项待补充资料必须有不随渲染变化的稳定身份，不能合并或重复',
+  );
+  assert.ok(preview.reviewProjection.supplements.every((matter) => (
+    baseline.expectedSourceIds.includes(matter.sourceId)
+      && matter.section === 'UNRESOLVED'
+      && !/\bGAP\b/u.test(matter.text)
+  )), '最终阅读投影只能使用已读取来源的第九章中文待补充资料');
+
+  const generated = await fixture.runtime.execute({
+    type: 'GENERATE_DELIVERABLE', mode: 'MERGED_DOCUMENT',
+    commandId: 'preview:generate:exact', runId: prepared.runId,
+    actorUserId: 'user_bo_gao', expectedRunRevision: prepared.runRevision,
+    expectedPreviewSha256: preview.previewSha256,
+  });
+  assert.equal(generated.deliverable?.mergedDocumentRef, preview.mergedDocumentRef,
+    '实际保存的合并文档必须与刚刚审阅的预览使用同一个内容身份');
+});
+
+test('已生成交付物刷新后仍可重建同一份完整三页签预览', async () => {
+  const fixture = readyFixture('2026-08-18T11:05:30.000Z');
+  const beforeGeneration = await fixture.runtime.preview({
+    runId: prepared.runId,
+    actorUserId: 'user_bo_gao',
+    expectedRunRevision: prepared.runRevision,
+  });
+  const generated = await fixture.runtime.execute({
+    type: 'GENERATE_DELIVERABLE', mode: 'MERGED_DOCUMENT',
+    commandId: 'preview:generate:reopen', runId: prepared.runId,
+    actorUserId: 'user_bo_gao', expectedRunRevision: prepared.runRevision,
+    expectedPreviewSha256: beforeGeneration.previewSha256,
+  });
+  assert.ok(generated.run, '生成后必须返回推进过 revision 的真实运行');
+
+  const afterGeneration = await fixture.runtime.preview({
+    runId: prepared.runId,
+    actorUserId: 'user_bo_gao',
+    expectedRunRevision: generated.run.revision,
+  });
+
+  assert.equal(afterGeneration.previewSha256, beforeGeneration.previewSha256,
+    '生命周期事件不能替换三页签所绑定的合并文档');
+  assert.equal(afterGeneration.mergedDocumentRef, generated.deliverable?.mergedDocumentRef,
+    '刷新后的预览必须读取已生成交付物的同一份完整 Markdown');
+  assert.deepEqual(afterGeneration.reviewProjection, beforeGeneration.reviewProjection,
+    '刷新后的审阅事项、审阅结论和标准化文档投影不能丢失来源或决定');
+
+  const frozen = await fixture.runtime.execute({
+    type: 'AUTHOR_CONFIRM_AND_FREEZE', commandId: 'preview:freeze:reopen',
+    runId: prepared.runId, actorUserId: 'user_bo_gao',
+    deliverableId: generated.deliverable!.deliverableId,
+    expectedDeliverableRevision: generated.deliverable!.revision,
+  });
+  assert.ok(frozen.run, '定版后必须返回推进过 revision 的真实运行');
+  const afterFreeze = await fixture.runtime.preview({
+    runId: prepared.runId,
+    actorUserId: 'user_bo_gao',
+    expectedRunRevision: frozen.run.revision,
+  });
+  assert.equal(afterFreeze.previewSha256, beforeGeneration.previewSha256,
+    '定版也只能改变标题和唯一主操作，不能替换完整预览内容');
+  assert.equal(afterFreeze.mergedDocumentRef, generated.deliverable?.mergedDocumentRef);
+});
+
+test('显式 MERGED_DOCUMENT 必须绑定最新预览 SHA，过期或缺失时拒绝生成', async () => {
+  const fixture = readyFixture('2026-08-18T11:06:00.000Z');
+  await assert.rejects(fixture.runtime.execute({
+    type: 'GENERATE_DELIVERABLE', mode: 'MERGED_DOCUMENT',
+    commandId: 'preview:generate:missing', runId: prepared.runId,
+    actorUserId: 'user_bo_gao', expectedRunRevision: prepared.runRevision,
+  }), /预览 SHA/u);
+
+  await assert.rejects(fixture.runtime.execute({
+    type: 'GENERATE_DELIVERABLE', mode: 'MERGED_DOCUMENT',
+    commandId: 'preview:generate:stale', runId: prepared.runId,
+    actorUserId: 'user_bo_gao', expectedRunRevision: prepared.runRevision,
+    expectedPreviewSha256: `sha256:${'0'.repeat(64)}` as ContentReference,
+  }), /预览 SHA.*变化/u);
+});
+
 test('production deliverable review-window lists six refs without opening their bodies and verifies only the selected content', async () => {
   const fixture = readyFixture('2026-08-18T11:00:00.000Z');
   const generated = await fixture.runtime.execute({

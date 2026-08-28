@@ -38,12 +38,11 @@ test('真实Chrome 200%缩放精确投影720×500 visual viewport，Portal与键
   const assertVisibleBounds = async () => {
     visual = (await cdp.send('Page.getLayoutMetrics')).cssVisualViewport;
     // Playwright bounding boxes for fixed review surfaces are relative to the
-    // DOM visual viewport. `pageX/pageY` are document scroll coordinates and
-    // therefore diverge after pinch zoom + focus scrolling; use the same
-    // offset/size coordinate system that the production surface adapter uses.
+    // DOM visual viewport. `visualViewport.offsetTop` is instead a layout-
+    // viewport/document offset and can change when the focused textarea is
+    // scrolled into view. Comparing the two coordinate systems would mark a
+    // fully visible fixed layer as out of bounds after keyboard focus.
     const visibleFrame = await page.evaluate(() => ({
-      left: window.visualViewport?.offsetLeft ?? 0,
-      top: window.visualViewport?.offsetTop ?? 0,
       width: window.visualViewport?.width ?? window.innerWidth,
       height: window.visualViewport?.height ?? window.innerHeight,
     }));
@@ -58,10 +57,10 @@ test('真实Chrome 200%缩放精确投影720×500 visual viewport，Portal与键
       for (let index = 0; index < count; index += 1) {
         const box = await locator.nth(index).boundingBox();
         if (!box) continue;
-        expect(box.x).toBeGreaterThanOrEqual(visibleFrame.left - 1);
-        expect(box.x + box.width).toBeLessThanOrEqual(visibleFrame.left + visibleFrame.width + 2);
-        expect(box.y).toBeGreaterThanOrEqual(visibleFrame.top - 1);
-        expect(box.y + box.height).toBeLessThanOrEqual(visibleFrame.top + visibleFrame.height + 2);
+        expect(box.x).toBeGreaterThanOrEqual(-1);
+        expect(box.x + box.width).toBeLessThanOrEqual(visibleFrame.width + 2);
+        expect(box.y).toBeGreaterThanOrEqual(-1);
+        expect(box.y + box.height).toBeLessThanOrEqual(visibleFrame.height + 2);
       }
     }
   };

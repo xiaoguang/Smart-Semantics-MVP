@@ -166,6 +166,10 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   await expect(mysql.getByRole('tab', { name: '审阅结论' })).toBeVisible();
   await expect(mysql.getByRole('tab', { name: '标准化文档' })).toBeVisible();
   await expect(mysql.getByRole('tab', { name: '依据追踪' })).toHaveCount(0);
+  const mysqlSupplements = mysql.getByRole('region', { name: '待补充资料', exact: true });
+  await expect(mysqlSupplements).toBeVisible();
+  await expect(mysqlSupplements.locator('[data-review-supplement]')).toHaveCount(4);
+  await expect(mysqlSupplements).not.toContainText(/\bGAP\b/u);
   await expect(mysql.getByRole('button', { name: '修改识别结论' })).toHaveCount(0);
   await mysql.getByRole('tab', { name: '审阅结论', exact: true }).click();
   await expect(mysql).toContainText('账户主数据（jsh_account）');
@@ -176,16 +180,17 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
 
   const github = await readSource(page, 'GitHub代码仓库');
   const findings = github.getByRole('region', { name: '审阅事项', exact: true })
-    .getByRole('region', { name: '跨来源事项', exact: true });
+    .getByRole('region', { name: '来源差异与比较', exact: true });
   await expect(findings).toBeVisible();
-  await expect(findings).toContainText('不同版本记录不一致');
+  await expect(findings).toContainText('已部署 DDL 的字段边界未见');
   await expect(findings.locator('[data-review-matter]')).toHaveCount(3);
+  await expect(findings.locator('[data-conflict-id="gyj-conflict-debt-schema"]')).toContainText('欠款字段');
   await github.getByRole('tab', { name: '审阅结论', exact: true }).click();
-  await expect(github.getByRole('region', { name: '跨来源事项', exact: true })).toHaveCount(0);
+  await expect(github.getByRole('region', { name: '来源差异与比较', exact: true })).toHaveCount(0);
   await expect(github.getByRole('region', { name: '审阅结论', exact: true }))
     .not.toContainText('互补资料');
   await github.getByRole('tab', { name: '审阅事项', exact: true }).click();
-  await expect(github.getByRole('region', { name: '跨来源事项', exact: true })).toContainText('互补资料');
+  await expect(github.getByRole('region', { name: '来源差异与比较', exact: true })).toContainText('等待更多来源');
   const githubBlock = github.locator(
     'article[data-review-claim="claim:guanyijia_github:github-v5-github-v5-003"]',
   );
@@ -246,7 +251,7 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
 
   const semantica = await readSource(page, '术语图（派生）', false);
   await completeSourceReview(semantica, false);
-  const semanticaFindings = semantica.getByRole('region', { name: '跨来源事项', exact: true });
+  const semanticaFindings = semantica.getByRole('region', { name: '来源差异与比较', exact: true });
   await expect(semanticaFindings).toContainText('欠款字段');
   await expect(semanticaFindings).toContainText('负库存配置');
   await expect(semanticaFindings).toContainText('单据状态');
@@ -266,15 +271,44 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   await capture(page, '11-five-source-status-nine-hunk');
   await resolveConflict(page, '状态 9 业务含义冲突', '登记为缺口');
 
+  const mergedPreview = page.getByLabel('完整合并标准化结果预览', { exact: true });
+  await expect(page.getByRole('heading', { name: '标准化结果预览', exact: true })).toBeVisible();
+  await expect(mergedPreview).toBeVisible();
+  await expect(mergedPreview).toContainText('Preview SHA256：sha256:');
+  await expect(mergedPreview.getByRole('tab', { name: '审阅事项', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(mergedPreview.getByRole('region', { name: '待确认事项', exact: true })).toContainText('0 项待确认');
+  await expect(mergedPreview.getByRole('region', { name: '待补充资料', exact: true })
+    .locator('[data-merged-review-supplement]')).not.toHaveCount(0);
+  await expect(mergedPreview.locator('[data-merged-review-decision]')).toHaveCount(3);
+  await mergedPreview.getByRole('tab', { name: '审阅结论', exact: true }).click();
+  await expect(mergedPreview.getByRole('region', { name: '3. 业务对象', exact: true })).toBeVisible();
+  await expect(mergedPreview).toContainText('数据库');
+  await expect(mergedPreview).toContainText('GitHub');
+  await expect(mergedPreview).toContainText('业务说明');
+  await expect(mergedPreview).toContainText('ERP管理制度');
+  await expect(mergedPreview).toContainText('企业术语图');
+  await mergedPreview.getByRole('tab', { name: '标准化文档', exact: true }).click();
+  await expect(mergedPreview.getByRole('button', { name: '阅读版', exact: true })).toBeVisible();
+  await mergedPreview.getByRole('button', { name: 'Markdown 源文', exact: true }).click();
+  await expect(mergedPreview.locator('pre.guanyijia-markdown-source')).toContainText('## 3. 业务对象');
+  await mergedPreview.getByRole('button', { name: '阅读版', exact: true }).click();
   await expect(page.getByRole('button', { name: '生成标准化结果' })).toBeVisible();
   await capture(page, '12-five-source-ready-for-deliverable');
   await page.getByRole('button', { name: '生成标准化结果' }).click();
   await expect(page.getByRole('button', { name: '确认结果并定版' })).toBeVisible({ timeout: 30_000 });
+  await page.reload();
+  await openStandardization(page, 'DESKTOP');
+  const restoredMergedPreview = page.getByLabel('完整合并标准化结果预览', { exact: true });
+  await expect(restoredMergedPreview).toBeVisible({ timeout: 30_000 });
+  await expect(restoredMergedPreview).toContainText('Preview SHA256：sha256:');
+  await expect(restoredMergedPreview.locator('[data-merged-review-decision]')).toHaveCount(3);
+  await expect(page.getByRole('button', { name: '确认结果并定版' })).toBeVisible();
   await expect(page.getByRole('button', { name: '提交独立审核' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '通过审核并定版' })).toHaveCount(0);
   await expect(page.getByText('完整文档保留所有结论和缺口；AI 建模只读取可用于建模的已确认结论。')).toBeVisible();
   await expect(page.getByRole('button', { name: /查看(合并文档|审阅决定|证据附录|模型差异)/u })).toHaveCount(0);
-  await expect(page.locator('body')).not.toContainText(/gyj-conflict-debt-schema|formalRootSourceIds|semanticDifferences|sha256:/u);
+  await expect(page.locator('body')).not.toContainText(/gyj-conflict-debt-schema|formalRootSourceIds|semanticDifferences/u);
+  await expect(mergedPreview).toContainText('Preview SHA256：sha256:');
   await capture(page, '13-five-source-deliverable-content');
   await page.getByRole('button', { name: '确认结果并定版' }).click();
   const deliverableWorkspace = page.locator('.guanyijia-deliverable-workspace');
