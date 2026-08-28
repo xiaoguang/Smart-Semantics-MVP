@@ -61,8 +61,10 @@ import type {
 import { createGuanyijiaStandardizationStory } from '../guanyijia-standardization-story/index.ts';
 import {
   candidateReviewTopicForBlock,
+  type CandidateReviewProjection,
 } from '../guanyijia-evidence-factory/candidate-review-projection.ts';
 import {
+  conflictIdForSourceReviewTopic,
   projectSourceReviewVisibility,
 } from '../guanyijia-evidence-factory/source-review-visibility.ts';
 import {
@@ -1729,6 +1731,9 @@ export default function GuanyijiaStandardizationWorkbench({
             ...(current ? { focusId: `guanyijia-timeline:${current.itemId}` } : {}),
           },
         });
+      } else if (next.run?.status === 'REVIEWING_DOCUMENT') {
+        setInteractionAnnouncement('当前决定已保存，可继续完成当前来源审阅。');
+        message.success('当前决定已保存，可继续完成当前来源审阅');
       } else if (next.nextAction.type === 'READ_NEXT_SOURCE') {
         setInteractionAnnouncement('当前决定已保存，可继续下一来源。');
         message.success('本项决定已保存，可继续下一来源');
@@ -2359,7 +2364,7 @@ export default function GuanyijiaStandardizationWorkbench({
         sourceName: selectedCandidateEvidence.sourceName,
         sourceClass: 'REAL' as const,
         snapshotId: selectedCandidateEvidence.snapshotId,
-        versionRef: '本次读取发现',
+        versionRef: '已准入来源比较',
         authority: selectedCandidateEvidence.evidenceClass === 'OBSERVED' ? 'PRIMARY' as const : 'AUXILIARY' as const,
         readSummary: `${selectedCandidateEvidence.evidenceClassLabel}；仅显示本次已载入来源的可复核内容。`,
         objectCount: selectedCandidateEvidence.evidenceClass === 'GAP' ? 0 : 1,
@@ -2746,19 +2751,16 @@ export default function GuanyijiaStandardizationWorkbench({
     const block = documentEvidenceCompilation.blocks.find((candidate) => candidate.blockId === trace.blockId);
     return block ? [{ ...trace, linePrefix: block.label }] : [];
   }) : [];
-  const candidateReviewsForSource = sourceReviewVisibility?.comparisonFindings ?? [];
-  const crossSourceGapFindings = candidateReviewsForSource.filter((finding) => (
-    finding.topic === 'DOCUMENT_STATUS' || finding.relation === 'UNSUPPORTED'
-  ));
-  const crossSourceConclusionFindings = candidateReviewsForSource.filter((finding) => (
-    !crossSourceGapFindings.includes(finding)
+  const crossSourceMatters = sourceReviewVisibility?.comparisonFindings ?? [];
+  const crossSourceSupplements = crossSourceMatters.filter((finding) => (
+    finding.evidence.some((evidence) => evidence.evidenceClass === 'GAP')
   ));
   const pendingChecklistTasks = useMemo(() => {
     const pendingTaskIds = new Set(pendingScriptedReviewEdits.map((edit) => edit.definition.editId));
     return (curatedWorkspace?.tasks ?? []).filter((task) => pendingTaskIds.has(task.taskId));
   }, [curatedWorkspace?.tasks, pendingScriptedReviewEdits]);
   const completedChecklistTasks = curatedWorkspace?.checklist.completedTasks ?? [];
-  const completedFormalDecisions = curatedWorkspace?.checklist.completedFormalDecisions ?? [];
+  const completedFormalDecisions = completedFormalReviewDecisions;
   const currentRevisionDiff = snapshot?.current?.revisionDiff
     ?? snapshot?.current?.revisionHistory?.find((diff) => (
       diff.afterDocumentId === snapshot.current?.document?.documentId
@@ -2784,6 +2786,33 @@ export default function GuanyijiaStandardizationWorkbench({
       inlineEvidence?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
       inlineEvidence?.focus({ preventScroll: true });
     }));
+  };
+  const actionForCrossSourceMatter = (finding: CandidateReviewProjection) => {
+    const conflictId = conflictIdForSourceReviewTopic(finding.topic);
+    const conflictStep = snapshot?.run?.sources.find((step) => (
+      step.introducedConflictIds.includes(conflictId)
+        && !step.resolvedConflictIds.includes(conflictId)
+    ));
+    if (!conflictStep) return { description: '等待更多来源。' };
+    if (snapshot?.currentConflict?.conflictId !== conflictId) {
+      return { description: '请先保存前一项来源差异。' };
+    }
+    const canOpen = snapshot?.run?.status === 'CONFLICT_BLOCKED' || snapshot?.run?.status === 'READY'
+      || (snapshot?.run?.status === 'REVIEWING_DOCUMENT' && conflictStep.status === 'DOCUMENT_READY');
+    if (!canOpen) return { description: '当前来源仍在读取中。' };
+    if (pendingScriptedReviewEdits.length) return { description: '请先核对本来源建议。' };
+    return {
+      description: '可保存当前决定。',
+      label: '处理该项',
+      onAction: () => {
+        reviewSurface.open({
+          kind: 'CONFLICT', stableId: `conflict:${conflictId}`,
+          revision: snapshot?.run?.revision,
+          focusId: `conflict:${conflictId}:close`,
+        }, document.activeElement as HTMLElement | null);
+        setInteractionAnnouncement(`已打开“${finding.heading}”，可查看双方资料并保存当前决定。`);
+      },
+    };
   };
   const selectFormalEvidence = (blockId: string) => {
     setSelectedBlockId(blockId);
@@ -3111,12 +3140,6 @@ export default function GuanyijiaStandardizationWorkbench({
           /> : !documentMarkdownLoading && <Empty description="选择完整 Markdown 读取文档正文" />}</>}
       </div>}
       {documentView !== 'MARKDOWN' && <div className="guanyijia-section-content">
-        {documentView === 'CONCLUSIONS' && crossSourceConclusionFindings.length > 0 && <section className="guanyijia-review-findings">
-          <CrossSourceFindingList
-            findings={crossSourceConclusionFindings}
-            expansionKey={`${snapshot.current.document.documentId}:${snapshot.current.document.revision}:${currentReviewSource?.sourceId ?? ''}`}
-          />
-        </section>}
         {curatedReview ? curatedStructuredDiffOpen ? <section className="guanyijia-curated-structured-diff" aria-label="原有结构化修改">
           <header><div><span>本次修改</span><h3>审阅文档变化</h3></div><BackAction destination="审阅事项" onBack={() => setCuratedStructuredDiffOpen(false)} /></header>
           <p>这里显示本次确认后更新的审阅结论。</p>
@@ -3135,8 +3158,8 @@ export default function GuanyijiaStandardizationWorkbench({
             </article>;
           }) : <Empty description="本次没有修改审阅结论。" />}
         </section> : <section className="guanyijia-review-checklist" aria-label={documentView === 'MATTERS' ? '审阅事项' : '审阅结论'}>
-          {documentView === 'MATTERS' && pendingChecklistTasks.length ? <section className="guanyijia-checklist-group" aria-label="待处理事项">
-            <header><h4>待处理事项</h4><small>{pendingChecklistTasks.length} 项需要处理</small></header>
+          {documentView === 'MATTERS' && (pendingChecklistTasks.length || crossSourceMatters.length) ? <section className="guanyijia-checklist-group guanyijia-pending-matters" aria-label="待确认事项">
+            <header><h4>待确认事项</h4><small>{pendingChecklistTasks.length + crossSourceMatters.length} 项待确认</small></header>
             {pendingChecklistTasks.map((task) => {
               const claim = curatedWorkspace!.claims.find((candidate) => candidate.claimId === task.claimId);
               const scriptedEdit = scriptedReviewEdits.find((candidate) => candidate.definition.editId === task.taskId);
@@ -3225,10 +3248,15 @@ export default function GuanyijiaStandardizationWorkbench({
                 </section>}
               </article>;
             })}
+            {crossSourceMatters.length > 0 && <CrossSourceFindingList
+              findings={crossSourceMatters}
+              actionForFinding={actionForCrossSourceMatter}
+              expansionKey={`${snapshot.run?.runId ?? 'pending'}:${snapshot.run?.revision ?? 0}`}
+            />}
           </section> : null}
           {documentView === 'MATTERS' && <>
-          {(curatedWorkspace?.checklist.gaps.length || crossSourceGapFindings.length) ? <section className="guanyijia-checklist-group" aria-label="资料缺口">
-            <header><h4>资料缺口</h4></header>
+          {(curatedWorkspace?.checklist.gaps.length || crossSourceSupplements.length) ? <section className="guanyijia-checklist-group" aria-label="待补充资料">
+            <header><h4>待补充资料</h4><small>{(curatedWorkspace?.checklist.gaps.length ?? 0) + crossSourceSupplements.length} 项待补充</small></header>
             {curatedWorkspace?.checklist.gaps.length ? <ul className="guanyijia-gap-list">{curatedWorkspace.checklist.gaps.map((gap) => {
               const claim = curatedWorkspace.claims.find((candidate) => candidate.claimId === gap.claimId);
               const trace = claim
@@ -3247,13 +3275,20 @@ export default function GuanyijiaStandardizationWorkbench({
                 })}</section>}
               </li>;
             })}</ul> : null}
-            {crossSourceGapFindings.length > 0 && <CrossSourceFindingList
-              findings={crossSourceGapFindings}
-              expansionKey={`${snapshot.current.document.documentId}:${snapshot.current.document.revision}:${currentReviewSource?.sourceId ?? ''}`}
-            />}
+            {crossSourceSupplements.length > 0 && <ul className="guanyijia-gap-list">{crossSourceSupplements.map((finding) => <li
+              key={`supplement:${finding.topic}`}
+              data-review-supplement={finding.topic}
+              tabIndex={-1}
+            >
+              <strong>{finding.topic === 'DOCUMENT_STATUS' ? '状态 9 的正式业务含义' : finding.heading}</strong>
+              <p>{finding.topic === 'DOCUMENT_STATUS'
+                ? '当前可信资料尚未说明状态 9 的正式业务含义。'
+                : finding.reviewGuidance}</p>
+              <small>下一步：补充官方资料或由业务负责人确认。</small>
+            </li>)}</ul>}
           </section> : null}
-          {(completedChecklistTasks.length || completedFormalDecisions.length) ? <section className="guanyijia-checklist-group" aria-label="已处理">
-            <header><h4>已处理</h4><small>{completedChecklistTasks.length + completedFormalDecisions.length} 项已保存</small></header>
+          {(completedChecklistTasks.length || completedFormalDecisions.length) ? <section className="guanyijia-checklist-group" aria-label="已处理事项">
+            <header><h4>已处理事项</h4><small>{completedChecklistTasks.length + completedFormalDecisions.length} 项已保存</small></header>
             <ul className="guanyijia-key-conclusion-list">{completedChecklistTasks.map((task) => {
               const claim = curatedWorkspace!.claims.find((candidate) => candidate.claimId === task.claimId);
               const decision = scriptedReviewEdits.find((candidate) => candidate.definition.editId === task.scriptedEditId);

@@ -152,6 +152,13 @@ before(async () => {
     snapshot = await workbench.execute(workbenchCommand(
       'READ_NEXT_SOURCE', snapshot.run!.revision, `prepare:read:${label}`,
     ));
+    if (label === 'github') {
+      snapshot = await workbench.execute({
+        type: 'DECIDE_SCRIPTED_REVIEW_EDIT', commandId: 'prepare:keep-scripted:github',
+        expectedRevision: snapshot.run!.revision, actorUserId: 'user_bo_gao',
+        editId: 'scripted:github:clarify-negative-stock', decision: 'KEEP_CURRENT',
+      });
+    }
     snapshot = await workbench.execute(workbenchCommand(
       'COMPLETE_CURRENT_DOCUMENT_REVIEW', snapshot.run!.revision, `prepare:review:${label}`,
     ));

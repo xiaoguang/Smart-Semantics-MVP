@@ -1,5 +1,5 @@
 import { Button } from 'antd';
-import { Fragment, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { CandidateReviewEvidence, CandidateReviewProjection } from '../guanyijia-evidence-factory/candidate-review-projection.ts';
 import { toggleFindingExpansion } from './finding-expansion.ts';
 
@@ -71,63 +71,48 @@ function FindingToggle({
   >{expanded ? '收起双方资料' : '查看双方资料'}</Button>;
 }
 
+export type CrossSourceFindingAction = {
+  description: string;
+  label?: string;
+  onAction?(): void;
+};
+
 /**
  * Cross-source material is intentionally local to the finding. Opening it
  * never redirects the reviewer to the source rail or changes their selection.
+ * Its cards share the review-items surface with scripted source suggestions;
+ * this avoids treating an unresolved comparison as a conclusion.
  */
 export function CrossSourceFindingList(input: {
   findings: readonly CandidateReviewProjection[];
   expansionKey?: string;
+  actionForFinding?(finding: CandidateReviewProjection): CrossSourceFindingAction;
 }) {
   const [expandedFindingId, setExpandedFindingId] = useState<string>();
   useEffect(() => setExpandedFindingId(undefined), [input.expansionKey]);
 
-  return <section className="guanyijia-cross-source-findings" aria-label="本次读取发现">
+  return <section className="guanyijia-cross-source-findings" aria-label="跨来源事项">
     <header>
-      <h3>本次读取发现</h3>
-      <p>这里汇总当前已读资料之间的一致之处、差异和需要继续确认的问题。</p>
+      <h3>来源差异与比较</h3>
+      <p>依据当前已准入的资料显示；未具备决定条件的事项会明确说明下一步。</p>
     </header>
-    <div className="guanyijia-cross-source-findings-table">
-      <table>
-        <thead><tr><th>议题</th><th>判断</th><th>当前来源</th><th>新来源</th><th>下一步</th></tr></thead>
-        <tbody>{input.findings.map((finding) => {
-          const materials = materialsForFinding(finding);
-          const expanded = expandedFindingId === finding.topic;
-          const controlsId = `finding-materials:table:${finding.topic}`;
-          return <Fragment key={finding.topic}>
-            <tr>
-              <th>{finding.heading}</th>
-              <td><strong>{finding.relationLabel}</strong><small>{finding.relationExplanation}</small></td>
-              <td><MaterialSummary material={materials[0]} /></td>
-              <td><MaterialSummary material={materials[1]} /></td>
-              <td><FindingToggle expanded={expanded} controlsId={controlsId} onToggle={() => setExpandedFindingId((current) => toggleFindingExpansion(current, finding.topic))} /><small>{finding.relation === 'CONFLICTS' ? '完成本次审阅后进入决定' : finding.reviewGuidance}</small></td>
-            </tr>
-            {expanded && <tr className="guanyijia-cross-source-expanded-row" id={controlsId}>
-              <td colSpan={5}><FindingMaterials finding={finding} /></td>
-            </tr>}
-          </Fragment>;
-        })}</tbody>
-      </table>
-    </div>
-    <div className="guanyijia-cross-source-findings-list" role="list" aria-label="跨来源发现">
-      {input.findings.map((finding) => {
-        const materials = materialsForFinding(finding);
-        const expanded = expandedFindingId === finding.topic;
-        const controlsId = `finding-materials:list:${finding.topic}`;
-        return <article key={finding.topic} role="listitem">
-          <header><strong>{finding.heading}</strong><span>{finding.relationLabel}</span></header>
-          <p className="guanyijia-cross-source-finding-explanation">{finding.relationExplanation}</p>
-          <div className="guanyijia-cross-source-materials">
-            <section><span>当前来源</span><MaterialSummary material={materials[0]} /></section>
-            <section><span>新来源</span><MaterialSummary material={materials[1]} /></section>
-          </div>
-          <footer>
-            <FindingToggle expanded={expanded} controlsId={controlsId} onToggle={() => setExpandedFindingId((current) => toggleFindingExpansion(current, finding.topic))} />
-            <small>{finding.relation === 'CONFLICTS' ? '完成本次审阅后进入决定' : finding.reviewGuidance}</small>
-          </footer>
-          {expanded && <div id={controlsId}><FindingMaterials finding={finding} /></div>}
-        </article>;
-      })}
-    </div>
+    {input.findings.map((finding) => {
+      const materials = materialsForFinding(finding);
+      const expanded = expandedFindingId === finding.topic;
+      const controlsId = `finding-materials:${finding.topic}`;
+      const action = input.actionForFinding?.(finding);
+      return <article key={finding.topic} data-review-matter={finding.topic} tabIndex={-1}>
+        <header><strong>{finding.heading}</strong><span>{finding.relationLabel}</span></header>
+        <div><span>当前资料</span><MaterialSummary material={materials[0]} /></div>
+        <div><span>新来源资料</span><MaterialSummary material={materials[1]} /></div>
+        <div><span>为什么需要确认</span><p>{finding.relationExplanation}</p></div>
+        <footer>
+          <FindingToggle expanded={expanded} controlsId={controlsId} onToggle={() => setExpandedFindingId((current) => toggleFindingExpansion(current, finding.topic))} />
+          {action?.onAction && <Button type="link" size="small" onClick={action.onAction}>{action.label ?? '处理该项'}</Button>}
+          <small>{action?.description ?? finding.reviewGuidance}</small>
+        </footer>
+        {expanded && <div id={controlsId}><FindingMaterials finding={finding} /></div>}
+      </article>;
+    })}
   </section>;
 }

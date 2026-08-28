@@ -46,6 +46,7 @@ function visibilitySources(
 test('GitHub DOCUMENT_READY immediately reveals the three exact stories and negative stock uses real code', () => {
   const projection = projectSourceReviewVisibility({
     currentSourceId: 'guanyijia_github',
+    currentConflictId: 'gyj-conflict-debt-schema',
     sources: visibilitySources({
       guanyijia_mysql: 'REVIEWED',
       guanyijia_github: 'DOCUMENT_READY',
@@ -57,8 +58,8 @@ test('GitHub DOCUMENT_READY immediately reveals the three exact stories and nega
     ['DEBT_FIELDS', 'CONFLICTS'],
     ['DOCUMENT_STATUS', 'TEMPORAL_DRIFT'],
   ]);
-  assert.equal(projection.actionableConflict, undefined,
-    'DOCUMENT_READY may reveal a comparison, but must not expose a formal decision action yet');
+  assert.equal(projection.actionableConflict?.topic, 'DEBT_FIELDS',
+    'GitHub 文档就绪后，欠款字段差异应可进入正式决定；不必等待完成整份来源审阅');
 
   const negativeStock = projection.comparisonFindings.find((finding) => finding.topic === 'NEGATIVE_STOCK');
   assert.ok(negativeStock);

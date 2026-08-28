@@ -81,6 +81,23 @@ test('a comparison includes the already admitted material from both participatin
   }
 });
 
+test('运行级比较不会因读者切换到术语图而消失', () => {
+  const visibility = projectSourceReviewVisibility({
+    currentSourceId: 'guanyijia_semantica_demo',
+    sources: sources({
+      guanyijia_mysql: 'ALIGNED',
+      guanyijia_github: 'CONFLICT_BLOCKED',
+      guanyijia_official_docs: 'ALIGNED',
+      guanyijia_demo_policy: 'CONFLICT_BLOCKED',
+      guanyijia_semantica_demo: 'DOCUMENT_READY',
+    }),
+  });
+
+  assert.deepEqual(visibility.comparisonFindings.map((item) => item.topic), [
+    'NEGATIVE_STOCK', 'DEBT_FIELDS', 'DOCUMENT_STATUS',
+  ], '跨来源比较属于整个运行，而不是当前打开来源的一次性内容');
+});
+
 test('an admitted source with a mismatched snapshot can be read but contributes no comparison or conflict', () => {
   const mismatched = sources({ guanyijia_mysql: 'REVIEWED', guanyijia_github: 'CONFLICT_BLOCKED' });
   mismatched.find((source) => source.sourceId === 'guanyijia_github')!.snapshotId = 'wrong-snapshot';
@@ -94,13 +111,13 @@ test('an admitted source with a mismatched snapshot can be read but contributes 
   assert.equal(result.actionableConflict, undefined);
 });
 
-test('formal decisions appear only in conflict-blocked state after every required source is admitted', () => {
+test('formal decisions appear as soon as their required sources are admitted', () => {
   const ready = projectSourceReviewVisibility({
     currentSourceId: 'guanyijia_github',
     currentConflictId: 'gyj-conflict-debt-schema',
     sources: sources({ guanyijia_mysql: 'REVIEWED', guanyijia_github: 'DOCUMENT_READY' }),
   });
-  assert.equal(ready.actionableConflict, undefined);
+  assert.equal(ready.actionableConflict?.topic, 'DEBT_FIELDS');
 
   const blocked = projectSourceReviewVisibility({
     currentSourceId: 'guanyijia_github',
@@ -119,8 +136,10 @@ test('formal decisions appear only in conflict-blocked state after every require
   });
   assert.deepEqual(policyBeforeOfficial.comparisonFindings.map((item) => item.topic), [
     'NEGATIVE_STOCK',
+    'DEBT_FIELDS',
+    'DOCUMENT_STATUS',
   ]);
-  assert.ok(policyBeforeOfficial.comparisonFindings[0]?.target);
+  assert.ok(policyBeforeOfficial.comparisonFindings.find((item) => item.topic === 'NEGATIVE_STOCK')?.target);
 
   const policyReady = projectSourceReviewVisibility({
     currentSourceId: 'guanyijia_demo_policy',
@@ -133,7 +152,9 @@ test('formal decisions appear only in conflict-blocked state after every require
   });
   assert.deepEqual(policyReady.comparisonFindings.map((item) => item.topic), [
     'NEGATIVE_STOCK',
+    'DEBT_FIELDS',
     'DOCUMENT_STATUS',
   ]);
-  assert.equal(policyReady.comparisonFindings.every((item) => item.target), true);
+  assert.equal(policyReady.comparisonFindings.find((item) => item.topic === 'NEGATIVE_STOCK')?.target !== undefined, true);
+  assert.equal(policyReady.comparisonFindings.find((item) => item.topic === 'DOCUMENT_STATUS')?.target !== undefined, true);
 });

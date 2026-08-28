@@ -18,6 +18,10 @@ const workbenchSource = readFileSync(
   new URL('./guanyijia-standardization-workbench.tsx', import.meta.url),
   'utf8',
 );
+const workbenchCss = readFileSync(
+  new URL('./data-standardization.css', import.meta.url),
+  'utf8',
+);
 
 type CompactReviewChecklist = {
   tasks: ReviewChecklistItem[];
@@ -117,7 +121,7 @@ test('审阅事项分别保留待处理、资料缺口和已审阅内容', () =>
   const formalChecklist = projectMysqlReview({
     formalDecisions: [{
       decisionId: 'resolution:debt-fields',
-      sourceId: 'guanyijia_mysql',
+    sourceId: 'guanyijia_github',
       title: '欠款字段结构冲突',
       statement: '已登记为资料缺口，等待进一步确认。',
     }],
@@ -129,12 +133,20 @@ test('审阅事项分别保留待处理、资料缺口和已审阅内容', () =>
   );
 });
 
-test('跨来源的状态 9 资料缺口在 GitHub 文档就绪后可从审阅事项进入', () => {
+test('所有跨来源比较都留在审阅事项，审阅结论不再承担冲突或资料不足', () => {
   assert.match(
     workbenchSource,
-    /crossSourceGapFindings[\s\S]*?topic === 'DOCUMENT_STATUS'[\s\S]*?documentView === 'MATTERS'[\s\S]*?<CrossSourceFindingList/u,
-    '状态 9 的跨来源资料缺口不能只留在审阅结论中',
+    /const crossSourceMatters = sourceReviewVisibility\?\.comparisonFindings \?\? \[\][\s\S]*?documentView === 'MATTERS'[\s\S]*?aria-label="待确认事项"[\s\S]*?<CrossSourceFindingList/u,
+    '全部跨来源比较必须在审阅事项的待确认事项分组中保持可见',
   );
+  assert.doesNotMatch(workbenchSource, /crossSourceConclusionFindings/u,
+    '审阅结论只能展示核心业务结论和对象目录，不能再承载跨来源比较');
+});
+
+test('待确认事项使用稳定 class 恢复宽屏三列卡片，而不是中文 aria-label 选择器', () => {
+  assert.match(workbenchSource, /guanyijia-pending-matters/u);
+  assert.match(workbenchCss, /\.guanyijia-pending-matters > article/u);
+  assert.doesNotMatch(workbenchCss, /\[aria-label=['"]待核对任务['"]\]/u);
 });
 
 test('核心结论与对象目录互不重复，且对象目录默认展开', () => {

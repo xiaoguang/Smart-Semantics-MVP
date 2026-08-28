@@ -94,3 +94,30 @@ test('阅读版在结论之前显示一次保存的章节阅读说明', () => {
   assert.equal(section?.sectionNarrative, '本章先交代对象范围和建模边界；具体结论随后逐条列出。');
   assert.match(readerSource, /section\.sectionNarrative/u);
 });
+
+test('阅读版把连续的 GAP 说明逐项投影为待补充资料，而不改写 Markdown 源文', () => {
+  const document = projectStandardizedDocument({
+    revisionLabel: '第 1 版',
+    markdownSource: '## 待确认事项\nGAP 1：状态 9 的正式业务含义未保存。GAP 2：欠款字段部署 DDL 缺失。\n',
+    standardSections: [{
+      id: 'UNRESOLVED',
+      title: '待确认事项',
+      purpose: '记录待补充资料。',
+      narrative: 'GAP 1：状态 9 的正式业务含义未保存。GAP 2：欠款字段部署 DDL 缺失。',
+    }],
+    claims: [{
+      claimId: 'gap-1', sectionId: 'UNRESOLVED', sectionTitle: '待确认事项',
+      sectionPurpose: '记录待补充资料。', markdownAnchor: 'gap-1',
+      title: '状态 9', statement: '仍需补充资料。', kind: 'GAP',
+    }],
+  });
+
+  const [section] = buildStandardizedDocumentReadingEntries(document);
+
+  assert.doesNotMatch(section?.sectionNarrative ?? '', /\bGAP\b/u,
+    '阅读版不得把冻结 Markdown 中的英文 GAP 直接暴露给用户');
+  assert.match(section?.sectionNarrative ?? '', /待补充资料 1：状态 9 的正式业务含义未保存。/u);
+  assert.match(section?.sectionNarrative ?? '', /待补充资料 2：欠款字段部署 DDL 缺失。/u);
+  assert.match(document.markdownSource, /GAP 1：状态 9 的正式业务含义未保存。GAP 2：欠款字段部署 DDL 缺失。/u,
+    '转换只能作用于阅读投影，原始 Markdown 必须逐字保留');
+});

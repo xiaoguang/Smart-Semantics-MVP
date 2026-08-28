@@ -175,18 +175,20 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   await readNextSource(mysql);
 
   const github = await readSource(page, 'GitHub代码仓库');
-  const gapFindings = github.getByRole('region', { name: '审阅事项', exact: true })
-    .getByRole('region', { name: '本次读取发现', exact: true });
-  await expect(gapFindings).toBeVisible();
-  await expect(gapFindings).toContainText('不同版本记录不一致');
-  await github.getByRole('tab', { name: '审阅结论', exact: true }).click();
-  const findings = github.getByRole('region', { name: '本次读取发现', exact: true });
+  const findings = github.getByRole('region', { name: '审阅事项', exact: true })
+    .getByRole('region', { name: '跨来源事项', exact: true });
   await expect(findings).toBeVisible();
-  await expect(github).toContainText('互补资料');
-  await expect(github).toContainText('结构差异');
+  await expect(findings).toContainText('不同版本记录不一致');
+  await expect(findings.locator('[data-review-matter]')).toHaveCount(3);
+  await github.getByRole('tab', { name: '审阅结论', exact: true }).click();
+  await expect(github.getByRole('region', { name: '跨来源事项', exact: true })).toHaveCount(0);
+  await expect(github.getByRole('region', { name: '审阅结论', exact: true }))
+    .not.toContainText('互补资料');
   await github.getByRole('tab', { name: '审阅事项', exact: true }).click();
-  const githubBlock = github.getByRole('region', { name: '审阅事项', exact: true })
-    .locator('article').filter({ hasText: '负库存' });
+  await expect(github.getByRole('region', { name: '跨来源事项', exact: true })).toContainText('互补资料');
+  const githubBlock = github.locator(
+    'article[data-review-claim="claim:guanyijia_github:github-v5-github-v5-003"]',
+  );
   await expect(githubBlock).toBeVisible();
   await githubBlock.getByRole('button', { name: '采用推荐修改' }).click();
   const editor = github.getByRole('region', { name: '修改负库存控制候选', exact: true });
@@ -244,6 +246,10 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
 
   const semantica = await readSource(page, '术语图（派生）', false);
   await completeSourceReview(semantica, false);
+  const semanticaFindings = semantica.getByRole('region', { name: '跨来源事项', exact: true });
+  await expect(semanticaFindings).toContainText('欠款字段');
+  await expect(semanticaFindings).toContainText('负库存配置');
+  await expect(semanticaFindings).toContainText('单据状态');
   await semantica.getByRole('button', { name: '返回时间线', exact: true }).click();
 
   await ask(page, '当前差异是什么', '欠款字段结构冲突');

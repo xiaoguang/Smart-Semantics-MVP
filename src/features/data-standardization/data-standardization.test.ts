@@ -210,7 +210,7 @@ test('来源材料只在对应结论内联展开，不再形成第二个材料�
 
 test('审阅事项与审阅结论分开呈现，对象明细默认展开', () => {
   const workbench = readFileSync(new URL('./guanyijia-standardization-workbench.tsx', import.meta.url), 'utf8');
-  assert.match(workbench, /documentView === 'MATTERS'[\s\S]*?aria-label="资料缺口"[\s\S]*?aria-label="已处理"/u);
+  assert.match(workbench, /documentView === 'MATTERS'[\s\S]*?aria-label="待确认事项"[\s\S]*?aria-label="待补充资料"[\s\S]*?aria-label="已处理事项"/u);
   assert.match(workbench, /documentView === 'CONCLUSIONS'[\s\S]*?aria-label="关键业务结论"[\s\S]*?<details\s+open[^>]*aria-label="对象明细"/u);
 });
 

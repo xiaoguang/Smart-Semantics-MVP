@@ -510,9 +510,6 @@ function validateSourceTimelineSemantics(run: Record<string, unknown>) {
   const runId = run.runId as string;
   const sources = run.sources as Array<Record<string, unknown>>;
   const timeline = run.timeline as Array<Record<string, unknown>>;
-  type Phase =
-    | 'PENDING' | 'STARTED' | 'COMPLETED' | 'GENERATED' | 'CORROBORATED' | 'REVISED'
-    | 'ASSISTANT_CONFIRMED' | 'REVIEWED' | 'FOUND' | 'RESOLVED';
   const semanticError = (sourceId: string, type: unknown) => {
     metadataError(`来源事件语义顺序无效：${runId}/${sourceId}/${String(type)}`);
   };
@@ -527,55 +524,56 @@ function validateSourceTimelineSemantics(run: Record<string, unknown>) {
 
   for (const source of sources) {
     const sourceId = source.sourceId as string;
-    const events = timeline.flatMap((event, index) => (
-      event.sourceId === sourceId ? [{ event, index }] : []
-    ));
+    const events = timeline.filter((event) => event.sourceId === sourceId);
+    let started = false;
+    let completed = false;
+    let generated = false;
+    let documentRevised = false;
+    let documentReviewed = false;
+    let conflictFoundCount = 0;
+    let conflictResolvedCount = 0;
 
-    let phase: Phase = 'PENDING';
-    for (const { event } of events) {
+    for (const event of events) {
       switch (event.type) {
       case 'SOURCE_READ_STARTED':
-        if (phase !== 'PENDING') semanticError(sourceId, event.type);
-        phase = 'STARTED';
+        if (started) semanticError(sourceId, event.type);
+        started = true;
         break;
       case 'SOURCE_READ_COMPLETED':
-        if (phase !== 'STARTED') semanticError(sourceId, event.type);
-        phase = 'COMPLETED';
+        if (!started || completed) semanticError(sourceId, event.type);
+        completed = true;
         break;
       case 'DOCUMENT_GENERATED':
-        if (phase !== 'COMPLETED') semanticError(sourceId, event.type);
-        phase = 'GENERATED';
+        if (!completed || generated) semanticError(sourceId, event.type);
+        generated = true;
         break;
       case 'CONFLICT_CORROBORATED':
-        if (phase !== 'GENERATED' && phase !== 'CORROBORATED') semanticError(sourceId, event.type);
-        phase = 'CORROBORATED';
+        if (!generated || documentRevised || documentReviewed) semanticError(sourceId, event.type);
         break;
       case 'DOCUMENT_REVISED':
-        if (phase !== 'GENERATED' && phase !== 'CORROBORATED' && phase !== 'REVISED'
-          && phase !== 'ASSISTANT_CONFIRMED') {
+        if (!generated || documentReviewed || conflictResolvedCount > 0) {
           semanticError(sourceId, event.type);
         }
-        phase = 'REVISED';
+        documentRevised = true;
         break;
       case 'ASSISTANT_PATCH_CONFIRMED':
-        if (phase !== 'GENERATED' && phase !== 'CORROBORATED' && phase !== 'REVISED') {
+        if (!generated || documentReviewed || conflictResolvedCount > 0) {
           semanticError(sourceId, event.type);
         }
-        phase = 'ASSISTANT_CONFIRMED';
         break;
       case 'DOCUMENT_REVIEWED':
-        if (phase !== 'GENERATED' && phase !== 'CORROBORATED' && phase !== 'REVISED') {
+        if (!generated || documentReviewed) {
           semanticError(sourceId, event.type);
         }
-        phase = 'REVIEWED';
+        documentReviewed = true;
         break;
       case 'CONFLICT_FOUND':
-        if (phase !== 'REVIEWED') semanticError(sourceId, event.type);
-        phase = 'FOUND';
+        if (!generated || conflictResolvedCount > 0) semanticError(sourceId, event.type);
+        conflictFoundCount += 1;
         break;
       case 'CONFLICT_RESOLVED':
-        if (phase !== 'FOUND' && phase !== 'RESOLVED') semanticError(sourceId, event.type);
-        phase = 'RESOLVED';
+        if (!generated || conflictFoundCount === 0) semanticError(sourceId, event.type);
+        conflictResolvedCount += 1;
         break;
       default:
         semanticError(sourceId, event.type);
@@ -584,21 +582,21 @@ function validateSourceTimelineSemantics(run: Record<string, unknown>) {
 
     const introduced = source.introducedConflictIds as string[];
     const resolved = source.resolvedConflictIds as string[];
-    const expectedPhase: Phase | 'DOCUMENT_READY' = source.status === 'PENDING'
-      ? 'PENDING'
+    const hasUnresolved = introduced.some((conflictId) => !resolved.includes(conflictId));
+    const hasExpectedResolutions = conflictResolvedCount === resolved.length;
+    const sourceValid = source.status === 'PENDING'
+      ? !started
       : source.status === 'READING'
-        ? 'STARTED'
+        ? started && !completed
         : source.status === 'DOCUMENT_READY'
-          ? 'DOCUMENT_READY'
+          ? generated && !documentReviewed && hasExpectedResolutions
           : source.status === 'REVIEWED'
-            ? 'REVIEWED'
+            ? generated && documentReviewed && !introduced.length && conflictFoundCount === 0 && !resolved.length
             : source.status === 'CONFLICT_BLOCKED'
-              ? resolved.length ? 'RESOLVED' : 'FOUND'
-              : introduced.length ? 'RESOLVED' : 'REVIEWED';
-    const phaseMatches = expectedPhase === 'DOCUMENT_READY'
-      ? phase === 'GENERATED' || phase === 'CORROBORATED' || phase === 'REVISED'
-      : phase === expectedPhase;
-    if (!phaseMatches) semanticError(sourceId, `expected:${expectedPhase}/actual:${phase}`);
+              ? generated && documentReviewed && conflictFoundCount > 0 && hasUnresolved && hasExpectedResolutions
+              : generated && documentReviewed && !hasUnresolved && hasExpectedResolutions
+                && (!introduced.length || conflictFoundCount > 0);
+    if (!sourceValid) semanticError(sourceId, `status:${source.status as string}`);
   }
 
   const firstDeliveryIndex = timeline.findIndex((event) => deliveryEventTypes.has(event.type as string));
@@ -716,6 +714,18 @@ function sourceLabel(run: StandardizationRun, sourceId: string) {
 
 function nextRunStatus(run: StandardizationRun): StandardizationRun['status'] {
   return run.sources.every((source) => source.status === 'ALIGNED') ? 'READY_FOR_OUTPUT' : 'READY';
+}
+
+function firstUnresolvedConflict(run: StandardizationRun) {
+  for (const source of run.sources) {
+    const conflictId = source.introducedConflictIds.find((candidate) => !source.resolvedConflictIds.includes(candidate));
+    if (conflictId) return { source, conflictId };
+  }
+  return undefined;
+}
+
+function sourceHasConflictFound(run: StandardizationRun, sourceId: string) {
+  return run.timeline.some((event) => event.type === 'CONFLICT_FOUND' && event.sourceId === sourceId);
 }
 
 const resolutionStrategies = new Set([
@@ -1750,6 +1760,9 @@ export function createStandardizationRunRuntime(input: {
           if (run.status !== 'REVIEWING_DOCUMENT' || !ready) {
             throw new Error('当前没有待审阅的来源文档');
           }
+          if (ready.resolvedConflictIds.length) {
+            throw new Error('已保存来源差异后不能修改来源文档');
+          }
           if (ready.sourceId !== command.sourceId || ready.documentId !== command.beforeDocumentId
             || ready.documentRevision !== command.beforeDocumentRevision) {
             throw new Error('助手Proposal对应的来源文档revision已变化');
@@ -1835,6 +1848,11 @@ export function createStandardizationRunRuntime(input: {
                 ...(command.documentContent ? { documentContent: command.documentContent } : {}),
               }),
             },
+            ...(command.introducedConflictIds.length ? [{
+              type: 'CONFLICT_FOUND' as const,
+              sourceId: ready.sourceId,
+              payload: JSON.stringify({ conflictIds: command.introducedConflictIds }),
+            }] : []),
           ]);
           return finishCommand(snapshot, state, current.index, run, command);
         }
@@ -1921,6 +1939,11 @@ export function createStandardizationRunRuntime(input: {
               sourceDocumentRevision: command.documentRevision,
               payload: command.payload,
             },
+            ...(conflictIds.length ? [{
+              type: 'CONFLICT_FOUND' as const,
+              sourceId: reading.sourceId,
+              payload: JSON.stringify({ conflictIds }),
+            }] : []),
             ...corroboratedConflictIds.map((conflictId) => ({
               type: 'CONFLICT_CORROBORATED' as const,
               sourceId: reading.sourceId,
@@ -1934,6 +1957,9 @@ export function createStandardizationRunRuntime(input: {
           const ready = run.sources.find((source) => source.status === 'DOCUMENT_READY');
           if (run.status !== 'REVIEWING_DOCUMENT' || !ready) {
             throw new Error('当前没有待审阅的来源文档');
+          }
+          if (ready.resolvedConflictIds.length) {
+            throw new Error('已保存来源差异后不能修改来源文档');
           }
           if (ready.sourceId !== command.sourceId) {
             throw new Error(`当前待审阅的来源不是 ${sourceLabel(run, command.sourceId)}`);
@@ -1973,23 +1999,30 @@ export function createStandardizationRunRuntime(input: {
           ready.documentRevision = command.documentRevision;
           ready.introducedConflictIds = [...command.introducedConflictIds];
           ready.resolvedConflictIds = [];
-          await appendEvents(run, command.actor, [{
-            type: 'DOCUMENT_REVISED',
-            sourceId: ready.sourceId,
-            sourceDocumentId: command.documentId,
-            sourceDocumentRevision: command.documentRevision,
-            payload: JSON.stringify({
-              beforeDocumentId,
-              beforeDocumentRevision,
-              documentId: command.documentId,
-              documentRevision: command.documentRevision,
-              changedBlockIds: [...command.diffSummary.changedBlockIds],
-              changedSections: [...command.diffSummary.changedSections],
-              affectedObjectIds: [...command.diffSummary.affectedObjectIds],
-              affectedConflictIds: [...command.introducedConflictIds],
-              ...(command.documentContent ? { documentContent: command.documentContent } : {}),
-            }),
-          }]);
+          await appendEvents(run, command.actor, [
+            {
+              type: 'DOCUMENT_REVISED',
+              sourceId: ready.sourceId,
+              sourceDocumentId: command.documentId,
+              sourceDocumentRevision: command.documentRevision,
+              payload: JSON.stringify({
+                beforeDocumentId,
+                beforeDocumentRevision,
+                documentId: command.documentId,
+                documentRevision: command.documentRevision,
+                changedBlockIds: [...command.diffSummary.changedBlockIds],
+                changedSections: [...command.diffSummary.changedSections],
+                affectedObjectIds: [...command.diffSummary.affectedObjectIds],
+                affectedConflictIds: [...command.introducedConflictIds],
+                ...(command.documentContent ? { documentContent: command.documentContent } : {}),
+              }),
+            },
+            ...(command.introducedConflictIds.length ? [{
+              type: 'CONFLICT_FOUND' as const,
+              sourceId: ready.sourceId,
+              payload: JSON.stringify({ conflictIds: command.introducedConflictIds }),
+            }] : []),
+          ]);
           return finishCommand(snapshot, state, current.index, run, command);
         }
 
@@ -2003,13 +2036,18 @@ export function createStandardizationRunRuntime(input: {
             type: 'DOCUMENT_REVIEWED', sourceId: ready.sourceId,
             payload: JSON.stringify({ documentId: ready.documentId, documentRevision: ready.documentRevision }),
           }];
-          if (ready.introducedConflictIds.length) {
+          const hasUnresolvedConflict = ready.introducedConflictIds.some((conflictId) => (
+            !ready.resolvedConflictIds.includes(conflictId)
+          ));
+          if (hasUnresolvedConflict) {
             ready.status = 'CONFLICT_BLOCKED';
             run.status = 'CONFLICT_BLOCKED';
-            eventValues.push({
-              type: 'CONFLICT_FOUND', sourceId: ready.sourceId,
-              payload: JSON.stringify({ conflictIds: ready.introducedConflictIds }),
-            });
+            if (!sourceHasConflictFound(run, ready.sourceId)) {
+              eventValues.push({
+                type: 'CONFLICT_FOUND', sourceId: ready.sourceId,
+                payload: JSON.stringify({ conflictIds: ready.introducedConflictIds }),
+              });
+            }
           } else {
             ready.status = 'ALIGNED';
             run.status = nextRunStatus(run);
@@ -2019,17 +2057,22 @@ export function createStandardizationRunRuntime(input: {
         }
 
         case 'RESOLVE_SOURCE_CONFLICT': {
-          const blocked = run.sources.find((source) => source.status === 'CONFLICT_BLOCKED');
-          if ((run.status !== 'CONFLICT_BLOCKED' && run.status !== 'READY') || !blocked) {
+          const first = firstUnresolvedConflict(run);
+          const canResolveDuringReview = run.status === 'REVIEWING_DOCUMENT'
+            && first?.source.status === 'DOCUMENT_READY';
+          const canResolveAfterReview = (run.status === 'CONFLICT_BLOCKED' || run.status === 'READY')
+            && first?.source.status === 'CONFLICT_BLOCKED';
+          if (!first || (!canResolveDuringReview && !canResolveAfterReview)) {
             throw new Error('当前没有待解决的来源冲突');
           }
-          if (blocked.sourceId !== command.sourceId) {
+          const source = first.source;
+          if (source.sourceId !== command.sourceId) {
             throw new Error(`当前冲突来源不是 ${sourceLabel(run, command.sourceId)}`);
           }
-          if (!blocked.introducedConflictIds.includes(command.conflictId)) {
+          if (!source.introducedConflictIds.includes(command.conflictId)) {
             throw new Error('待解决冲突不属于当前来源');
           }
-          if (blocked.resolvedConflictIds.includes(command.conflictId)) {
+          if (source.resolvedConflictIds.includes(command.conflictId)) {
             throw new Error('当前冲突已经解决');
           }
           if (!command.reason.trim()) throw new Error('冲突决定必须填写中文理由');
@@ -2038,7 +2081,7 @@ export function createStandardizationRunRuntime(input: {
             resolutionError('Runtime未配置Story纯投影校验器');
           }
           await input.resolutionArtifactValidator(artifact, run);
-          if (artifact.runId !== run.runId || artifact.sourceId !== blocked.sourceId
+          if (artifact.runId !== run.runId || artifact.sourceId !== source.sourceId
             || artifact.hunk.conflictId !== command.conflictId
             || artifact.strategy !== command.strategy
             || artifact.reason !== command.reason
@@ -2049,18 +2092,19 @@ export function createStandardizationRunRuntime(input: {
           if (artifact.hunk.hunkSha256 !== command.expectedHunkSha256) {
             throw new Error('冲突Hunk已变化，请刷新后重试');
           }
-          const unresolved = blocked.introducedConflictIds.filter((id) => !blocked.resolvedConflictIds.includes(id));
-          if (unresolved[0] !== command.conflictId) {
+          if (first.conflictId !== command.conflictId) {
             throw new Error('必须按顺序解决第一项未决冲突');
           }
-          blocked.resolvedConflictIds.push(command.conflictId);
-          unresolved.shift();
-          if (!unresolved.length) {
-            blocked.status = 'ALIGNED';
+          source.resolvedConflictIds.push(command.conflictId);
+          const hasRemainingForSource = source.introducedConflictIds.some((conflictId) => (
+            !source.resolvedConflictIds.includes(conflictId)
+          ));
+          if (!hasRemainingForSource && source.status === 'CONFLICT_BLOCKED') {
+            source.status = 'ALIGNED';
             run.status = nextRunStatus(run);
           }
           await appendEvents(run, command.actor, [{
-            type: 'CONFLICT_RESOLVED', sourceId: blocked.sourceId, payload: command.payload,
+            type: 'CONFLICT_RESOLVED', sourceId: source.sourceId, payload: command.payload,
           }]);
           return finishCommand(snapshot, state, current.index, run, command);
         }

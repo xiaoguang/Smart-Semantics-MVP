@@ -396,8 +396,10 @@ test('DOCUMENT_REVISED只在文档审阅态替换当前revision和冲突并保�
   assert.equal(revised.sources[0]?.documentRevision, 2);
   assert.deepEqual(revised.sources[0]?.introducedConflictIds, ['conflict-new']);
   assert.deepEqual(revised.sources[0]?.resolvedConflictIds, []);
-  assert.equal(revised.timeline.at(-1)?.type, 'DOCUMENT_REVISED');
-  const payload = await runtime.readEventPayload(revised.runId, revised.timeline.at(-1)!.eventId);
+  assert.deepEqual(revised.timeline.slice(-2).map((event) => event.type), [
+    'DOCUMENT_REVISED', 'CONFLICT_FOUND',
+  ]);
+  const payload = await runtime.readEventPayload(revised.runId, revised.timeline.at(-2)!.eventId);
   assert.deepEqual(JSON.parse(payload), {
     beforeDocumentId: 'document-mysql', beforeDocumentRevision: 1,
     documentId: 'document-mysql-r2', documentRevision: 2,
@@ -488,7 +490,7 @@ test('来源冲突必须逐项以完整Artifact解决，未决差异不阻断后
   });
   assert.equal(run.status, 'CONFLICT_BLOCKED');
   assert.equal(run.sources[0]?.status, 'CONFLICT_BLOCKED');
-  assert.deepEqual(run.timeline.slice(-2).map((event) => event.type), ['DOCUMENT_REVIEWED', 'CONFLICT_FOUND']);
+  assert.deepEqual(run.timeline.slice(-2).map((event) => event.type), ['CONFLICT_FOUND', 'DOCUMENT_REVIEWED']);
   run = await runtime.execute({
     type: 'START_NEXT_SOURCE', commandId: 'start-after-unresolved-conflict', runId: run.runId,
     expectedRevision: 3, actor,
@@ -551,6 +553,73 @@ test('来源冲突必须逐项以完整Artifact解决，未决差异不阻断后
   assert.equal(run.status, 'READY_FOR_OUTPUT');
   assert.equal(run.sources[0]?.status, 'ALIGNED');
   assert.deepEqual(run.timeline.slice(-2).map((event) => event.type), ['CONFLICT_RESOLVED', 'CONFLICT_RESOLVED']);
+  assert.equal(run.sources[1]?.status, 'ALIGNED');
+});
+
+test('来源文档就绪时即可保存第一项差异，且保存后仍待审阅并锁定当前 revision', async () => {
+  const { runtime } = setup();
+  const mysqlSource = { sourceId: 'guanyijia_mysql', sourceName: '管伊佳部署数据库' };
+  const githubSource = { sourceId: 'guanyijia_github', sourceName: '管伊佳 GitHub' };
+  let run = await createRun(runtime, { sources: [mysqlSource, githubSource] });
+
+  run = await runtime.execute({
+    type: 'START_NEXT_SOURCE', commandId: 'early-decision:start:mysql', runId: run.runId,
+    expectedRevision: run.revision, actor,
+  });
+  run = await completeCurrentSource(runtime, {
+    runId: run.runId, sourceId: mysqlSource.sourceId, expectedRevision: run.revision,
+    commandId: 'early-decision:complete:mysql',
+  });
+  run = await runtime.execute({
+    type: 'MARK_DOCUMENT_REVIEWED', commandId: 'early-decision:review:mysql', runId: run.runId,
+    expectedRevision: run.revision, actor, sourceId: mysqlSource.sourceId,
+  });
+  run = await runtime.execute({
+    type: 'START_NEXT_SOURCE', commandId: 'early-decision:start:github', runId: run.runId,
+    expectedRevision: run.revision, actor,
+  });
+  run = await completeCurrentSource(runtime, {
+    runId: run.runId, sourceId: githubSource.sourceId, expectedRevision: run.revision,
+    commandId: 'early-decision:complete:github', conflicts: ['gyj-conflict-debt-schema'],
+  });
+
+  assert.equal(run.status, 'REVIEWING_DOCUMENT');
+  assert.equal(run.sources[1]?.status, 'DOCUMENT_READY');
+  assert.deepEqual(run.timeline.slice(-2).map((event) => event.type), [
+    'DOCUMENT_GENERATED', 'CONFLICT_FOUND',
+  ], '文档就绪即登记已引入差异，不能等到完成审阅后才发现');
+
+  const debt = resolutionArtifactPayload({
+    runId: run.runId,
+    sourceId: githubSource.sourceId,
+    conflictId: 'gyj-conflict-debt-schema',
+    strategy: 'KEEP_CURRENT',
+    reason: '部署结构仍是本次审阅的当前工作标准。',
+  });
+  run = await runtime.execute({
+    type: 'RESOLVE_SOURCE_CONFLICT', commandId: 'early-decision:resolve:debt', runId: run.runId,
+    expectedRevision: run.revision, actor, sourceId: githubSource.sourceId,
+    conflictId: 'gyj-conflict-debt-schema', strategy: 'KEEP_CURRENT', reason: debt.artifact.reason,
+    expectedHunkSha256: debt.artifact.hunk.hunkSha256, payload: debt.payload,
+  });
+
+  assert.equal(run.status, 'REVIEWING_DOCUMENT');
+  assert.equal(run.sources[1]?.status, 'DOCUMENT_READY');
+  assert.deepEqual(run.sources[1]?.resolvedConflictIds, ['gyj-conflict-debt-schema']);
+  await assert.rejects(() => runtime.execute({
+    type: 'REVISE_SOURCE_DOCUMENT', commandId: 'early-decision:rewrite:github', runId: run.runId,
+    expectedRevision: run.revision, actor, sourceId: githubSource.sourceId,
+    documentId: 'document-guanyijia-github-r2', documentRevision: 2,
+    introducedConflictIds: ['gyj-conflict-debt-schema'],
+    diffSummary: { changedBlockIds: ['block-1'], changedSections: ['METRIC'], affectedObjectIds: ['RULE:debt'] },
+    payload: '# 不允许在正式决定后改写的文档',
+  }), /已保存来源差异后不能修改来源文档/u);
+
+  run = await runtime.execute({
+    type: 'MARK_DOCUMENT_REVIEWED', commandId: 'early-decision:review:github', runId: run.runId,
+    expectedRevision: run.revision, actor, sourceId: githubSource.sourceId,
+  });
+  assert.equal(run.status, 'READY_FOR_OUTPUT');
   assert.equal(run.sources[1]?.status, 'ALIGNED');
 });
 

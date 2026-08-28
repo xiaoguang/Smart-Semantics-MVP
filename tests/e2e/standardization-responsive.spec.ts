@@ -311,21 +311,14 @@ test('1024 Inspector overlay trap focus、Escape逆序恢复anchor', async ({ pa
   await capture(page, '02-1024-inspector-overlay-closed');
 });
 
-test('1280 本次读取发现以可见的扁平列表呈现，不依赖横向滚动', async ({ page }) => {
+test('1280 跨来源事项在审阅事项中保持可见且不依赖横向滚动', async ({ page }) => {
   await bootstrap(page, { width: 1280, height: 900 }, 'DESKTOP');
   const github = await enterGithubDocument(page);
-  await github.getByRole('tab', { name: '审阅结论', exact: true }).click();
-  const findings = github.getByRole('region', { name: '本次读取发现', exact: true });
-  const list = findings.getByRole('list', { name: '跨来源发现', exact: true });
-  await expect(list).toBeVisible();
-  // 状态 9 的资料缺口属于“审阅事项”；“审阅结论”只保留两项双方
-  // 资料的跨来源判断。
-  await expect(list.getByRole('listitem')).toHaveCount(2);
-  // At 1280px the component may use its desktop table rather than the
-  // compact list.  The visible controller is the contract, not a hidden
-  // alternate layout branch.
+  const matters = github.getByRole('region', { name: '审阅事项', exact: true });
+  const findings = matters.getByRole('region', { name: '跨来源事项', exact: true });
+  await expect(findings.locator('[data-review-matter]')).toHaveCount(3);
   const buttons = findings.locator('button[aria-controls^="finding-materials:"]:visible');
-  await expect(buttons).toHaveCount(2);
+  await expect(buttons).toHaveCount(3);
   for (const button of await buttons.all()) {
     await button.scrollIntoViewIfNeeded();
     await expect(button).toBeInViewport();
@@ -340,20 +333,19 @@ test('1280 本次读取发现以可见的扁平列表呈现，不依赖横向滚
   expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
 });
 
-test('1440 本次读取发现按实际主列宽度选择一种完整可读的布局', async ({ page }) => {
+test('1440 待确认事项恢复三列内容卡布局', async ({ page }) => {
   await bootstrap(page, { width: 1440, height: 1000 }, 'DESKTOP');
   const github = await enterGithubDocument(page);
-  const findings = github.getByRole('region', { name: '本次读取发现', exact: true });
-  const table = findings.getByRole('table');
-  const list = findings.getByRole('list', { name: '跨来源发现', exact: true });
-  const width = await findings.evaluate((element) => element.clientWidth);
-  if (width > 1055) {
-    await expect(table).toBeVisible();
-    await expect(list).toBeHidden();
-  } else {
-    await expect(table).toBeHidden();
-    await expect(list).toBeVisible();
-  }
+  // The card breakpoint belongs to the review-document container rather than
+  // the browser viewport. Use the existing peripheral controls to exercise
+  // the wide document state without changing the page shell.
+  await page.getByRole('button', { name: '收起来源资料', exact: true }).click();
+  await page.getByRole('button', { name: /收起导航$/u }).click();
+  const reviewWidth = await github.evaluate((element) => element.clientWidth);
+  expect(reviewWidth).toBeGreaterThan(959);
+  const matter = github.locator('[data-review-claim="claim:guanyijia_github:github-v5-github-v5-003"]');
+  const columns = await matter.evaluate((element) => getComputedStyle(element).gridTemplateColumns);
+  expect(columns.trim().split(/\s+/u)).toHaveLength(3);
 });
 
 test('冲突决定切换保持位置并显示当前选择的业务 Git 预览', async ({ page }) => {

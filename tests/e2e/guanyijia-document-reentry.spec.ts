@@ -174,6 +174,41 @@ test('从时间线打开早期差异时仅由差异层拥有主操作，关闭�
   await expect(github.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeVisible();
 });
 
+test('GitHub 本来源建议保存后，可在完成来源审阅前处理首项差异', async ({ page }) => {
+  await bootstrap(page, 1440);
+
+  await page.getByRole('button', { name: '开始资料整理' }).click();
+  const database = page.locator('section.guanyijia-document-review').last();
+  await expect(database).toBeVisible({ timeout: 30_000 });
+  await database.getByRole('button', { name: '保留当前结论', exact: true }).click();
+  await database.getByRole('button', { name: '完成数据库审阅', exact: true }).click();
+  await database.getByRole('button', { name: '审阅下一个来源', exact: true }).click();
+
+  const github = page.locator('section.guanyijia-document-review').last();
+  await expect(github.getByRole('heading', { name: '代码仓库审阅', exact: true })).toBeVisible({ timeout: 30_000 });
+  await github.getByRole('button', { name: '采用推荐修改', exact: true }).click();
+  const editor = github.getByRole('region', { name: '修改负库存控制候选', exact: true });
+  await editor.getByRole('button', { name: '预览修改', exact: true }).click();
+  await editor.getByRole('button', { name: '确认修改', exact: true }).click();
+
+  const debt = github.getByRole('region', { name: '跨来源事项', exact: true })
+    .locator('[data-review-matter="DEBT_FIELDS"]');
+  await expect(debt.getByRole('button', { name: '处理该项', exact: true })).toBeVisible();
+  await debt.getByRole('button', { name: '处理该项', exact: true }).click();
+
+  const conflict = page.getByLabel('当前来源差异');
+  await expect(conflict.getByRole('heading', { name: '欠款字段结构冲突', exact: true })).toBeVisible();
+  const visiblePrimary = page.locator('[data-workflow-primary="true"]:visible');
+  await expect(visiblePrimary).toHaveCount(1);
+  await expect(visiblePrimary).toHaveText('保存当前决定');
+  await expect(github.getByRole('button', { name: /^完成GitHub代码仓库审阅$/u })).toBeHidden();
+
+  await conflict.getByRole('button', { name: '保存当前决定', exact: true }).click();
+  await expect(github.getByRole('heading', { name: '代码仓库审阅', exact: true })).toBeVisible();
+  await expect(github.getByRole('button', { name: '完成GitHub代码仓库审阅', exact: true })).toBeVisible();
+  await expect(page.getByRole('status', { name: '操作反馈', exact: true })).toContainText('可继续完成当前来源审阅');
+});
+
 test('1024 资料抽屉可关闭并从页头恢复，五个来源保持可见', async ({ page }) => {
   await bootstrap(page, 1024);
 

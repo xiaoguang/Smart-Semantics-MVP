@@ -1581,9 +1581,10 @@ function projectChecklist(
   const completedTasks = entries.filter((entry) => (
     Boolean(entry.scriptedEditId) && resolvedScriptedEditIds.has(entry.scriptedEditId!)
   ));
-  const completedFormalDecisions = formalDecisions.filter((decision) => (
-    decision.sourceId === document.sourceId
-  ));
+  // Formal decisions belong to the run, not to whichever source document is
+  // currently open. Keeping this list global makes a saved decision readable
+  // after the reviewer moves to a later source.
+  const completedFormalDecisions = [...formalDecisions];
   const pendingTaskIds = new Set(tasks.map((entry) => entry.claimId));
   const gaps = entries
     .filter((entry) => !pendingTaskIds.has(entry.claimId) && document.evidence

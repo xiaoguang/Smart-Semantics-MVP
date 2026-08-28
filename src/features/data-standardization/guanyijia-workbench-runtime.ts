@@ -1037,6 +1037,21 @@ function selectFirstUnresolvedConflict(run: StandardizationRun): {
   return undefined;
 }
 
+function canResolveFirstUnresolvedConflict(
+  run: StandardizationRun,
+  unresolved: ReturnType<typeof selectFirstUnresolvedConflict>,
+) {
+  if (!unresolved) return false;
+  return run.status === 'CONFLICT_BLOCKED' || run.status === 'READY'
+    || (run.status === 'REVIEWING_DOCUMENT' && unresolved.sourceStep.status === 'DOCUMENT_READY');
+}
+
+function assertCurrentDocumentRevisionUnlocked(step: StandardizationSourceStep) {
+  if (step.resolvedConflictIds.length) {
+    throw new Error('已保存来源差异后不能修改来源文档');
+  }
+}
+
 function unresolvedConflictCount(run: StandardizationRun) {
   return run.sources.reduce((count, sourceStep) => (
     count + sourceStep.introducedConflictIds.filter((id) => !sourceStep.resolvedConflictIds.includes(id)).length
@@ -3495,8 +3510,8 @@ export function createGuanyijiaWorkbenchRuntime(input: {
       }
       const context = await loadRunContext(run);
       const unresolvedConflict = selectFirstUnresolvedConflict(run);
-      if (run.status === 'CONFLICT_BLOCKED' || run.status === 'READY') {
-        if (!unresolvedConflict || unresolvedConflict.conflictId !== previewInput.conflictId) {
+      if (unresolvedConflict && canResolveFirstUnresolvedConflict(run, unresolvedConflict)) {
+        if (unresolvedConflict.conflictId !== previewInput.conflictId) {
           throw new Error('只能预览当前第一项未解决冲突');
         }
       } else if (run.status !== 'READY_FOR_OUTPUT'
@@ -3785,6 +3800,7 @@ export function createGuanyijiaWorkbenchRuntime(input: {
         if (command.expectedPreviewSha256 !== previewSha256) {
           throw new Error('剧本修改预览已变化，请重新预览');
         }
+        assertCurrentDocumentRevisionUnlocked(currentStep);
         let revisedDocument: SourceModelingDocument | null = null;
         if (pendingApply) {
           if (pendingApply.beforeDocumentId !== currentStep.documentId) {
@@ -4124,6 +4140,7 @@ export function createGuanyijiaWorkbenchRuntime(input: {
           || canonicalModelingJson(proposal.preview) !== canonicalModelingJson(preview)) {
           throw new Error('助手Proposal预览已变化，请重新生成建议');
         }
+        assertCurrentDocumentRevisionUnlocked(currentStep);
         let revisedDocument: SourceModelingDocument;
         if (pendingAssistantApply) {
           const existing = await input.sourceDocuments.read(pendingAssistantApply.afterDocumentId);
@@ -4312,11 +4329,28 @@ export function createGuanyijiaWorkbenchRuntime(input: {
           throw new Error('标准化运行revision已变化，请刷新后重试');
         }
         const unresolvedConflict = selectFirstUnresolvedConflict(activeRun);
-        if (!unresolvedConflict || (activeRun.status !== 'CONFLICT_BLOCKED' && activeRun.status !== 'READY')) {
+        if (!unresolvedConflict || !canResolveFirstUnresolvedConflict(activeRun, unresolvedConflict)) {
           throw new Error('当前没有待解决的来源冲突');
         }
         if (unresolvedConflict.conflictId !== command.conflictId) {
           throw new Error('只能应用当前第一项未解决冲突');
+        }
+        const source = sources.find((candidate) => candidate.sourceId === unresolvedConflict.sourceStep.sourceId);
+        const context = await loadRunContext(activeRun);
+        const compilation = context.compilations.find((candidate) => (
+          candidate.sourceId === unresolvedConflict.sourceStep.sourceId
+        ));
+        const contentBinding = contentBindingForRun(activeRun, pointer);
+        if (!source || !compilation) throw new Error('当前冲突来源的文档上下文不存在');
+        const hasPendingScriptedReview = scriptedReviewStatesFor({
+          run: activeRun,
+          source,
+          compilation,
+          contentBinding,
+          pointer,
+        }).some((state) => state.status === 'PENDING');
+        if (hasPendingScriptedReview) {
+          throw new Error('请先核对本来源的建议修改');
         }
         const preview = await this.previewCurrentConflict({
           runId: activeRun.runId,
@@ -4438,6 +4472,7 @@ export function createGuanyijiaWorkbenchRuntime(input: {
           return result;
         }
 
+        assertCurrentDocumentRevisionUnlocked(currentStep);
         let revisedDocument: SourceModelingDocument | null = null;
         if (pendingApply) {
           if (pendingApply.beforeDocumentId !== currentStep.documentId) {

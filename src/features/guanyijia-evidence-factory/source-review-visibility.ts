@@ -48,6 +48,10 @@ const conflictIdByTopic: Readonly<Record<CandidateReviewProjection['topic'], str
   DOCUMENT_STATUS: 'gyj-conflict-status-nine',
 };
 
+export function conflictIdForSourceReviewTopic(topic: CandidateReviewProjection['topic']) {
+  return conflictIdByTopic[topic];
+}
+
 // This is a display-only excerpt from the immutable V6 content sidecar, not
 // a change to the formal candidate bundle. Its complete file digest and
 // locator are verified by the source-admission regression test against the
@@ -180,6 +184,28 @@ function findingsForSource(input: {
 }
 
 /**
+ * Projects comparisons for the admitted run rather than for the document the
+ * reader happens to have open.  The source-specific projection remains the
+ * evidence adapter: later admitted sources replace an earlier, partial view
+ * of the same topic with the most complete exact-source view.
+ */
+export function projectSourceReviewMatters(input: {
+  sources: readonly AdmittedSource[];
+}): CandidateReviewProjection[] {
+  const admitted = exactAdmittedSources(input.sources);
+  const byTopic = new Map<CandidateReviewProjection['topic'], CandidateReviewProjection>();
+  for (const source of input.sources) {
+    for (const finding of findingsForSource({
+      currentSourceId: source.sourceId,
+      admitted,
+    })) {
+      byTopic.set(finding.topic, finding);
+    }
+  }
+  return [...byTopic.values()];
+}
+
+/**
  * The only bridge from immutable candidate evidence to a live five-source
  * run. A snapshot being bundled locally is merely AVAILABLE; it becomes
  * visible in comparisons only once its exact source identity is ADMITTED.
@@ -192,15 +218,12 @@ export function projectSourceReviewVisibility(input: {
   const current = input.sources.find((source) => source.sourceId === input.currentSourceId);
   const admitted = exactAdmittedSources(input.sources);
   const sourceDocument = sourceDocumentProjection(current);
-  const comparisonFindings = findingsForSource({
-    currentSourceId: input.currentSourceId,
-    admitted,
-  });
+  const comparisonFindings = projectSourceReviewMatters({ sources: input.sources });
 
   const conflictPrerequisites = input.currentConflictId
     ? conflictSources[input.currentConflictId]
     : undefined;
-  const actionableConflict = current?.status === 'CONFLICT_BLOCKED'
+  const actionableConflict = current !== undefined && admittedStates.has(current.status)
     && input.currentConflictId
     && conflictPrerequisites
     && prerequisitesMet(conflictPrerequisites, admitted)

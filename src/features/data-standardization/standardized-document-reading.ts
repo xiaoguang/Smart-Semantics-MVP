@@ -12,6 +12,60 @@ export type StandardizedDocumentReadingEntry = {
   items: BusinessDocumentEntry[];
 };
 
+/**
+ * A frozen Markdown source can retain its historical `GAP` vocabulary while
+ * the reader uses the approved, itemised Chinese language.  The projection is
+ * deliberately one-way: it is never used to derive or write the source
+ * Markdown, its revision, or a candidate document.
+ */
+export type ReviewSupplementSegment =
+  | { kind: 'PROSE'; text: string }
+  | { kind: 'SUPPLEMENT'; ordinal: number; text: string };
+
+const reviewSupplementMarker = /(?:GAP\s*(\d+)?|资料缺口|待确认)\s*[：:]/giu;
+
+export function projectReviewSupplementSegments(value: string): ReviewSupplementSegment[] {
+  const matches = [...value.matchAll(reviewSupplementMarker)];
+  if (matches.length === 0) return value ? [{ kind: 'PROSE', text: value }] : [];
+
+  const segments: ReviewSupplementSegment[] = [];
+  let cursor = 0;
+  let nextOrdinal = 1;
+
+  for (let index = 0; index < matches.length; index += 1) {
+    const marker = matches[index]!;
+    const markerStart = marker.index ?? 0;
+    const markerEnd = markerStart + marker[0].length;
+    const prose = value.slice(cursor, markerStart).trim();
+    if (prose) segments.push({ kind: 'PROSE', text: prose });
+
+    const following = matches[index + 1];
+    const text = value.slice(markerEnd, following?.index ?? value.length).trim();
+    const suppliedOrdinal = marker[1] ? Number(marker[1]) : undefined;
+    const ordinal = suppliedOrdinal ?? nextOrdinal;
+    nextOrdinal = Math.max(nextOrdinal, ordinal + 1);
+    if (text) {
+      segments.push({ kind: 'SUPPLEMENT', ordinal, text });
+    } else {
+      // Preserve a malformed marker as readable text rather than silently
+      // dropping part of an immutable source description.
+      segments.push({ kind: 'SUPPLEMENT', ordinal, text: '尚未提供具体说明。' });
+    }
+    cursor = following?.index ?? value.length;
+  }
+
+  return segments;
+}
+
+export function projectReviewSupplementText(value: string): string {
+  return projectReviewSupplementSegments(value)
+    .map((segment) => segment.kind === 'SUPPLEMENT'
+      ? `待补充资料 ${segment.ordinal}：${segment.text}`
+      : segment.text)
+    .join('\n\n')
+    .replace(/\bGAP\b/giu, '待补充资料');
+}
+
 function normalizedSectionHeading(value: string): string {
   return value
     .replace(/^\s*\d+\.\s*/u, '')
@@ -42,10 +96,13 @@ export function buildStandardizedDocumentReadingEntries(
     .map((section) => ({
       sectionId: section.id,
       sectionTitle: section.title,
-      sectionPurpose: section.purpose,
-      ...(section.narrative ? { sectionNarrative: section.narrative } : {}),
+      sectionPurpose: projectReviewSupplementText(section.purpose),
+      ...(section.narrative ? { sectionNarrative: projectReviewSupplementText(section.narrative) } : {}),
       items: section.entries.map((entry) => ({
         ...entry,
+        title: projectReviewSupplementText(entry.title),
+        statement: projectReviewSupplementText(entry.statement),
+        ...(entry.nextStep ? { nextStep: projectReviewSupplementText(entry.nextStep) } : {}),
         ...(entry.fields ? { fields: [...entry.fields] } : {}),
         ...(entry.schemaEvidence ? {
           schemaEvidence: {

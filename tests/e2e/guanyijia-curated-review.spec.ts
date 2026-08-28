@@ -44,7 +44,7 @@ async function expectNoHorizontalOverflowWithin(target: Locator) {
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
 }
 
-test('数据库先展示审阅事项，页头动作能定位到待处理事项', async ({ page }) => {
+test('数据库先展示审阅事项，页头动作能定位到待确认事项', async ({ page }) => {
   test.setTimeout(120_000);
   await bootstrap(page, 1440);
   const document = await openCuratedReview(page);
@@ -66,10 +66,10 @@ test('数据库先展示审阅事项，页头动作能定位到待处理事项',
 
   await document.getByRole('button', { name: '核对 1 项建议', exact: true }).click();
   const matters = document.getByRole('region', { name: '审阅事项', exact: true });
-  const tasks = matters.getByRole('region', { name: '待处理事项', exact: true });
+  const tasks = matters.getByRole('region', { name: '待确认事项', exact: true });
   const depotHead = tasks.locator('article[data-review-claim="claim:guanyijia_mysql:curated-e005"]');
   await expect(depotHead).toBeVisible();
-  await expect(tasks.getByRole('heading', { name: '待处理事项', exact: true })).toBeVisible();
+  await expect(tasks.getByRole('heading', { name: '待确认事项', exact: true })).toBeVisible();
   await expect(depotHead.getByRole('button', { name: '采用推荐修改', exact: true })).toBeVisible();
   // The primary action takes the reviewer directly to the suggested change and
   // expands its supporting material.  The available action is therefore to
@@ -171,7 +171,7 @@ test('剧本修改同步到审阅事项、审阅结论与标准化文档，且�
   // A completed task moves out of the pending group and remains visible as a
   // saved decision in the review-items tab.
   await expect(document.locator('[data-review-claim="claim:guanyijia_mysql:curated-e005"]')).toContainText('库存单据表头（jsh_depot_head）');
-  await expect(document.getByRole('region', { name: '已处理', exact: true })).toBeVisible();
+  await expect(document.getByRole('region', { name: '已处理事项', exact: true })).toBeVisible();
   await document.getByRole('tab', { name: '标准化文档', exact: true }).click();
   await expect(document.getByRole('region', { name: '标准化文档', exact: true })).toContainText('库存单据表头（jsh_depot_head）');
   await expect(document.getByRole('tab', { name: '依据追踪', exact: true })).toHaveCount(0);
@@ -190,55 +190,40 @@ test('剧本修改同步到审阅事项、审阅结论与标准化文档，且�
   }
 });
 
-test('跨来源资料缺口留在审阅事项，其余比较结论保持扁平列表', async ({ page }) => {
+test('全部跨来源比较留在审阅事项，并以三列卡片保留可处理差异', async ({ page }) => {
   test.setTimeout(120_000);
   await bootstrap(page, 1440);
   const mysql = await openCuratedReview(page);
   const github = await completeDatabaseAndOpenGithub(page, mysql);
   const matters = github.getByRole('region', { name: '审阅事项', exact: true });
-  const gapFindings = matters.getByRole('region', { name: '本次读取发现', exact: true });
-  await expect(gapFindings).toContainText('单据状态');
-  await expect(gapFindings).toContainText('不同版本记录不一致');
-  const gaps = matters.getByRole('region', { name: '资料缺口', exact: true });
-  await expect(gaps).toContainText('状态 9 的业务含义仍缺少说明');
-  const statusTableRow = gaps.locator('.guanyijia-cross-source-findings-table tbody tr')
-    .filter({ hasText: '单据状态' }).first();
-  const statusFinding = await statusTableRow.isVisible()
-    ? statusTableRow
-    : gaps.getByRole('list', { name: '跨来源发现', exact: true })
-      .getByRole('listitem').filter({ hasText: '单据状态' }).first();
-  const statusMaterials = statusFinding.locator('button[aria-controls^="finding-materials:"]');
+  const pending = matters.getByRole('region', { name: '待确认事项', exact: true });
+  const findings = pending.getByRole('region', { name: '跨来源事项', exact: true });
+  await expect(findings).toContainText('负库存配置');
+  await expect(findings).toContainText('欠款字段');
+  await expect(findings).toContainText('单据状态');
+  await expect(findings.locator('[data-review-matter]')).toHaveCount(3);
+  const debt = findings.locator('[data-review-matter="DEBT_FIELDS"]');
+  await expect(debt).toContainText('请先核对本来源建议');
+  await expect(debt.getByRole('button', { name: '处理该项', exact: true })).toHaveCount(0);
+  // The review-document container, not the whole application viewport, owns
+  // the 959px three-column breakpoint. Collapse the two existing peripheral
+  // rails to verify the wide document state without changing page layout.
+  await page.getByRole('button', { name: '收起来源资料', exact: true }).click();
+  await page.getByRole('button', { name: /收起导航$/u }).click();
+  const reviewWidth = await github.evaluate((element) => element.clientWidth);
+  expect(reviewWidth).toBeGreaterThan(959);
+  const gridColumns = await github.locator('[data-review-claim="claim:guanyijia_github:github-v5-github-v5-003"]')
+    .evaluate((element) => getComputedStyle(element).gridTemplateColumns);
+  expect(gridColumns.trim().split(/\s+/u)).toHaveLength(3);
+  const statusMaterials = findings.locator('[data-review-matter="DOCUMENT_STATUS"]')
+    .getByRole('button', { name: /^(查看|收起)双方资料$/u });
   await statusMaterials.click();
   await expect(statusMaterials).toHaveText('收起双方资料');
-  await expect(statusFinding).toContainText('状态 9');
+  await expect(findings.getByRole('heading', { name: '参与判断的来源材料', exact: true })).toBeVisible();
 
   await github.getByRole('tab', { name: '审阅结论', exact: true }).click();
-  const findings = github.getByRole('region', { name: '本次读取发现', exact: true });
-  const desktopTable = findings.locator('.guanyijia-cross-source-findings-table');
-  const compactList = findings.locator('.guanyijia-cross-source-findings-list');
-  if (await desktopTable.isVisible()) {
-    await expect(findings.getByRole('columnheader', { name: '议题', exact: true })).toBeVisible();
-    await expect(findings.getByRole('columnheader', { name: '当前来源', exact: true })).toBeVisible();
-    await expect(findings.getByRole('columnheader', { name: '新来源', exact: true })).toBeVisible();
-    await expect(findings.getByRole('row')).toHaveCount(3);
-  } else {
-    // The content track is deliberately compact while the inline source
-    // material panel is open, even on a 1440px viewport.
-    await expect(compactList).toBeVisible();
-    await expect(compactList.getByRole('listitem')).toHaveCount(2);
-  }
-  const findingList = findings.getByRole('list', { name: '跨来源发现', exact: true });
-  await expect(findingList.getByRole('button', { name: /查看双方资料/u })).toHaveCount(2);
-  await expect(findings.locator('.candidate-evidence-review')).toHaveCount(0);
-  await expect(findings).toContainText('结构差异');
-  const firstFindingItem = findingList.getByRole('listitem').first();
-  const firstFinding = firstFindingItem.locator('button[aria-controls^="finding-materials:"]');
-  await firstFinding.click();
-  await expect(firstFinding).toHaveText('收起双方资料');
-  const expandedMaterials = findings.getByRole('heading', { name: '参与判断的来源材料', exact: true }).locator('..');
-  await expect(expandedMaterials).toBeVisible();
-  await expect(expandedMaterials.getByText('MySQL 已保存快照', { exact: true })).toBeVisible();
-  await expect(expandedMaterials.getByText('GitHub V6 固定版本源码', { exact: true })).toBeVisible();
+  await expect(github.getByRole('region', { name: '跨来源事项', exact: true })).toHaveCount(0);
+  await expect(github.locator('.candidate-evidence-review')).toHaveCount(0);
 });
 
 test('GitHub 剧本修改确认后仍返回审阅事项，而不是旧版识别卡', async ({ page }) => {
@@ -253,10 +238,10 @@ test('GitHub 剧本修改确认后仍返回审阅事项，而不是旧版识别�
   await editor.getByRole('button', { name: '确认修改', exact: true }).click();
 
   await expect(github.getByRole('region', { name: '审阅事项', exact: true })).toBeVisible();
-  // Once the only scripted task is confirmed, the task group is intentionally
-  // removed. The saved decision remains available in the review-items tab.
-  await expect(github.getByRole('heading', { name: '待处理事项', exact: true })).toHaveCount(0);
-  await expect(github.getByRole('heading', { name: '已处理', exact: true })).toBeVisible();
+  // The scripted task moves to 已处理事项, while running-source comparisons
+  // remain in 待确认事项 rather than vanishing with the local suggestion.
+  await expect(github.getByRole('heading', { name: '待确认事项', exact: true })).toBeVisible();
+  await expect(github.getByRole('heading', { name: '已处理事项', exact: true })).toBeVisible();
   await expect(github.getByText('租户级负库存控制', { exact: true })).toBeVisible();
   await expect(github.getByRole('heading', { name: '识别结果', exact: true })).toHaveCount(0);
   await expect(github.getByText('证据等级', { exact: true })).toHaveCount(0);

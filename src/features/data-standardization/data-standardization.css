@@ -876,14 +876,19 @@ body.standardization-overlay-active { overflow: hidden !important; }
 .guanyijia-checklist-group { display: grid; min-width: 0; gap: 10px; padding: 16px; border: 1px solid var(--dh-border, #dfe5eb); border-radius: 12px; background: #fff; }
 .guanyijia-review-conclusion-set { display: grid; min-width: 0; gap: 14px; }
 .guanyijia-checklist-group > header small { color: var(--dh-text-secondary, #667085); }
-.guanyijia-checklist-group[aria-label='待核对任务'] { border-color: #e6bd76; background: #fffdf7; }
-.guanyijia-checklist-group[aria-label='待核对任务'] > article { display: grid; min-width: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 14px; border: 1px solid #ead49d; border-radius: 10px; background: #fff; }
-.guanyijia-checklist-group[aria-label='待核对任务'] article > div { min-width: 0; }
-.guanyijia-checklist-group[aria-label='待核对任务'] article > div > span { display: block; margin-bottom: 4px; color: #8a4b08; font-size: 12px; font-weight: 700; }
-.guanyijia-checklist-group[aria-label='待核对任务'] article p { color: var(--dh-text-secondary, #667085); line-height: 1.6; overflow-wrap: anywhere; }
-.guanyijia-checklist-group[aria-label='待核对任务'] article footer { grid-column: 1 / -1; display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
-.guanyijia-checklist-group[aria-label='待核对任务'] .guanyijia-scripted-review-editor,
-.guanyijia-checklist-group[aria-label='待核对任务'] .guanyijia-inline-evidence { grid-column: 1 / -1; }
+.guanyijia-pending-matters { border-color: #e6bd76; background: #fffdf7; }
+.guanyijia-pending-matters > article,
+.guanyijia-cross-source-findings > article { display: grid; min-width: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 14px; border: 1px solid #ead49d; border-radius: 10px; background: #fff; }
+.guanyijia-pending-matters article > div,
+.guanyijia-cross-source-findings article > div { min-width: 0; }
+.guanyijia-pending-matters article > div > span,
+.guanyijia-cross-source-findings article > div > span { display: block; margin-bottom: 4px; color: #8a4b08; font-size: 12px; font-weight: 700; }
+.guanyijia-pending-matters article p,
+.guanyijia-cross-source-findings article p { color: var(--dh-text-secondary, #667085); line-height: 1.6; overflow-wrap: anywhere; }
+.guanyijia-pending-matters article footer,
+.guanyijia-cross-source-findings article footer { grid-column: 1 / -1; display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.guanyijia-pending-matters .guanyijia-scripted-review-editor,
+.guanyijia-pending-matters .guanyijia-inline-evidence { grid-column: 1 / -1; }
 .guanyijia-inline-evidence { display: grid; min-width: 0; gap: 8px; padding: 12px; border-left: 3px solid #7cc8a1; border-radius: 0 8px 8px 0; background: #f4fbf6; }
 .guanyijia-inline-evidence > div { display: grid; min-width: 0; gap: 5px; }
 .guanyijia-inline-evidence p { color: var(--dh-text, #1d2749) !important; }
@@ -1015,6 +1020,15 @@ body.standardization-overlay-active { overflow: hidden !important; }
 .guanyijia-cross-source-expanded-materials p { margin: 0; line-height: 1.55; overflow-wrap: anywhere; }
 .guanyijia-cross-source-expanded-materials small,
 .guanyijia-cross-source-expanded-materials em { color: var(--dh-text-secondary, #667085); font-size: 12px; font-style: normal; line-height: 1.45; overflow-wrap: anywhere; }
+.guanyijia-pending-matters > .guanyijia-cross-source-findings { gap: 12px; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.guanyijia-cross-source-findings > header { display: grid; gap: 4px; padding: 2px 0; }
+.guanyijia-cross-source-findings > header h3 { margin: 0; font-size: 15px; }
+.guanyijia-cross-source-findings > header p { margin: 0; font-size: 13px; }
+.guanyijia-cross-source-findings > article > header { grid-column: 1 / -1; display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 8px; }
+.guanyijia-cross-source-findings > article > header strong { color: var(--dh-text, #1d2749); }
+.guanyijia-cross-source-findings > article > header span { padding: 2px 8px; border-radius: 999px; color: #006e99; font-size: 12px; font-weight: 700; background: #e6f6fb; }
+.guanyijia-cross-source-findings > article > footer small { flex: 1 1 220px; color: var(--dh-text-secondary, #667085); line-height: 1.45; overflow-wrap: anywhere; }
+.guanyijia-cross-source-findings > article > [id^='finding-materials:'] { grid-column: 1 / -1; }
 
 .guanyijia-standardized-document { display: grid; width: 100%; min-width: 0; gap: 18px; max-width: none; margin: 0; }
 .guanyijia-standardized-document-toolbar { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid #dfe7ec; border-radius: 10px; background: #f8fafc; }
@@ -1067,13 +1081,15 @@ body.standardization-overlay-active { overflow: hidden !important; }
 }
 
 @container review-document (max-width: 959px) {
-  .guanyijia-checklist-group[aria-label='待核对任务'] > article,
+  .guanyijia-pending-matters > article,
+  .guanyijia-cross-source-findings > article,
   .guanyijia-before-after,
   .guanyijia-impact-preview,
   .guanyijia-review-assistant-before-after,
   .guanyijia-conflict-sides { grid-template-columns: 1fr; }
-  .guanyijia-checklist-group[aria-label='待核对任务'] article footer { justify-content: stretch; }
-  .guanyijia-checklist-group[aria-label='待核对任务'] article footer .ant-btn-primary { flex: 1 1 auto; }
+  .guanyijia-pending-matters article footer,
+  .guanyijia-cross-source-findings article footer { justify-content: stretch; }
+  .guanyijia-pending-matters article footer .ant-btn-primary { flex: 1 1 auto; }
   .guanyijia-key-conclusion-list > li { display: grid; gap: 8px; }
   .guanyijia-key-conclusion-list > li > div:last-child { justify-content: flex-start; }
 }
@@ -1401,9 +1417,11 @@ body:has(.guanyijia-workbench-shell.mobile-surface) .ant-message-notice-content 
   .guanyijia-next-task h2 { font-size: 19px; }
   .guanyijia-review-checklist { gap: 14px; }
   .guanyijia-checklist-group { padding: 14px; }
-  .guanyijia-checklist-group[aria-label='待核对任务'] > article { grid-template-columns: 1fr; }
-  .guanyijia-checklist-group[aria-label='待核对任务'] article footer { justify-content: stretch; }
-  .guanyijia-checklist-group[aria-label='待核对任务'] article footer .ant-btn-primary { flex: 1 1 auto; }
+  .guanyijia-pending-matters > article,
+  .guanyijia-cross-source-findings > article { grid-template-columns: 1fr; }
+  .guanyijia-pending-matters article footer,
+  .guanyijia-cross-source-findings article footer { justify-content: stretch; }
+  .guanyijia-pending-matters article footer .ant-btn-primary { flex: 1 1 auto; }
   .guanyijia-key-conclusion-list > li { display: grid; gap: 8px; }
   .guanyijia-key-conclusion-list > li > div:last-child { justify-content: flex-start; }
   .guanyijia-conflict-strategies { grid-template-columns: 1fr; }
