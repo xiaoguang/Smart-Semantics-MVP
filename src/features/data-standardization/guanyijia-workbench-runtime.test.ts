@@ -606,7 +606,7 @@ test('completing the MySQL document review marks the document ready before offer
   assert.deepEqual(reviewed.nextAction, { type: 'READ_NEXT_SOURCE', label: '载入GitHub代码仓库快照' });
 });
 
-test('reviewing GitHub stops at the concrete debt-field conflict and cannot continue', async () => {
+test('reviewing GitHub keeps the debt-field conflict pending and permits the next source', async () => {
   const { runtime } = fixture();
   const started = await runtime.execute(command('START_RUN', 0));
   const mysql = await runtime.execute(command('READ_NEXT_SOURCE', started.run!.revision, 'read:mysql'));
@@ -621,16 +621,46 @@ test('reviewing GitHub stops at the concrete debt-field conflict and cannot cont
 
   assert.equal(blocked.run?.status, 'CONFLICT_BLOCKED');
   assert.deepEqual(blocked.nextAction, {
-    type: 'RESOLVE_CONFLICT',
-    label: '处理1项来源差异',
+    type: 'READ_NEXT_SOURCE',
+    label: '载入业务说明快照',
   });
   const conflict = blocked.timeline.find((item) => item.kind === 'CONFLICT_FOUND');
   assert.equal(conflict?.conflicts?.[0]?.title, '欠款字段结构冲突');
   assert.deepEqual(conflict?.conflicts?.[0]?.affectedObjects, ['指标：receivable_debt', '规则：deposit']);
-  await assert.rejects(
-    runtime.execute(command('READ_NEXT_SOURCE', blocked.run!.revision, 'read:blocked')),
-    /仍有来源冲突未解决/,
-  );
+  const official = await runtime.execute(command('READ_NEXT_SOURCE', blocked.run!.revision, 'read:official'));
+  assert.equal(official.run?.status, 'REVIEWING_DOCUMENT');
+  assert.equal(official.current?.source.sourceId, 'guanyijia_official_docs');
+  assert.equal(official.timeline.find((item) => item.state === 'CURRENT')?.sourceId, 'guanyijia_official_docs');
+  const asked = await runtime.execute({
+    type: 'ASK_REVIEW_ASSISTANT',
+    commandId: 'read:official:assistant',
+    expectedRevision: official.run!.revision,
+    actorUserId: 'user-author',
+    message: '当前来源的读取范围是什么？',
+    selection: {},
+  });
+  assert.equal(asked.assistantTurnDelta?.item.response.title, '管伊佳官方核心文档');
+});
+
+test('review shell keeps the active source readable while an earlier conflict remains pending', async () => {
+  const { runtime } = fixture();
+  const started = await runtime.execute(command('START_RUN', 0, 'active-shell:start'));
+  const mysql = await runtime.execute(command('READ_NEXT_SOURCE', started.run!.revision, 'active-shell:read:mysql'));
+  const mysqlReviewed = await runtime.execute(command(
+    'COMPLETE_CURRENT_DOCUMENT_REVIEW', mysql.run!.revision, 'active-shell:review:mysql',
+  ));
+  const github = await runtime.execute(command('READ_NEXT_SOURCE', mysqlReviewed.run!.revision, 'active-shell:read:github'));
+  const githubReviewed = await runtime.execute(command(
+    'COMPLETE_CURRENT_DOCUMENT_REVIEW', github.run!.revision, 'active-shell:review:github',
+  ));
+  await runtime.execute(command('READ_NEXT_SOURCE', githubReviewed.run!.revision, 'active-shell:read:official'));
+
+  const shell = await runtime.readReviewShell('user-author');
+
+  assert.equal(shell.current?.source.sourceId, 'guanyijia_official_docs');
+  assert.equal(shell.current?.sourceStep.status, 'DOCUMENT_READY');
+  assert.equal(shell.currentConflict?.conflictId, 'gyj-conflict-debt-schema');
+  assert.equal(shell.timeline.find((item) => item.state === 'CURRENT')?.sourceId, 'guanyijia_official_docs');
 });
 
 test('reloading a blocked conflict reads only the source blocks needed for the current hunk', async () => {
@@ -1053,6 +1083,75 @@ test('冲突决定使用真实应用时间，Run成功后指针写失败可由�
     recovered.resolutions[0]?.decidedAt,
     blocked.run?.timeline.find((event) => event.type === 'CONFLICT_FOUND')?.createdAt,
   );
+});
+
+test('五源均已审阅且差异未决定时保留最后文档并进入第一项差异', async () => {
+  const { runtime } = fixture();
+  let snapshot = await runtime.execute(command('START_RUN', 0, 'deferred-conflicts:start'));
+  const readAndReview = async (source: string) => {
+    const read = await runtime.execute(command('READ_NEXT_SOURCE', snapshot.run!.revision, `deferred-conflicts:read:${source}`));
+    snapshot = await runtime.execute(command(
+      'COMPLETE_CURRENT_DOCUMENT_REVIEW', read.run!.revision, `deferred-conflicts:review:${source}`,
+    ));
+  };
+
+  await readAndReview('mysql');
+  await readAndReview('github');
+  await readAndReview('official');
+  await readAndReview('policy');
+  await readAndReview('semantica');
+
+  assert.equal(snapshot.run?.status, 'READY');
+  assert.equal(snapshot.current?.source.sourceId, 'guanyijia_semantica_demo');
+  assert.equal(snapshot.nextAction.type, 'RESOLVE_CONFLICT');
+  assert.equal(snapshot.currentConflict?.conflictId, 'gyj-conflict-debt-schema');
+});
+
+test('READY 状态按稳定顺序预览并保存延后差异后进入交付阶段', async () => {
+  const { runtime } = fixture();
+  let snapshot = await runtime.execute(command('START_RUN', 0, 'deferred-resolution:start'));
+  const readAndReview = async (source: string) => {
+    const read = await runtime.execute(command('READ_NEXT_SOURCE', snapshot.run!.revision, `deferred-resolution:read:${source}`));
+    snapshot = await runtime.execute(command(
+      'COMPLETE_CURRENT_DOCUMENT_REVIEW', read.run!.revision, `deferred-resolution:review:${source}`,
+    ));
+  };
+  const resolve = async (
+    conflictId: string,
+    strategy: 'KEEP_CURRENT' | 'MERGE' | 'DEFER_AS_GAP',
+    reason: string,
+  ) => {
+    const preview = await runtime.previewCurrentConflict({
+      runId: snapshot.run!.runId,
+      conflictId,
+      strategy,
+    });
+    snapshot = await runtime.execute({
+      type: 'RESOLVE_CURRENT_CONFLICT',
+      commandId: `deferred-resolution:resolve:${conflictId}`,
+      expectedRevision: snapshot.run!.revision,
+      actorUserId: 'user-author',
+      conflictId,
+      strategy,
+      reason,
+      expectedHunkSha256: preview.hunk.hunkSha256,
+    });
+  };
+
+  await readAndReview('mysql');
+  await readAndReview('github');
+  await readAndReview('official');
+  await readAndReview('policy');
+  await readAndReview('semantica');
+
+  await resolve('gyj-conflict-debt-schema', 'KEEP_CURRENT', '部署库作为当前工作标准，源码差异只作溯源。');
+  assert.equal(snapshot.currentConflict?.conflictId, 'gyj-conflict-negative-stock');
+  await resolve('gyj-conflict-negative-stock', 'MERGE', '保留按租户配置实现并登记统一制度尚未落地。');
+  assert.equal(snapshot.currentConflict?.conflictId, 'gyj-conflict-status-nine');
+  await resolve('gyj-conflict-status-nine', 'DEFER_AS_GAP', '状态九业务含义尚未得到正式确认。');
+
+  assert.equal(snapshot.run?.status, 'READY_FOR_OUTPUT');
+  assert.equal(snapshot.currentConflict, undefined);
 });
 
 test('五源主演示按GitHub debt、Policy两项与Semantica只佐证的时点到达READY_FOR_OUTPUT', async () => {

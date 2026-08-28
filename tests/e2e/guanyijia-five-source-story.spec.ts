@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   closeFormalCatalogBrowser,
   login,
@@ -74,7 +74,11 @@ const sourceReviewTitles = {
   '术语图（派生）': '企业术语图',
 } as const;
 
-async function readSource(page: Page, sourceName: keyof typeof sourceReviewTitles) {
+async function readSource(
+  page: Page,
+  sourceName: keyof typeof sourceReviewTitles,
+  hasReviewMatters = true,
+) {
   const heading = page.locator('header.guanyijia-document-review-header').getByRole('heading', {
     name: sourceReviewTitles[sourceName], exact: true,
   });
@@ -82,15 +86,24 @@ async function readSource(page: Page, sourceName: keyof typeof sourceReviewTitle
   const document = heading.locator('xpath=ancestor::section[contains(@class,"guanyijia-document-review")]');
   await expect(document).toBeVisible();
   await expect(document.getByRole('tab', { name: '审阅事项', exact: true })).toHaveAttribute('aria-selected', 'true');
-  await expect(document.getByRole('region', { name: '审阅事项', exact: true })).toBeVisible();
+  if (hasReviewMatters) {
+    await expect(document.getByRole('region', { name: '审阅事项', exact: true })).toBeVisible();
+  }
   return document;
 }
 
-async function completeSourceReview(page: Page) {
-  const document = page.locator('section.guanyijia-document-review')
-    .filter({ has: page.getByRole('button', { name: /^完成.+审阅$/u }) }).last();
+async function completeSourceReview(document: Locator, hasNextSource: boolean) {
   await document.getByRole('button', { name: /^完成.+审阅$/u }).click();
-  await expect(document).toBeHidden();
+  await expect(document).toBeVisible();
+  if (hasNextSource) {
+    await expect(document.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeVisible();
+  } else {
+    await expect(document.getByRole('button', { name: '审阅下一个来源', exact: true })).toHaveCount(0);
+  }
+}
+
+async function readNextSource(document: Locator) {
+  await document.getByRole('button', { name: '审阅下一个来源', exact: true }).click();
 }
 
 async function resolveConflict(
@@ -154,18 +167,20 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   await expect(mysql.getByRole('tab', { name: '标准化文档' })).toBeVisible();
   await expect(mysql.getByRole('tab', { name: '依据追踪' })).toHaveCount(0);
   await expect(mysql.getByRole('button', { name: '修改识别结论' })).toHaveCount(0);
+  await mysql.getByRole('tab', { name: '审阅结论', exact: true }).click();
   await expect(mysql).toContainText('账户主数据（jsh_account）');
+  await mysql.getByRole('tab', { name: '审阅事项', exact: true }).click();
   await mysql.getByRole('button', { name: '保留当前结论', exact: true }).click();
-  await mysql.getByRole('button', { name: '完成数据库审阅' }).click();
-  await expect(mysql).toBeHidden();
+  await completeSourceReview(mysql, true);
+  await readNextSource(mysql);
 
   const github = await readSource(page, 'GitHub代码仓库');
   const gapFindings = github.getByRole('region', { name: '审阅事项', exact: true })
-    .getByText('本次读取发现', { exact: true });
+    .getByRole('region', { name: '本次读取发现', exact: true });
   await expect(gapFindings).toBeVisible();
   await expect(gapFindings).toContainText('不同版本记录不一致');
   await github.getByRole('tab', { name: '审阅结论', exact: true }).click();
-  const findings = github.getByText('本次读取发现', { exact: true });
+  const findings = github.getByRole('region', { name: '本次读取发现', exact: true });
   await expect(findings).toBeVisible();
   await expect(github).toContainText('互补资料');
   await expect(github).toContainText('结构差异');
@@ -216,7 +231,20 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   // The fixed story deliberately has no generic free editor. The scripted
   // revision is the only supported source-document change in this demo.
   await expect(restoredGithub.getByRole('button', { name: '修改识别结论' })).toHaveCount(0);
-  await completeSourceReview(page);
+  await completeSourceReview(restoredGithub, true);
+  await readNextSource(restoredGithub);
+
+  const official = await readSource(page, '官方业务文档');
+  await completeSourceReview(official, true);
+  await readNextSource(official);
+
+  const policy = await readSource(page, 'ERP管理制度（演示）');
+  await completeSourceReview(policy, true);
+  await readNextSource(policy);
+
+  const semantica = await readSource(page, '术语图（派生）', false);
+  await completeSourceReview(semantica, false);
+  await semantica.getByRole('button', { name: '返回时间线', exact: true }).click();
 
   await ask(page, '当前差异是什么', '欠款字段结构冲突');
   await ask(page, '这项依据是什么？', /依据/u);
@@ -224,12 +252,6 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   await page.getByLabel('当前来源差异').scrollIntoViewIfNeeded();
   await capture(page, '09-five-source-debt-hunk');
   await resolveConflict(page, '欠款字段结构冲突', '保留当前结论');
-
-  await readSource(page, '官方业务文档');
-  await completeSourceReview(page);
-
-  await readSource(page, 'ERP管理制度（演示）');
-  await completeSourceReview(page);
   await page.getByLabel('当前来源差异').scrollIntoViewIfNeeded();
   await capture(page, '10-five-source-negative-stock-hunk');
   await resolveConflict(page, '负库存制度与实现冲突', '登记为缺口');
@@ -238,8 +260,6 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   await capture(page, '11-five-source-status-nine-hunk');
   await resolveConflict(page, '状态 9 业务含义冲突', '登记为缺口');
 
-  await readSource(page, '术语图（派生）');
-  await completeSourceReview(page);
   await expect(page.getByRole('button', { name: '生成标准化结果' })).toBeVisible();
   await capture(page, '12-five-source-ready-for-deliverable');
   await page.getByRole('button', { name: '生成标准化结果' }).click();

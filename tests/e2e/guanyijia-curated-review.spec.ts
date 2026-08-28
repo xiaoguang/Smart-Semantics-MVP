@@ -29,6 +29,16 @@ async function openCuratedReview(page: Page) {
   return document;
 }
 
+async function completeDatabaseAndOpenGithub(page: Page, database: Locator) {
+  await database.getByRole('button', { name: '保留当前结论', exact: true }).click();
+  await database.getByRole('button', { name: '完成数据库审阅', exact: true }).click();
+  await expect(database.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeVisible();
+  await database.getByRole('button', { name: '审阅下一个来源', exact: true }).click();
+  const github = page.locator('section.guanyijia-document-review').last();
+  await expect(github.getByRole('heading', { name: '代码仓库审阅', exact: true })).toBeVisible({ timeout: 30_000 });
+  return github;
+}
+
 async function expectNoHorizontalOverflowWithin(target: Locator) {
   const dimensions = await target.evaluate((element) => ({ scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }));
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
@@ -184,15 +194,23 @@ test('跨来源资料缺口留在审阅事项，其余比较结论保持扁平�
   test.setTimeout(120_000);
   await bootstrap(page, 1440);
   const mysql = await openCuratedReview(page);
-  await mysql.getByRole('button', { name: '保留当前结论', exact: true }).click();
-  await mysql.getByRole('button', { name: '完成数据库审阅', exact: true }).click();
-
-  const github = page.locator('section.guanyijia-document-review').last();
-  await expect(github).toBeVisible({ timeout: 30_000 });
+  const github = await completeDatabaseAndOpenGithub(page, mysql);
   const matters = github.getByRole('region', { name: '审阅事项', exact: true });
   const gapFindings = matters.getByRole('region', { name: '本次读取发现', exact: true });
   await expect(gapFindings).toContainText('单据状态');
   await expect(gapFindings).toContainText('不同版本记录不一致');
+  const gaps = matters.getByRole('region', { name: '资料缺口', exact: true });
+  await expect(gaps).toContainText('状态 9 的业务含义仍缺少说明');
+  const statusTableRow = gaps.locator('.guanyijia-cross-source-findings-table tbody tr')
+    .filter({ hasText: '单据状态' }).first();
+  const statusFinding = await statusTableRow.isVisible()
+    ? statusTableRow
+    : gaps.getByRole('list', { name: '跨来源发现', exact: true })
+      .getByRole('listitem').filter({ hasText: '单据状态' }).first();
+  const statusMaterials = statusFinding.locator('button[aria-controls^="finding-materials:"]');
+  await statusMaterials.click();
+  await expect(statusMaterials).toHaveText('收起双方资料');
+  await expect(statusFinding).toContainText('状态 9');
 
   await github.getByRole('tab', { name: '审阅结论', exact: true }).click();
   const findings = github.getByRole('region', { name: '本次读取发现', exact: true });
@@ -210,7 +228,7 @@ test('跨来源资料缺口留在审阅事项，其余比较结论保持扁平�
     await expect(compactList.getByRole('listitem')).toHaveCount(2);
   }
   const findingList = findings.getByRole('list', { name: '跨来源发现', exact: true });
-  await expect(findingList.getByRole('button', { name: /查看双方资料/u })).toHaveCount(3);
+  await expect(findingList.getByRole('button', { name: /查看双方资料/u })).toHaveCount(2);
   await expect(findings.locator('.candidate-evidence-review')).toHaveCount(0);
   await expect(findings).toContainText('结构差异');
   const firstFindingItem = findingList.getByRole('listitem').first();
@@ -220,18 +238,14 @@ test('跨来源资料缺口留在审阅事项，其余比较结论保持扁平�
   const expandedMaterials = findings.getByRole('heading', { name: '参与判断的来源材料', exact: true }).locator('..');
   await expect(expandedMaterials).toBeVisible();
   await expect(expandedMaterials.getByText('MySQL 已保存快照', { exact: true })).toBeVisible();
-  await expect(expandedMaterials.getByText(/^GitHub 冻结结构化记录/u)).toBeVisible();
+  await expect(expandedMaterials.getByText('GitHub V6 固定版本源码', { exact: true })).toBeVisible();
 });
 
 test('GitHub 剧本修改确认后仍返回审阅事项，而不是旧版识别卡', async ({ page }) => {
   test.setTimeout(180_000);
   await bootstrap(page, 1440);
   const mysql = await openCuratedReview(page);
-  await mysql.getByRole('button', { name: '保留当前结论', exact: true }).click();
-  await mysql.getByRole('button', { name: '完成数据库审阅', exact: true }).click();
-
-  const github = page.locator('section.guanyijia-document-review').last();
-  await expect(github).toBeVisible({ timeout: 30_000 });
+  const github = await completeDatabaseAndOpenGithub(page, mysql);
   await github.getByRole('button', { name: '采用推荐修改', exact: true }).click();
   const editor = github.getByRole('region', { name: /修改负库存控制候选/u });
   await expect(editor).toBeVisible();
@@ -252,11 +266,7 @@ test('GitHub 来源资料只说明本次保存的代码片段', async ({ page })
   test.setTimeout(120_000);
   await bootstrap(page, 1440);
   const mysql = await openCuratedReview(page);
-  await mysql.getByRole('button', { name: '保留当前结论', exact: true }).click();
-  await mysql.getByRole('button', { name: '完成数据库审阅', exact: true }).click();
-
-  const github = page.locator('section.guanyijia-document-review').last();
-  await expect(github).toBeVisible({ timeout: 30_000 });
+  const github = await completeDatabaseAndOpenGithub(page, mysql);
   const negativeStockTask = github.locator('article[data-review-claim="claim:guanyijia_github:github-v5-github-v5-003"]');
   await expect(negativeStockTask).toBeVisible();
   await negativeStockTask.getByRole('button', { name: '查看来源依据', exact: true }).click();

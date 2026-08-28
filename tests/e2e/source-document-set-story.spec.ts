@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   closeFormalCatalogBrowser,
   login,
@@ -7,7 +7,7 @@ import {
   selectGuanyijia,
 } from './cp8-helpers.ts';
 
-async function readAndReview(page: Page, sourceName: string) {
+async function readAndReview(page: Page, sourceName: string, hasNextSource: boolean): Promise<Locator> {
   const document = page.locator('section.guanyijia-document-review').last();
   await expect(document).toBeVisible({ timeout: 30_000 });
   await expect(document).toContainText(sourceName);
@@ -15,15 +15,28 @@ async function readAndReview(page: Page, sourceName: string) {
   const keep = document.getByRole('button', { name: '保留当前结论', exact: true });
   if (await keep.count()) await keep.click();
   await document.getByRole('button', { name: /^完成.+审阅$/u }).click();
-  await expect(document).toBeHidden();
+  await expect(document).toBeVisible();
+  if (hasNextSource) {
+    await expect(document.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeVisible();
+  } else {
+    await expect(document.getByRole('button', { name: '审阅下一个来源', exact: true })).toHaveCount(0);
+  }
+  return document;
 }
 
-async function resolve(page: Page, decision: string) {
+async function readNextSource(document: Locator) {
+  await document.getByRole('button', { name: '审阅下一个来源', exact: true }).click();
+}
+
+async function resolve(page: Page, decision: string, nextTitle?: string) {
   const conflict = page.getByLabel('当前来源差异');
   await expect(conflict).toBeVisible();
   await conflict.getByRole('radio', { name: decision }).click();
   await expect(conflict.getByLabel('中文决定理由')).toHaveCount(0);
   await conflict.getByRole('button', { name: '保存当前决定' }).click();
+  if (nextTitle) {
+    await expect(conflict.getByRole('heading', { name: nextTitle, exact: true })).toBeVisible();
+  }
 }
 
 test('来源文档集合可连续审阅、登记治理缺口并由作者直接定版', async ({ page }) => {
@@ -39,24 +52,31 @@ test('来源文档集合可连续审阅、登记治理缺口并由作者直接�
   await openStandardization(page, 'DESKTOP');
 
   await page.getByRole('button', { name: '开始资料整理' }).click();
-  await readAndReview(page, '数据库建模审阅');
-  await readAndReview(page, 'GitHub代码仓库审阅');
-  await resolve(page, '保留当前结论');
-  await readAndReview(page, '业务文档审阅');
-  await readAndReview(page, 'ERP管理制度审阅');
-  await resolve(page, '登记为缺口');
+  const mysql = await readAndReview(page, '数据库建模审阅', true);
+  await readNextSource(mysql);
+  const github = await readAndReview(page, '代码仓库审阅', true);
+  await readNextSource(github);
+  const official = await readAndReview(page, '业务说明', true);
+  await readNextSource(official);
+  const policy = await readAndReview(page, 'ERP管理制度', true);
+  await readNextSource(policy);
+  const semantica = await readAndReview(page, '企业术语图', false);
+  await semantica.getByRole('button', { name: '返回时间线', exact: true }).click();
+
+  await expect(page.getByLabel('当前来源差异')).toContainText('欠款字段结构冲突');
+  await resolve(page, '保留当前结论', '负库存制度与实现冲突');
+  await resolve(page, '登记为缺口', '状态 9 业务含义冲突');
   await expect(page.getByLabel('当前来源差异')).toContainText('状态 9 业务含义冲突');
   await resolve(page, '登记为缺口');
-  await readAndReview(page, '术语图审阅');
 
   await page.getByRole('button', { name: '生成标准化结果' }).click();
   await expect(page.getByRole('button', { name: '确认结果并定版' })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('button', { name: /独立审核|审批意见/u })).toHaveCount(0);
   await page.getByRole('button', { name: '确认结果并定版' }).click();
-  await expect(page.getByText('标准化结果已定版')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('heading', { name: '标准化结果已定版', exact: true })).toBeVisible({ timeout: 30_000 });
 
   await page.reload();
   await openStandardization(page, 'DESKTOP');
-  await expect(page.getByText('标准化结果已定版')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '标准化结果已定版', exact: true })).toBeVisible();
   expect(pageErrors).toEqual([]);
 });

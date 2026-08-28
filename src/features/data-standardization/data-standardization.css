@@ -1024,7 +1024,7 @@ body.standardization-overlay-active { overflow: hidden !important; }
 .guanyijia-standardized-document-reading > nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .guanyijia-standardized-document-reading > nav a { min-width: 0; padding: 8px 10px; overflow: hidden; border: 1px solid #dfe7ec; border-radius: 7px; color: var(--dh-text-secondary, #667085); line-height: 1.4; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
 .guanyijia-standardized-document-reading > nav a:hover { color: var(--dh-primary, #0089bd); background: #eef8fc; }
-.guanyijia-standardized-document-reading > article { display: grid; width: 100%; min-width: 0; max-width: none; gap: 26px; }
+.guanyijia-standardized-document-reading > article { display: grid; width: 100%; min-width: 0; max-width: none; gap: 26px; overflow-x: hidden; }
 .guanyijia-standardized-document-reading > article > section { min-width: 0; max-width: 100%; scroll-margin-top: 20px; }
 .guanyijia-standardized-document-reading h3 { margin: 0; font-size: 22px; }
 .guanyijia-standardized-document-purpose { margin: 7px 0 0; color: var(--dh-text-secondary, #667085); line-height: 1.65; }

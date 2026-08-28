@@ -111,6 +111,69 @@ test('1440 启动自动打开数据库文档，时间线和来源资料均可再
   await expect(inspector.locator('.guanyijia-source-list-row')).toHaveCount(5);
 });
 
+test('完成数据库审阅后保留文档，并由审阅者显式进入下一来源', async ({ page }) => {
+  await bootstrap(page, 1440);
+
+  await page.getByRole('button', { name: '开始资料整理' }).click();
+  const document = page.locator('section.guanyijia-document-review').last();
+  const header = document.locator('header.guanyijia-document-review-header');
+  await expect(header.getByRole('heading', {
+    name: '数据库建模审阅（真实证据节选）', exact: true,
+  })).toBeVisible({ timeout: 30_000 });
+
+  await document.getByRole('button', { name: '保留当前结论', exact: true }).click();
+  await document.getByRole('button', { name: '完成数据库审阅', exact: true }).click();
+
+  await expect(header.getByRole('heading', {
+    name: '数据库建模审阅（真实证据节选）', exact: true,
+  })).toBeVisible();
+  await expect(header.getByText('已审阅', { exact: true })).toBeVisible();
+  await expect(header.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeVisible();
+
+  await document.getByRole('button', { name: '返回时间线', exact: true }).click();
+  await expect(document).toBeHidden();
+  const inspector = page.locator('aside[aria-label="来源资料"]');
+  if (!await inspector.isVisible()) await page.getByRole('button', { name: '来源资料', exact: true }).click();
+  await inspector.locator('.guanyijia-source-list-row').filter({ hasText: '数据库' }).click();
+  await page.getByRole('button', { name: '打开数据库', exact: true }).click();
+  await expect(document.getByRole('heading', {
+    name: '数据库建模审阅（真实证据节选）', exact: true,
+  })).toBeVisible();
+  await expect(document.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeVisible();
+});
+
+test('从时间线打开早期差异时仅由差异层拥有主操作，关闭后恢复来源续读', async ({ page }) => {
+  await bootstrap(page, 1440);
+
+  await page.getByRole('button', { name: '开始资料整理' }).click();
+  const database = page.locator('section.guanyijia-document-review').last();
+  await expect(database).toBeVisible({ timeout: 30_000 });
+  await database.getByRole('button', { name: '保留当前结论', exact: true }).click();
+  await database.getByRole('button', { name: '完成数据库审阅', exact: true }).click();
+  await database.getByRole('button', { name: '审阅下一个来源', exact: true }).click();
+
+  const github = page.locator('section.guanyijia-document-review').last();
+  await expect(github.getByRole('heading', { name: '代码仓库审阅', exact: true })).toBeVisible({ timeout: 30_000 });
+  await github.getByRole('button', { name: '采用推荐修改', exact: true }).click();
+  const editor = github.getByRole('region', { name: '修改负库存控制候选', exact: true });
+  await editor.getByRole('button', { name: '预览修改', exact: true }).click();
+  await editor.getByRole('button', { name: '确认修改', exact: true }).click();
+  await github.getByRole('button', { name: '完成GitHub代码仓库审阅', exact: true }).click();
+  await expect(github.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: '审阅欠款字段结构冲突', exact: true }).click();
+  const conflict = page.getByLabel('当前来源差异');
+  await expect(conflict.getByRole('heading', { name: '欠款字段结构冲突', exact: true })).toBeVisible();
+  const visiblePrimary = page.locator('[data-workflow-primary="true"]:visible');
+  await expect(visiblePrimary).toHaveCount(1);
+  await expect(visiblePrimary).toHaveText('保存当前决定');
+  await expect(page.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeHidden();
+
+  await page.getByRole('button', { name: '返回来源审阅', exact: true }).click();
+  await expect(github.getByRole('heading', { name: '代码仓库审阅', exact: true })).toBeVisible();
+  await expect(github.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeVisible();
+});
+
 test('1024 资料抽屉可关闭并从页头恢复，五个来源保持可见', async ({ page }) => {
   await bootstrap(page, 1024);
 

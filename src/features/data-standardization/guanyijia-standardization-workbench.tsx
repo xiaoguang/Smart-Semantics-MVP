@@ -650,7 +650,12 @@ export default function GuanyijiaStandardizationWorkbench({
   const mobile = reviewLayout.mode === 'FULLSCREEN';
   const documentOpen = reviewSurface.state.layers.some((layer) => layer.kind === 'DOCUMENT');
   const documentLayer = reviewSurface.state.layers.findLast((layer) => layer.kind === 'DOCUMENT');
+  const conflictLayer = reviewSurface.state.layers.findLast((layer) => layer.kind === 'CONFLICT');
+  const documentVisible = documentOpen && !conflictLayer;
   const inspectorOpen = reviewSurface.state.layers.some((layer) => layer.kind === 'INSPECTOR');
+  const conflictPreviewRequired = Boolean(conflictLayer)
+    || snapshot?.nextAction.type === 'RESOLVE_CONFLICT'
+    || isReplacingHistoricalDecision;
   const revealReviewTarget = useCallback((selector: string, announcement: string) => {
     setInteractionAnnouncement(announcement);
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
@@ -829,7 +834,7 @@ export default function GuanyijiaStandardizationWorkbench({
   useEffect(() => {
     const conflict = conflictForReview;
     const runId = snapshot?.run?.runId;
-    if (!conflict || !runId) {
+    if (!conflict || !runId || !conflictPreviewRequired) {
       setConflictStrategy(undefined);
       setConflictDecision(undefined);
       setConflictPreview(undefined);
@@ -864,7 +869,7 @@ export default function GuanyijiaStandardizationWorkbench({
         if (!cancelled && conflictPreviewRequestRef.current === requestId) setConflictPreviewLoading(false);
       });
     return () => { cancelled = true; };
-  }, [conflictForReview, runtime, snapshot?.run?.runId]);
+  }, [conflictForReview, conflictPreviewRequired, runtime, snapshot?.run?.runId]);
 
   useEffect(() => {
     setSelectedBlockId(undefined);
@@ -1329,23 +1334,13 @@ export default function GuanyijiaStandardizationWorkbench({
       storeCommandSnapshot(next);
       if (type === 'READ_NEXT_SOURCE' || type === 'START_RUN') message.success(`${next.current?.source ? displaySourceName(next.current.source.sourceId, next.current.source.sourceName) : '来源'}快照已载入，来源文档已生成`);
       if (type === 'COMPLETE_CURRENT_DOCUMENT_REVIEW') {
-        if (documentOpen) reviewSurface.close();
-        if (next.run?.status === 'READY' && next.nextAction.type === 'READ_NEXT_SOURCE') {
-          autoOpenDocumentRef.current = true;
-          next = await runtime.execute({
-            type: 'READ_NEXT_SOURCE',
-            commandId: `${commandId(currentUser.userId, snapshot, type)}:next-source`,
-            expectedRevision: next.run.revision,
-            actorUserId: currentUser.userId,
-          });
-          storeCommandSnapshot(next);
-          // Open the freshly compiled document from the command result itself.
-          // This avoids racing the old document layer's revision migration.
-          window.requestAnimationFrame(() => openSourceDocument(next));
-          message.success(`${displaySourceName(next.current?.source.sourceId ?? '', next.current?.source.sourceName)}快照已载入，来源文档已生成`);
-        } else {
-          message.success(next.run?.status === 'CONFLICT_BLOCKED' ? '文档审阅完成，发现需要处理的来源差异' : '本份来源文档已完成审阅');
-        }
+        const completionMessage = next.nextAction.type === 'READ_NEXT_SOURCE'
+          ? '本份来源文档已完成审阅，可继续审阅下一来源。'
+          : next.nextAction.type === 'RESOLVE_CONFLICT'
+            ? '本份来源文档已完成审阅；可返回时间线处理来源差异。'
+            : '本份来源文档已完成审阅。';
+        setInteractionAnnouncement(completionMessage);
+        message.success(completionMessage);
       }
     } catch (cause) {
       const detail = businessErrorMessage(cause, '当前操作暂时无法完成，请重试。');
@@ -1712,32 +1707,34 @@ export default function GuanyijiaStandardizationWorkbench({
         message.success('当前决定已更新，请重新生成标准化结果');
         return;
       }
-      if (next.run?.status === 'READY' && next.nextAction.type === 'READ_NEXT_SOURCE') {
-        autoOpenDocumentRef.current = true;
-        const readNext = await runtime.execute({
-          type: 'READ_NEXT_SOURCE',
-          commandId: `${commandId(currentUser.userId, snapshot, 'RESOLVE_CURRENT_CONFLICT')}:next-source`,
-          expectedRevision: next.run.revision,
-          actorUserId: currentUser.userId,
-        });
-        storeCommandSnapshot(readNext);
-        window.requestAnimationFrame(() => openSourceDocument(readNext));
-        setInteractionAnnouncement('当前决定已保存，下一份资料已打开。');
-        message.success(`${displaySourceName(readNext.current?.source.sourceId ?? '', readNext.current?.source.sourceName)}快照已载入，来源文档已生成`);
-      } else {
-        const nextAnnouncement = next.run?.status === 'CONFLICT_BLOCKED'
-          ? '当前决定已保存，已打开下一项来源差异。'
-          : '当前决定已保存。';
+      if (next.currentConflict) {
+        const nextAnnouncement = '当前决定已保存，已定位下一项来源差异。';
         setInteractionAnnouncement(nextAnnouncement);
-        if (next.run?.status === 'CONFLICT_BLOCKED' && next.currentConflict) {
-          revealReviewTarget(
-            `[data-review-anchor="conflict:${next.currentConflict.conflictId}"]`,
-            nextAnnouncement,
-          );
-        }
-        message.success(next.run?.status === 'CONFLICT_BLOCKED'
-          ? '本项决定已保存，已定位下一项来源差异'
-          : '本项决定已保存');
+        revealReviewTarget(
+          `[data-review-anchor="conflict:${next.currentConflict.conflictId}"]`,
+          nextAnnouncement,
+        );
+        message.success('本项决定已保存，已定位下一项来源差异');
+      } else if (next.run?.status === 'READY_FOR_OUTPUT') {
+        setInteractionAnnouncement('全部决定已保存，可生成标准化结果。');
+        message.success('全部决定已保存，可生成标准化结果');
+        const current = next.timeline.findLast((item) => item.state === 'CURRENT') ?? next.timeline.at(-1);
+        reviewSurface.dispatch({
+          type: 'RUN_REVISION_CHANGED',
+          runRevision: next.run.revision,
+          validStableIds: [`deliverable:${next.run.runId}`],
+          fallbackAnchor: {
+            itemId: current ? `timeline:${current.itemId}` : 'review-surface:start',
+            relativeTop: 0,
+            ...(current ? { focusId: `guanyijia-timeline:${current.itemId}` } : {}),
+          },
+        });
+      } else if (next.nextAction.type === 'READ_NEXT_SOURCE') {
+        setInteractionAnnouncement('当前决定已保存，可继续下一来源。');
+        message.success('本项决定已保存，可继续下一来源');
+      } else {
+        setInteractionAnnouncement('当前决定已保存。');
+        message.success('本项决定已保存');
       }
     } catch (cause) {
       const detail = businessErrorMessage(cause, '当前决定暂时无法保存，请重试。');
@@ -1801,9 +1798,8 @@ export default function GuanyijiaStandardizationWorkbench({
       return;
     }
     if (currentDocumentLayer) {
-      // A completed review closes the previous document asynchronously. If the
-      // next source is already in the snapshot, close the stale layer first and
-      // let the next effect pass open the new document deterministically.
+      // An explicit next-source action replaces the previous document layer
+      // only after the next immutable source document is ready.
       reviewSurface.close();
       window.requestAnimationFrame(() => {
         if (autoOpenDocumentRef.current) setReviewNavigation((current) => ({ ...current, focusToken: current.focusToken + 1 }));
@@ -2002,23 +1998,33 @@ export default function GuanyijiaStandardizationWorkbench({
 
   const assistantSelection = (): ReviewAssistantContextSelection => {
     const selectedTimelineItem = timeline?.find((item) => item.itemId === selectedTimelineItemId);
-    const sourceId = documentOpen
-      ? snapshot?.current?.source.sourceId
-      : selectedTimelineItem?.sourceId ?? snapshot?.current?.source.sourceId;
-    const sourceDocument = sourceId && snapshot?.current?.source.sourceId === sourceId
+    const activeConflict = snapshot?.currentConflict;
+    const conflictSourceId = activeConflict
+      ? snapshot?.run?.sources.find((source) => source.introducedConflictIds.includes(activeConflict.conflictId))?.sourceId
+      : undefined;
+    const sourceId = !documentVisible && conflictPreviewRequired && conflictSourceId
+      ? conflictSourceId
+      : documentVisible
+        ? snapshot?.current?.source.sourceId
+        : selectedTimelineItem?.sourceId ?? snapshot?.current?.source.sourceId;
+    const conflictId = sourceId === conflictSourceId
+      ? activeConflict?.conflictId
+      : selectedTimelineItem?.conflicts?.[0]?.conflictId;
+    const timelineItem = conflictId
+      ? timeline?.find((item) => item.sourceId === sourceId
+        && item.conflicts?.some((candidate) => candidate.conflictId === conflictId))
+      : selectedTimelineItem?.sourceId === sourceId ? selectedTimelineItem : undefined;
+    const sourceDocument = documentVisible && sourceId && snapshot?.current?.source.sourceId === sourceId
       ? snapshot.current.document
       : undefined;
-    const block = sourceId === snapshot?.current?.source.sourceId
+    const block = documentVisible && sourceId === snapshot?.current?.source.sourceId
       ? currentDocumentBlocks?.find((candidate) => candidate.blockId === selectedBlockId)
       : undefined;
-    const conflictId = selectedTimelineItem
-      ? selectedTimelineItem.conflicts?.[0]?.conflictId
-      : snapshot?.currentConflict?.conflictId;
     return {
-      ...(selectedTimelineItem?.eventId ? { timelineItemId: selectedTimelineItem.eventId } : {}),
+      ...(timelineItem?.eventId ? { timelineItemId: timelineItem.eventId } : {}),
       ...(sourceId ? { sourceId } : {}),
       ...(sourceDocument ? { documentId: sourceDocument.documentId } : {}),
-      ...(documentOpen ? { section: reviewNavigation.selectedSection ?? 'OVERVIEW' } : {}),
+      ...(sourceDocument ? { section: reviewNavigation.selectedSection ?? 'OVERVIEW' } : {}),
       ...(block ? {
         blockId: block.blockId,
         ...(block.evidenceRefs[0] ? { evidenceRef: block.evidenceRefs[0] } : {}),
@@ -2394,7 +2400,9 @@ export default function GuanyijiaStandardizationWorkbench({
       : undefined)
     : selectedTimelineInspector;
   const readCount = snapshot?.run?.sources.filter((source) => Boolean(source.documentId)).length ?? 0;
-  const reviewedCount = snapshot?.run?.sources.filter((source) => ['ALIGNED', 'CONFLICT_BLOCKED'].includes(source.status)).length ?? 0;
+  const reviewedCount = snapshot?.run?.sources.filter((source) => (
+    ['REVIEWED', 'CONFLICT_BLOCKED', 'ALIGNED'].includes(source.status)
+  )).length ?? 0;
   const canCompleteReview = snapshot?.current?.sourceStep.status === 'DOCUMENT_READY'
     && !snapshot.current.legacyReadOnly
     && pendingScriptedReviewEdits.length === 0;
@@ -2418,9 +2426,7 @@ export default function GuanyijiaStandardizationWorkbench({
   const editingBlock = currentDocumentBlocks?.find((block) => block.blockId === editingBlockId);
   const editorModel = editingBlock ? structuredValueEditorModel(editingBlock.value) : undefined;
   const conflict = conflictForReview;
-  const conflictWorkspaceOpen = Boolean(conflict) && (
-    nextAction?.type === 'RESOLVE_CONFLICT' || isReplacingHistoricalDecision
-  );
+  const conflictWorkspaceOpen = Boolean(conflict) && conflictPreviewRequired;
   const currentConflictPreview = conflictPreview
     && conflict
     && conflictStrategy
@@ -2458,7 +2464,6 @@ export default function GuanyijiaStandardizationWorkbench({
   const canHandoffDeliverable = isDeliverableAuthor || sourceManagement.role === 'ADMIN';
   const inspectorLayer = reviewSurface.state.layers.findLast((layer) => layer.kind === 'INSPECTOR');
   const assistantPatchLayer = reviewSurface.state.layers.findLast((layer) => layer.kind === 'ASSISTANT_PATCH');
-  const conflictLayer = reviewSurface.state.layers.findLast((layer) => layer.kind === 'CONFLICT');
   const deliverableLayer = reviewSurface.state.layers.findLast((layer) => layer.kind === 'DELIVERABLE');
   const blockingReviewFailures = blockingReviewWindowFailures(reviewWindowErrors);
   const reviewMutationBlocked = blockingReviewFailures.length > 0 || curatedValidationFailed;
@@ -2524,7 +2529,7 @@ export default function GuanyijiaStandardizationWorkbench({
 
   useEffect(() => {
     const run = snapshot?.run;
-    if (!run || !conflict) { setIssueWindow(undefined); return; }
+    if (!run || !conflict || !conflictPreviewRequired) { setIssueWindow(undefined); return; }
     let cancelled = false;
     let failureTarget = reviewWindowFailureTargets.ISSUES;
     runtime.readReviewWindow({
@@ -2565,7 +2570,7 @@ export default function GuanyijiaStandardizationWorkbench({
     });
     return () => { cancelled = true; };
   }, [
-    clearReviewWindowFailure, conflict, currentUser.userId, recordReviewWindowFailure, runtime, snapshot?.run,
+    clearReviewWindowFailure, conflict, conflictPreviewRequired, currentUser.userId, recordReviewWindowFailure, runtime, snapshot?.run,
     reviewWindowFailureTargets.ISSUES, timelineWindowReloadToken, verifyReviewContent,
   ]);
 
@@ -2697,6 +2702,10 @@ export default function GuanyijiaStandardizationWorkbench({
       documentLayer && nextDocumentId && previousDocumentId && previousDocumentId !== nextDocumentId
       && snapshot.current?.history?.some((document) => document.documentId === previousDocumentId),
     );
+    const nextConflictId = snapshot.currentConflict?.conflictId;
+    const migratesCurrentConflict = Boolean(
+      conflictLayer && nextConflictId && conflictLayer.stableId !== `conflict:${nextConflictId}`,
+    );
     const validStableIds = [
       ...(nextDocumentId ? [`document:${nextDocumentId}`] : []),
       ...(snapshot.currentConflict ? [`conflict:${snapshot.currentConflict.conflictId}`] : []),
@@ -2709,20 +2718,27 @@ export default function GuanyijiaStandardizationWorkbench({
       type: 'RUN_REVISION_CHANGED',
       runRevision: run.revision,
       validStableIds,
-      ...(migratesCurrentDocument ? { layerMigrations: [{
-        fromStableId: documentLayer!.stableId,
-        toStableId: `document:${nextDocumentId}`,
-        focusId: selectedBlockId
-          ? `guanyijia-document-review:${nextDocumentId}:block:${selectedBlockId}`
-          : `guanyijia-document-review:${nextDocumentId}:heading`,
-      }] } : {}),
+      ...((migratesCurrentDocument || migratesCurrentConflict) ? { layerMigrations: [
+        ...(migratesCurrentDocument ? [{
+          fromStableId: documentLayer!.stableId,
+          toStableId: `document:${nextDocumentId}`,
+          focusId: selectedBlockId
+            ? `guanyijia-document-review:${nextDocumentId}:block:${selectedBlockId}`
+            : `guanyijia-document-review:${nextDocumentId}:heading`,
+        }] : []),
+        ...(migratesCurrentConflict ? [{
+          fromStableId: conflictLayer!.stableId,
+          toStableId: `conflict:${nextConflictId}`,
+          focusId: `conflict:${nextConflictId}:close`,
+        }] : []),
+      ] } : {}),
       fallbackAnchor: {
         itemId: current ? `timeline:${current.itemId}` : 'review-surface:start',
         relativeTop: 0,
         ...(current ? { focusId: `guanyijia-timeline:${current.itemId}` } : {}),
       },
     });
-  }, [deliverable?.deliverableId, deliveryPhase, reviewSurface, selectedBlockId, snapshot, timeline]);
+  }, [conflictLayer, deliverable?.deliverableId, deliveryPhase, reviewSurface, selectedBlockId, snapshot, timeline]);
 
   const documentEvidenceCompilation = snapshot?.current?.reviewCompilation ?? snapshot?.current?.compilation;
   const documentTraceLinks = documentEvidenceCompilation ? buildSourceDocumentTraceLinks(documentEvidenceCompilation) : [];
@@ -2830,8 +2846,10 @@ export default function GuanyijiaStandardizationWorkbench({
       })
     : undefined;
   const reviewNextSourceAvailable = Boolean(curatedWorkspace
-    && ['REVIEWED', 'ALIGNED'].includes(snapshot?.current?.sourceStep.status ?? '')
+    && ['REVIEWED', 'CONFLICT_BLOCKED', 'ALIGNED'].includes(snapshot?.current?.sourceStep.status ?? '')
     && snapshot?.nextAction.type === 'READ_NEXT_SOURCE');
+  const currentSourceReviewed = ['REVIEWED', 'CONFLICT_BLOCKED', 'ALIGNED']
+    .includes(snapshot?.current?.sourceStep.status ?? '');
   const runReviewPrimaryAction = () => {
     if (!reviewPrimaryAction) return;
     if (reviewPrimaryAction.kind === 'OPEN_PENDING_CLAIM') {
@@ -2959,7 +2977,7 @@ export default function GuanyijiaStandardizationWorkbench({
   // A corrupt or unavailable body means there are no verified blocks to render.
   // Keep the failure beside the affected document instead of falling back to a
   // page-wide storage/index message or silently collapsing the document layer.
-  const documentFailurePanel = documentOpen && snapshot?.current?.document && (documentWindowFailure || curatedValidationFailed)
+  const documentFailurePanel = documentVisible && snapshot?.current?.document && (documentWindowFailure || curatedValidationFailed)
     ? <section
       className="guanyijia-document-review guanyijia-document-review-unavailable"
       aria-label="当前来源文档"
@@ -2991,7 +3009,7 @@ export default function GuanyijiaStandardizationWorkbench({
     </section>
     : null;
 
-  const documentPanel = documentOpen && snapshot?.current?.document
+  const documentPanel = documentVisible && snapshot?.current?.document
     && !curatedValidationFailed && (currentDocumentBlocks || snapshot.current.legacyReadOnly) && pagedBlocks
     ? <section
       className="guanyijia-document-review"
@@ -3004,8 +3022,8 @@ export default function GuanyijiaStandardizationWorkbench({
           className="guanyijia-document-focus-target"
           tabIndex={-1}
         >
-          <Tag color={snapshot.current.document.status === 'SUPERSEDED' ? 'default' : snapshot.current.sourceStep.status === 'ALIGNED' ? 'green' : 'blue'}>
-            {snapshot.current.document.status === 'SUPERSEDED' ? '只读回看' : snapshot.current.sourceStep.status === 'ALIGNED' ? '已审阅' : '待审阅'}
+          <Tag color={snapshot.current.document.status === 'SUPERSEDED' ? 'default' : currentSourceReviewed ? 'green' : 'blue'}>
+            {snapshot.current.document.status === 'SUPERSEDED' ? '只读回看' : currentSourceReviewed ? '已审阅' : '待审阅'}
           </Tag>
           <Tag>{sourceOriginLabel(snapshot.current.source.sourceId)}</Tag>
           <h2>{curatedWorkspace?.metadata.title ?? curatedReview?.title ?? `${displaySourceName(snapshot.current.source.sourceId, snapshot.current.source.sourceName)}来源文档`}</h2>
@@ -3400,7 +3418,7 @@ export default function GuanyijiaStandardizationWorkbench({
 
   return <div
     ref={shellRef}
-    className={`guanyijia-workbench-shell${mobile ? ' mobile-surface' : ''}${compactInspector ? ' inspector-compact' : ''}${documentOpen ? ' document-open' : ''}${inspectorOpen ? ' inspector-open' : ''}${inspectorCollapsed ? ' inspector-collapsed' : ''}`}
+    className={`guanyijia-workbench-shell${mobile ? ' mobile-surface' : ''}${compactInspector ? ' inspector-compact' : ''}${documentVisible ? ' document-open' : ''}${inspectorOpen ? ' inspector-open' : ''}${inspectorCollapsed ? ' inspector-collapsed' : ''}`}
     data-review-layout={reviewLayout.mode.toLowerCase()}
     data-review-density={reviewLayout.density.toLowerCase()}
     data-review-scroll-owner={reviewLayout.scrollOwner.toLowerCase()}
@@ -3445,12 +3463,12 @@ export default function GuanyijiaStandardizationWorkbench({
       <div className="guanyijia-workbench-layout">
         <main
           className="guanyijia-workbench-thread"
-          role={mobile && documentLayer ? 'dialog' : undefined}
-          aria-label={mobile && documentLayer ? '当前来源文档' : undefined}
-          aria-modal={mobile && documentLayer ? true : undefined}
-          data-review-layer-id={mobile ? documentLayer?.stableId : undefined}
-          data-review-inertable={mobile && documentLayer ? true : undefined}
-          tabIndex={mobile && documentLayer ? -1 : undefined}
+          role={mobile && documentVisible ? 'dialog' : undefined}
+          aria-label={mobile && documentVisible ? '当前来源文档' : undefined}
+          aria-modal={mobile && documentVisible ? true : undefined}
+          data-review-layer-id={mobile && documentVisible ? documentLayer?.stableId : undefined}
+          data-review-inertable={mobile && documentVisible ? true : undefined}
+          tabIndex={mobile && documentVisible ? -1 : undefined}
         >
           <div ref={threadRef} className="guanyijia-workbench-scroll">
             {error && <Alert role="alert" className="guanyijia-workbench-error" type="error" showIcon title="当前步骤需要处理" description={error} />}
@@ -3513,7 +3531,7 @@ export default function GuanyijiaStandardizationWorkbench({
                 </section>
               </section>}
               {documentPanel ?? documentFailurePanel}
-              {snapshot && !documentOpen && deliveryPhase && !conflictWorkspaceOpen && <section
+              {snapshot && !documentVisible && deliveryPhase && !conflictWorkspaceOpen && <section
                 className={`guanyijia-next-task guanyijia-deliverable-workspace${mobile
                   ? deliverableLayer ? ' mobile-layer-open' : ' mobile-layer-closed'
                   : ''}`}
@@ -3566,7 +3584,7 @@ export default function GuanyijiaStandardizationWorkbench({
                 {!pendingDeliverableCommand && deliverable?.status === 'FROZEN' && canHandoffDeliverable && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void executeDeliverable('HANDOFF_STANDARDIZATION_DOCUMENT_TO_MODELING')}>前往 AI 建模</Button>}
                 {!pendingDeliverableCommand && deliverable?.status === 'HANDED_OFF' && <Button type="link" onClick={() => deliverableSnapshot && void openStandardizationHandoff(deliverableSnapshot)}>查看定版文档</Button>}
               </section>}
-              {snapshot && !documentOpen && (!deliveryPhase || conflictWorkspaceOpen) && (nextAction?.type !== 'NONE' || conflictWorkspaceOpen) && <section
+              {snapshot && !documentVisible && (!deliveryPhase || conflictWorkspaceOpen) && (nextAction?.type !== 'NONE' || conflictWorkspaceOpen) && <section
                 className={`guanyijia-next-task ${conflictWorkspaceOpen ? 'blocked' : ''}${
                   mobile && conflictWorkspaceOpen
                     ? conflictLayer ? ' mobile-layer-open' : ' mobile-layer-closed'
@@ -3581,10 +3599,10 @@ export default function GuanyijiaStandardizationWorkbench({
                 data-review-inertable
                 tabIndex={-1}
               >
-                {mobile && conflictWorkspaceOpen && conflictLayer && <BackAction
+                {conflictWorkspaceOpen && conflictLayer && <BackAction
                   id={`${conflictLayer.stableId}:close`}
-                  className="guanyijia-mobile-layer-back"
-                  destination="时间线"
+                  className={mobile ? 'guanyijia-mobile-layer-back' : 'guanyijia-conflict-layer-back'}
+                  destination={documentOpen ? '来源审阅' : '时间线'}
                   onBack={reviewSurface.close}
                 />}
                 {mobile && !conflictLayer && conflictWorkspaceOpen && conflict && <Button
@@ -3605,9 +3623,9 @@ export default function GuanyijiaStandardizationWorkbench({
                         ? '上一决定保留在历史中。选择新的处理方式后，请重新生成标准化结果。'
                         : '逐项核对来源差异；保存当前决定后才会定位下一项。')
                         : '当前步骤没有待处理操作。'}</p>
-                {nextAction?.type === 'START_RUN' && <Button type="primary" data-workflow-primary="true" loading={busy} onClick={() => void execute('START_RUN')}>{visibleWorkflowAction?.label ?? nextAction.label}</Button>}
-                {nextAction?.type === 'READ_NEXT_SOURCE' && <Button type="primary" data-workflow-primary="true" loading={busy} onClick={() => void execute('READ_NEXT_SOURCE')}>{visibleWorkflowAction?.label ?? nextAction.label}</Button>}
-                {nextAction?.type === 'REVIEW_DOCUMENT' && <Button
+                {!conflictWorkspaceOpen && nextAction?.type === 'START_RUN' && <Button type="primary" data-workflow-primary="true" loading={busy} onClick={() => void execute('START_RUN')}>{visibleWorkflowAction?.label ?? nextAction.label}</Button>}
+                {!conflictWorkspaceOpen && nextAction?.type === 'READ_NEXT_SOURCE' && <Button type="primary" data-workflow-primary="true" loading={busy} onClick={() => void execute('READ_NEXT_SOURCE')}>{visibleWorkflowAction?.label ?? nextAction.label}</Button>}
+                {!conflictWorkspaceOpen && nextAction?.type === 'REVIEW_DOCUMENT' && <Button
                   type="primary"
                   data-workflow-primary="true"
                   onClick={(event) => openSourceDocument(snapshot, event.currentTarget)}

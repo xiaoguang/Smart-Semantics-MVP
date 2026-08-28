@@ -159,7 +159,12 @@ const sourceReviewTitles = {
   '术语图（派生）': '企业术语图',
 } as const;
 
-async function readAndReviewSource(page: Page, sourceName: keyof typeof sourceReviewTitles, mobile: boolean) {
+async function readAndReviewSource(
+  page: Page,
+  sourceName: keyof typeof sourceReviewTitles,
+  mobile: boolean,
+  hasNextSource: boolean,
+): Promise<Locator> {
   const heading = page.locator('header.guanyijia-document-review-header').getByRole('heading', {
     name: sourceReviewTitles[sourceName], exact: true,
   }).last();
@@ -177,7 +182,17 @@ async function readAndReviewSource(page: Page, sourceName: keyof typeof sourceRe
   const retainCurrent = document.getByRole('button', { name: '保留当前结论', exact: true });
   if (await retainCurrent.count()) await retainCurrent.click();
   await document.getByRole('button', { name: /^完成.+审阅$/u }).click();
-  await expect(document).toBeHidden();
+  await expect(document).toBeVisible();
+  if (hasNextSource) {
+    await expect(document.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeVisible();
+  } else {
+    await expect(document.getByRole('button', { name: '审阅下一个来源', exact: true })).toHaveCount(0);
+  }
+  return document;
+}
+
+async function readNextSource(document: Locator) {
+  await document.getByRole('button', { name: '审阅下一个来源', exact: true }).click();
 }
 
 async function retainMysqlScriptedReview(document: Locator) {
@@ -192,6 +207,8 @@ async function enterGithubDocument(page: Page) {
   const mysql = page.locator('section.guanyijia-document-review').last();
   await retainMysqlScriptedReview(mysql);
   await mysql.getByRole('button', { name: '完成数据库审阅' }).click();
+  await expect(mysql.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeVisible();
+  await readNextSource(mysql);
   const github = page.locator('section.guanyijia-document-review').last();
   await expect(github.getByRole('heading', {
     name: sourceReviewTitles.GitHub代码仓库,
@@ -213,15 +230,21 @@ async function exerciseCompleteStateMatrix(
   await expectSingleWorkflowPrimary(page);
   await retainMysqlScriptedReview(mysql);
   await mysql.getByRole('button', { name: '完成数据库审阅' }).click();
-  await expect(mysql).toBeHidden();
+  await expect(mysql).toBeVisible();
+  await readNextSource(mysql);
 
-  await readAndReviewSource(page, 'GitHub代码仓库', mobile);
+  const github = await readAndReviewSource(page, 'GitHub代码仓库', mobile, true);
+  await readNextSource(github);
+  const official = await readAndReviewSource(page, '官方业务文档', mobile, true);
+  await readNextSource(official);
+  const policy = await readAndReviewSource(page, 'ERP管理制度（演示）', mobile, true);
+  await readNextSource(policy);
+  const semantica = await readAndReviewSource(page, '术语图（派生）', mobile, false);
+  await semantica.getByRole('button', { name: '返回时间线', exact: true }).click();
+
   await finishConflict(page, mobile, '欠款字段结构冲突', '保留当前结论');
-  await readAndReviewSource(page, '官方业务文档', mobile);
-  await readAndReviewSource(page, 'ERP管理制度（演示）', mobile);
   await finishConflict(page, mobile, '负库存制度与实现冲突', '登记为缺口');
   await finishConflict(page, mobile, '状态 9 业务含义冲突', '登记为缺口');
-  await readAndReviewSource(page, '术语图（派生）', mobile);
 
   const deliverable = page.getByLabel('标准化结果定版');
   await expect(deliverable).toBeVisible();
@@ -291,15 +314,18 @@ test('1024 Inspector overlay trap focus、Escape逆序恢复anchor', async ({ pa
 test('1280 本次读取发现以可见的扁平列表呈现，不依赖横向滚动', async ({ page }) => {
   await bootstrap(page, { width: 1280, height: 900 }, 'DESKTOP');
   const github = await enterGithubDocument(page);
+  await github.getByRole('tab', { name: '审阅结论', exact: true }).click();
   const findings = github.getByRole('region', { name: '本次读取发现', exact: true });
   const list = findings.getByRole('list', { name: '跨来源发现', exact: true });
   await expect(list).toBeVisible();
-  await expect(list.getByRole('listitem')).toHaveCount(3);
+  // 状态 9 的资料缺口属于“审阅事项”；“审阅结论”只保留两项双方
+  // 资料的跨来源判断。
+  await expect(list.getByRole('listitem')).toHaveCount(2);
   // At 1280px the component may use its desktop table rather than the
   // compact list.  The visible controller is the contract, not a hidden
   // alternate layout branch.
   const buttons = findings.locator('button[aria-controls^="finding-materials:"]:visible');
-  await expect(buttons).toHaveCount(3);
+  await expect(buttons).toHaveCount(2);
   for (const button of await buttons.all()) {
     await button.scrollIntoViewIfNeeded();
     await expect(button).toBeInViewport();
@@ -336,6 +362,8 @@ test('冲突决定切换保持位置并显示当前选择的业务 Git 预览', 
   const retainCurrent = github.getByRole('button', { name: '保留当前结论', exact: true });
   if (await retainCurrent.count()) await retainCurrent.click();
   await github.getByRole('button', { name: /^完成.+审阅$/u }).click();
+  await expect(github.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '审阅欠款字段结构冲突', exact: true }).click();
   const conflict = page.getByLabel('当前来源差异');
   await expect(conflict.getByRole('heading', { name: '欠款字段结构冲突', exact: true })).toBeVisible();
   const scroll = page.locator('.guanyijia-workbench-scroll');
@@ -428,15 +456,20 @@ test('390 手机覆盖时间线、文档、冲突、助手Patch、交付物与�
   const mysql = await openDocumentAndExerciseAssistant(page, true);
   await retainMysqlScriptedReview(mysql);
   await mysql.getByRole('button', { name: '完成数据库审阅' }).click();
-  await expect(mysql).toBeHidden();
+  await expect(mysql).toBeVisible();
+  await readNextSource(mysql);
 
-  await readAndReviewSource(page, 'GitHub代码仓库', true);
+  const github = await readAndReviewSource(page, 'GitHub代码仓库', true, true);
+  await readNextSource(github);
+  const official = await readAndReviewSource(page, '官方业务文档', true, true);
+  await readNextSource(official);
+  const policy = await readAndReviewSource(page, 'ERP管理制度（演示）', true, true);
+  await readNextSource(policy);
+  const semantica = await readAndReviewSource(page, '术语图（派生）', true, false);
+  await semantica.getByRole('button', { name: '返回时间线', exact: true }).click();
   await finishConflict(page, true, '欠款字段结构冲突', '保留当前结论');
-  await readAndReviewSource(page, '官方业务文档', true);
-  await readAndReviewSource(page, 'ERP管理制度（演示）', true);
   await finishConflict(page, true, '负库存制度与实现冲突', '登记为缺口');
   await finishConflict(page, true, '状态 9 业务含义冲突', '登记为缺口');
-  await readAndReviewSource(page, '术语图（派生）', true);
   const deliverable = page.getByRole('dialog', { name: '标准化结果定版' });
   await expect(deliverable).toBeVisible();
   await deliverable.getByRole('button', { name: '生成标准化结果' }).click();

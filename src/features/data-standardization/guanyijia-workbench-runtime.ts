@@ -1011,12 +1011,46 @@ function assertRunMatchesStory(run: StandardizationRun, sources: StorySource[]) 
   if (!matches) throw new Error('标准化运行来源与当前标准化流程不匹配');
 }
 
+function selectCurrentReviewStep(run: StandardizationRun): StandardizationSourceStep | undefined {
+  const active = run.sources.find((step) => (
+    step.status === 'READING' || step.status === 'DOCUMENT_READY'
+  ));
+  if (active) return active;
+  return [...run.sources]
+    .filter((step) => (
+      Boolean(step.documentId)
+      && ['REVIEWED', 'CONFLICT_BLOCKED', 'ALIGNED'].includes(step.status)
+    ))
+    .sort((left, right) => right.order - left.order)[0];
+}
+
+function selectFirstUnresolvedConflict(run: StandardizationRun): {
+  sourceStep: StandardizationSourceStep;
+  conflictId: string;
+} | undefined {
+  for (const sourceStep of [...run.sources].sort((left, right) => left.order - right.order)) {
+    const conflictId = sourceStep.introducedConflictIds.find((id) => (
+      !sourceStep.resolvedConflictIds.includes(id)
+    ));
+    if (conflictId) return { sourceStep, conflictId };
+  }
+  return undefined;
+}
+
+function unresolvedConflictCount(run: StandardizationRun) {
+  return run.sources.reduce((count, sourceStep) => (
+    count + sourceStep.introducedConflictIds.filter((id) => !sourceStep.resolvedConflictIds.includes(id)).length
+  ), 0);
+}
+
 function nextAction(run: StandardizationRun | null): GuanyijiaWorkbenchSnapshot['nextAction'] {
   if (!run) return { type: 'START_RUN', label: '开始资料整理' };
   if (run.status === 'READY') {
     const pending = run.sources.find((source) => source.status === 'PENDING');
-    return pending
-      ? { type: 'READ_NEXT_SOURCE', label: `载入${displaySourceName(pending.sourceId, pending.sourceName)}快照` }
+    if (pending) return { type: 'READ_NEXT_SOURCE', label: `载入${displaySourceName(pending.sourceId, pending.sourceName)}快照` };
+    const unresolved = selectFirstUnresolvedConflict(run);
+    return unresolved
+      ? { type: 'RESOLVE_CONFLICT', label: `处理${unresolvedConflictCount(run)}项来源差异` }
       : { type: 'NONE', label: '来源资料已整理完成' };
   }
   if (run.status === 'REVIEWING_DOCUMENT') {
@@ -1024,9 +1058,14 @@ function nextAction(run: StandardizationRun | null): GuanyijiaWorkbenchSnapshot[
     return { type: 'REVIEW_DOCUMENT', label: `继续审阅${current ? displaySourceName(current.sourceId, current.sourceName) : '当前来源'}` };
   }
   if (run.status === 'CONFLICT_BLOCKED') {
-    const current = run.sources.find((source) => source.status === 'CONFLICT_BLOCKED');
-    const count = current?.introducedConflictIds.filter((id) => !current.resolvedConflictIds.includes(id)).length ?? 0;
-    return { type: 'RESOLVE_CONFLICT', label: `处理${count}项来源差异` };
+    const pending = run.sources.find((source) => source.status === 'PENDING');
+    if (pending) {
+      return { type: 'READ_NEXT_SOURCE', label: `载入${displaySourceName(pending.sourceId, pending.sourceName)}快照` };
+    }
+    const unresolved = selectFirstUnresolvedConflict(run);
+    return unresolved
+      ? { type: 'RESOLVE_CONFLICT', label: `处理${unresolvedConflictCount(run)}项来源差异` }
+      : { type: 'NONE', label: '来源资料已整理完成' };
   }
   if (run.status === 'READING_SOURCE') return { type: 'NONE', label: '正在载入当前快照' };
   return { type: 'NONE', label: '当前 Checkpoint 暂无可执行操作' };
@@ -1154,9 +1193,7 @@ function timelineFor(input: {
   const compilationBySource = new Map(input.compilations.map((item) => [item.sourceId, item]));
   const sourceById = new Map(input.story.listSources().map((item) => [item.sourceId, item]));
   const conflicts = new Map(input.story.listConflictDefinitions().map((item) => [item.conflictId, item]));
-  const currentSourceId = input.run.sources.find((source) => (
-    !['PENDING', 'ALIGNED'].includes(source.status)
-  ))?.sourceId;
+  const currentSourceId = selectCurrentReviewStep(input.run)?.sourceId;
   const currentEventId = [...input.run.timeline].reverse().find((event) => {
     if (input.run.status === 'READING_SOURCE') return event.type === 'SOURCE_READ_STARTED';
     if (input.run.status === 'REVIEWING_DOCUMENT') {
@@ -1266,6 +1303,12 @@ function timelineFor(input: {
         kind: 'DOCUMENT_REVIEWED',
         title: `${source ? displaySourceName(source.sourceId, source.sourceName) : '来源'}文档审阅完成`,
         summary: '本份来源文档已完成审阅，可随时重新查看。',
+        ...(document && compilation ? { document: {
+          documentId: document.documentId,
+          revision: document.revision,
+          sectionCount: Object.keys(compilation.sections).length,
+          blockCounts: countBlocks(compilation),
+        } } : {}),
         ...(document ? { action: { type: 'OPEN_DOCUMENT' as const, documentId: document.documentId, revision: document.revision } } : {}),
       });
     } else if (event.type === 'CONFLICT_FOUND') {
@@ -1535,6 +1578,23 @@ export async function validateGuanyijiaCorroborationReceiptSetAgainstPersistedRe
   const isDeclaredCorroboratingSource = input.story.listConflictDefinitions().some((definition) => (
     definition.corroborating.some((candidate) => candidate.sourceId === input.projection.sourceId)
   ));
+  const sourceAdmissionSequence = input.run.timeline.find((event) => (
+    event.type === 'SOURCE_READ_COMPLETED' && event.sourceId === input.projection.sourceId
+  ))?.sequence;
+  const resolvedAtSourceAdmission = new Set(
+    sourceAdmissionSequence === undefined
+      ? input.run.sources.flatMap((source) => source.resolvedConflictIds)
+      : input.run.sources.flatMap((source) => {
+        const resolutionEvents = input.run.timeline.filter((event) => (
+          event.type === 'CONFLICT_RESOLVED' && event.sourceId === source.sourceId
+        ));
+        return resolutionEvents.flatMap((event, index) => (
+          event.sequence < sourceAdmissionSequence && source.resolvedConflictIds[index]
+            ? [source.resolvedConflictIds[index]!]
+            : []
+        ));
+      }),
+  );
   let expectedConflictIds: string[] = [];
   if (isDeclaredCorroboratingSource && step.documentId && step.documentRevision) {
     let generatedDocument = await input.sourceDocuments.read(step.documentId);
@@ -1559,7 +1619,9 @@ export async function validateGuanyijiaCorroborationReceiptSetAgainstPersistedRe
       story: input.story,
       throughSourceIndex: sourceIndex,
     });
-    expectedConflictIds = revisions.at(-1)!.compilation.corroboratedConflictIds;
+    expectedConflictIds = revisions.at(-1)!.compilation.corroboratedConflictIds.filter((conflictId) => (
+      resolvedAtSourceAdmission.has(conflictId)
+    ));
   }
   if (canonicalModelingJson(input.projection.conflictIds)
     !== canonicalModelingJson(expectedConflictIds)) {
@@ -1643,7 +1705,7 @@ export async function validateGuanyijiaAssistantArtifactAgainstPersistedRun(inpu
       step.status = 'ALIGNED';
     }
   }
-  const eventCurrentStep = eventRun.sources.find((step) => !['ALIGNED', 'PENDING'].includes(step.status));
+  const eventCurrentStep = selectCurrentReviewStep(eventRun);
   eventRun.status = eventCurrentStep?.status === 'READING' ? 'READING_SOURCE'
     : eventCurrentStep?.status === 'DOCUMENT_READY' ? 'REVIEWING_DOCUMENT'
       : eventCurrentStep?.status === 'CONFLICT_BLOCKED' ? 'CONFLICT_BLOCKED'
@@ -1798,7 +1860,10 @@ export async function validateGuanyijiaAssistantArtifactAgainstPersistedRun(inpu
         definition.conflictId === selection.conflictId
       ))?.introducedBySourceId
     : undefined;
-  const selectedKnowledgeSourceId = selection.sourceId ?? selectedDocumentSourceId ?? selectedConflictSourceId;
+  const selectedKnowledgeSourceId = selection.sourceId
+    ?? selectedDocumentSourceId
+    ?? selectedConflictSourceId
+    ?? eventCurrentStep?.sourceId;
   const lastReadSourceIndex = selectedKnowledgeSourceId
     ? storySources.findIndex((source) => source.sourceId === selectedKnowledgeSourceId)
     : -1;
@@ -1867,17 +1932,14 @@ export async function validateGuanyijiaAssistantArtifactAgainstPersistedRun(inpu
     })();
     runKnowledgeCache.set(knowledgeKey, persistedFacts);
   }
-  const currentStep = lastReadSourceIndex >= 0 ? eventRun.sources[lastReadSourceIndex] : undefined;
+  const currentStep = selectCurrentReviewStep(eventRun);
+  const currentConflict = selectFirstUnresolvedConflict(eventRun);
   const facts = await persistedFacts;
   const knowledge: ReviewAssistantKnowledge = {
     ...facts,
     ...(currentStep ? { currentSourceId: currentStep.sourceId, currentDocumentId: currentStep.documentId } : {}),
     ...(selection.blockId ? { currentBlockId: selection.blockId } : {}),
-    ...(currentStep?.status === 'CONFLICT_BLOCKED' ? {
-      currentConflictId: currentStep.introducedConflictIds.find((id) => (
-        !currentStep.resolvedConflictIds.includes(id)
-      )),
-    } : {}),
+    ...(currentConflict ? { currentConflictId: currentConflict.conflictId } : {}),
   };
 
   if (turn.response.kind !== 'PATCH_PREVIEW') {
@@ -2580,7 +2642,7 @@ export function createGuanyijiaWorkbenchRuntime(input: {
     const compilationBySource = new Map(compilations.map((value) => [value.sourceId, value]));
     const sourceById = new Map(sources.map((value) => [value.sourceId, value]));
     const conflictById = new Map(story.listConflictDefinitions().map((value) => [value.conflictId, value]));
-    const currentSourceId = run.sources.find((step) => !['PENDING', 'ALIGNED'].includes(step.status))?.sourceId;
+    const currentSourceId = selectCurrentReviewStep(run)?.sourceId;
     const currentEventId = [...run.timeline].reverse().find((event) => {
       if (run.status === 'READING_SOURCE') return event.type === 'SOURCE_READ_STARTED';
       if (run.status === 'REVIEWING_DOCUMENT') return event.sourceId === currentSourceId
@@ -2650,6 +2712,10 @@ export function createGuanyijiaWorkbenchRuntime(input: {
         result.push({
           ...base, kind: event.type, title: `${step ? displaySourceName(step.sourceId, step.sourceName) : '来源'}文档审阅完成`,
           summary: '本份来源文档已完成审阅，可随时重新查看。',
+          ...(document && compilation ? { document: {
+            documentId: document.documentId, revision: document.revision,
+            sectionCount: 9, blockCounts: countBlocks(compilation),
+          } } : {}),
           ...(document ? { action: { type: 'OPEN_DOCUMENT' as const, documentId: document.documentId, revision: document.revision } } : {}),
         });
       }
@@ -2746,35 +2812,33 @@ export function createGuanyijiaWorkbenchRuntime(input: {
     const contentBinding = contentBindingForRun(run, pointer);
     const documents = await input.sourceDocuments.list(projectId);
     let compilations = baseCompilationsForReview();
+    let conflictCompilations: SourceDocumentCompilation[] | undefined;
     let conflictDocuments: Map<string, SourceModelingDocument> | undefined;
     let currentConflict: {
       conflictId: string;
       definition: ReturnType<typeof story.listConflictDefinitions>[number];
     } | undefined;
-    const currentStep = run.sources.find((step) => !['PENDING', 'ALIGNED'].includes(step.status))
-      ?? [...run.sources].reverse().find((step) => step.status === 'ALIGNED');
+    const currentStep = selectCurrentReviewStep(run);
     const currentSource = currentStep ? sources.find((source) => source.sourceId === currentStep.sourceId) : undefined;
-    let currentDocument = currentStep
+    const currentDocument = currentStep
       ? documents.find((document) => document.documentId === currentStep.documentId)
       : undefined;
     if (currentDocument && !currentDocument.blocksRef) return snapshot(run);
-    if (run.status === 'CONFLICT_BLOCKED') {
-      const blocked = run.sources.find((step) => step.status === 'CONFLICT_BLOCKED');
-      const conflictId = blocked?.introducedConflictIds.find((id) => !blocked.resolvedConflictIds.includes(id));
-      const definition = conflictId
-        ? story.listConflictDefinitions().find((candidate) => candidate.conflictId === conflictId)
-        : undefined;
-      if (!blocked || !definition) throw new Error('标准化运行阻断状态缺少当前来源差异');
+    const unresolvedConflict = selectFirstUnresolvedConflict(run);
+    if (unresolvedConflict) {
+      const definition = story.listConflictDefinitions().find((candidate) => (
+        candidate.conflictId === unresolvedConflict.conflictId
+      ));
+      if (!definition) throw new Error('标准化运行阻断状态缺少当前来源差异');
       const introducedIndex = sources.findIndex((source) => source.sourceId === definition.introducedBySourceId);
       const context = await loadRunContext(run, {
         sourceLimit: introducedIndex + 1,
         blocksOnly: true,
         skipEventBodies: true,
       });
-      compilations = context.compilations;
+      conflictCompilations = context.compilations;
       conflictDocuments = context.documents;
-      currentDocument = currentStep ? context.documents.get(currentStep.sourceId) : undefined;
-      currentConflict = { conflictId: definition.conflictId, definition };
+      currentConflict = { conflictId: unresolvedConflict.conflictId, definition };
     }
     const currentCompilation = currentStep
       ? compilations.find((compilation) => compilation.sourceId === currentStep.sourceId)
@@ -2822,11 +2886,11 @@ export function createGuanyijiaWorkbenchRuntime(input: {
       });
       if (scriptedEdits.length) result.scriptedEdits = scriptedEdits;
     }
-    if (currentStep && currentConflict && conflictDocuments) {
+    if (currentConflict && conflictCompilations && conflictDocuments) {
       const introducedIndex = sources.findIndex((source) => (
         source.sourceId === currentConflict.definition.introducedBySourceId
       ));
-      const sourceRevisions = compilations.slice(0, introducedIndex + 1).map((compilation) => {
+      const sourceRevisions = conflictCompilations.slice(0, introducedIndex + 1).map((compilation) => {
         const document = conflictDocuments?.get(compilation.sourceId);
         if (!document) throw new Error(`当前冲突缺少持久化来源revision：${compilation.sourceId}`);
         return { documentId: document.documentId, documentRevision: document.revision, compilation };
@@ -2866,9 +2930,7 @@ export function createGuanyijiaWorkbenchRuntime(input: {
       assistantTurns: new Map<string, ReviewAssistantTurnArtifact>(),
       allDocuments: [] as SourceModelingDocument[],
     };
-    const currentStep = run?.sources.find((step) => (
-      !['PENDING', 'ALIGNED'].includes(step.status)
-    )) ?? [...(run?.sources ?? [])].reverse().find((step) => step.status === 'ALIGNED');
+    const currentStep = run ? selectCurrentReviewStep(run) : undefined;
     const currentSource = currentStep
       ? sources.find((source) => source.sourceId === currentStep.sourceId)
       : undefined;
@@ -2955,13 +3017,11 @@ export function createGuanyijiaWorkbenchRuntime(input: {
       });
       if (scriptedEdits.length) result.scriptedEdits = scriptedEdits;
     }
-    const conflictId = currentStep?.status === 'CONFLICT_BLOCKED'
-      ? currentStep.introducedConflictIds.find((id) => !currentStep.resolvedConflictIds.includes(id))
+    const unresolvedConflict = run ? selectFirstUnresolvedConflict(run) : undefined;
+    const definition = unresolvedConflict
+      ? story.listConflictDefinitions().find((candidate) => candidate.conflictId === unresolvedConflict.conflictId)
       : undefined;
-    const definition = conflictId
-      ? story.listConflictDefinitions().find((candidate) => candidate.conflictId === conflictId)
-      : undefined;
-    if (run && currentStep && definition && conflictId) {
+    if (run && unresolvedConflict && definition) {
       const introducedIndex = sources.findIndex((source) => source.sourceId === definition.introducedBySourceId);
       const sourceRevisions = context.compilations.slice(0, introducedIndex + 1).map((compilation) => {
         const document = context.documents.get(compilation.sourceId);
@@ -2969,9 +3029,9 @@ export function createGuanyijiaWorkbenchRuntime(input: {
         return { documentId: document.documentId, documentRevision: document.revision, compilation };
       });
       result.currentConflict = {
-        conflictId,
+        conflictId: unresolvedConflict.conflictId,
         title: definition.title,
-        hunk: story.buildConflictHunk({ conflictId, sourceRevisions }),
+        hunk: story.buildConflictHunk({ conflictId: unresolvedConflict.conflictId, sourceRevisions }),
         defaultStrategy: definition.defaultStrategy,
         allowedStrategies: [...definition.allowedStrategies],
       };
@@ -3193,8 +3253,8 @@ export function createGuanyijiaWorkbenchRuntime(input: {
     context: Awaited<ReturnType<typeof loadRunContext>>,
     selection: ReviewAssistantContextSelection,
   ): ReviewAssistantKnowledge {
-    const currentStep = run.sources.find((step) => !['PENDING', 'ALIGNED'].includes(step.status))
-      ?? [...run.sources].reverse().find((step) => step.status === 'ALIGNED');
+    const currentStep = selectCurrentReviewStep(run);
+    const currentConflict = selectFirstUnresolvedConflict(run);
     return {
       sources: context.compilations.map((compilation) => {
         const source = sources.find((candidate) => candidate.sourceId === compilation.sourceId)!;
@@ -3231,9 +3291,7 @@ export function createGuanyijiaWorkbenchRuntime(input: {
       }),
       ...(currentStep ? { currentSourceId: currentStep.sourceId, currentDocumentId: currentStep.documentId } : {}),
       ...(selection.blockId ? { currentBlockId: selection.blockId } : {}),
-      ...(currentStep?.status === 'CONFLICT_BLOCKED' ? {
-        currentConflictId: currentStep.introducedConflictIds.find((id) => !currentStep.resolvedConflictIds.includes(id)),
-      } : {}),
+      ...(currentConflict ? { currentConflictId: currentConflict.conflictId } : {}),
     };
   }
 
@@ -3436,10 +3494,9 @@ export function createGuanyijiaWorkbenchRuntime(input: {
         throw new Error('当前没有待解决的来源冲突');
       }
       const context = await loadRunContext(run);
-      if (run.status === 'CONFLICT_BLOCKED') {
-        const blocked = run.sources.find((step) => step.status === 'CONFLICT_BLOCKED');
-        const currentConflictId = blocked?.introducedConflictIds.find((id) => !blocked.resolvedConflictIds.includes(id));
-        if (!blocked || currentConflictId !== previewInput.conflictId) {
+      const unresolvedConflict = selectFirstUnresolvedConflict(run);
+      if (run.status === 'CONFLICT_BLOCKED' || run.status === 'READY') {
+        if (!unresolvedConflict || unresolvedConflict.conflictId !== previewInput.conflictId) {
           throw new Error('只能预览当前第一项未解决冲突');
         }
       } else if (run.status !== 'READY_FOR_OUTPUT'
@@ -4254,14 +4311,11 @@ export function createGuanyijiaWorkbenchRuntime(input: {
         if (activeRun.revision !== command.expectedRevision) {
           throw new Error('标准化运行revision已变化，请刷新后重试');
         }
-        const blocked = activeRun.sources.find((step) => step.status === 'CONFLICT_BLOCKED');
-        const currentConflictId = blocked?.introducedConflictIds.find((id) => (
-          !blocked.resolvedConflictIds.includes(id)
-        ));
-        if (!blocked || activeRun.status !== 'CONFLICT_BLOCKED') {
+        const unresolvedConflict = selectFirstUnresolvedConflict(activeRun);
+        if (!unresolvedConflict || (activeRun.status !== 'CONFLICT_BLOCKED' && activeRun.status !== 'READY')) {
           throw new Error('当前没有待解决的来源冲突');
         }
-        if (currentConflictId !== command.conflictId) {
+        if (unresolvedConflict.conflictId !== command.conflictId) {
           throw new Error('只能应用当前第一项未解决冲突');
         }
         const preview = await this.previewCurrentConflict({
@@ -4282,7 +4336,7 @@ export function createGuanyijiaWorkbenchRuntime(input: {
           schemaVersion: 1,
           resolutionId: `resolution:${activeRun.runId}:${command.conflictId}`,
           runId: activeRun.runId,
-          sourceId: blocked.sourceId,
+          sourceId: unresolvedConflict.sourceStep.sourceId,
           reason: command.reason.trim(),
           actorUserId: command.actorUserId,
           decidedAt,
@@ -4294,7 +4348,7 @@ export function createGuanyijiaWorkbenchRuntime(input: {
           expectedRevision: command.expectedRevision,
           actor: { userId: command.actorUserId },
           runId: activeRun.runId,
-          sourceId: blocked.sourceId,
+          sourceId: unresolvedConflict.sourceStep.sourceId,
           conflictId: command.conflictId,
           strategy: command.strategy,
           reason: artifact.reason,
