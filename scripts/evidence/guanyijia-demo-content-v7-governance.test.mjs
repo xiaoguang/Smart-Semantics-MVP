@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { standardSectionOrder } from '../../src/features/modeling-document-bridge/standard-markdown.ts';
@@ -17,6 +18,8 @@ import {
   validatePromptRevisionProposal,
 } from './guanyijia-demo-content-v7-generate.mjs';
 
+const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+
 function v2Output(descriptor) {
   return JSON.stringify({
     schemaVersion: 2,
@@ -31,7 +34,7 @@ function v2Output(descriptor) {
           .map((claim) => ({
             title: claim.title,
             explanation: '当前资料保存了这一结论，可作为后续建模理解的依据；具体运行情况仍需结合后续资料确认。',
-            ...(claim.boundary ? { boundary: claim.boundary } : {}),
+            boundary: claim.boundary ?? null,
             claimIds: [claim.claimId],
           })),
         gaps: claims
@@ -46,6 +49,13 @@ function v2Output(descriptor) {
     }),
   });
 }
+
+test('the strict V7 response schema requires every item property and represents an absent boundary as null', async () => {
+  const schema = JSON.parse(await readFile(join(moduleDirectory, 'schemas/guanyijia-demo-content-v7-narrative.schema.json'), 'utf8'));
+  const item = schema.properties.chapters.items.properties.items.items;
+  assert.ok(item.required.includes('boundary'));
+  assert.deepEqual(item.properties.boundary.type, ['string', 'null']);
+});
 
 test('V7 schema v2 maps every frozen Claim and Gap exactly once and records an ideal candidate', async () => {
   const descriptors = await loadV6NarrativeDescriptors();

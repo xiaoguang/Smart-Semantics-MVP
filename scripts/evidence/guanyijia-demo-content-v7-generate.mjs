@@ -192,7 +192,7 @@ function narrativePrompt(descriptor, promptRevision) {
     '事实边界：只能使用输入提供的冻结 Claim、Boundary 和 Evidence 摘要。不得新增字段、代码、文件、行号、运行结果、制度事实、跨来源结论或业务数据。不知道的内容必须写入 gaps 的缺少／影响／下一步。',
     '读者：业务负责人、产品经理和数据建模人员。先解释“是什么、为什么重要、如何使用、有哪些边界”，再由系统连接技术依据。使用自然、直接、短句中文；避免字段倾倒、模板空话和机械重复。',
     '结构：九章必须完整且按输入顺序输出。每个非 GAP Claim 必须且只能放入本章一个 items[].claimIds；每个 GAP Claim 必须且只能放入本章一个 gaps[].claimIds。不要把 claimId、sourceId、snapshot、SHA、文件位置、行号、英文 GAP 或证据引用写入人类文本。',
-    '输出职责：模型只能提供 introduction、items 的 title/explanation/boundary 和 gaps 的 missing/impact/nextStep。技术依据、章节标题、表格、Markdown、来源身份、正式差异和用户已保存修改由确定性程序处理。',
+    '输出职责：模型只能提供 introduction、items 的 title/explanation/boundary（没有边界时写 null）和 gaps 的 missing/impact/nextStep。技术依据、章节标题、表格、Markdown、来源身份、正式差异和用户已保存修改由确定性程序处理。',
     '来源边界：MySQL 的结构存在不代表实际配置、业务行或制度生效；GitHub 实现线索不代表生产部署；业务说明不能冒充官方原文；ERP 制度草案不能冒充已批准制度；企业术语图只能佐证词义，不构成新的根证据或冲突。',
     `本次单一来源类别：${descriptor.readerLabel}。`,
     revision,
@@ -454,6 +454,9 @@ function normalizeV2Output(parsed, descriptor) {
         if (!item || typeof item !== 'object' || Array.isArray(item)) fail(`item must be an object: ${descriptor.sourceId} / ${sectionId}`);
         const extras = Object.keys(item).filter((key) => !['title', 'explanation', 'boundary', 'claimIds'].includes(key));
         if (extras.length) issues.push(candidateIssue(CandidateIssueClass.NORMALIZED, 'EXTRA_ITEM_FIELDS_DROPPED', `${sectionId} item ${itemIndex + 1} dropped fields: ${extras.sort().join(', ')}`));
+        if (!Object.hasOwn(item, 'boundary') || (item.boundary !== null && typeof item.boundary !== 'string')) {
+          fail(`item.boundary must be a string or null: ${descriptor.sourceId} / ${sectionId}`);
+        }
         const claimIds = assertClaimIds(item.claimIds, 'item.claimIds', descriptor, sectionId);
         for (const claimId of claimIds) {
           const claim = claimMap.get(claimId);
@@ -464,7 +467,7 @@ function normalizeV2Output(parsed, descriptor) {
         return {
           title: normalizedHumanText(item.title, descriptor, sectionId, 'item.title', issues),
           explanation: normalizedHumanText(item.explanation, descriptor, sectionId, 'item.explanation', issues),
-          ...(item.boundary === undefined ? {} : { boundary: normalizedHumanText(item.boundary, descriptor, sectionId, 'item.boundary', issues) }),
+          ...(item.boundary === null ? {} : { boundary: normalizedHumanText(item.boundary, descriptor, sectionId, 'item.boundary', issues) }),
           claimIds,
         };
       });
@@ -1176,7 +1179,7 @@ function candidatePaths(candidateRoot, candidateId) {
   };
 }
 
-function candidateReceipt(candidateId, descriptor, generation, rawOutput, failure, stateWritePreflight) {
+function candidateReceipt(candidateId, descriptor, generation, rawOutput, failure, stateWritePreflight, modelSessionStarted) {
   return {
     schemaVersion: 2,
     candidateId,
@@ -1187,6 +1190,7 @@ function candidateReceipt(candidateId, descriptor, generation, rawOutput, failur
     sourceContentSha256: descriptor.sourceContentSha256,
     generation,
     lineage: generation.lineage,
+    attempt: { modelSessionStarted: Boolean(modelSessionStarted) },
     rawOutputSha256: sha256(rawOutput),
     outcome: failure ? 'FAILED' : 'COMPLETED',
     ...(stateWritePreflight
@@ -1245,6 +1249,7 @@ async function writeSourceCandidateArtifacts(candidateRoot, candidateId, descrip
       record.rawOutput,
       record.failure,
       record.stateWritePreflight,
+      record.modelSessionStarted,
     );
     const review = candidateReviewArtifact(candidateId, sourceReview);
     const normalized = candidateNormalizedArtifact(candidateId, sourceReview);
@@ -1281,6 +1286,7 @@ export async function persistV7SourceCandidate(input = {}) {
     ...(input.generationRound === undefined ? {} : { generationRound: input.generationRound }),
     ...(input.parentCandidateId ? { parentCandidateId: input.parentCandidateId } : {}),
     ...(input.promptRevision ? { promptRevision: input.promptRevision } : {}),
+    modelSessionStarted: input.modelSessionStarted ?? true,
   };
   const lineage = contentLineage(rawRecord, descriptor);
   await verifyRoundTwoLineage({ ...input, descriptors }, descriptor, lineage);
@@ -1343,6 +1349,7 @@ export async function persistV7FailedSourceCandidate(input = {}) {
     ...(input.generationRound === undefined ? {} : { generationRound: input.generationRound }),
     ...(input.parentCandidateId ? { parentCandidateId: input.parentCandidateId } : {}),
     ...(input.promptRevision ? { promptRevision: input.promptRevision } : {}),
+    modelSessionStarted: input.modelSessionStarted ?? Boolean(input.sessionId),
   };
   const generation = generationFor(descriptor, rawRecord);
   const failure = { message: failureMessage(input.failure) };
@@ -1395,6 +1402,7 @@ export async function regenerateV7SourceCandidate(input = {}) {
   if (typeof codexStatePreflight !== 'function') fail('Codex state write preflight is invalid');
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'guanyijia-v7-source-call-'));
   let stateWritePreflight;
+  let modelSessionStarted = false;
   try {
     const outputPath = join(temporaryRoot, `${descriptor.sourceId}.json`);
     try {
@@ -1420,7 +1428,12 @@ export async function regenerateV7SourceCandidate(input = {}) {
       // receipt/report with an empty raw payload rather than discarding the
       // source attempt or retrying it implicitly.
       await codexSession.prepare();
-      const result = await codexSession.generate({ descriptor, prompt: narrativePrompt(descriptor), outputPath });
+      modelSessionStarted = true;
+      const result = await codexSession.generate({
+        descriptor,
+        prompt: narrativePrompt(descriptor, input.promptRevision),
+        outputPath,
+      });
       if (!result || typeof result.sessionId !== 'string' || typeof result.rawOutput !== 'string') {
         fail(`${descriptor.sourceId} ChatGPT session returned an invalid result`);
       }
@@ -1431,6 +1444,7 @@ export async function regenerateV7SourceCandidate(input = {}) {
         sessionId: result.sessionId,
         rawOutput: result.rawOutput,
         stateWritePreflight,
+        modelSessionStarted,
       });
     } catch (error) {
       const rawOutput = await readFile(outputPath, 'utf8').catch(() => '');
@@ -1441,6 +1455,7 @@ export async function regenerateV7SourceCandidate(input = {}) {
         rawOutput,
         failure: error,
         stateWritePreflight,
+        modelSessionStarted,
       });
     }
   } finally {
@@ -1466,6 +1481,7 @@ export async function loadV7SourceCandidate(input = {}) {
     sourceId: descriptor.sourceId,
     generation: receipt.generation,
     rawOutput,
+    ...(receipt.attempt ? { modelSessionStarted: receipt.attempt.modelSessionStarted } : {}),
     ...(receipt.stateWritePreflight ? { stateWritePreflight: receipt.stateWritePreflight } : {}),
     ...(receipt.outcome === 'FAILED' ? { failure: receipt.failure } : {}),
   };
@@ -1476,8 +1492,12 @@ export async function loadV7SourceCandidate(input = {}) {
     rawOutput,
     record.failure,
     record.stateWritePreflight,
+    record.modelSessionStarted,
   );
-  if (canonicalJson(receipt) !== canonicalJson(expectedReceipt)) {
+  const legacyExpectedReceipt = structuredClone(expectedReceipt);
+  delete legacyExpectedReceipt.attempt;
+  if (canonicalJson(receipt) !== canonicalJson(expectedReceipt)
+    && canonicalJson(receipt) !== canonicalJson(legacyExpectedReceipt)) {
     fail(`candidate receipt does not bind its raw output and V6 identity: ${candidateId}`);
   }
   const review = validateSourceCandidateRecord(record, descriptor, {
