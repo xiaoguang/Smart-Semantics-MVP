@@ -49,11 +49,10 @@
   `npm run evidence:guanyijia:content:candidates:generate -- <sourceId>`
   maintenance command may invoke the logged-in Codex session. It handles one
   explicit source per invocation; it never retries automatically or reruns all
-  five sources for one source. After an initial generation, allow at most two
-  explicit content-improvement rounds for that source. Infrastructure or
-  integrity failures are fatal: stop and preserve the receipt rather than
-  retrying. Length, style, and density findings are warnings only; they do not
-  authorize another generation round or block the candidate workflow. A V7
+  five sources for one source. A source may produce at most two product-content
+  candidates: Round 1 and one explicitly authorized Round 2 replacement.
+  Infrastructure or integrity failures are fatal: stop and preserve the
+  receipt rather than retrying. A V7
   candidate remains separate from a frozen sidecar until the maintainer creates
   a source-keyed selection with
   `npm run evidence:guanyijia:content:candidates:selection -- <selection.json>
@@ -115,6 +114,10 @@
 - TDD test writing and OCR: `gpt-5.6-luna` with `xhigh` reasoning.
 - Five-source bulk analysis and Markdown/knowledge-base proposal generation:
   `gpt-5.6-luna` with `xhigh` reasoning.
+- A fatal V7 reader-candidate finding may be analyzed by `gpt-5.6-sol` with
+  `ultra` reasoning. Its output is a bounded prompt-revision artifact, not
+  product content; it may not weaken the frozen fact boundary, source identity,
+  schema, traceability, or deterministic validators.
 - The independently scoped `guanyijia-demo-content-v1-20260821` content
   sidecar is the deliberate exception: its one approved authoring pass uses
   `gpt-5.6-luna` with `medium` reasoning, as recorded in its generation
@@ -227,14 +230,29 @@
   validation or human review used after generation; (5) improvement round 1;
   (6) improvement round 2; (7) the decision rule after round 2; and (8)
   estimated execution time.
-- A generation task consists of one initial generation and at most two
-  explicit, bounded improvement rounds. Never retry automatically and never
-  rerun unrelated sources or artifacts because one item needs improvement.
+- A product-content generation unit consists of at most two candidates. Round
+  1 is the initial candidate; Round 2 is the only allowed replacement. Never
+  retry automatically or rerun unrelated sources or artifacts because one item
+  needs improvement. A failed preflight before `thread.started` does not use a
+  content round, but must be explicitly restarted after the capability is
+  repaired; a started model session consumes its round even if it returns empty
+  or invalid output.
+- Before Round 2, a single `gpt-5.6-sol`/`ultra` prompt-diagnosis task may
+  create a receipt-bound corrective addendum from the frozen input, the Round 1
+  candidate, and named findings. It is not a product-content candidate, but it
+  must itself declare ideal acceptance, fatal errors, deterministic validation,
+  and human review. It may only add narrowly scoped corrective instructions;
+  it must not introduce facts or weaken immutable source, schema, evidence, or
+  safety constraints.
 - Round 1 prioritizes factual correctness, source identity, required coverage,
-  schema and structural validity. Round 2 addresses remaining accuracy,
-  clarity, density and presentation findings without broadening the approved
-  scope.
-- After round 2, the task may continue when every task-specific fatal error has
-  been eliminated, even if non-fatal ideal-quality warnings remain. Record
-  those warnings honestly. If any fatal error remains, stop, preserve the
-  output and validation receipt, and discuss the next approach with the user.
+  schema and structural validity. Round 2 fixes only named fatal findings or a
+  user-approved systemic readability finding without broadening the approved
+  scope. The source authoring model is `gpt-5.6-luna`/`xhigh`; prompt diagnosis
+  is `gpt-5.6-sol`/`ultra`.
+- A candidate is `IDEAL` only when all ideal-quality requirements pass. It is
+  `REVIEWABLE_WITH_WARNINGS` only when all fatal-error checks pass and every
+  remaining warning is recorded for human approval. Any fatal error is
+  `FATAL`: after Round 1 it requires a valid prompt diagnosis before Round 2;
+  after Round 2 it stops the candidate, selection, freeze, package, and
+  deployment workflow. Do not create a third candidate. Preserve the output
+  and receipts, then discuss the next approach with the user.
