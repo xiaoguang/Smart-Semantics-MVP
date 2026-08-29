@@ -1,6 +1,7 @@
 import { sha256HexSync } from '../ai-modeling/sha256.ts';
 import {
   bindDemoContentRun,
+  validateDemoContentRunBinding,
   type DemoContentRunBinding,
 } from '../guanyijia-demo-content/demo-content-review.ts';
 import { createGuanyijiaStandardizationStory } from '../guanyijia-standardization-story/index.ts';
@@ -856,14 +857,17 @@ function formalSourcesForDemoContent(run: StandardizationRun) {
 
 function contentBindingForRun(run: StandardizationRun, pointer: ActiveRunPointer | null): DemoContentRunBinding | undefined {
   if (!pointer?.contentBinding) return undefined;
-  const expected = bindDemoContentRun({
-    runId: run.runId,
-    formalSources: formalSourcesForDemoContent(run),
-  });
-  if (canonicalModelingJson(pointer.contentBinding) !== canonicalModelingJson(expected)) {
+  const binding = validateDemoContentRunBinding(pointer.contentBinding);
+  const formalSources = formalSourcesForDemoContent(run);
+  if (binding.runId !== run.runId
+    || binding.sourceBindings.length !== formalSources.length
+    || binding.sourceBindings.some((source, index) => (
+      source.sourceId !== formalSources[index]?.sourceId
+      || source.formalSnapshotId !== formalSources[index]?.snapshotId
+    ))) {
     throw new Error('冻结内容快照校验失败');
   }
-  return expected;
+  return binding;
 }
 
 /**

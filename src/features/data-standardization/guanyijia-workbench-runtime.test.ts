@@ -334,6 +334,28 @@ test('a new five-source run pins the frozen reading-material version and preserv
   assert.deepEqual(restored.contentBinding, started.contentBinding);
 });
 
+test('restores an in-progress V6 binding after the V7 browser publication becomes active', async () => {
+  const { runtime, pointerStorage, sourceDocuments, runs } = fixture();
+  const started = await runtime.execute(command('START_RUN', 0, 'content-binding:legacy-v6:start'));
+  const pointerKey = guanyijiaActiveRunPointerStorageKeyFor(started.batchId);
+  const pointer = JSON.parse(pointerStorage.getItem(pointerKey)!) as { contentBinding: Record<string, unknown> };
+  pointer.contentBinding = {
+    ...pointer.contentBinding,
+    contentSnapshotId: 'guanyijia-demo-content-v6-20260826',
+    contentSha256: 'sha256:6da765901357f4b0856e3b1c5aaab159aec75c895b60b1bb2ea11539997f8180',
+  };
+  pointerStorage.setItem(pointerKey, JSON.stringify(pointer));
+
+  const restoredRuntime = createGuanyijiaWorkbenchRuntime({
+    pointerStorage, standardizationRuns: runs, sourceDocuments,
+  });
+  const restored = await restoredRuntime.read('user-author');
+
+  assert.equal(restored.contentBinding?.contentSnapshotId, 'guanyijia-demo-content-v6-20260826');
+  assert.equal(restored.contentBinding?.contentSha256,
+    'sha256:6da765901357f4b0856e3b1c5aaab159aec75c895b60b1bb2ea11539997f8180');
+});
+
 test('production review shell reaches React without source bodies and hydrates only the selected verified document window', async () => {
   const { runtime, sourceDocuments, contentStore } = fixture();
   const started = await runtime.execute(command('START_RUN', 0, 'shell:start'));
