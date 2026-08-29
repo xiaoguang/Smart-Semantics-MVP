@@ -142,7 +142,7 @@ async function freezeFixture(targetRoot) {
   });
 }
 
-test('V7 candidate binds exactly five new Luna high sessions to the V6 frozen reviews', async () => {
+test('V7 candidate binds exactly five new Luna xhigh sessions to the V6 frozen reviews', async () => {
   const implementation = api();
   const descriptors = await implementation.loadV6NarrativeDescriptors({ sourceSnapshotRoot: v6Root });
   const candidate = implementation.createV7Candidate(descriptors, recordsFor(descriptors));
@@ -159,10 +159,10 @@ test('V7 candidate binds exactly five new Luna high sessions to the V6 frozen re
     assert.deepEqual(issueClasses(review), []);
     assert.equal(review.generation.provider, 'CODEX_CHATGPT_SESSION');
     assert.equal(review.generation.model, 'gpt-5.6-luna');
-    assert.equal(review.generation.reasoningEffort, 'high');
+    assert.equal(review.generation.reasoningEffort, 'xhigh');
     assert.match(
       review.generation.promptVersion,
-      /^guanyijia-v7-reader-narrative-[a-z_]+-4$/u,
+      /^guanyijia-v7-reader-candidate-[a-z_]+-5$/u,
       'the richer V7 contract must have its own prompt version for reproducible generation metadata',
     );
     assert.deepEqual(review.narratives.map((section) => section.sectionId), standardSectionOrder.map(({ key }) => key));

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sourceId",
+    "basePromptVersion",
+    "parentCandidateId",
+    "fatalFindingIds",
+    "correctiveDirectives",
+    "preservedConstraints",
+    "nonGoals"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "sourceId": { "type": "string", "minLength": 1 },
+    "basePromptVersion": { "type": "string", "minLength": 1 },
+    "parentCandidateId": { "type": "string", "minLength": 1 },
+    "fatalFindingIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "correctiveDirectives": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["findingIds", "instruction", "reason"],
+        "properties": {
+          "findingIds": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "instruction": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "preservedConstraints": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "nonGoals": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

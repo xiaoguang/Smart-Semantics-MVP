@@ -2,18 +2,18 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "sourceId", "sections"],
+  "required": ["schemaVersion", "sourceId", "chapters"],
   "properties": {
-    "schemaVersion": { "type": "integer", "const": 1 },
+    "schemaVersion": { "type": "integer", "const": 2 },
     "sourceId": { "type": "string", "minLength": 1 },
-    "sections": {
+    "chapters": {
       "type": "array",
       "minItems": 9,
       "maxItems": 9,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["sectionId", "narrative"],
+        "required": ["sectionId", "introduction", "items", "gaps"],
         "properties": {
           "sectionId": {
             "type": "string",
@@ -29,19 +29,41 @@
               "UNRESOLVED"
             ]
           },
-          "coverage": {
-            "type": "string",
-            "enum": ["SUPPORTED", "PARTIAL", "GAP"]
+          "introduction": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["title", "explanation", "claimIds"],
+              "properties": {
+                "title": { "type": "string", "minLength": 1 },
+                "explanation": { "type": "string", "minLength": 1 },
+                "boundary": { "type": "string", "minLength": 1 },
+                "claimIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
           },
-          "narrative": { "type": "string", "minLength": 1 },
-          "gap": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["missing", "limitation", "nextStep"],
-            "properties": {
-              "missing": { "type": "string", "minLength": 1 },
-              "limitation": { "type": "string", "minLength": 1 },
-              "nextStep": { "type": "string", "minLength": 1 }
+          "gaps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["missing", "impact", "nextStep", "claimIds"],
+              "properties": {
+                "missing": { "type": "string", "minLength": 1 },
+                "impact": { "type": "string", "minLength": 1 },
+                "nextStep": { "type": "string", "minLength": 1 },
+                "claimIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "type": "string", "minLength": 1 }
+                }
+              }
             }
           }
         }

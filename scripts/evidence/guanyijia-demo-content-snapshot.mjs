@@ -98,7 +98,8 @@ function validateRichGenerationRuns(manifest, persistedGeneration) {
   const sourceIds = manifest.generationRuns.map((generation) => generation.sourceId);
   const requiredSourceIds = REQUIRED_SOURCES.map(([sourceId]) => sourceId);
   const sessionIds = manifest.generationRuns.map((generation) => generation.sessionId);
-  if (manifest.generationRuns.some((generation) => generation.reasoningEffort !== 'high')
+  const expectedReasoningEffort = demoContentSnapshotVersion(manifest.snapshotId) >= 7 ? 'xhigh' : 'high';
+  if (manifest.generationRuns.some((generation) => generation.reasoningEffort !== expectedReasoningEffort)
     || canonicalJson(sourceIds) !== canonicalJson(requiredSourceIds)
     || new Set(sessionIds).size !== sessionIds.length
     || persistedGeneration.schemaVersion !== 1
@@ -519,7 +520,7 @@ function validateGeneratedMaterials(materials) {
 
 function validateGeneration(generation) {
   if (!generation || generation.provider !== 'CODEX_CHATGPT_SESSION'
-    || generation.model !== 'gpt-5.6-luna' || !['medium', 'high'].includes(generation.reasoningEffort)
+    || generation.model !== 'gpt-5.6-luna' || !['medium', 'high', 'xhigh'].includes(generation.reasoningEffort)
     || typeof generation.sessionId !== 'string' || !generation.sessionId
     || typeof generation.promptVersion !== 'string' || !generation.promptVersion
     || !isSha256(generation.inputDigest) || !isSha256(generation.outputDigest)) {
@@ -634,9 +635,12 @@ export async function validateDemoContentSnapshot(root) {
   if (!isSha256(manifest.contentSha256) || manifest.contentSha256 !== sha256(`${canonicalJson(unsignedManifest)}\n`)) {
     fail('manifest content digest mismatch');
   }
+  const allowedReasoningEfforts = demoContentSnapshotVersion(manifest.snapshotId) >= 7
+    ? ['medium', 'high', 'xhigh']
+    : ['medium', 'high'];
   for (const generation of manifest.generationRuns) {
     if (generation.provider !== 'CODEX_CHATGPT_SESSION' || generation.model !== 'gpt-5.6-luna'
-      || !['medium', 'high'].includes(generation.reasoningEffort) || typeof generation.sessionId !== 'string'
+      || !allowedReasoningEfforts.includes(generation.reasoningEffort) || typeof generation.sessionId !== 'string'
       || !generation.sessionId || typeof generation.promptVersion !== 'string'
       || !isSha256(generation.inputDigest) || !isSha256(generation.outputDigest)) fail('generation manifest is invalid');
   }

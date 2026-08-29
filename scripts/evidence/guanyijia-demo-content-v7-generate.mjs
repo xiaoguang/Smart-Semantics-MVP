@@ -55,6 +55,7 @@ const defaultCandidateRoot = resolve(
   'modeling-evidence/guanyijia/demo-content/candidates/V7',
 );
 const schemaPath = resolve(moduleDirectory, 'schemas/guanyijia-demo-content-v7-narrative.schema.json');
+const promptRevisionSchemaPath = resolve(moduleDirectory, 'schemas/guanyijia-demo-content-v7-prompt-revision.schema.json');
 
 const forbiddenEnvironmentKeys = Object.freeze([
   'OPENAI_API_KEY',
@@ -74,6 +75,18 @@ export const CandidateIssueClass = Object.freeze({
   CRITICAL: 'CRITICAL',
 });
 
+/** Product-content candidates are intentionally capped at two per source. */
+export const ContentGenerationRound = Object.freeze({
+  ONE: 1,
+  TWO: 2,
+});
+
+export const CandidateAcceptance = Object.freeze({
+  IDEAL: 'IDEAL',
+  REVIEWABLE_WITH_WARNINGS: 'REVIEWABLE_WITH_WARNINGS',
+  FATAL: 'FATAL',
+});
+
 const transportReplacement = Object.freeze({
   SOURCE_NATIVE: (descriptor) => descriptor.readerLabel,
   FROZEN_RECORD: () => '已保存资料',
@@ -87,6 +100,7 @@ const transportReplacement = Object.freeze({
   '<!--': () => '注释：',
   '&amp;gt;': () => '>',
   'sha256:': () => '摘要：',
+  'GAP': () => '待补充资料',
 });
 
 function fail(message) {
@@ -149,32 +163,40 @@ async function artifact(root, path, mediaType) {
 }
 
 function promptVersionFor(sourceId) {
-  // The V7-4 prompt records that coverage is derived from frozen claims, not
-  // guessed by the model.  A prompt-version bump keeps future frozen output
-  // distinguishable from the old model-supplied coverage contract.
-  // A new version prevents a future frozen result from being mistaken for
-  // one produced under the former model-supplied coverage contract.
-  return `guanyijia-v7-reader-narrative-${sourceId}-4`;
+  return `guanyijia-v7-reader-candidate-${sourceId}-5`;
 }
 
-function narrativePrompt(descriptor) {
+function narrativePrompt(descriptor, promptRevision) {
   const sections = standardSectionOrder.map(({ key, heading }) => ({
     sectionId: key,
     heading,
-    currentClaims: descriptor.review.claims
+    claims: descriptor.review.claims
       .filter((claim) => claim.sectionId === key)
-      .map((claim) => ({ title: claim.title, statement: claim.statement, boundary: claim.boundary }))
-      .slice(0, 12),
+      .map((claim) => ({
+        claimId: claim.claimId,
+        kind: claim.kind,
+        title: claim.title,
+        statement: claim.statement,
+        boundary: claim.boundary,
+      })),
   }));
+  const revision = promptRevision
+    ? [
+      '本轮受限修订指令（只处理列出的已发现问题；不得改变以下不可变事实边界）：',
+      ...promptRevision.correctiveDirectives.map((directive) => `- ${directive.instruction}`),
+      `不得做的事：${promptRevision.nonGoals.join('；')}`,
+    ].join('\n')
+    : '';
   return [
-    '你是中文 ERP 标准化文档的阅读层撰稿人。只输出符合给定 JSON Schema 的 JSON，不要代码围栏或额外文字。',
-    '这是基于单一、已冻结来源的资料整理。只能解释给出的标题、结论和边界；不得新增字段、代码、文件、行号、运行结果、制度事实、跨来源结论或业务数据。',
-    '九章必须按给定顺序输出。不要输出 coverage；系统会根据已准入的冻结结论确定章节是部分覆盖还是资料缺口。待确认事项以及系统要求的资料缺口章节必须返回 gap 对象，精确包含 missing、limitation、nextStep 三项短中文说明。',
-    'narrative 使用清晰、可读的中文。依据当前材料补充业务解释，说明本章如何帮助后续 AI 建模理解对象、活动、字段、关系、口径或限制；不要重复结论、不要用空话填充，也不得添加未经保存的事实。',
-    'GAP 章节的 narrative 解释当前阅读边界；系统会把 gap.missing、gap.limitation、gap.nextStep 组成最终可读的“缺少／限制／下一步”提示。三项都必须具体，说明缺少什么材料、因此有什么限制、下一步由谁或通过什么资料确认。正文不得出现任何内部标识、摘要、追踪标记、英文枚举或技术传输词。',
-    '已保存结论由系统保留；请用 narrative 补充其业务解释，不要重复粘贴结论。',
+    '角色：你是中文 ERP 业务说明书编辑，不是数据库或代码清单生成器。只输出符合给定 JSON Schema v2 的 JSON；不要代码围栏或额外文字。',
+    '事实边界：只能使用输入提供的冻结 Claim、Boundary 和 Evidence 摘要。不得新增字段、代码、文件、行号、运行结果、制度事实、跨来源结论或业务数据。不知道的内容必须写入 gaps 的缺少／影响／下一步。',
+    '读者：业务负责人、产品经理和数据建模人员。先解释“是什么、为什么重要、如何使用、有哪些边界”，再由系统连接技术依据。使用自然、直接、短句中文；避免字段倾倒、模板空话和机械重复。',
+    '结构：九章必须完整且按输入顺序输出。每个非 GAP Claim 必须且只能放入本章一个 items[].claimIds；每个 GAP Claim 必须且只能放入本章一个 gaps[].claimIds。不要把 claimId、sourceId、snapshot、SHA、文件位置、行号、英文 GAP 或证据引用写入人类文本。',
+    '输出职责：模型只能提供 introduction、items 的 title/explanation/boundary 和 gaps 的 missing/impact/nextStep。技术依据、章节标题、表格、Markdown、来源身份、正式差异和用户已保存修改由确定性程序处理。',
+    '来源边界：MySQL 的结构存在不代表实际配置、业务行或制度生效；GitHub 实现线索不代表生产部署；业务说明不能冒充官方原文；ERP 制度草案不能冒充已批准制度；企业术语图只能佐证词义，不构成新的根证据或冲突。',
     `本次单一来源类别：${descriptor.readerLabel}。`,
-    `已保存的可解释结论（仅能基于这些内容撰写）：${JSON.stringify(sections)}`,
+    revision,
+    `冻结 Claim 输入（仅能基于这些内容撰写）：${JSON.stringify(sections)}`,
   ].join('\n\n');
 }
 
@@ -261,7 +283,7 @@ function derivedCoverage(descriptor, sectionId) {
     : 'PARTIAL';
 }
 
-function normalizeOutput(rawOutput, descriptor) {
+function normalizeV1Output(rawOutput, descriptor) {
   const issues = [];
   let parsed;
   try {
@@ -351,21 +373,283 @@ function normalizeOutput(rawOutput, descriptor) {
   }
 }
 
+function normalizedHumanText(value, descriptor, sectionId, field, issues) {
+  const text = normalizeHumanText(value, descriptor, sectionId, field, issues);
+  if (!text) fail(`${field} must not be empty: ${descriptor.sourceId} / ${sectionId}`);
+  if (/\b(?:sourceId|snapshotId|ContentReference|sha256|GAP)\b/iu.test(text)) {
+    fail(`${field} contains an internal transport token: ${descriptor.sourceId} / ${sectionId}`);
+  }
+  return text;
+}
+
+function expectedClaimMap(descriptor) {
+  return new Map(descriptor.review.claims.map((claim) => [claim.claimId, claim]));
+}
+
+function assertClaimIds(value, field, descriptor, sectionId) {
+  if (!Array.isArray(value) || !value.length || value.some((claimId) => typeof claimId !== 'string' || !claimId)) {
+    fail(`${field} must contain one or more claim IDs: ${descriptor.sourceId} / ${sectionId}`);
+  }
+  if (new Set(value).size !== value.length) {
+    fail(`${field} must not repeat a claim ID: ${descriptor.sourceId} / ${sectionId}`);
+  }
+  return [...value];
+}
+
+function chapterNarrative(chapter) {
+  const itemText = chapter.items.map((item) => [
+    `**${item.title}**`,
+    item.explanation,
+    ...(item.boundary ? [`边界：${item.boundary}`] : []),
+  ].join('\n\n'));
+  const gapText = chapter.gaps.map((gap, index) => [
+    `**待补充资料 ${index + 1}**`,
+    `缺少：${gap.missing}`,
+    `影响：${gap.impact}`,
+    `下一步：${gap.nextStep}`,
+  ].join('\n\n'));
+  return [chapter.introduction, ...itemText, ...gapText].filter(Boolean).join('\n\n');
+}
+
+function normalizeV2Output(parsed, descriptor) {
+  const issues = [];
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
+    || parsed.schemaVersion !== 2 || parsed.sourceId !== descriptor.sourceId || !Array.isArray(parsed.chapters)) {
+    return {
+      issues: [candidateIssue(CandidateIssueClass.CRITICAL, 'INVALID_SHAPE', `${descriptor.sourceId} reader candidate must use schema v2`)],
+      status: 'BLOCKED',
+    };
+  }
+  const outputExtras = Object.keys(parsed).filter((key) => !['schemaVersion', 'sourceId', 'chapters'].includes(key));
+  if (outputExtras.length) issues.push(candidateIssue(CandidateIssueClass.NORMALIZED, 'EXTRA_OUTPUT_FIELDS_DROPPED', `dropped output fields: ${outputExtras.sort().join(', ')}`));
+  const expectedSections = standardSectionOrder.map(({ key }) => key);
+  if (parsed.chapters.length !== expectedSections.length || parsed.chapters.some((chapter) => !chapter || typeof chapter !== 'object' || Array.isArray(chapter))) {
+    return {
+      issues: [...issues, candidateIssue(CandidateIssueClass.CRITICAL, 'INVALID_SECTION_SET', `${descriptor.sourceId} reader candidate must include exactly the canonical nine chapters`)],
+      status: 'BLOCKED',
+    };
+  }
+  const chapterById = new Map(parsed.chapters.map((chapter) => [chapter.sectionId, chapter]));
+  if (!exactMembers(parsed.chapters.map((chapter) => chapter.sectionId), expectedSections)) {
+    return {
+      issues: [...issues, candidateIssue(CandidateIssueClass.CRITICAL, 'INVALID_SECTION_SET', `${descriptor.sourceId} reader candidate has missing or duplicate canonical chapters`)],
+      status: 'BLOCKED',
+    };
+  }
+  if (parsed.chapters.map((chapter) => chapter.sectionId).join('\n') !== expectedSections.join('\n')) {
+    issues.push(candidateIssue(CandidateIssueClass.NORMALIZED, 'SECTION_ORDER_NORMALIZED', 'canonical chapter order was restored'));
+  }
+  try {
+    const claimMap = expectedClaimMap(descriptor);
+    const seen = new Map();
+    const chapters = expectedSections.map((sectionId) => {
+      const rawChapter = chapterById.get(sectionId);
+      const chapterExtras = Object.keys(rawChapter).filter((key) => !['sectionId', 'introduction', 'items', 'gaps'].includes(key));
+      if (chapterExtras.length) issues.push(candidateIssue(CandidateIssueClass.NORMALIZED, 'EXTRA_CHAPTER_FIELDS_DROPPED', `${sectionId} dropped fields: ${chapterExtras.sort().join(', ')}`));
+      if (!Array.isArray(rawChapter.items) || !Array.isArray(rawChapter.gaps)) {
+        fail(`items and gaps must be arrays: ${descriptor.sourceId} / ${sectionId}`);
+      }
+      const introduction = normalizedHumanText(rawChapter.introduction, descriptor, sectionId, 'introduction', issues);
+      const items = rawChapter.items.map((item, itemIndex) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) fail(`item must be an object: ${descriptor.sourceId} / ${sectionId}`);
+        const extras = Object.keys(item).filter((key) => !['title', 'explanation', 'boundary', 'claimIds'].includes(key));
+        if (extras.length) issues.push(candidateIssue(CandidateIssueClass.NORMALIZED, 'EXTRA_ITEM_FIELDS_DROPPED', `${sectionId} item ${itemIndex + 1} dropped fields: ${extras.sort().join(', ')}`));
+        const claimIds = assertClaimIds(item.claimIds, 'item.claimIds', descriptor, sectionId);
+        for (const claimId of claimIds) {
+          const claim = claimMap.get(claimId);
+          if (!claim || claim.sectionId !== sectionId || claim.kind === 'GAP') fail(`item claims must be known non-GAP claims in the same chapter: ${descriptor.sourceId} / ${sectionId}`);
+          if (seen.has(claimId)) fail(`Claim is mapped more than once: ${claimId}`);
+          seen.set(claimId, 'item');
+        }
+        return {
+          title: normalizedHumanText(item.title, descriptor, sectionId, 'item.title', issues),
+          explanation: normalizedHumanText(item.explanation, descriptor, sectionId, 'item.explanation', issues),
+          ...(item.boundary === undefined ? {} : { boundary: normalizedHumanText(item.boundary, descriptor, sectionId, 'item.boundary', issues) }),
+          claimIds,
+        };
+      });
+      const gaps = rawChapter.gaps.map((gap, gapIndex) => {
+        if (!gap || typeof gap !== 'object' || Array.isArray(gap)) fail(`gap must be an object: ${descriptor.sourceId} / ${sectionId}`);
+        const extras = Object.keys(gap).filter((key) => !['missing', 'impact', 'nextStep', 'claimIds'].includes(key));
+        if (extras.length) issues.push(candidateIssue(CandidateIssueClass.NORMALIZED, 'EXTRA_GAP_FIELDS_DROPPED', `${sectionId} gap ${gapIndex + 1} dropped fields: ${extras.sort().join(', ')}`));
+        const claimIds = assertClaimIds(gap.claimIds, 'gap.claimIds', descriptor, sectionId);
+        for (const claimId of claimIds) {
+          const claim = claimMap.get(claimId);
+          if (!claim || claim.sectionId !== sectionId || claim.kind !== 'GAP') fail(`gap claims must be known GAP claims in the same chapter: ${descriptor.sourceId} / ${sectionId}`);
+          if (seen.has(claimId)) fail(`Claim is mapped more than once: ${claimId}`);
+          seen.set(claimId, 'gap');
+        }
+        return {
+          missing: normalizedHumanText(gap.missing, descriptor, sectionId, 'gap.missing', issues),
+          impact: normalizedHumanText(gap.impact, descriptor, sectionId, 'gap.impact', issues),
+          nextStep: normalizedHumanText(gap.nextStep, descriptor, sectionId, 'gap.nextStep', issues),
+          claimIds,
+        };
+      });
+      return { sectionId, introduction, items, gaps };
+    });
+    for (const [claimId, claim] of claimMap) {
+      const expectedKind = claim.kind === 'GAP' ? 'gap' : 'item';
+      if (seen.get(claimId) !== expectedKind) fail(`Claim is missing or mapped to the wrong reader structure: ${claimId}`);
+    }
+    const narratives = chapters.map((chapter) => ({
+      sectionId: chapter.sectionId,
+      coverage: derivedCoverage(descriptor, chapter.sectionId),
+      narrative: chapterNarrative(chapter),
+    }));
+    return {
+      issues: normalizedIssueList(issues),
+      chapters,
+      narratives,
+      status: issues.length ? 'READY_WITH_WARNINGS' : 'READY',
+    };
+  } catch (error) {
+    return {
+      issues: normalizedIssueList([...issues, candidateIssue(
+        CandidateIssueClass.CRITICAL,
+        'INVALID_CONTENT',
+        error instanceof Error ? error.message : String(error),
+      )]),
+      status: 'BLOCKED',
+    };
+  }
+}
+
+function normalizeOutput(rawOutput, descriptor) {
+  let parsed;
+  try {
+    parsed = JSON.parse(rawOutput);
+  } catch {
+    return {
+      issues: [candidateIssue(CandidateIssueClass.CRITICAL, 'INVALID_JSON', `${descriptor.sourceId} reader narrative output is not JSON`)],
+      status: 'BLOCKED',
+    };
+  }
+  return parsed?.schemaVersion === 2
+    ? normalizeV2Output(parsed, descriptor)
+    : normalizeV1Output(rawOutput, descriptor);
+}
+
 function narrativeRecord(narratives) {
   return Object.fromEntries(narratives.map((section) => [section.sectionId, section.narrative]));
 }
 
+export const ImmutablePromptConstraints = Object.freeze([
+  '只能使用冻结 Claim、Boundary 和 Evidence 摘要',
+  '九章完整且顺序固定',
+  'Claim 和 Gap 必须可追溯且不得跨来源',
+  '不得生成文件路径、行号、证据引用、来源身份或 SHA',
+  '不得扩大事实范围或修改用户已保存决定',
+]);
+
+function promptRevisionId(proposal) {
+  return `v7-prompt-revision-${sha256(canonicalJson({
+    sourceId: proposal.sourceId,
+    basePromptVersion: proposal.basePromptVersion,
+    parentCandidateId: proposal.parentCandidateId,
+    fatalFindingIds: proposal.fatalFindingIds,
+    correctiveDirectives: proposal.correctiveDirectives,
+    preservedConstraints: proposal.preservedConstraints,
+    nonGoals: proposal.nonGoals,
+  })).slice(7, 31)}`;
+}
+
+/** Validate a bounded Sol Ultra addendum before it can be paired with Luna Round 2. */
+export function validatePromptRevisionProposal(value) {
+  if (!value || value.schemaVersion !== 1 || !sourceOrder.includes(value.sourceId)
+    || typeof value.basePromptVersion !== 'string' || !value.basePromptVersion
+    || typeof value.parentCandidateId !== 'string' || !value.parentCandidateId
+    || !Array.isArray(value.fatalFindingIds) || !value.fatalFindingIds.length
+    || new Set(value.fatalFindingIds).size !== value.fatalFindingIds.length
+    || value.fatalFindingIds.some((findingId) => typeof findingId !== 'string' || !findingId)
+    || !Array.isArray(value.correctiveDirectives) || !value.correctiveDirectives.length
+    || !Array.isArray(value.preservedConstraints) || !Array.isArray(value.nonGoals)) {
+    fail('prompt revision must bind one source, parent candidate, fatal findings and corrective directives');
+  }
+  const directiveFindingIds = new Set();
+  for (const directive of value.correctiveDirectives) {
+    if (!directive || !Array.isArray(directive.findingIds) || !directive.findingIds.length
+      || directive.findingIds.some((findingId) => typeof findingId !== 'string' || !findingId)
+      || typeof directive.instruction !== 'string' || !directive.instruction.trim()
+      || typeof directive.reason !== 'string' || !directive.reason.trim()) {
+      fail('every prompt corrective directive must name findings, instruction and reason');
+    }
+    directive.findingIds.forEach((findingId) => directiveFindingIds.add(findingId));
+    if (/忽略|绕过|删除.*(?:Claim|证据|九章|边界)|新增.*事实|编造/iu.test(directive.instruction)) {
+      fail('prompt revision may not weaken immutable fact, Claim, evidence or chapter constraints');
+    }
+  }
+  if (value.fatalFindingIds.some((findingId) => !directiveFindingIds.has(findingId))) {
+    fail('prompt revision must contain a corrective directive for every fatal finding');
+  }
+  if (!exactMembers(value.preservedConstraints, ImmutablePromptConstraints)
+    || value.nonGoals.some((item) => typeof item !== 'string' || !item.trim())) {
+    fail('prompt revision must preserve every immutable constraint and declare readable non-goals');
+  }
+  return {
+    schemaVersion: 1,
+    sourceId: value.sourceId,
+    basePromptVersion: value.basePromptVersion,
+    parentCandidateId: value.parentCandidateId,
+    fatalFindingIds: [...value.fatalFindingIds],
+    correctiveDirectives: value.correctiveDirectives.map((directive) => ({
+      findingIds: [...directive.findingIds],
+      instruction: directive.instruction.trim(),
+      reason: directive.reason.trim(),
+    })),
+    preservedConstraints: [...value.preservedConstraints],
+    nonGoals: [...value.nonGoals].map((item) => item.trim()),
+    promptRevisionId: value.promptRevisionId ?? promptRevisionId(value),
+  };
+}
+
+function contentLineage(record, descriptor) {
+  const generationRound = record?.generationRound ?? ContentGenerationRound.ONE;
+  if (!Object.values(ContentGenerationRound).includes(generationRound)) {
+    fail('a source may produce at most two content candidates; Round 3 is forbidden');
+  }
+  if (generationRound === ContentGenerationRound.ONE) {
+    if (record?.parentCandidateId || record?.promptRevision || record?.promptRevisionId) {
+      fail('Round 1 cannot reference a parent candidate or prompt revision');
+    }
+    return { generationRound };
+  }
+  if (typeof record?.parentCandidateId !== 'string' || !record.parentCandidateId) {
+    fail('Round 2 requires its Round 1 parent candidate');
+  }
+  if (!record.promptRevision) fail('Round 2 requires a validated Sol prompt revision');
+  const promptRevision = validatePromptRevisionProposal(record.promptRevision);
+  if (promptRevision.sourceId !== descriptor.sourceId
+    || promptRevision.parentCandidateId !== record.parentCandidateId
+    || promptRevision.basePromptVersion !== promptVersionFor(descriptor.sourceId)) {
+    fail('Round 2 prompt revision must bind the same source, parent candidate and base prompt version');
+  }
+  return {
+    generationRound,
+    parentCandidateId: record.parentCandidateId,
+    promptRevisionId: promptRevision.promptRevisionId,
+    promptRevision,
+  };
+}
+
 function generationFor(descriptor, record) {
-  const prompt = narrativePrompt(descriptor);
+  const lineage = contentLineage(record, descriptor);
+  const prompt = narrativePrompt(descriptor, lineage.promptRevision);
   return {
     sourceId: descriptor.sourceId,
     provider: 'CODEX_CHATGPT_SESSION',
     model: 'gpt-5.6-luna',
-    reasoningEffort: 'high',
+    reasoningEffort: 'xhigh',
     sessionId: record.sessionId,
     promptVersion: promptVersionFor(descriptor.sourceId),
     inputDigest: sha256(prompt),
     outputDigest: sha256(record.rawOutput),
+    lineage: {
+      generationRound: lineage.generationRound,
+      ...(lineage.parentCandidateId ? { parentCandidateId: lineage.parentCandidateId } : {}),
+      ...(lineage.promptRevisionId ? { promptRevisionId: lineage.promptRevisionId } : {}),
+    },
+    ...(lineage.promptRevision ? { promptRevision: lineage.promptRevision } : {}),
   };
 }
 
@@ -373,10 +657,15 @@ function validateGeneration(generation, descriptor, rawOutput, sessionIds) {
   const expected = generationFor(descriptor, {
     sessionId: generation?.sessionId,
     rawOutput,
+    generationRound: generation?.lineage?.generationRound,
+    parentCandidateId: generation?.lineage?.parentCandidateId,
+    ...(generation?.lineage?.promptRevisionId
+      ? { promptRevision: generation?.promptRevision }
+      : {}),
   });
   if (!generation || canonicalJson(generation) !== canonicalJson(expected)
     || !generation.sessionId || sessionIds.has(generation.sessionId)) {
-    fail(`${descriptor.sourceId} generation metadata is not a distinct ChatGPT Luna high session`);
+    fail(`${descriptor.sourceId} generation metadata is not a distinct ChatGPT Luna xhigh session`);
   }
   sessionIds.add(generation.sessionId);
   return structuredClone(generation);
@@ -482,6 +771,7 @@ function validateSourceCandidateRecord(record, descriptor, { sourceIdentityDrift
       generation: record.generation,
       rawOutput: record.rawOutput,
       status: 'BLOCKED',
+      acceptance: CandidateAcceptance.FATAL,
       issues: normalizedIssueList(issues),
     };
   }
@@ -513,19 +803,26 @@ function validateSourceCandidateRecord(record, descriptor, { sourceIdentityDrift
   const status = normalizedIssues.some((issue) => issue.class === CandidateIssueClass.CRITICAL)
     ? 'BLOCKED'
     : normalizedIssues.length ? 'READY_WITH_WARNINGS' : 'READY';
+  const acceptance = status === 'BLOCKED'
+    ? CandidateAcceptance.FATAL
+    : status === 'READY_WITH_WARNINGS'
+      ? CandidateAcceptance.REVIEWABLE_WITH_WARNINGS
+      : CandidateAcceptance.IDEAL;
   return {
     candidateId: record?.candidateId,
     descriptor,
     generation,
     rawOutput: record?.rawOutput,
+    chapters: initial.chapters,
     narratives: initial.narratives,
     normalized: initial.narratives ? {
-      schemaVersion: 1,
+      schemaVersion: initial.chapters ? 2 : 1,
       sourceId: descriptor.sourceId,
       sourceSnapshotId: descriptor.sourceSnapshotId,
-      sections: initial.narratives,
+      ...(initial.chapters ? { chapters: initial.chapters } : { sections: initial.narratives }),
     } : undefined,
     status,
+    acceptance,
     issues: normalizedIssues,
   };
 }
@@ -569,6 +866,7 @@ export function validateV7Candidate(candidate, descriptors) {
         schemaVersion: 1,
         sourceId: review.descriptor.sourceId,
         status: review.status,
+        acceptance: review.acceptance,
         issues: review.issues,
         ...(review.normalized ? { normalized: review.normalized } : {}),
       },
@@ -744,24 +1042,27 @@ function sessionIdFromJsonLines(value) {
   fail('Codex did not return a ChatGPT session ID');
 }
 
-export function codexInvocationArgs(outputPath) {
+export function codexInvocationArgs(outputPath, input = {}) {
+  const model = input.model ?? 'gpt-5.6-luna';
+  const reasoningEffort = input.reasoningEffort ?? 'xhigh';
+  const outputSchemaPath = input.outputSchemaPath ?? schemaPath;
   return [
     'exec',
     '--ephemeral',
     '--ignore-user-config',
-    '-m', 'gpt-5.6-luna',
-    '-c', 'model_reasoning_effort="high"',
+    '-m', model,
+    '-c', `model_reasoning_effort="${reasoningEffort}"`,
     '-s', 'read-only',
-    '--output-schema', schemaPath,
+    '--output-schema', outputSchemaPath,
     '--output-last-message', outputPath,
     '--json',
     '-',
   ];
 }
 
-function runCodex(prompt, environment, outputPath) {
+function runCodex(prompt, environment, outputPath, invocation) {
   return new Promise((resolveRun, rejectRun) => {
-    const child = spawn('codex', codexInvocationArgs(outputPath), {
+    const child = spawn('codex', invocation ?? codexInvocationArgs(outputPath), {
       cwd: prototypeRoot,
       env: environment,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -784,8 +1085,8 @@ function createCodexSessionAdapter() {
     async prepare() {
       await assertChatGptLogin(environment);
     },
-    async generate({ prompt, outputPath }) {
-      const { stdout } = await runCodex(prompt, environment, outputPath);
+    async generate({ prompt, outputPath, invocation }) {
+      const { stdout } = await runCodex(prompt, environment, outputPath, invocation);
       return { sessionId: sessionIdFromJsonLines(stdout), rawOutput: await readFile(outputPath, 'utf8') };
     },
   };
@@ -871,12 +1172,13 @@ function candidatePaths(candidateRoot, candidateId) {
     receiptPath: join(candidateRootPath, 'receipt.json'),
     normalizedPath: join(candidateRootPath, 'normalized.json'),
     reviewPath: join(candidateRootPath, 'review-report.json'),
+    renderedReviewPath: join(candidateRootPath, 'rendered-review.md'),
   };
 }
 
 function candidateReceipt(candidateId, descriptor, generation, rawOutput, failure, stateWritePreflight) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     candidateId,
     snapshotId: V7_SNAPSHOT_ID,
     previousSnapshotId: V6_SNAPSHOT_ID,
@@ -884,6 +1186,7 @@ function candidateReceipt(candidateId, descriptor, generation, rawOutput, failur
     sourceSnapshotId: descriptor.sourceSnapshotId,
     sourceContentSha256: descriptor.sourceContentSha256,
     generation,
+    lineage: generation.lineage,
     rawOutputSha256: sha256(rawOutput),
     outcome: failure ? 'FAILED' : 'COMPLETED',
     ...(stateWritePreflight
@@ -895,10 +1198,11 @@ function candidateReceipt(candidateId, descriptor, generation, rawOutput, failur
 
 function candidateReviewArtifact(candidateId, sourceReview) {
   return {
-    schemaVersion: 1,
+    schemaVersion: sourceReview.normalized?.schemaVersion ?? 2,
     candidateId,
     sourceId: sourceReview.descriptor.sourceId,
     status: sourceReview.status,
+    acceptance: sourceReview.acceptance,
     issues: sourceReview.issues,
     ...(sourceReview.normalized ? { normalized: sourceReview.normalized } : {}),
   };
@@ -906,12 +1210,25 @@ function candidateReviewArtifact(candidateId, sourceReview) {
 
 function candidateNormalizedArtifact(candidateId, sourceReview) {
   return {
-    schemaVersion: 1,
+    schemaVersion: sourceReview.normalized?.schemaVersion ?? 2,
     candidateId,
     sourceId: sourceReview.descriptor.sourceId,
     status: sourceReview.status,
-    sections: sourceReview.narratives ?? null,
+    acceptance: sourceReview.acceptance,
+    ...(sourceReview.chapters ? { chapters: sourceReview.chapters } : { sections: sourceReview.narratives ?? null }),
   };
+}
+
+function renderedReviewMarkdown(descriptor, sourceReview) {
+  if (!sourceReview.narratives) return '# V7 阅读候选\n\n候选未通过结构化校验，不能提供阅读版。\n';
+  return [
+    `# ${descriptor.readerLabel}审阅候选`,
+    '本阅读版由冻结资料上的结构化候选确定性排版；技术依据由页面按结论展开。',
+    ...standardSectionOrder.map(({ key, heading }) => {
+      const section = sourceReview.narratives.find((item) => item.sectionId === key);
+      return `## ${heading}\n\n${section?.narrative ?? '本章没有可用阅读内容。'}`;
+    }),
+  ].join('\n\n');
 }
 
 async function writeSourceCandidateArtifacts(candidateRoot, candidateId, descriptor, record, sourceReview) {
@@ -931,10 +1248,12 @@ async function writeSourceCandidateArtifacts(candidateRoot, candidateId, descrip
     );
     const review = candidateReviewArtifact(candidateId, sourceReview);
     const normalized = candidateNormalizedArtifact(candidateId, sourceReview);
+    const renderedReview = renderedReviewMarkdown(descriptor, sourceReview);
     await writeFile(join(stage, 'raw-output.txt'), record.rawOutput, { encoding: 'utf8', flag: 'wx' });
     await writeFile(join(stage, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
     await writeFile(join(stage, 'normalized.json'), `${JSON.stringify(normalized, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
     await writeFile(join(stage, 'review-report.json'), `${JSON.stringify(review, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+    await writeFile(join(stage, 'rendered-review.md'), renderedReview, { encoding: 'utf8', flag: 'wx' });
     await rename(stage, paths.candidateRootPath);
     published = true;
     return { receipt, normalized, review };
@@ -959,7 +1278,12 @@ export async function persistV7SourceCandidate(input = {}) {
     sourceId: descriptor.sourceId,
     sessionId: input.sessionId,
     rawOutput: input.rawOutput,
+    ...(input.generationRound === undefined ? {} : { generationRound: input.generationRound }),
+    ...(input.parentCandidateId ? { parentCandidateId: input.parentCandidateId } : {}),
+    ...(input.promptRevision ? { promptRevision: input.promptRevision } : {}),
   };
+  const lineage = contentLineage(rawRecord, descriptor);
+  await verifyRoundTwoLineage({ ...input, descriptors }, descriptor, lineage);
   const generation = generationFor(descriptor, rawRecord);
   const candidateId = input.candidateId ?? sourceCandidateId(descriptor, generation, input.rawOutput);
   const record = {
@@ -1016,6 +1340,9 @@ export async function persistV7FailedSourceCandidate(input = {}) {
     sourceId: descriptor.sourceId,
     ...(typeof input.sessionId === 'string' && input.sessionId ? { sessionId: input.sessionId } : {}),
     rawOutput,
+    ...(input.generationRound === undefined ? {} : { generationRound: input.generationRound }),
+    ...(input.parentCandidateId ? { parentCandidateId: input.parentCandidateId } : {}),
+    ...(input.promptRevision ? { promptRevision: input.promptRevision } : {}),
   };
   const generation = generationFor(descriptor, rawRecord);
   const failure = { message: failureMessage(input.failure) };
@@ -1166,6 +1493,173 @@ export async function loadV7SourceCandidate(input = {}) {
     fail(`candidate review report drifted from raw output: ${candidateId}`);
   }
   return { ...record, receipt, normalized, review: expectedReview };
+}
+
+function promptRevisionPaths(candidateRoot, revisionId) {
+  const root = resolve(candidateRoot, 'prompt-revisions');
+  const id = assertCandidateId(revisionId);
+  const revisionRoot = resolve(root, id);
+  if (!isSameOrDescendant(root, revisionRoot) || revisionRoot === root) {
+    fail('prompt revision path escapes the V7 candidate root');
+  }
+  return {
+    root,
+    revisionRoot,
+    rawOutputPath: join(revisionRoot, 'raw-output.txt'),
+    receiptPath: join(revisionRoot, 'receipt.json'),
+    normalizedPath: join(revisionRoot, 'normalized.json'),
+    reviewPath: join(revisionRoot, 'review-report.json'),
+  };
+}
+
+function promptRevisionPrompt(descriptor, parent, fatalFindingIds) {
+  return [
+    '角色：你是生成质量的提示词诊断员。只输出符合 JSON Schema 的 JSON，不要生成产品正文、Markdown 或代码围栏。',
+    '你的任务是为一次失败的 Luna 阅读候选写最小 corrective addendum。每条致命 finding 都必须有可执行指令和原因。',
+    `不可变核心（必须逐条原样保留）：${JSON.stringify(ImmutablePromptConstraints)}`,
+    '不得加入输入没有的新事实、证据、文件、行号、来源身份或业务结论；不得删除或弱化不可变核心；不得建议绕过 Claim、Gap、Schema 或证据验证。',
+    `来源：${descriptor.sourceId}。父候选：${parent.candidateId}。基础提示词：${parent.generation.promptVersion}。`,
+    `必须修复的 finding：${JSON.stringify(fatalFindingIds)}`,
+    `父候选审查问题：${JSON.stringify(parent.review.issues.filter((issue) => fatalFindingIds.includes(issue.code)))}`,
+    `父候选原始输出：${parent.rawOutput}`,
+  ].join('\n\n');
+}
+
+/**
+ * Ask Sol Ultra for a bounded corrective addendum. This operation produces no
+ * product content and is only callable for a persisted fatal Round 1 source.
+ */
+export async function refineV7Prompt(input = {}) {
+  if (!sourceOrder.includes(input.sourceId) || typeof input.parentCandidateId !== 'string' || !input.parentCandidateId) {
+    fail('prompt refinement requires one canonical source and its persisted Round 1 parent candidate');
+  }
+  if (!Array.isArray(input.findingIds) || !input.findingIds.length) {
+    fail('prompt refinement requires explicit fatal finding IDs');
+  }
+  const descriptors = input.descriptors ?? await loadV6NarrativeDescriptors(input);
+  const descriptor = descriptors.find((candidate) => candidate.sourceId === input.sourceId);
+  const candidateRoot = input.candidateRoot ?? defaultCandidateRoot;
+  const parent = await loadV7SourceCandidate({
+    candidateRoot,
+    candidateId: input.parentCandidateId,
+    descriptors,
+  });
+  if (parent.sourceId !== descriptor.sourceId || parent.receipt.lineage?.generationRound !== ContentGenerationRound.ONE
+    || parent.review.acceptance !== CandidateAcceptance.FATAL) {
+    fail('prompt refinement requires a fatal Round 1 candidate from the same source');
+  }
+  const expectedFindingIds = parent.review.issues
+    .filter((issue) => issue.class === CandidateIssueClass.CRITICAL)
+    .map((issue) => issue.code);
+  if (!exactMembers(input.findingIds, expectedFindingIds)) {
+    fail('prompt refinement must receive every fatal finding from the parent candidate');
+  }
+  const codexSession = input.codexSession ?? createCodexSessionAdapter();
+  const codexStatePreflight = input.codexStatePreflight ?? preflightCodexStateWriteCapability;
+  if (!codexSession || typeof codexSession.prepare !== 'function' || typeof codexSession.generate !== 'function'
+    || typeof codexStatePreflight !== 'function') {
+    fail('prompt refinement requires valid ChatGPT and state-preflight adapters');
+  }
+  const stateWritePreflight = validateStateWritePreflight(await codexStatePreflight());
+  if (stateWritePreflight.status === 'BLOCKED') {
+    fail(`Sol prompt refinement preflight is blocked at ${stateWritePreflight.failure.path}`);
+  }
+  const temporaryRoot = await mkdtemp(join(tmpdir(), 'guanyijia-v7-prompt-revision-'));
+  try {
+    const outputPath = join(temporaryRoot, `${descriptor.sourceId}.json`);
+    await codexSession.prepare();
+    const prompt = promptRevisionPrompt(descriptor, parent, input.findingIds);
+    const result = await codexSession.generate({
+      descriptor,
+      prompt,
+      outputPath,
+      invocation: codexInvocationArgs(outputPath, {
+        model: 'gpt-5.6-sol',
+        reasoningEffort: 'ultra',
+        outputSchemaPath: promptRevisionSchemaPath,
+      }),
+    });
+    if (!result || typeof result.sessionId !== 'string' || typeof result.rawOutput !== 'string') {
+      fail('Sol prompt refinement returned an invalid ChatGPT session result');
+    }
+    let proposal;
+    try {
+      proposal = validatePromptRevisionProposal(JSON.parse(result.rawOutput));
+    } catch (error) {
+      fail(`Sol prompt refinement output is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (proposal.sourceId !== descriptor.sourceId || proposal.parentCandidateId !== parent.candidateId
+      || proposal.basePromptVersion !== parent.generation.promptVersion
+      || !exactMembers(proposal.fatalFindingIds, input.findingIds)) {
+      fail('Sol prompt refinement output does not bind the required source, parent, prompt or fatal findings');
+    }
+    const paths = promptRevisionPaths(candidateRoot, proposal.promptRevisionId);
+    await assertDoesNotExist(paths.revisionRoot, 'prompt revision');
+    await mkdir(paths.root, { recursive: true });
+    const stage = await mkdtemp(join(paths.root, `.${proposal.promptRevisionId}.staging-`));
+    let published = false;
+    try {
+      const generation = {
+        provider: 'CODEX_CHATGPT_SESSION',
+        model: 'gpt-5.6-sol',
+        reasoningEffort: 'ultra',
+        sessionId: result.sessionId,
+        promptVersion: `${parent.generation.promptVersion}-sol-revision-1`,
+        inputDigest: sha256(prompt),
+        outputDigest: sha256(result.rawOutput),
+      };
+      const receipt = {
+        schemaVersion: 1,
+        promptRevisionId: proposal.promptRevisionId,
+        sourceId: descriptor.sourceId,
+        parentCandidateId: parent.candidateId,
+        sourceContentSha256: descriptor.sourceContentSha256,
+        generation,
+        stateWritePreflight,
+      };
+      await writeFile(join(stage, 'raw-output.txt'), result.rawOutput, { encoding: 'utf8', flag: 'wx' });
+      await writeFile(join(stage, 'normalized.json'), `${JSON.stringify(proposal, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+      await writeFile(join(stage, 'review-report.json'), `${JSON.stringify({ schemaVersion: 1, promptRevisionId: proposal.promptRevisionId, status: 'READY', issues: [] }, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+      await writeFile(join(stage, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+      await rename(stage, paths.revisionRoot);
+      published = true;
+      return { proposal, receipt };
+    } finally {
+      if (!published) await rm(stage, { recursive: true, force: true });
+    }
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+}
+
+async function verifyRoundTwoLineage(input, descriptor, lineage) {
+  if (lineage.generationRound !== ContentGenerationRound.TWO) return;
+  const candidateRoot = input.candidateRoot ?? defaultCandidateRoot;
+  const parent = await loadV7SourceCandidate({
+    candidateRoot,
+    candidateId: lineage.parentCandidateId,
+    descriptors: input.descriptors,
+  });
+  if (parent.sourceId !== descriptor.sourceId
+    || parent.receipt.sourceContentSha256 !== descriptor.sourceContentSha256
+    || parent.receipt.lineage?.generationRound !== ContentGenerationRound.ONE) {
+    fail('Round 2 parent candidate must use the same source and frozen V6 input digest');
+  }
+  const paths = promptRevisionPaths(candidateRoot, lineage.promptRevisionId);
+  const [receipt, normalized] = await Promise.all([
+    readJson(paths.receiptPath),
+    readJson(paths.normalizedPath),
+  ]);
+  const proposal = validatePromptRevisionProposal(normalized);
+  if (receipt?.promptRevisionId !== lineage.promptRevisionId
+    || receipt?.sourceId !== descriptor.sourceId
+    || receipt?.parentCandidateId !== lineage.parentCandidateId
+    || receipt?.sourceContentSha256 !== descriptor.sourceContentSha256
+    || receipt?.generation?.model !== 'gpt-5.6-sol'
+    || receipt?.generation?.reasoningEffort !== 'ultra'
+    || canonicalJson(proposal) !== canonicalJson(lineage.promptRevision)) {
+    fail('Round 2 must bind one verified Sol Ultra prompt revision for the same source and frozen input');
+  }
 }
 
 function selectionShape(selection) {
@@ -1380,6 +1874,7 @@ export async function freezeV7Snapshot(input = {}) {
       transformed.generationManifest = item.generation;
       transformedBySource.set(item.descriptor.sourceId, {
         ...item,
+        chapters: item.chapters,
         narrativeSections: item.narratives,
         narratives,
         transformed,
@@ -1393,10 +1888,11 @@ export async function freezeV7Snapshot(input = {}) {
       const narrativePath = narrativePathBySource[source.sourceId];
       await writeFile(join(stage, reviewPath), `${JSON.stringify(transformed.transformed, null, 2)}\n`, 'utf8');
       const narrativeArtifact = {
-        schemaVersion: 1,
+        schemaVersion: transformed.chapters ? 2 : 1,
         sourceId: source.sourceId,
         sourceSnapshotId: source.snapshotId,
         sections: transformed.narrativeSections,
+        ...(transformed.chapters ? { chapters: transformed.chapters } : {}),
         generation: transformed.generation,
         rawOutput: transformed.rawOutput,
       };
@@ -1493,6 +1989,9 @@ export async function validateV7Snapshot(root, input = {}) {
     const narratives = normalizedOutput.narratives;
     if (canonicalJson(narrativeArtifact.sections) !== canonicalJson(narratives)) {
       fail(`V7 normalized reader narrative sections drifted from raw output: ${descriptor.sourceId}`);
+    }
+    if (normalizedOutput.chapters && canonicalJson(narrativeArtifact.chapters) !== canonicalJson(normalizedOutput.chapters)) {
+      fail(`V7 structured reader chapters drifted from raw output: ${descriptor.sourceId}`);
     }
     const generation = validateGeneration(
       narrativeArtifact.generation,
