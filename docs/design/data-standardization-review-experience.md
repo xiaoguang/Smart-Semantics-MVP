@@ -317,6 +317,13 @@ receipt；模型不得生成文件路径、行号、Evidence Ref、来源身份�
 Markdown 样式。Demo 读取冻结 V7，浏览器运行时不得调用模型；未来 LIVE adapter 只在真实
 `ORGANIZE` 阶段调用相同 Schema 和提示词，且不继承 Demo 的人为展示停留。
 
+V2 的模型输出 Schema 因此只包含 `schemaVersion` 和 `chapters`；`sourceId` 永远由冻结的
+来源描述符在确定性边界注入。历史候选若额外携带一个模型生成的 `sourceId`，只能由专用兼容
+投影丢弃该字段，并写入新的、追加式 remediation receipt。兼容投影必须绑定原始 Candidate、
+原始输出 digest、冻结来源描述符和投影后 digest；不得修改原始输出、Receipt、Claim、Gap、
+章节或任何业务文字。它只用于修复“模型错误输出了来源身份”这一结构错误，不能把任意来源
+不匹配、事实错误或内容缺失降级为可接受问题，也不调用模型或创建第三份产品内容候选。
+
 每次生成必须绑定冻结 V6 内容身份、精确来源、九章 Claim／Boundary／Gap／Evidence 映射、
 提示词版本和 Schema 版本，并写入不可覆盖的 Candidate 目录与 receipt。提示词把模型限定为
 中文 ERP 业务说明书编辑：只使用输入事实，不知道就明确列为边界或待补充资料，先业务解释
