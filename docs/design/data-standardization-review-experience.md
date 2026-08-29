@@ -331,6 +331,11 @@ V2 的模型输出 Schema 因此只包含 `schemaVersion` 和 `chapters`；`sour
 `LEGACY_MODEL_SOURCE_ID_DROPPED` 告警，不能把它提升为 `IDEAL`，也不得伪造该父调用为
 带 Sol 修订的 Round 2。
 
+较早 Receipt 若在 `attempt.modelSessionStarted` 字段引入前创建，可仅在它已经 `COMPLETED`、
+拥有通过验证的非空 Luna session ID、并且 Receipt／输入／输出／lineage 均精确匹配时作为
+“已启动”的历史证明；不写回该字段。任何显式 `modelSessionStarted: false`、空 session ID、
+或 Receipt 绑定不一致仍一律拒绝，不能走兼容投影。
+
 每次生成必须绑定冻结 V6 内容身份、精确来源、九章 Claim／Boundary／Gap／Evidence 映射、
 提示词版本和 Schema 版本，并写入不可覆盖的 Candidate 目录与 receipt。提示词把模型限定为
 中文 ERP 业务说明书编辑：只使用输入事实，不知道就明确列为边界或待补充资料，先业务解释

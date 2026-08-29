@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -134,6 +134,50 @@ test('V7 blocks model-supplied source identity during ordinary validation but pe
     const selection = await createV7Selection({ descriptors, candidates, candidateRoot });
     const selectionValidation = await validateV7Selection({ descriptors, selection, candidateRoot });
     assert.equal(selectionValidation.reviews.find((review) => review.descriptor.sourceId === descriptor.sourceId)?.acceptance, 'REVIEWABLE_WITH_WARNINGS');
+  } finally {
+    await rm(candidateRoot, { recursive: true, force: true });
+  }
+});
+
+test('V7 legacy source identity remediation accepts only a completed legacy receipt with a bound started session', async () => {
+  const descriptors = await loadV6NarrativeDescriptors();
+  const descriptor = descriptors[0];
+  const raw = JSON.parse(v2Output(descriptor));
+  raw.sourceId = 'mysql-v5';
+  const candidateRoot = await mkdtemp(join(tmpdir(), 'guanyijia-v7-legacy-started-session-'));
+  try {
+    const parent = await persistV7SourceCandidate({
+      descriptors,
+      sourceId: descriptor.sourceId,
+      sessionId: 'chatgpt-session-v7-legacy-started-session',
+      rawOutput: JSON.stringify(raw),
+      candidateRoot,
+      generationRound: 1,
+    });
+    const receiptPath = join(candidateRoot, parent.candidateId, 'receipt.json');
+    const receipt = JSON.parse(await readFile(receiptPath, 'utf8'));
+    delete receipt.attempt;
+    await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
+
+    const projection = await reprojectLegacyV7SourceCandidate({
+      descriptors,
+      sourceId: descriptor.sourceId,
+      parentCandidateId: parent.candidateId,
+      candidateRoot,
+    });
+    assert.equal(projection.status, 'READY_WITH_WARNINGS');
+
+    const rejectedReceipt = { ...receipt, attempt: { modelSessionStarted: false } };
+    await writeFile(receiptPath, `${JSON.stringify(rejectedReceipt, null, 2)}\n`, 'utf8');
+    await assert.rejects(
+      reprojectLegacyV7SourceCandidate({
+        descriptors,
+        sourceId: descriptor.sourceId,
+        parentCandidateId: parent.candidateId,
+        candidateRoot,
+      }),
+      /completed started source candidate/u,
+    );
   } finally {
     await rm(candidateRoot, { recursive: true, force: true });
   }

@@ -1356,10 +1356,13 @@ export async function reprojectLegacyV7SourceCandidate(input = {}) {
     readFile(paths.rawOutputPath, 'utf8'),
     readJson(paths.receiptPath),
   ]);
+  const hasLegacyStartedSession = !Object.hasOwn(receipt ?? {}, 'attempt')
+    && typeof receipt?.generation?.sessionId === 'string'
+    && Boolean(receipt.generation.sessionId);
   if (receipt?.candidateId !== input.parentCandidateId
     || receipt?.sourceId !== descriptor?.sourceId
     || receipt?.outcome !== 'COMPLETED'
-    || receipt?.attempt?.modelSessionStarted !== true) {
+    || (receipt?.attempt?.modelSessionStarted !== true && !hasLegacyStartedSession)) {
     fail('legacy source identity projection parent receipt is not a completed started source candidate');
   }
   const expectedReceipt = candidateReceipt(
@@ -1369,9 +1372,12 @@ export async function reprojectLegacyV7SourceCandidate(input = {}) {
     rawOutput,
     undefined,
     receipt.stateWritePreflight,
-    receipt.attempt.modelSessionStarted,
+    receipt.attempt?.modelSessionStarted,
   );
-  if (canonicalJson(receipt) !== canonicalJson(expectedReceipt)) {
+  const legacyExpectedReceipt = structuredClone(expectedReceipt);
+  delete legacyExpectedReceipt.attempt;
+  if (canonicalJson(receipt) !== canonicalJson(expectedReceipt)
+    && canonicalJson(receipt) !== canonicalJson(legacyExpectedReceipt)) {
     fail('legacy source identity projection parent receipt does not bind its raw output and frozen identity');
   }
   try {
