@@ -3,7 +3,6 @@ import { Button, Empty, Tag } from 'antd';
 import type { ReactNode } from 'react';
 import type { StandardizationFactsInspectorModel } from './guanyijia-workbench-runtime.ts';
 import { displaySourceName, sourceClassLabel } from './human-readable-evidence.ts';
-import { MysqlSchemaEvidenceView } from './mysql-schema-evidence-view.tsx';
 import type { ReviewEvidenceView } from '../guanyijia-evidence-factory/source-review-document.ts';
 
 const evidenceStatusLabel = {
@@ -13,71 +12,53 @@ const evidenceStatusLabel = {
   CONFLICT: '来源差异',
 } as const;
 
-function highlightedSqlLine(line: string) {
-  return line.split(/(\b(?:CREATE|TABLE|PRIMARY|KEY|NOT|NULL|DEFAULT|COMMENT|INDEX|FOREIGN|REFERENCES)\b|`[^`]+`|'[^']*')/giu)
-    .filter((part) => part.length > 0)
-    .map((part, index) => /^\b(?:CREATE|TABLE|PRIMARY|KEY|NOT|NULL|DEFAULT|COMMENT|INDEX|FOREIGN|REFERENCES)\b$/iu.test(part)
-      ? <span className="guanyijia-sql-keyword" key={`${part}:${index}`}>{part}</span>
-      : /^`[^`]+`$/u.test(part)
-        ? <span className="guanyijia-sql-identifier" key={`${part}:${index}`}>{part}</span>
-        : /^'[^']*'$/u.test(part)
-          ? <span className="guanyijia-sql-string" key={`${part}:${index}`}>{part}</span>
-          : <span key={`${part}:${index}`}>{part}</span>);
-}
-
-function decodeVisibleSourceText(value: string) {
-  return value
-    .replace(/&amp;gt;|&gt;/gu, '>')
-    .replace(/&amp;lt;|&lt;/gu, '<')
-    .replace(/&amp;amp;|&amp;/gu, '&')
-    .replace(/&quot;/gu, '"')
-    .replace(/&#39;/gu, "'");
-}
-
-function sourceExcerptCode(source: string, language: 'sql' | 'text') {
-  const visibleSource = decodeVisibleSourceText(source);
-  return <div className="guanyijia-source-code-wrap">
-    <small>以下行号仅表示本段摘录内的位置。</small>
-    <pre className={`guanyijia-source-code language-${language}`} tabIndex={0} aria-label={language === 'sql' ? 'SQL 摘录' : '来源代码摘录'}>
-    <code>{visibleSource.split('\n').map((line, index) => <span className="guanyijia-source-code-line" key={index}>
-      <i aria-hidden="true">{index + 1}</i><span>{language === 'sql' ? highlightedSqlLine(line) : line}</span>{'\n'}
-    </span>)}</code>
-    </pre>
-  </div>;
-}
-
-function reviewEvidenceViewContent(view: ReviewEvidenceView | undefined) {
+function reviewEvidenceSummary(view: ReviewEvidenceView | undefined) {
   if (!view) return null;
-  if (view.kind === 'MYSQL_SCHEMA') {
-    return <MysqlSchemaEvidenceView evidence={view} />;
+  if (view.kind === 'MYSQL_SCHEMA') return <>
+    <p>{view.objectComment ?? `${view.objectName}的已保存结构资料支持当前结论。`}</p>
+    <small>来源位置：{view.locationValue}</small>
+  </>;
+  if (view.kind === 'DOCUMENT_SECTION') return <>
+    <p>{view.excerpt}</p><small>来源位置：{view.locationValue}</small>
+  </>;
+  if (view.kind === 'TERM_RELATION') return <>
+    <p>本项关联 {view.terms.length} 个术语和 {view.relations.length} 条关系，用于佐证当前结论。</p>
+    <small>来源位置：{view.locationValue}</small>
+  </>;
+  return <>
+    <p>已定位到与当前结论相关的{view.language === 'sql' ? '结构摘录' : '源码摘录'}；技术内容请在正文中阅读。</p>
+    <small>来源位置：{view.locationValue}</small>
+  </>;
+}
+
+function compactEvidenceFallback(
+  evidence: NonNullable<NonNullable<StandardizationFactsInspectorModel['block']>['readableEvidence']>,
+) {
+  if (evidence.sourceType === 'DDL' || evidence.sourceType === 'SQL' || evidence.sourceType === 'CODE') {
+    const materialLabel = evidence.sourceType === 'CODE' ? '源码' : '结构资料';
+    return <>
+      <p>已定位到与当前结论相关的{materialLabel}；技术内容请在正文中阅读。</p>
+      <small>{evidence.locationLabel}：{evidence.locationValue}</small>
+    </>;
   }
-  if (view.kind === 'DOCUMENT_SECTION') return <section className="guanyijia-inspector-document-evidence">
-    <strong>{view.title}</strong><p>{view.excerpt}</p>
-    <small>来源位置：{view.locationValue}</small>
-  </section>;
-  if (view.kind === 'TERM_RELATION') return <section className="guanyijia-inspector-term-evidence">
-    <strong>{view.title}</strong>
-    <table aria-label={`${view.title}相关术语`}><thead><tr><th>术语</th><th>说明</th><th>领域</th></tr></thead><tbody>
-      {view.terms.map((term) => <tr key={term.name}><th>{term.name}</th><td>{term.definition}</td><td>{term.domain}</td></tr>)}
-    </tbody></table>
-    <table aria-label={`${view.title}相关关系`}><thead><tr><th>起点</th><th>关系</th><th>终点</th><th>说明</th></tr></thead><tbody>
-      {view.relations.map((relation, index) => <tr key={`${relation.subject}:${relation.predicate}:${relation.object}:${index}`}><td>{relation.subject}</td><td>{relation.predicate}</td><td>{relation.object}</td><td>{relation.description}</td></tr>)}
-    </tbody></table>
-    <small>来源位置：{view.locationValue}</small>
-  </section>;
-  if (view.kind === 'SOURCE_EXCERPT') return <section className="guanyijia-inspector-source-excerpt">
-    <strong>{view.title}</strong>
-    {sourceExcerptCode(view.rawExcerpt, view.language)}
-    <small>来源位置：{view.locationValue}</small>
-  </section>;
-  return null;
+  return <>
+    <p>{evidence.excerpt}</p>
+    <small>{evidence.locationLabel}：{evidence.locationValue}</small>
+  </>;
+}
+
+function sourceStatusLabel(status: string | undefined) {
+  if (status === 'ALIGNED' || status === 'REVIEWED') return '已审阅';
+  if (status === 'DOCUMENT_READY') return '待审阅';
+  if (status === 'CONFLICT_BLOCKED') return '审阅中 · 有待保存差异';
+  if (status === 'READING') return '处理中';
+  return '未开始';
 }
 
 export default function StandardizationFactsInspector({
   model,
   sources = [],
   selectedSourceId,
-  onSelectSource,
   onClose,
   closeLabel = '关闭来源资料',
   layerId = 'inspector:inline',
@@ -86,11 +67,11 @@ export default function StandardizationFactsInspector({
   comparisonEvidence = [],
   workflow,
   showMaterialDetails = true,
+  onOpenTechnicalEvidence,
 }: {
   model?: StandardizationFactsInspectorModel;
   sources?: Array<{ sourceId: string; sourceName: string; status: string; sourceClass?: 'REAL' | 'DEMO_POLICY' | 'DERIVED' }>;
   selectedSourceId?: string;
-  onSelectSource?(sourceId: string): void;
   onClose?(): void;
   closeLabel?: string;
   layerId?: string;
@@ -103,20 +84,22 @@ export default function StandardizationFactsInspector({
     locationLabel: string;
     locationValue: string;
   }>;
-  /** The workflow is separate from source material and owns the lower rail. */
+  /** Source progress displayed in the upper rail. */
   workflow?: ReactNode;
-  /** Detailed material is now presented in the assistant current-context area. */
+  /** The lower evidence panel can be suppressed only by an isolated legacy surface. */
   showMaterialDetails?: boolean;
+  /** Moves the reader to the already-selected, exact technical material. */
+  onOpenTechnicalEvidence?(): void;
 }) {
   const selectedSource = sources.find((source) => source.sourceId === (selectedSourceId ?? model?.sourceId));
   const sourceClass = selectedSource?.sourceClass ?? 'REAL';
   const sourceStatus = selectedSource?.status;
-  const hasReadableReviewEvidence = Boolean(reviewEvidenceView && model?.block?.readableEvidence);
-  const requiresStructuredReviewEvidence = Boolean(model?.block?.readableEvidence && (
-    model.sourceId === 'guanyijia_official_docs'
-    || model.sourceId === 'guanyijia_demo_policy'
-    || model.sourceId === 'guanyijia_semantica_demo'
-  ));
+  const sourcePosition = selectedSource ? sources.indexOf(selectedSource) + 1 : undefined;
+  const reviewedSources = sources.filter((source) => source.status === 'ALIGNED' || source.status === 'REVIEWED').length;
+  const currentSourceName = selectedSource
+    ? displaySourceName(selectedSource.sourceId, selectedSource.sourceName)
+    : model ? displaySourceName(model.sourceId, model.sourceName) : undefined;
+  const evidenceLocation = model?.block?.readableEvidence?.locationValue;
   return <aside
     id="guanyijia-facts-inspector"
     className="guanyijia-facts-inspector"
@@ -130,52 +113,58 @@ export default function StandardizationFactsInspector({
     {modal && onClose && <div className="guanyijia-facts-inspector-close">
       <Button id="guanyijia-facts-inspector:close" type="text" aria-label={closeLabel} icon={<CloseOutlined />} onClick={onClose} />
     </div>}
-    <section className="guanyijia-source-list" aria-label="资料来源列表">
-      {sources.map((source) => <button type="button" onClick={() => onSelectSource?.(source.sourceId)} className={`guanyijia-source-list-row status-${source.status.toLowerCase()} ${source.sourceId === (selectedSourceId ?? model?.sourceId) ? 'selected' : ''}`} key={source.sourceId}>
-        <span className="guanyijia-source-status" aria-hidden="true" />
-        <strong>{displaySourceName(source.sourceId, source.sourceName)}</strong>
-        <small>{source.status === 'ALIGNED' || source.status === 'REVIEWED' ? '已审阅'
-          : source.status === 'DOCUMENT_READY' ? '待审阅'
-            : source.status === 'CONFLICT_BLOCKED' ? '审阅中 · 有待保存差异'
-              : source.status === 'READING' ? '读取中' : '待读取'}</small>
-      </button>)}
+    <section className="guanyijia-source-progress-panel" aria-label="来源进展">
+      <header className="guanyijia-rail-panel-heading">
+        <div><span>来源处理 {reviewedSources}/{sources.length}</span><h2>来源进展</h2></div>
+        {currentSourceName && <small>当前：{currentSourceName}</small>}
+      </header>
+      {workflow ? <div className="guanyijia-workflow-panel">{workflow}</div>
+        : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未配置来源进展" />}
     </section>
-    {workflow && <section className="guanyijia-workflow-panel" aria-label="标准化流程">
-      {workflow}
+    {showMaterialDetails && <section className="guanyijia-evidence-support-panel" aria-label="证据与支持信息">
+      <header className="guanyijia-rail-panel-heading"><h2>证据与支持信息</h2></header>
+      {!model && selectedSource ? <div className="guanyijia-inspector-body guanyijia-source-summary-preview" id="guanyijia-facts-inspector-content" tabIndex={-1}>
+        <h3>当前来源概览</h3>
+        <div className="guanyijia-inspector-tags"><Tag color={sourceClass === 'REAL' ? 'green' : sourceClass === 'DERIVED' ? 'purple' : 'orange'}>{sourceClassLabel(sourceClass)}</Tag></div>
+        <p className="guanyijia-inspector-summary">{selectedSource.sourceId.startsWith('pre-run:') ? '该来源将在开始资料整理后按顺序载入。' : '该资料已准备好，可在主阅读区查看其支持的结论。'}</p>
+        <dl className="guanyijia-fact-list">
+          <div><dt>当前状态</dt><dd>{sourceStatusLabel(sourceStatus)}</dd></div>
+          {sourcePosition && <div><dt>处理顺序</dt><dd>第 {sourcePosition} 个来源</dd></div>}
+          <div><dt>支持范围</dt><dd>仅支持已保存的来源材料与审阅结论。</dd></div>
+        </dl>
+      </div> : !model ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="选择审阅事项，查看支持它的材料" /> : <div className="guanyijia-inspector-body" id="guanyijia-facts-inspector-content" tabIndex={-1}>
+        <h3>当前事项</h3>
+        <div className="guanyijia-inspector-tags">
+          <Tag
+            color={model.sourceClass === 'REAL' ? 'green' : model.sourceClass === 'DERIVED' ? 'purple' : 'orange'}
+            style={model.sourceClass === 'REAL' ? { color: '#237804' } : undefined}
+          >
+            {sourceClassLabel(model.sourceClass)}
+          </Tag>
+          {model.block && <Tag>{evidenceStatusLabel[model.block.evidenceStatus]}</Tag>}
+        </div>
+        {model.block && <section className="guanyijia-inspector-block">
+          <header><strong>{model.block.label}</strong></header>
+          <p className="guanyijia-inspector-summary">{model.readSummary}</p>
+          {model.block.readableEvidence && <div className="guanyijia-readable-evidence">
+            {reviewEvidenceSummary(reviewEvidenceView) ?? compactEvidenceFallback(model.block.readableEvidence)}
+          </div>}
+          <dl className="guanyijia-fact-list">
+            <div><dt>证据来源</dt><dd>{displaySourceName(model.sourceId, model.sourceName)}</dd></div>
+            <div><dt>支持范围</dt><dd>支持 {model.evidenceCount} 项已保存依据和 {model.objectCount} 个相关对象。</dd></div>
+            <div><dt>不能推出</dt><dd>{model.authority === 'PRIMARY' ? '来源外的业务配置或运行结果。' : '未经主来源核验的正式结论。'}</dd></div>
+            {evidenceLocation && <div><dt>来源位置</dt><dd>{evidenceLocation}</dd></div>}
+          </dl>
+        </section>}
+        {comparisonEvidence.length > 1 && <section className="guanyijia-inspector-block guanyijia-comparison-material" aria-label="双方来源材料">
+          <header><strong>双方证据索引</strong></header>
+          {comparisonEvidence.map((evidence) => <article key={`${evidence.sourceName}:${evidence.title}`}>
+            <strong>{evidence.sourceName} · {evidence.title}</strong>
+            <small>{evidence.locationLabel}：{evidence.locationValue}</small>
+          </article>)}
+        </section>}
+        <Button type="link" className="guanyijia-open-technical-evidence" onClick={onOpenTechnicalEvidence}>在正文查看技术依据</Button>
+      </div>}
     </section>}
-    {showMaterialDetails && !model && selectedSource ? <div className="guanyijia-inspector-body guanyijia-source-summary-preview" id="guanyijia-facts-inspector-content" tabIndex={-1}>
-      <div className="guanyijia-inspector-tags"><Tag color={sourceClass === 'REAL' ? 'green' : sourceClass === 'DERIVED' ? 'purple' : 'orange'}>{sourceClassLabel(sourceClass)}</Tag></div>
-      <p className="guanyijia-inspector-summary">{selectedSource.sourceId.startsWith('pre-run:') ? '该来源将在开始资料整理后按顺序载入。' : '该资料已准备好。'}</p>
-      <dl className="guanyijia-fact-list">
-        <div><dt>当前状态</dt><dd>{sourceStatus === 'PENDING' ? '等待按顺序载入' : '等待选择可读内容'}</dd></div>
-      </dl>
-    </div> : showMaterialDetails && !model ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="选择来源或审阅结论，查看支持它的材料" /> : showMaterialDetails && model ? <div className="guanyijia-inspector-body" id="guanyijia-facts-inspector-content" tabIndex={-1}>
-      <div className="guanyijia-inspector-tags">
-        <Tag
-          color={model.sourceClass === 'REAL' ? 'green' : model.sourceClass === 'DERIVED' ? 'purple' : 'orange'}
-          style={model.sourceClass === 'REAL' ? { color: '#237804' } : undefined}
-        >
-          {sourceClassLabel(model.sourceClass)}
-        </Tag>
-      </div>
-      <p className="guanyijia-inspector-summary">以下内容是支持当前审阅结论的已保存来源材料。</p>
-      {model.block && <section className="guanyijia-inspector-block">
-        <header><Tag>{evidenceStatusLabel[model.block.evidenceStatus]}</Tag><strong>{model.block.label}</strong></header>
-        {model.block.readableEvidence && <div className="guanyijia-readable-evidence">
-          {reviewEvidenceViewContent(reviewEvidenceView) ?? (requiresStructuredReviewEvidence
-            ? <p>这段来源材料暂时无法显示。</p>
-            : <p>{model.block.readableEvidence.excerpt}</p>)}
-          {!hasReadableReviewEvidence && <dl><div><dt>{model.block.readableEvidence.locationLabel}</dt><dd>{model.block.readableEvidence.locationValue}</dd></div></dl>}
-        </div>}
-      </section>}
-      {comparisonEvidence.length > 1 && <section className="guanyijia-inspector-block guanyijia-comparison-material" aria-label="双方来源材料">
-        <header><strong>双方来源材料</strong></header>
-        {comparisonEvidence.map((evidence) => <article key={`${evidence.sourceName}:${evidence.title}`}>
-          <strong>{evidence.sourceName} · {evidence.title}</strong>
-          <p>{evidence.excerpt}</p>
-          <small>{evidence.locationLabel}：{evidence.locationValue}</small>
-        </article>)}
-      </section>}
-    </div> : null}
   </aside>;
 }

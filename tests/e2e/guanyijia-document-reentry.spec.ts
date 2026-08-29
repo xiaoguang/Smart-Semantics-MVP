@@ -118,20 +118,20 @@ test('1440 启动自动打开数据库文档，时间线和来源资料均可再
   const inspector = page.locator('aside[aria-label="来源资料"]');
   if (!await inspector.isVisible()) await page.getByRole('button', { name: '来源资料', exact: true }).click();
   await expect(inspector).toBeVisible();
-  await expect(inspector.locator('.guanyijia-source-list-row')).toHaveCount(5);
-  // The redesigned side panel is a source-and-workflow navigator. Source
-  // excerpts remain in the review claim where the reader requested them,
-  // rather than duplicating a stale detail block in this panel.
-  await inspector.locator('.guanyijia-source-list-row').filter({ hasText: 'GitHub代码仓库' }).click();
-  await expect(inspector.locator('.guanyijia-source-list-row').filter({ hasText: 'GitHub代码仓库' }))
-    .toContainText('待读取');
+  await expect(inspector.locator('.guanyijia-source-list-row')).toHaveCount(0);
+  await expect(inspector.locator('.guanyijia-source-progress-panel')).toBeVisible();
+  await expect(inspector.locator('.guanyijia-evidence-support-panel')).toBeVisible();
+  const sourceRows = inspector.locator('.guanyijia-source-process-item');
+  await expect(sourceRows).toHaveCount(5);
+  const githubProcess = sourceRows.filter({ hasText: 'GitHub代码仓库' });
+  await expect(githubProcess).toContainText('待读取');
+  await expect(githubProcess.locator('button.guanyijia-source-process-disclosure')).toHaveCount(0);
 
   await document.getByRole('button', { name: '返回时间线' }).click();
   await expect(document).toBeHidden();
 
-  // Selecting a source only locates its workflow checkpoint. Reopening the
-  // document is an explicit action inside that checkpoint's disclosure.
-  await inspector.locator('.guanyijia-source-list-row').filter({ hasText: '数据库' }).click();
+  // Reopening the document remains an explicit action inside the completed
+  // source's disclosure; there is no duplicate source-list control.
   await expect(document).toBeHidden();
   const databaseProcess = inspector.locator('.guanyijia-source-process-item').filter({ hasText: '数据库' });
   const databaseDisclosure = databaseProcess.locator('button.guanyijia-source-process-disclosure');
@@ -151,7 +151,7 @@ test('1440 启动自动打开数据库文档，时间线和来源资料均可再
   await expect(inspector).toBeHidden();
   await page.getByRole('button', { name: '来源资料', exact: true }).click();
   await expect(inspector).toBeVisible();
-  await expect(inspector.locator('.guanyijia-source-list-row')).toHaveCount(5);
+  await expect(inspector.locator('.guanyijia-source-process-item')).toHaveCount(5);
 });
 
 test('完成数据库审阅后自动进入下一来源，已完成来源可只读回看', async ({ page }) => {
@@ -205,7 +205,6 @@ test('完成数据库审阅后自动进入下一来源，已完成来源可只�
   await expect(githubDisclosure).toHaveAttribute('aria-expanded', 'true');
   await expect(databaseProcess.locator('.guanyijia-source-process-details')).toBeHidden();
 
-  await inspector.locator('.guanyijia-source-list-row').filter({ hasText: '数据库' }).click();
   if (await databaseDisclosure.getAttribute('aria-expanded') !== 'true') await databaseDisclosure.click();
   await expect(databaseDisclosure).toHaveAttribute('aria-expanded', 'true');
   await databaseProcess.getByRole('button', { name: '查看审阅文档', exact: true }).click();
@@ -315,13 +314,16 @@ test('1024 资料抽屉可关闭并从页头恢复，五个来源保持可见', 
 
   const inspector = page.getByRole('dialog', { name: '来源资料' });
   await expect(inspector).toBeVisible();
-  await expect(inspector.locator('.guanyijia-source-list-row')).toHaveCount(5);
+  await expect(inspector.locator('.guanyijia-source-list-row')).toHaveCount(0);
+  await expect(inspector.locator('.guanyijia-source-progress-panel')).toBeVisible();
+  await expect(inspector.locator('.guanyijia-evidence-support-panel')).toBeVisible();
+  await expect(inspector.locator('.guanyijia-source-process-item')).toHaveCount(5);
   await inspector.getByRole('button', { name: '关闭来源资料' }).click();
   await expect(inspector).toBeHidden();
 
   await page.getByRole('button', { name: '来源资料', exact: true }).click();
   await expect(inspector).toBeVisible();
-  await expect(inspector.locator('.guanyijia-source-list-row')).toHaveCount(5);
+  await expect(inspector.locator('.guanyijia-source-process-item')).toHaveCount(5);
 });
 
 test('1024 同源依据只在结论下展开，不会强制打开来源资料抽屉', async ({ page }) => {

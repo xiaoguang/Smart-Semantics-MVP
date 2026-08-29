@@ -2920,6 +2920,12 @@ export default function GuanyijiaStandardizationWorkbench({
       ? curatedInspectorModel ?? factsInspectorFor(snapshot, selectedBlockId) ?? selectedTimelineInspector ?? snapshot.inspector
       : undefined)
     : selectedTimelineInspector;
+  // The rail starts with a source-level overview. It changes to exact evidence
+  // only after a person selects an evidence-backed claim, comparison or block.
+  const inspectorRailModel = selectedCandidateEvidenceRef || selectedCuratedEvidenceRef || selectedBlockId
+    || selectedTimelineItemId?.includes(':conflict:')
+    ? inspectorModel
+    : undefined;
   const readCount = snapshot?.run?.sources.filter((source) => Boolean(source.documentId)).length ?? 0;
   const reviewedCount = snapshot?.run?.sources.filter((source) => (
     ['REVIEWED', 'CONFLICT_BLOCKED', 'ALIGNED'].includes(source.status)
@@ -3388,6 +3394,22 @@ export default function GuanyijiaStandardizationWorkbench({
     setDocumentView('MARKDOWN');
     setStandardizedDocumentView('READING');
     setMarkdownAnchorToFocus(trace.markdownAnchor);
+  };
+  const openTechnicalEvidenceFromInspector = () => {
+    const evidenceRef = inspectorRailModel?.block?.readableEvidence?.evidenceRef;
+    const trace = evidenceRef
+      ? curatedReview?.traceLinks.find((candidate) => candidate.evidenceRefs.includes(evidenceRef))
+      : undefined;
+    if (trace) {
+      focusCuratedTrace(trace);
+      setInteractionAnnouncement('已在正文中定位当前事项的技术依据。');
+      return;
+    }
+    setDocumentView('MARKDOWN');
+    setStandardizedDocumentView('READING');
+    if (selectedCuratedTraceAnchor) setMarkdownAnchorToFocus(selectedCuratedTraceAnchor);
+    if (!curatedReview && !documentMarkdown) void loadDocumentMarkdown();
+    setInteractionAnnouncement('已切换到正文，可按章节查看技术依据。');
   };
   const returnToReviewClaim = () => {
     const target = markdownReturnRef.current;
@@ -4419,10 +4441,9 @@ export default function GuanyijiaStandardizationWorkbench({
           {reviewAssistant}
         </main>
         <StandardizationFactsInspector
-          model={inspectorModel}
+          model={inspectorRailModel}
           sources={inspectorSources}
           selectedSourceId={selectedInspectorSourceId}
-          onSelectSource={selectSourceFromInspector}
           onClose={inspectorLayered ? () => closeLayer('inspector') : undefined}
           closeLabel="关闭来源资料"
           layerId={inspectorLayer?.stableId ?? 'inspector:inline'}
@@ -4435,7 +4456,8 @@ export default function GuanyijiaStandardizationWorkbench({
             locateRequest={workflowLocateRequest}
             onSelect={(item) => selectTimeline(item as WorkbenchTimelineItem)}
           /> : undefined}
-          showMaterialDetails={false}
+          showMaterialDetails
+          onOpenTechnicalEvidence={openTechnicalEvidenceFromInspector}
         />
       </div>
     </Card>

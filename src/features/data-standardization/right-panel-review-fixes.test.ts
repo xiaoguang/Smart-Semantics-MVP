@@ -61,13 +61,13 @@ test('selecting a source only locates its workflow and keeps the current inline 
   assert.doesNotMatch(handler, /setSelectedCuratedEvidenceRef\(undefined\)/);
 });
 
-test('a selected pending source row has the same selected visual treatment as every other source', () => {
-  assert.match(
-    inspectorSource,
-    /onClick=\{\(\) => onSelectSource\?\.\(source\.sourceId\)\}[\s\S]*?source\.sourceId === \(selectedSourceId \?\? model\?\.sourceId\) \? 'selected' : ''/,
-  );
-  assert.match(inspectorStyles, /\.guanyijia-source-list-row\.selected\s*\{\s*background:/);
-  assert.match(inspectorStyles, /\.guanyijia-source-list-row\.selected \.guanyijia-source-status\s*\{\s*background:/);
+test('right rail has one source-progress area above an independent evidence-support area', () => {
+  assert.doesNotMatch(inspectorSource, /guanyijia-source-list/u);
+  assert.match(inspectorSource, /className="guanyijia-source-progress-panel"/u);
+  assert.match(inspectorSource, /className="guanyijia-evidence-support-panel"/u);
+  assert.match(inspectorStyles, /\.guanyijia-source-progress-panel\s*\{[\s\S]*?max-height:/u);
+  assert.match(inspectorStyles, /\.guanyijia-evidence-support-panel\s*\{[\s\S]*?overflow-y:\s*auto/u);
+  assert.match(inspectorStyles, /\.guanyijia-document-review-header\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto/u);
 });
 
 test('a smooth programmatic workflow scroll keeps its guard beyond the first animation frame', () => {
