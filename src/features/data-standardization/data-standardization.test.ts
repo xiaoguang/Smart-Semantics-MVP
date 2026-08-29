@@ -182,7 +182,9 @@ test('管伊佳审阅助手嵌入当前审阅页，且来源资料区不泄露�
   assert.match(styles, /\.guanyijia-review-assistant-composer textarea\s*\{[^}]*min-height:\s*44px\s*!important;/u);
   assert.doesNotMatch(inspector, /应用|策略|理由|TextArea|type="primary"|<dt>sourceId<\/dt>|<dt>evidenceRef<\/dt>|<dt>sha256<\/dt>/u);
   assert.match(inspector, /aria-label="来源资料"/u);
-  assert.match(inspector, /支持当前审阅结论的已保存来源材料。/u);
+  assert.match(inspector, /aria-label="来源进展"/u);
+  assert.match(inspector, /aria-label="证据与支持信息"/u);
+  assert.match(inspector, /仅支持已保存的来源材料与审阅结论。/u);
   assert.doesNotMatch(inspector, /支持的审阅结论/u);
   assert.match(integrity, /内容校验/u);
   assert.match(integrity, /来源差异记录暂时无法读取。请刷新当前步骤后重试。/u);
@@ -214,7 +216,7 @@ test('审阅事项与审阅结论分开呈现，对象明细默认展开', () =>
   assert.match(workbench, /documentView === 'CONCLUSIONS'[\s\S]*?aria-label="关键业务结论"[\s\S]*?<details\s+open[^>]*aria-label="对象明细"/u);
 });
 
-test('内联依据不重复输出“支持结论”文案，并以中文显示数据库键类型', () => {
+test('技术依据只在主阅读区呈现，并以中文显示数据库键类型', () => {
   const readable = readFileSync(new URL('./source-document-readable.tsx', import.meta.url), 'utf8');
   const inspector = readFileSync(new URL('./standardization-facts-inspector.tsx', import.meta.url), 'utf8');
   const mysqlSchemaEvidenceView = readFileSync(new URL('./mysql-schema-evidence-view.tsx', import.meta.url), 'utf8');
@@ -222,7 +224,8 @@ test('内联依据不重复输出“支持结论”文案，并以中文显示�
   assert.doesNotMatch(readable, /supports\?: string/u);
   assert.doesNotMatch(readable, /supports=\{/u);
   assert.match(readable, /MysqlSchemaEvidenceView/u);
-  assert.match(inspector, /MysqlSchemaEvidenceView/u);
+  assert.doesNotMatch(inspector, /MysqlSchemaEvidenceView/u);
+  assert.match(inspector, /在正文查看技术依据/u);
   assert.match(mysqlSchemaEvidenceView, /projectMysqlSchemaEvidence/u);
   assert.match(mysqlSchemaEvidence, /case 'PRIMARY':\s*return '主键'/u);
   assert.match(mysqlSchemaEvidence, /case 'INDEX':\s*return '索引'/u);
@@ -231,17 +234,17 @@ test('内联依据不重复输出“支持结论”文案，并以中文显示�
 
 test('文档、制度和术语资料缺少结构化展示时局部失败关闭，不回退整篇材料', () => {
   const inspector = readFileSync(new URL('./standardization-facts-inspector.tsx', import.meta.url), 'utf8');
-  assert.match(inspector, /requiresStructuredReviewEvidence/u);
-  assert.match(inspector, /这段来源材料暂时无法显示。/u);
-  assert.doesNotMatch(inspector, /reviewEvidenceViewContent\(reviewEvidenceView\) \?\? <p>\{model\.block\.readableEvidence\.excerpt\}<\/p>/u);
+  assert.match(inspector, /const hasReadableReviewEvidence = Boolean\(reviewEvidenceView && model\?\.block\?\.readableEvidence\);/u);
+  assert.match(inspector, /该事项的已声明依据暂时无法验证。请刷新当前步骤后重试。/u);
+  assert.doesNotMatch(inspector, /compactEvidenceFallback/u);
 });
 
-test('来源资料区将固定源码节选作为可读代码材料显示，而非退回摘要', () => {
+test('固定源码节选留在主阅读区，来源资料区只提供可读摘要与跳转', () => {
   const inspector = readFileSync(new URL('./standardization-facts-inspector.tsx', import.meta.url), 'utf8');
   const readable = readFileSync(new URL('./source-document-readable.tsx', import.meta.url), 'utf8');
-  assert.match(inspector, /view\.kind === 'SOURCE_EXCERPT'/u);
-  assert.match(inspector, /view\.rawExcerpt/u);
-  assert.match(inspector, /view\.locationValue/u);
+  assert.doesNotMatch(inspector, /view\.rawExcerpt/u);
+  assert.match(inspector, /技术内容请在正文中阅读。/u);
+  assert.match(inspector, /在正文查看技术依据/u);
   assert.match(readable, /language === 'sql' \? 'SQL 摘录' : '来源代码摘录'/u);
   assert.match(readable, /来源位置：\{source\.locationValue\}/u);
 });
@@ -253,7 +256,7 @@ test('来源资料区和修改提示使用业务化文案，不暴露剧本或�
   assert.doesNotMatch(inspector, /\{model\.objectCount\} 个对象/u);
   assert.match(workbench, /请在审阅事项中处理已列出的建议/u);
   assert.doesNotMatch(workbench, /剧本/u);
-  assert.match(inspector, /该资料已准备好。/u);
+  assert.match(inspector, /该资料已准备好，可在主阅读区查看其支持的结论。/u);
   assert.doesNotMatch(inspector, /按当前流程到达后即可阅读|完成前一份资料审阅后/u);
 });
 
@@ -284,7 +287,7 @@ test('来源资料只有工具栏入口，覆盖或全屏层使用资料区内�
 test('已使用可读依据视图时，资料区不再重复输出内部定位器和对象标签', () => {
   const inspector = readFileSync(new URL('./standardization-facts-inspector.tsx', import.meta.url), 'utf8');
   assert.match(inspector, /const hasReadableReviewEvidence = Boolean\(reviewEvidenceView && model\?\.block\?\.readableEvidence\);/u);
-  assert.match(inspector, /!hasReadableReviewEvidence && <dl>/u);
+  assert.match(inspector, /!hasReadableReviewEvidence && <dl className="guanyijia-fact-list">/u);
   assert.doesNotMatch(inspector, /model\.block\.locator/u);
   assert.doesNotMatch(inspector, /相关业务对象/u);
   assert.doesNotMatch(inspector, /guanyijia-impact-list/u);

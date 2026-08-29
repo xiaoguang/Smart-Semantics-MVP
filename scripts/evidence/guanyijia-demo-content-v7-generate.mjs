@@ -2406,6 +2406,9 @@ export async function freezeV7Snapshot(input = {}) {
   try {
     await cp(sourceSnapshotRoot, stage, { recursive: true, force: false, errorOnExist: false });
     const v6Manifest = await readJson(join(stage, 'manifest.json'));
+    const selectedRecordBySource = new Map(
+      validatedCandidate.candidate.reviews.map((record) => [record.sourceId, record]),
+    );
     const transformedBySource = new Map();
     for (const item of validatedCandidate.reviews) {
       const narratives = narrativeRecord(item.narratives);
@@ -2419,6 +2422,8 @@ export async function freezeV7Snapshot(input = {}) {
         chapters: item.chapters,
         narrativeSections: item.narratives,
         narratives,
+        candidateId: selectedRecordBySource.get(item.descriptor.sourceId)?.candidateId,
+        compatibility: selectedRecordBySource.get(item.descriptor.sourceId)?.compatibility,
         transformed,
       });
     }
@@ -2437,6 +2442,10 @@ export async function freezeV7Snapshot(input = {}) {
         ...(transformed.chapters ? { chapters: transformed.chapters } : {}),
         generation: transformed.generation,
         rawOutput: transformed.rawOutput,
+        ...(transformed.compatibility ? {
+          candidateId: transformed.candidateId,
+          compatibility: transformed.compatibility,
+        } : {}),
       };
       await writeFile(join(stage, narrativePath), `${JSON.stringify(narrativeArtifact, null, 2)}\n`, 'utf8');
       const withReview = replaceArtifact(source.artifacts, await artifact(stage, reviewPath, 'application/json'));
@@ -2524,7 +2533,12 @@ export async function validateV7Snapshot(root, input = {}) {
     if (typeof narrativeArtifact.rawOutput !== 'string') {
       fail(`V7 raw reader output is missing: ${descriptor.sourceId}`);
     }
-    const normalizedOutput = normalizeOutput(narrativeArtifact.rawOutput, descriptor);
+    const normalizedOutput = normalizeOutput(narrativeArtifact.rawOutput, descriptor, {
+      allowLegacyModelSourceIdentity: isLegacySourceIdentityCompatibility(
+        narrativeArtifact.compatibility,
+        narrativeArtifact.candidateId,
+      ),
+    });
     if (normalizedOutput.status === 'BLOCKED' || !normalizedOutput.narratives) {
       fail(`V7 raw reader output is blocked: ${descriptor.sourceId}`);
     }

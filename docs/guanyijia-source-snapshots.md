@@ -29,7 +29,7 @@ revision；这些 revision 不会反写或替换固定 Bundle。
 当前真实治理 Demo 还会读取一个候选证据叠加层：它从同一批已冻结材料中挑选少量真实片段，用于展示互证、结构冲突、时间漂移和资料缺口。该候选层不回源、不读取业务行，也不是正式 V2；参见 [多源证据治理参考架构](architecture/multi-source-evidence-governance.md)。
 
 与正式来源 Bundle 分离的丰富 Demo 阅读材料保存在 `modeling-evidence/guanyijia/demo-content/snapshots/` 的
-内容 sidecar。最近一次已冻结的富内容版本是 `guanyijia-demo-content-v6-20260826`，并通过 `DemoContentReview` 接入资料审阅工作台：启动运行时
+内容 sidecar。最近一次已冻结的富内容版本是 `guanyijia-demo-content-v7-20260827`，并通过 `DemoContentReview` 接入资料审阅工作台：启动运行时
 将 `runId`、五项正式 `snapshotId` 与内容包 SHA 精确绑定，后续刷新、继续审阅与恢复都只读同一版本。它提供固定
 Git 源码树的故事行段、演示业务资料、ERP 制度和术语图，但不产生正式证据链或修改 V1；身份或摘要损坏会让受影响
-来源 fail closed，而不会回退旧模板。计划中的 V7 只能从精确 V6 追加，尚未冻结时不得称为当前内容。其维护、打包、校验与回滚规则见 [Demo 内容快照维护手册](guanyijia-demo-content-snapshot.md)。
+来源 fail closed，而不会回退旧模板。V7 以精确 V6 为不可变前序，只改善人类阅读投影；V6 和更早版本继续供历史运行精确读取。其维护、打包、校验与回滚规则见 [Demo 内容快照维护手册](guanyijia-demo-content-snapshot.md)。

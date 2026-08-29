@@ -28,7 +28,11 @@ const canonicalV6SnapshotRoot = join(
   prototypeRoot,
   `../modeling-evidence/guanyijia/demo-content/snapshots/${V6_SNAPSHOT_ID}`,
 );
-const defaultSnapshotRoot = canonicalV6SnapshotRoot;
+const canonicalV7SnapshotRoot = join(
+  prototypeRoot,
+  `../modeling-evidence/guanyijia/demo-content/snapshots/${V7_SNAPSHOT_ID}`,
+);
+const defaultSnapshotRoot = canonicalV7SnapshotRoot;
 const defaultOutput = join(
   prototypeRoot,
   'src/features/guanyijia-demo-content/pinned-demo-content.generated.ts',

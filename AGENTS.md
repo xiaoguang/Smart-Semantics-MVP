@@ -18,13 +18,11 @@
   OCR, LLMs, or a source scanner.
 - External capture is allowed only through the explicitly authorized
   `npm run evidence:guanyijia:capture` maintenance command (the current
-  command is a secure local preflight, not an implicit source reader). The
-  current candidate target is a committed, once-authorized Luna/ChatGPT-session
-  asset; this repository does not currently expose executable
-  `evidence:guanyijia:generate` or `evidence:guanyijia:freeze` commands.
-  When the full factory adds them, they must be separately authorized,
-  immutable-version-producing maintenance workflows that preserve prior
-  versions for comparison and rollback.
+  command is a secure local preflight, not an implicit source reader). Content
+  candidate generation and freeze are also explicit, separately authorized,
+  immutable-version-producing maintenance workflows; they preserve prior
+  versions for comparison and rollback and are never a browser/runtime
+  capability.
 - The current candidate Demo uses zero business rows: it may admit frozen DDL,
   stored procedures, static DML summaries and approved zero-row logic only.
   It must not read, retain or infer conclusions from Tenant 153 rows, samples,
@@ -69,15 +67,17 @@
   Git, or call a model.
 - A frozen sidecar version is append-only: create a new snapshot ID for every
   refresh and preserve old directories for comparison and rollback.
-- The active, final sidecar for this work unit is
-  `guanyijia-demo-content-v6-20260826`. The generic `content:check`,
-  `content:package`, and `content:package:check` commands validate or publish
-  V6 only; they must never imply that an unfrozen V7 candidate is active.
-  V6 publication uses a structural no-shrink gate: it compares source/formal
-  identities, all five nine-section documents, claim/evidence/trace mappings,
-  the merged document, and the terminology graph. It deliberately does not
-  use word count, Markdown line count, or file size as a quality or release
-  criterion.
+- The active, final sidecar for this work unit is the user-approved,
+  append-only `guanyijia-demo-content-v7-20260827`
+  (`sha256:b570297c59fd19538970985eacf60dd1bc9f46c7dbda550ecf46e2b43f706ca4`).
+  The generic `content:check`, `content:package`, and
+  `content:package:check` commands validate or publish V7. V6 remains an exact
+  immutable predecessor and is checked only through its explicit maintenance
+  path; existing V5/V6 run bindings do not silently upgrade. V7 publication
+  uses the same structural no-shrink gate over source/formal identities, all
+  five nine-section documents, claim/evidence/trace mappings, the merged
+  document, and the terminology graph. It deliberately does not use word
+  count, Markdown line count, or file size as a quality or release criterion.
 - `DemoContentReview` is the only seam from this sidecar to a standardization
   run. It binds an exact `runId + formal source identities` to an exact
   content snapshot SHA and must fail closed locally when either identity or

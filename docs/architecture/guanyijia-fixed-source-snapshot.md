@@ -10,11 +10,12 @@
 
 在这三层之上，真实多源治理 Demo 可以叠加一个只读 `CandidateEvidenceBundle`：它只从已经冻结的本地 MySQL/GitHub 资料选取少量、可定位的片段，投影互证、冲突、时间漂移和 GAP。它不是正式 V2，也不替换 `PinnedSourceSnapshotBundle`；其完整治理边界、信任分级和升级路径见 [多源证据治理参考架构](multi-source-evidence-governance.md)。
 
-当前五源工作台还绑定最近一次已冻结的富内容 sidecar `guanyijia-demo-content-v6-20260826`。它是与正式 Bundle 并列、不可变的
+当前五源工作台绑定用户已批准、最近一次已冻结的富内容 sidecar `guanyijia-demo-content-v7-20260827`
+（`sha256:b570297c59fd19538970985eacf60dd1bc9f46c7dbda550ecf46e2b43f706ca4`）。它是与正式 Bundle 并列、不可变的
 人类阅读投影：MySQL 继续显示真实结构节选，GitHub 使用固定 commit 的精确源码行段，业务资料与制度明确标为
 演示编写，术语图明确标为派生资料。`DemoContentReview` 在运行创建时把内容版本、内容 SHA 与五项正式来源
 身份绑定；校验失败只关闭受影响来源，绝不退回旧模板正文或重新扫描来源。sidecar 不成为 Candidate、正式
-Claim、Assertion、Conflict 或 V1 的输入。计划中的 V7 只能追加自精确 V6；在它实际冻结前不得将其作为当前版本或运行绑定。
+Claim、Assertion、Conflict 或 V1 的输入。V7 是从精确 V6 追加的阅读投影；V6 保持只读前序，已绑定 V5/V6 的运行不会静默升级。
 
 浏览器不会负责编译第二层。它只把 Bundle 写入本次运行所需的来源文档 revision；`localStorage` 是可随时丢弃的镜像，不是 Demo 的唯一来源。
 

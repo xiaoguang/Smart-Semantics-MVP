@@ -379,6 +379,58 @@ test('V7 freezes only the deterministic schema v2 reader structure and preserves
   }
 });
 
+test('V7 freezes a selected legacy source-identity remediation without altering its immutable raw output', async () => {
+  const descriptors = await loadV6NarrativeDescriptors();
+  const legacyDescriptor = descriptors[0];
+  const temporaryRoot = await mkdtemp(join(tmpdir(), 'guanyijia-v7-legacy-remediation-freeze-'));
+  const candidateRoot = join(temporaryRoot, 'candidates');
+  const selectionPath = join(temporaryRoot, 'selection.json');
+  const targetSnapshotRoot = join(temporaryRoot, 'guanyijia-demo-content-v7-20260827');
+  try {
+    const legacyRaw = JSON.parse(v2Output(legacyDescriptor));
+    legacyRaw.sourceId = 'mysql-v5';
+    const parent = await persistV7SourceCandidate({
+      descriptors,
+      sourceId: legacyDescriptor.sourceId,
+      sessionId: 'chatgpt-session-v7-legacy-remediation-freeze',
+      rawOutput: JSON.stringify(legacyRaw),
+      candidateRoot,
+      generationRound: 1,
+    });
+    const remediation = await persistLegacyV7SourceIdentityRemediation({
+      descriptors,
+      sourceId: legacyDescriptor.sourceId,
+      parentCandidateId: parent.candidateId,
+      candidateRoot,
+    });
+    const candidates = { [legacyDescriptor.sourceId]: remediation.candidateId };
+    for (const descriptor of descriptors.filter((candidate) => candidate.sourceId !== legacyDescriptor.sourceId)) {
+      const candidate = await persistV7SourceCandidate({
+        descriptors,
+        sourceId: descriptor.sourceId,
+        sessionId: `chatgpt-session-v7-legacy-remediation-freeze-${descriptor.sourceId}`,
+        rawOutput: v2Output(descriptor),
+        candidateRoot,
+        generationRound: 1,
+      });
+      candidates[descriptor.sourceId] = candidate.candidateId;
+    }
+    await createV7Selection({ descriptors, candidateRoot, selectionPath, candidates });
+    await freezeV7Snapshot({ candidateRoot, selectionPath, targetSnapshotRoot });
+    const validated = await validateV7Snapshot(targetSnapshotRoot);
+    assert.equal(validated.snapshotId, 'guanyijia-demo-content-v7-20260827');
+    const frozen = JSON.parse(await readFile(join(targetSnapshotRoot, 'sources/mysql/v7-reader-narratives.json'), 'utf8'));
+    assert.deepEqual(frozen.compatibility, {
+      kind: 'DROP_LEGACY_MODEL_SOURCE_IDENTITY',
+      remediationId: remediation.candidateId,
+      parentCandidateId: parent.candidateId,
+    });
+    assert.equal(frozen.rawOutput, JSON.stringify(legacyRaw));
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
 test('V7 rejects a third content candidate and a Round 2 candidate without its verified lineage', async () => {
   const descriptors = await loadV6NarrativeDescriptors();
   const descriptor = descriptors[0];

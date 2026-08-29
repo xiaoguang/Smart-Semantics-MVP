@@ -51,7 +51,7 @@ M3 负责来源设置、共享连接、YAML、文件、配置版本、测试、�
 
 页面先读取章节计数、断言数、证据数和校验摘要；用户选择章节后才读取该节正文。`getRevisionDiff` 从相邻 revision 的真实 blocks、assertions、sections 和 Markdown 计算 Before／After 与行级差异，不用字符数冒充 Diff，也不修改历史 revision。
 
-管伊佳页面把已验证 block 做成三种用户可见投影：`审阅事项`、`审阅结论`与`标准化文档`，其精确页面合同见[审阅体验设计](../design/data-standardization-review-experience.md)。审阅事项固定承载待确认事项（本来源建议及运行级跨来源比较）、逐项待补充资料和已处理事项；结论只放核心结论与默认展开对象目录；标准化文档在同一 revision 中提供 V6 九章阅读版和只读 Markdown 源文。跨来源互补、差异和时间漂移按已准入运行级来源投影到审阅事项，不能因为 `snapshot.current` 指向后续文档而消失，也不能进入审阅结论。阅读版只读将可识别的连续 `GAP` 拆成中文待补充资料，Markdown 源文不变。每条审阅结论都可在原位置按需展开来源依据。每个 block 都有 `SourceDocumentTraceLink(blockId, assertionId, section, markdownAnchor, evidenceRefs)`；该链路只在当前结论需要阅读或跳转 Markdown 时按需读取，不能为了追踪而将整份来源正文送入 React。默认阅读区展示安全的 DDL／SQL／代码／制度段落／三元组摘录、来源位置和支持结论；SHA、content ref、sourceId、内部 revision 与 `FROZEN_FILE` 等仅用于内部审计，不进入业务页面。
+管伊佳页面把已验证 block 做成三种用户可见投影：`审阅事项`、`审阅结论`与`标准化文档`，其精确页面合同见[审阅体验设计](../design/data-standardization-review-experience.md)。审阅事项固定承载待确认事项（本来源建议及运行级跨来源比较）、逐项待补充资料和已处理事项；结论只放核心结论与默认展开对象目录；标准化文档在同一 revision 中提供 V7 九章业务阅读版和只读 Markdown 源文。跨来源互补、差异和时间漂移按已准入运行级来源投影到审阅事项，不能因为 `snapshot.current` 指向后续文档而消失，也不能进入审阅结论。阅读版只读将可识别的连续 `GAP` 拆成中文待补充资料，Markdown 源文不变。每条审阅结论都可在原位置按需展开来源依据。每个 block 都有 `SourceDocumentTraceLink(blockId, assertionId, section, markdownAnchor, evidenceRefs)`；该链路只在当前结论需要阅读或跳转 Markdown 时按需读取，不能为了追踪而将整份来源正文送入 React。默认阅读区展示安全的 DDL／SQL／代码／制度段落／三元组摘录、来源位置和支持结论；SHA、content ref、sourceId、内部 revision 与 `FROZEN_FILE` 等仅用于内部审计，不进入业务页面。
 
 ### 管伊佳固定来源编译模块
 
@@ -105,7 +105,7 @@ GitHub 在建议完成后引入并立即要求保存 debt；官方文档不引�
 
 `src/features/standardization-deliverable/` 是固定资料 Run 完成后的唯一交付 seam，只暴露 `read`、按游标读取内容和 `execute`。它不导入旧 `document-alignment`、旧 bridge runtime 或 Fixture，也不按 `projectId` 选择预制结果。生产 adapter 以 `run.scenarioKey` 注入受保护 V1 descriptor、正式 Catalog V1、`ProjectionContext`、成员权限、SourceDocument／Run／CP5 Artifact readers 与内容寻址存储。Run 的四条原始 `MARK_*` 交付命令另要求由该 adapter 闭包持有的 capability；普通 Run 调用方不能绕过 Deliverable 权限、内容和审批校验直接伪造交付链。
 
-`GENERATE_DELIVERABLE` 只接受 `READY_FOR_OUTPUT`，并要求 canonical 顺序的所有固定来源都回链精确 `documentId + revision + blocks/sections/assertions/Markdown refs`。每个 Run 引入冲突必须且只能有一个已由 CP5 Run validator 验证的完整决定 Artifact。交付正文由同一只读构建器逐章合并五份用户实际审阅的完整 V6 文档（九章×数据库、GitHub、业务说明、ERP制度、术语图），再追加决定清单和治理附录；正式结构投影只能用于校验与建模资格，不能替代人类 Markdown 正文。REAL 来源才是 formal root，DEMO_POLICY 与 DERIVED 只进入治理说明／佐证。交付时再从完整文档建立 `ModelingEligibility`：已确认且依据充分的结论为 `ELIGIBLE`，登记缺口为 `EXCLUDED_GAP`，无法确定内容为 `EXCLUDED_UNCERTAIN`。三类都写入交付文档，只有第一类可被 M4 编译。
+`GENERATE_DELIVERABLE` 只接受 `READY_FOR_OUTPUT`，并要求 canonical 顺序的所有固定来源都回链精确 `documentId + revision + blocks/sections/assertions/Markdown refs`。每个 Run 引入冲突必须且只能有一个已由 CP5 Run validator 验证的完整决定 Artifact。交付正文由同一只读构建器逐章合并五份用户实际审阅的完整 V7 业务阅读文档（九章×数据库、GitHub、业务说明、ERP制度、术语图），再追加决定清单和治理附录；V7 以精确 V6 的冻结输入为不可变前序，正式结构投影只能用于校验与建模资格，不能替代人类 Markdown 正文。REAL 来源才是 formal root，DEMO_POLICY 与 DERIVED 只进入治理说明／佐证。交付时再从完整文档建立 `ModelingEligibility`：已确认且依据充分的结论为 `ELIGIBLE`，登记缺口为 `EXCLUDED_GAP`，无法确定内容为 `EXCLUDED_UNCERTAIN`。三类都写入交付文档，只有第一类可被 M4 编译。
 
 新 `ModelingDocumentArtifact(origin=STANDARDIZATION)` 有独立 deterministic ID、九段 Markdown SHA 与来源批次，不冒充 `artifact-guanyijia-v1-40c8572864bd`。Artifact 与完整文档允许产生可审核的候选差异；标准化阶段只记录这些候选，绝不写回正式 Catalog 或 V1。黄金 Artifact、Markdown、semantic SHA、Catalog identity/fingerprint 或 counts 任一漂移都会 fail closed；治理附录、决定和 Receipt 不写回 semantic payload、正式 Sidecar 或 Catalog。
 

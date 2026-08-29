@@ -185,7 +185,7 @@ test('binds an exact five-source run to the frozen content publication', () => {
     formalSources,
   });
 
-  assert.equal(binding.contentSnapshotId, 'guanyijia-demo-content-v6-20260826');
+  assert.equal(binding.contentSnapshotId, 'guanyijia-demo-content-v7-20260827');
   assert.equal(binding.sourceBindings.length, 5);
   assert.deepEqual(binding.sourceBindings.map((source) => source.sourceId), formalSources.map((source) => source.sourceId));
   assert.equal(binding.sourceBindings.find((source) => source.sourceId === 'guanyijia_github')?.origin, 'SOURCE_NATIVE');
@@ -200,7 +200,7 @@ test('refuses a content binding when a formal source snapshot does not match the
   }), /冻结内容快照校验失败/u);
 });
 
-test('projects V6 GitHub source excerpts and authored materials without a legacy template fallback', () => {
+test('projects V7 GitHub source explanations and authored-material boundaries without a legacy template fallback', () => {
   const github = readDemoContentSourceReview({
     sourceId: 'guanyijia_github',
     snapshotId: '20260813032126Z-5821d0ece9b1',
@@ -214,14 +214,15 @@ test('projects V6 GitHub source excerpts and authored materials without a legacy
   assert.ok(official);
   assert.equal(github.contentOrigin, 'SOURCE_NATIVE');
   assert.equal(github.evidence.every((entry) => entry.excerptKind === 'EXACT_EXCERPT'), true);
-  assert.match(github.markdown, /固定仓库共有 719 个文件；本次选择 32 个文件、69 段证据/u);
+  assert.match(github.markdown, /本章说明源码节选中可以确认的通用入口和配置定义/u);
+  assert.match(github.markdown, /不能单独证明/u);
   assert.ok(github.markdown.split('\n').length >= 250);
   assert.ok(github.evidence.length >= 60);
   assert.ok(github.traceLinks.length >= 40);
-  assert.doesNotMatch(github.markdown, /TRACE:|<!--|[a-f0-9]{40}/iu);
+  assert.doesNotMatch(github.markdown, /TRACE:|<!--|sourceId=|snapshotId=|[a-f0-9]{40}/iu);
   assert.doesNotMatch(github.markdown, /冻结扫描已识别|源码界面与工作流提供/u);
   assert.equal(official.contentOrigin, 'DEMO_AUTHORED');
-  assert.match(official.markdown, /演示编写材料，不是官方原文/u);
+  assert.match(official.markdown, /演示编写/u);
   assert.ok(official.evidence.length > 0);
   assert.ok(official.traceLinks.every((trace) => (
     trace.evidenceRefs.length > 0 && trace.markdownAnchor.length > 0
@@ -256,7 +257,7 @@ test('continues to read a persisted V5 binding after V6 becomes active', () => {
   })?.markdown ?? '', /固定版本共 719 个文件/u);
 });
 
-test('publishes V6 as the rich active publication and retains V5 as its predecessor', () => {
+test('publishes approved V7 as the rich active publication and retains V6 then V5 as its predecessors', () => {
   const publication = pinnedDemoContentPublication as unknown as {
     contentSnapshotId: string;
     legacyPublications?: Array<{
@@ -265,19 +266,21 @@ test('publishes V6 as the rich active publication and retains V5 as its predeces
     }>;
   };
 
-  assert.equal(publication.contentSnapshotId, 'guanyijia-demo-content-v6-20260826');
+  assert.equal(publication.contentSnapshotId, 'guanyijia-demo-content-v7-20260827');
   assert.deepEqual([
     publication.contentSnapshotId,
     publication.legacyPublications?.[0]?.contentSnapshotId,
+    publication.legacyPublications?.[0]?.legacyPublications?.[0]?.contentSnapshotId,
   ], [
+    'guanyijia-demo-content-v7-20260827',
     'guanyijia-demo-content-v6-20260826',
     'guanyijia-demo-content-v5-20260826',
   ]);
 
   const mysql = readDemoContentSourceReview(formalSources[0]);
-  assert.ok(mysql, 'active V6 MySQL source must expose a review');
-  assert.equal(mysql.standardSections?.length, 9, 'active V6 MySQL review must keep the rich nine-section shape');
-  assert.ok((mysql.claims?.length ?? 0) > 0, 'active V6 MySQL review must keep rich claims');
+  assert.ok(mysql, 'active V7 MySQL source must expose a review');
+  assert.equal(mysql.standardSections?.length, 9, 'active V7 MySQL review must keep the rich nine-section shape');
+  assert.ok((mysql.claims?.length ?? 0) > 0, 'active V7 MySQL review must keep rich claims');
 });
 
 test('resolves a persisted V6 binding to its exact rich review after V7 activation', () => {

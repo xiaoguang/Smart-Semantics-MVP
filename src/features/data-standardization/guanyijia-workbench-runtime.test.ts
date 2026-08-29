@@ -311,8 +311,8 @@ test('a new five-source run pins the frozen reading-material version and preserv
   assert.deepEqual(started.contentBinding, {
     runId: started.run!.runId,
     storyKey: 'guanyijia-five-source-v1',
-    contentSnapshotId: 'guanyijia-demo-content-v6-20260826',
-    contentSha256: 'sha256:6da765901357f4b0856e3b1c5aaab159aec75c895b60b1bb2ea11539997f8180',
+    contentSnapshotId: 'guanyijia-demo-content-v7-20260827',
+    contentSha256: 'sha256:b570297c59fd19538970985eacf60dd1bc9f46c7dbda550ecf46e2b43f706ca4',
     sourceBindings: [
       ['guanyijia_mysql', 'SNAPSHOT_REFERENCE'],
       ['guanyijia_github', 'SOURCE_NATIVE'],

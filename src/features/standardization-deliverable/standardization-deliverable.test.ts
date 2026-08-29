@@ -532,8 +532,10 @@ test('READY_FOR_OUTPUT 先返回同一份完整九章合并预览，预览不写
     '每个固定章节都必须保留数据库审阅文档的完整正文来源段');
   assert.equal((preview.mergedDocument.markdown.match(/### 来源5：/gu) ?? []).length, 9,
     '每个固定章节都必须保留企业术语图审阅文档的完整正文来源段');
-  assert.match(preview.mergedDocument.markdown, /本次从 95 张表中选择 30 张/u,
-    '最终 Markdown 必须包含冻结 V6 的完整正文，而不是简化的结构投影摘要');
+  assert.match(preview.mergedDocument.markdown, /资料范围与使用方式/u,
+    '最终 Markdown 必须保留冻结 V7 的完整业务可读正文，而不是简化的结构投影摘要');
+  assert.match(preview.mergedDocument.markdown, /只可将结构视为建模线索/u,
+    'V7 正文必须保留来源边界，不能把技术承载位置写成业务事实');
   assert.deepEqual(preview.reviewProjection.chapters.map((chapter) => chapter.section), [
     'OVERVIEW', 'GOAL', 'OBJECT', 'ACTIVITY', 'FIELD', 'RELATION', 'METRIC', 'QUESTION', 'UNRESOLVED',
   ]);
@@ -1350,8 +1352,10 @@ test('Workbench与M4只暴露当前状态唯一主动作，右侧检查器保持
   assert.match(workbench, /pendingCommand/u);
   assert.match(workbench, /继续完成上一步/u);
   assert.equal(guanyijiaDeliverableContentLabelFor('mergedDocumentRef'), '合并文档');
-  assert.match(timeline, /OPEN_DELIVERABLE/u);
-  assert.match(timeline, /查看\$\{item\.title\}/u);
+  assert.match(workbench, /OPEN_DELIVERABLE/u,
+    '交付物打开命令属于工作台命令层，而非来源过程展示组件');
+  assert.match(timeline, /projectVisibleBusinessJourneyStages/u);
+  assert.match(timeline, /toggleSourceStages/u);
   assert.match(workbench, /const reviewAssistant = <ReviewAssistantPanel/u);
   assert.equal([...workbench.matchAll(/<ReviewAssistantPanel/g)].length, 1);
   assert.match(workbench, /<main[\s\S]*?className="guanyijia-workbench-thread"[\s\S]*?>[\s\S]*?\{reviewAssistant\}\s*<\/main>/u);

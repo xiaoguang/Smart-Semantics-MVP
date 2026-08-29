@@ -307,13 +307,13 @@ test('packages a V7 rich browser projection and preserves its V6 then V5 immutab
   assert.equal(publication.sources.every((source) => source.review.standardSections?.length === 9), true);
 });
 
-test('uses the verified V6 snapshot as the default active browser publication', async () => {
+test('uses the approved V7 snapshot as the default active browser publication', async () => {
   const publication = await buildDemoContentPublication();
 
-  assert.equal(publication.contentSnapshotId, v6SnapshotId);
+  assert.equal(publication.contentSnapshotId, v7SnapshotId);
   assert.deepEqual(
     publication.legacyPublications?.map((entry) => entry.contentSnapshotId),
-    [v5SnapshotId],
+    [v6SnapshotId],
   );
 });
 

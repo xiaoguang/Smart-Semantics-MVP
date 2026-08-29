@@ -622,6 +622,17 @@ test('V7 candidate command assignments are source keyed and maintenance scripts 
     packageJson.scripts['evidence:guanyijia:content:freeze'] ?? '',
     /--freeze-selection/u,
   );
+  for (const scriptName of [
+    'evidence:guanyijia:content:check',
+    'evidence:guanyijia:content:package',
+    'evidence:guanyijia:content:package:check',
+  ]) {
+    const script = packageJson.scripts[scriptName] ?? '';
+    assert.match(script, /guanyijia-demo-content-v7-(?:generate|20260827)/u,
+      `${scriptName} must target the approved V7 snapshot`);
+    assert.doesNotMatch(script, /guanyijia-demo-content-v6-generate/u,
+      `${scriptName} must not keep V6 as the active publication target`);
+  }
   assert.deepEqual(
     implementation.parseV7FreezeArguments(['--selection', '/private/tmp/v7-selection.json']),
     { selectionPath: '/private/tmp/v7-selection.json' },

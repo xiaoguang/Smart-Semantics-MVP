@@ -31,22 +31,6 @@ function reviewEvidenceSummary(view: ReviewEvidenceView | undefined) {
   </>;
 }
 
-function compactEvidenceFallback(
-  evidence: NonNullable<NonNullable<StandardizationFactsInspectorModel['block']>['readableEvidence']>,
-) {
-  if (evidence.sourceType === 'DDL' || evidence.sourceType === 'SQL' || evidence.sourceType === 'CODE') {
-    const materialLabel = evidence.sourceType === 'CODE' ? '源码' : '结构资料';
-    return <>
-      <p>已定位到与当前结论相关的{materialLabel}；技术内容请在正文中阅读。</p>
-      <small>{evidence.locationLabel}：{evidence.locationValue}</small>
-    </>;
-  }
-  return <>
-    <p>{evidence.excerpt}</p>
-    <small>{evidence.locationLabel}：{evidence.locationValue}</small>
-  </>;
-}
-
 function sourceStatusLabel(status: string | undefined) {
   if (status === 'ALIGNED' || status === 'REVIEWED') return '已审阅';
   if (status === 'DOCUMENT_READY') return '待审阅';
@@ -99,7 +83,7 @@ export default function StandardizationFactsInspector({
   const currentSourceName = selectedSource
     ? displaySourceName(selectedSource.sourceId, selectedSource.sourceName)
     : model ? displaySourceName(model.sourceId, model.sourceName) : undefined;
-  const evidenceLocation = model?.block?.readableEvidence?.locationValue;
+  const hasReadableReviewEvidence = Boolean(reviewEvidenceView && model?.block?.readableEvidence);
   return <aside
     id="guanyijia-facts-inspector"
     className="guanyijia-facts-inspector"
@@ -147,14 +131,16 @@ export default function StandardizationFactsInspector({
           <header><strong>{model.block.label}</strong></header>
           <p className="guanyijia-inspector-summary">{model.readSummary}</p>
           {model.block.readableEvidence && <div className="guanyijia-readable-evidence">
-            {reviewEvidenceSummary(reviewEvidenceView) ?? compactEvidenceFallback(model.block.readableEvidence)}
+            {hasReadableReviewEvidence
+              ? reviewEvidenceSummary(reviewEvidenceView)
+              : <p>该事项的已声明依据暂时无法验证。请刷新当前步骤后重试。</p>}
           </div>}
-          <dl className="guanyijia-fact-list">
+          {!hasReadableReviewEvidence && <dl className="guanyijia-fact-list">
             <div><dt>证据来源</dt><dd>{displaySourceName(model.sourceId, model.sourceName)}</dd></div>
             <div><dt>支持范围</dt><dd>支持 {model.evidenceCount} 项已保存依据和 {model.objectCount} 个相关对象。</dd></div>
             <div><dt>不能推出</dt><dd>{model.authority === 'PRIMARY' ? '来源外的业务配置或运行结果。' : '未经主来源核验的正式结论。'}</dd></div>
-            {evidenceLocation && <div><dt>来源位置</dt><dd>{evidenceLocation}</dd></div>}
           </dl>
+          }
         </section>}
         {comparisonEvidence.length > 1 && <section className="guanyijia-inspector-block guanyijia-comparison-material" aria-label="双方来源材料">
           <header><strong>双方证据索引</strong></header>
@@ -163,7 +149,7 @@ export default function StandardizationFactsInspector({
             <small>{evidence.locationLabel}：{evidence.locationValue}</small>
           </article>)}
         </section>}
-        <Button type="link" className="guanyijia-open-technical-evidence" onClick={onOpenTechnicalEvidence}>在正文查看技术依据</Button>
+        {hasReadableReviewEvidence && <Button type="link" className="guanyijia-open-technical-evidence" onClick={onOpenTechnicalEvidence}>在正文查看技术依据</Button>}
       </div>}
     </section>}
   </aside>;

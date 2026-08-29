@@ -2,14 +2,15 @@
 
 ## 用途与边界
 
-当前最近一次已冻结的富内容 sidecar 是 `guanyijia-demo-content-v6-20260826`，保存于：
+当前最近一次已冻结且已接入新运行的富内容 sidecar 是
+`guanyijia-demo-content-v7-20260827`，保存于：
 
 ```text
 ../modeling-evidence/guanyijia/demo-content/snapshots/
-guanyijia-demo-content-v6-20260826/
+guanyijia-demo-content-v7-20260827/
 ```
 
-它让 Demo 展示较丰富的业务说明、制度和术语图，并能以固定 commit、文件和行号定位 GitHub 源码。早期版本及 `V5`、`V6` 都原样保留，供比较和回滚；`DemoContentReview`
+它让 Demo 展示较丰富的业务说明、制度和术语图，并能以固定 commit、文件和行号定位 GitHub 源码。早期版本 `V5`、`V6` 都原样保留，供比较和回滚；`DemoContentReview`
 在一次资料整理运行开始时将所选版本绑定到精确的 `runId` 和五项正式快照身份；刷新与继续审阅都会读取同一个绑定。
 它不改变现有 Pinned Bundle、管伊佳正式 V1、Catalog、黄金 SHA、正式 Claim 或正式冲突定义，也不会替代正式证据
 工厂的准入与治理链。
@@ -54,7 +55,7 @@ guanyijia-demo-content-v6-20260826/
 1,817 个冻结 GitHub 行号范围，全部在对应文件范围内；未来若重捕获源码，必须重新执行相同的范围校验，不能把
 过期行号直接带入新快照。
 
-## 当前已定版 V6 维护入口
+## 当前已定版 V7 维护入口
 
 在 `linguan-prototype-v2` 目录运行：
 
@@ -64,8 +65,15 @@ npm run evidence:guanyijia:content:package
 npm run evidence:guanyijia:content:package:check
 ```
 
-本轮的最终、可发布内容是 `guanyijia-demo-content-v6-20260826`。上述通用命令固定先用 V6 校验器复核该快照；`package`
-才生成浏览器安全的投影，`package:check` 只重算并对照已提交投影。它们不读取 V7 目标目录，不联网、扫描或调用 Codex。
+本轮的最终、可发布内容是 `guanyijia-demo-content-v7-20260827`，内容 SHA 为
+`sha256:b570297c59fd19538970985eacf60dd1bc9f46c7dbda550ecf46e2b43f706ca4`。上述通用命令先以
+V7 校验器复核该快照；`package` 才生成浏览器安全的投影，`package:check` 只重算并对照已提交
+投影。它们不联网、扫描或调用 Codex。若需复核历史 V6，必须显式运行：
+
+```bash
+node scripts/evidence/guanyijia-demo-content-v6-generate.mjs --check \
+  ../modeling-evidence/guanyijia/demo-content/snapshots/guanyijia-demo-content-v6-20260826
+```
 
 ### V6 完整性基线
 
@@ -76,18 +84,20 @@ V6 的发布门禁保护的是**内容集合和可追踪关系**，不是篇幅�
 
 因此，V6 既不会因文案更精炼而被误拒，也不会因保留了相同 ID 却删除说明、材料或关联而被误放行。
 
-### 计划中的 V7 九章阅读内容维护
+### 已批准的 V7 九章阅读内容
 
-`guanyijia-demo-content-v7-20260827` 是 **从精确 V6 追加的维护目标**，当前尚未冻结，不能写成已生效版本。V7
-只能读取 `guanyijia-demo-content-v6-20260826` 的已冻结审阅资料；它不重新捕获来源、不替换 V6，也不改写原始
+`guanyijia-demo-content-v7-20260827` 是从精确 V6 追加的已生效阅读投影。用户在审阅数据库样稿和
+五源 Selection 后明确批准
+`../modeling-evidence/guanyijia/demo-content/candidates/V7/selections/v7-five-source-review-20260829.json`；
+冻结过程只复制 V6 原始材料并新增经验证的人类可读九章正文。它不重新捕获来源、不替换 V6，也不改写原始
 证据、正式 Claim、正式冲突或管伊佳正式 V1。
 
-本轮曾明确启动五个单来源的 V7 维护尝试，但它们都在发送提示词或调用模型之前因 Codex 本地状态数据库
-`~/.codex/state_5.sqlite` 只读而失败。没有任何一次调用产生可冻结的 V7 候选、输出或快照；这不是模型、配额、来源内容或
-Schema 失败。该状态目录的写入能力必须在未来每次维护调用前预检；预检被拒绝时保留诊断回执，明确报告被阻断的
-`CODEX_STATE_DB_WRITE` 能力和路径，并停止，不自动重试。
+本轮早期曾出现一次 Codex 本地状态数据库 `~/.codex/state_5.sqlite` 只读的预检失败；它发生在
+`thread.started` 前，因此没有消耗候选轮次，也没有产生产品内容。能力修复与回归测试通过后才重启同一轮，随后形成并
+验证了本次批准的五源 Selection 与 V7 快照。这不是模型、配额、来源内容或 Schema 的失败。该状态目录的写入能力
+仍必须在未来每次维护调用前预检；预检被拒绝时保留诊断回执，明确报告被阻断的 `CODEX_STATE_DB_WRITE` 能力和路径。
 
-获得单独授权且预检通过后，V7 仍是显式、逐来源的候选维护，不会改变上述通用 V6 命令：
+候选维护始终是显式、逐来源的流程；本次已完成的 V7 不授权后续重跑，未来维护必须创建新 snapshot：
 
 ```bash
 npm run evidence:guanyijia:content:candidates:generate -- guanyijia_mysql
@@ -128,15 +138,13 @@ content digest、会话生成元数据和 raw-output digest；review report 的 
 复制 V6 原始材料、仅新增 V7 阅读投影、重算 manifest 与 checksums，并以目录 rename 发布。目标目录已存在、V6
 继承材料字节发生漂移或引用校验失败时都必须失败；V6 及更早目录始终只读保留。
 
-V7 冻结后必须使用其专用校验，复核 lineage、generation receipt、九章和最终阅读文档完整性；它不联网、不调用 Codex，
-也不能由通用快照检查给出伪绿。在 V7 实际冻结并经单独维护工作更新命令契约前，通用 `content:check`、`package` 和
-`package:check` 始终验证和发布 V6。`package` 是明确的本地发布步骤：它只读取已成功冻结的
-sidecar、对 V6 或其后追加的富内容快照校验每份标准审阅文档的九章、结论、依据和锚点，再写入浏览器静态投影
+V7 已通过其专用校验，复核 lineage、generation receipt、九章和最终阅读文档完整性；该校验不联网、不调用 Codex，
+也不能由通用快照检查给出伪绿。通用 `content:check`、`package` 和 `package:check` 现在验证和发布 V7。
+`package` 是明确的本地发布步骤：它只读取已成功冻结的 sidecar、校验每份标准审阅文档的九章、结论、依据和锚点，再写入浏览器静态投影
 `src/features/guanyijia-demo-content/pinned-demo-content.generated.ts`。它不会扫描、联网或调用 Codex；浏览器包只
 包含当前阅读所需的已冻结摘要与精确摘录，完整 719 个文件继续只保留在本地冻结快照。每个富内容快照都按其
-`previousSnapshotId` 递归保留已发布的历史投影；成功冻结的 V7 才会形成精确的 `V7 → V6 → V5` 链，已绑定的运行不会被静默升级。
-`package:check` 只复核 sidecar 与已提交的浏览器投影是否相同。V7 尚未冻结，不能据此把 V7 称为当前版本或把通用入口
-指向 V7。
+`previousSnapshotId` 递归保留已发布的历史投影；当前已形成精确的 `V7 → V6 → V5` 链，已绑定的运行不会被静默升级。
+`package:check` 只复核 sidecar 与已提交的浏览器投影是否相同。
 
 日常开发、测试、构建、演示、恢复和热更新只读取已提交的浏览器投影；它们不得调用上述维护命令、下载源码
 或重新生成演示资料。
@@ -155,7 +163,7 @@ sidecar 的目录、Git 树或文件索引。
 ```text
 审阅事项：待确认事项（本来源建议与已准入跨来源比较）、逐项待补充资料与已处理事项
 审阅结论：核心业务结论与默认展开的完整对象目录
-标准化文档：同一 Revision 的 V6 九章阅读版与只读 Markdown 源文
+标准化文档：同一 Revision 的 V7 九章阅读版与只读 Markdown 源文
 结论内依据：来源材料 → 审阅结论 → Markdown 段落
 ```
 
@@ -185,9 +193,8 @@ Claim 上开放建议核对；编辑器只显示允许变更的业务名称或�
 
 ## 新版本与回滚
 
-不可修改已冻结的 `v1-20260821`、V5 或 V6 目录。V7 目标目录尚不存在，不能在产品或维护文档中称为“当前”。当前新运行只能绑定
-已发布的内容版本；已经绑定 V5 或 V6 的运行继续读取原版本，不会静默升级。若未来 V7 成功冻结，它将以 `V7 → V6 → V5`
-追加链保留历史投影。需要更新时必须创建新的
+不可修改已冻结的 `v1-20260821`、V5、V6 或 V7 目录。当前新运行绑定已发布的 V7；已经绑定 V5 或 V6 的运行继续读取原版本，
+不会静默升级。V7 以 `V7 → V6 → V5` 追加链保留历史投影。需要更新时必须创建新的
 snapshotId、重新捕获（如涉及源码）并重新生成，保留旧目录作为可比较、可回滚版本。工作台已通过 `DemoContentReview`
 只读加载这个 sidecar，并清晰显示每类
 内容的 origin；若要把其中任何文字提升为正式事实，必须重新经过完整多源证据治理流程。
