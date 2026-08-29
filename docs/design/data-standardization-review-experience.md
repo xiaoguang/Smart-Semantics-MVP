@@ -370,6 +370,11 @@ Selection 创建后必须先产出一个追加式、只读的五源审阅包：�
 验收状态、非致命告警与 Claim／待补充资料覆盖统计。审阅包的合并预览摘要必须绑定 Selection
 的规范 JSON 摘要；它只用于用户审批，不能冻结、package、部署或改变任何候选内容。
 
+审阅包分为人类阅读 Markdown 与 JSON 审计清单：Markdown 使用中文的“理想／可审阅（有告警）／
+不可审阅”状态和可读告警解释，不显示 sourceId、snapshot、SHA、原始 finding code 或 Candidate
+标识；JSON 清单保留 Candidate lineage、哈希、原始 finding、轮次与覆盖数字，供审批追溯。渲染
+规则自身带版本号；升级渲染规则时必须创建新的追加式审阅包，不能改写已有审阅包。
+
 ## 运行时接口与兼容性
 
 来源准备阶段是 UI 观察接口，不进入持久化 `StandardizationRun` Schema：

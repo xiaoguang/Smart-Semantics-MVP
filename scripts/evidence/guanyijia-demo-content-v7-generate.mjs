@@ -2169,8 +2169,34 @@ function sourceReviewCoverage(review) {
   };
 }
 
+const SelectionReviewPackageRendererVersion = 2;
+
+function selectionAcceptanceLabel(acceptance) {
+  switch (acceptance) {
+    case 'IDEAL':
+      return '理想';
+    case 'REVIEWABLE_WITH_WARNINGS':
+      return '可审阅（有告警）';
+    case 'FATAL':
+      return '不可审阅';
+    default:
+      fail(`unknown V7 selection acceptance ${acceptance}`);
+  }
+}
+
+function selectionIssueSummary(issue) {
+  if (issue.code === 'LEGACY_MODEL_SOURCE_ID_DROPPED') {
+    return '旧候选多写了来源身份字段，已由确定性程序移除；正文、已确认内容、待补充资料和证据映射均未改变。';
+  }
+  if (issue.code === 'TRANSPORT_VOCABULARY_NORMALIZED') {
+    return '阅读投影中的技术传输词已按固定规则中文化；原始冻结内容和证据映射未改变。';
+  }
+  return '已记录一项结构告警；详细审计信息见审计清单。';
+}
+
 function selectionReviewPackageId(validation) {
   return `v7-selection-review-${sha256(canonicalJson({
+    rendererVersion: SelectionReviewPackageRendererVersion,
     selection: validation.selection,
     reviews: validation.reviews.map((review) => ({
       candidateId: review.candidateId,
@@ -2185,12 +2211,12 @@ function selectionReviewPackageId(validation) {
 
 function selectionReviewPackageMarkdown(validation) {
   const sourceRows = validation.reviews.map((review) => [
-    `| ${review.descriptor.readerLabel}`,
-    `| ${review.acceptance}`,
-    `| ${review.issues.length ? review.issues.map((issue) => issue.code).join('、') : '无'} |`,
-  ].join('')).join('\n');
+    review.descriptor.readerLabel,
+    selectionAcceptanceLabel(review.acceptance),
+    review.issues.length ? review.issues.map(selectionIssueSummary).join('；') : '无',
+  ].map((cell) => ` ${cell} `).join('|')).map((row) => `|${row}|`).join('\n');
   const warningLines = validation.reviews.flatMap((review) => review.issues.map((issue) => (
-    `- ${review.descriptor.readerLabel}：${issue.message}`
+    `- ${review.descriptor.readerLabel}：${selectionIssueSummary(issue)}`
   )));
   const chapters = standardSectionOrder.map(({ key, heading }) => [
     `## ${heading}`,
@@ -2200,13 +2226,14 @@ function selectionReviewPackageMarkdown(validation) {
       return `### 来源 ${index + 1}：${review.descriptor.readerLabel}\n\n${narrative}`;
     }),
   ].join('\n\n')).join('\n\n');
-  const auditRows = validation.reviews.map((review) => [
-    `| ${review.descriptor.readerLabel}`,
-    `| ${review.candidateId}`,
-    `| ${review.generation.lineage.generationRound}`,
-    `| ${sourceReviewCoverage(review).admittedClaims}/${sourceReviewCoverage(review).projectedAdmittedClaims}`,
-    `| ${sourceReviewCoverage(review).gaps}/${sourceReviewCoverage(review).projectedGaps} |`,
-  ].join('')).join('\n');
+  const auditRows = validation.reviews.map((review) => {
+    const coverage = sourceReviewCoverage(review);
+    return [
+      review.descriptor.readerLabel,
+      `${coverage.admittedClaims}/${coverage.projectedAdmittedClaims}`,
+      `${coverage.gaps}/${coverage.projectedGaps}`,
+    ].map((cell) => ` ${cell} `).join('|');
+  }).map((row) => `|${row}|`).join('\n');
   return [
     '# 管伊佳 V7 五来源审阅包',
     '这是冻结 V6 上的只读候选合并预览。它用于 Selection 审阅，不是已冻结或已部署的标准化文档。',
@@ -2215,9 +2242,9 @@ function selectionReviewPackageMarkdown(validation) {
     ...(warningLines.length ? ['## 需要保留的告警', ...warningLines] : []),
     '## 九章五来源合并预览',
     chapters,
-    '## 审计覆盖摘要',
-    'Claim／资料缺口的结构化映射已在确定性校验中逐项验证；下表仅汇总数量，正文不展示内部 Claim 标识。',
-    '| 来源 | Candidate | 内容轮次 | Claim 覆盖（冻结／投影） | 资料缺口覆盖（冻结／投影） |\n| --- | --- | ---: | ---: | ---: |\n' + auditRows,
+    '## 覆盖检查',
+    '已确认内容和待补充资料均已由确定性校验逐项映射；下表仅汇总数量。候选谱系、哈希和原始告警码只保留在配套 JSON 审计清单中。',
+    '| 来源 | 已确认内容覆盖（冻结／投影） | 待补充资料覆盖（冻结／投影） |\n| --- | ---: | ---: |\n' + auditRows,
   ].join('\n\n') + '\n';
 }
 
@@ -2255,6 +2282,7 @@ export async function createV7SelectionReviewPackage(input = {}) {
   const markdown = selectionReviewPackageMarkdown(validation);
   const manifest = {
     schemaVersion: 1,
+    rendererVersion: SelectionReviewPackageRendererVersion,
     packageId,
     selection: validation.selection,
     selectionSha256: sha256(canonicalJson(validation.selection)),

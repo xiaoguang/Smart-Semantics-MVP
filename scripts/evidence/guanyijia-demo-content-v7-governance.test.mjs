@@ -219,7 +219,12 @@ test('V7 selection review package renders one read-only nine-chapter five-source
     assert.match(markdown, /^# 管伊佳 V7 五来源审阅包/mu);
     assert.equal((markdown.match(/^## \d+\./gmu) ?? []).length, 9);
     assert.equal((markdown.match(/^### 来源 [1-5]：/gmu) ?? []).length, 45);
+    assert.match(markdown, /理想/u);
+    assert.doesNotMatch(markdown, /\b(?:IDEAL|REVIEWABLE_WITH_WARNINGS|FATAL)\b/u);
+    assert.doesNotMatch(markdown, /\b(?:LEGACY_MODEL_SOURCE_ID_DROPPED|TRANSPORT_VOCABULARY_NORMALIZED)\b/u);
+    assert.doesNotMatch(markdown, /\| 来源 \| Candidate \|/u);
     assert.equal(manifest.reviews.length, 5);
+    assert.equal(manifest.rendererVersion, 2);
     assert.ok(manifest.reviews.every((review) => review.coverage.admittedClaims === review.coverage.projectedAdmittedClaims));
     assert.ok(manifest.reviews.every((review) => review.coverage.gaps === review.coverage.projectedGaps));
     await assert.rejects(
