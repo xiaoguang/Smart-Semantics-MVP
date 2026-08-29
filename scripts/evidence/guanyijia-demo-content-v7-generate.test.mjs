@@ -898,6 +898,11 @@ test('V7 persists a failed Codex source call as a blocked candidate so other sel
     assert.ok(failed.review.issues.some((issue) => issue.code === 'CODEX_SESSION_FAILED'));
     assert.equal(failed.receipt.outcome, 'FAILED');
     assert.equal(failed.receipt.stateWritePreflight.status, 'PASSED');
+    assert.equal(
+      failed.receipt.attempt.modelSessionStarted,
+      false,
+      'a Codex process error without thread.started must not consume a content round',
+    );
     assert.match(failed.receipt.failure.message, /simulated Codex nonzero exit/u);
 
     const reloaded = await implementation.loadV7SourceCandidate({
@@ -908,6 +913,34 @@ test('V7 persists a failed Codex source call as a blocked candidate so other sel
     assert.equal(reloaded.review.status, 'BLOCKED');
     assert.ok(reloaded.review.issues.some((issue) => issue.code === 'CODEX_SESSION_FAILED'));
     assert.equal(await readFile(join(candidateRoot, failed.candidateId, 'raw-output.txt'), 'utf8'), '');
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test('V7 records a failed source call as consuming a round only when Codex reported thread.started', async () => {
+  const implementation = selectionApi();
+  const descriptors = await implementation.loadV6NarrativeDescriptors({ sourceSnapshotRoot: v6Root });
+  const temporaryRoot = await mkdtemp(join(tmpdir(), 'guanyijia-v7-started-source-failure-'));
+  const candidateRoot = join(temporaryRoot, 'candidates');
+  const state = await writableCodexStateFixture(implementation, temporaryRoot);
+  try {
+    const failure = new Error('simulated Codex failure after thread.started');
+    failure.sessionId = 'chatgpt-session-v7-started-then-failed';
+    const failed = await implementation.regenerateV7SourceCandidate({
+      descriptors,
+      sourceId: 'guanyijia_github',
+      candidateRoot,
+      codexStatePreflight: state.run,
+      codexSession: {
+        async prepare() {},
+        async generate() { throw failure; },
+      },
+    });
+
+    assert.equal(failed.receipt.outcome, 'FAILED');
+    assert.equal(failed.receipt.attempt.modelSessionStarted, true);
+    assert.equal(failed.receipt.generation.sessionId, 'chatgpt-session-v7-started-then-failed');
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }

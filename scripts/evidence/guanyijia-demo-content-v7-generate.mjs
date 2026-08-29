@@ -1033,7 +1033,7 @@ async function assertChatGptLogin(environment) {
   }
 }
 
-function sessionIdFromJsonLines(value) {
+function optionalSessionIdFromJsonLines(value) {
   for (const line of value.split('\n')) {
     try {
       const event = JSON.parse(line);
@@ -1042,7 +1042,11 @@ function sessionIdFromJsonLines(value) {
       }
     } catch { /* Non-JSON diagnostics are not session records. */ }
   }
-  fail('Codex did not return a ChatGPT session ID');
+  return undefined;
+}
+
+function sessionIdFromJsonLines(value) {
+  return optionalSessionIdFromJsonLines(value) ?? fail('Codex did not return a ChatGPT session ID');
 }
 
 export function codexInvocationArgs(outputPath, input = {}) {
@@ -1075,9 +1079,18 @@ function runCodex(prompt, environment, outputPath, invocation) {
     child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
     child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
     child.once('error', rejectRun);
-    child.once('close', (code) => code === 0
-      ? resolveRun({ stdout, stderr })
-      : rejectRun(new Error(`Codex V7 generation exited with ${code}: ${[stderr.trim(), stdout.trim()].filter(Boolean).join('\n')}`)));
+    child.once('close', (code) => {
+      if (code === 0) {
+        resolveRun({ stdout, stderr });
+        return;
+      }
+      const failure = new Error(
+        `Codex V7 generation exited with ${code}: ${[stderr.trim(), stdout.trim()].filter(Boolean).join('\n')}`,
+      );
+      const sessionId = optionalSessionIdFromJsonLines(stdout);
+      if (sessionId) failure.sessionId = sessionId;
+      rejectRun(failure);
+    });
     child.stdin.end(prompt, 'utf8');
   });
 }
@@ -1423,12 +1436,10 @@ export async function regenerateV7SourceCandidate(input = {}) {
           + ` at ${stateWritePreflight.failure.path}: ${stateWritePreflight.failure.message}`,
         );
       }
-      // Preparation is part of the one explicit source session.  If it fails
-      // before Codex writes an output-last-message file, persist a failed
-      // receipt/report with an empty raw payload rather than discarding the
-      // source attempt or retrying it implicitly.
+      // Login preparation is not a model content attempt. A candidate round
+      // starts only when Codex reports thread.started; a pre-start process
+      // failure remains an immutable diagnostic and does not consume a round.
       await codexSession.prepare();
-      modelSessionStarted = true;
       const result = await codexSession.generate({
         descriptor,
         prompt: narrativePrompt(descriptor, input.promptRevision),
@@ -1437,6 +1448,7 @@ export async function regenerateV7SourceCandidate(input = {}) {
       if (!result || typeof result.sessionId !== 'string' || typeof result.rawOutput !== 'string') {
         fail(`${descriptor.sourceId} ChatGPT session returned an invalid result`);
       }
+      modelSessionStarted = true;
       return persistV7SourceCandidate({
         ...input,
         descriptors,
@@ -1448,6 +1460,9 @@ export async function regenerateV7SourceCandidate(input = {}) {
       });
     } catch (error) {
       const rawOutput = await readFile(outputPath, 'utf8').catch(() => '');
+      const sessionId = typeof error?.sessionId === 'string' && error.sessionId
+        ? error.sessionId
+        : undefined;
       return persistV7FailedSourceCandidate({
         ...input,
         descriptors,
@@ -1455,7 +1470,8 @@ export async function regenerateV7SourceCandidate(input = {}) {
         rawOutput,
         failure: error,
         stateWritePreflight,
-        modelSessionStarted,
+        ...(sessionId ? { sessionId } : {}),
+        modelSessionStarted: modelSessionStarted || Boolean(sessionId),
       });
     }
   } finally {
