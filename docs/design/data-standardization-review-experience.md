@@ -328,7 +328,10 @@ Markdown 样式。Demo 读取冻结 V7，浏览器运行时不得调用模型；
 Luna/xhigh Round 2 替代候选。Round 2 只可在 Round 1 存在致命错误，或用户明确指出系统性
 可读性问题时使用；它必须绑定同一冻结 V6 digest、Round 1 Candidate 与新的提示词版本。模型
 在 `thread.started` 前的登录、权限或状态目录预检失败不消耗内容轮次，但不得自动重试；已经
-启动的模型会话即使输出无效或为空，也消耗该轮。
+启动的模型会话即使输出无效或为空，通常也消耗该轮。唯一例外是服务端在生成任何产品内容前
+明确拒绝本次提交的输出 JSON Schema：保留不可覆盖的诊断 Receipt，修复并测试 Schema 后，
+须获得用户明确授权才可重启同一轮。该例外不适用于空模型输出、无效 Candidate JSON、生成开始
+后的模型／进程失败或任何内容质量 finding；这些情况都消耗轮次。
 
 Round 1 出现致命错误时，先由 Sol/ultra 对冻结输入、Round 1 Candidate、确定性 finding 和
 不可变核心提示词生成一个 receipt-bound corrective addendum；Sol 不能生成产品内容、引入事实、

@@ -236,7 +236,13 @@
   needs improvement. A failed preflight before `thread.started` does not use a
   content round, but must be explicitly restarted after the capability is
   repaired; a started model session consumes its round even if it returns empty
-  or invalid output.
+  or invalid output. The sole exception is a provider response that rejects the
+  submitted output JSON Schema before generating any product content: preserve
+  its immutable diagnostic receipt, repair and test the schema, obtain the
+  user's explicit authorization, then restart the same content round once.
+  This exception never covers an empty model response, invalid candidate JSON,
+  a model/process failure after generation begins, or any content-quality
+  finding; those always consume the round.
 - Before Round 2, a single `gpt-5.6-sol`/`ultra` prompt-diagnosis task may
   create a receipt-bound corrective addendum from the frozen input, the Round 1
   candidate, and named findings. It is not a product-content candidate, but it
