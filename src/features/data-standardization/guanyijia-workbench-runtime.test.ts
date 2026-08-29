@@ -48,12 +48,20 @@ class ResolutionPointerFailureStorage extends MemoryStorage {
   }
 }
 
-function fixture() {
+function fixture(input?: {
+  story?: ReturnType<typeof createGuanyijiaStandardizationStory>;
+  sourcePreparationObserver?: (progress: {
+    sourceId: string;
+    stage: 'READ' | 'ANALYZE' | 'ORGANIZE';
+    state: 'ACTIVE' | 'COMPLETE' | 'ERROR';
+    sequence: number;
+  }) => void | Promise<void>;
+}) {
   const metadataStorage = new MemoryStorage();
   const pointerStorage = new MemoryStorage();
   const contentStore = createMemoryContentStore();
   const sourceDocuments = createSourceDocumentRuntime({ metadataStorage, contentStore });
-  const story = createGuanyijiaStandardizationStory();
+  const story = input?.story ?? createGuanyijiaStandardizationStory();
   const runs = createStandardizationRunRuntime({
     metadataStorage,
     contentStore,
@@ -87,9 +95,162 @@ function fixture() {
     sourceDocuments,
     story,
     contentStore,
+    sourcePreparationObserver: input?.sourcePreparationObserver,
   });
   return { runtime, metadataStorage, pointerStorage, contentStore, sourceDocuments, runs, story };
 }
+
+test('source preparation reports each real read, analysis, and organization boundary', async () => {
+  const progress: Array<{
+    sourceId: string;
+    stage: string;
+    state: string;
+    sequence: number;
+  }> = [];
+  const { runtime } = fixture({
+    sourcePreparationObserver: (event) => progress.push(event),
+  });
+  const started = await runtime.execute(command('START_RUN', 0, 'journey:stages:start'));
+  await runtime.execute(command('READ_NEXT_SOURCE', started.run!.revision, 'journey:stages:mysql'));
+
+  assert.deepEqual(progress.map(({ sourceId, stage, state }) => [sourceId, stage, state]), [
+    ['guanyijia_mysql', 'READ', 'ACTIVE'],
+    ['guanyijia_mysql', 'READ', 'COMPLETE'],
+    ['guanyijia_mysql', 'ANALYZE', 'ACTIVE'],
+    ['guanyijia_mysql', 'ANALYZE', 'COMPLETE'],
+    ['guanyijia_mysql', 'ORGANIZE', 'ACTIVE'],
+    ['guanyijia_mysql', 'ORGANIZE', 'COMPLETE'],
+  ]);
+  assert.deepEqual(progress.map((event) => event.sequence), [1, 2, 3, 4, 5, 6]);
+});
+
+test('source preparation waits for the active-stage presentation callback before advancing', async () => {
+  const progress: Array<{ stage: string; state: string }> = [];
+  let releaseReadPresentation: (() => void) | undefined;
+  const { runtime } = fixture({
+    sourcePreparationObserver: (event) => {
+      progress.push(event);
+      if (event.stage === 'READ' && event.state === 'ACTIVE') {
+        return new Promise<void>((resolve) => { releaseReadPresentation = resolve; });
+      }
+      return undefined;
+    },
+  });
+  const started = await runtime.execute(command('START_RUN', 0, 'journey:presentation:start'));
+  let finished = false;
+  const preparing = runtime.execute(command('READ_NEXT_SOURCE', started.run!.revision, 'journey:presentation:mysql'))
+    .then((result) => { finished = true; return result; });
+
+  for (let attempt = 0; attempt < 8 && !releaseReadPresentation; attempt += 1) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  assert.ok(releaseReadPresentation, 'READ ACTIVE must reach the presentation observer first');
+  assert.deepEqual(progress.map(({ stage, state }) => [stage, state]), [['READ', 'ACTIVE']]);
+  assert.equal(finished, false);
+
+  releaseReadPresentation();
+  const prepared = await preparing;
+  assert.equal(prepared.run?.sources[0]?.status, 'DOCUMENT_READY');
+});
+
+test('a presentation callback failure does not turn a valid source preparation into a source error', async () => {
+  const progress: Array<{ stage: string; state: string }> = [];
+  const { runtime } = fixture({
+    sourcePreparationObserver: (event) => {
+      progress.push(event);
+      if (event.stage === 'ANALYZE' && event.state === 'ACTIVE') {
+        return Promise.reject(new Error('演示层已卸载'));
+      }
+      return undefined;
+    },
+  });
+  const started = await runtime.execute(command('START_RUN', 0, 'journey:presentation-error:start'));
+
+  const prepared = await runtime.execute(command(
+    'READ_NEXT_SOURCE', started.run!.revision, 'journey:presentation-error:mysql',
+  ));
+
+  assert.equal(prepared.run?.sources[0]?.status, 'DOCUMENT_READY');
+  assert.equal(progress.some((event) => event.state === 'ERROR'), false);
+});
+
+test('a synchronously thrown presentation callback does not turn a valid source preparation into a source error', async () => {
+  const progress: Array<{ stage: string; state: string }> = [];
+  const { runtime } = fixture({
+    sourcePreparationObserver: (event) => {
+      progress.push(event);
+      if (event.stage === 'ORGANIZE' && event.state === 'ACTIVE') {
+        throw new Error('展示层已经关闭');
+      }
+      return undefined;
+    },
+  });
+  const started = await runtime.execute(command('START_RUN', 0, 'journey:presentation-throw:start'));
+
+  const prepared = await runtime.execute(command(
+    'READ_NEXT_SOURCE', started.run!.revision, 'journey:presentation-throw:mysql',
+  ));
+
+  assert.equal(prepared.run?.sources[0]?.status, 'DOCUMENT_READY');
+  assert.equal(progress.some((event) => event.state === 'ERROR'), false);
+});
+
+test('the read stage does not complete before the frozen source compilation is selected', async () => {
+  const progress: Array<{ stage: string; state: string }> = [];
+  const baseStory = createGuanyijiaStandardizationStory();
+  const observedStory = Object.create(baseStory) as typeof baseStory;
+  let frozenCompilationStartedBeforeReadCompleted = false;
+  observedStory.compileSource = (input) => {
+    const readStarted = progress.some((event) => event.stage === 'READ' && event.state === 'ACTIVE');
+    const readCompleted = progress.some((event) => event.stage === 'READ' && event.state === 'COMPLETE');
+    if (readStarted && !readCompleted) frozenCompilationStartedBeforeReadCompleted = true;
+    return baseStory.compileSource(input);
+  };
+  const { runtime } = fixture({
+    story: observedStory,
+    sourcePreparationObserver: (event) => progress.push(event),
+  });
+  const started = await runtime.execute(command('START_RUN', 0, 'journey:read-boundary:start'));
+
+  await runtime.execute(command('READ_NEXT_SOURCE', started.run!.revision, 'journey:read-boundary:mysql'));
+
+  assert.equal(frozenCompilationStartedBeforeReadCompleted, true);
+});
+
+test('a failed real preparation phase stays visible and resumes the same reading source without skipping it', async () => {
+  const baseStory = createGuanyijiaStandardizationStory();
+  const retryStory = Object.create(baseStory) as typeof baseStory;
+  let failOnce = true;
+  retryStory.compileSource = (input) => {
+    if (failOnce && input.sourceId === 'guanyijia_mysql') {
+      failOnce = false;
+      throw new Error('模拟分析阶段失败');
+    }
+    return baseStory.compileSource(input);
+  };
+  const progress: Array<{ stage: string; state: string }> = [];
+  const { runtime } = fixture({
+    story: retryStory,
+    sourcePreparationObserver: (event) => progress.push(event),
+  });
+  const started = await runtime.execute(command('START_RUN', 0, 'journey:retry:start'));
+
+  await assert.rejects(
+    runtime.execute(command('READ_NEXT_SOURCE', started.run!.revision, 'journey:retry:failed-read')),
+    /模拟分析阶段失败/u,
+  );
+  const failed = await runtime.read('user-author');
+  assert.equal(failed.run?.status, 'READING_SOURCE');
+  assert.equal(failed.run?.sources[0]?.status, 'READING');
+  assert.equal(progress.at(-1)?.stage, 'READ');
+  assert.equal(progress.at(-1)?.state, 'ERROR');
+
+  const resumed = await runtime.execute(command(
+    'READ_NEXT_SOURCE', failed.run!.revision, 'journey:retry:resume-read',
+  ));
+  assert.equal(resumed.current?.source.sourceId, 'guanyijia_mysql');
+  assert.equal(resumed.run?.sources[0]?.status, 'DOCUMENT_READY');
+});
 
 test('production review-window facade keeps all six streams summary-only until verified content is opened', async () => {
   const { runtime, contentStore } = fixture();
@@ -357,21 +518,6 @@ function command(
 
 async function advanceToSemanticaDocumentReady(runtime: ReturnType<typeof fixture>['runtime']) {
   let snapshot = await runtime.execute(command('START_RUN', 0, 'normalized-flow:start'));
-  const readAndReview = async (source: string) => {
-    const read = await runtime.execute(command(
-      'READ_NEXT_SOURCE', snapshot.run!.revision, `normalized-flow:read:${source}`,
-    ));
-    const scriptedDecision = source === 'github'
-      ? await runtime.execute({
-        type: 'DECIDE_SCRIPTED_REVIEW_EDIT', commandId: `normalized-flow:keep-scripted:${source}`,
-        expectedRevision: read.run!.revision, actorUserId: 'user-author',
-        editId: 'scripted:github:clarify-negative-stock', decision: 'KEEP_CURRENT',
-      })
-      : read;
-    snapshot = await runtime.execute(command(
-      'COMPLETE_CURRENT_DOCUMENT_REVIEW', scriptedDecision.run!.revision, `normalized-flow:review:${source}`,
-    ));
-  };
   const resolve = async (
     conflictId: string,
     strategy: 'KEEP_CURRENT' | 'MERGE' | 'DEFER_AS_GAP',
@@ -391,14 +537,34 @@ async function advanceToSemanticaDocumentReady(runtime: ReturnType<typeof fixtur
       expectedHunkSha256: preview.hunk.hunkSha256,
     });
   };
+  const readAndReview = async (source: string) => {
+    const read = await runtime.execute(command(
+      'READ_NEXT_SOURCE', snapshot.run!.revision, `normalized-flow:read:${source}`,
+    ));
+    const scriptedDecision = source === 'github'
+      ? await runtime.execute({
+        type: 'DECIDE_SCRIPTED_REVIEW_EDIT', commandId: `normalized-flow:keep-scripted:${source}`,
+        expectedRevision: read.run!.revision, actorUserId: 'user-author',
+        editId: 'scripted:github:clarify-negative-stock', decision: 'KEEP_CURRENT',
+      })
+      : read;
+    snapshot = scriptedDecision;
+    if (source === 'github') {
+      await resolve('gyj-conflict-debt-schema', 'KEEP_CURRENT', '部署库为当前工作标准。');
+    }
+    if (source === 'policy') {
+      await resolve('gyj-conflict-negative-stock', 'MERGE', '保留实现事实并登记制度缺口。');
+      await resolve('gyj-conflict-status-nine', 'DEFER_AS_GAP', '状态九业务含义待确认。');
+    }
+    snapshot = await runtime.execute(command(
+      'COMPLETE_CURRENT_DOCUMENT_REVIEW', snapshot.run!.revision, `normalized-flow:review:${source}`,
+    ));
+  };
 
   await readAndReview('mysql');
   await readAndReview('github');
-  await resolve('gyj-conflict-debt-schema', 'KEEP_CURRENT', '部署库为当前工作标准。');
   await readAndReview('official');
   await readAndReview('policy');
-  await resolve('gyj-conflict-negative-stock', 'MERGE', '保留实现事实并登记制度缺口。');
-  await resolve('gyj-conflict-status-nine', 'DEFER_AS_GAP', '状态九业务含义待确认。');
   return runtime.execute(command(
     'READ_NEXT_SOURCE', snapshot.run!.revision, 'normalized-flow:read:semantica',
   ));
@@ -613,7 +779,7 @@ test('completing the MySQL document review marks the document ready before offer
   assert.deepEqual(reviewed.nextAction, { type: 'READ_NEXT_SOURCE', label: '载入GitHub代码仓库快照' });
 });
 
-test('reviewing GitHub keeps the debt-field conflict pending and permits the next source', async () => {
+test('GitHub 的正式欠款字段差异立即出现，保存前不能完成来源', async () => {
   const { runtime } = fixture();
   const started = await runtime.execute(command('START_RUN', 0));
   const mysql = await runtime.execute(command('READ_NEXT_SOURCE', started.run!.revision, 'read:mysql'));
@@ -622,31 +788,44 @@ test('reviewing GitHub keeps the debt-field conflict pending and permits the nex
   ));
   const github = await runtime.execute(command('READ_NEXT_SOURCE', mysqlReviewed.run!.revision, 'read:github'));
 
-  const blocked = await runtime.execute(command(
-    'COMPLETE_CURRENT_DOCUMENT_REVIEW', github.run!.revision, 'review:github',
-  ));
+  assert.equal(github.currentConflict?.conflictId, 'gyj-conflict-debt-schema');
+  const conflict = github.timeline.find((item) => item.kind === 'CONFLICT_FOUND');
+  assert.equal(conflict?.conflicts?.[0]?.title, '欠款字段结构冲突');
+  assert.deepEqual(conflict?.conflicts?.[0]?.affectedObjects, ['指标：receivable_debt', '规则：deposit']);
 
-  assert.equal(blocked.run?.status, 'CONFLICT_BLOCKED');
-  assert.deepEqual(blocked.nextAction, {
+  await assert.rejects(
+    () => runtime.execute(command(
+      'COMPLETE_CURRENT_DOCUMENT_REVIEW', github.run!.revision, 'review:github:before-decision',
+    )),
+    /请先保存当前来源的正式差异/u,
+  );
+
+  const suggestionResolved = await runtime.execute({
+    type: 'DECIDE_SCRIPTED_REVIEW_EDIT', commandId: 'review:github:keep-scripted',
+    expectedRevision: github.run!.revision, actorUserId: 'user-author',
+    editId: 'scripted:github:clarify-negative-stock', decision: 'KEEP_CURRENT',
+  });
+  const preview = await runtime.previewCurrentConflict({
+    runId: suggestionResolved.run!.runId,
+    conflictId: 'gyj-conflict-debt-schema',
+    strategy: 'KEEP_CURRENT',
+  });
+  const resolved = await runtime.execute({
+    type: 'RESOLVE_CURRENT_CONFLICT', commandId: 'review:github:resolve-debt',
+    expectedRevision: suggestionResolved.run!.revision, actorUserId: 'user-author',
+    conflictId: 'gyj-conflict-debt-schema', strategy: 'KEEP_CURRENT',
+    reason: '部署结构仍是当前工作标准。', expectedHunkSha256: preview.hunk.hunkSha256,
+  });
+  assert.equal(resolved.currentConflict, undefined);
+
+  const reviewed = await runtime.execute(command(
+    'COMPLETE_CURRENT_DOCUMENT_REVIEW', resolved.run!.revision, 'review:github:after-decision',
+  ));
+  assert.equal(reviewed.run?.sources[1]?.status, 'ALIGNED');
+  assert.deepEqual(reviewed.nextAction, {
     type: 'READ_NEXT_SOURCE',
     label: '载入业务说明快照',
   });
-  const conflict = blocked.timeline.find((item) => item.kind === 'CONFLICT_FOUND');
-  assert.equal(conflict?.conflicts?.[0]?.title, '欠款字段结构冲突');
-  assert.deepEqual(conflict?.conflicts?.[0]?.affectedObjects, ['指标：receivable_debt', '规则：deposit']);
-  const official = await runtime.execute(command('READ_NEXT_SOURCE', blocked.run!.revision, 'read:official'));
-  assert.equal(official.run?.status, 'REVIEWING_DOCUMENT');
-  assert.equal(official.current?.source.sourceId, 'guanyijia_official_docs');
-  assert.equal(official.timeline.find((item) => item.state === 'CURRENT')?.sourceId, 'guanyijia_official_docs');
-  const asked = await runtime.execute({
-    type: 'ASK_REVIEW_ASSISTANT',
-    commandId: 'read:official:assistant',
-    expectedRevision: official.run!.revision,
-    actorUserId: 'user-author',
-    message: '当前来源的读取范围是什么？',
-    selection: {},
-  });
-  assert.equal(asked.assistantTurnDelta?.item.response.title, '管伊佳官方核心文档');
 });
 
 test('GitHub 文档就绪后可预览首项差异，但须先保存本来源建议才可提前决定', async () => {
@@ -691,7 +870,7 @@ test('GitHub 文档就绪后可预览首项差异，但须先保存本来源建�
   assert.equal(resolved.currentConflict, undefined);
 });
 
-test('review shell keeps the active source readable while an earlier conflict remains pending', async () => {
+test('review shell keeps the next active source readable after its immediate conflict is saved', async () => {
   const { runtime } = fixture();
   const started = await runtime.execute(command('START_RUN', 0, 'active-shell:start'));
   const mysql = await runtime.execute(command('READ_NEXT_SOURCE', started.run!.revision, 'active-shell:read:mysql'));
@@ -699,8 +878,24 @@ test('review shell keeps the active source readable while an earlier conflict re
     'COMPLETE_CURRENT_DOCUMENT_REVIEW', mysql.run!.revision, 'active-shell:review:mysql',
   ));
   const github = await runtime.execute(command('READ_NEXT_SOURCE', mysqlReviewed.run!.revision, 'active-shell:read:github'));
+  const githubSuggestion = await runtime.execute({
+    type: 'DECIDE_SCRIPTED_REVIEW_EDIT', commandId: 'active-shell:keep-github-suggestion',
+    expectedRevision: github.run!.revision, actorUserId: 'user-author',
+    editId: 'scripted:github:clarify-negative-stock', decision: 'KEEP_CURRENT',
+  });
+  const preview = await runtime.previewCurrentConflict({
+    runId: githubSuggestion.run!.runId,
+    conflictId: 'gyj-conflict-debt-schema',
+    strategy: 'KEEP_CURRENT',
+  });
+  const conflictSaved = await runtime.execute({
+    type: 'RESOLVE_CURRENT_CONFLICT', commandId: 'active-shell:resolve-debt',
+    expectedRevision: githubSuggestion.run!.revision, actorUserId: 'user-author',
+    conflictId: 'gyj-conflict-debt-schema', strategy: 'KEEP_CURRENT',
+    reason: '部署结构仍是当前工作标准。', expectedHunkSha256: preview.hunk.hunkSha256,
+  });
   const githubReviewed = await runtime.execute(command(
-    'COMPLETE_CURRENT_DOCUMENT_REVIEW', github.run!.revision, 'active-shell:review:github',
+    'COMPLETE_CURRENT_DOCUMENT_REVIEW', conflictSaved.run!.revision, 'active-shell:review:github',
   ));
   await runtime.execute(command('READ_NEXT_SOURCE', githubReviewed.run!.revision, 'active-shell:read:official'));
 
@@ -708,11 +903,11 @@ test('review shell keeps the active source readable while an earlier conflict re
 
   assert.equal(shell.current?.source.sourceId, 'guanyijia_official_docs');
   assert.equal(shell.current?.sourceStep.status, 'DOCUMENT_READY');
-  assert.equal(shell.currentConflict?.conflictId, 'gyj-conflict-debt-schema');
+  assert.equal(shell.currentConflict, undefined);
   assert.equal(shell.timeline.find((item) => item.state === 'CURRENT')?.sourceId, 'guanyijia_official_docs');
 });
 
-test('reloading a blocked conflict reads only the source blocks needed for the current hunk', async () => {
+test('reloading an active immediate conflict reads only the source blocks needed for the current hunk', async () => {
   const { runtime, runs, sourceDocuments } = fixture();
   const started = await runtime.execute(command('START_RUN', 0, 'blocked-shell:start'));
   const mysql = await runtime.execute(command('READ_NEXT_SOURCE', started.run!.revision, 'blocked-shell:read:mysql'));
@@ -722,10 +917,7 @@ test('reloading a blocked conflict reads only the source blocks needed for the c
   const github = await runtime.execute(command(
     'READ_NEXT_SOURCE', mysqlReviewed.run!.revision, 'blocked-shell:read:github',
   ));
-  const blocked = await runtime.execute(command(
-    'COMPLETE_CURRENT_DOCUMENT_REVIEW', github.run!.revision, 'blocked-shell:review:github',
-  ));
-  assert.equal(blocked.run?.status, 'CONFLICT_BLOCKED');
+  assert.equal(github.currentConflict?.conflictId, 'gyj-conflict-debt-schema');
 
   let eventPayloadReads = 0;
   const originalReadEventPayload = runs.readEventPayload.bind(runs);
@@ -753,7 +945,7 @@ test('reloading a blocked conflict reads only the source blocks needed for the c
   assert.deepEqual(sourceReads, { blocks: 2, assertions: 0, sections: 0, markdown: 0 });
 });
 
-test('ASK after entering CONFLICT_BLOCKED is immediately present in the production assistant history', async () => {
+test('ASK while an immediate formal conflict is open is present in the production assistant history', async () => {
   const { runtime } = fixture();
   const started = await runtime.execute(command('START_RUN', 0, 'history-integration:start'));
   const mysql = await runtime.execute(command('READ_NEXT_SOURCE', started.run!.revision, 'history-integration:read:mysql'));
@@ -763,14 +955,11 @@ test('ASK after entering CONFLICT_BLOCKED is immediately present in the producti
   const github = await runtime.execute(command(
     'READ_NEXT_SOURCE', mysqlReviewed.run!.revision, 'history-integration:read:github',
   ));
-  const blocked = await runtime.execute(command(
-    'COMPLETE_CURRENT_DOCUMENT_REVIEW', github.run!.revision, 'history-integration:review:github',
-  ));
-  assert.equal(blocked.run?.status, 'CONFLICT_BLOCKED');
+  assert.equal(github.currentConflict?.conflictId, 'gyj-conflict-debt-schema');
 
   const asked = await runtime.execute({
     type: 'ASK_REVIEW_ASSISTANT', commandId: 'history-integration:ask',
-    expectedRevision: blocked.run!.revision, actorUserId: 'user-author',
+    expectedRevision: github.run!.revision, actorUserId: 'user-author',
     message: '当前差异是什么',
     selection: { sourceId: 'guanyijia_github', conflictId: 'gyj-conflict-debt-schema' },
   });
@@ -930,10 +1119,7 @@ test('完整生产时序在r1→手工r2→Proposal取消/确认r3→冲突ASK�
   ));
   assert.equal(snapshot.run!.sources[0]?.status, 'ALIGNED');
   snapshot = await runtime.execute(command('READ_NEXT_SOURCE', snapshot.run!.revision, 'exact-history:read:github'));
-  snapshot = await runtime.execute(command(
-    'COMPLETE_CURRENT_DOCUMENT_REVIEW', snapshot.run!.revision, 'exact-history:review:github',
-  ));
-  assert.equal(snapshot.run!.status, 'CONFLICT_BLOCKED');
+  assert.equal(snapshot.currentConflict?.conflictId, 'gyj-conflict-debt-schema');
 
   const beforeConflictAsk = await runtime.readAssistantHistory({
     actorUserId: 'user-author', runId: snapshot.run!.runId,
@@ -980,16 +1166,13 @@ test('Workbench从持久化revision预览并逐项保存决定，刷新只从事
     expectedRevision: github.run!.revision, actorUserId: 'user-author',
     editId: 'scripted:github:clarify-negative-stock', decision: 'KEEP_CURRENT',
   });
-  const blocked = await runtime.execute(command(
-    'COMPLETE_CURRENT_DOCUMENT_REVIEW', githubSuggestion.run!.revision, 'resolve:review:github',
-  ));
-  assert.equal(blocked.currentConflict?.conflictId, 'gyj-conflict-debt-schema');
-  assert.equal(factsInspectorFor(blocked)?.block?.label, blocked.currentConflict?.hunk.incoming.block.label);
-  assert.ok(factsInspectorFor(blocked)?.block?.locator);
-  assert.deepEqual(factsInspectorFor(blocked)?.block?.affectedObjects, ['指标：receivable_debt', '规则：deposit']);
+  assert.equal(githubSuggestion.currentConflict?.conflictId, 'gyj-conflict-debt-schema');
+  assert.equal(factsInspectorFor(githubSuggestion)?.block?.label, githubSuggestion.currentConflict?.hunk.incoming.block.label);
+  assert.ok(factsInspectorFor(githubSuggestion)?.block?.locator);
+  assert.deepEqual(factsInspectorFor(githubSuggestion)?.block?.affectedObjects, ['指标：receivable_debt', '规则：deposit']);
 
   const preview = await runtime.previewCurrentConflict({
-    runId: blocked.run!.runId,
+    runId: githubSuggestion.run!.runId,
     conflictId: 'gyj-conflict-debt-schema',
     strategy: 'KEEP_CURRENT',
   });
@@ -1003,14 +1186,14 @@ test('Workbench从持久化revision预览并逐项保存决定，刷新只从事
   ]);
   const apply = {
     type: 'RESOLVE_CURRENT_CONFLICT' as const,
-    commandId: 'resolve:debt', expectedRevision: blocked.run!.revision,
+    commandId: 'resolve:debt', expectedRevision: githubSuggestion.run!.revision,
     actorUserId: 'user-author', conflictId: 'gyj-conflict-debt-schema' as const,
     strategy: 'KEEP_CURRENT' as const, reason: '部署数据库是当前工作标准，源码差异保留为溯源。',
     expectedHunkSha256: preview.hunk.hunkSha256,
   };
   const resolved = await runtime.execute(apply);
 
-  assert.equal(resolved.run?.status, 'READY');
+  assert.equal(resolved.run?.status, 'REVIEWING_DOCUMENT');
   assert.equal(resolved.resolutions.length, 1);
   assert.equal(resolved.resolutions[0]?.previewSha256, preview.previewSha256);
   assert.equal(resolved.timeline.at(-1)?.kind, 'CONFLICT_RESOLVED');
@@ -1038,18 +1221,15 @@ test('Run持久化revision校验拒绝同步伪造Hunk全文并重算整个Artif
   const github = await runtime.execute(command(
     'READ_NEXT_SOURCE', mysqlDone.run!.revision, 'forged:read:github',
   ));
-  const blocked = await runtime.execute(command(
-    'COMPLETE_CURRENT_DOCUMENT_REVIEW', github.run!.revision, 'forged:review:github',
-  ));
   const preview = await runtime.previewCurrentConflict({
-    runId: blocked.run!.runId,
+    runId: github.run!.runId,
     conflictId: 'gyj-conflict-debt-schema',
     strategy: 'KEEP_CURRENT',
   });
   const forged = {
     schemaVersion: 1 as const,
-    resolutionId: `resolution:${blocked.run!.runId}:gyj-conflict-debt-schema`,
-    runId: blocked.run!.runId,
+    resolutionId: `resolution:${github.run!.runId}:gyj-conflict-debt-schema`,
+    runId: github.run!.runId,
     sourceId: 'guanyijia_github',
     reason: '攻击者同步重算了所有派生字段。',
     actorUserId: 'user-author',
@@ -1071,7 +1251,7 @@ test('Run持久化revision校验拒绝同步伪造Hunk全文并重算整个Artif
 
   await assert.rejects(() => validateGuanyijiaResolutionArtifactAgainstPersistedRevisions({
     artifact: forged,
-    run: blocked.run!,
+    run: github.run!,
     sourceDocuments,
     story,
   }), /无法由运行登记的持久化revision复算/);
@@ -1116,15 +1296,12 @@ test('冲突决定使用真实应用时间，Run成功后指针写失败可由�
     expectedRevision: github.run!.revision, actorUserId: 'user-author',
     editId: 'scripted:github:clarify-negative-stock', decision: 'KEEP_CURRENT',
   });
-  const blocked = await runtime.execute(command(
-    'COMPLETE_CURRENT_DOCUMENT_REVIEW', githubSuggestion.run!.revision, 'saga:review:github',
-  ));
   const preview = await runtime.previewCurrentConflict({
-    runId: blocked.run!.runId, conflictId: 'gyj-conflict-debt-schema', strategy: 'KEEP_CURRENT',
+    runId: githubSuggestion.run!.runId, conflictId: 'gyj-conflict-debt-schema', strategy: 'KEEP_CURRENT',
   });
   const resolveCommand = {
     type: 'RESOLVE_CURRENT_CONFLICT' as const,
-    commandId: 'resolve:saga', expectedRevision: blocked.run!.revision,
+    commandId: 'resolve:saga', expectedRevision: githubSuggestion.run!.revision,
     actorUserId: 'user-author', conflictId: 'gyj-conflict-debt-schema',
     strategy: 'KEEP_CURRENT' as const, reason: '部署事实优先，源码结论保留溯源。',
     expectedHunkSha256: preview.hunk.hunkSha256,
@@ -1132,7 +1309,7 @@ test('冲突决定使用真实应用时间，Run成功后指针写失败可由�
   pointerStorage.failNextResolutionCompletion = true;
 
   await assert.rejects(() => runtime.execute(resolveCommand), /模拟决定完成指针写入失败/);
-  const committed = await runs.read(blocked.run!.runId);
+  const committed = await runs.read(githubSuggestion.run!.runId);
   assert.equal(committed?.timeline.filter((event) => event.type === 'CONFLICT_RESOLVED').length, 1);
   const recovered = await runtime.execute(resolveCommand);
   assert.equal(recovered.run?.revision, committed?.revision);
@@ -1140,107 +1317,66 @@ test('冲突决定使用真实应用时间，Run成功后指针写失败可由�
   assert.equal(recovered.resolutions[0]?.decidedAt, '2026-08-18T15:59:59.000Z');
   assert.notEqual(
     recovered.resolutions[0]?.decidedAt,
-    blocked.run?.timeline.find((event) => event.type === 'CONFLICT_FOUND')?.createdAt,
+    githubSuggestion.run?.timeline.find((event) => event.type === 'CONFLICT_FOUND')?.createdAt,
   );
 });
 
-test('五源均已审阅且差异未决定时保留最后文档并进入第一项差异', async () => {
+test('正式差异不能延后到五源审阅完成后再集中处理', async () => {
   const { runtime } = fixture();
-  let snapshot = await runtime.execute(command('START_RUN', 0, 'deferred-conflicts:start'));
-  const readAndReview = async (source: string) => {
-    const read = await runtime.execute(command('READ_NEXT_SOURCE', snapshot.run!.revision, `deferred-conflicts:read:${source}`));
-    const scriptedDecision = source === 'github'
-      ? await runtime.execute({
-        type: 'DECIDE_SCRIPTED_REVIEW_EDIT', commandId: `deferred-conflicts:keep-scripted:${source}`,
-        expectedRevision: read.run!.revision, actorUserId: 'user-author',
-        editId: 'scripted:github:clarify-negative-stock', decision: 'KEEP_CURRENT',
-      })
-      : read;
-    snapshot = await runtime.execute(command(
-      'COMPLETE_CURRENT_DOCUMENT_REVIEW', scriptedDecision.run!.revision, `deferred-conflicts:review:${source}`,
-    ));
-  };
+  const started = await runtime.execute(command('START_RUN', 0, 'immediate-gate:start'));
+  const mysql = await runtime.execute(command('READ_NEXT_SOURCE', started.run!.revision, 'immediate-gate:read:mysql'));
+  const mysqlReviewed = await runtime.execute(command(
+    'COMPLETE_CURRENT_DOCUMENT_REVIEW', mysql.run!.revision, 'immediate-gate:review:mysql',
+  ));
+  const github = await runtime.execute(command('READ_NEXT_SOURCE', mysqlReviewed.run!.revision, 'immediate-gate:read:github'));
+  const suggestionResolved = await runtime.execute({
+    type: 'DECIDE_SCRIPTED_REVIEW_EDIT', commandId: 'immediate-gate:keep-github-suggestion',
+    expectedRevision: github.run!.revision, actorUserId: 'user-author',
+    editId: 'scripted:github:clarify-negative-stock', decision: 'KEEP_CURRENT',
+  });
 
-  await readAndReview('mysql');
-  await readAndReview('github');
-  await readAndReview('official');
-  await readAndReview('policy');
-  await readAndReview('semantica');
-
-  assert.equal(snapshot.run?.status, 'READY');
-  assert.equal(snapshot.current?.source.sourceId, 'guanyijia_semantica_demo');
-  assert.equal(snapshot.nextAction.type, 'RESOLVE_CONFLICT');
-  assert.equal(snapshot.currentConflict?.conflictId, 'gyj-conflict-debt-schema');
+  await assert.rejects(
+    () => runtime.execute(command(
+      'COMPLETE_CURRENT_DOCUMENT_REVIEW', suggestionResolved.run!.revision, 'immediate-gate:complete-github',
+    )),
+    /请先保存当前来源的正式差异/u,
+  );
+  await assert.rejects(
+    () => runtime.execute(command(
+      'READ_NEXT_SOURCE', suggestionResolved.run!.revision, 'immediate-gate:skip-github',
+    )),
+    /请先保存当前来源的正式差异/u,
+  );
+  assert.equal(suggestionResolved.currentConflict?.conflictId, 'gyj-conflict-debt-schema');
 });
 
-test('READY 状态按稳定顺序预览并保存延后差异后进入交付阶段', async () => {
+test('所有正式差异均在所属来源审阅前保存后才可进入交付阶段', async () => {
   const { runtime } = fixture();
-  let snapshot = await runtime.execute(command('START_RUN', 0, 'deferred-resolution:start'));
-  const readAndReview = async (source: string) => {
-    const read = await runtime.execute(command('READ_NEXT_SOURCE', snapshot.run!.revision, `deferred-resolution:read:${source}`));
-    const scriptedDecision = source === 'github'
-      ? await runtime.execute({
-        type: 'DECIDE_SCRIPTED_REVIEW_EDIT', commandId: `deferred-resolution:keep-scripted:${source}`,
-        expectedRevision: read.run!.revision, actorUserId: 'user-author',
-        editId: 'scripted:github:clarify-negative-stock', decision: 'KEEP_CURRENT',
-      })
-      : read;
-    snapshot = await runtime.execute(command(
-      'COMPLETE_CURRENT_DOCUMENT_REVIEW', scriptedDecision.run!.revision, `deferred-resolution:review:${source}`,
-    ));
-  };
-  const resolve = async (
-    conflictId: string,
-    strategy: 'KEEP_CURRENT' | 'MERGE' | 'DEFER_AS_GAP',
-    reason: string,
-  ) => {
-    const preview = await runtime.previewCurrentConflict({
-      runId: snapshot.run!.runId,
-      conflictId,
-      strategy,
-    });
-    snapshot = await runtime.execute({
-      type: 'RESOLVE_CURRENT_CONFLICT',
-      commandId: `deferred-resolution:resolve:${conflictId}`,
-      expectedRevision: snapshot.run!.revision,
-      actorUserId: 'user-author',
-      conflictId,
-      strategy,
-      reason,
-      expectedHunkSha256: preview.hunk.hunkSha256,
-    });
-  };
-
-  await readAndReview('mysql');
-  await readAndReview('github');
-  await readAndReview('official');
-  await readAndReview('policy');
-  await readAndReview('semantica');
-
-  await resolve('gyj-conflict-debt-schema', 'KEEP_CURRENT', '部署库作为当前工作标准，源码差异只作溯源。');
-  assert.equal(snapshot.currentConflict?.conflictId, 'gyj-conflict-negative-stock');
-  await resolve('gyj-conflict-negative-stock', 'MERGE', '保留按租户配置实现并登记统一制度尚未落地。');
-  assert.equal(snapshot.currentConflict?.conflictId, 'gyj-conflict-status-nine');
-  await resolve('gyj-conflict-status-nine', 'DEFER_AS_GAP', '状态九业务含义尚未得到正式确认。');
-
-  assert.equal(snapshot.run?.status, 'READY_FOR_OUTPUT');
-  assert.equal(snapshot.currentConflict, undefined);
+  const ready = await advanceToReadyForOutput(runtime);
+  assert.equal(ready.run?.status, 'READY_FOR_OUTPUT');
+  assert.equal(ready.currentConflict, undefined);
+  assert.deepEqual(
+    ready.run?.timeline.filter((event) => event.type === 'CONFLICT_RESOLVED').map((event) => event.sourceId),
+    ['guanyijia_github', 'guanyijia_demo_policy', 'guanyijia_demo_policy'],
+  );
 });
 
 test('五源主演示按GitHub debt、Policy两项与Semantica只佐证的时点到达READY_FOR_OUTPUT', async () => {
   const { runtime, metadataStorage, contentStore } = fixture();
   let snapshot = await runtime.execute(command('START_RUN', 0, 'flow:start'));
-  const readAndReview = async (source: string) => {
+  const read = async (source: string) => {
     const read = await runtime.execute(command('READ_NEXT_SOURCE', snapshot.run!.revision, `flow:read:${source}`));
-    const scriptedDecision = source === 'github'
+    snapshot = source === 'github'
       ? await runtime.execute({
         type: 'DECIDE_SCRIPTED_REVIEW_EDIT', commandId: `flow:keep-scripted:${source}`,
         expectedRevision: read.run!.revision, actorUserId: 'user-author',
         editId: 'scripted:github:clarify-negative-stock', decision: 'KEEP_CURRENT',
       })
       : read;
+  };
+  const review = async (source: string) => {
     snapshot = await runtime.execute(command(
-      'COMPLETE_CURRENT_DOCUMENT_REVIEW', scriptedDecision.run!.revision, `flow:review:${source}`,
+      'COMPLETE_CURRENT_DOCUMENT_REVIEW', snapshot.run!.revision, `flow:review:${source}`,
     ));
   };
   const resolve = async (
@@ -1259,18 +1395,21 @@ test('五源主演示按GitHub debt、Policy两项与Semantica只佐证的时点
     return preview;
   };
 
-  await readAndReview('mysql');
-  await readAndReview('github');
+  await read('mysql');
+  await review('mysql');
+  await read('github');
   assert.equal(snapshot.currentConflict?.conflictId, 'gyj-conflict-debt-schema');
   await resolve('gyj-conflict-debt-schema', 'KEEP_CURRENT', '部署库作为当前工作标准，源码差异只作溯源。');
-  await readAndReview('official');
+  await review('github');
+  await read('official');
+  await review('official');
   assert.equal(snapshot.run?.status, 'READY', '官方文档不能引入新冲突');
-  await readAndReview('policy');
+  await read('policy');
   assert.equal(snapshot.currentConflict?.conflictId, 'gyj-conflict-negative-stock');
   const negative = await resolve(
     'gyj-conflict-negative-stock', 'MERGE', '保留按租户配置实现并登记统一制度尚未落地。',
   );
-  assert.equal(snapshot.run?.status, 'CONFLICT_BLOCKED');
+  assert.equal(snapshot.run?.status, 'REVIEWING_DOCUMENT');
   assert.equal(snapshot.currentConflict?.conflictId, 'gyj-conflict-status-nine');
   assert.deepEqual(negative.result.blocks.map((block) => block.stableCode), [
     'rule.negative_stock', 'resolution.gap.negative_stock_policy_not_implemented',
@@ -1278,7 +1417,7 @@ test('五源主演示按GitHub debt、Policy两项与Semantica只佐证的时点
   const status = await resolve(
     'gyj-conflict-status-nine', 'DEFER_AS_GAP', '状态九业务含义尚未得到正式确认。',
   );
-  assert.equal(snapshot.run?.status, 'READY');
+  assert.equal(snapshot.run?.status, 'REVIEWING_DOCUMENT');
   assert.deepEqual(
     snapshot.timeline
       .filter((event) => event.kind === 'CONFLICT_RESOLVED')
@@ -1308,7 +1447,9 @@ test('五源主演示按GitHub debt、Policy两项与Semantica只佐证的时点
     { objectId: 'audit_status', disposition: 'CANDIDATE_ONLY' },
   ]);
 
-  await readAndReview('semantica');
+  await review('policy');
+  await read('semantica');
+  await review('semantica');
   assert.equal(snapshot.run?.status, 'READY_FOR_OUTPUT');
   assert.equal(snapshot.resolutions.length, 3);
   assert.deepEqual(snapshot.run?.timeline
@@ -1358,16 +1499,25 @@ test('五源主演示按GitHub debt、Policy两项与Semantica只佐证的时点
 
   const reorderedState = JSON.parse(raw) as typeof state;
   const reorderedTimeline = reorderedState.runs[0]!.timeline;
+  const githubConflictEvents = reorderedTimeline.filter((event) => (
+    event.sourceId === 'guanyijia_github'
+    && (event.type === 'CONFLICT_FOUND' || event.type === 'CONFLICT_RESOLVED')
+  ));
+  assert.deepEqual(githubConflictEvents.map((event) => event.type), [
+    'CONFLICT_FOUND', 'CONFLICT_RESOLVED',
+  ]);
+  for (let index = reorderedTimeline.length - 1; index >= 0; index -= 1) {
+    const event = reorderedTimeline[index]!;
+    if (event.sourceId === 'guanyijia_github'
+      && (event.type === 'CONFLICT_FOUND' || event.type === 'CONFLICT_RESOLVED')) {
+      reorderedTimeline.splice(index, 1);
+    }
+  }
   const reviewedIndex = reorderedTimeline.findIndex((event) => (
     event.type === 'DOCUMENT_REVIEWED' && event.sourceId === 'guanyijia_github'
   ));
-  const foundIndex = reorderedTimeline.findIndex((event) => (
-    event.type === 'CONFLICT_FOUND' && event.sourceId === 'guanyijia_github'
-  ));
-  assert.ok(foundIndex >= 0 && reviewedIndex > foundIndex);
-  [reorderedTimeline[reviewedIndex], reorderedTimeline[foundIndex]] = [
-    reorderedTimeline[foundIndex]!, reorderedTimeline[reviewedIndex]!,
-  ];
+  assert.ok(reviewedIndex >= 0);
+  reorderedTimeline.splice(reviewedIndex + 1, 0, ...githubConflictEvents);
   reorderedTimeline.forEach((event, index) => {
     event.sequence = index + 1;
     event.eventId = `${reorderedState.runs[0]!.runId}:event:${index + 1}`;
@@ -1678,7 +1828,6 @@ test('GitHub scripted clarification survives to the later negative-stock conflic
   assert.equal(restored.current?.compilation?.blocks.find((block) => (
     block.blockId === 'gyj-block:rule.negative_stock'
   ))?.label, '租户级负库存控制（人工确认）');
-  snapshot = await runtime.execute(command('COMPLETE_CURRENT_DOCUMENT_REVIEW', snapshot.run!.revision, 'scripted-github:complete:github'));
   const debtPreview = await runtime.previewCurrentConflict({
     runId: snapshot.run!.runId, conflictId: 'gyj-conflict-debt-schema', strategy: 'KEEP_CURRENT',
   });
@@ -1688,10 +1837,13 @@ test('GitHub scripted clarification survives to the later negative-stock conflic
     conflictId: 'gyj-conflict-debt-schema', strategy: 'KEEP_CURRENT',
     reason: '当前部署结构仍为审阅基线。', expectedHunkSha256: debtPreview.hunk.hunkSha256,
   });
+  snapshot = await runtime.execute(command(
+    'COMPLETE_CURRENT_DOCUMENT_REVIEW', snapshot.run!.revision, 'scripted-github:complete:github',
+  ));
   const official = await runtime.execute(command('READ_NEXT_SOURCE', snapshot.run!.revision, 'scripted-github:read:official'));
   snapshot = await runtime.execute(command('COMPLETE_CURRENT_DOCUMENT_REVIEW', official.run!.revision, 'scripted-github:complete:official'));
   const policy = await runtime.execute(command('READ_NEXT_SOURCE', snapshot.run!.revision, 'scripted-github:read:policy'));
-  snapshot = await runtime.execute(command('COMPLETE_CURRENT_DOCUMENT_REVIEW', policy.run!.revision, 'scripted-github:complete:policy'));
+  snapshot = policy;
 
   assert.equal(snapshot.currentConflict?.conflictId, 'gyj-conflict-negative-stock');
   const negativePreview = await runtime.previewCurrentConflict({

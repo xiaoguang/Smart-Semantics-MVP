@@ -79,3 +79,19 @@ test('a smooth programmatic workflow scroll keeps its guard beyond the first ani
     /window\.requestAnimationFrame\(\(\) => \{\s*programmaticScrollRef\.current = false;/,
   );
 });
+
+test('来源过程使用单一扁平 disclosure，而不是分离的展开阶段控件或竖向时间线', () => {
+  assert.match(
+    workflowSource,
+    /className=\{`guanyijia-source-process-disclosure[^`]*`\}[\s\S]*?aria-expanded=\{sourceStagesExpanded\}/u,
+    'source title row must be the only disclosure control',
+  );
+  assert.match(
+    workflowSource,
+    /projectVisibleBusinessJourneyStages\(item\.stages\)/u,
+    'the component must not render future stages before they are reached',
+  );
+  assert.doesNotMatch(workflowSource, /展开阶段|收起阶段|guanyijia-timeline-stage-toggle/u);
+  assert.doesNotMatch(inspectorStyles, /\.guanyijia-timeline-item::before/u);
+  assert.match(inspectorStyles, /\.guanyijia-source-process-disclosure\s*\{/u);
+});

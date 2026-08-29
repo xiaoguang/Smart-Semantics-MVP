@@ -724,10 +724,6 @@ function firstUnresolvedConflict(run: StandardizationRun) {
   return undefined;
 }
 
-function sourceHasConflictFound(run: StandardizationRun, sourceId: string) {
-  return run.timeline.some((event) => event.type === 'CONFLICT_FOUND' && event.sourceId === sourceId);
-}
-
 const resolutionStrategies = new Set([
   'KEEP_CURRENT', 'ACCEPT_INCOMING', 'MERGE', 'DEFER_AS_GAP',
 ]);
@@ -1858,6 +1854,9 @@ export function createStandardizationRunRuntime(input: {
         }
 
         case 'START_NEXT_SOURCE': {
+          if (firstUnresolvedConflict(run)) {
+            throw new Error('请先保存当前来源的正式差异');
+          }
           if (run.status !== 'READY' && run.status !== 'CONFLICT_BLOCKED') {
             throw new Error('当前来源文档尚未完成审阅，不能读取下一来源');
           }
@@ -2032,26 +2031,18 @@ export function createStandardizationRunRuntime(input: {
           if (ready.sourceId !== command.sourceId) {
             throw new Error(`当前待审阅的来源不是 ${sourceLabel(run, command.sourceId)}`);
           }
-          const eventValues: Parameters<typeof appendEvents>[2] = [{
-            type: 'DOCUMENT_REVIEWED', sourceId: ready.sourceId,
-            payload: JSON.stringify({ documentId: ready.documentId, documentRevision: ready.documentRevision }),
-          }];
           const hasUnresolvedConflict = ready.introducedConflictIds.some((conflictId) => (
             !ready.resolvedConflictIds.includes(conflictId)
           ));
           if (hasUnresolvedConflict) {
-            ready.status = 'CONFLICT_BLOCKED';
-            run.status = 'CONFLICT_BLOCKED';
-            if (!sourceHasConflictFound(run, ready.sourceId)) {
-              eventValues.push({
-                type: 'CONFLICT_FOUND', sourceId: ready.sourceId,
-                payload: JSON.stringify({ conflictIds: ready.introducedConflictIds }),
-              });
-            }
-          } else {
-            ready.status = 'ALIGNED';
-            run.status = nextRunStatus(run);
+            throw new Error('请先保存当前来源的正式差异');
           }
+          const eventValues: Parameters<typeof appendEvents>[2] = [{
+            type: 'DOCUMENT_REVIEWED', sourceId: ready.sourceId,
+            payload: JSON.stringify({ documentId: ready.documentId, documentRevision: ready.documentRevision }),
+          }];
+          ready.status = 'ALIGNED';
+          run.status = nextRunStatus(run);
           await appendEvents(run, command.actor, eventValues);
           return finishCommand(snapshot, state, current.index, run, command);
         }

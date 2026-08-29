@@ -55,7 +55,10 @@ async function expectReviewRowsAccessible(page: Page, inspectorOverlay = false) 
     await expect(workflowRoot).toBeVisible();
   }
   const timeline = workflowRoot.getByRole('list', { name: '标准化运行时间线' });
-  const rows = timeline.getByRole('listitem');
+  // The source journey now owns nested read/analyse/organise/review stage
+  // lists. aria-setsize describes the timeline's top-level checkpoints, not
+  // those nested process details.
+  const rows = timeline.locator(':scope > li.guanyijia-source-process-item, :scope > li.guanyijia-source-process-result');
   const total = await rows.first().getAttribute('aria-setsize');
   expect(Number(total)).toBeGreaterThanOrEqual(await rows.count());
   await expect(rows.first()).toHaveAttribute('aria-posinset', '1');
@@ -163,7 +166,7 @@ async function readAndReviewSource(
   page: Page,
   sourceName: keyof typeof sourceReviewTitles,
   mobile: boolean,
-  hasNextSource: boolean,
+  nextSourceName?: keyof typeof sourceReviewTitles,
 ): Promise<Locator> {
   const heading = page.locator('header.guanyijia-document-review-header').getByRole('heading', {
     name: sourceReviewTitles[sourceName], exact: true,
@@ -180,19 +183,37 @@ async function readAndReviewSource(
   await expect(document.getByRole('tab', { name: '标准化文档', exact: true })).toBeVisible();
   await expect(document.getByRole('tab', { name: '依据追踪', exact: true })).toHaveCount(0);
   const retainCurrent = document.getByRole('button', { name: '保留当前结论', exact: true });
-  if (await retainCurrent.count()) await retainCurrent.click();
+  if (await retainCurrent.count()) {
+    await retainCurrent.click();
+    // Saving a suggestion recalculates the document projection and promotes
+    // the first formal conflict.  Wait for that durable transition before
+    // asserting the newly actionable conflict card.
+    await expect(retainCurrent).toHaveCount(0, { timeout: 30_000 });
+  }
+  const matters = document.getByRole('region', { name: '来源差异与比较', exact: true });
+  if (sourceName === 'GitHub代码仓库') {
+    const debt = matters.locator('[data-review-matter="DEBT_FIELDS"]');
+    await expect(debt.getByRole('button', { name: '处理该项', exact: true })).toBeVisible();
+    await debt.getByRole('button', { name: '处理该项', exact: true }).click();
+    await finishConflict(page, mobile, '欠款字段结构冲突', '保留当前结论');
+  }
+  if (sourceName === 'ERP管理制度（演示）') {
+    const negativeStock = matters.locator('[data-review-matter="NEGATIVE_STOCK"]');
+    await expect(negativeStock.getByRole('button', { name: '处理该项', exact: true })).toBeVisible();
+    await negativeStock.getByRole('button', { name: '处理该项', exact: true }).click();
+    await finishConflict(page, mobile, '负库存制度与实现冲突', '登记为缺口');
+    await finishConflict(page, mobile, '状态 9 业务含义冲突', '登记为缺口');
+  }
   await document.getByRole('button', { name: /^完成.+审阅$/u }).click();
-  await expect(document).toBeVisible();
-  if (hasNextSource) {
-    await expect(document.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeVisible();
-  } else {
-    await expect(document.getByRole('button', { name: '审阅下一个来源', exact: true })).toHaveCount(0);
+  if (nextSourceName) {
+    const nextHeading = page.locator('header.guanyijia-document-review-header').getByRole('heading', {
+      name: sourceReviewTitles[nextSourceName], exact: true,
+    }).last();
+    await expect(nextHeading).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('button', { name: '审阅下一个来源', exact: true })).toHaveCount(0);
+    return nextHeading.locator('xpath=ancestor::section[contains(@class,"guanyijia-document-review")]');
   }
   return document;
-}
-
-async function readNextSource(document: Locator) {
-  await document.getByRole('button', { name: '审阅下一个来源', exact: true }).click();
 }
 
 async function retainMysqlScriptedReview(document: Locator) {
@@ -207,8 +228,6 @@ async function enterGithubDocument(page: Page) {
   const mysql = page.locator('section.guanyijia-document-review').last();
   await retainMysqlScriptedReview(mysql);
   await mysql.getByRole('button', { name: '完成数据库审阅' }).click();
-  await expect(mysql.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeVisible();
-  await readNextSource(mysql);
   const github = page.locator('section.guanyijia-document-review').last();
   await expect(github.getByRole('heading', {
     name: sourceReviewTitles.GitHub代码仓库,
@@ -230,33 +249,31 @@ async function exerciseCompleteStateMatrix(
   await expectSingleWorkflowPrimary(page);
   await retainMysqlScriptedReview(mysql);
   await mysql.getByRole('button', { name: '完成数据库审阅' }).click();
-  await expect(mysql).toBeVisible();
-  await readNextSource(mysql);
-
-  const github = await readAndReviewSource(page, 'GitHub代码仓库', mobile, true);
-  await readNextSource(github);
-  const official = await readAndReviewSource(page, '官方业务文档', mobile, true);
-  await readNextSource(official);
-  const policy = await readAndReviewSource(page, 'ERP管理制度（演示）', mobile, true);
-  await readNextSource(policy);
-  const semantica = await readAndReviewSource(page, '术语图（派生）', mobile, false);
-  await semantica.getByRole('button', { name: '返回时间线', exact: true }).click();
-
-  await finishConflict(page, mobile, '欠款字段结构冲突', '保留当前结论');
-  await finishConflict(page, mobile, '负库存制度与实现冲突', '登记为缺口');
-  await finishConflict(page, mobile, '状态 9 业务含义冲突', '登记为缺口');
+  await readAndReviewSource(page, 'GitHub代码仓库', mobile, '官方业务文档');
+  await readAndReviewSource(page, '官方业务文档', mobile, 'ERP管理制度（演示）');
+  await readAndReviewSource(page, 'ERP管理制度（演示）', mobile, '术语图（派生）');
+  await readAndReviewSource(page, '术语图（派生）', mobile);
 
   const deliverable = page.getByLabel('标准化结果定版');
   await expect(deliverable).toBeVisible();
   if (mobile) await expect(deliverable).toHaveRole('dialog');
-  await deliverable.getByRole('button', { name: '生成标准化结果' }).click();
-  await expect(deliverable.getByRole('button', { name: '确认结果并定版' })).toBeVisible();
+  // Building the immutable five-source preview reads every reviewed V6
+  // section before the final primary can be enabled.  On overlay/full-screen
+  // viewports this may outlive Playwright's default expectation window.
+  await expect(deliverable.getByRole('button', { name: '确认并定版' })).toBeVisible({ timeout: 30_000 });
   await expect(deliverable.getByRole('button', { name: '提交独立审核' })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
   await expectSingleWorkflowPrimary(page);
-  await deliverable.getByRole('button', { name: '确认结果并定版' }).click();
-  await expect(deliverable.getByText('标准化结果已定版')).toBeVisible();
-  await expect(deliverable.getByText(/审批意见|独立审核|审核人/u)).toHaveCount(0);
+  await deliverable.getByRole('button', { name: '确认并定版' }).click();
+  // One gesture performs the intentionally serial generate-and-freeze path
+  // for the complete five-source document.  It is not an instantaneous UI
+  // transition, so allow the durable work to finish rather than observing the
+  // valid intermediate "待定版" state after Playwright's default five seconds.
+  await expect(deliverable.getByText('标准化结果已定版')).toBeVisible({ timeout: 30_000 });
+  // The rich final document preserves complete reviewed source text, which
+  // may legitimately mention approval roles. Assert the retired workflow
+  // controls instead of treating source prose as a lifecycle UI element.
+  await expect(deliverable.getByRole('button', { name: /提交独立审核|确认结果并定版/u })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
   await expectNoSeriousAxe(page);
 }
@@ -353,9 +370,9 @@ test('冲突决定切换保持位置并显示当前选择的业务 Git 预览', 
   const github = await enterGithubDocument(page);
   const retainCurrent = github.getByRole('button', { name: '保留当前结论', exact: true });
   if (await retainCurrent.count()) await retainCurrent.click();
-  await github.getByRole('button', { name: /^完成.+审阅$/u }).click();
-  await expect(github.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '审阅欠款字段结构冲突', exact: true }).click();
+  await github.getByRole('region', { name: '来源差异与比较', exact: true })
+    .locator('[data-review-matter="DEBT_FIELDS"]')
+    .getByRole('button', { name: '处理该项', exact: true }).click();
   const conflict = page.getByLabel('当前来源差异');
   await expect(conflict.getByRole('heading', { name: '欠款字段结构冲突', exact: true })).toBeVisible();
   const scroll = page.locator('.guanyijia-workbench-scroll');
@@ -448,27 +465,16 @@ test('390 手机覆盖时间线、文档、冲突、助手Patch、交付物与�
   const mysql = await openDocumentAndExerciseAssistant(page, true);
   await retainMysqlScriptedReview(mysql);
   await mysql.getByRole('button', { name: '完成数据库审阅' }).click();
-  await expect(mysql).toBeVisible();
-  await readNextSource(mysql);
-
-  const github = await readAndReviewSource(page, 'GitHub代码仓库', true, true);
-  await readNextSource(github);
-  const official = await readAndReviewSource(page, '官方业务文档', true, true);
-  await readNextSource(official);
-  const policy = await readAndReviewSource(page, 'ERP管理制度（演示）', true, true);
-  await readNextSource(policy);
-  const semantica = await readAndReviewSource(page, '术语图（派生）', true, false);
-  await semantica.getByRole('button', { name: '返回时间线', exact: true }).click();
-  await finishConflict(page, true, '欠款字段结构冲突', '保留当前结论');
-  await finishConflict(page, true, '负库存制度与实现冲突', '登记为缺口');
-  await finishConflict(page, true, '状态 9 业务含义冲突', '登记为缺口');
+  await readAndReviewSource(page, 'GitHub代码仓库', true, '官方业务文档');
+  await readAndReviewSource(page, '官方业务文档', true, 'ERP管理制度（演示）');
+  await readAndReviewSource(page, 'ERP管理制度（演示）', true, '术语图（派生）');
+  await readAndReviewSource(page, '术语图（派生）', true);
   const deliverable = page.getByRole('dialog', { name: '标准化结果定版' });
   await expect(deliverable).toBeVisible();
-  await deliverable.getByRole('button', { name: '生成标准化结果' }).click();
-  await expect(deliverable.getByRole('button', { name: '确认结果并定版' })).toBeVisible();
+  await expect(deliverable.getByRole('button', { name: '确认并定版' })).toBeVisible();
   await expect(deliverable.locator('[data-workflow-primary="true"]')).toHaveCount(1);
-  await deliverable.getByRole('button', { name: '确认结果并定版' }).click();
-  await expect(deliverable.getByText('标准化结果已定版')).toBeVisible();
+  await deliverable.getByRole('button', { name: '确认并定版' }).click();
+  await expect(deliverable.getByText('标准化结果已定版')).toBeVisible({ timeout: 30_000 });
   await deliverable.getByRole('button', { name: '返回时间线' }).click();
   await expect(deliverable).toBeHidden();
   await expectNoHorizontalOverflow(page);

@@ -131,10 +131,13 @@ export default function StandardizationFactsInspector({
       <Button id="guanyijia-facts-inspector:close" type="text" aria-label={closeLabel} icon={<CloseOutlined />} onClick={onClose} />
     </div>}
     <section className="guanyijia-source-list" aria-label="资料来源列表">
-      {sources.map((source) => <button type="button" onClick={() => onSelectSource?.(source.sourceId)} className={`guanyijia-source-list-row ${source.sourceId === (selectedSourceId ?? model?.sourceId) ? 'selected' : ''}`} key={source.sourceId}>
+      {sources.map((source) => <button type="button" onClick={() => onSelectSource?.(source.sourceId)} className={`guanyijia-source-list-row status-${source.status.toLowerCase()} ${source.sourceId === (selectedSourceId ?? model?.sourceId) ? 'selected' : ''}`} key={source.sourceId}>
         <span className="guanyijia-source-status" aria-hidden="true" />
         <strong>{displaySourceName(source.sourceId, source.sourceName)}</strong>
-        <small>{source.status === 'ALIGNED' ? '已审阅' : source.status === 'DOCUMENT_READY' ? '待审阅' : source.status === 'CONFLICT_BLOCKED' ? '存在差异' : source.status === 'READING' ? '读取中' : '待读取'}</small>
+        <small>{source.status === 'ALIGNED' || source.status === 'REVIEWED' ? '已审阅'
+          : source.status === 'DOCUMENT_READY' ? '待审阅'
+            : source.status === 'CONFLICT_BLOCKED' ? '审阅中 · 有待保存差异'
+              : source.status === 'READING' ? '读取中' : '待读取'}</small>
       </button>)}
     </section>
     {workflow && <section className="guanyijia-workflow-panel" aria-label="标准化流程">

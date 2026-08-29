@@ -41,6 +41,7 @@ import type {
   ZeroDeltaReport,
 } from './types.ts';
 import type { StandardizationDeliverableMode } from './types.ts';
+import type { ReviewedSourceDocument } from './reviewed-source-documents.ts';
 import {
   assertModelingEligibilityProjection,
   projectModelingEligibility,
@@ -74,6 +75,7 @@ type PreviewBuild = {
   baseline: ProtectedBaseline;
   resolutions: ConflictResolutionArtifact[];
   sourceEntries: LoadedSourceEntry[];
+  reviewedSourceDocuments?: ReviewedSourceDocument[];
   governanceAppendix: GovernanceEvidenceAppendix;
 };
 
@@ -522,6 +524,42 @@ export function createStandardizationDeliverableRuntime(
       return { source, document, sections, assertions, blocks, markdown };
     }));
   };
+  const reviewedSourceDocumentsFor = async (
+    run: StandardizationRun,
+    sourceEntries: LoadedSourceEntry[],
+  ): Promise<ReviewedSourceDocument[] | undefined> => {
+    if (!input.reviewedSourceDocuments) {
+      if (run.scenarioKey === 'guanyijia-five-source-v1') {
+        throw new Error('管伊佳完整合并文档必须读取已审阅的 V6 来源文档');
+      }
+      return undefined;
+    }
+    const reviewed = await input.reviewedSourceDocuments.readForRun(run);
+    if (reviewed.length !== sourceEntries.length) {
+      throw new Error('完整审阅来源文档数量与本次运行来源不一致');
+    }
+    for (const [index, document] of reviewed.entries()) {
+      const entry = sourceEntries[index];
+      if (!entry || document.order !== index + 1
+        || document.sourceId !== entry.source.sourceId
+        || document.sourceName !== entry.source.sourceName
+        || document.documentId !== entry.document.documentId
+        || document.documentRevision !== entry.document.revision
+        || !document.contentSnapshotId.trim()
+        || !document.markdown.trim()
+        || document.sections.length !== standardSectionOrder.length) {
+        throw new Error('完整审阅来源文档身份与本次运行不一致');
+      }
+      for (const [sectionIndex, section] of document.sections.entries()) {
+        const expected = standardSectionOrder[sectionIndex];
+        if (!expected || section.section !== expected.key || section.heading !== expected.heading
+          || !section.markdown.trim()) {
+          throw new Error('完整审阅来源文档缺少固定章节或章节顺序错误');
+        }
+      }
+    }
+    return reviewed;
+  };
   const sourceManifestFor = (
     run: StandardizationRun,
     sourceEntries: LoadedSourceEntry[],
@@ -551,13 +589,22 @@ export function createStandardizationDeliverableRuntime(
     run: StandardizationRun,
     sourceEntries: LoadedSourceEntry[],
     resolutions: ConflictResolutionArtifact[],
+    reviewedSourceDocuments?: readonly ReviewedSourceDocument[],
   ): MergedStandardizationDocument => {
     const sections = Object.fromEntries(standardSectionOrder.map(({ key }) => {
-      const sourceParts = sourceEntries.map(({ source, document, sections: sourceSections }) => [
-        `### 来源：${source.sourceName}`,
-        `> 本节依据本次已读取的 ${document.sourceName} 资料整理。`,
-        sourceSections[key],
-      ].join('\n'));
+      const sourceParts = sourceEntries.map(({ source, document, sections: sourceSections }, index) => {
+        const reviewed = reviewedSourceDocuments?.[index];
+        const richSection = reviewed?.sections.find((section) => section.section === key);
+        if (reviewed && !richSection) throw new Error(`完整审阅来源文档缺少${key}章节`);
+        return richSection ? [
+          `### 来源${index + 1}：${source.sourceName}`,
+          richSection.markdown,
+        ].join('\n\n') : [
+          `### 来源：${source.sourceName}`,
+          `> 本节依据本次已读取的 ${document.sourceName} 资料整理。`,
+          sourceSections[key],
+        ].join('\n');
+      });
       const decisions = resolutions.map((resolution) => decisionSection(resolution, key)).filter(Boolean);
       if (key === 'UNRESOLVED') {
         decisions.push('> 资料缺口：当前库存缺少可信业务生效时间字段。\n> AI 建模处理：不生成当前库存时点指标或 SLA。');
@@ -661,18 +708,25 @@ export function createStandardizationDeliverableRuntime(
   const reviewProjectionFor = (
     sourceEntries: LoadedSourceEntry[],
     resolutions: ConflictResolutionArtifact[],
+    reviewedSourceDocuments?: readonly ReviewedSourceDocument[],
   ): StandardizationDeliverablePreview['reviewProjection'] => ({
     chapters: standardSectionOrder.map(({ key, heading }) => ({
       section: key,
       heading,
-      sources: sourceEntries.map(({ source, sections, assertions, blocks }, index) => ({
-        order: index + 1,
-        sourceId: source.sourceId,
-        sourceName: source.sourceName,
-        markdown: sections[key],
-        assertions: structuredClone(assertions.filter((assertion) => assertion.section === key)),
-        blocks: structuredClone(blocks.filter((block) => block.section === key)),
-      })),
+      sources: sourceEntries.map(({ source, sections, assertions, blocks }, index) => {
+        const reviewed = reviewedSourceDocuments?.[index];
+        const richSection = reviewed?.sections.find((section) => section.section === key);
+        if (reviewed && !richSection) throw new Error(`完整审阅来源文档缺少${key}章节`);
+        return {
+          order: index + 1,
+          sourceId: source.sourceId,
+          sourceName: source.sourceName,
+          markdown: richSection?.markdown ?? sections[key],
+          assertions: structuredClone(assertions.filter((assertion) => assertion.section === key)),
+          blocks: structuredClone(blocks.filter((block) => block.section === key)),
+          changes: structuredClone((reviewed?.changes ?? []).filter((change) => change.section === key)),
+        };
+      }),
     })),
     supplements: reviewSupplementsFor(sourceEntries, resolutions),
     decisions: resolutions.map((resolution) => ({
@@ -689,14 +743,37 @@ export function createStandardizationDeliverableRuntime(
     validateBaseline(baseline, run);
     const resolutions = validateResolutions(run, await input.conflictResolutions.list(run));
     const sourceEntries = await readSourceEntries(run, baseline);
+    const reviewedSourceDocuments = await reviewedSourceDocumentsFor(run, sourceEntries);
     const sourceManifest = sourceManifestFor(run, sourceEntries);
-    const mergedDocument = mergedDocumentFor(run, sourceEntries, resolutions);
+    const mergedDocument = mergedDocumentFor(run, sourceEntries, resolutions, reviewedSourceDocuments);
     const decisionManifest = decisionManifestFor(run, resolutions);
     const governanceAppendix = governanceAppendixFor(run.runId, sourceManifest, decisionManifest);
-    const reviewProjection = reviewProjectionFor(sourceEntries, resolutions);
+    const reviewProjection = reviewProjectionFor(sourceEntries, resolutions, reviewedSourceDocuments);
+    const reviewedSourceManifest = (reviewedSourceDocuments ?? sourceEntries.map(({ source, document }, index) => ({
+      sourceId: source.sourceId,
+      sourceName: source.sourceName,
+      order: index + 1,
+      contentSnapshotId: document.sourceSnapshotId,
+      documentId: document.documentId,
+      documentRevision: document.revision,
+      originalMarkdownSha256: document.markdownSha256,
+      reviewedMarkdownSha256: document.markdownSha256,
+    }))).map((document) => ({
+      sourceId: document.sourceId,
+      sourceName: document.sourceName,
+      order: document.order,
+      contentSnapshotId: document.contentSnapshotId,
+      documentId: document.documentId,
+      documentRevision: document.documentRevision,
+      originalMarkdownSha256: document.originalMarkdownSha256,
+      reviewedMarkdownSha256: document.reviewedMarkdownSha256,
+    }));
+    const changeManifest = reviewedSourceDocuments?.flatMap((document) => document.changes) ?? [];
     const previewSha256 = contentReferenceFor({
       sourceManifest,
+      reviewedSourceManifest,
       decisionManifest,
+      changeManifest,
       mergedDocument,
       reviewProjection,
     });
@@ -708,13 +785,16 @@ export function createStandardizationDeliverableRuntime(
         previewSha256,
         mergedDocumentRef: contentReferenceFor(mergedDocument),
         sourceManifest,
+        reviewedSourceManifest,
         decisionManifest,
+        changeManifest,
         mergedDocument,
         reviewProjection,
       },
       baseline,
       resolutions,
       sourceEntries,
+      ...(reviewedSourceDocuments ? { reviewedSourceDocuments } : {}),
       governanceAppendix,
     };
   };
@@ -851,11 +931,12 @@ export function createStandardizationDeliverableRuntime(
     ]);
     const resolutions = validateResolutions(run, await input.conflictResolutions.list(run));
     const sourceEntries = await readSourceEntries(run, baseline);
+    const reviewedSourceDocuments = await reviewedSourceDocumentsFor(run, sourceEntries);
     const expectedManifest = sourceManifestFor(run, sourceEntries);
     if (canonicalModelingJson(manifest) !== canonicalModelingJson(expectedManifest)) {
       throw new Error('来源清单没有回链当前持久化revision');
     }
-    const expectedMerged = mergedDocumentFor(run, sourceEntries, resolutions);
+    const expectedMerged = mergedDocumentFor(run, sourceEntries, resolutions, reviewedSourceDocuments);
     if (canonicalModelingJson(merged) !== canonicalModelingJson(expectedMerged)) {
       throw new Error('九段合并文档不是持久化来源 revision 与 CP5 决定的唯一投影');
     }

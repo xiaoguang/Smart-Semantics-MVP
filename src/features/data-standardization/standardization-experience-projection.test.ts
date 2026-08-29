@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   locateSourceCheckpoint,
   projectBusinessJourneyTimeline,
+  projectVisibleBusinessJourneyStages,
   projectStandardizationExperience,
   type SourceLifecycleEvent,
   type StandardizationSource,
@@ -74,11 +75,12 @@ test('来源导航只定位右侧流程检查点，不打开来源文档', () =>
   });
 });
 
-test('业务流程只保留每个来源、每项差异和一个结果检查点', () => {
+test('业务流程把差异嵌入其来源的审阅阶段，而不在流程末尾另建差异队列', () => {
   const journey = projectBusinessJourneyTimeline({
     sources: sources.map((source, index) => ({
       ...source,
       status: index === 0 ? 'DOCUMENT_READY' as const : 'PENDING' as const,
+      ...(index === 0 ? { introducedConflictIds: ['debt'], resolvedConflictIds: [] } : {}),
     })),
     timeline: [
       {
@@ -105,12 +107,19 @@ test('业务流程只保留每个来源、每项差异和一个结果检查点',
     'source:guanyijia_official_docs',
     'source:guanyijia_policy',
     'source:guanyijia_semantica',
-    'finding:debt',
     'result:standardization',
   ]);
   assert.equal(journey.find((item) => item.checkpointId === 'source:guanyijia_mysql')?.action
     && (journey.find((item) => item.checkpointId === 'source:guanyijia_mysql')!.action as { type: string }).type, 'OPEN_DOCUMENT');
   assert.equal(journey.find((item) => item.checkpointId === 'source:guanyijia_github')?.action, undefined);
+  const mysql = journey.find((item) => item.checkpointId === 'source:guanyijia_mysql');
+  assert.deepEqual(mysql?.stages?.map((stage) => [stage.stage, stage.state]), [
+    ['READ', 'COMPLETE'], ['ANALYZE', 'COMPLETE'], ['ORGANIZE', 'COMPLETE'], ['REVIEW', 'ACTIVE'],
+  ]);
+  assert.deepEqual(mysql?.stages?.find((stage) => stage.stage === 'REVIEW')?.conflicts, [{
+    conflictId: 'debt', title: '欠款字段', state: 'ACTIVE', affectedObjects: [],
+    action: { type: 'OPEN_CONFLICT', conflictId: 'debt' },
+  }]);
 });
 
 test('已审阅的来源不会阻止流程定位到下一个待读取来源', () => {
@@ -125,5 +134,62 @@ test('已审阅的来源不会阻止流程定位到下一个待读取来源', ()
   assert.equal(
     journey.find((checkpoint) => checkpoint.state === 'CURRENT')?.checkpointId,
     'source:guanyijia_github',
+  );
+});
+
+test('真实读取阶段回执覆盖当前来源的默认阶段状态', () => {
+  const journey = projectBusinessJourneyTimeline({
+    sources: sources.map((source, index) => ({
+      ...source,
+      status: index === 0 ? 'READING' as const : 'PENDING' as const,
+      ...(index === 0 ? {
+        preparationStates: {
+          READ: 'COMPLETE' as const,
+          ANALYZE: 'ACTIVE' as const,
+          ORGANIZE: 'PENDING' as const,
+        },
+      } : {}),
+    })),
+    timeline: [],
+  });
+
+  assert.deepEqual(
+    journey.find((checkpoint) => checkpoint.checkpointId === 'source:guanyijia_mysql')?.stages
+      ?.map((stage) => [stage.stage, stage.state]),
+    [
+      ['READ', 'COMPLETE'],
+      ['ANALYZE', 'ACTIVE'],
+      ['ORGANIZE', 'PENDING'],
+      ['REVIEW', 'PENDING'],
+    ],
+  );
+});
+
+test('右侧来源过程只显示截至真实当前阶段的累计前缀', () => {
+  const reading = projectBusinessJourneyTimeline({
+    sources: sources.map((source, index) => ({
+      ...source,
+      status: index === 0 ? 'READING' as const : 'PENDING' as const,
+      ...(index === 0 ? { preparationStates: { READ: 'COMPLETE' as const, ANALYZE: 'ACTIVE' as const } } : {}),
+    })),
+    timeline: [],
+  }).find((checkpoint) => checkpoint.checkpointId === 'source:guanyijia_mysql');
+  const pending = projectBusinessJourneyTimeline({
+    sources: sources.map((source) => ({ ...source, status: 'PENDING' as const })),
+    timeline: [],
+  }).find((checkpoint) => checkpoint.checkpointId === 'source:guanyijia_mysql');
+  const complete = projectBusinessJourneyTimeline({
+    sources: sources.map((source, index) => ({ ...source, status: index === 0 ? 'ALIGNED' as const : 'PENDING' as const })),
+    timeline: [],
+  }).find((checkpoint) => checkpoint.checkpointId === 'source:guanyijia_mysql');
+
+  assert.deepEqual(
+    projectVisibleBusinessJourneyStages(reading?.stages).map((stage) => [stage.stage, stage.state]),
+    [['READ', 'COMPLETE'], ['ANALYZE', 'ACTIVE']],
+  );
+  assert.deepEqual(projectVisibleBusinessJourneyStages(pending?.stages), []);
+  assert.deepEqual(
+    projectVisibleBusinessJourneyStages(complete?.stages).map((stage) => [stage.stage, stage.state]),
+    [['READ', 'COMPLETE'], ['ANALYZE', 'COMPLETE'], ['ORGANIZE', 'COMPLETE'], ['REVIEW', 'COMPLETE']],
   );
 });

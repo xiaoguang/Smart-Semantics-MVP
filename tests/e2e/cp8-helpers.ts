@@ -118,7 +118,11 @@ export async function openStandardization(page: Page, navigation: 'DESKTOP' | 'M
 
 export async function enterMysqlDocument(page: Page) {
   await page.getByRole('button', { name: '开始资料整理' }).click();
-  await expect(page.locator('section.guanyijia-document-review').last()).toBeVisible();
+  // Starting a run binds and validates the exact frozen V6 document before
+  // it opens the review surface.  This is a real asynchronous boundary, not
+  // an animation, so do not race it with Playwright's generic five seconds.
+  await expect(page.locator('section.guanyijia-document-review').last())
+    .toBeVisible({ timeout: 30_000 });
 }
 
 export async function expectNoHorizontalOverflow(page: Page) {

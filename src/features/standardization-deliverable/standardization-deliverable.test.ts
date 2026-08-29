@@ -4,6 +4,7 @@ import test, { before } from 'node:test';
 import { sha256HexSync } from '../ai-modeling/sha256.ts';
 import { guanyijiaV1 } from '../collaboration/fixtures.ts';
 import { createGuanyijiaStandardizationStory } from '../guanyijia-standardization-story/index.ts';
+import { bindDemoContentRun } from '../guanyijia-demo-content/demo-content-review.ts';
 import { guanyijiaFrozenModelingArtifact } from '../modeling-document-bridge/guanyijia-modeling-baseline.ts';
 import {
   canonicalModelingJson,
@@ -22,6 +23,7 @@ import {
   validateGuanyijiaResolutionArtifactAgainstPersistedRevisions,
   type GuanyijiaWorkbenchCommand,
 } from '../data-standardization/guanyijia-workbench-runtime.ts';
+import { createGuanyijiaReviewedSourceDocumentReader } from '../data-standardization/guanyijia-reviewed-source-documents.ts';
 import { createStandardizationDeliverableRuntime } from './runtime.ts';
 import { createBrowserDeliverableMetadataStore } from './metadata-store.ts';
 import { projectZeroDeltaM4View } from '../ai-modeling/zero-delta-handoff.ts';
@@ -148,21 +150,6 @@ before(async () => {
     now: () => '2026-08-18T10:00:00.000Z',
   });
   let snapshot = await workbench.execute(workbenchCommand('START_RUN', 0, 'prepare:start'));
-  const readAndReview = async (label: string) => {
-    snapshot = await workbench.execute(workbenchCommand(
-      'READ_NEXT_SOURCE', snapshot.run!.revision, `prepare:read:${label}`,
-    ));
-    if (label === 'github') {
-      snapshot = await workbench.execute({
-        type: 'DECIDE_SCRIPTED_REVIEW_EDIT', commandId: 'prepare:keep-scripted:github',
-        expectedRevision: snapshot.run!.revision, actorUserId: 'user_bo_gao',
-        editId: 'scripted:github:clarify-negative-stock', decision: 'KEEP_CURRENT',
-      });
-    }
-    snapshot = await workbench.execute(workbenchCommand(
-      'COMPLETE_CURRENT_DOCUMENT_REVIEW', snapshot.run!.revision, `prepare:review:${label}`,
-    ));
-  };
   const resolve = async (
     conflictId: string,
     strategy: 'KEEP_CURRENT' | 'MERGE' | 'DEFER_AS_GAP',
@@ -177,13 +164,32 @@ before(async () => {
       conflictId, strategy, reason, expectedHunkSha256: preview.hunk.hunkSha256,
     });
   };
+  const readAndReview = async (label: string) => {
+    snapshot = await workbench.execute(workbenchCommand(
+      'READ_NEXT_SOURCE', snapshot.run!.revision, `prepare:read:${label}`,
+    ));
+    if (label === 'github') {
+      snapshot = await workbench.execute({
+        type: 'DECIDE_SCRIPTED_REVIEW_EDIT', commandId: 'prepare:keep-scripted:github',
+        expectedRevision: snapshot.run!.revision, actorUserId: 'user_bo_gao',
+        editId: 'scripted:github:clarify-negative-stock', decision: 'KEEP_CURRENT',
+      });
+    }
+    if (label === 'github') {
+      await resolve('gyj-conflict-debt-schema', 'KEEP_CURRENT', '部署数据库作为当前工作标准。');
+    }
+    if (label === 'policy') {
+      await resolve('gyj-conflict-negative-stock', 'MERGE', '保留租户配置实现并登记制度缺口。');
+      await resolve('gyj-conflict-status-nine', 'DEFER_AS_GAP', '状态九正式业务含义待确认。');
+    }
+    snapshot = await workbench.execute(workbenchCommand(
+      'COMPLETE_CURRENT_DOCUMENT_REVIEW', snapshot.run!.revision, `prepare:review:${label}`,
+    ));
+  };
   await readAndReview('mysql');
   await readAndReview('github');
-  await resolve('gyj-conflict-debt-schema', 'KEEP_CURRENT', '部署数据库作为当前工作标准。');
   await readAndReview('official');
   await readAndReview('policy');
-  await resolve('gyj-conflict-negative-stock', 'MERGE', '保留租户配置实现并登记制度缺口。');
-  await resolve('gyj-conflict-status-nine', 'DEFER_AS_GAP', '状态九正式业务含义待确认。');
   await readAndReview('semantica');
   assert.equal(snapshot.run?.status, 'READY_FOR_OUTPUT');
   const resolutions = await Promise.all(snapshot.run!.timeline
@@ -286,6 +292,18 @@ function readyFixture(
   const modelingProjector = createStandardizationModelingProjector();
   const runtime = createStandardizationDeliverableRuntime({
     metadataStore, contentStore, runReader, sourceDocuments,
+    reviewedSourceDocuments: createGuanyijiaReviewedSourceDocumentReader({
+      sourceDocuments,
+      contentBindingForRun(run) {
+        return bindDemoContentRun({
+          runId: run.runId,
+          formalSources: run.sources.map((source) => {
+            if (!source.snapshotId) throw new Error('运行来源缺少固定快照身份');
+            return { sourceId: source.sourceId, snapshotId: source.snapshotId };
+          }),
+        });
+      },
+    }),
     conflictResolutions,
     baselineProvider: { async resolve(scenarioKey) {
       const selected = options.baseline ?? baseline;
@@ -508,6 +526,14 @@ test('READY_FOR_OUTPUT 先返回同一份完整九章合并预览，预览不写
   assert.match(preview.previewSha256, /^sha256:[0-9a-f]{64}$/u);
   assert.match(preview.mergedDocumentRef, /^sha256:[0-9a-f]{64}$/u);
   assert.deepEqual(preview.sourceManifest.sources.map((source) => source.sourceId), baseline.expectedSourceIds);
+  assert.deepEqual(preview.reviewedSourceManifest.map((source) => source.sourceId), baseline.expectedSourceIds,
+    '完整预览必须记录五份实际审阅来源文档的身份，而不是只记录结构化建模投影');
+  assert.equal((preview.mergedDocument.markdown.match(/### 来源1：/gu) ?? []).length, 9,
+    '每个固定章节都必须保留数据库审阅文档的完整正文来源段');
+  assert.equal((preview.mergedDocument.markdown.match(/### 来源5：/gu) ?? []).length, 9,
+    '每个固定章节都必须保留企业术语图审阅文档的完整正文来源段');
+  assert.match(preview.mergedDocument.markdown, /本次从 95 张表中选择 30 张/u,
+    '最终 Markdown 必须包含冻结 V6 的完整正文，而不是简化的结构投影摘要');
   assert.deepEqual(preview.reviewProjection.chapters.map((chapter) => chapter.section), [
     'OVERVIEW', 'GOAL', 'OBJECT', 'ACTIVITY', 'FIELD', 'RELATION', 'METRIC', 'QUESTION', 'UNRESOLVED',
   ]);
@@ -1315,7 +1341,7 @@ test('Workbench与M4只暴露当前状态唯一主动作，右侧检查器保持
   const modeling = readFileSync(new URL('../ai-modeling/ai-modeling-page.tsx', import.meta.url), 'utf8');
   const layout = readFileSync(new URL('../../layout/AppLayout.tsx', import.meta.url), 'utf8');
   assert.match(workbench, /生成标准化结果/u);
-  assert.match(workbench, /确认结果并定版/u);
+  assert.match(workbench, /确认并定版/u);
   assert.match(workbench, /AUTHOR_CONFIRM_AND_FREEZE/u);
   assert.doesNotMatch(workbench, /提交独立审核|通过审核并定版/u);
   assert.match(workbench, /HANDOFF_STANDARDIZATION_DOCUMENT_TO_MODELING/u);

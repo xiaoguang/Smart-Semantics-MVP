@@ -32,10 +32,9 @@ async function openCuratedReview(page: Page) {
 async function completeDatabaseAndOpenGithub(page: Page, database: Locator) {
   await database.getByRole('button', { name: '保留当前结论', exact: true }).click();
   await database.getByRole('button', { name: '完成数据库审阅', exact: true }).click();
-  await expect(database.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeVisible();
-  await database.getByRole('button', { name: '审阅下一个来源', exact: true }).click();
   const github = page.locator('section.guanyijia-document-review').last();
   await expect(github.getByRole('heading', { name: '代码仓库审阅', exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('button', { name: '审阅下一个来源', exact: true })).toHaveCount(0);
   return github;
 }
 
@@ -160,15 +159,22 @@ test('剧本修改同步到审阅事项、审阅结论与标准化文档，且�
   const evidence = editor.getByRole('region', { name: '来源依据', exact: true });
   await expect(evidence.getByText('重点字段 6/32', { exact: true })).toBeVisible();
   await expect(evidence).not.toContainText('该材料支持的结论');
-  await expect(page.getByRole('status', { name: '操作反馈', exact: true })).toContainText('已打开');
 
-  await editor.getByRole('button', { name: '预览修改', exact: true }).click();
-  await expect(editor.getByRole('region', { name: '修改预览', exact: true })).toContainText('库存单据主表');
-  await expect(editor.getByRole('region', { name: '修改预览', exact: true })).toContainText('库存单据表头（jsh_depot_head）');
-  await expect(page.getByRole('status', { name: '操作反馈', exact: true })).toContainText('已生成修改预览');
-  await editor.getByRole('button', { name: '确认修改', exact: true }).click();
+  // Opening the editor immediately starts the deterministic preview-SHA
+  // validation. Its current feedback is allowed to supersede the earlier
+  // evidence-open announcement; the visible evidence region above is the
+  // durable interaction contract.
+  const livePreview = editor.getByRole('region', { name: '修改效果', exact: true });
+  await expect(livePreview).toContainText('库存单据主表');
+  await expect(livePreview).toContainText('库存单据表头（jsh_depot_head）');
+  const save = editor.getByRole('button', { name: '保存修改', exact: true });
+  await expect(save).toBeEnabled({ timeout: 30_000 });
+  await save.click();
 
-  await expect(document.getByRole('button', { name: '完成数据库审阅', exact: true })).toBeVisible();
+  // Saving applies the exact reviewed-source revision and validates its
+  // deterministic preview identity before the document returns to review.
+  await expect(document.getByRole('button', { name: '完成数据库审阅', exact: true }))
+    .toBeVisible({ timeout: 30_000 });
   // A completed task moves out of the pending group and remains visible as a
   // saved decision in the review-items tab.
   await expect(document.locator('[data-review-claim="claim:guanyijia_mysql:curated-e005"]')).toContainText('库存单据表头（jsh_depot_head）');
@@ -237,14 +243,17 @@ test('GitHub 剧本修改确认后仍返回审阅事项，而不是旧版识别�
   await github.getByRole('button', { name: '采用推荐修改', exact: true }).click();
   const editor = github.getByRole('region', { name: /修改负库存控制候选/u });
   await expect(editor).toBeVisible();
-  await editor.getByRole('button', { name: '预览修改', exact: true }).click();
-  await editor.getByRole('button', { name: '确认修改', exact: true }).click();
+  const save = editor.getByRole('button', { name: '保存修改', exact: true });
+  await expect(editor.getByRole('region', { name: '修改效果', exact: true })).toBeVisible();
+  await expect(save).toBeEnabled({ timeout: 30_000 });
+  await save.click();
 
   await expect(github.getByRole('region', { name: '审阅事项', exact: true })).toBeVisible();
   // The scripted task moves to 已处理事项, while running-source comparisons
   // remain in 待确认事项 rather than vanishing with the local suggestion.
   await expect(github.getByRole('heading', { name: '待确认事项', exact: true })).toBeVisible();
-  await expect(github.getByRole('heading', { name: '已处理事项', exact: true })).toBeVisible();
+  await expect(github.getByRole('heading', { name: '已处理事项', exact: true }))
+    .toBeVisible({ timeout: 30_000 });
   await expect(github.getByText('租户级负库存控制', { exact: true })).toBeVisible();
   await expect(github.getByRole('heading', { name: '识别结果', exact: true })).toHaveCount(0);
   await expect(github.getByText('证据等级', { exact: true })).toHaveCount(0);

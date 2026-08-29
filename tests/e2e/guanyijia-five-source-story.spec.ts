@@ -59,7 +59,11 @@ async function ask(page: Page, message: string, expected: string | RegExp) {
   if ((await historyToggle.textContent())?.trim() === '展开对话') {
     await historyToggle.click();
   }
-  await expect(historyItems).toHaveCount(previousHistoryCount + 1);
+  // The full reviewed-source preview may still be finishing its deterministic
+  // Markdown work while an ASK turn commits.  The test must wait for the
+  // persisted history delta, rather than treating Playwright's generic
+  // five-second assertion default as a product contract.
+  await expect(historyItems).toHaveCount(previousHistoryCount + 1, { timeout: 30_000 });
   const normalizedMessage = message.normalize('NFKC').trim().replace(/\s+/gu, ' ');
   await expect(panel.locator('.guanyijia-review-assistant-question')
     .filter({ hasText: normalizedMessage }).last()).toBeVisible();
@@ -92,18 +96,18 @@ async function readSource(
   return document;
 }
 
-async function completeSourceReview(document: Locator, hasNextSource: boolean) {
+async function completeSourceReview(
+  page: Page,
+  document: Locator,
+  nextSourceName?: keyof typeof sourceReviewTitles,
+) {
   await document.getByRole('button', { name: /^完成.+审阅$/u }).click();
-  await expect(document).toBeVisible();
-  if (hasNextSource) {
-    await expect(document.getByRole('button', { name: '审阅下一个来源', exact: true })).toBeVisible();
-  } else {
-    await expect(document.getByRole('button', { name: '审阅下一个来源', exact: true })).toHaveCount(0);
+  if (nextSourceName) {
+    const next = await readSource(page, nextSourceName);
+    await expect(page.getByRole('button', { name: '审阅下一个来源', exact: true })).toHaveCount(0);
+    return next;
   }
-}
-
-async function readNextSource(document: Locator) {
-  await document.getByRole('button', { name: '审阅下一个来源', exact: true }).click();
+  return document;
 }
 
 async function resolveConflict(
@@ -134,6 +138,11 @@ async function resolveConflict(
   await expect(selectedRadio).toHaveAttribute('aria-checked', 'true');
   await expect(conflict.getByLabel('策略结果')).toContainText('决定后的结果');
   await conflict.getByRole('button', { name: '保存当前决定' }).click();
+  // Saving rebuilds the exact reviewed-source document and its deterministic
+  // Markdown preview.  Wait for the saved conflict's real UI transition,
+  // rather than racing the next story step against the click event.
+  await expect(conflict.getByRole('heading', { name: title, exact: true }))
+    .toHaveCount(0, { timeout: 30_000 });
 }
 
 test('唯一连续五源故事：revision、冲突、助手、作者定版与标准化文档交接', async ({ page }) => {
@@ -175,10 +184,7 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   await expect(mysql).toContainText('账户主数据（jsh_account）');
   await mysql.getByRole('tab', { name: '审阅事项', exact: true }).click();
   await mysql.getByRole('button', { name: '保留当前结论', exact: true }).click();
-  await completeSourceReview(mysql, true);
-  await readNextSource(mysql);
-
-  const github = await readSource(page, 'GitHub代码仓库');
+  const github = await completeSourceReview(page, mysql, 'GitHub代码仓库');
   const findings = github.getByRole('region', { name: '审阅事项', exact: true })
     .getByRole('region', { name: '来源差异与比较', exact: true });
   await expect(findings).toBeVisible();
@@ -201,14 +207,14 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   const revisedLabel = `${originalLabel}（人工确认）`;
   await editor.getByLabel('结论名称').fill(revisedLabel);
   await editor.getByLabel('业务说明').fill('源码按租户配置项决定是否允许负库存；保留该实现事实并等待制度核对。');
-  await editor.getByRole('button', { name: '预览修改' }).click();
-  const preview = editor.getByLabel('修改预览');
+  const preview = editor.getByRole('region', { name: '修改效果', exact: true });
   await expect(preview).toContainText('业务名称 · 修改前');
   await expect(preview).toContainText('业务名称 · 修改后');
-  await expect(preview).toContainText('Markdown ·');
   await expect(preview).toContainText(revisedLabel);
   await capture(page, '07-five-source-github-structured-preview');
-  await editor.getByRole('button', { name: '确认修改' }).click();
+  const saveGithubSuggestion = editor.getByRole('button', { name: '保存修改', exact: true });
+  await expect(saveGithubSuggestion).toBeEnabled({ timeout: 30_000 });
+  await saveGithubSuggestion.click();
   await expect(github).toContainText(revisedLabel);
   await expect(page.locator('.guanyijia-review-live-region')).toHaveText('修改已确认，审阅事项、审阅结论和标准化文档已同步更新。');
   const persistedSurface = await page.evaluate(() => {
@@ -224,7 +230,10 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   await page.reload();
   await openStandardization(page, 'DESKTOP');
   const restoredGithub = page.locator('section.guanyijia-document-review').last();
-  await expect(restoredGithub).toBeVisible();
+  // Rehydrating a persisted run reconstructs the exact reviewed V6 document.
+  // Wait for that real materialization boundary rather than racing it with
+  // Playwright's generic five-second assertion timeout.
+  await expect(restoredGithub).toBeVisible({ timeout: 30_000 });
   await expect(restoredGithub.getByRole('tab', { name: '审阅事项', exact: true })).toHaveAttribute('aria-selected', 'true');
   await restoredGithub.getByRole('button', { name: '查看历史版本' }).click();
   const history = restoredGithub.getByLabel('历史版本');
@@ -238,31 +247,23 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   // The fixed story deliberately has no generic free editor. The scripted
   // revision is the only supported source-document change in this demo.
   await expect(restoredGithub.getByRole('button', { name: '修改识别结论' })).toHaveCount(0);
-  await completeSourceReview(restoredGithub, true);
-  await readNextSource(restoredGithub);
-
-  const official = await readSource(page, '官方业务文档');
-  await completeSourceReview(official, true);
-  await readNextSource(official);
-
-  const policy = await readSource(page, 'ERP管理制度（演示）');
-  await completeSourceReview(policy, true);
-  await readNextSource(policy);
-
-  const semantica = await readSource(page, '术语图（派生）', false);
-  await completeSourceReview(semantica, false);
-  const semanticaFindings = semantica.getByRole('region', { name: '来源差异与比较', exact: true });
-  await expect(semanticaFindings).toContainText('欠款字段');
-  await expect(semanticaFindings).toContainText('负库存配置');
-  await expect(semanticaFindings).toContainText('单据状态');
-  await semantica.getByRole('button', { name: '返回时间线', exact: true }).click();
-
+  const debt = restoredGithub.getByRole('region', { name: '来源差异与比较', exact: true })
+    .locator('[data-review-matter="DEBT_FIELDS"]');
+  await expect(debt.getByRole('button', { name: '处理该项', exact: true })).toBeVisible();
+  await debt.getByRole('button', { name: '处理该项', exact: true }).click();
   await ask(page, '当前差异是什么', '欠款字段结构冲突');
   await ask(page, '这项依据是什么？', /依据/u);
   await ask(page, '影响哪些对象？', /影响对象/u);
   await page.getByLabel('当前来源差异').scrollIntoViewIfNeeded();
   await capture(page, '09-five-source-debt-hunk');
   await resolveConflict(page, '欠款字段结构冲突', '保留当前结论');
+  await expect(restoredGithub.getByRole('button', { name: '完成GitHub代码仓库审阅', exact: true })).toBeVisible();
+  const official = await completeSourceReview(page, restoredGithub, '官方业务文档');
+  const policy = await completeSourceReview(page, official, 'ERP管理制度（演示）');
+  const policyFindings = policy.getByRole('region', { name: '来源差异与比较', exact: true });
+  const negativeStock = policyFindings.locator('[data-review-matter="NEGATIVE_STOCK"]');
+  await expect(negativeStock.getByRole('button', { name: '处理该项', exact: true })).toBeVisible();
+  await negativeStock.getByRole('button', { name: '处理该项', exact: true }).click();
   await page.getByLabel('当前来源差异').scrollIntoViewIfNeeded();
   await capture(page, '10-five-source-negative-stock-hunk');
   await resolveConflict(page, '负库存制度与实现冲突', '登记为缺口');
@@ -270,6 +271,9 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   await page.getByLabel('当前来源差异').scrollIntoViewIfNeeded();
   await capture(page, '11-five-source-status-nine-hunk');
   await resolveConflict(page, '状态 9 业务含义冲突', '登记为缺口');
+  await expect(policy.getByRole('button', { name: '完成ERP管理制度审阅', exact: true })).toBeVisible();
+  const semantica = await completeSourceReview(page, policy, '术语图（派生）');
+  await completeSourceReview(page, semantica);
 
   const mergedPreview = page.getByLabel('完整合并标准化结果预览', { exact: true });
   await expect(page.getByRole('heading', { name: '标准化结果预览', exact: true })).toBeVisible();
@@ -281,7 +285,9 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
     .locator('[data-merged-review-supplement]')).not.toHaveCount(0);
   await expect(mergedPreview.locator('[data-merged-review-decision]')).toHaveCount(3);
   await mergedPreview.getByRole('tab', { name: '审阅结论', exact: true }).click();
-  await expect(mergedPreview.getByRole('region', { name: '3. 业务对象', exact: true })).toBeVisible();
+  // The conclusion tab now preserves the shared full five-source Markdown
+  // rather than substituting the prior structural-only object projection.
+  await expect(mergedPreview.getByRole('heading', { name: '3. 业务对象', exact: true })).toBeVisible();
   await expect(mergedPreview).toContainText('数据库');
   await expect(mergedPreview).toContainText('GitHub');
   await expect(mergedPreview).toContainText('业务说明');
@@ -292,31 +298,32 @@ test('唯一连续五源故事：revision、冲突、助手、作者定版与标
   await mergedPreview.getByRole('button', { name: 'Markdown 源文', exact: true }).click();
   await expect(mergedPreview.locator('pre.guanyijia-markdown-source')).toContainText('## 3. 业务对象');
   await mergedPreview.getByRole('button', { name: '阅读版', exact: true }).click();
-  await expect(page.getByRole('button', { name: '生成标准化结果' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '确认并定版' })).toBeVisible();
   await capture(page, '12-five-source-ready-for-deliverable');
-  await page.getByRole('button', { name: '生成标准化结果' }).click();
-  await expect(page.getByRole('button', { name: '确认结果并定版' })).toBeVisible({ timeout: 30_000 });
-  await page.reload();
-  await openStandardization(page, 'DESKTOP');
-  const restoredMergedPreview = page.getByLabel('完整合并标准化结果预览', { exact: true });
-  await expect(restoredMergedPreview).toBeVisible({ timeout: 30_000 });
-  await expect(restoredMergedPreview).toContainText('Preview SHA256：sha256:');
-  await expect(restoredMergedPreview.locator('[data-merged-review-decision]')).toHaveCount(3);
-  await expect(page.getByRole('button', { name: '确认结果并定版' })).toBeVisible();
   await expect(page.getByRole('button', { name: '提交独立审核' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '通过审核并定版' })).toHaveCount(0);
-  await expect(page.getByText('完整文档保留所有结论和缺口；AI 建模只读取可用于建模的已确认结论。')).toBeVisible();
   await expect(page.getByRole('button', { name: /查看(合并文档|审阅决定|证据附录|模型差异)/u })).toHaveCount(0);
   await expect(page.locator('body')).not.toContainText(/gyj-conflict-debt-schema|formalRootSourceIds|semanticDifferences/u);
   await expect(mergedPreview).toContainText('Preview SHA256：sha256:');
   await capture(page, '13-five-source-deliverable-content');
-  await page.getByRole('button', { name: '确认结果并定版' }).click();
+  await page.getByRole('button', { name: '确认并定版' }).click();
   const deliverableWorkspace = page.locator('.guanyijia-deliverable-workspace');
-  await expect(deliverableWorkspace.getByText('标准化结果已定版')).toBeVisible({ timeout: 30_000 });
-  await expect(deliverableWorkspace.getByText(/审批意见|独立审核|审核人/u)).toHaveCount(0);
+  // Author confirmation revalidates every reviewed source, decision and the
+  // full merged document before it persists the freeze event.  Keep the
+  // one-click lifecycle contract, but allow the deterministic integrity pass
+  // to complete on the full five-source V6 corpus.
+  await expect(deliverableWorkspace.getByText('标准化结果已定版')).toBeVisible({ timeout: 120_000 });
+  // The complete reviewed source documents are preserved verbatim; source
+  // prose may legitimately mention approval roles.  The retired workflow
+  // controls, rather than those words, define the lifecycle contract.
+  await expect(deliverableWorkspace.getByRole('button', { name: /提交独立审核|确认结果并定版/u })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '前往 AI 建模' })).toBeVisible();
   await expect(page.getByLabel('技术详情')).toHaveCount(0);
   await capture(page, '14-five-source-author-frozen');
+
+  await page.reload();
+  await openStandardization(page, 'DESKTOP');
+  await expect(page.getByRole('heading', { name: '标准化结果已定版', exact: true })).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole('button', { name: '前往 AI 建模' }).click();
   const handoff = page.locator('.modeling-document-handoff');

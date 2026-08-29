@@ -24,11 +24,13 @@ test('未来的待读取和待生成步骤不能复用绿色完成状态', () =>
   );
 });
 
-test('未决发现是唯一当前步骤，阻塞来源不能同时标记为当前', () => {
+test('未决差异挂在当前来源的审阅阶段，来源本身仍是唯一当前步骤', () => {
   const sources: JourneySource[] = [{
     sourceId: 'guanyijia_mysql',
     displayName: '数据库',
-    status: 'CONFLICT_BLOCKED',
+    status: 'DOCUMENT_READY',
+    introducedConflictIds: ['debt'],
+    resolvedConflictIds: [],
   }];
   const timeline: JourneyTimelineItem[] = [{
     itemId: 'finding-event',
@@ -44,8 +46,11 @@ test('未决发现是唯一当前步骤，阻塞来源不能同时标记为当�
   const current = projectBusinessJourneyTimeline({ sources, timeline }).filter((item) => item.state === 'CURRENT');
 
   assert.equal(current.length, 1, '业务时间线只能有一个 aria-current 对应的当前步骤');
-  assert.equal(current[0]?.businessKind, 'FINDING');
-  assert.equal(current[0]?.checkpointId, 'finding:debt');
+  assert.equal(current[0]?.businessKind, 'SOURCE');
+  assert.equal(current[0]?.checkpointId, 'source:guanyijia_mysql');
+  assert.deepEqual(current[0]?.stages?.find((stage) => stage.stage === 'REVIEW')?.conflicts, [{
+    conflictId: 'debt', title: '欠款字段', state: 'ACTIVE', affectedObjects: [],
+  }]);
 });
 
 test('所有打开的来源资料 Inspector 都保留 flex 布局以承载可滚动流程', () => {
@@ -62,12 +67,12 @@ test('所有打开的来源资料 Inspector 都保留 flex 布局以承载可滚
 
 test('移动端全屏文档层必须把底部对话输入纳入同一可访问层', () => {
   const mainMatch = workbenchSource.match(
-    /<main\b(?=[^>]*\bclassName="guanyijia-workbench-thread")(?=[^>]*\brole=\{mobile && documentLayer \? 'dialog' : undefined\})[^>]*>([\s\S]*?)<\/main>/u,
+    /<main\b(?=[^>]*\bclassName="guanyijia-workbench-thread")(?=[^>]*\brole=\{mobile && documentVisible \? 'dialog' : undefined\})[^>]*>([\s\S]*?)<\/main>/u,
   );
   assert.ok(mainMatch, '应存在标准化工作区主审阅层');
 
   const accessibleDialogRoots = [...workbenchSource.matchAll(
-    /<main\b(?=[^>]*\brole=\{mobile && documentLayer \? 'dialog' : undefined\})[^>]*>([\s\S]*?)<\/main>/gu,
+    /<main\b(?=[^>]*\brole=\{mobile && documentVisible \? 'dialog' : undefined\})[^>]*>([\s\S]*?)<\/main>/gu,
   )];
   assert.equal(accessibleDialogRoots.length, 1, '移动端文档只能有一个包含审阅助手的可访问对话框根');
 

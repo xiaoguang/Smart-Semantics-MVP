@@ -1,5 +1,5 @@
 import { Button } from 'antd';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CandidateReviewEvidence, CandidateReviewProjection } from '../guanyijia-evidence-factory/candidate-review-projection.ts';
 import type { SourceReviewMatter } from '../guanyijia-evidence-factory/source-review-visibility.ts';
 import { toggleFindingExpansion } from './finding-expansion.ts';
@@ -95,11 +95,22 @@ function stateLabel(matter: SourceReviewMatter): string {
 export function CrossSourceFindingList(input: {
   findings: readonly SourceReviewMatter[];
   expansionKey?: string;
+  /** Opens the current actionable formal difference once per review revision. */
+  autoExpandFindingId?: string;
   className?: string;
   actionForFinding?(matter: SourceReviewMatter): CrossSourceFindingAction;
 }) {
   const [expandedFindingId, setExpandedFindingId] = useState<string>();
+  const lastAutoExpansion = useRef<string | undefined>(undefined);
   useEffect(() => setExpandedFindingId(undefined), [input.expansionKey]);
+  useEffect(() => {
+    const token = `${input.expansionKey ?? 'review'}:${input.autoExpandFindingId ?? ''}`;
+    if (lastAutoExpansion.current === token) return;
+    lastAutoExpansion.current = token;
+    if (input.autoExpandFindingId && input.findings.some((matter) => matter.stableId === input.autoExpandFindingId)) {
+      setExpandedFindingId(input.autoExpandFindingId);
+    }
+  }, [input.autoExpandFindingId, input.expansionKey, input.findings]);
 
   return <section className={`guanyijia-cross-source-findings ${input.className ?? ''}`.trim()} aria-label="来源差异与比较">
     <header>

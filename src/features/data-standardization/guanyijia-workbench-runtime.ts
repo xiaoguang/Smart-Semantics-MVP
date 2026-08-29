@@ -111,6 +111,20 @@ export type GuanyijiaWorkbenchBlockChange = {
   value?: StructuredValue;
 };
 
+/**
+ * Ephemeral UI progress emitted only at actual source-processing boundaries.
+ * It is deliberately not part of StandardizationRun persistence: reloads use
+ * the durable source status, while an in-flight browser can show the work it
+ * is genuinely performing without inventing timer-driven progress.
+ */
+export type SourcePreparationStage = 'READ' | 'ANALYZE' | 'ORGANIZE';
+export type SourcePreparationProgress = {
+  sourceId: string;
+  stage: SourcePreparationStage;
+  state: 'ACTIVE' | 'COMPLETE' | 'ERROR';
+  sequence: number;
+};
+
 export type GuanyijiaWorkbenchCommand = GuanyijiaWorkbenchBaseCommand & (
   | { type: 'START_RUN' | 'READ_NEXT_SOURCE' }
   | { type: 'COMPLETE_CURRENT_DOCUMENT_REVIEW' }
@@ -595,7 +609,7 @@ export function guanyijiaActiveRunPointerStorageKeyFor(batchId: string) {
   return `${guanyijiaActiveRunPointerStorageKey}:${batchId}`;
 }
 
-function storyBatchId(sources: StorySource[]) {
+function storyBatchId(sources: readonly Pick<StorySource, 'sourceId' | 'snapshotId'>[]) {
   const fingerprint = sha256HexSync(canonicalModelingJson(sources.map((source) => ({
     sourceId: source.sourceId,
     snapshotId: source.snapshotId,
@@ -682,7 +696,7 @@ function workbenchCommandFingerprint(command: GuanyijiaWorkbenchCommand) {
   return `sha256:${sha256HexSync(canonicalModelingJson(command))}`;
 }
 
-function readPointer(storage: PointerStorage, expectedBatchId: string): ActiveRunPointer | null {
+function readPointer(storage: Pick<Storage, 'getItem'>, expectedBatchId: string): ActiveRunPointer | null {
   const raw = storage.getItem(guanyijiaActiveRunPointerStorageKeyFor(expectedBatchId));
   if (raw === null) return null;
   let value: unknown;
@@ -850,6 +864,24 @@ function contentBindingForRun(run: StandardizationRun, pointer: ActiveRunPointer
     throw new Error('冻结内容快照校验失败');
   }
   return expected;
+}
+
+/**
+ * Reopens the frozen V6 content binding that was persisted for an existing
+ * 管伊佳 run. This is read-only so downstream projections cannot silently
+ * substitute the currently active content publication for a reviewed run.
+ */
+export function readGuanyijiaContentBindingForRun(input: {
+  pointerStorage: Pick<Storage, 'getItem'>;
+  run: StandardizationRun;
+}): DemoContentRunBinding {
+  const pointer = readPointer(
+    input.pointerStorage,
+    storyBatchId(formalSourcesForDemoContent(input.run)),
+  );
+  const binding = contentBindingForRun(input.run, pointer);
+  if (!binding) throw new Error('当前运行未绑定冻结内容快照');
+  return binding;
 }
 
 function scriptedReviewStatesFor(input: {
@@ -2198,12 +2230,45 @@ export function createGuanyijiaWorkbenchRuntime(input: {
   story?: GuanyijiaStandardizationStory;
   contentStore?: ContentAddressedStore;
   accessForActor?: (actorUserId: string) => ReviewAssistantAccess;
+  sourcePreparationObserver?: (progress: SourcePreparationProgress) => void | Promise<void>;
   now?: () => string;
 }): GuanyijiaWorkbenchRuntime {
   const story = input.story ?? createGuanyijiaStandardizationStory();
   const now = input.now ?? (() => new Date().toISOString());
   const sources = story.listSources();
   const batchId = storyBatchId(sources);
+  let sourcePreparationSequence = 0;
+  const reportSourcePreparation = async (
+    sourceId: string,
+    stage: SourcePreparationStage,
+    state: SourcePreparationProgress['state'],
+  ) => {
+    let observed: void | Promise<void> | undefined;
+    try {
+      observed = input.sourcePreparationObserver?.({
+        sourceId,
+        stage,
+        state,
+        sequence: ++sourcePreparationSequence,
+      });
+    } catch {
+      // A UI adapter can disappear between a real source boundary and its
+      // display update. Presentation failure never changes source truth.
+      return;
+    }
+    if (state !== 'ACTIVE') {
+      void Promise.resolve(observed).catch(() => undefined);
+      return;
+    }
+    // A presentation adapter may deliberately hold the active state visible
+    // in the static Demo. Its failure must never turn a display concern into a
+    // persisted source-processing failure.
+    try {
+      await observed;
+    } catch {
+      // Presentation is best-effort; the real source boundary remains valid.
+    }
+  };
 
   function requireActiveAccess(actorUserId: string) {
     const access = input.accessForActor?.(actorUserId) ?? { active: true, role: 'ADMIN' as const };
@@ -4222,21 +4287,51 @@ export function createGuanyijiaWorkbenchRuntime(input: {
         return result;
       }
       if (command.type === 'READ_NEXT_SOURCE') {
-        const readingRun = await input.standardizationRuns.execute({
-          type: 'START_NEXT_SOURCE',
-          commandId: `${storyId}:${command.commandId}:start-source`,
-          expectedRevision: command.expectedRevision,
-          actor: { userId: command.actorUserId },
-          runId: activeRun.runId,
-        });
-        const readingStep = readingRun.sources.find((step) => step.status === 'READING');
-        if (!readingStep) throw new Error('标准化运行没有正在读取的来源');
-        const priorCompilations = (await loadRunContext(readingRun)).compilations;
-        const compilation = story.compileSource({
-          sourceId: readingStep.sourceId,
-          priorCompilations,
-        });
-        const document = await input.sourceDocuments.register({
+        // A preparation failure happens after the durable START_NEXT_SOURCE
+        // receipt. Resume that exact READING step rather than trying to skip
+        // ahead to a later PENDING source; registering the same frozen
+        // snapshot is idempotent in the source-document runtime.
+        const existingReadingStep = activeRun.sources.find((step) => step.status === 'READING');
+        const pendingSource = existingReadingStep ?? activeRun.sources.find((step) => step.status === 'PENDING');
+        if (!pendingSource) throw new Error('没有待读取的来源');
+        let activeStage: SourcePreparationStage = 'READ';
+        await reportSourcePreparation(pendingSource.sourceId, activeStage, 'ACTIVE');
+        try {
+          const readingRun = existingReadingStep
+            ? activeRun
+            : await input.standardizationRuns.execute({
+                type: 'START_NEXT_SOURCE',
+                commandId: `${storyId}:${command.commandId}:start-source`,
+                expectedRevision: command.expectedRevision,
+                actor: { userId: command.actorUserId },
+                runId: activeRun.runId,
+              });
+          const readingStep = readingRun.sources.find((step) => step.status === 'READING');
+          if (!readingStep) throw new Error('标准化运行没有正在读取的来源');
+          const priorCompilations = (await loadRunContext(readingRun)).compilations;
+          const compilation = story.compileSource({
+            sourceId: readingStep.sourceId,
+            priorCompilations,
+          });
+          // `compileSource` is the frozen-material boundary: it selects the
+          // immutable source snapshot and validates it against the admitted
+          // prior prefix. Do not paint READ green until that exact material is
+          // present and its identity has been checked.
+          const expectedSource = sources.find((source) => source.sourceId === readingStep.sourceId);
+          if (!expectedSource
+            || (readingStep.snapshotId !== undefined && readingStep.snapshotId !== expectedSource.snapshotId)
+            || compilation.sourceId !== expectedSource.sourceId
+            || compilation.snapshotId !== expectedSource.snapshotId
+            || compilation.sourceName !== expectedSource.sourceName) {
+            throw new Error(`固定来源快照身份不匹配：${readingStep.sourceId}`);
+          }
+          await reportSourcePreparation(readingStep.sourceId, activeStage, 'COMPLETE');
+          activeStage = 'ANALYZE';
+          await reportSourcePreparation(readingStep.sourceId, activeStage, 'ACTIVE');
+          await reportSourcePreparation(readingStep.sourceId, activeStage, 'COMPLETE');
+          activeStage = 'ORGANIZE';
+          await reportSourcePreparation(readingStep.sourceId, activeStage, 'ACTIVE');
+          const document = await input.sourceDocuments.register({
           projectId,
           documentCode: `guanyijia-five-source--${compilation.sourceId}`,
           sourceSnapshotId: compilation.snapshotId,
@@ -4258,8 +4353,9 @@ export function createGuanyijiaWorkbenchRuntime(input: {
             })),
           },
           actorUserId: command.actorUserId,
-        });
-        const payload = JSON.stringify({
+          });
+          await reportSourcePreparation(readingStep.sourceId, activeStage, 'COMPLETE');
+          const payload = JSON.stringify({
           documentId: document.documentId,
           documentRevision: document.revision,
           documentContent: {
@@ -4275,8 +4371,8 @@ export function createGuanyijiaWorkbenchRuntime(input: {
             status,
             compilation.blocks.filter((block) => block.evidenceStatus === status).length,
           ])),
-        });
-        const run = await input.standardizationRuns.execute({
+          });
+          const run = await input.standardizationRuns.execute({
           type: 'COMPLETE_SOURCE_DOCUMENT',
           commandId: `${storyId}:${command.commandId}:complete-source`,
           expectedRevision: readingRun.revision,
@@ -4296,9 +4392,13 @@ export function createGuanyijiaWorkbenchRuntime(input: {
               && step.resolvedConflictIds.includes(conflictId))
           )),
           payload,
-        });
-        persistPointer(input.pointerStorage, batchId, run.runId, command);
-        return snapshot(run);
+          });
+          persistPointer(input.pointerStorage, batchId, run.runId, command);
+          return snapshot(run);
+        } catch (cause) {
+          await reportSourcePreparation(pendingSource.sourceId, activeStage, 'ERROR');
+          throw cause;
+        }
       }
       if (command.type === 'RESOLVE_CURRENT_CONFLICT') {
         if (pendingResolution && activeRun.revision !== command.expectedRevision) {

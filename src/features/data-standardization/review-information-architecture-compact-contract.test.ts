@@ -143,6 +143,33 @@ test('所有跨来源比较都留在审阅事项，审阅结论不再承担冲�
     '审阅结论只能展示核心业务结论和对象目录，不能再承载跨来源比较');
 });
 
+test('当前第一项正式差异在审阅事项中自动展开，并成为来源页的唯一主操作', () => {
+  assert.match(workbenchSource, /const currentActionableMatter = sourceReviewMatters\.find/u,
+    '当前正式差异必须从运行级事项投影中选出，而不是从时间线反推');
+  assert.match(workbenchSource, /autoExpandFindingId=\{currentActionableMatter\?\.stableId\}/u,
+    '正式差异成立时必须自动展开其双方资料');
+  assert.match(workbenchSource, /currentConflictId: currentActionableMatter\?\.conflictId/u,
+    '来源页主操作必须指向当前第一项正式差异');
+});
+
+test('建议编辑直接显示本地修改效果，并在 250ms 后校验权威预览身份', () => {
+  assert.match(workbenchSource, /setTimeout\(\(\) => \{[\s\S]*?250\)/u,
+    '输入后应以有限防抖请求权威 Preview SHA 校验');
+  assert.match(workbenchSource, /正在校验/u,
+    '编辑器需要明确显示校验中的实时修改效果');
+  assert.doesNotMatch(workbenchSource, />预览修改</u,
+    '用户不应再额外点击“预览修改”才看见效果');
+});
+
+test('真实来源准备失败后保留读取中的来源，并提供唯一的阶段重试操作', () => {
+  assert.match(workbenchSource, /sourcePreparationFailure/u);
+  assert.match(workbenchSource, /runtime\.readReviewShell\(currentUser\.userId\)/u,
+    '失败后必须先恢复持久化 READING 来源，不能继续沿用旧 revision');
+  assert.match(workbenchSource, />重试当前阶段</u);
+  assert.match(workbenchSource, /sourcePreparationFailure && nextAction\?\.type === 'NONE'/u,
+    '重试只能在没有其他工作流 Primary 时出现');
+});
+
 test('待确认事项使用稳定 class 恢复宽屏三列卡片，而不是中文 aria-label 选择器', () => {
   assert.match(workbenchSource, /guanyijia-local-suggestions/u);
   assert.match(workbenchCss, /\.guanyijia-local-suggestions > article/u);
@@ -178,9 +205,18 @@ test('五源审阅完成后，三个页签必须绑定同一份完整合并预�
   assert.match(workbenchSource, /deliverablePreviewTab === 'MATTERS'/u);
   assert.match(workbenchSource, /deliverablePreviewTab === 'CONCLUSIONS'/u);
   assert.match(workbenchSource, /deliverablePreviewTab === 'DOCUMENT'/u);
-  assert.match(workbenchSource, /guanyijia-merged-source-markdown/u,
-    '单章来源区段必须作为完整文本展示，不能误交给要求九章输入的完整 Markdown 阅读器');
+  assert.match(workbenchSource, /mergedDocument\.markdown/u,
+    '最终预览必须使用同一份完整九章 Markdown，而不是逐章简化投影');
   assert.doesNotMatch(workbenchSource, /<SourceDocumentReadable content=\{source\.markdown\}/u);
+});
+
+test('最终三个页签均显示同一份五来源、九章节完整正文，并由一次确认完成生成和定版', () => {
+  assert.match(workbenchSource, /<MergedPreviewChapters preview=\{deliverablePreviewForRun\} presentation="MATTERS"/u);
+  assert.match(workbenchSource, /<MergedPreviewChapters preview=\{deliverablePreviewForRun\} presentation="CONCLUSIONS"/u);
+  assert.match(workbenchSource, /<MergedPreviewChapters preview=\{deliverablePreviewForRun\} presentation="DOCUMENT"/u);
+  assert.match(workbenchSource, /confirmAndFreezeDeliverable/u,
+    '预览页必须将生成和作者定版串成一个受控操作');
+  assert.match(workbenchSource, />确认并定版</u);
 });
 
 test('核心结论与对象目录互不重复，且对象目录默认展开', () => {

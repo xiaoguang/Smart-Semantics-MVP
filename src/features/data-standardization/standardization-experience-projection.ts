@@ -79,12 +79,46 @@ export type JourneyTimelineItem = {
 
 export type JourneySource = StandardizationSource & {
   status: SourceCheckpointStatus;
+  /** Formal conflict ownership remains on the source step, never in a UI-only queue. */
+  introducedConflictIds?: readonly string[];
+  resolvedConflictIds?: readonly string[];
+  /** In-flight UI receipt from actual READ/ANALYZE/ORGANIZE boundaries. */
+  preparationStates?: Partial<Record<'READ' | 'ANALYZE' | 'ORGANIZE', JourneyStageState>>;
+};
+
+export type JourneyStageState = 'PENDING' | 'ACTIVE' | 'COMPLETE' | 'ERROR';
+
+export type BusinessJourneyStage = {
+  stage: 'READ' | 'ANALYZE' | 'ORGANIZE' | 'REVIEW';
+  label: '读取' | '分析' | '组织' | '审阅';
+  state: JourneyStageState;
+  conflicts?: Array<{
+    conflictId: string;
+    title: string;
+    state: JourneyStageState;
+    affectedObjects: string[];
+    action?: JourneyTimelineAction;
+  }>;
 };
 
 export type BusinessJourneyCheckpoint = JourneyTimelineItem & {
-  businessKind: 'SOURCE' | 'FINDING' | 'RESULT';
+  businessKind: 'SOURCE' | 'RESULT';
   checkpointId: string;
+  stages?: BusinessJourneyStage[];
 };
+
+/**
+ * The source-process disclosure never foreshadows work that has not started.
+ * A completed source exposes its full receipt when reopened; an active source
+ * exposes only the stable prefix through the actual active or failed phase.
+ */
+export function projectVisibleBusinessJourneyStages(
+  stages: readonly BusinessJourneyStage[] | undefined,
+): BusinessJourneyStage[] {
+  if (!stages?.length) return [];
+  const lastVisibleIndex = stages.findLastIndex((stage) => stage.state !== 'PENDING');
+  return lastVisibleIndex < 0 ? [] : stages.slice(0, lastVisibleIndex + 1);
+}
 
 function sourceNeedsAttention(status: SourceCheckpointStatus) {
   return status === 'PENDING'
@@ -96,9 +130,9 @@ function sourceNeedsAttention(status: SourceCheckpointStatus) {
 const sourceStatusSummary: Readonly<Record<SourceCheckpointStatus, string>> = {
   PENDING: '待读取',
   READING: '正在读取固定快照',
-  DOCUMENT_READY: '待审阅',
+  DOCUMENT_READY: '审阅中',
   REVIEWED: '已审阅',
-  CONFLICT_BLOCKED: '存在差异',
+  CONFLICT_BLOCKED: '审阅中 · 有待保存差异',
   ALIGNED: '已审阅',
 };
 
@@ -114,9 +148,85 @@ function latestDocumentItem(items: readonly JourneyTimelineItem[]) {
     && 'type' in item.action && item.action.type === 'OPEN_DOCUMENT');
 }
 
+const journeyStageDefinitions: ReadonlyArray<Pick<BusinessJourneyStage, 'stage' | 'label'>> = [
+  { stage: 'READ', label: '读取' },
+  { stage: 'ANALYZE', label: '分析' },
+  { stage: 'ORGANIZE', label: '组织' },
+  { stage: 'REVIEW', label: '审阅' },
+];
+
+function stageStatesForSource(source: JourneySource): JourneyStageState[] {
+  const defaultStates = source.status === 'PENDING'
+    ? ['PENDING', 'PENDING', 'PENDING', 'PENDING'] as JourneyStageState[]
+    : source.status === 'READING'
+      ? ['ACTIVE', 'PENDING', 'PENDING', 'PENDING'] as JourneyStageState[]
+      : source.status === 'DOCUMENT_READY' || source.status === 'CONFLICT_BLOCKED'
+        ? ['COMPLETE', 'COMPLETE', 'COMPLETE', 'ACTIVE'] as JourneyStageState[]
+        : ['COMPLETE', 'COMPLETE', 'COMPLETE', 'COMPLETE'] as JourneyStageState[];
+  return defaultStates.map((state, index) => {
+    const stage = journeyStageDefinitions[index]?.stage;
+    return stage && stage !== 'REVIEW' ? source.preparationStates?.[stage] ?? state : state;
+  });
+}
+
+function conflictItemsById(items: readonly JourneyTimelineItem[]) {
+  const findings = new Map<string, JourneyTimelineItem>();
+  for (const item of items) {
+    for (const conflict of item.conflicts ?? []) findings.set(conflict.conflictId, item);
+    if (item.action && typeof item.action === 'object' && 'type' in item.action
+      && item.action.type === 'OPEN_CONFLICT' && 'conflictId' in item.action) {
+      const conflictId = String(item.action.conflictId);
+      const prior = findings.get(conflictId);
+      findings.set(conflictId, {
+        ...(prior ?? item),
+        ...item,
+        conflicts: prior?.conflicts ?? item.conflicts ?? [{
+          conflictId,
+          title: item.title,
+          affectedObjects: [],
+        }],
+      });
+    }
+  }
+  return findings;
+}
+
+function journeyStagesForSource(
+  source: JourneySource,
+  conflictItems: ReadonlyMap<string, JourneyTimelineItem>,
+): BusinessJourneyStage[] {
+  const states = stageStatesForSource(source);
+  const resolved = new Set(source.resolvedConflictIds ?? []);
+  const conflicts = (source.introducedConflictIds ?? []).map((conflictId) => {
+    const item = conflictItems.get(conflictId);
+    const conflict = item?.conflicts?.find((candidate) => candidate.conflictId === conflictId);
+    if (!item || !conflict) {
+      return {
+        conflictId,
+        title: `差异资料异常：${conflictId}`,
+        state: 'ERROR' as const,
+        affectedObjects: [],
+      };
+    }
+    return {
+      conflictId,
+      title: conflict.title,
+      state: resolved.has(conflictId) ? 'COMPLETE' as const : 'ACTIVE' as const,
+      affectedObjects: conflict.affectedObjects,
+      ...(item.action?.type === 'OPEN_CONFLICT' ? { action: item.action } : {}),
+    };
+  });
+  return journeyStageDefinitions.map((definition, index) => ({
+    ...definition,
+    state: states[index]!,
+    ...(definition.stage === 'REVIEW' && conflicts.length ? { conflicts } : {}),
+  }));
+}
+
 /**
  * Collapse the persisted timeline into the only journey users need to scan:
- * one line per source, one line per source difference, and one result line.
+ * one expandable source group and one result line. A formal difference lives
+ * under the exact source whose review introduced it, never as a late queue.
  * Detailed receipts remain in the persisted audit/document history.
  */
 export function projectBusinessJourneyTimeline(input: {
@@ -126,6 +236,7 @@ export function projectBusinessJourneyTimeline(input: {
   // REVIEWED is a completed source checkpoint. The next unread source, a
   // blocked difference, or the result is the user's next business step.
   const currentSourceId = input.sources.find((source) => sourceNeedsAttention(source.status))?.sourceId;
+  const conflictItems = conflictItemsById(input.timeline);
   const sourceCheckpoints: BusinessJourneyCheckpoint[] = input.sources.map((source) => {
     const sourceItems = input.timeline.filter((item) => item.sourceId === source.sourceId);
     const latest = sourceItems.at(-1);
@@ -146,64 +257,21 @@ export function projectBusinessJourneyTimeline(input: {
       ...(latest?.createdAt ? { createdAt: latest.createdAt } : {}),
       ...(latest?.contentRef ? { contentRef: latest.contentRef } : {}),
       ...(latest?.contentSha256 ? { contentSha256: latest.contentSha256 } : {}),
+      stages: journeyStagesForSource(source, conflictItems),
     };
   });
-
-  const findingById = new Map<string, JourneyTimelineItem>();
-  for (const item of input.timeline) {
-    for (const conflict of item.conflicts ?? []) findingById.set(conflict.conflictId, item);
-    if (item.action && typeof item.action === 'object' && 'type' in item.action
-      && item.action.type === 'OPEN_CONFLICT' && 'conflictId' in item.action) {
-      const conflictId = String(item.action.conflictId);
-      const prior = findingById.get(conflictId);
-      findingById.set(conflictId, {
-        ...(prior ?? item),
-        ...item,
-        conflicts: prior?.conflicts ?? item.conflicts ?? [{ conflictId, title: item.title, affectedObjects: [] }],
-      });
-    }
-  }
-  const findings = [...findingById.entries()].map(([conflictId, item]) => {
-    const conflict = item.conflicts?.find((candidate) => candidate.conflictId === conflictId)
-      ?? { conflictId, title: item.title, affectedObjects: [] };
-    return {
-      ...item,
-      itemId: `finding:${conflictId}`,
-      checkpointId: `finding:${conflictId}`,
-      businessKind: 'FINDING' as const,
-      title: conflict.title,
-      summary: item.kind === 'CONFLICT_FOUND' || item.kind === 'CONFLICT_DECISION_REPLACED'
-        ? '待决定' : '已决定',
-      conflicts: [conflict],
-    };
-  });
-
-  // A source that is blocked because of a difference is not a second current
-  // task. The unresolved difference is the actionable checkpoint. Preserve
-  // older finding records as receipts and let the latest active finding own
-  // the single journey focus.
-  const activeFinding = [...findings].reverse().find((item) => item.state === 'CURRENT');
-  const normalizedFindings = findings.map((item) => activeFinding
-    ? { ...item, state: item.itemId === activeFinding.itemId ? 'CURRENT' as const : 'RECEIPT' as const }
-    : item);
-  const normalizedSourceCheckpoints = sourceCheckpoints.map((item) => activeFinding
-    ? { ...item, state: 'RECEIPT' as const }
-    : item);
 
   const resultItem = [...input.timeline].reverse().find((item) => item.kind.startsWith('DELIVERABLE_')
     || item.kind === 'MODELING_HANDOFF_COMPLETED');
-  const allSourcesAligned = input.sources.length > 0 && input.sources.every((source) => source.status === 'ALIGNED');
+  const allSourcesReviewed = input.sources.length > 0 && input.sources.every((source) => (
+    source.status === 'ALIGNED' || source.status === 'REVIEWED'
+  ));
   const result: BusinessJourneyCheckpoint = {
     itemId: 'result:standardization',
     checkpointId: 'result:standardization',
     businessKind: 'RESULT',
     kind: resultItem?.kind ?? 'DELIVERABLE_GENERATED',
-    state: !normalizedSourceCheckpoints.some((item) => item.state === 'CURRENT')
-      && !normalizedFindings.some((item) => item.state === 'CURRENT')
-      && (resultItem?.state === 'CURRENT'
-        || (allSourcesAligned && resultItem?.kind === 'DELIVERABLE_FROZEN')
-        || (!normalizedSourceCheckpoints.some((item) => item.state === 'CURRENT')
-          && !normalizedFindings.some((item) => item.state === 'CURRENT')))
+    state: !sourceCheckpoints.some((item) => item.state === 'CURRENT') && allSourcesReviewed
       ? 'CURRENT' : 'RECEIPT',
     title: '标准化结果',
     summary: resultItem?.kind === 'MODELING_HANDOFF_COMPLETED' ? '已交接'
@@ -217,7 +285,7 @@ export function projectBusinessJourneyTimeline(input: {
     ...(resultItem?.contentRef ? { contentRef: resultItem.contentRef } : {}),
     ...(resultItem?.contentSha256 ? { contentSha256: resultItem.contentSha256 } : {}),
   };
-  return [...normalizedSourceCheckpoints, ...normalizedFindings, result];
+  return [...sourceCheckpoints, result];
 }
 
 export type SourceCheckpointLocation = {

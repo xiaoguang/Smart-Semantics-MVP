@@ -152,7 +152,7 @@ async function completeCurrentSource(
   });
 }
 
-async function reviewSingleSource(
+async function prepareSingleSource(
   runtime: ReturnType<typeof createStandardizationRunRuntime>,
   conflicts: string[] = [],
   source = fiveSources[0]!,
@@ -166,6 +166,15 @@ async function reviewSingleSource(
     runId: run.runId, sourceId: source.sourceId, expectedRevision: 1,
     commandId: 'prepare-complete', conflicts,
   });
+  return run;
+}
+
+async function reviewSingleSource(
+  runtime: ReturnType<typeof createStandardizationRunRuntime>,
+  conflicts: string[] = [],
+  source = fiveSources[0]!,
+) {
+  const run = await prepareSingleSource(runtime, conflicts, source);
   return runtime.execute({
     type: 'MARK_DOCUMENT_REVIEWED', commandId: 'prepare-review', runId: run.runId,
     expectedRevision: 2, actor, sourceId: source.sourceId,
@@ -471,7 +480,7 @@ test('读取事件载荷时独立复算 sha256 并拒绝与 payloadRef 不一致
   );
 });
 
-test('来源冲突必须逐项以完整Artifact解决，未决差异不阻断后续来源且最后一项才对齐', async () => {
+test('已引入的正式差异必须在所属来源完成前逐项保存，随后才可读取下一来源', async () => {
   const { runtime } = setup();
   const policySource = { sourceId: 'guanyijia_demo_policy', sourceName: '管伊佳演示制度 Markdown' };
   const nextSource = { sourceId: 'guanyijia_semantica_demo', sourceName: '管伊佳演示制度术语图' };
@@ -484,31 +493,14 @@ test('来源冲突必须逐项以完整Artifact解决，未决差异不阻断后
     runId: run.runId, sourceId: policySource.sourceId, expectedRevision: 1, commandId: 'complete-policy',
     conflicts: ['gyj-conflict-negative-stock', 'gyj-conflict-status-nine'],
   });
-  run = await runtime.execute({
-    type: 'MARK_DOCUMENT_REVIEWED', commandId: 'review-mysql', runId: run.runId,
-    expectedRevision: 2, actor, sourceId: policySource.sourceId,
-  });
-  assert.equal(run.status, 'CONFLICT_BLOCKED');
-  assert.equal(run.sources[0]?.status, 'CONFLICT_BLOCKED');
-  assert.deepEqual(run.timeline.slice(-2).map((event) => event.type), ['CONFLICT_FOUND', 'DOCUMENT_REVIEWED']);
-  run = await runtime.execute({
-    type: 'START_NEXT_SOURCE', commandId: 'start-after-unresolved-conflict', runId: run.runId,
-    expectedRevision: 3, actor,
-  });
-  assert.equal(run.status, 'READING_SOURCE');
-  assert.equal(run.sources[0]?.status, 'CONFLICT_BLOCKED');
-  assert.equal(run.sources[1]?.status, 'READING');
-  run = await completeCurrentSource(runtime, {
-    runId: run.runId, sourceId: nextSource.sourceId, expectedRevision: run.revision,
-    commandId: 'complete-semantica-after-unresolved-conflict',
-  });
-  run = await runtime.execute({
-    type: 'MARK_DOCUMENT_REVIEWED', commandId: 'review-semantica-after-unresolved-conflict',
-    runId: run.runId, expectedRevision: run.revision, actor, sourceId: nextSource.sourceId,
-  });
-  assert.equal(run.status, 'READY');
-  assert.equal(run.sources[0]?.status, 'CONFLICT_BLOCKED');
-  assert.equal(run.sources[1]?.status, 'ALIGNED');
+  await assert.rejects(() => runtime.execute({
+    type: 'MARK_DOCUMENT_REVIEWED', commandId: 'review-before-saving-conflicts', runId: run.runId,
+    expectedRevision: run.revision, actor, sourceId: policySource.sourceId,
+  }), /请先保存当前来源的正式差异/u);
+  await assert.rejects(() => runtime.execute({
+    type: 'START_NEXT_SOURCE', commandId: 'start-before-saving-conflicts', runId: run.runId,
+    expectedRevision: run.revision, actor,
+  }), /请先保存当前来源的正式差异/u);
   const negative = resolutionArtifactPayload({
     runId: run.runId, sourceId: policySource.sourceId, conflictId: 'gyj-conflict-negative-stock',
     strategy: 'MERGE', reason: '保留当前实现并登记制度落地缺口',
@@ -519,18 +511,18 @@ test('来源冲突必须逐项以完整Artifact解决，未决差异不阻断后
   });
   await assert.rejects(() => runtime.execute({
     type: 'RESOLVE_SOURCE_CONFLICT', commandId: 'resolve-status-out-of-order', runId: run.runId,
-    expectedRevision: 6, actor, sourceId: policySource.sourceId, conflictId: 'gyj-conflict-status-nine',
+    expectedRevision: run.revision, actor, sourceId: policySource.sourceId, conflictId: 'gyj-conflict-status-nine',
     strategy: 'DEFER_AS_GAP', reason: statusFirst.artifact.reason,
     expectedHunkSha256: statusFirst.artifact.hunk.hunkSha256, payload: statusFirst.payload,
   }), /必须按顺序解决第一项未决冲突/);
   run = await runtime.execute({
     type: 'RESOLVE_SOURCE_CONFLICT', commandId: 'resolve-negative', runId: run.runId,
-    expectedRevision: 6, actor, sourceId: policySource.sourceId, conflictId: 'gyj-conflict-negative-stock',
+    expectedRevision: run.revision, actor, sourceId: policySource.sourceId, conflictId: 'gyj-conflict-negative-stock',
     strategy: 'MERGE', reason: negative.artifact.reason,
     expectedHunkSha256: negative.artifact.hunk.hunkSha256, payload: negative.payload,
   });
-  assert.equal(run.status, 'READY');
-  assert.equal(run.sources[0]?.status, 'CONFLICT_BLOCKED');
+  assert.equal(run.status, 'REVIEWING_DOCUMENT');
+  assert.equal(run.sources[0]?.status, 'DOCUMENT_READY');
   assert.deepEqual(run.sources[0]?.resolvedConflictIds, ['gyj-conflict-negative-stock']);
   assert.equal(run.timeline.at(-1)?.type, 'CONFLICT_RESOLVED');
   const stored = JSON.parse(await runtime.readEventPayload(run.runId, run.timeline.at(-1)!.eventId));
@@ -546,13 +538,33 @@ test('来源冲突必须逐项以完整Artifact解决，未决差异不阻断后
   });
   run = await runtime.execute({
     type: 'RESOLVE_SOURCE_CONFLICT', commandId: 'resolve-status', runId: run.runId,
-    expectedRevision: 7, actor, sourceId: policySource.sourceId, conflictId: 'gyj-conflict-status-nine',
+    expectedRevision: run.revision, actor, sourceId: policySource.sourceId, conflictId: 'gyj-conflict-status-nine',
     strategy: 'DEFER_AS_GAP', reason: status.artifact.reason,
     expectedHunkSha256: status.artifact.hunk.hunkSha256, payload: status.payload,
   });
-  assert.equal(run.status, 'READY_FOR_OUTPUT');
+  assert.equal(run.status, 'REVIEWING_DOCUMENT');
+  assert.equal(run.sources[0]?.status, 'DOCUMENT_READY');
+
+  run = await runtime.execute({
+    type: 'MARK_DOCUMENT_REVIEWED', commandId: 'review-after-saving-conflicts', runId: run.runId,
+    expectedRevision: run.revision, actor, sourceId: policySource.sourceId,
+  });
+  assert.equal(run.status, 'READY');
   assert.equal(run.sources[0]?.status, 'ALIGNED');
-  assert.deepEqual(run.timeline.slice(-2).map((event) => event.type), ['CONFLICT_RESOLVED', 'CONFLICT_RESOLVED']);
+
+  run = await runtime.execute({
+    type: 'START_NEXT_SOURCE', commandId: 'start-after-saving-conflicts', runId: run.runId,
+    expectedRevision: run.revision, actor,
+  });
+  run = await completeCurrentSource(runtime, {
+    runId: run.runId, sourceId: nextSource.sourceId, expectedRevision: run.revision,
+    commandId: 'complete-semantica-after-saving-conflicts',
+  });
+  run = await runtime.execute({
+    type: 'MARK_DOCUMENT_REVIEWED', commandId: 'review-semantica-after-saving-conflicts',
+    runId: run.runId, expectedRevision: run.revision, actor, sourceId: nextSource.sourceId,
+  });
+  assert.equal(run.status, 'READY_FOR_OUTPUT');
   assert.equal(run.sources[1]?.status, 'ALIGNED');
 });
 
@@ -626,7 +638,7 @@ test('来源文档就绪时即可保存第一项差异，且保存后仍待审�
 test('定版前可以以新的不可变决定取代已保存差异，且原决定保持在时间线中', async () => {
   const { runtime } = setup();
   const githubSource = { sourceId: 'guanyijia_github', sourceName: 'jshERP 源码' };
-  const blocked = await reviewSingleSource(runtime, ['gyj-conflict-debt-schema'], githubSource);
+  const blocked = await prepareSingleSource(runtime, ['gyj-conflict-debt-schema'], githubSource);
   const first = resolutionArtifactPayload({
     runId: blocked.runId,
     sourceId: githubSource.sourceId,
@@ -640,19 +652,24 @@ test('定版前可以以新的不可变决定取代已保存差异，且原决�
     conflictId: 'gyj-conflict-debt-schema', strategy: 'KEEP_CURRENT', reason: first.artifact.reason,
     expectedHunkSha256: first.artifact.hunk.hunkSha256, payload: first.payload,
   });
-  assert.equal(aligned.status, 'READY_FOR_OUTPUT');
+  assert.equal(aligned.status, 'REVIEWING_DOCUMENT');
+  const reviewed = await runtime.execute({
+    type: 'MARK_DOCUMENT_REVIEWED', commandId: 'review-after-first-debt-decision', runId: aligned.runId,
+    expectedRevision: aligned.revision, actor, sourceId: githubSource.sourceId,
+  });
+  assert.equal(reviewed.status, 'READY_FOR_OUTPUT');
 
   const replacement = resolutionArtifactPayload({
-    runId: aligned.runId,
+    runId: reviewed.runId,
     sourceId: githubSource.sourceId,
     conflictId: 'gyj-conflict-debt-schema',
     strategy: 'DEFER_AS_GAP',
     reason: '改为登记缺口，等待部署结构确认。',
   });
-  replacement.artifact.resolutionId = `replacement:${aligned.runId}:gyj-conflict-debt-schema:${aligned.timeline.length + 1}`;
+  replacement.artifact.resolutionId = `replacement:${reviewed.runId}:gyj-conflict-debt-schema:${reviewed.timeline.length + 1}`;
   const replaced = await runtime.execute({
-    type: 'REPLACE_SOURCE_CONFLICT_DECISION', commandId: 'replace-debt-decision', runId: aligned.runId,
-    expectedRevision: aligned.revision, actor, sourceId: githubSource.sourceId,
+    type: 'REPLACE_SOURCE_CONFLICT_DECISION', commandId: 'replace-debt-decision', runId: reviewed.runId,
+    expectedRevision: reviewed.revision, actor, sourceId: githubSource.sourceId,
     conflictId: 'gyj-conflict-debt-schema', strategy: 'DEFER_AS_GAP', reason: replacement.artifact.reason,
     expectedHunkSha256: replacement.artifact.hunk.hunkSha256, payload: JSON.stringify(replacement.artifact),
   });
@@ -660,7 +677,7 @@ test('定版前可以以新的不可变决定取代已保存差异，且原决�
   assert.equal(replaced.status, 'READY_FOR_OUTPUT');
   assert.deepEqual(replaced.sources[0]?.resolvedConflictIds, ['gyj-conflict-debt-schema']);
   assert.deepEqual(replaced.timeline.slice(-2).map((event) => event.type), [
-    'CONFLICT_RESOLVED',
+    'DOCUMENT_REVIEWED',
     'CONFLICT_DECISION_REPLACED',
   ]);
   const saved = JSON.parse(await runtime.readEventPayload(replaced.runId, replaced.timeline.at(-1)!.eventId));
@@ -671,7 +688,7 @@ test('定版前可以以新的不可变决定取代已保存差异，且原决�
 test('已生成但尚未定版的结果会在重新处理差异后保留为历史，并要求重新生成', async () => {
   const { runtime } = setup();
   const githubSource = { sourceId: 'guanyijia_github', sourceName: 'jshERP 源码' };
-  const blocked = await reviewSingleSource(runtime, ['gyj-conflict-debt-schema'], githubSource);
+  const blocked = await prepareSingleSource(runtime, ['gyj-conflict-debt-schema'], githubSource);
   const first = resolutionArtifactPayload({
     runId: blocked.runId,
     sourceId: githubSource.sourceId,
@@ -685,9 +702,13 @@ test('已生成但尚未定版的结果会在重新处理差异后保留为历�
     conflictId: 'gyj-conflict-debt-schema', strategy: 'KEEP_CURRENT', reason: first.artifact.reason,
     expectedHunkSha256: first.artifact.hunk.hunkSha256, payload: first.payload,
   });
+  const reviewed = await runtime.execute({
+    type: 'MARK_DOCUMENT_REVIEWED', commandId: 'review-before-generated-result', runId: aligned.runId,
+    expectedRevision: aligned.revision, actor, sourceId: githubSource.sourceId,
+  });
   const generated = await runtime.execute({
-    type: 'MARK_DELIVERABLE_GENERATED', commandId: 'generate-before-reprocess', runId: aligned.runId,
-    expectedRevision: aligned.revision, actor, deliverableId: 'deliverable-before-reprocess',
+    type: 'MARK_DELIVERABLE_GENERATED', commandId: 'generate-before-reprocess', runId: reviewed.runId,
+    expectedRevision: reviewed.revision, actor, deliverableId: 'deliverable-before-reprocess',
     deliveryCapability, payload: deliveryGeneratedPayload('deliverable-before-reprocess'),
   });
   const replacement = resolutionArtifactPayload({
@@ -724,7 +745,7 @@ test('已生成但尚未定版的结果会在重新处理差异后保留为历�
 test('单项决定拒绝未知错源重复空理由陈旧Hunk与重算SHA后的Assertion Diff provenance篡改', async () => {
   const { runtime } = setup();
   const githubSource = { sourceId: 'guanyijia_github', sourceName: 'jshERP 源码' };
-  const blocked = await reviewSingleSource(runtime, ['gyj-conflict-debt-schema'], githubSource);
+  const blocked = await prepareSingleSource(runtime, ['gyj-conflict-debt-schema'], githubSource);
   const valid = resolutionArtifactPayload({
     runId: blocked.runId, sourceId: githubSource.sourceId, conflictId: 'gyj-conflict-debt-schema',
     strategy: 'KEEP_CURRENT', reason: '部署事实优先，源码差异仅保留溯源。',
@@ -808,14 +829,19 @@ test('单项决定拒绝未知错源重复空理由陈旧Hunk与重算SHA后的A
   assert.equal((await runtime.read(blocked.runId))?.revision, blocked.revision);
 
   const resolved = await runtime.execute({ ...baseCommand, commandId: 'resolve:valid' });
-  assert.equal(resolved.status, 'READY_FOR_OUTPUT');
+  assert.equal(resolved.status, 'REVIEWING_DOCUMENT');
   await assert.rejects(() => runtime.execute({
     ...baseCommand, commandId: 'resolve:again', expectedRevision: resolved.revision,
   }), /当前没有待解决的来源冲突|已经解决/);
   await assert.rejects(() => runtime.execute({
     ...baseCommand, commandId: 'resolve:valid', reason: '改变理由', expectedRevision: blocked.revision,
   }), /commandId已用于不同命令/);
-  assert.equal((await runtime.read(blocked.runId))?.revision, resolved.revision);
+  const reviewed = await runtime.execute({
+    type: 'MARK_DOCUMENT_REVIEWED', commandId: 'review-after-valid-resolution', runId: resolved.runId,
+    expectedRevision: resolved.revision, actor, sourceId: githubSource.sourceId,
+  });
+  assert.equal(reviewed.status, 'READY_FOR_OUTPUT');
+  assert.equal((await runtime.read(blocked.runId))?.revision, reviewed.revision);
 });
 
 test('两个Runtime同revision并发决定同一项时只有一个CAS成功且事件投影不被覆盖', async () => {
@@ -832,7 +858,7 @@ test('两个Runtime同revision并发决定同一项时只有一个CAS成功且�
     now: () => '2026-08-17T12:00:00.000Z',
   });
   const githubSource = { sourceId: 'guanyijia_github', sourceName: 'jshERP 源码' };
-  const blocked = await reviewSingleSource(firstRuntime, ['gyj-conflict-debt-schema'], githubSource);
+  const blocked = await prepareSingleSource(firstRuntime, ['gyj-conflict-debt-schema'], githubSource);
   const keep = resolutionArtifactPayload({
     runId: blocked.runId, sourceId: githubSource.sourceId, conflictId: 'gyj-conflict-debt-schema',
     strategy: 'KEEP_CURRENT', reason: '部署事实优先。',
@@ -893,10 +919,6 @@ test('含佐证的完成命令在缺少集合validator时必须于CAS前拒绝',
     commandId: 'validator:complete:github',
     conflicts: ['gyj-conflict-debt-schema'],
   });
-  run = await runtime.execute({
-    type: 'MARK_DOCUMENT_REVIEWED', commandId: 'validator:review:github', runId: run.runId,
-    expectedRevision: run.revision, actor, sourceId: 'guanyijia_github',
-  });
   const resolution = resolutionArtifactPayload({
     runId: run.runId,
     sourceId: 'guanyijia_github',
@@ -909,6 +931,10 @@ test('含佐证的完成命令在缺少集合validator时必须于CAS前拒绝',
     expectedRevision: run.revision, actor, sourceId: 'guanyijia_github',
     conflictId: 'gyj-conflict-debt-schema', strategy: 'KEEP_CURRENT', reason: resolution.artifact.reason,
     expectedHunkSha256: resolution.artifact.hunk.hunkSha256, payload: resolution.payload,
+  });
+  run = await runtime.execute({
+    type: 'MARK_DOCUMENT_REVIEWED', commandId: 'validator:review:github', runId: run.runId,
+    expectedRevision: run.revision, actor, sourceId: 'guanyijia_github',
   });
   run = await runtime.execute({
     type: 'START_NEXT_SOURCE', commandId: 'validator:start:semantica', runId: run.runId,
@@ -1230,15 +1256,17 @@ const brokenStateCombinationScenarios: Array<{
   },
   {
     name: 'CONFLICT_BLOCKED 没有未解决冲突',
-    arrange: (runtime) => reviewSingleSource(runtime, ['conflict-1']),
+    arrange: (runtime) => prepareSingleSource(runtime, ['conflict-1']),
     mutate: (state) => {
+      state.runs[0]!.status = 'CONFLICT_BLOCKED';
+      state.runs[0]!.sources[0]!.status = 'CONFLICT_BLOCKED';
       state.runs[0]!.sources[0]!.resolvedConflictIds = ['conflict-1'];
     },
     error: /CONFLICT_BLOCKED没有未解决冲突/,
   },
   {
     name: 'ALIGNED 来源仍有未解决冲突',
-    arrange: (runtime) => reviewSingleSource(runtime, ['conflict-1']),
+    arrange: (runtime) => prepareSingleSource(runtime, ['conflict-1']),
     mutate: (state) => {
       state.runs[0]!.status = 'READY_FOR_OUTPUT';
       state.runs[0]!.sources[0]!.status = 'ALIGNED';

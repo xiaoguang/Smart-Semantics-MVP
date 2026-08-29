@@ -16,6 +16,7 @@ import type { StandardizationRun } from '../standardization-run/types.ts';
 import type { ProjectionContext } from '../modeling-document-projector/index.ts';
 import type { StandardizationModelingEligibilityProjection } from './modeling-eligibility.ts';
 import type { ReviewSupplementMatter } from '../data-standardization/standardized-document-reading.ts';
+import type { ReviewedSourceChange, ReviewedSourceDocument } from './reviewed-source-documents.ts';
 
 export type DeliverableStatus =
   | 'GENERATED_AWAITING_AUTHOR'
@@ -236,7 +237,12 @@ export type StandardizationDeliverablePreview = {
   previewSha256: ContentReference;
   mergedDocumentRef: ContentReference;
   sourceManifest: SourceCollectionManifest;
+  /** Exact rich V6 source documents after the user's saved review revisions. */
+  reviewedSourceManifest: Array<Pick<ReviewedSourceDocument,
+    'sourceId' | 'sourceName' | 'order' | 'contentSnapshotId' | 'documentId'
+    | 'documentRevision' | 'originalMarkdownSha256' | 'reviewedMarkdownSha256'>>;
   decisionManifest: ResolutionDecisionManifest;
+  changeManifest: ReviewedSourceChange[];
   mergedDocument: MergedStandardizationDocument;
   reviewProjection: {
     chapters: Array<{
@@ -249,6 +255,7 @@ export type StandardizationDeliverablePreview = {
         markdown: string;
         assertions: StructuredModelingAssertion[];
         blocks: SourceDocumentBlock[];
+        changes: ReviewedSourceChange[];
       }>;
     }>;
     supplements: ReviewSupplementMatter[];
@@ -296,6 +303,14 @@ export type SourceDocumentReader = {
   readSections?(documentId: string): Promise<Record<ModelingDocumentSection, string>>;
   readAssertions?(documentId: string): Promise<StructuredModelingAssertion[]>;
   readBlocks?(documentId: string): Promise<SourceDocumentBlock[]>;
+};
+
+/**
+ * Supplies the five immutable rich V6 source documents bound to one run and
+ * applies only the saved review revision. It must not access a live source.
+ */
+export type ReviewedSourceDocumentReader = {
+  readForRun(run: StandardizationRun): Promise<ReviewedSourceDocument[]>;
 };
 
 export type ConflictResolutionReader = {
@@ -359,6 +374,7 @@ export type StandardizationDeliverableRuntimeInput = {
   contentStore: ContentAddressedStore;
   runReader: StandardizationRunReader;
   sourceDocuments: SourceDocumentReader;
+  reviewedSourceDocuments?: ReviewedSourceDocumentReader;
   conflictResolutions: ConflictResolutionReader;
   baselineProvider: ProtectedBaselineProvider;
   modelingProjector: ModelingProjector;

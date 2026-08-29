@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { projectReviewPrimaryAction, resolveReviewResultSection } from './review-workspace-actions.ts';
+import {
+  projectReviewPrimaryAction,
+  resolveReviewResultSection,
+  shouldRetainHistoricalDocumentDuringPreparation,
+} from './review-workspace-actions.ts';
 
 test('the header directs a pending scripted review to its exact result claim', () => {
   const action = projectReviewPrimaryAction({
@@ -28,6 +32,19 @@ test('the header becomes the single complete-review action after scripted decisi
   });
 });
 
+test('the header directs the first actionable formal conflict immediately after local suggestions', () => {
+  assert.deepEqual(projectReviewPrimaryAction({
+    sourceName: 'GitHub代码仓库',
+    pendingClaimIds: [],
+    claimSections: new Map(),
+    currentConflictId: 'conflict:receivable-debt',
+  }), {
+    kind: 'OPEN_CURRENT_CONFLICT',
+    label: '保存当前决定',
+    conflictId: 'conflict:receivable-debt',
+  });
+});
+
 test('an empty metadata section is redirected to the pending result claim', () => {
   assert.equal(resolveReviewResultSection({
     selectedSection: 'GOAL',
@@ -48,4 +65,18 @@ test('a previously selected section with review results is retained on re-entry'
     ],
     pendingClaimIds: ['claim:depot-head'],
   }), 'ACTIVITY');
+});
+
+test('a prepared next source never replaces an intentionally opened historical document', () => {
+  assert.equal(shouldRetainHistoricalDocumentDuringPreparation({
+    historicalDocumentOpen: true,
+    visibleDocumentStableId: 'document:mysql-r1',
+    preparedDocumentStableId: 'document:github-r1',
+  }), true);
+
+  assert.equal(shouldRetainHistoricalDocumentDuringPreparation({
+    historicalDocumentOpen: false,
+    visibleDocumentStableId: 'document:mysql-r1',
+    preparedDocumentStableId: 'document:github-r1',
+  }), false);
 });

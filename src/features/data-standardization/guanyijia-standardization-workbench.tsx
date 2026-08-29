@@ -79,6 +79,7 @@ import {
   type SourceReviewTrace,
 } from '../guanyijia-evidence-factory/source-review-document.ts';
 import { readDemoContentSourceConfiguration } from '../guanyijia-demo-content/demo-content-review.ts';
+import { createGuanyijiaReviewedSourceDocumentReader } from './guanyijia-reviewed-source-documents.ts';
 import {
   createGuanyijiaWorkbenchRuntime,
   continueCurrentDocumentReviewAfterApply,
@@ -89,6 +90,7 @@ import {
   pageCurrentDocumentBlocks,
   projectCurrentDocumentBlockWindow,
   projectGuanyijiaReviewShellSnapshot,
+  readGuanyijiaContentBindingForRun,
   reviseEditableStructuredValue,
   structuredValueEditorModel,
   validateGuanyijiaCorroborationReceipt,
@@ -99,6 +101,7 @@ import {
   type DocumentReviewNavigationState,
   type GuanyijiaWorkbenchCommand,
   type GuanyijiaWorkbenchSnapshot,
+  type SourcePreparationProgress,
   type StandardizationFactsInspectorModel,
   type WorkbenchTimelineItem,
 } from './guanyijia-workbench-runtime.ts';
@@ -113,6 +116,10 @@ import {
 } from './standardized-document-projection.ts';
 import { buildHumanReadableEvidence, buildSourceDocumentTraceLinks, displaySourceName, sourceOriginLabel } from './human-readable-evidence.ts';
 import StandardizationTimeline from './standardization-timeline.tsx';
+import {
+  sourcePreparationPresentationDelayMs,
+  type SourcePreparationPresentationMode,
+} from './source-preparation-presentation.ts';
 import {
   projectBusinessJourneyTimeline,
   type JourneySource,
@@ -129,7 +136,11 @@ import {
 import { CrossSourceFindingList } from './cross-source-finding-list.tsx';
 import { businessErrorMessage } from './business-error-message.ts';
 import { buildWorkbenchActions, sourceSnapshotAction } from './workbench-action-model.ts';
-import { projectReviewPrimaryAction, resolveReviewResultSection } from './review-workspace-actions.ts';
+import {
+  projectReviewPrimaryAction,
+  resolveReviewResultSection,
+  shouldRetainHistoricalDocumentDuringPreparation,
+} from './review-workspace-actions.ts';
 import ReviewAssistantPanel from './review-assistant-panel.tsx';
 import { classifyReviewAssistantIntent } from './review-assistant.ts';
 import type {
@@ -179,6 +190,44 @@ function standardizedDocumentKind(kind: string | undefined): StandardizedDocumen
   if (kind === 'OBJECT') return 'OBJECT';
   if (kind === 'GAP') return 'GAP';
   return 'RULE';
+}
+
+function reviewDocumentReadTargetKey(
+  run: GuanyijiaWorkbenchSnapshot['run'] | undefined,
+  document: NonNullable<GuanyijiaWorkbenchSnapshot['current']>['document'] | undefined,
+) {
+  if (!run || !document) return undefined;
+  return `${run.runId}:r${run.revision}:document:${document.documentId}:r${document.revision}`;
+}
+
+type MergedPreviewPresentation = 'MATTERS' | 'CONCLUSIONS' | 'DOCUMENT';
+
+function MergedPreviewChapters({
+  preview,
+  presentation,
+}: {
+  preview: StandardizationDeliverablePreview;
+  presentation: MergedPreviewPresentation;
+}) {
+  const heading = presentation === 'MATTERS'
+    ? '完整合并正文（附审阅事项）'
+    : presentation === 'CONCLUSIONS'
+      ? '完整合并正文（附核心结论）'
+      : '完整合并正文';
+  return <section className={`guanyijia-merged-preview-full guanyijia-merged-preview-full-${presentation.toLowerCase()}`}>
+    <header><h4>{heading}</h4><small>九个固定章节；每章按数据库、GitHub、业务说明、ERP管理制度、企业术语图排列。</small></header>
+    {preview.changeManifest.length > 0 && <section className="guanyijia-reviewed-source-changes" aria-label="用户修改">
+      {preview.changeManifest.map((change) => <article key={change.changeId} data-reviewed-source-change={change.changeId}>
+        <header><span>用户修改</span><strong>{change.field === 'TITLE' ? '业务名称' : '结论说明'}</strong></header>
+        <details>
+          <summary>展开查看修改前后</summary>
+          <p className="removed">− {change.before}</p>
+          <p className="added">+ {change.after}</p>
+        </details>
+      </article>)}
+    </section>}
+    <SourceDocumentReadable content={preview.mergedDocument.markdown} />
+  </section>;
 }
 
 const demoRoleBySourceId: Record<string, SourceRole> = {
@@ -350,12 +399,15 @@ function recoveryTargetFromError(
 
 export default function GuanyijiaStandardizationWorkbench({
   onHandoff,
+  sourcePreparationPresentationMode = 'DEMO',
 }: {
   onHandoff?(
     artifact: ModelingDocumentArtifact,
     receipt: StandardizationModelingHandoffReceipt,
     eligibility?: StandardizationModelingEligibilityProjection,
   ): void;
+  /** Demo keeps active stages visible; LIVE adapters report without synthetic dwell. */
+  sourcePreparationPresentationMode?: SourcePreparationPresentationMode;
 }) {
   const { currentUser } = useCurrentUser();
   const sourceManagement = useSourceManagement();
@@ -392,6 +444,15 @@ export default function GuanyijiaStandardizationWorkbench({
       })
     ),
   }), [contentStore, deliveryCapability, sourceDocuments, story]);
+  const sourcePreparationObserverRef = useRef<(progress: SourcePreparationProgress) => void | Promise<void>>(() => undefined);
+  const sourcePreparationPresentationCancelsRef = useRef(new Set<() => void>());
+  const sourcePreparationPresentationEpochRef = useRef(0);
+  const sourcePreparationMountedRef = useRef(true);
+  const cancelSourcePreparationPresentation = useCallback(() => {
+    sourcePreparationPresentationEpochRef.current += 1;
+    for (const cancel of sourcePreparationPresentationCancelsRef.current) cancel();
+    sourcePreparationPresentationCancelsRef.current.clear();
+  }, []);
   const runtime = useMemo(() => createGuanyijiaWorkbenchRuntime({
     pointerStorage: localStorage,
     standardizationRuns,
@@ -407,6 +468,9 @@ export default function GuanyijiaStandardizationWorkbench({
       } catch {
         return { active: false, role: 'VIEWER' };
       }
+    },
+    sourcePreparationObserver(progress) {
+      return sourcePreparationObserverRef.current(progress);
     },
   }), [collaboration, contentStore, sourceDocuments, standardizationRuns, story]);
   const deliverableMetadataStore = useMemo(() => createBrowserDeliverableMetadataStore(), []);
@@ -435,6 +499,12 @@ export default function GuanyijiaStandardizationWorkbench({
       contentStore,
       runReader,
       sourceDocuments,
+      reviewedSourceDocuments: createGuanyijiaReviewedSourceDocumentReader({
+        sourceDocuments,
+        contentBindingForRun(run) {
+          return readGuanyijiaContentBindingForRun({ pointerStorage: localStorage, run });
+        },
+      }),
       conflictResolutions: {
         async list(run) {
           const artifacts = await Promise.all(run.timeline.filter((event) => (
@@ -499,6 +569,10 @@ export default function GuanyijiaStandardizationWorkbench({
   }
   const assistantPatchSeenRef = useRef<string | undefined>(undefined);
   const autoOpenDocumentRef = useRef(false);
+  const historicalDocumentOpenRef = useRef(false);
+  const documentReadTargetRef = useRef<string | undefined>(undefined);
+  const scriptedPreviewRequestRef = useRef(0);
+  const blockPreviewRequestRef = useRef(0);
   const reviewScrollRestoreRef = useRef<number | undefined>(undefined);
   const markdownReturnRef = useRef<{
     claimId: string;
@@ -516,6 +590,52 @@ export default function GuanyijiaStandardizationWorkbench({
   const [deliverablePreviewError, setDeliverablePreviewError] = useState<string>();
   const [deliverablePreviewTab, setDeliverablePreviewTab] = useState<'MATTERS' | 'CONCLUSIONS' | 'DOCUMENT'>('MATTERS');
   const [deliverablePreviewDocumentView, setDeliverablePreviewDocumentView] = useState<'READING' | 'MARKDOWN'>('READING');
+  const [sourcePreparationStates, setSourcePreparationStates] = useState<
+    Partial<Record<string, Partial<Record<'READ' | 'ANALYZE' | 'ORGANIZE', SourcePreparationProgress['state']>>>>
+  >({});
+  sourcePreparationObserverRef.current = (progress) => {
+    if (!sourcePreparationMountedRef.current) return undefined;
+    const presentationEpoch = sourcePreparationPresentationEpochRef.current;
+    setSourcePreparationStates((current) => ({
+      ...current,
+      [progress.sourceId]: {
+        ...current[progress.sourceId],
+        [progress.stage]: progress.state,
+      },
+    }));
+    const delayMs = sourcePreparationPresentationDelayMs(sourcePreparationPresentationMode, progress);
+    if (!delayMs) return undefined;
+    return new Promise<void>((resolve) => {
+      let frame: number | undefined;
+      let timer: number | undefined;
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (frame !== undefined) window.cancelAnimationFrame(frame);
+        if (timer !== undefined) window.clearTimeout(timer);
+        sourcePreparationPresentationCancelsRef.current.delete(finish);
+        resolve();
+      };
+      sourcePreparationPresentationCancelsRef.current.add(finish);
+      frame = window.requestAnimationFrame(() => {
+        frame = undefined;
+        if (!sourcePreparationMountedRef.current
+          || presentationEpoch !== sourcePreparationPresentationEpochRef.current) {
+          finish();
+          return;
+        }
+        timer = window.setTimeout(finish, delayMs);
+      });
+    });
+  };
+  useEffect(() => {
+    sourcePreparationMountedRef.current = true;
+    return () => {
+      sourcePreparationMountedRef.current = false;
+      cancelSourcePreparationPresentation();
+    };
+  }, [cancelSourcePreparationPresentation]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [interactionAnnouncement, setInteractionAnnouncement] = useState('');
@@ -596,6 +716,10 @@ export default function GuanyijiaStandardizationWorkbench({
   const [editingScriptedEditId, setEditingScriptedEditId] = useState<string>();
   const [scriptedEditLabel, setScriptedEditLabel] = useState('');
   const [scriptedEditText, setScriptedEditText] = useState('');
+  const [scriptedPreviewDraftKey, setScriptedPreviewDraftKey] = useState<string>();
+  const [scriptedPreviewValidating, setScriptedPreviewValidating] = useState(false);
+  const [blockPreviewDraftKey, setBlockPreviewDraftKey] = useState<string>();
+  const [blockPreviewValidating, setBlockPreviewValidating] = useState(false);
   const [curatedStructuredDiffOpen, setCuratedStructuredDiffOpen] = useState(false);
   const [conflictStrategy, setConflictStrategy] = useState<ConflictResolutionStrategy>();
   const [conflictDecision, setConflictDecision] = useState<BusinessConflictDecision>();
@@ -687,8 +811,20 @@ export default function GuanyijiaStandardizationWorkbench({
     }));
   }, [documentOpen]);
   const storeCommandSnapshot = useCallback((next: GuanyijiaWorkbenchSnapshot) => {
+    // A command can select a new document before React commits. Invalidate
+    // the previous window synchronously so a late read cannot replace the
+    // next-source shell during automatic continuation.
+    if (!historicalDocumentOpenRef.current) {
+      documentReadTargetRef.current = reviewDocumentReadTargetKey(next.run, next.current?.document);
+    }
     setSnapshot((current) => {
       const projected = projectGuanyijiaReviewShellSnapshot(next);
+      // A historical document is a deliberate, read-only detour. A concurrent
+      // automatic preparation may update the durable run, but it cannot
+      // replace the document the reader deliberately opened.
+      if (historicalDocumentOpenRef.current && current?.current?.document) {
+        return { ...projected, current: current.current };
+      }
       const currentDocument = current?.current?.document;
       const nextDocument = projected.current?.document;
       // Command responses intentionally carry shell metadata only. Keep the
@@ -768,6 +904,7 @@ export default function GuanyijiaStandardizationWorkbench({
     runtime.readReviewShell(currentUser.userId)
       .then((next) => { if (!cancelled) {
         if (next.nextAction.type === 'REVIEW_DOCUMENT') autoOpenDocumentRef.current = true;
+        documentReadTargetRef.current = reviewDocumentReadTargetKey(next.run, next.current?.document);
         setSnapshot(next); setRunStateUnavailable(false); setError(undefined);
       } })
       .catch((cause) => { if (!cancelled) {
@@ -1007,6 +1144,8 @@ export default function GuanyijiaStandardizationWorkbench({
       setDocumentWindowPageIndex(0);
       return;
     }
+    const targetKey = reviewDocumentReadTargetKey(run, document);
+    documentReadTargetRef.current = targetKey;
     let cancelled = false;
     runtime.readReviewCurrentDocument({
       actorUserId: currentUser.userId,
@@ -1015,7 +1154,7 @@ export default function GuanyijiaStandardizationWorkbench({
       epoch: `revision:${run.revision}`,
       filter: `section:${selectedSection}`,
     }).then(({ window, current }) => {
-      if (cancelled) return;
+      if (cancelled || documentReadTargetRef.current !== targetKey) return;
       setSnapshot((value) => value ? { ...value, current } : value);
       setDocumentWindowPages([window]);
       setDocumentWindowPageIndex(0);
@@ -1131,6 +1270,10 @@ export default function GuanyijiaStandardizationWorkbench({
     : undefined, [currentReviewSource, pendingScriptedReviewEdits.length, snapshot?.currentConflict?.conflictId, snapshot?.run]);
   const sourceReviewMatters = sourceReviewVisibility?.matterProjection.items ?? [];
   const crossSourceMatters = sourceReviewMatters.filter((matter) => matter.state !== 'RESOLVED');
+  const currentActionableMatter = sourceReviewMatters.find((matter) => (
+    matter.state === 'ACTIONABLE'
+      && matter.conflictId === snapshot?.currentConflict?.conflictId
+  ));
   const sourceReviewIntegrityIssues = sourceReviewVisibility?.matterProjection.integrityIssues ?? [];
   const sourceReviewIntegrityBlocked = sourceReviewIntegrityIssues.length > 0;
   const usesCuratedReview = Boolean(curatedReview);
@@ -1371,6 +1514,95 @@ export default function GuanyijiaStandardizationWorkbench({
     setSourceBoardSelection(sourceBoardBindings(result.model));
   };
 
+  /**
+   * A prepared source document replaces the visible document layer as one
+   * trusted handoff.  This must not depend on two effects racing each other:
+   * the runtime has already bound the exact next document, so the navigator
+   * can migrate its stable layer immediately.  When the user is on the
+   * timeline there is no layer to migrate and the existing auto-open effect
+   * opens the freshly prepared document instead.
+   */
+  const handoffPreparedSourceDocument = useCallback((next: GuanyijiaWorkbenchSnapshot) => {
+    const run = next.run;
+    const document = next.current?.document;
+    if (!run || !document) return;
+    const targetStableId = `document:${document.documentId}`;
+    const currentDocumentLayer = reviewSurface.state.layers.findLast((layer) => layer.kind === 'DOCUMENT');
+    if (shouldRetainHistoricalDocumentDuringPreparation({
+      historicalDocumentOpen: historicalDocumentOpenRef.current,
+      visibleDocumentStableId: currentDocumentLayer?.stableId,
+      preparedDocumentStableId: targetStableId,
+    })) {
+      autoOpenDocumentRef.current = false;
+      const source = next.current?.source;
+      const announcement = `${source
+        ? displaySourceName(source.sourceId, source.sourceName)
+        : '下一来源'}已就绪；当前仍在查看历史来源。关闭历史文档后将回到当前审阅。`;
+      setInteractionAnnouncement(announcement);
+      message.info(announcement);
+      return;
+    }
+    const navigation = openCurrentDocumentReview(next, reviewNavigation);
+    setReviewNavigation(navigation);
+    setSectionPage(1);
+    if (!currentDocumentLayer) {
+      autoOpenDocumentRef.current = true;
+      return;
+    }
+    const current = next.timeline.findLast((item) => item.state === 'CURRENT') ?? next.timeline.at(-1);
+    reviewSurface.dispatch({
+      type: 'RUN_REVISION_CHANGED',
+      runRevision: run.revision,
+      validStableIds: [targetStableId],
+      ...(currentDocumentLayer.stableId !== targetStableId ? { layerMigrations: [{
+        fromStableId: currentDocumentLayer.stableId,
+        toStableId: targetStableId,
+        focusId: navigation.focusTargetId,
+      }] } : {}),
+      fallbackAnchor: {
+        itemId: current ? `timeline:${current.itemId}` : 'review-surface:start',
+        relativeTop: 0,
+        ...(current ? { focusId: `guanyijia-timeline:${current.itemId}` } : {}),
+      },
+    });
+    autoOpenDocumentRef.current = false;
+  }, [reviewNavigation, reviewSurface]);
+
+  /**
+   * The final source has no next document.  Its completed review therefore
+   * hands the visible source layer to the single merged-result workspace
+   * instead of leaving a stale document above the result preview.  This is a
+   * lifecycle boundary, not a synthetic delay: the deterministic preview is
+   * still read separately and controls whether the final primary is enabled.
+   */
+  const enterDeliverablePreview = useCallback((next: GuanyijiaWorkbenchSnapshot) => {
+    const run = next.run;
+    if (!run) return;
+    const current = next.timeline.findLast((item) => item.state === 'CURRENT') ?? next.timeline.at(-1);
+    const stableId = `deliverable:${run.runId}`;
+    documentReadTargetRef.current = undefined;
+    autoOpenDocumentRef.current = false;
+    reviewSurface.dispatch({
+      type: 'RUN_REVISION_CHANGED',
+      runRevision: run.revision,
+      validStableIds: [],
+      fallbackAnchor: {
+        itemId: current ? `timeline:${current.itemId}` : 'review-surface:start',
+        relativeTop: 0,
+        ...(current ? { focusId: `guanyijia-timeline:${current.itemId}` } : {}),
+      },
+    });
+    if (mobile) {
+      workflowLayerSeenRef.current = stableId;
+      reviewSurface.open({
+        kind: 'DELIVERABLE',
+        stableId,
+        revision: run.revision,
+        focusId: `${stableId}:close`,
+      });
+    }
+  }, [mobile, reviewSurface]);
+
   const execute = async (type: 'START_RUN' | 'READ_NEXT_SOURCE' | 'COMPLETE_CURRENT_DOCUMENT_REVIEW') => {
     if (!snapshot) return;
     if (type === 'COMPLETE_CURRENT_DOCUMENT_REVIEW' && !allowReviewMutation('PATCH')) return;
@@ -1379,6 +1611,8 @@ export default function GuanyijiaStandardizationWorkbench({
       return;
     }
     if (type === 'START_RUN') {
+      cancelSourcePreparationPresentation();
+      setSourcePreparationStates({});
       const validation = validateSourceBoardStart(sourceBoard);
       if (!validation.ok) {
         setSourceCenterOpen(true);
@@ -1388,6 +1622,8 @@ export default function GuanyijiaStandardizationWorkbench({
     }
     setBusy(true); setError(undefined);
     try {
+      let preparedSourceDocument = type === 'READ_NEXT_SOURCE';
+      let enteringDeliverablePreview = false;
       let next = await runtime.execute({
         type,
         commandId: commandId(currentUser.userId, snapshot, type),
@@ -1399,20 +1635,44 @@ export default function GuanyijiaStandardizationWorkbench({
         } : {}),
       });
       if (type === 'START_RUN' && next.run?.status === 'READY') {
-        autoOpenDocumentRef.current = true;
         next = await runtime.execute({
           type: 'READ_NEXT_SOURCE',
           commandId: `${commandId(currentUser.userId, snapshot, type)}:first-source`,
           expectedRevision: next.run.revision,
           actorUserId: currentUser.userId,
         });
+        preparedSourceDocument = true;
       }
-      if (type === 'READ_NEXT_SOURCE') autoOpenDocumentRef.current = true;
+      if (type === 'COMPLETE_CURRENT_DOCUMENT_REVIEW'
+        && next.nextAction.type === 'READ_NEXT_SOURCE'
+        && next.run) {
+        // A source review has genuinely completed at this point. Let React
+        // paint that completed state for one frame, then start the next
+        // immutable source. This is not simulated progress: READ_NEXT_SOURCE
+        // still performs the actual read, analysis and document registration.
+        storeCommandSnapshot(next);
+        setInteractionAnnouncement('本来源已审阅完成，正在自动准备下一来源。');
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+        autoOpenDocumentRef.current = true;
+        next = await runtime.execute({
+          type: 'READ_NEXT_SOURCE',
+          commandId: `${commandId(currentUser.userId, snapshot, type)}:auto-next:${next.run.revision}`,
+          expectedRevision: next.run.revision,
+          actorUserId: currentUser.userId,
+        });
+        preparedSourceDocument = true;
+      }
       storeCommandSnapshot(next);
+      enteringDeliverablePreview = type === 'COMPLETE_CURRENT_DOCUMENT_REVIEW'
+        && next.run?.status === 'READY_FOR_OUTPUT';
+      if (enteringDeliverablePreview) enterDeliverablePreview(next);
+      else if (preparedSourceDocument) handoffPreparedSourceDocument(next);
       if (type === 'READ_NEXT_SOURCE' || type === 'START_RUN') message.success(`${next.current?.source ? displaySourceName(next.current.source.sourceId, next.current.source.sourceName) : '来源'}快照已载入，来源文档已生成`);
       if (type === 'COMPLETE_CURRENT_DOCUMENT_REVIEW') {
-        const completionMessage = next.nextAction.type === 'READ_NEXT_SOURCE'
-          ? '本份来源文档已完成审阅，可继续审阅下一来源。'
+        const completionMessage = next.current?.source
+          ? `本份来源文档已完成审阅，已自动进入${displaySourceName(next.current.source.sourceId, next.current.source.sourceName)}。`
+          : next.nextAction.type === 'READ_NEXT_SOURCE'
+          ? '本份来源文档已完成审阅，正在自动准备下一来源。'
           : next.nextAction.type === 'RESOLVE_CONFLICT'
             ? '本份来源文档已完成审阅；可返回时间线处理来源差异。'
             : '本份来源文档已完成审阅。';
@@ -1421,6 +1681,13 @@ export default function GuanyijiaStandardizationWorkbench({
       }
     } catch (cause) {
       const detail = businessErrorMessage(cause, '当前操作暂时无法完成，请重试。');
+      if (type === 'READ_NEXT_SOURCE') {
+        // START_NEXT_SOURCE is durable before the later source compilation
+        // and registration work. Refresh the shell after a failure so the
+        // retry operates on that exact READING source instead of a stale
+        // previous revision or a later pending source.
+        try { storeCommandSnapshot(await runtime.readReviewShell(currentUser.userId)); } catch { /* preserve the original error */ }
+      }
       setError(detail); message.error(detail);
     } finally { setBusy(false); }
   };
@@ -1523,6 +1790,69 @@ export default function GuanyijiaStandardizationWorkbench({
     } finally { setBusy(false); }
   };
 
+  /**
+   * The final primary is intentionally one user gesture.  Its two durable
+   * commands remain serial and independently recoverable: a successful
+   * generation is retained if the subsequent author freeze cannot complete.
+   */
+  const confirmAndFreezeDeliverable = async () => {
+    if (!snapshot?.run) return;
+    if (!allowReviewMutation('DELIVERABLE_APPROVAL')) return;
+    setBusy(true); setError(undefined);
+    let current = deliverableSnapshot?.deliverable;
+    try {
+      const currentPreview = deliverablePreview
+        && deliverablePreview.runId === snapshot.run.runId
+        && deliverablePreview.runRevision === snapshot.run.revision
+        ? deliverablePreview
+        : undefined;
+      if (!current && !currentPreview) {
+        throw new Error('完整合并预览尚未就绪或已过期，请重新核对后再确认并定版。');
+      }
+      if (!current) {
+        const generated = await deliverables.execute({
+          type: 'GENERATE_DELIVERABLE',
+          runId: snapshot.run.runId,
+          actorUserId: currentUser.userId,
+          commandId: `${snapshot.storyId}:${currentUser.userId}:GENERATE_DELIVERABLE:confirm-and-freeze:run-r${snapshot.run.revision}`,
+          mode: 'MERGED_DOCUMENT',
+          expectedRunRevision: snapshot.run.revision,
+          expectedPreviewSha256: currentPreview!.previewSha256,
+        });
+        setDeliverableSnapshot(generated);
+        current = generated.deliverable;
+        if (!current) throw new Error('完整标准化结果生成后未返回可定版文档');
+      }
+      if (current.status === 'GENERATED_AWAITING_AUTHOR' || current.status === 'AWAITING_INDEPENDENT_REVIEW') {
+        const frozen = await deliverables.execute({
+          type: 'AUTHOR_CONFIRM_AND_FREEZE',
+          runId: snapshot.run.runId,
+          actorUserId: currentUser.userId,
+          commandId: `${snapshot.storyId}:${currentUser.userId}:AUTHOR_CONFIRM_AND_FREEZE:confirm-and-freeze:deliverable-r${current.revision}`,
+          deliverableId: current.deliverableId,
+          expectedDeliverableRevision: current.revision,
+        });
+        setDeliverableSnapshot(frozen);
+        current = frozen.deliverable;
+      }
+      setSnapshot(await runtime.readReviewShell(currentUser.userId));
+      if (current?.status === 'FROZEN') {
+        setInteractionAnnouncement('完整合并文档已生成并定版。');
+        message.success('完整合并文档已生成并定版');
+      }
+    } catch (cause) {
+      // Generation may have completed while freezing failed.  Re-read the
+      // durable state so the page honestly offers “继续定版”, never retries
+      // generation invisibly.
+      try { setDeliverableSnapshot(await deliverables.read({ runId: snapshot.run.runId, actorUserId: currentUser.userId })); }
+      catch { /* keep the last verified snapshot visible */ }
+      try { setSnapshot(await runtime.readReviewShell(currentUser.userId)); }
+      catch { /* the original error remains more useful */ }
+      const detail = businessErrorMessage(cause, '完整合并文档暂时无法确认并定版，请重试。');
+      setError(detail); message.error(detail);
+    } finally { setBusy(false); }
+  };
+
   const resumePendingDeliverable = async () => {
     const pendingCommand = deliverableSnapshot?.pendingCommand;
     if (!pendingCommand || pendingCommand.actorUserId !== currentUser.userId) return;
@@ -1543,9 +1873,17 @@ export default function GuanyijiaStandardizationWorkbench({
     } finally { setBusy(false); }
   };
 
-  const clearPreview = () => setSnapshot((current) => current?.preview || current?.scriptedEditPreviewSha256
-    ? { ...current, preview: undefined, scriptedEditPreviewSha256: undefined }
-    : current);
+  const clearPreview = () => {
+    scriptedPreviewRequestRef.current += 1;
+    blockPreviewRequestRef.current += 1;
+    setScriptedPreviewDraftKey(undefined);
+    setScriptedPreviewValidating(false);
+    setBlockPreviewDraftKey(undefined);
+    setBlockPreviewValidating(false);
+    setSnapshot((current) => current?.preview || current?.scriptedEditPreviewSha256
+      ? { ...current, preview: undefined, scriptedEditPreviewSha256: undefined }
+      : current);
+  };
 
   const currentEditChange = () => {
     const block = currentDocumentBlocks?.find((candidate) => candidate.blockId === editingBlockId);
@@ -1560,6 +1898,24 @@ export default function GuanyijiaStandardizationWorkbench({
     };
   };
 
+  const editingBlockForPreview = currentDocumentBlocks?.find((candidate) => candidate.blockId === editingBlockId);
+  const blockDraftChange = editingBlockId ? (() => {
+    try { return currentEditChange(); }
+    catch { return undefined; }
+  })() : undefined;
+  const blockDraftKey = blockDraftChange
+    ? sha256HexSync(canonicalModelingJson(blockDraftChange))
+    : undefined;
+  const blockDraftChanged = Boolean(editingBlockForPreview && blockDraftChange && (
+    editingBlockForPreview.label !== blockDraftChange.label
+      || canonicalModelingJson(editingBlockForPreview.value) !== canonicalModelingJson(blockDraftChange.value)
+  ));
+  const blockDraftModel = editingBlockForPreview
+    ? structuredValueEditorModel(editingBlockForPreview.value)
+    : undefined;
+  const blockDraftValid = Boolean(blockDraftChange && editLabel.trim() && editValueText.trim()
+    && (blockDraftModel?.kind !== 'TEXT_OBJECT' || blockDraftModel.normalized === undefined || editNormalized?.trim()));
+
   const displayedReviewDocumentTarget = () => {
     const document = snapshot?.current?.document;
     return document ? {
@@ -1569,32 +1925,54 @@ export default function GuanyijiaStandardizationWorkbench({
   };
 
   const previewEdit = async () => {
-    if (!snapshot?.run) return;
+    if (!snapshot?.run || !blockDraftChange || !blockDraftKey) return;
     if (!allowReviewMutation('PATCH')) return;
-    setBusy(true); setError(undefined);
+    const requestId = ++blockPreviewRequestRef.current;
+    setBlockPreviewValidating(true); setError(undefined);
     try {
-      const change = currentEditChange();
       const next = await runtime.execute({
         type: 'PREVIEW_CURRENT_BLOCK_CHANGE',
-        commandId: `${commandId(currentUser.userId, snapshot, 'PREVIEW_CURRENT_BLOCK_CHANGE')}:${change.blockId}`,
+        commandId: `${commandId(currentUser.userId, snapshot, 'PREVIEW_CURRENT_BLOCK_CHANGE')}:${blockDraftChange.blockId}:${blockDraftKey.slice(0, 12)}`,
         expectedRevision: snapshot.run.revision,
         actorUserId: currentUser.userId,
         ...displayedReviewDocumentTarget(),
-        change,
+        change: blockDraftChange,
       });
+      if (requestId !== blockPreviewRequestRef.current) return;
       storeCommandSnapshot(next);
+      setBlockPreviewDraftKey(blockDraftKey);
     } catch (cause) {
+      if (requestId !== blockPreviewRequestRef.current) return;
       const detail = businessErrorMessage(cause, '修改预览暂时无法生成，请重试。');
-      setError(detail); message.error(detail);
-    } finally { setBusy(false); }
+      setError(detail);
+    } finally {
+      if (requestId === blockPreviewRequestRef.current) setBlockPreviewValidating(false);
+    }
   };
 
+  useEffect(() => {
+    if (!editingBlockId || !blockDraftKey || !blockDraftChanged || !blockDraftValid
+      || blockPreviewDraftKey === blockDraftKey || !snapshot?.run) return;
+    const timer = window.setTimeout(() => {
+      void previewEdit();
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [
+    blockDraftChanged,
+    blockDraftKey,
+    blockDraftValid,
+    blockPreviewDraftKey,
+    editingBlockId,
+    snapshot?.run?.revision,
+  ]);
+
   const applyEdit = async () => {
-    if (!snapshot?.run || !editingBlockId) return;
+    if (!snapshot?.run || !editingBlockId || !blockDraftChange || !blockDraftKey
+      || blockPreviewDraftKey !== blockDraftKey || !snapshot.preview) return;
     if (!allowReviewMutation('PATCH')) return;
     setBusy(true); setError(undefined);
     try {
-      const change = currentEditChange();
+      const change = blockDraftChange;
       const digest = sha256HexSync(canonicalModelingJson(change)).slice(0, 12);
       const next = await runtime.execute({
         type: 'APPLY_CURRENT_BLOCK_CHANGE',
@@ -1612,6 +1990,8 @@ export default function GuanyijiaStandardizationWorkbench({
       setReviewNavigation(navigation);
       setSelectedBlockId(editingBlockId);
       setEditingBlockId(undefined);
+      setBlockPreviewDraftKey(undefined);
+      setBlockPreviewValidating(false);
       setHistoryOpen(false);
       message.success('修改已应用，已生成新的文档版本');
     } catch (cause) {
@@ -1672,30 +2052,71 @@ export default function GuanyijiaStandardizationWorkbench({
     };
   };
 
+  const scriptedDraftTask = editingScriptedReviewEdit
+    ? curatedWorkspace?.tasks.find((task) => task.taskId === editingScriptedReviewEdit.definition.editId)
+    : undefined;
+  const scriptedDraftPatch = editingScriptedReviewEdit ? scriptedPatchForEditor() : undefined;
+  const scriptedDraftKey = scriptedDraftPatch
+    ? sha256HexSync(canonicalModelingJson(scriptedDraftPatch))
+    : undefined;
+  const scriptedDraftChanged = Boolean(editingScriptedReviewEdit && scriptedDraftTask && (
+    (editingScriptedReviewEdit.definition.editableFields.includes('label')
+      && scriptedEditLabel !== scriptedDraftTask.current.title)
+    || (editingScriptedReviewEdit.definition.editableFields.includes('text')
+      && scriptedEditText !== scriptedDraftTask.current.statement)
+  ));
+  const scriptedDraftValid = Boolean(editingScriptedReviewEdit && (
+    (!editingScriptedReviewEdit.definition.editableFields.includes('label') || scriptedEditLabel.trim())
+    && (!editingScriptedReviewEdit.definition.editableFields.includes('text') || scriptedEditText.trim())
+  ));
+
   const previewScriptedReviewEdit = async () => {
-    if (!snapshot?.run || !editingScriptedReviewEdit) return;
+    if (!snapshot?.run || !editingScriptedReviewEdit || !scriptedDraftPatch || !scriptedDraftKey) return;
     if (!allowReviewMutation('PATCH')) return;
-    setBusy(true); setError(undefined);
+    const requestId = ++scriptedPreviewRequestRef.current;
+    setScriptedPreviewValidating(true); setError(undefined);
     try {
       const next = await runtime.execute({
         type: 'PREVIEW_SCRIPTED_REVIEW_EDIT',
-        commandId: `${commandId(currentUser.userId, snapshot, 'PREVIEW_SCRIPTED_REVIEW_EDIT')}:${editingScriptedReviewEdit.definition.editId}`,
+        commandId: `${commandId(currentUser.userId, snapshot, 'PREVIEW_SCRIPTED_REVIEW_EDIT')}:${editingScriptedReviewEdit.definition.editId}:${scriptedDraftKey.slice(0, 12)}`,
         expectedRevision: snapshot.run.revision,
         actorUserId: currentUser.userId,
         ...displayedReviewDocumentTarget(),
         editId: editingScriptedReviewEdit.definition.editId,
-        patch: scriptedPatchForEditor(),
+        patch: scriptedDraftPatch,
       });
+      if (requestId !== scriptedPreviewRequestRef.current) return;
       storeCommandSnapshot(next);
-      setInteractionAnnouncement('已生成修改预览；请核对名称和 Markdown 段落。');
+      setScriptedPreviewDraftKey(scriptedDraftKey);
+      setInteractionAnnouncement('修改效果已校验；可直接保存修改。');
     } catch (cause) {
+      if (requestId !== scriptedPreviewRequestRef.current) return;
       const detail = businessErrorMessage(cause, '修改预览暂时无法生成，请重试。');
-      setError(detail); message.error(detail);
-    } finally { setBusy(false); }
+      setError(detail);
+    } finally {
+      if (requestId === scriptedPreviewRequestRef.current) setScriptedPreviewValidating(false);
+    }
   };
 
+  useEffect(() => {
+    if (!editingScriptedReviewEdit || !scriptedDraftKey || !scriptedDraftChanged || !scriptedDraftValid
+      || scriptedPreviewDraftKey === scriptedDraftKey || !snapshot?.run) return;
+    const timer = window.setTimeout(() => {
+      void previewScriptedReviewEdit();
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [
+    editingScriptedReviewEdit?.definition.editId,
+    scriptedDraftChanged,
+    scriptedDraftKey,
+    scriptedDraftValid,
+    scriptedPreviewDraftKey,
+    snapshot?.run?.revision,
+  ]);
+
   const applyScriptedReviewEdit = async () => {
-    if (!snapshot?.run || !editingScriptedReviewEdit || !snapshot.scriptedEditPreviewSha256) return;
+    if (!snapshot?.run || !editingScriptedReviewEdit || !snapshot.scriptedEditPreviewSha256
+      || !scriptedDraftPatch || !scriptedDraftKey || scriptedPreviewDraftKey !== scriptedDraftKey) return;
     if (!allowReviewMutation('PATCH')) return;
     setBusy(true); setError(undefined);
     try {
@@ -1708,7 +2129,7 @@ export default function GuanyijiaStandardizationWorkbench({
         ...displayedReviewDocumentTarget(),
         editId,
         decision: 'APPLY_SUGGESTION',
-        patch: scriptedPatchForEditor(),
+        patch: scriptedDraftPatch,
         expectedPreviewSha256: snapshot.scriptedEditPreviewSha256,
       });
       const navigation = continueCurrentDocumentReviewAfterApply(next, {
@@ -1862,6 +2283,7 @@ export default function GuanyijiaStandardizationWorkbench({
     const run = snapshot?.run;
     if (!snapshot || !run) return;
     if (documentId === snapshot.current?.document?.documentId) {
+      historicalDocumentOpenRef.current = false;
       setHistoricalDocumentOpen(false);
       openSourceDocument(snapshot, trigger);
       return;
@@ -1873,7 +2295,9 @@ export default function GuanyijiaStandardizationWorkbench({
         documentId,
       });
       const targetSnapshot = { ...snapshot, current };
+      historicalDocumentOpenRef.current = true;
       setHistoricalDocumentOpen(true);
+      documentReadTargetRef.current = reviewDocumentReadTargetKey(targetSnapshot.run, targetSnapshot.current?.document);
       setSnapshot(targetSnapshot);
       openSourceDocument(targetSnapshot, trigger);
     } catch (cause) {
@@ -1892,12 +2316,11 @@ export default function GuanyijiaStandardizationWorkbench({
       return;
     }
     if (currentDocumentLayer) {
-      // An explicit next-source action replaces the previous document layer
-      // only after the next immutable source document is ready.
-      reviewSurface.close();
-      window.requestAnimationFrame(() => {
-        if (autoOpenDocumentRef.current) setReviewNavigation((current) => ({ ...current, focusToken: current.focusToken + 1 }));
-      });
+      // A run revision transition owns replacement of an already-open
+      // document.  It can migrate the trusted layer to the exact next source
+      // document (or safely clear it if that is not possible).  Closing here
+      // races that migration and can strand the shell at "继续审阅" after the
+      // runtime has already prepared the next source.
       return;
     }
     autoOpenDocumentRef.current = false;
@@ -1918,9 +2341,13 @@ export default function GuanyijiaStandardizationWorkbench({
     const restoreScrollTop = reviewScrollRestoreRef.current;
     reviewSurface.close();
     if (layer === 'document' && historicalDocumentOpen && snapshot?.run) {
+      historicalDocumentOpenRef.current = false;
       setHistoricalDocumentOpen(false);
       void runtime.readReviewShell(currentUser.userId)
-        .then((next) => setSnapshot(next))
+        .then((next) => {
+          documentReadTargetRef.current = reviewDocumentReadTargetKey(next.run, next.current?.document);
+          setSnapshot(next);
+        })
         .catch((cause) => setError(businessErrorMessage(cause, '当前审阅任务暂时无法恢复，请重试。')));
     }
     // The navigator emits the same effect, but an inline document close can
@@ -2501,6 +2928,14 @@ export default function GuanyijiaStandardizationWorkbench({
     && !snapshot.current.legacyReadOnly
     && pendingScriptedReviewEdits.length === 0;
   const nextAction = snapshot?.nextAction;
+  const sourcePreparationFailure = Object.entries(sourcePreparationStates).flatMap(([sourceId, stages]) => (
+    Object.entries(stages ?? {}).flatMap(([stage, state]) => state === 'ERROR'
+      ? [{ sourceId, stage: stage as SourcePreparationProgress['stage'] }]
+      : [])
+  ))[0];
+  const sourcePreparationFailureName = sourcePreparationFailure
+    ? snapshot?.run?.sources.find((source) => source.sourceId === sourcePreparationFailure.sourceId)
+    : undefined;
   const visibleWorkflowAction = nextAction
     ? buildWorkbenchActions({
       workflow: nextAction,
@@ -2982,11 +3417,9 @@ export default function GuanyijiaStandardizationWorkbench({
         sourceName: displaySourceName(snapshot.current.source.sourceId, snapshot.current.source.sourceName),
         pendingClaimIds: pendingScriptedReviewEdits.map((edit) => edit.definition.reviewClaimId),
         claimSections: new Map(curatedWorkspace.claims.map((claim) => [claim.claimId, claim.section])),
+        currentConflictId: currentActionableMatter?.conflictId,
       })
     : undefined;
-  const reviewNextSourceAvailable = Boolean(curatedWorkspace
-    && ['REVIEWED', 'CONFLICT_BLOCKED', 'ALIGNED'].includes(snapshot?.current?.sourceStep.status ?? '')
-    && snapshot?.nextAction.type === 'READ_NEXT_SOURCE');
   const currentSourceReviewed = ['REVIEWED', 'CONFLICT_BLOCKED', 'ALIGNED']
     .includes(snapshot?.current?.sourceStep.status ?? '');
   const runReviewPrimaryAction = () => {
@@ -2994,6 +3427,15 @@ export default function GuanyijiaStandardizationWorkbench({
     if (reviewPrimaryAction.kind === 'OPEN_PENDING_CLAIM') {
       const claim = curatedWorkspace?.claims.find((candidate) => candidate.claimId === reviewPrimaryAction.claimId);
       if (claim) focusCuratedClaim(claim);
+      return;
+    }
+    if (reviewPrimaryAction.kind === 'OPEN_CURRENT_CONFLICT') {
+      reviewSurface.open({
+        kind: 'CONFLICT', stableId: `conflict:${reviewPrimaryAction.conflictId}`,
+        revision: snapshot?.run?.revision,
+        focusId: `conflict:${reviewPrimaryAction.conflictId}:close`,
+      }, document.activeElement as HTMLElement | null);
+      setInteractionAnnouncement('已打开当前来源差异，可查看双方资料并保存当前决定。');
       return;
     }
     void execute('COMPLETE_CURRENT_DOCUMENT_REVIEW');
@@ -3072,12 +3514,16 @@ export default function GuanyijiaStandardizationWorkbench({
     sourceId: source.sourceId,
     sourceName: source.sourceName,
     status: source.status,
+    introducedConflictIds: source.introducedConflictIds,
+    resolvedConflictIds: source.resolvedConflictIds,
     sourceClass: source.sourceId === 'guanyijia_demo_policy' ? 'DEMO_POLICY' as const
       : source.sourceId === 'guanyijia_semantica_demo' ? 'DERIVED' as const : 'REAL' as const,
   })) ?? sourceBoard.slots.map((slot) => ({
     sourceId: slot.instance?.sourceId ?? `pre-run:${slot.role}`,
     sourceName: slot.displayName,
     status: slot.readState === 'NONE' ? 'PENDING' : slot.readState,
+    introducedConflictIds: [] as string[],
+    resolvedConflictIds: [] as string[],
     sourceClass: slot.role === 'ERP_POLICY' ? 'DEMO_POLICY' as const
       : slot.role === 'TERMINOLOGY' ? 'DERIVED' as const : 'REAL' as const,
   }));
@@ -3086,9 +3532,14 @@ export default function GuanyijiaStandardizationWorkbench({
       sourceId: source.sourceId,
       displayName: displaySourceName(source.sourceId, source.sourceName),
       status: sourceCheckpointStatus(source.status),
+      ...(source.introducedConflictIds ? { introducedConflictIds: source.introducedConflictIds } : {}),
+      ...(source.resolvedConflictIds ? { resolvedConflictIds: source.resolvedConflictIds } : {}),
+      ...(sourcePreparationStates[source.sourceId]
+        ? { preparationStates: sourcePreparationStates[source.sourceId] }
+        : {}),
     })),
     timeline: snapshot?.timeline ?? [],
-  }), [inspectorSources, snapshot?.timeline]);
+  }), [inspectorSources, snapshot?.timeline, sourcePreparationStates]);
   const reviewAssistant = <ReviewAssistantPanel
     history={assistantHistory}
     historyTotal={assistantHistoryTotal}
@@ -3173,7 +3624,6 @@ export default function GuanyijiaStandardizationWorkbench({
         <div className="guanyijia-document-header-actions">
           {(snapshot.current.history?.length ?? 0) > 1 && <Button type="link" onClick={() => setHistoryOpen((open) => !open)}>{historyOpen ? '收起历史版本' : '查看历史版本'}</Button>}
           {reviewPrimaryAction && !editingBlockId && !editingScriptedEditId && !pendingAssistantProposal && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={runReviewPrimaryAction}>{reviewPrimaryAction.label}</Button>}
-          {!reviewPrimaryAction && reviewNextSourceAvailable && !editingBlockId && !editingScriptedEditId && !pendingAssistantProposal && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void execute('READ_NEXT_SOURCE')}>审阅下一个来源</Button>}
           {!curatedWorkspace && canCompleteReview && !editingBlockId && !editingScriptedEditId && !pendingAssistantProposal && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void execute('COMPLETE_CURRENT_DOCUMENT_REVIEW')}>完成{displaySourceName(snapshot.current.source.sourceId, snapshot.current.source.sourceName)}审阅</Button>}
         </div>
       </header>
@@ -3335,18 +3785,18 @@ export default function GuanyijiaStandardizationWorkbench({
                     })}
                   </section>}
                   <div className="guanyijia-editor-actions">
-                    {!snapshot.scriptedEditPreviewSha256 ? <>
-                      <Button type="text" onClick={() => { setEditingScriptedEditId(undefined); clearPreview(); }}>取消</Button>
-                      <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked || busy
-                        || (scriptedEdit.definition.editableFields.includes('label') && !scriptedEditLabel.trim())
-                        || (scriptedEdit.definition.editableFields.includes('text') && !scriptedEditText.trim())} loading={busy} onClick={() => void previewScriptedReviewEdit()}>预览修改</Button>
-                    </> : <>
-                      <Button type="text" onClick={clearPreview}>继续编辑</Button>
-                      <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void applyScriptedReviewEdit()}>确认修改</Button>
-                    </>}
+                    <Button type="text" onClick={() => { setEditingScriptedEditId(undefined); clearPreview(); }}>取消</Button>
+                    <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked || busy
+                      || !scriptedDraftValid || !scriptedDraftChanged || scriptedPreviewValidating
+                      || !snapshot.scriptedEditPreviewSha256 || scriptedPreviewDraftKey !== scriptedDraftKey}
+                      loading={busy} onClick={() => void applyScriptedReviewEdit()}>保存修改</Button>
                   </div>
-                  {snapshot.scriptedEditPreviewSha256 && <section className="guanyijia-change-preview" aria-label="修改预览">
-                    <h4>修改预览</h4>
+                  <section className="guanyijia-change-preview" aria-label="修改效果">
+                    <header><h4>修改效果</h4><small>{scriptedPreviewValidating
+                      ? '正在校验…'
+                      : scriptedPreviewDraftKey === scriptedDraftKey && snapshot.scriptedEditPreviewSha256
+                        ? '已校验'
+                        : scriptedDraftChanged ? '等待校验' : '请输入不同于原结论的修改内容'}</small></header>
                     <div className="guanyijia-before-after">
                       <div><span>业务名称 · 修改前</span><strong>{task.current.title}</strong><p>{task.current.statement}</p></div>
                       <div><span>业务名称 · 修改后</span><strong>{editedTitle}</strong><p>{editedStatement}</p></div>
@@ -3356,7 +3806,7 @@ export default function GuanyijiaStandardizationWorkbench({
                       <p className="removed">− {task.current.title}：{task.current.statement}</p>
                       <p className="added">+ {editedTitle}：{editedStatement}</p>
                     </section>
-                  </section>}
+                  </section>
                 </section>}
               </article>;
             })}</section>}
@@ -3365,6 +3815,7 @@ export default function GuanyijiaStandardizationWorkbench({
               className="guanyijia-cross-source-matters"
               actionForFinding={actionForCrossSourceMatter}
               expansionKey={`${snapshot.run?.runId ?? 'pending'}:${snapshot.run?.revision ?? 0}`}
+              autoExpandFindingId={currentActionableMatter?.stableId}
             />}
             {sourceReviewIntegrityIssues.length > 0 && <section className="guanyijia-source-review-integrity" aria-label="来源差异完整性错误">
               <h5>来源差异完整性错误</h5>
@@ -3535,32 +3986,31 @@ export default function GuanyijiaStandardizationWorkbench({
           </label>}
           {editorModel.kind === 'TEXT_OBJECT' && Object.keys(editorModel.readonlyFields).length > 0 && <p className="guanyijia-editor-locked-fields">本次可修改：名称和结论说明。确认后，审阅文档会同步更新对应段落。</p>}
           <div className="guanyijia-editor-actions">
-            {!snapshot.preview ? <>
-              <Button type="text" onClick={() => { setEditingBlockId(undefined); clearPreview(); }}>取消</Button>
-              <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked || !editLabel.trim() || !editValueText.trim()
-                || (editorModel.kind === 'TEXT_OBJECT' && editorModel.normalized !== undefined && !editNormalized?.trim())} loading={busy} onClick={() => void previewEdit()}>预览修改</Button>
-            </> : <>
-              <Button type="text" onClick={clearPreview}>继续编辑</Button>
-              <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void applyEdit()}>确认修改</Button>
-            </>}
+            <Button type="text" onClick={() => { setEditingBlockId(undefined); clearPreview(); }}>取消</Button>
+            <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked || busy
+              || !blockDraftValid || !blockDraftChanged || blockPreviewValidating
+              || !snapshot.preview || blockPreviewDraftKey !== blockDraftKey}
+              loading={busy} onClick={() => void applyEdit()}>保存修改</Button>
           </div>
-          {snapshot.preview && <section className="guanyijia-change-preview" aria-label="修改预览">
-            <h4>修改预览</h4>
+          {blockDraftChange && <section className="guanyijia-change-preview" aria-label="修改效果">
+            <header><h4>修改效果</h4><small>{blockPreviewValidating
+              ? '正在校验…'
+              : blockPreviewDraftKey === blockDraftKey && snapshot.preview
+                ? '已校验'
+                : blockDraftChanged ? '等待校验' : '请输入不同于原结论的修改内容'}</small></header>
             <div className="guanyijia-before-after">
-              <div><span>修改前</span><strong>{snapshot.preview.block.before.label}</strong><p>{blockText(snapshot.preview.block.before.value)}</p></div>
-              <div><span>修改后</span><strong>{snapshot.preview.block.after.label}</strong><p>{blockText(snapshot.preview.block.after.value)}</p></div>
-              <div><span>修改前结论</span><p>{snapshot.preview.assertion.before.statement}</p></div>
-              <div><span>修改后结论</span><p>{snapshot.preview.assertion.after.statement}</p></div>
+              <div><span>修改前</span><strong>{editingBlock.label}</strong><p>{blockText(editingBlock.value)}</p></div>
+              <div><span>修改后</span><strong>{blockDraftChange.label}</strong><p>{blockText(blockDraftChange.value)}</p></div>
             </div>
             <p className="guanyijia-document-change-note">确认后，标准化文档会同步更新这条结论所在的段落。</p>
-            <div className="guanyijia-impact-preview">
-              <div><strong>受影响冲突</strong>{snapshot.preview.affectedConflicts.length
-                ? snapshot.preview.affectedConflicts.map((conflict) => <p key={conflict.conflictId}>{conflict.title}：{conflict.beforeVariant ?? '无'} → {conflict.afterVariant ?? '无'}</p>)
-                : <p>没有新增或改变来源冲突</p>}</div>
-              <div><strong>受影响对象</strong>{snapshot.preview.affectedObjects.length
-                ? snapshot.preview.affectedObjects.map((object) => <p key={object}>{object}</p>)
-                : <p>没有直接关联模型对象</p>}</div>
-            </div>
+            {snapshot.preview && blockPreviewDraftKey === blockDraftKey && <div className="guanyijia-impact-preview">
+                <div><strong>受影响冲突</strong>{snapshot.preview.affectedConflicts.length
+                  ? snapshot.preview.affectedConflicts.map((conflict) => <p key={conflict.conflictId}>{conflict.title}：{conflict.beforeVariant ?? '无'} → {conflict.afterVariant ?? '无'}</p>)
+                  : <p>没有新增或改变来源冲突</p>}</div>
+                <div><strong>受影响对象</strong>{snapshot.preview.affectedObjects.length
+                  ? snapshot.preview.affectedObjects.map((object) => <p key={object}>{object}</p>)
+                  : <p>没有直接关联模型对象</p>}</div>
+              </div>}
           </section>}
         </section>}
         {pagedBlocks.pageCount > 1 && <div className="guanyijia-document-pagination">
@@ -3628,19 +4078,10 @@ export default function GuanyijiaStandardizationWorkbench({
           </li>)}
         </ul>
       </section>
+      <MergedPreviewChapters preview={deliverablePreviewForRun} presentation="MATTERS" />
     </div>}
     {deliverablePreviewTab === 'CONCLUSIONS' && <div className="guanyijia-merged-preview-content guanyijia-merged-preview-conclusions">
-      {deliverablePreviewForRun.reviewProjection.chapters.map((chapter) => <section
-        className="guanyijia-checklist-group guanyijia-merged-preview-chapter"
-        key={chapter.section}
-        aria-label={chapter.heading}
-      >
-        <header><h4>{chapter.heading}</h4><small>{chapter.sources.length} 个来源区段</small></header>
-        {chapter.sources.map((source) => <article key={`${chapter.section}:${source.sourceId}`}>
-          <header><span>来源 {source.order}</span><strong>{displaySourceName(source.sourceId, source.sourceName)}</strong></header>
-          <pre className="guanyijia-merged-source-markdown">{source.markdown}</pre>
-        </article>)}
-      </section>)}
+      <MergedPreviewChapters preview={deliverablePreviewForRun} presentation="CONCLUSIONS" />
     </div>}
     {deliverablePreviewTab === 'DOCUMENT' && <div className="guanyijia-merged-preview-content guanyijia-readable-markdown-panel">
       <div className="guanyijia-markdown-reader-toolbar">
@@ -3655,7 +4096,7 @@ export default function GuanyijiaStandardizationWorkbench({
         </div>
       </div>
       {deliverablePreviewDocumentView === 'READING'
-        ? <SourceDocumentReadable content={deliverablePreviewForRun.mergedDocument.markdown} />
+        ? <MergedPreviewChapters preview={deliverablePreviewForRun} presentation="DOCUMENT" />
         : <pre className="guanyijia-markdown-source">{deliverablePreviewForRun.mergedDocument.markdown}</pre>}
     </div>}
   </section> : null;
@@ -3814,7 +4255,7 @@ export default function GuanyijiaStandardizationWorkbench({
                       : deliverable.status === 'FROZEN' ? '标准化结果已定版'
                       : '标准化文档已交给 AI 建模'}</h2>
                   <p>{pendingDeliverableCommand ? '上一步的内容已经保存；可以继续完成当前流程。'
-                  : !deliverable ? '先核对完整合并文档；确认 Preview SHA256 后再生成标准化结果。'
+                  : !deliverable ? '先核对完整合并文档；确认 Preview SHA256 后，一次确认会串行完成生成和定版。'
                     : deliverable.status === 'HANDED_OFF'
                     ? '完整标准化文档已交接；资料缺口不会进入模型候选。'
                       : '定版前会确认本次资料审阅和差异决定已完整保存。'}</p>
@@ -3836,12 +4277,12 @@ export default function GuanyijiaStandardizationWorkbench({
                 </p>}
                 {pendingDeliverableCommand?.actorUserId === currentUser.userId && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void resumePendingDeliverable()}>继续完成上一步</Button>}
                 {!pendingDeliverableCommand && !deliverable && canAuthorDeliverable && readyDeliverablePreview
-                  && !deliverablePreviewLoading && !deliverablePreviewError && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void executeDeliverable('GENERATE_DELIVERABLE')}>生成标准化结果</Button>}
-                {!pendingDeliverableCommand && (deliverable?.status === 'GENERATED_AWAITING_AUTHOR' || deliverable?.status === 'AWAITING_INDEPENDENT_REVIEW') && canAuthorFreezeDeliverable && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void executeDeliverable('AUTHOR_CONFIRM_AND_FREEZE')}>确认结果并定版</Button>}
+                  && !deliverablePreviewLoading && !deliverablePreviewError && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void confirmAndFreezeDeliverable()}>确认并定版</Button>}
+                {!pendingDeliverableCommand && (deliverable?.status === 'GENERATED_AWAITING_AUTHOR' || deliverable?.status === 'AWAITING_INDEPENDENT_REVIEW') && canAuthorFreezeDeliverable && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void executeDeliverable('AUTHOR_CONFIRM_AND_FREEZE')}>继续定版</Button>}
                 {!pendingDeliverableCommand && deliverable?.status === 'FROZEN' && canHandoffDeliverable && <Button type="primary" data-workflow-primary="true" disabled={reviewMutationBlocked} loading={busy} onClick={() => void executeDeliverable('HANDOFF_STANDARDIZATION_DOCUMENT_TO_MODELING')}>前往 AI 建模</Button>}
                 {!pendingDeliverableCommand && deliverable?.status === 'HANDED_OFF' && <Button type="link" onClick={() => deliverableSnapshot && void openStandardizationHandoff(deliverableSnapshot)}>查看定版文档</Button>}
               </section>}
-              {snapshot && !documentVisible && (!deliveryPhase || conflictWorkspaceOpen) && (nextAction?.type !== 'NONE' || conflictWorkspaceOpen) && <section
+              {snapshot && !documentVisible && (!deliveryPhase || conflictWorkspaceOpen) && (nextAction?.type !== 'NONE' || conflictWorkspaceOpen || sourcePreparationFailure) && <section
                 className={`guanyijia-next-task ${conflictWorkspaceOpen ? 'blocked' : ''}${
                   mobile && conflictWorkspaceOpen
                     ? conflictLayer ? ' mobile-layer-open' : ' mobile-layer-closed'
@@ -3872,16 +4313,25 @@ export default function GuanyijiaStandardizationWorkbench({
                     focusId: `conflict:${conflict.conflictId}:close`,
                   }, event.currentTarget)}
                 >审阅来源差异</Button>}
-                <h2 id={conflictWorkspaceOpen ? 'guanyijia-conflict-dialog-title' : undefined}>{isReplacingHistoricalDecision ? '重新处理来源差异' : workflowTitle}</h2>
+                <h2 id={conflictWorkspaceOpen ? 'guanyijia-conflict-dialog-title' : undefined}>{isReplacingHistoricalDecision ? '重新处理来源差异' : sourcePreparationFailure
+                  ? `${displaySourceName(sourcePreparationFailure.sourceId, sourcePreparationFailureName?.sourceName ?? sourcePreparationFailure.sourceId)}准备失败`
+                  : workflowTitle}</h2>
                 <p>{nextAction?.type === 'START_RUN' ? '按固定顺序载入数据库、代码、业务文档、演示制度和术语图的固定快照。'
                   : nextAction?.type === 'READ_NEXT_SOURCE' ? '载入固定演示快照，并打开审阅事项。'
                     : nextAction?.type === 'REVIEW_DOCUMENT' ? '文档已就绪；点此继续审阅。'
+                      : sourcePreparationFailure ? `${sourcePreparationFailure.stage === 'READ' ? '读取' : sourcePreparationFailure.stage === 'ANALYZE' ? '分析' : '组织'}阶段未完成；可重试当前阶段，上一份来源仍保持可读。`
                       : conflictWorkspaceOpen ? (isReplacingHistoricalDecision
                         ? '上一决定保留在历史中。选择新的处理方式后，请重新生成标准化结果。'
                         : '逐项核对来源差异；保存当前决定后才会定位下一项。')
                         : '当前步骤没有待处理操作。'}</p>
                 {!conflictWorkspaceOpen && nextAction?.type === 'START_RUN' && <Button type="primary" data-workflow-primary="true" loading={busy} onClick={() => void execute('START_RUN')}>{visibleWorkflowAction?.label ?? nextAction.label}</Button>}
                 {!conflictWorkspaceOpen && nextAction?.type === 'READ_NEXT_SOURCE' && <Button type="primary" data-workflow-primary="true" loading={busy} onClick={() => void execute('READ_NEXT_SOURCE')}>{visibleWorkflowAction?.label ?? nextAction.label}</Button>}
+                {!conflictWorkspaceOpen && sourcePreparationFailure && nextAction?.type === 'NONE' && <Button
+                  type="primary"
+                  data-workflow-primary="true"
+                  loading={busy}
+                  onClick={() => void execute('READ_NEXT_SOURCE')}
+                >重试当前阶段</Button>}
                 {!conflictWorkspaceOpen && nextAction?.type === 'REVIEW_DOCUMENT' && <Button
                   type="primary"
                   data-workflow-primary="true"
