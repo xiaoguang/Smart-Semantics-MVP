@@ -2,10 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "sourceId", "chapters"],
+  "required": ["schemaVersion", "chapters"],
   "properties": {
     "schemaVersion": { "type": "integer", "const": 2 },
-    "sourceId": { "type": "string", "minLength": 1 },
     "chapters": {
       "type": "array",
       "minItems": 9,

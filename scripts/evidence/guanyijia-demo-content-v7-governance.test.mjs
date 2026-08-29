@@ -11,11 +11,16 @@ import {
   createV7Selection,
   freezeV7Snapshot,
   ImmutablePromptConstraints,
+  loadV7SourceCandidate,
   loadV6NarrativeDescriptors,
+  persistLegacyV7SourceIdentityRemediation,
   persistV7SourceCandidate,
+  reprojectLegacyV2SourceIdentity,
+  reprojectLegacyV7SourceCandidate,
   refineV7Prompt,
   validateV7Snapshot,
   validatePromptRevisionProposal,
+  validateV7Selection,
 } from './guanyijia-demo-content-v7-generate.mjs';
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
@@ -23,7 +28,6 @@ const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 function v2Output(descriptor) {
   return JSON.stringify({
     schemaVersion: 2,
-    sourceId: descriptor.sourceId,
     chapters: standardSectionOrder.map(({ key, heading }) => {
       const claims = descriptor.review.claims.filter((claim) => claim.sectionId === key);
       return {
@@ -50,11 +54,89 @@ function v2Output(descriptor) {
   });
 }
 
-test('the strict V7 response schema requires every item property and represents an absent boundary as null', async () => {
+test('the strict V7 response schema requires every item property, represents an absent boundary as null, and excludes source identity', async () => {
   const schema = JSON.parse(await readFile(join(moduleDirectory, 'schemas/guanyijia-demo-content-v7-narrative.schema.json'), 'utf8'));
   const item = schema.properties.chapters.items.properties.items.items;
   assert.ok(item.required.includes('boundary'));
   assert.deepEqual(item.properties.boundary.type, ['string', 'null']);
+  assert.equal(schema.required.includes('sourceId'), false);
+  assert.equal(Object.hasOwn(schema.properties, 'sourceId'), false);
+});
+
+test('V7 blocks model-supplied source identity during ordinary validation but permits only the explicit legacy projection seam', async () => {
+  const descriptors = await loadV6NarrativeDescriptors();
+  const descriptor = descriptors[1];
+  const raw = JSON.parse(v2Output(descriptor));
+  raw.sourceId = 'github-v5';
+  const candidateRoot = await mkdtemp(join(tmpdir(), 'guanyijia-v7-legacy-source-identity-'));
+  try {
+    const ordinary = await persistV7SourceCandidate({
+      descriptors,
+      sourceId: descriptor.sourceId,
+      sessionId: 'chatgpt-session-v7-source-identity-ordinary',
+      rawOutput: JSON.stringify(raw),
+      candidateRoot,
+      generationRound: 1,
+    });
+    assert.equal(ordinary.review.acceptance, 'FATAL');
+    assert.ok(ordinary.review.issues.some((issue) => issue.code === 'MODEL_SOURCE_IDENTITY_FORBIDDEN'));
+
+    const reprojected = reprojectLegacyV2SourceIdentity({
+      descriptor,
+      rawOutput: JSON.stringify(raw),
+    });
+    assert.equal(reprojected.sourceId, descriptor.sourceId);
+    assert.equal(reprojected.status, 'READY_WITH_WARNINGS');
+    assert.ok(reprojected.issues.some((issue) => issue.code === 'LEGACY_MODEL_SOURCE_ID_DROPPED'));
+    assert.equal(reprojected.chapters.length, 9);
+
+    const persistedReprojection = await reprojectLegacyV7SourceCandidate({
+      descriptors,
+      sourceId: descriptor.sourceId,
+      parentCandidateId: ordinary.candidateId,
+      candidateRoot,
+    });
+    assert.equal(persistedReprojection.parentCandidateId, ordinary.candidateId);
+    assert.equal(persistedReprojection.sourceId, descriptor.sourceId);
+    assert.equal(persistedReprojection.status, 'READY_WITH_WARNINGS');
+    assert.equal(persistedReprojection.parentRawOutputSha256, ordinary.receipt.rawOutputSha256);
+
+    const remediation = await persistLegacyV7SourceIdentityRemediation({
+      descriptors,
+      sourceId: descriptor.sourceId,
+      parentCandidateId: ordinary.candidateId,
+      candidateRoot,
+    });
+    assert.equal(remediation.sourceId, descriptor.sourceId);
+    assert.equal(remediation.parentCandidateId, ordinary.candidateId);
+    assert.equal(remediation.review.acceptance, 'REVIEWABLE_WITH_WARNINGS');
+    const loaded = await loadV7SourceCandidate({
+      descriptors,
+      candidateId: remediation.candidateId,
+      candidateRoot,
+    });
+    assert.equal(loaded.candidateId, remediation.candidateId);
+    assert.equal(loaded.compatibility.kind, 'DROP_LEGACY_MODEL_SOURCE_IDENTITY');
+    assert.equal(loaded.review.acceptance, 'REVIEWABLE_WITH_WARNINGS');
+
+    const candidates = { [descriptor.sourceId]: remediation.candidateId };
+    for (const other of descriptors.filter((candidate) => candidate.sourceId !== descriptor.sourceId)) {
+      const persisted = await persistV7SourceCandidate({
+        descriptors,
+        sourceId: other.sourceId,
+        sessionId: `chatgpt-session-v7-source-identity-${other.sourceId}`,
+        rawOutput: v2Output(other),
+        candidateRoot,
+        generationRound: 1,
+      });
+      candidates[other.sourceId] = persisted.candidateId;
+    }
+    const selection = await createV7Selection({ descriptors, candidates, candidateRoot });
+    const selectionValidation = await validateV7Selection({ descriptors, selection, candidateRoot });
+    assert.equal(selectionValidation.reviews.find((review) => review.descriptor.sourceId === descriptor.sourceId)?.acceptance, 'REVIEWABLE_WITH_WARNINGS');
+  } finally {
+    await rm(candidateRoot, { recursive: true, force: true });
+  }
 });
 
 test('V7 schema v2 maps every frozen Claim and Gap exactly once and records an ideal candidate', async () => {

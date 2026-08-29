@@ -411,14 +411,32 @@ function chapterNarrative(chapter) {
   return [chapter.introduction, ...itemText, ...gapText].filter(Boolean).join('\n\n');
 }
 
-function normalizeV2Output(parsed, descriptor) {
+function normalizeV2Output(parsed, descriptor, input = {}) {
   const issues = [];
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
-    || parsed.schemaVersion !== 2 || parsed.sourceId !== descriptor.sourceId || !Array.isArray(parsed.chapters)) {
+    || parsed.schemaVersion !== 2 || !Array.isArray(parsed.chapters)) {
     return {
       issues: [candidateIssue(CandidateIssueClass.CRITICAL, 'INVALID_SHAPE', `${descriptor.sourceId} reader candidate must use schema v2`)],
       status: 'BLOCKED',
     };
+  }
+  const hasModelSourceIdentity = Object.hasOwn(parsed, 'sourceId');
+  if (hasModelSourceIdentity && !input.allowLegacyModelSourceIdentity) {
+    return {
+      issues: [candidateIssue(
+        CandidateIssueClass.CRITICAL,
+        'MODEL_SOURCE_IDENTITY_FORBIDDEN',
+        `${descriptor.sourceId} reader candidate must not generate source identity`,
+      )],
+      status: 'BLOCKED',
+    };
+  }
+  if (hasModelSourceIdentity) {
+    issues.push(candidateIssue(
+      CandidateIssueClass.NORMALIZED,
+      'LEGACY_MODEL_SOURCE_ID_DROPPED',
+      `${descriptor.sourceId} legacy model source identity was dropped before deterministic injection`,
+    ));
   }
   const outputExtras = Object.keys(parsed).filter((key) => !['schemaVersion', 'sourceId', 'chapters'].includes(key));
   if (outputExtras.length) issues.push(candidateIssue(CandidateIssueClass.NORMALIZED, 'EXTRA_OUTPUT_FIELDS_DROPPED', `dropped output fields: ${outputExtras.sort().join(', ')}`));
@@ -518,7 +536,7 @@ function normalizeV2Output(parsed, descriptor) {
   }
 }
 
-function normalizeOutput(rawOutput, descriptor) {
+function normalizeOutput(rawOutput, descriptor, input = {}) {
   let parsed;
   try {
     parsed = JSON.parse(rawOutput);
@@ -529,8 +547,44 @@ function normalizeOutput(rawOutput, descriptor) {
     };
   }
   return parsed?.schemaVersion === 2
-    ? normalizeV2Output(parsed, descriptor)
+    ? normalizeV2Output(parsed, descriptor, input)
     : normalizeV1Output(rawOutput, descriptor);
+}
+
+/**
+ * Reproject one legacy V2 raw output that leaked a model-produced sourceId.
+ * This is deliberately separate from normal candidate validation: current and
+ * future model calls must be blocked for that field, while the compatibility
+ * seam only drops it and injects the frozen descriptor identity.
+ */
+export function reprojectLegacyV2SourceIdentity(input = {}) {
+  const descriptor = input.descriptor;
+  if (!descriptor || !sourceOrder.includes(descriptor.sourceId) || typeof input.rawOutput !== 'string') {
+    fail('legacy source identity projection requires one frozen descriptor and raw output');
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(input.rawOutput);
+  } catch {
+    fail('legacy source identity projection requires valid JSON raw output');
+  }
+  if (!parsed || parsed.schemaVersion !== 2 || !Object.hasOwn(parsed, 'sourceId')) {
+    fail('legacy source identity projection requires a V2 raw output with model source identity');
+  }
+  const normalized = normalizeV2Output(parsed, descriptor, { allowLegacyModelSourceIdentity: true });
+  return {
+    sourceId: descriptor.sourceId,
+    rawOutputSha256: sha256(input.rawOutput),
+    projectedOutputSha256: sha256(canonicalJson({
+      schemaVersion: 2,
+      sourceId: descriptor.sourceId,
+      chapters: normalized.chapters ?? null,
+      narratives: normalized.narratives ?? null,
+      issues: normalized.issues,
+      status: normalized.status,
+    })),
+    ...normalized,
+  };
 }
 
 function narrativeRecord(narratives) {
@@ -783,7 +837,9 @@ function validateSourceCandidateRecord(record, descriptor, { sourceIdentityDrift
       issues: [candidateIssue(CandidateIssueClass.CRITICAL, 'MISSING_SOURCE_CANDIDATE', `${descriptor.sourceId} candidate raw output is missing`)],
       status: 'BLOCKED',
     }
-    : normalizeOutput(record.rawOutput, descriptor);
+    : normalizeOutput(record.rawOutput, descriptor, {
+      allowLegacyModelSourceIdentity: isLegacySourceIdentityCompatibility(record.compatibility, record.candidateId),
+    });
   const issues = [...initial.issues];
   let generation;
   if (record?.rawOutput && record?.generation) {
@@ -1239,6 +1295,174 @@ function candidateReceipt(candidateId, descriptor, generation, rawOutput, failur
   };
 }
 
+const LegacySourceIdentityRemediationKind = 'DROP_LEGACY_MODEL_SOURCE_IDENTITY';
+
+function legacySourceIdentityCompatibility(remediationId, parentCandidateId) {
+  return {
+    kind: LegacySourceIdentityRemediationKind,
+    remediationId,
+    parentCandidateId,
+  };
+}
+
+function isLegacySourceIdentityCompatibility(value, candidateId) {
+  return value?.kind === LegacySourceIdentityRemediationKind
+    && value.remediationId === candidateId
+    && typeof value.parentCandidateId === 'string'
+    && Boolean(value.parentCandidateId);
+}
+
+function legacySourceIdentityRemediationId(projection) {
+  const digest = sha256(canonicalJson({
+    sourceId: projection.sourceId,
+    parentCandidateId: projection.parentCandidateId,
+    parentRawOutputSha256: projection.parentRawOutputSha256,
+    parentReceiptSha256: projection.parentReceiptSha256,
+    projectedOutputSha256: projection.projectedOutputSha256,
+  })).slice(7, 31);
+  return `v7-remediation-${projection.sourceId}-${digest}`;
+}
+
+function legacySourceIdentityRemediationReceipt(remediationId, descriptor, projection, generation) {
+  return {
+    schemaVersion: 1,
+    kind: LegacySourceIdentityRemediationKind,
+    candidateId: remediationId,
+    sourceId: descriptor.sourceId,
+    sourceSnapshotId: descriptor.sourceSnapshotId,
+    sourceContentSha256: descriptor.sourceContentSha256,
+    parentCandidateId: projection.parentCandidateId,
+    parentRawOutputSha256: projection.parentRawOutputSha256,
+    parentReceiptSha256: projection.parentReceiptSha256,
+    projectedOutputSha256: projection.projectedOutputSha256,
+    generation,
+  };
+}
+
+/**
+ * Read and deterministically revalidate one immutable legacy candidate whose
+ * only model-schema violation is a leaked sourceId field. This operation is
+ * read-only: persistence of an approved remediation receipt is a separate
+ * publication gate.
+ */
+export async function reprojectLegacyV7SourceCandidate(input = {}) {
+  if (!sourceOrder.includes(input.sourceId) || typeof input.parentCandidateId !== 'string' || !input.parentCandidateId) {
+    fail('legacy source identity projection requires one canonical source and persisted parent candidate');
+  }
+  const descriptors = input.descriptors ?? await loadV6NarrativeDescriptors(input);
+  const descriptor = descriptors.find((candidate) => candidate.sourceId === input.sourceId);
+  const paths = candidatePaths(input.candidateRoot ?? defaultCandidateRoot, input.parentCandidateId);
+  const [rawOutput, receipt] = await Promise.all([
+    readFile(paths.rawOutputPath, 'utf8'),
+    readJson(paths.receiptPath),
+  ]);
+  if (receipt?.candidateId !== input.parentCandidateId
+    || receipt?.sourceId !== descriptor?.sourceId
+    || receipt?.outcome !== 'COMPLETED'
+    || receipt?.attempt?.modelSessionStarted !== true) {
+    fail('legacy source identity projection parent receipt is not a completed started source candidate');
+  }
+  const expectedReceipt = candidateReceipt(
+    input.parentCandidateId,
+    descriptor,
+    receipt.generation,
+    rawOutput,
+    undefined,
+    receipt.stateWritePreflight,
+    receipt.attempt.modelSessionStarted,
+  );
+  if (canonicalJson(receipt) !== canonicalJson(expectedReceipt)) {
+    fail('legacy source identity projection parent receipt does not bind its raw output and frozen identity');
+  }
+  try {
+    validateGeneration(receipt.generation, descriptor, rawOutput, new Set());
+  } catch (error) {
+    fail(`legacy source identity projection parent generation is invalid: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const projection = reprojectLegacyV2SourceIdentity({ descriptor, rawOutput });
+  return {
+    parentCandidateId: input.parentCandidateId,
+    parentRawOutputSha256: receipt.rawOutputSha256,
+    parentReceiptSha256: sha256(canonicalJson(receipt)),
+    parentGeneration: structuredClone(receipt.generation),
+    sourceSnapshotId: descriptor.sourceSnapshotId,
+    sourceContentSha256: descriptor.sourceContentSha256,
+    ...projection,
+  };
+}
+
+/**
+ * Persist the one permitted deterministic remediation for a legacy raw V2
+ * output.  It copies the immutable parent raw output without editing it, then
+ * records the exact projection that dropped the leaked model sourceId.  This
+ * is not a third content candidate and never calls a model.
+ */
+export async function persistLegacyV7SourceIdentityRemediation(input = {}) {
+  const descriptors = input.descriptors ?? await loadV6NarrativeDescriptors(input);
+  if (!sourceOrder.includes(input.sourceId) || typeof input.parentCandidateId !== 'string' || !input.parentCandidateId) {
+    fail('legacy source identity remediation requires one canonical source and persisted parent candidate');
+  }
+  const descriptor = descriptors.find((candidate) => candidate.sourceId === input.sourceId);
+  const candidateRoot = input.candidateRoot ?? defaultCandidateRoot;
+  const projection = await reprojectLegacyV7SourceCandidate({
+    ...input,
+    descriptors,
+    candidateRoot,
+  });
+  const remediationId = input.remediationId ?? legacySourceIdentityRemediationId(projection);
+  const parentPaths = candidatePaths(candidateRoot, input.parentCandidateId);
+  const paths = candidatePaths(candidateRoot, remediationId);
+  await assertDoesNotExist(paths.candidateRootPath, 'legacy source identity remediation');
+  const [rawOutput, parentReceipt] = await Promise.all([
+    readFile(parentPaths.rawOutputPath, 'utf8'),
+    readJson(parentPaths.receiptPath),
+  ]);
+  if (sha256(rawOutput) !== projection.parentRawOutputSha256
+    || sha256(canonicalJson(parentReceipt)) !== projection.parentReceiptSha256) {
+    fail('legacy source identity remediation parent artifacts changed during projection');
+  }
+  const generation = parentReceipt.generation;
+  const record = {
+    candidateId: remediationId,
+    sourceId: descriptor.sourceId,
+    generation,
+    rawOutput,
+    compatibility: legacySourceIdentityCompatibility(remediationId, input.parentCandidateId),
+  };
+  const sourceReview = validateSourceCandidateRecord(record, descriptor, {
+    sourceIdentityDrift: false,
+    sessionIds: new Set(),
+  });
+  if (sourceReview.status === 'BLOCKED') {
+    fail('legacy source identity remediation may only publish a source-identity-only compatibility projection');
+  }
+  const receipt = legacySourceIdentityRemediationReceipt(remediationId, descriptor, projection, generation);
+  await mkdir(paths.root, { recursive: true });
+  const stage = await mkdtemp(join(paths.root, `.${remediationId}.staging-`));
+  let published = false;
+  try {
+    const review = candidateReviewArtifact(remediationId, sourceReview);
+    const normalized = candidateNormalizedArtifact(remediationId, sourceReview);
+    await writeFile(join(stage, 'raw-output.txt'), rawOutput, { encoding: 'utf8', flag: 'wx' });
+    await writeFile(join(stage, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+    await writeFile(join(stage, 'normalized.json'), `${JSON.stringify(normalized, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+    await writeFile(join(stage, 'review-report.json'), `${JSON.stringify(review, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+    await writeFile(join(stage, 'rendered-review.md'), renderedReviewMarkdown(descriptor, sourceReview), { encoding: 'utf8', flag: 'wx' });
+    await rename(stage, paths.candidateRootPath);
+    published = true;
+    return {
+      candidateId: remediationId,
+      sourceId: descriptor.sourceId,
+      parentCandidateId: input.parentCandidateId,
+      receipt,
+      normalized,
+      review,
+    };
+  } finally {
+    if (!published) await rm(stage, { recursive: true, force: true });
+  }
+}
+
 function candidateReviewArtifact(candidateId, sourceReview) {
   return {
     schemaVersion: sourceReview.normalized?.schemaVersion ?? 2,
@@ -1505,6 +1729,53 @@ export async function regenerateV7SourceCandidate(input = {}) {
   }
 }
 
+async function loadLegacySourceIdentityRemediation({ candidateRoot, candidateId, descriptors, rawOutput, receipt, normalized, persistedReview }) {
+  if (receipt?.kind !== LegacySourceIdentityRemediationKind || !sourceOrder.includes(receipt?.sourceId)
+    || typeof receipt?.parentCandidateId !== 'string' || !receipt.parentCandidateId) {
+    fail(`legacy source identity remediation receipt is invalid: ${candidateId}`);
+  }
+  const descriptor = descriptors.find((candidate) => candidate.sourceId === receipt.sourceId);
+  const projection = await reprojectLegacyV7SourceCandidate({
+    candidateRoot,
+    descriptors,
+    sourceId: descriptor.sourceId,
+    parentCandidateId: receipt.parentCandidateId,
+  });
+  const expectedReceipt = legacySourceIdentityRemediationReceipt(
+    candidateId,
+    descriptor,
+    projection,
+    projection.parentGeneration,
+  );
+  if (canonicalJson(receipt) !== canonicalJson(expectedReceipt)
+    || sha256(rawOutput) !== projection.parentRawOutputSha256) {
+    fail(`legacy source identity remediation does not bind its immutable parent output: ${candidateId}`);
+  }
+  const record = {
+    candidateId,
+    sourceId: descriptor.sourceId,
+    generation: projection.parentGeneration,
+    rawOutput,
+    compatibility: legacySourceIdentityCompatibility(candidateId, receipt.parentCandidateId),
+  };
+  const review = validateSourceCandidateRecord(record, descriptor, {
+    sourceIdentityDrift: false,
+    sessionIds: new Set(),
+  });
+  if (review.status === 'BLOCKED') {
+    fail(`legacy source identity remediation has additional content failures: ${candidateId}`);
+  }
+  const expectedNormalized = candidateNormalizedArtifact(candidateId, review);
+  const expectedReview = candidateReviewArtifact(candidateId, review);
+  if (canonicalJson(normalized) !== canonicalJson(expectedNormalized)) {
+    fail(`legacy source identity remediation normalized artifact drifted from its parent: ${candidateId}`);
+  }
+  if (canonicalJson(persistedReview) !== canonicalJson(expectedReview)) {
+    fail(`legacy source identity remediation review report drifted from its parent: ${candidateId}`);
+  }
+  return { ...record, receipt, normalized, review: expectedReview };
+}
+
 export async function loadV7SourceCandidate(input = {}) {
   const candidateRoot = input.candidateRoot ?? defaultCandidateRoot;
   const candidateId = assertCandidateId(input.candidateId);
@@ -1516,6 +1787,17 @@ export async function loadV7SourceCandidate(input = {}) {
     readJson(paths.normalizedPath),
     readJson(paths.reviewPath),
   ]);
+  if (receipt?.kind === LegacySourceIdentityRemediationKind) {
+    return loadLegacySourceIdentityRemediation({
+      candidateRoot,
+      candidateId,
+      descriptors,
+      rawOutput,
+      receipt,
+      normalized,
+      persistedReview,
+    });
+  }
   const descriptor = descriptors.find((candidate) => candidate.sourceId === receipt?.sourceId);
   if (!descriptor) fail(`candidate receipt has an unknown source: ${candidateId}`);
   const record = {
@@ -1850,6 +2132,7 @@ export async function validateV7Selection(input = {}) {
       sourceId: record.sourceId,
       generation: record.generation,
       rawOutput: record.rawOutput,
+      ...(record.compatibility ? { compatibility: record.compatibility } : {}),
       ...(record.failure ? { failure: record.failure } : {}),
     })),
   };
@@ -2128,6 +2411,37 @@ async function main() {
     process.stdout.write(`${JSON.stringify({ candidateId: candidate.candidateId, sourceId: candidate.sourceId, status: candidate.review.status }, null, 2)}\n`);
     return;
   }
+  if (command === '--reproject-legacy-source-id' && args.length === 2) {
+    const projection = await reprojectLegacyV7SourceCandidate({
+      sourceId: args[0],
+      parentCandidateId: args[1],
+    });
+    process.stdout.write(`${JSON.stringify({
+      sourceId: projection.sourceId,
+      parentCandidateId: projection.parentCandidateId,
+      status: projection.status,
+      acceptance: projection.status === 'READY' ? CandidateAcceptance.IDEAL : CandidateAcceptance.REVIEWABLE_WITH_WARNINGS,
+      issues: projection.issues,
+      parentRawOutputSha256: projection.parentRawOutputSha256,
+      projectedOutputSha256: projection.projectedOutputSha256,
+    }, null, 2)}\n`);
+    return;
+  }
+  if (command === '--persist-legacy-source-id-remediation' && args.length === 2) {
+    const remediation = await persistLegacyV7SourceIdentityRemediation({
+      sourceId: args[0],
+      parentCandidateId: args[1],
+    });
+    process.stdout.write(`${JSON.stringify({
+      candidateId: remediation.candidateId,
+      sourceId: remediation.sourceId,
+      parentCandidateId: remediation.parentCandidateId,
+      status: remediation.review.status,
+      acceptance: remediation.review.acceptance,
+      issues: remediation.review.issues,
+    }, null, 2)}\n`);
+    return;
+  }
   if (command === '--check-source-candidate' && (args.length === 1 || args.length === 2)) {
     const candidate = await loadV7SourceCandidate({ candidateId: args[0], ...(args[1] ? { candidateRoot: args[1] } : {}) });
     process.stdout.write(`${JSON.stringify({ candidateId: candidate.candidateId, sourceId: candidate.sourceId, status: candidate.review.status }, null, 2)}\n`);
@@ -2161,7 +2475,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify({ snapshotId: result.snapshotId, sourceReviews: result.reviews.length }, null, 2)}\n`);
     return;
   }
-  fail('Usage: node scripts/evidence/guanyijia-demo-content-v7-generate.mjs --source <source-id> [candidate-root] | --refine-prompt <source-id> <parent-candidate-id> <fatal-finding-id>... | --source-round-two <source-id> <parent-candidate-id> <prompt-revision-id> | --create-selection <selection.json> <sourceId=candidateId> ×5 | --selection <selection.json> | --freeze --selection <selection.json> [--target <snapshot-root>] | --check <snapshot-root>');
+  fail('Usage: node scripts/evidence/guanyijia-demo-content-v7-generate.mjs --source <source-id> [candidate-root] | --refine-prompt <source-id> <parent-candidate-id> <fatal-finding-id>... | --source-round-two <source-id> <parent-candidate-id> <prompt-revision-id> | --reproject-legacy-source-id <source-id> <parent-candidate-id> | --persist-legacy-source-id-remediation <source-id> <parent-candidate-id> | --create-selection <selection.json> <sourceId=candidateId> ×5 | --selection <selection.json> | --freeze --selection <selection.json> [--target <snapshot-root>] | --check <snapshot-root>');
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

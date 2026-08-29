@@ -324,6 +324,13 @@ V2 的模型输出 Schema 因此只包含 `schemaVersion` 和 `chapters`；`sour
 章节或任何业务文字。它只用于修复“模型错误输出了来源身份”这一结构错误，不能把任意来源
 不匹配、事实错误或内容缺失降级为可接受问题，也不调用模型或创建第三份产品内容候选。
 
+该兼容投影只有在父 Candidate 已完成、确实出现 `thread.started`、其 Receipt 与原始输出和
+冻结来源身份逐字校验通过，且重新验证后除模型 `sourceId` 外不存在致命错误时才可发布。修复
+目录复制父原始输出但绝不覆盖父目录；它以独立 Candidate 引用记录父 Candidate、父 Receipt
+摘要、原始输出摘要和确定性投影摘要。Selection 读取此引用时仍必须显示
+`LEGACY_MODEL_SOURCE_ID_DROPPED` 告警，不能把它提升为 `IDEAL`，也不得伪造该父调用为
+带 Sol 修订的 Round 2。
+
 每次生成必须绑定冻结 V6 内容身份、精确来源、九章 Claim／Boundary／Gap／Evidence 映射、
 提示词版本和 Schema 版本，并写入不可覆盖的 Candidate 目录与 receipt。提示词把模型限定为
 中文 ERP 业务说明书编辑：只使用输入事实，不知道就明确列为边界或待补充资料，先业务解释
