@@ -574,6 +574,8 @@ test('V7 selection is keyed by source ID and does not depend on candidate array 
 test('V7 candidate command assignments are source keyed and maintenance scripts use explicit source and selection commands', async () => {
   const implementation = selectionApi();
   assert.equal(typeof implementation.parseV7SourceCandidateAssignments, 'function');
+  assert.equal(typeof implementation.parseV7PromptRefinementArguments, 'function');
+  assert.equal(typeof implementation.parseV7RoundTwoArguments, 'function');
   const descriptors = await implementation.loadV6NarrativeDescriptors({ sourceSnapshotRoot: v6Root });
   const candidateIds = Object.fromEntries(descriptors.map((descriptor, index) => [
     descriptor.sourceId,
@@ -639,6 +641,38 @@ test('V7 candidate command assignments are source keyed and maintenance scripts 
   assert.throws(
     () => implementation.parseV7FreezeArguments(['/private/tmp/v7-selection.json']),
     /--selection/i,
+  );
+  assert.deepEqual(
+    implementation.parseV7PromptRefinementArguments([
+      'guanyijia_github',
+      'v7-guanyijia_github-round-one',
+      'INVALID_SHAPE',
+    ]),
+    {
+      sourceId: 'guanyijia_github',
+      parentCandidateId: 'v7-guanyijia_github-round-one',
+      findingIds: ['INVALID_SHAPE'],
+    },
+  );
+  assert.deepEqual(
+    implementation.parseV7RoundTwoArguments([
+      'guanyijia_github',
+      'v7-guanyijia_github-round-one',
+      'v7-prompt-revision-1234567890',
+    ]),
+    {
+      sourceId: 'guanyijia_github',
+      parentCandidateId: 'v7-guanyijia_github-round-one',
+      promptRevisionId: 'v7-prompt-revision-1234567890',
+    },
+  );
+  assert.throws(
+    () => implementation.parseV7PromptRefinementArguments(['guanyijia_github', 'parent-only']),
+    /source.*parent.*finding|finding/i,
+  );
+  assert.throws(
+    () => implementation.parseV7RoundTwoArguments(['guanyijia_github', 'parent-only']),
+    /source.*parent.*revision|revision/i,
   );
 });
 

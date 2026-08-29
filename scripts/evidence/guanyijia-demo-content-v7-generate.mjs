@@ -1143,6 +1143,32 @@ export function parseV7SourceCandidateAssignments(assignments) {
   return Object.fromEntries(sourceOrder.map((sourceId) => [sourceId, candidates[sourceId]]));
 }
 
+/** Parse the one explicit Sol refinement request for a fatal Round 1 candidate. */
+export function parseV7PromptRefinementArguments(args) {
+  if (!Array.isArray(args) || args.length < 3) {
+    fail('prompt refinement requires <source-id> <parent-candidate-id> <fatal-finding-id>...');
+  }
+  const [sourceId, parentCandidateId, ...findingIds] = args;
+  if (!sourceOrder.includes(sourceId) || !assertCandidateId(parentCandidateId)
+    || findingIds.some((findingId) => typeof findingId !== 'string' || !findingId.trim())) {
+    fail('prompt refinement requires <source-id> <parent-candidate-id> <fatal-finding-id>...');
+  }
+  return { sourceId, parentCandidateId, findingIds };
+}
+
+/** Parse the only allowable product-content replacement after a Sol revision. */
+export function parseV7RoundTwoArguments(args) {
+  if (!Array.isArray(args) || args.length !== 3) {
+    fail('Round 2 requires <source-id> <parent-candidate-id> <prompt-revision-id>');
+  }
+  const [sourceId, parentCandidateId, promptRevisionId] = args;
+  if (!sourceOrder.includes(sourceId) || !assertCandidateId(parentCandidateId)
+    || !assertCandidateId(promptRevisionId)) {
+    fail('Round 2 requires <source-id> <parent-candidate-id> <prompt-revision-id>');
+  }
+  return { sourceId, parentCandidateId, promptRevisionId };
+}
+
 /**
  * Parse the public freeze contract. The selection is intentionally named on
  * the command line: a freeze must never infer or silently discover a
@@ -1668,6 +1694,32 @@ export async function refineV7Prompt(input = {}) {
   }
 }
 
+/** Read and verify one immutable Sol prompt revision before a Round 2 call. */
+export async function loadV7PromptRevision(input = {}) {
+  if (typeof input.promptRevisionId !== 'string' || !input.promptRevisionId) {
+    fail('prompt revision ID is required');
+  }
+  const paths = promptRevisionPaths(input.candidateRoot ?? defaultCandidateRoot, input.promptRevisionId);
+  const [receipt, normalized, review] = await Promise.all([
+    readJson(paths.receiptPath),
+    readJson(paths.normalizedPath),
+    readJson(paths.reviewPath),
+  ]);
+  const proposal = validatePromptRevisionProposal(normalized);
+  if (receipt?.schemaVersion !== 1
+    || receipt?.promptRevisionId !== proposal.promptRevisionId
+    || receipt?.sourceId !== proposal.sourceId
+    || receipt?.parentCandidateId !== proposal.parentCandidateId
+    || receipt?.generation?.model !== 'gpt-5.6-sol'
+    || receipt?.generation?.reasoningEffort !== 'ultra'
+    || review?.schemaVersion !== 1
+    || review?.promptRevisionId !== proposal.promptRevisionId
+    || review?.status !== 'READY') {
+    fail(`prompt revision is not a verified Sol Ultra receipt: ${input.promptRevisionId}`);
+  }
+  return { proposal, receipt, review };
+}
+
 async function verifyRoundTwoLineage(input, descriptor, lineage) {
   if (lineage.generationRound !== ContentGenerationRound.TWO) return;
   const candidateRoot = input.candidateRoot ?? defaultCandidateRoot;
@@ -2059,6 +2111,23 @@ async function main() {
     process.stdout.write(`${JSON.stringify({ candidateId: candidate.candidateId, sourceId: candidate.sourceId, status: candidate.review.status }, null, 2)}\n`);
     return;
   }
+  if (command === '--refine-prompt') {
+    const refinement = await refineV7Prompt(parseV7PromptRefinementArguments(args));
+    process.stdout.write(`${JSON.stringify({ promptRevisionId: refinement.proposal.promptRevisionId, sourceId: refinement.proposal.sourceId, status: 'READY' }, null, 2)}\n`);
+    return;
+  }
+  if (command === '--source-round-two') {
+    const roundTwo = parseV7RoundTwoArguments(args);
+    const revision = await loadV7PromptRevision({ promptRevisionId: roundTwo.promptRevisionId });
+    const candidate = await regenerateV7SourceCandidate({
+      sourceId: roundTwo.sourceId,
+      generationRound: ContentGenerationRound.TWO,
+      parentCandidateId: roundTwo.parentCandidateId,
+      promptRevision: revision.proposal,
+    });
+    process.stdout.write(`${JSON.stringify({ candidateId: candidate.candidateId, sourceId: candidate.sourceId, status: candidate.review.status }, null, 2)}\n`);
+    return;
+  }
   if (command === '--check-source-candidate' && (args.length === 1 || args.length === 2)) {
     const candidate = await loadV7SourceCandidate({ candidateId: args[0], ...(args[1] ? { candidateRoot: args[1] } : {}) });
     process.stdout.write(`${JSON.stringify({ candidateId: candidate.candidateId, sourceId: candidate.sourceId, status: candidate.review.status }, null, 2)}\n`);
@@ -2092,7 +2161,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify({ snapshotId: result.snapshotId, sourceReviews: result.reviews.length }, null, 2)}\n`);
     return;
   }
-  fail('Usage: node scripts/evidence/guanyijia-demo-content-v7-generate.mjs --source <source-id> [candidate-root] | --create-selection <selection.json> <sourceId=candidateId> ×5 | --selection <selection.json> | --freeze --selection <selection.json> [--target <snapshot-root>] | --check <snapshot-root>');
+  fail('Usage: node scripts/evidence/guanyijia-demo-content-v7-generate.mjs --source <source-id> [candidate-root] | --refine-prompt <source-id> <parent-candidate-id> <fatal-finding-id>... | --source-round-two <source-id> <parent-candidate-id> <prompt-revision-id> | --create-selection <selection.json> <sourceId=candidateId> ×5 | --selection <selection.json> | --freeze --selection <selection.json> [--target <snapshot-root>] | --check <snapshot-root>');
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

@@ -234,15 +234,16 @@
   1 is the initial candidate; Round 2 is the only allowed replacement. Never
   retry automatically or rerun unrelated sources or artifacts because one item
   needs improvement. A failed preflight before `thread.started` does not use a
-  content round, but must be explicitly restarted after the capability is
-  repaired; a started model session consumes its round even if it returns empty
-  or invalid output. The sole exception is a provider response that rejects the
-  submitted output JSON Schema before generating any product content: preserve
-  its immutable diagnostic receipt, repair and test the schema, obtain the
-  user's explicit authorization, then restart the same content round once.
-  This exception never covers an empty model response, invalid candidate JSON,
-  a model/process failure after generation begins, or any content-quality
-  finding; those always consume the round.
+  content round. Preserve its immutable diagnostic receipt, repair and test the
+  capability, then restart that same round without asking the user again. At
+  most two repaired restarts may follow the original pre-start failure; three
+  consecutive pre-start failures for one source stop the task for discussion.
+  A started model session consumes its round even if it returns empty or invalid
+  output. The same pre-start exception covers a provider response that rejects
+  the submitted output JSON Schema before generating any product content. It
+  never covers an empty model response, invalid candidate JSON, a
+  model/process failure after `thread.started`, or any content-quality finding;
+  those always consume the round.
 - Before Round 2, a single `gpt-5.6-sol`/`ultra` prompt-diagnosis task may
   create a receipt-bound corrective addendum from the frozen input, the Round 1
   candidate, and named findings. It is not a product-content candidate, but it
