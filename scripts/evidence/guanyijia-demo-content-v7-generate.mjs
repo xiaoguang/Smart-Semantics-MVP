@@ -2153,6 +2153,143 @@ export async function validateV7Selection(input = {}) {
   return { selection: structuredClone(selection), ...validated };
 }
 
+function sourceReviewCoverage(review) {
+  const sourceClaims = review.descriptor.review.claims;
+  const admittedClaimIds = sourceClaims
+    .filter((claim) => claim.kind !== 'GAP')
+    .map((claim) => claim.claimId);
+  const gapClaimIds = sourceClaims
+    .filter((claim) => claim.kind === 'GAP')
+    .map((claim) => claim.claimId);
+  return {
+    admittedClaims: admittedClaimIds.length,
+    projectedAdmittedClaims: review.chapters.flatMap((chapter) => chapter.items.flatMap((item) => item.claimIds)).length,
+    gaps: gapClaimIds.length,
+    projectedGaps: review.chapters.flatMap((chapter) => chapter.gaps.flatMap((gap) => gap.claimIds)).length,
+  };
+}
+
+function selectionReviewPackageId(validation) {
+  return `v7-selection-review-${sha256(canonicalJson({
+    selection: validation.selection,
+    reviews: validation.reviews.map((review) => ({
+      candidateId: review.candidateId,
+      sourceId: review.descriptor.sourceId,
+      generation: review.generation,
+      acceptance: review.acceptance,
+      issues: review.issues,
+      coverage: sourceReviewCoverage(review),
+    })),
+  })).slice(7, 31)}`;
+}
+
+function selectionReviewPackageMarkdown(validation) {
+  const sourceRows = validation.reviews.map((review) => [
+    `| ${review.descriptor.readerLabel}`,
+    `| ${review.acceptance}`,
+    `| ${review.issues.length ? review.issues.map((issue) => issue.code).join('、') : '无'} |`,
+  ].join('')).join('\n');
+  const warningLines = validation.reviews.flatMap((review) => review.issues.map((issue) => (
+    `- ${review.descriptor.readerLabel}：${issue.message}`
+  )));
+  const chapters = standardSectionOrder.map(({ key, heading }) => [
+    `## ${heading}`,
+    ...validation.reviews.map((review, index) => {
+      const narrative = review.narratives.find((section) => section.sectionId === key)?.narrative;
+      if (!narrative) fail(`selection review package is missing ${key} narrative for ${review.descriptor.sourceId}`);
+      return `### 来源 ${index + 1}：${review.descriptor.readerLabel}\n\n${narrative}`;
+    }),
+  ].join('\n\n')).join('\n\n');
+  const auditRows = validation.reviews.map((review) => [
+    `| ${review.descriptor.readerLabel}`,
+    `| ${review.candidateId}`,
+    `| ${review.generation.lineage.generationRound}`,
+    `| ${sourceReviewCoverage(review).admittedClaims}/${sourceReviewCoverage(review).projectedAdmittedClaims}`,
+    `| ${sourceReviewCoverage(review).gaps}/${sourceReviewCoverage(review).projectedGaps} |`,
+  ].join('')).join('\n');
+  return [
+    '# 管伊佳 V7 五来源审阅包',
+    '这是冻结 V6 上的只读候选合并预览。它用于 Selection 审阅，不是已冻结或已部署的标准化文档。',
+    '## 候选状态',
+    '| 来源 | 验收状态 | 已记录告警 |\n| --- | --- | --- |\n' + sourceRows,
+    ...(warningLines.length ? ['## 需要保留的告警', ...warningLines] : []),
+    '## 九章五来源合并预览',
+    chapters,
+    '## 审计覆盖摘要',
+    'Claim／资料缺口的结构化映射已在确定性校验中逐项验证；下表仅汇总数量，正文不展示内部 Claim 标识。',
+    '| 来源 | Candidate | 内容轮次 | Claim 覆盖（冻结／投影） | 资料缺口覆盖（冻结／投影） |\n| --- | --- | ---: | ---: | ---: |\n' + auditRows,
+  ].join('\n\n') + '\n';
+}
+
+function selectionReviewPackagePaths(reviewPackageRoot, packageId) {
+  const root = resolve(reviewPackageRoot);
+  const id = assertCandidateId(packageId);
+  const packageRootPath = resolve(root, id);
+  if (!isSameOrDescendant(root, packageRootPath) || packageRootPath === root) {
+    fail('selection review package path escapes its root');
+  }
+  return {
+    root,
+    packageRootPath,
+    markdownPath: join(packageRootPath, 'merged-preview.md'),
+    manifestPath: join(packageRootPath, 'review-manifest.json'),
+  };
+}
+
+/**
+ * Publish a read-only, append-only package for human approval of one explicit
+ * five-source V7 selection. It never freezes content or changes the browser
+ * package; it merely renders the already validated candidate structures.
+ */
+export async function createV7SelectionReviewPackage(input = {}) {
+  if (typeof input.selectionPath !== 'string' || !input.selectionPath) {
+    fail('selection review package requires one explicit persisted selection path');
+  }
+  const validation = await validateV7Selection(input);
+  const packageId = selectionReviewPackageId(validation);
+  const paths = selectionReviewPackagePaths(
+    input.reviewPackageRoot ?? join(defaultCandidateRoot, 'review-packages'),
+    packageId,
+  );
+  await assertDoesNotExist(paths.packageRootPath, 'selection review package');
+  const markdown = selectionReviewPackageMarkdown(validation);
+  const manifest = {
+    schemaVersion: 1,
+    packageId,
+    selection: validation.selection,
+    selectionSha256: sha256(canonicalJson(validation.selection)),
+    mergedPreviewSha256: sha256(markdown),
+    reviews: validation.reviews.map((review) => ({
+      candidateId: review.candidateId,
+      sourceId: review.descriptor.sourceId,
+      sourceName: review.descriptor.readerLabel,
+      acceptance: review.acceptance,
+      issues: review.issues,
+      generation: review.generation,
+      coverage: sourceReviewCoverage(review),
+    })),
+  };
+  await mkdir(paths.root, { recursive: true });
+  const stage = await mkdtemp(join(paths.root, `.${packageId}.staging-`));
+  let published = false;
+  try {
+    await writeFile(join(stage, 'merged-preview.md'), markdown, { encoding: 'utf8', flag: 'wx' });
+    await writeFile(join(stage, 'review-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+    await rename(stage, paths.packageRootPath);
+    published = true;
+    return {
+      packageId,
+      packageRootPath: paths.packageRootPath,
+      markdownPath: paths.markdownPath,
+      manifestPath: paths.manifestPath,
+      mergedPreviewSha256: manifest.mergedPreviewSha256,
+      reviews: manifest.reviews,
+    };
+  } finally {
+    if (!published) await rm(stage, { recursive: true, force: true });
+  }
+}
+
 function replaceArtifact(artifacts, replacement) {
   const matches = artifacts.filter((entry) => entry.path === replacement.path);
   if (matches.length !== 1) fail(`expected exactly one artifact to replace: ${replacement.path}`);
@@ -2466,6 +2603,22 @@ async function main() {
     process.stdout.write(`${JSON.stringify({ snapshotId: result.selection.snapshotId, sourceReviews: result.reviews.map((review) => ({ sourceId: review.descriptor.sourceId, status: review.status })) }, null, 2)}\n`);
     return;
   }
+  if (command === '--review-selection' && (args.length === 1 || args.length === 2)) {
+    const reviewPackage = await createV7SelectionReviewPackage({
+      selectionPath: args[0],
+      ...(args[1] ? { reviewPackageRoot: args[1] } : {}),
+    });
+    process.stdout.write(`${JSON.stringify({
+      packageId: reviewPackage.packageId,
+      markdownPath: reviewPackage.markdownPath,
+      mergedPreviewSha256: reviewPackage.mergedPreviewSha256,
+      reviews: reviewPackage.reviews.map((review) => ({
+        sourceId: review.sourceId,
+        acceptance: review.acceptance,
+      })),
+    }, null, 2)}\n`);
+    return;
+  }
   if (command === '--freeze') {
     const manifest = await freezeV7Snapshot(parseV7FreezeArguments(args));
     process.stdout.write(`${JSON.stringify({ snapshotId: manifest.snapshotId, contentSha256: manifest.contentSha256 }, null, 2)}\n`);
@@ -2481,7 +2634,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify({ snapshotId: result.snapshotId, sourceReviews: result.reviews.length }, null, 2)}\n`);
     return;
   }
-  fail('Usage: node scripts/evidence/guanyijia-demo-content-v7-generate.mjs --source <source-id> [candidate-root] | --refine-prompt <source-id> <parent-candidate-id> <fatal-finding-id>... | --source-round-two <source-id> <parent-candidate-id> <prompt-revision-id> | --reproject-legacy-source-id <source-id> <parent-candidate-id> | --persist-legacy-source-id-remediation <source-id> <parent-candidate-id> | --create-selection <selection.json> <sourceId=candidateId> ×5 | --selection <selection.json> | --freeze --selection <selection.json> [--target <snapshot-root>] | --check <snapshot-root>');
+  fail('Usage: node scripts/evidence/guanyijia-demo-content-v7-generate.mjs --source <source-id> [candidate-root] | --refine-prompt <source-id> <parent-candidate-id> <fatal-finding-id>... | --source-round-two <source-id> <parent-candidate-id> <prompt-revision-id> | --reproject-legacy-source-id <source-id> <parent-candidate-id> | --persist-legacy-source-id-remediation <source-id> <parent-candidate-id> | --create-selection <selection.json> <sourceId=candidateId> ×5 | --selection <selection.json> | --review-selection <selection.json> [review-package-root] | --freeze --selection <selection.json> [--target <snapshot-root>] | --check <snapshot-root>');
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

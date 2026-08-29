@@ -365,6 +365,11 @@ Round 1 出现致命错误时，先由 Sol/ultra 对冻结输入、Round 1 Candi
 结论意义均为 `FATAL`。Round 2 后任一 `FATAL` 仍存在时，停止 Candidate、Selection、freeze、
 package 与部署；不存在第三份内容候选。
 
+Selection 创建后必须先产出一个追加式、只读的五源审阅包：固定九章下按数据库、GitHub、
+业务说明、ERP 管理制度、企业术语图的顺序完整排列候选正文，并附 Candidate lineage、
+验收状态、非致命告警与 Claim／待补充资料覆盖统计。审阅包的合并预览摘要必须绑定 Selection
+的规范 JSON 摘要；它只用于用户审批，不能冻结、package、部署或改变任何候选内容。
+
 ## 运行时接口与兼容性
 
 来源准备阶段是 UI 观察接口，不进入持久化 `StandardizationRun` Schema：

@@ -9,6 +9,7 @@ import { standardSectionOrder } from '../../src/features/modeling-document-bridg
 import {
   codexInvocationArgs,
   createV7Selection,
+  createV7SelectionReviewPackage,
   freezeV7Snapshot,
   ImmutablePromptConstraints,
   loadV7SourceCandidate,
@@ -180,6 +181,58 @@ test('V7 legacy source identity remediation accepts only a completed legacy rece
     );
   } finally {
     await rm(candidateRoot, { recursive: true, force: true });
+  }
+});
+
+test('V7 selection review package renders one read-only nine-chapter five-source preview with coverage receipts', async () => {
+  const descriptors = await loadV6NarrativeDescriptors();
+  const temporaryRoot = await mkdtemp(join(tmpdir(), 'guanyijia-v7-selection-review-package-'));
+  const candidateRoot = join(temporaryRoot, 'candidates');
+  const selectionPath = join(temporaryRoot, 'selection.json');
+  const reviewPackageRoot = join(temporaryRoot, 'review-packages');
+  try {
+    const persisted = [];
+    for (const [index, descriptor] of descriptors.entries()) {
+      persisted.push(await persistV7SourceCandidate({
+        descriptors,
+        sourceId: descriptor.sourceId,
+        sessionId: `chatgpt-session-v7-selection-review-${index + 1}`,
+        rawOutput: v2Output(descriptor),
+        candidateRoot,
+        generationRound: 1,
+      }));
+    }
+    await createV7Selection({
+      descriptors,
+      candidateRoot,
+      selectionPath,
+      candidates: Object.fromEntries(persisted.map((candidate) => [candidate.sourceId, candidate.candidateId])),
+    });
+    const reviewPackage = await createV7SelectionReviewPackage({
+      descriptors,
+      candidateRoot,
+      selectionPath,
+      reviewPackageRoot,
+    });
+    const markdown = await readFile(reviewPackage.markdownPath, 'utf8');
+    const manifest = JSON.parse(await readFile(reviewPackage.manifestPath, 'utf8'));
+    assert.match(markdown, /^# 管伊佳 V7 五来源审阅包/mu);
+    assert.equal((markdown.match(/^## \d+\./gmu) ?? []).length, 9);
+    assert.equal((markdown.match(/^### 来源 [1-5]：/gmu) ?? []).length, 45);
+    assert.equal(manifest.reviews.length, 5);
+    assert.ok(manifest.reviews.every((review) => review.coverage.admittedClaims === review.coverage.projectedAdmittedClaims));
+    assert.ok(manifest.reviews.every((review) => review.coverage.gaps === review.coverage.projectedGaps));
+    await assert.rejects(
+      createV7SelectionReviewPackage({
+        descriptors,
+        candidateRoot,
+        selectionPath,
+        reviewPackageRoot,
+      }),
+      /already exists/u,
+    );
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
   }
 });
 
