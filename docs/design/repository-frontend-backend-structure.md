@@ -1,5 +1,7 @@
 # Repository Frontend and Backend Agent Structure
 
+This English document and the [Chinese rendering](./repository-frontend-backend-structure.zh-CN.md) are parallel renderings of the same approved architecture. They carry the same facts, boundaries, and implementation contract; they are not separate designs.
+
 - Status: approved target architecture; implementation has not occurred as part of this design work
 - Decision date: 2026-08-29
 - Implementation branch: `codex/backend-agents-import`
@@ -56,6 +58,7 @@ linguan-prototype-v2/
 │       │   │   └── stages/
 │       │   │       └── 00-mvp.md
 │       │   ├── progress/
+│       │   │   └── repository-structure-zh-cn.md  # ordinary new progress record for this task
 │       │   ├── src/
 │       │   │   ├── main/java/
 │       │   │   └── test/java/
@@ -74,6 +77,7 @@ linguan-prototype-v2/
     ├── repository-structure.md
     ├── design/
     │   ├── repository-frontend-backend-structure.md
+    │   ├── repository-frontend-backend-structure.zh-CN.md
     │   └── data-standardization-review-experience.md
     └── handoffs/
         └── 2026-08-29-backend-agents-import.md
@@ -159,14 +163,16 @@ The subsequent implementation commit includes:
 - the GitHub Code Agent's `.gitignore`, scoped `AGENTS.md`, `DESIGN.md`, `README.md`, `pom.xml`, `docs/stages/00-mvp.md`, all existing progress files, all Java production source, and all Java tests;
 - `backend-agents/sources/github-code/progress/backend-agents-repository-import.md`, already marked `COMPLETE` after this architecture-specification task's verification and moved byte-for-byte from its checkpoint-tracked old path;
 - `backend-agents/sources/github-code/progress/backend-agents-import-orchestration.md`, relocated from its checkpoint-tracked old path and updated only by the root integration/implementation owner through implementation completion;
+- `backend-agents/sources/github-code/progress/repository-structure-zh-cn.md`, this Chinese-rendering task's ordinary new backend progress record, marked `COMPLETE` at task completion; it has no old path and does not participate in the two checkpoint progress files' relocation lifecycle;
 - `shared/source-agent-contracts/README.md`;
 - root navigation and ownership changes in `.gitignore`, `AGENTS.md`, and `README.md`;
 - `docs/repository-structure.md`;
+- the minimal synchronization changes in `docs/design/repository-frontend-backend-structure.md` that register the parallel language rendering, plus the new `docs/design/repository-frontend-backend-structure.zh-CN.md`;
 - `docs/handoffs/2026-08-29-backend-agents-import.md`.
 
-Java source, tests, Maven configuration, stable architecture, stage design, capability README, completed and historical progress records, and placeholder Source Agent READMEs must remain byte-for-byte unchanged except for the specific documentation path/link corrections listed in section 6. The root-owned orchestration progress record is the sole progress-file content exception: its owner updates current implementation state according to the scoped progress contract. Historic progress statements are not rewritten merely because files move.
+Java source, tests, Maven configuration, stable architecture, stage design, capability README, completed and historical progress records, and placeholder Source Agent READMEs must remain byte-for-byte unchanged except for the specific documentation path/link corrections listed in section 6. Among the pre-existing progress files, the root-owned orchestration progress record is the sole content exception: its owner updates current implementation state according to the scoped progress contract. Historic progress statements are not rewritten merely because files move. The new Chinese-rendering task record is a normal work-unit progress file, not a third relocation or orchestration record.
 
-The design-specification checkpoint tracks no backend workspace files other than the two named old-path progress records. No third implementation progress file is created: `backend-agents-import-orchestration.md` is the root owner's implementation progress record. Every other approved backend workspace file is an addition at its target path.
+The design-specification checkpoint tracks no backend workspace files other than the two named old-path progress records. No third implementation-lifecycle or orchestration progress file is created: `backend-agents-import-orchestration.md` is the root owner's implementation progress record. `repository-structure-zh-cn.md` is an ordinary new documentation-work progress record. Every other approved backend workspace file is an addition at its target path.
 
 ### 5.2 Content that must remain untracked
 
@@ -220,8 +226,10 @@ The implementation updates the following current-fact documents:
 
 - `README.md` gains a concise repository navigation section immediately after its opening description. It identifies repository root as the frontend application, links to `./backend-agents/README.md`, links to `./shared/source-agent-contracts/README.md`, and states the frontend and backend command working directories.
 - `AGENTS.md` gains scope routing for `backend-agents/`, its source-owned subdirectories, and `shared/source-agent-contracts/`. It continues to route frontend work to the existing frontend instructions and does not turn backend Agent work into frontend work.
-- `docs/repository-structure.md` becomes the durable repository ownership map. It records the target tree, command roots, ownership, dependency direction, ignored surfaces, and where implementation-specific instructions live. From that file, its links to the backend navigation, shared contract, and this design are `../backend-agents/README.md`, `../shared/source-agent-contracts/README.md`, and `./design/repository-frontend-backend-structure.md`.
-- `docs/handoffs/2026-08-29-backend-agents-import.md` is the frontend notification described in section 11. From that file, its links to backend navigation, the shared contract, repository structure, and this design are `../../backend-agents/README.md`, `../../shared/source-agent-contracts/README.md`, `../repository-structure.md`, and `../design/repository-frontend-backend-structure.md`.
+- `docs/repository-structure.md` becomes the durable repository ownership map. It records the target tree, command roots, ownership, dependency direction, ignored surfaces, and where implementation-specific instructions live. From that file, its links to the backend navigation, shared contract, English design, and Chinese design are `../backend-agents/README.md`, `../shared/source-agent-contracts/README.md`, `./design/repository-frontend-backend-structure.md`, and `./design/repository-frontend-backend-structure.zh-CN.md`.
+- `docs/handoffs/2026-08-29-backend-agents-import.md` is the frontend notification described in section 11. From that file, its links to backend navigation, the shared contract, repository structure, English design, and Chinese design are `../../backend-agents/README.md`, `../../shared/source-agent-contracts/README.md`, `../repository-structure.md`, `../design/repository-frontend-backend-structure.md`, and `../design/repository-frontend-backend-structure.zh-CN.md`.
+
+The English design at `docs/design/repository-frontend-backend-structure.md` and the Chinese design at `docs/design/repository-frontend-backend-structure.zh-CN.md` link to each other near the top and remain materially identical descriptions of one architecture, migration behavior, and acceptance contract.
 
 ### 6.2 Backend documentation links
 
@@ -234,7 +242,8 @@ The following link changes are exact:
 | `backend-agents/sources/github-code/README.md` | `NineSectionProfile` link becomes `../../../shared/source-agent-contracts/README.md`. |
 | `backend-agents/sources/github-code/DESIGN.md` | `NineSectionProfile` link becomes `../../../shared/source-agent-contracts/README.md`. Its downstream review link remains `../../../docs/design/data-standardization-review-experience.md` because the directory depth is unchanged. |
 | `backend-agents/sources/github-code/docs/stages/00-mvp.md` | `NineSectionProfile` link becomes `../../../../../shared/source-agent-contracts/README.md`; links to `../../DESIGN.md`, `../../src/`, and `../../.workspace/` keep their existing relative forms. |
-| Existing progress files | Move without rewriting historical path statements. The Sol architecture-author record is `COMPLETE` and remains unchanged. The root orchestration record is `IN_PROGRESS` at the checkpoint, is the implementation progress record, and is updated only by its root owner; no third implementation progress file is created. |
+| Existing progress files | Move without rewriting historical path statements. The Sol architecture-author record is `COMPLETE` and remains unchanged. The root orchestration record is `IN_PROGRESS` at the checkpoint, is the implementation progress record, and is updated only by its root owner; no third implementation-lifecycle or orchestration progress file is created. |
+| `backend-agents/sources/github-code/progress/repository-structure-zh-cn.md` | Enter the implementation inventory as this parallel-Chinese-document task's ordinary new backend progress record and mark it `COMPLETE` at task end. It has no old path and does not participate in the two checkpoint progress files' relocation lifecycle. |
 
 ### 6.3 Existing dirty documents
 
@@ -253,7 +262,7 @@ Because those lines do not exist in the committed `HEAD` version, the file remai
 
 ## 7. Dirty-worktree-safe migration algorithm
 
-The implementation follows these steps in order after the separate design-specification checkpoint has committed this document and both old-workspace progress records. It does not use `git stash`, `git reset`, `git checkout --`, broad cleanup commands, or `git add .`. The root integration/implementation owner continues the existing `source-to-standard-markdown/sources/github-code/progress/backend-agents-import-orchestration.md` record, relocates it with the rest of `sources/`, and is the only agent that updates it. The completed architecture-author record remains unchanged. No third implementation progress file is created.
+The implementation follows these steps in order after the separate design-specification checkpoint has committed this document and both old-workspace progress records. It does not use `git stash`, `git reset`, `git checkout --`, broad cleanup commands, or `git add .`. The root integration/implementation owner continues the existing `source-to-standard-markdown/sources/github-code/progress/backend-agents-import-orchestration.md` record, relocates it with the rest of `sources/`, and is the only agent that updates it. The completed architecture-author record remains unchanged. No third implementation-lifecycle or orchestration progress file is created. The new `repository-structure-zh-cn.md` is an ordinary documentation-work progress record and does not replace either checkpoint record.
 
 ### 7.1 Preflight and preservation
 
@@ -277,9 +286,10 @@ The implementation follows these steps in order after the separate design-specif
 1. Apply the exact backend documentation link and scope changes from section 6.
 2. Update root `.gitignore`, `AGENTS.md`, and `README.md` as specified.
 3. Create `docs/repository-structure.md` and the frontend handoff.
-4. Correct only the five old-path forms named in section 6.3 inside the dirty data-standardization design; keep that file unstaged.
-5. Do not edit the dirty 2026-08-27 handoff.
-6. Only the root integration/implementation owner updates `backend-agents/sources/github-code/progress/backend-agents-import-orchestration.md` after each verifiable phase. Keep it `IN_PROGRESS` through the initial section 8 validation. After every section 8 check succeeds, mark it `COMPLETE`, restage only that exact target path, and rerun the section 8.1 Git and inventory checks before following section 9. Record the immutable commit identity in the handoff and out-of-band notification rather than by adding a post-commit progress edit. Do not edit the completed architecture-author progress file.
+4. Keep the English and Chinese designs as parallel renderings of the same architecture. Apply only the registration, navigation, inventory, validation, notification-navigation, and acceptance synchronization specified in sections 6, 7.4, 8, 11, and 13; do not change migration behavior.
+5. Correct only the five old-path forms named in section 6.3 inside the dirty data-standardization design; keep that file unstaged.
+6. Do not edit the dirty 2026-08-27 handoff.
+7. Only the root integration/implementation owner updates `backend-agents/sources/github-code/progress/backend-agents-import-orchestration.md` after each verifiable phase. Keep it `IN_PROGRESS` through the initial section 8 validation. After every section 8 check succeeds, mark it `COMPLETE`, restage only that exact target path, and rerun the section 8.1 Git and inventory checks before following section 9. Record the immutable commit identity in the handoff and out-of-band notification rather than by adding a post-commit progress edit. Do not edit the completed architecture-author progress file.
 
 ### 7.4 Stage an explicit allowlist
 
@@ -308,10 +318,12 @@ source-to-standard-markdown/sources/github-code/progress/backend-agents-reposito
 source-to-standard-markdown/sources/github-code/progress/backend-agents-import-orchestration.md
 shared/source-agent-contracts/README.md
 docs/repository-structure.md
+docs/design/repository-frontend-backend-structure.md
+docs/design/repository-frontend-backend-structure.zh-CN.md
 docs/handoffs/2026-08-29-backend-agents-import.md
 ```
 
-Directory pathspecs in that list are bounded to an approved ownership root. The two exact old progress-file paths are included only so their tracked deletions can be paired with their new paths; stage those exact old paths and no broader old-workspace pathspec. Before commit, compare every staged filename with this allowlist. In particular, the index must not contain `docs/design/data-standardization-review-experience.md`, `docs/handoffs/2026-08-27-data-standardization-review-ia.md`, any `source-to-standard-markdown/` path other than the deleted sides of the two progress-record relocations, `.workspace/`, `target/`, `.github/modernize/`, `.DS_Store`, a JAR, a class file, or a generated report.
+Directory pathspecs in that list are bounded to an approved ownership root. The two exact old progress-file paths are included only so their tracked deletions can be paired with their new paths; stage those exact old paths and no broader old-workspace pathspec. `backend-agents/sources/github-code/progress/` includes the ordinary new `repository-structure-zh-cn.md` record, which is not one of the two old-path relocation exceptions. Before commit, compare every staged filename with this allowlist. In particular, the index must not contain `docs/design/data-standardization-review-experience.md`, `docs/handoffs/2026-08-27-data-standardization-review-ia.md`, any `source-to-standard-markdown/` path other than the deleted sides of the two progress-record relocations, `.workspace/`, `target/`, `.github/modernize/`, `.DS_Store`, a JAR, a class file, or a generated report.
 
 ## 8. Validation
 
@@ -339,11 +351,12 @@ Acceptance requirements:
 - the two pre-existing dirty documents remain unstaged;
 - no Java production/test file, stable design, stage design, progress file, or placeholder README is missing;
 - local ignored artifacts remain present where preserved or relocated and none is staged;
-- the architecture-author progress record remains `COMPLETE`, and the root-owned orchestration record is `COMPLETE` in the final staged state after being updated only by its root owner;
+- the architecture-author progress record remains `COMPLETE`, the root-owned orchestration record is `COMPLETE` in the final staged state after being updated only by its root owner, and the ordinary new `repository-structure-zh-cn.md` progress record is `COMPLETE` without altering either checkpoint record's relocation lifecycle;
 - `git diff --cached --find-renames --name-status` reports each of the two progress-record relocations either as a rename from its old path to its new path or as the equivalent old-path deletion plus new-path addition;
 - every remaining committed backend workspace file is an addition at `backend-agents/` or `shared/source-agent-contracts/`, with no other old-path rename or deletion;
 - `git ls-files source-to-standard-markdown` is empty after staging because both tracked old-path progress records have relocated;
 - no frontend implementation, package, lockfile, script, deployment, or frontend-test path appears in the diff.
+- both language design files are allowlisted, their near-top cross-links resolve, and they remain materially aligned on every architecture fact, path, ownership boundary, migration/validation/rollback contract, two-checkpoint-progress-file lifecycle, generative-content inventory, and acceptance condition.
 
 Use this staged-name exclusion check; it must produce no output:
 
@@ -363,10 +376,12 @@ backend-agents/sources/github-code/DESIGN.md
 backend-agents/sources/github-code/docs/stages/00-mvp.md
 shared/source-agent-contracts/README.md
 docs/repository-structure.md
+docs/design/repository-frontend-backend-structure.md
+docs/design/repository-frontend-backend-structure.zh-CN.md
 docs/handoffs/2026-08-29-backend-agents-import.md
 ```
 
-Resolve the relative Markdown links in the three moved GitHub Code Agent documents and the root navigation documents from each containing directory. Then search the active navigation set for stale paths:
+Resolve the relative Markdown links in the three moved GitHub Code Agent documents, the root navigation documents, and the English/Chinese design cross-links from each containing directory. Then search the active navigation set for stale paths:
 
 ```bash
 rg -n 'source-to-standard-markdown|(^|[^[:alnum:]])contracts/README\.md' \
@@ -378,7 +393,7 @@ rg -n 'source-to-standard-markdown|(^|[^[:alnum:]])contracts/README\.md' \
   backend-agents/sources/github-code/docs/stages/00-mvp.md
 ```
 
-That search must return no active old-path reference. This specification and historical progress/handoff records are intentionally outside the search because their old-path text documents the migration or a past event.
+That search must return no active old-path reference. Both language renderings of this specification and historical progress/handoff records are intentionally outside the search because their old-path text documents the migration or a past event.
 
 ### 8.3 Backend Maven verification
 
@@ -415,7 +430,7 @@ After every check in section 8 passes, create one atomic implementation commit i
 6. Verify the local branch tracks `origin/codex/backend-agents-import` and the pushed tip equals the recorded SHA.
 7. Send the frontend notification with the exact branch and pushed SHA.
 
-The implementation commit contains both progress-file relocations, the root-owned orchestration record's approved status updates, the remaining backend additions, and approved repository documentation changes. It is pushed to `origin/codex/backend-agents-import`, not `main`. This task does not create a pull request, merge, rebase, force-push, deploy, or delete a branch. Any PR or merge requires a separate request.
+The implementation commit contains both progress-file relocations, the root-owned orchestration record's approved status updates, the remaining backend additions, approved repository documentation changes, the synchronized English/Chinese design registration, and the Chinese-document task's ordinary new progress record. It is pushed to `origin/codex/backend-agents-import`, not `main`. This task does not create a pull request, merge, rebase, force-push, deploy, or delete a branch. Any PR or merge requires a separate request.
 
 The tracked handoff identifies the migration commit as “the single commit containing this handoff” on `origin/codex/backend-agents-import`. A Git commit cannot contain its own SHA. Therefore the exact SHA is added to the out-of-band frontend notification after push and can be recovered deterministically with:
 
@@ -444,7 +459,7 @@ Rollback of this repository-layout commit does not require an npm reinstall or f
 
 ## 11. Frontend notification contract
 
-`docs/handoffs/2026-08-29-backend-agents-import.md` is addressed to frontend owners and must contain all of the following as current facts:
+`docs/handoffs/2026-08-29-backend-agents-import.md` is addressed to frontend owners, links to both parallel language renderings of this architecture, and must contain all of the following as current facts:
 
 1. **Outcome.** The repository now contains a backend Source Agent workspace at `backend-agents/` and a language-neutral contract at `shared/source-agent-contracts/`; the frontend remains at repository root.
 2. **Old-to-new mapping.** Include the mapping table from section 4 for workspace documents, five source directories, GitHub Code Agent, both checkpoint-tracked progress-file rename/delete-add exceptions, and shared contract.
@@ -482,9 +497,10 @@ The restructuring is complete only when all of these statements are true:
 - the frontend remains at repository root with no runtime, build, command, package, test, or deployment path change;
 - the full approved backend Agent source and documentation surface is tracked under `backend-agents/`;
 - the language-neutral contract is tracked only at `shared/source-agent-contracts/README.md`;
-- the two checkpoint-tracked progress files are the only old-path files eligible to appear as renames (or delete/add pairs), and every other backend workspace file appears as a new target-path addition;
+- the two checkpoint-tracked progress files are the only old-path files eligible to appear as renames (or delete/add pairs), and every other backend workspace file appears as a new target-path addition; `repository-structure-zh-cn.md` is an ordinary new backend progress record, is `COMPLETE`, and does not alter the two-file lifecycle;
 - local/generated/backend build artifacts and the modernization stub are absent from the index;
 - all active navigation links point to the new paths;
+- `docs/design/repository-frontend-backend-structure.md` and `docs/design/repository-frontend-backend-structure.zh-CN.md` have resolvable near-top cross-links and are materially aligned language renderings of the same architecture;
 - the targeted and full Maven module tests pass from the new path;
 - the two pre-existing dirty documents are preserved and excluded from the migration commit as specified;
 - one atomic implementation commit, following the separate design-specification checkpoint, is pushed to `origin/codex/backend-agents-import`;

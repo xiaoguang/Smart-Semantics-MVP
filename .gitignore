@@ -28,3 +28,22 @@ blob-report/
 *.njsproj
 *.sln
 *.sw?
+
+# Backend Agent local inputs and generated outputs
+/backend-agents/**/.workspace/
+/backend-agents/**/target/
+/backend-agents/**/*.jar
+/backend-agents/**/*.class
+/backend-agents/**/reports/
+/backend-agents/**/surefire-reports/
+
+# Local agent state and secrets
+/.codex/
+.env
+.env.*
+!.env.example
+!*.env.example
+!.env.*.example
+
+# Tool-local legacy modernization state
+/source-to-standard-markdown/.github/modernize/java-upgrade/

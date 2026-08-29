@@ -1,5 +1,18 @@
 # Linguan Prototype Instructions
 
+## Scope routing
+
+- The repository root, `src/`, `public/`, `scripts/`, `deploy/`, and root npm
+  configuration are the frontend application surface.
+- `backend-agents/` owns offline source-to-nine-section backend Agents. Read
+  `backend-agents/AGENTS.md` and the nearest source-scoped `AGENTS.md` before
+  working there; source directories do not share implementation code.
+- `shared/source-agent-contracts/` is the language-neutral contract seam. It
+  contains no frontend runtime or backend parser implementation. Changes to
+  this seam require explicit shared-contract scope.
+- Frontend runtime code must not import Java source, Maven output, local
+  workspaces, or generated artifacts from `backend-agents/`.
+
 ## Scope and preserved baselines
 
 - Work only in `linguan-prototype-v2` unless the user explicitly authorizes an
