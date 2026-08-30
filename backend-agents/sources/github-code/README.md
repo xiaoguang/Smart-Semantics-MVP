@@ -1,16 +1,16 @@
 # GitHub Code Agent
 
-目标是把一份不再变化的代码仓库整理成准确、可追溯、明确写出未知项的九章 Markdown 候选。程序负责证明源码事实和组织文档；模型只解释已经证明的一条局部业务流程。
+目标是把一份不再变化的代码仓库整理成准确、可追溯、明确写出未知项的九章 Markdown 候选。程序用完整 ProofPack 证明源码事实，再把更小的非重叠 EvidenceCapsule 交给模型，编译一条入口根 Flow 及其 Outcome，并用固定模板组织事实句；模型只为已经证明的局部流程选择冻结 BusinessTermRegistry 中的 term key 和有限 claim key。没有 eligible 业务术语时，程序使用 total TechnicalDisplayRegistry，而不是接收开放模型命名。
 
 当前代码还只是 POC。它能校验声明文件和摘录是否被改动、测试两种受控生成方式、稳定输出九个章节并保存归档；它还不能证明每句代码声明都由所指源码支持。固定 DepotHead 样例因此已被拒绝，没有可接受 Candidate。目标架构与 POC 能力必须分开阅读。
 
-## 三条阅读路线
+## 建议阅读顺序
 
-| 你想回答的问题 | 最短路线 | 能得到什么 |
-| --- | --- | --- |
-| 五分钟看懂长期目标 | 读[总体设计](DESIGN.md)第 1 节，再按需看第 2 节十二个模块 | 输入、输出、为什么不把全仓交给模型、程序/模型分工、Gap 和唯一目标数据流。 |
-| 看一个真实成败案例 | 读[总体设计](DESIGN.md)第 4 节，再看[00 POC 实现记录](docs/stages/00-mvp.md)第 13 节 | DepotHead 的 3 文件、5 Evidence、5 LockedFact、1 Flow 为什么 hash/reference 通过却只有 2 Fact 通过、3 Fact 失败。 |
-| 查当前工程实现 | 读[00 POC 实现记录](docs/stages/00-mvp.md)第 4–18 节，再看 src/main、src/test 和下面的 CLI | 真实 Interface、两条 POC 测试路径、Manifest/R1/R2/identity/archive 合同、命令、测试和缺口。 |
+1. 先看[垂直主线](DESIGN.md#2-垂直主线从冻结源码到可审阅候选)，确认冻结源码怎样依次形成可审阅 Candidate，以及安全/资源门禁为什么横切全链。
+2. 再看[M1–M8 完整 walkthrough](DESIGN.md#3-八个深模块的端到端-walkthrough)，沿同一个合成“库存预留”仓库检查每个模块的输入、算法、模型角色、输出、失败和测试。
+3. 然后看[可行性证明与 AssuranceLedger](DESIGN.md#4-可行性证明与可重算-assuranceledger)，区分能力包络内的程序保证、受支持模型解释和静态代码不能证明的政策。
+4. 接着直接读[完整九章 Markdown 结果](DESIGN.md#5-synthetic-样例的完整九章-markdown-结果)，确认内部 ID/SHA/transport 字段没有泄漏到业务正文，五项未证政策留在“待确认事项”。
+5. 最后查[当前 POC 成熟度矩阵](DESIGN.md#9-附录-b当前-poc-成熟度矩阵)和[00 POC 实现记录](docs/stages/00-mvp.md)，了解哪些目标能力仍是 PARTIAL、POC_ONLY 或 NOT_IMPLEMENTED，以及 DepotHead 为什么 2 个 Fact 通过、3 个失败。
 
 九章名称、顺序和“恰好一次”的共同合同见[共享 NineSectionProfile](../../../shared/source-agent-contracts/README.md)。progress/ 只记录任务恢复状态，不替代设计。
 
@@ -29,7 +29,8 @@
 | `inspect`/`discover` | DIAGNOSTIC（01 输入） | 未冻结目录输出，不得进入 Candidate/Markdown/正式 Trace |
 | `SourceAnalyzer` CodeFact seam | PARTIAL（02 输入） | 无 CLI、Proof 或 generation 接线 |
 | runtime receipt admission | PARTIAL（04 输入） | 独立 seam，未接 generate/CLI；Provider 身份字段待拆分 |
-| HTTP、远程 Git、自动 Flow 编译 | NOT IMPLEMENTED | 目标能力，不能从总体设计推断可用 |
+| future local-loopback HTTP Adapter、自动 Flow 编译 | NOT IMPLEMENTED | 本分析 core 的目标能力，不能从总体设计推断当前可用；不承诺远程 HTTP 服务 |
+| 远程 Git Capture | OUTSIDE AGENT CORE | 必须由另一个显式授权的上游 Capture workflow/Adapter 固定 revision 并交付离线 `FrozenRepositoryRequest`；不是当前或目标 M1–M8 的网络能力 |
 
 标准 MyBatis mapper DOCTYPE 可以解析，但外部 DTD、entity、schema 和网络解析全部禁用。模块不执行客户 Maven、插件、测试、脚本、应用、SQL 或 MyBatis runtime。
 
