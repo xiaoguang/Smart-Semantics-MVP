@@ -2,19 +2,21 @@
 
 ## 状态与范围
 
-本文件是管伊佳数据标准化审阅体验的当前权威设计。它记录 2026-08-28 至 2026-08-29
-用户批准的“即时差异审阅、自动来源流程、完整合并文档、证据栏与人类可读 V7”合同；
-实现、测试和当前事实文档必须以它为准。此前“未决正式差异可继续下一来源”“手动审阅
-下一个来源”以及“最后集中处理来源差异”的设计不再适用于新运行。
+本文件是管伊佳**下游审阅、差异处理、五来源合并和 V7 阅读体验**的当前权威设计。它记录
+2026-08-28 至 2026-08-29 用户批准的“即时差异审阅、自动来源流程、完整合并文档、证据栏
+与人类可读 V7”合同；这些实现、测试和当前事实文档必须以它为准。GitHub 代码来源如何生成
+九章候选不由本文定义，其权威是 [GitHub Code Agent 总体设计](../../backend-agents/sources/github-code/docs/DESIGN.md)
+与 [MVP 阶段设计](../../backend-agents/sources/github-code/docs/stages/00-mvp.md)。此前
+“未决正式差异可继续下一来源”“手动审阅下一个来源”以及“最后集中处理来源差异”的设计
+不再适用于新运行。
 
-实施严格分两阶段。阶段一只调整审阅页面：右栏的来源进度与证据支持信息、以及页头对齐；
-本阶段不调用 LLM 或其他生成模型，也不创建 V7。阶段一部署后必须由用户审阅页面风格。
-只有用户明确批准该页面后，才可以执行阶段二的 V7 候选生成、审阅、冻结和接入；阶段二的
-模型输入、验收、两轮改进与停止规则由 scoped `AGENTS.md` 和本文件共同约束。
+两阶段审批现已完成：阶段一页面已获审阅批准，阶段二 V7 阅读投影也已获批准并冻结；本文件
+后文保留两阶段合同和历史门禁以解释当前结果。历史批准不授权新的来源捕获、模型调用、候选
+生成、freeze、package 或部署；任何新维护运行仍须按 scoped `AGENTS.md` 单独获得明确授权。
 
-两个阶段都不得修改 V6、Pinned Bundle、正式管伊佳 V1、零售 V1/V2、黄金摘要、原始证据
-或快照；不得重新捕获来源，且不得调用 capture、package 或 freeze。阶段一的所有文档拼接、
-修改投影、预览和 SHA 校验继续只使用冻结 V6 内容、已保存 Revision 和确定性 TypeScript。
+两个阶段均未修改 V6、Pinned Bundle、正式管伊佳 V1、零售 V1/V2、黄金摘要、原始证据或
+快照，也未重新捕获来源。普通文档拼接、修改投影、预览和 SHA 校验继续只使用冻结内容、
+已保存 Revision 和确定性 TypeScript。
 
 ## 术语
 
@@ -306,6 +308,37 @@ runId + sourceManifest + reviewedSourceManifest + decisionManifest
 `sha256:b570297c59fd19538970985eacf60dd1bc9f46c7dbda550ecf46e2b43f706ca4`。V7 仅改善人类阅读
 投影，不重新捕获来源、不改写 V6、Pinned Bundle、正式 Claim、Conflict 或正式 V1。新运行绑定
 V7；已有 V5/V6 运行继续绑定各自的历史版本。
+
+### 源到九章 Agent 工作区
+
+五个来源的候选生成过程统一放在仓库内的 `backend-agents/` 工作区，但每个来源
+由一个独立 Source Agent 负责，并在自己的子目录内保持实现与维护记录。共享 `shared/source-agent-contracts/`
+只定义冻结输入、九章候选、验证回执、最多两份产品候选的 `ReaderCandidateRound`、来源内部
+同一候选的 `FlowInterpretationRound` 和显式 Selection；它不包含任何来源专用的
+选择、解释或生成逻辑。当前分工为：数据库、GitHub 代码、业务说明、ERP 管理制度和企业
+术语图五个来源各占一个子目录；本工作单元只负责 `sources/github-code/` 的代码到九章
+Markdown 过程，不修改其他来源 Agent 的实现。
+
+```text
+backend-agents/
+├── AGENTS.md
+├── CONTEXT.md
+└── sources/
+    ├── mysql/
+    ├── github-code/
+    ├── business-docs/
+    ├── erp-policy/
+    └── terminology-graph/
+
+shared/
+└── source-agent-contracts/
+    └── README.md
+```
+
+工作区只是阶段二的隔离维护 seam；创建目录、记录合同或编写无模型的确定性测试不等于开始
+新的 V7 生成。阶段一页面获批前的历史门禁已完成，但该完成状态不授权后续 Source Agent
+调用模型、读取来源系统、创建候选、冻结快照、重新打包或接入运行时。Source Agent 的输出
+始终是未发布候选；显式选择、冻结、package 和运行时激活仍是 Agent 之外的独立维护门禁。
 
 V7 的目标是业务可读的说明书，而不是技术传输记录。每一份来源仍保留固定九章，但每章首先
 说明“是什么、为什么重要、如何使用、有哪些边界或例外”，再按需提供可展开的技术依据。

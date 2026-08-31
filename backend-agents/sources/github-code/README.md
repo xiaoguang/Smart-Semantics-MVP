@@ -1,122 +1,116 @@
 # GitHub Code Agent
 
-目标是把一份不再变化的代码仓库整理成准确、可追溯、明确写出未知项的九章 Markdown 候选。程序用完整 ProofPack 证明源码事实，再把更小的非重叠 EvidenceCapsule 交给模型，编译一条入口根 Flow 及其 Outcome，并用固定模板组织事实句；模型只为已经证明的局部流程选择冻结 BusinessTermRegistry 中的 term key 和有限 claim key。没有 eligible 业务术语时，程序使用 total TechnicalDisplayRegistry，而不是接收开放模型命名。
+本 Agent 的目标是把一份**完整冻结的** Java/Spring MVC/MyBatis 仓库快照，整理成可信、可追溯、明确写出未知项的**一份仓库级**九章 Markdown 候选。程序先盘点全入口、构建五张程序图、证明Fact，再为每个支持入口编译独立Flow/EvidenceCapsule；Stage06每Flow先用隔离`R0_REGISTRY_PROPOSAL`提出有basis的仓库特定词并由程序冻结唯一RepositoryInterpretationRegistry，再用同Flow finite-key R1/R2解释；程序把全部slice准入并合成唯一RepositoryKnowledge，再只生成一份NineSectionPlan/document.md、Trace和完整analysis run archive。
 
-当前代码还只是 POC。它能校验声明文件和摘录是否被改动、测试两种受控生成方式、稳定输出九个章节并保存归档；它还不能证明每句代码声明都由所指源码支持。固定 DepotHead 样例因此已被拒绝，没有可接受 Candidate。目标架构与 POC 能力必须分开阅读。
+DepotHead 八文件只是贯穿讲解和局部fixture，不是产品分析范围。一个Flow成功、一个shard完成或一个局部slice可读都不能结束run；只有RepositoryCoverageLedger对完整仓库的文件、site、入口、图、Fact/atom、Outcome、Flow、解释、知识和section owner逐项闭合才可完成。禁止一Flow一Markdown，也禁止先渲染片段再拼接。
 
-## 建议阅读顺序
+目标设计权威是 [docs/DESIGN.md](docs/DESIGN.md)。当前代码和测试只验证或反驳目标的一部分，不能反向降低设计。
 
-1. 先看[垂直主线](DESIGN.md#2-垂直主线从冻结源码到可审阅候选)，确认冻结源码怎样依次形成可审阅 Candidate，以及安全/资源门禁为什么横切全链。
-2. 再看[M1–M8 完整 walkthrough](DESIGN.md#3-八个深模块的端到端-walkthrough)，沿同一个合成“库存预留”仓库检查每个模块的输入、算法、模型角色、输出、失败和测试。
-3. 然后看[可行性证明与 AssuranceLedger](DESIGN.md#4-可行性证明与可重算-assuranceledger)，区分能力包络内的程序保证、受支持模型解释和静态代码不能证明的政策。
-4. 接着直接读[完整九章 Markdown 结果](DESIGN.md#5-synthetic-样例的完整九章-markdown-结果)，确认内部 ID/SHA/transport 字段没有泄漏到业务正文，五项未证政策留在“待确认事项”。
-5. 最后查[当前 POC 成熟度矩阵](DESIGN.md#9-附录-b当前-poc-成熟度矩阵)和[00 POC 实现记录](docs/stages/00-mvp.md)，了解哪些目标能力仍是 PARTIAL、POC_ONLY 或 NOT_IMPLEMENTED，以及 DepotHead 为什么 2 个 Fact 通过、3 个失败。
+## 五分钟阅读路线
 
-九章名称、顺序和“恰好一次”的共同合同见[共享 NineSectionProfile](../../../shared/source-agent-contracts/README.md)。progress/ 只记录任务恢复状态，不替代设计。
+1. 读 [总体设计 §1–2](docs/DESIGN.md#1-先说业务结果)：先理解业务/信任目标，以及真实 jshERP DepotHead status 路径。
+2. 读 [八阶段主线](docs/DESIGN.md#3-八阶段纵向主线)及[仓库完成门禁](docs/DESIGN.md#37-repository-completion-gate)：确认每模块/阶段立即产生canonical JSON/JSONL，分片不降覆盖，单Flow PASS不能完成。
+3. 读 [当前实现审计](docs/DESIGN.md#15-当前实现审计与目标设计分开)：记住当前 jshERP 诚实结果仍是 Gap、0 Flow、0 Capsule。
+4. 需要细节时选择一份阶段文档；不要先从 Java 类名推断架构。
+5. [Stage 00](docs/stages/00-mvp.md)只用于理解 POC 历史和被拒绝的 shortcut，不是当前主线。
 
-## 当前 POC 能力
+## 八阶段路线
 
-| 能力 | 状态 | 边界 |
+| 阶段 | 人类问题 | 详细设计 |
+| ---: | --- | --- |
+| 01 | 分析的是哪份不可变源码？ | [冻结来源](docs/stages/01-freeze-source.md) |
+| 02 | 这是什么应用，入口在哪里？ | [发现应用类型和入口](docs/stages/02-discover-application-and-entries.md) |
+| 03 | 结构、调用、控制、数据和证据怎样连接？ | [构建五张正式程序图](docs/stages/03-build-five-program-graphs.md) |
+| 04 | 哪些代码事实逐原子可证明？ | [证明代码事实](docs/stages/04-prove-code-facts.md) |
+| 05 | 每个入口的完整流程和模型阅读包是什么？ | [编译完整业务流程](docs/stages/05-compile-business-flows.md) |
+| 06 | 新仓库业务词怎样由每Flow R0提出、程序冻结，再由R1/R2安全选择？ | [一次只解释一个流程](docs/stages/06-interpret-one-flow-at-a-time.md) |
+| 07 | 谁决定解释能否进入仓库业务知识？ | [准入并合并业务知识](docs/stages/07-admit-and-merge-business-knowledge.md) |
+| 08 | 九章、Markdown、Trace、归档和恢复怎样闭合？ | [构建九章文档并归档整个运行](docs/stages/08-build-nine-section-document-and-archive.md) |
+
+每份阶段文档都按同一顺序写：为什么存在、DepotHead 具体输入、步骤、可观察 artifacts、下游保证、成功/Gap/fatal、程序/模型角色，最后才是 records、identity、算法、预算、安全、failure codes、tests 和当前差距。
+
+## 技术参考路线
+
+- 跨阶段 records、canonical identity、预算、安全、failure families 和测试目标：[总体设计 §12–13](docs/DESIGN.md#12-运行持久化与精确恢复)。
+- 九章名称、顺序和基数的唯一权威：[共享 NineSectionProfile](../../../shared/source-agent-contracts/README.md)。
+- 所有 Source Agent 的中文共同语境：[backend-agents/CONTEXT.md](../../CONTEXT.md)。
+- 事实/Proof/Gap 技术合同：[Stage 04](docs/stages/04-prove-code-facts.md#8-技术合同)。
+- Flow/Capsule 技术合同：[Stage 05](docs/stages/05-compile-business-flows.md#8-技术合同)。
+- 模型`R0_REGISTRY_PROPOSAL`、RepositoryInterpretationRegistry freeze、finite-key R1/R2、3N accounting和lifecycle：[Stage 06](docs/stages/06-interpret-one-flow-at-a-time.md#8-技术合同)。
+- run-centric `start/inspect/resume/artifact/render/validate/trace`、plan-only renderer、typed Trace、Candidate rounds和whole-run resume：[Stage 08](docs/stages/08-build-nine-section-document-and-archive.md#8-技术合同)。
+- 模块 artifact wire schema、Luna/xhigh RED 与 Terra/xhigh GREEN brief：每份 stage 文档的 `8.0` 与 `8.0.1`。
+- Sol/ultra唯一Design Authority、偏离STOP与用户升级规则：[总体设计 §13.10–13.11](docs/DESIGN.md#1310-agent-执行纪律)。
+
+## 当前能力
+
+以下只描述当前仓库，不代表目标已经实现：
+
+| 能力 | 中文状态 | 诚实边界 |
 | --- | --- | --- |
-| 人工 Manifest 文件/Evidence 完整性 | IMPLEMENTED | 校验 size/SHA、行段 SHA 与 known IDs；只证明 hash/reference integrity，不是远程 Git capture |
-| Fact→Evidence semantic closure | NOT IMPLEMENTED | 不逐 atom 检查 Fact 自身声明 span；有效 SHA/ID 不足以准入 |
-| provider-free baseline | IMPLEMENTED（执行路径） | 不调用模型；缺 semantic closure 与语义原子守恒，不能据此准入当前样例 |
-| recorded R1/R2 | IMPLEMENTED（单 Flow 执行路径） | 同一 Candidate 内解释/精度复核；不调用 live model，也不能补足 Fact 证据 |
-| 九章渲染 | PARTIAL | 固定标题和字节确定性；不等于读者内容充分 |
-| 八文件归档 | IMPLEMENTED | 原子安装、逐字节幂等、冲突拒绝 |
-| archived validate | PARTIAL | 主要检查布局、sidecar identity、正文 SHA、九标题 |
-| archived Trace | PARTIAL | 读取存档 locator；不重开冻结源码重验 hash |
-| `inspect`/`discover` | DIAGNOSTIC（01 输入） | 未冻结目录输出，不得进入 Candidate/Markdown/正式 Trace |
-| `SourceAnalyzer` CodeFact seam | PARTIAL（02 输入） | 无 CLI、Proof 或 generation 接线 |
-| runtime receipt admission | PARTIAL（04 输入） | 独立 seam，未接 generate/CLI；Provider 身份字段待拆分 |
-| future local-loopback HTTP Adapter、自动 Flow 编译 | NOT IMPLEMENTED | 本分析 core 的目标能力，不能从总体设计推断当前可用；不承诺远程 HTTP 服务 |
-| 远程 Git Capture | OUTSIDE AGENT CORE | 必须由另一个显式授权的上游 Capture workflow/Adapter 固定 revision 并交付离线 `FrozenRepositoryRequest`；不是当前或目标 M1–M8 的网络能力 |
+| 冻结输入、有限仓库理解、Fact/Proof | **已验证（有限、内存态）** | 现有 Stage01 core 有 bounded tests；成功中间态未按八阶段目标立即持久化 |
+| Flow/Outcome/Capsule 编译 | **已验证（有限、内存态）** | 现有 Stage02 core 对受支持 fixture 工作；固定 jshERP 八文件是 Gap、0 Flow、0 Capsule |
+| 五张 standalone 程序图 | **缺失目标产物** | 现有 model/view 只有部分结构/call/CFG；没有正式 data-flow/evidence graph 文件 |
+| 逐 Flow 模型解释和程序准入 | **部分具备（scripted R1/R2）** | 尚无R0 proposal/registry freeze/正常3N合同；DepotHead当前0 task，live Provider未在本次调用 |
+| 九章、Trace、Candidate archive | **部分具备（final-only）** | archive-v2 有 bounded final preimage/validation；前七阶段还不是独立 production stage assets |
+| run-centric Java/CLI/loopback HTTP | **部分具备（注入式 Adapter）** | 单一七方法RepositoryAnalysisAgent、identity-only artifact query、三Adapter同义映射和默认composition尚未实现 |
+| Stage 00 POC | **POC 历史记录** | 人工 Manifest、LockedFact、baseline 和旧 archive 不能绕过目标主线 |
 
-标准 MyBatis mapper DOCTYPE 可以解析，但外部 DTD、entity、schema 和网络解析全部禁用。模块不执行客户 Maven、插件、测试、脚本、应用、SQL 或 MyBatis runtime。
+真实 walkthrough 固定为：
 
-## 六个 CLI
+~~~text
+DepotHeadController.batchSetStatus
+  -> DepotHeadService.batchSetStatus
+  -> DepotHeadMapper.updateByExampleSelective
+  -> DepotHeadMapper.xml#updateByExampleSelective
+  -> jsh_depot_head.status
+~~~
 
-以下命令只描述可复现的现有 Interface。调用方必须在生成前另行完成 Fact semantic Evidence audit；当前 core 不会代为阻断语义不闭合的 Manifest，固定 DepotHead 样例不得用于这些命令的当前验收。
+源码里能看到这条路径，不等于当前程序已经证明整条路径。缺少通用 DepotHead dataflow/Facts 是当前设计审计中的明确 Gap。
 
-构建 shaded JAR：
+## 只读复验命令
 
-```bash
-mvn -q -DskipTests package
-java -jar target/github-code-to-markdown-0.1.0-SNAPSHOT.jar --help
-```
+以下命令不运行 Maven、不调用模型、不联网、不生成 Candidate，也不修改客户快照。
 
-用模板路径生成 recorded Candidate：
+确认工作树和固定 jshERP identity：
 
-```bash
-java -jar target/github-code-to-markdown-0.1.0-SNAPSHOT.jar generate \
-  --manifest <flow-manifest.json> \
-  --snapshot-root <frozen-source-root> \
-  --workspace <new-or-empty-workspace> \
-  --recorded-r1 <r1.json> \
-  --recorded-r2 <r2.json>
-```
+~~~bash
+git status --short
+git -C .workspace/jshERP-8c30ce7861570458920175e200bb2a6442713580 rev-parse HEAD
+git -C .workspace/jshERP-8c30ce7861570458920175e200bb2a6442713580 status --porcelain=v1
+~~~
 
-生成 provider-free baseline：
+确认真实 DepotHead 主链：
 
-```bash
-java -jar target/github-code-to-markdown-0.1.0-SNAPSHOT.jar baseline \
-  --manifest <flow-manifest.json> \
-  --snapshot-root <frozen-source-root> \
-  --workspace <new-or-empty-workspace>
-```
+~~~bash
+rg -n "RequestMapping|batchSetStatus|setStatus|andIdIn|updateByExampleSelective" \
+  .workspace/jshERP-8c30ce7861570458920175e200bb2a6442713580/jshERP-boot/src/main/java/com/jsh/erp/controller/DepotHeadController.java \
+  .workspace/jshERP-8c30ce7861570458920175e200bb2a6442713580/jshERP-boot/src/main/java/com/jsh/erp/service/DepotHeadService.java \
+  .workspace/jshERP-8c30ce7861570458920175e200bb2a6442713580/jshERP-boot/src/main/java/com/jsh/erp/datasource/entities/DepotHead.java \
+  .workspace/jshERP-8c30ce7861570458920175e200bb2a6442713580/jshERP-boot/src/main/java/com/jsh/erp/datasource/entities/DepotHeadExample.java \
+  .workspace/jshERP-8c30ce7861570458920175e200bb2a6442713580/jshERP-boot/src/main/java/com/jsh/erp/datasource/mappers/DepotHeadMapper.java
 
-只读 archived Candidate：
+rg -n "Update_By_Example_Where_Clause|updateByExampleSelective|update jsh_depot_head|record.status|status =" \
+  .workspace/jshERP-8c30ce7861570458920175e200bb2a6442713580/jshERP-boot/src/main/resources/mapper_xml/DepotHeadMapper.xml
+~~~
 
-```bash
-java -jar target/github-code-to-markdown-0.1.0-SNAPSHOT.jar validate \
-  --workspace <workspace> \
-  --candidate-id <candidate-id-from-candidate.json>
+确认八阶段文件与九章标题：
 
-java -jar target/github-code-to-markdown-0.1.0-SNAPSHOT.jar trace \
-  --workspace <workspace> \
-  --candidate-id <candidate-id-from-candidate.json> \
-  --item-key <trace-item-key>
-```
+~~~bash
+for f in \
+  docs/stages/01-freeze-source.md \
+  docs/stages/02-discover-application-and-entries.md \
+  docs/stages/03-build-five-program-graphs.md \
+  docs/stages/04-prove-code-facts.md \
+  docs/stages/05-compile-business-flows.md \
+  docs/stages/06-interpret-one-flow-at-a-time.md \
+  docs/stages/07-admit-and-merge-business-knowledge.md \
+  docs/stages/08-build-nine-section-document-and-archive.md
+do
+  test -f "$f"
+done
 
-目录诊断：
+sed -n '/## NineSectionProfile/,/## 最小 Interface/p' \
+  ../../../shared/source-agent-contracts/README.md
+~~~
 
-```bash
-java -jar target/github-code-to-markdown-0.1.0-SNAPSHOT.jar inspect \
-  --repository-root <local-source-root>
-
-java -jar target/github-code-to-markdown-0.1.0-SNAPSHOT.jar discover \
-  --repository-root <local-source-root>
-```
-
-`inspect` 和 `discover` 不读取 Manifest/commit/file SHA，也不冻结 locator。它们的 JSON 只能用于诊断；正式准入必须重新绑定并校验 Manifest/Evidence。
-
-## 归档文件
-
-首次成功归档后的 workspace 恰好包含：
-
-```text
-document.md
-candidate.json
-evidence-pack.json
-r1-interpretation.json
-r2-precision-review.json
-trace-index.json
-generation-receipt.json
-validation-receipt.json
-```
-
-`validate` 检测正文篡改时只写 invalid receipt，不修复 Markdown。`validation-receipt.json` 当前会被后续验证替换，不是追加 lineage。
-
-## 固定 POC 样例
-
-本地忽略工作区保留 jshERP commit `8c30ce7861570458920175e200bb2a6442713580` 的 DepotHead 小样：3 个文件、5 个 Evidence、5 个 LockedFact、1 个 Flow。文件/摘录哈希与 known-ID references 有效，但逐 atom 审计只有 2 个 Fact 通过、3 个失败，整个 Flow semantic closure 失败。该样例已降级为拒绝输入，不得用于当前验收、Candidate 内容依据或 Reader Selection；详见 [00-mvp](docs/stages/00-mvp.md)。
-
-`.workspace/mvp-depothead-baseline-v2/` 是 Renderer 源码变化前的历史产物，不代表当前源码或当前验收，禁止把它作为发布依据或在普通文档工作中重新生成。
-
-## 直接测试
-
-```bash
-mvn -q -Dtest=ManifestEvidenceVerificationTest,InterpretationAdmissionGateTest,NineSectionRenderingDeterminismTest,DeterministicBaselineGenerationTest,CandidateArchivePersistenceTest,CodeMdCliPersistenceTest,CodeMdCliValidateTest,TraceLocatorTest,RepositoryDiscovererTest,CodeMdCliDiscoveryTest,CodeFactAnalyzerTest,ModelRuntimeReceiptAdmissionTest test
-```
-
-这些测试只使用合成 fixture 或 recorded provider，不联网、不调用模型、不执行客户项目。
+文档-only 变更不要求测试或 build。若未来实现目标 stages，只运行直接覆盖该变更的定向测试。

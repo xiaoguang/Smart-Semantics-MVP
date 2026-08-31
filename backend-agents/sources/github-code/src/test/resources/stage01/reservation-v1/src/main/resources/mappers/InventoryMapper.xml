@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="example.inventory.InventoryMapper">
+  <select id="findBySku" resultType="example.inventory.InventoryRow">
+    SELECT sku, on_hand AS onHand, reserved_qty AS reserved, version
+    FROM inventory
+    WHERE sku = #{sku}
+  </select>
+  <update id="addReservation">
+    UPDATE inventory
+    SET reserved_qty = reserved_qty + #{quantity}, version = version + 1
+    WHERE sku = #{sku} AND version = #{version}
+  </update>
+</mapper>

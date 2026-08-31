@@ -7,7 +7,7 @@
 1. [共享规则](AGENTS.md)：所有 Source Agent 的安全、所有权和两类轮次规则。
 2. [共享语言](CONTEXT.md)：`ReaderCandidateRound`、`FlowInterpretationRound` 等术语。
 3. [共享合同](../shared/source-agent-contracts/README.md)：固定 `NineSectionProfile` 与最小身份链。
-4. 来源 Agent 的总体设计与阶段设计；GitHub Code Agent 从 [总体设计](sources/github-code/DESIGN.md) 进入，再读 [MVP 阶段设计](sources/github-code/docs/stages/00-mvp.md)。
+4. 来源 Agent 的总体设计与阶段设计；GitHub Code Agent 从 [总体设计](sources/github-code/docs/DESIGN.md) 进入，再读 [MVP 阶段设计](sources/github-code/docs/stages/00-mvp.md)。
 5. 对应实现、测试、归档 JSON 与只用于恢复的 progress。
 
 [管伊佳下游审阅/合并设计](../docs/design/data-standardization-review-experience.md) 负责多来源审阅、决定叠加、Selection、冻结和浏览器阅读体验，不定义单个来源 Agent 的生成架构。

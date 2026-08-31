@@ -5,7 +5,7 @@
 - This directory owns only the Java/Maven code-to-nine-section Agent and its
   tests, fixtures, design, CLI, Java Interface, and any future local loopback
   HTTP adapter. Ownership does not imply that every listed surface is already
-  implemented; `DESIGN.md` and the current stage design own maturity facts.
+  implemented; `docs/DESIGN.md` and the current stage design own maturity facts.
 - Do not modify V6, Pinned assets, formal models, formal evidence, existing
   source candidates, frontend code, or another source Agent's implementation.
 - The v0 profile supports frozen Java/Spring MVC/MyBatis source only. JPA,
@@ -27,6 +27,9 @@
 
 - Critical reasoning, architecture, and important design documentation use
   `gpt-5.6-sol` with `ultra` reasoning.
+- The sole target-design authority is `gpt-5.6-sol / ultra` (the Sol/ultra
+  Design Authority). `gpt-5.6-sol / xhigh` is a debug role only and cannot
+  approve architecture or contract changes.
 - Production implementation uses `gpt-5.6-terra` with `xhigh` reasoning.
 - TDD test writing uses `gpt-5.6-luna` with `xhigh` reasoning. LLM code review,
   bounded source reading, and nine-section Markdown proposal generation also
@@ -35,10 +38,21 @@
 - Automated tests use only scripted or recorded providers. They never invoke a
   live model, network source, API key, or customer build.
 - A live Luna task requires the logged-in Codex session preflight and a frozen
-  task package. Its `FlowInterpretationRound` may use one R1 interpretation and
-  one R2 precision review inside the same reader candidate; R2 is not a product
+  task package. For every eligible Flow, Stage 06 first uses one isolated
+  `R0_REGISTRY_PROPOSAL`; the program validates all R0 results and freezes one
+  `RepositoryInterpretationRegistry`, then R0-ready Flows use one finite-key R1
+  interpretation and one R2 precision review. Normal N-Flow cardinality is 3N
+  slots/calls. R0/R1/R2 never share context across Flows; R2 is not a product
   candidate replacement and does not consume another `ReaderCandidateRound`.
-  Never retry, switch provider, or fall back to an API key automatically.
+  Never retry a started/ambiguous slot, switch provider, or fall back to an API
+  key automatically.
+- Stage 05's same persisted EvidenceCapsule is the sole source-evidence input
+  for a Flow's R0/R1/R2. R0 may propose bounded business labels/purposes with
+  explicit same-Capsule basis, but cannot create Facts, locators, Flows, or
+  Markdown. An organization registry is an optional exact-match seed only;
+  every seed-derived item still requires R0 and non-empty Capsule basis. R1/R2
+  cannot start until all R0 dispositions are terminal and the one repository
+  registry has been atomically frozen.
 - Each live-model receipt must record the observed provider, model, reasoning
   effort, and sandbox. A mismatch from the frozen task policy is terminal for
   that model-enhanced candidate: preserve the JSON failure receipt, do not
@@ -49,30 +63,109 @@
   verify any required identity, fail closed before admitting the response.
 - The program, not Luna, validates paths, locators, hashes, source facts,
   evidence references, section ownership, and final Markdown.
+- Every named target module follows the exact handoff in its stage document:
+  Luna/xhigh writes one-behavior-at-a-time RED tests against public seams and
+  independent goldens; Terra/xhigh starts only after observing the expected
+  RED and implements the smallest GREEN vertical slice. Both use the listed
+  targeted Maven selector only—never network, a live Provider, customer Maven,
+  or private-implementation coupling.
+- Luna/Terra must STOP a slice when an expected RED cannot be established,
+  required upstream data is absent, implementation conflicts with the target,
+  or schema/failure/model-boundary semantics would need to change. Record
+  evidence/options in the task progress file and ask the Sol/ultra Design
+  Authority. Never silently change a schema, golden, failure level, retry, or
+  model boundary. Any cross-stage architecture, business-goal, trust, source,
+  nine-section, safety, or model-boundary change also requires explicit user
+  confirmation before design, RED, or implementation proceeds.
 
 ## Design and recovery documents
 
-- Maintain one current detailed design under `docs/stages/` for every stage.
-  When a work unit changes an invariant or architecture used by more than one
-  stage, update `DESIGN.md` in that same work unit.
-- `DESIGN.md` owns stable architecture and cross-stage invariants. A stage
+- `docs/DESIGN.md` is the authoritative target architecture. Current code, POC
+  artifacts, tests, and maturity records may validate or falsify it, but must
+  never silently weaken the target to match the implementation.
+- Maintain exactly one current detailed target design for every production
+  stage:
+  - `docs/stages/01-freeze-source.md`
+  - `docs/stages/02-discover-application-and-entries.md`
+  - `docs/stages/03-build-five-program-graphs.md`
+  - `docs/stages/04-prove-code-facts.md`
+  - `docs/stages/05-compile-business-flows.md`
+  - `docs/stages/06-interpret-one-flow-at-a-time.md`
+  - `docs/stages/07-admit-and-merge-business-knowledge.md`
+  - `docs/stages/08-build-nine-section-document-and-archive.md`
+- `docs/stages/00-mvp.md` is a POC record, not a ninth target stage or an
+  alternate production path.
+- When a work unit changes an invariant or architecture used by more than one
+  stage, update `docs/DESIGN.md` in that same work unit.
+- `docs/DESIGN.md` owns stable architecture and cross-stage invariants. A stage
   document owns that stage's current design, implemented result, tests, gaps,
   and exit conditions. README files are navigation and capability indexes.
+- Target production persistence is stage-by-stage: every successful stage
+  immediately installs canonical JSON/JSONL artifacts under its analysis run
+  directory, records exact input/tool/profile/schema/prompt hashes, and
+  preserves upstream artifacts when a downstream stage fails. Five standalone
+  graph files are first-class Stage 03 artifacts. Final-only Candidate archive
+  behavior is a current maturity fact, not the target contract.
+- Stage-internal handoff is persisted too. Every named module writes its exact
+  schema-versioned canonical JSON/JSONL `ModuleArtifact` under the stage's
+  `modules/<nn-module>/` directory. The next module must reopen and validate
+  its ID/SHA/upstream/control references; it cannot consume a predecessor's
+  private object or bypass the artifact. Each stage document fixes, per module,
+  the problem, upstream preconditions, deterministic/LLM order, output schema
+  and DepotHead example, invariants, Gap/fatal/recovery, downstream guarantee,
+  non-goals, public test seam, Luna RED brief, and Terra GREEN brief.
+- Target scope is the complete frozen repository. The DepotHead eight-file
+  `BOUNDED_PATH_SET` is only a walkthrough/local fixture and is never eligible
+  to complete a repository analysis. Stage 02 inventories every entry; every
+  entry is compiled to a Flow or gets an evidence-backed Gap/EXCLUDED
+  disposition. Resource sharding may change scheduling only: shard denominator
+  ID sets must be disjoint and their canonical union must equal the complete
+  denominator.
+- If a repository has N supported FlowSlices, Stage 05 persists N independent
+  EvidenceCapsules. Stage 06 persists N R0 dispositions, exactly one frozen
+  RepositoryInterpretationRegistry, and N final interpretation dispositions;
+  its normal path has N R0 plus 2N R1/R2 slots/calls. Stage 07 preserves
+  `registryProposalId -> provisionalKey -> interpretationProposalId ->
+  selectedKey -> meaningId` while merging all admitted interpretations and
+  deterministic facts into exactly one RepositoryKnowledge. Stage 08 generates exactly one
+  repository-level NineSectionPlan and one `document.md`; per-Flow Markdown
+  and pre-rendered-fragment concatenation are forbidden. A run completes only
+  when its RepositoryCoverageLedger accounts for every file, site, entry,
+  graph item, fact/atom, outcome, Flow, model proposal/disposition, knowledge
+  item, and section owner. One Flow PASS never completes a run.
+- The sole public target seam is one run-centric `RepositoryAnalysisAgent`
+  with `start`, `inspect`, `resume`, `artifact`, `render`, `validate`, and
+  `trace`. Java, CLI, and authenticated loopback HTTP are symmetric adapters.
+  Artifact lookup always requires `runId + artifactId`; optional stage/module/
+  type/digest values are expected-value checks, never locators. No public
+  request or response may accept or expose a filesystem `Path`, and read-only
+  observation methods never call a Provider or execute customer code.
 - Progress files record only resumable work state: scope, completed checks,
   changed paths, verification, blockers, and next action. They never replace or
   override overall or stage design.
 
 ## Documentation readability
 
+- Overall and stage designs are function-first. Before introducing records,
+  class names, Interfaces, schemas, identities, algorithms, budgets, security,
+  failure codes, tests, or maturity, explain in this order: why the stage
+  exists; its concrete input; step-by-step work; observable persisted
+  artifacts; how downstream consumes them without reprocessing; success/Gap/
+  fatal and recovery behavior; and program/model responsibilities.
 - Every future stage design must point to its position on the single main flow
-  in DESIGN.md. For each stage-owned module, state its input, deterministic
-  process, output, and failure behavior.
+  in `docs/DESIGN.md` and use the real fixed DepotHead path as the shared walkthrough.
+  Label real source, deterministic conclusions, model interpretation,
+  unknowns, and illustrative target JSON separately.
 - Include one real, bounded example with an explicit evidence boundary and an
   honest success, Gap, or rejection result. Never use a historical artifact as
   proof of current or target behavior.
 - State explicitly how the stage's evidence confirms or changes the target
   design. A stage document is an implementation record and design-feedback
   surface, not a competing overall architecture.
+- Keep target design and current maturity in separate sections. Use Chinese
+  status labels for the current audit, and preserve the fixed jshERP result as
+  Gap / zero Flow / zero Capsule until a new, directly verified run proves
+  otherwise.
 - In the reader layer, lead with Chinese terms and plain-language explanations.
   In technical-reference sections, retain exact code, Interface, field, command,
   and artifact names.

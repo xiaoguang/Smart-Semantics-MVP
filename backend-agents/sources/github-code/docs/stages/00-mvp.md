@@ -2,11 +2,12 @@
 
 ## 1. 文档职责、状态与结论
 
-- 阶段状态：**CURRENT / ACCURACY EXIT NOT MET**。
+- 阶段状态：**POC 历史记录 / 准确度出口未满足**。
 - 实现形态：Java 17、单 Maven 模块、离线、无 HTTP、无远程 Git、无 live model Adapter。
 - 文档职责：记录阶段 00 实际实现、测试、固定样例审计和它们对目标设计的反馈；本文不是另一套总体架构，也不是运行日志。
-- 总体架构：[GitHub Code Agent 总体设计](../../DESIGN.md)。
+- 总体架构：[GitHub Code Agent 总体设计](../DESIGN.md)。
 - 九章权威：[NineSectionProfile](../../../../../shared/source-agent-contracts/README.md)。
+- 当前目标路线：[01 冻结来源](01-freeze-source.md) → [02 发现应用与入口](02-discover-application-and-entries.md) → [03 五张程序图](03-build-five-program-graphs.md) → [04 事实与证明](04-prove-code-facts.md) → [05 流程与 Capsule](05-compile-business-flows.md) → [06 单流程解释](06-interpret-one-flow-at-a-time.md) → [07 准入与知识合并](07-admit-and-merge-business-knowledge.md) → [08 九章与运行归档](08-build-nine-section-document-and-archive.md)。
 
 本 POC 已证明：人工 Flow Manifest 能驱动文件/Evidence 哈希与引用校验，两种隔离测试能分别经过 provider-free baseline 或 recorded R1/R2，再由程序输出固定九章并归档一份 document.md 与七个 JSON sidecar。
 
@@ -77,9 +78,9 @@
 
 现有实现和诊断 seam 可作为后续开发输入，但本 POC 不能宣称准确度退出，也不能把当前 DepotHead 冻结输入或其历史 Candidate 传递为已验收产物。当前没有可接受 Candidate。
 
-## 3. POC 结果怎样反馈目标 ARCH
+## 3. POC 结果怎样反馈目标设计
 
-下表不是第二张成熟度矩阵。它只把 POC 证据定位到目标 ARCH，说明这次实验验证了什么、又暴露了什么；目标模块的当前成熟度只在总体设计末尾维护。链接指向真实类、测试和本地只读产物；`.workspace` 产物被 Git 忽略，只是核验材料，不是文档权威。
+下表保留 POC 时期的 ARCH 编号，便于理解历史证据；这些编号不再定义当前八阶段目标结构。当前成熟度只在总体设计末尾和八份阶段文档维护。链接指向真实类、测试和本地只读产物；`.workspace` 产物被 Git 忽略，只是核验材料，不是文档权威。
 
 | 目标 ARCH | POC 证据类型 | 当前实现、测试与设计反馈 |
 | --- | --- | --- |
@@ -133,11 +134,11 @@
 
 | Seam | 归属阶段 | 当前 Interface 与现状 | 未接边界 |
 | --- | --- | --- | --- |
-| `RepositoryDiscoverer` | 01 | `discover(DiscoveryRequest)`；目录级 Phase 1 诊断 | 冻结 Manifest、Candidate |
-| `SourceAnalyzer` | 02 | `analyze(AnalysisRequest)`；目录级 Phase 2 CodeFact/Condition/Gap | CLI、Proof、Candidate |
-| `ModelRuntimeReceiptAdmission` | 04 | `admit(policy, receipt)`；四个 runtime 字段逐字比较 | `generate`/CLI 接线、task identity、Adapter/Auth/upstream 分离 |
+| `RepositoryDiscoverer` | 当前目标 02/03 的历史输入 | `discover(DiscoveryRequest)`；目录级 Phase 1 诊断 | 冻结 Stage 02/五图/Candidate |
+| `SourceAnalyzer` | 当前目标 04 的历史输入 | `analyze(AnalysisRequest)`；目录级 Phase 2 CodeFact/Condition/Gap | canonical Proof、Stage 04 assets、Candidate |
+| `ModelRuntimeReceiptAdmission` | 当前目标 06/08 的历史输入 | `admit(policy, receipt)`；四个 runtime 字段逐字比较 | `generate`/CLI 接线、task identity、Adapter/Auth/upstream 分离 |
 
-上表第二列应分别是：`01-entry-and-mybatis.md`、`02-codefacts-and-proof.md`、`04-runtime-recovery-security.md`。这些文件本工作单元不创建；seam 的存在不表示对应 ARCH 已在 00 阶段实现。
+上表只记录 POC 邻接 seam；当前规范分别见 [02 应用与入口](02-discover-application-and-entries.md)、[03 五图](03-build-five-program-graphs.md)、[04 事实与证明](04-prove-code-facts.md)、[06 单流程解释](06-interpret-one-flow-at-a-time.md)和[08 九章与归档](08-build-nine-section-document-and-archive.md)。seam 的存在不表示对应目标阶段已实现。
 
 ## 5. 两条 POC 隔离测试路径
 
@@ -532,16 +533,16 @@ mvn -q -Dtest=ManifestEvidenceVerificationTest,InterpretationAdmissionGateTest,N
 
 现有测试通过不能关闭准确度出口：测试只验证 Manifest 字节/摘录 hash 与 reference failure，没有逐 atom 解释源码语义，因此不会发现 DepotHead 三个 Fact 的 span 错配。该缺口需要独立的 semantic audit/Proof gate 及正反例测试。
 
-## 18. 下一阶段输入
+## 18. 当前目标路线中的位置
 
-`01-entry-and-mybatis.md` 的实现计划应只消费：
+本 POC 不再向一个临时“下一阶段”文件交接。仍有效的反馈已经分别进入：
 
-- 本文固定的 POC Interface/缺口；
-- 作为 01 邻接 seam 的已测试 `RepositoryDiscoverer` 诊断输出类型；
-- ARCH-01 冻结规则与 ARCH-12 XML 安全不变量；
-- 一个新设计的“诊断事实如何进入冻结 Manifest/Evidence，并逐 atom 建立 semantic closure”的准入 seam；
-- Java core/CLI 统一 path/symlink policy 与对应直接测试；
-- 收紧 `LockedFact` 空 payload/evidence 规则的明确目标合同；
-- 语义原子清单要求，但不提前实现 03 阶段完整九章组装。
+- [01 冻结来源](01-freeze-source.md)：统一 path/symlink、snapshot identity 与立即持久化；
+- [03 五张程序图](03-build-five-program-graphs.md)：把诊断式结构/调用信息升级为五个一等图产物；
+- [04 事实与证明](04-prove-code-facts.md)：逐 atom semantic closure，拒绝空 LockedFact 或借用 Evidence；
+- [05 流程与 Capsule](05-compile-business-flows.md)：自动入口根 Flow 和最小模型阅读包；
+- [08 九章与运行归档](08-build-nine-section-document-and-archive.md)：plan-only renderer、完整 Trace、逐阶段资产和 whole-run resume。
+
+后续实现只能按当前目标设计新增 production 能力；不得恢复人工 Flow Manifest、provider-free baseline 或旧八文件 archive 作为并列主线。
 
 在 DepotHead 样例能再次作为阶段输入前，必须经另行授权修正并重新冻结 Evidence/Fact 引用，逐 atom 通过独立 semantic audit，再由未来 gate 验证；本工作单元不做该修复或生成。进入下一阶段时不得把一次 `inspect`/`discover` 输出复制为正式 Trace，也不得把当前拒绝 Manifest、historical baseline、baseline-v2 或 failure receipt 当作当前源码验收。

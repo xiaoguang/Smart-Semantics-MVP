@@ -51,10 +51,10 @@ linguan-prototype-v2/
 │       ├── github-code/
 │       │   ├── .gitignore
 │       │   ├── AGENTS.md
-│       │   ├── DESIGN.md
 │       │   ├── README.md
 │       │   ├── pom.xml
 │       │   ├── docs/
+│       │   │   ├── DESIGN.md
 │       │   │   └── stages/
 │       │   │       └── 00-mvp.md
 │       │   ├── progress/
@@ -97,7 +97,7 @@ linguan-prototype-v2/
 
 `backend-agents/` 是后端来源 Agent 的工作区与所有权根。其作用域内的 `AGENTS.md`、`CONTEXT.md` 和 `README.md` 定义后端 Agent 的共享规则与导航。`backend-agents/sources/{mysql,github-code,business-docs,erp-policy,terminology-graph}/` 下的每个目录仍分别归属相应来源，任何一个来源 Agent 都不得导入另一个来源 Agent 的实现。
 
-GitHub Code Agent 继续采用 Java 17 的单模块 Maven 实现。其深模块接口仍是现有 `CodeToMarkdownAgent` 接缝及其 CLI；Java 实现、来源解析、测试、本地工作区与构建输出都封装在 `backend-agents/sources/github-code/` 内。目录移动不改变 Java 包名、Maven 坐标、行为、成熟度声明或安全规则。
+GitHub Code Agent 继续采用 Java 17 的单模块 Maven 实现。现有 `CodeToMarkdownAgent` 与 CLI 是 `backend-agents/sources/github-code/` 所有的当前实现 Adapter，不是架构上永久固定的接缝；面向完整分析 run 的目标接口可以在该来源目录内部演进，而不改变仓库布局或跨来源依赖方向。Java 实现、来源解析、测试、本地工作区与构建输出仍封装在该目录内。目录移动不改变 Java 包名、Maven 坐标、行为、成熟度声明或安全规则。
 
 ### 3.3 来源 Agent 共享契约接缝
 
@@ -160,7 +160,7 @@ GitHub Code Agent 继续采用 Java 17 的单模块 Maven 实现。其深模块�
 
 - `backend-agents/AGENTS.md`、`backend-agents/CONTEXT.md` 与 `backend-agents/README.md`；
 - 每个来源 Agent 的占位 README；
-- GitHub Code Agent 的 `.gitignore`、作用域 `AGENTS.md`、`DESIGN.md`、`README.md`、`pom.xml`、`docs/stages/00-mvp.md`、所有现有进度文件、全部 Java 生产源码与全部 Java 测试；
+- GitHub Code Agent 的 `.gitignore`、作用域 `AGENTS.md`、`docs/DESIGN.md`、`README.md`、`pom.xml`、`docs/stages/00-mvp.md`、所有现有进度文件、全部 Java 生产源码与全部 Java 测试；
 - `backend-agents/sources/github-code/progress/backend-agents-repository-import.md`：本架构规范任务校验后已标记为 `COMPLETE`，从检查点已跟踪的旧路径逐字节迁入；
 - `backend-agents/sources/github-code/progress/backend-agents-import-orchestration.md`：从检查点已跟踪的旧路径迁入，并且直至实施完成都只由根集成/实施负责人更新；
 - `backend-agents/sources/github-code/progress/repository-structure-zh-cn.md`：本中文并行版任务的普通新增后端进度记录，完成后为 `COMPLETE`；它没有旧路径，也不参与上述两个检查点进度文件的迁移生命周期；
@@ -240,8 +240,8 @@ GitHub Code Agent 继续采用 Java 17 的单模块 Maven 实现。其深模块�
 | `backend-agents/README.md` | 共享契约链接改为 `../shared/source-agent-contracts/README.md`；工作区目录树使用 `backend-agents/` 与 `shared/source-agent-contracts/`。 |
 | `backend-agents/AGENTS.md` | 作用域文本命名 `backend-agents/`；唯一共享接缝为 `shared/source-agent-contracts/`。 |
 | `backend-agents/sources/github-code/README.md` | `NineSectionProfile` 链接改为 `../../../shared/source-agent-contracts/README.md`。 |
-| `backend-agents/sources/github-code/DESIGN.md` | `NineSectionProfile` 链接改为 `../../../shared/source-agent-contracts/README.md`。下游评审链接仍为 `../../../docs/design/data-standardization-review-experience.md`，因为目录深度不变。 |
-| `backend-agents/sources/github-code/docs/stages/00-mvp.md` | `NineSectionProfile` 链接改为 `../../../../../shared/source-agent-contracts/README.md`；指向 `../../DESIGN.md`、`../../src/` 与 `../../.workspace/` 的链接保持原有相对形式。 |
+| `backend-agents/sources/github-code/docs/DESIGN.md` | `NineSectionProfile` 链接为 `../../../../shared/source-agent-contracts/README.md`；任何下游评审链接应为 `../../../../docs/design/data-standardization-review-experience.md`，因为权威文件现位于更深一层目录。 |
+| `backend-agents/sources/github-code/docs/stages/00-mvp.md` | `NineSectionProfile` 链接仍为 `../../../../../shared/source-agent-contracts/README.md`；总体设计链接改为 `../DESIGN.md`，指向 `../../src/` 与 `../../.workspace/` 的链接保持原有相对形式。 |
 | 既有进度文件 | 移动时不改写历史路径陈述。Sol 架构作者的记录为 `COMPLETE` 且保持不变。根编排记录在检查点时为 `IN_PROGRESS`，它就是实施进度记录，仅由根负责人更新；不得创建第三个实施生命周期或编排进度文件。 |
 | `backend-agents/sources/github-code/progress/repository-structure-zh-cn.md` | 作为本并行中文文档任务新增的普通后端进度记录进入实施清单；任务结束时标记 `COMPLETE`。它没有旧路径，也不参与两个检查点已跟踪进度文件的迁移生命周期。 |
 
@@ -249,7 +249,7 @@ GitHub Code Agent 继续采用 Java 17 的单模块 Maven 实现。其深模块�
 
 `docs/design/data-standardization-review-experience.md` 当前只在预先存在的未暂存新增内容中包含旧路径链接与工作区目录树。迁移负责人必须只做以下工作副本修正：
 
-- 将 `../../source-to-standard-markdown/sources/github-code/DESIGN.md` 改为 `../../backend-agents/sources/github-code/DESIGN.md`；
+- 将 `../../source-to-standard-markdown/sources/github-code/DESIGN.md` 改为 `../../backend-agents/sources/github-code/docs/DESIGN.md`；
 - 将 `../../source-to-standard-markdown/sources/github-code/docs/stages/00-mvp.md` 改为 `../../backend-agents/sources/github-code/docs/stages/00-mvp.md`；
 - 将工作区名称改为 `backend-agents/`；
 - 将共享接缝改为 `shared/source-agent-contracts/`；
@@ -308,7 +308,7 @@ backend-agents/sources/erp-policy/README.md
 backend-agents/sources/terminology-graph/README.md
 backend-agents/sources/github-code/.gitignore
 backend-agents/sources/github-code/AGENTS.md
-backend-agents/sources/github-code/DESIGN.md
+backend-agents/sources/github-code/docs/DESIGN.md
 backend-agents/sources/github-code/README.md
 backend-agents/sources/github-code/pom.xml
 backend-agents/sources/github-code/docs/
@@ -372,7 +372,7 @@ git diff --cached --name-only | rg '(^|/)(\.workspace|target|reports|surefire-re
 backend-agents/README.md
 backend-agents/AGENTS.md
 backend-agents/sources/github-code/README.md
-backend-agents/sources/github-code/DESIGN.md
+backend-agents/sources/github-code/docs/DESIGN.md
 backend-agents/sources/github-code/docs/stages/00-mvp.md
 shared/source-agent-contracts/README.md
 docs/repository-structure.md
@@ -389,7 +389,7 @@ rg -n 'source-to-standard-markdown|(^|[^[:alnum:]])contracts/README\.md' \
   docs/design/data-standardization-review-experience.md \
   backend-agents/README.md backend-agents/AGENTS.md \
   backend-agents/sources/github-code/README.md \
-  backend-agents/sources/github-code/DESIGN.md \
+  backend-agents/sources/github-code/docs/DESIGN.md \
   backend-agents/sources/github-code/docs/stages/00-mvp.md
 ```
 

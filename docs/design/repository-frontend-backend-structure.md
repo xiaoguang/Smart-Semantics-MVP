@@ -51,10 +51,10 @@ linguan-prototype-v2/
 │       ├── github-code/
 │       │   ├── .gitignore
 │       │   ├── AGENTS.md
-│       │   ├── DESIGN.md
 │       │   ├── README.md
 │       │   ├── pom.xml
 │       │   ├── docs/
+│       │   │   ├── DESIGN.md
 │       │   │   └── stages/
 │       │   │       └── 00-mvp.md
 │       │   ├── progress/
@@ -97,7 +97,7 @@ Frontend owners continue to work from repository root. No frontend import, Vite 
 
 `backend-agents/` is the backend Source Agent workspace and ownership root. Its scoped `AGENTS.md`, `CONTEXT.md`, and `README.md` define shared backend Agent rules and navigation. Each directory under `backend-agents/sources/{mysql,github-code,business-docs,erp-policy,terminology-graph}/` remains source-owned and does not import another source Agent's implementation.
 
-The GitHub Code Agent remains a Java 17, single-module Maven implementation. Its deep module interface is the existing `CodeToMarkdownAgent` seam and its CLI; its Java implementation, source parsing, tests, local workspaces, and build output remain private to `backend-agents/sources/github-code/`. Moving the directory does not change Java packages, Maven coordinates, behavior, maturity claims, or safety rules.
+The GitHub Code Agent remains a Java 17, single-module Maven implementation. Its current `CodeToMarkdownAgent` and CLI are implementation adapters owned by `backend-agents/sources/github-code/`, not an architecturally fixed seam; the target run-oriented interface may evolve inside that source-owned directory without changing repository layout or cross-source dependency direction. Its Java implementation, source parsing, tests, local workspaces, and build output remain private there. Moving the directory does not change Java packages, Maven coordinates, behavior, maturity claims, or safety rules.
 
 ### 3.3 Shared Source Agent contract seam
 
@@ -160,7 +160,7 @@ The subsequent implementation commit includes:
 
 - `backend-agents/AGENTS.md`, `backend-agents/CONTEXT.md`, and `backend-agents/README.md`;
 - every source Agent placeholder README;
-- the GitHub Code Agent's `.gitignore`, scoped `AGENTS.md`, `DESIGN.md`, `README.md`, `pom.xml`, `docs/stages/00-mvp.md`, all existing progress files, all Java production source, and all Java tests;
+- the GitHub Code Agent's `.gitignore`, scoped `AGENTS.md`, `docs/DESIGN.md`, `README.md`, `pom.xml`, `docs/stages/00-mvp.md`, all existing progress files, all Java production source, and all Java tests;
 - `backend-agents/sources/github-code/progress/backend-agents-repository-import.md`, already marked `COMPLETE` after this architecture-specification task's verification and moved byte-for-byte from its checkpoint-tracked old path;
 - `backend-agents/sources/github-code/progress/backend-agents-import-orchestration.md`, relocated from its checkpoint-tracked old path and updated only by the root integration/implementation owner through implementation completion;
 - `backend-agents/sources/github-code/progress/repository-structure-zh-cn.md`, this Chinese-rendering task's ordinary new backend progress record, marked `COMPLETE` at task completion; it has no old path and does not participate in the two checkpoint progress files' relocation lifecycle;
@@ -240,8 +240,8 @@ The following link changes are exact:
 | `backend-agents/README.md` | Shared contract link becomes `../shared/source-agent-contracts/README.md`; workspace tree uses `backend-agents/` and `shared/source-agent-contracts/`. |
 | `backend-agents/AGENTS.md` | Scope text names `backend-agents/`; the only shared seam is `shared/source-agent-contracts/`. |
 | `backend-agents/sources/github-code/README.md` | `NineSectionProfile` link becomes `../../../shared/source-agent-contracts/README.md`. |
-| `backend-agents/sources/github-code/DESIGN.md` | `NineSectionProfile` link becomes `../../../shared/source-agent-contracts/README.md`. Its downstream review link remains `../../../docs/design/data-standardization-review-experience.md` because the directory depth is unchanged. |
-| `backend-agents/sources/github-code/docs/stages/00-mvp.md` | `NineSectionProfile` link becomes `../../../../../shared/source-agent-contracts/README.md`; links to `../../DESIGN.md`, `../../src/`, and `../../.workspace/` keep their existing relative forms. |
+| `backend-agents/sources/github-code/docs/DESIGN.md` | `NineSectionProfile` link is `../../../../shared/source-agent-contracts/README.md`; any downstream review link is `../../../../docs/design/data-standardization-review-experience.md` because the authority now sits one directory deeper. |
+| `backend-agents/sources/github-code/docs/stages/00-mvp.md` | `NineSectionProfile` link remains `../../../../../shared/source-agent-contracts/README.md`; the overall-design link becomes `../DESIGN.md`, while links to `../../src/` and `../../.workspace/` keep their existing relative forms. |
 | Existing progress files | Move without rewriting historical path statements. The Sol architecture-author record is `COMPLETE` and remains unchanged. The root orchestration record is `IN_PROGRESS` at the checkpoint, is the implementation progress record, and is updated only by its root owner; no third implementation-lifecycle or orchestration progress file is created. |
 | `backend-agents/sources/github-code/progress/repository-structure-zh-cn.md` | Enter the implementation inventory as this parallel-Chinese-document task's ordinary new backend progress record and mark it `COMPLETE` at task end. It has no old path and does not participate in the two checkpoint progress files' relocation lifecycle. |
 
@@ -249,7 +249,7 @@ The following link changes are exact:
 
 `docs/design/data-standardization-review-experience.md` currently contains old-path links and a workspace tree only in pre-existing unstaged additions. The migration owner must make these exact working-copy corrections:
 
-- `../../source-to-standard-markdown/sources/github-code/DESIGN.md` becomes `../../backend-agents/sources/github-code/DESIGN.md`;
+- `../../source-to-standard-markdown/sources/github-code/DESIGN.md` becomes `../../backend-agents/sources/github-code/docs/DESIGN.md`;
 - `../../source-to-standard-markdown/sources/github-code/docs/stages/00-mvp.md` becomes `../../backend-agents/sources/github-code/docs/stages/00-mvp.md`;
 - the workspace name becomes `backend-agents/`;
 - the shared seam becomes `shared/source-agent-contracts/`;
@@ -308,7 +308,7 @@ backend-agents/sources/erp-policy/README.md
 backend-agents/sources/terminology-graph/README.md
 backend-agents/sources/github-code/.gitignore
 backend-agents/sources/github-code/AGENTS.md
-backend-agents/sources/github-code/DESIGN.md
+backend-agents/sources/github-code/docs/DESIGN.md
 backend-agents/sources/github-code/README.md
 backend-agents/sources/github-code/pom.xml
 backend-agents/sources/github-code/docs/
@@ -372,7 +372,7 @@ Confirm each new active target exists:
 backend-agents/README.md
 backend-agents/AGENTS.md
 backend-agents/sources/github-code/README.md
-backend-agents/sources/github-code/DESIGN.md
+backend-agents/sources/github-code/docs/DESIGN.md
 backend-agents/sources/github-code/docs/stages/00-mvp.md
 shared/source-agent-contracts/README.md
 docs/repository-structure.md
@@ -389,7 +389,7 @@ rg -n 'source-to-standard-markdown|(^|[^[:alnum:]])contracts/README\.md' \
   docs/design/data-standardization-review-experience.md \
   backend-agents/README.md backend-agents/AGENTS.md \
   backend-agents/sources/github-code/README.md \
-  backend-agents/sources/github-code/DESIGN.md \
+  backend-agents/sources/github-code/docs/DESIGN.md \
   backend-agents/sources/github-code/docs/stages/00-mvp.md
 ```
 

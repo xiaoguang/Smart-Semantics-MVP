@@ -82,4 +82,4 @@
 
 ## Resume checks
 
-- Re-read this file, run `git status --short`, confirm the branch, and inspect any changes in `DESIGN.md`/`README.md` before continuing.
+- Re-read this file, run `git status --short`, confirm the branch, and inspect any changes in the current authority `docs/DESIGN.md` and `README.md` before continuing.
