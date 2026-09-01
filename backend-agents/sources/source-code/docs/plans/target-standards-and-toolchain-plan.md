@@ -229,7 +229,7 @@ Taplo 与 markdownlint-cli2 不在本计划中伪造版本。它们的确定门�
 
 | Work unit | 直接 selector | reader-visible analysis step/run 输出 |
 | --- | --- | --- |
-| Foundation/artifact/runtime | `CanonicalJsonCodecTest`, `CanonicalArtifactPolicyRegistryTest`, `CanonicalModuleArtifactStoreTest`, `CanonicalAnalysisStepArtifactStoreTest`, `CanonicalRunManifestStoreTest`, `RunExecutionStateTest`, `SourceAnalysisArchitectureTest`; integration：`CanonicalAnalysisStepArtifactStoreAtomicInstallIT` | 无分析步骤输出；冻结 typed refs、policy、store/run-manifest seam及`QUEUED/RUNNING/FINISHED/FAILED`单进程状态 |
+| Foundation/artifact/runtime | `CanonicalJsonCodecTest`, `CanonicalArtifactPolicyRegistryTest`, `AnalysisStepAddressTest`, `CanonicalModuleArtifactStoreTest`, `CanonicalAnalysisStepArtifactStoreTest`, `CanonicalRunManifestStoreTest`, `RunExecutionStateTest`, `SourceAnalysisArchitectureTest`; integration：`CanonicalAnalysisStepArtifactStoreAtomicInstallIT` | 无分析步骤输出；冻结 typed refs、policy、store/run-manifest seam及`QUEUED/RUNNING/FINISHED/FAILED`单进程状态 |
 | Verified source inventory | `FrozenRequestAdmissionTest`, `VerifiedSourceIndexerTest`, `VerifiedSourceInventoryPublicationSpecifierTest` | `source-input.json`, `verified-snapshot.json`, `source-inventory.jsonl`, `verified-source-inventory-receipt.json`（3 semantic + receipt） |
 | Application discovery | `ApplicationProfileDetectorTest`, `SpringHttpEntryDiscovererTest`, `MapperCapabilityCatalogerTest`, `ApplicationDiscoveryPublicationSpecifierTest` | `application-profile.json`, `entry-points.jsonl`, `mapper-catalog.jsonl`, `capability-report.json`, `application-discovery-receipt.json`（4 + receipt） |
 | Program graphs | `CodeStructureGraphBuilderTest`, `CallGraphBuilderTest`, `ControlFlowGraphBuilderTest`, `DataFlowGraphBuilderTest`, `EvidenceGraphBuilderTest`, `ProgramGraphsPublicationSpecifierTest` | 五 graph JSON + `graph-index.json` + `graph-gaps.jsonl` + `program-graphs-receipt.json`（7 + receipt） |
@@ -261,12 +261,12 @@ Taplo 与 markdownlint-cli2 不在本计划中伪造版本。它们的确定门�
 
 **计划文件：** `.mvn/toolchains.xml`, `pom.xml`, `src/main/java/org/sourceanalysis/app/artifact/`, `.../evidence/`, `.../runtime/`, `.../validation/`, 对应 `src/test/java` 与 `src/test/resources/analysis/foundation/`。实施先把整个 Agent 移到 `backend-agents/sources/source-code/`，设置 `org.sourceanalysis:source-code-analysis-agent`，删除 pre-reset 包/fixture，并建立旧 wire fail-closed 测试；不保留兼容 reader。
 
-- [ ] Luna/xhigh 先创建 `SourceAnalysisArchitectureTest`, `PreResetWireRejectionTest`, `CanonicalJsonCodecTest`, `CanonicalArtifactPolicyRegistryTest` 的最小 RED；每个 fixture 对应已发布 schema/identity，不创建平行合同。
-- [ ] Terra/xhigh 只实现让这三个 selector GREEN 的 codec/policy/value/address/package rules。
+- [ ] Luna/xhigh 先创建 `SourceAnalysisArchitectureTest`, `PreResetWireRejectionTest`, `CanonicalJsonCodecTest`, `CanonicalArtifactPolicyRegistryTest`, `AnalysisStepAddressTest` 的最小 RED；每个 fixture 对应已发布 schema/identity，不创建平行合同。首个3–5小时slice只从`CanonicalJsonCodecTest#encodesCanonicalObjectWithUtf8ByteOrderedKeys`这一个行为开始，拥有`CanonicalJsonCodec`、`ImmutableBytes`与typed identity/address primitives；不创建store publication、receipt/manifest、runtime/validation/evidence record、JSONL/RAW_UTF8 writer或业务分析能力。
+- [ ] Terra/xhigh 只实现让这些foundation selectors逐行为GREEN的codec/policy/value/address/package rules。
 - [ ] Luna/xhigh 再创建 `CanonicalModuleArtifactStoreTest`, `CanonicalAnalysisStepArtifactStoreTest`, `CanonicalRunManifestStoreTest`, `RunExecutionStateTest` 的 atomic/collision/reopen/partial-install 与四状态 RED。
 - [ ] Terra/xhigh 实现三个 public deep seams、最小 single-process execution state 与共享 private atomic filesystem machinery；无 caller path/prefix。
 - [ ] Sol/ultra 只处理 unexpected RED、合同歧义、identity/DAG 偏差；需要架构变化即停止并请求用户批准。
-- [ ] 串行运行七个 direct selectors、`spotless:check`、`-Pquality -DskipTests verify`、dependency convergence；双轴 review 后由父任务提交/推送。
+- [ ] 串行运行本任务列出的direct selectors、`spotless:check`、`-Pquality -DskipTests verify`、dependency convergence；双轴 review 后由父任务提交/推送。
 
 ### Task 2：已验证源码清单
 
