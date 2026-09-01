@@ -41,7 +41,7 @@ DepotHead 八文件中可核对的 **REAL_SOURCE**：
 }
 ~~~
 
-这不是现有 `ApplicationDiscoveryCompiler`（旧四分析步骤编号）的 DepotHead success 声明。当前整体 slice 在本次目标 分析步骤“业务流程” 仍为 Gap、0 Flow、0 Capsule。
+这不是现有 pre-reset `Stage02Compiler`（旧四分析步骤编号）的 DepotHead success 声明。当前整体 slice 在本次目标 分析步骤“业务流程” 仍为 Gap、0 Flow、0 Capsule。
 
 ## 3. 程序怎样工作
 

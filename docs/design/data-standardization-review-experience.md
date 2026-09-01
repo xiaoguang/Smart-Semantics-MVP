@@ -5,8 +5,8 @@
 本文件是管伊佳**下游审阅、差异处理、五来源合并和 V7 阅读体验**的当前权威设计。它记录
 2026-08-28 至 2026-08-29 用户批准的“即时差异审阅、自动来源流程、完整合并文档、证据栏
 与人类可读 V7”合同；这些实现、测试和当前事实文档必须以它为准。GitHub 代码来源如何生成
-九章候选不由本文定义，其权威是 [GitHub Code Agent 总体设计](../../backend-agents/sources/github-code/docs/DESIGN.md)
-与 [MVP 阶段设计](../../backend-agents/sources/github-code/docs/stages/00-mvp.md)。此前
+九章候选不由本文定义，其唯一上游架构权威是 [Source Code Analysis Agent 总体设计](../../backend-agents/sources/github-code/docs/DESIGN.md)；
+各分析步骤细节从该设计和其主动导航进入，历史 POC 不属于当前权威合同。此前
 “未决正式差异可继续下一来源”“手动审阅下一个来源”以及“最后集中处理来源差异”的设计
 不再适用于新运行。
 

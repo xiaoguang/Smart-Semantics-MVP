@@ -519,7 +519,7 @@ sourceFileIds = analyzableTextFileIds ⊎ nonAnalyzableMediaFileIds
 flowSliceIds ↔ evidenceCapsuleIds
 flowSliceIds = modelEligibleFlowSliceIds ⊎ modelIneligibleFlowSliceIds
 modelIneligibleFlowSliceIds -> nonempty modelIneligibilityByFlow.gapIds
-modelEligibleFlowSliceIds = FlowInterpretation FlowInterpretationDisposition.flowSliceIds
+modelEligibleFlowSliceIds = set(d.flowSliceId for each canonical FlowInterpretationDisposition d in flow-interpretation-dispositions.jsonl)
 flowSliceIds ↔ FlowAdmissionDecision.flowSliceIds
 modelIneligibleFlowSliceIds = MODEL_INELIGIBLE_TECHNICAL_FALLBACK.flowSliceIds
 modelEligibleFlowSliceIds = union(the other four FlowAdmissionDecision variants)

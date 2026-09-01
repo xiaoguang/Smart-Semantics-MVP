@@ -139,7 +139,7 @@ DepotHead 只是完整仓库中 `N` 个入口/FlowSlice 之一的讲解 fixture�
 
 ### 2.4 当前诚实结果
 
-现有实现中名为 `ApplicationDiscoveryCompiler` 的固定 jshERP 八文件验收结果是 **Gap、0 Flow、0 Capsule**；它对应本次八个分析步骤目标中的 分析步骤“业务流程”，而不是新的入口发现 分析步骤“应用发现”。原因不是源码里没有这条路径，而是当前通用数据流、Fact registry 和动态 MyBatis 证明能力不足以闭合目标合同。后文目标 JSON 不能被引用为“当前 DepotHead 已成功”。
+现有 pre-reset 实现中的旧 `Stage02Compiler` 对固定 jshERP 八文件的验收结果是 **Gap、0 Flow、0 Capsule**；它对应本次八个分析步骤目标中的 分析步骤“业务流程”，而不是新的入口发现 分析步骤“应用发现”。原因不是源码里没有这条路径，而是当前通用数据流、Fact registry 和动态 MyBatis 证明能力不足以闭合目标合同。后文目标 JSON 不能被引用为“当前 DepotHead 已成功”。
 
 ## 3. 八个分析步骤纵向主线
 
@@ -421,10 +421,10 @@ RepositoryKnowledge draft 的 `closedThroughRepositoryKnowledge=true` 同样不�
 
 ~~~text
 sourceFileIds = analyzableTextFileIds ⊎ nonAnalyzableMediaFileIds
-compiledFlowSlices = modelEligibleFlows ⊎ modelIneligibleFlows
-compiledFlowSlices ↔ evidenceCapsuleIds ↔ flowAdmissionDecisionIds
-modelIneligibleFlows ↔ nonempty modelIneligibilityByFlow.gapIds
-modelEligibleFlows = FlowInterpretation FlowInterpretationDisposition.flowSliceIds
+flowSliceIds = modelEligibleFlowSliceIds ⊎ modelIneligibleFlowSliceIds
+flowSliceIds ↔ evidenceCapsuleIds ↔ flowAdmissionDecisionIds
+modelIneligibleFlowSliceIds -> nonempty modelIneligibilityByFlow.gapIds
+modelEligibleFlowSliceIds = set(d.flowSliceId for each canonical FlowInterpretationDisposition d in flow-interpretation-dispositions.jsonl)
 registryProposalIds = acceptedRegistryProposalIds ⊎ rejectedRegistryProposalIds
 interpretationProposalDecisionIds = KEEP ⊎ NARROW ⊎ DROP ⊎ NEEDS_EVIDENCE ⊎ NEEDS_TERM_REGISTRY
 semanticItemIds = ownerSemanticItemIds ⊎ reasonedSemanticExclusionIds

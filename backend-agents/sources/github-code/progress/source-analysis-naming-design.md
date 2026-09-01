@@ -23,12 +23,21 @@
 - Kept pre-reset implementation facts in explicit current-maturity audit sections and history-only records; target contracts reject old paths, packages, numbered step names, schemas, receipts, and aliases without compatibility readers.
 - Completed active-document link, navigation, naming-registry/cardinality, exact-file-set, and whitespace checks without Maven, model, source, customer-code, or network calls.
 
+## Review round 1 resolutions
+
+- Removed the two active links to deleted `docs/stages/00-mvp.md`; backend navigation now enters the authoritative DESIGN and eight-analysis-step index, while the downstream review design names only DESIGN as the upstream architecture authority.
+- Restored the canonical Adapter vocabulary in the nine-section document: `analyze-step`, `POST /analysis-step-executions`, and semantic `--analysis-step-key` location discriminators.
+- Corrected the strict-fixture constructor example to the exact four-field `AnalysisStepModuleAddress(runId, analysisStepKey, moduleNumber, moduleKey)` contract.
+- Restored `Stage02Compiler` as an explicitly pre-reset current-maturity fact instead of relabeling the historical class with target discovery vocabulary.
+- Repaired the coverage equations to use the defined `flowSliceIds` fields and the exact set of `flowSliceId` values from canonical `flow-interpretation-dispositions.jsonl` records.
+
 ## Current state
 
 The docs-only naming design is coherent and ready for integration. Target contracts use the approved semantic names; old implementation names remain only where the current-maturity audit or Wire Reset rejection contract must identify pre-reset inputs. Implementation remains pre-reset and may not begin until this coherent design commit is integrated and the design-publication gate is satisfied.
 
 ## Changed files
 
+- `backend-agents/README.md`
 - `backend-agents/AGENTS.md`
 - `backend-agents/sources/github-code/AGENTS.md`
 - `backend-agents/sources/github-code/README.md`
@@ -40,6 +49,7 @@ The docs-only naming design is coherent and ready for integration. Target contra
 - `backend-agents/sources/github-code/docs/plans/target-standards-and-toolchain-plan.md`
 - `backend-agents/sources/github-code/docs/supplements/runtime-recovery-todo.md`
 - `backend-agents/sources/github-code/progress/source-analysis-naming-design.md`
+- `docs/design/data-standardization-review-experience.md`
 
 ## Verification
 
@@ -52,6 +62,11 @@ The docs-only naming design is coherent and ready for integration. Target contra
 | Inline stale active-navigation scan | PASS | No active links to `docs/stages/`, the POC record, or the historical estimate. |
 | Inline exact analysis-step file scan | PASS | Exactly the eight approved files exist under `docs/analysis-steps/`. |
 | `git diff --check` | PASS | No whitespace errors. |
+| Review round 1 Markdown relative-link scan | PASS | All relative links resolve across 17 active source/downstream documents. |
+| Review round 1 stale active-navigation scan | PASS | No active link targets deleted `docs/stages/`, the POC, or the historical estimate. |
+| Review round 1 regression scan | PASS | Invalid Adapter spellings, false maturity alias, malformed coverage phrase, and five-argument address example are absent. |
+| Review round 1 exact file/cardinality scan | PASS | Eight approved analysis-step files and the fixed 52-output contract remain present. |
+| Review round 1 `git diff --check` | PASS | No whitespace errors in the review fix. |
 | Maven/model/source/customer/network calls | NOT RUN | Prohibited for this docs-only delivery. |
 
 ## Decisions
