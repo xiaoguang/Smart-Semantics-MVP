@@ -6,7 +6,7 @@
 
 本能力原本试图让一个 analysis run 在进程崩溃后，自动接回同一个 runId、队列、worker 与模型调用状态，并修补跨进程终态。它不直接增加完整仓库冻结、五图、Fact/Proof/Gap、Flow/EvidenceCapsule、逐 Flow R0/R1/R2、RepositoryKnowledge、九章、Trace 或归档的业务分析能力，却会显著扩大 runtime 状态机、持久化协议和故障矩阵。
 
-active v0 只需要把核心八阶段做正确，并允许新执行显式消费已验证的上游 stage/module artifacts。因此，同一运行自动恢复整体延期。
+active v0 只需要把核心八个分析步骤做正确，并允许新执行显式消费已验证的上游 analysis step/module artifacts。因此，同一运行自动恢复整体延期。
 
 ## 2. 延期的能力意图
 
@@ -40,10 +40,10 @@ active v0 只需要把核心八阶段做正确，并允许新执行显式消费�
 
 未来能力若重新立项，可能覆盖“同一 run 的跨进程自动续跑与终态修复”。它仍不应改变：
 
-- 八阶段业务目标、N/E/I/R、逐 Flow R0/R1/R2 与九章结构；
+- 八个分析步骤业务目标、N/E/I/R、逐 Flow R0/R1/R2 与九章结构；
 - 52 个 reader-visible 正式输出；
 - canonical JSON/JSONL、Evidence、Proof、Trace 与完整仓库覆盖；
-- Stage/module artifacts 作为业务分析产物和上下游对话格式的地位；
+- AnalysisStep/module artifacts 作为业务分析产物和上下游对话格式的地位；
 - 开发 Agent 使用 Git + 独立 `progress/*.md` 的续接规则。
 
 本文也不覆盖分布式 worker、跨机器高可用、外部消息队列、Provider 事务协议或任意 exactly-once 保证；这些若需要，必须另行立项。
@@ -53,9 +53,9 @@ active v0 只需要把核心八阶段做正确，并允许新执行显式消费�
 active v0 的规则是：
 
 - 异步运行只有 `QUEUED | RUNNING | FINISHED | FAILED`；worker 是单进程语义；
-- 进程中断时，未完成 run 失败；调用者启动新的 run 或新的 stage execution；
-- 已完整安装的 stage/module JSON/JSONL/receipt 保留，可 inspect、诊断并作为新执行的显式输入；
-- Stage07 可以在新执行中直接读取并验证 Stage06 publication references，不重扫源码、不重做有效 Stage01–06；
+- 进程中断时，未完成 run 失败；调用者启动新的 run 或新的 analysis step execution；
+- 已完整安装的 analysis step/module JSON/JSONL/receipt 保留，可 inspect、诊断并作为新执行的显式输入；
+- RepositoryKnowledge 可以在新执行中直接读取并验证 FlowInterpretation publication references，不重扫源码、不重做有效 前六个分析步骤；
 - Provider 调用一旦开始，不自动重试、不切换 Provider；当前 run 失败并保留已写诊断；
 - capability manifest 只可声明 `RUNTIME_RESUME=CAPABILITY_NOT_ENABLED`，不得暴露假 resume seam。
 
@@ -63,7 +63,7 @@ active v0 的规则是：
 
 ## 6. 粗略开发量（仅用于延期决策）
 
-在不改变核心业务合同、已有 stage stores 可复用且由熟悉代码库的实现者执行的前提下，完整同一运行自动恢复预计 **56–96 个有效工程小时（约 7–12 人日）**。其中，模型终态自动修复、started/ambiguous 调用裁决及其故障矩阵约占 **32–56 小时（约 4–7 人日）**。
+在不改变核心业务合同、已有 analysis step stores 可复用且由熟悉代码库的实现者执行的前提下，完整同一运行自动恢复预计 **56–96 个有效工程小时（约 7–12 人日）**。其中，模型终态自动修复、started/ambiguous 调用裁决及其故障矩阵约占 **32–56 小时（约 4–7 人日）**。
 
 该估算不含需求重新确认、分布式化、Provider 事务支持、外部队列、兼容迁移、全仓回归等待或生产部署。它不是排期承诺，也不是开始实现的授权。
 
