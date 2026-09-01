@@ -352,8 +352,8 @@ Stage01：REQUEST_SCHEMA_INVALID、CAPTURE_IDENTITY_INVALID、SOURCE_REGISTRATIO
 
 | 状态 | 当前事实 |
 | --- | --- |
-| **已验证（有限、内存态）** | 现有 Stage01 M1 能验证声明 inventory、NOFOLLOW、size/SHA、strict UTF-8、line index 和 stable identity；固定 jshERP 八文件有只读验收证据 |
-| **尚未符合目标** | 没有本设计的`LocalGitCommitCaptureAdapter`、source registration、binary disposition、v2 schemas、逐module payload+receipt或run/stages/01 canonical production assets；当前`verified-snapshot-v1`不能冒充v2 |
-| **明确边界** | 本次只定目标合同，没有执行capture或改实现；COMPLETE_CAPTURE完整性仍待新adapter/receipt证明，八文件不代表全仓 |
+| **已实现并定向验证** | `LocalGitCommitCaptureAdapter`已只读capture一个精确commit、保存source registration和text/media disposition；M1/M2/M3分别经module store原子安装并重开，M3恰发布`source-input.json`、`source-inventory.jsonl`和`verified-snapshot.json`，Stage store最后追加`stage-receipt.json`。M2按file identity重开Capture bytes，并在读前/读后重验size、SHA和regular-file属性。直接selector共9个测试通过。 |
+| **仍未完成的Stage01验收** | 当前闭环使用小型synthetic repository和input-registry fake；尚未把完整`analysis-run-request-v2`输入注册、预算分片、所有安全反例和固定jshERP完整commit连接成一次端到端Stage01运行。`BOUNDED_PATH_SET`仍不能冒充完整仓库完成。 |
+| **明确边界** | 本实现没有运行客户Maven、插件、测试或应用，也没有重新capture固定jshERP；后者仍须在完整Stage01编排器可用后以已批准commit离线验收。 |
 
-本阶段目标不会因当前只有内存结果而降级。后续实现应增加持久化 Adapter，同时保留现有验证强度。
+本阶段目标不会因当前的synthetic绿色结果而降级；后续Stage01工作应补足上述端到端和反例验收，而不是降低范围或把小切片当作完整仓库结果。

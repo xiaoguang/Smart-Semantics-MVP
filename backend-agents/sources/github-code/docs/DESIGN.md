@@ -2037,7 +2037,7 @@ plan 中每个 ReaderItem 有唯一 section owner。空章也使用 typed EMPTY_
 
 | 目标阶段/横切能力 | 中文状态 | 当前事实 | 与目标的差距 |
 | --- | --- | --- | --- |
-| Local Git capture / Stage 01 冻结来源 | **capture缺失；Stage01已验证（有限、内存态）** | 现有 Stage01 M1 对调用方声明的文本inventory做path/size/SHA/UTF-8/identity校验；固定jshERP八文件可重验 | 没有本设计的`LocalGitCommitCaptureAdapter`、完整tree/media disposition、source registration或v2 module/stage assets；现有`verified-snapshot-v1`不等于新v2合同 |
+| Local Git capture / Stage 01 冻结来源 | **部分实现（持久化垂直闭环）** | 新`LocalGitCommitCaptureAdapter`只读精确Git commit、生成registration和text/media inventory；Stage01 M1/M2/M3均经canonical module store重开，M3发布三项语义文件，Stage store追加receipt。M2以file identity读前/读后核验源码字节。 | 仍缺完整run输入注册/编排、预算分片及全部安全反例；尚未对完整固定jshERP commit执行Stage01端到端离线验收。小型synthetic闭环不能代表完整仓库成功。 |
 | Stage 02 应用与入口发现 | **部分具备（内存态）** | 现有 Stage01 M2 能在有限 Java/Spring MVC/MyBatis profile 中发现 route、部分 Mapper 绑定与 capability site | 目标独立 application/entry artifacts 与完整 catalog 尚未形成 |
 | Stage 03 五张程序图 | **缺失目标产物** | 现有 RepositoryModel、Stage01FlowView 含部分结构、调用和 CFG 投影 | 没有五个 standalone first-class graph files；通用 data-flow/evidence graph 不足 |
 | Stage 04 事实与证明 | **已验证（有限 profile）/ DepotHead 仍有缺口** | 现有 Stage01 M3 有 CodeFact、ProofPack、GapLedger 与 accounting 的 in-memory bounded tests | Fact registry 偏合成剖面；无法充分证明 DepotHead status/ids 的跨层通用数据流 |

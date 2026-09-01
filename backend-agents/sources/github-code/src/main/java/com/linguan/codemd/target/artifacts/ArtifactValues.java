@@ -30,6 +30,15 @@ final class ArtifactValues {
         return value;
     }
 
+    static String fileName(String value, String field) {
+        text(value, field);
+        if (!FILE_NAME.matcher(value).matches()) {
+            throw new ArtifactStoreException(
+                    "MODULE_INSTALL_REQUEST_INVALID", field + " must be a safe basename");
+        }
+        return value;
+    }
+
     static String sha256(String value, String field, boolean nullable) {
         if (value == null && nullable) {
             return null;
@@ -48,6 +57,17 @@ final class ArtifactValues {
                 || !TOKEN.matcher(value.substring(0, separator)).matches()
                 || !SHA_256.matcher(value.substring(separator + 1)).matches()) {
             throw new ArtifactStoreException("MODULE_PUBLICATION_REQUEST_INVALID", field + " must be type-prefix:sha256");
+        }
+        return value;
+    }
+
+    static String contentId(String value, String field, String requiredPrefix) {
+        text(value, field);
+        String prefix = requiredPrefix + ":";
+        if (!value.startsWith(prefix) || !SHA_256.matcher(value.substring(prefix.length())).matches()) {
+            throw new ArtifactStoreException(
+                    "MODULE_PUBLICATION_REQUEST_INVALID",
+                    field + " must be " + requiredPrefix + ":<lowercase-sha256>");
         }
         return value;
     }

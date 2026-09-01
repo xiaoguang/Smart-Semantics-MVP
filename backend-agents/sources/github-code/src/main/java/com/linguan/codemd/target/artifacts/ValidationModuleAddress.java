@@ -6,8 +6,12 @@ public record ValidationModuleAddress(
         int moduleNumber,
         String moduleKey) implements ModulePublicationAddress {
     public ValidationModuleAddress {
-        runId = ArtifactValues.token(runId, "runId");
-        validationId = ArtifactValues.token(validationId, "validationId");
-        StageModuleAddress.validateModule(moduleNumber, moduleKey);
+        runId = ArtifactValues.contentId(runId, "runId", "analysis-run");
+        validationId = ArtifactValues.contentId(validationId, "validationId", "validation");
+        if (moduleNumber != 1 || !"run-validator".equals(moduleKey)) {
+            throw new ArtifactStoreException(
+                    "MODULE_PUBLICATION_REQUEST_INVALID",
+                    "validation publication must use module 01-run-validator");
+        }
     }
 }
