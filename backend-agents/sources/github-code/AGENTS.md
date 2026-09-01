@@ -1,279 +1,269 @@
-# GitHub Code Agent Instructions
+# Source Code Analysis Agent Instructions
 
-## Scope
+## Scope and target identity
 
-- This directory owns only the Java/Maven code-to-nine-section Agent and its
-  tests, fixtures, design, CLI, Java Interface, and any future local loopback
-  HTTP adapter. Ownership does not imply that every listed surface is already
-  implemented; `docs/DESIGN.md` and the current stage design own maturity facts.
+- This directory owns only the Java/Maven frozen-source-to-nine-section Agent,
+  its tests, fixtures, design, CLI, Java Interface, and future authenticated
+  loopback HTTP adapter.
+- The target directory is `backend-agents/sources/source-code/`, the Maven
+  coordinate is `org.sourceanalysis:source-code-analysis-agent`, the display
+  name is `Source Code Analysis Agent`, and the Java root is
+  `org.sourceanalysis.app`.
+- This instructions file remains at the pre-reset `sources/github-code/` path
+  only during the approved docs-only naming work. The implementation Wire
+  Reset moves the whole directory and leaves no alias, symlink, compatibility
+  reader, or second implementation behind.
 - Do not modify V6, Pinned assets, formal models, formal evidence, existing
-  source candidates, frontend code, or another source Agent's implementation.
-- The v0 profile supports frozen Java/Spring MVC/MyBatis source only. JPA,
-  message brokers, schedulers, batch, reflection, AOP, SpEL, WebFlux and
-  unsupported constructs must become explicit gaps.
+  source candidates, frontend code, or another Source Agent's implementation.
+- Target v0 supports frozen Java/Spring MVC/MyBatis source only. JPA, message
+  brokers, schedulers, batch, reflection, AOP, SpEL, WebFlux, and unsupported
+  constructs become explicit Gaps.
+
+## Target package registry
+
+- The public application seam lives at `org.sourceanalysis.app`.
+- The eight analysis packages are exactly:
+  - `org.sourceanalysis.app.analysis.inventory`
+  - `org.sourceanalysis.app.analysis.discovery`
+  - `org.sourceanalysis.app.analysis.graph`
+  - `org.sourceanalysis.app.analysis.fact`
+  - `org.sourceanalysis.app.analysis.flow`
+  - `org.sourceanalysis.app.analysis.interpretation`
+  - `org.sourceanalysis.app.analysis.knowledge`
+  - `org.sourceanalysis.app.analysis.document`
+- The cross-cutting roots are exactly:
+  - `org.sourceanalysis.app.capture.localgit`
+  - `org.sourceanalysis.app.artifact`
+  - `org.sourceanalysis.app.evidence`
+  - `org.sourceanalysis.app.runtime`
+  - `org.sourceanalysis.app.validation`
+  - `org.sourceanalysis.app.adapter.cli`
+  - `org.sourceanalysis.app.adapter.http`
+  - `org.sourceanalysis.app.adapter.provider`
+- Future database analysis uses `org.sourceanalysis.db.analysis`; it is
+  documentation-only in this work and must not be created here.
+- Do not create `target`, `mvp`, numbered analysis packages, `common`,
+  `shared`, `misc`, `utils`, `codemd`, `github`, or `linguan` in target Java,
+  Maven, artifact, schema, type, command, or fixture names. Do not create a
+  generic helper root: put each rule at the semantic seam that owns it.
 
 ## Fixed jshERP offline acceptance source
 
 - The user explicitly approved one read-only offline acceptance capture of
   `https://github.com/jishenghua/jshERP.git` at commit
   `8c30ce7861570458920175e200bb2a6442713580`.
-- Capture may only populate this Agent's ignored local workspace. The analyzer
-  must subsequently consume the generated immutable manifest, never `master`
-  or a live working tree.
+- Capture may populate only this Agent's ignored local workspace. Analysis
+  consumes the generated immutable manifest, never `master` or a live working
+  tree.
 - Do not run the captured repository's Maven, plugins, tests, scripts, or
   application. Do not silently refresh the commit.
 
 ## Model and testing rules
 
 - Critical reasoning, architecture, and important design documentation use
-  `gpt-5.6-sol` with `ultra` reasoning.
-- The sole target-design authority is `gpt-5.6-sol / ultra` (the Sol/ultra
-  Design Authority). `gpt-5.6-sol / xhigh` is a debug role only and cannot
-  approve architecture or contract changes.
-- Production implementation uses `gpt-5.6-terra` with `xhigh` reasoning.
-- TDD test writing uses `gpt-5.6-luna` with `xhigh` reasoning. LLM code review,
-  bounded source reading, and nine-section Markdown proposal generation also
-  use `gpt-5.6-luna` with `xhigh` reasoning. Debugging uses `gpt-5.6-sol` with
-  `xhigh` reasoning.
-- Automated tests use only a scripted fake Provider. They never invoke a live
-  model, network source, API key, or customer build.
-- A live Luna task requires the logged-in Codex session preflight and a frozen
-  task package. For every eligible Flow, Stage 06 first uses one isolated
-  `R0_REGISTRY_PROPOSAL`; the program validates all R0 results and freezes one
-  `RepositoryInterpretationRegistry`, then R0-ready Flows use one finite-key R1
-  interpretation and one R2 precision review. Let `N` be all Stage05 Flows,
-  `E` the eligible subset, and `R` the R0-ready subset of `E`: Stage06 has
-  `E + 2R` planned tasks and matching typed dispositions. Persisted rounds and
-  started Provider calls are a subset of those tasks; only when every planned
-  task starts and `R=E` are there `3E` calls. Ineligible Flows
-  have zero Stage06 per-Flow objects and receive a Stage07 technical fallback.
-  R0/R1/R2 never share context across Flows; R2 is not a product
-  candidate replacement and does not consume another `ReaderCandidateRound`.
-  Once a Provider call has started, never retry it, switch provider, or fall
-  back to an API key automatically; fail the current run and preserve safe
-  diagnostics.
-- Stage 05's same persisted EvidenceCapsule is the sole source-evidence input
-  for a Flow's R0/R1/R2. R0 may propose bounded business labels/purposes with
-  explicit same-Capsule basis, but cannot create Facts, locators, Flows, or
-  Markdown. An organization registry is an optional exact-match seed only;
-  every seed-derived item still requires R0 and non-empty Capsule basis. R1/R2
-  cannot start until all R0 dispositions are closed and the one repository
-  registry has been atomically frozen.
-- Each live-model receipt must record the observed provider, model, reasoning
-  effort, and sandbox. A mismatch from the frozen task policy is terminal for
-  that model-enhanced candidate: preserve the JSON failure receipt, do not
-  render it, and do not silently retry or resume it with another runtime.
-- Model configured Adapter identity, configured Auth Mode, and observed
-  upstream provider are different fields. Never compare or persist one as if it
-  were another. If the execution path does not keep them separate, or cannot
-  verify any required identity, fail closed before admitting the response.
-- The program, not Luna, validates paths, locators, hashes, source facts,
+  `gpt-5.6-sol` with `ultra` reasoning. The sole design authority is
+  `gpt-5.6-sol / ultra`; `gpt-5.6-sol / xhigh` is a debug role only.
+- Production implementation uses `gpt-5.6-terra / xhigh`. TDD test writing,
+  bounded source reading, code review, and nine-section proposal generation
+  use `gpt-5.6-luna / xhigh`.
+- Automated tests use only frozen fixtures and a scripted fake Provider. They
+  never invoke a live model, network source, API key, or customer build.
+- A live Luna task requires current explicit authorization, the logged-in
+  Codex-session preflight, and one frozen task package.
+- For every eligible Flow, flow interpretation runs one isolated
+  `R0_REGISTRY_PROPOSAL`. The program closes all R0 dispositions and freezes
+  one `RepositoryInterpretationRegistry`; each R0-ready Flow then receives one
+  finite-key R1 interpretation and one R2 precision review.
+- Let `N` be all business Flows, `E` the eligible subset, and `R` the R0-ready
+  subset of `E`. Flow interpretation has `E + 2R` planned tasks and matching
+  typed dispositions. Only when every task starts and `R = E` are there `3E`
+  Provider calls. Ineligible Flows have no interpretation objects and receive
+  a repository-knowledge technical fallback.
+- The same persisted EvidenceCapsule is the sole source-evidence input for a
+  Flow's R0/R1/R2. R0 may propose bounded business labels/purposes with
+  same-Capsule basis; it cannot create Facts, locators, Flows, or Markdown.
+- Once a Provider call starts, never retry it, switch provider, fall back to
+  an API key, or resume it automatically. Fail the current run and preserve
+  safe diagnostics.
+- Configured adapter identity, configured auth mode, expected runtime, and
+  observed upstream provider are separate fields. Any missing or mismatched
+  required identity fails closed.
+- The program, not the model, validates paths, locators, hashes, source facts,
   evidence references, section ownership, and final Markdown.
-- Every named target module follows the exact handoff in its stage document:
-  Luna/xhigh writes one-behavior-at-a-time RED tests against public seams and
-  independent goldens; Terra/xhigh starts only after observing the expected
-  RED and implements the smallest GREEN vertical slice. Both use the listed
-  targeted Maven selector only—never network, a live Provider, customer Maven,
-  or private-implementation coupling.
-- Luna/Terra must STOP a slice when an expected RED cannot be established,
-  required upstream data is absent, implementation conflicts with the target,
-  or schema/failure/model-boundary semantics would need to change. Record
-  evidence/options in the task progress file and ask the Sol/ultra Design
-  Authority. Never silently change a schema, golden, failure level, retry, or
-  model boundary. Any cross-stage architecture, business-goal, trust, source,
-  nine-section, safety, or model-boundary change also requires explicit user
-  confirmation before design, RED, or implementation proceeds.
+- Each target module follows its analysis-step document. Luna/xhigh writes one
+  behavior-at-a-time RED tests against public seams and independent goldens;
+  Terra/xhigh begins after the expected RED and implements the smallest GREEN
+  vertical slice. Use only the listed targeted Maven selector.
+- Stop a slice when the expected RED cannot be established, required upstream
+  data is absent, implementation conflicts with design, or schema/failure/
+  model-boundary semantics would need to change. Record evidence and ask the
+  Sol/ultra Design Authority; do not silently change the contract.
 
-## Design, artifact reuse, and deferred runtime recovery
+## Authoritative design and publication gate
 
-- `docs/DESIGN.md` is the authoritative target architecture. Current code, POC
-  artifacts, tests, and maturity records may validate or falsify it, but must
-  never silently weaken the target to match the implementation.
-- Maintain exactly one current detailed target design for every production
-  stage:
-  - `docs/stages/01-freeze-source.md`
-  - `docs/stages/02-discover-application-and-entries.md`
-  - `docs/stages/03-build-five-program-graphs.md`
-  - `docs/stages/04-prove-code-facts.md`
-  - `docs/stages/05-compile-business-flows.md`
-  - `docs/stages/06-interpret-one-flow-at-a-time.md`
-  - `docs/stages/07-admit-and-merge-business-knowledge.md`
-  - `docs/stages/08-build-nine-section-document-and-archive.md`
-- `docs/stages/00-mvp.md` is a POC record, not a ninth target stage or an
-  alternate production path.
-- Before any POM, build configuration, production code, or test work, read
-  `docs/plans/target-standards-and-toolchain-plan.md`. It is the approved
-  execution standard for project-local JDK 17 Toolchains, formatter/quality
-  gates, direct-selector command prefixes, Luna/Terra/Sol roles, progress
-  discipline, and default-authority/platform boundaries; do not duplicate or
-  weaken its detailed matrices here.
-- When a work unit changes an invariant or architecture used by more than one
-  stage, update `docs/DESIGN.md` in that same work unit.
-- `docs/DESIGN.md` owns stable architecture and cross-stage invariants. A stage
-  document owns that stage's current design, implemented result, tests, gaps,
-  and exit conditions. README files are navigation and capability indexes.
-- **Design-publication gate:** before any production-code, test, configuration,
-  or behavior-changing implementation edit, update the applicable target
-  design (`docs/DESIGN.md` and the affected stage document) first. Complete a
-  coherent docs-only commit and fast-forward push that design to `origin/main`
-  before starting the corresponding implementation slice. If implementation
-  exposes a design correction, stop that slice, update and publish the design
-  first, then resume from a fresh RED; never let an unpushed local design
-  become an implementation-only contract.
-- Target production persistence is stage-by-stage: every successful stage
-  immediately installs canonical JSON/JSONL artifacts under its analysis run
-  directory, records exact input/tool/profile/schema/prompt hashes, and
-  preserves upstream artifacts when a downstream stage fails. Five standalone
-  graph files are first-class Stage 03 artifacts. Final-only Candidate archive
-  behavior is a current maturity fact, not the target contract.
-- **Do not confuse three layers.** Coding Agent continuity uses Git plus that
-  Agent's own `progress/*.md`. Stage/module JSON, JSONL and receipts are core
-  business analysis products and explicit upstream/downstream handoff formats:
-  a new stage execution may validate and consume them without rescanning source
-  or reprocessing valid upstream stages. Neither layer is product runtime
-  recovery. Same-run process-crash recovery, queue/worker takeover, model-call
-  recovery and terminal repair are deferred in
-  `docs/supplements/runtime-recovery-todo.md`; that supplement is not an
-  implementation contract. Do not reintroduce any such mechanism unless the
-  user explicitly approves a new design work unit.
-- Active v0 does not resume an interrupted run. Preserve every fully installed
-  JSON/JSONL artifact, receipt and diagnostic; mark the interrupted run failed,
-  and let the caller create a new run or explicit downstream-stage execution.
-  A Provider call that has started is never retried or switched automatically.
-- A successful explicit execution ending before Stage08 is `FINISHED` with a
-  null `analysisResult` and no root run manifest. Only an execution through
-  Stage08 produces one of the four repository `AnalysisResult` values.
-- Stage-internal handoff is persisted too. Every named module writes its exact
-  schema-versioned canonical JSON/JSONL `ModuleArtifact` under the stage's
-  `modules/<nn-module>/` directory. The next module must reopen and validate
-  its ID/SHA/upstream/control references; it cannot consume a predecessor's
-  private object or bypass the artifact. Each stage document fixes, per module,
-  the problem, upstream preconditions, deterministic/LLM order, output schema
-  and DepotHead example, invariants, Gap/fatal/artifact-reuse behavior, downstream guarantee,
-  non-goals, public test seam, Luna RED brief, and Terra GREEN brief.
-- Target scope is the complete frozen repository. The DepotHead eight-file
-  `BOUNDED_PATH_SET` is only a walkthrough/local fixture and is never eligible
-  to complete a repository analysis. Stage 02 inventories every entry; every
-  entry is compiled to a Flow or gets an evidence-backed Gap/EXCLUDED
-  disposition. Resource sharding may change scheduling only: shard denominator
-  ID sets must be disjoint and their canonical union must equal the complete
-  denominator.
-- If a repository has N supported FlowSlices, Stage 05 persists N independent
-  EvidenceCapsules. Let E be the eligible subset and R its R0-ready subset.
-  Stage 06 persists E R0 dispositions, exactly one frozen
-  RepositoryInterpretationRegistry, E final interpretation dispositions, and
-  2R R1/R2 planned tasks and typed dispositions. Rounds/started calls are a
-  verified subset; only an all-start `R=E` run has 3E calls. Ineligible Flows have zero
-  Stage06 per-Flow objects, and Stage07 writes their unique technical-fallback
-  admission decisions. Stage 07 preserves
-  `registryProposalId -> provisionalKey -> interpretationProposalId ->
-  selectedKey -> meaningId` while merging all admitted interpretations and
-  deterministic facts into exactly one RepositoryKnowledge. Stage 08 generates exactly one
-  repository-level NineSectionPlan and one `document.md`; per-Flow Markdown
-  and pre-rendered-fragment concatenation are forbidden. A run completes only
-  when its RepositoryCoverageLedger accounts for every file, site, entry,
-  graph item, fact/atom, outcome, Flow, model proposal/disposition, knowledge
-  item, and section owner. One Flow PASS never completes a repository analysis.
+- `docs/DESIGN.md` is the authoritative target architecture. Current code,
+  historical artifacts, tests, and maturity records may validate or falsify
+  it but never weaken it silently.
+- Maintain exactly one detailed design for each production analysis step:
+  - `docs/analysis-steps/01-verified-source-inventory.md`
+  - `docs/analysis-steps/02-application-discovery.md`
+  - `docs/analysis-steps/03-program-graphs.md`
+  - `docs/analysis-steps/04-proven-code-facts.md`
+  - `docs/analysis-steps/05-business-flows.md`
+  - `docs/analysis-steps/06-flow-interpretation.md`
+  - `docs/analysis-steps/07-repository-knowledge.md`
+  - `docs/analysis-steps/08-nine-section-document.md`
+- `docs/history/` contains history-only records. They are not target
+  navigation, a production contract, or evidence of current behavior.
+- Before POM, build configuration, production code, test, fixture, schema, or
+  behavior changes, read both implementation plans under `docs/plans/`.
+- **Design-publication gate:** update the applicable target design first,
+  complete a coherent docs-only commit, and fast-forward push it to
+  `origin/main` before implementation begins. If implementation exposes a
+  correction, stop, publish the corrected design, and resume from a fresh RED.
+- `docs/DESIGN.md` owns stable architecture and cross-analysis-step
+  invariants. Each analysis-step document owns that step's design,
+  implementation audit, tests, Gaps, and exit conditions. README is navigation
+  and capability indexing.
+
+## Analysis-step and runtime vocabulary
+
+- The closed semantic keys and their ordered runtime directories are:
+  - `verified-source-inventory` → `steps/01-verified-source-inventory/`
+  - `application-discovery` → `steps/02-application-discovery/`
+  - `program-graphs` → `steps/03-program-graphs/`
+  - `proven-code-facts` → `steps/04-proven-code-facts/`
+  - `business-flows` → `steps/05-business-flows/`
+  - `flow-interpretation` → `steps/06-flow-interpretation/`
+  - `repository-knowledge` → `steps/07-repository-knowledge/`
+  - `nine-section-document` → `steps/08-nine-section-document/`
+- Numerical prefixes order documentation and runtime directories only. Java
+  types, fields, package names, schema versions, artifact IDs, tests, and
+  commands use semantic names.
+- Target types use `AnalysisStep` only for the generic abstraction and use
+  semantic prefixes such as `VerifiedSourceInventoryReference` for concrete
+  outputs. Public execution is `executeStep(AnalysisStepExecutionRequest)`;
+  no future type or field uses a numbered step name.
+- Every named module writes one or more schema-versioned canonical JSON/JSONL
+  `ModuleArtifact` payloads under `modules/<nn-module>/`, then installs a
+  receipt last. The next module must fresh-reopen the payload and receipt and
+  validate ID/SHA/upstream/control references.
+- Every successful analysis step immediately installs its official semantic
+  outputs and one semantic receipt under its run directory. Five standalone
+  program graphs are first-class outputs. Downstream failures preserve valid
+  upstream publications.
+
+## Full Wire Reset
+
+- The first implementation delivery moves the source directory, replaces the
+  Maven identity and Java namespace, deletes pre-reset production/test
+  packages and obsolete fixtures, and writes the new wire only.
+- Do not add compatibility readers, legacy aliases, migration bridges,
+  symlinks, old-to-new translators, dual writers, or fallback discovery.
+  Pre-reset paths, descriptors, schema versions, receipt names, package
+  identities, and numbered types fail closed with no new publication.
+- Preserve Git history and every historical `progress/*.md` file. Those are
+  engineering audit records, not runtime inputs.
+- The current pre-reset tree under `com.linguan.codemd` has bounded persisted
+  inventory/discovery vertical slices and older historical implementations.
+  That fact belongs only in explicit current-maturity sections; it is not a
+  target naming exception or reusable compatibility seam.
+
+## Persistence, reuse, and recovery boundary
+
+- Coding continuity uses Git plus each Agent's own `progress/*.md`. Module,
+  analysis-step, run, and validation artifacts are business products. Neither
+  layer is product runtime recovery.
+- Active v0 does not resume an interrupted run. Preserve fully installed
+  artifacts/receipts and diagnostics, mark the run `FAILED`, and let the
+  caller create a new run or an explicit new analysis-step execution from
+  exact validated upstream publication references.
+- Same-run process-crash recovery, queue/worker takeover, Provider-call
+  recovery, and terminal repair remain deferred in
+  `docs/supplements/runtime-recovery-todo.md`. Do not implement them without a
+  new user-approved design work unit.
+- An explicit execution ending before the nine-section document is `FINISHED`
+  with `analysisResult=null` and no root run manifest. Only an execution
+  through the nine-section document produces one of the four repository
+  `AnalysisResult` values.
+- Resource sharding changes scheduling only. Shard denominator ID sets are
+  disjoint and their canonical union equals the complete denominator.
+- The DepotHead eight-file `BOUNDED_PATH_SET` is a walkthrough/local fixture,
+  never repository-completion eligible. Every discovered entry becomes one
+  Flow or one evidence-backed Gap/EXCLUDED disposition.
+- A run completes only when `RepositoryCoverageLedger` accounts for every
+  file, site, entry, graph item, fact/atom, outcome, Flow, model proposal/
+  disposition, knowledge item, and section owner. One Flow PASS never
+  completes a repository analysis.
+
+## Public seam and output rules
+
 - The sole public target seam is one run-centric `RepositoryAnalysisAgent`
-  with `start`, `executeStage`, `inspect`, `artifact`, `render`, `validate`,
-  and `trace`. `executeStage` always creates a new execution identity from
-  exact validated upstream publication references; it is not same-run resume.
-  Java, CLI, and authenticated loopback HTTP are symmetric adapters.
-  Artifact lookup always requires `runId + artifactId`; an optional expected
-  `ArtifactLocation` is the sealed `STAGE_MODULE | VALIDATION_MODULE |
-  STAGE_PUBLICATION | RUN_MANIFEST` union, and type/digest values are
-  expected-value checks, never locators. External validator views do not
-  invent stage fields, and trace requires a bounded hop budget
-  with an optional expected Candidate identity. No public
-  request or response may accept or expose a filesystem `Path`. `artifact`
-  returns full bytes only for a registry policy explicitly marked
-  `PATH_FREE_COMPLETE_UTF8`; raw source-bearing artifacts (including raw
-  Trace records), prompts, and raw model responses are metadata-only. `trace`
-  is the only validated, path-free public projection of source hops. Read-only
-  observation methods never call a Provider or execute customer code.
-- Progress files record only coding-work continuity state: scope, completed checks,
-  changed paths, verification, blockers, and next action. They never replace or
-  override overall or stage design.
+  with `start`, `executeStep`, `inspect`, `artifact`, `render`, `validate`,
+  and `trace`. `executeStep` creates a new execution identity; it is not
+  same-run resume.
+- Java, CLI, and authenticated loopback HTTP are symmetric adapters. No public
+  request/response accepts or exposes filesystem `Path`.
+- Artifact lookup requires `runId + artifactId`; optional expected
+  `ArtifactLocation` is the sealed `ANALYSIS_STEP_MODULE |
+  VALIDATION_MODULE | ANALYSIS_STEP_PUBLICATION | RUN_MANIFEST` union.
+  Type/digest values are expected-value checks, never locators.
+- `artifact` returns full bytes only when registry policy is
+  `PATH_FREE_COMPLETE_UTF8`. Raw source-bearing artifacts, raw Trace, prompts,
+  and raw model responses are metadata-only. `trace` is the sole validated,
+  path-free source-hop projection.
+- Read-only observations never call a Provider, execute customer code, inject
+  evidence, or replace an analysis-step publication/receipt.
+- The final body has exactly the nine agreed H2 sections. IDs, hashes, prompts,
+  and receipts remain sidecars, not normal business prose.
+- Preserve exactly 42 semantic analysis-step payloads, eight semantic
+  receipts, one `nine-section-archive-manifest.json`, and one root
+  `run-manifest.json`: 52 reader-visible run outputs. Module artifacts/
+  receipts and exterior validation publications are excluded from this count.
+- Every Agent-produced machine artifact is canonical UTF-8 JSON or append-only
+  JSONL. Exceptions are final `document.md`, durable design/progress Markdown,
+  and immutable source inputs retained verbatim.
+
+## Evidence and reader admission
+
+- Fact admission requires semantic Evidence closure. Valid hashes and closed
+  references prove integrity only; every claimed semantic atom must be
+  supported by bytes inside Evidence spans the Fact references, plus a
+  deterministic Proof or independent audit proof.
+- Reader admission requires every admitted atom—kind, attributes, conditions,
+  literal values, and relationships—to appear in reader content, attached
+  technical basis, an explicit Gap, or a reasoned exclusion. Silent atom loss
+  is fatal; word count and file size are not quality gates.
+- Standard MyBatis mapper `DOCTYPE` syntax is accepted only with external DTD,
+  general/parameter entity, schema, and all network resolution disabled.
+  Inability to enforce those settings fails closed.
 
 ## Documentation readability
 
-- Overall and stage designs are function-first. Before introducing records,
-  class names, Interfaces, schemas, identities, algorithms, budgets, security,
-  failure codes, tests, or maturity, explain in this order: why the stage
-  exists; its concrete input; step-by-step work; observable persisted
-  artifacts; how downstream consumes them without reprocessing; success/Gap/
-  fatal and explicit upstream-artifact reuse behavior; and program/model
-  responsibilities.
-- Every future stage design must point to its position on the single main flow
-  in `docs/DESIGN.md` and use the real fixed DepotHead path as the shared walkthrough.
-  Label real source, deterministic conclusions, model interpretation,
-  unknowns, and illustrative target JSON separately.
-- Include one real, bounded example with an explicit evidence boundary and an
-  honest success, Gap, or rejection result. Never use a historical artifact as
-  proof of current or target behavior.
-- State explicitly how the stage's evidence confirms or changes the target
-  design. A stage document is an implementation record and design-feedback
-  surface, not a competing overall architecture.
-- Keep target design and current maturity in separate sections. Use Chinese
-  status labels for the current audit, and preserve the fixed jshERP result as
-  Gap / zero Flow / zero Capsule until a new, directly verified run proves
-  otherwise.
-- In the reader layer, lead with Chinese terms and plain-language explanations.
-  In technical-reference sections, retain exact code, Interface, field, command,
-  and artifact names.
+- Overall and analysis-step designs are function-first: why it exists,
+  concrete input, work, observable artifacts, downstream consumption,
+  success/Gap/fatal and reuse, program/model roles, then records/identity/
+  algorithm/budget/security/failure/tests/maturity.
+- Every analysis-step design points to the one main flow and uses the fixed
+  DepotHead path as shared walkthrough. Label real source, deterministic
+  conclusions, model interpretation, unknowns, and illustrative JSON
+  separately.
+- Keep target design and current maturity in separate sections. Current audits
+  use Chinese status labels and keep fixed jshERP at Gap / zero Flow / zero
+  Capsule until a new directly verified run proves otherwise.
+- Reader sections lead with Chinese terms and plain language. Technical
+  reference sections retain exact future code, Interface, field, command, and
+  artifact names.
 
 ## Per-agent progress files
 
 - Before modifying code, tests, configuration, or durable documentation, every
-  root, sub-agent, and debug agent creates one tracked file at
-  `progress/<task-slug>.md`. Its task brief must name that exact path.
-- An agent owns only its own progress file. If it cannot create or update it,
-  it must stop before changing implementation state.
-- Use `progress/TEMPLATE.md`. Update the current state in place before a long
-  command, after every verifiable step and test, on a blocker, and at task end.
-  Do not append a chronological work log.
-- Record scope, approvals, changed paths, completed work, test commands and
-  concise results, decisions, blockers, and the exact next action. Do not put
-  secrets, full prompts, large source excerpts, or large logs in progress.
-- A coding Agent continuing interrupted work reads its progress file, checks
-  `git status`, and verifies
-  referenced artifacts and tests before continuing. Finished files are marked
-  `COMPLETE` and retained.
-
-## Runtime and output
-
-- Use Java 17. Keep target v0 as one Maven module with package-private deep
-  modules; do not introduce a premature multi-module reactor.
-- MyBatis is source input only: use Java/XML parsing and never add or execute
-  the MyBatis runtime. JPA is not in v0.
-- The body always has exactly the nine agreed H2 sections. IDs, hashes, prompts
-  and receipts belong in sidecars, never in normal business prose.
-- `inspect` and other diagnostic views are read-only projections of already
-  installed artifacts. They cannot inject files, locators, evidence, Facts, or
-  scope into business outputs. Every item entering a Candidate, reader Markdown,
-  or formal Trace must traverse fresh-validated Stage01–07 publications and
-  their exact coverage/accounting; diagnostics cannot replace any stage
-  publication or receipt.
-- Fact admission requires semantic Evidence closure. A known Evidence ID,
-  valid source/excerpt hashes, and closed references prove integrity and
-  identity only. Every semantic atom claimed by a Fact must be supported by
-  bytes inside Evidence spans that the Fact itself references, plus a
-  deterministic Proof or an independently recorded audit proof. Evidence
-  elsewhere in the Manifest cannot fill a missing atom unless the Fact
-  explicitly references it. Reject an unsupported Fact or emit a Gap before
-  Candidate construction.
-- Reader admission is stronger than nine headings and a valid SHA. Every
-  admitted fact must contribute its semantic atoms—kind, attributes,
-  conditions, literal values, and relationships—to reader content, an attached
-  technical basis, an explicit Gap, or a reasoned exclusion. Silent atom loss
-  is fatal; raw word count or file size is not a substitute for this gate.
-- A standard MyBatis mapper `DOCTYPE` declaration is acceptable source syntax.
-  Parsing must disable external DTD, general/parameter entity, schema, and all
-  network resolution; any attempt or inability to enforce those settings fails
-  closed.
-- Every Agent-produced machine artifact is canonical UTF-8 JSON (`*.json`) or
-  append-only JSON Lines (`*.jsonl`). Do not create Java serialization,
-  databases, binary caches, or private intermediate formats. The exceptions are
-  the final reader-facing `document.md`, durable design/progress Markdown, and
-  the immutable source files retained verbatim as inputs rather than generated
-  artifacts.
+  Agent creates one tracked `progress/<task-slug>.md` from
+  `progress/TEMPLATE.md`. Each Agent owns only its file.
+- Update current state in place before a long command, after every verifiable
+  step/test, on a blocker, and at task end. Do not append a chronological log.
+- Record scope, approvals, changed paths, checks, decisions, blockers, and the
+  exact next action. Do not include secrets, full prompts, large source
+  excerpts, or logs.
+- Continuing work reads its progress, checks Git status, and verifies referenced
+  artifacts/tests. Completed progress files remain tracked and unchanged.

@@ -4,13 +4,15 @@
 
 **状态：** `CORE PLAN APPROVED — IN-SCOPE EXECUTION DEFAULT AUTHORIZED`
 
-**目标：** 在不改变已批准八阶段业务架构、持久化 DAG、身份公式和公开接口的前提下，冻结目标实现使用的成熟开源依赖、Maven 质量门、通用文件标准、代理协作边界、直接测试 selector、发布门和连续工期预算。
+**目标：** 在不改变已批准八个分析步骤业务架构、持久化 DAG、身份公式和公开接口的前提下，冻结目标实现使用的成熟开源依赖、Maven 质量门、通用文件标准、代理协作边界、直接测试 selector、发布门和连续工期预算。
 
-**架构：** `Stage01 → Stage02 → Stage03 → Stage04 → Stage05 → Stage06 → Stage07 → Stage08 → validation → Java/CLI/HTTP adapters`。三个深存储 seam、policy registry、`analysis-run-request-v2`、stage receipt-last、Stage08 五 semantic → archive → receipt → root manifest → M4 的顺序均来自权威设计，本计划只规划实现方法，不另造跨阶段决策。显式 `executeStage` 可让一个新执行消费经验证的上游 stage publications；它不是同一 run 恢复。
+**架构：** `verified-source-inventory → application-discovery → program-graphs → proven-code-facts → business-flows → flow-interpretation → repository-knowledge → nine-section-document → validation → Java/CLI/HTTP adapters`。三个深存储 seam、policy registry、`analysis-run-request-v2`、语义 receipt-last、九章文档五项 semantic → archive → receipt → root manifest → M4 的顺序均来自权威设计。本计划只规划实现方法，不另造跨分析步骤决策。显式 `executeStep` 可让一个新执行消费经验证的上游分析步骤 publications；它不是同一 run 恢复。
+
+**目标身份与package registry：** 工程目录为`backend-agents/sources/source-code/`，Maven坐标为`org.sourceanalysis:source-code-analysis-agent`，display name为`Source Code Analysis Agent`，Java root为`org.sourceanalysis.app`。八个分析package依次为`org.sourceanalysis.app.analysis.inventory`、`org.sourceanalysis.app.analysis.discovery`、`org.sourceanalysis.app.analysis.graph`、`org.sourceanalysis.app.analysis.fact`、`org.sourceanalysis.app.analysis.flow`、`org.sourceanalysis.app.analysis.interpretation`、`org.sourceanalysis.app.analysis.knowledge`、`org.sourceanalysis.app.analysis.document`；横切根精确为`org.sourceanalysis.app.capture.localgit`、`org.sourceanalysis.app.artifact`、`org.sourceanalysis.app.evidence`、`org.sourceanalysis.app.runtime`、`org.sourceanalysis.app.validation`、`org.sourceanalysis.app.adapter.cli`、`org.sourceanalysis.app.adapter.http`、`org.sourceanalysis.app.adapter.provider`。未来数据库只保留文档根`org.sourceanalysis.db.analysis`，本计划不创建数据库代码，也不创建通用`common`/`shared`根。
 
 **技术栈：** Java 17、Maven 3.9.11、Jackson 2、隔离 Git CLI、JavaParser Symbol Solver、Maven Model Reader、Tomlj、networknt JSON Schema Validator、Picocli；JUnit/AssertJ/jqwik/ArchUnit/Awaitility；Enforcer/Toolchains/Compiler/Surefire/Failsafe/Spotless/SpotBugs/PMD/Dependency/CycloneDX/OWASP/Javadoc/Shade。
 
-**权威规格：** `docs/DESIGN.md`、`docs/stages/01-freeze-source.md` 至 `docs/stages/08-build-nine-section-document-and-archive.md`。若本计划与这些文件冲突，以完成独立审查并发布后的权威规格为准，实施必须停止并由 Sol/ultra 报告，不得在代码中自行选择。
+**权威规格：** `docs/DESIGN.md`、`docs/analysis-steps/01-verified-source-inventory.md` 至 `docs/analysis-steps/08-nine-section-document.md`。若本计划与这些文件冲突，以完成独立审查并发布后的权威规格为准，实施必须停止并由 Sol/ultra 报告，不得在代码中自行选择。
 
 ---
 
@@ -22,11 +24,11 @@
 
 本计划不做以下事情：
 
-- 不改变 Stage01–08 的模块表、公开输出数量、内容身份、receipt/root 公式或 Stage08 DAG。
-- 不以工具库替代证据、Proof、Flow、coverage、registry lineage、Candidate、validation 或显式 stage 输入验证的领域规则。
+- 不改变八个分析步骤的模块表、公开输出数量、内容身份、receipt/root 公式或九章文档 DAG。
+- 不以工具库替代证据、Proof、Flow、coverage、registry lineage、Candidate、validation 或显式 analysis step 输入验证的领域规则。
 - 不实现进程重启后的同一 run、队列、worker 或 Provider 调用恢复；该范围仅见 `docs/supplements/runtime-recovery-todo.md`，不得据此编码。
 - 不从 Maven、JavaParser 或 JGit 自动解析客户代码时触发远程解析、构建、class loading、注解处理器或客户代码执行。
-- 不新增“万能 utilities”层，不自造 JSON/TOML/XML/Git/Maven parser、Java formatter、Markdown linter 或 JSON Schema evaluator。
+- 不新增通用 `common`、`shared`、`misc` 或 `utils` 层，不自造 JSON/TOML/XML/Git/Maven parser、Java formatter、Markdown linter 或 JSON Schema evaluator。
 - 不把已批准版本视为已经下载、已经兼容或已经通过安全审计；这些事实由后文执行 gate 和测试建立。
 
 已批准核心包包括基础依赖、测试库、Maven插件/profile、通用格式规则和实施工作流。JGit alternate adapter、Taplo、markdownlint-cli2与Maven Wrapper为caller-driven deferred项；OWASP漏洞库更新为feed/credentials/cache environment gate；新JDK安装仅在project-local Toolchains找不到合格JDK 17时触发。它们都不再等待额外用户确认。
@@ -39,13 +41,13 @@
 | Maven | preflight Maven 3.9.16，当前POM未冻结wrapper/runtime上限 | Enforcer要求Maven `[3.9.11,4)`，当前3.9.16满足；Wrapper 3.3.4仅在出现可复现分发调用者时按需加入 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | Jackson | 当前 POM 2.21.4 | 保持一个 Jackson 2 BOM/版本源；任何库带入的 Jackson 均收敛到同一 2.21.4，不混用 Jackson 3 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | Picocli | 当前 POM 4.7.7 | 保持 4.7.7；只做 CLI 参数/usage/exit-code adapter，不承载领域验证 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
-| JavaParser | 当前 POM仅 `javaparser-core` 3.28.2 | 改用同版 `javaparser-symbol-solver-core` 3.28.2 作为 Stage02/03 adapter；避免 core 与 solver 版本分裂 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
+| JavaParser | 当前 POM仅 `javaparser-core` 3.28.2 | 改用同版 `javaparser-symbol-solver-core` 3.28.2 作为应用发现与程序图 adapter；避免 core 与 solver 版本分裂 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | Test | 当前 POM JUnit 5.13.4 | 保持 JUnit 5.13.4，增加职责互斥的 AssertJ/jqwik/ArchUnit/Awaitility | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | 重型验证 | 尚未冻结 | 同一时刻最多一个 Maven 重型命令；最多两个活跃代理；默认 direct selector + offline | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 
 只读preflight另确认Node `v25.9.0`、npm `11.12.1`与`xmllint/libxml2 2.9.13`已安装，Taplo和markdownlint-cli2未安装。这些只是环境事实：当前docs-only gate不安装或执行deferred CLI；未来若出现具体Markdown/TOML调用者，仍先走本计划的官方版本/完整性门。`xmllint`即使已存在，也只允许`--noout --nonet`诊断，不能替代JDK secure JAXP/Maven Model Reader。
 
-实施开始前必须先完成当前权威设计 Round-3 修正、独立 Sol/ultra 审查、文档机械 gate，并只提交/推送设计文档。该 docs-only publish gate 是代码工作的硬前置，不因核心包已批准或默认授权而跳过。
+实施开始前必须先完成 `source-analysis-naming-and-delivery-plan.md` 规定的 docs-only 命名发布、独立 Sol/ultra 审查和文档机械 gate，并只提交/推送设计文档。该 publish gate 是代码工作的硬前置，不因核心包已批准或默认授权而跳过。
 
 Toolchain foundation必须提交project-tracked `.mvn/toolchains.xml`，不得创建或修改用户级`~/.m2/toolchains.xml`。当前local host的exact配置使用Homebrew稳定symlink `/usr/local/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home`（preflight解析到`/usr/local/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home`）：
 
@@ -64,7 +66,7 @@ Toolchain foundation必须提交project-tracked `.mvn/toolchains.xml`，不得�
 </toolchains>
 ~~~
 
-每条Maven命令都必须显式传`-t .mvn/toolchains.xml`；toolchain file缺失、symlink失效、选择结果不是JDK 17或Compiler没有使用该toolchain均fail closed。其他host不得回退用户home配置：先在该host的独立toolchain maintenance work unit验证一个JDK 17绝对home并更新project-local文件，再运行任何build。Stage docs里的`mvn -Dtest=...`只标识direct selector，实际执行必须使用本计划第5节完整前缀。
+每条Maven命令都必须显式传`-t .mvn/toolchains.xml`；toolchain file缺失、symlink失效、选择结果不是JDK 17或Compiler没有使用该toolchain均fail closed。其他host不得回退用户home配置：先在该host的独立toolchain maintenance work unit验证一个JDK 17绝对home并更新project-local文件，再运行任何build。AnalysisStep docs里的`mvn -Dtest=...`只标识direct selector，实际执行必须使用本计划第5节完整前缀。
 
 ## 2. 开源依赖决策矩阵
 
@@ -72,9 +74,9 @@ Toolchain foundation必须提交project-tracked `.mvn/toolchains.xml`，不得�
 
 | 能力 | 建议坐标/版本 | 采用方式与边界 | 不采用方案 | 状态 |
 | --- | --- | --- | --- | --- |
-| Git capture | 系统 Git CLI；运行前记录并验证 `git --version`，最低兼容线在首次实现任务用 fixture gate 固定 | Stage01 继续调用已批准的本地、只读、隔离 Git plumbing 命令；显式参数、固定对象格式、清空 hooks/config/env、禁网络、禁 worktree read；stdout 作为受限 adapter 输入 | 自写 `.git`/pack/index parser；libgit2 JNI；让 JGit 替代已批准 capture 行为 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
-| JGit | `org.eclipse.jgit:org.eclipse.jgit:7.7.1.202607240634-r` | 仅当某个已列测试出现Java内read-only object/model cross-check具体调用者时加入窄adapter；不得成为Stage01 canonical capture，不得联网。没有调用者时不入POM | 为“可能有用”而引入闲置依赖；自造 Git plumbing | DEFERRED — CALLER-DRIVEN |
-| Java 语法/符号 | `com.github.javaparser:javaparser-symbol-solver-core:3.28.2` | Stage02/03 只读取 VerifiedSnapshot 提供的 canonical UTF-8 bytes；自定义 TypeSolver 仅解析快照内 source roots；不扫描活动目录、不下载依赖、不加载客户 class | regex Java parser、compiler plugin 执行、反射客户代码 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
+| Git capture | 系统 Git CLI；运行前记录并验证 `git --version`，最低兼容线在首次实现任务用 fixture gate 固定 | VerifiedSourceInventory 继续调用已批准的本地、只读、隔离 Git plumbing 命令；显式参数、固定对象格式、清空 hooks/config/env、禁网络、禁 worktree read；stdout 作为受限 adapter 输入 | 自写 `.git`/pack/index parser；libgit2 JNI；让 JGit 替代已批准 capture 行为 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
+| JGit | `org.eclipse.jgit:org.eclipse.jgit:7.7.1.202607240634-r` | 仅当某个已列测试出现Java内read-only object/model cross-check具体调用者时加入窄adapter；不得成为VerifiedSourceInventory canonical capture，不得联网。没有调用者时不入POM | 为“可能有用”而引入闲置依赖；自造 Git plumbing | DEFERRED — CALLER-DRIVEN |
+| Java 语法/符号 | `com.github.javaparser:javaparser-symbol-solver-core:3.28.2` | 应用发现与程序图只读取 `VerifiedSnapshot` 提供的 canonical UTF-8 bytes；自定义 TypeSolver 仅解析快照内 source roots；不扫描活动目录、不下载依赖、不加载客户 class | regex Java parser、compiler plugin 执行、反射客户代码 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | Maven 模型 | `org.apache.maven:maven-model:3.9.11` | 用 `MavenXpp3Reader`/model classes 严格读取快照内 POM；禁 model builder 的 parent/plugin/repository resolution；所有未解析 property/profile 形成 typed signal/GAP | 自写 XML-to-POM 映射；运行客户 Maven；隐式解析远程 parent | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | TOML | `org.tomlj:tomlj:1.1.1` | 严格 parser；保存 parse positions，拒绝 duplicate/invalid keys；领域层再映射为 closed records | 自写 tokenizer/parser；把 TOML 当 properties | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | JSON Schema | `com.networknt:json-schema-validator:2.0.1` | Draft 2020-12；只加载内容寻址的本地 schema bundle，关闭远程 `$ref`；排除不使用的 YAML；与项目 Jackson 2.21.4 做 dependency convergence 和行为测试 | 3.x（Jackson 3 线）与 Jackson 2 混装；手写通用 schema evaluator；联网取 schema | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
@@ -96,8 +98,8 @@ Toolchain foundation必须提交project-tracked `.mvn/toolchains.xml`，不得�
 | --- | --- | --- | --- | --- |
 | JUnit Jupiter / `org.junit.jupiter:junit-jupiter` | 5.13.4 | test engine、lifecycle、parameterized/dynamic tests | 不用自建 runner；暂不升级 JUnit 6 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | AssertJ Core / `org.assertj:assertj-core` | 3.27.7 | 可读的对象/集合/异常断言与 custom assertion | 不用它做随机生成、轮询或架构扫描 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
-| jqwik / `net.jqwik:jqwik` | 1.10.1 | 只覆盖 identity framing、UTF-8 ordering、safe key/path grammar、descriptor root、stage-publication lineage 的性质测试 | 不把 golden contract 改成随机期望；不用于 Provider/model 行为 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
-| ArchUnit JUnit5 / `com.tngtech.archunit:archunit-junit5` | 1.5.0 | 验证 package/moduleKey 映射、adapter→application→domain 依赖方向、public seam path-free、stage 间无反向依赖 | 不重复 PMD/SpotBugs 的代码级规则 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
+| jqwik / `net.jqwik:jqwik` | 1.10.1 | 只覆盖 identity framing、UTF-8 ordering、safe key/path grammar、descriptor root、analysis-step-publication lineage 的性质测试 | 不把 golden contract 改成随机期望；不用于 Provider/model 行为 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
+| ArchUnit JUnit5 / `com.tngtech.archunit:archunit-junit5` | 1.5.0 | 验证 package/moduleKey 映射、adapter→application→domain 依赖方向、public seam path-free、analysis step 间无反向依赖 | 不重复 PMD/SpotBugs 的代码级规则 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | Awaitility / `org.awaitility:awaitility` | 4.3.0 | 只用于 single-process async execution、loopback HTTP 状态与 atomic publication 的有界等待测试 | 不用 sleep；不掩盖非并发 deterministic failure | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 
 测试默认不引入 Mockito。I/O、Provider、clock/fault injection 使用窄手写 fake/recording adapter；identity、store、manifest、receipt 不 mock。若未来出现只有 mocking framework 才能隔离的第三方 API，必须给出具体 seam、调用者和新增审批，不得预先加依赖。
@@ -121,11 +123,11 @@ Toolchain foundation必须提交project-tracked `.mvn/toolchains.xml`，不得�
 | Maven Toolchains | 3.3.0 | 从显式`-t .mvn/toolchains.xml`选择`jdk` version 17；禁止读写用户级toolchains；缺file/home/match明确失败，不回退shell JDK | `validate`/编译前 check | 每次 PR 必跑 | 无网络；轻；本机JDK 17已存在 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | Maven Compiler | 3.15.0 | `release=17`、UTF-8、`-parameters`；先不启用会因第三方/generated code 产生噪声的全量 `-Werror` | compile/testCompile | 每次 PR 必跑 | 无额外网络；中 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | Surefire | 3.5.5 | `*Test` unit/contract selector；固定 locale/timezone/encoding；Provider/network disabled；POM 明确把默认 false 的 `skipUTs` property 映射到 Surefire `skipTests` | direct selector | PR targeted suite | 无网络；按 selector 轻/中 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
-| Failsafe | 3.5.5 | 仅 `*IT` filesystem/process/adapter integration；`integration-test` + `verify` | 显式 `-Dit.test=` | 阶段 gate/最终验收 | 无网络；中/重，必须串行 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
+| Failsafe | 3.5.5 | 仅 `*IT` filesystem/process/adapter integration；`integration-test` + `verify` | 显式 `-Dit.test=` | 分析步骤 gate/最终验收 | 无网络；中/重，必须串行 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | Spotless Maven | 3.10.1 | Java 使用 google-java-format 1.36.1；POM/Markdown 不自动重排领域 golden | `spotless:check`；apply 必须显式 | PR 只 check | 首次解析后离线；轻/中 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | google-java-format | 1.36.1 | Spotless 唯一 Java formatter engine | 仅由 Spotless 调用 | 锁定版本 check | 无运行时网络；轻 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
-| SpotBugs Maven | 4.10.4.0 | bytecode correctness：null/dropped result/resource/threading/equals/hash/serialization 风险；只配置经证实排除 | `-Pquality` | PR/阶段 gate | 中/重，串行 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
-| Maven PMD | 3.28.0 | 源码层 narrow rule set：复杂度、空 catch、异常吞噬、危险 API、设计边界；关闭与 SpotBugs 重叠规则 | `-Pquality` | PR/阶段 gate | 中/重，串行 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
+| SpotBugs Maven | 4.10.4.0 | bytecode correctness：null/dropped result/resource/threading/equals/hash/serialization 风险；只配置经证实排除 | `-Pquality` | PR/分析步骤 gate | 中/重，串行 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
+| Maven PMD | 3.28.0 | 源码层 narrow rule set：复杂度、空 catch、异常吞噬、危险 API、设计边界；关闭与 SpotBugs 重叠规则 | `-Pquality` | PR/分析步骤 gate | 中/重，串行 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | Maven Dependency Plugin | 3.11.0 | used-undeclared/unused-declared；精确列出反射/ServiceLoader 例外；Jackson tree audit | `dependency:analyze-only`/`dependency:tree` | POM 变更必跑 | 缓存后离线；中 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | CycloneDX Maven | 2.9.3 | 生成包含 compile/runtime 的 SBOM；不改变运行 artifact | supply-chain profile 显式 | release/final acceptance | 缓存后离线；中 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | OWASP Dependency Check | 13.0.0 | 只做dependency CVE audit；仅在NVD/API feed、所需credentials与持久cache位置可用时启用；环境未就绪时不伪称安全通过 | 默认 skip | 定时 CI/release，环境门满足后 | 网络且重，必须串行/缓存 DB | ENVIRONMENT-GATED |
@@ -171,9 +173,9 @@ Java、JSON/JSONL、TOML/config、Markdown、XML 必须先由成熟、版本固�
 
 - 长度前缀/domain separator/UTF-8 byte-order/descriptor list 的身份 framing；
 - artifact policy、root、receipt、manifest 与 immutable publication；
-- safe value grammar 和 closed stage/module/address mapping；
+- safe value grammar 和 closed analysis step/module/address mapping；
 - source evidence/excerpt、Proof closure、graph/Flow/coverage/accounting；
-- registry/meaning lineage、ReaderItem、Candidate、validation 与显式 stage execution；
+- registry/meaning lineage、ReaderItem、Candidate、validation 与显式 analysis step execution；
 - Provider lifecycle、预算、单次调用失败语义与 single-process execution orchestration。
 
 通用工具只能验证/格式化外层语法，不能重新定义这些 canonical bytes 或领域 ID。
@@ -197,9 +199,9 @@ Taplo 与 markdownlint-cli2 不在本计划中伪造版本。它们的确定门�
 
 | 场景 | 精确默认命令 | 约束 |
 | --- | --- | --- |
-| 单个 RED/GREEN selector | `mvn -t .mvn/toolchains.xml -o -Dtest=Stage01FrozenRequestAdmissionTest test` | 命令示例使用真实类；其他任务只能替换为第 6 节同一 work unit 的一个精确类名，不得用 wildcard 或空 selector 回退全套 |
-| 多个同任务 selector | `mvn -t .mvn/toolchains.xml -o -Dtest=CanonicalModuleArtifactStoreTest,CanonicalStageArtifactStoreTest test` | 只允许同一 work unit 直接覆盖者 |
-| 单个 integration selector | `mvn -t .mvn/toolchains.xml -o -DskipUTs -Dit.test=CanonicalStageArtifactStoreAtomicInstallIT verify` | Failsafe `*IT`；文件系统/process 测试串行 |
+| 单个 RED/GREEN selector | `mvn -t .mvn/toolchains.xml -o -Dtest=FrozenRequestAdmissionTest test` | 命令示例使用真实类；其他任务只能替换为第 6 节同一 work unit 的一个精确类名，不得用 wildcard 或空 selector 回退全套 |
+| 多个同任务 selector | `mvn -t .mvn/toolchains.xml -o -Dtest=CanonicalModuleArtifactStoreTest,CanonicalAnalysisStepArtifactStoreTest test` | 只允许同一 work unit 直接覆盖者 |
+| 单个 integration selector | `mvn -t .mvn/toolchains.xml -o -DskipUTs -Dit.test=CanonicalAnalysisStepArtifactStoreAtomicInstallIT verify` | Failsafe `*IT`；文件系统/process 测试串行 |
 | 格式 check | `mvn -t .mvn/toolchains.xml -o spotless:check` | CI 与提交前；不改文件 |
 | 格式 apply | `mvn -t .mvn/toolchains.xml -o spotless:apply` | 仅实现代理在自己拥有的 Java 文件上显式运行；之后重跑 direct tests |
 | 静态质量 | `mvn -t .mvn/toolchains.xml -o -Pquality -DskipTests verify` | Enforcer + compile + SpotBugs + PMD + dependency analyze；重型串行 |
@@ -219,107 +221,107 @@ Taplo 与 markdownlint-cli2 不在本计划中伪造版本。它们的确定门�
 - `release` 才运行 Javadoc、Shade 与本地 smoke；不触发 source capture 或 Provider。
 - 首次范围内解析保存`mvn -t .mvn/toolchains.xml dependency:go-offline`的实际输出、selected JDK 17和本地cache事实；未来命令加`-o`。cache miss只可按默认授权解析已列精确坐标，并仍服从平台网络控制。
 
-## 6. 八阶段输出与直接 selector 冻结表
+## 6. 八个分析步骤输出与直接 selector 冻结表
 
 下表不改变权威 schema；它只把实现 work unit 与可观察输出关联。所有 selector/任务划分均为 **APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED**。
 
-| Work unit | 直接 selector | reader-visible stage/run 输出 |
+| Work unit | 直接 selector | reader-visible analysis step/run 输出 |
 | --- | --- | --- |
-| Foundation/contracts | `CanonicalJsonCodecTest`, `CanonicalArtifactPolicyRegistryTest`, `CanonicalModuleArtifactStoreTest`, `CanonicalStageArtifactStoreTest`, `CanonicalRunManifestStoreTest`, `RunExecutionStateTest`, `TargetArchitectureTest`; integration：`CanonicalStageArtifactStoreAtomicInstallIT` | 无 stage 输出；冻结 typed refs、policy、store/run-manifest seam及`QUEUED/RUNNING/FINISHED/FAILED`单进程状态 |
-| Stage01 | `Stage01FrozenRequestAdmissionTest`, `Stage01VerifiedSourceIndexerTest`, `Stage01PublicationSpecifierTest` | `source-input.json`, `verified-snapshot.json`, `source-inventory.jsonl`, `stage-receipt.json`（3 semantic + receipt） |
-| Stage02 | `Stage02ApplicationProfileDetectorTest`, `Stage02SpringHttpEntryDiscovererTest`, `Stage02MapperCapabilityCatalogerTest`, `Stage02PublicationSpecifierTest` | `application-profile.json`, `entry-points.jsonl`, `mapper-catalog.jsonl`, `capability-report.json`, `stage-receipt.json`（4 + receipt） |
-| Stage03 | `Stage03CodeStructureGraphBuilderTest`, `Stage03CallGraphBuilderTest`, `Stage03ControlFlowGraphBuilderTest`, `Stage03DataFlowGraphBuilderTest`, `Stage03EvidenceGraphBuilderTest`, `Stage03ProgramGraphSetPublicationSpecifierTest` | 五 graph JSON + `graph-index.json` + `graph-gaps.jsonl` + receipt（7 + receipt） |
-| Stage04 | `Stage04FactCandidateEnumeratorTest`, `Stage04AtomicProofBuilderTest`, `Stage04FactLedgerPublicationSpecifierTest` | `proven-facts.json`, `proof-pack.json`, `gap-ledger.json`, `fact-accounting.json`, receipt（4 + receipt） |
-| Stage05 | `Stage05EntryRootedFlowCompilerTest`, `Stage05EvidenceCapsuleProjectorTest`, `Stage05FlowPublicationSpecifierTest` | `flow-slices.json`, `flow-coverage.json`, `entry-dispositions.jsonl`, `evidence-capsules.jsonl`, `flow-gaps.jsonl`, receipt（5 + receipt） |
-| Stage06 | `Stage06RegistryProposalTaskCompilerTest`, `Stage06RegistryProposalRunnerTest`, `Stage06RepositoryInterpretationRegistryFreezerTest`, `Stage06FiniteKeyFlowTaskCompilerTest`, `Stage06InterpretationRunnerTest`, `Stage06InterpretationPublicationSpecifierTest` | 三个 registry JSONL/registry JSON + task/round/receipt/candidate/disposition 五 JSONL + receipt（9 + receipt） |
-| Stage07 | `Stage07ProposalAdmissionEngineTest`, `Stage07AnchoredKnowledgeMergerTest`, `Stage07KnowledgePublicationSpecifierTest` | `admitted-flow-meanings.jsonl`, `repository-business-knowledge.json`, `knowledge-conflicts.jsonl`, `knowledge-accounting.json`, `merged-gaps.json`, receipt（5 + receipt） |
-| Stage08 | `Stage08NineSectionPlannerTest`, `Stage08PlanOnlyRendererTest`, `Stage08TypedTraceCompilerTest`, `Stage08CandidateRunArchiverTest` | 五 semantic：plan/document/trace/candidate/baseline → archive manifest → stage receipt → root `run-manifest.json`；然后 observation-only M4 module receipt |
-| Exterior validation | `IndependentRunValidatorTest` | run 外 validation publication/receipt；不改 Candidate 或 stage publications |
-| Public/adapters | `RepositoryAnalysisAgentContractTest`, `RepositoryAnalysisCliAdapterTest`, `RepositoryAnalysisLoopbackHttpAdapterTest`; integration：`RepositoryAnalysisLoopbackHttpAdapterIT` | 同一 public request/query/result seam；`executeStage`只接精确上游publication refs并创建新执行；Stage02–07区间可`FINISHED`但result/root manifest为空，执行到Stage08才有四值result；CLI/loopback HTTP 不增业务分支、不接收 caller paths |
+| Foundation/artifact/runtime | `CanonicalJsonCodecTest`, `CanonicalArtifactPolicyRegistryTest`, `CanonicalModuleArtifactStoreTest`, `CanonicalAnalysisStepArtifactStoreTest`, `CanonicalRunManifestStoreTest`, `RunExecutionStateTest`, `SourceAnalysisArchitectureTest`; integration：`CanonicalAnalysisStepArtifactStoreAtomicInstallIT` | 无分析步骤输出；冻结 typed refs、policy、store/run-manifest seam及`QUEUED/RUNNING/FINISHED/FAILED`单进程状态 |
+| Verified source inventory | `FrozenRequestAdmissionTest`, `VerifiedSourceIndexerTest`, `VerifiedSourceInventoryPublicationSpecifierTest` | `source-input.json`, `verified-snapshot.json`, `source-inventory.jsonl`, `verified-source-inventory-receipt.json`（3 semantic + receipt） |
+| Application discovery | `ApplicationProfileDetectorTest`, `SpringHttpEntryDiscovererTest`, `MapperCapabilityCatalogerTest`, `ApplicationDiscoveryPublicationSpecifierTest` | `application-profile.json`, `entry-points.jsonl`, `mapper-catalog.jsonl`, `capability-report.json`, `application-discovery-receipt.json`（4 + receipt） |
+| Program graphs | `CodeStructureGraphBuilderTest`, `CallGraphBuilderTest`, `ControlFlowGraphBuilderTest`, `DataFlowGraphBuilderTest`, `EvidenceGraphBuilderTest`, `ProgramGraphsPublicationSpecifierTest` | 五 graph JSON + `graph-index.json` + `graph-gaps.jsonl` + `program-graphs-receipt.json`（7 + receipt） |
+| Proven code facts | `FactCandidateEnumeratorTest`, `AtomicProofBuilderTest`, `ProvenCodeFactsPublicationSpecifierTest` | `proven-facts.json`, `proof-pack.json`, `gap-ledger.json`, `fact-accounting.json`, `proven-code-facts-receipt.json`（4 + receipt） |
+| Business flows | `EntryRootedFlowCompilerTest`, `EvidenceCapsuleProjectorTest`, `BusinessFlowsPublicationSpecifierTest` | `flow-slices.json`, `flow-coverage.json`, `entry-dispositions.jsonl`, `evidence-capsules.jsonl`, `flow-gaps.jsonl`, `business-flows-receipt.json`（5 + receipt） |
+| Flow interpretation | `RegistryProposalTaskCompilerTest`, `RegistryProposalRunnerTest`, `RepositoryInterpretationRegistryFreezerTest`, `FiniteKeyFlowTaskCompilerTest`, `InterpretationRunnerTest`, `FlowInterpretationPublicationSpecifierTest` | 三个 registry JSONL/registry JSON + task/round/receipt/candidate/disposition 五 JSONL + `flow-interpretation-receipt.json`（9 + receipt） |
+| Repository knowledge | `ProposalAdmissionEngineTest`, `AnchoredKnowledgeMergerTest`, `RepositoryKnowledgePublicationSpecifierTest` | `admitted-flow-meanings.jsonl`, `repository-business-knowledge.json`, `knowledge-conflicts.jsonl`, `knowledge-accounting.json`, `merged-gaps.json`, `repository-knowledge-receipt.json`（5 + receipt） |
+| Nine-section document | `NineSectionPlannerTest`, `PlanOnlyRendererTest`, `TypedTraceCompilerTest`, `CandidateRunArchiverTest` | 五 semantic → `nine-section-archive-manifest.json` → `nine-section-document-receipt.json` → root `run-manifest.json`；然后 observation-only M4 module receipt |
+| Exterior validation | `IndependentRunValidatorTest` | run 外 validation publication/receipt；不改 Candidate 或 analysis step publications |
+| Public/adapters | `RepositoryAnalysisAgentContractTest`, `RepositoryAnalysisCliAdapterTest`, `RepositoryAnalysisLoopbackHttpAdapterTest`; integration：`RepositoryAnalysisLoopbackHttpAdapterIT` | 同一 public request/query/result seam；`executeStep`只接精确上游publication refs并创建新执行；应用发现至仓库知识的分析步骤区间可`FINISHED`但result/root manifest为空，执行到九章文档才有四值result；CLI/loopback HTTP 不增业务分支、不接收 caller paths |
 
-Stage03 的“五 graph JSON”精确为 `code-structure-graph.json`, `call-graph.json`, `control-flow-graph.json`, `data-flow-graph.json`, `evidence-graph.json`。Stage06 的九项精确为 `registry-proposal-tasks.jsonl`, `registry-proposal-rounds.jsonl`, `registry-proposal-dispositions.jsonl`, `repository-interpretation-registry.json`, `flow-model-tasks.jsonl`, `model-rounds.jsonl`, `generation-receipts.jsonl`, `interpretation-candidates.jsonl`, `flow-interpretation-dispositions.jsonl`。
+程序图的“五 graph JSON”精确为 `code-structure-graph.json`, `call-graph.json`, `control-flow-graph.json`, `data-flow-graph.json`, `evidence-graph.json`。流程解释的九项精确为 `registry-proposal-tasks.jsonl`, `registry-proposal-rounds.jsonl`, `registry-proposal-dispositions.jsonl`, `repository-interpretation-registry.json`, `flow-model-tasks.jsonl`, `model-rounds.jsonl`, `generation-receipts.jsonl`, `interpretation-candidates.jsonl`, `flow-interpretation-dispositions.jsonl`。
 
-全 run reader-visible 基数保持：42 个 semantic stage payload + 8 个 stage receipt + 1 个 Stage08 archive manifest + 1 个 root run manifest = 52。Module artifacts/receipts 和 exterior validation publication 不混入这 52 项；新 stage execution 产生普通目标stage publication，不新增第53种正式输出。
+全 run reader-visible 基数保持：42 个 semantic 分析步骤 payload + 8 个语义 receipt + 1 个 `nine-section-archive-manifest.json` + 1 个 root run manifest = 52。Module artifacts/receipts 和 exterior validation publication 不混入这 52 项；新的分析步骤执行产生普通目标 publication，不新增第53种正式输出。
 
-## 7. 分阶段执行地图
+## 7. 按分析步骤执行地图
 
 ### Task 0：先完成并发布权威设计（代码硬前置）
 
-**文件：** `docs/DESIGN.md`, `docs/stages/01-...md` 至 `08-...md`, 各代理自有 `progress/target-*.md`
+**文件：** `docs/DESIGN.md`, `docs/analysis-steps/01-...md` 至 `08-...md`, 各代理自有 `progress/<task-slug>.md`
 
-- [ ] Sol/ultra 从自己 `progress/*.md` 记录的 Stage02 §8.0.1 工作断点完成 Round-3 P1 纠正，不改批准架构。
-- [ ] 运行 JSON/JSONL parse、ID grammar/reference、upstream closure、moduleKey/address、Stage08 DAG、fence、stale scan、`git diff --check`。
+- [ ] Sol/ultra 完成 `sources/source-code`、Maven/Java/package registry、八个语义分析步骤、Wire Reset 与 semantic receipt 设计，不改批准业务架构。
+- [ ] 运行 JSON/JSONL parse、ID grammar/reference、upstream closure、moduleKey/address、九章文档 DAG、fence、link/path/stale-name scan、`git diff --check`。
 - [ ] 独立 Sol/ultra 做固定 P0/P1 architecture + exact-fixture review；P0/P1 为零才能通过。
 - [ ] 父任务只提交/推送 authoritative docs 与各自 progress；确认 origin/main 含该 commit。
 - [ ] 在任何 POM/code/test task 开始前记录 docs commit SHA。
 
-### Task 1：工具链与 shared contracts foundation
+### Task 1：Wire Reset 与工具链/artifact/runtime foundation
 
-**计划文件：** `.mvn/toolchains.xml`, `pom.xml`, `src/main/java/com/linguan/codemd/target/contracts/`, `.../artifacts/`, 对应 `src/test/java` 与 `src/test/resources/target/foundation/`。这些文件在该future foundation work unit内默认授权；当前Round-3仍不得编辑。
+**计划文件：** `.mvn/toolchains.xml`, `pom.xml`, `src/main/java/org/sourceanalysis/app/artifact/`, `.../evidence/`, `.../runtime/`, `.../validation/`, 对应 `src/test/java` 与 `src/test/resources/analysis/foundation/`。实施先把整个 Agent 移到 `backend-agents/sources/source-code/`，设置 `org.sourceanalysis:source-code-analysis-agent`，删除 pre-reset 包/fixture，并建立旧 wire fail-closed 测试；不保留兼容 reader。
 
-- [ ] Luna/xhigh 先创建 `CanonicalJsonCodecTest`, `CanonicalArtifactPolicyRegistryTest`, `TargetArchitectureTest` 的最小 RED；每个 fixture 对应已发布 schema/identity，不创建平行合同。
+- [ ] Luna/xhigh 先创建 `SourceAnalysisArchitectureTest`, `PreResetWireRejectionTest`, `CanonicalJsonCodecTest`, `CanonicalArtifactPolicyRegistryTest` 的最小 RED；每个 fixture 对应已发布 schema/identity，不创建平行合同。
 - [ ] Terra/xhigh 只实现让这三个 selector GREEN 的 codec/policy/value/address/package rules。
-- [ ] Luna/xhigh 再创建 `CanonicalModuleArtifactStoreTest`, `CanonicalStageArtifactStoreTest`, `CanonicalRunManifestStoreTest`, `RunExecutionStateTest` 的 atomic/collision/reopen/partial-install 与四状态 RED。
+- [ ] Luna/xhigh 再创建 `CanonicalModuleArtifactStoreTest`, `CanonicalAnalysisStepArtifactStoreTest`, `CanonicalRunManifestStoreTest`, `RunExecutionStateTest` 的 atomic/collision/reopen/partial-install 与四状态 RED。
 - [ ] Terra/xhigh 实现三个 public deep seams、最小 single-process execution state 与共享 private atomic filesystem machinery；无 caller path/prefix。
 - [ ] Sol/ultra 只处理 unexpected RED、合同歧义、identity/DAG 偏差；需要架构变化即停止并请求用户批准。
 - [ ] 串行运行七个 direct selectors、`spotless:check`、`-Pquality -DskipTests verify`、dependency convergence；双轴 review 后由父任务提交/推送。
 
-### Task 2：Stage01
+### Task 2：已验证源码清单
 
 - [ ] Luna/xhigh 按 M1→M2→M3 顺序创建/收紧三个 exact selectors；包含隔离 Git CLI environment、complete/bounded denominator、media/symlink/gitlink、M3 三 semantic、receipt-last/partial-install。
-- [ ] Terra/xhigh 依次只改 `target/stage01/request-admission`, `source-index`, `publish`，每个 selector 单独 GREEN。
+- [ ] Terra/xhigh 依次只改 `org.sourceanalysis.app.capture.localgit` 与 `org.sourceanalysis.app.analysis.inventory`；runtime module keys仍是`request-admission`, `source-index`, `publish`，每个 selector 单独 GREEN。
 - [ ] Sol/ultra debug 只在 capture/object-format/identity 或跨 store 合同问题介入。
-- [ ] 输出四文件 strict golden；stage review/quality gate；独立 review；父任务提交/推送。
+- [ ] 输出四文件 strict golden；analysis step review/quality gate；独立 review；父任务提交/推送。
 
-### Task 3：Stage02
+### Task 3：应用发现
 
-- [ ] M1 `Stage02ApplicationProfileDetectorTest` 先 RED/GREEN，固定 closed signals、profile ref、coverage input。
+- [ ] M1 `ApplicationProfileDetectorTest` 先 RED/GREEN，固定 closed signals、profile ref、coverage input。
 - [ ] M1 完成后，最多两个代理并行：Luna 为 M2 建 RED，同时 Terra 完成已审查的 M1 GREEN 修正；M2 与 M3 不在同一 mutable fixture 文件并发编辑。
-- [ ] M2 `Stage02SpringHttpEntryDiscovererTest` 与 M3 `Stage02MapperCapabilityCatalogerTest` 分别 RED/GREEN，统一 typed `SourceLocatorV1`/`SourceExcerptV1`/`CapabilitySiteV2`。
-- [ ] M4 `Stage02PublicationSpecifierTest` 验四 semantic、全 denominator、receipt-last；stage gate/review/提交/推送。
+- [ ] M2 `SpringHttpEntryDiscovererTest` 与 M3 `MapperCapabilityCatalogerTest` 分别 RED/GREEN，统一 typed `SourceLocatorV1`/`SourceExcerptV1`/`CapabilitySiteV2`。
+- [ ] M4 `ApplicationDiscoveryPublicationSpecifierTest` 验四 semantic、全 denominator、receipt-last；analysis step gate/review/提交/推送。
 
-### Task 4：Stage03
+### Task 4：程序图
 
 - [ ] 按 M1→M5 graph dependency 顺序逐 selector RED/GREEN；JavaParser solver 只能读 verified bytes 和 frozen profiles。
 - [ ] M2/M3/M4 可在共同 M1 IDs/schema 固定后做“Luna 下一模块 RED / Terra 前一模块 GREEN”的双代理流水，不并发重写共享 golden。
 - [ ] M5 evidence graph 证明每 node/edge locator/provenance；M6 publication 证明七 semantic direct lineage、root/receipt。
 - [ ] 七输出 + receipt gate；独立 review；父任务提交/推送。
 
-### Task 5：Stage04
+### Task 5：已证明代码事实
 
-- [ ] Luna 为 candidate/atom/disposition closure 建 `Stage04FactCandidateEnumeratorTest` RED；Terra GREEN。
-- [ ] Luna 为 Proof rule/root/closed atom/Gap 守恒建 `Stage04AtomicProofBuilderTest` RED；Terra GREEN。
-- [ ] M3 publication 只组合四 semantic；stage store receipt-last；stage gate/review/提交/推送。
+- [ ] Luna 为 candidate/atom/disposition closure 建 `FactCandidateEnumeratorTest` RED；Terra GREEN。
+- [ ] Luna 为 Proof rule/root/closed atom/Gap 守恒建 `AtomicProofBuilderTest` RED；Terra GREEN。
+- [ ] M3 publication 只组合四 semantic；analysis step store receipt-last；analysis step gate/review/提交/推送。
 
-### Task 6：Stage05
+### Task 6：业务流程
 
-- [ ] `Stage05EntryRootedFlowCompilerTest` 覆盖每 Stage02 entry 唯一 COMPILED/GAP/EXCLUDED、outcomes/branches/calls/facts accounting。
-- [ ] `Stage05EvidenceCapsuleProjectorTest` 覆盖 raw continuous excerpts、projection obligations、minimal closure、每 compiled flow 恰一 capsule。
-- [ ] `Stage05FlowPublicationSpecifierTest` 覆盖五 semantic 与 0Flow 非空 accounting；stage gate/review/提交/推送。
+- [ ] `EntryRootedFlowCompilerTest` 覆盖每 ApplicationDiscovery entry 唯一 COMPILED/GAP/EXCLUDED、outcomes/branches/calls/facts accounting。
+- [ ] `EvidenceCapsuleProjectorTest` 覆盖 raw continuous excerpts、projection obligations、minimal closure、每 compiled flow 恰一 capsule。
+- [ ] `BusinessFlowsPublicationSpecifierTest` 覆盖五 semantic 与 0Flow 非空 accounting；analysis step gate/review/提交/推送。
 
-### Task 7：Stage06
+### Task 7：流程解释
 
 - [ ] R0 compiler/runner/freeze 三 selector 严格串行冻结 registry；Provider fake 记录 exact request bytes、configured/expected/observed runtime、round与generation receipt identity。
 - [ ] R1/R2 task compiler 保存 canonical provider input bytes 或其直接内容寻址 ref，作为可观察业务输入与下游复用格式；runner 只从已验证artifact重开，不依赖内存草稿。
 - [ ] M6 publication 验九 semantic、`E+2R` task/disposition双射、R0/R1/R2 shard denominator=`E/R/R`和READY/GAP/FAILED守恒；不把 Provider nondeterminism 混入 identity 规则。
-- [ ] Provider/runtime failure integration 属重型 selector，单独串行；started调用失败必须令run失败且不得自动重试/切换；stage gate/review/提交/推送。
+- [ ] Provider/runtime failure integration 属重型 selector，单独串行；started调用失败必须令run失败且不得自动重试/切换；analysis step gate/review/提交/推送。
 
-### Task 8：Stage07
+### Task 8：仓库知识
 
 - [ ] Admission selector 覆盖 KEEP/NARROW/DROP/NEEDS_EVIDENCE；NARROW 保持 `selectedKey` 不变，只收窄 decision/basis/meaning eligibility。
 - [ ] Merge selector 覆盖 typed anchors、owner、conflict、facts/meanings/gaps/accounting 单一仓库快照。
-- [ ] Publication selector 覆盖五 semantic、lineage 与 receipt；stage gate/review/提交/推送。
+- [ ] Publication selector 覆盖五 semantic、lineage 与 receipt；analysis step gate/review/提交/推送。
 
-### Task 9：Stage08 与 validation
+### Task 9：九章文档与 validation
 
 - [ ] Planner/renderer/trace 三 selector 逐个 RED/GREEN；renderer 仅吃 plan bytes，确定性复现九个 H2 UTF-8/LF bytes；trace 保存完整 registry→meaning→proof→source 链。
-- [ ] Archiver selector 验证 five semantic → archive → stage receipt → root manifest → observation-only M4；任一partial install不得被误认成功，完整安装可fresh reopen且DAG不成环。
-- [ ] `IndependentRunValidatorTest` 从明确的八个 typed stage publication refs、run manifest、request/schema/source refs 重开；只写幂等 validation artifacts。
-- [ ] Stage08 与 exterior validator 分开 review，但在同一完整 DAG gate 后才提交/推送。
+- [ ] Archiver selector 验证 five semantic → archive → analysis step receipt → root manifest → observation-only M4；任一partial install不得被误认成功，完整安装可fresh reopen且DAG不成环。
+- [ ] `IndependentRunValidatorTest` 从明确的八个 typed analysis step publication refs、run manifest、request/schema/source refs 重开；只写幂等 validation artifacts。
+- [ ] 九章文档与 exterior validator 分开 review，但在同一完整 DAG gate 后才提交/推送。
 
 ### Task 10：public seam、CLI 与 loopback HTTP adapters
 
-- [ ] `RepositoryAnalysisAgentContractTest` 先冻结 request-v2、`StageExecutionRequest`、sealed STAGE/VALIDATION publication views、无 caller path；证明Stage07新执行可直接消费经验证Stage06 refs且不触发Stage01–06，并验证Stage07-only `FINISHED/analysisResult=null/no run manifest`与Stage08完成态互斥。
+- [ ] `RepositoryAnalysisAgentContractTest` 先冻结 request-v2、`AnalysisStepExecutionRequest`、sealed `ANALYSIS_STEP | VALIDATION` publication views、无 caller path；证明仓库知识新执行可直接消费经验证的流程解释 refs且不触发前六个分析步骤，并验证仓库知识-only `FINISHED/analysisResult=null/no run manifest`与九章文档完成态互斥。
 - [ ] CLI adapter 只做 Picocli parsing/rendering；invalid request/exit code/stdout-stderr golden；不另开 store 或 source path。
 - [ ] Loopback HTTP adapter 复用同一 application seam；schema/status/idempotency mapping；无网络型 integration，仅本机 ephemeral port 且串行。
 - [ ] Shade release 包 local `--help`、invalid request、fixture query smoke；不 capture、不 Provider、不外网。
@@ -328,7 +330,7 @@ Stage03 的“五 graph JSON”精确为 `code-structure-graph.json`, `call-grap
 ### Task 11：最终验收
 
 - [ ] 从 clean checkout 和已批准 JDK/Maven toolchain 开始；先离线 direct/regression selectors，再串行 integration/quality/release。
-- [ ] 对 52 个 reader-visible outputs、module/stage/run receipts和validation artifacts做 fresh-process reopen，并验证Stage06→Stage07显式新执行。
+- [ ] 对 52 个 reader-visible outputs、module/analysis step/run receipts和validation artifacts做 fresh-process reopen，并验证FlowInterpretation→RepositoryKnowledge显式新执行。
 - [ ] 重跑 identity property tests、partial-install matrix、bounded/complete analysis-result matrix、CLI/HTTP contract tests。
 - [ ] 生成 SBOM；只有漏洞DB feed、所需credentials与持久cache环境门满足后才运行并报告OWASP result，否则明确记为“环境未就绪，未执行”，不能写PASS。
 - [ ] 独立 Standards/Spec 双轴 review；零 P0/P1；父任务提交/推送最终验收文档/必要修正。
@@ -339,11 +341,11 @@ Stage03 的“五 graph JSON”精确为 `code-structure-graph.json`, `call-grap
 
 1. 同时最多两个活跃代理，包括 orchestrator；任何 Maven 重型命令开始前，另一代理不得运行 Maven。
 2. Luna/xhigh 负责 RED：先把权威记录/identity/partial-install/negative case 变成最小直接测试；不得先写 production。
-3. Terra/xhigh 负责 GREEN：只编辑该 selector 所属 implementation/package；不得顺手改下一 stage、POM 或权威 schema。
+3. Terra/xhigh 负责 GREEN：只编辑该 selector 所属 implementation/package；不得顺手改下一 analysis step、POM 或权威 schema。
 4. Sol/ultra 负责 unexpected RED/debug、跨模块一致性和 review；不得把本地 bug 包装成新架构。发现需改已批准合同立即停止并请求用户决定。
-5. 每个代理在编辑前创建自己唯一的 progress，例如 Stage02 M2 使用 `progress/target-stage02-http-entry.md`；记录 owner、范围、exact selectors、RED/GREEN 输出、文件、阻塞、下一动作。代理不得共写同一 progress。
-6. 每个模块安全边界更新 progress；每个 stage 完成后运行 direct selectors、doc/golden gates、质量 gate、独立 review。
-7. 代码任务只在 authoritative docs 已发布到 origin/main 后开始。每个 toolchain/stage/adapters work unit 独立 review、独立 commit、独立 push；不得把不相关 dirty changes 混入。
+5. 每个代理在编辑前创建自己唯一的 progress，例如应用发现 M2 使用 `progress/source-analysis-application-discovery-http-entry.md`；记录 owner、范围、exact selectors、RED/GREEN 输出、文件、阻塞、下一动作。代理不得共写同一 progress。
+6. 每个模块安全边界更新 progress；每个 analysis step 完成后运行 direct selectors、doc/golden gates、质量 gate、独立 review。
+7. 代码任务只在 authoritative docs 已发布到 origin/main 后开始。每个 toolchain/analysis step/adapters work unit 独立 review、独立 commit、独立 push；不得把不相关 dirty changes 混入。
 8. commit/非强制push在既定项目范围内默认授权，但仍由拥有完整diff和发布gate的父任务统一完成；实施子代理不私自混入或发布局部状态。
 9. 测试范围遵循 scoped AGENTS：默认只跑新增或直接覆盖当前改变的 selector；全仓 suite 需要用户在当轮明确要求。
 
@@ -351,26 +353,26 @@ Stage03 的“五 graph JSON”精确为 `code-structure-graph.json`, `call-grap
 
 以下为 **APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED** 的工程估算，假定规格在进入 Task 1 前稳定、最多两个代理、重型 Maven 串行，且依赖cache、feed/JDK等环境门等待时间不计入。估算是连续 wall-clock elapsed，不是两名代理工时相加。
 
-| 阶段 | 连续 elapsed | 包含 |
+| 分析步骤 | 连续 elapsed | 包含 |
 | --- | ---: | --- |
 | 工具链 foundation | 8–12 小时 | 批准后的 POM、profiles、codec/policy、三 stores、最小四状态execution、architecture tests、quality gate |
-| Stage01–05 | 58–82 小时 | 3+4+6+3+3 个模块的 RED/GREEN、goldens、stage review/commit/push |
-| Stage06–08 + validation + adapters | 38–54 小时 | 6+3+4 模块、一个 exterior validator、显式stage execution、public/CLI/HTTP、Provider失败门 |
+| 已验证源码清单至业务流程 | 58–82 小时 | 3+4+6+3+3 个模块的 RED/GREEN、goldens、analysis step review/commit/push |
+| 流程解释至九章文档 + validation + adapters | 38–54 小时 | 6+3+4 模块、一个 exterior validator、显式analysis step execution、public/CLI/HTTP、Provider失败门 |
 | 最终验收 | 10–14 小时 | clean/offline fresh-reopen、52-output reopen、quality/release/SBOM、独立双轴 review |
 | **active v0总计** | **114–162 连续小时** | 约 15–21 个 8 小时工作日；不含等待用户审批、下载或外部 CI 排队，也不含同一run自动恢复TODO |
 
-关键路径不可压缩为并行 stage：
+关键路径不可压缩为并行 analysis step：
 
-`authoritative docs review/push → toolchain/contracts/stores → Stage01 → Stage02 → Stage03 → Stage04 → Stage05 → Stage06 → Stage07 → Stage08 → validation → public adapters → final acceptance`。
+`authoritative docs review/push → toolchain/contracts/stores → VerifiedSourceInventory → ApplicationDiscovery → ProgramGraphs → ProvenCodeFacts → BusinessFlows → FlowInterpretation → RepositoryKnowledge → NineSectionDocument → validation → public adapters → final acceptance`。
 
 允许的双代理并行仅发生在稳定接口两侧：
 
 - Luna 为“下一模块”写 RED 时，Terra 为“上一模块已审查 RED”写 GREEN；不得并发修改同一 fixture/schema/progress。
-- Stage02 M2/M3 的独立输入 fixture、Stage03 已冻结 M1 后的相邻 graph module、CLI/HTTP adapter RED 可与 core public seam 的最终 GREEN 交错。
+- ApplicationDiscovery M2/M3 的独立输入 fixture、ProgramGraphs 已冻结 M1 后的相邻 graph module、CLI/HTTP adapter RED 可与 core public seam 的最终 GREEN 交错。
 - 文档/fixture mechanical validation 可与非重型代码阅读并行；不能与重型 Maven 并行。
-- SpotBugs、PMD、Failsafe、OWASP、Shade/release、完整 stage partial-install matrix 必须串行。
+- SpotBugs、PMD、Failsafe、OWASP、Shade/release、完整 analysis step partial-install matrix 必须串行。
 
-若实际连续 elapsed 超过某阶段上界 25%，owner 必须先更新 progress，列明是合同缺口、fixture 返工、工具兼容还是环境等待，再由 Sol/ultra 判断是否需要重新估算；不得通过跳过 gate 追赶时间。
+若实际连续 elapsed 超过某分析步骤上界 25%，owner 必须先更新 progress，列明是合同缺口、fixture 返工、工具兼容还是环境等待，再由 Sol/ultra 判断是否需要重新估算；不得通过跳过 gate 追赶时间。
 
 ## 10. 默认授权、按需/环境门与平台边界
 
@@ -396,7 +398,7 @@ Stage03 的“五 graph JSON”精确为 `code-structure-graph.json`, `call-grap
 - 已覆盖 Git、Java 符号、Maven model、TOML、JSON Schema、CLI 和五类测试库。
 - 已覆盖 Enforcer、Toolchains、Compiler、Surefire/Failsafe、Spotless/gjf、SpotBugs、PMD、dependency analysis、CycloneDX、OWASP、Javadoc、Shade。
 - 已覆盖 Java、JSON/JSONL、TOML/config、Markdown、XML 的 parser/linter/formatter/schema 规则与 canonical-byte 例外。
-- 已覆盖 Stage01–08、exterior validation、显式stage execution、public/CLI/HTTP、52 项 stage/run outputs、直接 selectors、docs-only publish gate、review/commit/push。
+- 已覆盖 八个分析步骤、exterior validation、显式analysis step execution、public/CLI/HTTP、52 项 analysis step/run outputs、直接 selectors、docs-only publish gate、review/commit/push。
 - 已覆盖双代理限制、重型 Maven 串行、Luna RED/Terra GREEN/Sol debug、每代理独立 progress、连续工期与审批等待分离。
 
 ### 11.2 工具重叠
@@ -421,11 +423,11 @@ Stage03 的“五 graph JSON”精确为 `code-structure-graph.json`, `call-grap
 
 用户已批准以下核心包；其范围内下载、POM、格式化、直接测试、提交与非强制推送不再重复询问，仍服从第10节边界：
 
-1. 保持隔离Git CLI为Stage01 canonical capture，禁止自造Git plumbing；JGit暂不入POM，只有具体cross-check调用者时按需加入并验证。
+1. 保持隔离Git CLI为VerifiedSourceInventory canonical capture，禁止自造Git plumbing；JGit暂不入POM，只有具体cross-check调用者时按需加入并验证。
 2. 采用 JavaParser Symbol Solver 3.28.2、Maven Model 3.9.11、Tomlj 1.1.1、networknt 2.0.1、Picocli 4.7.7，并保持 Jackson 2.21.4 收敛。
 3. 采用 JUnit 5.13.4、AssertJ 3.27.7、jqwik 1.10.1、ArchUnit 1.5.0、Awaitility 4.3.0；不预装 Mockito。
 4. 采用第 3 节 Maven 核心质量矩阵；PMD/SpotBugs 分工，CPD 非阻塞，CI check-only。
 5. 采用第4节通用格式规则；Taplo、markdownlint-cli2、Maven Wrapper按具体调用者启用，OWASP feed/JDK安装按环境事实启用，不再重复请求用户批准。
-6. 采用 docs-only publish gate、最多双代理、重型 Maven 串行、逐 stage RED/GREEN/review/commit/push 和 114–162 小时 active v0 连续 elapsed 预算；同一run自动恢复的56–96小时独立留在TODO，不进入实现计划。
+6. 采用 docs-only publish gate、最多双代理、重型 Maven 串行、逐 analysis step RED/GREEN/review/commit/push 和 114–162 小时 active v0 连续 elapsed 预算；同一run自动恢复的56–96小时独立留在TODO，不进入实现计划。
 
 批准后的第一项动作仍不是改 POM：先从各Agent自己的progress工作断点完成当前权威设计修正、独立复审并发布 docs；随后才开始只含工具链 foundation 的独立实现 work unit。

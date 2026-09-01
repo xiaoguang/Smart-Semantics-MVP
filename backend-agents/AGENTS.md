@@ -13,13 +13,34 @@
 ## Source ownership
 
 - `sources/mysql/`: frozen database material to nine-section candidate.
-- `sources/github-code/`: frozen GitHub code to nine-section candidate.
+- `sources/source-code/`: frozen source code to one repository-level
+  nine-section candidate. Its target name is source-oriented rather than
+  hosting-provider-oriented.
 - `sources/business-docs/`: frozen business-document material to candidate.
 - `sources/erp-policy/`: frozen ERP policy material to candidate.
 - `sources/terminology-graph/`: frozen terminology graph to candidate.
 - Implementation work is source-scoped: work only in the source directory
   named by the user. Repository-structure or shared-contract edits require
   explicit scope in addition to a source assignment.
+- The pre-reset implementation currently remains under `sources/github-code/`.
+  Only an explicitly approved docs-only naming work unit may describe the
+  transition there. The implementation Wire Reset moves the complete source
+  Agent to `sources/source-code/`; it does not leave an alias, symlink,
+  compatibility reader, or second implementation at the old path.
+- The target Maven coordinate is
+  `org.sourceanalysis:source-code-analysis-agent`, the display name is
+  `Source Code Analysis Agent`, and the Java root is `org.sourceanalysis.app`.
+  Its eight closed semantic package/key pairs are
+  `org.sourceanalysis.app.analysis.inventory` / `verified-source-inventory`,
+  `org.sourceanalysis.app.analysis.discovery` / `application-discovery`,
+  `org.sourceanalysis.app.analysis.graph` / `program-graphs`,
+  `org.sourceanalysis.app.analysis.fact` / `proven-code-facts`,
+  `org.sourceanalysis.app.analysis.flow` / `business-flows`,
+  `org.sourceanalysis.app.analysis.interpretation` / `flow-interpretation`,
+  `org.sourceanalysis.app.analysis.knowledge` / `repository-knowledge`, and
+  `org.sourceanalysis.app.analysis.document` / `nine-section-document`.
+  Numerical prefixes order only their documentation and `steps/` runtime
+  directories; see the source-scoped instructions for the exact paths.
 
 ## Shared contract seam
 

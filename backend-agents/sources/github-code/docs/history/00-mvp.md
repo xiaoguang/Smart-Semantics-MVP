@@ -7,7 +7,7 @@
 - 文档职责：记录阶段 00 实际实现、测试、固定样例审计和它们对目标设计的反馈；本文不是另一套总体架构，也不是运行日志。
 - 总体架构：[GitHub Code Agent 总体设计](../DESIGN.md)。
 - 九章权威：[NineSectionProfile](../../../../../shared/source-agent-contracts/README.md)。
-- 当前目标路线：[01 冻结来源](01-freeze-source.md) → [02 发现应用与入口](02-discover-application-and-entries.md) → [03 五张程序图](03-build-five-program-graphs.md) → [04 事实与证明](04-prove-code-facts.md) → [05 流程与 Capsule](05-compile-business-flows.md) → [06 单流程解释](06-interpret-one-flow-at-a-time.md) → [07 准入与知识合并](07-admit-and-merge-business-knowledge.md) → [08 九章与运行归档](08-build-nine-section-document-and-archive.md)。
+- 当前目标路线：[01 冻结来源](../analysis-steps/01-verified-source-inventory.md) → [02 发现应用与入口](../analysis-steps/02-application-discovery.md) → [03 五张程序图](../analysis-steps/03-program-graphs.md) → [04 事实与证明](../analysis-steps/04-proven-code-facts.md) → [05 流程与 Capsule](../analysis-steps/05-business-flows.md) → [06 单流程解释](../analysis-steps/06-flow-interpretation.md) → [07 准入与知识合并](../analysis-steps/07-repository-knowledge.md) → [08 九章与运行归档](../analysis-steps/08-nine-section-document.md)。
 
 本 POC 已证明：人工 Flow Manifest 能驱动文件/Evidence 哈希与引用校验，两种隔离测试能分别经过 provider-free baseline 或 recorded R1/R2，再由程序输出固定九章并归档一份 document.md 与七个 JSON sidecar。
 
@@ -138,7 +138,7 @@
 | `SourceAnalyzer` | 当前目标 04 的历史输入 | `analyze(AnalysisRequest)`；目录级 Phase 2 CodeFact/Condition/Gap | canonical Proof、Stage 04 assets、Candidate |
 | `ModelRuntimeReceiptAdmission` | 当前目标 06/08 的历史输入 | `admit(policy, receipt)`；四个 runtime 字段逐字比较 | `generate`/CLI 接线、task identity、Adapter/Auth/upstream 分离 |
 
-上表只记录 POC 邻接 seam；当前规范分别见 [02 应用与入口](02-discover-application-and-entries.md)、[03 五图](03-build-five-program-graphs.md)、[04 事实与证明](04-prove-code-facts.md)、[06 单流程解释](06-interpret-one-flow-at-a-time.md)和[08 九章与归档](08-build-nine-section-document-and-archive.md)。seam 的存在不表示对应目标阶段已实现。
+上表只记录 POC 邻接 seam；当前规范分别见 [02 应用与入口](../analysis-steps/02-application-discovery.md)、[03 五图](../analysis-steps/03-program-graphs.md)、[04 事实与证明](../analysis-steps/04-proven-code-facts.md)、[06 单流程解释](../analysis-steps/06-flow-interpretation.md)和[08 九章与归档](../analysis-steps/08-nine-section-document.md)。seam 的存在不表示对应目标阶段已实现。
 
 ## 5. 两条 POC 隔离测试路径
 
@@ -537,11 +537,11 @@ mvn -q -Dtest=ManifestEvidenceVerificationTest,InterpretationAdmissionGateTest,N
 
 本 POC 不再向一个临时“下一阶段”文件交接。仍有效的反馈已经分别进入：
 
-- [01 冻结来源](01-freeze-source.md)：统一 path/symlink、snapshot identity 与立即持久化；
-- [03 五张程序图](03-build-five-program-graphs.md)：把诊断式结构/调用信息升级为五个一等图产物；
-- [04 事实与证明](04-prove-code-facts.md)：逐 atom semantic closure，拒绝空 LockedFact 或借用 Evidence；
-- [05 流程与 Capsule](05-compile-business-flows.md)：自动入口根 Flow 和最小模型阅读包；
-- [08 九章与运行归档](08-build-nine-section-document-and-archive.md)：plan-only renderer、完整 Trace、逐阶段资产和基于validated upstream publications的显式新stage执行。
+- [01 冻结来源](../analysis-steps/01-verified-source-inventory.md)：统一 path/symlink、snapshot identity 与立即持久化；
+- [03 五张程序图](../analysis-steps/03-program-graphs.md)：把诊断式结构/调用信息升级为五个一等图产物；
+- [04 事实与证明](../analysis-steps/04-proven-code-facts.md)：逐 atom semantic closure，拒绝空 LockedFact 或借用 Evidence；
+- [05 流程与 Capsule](../analysis-steps/05-business-flows.md)：自动入口根 Flow 和最小模型阅读包；
+- [08 九章与运行归档](../analysis-steps/08-nine-section-document.md)：plan-only renderer、完整 Trace、逐阶段资产和基于validated upstream publications的显式新stage执行。
 
 后续实现只能按当前目标设计新增 production 能力；不得恢复人工 Flow Manifest、provider-free baseline 或旧八文件 archive 作为并列主线。
 

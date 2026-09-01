@@ -42,7 +42,7 @@ git reflog --date=iso-strict --format='%h %gD %gs %cd'
 
 Foundation 的直接门禁通过 8 个测试；Stage01 的 Capture、M1、M2、M3 直接 selector 通过 9 个测试。证据见 [Foundation Progress](../../progress/target-foundation-terra-green.md)、[Capture Progress](../../progress/target-stage01-capture.md)、[Source Index Progress](../../progress/target-stage01-source-index.md) 和 [Publication Progress](../../progress/target-stage01-publication.md)。
 
-但是，这个结果是“持久化 synthetic vertical”，不是 Stage01 最终验收。当前设计审计明确保留以下工作：完整 run 输入注册和编排、预算分片、全部安全反例，以及固定 jshERP 完整 commit 的端到端离线运行；小型 repository 不能获得完整仓库完成资格。证据见 [Stage01 详细设计的当前实现差距](../stages/01-freeze-source.md#9-当前实现差距审计) 和 [总体设计当前审计](../DESIGN.md#15-当前实现审计与目标设计分开)。
+但是，这个结果是“持久化 synthetic vertical”，不是 Stage01 最终验收。当前设计审计明确保留以下工作：完整 run 输入注册和编排、预算分片、全部安全反例，以及固定 jshERP 完整 commit 的端到端离线运行；小型 repository 不能获得完整仓库完成资格。证据见 [Stage01 详细设计的当前实现差距](../analysis-steps/01-verified-source-inventory.md#9-当前实现差距审计) 和 [总体设计当前审计](../DESIGN.md#15-当前实现审计与目标设计分开)。
 
 所以，原来 Foundation `8–12h` 加 Stage01 `10–14h` 的合计 `18–26h`，与已交付纵切的 `9.08h` 相比，当前完成速度约为原估算的 **35%–50%**。这个比例不能直接外推为全部后续工作只需原计划一半：Foundation 仍缺 Run Manifest Store、最小 execution state 与其直接验收；Stage01 的完整仓库验收留在最终 Z 批次，而且 Stage03 数据流、Stage05 全仓流程闭合、Stage06 模型任务守恒和 Stage08 Trace 的语义难度显著更高。
 
