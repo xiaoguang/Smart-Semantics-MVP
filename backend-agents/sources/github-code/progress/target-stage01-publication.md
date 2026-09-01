@@ -14,6 +14,8 @@
 - Added a path-free immutable input registry for exact analysis/frozen request bytes.
 - Reopened M1/M2, checked controls/status/reference closure, published exactly the required three semantic files through M3, then installed the public Stage01 set through the Stage store.
 - Verified M3 module payload count and the Stage store's separate receipt-last set.
+- Committed the validated Foundation + Stage01 vertical as `d497d14` and pushed it to
+  `origin/main` after fetching the confirmed `e8b64cb` ancestor.
 
 ## Current state
 
@@ -44,8 +46,9 @@
 
 ## Exact next action
 
-- Commit the validated Foundation + Stage01 implementation and push the resulting commit to `origin/main` as required by the user.
+- Begin Stage02 from the pushed main baseline; keep Stage01's unrun full-jshERP and adversarial
+  acceptance explicitly separate from this completed implementation vertical.
 
 ## Resume checks
 
-- Verify the stage commit reached `origin/main`; then begin the Stage02 detailed design/readiness check from the updated main baseline.
+- Confirm `origin/main` resolves to `d497d14` or a later fast-forward before starting Stage02.

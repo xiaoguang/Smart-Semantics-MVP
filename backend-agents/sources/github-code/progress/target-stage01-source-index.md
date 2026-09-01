@@ -60,9 +60,9 @@
 
 ## Exact next action
 
-- Commit the validated Foundation + Stage01 implementation and push it to main. A later integration
-  work item must add the full jshERP and broader Stage01 adversarial acceptance described in the
-  durable Stage01 design; this completion record does not claim those unrun checks.
+- Stage01 was committed as `d497d14` and pushed to `origin/main`. A later integration work item
+  must add the full jshERP and broader Stage01 adversarial acceptance described in the durable
+  Stage01 design; this completion record does not claim those unrun checks.
 
 ## Resume checks
 
