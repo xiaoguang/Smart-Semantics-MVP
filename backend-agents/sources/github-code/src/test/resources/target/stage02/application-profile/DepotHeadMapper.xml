@@ -1,7 +1,0 @@
-<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
-  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="example.depot.DepotHeadMapper">
-  <update id="updateByExampleSelective">
-    update depot_head set status = #{record.status}
-  </update>
-</mapper>

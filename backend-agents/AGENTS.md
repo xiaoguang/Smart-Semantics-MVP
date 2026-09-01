@@ -22,11 +22,12 @@
 - Implementation work is source-scoped: work only in the source directory
   named by the user. Repository-structure or shared-contract edits require
   explicit scope in addition to a source assignment.
-- The pre-reset implementation currently remains under `sources/github-code/`.
-  Only an explicitly approved docs-only naming work unit may describe the
-  transition there. The implementation Wire Reset moves the complete source
-  Agent to `sources/source-code/`; it does not leave an alias, symlink,
-  compatibility reader, or second implementation at the old path.
+- The approved Wire Reset has moved this Agent to `sources/source-code/` and
+  removed the pre-reset implementation. `sources/github-code/` may appear
+  only in Git history, preserved progress/history documents, implementation
+  plans that describe the completed move, or explicit unsupported-wire test
+  data. It is never an active path, alias, symlink, compatibility reader, or
+  second implementation.
 - The target Maven coordinate is
   `org.sourceanalysis:source-code-analysis-agent`, the display name is
   `Source Code Analysis Agent`, and the Java root is `org.sourceanalysis.app`.
