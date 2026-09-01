@@ -2,205 +2,171 @@
 
 > 总体设计权威：[GitHub Code Agent 总体设计](../DESIGN.md)。
 
+本文示例严格使用 DESIGN §1.3 的 `NARRATIVE_ILLUSTRATION | STRUCTURAL_WIRE_SPECIMEN | STRICT_REPLAY_GOLDEN` 分类。`NARRATIVE_ILLUSTRATION` 只帮助理解，允许省略字段，**不是 schema-valid wire record、identity preimage 或 replay golden**；字段表、闭集、nullable 规则、排序和 identity 公式本身是 exact 合同，但不是第四种示例标签。没有标为 `STRICT_REPLAY_GOLDEN` 的 ID、digest 或 size 不得复制为 golden。
+
 ## 1. 为什么存在
 
-模型提案不自动成为业务知识。即使两个 Flow 都选择“单据”这个词，它们也可能指不同 Java type、SQL table 或请求对象；反过来，同一个 jsh_depot_head 技术锚点也可能被不同流程用不同措辞描述。
+模型提案不自动成为业务知识。即使两个 Flow 都选择“单据”这个词，它们也可能指不同 Java type、SQL table 或请求对象；反过来，同一个 `jsh_depot_head` 技术锚点也可能被不同流程用不同措辞描述。
 
-本阶段由程序重新计算**完整 FlowSlice 集合中每个解释或失败 disposition**的合法性，用技术锚点跨 Flow 合并对象、关系、指标和冲突，并把 Proven Fact、Admitted Interpretation 和 Gap 分层保存。无论仓库有多少 Flow，Stage07 只产生**一份且仅一份 RepositoryKnowledge**；最终决定属于程序，不属于模型。DepotHead只是合并输入中的一个slice。
+Stage 07 是 Stage 05 全部 Flow 与单一仓库知识之间的程序化 seam。它必须为 **Stage 05 的每一个 `flowSliceId` 写恰一个 `FlowAdmissionDecisionV1`**：model-eligible Flow 重验 Stage 06 disposition/candidate；model-ineligible Flow 没有 Stage 06 disposition，直接使用带 Stage 05 ineligibility Gap 的技术回退。随后程序按 proven technical anchor 合并 Facts、meanings、fallbacks、relations、metrics、conflicts 和 Gaps。无论仓库有多少 Flow，本阶段只产生**一份且仅一份 RepositoryKnowledge**；最终决定属于程序，不属于模型。
 
-## 2. 具体输入与 DepotHead 例子
+## 2. 具体输入与 DepotHead 证据边界
 
-输入：
+输入全部是已安装、可 fresh-reopen 的 canonical artifacts：
 
-> Walkthrough 示例声明 — **TARGET_ILLUSTRATIVE_NOT_CURRENT_OUTPUT**：本文件用未来闭合 Flow 的提案展示准入/merge artifact 接力；当前 fixed slice 只有确定性范围与 Gap，技术 unknown 只用 nullable/UNRESOLVED/Gap/fatal 表达。
+- Stage 01–04 的 source scope、program evidence、Facts、Proof、Gaps 和 coverage；
+- Stage 05 的完整 `flowSliceIds`、Flow/Capsule、`modelEligibleFlowSliceIds`、`modelIneligibleFlowSliceIds`、逐 ineligible Flow 的非空 `modelIneligibilityGapIds` 与 coverage；
+- Stage 06 仅针对 model-eligible Flow 的九项 canonical semantic artifacts 与 `stage-receipt.json`：R0/R1/R2 tasks、实际Provider rounds与generation receipts、唯一 `RepositoryInterpretationRegistry`、registry proposal dispositions、interpretation candidates 和 `FlowInterpretationDisposition`。程序直接从两类disposition中的 `ModelTaskDispositionV1` 验证全部planned task，而不读取任何运行时队列或进程状态；
+- 冻结的 `TechnicalDisplayRegistry`、knowledge/admission profiles、schema bundle、artifact policy 和预算。
 
-- Stage 04 Facts/Proof/Gaps；
-- Stage 05 Flow/Capsule/coverage；
-- Stage 06 canonical R0/R1/R2 tasks/rounds/receipts、`RepositoryInterpretationRegistry`、registry proposals、interpretation proposals与每Flow dispositions；
-- 冻结 TechnicalDisplayRegistry，以及 Stage06程序冻结的 repository-specific BusinessTerm/Claim/Question provisional keys；
-- knowledge/admission profiles 和预算。
+Stage 05 的两个 eligibility 分子必须不交叠且 union 精确等于全部 Flow。Stage 06 disposition 的 Flow ID 集必须精确等于 Stage 05 `modelEligibleFlowSliceIds`；model-ineligible Flow 出现在任何 Stage 06 task、round、candidate 或 disposition 中都是 fatal。
 
-未来 DepotHead 模型可能提出：
+DepotHead 的固定真实样例当前仍是 Stage 05 Gap、0 Flow、0 Capsule，所以 Stage 07 不得制造业务 meaning。它仍发布一份仓库级 technical/Gaps knowledge、空 Flow decision 集和 Stage 01–07 coverage draft。
+
+**示例分类：NARRATIVE_ILLUSTRATION / NOT_SCHEMA_VALID。** 下列只说明当前审计结果，省略全部 wire metadata 与 identity 字段：
 
 ~~~json
 {
-  "flowSliceId": "flow:<hex64>",
-  "registryProposalId": "registry-proposal:depothead-batch-audit",
-  "provisionalKey": "TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "interpretationProposalId": "interpretation-proposal:depothead-batch-audit",
-  "selectedKey": "TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "basisAtomIds": ["atom:<hex64>"]
+  "flowSliceIds": [],
+  "flowAdmissionDecisions": [],
+  "admittedMeaningIds": [],
+  "repositoryKnowledgeCount": 1,
+  "currentDepotHeadResult": "GAP",
+  "closedThroughStage07": false,
+  "closureReasonCode": "BOUNDED_PATH_SET_NOT_REPOSITORY_COMPLETE"
 }
 ~~~
 
-Stage 07 只有在 term eligibility、basis、Flow ownership 和 priority 全部闭合时才生成 **MODEL_INTERPRETATION / ADMITTED**。否则 DROP、NARROW 或 NEEDS_EVIDENCE。
-
-当前固定 jshERP slice 没有 Flow/Capsule/round。Stage 07 当前应合并确定性 Gaps 和技术范围说明，而不是制造 DepotHead business meaning。
+若未来闭合 Flow 选择“批量审核或反审核”，模型 lineage 仍只证明一个待准入提案。Stage 07 必须逐跳重验 `registryProposalId → provisionalKey → interpretationProposalId → selectedKey`、同 Flow basis 和 program lattice；不能从这句话反推 Fact 或企业政策。
 
 ## 3. 程序怎样工作
 
-1. 重验 Stage 04–06 artifact roots、完整flow interpretation coverage、R0/R1/R2 round sets、runtime receipts和唯一 `RepositoryInterpretationRegistry`。
-2. 按flowSliceId/interpretationProposalId处理每个READY candidate；对GAP/FAILED Flow建立technical fallback和Gap lineage，任何eligible Flow不得遗漏。
-3. 逐 interpretation proposal 验证不可断裂的 `registryProposalId → provisionalKey → interpretationProposalId → selectedKey`：selectedKey必须等于或按lattice收窄自同Flow provisionalKey，basis完全属于同一Flow/Capsule。
-4. 重新执行 decision lattice；程序结果只能与模型建议相同或更保守。
-5. 没有 admitted business term 时，从 total TechnicalDisplayRegistry 解析唯一技术显示。
-6. 构建 TechnicalAnchor：FLOW、REQUEST、RESULT、RECORD、OUTCOME、ACTIVITY、FIELD、FORMULA、RELATION。
-7. 只按 FQN、SQL table、Flow/Outcome ID 或 Proof-backed equivalence edge 合并；simple name、中文名和 term key 相同都不是 identity。
-8. 在全Flow union上建立对象同一性、跨Flow关系、指标/formula引用和conflict；每条`RegistryMeaningLineage`保留member flow/Fact/registry proposal/provisional key/interpretation proposal/meaning IDs，并从冻结registry逐字段复制`proposalKind/normalizedLabel/normalizedPurpose`，不得改写显示值。
-9. 保持 facts、admitted meanings、technical fallbacks、gaps、conflicts 各自 typed。
-10. 给每个 fact atom、registry proposal、provisional key、interpretation proposal、meaning、fallback和Gap唯一knowledge owner；每个conflict必须resolved或显式fatal。
-11. 验证Flow/candidate/decision/knowledge shard union与完整上游denominator一致，重算knowledge accounting，原子安装 Stage07。
+1. 重验 Stage 01–06 roots、controls、完整 Stage 05 Flow denominator、eligibility partition、Stage 06 eligible-only coverage 和唯一 frozen registry；从Stage06两类disposition枚举R0/R1/R2 `ModelTaskDispositionV1`，用任务集合重算`E + 2R` task/disposition双射，并验证flow/task/round/state、对应round/receipt和R2 `NOT_RUN_UPSTREAM_FAILED`的same-Flow upstream-task链。
+2. 按 `flowSliceId` 对**全部 Stage 05 Flow**迭代，而不是按 Stage 06 candidate 迭代。
+3. 对 model-ineligible Flow，验证 Stage 06 中不存在该 Flow，要求 Stage 05 ineligibility Gap 非空，解析唯一 technical fallback，并生成 `MODEL_INELIGIBLE_TECHNICAL_FALLBACK`。
+4. 对 model-eligible Flow，要求恰一个 Stage 06 `FlowInterpretationDisposition`。`READY_FOR_ADMISSION` 必须绑定恰一个 candidate；`GAP`/`FAILED` 必须没有 candidate 并携带合同规定的 Gap/failure lineage。
+5. 对 READY candidate 的每个 interpretation proposal，验证 `registryProposalId → provisionalKey → interpretationProposalId → selectedKey`；`selectedKey`必须逐字等于同 Flow registry item 的 `provisionalKey`，basis 不能扩张。
+6. 重算 proposal decision lattice。程序只能与模型建议相同或更保守；KEEP/NARROW 产生 meaning，DROP/NEEDS 不产生 meaning。
+7. 根据闭集条件为该 Flow 生成恰一个 flow-level decision。无 admitted meaning、Stage 06 GAP/FAILED 或 model-ineligible 都必须走 total technical fallback，不能从 Flow denominator 消失。
+8. 构建 `FLOW | REQUEST | RESULT | RECORD | OUTCOME | ACTIVITY | FIELD | FORMULA | RELATION` technical anchors。
+9. 只按 FQN、SQL table/column、Flow/Outcome ID、exact graph endpoint 或 Proof-backed equivalence edge 合并；simple name、中文名、display value 和 term key 都不是 identity。
+10. 在全 Flow union 上建立对象同一性、关系、指标/formula 和 conflict；逐字段复制 frozen registry 的 `proposalKind/normalizedLabel/normalizedPurpose`，不得改写显示值。
+11. 给每个 Fact atom、Flow、Outcome、proposal、provisional key、proposal decision、meaning、fallback、Gap、knowledge item、relation 和 metric 恰一个 knowledge owner或有 reason code 的 exclusion。
+12. M3 从已安装 M1/M2 artifacts 重算 exact ID-set equations，形成嵌入 `knowledge-accounting.json` 的 `RepositoryCoverageLedgerDraftV2`，再发布五个 semantic files；stage store 最后计算 Stage 07 root/receipt。draft 不引用 Stage 07 root、receipt、M3 receipt、自己的 enclosing artifact 或 Stage 08 final ledger。
 
 ## 4. 生成的可观察产物
 
+Stage 07 的 reader-visible set 保持**恰六个文件**：五个 semantic files 加一个 receipt；本次合同不增加文件或改变数量。
+
 | 文件 | 唯一职责 |
 | --- | --- |
-| admitted-flow-meanings.jsonl | 每 Flow 的最终 KEEP/NARROW/DROP/NEEDS_EVIDENCE 与 technical fallback |
-| repository-business-knowledge.json | 对象、活动、流程、Outcome、字段、关系、公式、问题和三类知识 lineage |
-| knowledge-conflicts.jsonl | anchor/term/claim/owner 冲突及确定性处置 |
-| knowledge-accounting.json | Fact atom、meaning、Gap、owner、conflict 守恒 |
-| merged-gaps.json | 去重但不丢 provenance 的仓库级 Gap 视图 |
-| stage-receipt.json | upstream roots、registry/profile hashes、artifact set |
+| `admitted-flow-meanings.jsonl` | 每个 Stage 05 Flow 恰一条 `FlowAdmissionRecordV2`，内含完整 flow decision 及其 meanings/fallbacks；文件名保留但内容不再暗示“只有 admitted Flow 才有行” |
+| `repository-business-knowledge.json` | 全仓一份对象、活动、流程、Outcome、字段、关系、公式、问题、Facts、meanings、fallbacks、Gaps、ownership、conflicts 与 registry lineage |
+| `knowledge-conflicts.jsonl` | 每个 anchor/term/claim/owner conflict 及确定性 resolution；fatal conflict 不发布 |
+| `knowledge-accounting.json` | `RepositoryKnowledgeCoverageV2` 和嵌入的 `RepositoryCoverageLedgerDraftV2` |
+| `merged-gaps.json` | 去重但可逆的 canonical Gap 与 member Gap provenance |
+| `stage-receipt.json` | Stage 07 upstream controls、五项 semantic descriptors、root、status 和 Gap refs；由 stage store 最后创建 |
 
-DepotHead 目标知识项形状：
-
-~~~json
-{
-  "knowledgeKind": "ACTIVITY",
-  "anchor": "method:DepotHeadService.batchSetStatus",
-  "technicalDisplay": "POST /depotHead/batchSetStatus → DepotHeadService.batchSetStatus",
-  "businessTermKey": null,
-  "factIds": ["fact:<hex64>"],
-  "meaningIds": [],
-  "gapIds": ["gap:<hex64>"]
-}
-~~~
-
-businessTermKey=null 是合法技术回退，不表示模型失败。
-
-目标 Stage07 出口始终是六个命名文件的非空、**单一仓库知识快照**。即使0Flow/0proposal，`repository-business-knowledge.json`也要包含source scope、technical fallbacks、deterministic Gaps和ownership/accounting，receipt明确proposal/meaning/model call均为0。若有`N` Flow，所有READY/GAP/FAILED dispositions及其Facts必须汇入同一RepositoryKnowledge；未来DepotHead正向出口可以增加admitted meaning，但不能替换或删除其Proven Facts、technical anchors和Gaps，也不能单独生成“DepotHead knowledge”旁路。
-
-### 4.1 人类 walkthrough：模块用什么文件接力
+**示例分类：NARRATIVE_ILLUSTRATION / NOT_SCHEMA_VALID。** 下列只对比两个 flow-level variant；省略 required refs、数组和 identity material，不能交给 reader：
 
 ~~~jsonl
-{"module":"ProposalAdmissionEngine","artifact":"modules/01-admission/admission-decision-set.json","takesFrom":["Stage04Reference","Stage05Reference","Stage06Reference","frozen registries"],"says":{"registryProposalId":"registry-proposal:depothead-batch-audit","provisionalKey":"TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","interpretationProposalId":"interpretation-proposal:depothead-batch-audit","selectedKey":"TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","programDecision":"KEEP","meaningId":"meaning:depothead-batch-audit"}}
-{"module":"AnchoredKnowledgeMerger","artifact":"modules/02-knowledge-merge/knowledge-merge.json","takesFrom":["admission-decision-set.json","Facts/Flows/Gaps","RepositoryInterpretationRegistry"],"says":{"knowledgeItemId":"knowledge:activity:depothead-status-change","anchor":"method:DepotHeadService.batchSetStatus","factId":"fact:depothead-status-persistence","lineage":"registryProposalId → provisionalKey → interpretationProposalId → selectedKey → meaningId","normalizedLabel":"批量审核或反审核","remainingGap":"gap:runtime-status-policy"}}
-{"module":"KnowledgeArtifactPublisher","artifact":"modules/03-publish/stage07-publication.json","takesFrom":["admission-decision-set.json","knowledge-merge.json"],"says":{"knowledgeItemCount":1,"meaningCount":1,"gapCount":1,"publicFiles":["admitted-flow-meanings.jsonl","repository-business-knowledge.json","knowledge-conflicts.jsonl","knowledge-accounting.json","merged-gaps.json","stage-receipt.json"],"nextStage":"08-build-nine-section-document-and-archive"}}
+{"flowSliceId":"flow:eligible","decisionKind":"MODEL_MEANING_ADMITTED","stage06Disposition":"READY_FOR_ADMISSION","meaningIds":["meaning:one"]}
+{"flowSliceId":"flow:ineligible","decisionKind":"MODEL_INELIGIBLE_TECHNICAL_FALLBACK","stage06Disposition":null,"meaningIds":[],"technicalFallbackIds":["fallback:one"],"gapIds":["gap:model-ineligible"]}
 ~~~
 
-`registryProposalId → provisionalKey → interpretationProposalId → selectedKey → meaningId` 是五个不同typed identity之间的显式准入链，不是改名；meaning保留完整R0/R1/R2/basis lineage。M2把Fact、meaning和Gap放在同一个proven anchor下但不互相替代，M3只发布。当前0 proposal时meaning链不存在，technical fallback/Gap链仍完整。
+0 Flow 时 `admitted-flow-meanings.jsonl` 是 policy-allowed canonical empty JSONL；其余四个 semantic files和receipt仍为非空 canonical artifacts，`repositoryKnowledgeCount=1`，draft 的 Flow ID sets为空但 source/site/entry/Fact/Gap accounting不能凭空为空。
 
 ## 5. 下游怎样消费而不返工
 
-Stage 08 只读 repository-business-knowledge.json、admitted-flow-meanings.jsonl、merged-gaps.json、knowledge accounting/conflicts 和冻结 reader registries。它不读取 raw model response，也不重新：
+Stage 08 只读 Stage 07 的五个 semantic files、Stage 07 receipt、frozen profiles/registry 和前序 typed refs。它不读取 raw model reasoning，不重新选择 term、合并对象、决定 Fact/Gap、打开源码或调用 Provider。
 
-- 选择 term；
-- 合并对象；
-- 决定 Fact/Gap；
-- 打开源码；
-- 执行 Provider。
-
-若 Stage 08 发现 owner 缺失，正确结果是 Stage 07/08 invariant failure，不是 renderer 临时选一章。
-
-### 下游前置条件与后置保证
+Stage 08 M1 fresh-reopen `knowledge-accounting.json`，以 `RepositoryCoverageLedgerDraftReferenceV1{knowledgeAccountingRef,repositoryCoverageLedgerDraftId,schemaVersion}` 精确选中嵌套 draft；然后计算 reader semantic IDs、section ownership 和唯一 **final** `RepositoryCoverageLedgerV3`。Stage 07 draft 不含 reader item/section owner，不可冒充 run completion ledger。
 
 | Stage 08 开始前必须成立 | Stage 07 成功后保证 |
 | --- | --- |
-| Stage04–06 roots、RepositoryInterpretationRegistry、admission profiles与Stage07 controls完全一致 | 每个registry/interpretation proposal有确定性处置；每个Fact atom、registry proposal、provisional key、interpretation proposal、meaning、fallback和Gap有唯一owner/disposition |
-| 六个 output files、receipt root、anchor/knowledge/conflict/accounting refs 闭合 | merge 只基于 proven anchor；同名/中文显示不会改变 identity，unresolved conflict 不会进入成功结果 |
-| TechnicalDisplayRegistry 对所有缺 term 的 admitted technical anchor 恰一匹配 | Stage 08 可只读 typed knowledge/owners/Gaps 规划章节，无需重做 admission、merge 或模型调用 |
-| Stage05全部Flow与Stage06全部candidate/GAP/FAILED dispositions均有Stage07 decision/owner；knowledge shard union闭合 | Stage08获得恰一个repositoryKnowledgeId，完整保存跨Flow identity/relations/metrics/conflicts；没有per-Flow孤儿knowledge |
+| Stage 05 Flow denominator、eligibility partition 与 Stage 06 eligible-only disposition set闭合 | 每个 Stage 05 Flow 恰一个 decision；model-ineligible Flow 的 Stage 06 refs 全部为 null |
+| 六个文件、receipt root、knowledge/conflict/accounting refs闭合 | 恰一个 RepositoryKnowledge；所有 Flow、proposal、meaning、fallback、Gap 和 knowledge item 都有 disposition/owner |
+| TechnicalDisplayRegistry 对每个 fallback anchor 恰一匹配 | Stage 08 无需临时补 term 或 display，也不能把 fallback 当 model meaning |
+| draft reference 指向 `knowledge-accounting.json` 内 exact nested ID | Stage 08 M1 可从同一 draft 值完成 reader/section accounting，而不形成 plan↔ledger 或 Stage07-artifact↔Stage07-root 环 |
 
-Stage 08 不能容错式补 owner、挑 term 或合并对象；任何缺失都应使 Stage 07 replay/Stage 08 input validation 失败。
+## 6. 成功、Gap、fatal 与显式复用
 
-## 6. 成功、Gap、fatal 与恢复
-
-- **成功**：完整仓库所有 Flow dispositions、proposals、Facts、atoms、meanings、fallbacks、Gaps、relations/metrics和conflicts有完整decision/owner；恰一个RepositoryKnowledge且shard/accounting闭合，阶段目录原子安装。
-- **带 Gap 成功**：无业务 term、proposal DROP、needs evidence 或仓库待确认问题；technical fallback 让事实文档仍可继续。
-- **fatal**：unknown key/reference、registry drift、fallback 0/2 matches、meaning basis expanded、双 owner/无 owner、unresolved equal-priority conflict、anchor merge 依据不足或 accounting 不闭合。
-- **恢复**：Stage07不重新调用模型；它只重放canonical rounds和已完成merge shards。缺/重叠 shard、遗漏Flow或知识孤儿时不发布；upstream/control hashes完全相同才复用，改变shard size/order输出bytes相同。
+- **成功**：Stage 05 全 Flow → FlowAdmissionDecision 是 total one-to-one map；Stage 06 只覆盖 eligible subset；所有 semantic ID sets、owners、shards、conflicts 和 draft equations闭合；恰一 RepositoryKnowledge，阶段目录原子安装。
+- **带 Gap 成功**：model-ineligible、Stage 06 GAP、安全闭合的 Stage 06 FAILED、proposal NEEDS、无业务 term 或仓库待确认问题都有 typed Gap/failure lineage和 technical fallback；它们不从 denominator 消失。
+- **fatal**：eligible Flow 缺/重 Stage 06 disposition、ineligible Flow 出现 Stage 06 artifact、task disposition缺失/重复/跨Flow/与task、round或receipt不等、R2 `NOT_RUN_UPSTREAM_FAILED`链不闭合、unknown key/ref、registry drift、basis expanded、fallback 0/2 matches、double/no owner、unresolved equal-priority conflict、draft 自引用/未来引用、count 相等但 ID set 不等、accounting 不闭合。
+- **显式复用**：若原Stage07执行失败，调用者以`executeStage(targetStage=7)`创建新的run，显式传入已验证Stage01–06 publication references。新执行fresh-reopen所列canonical artifacts并只执行Stage07；不重扫源码、不重做Stage01–06、Provider调用为0。上游publication或control refs不闭合时拒绝启动。这是业务artifact复用，不是同run、队列或worker恢复。
+- **确定性**：在相同upstream/control refs下，改变shard size或并行完成顺序不得改变canonical bytes。
 
 ## 7. 程序与模型责任
 
 | 责任 | 程序 | LLM |
 | --- | --- | --- |
-| 检查 eligibility/basis | 是 | 否 |
-| 最终 KEEP/NARROW/DROP | 是 | 否 |
-| 合并技术锚点/解决冲突 | 是 | 否 |
+| 验证 eligibility partition、Stage 06 coverage、key/basis | 是 | 否 |
+| 最终 proposal decision 和 flow decision | 是 | 否 |
+| 解析 technical fallback、合并 anchors、解决 conflicts | 是 | 否 |
 | 提出有限解释 | 否，本阶段只消费 Stage 06 | Stage 06 已完成 |
-| 自我批准或改 Fact | 禁止 | 禁止 |
+| 修改 Fact、扩 registry、补源码或写 Markdown | 禁止 | 禁止 |
 
-本阶段无 Provider 参数，运行时模型调用数固定为 0。
+本阶段没有 Provider 参数，运行时模型调用数固定为 0。
 
 ## 8. 技术合同
 
 ### 8.0 固定模块合同
 
-模块执行顺序固定为 `ProposalAdmissionEngine` → `AnchoredKnowledgeMerger` → `KnowledgeArtifactPublisher`。全部模块只重放 Stage04–06 artifacts；任何模块都没有 Provider、source Path 或开放文本入口。
+执行顺序固定为 `ProposalAdmissionEngine` → `AnchoredKnowledgeMerger` → `KnowledgePublicationSpecifier` → `CanonicalStageArtifactStore`。前三个是业务 modules；stage store 只负责 fresh-reopen、root 和 receipt-last。任何 module 都没有 Provider、source Path 或开放文本入口。
 
-#### M1 ProposalAdmissionEngine
+#### M1 `ProposalAdmissionEngine`
 
-- **解决的问题**：独立于模型自评，重新计算每个 proposal 的 key eligibility、basis ownership 和最终保守 decision。
-- **精确上游输入及前置**：valid Stage04 Facts/Proof/Gaps、Stage05完整Flow/Capsule、Stage06完整R0/R1/R2 disposition/candidate/task/round/receipt/proposal artifacts与唯一RepositoryInterpretationRegistry、TechnicalDisplayRegistry/admission profile/budget；flow/registry/round/runtime refs已验证。
-- **确定性顺序 / LLM**：固定全flowSliceId denominator → READY按interpretationProposalId验证registryProposalId/provisionalKey/selectedKey/eligibility/basis/lattice → GAP/FAILED转technical fallback/Gap decision → 每Flow与两类proposal decision accounting；0 LLM/Provider。
-- **目标输出与 DepotHead 示例**：`AdmissionDecisionSet{repositoryInterpretationRegistryId,interpretationProposalDecisions,admittedMeanings,technicalFallbacks,decisionAccounting}`；未来DepotHead provisional key可KEEP并生成完整五段lineage，当前0proposal仍产生technical scope/Gap fallback inputs。
-- **必须保持的不变量**：程序decision不比模型宽；basis/key不扩张；每registry proposal和interpretation proposal各有唯一处置；每admitted meaning精确保存五段lineage；每Stage05 eligible Flow恰一flow decision；fallback为0/1/2匹配中的唯一1才可继续。
-- **Gap / fatal / 恢复**：NEEDS_EVIDENCE/TERM是Gap型decision；unknown key/ref、basis expansion、fallback0/2、round replay mismatch fatal；恢复纯重放相同 artifacts。
-- **给下游的后置保证**：M2得到stable meaning/fallback/proposal lineage，不需访问raw response或再次决定admission。
-- **明确非目标**：不改Fact、不扩registry、不合并anchor、不调用模型。
-- **公共测试 seam 与验收**：`admit(facts, flows, interpretations, registries, profile)`覆盖至少双Flow、完整五段lineage、断一段/跨Flow key、全lattice、一Flowcandidate/一Flow unavailable fallback、single-flow omission、模型KEEP对抗programDROP、basis mutation、fallback0/1/2和0proposal；expected decisions独立手写。
-- **Luna/xhigh 测试指南**：创建 `Stage07ProposalAdmissionEngineTest`，冻结Stage04–06 artifacts、registries和独立decision goldens于 `src/test/resources/target/stage07/proposal-admission/`。每个RED只测lineage closure或KEEP/NARROW/DROP/NEEDS_EVIDENCE/NEEDS_TERM_REGISTRY之一，再测跨Flowkey、basis mutation、fallback0/1/2、0proposal/replay；首RED因seam/schema缺失。只fakeartifact reader，decision lattice/canonical不能mock。命令：`mvn -Dtest=Stage07ProposalAdmissionEngineTest test`；禁Provider/network。偏离按DESIGN 13.11。
-- **Terra/xhigh 实现指南**：RED后仅拥有 `target/stage07/proposaladmission/`，实现 public `ProposalAdmissionEngine/AdmissionDecisionSet` 与 `stage07-admission-decision-set-v2`；只读Stage04–06+registries，registryProposal→provisionalKey→interpretationProposal→selectedKey→eligibility/basis→lattice→meaning/fallback。逐decision GREEN；不得信模型KEEP、重写registry或读raw response。缺basis/跨stage字段MUST STOP交Sol/ultra，完成更新审计。
+- **解决的问题**：把完整 Stage 05 Flow denominator 转成完整、closed、content-addressed flow decisions，同时独立重算 READY candidate 的 proposal decisions。
+- **精确输入**：Stage 04 四项 semantic artifacts、Stage 05 五项 semantic artifacts、Stage 06 九项 semantic artifacts及三阶段receipt、frozen registry/TechnicalDisplayRegistry、admission profile和预算的 exact refs。Stage 05 coverage必须携带 eligibility partition和逐 ineligible Flow Gap mapping；Stage06两类disposition携带验证task closure所需的`ModelTaskDispositionV1`。
+- **顺序**：先验证Stage06 R0/R1/R2 tasks与两类disposition中的task disposition集合精确双射为`E+2R`，再验证每个accepted disposition对应的round/receipt，以及R2 `NOT_RUN_UPSTREAM_FAILED`的same-Flow upstream task；然后按 Stage 05 `flowSliceId`排序；model-ineligible 分支不读取 Stage 06 per-Flow object；eligible 分支 exact-join一个 disposition；READY 再按 `interpretationProposalId`执行 lattice。0 LLM。
+- **输出**：一个 `stage07-admission-decision-set-v4` `ModuleArtifact<AdmissionDecisionSetV4>`。
+- **保证**：每个 Stage 05 Flow恰一个 `FlowAdmissionDecisionV1`；每个 Stage 06 interpretation proposal恰一个 `InterpretationProposalDecisionV1`；每个 KEEP/NARROW恰一个 meaning lineage；fallback resolution恰一匹配。
+- **Gap/fatal**：合法 fallback variant可继续；eligibility/disposition集合不等、ineligible携带Stage06 ref、eligible缺ref、task/disposition集合不精确为`E+2R`、disposition与task/round/receipt的flow/task/round/state或R2 upstream task不等、variant nullable组合错误、lineage/basis/fallback不闭合为fatal。
+- **非目标**：不合并anchor、不改 Fact/registry、不调用模型。
+- **测试 seam**：`admit(facts, stage05Flows, stage06Interpretations, registries, profile)`；expected decisions必须独立手写，canonicalizer/lattice/accounting不可mock。
+- **Luna RED 指南**：`Stage07ProposalAdmissionEngineTest` 逐一覆盖五个 flow variants、五个 proposal variants、eligible/ineligible partition mutation、missing/extra Stage06 disposition、R0/R1/R2 task disposition缺失/重复/foreign task或round/receipt/state mutation、R2 `NOT_RUN_UPSTREAM_FAILED` upstream-task mutation、cross-Flow key、basis expansion、fallback 0/1/2、0Flow、single-flow omission和order determinism；只运行 `mvn -Dtest=Stage07ProposalAdmissionEngineTest test`，无网络/Provider。
+- **Terra GREEN 指南**：仅实现 `target/stage07/admission/` 与 v4 schema；先闭合 all-Flow total map，再做 READY proposal lattice。不得保留 v3 的 required `stage06DispositionId` 或开放 `decision` 字符串。
 
-#### M2 AnchoredKnowledgeMerger
+#### M2 `AnchoredKnowledgeMerger`
 
-- **解决的问题**：按 proven technical anchors 合并跨Flow知识、处理冲突，并给每个semantic item唯一owner。
-- **精确上游输入及前置**：M1全Flow AdmissionDecisionSet、Stage04完整Facts/Gaps、Stage05完整Flows、anchor/knowledge profiles/budget；meaning/fallback/fact/flow refs闭合。
-- **确定性顺序 / LLM**：按flowSliceId shard建FLOW/REQUEST/RESULT/RECORD/OUTCOME/ACTIVITY/FIELD/FORMULA/RELATION anchors → 以M1 proposal/key IDs exact-join冻结registry并逐字段复制`proposalKind/normalizedLabel/normalizedPurpose` → 全shard按priority/equivalence union → 构建typed knowledge items/跨Flowrelations/metrics → resolve conflicts → assign owners/account → canonical单一knowledge；0 LLM。
-- **目标输出与 DepotHead 示例**：`KnowledgeMerge{anchors,knowledgeItems,ownership,conflicts,mergedGaps}`；例子用method/entry/table anchors连接DepotHead activity、`jsh_depot_head` record、status field和where Gap。
-- **必须保持的不变量**：merge只用proven key；每个admitted meaning保留完整R0→registry→R1/R2→meaning lineage，且三项规范业务值与对应冻结registry item逐字节相同；所有Flow shard union等于Stage05 Flow IDs；每semantic item恰一owner；relation/metric每endpoint有proven refs；alias Gap保留members；只产一个repositoryKnowledgeId。
-- **Gap / fatal / 恢复**：未解决业务问题保留Gap；anchor不足/ambiguous、双/无owner、unresolved equal conflict、accounting fatal；恢复按相同排序重建全部merge。
-- **给下游的后置保证**：M3/Stage08获得typed、owned、无歧义的repository knowledge；显示名不承担identity。
-- **明确非目标**：不重新admit proposal、不从source/模型补anchor、不选择九章。
-- **公共测试 seam 与验收**：`merge(admissions, facts, flows, profiles)`使用至少双Flow，覆盖完整registry lineage/任一hop删除、同SQL表跨Flowidentity merge、跨Flowrelation/metric、同名不同FQN、equivalence edge、conflict priority、owner mutation、缺/重叠shard、0Flowgaps；顺序不改变bytes且只产一个knowledge。
-- **Luna/xhigh 测试指南**：创建 `Stage07AnchoredKnowledgeMergerTest`，fixtures/goldens放 `src/test/resources/target/stage07/knowledge-merger/`。逐RED：registry lineage/hop deletion→anchor kinds→同表merge→同名FQN隔离→proof equivalence→priority conflict→双/无owner→Gap alias→0Flow→order determinism；首RED因merger/schema缺失。artifact reader可fake，union/accounting/canonical不可mock。命令：`mvn -Dtest=Stage07AnchoredKnowledgeMergerTest test`；无网络/模型。偏离按13.11。
-- **Terra/xhigh 实现指南**：RED后只改 `target/stage07/knowledgemerger/`，实现 public `AnchoredKnowledgeMerger/KnowledgeMerge` 与 `stage07-knowledge-merge-v2`；消费M1+Facts/Flows，anchors→priority union→items+registryLineage→conflicts→owners/accounting。逐RED GREEN；禁止显示名merge、丢proposal lineage、输入顺序tie-break或补source。需改跨stage语义MUST STOP并升级用户，更新审计。
+- **解决的问题**：按 proven technical anchors 合并跨 Flow 知识、处理 conflict，并给每个 semantic item唯一owner。
+- **精确输入**：fresh-reopened M1 v4、Stage 04 Facts/Gaps、Stage 05全部Flows、frozen registry、anchor/knowledge profiles和预算。
+- **顺序**：按 flow decision 建 anchors/items → exact-copy registry values → 全 shard proven-key union → relations/metrics → conflicts → ownership/accounting → 单一 knowledge。0 LLM。
+- **输出**：一个 `stage07-knowledge-merge-v3` `ModuleArtifact<KnowledgeMergeV3>`；它显式保存 `flowAdmissionDecisionIds`，不能只从 Stage 06 eligible subset推断 Flow coverage。
+- **保证**：Flow shard union等于 Stage 05 Flow IDs；meaning lineage完整；ineligible/GAP/FAILED fallbacks仍有 technical anchor/owner；只产一个 `repositoryKnowledgeId`。
+- **Gap/fatal**：业务未知保留Gap；anchor不足/ambiguous、double/no owner、unresolved equal-priority conflict、alias provenance丢失为fatal。
+- **测试 seam**：`merge(admissions, facts, flows, profiles)`覆盖双Flow同表merge、同名不同FQN隔离、proof equivalence、relation/metric、每种fallback、owner mutation、Gap alias、0Flow和顺序稳定。
+- **Luna/Terra 指南**：目标测试 `Stage07AnchoredKnowledgeMergerTest`；实现只在 `target/stage07/knowledge-merge/`，使用 v3，禁止显示名merge、丢flow decision或补source。
 
-#### M3 KnowledgeArtifactPublisher
+#### M3 `KnowledgePublicationSpecifier`
 
-- **解决的问题**：验证admission/merge/accounting的全局闭包并安装Stage07 public knowledge artifacts。
-- **精确上游输入及前置**：M1完整 AdmissionDecisionSet/flow decisions、M2唯一KnowledgeMerge/shard receipts、Stage04–06 roots、registry/profile controls；flow/proposal/semantic/owner/conflict IDs局部有效。
-- **确定性顺序 / LLM**：验证全Flow/knowledge shard union → join lineage → 重算Flow/Fact/proposal/meaning/Gap/relation/metric/conflict equations → canonical六文件 → staging force/SHA → atomic install；0 LLM/Provider。
-- **目标输出与 DepotHead 示例**：六个 exact files；未来例有admitted activity meaning，当前例有0 meaning但nonempty technical anchors/scope/Gaps/owners/receipt。
-- **必须保持的不变量**：Stage05全Flow和Stage06全dispositions都有处置；public artifacts只含一个repositoryKnowledgeId且只引用M1/M2 IDs；所有semantic items/aliases可逆追踪；publisher不改变decision/merge。
-- **Gap / fatal / 恢复**：合法DROP/NEEDS/Gaps为SUCCEEDED_WITH_GAPS；orphan/duplicate/accounting/ref/canonical/install错误 fatal；恢复只认完整receipt。
-- **给下游的后置保证**：Stage08可只读repository knowledge、meanings、merged Gaps、owners/conflicts规划九章。
-- **明确非目标**：不补owner/term、不开source/Provider、不渲染文档。
-- **公共测试 seam 与验收**：`publish(admissions, merge, controls)`覆盖0Flow、至少双Flow→一个knowledge、registry lineage loss、single-flow omission、第二个knowledge rejection、ID-set count spoof、orphan/duplicate owner、alias loss、缺/重叠shard、乱序/crash/collision；只有六文件和仓库ledger闭合返回Stage07Reference。
-- **Luna/xhigh 测试指南**：创建 `Stage07KnowledgeArtifactPublisherTest`，M1/M2 artifacts与six-file goldens放 `src/test/resources/target/stage07/artifact-publisher/`。RED顺序：0Flow nonempty knowledge、admitted meaning、count spoof、orphan/duplicate/alias loss、乱序、crash/collision/resume；首RED因publisher缺失。只mockartifact store，lineage/accounting/canonical不mock。命令：`mvn -Dtest=Stage07KnowledgeArtifactPublisherTest test`；禁network/Provider/customer build。偏离按13.11。
-- **Terra/xhigh 实现指南**：RED后仅改 `target/stage07/artifactpublisher/`，实现 public `KnowledgeArtifactPublisher/Stage07Reference` 与 `stage07-knowledge-publication-v2`；只读M1/M2 files，完整registry/interpretation lineage→equations→six files→atomic。逐RED GREEN，Stage08只凭reference规划；不得补owner/meaning/lineage。跨stage contract改动MUST STOP交Sol/ultra/用户，完成更新审计。
+- **解决的问题**：验证 M1/M2 和 Stage 01–07 accounting闭包，生成五个 semantic payload 与嵌套 draft；stage store独占 Stage 07 root/receipt。
+- **精确输入**：fresh-reopened M1 v4、M2 v3、Stage 01–06 publication references、M3实际打开的每个Stage01–06 semantic coverage artifact reference、所有上游 coverage/shard values和controls。不得接收 Stage 07 publication/root/receipt，因为它们尚不存在。
+- **顺序**：验证 all-Flow/proposal/knowledge union → 构造 `Stage07CoveragePreparationV1` → 重算 Stage 01–07 ID sets/equations → 构造 `RepositoryCoverageLedgerDraftV2` → canonical 五个 semantic payload → 一次 M3 install/receipt → stage store fresh-reopen/root/receipt-last。0 LLM。
+- **输出**：M3恰五个 semantic files；stage store形成恰六个 reader-visible files。`knowledge-accounting.json`内含 draft，不新增 `repository-coverage-ledger-draft.json`。
+- **保证**：draft只含 Stage 01–07事实；不含 reader/section owner/final `closed`，不引用 enclosing accounting artifact、M3 receipt、Stage 07 root/receipt或任何 Stage 08 identity。
+- **Gap/fatal**：合法 Gap可使 `closedThroughStage07=true`；未知/遗漏 denominator、broken equation、自引用/未来引用、orphan/duplicate/canonical/install错误 fatal。`closedThroughStage07=false`只有在missing/unexpected IDs和非空closure reason完整可诊断时可发布为incomplete draft，不能冒充complete。
+- **测试 seam**：`specify(admissions, merge, stage01To06, controls)`覆盖 exact-five/exact-six、all-flow decisions、embedded draft、cycle injection、count spoof、ID-set mismatch、0Flow nonempty knowledge、missing/overlap shard、receipt-last/partial-install/collision和fresh-reopen。
+- **Luna/Terra 指南**：目标测试 `Stage07KnowledgePublicationSpecifierTest`；实现只在 `target/stage07/publish/`，真实 module/stage stores，canonical/root/accounting不可mock。
 
-### 8.0.1 模块 artifact wire schemas
+### 8.0.1 Wire-exact module 与 public schemas
 
-使用 DESIGN 13.3 envelope；`!`=required non-null，`?`=required nullable。
+`!` 表示 required non-null，`?` 表示 required nullable；required-nullable 字段必须存在，不能省略。所有数组按本节规定的 stable ID UTF-8 byte order排序、去重。
 
-| artifact | schemaVersion / artifactType | 精确 upstream | payload/排序 |
-| --- | --- | --- | --- |
-| `modules/01-admission/admission-decision-set.json` | `stage07-admission-decision-set-v2` / `STAGE07_ADMISSION_DECISION_SET` | Stage04+Stage05+Stage06 registry/R0/R1/R2 IDs/SHAs | `admissionDecisionSetId!`、`repositoryInterpretationRegistryId!`、`flowDecisions[]!{flowDecisionId!,flowSliceId!,stage06Disposition!,candidateId?,decision!,meaningIds[]!,fallbackIds[]!,gapIds[]!,failureRef?,reasonCode?}`、`interpretationProposalDecisions[]!{interpretationProposalId!,registryProposalId!,provisionalKey!,selectedKey!,decision!,basisAtomIds[]!,basisGapIds[]!,meaningId?,fallbackId?,reasonCode?}`、`admittedMeanings[]!{meaningId!,flowSliceId!,anchorId!,registryProposalIds[]!,provisionalKeys[]!,interpretationProposalIds[]!,selectedKeys[]!,basisAtomIds[]!,basisGapIds[]!,decision!,technicalFallbackId?}`、`technicalFallbacks[]!`、`decisionAccounting!{flowSliceIds[]!,flowDecisionIds[]!,registryProposalIds[]!,provisionalKeys[]!,interpretationProposalIds[]!,keepIds[]!,narrowIds[]!,dropIds[]!,needsEvidenceIds[]!,needsTermRegistryIds[]!,fallbackIds[]!,gapIds[]!,closed!}`；按flow/proposal/meaning/fallback IDs |
-| `modules/02-knowledge-merge/knowledge-merge.json` | `stage07-knowledge-merge-v2` / `STAGE07_KNOWLEDGE_MERGE` | M1+Stage04+Stage05+Stage06 registry ID/SHA | `knowledgeMergeId!`、`repositoryKnowledgeId!`、`repositoryInterpretationRegistryId!`、`sourceFlowSliceIds[]!`、`registryLineage[]!{registryLineageId!,registryProposalId!,provisionalKey!,interpretationProposalId!,selectedKey!,meaningId!,flowSliceId!,proposalKind!,normalizedLabel!,normalizedPurpose!,basisAtomIds[]!,basisGapIds[]!}`、`flows[]!{flowSliceId!,entryId!,outcomePathIds[]!,factIds[]!,meaningIds[]!,registryLineageIds[]!,gapIds[]!}`、`outcomes[]!`、`anchors[]!`、`knowledgeItems[]!{knowledgeItemId!,knowledgeKind!,anchorId!,technicalDisplay!,factIds[]!,meaningIds[]!,registryLineageIds[]!,gapIds[]!,owningFlowIds[]!,outcomePathIds[]!}`、`relations[]!`、`metrics[]!`、`ownership[]!`、`conflicts[]!`、`mergedGaps[]!`、`knowledgeShardReceipts[]!`、`accounting!{flowSliceIds[]!,outcomePathIds[]!,factAtomIds[]!,registryProposalIds[]!,provisionalKeys[]!,interpretationProposalIds[]!,registryLineageIds[]!,meaningIds[]!,fallbackIds[]!,knowledgeItemIds[]!,relationIds[]!,metricIds[]!,gapIds[]!,ownerSemanticItemIds[]!}`；arrays按stable ID；三项规范值必须exact-copy对应registry item |
-| `modules/03-publish/stage07-publication.json` | `stage07-knowledge-publication-v2` / `STAGE07_KNOWLEDGE_PUBLICATION` | M1+M2 IDs/SHAs | `stageStatus!`、`admissionDecisionSetId!`、`knowledgeMergeId!`、`repositoryKnowledgeId!`、`repositoryInterpretationRegistryId!`、counts!、`repositoryKnowledgeCoverage!{flowSliceIds[]!,flowDecisionIds[]!,outcomePathIds[]!,factAtomIds[]!,registryProposalIds[]!,provisionalKeys[]!,interpretationProposalIds[]!,registryLineageIds[]!,meaningIds[]!,gapIds[]!,knowledgeItemIds[]!,relationIds[]!,metricIds[]!,ownerSemanticItemIds[]!,shardReceiptIds[]!,closed!}`、`stageArtifactRoot!`、`publishedArtifacts[6]!`、`nextStage!` |
+| artifact | schemaVersion / artifactType | wire-exact payload |
+| --- | --- | --- |
+| `modules/01-admission/admission-decision-set.json` | `stage07-admission-decision-set-v4` / `STAGE07_ADMISSION_DECISION_SET` | `admissionDecisionSetId!`, `repositoryInterpretationRegistryId!`, `stage05FlowSliceIds[]!`, `modelEligibleFlowSliceIds[]!`, `modelIneligibleFlowSliceIds[]!`, `flowAdmissionDecisions[]!:FlowAdmissionDecisionV1`, `interpretationProposalDecisions[]!:InterpretationProposalDecisionV1`, `admittedMeanings[]!:AdmittedFlowMeaningV2`, `technicalFallbacks[]!:TechnicalFallbackV2`, `decisionAccounting!:AdmissionDecisionAccountingV2` |
+| `modules/02-knowledge-merge/knowledge-merge.json` | `stage07-knowledge-merge-v3` / `STAGE07_KNOWLEDGE_MERGE` | `knowledgeMergeId!`, `repositoryKnowledgeId!`, `repositoryInterpretationRegistryId!`, `sourceFlowSliceIds[]!`, `flowAdmissionDecisionIds[]!`, `registryLineage[]!`, `flows[]!`, `outcomes[]!`, `anchors[]!`, `knowledgeItems[]!`, `relations[]!`, `metrics[]!`, `ownership[]!`, `conflicts[]!`, `mergedGaps[]!`, `knowledgeShardReceipts[]!`, `accounting!:RepositoryKnowledgeCoverageV2` |
+| `admitted-flow-meanings.jsonl` | `stage07-flow-admission-record-v2` / `STAGE07_FLOW_ADMISSION_RECORD` | 每行 `flowAdmissionDecision!:FlowAdmissionDecisionV1`, `admittedMeanings[]!`, `technicalFallbacks[]!`；按 `flowSliceId`，行数精确等于 Stage 05 Flow count |
+| `repository-business-knowledge.json` | `stage07-repository-business-knowledge-v3` / `STAGE07_REPOSITORY_BUSINESS_KNOWLEDGE` | 恰一个 `RepositoryBusinessKnowledgeV3`，含 `repositoryKnowledgeId`, `repositoryInterpretationRegistryId`, `sourceFlowSliceIds`, `flowAdmissionDecisionIds`, typed knowledge arrays、registry lineage、ownership和conflicts |
+| `knowledge-conflicts.jsonl` | `stage07-knowledge-conflict-v2` / `STAGE07_KNOWLEDGE_CONFLICT` | 每个已resolved conflict恰一行；按 `conflictId`；fatal conflict不得出现于成功publication |
+| `knowledge-accounting.json` | `stage07-knowledge-accounting-v2` / `STAGE07_KNOWLEDGE_ACCOUNTING` | `artifactId!`, `repositoryKnowledgeId!`, `repositoryKnowledgeCoverage!:RepositoryKnowledgeCoverageV2`, `repositoryCoverageLedgerDraft!:RepositoryCoverageLedgerDraftV2` |
+| `merged-gaps.json` | `stage07-merged-gaps-v2` / `STAGE07_MERGED_GAPS` | `canonicalGaps[]!{canonicalGapId!,memberGapIds[]!,missingRequirement!,impact!,closureRequirement!}`；members非空、按ID排序、所有alias可逆 |
 
-decision nullable组合固定：KEEP/NARROW有meaningId，DROP有reasonCode，NEEDS_EVIDENCE有Gap ref，NEEDS_TERM_REGISTRY有fallbackId；不存在的字段必须null，不能省略/填story text。anchors只用8.3 proven keys。conflict即使resolved也保存；fatal conflict不安装artifact。所有field/lattice/priority/owner/sort/identity变化先设计并升version。
+M1 `upstreamArtifacts[]`必须逐项列出 Stage 04四项、Stage 05五项、Stage 06九项 semantic `ArtifactReference`，以及实际打开的TechnicalDisplayRegistry/admission profile/budget refs；不得从运行目录猜测未声明输入。M2列M1、Stage04四项、Stage05五项、frozen registry和实际打开的anchor/knowledge profile/budget refs；M3一次 install request 的 upstream 必须恰为M1/M2 refs及形成draft时实际打开的每个Stage01–06 semantic `ArtifactReference`。六个`StagePublicationReference`另作为root/receipt chain验证值进入draft，不代替实际读取bytes的direct preimage。任何额外读取先进入 upstream 并改变 module identity。
 
-`repositoryKnowledgeCoverage.closed` 只有上游完整Flow/interpretation coverage、所有Flow decisions和全semantic ownership均闭合时为true；bounded DepotHead知识投影固定false，但仍可作为诚实诊断输入供Stage08生成`INCOMPLETE_SCOPE`候选。
-
-~~~jsonl
-{"schemaVersion":"stage07-admission-decision-set-v2","artifactType":"STAGE07_ADMISSION_DECISION_SET","artifactId":"admission-decisions:1111111111111111111111111111111111111111111111111111111111111111","producer":{"stage":7,"module":"ProposalAdmissionEngine","moduleVersion":"v2"},"upstreamArtifacts":[{"artifactId":"repository-interpretation-registry:3333333333333333333333333333333333333333333333333333333333333333","sha256":"3333333333333333333333333333333333333333333333333333333333333333"},{"artifactId":"stage04-publication:3333333333333333333333333333333333333333333333333333333333333333","sha256":"4444444444444444444444444444444444444444444444444444444444444444"},{"artifactId":"stage05-publication:3333333333333333333333333333333333333333333333333333333333333333","sha256":"5555555555555555555555555555555555555555555555555555555555555555"},{"artifactId":"stage06-publication:6666666666666666666666666666666666666666666666666666666666666666","sha256":"6666666666666666666666666666666666666666666666666666666666666666"}],"controls":{"toolchainSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profileSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","schemaBundleSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","promptBundleSha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},"completion":{"status":"SUCCEEDED_WITH_GAPS","gapRefs":["gap:runtime-status-policy"],"failureRef":null},"payload":{"admissionDecisionSetId":"admission:depothead-v2","repositoryInterpretationRegistryId":"interpretation-registry:depothead-v1","flowDecisions":[{"flowDecisionId":"flow-decision:depothead-admitted-with-gaps","flowSliceId":"flow:post-depothead-batch-set-status","stage06Disposition":"READY_FOR_ADMISSION","candidateId":"flow-interpretation:depothead-v1","decision":"ADMITTED_WITH_GAPS","meaningIds":["meaning:depothead-batch-audit"],"fallbackIds":["fallback:depothead-route-display"],"gapIds":["gap:runtime-status-policy"],"failureRef":null,"reasonCode":null}],"interpretationProposalDecisions":[{"interpretationProposalId":"interpretation-proposal:depothead-batch-audit","registryProposalId":"registry-proposal:depothead-batch-audit","provisionalKey":"TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","selectedKey":"TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","decision":"KEEP","basisAtomIds":["atom:input-field","atom:value-source"],"basisGapIds":["gap:runtime-status-policy"],"meaningId":"meaning:depothead-batch-audit","fallbackId":null,"reasonCode":null}],"admittedMeanings":[{"meaningId":"meaning:depothead-batch-audit","flowSliceId":"flow:post-depothead-batch-set-status","anchorId":"anchor:method-depothead-batch-set-status","registryProposalIds":["registry-proposal:depothead-batch-audit"],"provisionalKeys":["TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"interpretationProposalIds":["interpretation-proposal:depothead-batch-audit"],"selectedKeys":["TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"basisAtomIds":["atom:input-field","atom:value-source"],"basisGapIds":["gap:runtime-status-policy"],"decision":"KEEP","technicalFallbackId":null}],"technicalFallbacks":[{"fallbackId":"fallback:depothead-route-display","anchorId":"anchor:method-depothead-batch-set-status","displayKey":"DISPLAY_HTTP_ROUTE_TO_SERVICE","displayValue":"POST /depotHead/batchSetStatus → DepotHeadService.batchSetStatus"}],"decisionAccounting":{"registryProposalIds":["registry-proposal:depothead-batch-audit"],"provisionalKeys":["TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"interpretationProposalIds":["interpretation-proposal:depothead-batch-audit"],"keepIds":["interpretation-proposal:depothead-batch-audit"],"narrowIds":[],"dropIds":[],"needsEvidenceIds":[],"needsTermRegistryIds":[],"flowSliceIds":["flow:post-depothead-batch-set-status"],"flowDecisionIds":["flow-decision:depothead-admitted-with-gaps"],"fallbackIds":["fallback:depothead-route-display"],"gapIds":["gap:runtime-status-policy"],"closed":true}}}
-{"schemaVersion":"stage07-knowledge-merge-v2","artifactType":"STAGE07_KNOWLEDGE_MERGE","artifactId":"knowledge-merge:2222222222222222222222222222222222222222222222222222222222222222","producer":{"stage":7,"module":"AnchoredKnowledgeMerger","moduleVersion":"v2"},"upstreamArtifacts":[{"artifactId":"admission-decisions:1111111111111111111111111111111111111111111111111111111111111111","sha256":"1111111111111111111111111111111111111111111111111111111111111111"},{"artifactId":"repository-interpretation-registry:3333333333333333333333333333333333333333333333333333333333333333","sha256":"3333333333333333333333333333333333333333333333333333333333333333"},{"artifactId":"stage04-publication:3333333333333333333333333333333333333333333333333333333333333333","sha256":"4444444444444444444444444444444444444444444444444444444444444444"},{"artifactId":"stage05-publication:3333333333333333333333333333333333333333333333333333333333333333","sha256":"5555555555555555555555555555555555555555555555555555555555555555"}],"controls":{"toolchainSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profileSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","schemaBundleSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","promptBundleSha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},"completion":{"status":"SUCCEEDED_WITH_GAPS","gapRefs":["gap:runtime-status-policy"],"failureRef":null},"payload":{"knowledgeMergeId":"knowledge-merge:depothead-v2","repositoryKnowledgeId":"repository-knowledge:depothead-v2","repositoryInterpretationRegistryId":"interpretation-registry:depothead-v1","sourceFlowSliceIds":["flow:post-depothead-batch-set-status"],"registryLineage":[{"registryLineageId":"registry-lineage:depothead-batch-audit","registryProposalId":"registry-proposal:depothead-batch-audit","provisionalKey":"TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","interpretationProposalId":"interpretation-proposal:depothead-batch-audit","selectedKey":"TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","meaningId":"meaning:depothead-batch-audit","flowSliceId":"flow:post-depothead-batch-set-status","proposalKind":"BUSINESS_TERM","normalizedLabel":"批量审核或反审核","normalizedPurpose":"描述同一入口依据输入状态批量改变单据状态","basisAtomIds":["atom:input-field","atom:value-source"],"basisGapIds":["gap:runtime-status-policy"]}],"anchors":[{"anchorId":"anchor:method-depothead-batch-set-status","kind":"ACTIVITY","provenEndpointIds":["method:service-batch-set-status"],"owningFlowIds":["flow:post-depothead-batch-set-status"],"proofBasisAtomIds":["atom:value-source"]},{"anchorId":"anchor:table-jsh-depot-head","kind":"RECORD","provenEndpointIds":["table:jsh-depot-head"],"owningFlowIds":["flow:post-depothead-batch-set-status"],"proofBasisAtomIds":["atom:table"]}],"knowledgeItems":[{"knowledgeItemId":"knowledge:activity:depothead-status-change","knowledgeKind":"ACTIVITY","anchorId":"anchor:method-depothead-batch-set-status","technicalDisplay":"POST /depotHead/batchSetStatus → DepotHeadService.batchSetStatus","factIds":["fact:depothead-status-persistence"],"meaningIds":["meaning:depothead-batch-audit"],"registryLineageIds":["registry-lineage:depothead-batch-audit"],"gapIds":["gap:runtime-status-policy"],"owningFlowIds":["flow:post-depothead-batch-set-status"],"outcomePathIds":["outcome:no-eligible-document","outcome:status-updated"]},{"knowledgeItemId":"knowledge:record:jsh-depot-head","knowledgeKind":"RECORD","anchorId":"anchor:table-jsh-depot-head","technicalDisplay":"jsh_depot_head","factIds":["fact:depothead-status-persistence"],"meaningIds":[],"registryLineageIds":[],"gapIds":[],"owningFlowIds":["flow:post-depothead-batch-set-status"],"outcomePathIds":["outcome:no-eligible-document","outcome:status-updated"]}],"relations":[{"relationId":"relation:activity-updates-record","kind":"UPDATES","fromKnowledgeItemId":"knowledge:activity:depothead-status-change","toKnowledgeItemId":"knowledge:record:jsh-depot-head","basisAtomIds":["atom:value-source"],"owningFlowIds":["flow:post-depothead-batch-set-status"]}],"metrics":[{"metricId":"metric:depothead-status-change-count","formulaKey":null,"inputKnowledgeItemIds":["knowledge:activity:depothead-status-change","knowledge:record:jsh-depot-head"],"basisAtomIds":[],"owningFlowIds":["flow:post-depothead-batch-set-status"],"gapIds":["gap:runtime-status-policy"]}],"ownership":[{"semanticItemId":"atom:column","ownerKnowledgeItemId":"knowledge:record:jsh-depot-head","disposition":"OWNED"},{"semanticItemId":"atom:eligible-id-set","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"atom:entry-route","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"atom:input-field","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"atom:mapper-method","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"atom:service-handler","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"atom:table","ownerKnowledgeItemId":"knowledge:record:jsh-depot-head","disposition":"OWNED"},{"semanticItemId":"atom:value-source","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"atom:where-key","ownerKnowledgeItemId":"knowledge:record:jsh-depot-head","disposition":"OWNED"},{"semanticItemId":"atom:where-operator","ownerKnowledgeItemId":"knowledge:record:jsh-depot-head","disposition":"OWNED"},{"semanticItemId":"fallback:depothead-route-display","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"flow:post-depothead-batch-set-status","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"gap:runtime-status-policy","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"knowledge:activity:depothead-status-change","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"knowledge:record:jsh-depot-head","ownerKnowledgeItemId":"knowledge:record:jsh-depot-head","disposition":"OWNED"},{"semanticItemId":"meaning:depothead-batch-audit","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"registry-proposal:depothead-batch-audit","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"interpretation-proposal:depothead-batch-audit","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"metric:depothead-status-change-count","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"outcome:no-eligible-document","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"outcome:status-updated","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"},{"semanticItemId":"relation:activity-updates-record","ownerKnowledgeItemId":"knowledge:activity:depothead-status-change","disposition":"OWNED"}],"conflicts":[{"conflictId":"conflict:technical-vs-business-display","kind":"DISPLAY_PRIORITY","memberIds":["fallback:depothead-route-display","meaning:depothead-batch-audit"],"resolution":"BUSINESS_TERM_WITH_TECHNICAL_ANCHOR","winnerId":"meaning:depothead-batch-audit"}],"mergedGaps":[{"canonicalGapId":"gap:runtime-status-policy","memberGapIds":["gap:runtime-status-policy"],"missingRequirement":"runtime attestation for tenant-wide status policy","impact":"business wording remains qualified","closureRequirement":"trusted runtime or domain-owner attestation"}],"knowledgeShardReceipts":[{"shardId":"knowledge-shard:depothead","denominatorFlowSliceIds":["flow:post-depothead-batch-set-status"],"knowledgeItemIds":["knowledge:activity:depothead-status-change","knowledge:record:jsh-depot-head"],"status":"SUCCEEDED_WITH_GAPS","gapIds":["gap:runtime-status-policy"]}],"accounting":{"flowSliceIds":["flow:post-depothead-batch-set-status"],"outcomePathIds":["outcome:no-eligible-document","outcome:status-updated"],"factAtomIds":["atom:column","atom:eligible-id-set","atom:entry-route","atom:input-field","atom:mapper-method","atom:service-handler","atom:table","atom:value-source","atom:where-key","atom:where-operator"],"ownedFactAtomIds":["atom:column","atom:eligible-id-set","atom:entry-route","atom:input-field","atom:mapper-method","atom:service-handler","atom:table","atom:value-source","atom:where-key","atom:where-operator"],"registryProposalIds":["registry-proposal:depothead-batch-audit"],"provisionalKeys":["TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"interpretationProposalIds":["interpretation-proposal:depothead-batch-audit"],"meaningIds":["meaning:depothead-batch-audit"],"registryLineageIds":["registry-lineage:depothead-batch-audit"],"gapIds":["gap:runtime-status-policy"],"ownerSemanticItemIds":["atom:column","atom:eligible-id-set","atom:entry-route","atom:input-field","atom:mapper-method","atom:service-handler","atom:table","atom:value-source","atom:where-key","atom:where-operator","fallback:depothead-route-display","flow:post-depothead-batch-set-status","gap:runtime-status-policy","knowledge:activity:depothead-status-change","knowledge:record:jsh-depot-head","meaning:depothead-batch-audit","registry-proposal:depothead-batch-audit","TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","interpretation-proposal:depothead-batch-audit","metric:depothead-status-change-count","outcome:no-eligible-document","outcome:status-updated","relation:activity-updates-record"],"fallbackIds":["fallback:depothead-route-display"],"knowledgeItemIds":["knowledge:activity:depothead-status-change","knowledge:record:jsh-depot-head"],"relationIds":["relation:activity-updates-record"],"metricIds":["metric:depothead-status-change-count"]},"flows":[{"flowSliceId":"flow:post-depothead-batch-set-status","entryId":"entry:post-depothead-batch-set-status","outcomePathIds":["outcome:no-eligible-document","outcome:status-updated"],"factIds":["fact:depothead-status-persistence"],"meaningIds":["meaning:depothead-batch-audit"],"registryLineageIds":["registry-lineage:depothead-batch-audit"],"gapIds":["gap:runtime-status-policy"]}],"outcomes":[{"outcomePathId":"outcome:no-eligible-document","owningFlowIds":["flow:post-depothead-batch-set-status"],"factIds":[],"basisAtomIds":["atom:eligible-id-set"],"gapIds":[]},{"outcomePathId":"outcome:status-updated","owningFlowIds":["flow:post-depothead-batch-set-status"],"factIds":["fact:depothead-status-persistence"],"basisAtomIds":["atom:value-source","atom:where-key","atom:where-operator"],"gapIds":["gap:runtime-status-policy"]}]}}
-{"schemaVersion":"stage07-knowledge-publication-v2","artifactType":"STAGE07_KNOWLEDGE_PUBLICATION","artifactId":"stage07-publication:3333333333333333333333333333333333333333333333333333333333333333","producer":{"stage":7,"module":"KnowledgeArtifactPublisher","moduleVersion":"v2"},"upstreamArtifacts":[{"artifactId":"admission-decisions:1111111111111111111111111111111111111111111111111111111111111111","sha256":"1111111111111111111111111111111111111111111111111111111111111111"},{"artifactId":"knowledge-merge:2222222222222222222222222222222222222222222222222222222222222222","sha256":"2222222222222222222222222222222222222222222222222222222222222222"}],"controls":{"toolchainSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profileSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","schemaBundleSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","promptBundleSha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},"completion":{"status":"SUCCEEDED_WITH_GAPS","gapRefs":["gap:runtime-status-policy"],"failureRef":null},"payload":{"stageStatus":"SUCCEEDED_WITH_GAPS","admissionDecisionSetId":"admission:depothead-v2","knowledgeMergeId":"knowledge-merge:depothead-v2","repositoryKnowledgeId":"repository-knowledge:depothead-v2","repositoryInterpretationRegistryId":"interpretation-registry:depothead-v1","knowledgeItemCount":2,"meaningCount":1,"gapCount":1,"repositoryKnowledgeCoverage":{"flowSliceIds":["flow:post-depothead-batch-set-status"],"flowDecisionIds":["flow-decision:depothead-admitted-with-gaps"],"factAtomIds":["atom:column","atom:eligible-id-set","atom:entry-route","atom:input-field","atom:mapper-method","atom:service-handler","atom:table","atom:value-source","atom:where-key","atom:where-operator"],"registryProposalIds":["registry-proposal:depothead-batch-audit"],"provisionalKeys":["TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"interpretationProposalIds":["interpretation-proposal:depothead-batch-audit"],"meaningIds":["meaning:depothead-batch-audit"],"registryLineageIds":["registry-lineage:depothead-batch-audit"],"gapIds":["gap:runtime-status-policy"],"knowledgeItemIds":["knowledge:activity:depothead-status-change","knowledge:record:jsh-depot-head"],"relationIds":["relation:activity-updates-record"],"metricIds":["metric:depothead-status-change-count"],"ownerSemanticItemIds":["atom:column","atom:eligible-id-set","atom:entry-route","atom:input-field","atom:mapper-method","atom:service-handler","atom:table","atom:value-source","atom:where-key","atom:where-operator","fallback:depothead-route-display","flow:post-depothead-batch-set-status","gap:runtime-status-policy","knowledge:activity:depothead-status-change","knowledge:record:jsh-depot-head","meaning:depothead-batch-audit","registry-proposal:depothead-batch-audit","TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","interpretation-proposal:depothead-batch-audit","metric:depothead-status-change-count","outcome:no-eligible-document","outcome:status-updated","relation:activity-updates-record"],"shardReceiptIds":["knowledge-shard:depothead"],"closed":false,"outcomePathIds":["outcome:no-eligible-document","outcome:status-updated"]},"stageArtifactRoot":"stage-root:0707070707070707070707070707070707070707070707070707070707070707","publishedArtifacts":[{"path":"admitted-flow-meanings.jsonl","sizeBytes":1000,"sha256":"1111111111111111111111111111111111111111111111111111111111111111"},{"path":"knowledge-accounting.json","sizeBytes":1200,"sha256":"2222222222222222222222222222222222222222222222222222222222222222"},{"path":"knowledge-conflicts.jsonl","sizeBytes":900,"sha256":"3333333333333333333333333333333333333333333333333333333333333333"},{"path":"merged-gaps.json","sizeBytes":800,"sha256":"4444444444444444444444444444444444444444444444444444444444444444"},{"path":"repository-business-knowledge.json","sizeBytes":2500,"sha256":"5555555555555555555555555555555555555555555555555555555555555555"},{"path":"stage-receipt.json","sizeBytes":1200,"sha256":"6666666666666666666666666666666666666666666666666666666666666666"}],"nextStage":"08-build-nine-section-document-and-archive"}}
-~~~
-
-### 8.1 Interface 与 records
+### 8.1 Interface 与核心 records
 
 ~~~java
 interface KnowledgeAdmissionEngine {
@@ -211,157 +177,420 @@ interface KnowledgeAdmissionEngine {
 }
 ~~~
 
+以下为 **exact record contracts**，不是伪代码示例。
+
 ~~~text
-AdmittedFlowMeaning
-  meaningId
-  flowSliceId
-  anchorId
-  registryProposalIds[]
-  provisionalKeys[]
-  interpretationProposalIds[]
-  selectedKeys[]
-  basisAtomIds[]
-  basisGapIds[]
-  decision
+FlowAdmissionDecisionV1
+  flowAdmissionDecisionId!
+  flowSliceId!
+  modelEligibility!: MODEL_ELIGIBLE | MODEL_INELIGIBLE
+  modelIneligibilityGapIds[]!
+  decisionKind!: MODEL_MEANING_ADMITTED
+               | MODEL_READY_TECHNICAL_FALLBACK
+               | MODEL_GAP_TECHNICAL_FALLBACK
+               | MODEL_FAILED_TECHNICAL_FALLBACK
+               | MODEL_INELIGIBLE_TECHNICAL_FALLBACK
+  stage06DispositionId?
+  stage06Disposition?: READY_FOR_ADMISSION | GAP | FAILED
+  candidateId?
+  interpretationProposalDecisionIds[]!
+  meaningIds[]!
+  technicalFallbackIds[]!
+  gapIds[]!
+  failureRef?
+  reasonCode?
+
+InterpretationProposalDecisionV1
+  interpretationProposalDecisionId!
+  flowSliceId!
+  interpretationProposalId!
+  registryProposalId!
+  provisionalKey!
+  selectedKey!
+  decisionKind!: KEEP | NARROW | DROP | NEEDS_EVIDENCE | NEEDS_TERM_REGISTRY
+  admittedBasisAtomIds[]!
+  admittedBasisGapIds[]!
+  meaningId?
+  technicalFallbackId?
+  decisionGapIds[]!
+  reasonCode?
+
+AdmittedFlowMeaningV2
+  meaningId!
+  flowSliceId!
+  anchorId!
+  registryProposalIds[]!
+  provisionalKeys[]!
+  interpretationProposalIds[]!
+  interpretationProposalDecisionIds[]!
+  selectedKeys[]!
+  basisAtomIds[]!
+  basisGapIds[]!
+  decisionKind!: KEEP | NARROW
   technicalFallbackId?
 
-RegistryMeaningLineage
-  registryLineageId
-  registryProposalId
-  provisionalKey
-  interpretationProposalId
-  selectedKey
-  meaningId
-  flowSliceId
-  proposalKind
-  normalizedLabel
-  normalizedPurpose
-  basisAtomIds[]
-  basisGapIds[]
+TechnicalFallbackV2
+  technicalFallbackId!
+  flowSliceId!
+  anchorId!
+  displayKey!
+  displayValue!
+  basisFactIds[]!
+  basisAtomIds[]!
+  gapIds[]!
+  sourceDecisionKind!: MODEL_MEANING_ADMITTED
+                     | MODEL_READY_TECHNICAL_FALLBACK
+                     | MODEL_GAP_TECHNICAL_FALLBACK
+                     | MODEL_FAILED_TECHNICAL_FALLBACK
+                     | MODEL_INELIGIBLE_TECHNICAL_FALLBACK
 
-TechnicalAnchor
-  anchorId
-  kind
-  provenEndpointIds[]
-  owningFlowIds[]
-  proofBasisAtomIds[]
+RegistryMeaningLineageV2
+  registryLineageId!
+  registryProposalId!
+  provisionalKey!
+  interpretationProposalId!
+  interpretationProposalDecisionId!
+  selectedKey!
+  meaningId!
+  flowSliceId!
+  proposalKind!
+  normalizedLabel!
+  normalizedPurpose!
+  basisAtomIds[]!
+  basisGapIds[]!
 
-RepositoryBusinessKnowledge
-  repositoryKnowledgeId
-  repositoryInterpretationRegistryId
-  sourceFlowSliceIds[]
-  registryLineage[]
-  objects[]
-  activities[]
-  flows[]
-  outcomes[]
-  fields[]
-  relations[]
-  formulas[]
-  questions[]
-  facts[]
-  admittedMeanings[]
-  technicalFallbacks[]
-  gaps[]
-  ownership[]
-  conflicts[]
+AdmissionDecisionAccountingV2
+  flowSliceIds[]!
+  modelEligibleFlowSliceIds[]!
+  modelIneligibleFlowSliceIds[]!
+  modelIneligibilityGapIds[]!
+  stage06DispositionIds[]!
+  flowInterpretationCandidateIds[]!
+  flowAdmissionDecisionIds[]!
+  registryProposalIds[]!
+  acceptedRegistryProposalIds[]!
+  rejectedRegistryProposalIds[]!
+  provisionalKeys[]!
+  interpretationProposalIds[]!
+  interpretationProposalDecisionIds[]!
+  keepDecisionIds[]!
+  narrowDecisionIds[]!
+  dropDecisionIds[]!
+  needsEvidenceDecisionIds[]!
+  needsTermRegistryDecisionIds[]!
+  meaningIds[]!
+  registryLineageIds[]!
+  technicalFallbackIds[]!
+  gapIds[]!
+  closed!
 
-RepositoryKnowledgeCoverage
-  flowSliceIds[]
-  flowDecisionIds[]
-  factAtomIds[]
-  registryProposalIds[]
-  provisionalKeys[]
-  interpretationProposalIds[]
-  meaningIds[]
-  gapIds[]
-  knowledgeItemIds[]
-  relationIds[]
-  metricIds[]
-  ownerSemanticItemIds[]
-  shardReceiptIds[]
-  closed
+RepositoryKnowledgeCoverageV2
+  flowSliceIds[]!
+  flowAdmissionDecisionIds[]!
+  outcomePathIds[]!
+  factAtomIds[]!
+  registryProposalIds[]!
+  provisionalKeys[]!
+  interpretationProposalIds[]!
+  interpretationProposalDecisionIds[]!
+  meaningIds[]!
+  registryLineageIds[]!
+  technicalFallbackIds[]!
+  gapIds[]!
+  knowledgeItemIds[]!
+  relationIds[]!
+  metricIds[]!
+  conflictIds[]!
+  semanticItemIds[]!
+  ownerSemanticItemIds[]!
+  reasonedSemanticExclusionIds[]!
+  shardReceiptIds[]!
+  closed!
+
+TechnicalAnchorV2
+  anchorId!
+  kind!: FLOW | REQUEST | RESULT | RECORD | OUTCOME | ACTIVITY | FIELD | FORMULA | RELATION
+  provenEndpointIds[]!
+  owningFlowIds[]!
+  proofBasisAtomIds[]!
+
+RepositoryBusinessKnowledgeV3
+  repositoryKnowledgeId!
+  repositoryInterpretationRegistryId!
+  sourceFlowSliceIds[]!
+  flowAdmissionDecisionIds[]!
+  registryLineage[]!: RegistryMeaningLineageV2
+  objects[]!
+  activities[]!
+  flows[]!
+  outcomes[]!
+  fields[]!
+  relations[]!
+  formulas[]!
+  questions[]!
+  facts[]!
+  admittedMeanings[]!: AdmittedFlowMeaningV2
+  technicalFallbacks[]!: TechnicalFallbackV2
+  gaps[]!
+  ownership[]!: KnowledgeOwnership
+  conflicts[]!
 
 KnowledgeOwnership
-  semanticItemId
-  ownerKnowledgeItemId
-  disposition
+  semanticItemId!
+  ownerKnowledgeItemId?
+  disposition!: OWNED | REASONED_EXCLUSION
+  reasonCode?
 ~~~
 
-### 8.2 Decision lattice
+### 8.2 FlowAdmissionDecisionV1 闭集与 nullable 矩阵
 
-程序 decision：
+不存在第六种 variant，也不存在 `ADMITTED_WITH_GAPS`、`UNAVAILABLE` 或自由字符串 decision。Gap 是独立数组，不应编码进 decision 名称。
 
-- KEEP：key、eligibility、basis、owner 全闭合；
-- NARROW：可保留更窄 key/basis；
-- DROP：合法 response 但提案不成立；
-- NEEDS_EVIDENCE：关闭需要新 Fact/Evidence；
-- NEEDS_TERM_REGISTRY：事实成立但本run冻结的RepositoryInterpretationRegistry无可准入key；使用technical fallback，不在Stage07在线扩registry。
+| decisionKind | model/Stage06 条件 | meaning/fallback | Gap/failure/reason |
+| --- | --- | --- | --- |
+| `MODEL_MEANING_ADMITTED` | `MODEL_ELIGIBLE`; disposition=`READY_FOR_ADMISSION`; disposition ID和candidate非null；ineligibility Gaps为空 | meaning非空；fallback可为空或覆盖没有业务meaning的其他proven anchors；proposal decision IDs精确等于candidate proposals | gap可空；failure/reason为null |
+| `MODEL_READY_TECHNICAL_FALLBACK` | `MODEL_ELIGIBLE`; disposition=`READY_FOR_ADMISSION`; disposition ID和candidate非null；ineligibility Gaps为空 | meaning为空；fallback非空；proposal decision IDs精确等于candidate proposals且没有KEEP/NARROW | gap是所有NEEDS decision Gap的union，可在全DROP时为空；failure=null；reason=`NO_PROPOSAL_ADMITTED` |
+| `MODEL_GAP_TECHNICAL_FALLBACK` | `MODEL_ELIGIBLE`; disposition=`GAP`; disposition ID非null；candidate=null；ineligibility Gaps为空 | proposal decision/meaning为空；fallback非空 | Stage06 gapIds非空；failure=null；reason逐字复制Stage06版本化reason |
+| `MODEL_FAILED_TECHNICAL_FALLBACK` | `MODEL_ELIGIBLE`; disposition=`FAILED`; disposition ID非null；candidate=null；ineligibility Gaps为空 | proposal decision/meaning为空；fallback非空 | failure非null；reason逐字复制Stage06 reason；gap非空：优先复制Stage06 gaps，若为空则确定性创建一个引用failureRef的`FLOW_INTERPRETATION_FAILED` Gap |
+| `MODEL_INELIGIBLE_TECHNICAL_FALLBACK` | `MODEL_INELIGIBLE`; Stage06 disposition ID/value和candidate全部null | proposal decision/meaning为空；fallback非空 | `modelIneligibilityGapIds`非空且逐字等于Stage05 mapping；failure=null；reason=`FLOW_MODEL_INELIGIBLE` |
 
-模型的 KEEP 不能覆盖程序 NARROW/DROP。NEEDS_TERM_REGISTRY 使用 technical fallback 继续，不自动扩 registry。
+所有 required-nullable 字段在每个 variant 中都必须出现。`MODEL_MEANING_ADMITTED` 可有 Gap，但仍表示至少一个 meaning通过；stage status `SUCCEEDED_WITH_GAPS`由整体 Gap accounting决定，不能改写flow decision kind。
 
-### 8.3 Anchor 与 merge
+每个variant的`gapIds`都不是自由列表，固定为该Flow的canonical union：`Stage05 Flow.gapIds ∪ modelIneligibilityGapIds ∪ Stage06 disposition.gapIds ∪ referenced proposal decision.decisionGapIds ∪ Stage07 deterministicGapIds`。不适用的分子为空；`MODEL_FAILED_TECHNICAL_FALLBACK`在Stage06 gap为空时增加恰一个引用`failureRef`的`FLOW_INTERPRETATION_FAILED` Gap。任何漏项、额外跨Flow Gap或输入顺序造成的差异都使decision invalid。
 
-Anchor identity 优先级：
+### 8.3 InterpretationProposalDecisionV1 闭集
+
+| decisionKind | meaningId | fallbackId | decisionGapIds | reasonCode | basis规则 |
+| --- | --- | --- | --- | --- | --- |
+| KEEP | 非null | null | empty | null | 逐字等于validated proposal basis |
+| NARROW | 非null | null | empty | 非null版本化code | validated basis的闭合子集；basis若被收窄仍必须非空，也可保持basis而只收窄meaning eligibility；绝不扩张 |
+| DROP | null | null | empty | 非null版本化code | 保存已验证basis，不用删除basis伪装DROP |
+| NEEDS_EVIDENCE | null | 非null | 非空 | 非null版本化code | 保存当前闭合basis；Gap说明缺什么新Fact/Evidence |
+| NEEDS_TERM_REGISTRY | null | 非null | 非空 | 非null版本化code | selectedKey仍逐字保留；Gap说明本run frozen registry eligibility不足，禁止在线扩registry |
+
+每个 Stage 06 interpretation proposal恰一个 decision；`interpretationProposalDecisionId`不能用 proposal ID代替。KEEP/NARROW meaning 与 `RegistryMeaningLineageV2`一一对应。
+
+### 8.4 Fallback、Gap 与 meaning 行为
+
+`TechnicalDisplayRegistry` 是 total deterministic registry。每个需要fallback的 proven anchor必须恰一匹配；0或2 matches都是 `TECHNICAL_FALLBACK_NOT_TOTAL` fatal。fallback display只从冻结registry复制，不能使用模型开放文本、source comment或临时中文名。
+
+Fallback不等于模型失败，也不替代Fact：
+
+- model-ineligible Flow仍保留全部 Facts、Outcomes和ineligibility Gaps；
+- Stage06 GAP/FAILED保留 disposition/failure lineage；
+- proposal DROP是reasoned exclusion，不自动创造Gap；
+- NEEDS_EVIDENCE/NEEDS_TERM_REGISTRY必须创建或引用typed Gap；
+- meaning admitted时，未被meaning覆盖的其他proven anchor仍可有technical fallback；
+- merged Gap必须保留 `canonicalGapId + memberGapIds`，alias不等于删除。
+
+### 8.5 Anchor、merge 与 ownership
+
+Anchor identity优先级固定为：
 
 1. proven SQL table/column 或 FQN type；
 2. Flow/Outcome ID；
 3. exact method/field/parameter graph endpoint；
 4. Proof-backed equivalence edge。
 
-显示值、simple name、注释和模型 term 不是 merge key。相同 jsh_depot_head table 可以在不同 Flow 合并为同 RECORD；不同 request FQN 即使都叫“单据”也不合并。
+相同 `jsh_depot_head` table可跨Flow合并为同一RECORD；不同request FQN即使都显示“单据”也不能合并。Relation/metric每个endpoint必须有proven refs。每个semantic item恰一个 `KnowledgeOwnership{semanticItemId,ownerKnowledgeItemId,disposition}`；reasoned exclusion也必须有closed reason code，不能成为遗漏垃圾桶。
 
-### 8.4 Accounting、identity 与预算
+`KnowledgeOwnership`的nullable组合固定：`OWNED`要求`ownerKnowledgeItemId`非null且`reasonCode=null`；`REASONED_EXCLUSION`要求`ownerKnowledgeItemId=null`且`reasonCode`为版本化非空code。一个`semanticItemId`不能同时出现两种disposition。
+
+### 8.6 RepositoryCoverageLedgerDraftV2
+
+Draft 是 `knowledge-accounting.json` 的嵌套值，不是独立文件。Stage 08引用它时使用：
 
 ~~~text
-stage04FactAtoms = knowledgeOwnedFacts + reasonedFactExclusions
-stage06RegistryProposals = frozenProvisionalKeys + rejectedRegistryProposals
-stage06InterpretationProposals = keep + narrow + drop + needsEvidence + needsTermRegistry
-admittedMeanings = exactTerminalMappings(registryProposalId, provisionalKey, interpretationProposalId, selectedKey, meaningId)
-allMeanings = knowledgeOwnedMeanings + reasonedMeaningExclusions
-allGaps = knowledgeOwnedGaps + mergedAliasGaps
-allConflicts = resolvedConflicts + fatalConflicts
-stage05FlowSlices = stage07FlowDecisions
-stage06EligibleFlows = stage07ReadyOrFallbackFlowDecisions
-knowledgeShardFlowIds = exactDisjointUnion(stage05FlowSlices)
+RepositoryCoverageLedgerDraftReferenceV1
+  knowledgeAccountingRef!: ArtifactReference
+  repositoryCoverageLedgerDraftId!
+  schemaVersion=repository-coverage-ledger-draft-v2
+~~~
+
+Stage 08先fresh-reopen `knowledgeAccountingRef`、验证artifact/schema/hash，再要求 nested draft ID逐字相等。普通 `ArtifactReference`不能单独假装指向JSON内部值。
+
+下列为 **exact** records：
+
+~~~text
+Stage07CoveragePreparationV1
+  schemaVersion=stage07-coverage-preparation-v1
+  stage01To06CoverageRoots[6]!: StagePublicationReference
+  stage07AdmissionDecisionSetRef!: ArtifactReference // installed M1 payload
+  stage07KnowledgeMergeRef!: ArtifactReference       // installed M2 payload
+  repositoryInterpretationRegistryRef!: ArtifactReference
+  repositoryKnowledgeId!
+  flowAdmissionDecisionIds[]!
+  interpretationProposalDecisionIds[]!
+  admittedMeaningIds[]!
+  registryLineageIds[]!
+  technicalFallbackIds[]!
+  repositoryKnowledgeItemIds[]!
+  relationIds[]!
+  metricIds[]!
+  knowledgeConflictIds[]!
+  mergedCanonicalGapIds[]!
+  semanticItemIds[]!
+  ownerSemanticItemIds[]!
+  reasonedSemanticExclusionIds[]!
+  stage07CoveragePreparationRoot!
+
+RepositoryCoverageLedgerDraftV2
+  schemaVersion=repository-coverage-ledger-draft-v2
+  repositoryCoverageLedgerDraftId!
+  sourceScopeKind!: COMPLETE_CAPTURE | BOUNDED_PATH_SET
+  repositoryCompletionEligible!: BOOLEAN
+  stage01To06CoverageRoots[6]!: StagePublicationReference
+  stage07CoveragePreparation!: Stage07CoveragePreparationV1
+  sourceFileIds[]!
+  analyzableTextFileIds[]!
+  nonAnalyzableMediaFileIds[]!
+  discoverySiteIds[]!
+  entryIds[]!
+  graphCandidateIdsByKind{}!
+  factCandidateKeys[]!
+  admittedFactIds[]!
+  atomIds[]!
+  outcomeCandidateIds[]!
+  outcomePathIds[]!
+  flowSliceIds[]!
+  evidenceCapsuleIds[]!
+  modelEligibleFlowSliceIds[]!
+  modelIneligibleFlowSliceIds[]!
+  modelIneligibilityGapIds[]!
+  modelIneligibilityByFlow[]!{flowSliceId!,gapIds[]!}
+  gapIds[]!
+  registryProposalTaskIds[]!
+  registryProposalRoundIds[]!
+  registryProposalDispositionIds[]!
+  registryProposalIds[]!
+  acceptedRegistryProposalIds[]!
+  rejectedRegistryProposalIds[]!
+  repositoryInterpretationRegistryItemIds[]!
+  provisionalKeys[]!
+  interpretationTaskIds[]!
+  interpretationRoundIds[]!
+  flowInterpretationDispositionIds[]!
+  flowInterpretationCandidateIds[]!
+  interpretationProposalIds[]!
+  interpretationProposalDecisionIds[]!
+  flowAdmissionDecisionIds[]!
+  admittedMeaningIds[]!
+  registryLineageIds[]!
+  technicalFallbackIds[]!
+  repositoryKnowledgeItemIds[]!
+  relationIds[]!
+  metricIds[]!
+  knowledgeConflictIds[]!
+  semanticItemIds[]!
+  ownerSemanticItemIds[]!
+  reasonedSemanticExclusionIds[]!
+  shardReceipts[]!: CoverageShardReceiptV1
+  equations[]!: CoverageEquationV1
+  closedThroughStage07!: BOOLEAN
+  closureReasonCode?
+
+CoverageShardReceiptV1
+  stageNumber!: 1..7
+  shardKind!
+  shardId!
+  denominatorIds[]!
+  dispositionIds[]!
+  outputIds[]!
+  status!
+  gapIds[]!
+  owningArtifactRef!: ArtifactReference
+
+CoverageEquationV1 = closed tagged union
+  EXACT_SET_EQUAL {equationKey!,leftIds[]!,rightIds[]!}
+  DISJOINT_UNION {equationKey!,denominatorIds[]!,partitions[]!{partitionKey!,ids[]!}}
+  BIJECTION {equationKey!,leftIds[]!,rightIds[]!,mappings[]!{leftId!,rightId!}}
+  TOTAL_FUNCTION {equationKey!,domainIds[]!,codomainIds[]!,mappings[]!{domainId!,codomainId!}}
+  NONEMPTY_SET_BY_DOMAIN {equationKey!,domainIds[]!,mappings[]!{domainId!,memberIds[]!}}
+~~~
+
+`Stage07CoveragePreparationV1`只能引用已安装的M1/M2和upstream registry，不引用M3、任何Stage07 public artifact、Stage07 stage root/receipt或未来Stage08值。其 ID sets逐字等于M1/M2；因此它给draft一个无环的 Stage07 coverage root。
+
+Draft至少包含并验证以下 equations（实际artifact保存完整左右ID sets，不只保存count）：
+
+~~~text
+sourceFileIds = analyzableTextFileIds ⊎ nonAnalyzableMediaFileIds
+flowSliceIds ↔ evidenceCapsuleIds
+flowSliceIds = modelEligibleFlowSliceIds ⊎ modelIneligibleFlowSliceIds
+modelIneligibleFlowSliceIds -> nonempty modelIneligibilityByFlow.gapIds
+modelEligibleFlowSliceIds = Stage06 FlowInterpretationDisposition.flowSliceIds
+flowSliceIds ↔ FlowAdmissionDecision.flowSliceIds
+modelIneligibleFlowSliceIds = MODEL_INELIGIBLE_TECHNICAL_FALLBACK.flowSliceIds
+modelEligibleFlowSliceIds = union(the other four FlowAdmissionDecision variants)
+registryProposalIds = acceptedRegistryProposalIds ⊎ rejectedRegistryProposalIds
+interpretationProposalIds = InterpretationProposalDecision.interpretationProposalIds
+interpretationProposalDecisionIds = KEEP ⊎ NARROW ⊎ DROP ⊎ NEEDS_EVIDENCE ⊎ NEEDS_TERM_REGISTRY
+admittedMeaningIds = meanings produced by KEEP ⊎ NARROW
+registryLineageIds ↔ KEEP/NARROW interpretationProposalDecisionIds
+semanticItemIds = ownerSemanticItemIds ⊎ reasonedSemanticExclusionIds
+knowledgeShardFlowIds = exactDisjointUnion(flowSliceIds)
 repositoryKnowledgeArtifacts = exactlyOne
 ~~~
 
-repositoryKnowledgeId 绑定upstream roots、RepositoryInterpretationRegistry root、admission/knowledge profiles，以及排序后的registry lineage/meanings/anchors/knowledge/ownership/conflicts/accounting。时间和执行顺序不进入ID。
+合法 typed Gap本身不使`closedThroughStage07=false`；闭包表示每个denominator item已有唯一处置，不表示“没有Gap”。`closedThroughStage07=true`要求`sourceScopeKind=COMPLETE_CAPTURE`、`repositoryCompletionEligible=true`、所有 equations成立、六个upstream publication refs/所有shard refs有效、M1/M2 preparation sets一致、无orphan/duplicate，且`closureReasonCode=null`。`BOUNDED_PATH_SET`必须为false并使用`BOUNDED_PATH_SET_NOT_REPOSITORY_COMPLETE`；其他false也要求版本化非空reason并可从equations精确算出missing/unexpected/overlap IDs。scope kind与eligibility不相容不是Gap，而是draft invalid。
 
-预算覆盖 anchors、proposals、knowledge items、relations、conflicts、owners 和 merge worklist；超限不得随意丢对象。
+Draft没有 `readerSemanticItemIds`、`sectionOwnerBySemanticItem`、Stage08 preparation、final `closed` 或 final ledger ID。唯一 final `RepositoryCoverageLedgerV3`只由Stage08 M1安装。
 
-### 8.5 安全与 failure codes
+### 8.7 Identity、排序和预算
 
-不读取源码、Path、raw prompt/response reasoning，不调用 Provider。只解析 exact canonical artifacts；open text 不进入 knowledge value。
+Identity公式固定为：
 
-稳定 code：
+~~~text
+flowAdmissionDecisionId = "flow-admission-decision:" + lowercaseHex(SHA-256(
+    frame(UTF8("flow-admission-decision-id-v1")) ||
+    frame(canonicalJson(decisionWithoutFlowAdmissionDecisionId))))
 
-STAGE07_INPUT_INVALID、MODEL_ROUND_REPLAY_MISMATCH、REGISTRY_INVALID、REGISTRY_MEANING_LINEAGE_BROKEN、INTERPRETATION_REFERENCE_INVALID、INTERPRETATION_BASIS_EXPANDED、INTERPRETATION_ADMISSION_INVALID、TECHNICAL_FALLBACK_NOT_TOTAL、ANCHOR_INPUT_NOT_PROVEN、ANCHOR_MERGE_AMBIGUOUS、KNOWLEDGE_OWNER_INVALID、KNOWLEDGE_CONFLICT_UNRESOLVED、KNOWLEDGE_ACCOUNTING_INVARIANT_BROKEN、STAGE07_RESOURCE_LIMIT_EXCEEDED。
+interpretationProposalDecisionId = "interpretation-proposal-decision:" + lowercaseHex(SHA-256(
+    frame(UTF8("interpretation-proposal-decision-id-v1")) ||
+    frame(canonicalJson(decisionWithoutInterpretationProposalDecisionId))))
 
-### 8.6 测试 seam 与验收
+stage07CoveragePreparationRoot = "stage07-coverage-preparation:" + lowercaseHex(SHA-256(
+    frame(UTF8("stage07-coverage-preparation-root-v1")) ||
+    frame(canonicalJson(preparationWithoutStage07CoveragePreparationRoot))))
 
-- 同一 canonical round replay 产生相同 decisions/knowledge bytes，无 Provider。
-- 模型 KEEP 对抗程序 DROP/NARROW 时程序胜出。
-- 删除或断开任一`registryProposalId/provisionalKey/interpretationProposalId/selectedKey`触发lineage failure；合法未准入term才走unique fallback/NEEDS_TERM_REGISTRY，且不改变Facts。
-- fallback 0 或 2 matches fatal。
-- 同 SQL table 跨 Flow 合并；不同 request FQN 不因同名合并。
-- equal-priority different term/value conflict 必须明确处置，不能按输入顺序选。
-- atom/meaning/Gap 双 owner、无 owner、静默丢失 fatal。
-- 0 Flow 时仍把 deterministic Gaps/范围说明合并进 knowledge。
-- multi-flow fixture 至少两Flow：同一table/proven identity可合并、不同FQN保持分离，并形成非空跨Flow relation或metric；每Flow candidate/GAP/FAILED都有decision与owner，最终仍只有一个RepositoryKnowledge。
+repositoryCoverageLedgerDraftId = "repository-coverage-ledger-draft:" + lowercaseHex(SHA-256(
+    frame(UTF8("repository-coverage-ledger-draft-id-v2")) ||
+    frame(canonicalJson(draftWithoutRepositoryCoverageLedgerDraftId))))
+~~~
 
-验收必须覆盖KEEP/NARROW/DROP/NEEDS_EVIDENCE/NEEDS_TERM_REGISTRY全lattice、fallback 0/1/2 matches、至少双Flow的同表合并/同名不同FQN隔离/非空relation或metric、一Flow unavailable fallback、single-flow omission、缺/重叠shard、equal-priority conflict和0Flow knowledge。只有replay bytes稳定、完整Flow→decision→唯一RepositoryKnowledge accounting闭合、所有semantic items有唯一owner且反例不依赖输入/shard顺序，Stage07才算可交付。
+每个preimage删除且只删除自己的顶层self字段；required-nullable字段继续存在。Identity覆盖完整variant字段、refs、ID sets、equations、scope和closure。不得按flow临时映射、用count、display或enclosing artifact ID代替。
 
-### 8.7 已冻结裁决：实现者不得自由推断
+普通 ID arrays按UTF-8 bytes排序去重；draft与preparation中的`stage01To06CoverageRoots`必须逐字相同并按stageNumber 1..6；`modelIneligibilityByFlow`按flowSliceId；`graphCandidateIdsByKind`按closed graph kind；`shardReceipts`按(stageNumber,shardKind,shardId)；equations按equationKey且partition按partitionKey；mapping按(domainId,codomainId/memberIds)。输入、shard或线程完成顺序不进入identity。
 
-- R0 registry proposal和R1/R2 interpretation proposal永不自批；Stage07重新计算最终decision且只能与模型建议相同或更保守。每个admitted meaning必须保存`registryProposalId→provisionalKey→interpretationProposalId→selectedKey→meaningId`完整链。
-- 业务 term 缺失时使用 total TechnicalDisplayRegistry 或 NEEDS_TERM_REGISTRY；不能开放写词、在线扩 registry 或丢 Fact。
-- merge key 只允许 proven SQL/FQN、Flow/Outcome ID、exact endpoint 或 Proof-backed equivalence；显示名/simple name/term key 不是 identity。
-- 每个 Fact atom、meaning、fallback、Gap 恰一个 owner；equal-priority unresolved conflict 是 fatal，不按输入顺序胜出。
-- 0 Flow 仍产生 scope/Gaps/technical knowledge；Stage 07 不调用 Provider、不读 raw reasoning/source。
-- Stage05全部Flow和Stage06全部candidate/GAP/FAILED dispositions必须被处置；Stage07每run只产一个RepositoryKnowledge，跨Flowidentity/relation/metric/conflict均在其中，禁止per-Flow knowledge旁路。
-- merge 数据结构、索引和并行策略可选择；decision lattice、anchor priority、ownership/accounting、Gap/fatal 不得改变。
+预算覆盖 anchors、proposal decisions、flow decisions、knowledge items、relations、metrics、conflicts、owners、draft ID sets/equations和merge worklist。超限不得截断或抽样；可完整指出受影响IDs时成为Gap/incomplete coverage，否则fatal。
+
+### 8.8 安全与稳定 failure codes
+
+不读取源码、Path、raw prompt/response reasoning，不调用Provider，不接收开放knowledge text。稳定codes：
+
+`STAGE07_INPUT_INVALID`, `STAGE05_FLOW_ELIGIBILITY_PARTITION_INVALID`, `STAGE06_ELIGIBLE_FLOW_COVERAGE_INVALID`, `STAGE06_TASK_DISPOSITION_CLOSURE_INVALID`, `MODEL_INELIGIBLE_FLOW_HAS_STAGE06_ARTIFACT`, `FLOW_ADMISSION_DECISION_INVALID`, `FLOW_ADMISSION_COVERAGE_BROKEN`, `MODEL_ROUND_REFERENCE_MISMATCH`, `REGISTRY_INVALID`, `REGISTRY_MEANING_LINEAGE_BROKEN`, `INTERPRETATION_REFERENCE_INVALID`, `INTERPRETATION_BASIS_EXPANDED`, `INTERPRETATION_ADMISSION_INVALID`, `TECHNICAL_FALLBACK_NOT_TOTAL`, `ANCHOR_INPUT_NOT_PROVEN`, `ANCHOR_MERGE_AMBIGUOUS`, `KNOWLEDGE_OWNER_INVALID`, `KNOWLEDGE_CONFLICT_UNRESOLVED`, `KNOWLEDGE_ACCOUNTING_INVARIANT_BROKEN`, `REPOSITORY_COVERAGE_DRAFT_INVALID`, `REPOSITORY_COVERAGE_DRAFT_CYCLE`, `STAGE07_RESOURCE_LIMIT_EXCEEDED`。
+
+### 8.9 测试 seam 与验收
+
+只运行当前slice的三个targeted selectors；禁止 full suite、live Provider、network、customer Maven或mock canonical/accounting core。
+
+- M1：五个flow decision variants各一个正例；五个proposal variants各一个正例；model-ineligible无Stage06且有Gap；eligible缺/重 disposition；ineligible多出task/disposition；R0/R1/R2 task/disposition的`E+2R`双射、accepted round/receipt refs、R2同Flow `NOT_RUN_UPSTREAM_FAILED`的正反例；candidate/proposal遗漏；cross-Flow key；basis expansion；fallback 0/2；identity mutation；0Flow；input order稳定。
+- M2：至少双Flow，其中一个model-ready admitted、一个model-ineligible或Stage06 failed fallback；同table merge、同名不同FQN隔离、非空relation/metric、registry lineage任一hop删除、owner/alias/conflict/shard mutation、0Flow单一knowledge。
+- M3：Stage05 Flow IDs与public JSONL行/decision IDs exact equality；Stage06只等于eligible subset；draft含全部Stage01–07 ID sets；Stage07 publication/root/self/M3/future-Stage08 cycle injection全部拒绝；nested draft reference reopen；count spoof、missing/overlap shard、second repository knowledge、exact-five/exact-six、partial-install/collision/fresh-reopen。
+- 端到端 fixture至少两个入口/Flow/Capsule；正常eligible Flow保持R0→registry→R1/R2→meaning lineage，并从Stage06 public dispositions重验对应task、round与receipt；另有model-ineligible（0 Stage06 disposition）、R0 GAP、R1/R2 FAILED和all-DROP fixtures。每种都产生恰一个FlowAdmissionDecision且最终仍只有一个RepositoryKnowledge。
+- 改变shard size或并发完成顺序后，M1/M2、五个public semantic bytes、draft ID和RepositoryKnowledge逐字节相同。
+
+验收只在 `stage05FlowSliceIds == flowAdmissionDecision.flowSliceIds`、eligible subset与Stage06 dispositions精确相等、public tasks与`ModelTaskDispositionV1`集合精确双射为`E+2R`、accepted round/receipt与R2 upstream-task refs闭合、proposal/meaning/fallback/owner accounting闭合、draft无环且五semantic+receipt原子安装时通过。单Flow PASS永远不能完成Stage07或run。
+
+### 8.10 已冻结裁决：实现者不得自由推断
+
+- Stage07的主分母永远是Stage05全部Flow，不是Stage06 candidates或dispositions。
+- 每个model-ineligible Flow恰一个`MODEL_INELIGIBLE_TECHNICAL_FALLBACK`，三个Stage06字段为null，不能伪造Stage06 disposition。
+- Flow decision是五variant closed union；proposal decision是五variant separate closed union；Gap不编码进decision名称。
+- 业务term缺失时使用total TechnicalDisplayRegistry；不能开放写词、在线扩registry或丢Fact。
+- merge key只允许proven SQL/FQN、Flow/Outcome、exact endpoint或Proof-backed equivalence；显示名/simple name/term key不是identity。
+- 每个semantic item恰一owner或有reasoned exclusion；equal-priority unresolved conflict fatal。
+- `RepositoryCoverageLedgerDraftV2`嵌入现有`knowledge-accounting.json`，只到Stage07；Stage08 M1拥有唯一final ledger。不得增加reader-visible文件。
+- Stage07每run只有一个RepositoryKnowledge；禁止per-Flow knowledge或Markdown旁路。
 
 ## 9. 当前实现差距审计
 
@@ -369,8 +598,10 @@ STAGE07_INPUT_INVALID、MODEL_ROUND_REPLAY_MISMATCH、REGISTRY_INVALID、REGISTR
 | --- | --- |
 | **部分具备（bounded v0）** | 现有 Stage03 有 finite term/claim admission、technical fallback、hard-anchor merge、Flow-local Gap 和 typed repository model tests |
 | **能力有限** | relation kind、通用 conflict/priority、显式 owner map 和跨 source-shape anchor 仍不完整 |
-| **R0 lineage尚未实现** | 当前实现没有Stage06 `RepositoryInterpretationRegistry`，因此也没有`registryProposalId→provisionalKey→interpretationProposalId→selectedKey→meaningId`准入与knowledge lineage |
-| **尚未符合目标** | 没有独立 run/stages/07 production artifacts；当前成功结果通常先在内存完成，随后只在 final Candidate archive 中出现 |
-| **真实 DepotHead 边界** | 0 Flow/0 Capsule 意味着 0 admitted model meaning；只保留可确定的范围与 Gap，不能写业务成功叙述 |
+| **all-Flow contract尚未实现** | 当前目标实现没有Stage05 eligibility partition→Stage07全Flow decision的独立持久化；model-ineligible Flow无Stage06 disposition的分支尚不存在 |
+| **R0 lineage尚未实现** | 当前实现没有目标Stage06 `RepositoryInterpretationRegistry`，因此也没有完整registry proposal→meaning lineage |
+| **coverage draft尚未实现** | 当前没有嵌入`knowledge-accounting.json`、无环并可由Stage08精确引用的`RepositoryCoverageLedgerDraftV2` |
+| **尚未符合目标** | 没有独立 `run/stages/07` production artifacts；当前成功结果通常先在内存完成，随后只在final Candidate archive中出现 |
+| **真实 DepotHead 边界** | 0 Flow/0 Capsule意味着0 flow decision和0 admitted model meaning；只保留可确定的scope与Gap，不能写业务成功叙述 |
 
-本阶段目标不是保留现有类 shape，而是保证模型提案不能自批、仓库知识有稳定 owner 和可重放 merge。
+本阶段目标不是保留现有类shape，而是让每个Flow都有可重验的程序决定、每个semantic item都有稳定owner、Stage08有无环的Stage01–07 draft输入，并始终维持一份完整仓库知识输出。

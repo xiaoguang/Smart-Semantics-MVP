@@ -2,6 +2,8 @@
 
 > 总体设计权威：[GitHub Code Agent 总体设计](../DESIGN.md)。
 
+本文示例严格使用DESIGN §1.3的`NARRATIVE_ILLUSTRATION | STRUCTURAL_WIRE_SPECIMEN | STRICT_REPLAY_GOLDEN`分类；未标为strict的digest/size/ID不可复制为golden。权威字段表、enum、identity和direct-preimage合同始终exact，不能靠示例降级删除。
+
 ## 1. 为什么存在
 
 Fact 说明一件事成立，却没有说明一个请求从哪里开始、经过哪些条件、在哪些终点结束。模型若直接收到 Fact 列表，仍可能把多个入口、分支和副作用拼成一段不存在的故事。
@@ -25,7 +27,7 @@ DepotHead **REAL_SOURCE** 包含：
 
 目标 Flow 应以 HTTP entry 为根，保留每个 guard polarity 和 terminal。**但当前结果不是成功 Flow**：固定 jshERP slice 仍是 Gap、0 Flow、0 Capsule。
 
-当前诚实 output 形状：
+**示例分类：NARRATIVE_ILLUSTRATION。** 当前诚实 output 形状如下；它是人类可读的审计投影，不是wire record或replay fixture：
 
 ~~~json
 {
@@ -57,11 +59,11 @@ reasonCodes 表示目标可用 code 示例；实际当前 code/count 以运行 a
 | 文件 | 唯一职责 |
 | --- | --- |
 | flow-slices.json | FlowSlice、OutcomePath、steps、facts/atoms/gaps 和 parent/child refs |
-| flow-coverage.json | 仓库 entry/outcome/call/mapper/fact/atom/evidence、shard 与 unsupported/failed/omitted 的分母与分子 |
+| flow-coverage.json | 仓库 entry/outcome/call/mapper/fact/atom/evidence、shard 与 unsupported/failed/omitted 的分母与分子；同时保存全部 Flow 的 model eligibility 严格分区和逐 ineligible Flow 的 Gap 映射 |
 | entry-dispositions.jsonl | 每个发现入口恰一条 COMPILED/GAP/EXCLUDED |
 | evidence-capsules.jsonl | 每个 COMPILED Flow 恰一个模型阅读包 |
 | flow-gaps.jsonl | blocking/warning Flow-local Gap 及 provenance |
-| stage-receipt.json | upstream roots、control hashes、artifact set、Flow/Capsule counts |
+| stage-receipt.json | upstream roots、control hashes、artifact descriptors、status与Gap refs/count；Flow/Capsule分母和counts在flow-coverage.json中 |
 
 未来 DepotHead 成功后的 Capsule 只能包含该 Flow 的必要 spans；它属于上述统一 walkthrough 声明：
 
@@ -76,21 +78,21 @@ Mapper XML :3,:70-93,:385-497
 
 是否需要更细 span 由 projection obligations 决定，不能把上面行段硬编码为 golden。
 
-目标出口不会因 0 Flow 变成空结果：六个命名文件必须全部存在；每个 Stage 02 entry 在 `entry-dispositions.jsonl` 恰有一条记录，`flow-coverage.json` 保存完整分母及 shard receipts，`flow-gaps.jsonl` 保存 blocking reason，receipt 明确 `flowSliceCount=0`、`evidenceCapsuleCount=0`。未来 DepotHead 正向出口则必须有一个入口根 Flow、完整 Outcomes 和恰一个 Capsule，但仓库 stage 只有在**其他所有入口也各有 COMPILED/GAP/EXCLUDED**后才闭合，而不是只把 DepotHead count 改成 1。
+目标出口不会因 0 Flow 变成空结果：六个命名文件必须全部存在；每个 Stage 02 entry 在 `entry-dispositions.jsonl` 恰有一条记录，`flow-coverage.json` 保存完整分母、`flowSliceCount=0`、`evidenceCapsuleCount=0`及 shard receipts，`flow-gaps.jsonl` 保存 blocking reason，receipt只绑定这些semantic payload的descriptor/status/Gap refs/count。未来 DepotHead 正向出口则必须有一个入口根 Flow、完整 Outcomes 和恰一个 Capsule，但仓库 stage 只有在**其他所有入口也各有 COMPILED/GAP/EXCLUDED**后才闭合，而不是只把 DepotHead count 改成 1。
 
-Artifact cardinality 固定：若完整仓库编译出 `N` 个 FlowSlice，则必有 `N` 个 EvidenceCapsule，且每对保留相同 `flowSliceId`；Stage05 不生成解释或 Markdown。每个 Flow/Capsule独立持久化并可单独恢复，最终 public files是所有 shard 的 canonical ID-set union。
+Artifact cardinality 固定：若完整仓库编译出 `N` 个 FlowSlice，则必有 `N` 个 EvidenceCapsule，且每对保留相同 `flowSliceId`；Stage05 不生成解释或 Markdown。每个 Flow/Capsule独立持久化并可被下游按identity读取，最终 public files是所有 shard 的 canonical ID-set union。
 
 ### 4.1 人类 walkthrough：模块用什么文件接力
 
-下面继续采用未来 Fact/graph closure 已补齐的目标分支；当前 implementation audit 的 0/0 不变。
+**示例分类：NARRATIVE_ILLUSTRATION。** 下面只解释未来 Fact/graph closure 已补齐后的模块接力，不是wire record、identity preimage或跨stage replay fixture；当前 implementation audit 的 0/0 不变。
 
 ~~~jsonl
-{"module":"EntryRootedFlowCompiler","artifact":"modules/01-flow-compiler/flow-compilation.json","takesFrom":["Stage02Reference","Stage03Reference","Stage04Reference"],"says":{"entryId":"entry:post-depothead-batch-set-status","flowSliceId":"flow:post-depothead-batch-set-status","factId":"fact:depothead-status-persistence","outcomes":["outcome:no-eligible-document","outcome:status-updated"]}}
-{"module":"EvidenceCapsuleProjector","artifact":"modules/02-capsule-projector/capsule-projection.json","takesFrom":["flow-compilation.json","Proof/Evidence/source"],"says":{"flowSliceId":"flow:post-depothead-batch-set-status","evidenceCapsuleId":"capsule:post-depothead-batch-set-status","covers":["entry route","dhIds guard","status value path","id IN where","both terminals"],"registryProposalBasisAtomIds":["atom:input-field","atom:value-source"],"registryProposalBasisGapIds":["gap:runtime-status-policy"],"usedBy":["R0","R1","R2"]}}
-{"module":"FlowArtifactPublisher","artifact":"modules/03-publish/stage05-publication.json","takesFrom":["flow-compilation.json","capsule-projection.json"],"says":{"flowCount":1,"capsuleCount":1,"publicFiles":["flow-slices.json","flow-coverage.json","entry-dispositions.jsonl","evidence-capsules.jsonl","flow-gaps.jsonl","stage-receipt.json"],"nextStage":"06-interpret-one-flow-at-a-time"}}
+{"module":"flow-compiler","artifact":"modules/01-flow-compiler/flow-compilation.json","takesFrom":["Stage02Reference","Stage03Reference","Stage04Reference"],"says":{"entryId":"entry:post-depothead-batch-set-status","flowSliceId":"flow:post-depothead-batch-set-status","factId":"fact:depothead-status-persistence","outcomes":["outcome:no-eligible-document","outcome:status-updated"]}}
+{"module":"capsule-projector","artifact":"modules/02-capsule-projector/capsule-projection.json","takesFrom":["flow-compilation.json","Proof/Evidence/source"],"says":{"flowSliceId":"flow:post-depothead-batch-set-status","evidenceCapsuleId":"capsule:post-depothead-batch-set-status","covers":["entry route","dhIds guard","status value path","id IN where","both terminals"],"registryProposalBasisAtomIds":["atom:input-field","atom:value-source"],"registryProposalBasisGapIds":["gap:runtime-status-policy"],"usedBy":["R0","R1","R2"]}}
+{"module":"publish","artifacts":"modules/03-publish/<five-semantic-files>","receipt":"modules/03-publish/module-receipt.json","takesFrom":["flow-compilation.json","capsule-projection.json"],"says":{"flowCount":1,"capsuleCount":1,"modelEligibleFlowSliceIds":["flow:post-depothead-batch-set-status"],"modelIneligibleFlowSliceIds":[],"modelIneligibilityGapIds":[],"modelIneligibilityByFlow":[],"semanticFiles":["flow-slices.json","flow-coverage.json","entry-dispositions.jsonl","evidence-capsules.jsonl","flow-gaps.jsonl"],"stageReceipt":null,"nextStep":"CanonicalStageArtifactStore"}}
 ~~~
 
-M1 的 `entryId/factId/outcomePathIds` 原样进入 M2；M2 只新增 `evidenceCapsuleId` 和直接语义 spans。当前缺 Proof 时 M1 产生 GAP/0 Flow，M2 产生0 Capsule，M3仍发布完整0/0 artifact set。
+M1 的 `entryId/factId/outcomePathIds` 原样进入 M2；M2 只新增 `evidenceCapsuleId`、直接语义 spans和可重验的model eligibility。上例假设DepotHead Capsule符合模型输入预算，所以进入eligible集合；若它只能安全持久化、却不能安全交给模型，则同一Flow和Capsule仍保留，只移动到`modelIneligibleFlowSliceIds`，并在`modelIneligibilityByFlow`增加该Flow及非空Gap。当前缺 Proof 时 M1 产生 GAP/0 Flow，M2 产生0 Capsule，M3仍发布完整0/0 artifact set，四项eligibility字段都显式为空数组。
 
 ## 5. 下游怎样消费而不返工
 
@@ -111,17 +113,17 @@ Stage 06 无权发现 Flow、补 Outcome、修改条件或请求“再读一点�
 | --- | --- |
 | Stage 02 entries、Stage 03 graph roots、Stage 04 Fact/Proof/Gaps 与 Stage 05 controls 全一致 | 每个发现 entry 恰一条 COMPILED/GAP/EXCLUDED disposition，入口与 Outcome 分母守恒 |
 | 六个 output files、receipt root、Flow/Outcome/Fact/atom/Gap/capsule refs 全闭合 | 每个 COMPILED entry 恰一个入口根 Flow，每个 Flow 恰一个最小 Capsule；GAP/EXCLUDED 没有 Capsule |
-| Capsule span hashes、projection obligations、R0 basis allowlist 和预算重验通过 | Stage 06 可从同一Capsule先建一个R0 slot，程序freeze registry后再建R1/R2；0 Flow可确定0 Provider call |
-| entry shard receipts不交叠且union精确等于Stage02全部entryIds；每entry有唯一disposition | Stage06得到完整的eligible Flow集合和全部Gap/排除accounting；一Flow PASS不足以结束Stage05/run |
+| Capsule span hashes、projection obligations、R0 basis allowlist 和预算重验通过 | Stage 06 可从同一Capsule先建一个R0 task，程序freeze registry后再建R1/R2 tasks；0 Flow可确定0 Provider call |
+| entry shard receipts不交叠且union精确等于Stage02全部entryIds；每entry有唯一disposition | Stage06只得到`modelEligibleFlowSliceIds`并且不会为ineligible Flow建task；Stage07仍从`flowSliceIds`与`modelIneligibilityByFlow`得到完整全Flow分母；一Flow PASS不足以结束Stage05/run |
 
 Stage 06 若看到多 Capsule、缺 Capsule、未闭合 Outcome 或越界 ref，必须拒绝整个 Stage 05 input；不能让模型选择“看哪一份”。
 
-## 6. 成功、Gap、fatal 与恢复
+## 6. 成功、Gap、fatal 与显式复用
 
 - **成功**：完整仓库所有 entry 都有唯一 disposition；每个 COMPILED entry 恰一个入口根 Flow/Capsule；全 shard union、coverage 和 projection closure 闭合。
 - **带 Gap 成功**：某 entry 为 GAP，或 Flow 带 warning Gap。0 Flow/0 Capsule 是合法 SUCCEEDED_WITH_GAPS，并显式阻止模型调用。
 - **fatal**：上游 replay mismatch、graph/proof reference broken、branch polarity/terminal closure broken、accounting 不守恒、source span 漂移、projection 不可满足或 identity collision。
-- **恢复**：重验 upstream roots、entry shard receipts 和 Stage 05 artifact root。已完成 deterministic Flow/Capsule shard保留，未开始 shard可重跑；缺/重叠 shard不能发布。完全相等才让 Stage 06 读取；fatal 不删除五图/Facts或已完成slice artifacts。
+- **显式复用**：新Stage06 execution重验upstream roots、entry shard receipts和Stage05 artifact root；缺/重叠shard不能发布。完全相等才读取；fatal不删除五图/Facts或已完整安装的slice artifacts。
 
 ## 7. 程序与模型责任
 
@@ -138,7 +140,7 @@ Stage 06 若看到多 Capsule、缺 Capsule、未闭合 Outcome 或越界 ref，
 
 ### 8.0 固定模块合同
 
-模块执行顺序固定为 `EntryRootedFlowCompiler` → `EvidenceCapsuleProjector` → `FlowArtifactPublisher`。每个模块先安装 canonical artifact；后继只读 artifact，不读取前驱内存图或私有类。
+模块执行顺序固定为 `EntryRootedFlowCompiler` → `EvidenceCapsuleProjector` → `FlowPublicationSpecifier` → `CanonicalStageArtifactStore`。前三个业务模块先安装 canonical artifact；后继只读 artifact，不读取前驱内存图或私有类，stage store不是第四个业务模块。
 
 #### M1 EntryRootedFlowCompiler
 
@@ -147,59 +149,73 @@ Stage 06 若看到多 Capsule、缺 Capsule、未闭合 Outcome 或越界 ref，
 - **确定性顺序 / LLM**：固定全 entryId denominator → 按entryId shard → 建 ownership scope → 沿 EXACT call/CFG/call-return → 枚举 decision sequences/terminals → longest common prefix → 分配 Fact/atom/Gap → per-entry disposition → shard union/account；0 LLM。
 - **目标输出与 DepotHead 示例**：`FlowCompilation{entryDispositions,flowSlices,outcomePaths,ownership,coverage}`；未来例为一个 POST entry Flow、多 Outcome，当前例为该 entry 的 GAP/0 Flow与 blocking refs。
 - **必须保持的不变量**：Stage02每 entry 恰一 disposition；COMPILED 恰一个 root Flow；每 terminal path 恰一 Outcome disposition；Fact/atom/Gap owner 唯一；entry shards不交叠且union等于完整entry denominator。
-- **Gap / fatal / 恢复**：unsupported/ambiguous/unproven path 是 entry/Outcome Gap；broken graph/Proof refs、missing polarity/terminal、duplicate owner/accounting fatal；恢复重放完整 entry set。
+- **Gap / fatal / artifact复用**：unsupported/ambiguous/unproven path 是 entry/Outcome Gap；broken graph/Proof refs、missing polarity/terminal、duplicate owner/accounting fatal；模块每次处理完整entry denominator。
 - **给下游的后置保证**：M2 得到闭合 Flow/Outcome/Fact/Proof ownership，或可解释的零 Flow，绝不需要补 path。
 - **明确非目标**：不选 source spans、不调用模型、不按 terminal 拆多个 Flow、不发明业务名。
-- **公共测试 seam 与验收**：`compile(entries, graphs, facts, profile)` 覆盖至少两非空entry/Flow、多 Outcome、第二 entry 隔离、其中一entry Gap/恢复、缺/重叠 shard、loop/ambiguous Gap、edge deletion fatal 与 DepotHead 0/0 baseline；ID-set accounting必须闭合且一Flow PASS不能完成stage。
+- **公共测试 seam 与验收**：`compile(entries, graphs, facts, profile)` 覆盖至少两非空entry/Flow、多 Outcome、第二 entry 隔离、其中一entry Gap、缺/重叠 shard、loop/ambiguous Gap、edge deletion fatal 与 DepotHead 0/0 baseline；ID-set accounting必须闭合且一Flow PASS不能完成stage。
 - **Luna/xhigh 测试指南**：创建 `Stage05EntryRootedFlowCompilerTest`，冻结Stage02–04 files、多Outcome fixture及当前DepotHead 0/0 golden于 `src/test/resources/target/stage05/flow-compiler/`。逐RED：单entry多Outcome、第二entry隔离、shared prefix、loop/ambiguous Gap、edge/polarity deletion、0/0 disposition、order determinism；首RED因seam/schema缺失。只fakeartifact reader，flow/accounting不可mock。命令：`mvn -Dtest=Stage05EntryRootedFlowCompilerTest test`；禁网络/客户执行。偏离按DESIGN 13.11。
-- **Terra/xhigh 实现指南**：RED后只改 `target/stage05/flowcompiler/`，实现 public `EntryRootedFlowCompiler/FlowCompilation` 与 `stage05-flow-compilation-v1`；只读Stage02–04 artifacts，entry→traversal→terminal paths→shared prefix→ownership/accounting。逐slice GREEN；不得行号补路/按terminal拆Flow/硬编码DepotHead。需新graph/Fact字段MUST STOP交Sol/ultra并按跨stage规则升级，完成更新审计。
+- **Terra/xhigh 实现指南**：RED后只改 `target/stage05/flow-compiler/`，实现 public `EntryRootedFlowCompiler/FlowCompilation` 与 `stage05-flow-compilation-v1`；只读Stage02–04 artifacts，entry→traversal→terminal paths→shared prefix→ownership/accounting。逐slice GREEN；不得行号补路/按terminal拆Flow/硬编码DepotHead。需新graph/Fact字段MUST STOP交Sol/ultra并按跨stage规则升级，完成更新审计。
 
 #### M2 EvidenceCapsuleProjector
 
 - **解决的问题**：为每个 compiled Flow 从 Proof roots 选择唯一、最小、预算内、模型可读的 source投影。
 - **精确上游输入及前置**：M1 FlowCompilation artifact、Stage04 ProofPack、Stage03 Evidence graph、Stage01 source handles、projection profile/budget；每 Flow/Outcome/atom/proof ref 闭合。
 - **确定性顺序 / LLM**：按 flowSliceId → 枚举 ATOM/OUTCOME obligations → 从 Proof roots取 direct-semantic spans → stable set cover → exact excerpt/hash → deletion minimality/closure check；0 LLM。
-- **目标输出与 DepotHead 示例**：`CapsuleProjection{capsules,modelEvidenceSpans,projectionObligations,flowShardReceipts,budgetUsage}`；未来一个 DepotHead Flow 对应一个 Capsule，含 route、guards、status write、id where 与 terminals 的非空 spans；multi-flow fixture为每个其他Flow另有独立Capsule。
-- **必须保持的不变量**：`N` compiled Flow↔`N` Capsule 一一对应；flow shards不交叠且union等于M1 flowSliceIds；每 obligation有支持且每 span不可冗余；span只来自 own Flow Proof、原始 bytes不 trim。
-- **Gap / fatal / 恢复**：无安全 split 的预算超限使对应 Flow blocking Gap；source drift、cross-Flow span、unsatisfied/redundant projection、ref broken fatal；恢复重算整个 affected Flow projection。
-- **给下游的后置保证**：M3/Stage06 可按 flowSliceId 得到恰一个 closed Capsule，且 `registryProposalBasisAtomIds/GapIds` 是 R0 唯一可用basis；R0/R1/R2共享该artifact，模型不需Path/graphs/其他Flow。
+- **目标输出与 DepotHead 示例**：`CapsuleProjection{capsules,modelEvidenceSpans,projectionObligations,flowShardReceipts,budgetUsage}`；每个 Capsule 内嵌可供模型阅读的 `factViews/gapViews/outcomePathViews`，而不是只留下外部 ID，并有明确 `modelEligibility`。未来一个DepotHead Flow因而同时给出入口、guards、status write、id where、terminals及其最小非空 spans；multi-flow fixture为每个其他Flow另有独立Capsule。若某Flow的本地证据包能持久化但不安全/不合规地交给模型，它仍有 Capsule、Flow 和 Gap，只标为 `INELIGIBLE`，绝不从仓库流程分母消失。
+- **必须保持的不变量**：`N` compiled Flow↔`N` Capsule 一一对应；flow shards不交叠且union等于M1 flowSliceIds；每 obligation有支持且每 span不可冗余；每个 view 都是同 Flow 已持久化 Fact/Gap/Outcome 的逐字段受控投影，不能用摘要、模型文本或外部查找替代；span只来自 own Flow Proof、原始 bytes不 trim。
+- **Gap / fatal / artifact复用**：无安全 split 的预算超限使对应 Flow blocking Gap；source drift、cross-Flow span、unsatisfied/redundant projection、ref broken fatal；projector只从完整affected Flow及其verified inputs计算。
+- **给下游的后置保证**：M3/Stage06 可按 flowSliceId 得到恰一个 closed、evidence-complete Capsule：它已经携带该 Flow 的 facts、gaps、outcomes、spans、obligations 与 R0 basis allowlist；R0/R1/R2共享该artifact，模型不需Path/graphs/其他Flow，也不得从别的artifact补内容。
 - **明确非目标**：不缩减 ProofPack本身、不解释业务、不让 Provider请求额外源码。
 - **公共测试 seam 与验收**：`project(flowCompilation, proofs, evidence, source)` 使用至少两Flow，对每span deletion、proof-only injection、cross-Flow借用、source mutation、缺/重叠shard和预算边界；另断言R0 basis非空、闭合、同Flow且R0/R1/R2 sourceArtifactId完全相等。正例每Flow独立obligations闭合且删除任一span失败。
 - **Luna/xhigh 测试指南**：创建 `Stage05EvidenceCapsuleProjectorTest`，fixtures/goldens在 `src/test/resources/target/stage05/capsule-projector/`。RED顺序：一个Flow完整obligations/spans→R0 basis closure→R0/R1/R2同artifact→逐span deletion→proof-only冗余→cross-Flow借用→source drift→budget no-safe-split Gap→root determinism；首RED因projector/schema缺失。仅fake source handle，set-cover/obligation/canonical不可mock。命令：`mvn -Dtest=Stage05EvidenceCapsuleProjectorTest test`；无Provider/network。偏离按13.11。
-- **Terra/xhigh 实现指南**：RED后仅拥有 `target/stage05/capsuleprojector/`，实现 public `EvidenceCapsuleProjector/CapsuleProjection` 与 `stage05-capsule-projection-v2`；消费M1+Proof/Evidence/source，obligation→eligible spans→stable minimal cover→exact excerpts/hash→R0 basis closure。逐RED GREEN；不得多给源码、跨Flow、trim bytes或给R0/R1/R2不同source。缺Proof语义/需跨stage变更MUST STOP，完成更新审计。
+- **Terra/xhigh 实现指南**：RED后仅拥有 `target/stage05/capsule-projector/`，实现 public `EvidenceCapsuleProjector/CapsuleProjection` 与 `stage05-capsule-projection-v4`；消费M1+Proof/Evidence/source，obligation→eligible spans→stable minimal cover→连续 `SourceExcerptV1`→完整 Fact/Gap/Outcome view→R0 basis closure。逐RED GREEN；不得多给源码、跨Flow、trim bytes、合成不连续excerpt、以摘要替代view，或给R0/R1/R2不同source。缺Proof语义/需跨stage变更MUST STOP，完成更新审计。
 
-#### M3 FlowArtifactPublisher
+#### M3 FlowPublicationSpecifier
 
-- **解决的问题**：组合 Flow 与 Capsule artifacts，守恒全部 entry/outcome/fact/atom/Gap后形成 Stage05Reference。
-- **精确上游输入及前置**：M1全仓 FlowCompilation/shard receipts、M2全 Flow CapsuleProjection/shard receipts、Stage02–04 roots和Stage05 controls；完整entry dispositions与Flow/Capsule双射或明确0/0已局部验证。
-- **确定性顺序 / LLM**：验证entry/flow shard disjoint union → join by flowSliceId → 重算全仓 coverage/dispositions/unsupported/failed/omitted → canonical六文件 → staging force/SHA/reference validation → atomic install；0 LLM。
-- **目标输出与 DepotHead 示例**：六个 exact files；当前例 entry-dispositions 有 DepotHead GAP、flow/capsule arrays零记录、Gap/coverage/receipt非空；未来正例有同 entryId 的 Flow/Capsule。
-- **必须保持的不变量**：每 COMPILED Flow恰一个 Capsule，GAP/EXCLUDED无 Capsule；所有Stage02 entry唯一处置，single Flow PASS不等于stage/run完成；public files只引用M1/M2 IDs；publisher不改语义。
-- **Gap / fatal / 恢复**：合法0/0为SUCCEEDED_WITH_GAPS；orphan/multiple Capsule、coverage/ref/canonical/install/collision错误 fatal；恢复只认完整receipt。
-- **给下游的后置保证**：Stage06能纯 artifact-driven 地得到 task cardinality；0 Flow严格推出0 task/call。
+- **解决的问题**：组合 Flow 与 Capsule artifacts，守恒全部 entry/outcome/fact/atom/Gap并形成五个semantic payload；stage store独占root/receipt与Stage05Reference。
+- **精确上游输入及前置**：M1全仓 FlowCompilation/shard receipts、M2全 Flow CapsuleProjection/shard receipts、Stage02–04 roots和Stage05 controls；完整entry dispositions与Flow/Capsule双射或明确0/0已局部验证；每个Capsule已有唯一`modelEligibility`和本Flow内可重验的`modelIneligibilityGapIds[]`。
+- **确定性顺序 / LLM**：验证entry/flow shard disjoint union → join by flowSliceId → 由Capsule逐项重算`modelEligibleFlowSliceIds`、`modelIneligibleFlowSliceIds`和`modelIneligibilityByFlow` → 重算全仓 coverage/dispositions/unsupported/failed/omitted → canonical五个semantic payload → M3 install/receipt → stage store fresh reopen/root/receipt-last；0 LLM。
+- **目标输出与 DepotHead 示例**：M3恰五个semantic files；stage store形成五项+receipt的六文件reader-visible set。当前例 entry-dispositions 有 DepotHead GAP、flow/capsule及eligibility分区均为空、Gap/coverage/receipt非空；未来正例在`flow-coverage.json`中把每个Flow精确分到eligible或ineligible，并为后者保存非空Gap映射。
+- **必须保持的不变量**：每 COMPILED Flow恰一个 Capsule，GAP/EXCLUDED无 Capsule；`flowSliceIds`必须是eligible与ineligible的互斥并集，mapping domain必须逐字等于ineligible集合且mapping Gap union逐字等于`modelIneligibilityGapIds`；所有Stage02 entry唯一处置，single Flow PASS不等于stage/run完成；semantic files只引用M1/M2 IDs；M3不含或预报stage root/receipt且不改语义。
+- **Gap / fatal / artifact复用**：合法0/0为SUCCEEDED_WITH_GAPS；orphan/multiple Capsule、coverage/ref/canonical/install/collision错误 fatal；下游只认完整receipt。
+- **给下游的后置保证**：Stage06能纯 artifact-driven 地从eligible集合得到task cardinality，Stage07能从全Flow集合与逐Flow mapping得到total decision denominator；0 Flow严格推出0 task/call。
 - **明确非目标**：不修 Flow/Capsule、不重读 source、不调用 Provider。
-- **公共测试 seam 与验收**：`publish(flowCompilation, capsuleProjection, controls)` 覆盖0/0、至少2 Flow/2 Capsule、one-to-one、一个Flow失败后恢复、single-PASS/other-omitted、缺/重叠 shard、orphan/duplicate、乱序、crash/collision；只有完整六文件和仓库ledger闭合返回Stage05Reference。
-- **Luna/xhigh 测试指南**：创建 `Stage05FlowArtifactPublisherTest`，module files/goldens放 `src/test/resources/target/stage05/flow-artifact-publisher/`。逐RED：0/0 six-file set、one Flow/one Capsule、orphan/duplicate、coverage count spoof、乱序、crash/collision/resume；首RED因publisher缺失。只mockartifact-store，join/accounting/canonical不mock。命令：`mvn -Dtest=Stage05FlowArtifactPublisherTest test`；禁网络/Provider/customer Maven。偏离按13.11。
-- **Terra/xhigh 实现指南**：RED后只改 `target/stage05/flowartifactpublisher/`，实现 public `FlowArtifactPublisher/Stage05Reference` 与 `stage05-flow-publication-v1`；只读M1/M2 module artifacts，join→coverage→six files→atomic. 每RED GREEN，0/0必须让direct Provider seam 0调用；禁止补Flow/Capsule。跨stage contract改变MUST STOP交Sol/ultra/用户，更新审计。
+- **公共测试 seam 与验收**：`specify(flowCompilation, capsuleProjection, controls)` 覆盖0/0、至少2 Flow/2 Capsule且一eligible一ineligible、one-to-one、一个Flow Gap、single-PASS/other-omitted、eligibility overlap/omission、mapping空Gap/foreign Gap/union drift、缺/重叠 shard、orphan/duplicate、乱序、partial-install/collision；只有M3 exact-five、stage-store exact-six和仓库ledger闭合才返回Stage05Reference。
+- **Luna/xhigh 测试指南**：创建 `Stage05FlowPublicationSpecifierTest`，module files/goldens放 `src/test/resources/target/stage05/publish/`。逐RED：M3 exact-five、stage exact-six、0/0、one Flow/one Capsule、eligible/ineligible exact partition、mapping domain/非空Gap/union closure、orphan/duplicate、coverage count spoof、receipt-last/partial-install/collision/fresh-reopen；使用真实module/stage stores，join/accounting/canonical/root不mock。命令：`mvn -Dtest=Stage05FlowPublicationSpecifierTest test`；禁网络/Provider/customer Maven。偏离按13.11。
+- **Terra/xhigh 实现指南**：RED后只改 `target/stage05/publish/`，实现 public `FlowPublicationSpecifier/Stage05Reference`；只读M1/M2 module artifacts，join→eligibility partition/mapping→coverage→five semantic files→M3 install/receipt→typed stage-store receipt-last。不得生成旧single publication summary、从Gap猜eligibility、预报root/receipt或补Flow/Capsule；0/0必须让direct Provider seam 0调用。跨stage contract改变MUST STOP交Sol/ultra/用户，更新审计。
 
 ### 8.0.1 模块 artifact wire schemas
 
-使用 DESIGN 13.3 envelope；`!`=required non-null，`?`=required nullable。
+M1/M2使用 DESIGN 13.3 `ModuleArtifact<T>` envelope；M3直接安装五个stage schema注册的JSON/JSONL semantic bytes而无summary envelope。`!`=required non-null，`?`=required nullable。
 
 | artifact | schemaVersion / artifactType | 精确 upstream | payload/排序 |
 | --- | --- | --- | --- |
-| `modules/01-flow-compiler/flow-compilation.json` | `stage05-flow-compilation-v1` / `STAGE05_FLOW_COMPILATION` | Stage02+Stage03+Stage04 IDs/SHAs | `flowCompilationId!`、`entryDispositions[]!{entryId!,disposition!,flowSliceId?,gapIds[]!,reasonCode?,evidenceRefs[]!}`、`flowSlices[]!`、`entryShardReceipts[]!{shardId!,denominatorEntryIds[]!,dispositionEntryIds[]!,flowSliceIds[]!,status!,gapIds[]!}`、`coverage!`；entries/flows/shards按ID，steps/decisions保持语义顺序，outcomes按outcomePathId |
-| `modules/02-capsule-projector/capsule-projection.json` | `stage05-capsule-projection-v2` / `STAGE05_CAPSULE_PROJECTION` | M1+Stage01+Stage03+Stage04 IDs/SHAs | `capsuleProjectionId!`、`flowCompilationId!`、`capsules[]!{evidenceCapsuleId!,flowSliceId!,proofPackId!,outcomePathIds[]!,allowedFacts[]!,allowedGaps[]!,registryProposalBasisAtomIds[]!,registryProposalBasisGapIds[]!,modelEvidenceSpanIds[]!,projectionObligationIds[]!,budgetUsage!}`、`modelEvidenceSpans[]!{spanId!,locator!,sourceFileSha256!,excerpt!,excerptSha256!,supportedAtomIds[]!,supportedOutcomePathIds[]!}`、`projectionObligations[]!{obligationId!,kind!,semanticItemId!,satisfyingSpanIds[]!}`、`flowShardReceipts[]!`、`budgetUsage!`；capsules/spans/obligations/shards按ID，basis IDs按UTF-8 byte order |
-| `modules/03-publish/stage05-publication.json` | `stage05-flow-publication-v1` / `STAGE05_FLOW_PUBLICATION` | M1+M2 IDs/SHAs | `stageStatus!`、`flowCompilationId!`、`capsuleProjectionId!`、`flowCount!`、`capsuleCount!`、`repositoryFlowCoverage!{entryIds[]!,compiledEntryIds[]!,gappedEntryIds[]!,excludedEntryIds[]!,flowSliceIds[]!,capsuleIds[]!,entryShardReceiptIds[]!,flowShardReceiptIds[]!,closed!}`、`stageArtifactRoot!`、`publishedArtifacts[6]!`、`nextStage!`；ID arrays/files按canonical ID/path |
+| `modules/01-flow-compiler/flow-compilation.json` | `stage05-flow-compilation-v1` / `STAGE05_FLOW_COMPILATION` | exact Stage02 `capability-report/entry-points`、Stage03七项、Stage04 `fact-accounting/gap-ledger/proof-pack/proven-facts` ArtifactReferences | `flowCompilationId!`、`entryDispositions[]!{entryId!,disposition!,flowSliceId?,gapIds[]!,reasonCode?,evidenceRefs[]!}`、`flowSlices[]!`、`entryShardReceipts[]!{shardId!,denominatorEntryIds[]!,dispositionEntryIds[]!,flowSliceIds[]!,status!,gapIds[]!}`、`coverage!`；entries/flows/shards按ID，steps/decisions保持语义顺序，outcomes按outcomePathId |
+| `modules/02-capsule-projector/capsule-projection.json` | `stage05-capsule-projection-v4` / `STAGE05_CAPSULE_PROJECTION` | exact M1、Stage01两项、Stage03七项、Stage04四项 ArtifactReferences | `capsuleProjectionId!`、`flowCompilationId!`、`capsules[]!{evidenceCapsuleId!,flowSliceId!,proofPackId!,modelEligibility!,modelIneligibilityGapIds[]!,entryView!:FlowEntryViewV1,factViews[]!:FlowFactViewV1,gapViews[]!:FlowGapViewV1,outcomePathViews[]!:FlowOutcomePathViewV1,registryProposalBasisAtomIds[]!,registryProposalBasisGapIds[]!,modelEvidenceSpanIds[]!,projectionObligationIds[]!,budgetUsage!}`、`modelEvidenceSpans[]!{spanId!,sourceExcerpt!:SourceExcerptV1,supportedAtomIds[]!,supportedOutcomePathIds[]!}`、`projectionObligations[]!{obligationId!,kind!,semanticItemId!,satisfyingSpanIds[]!}`、`flowShardReceipts[]!`、`budgetUsage!`；capsules/spans/obligations/shards按ID，fact/gap/outcome views按其stable ID，basis IDs按UTF-8 byte order |
+| `modules/03-publish/<five registered semantic filenames>` | 各public schema/type；无summary envelope | M1+M2 IDs/SHAs | 一次module install恰`flow-slices.json/flow-coverage.json/entry-dispositions.jsonl/evidence-capsules.jsonl/flow-gaps.jsonl`；其中`flow-coverage.json`的`RepositoryFlowCoverage`必须包含8.1列出的四项model eligibility字段及完整mapping；module receipt绑定五descriptors；禁止stage root/receipt或六项published list；Stage store provenance绑定M3 reference |
 
-FlowSlice/Outcome/BranchDecision字段按8.1；COMPILED entry的flowSliceId non-null且gapIds可为空，GAP/EXCLUDED的flowSliceId必须null并有reason/Gap。技术示例的静态unknown必须成为GAP disposition，不能用示例Outcome补齐。Capsule excerpt必须是locator原始bytes；任何schema/ownership/projection/sort/identity变化先设计+升version，下游不可回读graph/source补字段。
+M3的完整module fixture必须用一次install request/receipt绑定表中M1/M2两个ArtifactReferences；五个standalone payload不得重复envelope。只给payload而省略该排序upstream集合，不是完整M3 fixture。
+
+FlowSlice/Outcome/BranchDecision字段按8.1；COMPILED entry的flowSliceId non-null且gapIds可为空，GAP/EXCLUDED的flowSliceId必须null并有reason/Gap。技术示例的静态unknown必须成为GAP disposition，不能用示例Outcome补齐。`ModelEvidenceSpanV3.sourceExcerpt`必须是DESIGN §13.2的完整`SourceExcerptV1`，其`rawUtf8`恰为locator半开连续区间的原始bytes；不连续证据必须拆成多个span，禁止使用`+`、`...`或重排后的合成excerpt。任何schema/ownership/projection/sort/identity变化先设计+升version，下游不可回读graph/source补字段。
 
 `repositoryFlowCoverage.closed` 只有在 Stage02 repositoryEntryCoverage已闭合、全部entry/flow shards守恒且每entry处置完成时为true；DepotHead bounded示例固定为false，即使局部一Flow/一Capsule双射成立。
 
+**阅读示意，不是 wire、schema 或 replay fixture。** 早期长 JSON 包络曾把 Capsule 写成 ID 列表，无法保证模型实际读到 Fact、Gap 和 Outcome 的值，现已从目标设计移除。实现者只能遵循上表的 v4 结构、§8.1 records 与 Stage06 的逐字复制规则。
+
+~~~text
+DepotHead flow capsule (illustrative):
+  fact view: request status eventually supplies record.status → jsh_depot_head.status
+  outcome view A: eligible document IDs empty → return without update
+  outcome view B: eligible IDs non-empty → update status for WHERE id IN eligible IDs
+  gap view: runtime status policy is not statically provable
+  evidence: route, id collection/guard, setter, mapper column and WHERE spans
+~~~
+
+**示例分类：STRUCTURAL_WIRE_SPECIMEN（isolated `ModelEvidenceSpanV3` variants）。** 下列两条分别表示同一文件中不连续的class/method annotation；每条字段和类型完整、半开byte区间与所示ASCII `rawUtf8`长度一致，并按locator排序。digest只满足grammar且未从展示bytes重算，所以不能replay；二者不得合并为带` + `的伪raw excerpt。
+
 ~~~jsonl
-{"schemaVersion":"stage05-flow-compilation-v1","artifactType":"STAGE05_FLOW_COMPILATION","artifactId":"flow-compilation:1111111111111111111111111111111111111111111111111111111111111111","producer":{"stage":5,"module":"EntryRootedFlowCompiler","moduleVersion":"v1"},"upstreamArtifacts":[{"artifactId":"stage02-publication:4444444444444444444444444444444444444444444444444444444444444444","sha256":"2222222222222222222222222222222222222222222222222222222222222222"},{"artifactId":"stage03-publication:6666666666666666666666666666666666666666666666666666666666666666","sha256":"3333333333333333333333333333333333333333333333333333333333333333"},{"artifactId":"stage04-publication:3333333333333333333333333333333333333333333333333333333333333333","sha256":"4444444444444444444444444444444444444444444444444444444444444444"}],"controls":{"toolchainSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profileSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","schemaBundleSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","promptBundleSha256":null},"completion":{"status":"SUCCEEDED_WITH_GAPS","gapRefs":["gap:runtime-status-policy"],"failureRef":null},"payload":{"flowCompilationId":"flow-compilation:depothead-v1","entryDispositions":[{"entryId":"entry:post-depothead-batch-set-status","disposition":"COMPILED","flowSliceId":"flow:post-depothead-batch-set-status","gapIds":["gap:runtime-status-policy"],"reasonCode":null,"evidenceRefs":["fact:depothead-status-persistence"]}],"flowSlices":[{"flowSliceId":"flow:post-depothead-batch-set-status","entryId":"entry:post-depothead-batch-set-status","trigger":"POST /depotHead/batchSetStatus","rootNodeId":"method:controller-batch-set-status","sharedSteps":[{"kind":"ENTRY","nodeId":"method:controller-batch-set-status"},{"kind":"CALL_CHILD","nodeId":"method:service-batch-set-status"}],"factIds":["fact:depothead-status-persistence"],"atomIds":["atom:eligible-id-set","atom:entry-route","atom:value-source","atom:where-key","atom:where-operator"],"outcomePaths":[{"outcomePathId":"outcome:no-eligible-document","decisions":[{"guardNodeId":"guard:dhids-not-empty","conditionAtomId":"atom:eligible-id-set","polarity":"FALSE","normalizedCondition":"eligible id set is empty"}],"terminalNodeId":"terminal:return-result","terminalKind":"RETURN","terminalFactIds":[],"requiredAtomIds":["atom:eligible-id-set"],"requiredProofIds":["proof:eligible-id-set"]},{"outcomePathId":"outcome:status-updated","decisions":[{"guardNodeId":"guard:dhids-not-empty","conditionAtomId":"atom:eligible-id-set","polarity":"TRUE","normalizedCondition":"eligible id set is not empty"}],"terminalNodeId":"terminal:return-result","terminalKind":"RETURN","terminalFactIds":["fact:depothead-status-persistence"],"requiredAtomIds":["atom:value-source","atom:where-key","atom:where-operator"],"requiredProofIds":["proof:value-source","proof:where-key","proof:where-operator"]}],"gapIds":["gap:runtime-status-policy"],"parentFlowSliceId":null,"childFlowSliceIds":[]}],"entryShardReceipts":[{"shardId":"entry-shard:depothead","denominatorEntryIds":["entry:post-depothead-batch-set-status"],"dispositionEntryIds":["entry:post-depothead-batch-set-status"],"flowSliceIds":["flow:post-depothead-batch-set-status"],"status":"SUCCEEDED","gapIds":[]}],"coverage":{"entryIds":["entry:post-depothead-batch-set-status"],"compiledEntryIds":["entry:post-depothead-batch-set-status"],"gappedEntryIds":[],"excludedEntryIds":[],"outcomeIds":["outcome:no-eligible-document","outcome:status-updated"],"ownedFactIds":["fact:depothead-status-persistence"],"ownedGapIds":["gap:runtime-status-policy"]}}}
-{"schemaVersion":"stage05-capsule-projection-v2","artifactType":"STAGE05_CAPSULE_PROJECTION","artifactId":"capsule-projection:2222222222222222222222222222222222222222222222222222222222222222","producer":{"stage":5,"module":"EvidenceCapsuleProjector","moduleVersion":"v2"},"upstreamArtifacts":[{"artifactId":"flow-compilation:1111111111111111111111111111111111111111111111111111111111111111","sha256":"1111111111111111111111111111111111111111111111111111111111111111"},{"artifactId":"stage01-publication:3333333333333333333333333333333333333333333333333333333333333333","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},{"artifactId":"stage04-publication:3333333333333333333333333333333333333333333333333333333333333333","sha256":"4444444444444444444444444444444444444444444444444444444444444444"}],"controls":{"toolchainSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profileSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","schemaBundleSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","promptBundleSha256":null},"completion":{"status":"SUCCEEDED_WITH_GAPS","gapRefs":["gap:runtime-status-policy"],"failureRef":null},"payload":{"capsuleProjectionId":"capsule-projection:depothead-v2","flowCompilationId":"flow-compilation:depothead-v1","capsules":[{"evidenceCapsuleId":"capsule:post-depothead-batch-set-status","flowSliceId":"flow:post-depothead-batch-set-status","proofPackId":"proof-pack:depothead-v1","outcomePathIds":["outcome:no-eligible-document","outcome:status-updated"],"allowedFacts":["fact:depothead-status-persistence"],"allowedGaps":["gap:runtime-status-policy"],"registryProposalBasisAtomIds":["atom:input-field","atom:value-source"],"registryProposalBasisGapIds":["gap:runtime-status-policy"],"modelEvidenceSpanIds":["span:controller-entry","span:example-id-in","span:service-guard","span:service-id-criterion","span:service-status","span:xml-status","span:xml-where"],"projectionObligationIds":["obligation:entry-route","obligation:no-eligible-outcome","obligation:status-updated","obligation:value-source","obligation:where-id-in"],"budgetUsage":{"spanCount":7,"utf8Bytes":284}}],"modelEvidenceSpans":[{"spanId":"span:controller-entry","locator":"jshERP-boot/src/main/java/com/jsh/erp/controller/DepotHeadController.java:43,178-191","sourceFileSha256":"2222222222222222222222222222222222222222222222222222222222222222","excerpt":"@RequestMapping(\"/depotHead\") + @PostMapping(\"/batchSetStatus\")","excerptSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","supportedAtomIds":["atom:entry-route"],"supportedOutcomePathIds":["outcome:no-eligible-document","outcome:status-updated"]},{"spanId":"span:example-id-in","locator":"jshERP-boot/src/main/java/com/jsh/erp/datasource/entities/DepotHeadExample.java:149-151","sourceFileSha256":"4444444444444444444444444444444444444444444444444444444444444444","excerpt":"addCriterion(\"id in\", values, \"id\")","excerptSha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","supportedAtomIds":["atom:where-key","atom:where-operator"],"supportedOutcomePathIds":["outcome:status-updated"]},{"spanId":"span:service-guard","locator":"jshERP-boot/src/main/java/com/jsh/erp/service/DepotHeadService.java:798-821","sourceFileSha256":"6666666666666666666666666666666666666666666666666666666666666666","excerpt":"if(!dhIds.isEmpty()) { ... } return result;","excerptSha256":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","supportedAtomIds":["atom:eligible-id-set"],"supportedOutcomePathIds":["outcome:no-eligible-document","outcome:status-updated"]},{"spanId":"span:service-id-criterion","locator":"jshERP-boot/src/main/java/com/jsh/erp/service/DepotHeadService.java:798-803","sourceFileSha256":"6666666666666666666666666666666666666666666666666666666666666666","excerpt":"example.createCriteria().andIdIn(dhIds);","excerptSha256":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","supportedAtomIds":["atom:eligible-id-set","atom:where-key","atom:where-operator"],"supportedOutcomePathIds":["outcome:status-updated"]},{"spanId":"span:service-status","locator":"jshERP-boot/src/main/java/com/jsh/erp/service/DepotHeadService.java:798-803","sourceFileSha256":"6666666666666666666666666666666666666666666666666666666666666666","excerpt":"depotHead.setStatus(status);","excerptSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","supportedAtomIds":["atom:value-source"],"supportedOutcomePathIds":["outcome:status-updated"]},{"spanId":"span:xml-status","locator":"jshERP-boot/src/main/resources/mapper_xml/DepotHeadMapper.xml:472-473","sourceFileSha256":"8888888888888888888888888888888888888888888888888888888888888888","excerpt":"status = #{record.status}","excerptSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","supportedAtomIds":["atom:value-source"],"supportedOutcomePathIds":["outcome:status-updated"]},{"spanId":"span:xml-where","locator":"jshERP-boot/src/main/resources/mapper_xml/DepotHeadMapper.xml:494-495","sourceFileSha256":"8888888888888888888888888888888888888888888888888888888888888888","excerpt":"<include refid=\"Update_By_Example_Where_Clause\" />","excerptSha256":"9999999999999999999999999999999999999999999999999999999999999999","supportedAtomIds":["atom:where-key","atom:where-operator"],"supportedOutcomePathIds":["outcome:status-updated"]}],"projectionObligations":[{"obligationId":"obligation:entry-route","kind":"ATOM_DIRECT_SEMANTICS","semanticItemId":"atom:entry-route","satisfyingSpanIds":["span:controller-entry"]},{"obligationId":"obligation:no-eligible-outcome","kind":"OUTCOME_TERMINAL","semanticItemId":"outcome:no-eligible-document","satisfyingSpanIds":["span:service-guard"]},{"obligationId":"obligation:status-updated","kind":"OUTCOME_TERMINAL","semanticItemId":"outcome:status-updated","satisfyingSpanIds":["span:service-guard","span:service-status","span:xml-status"]},{"obligationId":"obligation:value-source","kind":"ATOM_DIRECT_SEMANTICS","semanticItemId":"atom:value-source","satisfyingSpanIds":["span:service-status","span:xml-status"]},{"obligationId":"obligation:where-id-in","kind":"ATOM_SET_DIRECT_SEMANTICS","semanticItemId":"atom-set:where-id-in","satisfyingSpanIds":["span:example-id-in","span:service-id-criterion","span:xml-where"]}],"flowShardReceipts":[{"shardId":"flow-shard:depothead","denominatorFlowSliceIds":["flow:post-depothead-batch-set-status"],"capsuleIds":["capsule:post-depothead-batch-set-status"],"status":"SUCCEEDED","gapIds":[]}],"budgetUsage":{"capsuleCount":1,"spanCount":7,"utf8Bytes":284}}}
-{"schemaVersion":"stage05-flow-publication-v1","artifactType":"STAGE05_FLOW_PUBLICATION","artifactId":"stage05-publication:3333333333333333333333333333333333333333333333333333333333333333","producer":{"stage":5,"module":"FlowArtifactPublisher","moduleVersion":"v1"},"upstreamArtifacts":[{"artifactId":"capsule-projection:2222222222222222222222222222222222222222222222222222222222222222","sha256":"2222222222222222222222222222222222222222222222222222222222222222"},{"artifactId":"flow-compilation:1111111111111111111111111111111111111111111111111111111111111111","sha256":"1111111111111111111111111111111111111111111111111111111111111111"}],"controls":{"toolchainSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profileSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","schemaBundleSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","promptBundleSha256":null},"completion":{"status":"SUCCEEDED_WITH_GAPS","gapRefs":["gap:runtime-status-policy"],"failureRef":null},"payload":{"stageStatus":"SUCCEEDED_WITH_GAPS","flowCompilationId":"flow-compilation:depothead-v1","capsuleProjectionId":"capsule-projection:depothead-v2","flowCount":1,"capsuleCount":1,"repositoryFlowCoverage":{"entryIds":["entry:post-depothead-batch-set-status"],"compiledEntryIds":["entry:post-depothead-batch-set-status"],"gappedEntryIds":[],"excludedEntryIds":[],"flowSliceIds":["flow:post-depothead-batch-set-status"],"capsuleIds":["capsule:post-depothead-batch-set-status"],"entryShardReceiptIds":["entry-shard:depothead"],"flowShardReceiptIds":["flow-shard:depothead"],"closed":false},"stageArtifactRoot":"stage-root:0505050505050505050505050505050505050505050505050505050505050505","publishedArtifacts":[{"path":"entry-dispositions.jsonl","sizeBytes":800,"sha256":"1111111111111111111111111111111111111111111111111111111111111111"},{"path":"evidence-capsules.jsonl","sizeBytes":2200,"sha256":"2222222222222222222222222222222222222222222222222222222222222222"},{"path":"flow-coverage.json","sizeBytes":1000,"sha256":"3333333333333333333333333333333333333333333333333333333333333333"},{"path":"flow-gaps.jsonl","sizeBytes":600,"sha256":"4444444444444444444444444444444444444444444444444444444444444444"},{"path":"flow-slices.json","sizeBytes":2400,"sha256":"5555555555555555555555555555555555555555555555555555555555555555"},{"path":"stage-receipt.json","sizeBytes":1200,"sha256":"6666666666666666666666666666666666666666666666666666666666666666"}],"nextStage":"06-interpret-one-flow-at-a-time"}}
+{"spanId":"span:controller-class-route","sourceExcerpt":{"locator":{"fileId":"file:2222222222222222222222222222222222222222222222222222222222222222","path":"src/main/java/example/DepotHeadController.java","startByte":1000,"endByteExclusive":1029,"startLine":43,"startColumn":1,"endLine":43,"endColumn":30},"rawUtf8":"@RequestMapping(\"/depotHead\")","rawUtf8Sha256":"1111111111111111111111111111111111111111111111111111111111111111"},"supportedAtomIds":["atom:entry-route"],"supportedOutcomePathIds":["outcome:status-updated"]}
+{"spanId":"span:controller-method-route","sourceExcerpt":{"locator":{"fileId":"file:2222222222222222222222222222222222222222222222222222222222222222","path":"src/main/java/example/DepotHeadController.java","startByte":5000,"endByteExclusive":5031,"startLine":178,"startColumn":1,"endLine":178,"endColumn":32},"rawUtf8":"@PostMapping(\"/batchSetStatus\")","rawUtf8Sha256":"2222222222222222222222222222222222222222222222222222222222222222"},"supportedAtomIds":["atom:entry-route"],"supportedOutcomePathIds":["outcome:status-updated"]}
 ~~~
 
 ### 8.1 Interface 与 records
@@ -245,14 +261,42 @@ EvidenceCapsule
   evidenceCapsuleId
   flowSliceId
   proofPackId
-  outcomePathIds[]
-  allowedFacts[]
-  allowedGaps[]
+  modelEligibility: ELIGIBLE | INELIGIBLE
+  modelIneligibilityGapIds[]               // empty iff ELIGIBLE; nonempty iff INELIGIBLE
+  entryView: FlowEntryViewV1
+  factViews[]: FlowFactViewV1
+  gapViews[]: FlowGapViewV1
+  outcomePathViews[]: FlowOutcomePathViewV1
   registryProposalBasisAtomIds[]
   registryProposalBasisGapIds[]
-  modelEvidenceSpans[]
-  projectionObligations[]
+  modelEvidenceSpanIds[]
+  projectionObligationIds[]
   budgetUsage
+
+FlowEntryViewV1                           // exact bounded projection of the owning entry/Flow root
+  entryId, trigger, rootNodeId
+  routeEvidenceRefs[]
+
+FlowFactViewV1                            // exact bounded projection of one admitted Stage04 CodeFact
+  factId, kind, subjectNodeIds[]
+  atoms[] {atomId, role, name, value{type,canonical}, proofId}
+  originFactArtifactRef
+
+FlowGapViewV1                             // exact bounded projection of one Flow-local or fact-owned Gap
+  gapId, scope=FLOW|OUTCOME|FACT|ATOM
+  reasonCode, affectedSemanticIds[]
+  evidenceRefs[], originGapLedgerRef
+
+FlowOutcomePathViewV1                     // exact copy of the owning FlowSlice outcome
+  outcomePathId, decisions[]
+  terminalNodeId, terminalKind
+  terminalFactIds[], requiredAtomIds[], requiredProofIds[]
+
+ModelEvidenceSpanV3
+  spanId
+  sourceExcerpt: SourceExcerptV1
+  supportedAtomIds[]
+  supportedOutcomePathIds[]
 
 RepositoryFlowCoverage
   entryIds[]
@@ -261,10 +305,16 @@ RepositoryFlowCoverage
   excludedEntryIds[]
   flowSliceIds[]
   capsuleIds[]
+  modelEligibleFlowSliceIds[]
+  modelIneligibleFlowSliceIds[]
+  modelIneligibilityGapIds[]
+  modelIneligibilityByFlow[] {flowSliceId, gapIds[]}
   entryShardReceiptIds[]
   flowShardReceiptIds[]
   closed
 ~~~
+
+这四项model eligibility字段是`flow-coverage.json`的required wire字段，不是Stage07临时重算的view。`modelIneligibilityByFlow`按`flowSliceId`严格排序且key唯一；每个`gapIds[]`非空、按UTF-8 ID排序去重。0 Flow时四项全部是exact empty array，不能省略或写null。
 
 FlowStep kind registry 至少有 ENTRY、GUARD、READ、CALCULATE、WRITE、RESULT、CALL_CHILD；不能写任意 prose。
 
@@ -284,17 +334,25 @@ admittedAtoms = flowOwned + gapOwned + reasonedUnassigned
 allEntryShardIds = exactDisjointUnion(entryShardDenominatorIds) = discoveredEntries
 allFlowShardIds = exactDisjointUnion(flowShardDenominatorIds) = compiledFlowSliceIds
 compiledFlowSliceIds = evidenceCapsuleFlowSliceIds
+compiledFlowSliceIds = modelEligibleFlowSliceIds ⊎ modelIneligibleFlowSliceIds
+modelEligibleFlowSliceIds = { capsule.flowSliceId | capsule.modelEligibility = ELIGIBLE }
+modelIneligibleFlowSliceIds = { capsule.flowSliceId | capsule.modelEligibility = INELIGIBLE }
+domain(modelIneligibilityByFlow) = modelIneligibleFlowSliceIds
+modelIneligibilityGapIds = exactUnion(modelIneligibilityByFlow[*].gapIds)
+modelIneligibilityByFlow[flowId].gapIds = capsule(flowId).modelIneligibilityGapIds
 ~~~
 
-0/0 不能用来抹掉已知 outcome candidate；denominator 在遍历前由 entry/CFG/profile固定。
+0/0 不能用来抹掉已知 outcome candidate；denominator 在遍历前由 entry/CFG/profile固定。`modelEligibility=INELIGIBLE` 只允许在 Capsule 的`modelIneligibilityGapIds[]`非空且每个Gap都在本 Flow/Capsule scope可重验时出现；`ELIGIBLE` 时该数组必须为空且该Flow不得出现在mapping。coverage的mapping不能加入Flow本身没有声明的foreign Gap，也不能遗漏Capsule声明的Gap。这个分类只禁止把 Capsule 交给 Provider，不改变 Flow、Capsule、Outcome 或 Stage07的全仓库决策分母。
 
 ### 8.3 Capsule 最小性
 
-ModelEvidenceSpan 保存 locator、sourceFileSha256、exact excerpt、excerptSha256、supportedAtomIds 和 supportedOutcomePathIds。excerpt 是 locator 原始 UTF-8 bytes，不 trim/格式化。
+`ModelEvidenceSpanV3`保存`spanId`、完整`SourceExcerptV1`、`supportedAtomIds[]`和`supportedOutcomePathIds[]`。`sourceExcerpt.rawUtf8`是locator半开连续区间的原始UTF-8 bytes，不trim/格式化；同一语义需要不连续位置时创建多个span并分别进入obligation，不得合成raw。
 
-ProjectionObligation kind 只允许 ATOM_DIRECT_SEMANTICS 或 OUTCOME_TERMINAL。每个 obligation 至少一个 satisfying span；删除任一 span 后至少一个 obligation 失去全部支持，否则该 span 冗余。
+ProjectionObligation kind 只允许 ATOM_DIRECT_SEMANTICS 或 OUTCOME_TERMINAL。需要同时覆盖`WHERE_KEY`与`WHERE_OPERATOR`时必须建立两个`ATOM_DIRECT_SEMANTICS` obligation，分别指向`atom:where-key`和`atom:where-operator`；不得发明`ATOM_SET_DIRECT_SEMANTICS`或用`atom-set:*`逃避逐atom closure。每个 obligation 至少一个 satisfying span；删除任一 span 后至少一个 obligation 失去全部支持，否则该 span 冗余。
 
 ProofPack 回答事实为何成立；Capsule 回答模型最少读什么。Capsule 不能删除 Proof dependency，也不能自证 Fact。
+
+`factViews[]`按`factId`排序，且其 ID 集必须逐字等于 owning `FlowSlice.factIds[]`；每个 view 的 atom array 必须逐字段等于对应 Stage04 `CodeFact.atoms[]`，并逐项指向同一 `proofId`。`gapViews[]`按`gapId`排序，且 ID 集必须逐字等于该 Flow/Outcome/Fact/Atom ownership scope 内、允许向模型显示的 Gap 集；不得把其他 Flow 的 Gap 或无证据的业务猜测放进来。`outcomePathViews[]`按`outcomePathId`排序，且 ID 集必须逐字等于 owning `FlowSlice.outcomePaths[]`；guard、polarity、terminal 与required atom/proof都不得摘要或改写。`modelEvidenceSpanIds[]`与`projectionObligationIds[]`分别按ID排序，并必须引用本次projection同一payload中的完整value；每个 atom/Outcome view 都必须被至少一项 obligation 覆盖。上述任一集合、字段或源artifact reference不等，M2不得发布 Capsule。
 
 ### 8.4 Identity、预算与安全
 
@@ -322,10 +380,11 @@ STAGE05_REQUEST_INVALID、UPSTREAM_ARTIFACT_REPLAY_MISMATCH、FLOW_GRAPH_REFEREN
 - Capsule span 必须来自 Proof roots，不按文本相似命中 decoy。
 - 每删一个直接语义 span，projection obligation 失败；proof-only span 注入被拒绝。
 - 0 Flow/0 Capsule 仍有完整 entry disposition/Gap/accounting，并让 Stage 06 Provider calls=0。
+- 双Flow fixture必须让一个Flow为ELIGIBLE、一个为INELIGIBLE；`flow-coverage.json`的两个Flow集合互斥并集等于全部Flow，mapping domain、逐Flow非空Gap和全局Gap union都与Capsule逐字相等。任一overlap、omission、empty/foreign/missing Gap mutation都必须fail closed。
 - 不同 root/input order 产生相同 canonical artifacts。
-- multi-flow fixture 至少有 DepotHead与第二入口各自独立Flow/Capsule；一条成功、一条Gap或暂缺shard时，已完成slice保留但stage/run不得误报完成。恢复后改变shard size/order，六文件bytes必须相同。
+- multi-flow fixture 至少有 DepotHead与第二入口各自独立Flow/Capsule；一条成功、一条Gap或缺shard时，已完整安装slice保留但stage/run不得误报完成。改变shard size/order，六文件bytes必须相同。
 
-验收必须同时覆盖至少两个非空 Flow/Capsule（其中一个可用 DepotHead讲解）、一个多 Outcome 入口、第二入口 ownership 隔离、其中一 Flow失败/恢复、缺/重叠 shard、逐 edge/span deletion mutation，以及当前 DepotHead 0/0 baseline。只有每个COMPILED入口各生成一个入口根 Flow/一个 Capsule且所有终点闭合、完整entry ledger守恒，0/0 baseline生成完整六文件/Gap/accounting并使 Provider seam调用数为0，Stage05才算可交付；单 Flow PASS不构成验收。
+验收必须同时覆盖至少两个非空 Flow/Capsule（其中一个可用 DepotHead讲解）、eligible/ineligible各一Flow及完整逐Flow Gap mapping、一个多 Outcome 入口、第二入口 ownership 隔离、其中一 Flow Gap、缺/重叠 shard、逐 edge/span deletion mutation，以及当前 DepotHead 0/0 baseline。只有每个COMPILED入口各生成一个入口根 Flow/一个 Capsule且所有终点闭合、完整entry ledger与eligibility分区/mapping守恒，0/0 baseline生成完整六文件/Gap/accounting并使 Provider seam调用数为0，Stage05才算可交付；单 Flow PASS不构成验收。
 
 ### 8.7 已冻结裁决：实现者不得自由推断
 

@@ -61,7 +61,7 @@
 - 追加式 validation/runtime lineage；
 - JPA、AOP、反射、SpEL、WebFlux、消息、调度、批处理和动态 SQL 解释。
 
-仓库中已有三个邻接 seam，但不属于 POC 主链完成项：RepositoryDiscoverer 是后续入口/MyBatis 输入，SourceAnalyzer 是后续 CodeFact/Proof 输入，ModelRuntimeReceiptAdmission 是后续 runtime/recovery 输入。本文只记录它们的接口现状和设计反馈，不用其存在把目标 ARCH-03/04/07 写成已完成。
+仓库中已有三个邻接 seam，但不属于 POC 主链完成项：RepositoryDiscoverer 是后续入口/MyBatis 输入，SourceAnalyzer 是后续 CodeFact/Proof 输入，ModelRuntimeReceiptAdmission 是后续模型运行身份校验输入。本文只记录它们的接口现状和设计反馈，不用其存在把目标 ARCH-03/04/07 写成已完成。
 
 ### 2.5 退出条件
 
@@ -441,7 +441,7 @@ Flow 是 `flow:depot-head-batch-status`，Trace item 是 `activity:depot-head-ba
 
 修正后仍需先验证五个 Fact 的 kind、全部 attributes、条件、字面值和关系均有 semantic Evidence closure，再执行正文/技术依据/Gap/有理由排除的原子 disposition。当前既缺第一道准入门禁，也缺第二道守恒台账；九章结构有效不能替代任何一道。
 
-## 14. 当前归档、恢复与安全
+## 14. 当前归档、验证与安全
 
 ### 14.1 Archive
 
@@ -478,7 +478,7 @@ Flow 是 `flow:depot-head-batch-status`，Trace item 是 `activity:depot-head-ba
 8. archived validate 主要检查八文件布局、candidate sidecar、正文 hash 和九标题；不校验 evidence pack、rounds、generation receipt、Trace closure、semantic Evidence closure、Fact coverage 或读者信息密度。
 9. discovery/SourceAnalyzer 不自动生成冻结 Manifest、Evidence、LockedFact、Flow 或 Candidate；其目录输出未冻结。
 10. 自动 Flow 编译、多 Flow 知识归并、完整 Proof 与语义原子守恒未实现。
-11. `validation-receipt.json` 可替换，不是追加 lineage；没有 runtime/recovery 状态机。
+11. `validation-receipt.json` 可替换，不是追加 lineage；没有目标的最小单进程execution state。
 12. 没有 HTTP、远程 Git Adapter 或 live model Adapter。
 13. Snapshot/candidate identity 没有直接覆盖所有 Manifest/origin/Fact 字段；长期算法需要版本化补全。
 
@@ -541,7 +541,7 @@ mvn -q -Dtest=ManifestEvidenceVerificationTest,InterpretationAdmissionGateTest,N
 - [03 五张程序图](03-build-five-program-graphs.md)：把诊断式结构/调用信息升级为五个一等图产物；
 - [04 事实与证明](04-prove-code-facts.md)：逐 atom semantic closure，拒绝空 LockedFact 或借用 Evidence；
 - [05 流程与 Capsule](05-compile-business-flows.md)：自动入口根 Flow 和最小模型阅读包；
-- [08 九章与运行归档](08-build-nine-section-document-and-archive.md)：plan-only renderer、完整 Trace、逐阶段资产和 whole-run resume。
+- [08 九章与运行归档](08-build-nine-section-document-and-archive.md)：plan-only renderer、完整 Trace、逐阶段资产和基于validated upstream publications的显式新stage执行。
 
 后续实现只能按当前目标设计新增 production 能力；不得恢复人工 Flow Manifest、provider-free baseline 或旧八文件 archive 作为并列主线。
 
