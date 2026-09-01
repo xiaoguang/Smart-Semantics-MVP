@@ -384,8 +384,11 @@ STAGE02_REQUEST_INVALID、SNAPSHOT_REOPEN_MISMATCH、APPLICATION_PROFILE_UNRESOL
 
 | 状态 | 当前事实 |
 | --- | --- |
-| **部分具备（内存态）** | 现有 Stage01 RepositoryCompiler 能在有限 Java/Spring MVC/MyBatis profile 中发现 route、类型、部分 mapper/config site 和 capability report |
-| **尚未符合目标** | 应用 profile、entry-points.jsonl、mapper-catalog.jsonl、capability-report.json 尚未作为独立 Stage 02 production assets 立即持久化 |
+| **已实现（M1 持久化画像草稿）** | `target/stage02/applicationprofile` 已从真实 Stage01 persisted publication 重开 `source-input.json`、`source-inventory.jsonl` 与 `verified-snapshot.json`；仅经 identity-based registered snapshot handle 复验选中的 POM/config bytes。它确定 Java release、Spring MVC/MyBatis parser signals 与 MyBatis mapper-location signal，并立即以 `stage02-application-profile-draft-v2` module publication 持久化。直接 selector `Stage02ApplicationProfileDetectorTest` 覆盖正向 Java17/Spring MVC/MyBatis、Java release conflict、不同 store root 的相同 bytes，以及媒体文件保留在完整分母但不解码。 |
+| **已实现（M2 持久化入口发现）** | `SpringHttpEntryDiscoverer` 重新打开 M1 module publication 和 Stage01 publication，只对 inventory 内冻结 Java bytes 使用 JavaParser。它在双 Controller fixture 中发现 `POST /depotHead/batchSetStatus` 与 `GET /health`，保留 DepotHead class/method 两份 route evidence、handler 和参数，并持久化 `stage02-http-entry-discovery-v2` draft。动态 route 形成 `AMBIGUOUS/DYNAMIC_ROUTE_EXPRESSION` site Gap；重复的同文本 annotation 保留不同的 AST byte locator。direct selector 已覆盖三种情况。 |
+| **已实现（M3 持久化 Mapper catalog）** | `MapperCapabilityCataloger` 从 M1/Stage01 的 persisted artifacts 读取 inventory 内 Java/XML bytes，目录级绑定 Java Mapper interface 与 XML namespace，持久化 `CANDIDATE_NOT_YET_BOUND` catalog。标准 MyBatis DOCTYPE 在禁用外部资源的 XML parser 下可读取；外部 entity 以 fatal 拒绝，namespace 不匹配是 typed Gap。它不声明 method→statement binding。 |
+| **已实现（M4 五文件发布）** | `Stage02PublicationSpecifier` fresh-reopen M1/M2/M3，核验同一 Stage01 controls、application profile、sites、shards、entry disposition 和完整分母后，原子安装 `application-profile.json`、`entry-points.jsonl`、`mapper-catalog.jsonl`、`capability-report.json`；Stage store 最后写入 `stage-receipt.json`。双入口正向和零入口（空 JSONL + `NO_ENTRY_DISCOVERED` Gap）都通过直接 selector。 |
+| **仍未符合目标** | Stage02 的目标持久化闭环已在小型 complete-capture fixture 验证，但尚未对完整固定 jshERP commit 运行，也还没有 public run orchestrator 将它接到 Stage03。当前 GREEN 只证明冻结输入上的静态 Java/Spring MVC/MyBatis discovery 和五文件发布，不代表全仓入口清单或业务 Flow 已完成。 |
 | **真实样例边界** | 当前代码能看到 DepotHead route 的相关字节，但后续数据流/Fact/Flow closure 未通过；不得把 entry discovery 写成当前 DepotHead complete Flow |
 
 本阶段只固定入口和能力分母。调用、控制、数据、证据关系属于 Stage 03，不能为了复用当前类而继续混在一个不可观察的内存阶段中。

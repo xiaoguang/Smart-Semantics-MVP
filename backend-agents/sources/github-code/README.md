@@ -48,6 +48,7 @@ DepotHead 八文件只是贯穿讲解和局部fixture，不是产品分析范围
 
 | 能力 | 中文状态 | 诚实边界 |
 | --- | --- | --- |
+| Stage 02 应用/入口/Mapper catalog | **已验证（小型冻结仓库五文件闭环）** | M1–M4 从 Stage01 persisted artifacts 产出 application profile、HTTP entries、未绑定 Mapper candidates、capability report 和 receipt；未运行完整 jshERP，也未产生 Stage03 图或业务流程 |
 | 冻结输入、有限仓库理解、Fact/Proof | **已验证（有限、内存态）** | 现有 Stage01 core 有 bounded tests；成功中间态未按八阶段目标立即持久化 |
 | Flow/Outcome/Capsule 编译 | **已验证（有限、内存态）** | 现有 Stage02 core 对受支持 fixture 工作；固定 jshERP 八文件是 Gap、0 Flow、0 Capsule |
 | 五张 standalone 程序图 | **缺失目标产物** | 现有 model/view 只有部分结构/call/CFG；没有正式 data-flow/evidence graph 文件 |

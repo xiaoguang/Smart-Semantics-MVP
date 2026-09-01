@@ -18,6 +18,20 @@ final class StageSemanticSchemaRegistry {
                             "source-inventory.jsonl", "STAGE01_SOURCE_INVENTORY", "stage01-source-inventory-v2"),
                     new Requirement(
                             "verified-snapshot.json", "VERIFIED_SNAPSHOT", "verified-snapshot-v2"));
+    private static final List<Requirement> STAGE02 =
+            List.of(
+                    new Requirement(
+                            "application-profile.json",
+                            "STAGE02_APPLICATION_PROFILE",
+                            "stage02-application-profile-v2"),
+                    new Requirement(
+                            "capability-report.json",
+                            "STAGE02_CAPABILITY_REPORT",
+                            "stage02-capability-report-v2"),
+                    new Requirement(
+                            "entry-points.jsonl", "STAGE02_ENTRY_POINTS", "stage02-entry-points-v2"),
+                    new Requirement(
+                            "mapper-catalog.jsonl", "STAGE02_MAPPER_CATALOG", "stage02-mapper-catalog-v2"));
 
     private StageSemanticSchemaRegistry() {}
 
@@ -51,6 +65,9 @@ final class StageSemanticSchemaRegistry {
     private static List<Requirement> requirements(StagePublicationAddress address) {
         if (address.stageNumber() == 1) {
             return STAGE01;
+        }
+        if (address.stageNumber() == 2) {
+            return STAGE02;
         }
         throw new ArtifactStoreException(
                 "STAGE_PUBLICATION_SCHEMA_UNAVAILABLE",
