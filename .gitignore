@@ -32,6 +32,8 @@ blob-report/
 # Backend Agent local inputs and generated outputs
 /backend-agents/**/.workspace/
 /backend-agents/**/target/
+!/backend-agents/sources/github-code/src/**/target/
+!/backend-agents/sources/github-code/src/**/target/**
 /backend-agents/**/*.jar
 /backend-agents/**/*.class
 /backend-agents/**/reports/
