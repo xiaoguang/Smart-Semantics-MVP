@@ -1,0 +1,53 @@
+name: Source Code Analysis
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - backend-agents/sources/source-code/**
+      - .github/workflows/source-analysis.yml
+  pull_request:
+    paths:
+      - backend-agents/sources/source-code/**
+      - .github/workflows/source-analysis.yml
+
+permissions:
+  contents: read
+
+jobs:
+  source-analysis:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: backend-agents/sources/source-code
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Temurin 17 and Maven cache
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Configure project-local Maven toolchain
+        run: |
+          set -euo pipefail
+          macos_jdk_home='/usr/local/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home'
+          expected_macos_entry="<jdkHome>${macos_jdk_home}</jdkHome>"
+          expected_runner_entry="<jdkHome>${JAVA_HOME}</jdkHome>"
+          test "$(grep -Foc "$expected_macos_entry" .mvn/toolchains.xml)" -eq 1
+          perl -0pi -e 's|<jdkHome>/usr/local/opt/openjdk\@17/libexec/openjdk\.jdk/Contents/Home</jdkHome>|<jdkHome>$ENV{JAVA_HOME}</jdkHome>|' .mvn/toolchains.xml
+          test "$(grep -Foc "$expected_runner_entry" .mvn/toolchains.xml)" -eq 1
+
+      - name: Check formatting
+        run: mvn -t .mvn/toolchains.xml spotless:check
+
+      - name: Run unit tests
+        run: mvn -t .mvn/toolchains.xml test
+
+      - name: Run quality checks
+        run: mvn -t .mvn/toolchains.xml -Pquality -DskipTests verify
