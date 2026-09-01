@@ -149,6 +149,14 @@ Each row also installs the one semantic receipt named in the target registry. Th
 
   Create `CanonicalJsonCodecTest`, `CanonicalArtifactPolicyRegistryTest`, and `AnalysisStepAddressTest`. Assert semantic keys, `steps/<ordered-semantic-key>/` paths, semantic receipt names, and rejection of caller paths or numeric aliases.
 
+  The first bounded 3–5 hour slice starts with one
+  `CanonicalJsonCodecTest#encodesCanonicalObjectWithUtf8ByteOrderedKeys` RED and
+  implements only `CanonicalJsonCodec`, `ImmutableBytes`, and the published
+  typed identity/address primitives. Policy loading and each of the three stores
+  follow through their own listed selectors. This first slice creates no
+  filesystem publication, receipt, manifest, runtime/validation record,
+  evidence record, JSONL/RAW_UTF8 writer, or business-analysis capability.
+
 - [ ] **Step 2: Implement the minimum artifact value types and registries.**
 
   Keep generic byte/install mechanics in `.artifact`; evidence locators and excerpts belong in `.evidence`. Do not create a catch-all helper package.

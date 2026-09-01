@@ -1639,6 +1639,9 @@ public interface CanonicalRunManifestStore {
 }
 
 public interface CanonicalArtifactPolicyRegistry {
+    static CanonicalArtifactPolicyRegistry load(
+            ImmutableBytes canonicalDocument,
+            CanonicalJsonCodec canonicalJson);
     ArtifactPolicyRegistryReference reference();
     CanonicalArtifactPolicy resolve(ArtifactPolicyKey key);
 }
@@ -1681,6 +1684,14 @@ public interface RunStoreHandle extends AutoCloseable {
 
 public final class CanonicalJsonCodec {
     public CanonicalJsonCodec();
+    public ImmutableBytes encodeCanonical(
+            com.fasterxml.jackson.databind.JsonNode value);
+    public com.fasterxml.jackson.databind.JsonNode parseCanonical(
+            ImmutableBytes canonicalUtf8);
+}
+
+public final class ArtifactStoreException extends RuntimeException {
+    public String code();
 }
 
 public record ArtifactStoreLimits(
@@ -1691,6 +1702,14 @@ public record ArtifactStoreLimits(
 ~~~
 
 以上类型都位于`org.sourceanalysis.app.artifact`。三个constructor参数顺序都固定为`runStore, canonicalJson, artifactPolicies, limits`，不得新增隐藏global/default。具体实现全部委托同一package-private `AtomicCanonicalPublicationEngine`；该engine、filesystem locator、staging name和atomic move细节既不出现在public constructor，也不成为可替换public seam。`RunStoreHandle`拥有/共享这一私有engine，保证三个store使用相同NOFOLLOW、force、collision与cleanup语义。
+
+`CanonicalJsonCodec`的两个方法是canonical JSON唯一公开语法seam；它不暴露或接受可变Jackson配置。`encodeCanonical`接受一个完整`JsonNode`值并返回compact、严格UTF-8、无BOM、无无意义空白且**无final LF**的bytes。object key按其解码后Unicode scalar序列的unsigned UTF-8 bytes做lexicographic排序；array保持调用方给定的语义顺序。字符串不做Unicode normalization：`"`、`\\`和U+0000–U+001F必须转义，其中backspace/tab/newline/form-feed/carriage-return分别固定为`\b`、`\t`、`\n`、`\f`、`\r`，其余控制字符固定为lowercase-hex `\u00xx`；solidus与其他合法Unicode scalar直接编码为UTF-8，不用可选转义。number只接受integral `JsonNode`并写最短十进制形式；浮点、指数、leading plus、leading zero和negative zero不是canonical number，具体字段的正负/范围仍由owner schema验证。
+
+`parseCanonical`使用strict duplicate detection和严格UTF-8解码，拒绝BOM、重复key、malformed UTF-8、unpaired surrogate、浮点/指数number以及任何不能完整解析的bytes；解析后再调用同一encoder，只有结果与输入逐byte相等才返回`JsonNode`。因此带可选空白、不同转义、不同key顺序或final LF的合法JSON也会被拒绝为noncanonical。owner-specific required/nullable/unknown-field、closed enum和schemaVersion检查仍由owner parser/store执行，codec不得猜schema或补默认。JSONL复用单条canonical object bytes后再由JSONL writer追加唯一LF；不得把JSON document的无final-LF规则改成JSONL文件规则。
+
+`ArtifactStoreException`是policy registry和三个store公开失败的唯一code-bearing exception。`code()`只返回§13.7已经冻结的对应stable code；异常safe detail不得包含Path、secret、raw bytes、raw stderr或用作测试golden的环境message。codec和typed value的直接参数错误可以是`IllegalArgumentException`；一旦发生在policy/store public operation内，owner必须转换成对应的既有`ARTIFACT_POLICY_*`、`MODULE_*`、`ANALYSIS_STEP_*`、`RUN_MANIFEST_*`或`ATOMIC_MOVE_UNSUPPORTED` code。`UnsupportedAnalysisWireException`继续只属于pre-reset header guard，不与本exception合并。
+
+本foundation按小vertical slice顺序交付，不能把三个store、runtime和validation压成一次改动。首个3–5小时slice只实现`CanonicalJsonCodec`、`ImmutableBytes`和下文typed identity/address primitives；Luna首先只增加`CanonicalJsonCodecTest`的一个行为RED，Terra只做对应最小GREEN。policy registry、module store、analysis-step store、run-manifest store、四状态runtime和exterior validation按两份计划后续selector逐项进入；首slice不创建JSONL/RAW_UTF8 writer、filesystem publication、receipt、manifest、evidence/runtime/validation record或任何业务分析能力。
 
 `RunStoreBootstrap.open`与`openForTest`是唯一允许`Path`的store bootstrap seam：前者接application配置的store root，后者要求JUnit提供的已存在、空、非-symlink临时目录；二者返回不暴露root/path accessor的opaque handle。`openForTest`使用真实filesystem、真实force与atomic move，不是in-memory fake；测试完成必须close handle。private source/policy registry可以在store内部保留local locator，但公开的source registration、policy registry load/registration和三个store request/reference一律只接受content ID/SHA/typed values，绝不接受或回显locator/Path。
 
@@ -1705,8 +1724,8 @@ ModulePublicationAddress (sealed)
 
 ModuleProducer(address, moduleVersion)
 
-ArtifactReference(artifactId, sha256)
-ArtifactPolicyRegistryReference(artifactId, sha256)
+ArtifactReference(ArtifactId artifactId, Sha256Digest sha256)
+ArtifactPolicyRegistryReference(ArtifactId artifactId, Sha256Digest sha256)
 ArtifactPolicyKey(artifactType, schemaVersion)
 CanonicalArtifactPolicy(key, artifactIdPrefix, mediaType, envelopeKind, emptyJsonlAllowed, publicContentExposure)
 ArtifactControls(toolchainSha256, profileSha256, schemaBundleSha256, promptBundleSha256, artifactPolicyRegistryRef)
@@ -1718,7 +1737,7 @@ CanonicalModulePayload(fileName, artifactType, schemaVersion, artifactId, mediaT
   mediaType is application/json | application/x-ndjson
   canonicalUtf8 is ImmutableBytes: defensive copy, complete bytes, never stream alias
 
-ModulePublicationReference(address, moduleArtifactRoot, moduleReceiptId, moduleReceiptSha256)
+ModulePublicationReference(address, ModuleArtifactRoot moduleArtifactRoot, ModuleReceiptId moduleReceiptId, Sha256Digest moduleReceiptSha256)
 
 ArtifactDescriptor(fileName, artifactType, schemaVersion, artifactId, mediaType, sizeBytes, sha256)
 InstalledModulePublication(reference, disposition, artifactDescriptors)
@@ -1758,6 +1777,8 @@ ReopenedRunManifest(reference, manifest, canonicalUtf8)
 
 `CanonicalArtifactPolicyRegistry`本身由exact `artifact-policy-registry-v2` canonical JSON document加载；document字段是`schemaVersion`、`artifactPolicyRegistryId`和`policies[]`。每项严格为`artifactType`、`schemaVersion`、`artifactIdPrefix`、`mediaType`、`envelopeKind`、`emptyJsonlAllowed`、`publicContentExposure`，按`artifactType`再`schemaVersion`的UTF-8 bytes排序且key唯一。`envelopeKind`是closed `MODULE_ARTIFACT_JSON | STANDALONE_JSON | CANONICAL_JSONL | RAW_UTF8`；JSON/RAW_UTF8策略的`emptyJsonlAllowed`必须为false。`publicContentExposure`是closed `METADATA_ONLY | PATH_FREE_COMPLETE_UTF8`：后者只可用于已由该schema保证不会携带 source locator/excerpt、prompt、raw response、secret或absolute/repository path的完整bytes；默认及任何无法静态证明安全的type/version必须是`METADATA_ONLY`。registry ID排除且只排除`artifactPolicyRegistryId`，公式为`artifact-policy-registry:SHA-256(frame(UTF8("canonical-artifact-policy-registry-id-v2")) || frame(canonicalJson(documentWithoutArtifactPolicyRegistryId)))`；reference SHA覆盖完整document bytes。
 
+`CanonicalArtifactPolicyRegistry.load(canonicalDocument, canonicalJson)`是唯一公开构造入口。它只接受path-free `ImmutableBytes`，先用`parseCanonical`验证bytes，再exact校验顶层/entry字段、顺序、key唯一、closed enum、prefix/media/envelope/empty/exposure组合、registry ID和完整document SHA，成功后返回immutable registry及由同一bytes算出的`reference()`。它不接受Path、stream、mutable registration、caller-selected reference或第二份配置；任何失败使用既有`ARTIFACT_POLICY_REGISTRY_INVALID`，不得返回部分registry。
+
 每个install/reopen先要求constructor registry的reference逐字等于`ArtifactControls.artifactPolicyRegistryRef`，再用exact `(artifactType,schemaVersion)`解析唯一policy。descriptor/media/envelope/identity prefix都以registry为authoritative；payload/request不得含`artifactIdPrefix`，也不得用artifactId中的caller prefix反向选择policy。缺key、重复key、prefix/media/envelope不匹配或zero-byte JSONL未被该exact policy许可均fail closed。policy registry/reference是内容寻址input：改变任一entry会改变registry ID、controls、payload/receipt/manifest identity和新run ID；旧run仍只按自己引用的registry重开。
 
 `ImmutableBytes`不是未定义占位符；它是同一公开package内唯一允许出现在store request/reopen output中的bytes值类型，精确API为：
@@ -1776,6 +1797,59 @@ public final class ImmutableBytes {
 ~~~
 
 `copyOf`拒绝null并立即复制输入；`copyToByteArray`每次返回新副本；`equals/hashCode`按全部byte内容而非数组identity；没有公开constructor、backing-array/`ByteBuffer`/stream accessor或unsafe wrap。测试精确用`ImmutableBytes.copyOf(canonicalBytes)`构造`CanonicalModulePayload`，并用`reopened.payloads().get(i).canonicalUtf8().copyToByteArray()`读取完整副本；随后修改原数组或返回副本都不得改变install/reopen结果。`CanonicalModulePayload`和`VerifiedCanonicalPayload`的`canonicalUtf8` component类型均为这个`ImmutableBytes`。
+
+首slice公开typed values及其component类型固定如下；五个单值record的public canonical constructor与`parse(String wireValue)`执行相同校验，`value()`返回canonical wire value；所有类型都不提供`Path` accessor，directory/receipt basename只由closed `AnalysisStepKey` mapping给出：
+
+~~~java
+public record ArtifactId(String value) {
+    public static ArtifactId parse(String wireValue);
+}
+
+public record AnalysisRunId(String value) {
+    public static AnalysisRunId parse(String wireValue);
+}
+
+public record Sha256Digest(String value) {
+    public static Sha256Digest parse(String wireValue);
+}
+
+public record ModuleArtifactRoot(String value) {
+    public static ModuleArtifactRoot parse(String wireValue);
+}
+
+public record ModuleReceiptId(String value) {
+    public static ModuleReceiptId parse(String wireValue);
+}
+
+public enum AnalysisStepKey {
+    VERIFIED_SOURCE_INVENTORY,
+    APPLICATION_DISCOVERY,
+    PROGRAM_GRAPHS,
+    PROVEN_CODE_FACTS,
+    BUSINESS_FLOWS,
+    FLOW_INTERPRETATION,
+    REPOSITORY_KNOWLEDGE,
+    NINE_SECTION_DOCUMENT;
+
+    public static AnalysisStepKey parse(String wireValue);
+    public String wireValue();
+    public int order();
+    public String directoryName();
+    public String receiptFileName();
+}
+
+public record AnalysisStepModuleAddress(
+        AnalysisRunId runId,
+        AnalysisStepKey analysisStepKey,
+        int moduleNumber,
+        String moduleKey) {}
+
+public record ArtifactReference(
+        ArtifactId artifactId,
+        Sha256Digest sha256) {}
+~~~
+
+`ArtifactId`验证通用safe content-ID grammar；fixed-prefix context仍由包含它的record/policy验证。`AnalysisRunId`、`ModuleArtifactRoot`和`ModuleReceiptId`分别只接受`analysis-run`、`module-root`和`module-receipt`。`Sha256Digest`只接受64 lowercase hex且没有prefix。`AnalysisStepKey`的wire value、1-based order、`<NN-analysisStepKey>` single-segment `directoryName`和semantic receipt filename逐项等于本设计closed registry；numeric alias、大小写alias和未知值拒绝。`AnalysisStepModuleAddress`构造时还要求module number/key命中同一compiled registry；它不接受caller目录。其他public records必须复用这些component types：`ModulePublicationReference(address, ModuleArtifactRoot, ModuleReceiptId, Sha256Digest)`、`ArtifactPolicyRegistryReference(ArtifactId, Sha256Digest)`以及所有artifact SHA/reference都不得退回raw String或互换fixed-prefix value。
 
 对应Java records的component顺序严格等于上面圆括号顺序；lists在constructor内`List.copyOf`，`ImmutableBytes`在进入/返回store时都保持上述value/defensive-copy语义。`promptBundleSha256`是required nullable的第4个control component，`artifactPolicyRegistryRef`是required non-null第5个component。`ModuleCompletionStatus`、`ModuleInstallDisposition`、`CanonicalMediaType`和`CanonicalEnvelopeKind`是closed enum；不得用String扩展未知值。
 
