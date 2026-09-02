@@ -133,12 +133,10 @@ class CallGraphBuilderTest {
   }
 
   @Test
-  void recordsAGapWhenTheKnownMapperHasNoCandidateForTheCalledMethod()
-      throws Exception {
+  void recordsAGapWhenTheKnownMapperHasNoCandidateForTheCalledMethod() throws Exception {
     Fixture fixture = unresolvedMapperMethodFixture();
 
-    CallGraphDraft draft =
-        new CallGraphBuilder().buildCalls(fixture.inputs(), fixture.profile());
+    CallGraphDraft draft = new CallGraphBuilder().buildCalls(fixture.inputs(), fixture.profile());
 
     assertThat(draft.edges())
         .filteredOn(edge -> edge.kind() == CallGraphEdgeKind.JAVA_METHOD_TO_XML_STATEMENT)
@@ -222,7 +220,8 @@ class CallGraphBuilderTest {
     return fixture(fixtureRoot, true);
   }
 
-  private Fixture fixture(String fixtureRoot, boolean includeMapperMethodCandidate) throws Exception {
+  private Fixture fixture(String fixtureRoot, boolean includeMapperMethodCandidate)
+      throws Exception {
     try (PersistedFixture persisted = persistedFixture(fixtureRoot, includeMapperMethodCandidate)) {
       ReopenedCodeStructureGraph reopenedStructure =
           persisted
@@ -238,8 +237,8 @@ class CallGraphBuilderTest {
     return persistedFixture(fixtureRoot, true);
   }
 
-  private PersistedFixture persistedFixture(String fixtureRoot, boolean includeMapperMethodCandidate)
-      throws Exception {
+  private PersistedFixture persistedFixture(
+      String fixtureRoot, boolean includeMapperMethodCandidate) throws Exception {
     CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
     CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
     ArtifactControls controls = controls(policies);
@@ -316,9 +315,7 @@ class CallGraphBuilderTest {
             "CANDIDATE_NOT_YET_BOUND");
     ReopenedProgramGraphInputs reopened =
         new ReopenedProgramGraphInputs(
-            source,
-            new ProgramGraphDiscoveryInputs(
-                discovery, List.of(entry), List.of(mapper)));
+            source, new ProgramGraphDiscoveryInputs(discovery, List.of(entry), List.of(mapper)));
     RunStoreHandle handle = RunStoreBootstrap.openForTest(temporaryDirectory);
     try {
       FileSystemCanonicalModuleArtifactStore store =

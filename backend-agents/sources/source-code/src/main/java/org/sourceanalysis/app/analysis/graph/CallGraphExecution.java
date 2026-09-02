@@ -24,7 +24,9 @@ final class CallGraphExecution {
     this.publisher = Objects.requireNonNull(publisher, "call graph publisher");
   }
 
-  /** Reopens one M1 structure, builds calls from its same frozen inputs, then persists exactly M2. */
+  /**
+   * Reopens one M1 structure, builds calls from its same frozen inputs, then persists exactly M2.
+   */
   CallGraphDraftReference execute(
       VerifiedSourceInventoryReference verifiedSource,
       ApplicationDiscoveryReference applicationDiscovery,

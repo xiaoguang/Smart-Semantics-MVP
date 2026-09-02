@@ -191,6 +191,73 @@ class CallGraphModulePublisherTest {
     }
   }
 
+  @Test
+  void freshReopensThePersistedCallGraphOnlyAgainstItsSameStructureAndInputs() {
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
+    ArtifactControls controls = controls(policies);
+    CodeStructureSource source = source(controls);
+    CodeStructureDiscovery discovery = discovery();
+    ArtifactReference graphProfile = reference("graph-profile", "call-graph-reader");
+    ReopenedProgramGraphInputs reopened =
+        new ReopenedProgramGraphInputs(
+            source, new ProgramGraphDiscoveryInputs(discovery, List.of(), List.of()));
+    AnalysisRunId runId = AnalysisRunId.parse("analysis-run:" + "4".repeat(64));
+
+    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(temporaryDirectory)) {
+      FileSystemCanonicalModuleArtifactStore store =
+          new FileSystemCanonicalModuleArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(2, 100_000, 200_000, 8));
+      CodeStructureGraphDraftReference structureReference =
+          new CodeStructureGraphModulePublisher(store)
+              .publish(
+                  new AnalysisStepModuleAddress(
+                      runId, AnalysisStepKey.PROGRAM_GRAPHS, 1, "code-structure"),
+                  source,
+                  discovery,
+                  new CodeStructureGraphBuilder()
+                      .buildStructure(
+                          source, discovery, new CodeStructureGraphProfile(graphProfile)));
+      ReopenedCodeStructureGraph structure =
+          new PersistedCodeStructureGraphReader(store)
+              .reopen(structureReference, reopened, graphProfile);
+      CallGraphDraftReference callReference =
+          new CallGraphModulePublisher(store)
+              .publish(
+                  new AnalysisStepModuleAddress(
+                      runId, AnalysisStepKey.PROGRAM_GRAPHS, 2, "call-graph"),
+                  structure,
+                  reopened,
+                  emptyCallGraph(source, discovery, graphProfile));
+
+      ReopenedCallGraph callGraph =
+          new PersistedCallGraphReader(store)
+              .reopen(callReference, reopened, structure, graphProfile);
+
+      assertThat(callGraph.reference()).isEqualTo(callReference);
+      assertThat(callGraph.draft().graphKind()).isEqualTo(ProgramGraphKind.CALL);
+      assertThat(callGraph.basis()).isEqualTo(structure.basis());
+    }
+  }
+
+  private static CallGraphDraft emptyCallGraph(
+      CodeStructureSource source,
+      CodeStructureDiscovery discovery,
+      ArtifactReference graphProfile) {
+    return new CallGraphDraft(
+        CallGraphDraft.SCHEMA_VERSION,
+        ProgramGraphKind.CALL,
+        id("program-graph", "call"),
+        source.snapshotId(),
+        discovery.applicationProfileId(),
+        graphProfile,
+        discovery.entryIds(),
+        List.of(),
+        List.of(),
+        List.of(),
+        new GraphCoverage(List.of(), List.of(), List.of(), List.of(), List.of(), true));
+  }
+
   private static CodeStructureSource source(ArtifactControls controls) {
     byte[] bytes = "package com.example; class DepotHead {}".getBytes(StandardCharsets.UTF_8);
     return new CodeStructureSource(
