@@ -100,6 +100,163 @@ class CanonicalModuleArtifactStoreTest {
   }
 
   @Test
+  void installsAndFreshReopensTheRegisteredVerifiedSourceIndexModuleArtifact() {
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = inventoryModulePolicyRegistry(canonicalJson);
+    ModuleInstallRequest request = sourceIndexInstallRequest(canonicalJson, policies);
+
+    assertThatCode(
+            () -> {
+              try (RunStoreHandle handle = RunStoreBootstrap.openForTest(emptyTemporaryDirectory)) {
+                CanonicalModuleArtifactStore store =
+                    new FileSystemCanonicalModuleArtifactStore(
+                        handle,
+                        canonicalJson,
+                        policies,
+                        new ArtifactStoreLimits(1, 1_000_000, 2_000_000, 4));
+
+                InstalledModulePublication installed = store.install(request);
+                assertThat(installed.artifactDescriptors())
+                    .singleElement()
+                    .satisfies(
+                        descriptor ->
+                            assertThat(descriptor.fileName())
+                                .isEqualTo("verified-source-index.json"));
+                assertThat(store.reopen(installed.reference()).payloads())
+                    .singleElement()
+                    .satisfies(
+                        payload ->
+                            assertThat(payload.descriptor().artifactType())
+                                .isEqualTo("VERIFIED_SOURCE_INVENTORY_VERIFIED_SOURCE_INDEX"));
+              }
+            })
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  void installsAndFreshReopensTheExactThreeVerifiedSourcePublisherArtifacts() {
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = publisherModulePolicyRegistry(canonicalJson);
+    ModuleInstallRequest request = sourcePublicationInstallRequest(canonicalJson, policies);
+
+    assertThatCode(
+            () -> {
+              try (RunStoreHandle handle = RunStoreBootstrap.openForTest(emptyTemporaryDirectory)) {
+                CanonicalModuleArtifactStore store =
+                    new FileSystemCanonicalModuleArtifactStore(
+                        handle,
+                        canonicalJson,
+                        policies,
+                        new ArtifactStoreLimits(3, 1_000_000, 2_000_000, 4));
+
+                InstalledModulePublication installed = store.install(request);
+                assertThat(installed.artifactDescriptors())
+                    .extracting(ArtifactDescriptor::fileName)
+                    .containsExactly(
+                        "source-input.json", "source-inventory.jsonl", "verified-snapshot.json");
+                assertThat(store.reopen(installed.reference()).payloads())
+                    .extracting(payload -> payload.descriptor().artifactType())
+                    .containsExactly(
+                        "VERIFIED_SOURCE_INVENTORY_SOURCE_INPUT",
+                        "VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY",
+                        "VERIFIED_SNAPSHOT");
+              }
+            })
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  void rejectsAVerifiedSourcePublisherInstallThatOmitsOneOfItsContractualArtifacts() {
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = publisherModulePolicyRegistry(canonicalJson);
+    ModuleInstallRequest complete = sourcePublicationInstallRequest(canonicalJson, policies);
+    ModuleInstallRequest incomplete =
+        new ModuleInstallRequest(
+            complete.address(),
+            complete.moduleVersion(),
+            complete.upstreamArtifacts(),
+            complete.controls(),
+            complete.status(),
+            complete.gapRefs(),
+            List.of(complete.payloads().get(0), complete.payloads().get(2)));
+
+    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(emptyTemporaryDirectory)) {
+      CanonicalModuleArtifactStore store =
+          new FileSystemCanonicalModuleArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(3, 1_000_000, 2_000_000, 4));
+
+      assertThatThrownBy(() -> store.install(incomplete))
+          .isInstanceOfSatisfying(
+              ArtifactStoreException.class,
+              failure -> assertThat(failure.code()).isEqualTo("MODULE_INSTALL_REQUEST_INVALID"));
+    }
+  }
+
+  @Test
+  void rejectsAVerifiedSourcePublisherInstallWhosePayloadInputOrderIsNotCanonical() {
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = publisherModulePolicyRegistry(canonicalJson);
+    ModuleInstallRequest complete = sourcePublicationInstallRequest(canonicalJson, policies);
+    ModuleInstallRequest outOfOrder =
+        new ModuleInstallRequest(
+            complete.address(),
+            complete.moduleVersion(),
+            complete.upstreamArtifacts(),
+            complete.controls(),
+            complete.status(),
+            complete.gapRefs(),
+            List.of(
+                complete.payloads().get(0),
+                complete.payloads().get(2),
+                complete.payloads().get(1)));
+
+    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(emptyTemporaryDirectory)) {
+      CanonicalModuleArtifactStore store =
+          new FileSystemCanonicalModuleArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(3, 1_000_000, 2_000_000, 4));
+
+      assertThatThrownBy(() -> store.install(outOfOrder))
+          .isInstanceOfSatisfying(
+              ArtifactStoreException.class,
+              failure -> assertThat(failure.code()).isEqualTo("MODULE_INSTALL_REQUEST_INVALID"));
+    }
+  }
+
+  @Test
+  void reportsAPersistedSourcePublisherPayloadMutationAsAnInvalidPublication() throws Exception {
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = publisherModulePolicyRegistry(canonicalJson);
+    ModuleInstallRequest request = sourcePublicationInstallRequest(canonicalJson, policies);
+
+    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(emptyTemporaryDirectory)) {
+      CanonicalModuleArtifactStore store =
+          new FileSystemCanonicalModuleArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(3, 1_000_000, 2_000_000, 4));
+      InstalledModulePublication installed = store.install(request);
+      Path sourceInput =
+          emptyTemporaryDirectory
+              .resolve("runs")
+              .resolve(
+                  "analysis-run--0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+              .resolve("steps")
+              .resolve("01-verified-source-inventory")
+              .resolve("modules")
+              .resolve("03-publish")
+              .resolve("source-input.json");
+      ObjectNode mutated =
+          (ObjectNode)
+              canonicalJson.parseCanonical(ImmutableBytes.copyOf(Files.readAllBytes(sourceInput)));
+      mutated.put("sourceRegistrationId", "source-registration:" + String.valueOf('9').repeat(64));
+      Files.write(sourceInput, canonicalJson.encodeCanonical(mutated).copyToByteArray());
+
+      assertThatThrownBy(() -> store.reopen(installed.reference()))
+          .isInstanceOfSatisfying(
+              ArtifactStoreException.class,
+              failure -> assertThat(failure.code()).isEqualTo("MODULE_PUBLICATION_INVALID"));
+    }
+  }
+
+  @Test
   void rejectsAPublicationWhoseReceiptWasRemovedAfterInstallation() throws Exception {
     CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
     CanonicalArtifactPolicyRegistry policies = requestAdmissionPolicyRegistry(canonicalJson);
@@ -318,6 +475,75 @@ class CanonicalModuleArtifactStoreTest {
         canonicalJson.encodeCanonical(document), canonicalJson);
   }
 
+  private static CanonicalArtifactPolicyRegistry inventoryModulePolicyRegistry(
+      CanonicalJsonCodec canonicalJson) {
+    ObjectMapper mapper = new ObjectMapper();
+    ObjectNode withoutId = mapper.createObjectNode();
+    withoutId.put("schemaVersion", "artifact-policy-registry-v2");
+    ArrayNode policies = withoutId.putArray("policies");
+    addRequestAdmissionPolicy(policies.addObject());
+    ObjectNode sourceIndex = policies.addObject();
+    sourceIndex.put("artifactType", "VERIFIED_SOURCE_INVENTORY_VERIFIED_SOURCE_INDEX");
+    sourceIndex.put("schemaVersion", "verified-source-inventory-verified-source-index-v2");
+    sourceIndex.put("artifactIdPrefix", "source-index");
+    sourceIndex.put("mediaType", "application/json");
+    sourceIndex.put("envelopeKind", "MODULE_ARTIFACT_JSON");
+    sourceIndex.put("emptyJsonlAllowed", false);
+    sourceIndex.put("publicContentExposure", "METADATA_ONLY");
+    ObjectNode document = withoutId.deepCopy();
+    document.put(
+        "artifactPolicyRegistryId",
+        "artifact-policy-registry:"
+            + sha256Hex(
+                concatenate(
+                    frame("canonical-artifact-policy-registry-id-v2"),
+                    frame(canonicalJson.encodeCanonical(withoutId).copyToByteArray()))));
+    return CanonicalArtifactPolicyRegistry.load(
+        canonicalJson.encodeCanonical(document), canonicalJson);
+  }
+
+  private static CanonicalArtifactPolicyRegistry publisherModulePolicyRegistry(
+      CanonicalJsonCodec canonicalJson) {
+    ObjectMapper mapper = new ObjectMapper();
+    ObjectNode withoutId = mapper.createObjectNode();
+    withoutId.put("schemaVersion", "artifact-policy-registry-v2");
+    ArrayNode policies = withoutId.putArray("policies");
+    addPolicy(
+        policies.addObject(),
+        "VERIFIED_SNAPSHOT",
+        "verified-snapshot-v2",
+        "verified-snapshot",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    addPolicy(
+        policies.addObject(),
+        "VERIFIED_SOURCE_INVENTORY_SOURCE_INPUT",
+        "verified-source-inventory-source-input-v2",
+        "verified-source-inventory-source-input",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    addPolicy(
+        policies.addObject(),
+        "VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY",
+        "verified-source-inventory-source-inventory-v2",
+        "verified-source-inventory-source-inventory",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        false);
+    ObjectNode document = withoutId.deepCopy();
+    document.put(
+        "artifactPolicyRegistryId",
+        "artifact-policy-registry:"
+            + sha256Hex(
+                concatenate(
+                    frame("canonical-artifact-policy-registry-id-v2"),
+                    frame(canonicalJson.encodeCanonical(withoutId).copyToByteArray()))));
+    return CanonicalArtifactPolicyRegistry.load(
+        canonicalJson.encodeCanonical(document), canonicalJson);
+  }
+
   private static void addRequestAdmissionPolicy(ObjectNode policy) {
     policy.put("artifactType", "VERIFIED_SOURCE_INVENTORY_ADMITTED_SOURCE_REQUEST");
     policy.put("schemaVersion", "verified-source-inventory-admitted-source-request-v2");
@@ -325,6 +551,23 @@ class CanonicalModuleArtifactStoreTest {
     policy.put("mediaType", "application/json");
     policy.put("envelopeKind", "MODULE_ARTIFACT_JSON");
     policy.put("emptyJsonlAllowed", false);
+    policy.put("publicContentExposure", "METADATA_ONLY");
+  }
+
+  private static void addPolicy(
+      ObjectNode policy,
+      String artifactType,
+      String schemaVersion,
+      String artifactIdPrefix,
+      String mediaType,
+      String envelopeKind,
+      boolean emptyJsonlAllowed) {
+    policy.put("artifactType", artifactType);
+    policy.put("schemaVersion", schemaVersion);
+    policy.put("artifactIdPrefix", artifactIdPrefix);
+    policy.put("mediaType", mediaType);
+    policy.put("envelopeKind", envelopeKind);
+    policy.put("emptyJsonlAllowed", emptyJsonlAllowed);
     policy.put("publicContentExposure", "METADATA_ONLY");
   }
 
@@ -379,6 +622,200 @@ class CanonicalModuleArtifactStoreTest {
         List.of(payload));
   }
 
+  private static ModuleInstallRequest sourceIndexInstallRequest(
+      CanonicalJsonCodec canonicalJson, CanonicalArtifactPolicyRegistry policies) {
+    AnalysisRunId runId =
+        AnalysisRunId.parse(
+            "analysis-run:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    AnalysisStepModuleAddress address =
+        new AnalysisStepModuleAddress(
+            runId, AnalysisStepKey.VERIFIED_SOURCE_INVENTORY, 2, "source-index");
+    List<ArtifactReference> upstreamArtifacts =
+        List.of(reference("source-registration", '7'), reference("source-request", '8'));
+    ArtifactControls controls =
+        new ArtifactControls(digest('a'), digest('b'), digest('c'), null, policies.reference());
+    ObjectMapper mapper = new ObjectMapper();
+    ObjectNode envelope = mapper.createObjectNode();
+    envelope.put("schemaVersion", "verified-source-inventory-verified-source-index-v2");
+    envelope.put("artifactType", "VERIFIED_SOURCE_INVENTORY_VERIFIED_SOURCE_INDEX");
+    ObjectNode producer = envelope.putObject("producer");
+    producer.put("moduleVersion", "v2");
+    ObjectNode producerAddress = producer.putObject("address");
+    producerAddress.put("kind", "ANALYSIS_STEP");
+    producerAddress.put("runId", address.runId().value());
+    producerAddress.put("analysisStepKey", address.analysisStepKey().wireValue());
+    producerAddress.put("moduleNumber", address.moduleNumber());
+    producerAddress.put("moduleKey", address.moduleKey());
+    ArrayNode upstream = envelope.putArray("upstreamArtifacts");
+    for (ArtifactReference reference : upstreamArtifacts) {
+      upstream
+          .addObject()
+          .put("artifactId", reference.artifactId().value())
+          .put("sha256", reference.sha256().value());
+    }
+    appendControls(envelope.putObject("controls"), controls);
+    ObjectNode completion = envelope.putObject("completion");
+    completion.put("status", "SUCCEEDED");
+    completion.putArray("gapRefs");
+    completion.putNull("failureRef");
+    ObjectNode payload = envelope.putObject("payload");
+    payload.put("snapshotId", "snapshot:" + digest('d').value());
+    payload.put("requestArtifactId", "source-request:" + digest('e').value());
+    payload.put("verifiedRegularFileCount", 1);
+    payload.put("analyzableTextFileCount", 1);
+    payload.put("nonAnalyzableMediaFileCount", 0);
+    payload.putArray("verifiedFiles");
+    payload.putArray("shardReceipts");
+    payload.put("sourceIntegrity", "VERIFIED");
+
+    ObjectNode withoutArtifactId =
+        (ObjectNode) canonicalJson.parseCanonical(canonicalJson.encodeCanonical(envelope));
+    String artifactId =
+        "source-index:"
+            + sha256Hex(
+                concatenate(
+                    frame("canonical-module-artifact-id-v1"),
+                    frame("verified-source-inventory-verified-source-index-v2"),
+                    frame("VERIFIED_SOURCE_INVENTORY_VERIFIED_SOURCE_INDEX"),
+                    frame(canonicalJson.encodeCanonical(withoutArtifactId).copyToByteArray())));
+    envelope.put("artifactId", artifactId);
+    CanonicalModulePayload sourceIndex =
+        new CanonicalModulePayload(
+            "verified-source-index.json",
+            "VERIFIED_SOURCE_INVENTORY_VERIFIED_SOURCE_INDEX",
+            "verified-source-inventory-verified-source-index-v2",
+            ArtifactId.parse(artifactId),
+            CanonicalMediaType.APPLICATION_JSON,
+            canonicalJson.encodeCanonical(envelope));
+    return new ModuleInstallRequest(
+        address,
+        "v2",
+        upstreamArtifacts,
+        controls,
+        ModuleCompletionStatus.SUCCEEDED,
+        List.of(),
+        List.of(sourceIndex));
+  }
+
+  private static ModuleInstallRequest sourcePublicationInstallRequest(
+      CanonicalJsonCodec canonicalJson, CanonicalArtifactPolicyRegistry policies) {
+    AnalysisRunId runId =
+        AnalysisRunId.parse(
+            "analysis-run:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    AnalysisStepModuleAddress address =
+        new AnalysisStepModuleAddress(
+            runId, AnalysisStepKey.VERIFIED_SOURCE_INVENTORY, 3, "publish");
+    List<ArtifactReference> upstreamArtifacts =
+        List.of(
+            reference("frozen-request", '1'),
+            reference("run-request", '2'),
+            reference("source-index", '3'),
+            reference("source-request", '4'));
+    ArtifactControls controls =
+        new ArtifactControls(digest('a'), digest('b'), digest('c'), null, policies.reference());
+    ObjectMapper mapper = new ObjectMapper();
+    ObjectNode sourceInput = mapper.createObjectNode();
+    sourceInput.put("schemaVersion", "verified-source-inventory-source-input-v2");
+    sourceInput.put("artifactType", "VERIFIED_SOURCE_INVENTORY_SOURCE_INPUT");
+    sourceInput.put("sourceInputId", "verified-source-inventory-input:" + digest('d').value());
+    sourceInput.put("sourceRegistrationId", "source-registration:" + digest('e').value());
+    ObjectNode verifiedSnapshot = mapper.createObjectNode();
+    verifiedSnapshot.put("schemaVersion", "verified-snapshot-v2");
+    verifiedSnapshot.put("artifactType", "VERIFIED_SNAPSHOT");
+    verifiedSnapshot.put("snapshotId", "snapshot:" + digest('f').value());
+    ObjectNode inventoryEntry = mapper.createObjectNode();
+    inventoryEntry.put("schemaVersion", "source-inventory-entry-v2");
+    inventoryEntry.put("fileId", "file:" + digest('7').value());
+    inventoryEntry.put(
+        "path", "jshERP-boot/src/main/java/com/jsh/erp/controller/DepotHeadController.java");
+
+    return new ModuleInstallRequest(
+        address,
+        "v2",
+        upstreamArtifacts,
+        controls,
+        ModuleCompletionStatus.SUCCEEDED,
+        List.of(),
+        List.of(
+            standalonePayload(
+                canonicalJson,
+                "source-input.json",
+                "VERIFIED_SOURCE_INVENTORY_SOURCE_INPUT",
+                "verified-source-inventory-source-input-v2",
+                "verified-source-inventory-source-input",
+                sourceInput),
+            jsonlPayload(
+                canonicalJson,
+                "source-inventory.jsonl",
+                "VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY",
+                "verified-source-inventory-source-inventory-v2",
+                "verified-source-inventory-source-inventory",
+                inventoryEntry),
+            standalonePayload(
+                canonicalJson,
+                "verified-snapshot.json",
+                "VERIFIED_SNAPSHOT",
+                "verified-snapshot-v2",
+                "verified-snapshot",
+                verifiedSnapshot)));
+  }
+
+  private static CanonicalModulePayload standalonePayload(
+      CanonicalJsonCodec canonicalJson,
+      String fileName,
+      String artifactType,
+      String schemaVersion,
+      String artifactIdPrefix,
+      ObjectNode document) {
+    ObjectNode withoutArtifactId =
+        (ObjectNode) canonicalJson.parseCanonical(canonicalJson.encodeCanonical(document));
+    String artifactId =
+        artifactIdPrefix
+            + ":"
+            + sha256Hex(
+                concatenate(
+                    frame("canonical-standalone-json-artifact-id-v1"),
+                    frame(schemaVersion),
+                    frame(artifactType),
+                    frame(canonicalJson.encodeCanonical(withoutArtifactId).copyToByteArray())));
+    document.put("artifactId", artifactId);
+    return new CanonicalModulePayload(
+        fileName,
+        artifactType,
+        schemaVersion,
+        ArtifactId.parse(artifactId),
+        CanonicalMediaType.APPLICATION_JSON,
+        canonicalJson.encodeCanonical(document));
+  }
+
+  private static CanonicalModulePayload jsonlPayload(
+      CanonicalJsonCodec canonicalJson,
+      String fileName,
+      String artifactType,
+      String schemaVersion,
+      String artifactIdPrefix,
+      ObjectNode entry) {
+    ImmutableBytes canonicalLine = canonicalJson.encodeCanonical(entry);
+    byte[] jsonl =
+        concatenate(canonicalLine.copyToByteArray(), "\n".getBytes(StandardCharsets.UTF_8));
+    String artifactId =
+        artifactIdPrefix
+            + ":"
+            + sha256Hex(
+                concatenate(
+                    frame("canonical-jsonl-artifact-id-v1"),
+                    frame(schemaVersion),
+                    frame(artifactType),
+                    frame(jsonl)));
+    return new CanonicalModulePayload(
+        fileName,
+        artifactType,
+        schemaVersion,
+        ArtifactId.parse(artifactId),
+        CanonicalMediaType.APPLICATION_X_NDJSON,
+        ImmutableBytes.copyOf(jsonl));
+  }
+
   private static ObjectNode requestAdmissionEnvelopeWithoutArtifactId(
       CanonicalJsonCodec canonicalJson,
       AnalysisStepModuleAddress address,
@@ -403,15 +840,7 @@ class CanonicalModuleArtifactStoreTest {
           .put("artifactId", reference.artifactId().value())
           .put("sha256", reference.sha256().value());
     }
-    ObjectNode controlsNode = envelope.putObject("controls");
-    controlsNode.put("toolchainSha256", controls.toolchainSha256().value());
-    controlsNode.put("profileSha256", controls.profileSha256().value());
-    controlsNode.put("schemaBundleSha256", controls.schemaBundleSha256().value());
-    controlsNode.putNull("promptBundleSha256");
-    controlsNode
-        .putObject("artifactPolicyRegistryRef")
-        .put("artifactId", controls.artifactPolicyRegistryRef().artifactId().value())
-        .put("sha256", controls.artifactPolicyRegistryRef().sha256().value());
+    appendControls(envelope.putObject("controls"), controls);
     ObjectNode completion = envelope.putObject("completion");
     completion.put("status", "SUCCEEDED");
     completion.putArray("gapRefs");
@@ -436,6 +865,17 @@ class CanonicalModuleArtifactStoreTest {
     file.put("analysisDisposition", "ANALYZABLE_TEXT");
     file.put("textEncoding", "UTF-8");
     return canonicalJson.parseCanonical(canonicalJson.encodeCanonical(envelope)).deepCopy();
+  }
+
+  private static void appendControls(ObjectNode controlsNode, ArtifactControls controls) {
+    controlsNode.put("toolchainSha256", controls.toolchainSha256().value());
+    controlsNode.put("profileSha256", controls.profileSha256().value());
+    controlsNode.put("schemaBundleSha256", controls.schemaBundleSha256().value());
+    controlsNode.putNull("promptBundleSha256");
+    controlsNode
+        .putObject("artifactPolicyRegistryRef")
+        .put("artifactId", controls.artifactPolicyRegistryRef().artifactId().value())
+        .put("sha256", controls.artifactPolicyRegistryRef().sha256().value());
   }
 
   private static ArtifactReference reference(String prefix, char digit) {

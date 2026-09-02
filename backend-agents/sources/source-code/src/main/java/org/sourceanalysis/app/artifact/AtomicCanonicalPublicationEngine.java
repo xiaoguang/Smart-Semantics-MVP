@@ -144,6 +144,7 @@ final class AtomicCanonicalPublicationEngine {
       }
       requireStrictReferences(request.upstreamArtifacts());
       requireStrictStrings(request.gapRefs());
+      requireStrictPayloadFileOrder(request.payloads());
       List<ArtifactDescriptor> descriptors = new ArrayList<>();
       long totalBytes = 0L;
       for (CanonicalModulePayload payload : request.payloads()) {
@@ -157,6 +158,7 @@ final class AtomicCanonicalPublicationEngine {
       }
       descriptors.sort(Comparator.comparing(ArtifactDescriptor::fileName, UTF8_ORDER));
       requireUniqueFileNamesAndArtifactIds(descriptors);
+      requireExpectedPayloadSet(request.address(), descriptors, true);
       if (descriptors.size() + 1 > limits.maxDirectoryEntries()) {
         throw invalidInstall();
       }
@@ -206,19 +208,12 @@ final class AtomicCanonicalPublicationEngine {
         || payload.schemaVersion() == null
         || payload.artifactId() == null
         || payload.mediaType() == null
-        || payload.canonicalUtf8() == null
-        || !"admitted-source-request.json".equals(payload.fileName())
-        || !request
-            .address()
-            .equals(
-                new AnalysisStepModuleAddress(
-                    request.address().runId(),
-                    AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
-                    1,
-                    "request-admission"))
-        || !"VERIFIED_SOURCE_INVENTORY_ADMITTED_SOURCE_REQUEST".equals(payload.artifactType())
-        || !"verified-source-inventory-admitted-source-request-v2"
-            .equals(payload.schemaVersion())) {
+        || payload.canonicalUtf8() == null) {
+      throw invalidInstall();
+    }
+    ModuleArtifactContract contract = moduleArtifactContract(payload);
+    if (!contract.fileName().equals(payload.fileName())
+        || !contract.addressFor(request.address().runId()).equals(request.address())) {
       throw invalidInstall();
     }
     if (!artifactPolicies.reference().equals(request.controls().artifactPolicyRegistryRef())) {
@@ -227,19 +222,19 @@ final class AtomicCanonicalPublicationEngine {
     CanonicalArtifactPolicy policy =
         artifactPolicies.resolve(
             new ArtifactPolicyKey(payload.artifactType(), payload.schemaVersion()));
-    if (policy.envelopeKind() != CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON
+    if (policy.envelopeKind() != contract.envelopeKind()
         || policy.mediaType() != payload.mediaType()
-        || payload.mediaType() != CanonicalMediaType.APPLICATION_JSON
         || payload.canonicalUtf8().size() > limits.maxArtifactBytes()) {
       throw policyMismatch();
     }
-    JsonNode parsed;
-    try {
-      parsed = canonicalJson.parseCanonical(payload.canonicalUtf8());
-    } catch (RuntimeException failure) {
-      throw payloadNotCanonical();
+    switch (policy.envelopeKind()) {
+      case MODULE_ARTIFACT_JSON ->
+          validateModuleArtifactEnvelope(request, payload, parseCanonicalPayload(payload), policy);
+      case STANDALONE_JSON ->
+          validateStandaloneJsonArtifact(payload, parseCanonicalPayload(payload), policy);
+      case CANONICAL_JSONL -> validateCanonicalJsonlArtifact(payload, policy);
+      case RAW_UTF8 -> throw invalidInstall();
     }
-    validateModuleArtifactEnvelope(request, payload, parsed, policy);
     return new ArtifactDescriptor(
         payload.fileName(),
         payload.artifactType(),
@@ -296,6 +291,62 @@ final class AtomicCanonicalPublicationEngine {
     }
   }
 
+  private JsonNode parseCanonicalPayload(CanonicalModulePayload payload) {
+    try {
+      return canonicalJson.parseCanonical(payload.canonicalUtf8());
+    } catch (RuntimeException failure) {
+      throw payloadNotCanonical();
+    }
+  }
+
+  private void validateStandaloneJsonArtifact(
+      CanonicalModulePayload payload, JsonNode parsed, CanonicalArtifactPolicy policy) {
+    if (!(parsed instanceof ObjectNode document)
+        || !payload.schemaVersion().equals(requiredTextForInstall(document, "schemaVersion"))
+        || !payload.artifactType().equals(requiredTextForInstall(document, "artifactType"))
+        || !payload.artifactId().value().equals(requiredTextForInstall(document, "artifactId"))) {
+      throw invalidInstall();
+    }
+    ObjectNode withoutArtifactId = document.deepCopy();
+    withoutArtifactId.remove("artifactId");
+    String expectedId =
+        policy.artifactIdPrefix()
+            + ":"
+            + sha256Hex(
+                concatenate(
+                    frame("canonical-standalone-json-artifact-id-v1"),
+                    frame(payload.schemaVersion()),
+                    frame(payload.artifactType()),
+                    frame(canonicalJson.encodeCanonical(withoutArtifactId).copyToByteArray())));
+    if (!expectedId.equals(payload.artifactId().value())) {
+      throw invalidInstall();
+    }
+  }
+
+  private void validateCanonicalJsonlArtifact(
+      CanonicalModulePayload payload, CanonicalArtifactPolicy policy) {
+    byte[] bytes = payload.canonicalUtf8().copyToByteArray();
+    if (bytes.length == 0) {
+      if (!policy.emptyJsonlAllowed()) {
+        throw invalidInstall();
+      }
+    } else {
+      requireCanonicalJsonlLines(payload, bytes);
+    }
+    String expectedId =
+        policy.artifactIdPrefix()
+            + ":"
+            + sha256Hex(
+                concatenate(
+                    frame("canonical-jsonl-artifact-id-v1"),
+                    frame(payload.schemaVersion()),
+                    frame(payload.artifactType()),
+                    frame(bytes)));
+    if (!expectedId.equals(payload.artifactId().value())) {
+      throw invalidInstall();
+    }
+  }
+
   private ModuleReceipt receiptFor(
       ModuleInstallRequest request, List<ArtifactDescriptor> descriptors, ModuleArtifactRoot root) {
     return new ModuleReceipt(
@@ -342,6 +393,7 @@ final class AtomicCanonicalPublicationEngine {
       List<VerifiedCanonicalPayload> payloads = readVerifiedPayloads(directory, receipt);
       List<ArtifactDescriptor> descriptors =
           payloads.stream().map(VerifiedCanonicalPayload::descriptor).toList();
+      requireExpectedPayloadSet(receipt.address(), descriptors, false);
       if (!moduleArtifactRoot(descriptors).equals(receipt.moduleArtifactRoot())) {
         throw invalidPublication();
       }
@@ -425,11 +477,45 @@ final class AtomicCanonicalPublicationEngine {
                     expected.artifactId(),
                     expected.mediaType(),
                     bytes)));
-    ArtifactDescriptor actual = validatePayload(request, request.payloads().get(0));
+    ArtifactDescriptor actual;
+    try {
+      actual = validatePayload(request, request.payloads().get(0));
+    } catch (ArtifactStoreException failure) {
+      throw invalidPublication();
+    }
     if (!actual.equals(expected)) {
       throw invalidPublication();
     }
     return actual;
+  }
+
+  private void requireCanonicalJsonlLines(CanonicalModulePayload payload, byte[] bytes) {
+    if (bytes[bytes.length - 1] != '\n') {
+      throw payloadNotCanonical();
+    }
+    int lineStart = 0;
+    for (int index = 0; index < bytes.length; index++) {
+      if (bytes[index] != '\n') {
+        continue;
+      }
+      if (index == lineStart) {
+        throw payloadNotCanonical();
+      }
+      ImmutableBytes lineBytes = ImmutableBytes.copyOf(Arrays.copyOfRange(bytes, lineStart, index));
+      JsonNode line =
+          parseCanonicalPayload(
+              new CanonicalModulePayload(
+                  payload.fileName(),
+                  payload.artifactType(),
+                  payload.schemaVersion(),
+                  payload.artifactId(),
+                  payload.mediaType(),
+                  lineBytes));
+      if (!(line instanceof ObjectNode)) {
+        throw payloadNotCanonical();
+      }
+      lineStart = index + 1;
+    }
   }
 
   private ModuleReceipt receiptFromNode(ObjectNode node) {
@@ -861,6 +947,18 @@ final class AtomicCanonicalPublicationEngine {
     }
   }
 
+  private static void requireStrictPayloadFileOrder(List<CanonicalModulePayload> payloads) {
+    String previous = null;
+    for (CanonicalModulePayload payload : payloads) {
+      if (payload == null
+          || payload.fileName() == null
+          || (previous != null && UTF8_ORDER.compare(previous, payload.fileName()) >= 0)) {
+        throw invalidInstall();
+      }
+      previous = payload.fileName();
+    }
+  }
+
   private static void requireUniqueFileNamesAndArtifactIds(List<ArtifactDescriptor> descriptors) {
     Set<String> fileNames = new HashSet<>();
     Set<ArtifactId> artifactIds = new HashSet<>();
@@ -870,6 +968,39 @@ final class AtomicCanonicalPublicationEngine {
           || !artifactIds.add(descriptor.artifactId())) {
         throw invalidInstall();
       }
+    }
+  }
+
+  private static void requireExpectedPayloadSet(
+      ModulePublicationAddress address,
+      List<ArtifactDescriptor> descriptors,
+      boolean installRequest) {
+    if (!(address instanceof AnalysisStepModuleAddress analysisStepAddress)
+        || analysisStepAddress.analysisStepKey() != AnalysisStepKey.VERIFIED_SOURCE_INVENTORY) {
+      throw installRequest ? invalidInstall() : invalidPublication();
+    }
+    List<String> expectedFileNames =
+        switch (analysisStepAddress.moduleNumber()) {
+          case 1 ->
+              "request-admission".equals(analysisStepAddress.moduleKey())
+                  ? List.of("admitted-source-request.json")
+                  : null;
+          case 2 ->
+              "source-index".equals(analysisStepAddress.moduleKey())
+                  ? List.of("verified-source-index.json")
+                  : null;
+          case 3 ->
+              "publish".equals(analysisStepAddress.moduleKey())
+                  ? List.of("source-input.json", "source-inventory.jsonl", "verified-snapshot.json")
+                  : null;
+          default -> null;
+        };
+    if (expectedFileNames == null
+        || !descriptors.stream()
+            .map(ArtifactDescriptor::fileName)
+            .toList()
+            .equals(expectedFileNames)) {
+      throw installRequest ? invalidInstall() : invalidPublication();
     }
   }
 
@@ -939,6 +1070,14 @@ final class AtomicCanonicalPublicationEngine {
     JsonNode value = object.get(name);
     if (value == null || !value.isTextual()) {
       throw invalidPublication();
+    }
+    return value.textValue();
+  }
+
+  private static String requiredTextForInstall(ObjectNode object, String name) {
+    JsonNode value = object.get(name);
+    if (value == null || !value.isTextual()) {
+      throw invalidInstall();
     }
     return value.textValue();
   }
@@ -1031,6 +1170,41 @@ final class AtomicCanonicalPublicationEngine {
     return new ArtifactStoreException("MODULE_PUBLICATION_COLLISION");
   }
 
+  private static ModuleArtifactContract moduleArtifactContract(CanonicalModulePayload payload) {
+    if ("VERIFIED_SOURCE_INVENTORY_ADMITTED_SOURCE_REQUEST".equals(payload.artifactType())
+        && "verified-source-inventory-admitted-source-request-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          1,
+          "request-admission",
+          "admitted-source-request.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("VERIFIED_SOURCE_INVENTORY_VERIFIED_SOURCE_INDEX".equals(payload.artifactType())
+        && "verified-source-inventory-verified-source-index-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          2,
+          "source-index",
+          "verified-source-index.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("VERIFIED_SOURCE_INVENTORY_SOURCE_INPUT".equals(payload.artifactType())
+        && "verified-source-inventory-source-input-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          3, "publish", "source-input.json", CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY".equals(payload.artifactType())
+        && "verified-source-inventory-source-inventory-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          3, "publish", "source-inventory.jsonl", CanonicalEnvelopeKind.CANONICAL_JSONL);
+    }
+    if ("VERIFIED_SNAPSHOT".equals(payload.artifactType())
+        && "verified-snapshot-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          3, "publish", "verified-snapshot.json", CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    throw invalidInstall();
+  }
+
   private record ValidatedModuleInstall(
       ModuleInstallRequest request,
       List<ArtifactDescriptor> descriptors,
@@ -1039,4 +1213,12 @@ final class AtomicCanonicalPublicationEngine {
       ModulePublicationReference reference) {}
 
   private record ReceiptBytes(ModuleReceipt receipt, ImmutableBytes canonicalUtf8) {}
+
+  private record ModuleArtifactContract(
+      int moduleNumber, String moduleKey, String fileName, CanonicalEnvelopeKind envelopeKind) {
+    private AnalysisStepModuleAddress addressFor(AnalysisRunId runId) {
+      return new AnalysisStepModuleAddress(
+          runId, AnalysisStepKey.VERIFIED_SOURCE_INVENTORY, moduleNumber, moduleKey);
+    }
+  }
 }
