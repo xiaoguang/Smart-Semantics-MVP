@@ -307,9 +307,107 @@ M2保存的`codeStructurePayloadRef`、M1的`payloadRef`和`ControlFlowGraphProf
 - **Gap / fatal / artifact复用**：bounded loop/unsupported construct 可形成 Gap；缺 polarity/terminal、悬空 block、call pair mismatch 或覆盖不闭合 fatal；只能从已验证前驱重建完整CFG draft。
 - **给下游的后置保证**：BusinessFlows 可按 entry root 枚举 Outcomes；ProvenCodeFacts 可证明条件 atom，无需从行号推路径。
 - **明确非目标**：不执行代码、不假定异常处理器/事务运行时、不命名业务 Outcome。
-- **公共测试 seam 与验收**：`buildControlFlow(structure, calls, entries)` 覆盖 TRUE/FALSE swap、terminal deletion、loop budget、call/return mutation；DepotHead 每个目标 guard 与 terminal 必须可达且 polarity 稳定。
+- **公共测试 seam 与验收**：`buildControlFlow(ControlFlowInputs inputs, ControlFlowGraphProfile profile)` 覆盖 TRUE/FALSE swap、terminal deletion、loop budget、call/return mutation；DepotHead 每个目标 guard 与 terminal 必须可达且 polarity 稳定。
 - **Luna/xhigh 测试指南**：创建 `ControlFlowGraphBuilderTest`，fixtures/goldens置 `src/test/resources/analysis/graph/control-flow/`。RED顺序：entry/guards/terminals正向、TRUE/FALSE swap、terminal deletion、call-return mismatch、loop budget Gap、order determinism；首RED应因CFG seam缺失。只fake verified method reader，禁止mock CFG/accounting。命令：`mvn -Dtest=ControlFlowGraphBuilderTest test`；禁客户运行/网络。偏离按DESIGN 13.11交`gpt-5.6-sol / ultra` Design Authority。
 - **Terra/xhigh 实现指南**：RED后只改 `analysis/graph/control-flow/`，实现 public `ControlFlowGraphBuilder/ControlFlowGraphDraft` 与 `program-graphs-control-flow-draft-v2`；M1/M2 artifacts→blocks/guards→typed edges→terminals→provenance drafts→coverage。每个RED独立GREEN；禁止行号补flow/运行代码。必要异常语义不在上游即STOP 13.11，审计同步。
+
+M3 的唯一 public Java seam 与 exact JSON payload 采用下列最小 records；`ControlFlowInputs`和
+`ControlFlowGraphProfile`只存在于进程内，不是新 wire/artifact。Java `ArtifactId`在 JSON 中是单个
+string，enum 使用下列大写值；所有字段和数组都 required，只有标成`?`的两个 JSON key required-
+nullable，unknown/missing/defaulted field 一律拒绝。
+
+```text
+ControlFlowGraphBuilder.buildControlFlow(ControlFlowInputs inputs,
+                                         ControlFlowGraphProfile profile)
+  -> ControlFlowGraphDraft
+
+record ControlFlowInputs(
+  ReopenedCodeStructureGraph structure,
+  ReopenedCallGraph calls,
+  ReopenedProgramGraphInputs reopened)
+
+record ControlFlowGraphProfile(ArtifactReference graphProfileRef)
+
+record ControlFlowGraphDraft(
+  String schemaVersion,                    // exactly program-graphs-control-flow-draft-v2
+  ProgramGraphKind graphKind,              // exactly CONTROL_FLOW
+  ArtifactId graphId,
+  String snapshotId,
+  ArtifactId applicationProfileId,
+  ArtifactReference graphProfileRef,
+  List<ArtifactId> entryIds,
+  List<ControlFlowNode> nodes,
+  List<ControlFlowEdge> edges,
+  List<ControlFlowTraversal> semanticTraversalOrder,
+  List<ProvenanceDraftV1> provenanceDrafts,
+  GraphCoverage coverage)
+
+record ControlFlowNode(
+  ArtifactId nodeId,
+  ControlFlowNodeKind kind,
+  String canonicalValue,
+  List<ArtifactId> owningEntryIds,
+  List<ArtifactId> evidenceDraftRefs)
+enum ControlFlowNodeKind {
+  ENTRY, BASIC_BLOCK, GUARD, RETURN_TERMINAL, THROW_TERMINAL, PROFILE_STOP_TERMINAL
+}
+
+record ControlFlowEdge(
+  ArtifactId edgeId,
+  ControlFlowEdgeKind kind,
+  ArtifactId fromNodeId,
+  ArtifactId toNodeId,
+  String ruleId,
+  ProgramResolution resolution,            // exactly EXACT
+  ArtifactId guardNodeId,                   // nullable Java value; JSON key required
+  ControlFlowPolarity polarity,             // nullable Java value; JSON key required
+  List<ArtifactId> evidenceDraftRefs)
+enum ControlFlowEdgeKind { NEXT, TRUE, FALSE, CALL, RETURN }
+enum ControlFlowPolarity { TRUE, FALSE }
+
+record ControlFlowTraversal(ArtifactId entryId, List<ArtifactId> nodeIds)
+```
+
+三个 input 都 non-null immutable，其中两个 predecessor 是不可伪造的 sealed aggregates；builder 读源码前重算
+`ProgramGraphInputBasis(reopened, profile.graphProfileRef)`，要求它逐字段等于`structure.basis`和
+`calls.basis`，并要求`calls.codeStructurePayloadRef == structure.payloadRef`。profile 只含完整
+`graph-profile:{sha256}` reference；rule registry和budget由该已验证 artifact 决定，不接受 caller
+复制的自由 rule/budget 字段。任一不一致以`GRAPH_REFERENCE_BROKEN`失败，不返回 partial draft。
+
+所有 Java `List`在 constructor defensive-copy；`entryIds`、nodes、edges、provenance分别按 ID
+排序且按ID distinct。`semanticTraversalOrder`按`entryId`排序，但每个
+`nodeIds`保持 canonical interprocedural DFS preorder：从该 entry 唯一的`ENTRY`开始，首次访问一个
+node时写一次，guard先`TRUE`后`FALSE`，其余同类edge按`edgeId`。每个reachable M2 call pair在M3中
+恰投影一次：`CALL`逐字段复用`CALL_TARGET | JAVA_METHOD_TO_XML_STATEMENT`的from/to/rule/resolution，
+`RETURN`逐字段复用其唯一反向`CALL_RETURN`，两者`guardNodeId/polarity=null`且各自edgeId绑定M2 edgeId。
+两者的`evidenceDraftRefs`与M2 edge逐字相同，M3 registry重列相同ID和内容的provenance draft。
+local predecessor以`NEXT`进入external M2 call-site，call-site以唯一`NEXT`指向continuation；walker先沿
+`CALL`进入target，Java method target以`NEXT`进入callee首个control node，XML statement是leaf。
+normal callee terminal或leaf验证栈顶`RETURN`后恢复call-site continuation；`RETURN` link不作为普通
+successor单独遍历，throw/profile-stop不恢复caller。缺失、额外或错配pair均 fatal。
+
+每个 traversal 可包含上述已验证的 M1/M2 external endpoint，但它们不在 M3 `nodes`中重复声明；每个
+entry恰一条traversal且不得重复或漏掉reachable node。每个M3-owned node必须出现在且只出现在其全部
+`owningEntryIds`对应的traversal；每个M3 edge必须被至少一个entry的walker命中（投影RETURN以其call-site
+可达计），因此unreachable owned subgraph一律 fatal。node的`owningEntryIds`必须非空、排序、distinct
+且为draft `entryIds`子集；每个edge endpoint必须解析到本draft node或已验证M1/M2 external node。
+
+M3-owned node/edge 的ID遵守8.4；`CALL/RETURN edgeId`的direct preimage还绑定对应M2 edgeId，M3
+`graphId`除8.4字段外还绑定完整`semanticTraversalOrder`。`coverage.exactElementIds`必须恰等于全部
+M3-owned nodeId和edgeId；candidate denominator再与exact/gap/exclusion互斥闭合。每个node/edge的
+非空`evidenceDraftRefs`只引用本draft唯一、按ID排序的`provenanceDrafts`，registry无悬空、无孤儿；
+traversal中的external node不重复计入M3 coverage。每个`PROFILE_STOP_TERMINAL`另以
+`identity("control-flow-profile-stop-successor-v1", nodeId)`确定唯一stopped-successor candidate ID，
+该candidate必须恰落入一个gap或exclusion disposition；profile-stop node自身仍是exact element。
+
+basic Java 行为严格固定：每个 entry 恰有一个无入边`ENTRY`并以唯一`NEXT`进入handler；
+`BASIC_BLOCK`是被call/branch/terminal边界切开的最大连续语句段；每个`if`条件产生一个`GUARD`，
+且恰有一条`TRUE`和一条`FALSE`出边，二者`guardNodeId`均为自身、polarity与kind相同，无`else`时
+FALSE指向lexical successor，若method已结束则指向正常fall-through terminal。显式`return`和正常fall-through分别形成由语句或method closing token
+提供source provenance的
+`RETURN_TERMINAL`，显式`throw`形成`THROW_TERMINAL`；terminal出度必须为0，throw不猜catch、事务或
+runtime handler；callee正常terminal通过上述walker stack恢复而不增加出边。unsupported/over-limit路径只能以`PROFILE_STOP_TERMINAL`加恰一个对应Gap/exclusion闭合，
+不得按行号补边；任何reachable nonterminal缺合法后继、terminal有出边或guard polarity不完整均fatal。
 
 #### M4 DataFlowGraphBuilder
 
