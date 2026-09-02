@@ -183,6 +183,55 @@ coverage/accounting 不闭合时，整个本次 graph module 以稳定`GRAPH_REF
 语法或 binding 局部不支持仍由相应 builder 形成 typed Gap。这样 M2 可以从真实的已发布
 ApplicationDiscovery 内容获取候选，而不是从 M1 的简化 ID 列表或测试对象反推业务关系。
 
+M1 自己的 module publication 还必须经过一个独立的、同样 fail-closed 的重开模块，才能成为
+M2 的输入。`PersistedCodeStructureGraphReader` 是该唯一 seam；它不是 graph builder、不是第七个
+module，也不产生新文件：
+
+```text
+PersistedCodeStructureGraphReader.reopen(
+  CodeStructureGraphDraftReference reference,
+  ReopenedProgramGraphInputs sameInputs,
+  ArtifactReference expectedGraphProfileRef)
+    -> ReopenedCodeStructureGraph
+
+ReopenedCodeStructureGraph                         // sealed opaque immutable aggregate
+  reference: CodeStructureGraphDraftReference
+  payloadRef: ArtifactReference
+  draft: CodeStructureGraphDraft
+  basis: ProgramGraphInputBasis
+
+ProgramGraphInputBasis
+  snapshotId, applicationProfileId, entryIds
+  sourceInventoryRef, verifiedSnapshotRef
+  applicationProfileRef, capabilityReportRef
+  entryPointsRef, mapperCatalogRef
+  controls, graphProfileRef
+```
+
+reader 先调用 `CanonicalModuleArtifactStore.reopen(reference.publication)`；只有 store 已重验 module
+root、receipt ID/SHA、payload descriptor/bytes、envelope 和 receipt 后才继续。reader 随后要求：
+
+1. module address 精确为当前 ProgramGraphs execution 的
+   `<runId> / program-graphs / 1 / code-structure`，envelope producer、receipt address 与 reference
+   相同，module version 为 `v1`，completion 只能是 `SUCCEEDED | SUCCEEDED_WITH_GAPS`；
+2. publication 只有一个 `code-structure-draft.json`，descriptor/envelope 的 artifact type 与 schema
+   精确为 `PROGRAM_GRAPHS_CODE_STRUCTURE_DRAFT / program-graphs-code-structure-draft-v2`；
+3. receipt 与 envelope 的 upstream 集合恰为同一个 graph profile，加上 `sameInputs` 中六个直接
+   reference：`sourceInventoryRef`、`verifiedSnapshotRef`、`applicationProfileRef`、
+   `capabilityReportRef`、`entryPointsRef`、`mapperCatalogRef`；不能缺、多或以 receipt/root 代替；
+4. receipt、envelope 与 `sameInputs.source.controls` 的五项 controls 逐字段相同，payload 的
+   `graphProfileRef` 等于 `expectedGraphProfileRef` 且它就是 upstream 中的 graph profile；
+5. canonical envelope 的 `payload` 按 exact schema 解析成 `CodeStructureGraphDraft`，拒绝未知、
+   缺失或默认补出的字段；draft 的 snapshotId、applicationProfileId、entryIds 分别精确等于
+   `sameInputs` 的 snapshot、application profile 与完整排序 entry denominator。
+
+成功后 reader 才创建不可由 caller 实现或构造的 sealed aggregate；`basis` 是上述已验证值的
+不可变投影，不是第二份 wire。任何 address/key、receipt、schema/type、lineage、controls、profile
+或 payload identity 不一致都统一以 `GRAPH_REFERENCE_BROKEN` 失败，不返回 raw draft、partial
+aggregate 或 Graph Gap。reader 和 M2 execution 均不接受 caller `Path`、raw source、自由 JSON、
+detached entry/Mapper lists，也不扫描 worktree。M2 的 `CallGraphProfile.graphProfileRef` 同时就是
+这里的 `expectedGraphProfileRef`，因为 8.0.1 已要求 M1–M5 逐字复用同一 graph profile。
+
 #### M1 CodeStructureGraphBuilder
 
 - **解决的问题**：给后续关系一个唯一的声明/包含/SQL 结构坐标系，避免按文件名或 simple name 找对象。
@@ -200,16 +249,16 @@ ApplicationDiscovery 内容获取候选，而不是从 M1 的简化 ID 列表或
 #### M2 CallGraphBuilder
 
 - **解决的问题**：唯一确定调用 target、call/return pair 和 Mapper Java→XML statement binding。
-- **精确上游输入及前置**：`CallGraphInputs{structure: fresh-reopened M1 CodeStructureGraphDraft, reopened: the same ReopenedProgramGraphInputs}`与`CallGraphProfile`（CALL registry/profile/budget）；M2只可解析`reopened.source`中的verified call-site bytes，只可把`reopened.discovery.entries/mapperCatalog`作为Stage 2候选，并要求structure/source/discovery的snapshot、application profile、controls与upstream ArtifactReferences逐字一致；receiver/type/method candidate refs 均存在。`CallGraphInputs`是immutable in-process builder input，不是新wire/module artifact，不含worktree/repository `Path`、自由source string或与该reopen脱离的entries/catalog列表。
+- **精确上游输入及前置**：`CallGraphInputs{structure: ReopenedCodeStructureGraph, reopened: the same ReopenedProgramGraphInputs}`与`CallGraphProfile`（CALL registry/profile/budget）；M2 execution 必须先用上段 `PersistedCodeStructureGraphReader` 从 M1 reference 得到 sealed structure aggregate，禁止 caller 把 raw `CodeStructureGraphDraft` 塞入 input。M2只可解析`reopened.source`中的verified call-site bytes，只可把`reopened.discovery.entries/mapperCatalog`作为Stage 2候选；builder 开始解析前必须重算 `ProgramGraphInputBasis`，要求它与 `structure.basis` 以及 `CallGraphProfile.graphProfileRef` 逐字段相同。receiver/type/method candidate refs 均存在。`CallGraphInputs`是immutable in-process builder input，不是新wire/module artifact，不含worktree/repository `Path`、自由source string或与该reopen脱离的entries/catalog列表。
 - **确定性顺序 / LLM**：枚举 call sites → 求 receiver static type → 解析 method signature/overload → 建 direct target → 配对 call/return → 按 namespace/signature 绑定 Mapper statement；0 LLM。
 - **目标输出与 DepotHead 示例**：CALL graph draft；例子有 Controller :185→Service :742、Service :803→Mapper Java :23、Mapper Java→XML :385 三段 exact edges。
 - **必须保持的不变量**：每个 admitted call/binding target 唯一；edge 保存 exact endpoints/rule/resolution/evidence draft；simple name/文本相似不是 tie-breaker。
 - **Gap / fatal / artifact复用**：可定位的 ambiguous/unsupported call 为 affected-entry Gap；两个 exact target、broken endpoints、pair/reference/accounting 错误 fatal；只接受相同roots/profile。
 - **给下游的后置保证**：M3/M4/BusinessFlows 能沿明确 call/return，不需动态 dispatch 猜测；ProvenCodeFacts 可把 call edge 放入 Proof。
 - **明确非目标**：不以调用顺序代替 CFG，不推值流，不把 unresolved candidate 任选一个。
-- **公共测试 seam 与验收**：`buildCalls(CallGraphInputs inputs, CallGraphProfile profile)` 对三段 DepotHead chain 做逐段 deletion/decoy/overload mutation；fixture必须把fresh-reopened M1 draft与同一次`ReopenedProgramGraphInputs`组成唯一inputs，删除/替换call-site bytes或脱离Stage 2的entry/catalog candidate都不得由路径、自由字符串搜索或M1 display value补回；只有唯一 signature/namespace binding 时产生 EXACT edge。
-- **Luna/xhigh 测试指南**：创建 `CallGraphBuilderTest`，fixtures/goldens在 `src/test/resources/analysis/graph/call-graph/`。一个RED一个三段binding：Controller→Service、Service→Mapper、Mapper→XML；随后overload/decoy Gap、双exact fatal、call-return mutation、determinism。首RED因seam缺失；golden不由production生成。只fake上游artifact reader，禁止mockresolution/canonical。命令：`mvn -Dtest=CallGraphBuilderTest test`；无网络/runtime。偏离按13.11。
-- **Terra/xhigh 实现指南**：RED后仅拥有 `analysis/graph/call-graph/`，实现 public `CallGraphBuilder/CallGraphInputs/CallGraphProfile/CallGraphDraft` 与 `program-graphs-call-graph-draft-v2`；execution先fresh-reopen M1 draft与同一`ReopenedProgramGraphInputs`并验证共同identity，再只以`inputs.structure`解析endpoint、以`inputs.reopened.source`解析call site、以`inputs.reopened.discovery.entries/mapperCatalog`解析Stage 2候选，按receiver type→signature→target→return pair→Mapper binding→provenance drafts。逐edge GREEN且decoy不命中；不得接受Path/detached lists/free source string、扫描worktree、字符串fallback或改M1。跨analysis step/data缺失MUST STOP交Sol/ultra，更新审计。
+- **公共测试 seam 与验收**：`buildCalls(CallGraphInputs inputs, CallGraphProfile profile)` 对三段 DepotHead chain 做逐段 deletion/decoy/overload mutation；fixture必须先把真实 M1 module publication 安装到 canonical store，再由 `PersistedCodeStructureGraphReader` 与同一次`ReopenedProgramGraphInputs`生成唯一 sealed inputs。raw draft constructor、错 M1 address/key、receipt SHA、schema/type、六项 lineage、controls、profile、snapshot/application/entry denominator 任一 mutation 都必须在 builder 解析源码前以 `GRAPH_REFERENCE_BROKEN` 失败；删除/替换call-site bytes或脱离Stage 2的entry/catalog candidate不得由路径、自由字符串搜索或M1 display value补回；只有唯一 signature/namespace binding 时产生 EXACT edge。
+- **Luna/xhigh 测试指南**：创建 `CallGraphBuilderTest`，fixtures/goldens在 `src/test/resources/analysis/graph/call-graph/`。先用真实 canonical module store 建 reader/execution RED：正确 M1 fresh reopen，以及 address/receipt/schema/type/六 refs/controls/profile/snapshot/application/entry mutation fail-closed；不能新增平行 selector 或允许测试直接构造 sealed aggregate。随后一个RED一个三段binding：Controller→Service、Service→Mapper、Mapper→XML；再做overload/decoy Gap、双exact fatal、call-return mutation、determinism。golden不由production生成；禁止mock store receipt验证、resolution/canonical。命令：`mvn -Dtest=CallGraphBuilderTest test`；无网络/runtime。偏离按13.11。
+- **Terra/xhigh 实现指南**：RED后仅拥有 `analysis/graph/call-graph/`，实现 `PersistedCodeStructureGraphReader`、sealed `ReopenedCodeStructureGraph`、M2 execution，以及 public `CallGraphBuilder/CallGraphInputs/CallGraphProfile/CallGraphDraft` 与 `program-graphs-call-graph-draft-v2`。execution先用同一`ReopenedProgramGraphInputs`和`CallGraphProfile.graphProfileRef` fresh-reopen M1 module，验证 address/receipt/exact payload/六 refs/controls与全部payload identity，严格解析draft并构造opaque aggregate；再只以`inputs.structure.draft`解析endpoint、以`inputs.reopened.source`解析call site、以`inputs.reopened.discovery.entries/mapperCatalog`解析Stage 2候选，按receiver type→signature→target→return pair→Mapper binding→provenance drafts。逐edge GREEN且decoy不命中；不得暴露可伪造aggregate实现、接受raw draft/Path/detached lists/free source string、扫描worktree、字符串fallback或改M1。跨analysis step/data缺失MUST STOP交Sol/ultra，更新审计。
 
 #### M3 ControlFlowGraphBuilder
 
@@ -279,6 +328,13 @@ M1–M5使用 DESIGN 13.3 `ModuleArtifact<T>` envelope并采用8.1 ProgramGraph 
 | `modules/04-data-flow/data-flow-draft.json` | `program-graphs-data-flow-draft-v2` / `PROGRAM_GRAPHS_DATA_FLOW_DRAFT` | exact M1/M2/M3、`graph-profile`、VerifiedSourceInventory `source-inventory/verified-snapshot` ArtifactReferences | M1同形payload且`graphKind=DATA_FLOW!`；nodes/edges/provenance按ID，typed adjacent edges按edgeId，跨图endpoint只引用global graph index；`worklistAccounting!{enqueued!,processed!,overLimit!}` |
 | `modules/05-evidence-graph/evidence-graph-draft.json` | `program-graphs-evidence-graph-draft-v2` / `PROGRAM_GRAPHS_EVIDENCE_GRAPH_DRAFT` | exact M1–M4、`graph-profile`、VerifiedSourceInventory `source-inventory/verified-snapshot` ArtifactReferences | `graphKind=EVIDENCE!`及M1共通identity字段；`nodes[]!`为下述`EvidenceNodeV2`且按evidenceNodeId，`edges[]!`使用下述EvidenceEdge并按ID；`coverage!`逐program element闭合 |
 | `modules/06-publish/<seven registered semantic filenames>` | 各public schema/type；无summary envelope | M1–M5 IDs/SHAs | 一次module install恰五图+`graph-index.json`+`graph-gaps.jsonl`；module receipt绑定七descriptors；禁止analysis step root/receipt或八项published list；AnalysisStep store provenance绑定M6 reference |
+
+M2 不能把上表 M1 行理解为“持有一个 Java draft 就等于依赖 M1”。M1→M2 handoff 必须使用
+`CodeStructureGraphDraftReference` 经 canonical store 与 `PersistedCodeStructureGraphReader` fresh
+reopen；store 验证 module publication，domain reader 再验证该行的 exact address、单 payload
+descriptor/envelope、receipt、upstream、controls 和 payload identity，最后才产生
+`ReopenedCodeStructureGraph`。M2 module 的 own upstream 仍按上表 M2 行保存；这个 in-process
+aggregate 不新增 schema、artifact 或第 53 项 reader-visible 文件。
 
 `graphProfileRef`是完整content-addressed `ArtifactReference{artifactId,sha256}`，固定prefix=`graph-profile`；它不是自由字符串或仅语法合法的profile key。M1–M5必须逐字使用同一个ref，将其列入`upstreamArtifacts`，并在每个graph payload中重复该typed ref；graphId identity绑定两个字段且fresh reopen验证profile bytes。M6完整module fixture用一次install request绑定M1–M5五个draft ArtifactReferences，七个standalone payload不重复envelope。
 
@@ -441,8 +497,9 @@ Wire Reset后的`org.sourceanalysis.app.analysis.graph`已经有受限的 M1 代
 | **已实现（结构/构建门）** | 目标package、Maven身份和JDK 17 Toolchain已经就位；通用wire头门禁只负责拒绝非`SOURCE_ANALYSIS/v1`输入。 |
 | **已实现（M1 有界切片）** | `CodeStructureGraphBuilder`已能对传入的已验证 UTF-8 Java、标准 MyBatis XML/静态 SQL 和静态 YAML 产生 code-structure draft：声明、配置、Mapper、表/列节点与关系均带 v2 `ProvenanceDraftV1`。Java 用 AST 范围，XML 表/列用经标签和属性校验的范围，嵌套 YAML 键按 `.` 展平；遇到解析、实体、动态资源或不安全映射则记 Gap。`CodeStructureGraphModulePublisher`已将该 draft 按 receipt-last 安装并从 module store fresh reopen。当前直接验证为 8 个 M1 builder/publisher 测试通过。 |
 | **部分实现（M1 的产品组装）** | 代码结构 builder 的公开测试 seam 仍接收结构化的 `CodeStructureSource` 与 `CodeStructureDiscovery` 输入。由正式运行核心重新打开已验证源码清单和应用发现 artifacts、构造这两个输入并驱动 M1 的路径尚未落地；因此当前模块产物不是完整分析步骤的 reader-visible 输出。 |
+| **尚未实现（M1→M2 可信重开）** | 本节新增的 `PersistedCodeStructureGraphReader`、sealed `ReopenedCodeStructureGraph`、exact payload parser、`ProgramGraphInputBasis` 比对和 M2 execution 尚未实现；当前 raw `CodeStructureGraphDraft` 不能证明它来自所声明的 M1 receipt/lineage，也不得作为目标 M2 输入。 |
 | **尚未实现** | M2–M6、call/control-flow/data-flow/evidence 五图集合、graph index、正式 graph Gap JSONL、ProgramGraphs receipt，以及跨图/完整仓库验收均未实现。 |
 | **历史证据，不是当前能力** | 已删除的`RepositoryModel`/旧FlowView曾投影部分结构、调用、SQL和CFG，并暴露DepotHead跨层status/ids dataflow不足。它们只提供测试反例，不是当前图或永久seam。 |
-| **下一实现门** | 先补齐 M1 从已持久化源码清单和应用发现 artifacts 重新打开输入的产品组装，再按本章实现 M2–M5，并以 M6 原子发布五图、index、Gap 和 receipt；删除任一源码关系时对应 edge 必须消失或形成 Gap。 |
+| **下一实现门** | 先实现并验证 `PersistedCodeStructureGraphReader` 与 sealed M1→M2 handoff，再按本章完成 M2–M5，并以 M6 原子发布五图、index、Gap 和 receipt；删除任一源码关系时对应 edge 必须消失或形成 Gap。 |
 
 历史pre-reset jshERP slice的Gap、0 Flow、0 Capsule不能被目标edge示例改写成成功，也不能被误报为当前SourceAnalysis输出。
