@@ -16,6 +16,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
@@ -64,7 +67,7 @@ class ApplicationDiscoveryExecutionTest {
     VerifiedSourceInventoryReference frozenSource = frozenSource();
     VerifiedSourceTextSet source = source(controls);
     AtomicInteger reopenCount = new AtomicInteger();
-    VerifiedSourceContentHandle sourceHandle =
+    VerifiedSourceTextReader sourceHandle =
         reference -> {
           assertThat(reference).isEqualTo(frozenSource);
           reopenCount.incrementAndGet();

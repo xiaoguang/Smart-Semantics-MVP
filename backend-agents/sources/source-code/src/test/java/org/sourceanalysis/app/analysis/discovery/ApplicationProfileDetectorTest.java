@@ -10,6 +10,9 @@ import java.util.HexFormat;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
@@ -28,7 +31,7 @@ class ApplicationProfileDetectorTest {
   @Test
   void detectsStaticJavaSpringMvcAndMyBatisSignalsFromVerifiedPomAndConfiguration() {
     VerifiedSourceInventoryReference frozenSource = frozenSource();
-    VerifiedSourceContentHandle sourceHandle =
+    VerifiedSourceTextReader sourceHandle =
         reference -> {
           assertThat(reference).isEqualTo(frozenSource);
           return sourceTextSet(
@@ -78,7 +81,7 @@ class ApplicationProfileDetectorTest {
   @Test
   void rejectsConflictingJavaReleaseSignalsFromTheSameVerifiedRepository() {
     VerifiedSourceInventoryReference frozenSource = frozenSource();
-    VerifiedSourceContentHandle sourceHandle =
+    VerifiedSourceTextReader sourceHandle =
         reference ->
             sourceTextSet(
                 List.of(
@@ -104,7 +107,7 @@ class ApplicationProfileDetectorTest {
   @Test
   void doesNotTreatAnUnrelatedMapperLocationsKeyAsMyBatisConfiguration() {
     VerifiedSourceInventoryReference frozenSource = frozenSource();
-    VerifiedSourceContentHandle sourceHandle =
+    VerifiedSourceTextReader sourceHandle =
         reference ->
             sourceTextSet(
                 List.of(
@@ -130,7 +133,7 @@ class ApplicationProfileDetectorTest {
   @Test
   void usesMavenCompilerSourceWhenReleaseIsNotDeclared() {
     VerifiedSourceInventoryReference frozenSource = frozenSource();
-    VerifiedSourceContentHandle sourceHandle =
+    VerifiedSourceTextReader sourceHandle =
         reference ->
             sourceTextSet(
                 List.of(
@@ -181,7 +184,7 @@ class ApplicationProfileDetectorTest {
   @Test
   void doesNotTreatAnArbitraryXmlFilenameEndingInPomXmlAsAMavenModel() {
     VerifiedSourceInventoryReference frozenSource = frozenSource();
-    VerifiedSourceContentHandle sourceHandle =
+    VerifiedSourceTextReader sourceHandle =
         reference ->
             sourceTextSet(
                 List.of(

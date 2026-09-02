@@ -13,8 +13,11 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
@@ -90,6 +93,58 @@ class CodeStructureGraphModulePublisherTest {
                 assertThat(body.get("nodes")).hasSize(1);
                 assertThat(body.get("provenanceDrafts")).hasSize(1);
               });
+    }
+  }
+
+  @Test
+  void buildsAndPersistsTheDraftOnlyFromFreshProgramGraphInputs() {
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
+    ArtifactControls controls = controls(policies);
+    CodeStructureSource source = source(controls);
+    CodeStructureDiscovery discovery = discovery();
+    AnalysisRunId runId = AnalysisRunId.parse("analysis-run:" + "3".repeat(64));
+    VerifiedSourceInventoryReference sourceReference =
+        new VerifiedSourceInventoryReference(
+            analysisStepReference(runId, AnalysisStepKey.VERIFIED_SOURCE_INVENTORY, "source"));
+    ApplicationDiscoveryReference discoveryReference =
+        new ApplicationDiscoveryReference(
+            analysisStepReference(runId, AnalysisStepKey.APPLICATION_DISCOVERY, "discovery"));
+    AnalysisStepModuleAddress destination =
+        new AnalysisStepModuleAddress(runId, AnalysisStepKey.PROGRAM_GRAPHS, 1, "code-structure");
+    AtomicInteger reopenCount = new AtomicInteger();
+
+    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(temporaryDirectory)) {
+      FileSystemCanonicalModuleArtifactStore store =
+          new FileSystemCanonicalModuleArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(2, 100_000, 200_000, 8));
+      ProgramGraphInputReader inputs =
+          (actualSource, actualDiscovery) -> {
+            assertThat(actualSource).isEqualTo(sourceReference);
+            assertThat(actualDiscovery).isEqualTo(discoveryReference);
+            reopenCount.incrementAndGet();
+            return new ReopenedProgramGraphInputs(
+                source, new ProgramGraphDiscoveryInputs(discovery, List.of(), List.of()));
+          };
+
+      CodeStructureGraphDraftReference reference =
+          new CodeStructureGraphExecution(
+                  inputs,
+                  new CodeStructureGraphBuilder(),
+                  new CodeStructureGraphModulePublisher(store))
+              .execute(
+                  sourceReference,
+                  discoveryReference,
+                  destination,
+                  new CodeStructureGraphProfile(reference("graph-profile", "executor")));
+
+      assertThat(reopenCount.get()).isEqualTo(1);
+      assertThat(store.reopen(reference.publication()).payloads())
+          .singleElement()
+          .satisfies(
+              payload ->
+                  assertThat(payload.descriptor().fileName())
+                      .isEqualTo("code-structure-draft.json"));
     }
   }
 
@@ -175,6 +230,17 @@ class CodeStructureGraphModulePublisherTest {
 
   private static ArtifactId id(String prefix, String value) {
     return ArtifactId.parse(prefix + ":" + digest(value));
+  }
+
+  private static org.sourceanalysis.app.artifact.AnalysisStepPublicationReference
+      analysisStepReference(AnalysisRunId runId, AnalysisStepKey key, String value) {
+    return new org.sourceanalysis.app.artifact.AnalysisStepPublicationReference(
+        new org.sourceanalysis.app.artifact.AnalysisStepPublicationAddress(runId, key),
+        org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot.parse(
+            "analysis-step-root:" + digest(value + "-root")),
+        org.sourceanalysis.app.artifact.AnalysisStepReceiptId.parse(
+            "analysis-step-receipt:" + digest(value + "-receipt")),
+        new Sha256Digest(digest(value + "-receipt-sha")));
   }
 
   private static CanonicalArtifactPolicyRegistry policies(CanonicalJsonCodec canonicalJson) {

@@ -32,7 +32,14 @@
 - Implemented the bounded static YAML mapping walker: it tracks indentation-scoped parents, flattens nested mapping keys, preserves key/value source spans, and emits typed Gaps for unsafe mapping or indentation shapes. The nested-key selector is GREEN.
 - Published the related current-maturity correction as docs commit `5a98f4a` on `origin/main`. It distinguishes the M1 builder/module slice from the still-unimplemented persisted runtime assembly and M2–M6.
 - Published the bounded `PersistedProgramGraphInputReader` design clarification as `21f3037` on `origin/main`. It closes the existing M1/M2 input contract without adding a graph module, artifact, or public API.
-- The next M1 slice is an executor that fresh-reopens verified-source and application-discovery inputs before it builds/publishes the draft; it must not make the manual structured test inputs a production handoff.
+- Added the first input-reader RED. It fails only because `PersistedProgramGraphInputReader` is absent; the test also locks out caller-owned `Path` constructor inputs.
+- Moved the reusable verified-source text boundary to `analysis.inventory` as `VerifiedSourceTextReader` / `PersistedVerifiedSourceTextReader`. Its direct two-test selector remains green; the Program Graph reader is still the only expected RED.
+- Added a persisted-artifact behavior test for the reader. It now fails at test compilation only because the closed `ReopenedProgramGraphInputs` type and `reopen(VerifiedSourceInventoryReference, ApplicationDiscoveryReference)` behavior are absent; no parser or fixture failure is hidden by that RED.
+- The next M1 slice is the reader implementation: fresh-reopen verified source text plus the four published application-discovery semantic artifacts, verify identity/controls/predecessor/artifact-set closure, then construct path-free graph inputs.
+- Implemented that reader. It validates the exact two predecessor references, controls, successful application-discovery receipt and four-file artifact set; it then reads the semantic profile, capability coverage, entry JSONL and Mapper catalog JSONL into closed graph inputs. A missing exact verified-source predecessor is explicitly rejected.
+- The reader and moved inventory text handle pass 5 direct tests; the directly affected application-discovery selectors pass 27 tests. Spotless and `git diff --check` also pass.
+- Added the next M1 RED: the module-publisher selector now fails at test compilation only because the internal `ProgramGraphInputReader` and `CodeStructureGraphExecution` handoff types do not yet exist. The test requires one fresh input reopen before the real builder and real receipt-last module publisher run.
+- Implemented the M1 execution seam. `CodeStructureGraphExecution` can only receive a fresh `ProgramGraphInputReader` result, then invokes the real builder and receipt-last module publisher; its direct tests pass together with the persisted-input reader tests.
 
 ## Changed files
 
@@ -63,6 +70,15 @@
 | `mvn -t .mvn/toolchains.xml -o -Dtest=CodeStructureGraphBuilderTest,CodeStructureGraphModulePublisherTest test` | PASS | 8 tests, 0 failures/errors/skips; canonical module payload fresh reopen remains green. |
 | `mvn -t .mvn/toolchains.xml -o spotless:apply` | PASS | All M1 sources and tests formatted. |
 | `git diff --check` | PASS | No whitespace errors. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=PersistedProgramGraphInputReaderTest test` | RED | 1 test, 1 expected failure, 0 errors/skips: the persisted input-reader class is absent. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=PersistedProgramGraphInputReaderTest,PersistedVerifiedSourceTextReaderTest test` | RED | 3 tests: 2 source-reader tests pass; 1 expected Program Graph reader absence failure, no errors/skips. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=PersistedProgramGraphInputReaderTest test` | RED | Test compilation fails only because `ReopenedProgramGraphInputs` and the reader `reopen(...)` method do not yet exist. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=PersistedProgramGraphInputReaderTest,PersistedVerifiedSourceTextReaderTest test` | PASS | 5 tests, 0 failures/errors/skips: fresh input re-open and missing-predecessor rejection pass. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=ApplicationDiscoveryExecutionTest,ApplicationProfileDetectorTest,HttpEntryDiscoveryModulePublisherTest,MapperCapabilityCatalogerTest,SpringHttpEntryDiscovererTest,PersistedVerifiedSourceTextReaderTest test` | PASS | 27 tests, 0 failures/errors/skips after moving the shared verified-source reader to source inventory. |
+| `mvn -t .mvn/toolchains.xml -o spotless:apply` | PASS | Formatter applied and reported no errors (it notes tracked paths deliberately moved during the package relocation). |
+| `git diff --check` | PASS | No whitespace errors after formatter. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=CodeStructureGraphModulePublisherTest test` | RED | Test compilation fails only on absent `ProgramGraphInputReader` and `CodeStructureGraphExecution`. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=CodeStructureGraphModulePublisherTest,PersistedProgramGraphInputReaderTest test` | PASS | 5 tests, 0 failures/errors/skips: one fresh input reopen drives the real builder and real receipt-last module publisher. |
 
 ## Decisions
 
@@ -77,7 +93,7 @@
 
 ## Exact next action
 
-- Rebase local M1 work on published design commit `21f3037`, then write the smallest public RED for persisted M1 input assembly before starting M2.
+- Run the complete M1 selector after formatting, take a local WIP checkpoint, then start the M2 CallGraphBuilder RED: one exact Controller→Service call edge, no string/name fallback.
 
 ## Resume checks
 

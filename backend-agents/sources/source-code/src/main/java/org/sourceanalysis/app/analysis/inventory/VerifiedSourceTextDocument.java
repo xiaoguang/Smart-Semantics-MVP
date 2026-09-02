@@ -1,4 +1,4 @@
-package org.sourceanalysis.app.analysis.discovery;
+package org.sourceanalysis.app.analysis.inventory;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -9,7 +9,7 @@ import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.Sha256Digest;
 
 /** One parser-safe UTF-8 document whose identity has already been verified by source inventory. */
-record VerifiedSourceTextDocument(
+public record VerifiedSourceTextDocument(
     ArtifactId fileId,
     String path,
     String gitMode,
@@ -18,7 +18,7 @@ record VerifiedSourceTextDocument(
     Sha256Digest sha256,
     ImmutableBytes rawUtf8) {
 
-  VerifiedSourceTextDocument {
+  public VerifiedSourceTextDocument {
     Objects.requireNonNull(fileId, "file id");
     if (path == null || path.isBlank() || path.startsWith("/") || path.contains("..")) {
       throw new IllegalArgumentException("source path must be repository relative");

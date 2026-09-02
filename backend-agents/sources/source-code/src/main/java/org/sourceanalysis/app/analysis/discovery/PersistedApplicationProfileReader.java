@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.ArtifactId;
@@ -31,13 +33,13 @@ final class PersistedApplicationProfileReader {
   private static final String SCHEMA_VERSION = "application-discovery-application-profile-draft-v2";
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
-  private final VerifiedSourceContentHandle sourceHandle;
+  private final VerifiedSourceTextReader sourceReader;
   private final CanonicalJsonCodec canonicalJson;
 
   PersistedApplicationProfileReader(
-      CanonicalModuleArtifactStore moduleArtifacts, VerifiedSourceContentHandle sourceHandle) {
+      CanonicalModuleArtifactStore moduleArtifacts, VerifiedSourceTextReader sourceReader) {
     this.moduleArtifacts = Objects.requireNonNull(moduleArtifacts, "module artifact store");
-    this.sourceHandle = Objects.requireNonNull(sourceHandle, "verified source handle");
+    this.sourceReader = Objects.requireNonNull(sourceReader, "verified source reader");
     this.canonicalJson = new CanonicalJsonCodec();
   }
 
@@ -46,7 +48,7 @@ final class PersistedApplicationProfileReader {
     try {
       ReopenedModulePublication publication = moduleArtifacts.reopen(draft.publication());
       requireDraft(publication);
-      VerifiedSourceTextSet source = sourceHandle.reopen(frozenSource);
+      VerifiedSourceTextSet source = sourceReader.reopen(frozenSource);
       if (!publication.receipt().controls().equals(source.controls())
           || !publication.receipt().upstreamArtifacts().contains(source.sourceInventoryRef())
           || !publication.receipt().upstreamArtifacts().contains(source.verifiedSnapshotRef())) {

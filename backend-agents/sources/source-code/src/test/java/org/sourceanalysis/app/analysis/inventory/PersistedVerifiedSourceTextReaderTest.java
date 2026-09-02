@@ -1,4 +1,4 @@
-package org.sourceanalysis.app.analysis.discovery;
+package org.sourceanalysis.app.analysis.inventory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -16,7 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
+import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryException;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
@@ -46,7 +46,7 @@ import org.sourceanalysis.app.capture.localgit.LocalGitSourceRegistry;
 import org.sourceanalysis.app.capture.localgit.RegisteredSourceCapture;
 import org.sourceanalysis.app.capture.localgit.SourceRegistrationReference;
 
-class PersistedVerifiedSourceContentHandleTest {
+class PersistedVerifiedSourceTextReaderTest {
 
   @TempDir Path temporaryDirectory;
 
@@ -54,8 +54,8 @@ class PersistedVerifiedSourceContentHandleTest {
   void reopensOnlyInventoryMembersFromARegisteredFrozenSnapshot() throws Exception {
     CapturedFixture captured = capturedFixture();
     PublishedInventory published = publishedInventory(captured);
-    PersistedVerifiedSourceContentHandle handle =
-        new PersistedVerifiedSourceContentHandle(
+    PersistedVerifiedSourceTextReader handle =
+        new PersistedVerifiedSourceTextReader(
             new FixedAnalysisStepStore(published.reopened()), captured.registry());
 
     VerifiedSourceTextSet texts =
@@ -102,8 +102,8 @@ class PersistedVerifiedSourceContentHandleTest {
     ReopenedAnalysisStepPublication alteredPublication =
         new ReopenedAnalysisStepPublication(
             published.reference(), published.reopened().receipt(), alteredPayloads, null);
-    PersistedVerifiedSourceContentHandle handle =
-        new PersistedVerifiedSourceContentHandle(
+    PersistedVerifiedSourceTextReader handle =
+        new PersistedVerifiedSourceTextReader(
             new FixedAnalysisStepStore(alteredPublication), captured.registry());
 
     assertThatThrownBy(

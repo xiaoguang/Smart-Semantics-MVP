@@ -28,6 +28,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
@@ -42,13 +45,13 @@ public final class SpringHttpEntryDiscoverer {
   private static final String SPRING_WEB_ANNOTATION_PACKAGE =
       "org.springframework.web.bind.annotation";
 
-  private final VerifiedSourceContentHandle sourceHandle;
+  private final VerifiedSourceTextReader sourceReader;
 
-  SpringHttpEntryDiscoverer(VerifiedSourceContentHandle sourceHandle) {
-    if (sourceHandle == null) {
+  SpringHttpEntryDiscoverer(VerifiedSourceTextReader sourceReader) {
+    if (sourceReader == null) {
       throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_REQUEST_INVALID");
     }
-    this.sourceHandle = sourceHandle;
+    this.sourceReader = sourceReader;
   }
 
   /** Reads verified Java bytes and composes explicit class and method Spring MVC routes. */
@@ -56,7 +59,7 @@ public final class SpringHttpEntryDiscoverer {
       ApplicationProfile profile, VerifiedSourceInventoryReference frozenSource) {
     try {
       requireSpringMvcProfile(profile);
-      VerifiedSourceTextSet source = sourceHandle.reopen(frozenSource);
+      VerifiedSourceTextSet source = sourceReader.reopen(frozenSource);
       return discoverEntries(profile, source, defaultShards(source));
     } catch (ApplicationDiscoveryException failure) {
       throw failure;
@@ -74,7 +77,7 @@ public final class SpringHttpEntryDiscoverer {
       List<JavaSourceShard> sourceShards) {
     try {
       requireSpringMvcProfile(profile);
-      VerifiedSourceTextSet source = sourceHandle.reopen(frozenSource);
+      VerifiedSourceTextSet source = sourceReader.reopen(frozenSource);
       return discoverEntries(profile, source, sourceShards);
     } catch (ApplicationDiscoveryException failure) {
       throw failure;

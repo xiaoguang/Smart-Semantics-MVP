@@ -1,11 +1,11 @@
-package org.sourceanalysis.app.analysis.discovery;
+package org.sourceanalysis.app.analysis.inventory;
 
 import java.util.List;
 import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 
 /** The analyzable-text partition of one fresh-reopened verified source inventory. */
-record VerifiedSourceTextSet(
+public record VerifiedSourceTextSet(
     String snapshotId,
     String inventoryScopeKind,
     boolean repositoryCompletionEligible,
@@ -15,7 +15,7 @@ record VerifiedSourceTextSet(
     ArtifactControls controls,
     List<VerifiedSourceTextDocument> documents) {
 
-  VerifiedSourceTextSet {
+  public VerifiedSourceTextSet {
     if (snapshotId == null || !snapshotId.matches("snapshot:[0-9a-f]{64}")) {
       throw new IllegalArgumentException("snapshot identity must be canonical");
     }

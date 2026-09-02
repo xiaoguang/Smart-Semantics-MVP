@@ -10,6 +10,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
@@ -69,7 +72,7 @@ class MapperCapabilityCatalogerTest {
             """);
     ArtifactControls controls = controls();
     ApplicationProfile profile = profile(mapperJava, controls);
-    VerifiedSourceContentHandle sourceHandle =
+    VerifiedSourceTextReader sourceHandle =
         reference -> sourceTextSet(mapperJava, mapperXml, controls);
 
     MapperCatalogDiscovery catalog =
@@ -127,7 +130,7 @@ class MapperCapabilityCatalogerTest {
             """);
     ArtifactControls controls = controls();
     ApplicationProfile profile = profile(mapperJava, controls);
-    VerifiedSourceContentHandle sourceHandle =
+    VerifiedSourceTextReader sourceHandle =
         reference -> sourceTextSet(mapperJava, mapperXml, controls);
 
     MapperCatalogDiscovery catalog =
@@ -162,7 +165,7 @@ class MapperCapabilityCatalogerTest {
             """);
     ArtifactControls controls = controls();
     ApplicationProfile profile = profile(mapperJava, controls);
-    VerifiedSourceContentHandle sourceHandle =
+    VerifiedSourceTextReader sourceHandle =
         reference -> sourceTextSet(mapperJava, mapperXml, controls);
 
     assertThatThrownBy(

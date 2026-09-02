@@ -9,6 +9,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
@@ -46,7 +49,7 @@ class SpringHttpEntryDiscovererTest {
               }
             }
             """);
-    VerifiedSourceContentHandle sourceHandle = reference -> sourceTextSet(controller);
+    VerifiedSourceTextReader sourceHandle = reference -> sourceTextSet(controller);
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
@@ -103,7 +106,7 @@ class SpringHttpEntryDiscovererTest {
               }
             }
             """);
-    VerifiedSourceContentHandle sourceHandle = reference -> sourceTextSet(controller);
+    VerifiedSourceTextReader sourceHandle = reference -> sourceTextSet(controller);
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
@@ -141,7 +144,7 @@ class SpringHttpEntryDiscovererTest {
               }
             }
             """);
-    VerifiedSourceContentHandle sourceHandle = reference -> sourceTextSet(controller);
+    VerifiedSourceTextReader sourceHandle = reference -> sourceTextSet(controller);
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
@@ -188,7 +191,7 @@ class SpringHttpEntryDiscovererTest {
               }
             }
             """);
-    VerifiedSourceContentHandle sourceHandle = reference -> sourceTextSet(controller);
+    VerifiedSourceTextReader sourceHandle = reference -> sourceTextSet(controller);
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
@@ -225,7 +228,7 @@ class SpringHttpEntryDiscovererTest {
               }
             }
             """);
-    VerifiedSourceContentHandle sourceHandle = reference -> sourceTextSet(controller);
+    VerifiedSourceTextReader sourceHandle = reference -> sourceTextSet(controller);
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
@@ -262,7 +265,7 @@ class SpringHttpEntryDiscovererTest {
               }
             }
             """);
-    VerifiedSourceContentHandle sourceHandle = reference -> sourceTextSet(controller);
+    VerifiedSourceTextReader sourceHandle = reference -> sourceTextSet(controller);
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
@@ -290,7 +293,7 @@ class SpringHttpEntryDiscovererTest {
               }
             }
             """);
-    VerifiedSourceContentHandle sourceHandle = reference -> sourceTextSet(controller);
+    VerifiedSourceTextReader sourceHandle = reference -> sourceTextSet(controller);
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
@@ -328,7 +331,7 @@ class SpringHttpEntryDiscovererTest {
               }
             }
             """);
-    VerifiedSourceContentHandle sourceHandle = reference -> sourceTextSet(controller);
+    VerifiedSourceTextReader sourceHandle = reference -> sourceTextSet(controller);
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
@@ -370,7 +373,7 @@ class SpringHttpEntryDiscovererTest {
               }
             }
             """);
-    VerifiedSourceContentHandle sourceHandle = reference -> sourceTextSet(controller);
+    VerifiedSourceTextReader sourceHandle = reference -> sourceTextSet(controller);
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
@@ -409,7 +412,7 @@ class SpringHttpEntryDiscovererTest {
               }
             }
             """);
-    VerifiedSourceContentHandle sourceHandle = reference -> sourceTextSet(controller);
+    VerifiedSourceTextReader sourceHandle = reference -> sourceTextSet(controller);
     List<JavaSourceShard> overlappingShards =
         List.of(
             new JavaSourceShard(

@@ -15,6 +15,9 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
@@ -81,7 +84,7 @@ class HttpEntryDiscoveryModulePublisherTest {
             }
             """);
     ApplicationProfile profile = profile(controller, controls);
-    VerifiedSourceContentHandle sourceHandle = reference -> sourceTextSet(controller, controls);
+    VerifiedSourceTextReader sourceHandle = reference -> sourceTextSet(controller, controls);
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle).discoverEntries(profile, frozenSource());
     AnalysisStepModuleAddress profileAddress = address(1, "application-profile");

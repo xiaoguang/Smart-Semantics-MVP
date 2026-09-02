@@ -1,22 +1,23 @@
 package org.sourceanalysis.app.analysis.discovery;
 
 import java.util.Objects;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 
 /** Executes the fixed M1–M4 application-discovery workflow over one frozen source inventory. */
 public final class ApplicationDiscoveryExecutor {
 
-  private final VerifiedSourceContentHandle sourceHandle;
+  private final VerifiedSourceTextReader sourceReader;
   private final CanonicalModuleArtifactStore moduleArtifacts;
   private final CanonicalAnalysisStepArtifactStore stepArtifacts;
 
   /** Creates a path-free executor over verified source bytes and the canonical stores. */
   public ApplicationDiscoveryExecutor(
-      VerifiedSourceContentHandle sourceHandle,
+      VerifiedSourceTextReader sourceReader,
       CanonicalModuleArtifactStore moduleArtifacts,
       CanonicalAnalysisStepArtifactStore stepArtifacts) {
-    this.sourceHandle = Objects.requireNonNull(sourceHandle, "verified source handle");
+    this.sourceReader = Objects.requireNonNull(sourceReader, "verified source reader");
     this.moduleArtifacts = Objects.requireNonNull(moduleArtifacts, "module artifact store");
     this.stepArtifacts = Objects.requireNonNull(stepArtifacts, "analysis step artifact store");
   }
@@ -26,7 +27,7 @@ public final class ApplicationDiscoveryExecutor {
     try {
       requireDestination(request);
       ApplicationProfile detected =
-          new ApplicationProfileDetector(sourceHandle)
+          new ApplicationProfileDetector(sourceReader)
               .detect(request.verifiedSourceInventory(), request.discoveryProfile());
       ApplicationProfileDraftReference profileDraft =
           new ApplicationProfileModulePublisher(moduleArtifacts)
@@ -38,10 +39,10 @@ public final class ApplicationDiscoveryExecutor {
                       "application-profile"),
                   detected);
       ApplicationProfile profile =
-          new PersistedApplicationProfileReader(moduleArtifacts, sourceHandle)
+          new PersistedApplicationProfileReader(moduleArtifacts, sourceReader)
               .reopen(profileDraft, request.verifiedSourceInventory());
       HttpEntryDiscovery entries =
-          new SpringHttpEntryDiscoverer(sourceHandle)
+          new SpringHttpEntryDiscoverer(sourceReader)
               .discoverEntries(profile, request.verifiedSourceInventory());
       HttpEntryDiscoveryDraftReference entryDraft =
           new HttpEntryDiscoveryModulePublisher(moduleArtifacts)
@@ -55,7 +56,7 @@ public final class ApplicationDiscoveryExecutor {
                   profile,
                   entries);
       MapperCatalogDiscovery catalog =
-          new MapperCapabilityCataloger(sourceHandle)
+          new MapperCapabilityCataloger(sourceReader)
               .catalogMappers(profile, request.verifiedSourceInventory());
       MapperCatalogDraftReference catalogDraft =
           new MapperCatalogModulePublisher(moduleArtifacts)

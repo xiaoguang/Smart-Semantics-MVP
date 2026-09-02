@@ -27,6 +27,9 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
@@ -45,13 +48,13 @@ public final class MapperCapabilityCataloger {
   private static final List<String> STATEMENT_KINDS =
       List.of("select", "insert", "update", "delete");
 
-  private final VerifiedSourceContentHandle sourceHandle;
+  private final VerifiedSourceTextReader sourceReader;
 
-  MapperCapabilityCataloger(VerifiedSourceContentHandle sourceHandle) {
-    if (sourceHandle == null) {
+  MapperCapabilityCataloger(VerifiedSourceTextReader sourceReader) {
+    if (sourceReader == null) {
       throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_REQUEST_INVALID");
     }
-    this.sourceHandle = sourceHandle;
+    this.sourceReader = sourceReader;
   }
 
   /** Reads only fresh-reopened verified text and reports Mapper candidates rather than bindings. */
@@ -59,7 +62,7 @@ public final class MapperCapabilityCataloger {
       ApplicationProfile profile, VerifiedSourceInventoryReference frozenSource) {
     try {
       requireMyBatisProfile(profile);
-      VerifiedSourceTextSet source = sourceHandle.reopen(frozenSource);
+      VerifiedSourceTextSet source = sourceReader.reopen(frozenSource);
       requireSameVerifiedBasis(profile, source);
       Map<String, JavaMapperInterface> interfaces = javaInterfaces(source, profile.snapshotId());
       List<XmlMapperResource> resources = xmlMapperResources(source, profile.snapshotId());

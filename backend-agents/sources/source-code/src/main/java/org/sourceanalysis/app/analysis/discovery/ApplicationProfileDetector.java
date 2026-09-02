@@ -22,6 +22,9 @@ import org.apache.maven.model.Dependency;
 import org.apache.maven.model.Model;
 import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactPolicyRegistryReference;
@@ -43,10 +46,10 @@ public final class ApplicationProfileDetector {
       Pattern.compile("(?m)^\\s*mapper-locations\\s*:\\s*([^\\r\\n#]+)");
   private static final CanonicalJsonCodec CANONICAL_JSON = new CanonicalJsonCodec();
 
-  private final VerifiedSourceContentHandle sourceHandle;
+  private final VerifiedSourceTextReader sourceReader;
 
-  ApplicationProfileDetector(VerifiedSourceContentHandle sourceHandle) {
-    this.sourceHandle = java.util.Objects.requireNonNull(sourceHandle, "verified source handle");
+  ApplicationProfileDetector(VerifiedSourceTextReader sourceReader) {
+    this.sourceReader = java.util.Objects.requireNonNull(sourceReader, "verified source reader");
   }
 
   /** Reads only the supplied verified-source handle and returns static capability signals. */
@@ -55,7 +58,7 @@ public final class ApplicationProfileDetector {
     if (frozenSource == null || discoveryProfile == null) {
       throw new IllegalArgumentException("application discovery request is invalid");
     }
-    VerifiedSourceTextSet source = sourceHandle.reopen(frozenSource);
+    VerifiedSourceTextSet source = sourceReader.reopen(frozenSource);
     List<FrameworkSignal> frameworkSignals = frameworkSignals(source.documents());
     List<ConfigSignal> configSignals = configSignals(source.documents());
     Integer languageVersion = languageVersion(source.documents());

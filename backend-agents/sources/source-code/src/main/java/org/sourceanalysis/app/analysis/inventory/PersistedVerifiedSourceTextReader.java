@@ -1,4 +1,4 @@
-package org.sourceanalysis.app.analysis.discovery;
+package org.sourceanalysis.app.analysis.inventory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -16,7 +16,7 @@ import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
+import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryException;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
@@ -35,16 +35,16 @@ import org.sourceanalysis.app.capture.localgit.RegisteredSourceSnapshot;
 /**
  * Fresh-reopens verified source inventory artifacts and returns only parser-safe registered bytes.
  */
-final class PersistedVerifiedSourceContentHandle implements VerifiedSourceContentHandle {
+public final class PersistedVerifiedSourceTextReader implements VerifiedSourceTextReader {
 
   private static final Comparator<String> UTF8_ORDER =
-      PersistedVerifiedSourceContentHandle::compareUtf8;
+      PersistedVerifiedSourceTextReader::compareUtf8;
 
   private final CanonicalAnalysisStepArtifactStore stepArtifacts;
   private final LocalGitSourceRegistry sourceRegistry;
   private final CanonicalJsonCodec canonicalJson;
 
-  PersistedVerifiedSourceContentHandle(
+  public PersistedVerifiedSourceTextReader(
       CanonicalAnalysisStepArtifactStore stepArtifacts, LocalGitSourceRegistry sourceRegistry) {
     if (stepArtifacts == null || sourceRegistry == null) {
       throw failure("APPLICATION_DISCOVERY_REQUEST_INVALID");
