@@ -1,6 +1,6 @@
 # Progress: source-inventory-m3-maturity
 
-- Status: IN_PROGRESS
+- Status: COMPLETE
 - Agent role: source-inventory implementation-audit editor
 - Model: gpt-5.6-sol / ultra
 - Started: 2026-09-02
@@ -37,7 +37,7 @@
 
 ## Exact next action
 
-- Publish the audit correction before committing the M3 implementation, then create the M1 module-publication RED.
+- Audit correction published as `1c99832`; proceed with the M1 module-publication RED after the matching M3 implementation is committed.
 
 ## Resume checks
 

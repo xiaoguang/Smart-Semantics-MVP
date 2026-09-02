@@ -1,6 +1,6 @@
 # Progress: source-inventory-input-reader-design
 
-- Status: IN_PROGRESS
+- Status: COMPLETE
 - Agent role: source-inventory design authority
 - Model: gpt-5.6-sol / ultra
 - Started: 2026-09-02
@@ -15,7 +15,7 @@
 
 ## Current state
 
-- Add the smallest composition-only reader: it accepts only an `ArtifactReference`, returns only immutable bytes after identity verification, and exposes no path or discovery operation. M3 remains responsible for its exact schema validation.
+- Added the smallest composition-only reader. It accepts only an `ArtifactReference`, returns only immutable bytes after identity verification, and exposes no path or discovery operation; M3 performs its own schema and closure validation.
 
 ## Changed files
 
@@ -37,7 +37,7 @@
 
 ## Exact next action
 
-- Publish the scoped design clarification to `main`, then implement the M3 reader-backed projection against the already-established RED.
+- The design clarification was published as `497950d`; the matching M3 implementation is ready for its implementation commit.
 
 ## Resume checks
 
