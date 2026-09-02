@@ -246,6 +246,36 @@ interface ApplicationDiscoverer {
 }
 ~~~
 
+#### 8.1.1 已验证源码字节边界
+
+上面的 public Interface 故意没有 `Path`、工作区目录、裸文件名或 `byte[]` 参数。它收到的
+`VerifiedSourceInventoryReference` 是已经落盘的第一步出口；实现开始时必须先重开并验证该出口的
+`source-input.json`、`verified-snapshot.json`、`source-inventory.jsonl` 和 receipt，才能取得其中唯一的
+`sourceRegistrationId`、完整 file inventory 与 file SHA。
+
+随后，运行时的**私有 composition dependency**按下面顺序取得一份不泄露存储位置的源码读取能力：
+
+~~~text
+VerifiedSourceInventoryReference
+  → fresh reopen 第一分析步骤的四项正式文件
+  → sourceRegistrationId + exact inventory member
+  → private LocalGitSourceRegistry.openSnapshot(sourceRegistrationId)
+  → RegisteredSourceSnapshot.read(registered member)
+  → compare size + SHA-256 + text/media disposition
+  → parser-only ImmutableBytes
+~~~
+
+这个 dependency 不是新的 public API、不是 JSON field，也不是可由调用者替换的任意文件系统 reader。
+它只能读取 inventory 中已登记的 regular file；每次读取都必须重新核对该 member 的 path、git mode、
+size、SHA-256、text encoding 和分析处置。媒体文件或 inventory 外路径绝不能交给 Java、POM、配置或 XML
+parser。注册、snapshot、blob 或私有 workspace 的绝对路径永远不能进入 application-discovery artifact、
+错误正文、identity 或 trace。
+
+因此 M1/M2/M3 的“verified source handles”不是内存捷径：它们是上述从 persisted 第一分析步骤输出到
+private registry 的一次 fresh reopen。此规则也解释了为什么 M2/M3 可以并行读取同一冻结仓库，却不能通过
+彼此的 draft 或一个调用者提供的路径来补文件。后续 ProgramGraphs 沿用相同边界；若该边界无法验证，使用
+`SNAPSHOT_REOPEN_MISMATCH` 或 `APPLICATION_DISCOVERY_REQUEST_INVALID` 失败，不能猜测、降级或改读工作区。
+
 ~~~text
 ApplicationProfile
   applicationProfileId
@@ -387,7 +417,7 @@ Wire Reset后的`org.sourceanalysis.app.analysis.discovery`目前只有语义pac
 | 状态 | 当前事实 |
 | --- | --- |
 | **已实现（结构/构建门）** | 目标package和JDK 17 Toolchain已经就位，旧编号package与旧wire已从当前树删除。 |
-| **本步骤生产能力尚未实现** | M1–M4、应用画像、Spring MVC入口发现、Mapper catalog、XML安全解析和五项正式输出当前均不存在；没有当前入口分母或DepotHead发现结果。 |
+| **本步骤生产能力尚未实现** | M1–M4、应用画像、Spring MVC入口发现、Mapper catalog、XML安全解析和五项正式输出当前均不存在；没有当前入口分母或DepotHead发现结果。第一分析步骤已经持久化`sourceRegistrationId`、完整inventory和可私有重开的 frozen snapshot；本步骤仍需按8.1.1把它们重开为严格的 parser-only bytes，不能把该现有能力误写成已完成应用发现。 |
 | **历史证据，不是当前能力** | 已删除的pre-reset纵切曾用小型fixture验证部分Java/Spring MVC/MyBatis signals、双Controller、DOCTYPE/XXE和五文件发布意图。它只能指导新测试，不能作为当前implementation、artifact或兼容seam。 |
 | **下一实现门** | 按本章重新实现M1→M4，先消费fresh-reopened VerifiedSourceInventory，再闭合每个site/entry/Mapper candidate的唯一处置和五项semantic publication。 |
 
