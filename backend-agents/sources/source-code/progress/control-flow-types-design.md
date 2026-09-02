@@ -1,10 +1,10 @@
 # Progress: Control-flow types design
 
-- Status: COMPLETE
+- Status: IN_PROGRESS
 - Agent role: Sol/ultra M3 design authority
 - Model: gpt-5.6-sol / ultra
 - Started: 2026-09-02T16:54:27Z
-- Last updated: 2026-09-02T17:09:12Z
+- Last updated: 2026-09-02T17:59:41Z
 - Scope: Define the minimal public typed M3 JSON/Java record contract and strict entry/if/return/throw behavior in the M3 section of `docs/analysis-steps/03-program-graphs.md` only.
 - Approved inputs: Parent-agent task; repository `AGENTS.md`; M3 design section and its directly governing M1/M2 reopen contract.
 - Current branch/worktree: `codex/source-analysis-graph-provenance-design` in `/private/tmp/linguan-source-analysis-graph-provenance-design/backend-agents/sources/source-code`
@@ -18,7 +18,7 @@
 
 ## Current state
 
-- The bounded M3 design contract and review corrections are complete; no code, tests, POM, M4 text, architecture, or artifact count changed.
+- Reopened at parent request to eliminate the remaining seven contract ambiguities before publication.
 
 ## Changed files
 
@@ -39,6 +39,7 @@
 - Express strict basic behavior for entry, `if`, `return`, and `throw`; bounded loops and richer exception semantics remain explicit Gaps or later design authority work.
 - Keep `ControlFlowGraphProfile` minimal: it carries only the verified content-addressed profile reference; rules and budgets remain behind that reference.
 - Represent multi-entry `semanticTraversalOrder` as sorted `ControlFlowTraversal(entryId,nodeIds)` records, with canonical DFS order inside each entry.
+- Follow-up authority requires enforceable input construction, explicit node-and-edge traversal closure, distinct entry/callee return terminals, and a typed terminal disposition mapping.
 
 ## Blockers
 
@@ -46,7 +47,7 @@
 
 ## Exact next action
 
-- Parent agent may consume the local docs-only commit; do not push from this task.
+- Amend the M3-only contract, run focused review and diff checks, then create a second local docs-only commit without pushing.
 
 ## Resume checks
 
