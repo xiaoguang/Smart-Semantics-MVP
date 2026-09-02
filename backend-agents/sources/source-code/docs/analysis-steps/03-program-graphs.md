@@ -232,6 +232,43 @@ aggregate 或 Graph Gap。reader 和 M2 execution 均不接受 caller `Path`、r
 detached entry/Mapper lists，也不扫描 worktree。M2 的 `CallGraphProfile.graphProfileRef` 同时就是
 这里的 `expectedGraphProfileRef`，因为 8.0.1 已要求 M1–M5 逐字复用同一 graph profile。
 
+M2 自己的 module publication 也必须先经唯一的 `PersistedCallGraphReader` fresh reopen，M3 才能读取
+调用关系；该 reader 不是 builder、module 或新 artifact：
+
+```text
+PersistedCallGraphReader.reopen(
+  CallGraphDraftReference reference,
+  ReopenedProgramGraphInputs sameInputs,
+  ReopenedCodeStructureGraph sameStructure,
+  ArtifactReference expectedGraphProfileRef)
+    -> ReopenedCallGraph
+
+ReopenedCallGraph                              // sealed opaque immutable aggregate
+  reference: CallGraphDraftReference
+  payloadRef: ArtifactReference
+  draft: CallGraphDraft
+  codeStructurePayloadRef: ArtifactReference
+  basis: ProgramGraphInputBasis
+```
+
+reader 先调用 `CanonicalModuleArtifactStore.reopen(reference.publication)`，再要求 address 精确为同一
+run 的`program-graphs / 2 / call-graph`、completion 合法、publication 只有
+`call-graph-draft.json`，type/schema 精确为
+`PROGRAM_GRAPHS_CALL_GRAPH_DRAFT / program-graphs-call-graph-draft-v2`。receipt 与 envelope 的
+upstream 必须恰为八项：`sameStructure.payloadRef`、`expectedGraphProfileRef`及`sameInputs`的六个
+direct references；controls 必须等于`sameInputs.source.controls`。payload 以exact schema解析，
+`graphKind=CALL`，其 snapshot/application profile/排序entry denominator/profile逐字段等于
+`sameStructure.basis`，外部endpoint只能命中`sameStructure.draft`，call/return、provenance与coverage
+引用必须闭合。任一address、receipt、payload、八项lineage、controls、profile、basis或endpoint不一致
+统一以`GRAPH_REFERENCE_BROKEN`失败，不返回raw draft、partial aggregate或Graph Gap。
+
+M3 execution 必须使用同一次`sameInputs`先重开 M1，再以上述 reader 重开 M2，最后构造只含
+`ReopenedCodeStructureGraph + ReopenedCallGraph + ReopenedProgramGraphInputs`的immutable
+`ControlFlowInputs`；M3开始解析前重算`ProgramGraphInputBasis`，要求两个sealed aggregate的basis、
+M2保存的`codeStructurePayloadRef`、M1的`payloadRef`和`ControlFlowGraphProfile.graphProfileRef`
+全部一致。caller不得传入raw `CallGraphDraft`、detached entry/call lists、`Path`、自由source string或
+自行实现的aggregate。
+
 #### M1 CodeStructureGraphBuilder
 
 - **解决的问题**：给后续关系一个唯一的声明/包含/SQL 结构坐标系，避免按文件名或 simple name 找对象。
@@ -263,7 +300,7 @@ detached entry/Mapper lists，也不扫描 worktree。M2 的 `CallGraphProfile.g
 #### M3 ControlFlowGraphBuilder
 
 - **解决的问题**：表达每个 entry 可达步骤、guard polarity、call/return 与 terminal，防止用源码行序讲流程。
-- **精确上游输入及前置**：M1 structure、M2 call targets、ApplicationDiscovery entry roots、verified method bodies、CONTROL_FLOW registry/profile/budget；entry/call endpoints 全部有效。
+- **精确上游输入及前置**：`ControlFlowInputs{structure: ReopenedCodeStructureGraph, calls: ReopenedCallGraph, reopened: the same ReopenedProgramGraphInputs}`与`ControlFlowGraphProfile`；M3 execution必须按8.0先fresh-reopen M1/M2，校验同一basis、M1 payload ref与graph profile，再从`reopened.discovery.entries`读取entry roots、从`reopened.source`读取verified method bodies。raw `CodeStructureGraphDraft`、raw `CallGraphDraft`和detached entry/call lists均禁止；entry/call endpoints全部有效。
 - **确定性顺序 / LLM**：每 entry 建 ENTRY → basic blocks/guards → TRUE/FALSE/NEXT/CALL/RETURN → return/throw/profile stop terminals → reachability/accounting；0 LLM。
 - **目标输出与 DepotHead 示例**：CONTROL_FLOW draft；例子保留 Service :752-796 的 status/库存条件 polarity、`:798-803` 非空 dhIds 写入分支与 :821 return terminal。
 - **必须保持的不变量**：每个 guard 的 outgoing polarity 显式且合法；每个可达 path 终止、Gap 或 reasoned exclusion；call/return refs 与 M2 一致。
