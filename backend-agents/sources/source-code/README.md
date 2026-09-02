@@ -72,7 +72,7 @@ POC 记录位于 `docs/history/`，只用于历史审计，不属于阅读路线
 | Java构建选择 | **已实现（构建）** | 项目提供JDK 17 Toolchain配置，compiler release固定为17；这只约束Agent自身构建，不代表任何业务分析步骤已实现 |
 | 新wire头门禁 | **已实现（窄门禁）** | `AnalysisWireFormatGuard`只接受对象头`wireKind=SOURCE_ANALYSIS`且`wireVersion=v1`，并以`UNSUPPORTED_ANALYSIS_WIRE`拒绝顶层描述符元数据中的pre-reset path、编号stage、stage receipt/schema、旧Maven/Java package身份和wire alias；不扫描业务内容。owner-specific schema、canonical artifact reader与八步artifact校验尚未实现 |
 | Canonical artifact foundation | **部分实现（源码清单模块持久化纵切）** | 已有canonical JSON、不可变bytes、typed identity/address和policy registry；module store已能原子安装、receipt-last并fresh reopen源码盘点M1/M2的JSON payload，以及M3恰好三项独立JSON/JSONL payload，并重算descriptor/root/receipt、拒绝策略/符号链接/碰撞/文件组和顺序错误。它不是完整store：RAW UTF-8、其他模块payload、analysis-step/run store、生产root bootstrap和runtime仍未实现 |
-| 八个业务分析步骤 | **尚未实现（源码清单共享持久化预备已完成）** | 八个语义package目前仍只有`package-info.java`骨架；没有当前Local Git capture、M1/M2/M3业务算法、reader-visible源码清单、应用发现、五图、Fact/Proof、Flow/Capsule、R0/R1/R2、RepositoryKnowledge、九章或Trace生产代码与运行产物 |
+| 八个业务分析步骤 | **尚未实现（独立capture与共享持久化预备已完成）** | `LocalGitCommitCaptureAdapter`已在synthetic local Git repository上验证exact commit的raw tree/blob capture、文本/二进制/100755处置、symlink拒绝和工作区独立性；它不是已完成的源码盘点。M1/M2/M3业务算法、reader-visible源码清单、应用发现、五图、Fact/Proof、Flow/Capsule、R0/R1/R2、RepositoryKnowledge、九章和Trace生产代码与运行产物仍不存在 |
 | public Java/CLI/HTTP | **尚未实现** | `RepositoryAnalysisAgent`七方法、`source-analysis` CLI和loopback HTTP adapter均不存在 |
 | pre-reset Stage/POC实现 | **已删除；仅历史证据** | 旧纵切、POC、fixture和旧接口不在当前生产/测试树中，不得包装成兼容层或作为当前jshERP结果 |
 

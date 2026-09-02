@@ -315,6 +315,9 @@
                         <configuration>
                             <failOnViolation>true</failOnViolation>
                             <printFailingErrors>true</printFailingErrors>
+                            <jdkToolchain>
+                                <version>17</version>
+                            </jdkToolchain>
                         </configuration>
                     </plugin>
                 </plugins>
