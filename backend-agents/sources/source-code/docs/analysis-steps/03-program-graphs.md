@@ -151,6 +151,38 @@ Controller.status
 
 模块集合固定为五个 graph builder 加一个 graph-set publication specifier。顺序为 `CodeStructureGraphBuilder` → `CallGraphBuilder` / `ControlFlowGraphBuilder` / `DataFlowGraphBuilder` → `EvidenceGraphBuilder` → `ProgramGraphSetPublicationSpecifier` → `CanonicalAnalysisStepArtifactStore`；analysis step store不是第七个业务模块。中间只能交换 typed node/edge/provenance drafts。任何 builder 都不能调用 LLM。
 
+在 M1 前、并在每一个 graph builder 需要上游输入时，内部的
+`PersistedProgramGraphInputReader`执行一次**输入重新打开**。它不是第六种图、不是
+module、不会产生新文件，也不会改变五图的模块顺序。它只接收
+`VerifiedSourceInventoryReference + ApplicationDiscoveryReference`，重新打开并校验以下已经
+发布的 JSON/JSONL 与 receipt：源码清单的`source-input.json`、`verified-snapshot.json`、
+`source-inventory.jsonl`；应用发现的`application-profile.json`、`capability-report.json`、
+`entry-points.jsonl`、`mapper-catalog.jsonl`。然后它重新读取已登记的冻结源码字节，验证文件
+ID、路径、模式、大小、UTF-8、文件 SHA-256 与两个 analysis-step publication 的 controls/
+source predecessor 完全一致。
+
+重新打开成功后，reader 只向本 analysis step 提供两个不可变输入视图：
+
+```text
+ReopenedProgramGraphInputs
+  source: CodeStructureSource
+    snapshotId, complete/bounded scope, controls,
+    source-inventory/snapshot ArtifactReference, verified text documents
+  discovery: ProgramGraphDiscoveryInputs
+    applicationProfileId + profile/capability/entry/catalog ArtifactReference,
+    entries[] { entryId, handlerFqn, parameterNames, route evidence },
+    mapperCatalog[] { catalogEntryId, Java interface/method candidates,
+                      XML resource/namespace/statement candidates, binding state }
+```
+
+M1只消费`source`和`discovery`中的 identity/entry ownership；M2 才消费 entry 的 handler
+和 Mapper candidates，M3消费 entry root，M4消费已验证的源码及前驱图。reader 不从路径扫描
+工作区、不执行 Maven、不重新发现 HTTP/Mapper site、不用字符串搜索替代上游 JSON，也不替
+builder 猜测缺失值。任何 descriptor/schema/receipt/source predecessor/controls/file identity/
+coverage/accounting 不闭合时，整个本次 graph module 以稳定`GRAPH_REFERENCE_BROKEN`失败；
+语法或 binding 局部不支持仍由相应 builder 形成 typed Gap。这样 M2 可以从真实的已发布
+ApplicationDiscovery 内容获取候选，而不是从 M1 的简化 ID 列表或测试对象反推业务关系。
+
 #### M1 CodeStructureGraphBuilder
 
 - **解决的问题**：给后续关系一个唯一的声明/包含/SQL 结构坐标系，避免按文件名或 simple name 找对象。
