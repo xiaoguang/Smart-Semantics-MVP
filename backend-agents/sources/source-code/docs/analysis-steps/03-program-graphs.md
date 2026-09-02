@@ -661,7 +661,7 @@ GRAPH_PROFILE_INVALID、GRAPH_REFERENCE_BROKEN、GRAPH_ACCOUNTING_INVARIANT_BROK
 
 ## 9. 当前实现成熟度审计
 
-Wire Reset后的`org.sourceanalysis.app.analysis.graph`已经有受限的 M1/M2 垂直切片和首个 M3 线性控制流切片；它们不等于完整的“程序图”分析步骤，也不等于已完成的全仓库业务分析。当前实现状态必须与上方目标设计分开阅读。
+Wire Reset后的`org.sourceanalysis.app.analysis.graph`已经有受限的 M1/M2 垂直切片和首个 M3 线性/单 guard 控制流切片；它们不等于完整的“程序图”分析步骤，也不等于已完成的全仓库业务分析。当前实现状态必须与上方目标设计分开阅读。
 
 | 状态 | 当前事实 |
 | --- | --- |
@@ -671,9 +671,9 @@ Wire Reset后的`org.sourceanalysis.app.analysis.graph`已经有受限的 M1/M2 
 | **部分实现（M1→M2 可信重开）** | `PersistedCodeStructureGraphReader`、sealed `ReopenedCodeStructureGraph`、exact payload parser和`ProgramGraphInputBasis`已经实现并由真实 canonical module store 验证：M2只能先重开 M1 receipt/payload，核对 address、schema/type、七个上游引用、controls、profile和分母，再读取结构 draft。改变 fresh-reopened source controls 会在解析前以`GRAPH_REFERENCE_BROKEN`拒绝。M2 execution 与自己的 receipt-last 持久化已经使用这条 seam；完整产品运行核心的 M1/M2 组装仍受上行“产品组装”缺口限制。 |
 | **部分实现（M2 有界调用图）** | `CallGraphBuilder`已对冻结 fixture 产生唯一 Controller→Service、Service→Mapper、Mapper Java→XML statement 以及 call/return edges；重载 handler 或受显式 import 影响的 receiver 都记录 Gap，绝不按源码顺序或简单名称猜 target。`CallGraphExecution`会先以同一 reopened inputs 重开 M1，再构建并由`CallGraphModulePublisher`将调用图写为独立 M2 receipt-last artifact；后者把已重开 M1 payload 加入八项上游 lineage。上一轮发现的直接 Java 调用 provenance 断链已在当前有界切片修复：builder 会把调用 AST span 对应的`ProvenanceDraftV1`收入`CallGraphDraft.provenanceDrafts`，`CallGraphDraft`会拒绝节点或边引用 registry 中不存在的 evidence draft。完整 receipt mutation matrix、Mapper binding accounting 与完整仓库验收仍未实现。 |
 | **部分实现（M2→M3 可信重开）** | `PersistedCallGraphReader`和sealed `ReopenedCallGraph`已由真实 canonical M1/M2 modules 验证 address、type/schema、八项 upstream、controls、producer/completion、payload、profile与同一 M1/source/discovery basis。当前 M3 公共测试已通过这条 fresh-reopen seam 取得 M1/M2，并在解析前核对相同 basis、graph profile 与 M2 保存的 M1 payload lineage；这只证明当前有界输入链可用，不代表完整 mutation matrix 已完成。 |
-| **部分实现（M3 线性控制流切片）** | `ControlFlowGraphBuilderTest`当前验证一个单入口、无 guard 的线性 fixture：builder 只投影已经由 M2 证明的 call/return edges，并生成`ENTRY`、`BASIC_BLOCK`、`ENTRY_RETURN_TERMINAL`和`CALLEE_RETURN_TERMINAL`。遇到 Java `if` 时，当前实现不会猜分支，而是生成 typed `PROFILE_STOP_TERMINAL` Gap。guard、TRUE/FALSE branch、throw、loop budget、完整 DFS/reachability、多入口守恒与 M3 module publication均尚未实现，因此该 GREEN 不能代表控制流图或分析步骤“程序图”完成。 |
-| **尚未实现** | M3 的分支/异常/循环与完整发布、M4–M6、`data-flow`、`evidence`和完整五图集合、graph index、正式 graph Gap JSONL、ProgramGraphs receipt，以及跨图/完整仓库验收均未实现。 |
+| **部分实现（M3 线性与单 guard 控制流切片）** | `ControlFlowGraphBuilderTest`当前验证一个单入口 fixture：builder 只投影已经由 M2 证明的 call/return edges，并生成`ENTRY`、`BASIC_BLOCK`、`ENTRY_RETURN_TERMINAL`和`CALLEE_RETURN_TERMINAL`。对上游 Service 中的`if (status == null) { return; }`，当前实现生成一个`GUARD`：TRUE edge 的`guardNodeId`指向该 guard、`polarity=TRUE`并到达 callee return terminal；FALSE edge 使用同一`guardNodeId`与`polarity=FALSE`到达 guard 后的正常续接节点。这个受支持形状不再产生`PROFILE_STOP_TERMINAL`。当前仅支持“单个、无 else、then 子树含 return”的 guard；一般多重/嵌套 if、else、throw、loop budget、多入口 ownership、完整 DFS/reachability、跨调用栈语义、终止节点删除/返回配对变异测试与 M3 module publication仍未实现，因此该 GREEN 不能代表控制流图或分析步骤“程序图”完成。 |
+| **尚未实现** | M3 的通用多重/嵌套/else 分支、异常、循环、跨调用栈语义与完整发布、M4–M6、`data-flow`、`evidence`和完整五图集合、graph index、正式 graph Gap JSONL、ProgramGraphs receipt，以及跨图/完整仓库验收均未实现。 |
 | **历史证据，不是当前能力** | 已删除的`RepositoryModel`/旧FlowView曾投影部分结构、调用、SQL和CFG，并暴露DepotHead跨层status/ids dataflow不足。它们只提供测试反例，不是当前图或永久seam。 |
-| **下一实现门** | M3 下一条 RED 必须把当前 `if` 的`PROFILE_STOP_TERMINAL`替换为有精确 guard provenance 的 TRUE/FALSE 分支，并补齐显式 return/throw、reachability、loop budget 和多入口守恒；随后安装 M3 receipt-last module artifact。M2 同时仍需补齐其余 fail-closed mutation matrix与 Mapper binding accounting。线性 M3 GREEN 和有界 M2 closure 都不能单独关闭本分析步骤；之后仍须完成 M4–M5，并由 M6 原子发布五图、index、Gap 和 receipt。 |
+| **下一实现门** | M3 后续 RED 必须按目标合同补齐一般多重/嵌套/else 分支、显式 throw、loop budget、完整 DFS/reachability、多入口守恒与跨调用栈 return 语义，并覆盖删除终止节点、破坏返回配对等变异；随后安装 M3 receipt-last module artifact。M2 同时仍需补齐其余 fail-closed mutation matrix与 Mapper binding accounting。单 guard M3 GREEN 和有界 M2 closure 都不能单独关闭本分析步骤；之后仍须完成 M4–M5，并由 M6 原子发布五图、index、Gap 和 receipt。 |
 
 历史pre-reset jshERP slice的Gap、0 Flow、0 Capsule不能被目标edge示例改写成成功，也不能被误报为当前SourceAnalysis输出。
