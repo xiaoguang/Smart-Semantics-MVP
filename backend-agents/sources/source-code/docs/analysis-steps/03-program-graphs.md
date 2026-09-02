@@ -493,19 +493,26 @@ catch、事务或runtime handler。
 unsupported/over-limit路径只能以`PROFILE_STOP_TERMINAL`加恰一个typed disposition闭合，
 不得按行号补边；任何reachable nonterminal缺合法后继、terminal有出边或guard polarity不完整均fatal。
 
+为让M4不重建CFG，fresh-reopened M3还必须对每个activated Java `BASIC_BLOCK`保证：其
+source provenance恰覆盖一个已验证method body内的唯一连续AST statement range；每个M4候选
+statement/expression按最小包含span恰归属一个activated block；该block的所有可执行入边与出边都出现在
+该entry traversal。block内Java求值顺序由M4从同一verified AST按语言规则重算，不新增M3 wire字段。
+任一多重/零block归属、跨method span、不完整predecessor closure或source locator/digest矛盾都是
+`GRAPH_REFERENCE_BROKEN`，M4不得以source order补图。
+
 #### M4 DataFlowGraphBuilder
 
 - **解决的问题**：逐段证明请求值怎样跨参数、变量、property、criteria、placeholder 到 SQL column/where。
 - **精确上游输入及前置**：`DataFlowInputs{structure: ReopenedCodeStructureGraph, calls: ReopenedCallGraph, controlFlow: ReopenedControlFlowGraph, reopened: the same ReopenedProgramGraphInputs}`与`DataFlowGraphProfile`；M4 execution必须以同一次reopened inputs按8.0依序fresh-reopen M1/M2/M3，校验同一basis、三段payload refs与graph profile，只从`reopened.source`读取verified Java/XML bytes。raw drafts、detached endpoints/lists、`Path`和自由source均禁止。
 - **确定性顺序 / LLM**：建 intra-method def-use → argument→parameter → assignment/setter/property → Mapper record/example params → XML dynamic condition/include → placeholder/criterion→column/where → fixed-point/account；0 LLM。
 - **目标输出与 DepotHead 示例**：DATA_FLOW draft；例子分别闭合 `Controller.status→Service.status→setStatus→record.status→jsh_depot_head.status` 与 `ids→dhIds→andIdIn→WHERE id IN`。
-- **必须保持的不变量**：每条长链由相邻 typed edges 组成；每 edge 有唯一 rule/endpoints/guard context；不跨 unresolved call/alias/XML path。
-- **Gap / fatal / artifact复用**：局部 alias/dynamic SQL/loop 超能力为 Gap；伪 exact binding、broken endpoint、worklist/accounting/identity 错误 fatal；只接受相同roots/rules。
-- **给下游的后置保证**：ProvenCodeFacts 能逐 atom 引用 exact value/where edge；BusinessFlows 能保留数据相关条件，不需字符串匹配。
+- **必须保持的不变量**：每条长链由相邻 typed edges 组成；每 edge 有唯一 rule/endpoints/guard context；parameter/local read只连唯一reaching definition，赋值RHS先于write处理；不跨 unresolved call/alias/XML path。
+- **Gap / fatal / artifact复用**：局部 alias、multi-definition join、非direct write/setter、dynamic SQL/loop 超能力为 Gap；伪 exact binding、broken predecessor endpoint、worklist/accounting/identity 错误 fatal；只接受相同roots/rules。
+- **给下游的后置保证**：ProvenCodeFacts 能逐 atom 引用 exact parameter/local reaching-definition、direct assignment、setter/field和后续where edge；BusinessFlows 能保留M3 guard相关数据条件，不需字符串匹配或重开AST。
 - **明确非目标**：不证明运行时 DB/trigger 值，不用字段同名跨层连边，不硬编码 DepotHead positive edge。
-- **公共测试 seam 与验收**：`buildDataFlow(DataFlowInputs inputs, DataFlowGraphProfile profile)`；首个slice对每个M3-activated exact Java call按actual ordinal生成唯一`ARGUMENT_TO_PARAMETER`，覆盖ordinal swap、same-name decoy、missing M1 parameter、raw input与M1/M2/M3 reference mutations、worklist/accounting；后续再对两条DepotHead chain逐段mutation。
-- **Luna/xhigh 测试指南**：创建 `DataFlowGraphBuilderTest`，fixtures/goldens置`src/test/resources/analysis/graph/data-flow/`。首RED先用真实canonical store安装并fresh-reopen M1/M2/M3，再断言Controller status/ids actual各自只连到Service同ordinal M1 `PARAMETER`；随后做ordinal swap、same-name decoy、raw draft不可构造、M3 address/receipt/schema/upstream/controls/profile/basis mutation、unproven binding Gap、worklist max+1 fatal、order determinism。再依次RED intra-def/use、setter/property、record/placeholder/column、ids/criterion/where。只fake verified source handle，禁止mock predecessor readers、dataflow/accounting/canonical。命令：`mvn -Dtest=DataFlowGraphBuilderTest test`；禁网络/客户MyBatis。偏离按13.11。
-- **Terra/xhigh 实现指南**：RED后仅拥有 `analysis/graph/data-flow/`，先实现`PersistedControlFlowGraphReader`、sealed `ReopenedControlFlowGraph`、M4 execution与public `DataFlowGraphBuilder/DataFlowInputs/DataFlowGraphProfile/DataFlowGraphDraft`，安装`program-graphs-data-flow-draft-v2`。首GREEN只做M3-activated exact call的相邻argument→M1 parameter；随后才按局部→property→XML fixed-point扩展closed enum。禁止raw draft/Path、字段同名捷径、DepotHead硬编码或output-derived denominator。上游缺endpoint或需新edge语义MUST STOP交Sol/ultra/必要时用户。
+- **公共测试 seam 与验收**：`buildDataFlow(DataFlowInputs inputs, DataFlowGraphProfile profile)`；首个slice保留每个M3-activated exact Java call的ordinal `ARGUMENT_TO_PARAMETER`，下一组RED在同一seam上加parameter/local singleton-reaching `DEF_USE`、direct-local `ASSIGNMENT`与direct-setter `SETTER_TO_PROPERTY`，覆盖shadow decoy、RHS-before-write、branch join Gap、compound write Gap、伪setter/field decoy、guard、ID-set accounting与逐边mutation。
+- **Luna/xhigh 测试指南**：创建/扩展 `DataFlowGraphBuilderTest`，fixtures/goldens置`src/test/resources/analysis/graph/data-flow/`。先保持真实canonical store fresh-reopen M1/M2/M3的Controller status/ids ordinal binding及其reference/accounting mutations。下一RED依次冻结parameter→simple-name ARGUMENT/USE、local initializer/reassignment的USE→DEFINITION、direct setter body的formal→USE→M1 FIELD `ASSIGNMENT`与caller `ARGUMENT`→FIELD `SETTER_TO_PROPERTY`；每步加same-name/shadow decoy、ambiguous join、complex RHS/compound operator、fake `setX`、wrong FIELD `DECLARES`、guard mutation、work-item omission/duplication/max+1和order determinism。只fake verified source handle，禁止mock predecessor readers、dataflow/accounting/canonical/reaching-definition。命令：`mvn -Dtest=DataFlowGraphBuilderTest test`；禁网络/客户MyBatis。偏离按13.11。
+- **Terra/xhigh 实现指南**：RED后仅拥有 `analysis/graph/data-flow/`，保持已批准的`PersistedControlFlowGraphReader`、sealed `ReopenedControlFlowGraph`、M4 execution与唯一public seam/wire。在argument binding GREEN后按read/write denominator→singleton reaching definition→direct local assignment→direct setter FIELD扩展；不新增public method、record field、artifact或M1–M3 schema。禁止raw draft/Path、字段或setter名称捷径、DepotHead硬编码或output-derived denominator。上游缺endpoint或需新edge语义MUST STOP交Sol/ultra/必要时用户。
 
 M4唯一public Java seam与exact JSON payload如下。`DataFlowInputs`和`DataFlowGraphProfile`只存在于
 进程内，不是新wire/artifact；所有字段/数组required，nullable JSON key必须出现，unknown、missing、
@@ -615,8 +622,73 @@ parameter的全部exact provenance drafts，M4 registry逐ID重列相同上游dr
 argument nodeId的direct preimage绑定M2 edgeId和ordinal；binding edgeId的direct preimage再绑定M1
 parameter nodeId。reader可从fresh-reopened predecessors重算，不允许仅凭canonicalValue相信binding。
 
-`enqueuedWorkItemIds`恰为上述所有explicit-actual work-item IDs，按M3 traversal的entry、activated call
-anchor、ordinal枚举后再按ID canonical排序、distinct；`processedWorkItemIds`记录实际处理的同一IDs且同样
+下一组intra-method/direct-property slice不新增public record或JSON field，仍只写上述
+`DataFlowNode/DataFlowEdge/DataFlowWorklistAccounting/GraphGapDraft`。它在生成任何新node/edge前，
+对每个M3 traversal中已activated method且按上段唯一归属于`BASIC_BLOCK`的verified Java AST枚举三类
+work item：
+
+1. 每个value-read位置的`NameExpr`（不包declaration/type/method/member/label name）为
+   `identity("data-flow-java-read-work-item-v1", declaring M1 METHOD nodeId, fileId,
+   startByte, endByteExclusive, astRole)`；`astRole`只能是`SIMPLE_NAME_READ`或
+   `ARGUMENT_SIMPLE_NAME_READ`，后者的span必须恰等于已枚举argument work item的整个actual。
+2. 每个含initializer的`VariableDeclarator`、每个`AssignExpr`以及每个其他Java value-write
+   form（compound assign、`++/--`、enhanced-for/catch/lambda binding）为
+   `identity("data-flow-java-write-work-item-v1", declaring M1 METHOD nodeId, fileId,
+   startByte, endByteExclusive, astWriteKind)`；kind来自闭合Java AST enum，不是caller字符串。
+3. 每个activated exact M2 Java `CALL_TARGET`的actual ordinal，若target body在语法上含有从该
+   formal到instance field的write candidate，再枚举
+   `identity("data-flow-direct-setter-work-item-v1", M2 CALL_TARGET edgeId, actualOrdinal)`。
+   这个语法筛选发生在setter语义证明前；方法名`set*`不参与denominator。
+
+Java语义处理严格固定。lexical resolver按Java 8 scope把每个`NameExpr`绑定到唯一M1
+`PARAMETER`或同method的local declaration；shadowing、declaration-before-use、内外scope均按AST结构，
+不按名称邻近。method entry状态以M1 `PARAMETER`作initial definition；每个有值local initializer或
+simple `=` reassignment产生新M4 `DEFINITION`并kill该local的旧definition。initializer/assignment都先按
+Java left-to-right顺序求值RHS reads，再使新definition进scope/state。M4在无cycle的M3 executable
+predecessors上前向合并reaching-definition sets；某read只在所有owning entries得到同一singleton
+definition时为exact。零/多definition、loop back-edge、capture/alias或不同entry得到不同binding均不造边。
+
+新元素的exact JSON字段/端点矩阵为：
+
+| kind | `fromNodeId` | `toNodeId` | `ruleId` |
+| --- | --- | --- | --- |
+| `DEF_USE` | external M1 `PARAMETER`或M4 `DEFINITION` | M4 `USE`，或span相同的已有M4 `ARGUMENT` | `java-single-reaching-definition-v1` |
+| `ASSIGNMENT` | M4 `USE` | M4 `DEFINITION` | `java-direct-local-assignment-v1` |
+| `ASSIGNMENT` | M4 `USE` | external M1 `FIELD` | `java-direct-field-assignment-v1` |
+| `SETTER_TO_PROPERTY` | 已有caller M4 `ARGUMENT` | external M1 `FIELD` | `java-direct-setter-property-v1` |
+
+四种edge的`resolution=EXACT`；`guardNodeId/polarity`必须both-null，或恰为该occurrence在M3中所有
+owning entries共享的唯一activation guard/polarity。需要多个guard pair、不同owner context或无法从
+M3重算时为Gap。edge wire仍无ownership字段：`DEF_USE`取to-node owners，local
+`ASSIGNMENT`取to-definition owners，field `ASSIGNMENT`和`SETTER_TO_PROPERTY`取from-node owners；每个
+derived set必须非空且恰等于M3重算的relation owners。
+
+M4 local `DEFINITION`及引用local的`USE`使用
+`java-local-symbol-v1|<declaring METHOD canonical signature>|<declared canonical type>|<identifier>`语义值；
+引用parameter的`USE.canonicalValue`则必须逐字等于该external M1 `PARAMETER.canonicalValue`。
+shadowed local declarations可共享该值，但其nodeId direct preimage还绑定declaring METHOD nodeId、原始
+local declaration fileId/byte range；parameter use改为绑定M1 PARAMETER nodeId。两者都再绑定当前read/write
+fileId/byte range、AST role与rule version，因而不会合并。`USE`引用
+read span provenance，`DEFINITION`引用write span provenance。simple-name actual必须复用已有`ARGUMENT`
+node而不再声明`USE`。每个edgeId除8.4端点外还绑定它的read/write work-item ID和M3 block/guard
+context；setter edgeId再绑定M2 `CALL_TARGET` edgeId、ordinal与target-body assignment identity。
+
+local exact assignment只接受单一declarator的`T x = rhsName`或operator为plain `=`的
+`x = rhsName`；允许括号包住RHS simple name，不允许cast、call、constructor、binary/conditional expression、
+array/member target或compound/update operator。direct field assignment只接受当前declaring type中的
+`this.f = rhsName`；LHS必须命中fresh-reopened M1唯一`FIELD`，RHS必须是上述exact `USE`。
+它产生`ASSIGNMENT`但不在M4重声明field/definition。
+
+direct setter summary只在已activated exact M2 target为instance `void` method、目标ordinal恰有一个M1
+formal，且其唯一可执行transfer为`this.f = formalName`时生成。field必须由同一declaring M1
+`TYPE`以唯一`DECLARES`边声明，caller actual必须命中已有同ordinal `ARGUMENT`。transform、guard、alias、
+inherited/static field、multi-write、fluent return、generated/source-unavailable body或只有`set*`名称均不是证明。
+该target body的direct field `ASSIGNMENT`与caller侧`SETTER_TO_PROPERTY`是两个不同typed facts；若各自denominator
+成立则都发布，但不共用edge ID。
+
+`enqueuedWorkItemIds`恰为graph profile已启用slices的argument/read/write/direct-setter work-item IDs
+之排序、distinct集合；每类都先按M3 traversal、block AST order、再按上述identity生成，payload最后只按ID
+canonical排序。`processedWorkItemIds`记录实际处理的同一IDs且同样
 排序、distinct。每个work item只处理一次，无论结果是exact还是typed Gap；任何返回的draft都要求两个集合
 逐ID相等且`overLimit=false`。尝试发现profile上限后的第一项立即以
 `DATA_FLOW_WORKLIST_LIMIT_EXCEEDED` fatal，且不返回partial draft、Gap或module publication；本schema不
@@ -625,10 +697,14 @@ anchor、ordinal枚举后再按ID canonical排序、distinct；`processedWorkIte
 
 所有lists在constructor defensive-copy；`entryIds/nodes/edges/gapDrafts/provenanceDrafts`分别按主ID排序且
 distinct。
-首slice coverage candidate恰为每个explicit-actual work item预计算的M4 argument node与binding edge IDs，加上
-synthetic/implicit call-shape的确定性Gap candidate ID；受支持的work item的两项进exact，不支持的两项
-以同一local gapId进gap dispositions。`exactElementIds`恰为全部M4-owned emitted node/edge，M1 external
-parameter不计入M4 coverage。candidate/exact/gap/exclusion按8.0.1互斥闭合；不得从已生成edge反推分母。
+各slice coverage candidate的集合union恰为M4全部candidate denominator。argument work item仍预计算
+argument node/binding edge IDs；受支持read产生`USE`（或复用`ARGUMENT`）与`DEF_USE`，受支持write产生
+`DEFINITION/ASSIGNMENT`或field `ASSIGNMENT`，受支持setter产生`SETTER_TO_PROPERTY`。元素在set union中
+只计一次；external M1 `PARAMETER/FIELD`不计入M4 coverage。不支持或无法唯一绑定的work item不造
+program edge，而以`identity("data-flow-transfer-gap-candidate-v1", workItemId, transferKind)`的确定性ID进
+`DATA_FLOW_BINDING_UNPROVEN` Gap；该ID必须逐字出现在coverage disposition与`GraphGapDraft.candidateElementIds`。
+`exactElementIds`恰为全部M4-owned emitted node/edge。candidate/exact/gap/exclusion按8.0.1互斥闭合；
+不得从已生成edge反推denominator。
 每个emitted element的非空evidence refs只命中本draft唯一registry entry，且registry无孤儿；external
 endpoint必须命中fresh-reopened M1，guard/polarity只能both-null或合法M3 pair。`graphId`除8.4字段外还绑定
 完整`worklistAccounting/gapDrafts`。
@@ -709,7 +785,7 @@ M5不复用ProgramEdge字段冒充“evidence指向program edge”。`EvidenceNo
 {"evidenceNodeId":"evidence:3333333333333333333333333333333333333333333333333333333333333333","kind":"RULE_APPLICATION","sourceExcerpt":null,"ruleApplication":{"ruleId":"java-setter-property-binding","ruleVersion":"v1","inputProgramElementIds":["parameter:service-status","property:depothead-status"]}}
 ~~~
 
-**示例分类：NARRATIVE_ILLUSTRATION（五个ProgramGraphs模块的隔离故事投影）。** 下列大块只说明图之间的业务关系；它不是ModuleArtifact wire、schema-valid fixture或跨分析步骤replay链。尤其其中`canonicalValue`里的`File.java:line`、`source:*`和story IDs不是v2 source evidence，data-flow故事中的重复`PARAMETER` nodes、数值型worklist与缺失`gapDrafts`也不是M4 v2 wire；exact M4必须引用M1 parameter并使用上方ID-set accounting/Gap registry。Luna fixtures必须改用上面的exact records并在自己的closure内重算identity；不存在隐式ID remap。
+**示例分类：NARRATIVE_ILLUSTRATION（五个ProgramGraphs模块的隔离故事投影）。** 下列大块只说明图之间的业务关系；它不是ModuleArtifact wire、schema-valid fixture或跨分析步骤replay链。尤其其中`canonicalValue`里的`File.java:line`、`source:*`和story IDs不是v2 source evidence，data-flow故事中的重复`PARAMETER`/`PROPERTY` nodes、数值型worklist与缺失`gapDrafts`也不是M4 v2 wire；exact M4必须引用M1 `PARAMETER/FIELD`并使用上方ID-set accounting/Gap registry。Luna fixtures必须改用上面的exact records并在自己的closure内重算identity；不存在隐式ID remap。
 
 ~~~jsonl
 {"storyProjection":"code-structure","artifactId":"graph-draft:1111111111111111111111111111111111111111111111111111111111111111","producer":{"address":{"kind":"ANALYSIS_STEP","runId":"analysis-run:9999999999999999999999999999999999999999999999999999999999999999","analysisStepKey":"program-graphs","moduleNumber":1,"moduleKey":"code-structure"},"storyModuleVersion":"illustrative"},"upstreamArtifacts":[{"artifactId":"graph-profile:8888888888888888888888888888888888888888888888888888888888888888","sha256":"8888888888888888888888888888888888888888888888888888888888888888"},{"artifactId":"verified-source-inventory-source-inventory:5555555555555555555555555555555555555555555555555555555555555555","sha256":"5555555555555555555555555555555555555555555555555555555555555555"},{"artifactId":"application-discovery-application-profile:1111111111111111111111111111111111111111111111111111111111111111","sha256":"1111111111111111111111111111111111111111111111111111111111111111"},{"artifactId":"application-discovery-capability-report:4444444444444444444444444444444444444444444444444444444444444444","sha256":"4444444444444444444444444444444444444444444444444444444444444444"},{"artifactId":"application-discovery-entry-points:2222222222222222222222222222222222222222222222222222222222222222","sha256":"2222222222222222222222222222222222222222222222222222222222222222"},{"artifactId":"application-discovery-mapper-catalog:3333333333333333333333333333333333333333333333333333333333333333","sha256":"3333333333333333333333333333333333333333333333333333333333333333"},{"artifactId":"verified-snapshot:4444444444444444444444444444444444444444444444444444444444444444","sha256":"4444444444444444444444444444444444444444444444444444444444444444"}],"controls":{"toolchainSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profileSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","schemaBundleSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","promptBundleSha256":null,"artifactPolicyRegistryRef":{"artifactId":"artifact-policy-registry:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","sha256":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}},"completion":{"status":"SUCCEEDED_WITH_GAPS","gapRefs":["gap:bounded-path-set"],"failureRef":null},"payload":{"graphKind":"CODE_STRUCTURE","graphId":"graph:code-structure-depothead","snapshotId":"snapshot:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","applicationProfileId":"application:jsh-erp-java8-spring-mybatis","entryIds":["entry:post-depothead-batch-set-status"],"nodes":[{"nodeId":"column:jsh-depot-head-status","kind":"SQL_COLUMN","canonicalValue":"jsh_depot_head.status","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:status-column"]},{"nodeId":"entry:post-depothead-batch-set-status","kind":"HTTP_ENTRY","canonicalValue":"POST /depotHead/batchSetStatus","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:controller-route"]},{"nodeId":"method:controller-batch-set-status","kind":"METHOD","canonicalValue":"com.jsh.erp.controller.DepotHeadController#batchSetStatus","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:controller-method"]},{"nodeId":"method:mapper-update-by-example","kind":"METHOD","canonicalValue":"com.jsh.erp.datasource.mappers.DepotHeadMapper#updateByExampleSelective","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:mapper-method"]},{"nodeId":"method:service-batch-set-status","kind":"METHOD","canonicalValue":"com.jsh.erp.service.DepotHeadService#batchSetStatus","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:service-method"]},{"nodeId":"property:depothead-status","kind":"PROPERTY","canonicalValue":"com.jsh.erp.datasource.entities.DepotHead.status","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:set-status"]},{"nodeId":"route:post-depothead-batch-set-status","kind":"HTTP_ROUTE","canonicalValue":"POST /depotHead/batchSetStatus","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:controller-route"]},{"nodeId":"statement:update-by-example-selective","kind":"XML_STATEMENT","canonicalValue":"com.jsh.erp.datasource.mappers.DepotHeadMapper#updateByExampleSelective","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:xml-statement"]},{"nodeId":"table:jsh-depot-head","kind":"SQL_TABLE","canonicalValue":"jsh_depot_head","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:table-update"]},{"nodeId":"xml-guard:record-status-not-null","kind":"XML_GUARD","canonicalValue":"record.status != null","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:status-guard"]}],"edges":[{"edgeId":"structure-edge:controller-route","kind":"ROUTE_HANDLED_BY","fromNodeId":"route:post-depothead-batch-set-status","toNodeId":"method:controller-batch-set-status","ruleId":"spring-route-merge-v1","resolution":"EXACT","guardNodeId":null,"polarity":null,"evidenceDraftRefs":["provenance:controller-route"]},{"edgeId":"structure-edge:statement-table","kind":"STATEMENT_CONTAINS_SQL","fromNodeId":"statement:update-by-example-selective","toNodeId":"table:jsh-depot-head","ruleId":"sql-update-table-v1","resolution":"EXACT","guardNodeId":null,"polarity":null,"evidenceDraftRefs":["provenance:table-update"]},{"edgeId":"structure-edge:table-declares-status","kind":"DECLARES","fromNodeId":"table:jsh-depot-head","toNodeId":"column:jsh-depot-head-status","ruleId":"sql-column-declaration-v1","resolution":"EXACT","guardNodeId":null,"polarity":null,"evidenceDraftRefs":["provenance:status-column"]}],"coverage":{"candidateElementIds":["column:jsh-depot-head-status","entry:post-depothead-batch-set-status","method:controller-batch-set-status","method:mapper-update-by-example","method:service-batch-set-status","property:depothead-status","route:post-depothead-batch-set-status","statement:update-by-example-selective","structure-edge:controller-route","structure-edge:statement-table","structure-edge:table-declares-status","table:jsh-depot-head","xml-guard:record-status-not-null"],"exactElementIds":["column:jsh-depot-head-status","entry:post-depothead-batch-set-status","method:controller-batch-set-status","method:mapper-update-by-example","method:service-batch-set-status","property:depothead-status","route:post-depothead-batch-set-status","statement:update-by-example-selective","structure-edge:controller-route","structure-edge:statement-table","structure-edge:table-declares-status","table:jsh-depot-head","xml-guard:record-status-not-null"],"gapDispositions":[],"exclusionDispositions":[],"scopeGapIds":["gap:bounded-path-set"],"closed":false},"graphProfileRef":{"artifactId":"graph-profile:8888888888888888888888888888888888888888888888888888888888888888","sha256":"8888888888888888888888888888888888888888888888888888888888888888"}}}
@@ -786,7 +862,7 @@ graphKind 恰为 CODE_STRUCTURE、CALL、CONTROL_FLOW、DATA_FLOW、EVIDENCE。�
 | code structure | `PACKAGE`、`TYPE`、`FIELD`、`METHOD`、`PARAMETER`、`ANNOTATION`、`CONFIGURATION_KEY`、`CONFIGURATION_RESOURCE`、`XML_NAMESPACE`、`XML_STATEMENT`、`SQL_TABLE`、`SQL_COLUMN`；`CONTAINS`、`DECLARES`、`CONFIG_RESOLVES_RESOURCE`、`STATEMENT_CONTAINS_SQL`。配置仅接受已实现的静态key→resource literal；嵌套YAML键以`.`展平，无法安全展平或非literal值进入Gap。 |
 | call | call site/receiver/method target/mapper statement；RECEIVER_TYPE、CALL_TARGET、CALL_RETURN、JAVA_METHOD_TO_XML_STATEMENT |
 | control flow | entry/guard/basic step/call/return/throw/terminal；ENTRY、TRUE、FALSE、NEXT、CALL、RETURN、TERMINAL |
-| data flow | M4-owned `DEFINITION`、`USE`、`ARGUMENT`、`CRITERION`、`PLACEHOLDER`、`WHERE_PREDICATE`；external endpoint复用M1 `PARAMETER`、`PROPERTY`、`SQL_COLUMN`而不重声明；edge恰为`DEF_USE`、`ARGUMENT_TO_PARAMETER`、`ASSIGNMENT`、`SETTER_TO_PROPERTY`、`PROPERTY_TO_PLACEHOLDER`、`CRITERION_TO_WHERE`、`PLACEHOLDER_TO_COLUMN` |
+| data flow | M4-owned `DEFINITION`、`USE`、`ARGUMENT`、`CRITERION`、`PLACEHOLDER`、`WHERE_PREDICATE`；external endpoint复用M1 `PARAMETER`、`FIELD`、`SQL_COLUMN`而不重声明；edge恰为`DEF_USE`、`ARGUMENT_TO_PARAMETER`、`ASSIGNMENT`、`SETTER_TO_PROPERTY`、`PROPERTY_TO_PLACEHOLDER`、`CRITERION_TO_WHERE`、`PLACEHOLDER_TO_COLUMN`。这里property语义端点就是已有M1 `FIELD`；不存在M1 `PROPERTY` kind。 |
 | evidence | source file/span/rule application；LOCATES、PARSED_BY、BOUND_BY、SUPPORTS_PROGRAM_NODE、SUPPORTS_PROGRAM_EDGE |
 
 M1 `PARAMETER`不新增wire字段，但其语义身份必须完整：`canonicalValue`是
@@ -794,6 +870,12 @@ M1 `PARAMETER`不新增wire字段，但其语义身份必须完整：`canonicalV
 nodeId direct preimage同时绑定declaring M1 `METHOD` nodeId、ordinal和declared canonical type/signature，且该
 method必须以唯一M1 `DECLARES` edge指向该parameter。M4若不能从fresh-reopened M1逐字重验
 这三项就以`GRAPH_REFERENCE_BROKEN` fatal；不得从parameter name、source order或邻近declaration恢复。
+
+M1 `FIELD`同样不新增wire字段；其`canonicalValue`恰为
+`java-field-symbol-v1|<declaring TYPE canonical name>|<field name>|<declared canonical type>`，nodeId direct
+preimage同时绑定declaring M1 `TYPE` nodeId、field name和declared canonical type/signature，且该type必须
+以唯一M1 `DECLARES` edge指向该field。M4不得从setter name、bean convention、receiver simple name或
+story `PROPERTY` node恢复该endpoint；缺失/重复/矛盾均为`GRAPH_REFERENCE_BROKEN`。
 
 标准 MyBatis动态 set/if/include 不是天然 Gap；只有实现能安全展开并证明条件/parameter path 时才生成 exact edges，否则局部 Gap。
 
@@ -809,6 +891,16 @@ method必须以唯一M1 `DECLARES` edge指向该parameter。M4若不能从fresh-
 6. record parameter/property → XML if/placeholder :472-473；
 7. XML statement → table jsh_depot_head :386；
 8. ids :184 → parsed ids :749 → eligible dhIds :752-795 → andIdIn :802 → Example criterion :149-151 → XML where include :70-93,:494-495。
+
+本次M4 slice对第4段的exact walkthrough是：M3先证明Service :800
+`depotHead.setStatus(status)`的call/argument在`dhIds`非空guard TRUE下activated；`status`的
+`ARGUMENT_SIMPLE_NAME_READ` work item复用该call ordinal 0已有M4 `ARGUMENT`，并从Service M1
+`status PARAMETER`生成一条`DEF_USE`。若M2 exact target与fresh-reopened target body又恰证明唯一
+`this.status = formal[0]`，M4则把该caller `ARGUMENT`以`SETTER_TO_PROPERTY`连到DepotHead已有M1
+`status FIELD`；target body本身的formal read与direct field write同时分别产生`DEF_USE`和
+`ASSIGNMENT`。这些edge的单一guard pair均为上述TRUE context，external PARAMETER/FIELD不在M4重声明。
+若setter只是同名、body缺失/生成、有transform/multi-write或field `DECLARES`不唯一，该段就以
+line :800 locator的M4 local Gap处置，绝不从`setStatus`拼出FIELD。
 
 缺任一段只能形成 Gap，不能跨缺口连一条“看起来正确”的长 edge。
 
@@ -828,9 +920,10 @@ nodeId 绑定 snapshot、graph kind、semantic kind、canonical value、source i
 
 GRAPH_PROFILE_INVALID、GRAPH_REFERENCE_BROKEN、GRAPH_ACCOUNTING_INVARIANT_BROKEN、CODE_STRUCTURE_INVARIANT_BROKEN、CALL_TARGET_AMBIGUOUS、CALL_RETURN_PAIR_INVALID、CFG_POLARITY_MISSING、CFG_TERMINAL_UNRESOLVED、DATA_FLOW_BINDING_UNPROVEN、DATA_FLOW_WORKLIST_LIMIT_EXCEEDED、EVIDENCE_GRAPH_INVARIANT_BROKEN、EVIDENCE_SOURCE_REOPEN_MISMATCH、XML_SECURITY_POLICY_UNENFORCEABLE、XML_EXTERNAL_RESOLUTION_ATTEMPT、PROGRAM_GRAPHS_RESOURCE_LIMIT_EXCEEDED。
 
-M4分类固定：可定位且前驱一致、但本profile不支持的call shape以
-`DATA_FLOW_BINDING_UNPROVEN`写`GraphGapDraft`；M1/M2/M3 reference、source hash、formal endpoint或basis
-漂移用`GRAPH_REFERENCE_BROKEN` fatal；伪exact、重复binding、work-item/gap/provenance/coverage守恒错误用
+M4分类固定：可定位且前驱一致，但本profile不支持的call/read/write/setter shape、零/多
+reaching definitions、loop/capture/alias、multi-guard context以`DATA_FLOW_BINDING_UNPROVEN`写M4-only
+`GraphGapDraft`；M1/M2/M3 reference、source hash/basis、PARAMETER/FIELD identity、唯一AST→block mapping或
+predecessor closure漂移用`GRAPH_REFERENCE_BROKEN` fatal；伪exact、重复binding、work-item/gap/provenance/coverage守恒错误用
 `GRAPH_ACCOUNTING_INVARIANT_BROKEN` fatal；worklist max+1用`DATA_FLOW_WORKLIST_LIMIT_EXCEEDED` fatal。
 fatal不返回draft、不安装M4 module；integrity错误不得改写成Gap。
 
@@ -840,6 +933,9 @@ fatal不返回draft、不安装M4 module；integrity错误不得改写成Gap。
 - Controller→Service、Service→Mapper、Mapper→XML 分段 deletion mutation 分别失败。
 - TRUE/FALSE、terminal、call/return edge mutation 不得用源码顺序补回。
 - M4首slice必须覆盖M3-activated call×ordinal分母、external M1 parameter、work-item ID集合相等、typed Gap registry；ordinal/parameter、processed ID、gap reason/locator或predecessor ref任一mutation fail closed。
+- M4下一slices必须覆盖AST-role read/write/setter分母、shadow-safe singleton reaching definition、RHS-before-write、
+  `USE/ARGUMENT`复用、external M1 `FIELD`、三种新edge端点矩阵与work-item union；block/guard/
+  declaration/field/call-target/assignment-body任一mutation fail closed，join/compound/fake-setter必须为typed Gap。
 - status 和 ids 每一段 dataflow deletion 都使对应 Fact 不可证明。
 - 同名 decoy type/method/XML statement 不能被字符串匹配选中。
 - Evidence span hash、rule ID 或 graph endpoint mutation fail closed。
@@ -853,7 +949,7 @@ fatal不返回draft、不安装M4 module；integrity错误不得改写成Gap。
 - 图种类和五个 filenames 恰为本文件定义的五项；不能合并为 repository blob，也不能把第六种临时图加入 production set。
 - node/edge kind 只来自版本化 registry；不支持的语法产生带 affected entry 的 Gap，不能发明自由字符串 kind。
 - call、control、data binding 必须逐段 EXACT；simple name、源码邻近、声明顺序和注释不能补边。
-- M4不得等待M6 graph index才校验external endpoint，也不得重声明M1 parameter；每个builder的Gap必须随已安装draft持久化，M6只汇总不补写reason/locator。
+- M4不得等待M6 graph index才校验external endpoint，也不得重声明M1 `PARAMETER/FIELD`或发明M1 `PROPERTY`；每个builder的Gap必须随已安装draft持久化，M6只汇总不补写reason/locator。
 - Evidence graph 证明 graph provenance，Proof 在 分析步骤“已证明代码事实” 证明 Fact；两者不可合并或互相替代。
 - 五图作为一个原子analysis step set安装并按完整identity复用；不能引用四张再现场生成第五张。
 - parser core、graph storage、worklist 和并行实现可自行选择；graph 边界、registry、identity、Gap/fatal 与 DepotHead closure 不得改变。
@@ -871,9 +967,9 @@ Wire Reset后的`org.sourceanalysis.app.analysis.graph`已经有受限的 M1/M2 
 | **部分实现（M2 有界调用图）** | `CallGraphBuilder`已对冻结 fixture 产生唯一 Controller→Service、Service→Mapper、Mapper Java→XML statement 以及 call/return edges；重载 handler 或受显式 import 影响的 receiver 都记录 Gap，绝不按源码顺序或简单名称猜 target。`CallGraphExecution`会先以同一 reopened inputs 重开 M1，再构建并由`CallGraphModulePublisher`将调用图写为独立 M2 receipt-last artifact；后者把已重开 M1 payload 加入八项上游 lineage。上一轮发现的直接 Java 调用 provenance 断链已在当前有界切片修复：builder 会把调用 AST span 对应的`ProvenanceDraftV1`收入`CallGraphDraft.provenanceDrafts`，`CallGraphDraft`会拒绝节点或边引用 registry 中不存在的 evidence draft。完整 receipt mutation matrix、Mapper binding accounting 与完整仓库验收仍未实现。 |
 | **部分实现（M2→M3 可信重开）** | `PersistedCallGraphReader`和sealed `ReopenedCallGraph`已由真实 canonical M1/M2 modules 验证 address、type/schema、八项 upstream、controls、producer/completion、payload、profile与同一 M1/source/discovery basis。当前 M3 公共测试已通过这条 fresh-reopen seam 取得 M1/M2，并在解析前核对相同 basis、graph profile 与 M2 保存的 M1 payload lineage；这只证明当前有界输入链可用，不代表完整 mutation matrix 已完成。 |
 | **部分实现（M3 线性与单 guard 控制流切片）** | `ControlFlowGraphBuilderTest`当前验证一个单入口 fixture：builder 只投影已经由 M2 证明的 call/return edges，并生成`ENTRY`、`BASIC_BLOCK`、`ENTRY_RETURN_TERMINAL`和`CALLEE_RETURN_TERMINAL`。对上游 Service 中的`if (status == null) { return; }`，当前实现生成一个`GUARD`：TRUE edge 的`guardNodeId`指向该 guard、`polarity=TRUE`并到达 callee return terminal；FALSE edge 使用同一`guardNodeId`与`polarity=FALSE`到达 guard 后的正常续接节点。这个受支持形状不再产生`PROFILE_STOP_TERMINAL`。当前fixture没有direct-throw callee，因而尚未验证“M2 RETURN始终保留为structural frame link、throw不生成或激活continuation”的目标语义。当前仅支持“单个、无 else、then 子树含 return”的 guard；一般多重/嵌套 if、else、throw、loop budget、多入口 ownership、完整 DFS/reachability、跨调用栈语义、终止节点删除/返回配对变异测试与 M3 module publication仍未实现，因此该 GREEN 不能代表控制流图或分析步骤“程序图”完成。 |
-| **目标合同已发布、实现尚未开始（M4首个相邻binding）** | M4现已固定唯一`buildDataFlow(DataFlowInputs, DataFlowGraphProfile)` seam、M3 fresh-reopen aggregate、`program-graphs-data-flow-draft-v2` exact records、M3-activated call×ordinal分母、M4 `ARGUMENT`→external M1 `PARAMETER`、work-item ID集合守恒及typed `gapDrafts`。当前没有`PersistedControlFlowGraphReader`、M4 test、production builder或module publication证据，不能把合同文本当成GREEN。 |
-| **尚未实现** | M3 的direct-throw/mixed return-throw frame与continuation验证、通用多重/嵌套/else 分支、异常、循环、跨调用栈语义与完整发布；M4首slice及后续def-use/property/XML fixed-point；M5–M6、`evidence`和完整五图集合、graph index、正式 graph Gap JSONL、ProgramGraphs receipt，以及跨图/完整仓库验收均未实现。 |
+| **目标合同已发布、M4尚未达到合同** | M4现已固定唯一`buildDataFlow(DataFlowInputs, DataFlowGraphProfile)` seam、M3 fresh-reopen aggregate、`program-graphs-data-flow-draft-v2` exact records、argument→parameter、parameter/local singleton `DEF_USE`、direct local/field `ASSIGNMENT`与direct-setter `SETTER_TO_PROPERTY`，以及四类work-item union和M4-only typed `gapDrafts`。当前main尚无这些slices的完整RED/GREEN及module publication证据，不能把合同文本当成GREEN。已报告的并行implementation audit还表明builder `graphId`只绑定nodes/edges、未绑定完整`worklistAccounting/gapDrafts`；reader重建能拒绝tamper不代替identity义务，Terra必须修复后才能GREEN。 |
+| **尚未实现** | M3 的direct-throw/mixed return-throw frame与continuation验证、通用多重/嵌套/else 分支、异常、循环、跨调用栈语义与完整发布；M4上述相邻Java slices的完整实现及后续property/XML fixed-point；M5–M6、`evidence`和完整五图集合、graph index、正式 graph Gap JSONL、ProgramGraphs receipt，以及跨图/完整仓库验收均未实现。 |
 | **历史证据，不是当前能力** | 已删除的`RepositoryModel`/旧FlowView曾投影部分结构、调用、SQL和CFG，并暴露DepotHead跨层status/ids dataflow不足。它们只提供测试反例，不是当前图或永久seam。 |
-| **下一实现门** | M4首RED使用精确selector `mvn -Dtest=DataFlowGraphBuilderTest test`：真实store安装并fresh-reopen M1/M2/M3，先因缺`PersistedControlFlowGraphReader/DataFlowGraphBuilder`而失败，再冻结Controller status/ids按ordinal各一条`ARGUMENT_TO_PARAMETER`、same-name decoy不命中、work-item ID集合闭合、unproven binding Gap与max+1 fatal；Luna不得接受raw draft/Path或先造edge再反推分母。M3 direct-throw/mixed-return与一般CFG缺口仍须按上一门补齐；任一局部GREEN都不能关闭ProgramGraphs，之后仍须完成M4其余transfer、M5及M6原子发布。 |
+| **下一实现门** | 继续使用精确selector `mvn -Dtest=DataFlowGraphBuilderTest test`：在已批准argument→parameter前置行为上，下一RED先冻结Service `status PARAMETER`→:800 simple-name `ARGUMENT` `DEF_USE`，再以小型shadow/local reassignment fixture冻结RHS-before-write与`ASSIGNMENT`，最后冻结direct setter body `ASSIGNMENT`与caller `SETTER_TO_PROPERTY`。同selector必须加graphId worklist/gap绑定mutation、join/compound/fake-setter Gap、M1 FIELD与M3 block/guard mutation；Luna不得接受raw draft/Path或先造edge再反推denominator。任一局部GREEN都不能关闭ProgramGraphs，之后仍须完成M4其余transfer、M5及M6原子发布。 |
 
 历史pre-reset jshERP slice的Gap、0 Flow、0 Capsule不能被目标edge示例改写成成功，也不能被误报为当前SourceAnalysis输出。
