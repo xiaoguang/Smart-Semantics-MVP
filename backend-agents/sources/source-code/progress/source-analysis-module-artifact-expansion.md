@@ -1,6 +1,6 @@
 # Progress: source-analysis-module-artifact-expansion
 
-- Status: IN_PROGRESS
+- Status: COMPLETE
 - Agent role: Delivery orchestrator
 - Model: gpt-5.6-sol / ultra (design authority), gpt-5.6-luna / xhigh (RED), gpt-5.6-terra / xhigh (GREEN)
 - Started: 2026-09-01
@@ -22,23 +22,13 @@
 
 ## Current state
 
-- The module store can now atomically install and fresh-reopen M1 request admission, M2 verified
-  source index, and the M3 source input / snapshot / inventory publication group. The payload group
-  is closed by module address; standalone JSON and JSONL identities are recomputed before storage.
-- Maven formatting found only line-wrap violations in the two changed Java files. Next is applying
-  that mechanical formatter output, then one final TDD check that the publisher input itself is
-  ordered before a narrow implementation review and quality checks. The ordering RED is now green:
-  noncanonical input is rejected. Current-fact documentation now records the actual shared-store
-  boundary without claiming Stage01 business analysis. A final Spotless check found one additional
-  test line-wrap after the last RED/GREEN pair; the next action is its mechanical format application.
-  Final self-review found one stable-code defect: a persisted payload mutation is currently surfaced
-  as an invalid install request rather than an invalid stored publication. The public-seam RED is
-  established; it is now green after normalizing the reopen boundary. The bounded implementation
-  review found no further contract deviation. Local final verification is complete; Git integration
-  is the only remaining action.
-  This delivery still does not
-  contain the Stage01 owner algorithms, an analysis-step store, local Git capture, runtime, or any
-  customer-source execution.
+- Complete and fast-forwarded to `origin/main` at `bc6aa5d`. The module store atomically installs
+  and fresh-reopens source inventory M1 request admission, M2 source index and the exact M3 source
+  input / snapshot / inventory group. It recomputes standalone JSON and JSONL identities, enforces
+  the closed payload group and input order, and treats stored-payload mutation as publication
+  corruption.
+- This is shared persistence only: Stage01 owner algorithms, Local Git capture, the analysis-step
+  store, runtime and customer-source execution remain out of scope.
 
 ## Changed files
 
@@ -67,6 +57,8 @@
 | `mvn -t .mvn/toolchains.xml -o -Dtest=CanonicalModuleArtifactStoreTest test` | PASS | 13 tests, 0 failures/errors/skips; a persisted payload mutation fails as `MODULE_PUBLICATION_INVALID`. |
 | `mvn -t .mvn/toolchains.xml -o -Pquality verify` | PASS | 43 module tests, SpotBugs and PMD: 0 failures/errors/warnings. |
 | `git diff --check` | PASS | No whitespace errors in the bounded source, test, documentation and progress diff. |
+| `git fetch origin --prune` | PASS | `origin/main` remained at expected base `21e03d6`. |
+| `git push origin bc6aa5d:main` | PASS | Non-force fast-forwarded `origin/main` from `21e03d6` to `bc6aa5d`. |
 
 ## Decisions
 
@@ -75,6 +67,9 @@
 - The generic store enforces an exact known payload-file group for each currently supported source
   inventory module, but leaves owner-specific business-field validation to the future Stage01
   module algorithms.
+- `gh` is absent on this host and Homebrew installation was blocked by unrelated untrusted taps.
+  After independently verifying the exact remote main base, the user-authorized no-force
+  fast-forward push was used instead of an unavailable automatic merge request.
 
 ## Blockers
 
@@ -82,8 +77,8 @@
 
 ## Exact next action
 
-- Commit the bounded delivery, push its branch, merge it into `main` without waiting for remote CI,
-  then begin the next delivery from the new `origin/main`.
+- From the new `origin/main`, create the next isolated delivery branch for Local Git capture and
+  the Verified Source Inventory owner algorithms.
 
 ## Resume checks
 
