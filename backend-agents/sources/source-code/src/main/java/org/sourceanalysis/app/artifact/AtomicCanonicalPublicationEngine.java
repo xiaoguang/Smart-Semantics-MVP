@@ -975,24 +975,52 @@ final class AtomicCanonicalPublicationEngine {
       ModulePublicationAddress address,
       List<ArtifactDescriptor> descriptors,
       boolean installRequest) {
-    if (!(address instanceof AnalysisStepModuleAddress analysisStepAddress)
-        || analysisStepAddress.analysisStepKey() != AnalysisStepKey.VERIFIED_SOURCE_INVENTORY) {
+    if (!(address instanceof AnalysisStepModuleAddress analysisStepAddress)) {
       throw installRequest ? invalidInstall() : invalidPublication();
     }
     List<String> expectedFileNames =
-        switch (analysisStepAddress.moduleNumber()) {
-          case 1 ->
-              "request-admission".equals(analysisStepAddress.moduleKey())
-                  ? List.of("admitted-source-request.json")
-                  : null;
-          case 2 ->
-              "source-index".equals(analysisStepAddress.moduleKey())
-                  ? List.of("verified-source-index.json")
-                  : null;
-          case 3 ->
-              "publish".equals(analysisStepAddress.moduleKey())
-                  ? List.of("source-input.json", "source-inventory.jsonl", "verified-snapshot.json")
-                  : null;
+        switch (analysisStepAddress.analysisStepKey()) {
+          case VERIFIED_SOURCE_INVENTORY ->
+              switch (analysisStepAddress.moduleNumber()) {
+                case 1 ->
+                    "request-admission".equals(analysisStepAddress.moduleKey())
+                        ? List.of("admitted-source-request.json")
+                        : null;
+                case 2 ->
+                    "source-index".equals(analysisStepAddress.moduleKey())
+                        ? List.of("verified-source-index.json")
+                        : null;
+                case 3 ->
+                    "publish".equals(analysisStepAddress.moduleKey())
+                        ? List.of(
+                            "source-input.json", "source-inventory.jsonl", "verified-snapshot.json")
+                        : null;
+                default -> null;
+              };
+          case APPLICATION_DISCOVERY ->
+              switch (analysisStepAddress.moduleNumber()) {
+                case 1 ->
+                    "application-profile".equals(analysisStepAddress.moduleKey())
+                        ? List.of("application-profile-draft.json")
+                        : null;
+                case 2 ->
+                    "http-entry".equals(analysisStepAddress.moduleKey())
+                        ? List.of("http-entry-discovery.json")
+                        : null;
+                case 3 ->
+                    "mapper-catalog".equals(analysisStepAddress.moduleKey())
+                        ? List.of("mapper-catalog-draft.json")
+                        : null;
+                case 4 ->
+                    "publish".equals(analysisStepAddress.moduleKey())
+                        ? List.of(
+                            "application-profile.json",
+                            "capability-report.json",
+                            "entry-points.jsonl",
+                            "mapper-catalog.jsonl")
+                        : null;
+                default -> null;
+              };
           default -> null;
         };
     if (expectedFileNames == null
@@ -1174,6 +1202,7 @@ final class AtomicCanonicalPublicationEngine {
     if ("VERIFIED_SOURCE_INVENTORY_ADMITTED_SOURCE_REQUEST".equals(payload.artifactType())
         && "verified-source-inventory-admitted-source-request-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
+          AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
           1,
           "request-admission",
           "admitted-source-request.json",
@@ -1182,6 +1211,7 @@ final class AtomicCanonicalPublicationEngine {
     if ("VERIFIED_SOURCE_INVENTORY_VERIFIED_SOURCE_INDEX".equals(payload.artifactType())
         && "verified-source-inventory-verified-source-index-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
+          AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
           2,
           "source-index",
           "verified-source-index.json",
@@ -1190,17 +1220,92 @@ final class AtomicCanonicalPublicationEngine {
     if ("VERIFIED_SOURCE_INVENTORY_SOURCE_INPUT".equals(payload.artifactType())
         && "verified-source-inventory-source-input-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
-          3, "publish", "source-input.json", CanonicalEnvelopeKind.STANDALONE_JSON);
+          AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+          3,
+          "publish",
+          "source-input.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY".equals(payload.artifactType())
         && "verified-source-inventory-source-inventory-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
-          3, "publish", "source-inventory.jsonl", CanonicalEnvelopeKind.CANONICAL_JSONL);
+          AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+          3,
+          "publish",
+          "source-inventory.jsonl",
+          CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     if ("VERIFIED_SNAPSHOT".equals(payload.artifactType())
         && "verified-snapshot-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
-          3, "publish", "verified-snapshot.json", CanonicalEnvelopeKind.STANDALONE_JSON);
+          AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+          3,
+          "publish",
+          "verified-snapshot.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("APPLICATION_DISCOVERY_APPLICATION_PROFILE_DRAFT".equals(payload.artifactType())
+        && "application-discovery-application-profile-draft-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.APPLICATION_DISCOVERY,
+          1,
+          "application-profile",
+          "application-profile-draft.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("APPLICATION_DISCOVERY_HTTP_ENTRY_DISCOVERY".equals(payload.artifactType())
+        && "application-discovery-http-entry-discovery-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.APPLICATION_DISCOVERY,
+          2,
+          "http-entry",
+          "http-entry-discovery.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("APPLICATION_DISCOVERY_MAPPER_CATALOG_DRAFT".equals(payload.artifactType())
+        && "application-discovery-mapper-catalog-draft-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.APPLICATION_DISCOVERY,
+          3,
+          "mapper-catalog",
+          "mapper-catalog-draft.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("APPLICATION_DISCOVERY_APPLICATION_PROFILE".equals(payload.artifactType())
+        && "application-discovery-application-profile-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.APPLICATION_DISCOVERY,
+          4,
+          "publish",
+          "application-profile.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("APPLICATION_DISCOVERY_CAPABILITY_REPORT".equals(payload.artifactType())
+        && "application-discovery-capability-report-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.APPLICATION_DISCOVERY,
+          4,
+          "publish",
+          "capability-report.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("APPLICATION_DISCOVERY_ENTRY_POINTS".equals(payload.artifactType())
+        && "application-discovery-entry-points-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.APPLICATION_DISCOVERY,
+          4,
+          "publish",
+          "entry-points.jsonl",
+          CanonicalEnvelopeKind.CANONICAL_JSONL);
+    }
+    if ("APPLICATION_DISCOVERY_MAPPER_CATALOG".equals(payload.artifactType())
+        && "application-discovery-mapper-catalog-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.APPLICATION_DISCOVERY,
+          4,
+          "publish",
+          "mapper-catalog.jsonl",
+          CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     throw invalidInstall();
   }
@@ -1215,10 +1320,13 @@ final class AtomicCanonicalPublicationEngine {
   private record ReceiptBytes(ModuleReceipt receipt, ImmutableBytes canonicalUtf8) {}
 
   private record ModuleArtifactContract(
-      int moduleNumber, String moduleKey, String fileName, CanonicalEnvelopeKind envelopeKind) {
+      AnalysisStepKey analysisStepKey,
+      int moduleNumber,
+      String moduleKey,
+      String fileName,
+      CanonicalEnvelopeKind envelopeKind) {
     private AnalysisStepModuleAddress addressFor(AnalysisRunId runId) {
-      return new AnalysisStepModuleAddress(
-          runId, AnalysisStepKey.VERIFIED_SOURCE_INVENTORY, moduleNumber, moduleKey);
+      return new AnalysisStepModuleAddress(runId, analysisStepKey, moduleNumber, moduleKey);
     }
   }
 }

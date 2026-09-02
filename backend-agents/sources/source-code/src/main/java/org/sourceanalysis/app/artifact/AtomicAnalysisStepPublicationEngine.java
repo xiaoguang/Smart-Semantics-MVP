@@ -36,7 +36,6 @@ final class AtomicAnalysisStepPublicationEngine {
 
   private final FileSystemRunStoreHandle runStore;
   private final CanonicalJsonCodec canonicalJson;
-  private final CanonicalArtifactPolicyRegistry policies;
   private final ArtifactStoreLimits limits;
   private final AtomicCanonicalPublicationEngine moduleEngine;
 
@@ -47,7 +46,6 @@ final class AtomicAnalysisStepPublicationEngine {
       ArtifactStoreLimits limits) {
     this.runStore = runStore;
     this.canonicalJson = canonicalJson;
-    this.policies = policies;
     this.limits = limits;
     this.moduleEngine =
         new AtomicCanonicalPublicationEngine(runStore, canonicalJson, policies, limits);
@@ -62,11 +60,15 @@ final class AtomicAnalysisStepPublicationEngine {
       if (Files.exists(receiptPath, LinkOption.NOFOLLOW_LINKS)) {
         return reopenEquivalentOrReject(validated);
       }
-      requireNoPartialPublicPayloads(stepDirectory, validated.descriptors());
+      requireNoPartialPublicPayloads(stepDirectory);
 
+      Path stepParent = stepDirectory.getParent();
+      if (stepParent == null) {
+        throw invalidPublication();
+      }
       Path staging =
           Files.createTempDirectory(
-              stepDirectory.getParent(),
+              stepParent,
               validated.request().address().analysisStepKey().directoryName()
                   + ".semantic.staging-");
       try {
@@ -135,13 +137,12 @@ final class AtomicAnalysisStepPublicationEngine {
           || request.gapRefs() == null
           || request.semanticPayloads() == null
           || request.archiveManifestSpecification() != null
-          || !(request.publicationProvenance() instanceof AnalysisStepPublisherModuleProvenance)
-          || request.address().analysisStepKey() != AnalysisStepKey.VERIFIED_SOURCE_INVENTORY
-          || !request.upstreamAnalysisStepReferences().isEmpty()
-          || !request.gapRefs().isEmpty()) {
+          || !(request.publicationProvenance() instanceof AnalysisStepPublisherModuleProvenance)) {
         throw invalidInstall();
       }
-      requireLimits();
+      StepContract contract = stepContract(request.address().analysisStepKey());
+      requireLimits(contract);
+      requireReceiptState(contract, request, true);
       requireStrictPayloadOrder(request.semanticPayloads());
       ReopenedModulePublication publisher =
           moduleEngine.reopenModule(
@@ -155,7 +156,7 @@ final class AtomicAnalysisStepPublicationEngine {
       }
       List<ArtifactDescriptor> descriptors =
           request.semanticPayloads().stream().map(this::descriptor).toList();
-      requireExpectedSemanticSet(descriptors);
+      requireExpectedSemanticSet(request.address().analysisStepKey(), descriptors);
       if (!descriptors.equals(
               publisher.payloads().stream().map(VerifiedCanonicalPayload::descriptor).toList())
           || !request.semanticPayloads().stream()
@@ -256,11 +257,12 @@ final class AtomicAnalysisStepPublicationEngine {
 
   private void verifyPublisherAddress(
       AnalysisStepPublicationAddress stepAddress, ModulePublicationAddress publisherAddress) {
+    StepContract contract = stepContract(stepAddress.analysisStepKey());
     if (!(publisherAddress instanceof AnalysisStepModuleAddress publisher)
         || !publisher.runId().equals(stepAddress.runId())
         || publisher.analysisStepKey() != stepAddress.analysisStepKey()
-        || publisher.moduleNumber() != 3
-        || !"publish".equals(publisher.moduleKey())) {
+        || publisher.moduleNumber() != contract.publisherModuleNumber()
+        || !contract.publisherModuleKey().equals(publisher.moduleKey())) {
       throw invalidInstall();
     }
   }
@@ -349,15 +351,13 @@ final class AtomicAnalysisStepPublicationEngine {
   }
 
   private void validateReceiptStructure(AnalysisStepReceipt receipt) {
-    if (receipt.address().analysisStepKey() != AnalysisStepKey.VERIFIED_SOURCE_INVENTORY
-        || !(receipt.publicationProvenance() instanceof AnalysisStepPublisherModuleProvenance)
-        || !receipt.upstreamAnalysisStepReferences().isEmpty()
-        || receipt.archiveManifest() != null
-        || !receipt.gapRefs().isEmpty()
-        || receipt.status() != ModuleCompletionStatus.SUCCEEDED) {
+    StepContract contract = stepContract(receipt.address().analysisStepKey());
+    if (!(receipt.publicationProvenance() instanceof AnalysisStepPublisherModuleProvenance)
+        || receipt.archiveManifest() != null) {
       throw invalidPublication();
     }
-    requireExpectedSemanticSet(receipt.semanticArtifacts());
+    requireReceiptState(contract, receipt, false);
+    requireExpectedSemanticSet(receipt.address().analysisStepKey(), receipt.semanticArtifacts());
   }
 
   private ObjectNode receiptNode(AnalysisStepReceipt receipt, boolean includeId) {
@@ -368,14 +368,17 @@ final class AtomicAnalysisStepPublicationEngine {
     }
     node.set("address", addressNode(receipt.address()));
     node.set("publicationProvenance", provenanceNode(receipt.publicationProvenance()));
-    node.putArray("upstreamAnalysisStepReferences");
+    node.set(
+        "upstreamAnalysisStepReferences",
+        analysisStepReferences(receipt.upstreamAnalysisStepReferences()));
     node.set("controls", controlsNode(receipt.controls()));
     node.put("status", receipt.status().name());
     node.set("semanticArtifacts", descriptorArray(receipt.semanticArtifacts()));
     node.putNull("archiveManifest");
     node.put("analysisStepArtifactRoot", receipt.analysisStepArtifactRoot().value());
     node.put("gapCount", receipt.gapRefs().size());
-    node.putArray("gapRefs");
+    ArrayNode gapRefs = node.putArray("gapRefs");
+    receipt.gapRefs().forEach(gapRefs::add);
     return node;
   }
 
@@ -398,11 +401,14 @@ final class AtomicAnalysisStepPublicationEngine {
         || !RECEIPT_SCHEMA.equals(text(node, "schemaVersion"))
         || !node.get("archiveManifest").isNull()
         || !node.get("upstreamAnalysisStepReferences").isArray()
-        || !node.get("upstreamAnalysisStepReferences").isEmpty()
         || !node.get("gapRefs").isArray()
-        || !node.get("gapRefs").isEmpty()
-        || !node.get("gapCount").canConvertToInt()
-        || node.get("gapCount").intValue() != 0) {
+        || !node.get("gapCount").canConvertToInt()) {
+      throw invalidPublication();
+    }
+    List<AnalysisStepPublicationReference> upstream =
+        analysisStepReferencesFromNode(array(node.get("upstreamAnalysisStepReferences")));
+    List<String> gapRefs = stringsFromNode(array(node.get("gapRefs")));
+    if (node.get("gapCount").intValue() != gapRefs.size()) {
       throw invalidPublication();
     }
     return new AnalysisStepReceipt(
@@ -410,13 +416,13 @@ final class AtomicAnalysisStepPublicationEngine {
         AnalysisStepReceiptId.parse(text(node, "analysisStepReceiptId")),
         addressFromNode(object(node.get("address"))),
         provenanceFromNode(object(node.get("publicationProvenance"))),
-        List.of(),
+        upstream,
         controlsFromNode(object(node.get("controls"))),
         ModuleCompletionStatus.valueOf(text(node, "status")),
         descriptorsFromNode(array(node.get("semanticArtifacts"))),
         null,
         AnalysisStepArtifactRoot.parse(text(node, "analysisStepArtifactRoot")),
-        List.of());
+        gapRefs);
   }
 
   private ObjectNode addressNode(AnalysisStepPublicationAddress address) {
@@ -590,14 +596,13 @@ final class AtomicAnalysisStepPublicationEngine {
               node.get("sizeBytes").longValue(),
               Sha256Digest.parse(text(node, "sha256"))));
     }
-    requireExpectedSemanticSet(descriptors);
     return List.copyOf(descriptors);
   }
 
-  private void requireExpectedSemanticSet(List<ArtifactDescriptor> descriptors) {
+  private void requireExpectedSemanticSet(
+      AnalysisStepKey analysisStepKey, List<ArtifactDescriptor> descriptors) {
     List<String> names = descriptors.stream().map(ArtifactDescriptor::fileName).toList();
-    if (!names.equals(
-        List.of("source-input.json", "source-inventory.jsonl", "verified-snapshot.json"))) {
+    if (!names.equals(stepContract(analysisStepKey).semanticFileNames())) {
       throw invalidPublication();
     }
   }
@@ -654,20 +659,14 @@ final class AtomicAnalysisStepPublicationEngine {
     return current;
   }
 
-  private void requireNoPartialPublicPayloads(Path directory, List<ArtifactDescriptor> descriptors)
-      throws IOException {
-    Set<String> publicNames = new HashSet<>();
-    publicNames.add(directory.getFileName().toString());
-    for (ArtifactDescriptor descriptor : descriptors) {
-      publicNames.add(descriptor.fileName());
-    }
-    publicNames.add(AnalysisStepKey.VERIFIED_SOURCE_INVENTORY.receiptFileName());
+  private void requireNoPartialPublicPayloads(Path directory) throws IOException {
     try (Stream<Path> entries = Files.list(directory)) {
       for (Path entry : entries.toList()) {
-        String name = entry.getFileName().toString();
-        if (!"modules".equals(name) && publicNames.contains(name)) {
+        Path fileName = entry.getFileName();
+        if (fileName == null) {
           throw invalidPublication();
         }
+        String name = fileName.toString();
         if (!"modules".equals(name)) {
           throw invalidPublication();
         }
@@ -685,7 +684,11 @@ final class AtomicAnalysisStepPublicationEngine {
     try (Stream<Path> entries = Files.list(directory)) {
       Set<String> actual = new HashSet<>();
       for (Path entry : entries.toList()) {
-        String name = entry.getFileName().toString();
+        Path fileName = entry.getFileName();
+        if (fileName == null) {
+          throw invalidPublication();
+        }
+        String name = fileName.toString();
         actual.add(name);
         if ("modules".equals(name)) {
           requireDirectory(entry);
@@ -700,13 +703,140 @@ final class AtomicAnalysisStepPublicationEngine {
     }
   }
 
-  private void requireLimits() {
-    if (limits.maxPayloadFiles() < 3
+  private void requireLimits(StepContract contract) {
+    if (limits.maxPayloadFiles() < contract.semanticFileNames().size()
         || limits.maxArtifactBytes() < 0
         || limits.maxPublicationBytes() < 0
-        || limits.maxDirectoryEntries() < 5) {
+        || limits.maxDirectoryEntries() < contract.semanticFileNames().size() + 2) {
       throw invalidInstall();
     }
+  }
+
+  private static StepContract stepContract(AnalysisStepKey analysisStepKey) {
+    return switch (analysisStepKey) {
+      case VERIFIED_SOURCE_INVENTORY ->
+          new StepContract(
+              3,
+              "publish",
+              List.of("source-input.json", "source-inventory.jsonl", "verified-snapshot.json"),
+              false);
+      case APPLICATION_DISCOVERY ->
+          new StepContract(
+              4,
+              "publish",
+              List.of(
+                  "application-profile.json",
+                  "capability-report.json",
+                  "entry-points.jsonl",
+                  "mapper-catalog.jsonl"),
+              true);
+      default -> throw invalidInstall();
+    };
+  }
+
+  private static void requireReceiptState(
+      StepContract contract, AnalysisStepInstallRequest request, boolean installation) {
+    requireReceiptState(
+        contract,
+        request.upstreamAnalysisStepReferences(),
+        request.status(),
+        request.gapRefs(),
+        installation);
+  }
+
+  private static void requireReceiptState(
+      StepContract contract, AnalysisStepReceipt receipt, boolean installation) {
+    requireReceiptState(
+        contract,
+        receipt.upstreamAnalysisStepReferences(),
+        receipt.status(),
+        receipt.gapRefs(),
+        installation);
+  }
+
+  private static void requireReceiptState(
+      StepContract contract,
+      List<AnalysisStepPublicationReference> upstream,
+      ModuleCompletionStatus status,
+      List<String> gapRefs,
+      boolean installation) {
+    boolean validUpstream =
+        contract.requiresInventoryUpstream()
+            ? upstream != null
+                && upstream.size() == 1
+                && upstream.get(0) != null
+                && upstream.get(0).address().analysisStepKey()
+                    == AnalysisStepKey.VERIFIED_SOURCE_INVENTORY
+            : upstream != null && upstream.isEmpty();
+    boolean validStatus =
+        status != null
+            && gapRefs != null
+            && (gapRefs.isEmpty()
+                ? status == ModuleCompletionStatus.SUCCEEDED
+                : status == ModuleCompletionStatus.SUCCEEDED_WITH_GAPS);
+    if (!validUpstream || !validStatus) {
+      throw installation ? invalidInstall() : invalidPublication();
+    }
+    requireStrictStrings(gapRefs, installation);
+  }
+
+  private static void requireStrictStrings(List<String> values, boolean installation) {
+    String previous = null;
+    for (String value : values) {
+      if (value == null
+          || value.isBlank()
+          || (previous != null && UTF8_ORDER.compare(previous, value) >= 0)) {
+        throw installation ? invalidInstall() : invalidPublication();
+      }
+      previous = value;
+    }
+  }
+
+  private ArrayNode analysisStepReferences(List<AnalysisStepPublicationReference> references) {
+    ArrayNode values = JSON.createArrayNode();
+    for (AnalysisStepPublicationReference reference : references) {
+      ObjectNode value = values.addObject();
+      value.set("address", addressNode(reference.address()));
+      value.put("analysisStepArtifactRoot", reference.analysisStepArtifactRoot().value());
+      value.put("analysisStepReceiptId", reference.analysisStepReceiptId().value());
+      value.put("analysisStepReceiptSha256", reference.analysisStepReceiptSha256().value());
+    }
+    return values;
+  }
+
+  private List<AnalysisStepPublicationReference> analysisStepReferencesFromNode(ArrayNode values) {
+    List<AnalysisStepPublicationReference> references = new ArrayList<>();
+    for (JsonNode value : values) {
+      ObjectNode node = object(value);
+      if (!fieldNames(node)
+          .equals(
+              Set.of(
+                  "address",
+                  "analysisStepArtifactRoot",
+                  "analysisStepReceiptId",
+                  "analysisStepReceiptSha256"))) {
+        throw invalidPublication();
+      }
+      references.add(
+          new AnalysisStepPublicationReference(
+              addressFromNode(object(node.get("address"))),
+              AnalysisStepArtifactRoot.parse(text(node, "analysisStepArtifactRoot")),
+              AnalysisStepReceiptId.parse(text(node, "analysisStepReceiptId")),
+              Sha256Digest.parse(text(node, "analysisStepReceiptSha256"))));
+    }
+    return List.copyOf(references);
+  }
+
+  private List<String> stringsFromNode(ArrayNode values) {
+    List<String> strings = new ArrayList<>();
+    for (JsonNode value : values) {
+      if (!value.isTextual()) {
+        throw invalidPublication();
+      }
+      strings.add(value.textValue());
+    }
+    requireStrictStrings(strings, false);
+    return List.copyOf(strings);
   }
 
   private static void requireStrictPayloadOrder(List<CanonicalAnalysisStepPayload> payloads) {
@@ -879,4 +1009,10 @@ final class AtomicAnalysisStepPublicationEngine {
       AnalysisStepPublicationReference reference) {}
 
   private record ReceiptBytes(AnalysisStepReceipt receipt, ImmutableBytes canonicalUtf8) {}
+
+  private record StepContract(
+      int publisherModuleNumber,
+      String publisherModuleKey,
+      List<String> semanticFileNames,
+      boolean requiresInventoryUpstream) {}
 }
