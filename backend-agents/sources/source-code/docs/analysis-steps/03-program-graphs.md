@@ -497,9 +497,10 @@ Wire Reset后的`org.sourceanalysis.app.analysis.graph`已经有受限的 M1 代
 | **已实现（结构/构建门）** | 目标package、Maven身份和JDK 17 Toolchain已经就位；通用wire头门禁只负责拒绝非`SOURCE_ANALYSIS/v1`输入。 |
 | **已实现（M1 有界切片）** | `CodeStructureGraphBuilder`已能对传入的已验证 UTF-8 Java、标准 MyBatis XML/静态 SQL 和静态 YAML 产生 code-structure draft：声明、配置、Mapper、表/列节点与关系均带 v2 `ProvenanceDraftV1`。Java 用 AST 范围，XML 表/列用经标签和属性校验的范围，嵌套 YAML 键按 `.` 展平；遇到解析、实体、动态资源或不安全映射则记 Gap。`CodeStructureGraphModulePublisher`已将该 draft 按 receipt-last 安装并从 module store fresh reopen。当前直接验证为 8 个 M1 builder/publisher 测试通过。 |
 | **部分实现（M1 的产品组装）** | 代码结构 builder 的公开测试 seam 仍接收结构化的 `CodeStructureSource` 与 `CodeStructureDiscovery` 输入。由正式运行核心重新打开已验证源码清单和应用发现 artifacts、构造这两个输入并驱动 M1 的路径尚未落地；因此当前模块产物不是完整分析步骤的 reader-visible 输出。 |
-| **尚未实现（M1→M2 可信重开）** | 本节新增的 `PersistedCodeStructureGraphReader`、sealed `ReopenedCodeStructureGraph`、exact payload parser、`ProgramGraphInputBasis` 比对和 M2 execution 尚未实现；当前 raw `CodeStructureGraphDraft` 不能证明它来自所声明的 M1 receipt/lineage，也不得作为目标 M2 输入。 |
-| **尚未实现** | M2–M6、call/control-flow/data-flow/evidence 五图集合、graph index、正式 graph Gap JSONL、ProgramGraphs receipt，以及跨图/完整仓库验收均未实现。 |
+| **部分实现（M1→M2 可信重开）** | `PersistedCodeStructureGraphReader`、sealed `ReopenedCodeStructureGraph`、exact payload parser和`ProgramGraphInputBasis`已经实现并由真实 canonical module store 验证：M2只能先重开 M1 receipt/payload，核对 address、schema/type、七个上游引用、controls、profile和分母，再读取结构 draft。改变 fresh-reopened source controls 会在解析前以`GRAPH_REFERENCE_BROKEN`拒绝。M2 execution 与自己的持久化发布仍未实现。 |
+| **部分实现（M2 有界调用图）** | `CallGraphBuilder`已对冻结 fixture 产生唯一 Controller→Service、Service→Mapper、Mapper Java→XML statement 以及 call/return edges；重载 handler 或受显式 import 影响的 receiver 都记录 Gap，绝不按源码顺序或简单名称猜 target。M2 module publication、完整 receipt mutation matrix与完整仓库验收仍未实现。 |
+| **尚未实现** | M3–M6、control-flow/data-flow/evidence 五图集合、graph index、正式 graph Gap JSONL、ProgramGraphs receipt，以及跨图/完整仓库验收均未实现。 |
 | **历史证据，不是当前能力** | 已删除的`RepositoryModel`/旧FlowView曾投影部分结构、调用、SQL和CFG，并暴露DepotHead跨层status/ids dataflow不足。它们只提供测试反例，不是当前图或永久seam。 |
-| **下一实现门** | 先实现并验证 `PersistedCodeStructureGraphReader` 与 sealed M1→M2 handoff，再按本章完成 M2–M5，并以 M6 原子发布五图、index、Gap 和 receipt；删除任一源码关系时对应 edge 必须消失或形成 Gap。 |
+| **下一实现门** | 完成 M2 的独立 module execution/publication、完整 fail-closed mutation matrix和 Mapper binding accounting；之后按本章完成 M3–M5，并以 M6 原子发布五图、index、Gap 和 receipt。删除任一源码关系时对应 edge 必须消失或形成 Gap。 |
 
 历史pre-reset jshERP slice的Gap、0 Flow、0 Capsule不能被目标edge示例改写成成功，也不能被误报为当前SourceAnalysis输出。
