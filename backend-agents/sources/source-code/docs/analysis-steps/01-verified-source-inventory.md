@@ -299,6 +299,17 @@ FrozenRepositoryRequest
   resourceBudgetRef {artifactId, sha256}
 ~~~
 
+`expectedOrigin`是严格closed object，字段恰为`kind`、`repositoryUrl`和`revision40`：
+
+~~~text
+ExpectedOriginV2
+  kind = GIT_SHA1_COMMIT
+  repositoryUrl = non-empty path-free UTF-8 text
+  revision40 = [0-9a-f]{40}
+~~~
+
+`kind`没有其他合法值；它描述冻结对象的语义，不描述capture transport，所以不得写成`LOCAL_GIT_COMMIT`。`repositoryUrl`不读取Git remote、不做URL规范化，必须逐字等于capture receipt/registration的`declaredRepositoryIdentity`。`revision40`必须逐字等于registration与capture receipt的`commitId`，且receipt的`objectFormat`必须为`SHA1`。unknown/duplicate/null字段、大小写变体或格式错误为`REQUEST_SCHEMA_INVALID`；任何与已登记capture不一致的值为`CAPTURE_IDENTITY_INVALID`。未来即使由远程adapter冻结同一Git commit，仍使用此对象和值；adapter位置不改变源码身份。
+
 `FrozenRepositoryRequest`本身也是content-addressed artifact；inventory只能从它绑定的snapshot manifest读取。SourceFreezer先fresh reopen `analysis-run-request-v2`，从中取得source registration、frozen request以及profile/budget/toolchain/schema/prompt/policy refs，任何重复inline字段都拒绝。`SourceFreezeRequest`和`FrozenRepositoryRequest`均不含repository/snapshot/store path。private registry把`sourceRegistrationId`解析成opaque handle是composition行为，不是request字段。
 
 `VerifiedSnapshot v2`保存origin、capture proof、scope、policy/profile/budget refs、排序regular files、text/media partitions和sourceIntegrity；不保存inline budget、绝对root、byte buffer或时间。
@@ -308,6 +319,26 @@ FrozenRepositoryRequest
 ### 8.3 Identity 与 canonicalization
 
 `snapshotId = snapshot:lowercaseHex(SHA-256(frame(UTF8("verified-snapshot-id-v2")) || frame(canonicalJson(snapshotIdentityMaterial))))`，其中`frame`严格采用DESIGN 13.3.1的U64BE length framing。identity material包含origin、capture receipt/snapshot-manifest refs、scope、policy/profile/budget refs，以及按path UTF-8 bytes排序的regular-file path/gitMode/mediaType/size/SHA/analysisDisposition/textEncoding-nullability；排除self ID、private root、line-index digest、时间和异常。v1 snapshot ID不得在缺字段时升级或复用为v2。
+
+### 8.3.1 稳定 source file ID
+
+所有步骤只使用统一前缀`file:`；`source-file:`从来不是合法ID。M1从已登记manifest派生候选值，M2在重新读取并验证实际bytes的SHA-256后再次派生，同一值才可进入`verified-source-index.json`和后续步骤。
+
+~~~text
+sourceFileIdentityMaterial = canonicalJson({
+  "path": canonicalRepositoryRelativePath,
+  "gitMode": "100644" | "100755",
+  "sizeBytes": nonNegativeInteger,
+  "sha256": lowercaseHex64
+})
+
+fileId = "file:" + lowercaseHex(SHA-256(
+  frame(UTF8("verified-source-file-id-v1")) ||
+  frame(sourceFileIdentityMaterial)
+))
+~~~
+
+path保留已校验Git repository-relative UTF-8 bytes；不得做Unicode、大小写或locale归一化。identity material**恰好**四个字段，不加入snapshot、origin、registration、Git blob ID、media type、analysis disposition、text encoding、line index、private root、时间或执行信息。因此同一path、mode和bytes在不同私有root、分片顺序或snapshot中得到同一`fileId`；它属于哪个snapshot由`(snapshotId,fileId)`成员关系证明。传入/持久化的`fileId`与此重算结果不一致一律是`CAPTURE_IDENTITY_INVALID`，不得用相邻路径、simple name或旧前缀回退。
 
 source-inventory.jsonl按path排序，每行一个`source-inventory-entry-v2` canonical JSON object并以LF结束；所有regular files均出现。analysis step receipt绑定exact artifact names、size和SHA。
 
@@ -343,6 +374,7 @@ VerifiedSourceInventory：REQUEST_SCHEMA_INVALID、CAPTURE_IDENTITY_INVALID、SO
 - 空 inventory 非法；声明文件必须全量验证，不能用抽样、best effort 或成功百分比替代。
 - 所有tracked regular files均属denominator并验hash；binary标`NON_ANALYZABLE_MEDIA`且禁止parser，但不遗漏。symlink、submodule/gitlink与未知mode使capture失败。
 - public/analysis transport只含`sourceRegistrationId`和content-addressed refs；private registry可内部保留local locator，本地path只在capture CLI/private registry，且不得进入public registration/identity/error；source locator必须repository-relative。
+- `ExpectedOriginV2`只有`GIT_SHA1_COMMIT`；repository identity和40位revision分别逐字绑定到已登记capture的declared identity和SHA-1 commit。每个verified regular file只使用8.3.1的`file:` identity preimage；不得保留或接受`source-file:`别名。
 - 只有M3三个semantic payload先完成module publication、再由AnalysisStep store安装完整analysis step set并最后写receipt，才是成功；partial directory或M3自己预报analysis step receipt/root永远不是完成点。
 - 每个模块payload与`module-receipt.json`先由`CanonicalModuleArtifactStore`立即原子安装；下一模块只消费reopen结果，不能传draft对象。
 - 只有 profile 已明确列出的可隔离情况能成为 Gap；identity、路径、安全、hash、UTF-8 和 install 问题一律 fatal。

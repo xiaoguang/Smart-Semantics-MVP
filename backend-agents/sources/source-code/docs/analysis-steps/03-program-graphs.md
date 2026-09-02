@@ -261,7 +261,7 @@ M5不复用ProgramEdge字段冒充“evidence指向program edge”。`EvidenceNo
 **示例分类：STRUCTURAL_WIRE_SPECIMEN（两个隔离的 EvidenceNodeV2 variants，不可replay）。** 字段、closed variant与continuous excerpt完整；offset/digest未从本页未展示的完整source file重算，不能作为golden或与相邻大块的story IDs映射。
 
 ~~~jsonl
-{"evidenceNodeId":"evidence:1111111111111111111111111111111111111111111111111111111111111111","kind":"SOURCE_EXCERPT","sourceExcerpt":{"locator":{"fileId":"source-file:2222222222222222222222222222222222222222222222222222222222222222","path":"jshERP-boot/src/main/java/com/jsh/erp/service/DepotHeadService.java","startByte":30100,"endByteExclusive":30128,"startLine":800,"startColumn":9,"endLine":800,"endColumn":37},"rawUtf8":"depotHead.setStatus(status);","rawUtf8Sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"ruleApplication":null}
+{"evidenceNodeId":"evidence:1111111111111111111111111111111111111111111111111111111111111111","kind":"SOURCE_EXCERPT","sourceExcerpt":{"locator":{"fileId":"file:2222222222222222222222222222222222222222222222222222222222222222","path":"jshERP-boot/src/main/java/com/jsh/erp/service/DepotHeadService.java","startByte":30100,"endByteExclusive":30128,"startLine":800,"startColumn":9,"endLine":800,"endColumn":37},"rawUtf8":"depotHead.setStatus(status);","rawUtf8Sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"ruleApplication":null}
 {"evidenceNodeId":"evidence:3333333333333333333333333333333333333333333333333333333333333333","kind":"RULE_APPLICATION","sourceExcerpt":null,"ruleApplication":{"ruleId":"java-setter-property-binding","ruleVersion":"v1","inputProgramElementIds":["parameter:service-status","property:depothead-status"]}}
 ~~~
 
