@@ -402,13 +402,15 @@ GRAPH_PROFILE_INVALID、GRAPH_REFERENCE_BROKEN、GRAPH_ACCOUNTING_INVARIANT_BROK
 
 ## 9. 当前实现成熟度审计
 
-Wire Reset后的`org.sourceanalysis.app.analysis.graph`目前只有语义package骨架；当前没有parser core、graph builder或任何程序图artifact。
+Wire Reset后的`org.sourceanalysis.app.analysis.graph`已经有受限的 M1 代码结构图垂直切片；它不等于完整的“程序图”分析步骤，也不等于已完成的全仓库业务分析。当前实现状态必须与下方目标设计分开阅读。
 
 | 状态 | 当前事实 |
 | --- | --- |
 | **已实现（结构/构建门）** | 目标package、Maven身份和JDK 17 Toolchain已经就位；通用wire头门禁只负责拒绝非`SOURCE_ANALYSIS/v1`输入。 |
-| **本步骤生产能力尚未实现** | M1–M6以及code-structure、call、control-flow、data-flow、evidence五图、graph index、Gap和receipt均不存在。 |
+| **已实现（M1 有界切片）** | `CodeStructureGraphBuilder`已能对传入的已验证 UTF-8 Java、标准 MyBatis XML/静态 SQL 和静态 YAML 产生 code-structure draft：声明、配置、Mapper、表/列节点与关系均带 v2 `ProvenanceDraftV1`。Java 用 AST 范围，XML 表/列用经标签和属性校验的范围，嵌套 YAML 键按 `.` 展平；遇到解析、实体、动态资源或不安全映射则记 Gap。`CodeStructureGraphModulePublisher`已将该 draft 按 receipt-last 安装并从 module store fresh reopen。当前直接验证为 8 个 M1 builder/publisher 测试通过。 |
+| **部分实现（M1 的产品组装）** | 代码结构 builder 的公开测试 seam 仍接收结构化的 `CodeStructureSource` 与 `CodeStructureDiscovery` 输入。由正式运行核心重新打开已验证源码清单和应用发现 artifacts、构造这两个输入并驱动 M1 的路径尚未落地；因此当前模块产物不是完整分析步骤的 reader-visible 输出。 |
+| **尚未实现** | M2–M6、call/control-flow/data-flow/evidence 五图集合、graph index、正式 graph Gap JSONL、ProgramGraphs receipt，以及跨图/完整仓库验收均未实现。 |
 | **历史证据，不是当前能力** | 已删除的`RepositoryModel`/旧FlowView曾投影部分结构、调用、SQL和CFG，并暴露DepotHead跨层status/ids dataflow不足。它们只提供测试反例，不是当前图或永久seam。 |
-| **下一实现门** | 按本章从已持久化源码清单与应用发现结果构建五个独立图，闭合exact endpoints、evidence和跨图引用；删除任一源码关系时对应edge必须消失或形成Gap。 |
+| **下一实现门** | 先补齐 M1 从已持久化源码清单和应用发现 artifacts 重新打开输入的产品组装，再按本章实现 M2–M5，并以 M6 原子发布五图、index、Gap 和 receipt；删除任一源码关系时对应 edge 必须消失或形成 Gap。 |
 
 历史pre-reset jshERP slice的Gap、0 Flow、0 Capsule不能被目标edge示例改写成成功，也不能被误报为当前SourceAnalysis输出。
