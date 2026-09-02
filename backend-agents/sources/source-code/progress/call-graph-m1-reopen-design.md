@@ -17,6 +17,7 @@
 - Fixed the exact reopening checks: current ProgramGraphs M1 address, module version, receipt/reference, one exact payload descriptor/envelope, six source/discovery references, controls, graph profile, and parsed snapshot/profile/entry identities.
 - Replaced M2's raw-draft input with the sealed reopened aggregate plus the same `ReopenedProgramGraphInputs`; specified execution, Luna RED, Terra GREEN, and `GRAPH_REFERENCE_BROKEN` behavior.
 - Confirmed this is a ProgramGraphs-local interface correction; `docs/DESIGN.md`, schemas, artifact counts, and cross-analysis-step contracts do not change.
+- Published the docs-only correction as `e1aa95258e8d04e984577b1f0a91251ef204e5ee`; read-only remote verification confirmed `origin/main` at that commit.
 
 ## Current state
 
@@ -35,6 +36,8 @@
 | `git diff --check` | PASS | No whitespace errors. |
 | Program Graphs fence parity check | PASS | 4 backtick and 14 tilde fence markers; both balanced. |
 | `git status --short` after edit | PASS | Only the Program Graphs design and this task-owned progress file are changed. |
+| `git push origin HEAD:main` | PASS | Fast-forwarded `origin/main` from `7beb3ff` to `e1aa952`. |
+| `git ls-remote --heads origin main` | PASS | `origin/main` resolved to `e1aa95258e8d04e984577b1f0a91251ef204e5ee`. |
 
 ## Decisions
 
@@ -49,7 +52,7 @@
 
 ## Exact next action
 
-- Commit and fast-forward publish these two documentation files, then let the parent rebase the code branch before resuming the M2 RED/GREEN cycle.
+- Parent rebases the code branch onto the published design, then resumes the M2 RED/GREEN cycle from the reader/execution RED.
 
 ## Resume checks
 
