@@ -21,9 +21,9 @@
 
 ## Current state
 
-- M3 cannot proceed until M2 closes its declared evidence registry. The M3 test correctly rejects
-  a reopened M2 call-site evidence reference that has no persisted provenance draft. The M2 design
-  audit has been published to `origin/main` as `259b03d`.
+- M2 closure is now installed and its direct tests pass. The linear M3 seam is green: it
+  fresh-reopens M1/M2 from the canonical store, checks shared basis/profile/structure lineage, and
+  projects the exact M2 call/return pairs into one entry-rooted traversal.
 
 ## Changed files
 
@@ -37,21 +37,26 @@
 | --- | --- | --- |
 | `mvn -t .mvn/toolchains.xml -o -Dtest=ControlFlowGraphBuilderTest test` | Expected initial RED | Missing public M3 builder/types. |
 | `mvn -t .mvn/toolchains.xml -o -Dtest=ControlFlowGraphBuilderTest test` | Blocked by M2 predecessor | Fresh M2 call-site evidence reference has no declared provenance; M3 fails closed with `GRAPH_REFERENCE_BROKEN`. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=ControlFlowGraphBuilderTest test` | PASS | 1 test, 0 failures/errors/skips; one frozen entry exposes typed entry, basic/callee/entry terminals and exact M2 call/return projections. |
 
 ## Decisions
 
 - M3 will be implemented in vertical slices; it will not execute customer code or infer business outcomes.
 - M3 will not recreate or relax M2 evidence; M2 is repaired at its producing seam before this test
   may become green.
+- The first vertical slice sends `if` constructs to a typed profile-stop Gap. It does not yet
+  claim guard polarity, throws, loop accounting, multi-entry traversal ownership, module
+  publication, or full DFS/reachability closure.
 
 ## Blockers
 
-- M2 provenance closure repair is the only current predecessor blocker.
+- None for the linear slice. The next RED is the true/false guard and normal-fall-through
+  contract; it requires no architecture change.
 
 ## Exact next action
 
-- Rebase the local WIP onto `259b03d` after its local safety commit, repair M2 provenance closure
-  through its direct RED, then resume this direct M3 selector.
+- Publish the current implementation audit, then add one conditional Java fixture and a direct
+  TRUE/FALSE/terminal RED.
 
 ## Resume checks
 

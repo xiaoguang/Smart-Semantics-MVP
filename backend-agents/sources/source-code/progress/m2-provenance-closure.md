@@ -17,11 +17,17 @@
 
 ## Current state
 
-- Awaiting the docs-only current-audit publication. The next change is one M2 public-seam RED that asserts the declared registry exactly closes all node and edge evidence references.
+- Closure is now installed at the producing record/builder seam: direct AST call provenance is
+  registered before it is referenced, and `CallGraphDraft` rejects every non-closed node/edge
+  evidence registry. M3 has re-run successfully against the fresh persisted M2 artifact.
 
 ## Changed files
 
 - `progress/m2-provenance-closure.md`
+- `src/main/java/org/sourceanalysis/app/analysis/graph/CallGraphBuilder.java`
+- `src/main/java/org/sourceanalysis/app/analysis/graph/CallGraphDraft.java`
+- `src/test/java/org/sourceanalysis/app/analysis/graph/CallGraphBuilderTest.java`
+- `src/test/java/org/sourceanalysis/app/analysis/graph/CallGraphModulePublisherTest.java`
 
 ## Verification
 
@@ -29,18 +35,23 @@
 | --- | --- | --- |
 | `mvn -t .mvn/toolchains.xml -o -Dtest=ControlFlowGraphBuilderTest test` | RED | M3 reader fails at an M2 `CALL_SITE` evidence reference with `GRAPH_REFERENCE_BROKEN`; missing M2 provenance closure is the cause. |
 | `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphBuilderTest#declaresEveryNodeAndEdgeEvidenceReferenceInItsProvenanceRegistry test` | RED | Two direct Java-call provenance IDs are referenced but absent from `CallGraphDraft.provenanceDrafts`; one Mapper-binding draft is present. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphBuilderTest#declaresEveryNodeAndEdgeEvidenceReferenceInItsProvenanceRegistry,CallGraphModulePublisherTest#rejectsACallGraphWhoseEvidenceReferenceIsNotDeclared test` | PASS | 2 tests, 0 failures/errors/skips; producer registers exact AST evidence and draft rejects a non-closed registry. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=ControlFlowGraphBuilderTest test` | PASS | 1 test, 0 failures/errors/skips; M3 can fresh-reopen the corrected M2 artifact. |
 
 ## Decisions
 
 - M3 will not substitute, recreate, or ignore missing M2 evidence. The producer must publish a closed M2 artifact.
+- `CallGraphDraft` is the shared parser/producer gate; `PersistedCallGraphReader` rebuilds this
+  type from canonical JSON, so a tampered missing reference also fails closed at reopen.
 
 ## Blockers
 
-- No design ambiguity. A docs-only current-audit update is in progress before production repair.
+- None.
 
 ## Exact next action
 
-- Add the M2 provenance-closure RED after the audit is published, then minimally fix the M2 producer/reader contract.
+- Include this bounded M2 repair in the next local safety checkpoint; no remote code publication
+  occurs until the full Program Graphs delivery is accepted.
 
 ## Resume checks
 

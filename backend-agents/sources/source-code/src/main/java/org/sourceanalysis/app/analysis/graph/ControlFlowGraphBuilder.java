@@ -177,7 +177,8 @@ public final class ControlFlowGraphBuilder {
       }
 
       List<CallGraphNode> callSites = index.callSitesInside(method, entryId);
-      if (callSites.isEmpty()) {
+      List<CallGraphEdge> mapperBindings = index.outgoingBindings(externalMethod);
+      if (callSites.isEmpty() && mapperBindings.isEmpty()) {
         edge(
             entryId,
             ControlFlowEdgeKind.NEXT,
@@ -227,6 +228,25 @@ public final class ControlFlowGraphBuilder {
             null,
             callProvenance);
       }
+      for (CallGraphEdge mapperBinding : mapperBindings) {
+        project(entryId, mapperBinding, ControlFlowEdgeKind.CALL);
+        List<CallGraphEdge> returnEdges = index.pairedReturns(mapperBinding);
+        if (returnEdges.size() != 1) {
+          throw new GraphReferenceException();
+        }
+        project(entryId, returnEdges.get(0), ControlFlowEdgeKind.RETURN);
+      }
+      if (!mapperBindings.isEmpty()) {
+        edge(
+            entryId,
+            ControlFlowEdgeKind.NEXT,
+            basicBlock,
+            normalTerminal(entryId, method, entryHandler),
+            METHOD_RULE,
+            null,
+            null,
+            methodProvenance);
+      }
     }
 
     private ArtifactId normalTerminal(ArtifactId entryId, MethodInfo method, boolean entryHandler) {
@@ -244,7 +264,13 @@ public final class ControlFlowGraphBuilder {
     }
 
     private void project(ArtifactId entryId, CallGraphEdge predecessor, ControlFlowEdgeKind kind) {
-      provenance.putAll(index.callProvenance());
+      for (ArtifactId provenanceId : predecessor.evidenceDraftRefs()) {
+        ProvenanceDraftV1 evidence = index.callProvenance(provenanceId);
+        if (evidence == null) {
+          throw new GraphReferenceException();
+        }
+        provenance.putIfAbsent(provenanceId, evidence);
+      }
       noteNode(entryId, predecessor.fromNodeId());
       noteNode(entryId, predecessor.toNodeId());
       ArtifactId edgeId =
@@ -421,6 +447,7 @@ public final class ControlFlowGraphBuilder {
     private final Map<ArtifactId, ProvenanceDraftV1> callProvenance;
     private final Map<ArtifactId, CallGraphNode> callSites;
     private final Map<ArtifactId, List<CallGraphEdge>> outgoingCalls;
+    private final Map<ArtifactId, List<CallGraphEdge>> outgoingBindings;
     private final Map<ArtifactId, List<CallGraphEdge>> returnEdges;
 
     private Index(
@@ -430,6 +457,7 @@ public final class ControlFlowGraphBuilder {
         Map<ArtifactId, ProvenanceDraftV1> callProvenance,
         Map<ArtifactId, CallGraphNode> callSites,
         Map<ArtifactId, List<CallGraphEdge>> outgoingCalls,
+        Map<ArtifactId, List<CallGraphEdge>> outgoingBindings,
         Map<ArtifactId, List<CallGraphEdge>> returnEdges) {
       this.inputs = inputs;
       this.methodsBySignature = methodsBySignature;
@@ -437,6 +465,7 @@ public final class ControlFlowGraphBuilder {
       this.callProvenance = callProvenance;
       this.callSites = callSites;
       this.outgoingCalls = outgoingCalls;
+      this.outgoingBindings = outgoingBindings;
       this.returnEdges = returnEdges;
     }
 
@@ -460,11 +489,13 @@ public final class ControlFlowGraphBuilder {
           inputs.calls().draft().nodes().stream()
               .collect(java.util.stream.Collectors.toMap(CallGraphNode::nodeId, value -> value));
       Map<ArtifactId, List<CallGraphEdge>> outgoing = new HashMap<>();
+      Map<ArtifactId, List<CallGraphEdge>> bindings = new HashMap<>();
       Map<ArtifactId, List<CallGraphEdge>> returns = new HashMap<>();
       for (CallGraphEdge edge : inputs.calls().draft().edges()) {
-        if (edge.kind() == CallGraphEdgeKind.CALL_TARGET
-            || edge.kind() == CallGraphEdgeKind.JAVA_METHOD_TO_XML_STATEMENT) {
+        if (edge.kind() == CallGraphEdgeKind.CALL_TARGET) {
           outgoing.computeIfAbsent(edge.fromNodeId(), ignored -> new ArrayList<>()).add(edge);
+        } else if (edge.kind() == CallGraphEdgeKind.JAVA_METHOD_TO_XML_STATEMENT) {
+          bindings.computeIfAbsent(edge.fromNodeId(), ignored -> new ArrayList<>()).add(edge);
         } else if (edge.kind() == CallGraphEdgeKind.CALL_RETURN) {
           returns.computeIfAbsent(edge.fromNodeId(), ignored -> new ArrayList<>()).add(edge);
         }
@@ -472,10 +503,14 @@ public final class ControlFlowGraphBuilder {
       outgoing
           .values()
           .forEach(list -> list.sort(Comparator.comparing(value -> value.edgeId().value())));
+      bindings
+          .values()
+          .forEach(list -> list.sort(Comparator.comparing(value -> value.edgeId().value())));
       returns
           .values()
           .forEach(list -> list.sort(Comparator.comparing(value -> value.edgeId().value())));
-      return new Index(inputs, methods, structureMethods, provenance, sites, outgoing, returns);
+      return new Index(
+          inputs, methods, structureMethods, provenance, sites, outgoing, bindings, returns);
     }
 
     private MethodInfo resolveHandler(HttpEntryPoint entry) {
@@ -525,14 +560,18 @@ public final class ControlFlowGraphBuilder {
       return outgoingCalls.getOrDefault(callSiteId, List.of());
     }
 
+    private List<CallGraphEdge> outgoingBindings(ArtifactId methodNodeId) {
+      return outgoingBindings.getOrDefault(methodNodeId, List.of());
+    }
+
     private List<CallGraphEdge> pairedReturns(CallGraphEdge call) {
       return returnEdges.getOrDefault(call.toNodeId(), List.of()).stream()
           .filter(returnEdge -> returnEdge.toNodeId().equals(call.fromNodeId()))
           .toList();
     }
 
-    private Map<ArtifactId, ProvenanceDraftV1> callProvenance() {
-      return callProvenance;
+    private ProvenanceDraftV1 callProvenance(ArtifactId provenanceId) {
+      return callProvenance.get(provenanceId);
     }
 
     private static Map<String, MethodInfo> parseMethods(CodeStructureSource source) {

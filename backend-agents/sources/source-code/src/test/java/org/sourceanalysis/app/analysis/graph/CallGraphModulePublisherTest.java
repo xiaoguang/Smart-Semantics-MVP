@@ -1,6 +1,7 @@
 package org.sourceanalysis.app.analysis.graph;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -239,6 +240,42 @@ class CallGraphModulePublisherTest {
       assertThat(callGraph.basis()).isEqualTo(structure.basis());
       assertThat(callGraph.codeStructurePayloadRef()).isEqualTo(structure.payloadRef());
     }
+  }
+
+  @Test
+  void rejectsACallGraphWhoseEvidenceReferenceIsNotDeclared() {
+    ArtifactId entryId = id("entry", "unclosed");
+    ArtifactReference graphProfile = reference("graph-profile", "call-graph-unclosed-provenance");
+    CallGraphNode unclosedNode =
+        new CallGraphNode(
+            id("call-node", "unclosed"),
+            CallGraphNodeKind.CALL_SITE,
+            "unclosed-call-site",
+            List.of(entryId),
+            List.of(id("provenance", "missing")));
+
+    assertThatThrownBy(
+            () ->
+                new CallGraphDraft(
+                    CallGraphDraft.SCHEMA_VERSION,
+                    ProgramGraphKind.CALL,
+                    id("program-graph", "unclosed"),
+                    "snapshot:" + digest("unclosed"),
+                    id("application-profile", "unclosed"),
+                    graphProfile,
+                    List.of(entryId),
+                    List.of(unclosedNode),
+                    List.of(),
+                    List.of(),
+                    new GraphCoverage(
+                        List.of(unclosedNode.nodeId()),
+                        List.of(unclosedNode.nodeId()),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        true)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("call graph provenance references must close");
   }
 
   private static CallGraphDraft emptyCallGraph(

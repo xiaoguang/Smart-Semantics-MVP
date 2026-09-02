@@ -300,19 +300,22 @@ public final class CallGraphBuilder {
       byte[] bytes = document.rawUtf8().copyToByteArray();
       int startByte = source.substring(0, startCharacter).getBytes(StandardCharsets.UTF_8).length;
       int endByte = source.substring(0, endCharacter).getBytes(StandardCharsets.UTF_8).length;
-      return ProvenanceDraftV1.create(
-          CALL_RULE,
-          new SourceLocatorV1(
-              document.fileId(),
-              document.path(),
-              startByte,
-              endByte,
-              value.begin.line,
-              value.begin.column,
-              value.end.line,
-              value.end.column + 1),
-          document.sha256(),
-          ImmutableBytes.copyOf(java.util.Arrays.copyOfRange(bytes, startByte, endByte)));
+      ProvenanceDraftV1 candidate =
+          ProvenanceDraftV1.create(
+              CALL_RULE,
+              new SourceLocatorV1(
+                  document.fileId(),
+                  document.path(),
+                  startByte,
+                  endByte,
+                  value.begin.line,
+                  value.begin.column,
+                  value.end.line,
+                  value.end.column + 1),
+              document.sha256(),
+              ImmutableBytes.copyOf(java.util.Arrays.copyOfRange(bytes, startByte, endByte)));
+      provenance.putIfAbsent(candidate.provenanceDraftId(), candidate);
+      return candidate;
     }
 
     private CallGraphDraft finish() {

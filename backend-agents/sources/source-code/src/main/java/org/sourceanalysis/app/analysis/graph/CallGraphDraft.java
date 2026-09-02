@@ -1,8 +1,10 @@
 package org.sourceanalysis.app.analysis.graph;
 
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 
@@ -36,6 +38,7 @@ public record CallGraphDraft(
     nodes = orderedNodes(nodes);
     edges = orderedEdges(edges);
     provenanceDrafts = orderedProvenance(provenanceDrafts);
+    requireProvenanceClosure(nodes, edges, provenanceDrafts);
     Objects.requireNonNull(coverage, "coverage");
   }
 
@@ -80,5 +83,21 @@ public record CallGraphDraft(
       throw new IllegalArgumentException("call graph provenance IDs must be distinct");
     }
     return List.copyOf(ordered);
+  }
+
+  private static void requireProvenanceClosure(
+      List<CallGraphNode> nodes,
+      List<CallGraphEdge> edges,
+      List<ProvenanceDraftV1> provenanceDrafts) {
+    Set<ArtifactId> referenced = new HashSet<>();
+    nodes.forEach(node -> referenced.addAll(node.evidenceDraftRefs()));
+    edges.forEach(edge -> referenced.addAll(edge.evidenceDraftRefs()));
+    Set<ArtifactId> declared =
+        provenanceDrafts.stream()
+            .map(ProvenanceDraftV1::provenanceDraftId)
+            .collect(java.util.stream.Collectors.toSet());
+    if (!referenced.equals(declared)) {
+      throw new IllegalArgumentException("call graph provenance references must close");
+    }
   }
 }
