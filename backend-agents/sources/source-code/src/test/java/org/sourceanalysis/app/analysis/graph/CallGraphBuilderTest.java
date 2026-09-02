@@ -110,6 +110,30 @@ class CallGraphBuilderTest {
   }
 
   @Test
+  void declaresEveryNodeAndEdgeEvidenceReferenceInItsProvenanceRegistry() throws Exception {
+    Fixture fixture = fixture();
+
+    CallGraphDraft draft = new CallGraphBuilder().buildCalls(fixture.inputs(), fixture.profile());
+
+    assertThat(
+            draft.nodes().stream()
+                .flatMap(node -> node.evidenceDraftRefs().stream())
+                .collect(java.util.stream.Collectors.toSet()))
+        .isSubsetOf(
+            draft.provenanceDrafts().stream()
+                .map(ProvenanceDraftV1::provenanceDraftId)
+                .collect(java.util.stream.Collectors.toSet()));
+    assertThat(
+            draft.edges().stream()
+                .flatMap(edge -> edge.evidenceDraftRefs().stream())
+                .collect(java.util.stream.Collectors.toSet()))
+        .isSubsetOf(
+            draft.provenanceDrafts().stream()
+                .map(ProvenanceDraftV1::provenanceDraftId)
+                .collect(java.util.stream.Collectors.toSet()));
+  }
+
+  @Test
   void recordsAGapInsteadOfChoosingOneOverloadedHttpHandler() throws Exception {
     Fixture fixture = overloadedEntryFixture();
 
