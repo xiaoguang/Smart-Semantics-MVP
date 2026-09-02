@@ -1,7 +1,13 @@
 package org.sourceanalysis.app.analysis.graph;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,6 +16,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.discovery.HttpEntryKind;
 import org.sourceanalysis.app.analysis.discovery.HttpEntryPoint;
 import org.sourceanalysis.app.analysis.discovery.MapperCatalogEntry;
@@ -17,24 +24,27 @@ import org.sourceanalysis.app.analysis.discovery.MapperMethodCandidate;
 import org.sourceanalysis.app.analysis.discovery.MapperStatementCandidate;
 import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
-import org.sourceanalysis.app.artifact.ArtifactPolicyRegistryReference;
 import org.sourceanalysis.app.artifact.ArtifactReference;
+import org.sourceanalysis.app.artifact.ArtifactStoreLimits;
+import org.sourceanalysis.app.artifact.CanonicalArtifactPolicyRegistry;
+import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
+import org.sourceanalysis.app.artifact.FileSystemCanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
+import org.sourceanalysis.app.artifact.RunStoreBootstrap;
+import org.sourceanalysis.app.artifact.RunStoreHandle;
 import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.evidence.SourceExcerptV1;
 import org.sourceanalysis.app.evidence.SourceLocatorV1;
 
 class CallGraphBuilderTest {
 
+  @TempDir Path temporaryDirectory;
+
   @Test
   void resolvesOneStaticControllerToServiceCallAndItsReturnPair() throws Exception {
     Fixture fixture = fixture();
 
-    CallGraphDraft draft =
-        new CallGraphBuilder()
-            .buildCalls(
-                fixture.inputs(),
-                new CallGraphProfile(reference("graph-profile", "call-graph-v1")));
+    CallGraphDraft draft = new CallGraphBuilder().buildCalls(fixture.inputs(), fixture.profile());
 
     assertThat(draft.graphKind()).isEqualTo(ProgramGraphKind.CALL);
     assertThat(draft.nodes())
@@ -48,7 +58,7 @@ class CallGraphBuilderTest {
                 assertThat(edge.toNodeId())
                     .isEqualTo(
                         structureMethodId(
-                            fixture.inputs().structure(),
+                            fixture.inputs().structure().draft(),
                             "com.example.DepotHeadService#batchSetStatus(java.lang.String)")));
     assertThat(draft.edges())
         .filteredOn(edge -> edge.kind() == CallGraphEdgeKind.CALL_RETURN)
@@ -65,22 +75,18 @@ class CallGraphBuilderTest {
   void resolvesTheExactServiceToMapperAndMapperToXmlStatementChain() throws Exception {
     Fixture fixture = fixture();
 
-    CallGraphDraft draft =
-        new CallGraphBuilder()
-            .buildCalls(
-                fixture.inputs(),
-                new CallGraphProfile(reference("graph-profile", "call-graph-v1")));
+    CallGraphDraft draft = new CallGraphBuilder().buildCalls(fixture.inputs(), fixture.profile());
 
     assertThat(draft.edges())
         .filteredOn(edge -> edge.kind() == CallGraphEdgeKind.CALL_TARGET)
         .extracting(CallGraphEdge::toNodeId)
         .contains(
             structureNodeId(
-                fixture.inputs().structure(),
+                fixture.inputs().structure().draft(),
                 ProgramNodeKind.METHOD,
                 "com.example.DepotHeadService#batchSetStatus(java.lang.String)"),
             structureNodeId(
-                fixture.inputs().structure(),
+                fixture.inputs().structure().draft(),
                 ProgramNodeKind.METHOD,
                 "com.example.DepotHeadMapper#updateStatus(java.lang.String)"));
     assertThat(draft.edges())
@@ -91,13 +97,13 @@ class CallGraphBuilderTest {
               assertThat(edge.fromNodeId())
                   .isEqualTo(
                       structureNodeId(
-                          fixture.inputs().structure(),
+                          fixture.inputs().structure().draft(),
                           ProgramNodeKind.METHOD,
                           "com.example.DepotHeadMapper#updateStatus(java.lang.String)"));
               assertThat(edge.toNodeId())
                   .isEqualTo(
                       structureNodeId(
-                          fixture.inputs().structure(),
+                          fixture.inputs().structure().draft(),
                           ProgramNodeKind.XML_STATEMENT,
                           "com.example.DepotHeadMapper#updateStatus()"));
             });
@@ -107,11 +113,7 @@ class CallGraphBuilderTest {
   void recordsAGapInsteadOfChoosingOneOverloadedHttpHandler() throws Exception {
     Fixture fixture = overloadedEntryFixture();
 
-    CallGraphDraft draft =
-        new CallGraphBuilder()
-            .buildCalls(
-                fixture.inputs(),
-                new CallGraphProfile(reference("graph-profile", "call-graph-v1")));
+    CallGraphDraft draft = new CallGraphBuilder().buildCalls(fixture.inputs(), fixture.profile());
 
     assertThat(draft.nodes()).isEmpty();
     assertThat(draft.edges()).isEmpty();
@@ -122,11 +124,7 @@ class CallGraphBuilderTest {
   void recordsAGapWhenAnExplicitImportWouldMakeTheReceiverTargetDifferent() throws Exception {
     Fixture fixture = importedDecoyFixture();
 
-    CallGraphDraft draft =
-        new CallGraphBuilder()
-            .buildCalls(
-                fixture.inputs(),
-                new CallGraphProfile(reference("graph-profile", "call-graph-v1")));
+    CallGraphDraft draft = new CallGraphBuilder().buildCalls(fixture.inputs(), fixture.profile());
 
     assertThat(draft.edges())
         .filteredOn(edge -> edge.kind() == CallGraphEdgeKind.CALL_TARGET)
@@ -134,20 +132,66 @@ class CallGraphBuilderTest {
     assertThat(draft.coverage().gapDispositions()).hasSize(1);
   }
 
-  private static Fixture fixture() throws Exception {
+  @Test
+  void rejectsPersistedStructureWhenItsControlsDoNotMatchTheFreshReopenedInputs() throws Exception {
+    try (PersistedFixture persisted = persistedFixture("call-graph")) {
+      ArtifactControls changedControls =
+          new ArtifactControls(
+              new Sha256Digest(digest("different-toolchain")),
+              persisted.source().controls().profileSha256(),
+              persisted.source().controls().schemaBundleSha256(),
+              persisted.source().controls().promptBundleSha256(),
+              persisted.source().controls().artifactPolicyRegistryRef());
+      CodeStructureSource changedSource =
+          new CodeStructureSource(
+              persisted.source().snapshotId(),
+              persisted.source().inventoryScopeKind(),
+              persisted.source().repositoryCompletionEligible(),
+              persisted.source().sourceInventoryRef(),
+              persisted.source().verifiedSnapshotRef(),
+              changedControls,
+              persisted.source().documents());
+      ReopenedProgramGraphInputs changedInputs =
+          new ReopenedProgramGraphInputs(changedSource, persisted.reopened().discovery());
+
+      assertThatThrownBy(
+              () ->
+                  persisted
+                      .reader()
+                      .reopen(persisted.reference(), changedInputs, persisted.graphProfileRef()))
+          .isInstanceOf(GraphReferenceException.class)
+          .hasMessage("GRAPH_REFERENCE_BROKEN");
+    }
+  }
+
+  private Fixture fixture() throws Exception {
     return fixture("call-graph");
   }
 
-  private static Fixture overloadedEntryFixture() throws Exception {
+  private Fixture overloadedEntryFixture() throws Exception {
     return fixture("call-graph-overload");
   }
 
-  private static Fixture importedDecoyFixture() throws Exception {
+  private Fixture importedDecoyFixture() throws Exception {
     return fixture("call-graph-import-decoy");
   }
 
-  private static Fixture fixture(String fixtureRoot) throws Exception {
-    ArtifactControls controls = controls();
+  private Fixture fixture(String fixtureRoot) throws Exception {
+    try (PersistedFixture persisted = persistedFixture(fixtureRoot)) {
+      ReopenedCodeStructureGraph reopenedStructure =
+          persisted
+              .reader()
+              .reopen(persisted.reference(), persisted.reopened(), persisted.graphProfileRef());
+      return new Fixture(
+          new CallGraphInputs(reopenedStructure, persisted.reopened()),
+          new CallGraphProfile(persisted.graphProfileRef()));
+    }
+  }
+
+  private PersistedFixture persistedFixture(String fixtureRoot) throws Exception {
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
+    ArtifactControls controls = controls(policies);
     CodeStructureSource source =
         new CodeStructureSource(
             "snapshot:" + digest("call-graph-snapshot"),
@@ -170,12 +214,10 @@ class CallGraphBuilderTest {
             reference("entry-points", "call-graph"),
             reference("mapper-catalog", "call-graph"),
             List.of(entryId));
+    ArtifactReference profile = reference("graph-profile", "code-structure-v2");
     CodeStructureGraphDraft structure =
         new CodeStructureGraphBuilder()
-            .buildStructure(
-                source,
-                discovery,
-                new CodeStructureGraphProfile(reference("graph-profile", "code-structure-v2")));
+            .buildStructure(source, discovery, new CodeStructureGraphProfile(profile));
     HttpEntryPoint entry =
         new HttpEntryPoint(
             entryId,
@@ -219,12 +261,37 @@ class CallGraphBuilderTest {
                         "src/main/resources/mapper/DepotHeadMapper.xml",
                         "id=\"updateStatus\""))),
             "CANDIDATE_NOT_YET_BOUND");
-    return new Fixture(
-        new CallGraphInputs(
-            structure,
-            new ReopenedProgramGraphInputs(
-                source,
-                new ProgramGraphDiscoveryInputs(discovery, List.of(entry), List.of(mapper)))));
+    ReopenedProgramGraphInputs reopened =
+        new ReopenedProgramGraphInputs(
+            source, new ProgramGraphDiscoveryInputs(discovery, List.of(entry), List.of(mapper)));
+    RunStoreHandle handle = RunStoreBootstrap.openForTest(temporaryDirectory);
+    try {
+      FileSystemCanonicalModuleArtifactStore store =
+          new FileSystemCanonicalModuleArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(2, 100_000, 200_000, 8));
+      CodeStructureGraphDraftReference persisted =
+          new CodeStructureGraphModulePublisher(store)
+              .publish(
+                  new org.sourceanalysis.app.artifact.AnalysisStepModuleAddress(
+                      org.sourceanalysis.app.artifact.AnalysisRunId.parse(
+                          "analysis-run:" + digest("call-graph-module-run")),
+                      org.sourceanalysis.app.artifact.AnalysisStepKey.PROGRAM_GRAPHS,
+                      1,
+                      "code-structure"),
+                  source,
+                  discovery,
+                  structure);
+      return new PersistedFixture(
+          handle,
+          source,
+          reopened,
+          profile,
+          persisted,
+          new PersistedCodeStructureGraphReader(store));
+    } catch (RuntimeException failure) {
+      handle.close();
+      throw failure;
+    }
   }
 
   private static CodeStructureSourceDocument document(String fixtureRoot, String path)
@@ -284,14 +351,56 @@ class CallGraphBuilderTest {
         new Sha256Digest(digest(bytes)));
   }
 
-  private static ArtifactControls controls() {
+  private static ArtifactControls controls(CanonicalArtifactPolicyRegistry policies) {
     return new ArtifactControls(
         new Sha256Digest(digest("toolchain")),
         new Sha256Digest(digest("profile")),
         new Sha256Digest(digest("schema")),
         null,
-        new ArtifactPolicyRegistryReference(
-            id("artifact-policy-registry", "call-graph"), new Sha256Digest(digest("policy"))));
+        policies.reference());
+  }
+
+  private static CanonicalArtifactPolicyRegistry policies(CanonicalJsonCodec canonicalJson) {
+    ObjectNode document = JsonNodeFactory.instance.objectNode();
+    document.put("schemaVersion", "artifact-policy-registry-v2");
+    ArrayNode entries = document.putArray("policies");
+    entries
+        .addObject()
+        .put("artifactType", "PROGRAM_GRAPHS_CODE_STRUCTURE_DRAFT")
+        .put("schemaVersion", CodeStructureGraphDraft.SCHEMA_VERSION)
+        .put("artifactIdPrefix", "code-structure-graph")
+        .put("mediaType", "application/json")
+        .put("envelopeKind", "MODULE_ARTIFACT_JSON")
+        .put("emptyJsonlAllowed", false)
+        .put("publicContentExposure", "PATH_FREE_COMPLETE_UTF8");
+    document.put(
+        "artifactPolicyRegistryId",
+        "artifact-policy-registry:"
+            + digest(
+                concatenate(
+                    frame("canonical-artifact-policy-registry-id-v2"),
+                    frame(canonicalJson.encodeCanonical(document).copyToByteArray()))));
+    return CanonicalArtifactPolicyRegistry.load(
+        canonicalJson.encodeCanonical(document), canonicalJson);
+  }
+
+  private static byte[] frame(String value) {
+    return frame(value.getBytes(StandardCharsets.UTF_8));
+  }
+
+  private static byte[] frame(byte[] value) {
+    return ByteBuffer.allocate(Long.BYTES + value.length)
+        .order(ByteOrder.BIG_ENDIAN)
+        .putLong(value.length)
+        .put(value)
+        .array();
+  }
+
+  private static byte[] concatenate(byte[] first, byte[] second) {
+    byte[] result = new byte[first.length + second.length];
+    System.arraycopy(first, 0, result, 0, first.length);
+    System.arraycopy(second, 0, result, first.length, second.length);
+    return result;
   }
 
   private static ArtifactReference reference(String prefix, String value) {
@@ -314,5 +423,20 @@ class CallGraphBuilderTest {
     }
   }
 
-  private record Fixture(CallGraphInputs inputs) {}
+  private record Fixture(CallGraphInputs inputs, CallGraphProfile profile) {}
+
+  private record PersistedFixture(
+      RunStoreHandle handle,
+      CodeStructureSource source,
+      ReopenedProgramGraphInputs reopened,
+      ArtifactReference graphProfileRef,
+      CodeStructureGraphDraftReference reference,
+      PersistedCodeStructureGraphReader reader)
+      implements AutoCloseable {
+
+    @Override
+    public void close() {
+      handle.close();
+    }
+  }
 }

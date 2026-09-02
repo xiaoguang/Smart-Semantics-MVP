@@ -45,6 +45,9 @@ public final class CallGraphBuilder {
   public CallGraphDraft buildCalls(CallGraphInputs inputs, CallGraphProfile profile) {
     Objects.requireNonNull(inputs, "call graph inputs");
     Objects.requireNonNull(profile, "call graph profile");
+    if (!inputs.structure().basis().graphProfileRef().equals(profile.graphProfileRef())) {
+      throw new GraphReferenceException();
+    }
 
     InputIndex index = InputIndex.create(inputs);
     Accumulator accumulator = new Accumulator(inputs, profile, index);
@@ -336,13 +339,13 @@ public final class CallGraphBuilder {
               "program-graph",
               ProgramGraphKind.CALL.name(),
               inputs.reopened().source().snapshotId(),
-              inputs.structure().graphId().value(),
+              inputs.structure().draft().graphId().value(),
               profile.graphProfileRef().artifactId().value(),
               profile.graphProfileRef().sha256().value()),
           inputs.reopened().source().snapshotId(),
-          inputs.structure().applicationProfileId(),
+          inputs.structure().draft().applicationProfileId(),
           profile.graphProfileRef(),
-          inputs.structure().entryIds(),
+          inputs.structure().draft().entryIds(),
           List.copyOf(nodes.values()),
           List.copyOf(edges.values()),
           provenance.values().stream()
@@ -430,10 +433,10 @@ public final class CallGraphBuilder {
       }
       Map<String, ArtifactId> structureMethods = new HashMap<>();
       Map<String, ArtifactId> structureXmlStatements = new HashMap<>();
-      inputs.structure().nodes().stream()
+      inputs.structure().draft().nodes().stream()
           .filter(node -> node.kind() == ProgramNodeKind.METHOD)
           .forEach(node -> structureMethods.put(node.canonicalValue(), node.nodeId()));
-      inputs.structure().nodes().stream()
+      inputs.structure().draft().nodes().stream()
           .filter(node -> node.kind() == ProgramNodeKind.XML_STATEMENT)
           .forEach(node -> structureXmlStatements.put(node.canonicalValue(), node.nodeId()));
       Map<String, List<TypeMethod>> orderedHandlers = new HashMap<>();

@@ -4,16 +4,17 @@ import java.util.Objects;
 
 /** The single closed input aggregate for one CallGraphBuilder invocation. */
 public record CallGraphInputs(
-    CodeStructureGraphDraft structure, ReopenedProgramGraphInputs reopened) {
+    ReopenedCodeStructureGraph structure, ReopenedProgramGraphInputs reopened) {
 
   public CallGraphInputs {
-    Objects.requireNonNull(structure, "code structure draft");
+    Objects.requireNonNull(structure, "reopened code structure graph");
     Objects.requireNonNull(reopened, "reopened program graph inputs");
-    if (!structure.snapshotId().equals(reopened.source().snapshotId())
-        || !structure
-            .applicationProfileId()
-            .equals(reopened.discovery().codeStructureDiscovery().applicationProfileId())
-        || !structure.entryIds().equals(reopened.discovery().codeStructureDiscovery().entryIds())) {
+    ProgramGraphInputBasis expected =
+        ProgramGraphInputBasis.from(
+            reopened.source(),
+            reopened.discovery().codeStructureDiscovery(),
+            structure.draft().graphProfileRef());
+    if (!structure.basis().equals(expected)) {
       throw new IllegalArgumentException("call graph inputs do not share one reopened basis");
     }
   }
