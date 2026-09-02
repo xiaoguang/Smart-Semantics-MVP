@@ -71,6 +71,7 @@ POC 记录位于 `docs/history/`，只用于历史审计，不属于阅读路线
 | 工程身份与目录 | **已实现（结构）** | 目录为`backend-agents/sources/source-code/`，Maven坐标为`org.sourceanalysis:source-code-analysis-agent`，生产包全部位于`org.sourceanalysis.app`语义根下 |
 | Java构建选择 | **已实现（构建）** | 项目提供JDK 17 Toolchain配置，compiler release固定为17；这只约束Agent自身构建，不代表任何业务分析步骤已实现 |
 | 新wire头门禁 | **已实现（窄门禁）** | `AnalysisWireFormatGuard`只接受对象头`wireKind=SOURCE_ANALYSIS`且`wireVersion=v1`，并以`UNSUPPORTED_ANALYSIS_WIRE`拒绝顶层描述符元数据中的pre-reset path、编号stage、stage receipt/schema、旧Maven/Java package身份和wire alias；不扫描业务内容。owner-specific schema、canonical artifact reader与八步artifact校验尚未实现 |
+| Canonical artifact foundation | **部分实现（foundation）** | `CanonicalJsonCodec`、不可变bytes、typed identity/address及path-free `CanonicalArtifactPolicyRegistry`已能验证canonical JSON、policy ID和完整文档SHA；三个filesystem store、receipt-last、JSONL/RAW UTF-8、run manifest与runtime尚未实现 |
 | 八个业务分析步骤 | **尚未实现** | 八个语义package目前只有`package-info.java`骨架；没有当前Local Git capture、源码清单、应用发现、五图、Fact/Proof、Flow/Capsule、R0/R1/R2、RepositoryKnowledge、九章或Trace生产代码与运行产物 |
 | public Java/CLI/HTTP | **尚未实现** | `RepositoryAnalysisAgent`七方法、`source-analysis` CLI和loopback HTTP adapter均不存在 |
 | pre-reset Stage/POC实现 | **已删除；仅历史证据** | 旧纵切、POC、fixture和旧接口不在当前生产/测试树中，不得包装成兼容层或作为当前jshERP结果 |
