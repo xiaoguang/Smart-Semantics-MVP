@@ -350,12 +350,12 @@ VerifiedSourceInventory：REQUEST_SCHEMA_INVALID、CAPTURE_IDENTITY_INVALID、SO
 
 ## 9. 当前实现成熟度审计
 
-Wire Reset后的`org.sourceanalysis.app.analysis.inventory`目前只有语义package骨架；共享artifact包只实现了`SOURCE_ANALYSIS/v1`通用头门禁。它不会capture Git、验证source registration或发布本步骤四项文件。
+Wire Reset后的`org.sourceanalysis.app.analysis.inventory`目前仍只有语义package骨架。共享artifact包除`SOURCE_ANALYSIS/v1`通用头门禁外，已实现一个受限的落盘纵切：M1 `request-admission` 的唯一已注册`admitted-source-request.json` module envelope 可用`CanonicalModuleArtifactStore`进行receipt-last原子安装和fresh reopen。该纵切只证明通用持久化合同的一小段，不会capture Git、验证source registration，也不会发布本步骤四项文件。
 
 | 状态 | 当前事实 |
 | --- | --- |
 | **已实现（结构/构建门）** | 工程身份与package已切换，项目使用JDK 17 Toolchain；`analysis.inventory`和`capture.localgit`目标位置存在。 |
-| **本步骤生产能力尚未实现** | `LocalGitCommitCaptureAdapter`、M1/M2/M3、canonical module/analysis-step store以及`source-input.json`、`verified-snapshot.json`、`source-inventory.jsonl`、`step-receipt.json`当前均不存在。 |
+| **本步骤生产能力尚未实现** | `LocalGitCommitCaptureAdapter`、M1业务语义、M2/M3、analysis-step store以及`source-input.json`、`verified-snapshot.json`、`source-inventory.jsonl`、`step-receipt.json`当前均不存在。module store目前只支持上述一个M1 envelope，不能代表完整本步骤。 |
 | **历史证据，不是当前能力** | 已删除的pre-reset纵切曾在小型synthetic repository上验证只读capture、text/media disposition、hash与原子重开。这些结果只保留在Git历史/progress中，不能作为当前SourceAnalysis artifact或jshERP运行结果。 |
 | **下一实现门** | 按本章M1→M2→M3合同重新实现并通过完整tree、binary、symlink/gitlink、single-byte drift和不同root测试；随后才可对已批准完整jshERP commit做离线验收。 |
 
