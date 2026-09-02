@@ -16,16 +16,19 @@
 - Added the M2 typed reference, receipt-last publisher and Foundation module contract. The publisher records the exact M1 payload reference together with the six source/discovery references and graph profile, never a raw M1 draft or a filesystem path.
 - Corrected the test-only policy registry order before the GREEN run; policy identities are canonical-order sensitive.
 - The direct publisher selector is GREEN: one M1 module is persisted and fresh-reopened, then the M2 call graph is installed and fresh-reopened with its eight exact upstream references.
+- Added the M2 execution RED. It failed only because `CallGraphExecution` was absent; the test requires the execution to obtain its inputs from the persisted-input reader, fresh-reopen M1 through the sealed reader, build, and persist M2.
+- Implemented the M2 execution seam. Its direct test now proves exactly one preceding input reopen and one M1 receipt/payload reopen before M2 publication.
 
 ## Current state
 
-- The independent M2 module-publisher slice is GREEN. M2 still needs its execution seam (fresh M1 reopen → builder → M2 publisher) and the remaining mutation/determinism coverage before its module can be accepted.
+- The independent M2 publisher and M2 execution slices are GREEN. M2 still needs the remaining receipt mutation/determinism coverage and Mapper binding accounting before it can be accepted.
 
 ## Changed files
 
 - `progress/call-graph-publication.md`
 - `src/main/java/org/sourceanalysis/app/analysis/graph/CallGraphDraftReference.java`
 - `src/main/java/org/sourceanalysis/app/analysis/graph/CallGraphModulePublisher.java`
+- `src/main/java/org/sourceanalysis/app/analysis/graph/CallGraphExecution.java`
 - `src/main/java/org/sourceanalysis/app/artifact/AtomicCanonicalPublicationEngine.java`
 - `src/test/java/org/sourceanalysis/app/analysis/graph/CallGraphModulePublisherTest.java`
 
@@ -35,6 +38,7 @@
 | --- | --- | --- |
 | `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphModulePublisherTest test` | RED | Test compilation fails only because `CallGraphDraftReference` and `CallGraphModulePublisher` are absent. |
 | `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphModulePublisherTest test` | PASS | 1 test, 0 failures/errors/skips; M2 receipt records the source/discovery/profile and fresh M1 payload lineage. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphModulePublisherTest test` | PASS | 2 tests, 0 failures/errors/skips; execution fresh-reopens M1 before it builds and installs M2. |
 
 ## Decisions
 
@@ -47,7 +51,7 @@
 
 ## Exact next action
 
-- Add the M2 execution test: it must fresh-reopen M1 through `PersistedCodeStructureGraphReader`, build calls, then publish M2 once; no caller may inject a raw M1 draft.
+- Add the required M2 deterministic replay and invalid M1 / Mapper-binding mutation tests, then complete the M2 exit review.
 
 ## Resume checks
 
