@@ -20,6 +20,7 @@
 - Implemented the M2 execution seam. Its direct test now proves exactly one preceding input reopen and one M1 receipt/payload reopen before M2 publication.
 - Added a Mapper-method candidate RED. When Stage 2 already identifies a Mapper interface/XML namespace but omits the exact called method candidate, the prior builder silently omitted the Java→XML relationship and emitted no Gap.
 - The builder now distinguishes an ordinary non-Mapper target (no matching Mapper catalog, no Mapper binding claim) from a known Mapper with no candidate for the called method (`MAPPER_JAVA_METHOD_UNRESOLVED` Gap). The direct M2 builder selector is GREEN.
+- Added deterministic replay and graph-profile mismatch checks. The same sealed M1/reopened aggregate yields an equal `CallGraphDraft`; a different call-graph profile is rejected with `GRAPH_REFERENCE_BROKEN` before call resolution.
 
 ## Current state
 
@@ -43,6 +44,7 @@
 | `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphModulePublisherTest test` | PASS | 2 tests, 0 failures/errors/skips; execution fresh-reopens M1 before it builds and installs M2. |
 | `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphBuilderTest test` | RED | 6 tests, 1 failure: a known Mapper with no called-method candidate silently produced no Gap. |
 | `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphBuilderTest test` | PASS | 6 tests, 0 failures/errors/skips; known incomplete Mapper catalogs now produce the scoped unresolved-method Gap. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphBuilderTest test` | PASS | 8 tests, 0 failures/errors/skips; deterministic replay and profile-mismatch rejection pass. |
 
 ## Decisions
 
@@ -55,7 +57,7 @@
 
 ## Exact next action
 
-- Add the required M2 deterministic replay and remaining invalid M1 / Mapper-binding mutation tests, then complete the M2 exit review.
+- Integrate the published M2→M3 reopening contract, then add the remaining invalid M1/Mapper-binding mutation tests and complete the M2 exit review.
 
 ## Resume checks
 

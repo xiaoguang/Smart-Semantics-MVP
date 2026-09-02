@@ -147,6 +147,30 @@ class CallGraphBuilderTest {
   }
 
   @Test
+  void rebuildsTheSameCanonicalCallGraphFromTheSameFreshReopenedInputs() throws Exception {
+    Fixture fixture = fixture();
+
+    CallGraphDraft first = new CallGraphBuilder().buildCalls(fixture.inputs(), fixture.profile());
+    CallGraphDraft second = new CallGraphBuilder().buildCalls(fixture.inputs(), fixture.profile());
+
+    assertThat(second).isEqualTo(first);
+  }
+
+  @Test
+  void rejectsADifferentCallGraphProfileBeforeItCanResolveCalls() throws Exception {
+    Fixture fixture = fixture();
+
+    assertThatThrownBy(
+            () ->
+                new CallGraphBuilder()
+                    .buildCalls(
+                        fixture.inputs(),
+                        new CallGraphProfile(reference("graph-profile", "different-profile"))))
+        .isInstanceOf(GraphReferenceException.class)
+        .hasMessage("GRAPH_REFERENCE_BROKEN");
+  }
+
+  @Test
   void rejectsPersistedStructureWhenItsControlsDoNotMatchTheFreshReopenedInputs() throws Exception {
     try (PersistedFixture persisted = persistedFixture("call-graph")) {
       ArtifactControls changedControls =
