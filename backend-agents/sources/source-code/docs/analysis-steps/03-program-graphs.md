@@ -301,15 +301,15 @@ M2保存的`codeStructurePayloadRef`、M1的`payloadRef`和`ControlFlowGraphProf
 
 - **解决的问题**：表达每个 entry 可达步骤、guard polarity、call/return 与 terminal，防止用源码行序讲流程。
 - **精确上游输入及前置**：`ControlFlowInputs{structure: ReopenedCodeStructureGraph, calls: ReopenedCallGraph, reopened: the same ReopenedProgramGraphInputs}`与`ControlFlowGraphProfile`；M3 execution必须按8.0先fresh-reopen M1/M2，校验同一basis、M1 payload ref与graph profile，再从`reopened.discovery.entries`读取entry roots、从`reopened.source`读取verified method bodies。raw `CodeStructureGraphDraft`、raw `CallGraphDraft`和detached entry/call lists均禁止；entry/call endpoints全部有效。
-- **确定性顺序 / LLM**：每 entry 建 ENTRY → basic blocks/guards → TRUE/FALSE/NEXT/CALL/RETURN → return/throw/profile stop terminals → reachability/accounting；0 LLM。
+- **确定性顺序 / LLM**：每 entry 建 ENTRY → basic blocks/guards → TRUE/FALSE/NEXT/CALL → 投影structural RETURN frame link → return/throw/profile stop terminals → 只由normal exit激活continuation → reachability/accounting；0 LLM。
 - **目标输出与 DepotHead 示例**：CONTROL_FLOW draft；例子保留 Service :752-796 的 status/库存条件 polarity、`:798-803` 非空 dhIds 写入分支与 :821 return terminal。
-- **必须保持的不变量**：每个 guard 的 outgoing polarity 显式且合法；每个可达 path 终止、Gap 或 reasoned exclusion；call/return refs 与 M2 一致。
-- **Gap / fatal / artifact复用**：bounded loop/unsupported construct 可形成 Gap；缺 polarity/terminal、悬空 block、call pair mismatch 或覆盖不闭合 fatal；只能从已验证前驱重建完整CFG draft。
+- **必须保持的不变量**：每个 guard 的 outgoing polarity 显式且合法；每个可达 path 终止、Gap 或 reasoned exclusion；每个M3-activated M2 call/return pair都投影，但`RETURN`只是frame link，只有callee normal exit/leaf可激活call-site continuation，throw/profile stop均不可。
+- **Gap / fatal / artifact复用**：bounded loop/unsupported construct 可形成 Gap；缺 polarity/terminal、悬空 block、call pair mismatch、direct-throw-only call anchor仍有continuation、throw path激活continuation或覆盖不闭合 fatal；只能从已验证前驱重建完整CFG draft。
 - **给下游的后置保证**：BusinessFlows 可按 entry root 枚举 Outcomes；ProvenCodeFacts 可证明条件 atom，无需从行号推路径。
 - **明确非目标**：不执行代码、不假定异常处理器/事务运行时、不命名业务 Outcome。
-- **公共测试 seam 与验收**：`buildControlFlow(ControlFlowInputs inputs, ControlFlowGraphProfile profile)` 覆盖 TRUE/FALSE swap、terminal deletion、loop budget、call/return mutation；DepotHead 每个目标 guard 与 terminal 必须可达且 polarity 稳定。
-- **Luna/xhigh 测试指南**：创建 `ControlFlowGraphBuilderTest`，fixtures/goldens置 `src/test/resources/analysis/graph/control-flow/`。RED顺序：entry/guards/terminals正向、TRUE/FALSE swap、terminal deletion、call-return mismatch、loop budget Gap、order determinism；首RED应因CFG seam缺失。只fake verified method reader，禁止mock CFG/accounting。命令：`mvn -Dtest=ControlFlowGraphBuilderTest test`；禁客户运行/网络。偏离按DESIGN 13.11交`gpt-5.6-sol / ultra` Design Authority。
-- **Terra/xhigh 实现指南**：RED后只改 `analysis/graph/control-flow/`，实现 public `ControlFlowGraphBuilder/ControlFlowGraphDraft` 与 `program-graphs-control-flow-draft-v2`；M1/M2 artifacts→blocks/guards→typed edges→terminals→provenance drafts→coverage。每个RED独立GREEN；禁止行号补flow/运行代码。必要异常语义不在上游即STOP 13.11，审计同步。
+- **公共测试 seam 与验收**：`buildControlFlow(ControlFlowInputs inputs, ControlFlowGraphProfile profile)` 覆盖 TRUE/FALSE swap、terminal deletion、loop budget、call/return mutation，以及direct-throw-only call anchor保留M2 RETURN projection但无continuation、也不向lexical successor贡献path；DepotHead 每个目标 guard 与 terminal 必须可达且 polarity 稳定。
+- **Luna/xhigh 测试指南**：创建 `ControlFlowGraphBuilderTest`，fixtures/goldens置 `src/test/resources/analysis/graph/control-flow/`。RED顺序：entry/guards/terminals正向、TRUE/FALSE swap、terminal deletion、call-return mismatch、direct-throw与mixed return/throw continuation、loop budget Gap、order determinism；首RED应因CFG seam缺失。direct-throw golden必须同时保留projected RETURN、call anchor无continuation NEXT且不向successor贡献path；只有无独立可达前驱时才省略并exclude该successor。mixed golden只允许normal callee branch激活同一continuation。只fake verified method reader，禁止mock CFG/accounting。命令：`mvn -Dtest=ControlFlowGraphBuilderTest test`；禁客户运行/网络。偏离按DESIGN 13.11交`gpt-5.6-sol / ultra` Design Authority。
+- **Terra/xhigh 实现指南**：RED后只改 `analysis/graph/control-flow/`，实现 public `ControlFlowGraphBuilder/ControlFlowGraphDraft` 与 `program-graphs-control-flow-draft-v2`；M1/M2 artifacts→blocks/guards→typed edges→structural return frames→path-sensitive terminals/continuations→provenance drafts→coverage。每个RED独立GREEN；禁止把M2 RETURN pair当无条件successor、按行号补flow或运行代码。必要异常语义不在上游即STOP 13.11，审计同步。
 
 M3 的唯一 public Java seam 与 exact JSON payload 采用下列最小 records；`ControlFlowInputs`和
 `ControlFlowGraphProfile`只存在于进程内，不是新 wire/artifact。Java `ArtifactId`在 JSON 中是单个
@@ -392,33 +392,48 @@ enum ControlFlowTerminalDispositionKind { GAP, EXCLUSION }
 复制的自由 rule/budget 字段。任一不一致不返回 partial draft。
 
 所有 Java `List`在 constructor defensive-copy；`entryIds`、nodes、edges、terminal dispositions、
-provenance分别按其主ID排序且distinct。`semanticTraversalOrder`按`entryId`排序；每个`nodeIds`保存
-canonical interprocedural DFS node preorder，每个`edgeIds`保存同一walker发现的全部M3 edge顺序，
+provenance分别按其主ID排序且distinct。`semanticTraversalOrder`按`entryId`排序；每个`nodeIds`只保存
+canonical interprocedural walker实际激活的node preorder，`edgeIds`保存实际激活的flow edges，加上在
+reachable call anchor登记的structural `RETURN` frame links；`RETURN`出现在`edgeIds`不表示该path已返回。
 两者各自distinct。walker从该entry唯一`ENTRY`开始，guard先记录/访问`TRUE`再`FALSE`，其余同类edge
 按`edgeId`。
 
-对每个entry，以`owningEntryIds`包含该entry的M2 `CALL_SITE`为roots，沿M2 exact edges得到entry-induced
-call-pair denominator；其中每个唯一pair在M3必须恰投影一个`CALL`和一个`RETURN`。反向地，每个M3
-`CALL/RETURN`也必须来自该entry-induced denominator。`CALL`逐字段复用
+对每个entry，`owningEntryIds`包含该entry的全部M2 `CALL_SITE`先形成discovered call-pair candidate集合；
+walker从`ENTRY`沿可执行M3 flow到达其external endpoint时，该call anchor才是activated。只有activated
+anchors及其沿M2 exact edges得到的唯一pair构成projection denominator；每个pair在M3必须恰投影一个
+`CALL`和一个`RETURN`，反向地每个M3 `CALL/RETURN`也必须来自该denominator。未activated pair对应的两个
+M3 candidate edge ID仍按8.4预计算：已证明anchor不可达时各进reasoned exclusion，profile-stop/unsupported
+使可达性未知时各进Gap，禁止exact projection或静默省略。`CALL`逐字段复用
 `CALL_TARGET | JAVA_METHOD_TO_XML_STATEMENT`的from/to/rule/resolution，`RETURN`逐字段复用其唯一反向
 `CALL_RETURN`；二者的`guardNodeId/polarity=null`、`evidenceDraftRefs`与M2 edge逐字相同，M3 registry
-重列相同ID/内容的provenance draft，各自edgeId还绑定M2 edgeId。
+重列相同ID/内容的provenance draft，各自edgeId还绑定M2 edgeId。该RETURN projection在call anchor
+reachable时无条件登记为structural frame link，与callee是否存在normal exit无关；它从来不是可单独
+遍历的successor。
 
-`CALL_TARGET`的local predecessor以`NEXT`进入其external M2 call-site(from endpoint)，该call-site再以
-唯一`NEXT`指向continuation；call若为method最后动作，continuation就是该上下文的normal-return
-terminal。`JAVA_METHOD_TO_XML_STATEMENT`不制造call-site：其external Java method from endpoint就是
-anchor，continuation固定为该Mapper callee的`CALLEE_RETURN_TERMINAL`。walker在anchor按`CALL`、paired
-`RETURN` link的顺序记录两个edge，push continuation后进入target；有body的Java method target以`NEXT`
-进入callee首个control node，空body直接进入`CALLEE_RETURN_TERMINAL`，XML statement是normal leaf。
-`CALLEE_RETURN_TERMINAL`或leaf消费已记录且匹配栈顶的`RETURN`并恢复continuation；
-`ENTRY_RETURN_TERMINAL`结束entry，throw/profile-stop结束当前path且不恢复caller。`RETURN` link不是普通
-successor，缺失、额外或错配pair/continuation均 fatal。
+`CALL_TARGET`的local predecessor以`NEXT`进入其external M2 call-site(from endpoint)。只有callee至少有
+一条exact `CALLEE_RETURN_TERMINAL` path或normal leaf时，该call-site才有恰一条`NEXT` continuation；
+call若为method最后动作，该continuation就是caller上下文的normal-return terminal。direct-throw-only
+call anchor不得生成continuation NEXT，也不从该anchor向lexical successor贡献可执行path；successor只有
+不存在其他可达前驱时才从nodes/traversal省略并进reasoned exclusion，若有bypass branch则照常保留但无
+来自该call anchor的`NEXT`。只有profile-stop/unsupported导致可达性未知时才进Gap。
+`JAVA_METHOD_TO_XML_STATEMENT`不制造call-site：其
+external Java method from endpoint就是anchor，XML statement是normal leaf，因此continuation固定为该
+Mapper callee的`CALLEE_RETURN_TERMINAL`。
+
+walker在anchor先登记`CALL`与paired structural `RETURN`，仅在上述normal-exit条件成立时保存
+continuation，然后进入target；有body的Java method target以`NEXT`进入callee首个control node，空body
+直接进入`CALLEE_RETURN_TERMINAL`。`CALLEE_RETURN_TERMINAL`或normal leaf消费匹配栈顶的`RETURN`并
+激活continuation NEXT；`ENTRY_RETURN_TERMINAL`结束entry，`THROW_TERMINAL`或
+`PROFILE_STOP_TERMINAL`既不消费RETURN也不激活continuation。缺失、额外或错配pair/continuation均fatal。
 
 每个 traversal 可包含上述已验证的 M1/M2 external endpoint，但它们不在 M3 `nodes`中重复声明；每个
-entry恰一条traversal，`nodeIds/edgeIds`必须分别等于该walker的完整reachable node/edge集合，不能只给
-一个排序提示。每个M3-owned node必须出现在且只出现在其全部`owningEntryIds`对应的`nodeIds`；每个M3
-edge的derived owning entries恰为包含它的`edgeIds`之entry集合且必须非空（投影RETURN以其call-site
-可达计）。因此漏项、多项、wrong-owner或unreachable owned subgraph一律 fatal。node的
+entry恰一条traversal，`nodeIds`必须等于activated reachable nodes，`edgeIds`必须等于activated flow
+edges加reachable-call-anchor的structural RETURN links，不能只给一个排序提示。每个M3-owned node必须
+出现在且只出现在其全部`owningEntryIds`对应的`nodeIds`；每个M3 edge的derived owning entries恰为包含
+它的`edgeIds`之entry集合且必须非空。structural RETURN以call anchor可达计；continuation NEXT必须被
+至少一条normal-exit path激活，不允许direct-throw-only call anchor留下dormant continuation，也不允许
+仅凭该throw path把successor标为reachable；由独立path可达的同一successor不受影响。因此漏项、多项、
+wrong-owner或unreachable owned subgraph一律 fatal。node的
 `owningEntryIds`必须非空、排序、distinct且为draft `entryIds`子集；每个edge endpoint必须解析到
 本draft node或已验证M1/M2 external node。
 
@@ -440,8 +455,9 @@ endpoint；handler随后以唯一`NEXT`进入首个control node或entry normal-r
 FALSE指向lexical successor；若`if`位于method末尾，FALSE必须指向该method的正常fall-through terminal，
 不能悬空。entry handler中的显式`return`或normal fall-through形成`ENTRY_RETURN_TERMINAL`；被调用Java
 method中的对应出口形成`CALLEE_RETURN_TERMINAL`。二者分别由return语句或method closing token提供
-source provenance，只有callee variant按上述walker stack恢复caller。显式`throw`形成
-`THROW_TERMINAL`；所有terminal出度必须为0，throw不猜catch、事务或runtime handler。
+source provenance，只有callee variant按上述walker stack消费structural RETURN并恢复caller。显式
+`throw`形成`THROW_TERMINAL`；所有terminal出度必须为0，throw不消费RETURN、不激活continuation，且不猜
+catch、事务或runtime handler。
 unsupported/over-limit路径只能以`PROFILE_STOP_TERMINAL`加恰一个typed disposition闭合，
 不得按行号补边；任何reachable nonterminal缺合法后继、terminal有出边或guard polarity不完整均fatal。
 
@@ -671,9 +687,9 @@ Wire Reset后的`org.sourceanalysis.app.analysis.graph`已经有受限的 M1/M2 
 | **部分实现（M1→M2 可信重开）** | `PersistedCodeStructureGraphReader`、sealed `ReopenedCodeStructureGraph`、exact payload parser和`ProgramGraphInputBasis`已经实现并由真实 canonical module store 验证：M2只能先重开 M1 receipt/payload，核对 address、schema/type、七个上游引用、controls、profile和分母，再读取结构 draft。改变 fresh-reopened source controls 会在解析前以`GRAPH_REFERENCE_BROKEN`拒绝。M2 execution 与自己的 receipt-last 持久化已经使用这条 seam；完整产品运行核心的 M1/M2 组装仍受上行“产品组装”缺口限制。 |
 | **部分实现（M2 有界调用图）** | `CallGraphBuilder`已对冻结 fixture 产生唯一 Controller→Service、Service→Mapper、Mapper Java→XML statement 以及 call/return edges；重载 handler 或受显式 import 影响的 receiver 都记录 Gap，绝不按源码顺序或简单名称猜 target。`CallGraphExecution`会先以同一 reopened inputs 重开 M1，再构建并由`CallGraphModulePublisher`将调用图写为独立 M2 receipt-last artifact；后者把已重开 M1 payload 加入八项上游 lineage。上一轮发现的直接 Java 调用 provenance 断链已在当前有界切片修复：builder 会把调用 AST span 对应的`ProvenanceDraftV1`收入`CallGraphDraft.provenanceDrafts`，`CallGraphDraft`会拒绝节点或边引用 registry 中不存在的 evidence draft。完整 receipt mutation matrix、Mapper binding accounting 与完整仓库验收仍未实现。 |
 | **部分实现（M2→M3 可信重开）** | `PersistedCallGraphReader`和sealed `ReopenedCallGraph`已由真实 canonical M1/M2 modules 验证 address、type/schema、八项 upstream、controls、producer/completion、payload、profile与同一 M1/source/discovery basis。当前 M3 公共测试已通过这条 fresh-reopen seam 取得 M1/M2，并在解析前核对相同 basis、graph profile 与 M2 保存的 M1 payload lineage；这只证明当前有界输入链可用，不代表完整 mutation matrix 已完成。 |
-| **部分实现（M3 线性与单 guard 控制流切片）** | `ControlFlowGraphBuilderTest`当前验证一个单入口 fixture：builder 只投影已经由 M2 证明的 call/return edges，并生成`ENTRY`、`BASIC_BLOCK`、`ENTRY_RETURN_TERMINAL`和`CALLEE_RETURN_TERMINAL`。对上游 Service 中的`if (status == null) { return; }`，当前实现生成一个`GUARD`：TRUE edge 的`guardNodeId`指向该 guard、`polarity=TRUE`并到达 callee return terminal；FALSE edge 使用同一`guardNodeId`与`polarity=FALSE`到达 guard 后的正常续接节点。这个受支持形状不再产生`PROFILE_STOP_TERMINAL`。当前仅支持“单个、无 else、then 子树含 return”的 guard；一般多重/嵌套 if、else、throw、loop budget、多入口 ownership、完整 DFS/reachability、跨调用栈语义、终止节点删除/返回配对变异测试与 M3 module publication仍未实现，因此该 GREEN 不能代表控制流图或分析步骤“程序图”完成。 |
-| **尚未实现** | M3 的通用多重/嵌套/else 分支、异常、循环、跨调用栈语义与完整发布、M4–M6、`data-flow`、`evidence`和完整五图集合、graph index、正式 graph Gap JSONL、ProgramGraphs receipt，以及跨图/完整仓库验收均未实现。 |
+| **部分实现（M3 线性与单 guard 控制流切片）** | `ControlFlowGraphBuilderTest`当前验证一个单入口 fixture：builder 只投影已经由 M2 证明的 call/return edges，并生成`ENTRY`、`BASIC_BLOCK`、`ENTRY_RETURN_TERMINAL`和`CALLEE_RETURN_TERMINAL`。对上游 Service 中的`if (status == null) { return; }`，当前实现生成一个`GUARD`：TRUE edge 的`guardNodeId`指向该 guard、`polarity=TRUE`并到达 callee return terminal；FALSE edge 使用同一`guardNodeId`与`polarity=FALSE`到达 guard 后的正常续接节点。这个受支持形状不再产生`PROFILE_STOP_TERMINAL`。当前fixture没有direct-throw callee，因而尚未验证“M2 RETURN始终保留为structural frame link、throw不生成或激活continuation”的目标语义。当前仅支持“单个、无 else、then 子树含 return”的 guard；一般多重/嵌套 if、else、throw、loop budget、多入口 ownership、完整 DFS/reachability、跨调用栈语义、终止节点删除/返回配对变异测试与 M3 module publication仍未实现，因此该 GREEN 不能代表控制流图或分析步骤“程序图”完成。 |
+| **尚未实现** | M3 的direct-throw/mixed return-throw frame与continuation验证、通用多重/嵌套/else 分支、异常、循环、跨调用栈语义与完整发布、M4–M6、`data-flow`、`evidence`和完整五图集合、graph index、正式 graph Gap JSONL、ProgramGraphs receipt，以及跨图/完整仓库验收均未实现。 |
 | **历史证据，不是当前能力** | 已删除的`RepositoryModel`/旧FlowView曾投影部分结构、调用、SQL和CFG，并暴露DepotHead跨层status/ids dataflow不足。它们只提供测试反例，不是当前图或永久seam。 |
-| **下一实现门** | M3 后续 RED 必须按目标合同补齐一般多重/嵌套/else 分支、显式 throw、loop budget、完整 DFS/reachability、多入口守恒与跨调用栈 return 语义，并覆盖删除终止节点、破坏返回配对等变异；随后安装 M3 receipt-last module artifact。M2 同时仍需补齐其余 fail-closed mutation matrix与 Mapper binding accounting。单 guard M3 GREEN 和有界 M2 closure 都不能单独关闭本分析步骤；之后仍须完成 M4–M5，并由 M6 原子发布五图、index、Gap 和 receipt。 |
+| **下一实现门** | M3 下一 RED 先冻结direct-throw-only call anchor：必须保留exact M2 RETURN projection，但不得生成continuation NEXT或从该anchor到lexical successor的path；无独立前驱时successor才省略并exclude，有bypass branch时successor仍必须可达。再冻结mixed return/throw，只允许normal callee branch激活同一continuation。随后补齐一般多重/嵌套/else 分支、loop budget、完整 DFS/reachability、多入口守恒，覆盖删除终止节点、破坏返回配对等变异，并安装 M3 receipt-last module artifact。M2 同时仍需补齐其余 fail-closed mutation matrix与 Mapper binding accounting。单 guard M3 GREEN 和有界 M2 closure 都不能单独关闭本分析步骤；之后仍须完成 M4–M5，并由 M6 原子发布五图、index、Gap 和 receipt。 |
 
 历史pre-reset jshERP slice的Gap、0 Flow、0 Capsule不能被目标edge示例改写成成功，也不能被误报为当前SourceAnalysis输出。
