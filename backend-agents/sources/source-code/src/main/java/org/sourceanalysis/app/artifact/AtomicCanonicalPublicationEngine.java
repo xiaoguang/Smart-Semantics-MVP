@@ -1027,6 +1027,10 @@ final class AtomicCanonicalPublicationEngine {
                     "code-structure".equals(analysisStepAddress.moduleKey())
                         ? List.of("code-structure-draft.json")
                         : null;
+                case 2 ->
+                    "call-graph".equals(analysisStepAddress.moduleKey())
+                        ? List.of("call-graph-draft.json")
+                        : null;
                 default -> null;
               };
           default -> null;
@@ -1322,6 +1326,15 @@ final class AtomicCanonicalPublicationEngine {
           1,
           "code-structure",
           "code-structure-draft.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("PROGRAM_GRAPHS_CALL_GRAPH_DRAFT".equals(payload.artifactType())
+        && "program-graphs-call-graph-draft-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROGRAM_GRAPHS,
+          2,
+          "call-graph",
+          "call-graph-draft.json",
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     throw invalidInstall();
