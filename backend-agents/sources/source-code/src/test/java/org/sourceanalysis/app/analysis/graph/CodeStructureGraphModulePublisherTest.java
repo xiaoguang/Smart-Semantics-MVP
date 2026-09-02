@@ -20,7 +20,6 @@ import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
-import org.sourceanalysis.app.artifact.ArtifactPolicyRegistryReference;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.ArtifactStoreLimits;
 import org.sourceanalysis.app.artifact.CanonicalArtifactPolicyRegistry;
@@ -30,6 +29,7 @@ import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.RunStoreBootstrap;
 import org.sourceanalysis.app.artifact.RunStoreHandle;
 import org.sourceanalysis.app.artifact.Sha256Digest;
+import org.sourceanalysis.app.evidence.SourceLocatorV1;
 
 class CodeStructureGraphModulePublisherTest {
 
@@ -56,7 +56,8 @@ class CodeStructureGraphModulePublisherTest {
               handle, canonicalJson, policies, new ArtifactStoreLimits(2, 100_000, 200_000, 8));
 
       CodeStructureGraphDraftReference reference =
-          new CodeStructureGraphModulePublisher(store).publish(destination, source, discovery, draft);
+          new CodeStructureGraphModulePublisher(store)
+              .publish(destination, source, discovery, draft);
 
       var reopened = store.reopen(reference.publication());
       assertThat(reopened.receipt().address()).isEqualTo(destination);
@@ -72,8 +73,7 @@ class CodeStructureGraphModulePublisherTest {
               source.verifiedSnapshotRef(),
               draft.graphProfileRef());
       assertThat(reopened.receipt().upstreamArtifacts())
-          .isSortedAccordingTo(
-              java.util.Comparator.comparing(value -> value.artifactId().value()));
+          .isSortedAccordingTo(java.util.Comparator.comparing(value -> value.artifactId().value()));
       assertThat(reopened.payloads())
           .singleElement()
           .satisfies(
@@ -83,10 +83,12 @@ class CodeStructureGraphModulePublisherTest {
                     .isEqualTo("PROGRAM_GRAPHS_CODE_STRUCTURE_DRAFT");
                 assertThat(payload.descriptor().schemaVersion())
                     .isEqualTo(CodeStructureGraphDraft.SCHEMA_VERSION);
-                JsonNode body = canonicalJson.parseCanonical(payload.canonicalUtf8()).get("payload");
+                JsonNode body =
+                    canonicalJson.parseCanonical(payload.canonicalUtf8()).get("payload");
                 assertThat(body.get("graphKind").textValue()).isEqualTo("CODE_STRUCTURE");
                 assertThat(body.get("snapshotId").textValue()).isEqualTo(source.snapshotId());
                 assertThat(body.get("nodes")).hasSize(1);
+                assertThat(body.get("provenanceDrafts")).hasSize(1);
               });
     }
   }
@@ -94,7 +96,21 @@ class CodeStructureGraphModulePublisherTest {
   private static CodeStructureGraphDraft draft(
       CodeStructureSource source, CodeStructureDiscovery discovery) {
     ArtifactId node = id("program-node", "type");
-    ArtifactId provenance = id("provenance", "type");
+    CodeStructureSourceDocument document = source.documents().get(0);
+    ProvenanceDraftV1 provenance =
+        ProvenanceDraftV1.create(
+            "source-element-parser-v1",
+            new SourceLocatorV1(
+                document.fileId(),
+                document.path(),
+                0,
+                document.rawUtf8().size(),
+                1,
+                1,
+                1,
+                Math.toIntExact(document.rawUtf8().size()) + 1),
+            document.sha256(),
+            document.rawUtf8());
     CodeStructureGraphProfile profile =
         new CodeStructureGraphProfile(reference("graph-profile", "code-structure-v1"));
     return new CodeStructureGraphDraft(
@@ -107,8 +123,13 @@ class CodeStructureGraphModulePublisherTest {
         discovery.entryIds(),
         List.of(
             new DraftProgramNode(
-                node, ProgramNodeKind.TYPE, "com.example.DepotHead", discovery.entryIds(), List.of(provenance))),
+                node,
+                ProgramNodeKind.TYPE,
+                "com.example.DepotHead",
+                discovery.entryIds(),
+                List.of(provenance.provenanceDraftId()))),
         List.of(),
+        List.of(provenance),
         new GraphCoverage(List.of(node), List.of(node), List.of(), List.of(), List.of(), true));
   }
 
@@ -205,8 +226,7 @@ class CodeStructureGraphModulePublisherTest {
 
   private static String digest(byte[] value) {
     try {
-      return java.util.HexFormat.of()
-          .formatHex(MessageDigest.getInstance("SHA-256").digest(value));
+      return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
     } catch (NoSuchAlgorithmException impossible) {
       throw new IllegalStateException(impossible);
     }

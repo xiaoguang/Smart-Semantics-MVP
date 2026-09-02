@@ -17,9 +17,10 @@ public record CodeStructureGraphDraft(
     List<ArtifactId> entryIds,
     List<DraftProgramNode> nodes,
     List<DraftProgramEdge> edges,
+    List<ProvenanceDraftV1> provenanceDrafts,
     GraphCoverage coverage) {
 
-  public static final String SCHEMA_VERSION = "program-graphs-code-structure-draft-v1";
+  public static final String SCHEMA_VERSION = "program-graphs-code-structure-draft-v2";
 
   public CodeStructureGraphDraft {
     if (!SCHEMA_VERSION.equals(schemaVersion)) {
@@ -37,6 +38,8 @@ public record CodeStructureGraphDraft(
     entryIds = orderedIds(entryIds, "entry IDs");
     nodes = orderedNodes(nodes);
     edges = orderedEdges(edges);
+    provenanceDrafts = orderedProvenance(provenanceDrafts);
+    requireProvenanceClosure(nodes, edges, provenanceDrafts);
     Objects.requireNonNull(coverage, "graph coverage");
     List<ArtifactId> expectedCandidates =
         java.util.stream.Stream.of(
@@ -85,6 +88,36 @@ public record CodeStructureGraphDraft(
     return List.copyOf(ordered);
   }
 
+  private static List<ProvenanceDraftV1> orderedProvenance(List<ProvenanceDraftV1> values) {
+    Objects.requireNonNull(values, "provenance drafts");
+    List<ProvenanceDraftV1> ordered =
+        values.stream()
+            .sorted(Comparator.comparing(value -> value.provenanceDraftId().value()))
+            .toList();
+    if (ordered.size()
+        != ordered.stream().map(ProvenanceDraftV1::provenanceDraftId).distinct().count()) {
+      throw new IllegalArgumentException("provenance drafts must have distinct IDs");
+    }
+    return List.copyOf(ordered);
+  }
+
+  private static void requireProvenanceClosure(
+      List<DraftProgramNode> nodes,
+      List<DraftProgramEdge> edges,
+      List<ProvenanceDraftV1> provenanceDrafts) {
+    java.util.Set<ArtifactId> referenced = new java.util.HashSet<>();
+    nodes.forEach(node -> referenced.addAll(node.evidenceDraftRefs()));
+    edges.forEach(edge -> referenced.addAll(edge.evidenceDraftRefs()));
+    java.util.Set<ArtifactId> declared =
+        provenanceDrafts.stream()
+            .map(ProvenanceDraftV1::provenanceDraftId)
+            .collect(java.util.stream.Collectors.toSet());
+    if (!referenced.equals(declared)) {
+      throw new IllegalArgumentException(
+          "provenance drafts must close all evidence draft references");
+    }
+  }
+
   @Override
   public List<ArtifactId> entryIds() {
     return List.copyOf(entryIds);
@@ -98,5 +131,10 @@ public record CodeStructureGraphDraft(
   @Override
   public List<DraftProgramEdge> edges() {
     return List.copyOf(edges);
+  }
+
+  @Override
+  public List<ProvenanceDraftV1> provenanceDrafts() {
+    return List.copyOf(provenanceDrafts);
   }
 }

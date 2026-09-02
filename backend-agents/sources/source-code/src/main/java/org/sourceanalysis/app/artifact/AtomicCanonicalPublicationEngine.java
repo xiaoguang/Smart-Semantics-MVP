@@ -1316,7 +1316,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     if ("PROGRAM_GRAPHS_CODE_STRUCTURE_DRAFT".equals(payload.artifactType())
-        && "program-graphs-code-structure-draft-v1".equals(payload.schemaVersion())) {
+        && "program-graphs-code-structure-draft-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROGRAM_GRAPHS,
           1,

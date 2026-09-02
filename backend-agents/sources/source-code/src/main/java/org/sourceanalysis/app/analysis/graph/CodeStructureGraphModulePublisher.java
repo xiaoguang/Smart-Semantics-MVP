@@ -42,7 +42,9 @@ public final class CodeStructureGraphModulePublisher {
     canonicalJson = new CanonicalJsonCodec();
   }
 
-  /** Installs the canonical code-structure module result and returns its typed reopening reference. */
+  /**
+   * Installs the canonical code-structure module result and returns its typed reopening reference.
+   */
   public CodeStructureGraphDraftReference publish(
       AnalysisStepModuleAddress destination,
       CodeStructureSource source,
@@ -65,7 +67,9 @@ public final class CodeStructureGraphModulePublisher {
                 draft.graphProfileRef()));
     List<String> gapRefs = gapReferences(draft.coverage());
     ModuleCompletionStatus status =
-        gapRefs.isEmpty() ? ModuleCompletionStatus.SUCCEEDED : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
+        gapRefs.isEmpty()
+            ? ModuleCompletionStatus.SUCCEEDED
+            : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
     InstalledModulePublication installed =
         moduleArtifacts.install(
             new ModuleInstallRequest(
@@ -75,7 +79,8 @@ public final class CodeStructureGraphModulePublisher {
                 source.controls(),
                 status,
                 gapRefs,
-                List.of(payload(destination, upstream, source.controls(), draft, status, gapRefs))));
+                List.of(
+                    payload(destination, upstream, source.controls(), draft, status, gapRefs))));
     return new CodeStructureGraphDraftReference(installed.reference());
   }
 
@@ -127,6 +132,8 @@ public final class CodeStructureGraphModulePublisher {
     draft.nodes().forEach(node -> nodes.add(node(node)));
     ArrayNode edges = body.putArray("edges");
     draft.edges().forEach(edge -> edges.add(edge(edge)));
+    ArrayNode provenanceDrafts = body.putArray("provenanceDrafts");
+    draft.provenanceDrafts().forEach(provenance -> provenanceDrafts.add(provenance(provenance)));
     body.set("coverage", coverage(draft.coverage()));
     return body;
   }
@@ -160,6 +167,24 @@ public final class CodeStructureGraphModulePublisher {
       value.put("polarity", edge.polarity());
     }
     ids(value.putArray("evidenceDraftRefs"), edge.evidenceDraftRefs());
+    return value;
+  }
+
+  private static ObjectNode provenance(ProvenanceDraftV1 provenance) {
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    value.put("provenanceDraftId", provenance.provenanceDraftId().value());
+    value.put("ruleId", provenance.ruleId());
+    ObjectNode locator = value.putObject("sourceLocator");
+    locator.put("fileId", provenance.sourceLocator().fileId().value());
+    locator.put("path", provenance.sourceLocator().path());
+    locator.put("startByte", provenance.sourceLocator().startByte());
+    locator.put("endByteExclusive", provenance.sourceLocator().endByteExclusive());
+    locator.put("startLine", provenance.sourceLocator().startLine());
+    locator.put("startColumn", provenance.sourceLocator().startColumn());
+    locator.put("endLine", provenance.sourceLocator().endLine());
+    locator.put("endColumn", provenance.sourceLocator().endColumn());
+    value.put("sourceFileSha256", provenance.sourceFileSha256().value());
+    value.put("excerptSha256", provenance.excerptSha256().value());
     return value;
   }
 

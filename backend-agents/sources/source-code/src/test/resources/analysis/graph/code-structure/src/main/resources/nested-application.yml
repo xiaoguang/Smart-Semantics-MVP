@@ -1,0 +1,3 @@
+app:
+  persistence:
+    mapper-location: classpath:mapper/DepotHeadMapper.xml

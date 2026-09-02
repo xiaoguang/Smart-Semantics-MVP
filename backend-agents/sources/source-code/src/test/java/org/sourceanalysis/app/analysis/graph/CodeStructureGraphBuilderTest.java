@@ -10,6 +10,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
@@ -177,6 +179,199 @@ class CodeStructureGraphBuilderTest {
         .hasMessageContaining("file IDs");
   }
 
+  @Test
+  void preservesExactConfigurationAndProvenanceDraftsForLaterEvidenceReopening() throws Exception {
+    CodeStructureSource source =
+        new CodeStructureSource(
+            "snapshot:" + digest("provenance-snapshot"),
+            "COMPLETE_CAPTURE",
+            true,
+            reference("source-inventory", "provenance-inventory"),
+            reference("verified-snapshot", "provenance-snapshot"),
+            controls(),
+            List.of(
+                document("src/main/resources/application.yml"),
+                document("src/main/resources/mapper/DepotHeadMapper.xml")));
+    CodeStructureDiscovery discovery =
+        new CodeStructureDiscovery(
+            id("application-profile", "provenance-profile"),
+            reference("application-profile", "provenance-profile"),
+            reference("capability-report", "provenance-capability"),
+            reference("entry-points", "provenance-entries"),
+            reference("mapper-catalog", "provenance-mappers"),
+            List.of());
+
+    CodeStructureGraphDraft draft =
+        new CodeStructureGraphBuilder()
+            .buildStructure(
+                source,
+                discovery,
+                new CodeStructureGraphProfile(reference("graph-profile", "code-structure-v2")));
+
+    assertThat(draft.nodes())
+        .extracting(DraftProgramNode::canonicalValue)
+        .contains(
+            "mybatis.mapper-locations", "classpath:mapper/DepotHeadMapper.xml", "jsh_depot_head");
+    assertThat(draft.edges())
+        .extracting(DraftProgramEdge::kind)
+        .contains(ProgramEdgeKind.CONFIG_RESOLVES_RESOURCE, ProgramEdgeKind.STATEMENT_CONTAINS_SQL);
+
+    Set<ArtifactId> referencedProvenance =
+        new TreeSet<>(java.util.Comparator.comparing(ArtifactId::value));
+    draft.nodes().forEach(node -> referencedProvenance.addAll(node.evidenceDraftRefs()));
+    draft.edges().forEach(edge -> referencedProvenance.addAll(edge.evidenceDraftRefs()));
+    assertThat(draft.provenanceDrafts())
+        .extracting(ProvenanceDraftV1::provenanceDraftId)
+        .containsExactlyElementsOf(referencedProvenance);
+
+    DraftProgramNode configKey =
+        draft.nodes().stream()
+            .filter(node -> node.canonicalValue().equals("mybatis.mapper-locations"))
+            .findFirst()
+            .orElseThrow();
+    ProvenanceDraftV1 configKeyProvenance =
+        draft.provenanceDrafts().stream()
+            .filter(
+                draftProvenance ->
+                    configKey.evidenceDraftRefs().contains(draftProvenance.provenanceDraftId()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(configKeyProvenance.ruleId()).isEqualTo("yaml-static-key-v1");
+    assertThat(configKeyProvenance.sourceLocator().path())
+        .isEqualTo("src/main/resources/application.yml");
+    assertThat(configKeyProvenance.sourceLocator())
+        .extracting(
+            locator -> locator.startByte(),
+            locator -> locator.endByteExclusive(),
+            locator -> locator.startLine(),
+            locator -> locator.startColumn(),
+            locator -> locator.endLine(),
+            locator -> locator.endColumn())
+        .containsExactly(11L, 27L, 2, 3, 2, 19);
+    assertThat(configKeyProvenance.excerptSha256())
+        .isEqualTo(new Sha256Digest(digest("mapper-locations")));
+  }
+
+  @Test
+  void preservesDeclarationAndSqlTokenSpansInsteadOfUsingWholeSourceFiles() throws Exception {
+    CodeStructureSourceDocument controller =
+        document("src/main/java/com/example/DepotHeadController.java");
+    CodeStructureSourceDocument mapper = document("src/main/resources/mapper/DepotHeadMapper.xml");
+    CodeStructureSource source =
+        new CodeStructureSource(
+            "snapshot:" + digest("declaration-span-snapshot"),
+            "COMPLETE_CAPTURE",
+            true,
+            reference("source-inventory", "declaration-span-inventory"),
+            reference("verified-snapshot", "declaration-span-snapshot"),
+            controls(),
+            List.of(controller, mapper));
+    CodeStructureDiscovery discovery =
+        new CodeStructureDiscovery(
+            id("application-profile", "declaration-span-profile"),
+            reference("application-profile", "declaration-span-profile"),
+            reference("capability-report", "declaration-span-capability"),
+            reference("entry-points", "declaration-span-entries"),
+            reference("mapper-catalog", "declaration-span-mappers"),
+            List.of());
+
+    CodeStructureGraphDraft draft =
+        new CodeStructureGraphBuilder()
+            .buildStructure(
+                source,
+                discovery,
+                new CodeStructureGraphProfile(reference("graph-profile", "code-structure-v2")));
+
+    ProvenanceDraftV1 method =
+        provenanceFor(
+            draft,
+            "com.example.DepotHeadController#batchSetStatus(java.lang.String,java.lang.String)",
+            ProgramNodeKind.METHOD);
+    assertThat(method.sourceLocator())
+        .extracting(
+            locator -> locator.path(),
+            locator -> locator.startLine(),
+            locator -> locator.startColumn(),
+            locator -> locator.endLine(),
+            locator -> locator.endColumn())
+        .containsExactly("src/main/java/com/example/DepotHeadController.java", 4, 3, 6, 4);
+    assertThat(method.sourceLocator().endByteExclusive()).isLessThan(controller.rawUtf8().size());
+
+    ProvenanceDraftV1 table = provenanceFor(draft, "jsh_depot_head", ProgramNodeKind.SQL_TABLE);
+    assertThat(table.sourceLocator())
+        .extracting(
+            locator -> locator.path(),
+            locator -> locator.startLine(),
+            locator -> locator.startColumn(),
+            locator -> locator.endLine(),
+            locator -> locator.endColumn())
+        .containsExactly("src/main/resources/mapper/DepotHeadMapper.xml", 5, 12, 5, 26);
+    assertThat(table.sourceLocator().endByteExclusive()).isLessThan(mapper.rawUtf8().size());
+
+    ProvenanceDraftV1 column =
+        provenanceFor(draft, "jsh_depot_head.status", ProgramNodeKind.SQL_COLUMN);
+    assertThat(column.sourceLocator())
+        .extracting(
+            locator -> locator.startLine(),
+            locator -> locator.startColumn(),
+            locator -> locator.endLine(),
+            locator -> locator.endColumn())
+        .containsExactly(6, 9, 6, 15);
+  }
+
+  @Test
+  void flattensNestedStaticConfigurationKeysWithoutLosingTheirResourceEvidence() throws Exception {
+    CodeStructureSource source =
+        new CodeStructureSource(
+            "snapshot:" + digest("nested-config-snapshot"),
+            "COMPLETE_CAPTURE",
+            true,
+            reference("source-inventory", "nested-config-inventory"),
+            reference("verified-snapshot", "nested-config-snapshot"),
+            controls(),
+            List.of(document("src/main/resources/nested-application.yml")));
+    CodeStructureGraphDraft draft =
+        new CodeStructureGraphBuilder()
+            .buildStructure(
+                source,
+                discovery("nested-config"),
+                new CodeStructureGraphProfile(reference("graph-profile", "code-structure-v2")));
+
+    DraftProgramNode key =
+        draft.nodes().stream()
+            .filter(candidate -> candidate.kind() == ProgramNodeKind.CONFIGURATION_KEY)
+            .findFirst()
+            .orElseThrow();
+    assertThat(key.canonicalValue()).isEqualTo("app.persistence.mapper-location");
+    ProvenanceDraftV1 provenance =
+        draft.provenanceDrafts().stream()
+            .filter(candidate -> key.evidenceDraftRefs().contains(candidate.provenanceDraftId()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(provenance.sourceLocator())
+        .extracting(
+            locator -> locator.startLine(),
+            locator -> locator.startColumn(),
+            locator -> locator.endLine(),
+            locator -> locator.endColumn())
+        .containsExactly(3, 5, 3, 20);
+  }
+
+  private static ProvenanceDraftV1 provenanceFor(
+      CodeStructureGraphDraft draft, String canonicalValue, ProgramNodeKind kind) {
+    DraftProgramNode node =
+        draft.nodes().stream()
+            .filter(
+                candidate ->
+                    candidate.kind() == kind && candidate.canonicalValue().equals(canonicalValue))
+            .findFirst()
+            .orElseThrow();
+    return draft.provenanceDrafts().stream()
+        .filter(candidate -> node.evidenceDraftRefs().contains(candidate.provenanceDraftId()))
+        .findFirst()
+        .orElseThrow();
+  }
+
   private static CodeStructureSourceDocument document(String resourcePath) throws Exception {
     byte[] bytes =
         Files.readAllBytes(
@@ -196,6 +391,16 @@ class CodeStructureGraphBuilderTest {
         null,
         new ArtifactPolicyRegistryReference(
             id("artifact-policy-registry", "policy"), new Sha256Digest(digest("policy"))));
+  }
+
+  private static CodeStructureDiscovery discovery(String value) {
+    return new CodeStructureDiscovery(
+        id("application-profile", value + "-profile"),
+        reference("application-profile", value + "-profile"),
+        reference("capability-report", value + "-capability"),
+        reference("entry-points", value + "-entries"),
+        reference("mapper-catalog", value + "-mappers"),
+        List.of());
   }
 
   private static ArtifactReference reference(String prefix, String value) {
