@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper [<!ENTITY external SYSTEM "file:///should-not-be-read">]>
+<mapper namespace="com.example.ExternalEntityMapper">
+  <update id="updateStatus" parameterType="com.example.DepotHead">
+    &external;
+  </update>
+</mapper>

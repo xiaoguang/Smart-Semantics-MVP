@@ -1021,6 +1021,14 @@ final class AtomicCanonicalPublicationEngine {
                         : null;
                 default -> null;
               };
+          case PROGRAM_GRAPHS ->
+              switch (analysisStepAddress.moduleNumber()) {
+                case 1 ->
+                    "code-structure".equals(analysisStepAddress.moduleKey())
+                        ? List.of("code-structure-draft.json")
+                        : null;
+                default -> null;
+              };
           default -> null;
         };
     if (expectedFileNames == null
@@ -1306,6 +1314,15 @@ final class AtomicCanonicalPublicationEngine {
           "publish",
           "mapper-catalog.jsonl",
           CanonicalEnvelopeKind.CANONICAL_JSONL);
+    }
+    if ("PROGRAM_GRAPHS_CODE_STRUCTURE_DRAFT".equals(payload.artifactType())
+        && "program-graphs-code-structure-draft-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROGRAM_GRAPHS,
+          1,
+          "code-structure",
+          "code-structure-draft.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     throw invalidInstall();
   }
