@@ -27,7 +27,8 @@ import org.sourceanalysis.app.artifact.Sha256Digest;
  * Private, nofollow-safe reader for the immutable documents created by local Git capture.
  *
  * <p>It accepts only a content identifier and returns rootless capture metadata. It neither reads a
- * worktree nor exposes the private workspace location, source blob path, or raw blob bytes.
+ * worktree nor exposes the private workspace location or source blob path. Inventory composition
+ * can request an opaque private byte handle for one fresh-reopened registration.
  */
 public final class LocalGitSourceRegistry {
 
@@ -150,6 +151,25 @@ public final class LocalGitSourceRegistry {
       throw failure;
     } catch (RuntimeException | IOException failure) {
       throw failure("CAPTURE_IDENTITY_INVALID");
+    }
+  }
+
+  /**
+   * Opens one opaque private byte handle after fresh-reopening the registration and capture proof.
+   */
+  public RegisteredSourceSnapshot openSnapshot(ArtifactId sourceRegistrationId) {
+    RegisteredSourceCapture capture = reopen(sourceRegistrationId);
+    try {
+      Path snapshotDirectory = workspace.resolve("snapshots").resolve(capture.snapshotId());
+      requireNoSymlinkPath(snapshotDirectory);
+      if (!Files.isDirectory(snapshotDirectory, LinkOption.NOFOLLOW_LINKS)) {
+        throw failure("SOURCE_HANDLE_INVALID");
+      }
+      return new RegisteredSourceSnapshot(capture, snapshotDirectory);
+    } catch (SourceRegistrationRegistryException failure) {
+      throw failure;
+    } catch (IOException failure) {
+      throw failure("SOURCE_HANDLE_INVALID");
     }
   }
 
