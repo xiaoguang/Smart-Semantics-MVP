@@ -358,7 +358,8 @@ Wire Reset后的`org.sourceanalysis.app.analysis.inventory`目前仍只有语义
 | --- | --- |
 | **已实现（结构/构建门）** | 工程身份与package已切换，项目使用JDK 17 Toolchain；`analysis.inventory`和`capture.localgit`目标位置存在。共享module store已能持久化三种已注册模块形状。 |
 | **已实现（独立capture纵切）** | `LocalGitCommitCaptureAdapter`已在synthetic local Git repository上按exact commit读取raw tree/blob并安装manifest、receipt、content-addressed blob与path-free registration；它对text/media/100755分类，拒绝tree symlink，且工作区修改不会影响相同commit的capture identity。 |
-| **本步骤生产能力尚未实现** | private source registration lookup、预算和line-index验证、M1业务语义、M2文件验证/M3投影、analysis-step store及真正从已验证源码生成的四项reader-visible输出仍不存在。该capture纵切和共享module store都不能代表完整本步骤或任何jshERP结果。 |
+| **已实现（M1纯准入核心，尚未发布）** | `FrozenRequestAdmission`已严格解析canonical `analysis-run-request-v2`的ROUND_1/ROUND_2顶层形态，对注入的rootless capture/profile view核对source-registration、frozen request、profile/budget、canonical path、完整regular-file分母与资源预算，并按UTF-8 path顺序生成`AdmittedSourceRequest`。synthetic八文件、路径逃逸、空清单、capture mismatch、ROUND_2和输入乱序测试已覆盖。它不读来源字节，也没有M1 module artifact writer/reader、private source-registration registry integration或store publication。 |
+| **本步骤生产能力尚未实现** | private source registration lookup、M1 module artifact writer/parser与receipt-last publication、预算和line-index字节验证、M2文件验证/M3投影、analysis-step store及真正从已验证源码生成的四项reader-visible输出仍不存在。该capture纵切、M1纯准入核心和共享module store都不能代表完整本步骤或任何jshERP结果。 |
 | **历史证据，不是当前能力** | 已删除的pre-reset纵切曾在小型synthetic repository上验证只读capture、text/media disposition、hash与原子重开。这些结果只保留在Git历史/progress中，不能作为当前SourceAnalysis artifact或jshERP运行结果。 |
 | **下一实现门** | 按本章M1→M2→M3合同重新实现并通过完整tree、binary、symlink/gitlink、single-byte drift和不同root测试；随后才可对已批准完整jshERP commit做离线验收。 |
 

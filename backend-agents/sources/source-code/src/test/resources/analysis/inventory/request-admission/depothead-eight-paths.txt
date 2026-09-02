@@ -1,0 +1,8 @@
+jshERP-boot/pom.xml
+jshERP-boot/src/main/java/com/jsh/erp/controller/DepotHeadController.java
+jshERP-boot/src/main/java/com/jsh/erp/datasource/entities/DepotHead.java
+jshERP-boot/src/main/java/com/jsh/erp/datasource/entities/DepotHeadExample.java
+jshERP-boot/src/main/java/com/jsh/erp/datasource/mappers/DepotHeadMapper.java
+jshERP-boot/src/main/java/com/jsh/erp/service/DepotHeadService.java
+jshERP-boot/src/main/resources/application.yml
+jshERP-boot/src/main/resources/mapper_xml/DepotHeadMapper.xml
