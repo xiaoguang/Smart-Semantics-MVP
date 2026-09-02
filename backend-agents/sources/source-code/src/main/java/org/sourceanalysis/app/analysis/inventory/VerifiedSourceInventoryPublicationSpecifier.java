@@ -485,10 +485,10 @@ final class VerifiedSourceInventoryPublicationSpecifier {
               lineIndex == null ? null : Sha256Digest.parse(lineIndex)));
     }
     requirePathOrder(parsed);
+    ArtifactId requestArtifactId = artifactId(node, "requestArtifactId");
     ArrayNode shards = array(node, "shardReceipts");
-    requireShards(shards, parsed);
-    return new Indexed(
-        snapshotId, artifactId(node, "requestArtifactId"), text, media, parsed, shards);
+    requireShards(shards, parsed, requestArtifactId);
+    return new Indexed(snapshotId, requestArtifactId, text, media, parsed, shards);
   }
 
   private void requireClosure(
@@ -630,42 +630,45 @@ final class VerifiedSourceInventoryPublicationSpecifier {
         .put("sha256", reference.sha256().value());
   }
 
-  private static void requireShards(ArrayNode shards, List<File> files) {
-    if (shards.isEmpty()) {
+  private static void requireShards(
+      ArrayNode shards, List<File> files, ArtifactId requestArtifactId) {
+    if (shards.size() != 1) {
       throw failure("VERIFIED_SOURCE_INVENTORY_UPSTREAM_INVALID");
     }
-    Set<String> expected = new HashSet<>();
-    files.forEach(file -> expected.add(file.id().value()));
-    Set<String> denominator = new HashSet<>();
-    Set<String> verified = new HashSet<>();
-    for (JsonNode node : shards) {
-      ObjectNode shard = object(node);
-      requireFields(
-          shard, Set.of("shardId", "denominatorFileIds", "verifiedFileIds", "status", "gapIds"));
-      if (!text(shard, "shardId").matches("source-shard:[0-9a-f]{64}")
-          || !"SUCCEEDED".equals(text(shard, "status"))
-          || !array(shard, "gapIds").isEmpty()) {
-        throw failure("VERIFIED_SOURCE_INVENTORY_UPSTREAM_INVALID");
-      }
-      uniqueIds(array(shard, "denominatorFileIds"), denominator);
-      uniqueIds(array(shard, "verifiedFileIds"), verified);
+    List<String> expected =
+        files.stream().map(file -> file.id().value()).sorted(UTF8_ORDER).toList();
+    ObjectNode shard = object(shards.get(0));
+    requireFields(
+        shard, Set.of("shardId", "denominatorFileIds", "verifiedFileIds", "status", "gapIds"));
+    if (!text(shard, "shardId").matches("source-shard:[0-9a-f]{64}")
+        || !"SUCCEEDED".equals(text(shard, "status"))
+        || !array(shard, "gapIds").isEmpty()) {
+      throw failure("VERIFIED_SOURCE_INVENTORY_UPSTREAM_INVALID");
     }
-    if (!expected.equals(denominator) || !expected.equals(verified)) {
+    List<String> denominator = uniqueIds(array(shard, "denominatorFileIds"));
+    List<String> verified = uniqueIds(array(shard, "verifiedFileIds"));
+    if (!expected.equals(denominator)
+        || !expected.equals(verified)
+        || !text(shard, "shardId")
+            .equals(SourceShardIdentity.fullInventoryId(requestArtifactId, expected))) {
       throw failure("VERIFIED_SOURCE_INVENTORY_UPSTREAM_INVALID");
     }
   }
 
-  private static void uniqueIds(ArrayNode values, Set<String> target) {
+  private static List<String> uniqueIds(ArrayNode values) {
+    List<String> result = new ArrayList<>();
     String previous = null;
     for (JsonNode value : values) {
       if (!value.isTextual()
           || !value.textValue().matches("file:[0-9a-f]{64}")
           || (previous != null && UTF8_ORDER.compare(previous, value.textValue()) >= 0)
-          || !target.add(value.textValue())) {
+          || result.contains(value.textValue())) {
         throw failure("VERIFIED_SOURCE_INVENTORY_UPSTREAM_INVALID");
       }
+      result.add(value.textValue());
       previous = value.textValue();
     }
+    return List.copyOf(result);
   }
 
   private static void requirePathOrder(List<File> files) {

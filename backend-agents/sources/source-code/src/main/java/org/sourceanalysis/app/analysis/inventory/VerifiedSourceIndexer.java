@@ -18,7 +18,9 @@ import java.util.Map;
 import java.util.Set;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
+import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
+import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.capture.localgit.LocalGitSourceRegistry;
 import org.sourceanalysis.app.capture.localgit.RegisteredSourceCapture;
@@ -44,21 +46,40 @@ public final class VerifiedSourceIndexer {
    * @throws VerifiedSourceIndexException when capture identity or sealed file bytes do not satisfy
    *     the inventory contract
    */
+  /**
+   * Fresh-reopens the preceding M1 publication before it accesses the private source registry.
+   *
+   * <p>This is the only public M2 entry: callers cannot bypass M1 with an in-memory admitted
+   * request or a filesystem path.
+   */
   public VerifiedSourceIndex index(
-      AdmittedSourceRequest request, LocalGitSourceRegistry sourceRegistry) {
+      ModulePublicationReference admittedSourceRequestPublication,
+      CanonicalModuleArtifactStore moduleArtifacts,
+      LocalGitSourceRegistry sourceRegistry) {
+    if (moduleArtifacts == null) {
+      throw failure("REQUEST_SCHEMA_INVALID");
+    }
+    return index(
+        new AdmittedSourceRequestModuleReader(moduleArtifacts)
+            .read(admittedSourceRequestPublication),
+        sourceRegistry);
+  }
+
+  VerifiedSourceIndex index(
+      VerifiedSourceIndexInput request, LocalGitSourceRegistry sourceRegistry) {
     if (request == null || sourceRegistry == null) {
       throw failure("REQUEST_SCHEMA_INVALID");
     }
 
     try {
       RegisteredSourceSnapshot snapshot =
-          sourceRegistry.openSnapshot(request.sourceRegistrationId());
+          sourceRegistry.openSnapshot(request.sourceRegistrationRef().artifactId());
       RegisteredSourceCapture capture = snapshot.capture();
       verifyCaptureIdentity(request, capture);
-      List<CapturedRegularFile> admittedFiles = verifiedAdmissionFiles(request, capture);
+      List<AdmittedSourceFile> admittedFiles = verifiedAdmissionFiles(request, capture);
 
       List<VerifiedSourceFile> verifiedFiles = new ArrayList<>(admittedFiles.size());
-      for (CapturedRegularFile admittedFile : admittedFiles) {
+      for (AdmittedSourceFile admittedFile : admittedFiles) {
         RegisteredSourceFile manifestFile = matchingManifestFile(capture, admittedFile.path());
         ImmutableBytes sealedBytes = snapshot.read(manifestFile);
         byte[] rawBytes = sealedBytes.copyToByteArray();
@@ -90,7 +111,7 @@ public final class VerifiedSourceIndexer {
   }
 
   private static void verifyCaptureIdentity(
-      AdmittedSourceRequest request, RegisteredSourceCapture capture) {
+      VerifiedSourceIndexInput request, RegisteredSourceCapture capture) {
     if (!request.originRepositoryUrl().equals(capture.declaredRepositoryIdentity())
         || !request.originRevision().equals(capture.commitId())
         || !request.captureReceiptRef().equals(capture.captureReceiptRef())
@@ -100,9 +121,9 @@ public final class VerifiedSourceIndexer {
     }
   }
 
-  private static List<CapturedRegularFile> verifiedAdmissionFiles(
-      AdmittedSourceRequest request, RegisteredSourceCapture capture) {
-    List<CapturedRegularFile> files = request.files();
+  private static List<AdmittedSourceFile> verifiedAdmissionFiles(
+      VerifiedSourceIndexInput request, RegisteredSourceCapture capture) {
+    List<AdmittedSourceFile> files = request.files();
     if (files.size() != capture.manifestEntries().size() || !isStrictUtf8Sorted(files)) {
       throw failure("CAPTURE_IDENTITY_INVALID");
     }
@@ -113,37 +134,17 @@ public final class VerifiedSourceIndexer {
         throw failure("DUPLICATE_SOURCE_PATH");
       }
     }
-    Set<ArtifactId> textIds = new HashSet<>(request.analyzableTextFileIds());
-    Set<ArtifactId> mediaIds = new HashSet<>(request.nonAnalyzableMediaFileIds());
-    if (textIds.size() != request.analyzableTextFileIds().size()
-        || mediaIds.size() != request.nonAnalyzableMediaFileIds().size()
-        || !disjoint(textIds, mediaIds)) {
-      throw failure("CAPTURE_IDENTITY_INVALID");
-    }
-
-    for (CapturedRegularFile file : files) {
+    for (AdmittedSourceFile file : files) {
       RegisteredSourceFile manifestEntry = manifestByPath.get(file.path());
       if (manifestEntry == null || !sameManifestMetadata(file, manifestEntry)) {
         throw failure("CAPTURE_IDENTITY_INVALID");
       }
-      ArtifactId expectedFileId =
-          fileId(file.path(), file.gitMode(), file.sizeBytes(), file.sha256());
-      if (!file.fileId().equals(expectedFileId)
-          || (file.analysisDisposition() == SourceAnalysisDisposition.ANALYZABLE_TEXT
-              && !textIds.contains(file.fileId()))
-          || (file.analysisDisposition() == SourceAnalysisDisposition.NON_ANALYZABLE_MEDIA
-              && !mediaIds.contains(file.fileId()))) {
-        throw failure("CAPTURE_IDENTITY_INVALID");
-      }
-    }
-    if (textIds.size() + mediaIds.size() != files.size()) {
-      throw failure("CAPTURE_IDENTITY_INVALID");
     }
     return files;
   }
 
   private static boolean sameManifestMetadata(
-      CapturedRegularFile admitted, RegisteredSourceFile registered) {
+      AdmittedSourceFile admitted, RegisteredSourceFile registered) {
     return admitted.gitMode().equals(registered.gitMode())
         && admitted.mediaType().equals(registered.mediaType())
         && admitted.sizeBytes() == registered.sizeBytes()
@@ -152,10 +153,10 @@ public final class VerifiedSourceIndexer {
         && java.util.Objects.equals(admitted.textEncoding(), registered.textEncoding());
   }
 
-  private static boolean isStrictUtf8Sorted(List<CapturedRegularFile> files) {
+  private static boolean isStrictUtf8Sorted(List<AdmittedSourceFile> files) {
     String previous = null;
     Set<String> paths = new HashSet<>();
-    for (CapturedRegularFile file : files) {
+    for (AdmittedSourceFile file : files) {
       if (!paths.add(file.path())
           || (previous != null && UTF8_ORDER.compare(previous, file.path()) >= 0)) {
         return false;
@@ -163,10 +164,6 @@ public final class VerifiedSourceIndexer {
       previous = file.path();
     }
     return true;
-  }
-
-  private static boolean disjoint(Set<ArtifactId> first, Set<ArtifactId> second) {
-    return first.stream().noneMatch(second::contains);
   }
 
   private static RegisteredSourceFile matchingManifestFile(
@@ -177,7 +174,7 @@ public final class VerifiedSourceIndexer {
         .orElseThrow(() -> failure("CAPTURE_IDENTITY_INVALID"));
   }
 
-  private static void verifyBytes(CapturedRegularFile file, byte[] bytes) {
+  private static void verifyBytes(AdmittedSourceFile file, byte[] bytes) {
     if (bytes.length != file.sizeBytes()) {
       throw failure("SOURCE_SIZE_MISMATCH");
     }
@@ -186,13 +183,14 @@ public final class VerifiedSourceIndexer {
     }
   }
 
-  private static VerifiedSourceFile verifiedFile(CapturedRegularFile file, byte[] rawBytes) {
+  private static VerifiedSourceFile verifiedFile(AdmittedSourceFile file, byte[] rawBytes) {
+    ArtifactId fileId = fileId(file.path(), file.gitMode(), file.sizeBytes(), file.sha256());
     if (file.analysisDisposition() == SourceAnalysisDisposition.NON_ANALYZABLE_MEDIA) {
       if (file.textEncoding() != null) {
         throw failure("SOURCE_TEXT_DISPOSITION_INVALID");
       }
       return new VerifiedSourceFile(
-          file.fileId(),
+          fileId,
           file.path(),
           file.gitMode(),
           file.mediaType(),
@@ -207,7 +205,7 @@ public final class VerifiedSourceIndexer {
     requirePermittedText(rawBytes);
     List<Long> lineStarts = lineStarts(rawBytes);
     return new VerifiedSourceFile(
-        file.fileId(),
+        fileId,
         file.path(),
         file.gitMode(),
         file.mediaType(),

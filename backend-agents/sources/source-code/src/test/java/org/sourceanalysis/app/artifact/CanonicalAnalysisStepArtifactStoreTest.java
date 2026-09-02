@@ -79,6 +79,34 @@ class CanonicalAnalysisStepArtifactStoreTest {
   }
 
   @Test
+  void preservesANonNullPromptBundleControlAcrossAnalysisStepReceiptPersistence() {
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = sourceInventoryPolicies(canonicalJson);
+    AnalysisRunId runId =
+        AnalysisRunId.parse(
+            "analysis-run:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    ArtifactControls controls =
+        new ArtifactControls(
+            digest('a'), digest('b'), digest('c'), digest('d'), policies.reference());
+    ModuleInstallRequest publisherRequest =
+        publisherRequest(canonicalJson, policies, runId, controls);
+
+    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(emptyTemporaryDirectory)) {
+      CanonicalModuleArtifactStore moduleStore =
+          new FileSystemCanonicalModuleArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(3, 1_000_000, 2_000_000, 8));
+      InstalledModulePublication publisher = moduleStore.install(publisherRequest);
+      CanonicalAnalysisStepArtifactStore stepStore =
+          new FileSystemCanonicalAnalysisStepArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(3, 1_000_000, 2_000_000, 8));
+
+      var installed = stepStore.install(request(runId, controls, publisher, publisherRequest));
+
+      assertThat(stepStore.reopen(installed.reference()).receipt().controls()).isEqualTo(controls);
+    }
+  }
+
+  @Test
   void rejectsAReferenceWhoseReceiptDigestDoesNotMatchThePersistedReceipt() {
     CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
     CanonicalArtifactPolicyRegistry policies = sourceInventoryPolicies(canonicalJson);

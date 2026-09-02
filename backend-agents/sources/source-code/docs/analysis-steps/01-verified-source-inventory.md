@@ -222,7 +222,7 @@ SourceRegistration
 #### M2 VerifiedSourceIndexer
 
 - **解决的问题**：证明声明 path 当前仍是声明的普通文件字节，并生成稳定 source locator 所需索引。
-- **精确上游输入及前置**：由`CanonicalModuleArtifactStore.reopen(M1 reference)`得到的`AdmittedSourceRequest`与private registry解析出的opaque `RegisteredSnapshotHandle`；handle无可读取的path字段，只提供按snapshot/file identity做NOFOLLOW stat/read/reopen的受限操作。
+- **精确上游输入及前置**：由`CanonicalModuleArtifactStore.reopen(M1 reference)`得到的`admitted-source-request.json` **和同次M1 module receipt**，以及private registry解析出的opaque `RegisteredSnapshotHandle`；payload只投影其实际持久化的request identity、source registration、origin、scope和sorted files。capture/manifest reference不在该payload body中，M2只从同一M1 receipt的已验证upstream闭包取得它们，并核对三个reference与registered capture。M2不伪造M1未持久化的profile/toolchain/schema/prompt controls、`fileId`或text/media file-ID partitions。M2在读取并验证每个文件bytes后，才按8.3.1从path/mode/size/SHA确定性派生`fileId`，再从已验证的analysis disposition形成partition。handle无可读取的path字段，只提供按snapshot/file identity做NOFOLLOW stat/read/reopen的受限操作。
 - **确定性顺序 / LLM**：逐canonical regular path做NOFOLLOW ancestor/file check → pre-allocation stat/size gate → streaming SHA → post-read identity check → 对ANALYZABLE_TEXT strict UTF-8/line index、对NON_ANALYZABLE_MEDIA验证null text fields并禁止parser → partition/accounting → snapshot identity；全程0 LLM。
 - **目标输出与 DepotHead 示例**：`VerifiedFile{path,gitMode,mediaType,sizeBytes,sha256,analysisDisposition,textEncoding?,lineIndexDigest?}`列表、`SourceShardReceipt{denominatorFileIds,verifiedFileIds}`和`VerifiedSnapshotDraft{snapshotId,regular/text/media counts,sourceIntegrity}`；Controller为ANALYZABLE_TEXT。binary fixture为NON_ANALYZABLE_MEDIA且两个text字段为null；均不保存绝对root。
 - **必须保持的不变量**：每个admitted regular file恰一个终态；`trackedIds=verifiedIds⊎unverifiedIds`且`verifiedIds=textIds⊎mediaIds`，只有`unverifiedIds=∅`才能安装M2 success publication；所有files验SHA，只有text建立line index且可进入parser；shard denominators不交叠且union等于全部admitted fileIds；byte offsets基于原始UTF-8、line/column 1-based/end exclusive；不同private root/shard size/order的等价bytes得到相同IDs。
@@ -342,6 +342,38 @@ path保留已校验Git repository-relative UTF-8 bytes；不得做Unicode、大�
 
 source-inventory.jsonl按path排序，每行一个`source-inventory-entry-v2` canonical JSON object并以LF结束；所有regular files均出现。analysis step receipt绑定exact artifact names、size和SHA。
 
+### 8.3.2 已冻结 source shard identity
+
+v0 的 M2 不把调度分批当成业务产物：一次成功的 source-index publication 恰有一个
+`FULL_INVENTORY_VERIFICATION` logical shard。它的 denominator 是 M1 声明、M2 已逐字节
+验证的全部 `fileId`；其 `verifiedFileIds` 必须与 denominator 相同，`status=SUCCEEDED`，
+`gapIds=[]`。未来实现可在同一语义下分多个物理 worker 执行，但不能改变这个 logical
+shard 的 identity 或将物理分批写进 reader-visible JSON。
+
+~~~text
+sourceShardIdentityMaterial = canonicalJson({
+  "analysisStepKey": "verified-source-inventory",
+  "shardKind": "FULL_INVENTORY_VERIFICATION",
+  "requestArtifactId": exactM1SourceRequestArtifactId,
+  "denominatorFileIds": sortedCanonicalFileIds,
+  "verifiedFileIds": sortedCanonicalFileIds,
+  "status": "SUCCEEDED",
+  "gapIds": []
+})
+
+sourceShardId = "source-shard:" + lowercaseHex(SHA-256(
+  frame(UTF8("verified-source-shard-id-v1")) ||
+  frame(sourceShardIdentityMaterial)
+))
+~~~
+
+所有 ID 列表按其 ASCII/UTF-8 bytes 严格排序；同一 ID 不得重复。`requestArtifactId` 将
+shard 绑定到确切冻结请求和其 M1 controls；因此相同文件 bytes 出现在不同请求、来源或
+控制配置中时，不会被错误地复用为同一 M2 shard。M2 的 module envelope/receipt 仍各自
+绑定 controls 与 upstream references；该 shard 公式不含自身 ID、M2 artifact ID、时间、
+线程、私有 root、物理批次大小或行索引。M3 只接受此公式可重算且 denominator union
+闭合的 shard receipt。
+
 ### 8.4 预算和安全
 
 capture与VerifiedSourceInventory至少执行maxFiles、maxTotalBytes、maxFileBytes。capture以受约束Git CLI plumbing读取raw objects，拒绝promisor/alternates/replace/graft与任何lazy fetch；VerifiedSourceInventory先stat/size gate，再分配或解码，读取后复查identity。private snapshot handle、每个祖先目录段和文件都NOFOLLOW。所有regular files hash；只解码ANALYZABLE_TEXT。无live ref、工作区读取、网络、客户build/runtime或任意fallback。
@@ -390,11 +422,11 @@ Wire Reset后的`org.sourceanalysis.app.analysis.inventory`已开始形成源码
 | --- | --- |
 | **已实现（结构/构建门）** | 工程身份与package已切换，项目使用JDK 17 Toolchain；`analysis.inventory`和`capture.localgit`目标位置存在。共享module store已能持久化三种已注册模块形状。 |
 | **已实现（独立capture纵切）** | `LocalGitCommitCaptureAdapter`已在synthetic local Git repository上按exact commit读取raw tree/blob并安装manifest、receipt、content-addressed blob与path-free registration；`LocalGitSourceRegistry`已能只凭registration ID fresh-reopen并核验registration、receipt和manifest，且其返回值不泄露workspace/blob路径或原始字节。它对text/media/100755分类，拒绝tree symlink，且工作区修改不会影响相同commit的capture identity。 |
-| **已实现（M1准入与落盘 writer；尚未端到端组装）** | `FrozenRequestAdmission`已严格解析canonical `analysis-run-request-v2`的ROUND_1/ROUND_2顶层形态，对注入的rootless capture/profile view核对source-registration、frozen request、profile/budget、canonical path、完整regular-file分母与资源预算，并按UTF-8 path顺序生成`AdmittedSourceRequest`。`AdmittedSourceRequestModulePublisher`已将该结果与八项精确上游引用写为`admitted-source-request.json`及store-last module receipt，并可fresh reopen；其direct selector验证完整capture的text/media payload、上游闭包和无Path seam。它不读来源字节，也尚未由private source-registration registry、真实run request/frozen request reader与执行器驱动，M2 reader尚未实现。 |
-| **已实现（M2字节核验核心，尚未发布）** | `VerifiedSourceIndexer`只通过注册表提供的opaque snapshot handle重新读取M1准入的每个文件。它逐项重新核对capture身份、path/mode/size/SHA/处置和统一`file:` ID；文本以strict UTF-8解码、拒绝NUL/禁用控制字符并建立稳定的行起始byte索引，媒体保持无文本索引。synthetic测试已覆盖text/media分区、稳定ID以及同长度单字节漂移的`SOURCE_HASH_MISMATCH`拒绝。它尚未从已发布M1 payload读取输入、尚未安装M2 module artifact/receipt，也尚未形成reader-visible步骤输出。 |
-| **已实现（M3投影与步骤公开集，尚未由真实M1/M2驱动）** | `VerifiedSourceInventoryPublicationSpecifier`已经从fresh-reopened的synthetic M1/M2 module publications、按完整`ArtifactReference`读取并重验的run/frozen request bytes，构造`source-input.json`、`verified-snapshot.json`与`source-inventory.jsonl`；随后`CanonicalAnalysisStepArtifactStore`原子安装三项并最后写`verified-source-inventory-receipt.json`。直接测试覆盖三项文件、M3 provenance、input hash与receipt-last store重开。这是M3组合纵切，不等于真实客户代码的盘点。 |
-| **本步骤生产能力尚未实现** | M1与private source registry的正式组装、M1 module artifact parser、M2从已发布M1重开并安装module artifact/receipt、以及统一执行器仍不存在。故当前M3只能消费已构造的canonical上游publication，不能从已登记客户commit生成四项reader-visible输出；capture纵切、M1 writer/M2纯核心、M3投影和共享store均不能代表完整本步骤或任何jshERP结果。 |
+| **已实现（M1准入与落盘 writer）** | `FrozenRequestAdmission`已严格解析canonical `analysis-run-request-v2`的ROUND_1/ROUND_2顶层形态，对注入的rootless capture/profile view核对source-registration、frozen request、profile/budget、canonical path、完整regular-file分母与资源预算，并按UTF-8 path顺序生成`AdmittedSourceRequest`。`AdmittedSourceRequestModulePublisher`已将该结果与八项精确上游引用写为`admitted-source-request.json`及store-last module receipt，并可fresh reopen；其direct selector验证完整capture的text/media payload、上游闭包和无Path seam。它不读来源字节。 |
+| **已实现（M2字节核验与module publication）** | `VerifiedSourceIndexer`的唯一public M2 entry接收M1 `ModulePublicationReference`、shared module store与opaque source registry；它先委托`AdmittedSourceRequestModuleReader`严格重开M1 publication，验证module address、success receipt、唯一payload与payload字段，并把payload中真正持久化的source-file declaration与M1 receipt中的source-registration/capture/manifest refs投影为内部`VerifiedSourceIndexInput`。外部调用者不能传M1 Java内存对象或路径；M2不会虚构controls、file ID和partition。随后它只通过注册表提供的opaque snapshot handle重新读取每个已准入文件，逐项重新核对capture身份、path/mode/size/SHA/处置并在字节验证后派生统一`file:` ID；文本以strict UTF-8解码、拒绝NUL/禁用控制字符并建立稳定的行起始byte索引，媒体保持无文本索引。`VerifiedSourceIndexModulePublisher`将结果与exact M1 payload/source-registration closure安装为receipt-last `verified-source-index.json`，并以8.3.2的single full-inventory shard绑定全量`fileId`分母。direct selectors已覆盖M1 fresh reopen、public M2 seam、text/media分区、稳定ID、同长度单字节漂移的`SOURCE_HASH_MISMATCH`、M2 payload/receipt、canonical upstream排序与shard ID重算。 |
+| **已实现（M1→M2→M3真实模块接力）** | `VerifiedSourceInventoryPublicationSpecifier`已在同一个synthetic local Git capture中接收`FrozenRequestAdmission`生成的M1、fresh-reopened M2，以及按完整`ArtifactReference`重验的run/frozen request bytes，构造`source-input.json`、`verified-snapshot.json`与`source-inventory.jsonl`；随后`CanonicalAnalysisStepArtifactStore`原子安装三项并最后写`verified-source-inventory-receipt.json`。该端到端测试包含一项text和一项binary regular file，验证实际M1/M2 publication、单full-inventory shard重算、三项semantic文件和store-last receipt的fresh reopen。共享AnalysisStep store同时已覆盖非空`promptBundleSha256`的持久化往返，避免首次安装成功而重开失败。 |
+| **本步骤产品入口尚未实现** | 统一`RepositoryAnalysisAgent`、CLI和HTTP Adapter尚未实现；因此当前能力仍通过package-internal modules和测试组装，而不能由外部分析请求从已登记客户commit直接启动。它没有产生任何jshERP正式运行结果。后续Adapter阶段应只编排并复用这些已验证publication，不重写M1–M3逻辑。 |
 | **历史证据，不是当前能力** | 已删除的pre-reset纵切曾在小型synthetic repository上验证只读capture、text/media disposition、hash与原子重开。这些结果只保留在Git历史/progress中，不能作为当前SourceAnalysis artifact或jshERP运行结果。 |
-| **下一实现门** | 按本章M1→M2→M3合同重新实现并通过完整tree、binary、symlink/gitlink、single-byte drift和不同root测试；随后才可对已批准完整jshERP commit做离线验收。 |
+| **下一实现门** | 在统一产品入口实现前，补齐本章尚未覆盖的完整tree、100755、symlink/gitlink、不同private root与资源预算反例；随后由后续Adapter阶段把已登记的完整jshERP commit编排到这条M1→M2→M3链，仍不执行客户Maven或调用模型。 |
 
 本章目标不会因历史纵切被删除而降级，也不能因为package骨架和wire头门禁存在就声称源码已经冻结或盘点。

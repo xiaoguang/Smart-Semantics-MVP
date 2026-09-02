@@ -508,7 +508,11 @@ final class AtomicAnalysisStepPublicationEngine {
     node.put("toolchainSha256", controls.toolchainSha256().value());
     node.put("profileSha256", controls.profileSha256().value());
     node.put("schemaBundleSha256", controls.schemaBundleSha256().value());
-    node.putNull("promptBundleSha256");
+    if (controls.promptBundleSha256() == null) {
+      node.putNull("promptBundleSha256");
+    } else {
+      node.put("promptBundleSha256", controls.promptBundleSha256().value());
+    }
     node.putObject("artifactPolicyRegistryRef")
         .put("artifactId", controls.artifactPolicyRegistryRef().artifactId().value())
         .put("sha256", controls.artifactPolicyRegistryRef().sha256().value());
@@ -527,15 +531,17 @@ final class AtomicAnalysisStepPublicationEngine {
       throw invalidPublication();
     }
     ObjectNode registry = object(node.get("artifactPolicyRegistryRef"));
+    JsonNode prompt = node.get("promptBundleSha256");
     if (!fieldNames(registry).equals(Set.of("artifactId", "sha256"))
-        || !node.get("promptBundleSha256").isNull()) {
+        || prompt == null
+        || !(prompt.isNull() || prompt.isTextual())) {
       throw invalidPublication();
     }
     return new ArtifactControls(
         Sha256Digest.parse(text(node, "toolchainSha256")),
         Sha256Digest.parse(text(node, "profileSha256")),
         Sha256Digest.parse(text(node, "schemaBundleSha256")),
-        null,
+        prompt.isNull() ? null : Sha256Digest.parse(prompt.textValue()),
         new ArtifactPolicyRegistryReference(
             ArtifactId.parse(text(registry, "artifactId")),
             Sha256Digest.parse(text(registry, "sha256"))));

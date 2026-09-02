@@ -111,6 +111,17 @@ class AdmittedSourceRequestModulePublisherTest {
 
       var reopened = modules.reopen(publication);
       assertThat(reopened.receipt().upstreamArtifacts()).isEqualTo(upstream);
+      VerifiedSourceIndexInput indexInput =
+          new AdmittedSourceRequestModuleReader(modules).read(publication);
+      assertThat(indexInput.requestIdentity()).isEqualTo(runRequest.artifactId().value());
+      assertThat(indexInput.sourceRegistrationRef()).isEqualTo(sourceRegistration);
+      assertThat(indexInput.files())
+          .extracting(AdmittedSourceFile::path)
+          .containsExactly("docs/readme.txt", "images/logo.png");
+      assertThat(indexInput.files())
+          .filteredOn(file -> file.path().equals("images/logo.png"))
+          .singleElement()
+          .satisfies(file -> assertThat(file.textEncoding()).isNull());
       assertThat(reopened.payloads())
           .singleElement()
           .satisfies(

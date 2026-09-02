@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
@@ -21,6 +22,8 @@ import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
+import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
+import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.capture.localgit.LocalGitCaptureRequest;
 import org.sourceanalysis.app.capture.localgit.LocalGitCommitCaptureAdapter;
@@ -38,13 +41,28 @@ class VerifiedSourceIndexerTest {
   @TempDir Path temporaryDirectory;
 
   @Test
+  void exposesOnlyTheFreshM1PublicationSeamToCallersOutsideSourceInventory() {
+    assertThat(VerifiedSourceIndexer.class.getMethods())
+        .anyMatch(
+            method ->
+                method.getName().equals("index")
+                    && Arrays.equals(
+                        method.getParameterTypes(),
+                        new Class<?>[] {
+                          ModulePublicationReference.class,
+                          CanonicalModuleArtifactStore.class,
+                          LocalGitSourceRegistry.class
+                        }));
+  }
+
+  @Test
   void reopensRegisteredBytesAndProducesStableTextAndMediaFileIdentities() throws Exception {
     CapturedFixture fixture = capturedFixture();
     VerifiedSourceIndex index =
-        new VerifiedSourceIndexer().index(fixture.admittedRequest(), fixture.sourceRegistry());
+        new VerifiedSourceIndexer().index(fixture.indexInput(), fixture.sourceRegistry());
 
     assertThat(index.snapshotId()).isEqualTo(fixture.capture().snapshotId());
-    assertThat(index.requestIdentity()).isEqualTo(fixture.admittedRequest().requestIdentity());
+    assertThat(index.requestIdentity()).isEqualTo(fixture.indexInput().requestIdentity());
     assertThat(index.verifiedRegularFileCount()).isEqualTo(2);
     assertThat(index.analyzableTextFileCount()).isEqualTo(1);
     assertThat(index.nonAnalyzableMediaFileCount()).isEqualTo(1);
@@ -90,9 +108,7 @@ class VerifiedSourceIndexerTest {
         "package example;\nfinal class Catalogux {}\n".getBytes(StandardCharsets.UTF_8));
 
     assertThatThrownBy(
-            () ->
-                new VerifiedSourceIndexer()
-                    .index(fixture.admittedRequest(), fixture.sourceRegistry()))
+            () -> new VerifiedSourceIndexer().index(fixture.indexInput(), fixture.sourceRegistry()))
         .isInstanceOfSatisfying(
             VerifiedSourceIndexException.class,
             failure -> assertThat(failure.code()).isEqualTo("SOURCE_HASH_MISMATCH"));
@@ -127,65 +143,40 @@ class VerifiedSourceIndexerTest {
     LocalGitSourceRegistry registry = new LocalGitSourceRegistry(workspace);
     RegisteredSourceCapture capture = registry.reopen(registration.sourceRegistrationId());
 
-    List<CapturedRegularFile> admittedFiles =
+    List<AdmittedSourceFile> admittedFiles =
         capture.manifestEntries().stream()
-            .map(VerifiedSourceIndexerTest::capturedFile)
-            .sorted(Comparator.comparing(CapturedRegularFile::path))
+            .map(VerifiedSourceIndexerTest::admittedFile)
+            .sorted(Comparator.comparing(AdmittedSourceFile::path))
             .toList();
-    List<ArtifactId> textFileIds =
-        admittedFiles.stream()
-            .filter(file -> file.analysisDisposition() == SourceAnalysisDisposition.ANALYZABLE_TEXT)
-            .map(CapturedRegularFile::fileId)
-            .toList();
-    List<ArtifactId> mediaFileIds =
-        admittedFiles.stream()
-            .filter(
-                file ->
-                    file.analysisDisposition() == SourceAnalysisDisposition.NON_ANALYZABLE_MEDIA)
-            .map(CapturedRegularFile::fileId)
-            .toList();
-    ArtifactReference frozenRequest = reference("frozen-request", 'c');
-    AdmittedSourceRequest admittedRequest =
-        new AdmittedSourceRequest(
+    VerifiedSourceIndexInput indexInput =
+        new VerifiedSourceIndexInput(
             "run-request:" + "d".repeat(64),
-            registration.sourceRegistrationId(),
+            capture.sourceRegistrationRef(),
             capture.declaredRepositoryIdentity(),
             capture.commitId(),
-            frozenRequest,
             capture.captureReceiptRef(),
             capture.snapshotManifestRef(),
             InventoryScope.completeCapture(),
             true,
             admittedFiles.size(),
-            admittedFiles,
-            textFileIds,
-            mediaFileIds,
-            new RunRequestControls(
-                reference("capability-profile", 'e'),
-                RESOURCE_BUDGET,
-                reference("toolchain", 'f'),
-                reference("schema-bundle", '1'),
-                reference("prompt-bundle", '2'),
-                reference("artifact-policy-registry", '3')));
+            admittedFiles);
     ArtifactId textFileId =
         admittedFiles.stream()
             .filter(file -> file.path().equals("src/example/Catalogue.java"))
+            .map(VerifiedSourceIndexerTest::fileId)
             .findFirst()
-            .orElseThrow()
-            .fileId();
+            .orElseThrow();
     ArtifactId binaryFileId =
         admittedFiles.stream()
             .filter(file -> file.path().equals("static/logo.bin"))
+            .map(VerifiedSourceIndexerTest::fileId)
             .findFirst()
-            .orElseThrow()
-            .fileId();
-    return new CapturedFixture(
-        workspace, registry, capture, admittedRequest, textFileId, binaryFileId);
+            .orElseThrow();
+    return new CapturedFixture(workspace, registry, capture, indexInput, textFileId, binaryFileId);
   }
 
-  private static CapturedRegularFile capturedFile(RegisteredSourceFile file) {
-    return new CapturedRegularFile(
-        fileId(file.path(), file.gitMode(), file.sizeBytes(), file.sha256()),
+  private static AdmittedSourceFile admittedFile(RegisteredSourceFile file) {
+    return new AdmittedSourceFile(
         file.path(),
         file.gitMode(),
         file.mediaType(),
@@ -206,6 +197,10 @@ class VerifiedSourceIndexerTest {
     return ArtifactId.parse(
         "file:"
             + sha256Hex(concatenate(frame("verified-source-file-id-v1"), frame(identityBytes))));
+  }
+
+  private static ArtifactId fileId(AdmittedSourceFile file) {
+    return fileId(file.path(), file.gitMode(), file.sizeBytes(), file.sha256());
   }
 
   private static ArtifactReference reference(String prefix, char digit) {
@@ -263,7 +258,7 @@ class VerifiedSourceIndexerTest {
       Path workspace,
       LocalGitSourceRegistry sourceRegistry,
       RegisteredSourceCapture capture,
-      AdmittedSourceRequest admittedRequest,
+      VerifiedSourceIndexInput indexInput,
       ArtifactId textFileId,
       ArtifactId binaryFileId) {}
 }
