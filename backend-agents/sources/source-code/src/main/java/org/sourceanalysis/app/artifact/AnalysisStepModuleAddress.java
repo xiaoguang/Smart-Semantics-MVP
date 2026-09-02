@@ -5,7 +5,8 @@ import java.util.regex.Pattern;
 
 /** A validated address for one registered module of an analysis step. */
 public record AnalysisStepModuleAddress(
-    AnalysisRunId runId, AnalysisStepKey analysisStepKey, int moduleNumber, String moduleKey) {
+    AnalysisRunId runId, AnalysisStepKey analysisStepKey, int moduleNumber, String moduleKey)
+    implements ModulePublicationAddress {
 
   private static final Pattern MODULE_KEY = Pattern.compile("[a-z][a-z0-9-]{0,47}");
 
