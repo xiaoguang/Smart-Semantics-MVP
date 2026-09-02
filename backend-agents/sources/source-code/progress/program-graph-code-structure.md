@@ -31,6 +31,7 @@
 - Added a nested-configuration RED required by the M1 registry. The builder currently collapses `app.persistence.mapper-location` to `app.mapper-location`; the 7-test selector has exactly that one failure and no errors.
 - Implemented the bounded static YAML mapping walker: it tracks indentation-scoped parents, flattens nested mapping keys, preserves key/value source spans, and emits typed Gaps for unsafe mapping or indentation shapes. The nested-key selector is GREEN.
 - Published the related current-maturity correction as docs commit `5a98f4a` on `origin/main`. It distinguishes the M1 builder/module slice from the still-unimplemented persisted runtime assembly and M2–M6.
+- Published the bounded `PersistedProgramGraphInputReader` design clarification as `21f3037` on `origin/main`. It closes the existing M1/M2 input contract without adding a graph module, artifact, or public API.
 - The next M1 slice is an executor that fresh-reopens verified-source and application-discovery inputs before it builds/publishes the draft; it must not make the manual structured test inputs a production handoff.
 
 ## Changed files
@@ -76,7 +77,7 @@
 
 ## Exact next action
 
-- Create a local M1 checkpoint, rebase it on published design commit `5a98f4a`, then write the smallest public RED for persisted M1 input assembly before starting M2.
+- Rebase local M1 work on published design commit `21f3037`, then write the smallest public RED for persisted M1 input assembly before starting M2.
 
 ## Resume checks
 
