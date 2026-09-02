@@ -269,6 +269,38 @@ M2保存的`codeStructurePayloadRef`、M1的`payloadRef`和`ControlFlowGraphProf
 全部一致。caller不得传入raw `CallGraphDraft`、detached entry/call lists、`Path`、自由source string或
 自行实现的aggregate。
 
+M3 module publication也必须经唯一`PersistedControlFlowGraphReader` fresh reopen，M4才可读取CFG；
+该reader不是builder、module或新artifact：
+
+```text
+PersistedControlFlowGraphReader.reopen(
+  ControlFlowGraphDraftReference reference,
+  ReopenedProgramGraphInputs sameInputs,
+  ReopenedCodeStructureGraph sameStructure,
+  ReopenedCallGraph sameCalls,
+  ArtifactReference expectedGraphProfileRef)
+    -> ReopenedControlFlowGraph
+
+ReopenedControlFlowGraph                         // sealed opaque immutable aggregate
+  reference: ControlFlowGraphDraftReference
+  payloadRef: ArtifactReference
+  draft: ControlFlowGraphDraft
+  codeStructurePayloadRef: ArtifactReference
+  callGraphPayloadRef: ArtifactReference
+  basis: ProgramGraphInputBasis
+```
+
+reader先以`CanonicalModuleArtifactStore.reopen(reference.publication)`重验完整module，再要求address精确为
+同run的`program-graphs / 3 / control-flow`、completion合法、publication只有
+`control-flow-draft.json`，type/schema精确为
+`PROGRAM_GRAPHS_CONTROL_FLOW_DRAFT / program-graphs-control-flow-draft-v2`。receipt与envelope的
+upstream必须恰为六项：`sameStructure.payloadRef`、`sameCalls.payloadRef`、
+`expectedGraphProfileRef`、`sameInputs`的`sourceInventoryRef/verifiedSnapshotRef/entryPointsRef`；
+controls必须等于`sameInputs.source.controls`。payload exact解析后必须满足`graphKind=CONTROL_FLOW`、
+同一basis/profile、M1/M2 external endpoint、call/return projection、traversal、terminal disposition、
+provenance和coverage闭包。任一address、receipt、schema/type、六项lineage、controls、predecessor ref、
+basis或payload不一致统一以`GRAPH_REFERENCE_BROKEN`失败，不返回raw draft、partial aggregate或Graph Gap。
+
 #### M1 CodeStructureGraphBuilder
 
 - **解决的问题**：给后续关系一个唯一的声明/包含/SQL 结构坐标系，避免按文件名或 simple name 找对象。
@@ -464,16 +496,153 @@ unsupported/over-limit路径只能以`PROFILE_STOP_TERMINAL`加恰一个typed di
 #### M4 DataFlowGraphBuilder
 
 - **解决的问题**：逐段证明请求值怎样跨参数、变量、property、criteria、placeholder 到 SQL column/where。
-- **精确上游输入及前置**：M1 structure、M2 calls、M3 CFG、verified Java/XML bytes、DATA_FLOW registry/profile/worklist budget；所有定义/使用/call endpoints 已存在。
+- **精确上游输入及前置**：`DataFlowInputs{structure: ReopenedCodeStructureGraph, calls: ReopenedCallGraph, controlFlow: ReopenedControlFlowGraph, reopened: the same ReopenedProgramGraphInputs}`与`DataFlowGraphProfile`；M4 execution必须以同一次reopened inputs按8.0依序fresh-reopen M1/M2/M3，校验同一basis、三段payload refs与graph profile，只从`reopened.source`读取verified Java/XML bytes。raw drafts、detached endpoints/lists、`Path`和自由source均禁止。
 - **确定性顺序 / LLM**：建 intra-method def-use → argument→parameter → assignment/setter/property → Mapper record/example params → XML dynamic condition/include → placeholder/criterion→column/where → fixed-point/account；0 LLM。
 - **目标输出与 DepotHead 示例**：DATA_FLOW draft；例子分别闭合 `Controller.status→Service.status→setStatus→record.status→jsh_depot_head.status` 与 `ids→dhIds→andIdIn→WHERE id IN`。
 - **必须保持的不变量**：每条长链由相邻 typed edges 组成；每 edge 有唯一 rule/endpoints/guard context；不跨 unresolved call/alias/XML path。
 - **Gap / fatal / artifact复用**：局部 alias/dynamic SQL/loop 超能力为 Gap；伪 exact binding、broken endpoint、worklist/accounting/identity 错误 fatal；只接受相同roots/rules。
 - **给下游的后置保证**：ProvenCodeFacts 能逐 atom 引用 exact value/where edge；BusinessFlows 能保留数据相关条件，不需字符串匹配。
 - **明确非目标**：不证明运行时 DB/trigger 值，不用字段同名跨层连边，不硬编码 DepotHead positive edge。
-- **公共测试 seam 与验收**：`buildDataFlow(structure, calls, cfg)` 对两条 DepotHead chain 每段做 deletion/decoy/property/placeholder mutation；任一缺段使对应 chain 不闭合。
-- **Luna/xhigh 测试指南**：创建 `DataFlowGraphBuilderTest`，冻结两条DepotHead链及逐段mutation于 `src/test/resources/analysis/graph/data-flow/`。依次RED：intra-def/use、argument/parameter、setter/property、record/placeholder/column、ids/criterion/where、alias Gap、worklist fatal、determinism；每个RED应只因该edge/rule缺失。只fakeartifact/source reader，dataflow/canonical不能mock。命令：`mvn -Dtest=DataFlowGraphBuilderTest test`；禁网络/客户MyBatis。偏离按13.11。
-- **Terra/xhigh 实现指南**：RED后仅拥有 `analysis/graph/data-flow/`，实现 public `DataFlowGraphBuilder/DataFlowGraphDraft` 与 `program-graphs-data-flow-draft-v2`；只读M1–M3，按局部→跨调用→property→XML fixed-point，逐段保存rule/guard/provenance drafts。每段GREEN后跑同selector；禁止字段同名捷径/DepotHead硬编码。上游缺endpoint或需新edge语义MUST STOP交Sol/ultra/必要时用户。
+- **公共测试 seam 与验收**：`buildDataFlow(DataFlowInputs inputs, DataFlowGraphProfile profile)`；首个slice对每个M3-activated exact Java call按actual ordinal生成唯一`ARGUMENT_TO_PARAMETER`，覆盖ordinal swap、same-name decoy、missing M1 parameter、raw input与M1/M2/M3 reference mutations、worklist/accounting；后续再对两条DepotHead chain逐段mutation。
+- **Luna/xhigh 测试指南**：创建 `DataFlowGraphBuilderTest`，fixtures/goldens置`src/test/resources/analysis/graph/data-flow/`。首RED先用真实canonical store安装并fresh-reopen M1/M2/M3，再断言Controller status/ids actual各自只连到Service同ordinal M1 `PARAMETER`；随后做ordinal swap、same-name decoy、raw draft不可构造、M3 address/receipt/schema/upstream/controls/profile/basis mutation、unproven binding Gap、worklist max+1 fatal、order determinism。再依次RED intra-def/use、setter/property、record/placeholder/column、ids/criterion/where。只fake verified source handle，禁止mock predecessor readers、dataflow/accounting/canonical。命令：`mvn -Dtest=DataFlowGraphBuilderTest test`；禁网络/客户MyBatis。偏离按13.11。
+- **Terra/xhigh 实现指南**：RED后仅拥有 `analysis/graph/data-flow/`，先实现`PersistedControlFlowGraphReader`、sealed `ReopenedControlFlowGraph`、M4 execution与public `DataFlowGraphBuilder/DataFlowInputs/DataFlowGraphProfile/DataFlowGraphDraft`，安装`program-graphs-data-flow-draft-v2`。首GREEN只做M3-activated exact call的相邻argument→M1 parameter；随后才按局部→property→XML fixed-point扩展closed enum。禁止raw draft/Path、字段同名捷径、DepotHead硬编码或output-derived denominator。上游缺endpoint或需新edge语义MUST STOP交Sol/ultra/必要时用户。
+
+M4唯一public Java seam与exact JSON payload如下。`DataFlowInputs`和`DataFlowGraphProfile`只存在于
+进程内，不是新wire/artifact；所有字段/数组required，nullable JSON key必须出现，unknown、missing、
+defaulted field一律拒绝：
+
+```text
+DataFlowGraphBuilder.buildDataFlow(DataFlowInputs inputs,
+                                   DataFlowGraphProfile profile)
+  -> DataFlowGraphDraft
+
+record DataFlowInputs(
+  ReopenedCodeStructureGraph structure,
+  ReopenedCallGraph calls,
+  ReopenedControlFlowGraph controlFlow,
+  ReopenedProgramGraphInputs reopened)
+
+record DataFlowGraphProfile(ArtifactReference graphProfileRef)
+
+record DataFlowGraphDraft(
+  String schemaVersion,                    // exactly program-graphs-data-flow-draft-v2
+  ProgramGraphKind graphKind,              // exactly DATA_FLOW
+  ArtifactId graphId,
+  String snapshotId,
+  ArtifactId applicationProfileId,
+  ArtifactReference graphProfileRef,
+  List<ArtifactId> entryIds,
+  List<DataFlowNode> nodes,
+  List<DataFlowEdge> edges,
+  DataFlowWorklistAccounting worklistAccounting,
+  List<GraphGapDraft> gapDrafts,
+  List<ProvenanceDraftV1> provenanceDrafts,
+  GraphCoverage coverage)
+
+record DataFlowNode(
+  ArtifactId nodeId,
+  DataFlowNodeKind kind,
+  String canonicalValue,
+  List<ArtifactId> owningEntryIds,
+  List<ArtifactId> evidenceDraftRefs)
+enum DataFlowNodeKind {
+  DEFINITION, USE, ARGUMENT, CRITERION, PLACEHOLDER, WHERE_PREDICATE
+}
+
+record DataFlowEdge(
+  ArtifactId edgeId,
+  DataFlowEdgeKind kind,
+  ArtifactId fromNodeId,
+  ArtifactId toNodeId,
+  String ruleId,
+  ProgramResolution resolution,            // exactly EXACT
+  ArtifactId guardNodeId,                   // nullable Java value; JSON key required
+  ControlFlowPolarity polarity,             // nullable Java value; JSON key required
+  List<ArtifactId> evidenceDraftRefs)
+enum DataFlowEdgeKind {
+  DEF_USE, ARGUMENT_TO_PARAMETER, ASSIGNMENT, SETTER_TO_PROPERTY,
+  PROPERTY_TO_PLACEHOLDER, CRITERION_TO_WHERE, PLACEHOLDER_TO_COLUMN
+}
+
+record DataFlowWorklistAccounting(
+  List<ArtifactId> enqueuedWorkItemIds,
+  List<ArtifactId> processedWorkItemIds,
+  boolean overLimit)
+
+record GraphGapDraft(
+  ArtifactId gapId,
+  String reasonCode,
+  List<ArtifactId> affectedEntryIds,
+  List<ArtifactId> candidateElementIds,
+  SourceLocatorV1 sourceLocator)             // nullable Java value; JSON key required
+```
+
+`DataFlowInputs`的public canonical constructor要求四项non-null，以
+`structure.basis.graphProfileRef`从`reopened`重算`ProgramGraphInputBasis`，并要求重算值、三个sealed
+aggregate的basis逐字段相等，`calls.codeStructurePayloadRef == structure.payloadRef`，且
+`controlFlow.codeStructurePayloadRef/callGraphPayloadRef`分别等于M1/M2 payload ref；否则在读取源码前抛
+`GraphReferenceException(GRAPH_REFERENCE_BROKEN)`。builder再要求
+`profile.graphProfileRef == structure.basis.graphProfileRef`；profile constructor只接受non-null完整
+`graph-profile:{sha256}` reference。caller不能构造/实现sealed aggregates，也不能传raw predecessor
+draft、module bytes、`Path`、detached entry/call/CFG lists或自由source string。
+
+首个`ARGUMENT_TO_PARAMETER` slice的worklist denominator在生成任何M4 node/edge、查找formal
+endpoint或判定shape是否支持前独立计算：取每个entry的M3 traversal中已激活、且能反向唯一
+对应M2 `CALL_TARGET`的Java call anchor，对verified invocation AST每个显式syntactic actual取zero-based
+ordinal。每个actual的work-item ID恰为`identity("data-flow-argument-work-item-v1", M2 CALL_TARGET
+edgeId, actualOrdinal)`；它不包含尚未证明的formal endpoint、support result或处置。固定arity call要求
+actual/formal count相等，且每个formal ordinal恰有一个M1 endpoint；零参数fixed-arity call产生零work item。
+
+varargs或本slice不支持的explicit-actual/expression shape按work item生成受影响entry的
+`DATA_FLOW_BINDING_UNPROVEN` Gap，不能按名称或邻近位置补边。synthetic/implicit call shape若没有显式
+actual，则另产生`identity("data-flow-call-shape-candidate-v1", M2 CALL_TARGET edgeId)`的local Gap
+candidate；它不是work item，不进入两个worklist ID集合。已被M2/M3声明为exact却缺target、call
+activation、固定arity formal endpoint或arity自相矛盾是`GRAPH_REFERENCE_BROKEN` fatal，不得降级为Gap。
+
+每个受支持的explicit-actual work item都以同ordinal查找已验证M1 `PARAMETER`，并恰产生一个
+M4-owned `ARGUMENT` node和一个`ARGUMENT_TO_PARAMETER` edge。argument的`canonicalValue`恰为
+actual expression的`java-expression-canonical-v1` AST语义序列化：comments、whitespace与source
+location不进入该值，literal/operator、解析后的symbol/type和expression shape必须保留；无法产生该
+canonical form就是上述typed Gap。M2 site/edge与ordinal只进入ID preimage，不写入
+`canonicalValue`。edge从该argument node指向既有M1 parameter external endpoint，M4不得重声明
+parameter；固定`ruleId=java-argument-binding-v1`、`resolution=EXACT`、`guardNodeId=null`、
+`polarity=null`。`ARGUMENT.owningEntryIds`恰为激活该call的全部entries之排序distinct集合；
+edge wire没有ownership字段，其derived owning entries恰等于from `ARGUMENT.owningEntryIds`，且必须与M3
+activation集合相等。argument transfer在call被M3激活后无条件发生，其到达条件仍由M3表达。
+
+argument node引用其连续expression span provenance；edge引用该span、M2 call binding和M1 formal
+parameter的全部exact provenance drafts，M4 registry逐ID重列相同上游draft及新draft，禁止孤儿或悬空。
+argument nodeId的direct preimage绑定M2 edgeId和ordinal；binding edgeId的direct preimage再绑定M1
+parameter nodeId。reader可从fresh-reopened predecessors重算，不允许仅凭canonicalValue相信binding。
+
+`enqueuedWorkItemIds`恰为上述所有explicit-actual work-item IDs，按M3 traversal的entry、activated call
+anchor、ordinal枚举后再按ID canonical排序、distinct；`processedWorkItemIds`记录实际处理的同一IDs且同样
+排序、distinct。每个work item只处理一次，无论结果是exact还是typed Gap；任何返回的draft都要求两个集合
+逐ID相等且`overLimit=false`。尝试发现profile上限后的第一项立即以
+`DATA_FLOW_WORKLIST_LIMIT_EXCEEDED` fatal，且不返回partial draft、Gap或module publication；本schema不
+安装`overLimit=true`的draft，因为停止时尚未证明剩余prospective IDs的完整处置。重复/遗漏work item或
+两个集合/denominator不等均为`GRAPH_ACCOUNTING_INVARIANT_BROKEN`。
+
+所有lists在constructor defensive-copy；`entryIds/nodes/edges/gapDrafts/provenanceDrafts`分别按主ID排序且
+distinct。
+首slice coverage candidate恰为每个explicit-actual work item预计算的M4 argument node与binding edge IDs，加上
+synthetic/implicit call-shape的确定性Gap candidate ID；受支持的work item的两项进exact，不支持的两项
+以同一local gapId进gap dispositions。`exactElementIds`恰为全部M4-owned emitted node/edge，M1 external
+parameter不计入M4 coverage。candidate/exact/gap/exclusion按8.0.1互斥闭合；不得从已生成edge反推分母。
+每个emitted element的非空evidence refs只命中本draft唯一registry entry，且registry无孤儿；external
+endpoint必须命中fresh-reopened M1，guard/polarity只能both-null或合法M3 pair。`graphId`除8.4字段外还绑定
+完整`worklistAccounting/gapDrafts`。
+
+每个M4 `GraphGapDraft.gapId`必须命中且只命中coverage `gapDispositions[].gapId`或`scopeGapIds`；反向每个
+该类gapId恰有一条draft，module completion的`gapRefs`又恰等于全部`gapDrafts.gapId`。local Gap要求
+nonblank reason、非空affected entries/candidate IDs与non-null verified `sourceLocator`；scope Gap允许
+locator=null和空candidate IDs，但仍须有非空affected entries与版本化reason。candidate IDs必须逐字等于
+coverage中指向该gapId的集合。M4 Gap不引用provenance draft ID；它的typed locator就是可重开的source
+anchor。M6从已安装M4 draft的`gapDrafts`一对一写`program-graphs-graph-gap-v1`，只复制
+`gapId/reasonCode/affectedEntryIds/candidateElementIds/sourceLocator`并补`graphKind=DATA_FLOW`；不发布M4
+provenance draft ID、不猜reason/locator，不接受detached/in-memory M4 Gap注入或替换。这是M4-only wire扩展，
+不改写M1–M3/M5的v2 payload。任一unknown enum、错排序/owner/endpoint、伪exact binding、provenance、gap、
+identity或coverage不闭合均fatal且不返回partial draft。
 
 #### M5 EvidenceGraphBuilder
 
@@ -499,7 +668,7 @@ unsupported/over-limit路径只能以`PROFILE_STOP_TERMINAL`加恰一个typed di
 - **Gap / fatal / artifact复用**：builder 的局部 Gap 原样入账；缺图、多图、cross-ref、root/canonical/install/collision 错误 fatal；下游不能选四张引用。
 - **给下游的后置保证**：ProvenCodeFacts和BusinessFlows只凭ProgramGraphsReference获得完整五图、index、Gap/accounting，不需源码parser。
 - **明确非目标**：不补 graph edge、不证明 Fact、不编译 Flow、不调用模型。
-- **公共测试 seam 与验收**：`specifyGraphSet(fiveDrafts, gaps, controls)` 覆盖缺/多/交换 graph、cross-ref mutation、乱序、partial-install/collision；只有M6 exact-seven和analysis-step-store eight-file coherent set才返回 ProgramGraphsReference。
+- **公共测试 seam 与验收**：`specifyGraphSet(fiveReopenedDrafts, controls)`重开并校验五个已安装draft；M4 Gap只能来自已重开`DataFlowGraphDraft.gapDrafts`，不得作为detached参数注入或替换。覆盖缺/多/交换 graph、M4 Gap脱离/替换、cross-ref mutation、乱序、partial-install/collision；只有M6 exact-seven和analysis-step-store eight-file coherent set才返回 ProgramGraphsReference。其他前驱已有Gap来源与wire不在本M4合同中改写。
 - **Luna/xhigh 测试指南**：创建 `ProgramGraphsPublicationSpecifierTest`，五module artifacts/golden set放 `src/test/resources/analysis/graph/publish/`。RED顺序：M6 exact-seven、analysis step exact-eight、缺/多/交换graph、cross-ref/ID-set spoof、Gap accounting、乱序、receipt-last/partial-install/collision/fresh-reopen；使用真实module/analysis step stores，禁止mockcross-validator/canonical/root。命令：`mvn -Dtest=ProgramGraphsPublicationSpecifierTest test`；禁网络/build。偏离按13.11。
 - **Terra/xhigh 实现指南**：RED后仅拥有 `analysis/graph/publish/`，实现 public `ProgramGraphSetPublicationSpecifier/ProgramGraphsReference`；只读M1–M5 files，cross-ref→semantic files→M6 install/receipt→typed analysis-step-store receipt-last。不得生成旧single publication summary、预报root/receipt、补边或少图。跨分析步骤变更MUST STOP交Sol/ultra并按DESIGN升级用户。
 
@@ -512,7 +681,7 @@ M1–M5使用 DESIGN 13.3 `ModuleArtifact<T>` envelope并采用8.1 ProgramGraph 
 | `modules/01-code-structure/code-structure-draft.json` | `program-graphs-code-structure-draft-v2` / `PROGRAM_GRAPHS_CODE_STRUCTURE_DRAFT` | exact `graph-profile`；VerifiedSourceInventory `source-inventory/verified-snapshot`；ApplicationDiscovery `application-profile/capability-report/entry-points/mapper-catalog` ArtifactReferences | `graphKind=CODE_STRUCTURE!`、`graphId!`、`snapshotId!`、`applicationProfileId!`、`graphProfileRef!`、`entryIds[]!`、`nodes[]!`、`edges[]!`、`provenanceDrafts[]!`、`coverage!`；nodes/edges/provenance按ID |
 | `modules/02-call-graph/call-graph-draft.json` | `program-graphs-call-graph-draft-v2` / `PROGRAM_GRAPHS_CALL_GRAPH_DRAFT` | exact M1、`graph-profile`、VerifiedSourceInventory两项、ApplicationDiscovery `entry-points/mapper-catalog` ArtifactReferences | M1同形payload且`graphKind=CALL!`；每个CALL_TARGET/JAVA_METHOD_TO_XML_STATEMENT有唯一`CALL_RETURN` pair，edge保留resolution/rule/evidenceDraftRefs并按edgeId |
 | `modules/03-control-flow/control-flow-draft.json` | `program-graphs-control-flow-draft-v2` / `PROGRAM_GRAPHS_CONTROL_FLOW_DRAFT` | exact M1/M2、`graph-profile`、VerifiedSourceInventory两项、ApplicationDiscovery `entry-points` ArtifactReferences | M1同形payload且`graphKind=CONTROL_FLOW!`；nodes/edges/provenance按ID，每entry的`semanticTraversalOrder[]!`按canonical DFS顺序；每guard的TRUE/FALSE或typed terminal/Gap disposition必备 |
-| `modules/04-data-flow/data-flow-draft.json` | `program-graphs-data-flow-draft-v2` / `PROGRAM_GRAPHS_DATA_FLOW_DRAFT` | exact M1/M2/M3、`graph-profile`、VerifiedSourceInventory `source-inventory/verified-snapshot` ArtifactReferences | M1同形payload且`graphKind=DATA_FLOW!`；nodes/edges/provenance按ID，typed adjacent edges按edgeId，跨图endpoint只引用global graph index；`worklistAccounting!{enqueued!,processed!,overLimit!}` |
+| `modules/04-data-flow/data-flow-draft.json` | `program-graphs-data-flow-draft-v2` / `PROGRAM_GRAPHS_DATA_FLOW_DRAFT` | exact M1/M2/M3、`graph-profile`、VerifiedSourceInventory `source-inventory/verified-snapshot` ArtifactReferences | M1同形identity且`graphKind=DATA_FLOW!`；`nodes[]!/edges[]!/gapDrafts[]!/provenanceDrafts[]!/coverage!`按各自ID；external endpoints直接对fresh-reopened M1–M3校验，global graph index只由M6稍后生成；`worklistAccounting!{enqueuedWorkItemIds[]!,processedWorkItemIds[]!,overLimit!}` |
 | `modules/05-evidence-graph/evidence-graph-draft.json` | `program-graphs-evidence-graph-draft-v2` / `PROGRAM_GRAPHS_EVIDENCE_GRAPH_DRAFT` | exact M1–M4、`graph-profile`、VerifiedSourceInventory `source-inventory/verified-snapshot` ArtifactReferences | `graphKind=EVIDENCE!`及M1共通identity字段；`nodes[]!`为下述`EvidenceNodeV2`且按evidenceNodeId，`edges[]!`使用下述EvidenceEdge并按ID；`coverage!`逐program element闭合 |
 | `modules/06-publish/<seven registered semantic filenames>` | 各public schema/type；无summary envelope | M1–M5 IDs/SHAs | 一次module install恰五图+`graph-index.json`+`graph-gaps.jsonl`；module receipt绑定七descriptors；禁止analysis step root/receipt或八项published list；AnalysisStep store provenance绑定M6 reference |
 
@@ -525,9 +694,9 @@ aggregate 不新增 schema、artifact 或第 53 项 reader-visible 文件。
 
 `graphProfileRef`是完整content-addressed `ArtifactReference{artifactId,sha256}`，固定prefix=`graph-profile`；它不是自由字符串或仅语法合法的profile key。M1–M5必须逐字使用同一个ref，将其列入`upstreamArtifacts`，并在每个graph payload中重复该typed ref；graphId identity绑定两个字段且fresh reopen验证profile bytes。M6完整module fixture用一次install request绑定M1–M5五个draft ArtifactReferences，七个standalone payload不重复envelope。
 
-M1–M4 draft 的 `DraftProgramNode` 字段为`nodeId/kind/canonicalValue/owningEntryIds/evidenceDraftRefs`，`DraftProgramEdge`为`edgeId/kind/fromNodeId/toNodeId/ruleId/resolution/guardNodeId?/polarity?/evidenceDraftRefs`，全部required，仅guard/polarity可在不适用时null。每一个draft另有一份同一module内的`provenanceDrafts[]!` registry；`evidenceDraftRefs`只能引用其中的ID，所有被引用ID必须恰有一条entry，且每条entry至少被一个node或edge引用。`ProvenanceDraftV1`固定字段为`provenanceDraftId! / ruleId! / sourceLocator! / sourceFileSha256! / excerptSha256!`：locator逐字段采用`SourceLocatorV1`，full-file SHA-256绑定冻结文件，excerpt SHA-256绑定该连续byte range。其identity由`ruleId + fileId + sourceFileSha256 + locator byte range + excerptSha256`分帧计算；不得使用绝对路径、显示名、顺序号或source search结果。M5只可按此locator重新打开VerifiedSource bytes、重算两个digest后生成`SourceExcerptV1`和最终Evidence node；它不得重新解析语义结构或以字符串邻近回填span。`canonicalValue`只保存该program element的版本化语义值（FQN、route、symbol、operator等），不得保存`path:line`或冒充source evidence。nodeId在整个ProgramGraphs graph set内全局唯一；from/to可指本图node或M1–M4已发布draft中的node，后图不得重新声明前图node。`graph-index.json`保存`nodeId→owningGraphKind`并验证，不能用未登记external endpoint。
+M1–M4 draft 的 `DraftProgramNode` 字段为`nodeId/kind/canonicalValue/owningEntryIds/evidenceDraftRefs`，`DraftProgramEdge`为`edgeId/kind/fromNodeId/toNodeId/ruleId/resolution/guardNodeId?/polarity?/evidenceDraftRefs`，全部required，仅guard/polarity可在不适用时null。每一个draft另有一份同一module内的`provenanceDrafts[]!` registry；`evidenceDraftRefs`只能引用其中的ID，所有被引用ID必须恰有一条entry，且每条entry至少被一个node或edge引用。M4另有本M4合同专属的按gapId排序`gapDrafts[]!`；该字段不向M1–M3/M5 v2 wire倒灌。`ProvenanceDraftV1`固定字段为`provenanceDraftId! / ruleId! / sourceLocator! / sourceFileSha256! / excerptSha256!`：locator逐字段采用`SourceLocatorV1`，full-file SHA-256绑定冻结文件，excerpt SHA-256绑定该连续byte range。其identity由`ruleId + fileId + sourceFileSha256 + locator byte range + excerptSha256`分帧计算；不得使用绝对路径、显示名、顺序号或source search结果。M5只可按此locator重新打开VerifiedSource bytes、重算两个digest后生成`SourceExcerptV1`和最终Evidence node；它不得重新解析语义结构或以字符串邻近回填span。`canonicalValue`只保存该program element的版本化语义值（FQN、route、symbol、operator等），不得保存`path:line`或冒充source evidence。nodeId在整个ProgramGraphs graph set内全局唯一；from/to可指本图node或M1–M4已发布draft中的node，后图不得重新声明前图node。M2–M5在自己构建时直接对fresh-reopened predecessors验证external endpoints；`graph-index.json`尚不存在，只有M6稍后汇总全局`nodeId→owningGraphKind`并再次验证。
 
-M1–M4 `coverage`固定为`candidateElementIds[]!/exactElementIds[]!/gapDispositions[]!{candidateElementId!,gapId!}/exclusionDispositions[]!{candidateElementId!,reasonCode!,evidenceRefs[]!}/scopeGapIds[]!/closed!`；四个ID/disposition数组按program element ID，candidate集合必须恰等于其余三个互斥分子的element ID union。M5改用`candidateProgramElementIds[]!/evidencedProgramElementIds[]!/gapDispositions[]!/exclusionDispositions[]!/scopeGapIds[]!/closed!`并要求candidate等于evidenced+gap+excluded。`scopeGapIds`解释仓库范围，不代替任何已发现element的处置；bounded示例因此`closed=false`。
+M1–M4 `coverage`固定为`candidateElementIds[]!/exactElementIds[]!/gapDispositions[]!{candidateElementId!,gapId!}/exclusionDispositions[]!{candidateElementId!,reasonCode!,evidenceRefs[]!}/scopeGapIds[]!/closed!`；四个ID/disposition数组按program element ID，candidate集合必须恰等于其余三个互斥分子的element ID union。M5改用`candidateProgramElementIds[]!/evidencedProgramElementIds[]!/gapDispositions[]!/exclusionDispositions[]!/scopeGapIds[]!/closed!`并要求candidate等于evidenced+gap+excluded。仅M4在本合同中还要求coverage gap IDs与其`gapDrafts`及module completion `gapRefs`一一闭合；`scopeGapIds`解释仓库范围，不代替任何已发现element的处置；bounded示例因此`closed=false`。
 
 M5不复用ProgramEdge字段冒充“evidence指向program edge”。`EvidenceNodeV2(evidenceNodeId,kind,sourceExcerpt,ruleApplication)`是closed union：`SOURCE_EXCERPT{sourceExcerpt!,ruleApplication=null}`或`RULE_APPLICATION{sourceExcerpt=null,ruleApplication!}`，两个required-nullable槽必须都出现且恰一非null。`sourceExcerpt`逐字段使用DESIGN §13.2 `SourceExcerptV1`；`RuleApplicationV2(ruleId,ruleVersion,inputProgramElementIds)`三项required，input IDs按UTF-8排序。一个SOURCE_EXCERPT只能表示同一文件的一个连续span；不连续证据必须拆为多个nodes，禁止`path:line`、` + `、`...`或合成raw。
 
@@ -540,7 +709,7 @@ M5不复用ProgramEdge字段冒充“evidence指向program edge”。`EvidenceNo
 {"evidenceNodeId":"evidence:3333333333333333333333333333333333333333333333333333333333333333","kind":"RULE_APPLICATION","sourceExcerpt":null,"ruleApplication":{"ruleId":"java-setter-property-binding","ruleVersion":"v1","inputProgramElementIds":["parameter:service-status","property:depothead-status"]}}
 ~~~
 
-**示例分类：NARRATIVE_ILLUSTRATION（五个ProgramGraphs模块的隔离故事投影）。** 下列大块只说明图之间的业务关系；它不是ModuleArtifact wire、schema-valid fixture或跨分析步骤replay链。尤其其中`canonicalValue`里的`File.java:line`、`source:*`和story IDs不是v2 source evidence，Luna fixtures必须改用上面的exact records并在自己的closure内重算identity；不存在隐式ID remap。
+**示例分类：NARRATIVE_ILLUSTRATION（五个ProgramGraphs模块的隔离故事投影）。** 下列大块只说明图之间的业务关系；它不是ModuleArtifact wire、schema-valid fixture或跨分析步骤replay链。尤其其中`canonicalValue`里的`File.java:line`、`source:*`和story IDs不是v2 source evidence，data-flow故事中的重复`PARAMETER` nodes、数值型worklist与缺失`gapDrafts`也不是M4 v2 wire；exact M4必须引用M1 parameter并使用上方ID-set accounting/Gap registry。Luna fixtures必须改用上面的exact records并在自己的closure内重算identity；不存在隐式ID remap。
 
 ~~~jsonl
 {"storyProjection":"code-structure","artifactId":"graph-draft:1111111111111111111111111111111111111111111111111111111111111111","producer":{"address":{"kind":"ANALYSIS_STEP","runId":"analysis-run:9999999999999999999999999999999999999999999999999999999999999999","analysisStepKey":"program-graphs","moduleNumber":1,"moduleKey":"code-structure"},"storyModuleVersion":"illustrative"},"upstreamArtifacts":[{"artifactId":"graph-profile:8888888888888888888888888888888888888888888888888888888888888888","sha256":"8888888888888888888888888888888888888888888888888888888888888888"},{"artifactId":"verified-source-inventory-source-inventory:5555555555555555555555555555555555555555555555555555555555555555","sha256":"5555555555555555555555555555555555555555555555555555555555555555"},{"artifactId":"application-discovery-application-profile:1111111111111111111111111111111111111111111111111111111111111111","sha256":"1111111111111111111111111111111111111111111111111111111111111111"},{"artifactId":"application-discovery-capability-report:4444444444444444444444444444444444444444444444444444444444444444","sha256":"4444444444444444444444444444444444444444444444444444444444444444"},{"artifactId":"application-discovery-entry-points:2222222222222222222222222222222222222222222222222222222222222222","sha256":"2222222222222222222222222222222222222222222222222222222222222222"},{"artifactId":"application-discovery-mapper-catalog:3333333333333333333333333333333333333333333333333333333333333333","sha256":"3333333333333333333333333333333333333333333333333333333333333333"},{"artifactId":"verified-snapshot:4444444444444444444444444444444444444444444444444444444444444444","sha256":"4444444444444444444444444444444444444444444444444444444444444444"}],"controls":{"toolchainSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profileSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","schemaBundleSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","promptBundleSha256":null,"artifactPolicyRegistryRef":{"artifactId":"artifact-policy-registry:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","sha256":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}},"completion":{"status":"SUCCEEDED_WITH_GAPS","gapRefs":["gap:bounded-path-set"],"failureRef":null},"payload":{"graphKind":"CODE_STRUCTURE","graphId":"graph:code-structure-depothead","snapshotId":"snapshot:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","applicationProfileId":"application:jsh-erp-java8-spring-mybatis","entryIds":["entry:post-depothead-batch-set-status"],"nodes":[{"nodeId":"column:jsh-depot-head-status","kind":"SQL_COLUMN","canonicalValue":"jsh_depot_head.status","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:status-column"]},{"nodeId":"entry:post-depothead-batch-set-status","kind":"HTTP_ENTRY","canonicalValue":"POST /depotHead/batchSetStatus","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:controller-route"]},{"nodeId":"method:controller-batch-set-status","kind":"METHOD","canonicalValue":"com.jsh.erp.controller.DepotHeadController#batchSetStatus","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:controller-method"]},{"nodeId":"method:mapper-update-by-example","kind":"METHOD","canonicalValue":"com.jsh.erp.datasource.mappers.DepotHeadMapper#updateByExampleSelective","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:mapper-method"]},{"nodeId":"method:service-batch-set-status","kind":"METHOD","canonicalValue":"com.jsh.erp.service.DepotHeadService#batchSetStatus","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:service-method"]},{"nodeId":"property:depothead-status","kind":"PROPERTY","canonicalValue":"com.jsh.erp.datasource.entities.DepotHead.status","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:set-status"]},{"nodeId":"route:post-depothead-batch-set-status","kind":"HTTP_ROUTE","canonicalValue":"POST /depotHead/batchSetStatus","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:controller-route"]},{"nodeId":"statement:update-by-example-selective","kind":"XML_STATEMENT","canonicalValue":"com.jsh.erp.datasource.mappers.DepotHeadMapper#updateByExampleSelective","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:xml-statement"]},{"nodeId":"table:jsh-depot-head","kind":"SQL_TABLE","canonicalValue":"jsh_depot_head","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:table-update"]},{"nodeId":"xml-guard:record-status-not-null","kind":"XML_GUARD","canonicalValue":"record.status != null","owningEntryIds":["entry:post-depothead-batch-set-status"],"evidenceDraftRefs":["provenance:status-guard"]}],"edges":[{"edgeId":"structure-edge:controller-route","kind":"ROUTE_HANDLED_BY","fromNodeId":"route:post-depothead-batch-set-status","toNodeId":"method:controller-batch-set-status","ruleId":"spring-route-merge-v1","resolution":"EXACT","guardNodeId":null,"polarity":null,"evidenceDraftRefs":["provenance:controller-route"]},{"edgeId":"structure-edge:statement-table","kind":"STATEMENT_CONTAINS_SQL","fromNodeId":"statement:update-by-example-selective","toNodeId":"table:jsh-depot-head","ruleId":"sql-update-table-v1","resolution":"EXACT","guardNodeId":null,"polarity":null,"evidenceDraftRefs":["provenance:table-update"]},{"edgeId":"structure-edge:table-declares-status","kind":"DECLARES","fromNodeId":"table:jsh-depot-head","toNodeId":"column:jsh-depot-head-status","ruleId":"sql-column-declaration-v1","resolution":"EXACT","guardNodeId":null,"polarity":null,"evidenceDraftRefs":["provenance:status-column"]}],"coverage":{"candidateElementIds":["column:jsh-depot-head-status","entry:post-depothead-batch-set-status","method:controller-batch-set-status","method:mapper-update-by-example","method:service-batch-set-status","property:depothead-status","route:post-depothead-batch-set-status","statement:update-by-example-selective","structure-edge:controller-route","structure-edge:statement-table","structure-edge:table-declares-status","table:jsh-depot-head","xml-guard:record-status-not-null"],"exactElementIds":["column:jsh-depot-head-status","entry:post-depothead-batch-set-status","method:controller-batch-set-status","method:mapper-update-by-example","method:service-batch-set-status","property:depothead-status","route:post-depothead-batch-set-status","statement:update-by-example-selective","structure-edge:controller-route","structure-edge:statement-table","structure-edge:table-declares-status","table:jsh-depot-head","xml-guard:record-status-not-null"],"gapDispositions":[],"exclusionDispositions":[],"scopeGapIds":["gap:bounded-path-set"],"closed":false},"graphProfileRef":{"artifactId":"graph-profile:8888888888888888888888888888888888888888888888888888888888888888","sha256":"8888888888888888888888888888888888888888888888888888888888888888"}}}
@@ -617,8 +786,14 @@ graphKind 恰为 CODE_STRUCTURE、CALL、CONTROL_FLOW、DATA_FLOW、EVIDENCE。�
 | code structure | `PACKAGE`、`TYPE`、`FIELD`、`METHOD`、`PARAMETER`、`ANNOTATION`、`CONFIGURATION_KEY`、`CONFIGURATION_RESOURCE`、`XML_NAMESPACE`、`XML_STATEMENT`、`SQL_TABLE`、`SQL_COLUMN`；`CONTAINS`、`DECLARES`、`CONFIG_RESOLVES_RESOURCE`、`STATEMENT_CONTAINS_SQL`。配置仅接受已实现的静态key→resource literal；嵌套YAML键以`.`展平，无法安全展平或非literal值进入Gap。 |
 | call | call site/receiver/method target/mapper statement；RECEIVER_TYPE、CALL_TARGET、CALL_RETURN、JAVA_METHOD_TO_XML_STATEMENT |
 | control flow | entry/guard/basic step/call/return/throw/terminal；ENTRY、TRUE、FALSE、NEXT、CALL、RETURN、TERMINAL |
-| data flow | definition/use/argument/parameter/property/criterion/placeholder/column；DEF_USE、ARGUMENT_TO_PARAMETER、ASSIGNMENT、SETTER_TO_PROPERTY、PROPERTY_TO_PLACEHOLDER、CRITERION_TO_WHERE、PLACEHOLDER_TO_COLUMN |
+| data flow | M4-owned `DEFINITION`、`USE`、`ARGUMENT`、`CRITERION`、`PLACEHOLDER`、`WHERE_PREDICATE`；external endpoint复用M1 `PARAMETER`、`PROPERTY`、`SQL_COLUMN`而不重声明；edge恰为`DEF_USE`、`ARGUMENT_TO_PARAMETER`、`ASSIGNMENT`、`SETTER_TO_PROPERTY`、`PROPERTY_TO_PLACEHOLDER`、`CRITERION_TO_WHERE`、`PLACEHOLDER_TO_COLUMN` |
 | evidence | source file/span/rule application；LOCATES、PARSED_BY、BOUND_BY、SUPPORTS_PROGRAM_NODE、SUPPORTS_PROGRAM_EDGE |
+
+M1 `PARAMETER`不新增wire字段，但其语义身份必须完整：`canonicalValue`是
+`java-parameter-symbol-v1|<declaring METHOD canonical signature>|<zero-based ordinal>|<declared canonical type>`，
+nodeId direct preimage同时绑定declaring M1 `METHOD` nodeId、ordinal和declared canonical type/signature，且该
+method必须以唯一M1 `DECLARES` edge指向该parameter。M4若不能从fresh-reopened M1逐字重验
+这三项就以`GRAPH_REFERENCE_BROKEN` fatal；不得从parameter name、source order或邻近declaration恢复。
 
 标准 MyBatis动态 set/if/include 不是天然 Gap；只有实现能安全展开并证明条件/parameter path 时才生成 exact edges，否则局部 Gap。
 
@@ -639,11 +814,11 @@ graphKind 恰为 CODE_STRUCTURE、CALL、CONTROL_FLOW、DATA_FLOW、EVIDENCE。�
 
 ### 8.4 Identity、accounting 与预算
 
-nodeId 绑定 snapshot、graph kind、semantic kind、canonical value、source identity 和 rule version；edgeId 再绑定 exact endpoints、rule、resolution、guard/polarity。graphId 最后绑定全部排序 nodes/edges、完整`graphProfileRef.artifactId+sha256`和 coverage；禁止用display key或仅ID替代profile bytes reference。
+nodeId 绑定 snapshot、graph kind、semantic kind、canonical value、source identity 和 rule version；edgeId 再绑定 exact endpoints、rule、resolution、guard/polarity。需要直接predecessor证明的投影edge还绑定前驱edge ID/ordinal。graphId 最后绑定全部排序 nodes/edges、图特有traversal或worklist accounting、完整`graphProfileRef.artifactId+sha256`和 coverage；M4 graphId另绑定排序`gapDrafts`。禁止用display key或仅ID替代profile bytes reference。
 
 每张图必须满足 discovered candidates = admitted exact + gap + reasoned exclusion。跨图index建立全局唯一node/edge catalog，验证ProgramEdge所有外部endpoint以及EvidenceEdge的subject/rule refs；unknown node/edge不得被默默丢弃。Evidence graph从来不把program edge ID塞进`toNodeId`。
 
-预算分图执行 maxNodes/maxEdges，并覆盖 AST/XML/SQL chars、call depth、CFG states、dataflow worklist、evidence spans 和 traversal depth。超限不截断为 COMPLETE。
+预算分图执行 maxNodes/maxEdges，并覆盖 AST/XML/SQL chars、call depth、CFG states、dataflow worklist、evidence spans 和 traversal depth。超限不截断为 COMPLETE。M4 worklist必须保存完整enqueued/processed ID集合；本v2在max+1时fatal，不安装`overLimit=true`或只剩计数的partial draft。
 
 ### 8.5 安全与 failure codes
 
@@ -653,11 +828,18 @@ nodeId 绑定 snapshot、graph kind、semantic kind、canonical value、source i
 
 GRAPH_PROFILE_INVALID、GRAPH_REFERENCE_BROKEN、GRAPH_ACCOUNTING_INVARIANT_BROKEN、CODE_STRUCTURE_INVARIANT_BROKEN、CALL_TARGET_AMBIGUOUS、CALL_RETURN_PAIR_INVALID、CFG_POLARITY_MISSING、CFG_TERMINAL_UNRESOLVED、DATA_FLOW_BINDING_UNPROVEN、DATA_FLOW_WORKLIST_LIMIT_EXCEEDED、EVIDENCE_GRAPH_INVARIANT_BROKEN、EVIDENCE_SOURCE_REOPEN_MISMATCH、XML_SECURITY_POLICY_UNENFORCEABLE、XML_EXTERNAL_RESOLUTION_ATTEMPT、PROGRAM_GRAPHS_RESOURCE_LIMIT_EXCEEDED。
 
+M4分类固定：可定位且前驱一致、但本profile不支持的call shape以
+`DATA_FLOW_BINDING_UNPROVEN`写`GraphGapDraft`；M1/M2/M3 reference、source hash、formal endpoint或basis
+漂移用`GRAPH_REFERENCE_BROKEN` fatal；伪exact、重复binding、work-item/gap/provenance/coverage守恒错误用
+`GRAPH_ACCOUNTING_INVARIANT_BROKEN` fatal；worklist max+1用`DATA_FLOW_WORKLIST_LIMIT_EXCEEDED` fatal。
+fatal不返回draft、不安装M4 module；integrity错误不得改写成Gap。
+
 ### 8.6 测试 seam 与验收
 
 - 五个 exact filenames 是 first-class artifacts；缺一、多一或交叉替换必须失败。
 - Controller→Service、Service→Mapper、Mapper→XML 分段 deletion mutation 分别失败。
 - TRUE/FALSE、terminal、call/return edge mutation 不得用源码顺序补回。
+- M4首slice必须覆盖M3-activated call×ordinal分母、external M1 parameter、work-item ID集合相等、typed Gap registry；ordinal/parameter、processed ID、gap reason/locator或predecessor ref任一mutation fail closed。
 - status 和 ids 每一段 dataflow deletion 都使对应 Fact 不可证明。
 - 同名 decoy type/method/XML statement 不能被字符串匹配选中。
 - Evidence span hash、rule ID 或 graph endpoint mutation fail closed。
@@ -671,6 +853,7 @@ GRAPH_PROFILE_INVALID、GRAPH_REFERENCE_BROKEN、GRAPH_ACCOUNTING_INVARIANT_BROK
 - 图种类和五个 filenames 恰为本文件定义的五项；不能合并为 repository blob，也不能把第六种临时图加入 production set。
 - node/edge kind 只来自版本化 registry；不支持的语法产生带 affected entry 的 Gap，不能发明自由字符串 kind。
 - call、control、data binding 必须逐段 EXACT；simple name、源码邻近、声明顺序和注释不能补边。
+- M4不得等待M6 graph index才校验external endpoint，也不得重声明M1 parameter；每个builder的Gap必须随已安装draft持久化，M6只汇总不补写reason/locator。
 - Evidence graph 证明 graph provenance，Proof 在 分析步骤“已证明代码事实” 证明 Fact；两者不可合并或互相替代。
 - 五图作为一个原子analysis step set安装并按完整identity复用；不能引用四张再现场生成第五张。
 - parser core、graph storage、worklist 和并行实现可自行选择；graph 边界、registry、identity、Gap/fatal 与 DepotHead closure 不得改变。
@@ -688,8 +871,9 @@ Wire Reset后的`org.sourceanalysis.app.analysis.graph`已经有受限的 M1/M2 
 | **部分实现（M2 有界调用图）** | `CallGraphBuilder`已对冻结 fixture 产生唯一 Controller→Service、Service→Mapper、Mapper Java→XML statement 以及 call/return edges；重载 handler 或受显式 import 影响的 receiver 都记录 Gap，绝不按源码顺序或简单名称猜 target。`CallGraphExecution`会先以同一 reopened inputs 重开 M1，再构建并由`CallGraphModulePublisher`将调用图写为独立 M2 receipt-last artifact；后者把已重开 M1 payload 加入八项上游 lineage。上一轮发现的直接 Java 调用 provenance 断链已在当前有界切片修复：builder 会把调用 AST span 对应的`ProvenanceDraftV1`收入`CallGraphDraft.provenanceDrafts`，`CallGraphDraft`会拒绝节点或边引用 registry 中不存在的 evidence draft。完整 receipt mutation matrix、Mapper binding accounting 与完整仓库验收仍未实现。 |
 | **部分实现（M2→M3 可信重开）** | `PersistedCallGraphReader`和sealed `ReopenedCallGraph`已由真实 canonical M1/M2 modules 验证 address、type/schema、八项 upstream、controls、producer/completion、payload、profile与同一 M1/source/discovery basis。当前 M3 公共测试已通过这条 fresh-reopen seam 取得 M1/M2，并在解析前核对相同 basis、graph profile 与 M2 保存的 M1 payload lineage；这只证明当前有界输入链可用，不代表完整 mutation matrix 已完成。 |
 | **部分实现（M3 线性与单 guard 控制流切片）** | `ControlFlowGraphBuilderTest`当前验证一个单入口 fixture：builder 只投影已经由 M2 证明的 call/return edges，并生成`ENTRY`、`BASIC_BLOCK`、`ENTRY_RETURN_TERMINAL`和`CALLEE_RETURN_TERMINAL`。对上游 Service 中的`if (status == null) { return; }`，当前实现生成一个`GUARD`：TRUE edge 的`guardNodeId`指向该 guard、`polarity=TRUE`并到达 callee return terminal；FALSE edge 使用同一`guardNodeId`与`polarity=FALSE`到达 guard 后的正常续接节点。这个受支持形状不再产生`PROFILE_STOP_TERMINAL`。当前fixture没有direct-throw callee，因而尚未验证“M2 RETURN始终保留为structural frame link、throw不生成或激活continuation”的目标语义。当前仅支持“单个、无 else、then 子树含 return”的 guard；一般多重/嵌套 if、else、throw、loop budget、多入口 ownership、完整 DFS/reachability、跨调用栈语义、终止节点删除/返回配对变异测试与 M3 module publication仍未实现，因此该 GREEN 不能代表控制流图或分析步骤“程序图”完成。 |
-| **尚未实现** | M3 的direct-throw/mixed return-throw frame与continuation验证、通用多重/嵌套/else 分支、异常、循环、跨调用栈语义与完整发布、M4–M6、`data-flow`、`evidence`和完整五图集合、graph index、正式 graph Gap JSONL、ProgramGraphs receipt，以及跨图/完整仓库验收均未实现。 |
+| **目标合同已发布、实现尚未开始（M4首个相邻binding）** | M4现已固定唯一`buildDataFlow(DataFlowInputs, DataFlowGraphProfile)` seam、M3 fresh-reopen aggregate、`program-graphs-data-flow-draft-v2` exact records、M3-activated call×ordinal分母、M4 `ARGUMENT`→external M1 `PARAMETER`、work-item ID集合守恒及typed `gapDrafts`。当前没有`PersistedControlFlowGraphReader`、M4 test、production builder或module publication证据，不能把合同文本当成GREEN。 |
+| **尚未实现** | M3 的direct-throw/mixed return-throw frame与continuation验证、通用多重/嵌套/else 分支、异常、循环、跨调用栈语义与完整发布；M4首slice及后续def-use/property/XML fixed-point；M5–M6、`evidence`和完整五图集合、graph index、正式 graph Gap JSONL、ProgramGraphs receipt，以及跨图/完整仓库验收均未实现。 |
 | **历史证据，不是当前能力** | 已删除的`RepositoryModel`/旧FlowView曾投影部分结构、调用、SQL和CFG，并暴露DepotHead跨层status/ids dataflow不足。它们只提供测试反例，不是当前图或永久seam。 |
-| **下一实现门** | M3 下一 RED 先冻结direct-throw-only call anchor：必须保留exact M2 RETURN projection，但不得生成continuation NEXT或从该anchor到lexical successor的path；无独立前驱时successor才省略并exclude，有bypass branch时successor仍必须可达。再冻结mixed return/throw，只允许normal callee branch激活同一continuation。随后补齐一般多重/嵌套/else 分支、loop budget、完整 DFS/reachability、多入口守恒，覆盖删除终止节点、破坏返回配对等变异，并安装 M3 receipt-last module artifact。M2 同时仍需补齐其余 fail-closed mutation matrix与 Mapper binding accounting。单 guard M3 GREEN 和有界 M2 closure 都不能单独关闭本分析步骤；之后仍须完成 M4–M5，并由 M6 原子发布五图、index、Gap 和 receipt。 |
+| **下一实现门** | M4首RED使用精确selector `mvn -Dtest=DataFlowGraphBuilderTest test`：真实store安装并fresh-reopen M1/M2/M3，先因缺`PersistedControlFlowGraphReader/DataFlowGraphBuilder`而失败，再冻结Controller status/ids按ordinal各一条`ARGUMENT_TO_PARAMETER`、same-name decoy不命中、work-item ID集合闭合、unproven binding Gap与max+1 fatal；Luna不得接受raw draft/Path或先造edge再反推分母。M3 direct-throw/mixed-return与一般CFG缺口仍须按上一门补齐；任一局部GREEN都不能关闭ProgramGraphs，之后仍须完成M4其余transfer、M5及M6原子发布。 |
 
 历史pre-reset jshERP slice的Gap、0 Flow、0 Capsule不能被目标edge示例改写成成功，也不能被误报为当前SourceAnalysis输出。
