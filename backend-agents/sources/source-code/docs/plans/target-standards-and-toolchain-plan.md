@@ -129,7 +129,7 @@ Toolchain foundation必须提交project-tracked `.mvn/toolchains.xml`，不得�
 | Spotless Maven | 3.10.1 | Java 使用 google-java-format 1.36.1；POM/Markdown 不自动重排领域 golden | `spotless:check`；apply 必须显式 | PR 只 check | 首次解析后离线；轻/中 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | google-java-format | 1.36.1 | Spotless 唯一 Java formatter engine | 仅由 Spotless 调用 | 锁定版本 check | 无运行时网络；轻 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | SpotBugs Maven | 4.10.4.0 | bytecode correctness：null/dropped result/resource/threading/equals/hash/serialization 风险；只配置经证实排除 | `-Pquality` | PR/分析步骤 gate | 中/重，串行 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
-| Maven PMD | 3.28.0 | 源码层 narrow rule set：复杂度、空 catch、异常吞噬、危险 API、设计边界；关闭与 SpotBugs 重叠规则 | `-Pquality` | PR/分析步骤 gate | 中/重，串行 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
+| Maven PMD | 3.28.0 | 源码层 narrow rule set：复杂度、空 catch、异常吞噬、危险 API、设计边界；关闭与 SpotBugs 重叠规则。显式`jdkToolchain.version=17`，使PMD type resolver读取JDK 17类库而非启动Maven的shell JDK | `-Pquality` | PR/分析步骤 gate | 中/重，串行 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | Maven Dependency Plugin | 3.11.0 | used-undeclared/unused-declared；精确列出反射/ServiceLoader 例外；Jackson tree audit | `dependency:analyze-only`/`dependency:tree` | POM 变更必跑 | 缓存后离线；中 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | CycloneDX Maven | 2.9.3 | 生成包含 compile/runtime 的 SBOM；不改变运行 artifact | supply-chain profile 显式 | release/final acceptance | 缓存后离线；中 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | OWASP Dependency Check | 13.0.0 | 只做dependency CVE audit；仅在NVD/API feed、所需credentials与持久cache位置可用时启用；环境未就绪时不伪称安全通过 | 默认 skip | 定时 CI/release，环境门满足后 | 网络且重，必须串行/缓存 DB | ENVIRONMENT-GATED |
@@ -162,8 +162,9 @@ Toolchain foundation必须提交project-tracked `.mvn/toolchains.xml`，不得�
 2. PMD 独占少量源码设计、复杂度、空 catch、危险 API 规则；不启用全量默认 ruleset 后再大量 suppress。
 3. CPD 不作为 blocking gate。重复领域字段往往是跨 schema 的显式合同；误删比重复更危险。若以后需要 CPD，只能生成 report、限定 Java production code、排除 records/fixtures，并另行审批。
 4. ArchUnit 只验证包依赖、moduleKey/fixture mapping 和 path-free architecture；不复制 PMD 命名/复杂度规则。
-5. Enforcer 检 dependency convergence/构建环境；Dependency Plugin 检 declared/used；CycloneDX 描述清单；OWASP 在获批 feed 上做漏洞匹配。四者不互相代替。
-6. Spotless 是唯一 Java formatter。PMD/Checkstyle 不承担排版；本计划不新增 Checkstyle，避免与 google-java-format 和 PMD 重复。
+5. PMD必须使用project-tracked JDK 17 Toolchain；仅设置`targetJdk`不足以避免PMD在较新的Maven shell JDK上解析不兼容的class file。该插件支持独立`jdkToolchain`配置，优先于通用Toolchains选择。[官方PMD Toolchains说明](https://maven.apache.org/plugins/maven-pmd-plugin/examples/targetJdk.html)
+6. Enforcer 检 dependency convergence/构建环境；Dependency Plugin 检 declared/used；CycloneDX 描述清单；OWASP 在获批 feed 上做漏洞匹配。四者不互相代替。
+7. Spotless 是唯一 Java formatter。PMD/Checkstyle 不承担排版；本计划不新增 Checkstyle，避免与 google-java-format 和 PMD 重复。
 
 ## 4. 通用文件标准：成熟工具优先，领域算法自有
 
