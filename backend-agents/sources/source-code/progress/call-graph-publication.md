@@ -18,6 +18,8 @@
 - The direct publisher selector is GREEN: one M1 module is persisted and fresh-reopened, then the M2 call graph is installed and fresh-reopened with its eight exact upstream references.
 - Added the M2 execution RED. It failed only because `CallGraphExecution` was absent; the test requires the execution to obtain its inputs from the persisted-input reader, fresh-reopen M1 through the sealed reader, build, and persist M2.
 - Implemented the M2 execution seam. Its direct test now proves exactly one preceding input reopen and one M1 receipt/payload reopen before M2 publication.
+- Added a Mapper-method candidate RED. When Stage 2 already identifies a Mapper interface/XML namespace but omits the exact called method candidate, the prior builder silently omitted the Java→XML relationship and emitted no Gap.
+- The builder now distinguishes an ordinary non-Mapper target (no matching Mapper catalog, no Mapper binding claim) from a known Mapper with no candidate for the called method (`MAPPER_JAVA_METHOD_UNRESOLVED` Gap). The direct M2 builder selector is GREEN.
 
 ## Current state
 
@@ -39,6 +41,8 @@
 | `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphModulePublisherTest test` | RED | Test compilation fails only because `CallGraphDraftReference` and `CallGraphModulePublisher` are absent. |
 | `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphModulePublisherTest test` | PASS | 1 test, 0 failures/errors/skips; M2 receipt records the source/discovery/profile and fresh M1 payload lineage. |
 | `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphModulePublisherTest test` | PASS | 2 tests, 0 failures/errors/skips; execution fresh-reopens M1 before it builds and installs M2. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphBuilderTest test` | RED | 6 tests, 1 failure: a known Mapper with no called-method candidate silently produced no Gap. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphBuilderTest test` | PASS | 6 tests, 0 failures/errors/skips; known incomplete Mapper catalogs now produce the scoped unresolved-method Gap. |
 
 ## Decisions
 
@@ -51,7 +55,7 @@
 
 ## Exact next action
 
-- Add the required M2 deterministic replay and invalid M1 / Mapper-binding mutation tests, then complete the M2 exit review.
+- Add the required M2 deterministic replay and remaining invalid M1 / Mapper-binding mutation tests, then complete the M2 exit review.
 
 ## Resume checks
 

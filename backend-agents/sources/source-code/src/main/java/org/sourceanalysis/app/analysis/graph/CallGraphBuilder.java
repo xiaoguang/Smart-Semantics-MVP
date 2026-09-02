@@ -181,12 +181,18 @@ public final class CallGraphBuilder {
     private void bindMapper(String targetSignature, ArtifactId targetNode) {
       String interfaceFqn = targetSignature.substring(0, targetSignature.indexOf('#'));
       String methodSignature = targetSignature.substring(targetSignature.indexOf('#') + 1);
+      List<MapperCatalogEntry> matchingCatalogs =
+          inputs.reopened().discovery().mapperCatalog().stream()
+              .filter(
+                  catalog ->
+                      catalog.javaInterfaceFqn().equals(interfaceFqn)
+                          && catalog.xmlNamespace().equals(interfaceFqn))
+              .toList();
+      if (matchingCatalogs.isEmpty()) {
+        return;
+      }
       List<MapperMethodBinding> candidates = new ArrayList<>();
-      for (MapperCatalogEntry catalog : inputs.reopened().discovery().mapperCatalog()) {
-        if (!catalog.javaInterfaceFqn().equals(interfaceFqn)
-            || !catalog.xmlNamespace().equals(interfaceFqn)) {
-          continue;
-        }
+      for (MapperCatalogEntry catalog : matchingCatalogs) {
         for (MapperMethodCandidate method : catalog.javaMethodCandidates()) {
           if (method.signature().equals(methodSignature)) {
             candidates.add(new MapperMethodBinding(catalog, method));
@@ -194,6 +200,7 @@ public final class CallGraphBuilder {
         }
       }
       if (candidates.isEmpty()) {
+        gap("MAPPER_JAVA_METHOD_UNRESOLVED", targetSignature);
         return;
       }
       if (candidates.size() != 1) {

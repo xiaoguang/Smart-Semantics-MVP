@@ -133,6 +133,20 @@ class CallGraphBuilderTest {
   }
 
   @Test
+  void recordsAGapWhenTheKnownMapperHasNoCandidateForTheCalledMethod()
+      throws Exception {
+    Fixture fixture = unresolvedMapperMethodFixture();
+
+    CallGraphDraft draft =
+        new CallGraphBuilder().buildCalls(fixture.inputs(), fixture.profile());
+
+    assertThat(draft.edges())
+        .filteredOn(edge -> edge.kind() == CallGraphEdgeKind.JAVA_METHOD_TO_XML_STATEMENT)
+        .isEmpty();
+    assertThat(draft.coverage().gapDispositions()).hasSize(1);
+  }
+
+  @Test
   void rejectsPersistedStructureWhenItsControlsDoNotMatchTheFreshReopenedInputs() throws Exception {
     try (PersistedFixture persisted = persistedFixture("call-graph")) {
       ArtifactControls changedControls =
@@ -176,8 +190,16 @@ class CallGraphBuilderTest {
     return fixture("call-graph-import-decoy");
   }
 
+  private Fixture unresolvedMapperMethodFixture() throws Exception {
+    return fixture("call-graph", false);
+  }
+
   private Fixture fixture(String fixtureRoot) throws Exception {
-    try (PersistedFixture persisted = persistedFixture(fixtureRoot)) {
+    return fixture(fixtureRoot, true);
+  }
+
+  private Fixture fixture(String fixtureRoot, boolean includeMapperMethodCandidate) throws Exception {
+    try (PersistedFixture persisted = persistedFixture(fixtureRoot, includeMapperMethodCandidate)) {
       ReopenedCodeStructureGraph reopenedStructure =
           persisted
               .reader()
@@ -189,6 +211,11 @@ class CallGraphBuilderTest {
   }
 
   private PersistedFixture persistedFixture(String fixtureRoot) throws Exception {
+    return persistedFixture(fixtureRoot, true);
+  }
+
+  private PersistedFixture persistedFixture(String fixtureRoot, boolean includeMapperMethodCandidate)
+      throws Exception {
     CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
     CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
     ArtifactControls controls = controls(policies);
@@ -241,14 +268,16 @@ class CallGraphBuilderTest {
         new MapperCatalogEntry(
             id("mapper-catalog-entry", "depot-head"),
             "com.example.DepotHeadMapper",
-            List.of(
-                new MapperMethodCandidate(
-                    id("mapper-method", "update-status"),
-                    "updateStatus(java.lang.String)",
-                    excerpt(
-                        fixtureRoot,
-                        "src/main/java/com/example/DepotHeadMapper.java",
-                        "void updateStatus(String status);"))),
+            includeMapperMethodCandidate
+                ? List.of(
+                    new MapperMethodCandidate(
+                        id("mapper-method", "update-status"),
+                        "updateStatus(java.lang.String)",
+                        excerpt(
+                            fixtureRoot,
+                            "src/main/java/com/example/DepotHeadMapper.java",
+                            "void updateStatus(String status);")))
+                : List.of(),
             "src/main/resources/mapper/DepotHeadMapper.xml",
             "com.example.DepotHeadMapper",
             List.of(
@@ -263,7 +292,9 @@ class CallGraphBuilderTest {
             "CANDIDATE_NOT_YET_BOUND");
     ReopenedProgramGraphInputs reopened =
         new ReopenedProgramGraphInputs(
-            source, new ProgramGraphDiscoveryInputs(discovery, List.of(entry), List.of(mapper)));
+            source,
+            new ProgramGraphDiscoveryInputs(
+                discovery, List.of(entry), List.of(mapper)));
     RunStoreHandle handle = RunStoreBootstrap.openForTest(temporaryDirectory);
     try {
       FileSystemCanonicalModuleArtifactStore store =
