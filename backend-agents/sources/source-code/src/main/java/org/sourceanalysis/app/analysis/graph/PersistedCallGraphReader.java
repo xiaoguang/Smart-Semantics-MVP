@@ -70,6 +70,7 @@ public final class PersistedCallGraphReader {
       return new VerifiedReopenedCallGraph(
           reference,
           new ArtifactReference(payload.descriptor().artifactId(), payload.descriptor().sha256()),
+          sameStructure.payloadRef(),
           draft,
           basis);
     } catch (GraphReferenceException failure) {
@@ -429,16 +430,19 @@ public final class PersistedCallGraphReader {
   static final class VerifiedReopenedCallGraph implements ReopenedCallGraph {
     private final CallGraphDraftReference reference;
     private final ArtifactReference payloadRef;
+    private final ArtifactReference codeStructurePayloadRef;
     private final CallGraphDraft draft;
     private final ProgramGraphInputBasis basis;
 
     private VerifiedReopenedCallGraph(
         CallGraphDraftReference reference,
         ArtifactReference payloadRef,
+        ArtifactReference codeStructurePayloadRef,
         CallGraphDraft draft,
         ProgramGraphInputBasis basis) {
       this.reference = reference;
       this.payloadRef = payloadRef;
+      this.codeStructurePayloadRef = codeStructurePayloadRef;
       this.draft = draft;
       this.basis = basis;
     }
@@ -451,6 +455,11 @@ public final class PersistedCallGraphReader {
     @Override
     public ArtifactReference payloadRef() {
       return payloadRef;
+    }
+
+    @Override
+    public ArtifactReference codeStructurePayloadRef() {
+      return codeStructurePayloadRef;
     }
 
     @Override

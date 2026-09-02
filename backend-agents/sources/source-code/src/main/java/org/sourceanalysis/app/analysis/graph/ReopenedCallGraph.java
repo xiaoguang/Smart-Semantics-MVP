@@ -10,6 +10,9 @@ public sealed interface ReopenedCallGraph
 
   ArtifactReference payloadRef();
 
+  /** The exact M1 payload identity present in this M2 module's verified upstream lineage. */
+  ArtifactReference codeStructurePayloadRef();
+
   CallGraphDraft draft();
 
   ProgramGraphInputBasis basis();

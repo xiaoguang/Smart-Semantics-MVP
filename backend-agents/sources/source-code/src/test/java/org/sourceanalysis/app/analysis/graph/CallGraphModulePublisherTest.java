@@ -237,6 +237,7 @@ class CallGraphModulePublisherTest {
       assertThat(callGraph.reference()).isEqualTo(callReference);
       assertThat(callGraph.draft().graphKind()).isEqualTo(ProgramGraphKind.CALL);
       assertThat(callGraph.basis()).isEqualTo(structure.basis());
+      assertThat(callGraph.codeStructurePayloadRef()).isEqualTo(structure.payloadRef());
     }
   }
 

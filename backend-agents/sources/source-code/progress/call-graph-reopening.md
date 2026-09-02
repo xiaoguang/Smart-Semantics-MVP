@@ -15,6 +15,7 @@
 - Added the real-store reopening RED to the M2 module selector. Compilation failed only because `PersistedCallGraphReader` and `ReopenedCallGraph` were absent.
 - Implemented the sealed M2 aggregate and strict persisted reader. It reopens the M2 receipt/payload, verifies its `program-graphs / 2 / call-graph` identity, the eight upstream artifacts, controls, producer/completion envelope, and the same source/discovery/M1/profile basis before decoding the call graph.
 - The reader selector is GREEN with real canonical M1 and M2 module publications.
+- M3 contract audit found that the sealed aggregate must expose its already-verified M1 payload identity. Added `codeStructurePayloadRef`; a compile RED established the missing accessor, and the real-store selector is GREEN again.
 
 ## Current state
 
@@ -33,6 +34,7 @@
 | --- | --- | --- |
 | `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphModulePublisherTest test` | RED | Test compilation fails only because `PersistedCallGraphReader` and `ReopenedCallGraph` are absent. |
 | `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphModulePublisherTest test` | PASS | 3 tests, 0 failures/errors/skips; the reader fresh-reopens real M2 with its same M1 and inputs. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphModulePublisherTest test` | PASS | 3 tests, 0 failures/errors/skips; the reopened M2 aggregate exposes the exact upstream M1 payload reference. |
 
 ## Decisions
 
