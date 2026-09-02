@@ -200,16 +200,16 @@ ApplicationDiscovery 内容获取候选，而不是从 M1 的简化 ID 列表或
 #### M2 CallGraphBuilder
 
 - **解决的问题**：唯一确定调用 target、call/return pair 和 Mapper Java→XML statement binding。
-- **精确上游输入及前置**：M1 structure draft、ApplicationDiscovery entries/mapper catalog、verified call-site bytes、CALL registry/profile/budget；receiver/type/method candidate refs 均存在。
+- **精确上游输入及前置**：`CallGraphInputs{structure: fresh-reopened M1 CodeStructureGraphDraft, reopened: the same ReopenedProgramGraphInputs}`与`CallGraphProfile`（CALL registry/profile/budget）；M2只可解析`reopened.source`中的verified call-site bytes，只可把`reopened.discovery.entries/mapperCatalog`作为Stage 2候选，并要求structure/source/discovery的snapshot、application profile、controls与upstream ArtifactReferences逐字一致；receiver/type/method candidate refs 均存在。`CallGraphInputs`是immutable in-process builder input，不是新wire/module artifact，不含worktree/repository `Path`、自由source string或与该reopen脱离的entries/catalog列表。
 - **确定性顺序 / LLM**：枚举 call sites → 求 receiver static type → 解析 method signature/overload → 建 direct target → 配对 call/return → 按 namespace/signature 绑定 Mapper statement；0 LLM。
 - **目标输出与 DepotHead 示例**：CALL graph draft；例子有 Controller :185→Service :742、Service :803→Mapper Java :23、Mapper Java→XML :385 三段 exact edges。
 - **必须保持的不变量**：每个 admitted call/binding target 唯一；edge 保存 exact endpoints/rule/resolution/evidence draft；simple name/文本相似不是 tie-breaker。
 - **Gap / fatal / artifact复用**：可定位的 ambiguous/unsupported call 为 affected-entry Gap；两个 exact target、broken endpoints、pair/reference/accounting 错误 fatal；只接受相同roots/profile。
 - **给下游的后置保证**：M3/M4/BusinessFlows 能沿明确 call/return，不需动态 dispatch 猜测；ProvenCodeFacts 可把 call edge 放入 Proof。
 - **明确非目标**：不以调用顺序代替 CFG，不推值流，不把 unresolved candidate 任选一个。
-- **公共测试 seam 与验收**：`buildCalls(structure, entries, mapperCatalog)` 对三段 DepotHead chain 做逐段 deletion/decoy/overload mutation；只有唯一 signature/namespace binding 时产生 EXACT edge。
+- **公共测试 seam 与验收**：`buildCalls(CallGraphInputs inputs, CallGraphProfile profile)` 对三段 DepotHead chain 做逐段 deletion/decoy/overload mutation；fixture必须把fresh-reopened M1 draft与同一次`ReopenedProgramGraphInputs`组成唯一inputs，删除/替换call-site bytes或脱离Stage 2的entry/catalog candidate都不得由路径、自由字符串搜索或M1 display value补回；只有唯一 signature/namespace binding 时产生 EXACT edge。
 - **Luna/xhigh 测试指南**：创建 `CallGraphBuilderTest`，fixtures/goldens在 `src/test/resources/analysis/graph/call-graph/`。一个RED一个三段binding：Controller→Service、Service→Mapper、Mapper→XML；随后overload/decoy Gap、双exact fatal、call-return mutation、determinism。首RED因seam缺失；golden不由production生成。只fake上游artifact reader，禁止mockresolution/canonical。命令：`mvn -Dtest=CallGraphBuilderTest test`；无网络/runtime。偏离按13.11。
-- **Terra/xhigh 实现指南**：RED后仅拥有 `analysis/graph/call-graph/`，实现 public `CallGraphBuilder/CallGraphDraft` 与 `program-graphs-call-graph-draft-v2`；只读M1/ApplicationDiscovery，receiver type→signature→target→return pair→Mapper binding→provenance drafts。逐edge GREEN且decoy不命中；不能字符串fallback或改M1。跨analysis step/data缺失MUST STOP交Sol/ultra，更新审计。
+- **Terra/xhigh 实现指南**：RED后仅拥有 `analysis/graph/call-graph/`，实现 public `CallGraphBuilder/CallGraphInputs/CallGraphProfile/CallGraphDraft` 与 `program-graphs-call-graph-draft-v2`；execution先fresh-reopen M1 draft与同一`ReopenedProgramGraphInputs`并验证共同identity，再只以`inputs.structure`解析endpoint、以`inputs.reopened.source`解析call site、以`inputs.reopened.discovery.entries/mapperCatalog`解析Stage 2候选，按receiver type→signature→target→return pair→Mapper binding→provenance drafts。逐edge GREEN且decoy不命中；不得接受Path/detached lists/free source string、扫描worktree、字符串fallback或改M1。跨analysis step/data缺失MUST STOP交Sol/ultra，更新审计。
 
 #### M3 ControlFlowGraphBuilder
 
