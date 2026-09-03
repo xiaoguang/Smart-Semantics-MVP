@@ -69,6 +69,8 @@ POC 记录位于 `docs/history/`，只用于历史审计，不属于阅读路线
 | 当前能力 | 中文状态 | 诚实边界 |
 | --- | --- | --- |
 | 工程身份与目录 | **已实现（结构）** | 目录为`backend-agents/sources/source-code/`，Maven坐标为`org.sourceanalysis:source-code-analysis-agent`，生产包全部位于`org.sourceanalysis.app`语义根下 |
+| 程序图 | **部分实现（受控fixture）** | 五张图、图索引和Gap的构建、canonical发布与重新打开已通过定向测试；当前尚未连接完整客户仓库输入 |
+| 代码事实候选 | **部分实现（受控fixture）** | 程序能从重新打开的应用发现和五图中列出精确闭合的Java边界调用候选，或保留缺口处置；这不是已证明的业务Fact |
 | Java构建选择 | **已实现（构建）** | 项目提供JDK 17 Toolchain配置，compiler release固定为17；这只约束Agent自身构建，不代表任何业务分析步骤已实现 |
 | 新wire头门禁 | **已实现（窄门禁）** | `AnalysisWireFormatGuard`只接受对象头`wireKind=SOURCE_ANALYSIS`且`wireVersion=v1`，并以`UNSUPPORTED_ANALYSIS_WIRE`拒绝顶层描述符元数据中的pre-reset path、编号stage、stage receipt/schema、旧Maven/Java package身份和wire alias；不扫描业务内容。owner-specific schema、canonical artifact reader与八步artifact校验尚未实现 |
 | Canonical artifact foundation | **部分实现（源码清单模块持久化纵切）** | 已有canonical JSON、不可变bytes、typed identity/address和policy registry；module store已能原子安装、receipt-last并fresh reopen源码盘点M1/M2的JSON payload，以及M3恰好三项独立JSON/JSONL payload，并重算descriptor/root/receipt、拒绝策略/符号链接/碰撞/文件组和顺序错误。它不是完整store：RAW UTF-8、其他模块payload、analysis-step/run store、生产root bootstrap和runtime仍未实现 |

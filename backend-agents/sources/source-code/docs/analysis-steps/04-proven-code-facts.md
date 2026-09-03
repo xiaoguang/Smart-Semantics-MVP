@@ -334,13 +334,14 @@ FACT_PROFILE_INVALID、FACT_KIND_UNSUPPORTED、REQUIRED_ATOM_MISSING、DATA_FLOW
 
 ## 9. 当前实现成熟度审计
 
-Wire Reset后的`org.sourceanalysis.app.analysis.fact`目前只有语义package骨架；当前没有Fact candidate、Proof builder、Gap ledger或本步骤artifact。
+以下是本次工作树已由定向测试验证的当前事实；它不把候选清单外推成已证明Fact，也不把synthetic fixture外推成jshERP运行结果。
 
 | 状态 | 当前事实 |
 | --- | --- |
 | **已实现（结构/构建门）** | 目标package与JDK 17 Toolchain已就位；通用wire头门禁不理解Fact、Proof或Evidence语义。 |
-| **本步骤生产能力尚未实现** | M1–M3、逐atom proof、五项正式输出和从五图fresh-reopen的Fact compiler均不存在。 |
+| **部分实现（M1 候选清单）** | `PersistedFactCandidateInputReader`会从同一冻结依据重新打开应用发现与完整五图，并校验五图、graph index、应用画像和源码清单之间的身份闭合；`FactCandidateEnumerator`只为证据、调用、参数、控制路径均精确闭合的Java边界调用建立候选，并为不闭合组合保留`NOT_APPLICABLE`处置。`FactCandidateSetModulePublisher`将唯一`fact-candidate-set.json`与七项上游引用canonical安装；独立reader重开后重枚举并拒绝内容漂移。two-entry/two-boundary、缺Evidence、幽灵endpoint、错误Evidence support、源码摘录、profile/index/source lineage、owner、registry determinism与module tamper的16个定向测试通过。 |
+| **尚未实现（M2–M3）** | 还没有`AtomicProofBuilder`、逐atom CLOSED Proof、admitted `CodeFact`、Fact rejection/Gap ledger/accounting，也没有五项正式步骤输出。因此候选清单不能被业务流程步骤消费为“已证明事实”。 |
 | **历史证据，不是当前能力** | 已删除的pre-reset代码曾验证有限profile的Fact/Proof/Gap/accounting；旧POC五个人工LockedFact独立审计仅两条成立。它们说明“hash闭合不等于语义证据闭合”，不能复制为当前Fact。 |
-| **下一实现门** | 按本章只消费五张图与其Evidence，逐atom建立generic boundary invocation Proof或Gap，并用target/argument/origin/guard/evidence与XML/SQL伪支持mutation证明不会把外部效果猜成事实。 |
+| **下一实现门** | 按本章只消费已安装的候选清单、五图和冻结源码，逐atom重新打开span/hash、核验rule/edge闭合，建立generic Java boundary invocation Proof或Gap；以target/argument/origin/guard/evidence与XML/SQL伪支持mutation证明不会把外部效果猜成事实。 |
 
 分析步骤“已证明代码事实”的成功允许有Gap；但只有当前新实现 admitted-with-Proof 的Fact才能进入分析步骤“业务流程”。
