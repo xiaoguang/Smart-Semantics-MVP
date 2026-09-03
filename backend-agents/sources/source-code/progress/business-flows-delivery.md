@@ -17,12 +17,13 @@
 
 ## Current state
 
-The read-only seam audit found no new cross-step field requirement, but it found two stale rows in the overall current-maturity table: ApplicationDiscovery and ProvenCodeFacts had already advanced beyond the text shown there. This documentation correction is being published before the first BusinessFlows RED. The next task remains a narrow persisted-upstream reader audit followed by the first Flow compiler test.
+The read-only seam audit found no new cross-step field requirement. It found two stale overall-maturity rows, which were published to `origin/main` as `2001e7f`, and one Java-grammar error in the detailed implementation guidance: a hyphenated persistent module key had been presented as a Java source package. The correction keeps the wire keys `flow-compiler` and `capsule-projector` unchanged, while assigning their Java implementation packages to `analysis.flow.compiler` and `analysis.flow.capsule`. This docs-only correction is ready for the required pre-RED publication.
 
 ## Changed files
 
 - `progress/business-flows-delivery.md`
 - `docs/DESIGN.md`
+- `docs/analysis-steps/05-business-flows.md`
 
 ## Verification
 
@@ -32,20 +33,23 @@ The read-only seam audit found no new cross-step field requirement, but it found
 | `wc -l` and bounded `sed` reads of required design files | PASS | Read all required target and BusinessFlows contracts before implementation. |
 | `rg --files src/main/java src/test/java` | PASS | Existing upstream artifacts/readers are present; `analysis.flow` is still only a skeleton. |
 | Current-audit cross-check against analysis-step 02–04 documents and published code | PASS | Corrected only stale maturity descriptions; no target architecture, artifact count, or interface changed. |
+| `git push origin HEAD:main` | PASS | Published docs-only commit `2001e7f`; remote `main` equals this commit. |
+| Target package-name audit | PASS | Persistent module keys retain hyphens by contract; Java packages now use legal semantic names without changing any wire field. |
 
 ## Decisions
 
 - Flow compilation may only consume fresh-reopened upstream artifacts; it may not reparse source, infer external effects, or create a per-Flow Markdown file.
 - A boundary invocation remains a Java fact with an external-effect Gap; the capsule must preserve that Gap for downstream explanation.
 - The overall maturity audit must report the delivered M1–M4 discovery and M1–M3 fact vertical slices truthfully, while retaining their full-repository limitations.
+- A persistent module key and a Java package name are separate namespaces: `flow-compiler` / `capsule-projector` remain fixed wire keys, while implementation uses `.flow.compiler` / `.flow.capsule`.
 
 ## Blockers
 
-- None. A cross-step field audit is in progress before the first RED test.
+- None. The required docs-only package-name correction is being published before the first RED test.
 
 ## Exact next action
 
-Publish this docs-only correction to `origin/main`; then inspect persisted upstream record readers and fixture payloads before creating the first narrow `EntryRootedFlowCompilerTest` RED.
+Commit and push the docs-only package-name correction, then inspect persisted upstream record readers and fixture payloads before creating the first narrow `EntryRootedFlowCompilerTest` RED.
 
 ## Resume checks
 
