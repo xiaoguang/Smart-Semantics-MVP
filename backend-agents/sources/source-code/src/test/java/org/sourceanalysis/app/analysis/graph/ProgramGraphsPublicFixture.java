@@ -584,7 +584,47 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
 
   private static SourceMaterial source(ArtifactControls controls, boolean guardedApprove) {
     String controller =
+        guardedApprove
+            ? """
+        package com.example;
+
+        class OrderController {
+          private final OrderService orderService = new OrderService();
+
+          void approve(String status) {
+            orderService.approve(status);
+          }
+
+          void cancel(String status) {
+            orderService.cancel(status);
+          }
+        }
+
+        class OrderService {
+          private final ApprovalClient approvalClient = null;
+          private final CancellationClient cancellationClient = null;
+
+          void approve(String status) {
+            if (status == null) {
+              return;
+            }
+            approvalClient.record(status);
+          }
+
+          void cancel(String status) {
+            cancellationClient.record(status);
+          }
+        }
+
+        interface ApprovalClient {
+          void record(String status);
+        }
+
+        interface CancellationClient {
+          void record(String status);
+        }
         """
+            : """
         package com.example;
 
         class OrderController {
@@ -995,6 +1035,13 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(entries, "PROVEN_CODE_FACTS_PROOF_PACK", "proven-code-facts-proof-pack-v2", "proven-code-facts-proof-pack", "application/json", "STANDALONE_JSON", false);
     policy(entries, "PROVEN_CODE_FACTS_PROOF_DECISION_SET", "proven-code-facts-proof-decision-set-v2", "proven-code-facts-proof-decision-set", "application/json", "MODULE_ARTIFACT_JSON", false);
     policy(entries, "PROVEN_CODE_FACTS_PROVEN_FACTS", "proven-code-facts-proven-facts-v2", "proven-code-facts-proven-facts", "application/json", "STANDALONE_JSON", false);
+    policy(entries, "BUSINESS_FLOWS_FLOW_COMPILATION", "business-flows-flow-compilation-v1", "business-flows-flow-compilation", "application/json", "MODULE_ARTIFACT_JSON", false);
+    policy(entries, "BUSINESS_FLOWS_CAPSULE_PROJECTION", "business-flows-capsule-projection-v4", "business-flows-capsule-projection", "application/json", "MODULE_ARTIFACT_JSON", false);
+    policy(entries, "BUSINESS_FLOWS_FLOW_SLICES", "business-flows-flow-slices-v1", "business-flows-flow-slices", "application/json", "STANDALONE_JSON", false);
+    policy(entries, "BUSINESS_FLOWS_FLOW_COVERAGE", "business-flows-flow-coverage-v1", "business-flows-flow-coverage", "application/json", "STANDALONE_JSON", false);
+    policy(entries, "BUSINESS_FLOWS_ENTRY_DISPOSITION", "business-flows-entry-disposition-v1", "business-flows-entry-disposition", "application/x-ndjson", "CANONICAL_JSONL", true);
+    policy(entries, "BUSINESS_FLOWS_EVIDENCE_CAPSULE", "business-flows-evidence-capsule-v1", "business-flows-evidence-capsule", "application/x-ndjson", "CANONICAL_JSONL", true);
+    policy(entries, "BUSINESS_FLOWS_FLOW_GAP", "business-flows-flow-gap-v1", "business-flows-flow-gap", "application/x-ndjson", "CANONICAL_JSONL", true);
     policy(entries, "VERIFIED_SNAPSHOT", "verified-snapshot-v2", "verified-snapshot", "application/json", "STANDALONE_JSON", false);
     policy(entries, "VERIFIED_SOURCE_INVENTORY_SOURCE_INPUT", "verified-source-inventory-source-input-v2", "verified-source-inventory-source-input", "application/json", "STANDALONE_JSON", false);
     policy(entries, "VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY", "verified-source-inventory-source-inventory-v2", "verified-source-inventory-source-inventory", "application/x-ndjson", "CANONICAL_JSONL", false);

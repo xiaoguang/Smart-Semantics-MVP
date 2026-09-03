@@ -63,7 +63,7 @@ reasonCodes 表示目标可用 code 示例；实际当前 code/count 以运行 a
 | entry-dispositions.jsonl | 每个发现入口恰一条 COMPILED/GAP/EXCLUDED |
 | evidence-capsules.jsonl | 每个 COMPILED Flow 恰一个模型阅读包 |
 | flow-gaps.jsonl | blocking/warning Flow-local Gap 及 provenance |
-| business-flows-receipt.json | upstream roots、control hashes、artifact descriptors、status与Gap refs/count；Flow/Capsule分母和counts在flow-coverage.json中 |
+| step-receipt.json | upstream roots、control hashes、artifact descriptors、status与Gap refs/count；Flow/Capsule分母和counts在flow-coverage.json中 |
 
 未来 DepotHead 成功后的 Capsule 只能包含该 Flow 的必要 spans；它属于上述统一 walkthrough 声明：
 
@@ -190,8 +190,8 @@ M1/M2使用 DESIGN 13.3 `ModuleArtifact<T>` envelope；M3直接安装五个analy
 
 | artifact | schemaVersion / artifactType | 精确 upstream | payload/排序 |
 | --- | --- | --- | --- |
-| `modules/01-flow-compiler/flow-compilation.json` | `business-flows-flow-compilation-v1` / `BUSINESS_FLOWS_FLOW_COMPILATION` | exact ApplicationDiscovery `capability-report/entry-points`、ProgramGraphs七项、ProvenCodeFacts `fact-accounting/gap-ledger/proof-pack/proven-facts` ArtifactReferences，以及 content-addressed `flowCompilationProfile` | `flowCompilationId!`、`flowCompilationProfile!{profileRef!,maxFlows!,maxOutcomesPerFlow!,maxFlowNodes!,maxFlowEdges!,maxTraversalDepth!}`、`entryDispositions[]!{entryId!,disposition!,flowSliceId?,gapIds[]!,reasonCode?,evidenceRefs[]!}`、`flowSlices[]!`、`entryShardReceipts[]!{shardId!,denominatorEntryIds[]!,dispositionEntryIds[]!,flowSliceIds[]!,status!,gapIds[]!}`、`coverage!`；entries/flows/shards按ID，steps/decisions保持语义顺序，outcomes按outcomePathId |
-| `modules/02-capsule-projector/capsule-projection.json` | `business-flows-capsule-projection-v4` / `BUSINESS_FLOWS_CAPSULE_PROJECTION` | exact M1、VerifiedSourceInventory两项、ProgramGraphs七项、ProvenCodeFacts四项 ArtifactReferences | `capsuleProjectionId!`、`flowCompilationId!`、`capsules[]!{evidenceCapsuleId!,flowSliceId!,proofPackId!,modelEligibility!,modelIneligibilityGapIds[]!,entryView!:FlowEntryViewV1,factViews[]!:FlowFactViewV1,gapViews[]!:FlowGapViewV1,outcomePathViews[]!:FlowOutcomePathViewV1,registryProposalBasisAtomIds[]!,registryProposalBasisGapIds[]!,modelEvidenceSpanIds[]!,projectionObligationIds[]!,budgetUsage!}`、`modelEvidenceSpans[]!{spanId!,sourceExcerpt!:SourceExcerptV1,supportedAtomIds[]!,supportedOutcomePathIds[]!}`、`projectionObligations[]!{obligationId!,kind!,semanticItemId!,satisfyingSpanIds[]!}`、`flowShardReceipts[]!`、`budgetUsage!`；capsules/spans/obligations/shards按ID，fact/gap/outcome views按其stable ID，basis IDs按UTF-8 byte order |
+| `modules/01-flow-compiler/flow-compilation.json` | `business-flows-flow-compilation-v1` / `BUSINESS_FLOWS_FLOW_COMPILATION` | exact ApplicationDiscovery `capability-report/entry-points`、ProgramGraphs七项、ProvenCodeFacts `fact-accounting/gap-ledger/proof-pack/proven-facts` ArtifactReferences，以及 content-addressed `flowCompilationProfile` | `flowCompilationId!`、`flowCompilationProfile!{profileRef!,maxFlows!,maxOutcomesPerFlow!,maxFlowNodes!,maxFlowEdges!,maxTraversalDepth!}`、`entryDispositions[]!{entryId!,disposition!,flowSliceId?,gapIds[]!,reasonCode?,evidenceRefs[]!}`、`flowSlices[]!`、`flowGaps[]!{gapId!,scope!,reasonCode!,affectedSemanticIds[]!,evidenceNodeIds[]!}`、`entryShardReceipts[]!{shardId!,denominatorEntryIds[]!,dispositionEntryIds[]!,flowSliceIds[]!,status!,gapIds[]!}`、`coverage!`；entries/flows/gaps/shards按ID，steps/decisions保持语义顺序，outcomes按outcomePathId |
+| `modules/02-capsule-projector/capsule-projection.json` | `business-flows-capsule-projection-v4` / `BUSINESS_FLOWS_CAPSULE_PROJECTION` | exact M1、VerifiedSourceInventory两项、ProgramGraphs七项、ProvenCodeFacts四项 ArtifactReferences | `capsuleProjectionId!`、`flowCompilationRef!`、`proofPackRef!`、`capsuleProjectionProfile!`、`capsules[]!{evidenceCapsuleId!,flowSliceId!,proofPackId!,modelEligibility!,modelIneligibilityGapIds[]!,entryView!:FlowEntryViewV1,factViews[]!:FlowFactViewV1,gapViews[]!:FlowGapViewV1,outcomePathViews[]!:FlowOutcomePathViewV1,registryProposalBasisAtomIds[]!,registryProposalBasisGapIds[]!,modelEvidenceSpanIds[]!,projectionObligationIds[]!,budgetUsage!}`、`modelEvidenceSpans[]!{spanId!,sourceExcerpt!:SourceExcerptV1,supportedAtomIds[]!,supportedOutcomePathIds[]!}`、`projectionObligations[]!{obligationId!,kind!,semanticItemId!,satisfyingSpanIds[]!}`、`budgetUsage!`；capsules/spans/obligations按ID，fact/gap/outcome views按其stable ID，basis IDs按UTF-8 byte order |
 | `modules/03-publish/<five registered semantic filenames>` | 各public schema/type；无summary envelope | M1+M2 IDs/SHAs | 一次module install恰`flow-slices.json/flow-coverage.json/entry-dispositions.jsonl/evidence-capsules.jsonl/flow-gaps.jsonl`；其中`flow-coverage.json`的`RepositoryFlowCoverage`必须包含8.1列出的四项model eligibility字段及完整mapping；module receipt绑定五descriptors；禁止analysis step root/receipt或六项published list；AnalysisStep store provenance绑定M3 reference |
 
 M3的完整module fixture必须用一次install request/receipt绑定表中M1/M2两个ArtifactReferences；五个standalone payload不得重复envelope。只给payload而省略该排序upstream集合，不是完整M3 fixture。
@@ -417,13 +417,13 @@ BUSINESS_FLOWS_REQUEST_INVALID、UPSTREAM_ARTIFACT_REPLAY_MISMATCH、FLOW_GRAPH_
 
 ## 9. 当前实现成熟度审计
 
-Wire Reset后的正式 `origin/main` 尚未交付本步骤；开发分支中的 M1 探索只用于验证合同，不能被写成已发布能力。
+正式 `origin/main` 尚未交付本步骤；当前开发分支已完成一个受限的 M1–M3 纵切，用它验证持久化模块接力、双入口 Flow/Capsule 归属、条件分支和模型预算处置。它仍不是完整仓库验收能力。
 
 | 状态 | 当前事实 |
 | --- | --- |
 | **已实现（结构/构建门）** | 目标package与JDK 17 Toolchain已就位；通用wire头门禁只判断`SOURCE_ANALYSIS/v1`，不建立Flow eligibility。 |
-| **尚未交付（M1 探索中的合同验证）** | 未提交的开发分支已验证：持久化 ControlFlow 确有 `GUARD` 及 TRUE/FALSE 边，Flow compiler 可沿准确 call/return 前进；但它在缺少 `JAVA_GUARD_CONDITION` 的 v1 ProvenCodeFacts 输入处 fail closed。该 RED 证明了 v2 producer 必须先实现，不是本步骤能力。 |
-| **本步骤生产能力尚未实现** | M1 的 complete branch decision、call/return traversal、GAP/EXCLUDED entry disposition、loop/ambiguous handling、M1 module artifact/publisher 与 shard/accounting尚未交付；M2、M3、Flow/Capsule双射、eligible/ineligible分区与六项正式输出均不存在。这个步骤不能用于仓库完成判定。 |
+| **已实现（开发分支的受限纵切）** | M1 从重新打开的 ApplicationDiscovery、ProgramGraphs 与 ProvenCodeFacts v2 读取双入口 fixture，沿准确 call/return 和 TRUE/FALSE guard 生成 Flow/Outcome；每个入口都写 COMPILED 或带 reason 的 GAP。M2 从 M1 与 Proof/Evidence/source artifacts 重开后，给每个 compiled Flow 写一份 Capsule；模型预算超限时仍保留 Flow/Capsule 和证据，只写 `INELIGIBLE` 与明确 Gap。M3 将 Flow、Capsule、入口处置、coverage 与 Flow Gap 发布为五项正式文件和 `step-receipt.json`。 |
+| **尚未交付（完整仓库能力）** | 仍缺真实完整 jshERP 从源码清单至本步骤的离线运行、0 Flow persisted fixture、循环/多实现/歧义调用的系统性处置、entry 分片与跨 Flow 的完整隔离测试，以及正式运行核心接线。该纵切不得用于仓库完成判定，也不产生可供真实模型调用的已发布 Flow。 |
 | **历史证据，不是当前能力** | 已删除的pre-reset compiler曾在有限fixture上编译Flow/Outcome/Capsule；固定八文件历史审计为blocking Gap、0 Flow、0 Capsule。该结果只作为0调用和证明不足的回归baseline。 |
 | **下一实现门** | 按本章消费已持久化ApplicationDiscovery、ProgramGraphs和ProvenCodeFacts，至少用双入口、双Flow、多Outcome、跨Flow隔离、eligible/ineligible和0Flow场景闭合全仓分母。 |
 

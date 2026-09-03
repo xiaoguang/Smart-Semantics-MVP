@@ -1076,6 +1076,27 @@ final class AtomicCanonicalPublicationEngine {
                         : null;
                 default -> null;
               };
+          case BUSINESS_FLOWS ->
+              switch (analysisStepAddress.moduleNumber()) {
+                case 1 ->
+                    "flow-compiler".equals(analysisStepAddress.moduleKey())
+                        ? List.of("flow-compilation.json")
+                        : null;
+                case 2 ->
+                    "capsule-projector".equals(analysisStepAddress.moduleKey())
+                        ? List.of("capsule-projection.json")
+                        : null;
+                case 3 ->
+                    "publish".equals(analysisStepAddress.moduleKey())
+                        ? List.of(
+                            "entry-dispositions.jsonl",
+                            "evidence-capsules.jsonl",
+                            "flow-coverage.json",
+                            "flow-gaps.jsonl",
+                            "flow-slices.json")
+                        : null;
+                default -> null;
+              };
           default -> null;
         };
     if (expectedFileNames == null
@@ -1469,6 +1490,49 @@ final class AtomicCanonicalPublicationEngine {
           "publish",
           "graph-index.json",
           CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("BUSINESS_FLOWS_FLOW_COMPILATION".equals(payload.artifactType())
+        && "business-flows-flow-compilation-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.BUSINESS_FLOWS,
+          1,
+          "flow-compiler",
+          "flow-compilation.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("BUSINESS_FLOWS_CAPSULE_PROJECTION".equals(payload.artifactType())
+        && "business-flows-capsule-projection-v4".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.BUSINESS_FLOWS,
+          2,
+          "capsule-projector",
+          "capsule-projection.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("BUSINESS_FLOWS_FLOW_SLICES".equals(payload.artifactType())
+        && "business-flows-flow-slices-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.BUSINESS_FLOWS, 3, "publish", "flow-slices.json", CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("BUSINESS_FLOWS_FLOW_COVERAGE".equals(payload.artifactType())
+        && "business-flows-flow-coverage-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.BUSINESS_FLOWS, 3, "publish", "flow-coverage.json", CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("BUSINESS_FLOWS_ENTRY_DISPOSITION".equals(payload.artifactType())
+        && "business-flows-entry-disposition-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.BUSINESS_FLOWS, 3, "publish", "entry-dispositions.jsonl", CanonicalEnvelopeKind.CANONICAL_JSONL);
+    }
+    if ("BUSINESS_FLOWS_EVIDENCE_CAPSULE".equals(payload.artifactType())
+        && "business-flows-evidence-capsule-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.BUSINESS_FLOWS, 3, "publish", "evidence-capsules.jsonl", CanonicalEnvelopeKind.CANONICAL_JSONL);
+    }
+    if ("BUSINESS_FLOWS_FLOW_GAP".equals(payload.artifactType())
+        && "business-flows-flow-gap-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.BUSINESS_FLOWS, 3, "publish", "flow-gaps.jsonl", CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     if ("PROVEN_CODE_FACTS_FACT_CANDIDATE_SET".equals(payload.artifactType())
         && "proven-code-facts-fact-candidate-set-v2".equals(payload.schemaVersion())) {

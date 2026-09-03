@@ -758,6 +758,21 @@ final class AtomicAnalysisStepPublicationEngine {
                   AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
                   AnalysisStepKey.APPLICATION_DISCOVERY,
                   AnalysisStepKey.PROGRAM_GRAPHS));
+      case BUSINESS_FLOWS ->
+          new StepContract(
+              3,
+              "publish",
+              List.of(
+                  "entry-dispositions.jsonl",
+                  "evidence-capsules.jsonl",
+                  "flow-coverage.json",
+                  "flow-gaps.jsonl",
+                  "flow-slices.json"),
+              List.of(
+                  AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                  AnalysisStepKey.APPLICATION_DISCOVERY,
+                  AnalysisStepKey.PROGRAM_GRAPHS,
+                  AnalysisStepKey.PROVEN_CODE_FACTS));
       default -> throw invalidInstall();
     };
   }
