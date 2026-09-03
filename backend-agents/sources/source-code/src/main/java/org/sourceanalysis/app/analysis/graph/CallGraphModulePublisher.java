@@ -74,7 +74,7 @@ public final class CallGraphModulePublisher {
                 basis.mapperCatalogRef(),
                 basis.graphProfileRef(),
                 structure.payloadRef()));
-    List<String> gapRefs = gapReferences(draft.coverage());
+    List<String> gapRefs = gapReferences(draft);
     ModuleCompletionStatus status =
         gapRefs.isEmpty()
             ? ModuleCompletionStatus.SUCCEEDED
@@ -146,6 +146,8 @@ public final class CallGraphModulePublisher {
     draft.nodes().forEach(node -> nodes.add(node(node)));
     ArrayNode edges = body.putArray("edges");
     draft.edges().forEach(edge -> edges.add(edge(edge)));
+    ArrayNode gapDrafts = body.putArray("gapDrafts");
+    draft.gapDrafts().forEach(gap -> gapDrafts.add(gap(gap)));
     ArrayNode provenanceDrafts = body.putArray("provenanceDrafts");
     draft.provenanceDrafts().forEach(provenance -> provenanceDrafts.add(provenance(provenance)));
     body.set("coverage", coverage(draft.coverage()));
@@ -189,6 +191,24 @@ public final class CallGraphModulePublisher {
     locator.put("endColumn", provenance.sourceLocator().endColumn());
     value.put("sourceFileSha256", provenance.sourceFileSha256().value());
     value.put("excerptSha256", provenance.excerptSha256().value());
+    return value;
+  }
+
+  private static ObjectNode gap(GraphGapDraft gap) {
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    value.put("gapId", gap.gapId().value());
+    value.put("reasonCode", gap.reasonCode());
+    ids(value.putArray("affectedEntryIds"), gap.affectedEntryIds());
+    ids(value.putArray("candidateElementIds"), gap.candidateElementIds());
+    ObjectNode locator = value.putObject("sourceLocator");
+    locator.put("fileId", gap.sourceLocator().fileId().value());
+    locator.put("path", gap.sourceLocator().path());
+    locator.put("startByte", gap.sourceLocator().startByte());
+    locator.put("endByteExclusive", gap.sourceLocator().endByteExclusive());
+    locator.put("startLine", gap.sourceLocator().startLine());
+    locator.put("startColumn", gap.sourceLocator().startColumn());
+    locator.put("endLine", gap.sourceLocator().endLine());
+    locator.put("endColumn", gap.sourceLocator().endColumn());
     return value;
   }
 
@@ -283,10 +303,11 @@ public final class CallGraphModulePublisher {
     return List.copyOf(ordered);
   }
 
-  private static List<String> gapReferences(GraphCoverage coverage) {
+  static List<String> gapReferences(CallGraphDraft draft) {
+    Objects.requireNonNull(draft, "call graph draft");
     List<String> values = new ArrayList<>();
-    coverage.gapDispositions().forEach(gap -> values.add(gap.gapId().value()));
-    coverage.scopeGapIds().forEach(gap -> values.add(gap.value()));
+    draft.gapDrafts().forEach(gap -> values.add(gap.gapId().value()));
+    draft.coverage().scopeGapIds().forEach(gap -> values.add(gap.value()));
     values.sort(UTF8_ORDER);
     if (values.size() != values.stream().distinct().count()) {
       throw new IllegalArgumentException("call-graph gap references must be distinct");

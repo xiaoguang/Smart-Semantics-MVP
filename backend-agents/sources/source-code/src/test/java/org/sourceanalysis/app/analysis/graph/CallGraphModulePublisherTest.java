@@ -82,6 +82,7 @@ class CallGraphModulePublisherTest {
               List.of(),
               List.of(),
               List.of(),
+              List.of(),
               new GraphCoverage(List.of(), List.of(), List.of(), List.of(), List.of(), true));
 
       CallGraphDraftReference reference =
@@ -267,6 +268,7 @@ class CallGraphModulePublisherTest {
                     List.of(unclosedNode),
                     List.of(),
                     List.of(),
+                    List.of(),
                     new GraphCoverage(
                         List.of(unclosedNode.nodeId()),
                         List.of(unclosedNode.nodeId()),
@@ -290,6 +292,7 @@ class CallGraphModulePublisherTest {
         discovery.applicationProfileId(),
         graphProfile,
         discovery.entryIds(),
+        List.of(),
         List.of(),
         List.of(),
         List.of(),

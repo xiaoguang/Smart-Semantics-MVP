@@ -116,11 +116,20 @@ class CodeStructureGraphBuilderTest {
 
     assertThat(draft.nodes()).isEmpty();
     assertThat(draft.edges()).isEmpty();
-    assertThat(draft.coverage().gapDispositions())
-        .singleElement()
-        .satisfies(
-            gap -> assertThat(gap.candidateElementId().value()).startsWith("program-element:"));
-    assertThat(draft.coverage().closed()).isFalse();
+    GraphGapDraft gap = draft.gapDrafts().get(0);
+    assertThat(gap.affectedEntryIds()).isEmpty();
+    assertThat(gap.candidateElementIds())
+        .containsExactly(draft.coverage().gapDispositions().get(0).candidateElementId());
+    assertThat(gap.sourceLocator().fileId()).isEqualTo(source.documents().get(0).fileId());
+    assertThat(gap.sourceLocator().path()).isEqualTo(source.documents().get(0).path());
+    assertThat(gap.sourceLocator().startByte()).isEqualTo(0L);
+    assertThat(gap.sourceLocator().endByteExclusive())
+        .isEqualTo((long) source.documents().get(0).rawUtf8().size());
+    assertThat(gap.sourceLocator().startLine()).isEqualTo(1);
+    assertThat(gap.sourceLocator().startColumn()).isEqualTo(1);
+    assertThat(gap.sourceLocator().endLine()).isEqualTo(8);
+    assertThat(gap.sourceLocator().endColumn()).isEqualTo(1);
+    assertThat(draft.coverage().closed()).isTrue();
   }
 
   @Test
@@ -152,7 +161,20 @@ class CodeStructureGraphBuilderTest {
 
     assertThat(draft.nodes()).isEmpty();
     assertThat(draft.edges()).isEmpty();
-    assertThat(draft.coverage().gapDispositions()).singleElement();
+    GraphGapDraft gap = draft.gapDrafts().get(0);
+    assertThat(gap.affectedEntryIds()).isEmpty();
+    assertThat(gap.candidateElementIds())
+        .containsExactly(draft.coverage().gapDispositions().get(0).candidateElementId());
+    assertThat(gap.sourceLocator().fileId()).isEqualTo(source.documents().get(0).fileId());
+    assertThat(gap.sourceLocator().path()).isEqualTo(source.documents().get(0).path());
+    assertThat(gap.sourceLocator().startByte()).isEqualTo(0L);
+    assertThat(gap.sourceLocator().endByteExclusive())
+        .isEqualTo((long) source.documents().get(0).rawUtf8().size());
+    assertThat(gap.sourceLocator().startLine()).isEqualTo(1);
+    assertThat(gap.sourceLocator().startColumn()).isEqualTo(1);
+    assertThat(gap.sourceLocator().endLine()).isEqualTo(8);
+    assertThat(gap.sourceLocator().endColumn()).isEqualTo(1);
+    assertThat(draft.coverage().closed()).isTrue();
   }
 
   @Test

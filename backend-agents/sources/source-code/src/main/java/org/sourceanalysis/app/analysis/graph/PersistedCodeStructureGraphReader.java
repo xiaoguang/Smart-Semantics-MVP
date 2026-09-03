@@ -67,9 +67,15 @@ public final class PersistedCodeStructureGraphReader {
       if (!draft.snapshotId().equals(expected.snapshotId())
           || !draft.applicationProfileId().equals(expected.applicationProfileId())
           || !draft.entryIds().equals(expected.entryIds())
-          || !draft.graphProfileRef().equals(expected.graphProfileRef())) {
+          || !draft.graphProfileRef().equals(expected.graphProfileRef())
+          || !publication
+              .receipt()
+              .gapRefs()
+              .equals(CodeStructureGraphModulePublisher.gapReferences(draft))) {
         throw broken();
       }
+      CodeStructureGraphDraft.requireIdentity(draft);
+      requireGapSourceLocators(draft, sameInputs.source());
       return new VerifiedReopenedCodeStructureGraph(
           reference,
           new ArtifactReference(payload.descriptor().artifactId(), payload.descriptor().sha256()),
@@ -190,6 +196,7 @@ public final class PersistedCodeStructureGraphReader {
             "entryIds",
             "nodes",
             "edges",
+            "gapDrafts",
             "provenanceDrafts",
             "coverage"));
     return new CodeStructureGraphDraft(
@@ -202,8 +209,47 @@ public final class PersistedCodeStructureGraphReader {
         ids(body.get("entryIds")),
         nodes(body.get("nodes")),
         edges(body.get("edges")),
+        gaps(body.get("gapDrafts")),
         provenance(body.get("provenanceDrafts")),
         coverage(body.get("coverage")));
+  }
+
+  private static List<GraphGapDraft> gaps(JsonNode values) {
+    return objects(values).stream()
+        .map(
+            value -> {
+              requireObjectFields(
+                  value,
+                  Set.of(
+                      "gapId",
+                      "reasonCode",
+                      "affectedEntryIds",
+                      "candidateElementIds",
+                      "sourceLocator"));
+              return new GraphGapDraft(
+                  id(value, "gapId"),
+                  text(value, "reasonCode"),
+                  ids(value.get("affectedEntryIds")),
+                  ids(value.get("candidateElementIds")),
+                  locator(value.get("sourceLocator")));
+            })
+        .toList();
+  }
+
+  private static void requireGapSourceLocators(
+      CodeStructureGraphDraft draft, CodeStructureSource source) {
+    for (GraphGapDraft gap : draft.gapDrafts()) {
+      boolean valid =
+          source.documents().stream()
+              .anyMatch(
+                  document ->
+                      document.fileId().equals(gap.sourceLocator().fileId())
+                          && document.path().equals(gap.sourceLocator().path())
+                          && gap.sourceLocator().endByteExclusive() <= document.rawUtf8().size());
+      if (!valid) {
+        throw broken();
+      }
+    }
   }
 
   private static List<DraftProgramNode> nodes(JsonNode values) {

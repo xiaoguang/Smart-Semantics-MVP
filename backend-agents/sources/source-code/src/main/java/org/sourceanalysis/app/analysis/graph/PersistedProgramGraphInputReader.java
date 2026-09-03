@@ -109,7 +109,8 @@ final class PersistedProgramGraphInputReader implements ProgramGraphInputReader 
           object(
               canonicalJson.parseCanonical(payloads.get(CAPABILITY_REPORT_FILE).canonicalUtf8()));
       ArtifactId applicationProfileId = ArtifactId.parse(text(profile, "applicationProfileId"));
-      if (!applicationProfileId.value().equals(text(profile, "artifactId"))
+      ArtifactReference applicationProfileRef = reference(payloads.get(APPLICATION_PROFILE_FILE));
+      if (!applicationProfileRef.artifactId().value().equals(text(profile, "artifactId"))
           || !applicationProfileId.value().equals(text(capability, "applicationProfileId"))) {
         throw failure();
       }
@@ -121,7 +122,7 @@ final class PersistedProgramGraphInputReader implements ProgramGraphInputReader 
           new ProgramGraphDiscoveryInputs(
               new CodeStructureDiscovery(
                   applicationProfileId,
-                  reference(payloads.get(APPLICATION_PROFILE_FILE)),
+                  applicationProfileRef,
                   reference(payloads.get(CAPABILITY_REPORT_FILE)),
                   reference(payloads.get(ENTRY_POINTS_FILE)),
                   reference(payloads.get(MAPPER_CATALOG_FILE)),

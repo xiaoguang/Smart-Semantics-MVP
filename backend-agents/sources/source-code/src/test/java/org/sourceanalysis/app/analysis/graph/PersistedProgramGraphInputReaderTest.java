@@ -3,9 +3,12 @@ package org.sourceanalysis.app.analysis.graph;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -187,8 +190,16 @@ class PersistedProgramGraphInputReaderTest {
     ObjectNode profile = JsonNodeFactory.instance.objectNode();
     profile.put("schemaVersion", "application-discovery-application-profile-v2");
     profile.put("artifactType", "APPLICATION_DISCOVERY_APPLICATION_PROFILE");
-    profile.put("artifactId", applicationProfileId.value());
     profile.put("applicationProfileId", applicationProfileId.value());
+    profile.put(
+        "artifactId",
+        standaloneArtifactId(
+                canonicalJson,
+                profile,
+                "APPLICATION_DISCOVERY_APPLICATION_PROFILE",
+                "application-discovery-application-profile-v2",
+                "application-profile")
+            .value());
     ObjectNode capability = JsonNodeFactory.instance.objectNode();
     capability.put("schemaVersion", "application-discovery-capability-report-v2");
     capability.put("artifactType", "APPLICATION_DISCOVERY_CAPABILITY_REPORT");
@@ -341,6 +352,12 @@ class PersistedProgramGraphInputReaderTest {
       CanonicalMediaType mediaType,
       ImmutableBytes bytes) {
     ArtifactId artifactId = id("artifact", fileName + artifactType);
+    if (mediaType == CanonicalMediaType.APPLICATION_JSON) {
+      JsonNode document = new CanonicalJsonCodec().parseCanonical(bytes);
+      if (document.hasNonNull("artifactId")) {
+        artifactId = ArtifactId.parse(document.get("artifactId").textValue());
+      }
+    }
     return new VerifiedCanonicalPayload(
         new ArtifactDescriptor(
             fileName,
@@ -351,6 +368,27 @@ class PersistedProgramGraphInputReaderTest {
             bytes.size(),
             new Sha256Digest(digest(bytes.copyToByteArray()))),
         bytes);
+  }
+
+  private static ArtifactId standaloneArtifactId(
+      CanonicalJsonCodec canonicalJson,
+      ObjectNode document,
+      String artifactType,
+      String schemaVersion,
+      String prefix) {
+    ObjectNode withoutArtifactId = document.deepCopy();
+    withoutArtifactId.remove("artifactId");
+    withoutArtifactId.put("schemaVersion", schemaVersion);
+    withoutArtifactId.put("artifactType", artifactType);
+    return ArtifactId.parse(
+        prefix
+            + ":"
+            + digest(
+                concatenate(
+                    frame("canonical-standalone-json-artifact-id-v1"),
+                    frame(schemaVersion),
+                    frame(artifactType),
+                    frame(canonicalJson.encodeCanonical(withoutArtifactId).copyToByteArray()))));
   }
 
   private static AnalysisStepPublicationReference analysisStepReference(
@@ -390,6 +428,32 @@ class PersistedProgramGraphInputReaderTest {
     } catch (NoSuchAlgorithmException impossible) {
       throw new IllegalStateException(impossible);
     }
+  }
+
+  private static byte[] frame(String value) {
+    return frame(value.getBytes(StandardCharsets.UTF_8));
+  }
+
+  private static byte[] frame(byte[] value) {
+    return ByteBuffer.allocate(Integer.BYTES + value.length)
+        .order(ByteOrder.BIG_ENDIAN)
+        .putInt(value.length)
+        .put(value)
+        .array();
+  }
+
+  private static byte[] concatenate(byte[]... parts) {
+    int length = 0;
+    for (byte[] part : parts) {
+      length += part.length;
+    }
+    byte[] result = new byte[length];
+    int offset = 0;
+    for (byte[] part : parts) {
+      System.arraycopy(part, 0, result, offset, part.length);
+      offset += part.length;
+    }
+    return result;
   }
 
   private record Fixture(

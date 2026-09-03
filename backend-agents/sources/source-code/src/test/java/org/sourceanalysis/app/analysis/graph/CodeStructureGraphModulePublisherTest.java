@@ -168,24 +168,38 @@ class CodeStructureGraphModulePublisherTest {
             document.rawUtf8());
     CodeStructureGraphProfile profile =
         new CodeStructureGraphProfile(reference("graph-profile", "code-structure-v1"));
-    return new CodeStructureGraphDraft(
-        CodeStructureGraphDraft.SCHEMA_VERSION,
-        ProgramGraphKind.CODE_STRUCTURE,
-        id("program-graph", "code-structure"),
-        source.snapshotId(),
-        discovery.applicationProfileId(),
-        profile.graphProfileRef(),
-        discovery.entryIds(),
+    List<DraftProgramNode> nodes =
         List.of(
             new DraftProgramNode(
                 node,
                 ProgramNodeKind.TYPE,
                 "com.example.DepotHead",
                 discovery.entryIds(),
-                List.of(provenance.provenanceDraftId()))),
+                List.of(provenance.provenanceDraftId())));
+    GraphCoverage coverage =
+        new GraphCoverage(List.of(node), List.of(node), List.of(), List.of(), List.of(), true);
+    return new CodeStructureGraphDraft(
+        CodeStructureGraphDraft.SCHEMA_VERSION,
+        ProgramGraphKind.CODE_STRUCTURE,
+        CodeStructureGraphDraft.calculateGraphId(
+            source.snapshotId(),
+            discovery.applicationProfileId(),
+            profile.graphProfileRef(),
+            discovery.entryIds(),
+            nodes,
+            List.of(),
+            List.of(),
+            List.of(provenance),
+            coverage),
+        source.snapshotId(),
+        discovery.applicationProfileId(),
+        profile.graphProfileRef(),
+        discovery.entryIds(),
+        nodes,
+        List.of(),
         List.of(),
         List.of(provenance),
-        new GraphCoverage(List.of(node), List.of(node), List.of(), List.of(), List.of(), true));
+        coverage);
   }
 
   private static CodeStructureSource source(ArtifactControls controls) {

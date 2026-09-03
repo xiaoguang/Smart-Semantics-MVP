@@ -719,7 +719,7 @@ final class AtomicAnalysisStepPublicationEngine {
               3,
               "publish",
               List.of("source-input.json", "source-inventory.jsonl", "verified-snapshot.json"),
-              false);
+              List.of());
       case APPLICATION_DISCOVERY ->
           new StepContract(
               4,
@@ -729,7 +729,22 @@ final class AtomicAnalysisStepPublicationEngine {
                   "capability-report.json",
                   "entry-points.jsonl",
                   "mapper-catalog.jsonl"),
-              true);
+              List.of(AnalysisStepKey.VERIFIED_SOURCE_INVENTORY));
+      case PROGRAM_GRAPHS ->
+          new StepContract(
+              6,
+              "publish",
+              List.of(
+                  "call-graph.json",
+                  "code-structure-graph.json",
+                  "control-flow-graph.json",
+                  "data-flow-graph.json",
+                  "evidence-graph.json",
+                  "graph-gaps.jsonl",
+                  "graph-index.json"),
+              List.of(
+                  AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                  AnalysisStepKey.APPLICATION_DISCOVERY));
       default -> throw invalidInstall();
     };
   }
@@ -761,13 +776,14 @@ final class AtomicAnalysisStepPublicationEngine {
       List<String> gapRefs,
       boolean installation) {
     boolean validUpstream =
-        contract.requiresInventoryUpstream()
-            ? upstream != null
-                && upstream.size() == 1
-                && upstream.get(0) != null
-                && upstream.get(0).address().analysisStepKey()
-                    == AnalysisStepKey.VERIFIED_SOURCE_INVENTORY
-            : upstream != null && upstream.isEmpty();
+        upstream != null
+            && upstream.size() == contract.upstreamStepKeys().size()
+            && java.util.stream.IntStream.range(0, upstream.size())
+                .allMatch(
+                    index ->
+                        upstream.get(index) != null
+                            && upstream.get(index).address().analysisStepKey()
+                                == contract.upstreamStepKeys().get(index));
     boolean validStatus =
         status != null
             && gapRefs != null
@@ -1014,5 +1030,5 @@ final class AtomicAnalysisStepPublicationEngine {
       int publisherModuleNumber,
       String publisherModuleKey,
       List<String> semanticFileNames,
-      boolean requiresInventoryUpstream) {}
+      List<AnalysisStepKey> upstreamStepKeys) {}
 }

@@ -1031,6 +1031,29 @@ final class AtomicCanonicalPublicationEngine {
                     "call-graph".equals(analysisStepAddress.moduleKey())
                         ? List.of("call-graph-draft.json")
                         : null;
+                case 3 ->
+                    "control-flow".equals(analysisStepAddress.moduleKey())
+                        ? List.of("control-flow-draft.json")
+                        : null;
+                case 4 ->
+                    "data-flow".equals(analysisStepAddress.moduleKey())
+                        ? List.of("data-flow-draft.json")
+                        : null;
+                case 5 ->
+                    "evidence-graph".equals(analysisStepAddress.moduleKey())
+                        ? List.of("evidence-graph-draft.json")
+                        : null;
+                case 6 ->
+                    "publish".equals(analysisStepAddress.moduleKey())
+                        ? List.of(
+                            "call-graph.json",
+                            "code-structure-graph.json",
+                            "control-flow-graph.json",
+                            "data-flow-graph.json",
+                            "evidence-graph.json",
+                            "graph-gaps.jsonl",
+                            "graph-index.json")
+                        : null;
                 default -> null;
               };
           default -> null;
@@ -1320,7 +1343,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     if ("PROGRAM_GRAPHS_CODE_STRUCTURE_DRAFT".equals(payload.artifactType())
-        && "program-graphs-code-structure-draft-v2".equals(payload.schemaVersion())) {
+        && "program-graphs-code-structure-draft-v3".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROGRAM_GRAPHS,
           1,
@@ -1329,13 +1352,103 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("PROGRAM_GRAPHS_CALL_GRAPH_DRAFT".equals(payload.artifactType())
-        && "program-graphs-call-graph-draft-v2".equals(payload.schemaVersion())) {
+        && "program-graphs-call-graph-draft-v3".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROGRAM_GRAPHS,
           2,
           "call-graph",
           "call-graph-draft.json",
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("PROGRAM_GRAPHS_CONTROL_FLOW_DRAFT".equals(payload.artifactType())
+        && "program-graphs-control-flow-draft-v3".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROGRAM_GRAPHS,
+          3,
+          "control-flow",
+          "control-flow-draft.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("PROGRAM_GRAPHS_DATA_FLOW_DRAFT".equals(payload.artifactType())
+        && "program-graphs-data-flow-draft-v3".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROGRAM_GRAPHS,
+          4,
+          "data-flow",
+          "data-flow-draft.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("PROGRAM_GRAPHS_EVIDENCE_GRAPH_DRAFT".equals(payload.artifactType())
+        && "program-graphs-evidence-graph-draft-v3".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROGRAM_GRAPHS,
+          5,
+          "evidence-graph",
+          "evidence-graph-draft.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("PROGRAM_GRAPHS_CODE_STRUCTURE_GRAPH".equals(payload.artifactType())
+        && "program-graphs-code-structure-graph-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROGRAM_GRAPHS,
+          6,
+          "publish",
+          "code-structure-graph.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("PROGRAM_GRAPHS_CALL_GRAPH".equals(payload.artifactType())
+        && "program-graphs-call-graph-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROGRAM_GRAPHS,
+          6,
+          "publish",
+          "call-graph.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("PROGRAM_GRAPHS_CONTROL_FLOW_GRAPH".equals(payload.artifactType())
+        && "program-graphs-control-flow-graph-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROGRAM_GRAPHS,
+          6,
+          "publish",
+          "control-flow-graph.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("PROGRAM_GRAPHS_DATA_FLOW_GRAPH".equals(payload.artifactType())
+        && "program-graphs-data-flow-graph-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROGRAM_GRAPHS,
+          6,
+          "publish",
+          "data-flow-graph.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("PROGRAM_GRAPHS_EVIDENCE_GRAPH".equals(payload.artifactType())
+        && "program-graphs-evidence-graph-v3".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROGRAM_GRAPHS,
+          6,
+          "publish",
+          "evidence-graph.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("PROGRAM_GRAPHS_GRAPH_GAP".equals(payload.artifactType())
+        && "program-graphs-graph-gap-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROGRAM_GRAPHS,
+          6,
+          "publish",
+          "graph-gaps.jsonl",
+          CanonicalEnvelopeKind.CANONICAL_JSONL);
+    }
+    if ("PROGRAM_GRAPHS_GRAPH_INDEX".equals(payload.artifactType())
+        && "program-graphs-graph-index-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROGRAM_GRAPHS,
+          6,
+          "publish",
+          "graph-index.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     throw invalidInstall();
   }

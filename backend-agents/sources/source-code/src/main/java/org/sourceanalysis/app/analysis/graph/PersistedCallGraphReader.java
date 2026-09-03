@@ -64,7 +64,12 @@ public final class PersistedCallGraphReader {
       if (!draft.snapshotId().equals(basis.snapshotId())
           || !draft.applicationProfileId().equals(basis.applicationProfileId())
           || !draft.entryIds().equals(basis.entryIds())
-          || !draft.graphProfileRef().equals(basis.graphProfileRef())) {
+          || !draft.graphProfileRef().equals(basis.graphProfileRef())
+          || !publication.receipt().gapRefs().equals(CallGraphModulePublisher.gapReferences(draft))
+          || publication.receipt().status()
+              != (publication.receipt().gapRefs().isEmpty()
+                  ? ModuleCompletionStatus.SUCCEEDED
+                  : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS)) {
         throw broken();
       }
       return new VerifiedReopenedCallGraph(
@@ -173,6 +178,7 @@ public final class PersistedCallGraphReader {
             "entryIds",
             "nodes",
             "edges",
+            "gapDrafts",
             "provenanceDrafts",
             "coverage"));
     return new CallGraphDraft(
@@ -185,8 +191,31 @@ public final class PersistedCallGraphReader {
         ids(body.get("entryIds")),
         nodes(body.get("nodes")),
         edges(body.get("edges")),
+        gaps(body.get("gapDrafts")),
         provenance(body.get("provenanceDrafts")),
         coverage(body.get("coverage")));
+  }
+
+  private static List<GraphGapDraft> gaps(JsonNode values) {
+    return objects(values).stream()
+        .map(
+            value -> {
+              fields(
+                  value,
+                  Set.of(
+                      "gapId",
+                      "reasonCode",
+                      "affectedEntryIds",
+                      "candidateElementIds",
+                      "sourceLocator"));
+              return new GraphGapDraft(
+                  id(value, "gapId"),
+                  text(value, "reasonCode"),
+                  ids(value.get("affectedEntryIds")),
+                  ids(value.get("candidateElementIds")),
+                  locator(value.get("sourceLocator")));
+            })
+        .toList();
   }
 
   private static List<CallGraphNode> nodes(JsonNode values) {

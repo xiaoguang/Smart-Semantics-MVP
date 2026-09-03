@@ -183,26 +183,21 @@ public final class CodeStructureGraphBuilder {
         accumulator.node(ProgramNodeKind.METHOD, signature, document, SOURCE_RULE, methodSpan);
     accumulator.edge(
         ProgramEdgeKind.DECLARES, typeNode, methodNode, SOURCE_RULE, document, methodSpan);
-    method
-        .getParameters()
-        .forEach(
-            parameter -> {
-              SourceSpan parameterSpan = javaSpan(document, source, parameter.getRange());
-              ArtifactId parameterNode =
-                  accumulator.node(
-                      ProgramNodeKind.PARAMETER,
-                      signature + ":" + parameter.getNameAsString(),
-                      document,
-                      SOURCE_RULE,
-                      parameterSpan);
-              accumulator.edge(
-                  ProgramEdgeKind.DECLARES,
-                  methodNode,
-                  parameterNode,
-                  SOURCE_RULE,
-                  document,
-                  parameterSpan);
-            });
+    for (int ordinal = 0; ordinal < method.getParameters().size(); ordinal++) {
+      var parameter = method.getParameter(ordinal);
+      SourceSpan parameterSpan = javaSpan(document, source, parameter.getRange());
+      String declaredType = typeName(parameter.getType(), packageName);
+      ArtifactId parameterNode =
+          accumulator.parameterNode(
+              methodNode, signature, ordinal, declaredType, document, parameterSpan);
+      accumulator.edge(
+          ProgramEdgeKind.DECLARES,
+          methodNode,
+          parameterNode,
+          SOURCE_RULE,
+          document,
+          parameterSpan);
+    }
   }
 
   private String typeName(Type type, String packageName) {
@@ -331,7 +326,10 @@ public final class CodeStructureGraphBuilder {
       Matcher mapping = YAML_MAPPING.matcher(line);
       if (!mapping.matches()) {
         if (line.startsWith("\t") || line.startsWith(" ") || line.contains(":")) {
-          accumulator.gap(document, "CONFIGURATION_MAPPING_UNSUPPORTED");
+          accumulator.gap(
+              document,
+              "CONFIGURATION_MAPPING_UNSUPPORTED",
+              lineSpan(document, source, lineNumber, line));
         }
         lineNumber++;
         continue;
@@ -341,7 +339,10 @@ public final class CodeStructureGraphBuilder {
         parents.pop();
       }
       if (indentation > 0 && parents.isEmpty()) {
-        accumulator.gap(document, "CONFIGURATION_INDENTATION_UNSUPPORTED");
+        accumulator.gap(
+            document,
+            "CONFIGURATION_INDENTATION_UNSUPPORTED",
+            lineSpan(document, source, lineNumber, line));
         lineNumber++;
         continue;
       }
@@ -360,7 +361,10 @@ public final class CodeStructureGraphBuilder {
       String flattenedKey = flattenedKey(parents, key);
       if (!literal.startsWith("classpath:")) {
         if (key.equals("mapper-locations") && literal.contains("${")) {
-          accumulator.gap(document, "CONFIGURATION_RESOURCE_DYNAMIC");
+          accumulator.gap(
+              document,
+              "CONFIGURATION_RESOURCE_DYNAMIC",
+              lineSpan(document, source, lineNumber, line));
         }
         lineNumber++;
         continue;
@@ -423,7 +427,10 @@ public final class CodeStructureGraphBuilder {
       GraphAccumulator accumulator) {
     String source = xml.substring(statementSpan.contentStart(), statementSpan.contentEnd());
     if (source.contains("<")) {
-      accumulator.gap(document, "MYBATIS_DYNAMIC_SQL_UNSUPPORTED");
+      accumulator.gap(
+          document,
+          "MYBATIS_DYNAMIC_SQL_UNSUPPORTED",
+          span(document, xml, statementSpan.startOffset(), statementSpan.endOffsetExclusive()));
       return;
     }
     Matcher update = SQL_UPDATE_TABLE.matcher(source);
@@ -481,6 +488,11 @@ public final class CodeStructureGraphBuilder {
       }
     }
     return new SourceSpan(0L, document.rawUtf8().size(), 1, 1, line, column);
+  }
+
+  private static SourceSpan lineSpan(
+      CodeStructureSourceDocument document, String source, int lineNumber, String line) {
+    return span(document, source, lineNumber, 1, lineNumber, Math.max(2, line.length() + 1));
   }
 
   private static SourceSpan span(
@@ -697,6 +709,7 @@ public final class CodeStructureGraphBuilder {
     private final Map<ArtifactId, DraftProgramEdge> edges = new LinkedHashMap<>();
     private final Map<ArtifactId, ProvenanceDraftV1> provenanceDrafts = new LinkedHashMap<>();
     private final Map<ArtifactId, GraphGapDisposition> gaps = new LinkedHashMap<>();
+    private final Map<ArtifactId, GraphGapDraft> gapDrafts = new LinkedHashMap<>();
 
     private GraphAccumulator(CodeStructureSource source, CodeStructureDiscovery discovery) {
       this.source = source;
@@ -728,6 +741,37 @@ public final class CodeStructureGraphBuilder {
               ruleId);
       DraftProgramNode candidate =
           new DraftProgramNode(id, kind, canonicalValue, discovery.entryIds(), List.of(sourceRef));
+      DraftProgramNode previous = nodes.putIfAbsent(id, candidate);
+      if (previous != null && !previous.equals(candidate)) {
+        throw new IllegalArgumentException("CODE_STRUCTURE_DUPLICATE_NODE_ID");
+      }
+      return id;
+    }
+
+    private ArtifactId parameterNode(
+        ArtifactId methodNode,
+        String methodSignature,
+        int ordinal,
+        String declaredType,
+        CodeStructureSourceDocument document,
+        SourceSpan span) {
+      ArtifactId sourceRef = provenance(document, SOURCE_RULE, span);
+      String canonicalValue =
+          "java-parameter-symbol-v1|" + methodSignature + "|" + ordinal + "|" + declaredType;
+      ArtifactId id =
+          identity(
+              "java-parameter-symbol-v1",
+              source.snapshotId(),
+              methodNode.value(),
+              Integer.toString(ordinal),
+              declaredType);
+      DraftProgramNode candidate =
+          new DraftProgramNode(
+              id,
+              ProgramNodeKind.PARAMETER,
+              canonicalValue,
+              discovery.entryIds(),
+              List.of(sourceRef));
       DraftProgramNode previous = nodes.putIfAbsent(id, candidate);
       if (previous != null && !previous.equals(candidate)) {
         throw new IllegalArgumentException("CODE_STRUCTURE_DUPLICATE_NODE_ID");
@@ -768,10 +812,31 @@ public final class CodeStructureGraphBuilder {
     }
 
     private void gap(CodeStructureSourceDocument document, String reason) {
+      gap(document, reason, fullSpan(document));
+    }
+
+    private void gap(CodeStructureSourceDocument document, String reason, SourceSpan span) {
       ArtifactId candidate =
-          identity("program-element", source.snapshotId(), document.fileId().value(), reason);
-      ArtifactId gap = identity("graph-gap", candidate.value(), reason, document.sha256().value());
-      gaps.put(candidate, new GraphGapDisposition(candidate, gap));
+          identity(
+              "program-element",
+              source.snapshotId(),
+              document.fileId().value(),
+              reason,
+              Long.toString(span.startByte()),
+              Long.toString(span.endByteExclusive()));
+      SourceLocatorV1 locator = locator(document, span);
+      GraphGapDraft gap =
+          GraphGapDraft.forLocalOccurrence(
+              ProgramGraphKind.CODE_STRUCTURE, reason, List.of(), List.of(candidate), locator);
+      GraphGapDraft existingGap = gapDrafts.putIfAbsent(gap.gapId(), gap);
+      if (existingGap != null && !existingGap.equals(gap)) {
+        throw new IllegalArgumentException("CODE_STRUCTURE_DUPLICATE_GAP_ID");
+      }
+      GraphGapDisposition disposition = new GraphGapDisposition(candidate, gap.gapId());
+      GraphGapDisposition existingDisposition = gaps.putIfAbsent(candidate, disposition);
+      if (existingDisposition != null && !existingDisposition.equals(disposition)) {
+        throw new IllegalArgumentException("CODE_STRUCTURE_DUPLICATE_GAP_CANDIDATE");
+      }
     }
 
     private CodeStructureGraphDraft finish(CodeStructureGraphProfile profile) {
@@ -793,6 +858,10 @@ public final class CodeStructureGraphBuilder {
           gaps.values().stream()
               .sorted(Comparator.comparing(value -> value.candidateElementId().value()))
               .toList();
+      List<GraphGapDraft> orderedGapDrafts =
+          gapDrafts.values().stream()
+              .sorted(Comparator.comparing(value -> value.gapId().value()))
+              .toList();
       List<ArtifactId> candidates = new ArrayList<>(exact);
       candidates.addAll(orderedGaps.stream().map(GraphGapDisposition::candidateElementId).toList());
       candidates.sort(Comparator.comparing(ArtifactId::value));
@@ -808,15 +877,22 @@ public final class CodeStructureGraphBuilder {
               orderedGaps,
               List.of(),
               scopeGaps,
-              orderedGaps.isEmpty() && source.repositoryCompletionEligible());
+              source.repositoryCompletionEligible());
+      List<ProvenanceDraftV1> orderedProvenance =
+          provenanceDrafts.values().stream()
+              .sorted(Comparator.comparing(value -> value.provenanceDraftId().value()))
+              .toList();
       ArtifactId graphId =
-          identity(
-              "program-graph",
-              ProgramGraphKind.CODE_STRUCTURE.name(),
+          CodeStructureGraphDraft.calculateGraphId(
               source.snapshotId(),
-              discovery.applicationProfileId().value(),
-              profile.graphProfileRef().artifactId().value(),
-              profile.graphProfileRef().sha256().value());
+              discovery.applicationProfileId(),
+              profile.graphProfileRef(),
+              discovery.entryIds(),
+              orderedNodes,
+              orderedEdges,
+              orderedGapDrafts,
+              orderedProvenance,
+              coverage);
       return new CodeStructureGraphDraft(
           CodeStructureGraphDraft.SCHEMA_VERSION,
           ProgramGraphKind.CODE_STRUCTURE,
@@ -827,24 +903,14 @@ public final class CodeStructureGraphBuilder {
           discovery.entryIds(),
           orderedNodes,
           orderedEdges,
-          provenanceDrafts.values().stream()
-              .sorted(Comparator.comparing(value -> value.provenanceDraftId().value()))
-              .toList(),
+          orderedGapDrafts,
+          orderedProvenance,
           coverage);
     }
 
     private ArtifactId provenance(
         CodeStructureSourceDocument document, String ruleId, SourceSpan span) {
-      SourceLocatorV1 locator =
-          new SourceLocatorV1(
-              document.fileId(),
-              document.path(),
-              span.startByte(),
-              span.endByteExclusive(),
-              span.startLine(),
-              span.startColumn(),
-              span.endLine(),
-              span.endColumn());
+      SourceLocatorV1 locator = locator(document, span);
       byte[] raw = document.rawUtf8().copyToByteArray();
       ImmutableBytes excerpt =
           ImmutableBytes.copyOf(
@@ -860,6 +926,18 @@ public final class CodeStructureGraphBuilder {
         throw new IllegalArgumentException("CODE_STRUCTURE_DUPLICATE_PROVENANCE_DRAFT");
       }
       return candidate.provenanceDraftId();
+    }
+
+    private static SourceLocatorV1 locator(CodeStructureSourceDocument document, SourceSpan span) {
+      return new SourceLocatorV1(
+          document.fileId(),
+          document.path(),
+          span.startByte(),
+          span.endByteExclusive(),
+          span.startLine(),
+          span.startColumn(),
+          span.endLine(),
+          span.endColumn());
     }
   }
 
