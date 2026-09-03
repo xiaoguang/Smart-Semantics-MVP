@@ -280,6 +280,15 @@ class ControlFlowGraphBuilderTest {
           draft.nodes().stream().filter(node -> node.kind() == ControlFlowNodeKind.GUARD).toList();
       assertThat(guards).singleElement();
       ControlFlowNode guard = guards.get(0);
+      assertThat(ControlFlowGraphWire.body(draft).path("nodes"))
+          .filteredOn(node -> guard.nodeId().value().equals(node.path("nodeId").asText()))
+          .singleElement()
+          .satisfies(
+              node ->
+                  assertThat(node.path("normalizedCondition").asText())
+                      .as(
+                          "the persisted control graph must carry the guard condition independently of its technical key")
+                      .isEqualTo("status == null"));
       assertThat(draft.edges())
           .filteredOn(edge -> edge.kind() == ControlFlowEdgeKind.TRUE)
           .singleElement()

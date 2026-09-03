@@ -10,6 +10,7 @@ public record ControlFlowNode(
     ArtifactId nodeId,
     ControlFlowNodeKind kind,
     String canonicalValue,
+    String normalizedCondition,
     List<ArtifactId> owningEntryIds,
     List<ArtifactId> evidenceDraftRefs) {
 
@@ -18,6 +19,13 @@ public record ControlFlowNode(
     Objects.requireNonNull(kind, "control-flow node kind");
     if (canonicalValue == null || canonicalValue.isBlank()) {
       throw new IllegalArgumentException("control-flow node canonical value is required");
+    }
+    if (kind == ControlFlowNodeKind.GUARD) {
+      if (normalizedCondition == null || normalizedCondition.isBlank()) {
+        throw new IllegalArgumentException("guard control-flow node normalized condition is required");
+      }
+    } else if (normalizedCondition != null) {
+      throw new IllegalArgumentException("only guard control-flow nodes may carry a normalized condition");
     }
     owningEntryIds = orderedDistinct(owningEntryIds, "control-flow node owners");
     evidenceDraftRefs = orderedDistinct(evidenceDraftRefs, "control-flow node evidence");

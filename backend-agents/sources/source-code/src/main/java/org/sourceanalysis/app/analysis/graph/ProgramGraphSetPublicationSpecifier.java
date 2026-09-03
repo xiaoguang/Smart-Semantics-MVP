@@ -52,7 +52,7 @@ public final class ProgramGraphSetPublicationSpecifier {
   private static final String CALL_TYPE = "PROGRAM_GRAPHS_CALL_GRAPH";
   private static final String CALL_SCHEMA = "program-graphs-call-graph-v1";
   private static final String CONTROL_FLOW_TYPE = "PROGRAM_GRAPHS_CONTROL_FLOW_GRAPH";
-  private static final String CONTROL_FLOW_SCHEMA = "program-graphs-control-flow-graph-v1";
+  private static final String CONTROL_FLOW_SCHEMA = "program-graphs-control-flow-graph-v2";
   private static final String DATA_FLOW_TYPE = "PROGRAM_GRAPHS_DATA_FLOW_GRAPH";
   private static final String DATA_FLOW_SCHEMA = "program-graphs-data-flow-graph-v2";
   private static final String EVIDENCE_TYPE = "PROGRAM_GRAPHS_EVIDENCE_GRAPH";
@@ -720,18 +720,19 @@ public final class ProgramGraphSetPublicationSpecifier {
   private static PublicNode nodeValue(Object value) {
     if (value instanceof DraftProgramNode node)
       return new PublicNode(
-          node.nodeId(), node.kind().name(), node.canonicalValue(), node.owningEntryIds(), null, null);
+          node.nodeId(), node.kind().name(), node.canonicalValue(), null, node.owningEntryIds(), null, null);
     if (value instanceof CallGraphNode node)
       return new PublicNode(
-          node.nodeId(), node.kind().name(), node.canonicalValue(), node.owningEntryIds(), null, null);
+          node.nodeId(), node.kind().name(), node.canonicalValue(), null, node.owningEntryIds(), null, null);
     if (value instanceof ControlFlowNode node)
       return new PublicNode(
-          node.nodeId(), node.kind().name(), node.canonicalValue(), node.owningEntryIds(), null, null);
+          node.nodeId(), node.kind().name(), node.canonicalValue(), node.normalizedCondition(), node.owningEntryIds(), null, null);
     if (value instanceof DataFlowNode node)
       return new PublicNode(
           node.nodeId(),
           node.kind().name(),
           node.canonicalValue(),
+          null,
           node.owningEntryIds(),
           node.boundaryInvocation(),
           node.unknownBoundaryReturn());
@@ -883,6 +884,7 @@ public final class ProgramGraphSetPublicationSpecifier {
       ArtifactId id,
       String kind,
       String canonicalValue,
+      String normalizedCondition,
       List<ArtifactId> owners,
       JavaBoundaryInvocationV1 boundaryInvocation,
       UnknownBoundaryReturnV1 unknownBoundaryReturn) {}
@@ -977,6 +979,10 @@ public final class ProgramGraphSetPublicationSpecifier {
         value.put("nodeId", node.id().value());
         value.put("kind", node.kind());
         value.put("canonicalValue", node.canonicalValue());
+        if (identity.kind() == ProgramGraphKind.CONTROL_FLOW) {
+          if (node.normalizedCondition() == null) value.putNull("normalizedCondition");
+          else value.put("normalizedCondition", node.normalizedCondition());
+        }
         ids(value.putArray("owningEntryIds"), node.owners());
         ids(value.putArray("evidenceNodeIds"), evidenceByElement.get(node.id()));
         if (identity.kind() == ProgramGraphKind.DATA_FLOW) {

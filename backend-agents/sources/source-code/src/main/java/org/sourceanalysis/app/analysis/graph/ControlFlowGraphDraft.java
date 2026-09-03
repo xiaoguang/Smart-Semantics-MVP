@@ -32,7 +32,7 @@ public record ControlFlowGraphDraft(
     List<ProvenanceDraftV1> provenanceDrafts,
     GraphCoverage coverage) {
 
-  public static final String SCHEMA_VERSION = "program-graphs-control-flow-draft-v3";
+  public static final String SCHEMA_VERSION = "program-graphs-control-flow-draft-v4";
 
   public ControlFlowGraphDraft {
     if (!SCHEMA_VERSION.equals(schemaVersion) || graphKind != ProgramGraphKind.CONTROL_FLOW) {

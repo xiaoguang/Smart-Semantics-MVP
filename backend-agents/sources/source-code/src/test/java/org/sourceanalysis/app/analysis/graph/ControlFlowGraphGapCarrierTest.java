@@ -21,13 +21,13 @@ class ControlFlowGraphGapCarrierTest {
   @TempDir java.nio.file.Path temporaryDirectory;
 
   @Test
-  void carriesAnUnsupportedLoopGapThroughV3IdentityAndBidirectionalCoverage() {
+  void carriesAnUnsupportedLoopGapThroughV4IdentityAndBidirectionalCoverage() {
     ControlFlowGraphDraft first;
     try (ControlFlowGraphBuilderTest.Fixture fixture =
         ControlFlowGraphBuilderTest.Fixture.createWithStatusLoop(temporaryDirectory)) {
       first = build(fixture);
 
-      assertThat(first.schemaVersion()).isEqualTo("program-graphs-control-flow-draft-v3");
+      assertThat(first.schemaVersion()).isEqualTo("program-graphs-control-flow-draft-v4");
       assertThat(first.gapDrafts()).singleElement();
       GraphGapDraft gap = first.gapDrafts().get(0);
       assertThat(gap.reasonCode()).isEqualTo("LOOP_SLICE_NOT_INSTALLED");

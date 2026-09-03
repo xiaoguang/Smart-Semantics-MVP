@@ -88,6 +88,8 @@ final class ControlFlowGraphWire {
     value.put("nodeId", node.nodeId().value());
     value.put("kind", node.kind().name());
     value.put("canonicalValue", node.canonicalValue());
+    if (node.normalizedCondition() == null) value.putNull("normalizedCondition");
+    else value.put("normalizedCondition", node.normalizedCondition());
     ids(value.putArray("owningEntryIds"), node.owningEntryIds());
     ids(value.putArray("evidenceDraftRefs"), node.evidenceDraftRefs());
     return value;
@@ -204,11 +206,12 @@ final class ControlFlowGraphWire {
               fields(
                   value,
                   Set.of(
-                      "nodeId", "kind", "canonicalValue", "owningEntryIds", "evidenceDraftRefs"));
+                      "nodeId", "kind", "canonicalValue", "normalizedCondition", "owningEntryIds", "evidenceDraftRefs"));
               return new ControlFlowNode(
                   id(value, "nodeId"),
                   ControlFlowNodeKind.valueOf(text(value, "kind")),
                   text(value, "canonicalValue"),
+                  nullableText(value, "normalizedCondition"),
                   ids(value.get("owningEntryIds")),
                   ids(value.get("evidenceDraftRefs")));
             })

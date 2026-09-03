@@ -1381,7 +1381,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("PROGRAM_GRAPHS_CONTROL_FLOW_DRAFT".equals(payload.artifactType())
-        && "program-graphs-control-flow-draft-v3".equals(payload.schemaVersion())) {
+        && "program-graphs-control-flow-draft-v4".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROGRAM_GRAPHS,
           3,
@@ -1426,7 +1426,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("PROGRAM_GRAPHS_CONTROL_FLOW_GRAPH".equals(payload.artifactType())
-        && "program-graphs-control-flow-graph-v1".equals(payload.schemaVersion())) {
+        && "program-graphs-control-flow-graph-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROGRAM_GRAPHS,
           6,

@@ -589,6 +589,7 @@ public final class ControlFlowGraphBuilder {
               entryId,
               ControlFlowNodeKind.GUARD,
               "guard:" + method.signature() + ":" + value.getCondition(),
+              value.getCondition().toString(),
               guardProvenance);
       edge(
           entryId,
@@ -742,6 +743,15 @@ public final class ControlFlowGraphBuilder {
         ControlFlowNodeKind kind,
         String canonicalValue,
         ProvenanceDraftV1 evidence) {
+      return node(entryId, kind, canonicalValue, null, evidence);
+    }
+
+    private ArtifactId node(
+        ArtifactId entryId,
+        ControlFlowNodeKind kind,
+        String canonicalValue,
+        String normalizedCondition,
+        ProvenanceDraftV1 evidence) {
       registerProvenance(evidence);
       ArtifactId nodeId =
           identity(
@@ -756,6 +766,7 @@ public final class ControlFlowGraphBuilder {
               nodeId,
               kind,
               canonicalValue,
+              normalizedCondition,
               List.of(entryId),
               List.of(evidence.provenanceDraftId()));
       nodes.compute(
@@ -874,6 +885,7 @@ public final class ControlFlowGraphBuilder {
         ControlFlowNode existing, ControlFlowNode candidate, ArtifactId entryId) {
       if (existing.kind() != candidate.kind()
           || !existing.canonicalValue().equals(candidate.canonicalValue())
+          || !Objects.equals(existing.normalizedCondition(), candidate.normalizedCondition())
           || !existing.evidenceDraftRefs().equals(candidate.evidenceDraftRefs())) {
         throw new GraphReferenceException();
       }
@@ -881,6 +893,7 @@ public final class ControlFlowGraphBuilder {
           existing.nodeId(),
           existing.kind(),
           existing.canonicalValue(),
+          existing.normalizedCondition(),
           unionOwners(existing.owningEntryIds(), entryId),
           existing.evidenceDraftRefs());
     }

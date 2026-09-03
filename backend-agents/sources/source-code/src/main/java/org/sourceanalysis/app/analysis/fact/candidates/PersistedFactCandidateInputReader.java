@@ -51,7 +51,7 @@ public final class PersistedFactCandidateInputReader {
   private static final String CALL_TYPE = "PROGRAM_GRAPHS_CALL_GRAPH";
   private static final String CALL_SCHEMA = "program-graphs-call-graph-v1";
   private static final String CONTROL_TYPE = "PROGRAM_GRAPHS_CONTROL_FLOW_GRAPH";
-  private static final String CONTROL_SCHEMA = "program-graphs-control-flow-graph-v1";
+  private static final String CONTROL_SCHEMA = "program-graphs-control-flow-graph-v2";
   private static final String DATA_TYPE = "PROGRAM_GRAPHS_DATA_FLOW_GRAPH";
   private static final String DATA_SCHEMA = "program-graphs-data-flow-graph-v2";
   private static final String EVIDENCE_TYPE = "PROGRAM_GRAPHS_EVIDENCE_GRAPH";
@@ -492,6 +492,9 @@ public final class PersistedFactCandidateInputReader {
     for (JsonNode value : values) {
       Set<String> fields =
           new HashSet<>(Set.of("nodeId", "kind", "canonicalValue", "owningEntryIds", "evidenceNodeIds"));
+      if (graphKind == ProgramGraphKind.CONTROL_FLOW) {
+        fields.add("normalizedCondition");
+      }
       if (graphKind == ProgramGraphKind.DATA_FLOW) {
         fields.add("boundaryInvocation");
         fields.add("unknownBoundaryReturn");
@@ -513,7 +516,10 @@ public final class PersistedFactCandidateInputReader {
               kind,
               ids(value.get("owningEntryIds"), "node owners"),
               ids(value.get("evidenceNodeIds"), "node evidence IDs"),
-              invocation);
+              invocation,
+              graphKind == ProgramGraphKind.CONTROL_FLOW
+                  ? nullableText(value, "normalizedCondition")
+                  : null);
       if (result.putIfAbsent(nodeId, node) != null) throw broken();
     }
     return Map.copyOf(result);

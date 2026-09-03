@@ -608,7 +608,7 @@ class ProgramGraphPublicWireTest {
     policy(
         entries,
         "PROGRAM_GRAPHS_CONTROL_FLOW_GRAPH",
-        "program-graphs-control-flow-graph-v1",
+        "program-graphs-control-flow-graph-v2",
         "program-graphs-control-flow-graph",
         "application/json",
         "STANDALONE_JSON",

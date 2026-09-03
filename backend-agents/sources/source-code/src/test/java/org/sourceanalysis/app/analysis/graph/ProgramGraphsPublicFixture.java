@@ -970,7 +970,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(entries, "PROGRAM_GRAPHS_CALL_GRAPH_DRAFT", CallGraphDraft.SCHEMA_VERSION, "call-graph", "application/json", "MODULE_ARTIFACT_JSON", false);
     policy(entries, "PROGRAM_GRAPHS_CODE_STRUCTURE_GRAPH", "program-graphs-code-structure-graph-v1", "program-graphs-code-structure-graph", "application/json", "STANDALONE_JSON", false);
     policy(entries, "PROGRAM_GRAPHS_CODE_STRUCTURE_DRAFT", CodeStructureGraphDraft.SCHEMA_VERSION, "code-structure-graph", "application/json", "MODULE_ARTIFACT_JSON", false);
-    policy(entries, "PROGRAM_GRAPHS_CONTROL_FLOW_GRAPH", "program-graphs-control-flow-graph-v1", "program-graphs-control-flow-graph", "application/json", "STANDALONE_JSON", false);
+    policy(entries, "PROGRAM_GRAPHS_CONTROL_FLOW_GRAPH", "program-graphs-control-flow-graph-v2", "program-graphs-control-flow-graph", "application/json", "STANDALONE_JSON", false);
     policy(entries, "PROGRAM_GRAPHS_CONTROL_FLOW_DRAFT", ControlFlowGraphDraft.SCHEMA_VERSION, "control-flow-graph", "application/json", "MODULE_ARTIFACT_JSON", false);
     policy(entries, "PROGRAM_GRAPHS_DATA_FLOW_GRAPH", "program-graphs-data-flow-graph-v2", "program-graphs-data-flow-graph", "application/json", "STANDALONE_JSON", false);
     policy(entries, "PROGRAM_GRAPHS_DATA_FLOW_DRAFT", DataFlowGraphDraft.SCHEMA_VERSION, "data-flow-graph", "application/json", "MODULE_ARTIFACT_JSON", false);

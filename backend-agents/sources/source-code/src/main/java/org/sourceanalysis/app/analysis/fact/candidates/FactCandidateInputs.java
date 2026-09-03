@@ -200,7 +200,8 @@ public record FactCandidateInputs(
       String kind,
       List<String> owningEntryIds,
       List<String> sourceEvidenceNodeIds,
-      BoundaryInvocation boundaryInvocation) {
+      BoundaryInvocation boundaryInvocation,
+      String normalizedCondition) {
 
     public PublicProgramNode {
       nodeId = checkedId(nodeId, "program node ID");
@@ -211,6 +212,11 @@ public record FactCandidateInputs(
         throw new IllegalArgumentException("PROOF_PACK_REFERENCE_BROKEN");
       }
       if ("JAVA_BOUNDARY_INVOCATION".equals(kind) && owningEntryIds.isEmpty()) {
+        throw new IllegalArgumentException("PROOF_PACK_REFERENCE_BROKEN");
+      }
+      if ("GUARD".equals(kind)) {
+        requireText(normalizedCondition, "guard normalized condition");
+      } else if (normalizedCondition != null) {
         throw new IllegalArgumentException("PROOF_PACK_REFERENCE_BROKEN");
       }
     }
