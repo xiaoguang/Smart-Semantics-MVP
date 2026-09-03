@@ -32,7 +32,7 @@ class FactCandidateModuleReaderTest {
   private static final String READER_CLASS =
       "org.sourceanalysis.app.analysis.fact.candidates.PersistedFactCandidateSetReader";
   private static final String ARTIFACT_TYPE = "PROVEN_CODE_FACTS_FACT_CANDIDATE_SET";
-  private static final String SCHEMA_VERSION = "proven-code-facts-fact-candidate-set-v1";
+  private static final String SCHEMA_VERSION = "proven-code-facts-fact-candidate-set-v2";
 
   @TempDir Path temporaryDirectory;
 
@@ -40,8 +40,9 @@ class FactCandidateModuleReaderTest {
   void freshReopenReturnsTypedCandidateSetAndRejectsPersistedPayloadTamper() throws Exception {
     Path storeRoot = temporaryDirectory.resolve("candidate-reader-store");
     Files.createDirectory(storeRoot);
-    try (ProgramGraphsPublicFixture fixture =
-            ProgramGraphsPublicFixture.create(temporaryDirectory.resolve("graph-input"));
+      try (ProgramGraphsPublicFixture fixture =
+            ProgramGraphsPublicFixture.createWithGuardedApprove(
+                temporaryDirectory.resolve("graph-input"));
         RunStoreHandle handle = RunStoreBootstrap.openForTest(storeRoot)) {
       CanonicalJsonCodec json = new CanonicalJsonCodec();
       // Reuse the fixture's registry and controls so publication and fresh input have one
@@ -69,6 +70,15 @@ class FactCandidateModuleReaderTest {
       assertThat(reopened.candidateSetId()).isEqualTo(expected.candidateSetId());
       assertThat(reopened.candidates()).containsExactlyElementsOf(expected.candidates());
       assertThat(reopened.denominator()).isEqualTo(expected.denominator());
+      assertThat(reopened.candidates())
+          .filteredOn(candidate -> "JAVA_GUARD_CONDITION".equals(candidate.kind()))
+          .singleElement()
+          .satisfies(
+              candidate -> {
+                assertThat(candidate.guardNodeId()).isNotBlank();
+                assertThat(candidate.normalizedCondition()).isEqualTo("status == null");
+                assertThat(candidate.branchEdgeIds()).hasSize(2);
+              });
 
       Path payloadPath = payloadPath(storeRoot, reference);
       ObjectNode envelope =

@@ -35,9 +35,9 @@ import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 public final class PersistedFactCandidateSetReader {
 
   private static final String ARTIFACT_TYPE = "PROVEN_CODE_FACTS_FACT_CANDIDATE_SET";
-  private static final String SCHEMA_VERSION = "proven-code-facts-fact-candidate-set-v1";
+  private static final String SCHEMA_VERSION = "proven-code-facts-fact-candidate-set-v2";
   private static final String FILE_NAME = "fact-candidate-set.json";
-  private static final String MODULE_VERSION = "v1";
+  private static final String MODULE_VERSION = "v2";
   private static final Set<String> ENVELOPE_FIELDS =
       Set.of(
           "artifactId",
@@ -67,7 +67,7 @@ public final class PersistedFactCandidateSetReader {
           "denominator",
           "notApplicableDispositions",
           "sourceGraphRoots");
-  private static final Set<String> CANDIDATE_FIELDS =
+  private static final Set<String> BOUNDARY_CANDIDATE_FIELDS =
       Set.of(
           "boundaryNodeId",
           "callTargetEdgeId",
@@ -84,6 +84,16 @@ public final class PersistedFactCandidateSetReader {
           "staticTargetMethod",
           "staticTargetSignature",
           "staticTargetType");
+  private static final Set<String> GUARD_CANDIDATE_FIELDS =
+      Set.of(
+          "branchEdgeIds",
+          "candidateFactKey",
+          "entryId",
+          "evidenceNodeIdsBySubject",
+          "guardNodeId",
+          "kind",
+          "normalizedCondition",
+          "requiredAtoms");
   private static final Set<String> ARGUMENT_FIELDS =
       Set.of("argumentEdgeId", "argumentNodeId", "javaLocalOriginNodeIds", "ordinal");
   private static final Set<String> EVIDENCE_FIELDS =
@@ -91,7 +101,7 @@ public final class PersistedFactCandidateSetReader {
   private static final Set<String> ATOM_FIELDS =
       Set.of("atomKey", "expectedEvidenceKinds", "role", "valueType");
   private static final Set<String> DISPOSITION_FIELDS =
-      Set.of("boundaryNodeId", "entryId", "missingRoles", "reasonCode", "templateKey");
+      Set.of("entryId", "missingRoles", "reasonCode", "subjectNodeId", "templateKey");
   private static final Set<String> DENOMINATOR_FIELDS =
       Set.of("applicableKeys", "notApplicableKeys");
 
@@ -259,24 +269,51 @@ public final class PersistedFactCandidateSetReader {
       if (!(value instanceof ObjectNode candidate)) {
         throw failure();
       }
-      requireExactFields(candidate, CANDIDATE_FIELDS);
-      result.add(
-          new FactCandidateSet.FactCandidate(
-              requiredText(candidate, "candidateFactKey"),
-              requiredText(candidate, "entryId"),
-              requiredText(candidate, "kind"),
-              requiredText(candidate, "boundaryNodeId"),
-              requiredText(candidate, "invocationCallId"),
-              requiredText(candidate, "callTargetEdgeId"),
-              requiredText(candidate, "staticTargetType"),
-              requiredText(candidate, "staticTargetMethod"),
-              requiredText(candidate, "staticTargetSignature"),
-              texts(requiredArray(candidate, "orderedArgumentEdgeIds")),
-              arguments(requiredArray(candidate, "orderedArguments")),
-              requiredText(candidate, "controlBlockId"),
-              nullableText(candidate, "guardId"),
-              evidence(requiredArray(candidate, "evidenceNodeIdsBySubject")),
-              atoms(requiredArray(candidate, "requiredAtoms"))));
+      String kind = requiredText(candidate, "kind");
+      if ("JAVA_BOUNDARY_INVOCATION".equals(kind)) {
+        requireExactFields(candidate, BOUNDARY_CANDIDATE_FIELDS);
+        result.add(
+            new FactCandidateSet.FactCandidate(
+                requiredText(candidate, "candidateFactKey"),
+                requiredText(candidate, "entryId"),
+                kind,
+                requiredText(candidate, "boundaryNodeId"),
+                requiredText(candidate, "invocationCallId"),
+                requiredText(candidate, "callTargetEdgeId"),
+                requiredText(candidate, "staticTargetType"),
+                requiredText(candidate, "staticTargetMethod"),
+                requiredText(candidate, "staticTargetSignature"),
+                texts(requiredArray(candidate, "orderedArgumentEdgeIds")),
+                arguments(requiredArray(candidate, "orderedArguments")),
+                requiredText(candidate, "controlBlockId"),
+                nullableText(candidate, "guardId"),
+                evidence(requiredArray(candidate, "evidenceNodeIdsBySubject")),
+                atoms(requiredArray(candidate, "requiredAtoms"))));
+      } else if ("JAVA_GUARD_CONDITION".equals(kind)) {
+        requireExactFields(candidate, GUARD_CANDIDATE_FIELDS);
+        result.add(
+            new FactCandidateSet.FactCandidate(
+                requiredText(candidate, "candidateFactKey"),
+                requiredText(candidate, "entryId"),
+                kind,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(),
+                null,
+                null,
+                evidence(requiredArray(candidate, "evidenceNodeIdsBySubject")),
+                atoms(requiredArray(candidate, "requiredAtoms")),
+                requiredText(candidate, "guardNodeId"),
+                requiredText(candidate, "normalizedCondition"),
+                texts(requiredArray(candidate, "branchEdgeIds"))));
+      } else {
+        throw failure();
+      }
     }
     return List.copyOf(result);
   }
@@ -341,7 +378,7 @@ public final class PersistedFactCandidateSetReader {
       result.add(
           new FactCandidateSet.NotApplicableDisposition(
               requiredText(disposition, "entryId"),
-              requiredText(disposition, "boundaryNodeId"),
+              requiredText(disposition, "subjectNodeId"),
               requiredText(disposition, "templateKey"),
               texts(requiredArray(disposition, "missingRoles")),
               requiredText(disposition, "reasonCode")));

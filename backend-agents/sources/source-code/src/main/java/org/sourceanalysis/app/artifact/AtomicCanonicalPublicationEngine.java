@@ -1471,7 +1471,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("PROVEN_CODE_FACTS_FACT_CANDIDATE_SET".equals(payload.artifactType())
-        && "proven-code-facts-fact-candidate-set-v1".equals(payload.schemaVersion())) {
+        && "proven-code-facts-fact-candidate-set-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROVEN_CODE_FACTS,
           1,
@@ -1480,7 +1480,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("PROVEN_CODE_FACTS_PROOF_DECISION_SET".equals(payload.artifactType())
-        && "proven-code-facts-proof-decision-set-v1".equals(payload.schemaVersion())) {
+        && "proven-code-facts-proof-decision-set-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROVEN_CODE_FACTS,
           2,
@@ -1489,7 +1489,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("PROVEN_CODE_FACTS_FACT_ACCOUNTING".equals(payload.artifactType())
-        && "proven-code-facts-fact-accounting-v1".equals(payload.schemaVersion())) {
+        && "proven-code-facts-fact-accounting-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROVEN_CODE_FACTS,
           3,
@@ -1498,7 +1498,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("PROVEN_CODE_FACTS_GAP_LEDGER".equals(payload.artifactType())
-        && "proven-code-facts-gap-ledger-v1".equals(payload.schemaVersion())) {
+        && "proven-code-facts-gap-ledger-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROVEN_CODE_FACTS,
           3,
@@ -1507,7 +1507,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("PROVEN_CODE_FACTS_PROOF_PACK".equals(payload.artifactType())
-        && "proven-code-facts-proof-pack-v1".equals(payload.schemaVersion())) {
+        && "proven-code-facts-proof-pack-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROVEN_CODE_FACTS,
           3,
@@ -1516,7 +1516,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("PROVEN_CODE_FACTS_PROVEN_FACTS".equals(payload.artifactType())
-        && "proven-code-facts-proven-facts-v1".equals(payload.schemaVersion())) {
+        && "proven-code-facts-proven-facts-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROVEN_CODE_FACTS,
           3,

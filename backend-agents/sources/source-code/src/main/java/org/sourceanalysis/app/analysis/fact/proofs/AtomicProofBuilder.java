@@ -57,7 +57,9 @@ public final class AtomicProofBuilder {
 
     for (FactCandidateSet.FactCandidate candidate : candidates.candidates()) {
       CandidateKey key = CandidateKey.of(candidate);
-      externalEffectGaps.add(externalEffectGap(candidate, key.value()));
+      if ("JAVA_BOUNDARY_INVOCATION".equals(candidate.kind())) {
+        externalEffectGaps.add(externalEffectGap(candidate, key.value()));
+      }
       List<AtomAttempt> attempts = new ArrayList<>();
       for (FactCandidateSet.RequiredAtom atom : candidate.requiredAtoms()) {
         attempts.add(attemptAtom(candidate, key.value(), atom, inputs, documents, rules));
@@ -150,6 +152,13 @@ public final class AtomicProofBuilder {
 
   private static List<SubjectRequirement> subjectsFor(
       FactCandidateSet.FactCandidate candidate, String atomKey) {
+    if ("JAVA_GUARD_CONDITION".equals(candidate.kind())) {
+      return "CONTROL_CONDITION".equals(atomKey)
+          ? List.of(
+              new SubjectRequirement(
+                  candidate.guardNodeId(), ProofRuleRegistry.SubjectCategory.GUARD, null))
+          : List.of();
+    }
     List<SubjectRequirement> all = allSubjects(candidate);
     return switch (atomKey) {
       case "INVOCATION_CALL_ID" -> select(all, ProofRuleRegistry.SubjectCategory.CALL_SITE, ProofRuleRegistry.SubjectCategory.BOUNDARY_INVOCATION);
@@ -164,6 +173,10 @@ public final class AtomicProofBuilder {
   }
 
   private static List<SubjectRequirement> allSubjects(FactCandidateSet.FactCandidate candidate) {
+    if ("JAVA_GUARD_CONDITION".equals(candidate.kind())) {
+      return List.of(
+          new SubjectRequirement(candidate.guardNodeId(), ProofRuleRegistry.SubjectCategory.GUARD, null));
+    }
     List<SubjectRequirement> subjects = new ArrayList<>();
     subjects.add(new SubjectRequirement(candidate.invocationCallId(), ProofRuleRegistry.SubjectCategory.CALL_SITE, null));
     subjects.add(new SubjectRequirement(candidate.boundaryNodeId(), ProofRuleRegistry.SubjectCategory.BOUNDARY_INVOCATION, null));
@@ -315,7 +328,7 @@ public final class AtomicProofBuilder {
         identity(
             "code-fact",
             candidate.kind(),
-            candidate.boundaryNodeId(),
+            String.join("|", candidate.subjectNodeIds()),
             String.join("|", seeds.stream().map(ProofSeed::atomId).toList()));
     List<ProofDecisionSet.AtomProof> proofs = new ArrayList<>();
     List<ProofDecisionSet.FactAtom> atoms = new ArrayList<>();
@@ -379,6 +392,8 @@ public final class AtomicProofBuilder {
                       .flatMap(binding -> binding.sourceEvidenceNodeIds().stream())
                       .sorted()
                       .toList()));
+      case "CONTROL_CONDITION" ->
+          new ProofDecisionSet.AtomValue("STRING", candidate.normalizedCondition());
       default -> throw new IllegalArgumentException("PROOF_RULE_REGISTRY_INVALID");
     };
   }
@@ -432,8 +447,7 @@ public final class AtomicProofBuilder {
 
   private record CandidateKey(String value) {
     private static CandidateKey of(FactCandidateSet.FactCandidate candidate) {
-      return new CandidateKey(
-          candidate.entryId() + "|" + candidate.boundaryNodeId() + "|" + candidate.candidateFactKey());
+      return new CandidateKey(candidate.denominatorKey());
     }
   }
 

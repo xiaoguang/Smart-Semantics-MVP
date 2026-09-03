@@ -198,6 +198,7 @@ public record FactCandidateInputs(
   public record PublicProgramNode(
       String nodeId,
       String kind,
+      String canonicalValue,
       List<String> owningEntryIds,
       List<String> sourceEvidenceNodeIds,
       BoundaryInvocation boundaryInvocation,
@@ -206,6 +207,7 @@ public record FactCandidateInputs(
     public PublicProgramNode {
       nodeId = checkedId(nodeId, "program node ID");
       requireText(kind, "program node kind");
+      requireText(canonicalValue, "program node canonical value");
       owningEntryIds = orderedArtifactIds(owningEntryIds, "node owners");
       sourceEvidenceNodeIds = orderedArtifactIds(sourceEvidenceNodeIds, "node source evidence IDs");
       if ("JAVA_BOUNDARY_INVOCATION".equals(kind) != (boundaryInvocation != null)) {

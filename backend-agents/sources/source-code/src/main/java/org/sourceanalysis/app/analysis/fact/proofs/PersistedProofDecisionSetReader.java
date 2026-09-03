@@ -38,9 +38,9 @@ import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 public final class PersistedProofDecisionSetReader {
 
   private static final String ARTIFACT_TYPE = "PROVEN_CODE_FACTS_PROOF_DECISION_SET";
-  private static final String SCHEMA_VERSION = "proven-code-facts-proof-decision-set-v1";
+  private static final String SCHEMA_VERSION = "proven-code-facts-proof-decision-set-v2";
   private static final String FILE_NAME = "proof-decision-set.json";
-  private static final String MODULE_VERSION = "v1";
+  private static final String MODULE_VERSION = "v2";
   private static final Set<String> ENVELOPE_FIELDS =
       Set.of(
           "artifactId",
@@ -165,7 +165,7 @@ public final class PersistedProofDecisionSetReader {
     VerifiedCanonicalPayload payload = publication.payloads().get(0);
     if (!"fact-candidate-set.json".equals(payload.descriptor().fileName())
         || !"PROVEN_CODE_FACTS_FACT_CANDIDATE_SET".equals(payload.descriptor().artifactType())
-        || !"proven-code-facts-fact-candidate-set-v1".equals(payload.descriptor().schemaVersion())) {
+        || !"proven-code-facts-fact-candidate-set-v2".equals(payload.descriptor().schemaVersion())) {
       throw broken();
     }
     return new ArtifactReference(payload.descriptor().artifactId(), payload.descriptor().sha256());
@@ -420,13 +420,20 @@ public final class PersistedProofDecisionSetReader {
     Map<String, ProofDecisionSet.CodeFact> admitted = uniqueCodeFacts(decisions.codeFacts());
     Map<String, ProofDecisionSet.AtomProof> proofs = uniqueProofs(decisions.atomProofs());
     Map<String, ProofDecisionSet.ExternalEffectGap> gaps = uniqueExternalGaps(decisions.externalEffectGaps());
-    if (!facts.keySet().equals(keys) || !gaps.keySet().equals(keys)) throw broken();
+    Set<String> boundaryKeys =
+        candidateByKey.entrySet().stream()
+            .filter(entry -> "JAVA_BOUNDARY_INVOCATION".equals(entry.getValue().kind()))
+            .map(Map.Entry::getKey)
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    if (!facts.keySet().equals(keys) || !gaps.keySet().equals(boundaryKeys)) throw broken();
     Map<String, ProofDecisionSet.AtomDisposition> atoms = uniqueAtomDispositions(decisions.atomDispositions());
     Map<String, ProofDecisionSet.RootCauseRejection> causes = uniqueCauses(decisions.rootCauseRejections());
     for (Map.Entry<String, FactCandidateSet.FactCandidate> entry : candidateByKey.entrySet()) {
       String key = entry.getKey();
       FactCandidateSet.FactCandidate candidate = entry.getValue();
-      requireExternalGap(gaps.get(key), candidate, key);
+      if ("JAVA_BOUNDARY_INVOCATION".equals(candidate.kind())) {
+        requireExternalGap(gaps.get(key), candidate, key);
+      }
       List<String> expectedAtomKeys = candidate.requiredAtoms().stream().map(FactCandidateSet.RequiredAtom::atomKey).toList();
       Set<String> expectedDispositionKeys =
           expectedAtomKeys.stream().map(atomKey -> key + "\u0000" + atomKey).collect(java.util.stream.Collectors.toUnmodifiableSet());
@@ -592,7 +599,7 @@ public final class PersistedProofDecisionSetReader {
   }
 
   private static String denominatorKey(FactCandidateSet.FactCandidate candidate) {
-    return candidate.entryId() + "|" + candidate.boundaryNodeId() + "|" + candidate.candidateFactKey();
+    return candidate.denominatorKey();
   }
 
   private static org.sourceanalysis.app.artifact.ArtifactControls controls(ObjectNode value) {

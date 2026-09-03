@@ -60,17 +60,17 @@ public final class FactLedgerPublicationSpecifier {
 
   private static final String PROVEN_FACTS_FILE = "proven-facts.json";
   private static final String PROVEN_FACTS_TYPE = "PROVEN_CODE_FACTS_PROVEN_FACTS";
-  private static final String PROVEN_FACTS_SCHEMA = "proven-code-facts-proven-facts-v1";
+  private static final String PROVEN_FACTS_SCHEMA = "proven-code-facts-proven-facts-v2";
   private static final String PROOF_PACK_FILE = "proof-pack.json";
   private static final String PROOF_PACK_TYPE = "PROVEN_CODE_FACTS_PROOF_PACK";
-  private static final String PROOF_PACK_SCHEMA = "proven-code-facts-proof-pack-v1";
+  private static final String PROOF_PACK_SCHEMA = "proven-code-facts-proof-pack-v2";
   private static final String GAP_LEDGER_FILE = "gap-ledger.json";
   private static final String GAP_LEDGER_TYPE = "PROVEN_CODE_FACTS_GAP_LEDGER";
-  private static final String GAP_LEDGER_SCHEMA = "proven-code-facts-gap-ledger-v1";
+  private static final String GAP_LEDGER_SCHEMA = "proven-code-facts-gap-ledger-v2";
   private static final String FACT_ACCOUNTING_FILE = "fact-accounting.json";
   private static final String FACT_ACCOUNTING_TYPE = "PROVEN_CODE_FACTS_FACT_ACCOUNTING";
-  private static final String FACT_ACCOUNTING_SCHEMA = "proven-code-facts-fact-accounting-v1";
-  private static final String MODULE_VERSION = "v1";
+  private static final String FACT_ACCOUNTING_SCHEMA = "proven-code-facts-fact-accounting-v2";
+  private static final String MODULE_VERSION = "v2";
   private static final Comparator<String> UTF8_ORDER = FactLedgerPublicationSpecifier::compareUtf8;
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
@@ -118,7 +118,7 @@ public final class FactLedgerPublicationSpecifier {
 
       FactCandidateSet candidates =
           new PersistedFactCandidateSetReader(moduleArtifacts)
-              .reopen(candidatePublication, inputs, FactRegistry.standardJavaBoundary());
+              .reopen(candidatePublication, inputs, FactRegistry.standardJavaFacts());
       ProofDecisionSet decisions =
           new PersistedProofDecisionSetReader(moduleArtifacts)
               .reopen(proofPublication, inputs, candidatePublication, candidates);
@@ -289,31 +289,65 @@ public final class FactLedgerPublicationSpecifier {
   private static ObjectNode accountingBody(
       FactCandidateSet candidates, ProofDecisionSet decisions, ArtifactReference proofPayload) {
     ObjectNode body = commonBody(candidates, decisions, proofPayload);
-    List<String> candidateKeys = candidates.candidates().stream().map(FactLedgerPublicationSpecifier::candidateKey).toList();
-    List<String> admittedFacts = decisions.codeFacts().stream().map(ProofDecisionSet.CodeFact::factId).toList();
+    List<String> candidateKeys =
+        sortedStrings(
+            candidates.candidates().stream().map(FactLedgerPublicationSpecifier::candidateKey).toList());
+    List<String> boundaryCandidateKeys =
+        sortedStrings(
+            candidates.candidates().stream()
+                .filter(candidate -> "JAVA_BOUNDARY_INVOCATION".equals(candidate.kind()))
+                .map(FactLedgerPublicationSpecifier::candidateKey)
+                .toList());
+    List<String> guardCandidateKeys =
+        sortedStrings(
+            candidates.candidates().stream()
+                .filter(candidate -> "JAVA_GUARD_CONDITION".equals(candidate.kind()))
+                .map(FactLedgerPublicationSpecifier::candidateKey)
+                .toList());
+    List<String> admittedFacts =
+        sortedStrings(decisions.codeFacts().stream().map(ProofDecisionSet.CodeFact::factId).toList());
     List<String> rejectedCandidates =
-        decisions.factDispositions().stream()
-            .filter(value -> "REJECTED_WITH_REASON".equals(value.disposition()))
-            .map(ProofDecisionSet.FactDisposition::candidateDenominatorKey)
-            .toList();
+        sortedStrings(
+            decisions.factDispositions().stream()
+                .filter(value -> "REJECTED_WITH_REASON".equals(value.disposition()))
+                .map(ProofDecisionSet.FactDisposition::candidateDenominatorKey)
+                .toList());
     List<String> admittedAtoms =
-        decisions.atomDispositions().stream()
-            .filter(value -> "CLOSED".equals(value.disposition()))
-            .map(FactLedgerPublicationSpecifier::atomDispositionKey)
-            .toList();
+        sortedStrings(
+            decisions.atomDispositions().stream()
+                .filter(value -> "CLOSED".equals(value.disposition()))
+                .map(FactLedgerPublicationSpecifier::atomDispositionKey)
+                .toList());
     List<String> rejectedAtoms =
-        decisions.atomDispositions().stream()
-            .filter(value -> "REJECTED_WITH_REASON".equals(value.disposition()))
-            .map(FactLedgerPublicationSpecifier::atomDispositionKey)
-            .toList();
+        sortedStrings(
+            decisions.atomDispositions().stream()
+                .filter(value -> "REJECTED_WITH_REASON".equals(value.disposition()))
+                .map(FactLedgerPublicationSpecifier::atomDispositionKey)
+                .toList());
     List<String> externalGapIds =
-        decisions.externalEffectGaps().stream().map(ProofDecisionSet.ExternalEffectGap::gapId).toList();
+        sortedStrings(
+            decisions.externalEffectGaps().stream()
+                .map(ProofDecisionSet.ExternalEffectGap::gapId)
+                .toList());
+    requireAccountingClosure(
+        candidates,
+        decisions,
+        candidateKeys,
+        boundaryCandidateKeys,
+        guardCandidateKeys,
+        admittedFacts,
+        rejectedCandidates,
+        admittedAtoms,
+        rejectedAtoms,
+        externalGapIds);
     strings(body.putArray("candidateDenominatorKeys"), candidateKeys);
     strings(body.putArray("admittedFactIds"), admittedFacts);
     strings(body.putArray("rejectedCandidateDenominatorKeys"), rejectedCandidates);
     strings(body.putArray("admittedAtomDispositionKeys"), admittedAtoms);
     strings(body.putArray("rejectedAtomDispositionKeys"), rejectedAtoms);
     strings(body.putArray("externalEffectGapIds"), externalGapIds);
+    strings(body.putArray("boundaryCandidateDenominatorKeys"), boundaryCandidateKeys);
+    strings(body.putArray("guardCandidateDenominatorKeys"), guardCandidateKeys);
     body.put("candidateFactCount", candidateKeys.size());
     body.put("admittedFactCount", admittedFacts.size());
     body.put("rejectedFactCount", rejectedCandidates.size());
@@ -323,6 +357,65 @@ public final class FactLedgerPublicationSpecifier {
     body.put("provenFactAtomCount", admittedAtoms.size());
     body.put("externalEffectGapCount", externalGapIds.size());
     return body;
+  }
+
+  private static void requireAccountingClosure(
+      FactCandidateSet candidates,
+      ProofDecisionSet decisions,
+      List<String> candidateKeys,
+      List<String> boundaryCandidateKeys,
+      List<String> guardCandidateKeys,
+      List<String> admittedFacts,
+      List<String> rejectedCandidates,
+      List<String> admittedAtoms,
+      List<String> rejectedAtoms,
+      List<String> externalGapIds) {
+    if (!sameKeys(
+            candidateKeys,
+            decisions.factDispositions().stream()
+                .map(ProofDecisionSet.FactDisposition::candidateDenominatorKey)
+                .toList())
+        || candidateKeys.size() != boundaryCandidateKeys.size() + guardCandidateKeys.size()
+        || !sameKeys(
+            boundaryCandidateKeys,
+            decisions.externalEffectGaps().stream()
+                .map(ProofDecisionSet.ExternalEffectGap::candidateDenominatorKey)
+                .toList())
+        || externalGapIds.size() != boundaryCandidateKeys.size()) {
+      throw broken();
+    }
+    List<String> requiredAtoms =
+        sortedStrings(
+            candidates.candidates().stream()
+                .flatMap(
+                    candidate ->
+                        candidate.requiredAtoms().stream()
+                            .map(atom -> candidateKey(candidate) + "\u0000" + atom.atomKey()))
+                .toList());
+    if (!sameKeys(
+            requiredAtoms,
+            decisions.atomDispositions().stream()
+                .map(FactLedgerPublicationSpecifier::atomDispositionKey)
+                .toList())
+        || admittedAtoms.size() + rejectedAtoms.size() != requiredAtoms.size()
+        || admittedFacts.size() + rejectedCandidates.size() != candidateKeys.size()) {
+      throw broken();
+    }
+    Map<String, ProofDecisionSet.FactDisposition> dispositionByKey = new HashMap<>();
+    for (ProofDecisionSet.FactDisposition disposition : decisions.factDispositions()) {
+      if (dispositionByKey.put(disposition.candidateDenominatorKey(), disposition) != null) {
+        throw broken();
+      }
+    }
+    for (ProofDecisionSet.CodeFact fact : decisions.codeFacts()) {
+      ProofDecisionSet.FactDisposition disposition =
+          dispositionByKey.get(fact.candidateDenominatorKey());
+      if (disposition == null || !fact.factId().equals(disposition.admittedFactId())) throw broken();
+    }
+  }
+
+  private static boolean sameKeys(List<String> expected, List<String> actual) {
+    return expected.equals(sortedStrings(actual));
   }
 
   private static ObjectNode commonBody(
@@ -344,7 +437,7 @@ public final class FactLedgerPublicationSpecifier {
     List<LedgerGap> result = new ArrayList<>();
     for (ProofDecisionSet.ExternalEffectGap gap : decisions.externalEffectGaps()) {
       FactCandidateSet.FactCandidate candidate = candidateByKey.get(gap.candidateDenominatorKey());
-      if (candidate == null) throw broken();
+      if (candidate == null || !"JAVA_BOUNDARY_INVOCATION".equals(candidate.kind())) throw broken();
       result.add(
           LedgerGap.external(
               gap.gapId(),
@@ -486,7 +579,13 @@ public final class FactLedgerPublicationSpecifier {
   }
 
   private static String candidateKey(FactCandidateSet.FactCandidate candidate) {
-    return candidate.entryId() + "|" + candidate.boundaryNodeId() + "|" + candidate.candidateFactKey();
+    return candidate.denominatorKey();
+  }
+
+  private static List<String> sortedStrings(List<String> values) {
+    List<String> ordered = values.stream().sorted(UTF8_ORDER).toList();
+    if (ordered.size() != ordered.stream().distinct().count()) throw broken();
+    return ordered;
   }
 
   private static String atomDispositionKey(ProofDecisionSet.AtomDisposition disposition) {

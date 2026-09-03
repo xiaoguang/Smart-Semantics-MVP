@@ -106,6 +106,16 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
 
   /** Creates one real canonical source/discovery/graph publication with two entries and bounds. */
   public static ProgramGraphsPublicFixture create(Path emptyTemporaryDirectory) {
+    return create(emptyTemporaryDirectory, false);
+  }
+
+  /** Creates the persisted two-entry fixture with one real Java guard in {@code approve}. */
+  public static ProgramGraphsPublicFixture createWithGuardedApprove(Path emptyTemporaryDirectory) {
+    return create(emptyTemporaryDirectory, true);
+  }
+
+  private static ProgramGraphsPublicFixture create(
+      Path emptyTemporaryDirectory, boolean guardedApprove) {
     createEmptyTestStoreDirectory(emptyTemporaryDirectory);
     CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
     CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
@@ -125,7 +135,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
               canonicalJson,
               policies,
               new ArtifactStoreLimits(16, 2_000_000, 8_000_000, 24));
-      SourceMaterial source = source(controls);
+      SourceMaterial source = source(controls, guardedApprove);
       List<CanonicalModulePayload> sourcePayloads = sourcePayloads(canonicalJson);
       InstalledModulePublication sourceModule =
           modules.install(
@@ -572,7 +582,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     handle.close();
   }
 
-  private static SourceMaterial source(ArtifactControls controls) {
+  private static SourceMaterial source(ArtifactControls controls, boolean guardedApprove) {
     String controller =
         """
         package com.example;
@@ -581,6 +591,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
           private final OrderService orderService = new OrderService();
 
           void approve(String status) {
+            %s
             orderService.approve(status);
           }
 
@@ -609,7 +620,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         interface CancellationClient {
           void record(String status);
         }
-        """;
+        """.formatted(guardedApprove ? "if (status == null) { return; }" : "");
     String mapper =
         """
         package com.example;
@@ -978,12 +989,12 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(entries, "PROGRAM_GRAPHS_EVIDENCE_GRAPH_DRAFT", EvidenceGraphDraft.SCHEMA_VERSION, "evidence-graph", "application/json", "MODULE_ARTIFACT_JSON", false);
     policy(entries, "PROGRAM_GRAPHS_GRAPH_GAP", "program-graphs-graph-gap-v1", "program-graphs-graph-gaps", "application/x-ndjson", "CANONICAL_JSONL", true);
     policy(entries, "PROGRAM_GRAPHS_GRAPH_INDEX", "program-graphs-graph-index-v2", "program-graphs-graph-index", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "PROVEN_CODE_FACTS_FACT_CANDIDATE_SET", "proven-code-facts-fact-candidate-set-v1", "proven-code-facts-fact-candidate-set", "application/json", "MODULE_ARTIFACT_JSON", false);
-    policy(entries, "PROVEN_CODE_FACTS_FACT_ACCOUNTING", "proven-code-facts-fact-accounting-v1", "proven-code-facts-fact-accounting", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "PROVEN_CODE_FACTS_GAP_LEDGER", "proven-code-facts-gap-ledger-v1", "proven-code-facts-gap-ledger", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "PROVEN_CODE_FACTS_PROOF_PACK", "proven-code-facts-proof-pack-v1", "proven-code-facts-proof-pack", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "PROVEN_CODE_FACTS_PROOF_DECISION_SET", "proven-code-facts-proof-decision-set-v1", "proven-code-facts-proof-decision-set", "application/json", "MODULE_ARTIFACT_JSON", false);
-    policy(entries, "PROVEN_CODE_FACTS_PROVEN_FACTS", "proven-code-facts-proven-facts-v1", "proven-code-facts-proven-facts", "application/json", "STANDALONE_JSON", false);
+    policy(entries, "PROVEN_CODE_FACTS_FACT_CANDIDATE_SET", "proven-code-facts-fact-candidate-set-v2", "proven-code-facts-fact-candidate-set", "application/json", "MODULE_ARTIFACT_JSON", false);
+    policy(entries, "PROVEN_CODE_FACTS_FACT_ACCOUNTING", "proven-code-facts-fact-accounting-v2", "proven-code-facts-fact-accounting", "application/json", "STANDALONE_JSON", false);
+    policy(entries, "PROVEN_CODE_FACTS_GAP_LEDGER", "proven-code-facts-gap-ledger-v2", "proven-code-facts-gap-ledger", "application/json", "STANDALONE_JSON", false);
+    policy(entries, "PROVEN_CODE_FACTS_PROOF_PACK", "proven-code-facts-proof-pack-v2", "proven-code-facts-proof-pack", "application/json", "STANDALONE_JSON", false);
+    policy(entries, "PROVEN_CODE_FACTS_PROOF_DECISION_SET", "proven-code-facts-proof-decision-set-v2", "proven-code-facts-proof-decision-set", "application/json", "MODULE_ARTIFACT_JSON", false);
+    policy(entries, "PROVEN_CODE_FACTS_PROVEN_FACTS", "proven-code-facts-proven-facts-v2", "proven-code-facts-proven-facts", "application/json", "STANDALONE_JSON", false);
     policy(entries, "VERIFIED_SNAPSHOT", "verified-snapshot-v2", "verified-snapshot", "application/json", "STANDALONE_JSON", false);
     policy(entries, "VERIFIED_SOURCE_INVENTORY_SOURCE_INPUT", "verified-source-inventory-source-input-v2", "verified-source-inventory-source-input", "application/json", "STANDALONE_JSON", false);
     policy(entries, "VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY", "verified-source-inventory-source-inventory-v2", "verified-source-inventory-source-inventory", "application/x-ndjson", "CANONICAL_JSONL", false);

@@ -35,7 +35,7 @@ class ProofDecisionSetModuleArtifactTest {
   private static final String PUBLISHER_CLASS =
       "org.sourceanalysis.app.analysis.fact.proofs.ProofDecisionSetModulePublisher";
   private static final String ARTIFACT_TYPE = "PROVEN_CODE_FACTS_PROOF_DECISION_SET";
-  private static final String SCHEMA_VERSION = "proven-code-facts-proof-decision-set-v1";
+  private static final String SCHEMA_VERSION = "proven-code-facts-proof-decision-set-v2";
 
   @TempDir Path temporaryDirectory;
 

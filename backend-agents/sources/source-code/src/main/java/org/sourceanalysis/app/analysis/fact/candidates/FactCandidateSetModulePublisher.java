@@ -29,9 +29,9 @@ import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 public final class FactCandidateSetModulePublisher {
 
   private static final String ARTIFACT_TYPE = "PROVEN_CODE_FACTS_FACT_CANDIDATE_SET";
-  private static final String SCHEMA_VERSION = "proven-code-facts-fact-candidate-set-v1";
+  private static final String SCHEMA_VERSION = "proven-code-facts-fact-candidate-set-v2";
   private static final String ARTIFACT_PREFIX = "proven-code-facts-fact-candidate-set";
-  private static final String MODULE_VERSION = "v1";
+  private static final String MODULE_VERSION = "v2";
   private static final String FILE_NAME = "fact-candidate-set.json";
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
@@ -134,20 +134,26 @@ public final class FactCandidateSetModulePublisher {
     body.put("candidateFactKey", candidate.candidateFactKey());
     body.put("entryId", candidate.entryId());
     body.put("kind", candidate.kind());
-    body.put("boundaryNodeId", candidate.boundaryNodeId());
-    body.put("invocationCallId", candidate.invocationCallId());
-    body.put("callTargetEdgeId", candidate.callTargetEdgeId());
-    body.put("staticTargetType", candidate.staticTargetType());
-    body.put("staticTargetMethod", candidate.staticTargetMethod());
-    body.put("staticTargetSignature", candidate.staticTargetSignature());
-    strings(body.putArray("orderedArgumentEdgeIds"), candidate.orderedArgumentEdgeIds());
-    ArrayNode orderedArguments = body.putArray("orderedArguments");
-    candidate.orderedArguments().forEach(argument -> orderedArguments.add(argument(argument)));
-    body.put("controlBlockId", candidate.controlBlockId());
-    if (candidate.guardId() == null) {
-      body.putNull("guardId");
+    if ("JAVA_BOUNDARY_INVOCATION".equals(candidate.kind())) {
+      body.put("boundaryNodeId", candidate.boundaryNodeId());
+      body.put("invocationCallId", candidate.invocationCallId());
+      body.put("callTargetEdgeId", candidate.callTargetEdgeId());
+      body.put("staticTargetType", candidate.staticTargetType());
+      body.put("staticTargetMethod", candidate.staticTargetMethod());
+      body.put("staticTargetSignature", candidate.staticTargetSignature());
+      strings(body.putArray("orderedArgumentEdgeIds"), candidate.orderedArgumentEdgeIds());
+      ArrayNode orderedArguments = body.putArray("orderedArguments");
+      candidate.orderedArguments().forEach(argument -> orderedArguments.add(argument(argument)));
+      body.put("controlBlockId", candidate.controlBlockId());
+      if (candidate.guardId() == null) {
+        body.putNull("guardId");
+      } else {
+        body.put("guardId", candidate.guardId());
+      }
     } else {
-      body.put("guardId", candidate.guardId());
+      body.put("guardNodeId", candidate.guardNodeId());
+      body.put("normalizedCondition", candidate.normalizedCondition());
+      strings(body.putArray("branchEdgeIds"), candidate.branchEdgeIds());
     }
     ArrayNode evidence = body.putArray("evidenceNodeIdsBySubject");
     candidate.evidenceBySubject().forEach(binding -> evidence.add(evidence(binding)));
@@ -186,7 +192,7 @@ public final class FactCandidateSetModulePublisher {
   private static ObjectNode notApplicable(FactCandidateSet.NotApplicableDisposition disposition) {
     ObjectNode body = JsonNodeFactory.instance.objectNode();
     body.put("entryId", disposition.entryId());
-    body.put("boundaryNodeId", disposition.boundaryNodeId());
+    body.put("subjectNodeId", disposition.subjectNodeId());
     body.put("templateKey", disposition.templateKey());
     strings(body.putArray("missingRoles"), disposition.missingRoles());
     body.put("reasonCode", disposition.reasonCode());

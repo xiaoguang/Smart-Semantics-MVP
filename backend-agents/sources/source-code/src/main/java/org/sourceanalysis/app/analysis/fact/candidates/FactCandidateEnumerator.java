@@ -9,7 +9,7 @@ import java.util.Set;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphKind;
 
 /**
- * Enumerates only exact frozen-Java boundary invocation candidates from persisted public graphs.
+ * Enumerates exact frozen-Java boundary and guard-condition candidates from persisted public graphs.
  *
  * <p>This module does not choose a Proof, admit a Fact, inspect source text, parse canonical
  * values, or infer any external system behavior.
@@ -17,6 +17,7 @@ import org.sourceanalysis.app.analysis.graph.ProgramGraphKind;
 public final class FactCandidateEnumerator {
 
   private static final String JAVA_BOUNDARY_KIND = "JAVA_BOUNDARY_INVOCATION";
+  private static final String JAVA_GUARD_KIND = "JAVA_GUARD_CONDITION";
   private static final String DATA_ARGUMENT_EDGE = "ARGUMENT_TO_BOUNDARY";
   private static final String CALL_SITE = "CALL_SITE";
   private static final String CALL_TARGET = "CALL_TARGET";
@@ -30,10 +31,26 @@ public final class FactCandidateEnumerator {
     Objects.requireNonNull(inputs, "fact candidate inputs");
     Objects.requireNonNull(registry, "fact registry");
 
-    FactCandidateInputs.PublicProgramGraph data = inputs.graph(ProgramGraphKind.DATA_FLOW);
     List<FactCandidateSet.FactCandidate> candidates = new ArrayList<>();
     List<FactCandidateSet.NotApplicableDisposition> notApplicable = new ArrayList<>();
-    data.nodesById().values().stream()
+    for (FactRegistry.FactTemplate template : registry.templates()) {
+      if (JAVA_BOUNDARY_KIND.equals(template.kind())) {
+        enumerateBoundaryCandidates(inputs, template, candidates, notApplicable);
+      } else if (JAVA_GUARD_KIND.equals(template.kind())) {
+        enumerateGuardCandidates(inputs, template, candidates, notApplicable);
+      } else {
+        throw new IllegalArgumentException("FACT_KIND_UNSUPPORTED");
+      }
+    }
+    return FactCandidateSet.create(inputs.sourceGraphRoots(), candidates, notApplicable);
+  }
+
+  private static void enumerateBoundaryCandidates(
+      FactCandidateInputs inputs,
+      FactRegistry.FactTemplate template,
+      List<FactCandidateSet.FactCandidate> candidates,
+      List<FactCandidateSet.NotApplicableDisposition> notApplicable) {
+    inputs.graph(ProgramGraphKind.DATA_FLOW).nodesById().values().stream()
         .filter(node -> JAVA_BOUNDARY_KIND.equals(node.kind()))
         .sorted(Comparator.comparing(FactCandidateInputs.PublicProgramNode::nodeId))
         .forEach(
@@ -43,19 +60,11 @@ public final class FactCandidateEnumerator {
                     .sorted()
                     .forEach(
                         entryId ->
-                            registry.templates().forEach(
-                                template ->
-                                    enumerateTemplate(
-                                        inputs,
-                                        template,
-                                        entryId,
-                                        boundary,
-                                        candidates,
-                                        notApplicable))));
-    return FactCandidateSet.create(inputs.sourceGraphRoots(), candidates, notApplicable);
+                            enumerateBoundaryTemplate(
+                                inputs, template, entryId, boundary, candidates, notApplicable)));
   }
 
-  private static void enumerateTemplate(
+  private static void enumerateBoundaryTemplate(
       FactCandidateInputs inputs,
       FactRegistry.FactTemplate template,
       String entryId,
@@ -99,6 +108,134 @@ public final class FactCandidateEnumerator {
                             atom.valueType(),
                             atom.expectedEvidenceKinds()))
                 .toList()));
+  }
+
+  private static void enumerateGuardCandidates(
+      FactCandidateInputs inputs,
+      FactRegistry.FactTemplate template,
+      List<FactCandidateSet.FactCandidate> candidates,
+      List<FactCandidateSet.NotApplicableDisposition> notApplicable) {
+    inputs.graph(ProgramGraphKind.CONTROL_FLOW).nodesById().values().stream()
+        .filter(node -> GUARD.equals(node.kind()))
+        .sorted(Comparator.comparing(FactCandidateInputs.PublicProgramNode::nodeId))
+        .forEach(
+            guard ->
+                guard.owningEntryIds().stream()
+                    .filter(inputs.entryIds()::contains)
+                    .sorted()
+                    .forEach(
+                        entryId ->
+                            enumerateGuardTemplate(
+                                inputs, template, entryId, guard, candidates, notApplicable)));
+  }
+
+  private static void enumerateGuardTemplate(
+      FactCandidateInputs inputs,
+      FactRegistry.FactTemplate template,
+      String entryId,
+      FactCandidateInputs.PublicProgramNode guard,
+      List<FactCandidateSet.FactCandidate> candidates,
+      List<FactCandidateSet.NotApplicableDisposition> notApplicable) {
+    GuardPath path = exactGuardPath(inputs, entryId, guard);
+    if (!path.missingRoles().isEmpty()) {
+      notApplicable.add(
+          new FactCandidateSet.NotApplicableDisposition(
+              entryId,
+              guard.nodeId(),
+              template.candidateFactKey(),
+              path.missingRoles(),
+              "GUARD_CONDITION_UNPROVEN"));
+      return;
+    }
+    candidates.add(
+        new FactCandidateSet.FactCandidate(
+            template.candidateFactKey(),
+            entryId,
+            template.kind(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(),
+            List.of(),
+            null,
+            null,
+            path.evidenceBySubject(),
+            template.requiredAtoms().stream()
+                .map(
+                    atom ->
+                        new FactCandidateSet.RequiredAtom(
+                            atom.atomKey(),
+                            atom.role(),
+                            atom.valueType(),
+                            atom.expectedEvidenceKinds()))
+                .toList(),
+            guard.nodeId(),
+            guard.normalizedCondition(),
+            path.branchEdgeIds()));
+  }
+
+  private static GuardPath exactGuardPath(
+      FactCandidateInputs inputs, String entryId, FactCandidateInputs.PublicProgramNode guard) {
+    FactCandidateInputs.PublicProgramGraph control = inputs.graph(ProgramGraphKind.CONTROL_FLOW);
+    List<String> missing = new ArrayList<>();
+    List<FactCandidateInputs.PublicProgramEdge> branches =
+        control.edgesById().values().stream()
+            .filter(edge -> guard.nodeId().equals(edge.guardNodeId()))
+            .filter(edge -> guard.nodeId().equals(edge.fromNodeId()))
+            .filter(edge -> "TRUE".equals(edge.kind()) || "FALSE".equals(edge.kind()))
+            .filter(edge -> edge.kind().equals(edge.polarity()))
+            .filter(
+                edge -> {
+                  FactCandidateInputs.PublicProgramNode target =
+                      control.nodesById().get(edge.toNodeId());
+                  return target != null && target.owningEntryIds().contains(entryId);
+                })
+            .sorted(Comparator.comparing(FactCandidateInputs.PublicProgramEdge::edgeId))
+            .toList();
+    if (branches.size() != 2
+        || branches.stream().map(FactCandidateInputs.PublicProgramEdge::kind).distinct().count() != 2) {
+      missing.add("GUARD_BRANCHES");
+    }
+    FactCandidateInputs.SubjectEvidence closure =
+        inputs
+            .evidenceGraph()
+            .closureFor(
+                ProgramGraphKind.CONTROL_FLOW,
+                FactCandidateInputs.EvidenceSupportKind.SUPPORTS_PROGRAM_NODE,
+                guard.nodeId(),
+                guard.sourceEvidenceNodeIds());
+    if (closure == null || !hasGuardRulePair(inputs, guard.nodeId(), closure)) {
+      missing.add("GUARD_EVIDENCE");
+    }
+    if (!missing.isEmpty()) return new GuardPath(missing, List.of(), List.of());
+    return new GuardPath(
+        List.of(),
+        branches.stream().map(FactCandidateInputs.PublicProgramEdge::edgeId).toList(),
+        List.of(
+            new FactCandidateSet.SubjectEvidenceBinding(
+                closure.subjectElementId(),
+                closure.sourceEvidenceNodeIds(),
+                closure.ruleApplicationEvidenceNodeIds())));
+  }
+
+  private static boolean hasGuardRulePair(
+      FactCandidateInputs inputs, String guardNodeId, FactCandidateInputs.SubjectEvidence closure) {
+    return inputs.evidenceGraph().edges().stream()
+        .filter(edge -> guardNodeId.equals(edge.subjectProgramElementId()))
+        .filter(edge -> closure.sourceEvidenceNodeIds().contains(edge.sourceEvidenceNodeId()))
+        .filter(edge -> closure.ruleApplicationEvidenceNodeIds().contains(edge.ruleApplicationEvidenceNodeId()))
+        .map(edge -> inputs.evidenceGraph().nodesById().get(edge.ruleApplicationEvidenceNodeId()))
+        .filter(Objects::nonNull)
+        .map(FactCandidateInputs.EvidenceNode::ruleApplication)
+        .filter(Objects::nonNull)
+        .anyMatch(
+            rule ->
+                "control-flow-if-guard-v1".equals(rule.ruleId())
+                    && "v1".equals(rule.ruleVersion())
+                    && rule.inputProgramElementIds().contains(guardNodeId));
   }
 
   private static CandidatePath exactPath(
@@ -302,6 +439,18 @@ public final class FactCandidateEnumerator {
 
     private static CandidatePath missing(String role) {
       return new CandidatePath(List.of(role), List.of(), List.of(), List.of());
+    }
+  }
+
+  private record GuardPath(
+      List<String> missingRoles,
+      List<String> branchEdgeIds,
+      List<FactCandidateSet.SubjectEvidenceBinding> evidenceBySubject) {
+
+    private GuardPath {
+      missingRoles = List.copyOf(missingRoles);
+      branchEdgeIds = List.copyOf(branchEdgeIds);
+      evidenceBySubject = List.copyOf(evidenceBySubject);
     }
   }
 }

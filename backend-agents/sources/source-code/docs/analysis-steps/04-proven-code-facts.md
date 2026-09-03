@@ -383,15 +383,15 @@ FACT_PROFILE_INVALID、FACT_KIND_UNSUPPORTED、REQUIRED_ATOM_MISSING、GUARD_CON
 
 ## 9. 当前实现成熟度审计
 
-以下是正式 `origin/main` 已由定向测试验证的当前事实；它不把候选清单外推成已证明Fact，也不把synthetic fixture外推成jshERP运行结果。表中的已实现能力仍是 v1；本章刚刚定义的 v2 guard-condition 合同尚未交付。
+以下是正式实现分支已由定向测试验证的当前事实；它不把候选清单外推成已证明Fact，也不把synthetic fixture外推成jshERP运行结果。M1/M2/M3的 v2 guard-condition 合同已交付；这仍不是完整jshERP业务事实验收。
 
 | 状态 | 当前事实 |
 | --- | --- |
 | **已实现（结构/构建门）** | 目标package与JDK 17 Toolchain已就位；通用wire头门禁不理解Fact、Proof或Evidence语义。 |
-| **已实现（v1 M1 候选清单）** | `PersistedFactCandidateInputReader`从同一冻结依据重新打开应用发现与完整五图，校验五图、graph index、应用画像和源码清单之间的身份闭合；`FactCandidateEnumerator`只为证据、调用、参数、控制路径均精确闭合的Java边界调用建立候选，并为不闭合组合保留`NOT_APPLICABLE`。`FactCandidateSetModulePublisher`安装唯一`fact-candidate-set.json`与七项上游引用；独立reader重开、重枚举并拒绝内容漂移。它尚未枚举独立 guard candidate。 |
-| **已实现（v1 M2 原子证明）** | `AtomicProofBuilder`只从已保存M1输入、Evidence和冻结源码构造逐atom CLOSED Proof；它逐字节重验span/hash、选择同一Evidence边上的允许source/rule pair，并在任一atom失败时拒绝整个复合Fact。每个Java boundary同时留下不声称外部效果的`DATA_FLOW_BINDING_UNPROVEN` Gap。`ProofDecisionSetModulePublisher`与`PersistedProofDecisionSetReader`将M1 candidate、source inventory、snapshot和M2 decision严格重开闭合；源码字节漂移会fatal。它尚未证明独立 guard condition。 |
-| **已实现（v1 M3 事实账本）** | `FactLedgerPublicationSpecifier`只消费重开的M1/M2与三个已保存analysis-step predecessor，生成并原子安装`proven-facts.json`、`proof-pack.json`、`gap-ledger.json`、`fact-accounting.json`及receipt。正向样例证明两条内部Java invocation Fact与两条外部效果Gap可共存；反向样例证明每条rejected Fact同时保留根因Gap与外部效果Gap。它的 v1 schemas/accounting 还不能表达 guard 与 boundary 的分区。 |
+| **已实现（v2 M1 候选清单）** | `PersistedFactCandidateInputReader`从同一冻结依据重新打开应用发现与完整五图，校验五图、graph index、应用画像和源码清单之间的身份闭合；`FactCandidateEnumerator`为证据、调用、参数、控制路径均精确闭合的Java边界调用建立候选，并为每个可达且证据闭合的`if` guard建立独立`JAVA_GUARD_CONDITION`候选。guard仅保存控制图v2的`normalizedCondition`、自身TRUE/FALSE branch和自身Evidence；不闭合组合保留`NOT_APPLICABLE`。`FactCandidateSetModulePublisher`安装唯一v2 `fact-candidate-set.json`与七项上游引用；独立reader重开、重枚举并拒绝内容漂移。 |
+| **已实现（v2 M2 原子证明）** | `AtomicProofBuilder`只从已保存M1输入、Evidence和冻结源码构造逐atom CLOSED Proof；它逐字节重验span/hash、选择同一Evidence边上的允许source/rule pair，并在任一atom失败时拒绝整个复合Fact。boundary继续留下不声称外部效果的`DATA_FLOW_BINDING_UNPROVEN` Gap；独立guard只证明一个`CONTROL_CONDITION` atom，绝不产生外部效果Gap。`ProofDecisionSetModulePublisher`与`PersistedProofDecisionSetReader`将M1 candidate、source inventory、snapshot和M2 decision严格重开闭合；源码字节漂移会fatal。 |
+| **已实现（v2 M3 事实账本）** | `FactLedgerPublicationSpecifier`只消费重开的M1/M2与三个已保存analysis-step predecessor，生成并原子安装v2 `proven-facts.json`、`proof-pack.json`、`gap-ledger.json`、`fact-accounting.json`及receipt。账本分别保存boundary与guard候选分母，并强制`externalEffectGapCount = boundaryCandidateCount`：guard绝不会被记成外部效果Gap。正向fixture验证两条内部Java invocation Fact、一个guard Fact和两条外部效果Gap可共存；反向样例证明每条rejected boundary Fact同时保留根因Gap与外部效果Gap。 |
 | **历史证据，不是当前能力** | 已删除的pre-reset代码曾验证有限profile的Fact/Proof/Gap/accounting；旧POC五个人工LockedFact独立审计仅两条成立。它们说明“hash闭合不等于语义证据闭合”，不能复制为当前Fact。 |
-| **下一实现门** | 先实现并发布 v2 M1/M2/M3：独立 guard candidate、`CONTROL_CONDITION` Proof、v2 accounting与四项 public schema；再进入分析步骤“业务流程”。后者只能重新打开 v2 四个semantic files与五图，以每个入口为根编译Flow与Evidence Capsule；不能重新扫描源码、重建Fact或把本步骤external-effect Gap升级成SQL/消息/API效果。 |
+| **下一实现门** | 进入分析步骤“业务流程”。后者只能重新打开 v2 四个semantic files与五图，以每个入口为根编译Flow与Evidence Capsule；不能重新扫描源码、重建Fact或把本步骤external-effect Gap升级成SQL/消息/API效果。 |
 
 分析步骤“已证明代码事实”的成功允许有Gap；但只有当前新实现 admitted-with-Proof 的Fact才能进入分析步骤“业务流程”。

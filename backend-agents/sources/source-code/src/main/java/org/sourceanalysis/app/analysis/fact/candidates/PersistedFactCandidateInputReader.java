@@ -514,6 +514,7 @@ public final class PersistedFactCandidateInputReader {
           new FactCandidateInputs.PublicProgramNode(
               nodeId,
               kind,
+              text(value, "canonicalValue"),
               ids(value.get("owningEntryIds"), "node owners"),
               ids(value.get("evidenceNodeIds"), "node evidence IDs"),
               invocation,
