@@ -133,6 +133,16 @@ required atoms:
 
 模块执行顺序固定为 `FactCandidateEnumerator` → `AtomicProofBuilder` → `FactLedgerPublicationSpecifier` → `CanonicalAnalysisStepArtifactStore`。前三步先安装自己的 canonical module artifact，下一步只读该 artifact；analysis step store不是第四个业务模块，不得靠共享 mutable collections 传 candidate、Proof 或 Gap。
 
+为避免实现者把“事实分析步骤根包”与“某个模块的Java包”混为一谈，三个模块的公开类型位置固定如下：
+
+| 模块 | 唯一Java包 | 公开类型 |
+| --- | --- | --- |
+| M1 候选枚举 | `org.sourceanalysis.app.analysis.fact.candidates` | `FactCandidateEnumerator`、`FactCandidateSet`及其候选/原子/registry records |
+| M2 原子证明 | `org.sourceanalysis.app.analysis.fact.proofs` | `AtomicProofBuilder`、`ProofDecisionSet`及其 Proof/decision records |
+| M3 账本发布 | `org.sourceanalysis.app.analysis.fact.publish` | `FactLedgerPublicationSpecifier`、`ProvenCodeFactsReference`及其发布 records |
+
+`org.sourceanalysis.app.analysis.fact`只表示整个语义步骤；它不放置这三个模块的别名、桥接类型或第二个公开入口。测试目录必须镜像所属模块包。这个局部命名裁决不改变步骤输入、输出、数量、schema或公共运行时Interface。
+
 #### M1 FactCandidateEnumerator
 
 - **解决的问题**：在看证明结果前先冻结应该尝试证明的 Fact/required atom 分母，防止失败项消失。
@@ -145,7 +155,7 @@ required atoms:
 - **明确非目标**：不选择具体 proof path、不 admission Fact、不解释业务名称。
 - **公共测试 seam 与验收**：`enumerate(entries, graphIndex, factRegistry)` 覆盖 DepotHead template、registry deletion、同名 decoy、输入乱序；Proof 删除不能改变枚举 bytes/counts。
 - **Luna/xhigh 测试指南**：创建`FactCandidateEnumeratorTest`，冻结ProgramGraphs v3/v2 boundary artifacts与手写candidate golden。逐RED：invocation atom denominator、external effect不进入Fact、Mapper/HTTP同generic kind、ambiguous Gap、old ProgramGraphs set拒绝、order determinism；registry/canonical不可mock。
-- **Terra/xhigh 实现指南**：RED后只改 `analysis/fact/candidates/`，实现 public `FactCandidateEnumerator/FactCandidateSet` 与 `proven-code-facts-fact-candidate-set-v1`；只读ApplicationDiscovery与ProgramGraphs artifacts，registry match→instantiate atoms→denominator。逐RED GREEN，Proof结果不得反向影响枚举；禁止fixture硬编码/改required atoms。上游或registry语义不足MUST STOP交Sol/ultra，完成更新审计。
+- **Terra/xhigh 实现指南**：RED后只改 `org.sourceanalysis.app.analysis.fact.candidates`（路径为`analysis/fact/candidates/`），实现 public `FactCandidateEnumerator/FactCandidateSet` 与 `proven-code-facts-fact-candidate-set-v1`；只读ApplicationDiscovery与ProgramGraphs artifacts，registry match→instantiate atoms→denominator。逐RED GREEN，Proof结果不得反向影响枚举；禁止fixture硬编码/改required atoms。上游或registry语义不足MUST STOP交Sol/ultra，完成更新审计。
 
 #### M2 AtomicProofBuilder
 
@@ -159,7 +169,7 @@ required atoms:
 - **明确非目标**：不把 evidence locator、Trace、模型或文本相似当 Proof，不生成 Flow。
 - **公共测试 seam 与验收**：`prove(candidateSet, graphs, source, rules)`对每个boundary atom逐段deletion、source/rule mutation、XML/SQL伪支持、conflict和正向closure；任一缺项不admit invocation Fact，任何完整invocation也不关闭external-effect Gap。
 - **Luna/xhigh 测试指南**：创建`AtomicProofBuilderTest`，fixtures/goldens放`src/test/resources/analysis/fact/proofs/`。一个行为一个RED：全部boundary atoms闭合正例、每段deletion rejection、external-effect非准入、source/rule drift fatal、sibling all-reject、conflicting facts、root replay；expected Proof paths独立手写。只fake source reopen，禁止mock graph traversal/Proof/canonical；无网络/模型。
-- **Terra/xhigh 实现指南**：RED后仅拥有 `analysis/fact/proofs/`，实现 public `AtomicProofBuilder/ProofDecisionSet` 与 `proven-code-facts-proof-decision-set-v1`；M1+ProgramGraphs+source→role match→reopen→Proof→atom→composite decision。逐atom GREEN再composite GREEN；不得借Evidence/模型/Trace或保留sibling。需改Fact/graph跨analysis step contract则MUST STOP并交用户流程，审计同步。
+- **Terra/xhigh 实现指南**：RED后仅拥有 `org.sourceanalysis.app.analysis.fact.proofs`（路径为`analysis/fact/proofs/`），实现 public `AtomicProofBuilder/ProofDecisionSet` 与 `proven-code-facts-proof-decision-set-v1`；M1+ProgramGraphs+source→role match→reopen→Proof→atom→composite decision。逐atom GREEN再composite GREEN；不得借Evidence/模型/Trace或保留sibling。需改Fact/graph跨analysis step contract则MUST STOP并交用户流程，审计同步。
 
 #### M3 FactLedgerPublicationSpecifier
 
@@ -173,7 +183,7 @@ required atoms:
 - **明确非目标**：不重新证明、不把 rejection 升级、不调用模型、不选择 Flow ownership。
 - **公共测试 seam 与验收**：`specifyCandidatesAndProofs(candidateSet, decisions, gaps)` 覆盖 orphan/double owner/count-equal-but-ID-different、乱序和partial-install；只有M3 exact-four、analysis-step-store exact-five及ID-set equations全闭合才返回 ProvenCodeFactsReference。
 - **Luna/xhigh 测试指南**：创建 `ProvenCodeFactsPublicationSpecifierTest`，module artifacts/goldens在 `src/test/resources/analysis/fact/publish/`。RED顺序：M3 exact-four、analysis step exact-five、current DepotHead rejection、positive admitted、orphan/double disposition、count spoof/ID mismatch、Gap closure、receipt-last/partial-install/collision；使用真实module/analysis step stores，不能mockaccounting/canonical/root。命令：`mvn -Dtest=ProvenCodeFactsPublicationSpecifierTest test`；禁网络/customer Maven。偏离按13.11。
-- **Terra/xhigh 实现指南**：RED后仅改 `analysis/fact/publish/`，实现 public `FactLedgerPublicationSpecifier/ProvenCodeFactsReference`；只读M1/M2 artifacts，classify gaps→ID-set equations→four semantic files→M3 install/receipt→typed analysis-step-store receipt-last。不得生成旧single publication summary、预报root/receipt、重新prove或升级rejection。任何field/accounting跨analysis step改动MUST STOP交Sol/ultra/用户，完成更新审计。
+- **Terra/xhigh 实现指南**：RED后仅改 `org.sourceanalysis.app.analysis.fact.publish`（路径为`analysis/fact/publish/`），实现 public `FactLedgerPublicationSpecifier/ProvenCodeFactsReference`；只读M1/M2 artifacts，classify gaps→ID-set equations→four semantic files→M3 install/receipt→typed analysis-step-store receipt-last。不得生成旧single publication summary、预报root/receipt、重新prove或升级rejection。任何field/accounting跨analysis step改动MUST STOP交Sol/ultra/用户，完成更新审计。
 
 ### 8.0.1 模块 artifact wire schemas
 
