@@ -136,7 +136,7 @@ Java 包名不复刻带连字符的持久化 module key。为防止实现者另�
 
 | 模块 | exact direct upstream | exact输出与失败 | 下游保证 |
 | --- | --- | --- | --- |
-| M1 RegistryProposalTaskCompiler | BusinessFlows五项semantic refs、BusinessFlows receipt、run-request、prompt/schema/budget refs | `flow-interpretation-registry-proposal-task-set-v2`：`E` tasks、完整input JSON、R0 shard denominator=`E`；分区/ref/hash错则run失败 | M2无需读取BusinessFlows或内存draft |
+| M1 RegistryProposalTaskCompiler | BusinessFlows五项semantic refs（其中`evidence-capsules.jsonl`必须为`business-flows-evidence-capsule-v2`）、BusinessFlows receipt、run-request、prompt/schema/budget refs | `flow-interpretation-registry-proposal-task-set-v2`：`E` tasks、完整input JSON、R0 shard denominator=`E`；分区/ref/hash错则run失败 | M2无需读取BusinessFlows或内存draft |
 | M2 RegistryProposalRunner | M1 task-set ref、冻结Provider/runtime policy | `flow-interpretation-registry-proposal-execution-set-v3`：`E` rounds/receipts/dispositions及validated proposals；Provider每task一次，transport/runtime失败使run失败 | M3只读canonical R0业务结果 |
 | M3 RepositoryInterpretationRegistryFreezer | M1、M2、BusinessFlows五项refs | `flow-interpretation-repository-interpretation-registry-v2`：唯一registry、`E` flow dispositions、proposal accounting；缺/重/碰撞fatal | M4获得finite same-Flow keys |
 | M4 FiniteKeyFlowTaskCompiler | M3、BusinessFlows五项、run-request、R1/R2 prompt/schema/budget refs | `flow-interpretation-flow-task-set-v4`：`2R` tasks；R1和R2 shard denominator各=`R` | M5无需决定allowlist/session/input |
@@ -147,7 +147,7 @@ DepotHead walkthrough在每个模块的投影固定为：M1一个完整Capsule R
 
 每个模块都必须满足以下实现brief：
 
-- **M1测试/实现**：public seam `compileRegistryProposalTasks(businessFlows, requestV2)`；Luna selector `RegistryProposalTaskCompilerTest`覆盖`N=0,E=0`、`N>0,E=0`、mixed eligibility、完整Capsule input、seed、partition/shard/hash反例。Terra只改`analysis/interpretation/proposal/`。
+- **M1测试/实现**：public seam `compileRegistryProposalTasks(businessFlows, requestV2)`；Luna selector `RegistryProposalTaskCompilerTest`覆盖`N=0,E=0`、`N>0,E=0`、mixed eligibility、完整Capsule input、seed、partition/shard/hash反例。完整Capsule input只从fresh-reopened BusinessFlows public `evidence-capsules.jsonl` v2得到，其中span/obligation对象与其ID列表逐字闭合；v1、private M2 module引用、重新打开源码或省略内容都必须fail closed。Terra只改`analysis/interpretation/proposal/`。
 - **M2测试/实现**：public seam `runRegistryProposals(taskSet, provider)`；Luna selector `RegistryProposalRunnerTest`覆盖0call、valid term、typed GAP/FAILED、basis/Unicode/seed反例、single-call、transport failure no retry、双Flow隔离。Terra只改`analysis/interpretation/proposal/`。
 - **M3测试/实现**：public seam `freeze(taskSet, executionSet, businessFlows)`；Luna selector `RepositoryInterpretationRegistryFreezerTest`覆盖empty、one item、same-label two-flow、seed lineage、shuffle、missing/duplicate/collision、fresh reopen。Terra只改`analysis/interpretation/registry/`。
 - **M4测试/实现**：public seam `compileFiniteKeyTasks(businessFlows, registry, requestV2)`；Luna selector `FiniteKeyFlowTaskCompilerTest`覆盖0ready、single、multi-flow key isolation、READY missing key、`R/R` shard denominators和input hashes。Terra只改`analysis/interpretation/model/`。

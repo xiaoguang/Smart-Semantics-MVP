@@ -61,7 +61,7 @@ reasonCodes 表示目标可用 code 示例；实际当前 code/count 以运行 a
 | flow-slices.json | FlowSlice、OutcomePath、steps、facts/atoms/gaps 和 parent/child refs |
 | flow-coverage.json | 仓库 entry/outcome/call/mapper/fact/atom/evidence、shard 与 unsupported/failed/omitted 的分母与分子；同时保存全部 Flow 的 model eligibility 严格分区和逐 ineligible Flow 的 Gap 映射 |
 | entry-dispositions.jsonl | 每个发现入口恰一条 COMPILED/GAP/EXCLUDED |
-| evidence-capsules.jsonl | 每个 COMPILED Flow 恰一个模型阅读包 |
+| evidence-capsules.jsonl | 每个 COMPILED Flow 恰一个完整、模型可读取的 Capsule：facts/gaps/outcomes、R0 basis、连续 source spans 与 projection obligations 一起持久化 |
 | flow-gaps.jsonl | blocking/warning Flow-local Gap 及 provenance |
 | step-receipt.json | upstream roots、control hashes、artifact descriptors、status与Gap refs/count；Flow/Capsule分母和counts在flow-coverage.json中 |
 
@@ -176,7 +176,7 @@ M1 的 `entryId/factId/outcomePathIds` 原样进入 M2；M2 只新增 `evidenceC
 - **精确上游输入及前置**：M1全仓 FlowCompilation/shard receipts、M2全 Flow CapsuleProjection/shard receipts、ApplicationDiscovery、ProgramGraphs与ProvenCodeFacts roots和BusinessFlows controls；完整entry dispositions与Flow/Capsule双射或明确0/0已局部验证；每个Capsule已有唯一`modelEligibility`和本Flow内可重验的`modelIneligibilityGapIds[]`。
 - **确定性顺序 / LLM**：验证entry/flow shard disjoint union → join by flowSliceId → 由Capsule逐项重算`modelEligibleFlowSliceIds`、`modelIneligibleFlowSliceIds`和`modelIneligibilityByFlow` → 重算全仓 coverage/dispositions/unsupported/failed/omitted → canonical五个semantic payload → M3 install/receipt → analysis step store fresh reopen/root/receipt-last；0 LLM。
 - **目标输出与 DepotHead 示例**：M3恰五个semantic files；analysis step store形成五项+receipt的六文件reader-visible set。历史回归例要求entry-dispositions有DepotHead GAP、flow/capsule及eligibility分区均为空、Gap/coverage/receipt非空；未来正例在`flow-coverage.json`中把每个Flow精确分到eligible或ineligible，并为后者保存非空Gap映射。
-- **必须保持的不变量**：每 COMPILED Flow恰一个 Capsule，GAP/EXCLUDED无 Capsule；`flowSliceIds`必须是eligible与ineligible的互斥并集，mapping domain必须逐字等于ineligible集合且mapping Gap union逐字等于`modelIneligibilityGapIds`；所有ApplicationDiscovery entry唯一处置，single Flow PASS不等于analysis step/run完成；semantic files只引用M1/M2 IDs；M3不含或预报analysis step root/receipt且不改语义。
+- **必须保持的不变量**：每 COMPILED Flow恰一个 Capsule，GAP/EXCLUDED无 Capsule；`flowSliceIds`必须是eligible与ineligible的互斥并集，mapping domain必须逐字等于ineligible集合且mapping Gap union逐字等于`modelIneligibilityGapIds`；每个公开 Capsule line 必须内嵌其`modelEvidenceSpanIds[]`对应的完整`modelEvidenceSpans[]`以及`projectionObligationIds[]`对应的完整`projectionObligations[]`，两个 ID-set 分别严格相等。这样FlowInterpretation只重开BusinessFlows五项public artifacts就能得到完整、同Flow、可重验的模型材料；它不得读取M2 private module或重开源码补内容。所有ApplicationDiscovery entry唯一处置，single Flow PASS不等于analysis step/run完成；semantic files只引用M1/M2 IDs；M3不含或预报analysis step root/receipt且不改语义。
 - **Gap / fatal / artifact复用**：合法0/0为SUCCEEDED_WITH_GAPS；orphan/multiple Capsule、coverage/ref/canonical/install/collision错误 fatal；下游只认完整receipt。
 - **给下游的后置保证**：FlowInterpretation能纯 artifact-driven 地从eligible集合得到task cardinality，RepositoryKnowledge能从全Flow集合与逐Flow mapping得到total decision denominator；0 Flow严格推出0 task/call。
 - **明确非目标**：不修 Flow/Capsule、不重读 source、不调用 Provider。
@@ -195,6 +195,8 @@ M1/M2使用 DESIGN 13.3 `ModuleArtifact<T>` envelope；M3直接安装五个analy
 | `modules/03-publish/<five registered semantic filenames>` | 各public schema/type；无summary envelope | M1+M2 IDs/SHAs | 一次module install恰`flow-slices.json/flow-coverage.json/entry-dispositions.jsonl/evidence-capsules.jsonl/flow-gaps.jsonl`；其中`flow-coverage.json`的`RepositoryFlowCoverage`必须包含8.1列出的四项model eligibility字段及完整mapping；module receipt绑定五descriptors；禁止analysis step root/receipt或六项published list；AnalysisStep store provenance绑定M3 reference |
 
 M3的完整module fixture必须用一次install request/receipt绑定表中M1/M2两个ArtifactReferences；五个standalone payload不得重复envelope。只给payload而省略该排序upstream集合，不是完整M3 fixture。
+
+`evidence-capsules.jsonl`的每一行使用`business-flows-evidence-capsule-v2` / `BUSINESS_FLOWS_EVIDENCE_CAPSULE`。除已有的`EvidenceCapsule`字段外，line必须按`spanId`包含`modelEvidenceSpans[]!{spanId!,sourceExcerpt!:SourceExcerptV1,supportedAtomIds[]!,supportedOutcomePathIds[]!}`，并按`obligationId`包含`projectionObligations[]!{obligationId!,kind!,semanticItemId!,satisfyingSpanIds[]!}`。每个embedded span/obligation只能由该line的ID列表引用；每个列表ID必须有且只有一个完整embedded value。它们是同一Flow的public evidence handoff，不是额外的semantic文件，也不改变BusinessFlows的五项payload/六项reader-visible输出数量。因为line携带冻结源码摘录，后续Artifact API必须按其raw-source policy提供metadata-only访问；只有FlowInterpretation内部的fresh-reopen可以取得完整canonical bytes。
 
 FlowSlice/Outcome/BranchDecision字段按8.1；COMPILED entry的flowSliceId non-null且gapIds可为空，GAP/EXCLUDED的flowSliceId必须null并有reason/Gap。技术示例的静态unknown必须成为GAP disposition，不能用示例Outcome补齐。`ModelEvidenceSpanV3.sourceExcerpt`必须是DESIGN §13.2的完整`SourceExcerptV1`，其`rawUtf8`恰为locator半开连续区间的原始bytes；不连续证据必须拆成多个span，禁止使用`+`、`...`或重排后的合成excerpt。任何schema/ownership/projection/sort/identity变化先设计+升version，下游不可回读graph/source补字段。
 
@@ -422,7 +424,8 @@ BUSINESS_FLOWS_REQUEST_INVALID、UPSTREAM_ARTIFACT_REPLAY_MISMATCH、FLOW_GRAPH_
 | 状态 | 当前事实 |
 | --- | --- |
 | **已实现（结构/构建门）** | 目标package与JDK 17 Toolchain已就位；通用wire头门禁只判断`SOURCE_ANALYSIS/v1`，不建立Flow eligibility。 |
-| **已实现（开发分支的受限纵切）** | M1 从重新打开的 ApplicationDiscovery、ProgramGraphs 与 ProvenCodeFacts v2 读取双入口 fixture，沿准确 call/return 和 TRUE/FALSE guard 生成 Flow/Outcome；每个入口都写 COMPILED 或带 reason 的 GAP。M2 从 M1 与 Proof/Evidence/source artifacts 重开后，给每个 compiled Flow 写一份 Capsule；模型预算超限时仍保留 Flow/Capsule 和证据，只写 `INELIGIBLE` 与明确 Gap。M3 将 Flow、Capsule、入口处置、coverage 与 Flow Gap 发布为五项正式文件和 `step-receipt.json`。 |
+| **已实现（开发分支的受限纵切）** | M1 从重新打开的 ApplicationDiscovery、ProgramGraphs 与 ProvenCodeFacts v2 读取双入口 fixture，沿准确 call/return 和 TRUE/FALSE guard 生成 Flow/Outcome；每个入口都写 COMPILED 或带 reason 的 GAP。M2 从 M1 与 Proof/Evidence/source artifacts 重开后，给每个 compiled Flow 写一份 Capsule；模型预算超限时仍保留 Flow/Capsule 和证据，只写 `INELIGIBLE` 与明确 Gap。M3 已将 Flow、Capsule、入口处置、coverage 与 Flow Gap 发布为五项正式文件和 receipt；但已发布的Capsule v1只写span/obligation ID、漏写完整value，不能作为第六步唯一的模型证据输入。 |
+| **应当修复（跨步骤证据交接）** | 在不新增文件的前提下，把每Flow完整`modelEvidenceSpans[]`和`projectionObligations[]`加入公开`evidence-capsules.jsonl`，升级为v2，并以ID-set equality、跨Flow隔离和fresh-reopen测试验证。这是现有目标Capsule合同的实现缺口，不是让FlowInterpretation读取私有M2 module或重读源码的兼容旁路。 |
 | **尚未交付（完整仓库能力）** | 仍缺真实完整 jshERP 从源码清单至本步骤的离线运行、0 Flow persisted fixture、循环/多实现/歧义调用的系统性处置、entry 分片与跨 Flow 的完整隔离测试，以及正式运行核心接线。该纵切不得用于仓库完成判定，也不产生可供真实模型调用的已发布 Flow。 |
 | **历史证据，不是当前能力** | 已删除的pre-reset compiler曾在有限fixture上编译Flow/Outcome/Capsule；固定八文件历史审计为blocking Gap、0 Flow、0 Capsule。该结果只作为0调用和证明不足的回归baseline。 |
 | **下一实现门** | 按本章消费已持久化ApplicationDiscovery、ProgramGraphs和ProvenCodeFacts，至少用双入口、双Flow、多Outcome、跨Flow隔离、eligible/ineligible和0Flow场景闭合全仓分母。 |
