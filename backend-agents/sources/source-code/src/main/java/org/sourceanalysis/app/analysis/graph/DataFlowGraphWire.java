@@ -103,13 +103,13 @@ final class DataFlowGraphWire {
     ids(value.putArray("owningEntryIds"), item.owningEntryIds());
     ids(value.putArray("evidenceDraftRefs"), item.evidenceDraftRefs());
     if (item.boundaryInvocation() == null) value.putNull("boundaryInvocation");
-    else value.set("boundaryInvocation", boundaryInvocation(item.boundaryInvocation()));
+    else value.set("boundaryInvocation", boundaryInvocationValue(item.boundaryInvocation()));
     if (item.unknownBoundaryReturn() == null) value.putNull("unknownBoundaryReturn");
-    else value.set("unknownBoundaryReturn", unknownBoundaryReturn(item.unknownBoundaryReturn()));
+    else value.set("unknownBoundaryReturn", unknownBoundaryReturnValue(item.unknownBoundaryReturn()));
     return value;
   }
 
-  private static ObjectNode boundaryInvocation(JavaBoundaryInvocationV1 item) {
+  static ObjectNode boundaryInvocationValue(JavaBoundaryInvocationV1 item) {
     ObjectNode value = JsonNodeFactory.instance.objectNode();
     value.put("invocationCallId", item.invocationCallId().value());
     value.put("callTargetEdgeId", item.callTargetEdgeId().value());
@@ -138,7 +138,7 @@ final class DataFlowGraphWire {
     return value;
   }
 
-  private static ObjectNode unknownBoundaryReturn(UnknownBoundaryReturnV1 item) {
+  static ObjectNode unknownBoundaryReturnValue(UnknownBoundaryReturnV1 item) {
     ObjectNode value = JsonNodeFactory.instance.objectNode();
     value.put("boundaryInvocationNodeId", item.boundaryInvocationNodeId().value());
     value.put("declaredReturnType", item.declaredReturnType());

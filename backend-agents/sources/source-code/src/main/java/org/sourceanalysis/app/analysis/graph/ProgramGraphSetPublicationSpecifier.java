@@ -720,16 +720,21 @@ public final class ProgramGraphSetPublicationSpecifier {
   private static PublicNode nodeValue(Object value) {
     if (value instanceof DraftProgramNode node)
       return new PublicNode(
-          node.nodeId(), node.kind().name(), node.canonicalValue(), node.owningEntryIds());
+          node.nodeId(), node.kind().name(), node.canonicalValue(), node.owningEntryIds(), null, null);
     if (value instanceof CallGraphNode node)
       return new PublicNode(
-          node.nodeId(), node.kind().name(), node.canonicalValue(), node.owningEntryIds());
+          node.nodeId(), node.kind().name(), node.canonicalValue(), node.owningEntryIds(), null, null);
     if (value instanceof ControlFlowNode node)
       return new PublicNode(
-          node.nodeId(), node.kind().name(), node.canonicalValue(), node.owningEntryIds());
+          node.nodeId(), node.kind().name(), node.canonicalValue(), node.owningEntryIds(), null, null);
     if (value instanceof DataFlowNode node)
       return new PublicNode(
-          node.nodeId(), node.kind().name(), node.canonicalValue(), node.owningEntryIds());
+          node.nodeId(),
+          node.kind().name(),
+          node.canonicalValue(),
+          node.owningEntryIds(),
+          node.boundaryInvocation(),
+          node.unknownBoundaryReturn());
     throw broken();
   }
 
@@ -875,7 +880,12 @@ public final class ProgramGraphSetPublicationSpecifier {
   private record ElementOwner(ProgramGraphKind graphKind, boolean node, String kind) {}
 
   private record PublicNode(
-      ArtifactId id, String kind, String canonicalValue, List<ArtifactId> owners) {}
+      ArtifactId id,
+      String kind,
+      String canonicalValue,
+      List<ArtifactId> owners,
+      JavaBoundaryInvocationV1 boundaryInvocation,
+      UnknownBoundaryReturnV1 unknownBoundaryReturn) {}
 
   private record PublicEdge(
       ArtifactId id,
@@ -969,6 +979,20 @@ public final class ProgramGraphSetPublicationSpecifier {
         value.put("canonicalValue", node.canonicalValue());
         ids(value.putArray("owningEntryIds"), node.owners());
         ids(value.putArray("evidenceNodeIds"), evidenceByElement.get(node.id()));
+        if (identity.kind() == ProgramGraphKind.DATA_FLOW) {
+          if (node.boundaryInvocation() == null) value.putNull("boundaryInvocation");
+          else {
+            value.set(
+                "boundaryInvocation",
+                DataFlowGraphWire.boundaryInvocationValue(node.boundaryInvocation()));
+          }
+          if (node.unknownBoundaryReturn() == null) value.putNull("unknownBoundaryReturn");
+          else {
+            value.set(
+                "unknownBoundaryReturn",
+                DataFlowGraphWire.unknownBoundaryReturnValue(node.unknownBoundaryReturn()));
+          }
+        }
       }
       ArrayNode edgeArray = document.putArray("edges");
       for (PublicEdge edge : edges) {

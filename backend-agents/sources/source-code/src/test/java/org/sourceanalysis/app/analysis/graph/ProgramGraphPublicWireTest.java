@@ -54,7 +54,7 @@ class ProgramGraphPublicWireTest {
   @Test
   void publicGraphsCloseEvidenceAndIndexWithoutDraftFields() {
     try (ControlFlowGraphBuilderTest.Fixture fixture =
-        ControlFlowGraphBuilderTest.Fixture.create(temporaryDirectory)) {
+        ControlFlowGraphBuilderTest.Fixture.createWithConsumedAuditClientReturn(temporaryDirectory)) {
       CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
       CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
       ArtifactControls controls = controls(policies);
@@ -63,13 +63,13 @@ class ProgramGraphPublicWireTest {
               fixture.handle(),
               canonicalJson,
               policies,
-              new ArtifactStoreLimits(8, 100_000, 300_000, 12));
+              new ArtifactStoreLimits(8, 1_000_000, 4_000_000, 12));
       CanonicalAnalysisStepArtifactStore steps =
           new FileSystemCanonicalAnalysisStepArtifactStore(
               fixture.handle(),
               canonicalJson,
               policies,
-              new ArtifactStoreLimits(8, 100_000, 300_000, 10));
+              new ArtifactStoreLimits(8, 1_000_000, 4_000_000, 10));
       AnalysisRunId runId = AnalysisRunId.parse("analysis-run:" + digest("public-wire-run"));
       InstalledModulePublication sourceModule =
           modules.install(
@@ -263,6 +263,7 @@ class ProgramGraphPublicWireTest {
               "program-graphs-data-flow-graph-v2",
               "program-graphs-evidence-graph-v3",
               "program-graphs-graph-index-v2");
+      assertPublicDataFlowVariants(dataDraft, documents.get("data-flow-graph.json"));
       JsonNode evidenceGraph = documents.get("evidence-graph.json");
       Set<String> sourceEvidenceIds = new HashSet<>();
       Map<String, Set<String>> supportedBySubject = new HashMap<>();
@@ -285,6 +286,12 @@ class ProgramGraphPublicWireTest {
               "data-flow-graph.json")) {
         JsonNode graph = documents.get(fileName);
         assertNoDraftFields(graph);
+        if (!"data-flow-graph.json".equals(fileName)) {
+          for (JsonNode node : graph.get("nodes")) {
+            assertThat(node.has("boundaryInvocation")).isFalse();
+            assertThat(node.has("unknownBoundaryReturn")).isFalse();
+          }
+        }
         for (JsonNode node : graph.get("nodes")) {
           assertEvidenceIds(node, sourceEvidenceIds, supportedBySubject);
         }
@@ -295,6 +302,108 @@ class ProgramGraphPublicWireTest {
       assertNoDraftFields(evidenceGraph);
       assertGraphIndexClosure(documents, reopened, canonicalJson);
     }
+  }
+
+  private static void assertPublicDataFlowVariants(
+      DataFlowGraphDraft expectedDraft, JsonNode dataFlowGraph) {
+    Map<String, DataFlowNode> expectedById = new HashMap<>();
+    for (DataFlowNode node : expectedDraft.nodes()) {
+      expectedById.put(node.nodeId().value(), node);
+    }
+    assertThat(dataFlowGraph.path("nodes")).hasSize(expectedById.size());
+    boolean sawBoundary = false;
+    boolean sawUnknownReturn = false;
+    for (JsonNode actual : dataFlowGraph.path("nodes")) {
+      DataFlowNode expected = expectedById.remove(actual.path("nodeId").textValue());
+      assertThat(expected).as("public node must come from the persisted M4 draft").isNotNull();
+      assertThat(actual.has("boundaryInvocation")).isTrue();
+      assertThat(actual.has("unknownBoundaryReturn")).isTrue();
+      if (expected.boundaryInvocation() != null) {
+        sawBoundary = true;
+        assertBoundaryInvocation(actual.path("boundaryInvocation"), expected.boundaryInvocation());
+        assertThat(actual.path("unknownBoundaryReturn").isNull()).isTrue();
+      } else if (expected.unknownBoundaryReturn() != null) {
+        sawUnknownReturn = true;
+        assertThat(actual.path("boundaryInvocation").isNull()).isTrue();
+        assertUnknownBoundaryReturn(
+            actual.path("unknownBoundaryReturn"), expected.unknownBoundaryReturn());
+      } else {
+        assertThat(actual.path("boundaryInvocation").isNull()).isTrue();
+        assertThat(actual.path("unknownBoundaryReturn").isNull()).isTrue();
+      }
+    }
+    assertThat(expectedById).isEmpty();
+    assertThat(sawBoundary).isTrue();
+    assertThat(sawUnknownReturn).isTrue();
+  }
+
+  private static void assertBoundaryInvocation(
+      JsonNode actual, JavaBoundaryInvocationV1 expected) {
+    assertThat(actual.isObject()).isTrue();
+    assertThat(actual.path("invocationCallId").textValue())
+        .isEqualTo(expected.invocationCallId().value());
+    assertThat(actual.path("callTargetEdgeId").textValue())
+        .isEqualTo(expected.callTargetEdgeId().value());
+    assertThat(actual.path("staticTargetType").textValue()).isEqualTo(expected.staticTargetType());
+    assertThat(actual.path("staticTargetMethod").textValue()).isEqualTo(expected.staticTargetMethod());
+    assertThat(actual.path("staticTargetSignature").textValue())
+        .isEqualTo(expected.staticTargetSignature());
+    assertThat(actual.path("orderedArguments")).hasSize(expected.orderedArguments().size());
+    for (int index = 0; index < expected.orderedArguments().size(); index++) {
+      BoundaryArgumentV1 expectedArgument = expected.orderedArguments().get(index);
+      JsonNode actualArgument = actual.path("orderedArguments").get(index);
+      assertThat(actualArgument.path("ordinal").intValue()).isEqualTo(expectedArgument.ordinal());
+      assertThat(actualArgument.path("argumentNodeId").textValue())
+          .isEqualTo(expectedArgument.argumentNodeId().value());
+      assertThat(actualArgument.path("javaLocalOriginNodeIds"))
+          .extracting(JsonNode::textValue)
+          .containsExactlyElementsOf(
+              expectedArgument.javaLocalOriginNodeIds().stream().map(ArtifactId::value).toList());
+    }
+    JsonNode control = actual.path("controlContext");
+    assertThat(control.path("basicBlockNodeId").textValue())
+        .isEqualTo(expected.controlContext().basicBlockNodeId().value());
+    assertNullableId(control.path("guardNodeId"), expected.controlContext().guardNodeId());
+    assertNullableText(
+        control.path("polarity"),
+        expected.controlContext().polarity() == null
+            ? null
+            : expected.controlContext().polarity().name());
+    assertLocator(actual.path("sourceLocator"), expected.sourceLocator());
+    assertThat(actual.path("ruleId").textValue()).isEqualTo(expected.ruleId());
+  }
+
+  private static void assertUnknownBoundaryReturn(JsonNode actual, UnknownBoundaryReturnV1 expected) {
+    assertThat(actual.isObject()).isTrue();
+    assertThat(actual.path("boundaryInvocationNodeId").textValue())
+        .isEqualTo(expected.boundaryInvocationNodeId().value());
+    assertThat(actual.path("declaredReturnType").textValue())
+        .isEqualTo(expected.declaredReturnType());
+    assertThat(actual.path("sourceState").textValue()).isEqualTo(expected.sourceState().name());
+    assertLocator(actual.path("sourceLocator"), expected.sourceLocator());
+    assertThat(actual.path("ruleId").textValue()).isEqualTo(expected.ruleId());
+  }
+
+  private static void assertLocator(
+      JsonNode actual, org.sourceanalysis.app.evidence.SourceLocatorV1 expected) {
+    assertThat(actual.path("fileId").textValue()).isEqualTo(expected.fileId().value());
+    assertThat(actual.path("path").textValue()).isEqualTo(expected.path());
+    assertThat(actual.path("startByte").longValue()).isEqualTo(expected.startByte());
+    assertThat(actual.path("endByteExclusive").longValue()).isEqualTo(expected.endByteExclusive());
+    assertThat(actual.path("startLine").intValue()).isEqualTo(expected.startLine());
+    assertThat(actual.path("startColumn").intValue()).isEqualTo(expected.startColumn());
+    assertThat(actual.path("endLine").intValue()).isEqualTo(expected.endLine());
+    assertThat(actual.path("endColumn").intValue()).isEqualTo(expected.endColumn());
+  }
+
+  private static void assertNullableId(JsonNode actual, ArtifactId expected) {
+    if (expected == null) assertThat(actual.isNull()).isTrue();
+    else assertThat(actual.textValue()).isEqualTo(expected.value());
+  }
+
+  private static void assertNullableText(JsonNode actual, String expected) {
+    if (expected == null) assertThat(actual.isNull()).isTrue();
+    else assertThat(actual.textValue()).isEqualTo(expected);
   }
 
   private static void assertEvidenceIds(
