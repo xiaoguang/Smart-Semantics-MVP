@@ -1056,6 +1056,26 @@ final class AtomicCanonicalPublicationEngine {
                         : null;
                 default -> null;
               };
+          case PROVEN_CODE_FACTS ->
+              switch (analysisStepAddress.moduleNumber()) {
+                case 1 ->
+                    "candidates".equals(analysisStepAddress.moduleKey())
+                        ? List.of("fact-candidate-set.json")
+                        : null;
+                case 2 ->
+                    "proofs".equals(analysisStepAddress.moduleKey())
+                        ? List.of("proof-decision-set.json")
+                        : null;
+                case 3 ->
+                    "publish".equals(analysisStepAddress.moduleKey())
+                        ? List.of(
+                            "fact-accounting.json",
+                            "gap-ledger.json",
+                            "proof-pack.json",
+                            "proven-facts.json")
+                        : null;
+                default -> null;
+              };
           default -> null;
         };
     if (expectedFileNames == null
@@ -1448,6 +1468,60 @@ final class AtomicCanonicalPublicationEngine {
           6,
           "publish",
           "graph-index.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("PROVEN_CODE_FACTS_FACT_CANDIDATE_SET".equals(payload.artifactType())
+        && "proven-code-facts-fact-candidate-set-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROVEN_CODE_FACTS,
+          1,
+          "candidates",
+          "fact-candidate-set.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("PROVEN_CODE_FACTS_PROOF_DECISION_SET".equals(payload.artifactType())
+        && "proven-code-facts-proof-decision-set-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROVEN_CODE_FACTS,
+          2,
+          "proofs",
+          "proof-decision-set.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("PROVEN_CODE_FACTS_FACT_ACCOUNTING".equals(payload.artifactType())
+        && "proven-code-facts-fact-accounting-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROVEN_CODE_FACTS,
+          3,
+          "publish",
+          "fact-accounting.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("PROVEN_CODE_FACTS_GAP_LEDGER".equals(payload.artifactType())
+        && "proven-code-facts-gap-ledger-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROVEN_CODE_FACTS,
+          3,
+          "publish",
+          "gap-ledger.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("PROVEN_CODE_FACTS_PROOF_PACK".equals(payload.artifactType())
+        && "proven-code-facts-proof-pack-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROVEN_CODE_FACTS,
+          3,
+          "publish",
+          "proof-pack.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("PROVEN_CODE_FACTS_PROVEN_FACTS".equals(payload.artifactType())
+        && "proven-code-facts-proven-facts-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROVEN_CODE_FACTS,
+          3,
+          "publish",
+          "proven-facts.json",
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     throw invalidInstall();

@@ -367,9 +367,10 @@ FACT_PROFILE_INVALID、FACT_KIND_UNSUPPORTED、REQUIRED_ATOM_MISSING、DATA_FLOW
 | 状态 | 当前事实 |
 | --- | --- |
 | **已实现（结构/构建门）** | 目标package与JDK 17 Toolchain已就位；通用wire头门禁不理解Fact、Proof或Evidence语义。 |
-| **部分实现（M1 候选清单，尚未成为M2 handoff）** | `PersistedFactCandidateInputReader`会从同一冻结依据重新打开应用发现与完整五图，并校验五图、graph index、应用画像和源码清单之间的身份闭合；`FactCandidateEnumerator`只为现有证据、调用、参数、控制路径均精确闭合的Java边界调用建立候选，并为不闭合组合保留`NOT_APPLICABLE`处置。`FactCandidateSetModulePublisher`将唯一`fact-candidate-set.json`与七项上游引用canonical安装；独立reader重开后重枚举并拒绝内容漂移。two-entry/two-boundary、缺Evidence、幽灵endpoint、错误Evidence support、源码摘录、profile/index/source lineage、owner、registry determinism与module tamper的16个定向测试通过。已发现的局部缺口是：当前内存投影没有保留完整source/rule records，且candidate closure尚未要求call-site/local-origin evidence；因此必须先按本章修正M1，才能作为M2的逐atom输入。 |
-| **尚未实现（M2–M3）** | 还没有`AtomicProofBuilder`、逐atom CLOSED Proof、admitted `CodeFact`、Fact rejection/Gap ledger/accounting，也没有五项正式步骤输出。因此候选清单不能被业务流程步骤消费为“已证明事实”。 |
+| **已实现（M1 候选清单）** | `PersistedFactCandidateInputReader`从同一冻结依据重新打开应用发现与完整五图，校验五图、graph index、应用画像和源码清单之间的身份闭合；`FactCandidateEnumerator`只为证据、调用、参数、控制路径均精确闭合的Java边界调用建立候选，并为不闭合组合保留`NOT_APPLICABLE`。`FactCandidateSetModulePublisher`安装唯一`fact-candidate-set.json`与七项上游引用；独立reader重开、重枚举并拒绝内容漂移。two-entry/two-boundary、缺Evidence、幽灵endpoint、错误Evidence support、源码摘录、profile/index/source lineage、owner、registry determinism与module tamper回归通过。 |
+| **已实现（M2 原子证明）** | `AtomicProofBuilder`只从已保存M1输入、Evidence和冻结源码构造逐atom CLOSED Proof；它逐字节重验span/hash、选择同一Evidence边上的允许source/rule pair，并在任一atom失败时拒绝整个复合Fact。每个Java boundary同时留下不声称外部效果的`DATA_FLOW_BINDING_UNPROVEN` Gap。`ProofDecisionSetModulePublisher`与`PersistedProofDecisionSetReader`将M1 candidate、source inventory、snapshot和M2 decision严格重开闭合；源码字节漂移会fatal。 |
+| **已实现（M3 事实账本）** | `FactLedgerPublicationSpecifier`只消费重开的M1/M2与三个已保存analysis-step predecessor，生成并原子安装`proven-facts.json`、`proof-pack.json`、`gap-ledger.json`、`fact-accounting.json`及receipt。正向样例证明两条内部Java invocation Fact与两条外部效果Gap可共存；反向样例证明每条rejected Fact同时保留根因Gap与外部效果Gap。四个文件、五文件reader-visible步骤、ID集合和count守恒均由定向测试验证。 |
 | **历史证据，不是当前能力** | 已删除的pre-reset代码曾验证有限profile的Fact/Proof/Gap/accounting；旧POC五个人工LockedFact独立审计仅两条成立。它们说明“hash闭合不等于语义证据闭合”，不能复制为当前Fact。 |
-| **下一实现门** | 按本章只消费已安装的候选清单、五图和冻结源码，逐atom重新打开span/hash、核验rule/edge闭合，建立generic Java boundary invocation Proof或Gap；以target/argument/origin/guard/evidence与XML/SQL伪支持mutation证明不会把外部效果猜成事实。 |
+| **下一实现门** | 进入分析步骤“业务流程”：只重新打开本步骤四个semantic files与五图，以每个入口为根编译Flow与Evidence Capsule。它不能重新扫描源码、重建Fact或把本步骤external-effect Gap升级成SQL/消息/API效果。 |
 
 分析步骤“已证明代码事实”的成功允许有Gap；但只有当前新实现 admitted-with-Proof 的Fact才能进入分析步骤“业务流程”。

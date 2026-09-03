@@ -745,6 +745,19 @@ final class AtomicAnalysisStepPublicationEngine {
               List.of(
                   AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
                   AnalysisStepKey.APPLICATION_DISCOVERY));
+      case PROVEN_CODE_FACTS ->
+          new StepContract(
+              3,
+              "publish",
+              List.of(
+                  "fact-accounting.json",
+                  "gap-ledger.json",
+                  "proof-pack.json",
+                  "proven-facts.json"),
+              List.of(
+                  AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                  AnalysisStepKey.APPLICATION_DISCOVERY,
+                  AnalysisStepKey.PROGRAM_GRAPHS));
       default -> throw invalidInstall();
     };
   }
