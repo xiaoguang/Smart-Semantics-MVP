@@ -132,6 +132,8 @@ RepositoryKnowledge只读取ProvenCodeFacts Facts、BusinessFlows Flows/Capsules
 
 顺序固定为`RegistryProposalTaskCompiler → RegistryProposalRunner → RepositoryInterpretationRegistryFreezer → FiniteKeyFlowTaskCompiler → InterpretationRunner → InterpretationPublicationSpecifier → CanonicalAnalysisStepArtifactStore`。只有M2/M5持有Provider Interface；每个task最多调用一次。持久化module keys仍固定为`registry-task-compiler / registry-proposal-runner / registry-freezer / flow-task-compiler / interpretation-runner / publish`。
 
+Java 包名不复刻带连字符的持久化 module key。为防止实现者另造编号或泛型 helper root，R0 proposal task compiler 与 runner 位于`org.sourceanalysis.app.analysis.interpretation.proposal`，唯一 registry freezer 位于`org.sourceanalysis.app.analysis.interpretation.registry`；后续 R1/R2 compiler 与 runner 位于`org.sourceanalysis.app.analysis.interpretation.model`，最终发布器位于`org.sourceanalysis.app.analysis.interpretation.publish`。这些包只表达实现职责；artifact/module key、schema、运行目录和输出文件仍严格使用本章既定 wire 名称。
+
 | 模块 | exact direct upstream | exact输出与失败 | 下游保证 |
 | --- | --- | --- | --- |
 | M1 RegistryProposalTaskCompiler | BusinessFlows五项semantic refs、BusinessFlows receipt、run-request、prompt/schema/budget refs | `flow-interpretation-registry-proposal-task-set-v2`：`E` tasks、完整input JSON、R0 shard denominator=`E`；分区/ref/hash错则run失败 | M2无需读取BusinessFlows或内存draft |
@@ -145,11 +147,11 @@ DepotHead walkthrough在每个模块的投影固定为：M1一个完整Capsule R
 
 每个模块都必须满足以下实现brief：
 
-- **M1测试/实现**：public seam `compileRegistryProposalTasks(businessFlows, requestV2)`；Luna selector `RegistryProposalTaskCompilerTest`覆盖`N=0,E=0`、`N>0,E=0`、mixed eligibility、完整Capsule input、seed、partition/shard/hash反例。Terra只改`analysis/interpretation/registry-task-compiler/`。
-- **M2测试/实现**：public seam `runRegistryProposals(taskSet, provider)`；Luna selector `RegistryProposalRunnerTest`覆盖0call、valid term、typed GAP/FAILED、basis/Unicode/seed反例、single-call、transport failure no retry、双Flow隔离。Terra只改`analysis/interpretation/registry-proposal-runner/`。
-- **M3测试/实现**：public seam `freeze(taskSet, executionSet, businessFlows)`；Luna selector `RepositoryInterpretationRegistryFreezerTest`覆盖empty、one item、same-label two-flow、seed lineage、shuffle、missing/duplicate/collision、fresh reopen。Terra只改`analysis/interpretation/registry-freezer/`。
-- **M4测试/实现**：public seam `compileFiniteKeyTasks(businessFlows, registry, requestV2)`；Luna selector `FiniteKeyFlowTaskCompilerTest`覆盖0ready、single、multi-flow key isolation、READY missing key、`R/R` shard denominators和input hashes。Terra只改`analysis/interpretation/flow-task-compiler/`。
-- **M5测试/实现**：public seam `runInterpretations(taskSet, registry, r0Dispositions, provider)`；Luna selector `InterpretationRunnerTest`覆盖R1/R2 success、R1 typed GAP/FAILED→R2 NOT_RUN、unknown/cross-flow key、R2 expansion、transport failure no retry、双Flow隔离。Terra只改`analysis/interpretation/interpretation-runner/`。
+- **M1测试/实现**：public seam `compileRegistryProposalTasks(businessFlows, requestV2)`；Luna selector `RegistryProposalTaskCompilerTest`覆盖`N=0,E=0`、`N>0,E=0`、mixed eligibility、完整Capsule input、seed、partition/shard/hash反例。Terra只改`analysis/interpretation/proposal/`。
+- **M2测试/实现**：public seam `runRegistryProposals(taskSet, provider)`；Luna selector `RegistryProposalRunnerTest`覆盖0call、valid term、typed GAP/FAILED、basis/Unicode/seed反例、single-call、transport failure no retry、双Flow隔离。Terra只改`analysis/interpretation/proposal/`。
+- **M3测试/实现**：public seam `freeze(taskSet, executionSet, businessFlows)`；Luna selector `RepositoryInterpretationRegistryFreezerTest`覆盖empty、one item、same-label two-flow、seed lineage、shuffle、missing/duplicate/collision、fresh reopen。Terra只改`analysis/interpretation/registry/`。
+- **M4测试/实现**：public seam `compileFiniteKeyTasks(businessFlows, registry, requestV2)`；Luna selector `FiniteKeyFlowTaskCompilerTest`覆盖0ready、single、multi-flow key isolation、READY missing key、`R/R` shard denominators和input hashes。Terra只改`analysis/interpretation/model/`。
+- **M5测试/实现**：public seam `runInterpretations(taskSet, registry, r0Dispositions, provider)`；Luna selector `InterpretationRunnerTest`覆盖R1/R2 success、R1 typed GAP/FAILED→R2 NOT_RUN、unknown/cross-flow key、R2 expansion、transport failure no retry、双Flow隔离。Terra只改`analysis/interpretation/model/`。
 - **M6测试/实现**：public seam `specify(m1,m2,m3,m4,m5,controls)`；Luna selector `FlowInterpretationPublicationSpecifierTest`覆盖`E=0`十文件、`E=1,R=1`、`E=2,R=1`、`E=2,R=2`、`E/R/R` shards、task/disposition ID-set equality、ineligible leakage、partial-install/collision/fresh-reopen。Terra只改`analysis/interpretation/publish/`。
 
 所有Luna tests使用scripted provider，禁止live Provider、网络、客户Maven或mock canonical/accounting。Terra观察对应RED后只实现最小GREEN；任何field/model/failure/cross-analysis step变化按DESIGN 13.11 STOP交Sol/ultra。
