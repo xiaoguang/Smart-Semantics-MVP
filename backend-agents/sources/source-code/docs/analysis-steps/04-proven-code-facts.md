@@ -184,7 +184,7 @@ required atoms:
 
 没有列在表中的rule不是“未来自动兼容”项；它使对应atom形成`REJECTED_WITH_REASON`及具体Gap，直到经过本步骤设计修订。`ProofDecisionSet`按candidate key、registry atom order产生一条atom disposition；只有所有atom都CLOSED才产生一个admitted `CodeFact`及同数`atomProofs`。任一atom未闭合时，Fact和所有sibling atom disposition一律`REJECTED_WITH_REASON`，直接失败atom保存自己的root cause，其余sibling保存`COMPOSITE_FACT_REJECTED`；不得留下可被后续步骤误当成独立事实的partial Proof。
 - **确定性顺序 / LLM**：按 candidate/atom key → 解析 required graph/evidence roles → 重开 span/hash → 建无环 proof closure → 先得 atom dispositions → 再按 all-atoms rule 得 Fact disposition；0 LLM。
-- **目标输出与 DepotHead 示例**：`ProofDecisionSet{proofs,codeFacts,factDispositions,atomDispositions,rootCauseRejections}`；boundary atoms全闭合时可admit invocation Fact，但external update/where效果仍有`DATA_FLOW_BINDING_UNPROVEN` Gap且不进入该Fact。
+- **目标输出与 DepotHead 示例**：`ProofDecisionSet{proofs,codeFacts,factDispositions,atomDispositions,rootCauseRejections,externalEffectGaps}`；boundary atoms全闭合时可admit invocation Fact，但每个admitted或rejected `JAVA_BOUNDARY_INVOCATION` candidate还恰有一条`ExternalEffectGap{gapId,candidateFactKey,entryId,boundaryNodeId,staticTargetType,staticTargetMethod,staticTargetSignature,code=DATA_FLOW_BINDING_UNPROVEN,basisEvidenceNodeIds}`。它只陈述“Java代码在此离开本分析范围，不能证明外部效果”，不声称数据库更新、SQL筛选、消息发送或任何具体外部结果，也不进入该Fact。
 - **必须保持的不变量**：一个 admitted atom 恰一个 CLOSED Proof；Fact 任一 required atom失败则无 admitted sibling；Proof refs 只指 M1/ProgramGraphs/VerifiedSourceInventory identities。
 - **Gap / fatal / artifact复用**：可解释的不闭合是 rejection/Gap；source/edge/reference drift、proof status伪 CLOSED、conflicting admitted facts fatal；M2从完整candidate set构建全部decisions，不混用其他publication的proof。
 - **给下游的后置保证**：M3 获得每个 candidate/atom 的唯一 disposition、closed proofs 或具体根因，能直接守恒计数。
@@ -214,7 +214,7 @@ M1/M2使用 DESIGN 13.3 `ModuleArtifact<T>` envelope；M3直接安装四个analy
 | artifact | schemaVersion / artifactType | 精确 upstream | payload/排序 |
 | --- | --- | --- | --- |
 | `modules/01-candidates/fact-candidate-set.json` | `proven-code-facts-fact-candidate-set-v1` / `PROVEN_CODE_FACTS_FACT_CANDIDATE_SET` | exact ApplicationDiscovery `capability-report/entry-points`与完整ProgramGraphs五张public graph、graph-index、graph-gap ArtifactReferences；reader重开后建立不可替代的`FactCandidateInputs` | `candidateSetId!`、`sourceGraphRoots[]!`（五图payload root的UTF-8排序集合）、`candidates[]!{candidateFactKey!,entryId!,kind=JAVA_BOUNDARY_INVOCATION!,boundaryNodeId!,invocationCallId!,callTargetEdgeId!,orderedArgumentEdgeIds[]!,controlBlockId!,guardId?（required nullable）,evidenceNodeIdsBySubject[]!,requiredAtoms[]!{atomKey!,role!,valueType!,expectedEvidenceKinds[]!}}`、`notApplicableDispositions[]!{entryId!,boundaryNodeId!,templateKey!,missingRoles[]!,reasonCode!}`、`denominator!{applicableKeys[]!,notApplicableKeys[]!}`；dispositions按entry/boundary/template，atoms按registry order |
-| `modules/02-proofs/proof-decision-set.json` | `proven-code-facts-proof-decision-set-v1` / `PROVEN_CODE_FACTS_PROOF_DECISION_SET` | exact M1、VerifiedSourceInventory `source-inventory/verified-snapshot`和ProgramGraphs七个semantic ArtifactReferences | `candidateSetId!`、`codeFacts[]!{factId!,kind!,subjectNodeIds[]!,atoms[]!{atomId!,role!,name!,value!{type!,canonical!},proofId!}}`、`atomProofs[]!{proofId!,factId!,atomId!,rootEvidenceNodeId!,requiredEvidenceNodeIds[]!,requiredProgramEdgeIds[]!,ruleIds[]!,status=CLOSED!}`、`factDispositions[]!{candidateFactKey!,disposition!,admittedFactId?,reasonCode?}`、`atomDispositions[]!{candidateFactKey!,atomKey!,disposition!,proofId?,reasonCode?}`、`rootCauseRejections[]!{candidateFactKey!,atomKey!,reasonCode!,gapId!}`；各数组按ID/key，Fact内atoms按registry order |
+| `modules/02-proofs/proof-decision-set.json` | `proven-code-facts-proof-decision-set-v1` / `PROVEN_CODE_FACTS_PROOF_DECISION_SET` | exact M1、VerifiedSourceInventory `source-inventory/verified-snapshot`和ProgramGraphs七个semantic ArtifactReferences | `candidateSetId!`、`codeFacts[]!{factId!,kind!,subjectNodeIds[]!,atoms[]!{atomId!,role!,name!,value!{type!,canonical!},proofId!}}`、`atomProofs[]!{proofId!,factId!,atomId!,rootEvidenceNodeId!,requiredEvidenceNodeIds[]!,requiredProgramEdgeIds[]!,ruleIds[]!,status=CLOSED!}`、`factDispositions[]!{candidateFactKey!,disposition!,admittedFactId?,reasonCode?}`、`atomDispositions[]!{candidateFactKey!,atomKey!,disposition!,proofId?,reasonCode?}`、`rootCauseRejections[]!{candidateFactKey!,atomKey!,reasonCode!,gapId!}`、`externalEffectGaps[]!{gapId!,candidateFactKey!,entryId!,boundaryNodeId!,staticTargetType!,staticTargetMethod!,staticTargetSignature!,code=DATA_FLOW_BINDING_UNPROVEN!,basisEvidenceNodeIds[]!}`；每个candidate恰一externalEffectGap，各数组按ID/key，Fact内atoms按registry order |
 | `modules/03-publish/<four registered semantic filenames>` | 各public schema/type；无summary envelope | exact M1 `fact-candidates`与M2 `proof-decisions` ArtifactReferences | 一次module install恰`proven-facts.json/proof-pack.json/gap-ledger.json/fact-accounting.json`；module receipt绑定四descriptors；禁止analysis step root/receipt或五项published list；AnalysisStep store provenance绑定M3 reference |
 
 M3的完整module fixture必须用一次install request/receipt绑定表中M1/M2两个ArtifactReferences；四个standalone payload不得重复envelope。只给四份payload而省略该排序upstream集合，不是完整M3 fixture。
@@ -282,6 +282,8 @@ Gap
   closureRequirement
 ~~~
 
+`ExternalEffectGap`是上面`ProofDecisionSet.externalEffectGaps`的窄类型，不用通用prose补全：它的basis只能来自该candidate已绑定的Evidence node IDs，`missingRequirement`固定为“已批准的外部系统语义adapter或同一仓库内可证明返回链”，`impact`固定为“不把Java边界调用写成外部效果”，`closureRequirement`固定为“另一个经过设计批准的外部系统分析步骤”。
+
 Atom value type 只允许 STRING、INTEGER、DECIMAL、BOOLEAN、SYMBOL_REF 或 ENUM_REF。任意 prose 不进入 atom。
 
 ### 8.2 Proof 与 identity
@@ -302,6 +304,7 @@ Proof 必须同时证明 source bytes 和 semantic rule path。file/span hash �
 candidateFactCount = admittedFactCount + rejectedFactCount
 candidateAtomCount = admittedAtomDispositionCount + rejectedAtomCount
 provenFactAtomCount = admittedAtomDispositionCount
+externalEffectGapCount = candidateFactCount
 ~~~
 
 一个复合 Fact 任一 atom 失败时，其所有 atoms 都是 REJECTED_WITH_REASON；不得把可独立证明的 sibling 留成孤立 admitted atom。
