@@ -45,7 +45,7 @@ reasonCodes 表示目标可用 code 示例；实际当前 code/count 以运行 a
 1. 重验上游 roots、Facts、Proof、Gaps 和五图 reference closure。
 2. 从 ApplicationDiscovery `repositoryEntryCoverage.entryIds` 取得完整入口分母，按 entryId 排序/分片，每个入口创建一个 flow ownership scope。
 3. 从 entry method 沿 EXACT call edge、显式 CFG edge 和 call/return pair 遍历。
-4. 每个 guard 记录 guardId、conditionAtomId、TRUE/FALSE polarity；不从行号猜极性。
+4. 每个 guard 记录 guardId、同 entry scope 的 `JAVA_GUARD_CONDITION/CONTROL_CONDITION` atom ID、TRUE/FALSE polarity；不从行号猜极性，也不把边界调用的 `CONTROL_CONTEXT` 当条件 atom。
 5. 到 return、throw 或 profile 支持的 stop 封闭 OutcomePath；同终点不同 decision sequence 仍是不同 Outcome。
 6. 所有 Outcome 求最长公共入口前缀，形成 sharedSteps；分支保留在 Outcomes。
 7. 将 Fact/atom/Gap 分配给唯一 Flow；共享子流程只有通过版本化 parent/child ownership rule 才可拆分。
@@ -87,7 +87,7 @@ Artifact cardinality 固定：若完整仓库编译出 `N` 个 FlowSlice，则�
 **示例分类：NARRATIVE_ILLUSTRATION。** 下面只解释未来 Fact/graph closure 已补齐后的模块接力，不是wire record、identity preimage或跨analysis step replay fixture；当前 implementation audit 的 0/0 不变。
 
 ~~~jsonl
-{"module":"flow-compiler","artifact":"modules/01-flow-compiler/flow-compilation.json","takesFrom":["ApplicationDiscoveryReference","ProgramGraphsReference","ProvenCodeFactsReference"],"says":{"entryId":"entry:post-depothead-batch-set-status","flowSliceId":"flow:post-depothead-batch-set-status","factId":"fact:depothead-mapper-boundary-invocation","outcomes":["outcome:no-eligible-document","outcome:boundary-invoked"],"externalEffectGapId":"gap:depothead-external-update-effect-unproven"}}
+{"module":"flow-compiler","artifact":"modules/01-flow-compiler/flow-compilation.json","takesFrom":["ApplicationDiscoveryReference","ProgramGraphsReference","ProvenCodeFactsReference"],"says":{"entryId":"entry:post-depothead-batch-set-status","flowSliceId":"flow:post-depothead-batch-set-status","guard":{"guardNodeId":"node:status-null","conditionAtomId":"atom:status-null-control-condition","trueOutcome":"outcome:reject-empty-status","falseOutcome":"outcome:boundary-invoked"},"factId":"fact:depothead-mapper-boundary-invocation","externalEffectGapId":"gap:depothead-external-update-effect-unproven"}}
 {"module":"capsule-projector","artifact":"modules/02-capsule-projector/capsule-projection.json","takesFrom":["flow-compilation.json","Proof/Evidence/source"],"says":{"flowSliceId":"flow:post-depothead-batch-set-status","evidenceCapsuleId":"capsule:post-depothead-batch-set-status","covers":["entry route","dhIds guard","generic boundary target","ordered arguments and origins","both terminals","external-effect Gap"],"registryProposalBasisAtomIds":["atom:input-field","atom:boundary-invocation"],"registryProposalBasisGapIds":["gap:depothead-external-update-effect-unproven"],"usedBy":["R0","R1","R2"]}}
 {"module":"publish","artifacts":"modules/03-publish/<five-semantic-files>","receipt":"modules/03-publish/module-receipt.json","takesFrom":["flow-compilation.json","capsule-projection.json"],"says":{"flowCount":1,"capsuleCount":1,"modelEligibleFlowSliceIds":["flow:post-depothead-batch-set-status"],"modelIneligibleFlowSliceIds":[],"modelIneligibilityGapIds":[],"modelIneligibilityByFlow":[],"semanticFiles":["flow-slices.json","flow-coverage.json","entry-dispositions.jsonl","evidence-capsules.jsonl","flow-gaps.jsonl"],"analysisStepReceipt":null,"nextStep":"CanonicalAnalysisStepArtifactStore"}}
 ~~~
@@ -145,16 +145,16 @@ M1 的 `entryId/factId/outcomePathIds` 原样进入 M2；M2 只新增 `evidenceC
 #### M1 EntryRootedFlowCompiler
 
 - **解决的问题**：把每个发现 entry 的 exact graph/Fact closure 编译成一个完整 Flow、多条 Outcomes 或明确 GAP/EXCLUDED。
-- **精确上游输入及前置**：valid ApplicationDiscovery complete entry inventory/coverage、ProgramGraphs call/control/data graphs、ProvenCodeFacts Facts/Proof/Gaps、flow profile/budget；所有 roots/entry/edge/fact refs及ApplicationDiscovery entry denominator已重验。
+- **精确上游输入及前置**：valid ApplicationDiscovery complete entry inventory/coverage、ProgramGraphs call/control/data graphs、ProvenCodeFacts **v2** Facts/Proof/Gaps、flow profile/budget；所有 roots/entry/edge/fact refs及ApplicationDiscovery entry denominator已重验。每个分支 edge 的 `guardNodeId` 必须在同 entry scope 匹配恰一条 admitted `JAVA_GUARD_CONDITION` 的 `CONTROL_CONDITION` atom；不匹配不是可由 M1 补写的空字段。
 - **确定性顺序 / LLM**：固定全 entryId denominator → 按entryId shard → 建 ownership scope → 沿 EXACT call/CFG/call-return → 枚举 decision sequences/terminals → longest common prefix → 分配 Fact/atom/Gap → per-entry disposition → shard union/account；0 LLM。
 - **目标输出与 DepotHead 示例**：`FlowCompilation{entryDispositions,flowSlices,outcomePaths,ownership,coverage}`；未来正例为一个POST entry Flow、多Outcome，历史回归例为该entry的GAP/0 Flow与blocking refs。
-- **必须保持的不变量**：ApplicationDiscovery每 entry 恰一 disposition；COMPILED 恰一个 root Flow；每 terminal path 恰一 Outcome disposition；Fact/atom/Gap owner 唯一；entry shards不交叠且union等于完整entry denominator。
-- **Gap / fatal / artifact复用**：unsupported/ambiguous/unproven path 是 entry/Outcome Gap；broken graph/Proof refs、missing polarity/terminal、duplicate owner/accounting fatal；模块每次处理完整entry denominator。
+- **必须保持的不变量**：ApplicationDiscovery每 entry 恰一 disposition；COMPILED 恰一个 root Flow；每 terminal path 恰一 Outcome disposition；每个 TRUE/FALSE pair 共享同一个已证明 condition atom；Fact/atom/Gap owner 唯一；entry shards不交叠且union等于完整entry denominator。
+- **Gap / fatal / artifact复用**：unsupported/ambiguous/unproven path 是 entry/Outcome Gap；缺少或多个同 scope `CONTROL_CONDITION` atom、broken graph/Proof refs、missing polarity/terminal、duplicate owner/accounting fatal；模块每次处理完整entry denominator。
 - **给下游的后置保证**：M2 得到闭合 Flow/Outcome/Fact/Proof ownership，或可解释的零 Flow，绝不需要补 path。
 - **明确非目标**：不选 source spans、不调用模型、不按 terminal 拆多个 Flow、不发明业务名。
-- **公共测试 seam 与验收**：`compile(entries, graphs, facts, profile)` 覆盖至少两非空entry/Flow、多 Outcome、第二 entry 隔离、其中一entry Gap、缺/重叠 shard、loop/ambiguous Gap、edge deletion fatal 与 DepotHead 0/0 baseline；ID-set accounting必须闭合且一Flow PASS不能完成analysis step。
-- **Luna/xhigh 测试指南**：创建`EntryRootedFlowCompilerTest`，冻结ApplicationDiscovery、ProgramGraphs与ProvenCodeFacts files、多Outcome fixture及由历史审计提炼的DepotHead 0/0 golden于`src/test/resources/analysis/flow/flow-compiler/`。逐RED：单entry多Outcome、第二entry隔离、shared prefix、loop/ambiguous Gap、edge/polarity deletion、0/0 disposition、order determinism；首RED因seam/schema缺失。只fake artifact reader，flow/accounting不可mock。命令：`mvn -Dtest=EntryRootedFlowCompilerTest test`；禁网络/客户执行。偏离按DESIGN 13.11。
-- **Terra/xhigh 实现指南**：RED后只改 Java package `analysis/flow/compiler/`（`org.sourceanalysis.app.analysis.flow.compiler`），实现 public `EntryRootedFlowCompiler/FlowCompilation` 与 `business-flows-flow-compilation-v1`；只读ApplicationDiscovery、ProgramGraphs与ProvenCodeFacts artifacts，entry→traversal→terminal paths→shared prefix→ownership/accounting。逐slice GREEN；不得行号补路/按terminal拆Flow/硬编码DepotHead。需新graph/Fact字段MUST STOP交Sol/ultra并按跨analysis step规则升级，完成更新审计。持久化 module key、module artifact 目录及 fixture 的末段仍严格是 `flow-compiler`；它是 wire key，不是 Java package 名称。
+- **公共测试 seam 与验收**：`compile(entries, graphs, facts, profile)` 覆盖至少两非空entry/Flow、多 Outcome、第二 entry 隔离、其中一entry Gap、缺/重叠 shard、loop/ambiguous Gap、edge deletion fatal 与 DepotHead 0/0 baseline。guard fixture 必须断言 TRUE/FALSE 两条 Outcome 都引用唯一、相同的 `CONTROL_CONDITION` atom；删除该 Fact、其 Proof、guard Evidence 或复制第二个同scope atom分别 fail closed。ID-set accounting必须闭合且一Flow PASS不能完成analysis step。
+- **Luna/xhigh 测试指南**：创建`EntryRootedFlowCompilerTest`，冻结ApplicationDiscovery、ProgramGraphs与 **v2** ProvenCodeFacts files、多Outcome fixture及由历史审计提炼的DepotHead 0/0 golden于`src/test/resources/analysis/flow/flow-compiler/`。逐RED：单entry多Outcome、同 guard 的 true/false shared condition atom、缺/重复/foreign condition atom、第二entry隔离、shared prefix、loop/ambiguous Gap、edge/polarity deletion、0/0 disposition、order determinism；首RED因seam/schema缺失。只fake artifact reader，flow/accounting不可mock。命令：`mvn -Dtest=EntryRootedFlowCompilerTest test`；禁网络/客户执行。偏离按DESIGN 13.11。
+- **Terra/xhigh 实现指南**：RED后只改 Java package `analysis/flow/compiler/`（`org.sourceanalysis.app.analysis.flow.compiler`），实现 public `EntryRootedFlowCompiler/FlowCompilation` 与 `business-flows-flow-compilation-v1`；只读ApplicationDiscovery、ProgramGraphs与 **v2** ProvenCodeFacts artifacts，entry→traversal→terminal paths→shared prefix→ownership/accounting。`conditionAtomId` 必须逐字来自 reopened `JAVA_GUARD_CONDITION/CONTROL_CONDITION`；不得以guard ID、文本、哈希或`CONTROL_CONTEXT`替代。逐slice GREEN；不得行号补路/按terminal拆Flow/硬编码DepotHead。需新graph/Fact字段MUST STOP交Sol/ultra并按跨analysis step规则升级，完成更新审计。持久化 module key、module artifact 目录及 fixture 的末段仍严格是 `flow-compiler`；它是 wire key，不是 Java package 名称。
 
 #### M2 EvidenceCapsuleProjector
 
@@ -270,7 +270,7 @@ OutcomePath
 
 BranchDecision
   guardNodeId
-  conditionAtomId
+  conditionAtomId                     // exactly one same-entry JAVA_GUARD_CONDITION / CONTROL_CONDITION atom
   polarity
   normalizedCondition
 
@@ -407,6 +407,7 @@ BUSINESS_FLOWS_REQUEST_INVALID、UPSTREAM_ARTIFACT_REPLAY_MISMATCH、FLOW_GRAPH_
 
 - Flow 边界是 entry，不是 return/throw；一个 compiled entry 恰一个入口根 Flow，多个结束方式只能是 Outcomes。
 - 只沿 EXACT call、显式 CFG polarity 和闭合 call/return 遍历；行号、异常习惯或模型不能补路径。
+- 一个 TRUE/FALSE branch pair 只消费其 guard node 所属 entry 的一个已证明 `CONTROL_CONDITION` atom；它不创建、重命名、借用或降级此 atom。
 - Fact/atom/Gap 有唯一 Flow ownership；共享子流程只能按版本化 parent/child rule 表示。
 - 每个Flow恰一个最小EvidenceCapsule；Capsule只从Proof roots投影，不能用“多给模型一点”作为降级。该同一artifact是FlowInterpretation R0/R1/R2唯一源码语义来源，且R0 basis只能来自显式`registryProposalBasis*`集合。
 - GAP/EXCLUDED entry 不生成 Capsule；0 Flow/0 Capsule 是可发布给 分析步骤“九章文档” 的可信分析状态，并强制 分析步骤“流程解释” 零调用。
@@ -416,12 +417,13 @@ BUSINESS_FLOWS_REQUEST_INVALID、UPSTREAM_ARTIFACT_REPLAY_MISMATCH、FLOW_GRAPH_
 
 ## 9. 当前实现成熟度审计
 
-Wire Reset后的`org.sourceanalysis.app.analysis.flow`目前只有语义package骨架；当前没有Flow compiler、EvidenceCapsule projector或六项本步骤产物。
+Wire Reset后的正式 `origin/main` 尚未交付本步骤；开发分支中的 M1 探索只用于验证合同，不能被写成已发布能力。
 
 | 状态 | 当前事实 |
 | --- | --- |
 | **已实现（结构/构建门）** | 目标package与JDK 17 Toolchain已就位；通用wire头门禁只判断`SOURCE_ANALYSIS/v1`，不建立Flow eligibility。 |
-| **本步骤生产能力尚未实现** | M1–M3、Entry→Flow唯一处置、Outcome、Flow/Capsule双射、eligible/ineligible分区与六项正式输出均不存在。 |
+| **尚未交付（M1 探索中的合同验证）** | 未提交的开发分支已验证：持久化 ControlFlow 确有 `GUARD` 及 TRUE/FALSE 边，Flow compiler 可沿准确 call/return 前进；但它在缺少 `JAVA_GUARD_CONDITION` 的 v1 ProvenCodeFacts 输入处 fail closed。该 RED 证明了 v2 producer 必须先实现，不是本步骤能力。 |
+| **本步骤生产能力尚未实现** | M1 的 complete branch decision、call/return traversal、GAP/EXCLUDED entry disposition、loop/ambiguous handling、M1 module artifact/publisher 与 shard/accounting尚未交付；M2、M3、Flow/Capsule双射、eligible/ineligible分区与六项正式输出均不存在。这个步骤不能用于仓库完成判定。 |
 | **历史证据，不是当前能力** | 已删除的pre-reset compiler曾在有限fixture上编译Flow/Outcome/Capsule；固定八文件历史审计为blocking Gap、0 Flow、0 Capsule。该结果只作为0调用和证明不足的回归baseline。 |
 | **下一实现门** | 按本章消费已持久化ApplicationDiscovery、ProgramGraphs和ProvenCodeFacts，至少用双入口、双Flow、多Outcome、跨Flow隔离、eligible/ineligible和0Flow场景闭合全仓分母。 |
 

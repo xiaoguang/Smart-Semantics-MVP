@@ -18,7 +18,7 @@
 
 DepotHead 的 **REAL_SOURCE** 在 Controller :43,:178-191、Service :741-822、Mapper Java :23、DepotHead :63,:301-307、Example :149-151 和 Mapper XML :3,:70-93,:385-497。
 
-目标候选Fact：
+目标候选Fact之一是边界调用：
 
 ~~~text
 kind: JAVA_BOUNDARY_INVOCATION
@@ -39,9 +39,24 @@ required atoms:
 
 这是candidate denominator，不是当前admitted Fact。`jsh_depot_head.status`、`WHERE id IN`等可作为独立M1/M2静态结构Fact；“该boundary invocation执行了更新/筛选”必须始终是外部效果Gap，不能成为这个candidate的atom。
 
+另一个独立目标候选是控制条件，而不是把它塞回某一次调用的上下文：
+
+~~~text
+kind: JAVA_GUARD_CONDITION
+candidate denominator key: entryId + "|" + guardNodeId + "|JAVA_GUARD_CONDITION"
+required atom:
+  CONTROL_CONDITION = ControlFlow GUARD node 的 normalizedCondition
+required proof:
+  guard node + guard source excerpt + control-flow-if-guard-v1 rule application
+~~~
+
+例如 `if (status == null) { return; }` 的 `status == null` 产生一条 `JAVA_GUARD_CONDITION` Fact 和一条 `CONTROL_CONDITION` atom。TRUE 与 FALSE 两条控制边都引用**同一个** atom，只用 polarity 区分结果。它不说明“空状态在业务上是否应该拒绝”，也不说明后续数据库效果；它只证明 Java 代码在该入口范围内以这个条件分支。
+
+`CONTROL_CONTEXT` 与 `CONTROL_CONDITION` 绝不等价：前者是某个边界调用的复合 Fact 所处控制块；后者是可独立追溯的 guard 条件。没有后者，下一步不能为 `BranchDecision.conditionAtomId` 编造值，必须形成 Gap 或 fatal。
+
 ## 3. 程序怎样工作
 
-1. 按版本化 Fact registry 枚举所有 candidate Facts 及 required atoms，先固定分母。
+1. 按版本化 Fact registry 枚举所有 candidate Facts 及 required atoms，先固定分母：既包括 `JAVA_BOUNDARY_INVOCATION`，也包括每个 entry scope 内可达的 `JAVA_GUARD_CONDITION`。
 2. 为 atom 选择明确 role：KIND、ATTRIBUTE、CONDITION、LITERAL 或 RELATIONSHIP。
 3. 从 Evidence graph 取 source nodes，从结构/call/control/data graphs 取 required edges 和 rule applications。
 4. 重开 snapshot，重验 file/span SHA、parsed node identity 和 edge endpoints。
@@ -89,10 +104,11 @@ required atoms:
 
 ## 5. 下游怎样消费而不返工
 
-分析步骤“业务流程” 只读取 proven-facts.json、proof-pack.json、gap-ledger.json、fact-accounting.json 和五图 roots。它按 factId/atomId/proofId 引用，不能：
+分析步骤“业务流程” 只读取 proven-facts.json、proof-pack.json、gap-ledger.json、fact-accounting.json 和五图 roots。它按 factId/atomId/proofId 引用；对每一条 TRUE/FALSE edge，它必须在同 entry ownership scope 找到**恰一条** `JAVA_GUARD_CONDITION` Fact 的 `CONTROL_CONDITION` atom，并以它填入 `BranchDecision.conditionAtomId`。它不能：
 
 - 借用另一个 Fact 的 span；
 - 使用 Manifest 中“附近”但未引用的 Evidence；
+- 用 `CONTROL_CONTEXT`、guard node ID、字符串摘要或哈希临时合成 condition atom；
 - 把模型一致、candidateId 或 Trace locator 当 Proof；
 - 在 Flow 编译时重新发明 Fact kind。
 
@@ -147,7 +163,7 @@ required atoms:
 
 - **解决的问题**：在看证明结果前先冻结应该尝试证明的 Fact/required atom 分母，防止失败项消失。
 - **精确上游输入及前置**：`PersistedFactCandidateInputReader`只能从同一run、同一snapshot、同一controls的fresh-reopened `VerifiedSourceInventoryReference`、`ApplicationDiscoveryReference`和完整`ProgramGraphsReference`构造一个`FactCandidateInputs`。它必须重开并验证ProgramGraphs的全部五张public graph、graph-index和graph-gaps；不得接收自由`JsonNode`、Path、单独graph、draft或调用者拼装的catalog。输入携带五张graph payload references、`capability-report.json`与`entry-points.jsonl`的准确ArtifactReference、`source-inventory.jsonl`与`verified-snapshot.json`的准确ArtifactReference、每个public node/edge的endpoint/owner/evidence IDs、ApplicationDiscovery entry IDs，以及版本化Fact registry/profile/budget。尤其，内部`PublicEvidenceGraph.EvidenceNode`必须原样保留二选一的`SourceExcerptV1{locator,rawUtf8,rawUtf8Sha256}`或`RuleApplication{ruleId,ruleVersion,inputProgramElementIds}`；不得把它压缩成“有source/rule”的boolean或只保留ID。M1发布器只接收这个已验证输入和`FactCandidateSet`，由输入导出固定七项graph/discovery上游集合与controls；不得接收调用者给出的任意上游列表或controls。
-- **精确适用关系（不得做笛卡尔积）**：对每个DataFlow `JAVA_BOUNDARY_INVOCATION` node，枚举器先取得它的`owningEntryIds`。对其中每个entryId，只在以下同一条冻结Java路径全部闭合时才实例化候选：
+- **精确适用关系（不得做笛卡尔积）**：v2 registry有两个相互独立的候选模板。对每个DataFlow `JAVA_BOUNDARY_INVOCATION` node，枚举器先取得它的`owningEntryIds`。对其中每个entryId，只在以下同一条冻结Java路径全部闭合时才实例化 boundary candidate：
   1. entryId存在于ApplicationDiscovery与五图的共同entry分母；
   2. boundary node内的`invocationCallId`命中CALL graph的`CALL_SITE` node，且该callsite的owner包含该entry；
   3. boundary node内的`callTargetEdgeId`命中从该callsite出发的EXACT `CALL_TARGET` edge；
@@ -155,16 +171,16 @@ required atoms:
   5. boundary的control block与可选guard命中CONTROL graph，并且它们的owner包含该entry；
   6. call-site node、boundary node、call-target edge、每条argument edge、每个Java-local-origin node及control context（basic block与可选guard）各有同一Evidence graph中的source-excerpt + rule-application闭包。
 
-  以上任一关系缺失、owner不相交、endpoint不匹配、resolution不是EXACT或Evidence不闭合时，枚举器为这个`entryId + boundaryNodeId + templateKey`写一个`NOT_APPLICABLE` disposition，带具体missing role/reason；它不能把该boundary分配给别的entry、借用别的boundary/edge的证据，或把这种不闭合静默变成零分母。ProgramGraphs publication、schema、root、controls或引用本身不一致是fatal `PROOF_PACK_REFERENCE_BROKEN`，不是普通not-applicable。
-- **确定性顺序 / LLM**：按entryId → boundaryNodeId → registry template key排序；先生成每个template-boundary-entry组合的`APPLICABLE`或`NOT_APPLICABLE` disposition，再只对APPLICABLE组合按registry声明顺序复制required atoms。一个boundary被多个entry共同拥有时只为这些共同owners各生成一个候选；0 LLM。
-- **目标输出与 DepotHead 示例**：`FactCandidateSet{schemaVersion,candidateSetId,sourceGraphRoots,candidates,notApplicableDispositions,denominator}`。每个`JAVA_BOUNDARY_INVOCATION` candidate保存`candidateFactKey`、entryId、boundaryNodeId、invocationCallId、callTargetEdgeId、ordered argument edge IDs、control block/guard IDs、按subject分组的Evidence node IDs和按模板声明顺序的required atoms；其subject集合必须至少覆盖call site、boundary、target、arguments、local origins、basic block和可选guard。M2从同一fresh-reopened `FactCandidateInputs`取得每个ID对应的完整`SourceExcerptV1`及rule application；candidate module artifact本身不重复这些源字节。例子含`DEPOTHEAD_JAVA_BOUNDARY_INVOCATION`及call ID、static target triple、ordered arguments、Java-local origins、control、evidence atoms。external effect另列Gap，绝不进入candidate。
-- **必须保持的不变量**：`candidateFactKey + entryId + boundaryNodeId`唯一；每种Fact kind的required atoms完整且版本化；每个template-boundary-entry组合恰一条applicable/not-applicable disposition；candidate set的sourceGraphRoots是完整五图payload的排序集合；枚举不受后续Proof成败影响。
+  对每个 ControlFlow `GUARD` node，枚举器用该 node 的 owning entry IDs（不能从邻近 boundary 继承 owner）建立 `entryId + guardNodeId + JAVA_GUARD_CONDITION` 分母项。仅当：(a) entry 位于 ApplicationDiscovery 与五图共同分母；(b) guard node 的 kind 精确为 `GUARD`；(c) 至少一条 TRUE/FALSE edge 的 `guardNodeId` 精确命中该 node，二者 owner 都包含同一 entry；(d) guard node 在 Evidence graph 中有同一 subject 的 source-excerpt→rule-application 配对，且 rule 精确为 `control-flow-if-guard-v1/v1`；才产生 `APPLICABLE`。缺任一项只为这个 guard-entry-template 写 `NOT_APPLICABLE`，并记录缺失 role；不允许由 guard 的文字、行号、调用的 `CONTROL_CONTEXT` 或相邻 Evidence 补齐。ProgramGraphs publication、schema、root、controls或引用本身不一致仍是 fatal `PROOF_PACK_REFERENCE_BROKEN`。
+- **确定性顺序 / LLM**：按entryId → template registry order → subject node ID排序；先生成每个 template-subject-entry 组合的`APPLICABLE`或`NOT_APPLICABLE` disposition，再只对APPLICABLE组合按模板声明顺序复制required atoms。boundary subject 是 boundaryNodeId，guard subject 是 guardNodeId；同一 guard 被多个 entry 合法拥有时仅为每个共同 owner 各生成一条候选；0 LLM。
+- **目标输出与 DepotHead 示例**：`FactCandidateSet{schemaVersion,candidateSetId,sourceGraphRoots,candidates,notApplicableDispositions,denominator}`。`JAVA_BOUNDARY_INVOCATION`保持`candidateFactKey`、entryId、boundaryNodeId、invocationCallId、callTargetEdgeId、ordered argument edge IDs、control block/guard IDs、按subject分组的Evidence node IDs和按模板声明顺序的required atoms。`JAVA_GUARD_CONDITION`保存`candidateFactKey=JAVA_GUARD_CONDITION`、entryId、guardNodeId、guard node 的`normalizedCondition`、两个 branch edge IDs、guard Evidence node IDs，且 requiredAtoms 恰为一项`CONTROL_CONDITION{role=CONDITION,valueType=STRING}`。两类 candidate 都由 M2 从同一 fresh-reopened inputs 取得完整`SourceExcerptV1`及rule application；candidate module artifact不重复源字节。external effect 只属于 boundary candidate 的独立 Gap，绝不进入任一 Fact。
+- **必须保持的不变量**：`candidateFactKey + entryId + subjectNodeId`唯一；每种Fact kind的required atoms完整且版本化；每个template-subject-entry组合恰一条applicable/not-applicable disposition；每个可达 guard 不能因没有 boundary invocation 而从分母消失；candidate set的sourceGraphRoots是完整五图payload的排序集合；枚举不受后续Proof成败影响。
 - **Gap / fatal / artifact复用**：profile 外但可定位的 candidate 标成 CapabilityGap；registry/schema/reference/accounting 冲突 fatal；模块只读相同graphs/profile，不读取未安装draft。
 - **给下游的后置保证**：M2 得到不可变 candidate/atom IDs、required evidence/edge roles 和完整 denominator，无权删减。
 - **明确非目标**：不选择具体 proof path、不 admission Fact、不解释业务名称。
-- **公共测试 seam 与验收**：`enumerate(FactCandidateInputs, FactRegistry)`。fixture必须先用真实canonical stores安装ApplicationDiscovery与完整ProgramGraphs publication，再由`PersistedFactCandidateInputReader`重开输入。首个two-entry/two-boundary golden证明只产生两条各自闭合的candidate，不允许四条cross-product；删除一条argument/control/evidence edge或改变owner/endpoint只令其对应组合NOT_APPLICABLE，不影响另一个entry-boundary组合。后续覆盖DepotHead template、registry deletion/reorder、同名decoy、old ProgramGraphs set拒绝与input order determinism；Proof删除不能改变M1的candidate bytes/counts。
-- **Luna/xhigh 测试指南**：创建`FactCandidateEnumeratorTest`，冻结完整ProgramGraphs v3/v2 boundary artifacts与手写candidate golden。逐RED：two-entry/two-boundary精确join、缺argument/control/evidence的NOT_APPLICABLE、外部effect不进入Fact、Mapper/HTTP同generic kind、ambiguous Graph Gap、old ProgramGraphs set拒绝、registry atom顺序和input order determinism；registry/canonical store不可mock，不能用缩减graph-index JSON代替真实reopen。
-- **Terra/xhigh 实现指南**：RED后只改 `org.sourceanalysis.app.analysis.fact.candidates`（路径为`analysis/fact/candidates/`），实现 `PersistedFactCandidateInputReader`、public `FactCandidateInputs`、`FactRegistry`、`FactCandidateEnumerator/FactCandidateSet` 与 `proven-code-facts-fact-candidate-set-v1`；只读ApplicationDiscovery与完整ProgramGraphs publication，fresh-reopen→exact boundary path join→template match→applicable/not-applicable denominator。逐RED GREEN，Proof结果不得反向影响枚举；禁止fixture硬编码/改required atoms。上游或registry语义不足MUST STOP交Sol/ultra，完成更新审计。
+- **公共测试 seam 与验收**：`enumerate(FactCandidateInputs, FactRegistry)`。fixture必须先用真实canonical stores安装ApplicationDiscovery与完整ProgramGraphs publication，再由`PersistedFactCandidateInputReader`重开输入。首个two-entry/two-boundary golden证明只产生两条各自闭合的boundary candidate，不允许四条cross-product；另一个含`if (status == null) return`的冻结 fixture 必须产生恰一条同entry guard candidate 和恰一项`CONTROL_CONDITION` required atom，即使该 guard 后没有 boundary invocation。删除 branch edge、guard owner或guard Evidence 只令对应 guard candidate `NOT_APPLICABLE`，不影响其他 entry/guard；删除Proof不得改变M1 candidate bytes/counts。
+- **Luna/xhigh 测试指南**：创建或扩展`FactCandidateEnumeratorTest`，冻结完整ProgramGraphs v3/v2 artifacts与手写candidate golden。逐RED：two-entry/two-boundary精确join、单 guard 的独立candidate、同一guard TRUE/FALSE不重复、缺branch/owner/evidence的NOT_APPLICABLE、外部effect不进入Fact、Mapper/HTTP同generic kind、ambiguous Graph Gap、旧ProgramGraphs或v1 Fact registry拒绝、registry atom顺序和input order determinism；registry/canonical store不可mock，不能用缩减graph-index JSON代替真实reopen。
+- **Terra/xhigh 实现指南**：RED后只改 `org.sourceanalysis.app.analysis.fact.candidates`（路径为`analysis/fact/candidates/`），实现 v2 `PersistedFactCandidateInputReader`、public `FactCandidateInputs`、`FactRegistry.standardJavaFacts()`、`FactCandidateEnumerator/FactCandidateSet` 与 `proven-code-facts-fact-candidate-set-v2`；只读ApplicationDiscovery与完整ProgramGraphs publication，fresh-reopen→exact boundary/guard join→template match→applicable/not-applicable denominator。逐RED GREEN，Proof结果不得反向影响枚举；禁止fixture硬编码/改required atoms。上游或registry语义不足MUST STOP交Sol/ultra，完成更新审计。
 
 #### M2 AtomicProofBuilder
 
@@ -172,7 +188,7 @@ required atoms:
 - **精确上游输入及前置**：M1 candidate artifact、由`PersistedFactCandidateInputReader`fresh-reopened的完整ProgramGraphs five graphs/evidence、一个显式`VerifiedSourceInventoryReference`、只读`VerifiedSourceTextReader`及版本化Proof rule registry/budget；candidate IDs、graph endpoints、source roots、snapshot和controls完全一致。`VerifiedSourceTextReader.reopen(source)`返回的文本集必须与candidate input的snapshot/controls一致；每个`SourceExcerptV1.locator.fileId/path`必须命中唯一文本文件，文件的已验证SHA和`[startByte,endByteExclusive)`字节切片必须分别等于excerpt的文件与摘要/字节；这两个byte offset必须是UTF-8 code-point边界，按同一字节流重新计出的one-based start/end line/column也必须与locator相同，不得trim、normalize或附近搜索。任一不符是fatal `PROOF_SOURCE_REOPEN_MISMATCH`，不是可用别处Evidence补齐的Gap。
 - **唯一公共seam**：`AtomicProofBuilder(VerifiedSourceTextReader sourceReader)`；其唯一业务方法是`ProofDecisionSet prove(FactCandidateSet candidates, FactCandidateInputs inputs, VerifiedSourceInventoryReference source, ProofRuleRegistry rules)`。builder不接收Path、原始JSON、图draft、任意source bytes或调用者组装的Evidence；source reader仅经构造器注入，测试也必须使用真实frozen text set。M2完成时另由自己的module publisher安装`proof-decision-set.json`，但该publisher不替代本seam的逐atom证明。
 - **M2 module落盘seam**：`ProofDecisionSetModulePublisher(CanonicalModuleArtifactStore store)`的唯一业务方法为`publish(AnalysisStepModuleAddress destination, FactCandidateInputs inputs, ModulePublicationReference candidatePublication, ProofDecisionSet decisions)`。它只接受`PROVEN_CODE_FACTS/01-candidates`的已安装M1 publication；fresh reopen后必须恰得到一份`fact-candidate-set.json`，并验证该payload的candidateSetId与`decisions.candidateSetId`相同。M2 envelope的直接upstream是该M1 candidate payload、`FactCandidateInputs`保留的`source-inventory.jsonl` reference与`verified-snapshot.json` reference；M1 receipt再闭合到它的完整ApplicationDiscovery与五图输入。这样M2不靠进程内对象、也不在M2中重复列写同一张图的所有artifact。destination只能是`PROVEN_CODE_FACTS/02-proofs`，并且安装后必须fresh reopen。下游唯一的typed读入口是`PersistedProofDecisionSetReader(CanonicalModuleArtifactStore store).reopen(ModulePublicationReference publication, FactCandidateInputs inputs, ModulePublicationReference candidatePublication, FactCandidateSet candidateSet)`：它重开M2 receipt/envelope/body及M1 candidate publication，要求M2地址、三条direct upstream、candidateSetId、每个Fact/atom/Proof/disposition/Gap分母和canonical排序均闭合；禁止M3接收调用方手写的`ProofDecisionSet`。
-- **atom→证据subject规则（固定）**：`ProofRuleRegistry`的`proven-code-facts-proof-rules-v1`对generic `JAVA_BOUNDARY_INVOCATION`精确规定：`INVOCATION_CALL_ID`需要call-site与boundary node；三个`STATIC_TARGET_*` atom各需要call-target edge；`ORDERED_ARGUMENTS`需要每条ordered argument edge；`JAVA_LOCAL_ORIGINS`需要每个ordered argument的每个local-origin node；`CONTROL_CONTEXT`需要basic block及有guard时的guard node；`INVOCATION_EVIDENCE`需要以上subject的并集。每个required subject都必须在Evidence graph中存在同一subject的**一条**source-excerpt→rule-application edge，rule application的`inputProgramElementIds`必须包含subject，且其`ruleId/ruleVersion`必须是下表的精确值。一个subject可以保留多条历史来源边；M2选择一个允许的精确配对，保留它的两个Evidence node ID，不能要求该subject的所有历史rule都属于本atom，也不能把不同Evidence edge的source/rule交叉配对。M1没有收集到任一允许pair时，M2不得猜测或临时重解析源码，只为相应atom生成rejection/Gap；复合Fact仍按全有或全无处理。
+- **atom→证据subject规则（固定）**：`ProofRuleRegistry`的`proven-code-facts-proof-rules-v2`对generic `JAVA_BOUNDARY_INVOCATION`精确规定：`INVOCATION_CALL_ID`需要call-site与boundary node；三个`STATIC_TARGET_*` atom各需要call-target edge；`ORDERED_ARGUMENTS`需要每条ordered argument edge；`JAVA_LOCAL_ORIGINS`需要每个ordered argument的每个local-origin node；`CONTROL_CONTEXT`需要basic block及有guard时的guard node；`INVOCATION_EVIDENCE`需要以上subject的并集。对 `JAVA_GUARD_CONDITION`，唯一 required atom 是 `CONTROL_CONDITION`，它只需要 guard node。每个required subject都必须在Evidence graph中存在同一subject的**一条**source-excerpt→rule-application edge，rule application的`inputProgramElementIds`必须包含subject，且其`ruleId/ruleVersion`必须是下表的精确值。一个subject可以保留多条历史来源边；M2选择一个允许的精确配对，保留它的两个Evidence node ID，不能要求该subject的所有历史rule都属于本atom，也不能把不同Evidence edge的source/rule交叉配对。M1没有收集到任一允许pair时，M2不得猜测或临时重解析源码，只为相应atom生成rejection/Gap；复合Fact仍按全有或全无处理。
 
 | subject类别 | 允许的`ruleId` | 精确`ruleVersion` |
 | --- | --- | --- |
@@ -181,18 +197,19 @@ required atoms:
 | argument-to-boundary edge | `java-boundary-argument-v1` | `v1` |
 | Java local origin | `source-element-parser-v1`、`java-argument-binding-v1`、`java-single-reaching-definition-v1`、`java-direct-local-assignment-v1`、`java-direct-field-assignment-v1`、`java-direct-setter-property-v1`、`java-local-read-v1`、`java-parameter-symbol-v1` | `v1` |
 | basic block | `control-flow-method-body-v1` | `v1` |
-| guard | `control-flow-if-guard-v1` | `v1` |
+| guard（`JAVA_BOUNDARY_INVOCATION` 的 CONTROL_CONTEXT） | `control-flow-if-guard-v1` | `v1` |
+| guard（`JAVA_GUARD_CONDITION` 的 CONTROL_CONDITION） | `control-flow-if-guard-v1` | `v1` |
 
-`source-element-parser-v1`只允许用于Java-local-origin node本身：它证明该已由M4绑定的参数/局部/字段节点来自冻结源码字节；它不单独证明参数到boundary的关系。该关系仍由同一atom所需的`ARGUMENT_TO_BOUNDARY` subject及其`java-boundary-argument-v1` Evidence pair闭合。没有列在表中的rule不是“未来自动兼容”项；它使对应atom形成`REJECTED_WITH_REASON`及具体Gap，直到经过本步骤设计修订。`ProofDecisionSet`按candidate key、registry atom order产生一条atom disposition；只有所有atom都CLOSED才产生一个admitted `CodeFact`及同数`atomProofs`。任一atom未闭合时，Fact和所有sibling atom disposition一律`REJECTED_WITH_REASON`，直接失败atom保存自己的root cause，其余sibling保存`COMPOSITE_FACT_REJECTED`；不得留下可被后续步骤误当成独立事实的partial Proof。
-- **确定性顺序 / LLM**：按`candidateDenominatorKey`→registry atom order → 解析required graph/evidence roles → 重开span/hash → 建无环proof closure → 先得atom dispositions → 再按all-atoms rule得Fact disposition；0 LLM。`candidateDenominatorKey = entryId + "|" + boundaryNodeId + "|" + candidateFactKey`，是M1同名字段组合的唯一实例键；`candidateFactKey`本身只是registry模板名，不能代替它。
-- **目标输出与 DepotHead 示例**：`ProofDecisionSet{proofs,codeFacts,factDispositions,atomDispositions,rootCauseRejections,externalEffectGaps}`；boundary atoms全闭合时可admit invocation Fact，但每个admitted或rejected `JAVA_BOUNDARY_INVOCATION` candidate还恰有一条`ExternalEffectGap{gapId,candidateDenominatorKey,entryId,boundaryNodeId,staticTargetType,staticTargetMethod,staticTargetSignature,code=DATA_FLOW_BINDING_UNPROVEN,basisEvidenceNodeIds}`。它只陈述“Java代码在此离开本分析范围，不能证明外部效果”，不声称数据库更新、SQL筛选、消息发送或任何具体外部结果，也不进入该Fact。
+`source-element-parser-v1`只允许用于Java-local-origin node本身：它证明该已由M4绑定的参数/局部/字段节点来自冻结源码字节；它不单独证明参数到boundary的关系。该关系仍由同一atom所需的`ARGUMENT_TO_BOUNDARY` subject及其`java-boundary-argument-v1` Evidence pair闭合。没有列在表中的rule不是“未来自动兼容”项；它使对应atom形成`REJECTED_WITH_REASON`及具体Gap，直到经过本步骤设计修订。对于 `JAVA_GUARD_CONDITION`，M2 只使用 guard node 的 canonical condition 值、该 guard node 和它自己的 source-excerpt/rule pair；不得从 branch target、boundary invocation 或数据流边补充条件含义。`ProofDecisionSet`按candidate key、registry atom order产生一条atom disposition；只有所有atom都CLOSED才产生一个admitted `CodeFact`及同数`atomProofs`。任一atom未闭合时，Fact和所有sibling atom disposition一律`REJECTED_WITH_REASON`，直接失败atom保存自己的root cause，其余sibling保存`COMPOSITE_FACT_REJECTED`；不得留下可被后续步骤误当成独立事实的partial Proof。
+- **确定性顺序 / LLM**：按`candidateDenominatorKey`→registry atom order → 解析required graph/evidence roles → 重开span/hash → 建无环proof closure → 先得atom dispositions → 再按all-atoms rule得Fact disposition；0 LLM。boundary 的 `candidateDenominatorKey = entryId + "|" + boundaryNodeId + "|" + candidateFactKey`；guard 的 `candidateDenominatorKey = entryId + "|" + guardNodeId + "|JAVA_GUARD_CONDITION"`。模板名不能代替这个实例键。
+- **目标输出与 DepotHead 示例**：`ProofDecisionSet{proofs,codeFacts,factDispositions,atomDispositions,rootCauseRejections,externalEffectGaps}`；boundary atoms全闭合时可admit invocation Fact，但每个 admitted 或 rejected `JAVA_BOUNDARY_INVOCATION` candidate 仍恰有一条`ExternalEffectGap{gapId,candidateDenominatorKey,entryId,boundaryNodeId,staticTargetType,staticTargetMethod,staticTargetSignature,code=DATA_FLOW_BINDING_UNPROVEN,basisEvidenceNodeIds}`。一个 admitted `JAVA_GUARD_CONDITION` 则只产生 `CONTROL_CONDITION` atom/proof，不产生外部效果 Gap。两者都不声称数据库更新、SQL筛选、消息发送或任何具体外部结果。
 - **必须保持的不变量**：一个 admitted atom 恰一个 CLOSED Proof；Fact 任一 required atom失败则无 admitted sibling；Proof refs 只指 M1/ProgramGraphs/VerifiedSourceInventory identities。
 - **Gap / fatal / artifact复用**：可解释的不闭合是 rejection/Gap；source/edge/reference drift、proof status伪 CLOSED、conflicting admitted facts fatal；M2从完整candidate set构建全部decisions，不混用其他publication的proof。
 - **给下游的后置保证**：M3 获得每个 candidate/atom 的唯一 disposition、closed proofs 或具体根因，能直接守恒计数。
 - **明确非目标**：不把 evidence locator、Trace、模型或文本相似当 Proof，不生成 Flow。
-- **公共测试 seam 与验收**：`prove(candidateSet, graphs, source, rules)`对每个boundary atom逐段deletion、source/rule mutation、XML/SQL伪支持、conflict和正向closure；任一缺项不admit invocation Fact，任何完整invocation也不关闭external-effect Gap。
-- **Luna/xhigh 测试指南**：创建`AtomicProofBuilderTest`，fixtures/goldens放`src/test/resources/analysis/fact/proofs/`。一个行为一个RED：全部boundary atoms闭合正例、每段deletion rejection、external-effect非准入、source/rule drift fatal、sibling all-reject、conflicting facts、root replay；expected Proof paths独立手写。只fake source reopen，禁止mock graph traversal/Proof/canonical；无网络/模型。
-- **Terra/xhigh 实现指南**：RED后仅拥有 `org.sourceanalysis.app.analysis.fact.proofs`（路径为`analysis/fact/proofs/`），实现 public `AtomicProofBuilder/ProofDecisionSet` 与 `proven-code-facts-proof-decision-set-v1`；M1+ProgramGraphs+source→role match→reopen→Proof→atom→composite decision。逐atom GREEN再composite GREEN；不得借Evidence/模型/Trace或保留sibling。需改Fact/graph跨analysis step contract则MUST STOP并交用户流程，审计同步。
+- **公共测试 seam 与验收**：`prove(candidateSet, graphs, source, rules)`对每个boundary atom逐段deletion、source/rule mutation、XML/SQL伪支持、conflict和正向closure；另对一个 guard candidate 删除 guard span、rule pair 或对应 branch edge，必须拒绝该 guard Fact，且不得影响其他条件或 boundary Fact。任一缺项不admit invocation Fact，任何完整invocation也不关闭external-effect Gap。
+- **Luna/xhigh 测试指南**：创建或扩展`AtomicProofBuilderTest`，fixtures/goldens放`src/test/resources/analysis/fact/proofs/`。一个行为一个RED：全部boundary atoms闭合正例、一个 guard 的独立`CONTROL_CONDITION`正例、每段deletion rejection、external-effect非准入、source/rule drift fatal、sibling all-reject、conflicting facts、root replay；expected Proof paths独立手写。只fake source reopen，禁止mock graph traversal/Proof/canonical；无网络/模型。
+- **Terra/xhigh 实现指南**：RED后仅拥有 `org.sourceanalysis.app.analysis.fact.proofs`（路径为`analysis/fact/proofs/`），实现 public `AtomicProofBuilder/ProofDecisionSet` 与 `proven-code-facts-proof-decision-set-v2`；M1+ProgramGraphs+source→role match→reopen→Proof→atom→composite decision。逐atom GREEN再composite GREEN；不得借Evidence/模型/Trace或保留sibling。需改Fact/graph跨analysis step contract则MUST STOP并交用户流程，审计同步。
 
 #### M3 FactLedgerPublicationSpecifier
 
@@ -205,8 +222,8 @@ required atoms:
 - **给下游的后置保证**：BusinessFlows 能只读 Facts/Proof/Gaps/accounting，并确定哪些 atom可进入 Flow、哪些必须留 Gap。
 - **明确非目标**：不重新证明、不把 rejection 升级、不调用模型、不选择 Flow ownership。
 - **唯一公共seam 与验收**：`FactLedgerPublicationSpecifier(CanonicalModuleArtifactStore, CanonicalAnalysisStepArtifactStore).specifyCandidatesAndProofs(FactCandidateInputs inputs, ModulePublicationReference candidatePublication, ModulePublicationReference proofPublication, VerifiedSourceInventoryReference source, ApplicationDiscoveryReference discovery, ProgramGraphsReference graphs)`。它先由M1/M2 typed readers重开并验证candidate/decision，随后重开三个analysis-step predecessor；调用方不能传入手写`ProofDecisionSet`、Gap、JSON或Path。它覆盖orphan/double owner/count-equal-but-ID-different、乱序和partial-install；只有M3 exact-four、analysis-step-store exact-five及ID-set equations全闭合才返回 `ProvenCodeFactsReference`。
-- **Luna/xhigh 测试指南**：创建 `ProvenCodeFactsPublicationSpecifierTest`，module artifacts/goldens在 `src/test/resources/analysis/fact/publish/`。RED顺序：M3 exact-four、analysis step exact-five、current DepotHead rejection、positive admitted、orphan/double disposition、count spoof/ID mismatch、Gap closure、receipt-last/partial-install/collision；使用真实module/analysis step stores，不能mockaccounting/canonical/root。命令：`mvn -Dtest=ProvenCodeFactsPublicationSpecifierTest test`；禁网络/customer Maven。偏离按13.11。
-- **Terra/xhigh 实现指南**：RED后仅改 `org.sourceanalysis.app.analysis.fact.publish`（路径为`analysis/fact/publish/`），实现 public `FactLedgerPublicationSpecifier/ProvenCodeFactsReference`；只读M1/M2 artifacts，classify gaps→ID-set equations→four semantic files→M3 install/receipt→typed analysis-step-store receipt-last。不得生成旧single publication summary、预报root/receipt、重新prove或升级rejection。任何field/accounting跨analysis step改动MUST STOP交Sol/ultra/用户，完成更新审计。
+- **Luna/xhigh 测试指南**：创建或扩展 `ProvenCodeFactsPublicationSpecifierTest`，module artifacts/goldens在 `src/test/resources/analysis/fact/publish/`。RED顺序：M3 exact-four、analysis step exact-five、current DepotHead rejection、positive boundary+guard admitted、guard/boundary分区计数、每条boundary恰一external-effect Gap而 guard 为零、orphan/double disposition、count spoof/ID mismatch、v1 rejection、Gap closure、receipt-last/partial-install/collision；使用真实module/analysis step stores，不能mockaccounting/canonical/root。命令：`mvn -Dtest=ProvenCodeFactsPublicationSpecifierTest test`；禁网络/customer Maven。偏离按13.11。
+- **Terra/xhigh 实现指南**：RED后仅改 `org.sourceanalysis.app.analysis.fact.publish`（路径为`analysis/fact/publish/`），实现 public `FactLedgerPublicationSpecifier/ProvenCodeFactsReference` 的 v2 schema writer/reader；只读M1/M2 artifacts，classify gaps→guard/boundary ID-set equations→four semantic files→M3 install/receipt→typed analysis-step-store receipt-last。不得生成第五个 public 文件、旧single publication summary、预报root/receipt、重新prove或升级rejection；v1 input/public schema必须fail closed。任何field/accounting跨analysis step改动MUST STOP交Sol/ultra/用户，完成更新审计。
 
 ### 8.0.1 模块 artifact wire schemas
 
@@ -214,28 +231,28 @@ M1/M2使用 DESIGN 13.3 `ModuleArtifact<T>` envelope；M3直接安装四个analy
 
 | artifact | schemaVersion / artifactType | 精确 upstream | payload/排序 |
 | --- | --- | --- | --- |
-| `modules/01-candidates/fact-candidate-set.json` | `proven-code-facts-fact-candidate-set-v1` / `PROVEN_CODE_FACTS_FACT_CANDIDATE_SET` | exact ApplicationDiscovery `capability-report/entry-points`与完整ProgramGraphs五张public graph、graph-index、graph-gap ArtifactReferences；reader重开后建立不可替代的`FactCandidateInputs` | `candidateSetId!`、`sourceGraphRoots[]!`（五图payload root的UTF-8排序集合）、`candidates[]!{candidateFactKey!,entryId!,kind=JAVA_BOUNDARY_INVOCATION!,boundaryNodeId!,invocationCallId!,callTargetEdgeId!,orderedArgumentEdgeIds[]!,controlBlockId!,guardId?（required nullable）,evidenceNodeIdsBySubject[]!,requiredAtoms[]!{atomKey!,role!,valueType!,expectedEvidenceKinds[]!}}`、`notApplicableDispositions[]!{entryId!,boundaryNodeId!,templateKey!,missingRoles[]!,reasonCode!}`、`denominator!{applicableKeys[]!,notApplicableKeys[]!}`；dispositions按entry/boundary/template，atoms按registry order |
-| `modules/02-proofs/proof-decision-set.json` | `proven-code-facts-proof-decision-set-v1` / `PROVEN_CODE_FACTS_PROOF_DECISION_SET` | direct：exact M1 `fact-candidate-set` payload + VerifiedSourceInventory `source-inventory/verified-snapshot`；M1 receipt transitive：ApplicationDiscovery和完整ProgramGraphs inputs | `candidateSetId!`、`codeFacts[]!{factId!,candidateDenominatorKey!,kind!,subjectNodeIds[]!,atoms[]!{atomId!,role!,name!,value!{type!,canonical!},proofId!}}`、`atomProofs[]!{proofId!,candidateDenominatorKey!,factId!,atomId!,rootEvidenceNodeId!,requiredEvidenceNodeIds[]!,requiredProgramEdgeIds[]!,ruleIds[]!,status=CLOSED!}`、`factDispositions[]!{candidateDenominatorKey!,disposition!,admittedFactId?,reasonCode?}`、`atomDispositions[]!{candidateDenominatorKey!,atomKey!,disposition!,proofId?,reasonCode?}`、`rootCauseRejections[]!{candidateDenominatorKey!,atomKey!,reasonCode!,gapId!}`、`externalEffectGaps[]!{gapId!,candidateDenominatorKey!,entryId!,boundaryNodeId!,staticTargetType!,staticTargetMethod!,staticTargetSignature!,code=DATA_FLOW_BINDING_UNPROVEN!,basisEvidenceNodeIds[]!}`；每个candidate恰一externalEffectGap，各数组按ID/key，Fact内atoms按registry order |
+| `modules/01-candidates/fact-candidate-set.json` | `proven-code-facts-fact-candidate-set-v2` / `PROVEN_CODE_FACTS_FACT_CANDIDATE_SET` | exact ApplicationDiscovery `capability-report/entry-points`与完整ProgramGraphs五张public graph、graph-index、graph-gap ArtifactReferences；reader重开后建立不可替代的`FactCandidateInputs` | `candidateSetId!`、`sourceGraphRoots[]!`（五图payload root的UTF-8排序集合）、`candidates[]!`为 closed union：`JAVA_BOUNDARY_INVOCATION{candidateFactKey!,entryId!,boundaryNodeId!,invocationCallId!,callTargetEdgeId!,orderedArgumentEdgeIds[]!,controlBlockId!,guardId?（required nullable）,evidenceNodeIdsBySubject[]!,requiredAtoms[]!}` 或 `JAVA_GUARD_CONDITION{candidateFactKey=JAVA_GUARD_CONDITION!,entryId!,guardNodeId!,normalizedCondition!,branchEdgeIds[]!（恰TRUE/FALSE所属边）,evidenceNodeIdsBySubject[]!,requiredAtoms=[CONTROL_CONDITION]!}`；`notApplicableDispositions[]!{entryId!,subjectNodeId!,templateKey!,missingRoles[]!,reasonCode!}`、`denominator!{applicableKeys[]!,notApplicableKeys[]!}`；dispositions按entry/template/subject，atoms按registry order |
+| `modules/02-proofs/proof-decision-set.json` | `proven-code-facts-proof-decision-set-v2` / `PROVEN_CODE_FACTS_PROOF_DECISION_SET` | direct：exact M1 `fact-candidate-set` payload + VerifiedSourceInventory `source-inventory/verified-snapshot`；M1 receipt transitive：ApplicationDiscovery和完整ProgramGraphs inputs | `candidateSetId!`、`codeFacts[]!{factId!,candidateDenominatorKey!,kind!,subjectNodeIds[]!,atoms[]!{atomId!,role!,name!,value!{type!,canonical!},proofId!}}`、`atomProofs[]!{proofId!,candidateDenominatorKey!,factId!,atomId!,rootEvidenceNodeId!,requiredEvidenceNodeIds[]!,requiredProgramEdgeIds[]!,ruleIds[]!,status=CLOSED!}`、`factDispositions[]!{candidateDenominatorKey!,disposition!,admittedFactId?,reasonCode?}`、`atomDispositions[]!{candidateDenominatorKey!,atomKey!,disposition!,proofId?,reasonCode?}`、`rootCauseRejections[]!{candidateDenominatorKey!,atomKey!,reasonCode!,gapId!}`、`externalEffectGaps[]!`仅对应每个boundary candidate，形状为`{gapId!,candidateDenominatorKey!,entryId!,boundaryNodeId!,staticTargetType!,staticTargetMethod!,staticTargetSignature!,code=DATA_FLOW_BINDING_UNPROVEN!,basisEvidenceNodeIds[]!}`；各数组按ID/key，Fact内atoms按registry order |
 | `modules/03-publish/<four registered semantic filenames>` | 下表四个public schema/type；无summary envelope | exact M1 `fact-candidates`与M2 `proof-decisions` ArtifactReferences | 一次module install恰`proven-facts.json/proof-pack.json/gap-ledger.json/fact-accounting.json`；module receipt绑定四descriptors；禁止analysis step root/receipt或五项published list；AnalysisStep store provenance绑定M3 reference |
 
 M3的完整module fixture必须用一次install request/receipt绑定表中M1/M2两个ArtifactReferences；四个standalone payload不得重复envelope。只给四份payload而省略该排序upstream集合，不是完整M3 fixture。
 
-**M3 四个 standalone payload（v1，字段锁定）。** 每个文件均含`schemaVersion`、`artifactType`、`artifactId`和`candidateSetId`；`artifactId`由去除`artifactId`后的canonical UTF-8 bytes、schema/type和固定artifact domain计算。四份文件都保存同一个`proofDecisionSetRef{artifactId,sha256}`，并且该reference必须是M2 module的唯一payload；它不把M2的module envelope嵌套进正文。
+**M3 四个 standalone payload（v2，字段锁定）。** 每个文件均含`schemaVersion`、`artifactType`、`artifactId`和`candidateSetId`；`artifactId`由去除`artifactId`后的canonical UTF-8 bytes、schema/type和固定artifact domain计算。四份文件都保存同一个`proofDecisionSetRef{artifactId,sha256}`，并且该reference必须是M2 module的唯一payload；它不把M2的module envelope嵌套进正文。v1 仅含 boundary candidate 的文件不是 v2 reader 的输入，必须以稳定 wire/schema 错误拒绝；这不是兼容升级。
 
 | 文件 | `artifactType` / `schemaVersion` | 除共同字段外的精确正文 | 下游保证 |
 | --- | --- | --- | --- |
-| `proven-facts.json` | `PROVEN_CODE_FACTS_PROVEN_FACTS` / `proven-code-facts-proven-facts-v1` | `codeFacts[]`（M2 `CodeFact`完整wire）、`factDispositions[]`（M2完整wire） | 一个candidate恰一Fact disposition；只有`ADMITTED`才在`codeFacts[]`出现，且`admittedFactId`命中唯一Fact。 |
-| `proof-pack.json` | `PROVEN_CODE_FACTS_PROOF_PACK` / `proven-code-facts-proof-pack-v1` | `atomProofs[]`（M2 `AtomProof`完整wire）、`atomDispositions[]`（M2完整wire）、`rootCauseRejections[]`（M2完整wire） | 每个candidate-required atom恰一atom disposition；`CLOSED`只引用本文件唯一CLOSED Proof；rejection的根因不会静默丢失。 |
-| `gap-ledger.json` | `PROVEN_CODE_FACTS_GAP_LEDGER` / `proven-code-facts-gap-ledger-v1` | `gaps[]!{gapId,kind,code,affectedEntryIds[],affectedCandidateDenominatorKeys[],evidenceNodeIds[],missingRequirement,impact,closureRequirement}` | external effect Gap由M2逐candidate直接投影；Fact rejection根因也逐条投影。所有数组UTF-8排序且无重复；不写外部系统效果。 |
-| `fact-accounting.json` | `PROVEN_CODE_FACTS_FACT_ACCOUNTING` / `proven-code-facts-fact-accounting-v1` | `candidateDenominatorKeys[]`、`admittedFactIds[]`、`rejectedCandidateDenominatorKeys[]`、`admittedAtomDispositionKeys[]`、`rejectedAtomDispositionKeys[]`、`externalEffectGapIds[]`、`candidateFactCount`、`admittedFactCount`、`rejectedFactCount`、`candidateAtomCount`、`admittedAtomDispositionCount`、`rejectedAtomCount`、`provenFactAtomCount`、`externalEffectGapCount` | ID集合与count双重守恒：不能以相同计数掩盖不同ID；严格满足8.3四条方程。 |
+| `proven-facts.json` | `PROVEN_CODE_FACTS_PROVEN_FACTS` / `proven-code-facts-proven-facts-v2` | `codeFacts[]`（M2 `CodeFact`完整wire）、`factDispositions[]`（M2完整wire） | 一个candidate恰一Fact disposition；只有`ADMITTED`才在`codeFacts[]`出现，且`admittedFactId`命中唯一Fact。 |
+| `proof-pack.json` | `PROVEN_CODE_FACTS_PROOF_PACK` / `proven-code-facts-proof-pack-v2` | `atomProofs[]`（M2 `AtomProof`完整wire）、`atomDispositions[]`（M2完整wire）、`rootCauseRejections[]`（M2完整wire） | 每个candidate-required atom恰一atom disposition；`CLOSED`只引用本文件唯一CLOSED Proof；rejection的根因不会静默丢失。 |
+| `gap-ledger.json` | `PROVEN_CODE_FACTS_GAP_LEDGER` / `proven-code-facts-gap-ledger-v2` | `gaps[]!{gapId,kind,code,affectedEntryIds[],affectedCandidateDenominatorKeys[],evidenceNodeIds[],missingRequirement,impact,closureRequirement}` | 每个boundary candidate有一项外部效果 Gap；每个 Fact rejection 根因也逐条投影。所有数组UTF-8排序且无重复；不写外部系统效果。 |
+| `fact-accounting.json` | `PROVEN_CODE_FACTS_FACT_ACCOUNTING` / `proven-code-facts-fact-accounting-v2` | `candidateDenominatorKeys[]`、`admittedFactIds[]`、`rejectedCandidateDenominatorKeys[]`、`admittedAtomDispositionKeys[]`、`rejectedAtomDispositionKeys[]`、`externalEffectGapIds[]`、`candidateFactCount`、`admittedFactCount`、`rejectedFactCount`、`candidateAtomCount`、`admittedAtomDispositionCount`、`rejectedAtomCount`、`provenFactAtomCount`、`externalEffectGapCount`、`boundaryCandidateDenominatorKeys[]`、`guardCandidateDenominatorKeys[]` | ID集合与count双重守恒：不能以相同计数掩盖不同ID；严格满足8.3方程及两种 candidate 分区。 |
 
 `gap-ledger.json` 的固定投影规则如下：`DATA_FLOW_BINDING_UNPROVEN`生成`kind=EXTERNAL_EFFECT`，affected entry/candidate/evidence直接取M2 `ExternalEffectGap`，`missingRequirement=APPROVED_EXTERNAL_SEMANTICS_ADAPTER_OR_PROVEN_RETURN_CHAIN`，`impact=DO_NOT_DESCRIBE_JAVA_BOUNDARY_AS_EXTERNAL_EFFECT`，`closureRequirement=APPROVED_EXTERNAL_SYSTEM_ANALYSIS_STEP`；每个`RootCauseRejection`生成`kind=FACT_REJECTION`，affected candidate从同M1 candidate取得entry和Evidence，`missingRequirement`与`closureRequirement`均为该rejection的`reasonCode`，`impact=FACT_NOT_ADMITTED`。任何未知Gap code或找不到candidate/Evidence是fatal `FACT_ACCOUNTING_INVARIANT_BROKEN`，不得以自由文本补齐。
 
-本步骤自身record字段未因boundary合同改变，因此module/public文件名和schema保持；但Fact/Gap profile必须发布包含`JAVA_BOUNDARY_INVOCATION`与external-effect Gap的新版content-addressed ref。M1/M2 readers必须exact接受完整ProgramGraphs public set所发布的data-flow v2、evidence v3、index v2以及其余三张public graph/Gap集合，拒绝旧集合、draft与任何新旧混搭；不能通过重开XML/SQL补成effect。
+guard condition 改变了候选闭集、Proof 选择和已发布的 Fact/atom 分母，因此 M1/M2 module schema 与 M3 四个 public schema 同步升为 v2；文件数量、文件名、artifactType、Step04 位置和 downstream output count 不变。Fact/Gap profile必须发布包含`JAVA_BOUNDARY_INVOCATION`、`JAVA_GUARD_CONDITION`与external-effect Gap的新版 content-addressed ref。M1/M2 readers必须exact接受完整ProgramGraphs public set所发布的data-flow v2、evidence v3、index v2以及其余三张public graph/Gap集合，拒绝旧集合、draft与任何新旧混搭；不能通过重开XML/SQL补成 effect 或 condition。
 
 atom value使用8.1 typed union；静态unknown不允许story value，必须使atom disposition=`REJECTED_WITH_REASON`并引用Gap。一个candidate admitted时其requiredAtoms与atomProofs一一对应；rejected candidate的`admittedFactId` required nullable为null。success envelope failureRef=null；integrity fatal写ModuleFailure。field/atom registry/source rule/sort/identity变化先设计并升version。
 
-**示例分类：STRUCTURAL_WIRE_SPECIMEN（isolated candidate semantics）。** 会把静态XML/SQL结构误写成boundary side effect的旧正例已删除。M1/M2 wire字段形状仍以上表为准；新Fact registry只能从ProgramGraphs v3/v2枚举`JAVA_BOUNDARY_INVOCATION`，并把外部effect作为独立Gap。
+**示例分类：STRUCTURAL_WIRE_SPECIMEN（isolated candidate semantics）。** 会把静态XML/SQL结构误写成boundary side effect的旧正例已删除。M1/M2 wire字段形状仍以上表为准；v2 Fact registry只能从ProgramGraphs v3/v2枚举`JAVA_BOUNDARY_INVOCATION`和`JAVA_GUARD_CONDITION`，并只把前者的外部effect作为独立Gap。
 
 ### 8.1 Interface 与 records
 
@@ -303,7 +320,7 @@ Atom value type 只允许 STRING、INTEGER、DECIMAL、BOOLEAN、SYMBOL_REF 或 
 无环顺序：
 
 1. graph/evidence node/edge IDs 已由 分析步骤“程序图” 固定；
-2. atomId 依赖 snapshot、candidateFactKey、role/name/value；
+2. atomId 依赖 snapshot、candidateFactKey、entry owner、subject node、role/name/value；`CONTROL_CONDITION`因此不可能被另一个 entry 或另一 guard 重用；
 3. factId 依赖 snapshot、kind、subject nodes 和排序 atoms，不含 proofId；
 4. proofId 依赖 factId、atomId、Evidence/program-edge closure 和 rule IDs；
 5. proofPackId、provenFactSetId、gapLedgerId、accountingId 最后计算。
@@ -316,7 +333,10 @@ Proof 必须同时证明 source bytes 和 semantic rule path。file/span hash �
 candidateFactCount = admittedFactCount + rejectedFactCount
 candidateAtomCount = admittedAtomDispositionCount + rejectedAtomCount
 provenFactAtomCount = admittedAtomDispositionCount
-externalEffectGapCount = candidateFactCount
+boundaryCandidateCount = count(boundaryCandidateDenominatorKeys)
+guardCandidateCount = count(guardCandidateDenominatorKeys)
+candidateFactCount = boundaryCandidateCount + guardCandidateCount
+externalEffectGapCount = boundaryCandidateCount
 ~~~
 
 一个复合 Fact 任一 atom 失败时，其所有 atoms 都是 REJECTED_WITH_REASON；不得把可独立证明的 sibling 留成孤立 admitted atom。
@@ -337,11 +357,11 @@ Gap 不是负面业务事实，也不是 placeholder。它必须保存 searched 
 
 稳定 code：
 
-FACT_PROFILE_INVALID、FACT_KIND_UNSUPPORTED、REQUIRED_ATOM_MISSING、DATA_FLOW_BINDING_UNPROVEN、COMPOSITE_FACT_REJECTED、PROOF_PACK_REFERENCE_BROKEN、PROOF_PROGRAM_EDGE_BROKEN、PROOF_SOURCE_REOPEN_MISMATCH、PROOF_NOT_CLOSED、CONFLICTING_FACTS、FACT_ACCOUNTING_INVARIANT_BROKEN、PROVEN_CODE_FACTS_RESOURCE_LIMIT_EXCEEDED。
+FACT_PROFILE_INVALID、FACT_KIND_UNSUPPORTED、REQUIRED_ATOM_MISSING、GUARD_CONDITION_UNPROVEN、DATA_FLOW_BINDING_UNPROVEN、COMPOSITE_FACT_REJECTED、PROOF_PACK_REFERENCE_BROKEN、PROOF_PROGRAM_EDGE_BROKEN、PROOF_SOURCE_REOPEN_MISMATCH、PROOF_NOT_CLOSED、CONFLICTING_FACTS、FACT_ACCOUNTING_INVARIANT_BROKEN、PROVEN_CODE_FACTS_RESOURCE_LIMIT_EXCEEDED。
 
 ### 8.6 测试 seam 与验收
 
-- 先枚举denominator，再mutation route、Service call、setter/property、boundary call ID/target triple/argument/origin/control/evidence任一段；XML table/column/where不得成为external-effect Proof。
+- 先枚举denominator，再mutation route、Service call、setter/property、boundary call ID/target triple/argument/origin/control/evidence或独立guard node/branch edge/evidence任一段；XML table/column/where不得成为external-effect Proof，也不得成为 guard condition Proof。
 - 删除 Fact 自己引用的 span/edge 必须 rejection；另一个 Fact 的 Evidence 不能补。
 - 同名 decoy、注释字符串和目标 JSON 不得形成 Proof。
 - Proof source span、graph endpoint、rule ID、fact/atom reference mutation fatal。
@@ -354,6 +374,7 @@ FACT_PROFILE_INVALID、FACT_KIND_UNSUPPORTED、REQUIRED_ATOM_MISSING、DATA_FLOW
 ### 8.7 已冻结裁决：实现者不得自由推断
 
 - candidate Fact/required atoms 来自版本化 registry，并在证明前固定；实现者不能为某 fixture 临时删 atom 或新增硬编码 Fact。
+- 每个可达 guard 是独立 candidate；`CONTROL_CONTEXT` 不能作为 `CONTROL_CONDITION` 的同义词或替代品。`BranchDecision.conditionAtomId` 只能指向后者的 CLOSED Proof。
 - 复合 Fact 是全有或全无：任一 required atom 不闭合，整条 Fact 及 sibling dispositions 都 rejected。
 - span hash、graph edge 和 rule path 三者共同构成 Proof；locator、Trace、模型一致或字符串相似都不能替代。
 - Gap 必须有 missing requirement、impact 和 closure requirement；不能把 Gap 写成负面业务事实或空 placeholder。
@@ -362,15 +383,15 @@ FACT_PROFILE_INVALID、FACT_KIND_UNSUPPORTED、REQUIRED_ATOM_MISSING、DATA_FLOW
 
 ## 9. 当前实现成熟度审计
 
-以下是本次工作树已由定向测试验证的当前事实；它不把候选清单外推成已证明Fact，也不把synthetic fixture外推成jshERP运行结果。
+以下是正式 `origin/main` 已由定向测试验证的当前事实；它不把候选清单外推成已证明Fact，也不把synthetic fixture外推成jshERP运行结果。表中的已实现能力仍是 v1；本章刚刚定义的 v2 guard-condition 合同尚未交付。
 
 | 状态 | 当前事实 |
 | --- | --- |
 | **已实现（结构/构建门）** | 目标package与JDK 17 Toolchain已就位；通用wire头门禁不理解Fact、Proof或Evidence语义。 |
-| **已实现（M1 候选清单）** | `PersistedFactCandidateInputReader`从同一冻结依据重新打开应用发现与完整五图，校验五图、graph index、应用画像和源码清单之间的身份闭合；`FactCandidateEnumerator`只为证据、调用、参数、控制路径均精确闭合的Java边界调用建立候选，并为不闭合组合保留`NOT_APPLICABLE`。`FactCandidateSetModulePublisher`安装唯一`fact-candidate-set.json`与七项上游引用；独立reader重开、重枚举并拒绝内容漂移。two-entry/two-boundary、缺Evidence、幽灵endpoint、错误Evidence support、源码摘录、profile/index/source lineage、owner、registry determinism与module tamper回归通过。 |
-| **已实现（M2 原子证明）** | `AtomicProofBuilder`只从已保存M1输入、Evidence和冻结源码构造逐atom CLOSED Proof；它逐字节重验span/hash、选择同一Evidence边上的允许source/rule pair，并在任一atom失败时拒绝整个复合Fact。每个Java boundary同时留下不声称外部效果的`DATA_FLOW_BINDING_UNPROVEN` Gap。`ProofDecisionSetModulePublisher`与`PersistedProofDecisionSetReader`将M1 candidate、source inventory、snapshot和M2 decision严格重开闭合；源码字节漂移会fatal。 |
-| **已实现（M3 事实账本）** | `FactLedgerPublicationSpecifier`只消费重开的M1/M2与三个已保存analysis-step predecessor，生成并原子安装`proven-facts.json`、`proof-pack.json`、`gap-ledger.json`、`fact-accounting.json`及receipt。正向样例证明两条内部Java invocation Fact与两条外部效果Gap可共存；反向样例证明每条rejected Fact同时保留根因Gap与外部效果Gap。四个文件、五文件reader-visible步骤、ID集合和count守恒均由定向测试验证。 |
+| **已实现（v1 M1 候选清单）** | `PersistedFactCandidateInputReader`从同一冻结依据重新打开应用发现与完整五图，校验五图、graph index、应用画像和源码清单之间的身份闭合；`FactCandidateEnumerator`只为证据、调用、参数、控制路径均精确闭合的Java边界调用建立候选，并为不闭合组合保留`NOT_APPLICABLE`。`FactCandidateSetModulePublisher`安装唯一`fact-candidate-set.json`与七项上游引用；独立reader重开、重枚举并拒绝内容漂移。它尚未枚举独立 guard candidate。 |
+| **已实现（v1 M2 原子证明）** | `AtomicProofBuilder`只从已保存M1输入、Evidence和冻结源码构造逐atom CLOSED Proof；它逐字节重验span/hash、选择同一Evidence边上的允许source/rule pair，并在任一atom失败时拒绝整个复合Fact。每个Java boundary同时留下不声称外部效果的`DATA_FLOW_BINDING_UNPROVEN` Gap。`ProofDecisionSetModulePublisher`与`PersistedProofDecisionSetReader`将M1 candidate、source inventory、snapshot和M2 decision严格重开闭合；源码字节漂移会fatal。它尚未证明独立 guard condition。 |
+| **已实现（v1 M3 事实账本）** | `FactLedgerPublicationSpecifier`只消费重开的M1/M2与三个已保存analysis-step predecessor，生成并原子安装`proven-facts.json`、`proof-pack.json`、`gap-ledger.json`、`fact-accounting.json`及receipt。正向样例证明两条内部Java invocation Fact与两条外部效果Gap可共存；反向样例证明每条rejected Fact同时保留根因Gap与外部效果Gap。它的 v1 schemas/accounting 还不能表达 guard 与 boundary 的分区。 |
 | **历史证据，不是当前能力** | 已删除的pre-reset代码曾验证有限profile的Fact/Proof/Gap/accounting；旧POC五个人工LockedFact独立审计仅两条成立。它们说明“hash闭合不等于语义证据闭合”，不能复制为当前Fact。 |
-| **下一实现门** | 进入分析步骤“业务流程”：只重新打开本步骤四个semantic files与五图，以每个入口为根编译Flow与Evidence Capsule。它不能重新扫描源码、重建Fact或把本步骤external-effect Gap升级成SQL/消息/API效果。 |
+| **下一实现门** | 先实现并发布 v2 M1/M2/M3：独立 guard candidate、`CONTROL_CONDITION` Proof、v2 accounting与四项 public schema；再进入分析步骤“业务流程”。后者只能重新打开 v2 四个semantic files与五图，以每个入口为根编译Flow与Evidence Capsule；不能重新扫描源码、重建Fact或把本步骤external-effect Gap升级成SQL/消息/API效果。 |
 
 分析步骤“已证明代码事实”的成功允许有Gap；但只有当前新实现 admitted-with-Proof 的Fact才能进入分析步骤“业务流程”。

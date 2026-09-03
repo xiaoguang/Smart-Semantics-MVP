@@ -588,7 +588,7 @@ capture 原子产生 `snapshot-manifest.jsonl`、`capture-receipt.json`（`local
 
 ### 工作步骤
 
-1. 先枚举 candidate Fact 与 required atoms，固定分母。
+1. 先枚举 candidate Fact 与 required atoms，固定分母。除了边界调用等复合事实，所有可达的控制流 `GUARD` 也各自成为一个独立的 `JAVA_GUARD_CONDITION` 候选：它只陈述“冻结 Java 在此判断这个规范化条件”，不陈述条件是否符合业务制度。
 2. 从证据图取 source nodes，从结构/调用/控制/数据图取 required edges。
 3. 为每个 atom 构造 Proof closure 并重验 source span。
 4. 所有 required atoms 闭合后才 admission 整个 CodeFact。
@@ -605,7 +605,7 @@ capture 原子产生 `snapshot-manifest.jsonl`、`capture-receipt.json`（`local
 
 ### 下游如何消费
 
-分析步骤“业务流程” 使用 CodeFact、Proof ID、Gap 和五图引用编译流程；它不能借用未被 Fact 引用的 Evidence，也不能把 EvidenceCapsule 当 Proof。
+分析步骤“业务流程” 使用 CodeFact、Proof ID、Gap 和五图引用编译流程；它不能借用未被 Fact 引用的 Evidence，也不能把 EvidenceCapsule 当 Proof。特别地，一条 TRUE/FALSE 分支只能引用同一 entry scope 内、kind 为 `JAVA_GUARD_CONDITION` 且 role 为 `CONTROL_CONDITION` 的已准入 atom；边界调用里的 `CONTROL_CONTEXT` 只说明调用受哪个控制块约束，不能替代该分支条件。
 
 ### 成功、Gap、fatal 与角色
 
@@ -2169,8 +2169,8 @@ plan 中每个 ReaderItem 有唯一 section owner。空章也使用 typed EMPTY_
 | Local Git capture / 分析步骤“已验证源码清单” | **部分实现（capture、M1 writer与共享持久化预备）** | `LocalGitCommitCaptureAdapter`已在synthetic local Git repository上以exact commit、raw Git objects、text/media/100755 inventory和path-free registration验证一条私有快照安装链；symlink拒绝及工作区独立性已有定向测试。M1纯准入的结果现可作为canonical receipt-last module publication持久化和fresh reopen；M2/M3尚未由capture或M1 reader驱动，private source registry lookup、统一执行器和四项reader-visible正式输出仍不存在；没有任何jshERP capture或分析结果。 | 实现M1→M3的真实重新打开与analysis-step publish，再对完整固定commit做离线验收。 |
 | 分析步骤“应用发现” | **部分实现（M1–M4 有界纵切）** | `ApplicationProfileDetector`、`SpringHttpEntryDiscoverer`和`MapperCapabilityCataloger`只经已验证的冻结文本读取 POM/Java/XML；M4 会从三份 fresh-reopened module publication 原子安装`application-profile.json`、`entry-points.jsonl`、`mapper-catalog.jsonl`、`capability-report.json`及 receipt。小型 Spring MVC/MyBatis fixture 覆盖 class/method route、Mapper candidate、DOCTYPE/XXE 门和空入口 Gap；不执行客户 Maven 或模型。 | 尚未由正式运行核心驱动完整冻结客户仓库；全量 route/config/Mapper 变体、完整入口分母和固定 jshERP 离线验收仍未完成。 |
 | 分析步骤“程序图” | **部分实现（M1–M6 图构建与发布纵切）** | 在schema-valid frozen fixture上，结构、调用、控制、数据、证据五图以及index/Gap可作为独立canonical输出安装并重新打开；数据图把离开Java的调用保留为边界调用及Java参数，不推断外部系统效果。 | 尚未接通完整源码盘点、应用发现和真实jshERP全仓输入；不得把fixture绿色测试外推为完整仓库图。 |
-| 分析步骤“已证明代码事实” | **部分实现（M1–M3 有界纵切）** | M1 从重开的应用发现和完整五图建立候选分母；M2 对每个原子重验冻结源码 span 与图/规则 closure，只在复合 Fact 全部 atom CLOSED 时准入；M3 原子安装`proven-facts.json`、`proof-pack.json`、`gap-ledger.json`、`fact-accounting.json`及 receipt。当前正向 fixture 已证明两条 Java boundary invocation Fact 与两条不声称外部效果的 Gap 可以并存，拒绝样例保留根因与边界 Gap。 | 尚未完成完整客户仓库的 Fact 分母、完整规则/预算矩阵、正式运行核心接线或 jshERP 离线验收；任何边界外 SQL、消息或 API 效果仍必须保持 Gap。 |
-| 分析步骤“业务流程” | **尚未实现** | 只有`analysis.flow`package骨架；没有Flow、Outcome、EvidenceCapsule或coverage。 | 当前不存在可供模型读取的Flow；历史“Gap、0 Flow、0 Capsule”不是当前运行结果。 |
+| 分析步骤“已证明代码事实” | **部分实现（v1 的 M1–M3 有界纵切）** | 当前已能从重开的应用发现和完整五图建立边界调用候选、逐原子重验冻结源码 span 与图/规则 closure，并原子安装四项账本文件。正向 fixture 证明两条 Java boundary invocation Fact 可与不声称外部效果的 Gap 并存。 | 当前 v1 没有独立的 `JAVA_GUARD_CONDITION` / `CONTROL_CONDITION` 事实；本次发布的 v2 合同尚待实现。完整客户仓库分母、完整规则/预算矩阵、正式运行核心接线或 jshERP 离线验收也尚未完成；任何边界外 SQL、消息或 API 效果仍必须保持 Gap。 |
+| 分析步骤“业务流程” | **尚未交付** | 一个未合入的 M1 工作分支已证明可以从持久化图沿 call/return 和 TRUE/FALSE 边遍历，但会在缺少独立 guard-condition Fact 时 fail closed。该工作分支不是已发布能力。 | 先实现并发布 ProvenCodeFacts v2，再完成 Flow、Outcome、EvidenceCapsule、coverage 与六项正式输出；当前不存在可供模型读取的已发布 Flow。历史“Gap、0 Flow、0 Capsule”不是当前运行结果。 |
 | 分析步骤“流程解释” | **尚未实现** | 只有`analysis.interpretation`package骨架；没有Provider adapter、R0/R1/R2 task、registry或十项输出。 | scripted、Codex Subscription和OpenAI-compatible实现均待后续工作；当前模型调用能力为零。 |
 | 分析步骤“仓库知识” | **尚未实现** | 只有`analysis.knowledge`package骨架；没有admission、anchor merge、RepositoryKnowledge或coverage draft。 | 需对全部Flow给唯一决定并汇总恰一份仓库知识。 |
 | 分析步骤“九章文档” | **尚未实现** | 只有`analysis.document`package骨架；没有planner、renderer、Trace、Candidate、run manifest或八项输出。 | 当前没有SourceAnalysis生成的Markdown。 |
