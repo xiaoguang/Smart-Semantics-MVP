@@ -394,6 +394,8 @@ Anchor identity优先级固定为：
 
 相同 `jsh_depot_head` table可跨Flow合并为同一RECORD；不同request FQN即使都显示“单据”也不能合并。Relation/metric每个endpoint必须有proven refs。每个semantic item恰一个 `KnowledgeOwnership{semanticItemId,ownerKnowledgeItemId,disposition}`；reasoned exclusion也必须有closed reason code，不能成为遗漏垃圾桶。
 
+SQL table/column、XML statement和Mapper→XML只作为静态技术anchor；generic `JavaBoundaryInvocation`只证明Java调用、静态target、ordered arguments/origins与control context。RepositoryKnowledge不得把二者合并为“调用更新/发送/缓存/索引了某对象”的关系或Outcome；external effect及unknown boundary return的具体值必须保留来自上游的Gap/待确认，技术显示名也不能补语义。
+
 `KnowledgeOwnership`的nullable组合固定：`OWNED`要求`ownerKnowledgeItemId`非null且`reasonCode=null`；`REASONED_EXCLUSION`要求`ownerKnowledgeItemId=null`且`reasonCode`为版本化非空code。一个`semanticItemId`不能同时出现两种disposition。
 
 ### 8.6 RepositoryCoverageLedgerDraftV2
@@ -590,6 +592,7 @@ repositoryCoverageLedgerDraftId = "repository-coverage-ledger-draft:" + lowercas
 - Flow decision是五variant closed union；proposal decision是五variant separate closed union；Gap不编码进decision名称。
 - 业务term缺失时使用total TechnicalDisplayRegistry；不能开放写词、在线扩registry或丢Fact。
 - merge key只允许proven SQL/FQN、Flow/Outcome、exact endpoint或Proof-backed equivalence；显示名/simple name/term key不是identity。
+- generic boundary invocation与静态外部结构可以各自成为anchor，但不得合并推导外部effect；对应Gap必须保留。
 - 每个semantic item恰一owner或有reasoned exclusion；equal-priority unresolved conflict fatal。
 - `RepositoryCoverageLedgerDraftV2`嵌入现有`knowledge-accounting.json`，只到RepositoryKnowledge；NineSectionDocument M1拥有唯一final ledger。不得增加reader-visible文件。
 - RepositoryKnowledge每run只有一个RepositoryKnowledge；禁止per-Flow knowledge或Markdown旁路。

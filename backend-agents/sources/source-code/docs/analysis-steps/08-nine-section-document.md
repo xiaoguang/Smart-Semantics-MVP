@@ -31,8 +31,8 @@ NineSectionDocument的四个analysis step modules先由M1把RepositoryKnowledge 
   "readerItemKind": "GAP_QUESTION",
   "templateKey": "gap-question-v1",
   "typedSlots": {
-    "subject": "DepotHead status persistence path",
-    "missingRequirement": "closed cross-layer data-flow proof"
+    "subject": "DepotHead boundary invocation external effect",
+    "missingRequirement": "evidence outside frozen Java proving the database effect"
   },
   "ownerKnowledgeItemId": "knowledge:2222222222222222222222222222222222222222222222222222222222222222",
   "knowledgeItemIds": ["knowledge:2222222222222222222222222222222222222222222222222222222222222222"],
@@ -155,7 +155,7 @@ NineSectionDocument模块顺序固定且只包含 `M1 NineSectionPlanner` → `M
 - **解决的问题**：把RepositoryKnowledge只闭合到knowledge的coverage draft扩成包含reader/section ownership的唯一final ledger，并把每个 owned Fact atom、meaning、fallback、Gap 唯一分配到固定九章和 typed ReaderItem，形成 renderer 的全部语义输入。
 - **精确上游输入及前置**：只读取8.0.1 M1行列出的content-addressed refs：run-request、profile-bundle、nine-section/reader-template/renderer profiles、唯一明确列出的FlowInterpretation `repository-interpretation-registry`、RepositoryKnowledge typed publication reference及RepositoryKnowledge五项semantic bytes；其中唯一`knowledge-accounting.json`是`RepositoryCoverageLedgerDraftReferenceV1.knowledgeAccountingRef`指定的carrier。M1必须重算nested draft ID/schema，验证draft的前六个分析步骤typed refs、`repositoryKnowledgeCoveragePreparation`、全部denominators/equations与`closedThroughRepositoryKnowledge/closureReasonCode`自洽，再验证已经安装的RepositoryKnowledge publication ref。除该registry外，它不重开VerifiedSourceInventory到BusinessFlows的原始analysis step bytes或其他FlowInterpretation bytes；只验证这些refs的wire形状、同run/semantic key、closed registry顺序/唯一性和在draft/preparation中复制的值，逐bytes重开完整前六个分析步骤属于external validator。final ledger尚不存在，绝不能作为M1 upstream或由调用者注入。envelope逐项绑定所有实际读取的ArtifactReferences且不存在inline budget/hidden control。
 - **确定性顺序 / LLM**：验证单一knowledge和typed RepositoryKnowledge draft reference → 验证draft的前六个分析步骤 typed refs与无环RepositoryKnowledge preparation root（不重开其原始bytes）→ fresh-reopen已完成RepositoryKnowledge publication → 确定prospective reader semantic IDs/section owner map → 计算`NineSectionDocumentCoveragePreparationV1`及其root → 逐字段复制RepositoryKnowledge所有decision/lineage/knowledge ownership ID sets并构造`RepositoryCoverageLedgerV3`，严格比较顶层与preparation的draft ref/reader IDs/owner map → 固定final-ledger identity → 用同一map建九个repository-level SectionPlan → 对ADMITTED_TERM exact-join`RegistryMeaningLineage`并把`normalizedLabel/normalizedPurpose`逐字节写入typed slots → 生成其余typed slots/template key → disposition/accounting → plan引用final-ledger ref并固定plan identity → 两个payload+一个receipt原子安装；0 LLM。
-- **目标输出与 DepotHead 示例**：同一M1 publication恰含`repository-coverage-ledger.json`的`nine-section-document-repository-coverage-ledger-v1` ModuleArtifact和`nine-section-plan-draft.json`的`nine-section-document-nine-section-plan-draft-v3` ModuleArtifact；bounded DepotHead ledger为`repositoryCompletionEligible=false/closed=false`并保留完整missing-ID accounting，plan在待确认事项放data-flow Gap。该module-only ledger不是NineSectionDocument八项public output之一。
+- **目标输出与 DepotHead 示例**：同一M1 publication恰含既定ledger与plan draft；bounded DepotHead plan可陈述generic boundary invocation及ordered arguments/origins，只在待确认事项写external database effect Gap。该module-only ledger不是NineSectionDocument八项public output之一。
 - **必须保持的不变量**：final ledger的`repositoryCoverageLedgerDraftRef`逐字段等于RepositoryKnowledge给出的`RepositoryCoverageLedgerDraftReferenceV1`，其carrier和nested draft ID/schema都已重验；preparation中的`upstreamAnalysisStepCoverageRoots[6]`逐项等于draft，`repositoryKnowledgeDraftPreparationRoot`逐字等于nested RepositoryKnowledge preparation root，`repositoryKnowledgePublicationRef`逐字等于已完成RepositoryKnowledge publication。`analysisStepCoverageRoots[0..6]`逐项等于前七个分析步骤 analysis step roots，`analysisStepCoverageRoots[7]`等于preparation root而不是未来NineSectionDocument analysis step root；final ledger逐字保留RepositoryKnowledge的proposal/decision/meaning/lineage/fallback/knowledge/ownership ID sets，不含plan ID，plan必须含final-ledger `ArtifactReference`。顶层与`nineSectionDocumentCoveragePreparation`的`repositoryCoverageLedgerDraftRef`、有序`readerSemanticItemIds[]`和完整`sectionOwnerBySemanticItem{}`必须逐字段相等。每run恰一plan、九章恰一次/固定顺序标题；全部Flow知识在同一plan中，每semantic item恰一disposition/owner；ledger preparation和plan复制的semantic IDs/owner map逐字相同；每ADMITTED_TERM ReaderItem保存完整五段registry→meaning lineage，`businessTerm/businessPurpose`分别逐字节等于lineage的`normalizedLabel/normalizedPurpose`；无silent loss或per-Flow plan。
 - **Gap / fatal / 确定性**：业务未知形成GAP_QUESTION/EMPTY_SECTION；缺/双owner、章错序、slot/type mismatch、atom loss fatal；相同knowledge/profile产生相同bytes。
 - **给下游的后置保证**：M2只需从M1 receipt重开的exact plan-draft payload即可完整渲染；M3必须从同一receipt重开plan draft与final ledger，并可从每个ReaderItem回到typed knowledge refs。M4随后由该draft确定性构造public `nine-section-plan.json`，且后续所有ledger消费者使用M1的同一final ref，不让M2依赖未来analysis step publication。
@@ -183,7 +183,7 @@ NineSectionDocument模块顺序固定且只包含 `M1 NineSectionPlanner` → `M
 - **解决的问题**：为每个ReaderItem建立无断链、typed、可验证的ReaderItem→source lineage，而不把Trace当Proof。
 - **精确上游输入及前置**：M1唯一仓库plan与同一publication内的final ledger、RepositoryKnowledge唯一knowledge/registryLineage、FlowInterpretation registry/R0/R1/R2、BusinessFlows Capsules/flow、ProvenCodeFacts Proof、ProgramGraphs Evidence、VerifiedSourceInventory complete snapshot/inventory及trace/profile refs；实际打开的每个semantic `ArtifactReference`逐项进入envelope，不读取ApplicationDiscovery就不得虚列；final-ledger ref必须逐字等于plan所引用者，所有roots/IDs和ledger denominator按声明结果自洽。
 - **确定性顺序 / LLM**：按readerItemKey → 根据kind选择trace schema → ADMITTED_TERM先连接knowledge/`registryLineageId`并核对plan slots与lineage规范值逐字节相同，再连接meaning/selectedKey/interpretationProposal/provisionalKey/registryProposal/Capsule basis，其他kind连接fallback/Fact/Gap → Proof/Evidence/source → hop/type/reference/accounting validation → trace root；0 LLM。
-- **目标输出与 DepotHead 示例**：`TraceSet{records,readerItemCoverage,traceRoot}`；status ReaderItem链为meaning→selectedKey→interpretationProposal→provisionalKey→registryProposal→Capsule basis→Proof→XML span；当前Gap item链到missing requirement/searched scope。
+- **目标输出与 DepotHead 示例**：`TraceSet{records,readerItemCoverage,traceRoot}`；invocation ReaderItem链为meaning→selectedKey→interpretationProposal→provisionalKey→registryProposal→Capsule basis→boundary-invocation Proof→Java call span；external-effect Gap item链到missing requirement/searched scope。XML span只能支持独立静态结构ReaderItem。
 - **必须保持的不变量**：九章中每个ReaderItem（含EMPTY_SECTION）恰一trace record；ADMITTED_TERM五段lineage不可跳跃、替换或反向；hop方向遵循identity DAG；source locator需validation后返回；Trace不生成缺失Proof；所有Flow知识回到同一`repositoryKnowledgeId`/`repositoryInterpretationRegistryId`。
 - **Gap / fatal / 确定性**：GAP/EMPTY有typed lineage；missing/substituted hop、source drift、orphan/duplicate record、budget截断 fatal；相同plan/upstream重编结果逐字相同。
 - **给下游的后置保证**：M4与外部run-validator得到self-describing trace root；审计查询可验证后逐跳返回，不需猜record kind。
@@ -244,6 +244,8 @@ active v0 不提供同一run的进程重启续跑，capability manifest固定报
 | `GAP_QUESTION` | `gap-question-v1` | `GapQuestionSlotsV1{subject!,missingRequirement!}` |
 
 `effectiveProfileRef`是完整`ArtifactReference`，必须等于同一plan的`nineSectionProfileRef`；不能写裸`profileId`。`EmptySectionReasonV1`闭集只有`NO_SEPARATE_PROVEN_GOAL | NO_ADMITTED_EXAMPLE_QUESTION | NO_ADMITTED_SECTION_CONTENT`。`ADMITTED_TERM`必须携带RepositoryKnowledge同一lineage的四个registry arrays和meaning；其他kind的四个registry arrays必须为空。
+
+`FACT_SENTENCE / field-write-v1`只有在上游Fact已直接证明write且Proof不跨generic boundary时才可选择；`JavaBoundaryInvocation`、M2 Mapper→XML binding或XML/SQL静态结构均不足以填`targetColumn`。boundary facts使用`TECHNICAL_FALLBACK / technical-scope-v1`陈述target/arguments，external effect必须另建`GAP_QUESTION`，不得由renderer把两项拼成一句write。
 
 #### TraceRecordV3与typed hop闭集
 
@@ -780,6 +782,7 @@ ANALYSIS_RUN_REQUEST_UNSUPPORTED、ANALYSIS_STEP_EXECUTION_REQUEST_INVALID、ANA
 - RepositoryKnowledge `RepositoryCoverageLedgerDraftV2`只可通过`RepositoryCoverageLedgerDraftReferenceV1`进入M1；M1必须分别验证前六个分析步骤 refs、draft内无环RepositoryKnowledge preparation root与已完成RepositoryKnowledge publication ref，并把全部RepositoryKnowledge decision/lineage/knowledge ownership ID sets原样保留到final `RepositoryCoverageLedgerV3`。final ledger不引用plan；plan与后续M3/M4/analysis step/run/validation只引用该final ref。它是M1 module-only业务coverage资产，不增加八项reader-visible output。
 - planner拥有section owner/disposition；M2 renderer唯一输入是M1 verified plan-draft payload，外部rerender唯一输入是public `nine-section-plan.json`；两者都没有source/model/registry能力且输出bytes必须相同。
 - Trace 只做 typed lineage 查询，不代替 Proof；查询前必须完成 Candidate/run validation。
+- ReaderItem对boundary最多陈述invocation/ordered arguments；external effect只能是GAP_QUESTION/待确认，Trace不得从XML/SQL span补成write。
 - Candidate 安装后不可变且始终未发布；review/validation只能写外部append-only区域，Selection是后续流程。
 - Candidate只引用前七个分析步骤 upstream roots；NineSectionDocument root只进入run-manifest。每run只有一份RepositoryKnowledge、NineSectionPlan和document.md；禁止per-Flow Markdown/fragment拼接。
 - completion只由COMPLETE_CAPTURE的RepositoryCoverageLedger闭合触发；单Flow PASS、缺/重叠shard或任何unsupported/failed/omitted item无处置时不得COMPLETE。

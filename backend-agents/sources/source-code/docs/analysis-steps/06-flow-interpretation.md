@@ -31,9 +31,9 @@ ineligible Flow在FlowInterpretation的task、round、candidate和disposition均
   "r0Proposal": {
     "kind": "BUSINESS_TERM",
     "label": "批量审核或反审核",
-    "purpose": "描述同一入口依据输入状态批量改变单据状态",
-    "basisAtomIds": ["atom:input-field", "atom:value-source"],
-    "basisGapIds": ["gap:runtime-status-policy"]
+    "purpose": "描述同一入口依据输入状态到达批量处理边界调用",
+    "basisAtomIds": ["atom:input-field", "atom:boundary-invocation"],
+    "basisGapIds": ["gap:external-update-effect-unproven"]
   },
   "frozenProvisionalKey": "TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "r1Selection": "TERM_P_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -41,7 +41,7 @@ ineligible Flow在FlowInterpretation的task、round、candidate和disposition均
 }
 ~~~
 
-R0 label/purpose是`MODEL_INTERPRETATION` proposal data，不是Fact。程序先验证UTF-8/NFC、字符与字节上限、kind、basis闭包和seed exact-match，再允许它进入registry。
+R0 label/purpose是`MODEL_INTERPRETATION` proposal data，不是Fact。程序先验证UTF-8/NFC、字符与字节上限、kind、basis闭包和seed exact-match，再允许它进入registry。即使label含“审核”“更新”或目标技术名，也不得把generic boundary invocation解释为外部副作用；Capsule中的external-effect Gap必须原样保留。
 
 ## 3. 程序怎样工作
 

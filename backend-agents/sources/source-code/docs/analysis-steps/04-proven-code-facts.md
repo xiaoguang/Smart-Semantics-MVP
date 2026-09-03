@@ -6,7 +6,7 @@
 
 ## 1. 为什么存在
 
-程序图说明“解析到了哪些 node/edge”，但一个业务事实往往由多段关系共同成立。例如“批量设置状态会把请求 status 写入 jsh_depot_head.status”至少涉及 HTTP 参数、Service 数据流、entity property、Mapper binding、XML statement、表和列。
+程序图说明“解析到了哪些node/edge”，但一个事实往往由多段关系共同成立。例如“Java在指定guard下以来源已证明的record/example参数调用DepotHeadMapper.updateByExampleSelective”涉及HTTP参数、Service数据流、entity property、call target、ordered arguments、control context和Evidence。它不等于“数据库已写入某列”。
 
 本分析步骤先枚举完整 Fact 的 required atoms，再逐 atom 建 Proof。任何 required atom 不闭合，整条复合 Fact 都不准入；已证明的 sibling atom 也不能拼成一条语义残缺的事实。
 
@@ -18,24 +18,26 @@
 
 DepotHead 的 **REAL_SOURCE** 在 Controller :43,:178-191、Service :741-822、Mapper Java :23、DepotHead :63,:301-307、Example :149-151 和 Mapper XML :3,:70-93,:385-497。
 
-目标候选 Fact：
+目标候选Fact：
 
 ~~~text
-kind: PERSISTED_STATUS_UPDATE
+kind: JAVA_BOUNDARY_INVOCATION
 required atoms:
   ENTRY_ROUTE = POST /depotHead/batchSetStatus
   INPUT_FIELD = status
   SERVICE_HANDLER = DepotHeadService.batchSetStatus
   ELIGIBLE_ID_SET = dhIds
-  MAPPER_METHOD = DepotHeadMapper.updateByExampleSelective
-  TABLE = jsh_depot_head
-  COLUMN = status
-  VALUE_SOURCE = request status
-  WHERE_KEY = id
-  WHERE_OPERATOR = IN
+  INVOCATION_CALL_ID = exact M2 call-site ID
+  STATIC_TARGET_TYPE = DepotHeadMapper
+  STATIC_TARGET_METHOD = updateByExampleSelective
+  STATIC_TARGET_SIGNATURE = updateByExampleSelective(DepotHead, DepotHeadExample)
+  ORDERED_ARGUMENTS = [record, example]
+  JAVA_LOCAL_ORIGINS = per-ordinal proven origins
+  CONTROL_CONTEXT = exact M3 block/guard
+  INVOCATION_EVIDENCE = Java call locator + java-boundary-invocation-v1
 ~~~
 
-这是 candidate denominator，不是当前 admitted Fact。当前五图/dataflow 不足时，正确输出是 rejection/Gap。
+这是candidate denominator，不是当前admitted Fact。`jsh_depot_head.status`、`WHERE id IN`等可作为独立M1/M2静态结构Fact；“该boundary invocation执行了更新/筛选”必须始终是外部效果Gap，不能成为这个candidate的atom。
 
 ## 3. 程序怎样工作
 
@@ -62,28 +64,28 @@ required atoms:
 
 ~~~json
 {
-  "candidateFactKey": "DEPOTHEAD_STATUS_PERSISTENCE",
+  "candidateFactKey": "DEPOTHEAD_JAVA_BOUNDARY_INVOCATION",
   "disposition": "REJECTED_WITH_REASON",
   "admittedFactId": null,
   "reasonCode": "DATA_FLOW_BINDING_UNPROVEN"
 }
 ~~~
 
-这是exact `FactDisposition`；缺失的`VALUE_SOURCE/WHERE_KEY/WHERE_OPERATOR`分别由同candidate的`AtomDisposition`和Gap记录，不把`missingAtomKeys`塞进Fact disposition。在未来五图闭合后，同一 candidate 才可能成为 ADMITTED_WITH_PROOF；不得预先改成 success 示例。
+这是exact `FactDisposition`；缺失的boundary target/argument/origin/control/evidence atom分别由同candidate的`AtomDisposition`和Gap记录。在ProgramGraphs boundary合同闭合后，同一candidate才可能成为ADMITTED_WITH_PROOF；外部效果Gap不因invocation Fact准入而关闭。
 
-目标分析步骤“已证明代码事实”出口始终包含五个命名文件和非空candidate/accounting记录。`proven-facts.json`可以有0个admitted Fact，但不能没有candidate dispositions；在历史DepotHead rejection回归场景中，至少要留下`DEPOTHEAD_STATUS_PERSISTENCE` rejection、缺失atom和对应Gap，保证“没有证明成功”本身可观察、可追因。
+目标分析步骤“已证明代码事实”出口始终包含五个命名文件和非空candidate/accounting记录。`proven-facts.json`可以有0个admitted Fact，但不能没有candidate dispositions；DepotHead至少留下`DEPOTHEAD_JAVA_BOUNDARY_INVOCATION` disposition，并留下`DEPOTHEAD_EXTERNAL_UPDATE_EFFECT_UNPROVEN` Gap，保证invocation与effect不被混写。
 
 ### 4.1 人类 walkthrough：模块用什么文件接力
 
 **示例分类：NARRATIVE_ILLUSTRATION。** 为了展示完整目标故事，下面采用“未来五图已闭合”的分支；当前SourceAnalysis尚无Fact实现或输出，历史pre-reset rejection/Gap只作为验收反例，三行不能加载为wire。
 
 ~~~jsonl
-{"module":"candidates","artifact":"modules/01-candidates/fact-candidate-set.json","takesFrom":["ApplicationDiscoveryReference","ProgramGraphsReference"],"says":{"candidateKey":"DEPOTHEAD_STATUS_PERSISTENCE","entryId":"entry:post-depothead-batch-set-status","requiredAtoms":["ENTRY_ROUTE","INPUT_FIELD","SERVICE_HANDLER","ELIGIBLE_ID_SET","MAPPER_METHOD","TABLE","COLUMN","VALUE_SOURCE","WHERE_KEY","WHERE_OPERATOR"]}}
-{"module":"proofs","artifact":"modules/02-proofs/proof-decision-set.json","takesFrom":["fact-candidate-set.json","five graphs","verified source"],"says":{"factId":"fact:depothead-status-persistence","decision":"ADMITTED_WITH_PROOF","closedAtomCount":10,"statusValuePath":"request status→jsh_depot_head.status","wherePath":"request ids→WHERE id IN"}}
-{"module":"publish","artifacts":"modules/03-publish/<four-semantic-files>","receipt":"modules/03-publish/module-receipt.json","takesFrom":["fact-candidate-set.json","proof-decision-set.json"],"says":{"admittedFactIds":["fact:depothead-status-persistence"],"remainingGapIds":["gap:runtime-status-policy"],"semanticFiles":["proven-facts.json","proof-pack.json","gap-ledger.json","fact-accounting.json"],"analysisStepReceipt":null,"nextStep":"CanonicalAnalysisStepArtifactStore"}}
+{"module":"candidates","artifact":"modules/01-candidates/fact-candidate-set.json","takesFrom":["ApplicationDiscoveryReference","ProgramGraphsReference"],"says":{"candidateKey":"DEPOTHEAD_JAVA_BOUNDARY_INVOCATION","kind":"JAVA_BOUNDARY_INVOCATION","entryId":"entry:post-depothead-batch-set-status","requiredAtoms":["INVOCATION_CALL_ID","STATIC_TARGET_TYPE","STATIC_TARGET_METHOD","STATIC_TARGET_SIGNATURE","ORDERED_ARGUMENTS","JAVA_LOCAL_ORIGINS","CONTROL_CONTEXT","INVOCATION_EVIDENCE"]}}
+{"module":"proofs","artifact":"modules/02-proofs/proof-decision-set.json","takesFrom":["fact-candidate-set.json","five graphs","verified source"],"says":{"factId":"fact:depothead-mapper-boundary-invocation","decision":"ADMITTED_WITH_PROOF","statement":"Java invokes the static target with the recorded ordered arguments","externalEffect":"UNPROVEN_GAP"}}
+{"module":"publish","artifacts":"modules/03-publish/<four-semantic-files>","receipt":"modules/03-publish/module-receipt.json","takesFrom":["fact-candidate-set.json","proof-decision-set.json"],"says":{"admittedFactIds":["fact:depothead-mapper-boundary-invocation"],"remainingGapIds":["gap:depothead-external-update-effect-unproven"],"semanticFiles":["proven-facts.json","proof-pack.json","gap-ledger.json","fact-accounting.json"],"analysisStepReceipt":null,"nextStep":"CanonicalAnalysisStepArtifactStore"}}
 ~~~
 
-`fact:depothead-status-persistence` 只在十个 atom 都闭合时出现；当前少 VALUE/WHERE 证明时，M2 改为 rejection并保留相同 candidate key，M3 不能为了让 BusinessFlows 有 Flow 而伪造 factId。
+`fact:depothead-mapper-boundary-invocation`只在全部invocation atoms闭合时出现；它与external-effect Gap可同时存在。M3不能为了让BusinessFlows有Flow而把XML/SQL静态结构加进Proof并改写成持久化成功。
 
 ## 5. 下游怎样消费而不返工
 
@@ -136,13 +138,13 @@ required atoms:
 - **解决的问题**：在看证明结果前先冻结应该尝试证明的 Fact/required atom 分母，防止失败项消失。
 - **精确上游输入及前置**：valid ApplicationDiscovery entry/capability refs、ProgramGraphs five-graph/index/Gap refs、版本化 Fact registry/profile/budget；graph roots/controls 已重验。
 - **确定性顺序 / LLM**：按 entry/site/registry key 排序 → 匹配适用 Fact templates → 实例化 subject/required atoms/roles/expected evidence kinds → 记录不适用 reason；0 LLM。
-- **目标输出与 DepotHead 示例**：`FactCandidateSet{candidateFacts,requiredAtoms,denominator,sourceGraphRoots}`；例子含 `DEPOTHEAD_STATUS_PERSISTENCE` 和 route/input/service/table/column/value/where 十个 atom keys。
+- **目标输出与 DepotHead 示例**：`FactCandidateSet{candidateFacts,requiredAtoms,denominator,sourceGraphRoots}`；例子含`DEPOTHEAD_JAVA_BOUNDARY_INVOCATION`及call ID、static target triple、ordered arguments、Java-local origins、control、evidence atoms；external effect另列Gap。
 - **必须保持的不变量**：candidate key+subject 唯一；每种 Fact kind 的 required atoms 完整且版本化；枚举不受后续 Proof 成败影响。
 - **Gap / fatal / artifact复用**：profile 外但可定位的 candidate 标成 CapabilityGap；registry/schema/reference/accounting 冲突 fatal；模块只读相同graphs/profile，不读取未安装draft。
 - **给下游的后置保证**：M2 得到不可变 candidate/atom IDs、required evidence/edge roles 和完整 denominator，无权删减。
 - **明确非目标**：不选择具体 proof path、不 admission Fact、不解释业务名称。
 - **公共测试 seam 与验收**：`enumerate(entries, graphIndex, factRegistry)` 覆盖 DepotHead template、registry deletion、同名 decoy、输入乱序；Proof 删除不能改变枚举 bytes/counts。
-- **Luna/xhigh 测试指南**：创建 `FactCandidateEnumeratorTest`，冻结ApplicationDiscovery与ProgramGraphs artifacts、Fact registry和手写candidate golden于 `src/test/resources/analysis/fact/candidates/`。逐RED：DepotHead十atom denominator、registry不适用、同名decoy、unsupported Gap、graph order determinism、Proof deletion不改分母；首RED因seam/schema缺失。只fakeartifact reader，registry matching/canonical不可mock。命令：`mvn -Dtest=FactCandidateEnumeratorTest test`；禁网络/客户运行。偏离按DESIGN 13.11。
+- **Luna/xhigh 测试指南**：创建`FactCandidateEnumeratorTest`，冻结ProgramGraphs v3/v2 boundary artifacts与手写candidate golden。逐RED：invocation atom denominator、external effect不进入Fact、Mapper/HTTP同generic kind、ambiguous Gap、old ProgramGraphs set拒绝、order determinism；registry/canonical不可mock。
 - **Terra/xhigh 实现指南**：RED后只改 `analysis/fact/candidates/`，实现 public `FactCandidateEnumerator/FactCandidateSet` 与 `proven-code-facts-fact-candidate-set-v1`；只读ApplicationDiscovery与ProgramGraphs artifacts，registry match→instantiate atoms→denominator。逐RED GREEN，Proof结果不得反向影响枚举；禁止fixture硬编码/改required atoms。上游或registry语义不足MUST STOP交Sol/ultra，完成更新审计。
 
 #### M2 AtomicProofBuilder
@@ -150,13 +152,13 @@ required atoms:
 - **解决的问题**：逐 atom 证明 source bytes 与 semantic graph/rule path都闭合，并执行 composite all-or-nothing admission。
 - **精确上游输入及前置**：M1 candidate artifact、ProgramGraphs five graphs/evidence、VerifiedSourceInventory source handles、Proof rule registry/budget；candidate IDs、graph endpoints、source roots 完全一致。
 - **确定性顺序 / LLM**：按 candidate/atom key → 解析 required graph/evidence roles → 重开 span/hash → 建无环 proof closure → 先得 atom dispositions → 再按 all-atoms rule 得 Fact disposition；0 LLM。
-- **目标输出与 DepotHead 示例**：`ProofDecisionSet{proofs,codeFacts,factDispositions,atomDispositions,rootCauseRejections}`；历史回归例中VALUE_SOURCE/WHERE atoms为`DATA_FLOW_BINDING_UNPROVEN`，整个Fact rejected；未来全闭合才有factId。
+- **目标输出与 DepotHead 示例**：`ProofDecisionSet{proofs,codeFacts,factDispositions,atomDispositions,rootCauseRejections}`；boundary atoms全闭合时可admit invocation Fact，但external update/where效果仍有`DATA_FLOW_BINDING_UNPROVEN` Gap且不进入该Fact。
 - **必须保持的不变量**：一个 admitted atom 恰一个 CLOSED Proof；Fact 任一 required atom失败则无 admitted sibling；Proof refs 只指 M1/ProgramGraphs/VerifiedSourceInventory identities。
 - **Gap / fatal / artifact复用**：可解释的不闭合是 rejection/Gap；source/edge/reference drift、proof status伪 CLOSED、conflicting admitted facts fatal；M2从完整candidate set构建全部decisions，不混用其他publication的proof。
 - **给下游的后置保证**：M3 获得每个 candidate/atom 的唯一 disposition、closed proofs 或具体根因，能直接守恒计数。
 - **明确非目标**：不把 evidence locator、Trace、模型或文本相似当 Proof，不生成 Flow。
-- **公共测试 seam 与验收**：`prove(candidateSet, graphs, source, rules)` 对十个 DepotHead atoms逐段 deletion、source/rule mutation、conflict和正向 closure；任一缺项绝不 admission composite Fact。
-- **Luna/xhigh 测试指南**：创建 `AtomicProofBuilderTest`，fixtures/goldens放 `src/test/resources/analysis/fact/proofs/`。一个行为一个RED：十atom全闭合正例、每段deletion rejection、source/rule drift fatal、sibling all-reject、conflicting facts、root replay；expected Proof paths独立手写。只fake source reopen，禁止mockgraph traversal/Proof/canonical。命令：`mvn -Dtest=AtomicProofBuilderTest test`；无网络/模型。异常RED按13.10，偏离按13.11。
+- **公共测试 seam 与验收**：`prove(candidateSet, graphs, source, rules)`对每个boundary atom逐段deletion、source/rule mutation、XML/SQL伪支持、conflict和正向closure；任一缺项不admit invocation Fact，任何完整invocation也不关闭external-effect Gap。
+- **Luna/xhigh 测试指南**：创建`AtomicProofBuilderTest`，fixtures/goldens放`src/test/resources/analysis/fact/proofs/`。一个行为一个RED：全部boundary atoms闭合正例、每段deletion rejection、external-effect非准入、source/rule drift fatal、sibling all-reject、conflicting facts、root replay；expected Proof paths独立手写。只fake source reopen，禁止mock graph traversal/Proof/canonical；无网络/模型。
 - **Terra/xhigh 实现指南**：RED后仅拥有 `analysis/fact/proofs/`，实现 public `AtomicProofBuilder/ProofDecisionSet` 与 `proven-code-facts-proof-decision-set-v1`；M1+ProgramGraphs+source→role match→reopen→Proof→atom→composite decision。逐atom GREEN再composite GREEN；不得借Evidence/模型/Trace或保留sibling。需改Fact/graph跨analysis step contract则MUST STOP并交用户流程，审计同步。
 
 #### M3 FactLedgerPublicationSpecifier
@@ -185,14 +187,11 @@ M1/M2使用 DESIGN 13.3 `ModuleArtifact<T>` envelope；M3直接安装四个analy
 
 M3的完整module fixture必须用一次install request/receipt绑定表中M1/M2两个ArtifactReferences；四个standalone payload不得重复envelope。只给四份payload而省略该排序upstream集合，不是完整M3 fixture。
 
+本步骤自身record字段未因boundary合同改变，因此module/public文件名和schema保持；但Fact/Gap profile必须发布包含`JAVA_BOUNDARY_INVOCATION`与external-effect Gap的新版content-addressed ref。M1/M2 readers必须exact接受ProgramGraphs M4 draft v3所发布的data-flow v2、evidence v3、index v2集合，拒绝旧集合与任何新旧混搭；不能通过重开XML/SQL补成effect。
+
 atom value使用8.1 typed union；静态unknown不允许story value，必须使atom disposition=`REJECTED_WITH_REASON`并引用Gap。一个candidate admitted时其requiredAtoms与atomProofs一一对应；rejected candidate的`admittedFactId` required nullable为null。success envelope failureRef=null；integrity fatal写ModuleFailure。field/atom registry/source rule/sort/identity变化先设计并升version。
 
-**示例分类：STRUCTURAL_WIRE_SPECIMEN（isolated single-candidate/single-atom records）。** 下面两行逐字段展示authoritative record形状；ID/digest未由展示bytes重算，因此不是schema-valid/replay声明，也不替代前文十atom DepotHead walkthrough或建立跨analysis step remap：
-
-~~~jsonl
-{"schemaVersion":"proven-code-facts-fact-candidate-set-v1","artifactType":"PROVEN_CODE_FACTS_FACT_CANDIDATE_SET","artifactId":"fact-candidates:1111111111111111111111111111111111111111111111111111111111111111","producer":{"address":{"kind":"ANALYSIS_STEP","runId":"analysis-run:9999999999999999999999999999999999999999999999999999999999999999","analysisStepKey":"proven-code-facts","moduleNumber":1,"moduleKey":"candidates"},"moduleVersion":"v1"},"upstreamArtifacts":[{"artifactId":"application-discovery-capability-report:4444444444444444444444444444444444444444444444444444444444444444","sha256":"4444444444444444444444444444444444444444444444444444444444444444"},{"artifactId":"application-discovery-entry-points:2222222222222222222222222222222222222222222222222222222222222222","sha256":"2222222222222222222222222222222222222222222222222222222222222222"},{"artifactId":"program-graphs-call-graph:1111111111111111111111111111111111111111111111111111111111111111","sha256":"1111111111111111111111111111111111111111111111111111111111111111"},{"artifactId":"program-graphs-code-structure:2222222222222222222222222222222222222222222222222222222222222222","sha256":"2222222222222222222222222222222222222222222222222222222222222222"},{"artifactId":"program-graphs-control-flow:3333333333333333333333333333333333333333333333333333333333333333","sha256":"3333333333333333333333333333333333333333333333333333333333333333"},{"artifactId":"program-graphs-data-flow:4444444444444444444444444444444444444444444444444444444444444444","sha256":"4444444444444444444444444444444444444444444444444444444444444444"},{"artifactId":"program-graphs-evidence:5555555555555555555555555555555555555555555555555555555555555555","sha256":"5555555555555555555555555555555555555555555555555555555555555555"},{"artifactId":"program-graphs-graph-gaps:6666666666666666666666666666666666666666666666666666666666666666","sha256":"6666666666666666666666666666666666666666666666666666666666666666"},{"artifactId":"program-graphs-graph-index:7777777777777777777777777777777777777777777777777777777777777777","sha256":"7777777777777777777777777777777777777777777777777777777777777777"}],"controls":{"toolchainSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profileSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","schemaBundleSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","promptBundleSha256":null,"artifactPolicyRegistryRef":{"artifactId":"artifact-policy-registry:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","sha256":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}},"completion":{"status":"SUCCEEDED","gapRefs":[],"failureRef":null},"payload":{"candidateSetId":"candidate-set:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","graphIds":{"codeStructure":"graph:1111111111111111111111111111111111111111111111111111111111111111","call":"graph:2222222222222222222222222222222222222222222222222222222222222222","controlFlow":"graph:3333333333333333333333333333333333333333333333333333333333333333","dataFlow":"graph:4444444444444444444444444444444444444444444444444444444444444444","evidence":"graph:5555555555555555555555555555555555555555555555555555555555555555"},"candidates":[{"candidateFactKey":"DEPOTHEAD_STATUS_COLUMN","entryId":"entry:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","kind":"PERSISTED_STATUS_UPDATE","subjectNodeIds":["node:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"],"requiredAtoms":[{"atomKey":"COLUMN","role":"ATTRIBUTE","valueType":"SYMBOL_REF","expectedEvidenceKinds":["CODE_STRUCTURE","EVIDENCE"]}]}],"denominator":{"candidateFactKeys":["DEPOTHEAD_STATUS_COLUMN"],"candidateAtomKeys":["COLUMN"]}}}
-{"schemaVersion":"proven-code-facts-proof-decision-set-v1","artifactType":"PROVEN_CODE_FACTS_PROOF_DECISION_SET","artifactId":"proof-decisions:2222222222222222222222222222222222222222222222222222222222222222","producer":{"address":{"kind":"ANALYSIS_STEP","runId":"analysis-run:9999999999999999999999999999999999999999999999999999999999999999","analysisStepKey":"proven-code-facts","moduleNumber":2,"moduleKey":"proofs"},"moduleVersion":"v1"},"upstreamArtifacts":[{"artifactId":"fact-candidates:1111111111111111111111111111111111111111111111111111111111111111","sha256":"1111111111111111111111111111111111111111111111111111111111111111"},{"artifactId":"verified-source-inventory-source-inventory:5555555555555555555555555555555555555555555555555555555555555555","sha256":"5555555555555555555555555555555555555555555555555555555555555555"},{"artifactId":"program-graphs-call-graph:1111111111111111111111111111111111111111111111111111111111111111","sha256":"1111111111111111111111111111111111111111111111111111111111111111"},{"artifactId":"program-graphs-code-structure:2222222222222222222222222222222222222222222222222222222222222222","sha256":"2222222222222222222222222222222222222222222222222222222222222222"},{"artifactId":"program-graphs-control-flow:3333333333333333333333333333333333333333333333333333333333333333","sha256":"3333333333333333333333333333333333333333333333333333333333333333"},{"artifactId":"program-graphs-data-flow:4444444444444444444444444444444444444444444444444444444444444444","sha256":"4444444444444444444444444444444444444444444444444444444444444444"},{"artifactId":"program-graphs-evidence:5555555555555555555555555555555555555555555555555555555555555555","sha256":"5555555555555555555555555555555555555555555555555555555555555555"},{"artifactId":"program-graphs-graph-gaps:6666666666666666666666666666666666666666666666666666666666666666","sha256":"6666666666666666666666666666666666666666666666666666666666666666"},{"artifactId":"program-graphs-graph-index:7777777777777777777777777777777777777777777777777777777777777777","sha256":"7777777777777777777777777777777777777777777777777777777777777777"},{"artifactId":"verified-snapshot:4444444444444444444444444444444444444444444444444444444444444444","sha256":"4444444444444444444444444444444444444444444444444444444444444444"}],"controls":{"toolchainSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profileSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","schemaBundleSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","promptBundleSha256":null,"artifactPolicyRegistryRef":{"artifactId":"artifact-policy-registry:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","sha256":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}},"completion":{"status":"SUCCEEDED","gapRefs":[],"failureRef":null},"payload":{"candidateSetId":"candidate-set:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","codeFacts":[{"factId":"fact:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","kind":"PERSISTED_STATUS_UPDATE","subjectNodeIds":["node:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"],"atoms":[{"atomId":"atom:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","role":"ATTRIBUTE","name":"COLUMN","value":{"type":"SYMBOL_REF","canonical":"column:jsh_depot_head.status"},"proofId":"proof:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}]}],"atomProofs":[{"proofId":"proof:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","factId":"fact:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","atomId":"atom:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","rootEvidenceNodeId":"evidence:9999999999999999999999999999999999999999999999999999999999999999","requiredEvidenceNodeIds":["evidence:9999999999999999999999999999999999999999999999999999999999999999"],"requiredProgramEdgeIds":["program-edge:8888888888888888888888888888888888888888888888888888888888888888"],"ruleIds":["sql-column-declaration-v1"],"status":"CLOSED"}],"factDispositions":[{"candidateFactKey":"DEPOTHEAD_STATUS_COLUMN","disposition":"ADMITTED_WITH_PROOF","admittedFactId":"fact:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","reasonCode":null}],"atomDispositions":[{"candidateFactKey":"DEPOTHEAD_STATUS_COLUMN","atomKey":"COLUMN","disposition":"ADMITTED_WITH_PROOF","proofId":"proof:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","reasonCode":null}],"rootCauseRejections":[]}}
-~~~
+**示例分类：STRUCTURAL_WIRE_SPECIMEN（isolated candidate semantics）。** 会把静态XML/SQL结构误写成boundary side effect的旧正例已删除。M1/M2 wire字段形状仍以上表为准；新Fact registry只能从ProgramGraphs v3/v2枚举`JAVA_BOUNDARY_INVOCATION`，并把外部effect作为独立Gap。
 
 ### 8.1 Interface 与 records
 
@@ -295,13 +294,13 @@ FACT_PROFILE_INVALID、FACT_KIND_UNSUPPORTED、REQUIRED_ATOM_MISSING、DATA_FLOW
 
 ### 8.6 测试 seam 与验收
 
-- 先枚举 denominator，再 mutation route prefix、Service call、setter/property、Mapper binding、XML table/column/where 任一段。
+- 先枚举denominator，再mutation route、Service call、setter/property、boundary call ID/target triple/argument/origin/control/evidence任一段；XML table/column/where不得成为external-effect Proof。
 - 删除 Fact 自己引用的 span/edge 必须 rejection；另一个 Fact 的 Evidence 不能补。
 - 同名 decoy、注释字符串和目标 JSON 不得形成 Proof。
 - Proof source span、graph endpoint、rule ID、fact/atom reference mutation fatal。
 - conflicting canonical Fact 双方都不 admitted。
 - 等价 root/input order 产生相同 records/IDs/canonical bytes。
-- fixed DepotHead slice 在通用能力补齐前继续输出 Gap/rejection，而不是硬编码 positive golden。
+- fixed DepotHead slice在generic boundary能力补齐前继续输出Gap/rejection；补齐后只可positive-admit invocation，不得硬编码external update positive golden。
 
 验收要求同时有：完整composite Fact正例、每个required atom的独立deletion/mutation反例、conflicting Fact、不同root fresh-reopen，以及从历史审计提炼的DepotHead rejection baseline。只有positive case全atoms CLOSED才admitted，任一反例都不会留下sibling admitted atom，五个artifacts可独立重验，分析步骤“已证明代码事实”才算可交付。
 
@@ -323,6 +322,6 @@ Wire Reset后的`org.sourceanalysis.app.analysis.fact`目前只有语义package�
 | **已实现（结构/构建门）** | 目标package与JDK 17 Toolchain已就位；通用wire头门禁不理解Fact、Proof或Evidence语义。 |
 | **本步骤生产能力尚未实现** | M1–M3、逐atom proof、五项正式输出和从五图fresh-reopen的Fact compiler均不存在。 |
 | **历史证据，不是当前能力** | 已删除的pre-reset代码曾验证有限profile的Fact/Proof/Gap/accounting；旧POC五个人工LockedFact独立审计仅两条成立。它们说明“hash闭合不等于语义证据闭合”，不能复制为当前Fact。 |
-| **下一实现门** | 按本章只消费五张图与其Evidence，逐atom建立CLOSED Proof或Gap，并用guard/setter/Mapper/SQL column deletion mutation证明不会从源码字符串猜回事实。 |
+| **下一实现门** | 按本章只消费五张图与其Evidence，逐atom建立generic boundary invocation Proof或Gap，并用target/argument/origin/guard/evidence与XML/SQL伪支持mutation证明不会把外部效果猜成事实。 |
 
 分析步骤“已证明代码事实”的成功允许有Gap；但只有当前新实现 admitted-with-Proof 的Fact才能进入分析步骤“业务流程”。

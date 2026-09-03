@@ -21,9 +21,9 @@ DepotHead **REAL_SOURCE** 包含：
 - POST /depotHead/batchSetStatus；
 - status 0/1 分支和当前单据状态检查，Service :752-776；
 - 强审核/负库存/出入库条件，Service :777-796；
-- dhIds 非空后 status/update，Service :798-803；
+- dhIds 非空后Java-local status赋值与boundary invocation，Service :798-803；
 - 库存更新、日志和 return，Service :804-821；
-- Mapper/XML status 持久化路径。
+- Mapper Java static target与独立Mapper/XML静态结构；外部持久化效果不在Flow事实中。
 
 目标 Flow 应以 HTTP entry 为根，保留每个 guard polarity 和 terminal。**但当前结果不是成功 Flow**：固定 jshERP slice 仍是 Gap、0 Flow、0 Capsule。
 
@@ -73,10 +73,10 @@ Service :741-821
 Mapper Java :23
 DepotHead :63,:301-307
 DepotHeadExample :149-151
-Mapper XML :3,:70-93,:385-497
+boundary call Service :803
 ~~~
 
-是否需要更细 span 由 projection obligations 决定，不能把上面行段硬编码为 golden。
+XML spans只可随独立静态结构Fact/Gap进入Capsule，不能证明boundary effect。是否需要更细span由projection obligations决定，不能把上面行段硬编码为golden。
 
 目标出口不会因 0 Flow 变成空结果：六个命名文件必须全部存在；每个 分析步骤“应用发现” entry 在 `entry-dispositions.jsonl` 恰有一条记录，`flow-coverage.json` 保存完整分母、`flowSliceCount=0`、`evidenceCapsuleCount=0`及 shard receipts，`flow-gaps.jsonl` 保存 blocking reason，receipt只绑定这些semantic payload的descriptor/status/Gap refs/count。未来 DepotHead 正向出口则必须有一个入口根 Flow、完整 Outcomes 和恰一个 Capsule，但仓库 analysis step 只有在**其他所有入口也各有 COMPILED/GAP/EXCLUDED**后才闭合，而不是只把 DepotHead count 改成 1。
 
@@ -87,8 +87,8 @@ Artifact cardinality 固定：若完整仓库编译出 `N` 个 FlowSlice，则�
 **示例分类：NARRATIVE_ILLUSTRATION。** 下面只解释未来 Fact/graph closure 已补齐后的模块接力，不是wire record、identity preimage或跨analysis step replay fixture；当前 implementation audit 的 0/0 不变。
 
 ~~~jsonl
-{"module":"flow-compiler","artifact":"modules/01-flow-compiler/flow-compilation.json","takesFrom":["ApplicationDiscoveryReference","ProgramGraphsReference","ProvenCodeFactsReference"],"says":{"entryId":"entry:post-depothead-batch-set-status","flowSliceId":"flow:post-depothead-batch-set-status","factId":"fact:depothead-status-persistence","outcomes":["outcome:no-eligible-document","outcome:status-updated"]}}
-{"module":"capsule-projector","artifact":"modules/02-capsule-projector/capsule-projection.json","takesFrom":["flow-compilation.json","Proof/Evidence/source"],"says":{"flowSliceId":"flow:post-depothead-batch-set-status","evidenceCapsuleId":"capsule:post-depothead-batch-set-status","covers":["entry route","dhIds guard","status value path","id IN where","both terminals"],"registryProposalBasisAtomIds":["atom:input-field","atom:value-source"],"registryProposalBasisGapIds":["gap:runtime-status-policy"],"usedBy":["R0","R1","R2"]}}
+{"module":"flow-compiler","artifact":"modules/01-flow-compiler/flow-compilation.json","takesFrom":["ApplicationDiscoveryReference","ProgramGraphsReference","ProvenCodeFactsReference"],"says":{"entryId":"entry:post-depothead-batch-set-status","flowSliceId":"flow:post-depothead-batch-set-status","factId":"fact:depothead-mapper-boundary-invocation","outcomes":["outcome:no-eligible-document","outcome:boundary-invoked"],"externalEffectGapId":"gap:depothead-external-update-effect-unproven"}}
+{"module":"capsule-projector","artifact":"modules/02-capsule-projector/capsule-projection.json","takesFrom":["flow-compilation.json","Proof/Evidence/source"],"says":{"flowSliceId":"flow:post-depothead-batch-set-status","evidenceCapsuleId":"capsule:post-depothead-batch-set-status","covers":["entry route","dhIds guard","generic boundary target","ordered arguments and origins","both terminals","external-effect Gap"],"registryProposalBasisAtomIds":["atom:input-field","atom:boundary-invocation"],"registryProposalBasisGapIds":["gap:depothead-external-update-effect-unproven"],"usedBy":["R0","R1","R2"]}}
 {"module":"publish","artifacts":"modules/03-publish/<five-semantic-files>","receipt":"modules/03-publish/module-receipt.json","takesFrom":["flow-compilation.json","capsule-projection.json"],"says":{"flowCount":1,"capsuleCount":1,"modelEligibleFlowSliceIds":["flow:post-depothead-batch-set-status"],"modelIneligibleFlowSliceIds":[],"modelIneligibilityGapIds":[],"modelIneligibilityByFlow":[],"semanticFiles":["flow-slices.json","flow-coverage.json","entry-dispositions.jsonl","evidence-capsules.jsonl","flow-gaps.jsonl"],"analysisStepReceipt":null,"nextStep":"CanonicalAnalysisStepArtifactStore"}}
 ~~~
 
@@ -161,7 +161,7 @@ M1 的 `entryId/factId/outcomePathIds` 原样进入 M2；M2 只新增 `evidenceC
 - **解决的问题**：为每个 compiled Flow 从 Proof roots 选择唯一、最小、预算内、模型可读的 source投影。
 - **精确上游输入及前置**：M1 FlowCompilation artifact、ProvenCodeFacts ProofPack、ProgramGraphs Evidence graph、VerifiedSourceInventory source handles、projection profile/budget；每 Flow/Outcome/atom/proof ref 闭合。
 - **确定性顺序 / LLM**：按 flowSliceId → 枚举 ATOM/OUTCOME obligations → 从 Proof roots取 direct-semantic spans → stable set cover → exact excerpt/hash → deletion minimality/closure check；0 LLM。
-- **目标输出与 DepotHead 示例**：`CapsuleProjection{capsules,modelEvidenceSpans,projectionObligations,flowShardReceipts,budgetUsage}`；每个 Capsule 内嵌可供模型阅读的 `factViews/gapViews/outcomePathViews`，而不是只留下外部 ID，并有明确 `modelEligibility`。未来一个DepotHead Flow因而同时给出入口、guards、status write、id where、terminals及其最小非空 spans；multi-flow fixture为每个其他Flow另有独立Capsule。若某Flow的本地证据包能持久化但不安全/不合规地交给模型，它仍有 Capsule、Flow 和 Gap，只标为 `INELIGIBLE`，绝不从仓库流程分母消失。
+- **目标输出与 DepotHead 示例**：`CapsuleProjection{capsules,modelEvidenceSpans,projectionObligations,flowShardReceipts,budgetUsage}`；每个Capsule内嵌`factViews/gapViews/outcomePathViews`。DepotHead Flow给出入口、guards、Java-local write、generic boundary invocation、ordered arguments、terminals和external-effect Gap；不能给出数据库write/where outcome。
 - **必须保持的不变量**：`N` compiled Flow↔`N` Capsule 一一对应；flow shards不交叠且union等于M1 flowSliceIds；每 obligation有支持且每 span不可冗余；每个 view 都是同 Flow 已持久化 Fact/Gap/Outcome 的逐字段受控投影，不能用摘要、模型文本或外部查找替代；span只来自 own Flow Proof、原始 bytes不 trim。
 - **Gap / fatal / artifact复用**：无安全 split 的预算超限使对应 Flow blocking Gap；source drift、cross-Flow span、unsatisfied/redundant projection、ref broken fatal；projector只从完整affected Flow及其verified inputs计算。
 - **给下游的后置保证**：M3/FlowInterpretation 可按 flowSliceId 得到恰一个 closed、evidence-complete Capsule：它已经携带该 Flow 的 facts、gaps、outcomes、spans、obligations 与 R0 basis allowlist；R0/R1/R2共享该artifact，模型不需Path/graphs/其他Flow，也不得从别的artifact补内容。
@@ -204,18 +204,19 @@ FlowSlice/Outcome/BranchDecision字段按8.1；COMPILED entry的flowSliceId non-
 
 ~~~text
 DepotHead flow capsule (illustrative):
-  fact view: request status eventually supplies record.status → jsh_depot_head.status
-  outcome view A: eligible document IDs empty → return without update
-  outcome view B: eligible IDs non-empty → update status for WHERE id IN eligible IDs
-  gap view: runtime status policy is not statically provable
-  evidence: route, id collection/guard, setter, mapper column and WHERE spans
+  fact view: Java invokes DepotHeadMapper.updateByExampleSelective(record, example)
+             with recorded ordered arguments and Java-local origins
+  outcome view A: eligible document IDs empty → return before boundary
+  outcome view B: eligible IDs non-empty → boundary invocation reached
+  gap view: external database update/filter effect is not statically proved
+  evidence: route, id collection/guard, setter, Java invocation locator/rule
 ~~~
 
 **示例分类：STRUCTURAL_WIRE_SPECIMEN（isolated `ModelEvidenceSpanV3` variants）。** 下列两条分别表示同一文件中不连续的class/method annotation；每条字段和类型完整、半开byte区间与所示ASCII `rawUtf8`长度一致，并按locator排序。digest只满足grammar且未从展示bytes重算，所以不能replay；二者不得合并为带` + `的伪raw excerpt。
 
 ~~~jsonl
-{"spanId":"span:controller-class-route","sourceExcerpt":{"locator":{"fileId":"file:2222222222222222222222222222222222222222222222222222222222222222","path":"src/main/java/example/DepotHeadController.java","startByte":1000,"endByteExclusive":1029,"startLine":43,"startColumn":1,"endLine":43,"endColumn":30},"rawUtf8":"@RequestMapping(\"/depotHead\")","rawUtf8Sha256":"1111111111111111111111111111111111111111111111111111111111111111"},"supportedAtomIds":["atom:entry-route"],"supportedOutcomePathIds":["outcome:status-updated"]}
-{"spanId":"span:controller-method-route","sourceExcerpt":{"locator":{"fileId":"file:2222222222222222222222222222222222222222222222222222222222222222","path":"src/main/java/example/DepotHeadController.java","startByte":5000,"endByteExclusive":5031,"startLine":178,"startColumn":1,"endLine":178,"endColumn":32},"rawUtf8":"@PostMapping(\"/batchSetStatus\")","rawUtf8Sha256":"2222222222222222222222222222222222222222222222222222222222222222"},"supportedAtomIds":["atom:entry-route"],"supportedOutcomePathIds":["outcome:status-updated"]}
+{"spanId":"span:controller-class-route","sourceExcerpt":{"locator":{"fileId":"file:2222222222222222222222222222222222222222222222222222222222222222","path":"src/main/java/example/DepotHeadController.java","startByte":1000,"endByteExclusive":1029,"startLine":43,"startColumn":1,"endLine":43,"endColumn":30},"rawUtf8":"@RequestMapping(\"/depotHead\")","rawUtf8Sha256":"1111111111111111111111111111111111111111111111111111111111111111"},"supportedAtomIds":["atom:entry-route"],"supportedOutcomePathIds":["outcome:boundary-invoked"]}
+{"spanId":"span:controller-method-route","sourceExcerpt":{"locator":{"fileId":"file:2222222222222222222222222222222222222222222222222222222222222222","path":"src/main/java/example/DepotHeadController.java","startByte":5000,"endByteExclusive":5031,"startLine":178,"startColumn":1,"endLine":178,"endColumn":32},"rawUtf8":"@PostMapping(\"/batchSetStatus\")","rawUtf8Sha256":"2222222222222222222222222222222222222222222222222222222222222222"},"supportedAtomIds":["atom:entry-route"],"supportedOutcomePathIds":["outcome:boundary-invoked"]}
 ~~~
 
 ### 8.1 Interface 与 records
@@ -316,7 +317,7 @@ RepositoryFlowCoverage
 
 这四项model eligibility字段是`flow-coverage.json`的required wire字段，不是RepositoryKnowledge临时重算的view。`modelIneligibilityByFlow`按`flowSliceId`严格排序且key唯一；每个`gapIds[]`非空、按UTF-8 ID排序去重。0 Flow时四项全部是exact empty array，不能省略或写null。
 
-FlowStep kind registry 至少有 ENTRY、GUARD、READ、CALCULATE、WRITE、RESULT、CALL_CHILD；不能写任意 prose。
+FlowStep kind registry至少有ENTRY、GUARD、READ、CALCULATE、WRITE、RESULT、CALL_CHILD；`WRITE`只表示由Fact证明的frozen-Java local/field write，不能表示boundary外部副作用。boundary invocation使用已有call/Fact引用表达，不新增技术专用FlowStep kind。
 
 ### 8.2 Coverage 与 dispositions
 
@@ -348,7 +349,7 @@ modelIneligibilityByFlow[flowId].gapIds = capsule(flowId).modelIneligibilityGapI
 
 `ModelEvidenceSpanV3`保存`spanId`、完整`SourceExcerptV1`、`supportedAtomIds[]`和`supportedOutcomePathIds[]`。`sourceExcerpt.rawUtf8`是locator半开连续区间的原始UTF-8 bytes，不trim/格式化；同一语义需要不连续位置时创建多个span并分别进入obligation，不得合成raw。
 
-ProjectionObligation kind 只允许 ATOM_DIRECT_SEMANTICS 或 OUTCOME_TERMINAL。需要同时覆盖`WHERE_KEY`与`WHERE_OPERATOR`时必须建立两个`ATOM_DIRECT_SEMANTICS` obligation，分别指向`atom:where-key`和`atom:where-operator`；不得发明`ATOM_SET_DIRECT_SEMANTICS`或用`atom-set:*`逃避逐atom closure。每个 obligation 至少一个 satisfying span；删除任一 span 后至少一个 obligation 失去全部支持，否则该 span 冗余。
+ProjectionObligation kind只允许ATOM_DIRECT_SEMANTICS或OUTCOME_TERMINAL。boundary target、每个argument/origin与control atom各自需要direct obligation；external-effect Gap也须有自己的Gap view，不能用XML/SQL span创建effect atom obligation。每个obligation至少一个satisfying span；删除任一span后至少一个obligation失去全部支持，否则该span冗余。
 
 ProofPack 回答事实为何成立；Capsule 回答模型最少读什么。Capsule 不能删除 Proof dependency，也不能自证 Fact。
 

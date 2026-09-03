@@ -119,10 +119,10 @@ DepotHead 只是完整仓库中 `N` 个入口/FlowSlice 之一的讲解 fixture�
 4. 非空 dhIds 触发 DepotHead.setStatus(status) 和 DepotHeadExample.andIdIn(dhIds)。
 5. Service 调用精确绑定 DepotHeadMapper.updateByExampleSelective。
 6. Mapper Java 方法精确绑定 XML statement updateByExampleSelective。
-7. record.status 的数据流精确到 XML 的 status = #{record.status}，statement 作用表为 jsh_depot_head。
-8. example 的 id-in criterion 精确进入 XML 的 Update_By_Example_Where_Clause。
+7. Service 对 `DepotHeadMapper.updateByExampleSelective(record, example)` 的调用被记录为通用 `JavaBoundaryInvocation`；记录精确静态 target type/method/signature、call ID、有序 argument IDs、Java 内已证明 origin、控制上下文和 source/rule evidence。
+8. M1 仍可发现 XML statement、table、column、placeholder/where 等静态结构，M2 仍可记录 Mapper Java→XML statement 的结构绑定；这些独立结构事实不得与第 7 点拼成“参数写入某列”或“criterion 进入某 where”的执行语义。
 
-第 7、8 点必须由正式数据流图、Mapper 参数绑定和 XML include 展开证明，不能因为字符串相似就成立。
+因此目标结论只到“Java 在某控制上下文以这些已证明来源的参数调用此外部边界”。外部系统是否执行 SQL、更新 `jsh_depot_head.status`、采用 `WHERE id IN`，以及执行结果如何，统一保持 **UNKNOWN / GAP**；不能因为 Mapper/XML/SQL 字符串相似或 M2 结构绑定而成立。
 
 ### 2.3 MODEL_INTERPRETATION 与 UNKNOWN
 
@@ -130,6 +130,7 @@ DepotHead 只是完整仓库中 `N` 个入口/FlowSlice 之一的讲解 fixture�
 
 静态源码仍不能证明：
 
+- 任一离开 frozen Java 的调用实际产生了什么外部副作用或返回了什么值；
 - 数据库触发器、隔离级别或外部系统是否另改 status；
 - 部署时实际启用了哪些配置；
 - status 0/1 的企业口径是否在所有租户、版本和单据类型中相同；
@@ -241,14 +242,14 @@ reader-visible正式输出总数固定为52，不因移除同run自动恢复而�
 | --- | --- |
 | 固定 Controller/XML bytes | `VerifiedSnapshot.snapshotId` → `VerifiedFile.fileId/path/sha256` |
 | POST 入口 | `EntryPoint.entryId` 保存 `routeEvidenceNodeIds`；ProgramGraphs entry graph node保存同一个 `entryId/owningEntryIds` |
-| Controller→Service→Mapper/XML | `ProgramEdge.edgeId` 的 endpoints 与 `evidenceNodeIds` 原样进入 atom Proof 的 `requiredProgramEdgeIds/requiredEvidenceNodeIds` |
+| Controller→Service→Java boundary；Mapper→XML仅作独立结构关系 | `ProgramEdge.edgeId` 的 endpoints 与 `evidenceNodeIds` 原样进入 atom Proof 的 `requiredProgramEdgeIds/requiredEvidenceNodeIds`；M4 boundary node不得越过M2 Mapper→XML结构边推断外部效果 |
 | status 与 ids 事实 | `FactAtom.atomId` 原样进入 `Proof.atomId`、`FlowSlice.atomIds`、`EvidenceCapsule.factViews[].atoms/projectionObligations` |
 | 完整请求过程 | `FlowSlice.flowSliceId` 原样进入 Capsule、RegistryProposalTask、RepositoryInterpretationRegistry item、FlowModelTask、InterpretationProposal、AdmittedFlowMeaning 和 RepositoryBusinessKnowledge.flow refs |
 | 仓库特有业务词 | `BusinessRegistryProposal.registryProposalId/flowSliceId/basisAtomIds/basisGapIds/proposalKind/normalizedLabel/normalizedPurpose` 经程序 disposition 生成唯一 `provisionalKey`；R1/R2 的 `InterpretationProposal.selectedKey` 必须等于该 Flow registry item 的 provisionalKey；RepositoryKnowledge `RegistryMeaningLineage`逐字段复制三项规范值 |
 | 业务解释 | `registryProposalId → provisionalKey → InterpretationProposal.interpretationProposalId/selectedKey → meaningId` 原样进入 admission decision和RepositoryKnowledge；admitted meaning保留两类proposal IDs与basis refs |
 | 九章读者项 | `ReaderItem.factIds/meaningIds/gapIds/registryProposalIds/interpretationProposalIds` 原样引用 knowledge；ADMITTED_TERM 的typed slots从同一`RegistryMeaningLineage.normalizedLabel/normalizedPurpose`逐字节复制；Trace先引用该`registryLineageId`，再从 readerItemKey 逐跳回 registry proposal/round receipt、basis IDs、Proof、Evidence、VerifiedFile 和 snapshotId |
 
-示意故事从 `POST /depotHead/batchSetStatus` 的 `status` 输入到 `jsh_depot_head.status` ReaderItem 时，任何分析步骤都不能把 `status` 改成另一个字段、把 `ids` where 条件静默丢掉、或凭空加入“审核”业务词。“批量审核或反审核”只能先作为R0有basis的仓库词候选，经程序freeze得到provisionalKey，再被R1/R2有限选择并由RepositoryKnowledge准入；当前没有Flow时该链停在Gap，NineSectionDocument的ReaderItem引用gapId而不是伪registry item或meaningId。
+示意故事从 `POST /depotHead/batchSetStatus` 的 `status` 输入到 `DepotHeadMapper.updateByExampleSelective(record, example)` boundary invocation 时，任何分析步骤都不能把 `status` 改成另一个字段、把 `ids` argument 静默丢掉、或凭空加入“审核”业务词。`jsh_depot_head.status` 与 `WHERE id IN` 只能作为独立静态 XML/SQL 结构锚点，不能写成该调用已产生的效果；对应外部效果必须成为 Gap/待确认。“批量审核或反审核”只能先作为R0有basis的仓库词候选，经程序freeze得到provisionalKey，再被R1/R2有限选择并由RepositoryKnowledge准入；当前没有Flow时该链停在Gap，NineSectionDocument的ReaderItem引用gapId而不是伪registry item或meaningId。
 
 ### 3.5 全局 accounting 与 coverage
 
@@ -552,8 +553,8 @@ capture 原子产生 `snapshot-manifest.jsonl`、`capture-receipt.json`（`local
 1. 建 **代码结构图**：package、type、field、method、config、XML statement、SQL table/column 及 containment/declaration。
 2. 建 **调用图**：receiver 静态类型、直接调用、Controller→Service、Service→Mapper、Mapper Java→XML statement。
 3. 建 **控制流图**：entry、TRUE/FALSE、NEXT、CALL、RETURN、THROW/terminal 与明确 branch polarity。
-4. 建 **数据流图**：definition/use、实参与形参、field setter/property、record/example 参数和 SQL placeholder/column。
-5. 建 **证据图**：每个语义 node/edge 回到 source locator、span SHA、解析规则和 binding rule。
+4. 建 **数据流图**：frozen Java 内的 definition/use、实参与形参、field setter/property；调用离开 frozen Java 时停在通用 `JavaBoundaryInvocation`，外部返回仅作为 unknown boundary-return source 回到 Java use。
+5. 建 **证据图**：每个语义 node/edge（包括 boundary invocation/unknown return）回到 source locator、span SHA、解析规则和 binding rule；不为外部效果制造证据。
 6. 逐图及跨图做引用、覆盖、唯一绑定和预算自验，再一次性安装五个一等产物。
 
 ### 可观察产物
@@ -583,7 +584,7 @@ capture 原子产生 `snapshot-manifest.jsonl`、`capture-receipt.json`（`local
 
 ### 具体输入
 
-五张正式程序图、snapshot、能力报告、版本化 Fact/Gap profile 和预算。DepotHead 的目标候选包括完整 HTTP route、状态输入、资格条件、Mapper 调用、status 数据流、表/列赋值和 id-in where 约束。
+五张正式程序图、snapshot、能力报告、版本化 Fact/Gap profile 和预算。DepotHead 的可准入目标候选包括完整 HTTP route、状态输入、资格条件、Mapper boundary invocation、调用时的有序 arguments 及其 Java-local origins；表/列与 where 只可作为独立静态结构候选，外部赋值/筛选效果必须是 Gap。
 
 ### 工作步骤
 
@@ -826,10 +827,10 @@ NineSectionDocument只读repository-business-knowledge.json、merged-gaps.json�
     {"fileName": "call-graph.json", "artifactType": "PROGRAM_GRAPHS_CALL_GRAPH", "schemaVersion": "program-graphs-call-graph-v1", "artifactId": "program-graphs-call-graph:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "mediaType": "application/json", "sizeBytes": 1, "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
     {"fileName": "code-structure-graph.json", "artifactType": "PROGRAM_GRAPHS_CODE_STRUCTURE_GRAPH", "schemaVersion": "program-graphs-code-structure-graph-v1", "artifactId": "program-graphs-code-structure:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "mediaType": "application/json", "sizeBytes": 1, "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"},
     {"fileName": "control-flow-graph.json", "artifactType": "PROGRAM_GRAPHS_CONTROL_FLOW_GRAPH", "schemaVersion": "program-graphs-control-flow-graph-v1", "artifactId": "program-graphs-control-flow:0000000000000000000000000000000000000000000000000000000000000000", "mediaType": "application/json", "sizeBytes": 1, "sha256": "1111111111111111111111111111111111111111111111111111111111111111"},
-    {"fileName": "data-flow-graph.json", "artifactType": "PROGRAM_GRAPHS_DATA_FLOW_GRAPH", "schemaVersion": "program-graphs-data-flow-graph-v1", "artifactId": "program-graphs-data-flow:2222222222222222222222222222222222222222222222222222222222222222", "mediaType": "application/json", "sizeBytes": 1, "sha256": "3333333333333333333333333333333333333333333333333333333333333333"},
-    {"fileName": "evidence-graph.json", "artifactType": "PROGRAM_GRAPHS_EVIDENCE_GRAPH", "schemaVersion": "program-graphs-evidence-graph-v2", "artifactId": "program-graphs-evidence:4444444444444444444444444444444444444444444444444444444444444444", "mediaType": "application/json", "sizeBytes": 1, "sha256": "5555555555555555555555555555555555555555555555555555555555555555"},
+    {"fileName": "data-flow-graph.json", "artifactType": "PROGRAM_GRAPHS_DATA_FLOW_GRAPH", "schemaVersion": "program-graphs-data-flow-graph-v2", "artifactId": "program-graphs-data-flow:2222222222222222222222222222222222222222222222222222222222222222", "mediaType": "application/json", "sizeBytes": 1, "sha256": "3333333333333333333333333333333333333333333333333333333333333333"},
+    {"fileName": "evidence-graph.json", "artifactType": "PROGRAM_GRAPHS_EVIDENCE_GRAPH", "schemaVersion": "program-graphs-evidence-graph-v3", "artifactId": "program-graphs-evidence:4444444444444444444444444444444444444444444444444444444444444444", "mediaType": "application/json", "sizeBytes": 1, "sha256": "5555555555555555555555555555555555555555555555555555555555555555"},
     {"fileName": "graph-gaps.jsonl", "artifactType": "PROGRAM_GRAPHS_GRAPH_GAP", "schemaVersion": "program-graphs-graph-gap-v1", "artifactId": "program-graphs-graph-gaps:6666666666666666666666666666666666666666666666666666666666666666", "mediaType": "application/x-ndjson", "sizeBytes": 1, "sha256": "7777777777777777777777777777777777777777777777777777777777777777"},
-    {"fileName": "graph-index.json", "artifactType": "PROGRAM_GRAPHS_GRAPH_INDEX", "schemaVersion": "program-graphs-graph-index-v1", "artifactId": "program-graphs-graph-index:8888888888888888888888888888888888888888888888888888888888888888", "mediaType": "application/json", "sizeBytes": 1, "sha256": "9999999999999999999999999999999999999999999999999999999999999999"}
+    {"fileName": "graph-index.json", "artifactType": "PROGRAM_GRAPHS_GRAPH_INDEX", "schemaVersion": "program-graphs-graph-index-v2", "artifactId": "program-graphs-graph-index:8888888888888888888888888888888888888888888888888888888888888888", "mediaType": "application/json", "sizeBytes": 1, "sha256": "9999999999999999999999999999999999999999999999999999999999999999"}
   ],
   "archiveManifest": null,
   "gapCount": 1,
@@ -1392,6 +1393,11 @@ ReaderTemplateSlotsV3                   // exact kind/template pairing; no other
   RELATION_REFERENCE / relation-v1 -> {from,relation,to}
   METRIC_REFERENCE / metric-with-gap-v1 -> {metric,definitionState}
   GAP_QUESTION / gap-question-v1 -> {subject,missingRequirement}
+
+Boundary projection rule: `JavaBoundaryInvocation` can only populate `TECHNICAL_FALLBACK / technical-scope-v1`
+with its static target and ordered arguments. `FACT_SENTENCE / field-write-v1` requires an upstream Fact whose Proof
+does not cross a generic Java boundary; Mapper→XML or XML/SQL static structure cannot supply `targetColumn`.
+Every external effect is rendered separately as `GAP_QUESTION` / 待确认.
 
 TraceRecordV3
   schemaVersion=nine-section-document-trace-record-v3
@@ -2005,7 +2011,7 @@ Schema 演进 fail closed：字段名、类型、必填/可空、来源规则、
 1. 发现分母先于成功分子：entry/site/Fact atom/Outcome 都不能因失败而消失。
 2. 调用唯一绑定需要 receiver/static type、method candidate 和版本化 rule；simple name 不足。
 3. 控制流每个 guard 保存 polarity；终点列表或源码行序不能替代 CFG。
-4. 数据流跨 Controller/Service/Mapper/XML 时逐段保存 definition/use/argument/property/placeholder binding。
+4. 数据流只在 frozen Java 内逐段保存 definition/use/argument/property binding；调用离开 frozen Java 时必须以通用 boundary invocation 截断。Mapper/Kafka/ES/HTTP/Redis/event/client/library 等不得形成技术专用边界语义；其外部效果不可证明，外部返回被 Java 使用时只能记录 unknown boundary-return source 与 Java use。
 5. Evidence graph 证明“图从何而来”；Proof 证明“这些图和字节为什么支持这个 atom”；Trace 只负责查询链，三者不互相冒充。
 6. EvidenceCapsule 是模型阅读投影，不是 ProofPack。
 7. 分析步骤“流程解释” 的 R0_REGISTRY_PROPOSAL 只提出有 Capsule basis 的仓库特定词、claim 和 question；程序先验证并冻结唯一 `RepositoryInterpretationRegistry`。之后 R1/R2 才能在同一 Flow 的 finite provisional keys 中选择。R0/R1/R2 是三个独立task kinds；R1/R2 属于同一产品 Candidate，ReaderCandidateRound 1/2 最多两份 Candidate，三者不能混用。
@@ -2067,7 +2073,7 @@ Profile 至少固定：
 - local capture fixture证明exact 40-hex commit只读object database、完整regular-file tree union、binary `NON_ANALYZABLE_MEDIA`仍验hash，以及worktree/index mutation不改变snapshot bytes；symlink/gitlink/unknown mode/missing object均无registration并以stable code失败。
 - 每个模块的测试必须先观察payload+`module-receipt.json`原子安装；缺receipt、receipt root篡改、payload-after-receipt partial install和内存旁路都失败。运行时除最终NineSectionDocument `document.md`外不得出现`.md`生成物。
 - 五张图分别有引用闭包、覆盖和跨图 edge mutation 测试。
-- DepotHead walkthrough 必须先补齐通用数据流/Fact 能力，再以 real fixed slice 做正向验收；不得用目标 JSON 当 golden。
+- DepotHead walkthrough 必须先补齐通用 frozen-Java 数据流与 boundary-invocation Fact 能力，再以 real fixed slice 验收“精确调用+有序参数+Java-local origins+外部效果 Gap”；不得用目标 JSON、Mapper→XML结构绑定或 SQL 文本当外部效果 golden。
 - 0 Flow/0 Capsule 有直接测试，断言 0 Provider call 且 Gap 仍进入九章计划。
 - 至少两个入口/Flow 的 repository fixture 验证：每 Flow 独立 Capsule；每个eligible Flow独立R0 proposal/disposition，同Flow finite-key R1/R2和FlowInterpretation disposition；每个ineligible Flow零FlowInterpretation artifact且保留BusinessFlows Gap；一个全仓 frozen registry。令`E`为eligible数、`R`为R0 READY数，planned tasks精确为`E+2R`，R0/R1/R2 shard denominators分别为`E/R/R`；正常`R=E`且所有task都实际调用成功时Provider calls为`3E`，R1 typed GAP/FAILED时对应R2 task保留并写`NOT_RUN_UPSTREAM_FAILED`且不调用Provider。READY子集独立candidate，RepositoryKnowledge为**全部**Flow各有独立decision且全仓只有一个跨 Flow RepositoryKnowledge，NineSectionDocument只有一个九章plan/document；任何per-Flow Markdown或片段拼接应失败。
 - R0 测试覆盖 novel repository term、同 label 不同 Flow 不误合并、optional seed exact-match/拒绝、basis缺失、非法 Unicode/控制字符、预算、单 Flow R0业务处置后其他 Flow bytes不变，以及 registry freeze 的排序/identity determinism；R0不得产生 Fact/locator/Flow/Markdown。
