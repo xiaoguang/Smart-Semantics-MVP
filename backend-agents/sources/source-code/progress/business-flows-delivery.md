@@ -17,7 +17,7 @@
 
 ## Current state
 
-The read-only seam audit found no new cross-step field requirement. It found two stale overall-maturity rows, which were published to `origin/main` as `2001e7f`, and one Java-grammar error in the detailed implementation guidance: a hyphenated persistent module key had been presented as a Java source package. The correction keeps the wire keys `flow-compiler` and `capsule-projector` unchanged, while assigning their Java implementation packages to `analysis.flow.compiler` and `analysis.flow.capsule`. This docs-only correction is ready for the required pre-RED publication.
+The read-only seam audit confirmed that the persisted upstream fields can support M1 without a new cross-step artifact. It also found a local M1 interface conflict: the compiler was specified to return the M3-only `BusinessFlowsReference`. The detailed design now correctly specifies an M1 `FlowCompilation`, a content-addressed `FlowCompilationProfile`, and M3 as the sole owner of `BusinessFlowsReference`. This preserves the eight-step data flow and output count, but needs the required docs-only publication before the first RED.
 
 ## Changed files
 
@@ -35,6 +35,8 @@ The read-only seam audit found no new cross-step field requirement. It found two
 | Current-audit cross-check against analysis-step 02–04 documents and published code | PASS | Corrected only stale maturity descriptions; no target architecture, artifact count, or interface changed. |
 | `git push origin HEAD:main` | PASS | Published docs-only commit `2001e7f`; remote `main` equals this commit. |
 | Target package-name audit | PASS | Persistent module keys retain hyphens by contract; Java packages now use legal semantic names without changing any wire field. |
+| `git push origin HEAD:main` | PASS | Published docs-only commit `ef43824`; remote `main` includes the legal Java-package clarification. |
+| M1 interface and artifact audit | PASS | Repaired local M1/M3 return-type conflict and made profile/budget identity explicit; no upstream payload, final public API, or output-count change. |
 
 ## Decisions
 
@@ -42,14 +44,15 @@ The read-only seam audit found no new cross-step field requirement. It found two
 - A boundary invocation remains a Java fact with an external-effect Gap; the capsule must preserve that Gap for downstream explanation.
 - The overall maturity audit must report the delivered M1–M4 discovery and M1–M3 fact vertical slices truthfully, while retaining their full-repository limitations.
 - A persistent module key and a Java package name are separate namespaces: `flow-compiler` / `capsule-projector` remain fixed wire keys, while implementation uses `.flow.compiler` / `.flow.capsule`.
+- M1 returns an immutable `FlowCompilation`; M2 reopens its persisted artifact; only M3 returns `BusinessFlowsReference`. Profile and budget are deterministic content-addressed M1 input, not ambient process configuration.
 
 ## Blockers
 
-- None. The required docs-only package-name correction is being published before the first RED test.
+- None. The required docs-only M1 contract correction is being published before the first RED test.
 
 ## Exact next action
 
-Commit and push the docs-only package-name correction, then inspect persisted upstream record readers and fixture payloads before creating the first narrow `EntryRootedFlowCompilerTest` RED.
+Commit and push the M1 contract correction, then create the first narrow `EntryRootedFlowCompilerTest` RED from the audited persisted upstream fixture.
 
 ## Resume checks
 

@@ -190,7 +190,7 @@ M1/M2使用 DESIGN 13.3 `ModuleArtifact<T>` envelope；M3直接安装五个analy
 
 | artifact | schemaVersion / artifactType | 精确 upstream | payload/排序 |
 | --- | --- | --- | --- |
-| `modules/01-flow-compiler/flow-compilation.json` | `business-flows-flow-compilation-v1` / `BUSINESS_FLOWS_FLOW_COMPILATION` | exact ApplicationDiscovery `capability-report/entry-points`、ProgramGraphs七项、ProvenCodeFacts `fact-accounting/gap-ledger/proof-pack/proven-facts` ArtifactReferences | `flowCompilationId!`、`entryDispositions[]!{entryId!,disposition!,flowSliceId?,gapIds[]!,reasonCode?,evidenceRefs[]!}`、`flowSlices[]!`、`entryShardReceipts[]!{shardId!,denominatorEntryIds[]!,dispositionEntryIds[]!,flowSliceIds[]!,status!,gapIds[]!}`、`coverage!`；entries/flows/shards按ID，steps/decisions保持语义顺序，outcomes按outcomePathId |
+| `modules/01-flow-compiler/flow-compilation.json` | `business-flows-flow-compilation-v1` / `BUSINESS_FLOWS_FLOW_COMPILATION` | exact ApplicationDiscovery `capability-report/entry-points`、ProgramGraphs七项、ProvenCodeFacts `fact-accounting/gap-ledger/proof-pack/proven-facts` ArtifactReferences，以及 content-addressed `flowCompilationProfile` | `flowCompilationId!`、`flowCompilationProfile!{profileRef!,maxFlows!,maxOutcomesPerFlow!,maxFlowNodes!,maxFlowEdges!,maxTraversalDepth!}`、`entryDispositions[]!{entryId!,disposition!,flowSliceId?,gapIds[]!,reasonCode?,evidenceRefs[]!}`、`flowSlices[]!`、`entryShardReceipts[]!{shardId!,denominatorEntryIds[]!,dispositionEntryIds[]!,flowSliceIds[]!,status!,gapIds[]!}`、`coverage!`；entries/flows/shards按ID，steps/decisions保持语义顺序，outcomes按outcomePathId |
 | `modules/02-capsule-projector/capsule-projection.json` | `business-flows-capsule-projection-v4` / `BUSINESS_FLOWS_CAPSULE_PROJECTION` | exact M1、VerifiedSourceInventory两项、ProgramGraphs七项、ProvenCodeFacts四项 ArtifactReferences | `capsuleProjectionId!`、`flowCompilationId!`、`capsules[]!{evidenceCapsuleId!,flowSliceId!,proofPackId!,modelEligibility!,modelIneligibilityGapIds[]!,entryView!:FlowEntryViewV1,factViews[]!:FlowFactViewV1,gapViews[]!:FlowGapViewV1,outcomePathViews[]!:FlowOutcomePathViewV1,registryProposalBasisAtomIds[]!,registryProposalBasisGapIds[]!,modelEvidenceSpanIds[]!,projectionObligationIds[]!,budgetUsage!}`、`modelEvidenceSpans[]!{spanId!,sourceExcerpt!:SourceExcerptV1,supportedAtomIds[]!,supportedOutcomePathIds[]!}`、`projectionObligations[]!{obligationId!,kind!,semanticItemId!,satisfyingSpanIds[]!}`、`flowShardReceipts[]!`、`budgetUsage!`；capsules/spans/obligations/shards按ID，fact/gap/outcome views按其stable ID，basis IDs按UTF-8 byte order |
 | `modules/03-publish/<five registered semantic filenames>` | 各public schema/type；无summary envelope | M1+M2 IDs/SHAs | 一次module install恰`flow-slices.json/flow-coverage.json/entry-dispositions.jsonl/evidence-capsules.jsonl/flow-gaps.jsonl`；其中`flow-coverage.json`的`RepositoryFlowCoverage`必须包含8.1列出的四项model eligibility字段及完整mapping；module receipt绑定五descriptors；禁止analysis step root/receipt或六项published list；AnalysisStep store provenance绑定M3 reference |
 
@@ -222,12 +222,28 @@ DepotHead flow capsule (illustrative):
 ### 8.1 Interface 与 records
 
 ~~~java
-interface BusinessFlowCompiler {
-    BusinessFlowsReference compile(ApplicationDiscoveryReference entries,
-                             ProgramGraphsReference graphs,
-                             ProvenCodeFactsReference facts);
+interface EntryRootedFlowCompiler {
+    FlowCompilation compile(ApplicationDiscoveryReference entries,
+                            ProgramGraphsReference graphs,
+                            ProvenCodeFactsReference facts,
+                            FlowCompilationProfile profile);
 }
+
+record FlowCompilationProfile(
+    ArtifactReference profileRef,
+    int maxFlows,
+    int maxOutcomesPerFlow,
+    int maxFlowNodes,
+    int maxFlowEdges,
+    int maxTraversalDepth) {}
 ~~~
+
+这里的 `FlowCompilation` 是 M1 的不可变编译结果；M1 publisher 将它立即安装为
+`flow-compilation.json`，M2 只能重新打开该文件，不能读取这个内存对象。
+`BusinessFlowsReference` 只由 M3 `FlowPublicationSpecifier` 在五个正式语义文件和
+receipt 均安装后返回。`profileRef` 是调用者提供、内容寻址的分析配置身份；六个预算
+字段均为正整数，并原样写入 M1 artifact，因此相同输入与 profile 才可得到相同结果。
+任何超限都形成对应 Flow 的 Gap 或明确 fatal，绝不截断遍历后把残余路径当作完整 Flow。
 
 ~~~text
 FlowSlice
