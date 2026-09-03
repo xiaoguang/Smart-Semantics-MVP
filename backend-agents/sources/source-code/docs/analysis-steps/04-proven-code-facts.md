@@ -146,7 +146,7 @@ required atoms:
 #### M1 FactCandidateEnumerator
 
 - **解决的问题**：在看证明结果前先冻结应该尝试证明的 Fact/required atom 分母，防止失败项消失。
-- **精确上游输入及前置**：`PersistedFactCandidateInputReader`只能从同一run、同一snapshot、同一controls的fresh-reopened `ApplicationDiscoveryReference`和完整`ProgramGraphsReference`构造一个`FactCandidateInputs`。它必须重开并验证ProgramGraphs的全部五张public graph、graph-index和graph-gaps；不得接收自由`JsonNode`、Path、单独graph、draft或调用者拼装的catalog。输入携带五张graph payload references、每个public node/edge的endpoint/owner/evidence IDs、ApplicationDiscovery entry IDs，以及版本化Fact registry/profile/budget。
+- **精确上游输入及前置**：`PersistedFactCandidateInputReader`只能从同一run、同一snapshot、同一controls的fresh-reopened `ApplicationDiscoveryReference`和完整`ProgramGraphsReference`构造一个`FactCandidateInputs`。它必须重开并验证ProgramGraphs的全部五张public graph、graph-index和graph-gaps；不得接收自由`JsonNode`、Path、单独graph、draft或调用者拼装的catalog。输入携带五张graph payload references、`capability-report.json`与`entry-points.jsonl`的准确ArtifactReference、每个public node/edge的endpoint/owner/evidence IDs、ApplicationDiscovery entry IDs，以及版本化Fact registry/profile/budget。M1发布器只接收这个已验证输入和`FactCandidateSet`，由输入导出固定七项上游集合与controls；不得接收调用者给出的任意上游列表或controls。
 - **精确适用关系（不得做笛卡尔积）**：对每个DataFlow `JAVA_BOUNDARY_INVOCATION` node，枚举器先取得它的`owningEntryIds`。对其中每个entryId，只在以下同一条冻结Java路径全部闭合时才实例化候选：
   1. entryId存在于ApplicationDiscovery与五图的共同entry分母；
   2. boundary node内的`invocationCallId`命中CALL graph的`CALL_SITE` node，且该callsite的owner包含该entry；
