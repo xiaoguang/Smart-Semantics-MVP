@@ -48,7 +48,11 @@
 
 当前 M2 支持已验证 fixture 中的 Controller→Service、Service→Mapper、Mapper Java→XML statement、call/return pair，以及一部分 field receiver、local declaration、overload/import/未解析 Gap。它尚未证明完整仓库中全部 activated direct-call candidate 的 receiver/static type/signature/overload 分母，也缺完整的多入口 ownership、递归/循环调用处置、classpath 缺失与 Mapper binding mutation matrix。
 
-**完成证据：** 每个被扫描的 call site 恰有 exact call pair、typed local Gap 或 reasoned exclusion；同名、重载、多实现和缺依赖不能被简单名称或源码顺序选中。
+M2.1在[程序图详细设计](../analysis-steps/03-program-graphs.md#m21-调用目标候选集合与唯一决议算法)冻结局部算法，不再由实现者自由选择：receiver static type先闭合；直接声明method按name、固定arity、可证明visibility和bounded argument compatibility形成有序目标候选集合；`|C|=1`才是EXACT，`|C|>1`是`CALL_TARGET_AMBIGUOUS`，零候选按是否存在unsupported actual分别是`CALL_ARGUMENT_TYPE_UNRESOLVED`或`CALL_TARGET_UNRESOLVED`。`null`是受支持的特殊actual：匹配全部reference/array formal、排除primitive formal，不能提前写argument-type Gap。重复canonical signature或M1 endpoint不成双射是fatal，不是ambiguity。
+
+这只是目标设计，不能写成实现事实。当前`CallGraphBuilder`仍以一个推导signature做单值lookup，尚未实现候选集合、`null`兼容、多entry owner并集或`CALL_TARGET_AMBIGUOUS`路径；状态仍为OPEN。
+
+**完成证据：** 每个被扫描的物理call site恰有exact call pair、一个typed local Gap或reasoned exclusion；同一site被多个entry到达时只处置一次且owner为完整排序并集；`String`/`Integer` overload+`null`稳定产生一条`CALL_TARGET_AMBIGUOUS`，删一overload变为EXACT，reference/primitive和primitive-only mutation按M2.1处置；同名、重载、多实现和缺依赖不能被简单名称或源码顺序选中。
 
 ### P4：把 M3 从已验证控制流形状扩展到通用入口路径
 
@@ -78,7 +82,7 @@ request status / ids
 
 **版本门：** M4 draft=`program-graphs-data-flow-draft-v3`，public data flow=`program-graphs-data-flow-graph-v2`，M5 draft=`program-graphs-evidence-graph-draft-v3`，public evidence=`program-graphs-evidence-graph-v3`，index=`program-graphs-graph-index-v2`。旧`program-graphs-data-flow-draft-v2`、`program-graphs-data-flow-graph-v1`、`program-graphs-evidence-graph-draft-v2`、`program-graphs-evidence-graph-v2`、`program-graphs-graph-index-v1`及任何新旧混搭必须拒绝；不提供兼容reader、默认字段或原位迁移。只可复用相同M1–M3正式references重新运行M4→M6。文件名、五图、M6七项semantic payload及analysis-step八文件不变。
 
-**Luna RED：** 在既有M4/M5/M6 public seams先冻结generic node/record/三种edge、ordered argument/origin、control/locator/rule、unknown return、技术无关性、ambiguous Gap、external-effect absence与旧版本拒绝；golden独立手写，使用真实canonical stores。**Terra GREEN：** 只实现这些RED所需的v3/v2 records、identity、evidence和M6投影；不得引入技术专用boundary enum/rule、解析外部实现或通过XML/SQL补值流。
+**Luna RED：** 在既有M4/M5/M6 public seams先冻结generic node/record/三种edge、ordered argument/origin、control/locator/rule、unknown return、技术无关性、external-effect absence与旧版本拒绝；golden独立手写，使用真实canonical stores。ambiguous Gap用例必须等M2 public seam先提供正式`CALL_TARGET_AMBIGUOUS`输出后再写，且只验证M4承接Gap、不猜target。**Terra GREEN：** 只实现这些RED所需的v3/v2 records、identity、evidence和M6投影；不得引入技术专用boundary enum/rule、解析外部实现或通过XML/SQL补值流。
 
 ### P6：补齐 M5 的全量 Evidence 闭包与预算
 

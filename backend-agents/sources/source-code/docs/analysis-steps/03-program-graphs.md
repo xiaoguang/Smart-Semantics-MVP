@@ -335,12 +335,64 @@ basis或payload不一致统一以`GRAPH_REFERENCE_BROKEN`失败，不返回raw d
 - **确定性顺序 / LLM**：枚举 call sites → 求 receiver static type → 解析 method signature/overload → 建 direct target → 配对 call/return → 按 namespace/signature 绑定 Mapper statement；0 LLM。
 - **目标输出与 DepotHead 示例**：CALL graph draft及其共享`gapDrafts`；例子有 Controller :185→Service :742、Service :803→Mapper Java :23、Mapper Java→XML :385 三段 exact edges。
 - **必须保持的不变量**：每个 admitted call/binding target 唯一；edge 保存 exact endpoints/rule/resolution/evidence draft；simple name/文本相似不是 tie-breaker；每条M2 local Gap有非空entry owner，且`coverage.scopeGapIds`逐字等于同一输入基础的`S`。
-- **Gap / fatal / artifact复用**：可定位的 ambiguous/unsupported或已完整枚举的over-limit call必须写共享`GraphGapDraft`，且M2每条local Gap的`affectedEntryIds`必须是owner draft `entryIds`的非空子集；没有入口owner的Mapper catalog未知留在ApplicationDiscovery或范围accounting，不能伪造M2 local Gap。若 Stage 2 已确认 Java interface 与 XML namespace 是同一 Mapper、但缺少被调用的方法 candidate，则写`MAPPER_JAVA_METHOD_UNRESOLVED` Gap，绝不静默省略 binding。没有匹配 Mapper catalog 的普通 Java interface 不被臆断为 Mapper。两个 exact target、broken endpoints、无法完成候选分母、pair/reference/accounting 错误 fatal；只接受相同roots/profile。
+- **Gap / fatal / artifact复用**：可定位的 ambiguous/unsupported或已完整枚举的over-limit call必须写共享`GraphGapDraft`，且M2每条local Gap的`affectedEntryIds`必须是owner draft `entryIds`的非空子集；没有入口owner的Mapper catalog未知留在ApplicationDiscovery或范围accounting，不能伪造M2 local Gap。若 Stage 2 已确认 Java interface 与 XML namespace 是同一 Mapper、但缺少被调用的方法 candidate，则写`MAPPER_JAVA_METHOD_UNRESOLVED` Gap，绝不静默省略 binding。没有匹配 Mapper catalog 的普通 Java interface 不被臆断为 Mapper。两个以上**兼容候选声明**是`CALL_TARGET_AMBIGUOUS` local Gap；同一canonical signature重复声明、broken M1 endpoint、无法完成候选分母、pair/reference/accounting错误才是fatal。只接受相同roots/profile。
 - **给下游的后置保证**：M3/M4/BusinessFlows 能沿明确 call/return，不需动态 dispatch 猜测；ProvenCodeFacts 可把 call edge 放入 Proof。
 - **明确非目标**：不以调用顺序代替 CFG，不推值流，不把 unresolved candidate 任选一个。
-- **公共测试 seam 与验收**：`buildCalls(CallGraphInputs inputs, CallGraphProfile profile)` 对三段 DepotHead chain 做逐段 deletion/decoy/overload mutation；fixture必须先把真实 M1 module publication 安装到 canonical store，再由 `PersistedCodeStructureGraphReader` 与同一次`ReopenedProgramGraphInputs`生成唯一 sealed inputs。raw draft constructor、错 M1 address/key、receipt SHA、schema/type、六项 lineage、controls、profile、snapshot/application/entry denominator 任一 mutation 都必须在 builder 解析源码前以 `GRAPH_REFERENCE_BROKEN` 失败；删除/替换call-site bytes或脱离Stage 2的entry/catalog candidate不得由路径、自由字符串搜索或M1 display value补回；只有唯一 signature/namespace binding 时产生 EXACT edge。ambiguous/unresolved call或Mapper fixture还必须直接断言共享Gap五字段、identity和coverage映射，任一字段/ID substitution均fail closed。
-- **Luna/xhigh 测试指南**：创建 `CallGraphBuilderTest`，fixtures/goldens在 `src/test/resources/analysis/graph/call-graph/`。先用真实 canonical module store 建 reader/execution RED：正确 M1 fresh reopen，以及 address/receipt/schema/type/六 refs/controls/profile/snapshot/application/entry mutation fail-closed；不能新增平行 selector 或允许测试直接构造 sealed aggregate。随后一个RED一个三段binding：Controller→Service、Service→Mapper、Mapper→XML；再做overload/decoy Gap、双exact fatal、call-return mutation、determinism。golden不由production生成；禁止mock store receipt验证、resolution/canonical。命令：`mvn -Dtest=CallGraphBuilderTest test`；无网络/runtime。偏离按13.11。
-- **Terra/xhigh 实现指南**：RED后仅拥有 `analysis/graph/call-graph/`，实现 `PersistedCodeStructureGraphReader`、sealed `ReopenedCodeStructureGraph`、M2 execution，以及 public `CallGraphBuilder/CallGraphInputs/CallGraphProfile/CallGraphDraft` 与 `program-graphs-call-graph-draft-v3`。execution先用同一`ReopenedProgramGraphInputs`和`CallGraphProfile.graphProfileRef` fresh-reopen M1 module，验证 address/receipt/exact payload/六 refs/controls与全部payload identity，严格解析draft并构造opaque aggregate；再只以`inputs.structure.draft`解析endpoint、以`inputs.reopened.source`解析call site、以`inputs.reopened.discovery.entries/mapperCatalog`解析Stage 2候选，按receiver type→signature→target→return pair→Mapper binding→provenance drafts。逐edge GREEN且decoy不命中；不得暴露可伪造aggregate实现、接受raw draft/Path/detached lists/free source string、扫描worktree、字符串fallback或改M1。跨analysis step/data缺失MUST STOP交Sol/ultra，更新审计。
+
+##### M2.1 调用目标候选集合与唯一决议算法
+
+本节是目标合同，当前代码尚未全部实现。它只深化`buildCalls(...)`内部行为，不增加public Interface、图、字段、文件或schema版本。必须区分两个容易混淆的集合：**目标候选集合**是resolver在内存中比较的method declarations；`GraphGapDraft.candidateElementIds`仍是调用site的coverage candidate ID，不用两个method node ID冒充两个调用site。
+
+对每个从某entry可达的物理`MethodCallExpr`，M2按以下顺序执行，任何排序均使用canonical signature的UTF-8 byte order：
+
+1. 以`fileId + exact call-expression span + caller method signature`建立一个调用site candidate；先将所有可达entry owner求并集，再产生一次处置。递归或两个entry到达同一site不会复制Gap；bounded worklist无法闭合是既有资源fatal。
+2. 求receiver static type。支持的receiver形状必须从冻结AST及M1声明唯一得到canonical FQN；不支持的表达式写`CALL_RECEIVER_UNSUPPORTED`，支持形状但零/多类型写`CALL_RECEIVER_UNRESOLVED`。两者都停止该site，不能进入目标候选选择。
+3. 枚举该static receiver type在冻结源码中**直接声明**的全部方法；先按method name、固定arity和可证明visibility过滤。visibility闭集为：显式`public`及按Java语言规则隐式public的interface method；同一declaring FQN内的`private`；同package的package-private或`protected`。跨package `protected`、继承查找、varargs展开、generic inference或无法证明visibility的声明不参与猜测；若它们可能决定调用而当前profile不能完成分母，该site写`CALL_TARGET_UNRESOLVED`。确定不可见的方法直接排除。
+4. 在过滤前检查声明完整性。相同receiver FQN、method name和canonical formal parameter types出现两次，或任一候选不能唯一命中一个M1 `METHOD` node，说明冻结AST与M1结构endpoint无法形成双射，以`GRAPH_REFERENCE_BROKEN` fatal；禁止`Map.put`覆盖、按源码顺序择一或把非法同签名声明说成overload ambiguity。M1已经处置为`JAVA_PARSE_UNSUPPORTED`的文件不再由M2解析；若M2要遍历的M1 exact method所在字节此时语法解析失败，同样是前驱不一致fatal。
+5. 仅当name/arity/visibility候选非空时，对每个ordered actual建立`EXACT_TYPE(canonicalType)`、`NULL_LITERAL`或`UNSUPPORTED`。当前bounded compatibility只支持：非null actual与formal canonical type逐字相等；`NULL_LITERAL`与任意已确定的非primitive reference/array formal兼容，与`boolean/byte/short/int/long/char/float/double`不兼容。`null`本身绝不是`UNSUPPORTED`。方法调用、lambda、method reference、条件表达式或无法唯一得到static type的actual为`UNSUPPORTED`；当前不做boxing/unboxing、primitive widening、reference widening、varargs或generic inference。
+6. 若name/arity/visibility候选为空，写`CALL_TARGET_UNRESOLVED`。若候选非空但任一actual为`UNSUPPORTED`，不允许用其他参数或唯一声明猜target，写`CALL_ARGUMENT_TYPE_UNRESOLVED`。否则以步骤5的完整、确定性compatibility过滤出目标候选集合`C`，按下表唯一处置。
+
+| `C`基数 | M2处置 | 允许产生的call内容 |
+| ---: | --- | --- |
+| `1` | `EXACT` | 一个`CALL_SITE`、一个`CALL_TARGET`、配对`CALL_RETURN`；target必须是该唯一M1 method endpoint |
+| `0`，且步骤5出现`UNSUPPORTED` | `CALL_ARGUMENT_TYPE_UNRESOLVED` local Gap | 无该site的call node/edge |
+| `0`，没有unsupported actual | `CALL_TARGET_UNRESOLVED` local Gap | 无该site的call node/edge |
+| `>1` | `CALL_TARGET_AMBIGUOUS` local Gap | 无该site的call node/edge；不运行“most specific”或源码顺序tie-break |
+
+步骤6第二行是算法的fail-closed分支；实现可在构造`C`前直接结束，但accounting结果等价于“没有可准入候选且参数类型关系未闭合”。一个已知但与所有formal都不逐字相等的非null type落入第三行；这是保守的false negative，不是授权实现reference widening。以后若扩展兼容关系，必须先升级profile/rule和mutation matrix，不能原位改变同一输入的结果。
+
+`CALL_TARGET_AMBIGUOUS`必须加入当前版本化CALL local-Gap reason闭集，它是可定位的业务分析缺口，不是抛出的fatal code。该物理调用site生成恰一个`GraphGapDraft{gapId, reasonCode=CALL_TARGET_AMBIGUOUS, affectedEntryIds, candidateElementIds=[siteCandidateId], sourceLocator}`：owner是到达该site的全部entry ID排序去重集合；locator恰覆盖调用表达式；`siteCandidateId`绑定snapshot、caller signature、receiver static FQN、method name、arity、ordered actual descriptors、排序后的兼容target signatures和locator。它恰进入一次`coverage.gapDispositions`，不进入`exactElementIds`或`exclusions`；在完整分母下local Gap可以与`coverage.closed=true`共存。gap ID继续完全使用8.0.1既有`GraphGapIdentityMaterialV1`公式，不增加自由detail字段。
+
+最小可重放语义例子：
+
+~~~java
+interface AuditClient {
+  boolean recordStatus(String status);
+  boolean recordStatus(Integer status);
+}
+
+final class DepotHeadService {
+  private AuditClient auditClient;
+
+  boolean record() {
+    return auditClient.recordStatus(null);
+  }
+}
+~~~
+
+receiver static type是`AuditClient`，name=`recordStatus`，arity=`1`；两个public declaration都通过visibility，`null`对两个reference formal都兼容，所以`|C|=2`。期望输出不是任一`CALL_TARGET`，而是一条CALL-owner Gap（ID仅示意）：
+
+~~~json
+{"affectedEntryIds":["entry:<sha256>"],"candidateElementIds":["call-candidate-v3:<sha256>"],"gapId":"graph-gap:<sha256>","reasonCode":"CALL_TARGET_AMBIGUOUS","sourceLocator":{"endByteExclusive":235,"endColumn":42,"endLine":10,"fileId":"file:<sha256>","path":"src/main/java/example/DepotHeadService.java","startByte":205,"startColumn":12,"startLine":10}}
+~~~
+
+若删除`Integer` overload，`|C|=1`并产生EXACT call/return pair；若把它改为`int`，`null`排除primitive后仍只有`String` candidate；若两个formal都是primitive，`C=0`并写`CALL_TARGET_UNRESOLVED`。这个bounded resolver即使遇到`Object`/`String`这类Java可能用most-specific规则继续决议的组合，也不自行实现该规则：多于一个null-compatible reference candidate仍写ambiguity，避免false exact。
+
+M4只消费M2中已有唯一`CALL_TARGET`的M3-activated call。上述site在fresh-reopened M2里只有原始CALL Gap，因此M3/M4不得生成call projection、boundary work item、`JavaBoundaryInvocation`、data-flow edge或复制成M4 Gap；M6最终只把这条M2 Gap按8.0.2一对一投影到`graph-gaps.jsonl`，`graphKind=CALL`。这句话是既有上下游保证，不改变M3/M4/M6合同。
+
+- **公共测试 seam 与验收**：`buildCalls(CallGraphInputs inputs, CallGraphProfile profile)` 对三段 DepotHead chain 做逐段 deletion/decoy/overload mutation；fixture必须先把真实 M1 module publication 安装到 canonical store，再由 `PersistedCodeStructureGraphReader` 与同一次`ReopenedProgramGraphInputs`生成唯一 sealed inputs。raw draft constructor、错 M1 address/key、receipt SHA、schema/type、六项 lineage、controls、profile、snapshot/application/entry denominator 任一 mutation 都必须在 builder 解析源码前以 `GRAPH_REFERENCE_BROKEN` 失败；删除/替换call-site bytes或脱离Stage 2的entry/catalog candidate不得由路径、自由字符串搜索或M1 display value补回；只有唯一 compatible target/namespace binding 时产生 EXACT edge。ambiguous/unresolved call或Mapper fixture还必须直接断言共享Gap五字段、identity和coverage映射，任一字段/ID substitution均fail closed。
+- **Luna/xhigh 测试指南**：只扩展既有`CallGraphBuilderTest`及其`src/test/resources/analysis/graph/call-graph/`fixtures，不创建平行resolver seam。第一条RED必须用真实M1 publication/readback建立上面的`String`/`Integer`+`null` fixture，并直接断言：恰一`CALL_TARGET_AMBIGUOUS`、非空准确owner、call-expression locator、单site candidate、Gap identity、coverage双向映射，以及该site零`CALL_SITE/CALL_TARGET/CALL_RETURN`；反转两个overload声明顺序应得到相同draft。随后每个行为一个RED：删一overload→EXACT；reference+primitive+`null`→唯一reference EXACT；primitive-only+`null`→`CALL_TARGET_UNRESOLVED`；unsupported actual→`CALL_ARGUMENT_TYPE_UNRESOLVED`；unknown receiver→既有receiver Gap；同签名重复与M1 endpoint缺失→`GRAPH_REFERENCE_BROKEN`。至少一个双entry fixture断言同一site只有一条Gap且owner为两个entry的排序并集。再在既有M4 selector加入一条窄测试，只验证fresh-reopened M2 ambiguity不产生boundary/data-flow元素且不复制Gap；M6既有Gap projection selector验证它最终仍是CALL Gap。golden不得由production生成，不能把`ENTRY_HANDLER_AMBIGUOUS`、`MAPPER_JAVA_METHOD_AMBIGUOUS`或`CALL_TARGET_UNRESOLVED`改名充数。命令：`mvn -t .mvn/toolchains.xml -o -Dtest=CallGraphBuilderTest test`，之后才运行直接覆盖M4/M6的既有selector；无网络/runtime。
+- **Terra/xhigh 实现指南**：RED后只改既有`analysis/graph`内M2实现与必要的M2 fixture reader，不改M1/M3/M4/M6合同。把signature-keyed单值`Map`替换为不会覆盖重复声明的有序candidate index；实现`ReceiverResolution`、`ActualTypeDescriptor`和bounded compatibility为M2内部类型，不暴露新public record。按“物理site枚举→entry owner fixed point→receiver→name/arity/visibility denominator→actual descriptors→compatibility→cardinality disposition”执行；只在`|C|=1`时建call/return及后续Mapper binding。所有Gap沿现有`GraphGapDraft`与coverage carrier落盘；不得加入source-order/most-specific/simple-name fallback或改变draft schema。完成每条RED后跑Spotless apply、重跑同一selector及`git diff --check`；若当前M1不能提供唯一endpoint或reason registry拒绝新reason，停止并交Sol/ultra，不得在M4伪造。
 
 #### M3 ControlFlowGraphBuilder
 
@@ -1044,6 +1096,8 @@ nodeId 绑定 snapshot、graph kind、semantic kind、canonical value、source i
 稳定 code：
 
 GRAPH_PROFILE_INVALID、GRAPH_REFERENCE_BROKEN、GRAPH_ACCOUNTING_INVARIANT_BROKEN、CODE_STRUCTURE_INVARIANT_BROKEN、CALL_TARGET_AMBIGUOUS、CALL_RETURN_PAIR_INVALID、CFG_POLARITY_MISSING、CFG_TERMINAL_UNRESOLVED、DATA_FLOW_BINDING_UNPROVEN、DATA_FLOW_WORKLIST_LIMIT_EXCEEDED、EVIDENCE_GRAPH_INVARIANT_BROKEN、EVIDENCE_SOURCE_REOPEN_MISMATCH、XML_SECURITY_POLICY_UNENFORCEABLE、XML_EXTERNAL_RESOLUTION_ATTEMPT、PROGRAM_GRAPHS_RESOURCE_LIMIT_EXCEEDED。
+
+其中`CALL_TARGET_AMBIGUOUS`按M2.1是CALL图的版本化local-Gap `reasonCode`，不是“发现两个合法overload就抛fatal”的异常。重复canonical declaration、M1 endpoint不闭合或同一site出现互斥处置仍分别按`GRAPH_REFERENCE_BROKEN`或`GRAPH_ACCOUNTING_INVARIANT_BROKEN` fatal。
 
 M4分类固定：可定位且前驱一致，但本profile不支持的call/read/write/setter shape、零/多
 reaching definitions、loop/capture/alias、multi-guard context以`DATA_FLOW_BINDING_UNPROVEN`写M4的共享
