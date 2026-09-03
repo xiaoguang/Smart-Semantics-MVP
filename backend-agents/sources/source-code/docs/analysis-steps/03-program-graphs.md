@@ -445,6 +445,7 @@ record ControlFlowNode(
   ArtifactId nodeId,
   ControlFlowNodeKind kind,
   String canonicalValue,
+  String normalizedCondition,              // required nullable; non-null only for GUARD
   List<ArtifactId> owningEntryIds,
   List<ArtifactId> evidenceDraftRefs)
 enum ControlFlowNodeKind {
@@ -549,6 +550,11 @@ nonblank reason且coverage恰含同candidate/reason。profile-stop node自身仍
 basic Java 行为严格固定：每个 entry 恰有一个无入边`ENTRY`并以唯一`NEXT`进入external handler method
 endpoint；handler随后以唯一`NEXT`进入首个control node或entry normal-return terminal。
 `BASIC_BLOCK`是被call/branch/terminal边界切开的最大连续语句段；每个`if`条件产生一个`GUARD`，
+其`normalizedCondition`由固定的`java-guard-condition-normalizer-v1`产生：对冻结源码已解析出的
+`IfStmt.getCondition()`调用固定版本 JavaParser 的`toString()`，结果直接写入字段。例如
+`if (status == null) { return; }`写入`"status == null"`。这不是从`canonicalValue`切割或从相邻
+源码再次搜索；`canonicalValue`仍只承担节点技术身份。非`GUARD`节点的该字段必须为null，`GUARD`
+节点缺少该字段是fatal public-wire错误。
 且恰有一条`TRUE`和一条`FALSE`出边，二者`guardNodeId`均为自身、polarity与kind相同，无`else`时
 FALSE指向lexical successor；若`if`位于method末尾，FALSE必须指向该method的正常fall-through terminal，
 不能悬空。entry handler中的显式`return`或normal fall-through形成`ENTRY_RETURN_TERMINAL`；被调用Java
@@ -849,7 +855,7 @@ M5不复用ProgramEdge字段冒充“evidence指向program edge”。`EvidenceNo
 | --- | --- | --- |
 | `code-structure-graph.json` | `PROGRAM_GRAPHS_CODE_STRUCTURE_GRAPH` | `program-graphs-code-structure-graph-v1` / `STANDALONE_JSON` |
 | `call-graph.json` | `PROGRAM_GRAPHS_CALL_GRAPH` | `program-graphs-call-graph-v1` / `STANDALONE_JSON` |
-| `control-flow-graph.json` | `PROGRAM_GRAPHS_CONTROL_FLOW_GRAPH` | `program-graphs-control-flow-graph-v1` / `STANDALONE_JSON` |
+| `control-flow-graph.json` | `PROGRAM_GRAPHS_CONTROL_FLOW_GRAPH` | `program-graphs-control-flow-graph-v2` / `STANDALONE_JSON` |
 | `data-flow-graph.json` | `PROGRAM_GRAPHS_DATA_FLOW_GRAPH` | `program-graphs-data-flow-graph-v2` / `STANDALONE_JSON` |
 | `evidence-graph.json` | `PROGRAM_GRAPHS_EVIDENCE_GRAPH` | `program-graphs-evidence-graph-v3` / `STANDALONE_JSON` |
 | `graph-gaps.jsonl` | `PROGRAM_GRAPHS_GRAPH_GAP` | `program-graphs-graph-gap-v1` / `CANONICAL_JSONL` |
@@ -865,7 +871,7 @@ PublicProgramGraphV1(
 ControlFlowPublicFields(semanticTraversalOrder[], terminalDispositions[])
 DataFlowPublicFields(worklistAccounting)        // nodes use DataFlowProgramNodeV2 variants
 
-ProgramNode(nodeId, kind, canonicalValue, owningEntryIds[], evidenceNodeIds[])
+ProgramNode(nodeId, kind, canonicalValue, normalizedCondition, owningEntryIds[], evidenceNodeIds[])
 DataFlowProgramNodeV2(nodeId, kind, canonicalValue, owningEntryIds[], evidenceNodeIds[],
                       boundaryInvocation?, unknownBoundaryReturn?)
 ProgramEdge(edgeId, kind, fromNodeId, toNodeId, ruleId, resolution,
