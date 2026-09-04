@@ -308,7 +308,11 @@ flowInterpretationDispositionId = "flow-interpretation-disposition:" + lowercase
 
 ### 8.2 R0、freeze、R1/R2 精确边界
 
-- R0 raw response每项只允许`proposalKind,label,purpose,basisAtomIds,basisGapIds,sourceSeedKey`；extra field拒绝。程序验证后才发布normalized values。
+- R0 provider response是一个canonical JSON object，根字段严格为`schemaVersion`、`kind`和与kind对应的payload。`schemaVersion`恒为`flow-interpretation-registry-proposal-response-v1`；Runner同时在transport envelope中记录observed runtime，不能让模型JSON自报runtime。
+  - `kind=R0_REGISTRY_PROPOSAL_RESPONSE`时根字段恰为`schemaVersion,kind,proposals`。每个proposal严格为`proposalKind,label,purpose,basisAtomIds,basisGapIds,sourceSeedKey`；extra field拒绝。`proposalKind`只能是`BUSINESS_TERM|CLAIM|QUESTION`，至少一个basis数组非空，且全部ID属于同一Capsule allowlist。程序验证后才发布normalized values。
+  - `kind=R0_REGISTRY_PROPOSAL_GAP`时根字段恰为`schemaVersion,kind,gapIds,reasonCode`。`gapIds`必须是该task同一Capsule已存在的Gap ID的非空、去重有序子集；`reasonCode`是有限的`INSUFFICIENT_EVIDENCE|UNRESOLVED_BUSINESS_TERM`。它关闭该Flow的R0 disposition为`GAP`，不创建R1/R2 task。
+  - `kind=R0_REGISTRY_PROPOSAL_FAILED`时根字段恰为`schemaVersion,kind,reasonCode`。`reasonCode`是有限的`MODEL_CANNOT_COMPLETE|RESPONSE_POLICY_REJECTED`；它关闭该Flow的R0 disposition为`FAILED`，不创建R1/R2 task。
+- provider transport/runtime异常、空response、非canonical JSON、unknown kind或任何不满足上述闭包的response都不是业务typed Gap/Failed：当前run直接`FAILED`，不得安装成功的FlowInterpretation publication，也不得重试、切换provider或把异常伪装成模型业务结论。
 - registry freeze等待全部`E`个R0 dispositions；不同Flow不按label/purpose合并，seed未被proposal引用的项不进入registry。
 - R1 selectedKey必须逐字等于同Flow provisionalKey；R2逐项覆盖R1，只能KEEP/NARROW/DROP/NEEDS_EVIDENCE。`NARROW`可收窄basis或meaning eligibility但不能换key。
 - R0-ready Flow有R0/R1/R2三个planned tasks；R0非READY eligible Flow只有R0；ineligible Flow三者都没有。ReaderCandidateRound不是第四次Flow解释。

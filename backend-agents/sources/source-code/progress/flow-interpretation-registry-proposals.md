@@ -20,17 +20,28 @@
 
 The R0 compiler RED is established. The public Capsule handoff had omitted the full values behind
 its span and obligation IDs. The target design correction was published at `26212c2`, and the user
-has explicitly approved the matching v2 public-wire repair. The repair now passes its direct M2/M3
-tests: each public Capsule embeds exactly its own complete spans and obligations, and the public
-schema allowlist plus fixture policy were advanced to v2. The next action is to commit/push that
-completed Stage05 repair without the still-RED Stage06 R0 test. Before the R0 compiler GREEN, a
-detail-design correction defines its typed task profile as a frozen analysis-run-request projection,
-rather than an arbitrary caller configuration.
+has explicitly approved the matching v2 public-wire repair. The repair was published at `c3b3e10`;
+each public Capsule now embeds exactly its own complete spans and obligations, and the public schema
+allowlist plus fixture policy are v2. The profile lineage clarification was published at `c896d86`.
+The first minimal M1 implementation now fresh-reopens the five public BusinessFlows artifacts,
+validates their denominator, capsule closure, receipt controls and limits, and emits only one
+canonical R0 input per eligible Capsule. M1 now persists that closed task set and M2 has a first
+scripted-provider GREEN for valid same-Flow term proposals. Before adding M2 typed Gap/Failed
+behavior, the exact provider response envelope is being published as a design-only correction.
 
 ## Changed files
 
 - `progress/flow-interpretation-registry-proposals.md`
 - `src/test/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalTaskCompilerTest.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalTaskProfile.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalTask.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalTaskSet.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalTaskShardReceipt.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalTaskCompilationException.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalTaskCompiler.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalTaskSetModulePublisher.java`
+- `src/main/java/org/sourceanalysis/app/artifact/AtomicCanonicalPublicationEngine.java`
+- `src/test/java/org/sourceanalysis/app/analysis/graph/ProgramGraphsPublicFixture.java`
 
 ## Verification
 
@@ -42,6 +53,12 @@ rather than an arbitrary caller configuration.
 | `mvn -t .mvn/toolchains.xml -o -Dtest=BusinessFlowsPublicationSpecifierTest test` | UNEXPECTED RED | 3 tests; all fail `FLOW_PUBLICATION_SPECIFIER_FAILED` caused by `FLOW_ACCOUNTING_INVARIANT_BROKEN` after the first v2 implementation. |
 | `mvn -t .mvn/toolchains.xml -o -Dtest=EvidenceCapsuleProjectorTest` | PASS | 3 tests; added same-Flow span/obligation ownership and closure assertion passes. |
 | `mvn -t .mvn/toolchains.xml -o -Dtest=EvidenceCapsuleProjectorTest,BusinessFlowsPublicationSpecifierTest test` | PASS | 6 tests; v2 public Capsule handoff, policy allowlist, and Stage05 publication all pass. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=RegistryProposalTaskCompilerTest test` | PASS | 1 test; two eligible persisted Capsules compile to two unique isolated canonical R0 tasks with complete Capsule views and recomputed SHA-256. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=RegistryProposalTaskCompilerTest test` | PASS | 2 tests; the all-ineligible public BusinessFlows case preserves its Flow publication but generates an empty R0 denominator and zero tasks. |
+| `mvn -t .mvn/toolchains.xml -o spotless:check` | BLOCKED_EXTERNAL | 56 pre-existing unrelated source/test files violate formatting; no global formatter was run because it would rewrite unrelated work. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=RegistryProposalTaskCompilerTest#persistsTheClosedR0TaskSetBeforeTheProviderRunnerCanReadIt test` | EXPECTED RED | 1 test; `RegistryProposalTaskSetModulePublisher` was absent. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=RegistryProposalTaskCompilerTest test` | PASS | 3 tests; M1 task-set compiler, zero eligible denominator, and persisted receipt-last module artifact all pass. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=RegistryProposalRunnerTest test` | EXPECTED RED → PASS | First run failed only because the R0 provider and runner types were absent; the scripted valid-term run now produces one round, receipt, proposal and `READY_FOR_FREEZE` disposition per persisted task. |
 
 ## Decisions
 
@@ -59,12 +76,14 @@ rather than an arbitrary caller configuration.
 
 ## Blockers
 
-- None. The user explicitly approved the published Capsule v2 public-wire repair.
+- Repository-wide Spotless is currently blocked by 56 unrelated existing violations. The M1 delivery
+  will use the plugin's owned-file selector plus `git diff --check`; it will not bulk-reformat
+  unrelated files.
 
 ## Exact next action
 
-Publish the narrow Stage06 profile-contract clarification, then implement the existing R0 compiler
-RED using only fresh-reopened BusinessFlows v2 public artifacts.
+Publish the exact M2 typed response-envelope clarification, then add its typed Gap/Failed and
+no-retry RED cases before extending the Runner.
 
 ## Resume checks
 
