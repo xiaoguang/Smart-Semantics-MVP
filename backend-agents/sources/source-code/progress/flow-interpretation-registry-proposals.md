@@ -14,6 +14,7 @@
 - Completed the bounded, persisted M1–M5 vertical slice: R0 task compilation, scripted R0 execution, frozen registry, finite-key R1/R2 task compilation, and scripted R1/R2 execution.
 - Each implemented module fresh-reopens its direct upstream canonical artifacts and installs its own module artifact receipt-last; no live Provider, customer source capture, or customer Maven execution occurred.
 - Verified the five direct public seams together: 10 tests, 0 failures, 0 errors, 0 skips.
+- Published the M1–M5 checkpoint to `origin/main` as `90c3ab9`.
 
 ## Current state
 
@@ -133,10 +134,10 @@ All experimental M6 changes were removed. The stable checkpoint contains only M1
 
 ## Exact next action
 
-Commit and push this safe M1–M5 checkpoint. On the next work session, read the M6 collision above
-and record a focused design decision before writing any M6 publication code.
+On the next work session, read the M6 collision above and record a focused design decision before
+writing any M6 publication code.
 
 ## Resume checks
 
 - Re-read this file and `git status --short`.
-- Confirm the checkpoint commit is on `origin/main` and that M6 still has no approved envelope/identity decision.
+- Confirm `origin/main` contains `90c3ab9` and that M6 still has no approved envelope/identity decision.
