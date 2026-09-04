@@ -48,8 +48,8 @@ import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 
 /**
- * M3 join: publishes the complete repository denominator as five formal business-flow files.
- * It does not repair a Flow or Capsule and does not read source code.
+ * M3 join: publishes the complete repository denominator as five formal business-flow files. It
+ * does not repair a Flow or Capsule and does not read source code.
  */
 public final class FlowPublicationSpecifier {
 
@@ -62,7 +62,7 @@ public final class FlowPublicationSpecifier {
   private static final String ENTRY_TYPE = "BUSINESS_FLOWS_ENTRY_DISPOSITION";
   private static final String ENTRY_SCHEMA = "business-flows-entry-disposition-v1";
   private static final String CAPSULE_TYPE = "BUSINESS_FLOWS_EVIDENCE_CAPSULE";
-  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v1";
+  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v2";
   private static final String GAP_TYPE = "BUSINESS_FLOWS_FLOW_GAP";
   private static final String GAP_SCHEMA = "business-flows-flow-gap-v1";
 
@@ -91,10 +91,14 @@ public final class FlowPublicationSpecifier {
       Objects.requireNonNull(discovery, "application discovery");
       Objects.requireNonNull(graphs, "program graphs");
       Objects.requireNonNull(facts, "proven code facts");
-      ReopenedAnalysisStepPublication sourceStep = reopen(source.publication(), AnalysisStepKey.VERIFIED_SOURCE_INVENTORY);
-      ReopenedAnalysisStepPublication discoveryStep = reopen(discovery.publication(), AnalysisStepKey.APPLICATION_DISCOVERY);
-      ReopenedAnalysisStepPublication graphStep = reopen(graphs.publication(), AnalysisStepKey.PROGRAM_GRAPHS);
-      ReopenedAnalysisStepPublication factStep = reopen(facts.publication(), AnalysisStepKey.PROVEN_CODE_FACTS);
+      ReopenedAnalysisStepPublication sourceStep =
+          reopen(source.publication(), AnalysisStepKey.VERIFIED_SOURCE_INVENTORY);
+      ReopenedAnalysisStepPublication discoveryStep =
+          reopen(discovery.publication(), AnalysisStepKey.APPLICATION_DISCOVERY);
+      ReopenedAnalysisStepPublication graphStep =
+          reopen(graphs.publication(), AnalysisStepKey.PROGRAM_GRAPHS);
+      ReopenedAnalysisStepPublication factStep =
+          reopen(facts.publication(), AnalysisStepKey.PROVEN_CODE_FACTS);
       requireLineage(sourceStep, discoveryStep, graphStep, factStep);
       ReopenedModulePublication compiler = moduleArtifacts.reopen(flowCompilation);
       ReopenedModulePublication projector = moduleArtifacts.reopen(capsuleProjection);
@@ -122,13 +126,22 @@ public final class FlowPublicationSpecifier {
           factStep.semanticPayloads().stream()
               .filter(value -> "proof-pack.json".equals(value.descriptor().fileName()))
               .findFirst()
-              .map(value -> new ArtifactReference(value.descriptor().artifactId(), value.descriptor().sha256()))
+              .map(
+                  value ->
+                      new ArtifactReference(
+                          value.descriptor().artifactId(), value.descriptor().sha256()))
               .orElseThrow(FlowPublicationSpecifier::failure);
-      Material material = material(compiler, projector, compilerPayload, projectorPayload, proofPack);
+      Material material =
+          material(compiler, projector, compilerPayload, projectorPayload, proofPack);
       List<CanonicalModulePayload> payloads = payloads(material);
       List<String> gaps = material.gapIds();
-      ModuleCompletionStatus status = gaps.isEmpty() ? ModuleCompletionStatus.SUCCEEDED : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
-      AnalysisStepModuleAddress address = new AnalysisStepModuleAddress(source.publication().address().runId(), AnalysisStepKey.BUSINESS_FLOWS, 3, "publish");
+      ModuleCompletionStatus status =
+          gaps.isEmpty()
+              ? ModuleCompletionStatus.SUCCEEDED
+              : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
+      AnalysisStepModuleAddress address =
+          new AnalysisStepModuleAddress(
+              source.publication().address().runId(), AnalysisStepKey.BUSINESS_FLOWS, 3, "publish");
       InstalledModulePublication module =
           moduleArtifacts.install(
               new ModuleInstallRequest(
@@ -144,16 +157,22 @@ public final class FlowPublicationSpecifier {
       InstalledAnalysisStepPublication step =
           analysisSteps.install(
               new AnalysisStepInstallRequest(
-                  new AnalysisStepPublicationAddress(address.runId(), AnalysisStepKey.BUSINESS_FLOWS),
+                  new AnalysisStepPublicationAddress(
+                      address.runId(), AnalysisStepKey.BUSINESS_FLOWS),
                   new AnalysisStepPublisherModuleProvenance(module.reference()),
-                  List.of(source.publication(), discovery.publication(), graphs.publication(), facts.publication()),
+                  List.of(
+                      source.publication(),
+                      discovery.publication(),
+                      graphs.publication(),
+                      facts.publication()),
                   sourceStep.receipt().controls(),
                   status,
                   gaps,
                   payloads.stream().map(FlowPublicationSpecifier::stepPayload).toList(),
                   null));
       ReopenedAnalysisStepPublication reopened = analysisSteps.reopen(step.reference());
-      if (!step.reference().equals(reopened.reference()) || reopened.semanticPayloads().size() != 5) {
+      if (!step.reference().equals(reopened.reference())
+          || reopened.semanticPayloads().size() != 5) {
         throw failure();
       }
       return new BusinessFlowsReference(step.reference());
@@ -170,8 +189,10 @@ public final class FlowPublicationSpecifier {
       ArtifactReference compilerPayload,
       ArtifactReference projectorPayload,
       ArtifactReference proofPack) {
-    JsonNode flowEnvelope = canonicalJson.parseCanonical(compiler.payloads().get(0).canonicalUtf8());
-    JsonNode capsuleEnvelope = canonicalJson.parseCanonical(projector.payloads().get(0).canonicalUtf8());
+    JsonNode flowEnvelope =
+        canonicalJson.parseCanonical(compiler.payloads().get(0).canonicalUtf8());
+    JsonNode capsuleEnvelope =
+        canonicalJson.parseCanonical(projector.payloads().get(0).canonicalUtf8());
     JsonNode flowPayload = object(flowEnvelope, "payload");
     JsonNode capsulePayload = object(capsuleEnvelope, "payload");
     if (!compilerPayload.equals(readReference(capsulePayload, "flowCompilationRef"))
@@ -182,6 +203,10 @@ public final class FlowPublicationSpecifier {
     List<JsonNode> dispositions = sortedObjects(array(flowPayload, "entryDispositions"), "entryId");
     List<JsonNode> compilationGaps = sortedObjects(array(flowPayload, "flowGaps"), "gapId");
     List<JsonNode> capsules = sortedObjects(array(capsulePayload, "capsules"), "flowSliceId");
+    Map<String, JsonNode> spansById =
+        indexed(array(capsulePayload, "modelEvidenceSpans"), "spanId");
+    Map<String, JsonNode> obligationsById =
+        indexed(array(capsulePayload, "projectionObligations"), "obligationId");
     Set<String> flowIds = ids(flows, "flowSliceId");
     Set<String> capsuleFlowIds = ids(capsules, "flowSliceId");
     List<JsonNode> compiledDispositions =
@@ -195,7 +220,8 @@ public final class FlowPublicationSpecifier {
     if (!flowIds.equals(capsuleFlowIds)
         || !flowIds.equals(compiledFlowIds)
         || compiledDispositions.stream()
-            .anyMatch(value -> value.get("flowSliceId") == null || value.get("flowSliceId").isNull())
+            .anyMatch(
+                value -> value.get("flowSliceId") == null || value.get("flowSliceId").isNull())
         || dispositions.stream()
             .filter(value -> !"COMPILED".equals(text(value, "disposition")))
             .anyMatch(
@@ -239,22 +265,66 @@ public final class FlowPublicationSpecifier {
       }
     }
     List<JsonNode> orderedGaps =
-        gapsById.values().stream().sorted(Comparator.comparing(value -> id(value, "gapId"), UTF8_ORDER)).toList();
-    Set<String> publishedGapIds = orderedGaps.stream().map(value -> id(value, "gapId")).collect(java.util.stream.Collectors.toSet());
-    if (modelIneligibilityByFlow.values().stream().flatMap(List::stream).anyMatch(id -> !publishedGapIds.contains(id))) {
+        gapsById.values().stream()
+            .sorted(Comparator.comparing(value -> id(value, "gapId"), UTF8_ORDER))
+            .toList();
+    Set<String> publishedGapIds =
+        orderedGaps.stream()
+            .map(value -> id(value, "gapId"))
+            .collect(java.util.stream.Collectors.toSet());
+    if (modelIneligibilityByFlow.values().stream()
+        .flatMap(List::stream)
+        .anyMatch(id -> !publishedGapIds.contains(id))) {
       throw failure();
     }
+    List<JsonNode> publicCapsules = completePublicCapsules(capsules, spansById, obligationsById);
     return new Material(
         compilerPayload,
         projectorPayload,
         flows,
         dispositions,
-        capsules,
+        publicCapsules,
         orderedGaps,
         orderedGaps.stream().map(value -> id(value, "gapId")).toList(),
         modelEligibleFlowIds.stream().sorted(UTF8_ORDER).toList(),
         modelIneligibleFlowIds.stream().sorted(UTF8_ORDER).toList(),
         Map.copyOf(modelIneligibilityByFlow));
+  }
+
+  private static List<JsonNode> completePublicCapsules(
+      List<JsonNode> capsules,
+      Map<String, JsonNode> spansById,
+      Map<String, JsonNode> obligationsById) {
+    Set<String> usedSpanIds = new HashSet<>();
+    Set<String> usedObligationIds = new HashSet<>();
+    List<JsonNode> result = new ArrayList<>();
+    for (JsonNode capsule : capsules) {
+      ObjectNode publicCapsule = ((ObjectNode) capsule).deepCopy();
+      List<String> spanIds = identifierArray(capsule, "modelEvidenceSpanIds");
+      List<String> obligationIds = identifierArray(capsule, "projectionObligationIds");
+      ArrayNode spans = publicCapsule.putArray("modelEvidenceSpans");
+      for (String spanId : spanIds) {
+        JsonNode span = spansById.get(spanId);
+        if (span == null || !usedSpanIds.add(spanId)) throw failure();
+        spans.add(span.deepCopy());
+      }
+      ArrayNode obligations = publicCapsule.putArray("projectionObligations");
+      for (String obligationId : obligationIds) {
+        JsonNode obligation = obligationsById.get(obligationId);
+        if (obligation == null || !usedObligationIds.add(obligationId)) throw failure();
+        List<String> satisfyingSpanIds = identifierArray(obligation, "satisfyingSpanIds");
+        if (satisfyingSpanIds.isEmpty() || !spanIds.containsAll(satisfyingSpanIds)) throw failure();
+        obligations.add(obligation.deepCopy());
+      }
+      result.add(publicCapsule);
+    }
+    if (usedSpanIds.size() != spansById.size()
+        || usedObligationIds.size() != obligationsById.size()) {
+      throw failure();
+    }
+    return result.stream()
+        .sorted(Comparator.comparing(value -> id(value, "flowSliceId"), UTF8_ORDER))
+        .toList();
   }
 
   private List<CanonicalModulePayload> payloads(Material material) {
@@ -264,18 +334,33 @@ public final class FlowPublicationSpecifier {
     flows.set("capsuleProjectionRef", reference(material.projectorPayload()));
     ArrayNode flowItems = flows.putArray("flowSlices");
     material.flows().forEach(value -> flowItems.add(value.deepCopy()));
-    values.add(standalone("flow-slices.json", FLOW_SLICES_TYPE, FLOW_SLICES_SCHEMA, "business-flows-flow-slices", flows));
+    values.add(
+        standalone(
+            "flow-slices.json",
+            FLOW_SLICES_TYPE,
+            FLOW_SLICES_SCHEMA,
+            "business-flows-flow-slices",
+            flows));
 
     ObjectNode coverage = JsonNodeFactory.instance.objectNode();
-    strings(coverage.putArray("entryIds"), material.dispositions().stream().map(value -> id(value, "entryId")).toList());
+    strings(
+        coverage.putArray("entryIds"),
+        material.dispositions().stream().map(value -> id(value, "entryId")).toList());
     strings(
         coverage.putArray("compiledEntryIds"),
         entryIdsWithDisposition(material.dispositions(), "COMPILED"));
-    strings(coverage.putArray("gappedEntryIds"), entryIdsWithDisposition(material.dispositions(), "GAP"));
     strings(
-        coverage.putArray("excludedEntryIds"), entryIdsWithDisposition(material.dispositions(), "EXCLUDED"));
-    strings(coverage.putArray("flowSliceIds"), material.flows().stream().map(value -> id(value, "flowSliceId")).toList());
-    strings(coverage.putArray("capsuleIds"), material.capsules().stream().map(value -> id(value, "evidenceCapsuleId")).toList());
+        coverage.putArray("gappedEntryIds"),
+        entryIdsWithDisposition(material.dispositions(), "GAP"));
+    strings(
+        coverage.putArray("excludedEntryIds"),
+        entryIdsWithDisposition(material.dispositions(), "EXCLUDED"));
+    strings(
+        coverage.putArray("flowSliceIds"),
+        material.flows().stream().map(value -> id(value, "flowSliceId")).toList());
+    strings(
+        coverage.putArray("capsuleIds"),
+        material.capsules().stream().map(value -> id(value, "evidenceCapsuleId")).toList());
     strings(coverage.putArray("modelEligibleFlowSliceIds"), material.modelEligibleFlowIds());
     strings(coverage.putArray("modelIneligibleFlowSliceIds"), material.modelIneligibleFlowIds());
     strings(
@@ -285,20 +370,44 @@ public final class FlowPublicationSpecifier {
             .sorted(UTF8_ORDER)
             .toList());
     ArrayNode ineligibilityByFlow = coverage.putArray("modelIneligibilityByFlow");
-    material.modelIneligibleFlowIds().forEach(
-        flowSliceId -> {
-          ObjectNode item = ineligibilityByFlow.addObject();
-          item.put("flowSliceId", flowSliceId);
-          strings(item.putArray("gapIds"), material.modelIneligibilityByFlow().get(flowSliceId));
-        });
+    material
+        .modelIneligibleFlowIds()
+        .forEach(
+            flowSliceId -> {
+              ObjectNode item = ineligibilityByFlow.addObject();
+              item.put("flowSliceId", flowSliceId);
+              strings(
+                  item.putArray("gapIds"), material.modelIneligibilityByFlow().get(flowSliceId));
+            });
     strings(coverage.putArray("gapIds"), material.gapIds());
     coverage.put("closed", true);
-    values.add(standalone("flow-coverage.json", COVERAGE_TYPE, COVERAGE_SCHEMA, "business-flows-flow-coverage", coverage));
+    values.add(
+        standalone(
+            "flow-coverage.json",
+            COVERAGE_TYPE,
+            COVERAGE_SCHEMA,
+            "business-flows-flow-coverage",
+            coverage));
 
-    values.add(jsonl("entry-dispositions.jsonl", ENTRY_TYPE, ENTRY_SCHEMA, "business-flows-entry-disposition", material.dispositions()));
-    values.add(jsonl("evidence-capsules.jsonl", CAPSULE_TYPE, CAPSULE_SCHEMA, "business-flows-evidence-capsule", material.capsules()));
-    values.add(jsonl("flow-gaps.jsonl", GAP_TYPE, GAP_SCHEMA, "business-flows-flow-gap", material.gaps()));
-    return values.stream().sorted(Comparator.comparing(CanonicalModulePayload::fileName, UTF8_ORDER)).toList();
+    values.add(
+        jsonl(
+            "entry-dispositions.jsonl",
+            ENTRY_TYPE,
+            ENTRY_SCHEMA,
+            "business-flows-entry-disposition",
+            material.dispositions()));
+    values.add(
+        jsonl(
+            "evidence-capsules.jsonl",
+            CAPSULE_TYPE,
+            CAPSULE_SCHEMA,
+            "business-flows-evidence-capsule",
+            material.capsules()));
+    values.add(
+        jsonl("flow-gaps.jsonl", GAP_TYPE, GAP_SCHEMA, "business-flows-flow-gap", material.gaps()));
+    return values.stream()
+        .sorted(Comparator.comparing(CanonicalModulePayload::fileName, UTF8_ORDER))
+        .toList();
   }
 
   private CanonicalModulePayload standalone(
@@ -309,9 +418,23 @@ public final class FlowPublicationSpecifier {
     document.put("artifactId", "pending");
     ObjectNode withoutId = document.deepCopy();
     withoutId.remove("artifactId");
-    ArtifactId id = ArtifactId.parse(prefix + ":" + sha256(frame("canonical-standalone-json-artifact-id-v1"), frame(schema), frame(type), frame(canonicalJson.encodeCanonical(withoutId).copyToByteArray())));
+    ArtifactId id =
+        ArtifactId.parse(
+            prefix
+                + ":"
+                + sha256(
+                    frame("canonical-standalone-json-artifact-id-v1"),
+                    frame(schema),
+                    frame(type),
+                    frame(canonicalJson.encodeCanonical(withoutId).copyToByteArray())));
     document.put("artifactId", id.value());
-    return new CanonicalModulePayload(fileName, type, schema, id, CanonicalMediaType.APPLICATION_JSON, canonicalJson.encodeCanonical(document));
+    return new CanonicalModulePayload(
+        fileName,
+        type,
+        schema,
+        id,
+        CanonicalMediaType.APPLICATION_JSON,
+        canonicalJson.encodeCanonical(document));
   }
 
   private CanonicalModulePayload jsonl(
@@ -321,12 +444,28 @@ public final class FlowPublicationSpecifier {
       ObjectNode line = ((ObjectNode) value).deepCopy();
       line.put("schemaVersion", schema);
       line.put("artifactType", type);
-      result.append(new String(canonicalJson.encodeCanonical(line).copyToByteArray(), StandardCharsets.UTF_8));
+      result.append(
+          new String(
+              canonicalJson.encodeCanonical(line).copyToByteArray(), StandardCharsets.UTF_8));
       result.append('\n');
     }
     byte[] bytes = result.toString().getBytes(StandardCharsets.UTF_8);
-    ArtifactId id = ArtifactId.parse(prefix + ":" + sha256(frame("canonical-jsonl-artifact-id-v1"), frame(schema), frame(type), frame(bytes)));
-    return new CanonicalModulePayload(fileName, type, schema, id, CanonicalMediaType.APPLICATION_X_NDJSON, ImmutableBytes.copyOf(bytes));
+    ArtifactId id =
+        ArtifactId.parse(
+            prefix
+                + ":"
+                + sha256(
+                    frame("canonical-jsonl-artifact-id-v1"),
+                    frame(schema),
+                    frame(type),
+                    frame(bytes)));
+    return new CanonicalModulePayload(
+        fileName,
+        type,
+        schema,
+        id,
+        CanonicalMediaType.APPLICATION_X_NDJSON,
+        ImmutableBytes.copyOf(bytes));
   }
 
   private ReopenedAnalysisStepPublication reopen(
@@ -334,7 +473,8 @@ public final class FlowPublicationSpecifier {
       AnalysisStepKey expected) {
     if (reference == null || reference.address().analysisStepKey() != expected) throw failure();
     ReopenedAnalysisStepPublication reopened = analysisSteps.reopen(reference);
-    if (!reference.equals(reopened.reference()) || reopened.receipt().address().analysisStepKey() != expected) {
+    if (!reference.equals(reopened.reference())
+        || reopened.receipt().address().analysisStepKey() != expected) {
       throw failure();
     }
     return reopened;
@@ -377,30 +517,57 @@ public final class FlowPublicationSpecifier {
   }
 
   private static CanonicalAnalysisStepPayload stepPayload(CanonicalModulePayload payload) {
-    return new CanonicalAnalysisStepPayload(payload.fileName(), payload.artifactType(), payload.schemaVersion(), payload.artifactId(), payload.mediaType(), payload.canonicalUtf8());
+    return new CanonicalAnalysisStepPayload(
+        payload.fileName(),
+        payload.artifactType(),
+        payload.schemaVersion(),
+        payload.artifactId(),
+        payload.mediaType(),
+        payload.canonicalUtf8());
   }
 
   private static ObjectNode reference(ArtifactReference value) {
-    return JsonNodeFactory.instance.objectNode().put("artifactId", value.artifactId().value()).put("sha256", value.sha256().value());
+    return JsonNodeFactory.instance
+        .objectNode()
+        .put("artifactId", value.artifactId().value())
+        .put("sha256", value.sha256().value());
   }
 
   private static ArtifactReference readReference(JsonNode source, String field) {
     JsonNode value = object(source, field);
     try {
-      return new ArtifactReference(ArtifactId.parse(text(value, "artifactId")), new Sha256Digest(text(value, "sha256")));
+      return new ArtifactReference(
+          ArtifactId.parse(text(value, "artifactId")), new Sha256Digest(text(value, "sha256")));
     } catch (RuntimeException invalid) {
       throw failure();
     }
   }
 
   private static List<JsonNode> sortedObjects(List<JsonNode> values, String idField) {
-    List<JsonNode> result = values.stream().filter(JsonNode::isObject).sorted(Comparator.comparing(value -> id(value, idField), UTF8_ORDER)).toList();
-    if (result.size() != values.size() || result.size() != result.stream().map(value -> id(value, idField)).distinct().count()) throw failure();
+    List<JsonNode> result =
+        values.stream()
+            .filter(JsonNode::isObject)
+            .sorted(Comparator.comparing(value -> id(value, idField), UTF8_ORDER))
+            .toList();
+    if (result.size() != values.size()
+        || result.size() != result.stream().map(value -> id(value, idField)).distinct().count())
+      throw failure();
     return result;
   }
 
   private static Set<String> ids(List<JsonNode> values, String field) {
-    return values.stream().map(value -> id(value, field)).collect(java.util.stream.Collectors.toCollection(HashSet::new));
+    return values.stream()
+        .map(value -> id(value, field))
+        .collect(java.util.stream.Collectors.toCollection(HashSet::new));
+  }
+
+  private static Map<String, JsonNode> indexed(List<JsonNode> values, String idField) {
+    Map<String, JsonNode> result = new HashMap<>();
+    for (JsonNode value : values) {
+      String id = id(value, idField);
+      if (result.put(id, value) != null) throw failure();
+    }
+    return Map.copyOf(result);
   }
 
   private static JsonNode object(JsonNode source, String field) {
@@ -449,7 +616,8 @@ public final class FlowPublicationSpecifier {
     return values;
   }
 
-  private static List<String> entryIdsWithDisposition(List<JsonNode> dispositions, String expected) {
+  private static List<String> entryIdsWithDisposition(
+      List<JsonNode> dispositions, String expected) {
     return dispositions.stream()
         .filter(value -> expected.equals(text(value, "disposition")))
         .map(value -> id(value, "entryId"))
@@ -475,14 +643,19 @@ public final class FlowPublicationSpecifier {
   }
 
   private static byte[] frame(byte[] bytes) {
-    return ByteBuffer.allocate(Long.BYTES + bytes.length).order(ByteOrder.BIG_ENDIAN).putLong(bytes.length).put(bytes).array();
+    return ByteBuffer.allocate(Long.BYTES + bytes.length)
+        .order(ByteOrder.BIG_ENDIAN)
+        .putLong(bytes.length)
+        .put(bytes)
+        .array();
   }
 
   private static int compareUtf8(String left, String right) {
     byte[] first = left.getBytes(StandardCharsets.UTF_8);
     byte[] second = right.getBytes(StandardCharsets.UTF_8);
     for (int index = 0; index < Math.min(first.length, second.length); index++) {
-      int result = Integer.compare(Byte.toUnsignedInt(first[index]), Byte.toUnsignedInt(second[index]));
+      int result =
+          Integer.compare(Byte.toUnsignedInt(first[index]), Byte.toUnsignedInt(second[index]));
       if (result != 0) return result;
     }
     return Integer.compare(first.length, second.length);

@@ -61,8 +61,8 @@ import org.sourceanalysis.app.evidence.SourceLocatorV1;
 /**
  * Test-only persisted graph fixture for Fact M1.
  *
- * <p>The fixture deliberately uses the current discovery and program-graph publishers. It is not
- * a JSON fixture and does not expose graph drafts to the Fact test. Two HTTP handlers each call a
+ * <p>The fixture deliberately uses the current discovery and program-graph publishers. It is not a
+ * JSON fixture and does not expose graph drafts to the Fact test. Two HTTP handlers each call a
  * different Java interface boundary, so the published data-flow graph has two distinct boundary
  * invocation nodes with disjoint entry ownership.
  */
@@ -197,8 +197,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
           new ApplicationDiscoveryReference(discoveryStep.reference());
       ArtifactReference graphProfile = reference("graph-profile", "fact-two-entry-profile");
       ProgramGraphsReference graphReference =
-          new ProgramGraphsExecution(
-                  source.reader(), modules, steps)
+          new ProgramGraphsExecution(source.reader(), modules, steps)
               .execute(sourceReference, discoveryReference, graphProfile, controls);
       return new ProgramGraphsPublicFixture(
           handle,
@@ -271,7 +270,8 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
   public static PersistedGraphMutation republishMutatedGraphs(
       ProgramGraphsPublicFixture base,
       Path mutationRoot,
-      BiFunction<List<CanonicalModulePayload>, CanonicalJsonCodec, List<CanonicalModulePayload>> mutation) {
+      BiFunction<List<CanonicalModulePayload>, CanonicalJsonCodec, List<CanonicalModulePayload>>
+          mutation) {
     try {
       Files.createDirectory(mutationRoot);
       CanonicalJsonCodec json = new CanonicalJsonCodec();
@@ -295,16 +295,9 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
           copyPublication(source, runId, 3, modules, steps, List.of(), controls);
       InstalledAnalysisStepPublication discoveryStep =
           copyPublication(
-              discovery,
-              runId,
-              4,
-              modules,
-              steps,
-              List.of(sourceStep.reference()),
-              controls);
+              discovery, runId, 4, modules, steps, List.of(sourceStep.reference()), controls);
       List<CanonicalModulePayload> original = modulePayloads(graph.semanticPayloads());
-      List<CanonicalModulePayload> changed =
-          List.copyOf(mutation.apply(original, json));
+      List<CanonicalModulePayload> changed = List.copyOf(mutation.apply(original, json));
       InstalledModulePublication graphModule =
           modules.install(
               new ModuleInstallRequest(
@@ -344,13 +337,14 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
    * payload mutation.
    *
    * <p>The graph payloads are copied unchanged, but are published downstream of the mutated
-   * discovery publication. This keeps the publication roots, controls, schemas, and graph
-   * lineage valid while allowing a test to isolate a discovery-to-source reference mismatch.
+   * discovery publication. This keeps the publication roots, controls, schemas, and graph lineage
+   * valid while allowing a test to isolate a discovery-to-source reference mismatch.
    */
   public static PersistedGraphMutation republishMutatedDiscovery(
       ProgramGraphsPublicFixture base,
       Path mutationRoot,
-      BiFunction<List<CanonicalModulePayload>, CanonicalJsonCodec, List<CanonicalModulePayload>> mutation) {
+      BiFunction<List<CanonicalModulePayload>, CanonicalJsonCodec, List<CanonicalModulePayload>>
+          mutation) {
     try {
       Files.createDirectory(mutationRoot);
       CanonicalJsonCodec json = new CanonicalJsonCodec();
@@ -401,7 +395,8 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
           new ProgramGraphsReference(graphStep.reference()),
           base.sourceReader);
     } catch (java.io.IOException failure) {
-      throw new IllegalStateException("cannot create persisted discovery mutation fixture", failure);
+      throw new IllegalStateException(
+          "cannot create persisted discovery mutation fixture", failure);
     }
   }
 
@@ -660,7 +655,8 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         interface CancellationClient {
           void record(String status);
         }
-        """.formatted(guardedApprove ? "if (status == null) { return; }" : "");
+        """
+                .formatted(guardedApprove ? "if (status == null) { return; }" : "");
     String mapper =
         """
         package com.example;
@@ -802,18 +798,25 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     profile.putNull("languageVersion");
     profile.putArray("frameworkSignals");
     profile.putArray("configSignals");
-    profile.set("capabilityProfileRef", referenceNode(reference("capability-profile", "fact-two-entry-capability")));
+    profile.set(
+        "capabilityProfileRef",
+        referenceNode(reference("capability-profile", "fact-two-entry-capability")));
     profile.set("sourceInventoryRef", referenceNode(sourceInventory));
     profile.set("verifiedSnapshotRef", referenceNode(verifiedSnapshot));
     profile.set("controls", controlsNode(controls));
-    List<ObjectNode> entryLines = source.entries().stream().map(ProgramGraphsPublicFixture::entryNode).toList();
+    List<ObjectNode> entryLines =
+        source.entries().stream().map(ProgramGraphsPublicFixture::entryNode).toList();
     ObjectNode capability = JsonNodeFactory.instance.objectNode();
     capability.put("schemaVersion", "application-discovery-capability-report-v2");
     capability.put("artifactType", "APPLICATION_DISCOVERY_CAPABILITY_REPORT");
     capability.put("applicationProfileId", applicationProfileId.value());
     ObjectNode coverage = capability.putObject("repositoryEntryCoverage");
     ArrayNode entryIds = coverage.putArray("entryIds");
-    source.entries().stream().map(HttpEntryPoint::entryId).map(ArtifactId::value).sorted().forEach(entryIds::add);
+    source.entries().stream()
+        .map(HttpEntryPoint::entryId)
+        .map(ArtifactId::value)
+        .sorted()
+        .forEach(entryIds::add);
     coverage.putArray("mapperCatalogEntryIds").add(source.mapperCatalog().catalogEntryId().value());
     coverage.put("entryCount", source.entries().size());
     coverage.put("mapperCatalogEntryCount", 1);
@@ -913,7 +916,8 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
 
   private static CanonicalModulePayload standalonePayload(
       CanonicalJsonCodec json, String fileName, String type, String schema, String prefix) {
-    return standaloneBody(json, fileName, type, schema, prefix, JsonNodeFactory.instance.objectNode());
+    return standaloneBody(
+        json, fileName, type, schema, prefix, JsonNodeFactory.instance.objectNode());
   }
 
   private static CanonicalModulePayload standaloneBody(
@@ -975,11 +979,17 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
             .map(value -> json.encodeCanonical(value).copyToByteArray())
             .reduce(
                 new byte[0],
-                (left, right) -> concatenate(concatenate(left, right), "\n".getBytes(StandardCharsets.UTF_8)));
+                (left, right) ->
+                    concatenate(concatenate(left, right), "\n".getBytes(StandardCharsets.UTF_8)));
     String artifactId =
         prefix
             + ":"
-            + digest(concatenate(frame("canonical-jsonl-artifact-id-v1"), frame(schema), frame(type), frame(bytes)));
+            + digest(
+                concatenate(
+                    frame("canonical-jsonl-artifact-id-v1"),
+                    frame(schema),
+                    frame(type),
+                    frame(bytes)));
     return new CanonicalModulePayload(
         fileName,
         type,
@@ -989,13 +999,19 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         ImmutableBytes.copyOf(bytes));
   }
 
-  private static ArtifactReference sourceArtifact(List<CanonicalModulePayload> payloads, String fileName) {
+  private static ArtifactReference sourceArtifact(
+      List<CanonicalModulePayload> payloads, String fileName) {
     CanonicalModulePayload payload =
-        payloads.stream().filter(value -> value.fileName().equals(fileName)).findFirst().orElseThrow();
-    return new ArtifactReference(payload.artifactId(), new Sha256Digest(digest(payload.canonicalUtf8().copyToByteArray())));
+        payloads.stream()
+            .filter(value -> value.fileName().equals(fileName))
+            .findFirst()
+            .orElseThrow();
+    return new ArtifactReference(
+        payload.artifactId(), new Sha256Digest(digest(payload.canonicalUtf8().copyToByteArray())));
   }
 
-  private static List<CanonicalAnalysisStepPayload> toStepPayloads(List<CanonicalModulePayload> payloads) {
+  private static List<CanonicalAnalysisStepPayload> toStepPayloads(
+      List<CanonicalModulePayload> payloads) {
     return payloads.stream()
         .map(
             payload ->
@@ -1013,53 +1029,303 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     ObjectNode document = JsonNodeFactory.instance.objectNode();
     document.put("schemaVersion", "artifact-policy-registry-v2");
     ArrayNode entries = document.putArray("policies");
-    policy(entries, "APPLICATION_DISCOVERY_APPLICATION_PROFILE", "application-discovery-application-profile-v2", "application-profile", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "APPLICATION_DISCOVERY_CAPABILITY_REPORT", "application-discovery-capability-report-v2", "capability-report", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "APPLICATION_DISCOVERY_ENTRY_POINTS", "application-discovery-entry-points-v2", "entry-points", "application/x-ndjson", "CANONICAL_JSONL", true);
-    policy(entries, "APPLICATION_DISCOVERY_MAPPER_CATALOG", "application-discovery-mapper-catalog-v2", "mapper-catalog", "application/x-ndjson", "CANONICAL_JSONL", false);
-    policy(entries, "PROGRAM_GRAPHS_CALL_GRAPH", "program-graphs-call-graph-v1", "program-graphs-call-graph", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "PROGRAM_GRAPHS_CALL_GRAPH_DRAFT", CallGraphDraft.SCHEMA_VERSION, "call-graph", "application/json", "MODULE_ARTIFACT_JSON", false);
-    policy(entries, "PROGRAM_GRAPHS_CODE_STRUCTURE_GRAPH", "program-graphs-code-structure-graph-v1", "program-graphs-code-structure-graph", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "PROGRAM_GRAPHS_CODE_STRUCTURE_DRAFT", CodeStructureGraphDraft.SCHEMA_VERSION, "code-structure-graph", "application/json", "MODULE_ARTIFACT_JSON", false);
-    policy(entries, "PROGRAM_GRAPHS_CONTROL_FLOW_GRAPH", "program-graphs-control-flow-graph-v2", "program-graphs-control-flow-graph", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "PROGRAM_GRAPHS_CONTROL_FLOW_DRAFT", ControlFlowGraphDraft.SCHEMA_VERSION, "control-flow-graph", "application/json", "MODULE_ARTIFACT_JSON", false);
-    policy(entries, "PROGRAM_GRAPHS_DATA_FLOW_GRAPH", "program-graphs-data-flow-graph-v2", "program-graphs-data-flow-graph", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "PROGRAM_GRAPHS_DATA_FLOW_DRAFT", DataFlowGraphDraft.SCHEMA_VERSION, "data-flow-graph", "application/json", "MODULE_ARTIFACT_JSON", false);
-    policy(entries, "PROGRAM_GRAPHS_EVIDENCE_GRAPH", "program-graphs-evidence-graph-v3", "program-graphs-evidence-graph", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "PROGRAM_GRAPHS_EVIDENCE_GRAPH_DRAFT", EvidenceGraphDraft.SCHEMA_VERSION, "evidence-graph", "application/json", "MODULE_ARTIFACT_JSON", false);
-    policy(entries, "PROGRAM_GRAPHS_GRAPH_GAP", "program-graphs-graph-gap-v1", "program-graphs-graph-gaps", "application/x-ndjson", "CANONICAL_JSONL", true);
-    policy(entries, "PROGRAM_GRAPHS_GRAPH_INDEX", "program-graphs-graph-index-v2", "program-graphs-graph-index", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "PROVEN_CODE_FACTS_FACT_CANDIDATE_SET", "proven-code-facts-fact-candidate-set-v2", "proven-code-facts-fact-candidate-set", "application/json", "MODULE_ARTIFACT_JSON", false);
-    policy(entries, "PROVEN_CODE_FACTS_FACT_ACCOUNTING", "proven-code-facts-fact-accounting-v2", "proven-code-facts-fact-accounting", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "PROVEN_CODE_FACTS_GAP_LEDGER", "proven-code-facts-gap-ledger-v2", "proven-code-facts-gap-ledger", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "PROVEN_CODE_FACTS_PROOF_PACK", "proven-code-facts-proof-pack-v2", "proven-code-facts-proof-pack", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "PROVEN_CODE_FACTS_PROOF_DECISION_SET", "proven-code-facts-proof-decision-set-v2", "proven-code-facts-proof-decision-set", "application/json", "MODULE_ARTIFACT_JSON", false);
-    policy(entries, "PROVEN_CODE_FACTS_PROVEN_FACTS", "proven-code-facts-proven-facts-v2", "proven-code-facts-proven-facts", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "BUSINESS_FLOWS_FLOW_COMPILATION", "business-flows-flow-compilation-v1", "business-flows-flow-compilation", "application/json", "MODULE_ARTIFACT_JSON", false);
-    policy(entries, "BUSINESS_FLOWS_CAPSULE_PROJECTION", "business-flows-capsule-projection-v4", "business-flows-capsule-projection", "application/json", "MODULE_ARTIFACT_JSON", false);
-    policy(entries, "BUSINESS_FLOWS_FLOW_SLICES", "business-flows-flow-slices-v1", "business-flows-flow-slices", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "BUSINESS_FLOWS_FLOW_COVERAGE", "business-flows-flow-coverage-v1", "business-flows-flow-coverage", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "BUSINESS_FLOWS_ENTRY_DISPOSITION", "business-flows-entry-disposition-v1", "business-flows-entry-disposition", "application/x-ndjson", "CANONICAL_JSONL", true);
-    policy(entries, "BUSINESS_FLOWS_EVIDENCE_CAPSULE", "business-flows-evidence-capsule-v1", "business-flows-evidence-capsule", "application/x-ndjson", "CANONICAL_JSONL", true);
-    policy(entries, "BUSINESS_FLOWS_FLOW_GAP", "business-flows-flow-gap-v1", "business-flows-flow-gap", "application/x-ndjson", "CANONICAL_JSONL", true);
-    policy(entries, "VERIFIED_SNAPSHOT", "verified-snapshot-v2", "verified-snapshot", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "VERIFIED_SOURCE_INVENTORY_SOURCE_INPUT", "verified-source-inventory-source-input-v2", "verified-source-inventory-source-input", "application/json", "STANDALONE_JSON", false);
-    policy(entries, "VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY", "verified-source-inventory-source-inventory-v2", "verified-source-inventory-source-inventory", "application/x-ndjson", "CANONICAL_JSONL", false);
+    policy(
+        entries,
+        "APPLICATION_DISCOVERY_APPLICATION_PROFILE",
+        "application-discovery-application-profile-v2",
+        "application-profile",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "APPLICATION_DISCOVERY_CAPABILITY_REPORT",
+        "application-discovery-capability-report-v2",
+        "capability-report",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "APPLICATION_DISCOVERY_ENTRY_POINTS",
+        "application-discovery-entry-points-v2",
+        "entry-points",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        true);
+    policy(
+        entries,
+        "APPLICATION_DISCOVERY_MAPPER_CATALOG",
+        "application-discovery-mapper-catalog-v2",
+        "mapper-catalog",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        false);
+    policy(
+        entries,
+        "PROGRAM_GRAPHS_CALL_GRAPH",
+        "program-graphs-call-graph-v1",
+        "program-graphs-call-graph",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "PROGRAM_GRAPHS_CALL_GRAPH_DRAFT",
+        CallGraphDraft.SCHEMA_VERSION,
+        "call-graph",
+        "application/json",
+        "MODULE_ARTIFACT_JSON",
+        false);
+    policy(
+        entries,
+        "PROGRAM_GRAPHS_CODE_STRUCTURE_GRAPH",
+        "program-graphs-code-structure-graph-v1",
+        "program-graphs-code-structure-graph",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "PROGRAM_GRAPHS_CODE_STRUCTURE_DRAFT",
+        CodeStructureGraphDraft.SCHEMA_VERSION,
+        "code-structure-graph",
+        "application/json",
+        "MODULE_ARTIFACT_JSON",
+        false);
+    policy(
+        entries,
+        "PROGRAM_GRAPHS_CONTROL_FLOW_GRAPH",
+        "program-graphs-control-flow-graph-v2",
+        "program-graphs-control-flow-graph",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "PROGRAM_GRAPHS_CONTROL_FLOW_DRAFT",
+        ControlFlowGraphDraft.SCHEMA_VERSION,
+        "control-flow-graph",
+        "application/json",
+        "MODULE_ARTIFACT_JSON",
+        false);
+    policy(
+        entries,
+        "PROGRAM_GRAPHS_DATA_FLOW_GRAPH",
+        "program-graphs-data-flow-graph-v2",
+        "program-graphs-data-flow-graph",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "PROGRAM_GRAPHS_DATA_FLOW_DRAFT",
+        DataFlowGraphDraft.SCHEMA_VERSION,
+        "data-flow-graph",
+        "application/json",
+        "MODULE_ARTIFACT_JSON",
+        false);
+    policy(
+        entries,
+        "PROGRAM_GRAPHS_EVIDENCE_GRAPH",
+        "program-graphs-evidence-graph-v3",
+        "program-graphs-evidence-graph",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "PROGRAM_GRAPHS_EVIDENCE_GRAPH_DRAFT",
+        EvidenceGraphDraft.SCHEMA_VERSION,
+        "evidence-graph",
+        "application/json",
+        "MODULE_ARTIFACT_JSON",
+        false);
+    policy(
+        entries,
+        "PROGRAM_GRAPHS_GRAPH_GAP",
+        "program-graphs-graph-gap-v1",
+        "program-graphs-graph-gaps",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        true);
+    policy(
+        entries,
+        "PROGRAM_GRAPHS_GRAPH_INDEX",
+        "program-graphs-graph-index-v2",
+        "program-graphs-graph-index",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "PROVEN_CODE_FACTS_FACT_CANDIDATE_SET",
+        "proven-code-facts-fact-candidate-set-v2",
+        "proven-code-facts-fact-candidate-set",
+        "application/json",
+        "MODULE_ARTIFACT_JSON",
+        false);
+    policy(
+        entries,
+        "PROVEN_CODE_FACTS_FACT_ACCOUNTING",
+        "proven-code-facts-fact-accounting-v2",
+        "proven-code-facts-fact-accounting",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "PROVEN_CODE_FACTS_GAP_LEDGER",
+        "proven-code-facts-gap-ledger-v2",
+        "proven-code-facts-gap-ledger",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "PROVEN_CODE_FACTS_PROOF_PACK",
+        "proven-code-facts-proof-pack-v2",
+        "proven-code-facts-proof-pack",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "PROVEN_CODE_FACTS_PROOF_DECISION_SET",
+        "proven-code-facts-proof-decision-set-v2",
+        "proven-code-facts-proof-decision-set",
+        "application/json",
+        "MODULE_ARTIFACT_JSON",
+        false);
+    policy(
+        entries,
+        "PROVEN_CODE_FACTS_PROVEN_FACTS",
+        "proven-code-facts-proven-facts-v2",
+        "proven-code-facts-proven-facts",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "BUSINESS_FLOWS_FLOW_COMPILATION",
+        "business-flows-flow-compilation-v1",
+        "business-flows-flow-compilation",
+        "application/json",
+        "MODULE_ARTIFACT_JSON",
+        false);
+    policy(
+        entries,
+        "BUSINESS_FLOWS_CAPSULE_PROJECTION",
+        "business-flows-capsule-projection-v4",
+        "business-flows-capsule-projection",
+        "application/json",
+        "MODULE_ARTIFACT_JSON",
+        false);
+    policy(
+        entries,
+        "BUSINESS_FLOWS_FLOW_SLICES",
+        "business-flows-flow-slices-v1",
+        "business-flows-flow-slices",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "BUSINESS_FLOWS_FLOW_COVERAGE",
+        "business-flows-flow-coverage-v1",
+        "business-flows-flow-coverage",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "BUSINESS_FLOWS_ENTRY_DISPOSITION",
+        "business-flows-entry-disposition-v1",
+        "business-flows-entry-disposition",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        true);
+    policy(
+        entries,
+        "BUSINESS_FLOWS_EVIDENCE_CAPSULE",
+        "business-flows-evidence-capsule-v2",
+        "business-flows-evidence-capsule",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        true);
+    policy(
+        entries,
+        "BUSINESS_FLOWS_FLOW_GAP",
+        "business-flows-flow-gap-v1",
+        "business-flows-flow-gap",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        true);
+    policy(
+        entries,
+        "VERIFIED_SNAPSHOT",
+        "verified-snapshot-v2",
+        "verified-snapshot",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "VERIFIED_SOURCE_INVENTORY_SOURCE_INPUT",
+        "verified-source-inventory-source-input-v2",
+        "verified-source-inventory-source-input",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY",
+        "verified-source-inventory-source-inventory-v2",
+        "verified-source-inventory-source-inventory",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        false);
     List<ObjectNode> ordered = new ArrayList<>();
     entries.forEach(value -> ordered.add((ObjectNode) value));
     ordered.sort(Comparator.comparing(value -> value.get("artifactType").textValue()));
     entries.removeAll();
     ordered.forEach(entries::add);
-    document.put("artifactPolicyRegistryId", "artifact-policy-registry:" + digest(concatenate(frame("canonical-artifact-policy-registry-id-v2"), frame(json.encodeCanonical(document).copyToByteArray()))));
+    document.put(
+        "artifactPolicyRegistryId",
+        "artifact-policy-registry:"
+            + digest(
+                concatenate(
+                    frame("canonical-artifact-policy-registry-id-v2"),
+                    frame(json.encodeCanonical(document).copyToByteArray()))));
     return CanonicalArtifactPolicyRegistry.load(json.encodeCanonical(document), json);
   }
 
-  private static void policy(ArrayNode entries, String type, String schema, String prefix, String media, String envelope, boolean emptyJsonl) {
-    entries.addObject().put("artifactType", type).put("schemaVersion", schema).put("artifactIdPrefix", prefix).put("mediaType", media).put("envelopeKind", envelope).put("emptyJsonlAllowed", emptyJsonl).put("publicContentExposure", "PATH_FREE_COMPLETE_UTF8");
+  private static void policy(
+      ArrayNode entries,
+      String type,
+      String schema,
+      String prefix,
+      String media,
+      String envelope,
+      boolean emptyJsonl) {
+    entries
+        .addObject()
+        .put("artifactType", type)
+        .put("schemaVersion", schema)
+        .put("artifactIdPrefix", prefix)
+        .put("mediaType", media)
+        .put("envelopeKind", envelope)
+        .put("emptyJsonlAllowed", emptyJsonl)
+        .put("publicContentExposure", "PATH_FREE_COMPLETE_UTF8");
   }
 
   private static ArtifactControls controls(CanonicalArtifactPolicyRegistry policies) {
-    return new ArtifactControls(new Sha256Digest(digest("toolchain")), new Sha256Digest(digest("profile")), new Sha256Digest(digest("schema")), null, policies.reference());
+    return new ArtifactControls(
+        new Sha256Digest(digest("toolchain")),
+        new Sha256Digest(digest("profile")),
+        new Sha256Digest(digest("schema")),
+        null,
+        policies.reference());
   }
 
   private static ObjectNode controlsNode(ArtifactControls values) {
@@ -1068,16 +1334,23 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     result.put("profileSha256", values.profileSha256().value());
     result.put("schemaBundleSha256", values.schemaBundleSha256().value());
     result.putNull("promptBundleSha256");
-    result.putObject("artifactPolicyRegistryRef").put("artifactId", values.artifactPolicyRegistryRef().artifactId().value()).put("sha256", values.artifactPolicyRegistryRef().sha256().value());
+    result
+        .putObject("artifactPolicyRegistryRef")
+        .put("artifactId", values.artifactPolicyRegistryRef().artifactId().value())
+        .put("sha256", values.artifactPolicyRegistryRef().sha256().value());
     return result;
   }
 
   private static ObjectNode referenceNode(ArtifactReference value) {
-    return JsonNodeFactory.instance.objectNode().put("artifactId", value.artifactId().value()).put("sha256", value.sha256().value());
+    return JsonNodeFactory.instance
+        .objectNode()
+        .put("artifactId", value.artifactId().value())
+        .put("sha256", value.sha256().value());
   }
 
   private static ArtifactReference reference(String prefix, String value) {
-    return new ArtifactReference(ArtifactId.parse(prefix + ":" + digest(value)), new Sha256Digest(digest(value)));
+    return new ArtifactReference(
+        ArtifactId.parse(prefix + ":" + digest(value)), new Sha256Digest(digest(value)));
   }
 
   private static SourceExcerptV1 excerpt(Map<String, String> documents, String path, String token) {
@@ -1085,11 +1358,29 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     int startCharacter = source.indexOf(token);
     if (startCharacter < 0) throw new IllegalArgumentException("fixture token is absent: " + token);
     long startByte = source.substring(0, startCharacter).getBytes(StandardCharsets.UTF_8).length;
-    int startLine = 1 + (int) source.substring(0, startCharacter).chars().filter(character -> character == '\n').count();
+    int startLine =
+        1
+            + (int)
+                source
+                    .substring(0, startCharacter)
+                    .chars()
+                    .filter(character -> character == '\n')
+                    .count();
     int lineStart = source.lastIndexOf('\n', startCharacter - 1) + 1;
     int startColumn = startCharacter - lineStart + 1;
     byte[] bytes = token.getBytes(StandardCharsets.UTF_8);
-    return new SourceExcerptV1(new SourceLocatorV1(id("file", path), path, startByte, startByte + bytes.length, startLine, startColumn, startLine, startColumn + token.length()), ImmutableBytes.copyOf(bytes), new Sha256Digest(digest(bytes)));
+    return new SourceExcerptV1(
+        new SourceLocatorV1(
+            id("file", path),
+            path,
+            startByte,
+            startByte + bytes.length,
+            startLine,
+            startColumn,
+            startLine,
+            startColumn + token.length()),
+        ImmutableBytes.copyOf(bytes),
+        new Sha256Digest(digest(bytes)));
   }
 
   private static void strings(ArrayNode target, List<String> values) {
@@ -1101,7 +1392,11 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
   }
 
   private static byte[] frame(byte[] value) {
-    return ByteBuffer.allocate(Long.BYTES + value.length).order(ByteOrder.BIG_ENDIAN).putLong(value.length).put(value).array();
+    return ByteBuffer.allocate(Long.BYTES + value.length)
+        .order(ByteOrder.BIG_ENDIAN)
+        .putLong(value.length)
+        .put(value)
+        .array();
   }
 
   private static byte[] concatenate(byte[]... values) {

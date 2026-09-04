@@ -6,8 +6,10 @@ import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -67,10 +69,7 @@ class EvidenceCapsuleProjectorTest {
       assertThat(capsules).hasSize(compilation.flowSlices().size());
       assertThat(spans).isNotEmpty();
       assertThat(obligations).isNotEmpty();
-      assertThat(
-              strings(capsules, "flowSliceId")
-                  .stream()
-                  .collect(Collectors.toUnmodifiableSet()))
+      assertThat(strings(capsules, "flowSliceId").stream().collect(Collectors.toUnmodifiableSet()))
           .isEqualTo(
               compilation.flowSlices().stream()
                   .map(FlowCompilation.FlowSlice::flowSliceId)
@@ -80,7 +79,9 @@ class EvidenceCapsuleProjectorTest {
 
       Map<String, FlowCompilation.FlowSlice> flowsById =
           compilation.flowSlices().stream()
-              .collect(Collectors.toUnmodifiableMap(FlowCompilation.FlowSlice::flowSliceId, flow -> flow));
+              .collect(
+                  Collectors.toUnmodifiableMap(
+                      FlowCompilation.FlowSlice::flowSliceId, flow -> flow));
       for (Object capsule : capsules) {
         FlowCompilation.FlowSlice flow = flowsById.get(property(capsule, "flowSliceId"));
         assertThat(flow).isNotNull();
@@ -130,6 +131,53 @@ class EvidenceCapsuleProjectorTest {
     }
   }
 
+  @Test
+  void assignsEveryProjectedEvidenceSpanAndObligationToExactlyOneFlowCapsule() throws Exception {
+    try (ProgramGraphsPublicFixture fixture =
+        ProgramGraphsPublicFixture.createWithGuardedApprove(
+            temporaryDirectory.resolve("capsule-projector-flow-local-evidence"))) {
+      ProvenCodeFactsReference facts = publishProvenFacts(fixture);
+      FlowCompilation compilation =
+          new EntryRootedFlowCompiler(fixture.stepArtifacts())
+              .compile(
+                  fixture.applicationDiscovery(), fixture.programGraphs(), facts, flowProfile());
+      ModulePublicationReference compiled =
+          new FlowCompilationModulePublisher(fixture.moduleArtifacts(), fixture.stepArtifacts())
+              .publish(fixture.applicationDiscovery(), fixture.programGraphs(), facts, compilation);
+
+      Object projection = project(fixture, facts, compiled, profile(24_576));
+      List<?> capsules = listProperty(projection, "capsules");
+      Map<String, Object> obligationsById =
+          listProperty(projection, "projectionObligations").stream()
+              .collect(
+                  Collectors.toUnmodifiableMap(
+                      obligation -> property(obligation, "obligationId").toString(),
+                      obligation -> obligation));
+      Set<String> referencedSpanIds = new HashSet<>();
+      Set<String> referencedObligationIds = new HashSet<>();
+      for (Object capsule : capsules) {
+        List<String> capsuleSpanIds = values(listProperty(capsule, "modelEvidenceSpanIds"));
+        for (String spanId : capsuleSpanIds) {
+          assertThat(referencedSpanIds.add(spanId)).as("span id %s", spanId).isTrue();
+        }
+        for (String obligationId : values(listProperty(capsule, "projectionObligationIds"))) {
+          assertThat(referencedObligationIds.add(obligationId))
+              .as("obligation id %s", obligationId)
+              .isTrue();
+          assertThat(values(listProperty(obligationsById.get(obligationId), "satisfyingSpanIds")))
+              .allMatch(capsuleSpanIds::contains);
+        }
+      }
+
+      assertThat(referencedSpanIds)
+          .containsExactlyInAnyOrderElementsOf(
+              strings(listProperty(projection, "modelEvidenceSpans"), "spanId"));
+      assertThat(referencedObligationIds)
+          .containsExactlyInAnyOrderElementsOf(
+              strings(listProperty(projection, "projectionObligations"), "obligationId"));
+    }
+  }
+
   private Object project(
       ProgramGraphsPublicFixture fixture,
       ProvenCodeFactsReference facts,
@@ -154,7 +202,8 @@ class EvidenceCapsuleProjectorTest {
                   org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore.class,
                   org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore.class,
                   org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader.class)
-              .newInstance(fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader());
+              .newInstance(
+                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader());
       return projectorType
           .getMethod(
               "project",
@@ -252,6 +301,10 @@ class EvidenceCapsuleProjectorTest {
     return values.stream().map(value -> property(value, property).toString()).toList();
   }
 
+  private static List<String> values(List<?> values) {
+    return values.stream().map(Object::toString).toList();
+  }
+
   private static Object property(Object target, String property) {
     try {
       return target.getClass().getMethod(property).invoke(target);
@@ -263,7 +316,8 @@ class EvidenceCapsuleProjectorTest {
   private static String digest(String value) {
     try {
       return java.util.HexFormat.of()
-          .formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+          .formatHex(
+              MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
     } catch (java.security.NoSuchAlgorithmException unavailable) {
       throw new IllegalStateException("SHA-256 must be available", unavailable);
     }

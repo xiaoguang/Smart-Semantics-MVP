@@ -8,6 +8,8 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateEnumerator;
@@ -85,7 +87,8 @@ class BusinessFlowsPublicationSpecifierTest {
           specify(fixture, facts, flowCompilation, capsuleProjection);
       ReopenedAnalysisStepPublication reopened = fixture.stepArtifacts().reopen(reference);
 
-      assertThat(reopened.receipt().address().analysisStepKey()).isEqualTo(AnalysisStepKey.BUSINESS_FLOWS);
+      assertThat(reopened.receipt().address().analysisStepKey())
+          .isEqualTo(AnalysisStepKey.BUSINESS_FLOWS);
       assertThat(reopened.semanticPayloads())
           .extracting(payload -> payload.descriptor().fileName())
           .containsExactly(
@@ -104,9 +107,7 @@ class BusinessFlowsPublicationSpecifierTest {
                   .canonicalUtf8()
                   .copyToByteArray(),
               StandardCharsets.UTF_8);
-      assertThat(flowGaps)
-          .contains("\"scope\":\"FLOW\"")
-          .contains("\"affectedSemanticIds\"");
+      assertThat(flowGaps).contains("\"scope\":\"FLOW\"").contains("\"affectedSemanticIds\"");
     }
   }
 
@@ -138,7 +139,8 @@ class BusinessFlowsPublicationSpecifierTest {
                       32,
                       4_096,
                       1));
-      assertThat(projection.capsules()).allMatch(value -> value.modelEligibility().equals("INELIGIBLE"));
+      assertThat(projection.capsules())
+          .allMatch(value -> value.modelEligibility().equals("INELIGIBLE"));
       ModulePublicationReference capsuleProjection =
           new CapsuleProjectionModulePublisher(
                   fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
@@ -161,13 +163,116 @@ class BusinessFlowsPublicationSpecifierTest {
                       .canonicalUtf8());
 
       assertThat(coverage.at("/modelEligibleFlowSliceIds")).isEmpty();
-      assertThat(coverage.at("/modelIneligibleFlowSliceIds"))
-          .hasSize(projection.capsules().size());
-      assertThat(coverage.at("/modelIneligibilityByFlow"))
-          .hasSize(projection.capsules().size());
-      assertThat(coverage.at("/modelIneligibilityGapIds"))
-          .hasSize(projection.capsules().size());
+      assertThat(coverage.at("/modelIneligibleFlowSliceIds")).hasSize(projection.capsules().size());
+      assertThat(coverage.at("/modelIneligibilityByFlow")).hasSize(projection.capsules().size());
+      assertThat(coverage.at("/modelIneligibilityGapIds")).hasSize(projection.capsules().size());
     }
+  }
+
+  @Test
+  void publishesEachCapsulesCompleteFlowLocalSpansAndObligationsForTheNextAnalysisStep()
+      throws Exception {
+    try (ProgramGraphsPublicFixture fixture =
+        ProgramGraphsPublicFixture.createWithGuardedApprove(
+            temporaryDirectory.resolve("business-flows-public-evidence-handoff"))) {
+      ProvenCodeFactsReference facts = publishProvenFacts(fixture);
+      FlowCompilation compilation =
+          new EntryRootedFlowCompiler(fixture.stepArtifacts())
+              .compile(
+                  fixture.applicationDiscovery(), fixture.programGraphs(), facts, flowProfile());
+      ModulePublicationReference flowCompilation =
+          new FlowCompilationModulePublisher(fixture.moduleArtifacts(), fixture.stepArtifacts())
+              .publish(fixture.applicationDiscovery(), fixture.programGraphs(), facts, compilation);
+      CapsuleProjection projection =
+          new EvidenceCapsuleProjector(
+                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
+              .project(
+                  flowCompilation,
+                  fixture.sourceInventory(),
+                  fixture.programGraphs(),
+                  facts,
+                  capsuleProfile());
+      ModulePublicationReference capsuleProjection =
+          new CapsuleProjectionModulePublisher(
+                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
+              .publish(
+                  flowCompilation,
+                  fixture.sourceInventory(),
+                  fixture.programGraphs(),
+                  facts,
+                  projection);
+
+      var reference = specify(fixture, facts, flowCompilation, capsuleProjection);
+      ReopenedAnalysisStepPublication reopened = fixture.stepArtifacts().reopen(reference);
+      List<JsonNode> lines = jsonLines(reopened, "evidence-capsules.jsonl");
+
+      assertThat(lines).hasSize(2);
+      Set<String> allSpanIds = new java.util.HashSet<>();
+      Set<String> allObligationIds = new java.util.HashSet<>();
+      lines.forEach(
+          capsule -> {
+            assertThat(capsule.path("schemaVersion").asText())
+                .isEqualTo("business-flows-evidence-capsule-v2");
+            List<String> referencedSpanIds = strings(capsule.path("modelEvidenceSpanIds"));
+            List<String> embeddedSpanIds = strings(capsule.path("modelEvidenceSpans"), "spanId");
+            List<String> referencedObligationIds = strings(capsule.path("projectionObligationIds"));
+            List<String> embeddedObligationIds =
+                strings(capsule.path("projectionObligations"), "obligationId");
+
+            assertThat(embeddedSpanIds).containsExactlyInAnyOrderElementsOf(referencedSpanIds);
+            assertThat(embeddedObligationIds)
+                .containsExactlyInAnyOrderElementsOf(referencedObligationIds);
+            assertThat(capsule.path("modelEvidenceSpans"))
+                .allSatisfy(
+                    span ->
+                        assertThat(span.path("sourceExcerpt").path("rawUtf8").asText())
+                            .isNotBlank());
+            assertThat(capsule.path("projectionObligations"))
+                .allSatisfy(
+                    obligation -> assertThat(obligation.path("satisfyingSpanIds")).isNotEmpty());
+            embeddedSpanIds.forEach(
+                spanId -> assertThat(allSpanIds.add(spanId)).as("span id %s", spanId).isTrue());
+            embeddedObligationIds.forEach(
+                obligationId ->
+                    assertThat(allObligationIds.add(obligationId))
+                        .as("obligation id %s", obligationId)
+                        .isTrue());
+          });
+    }
+  }
+
+  private static List<JsonNode> jsonLines(
+      ReopenedAnalysisStepPublication publication, String fileName) {
+    String jsonl =
+        new String(
+            publication.semanticPayloads().stream()
+                .filter(value -> fileName.equals(value.descriptor().fileName()))
+                .findFirst()
+                .orElseThrow()
+                .canonicalUtf8()
+                .copyToByteArray(),
+            StandardCharsets.UTF_8);
+    return jsonl
+        .lines()
+        .map(
+            value ->
+                new CanonicalJsonCodec()
+                    .parseCanonical(
+                        org.sourceanalysis.app.artifact.ImmutableBytes.copyOf(
+                            value.getBytes(StandardCharsets.UTF_8))))
+        .toList();
+  }
+
+  private static List<String> strings(JsonNode values) {
+    return java.util.stream.StreamSupport.stream(values.spliterator(), false)
+        .map(JsonNode::asText)
+        .toList();
+  }
+
+  private static List<String> strings(JsonNode values, String fieldName) {
+    return java.util.stream.StreamSupport.stream(values.spliterator(), false)
+        .map(value -> value.path(fieldName).asText())
+        .toList();
   }
 
   private static org.sourceanalysis.app.artifact.AnalysisStepPublicationReference specify(
@@ -203,7 +308,8 @@ class BusinessFlowsPublicationSpecifierTest {
               flowCompilation,
               capsuleProjection);
       Method publication = result.getClass().getMethod("publication");
-      return (org.sourceanalysis.app.artifact.AnalysisStepPublicationReference) publication.invoke(result);
+      return (org.sourceanalysis.app.artifact.AnalysisStepPublicationReference)
+          publication.invoke(result);
     } catch (ClassNotFoundException missing) {
       throw new AssertionError("FLOW_PUBLICATION_SPECIFIER_NOT_IMPLEMENTED", missing);
     } catch (InvocationTargetException failure) {
@@ -269,7 +375,8 @@ class BusinessFlowsPublicationSpecifierTest {
   private static String digest(String value) {
     try {
       return java.util.HexFormat.of()
-          .formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+          .formatHex(
+              MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
     } catch (java.security.NoSuchAlgorithmException unavailable) {
       throw new IllegalStateException("SHA-256 must be available", unavailable);
     }
