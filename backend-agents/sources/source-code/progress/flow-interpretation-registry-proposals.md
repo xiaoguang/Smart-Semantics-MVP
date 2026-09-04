@@ -1,33 +1,28 @@
 # Progress: Flow interpretation registry proposals
 
-- Status: IN_PROGRESS
+- Status: BLOCKED
 - Agent role: Sol/ultra design authority and delivery coordinator
 - Model: gpt-5.6-sol / ultra
 - Started: 2026-09-03
-- Last updated: 2026-09-03
-- Scope: Implement FlowInterpretation M1–M3: isolated R0 task compilation, scripted R0 execution, and one frozen repository interpretation registry. Before M1, repair the already-designed Stage05 public Capsule handoff so it carries the complete same-Flow span/obligation values needed by M1. No R1/R2, live Provider, public runtime adapter, or repository knowledge work.
+- Last updated: 2026-09-04
+- Scope: Complete FlowInterpretation: isolated R0 task compilation, scripted R0 execution, a frozen repository interpretation registry, finite-key R1/R2 execution, and the ten official step outputs. Before M1, repair the already-designed Stage05 public Capsule handoff so it carries the complete same-Flow span/obligation values needed by M1. No live Provider, public runtime adapter, or repository knowledge work.
 - Approved inputs: `docs/DESIGN.md`; `docs/analysis-steps/06-flow-interpretation.md`; both implementation plans; the published BusinessFlows step `d3f7d41`; frozen fixtures and a scripted Provider only.
 - Current branch/worktree: `codex/source-analysis-registry-proposals` at `/private/tmp/linguan-source-analysis-registry-proposals/backend-agents/sources/source-code`
 
 ## Completed
 
-- Created the worktree from the remote main commit that contains the completed BusinessFlows delivery.
-- Read repository and scoped rules, the FlowInterpretation detailed design, and implementation plans before making implementation changes.
-- Added the first public-seam R0 compiler RED test. Its direct selector compiles and fails only because the R0 compiler/profile are absent.
-- Published design correction `26212c2` to `origin/main`, retaining the five-file BusinessFlows public set while requiring the existing Capsule line to carry its complete span and obligation values.
+- Completed the bounded, persisted M1–M5 vertical slice: R0 task compilation, scripted R0 execution, frozen registry, finite-key R1/R2 task compilation, and scripted R1/R2 execution.
+- Each implemented module fresh-reopens its direct upstream canonical artifacts and installs its own module artifact receipt-last; no live Provider, customer source capture, or customer Maven execution occurred.
+- Verified the five direct public seams together: 10 tests, 0 failures, 0 errors, 0 skips.
 
 ## Current state
 
-The R0 compiler RED is established. The public Capsule handoff had omitted the full values behind
-its span and obligation IDs. The target design correction was published at `26212c2`, and the user
-has explicitly approved the matching v2 public-wire repair. The repair was published at `c3b3e10`;
-each public Capsule now embeds exactly its own complete spans and obligations, and the public schema
-allowlist plus fixture policy are v2. The profile lineage clarification was published at `c896d86`.
-The first minimal M1 implementation now fresh-reopens the five public BusinessFlows artifacts,
-validates their denominator, capsule closure, receipt controls and limits, and emits only one
-canonical R0 input per eligible Capsule. M1 now persists that closed task set and M2 has a first
-scripted-provider GREEN for valid same-Flow term proposals. Before adding M2 typed Gap/Failed
-behavior, the exact provider response envelope is being published as a design-only correction.
+M1–M5 are a verified internal vertical slice, not a completed Flow Interpretation step. M6 cannot
+be added safely under the current contract: `repository-interpretation-registry.json` is specified
+with the same `(artifactType, schemaVersion)` as both M3's module-artifact JSON and M6's standalone
+analysis-step JSON. The canonical artifact store intentionally maps each such pair to one envelope
+kind, so implementing both would require an unapproved dual write, alias, or wire-identity change.
+All experimental M6 changes were removed. The stable checkpoint contains only M1–M5.
 
 ## Changed files
 
@@ -40,8 +35,45 @@ behavior, the exact provider response envelope is being published as a design-on
 - `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalTaskCompilationException.java`
 - `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalTaskCompiler.java`
 - `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalTaskSetModulePublisher.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalProvider.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalProviderResponse.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalRunner.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalRound.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalGenerationReceipt.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalFlowDisposition.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalExecutionSet.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/proposal/BusinessRegistryProposal.java`
 - `src/main/java/org/sourceanalysis/app/artifact/AtomicCanonicalPublicationEngine.java`
 - `src/test/java/org/sourceanalysis/app/analysis/graph/ProgramGraphsPublicFixture.java`
+- `src/test/java/org/sourceanalysis/app/analysis/interpretation/proposal/RegistryProposalRunnerTest.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/registry/RegistryFreezeException.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/registry/RegistryProposalAccounting.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/registry/RepositoryInterpretationRegistry.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/registry/RepositoryInterpretationRegistryFlowDisposition.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/registry/RepositoryInterpretationRegistryFreezer.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/registry/RepositoryInterpretationRegistryItem.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/registry/RepositoryInterpretationRegistryModulePublisher.java`
+- `src/test/java/org/sourceanalysis/app/analysis/interpretation/registry/RepositoryInterpretationRegistryFreezerTest.java`
+- `src/test/java/org/sourceanalysis/app/analysis/interpretation/model/FiniteKeyFlowTaskCompilerTest.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/FlowModelTaskProfile.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/FlowModelTask.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/FlowModelTaskShardReceipt.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/FlowModelTaskSet.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/FlowModelTaskException.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/FiniteKeyFlowTaskCompiler.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/FlowModelTaskSetModulePublisher.java`
+- `src/test/java/org/sourceanalysis/app/analysis/interpretation/model/InterpretationRunnerTest.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/FlowModelProvider.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/FlowModelProviderResponse.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/ModelRound.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/GenerationReceipt.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/ModelTaskDisposition.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/InterpretationProposal.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/FlowInterpretationCandidate.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/FlowInterpretationDisposition.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/InterpretationExecutionSet.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/InterpretationRunner.java`
+- `src/main/java/org/sourceanalysis/app/analysis/interpretation/model/InterpretationExecutionSetModulePublisher.java`
 
 ## Verification
 
@@ -59,10 +91,25 @@ behavior, the exact provider response envelope is being published as a design-on
 | `mvn -t .mvn/toolchains.xml -o -Dtest=RegistryProposalTaskCompilerTest#persistsTheClosedR0TaskSetBeforeTheProviderRunnerCanReadIt test` | EXPECTED RED | 1 test; `RegistryProposalTaskSetModulePublisher` was absent. |
 | `mvn -t .mvn/toolchains.xml -o -Dtest=RegistryProposalTaskCompilerTest test` | PASS | 3 tests; M1 task-set compiler, zero eligible denominator, and persisted receipt-last module artifact all pass. |
 | `mvn -t .mvn/toolchains.xml -o -Dtest=RegistryProposalRunnerTest test` | EXPECTED RED → PASS | First run failed only because the R0 provider and runner types were absent; the scripted valid-term run now produces one round, receipt, proposal and `READY_FOR_FREEZE` disposition per persisted task. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=RegistryProposalRunnerTest#acceptsOneSameFlowBusinessTermFromEachPersistedR0TaskWithoutChangingItsEvidence test` | EXPECTED RED | 1 test; exact failure `REGISTRY_PROPOSAL_EXECUTION_SET_PUBLISHER_NOT_IMPLEMENTED`, with no errors. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=RegistryProposalRunnerTest#acceptsOneSameFlowBusinessTermFromEachPersistedR0TaskWithoutChangingItsEvidence test` | PASS | 1 test; M2 fresh-reopens M1 and installs `registry-proposal-execution-set.json` receipt-last without another Provider call. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=RegistryProposalRunnerTest#failsAfterTheFirstStartedProviderFailureWithoutRetryingAnotherTask test` | EXPECTED RED → PASS | First run exposed the generic response-invalid wrapper; M2 now returns `PROVIDER_FAILURE_AFTER_START` with the original cause and exactly one scripted call. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=RegistryProposalRunnerTest#closesEachEligibleFlowAsTypedGapUsingOnlyItsPersistedCapsuleGap test` | EXPECTED RED → PASS | The response kind was initially rejected; an allowed same-Capsule Gap now gives every eligible Flow one typed `GAP` disposition and no proposal. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=RegistryProposalRunnerTest test` | PASS | 4 tests; valid proposal, typed failure, typed Gap, receipt-last M2 persistence, and no-retry provider failure. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=RepositoryInterpretationRegistryFreezerTest test` | EXPECTED RED | The pure freezer passed; the expected remaining failure was `REPOSITORY_INTERPRETATION_REGISTRY_PUBLISHER_NOT_IMPLEMENTED`. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=RepositoryInterpretationRegistryFreezerTest test` | PASS | 1 test; M3 accepts fresh M1/M2/BusinessFlows closure and installs the receipt-last frozen registry. Two nullable source fields are compared explicitly, so a valid absent reason/seed is not treated as a failure. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=FiniteKeyFlowTaskCompilerTest test` | EXPECTED RED | 1 test; `FINITE_KEY_FLOW_TASK_COMPILER_NOT_IMPLEMENTED` because the immutable R1/R2 profile/compiler is absent; no compile error. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=FiniteKeyFlowTaskCompilerTest test` | EXPECTED RED → PASS | Compiler first passed the task shape; the publisher-specific RED was `FLOW_MODEL_TASK_SET_PUBLISHER_NOT_IMPLEMENTED`. The final 1-test selector passes with M4 fresh reopen and receipt-last persistence. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=InterpretationRunnerTest test` | EXPECTED RED | 1 test; `INTERPRETATION_RUNNER_NOT_IMPLEMENTED` because M5's provider/runner types are absent; no compile error. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=InterpretationRunnerTest test` | PASS | 1 test; 2 ready flows produce four ordered scripted calls, four rounds/receipts, two candidates, and two `READY_FOR_ADMISSION` final dispositions. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=InterpretationRunnerTest test` | EXPECTED RED → PASS | The M5 persistence RED was `INTERPRETATION_EXECUTION_SET_PUBLISHER_NOT_IMPLEMENTED`; the final selector fresh-reopens its three direct inputs and receipt-last installs `model-execution-set.json`. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=RegistryProposalTaskCompilerTest,RegistryProposalRunnerTest,RepositoryInterpretationRegistryFreezerTest,FiniteKeyFlowTaskCompilerTest,InterpretationRunnerTest test` | PASS | 10 tests, 0 failures, 0 errors, 0 skips across M1–M5. |
+| owned-file `spotless:check` | PASS | Only interpretation implementation/tests, artifact engine, and fixture policy checked; global Spotless remains out of scope because of existing unrelated violations. |
+| `git diff --check` | PASS | No whitespace errors in the checkpoint diff. |
 
 ## Decisions
 
-- M1–M3 is a bounded, separately reviewable delivery. It freezes the R0 denominator and registry before any R1/R2 code is introduced.
+- M1–M3 freezes the R0 denominator and registry before M4 creates any R1/R2 task. The user requested completion of the whole FlowInterpretation step here, so M4–M6 follow M3's direct GREEN.
 - Automated tests use a recording scripted Provider only; no real Provider, API key, customer Maven, or source capture is in scope.
 - Do not make FlowInterpretation read a Stage05 private module artifact, re-open source bytes, or use a partial Capsule view. The smallest correct repair is to enrich the existing public `evidence-capsules.jsonl` item with the complete span and projection-obligation values, then advance its schema/version and update the Stage05/06 public contract together.
 - The initial post-v2 failure was not cross-Flow evidence sharing. A direct M2 ownership test proved every span and obligation has one Capsule owner. The actual cause was the generic artifact contract and fixture policy still allowlisting v1; both now allowlist only v2.
@@ -76,16 +123,20 @@ behavior, the exact provider response envelope is being published as a design-on
 
 ## Blockers
 
-- Repository-wide Spotless is currently blocked by 56 unrelated existing violations. The M1 delivery
-  will use the plugin's owned-file selector plus `git diff --check`; it will not bulk-reformat
-  unrelated files.
+- **M6 registry envelope collision:** before M6 implementation, design authority must choose one
+  stable relationship between the M3 frozen registry and the reader-visible M6 registry: either a
+  new public artifact type/schema, or one shared canonical envelope made valid for both uses. The
+  current same-type/schema-but-two-envelope requirement cannot be implemented without violating
+  canonical identity. Do not add compatibility readers or dual writes.
+- Repository-wide Spotless has 56 pre-existing unrelated violations. This checkpoint uses the
+  owned-file selector and `git diff --check`, without rewriting unrelated work.
 
 ## Exact next action
 
-Publish the exact M2 typed response-envelope clarification, then add its typed Gap/Failed and
-no-retry RED cases before extending the Runner.
+Commit and push this safe M1–M5 checkpoint. On the next work session, read the M6 collision above
+and record a focused design decision before writing any M6 publication code.
 
 ## Resume checks
 
 - Re-read this file and `git status --short`.
-- Confirm branch base is `d3f7d41` and FlowInterpretation design still defines the same M1–M3 contract.
+- Confirm the checkpoint commit is on `origin/main` and that M6 still has no approved envelope/identity decision.
