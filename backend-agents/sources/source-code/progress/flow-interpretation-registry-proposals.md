@@ -50,9 +50,12 @@ rather than an arbitrary caller configuration.
 - Do not make FlowInterpretation read a Stage05 private module artifact, re-open source bytes, or use a partial Capsule view. The smallest correct repair is to enrich the existing public `evidence-capsules.jsonl` item with the complete span and projection-obligation values, then advance its schema/version and update the Stage05/06 public contract together.
 - The initial post-v2 failure was not cross-Flow evidence sharing. A direct M2 ownership test proved every span and obligation has one Capsule owner. The actual cause was the generic artifact contract and fixture policy still allowlisting v1; both now allowlist only v2.
 - M1 receives `RegistryProposalTaskProfile` only as a package-level, immutable projection of a
-  previously verified `analysis-run-request-v2`. Its prompt/schema/runtime digests must match the
+  previously verified `analysis-run-request-v2`. Its schema/runtime digests must match the
   persisted BusinessFlows controls; a future adapter cannot bypass request admission by constructing
   the profile itself.
+- Correction before coding: the pre-model BusinessFlows receipt may legally carry a null prompt
+  digest. Therefore M1 checks schema and profile/runtime against that receipt; its exact prompt
+  reference is frozen by the admitted run request and must not be inferred from the nullable receipt.
 
 ## Blockers
 

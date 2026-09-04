@@ -147,7 +147,7 @@ DepotHead walkthrough在每个模块的投影固定为：M1一个完整Capsule R
 
 每个模块都必须满足以下实现brief：
 
-- **M1测试/实现**：public seam `compileRegistryProposalTasks(businessFlows, taskProfile)`；`taskProfile`不是调用者可任意编造的模型配置，而是core在已经验证完整`analysis-run-request-v2`后投影出的不可变`RegistryProposalTaskProfile`。它恰含`promptBundleRef`、`outputSchemaRef`、`expectedRuntimeRef`、`resourceBudgetRef`及`maxTasks/maxProposalsPerTask/maxResponseUtf8Bytes/maxLabelUtf8Bytes/maxPurposeUtf8Bytes`；其前3个digest必须分别与BusinessFlows receipt中的prompt/schema/profile controls相符，其他request来源校验由后续run-core完成。Luna selector `RegistryProposalTaskCompilerTest`覆盖`N=0,E=0`、`N>0,E=0`、mixed eligibility、完整Capsule input、seed、partition/shard/hash反例。完整Capsule input只从fresh-reopened BusinessFlows public `evidence-capsules.jsonl` v2得到，其中span/obligation对象与其ID列表逐字闭合；v1、private M2 module引用、重新打开源码或省略内容都必须fail closed。Terra只改`analysis/interpretation/proposal/`。
+- **M1测试/实现**：public seam `compileRegistryProposalTasks(businessFlows, taskProfile)`；`taskProfile`不是调用者可任意编造的模型配置，而是core在已经验证完整`analysis-run-request-v2`后投影出的不可变`RegistryProposalTaskProfile`。它恰含`promptBundleRef`、`outputSchemaRef`、`expectedRuntimeRef`、`resourceBudgetRef`及`maxTasks/maxProposalsPerTask/maxResponseUtf8Bytes/maxLabelUtf8Bytes/maxPurposeUtf8Bytes`；`outputSchemaRef`和`expectedRuntimeRef`的digest必须分别与BusinessFlows receipt中的schema/profile controls相符。前五步不调用模型，故其`promptBundleSha256`可以合法为null；R0 prompt仍由完整run request的exact ref冻结，不能由null上游receipt补默认。其他request来源校验由后续run-core完成。Luna selector `RegistryProposalTaskCompilerTest`覆盖`N=0,E=0`、`N>0,E=0`、mixed eligibility、完整Capsule input、seed、partition/shard/hash反例。完整Capsule input只从fresh-reopened BusinessFlows public `evidence-capsules.jsonl` v2得到，其中span/obligation对象与其ID列表逐字闭合；v1、private M2 module引用、重新打开源码或省略内容都必须fail closed。Terra只改`analysis/interpretation/proposal/`。
 - **M2测试/实现**：public seam `runRegistryProposals(taskSet, provider)`；Luna selector `RegistryProposalRunnerTest`覆盖0call、valid term、typed GAP/FAILED、basis/Unicode/seed反例、single-call、transport failure no retry、双Flow隔离。Terra只改`analysis/interpretation/proposal/`。
 - **M3测试/实现**：public seam `freeze(taskSet, executionSet, businessFlows)`；Luna selector `RepositoryInterpretationRegistryFreezerTest`覆盖empty、one item、same-label two-flow、seed lineage、shuffle、missing/duplicate/collision、fresh reopen。Terra只改`analysis/interpretation/registry/`。
 - **M4测试/实现**：public seam `compileFiniteKeyTasks(businessFlows, registry, requestV2)`；Luna selector `FiniteKeyFlowTaskCompilerTest`覆盖0ready、single、multi-flow key isolation、READY missing key、`R/R` shard denominators和input hashes。Terra只改`analysis/interpretation/model/`。
@@ -206,7 +206,8 @@ RegistryProposalTaskProfile
 
   A package-level immutable projection of a previously verified analysis-run-request-v2.
   It is never an adapter request, path/config carrier, or substitute for run-request admission.
-  prompt/schema/runtime digest values must agree with the BusinessFlows receipt controls.
+  outputSchema/runtime digest values must agree with the BusinessFlows receipt controls.
+  Prompt is frozen by the exact run request because pre-model receipts may legally carry null.
 
 RegistryProposalInputV1
   schemaVersion=flow-interpretation-registry-proposal-input-v1
