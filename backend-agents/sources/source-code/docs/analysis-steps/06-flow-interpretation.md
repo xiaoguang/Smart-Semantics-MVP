@@ -139,7 +139,7 @@ Java 包名不复刻带连字符的持久化 module key。为防止实现者另�
 | M1 RegistryProposalTaskCompiler | BusinessFlows五项semantic refs（其中`evidence-capsules.jsonl`必须为`business-flows-evidence-capsule-v2`）、BusinessFlows receipt、run-request、prompt/schema/budget refs | `flow-interpretation-registry-proposal-task-set-v2`：`E` tasks、完整input JSON、R0 shard denominator=`E`；分区/ref/hash错则run失败 | M2无需读取BusinessFlows或内存draft |
 | M2 RegistryProposalRunner | M1 task-set ref、冻结Provider/runtime policy | `flow-interpretation-registry-proposal-execution-set-v3`：`E` rounds/receipts/dispositions及validated proposals；Provider每task一次，transport/runtime失败使run失败 | M3只读canonical R0业务结果 |
 | M3 RepositoryInterpretationRegistryFreezer | M1、M2、BusinessFlows五项refs | `flow-interpretation-repository-interpretation-registry-v2`：唯一registry、`E` flow dispositions、proposal accounting；缺/重/碰撞fatal | M4获得finite same-Flow keys |
-| M4 FiniteKeyFlowTaskCompiler | M3、BusinessFlows五项、run-request、R1/R2 prompt/schema/budget refs | `flow-interpretation-flow-task-set-v4`：`2R` tasks；R1和R2 shard denominator各=`R` | M5无需决定allowlist/session/input |
+| M4 FiniteKeyFlowTaskCompiler | M3、BusinessFlows五项、由已验证`analysis-run-request-v2`投影的`FlowModelTaskProfile` | `flow-interpretation-flow-task-set-v4`：`2R` tasks；R1和R2 shard denominator各=`R` | M5无需决定allowlist/session/input |
 | M5 InterpretationRunner | M2、M3、M4 refs、冻结Provider/runtime policy | `flow-interpretation-model-execution-set-v5`：actual rounds/receipts/proposals/candidates、`E` final dispositions和`2R` task dispositions；Provider失败使run失败 | M6无需Provider或runtime state |
 | M6 InterpretationPublicationSpecifier | M1–M5 refs | 一次module install恰九项public semantic bytes；closure/canonical/collision错误fatal；不得含analysis step root/receipt | AnalysisStep store可原样安装九项并最后写receipt |
 
@@ -150,7 +150,7 @@ DepotHead walkthrough在每个模块的投影固定为：M1一个完整Capsule R
 - **M1测试/实现**：public seam `compileRegistryProposalTasks(businessFlows, taskProfile)`；`taskProfile`不是调用者可任意编造的模型配置，而是core在已经验证完整`analysis-run-request-v2`后投影出的不可变`RegistryProposalTaskProfile`。它恰含`promptBundleRef`、`outputSchemaRef`、`expectedRuntimeRef`、`resourceBudgetRef`及`maxTasks/maxProposalsPerTask/maxResponseUtf8Bytes/maxLabelUtf8Bytes/maxPurposeUtf8Bytes`；`outputSchemaRef`和`expectedRuntimeRef`的digest必须分别与BusinessFlows receipt中的schema/profile controls相符。前五步不调用模型，故其`promptBundleSha256`可以合法为null；R0 prompt仍由完整run request的exact ref冻结，不能由null上游receipt补默认。其他request来源校验由后续run-core完成。Luna selector `RegistryProposalTaskCompilerTest`覆盖`N=0,E=0`、`N>0,E=0`、mixed eligibility、完整Capsule input、seed、partition/shard/hash反例。完整Capsule input只从fresh-reopened BusinessFlows public `evidence-capsules.jsonl` v2得到，其中span/obligation对象与其ID列表逐字闭合；v1、private M2 module引用、重新打开源码或省略内容都必须fail closed。Terra只改`analysis/interpretation/proposal/`。
 - **M2测试/实现**：public seam `runRegistryProposals(taskSet, provider)`；Luna selector `RegistryProposalRunnerTest`覆盖0call、valid term、typed GAP/FAILED、basis/Unicode/seed反例、single-call、transport failure no retry、双Flow隔离。Terra只改`analysis/interpretation/proposal/`。
 - **M3测试/实现**：public seam `freeze(taskSet, executionSet, businessFlows)`；Luna selector `RepositoryInterpretationRegistryFreezerTest`覆盖empty、one item、same-label two-flow、seed lineage、shuffle、missing/duplicate/collision、fresh reopen。Terra只改`analysis/interpretation/registry/`。
-- **M4测试/实现**：public seam `compileFiniteKeyTasks(businessFlows, registry, requestV2)`；Luna selector `FiniteKeyFlowTaskCompilerTest`覆盖0ready、single、multi-flow key isolation、READY missing key、`R/R` shard denominators和input hashes。Terra只改`analysis/interpretation/model/`。
+- **M4测试/实现**：public seam `compileFiniteKeyTasks(businessFlows, registry, taskProfile)`；`taskProfile`是core在exact `analysis-run-request-v2`已经通过admission后投影出的不可变`FlowModelTaskProfile`，不是Adapter可任意构造的模型配置。它携带R1/R2各自的prompt、output-schema、expected-runtime和resource-budget refs，以及`maxTasks/maxResponseUtf8Bytes/maxSelectedKeys/maxCandidateProposals`等冻结limits；两类schema/runtime digest必须分别与BusinessFlows controls一致。该临时包内projection seam只解决运行核心尚未实现前的模块输入，不改变未来`RepositoryAnalysisAgent`以request reference驱动整个分析运行的公共合同。Luna selector `FiniteKeyFlowTaskCompilerTest`覆盖0ready、single、multi-flow key isolation、READY missing key、`R/R` shard denominators和input hashes。Terra只改`analysis/interpretation/model/`。
 - **M5测试/实现**：public seam `runInterpretations(taskSet, registry, r0Dispositions, provider)`；Luna selector `InterpretationRunnerTest`覆盖R1/R2 success、R1 typed GAP/FAILED→R2 NOT_RUN、unknown/cross-flow key、R2 expansion、transport failure no retry、双Flow隔离。Terra只改`analysis/interpretation/model/`。
 - **M6测试/实现**：public seam `specify(m1,m2,m3,m4,m5,controls)`；Luna selector `FlowInterpretationPublicationSpecifierTest`覆盖`E=0`十文件、`E=1,R=1`、`E=2,R=1`、`E=2,R=2`、`E/R/R` shards、task/disposition ID-set equality、ineligible leakage、partial-install/collision/fresh-reopen。Terra只改`analysis/interpretation/publish/`。
 
@@ -252,6 +252,15 @@ FlowModelTask
   allowedKeys[]
   inputJson: FlowModelInputV1
   inputJsonSha256, outputSchemaSha256, promptBundleSha256, expectedRuntime
+
+FlowModelTaskProfile
+  r1PromptBundleRef, r1OutputSchemaRef, r1ExpectedRuntimeRef, r1ResourceBudgetRef
+  r2PromptBundleRef, r2OutputSchemaRef, r2ExpectedRuntimeRef, r2ResourceBudgetRef
+  maxTasks, maxResponseUtf8Bytes, maxSelectedKeys, maxCandidateProposals
+
+  A package-level immutable projection of one already-admitted analysis-run-request-v2.
+  The core, rather than an Adapter or caller, creates it after verifying every reference;
+  its R1/R2 schema/runtime digests must agree with the frozen BusinessFlows controls.
 
 FlowModelInputV1
   R1_INTERPRETATION_INPUT:
