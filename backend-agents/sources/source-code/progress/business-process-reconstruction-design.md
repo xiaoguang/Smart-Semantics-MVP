@@ -1,10 +1,10 @@
 # Progress: Business-process reconstruction design
 
-- Status: COMPLETE
+- Status: COMPLETE_POST_REVIEW_FIX_1
 - Agent role: Sol/ultra Design Authority
 - Model: gpt-5.6-sol / ultra
 - Started: 2026-09-08 03:50:53 NDT
-- Last updated: 2026-09-08 05:32:00 NDT
+- Last updated: 2026-09-08 06:00:17 NDT
 - Scope: Documentation-only cross-Flow BusinessProcess reconstruction design under `backend-agents/sources/source-code/`.
 - Approved inputs: `task-1-brief.md` and `cross-flow-requirements.md` in `.superpowers/sdd/source-analysis-process-reconstruction-design-plan/`.
 - Current branch/worktree: `codex/source-analysis-process-reconstruction-design` at `/private/tmp/linguan-source-analysis-process-design`.
@@ -19,10 +19,13 @@
 - Replaced `docs/analysis-steps/07-repository-knowledge.md` with a zero-call local/process admission design, three-value certainty, conflict preservation, many-to-many memberships, nine process arrays, and the renamed admission file.
 - Replaced `docs/analysis-steps/08-nine-section-document.md` with a fixed-nine-section process-first plan, five process ReaderItem kinds, plan-only renderer, full process Trace, and unchanged public interface.
 - Aligned `docs/DESIGN.md`, `AGENTS.md`, `README.md`, the naming/delivery plan, and the ProgramGraphs backlog to the same eight-step/57-artifact/model-boundary contracts.
+- Read and verified the independent Task 2 review. All five P1 and two P2 findings were reproduced against baseline commit `5b5fc5b` and accepted for fix round 1.
+- Closed all seven review findings: exact four-tier signal mapping and thirteen-kind closure; local-versus-total task accounting; typed claim/slot lineage and closed certainty predicates; complete Step 06/07/08 wire catalogs aligned with DESIGN; bounded Sol/ultra local/inter-module authority; Capsule span V4; and this post-review progress handoff.
 
 ## Current state
 
-- All approved durable documentation is revised. Docs-only verification passed; commit and handoff report are the remaining mechanical actions.
+- Commit `5b5fc5b` is the reviewed baseline. This record is the post-review fix-1 handoff contained in the next documentation commit; resolve that containing commit with `git rev-parse HEAD` after checkout rather than embedding a self-referential prospective SHA here.
+- The durable target now closes signal-tier semantics, task accounting, claim/certainty lineage, standalone wire fields/nullability/order/identity, and the Sol/ultra protocol-adjustment gate. No required documentation action remains before independent re-review or downstream RED planning.
 - No Java, tests, schemas, generated/runtime artifacts, source scans, or model calls are in scope.
 
 ## Changed files
@@ -44,7 +47,7 @@
 | --- | --- | --- |
 | `git status --short --branch` | PASS | Clean branch `codex/source-analysis-process-reconstruction-design` tracking `origin/main` before the progress-file edit. |
 | `git diff --check` | PASS | No whitespace errors. |
-| targeted `rg` contract checks | PASS | 57 count, five new Step 06 files, task/call formula, NOT_RUN semantics, four signal levels, nine process arrays, five ReaderItem kinds, and synthetic caveats are present; stale 52 and old admission basename are absent. |
+| targeted `rg` contract checks | PASS | In the approved files: 57 count, five new Step 06 files, task/call formula, NOT_RUN semantics, exact signal tiers, nine process arrays, complete Plan/Reader/Trace fields, five ReaderItem kinds, and synthetic caveats are present; stale 52, `ModelEvidenceSpanV3`, and wire `nineSectionPlanId!` are absent. |
 
 ## Decisions
 
@@ -60,7 +63,7 @@
 
 ## Exact next action
 
-- Commit the approved docs/progress paths, write the Task 1 completion report, and return the commit SHA.
+- Independent review may inspect the containing fix commit. If accepted, Luna/xhigh may derive bounded RED tests from the frozen module contracts; no production implementation is part of this documentation work unit.
 
 ## Resume checks
 

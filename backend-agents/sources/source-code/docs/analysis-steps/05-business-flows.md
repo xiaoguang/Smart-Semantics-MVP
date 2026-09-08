@@ -373,7 +373,7 @@ RepositoryFlowCoverage
   closed
 ~~~
 
-`ProcessJoinSignalV1` 是单 Flow 事实投影，不是跨 Flow 边。positive signal（前十二种）必须至少有一个同Flow `factId/atomId/proofId/evidenceNodeId/sourceLocator`闭合链；`COUNTER_CONDITION/CONFLICT_STATE`必须有该链或非空`gapIds`，`EXTERNAL_EFFECT_GAP`必须有非空`gapIds`并以boundary调用位置作为searched source location。`claimScope=STATIC_STRUCTURE`只允许陈述类型/表/字段/XML结构相关，不能表达已执行效果；`claimScope=GAP_ONLY`不能作为positive handoff。`GENERIC_TECHNICAL`明确覆盖tenantId、用户审计字段、日志、通用工具类等审计材料，下游不得仅凭它生成候选关系。方法名或中文名相似从来不是本record的合法basis。
+`ProcessJoinSignalV1`是单Flow事实投影，不是跨Flow边。positive kind的exact闭集是`BUSINESS_OBJECT_ANCHOR | JAVA_TYPE_ANCHOR | SQL_TABLE_ANCHOR | FIELD_ANCHOR | BUSINESS_IDENTIFIER_ANCHOR | IDENTIFIER_OUTPUT | IDENTIFIER_INPUT | STATE_PRODUCTION | STATE_CHECK | EXPLICIT_CALL | RETURN_TRANSFER | EVENT_REFERENCE | OBJECT_REFERENCE`；**这十三种中的每一种**都必须至少有一个同Flow `factId → atomId → proofId → evidenceNodeId → sourceLocator`闭合链，任何一个数组为空或任一hop不属于同一Proof closure都fatal。`COUNTER_CONDITION | CONFLICT_STATE`必须有同样闭合的反证链或非空`gapIds`加searched source locator；`EXTERNAL_EFFECT_GAP`必须有非空`gapIds`并以boundary调用位置作为searched source locator。`claimScope=STATIC_STRUCTURE`只允许陈述类型/表/字段/XML结构相关，不能表达已执行效果；`claimScope=GAP_ONLY`不能作为positive handoff。`GENERIC_TECHNICAL`明确覆盖tenantId、用户审计字段、日志、通用工具类等审计材料，下游不得仅凭它生成候选关系。方法名或中文名相似从来不是本record的合法basis。
 
 `processJoinSignalId`覆盖全部上述字段，排除且只排除self ID：
 
@@ -450,7 +450,7 @@ modelIneligibilityByFlow[flowId].gapIds = capsule(flowId).modelIneligibilityGapI
 
 ### 8.3 Capsule 最小性
 
-`ModelEvidenceSpanV3`保存`spanId`、完整`SourceExcerptV1`、`supportedAtomIds[]`和`supportedOutcomePathIds[]`。`sourceExcerpt.rawUtf8`是locator半开连续区间的原始UTF-8 bytes，不trim/格式化；同一语义需要不连续位置时创建多个span并分别进入obligation，不得合成raw。
+`ModelEvidenceSpanV4`保存`spanId`、完整`SourceExcerptV1`、`supportedAtomIds[]`、`supportedOutcomePathIds[]`和`supportedProcessJoinSignalIds[]`。`sourceExcerpt.rawUtf8`是locator半开连续区间的原始UTF-8 bytes，不trim/格式化；同一语义需要不连续位置时创建多个span并分别进入obligation，不得合成raw。
 
 ProjectionObligation kind只允许`ATOM_DIRECT_SEMANTICS | OUTCOME_TERMINAL | PROCESS_JOIN_SIGNAL_BASIS`。boundary target、每个argument/origin与control atom各自需要direct obligation；每个positive signal至少一项signal-basis obligation；external-effect Gap也须有自己的Gap view和`PROCESS_JOIN_SIGNAL_BASIS`，不能用XML/SQL span创建effect atom obligation。每个obligation至少一个satisfying span；删除任一span后至少一个obligation失去全部支持，否则该span冗余。
 

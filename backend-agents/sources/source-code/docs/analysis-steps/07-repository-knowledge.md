@@ -96,11 +96,17 @@ ineligible variant的Step 06局部ref必须全null；READY/GAP/FAILED variants�
 processAdmissionDecisionId!
 businessProcessHypothesisId!
 processInterpretationDispositionId!
+p1TaskId!
+p1RoundId!
+p2TaskId!
+p2RoundId!
+processHypothesisReviewId!
 decisionKind!: ADMIT | ADMIT_WITH_PENDING | PRESERVE_AS_ALTERNATIVE | REJECT
 claimDecisions[]!: ProcessClaimDecisionV1
 memberFlowSliceIds[]!
 candidateRelationIds[]!
 businessProcessId?
+processCertainty?: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
 processAlternativeIds[]!
 pendingConfirmationIds[]!
 gapIds[]!
@@ -116,14 +122,19 @@ ProcessClaimDecisionV1
   proofIds[]!
   evidenceNodeIds[]!
   processJoinSignalIds[]!
+  processSemanticCueIds[]!
+  counterSignalIds[]!
+  blockingCounterSignalIds[]!
   gapIds[]!
   reasonCode?
 ~~~
 
+`processCertainty`只在`ADMIT | ADMIT_WITH_PENDING`时非null，并与创建的`BusinessProcessKnowledgeV1.certainty`相等；其余decision必须为null。P1/P2 task、round与review refs始终非空，即使decision为alternative/reject，也不能丢失审查谱系。`blockingCounterSignalIds`必须是`counterSignalIds`中`blocking=true`项的精确子集。
+
 certainty规则：
 
-- `SOURCE_CONFIRMED`要求专门Fact与Proof直接支持claim，且无未解决counter；
-- `EVIDENCE_SUPPORTED_INFERENCE`要求闭合的support refs并保留推断标记，不能写成源码原话；
+- `SOURCE_CONFIRMED`要求P1响应accepted、P2对该hypothesis/claim为`KEEP | NARROW`、专门Fact与Proof直接支持claim，且没有`blocking=true` counter；
+- `EVIDENCE_SUPPORTED_INFERENCE`要求P1响应accepted、P2对同一hypothesis/claim为`KEEP | NARROW`、至少一个经M6验证的`PROVEN_HANDOFF | SHARED_ANCHOR` supporting relation/signal、完整Fact/Proof/Evidence/source闭包，并且没有`blocking=true` counter；任何仅有`SEMANTIC_CUE`、P2 pending/not-run、或仍有blocking counter的claim只能`PENDING_CONFIRMATION`；
 - `PENDING_CONFIRMATION`要求非空Gap或counter refs，只能进入pending/alternative，不得用于确定性转换；
 - reader wording不能提升certainty；P1/P2文字也不是Fact。
 
@@ -147,7 +158,7 @@ pendingConfirmations[]!: PendingConfirmationV1
 
 ~~~text
 BusinessProcessKnowledgeV1
-  businessProcessId!, purposeClaimId?, endResultClaimId?
+  businessProcessId!, certainty!, purposeClaimId?, endResultClaimId?
   activityIds[]!, relationIds[]!, membershipIds[]!, alternativeIds[]!, pendingConfirmationIds[]!
 
 ProcessMembershipV1
@@ -160,7 +171,232 @@ ProcessRelationKnowledgeV1
   conditionClaimIds[]!, supportCandidateRelationIds[]!, certainty!, gapIds[]!
 ~~~
 
+过程级`BusinessProcessKnowledgeV1.certainty`是其所有非alternative、非pending核心claims的最保守值：全部core claim均`SOURCE_CONFIRMED`才可confirmed；否则只要全部core claim满足上述inference predicate就是`EVIDENCE_SUPPORTED_INFERENCE`；任一core claim pending、P2 pending/not-run或blocking counter存在即为`PENDING_CONFIRMATION`。`ProcessActivityKnowledgeV1`、`ProcessRelationKnowledgeV1`、`ProcessMembershipV1`、`RoleKnowledgeV1`、`StateKnowledgeV1`、`ProcessClaimKnowledgeV1`和所有Step 08 process ReaderItem同样各有且仅有一个三值`certainty`，不得从父process默认继承或用numeric score替代。
+
 nullable约束：`BUSINESS_PROCESS`要求非null `businessProcessId`；`INDEPENDENT_ACTIVITY`要求null process且至少一个activity；`UNASSIGNED_PENDING`要求null process、空activity且非空Gap。一个Flow可有多个`BUSINESS_PROCESS` membership，但不得同时以`UNASSIGNED_PENDING`掩盖已准入membership。
+
+### 5.2 V5/V4完整wire合同
+
+以下是本步骤新增或升级standalone root及九类过程知识记录的完整字段，不允许实现另加自由文本、numeric confidence或第二个self ID。`!`表示字段必有且非null，`?`表示字段必有但值可为null，`[]!`表示字段必有、可为空数组；所有未标`?`的引用都必须闭合。
+
+~~~text
+KnowledgeAdmissionDecisionRecordV5
+  schemaVersion!: repository-knowledge-admission-decision-v5
+  artifactType!: REPOSITORY_KNOWLEDGE_ADMISSION_DECISION
+  artifactId!
+  decisionScope!: FLOW | BUSINESS_PROCESS
+  flowDecision?: FlowAdmissionDecisionV2
+  processDecision?: ProcessAdmissionDecisionV1
+  gapIds[]!
+
+RepositoryBusinessKnowledgeV4
+  schemaVersion!: repository-knowledge-business-knowledge-v4
+  artifactType!: REPOSITORY_KNOWLEDGE_BUSINESS_KNOWLEDGE
+  artifactId!
+  repositoryInterpretationRegistryId!
+  sourceScopeId!
+  flowSliceIds[]!
+  flowAdmissionDecisionIds[]!
+  processAdmissionDecisionIds[]!
+  objects[]!
+  activities[]!
+  flows[]!
+  outcomes[]!
+  fields[]!
+  relations[]!
+  formulas[]!
+  questions[]!
+  facts[]!
+  admittedMeanings[]!
+  technicalFallbacks[]!
+  registryLineage[]!
+  gaps[]!
+  ownership[]!
+  conflicts[]!
+  businessProcesses[]!: BusinessProcessKnowledgeV1
+  processActivities[]!: ProcessActivityKnowledgeV1
+  processRelations[]!: ProcessRelationKnowledgeV1
+  processMemberships[]!: ProcessMembershipV1
+  roles[]!: RoleKnowledgeV1
+  states[]!: StateKnowledgeV1
+  processClaims[]!: ProcessClaimKnowledgeV1
+  processAlternatives[]!: ProcessAlternativeKnowledgeV1
+  pendingConfirmations[]!: PendingConfirmationV1
+
+BusinessProcessKnowledgeV1
+  businessProcessId!
+  sourceBusinessProcessHypothesisId!
+  processAdmissionDecisionId!
+  nameKey!: RegistryOrTechnicalKeyV1
+  certainty!: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+  purposeClaimId?
+  endResultClaimId?
+  activityIds[]!
+  relationIds[]!
+  membershipIds[]!
+  roleIds[]!
+  stateIds[]!
+  processClaimIds[]!
+  alternativeIds[]!
+  pendingConfirmationIds[]!
+  gapIds[]!
+
+ProcessActivityKnowledgeV1
+  processActivityId!
+  sourceProcessClaimId!
+  processAdmissionDecisionId!
+  activityKey!: RegistryOrTechnicalKeyV1
+  memberFlowSliceIds[]!
+  businessProcessIds[]!
+  roleIds[]!
+  inputObjectKeys[]!: RegistryOrTechnicalKeyV1
+  outputObjectKeys[]!: RegistryOrTechnicalKeyV1
+  stateIds[]!
+  certainty!: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+  gapIds[]!
+
+ProcessRelationKnowledgeV1
+  processRelationId!
+  sourceProcessClaimId!
+  processAdmissionDecisionId!
+  fromActivityId?
+  toActivityId?
+  relationKind!: PRECEDES | CONDITIONALLY_PRECEDES | PARALLEL_WITH |
+                 ALTERNATIVE_TO | FALLS_BACK_TO | PRODUCES_FOR | CONSUMES_FROM
+  conditionClaimIds[]!
+  supportCandidateRelationIds[]!
+  processJoinSignalIds[]!
+  processSemanticCueIds[]!
+  counterSignalIds[]!
+  blockingCounterSignalIds[]!
+  certainty!: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+  gapIds[]!
+
+ProcessMembershipV1
+  processMembershipId!
+  flowSliceId!
+  membershipKind!: BUSINESS_PROCESS | INDEPENDENT_ACTIVITY | UNASSIGNED_PENDING
+  businessProcessId?
+  activityIds[]!
+  certainty!: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+  gapIds[]!
+
+RoleKnowledgeV1
+  roleId!
+  sourceProcessClaimId!
+  processAdmissionDecisionId!
+  roleKey!: RegistryOrTechnicalKeyV1
+  businessProcessIds[]!
+  activityIds[]!
+  responsibilityClaimIds[]!
+  certainty!: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+  gapIds[]!
+
+StateKnowledgeV1
+  stateId!
+  sourceProcessClaimId!
+  processAdmissionDecisionId!
+  stateKey!: RegistryOrTechnicalKeyV1
+  objectKey!: RegistryOrTechnicalKeyV1
+  producerActivityIds[]!
+  checkerActivityIds[]!
+  processJoinSignalIds[]!
+  certainty!: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+  gapIds[]!
+
+ProcessClaimKnowledgeV1
+  processClaimKnowledgeId!
+  sourceProcessClaimId!
+  processAdmissionDecisionId!
+  processHypothesisReviewId!
+  claimKind!: PURPOSE | END_RESULT | ACTIVITY | TRANSITION | CONDITION |
+               BRANCH | PARALLEL | ALTERNATIVE | FALLBACK | ROLE | STATE | OBJECT
+  subjectKey!: RegistryOrTechnicalKeyV1
+  predicateKey!: RegistryOrTechnicalKeyV1
+  objectKey?: RegistryOrTechnicalKeyV1
+  memberFlowSliceIds[]!
+  candidateRelationIds[]!
+  processJoinSignalIds[]!
+  processSemanticCueIds[]!
+  counterSignalIds[]!
+  blockingCounterSignalIds[]!
+  factIds[]!
+  proofIds[]!
+  evidenceNodeIds[]!
+  certainty!: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+  gapIds[]!
+
+ProcessAlternativeKnowledgeV1
+  processAlternativeId!
+  sourceProcessClaimIds[]!
+  processAdmissionDecisionId!
+  alternativeKind!: COMPETING_PROCESS | COMPETING_RELATION | COMPETING_CLAIM
+  memberFlowSliceIds[]!
+  candidateRelationIds[]!
+  mutuallyExclusiveWithAlternativeIds[]!
+  certainty!: PENDING_CONFIRMATION
+  gapIds[]!
+
+PendingConfirmationV1
+  pendingConfirmationId!
+  sourceProcessClaimIds[]!
+  processAdmissionDecisionId!
+  subjectKey!: RegistryOrTechnicalKeyV1
+  questionKey!: RegistryOrTechnicalKeyV1
+  memberFlowSliceIds[]!
+  processJoinSignalIds[]!
+  processSemanticCueIds[]!
+  counterSignalIds[]!
+  blockingCounterSignalIds[]!
+  gapIds[]!
+  certainty!: PENDING_CONFIRMATION
+
+KnowledgeConflictV3
+  schemaVersion!: repository-knowledge-conflict-v3
+  artifactType!: REPOSITORY_KNOWLEDGE_CONFLICT
+  artifactId!
+  conflictScope!: LOCAL | BUSINESS_PROCESS
+  competingSemanticItemIds[]!
+  conflictKind!: EQUIVALENT | COMPATIBLE | MUTUALLY_EXCLUSIVE | INSUFFICIENT_EVIDENCE
+  resolution!: MERGE | KEEP_BOTH | PRESERVE_ALTERNATIVES | PENDING_CONFIRMATION | REJECT
+  winningSemanticItemId?
+  processAlternativeIds[]!
+  pendingConfirmationIds[]!
+  factIds[]!
+  proofIds[]!
+  gapIds[]!
+  reasonCode!
+
+KnowledgeAccountingV3
+  schemaVersion!: repository-knowledge-accounting-v3
+  artifactType!: REPOSITORY_KNOWLEDGE_ACCOUNTING
+  artifactId!
+  repositoryKnowledgeId!
+  repositoryKnowledgeCoverage!: RepositoryKnowledgeCoverageV3
+  repositoryCoverageLedgerDraft!: RepositoryCoverageLedgerDraftV3
+  semanticArtifactDescriptors[5]!
+  gapIds[]!
+  status!: COMPLETE | COMPLETE_WITH_GAPS
+
+MergedGapV2
+  schemaVersion!: repository-knowledge-merged-gap-v2
+  artifactType!: REPOSITORY_KNOWLEDGE_MERGED_GAP
+  artifactId!
+  canonicalGapId!
+  memberGapIds[]!
+  gapCode!
+  gapScope!: LOCAL | BUSINESS_PROCESS | REPOSITORY
+  affectedFlowSliceIds[]!
+  affectedBusinessProcessIds[]!
+  factIds[]!
+  proofIds[]!
+  sourceLocators[]!
+  messageKey!
+~~~
+
+discriminator与nullable规则是闭集：`FLOW`只允许`flowDecision`非null，`BUSINESS_PROCESS`只允许`processDecision`非null；`KnowledgeConflictV3.winningSemanticItemId`只在`MERGE | REJECT`时非null；`fromActivityId/toActivityId`仅在关系端点确实未知且该记录为`PENDING_CONFIRMATION`、同时有非空Gap时可null。所有过程记录必须保留其own certainty；不得从process继承。
+
+规范顺序为：standalone JSON对象按以上字段顺序；JSONL先按`decisionScope`（`FLOW`在前）再按对应decision ID；九个数组分别按自身ID bytewise升序；内部ID数组去重后bytewise升序；业务活动展示顺序另由Step 08的显式section/reader order表达，不能借数组输入顺序推断。身份域固定为`repository-knowledge`：root `artifactId = sha256(schemaVersion || artifactType || canonical payload excluding artifactId)`；内部ID分别使用前缀`bp-knowledge-v1`、`process-activity-v1`、`process-relation-v1`、`process-membership-v1`、`role-knowledge-v1`、`state-knowledge-v1`、`process-claim-knowledge-v1`、`process-alternative-v1`、`pending-confirmation-v1`加其全部规范字段。引用字段不能参与另一记录的self-ID之外的隐式身份推导。
 
 ## 6. 五项semantic文件加receipt
 

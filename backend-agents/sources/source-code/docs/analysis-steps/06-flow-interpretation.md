@@ -78,16 +78,36 @@ M2、M5、M8之外不得调用Provider。M6/M7/M9的相同输入必须产生逐�
 
 ## 5. 候选关系不是业务事实
 
-`ProcessJoinSignalV1`映射为四个精确信号等级：
+M6使用下列四个等级。等级不是模型判断；程序按exact pair rule计算。单条Step 05 signal没有自己的等级，只有满足一整行的跨Flow组合才能形成该等级：
 
-| 等级 | 可用依据 | 允许的程序结论 |
+| 等级 | exact kind/source mapping | 允许的程序结论 |
 | --- | --- | --- |
-| `PROVEN_HANDOFF` | 标识符产出/返回与另一Flow消费、显式调用/返回/事件引用，且Proof闭包成立 | 建有方向的candidate edge；仍不是已证业务因果 |
-| `SHARED_ANCHOR` | 同一业务对象、Java类型、SQL表/字段或业务ID | 建共享锚点edge；默认无方向 |
-| `SEMANTIC_CUE` | 状态写/检查、非generic对象引用等较弱组合 | 建弱候选edge并要求P1/P2保留不确定性 |
-| `COUNTER_SIGNAL` | 相斥条件、冲突状态、Gap或反证 | 附在候选关系上；不能被正向信号吞掉 |
+| `PROVEN_HANDOFF` | 下列任一proof-closed pair：`EXPLICIT_CALL`匹配另一Flow的exact entry target；`IDENTIFIER_OUTPUT`或`RETURN_TRANSFER`匹配另一Flow的`IDENTIFIER_INPUT`；同一non-generic key的`STATE_PRODUCTION`匹配另一Flow的`STATE_CHECK`；同一event key的`EVENT_REFERENCE(direction=PRODUCES)`匹配`EVENT_REFERENCE(direction=CONSUMES)`。pair两端的十三种positive signal都必须各自闭合到本Flow Fact→atom→Proof→Evidence→source | 建有方向candidate edge；状态生产/消费不得降为较弱等级，但仍不自动证明完整业务因果或外部效果 |
+| `SHARED_ANCHOR` | 两Flow存在同`anchorKind+anchorKey`且`DOMAIN_SPECIFIC`的`BUSINESS_OBJECT_ANCHOR | JAVA_TYPE_ANCHOR | SQL_TABLE_ANCHOR | FIELD_ANCHOR | BUSINESS_IDENTIFIER_ANCHOR | OBJECT_REFERENCE`；两端各自Proof闭合 | 建默认无方向的相关性edge；共享表/字段/对象不能推顺序 |
+| `SEMANTIC_CUE` | 只来自§5.1的`ProcessSemanticCueV1`：finite frozen Registry business term，并由entry verb或state word的同Capsule basis限定；**任何Step 05结构signal、裸状态写/检查、方法名或中文名都不能直接映射到本级** | 只能建`PENDING_ONLY`弱候选；P1/P2和Step 07不得提升为confirmed transition |
+| `COUNTER_SIGNAL` | `COUNTER_CONDITION | CONFLICT_STATE | EXTERNAL_EFFECT_GAP`，或两Flow的domain object/state/key不相等；使用反证Proof或Gap+searched source closure | 附在候选关系上；`blocking=true`时阻止confirmed/inferred transition，不能被正向信号吞掉 |
 
 `tenantId`、创建/修改人等审计字段、日志、generic utility、方法名相似、中文名称相似，**单独都禁止成边**。只有同一个局部信号集合内存在domain-specific正向依据时，它们才可作为附加上下文。缺少专门Proof的外部影响始终是Gap。
+
+### 5.1 Registry语义cue的唯一来源
+
+`ProcessSemanticCueV1`由M6在M3 registry冻结后确定性产生，不回写Step 05，也不是第六项公开artifact。字段与nullable规则固定：
+
+~~~text
+processSemanticCueId!
+cueKind!: REGISTRY_BUSINESS_TERM | ENTRY_VERB | STATE_WORD
+leftFlowSliceId!, rightFlowSliceId!       // UTF-8 ordered; never equal
+leftRegistryItemId!, rightRegistryItemId! // both proposalKind=BUSINESS_TERM
+leftProvisionalKey!, rightProvisionalKey!
+normalizedCueKey!                         // frozen ProcessCueProfile exact normalization
+leftBasisAtomIds[]!, rightBasisAtomIds[]! // nonempty; each subset of its Capsule/R0 basis
+leftEntryId?, rightEntryId?               // nonnull on both sides iff ENTRY_VERB
+leftStateSignalIds[]!, rightStateSignalIds[]! // nonempty on both sides iff STATE_WORD
+processCueProfileRef!
+pendingOnly=true
+~~~
+
+`REGISTRY_BUSINESS_TERM`要求两项finite registry labels得到同一`normalizedCueKey`；`ENTRY_VERB`还要求两项basis各包含本Flow entry-bound atom，且cue key命中冻结`entryVerbLexicon`；`STATE_WORD`还要求两端各有Proof-closed `STATE_PRODUCTION | STATE_CHECK` signal且cue key命中冻结`stateWordLexicon`。entry/state lexicon只是对finite registry term分类，不能从method/中文显示名创建term。cue identity覆盖全部字段；任何registry/basis/profile缺失均不产cue而写Gap。它只能支持pending hypothesis。
 
 规范候选边字段如下；`leftFlowSliceId < rightFlowSliceId`按UTF-8 byte order，direction另存：
 
@@ -149,20 +169,41 @@ P1只可引用该shard的Flow、owner/context relation、signal、Fact/Proof/Evi
   "activityKeys": [{"keyKind":"REGISTRY","key":"ACTIVITY_P_…"}],
   "inputObjectKeys": [{"keyKind":"TECHNICAL","key":"object:replenishment-request"}],
   "outputObjectKeys": [{"keyKind":"TECHNICAL","key":"object:purchase-order"}],
-  "conditions": ["regional approval is accepted"],
-  "branches": [],
-  "parallelActivities": ["fee handling", "purchase-order approval"],
-  "alternatives": ["return for correction"],
-  "fallbacks": ["manual confirmation pending"],
+  "processClaims": [{
+    "processClaimId": "process-claim:approval-to-order",
+    "claimKind": "TRANSITION",
+    "subjectKeys": [{"keyKind":"REGISTRY","key":"ACTIVITY_P_STORE_APPROVAL"}],
+    "predicateKey": {"keyKind":"TECHNICAL","key":"transition:accepted-to"},
+    "objectKeys": [{"keyKind":"REGISTRY","key":"ACTIVITY_P_REGION_APPROVAL"}],
+    "memberFlowSliceIds": ["flow:store-approve", "flow:region-approve"],
+    "candidateRelationIds": ["process-relation:approval-to-order"],
+    "supportSignalIds": ["process-join-signal:po-id"],
+    "semanticCueIds": [],
+    "counterSignalIds": [],
+    "factIds": ["fact:approval-id-transfer"],
+    "proofIds": ["proof:approval-id-transfer"],
+    "evidenceNodeIds": ["evidence:approval-id-transfer"],
+    "gapIds": []
+  }],
+  "conditionClaimIds": [],
+  "branchClaimIds": [],
+  "parallelClaimIds": ["process-claim:parallel-fee-handling"],
+  "alternativeClaimIds": ["process-claim:return-for-correction"],
+  "fallbackClaimIds": ["process-claim:manual-confirmation"],
   "candidateRelations": [{"candidateRelationId":"process-relation:approval-to-order","supportSignalIds":["process-join-signal:po-id"],"counterSignalIds":[]}],
-  "purposeKey": {"keyKind":"REGISTRY","key":"CLAIM_P_…"},
-  "endResultKey": {"keyKind":"REGISTRY","key":"TERM_P_…"},
-  "pendingAssumptions": ["external accounting effect lacks Proof"],
-  "readerSlots": {"processName":"补货到结算（合成）","purpose":"连接申请、履约和结算","start":"提交补货申请","finish":"结算月度账单"}
+  "purposeClaimId": "process-claim:replenishment-purpose",
+  "endResultClaimId": "process-claim:settlement-result",
+  "pendingAssumptionClaimIds": ["process-claim:accounting-effect-pending"],
+  "readerSlots": [{
+    "slotKind": "PROCESS_SUMMARY",
+    "text": "补货到结算（合成）",
+    "processClaimIds": ["process-claim:replenishment-purpose", "process-claim:settlement-result"],
+    "registryOrTechnicalKeys": [{"keyKind":"REGISTRY","key":"CLAIM_P_…"}]
+  }]
 }
 ~~~
 
-`memberFlows.role`闭集为`START | INTERMEDIATE | TERMINAL | PARALLEL | ALTERNATIVE | FALLBACK`。业务词优先用registry key；技术fallback必须显式`TECHNICAL`。所有process claim都必须绑定候选关系与证据/Gap，reader slots仅是受限措辞，不能创建Markdown、Fact或新证据。
+`memberFlows.role`闭集为`START | INTERMEDIATE | TERMINAL | PARALLEL | ALTERNATIVE | FALLBACK`。业务词优先用registry key；技术fallback必须显式`TECHNICAL`。条件、分支、并行、备选、回退、目的、结束结果和pending均保存为typed claim ID，不保存裸模型字符串。每个`ProcessHypothesisClaimV1`必须至少绑定一个member Flow，并绑定非空candidate relation/support signal/Fact/Proof/Evidence闭包或非空Gap/counter；每个reader slot必须绑定非空`processClaimIds[]`，且只能摘要这些claims。slot文本不能创建Markdown、Fact、新证据或未绑定process assertion。
 
 ## 7. 十五个正式文件
 
@@ -217,6 +258,219 @@ flow-interpretation-business-process-hypothesis-v1 / FLOW_INTERPRETATION_BUSINES
 flow-interpretation-process-interpretation-disposition-v1 / FLOW_INTERPRETATION_PROCESS_INTERPRETATION_DISPOSITION
 flow-interpretation-generation-receipt-v3 / FLOW_INTERPRETATION_GENERATION_RECEIPT
 ~~~
+
+### 7.1 新增standalone wire的完整字段
+
+本节是五项新增standalone records及升级后generation receipt的exact合同。`!`表示required non-null，`?`表示**字段仍required但值可为null**，`[]!`表示required array（可空但不可null）；未列字段和extra field一律拒绝。object key按canonical JSON UTF-8 byte order；普通ID arrays排序去重，stage/member/claim/slot数组保留声明的业务顺序并另由其ID保证唯一。JSONL分别按`processEvidenceGroupId`、`processModelTaskId`、`processModelRoundId`、`businessProcessHypothesisId`、`processInterpretationDispositionId`和`generationReceiptId`排序。
+
+~~~text
+ProcessEvidenceGroupV1
+  schemaVersion!=flow-interpretation-process-evidence-group-v1
+  artifactType!=FLOW_INTERPRETATION_PROCESS_EVIDENCE_GROUP
+  processEvidenceGroupId!
+  groupKind!: CONNECTED_COMPONENT | SINGLETON
+  memberFlowSliceIds[]!
+  candidateRelations[]!: ProcessCandidateRelationV1
+  processSemanticCues[]!: ProcessSemanticCueV1
+  supportingProcessJoinSignalIds[]!
+  counterProcessJoinSignalIds[]!
+  repositoryInterpretationRegistryItemIds[]!
+  modelEligibility!: MODEL_SAFE | MODEL_INELIGIBLE
+  modelIneligibilityGapIds[]!
+  boundedMaterial!: ProcessBoundedMaterialV1
+
+ProcessCandidateRelationV1
+  candidateRelationId!
+  leftFlowSliceId!, rightFlowSliceId!       // left < right; never equal
+  strongestSignalLevel!: PROVEN_HANDOFF | SHARED_ANCHOR | SEMANTIC_CUE
+  direction!: LEFT_TO_RIGHT | RIGHT_TO_LEFT | UNDIRECTED
+  relationUse!: PROCESS_CANDIDATE | PENDING_ONLY
+  supportingProcessJoinSignalIds[]!
+  processSemanticCueIds[]!
+  counterProcessJoinSignalIds[]!
+  blockingCounterProcessJoinSignalIds[]!
+  factIds[]!, proofIds[]!, evidenceNodeIds[]!, sourceLocators[]!, gapIds[]!
+
+ProcessBoundedMaterialV1
+  flowViews[]!: ProcessFlowEvidenceViewV1
+  relationViews[]!: ProcessCandidateRelationV1
+  registryItems[]!: RepositoryInterpretationRegistryItemV3
+  limits!: ProcessMaterialLimitsV1
+
+ProcessFlowEvidenceViewV1
+  flowSliceId!, evidenceCapsuleId!, evidenceCapsuleRef!
+  entryId!
+  factViews[]!: ModelFactViewV1
+  gapViews[]!: ModelGapViewV1
+  outcomePathViews[]!: FlowOutcomePathViewV1
+  processJoinSignals[]!: ProcessJoinSignalV1
+  modelEvidenceSpans[]!: ModelEvidenceSpanV4
+  projectionObligations[]!: ProjectionObligationV1
+
+ProcessMaterialLimitsV1
+  maxFlows!, maxRelations!, maxSignals!, maxRegistryItems!
+  maxInputBytes!, maxHypotheses!, maxClaimsPerHypothesis!, maxReaderSlots!
+
+ProcessModelTaskV1
+  schemaVersion!=flow-interpretation-process-model-task-v1
+  artifactType!=FLOW_INTERPRETATION_PROCESS_MODEL_TASK
+  processModelTaskId!
+  taskKind!: PROCESS_P1_HYPOTHESIS | PROCESS_P2_PRECISION_REVIEW
+  taskShardId!, taskOrdinal!
+  processEvidenceGroupIds[]!
+  ownerCandidateRelationIds[]!
+  contextFlowSliceIds[]!
+  boundedMaterial!: ProcessBoundedMaterialV1
+  reviewedP1TaskId?, reviewedP1RoundId?      // both null for P1; both nonnull for P2
+  reviewedBusinessProcessHypothesisIds[]!   // empty for P1; exact P1 IDs for P2
+  promptBundleRef!, responseSchemaRef!, expectedRuntime!: ModelRuntimeIdentityV1
+  inputJsonSha256!, resourceBudget!: ProcessMaterialLimitsV1
+
+ProcessModelRoundV1
+  schemaVersion!=flow-interpretation-process-model-round-v1
+  artifactType!=FLOW_INTERPRETATION_PROCESS_MODEL_ROUND
+  processModelRoundId!
+  processModelTaskId!, taskKind!, taskShardId!
+  roundOrdinal!: 1 | 2
+  requestSha256!, responseSha256!
+  responseKind!: P1_HYPOTHESES | P1_GAP | P1_FAILED |
+                 P2_REVIEWS | P2_GAP | P2_FAILED
+  businessProcessHypothesisIds[]!
+  processHypothesisReviews[]!: ProcessHypothesisReviewV1
+  gapIds[]!
+  failureCode?                            // nonnull iff typed *_FAILED
+  generationReceiptId!
+
+BusinessProcessHypothesisV1
+  schemaVersion!=flow-interpretation-business-process-hypothesis-v1
+  artifactType!=FLOW_INTERPRETATION_BUSINESS_PROCESS_HYPOTHESIS
+  businessProcessHypothesisId!
+  taskShardId!, p1TaskId!, p1RoundId!
+  processEvidenceGroupIds[]!
+  memberFlows[]!: BusinessProcessFlowMemberV1
+  businessRoleKeys[]!, stageKeys[]!, activityKeys[]!
+  inputObjectKeys[]!, outputObjectKeys[]!, objectKeys[]!, stateKeys[]!
+  processClaims[]!: ProcessHypothesisClaimV1
+  conditionClaimIds[]!, branchClaimIds[]!, parallelClaimIds[]!
+  alternativeClaimIds[]!, fallbackClaimIds[]!
+  candidateRelations[]!: HypothesisRelationBindingV1
+  purposeClaimId!, endResultClaimId!
+  pendingAssumptionClaimIds[]!
+  readerSlots[]!: ProcessClaimBoundSlotV1
+  p2TaskId!, p2RoundId!
+  processHypothesisReviewId!
+  finalReviewDecision!: KEEP | NARROW | PENDING_CONFIRMATION
+
+BusinessProcessFlowMemberV1
+  flowSliceId!
+  role!: START | INTERMEDIATE | TERMINAL | PARALLEL | ALTERNATIVE | FALLBACK
+  stageKey!: RegistryOrTechnicalKeyV1
+  activityKey!: RegistryOrTechnicalKeyV1
+  supportingProcessClaimIds[]!
+
+RegistryOrTechnicalKeyV1
+  keyKind!: REGISTRY | TECHNICAL
+  key!
+  registryItemId?                         // nonnull iff REGISTRY
+  technicalAnchorIds[]!                   // nonempty iff TECHNICAL
+
+ProcessHypothesisClaimV1
+  processClaimId!
+  claimKind!: PURPOSE | END_RESULT | ACTIVITY | TRANSITION | CONDITION |
+              BRANCH | PARALLEL | ALTERNATIVE | FALLBACK | ROLE | STATE | OBJECT
+  subjectKeys[]!: RegistryOrTechnicalKeyV1
+  predicateKey!: RegistryOrTechnicalKeyV1
+  objectKeys[]!: RegistryOrTechnicalKeyV1
+  memberFlowSliceIds[]!
+  candidateRelationIds[]!
+  supportProcessJoinSignalIds[]!
+  processSemanticCueIds[]!
+  counterProcessJoinSignalIds[]!
+  blockingCounterProcessJoinSignalIds[]!
+  factIds[]!, proofIds[]!, evidenceNodeIds[]!, gapIds[]!
+
+HypothesisRelationBindingV1
+  candidateRelationId!
+  processClaimIds[]!
+  supportProcessJoinSignalIds[]!
+  processSemanticCueIds[]!
+  counterProcessJoinSignalIds[]!
+
+ProcessClaimBoundSlotV1
+  slotKind!: PROCESS_NAME | PROCESS_SUMMARY | PURPOSE | START | FINISH |
+             ACTIVITY | TRANSITION | ROLE | ALTERNATIVE | PENDING
+  text!
+  processClaimIds[]!                       // nonempty
+  registryOrTechnicalKeys[]!: RegistryOrTechnicalKeyV1
+
+ProcessHypothesisReviewV1
+  processHypothesisReviewId!
+  businessProcessHypothesisId!
+  decision!: KEEP | NARROW | DROP | PENDING_CONFIRMATION
+  retainedProcessClaimIds[]!
+  narrowedProcessClaimIds[]!
+  droppedProcessClaimIds[]!
+  pendingProcessClaimIds[]!
+  retainedMemberFlowSliceIds[]!
+  retainedCandidateRelationIds[]!
+  reasonCode?, gapIds[]!
+
+ProcessInterpretationDispositionV1
+  schemaVersion!=flow-interpretation-process-interpretation-disposition-v1
+  artifactType!=FLOW_INTERPRETATION_PROCESS_INTERPRETATION_DISPOSITION
+  processInterpretationDispositionId!
+  taskShardId!
+  p1TaskId!, p1TaskDisposition!: ModelTaskDispositionV2
+  p2TaskId!, p2TaskDisposition!: ModelTaskDispositionV2
+  proposedBusinessProcessHypothesisIds[]!
+  retainedBusinessProcessHypothesisIds[]!
+  narrowedBusinessProcessHypothesisIds[]!
+  droppedBusinessProcessHypothesisIds[]!
+  pendingBusinessProcessHypothesisIds[]!
+  disposition!: READY_FOR_ADMISSION | GAP | FAILED
+  gapIds[]!, failureRef?, reasonCode?
+
+ModelTaskDispositionV2                  // shared shape; local V1 stays unchanged
+  taskSpecId!, taskScopeKind!: PROCESS_SHARD
+  taskShardId!, round!: P1 | P2
+  state!: RESPONSE_ACCEPTED | RESPONSE_GAP | RESPONSE_FAILED | NOT_RUN_UPSTREAM_FAILED
+  modelRoundId?, generationReceiptId?, upstreamTaskSpecId?
+  gapIds[]!, failureRef?, reasonCode?
+
+GenerationReceiptV3
+  schemaVersion!=flow-interpretation-generation-receipt-v3
+  artifactType!=FLOW_INTERPRETATION_GENERATION_RECEIPT
+  generationReceiptId!
+  generationKind!: R0_REGISTRY_PROPOSAL | R1_FLOW_INTERPRETATION |
+                   R2_FLOW_PRECISION_REVIEW | PROCESS_P1_HYPOTHESIS |
+                   PROCESS_P2_PRECISION_REVIEW
+  taskSpecId!
+  flowSliceId?, taskShardId?               // exactly one scope field nonnull
+  requestSha256!, responseSha256!
+  configuredAdapterId!, configuredAuthMode!
+  expectedRuntime!: ModelRuntimeIdentityV1
+  observedRuntime!: ModelRuntimeIdentityV1
+  started=true, completed=true
+~~~
+
+`ModelTaskDispositionV2`是仅用于P1/P2 scope的版本化扩展，不改局部V1。`ProcessModelRoundV1.generationReceiptId`单向指向先固定的receipt；receipt不含round ID，避免identity环。`BusinessProcessHypothesisV1`公开文件只保存P2 KEEP/NARROW/PENDING的记录；DROP仍由round/review/disposition计数，不在hypothesis文件伪装保留。P2字段在成功public record中均non-null；P1 GAP/FAILED时不存在hypothesis record。
+
+每个上述self ID固定为`<prefix> + lowercaseHex(SHA-256(frame(UTF8(<domain-v1>)) || frame(canonicalJson(recordWithoutSelfId))))`，其中prefix/domain依次为：
+
+~~~text
+process-evidence-group: / flow-interpretation-process-evidence-group-id-v1
+process-relation: / flow-interpretation-process-candidate-relation-id-v1
+process-semantic-cue: / flow-interpretation-process-semantic-cue-id-v1
+process-model-task: / flow-interpretation-process-model-task-id-v1
+process-model-round: / flow-interpretation-process-model-round-id-v1
+business-process-hypothesis: / flow-interpretation-business-process-hypothesis-id-v1
+process-claim: / flow-interpretation-process-hypothesis-claim-id-v1
+process-hypothesis-review: / flow-interpretation-process-hypothesis-review-id-v1
+process-interpretation-disposition: / flow-interpretation-process-interpretation-disposition-id-v1
+generation-receipt: / flow-interpretation-generation-receipt-id-v3
+~~~
+
+每个preimage删除且只删除该record的self ID；required-nullable字段以null参与。embedded record有自己ID时先算embedded ID，parent仍覆盖完整embedded value。`sourceLocators[]`按`(path,startByte,endByteExclusive)`；member/claim/slot业务序列不得由模型输出顺序决定，M8按`(stage ordinal,flowSliceId,claimKind,processClaimId)`规范化后再计算parent identity。
 
 ## 8. 集合、identity与处置合同
 

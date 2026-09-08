@@ -77,10 +77,12 @@
   one `RepositoryInterpretationRegistry`; each R0-ready Flow then receives one
   finite-key R1 interpretation and one R2 precision review.
 - Let `N` be all business Flows, `E` the eligible subset, and `R` the R0-ready
-  subset of `E`. Flow interpretation has `E + 2R` planned tasks and matching
-  typed dispositions. Only when every task starts and `R = E` are there `3E`
-  Provider calls. Ineligible Flows have no interpretation objects and receive
-  a repository-knowledge technical fallback.
+  subset of `E`. The **local R0/R1/R2 lane** has `E + 2R` planned tasks and
+  matching typed dispositions. Only when every local task starts and `R = E`
+  are there `3E` local Provider calls. Ineligible Flows have no **local**
+  interpretation task/round/candidate/disposition, but remain in deterministic
+  process grouping and process-admission consideration and receive a local
+  repository-knowledge technical fallback.
 - The same persisted EvidenceCapsule is the sole source-evidence input for a
   Flow's R0/R1/R2. R0 may propose bounded business labels/purposes with
   same-Capsule basis; it cannot create Facts, locators, Flows, or Markdown.
@@ -112,11 +114,17 @@
   data is absent, implementation conflicts with design, or schema/failure/
   model-boundary semantics would need to change. Record evidence and ask the
   Sol/ultra Design Authority; do not silently change the contract.
-- Contract or schema uncertainty goes to Sol/ultra. Any change to the eight
-  steps, fixed nine sections, cross-step identity, 57-output count, or model
-  boundary stops and goes to the user. Sol/xhigh performs root-cause debugging
-  only. Scripted providers are the automated default; live Luna needs separate
-  authorization and preflight, and there is never an API fallback.
+- Contract or schema uncertainty goes to Sol/ultra. Sol/ultra may approve a
+  bounded local or adjacent-module protocol adjustment only after recording
+  its rationale, affected contracts/consumers, preserved invariants, and
+  fail-closed migration rule in durable design. User approval is reserved for
+  changes to the eight step set/order/key, fixed nine-section contract,
+  evidence/Proof/Trace trust rule, model-visible material or responsibility,
+  cross-step identity/publication, public `RepositoryAnalysisAgent`, or the
+  formal artifact/accounting boundary including 57 outputs. Sol/xhigh performs
+  root-cause debugging only. Scripted providers are the automated default;
+  live Luna needs separate authorization and preflight, and there is never an
+  API fallback.
 
 ## Authoritative design and publication gate
 

@@ -359,6 +359,12 @@ RepositoryCoverageLedgerDraftV3             // embedded in RepositoryKnowledge k
   interpretationTaskIds[], interpretationRoundIds[]
   flowInterpretationDispositionIds[], flowInterpretationCandidateIds[]
   interpretationProposalIds[], interpretationProposalDecisionIds[]
+  processEvidenceGroupIds[], processCandidateRelationIds[]
+  processModelTaskIds[], processModelRoundIds[]
+  businessProcessHypothesisIds[], processInterpretationDispositionIds[]
+  processAdmissionDecisionIds[], businessProcessIds[], processActivityIds[]
+  processRelationIds[], processMembershipIds[], roleIds[], stateIds[]
+  processClaimIds[], processAlternativeIds[], pendingConfirmationIds[]
   flowAdmissionDecisionIds[], admittedMeaningIds[], registryLineageIds[], technicalFallbackIds[]
   repositoryKnowledgeItemIds[], relationIds[], metricIds[], knowledgeConflictIds[]
   semanticItemIds[], ownerSemanticItemIds[], reasonedSemanticExclusionIds[]
@@ -689,6 +695,8 @@ FlowInterpretation为每个model-eligible Flow建立隔离R0，再冻结唯一Re
 7. 程序按`PROVEN_HANDOFF | SHARED_ANCHOR | SEMANTIC_CUE`建立`C`条候选边并附`COUNTER_SIGNAL`；generic-only依据禁止成边。连通组和singleton共同形成覆盖全部Flow的`G`个ProcessEvidenceGroups。
 8. 程序切成`S`个model-safe shards；每条candidate edge恰有一个owner shard，Flow可重复但仅作为read-only context。P1提出一个或多个hypothesis；P2只可KEEP/NARROW/DROP/PENDING_CONFIRMATION且不得新增Flow、edge、Fact、Evidence或hypothesis。
 9. M9发布十四份semantic及receipt。planned tasks=`E+2R+2S`；actual calls=`E+R+accepted local R1+S+accepted process P1`。R2/P2未运行仍有planned task与`NOT_RUN_UPSTREAM_FAILED`。
+
+信号等级是程序exact pair rule，不是模型评分：`PROVEN_HANDOFF`仅来自proof-closed的`EXPLICIT_CALL→exact entry target`、`IDENTIFIER_OUTPUT|RETURN_TRANSFER→IDENTIFIER_INPUT`、同non-generic key的`STATE_PRODUCTION→STATE_CHECK`或同event key的`EVENT_REFERENCE(PRODUCES)→EVENT_REFERENCE(CONSUMES)`；两端Step 05 positive signal都必须各自闭合到本Flow Fact→atom→Proof→Evidence→source。`SHARED_ANCHOR`只来自两Flow同`anchorKind+anchorKey`且`DOMAIN_SPECIFIC`的`BUSINESS_OBJECT_ANCHOR | JAVA_TYPE_ANCHOR | SQL_TABLE_ANCHOR | FIELD_ANCHOR | BUSINESS_IDENTIFIER_ANCHOR | OBJECT_REFERENCE`。`SEMANTIC_CUE`只来自程序在finite frozen Registry `BUSINESS_TERM`上按冻结entry-verb/state-word lexicon与同Capsule basis形成的`ProcessSemanticCueV1`，永远`PENDING_ONLY`；Step 05结构signal、裸状态、方法名或中文名不能直接映射到它。`COUNTER_SIGNAL`来自`COUNTER_CONDITION | CONFLICT_STATE | EXTERNAL_EFFECT_GAP`或不等的domain object/state/key；`blocking=true`阻止confirmed/inferred transition。tenant/audit/log/generic utility及名称相似不能单独成边，外部效果无专门Proof始终为Gap。
 
 ### 可观察产物
 
@@ -1134,6 +1142,213 @@ FlowInterpretationDisposition
   failureRef?
   reasonCode?
 
+Cross-Flow standalone wire catalog（与流程解释详细设计§7.1同一合同；`!`为required non-null，`?`为required nullable，`[]!`为required array）：
+
+ProcessEvidenceGroupV1
+  schemaVersion!=flow-interpretation-process-evidence-group-v1
+  artifactType!=FLOW_INTERPRETATION_PROCESS_EVIDENCE_GROUP
+  processEvidenceGroupId!
+  groupKind!: CONNECTED_COMPONENT | SINGLETON
+  memberFlowSliceIds[]!
+  candidateRelations[]!: ProcessCandidateRelationV1
+  processSemanticCues[]!: ProcessSemanticCueV1
+  supportingProcessJoinSignalIds[]!
+  counterProcessJoinSignalIds[]!
+  repositoryInterpretationRegistryItemIds[]!
+  modelEligibility!: MODEL_SAFE | MODEL_INELIGIBLE
+  modelIneligibilityGapIds[]!
+  boundedMaterial!: ProcessBoundedMaterialV1
+
+ProcessCandidateRelationV1
+  candidateRelationId!
+  leftFlowSliceId!, rightFlowSliceId!
+  strongestSignalLevel!: PROVEN_HANDOFF | SHARED_ANCHOR | SEMANTIC_CUE
+  direction!: LEFT_TO_RIGHT | RIGHT_TO_LEFT | UNDIRECTED
+  relationUse!: PROCESS_CANDIDATE | PENDING_ONLY
+  supportingProcessJoinSignalIds[]!
+  processSemanticCueIds[]!
+  counterProcessJoinSignalIds[]!
+  blockingCounterProcessJoinSignalIds[]!
+  factIds[]!, proofIds[]!, evidenceNodeIds[]!, sourceLocators[]!, gapIds[]!
+
+ProcessSemanticCueV1
+  processSemanticCueId!
+  cueKind!: REGISTRY_BUSINESS_TERM | ENTRY_VERB | STATE_WORD
+  leftFlowSliceId!, rightFlowSliceId!
+  leftRegistryItemId!, rightRegistryItemId!
+  leftProvisionalKey!, rightProvisionalKey!
+  normalizedCueKey!
+  leftBasisAtomIds[]!, rightBasisAtomIds[]!
+  leftEntryId?, rightEntryId?
+  leftStateSignalIds[]!, rightStateSignalIds[]!
+  processCueProfileRef!
+  pendingOnly=true
+
+ProcessBoundedMaterialV1
+  flowViews[]!: ProcessFlowEvidenceViewV1
+  relationViews[]!: ProcessCandidateRelationV1
+  registryItems[]!: RepositoryInterpretationRegistryItemV3
+  limits!: ProcessMaterialLimitsV1
+
+ProcessFlowEvidenceViewV1
+  flowSliceId!, evidenceCapsuleId!, evidenceCapsuleRef!
+  entryId!
+  factViews[]!: ModelFactViewV1
+  gapViews[]!: ModelGapViewV1
+  outcomePathViews[]!: FlowOutcomePathViewV1
+  processJoinSignals[]!: ProcessJoinSignalV1
+  modelEvidenceSpans[]!: ModelEvidenceSpanV4
+  projectionObligations[]!: ProjectionObligationV1
+
+ProcessMaterialLimitsV1
+  maxFlows!, maxRelations!, maxSignals!, maxRegistryItems!
+  maxInputBytes!, maxHypotheses!, maxClaimsPerHypothesis!, maxReaderSlots!
+
+ProcessModelTaskV1
+  schemaVersion!=flow-interpretation-process-model-task-v1
+  artifactType!=FLOW_INTERPRETATION_PROCESS_MODEL_TASK
+  processModelTaskId!
+  taskKind!: PROCESS_P1_HYPOTHESIS | PROCESS_P2_PRECISION_REVIEW
+  taskShardId!, taskOrdinal!
+  processEvidenceGroupIds[]!
+  ownerCandidateRelationIds[]!
+  contextFlowSliceIds[]!
+  boundedMaterial!: ProcessBoundedMaterialV1
+  reviewedP1TaskId?, reviewedP1RoundId?
+  reviewedBusinessProcessHypothesisIds[]!
+  promptBundleRef!, responseSchemaRef!, expectedRuntime!: ModelRuntimeIdentityV1
+  inputJsonSha256!, resourceBudget!: ProcessMaterialLimitsV1
+
+ProcessModelRoundV1
+  schemaVersion!=flow-interpretation-process-model-round-v1
+  artifactType!=FLOW_INTERPRETATION_PROCESS_MODEL_ROUND
+  processModelRoundId!
+  processModelTaskId!, taskKind!, taskShardId!
+  roundOrdinal!: 1 | 2
+  requestSha256!, responseSha256!
+  responseKind!: P1_HYPOTHESES | P1_GAP | P1_FAILED |
+                 P2_REVIEWS | P2_GAP | P2_FAILED
+  businessProcessHypothesisIds[]!
+  processHypothesisReviews[]!: ProcessHypothesisReviewV1
+  gapIds[]!
+  failureCode?
+  generationReceiptId!
+
+BusinessProcessHypothesisV1
+  schemaVersion!=flow-interpretation-business-process-hypothesis-v1
+  artifactType!=FLOW_INTERPRETATION_BUSINESS_PROCESS_HYPOTHESIS
+  businessProcessHypothesisId!
+  taskShardId!, p1TaskId!, p1RoundId!
+  processEvidenceGroupIds[]!
+  memberFlows[]!: BusinessProcessFlowMemberV1
+  businessRoleKeys[]!, stageKeys[]!, activityKeys[]!
+  inputObjectKeys[]!, outputObjectKeys[]!, objectKeys[]!, stateKeys[]!
+  processClaims[]!: ProcessHypothesisClaimV1
+  conditionClaimIds[]!, branchClaimIds[]!, parallelClaimIds[]!
+  alternativeClaimIds[]!, fallbackClaimIds[]!
+  candidateRelations[]!: HypothesisRelationBindingV1
+  purposeClaimId!, endResultClaimId!
+  pendingAssumptionClaimIds[]!
+  readerSlots[]!: ProcessClaimBoundSlotV1
+  p2TaskId!, p2RoundId!
+  processHypothesisReviewId!
+  finalReviewDecision!: KEEP | NARROW | PENDING_CONFIRMATION
+
+BusinessProcessFlowMemberV1
+  flowSliceId!
+  role!: START | INTERMEDIATE | TERMINAL | PARALLEL | ALTERNATIVE | FALLBACK
+  stageKey!: RegistryOrTechnicalKeyV1
+  activityKey!: RegistryOrTechnicalKeyV1
+  supportingProcessClaimIds[]!
+
+RegistryOrTechnicalKeyV1
+  keyKind!: REGISTRY | TECHNICAL
+  key!
+  registryItemId?
+  technicalAnchorIds[]!
+
+ProcessHypothesisClaimV1
+  processClaimId!
+  claimKind!: PURPOSE | END_RESULT | ACTIVITY | TRANSITION | CONDITION |
+              BRANCH | PARALLEL | ALTERNATIVE | FALLBACK | ROLE | STATE | OBJECT
+  subjectKeys[]!: RegistryOrTechnicalKeyV1
+  predicateKey!: RegistryOrTechnicalKeyV1
+  objectKeys[]!: RegistryOrTechnicalKeyV1
+  memberFlowSliceIds[]!
+  candidateRelationIds[]!
+  supportProcessJoinSignalIds[]!
+  processSemanticCueIds[]!
+  counterProcessJoinSignalIds[]!
+  blockingCounterProcessJoinSignalIds[]!
+  factIds[]!, proofIds[]!, evidenceNodeIds[]!, gapIds[]!
+
+HypothesisRelationBindingV1
+  candidateRelationId!
+  processClaimIds[]!
+  supportProcessJoinSignalIds[]!
+  processSemanticCueIds[]!
+  counterProcessJoinSignalIds[]!
+
+ProcessClaimBoundSlotV1
+  slotKind!: PROCESS_NAME | PROCESS_SUMMARY | PURPOSE | START | FINISH |
+             ACTIVITY | TRANSITION | ROLE | ALTERNATIVE | PENDING
+  text!
+  processClaimIds[]!
+  registryOrTechnicalKeys[]!: RegistryOrTechnicalKeyV1
+
+ProcessHypothesisReviewV1
+  processHypothesisReviewId!
+  businessProcessHypothesisId!
+  decision!: KEEP | NARROW | DROP | PENDING_CONFIRMATION
+  retainedProcessClaimIds[]!
+  narrowedProcessClaimIds[]!
+  droppedProcessClaimIds[]!
+  pendingProcessClaimIds[]!
+  retainedMemberFlowSliceIds[]!
+  retainedCandidateRelationIds[]!
+  reasonCode?, gapIds[]!
+
+ProcessInterpretationDispositionV1
+  schemaVersion!=flow-interpretation-process-interpretation-disposition-v1
+  artifactType!=FLOW_INTERPRETATION_PROCESS_INTERPRETATION_DISPOSITION
+  processInterpretationDispositionId!
+  taskShardId!
+  p1TaskId!, p1TaskDisposition!: ModelTaskDispositionV2
+  p2TaskId!, p2TaskDisposition!: ModelTaskDispositionV2
+  proposedBusinessProcessHypothesisIds[]!
+  retainedBusinessProcessHypothesisIds[]!
+  narrowedBusinessProcessHypothesisIds[]!
+  droppedBusinessProcessHypothesisIds[]!
+  pendingBusinessProcessHypothesisIds[]!
+  disposition!: READY_FOR_ADMISSION | GAP | FAILED
+  gapIds[]!, failureRef?, reasonCode?
+
+ModelTaskDispositionV2
+  taskSpecId!, taskScopeKind!: PROCESS_SHARD
+  taskShardId!, round!: P1 | P2
+  state!: RESPONSE_ACCEPTED | RESPONSE_GAP | RESPONSE_FAILED | NOT_RUN_UPSTREAM_FAILED
+  modelRoundId?, generationReceiptId?, upstreamTaskSpecId?
+  gapIds[]!, failureRef?, reasonCode?
+
+GenerationReceiptV3
+  schemaVersion!=flow-interpretation-generation-receipt-v3
+  artifactType!=FLOW_INTERPRETATION_GENERATION_RECEIPT
+  generationReceiptId!
+  generationKind!: R0_REGISTRY_PROPOSAL | R1_FLOW_INTERPRETATION |
+                   R2_FLOW_PRECISION_REVIEW | PROCESS_P1_HYPOTHESIS |
+                   PROCESS_P2_PRECISION_REVIEW
+  taskSpecId!
+  flowSliceId?, taskShardId?
+  requestSha256!, responseSha256!
+  configuredAdapterId!, configuredAuthMode!
+  expectedRuntime!: ModelRuntimeIdentityV1
+  observedRuntime!: ModelRuntimeIdentityV1
+  started=true, completed=true
+
+`ProcessSemanticCueV1`两端registry item都必须是finite frozen `BUSINESS_TERM`并闭合到各自Capsule basis；`ENTRY_VERB`两端entry ref非null且命中冻结entry lexicon，`STATE_WORD`两端signal数组非空且命中冻结state lexicon，`REGISTRY_BUSINESS_TERM`则entry为null、state arrays为空。cue只能`PENDING_ONLY`。P1 task的两个review ref为null且reviewed IDs为空；P2反之。generation receipt恰一个scope字段非null。public hypothesis只保留P2 KEEP/NARROW/PENDING；DROP只在round/review/disposition计数。
+
+以上self ID使用`<prefix> + lowercaseHex(SHA-256(frame(UTF8(<domain>)) || frame(canonicalJson(recordWithoutSelfId))))`，prefix/domain依次为`process-evidence-group:/flow-interpretation-process-evidence-group-id-v1`、`process-relation:/flow-interpretation-process-candidate-relation-id-v1`、`process-semantic-cue:/flow-interpretation-process-semantic-cue-id-v1`、`process-model-task:/flow-interpretation-process-model-task-id-v1`、`process-model-round:/flow-interpretation-process-model-round-id-v1`、`business-process-hypothesis:/flow-interpretation-business-process-hypothesis-id-v1`、`process-claim:/flow-interpretation-process-hypothesis-claim-id-v1`、`process-hypothesis-review:/flow-interpretation-process-hypothesis-review-id-v1`、`process-interpretation-disposition:/flow-interpretation-process-interpretation-disposition-id-v1`、`generation-receipt:/flow-interpretation-generation-receipt-id-v3`。每个preimage只删除自身ID，required-nullable以null参与；JSONL按self ID，普通ID数组按UTF-8 bytewise排序去重；stage/member/claim/slot由程序按`(stage ordinal,flowSliceId,claimKind,processClaimId)`规范化，不能信任模型顺序。
+
 For every eligible Flow, the R0 disposition has one R0 task disposition. The
 final interpretation disposition has both R1/R2 task dispositions iff its R0
 disposition is READY_FOR_FREEZE; otherwise both are null. Across both public
@@ -1172,41 +1387,275 @@ RepositoryFlowCoverage
   flowShardReceiptIds[]
   closed
 
-RepositoryBusinessKnowledge
-  repositoryKnowledgeId
-  repositoryInterpretationRegistryId
-  sourceScopeId
-  flowSliceIds[]
-  flowAdmissionDecisionIds[]
-  objects[]
-  activities[]
-  flows[]
-  outcomes[]
-  fields[]
-  relations[]
-  formulas[]
-  questions[]
-  facts[]
-  admittedMeanings[]
-  technicalFallbacks[]
-  registryLineage[]
-    registryLineageId
-    registryProposalId, provisionalKey
-    interpretationProposalId, selectedKey, meaningId, flowSliceId
-    proposalKind, normalizedLabel, normalizedPurpose
-    basisAtomIds[], basisGapIds[]
-  gaps[]
-  ownership[]
-  conflicts[]
-  businessProcesses[]
-  processActivities[]
-  processRelations[]
-  processMemberships[]
-  roles[]
-  states[]
-  processClaims[]
-  processAlternatives[]
-  pendingConfirmations[]
+RepositoryKnowledge admission/knowledge wire catalog（与仓库知识详细设计§5.2同一合同；`!`为required non-null，`?`为required nullable，`[]!`为required array）：
+
+FlowAdmissionDecisionV2
+  flowAdmissionDecisionId!
+  flowSliceId!
+  eligibility!: MODEL_ELIGIBLE | MODEL_INELIGIBLE
+  decisionKind!: MODEL_MEANING_ADMITTED | MODEL_NO_MEANING_TECHNICAL_FALLBACK |
+                 MODEL_GAP_TECHNICAL_FALLBACK | MODEL_FAILED_TECHNICAL_FALLBACK |
+                 MODEL_INELIGIBLE_TECHNICAL_FALLBACK
+  flowInterpretationDispositionId?
+  interpretationProposalDecisionIds[]!
+  meaningIds[]!
+  technicalFallbackIds[]!
+  gapIds[]!
+  failureRef?
+  reasonCode?
+
+ProcessAdmissionDecisionV1
+  processAdmissionDecisionId!
+  businessProcessHypothesisId!
+  processInterpretationDispositionId!
+  p1TaskId!
+  p1RoundId!
+  p2TaskId!
+  p2RoundId!
+  processHypothesisReviewId!
+  decisionKind!: ADMIT | ADMIT_WITH_PENDING | PRESERVE_AS_ALTERNATIVE | REJECT
+  claimDecisions[]!: ProcessClaimDecisionV1
+  memberFlowSliceIds[]!
+  candidateRelationIds[]!
+  businessProcessId?
+  processCertainty?: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+  processAlternativeIds[]!
+  pendingConfirmationIds[]!
+  gapIds[]!
+  reasonCode?
+
+ProcessClaimDecisionV1
+  processClaimId!
+  claimKind!: PURPOSE | END_RESULT | ACTIVITY | TRANSITION | CONDITION |
+               BRANCH | PARALLEL | ALTERNATIVE | FALLBACK | ROLE | STATE | OBJECT
+  disposition!: ADMIT | NARROW | PRESERVE_AS_ALTERNATIVE | PENDING_CONFIRMATION | REJECT
+  certainty!: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+  factIds[]!
+  proofIds[]!
+  evidenceNodeIds[]!
+  processJoinSignalIds[]!
+  processSemanticCueIds[]!
+  counterSignalIds[]!
+  blockingCounterSignalIds[]!
+  gapIds[]!
+  reasonCode?
+
+KnowledgeAdmissionDecisionRecordV5
+  schemaVersion!: repository-knowledge-admission-decision-v5
+  artifactType!: REPOSITORY_KNOWLEDGE_ADMISSION_DECISION
+  artifactId!
+  decisionScope!: FLOW | BUSINESS_PROCESS
+  flowDecision?: FlowAdmissionDecisionV2
+  processDecision?: ProcessAdmissionDecisionV1
+  gapIds[]!
+
+RepositoryBusinessKnowledgeV4
+  schemaVersion!: repository-knowledge-business-knowledge-v4
+  artifactType!: REPOSITORY_KNOWLEDGE_BUSINESS_KNOWLEDGE
+  artifactId!
+  repositoryInterpretationRegistryId!
+  sourceScopeId!
+  flowSliceIds[]!
+  flowAdmissionDecisionIds[]!
+  processAdmissionDecisionIds[]!
+  objects[]!
+  activities[]!
+  flows[]!
+  outcomes[]!
+  fields[]!
+  relations[]!
+  formulas[]!
+  questions[]!
+  facts[]!
+  admittedMeanings[]!
+  technicalFallbacks[]!
+  registryLineage[]!
+  gaps[]!
+  ownership[]!
+  conflicts[]!
+  businessProcesses[]!: BusinessProcessKnowledgeV1
+  processActivities[]!: ProcessActivityKnowledgeV1
+  processRelations[]!: ProcessRelationKnowledgeV1
+  processMemberships[]!: ProcessMembershipV1
+  roles[]!: RoleKnowledgeV1
+  states[]!: StateKnowledgeV1
+  processClaims[]!: ProcessClaimKnowledgeV1
+  processAlternatives[]!: ProcessAlternativeKnowledgeV1
+  pendingConfirmations[]!: PendingConfirmationV1
+
+BusinessProcessKnowledgeV1
+  businessProcessId!
+  sourceBusinessProcessHypothesisId!
+  processAdmissionDecisionId!
+  nameKey!: RegistryOrTechnicalKeyV1
+  certainty!: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+  purposeClaimId?
+  endResultClaimId?
+  activityIds[]!
+  relationIds[]!
+  membershipIds[]!
+  roleIds[]!
+  stateIds[]!
+  processClaimIds[]!
+  alternativeIds[]!
+  pendingConfirmationIds[]!
+  gapIds[]!
+
+ProcessActivityKnowledgeV1
+  processActivityId!
+  sourceProcessClaimId!
+  processAdmissionDecisionId!
+  activityKey!: RegistryOrTechnicalKeyV1
+  memberFlowSliceIds[]!
+  businessProcessIds[]!
+  roleIds[]!
+  inputObjectKeys[]!: RegistryOrTechnicalKeyV1
+  outputObjectKeys[]!: RegistryOrTechnicalKeyV1
+  stateIds[]!
+  certainty!: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+  gapIds[]!
+
+ProcessRelationKnowledgeV1
+  processRelationId!
+  sourceProcessClaimId!
+  processAdmissionDecisionId!
+  fromActivityId?
+  toActivityId?
+  relationKind!: PRECEDES | CONDITIONALLY_PRECEDES | PARALLEL_WITH |
+                 ALTERNATIVE_TO | FALLS_BACK_TO | PRODUCES_FOR | CONSUMES_FROM
+  conditionClaimIds[]!
+  supportCandidateRelationIds[]!
+  processJoinSignalIds[]!
+  processSemanticCueIds[]!
+  counterSignalIds[]!
+  blockingCounterSignalIds[]!
+  certainty!: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+  gapIds[]!
+
+ProcessMembershipV1
+  processMembershipId!
+  flowSliceId!
+  membershipKind!: BUSINESS_PROCESS | INDEPENDENT_ACTIVITY | UNASSIGNED_PENDING
+  businessProcessId?
+  activityIds[]!
+  certainty!: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+  gapIds[]!
+
+RoleKnowledgeV1
+  roleId!
+  sourceProcessClaimId!
+  processAdmissionDecisionId!
+  roleKey!: RegistryOrTechnicalKeyV1
+  businessProcessIds[]!
+  activityIds[]!
+  responsibilityClaimIds[]!
+  certainty!: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+  gapIds[]!
+
+StateKnowledgeV1
+  stateId!
+  sourceProcessClaimId!
+  processAdmissionDecisionId!
+  stateKey!: RegistryOrTechnicalKeyV1
+  objectKey!: RegistryOrTechnicalKeyV1
+  producerActivityIds[]!
+  checkerActivityIds[]!
+  processJoinSignalIds[]!
+  certainty!: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+  gapIds[]!
+
+ProcessClaimKnowledgeV1
+  processClaimKnowledgeId!
+  sourceProcessClaimId!
+  processAdmissionDecisionId!
+  processHypothesisReviewId!
+  claimKind!: PURPOSE | END_RESULT | ACTIVITY | TRANSITION | CONDITION |
+               BRANCH | PARALLEL | ALTERNATIVE | FALLBACK | ROLE | STATE | OBJECT
+  subjectKey!: RegistryOrTechnicalKeyV1
+  predicateKey!: RegistryOrTechnicalKeyV1
+  objectKey?: RegistryOrTechnicalKeyV1
+  memberFlowSliceIds[]!
+  candidateRelationIds[]!
+  processJoinSignalIds[]!
+  processSemanticCueIds[]!
+  counterSignalIds[]!
+  blockingCounterSignalIds[]!
+  factIds[]!
+  proofIds[]!
+  evidenceNodeIds[]!
+  certainty!: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+  gapIds[]!
+
+ProcessAlternativeKnowledgeV1
+  processAlternativeId!
+  sourceProcessClaimIds[]!
+  processAdmissionDecisionId!
+  alternativeKind!: COMPETING_PROCESS | COMPETING_RELATION | COMPETING_CLAIM
+  memberFlowSliceIds[]!
+  candidateRelationIds[]!
+  mutuallyExclusiveWithAlternativeIds[]!
+  certainty!: PENDING_CONFIRMATION
+  gapIds[]!
+
+PendingConfirmationV1
+  pendingConfirmationId!
+  sourceProcessClaimIds[]!
+  processAdmissionDecisionId!
+  subjectKey!: RegistryOrTechnicalKeyV1
+  questionKey!: RegistryOrTechnicalKeyV1
+  memberFlowSliceIds[]!
+  processJoinSignalIds[]!
+  processSemanticCueIds[]!
+  counterSignalIds[]!
+  blockingCounterSignalIds[]!
+  gapIds[]!
+  certainty!: PENDING_CONFIRMATION
+
+KnowledgeConflictV3
+  schemaVersion!: repository-knowledge-conflict-v3
+  artifactType!: REPOSITORY_KNOWLEDGE_CONFLICT
+  artifactId!
+  conflictScope!: LOCAL | BUSINESS_PROCESS
+  competingSemanticItemIds[]!
+  conflictKind!: EQUIVALENT | COMPATIBLE | MUTUALLY_EXCLUSIVE | INSUFFICIENT_EVIDENCE
+  resolution!: MERGE | KEEP_BOTH | PRESERVE_ALTERNATIVES | PENDING_CONFIRMATION | REJECT
+  winningSemanticItemId?
+  processAlternativeIds[]!
+  pendingConfirmationIds[]!
+  factIds[]!
+  proofIds[]!
+  gapIds[]!
+  reasonCode!
+
+KnowledgeAccountingV3
+  schemaVersion!: repository-knowledge-accounting-v3
+  artifactType!: REPOSITORY_KNOWLEDGE_ACCOUNTING
+  artifactId!
+  repositoryKnowledgeId!
+  repositoryKnowledgeCoverage!: RepositoryKnowledgeCoverageV3
+  repositoryCoverageLedgerDraft!: RepositoryCoverageLedgerDraftV3
+  semanticArtifactDescriptors[5]!
+  gapIds[]!
+  status!: COMPLETE | COMPLETE_WITH_GAPS
+
+MergedGapV2
+  schemaVersion!: repository-knowledge-merged-gap-v2
+  artifactType!: REPOSITORY_KNOWLEDGE_MERGED_GAP
+  artifactId!
+  canonicalGapId!
+  memberGapIds[]!
+  gapCode!
+  gapScope!: LOCAL | BUSINESS_PROCESS | REPOSITORY
+  affectedFlowSliceIds[]!
+  affectedBusinessProcessIds[]!
+  factIds[]!
+  proofIds[]!
+  sourceLocators[]!
+  messageKey!
+
+`decisionScope=FLOW`只允许`flowDecision`非null，`BUSINESS_PROCESS`只允许`processDecision`非null。`processCertainty`只在`ADMIT | ADMIT_WITH_PENDING`时非null，并与创建的process knowledge相等；其余为null。`SOURCE_CONFIRMED`要求P1 accepted、P2对同一hypothesis/claim为KEEP/NARROW、直接Fact/Proof和无blocking counter；`EVIDENCE_SUPPORTED_INFERENCE`要求同一P1/P2条件、至少一个经程序验证的`PROVEN_HANDOFF | SHARED_ANCHOR` relation/signal、完整Fact/Proof/Evidence/source闭包且无blocking counter；仅SEMANTIC_CUE、P2 pending/not-run或blocking counter都只能pending。Reader slot/prose不能绕过claim decision。
+
+`BUSINESS_PROCESS` membership要求process非null；`INDEPENDENT_ACTIVITY`要求process为null且activity非空；`UNASSIGNED_PENDING`要求process为null、activity为空、Gap非空。Conflict winner只在MERGE/REJECT时非null；relation端点只有pending且Gap非空时可null。standalone object按所列字段顺序；decision JSONL先FLOW后BUSINESS_PROCESS再按decision ID，九数组各按自身ID、内部ID数组按UTF-8 bytewise排序去重。root `artifactId = sha256(schemaVersion || artifactType || canonical payload excluding artifactId)`；内部prefix固定`bp-knowledge-v1`、`process-activity-v1`、`process-relation-v1`、`process-membership-v1`、`role-knowledge-v1`、`state-knowledge-v1`、`process-claim-knowledge-v1`、`process-alternative-v1`、`pending-confirmation-v1`并覆盖全部规范字段。
 
 RepositoryCoverageLedgerDraftV3
   schemaVersion=repository-coverage-ledger-draft-v3
@@ -1419,61 +1868,118 @@ CoverageEquationV1 = closed tagged union
   NONEMPTY_SET_BY_DOMAIN {equationKey, domainIds[], mappings[] {domainId, memberIds[]}}
 
 NineSectionPlanV4
-  schemaVersion=nine-section-document-nine-section-plan-v4
-  artifactType                           // exact policy-registry value for this schema
-  artifactId                             // canonical plan identity; public nineSectionPlanId aliases this value
-  repositoryKnowledgeRef: ArtifactReference
-  repositoryInterpretationRegistryRef: ArtifactReference
-  repositoryCoverageLedgerRef: ArtifactReference
-  nineSectionProfileRef: ArtifactReference
-  profileBundleRef: ArtifactReference
-  rendererProfileRef: ArtifactReference
-  repositoryCardinality {knowledgeCount=1,planCount=1,documentCountExpected=1}
-  sections[9]: SectionPlanV4
-  dispositions[]
-  coverage
+  schemaVersion!: nine-section-document-nine-section-plan-v4
+  artifactType!: NINE_SECTION_DOCUMENT_NINE_SECTION_PLAN
+  artifactId!
+  repositoryKnowledgeRef!: ArtifactReference
+  repositoryInterpretationRegistryRef!: ArtifactReference
+  repositoryCoverageLedgerRef!: ArtifactReference
+  nineSectionProfileRef!: ArtifactReference
+  profileBundleRef!: ArtifactReference
+  rendererProfileRef!: ArtifactReference
+  repositoryCardinality!: {knowledgeCount!: 1, planCount!: 1, documentCountExpected!: 1}
+  sections[9]!: SectionPlanV4
+  dispositions[]!: ReaderItemDispositionV4
+  coverage!: NineSectionPlanCoverageV4
+  readerSemanticItemIds[]!
+  sectionOwnerBySemanticItem[]!: SectionOwnerV4
+  readerItemIds[]!
+  processReaderItemIds[]!
+  reasonedExclusionIds[]!
 
 SectionPlanV4
-  sectionNumber: 1..9
-  sectionKey: DOCUMENT_GUIDE | BUSINESS_GOALS | BUSINESS_OBJECTS |
-              BUSINESS_ACTIVITIES | FIELDS_AND_DIMENSIONS | OBJECT_RELATIONS |
-              METRIC_DEFINITIONS | EXAMPLE_QUESTIONS | PENDING_CONFIRMATION
-  title                                 // exact closed key/title pairing in NineSectionDocument §8.2
-  readerItems[]: ReaderItemV4
+  sectionNumber!: 1..9
+  sectionKey!: DOCUMENT_GUIDE | BUSINESS_GOALS | BUSINESS_OBJECTS |
+               BUSINESS_ACTIVITIES | FIELDS_AND_DIMENSIONS | OBJECT_RELATIONS |
+               METRIC_DEFINITIONS | EXAMPLE_QUESTIONS | PENDING_CONFIRMATION
+  title!
+  readerItems[]!: ReaderItemV4
 
-ReaderItemV4                            // sealed by readerItemKind + templateKey + typedSlots
-  readerItemKey
-  readerItemKind: TECHNICAL_FALLBACK | EMPTY_SECTION | RECORD_REFERENCE |
-                  ADMITTED_TERM | FACT_SENTENCE | RELATION_REFERENCE |
-                  METRIC_REFERENCE | GAP_QUESTION | BUSINESS_PROCESS_OVERVIEW |
-                  PROCESS_ACTIVITY | PROCESS_TRANSITION | ROLE_RESPONSIBILITY |
-                  PROCESS_ALTERNATIVE
-  templateKey
-  typedSlots
-  ownerKnowledgeItemId                  // required nullable; null iff EMPTY_SECTION
-  knowledgeItemIds[], factIds[], meaningIds[]
-  registryProposalIds[], provisionalKeys[], interpretationProposalIds[], selectedKeys[]
-  gapIds[], relationIds[], metricIds[]
-  businessProcessIds[], processActivityIds[], processRelationIds[], processMembershipIds[]
-  roleIds[], stateIds[], processClaimIds[], processAdmissionDecisionIds[]
-  businessProcessHypothesisIds[], processAlternativeIds[], pendingConfirmationIds[]
-  certainty: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+ReaderItemV4
+  readerItemKey!
+  readerItemKind!: TECHNICAL_FALLBACK | EMPTY_SECTION | RECORD_REFERENCE |
+                   ADMITTED_TERM | FACT_SENTENCE | RELATION_REFERENCE |
+                   METRIC_REFERENCE | GAP_QUESTION | BUSINESS_PROCESS_OVERVIEW |
+                   PROCESS_ACTIVITY | PROCESS_TRANSITION | ROLE_RESPONSIBILITY |
+                   PROCESS_ALTERNATIVE
+  templateKey!
+  typedSlots!: ReaderTemplateSlotsV4
+  ownerKnowledgeItemId?
+  knowledgeItemIds[]!
+  factIds[]!
+  proofIds[]!
+  evidenceNodeIds[]!
+  meaningIds[]!
+  registryProposalIds[]!
+  provisionalKeys[]!
+  interpretationProposalIds[]!
+  selectedKeys[]!
+  gapIds[]!
+  relationIds[]!
+  metricIds[]!
+  businessProcessIds[]!
+  processActivityIds[]!
+  processRelationIds[]!
+  processMembershipIds[]!
+  roleIds[]!
+  stateIds[]!
+  processClaimIds[]!
+  processAdmissionDecisionIds[]!
+  businessProcessHypothesisIds[]!
+  processAlternativeIds[]!
+  pendingConfirmationIds[]!
+  processJoinSignalIds[]!
+  processSemanticCueIds[]!
+  counterSignalIds[]!
+  certainty?: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
 
-ReaderTemplateSlotsV4                   // exact kind/template pairing; no other variant
-  TECHNICAL_FALLBACK / technical-scope-v1 -> {display}
-  EMPTY_SECTION / empty-section-v2 -> {sectionKey,effectiveProfileRef,reasonCode}
-  RECORD_REFERENCE / record-anchor-v1 -> {record,evidence}
+ReaderTemplateSlotsV4
+  TECHNICAL_FALLBACK / technical-scope-v1 -> {display!}
+  EMPTY_SECTION / empty-section-v2 -> {sectionKey!, effectiveProfileRef!: ArtifactReference, reasonCode!}
+  RECORD_REFERENCE / record-anchor-v1 -> {record!, evidence!}
   ADMITTED_TERM / activity-with-anchor-v1 ->
-      {businessTerm,businessPurpose,technicalAnchor,flow,outcomes[]}
-  FACT_SENTENCE / field-write-v1 -> {inputField,targetColumn}
-  RELATION_REFERENCE / relation-v1 -> {from,relation,to}
-  METRIC_REFERENCE / metric-with-gap-v1 -> {metric,definitionState}
-  GAP_QUESTION / gap-question-v1 -> {subject,missingRequirement}
-  BUSINESS_PROCESS_OVERVIEW / business-process-overview-v1 -> {processName,purpose,start,finish,certainty}
-  PROCESS_ACTIVITY / process-activity-v1 -> {process,activity,role,input,output,certainty}
-  PROCESS_TRANSITION / process-transition-v1 -> {process,fromActivity,condition,toActivity,certainty}
-  ROLE_RESPONSIBILITY / role-responsibility-v1 -> {role,responsibility,process,certainty}
-  PROCESS_ALTERNATIVE / process-alternative-v1 -> {process,alternative,when,certainty}
+      {businessTerm!, businessPurpose!, technicalAnchor!, flow!, outcomes[]!}
+  FACT_SENTENCE / field-write-v1 -> {inputField!, targetColumn!}
+  RELATION_REFERENCE / relation-v1 -> {from!, relation!, to!}
+  METRIC_REFERENCE / metric-with-gap-v1 -> {metric!, definitionState!}
+  GAP_QUESTION / gap-question-v1 -> {subject!, missingRequirement!}
+  BUSINESS_PROCESS_OVERVIEW / business-process-overview-v1 ->
+      {processName!, purpose!, start!, finish!, certainty!}
+  PROCESS_ACTIVITY / process-activity-v1 ->
+      {process!, activity!, role!, input!, output!, certainty!}
+  PROCESS_TRANSITION / process-transition-v1 ->
+      {process!, fromActivity!, condition!, toActivity!, certainty!}
+  ROLE_RESPONSIBILITY / role-responsibility-v1 ->
+      {role!, responsibility!, process!, certainty!}
+  PROCESS_ALTERNATIVE / process-alternative-v1 ->
+      {process!, alternative!, when!, certainty!}
+
+ReaderItemDispositionV4
+  semanticItemId!
+  disposition!: ADMITTED_TO_READER | REASONED_EXCLUSION
+  readerItemKey?
+  sectionKey?
+  reasonCode?
+  gapIds[]!
+
+SectionOwnerV4
+  semanticItemId!
+  sectionKey!: DOCUMENT_GUIDE | BUSINESS_GOALS | BUSINESS_OBJECTS |
+               BUSINESS_ACTIVITIES | FIELDS_AND_DIMENSIONS | OBJECT_RELATIONS |
+               METRIC_DEFINITIONS | EXAMPLE_QUESTIONS | PENDING_CONFIRMATION
+
+NineSectionPlanCoverageV4
+  semanticItemIds[]!
+  ownerSemanticItemIds[]!
+  readerSemanticItemIds[]!
+  ownedReaderSemanticItemIds[]!
+  reasonedExclusionIds[]!
+  processKnowledgeItemIds[]!
+  processReaderItemIds[]!
+  sectionOwnerBySemanticItem[]!: SectionOwnerV4
+  traceExpectedReaderItemIds[]!
+
+`EMPTY_SECTION`要求owner/certainty为null且全部lineage数组为空；其他kind要求owner/certainty非null。`ADMITTED_TO_READER`要求reader/section非null且reason为null；`REASONED_EXCLUSION`要求reader/section为null、reason非null。所有引用数组按UTF-8 bytewise排序去重；sections按number，section内ReaderItems按冻结profile的显式business order。`readerItemKey = "reader-item-v4:" + lowercaseHex(SHA-256(frame(UTF8("reader-item-id-v4")) || frame(canonicalJson(recordWithoutReaderItemKey))))`，覆盖kind/template/slots、全部typed refs和required-nullable certainty。plan `artifactId`按`STANDALONE_JSON`排除且只排除自身；wire没有`nineSectionPlanId`第二self ID。
 
 Boundary projection rule: `JavaBoundaryInvocation` can only populate `TECHNICAL_FALLBACK / technical-scope-v1`
 with its static target and ordered arguments. `FACT_SENTENCE / field-write-v1` requires an upstream Fact whose Proof
@@ -1481,18 +1987,48 @@ does not cross a generic Java boundary; Mapper→XML or XML/SQL static structure
 Every external effect is rendered separately as `GAP_QUESTION` / 待确认.
 
 TraceRecordV4
-  schemaVersion=nine-section-document-trace-record-v4
-  traceId
-  readerItemKey
-  traceKind                             // local kinds plus PROCESS_KNOWLEDGE_CLAIM
-  hops[]: TraceHopV4
+  schemaVersion!: nine-section-document-trace-record-v4
+  artifactType!: NINE_SECTION_DOCUMENT_TRACE_RECORD
+  traceId!
+  readerItemKey!
+  traceKind!: FACT_SENTENCE | ADMITTED_TERM | TECHNICAL_FALLBACK | GAP_QUESTION |
+              RELATION_REFERENCE | METRIC_REFERENCE | RECORD_REFERENCE | EMPTY_SECTION |
+              PROCESS_KNOWLEDGE_CLAIM
+  hops[]!: TraceHopV4
 
-TraceHopV4                              // sealed tagged union
-  IDENTITY {identityKind,id}
-  ARTIFACT_REFERENCE {referenceRole,artifactRef}
-  SOURCE_EXCERPT {sourceExcerpt: SourceExcerptV1}
-  SECTION {sectionKey}
-  TEMPLATE {templateKey}
+TraceHopV4
+  IDENTITY {
+    identityKind!: READER_ITEM | KNOWLEDGE_ITEM | FLOW_ADMISSION_DECISION |
+                   INTERPRETATION_PROPOSAL | REPOSITORY_REGISTRY_ITEM |
+                   REGISTRY_PROPOSAL | FLOW_INTERPRETATION_DISPOSITION |
+                   PROCESS_KNOWLEDGE | PROCESS_ADMISSION_DECISION |
+                   BUSINESS_PROCESS_HYPOTHESIS | PROCESS_HYPOTHESIS_REVIEW |
+                   PROCESS_MODEL_TASK | PROCESS_MODEL_ROUND | GENERATION_RECEIPT |
+                   PROCESS_EVIDENCE_GROUP | PROCESS_CANDIDATE_RELATION |
+                   PROCESS_JOIN_SIGNAL | PROCESS_SEMANTIC_CUE | COUNTER_SIGNAL |
+                   FLOW_SLICE | EVIDENCE_CAPSULE | FACT | PROOF | EVIDENCE_NODE | GAP,
+    id!
+  }
+  ARTIFACT_REFERENCE {
+    referenceRole!: REPOSITORY_BUSINESS_KNOWLEDGE | KNOWLEDGE_ADMISSION_DECISIONS |
+                    KNOWLEDGE_CONFLICTS | KNOWLEDGE_ACCOUNTING | MERGED_GAPS |
+                    REPOSITORY_INTERPRETATION_REGISTRY | BUSINESS_PROCESS_HYPOTHESES |
+                    PROCESS_INTERPRETATION_DISPOSITIONS | PROCESS_MODEL_TASKS |
+                    PROCESS_MODEL_ROUNDS | GENERATION_RECEIPTS | PROCESS_EVIDENCE_GROUPS |
+                    BUSINESS_FLOW_ARTIFACT | PROVEN_CODE_FACT_ARTIFACT |
+                    PROGRAM_GRAPH_ARTIFACT | VERIFIED_SOURCE_INVENTORY | SEARCHED_SCOPE |
+                    NINE_SECTION_PROFILE | PROFILE_BUNDLE | RENDERER_PROFILE,
+    artifactRef!: ArtifactReference
+  }
+  SOURCE_EXCERPT {sourceExcerpt!: SourceExcerptV1}
+  SECTION {
+    sectionKey!: DOCUMENT_GUIDE | BUSINESS_GOALS | BUSINESS_OBJECTS |
+                 BUSINESS_ACTIVITIES | FIELDS_AND_DIMENSIONS | OBJECT_RELATIONS |
+                 METRIC_DEFINITIONS | EXAMPLE_QUESTIONS | PENDING_CONFIRMATION
+  }
+  TEMPLATE {templateKey!}
+
+五个TraceHop variant恰一成立。`PROCESS_KNOWLEDGE_CLAIM`只配五个process ReaderItem，其他八值与local kind一一配对。process最短有序链为`READER_ITEM → SECTION → TEMPLATE → PROCESS_KNOWLEDGE → PROCESS_ADMISSION_DECISION → BUSINESS_PROCESS_HYPOTHESIS → P1 task/round/receipt → P2 task[/round/receipt] → PROCESS_EVIDENCE_GROUP → supporting/counter SIGNAL → FLOW_SLICE → EVIDENCE_CAPSULE → FACT → PROOF → EVIDENCE_NODE → SOURCE_EXCERPT`；P2未运行只保留task/disposition和P1 upstream ref。每个ReaderItem恰一record，records按readerItemKey排序，hops不排序。`traceId = "trace-record-v4:" + lowercaseHex(SHA-256(frame(UTF8("trace-record-id-v4")) || frame(canonicalJson(recordWithoutTraceId))))`，排除且只排除traceId。
 
 ValidationReceiptV4
   validationId, runId
@@ -2221,9 +2757,11 @@ Profile 至少固定：
 
 Luna/xhigh 或 Terra/xhigh 在以下任一情况必须停止受影响 vertical slice：需求按现合同无法满足；预期 RED 不成立或因错误原因失败；现有实现与合同冲突；必需数据在上游 artifact 不存在；方案需要猜 schema/语义/failure/model boundary；或实现路径明显偏离业务/信任目标。Agent 先在自己唯一 progress 文件记录可复验证据、受影响 IDs/analysis steps、为何不能继续和最小可选项，然后把请求交给 **Sol/ultra Design Authority**；不得静默改变 schema、golden/expected value、失败等级、重试、模型职责或上下游边界。
 
-只有 Sol/ultra Design Authority 可以裁决**单模块或单分析步骤内部**、局部、可逆、语义等价且不改变跨分析步骤 contract 的实现权衡，例如内部命名/算法、模块内部拆分、明确 non-identity 的观测字段或满足同一硬上限的预算实现。裁决不得削弱业务目标、Fact准确、evidence/Proof/Trace closure、逐模块/分析步骤持久化与显式复用、固定九章、安全或 LLM 受限职责。局部裁决先更新对应 analysis step doc/schemaVersion，再允许 Luna 重写 RED、Terra 继续。Sol/xhigh 只能提交 debug 证据，不能批准该变更。
+只有 Sol/ultra Design Authority 可以批准有界的**单模块或相邻模块间协议调整**，包括为消除歧义而版本化局部artifact字段、nullable/排序、失败码、模块handoff或内部算法，只要调整保持最终业务目标且不触及下段用户保留边界。批准前必须在durable design记录：(1) 可复验理由；(2) 受影响module、analysis-step文档、schema/type与上下游消费方；(3) 保持不变的identity、evidence、model、accounting和public-interface invariants；(4) fail-closed迁移/兼容策略。记录并同步详细设计后，Luna才可重写RED、Terra才可继续。Sol/xhigh只能提交debug证据，不能批准变更。
 
-**MUST/STOP 升级规则**：任何影响跨分析步骤 Interface、artifact field semantics、identity DAG、composition/accounting invariant、分析步骤边界/顺序/持久化，或任何业务目标、信任模型、九章合同、来源范围、安全/模型边界的修改，Sol/ultra Design Authority 也 **MUST NOT** 自行决定。相关实现 **MUST STOP**；Sol/ultra 必须整理可复验证据、影响范围、至少两个可行备选（若确实只有一个则说明为何）、推荐项与不变项，交回用户讨论确认。用户确认前不得改 RED、production code 或当前有效合同；确认后才更新 DESIGN/相关 analysis step doc/schemaVersion并恢复实现。
+**用户保留的MUST/STOP边界只有以下六类**：改变八个analysis step的集合、顺序或stable key；改变固定九章的数量、顺序、key或语义；改变evidence/Proof/Trace信任规则；改变模型可见材料、职责或调用边界（包括P1/P2唯一多Flow例外）；改变跨analysis-step identity/publication语义；改变公开`RepositoryAnalysisAgent`或正式artifact/accounting边界（包括57总数）。任一命中时，Sol/ultra也必须停止，整理证据、影响、可行备选、推荐项与不变项交用户确认。其他局部或相邻模块protocol变化不因“artifact field semantics”这一泛化理由自动升级用户；仍必须由Sol/ultra按上一段书面裁决。
+
+本轮cross-Flow设计采用一次有界protocol裁决：理由是消除Step 06信号等级、Step 07 claim certainty/standalone records以及Step 08 plan/ReaderItem/Trace的实现歧义；受影响合同仅为`flow-interpretation` M6–M9、RepositoryKnowledge M1–M3与NineSectionDocument M1/M3及其本文/三份详细设计中的已版本化wire。保持不变的invariants是八步与`flow-interpretation` key、固定九章、P1/P2模型边界、Fact/Proof/Evidence/Trace closure、跨步骤content identity、公开七方法、五十七项正式accounting及外部效果无Proof即Gap。旧歧义形状不设alias/dual-write，未来实现按新版本fail closed；因此未触发用户保留边界。
 
 progress 只记录编码Agent中断后的继续工作证据与下一动作；durable design 只保存当前有效产品合同，不写时间流水账。两者不得被误建成产品runtime recovery。每个模块 handoff 的 Luna/Terra 指南都必须显式引用本节。
 

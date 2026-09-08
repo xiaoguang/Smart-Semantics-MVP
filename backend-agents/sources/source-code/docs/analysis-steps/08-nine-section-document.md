@@ -103,19 +103,23 @@ ROLE_RESPONSIBILITY
 PROCESS_ALTERNATIVE
 ~~~
 
-所有非EMPTY item共享：
+所有ReaderItem共享同一封闭wire字段集；`?`表示字段必有但值可为null，`[]!`表示字段必有、可为空数组：
 
 ~~~text
 readerItemKey!, readerItemKind!, templateKey!, typedSlots!
-ownerKnowledgeItemId!, knowledgeItemIds[]!
-factIds[]!, proofIds[]!, evidenceNodeIds[]!, gapIds[]!
+ownerKnowledgeItemId?, knowledgeItemIds[]!
+factIds[]!, proofIds[]!, evidenceNodeIds[]!, gapIds[]!, relationIds[]!, metricIds[]!
 meaningIds[]!, registryProposalIds[]!, provisionalKeys[]!
 interpretationProposalIds[]!, selectedKeys[]!
 businessProcessIds[]!, processActivityIds[]!, processRelationIds[]!
 processMembershipIds[]!, roleIds[]!, stateIds[]!, processClaimIds[]!
 processAdmissionDecisionIds[]!, businessProcessHypothesisIds[]!
-processAlternativeIds[]!, pendingConfirmationIds[]!, certainty!
+processAlternativeIds[]!, pendingConfirmationIds[]!
+processJoinSignalIds[]!, processSemanticCueIds[]!, counterSignalIds[]!
+certainty?: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
 ~~~
+
+只有`EMPTY_SECTION`允许`ownerKnowledgeItemId=null`且要求`certainty=null`、所有lineage数组为空；其他kind两字段都必须非null。process kind还必须有非空process knowledge、admission、hypothesis与claim lineage；local kind的process数组必须为空。任何Proof/Evidence、relation/metric或Gap ref都必须出现在上述对应数组，不能藏进slot prose。
 
 过程kind的template与slot闭集：
 
@@ -182,22 +186,125 @@ NineSectionDocument的七项analysis-step文件与一项run-root文件保持不�
 
 M1的module-only `repository-coverage-ledger.json`和plan draft、M2 rendered JSON、M3 trace set、M4 publication及各module receipt不增加正式run清单。Step 08数量不变；Step 06恰增5项后整个run正式artifact总数恰为**57**。
 
-`NineSectionPlanV4`关键字段：
+### 7.1 PlanV4完整wire合同
+
+此合同与总体设计§13.2的同名catalog逐字段相同。standalone plan只有`artifactId`一个self ID；Java/API中的`nineSectionPlanId`只是该值的别名，wire不得同时携带两者。
 
 ~~~text
-nineSectionPlanId!
-repositoryKnowledgeId!
-repositoryCoverageLedgerRef!
-nineSectionProfileRef!
-sections[9]!: SectionPlanV4
-readerSemanticItemIds[]!
-sectionOwnerBySemanticItem[]!{semanticItemId!,sectionKey!}
-readerItemIds[]!
-processReaderItemIds[]!
-reasonedExclusionIds[]!
+NineSectionPlanV4
+  schemaVersion!: nine-section-document-nine-section-plan-v4
+  artifactType!: NINE_SECTION_DOCUMENT_NINE_SECTION_PLAN
+  artifactId!
+  repositoryKnowledgeRef!: ArtifactReference
+  repositoryInterpretationRegistryRef!: ArtifactReference
+  repositoryCoverageLedgerRef!: ArtifactReference
+  nineSectionProfileRef!: ArtifactReference
+  profileBundleRef!: ArtifactReference
+  rendererProfileRef!: ArtifactReference
+  repositoryCardinality!: {knowledgeCount!: 1, planCount!: 1, documentCountExpected!: 1}
+  sections[9]!: SectionPlanV4
+  dispositions[]!: ReaderItemDispositionV4
+  coverage!: NineSectionPlanCoverageV4
+  readerSemanticItemIds[]!
+  sectionOwnerBySemanticItem[]!: SectionOwnerV4
+  readerItemIds[]!
+  processReaderItemIds[]!
+  reasonedExclusionIds[]!
+
+SectionPlanV4
+  sectionNumber!: 1..9
+  sectionKey!: DOCUMENT_GUIDE | BUSINESS_GOALS | BUSINESS_OBJECTS |
+               BUSINESS_ACTIVITIES | FIELDS_AND_DIMENSIONS | OBJECT_RELATIONS |
+               METRIC_DEFINITIONS | EXAMPLE_QUESTIONS | PENDING_CONFIRMATION
+  title!
+  readerItems[]!: ReaderItemV4
+
+ReaderItemV4
+  readerItemKey!
+  readerItemKind!: TECHNICAL_FALLBACK | EMPTY_SECTION | RECORD_REFERENCE |
+                   ADMITTED_TERM | FACT_SENTENCE | RELATION_REFERENCE |
+                   METRIC_REFERENCE | GAP_QUESTION | BUSINESS_PROCESS_OVERVIEW |
+                   PROCESS_ACTIVITY | PROCESS_TRANSITION | ROLE_RESPONSIBILITY |
+                   PROCESS_ALTERNATIVE
+  templateKey!
+  typedSlots!: ReaderTemplateSlotsV4
+  ownerKnowledgeItemId?
+  knowledgeItemIds[]!
+  factIds[]!
+  proofIds[]!
+  evidenceNodeIds[]!
+  meaningIds[]!
+  registryProposalIds[]!
+  provisionalKeys[]!
+  interpretationProposalIds[]!
+  selectedKeys[]!
+  gapIds[]!
+  relationIds[]!
+  metricIds[]!
+  businessProcessIds[]!
+  processActivityIds[]!
+  processRelationIds[]!
+  processMembershipIds[]!
+  roleIds[]!
+  stateIds[]!
+  processClaimIds[]!
+  processAdmissionDecisionIds[]!
+  businessProcessHypothesisIds[]!
+  processAlternativeIds[]!
+  pendingConfirmationIds[]!
+  processJoinSignalIds[]!
+  processSemanticCueIds[]!
+  counterSignalIds[]!
+  certainty?: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
+
+ReaderTemplateSlotsV4
+  TECHNICAL_FALLBACK / technical-scope-v1 -> {display!}
+  EMPTY_SECTION / empty-section-v2 -> {sectionKey!, effectiveProfileRef!: ArtifactReference, reasonCode!}
+  RECORD_REFERENCE / record-anchor-v1 -> {record!, evidence!}
+  ADMITTED_TERM / activity-with-anchor-v1 ->
+      {businessTerm!, businessPurpose!, technicalAnchor!, flow!, outcomes[]!}
+  FACT_SENTENCE / field-write-v1 -> {inputField!, targetColumn!}
+  RELATION_REFERENCE / relation-v1 -> {from!, relation!, to!}
+  METRIC_REFERENCE / metric-with-gap-v1 -> {metric!, definitionState!}
+  GAP_QUESTION / gap-question-v1 -> {subject!, missingRequirement!}
+  BUSINESS_PROCESS_OVERVIEW / business-process-overview-v1 ->
+      {processName!, purpose!, start!, finish!, certainty!}
+  PROCESS_ACTIVITY / process-activity-v1 ->
+      {process!, activity!, role!, input!, output!, certainty!}
+  PROCESS_TRANSITION / process-transition-v1 ->
+      {process!, fromActivity!, condition!, toActivity!, certainty!}
+  ROLE_RESPONSIBILITY / role-responsibility-v1 ->
+      {role!, responsibility!, process!, certainty!}
+  PROCESS_ALTERNATIVE / process-alternative-v1 ->
+      {process!, alternative!, when!, certainty!}
+
+ReaderItemDispositionV4
+  semanticItemId!
+  disposition!: ADMITTED_TO_READER | REASONED_EXCLUSION
+  readerItemKey?
+  sectionKey?
+  reasonCode?
+  gapIds[]!
+
+SectionOwnerV4
+  semanticItemId!
+  sectionKey!: DOCUMENT_GUIDE | BUSINESS_GOALS | BUSINESS_OBJECTS |
+               BUSINESS_ACTIVITIES | FIELDS_AND_DIMENSIONS | OBJECT_RELATIONS |
+               METRIC_DEFINITIONS | EXAMPLE_QUESTIONS | PENDING_CONFIRMATION
+
+NineSectionPlanCoverageV4
+  semanticItemIds[]!
+  ownerSemanticItemIds[]!
+  readerSemanticItemIds[]!
+  ownedReaderSemanticItemIds[]!
+  reasonedExclusionIds[]!
+  processKnowledgeItemIds[]!
+  processReaderItemIds[]!
+  sectionOwnerBySemanticItem[]!: SectionOwnerV4
+  traceExpectedReaderItemIds[]!
 ~~~
 
-`SectionPlanV4`严格为`sectionNumber,sectionKey,title,readerItems`。reader item identity覆盖kind/template/slots/所有typed refs/certainty；Markdown text本身不参与plan identity。
+`EMPTY_SECTION`要求owner/certainty为null且全部lineage数组为空；其他kind要求owner/certainty非null。`ADMITTED_TO_READER`要求reader/section非null且reason为null；`REASONED_EXCLUSION`要求reader为null、section为null、reason非null并可有Gap。`title`必须与§5固定key逐字配对。所有引用数组去重后UTF-8 bytewise升序；`sections`按number升序，section内ReaderItems按冻结profile的显式business order，不能借上游输入顺序推断。`readerItemKey = "reader-item-v4:" + lowercaseHex(SHA-256(frame(UTF8("reader-item-id-v4")) || frame(canonicalJson(recordWithoutReaderItemKey))))`，preimage覆盖kind/template/slots、全部typed refs和required-nullable certainty。`artifactId`按`STANDALONE_JSON`公式排除且只排除自身；plan identity因此覆盖九章与ReaderItem顺序，Markdown bytes不参与plan identity。
 
 ## 8. TraceV4
 
@@ -222,6 +329,56 @@ BUSINESS_PROCESS_HYPOTHESIS, PROCESS_MODEL_TASK, PROCESS_MODEL_ROUND,
 GENERATION_RECEIPT, PROCESS_EVIDENCE_GROUP, PROCESS_JOIN_SIGNAL,
 FLOW_SLICE, EVIDENCE_CAPSULE, FACT, PROOF, EVIDENCE_NODE, SOURCE_LOCATOR
 ~~~
+
+### 8.1 TraceV4完整wire合同
+
+~~~text
+TraceRecordV4
+  schemaVersion!: nine-section-document-trace-record-v4
+  artifactType!: NINE_SECTION_DOCUMENT_TRACE_RECORD
+  traceId!
+  readerItemKey!
+  traceKind!: FACT_SENTENCE | ADMITTED_TERM | TECHNICAL_FALLBACK | GAP_QUESTION |
+              RELATION_REFERENCE | METRIC_REFERENCE | RECORD_REFERENCE | EMPTY_SECTION |
+              PROCESS_KNOWLEDGE_CLAIM
+  hops[]!: TraceHopV4
+
+TraceHopV4
+  IDENTITY {
+    identityKind!: READER_ITEM | KNOWLEDGE_ITEM | FLOW_ADMISSION_DECISION |
+                   INTERPRETATION_PROPOSAL | REPOSITORY_REGISTRY_ITEM |
+                   REGISTRY_PROPOSAL | FLOW_INTERPRETATION_DISPOSITION |
+                   PROCESS_KNOWLEDGE | PROCESS_ADMISSION_DECISION |
+                   BUSINESS_PROCESS_HYPOTHESIS | PROCESS_HYPOTHESIS_REVIEW |
+                   PROCESS_MODEL_TASK | PROCESS_MODEL_ROUND | GENERATION_RECEIPT |
+                   PROCESS_EVIDENCE_GROUP | PROCESS_CANDIDATE_RELATION |
+                   PROCESS_JOIN_SIGNAL | PROCESS_SEMANTIC_CUE | COUNTER_SIGNAL |
+                   FLOW_SLICE | EVIDENCE_CAPSULE | FACT | PROOF | EVIDENCE_NODE | GAP,
+    id!
+  }
+  ARTIFACT_REFERENCE {
+    referenceRole!: REPOSITORY_BUSINESS_KNOWLEDGE | KNOWLEDGE_ADMISSION_DECISIONS |
+                    KNOWLEDGE_CONFLICTS | KNOWLEDGE_ACCOUNTING | MERGED_GAPS |
+                    REPOSITORY_INTERPRETATION_REGISTRY | BUSINESS_PROCESS_HYPOTHESES |
+                    PROCESS_INTERPRETATION_DISPOSITIONS | PROCESS_MODEL_TASKS |
+                    PROCESS_MODEL_ROUNDS | GENERATION_RECEIPTS | PROCESS_EVIDENCE_GROUPS |
+                    BUSINESS_FLOW_ARTIFACT | PROVEN_CODE_FACT_ARTIFACT |
+                    PROGRAM_GRAPH_ARTIFACT | VERIFIED_SOURCE_INVENTORY | SEARCHED_SCOPE |
+                    NINE_SECTION_PROFILE | PROFILE_BUNDLE | RENDERER_PROFILE,
+    artifactRef!: ArtifactReference
+  }
+  SOURCE_EXCERPT {sourceExcerpt!: SourceExcerptV1}
+  SECTION {
+    sectionKey!: DOCUMENT_GUIDE | BUSINESS_GOALS | BUSINESS_OBJECTS |
+                 BUSINESS_ACTIVITIES | FIELDS_AND_DIMENSIONS | OBJECT_RELATIONS |
+                 METRIC_DEFINITIONS | EXAMPLE_QUESTIONS | PENDING_CONFIRMATION
+  }
+  TEMPLATE {templateKey!}
+~~~
+
+五个variant恰一成立，不存在null payload或开放extra字段。`traceKind=PROCESS_KNOWLEDGE_CLAIM`只配五个process ReaderItem；其他八值与同名local ReaderItem一一配对。process hop顺序必须是`READER_ITEM → SECTION → TEMPLATE → PROCESS_KNOWLEDGE → PROCESS_ADMISSION_DECISION → BUSINESS_PROCESS_HYPOTHESIS → P1 task/round/receipt → P2 task[/round/receipt] → PROCESS_EVIDENCE_GROUP → supporting/counter SIGNAL → FLOW_SLICE → EVIDENCE_CAPSULE → FACT → PROOF → EVIDENCE_NODE → SOURCE_EXCERPT`；artifact refs紧邻其拥有identity，Gap可紧邻受影响identity。每个ReaderItem恰一record，records按`readerItemKey` bytewise升序；hops保持上述语义次序，不排序。
+
+`traceId = "trace-record-v4:" + lowercaseHex(SHA-256(frame(UTF8("trace-record-id-v4")) || frame(canonicalJson(recordWithoutTraceId))))`，排除且只排除`traceId`，所以reader key、kind和完整有序hops都参与identity。`SOURCE_EXCERPT`必须使用统一`SourceExcerptV1`并由validator重验；`SEARCHED_SCOPE`和profile lineage必须是完整ArtifactReference，禁止裸ID、`path:line`或合成excerpt。
 
 若P2 `NOT_RUN_UPSTREAM_FAILED`，Trace保存P2 task/disposition和P1 upstream ref，但不伪造P2 round/receipt。`SOURCE_CONFIRMED`可要求直接Fact/Proof链；推断/pending还必须带support/counter/Gap。source locator只在完整Candidate/run validation之后对外返回，且不是Proof。
 
