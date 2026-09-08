@@ -158,184 +158,493 @@ M6不能把edge拓扑排序成“真实顺序”。顺序、并行、替代、�
 
 P1只可引用该shard的Flow、owner/context relation、signal、Fact/Proof/Evidence/Gap和registry keys。P2收到同一bounded material、P1的accepted response和固定review allowlist；它不能用语言合理性补材料。
 
-`BusinessProcessHypothesisV1`使用以下完整字段/闭合引用specimen。它是明确合成的结构fixture，不代表jshERP；ID值只作schema-valid fixture token，不是从下列展示bytes重算的replay golden：
+`BusinessProcessHypothesisV1`使用以下完整字段/闭合引用specimen。它是明确合成的结构fixture，不代表jshERP；所有ID值仅为符合`<prefix>:<64 lowercase hex>`安全语法并维持引用闭包的结构token，未按展示bytes重算semantic identity，不能用于hash replay、identity preimage或跨示例ID映射；每个displayed object的key均按UTF-8 byte order规范排序：
 
 ~~~json
 {
-  "schemaVersion": "flow-interpretation-business-process-hypothesis-v1",
-  "artifactType": "FLOW_INTERPRETATION_BUSINESS_PROCESS_HYPOTHESIS",
-  "businessProcessHypothesisId": "business-process-hypothesis:fixture-approval-to-procurement",
-  "taskShardId": "process-shard:fixture-approval",
-  "p1TaskId": "process-model-task:fixture-p1-approval",
-  "p1RoundId": "process-model-round:fixture-p1-approval",
-  "processEvidenceGroupIds": ["process-evidence-group:fixture-approval"],
-  "memberFlows": [
+  "activityKeys": [
     {
-      "flowSliceId": "flow:store-approve",
-      "role": "START",
-      "stageKey": {"keyKind":"TECHNICAL","key":"stage:10-store-approval","registryItemId":null,"technicalAnchorIds":["entry:store-approve"]},
-      "activityKey": {"keyKind":"REGISTRY","key":"ACTIVITY_P_STORE_APPROVAL","registryItemId":"registry-item:store-approval","technicalAnchorIds":[]},
-      "supportingProcessClaimIds": ["process-claim:01-purpose","process-claim:02-store-activity","process-claim:04-transition"]
+      "key": "ACTIVITY_P_STORE_APPROVAL",
+      "keyKind": "REGISTRY",
+      "registryItemId": "registry-item:cff88e5432754f7744756abd14b9dbcca58c61ea769551113652844dd3e32b8a",
+      "technicalAnchorIds": []
     },
     {
-      "flowSliceId": "flow:region-approve",
-      "role": "TERMINAL",
-      "stageKey": {"keyKind":"TECHNICAL","key":"stage:20-region-approval","registryItemId":null,"technicalAnchorIds":["entry:region-approve"]},
-      "activityKey": {"keyKind":"REGISTRY","key":"ACTIVITY_P_REGION_APPROVAL","registryItemId":"registry-item:region-approval","technicalAnchorIds":[]},
-      "supportingProcessClaimIds": ["process-claim:03-region-activity","process-claim:04-transition","process-claim:05-result"]
+      "key": "ACTIVITY_P_REGION_APPROVAL",
+      "keyKind": "REGISTRY",
+      "registryItemId": "registry-item:d1878d798f51516049f2a5b81b8fed5d9af4bfafe95d2f8ff4f62ffd955f7ac3",
+      "technicalAnchorIds": []
     }
   ],
+  "alternativeClaimIds": [],
+  "artifactType": "FLOW_INTERPRETATION_BUSINESS_PROCESS_HYPOTHESIS",
+  "branchClaimIds": [],
+  "businessProcessHypothesisId": "business-process-hypothesis:f0abc6e6c537d54c4c7362a9b73503397659480ab86642f610d72acc19728fc8",
   "businessRoleKeys": [
-    {"keyKind":"REGISTRY","key":"ROLE_P_STORE_APPROVER","registryItemId":"registry-item:store-approver","technicalAnchorIds":[]},
-    {"keyKind":"REGISTRY","key":"ROLE_P_REGION_APPROVER","registryItemId":"registry-item:region-approver","technicalAnchorIds":[]}
-  ],
-  "stageKeys": [
-    {"keyKind":"TECHNICAL","key":"stage:10-store-approval","registryItemId":null,"technicalAnchorIds":["entry:store-approve"]},
-    {"keyKind":"TECHNICAL","key":"stage:20-region-approval","registryItemId":null,"technicalAnchorIds":["entry:region-approve"]}
-  ],
-  "activityKeys": [
-    {"keyKind":"REGISTRY","key":"ACTIVITY_P_STORE_APPROVAL","registryItemId":"registry-item:store-approval","technicalAnchorIds":[]},
-    {"keyKind":"REGISTRY","key":"ACTIVITY_P_REGION_APPROVAL","registryItemId":"registry-item:region-approval","technicalAnchorIds":[]}
-  ],
-  "inputObjectKeys": [
-    {"keyKind":"TECHNICAL","key":"object:replenishment-request","registryItemId":null,"technicalAnchorIds":["java-type:ReplenishmentRequest"]}
-  ],
-  "outputObjectKeys": [
-    {"keyKind":"TECHNICAL","key":"object:approved-procurement-request","registryItemId":null,"technicalAnchorIds":["java-type:ProcurementRequest"]}
-  ],
-  "objectKeys": [
-    {"keyKind":"TECHNICAL","key":"object:replenishment-request","registryItemId":null,"technicalAnchorIds":["java-type:ReplenishmentRequest"]},
-    {"keyKind":"TECHNICAL","key":"object:approved-procurement-request","registryItemId":null,"technicalAnchorIds":["java-type:ProcurementRequest"]}
-  ],
-  "stateKeys": [],
-  "processClaims": [
     {
-      "processClaimId": "process-claim:01-purpose",
-      "claimKind": "PURPOSE",
-      "subjectKeys": [{"keyKind":"TECHNICAL","key":"process:replenishment-approval","registryItemId":null,"technicalAnchorIds":["process-evidence-group:fixture-approval"]}],
-      "predicateKey": {"keyKind":"TECHNICAL","key":"purpose:authorize-replenishment","registryItemId":null,"technicalAnchorIds":["fact:replenishment-request-id"]},
-      "objectKeys": [{"keyKind":"TECHNICAL","key":"object:replenishment-request","registryItemId":null,"technicalAnchorIds":["java-type:ReplenishmentRequest"]}],
-      "memberFlowSliceIds": ["flow:store-approve","flow:region-approve"],
-      "candidateRelationIds": [],
-      "supportProcessJoinSignalIds": ["process-join-signal:request-id"],
-      "processSemanticCueIds": [],
-      "counterProcessJoinSignalIds": [],
-      "blockingCounterProcessJoinSignalIds": [],
-      "factIds": ["fact:replenishment-request-id"],
-      "proofIds": ["proof:replenishment-request-id"],
-      "evidenceNodeIds": ["evidence:replenishment-request-id"],
-      "gapIds": []
+      "key": "ROLE_P_STORE_APPROVER",
+      "keyKind": "REGISTRY",
+      "registryItemId": "registry-item:016fb55d9af2731760e21064d2905f717d90f110c6cb851df5caaa985a6802f2",
+      "technicalAnchorIds": []
     },
     {
-      "processClaimId": "process-claim:02-store-activity",
-      "claimKind": "ACTIVITY",
-      "subjectKeys": [{"keyKind":"REGISTRY","key":"ACTIVITY_P_STORE_APPROVAL","registryItemId":"registry-item:store-approval","technicalAnchorIds":[]}],
-      "predicateKey": {"keyKind":"TECHNICAL","key":"activity:checks-request","registryItemId":null,"technicalAnchorIds":["entry:store-approve"]},
-      "objectKeys": [{"keyKind":"TECHNICAL","key":"object:replenishment-request","registryItemId":null,"technicalAnchorIds":["java-type:ReplenishmentRequest"]}],
-      "memberFlowSliceIds": ["flow:store-approve"],
-      "candidateRelationIds": [],
-      "supportProcessJoinSignalIds": ["process-join-signal:request-id"],
-      "processSemanticCueIds": [],
-      "counterProcessJoinSignalIds": [],
-      "blockingCounterProcessJoinSignalIds": [],
-      "factIds": ["fact:store-approval-guard"],
-      "proofIds": ["proof:store-approval-guard"],
-      "evidenceNodeIds": ["evidence:store-approval-guard"],
-      "gapIds": []
-    },
+      "key": "ROLE_P_REGION_APPROVER",
+      "keyKind": "REGISTRY",
+      "registryItemId": "registry-item:ef3fba46f85b6c001cde49358e4e64fe8a95b4126984ab9d0ef6846a8e36c2af",
+      "technicalAnchorIds": []
+    }
+  ],
+  "candidateRelations": [
     {
-      "processClaimId": "process-claim:03-region-activity",
-      "claimKind": "ACTIVITY",
-      "subjectKeys": [{"keyKind":"REGISTRY","key":"ACTIVITY_P_REGION_APPROVAL","registryItemId":"registry-item:region-approval","technicalAnchorIds":[]}],
-      "predicateKey": {"keyKind":"TECHNICAL","key":"activity:reviews-approved-request","registryItemId":null,"technicalAnchorIds":["entry:region-approve"]},
-      "objectKeys": [{"keyKind":"TECHNICAL","key":"object:approved-procurement-request","registryItemId":null,"technicalAnchorIds":["java-type:ProcurementRequest"]}],
-      "memberFlowSliceIds": ["flow:region-approve"],
-      "candidateRelationIds": [],
-      "supportProcessJoinSignalIds": ["process-join-signal:request-id"],
-      "processSemanticCueIds": [],
+      "candidateRelationId": "process-relation:2d7ca03a7e01ed3b5bf5080a6cdbc042844149604c341fc2c28fd0bc9110f144",
       "counterProcessJoinSignalIds": [],
-      "blockingCounterProcessJoinSignalIds": [],
-      "factIds": ["fact:region-approval-guard"],
-      "proofIds": ["proof:region-approval-guard"],
-      "evidenceNodeIds": ["evidence:region-approval-guard"],
-      "gapIds": []
-    },
-    {
-      "processClaimId": "process-claim:04-transition",
-      "claimKind": "TRANSITION",
-      "subjectKeys": [{"keyKind":"REGISTRY","key":"ACTIVITY_P_STORE_APPROVAL","registryItemId":"registry-item:store-approval","technicalAnchorIds":[]}],
-      "predicateKey": {"keyKind":"TECHNICAL","key":"transition:request-id-handoff","registryItemId":null,"technicalAnchorIds":["process-relation:approval-to-region"]},
-      "objectKeys": [{"keyKind":"REGISTRY","key":"ACTIVITY_P_REGION_APPROVAL","registryItemId":"registry-item:region-approval","technicalAnchorIds":[]}],
-      "memberFlowSliceIds": ["flow:store-approve","flow:region-approve"],
-      "candidateRelationIds": ["process-relation:approval-to-region"],
-      "supportProcessJoinSignalIds": ["process-join-signal:request-id"],
+      "processClaimIds": [
+        "process-claim:9ee5ffed0169a6702e61d085fdc82509749550fb0f7e7d7b046b096677d9a277"
+      ],
       "processSemanticCueIds": [],
-      "counterProcessJoinSignalIds": [],
-      "blockingCounterProcessJoinSignalIds": [],
-      "factIds": ["fact:approval-id-transfer"],
-      "proofIds": ["proof:approval-id-transfer"],
-      "evidenceNodeIds": ["evidence:approval-id-transfer"],
-      "gapIds": []
-    },
-    {
-      "processClaimId": "process-claim:05-result",
-      "claimKind": "END_RESULT",
-      "subjectKeys": [{"keyKind":"TECHNICAL","key":"process:replenishment-approval","registryItemId":null,"technicalAnchorIds":["process-evidence-group:fixture-approval"]}],
-      "predicateKey": {"keyKind":"TECHNICAL","key":"result:approved-request-ready","registryItemId":null,"technicalAnchorIds":["fact:approved-request-output"]},
-      "objectKeys": [{"keyKind":"TECHNICAL","key":"object:approved-procurement-request","registryItemId":null,"technicalAnchorIds":["java-type:ProcurementRequest"]}],
-      "memberFlowSliceIds": ["flow:region-approve"],
-      "candidateRelationIds": [],
-      "supportProcessJoinSignalIds": ["process-join-signal:approved-request-output"],
-      "processSemanticCueIds": [],
-      "counterProcessJoinSignalIds": [],
-      "blockingCounterProcessJoinSignalIds": [],
-      "factIds": ["fact:approved-request-output"],
-      "proofIds": ["proof:approved-request-output"],
-      "evidenceNodeIds": ["evidence:approved-request-output"],
-      "gapIds": []
+      "supportProcessJoinSignalIds": [
+        "process-join-signal:3f04cfb2adb3d86fc64f2c3606122bc6ed72bcdb9f0e879dd149b71f324172a5"
+      ]
     }
   ],
   "conditionClaimIds": [],
-  "branchClaimIds": [],
-  "parallelClaimIds": [],
-  "alternativeClaimIds": [],
+  "endResultClaimId": "process-claim:aa9f85d770d04544261522449d3f13d08c8d565142edc1f30bf3a92042ff49e7",
   "fallbackClaimIds": [],
-  "candidateRelations": [
+  "finalReviewDecision": "NARROW",
+  "inputObjectKeys": [
     {
-      "candidateRelationId": "process-relation:approval-to-region",
-      "processClaimIds": ["process-claim:04-transition"],
-      "supportProcessJoinSignalIds": ["process-join-signal:request-id"],
-      "processSemanticCueIds": [],
-      "counterProcessJoinSignalIds": []
+      "key": "object:replenishment-request",
+      "keyKind": "TECHNICAL",
+      "registryItemId": null,
+      "technicalAnchorIds": [
+        "java-type:f6e91911a9a75170d403752817d9d4d8cf48a9011972dfd6d8a4ee5b2d5f5269"
+      ]
     }
   ],
-  "purposeClaimId": "process-claim:01-purpose",
-  "endResultClaimId": "process-claim:05-result",
+  "memberFlows": [
+    {
+      "activityKey": {
+        "key": "ACTIVITY_P_STORE_APPROVAL",
+        "keyKind": "REGISTRY",
+        "registryItemId": "registry-item:cff88e5432754f7744756abd14b9dbcca58c61ea769551113652844dd3e32b8a",
+        "technicalAnchorIds": []
+      },
+      "flowSliceId": "flow:845923e67c18ae248ef98ecdb1276637fd51b8307b4f4c62bad353eae30219a8",
+      "role": "START",
+      "stageKey": {
+        "key": "stage:10-store-approval",
+        "keyKind": "TECHNICAL",
+        "registryItemId": null,
+        "technicalAnchorIds": [
+          "entry:9d936463beb69145c707968441c731aabab23c6fb5ca2ce17633c92572ca375a"
+        ]
+      },
+      "supportingProcessClaimIds": [
+        "process-claim:0e00c4760f23ede28ac71ebfe65c1cbec305dd5516f35a148487be8da6b9a9bc",
+        "process-claim:e33055efd6795247d749111a7c14d002be6f5779c9c705d1385361d2f82c768c",
+        "process-claim:9ee5ffed0169a6702e61d085fdc82509749550fb0f7e7d7b046b096677d9a277"
+      ]
+    },
+    {
+      "activityKey": {
+        "key": "ACTIVITY_P_REGION_APPROVAL",
+        "keyKind": "REGISTRY",
+        "registryItemId": "registry-item:d1878d798f51516049f2a5b81b8fed5d9af4bfafe95d2f8ff4f62ffd955f7ac3",
+        "technicalAnchorIds": []
+      },
+      "flowSliceId": "flow:5a17c1e9844e07d878309fac255adc8fc0204b2a9cc64bed9e5e6e10b8477fdf",
+      "role": "TERMINAL",
+      "stageKey": {
+        "key": "stage:20-region-approval",
+        "keyKind": "TECHNICAL",
+        "registryItemId": null,
+        "technicalAnchorIds": [
+          "entry:2ff3b75fe291d8ce393cc8bed049a2f7114a8a867dae7574a3022f5b4026e2db"
+        ]
+      },
+      "supportingProcessClaimIds": [
+        "process-claim:01f5a1365c478440e7faa99e8ef40cc5381c313d1e8d9c72db1b0601c725e3a1",
+        "process-claim:9ee5ffed0169a6702e61d085fdc82509749550fb0f7e7d7b046b096677d9a277",
+        "process-claim:aa9f85d770d04544261522449d3f13d08c8d565142edc1f30bf3a92042ff49e7"
+      ]
+    }
+  ],
+  "objectKeys": [
+    {
+      "key": "object:replenishment-request",
+      "keyKind": "TECHNICAL",
+      "registryItemId": null,
+      "technicalAnchorIds": [
+        "java-type:f6e91911a9a75170d403752817d9d4d8cf48a9011972dfd6d8a4ee5b2d5f5269"
+      ]
+    },
+    {
+      "key": "object:approved-procurement-request",
+      "keyKind": "TECHNICAL",
+      "registryItemId": null,
+      "technicalAnchorIds": [
+        "java-type:94cb3ffd879bf81eac194fd852a807dcaa6679efb33b74520015ee8ccb29045f"
+      ]
+    }
+  ],
+  "outputObjectKeys": [
+    {
+      "key": "object:approved-procurement-request",
+      "keyKind": "TECHNICAL",
+      "registryItemId": null,
+      "technicalAnchorIds": [
+        "java-type:94cb3ffd879bf81eac194fd852a807dcaa6679efb33b74520015ee8ccb29045f"
+      ]
+    }
+  ],
+  "p1RoundId": "process-model-round:eb23171f9fec04973b1cf84f94650cb9d893caac11e858c9e98a5ee4cbf9251f",
+  "p1TaskId": "process-model-task:7a3b482cfdd0c2c7665d4971daec8fd933776ddfb5102f0832330057c2158f3e",
+  "p2RoundId": "process-model-round:256888825f3d098a7aeb5d1bbd2f50c0a8af259fbb1d046dbba1fe51617a5b28",
+  "p2TaskId": "process-model-task:593b26976db3e5aad81ab910be783c34c270fe9dd10ed6993d67d86707bc3755",
+  "parallelClaimIds": [],
   "pendingAssumptionClaimIds": [],
+  "processClaims": [
+    {
+      "blockingCounterProcessJoinSignalIds": [],
+      "candidateRelationIds": [],
+      "claimKind": "PURPOSE",
+      "counterProcessJoinSignalIds": [],
+      "evidenceNodeIds": [
+        "evidence:db9c6307d62362cde606b64c409c313e078e406d539d35a6056f2252e716a689"
+      ],
+      "factIds": [
+        "fact:cea94e6141ae25efb17a1c8a1466b329c1356046fd000d979104dc0b368ab129"
+      ],
+      "gapIds": [],
+      "memberFlowSliceIds": [
+        "flow:845923e67c18ae248ef98ecdb1276637fd51b8307b4f4c62bad353eae30219a8",
+        "flow:5a17c1e9844e07d878309fac255adc8fc0204b2a9cc64bed9e5e6e10b8477fdf"
+      ],
+      "objectKeys": [
+        {
+          "key": "object:replenishment-request",
+          "keyKind": "TECHNICAL",
+          "registryItemId": null,
+          "technicalAnchorIds": [
+            "java-type:f6e91911a9a75170d403752817d9d4d8cf48a9011972dfd6d8a4ee5b2d5f5269"
+          ]
+        }
+      ],
+      "predicateKey": {
+        "key": "purpose:authorize-replenishment",
+        "keyKind": "TECHNICAL",
+        "registryItemId": null,
+        "technicalAnchorIds": [
+          "fact:cea94e6141ae25efb17a1c8a1466b329c1356046fd000d979104dc0b368ab129"
+        ]
+      },
+      "processClaimId": "process-claim:0e00c4760f23ede28ac71ebfe65c1cbec305dd5516f35a148487be8da6b9a9bc",
+      "processSemanticCueIds": [],
+      "proofIds": [
+        "proof:204384ac8cded417faa92b7cf21968193ec9c5ad65e25f65c4d8830599dc041f"
+      ],
+      "subjectKeys": [
+        {
+          "key": "process:replenishment-approval",
+          "keyKind": "TECHNICAL",
+          "registryItemId": null,
+          "technicalAnchorIds": [
+            "process-evidence-group:e26641cdad55a54d08077243cb917ccfa8be8f6e1261202d95387bdcedac981c"
+          ]
+        }
+      ],
+      "supportProcessJoinSignalIds": [
+        "process-join-signal:3f04cfb2adb3d86fc64f2c3606122bc6ed72bcdb9f0e879dd149b71f324172a5"
+      ]
+    },
+    {
+      "blockingCounterProcessJoinSignalIds": [],
+      "candidateRelationIds": [],
+      "claimKind": "ACTIVITY",
+      "counterProcessJoinSignalIds": [],
+      "evidenceNodeIds": [
+        "evidence:65ec773113e3ebc5c3f33e5d75170f818717ae686759039c19e1539973aaa3d5"
+      ],
+      "factIds": [
+        "fact:cec9dcc7d4fb6ac7048fe4209a87a9dcc642538766d96d23f726cdeb9929e98d"
+      ],
+      "gapIds": [],
+      "memberFlowSliceIds": [
+        "flow:845923e67c18ae248ef98ecdb1276637fd51b8307b4f4c62bad353eae30219a8"
+      ],
+      "objectKeys": [
+        {
+          "key": "object:replenishment-request",
+          "keyKind": "TECHNICAL",
+          "registryItemId": null,
+          "technicalAnchorIds": [
+            "java-type:f6e91911a9a75170d403752817d9d4d8cf48a9011972dfd6d8a4ee5b2d5f5269"
+          ]
+        }
+      ],
+      "predicateKey": {
+        "key": "activity:checks-request",
+        "keyKind": "TECHNICAL",
+        "registryItemId": null,
+        "technicalAnchorIds": [
+          "entry:9d936463beb69145c707968441c731aabab23c6fb5ca2ce17633c92572ca375a"
+        ]
+      },
+      "processClaimId": "process-claim:e33055efd6795247d749111a7c14d002be6f5779c9c705d1385361d2f82c768c",
+      "processSemanticCueIds": [],
+      "proofIds": [
+        "proof:16621e1dbb2e4b043e582516388ae2582c44ec84ae2d3a9facd7005095a8900f"
+      ],
+      "subjectKeys": [
+        {
+          "key": "ACTIVITY_P_STORE_APPROVAL",
+          "keyKind": "REGISTRY",
+          "registryItemId": "registry-item:cff88e5432754f7744756abd14b9dbcca58c61ea769551113652844dd3e32b8a",
+          "technicalAnchorIds": []
+        }
+      ],
+      "supportProcessJoinSignalIds": [
+        "process-join-signal:3f04cfb2adb3d86fc64f2c3606122bc6ed72bcdb9f0e879dd149b71f324172a5"
+      ]
+    },
+    {
+      "blockingCounterProcessJoinSignalIds": [],
+      "candidateRelationIds": [],
+      "claimKind": "ACTIVITY",
+      "counterProcessJoinSignalIds": [],
+      "evidenceNodeIds": [
+        "evidence:12a9fcffa471cb680fc950197a28947b132f7cb2237da521fbeb31a733d85112"
+      ],
+      "factIds": [
+        "fact:9e867f7d056e3572d3046ccc5ec98a61c5dacc68abb6d3692be03434e0a08cd4"
+      ],
+      "gapIds": [],
+      "memberFlowSliceIds": [
+        "flow:5a17c1e9844e07d878309fac255adc8fc0204b2a9cc64bed9e5e6e10b8477fdf"
+      ],
+      "objectKeys": [
+        {
+          "key": "object:approved-procurement-request",
+          "keyKind": "TECHNICAL",
+          "registryItemId": null,
+          "technicalAnchorIds": [
+            "java-type:94cb3ffd879bf81eac194fd852a807dcaa6679efb33b74520015ee8ccb29045f"
+          ]
+        }
+      ],
+      "predicateKey": {
+        "key": "activity:reviews-approved-request",
+        "keyKind": "TECHNICAL",
+        "registryItemId": null,
+        "technicalAnchorIds": [
+          "entry:2ff3b75fe291d8ce393cc8bed049a2f7114a8a867dae7574a3022f5b4026e2db"
+        ]
+      },
+      "processClaimId": "process-claim:01f5a1365c478440e7faa99e8ef40cc5381c313d1e8d9c72db1b0601c725e3a1",
+      "processSemanticCueIds": [],
+      "proofIds": [
+        "proof:205798dccbe2c5afc6fac8406720580a51a4de9562b21c513f1691f21d7c784d"
+      ],
+      "subjectKeys": [
+        {
+          "key": "ACTIVITY_P_REGION_APPROVAL",
+          "keyKind": "REGISTRY",
+          "registryItemId": "registry-item:d1878d798f51516049f2a5b81b8fed5d9af4bfafe95d2f8ff4f62ffd955f7ac3",
+          "technicalAnchorIds": []
+        }
+      ],
+      "supportProcessJoinSignalIds": [
+        "process-join-signal:3f04cfb2adb3d86fc64f2c3606122bc6ed72bcdb9f0e879dd149b71f324172a5"
+      ]
+    },
+    {
+      "blockingCounterProcessJoinSignalIds": [],
+      "candidateRelationIds": [
+        "process-relation:2d7ca03a7e01ed3b5bf5080a6cdbc042844149604c341fc2c28fd0bc9110f144"
+      ],
+      "claimKind": "TRANSITION",
+      "counterProcessJoinSignalIds": [],
+      "evidenceNodeIds": [
+        "evidence:b961de54aea44b53d55f51ab12e85a651c373ac58dea096c88f6cef288e15799"
+      ],
+      "factIds": [
+        "fact:4e8527054a6a043200fd7680609b29ccf94724136a81da6425ff11d2281ddef2"
+      ],
+      "gapIds": [],
+      "memberFlowSliceIds": [
+        "flow:845923e67c18ae248ef98ecdb1276637fd51b8307b4f4c62bad353eae30219a8",
+        "flow:5a17c1e9844e07d878309fac255adc8fc0204b2a9cc64bed9e5e6e10b8477fdf"
+      ],
+      "objectKeys": [
+        {
+          "key": "ACTIVITY_P_REGION_APPROVAL",
+          "keyKind": "REGISTRY",
+          "registryItemId": "registry-item:d1878d798f51516049f2a5b81b8fed5d9af4bfafe95d2f8ff4f62ffd955f7ac3",
+          "technicalAnchorIds": []
+        }
+      ],
+      "predicateKey": {
+        "key": "transition:request-id-handoff",
+        "keyKind": "TECHNICAL",
+        "registryItemId": null,
+        "technicalAnchorIds": [
+          "process-relation:2d7ca03a7e01ed3b5bf5080a6cdbc042844149604c341fc2c28fd0bc9110f144"
+        ]
+      },
+      "processClaimId": "process-claim:9ee5ffed0169a6702e61d085fdc82509749550fb0f7e7d7b046b096677d9a277",
+      "processSemanticCueIds": [],
+      "proofIds": [
+        "proof:427cf5d2cbafdb11e4ef14aa8ae0e5d4ea080c05d250e9e85da169c55d49447d"
+      ],
+      "subjectKeys": [
+        {
+          "key": "ACTIVITY_P_STORE_APPROVAL",
+          "keyKind": "REGISTRY",
+          "registryItemId": "registry-item:cff88e5432754f7744756abd14b9dbcca58c61ea769551113652844dd3e32b8a",
+          "technicalAnchorIds": []
+        }
+      ],
+      "supportProcessJoinSignalIds": [
+        "process-join-signal:3f04cfb2adb3d86fc64f2c3606122bc6ed72bcdb9f0e879dd149b71f324172a5"
+      ]
+    },
+    {
+      "blockingCounterProcessJoinSignalIds": [],
+      "candidateRelationIds": [],
+      "claimKind": "END_RESULT",
+      "counterProcessJoinSignalIds": [],
+      "evidenceNodeIds": [
+        "evidence:1b103a8b1272eb39231becd50a633b72b6acf64ff7eeae31d1b233c0d4408c12"
+      ],
+      "factIds": [
+        "fact:a065d2dbe7e7599247442feccebf4ebe7d9f03457c330230bc2b31ca099a05c2"
+      ],
+      "gapIds": [],
+      "memberFlowSliceIds": [
+        "flow:5a17c1e9844e07d878309fac255adc8fc0204b2a9cc64bed9e5e6e10b8477fdf"
+      ],
+      "objectKeys": [
+        {
+          "key": "object:approved-procurement-request",
+          "keyKind": "TECHNICAL",
+          "registryItemId": null,
+          "technicalAnchorIds": [
+            "java-type:94cb3ffd879bf81eac194fd852a807dcaa6679efb33b74520015ee8ccb29045f"
+          ]
+        }
+      ],
+      "predicateKey": {
+        "key": "result:approved-request-ready",
+        "keyKind": "TECHNICAL",
+        "registryItemId": null,
+        "technicalAnchorIds": [
+          "fact:a065d2dbe7e7599247442feccebf4ebe7d9f03457c330230bc2b31ca099a05c2"
+        ]
+      },
+      "processClaimId": "process-claim:aa9f85d770d04544261522449d3f13d08c8d565142edc1f30bf3a92042ff49e7",
+      "processSemanticCueIds": [],
+      "proofIds": [
+        "proof:bd9f8b011eff1274a287156ef91020bd80310d08f36242269ed5613b555cdcef"
+      ],
+      "subjectKeys": [
+        {
+          "key": "process:replenishment-approval",
+          "keyKind": "TECHNICAL",
+          "registryItemId": null,
+          "technicalAnchorIds": [
+            "process-evidence-group:e26641cdad55a54d08077243cb917ccfa8be8f6e1261202d95387bdcedac981c"
+          ]
+        }
+      ],
+      "supportProcessJoinSignalIds": [
+        "process-join-signal:55be38edb45e56b8120bf7ef5f7273b055895e58d8da3e80fa0b9ad7515acba1"
+      ]
+    }
+  ],
+  "processEvidenceGroupIds": [
+    "process-evidence-group:e26641cdad55a54d08077243cb917ccfa8be8f6e1261202d95387bdcedac981c"
+  ],
+  "processHypothesisReviewId": "process-hypothesis-review:0665764e7cbe47f8a63b3138df3a25a53bfb6122959de939e4b0d82f12176a6e",
+  "purposeClaimId": "process-claim:0e00c4760f23ede28ac71ebfe65c1cbec305dd5516f35a148487be8da6b9a9bc",
   "readerSlots": [
     {
+      "processClaimIds": [
+        "process-claim:0e00c4760f23ede28ac71ebfe65c1cbec305dd5516f35a148487be8da6b9a9bc",
+        "process-claim:aa9f85d770d04544261522449d3f13d08c8d565142edc1f30bf3a92042ff49e7"
+      ],
+      "registryOrTechnicalKeys": [
+        {
+          "key": "process:replenishment-approval",
+          "keyKind": "TECHNICAL",
+          "registryItemId": null,
+          "technicalAnchorIds": [
+            "process-evidence-group:e26641cdad55a54d08077243cb917ccfa8be8f6e1261202d95387bdcedac981c"
+          ]
+        }
+      ],
       "slotKind": "PROCESS_NAME",
-      "text": "补货审批到采购准备（合成）",
-      "processClaimIds": ["process-claim:01-purpose","process-claim:05-result"],
-      "registryOrTechnicalKeys": [{"keyKind":"TECHNICAL","key":"process:replenishment-approval","registryItemId":null,"technicalAnchorIds":["process-evidence-group:fixture-approval"]}]
+      "text": "补货审批到采购准备（合成）"
     },
     {
+      "processClaimIds": [
+        "process-claim:0e00c4760f23ede28ac71ebfe65c1cbec305dd5516f35a148487be8da6b9a9bc",
+        "process-claim:e33055efd6795247d749111a7c14d002be6f5779c9c705d1385361d2f82c768c",
+        "process-claim:01f5a1365c478440e7faa99e8ef40cc5381c313d1e8d9c72db1b0601c725e3a1",
+        "process-claim:9ee5ffed0169a6702e61d085fdc82509749550fb0f7e7d7b046b096677d9a277",
+        "process-claim:aa9f85d770d04544261522449d3f13d08c8d565142edc1f30bf3a92042ff49e7"
+      ],
+      "registryOrTechnicalKeys": [
+        {
+          "key": "process:replenishment-approval",
+          "keyKind": "TECHNICAL",
+          "registryItemId": null,
+          "technicalAnchorIds": [
+            "process-evidence-group:e26641cdad55a54d08077243cb917ccfa8be8f6e1261202d95387bdcedac981c"
+          ]
+        }
+      ],
       "slotKind": "PROCESS_SUMMARY",
-      "text": "门店检查补货申请后，将同一申请标识交给区域审批；结果仅表示已批准的采购准备材料，不表示外部系统已经建单（合成）。",
-      "processClaimIds": ["process-claim:01-purpose","process-claim:02-store-activity","process-claim:03-region-activity","process-claim:04-transition","process-claim:05-result"],
-      "registryOrTechnicalKeys": [{"keyKind":"TECHNICAL","key":"process:replenishment-approval","registryItemId":null,"technicalAnchorIds":["process-evidence-group:fixture-approval"]}]
+      "text": "门店检查补货申请后，将同一申请标识交给区域审批；结果仅表示已批准的采购准备材料，不表示外部系统已经建单（合成）。"
     },
     {
+      "processClaimIds": [
+        "process-claim:9ee5ffed0169a6702e61d085fdc82509749550fb0f7e7d7b046b096677d9a277"
+      ],
+      "registryOrTechnicalKeys": [
+        {
+          "key": "transition:request-id-handoff",
+          "keyKind": "TECHNICAL",
+          "registryItemId": null,
+          "technicalAnchorIds": [
+            "process-relation:2d7ca03a7e01ed3b5bf5080a6cdbc042844149604c341fc2c28fd0bc9110f144"
+          ]
+        }
+      ],
       "slotKind": "TRANSITION",
-      "text": "同一补货申请标识从门店审批交给区域审批（合成）。",
-      "processClaimIds": ["process-claim:04-transition"],
-      "registryOrTechnicalKeys": [{"keyKind":"TECHNICAL","key":"transition:request-id-handoff","registryItemId":null,"technicalAnchorIds":["process-relation:approval-to-region"]}]
+      "text": "同一补货申请标识从门店审批交给区域审批（合成）。"
     }
   ],
-  "p2TaskId": "process-model-task:fixture-p2-approval",
-  "p2RoundId": "process-model-round:fixture-p2-approval",
-  "processHypothesisReviewId": "process-hypothesis-review:fixture-approval",
-  "finalReviewDecision": "NARROW"
+  "schemaVersion": "flow-interpretation-business-process-hypothesis-v1",
+  "stageKeys": [
+    {
+      "key": "stage:10-store-approval",
+      "keyKind": "TECHNICAL",
+      "registryItemId": null,
+      "technicalAnchorIds": [
+        "entry:9d936463beb69145c707968441c731aabab23c6fb5ca2ce17633c92572ca375a"
+      ]
+    },
+    {
+      "key": "stage:20-region-approval",
+      "keyKind": "TECHNICAL",
+      "registryItemId": null,
+      "technicalAnchorIds": [
+        "entry:2ff3b75fe291d8ce393cc8bed049a2f7114a8a867dae7574a3022f5b4026e2db"
+      ]
+    }
+  ],
+  "stateKeys": [],
+  "taskShardId": "process-shard:b32947c90a3f29b9dd43116f21db8c15d568475e149c965907a6bdf6254ac0e5"
 }
 ~~~
 
