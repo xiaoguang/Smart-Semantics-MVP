@@ -134,7 +134,41 @@ processCueProfileRef!
 pendingOnly=true
 ~~~
 
-`REGISTRY_BUSINESS_TERM`要求两项finite registry labels得到同一`normalizedCueKey`；`ENTRY_VERB`还要求两项basis各包含本Flow entry-bound atom，且cue key命中冻结`entryVerbLexicon`；`STATE_WORD`还要求两端各有Proof-closed `STATE_PRODUCTION | STATE_CHECK` signal且cue key命中冻结`stateWordLexicon`。entry/state lexicon只是对finite registry term分类，不能从method/中文显示名创建term。cue identity覆盖全部字段；任何registry/basis/profile缺失均不产cue而写Gap。它只能支持pending hypothesis。
+`REGISTRY_BUSINESS_TERM`要求两项finite registry labels得到同一`normalizedCueKey`；`ENTRY_VERB`还要求两项basis各包含本Flow entry-bound atom，且cue key命中冻结`entryVerbLexicon`；`STATE_WORD`还要求两端各有Proof-closed `STATE_PRODUCTION | STATE_CHECK` signal且cue key命中冻结`stateWordLexicon`。entry/state lexicon只是对finite registry term分类，不能从method/中文显示名创建term。cue identity覆盖全部字段；合法材料没有匹配pair是exact absence，profile或已引用registry/Capsule basis闭包损坏则按下述稳定fatal拒绝，不能猜cue或把它降成自由文本Gap。它只能支持pending hypothesis。
+
+**最小可执行`ProcessCueProfileV1`。** `ProcessSemanticCueV1.processCueProfileRef`逐字等于本run `analysis-run-request-v2.profileBundleRef`，不是新的run-request字段或第十六项输出。M6必须fresh-reopen该content-addressed bundle并exact取得以下Step 06 member；缺字段、extra field、乱序/重复lexicon或版本不等均fatal `PROCESS_CUE_PROFILE_INVALID`：
+
+~~~text
+flowInterpretation {
+  crossFlowCandidateRuleVersion=flow-interpretation-cross-flow-candidate-rules-v1
+  processCueProfile {
+    schemaVersion=flow-interpretation-process-cue-profile-v1
+    normalizationRule=R0_NFC_EXACT_V1
+    entryVerbLexicon[]
+    stateWordLexicon[]
+  }
+}
+~~~
+
+两个lexicon都是有限、非null、UTF-8 byte严格排序且无重复的string数组（允许空）；每项必须非空、已经NFC，且通过DESIGN §13.6既有control-character/bidi检查。`R0_NFC_EXACT_V1`的写owner是R0 M2 `analysis.interpretation.proposal.RegistryProposalRunner`：它先按既有规则验证Provider response的raw `label/purpose` Unicode、control/bidi与budget，再分别计算`Normalizer.normalize(raw,NFC)`，对normalized bytes重验非空/长度预算，以normalized值构造`BusinessRegistryProposal.normalizedLabel/normalizedPurpose`，且proposal identity也只使用这两个normalized值。它不trim、不折叠空白、不case-fold、不切词、不去标点。R0 M3 freezer在冻结前再次要求两个字段已是NFC。M6不再normalize或读取raw response；它只验证`RepositoryInterpretationRegistryItemV3.normalizedLabel`满足`NFC(value)=value`并令`normalizedCueKey=value`。大小写或空格不同的冻结值不匹配；non-NFC frozen value是`PROCESS_MODEL_REFERENCE_INVALID` fatal，不是“正规形不同但合法不匹配”。lexicon值按同一exact规则比较，不能从method、route、中文显示名、SourceExcerpt或Step 05 signal补term。
+
+v0最小cue枚举只需要`REGISTRY_BUSINESS_TERM`：对每个UTF-8排序的不同Flow pair，枚举双方`proposalKind=BUSINESS_TERM`的registry item pair；两端`basisAtomIds[]`都必须非空、逐字等于各item值并是各自Capsule `registryProposalBasisAtomIds[]`子集，且每个atom仍闭合到本Flow Fact/Proof/Evidence。两个`normalizedCueKey`逐字相等时产生一个cue，left/right registry item按Flow后按item ID排序，relation固定`SEMANTIC_CUE/PENDING_ONLY/UNDIRECTED`。没有equal pair是正常exact absence，不写“缺少同名词”Gap；foreign/missing Capsule basis是upstream reference fatal，不能降级匹配。`entryVerbLexicon`或`stateWordLexicon`命中本身不够：在现有Fact family没有可验证的entry-bound atom、现有Step 05没有相应state signal时，v0不得发`ENTRY_VERB`或`STATE_WORD`；未来只有本节原有两项额外basis gate真实闭合后才可启用，仍不新增source/model Fact。
+
+### 5.2 exact entry target与direct-call candidate
+
+M6不得从entry名称、route、方法simple name或Flow叙述猜callee。`CrossFlowCandidateCompiler`从已fresh-reopen的Step 03/05值为每个COMPILED Flow计算唯一target：
+
+1. 用`FlowSlice.entryId/rootNodeId`命中ControlFlow `kind=ENTRY` root；root的`owningEntryIds`必须**包含**该entry，不要求singleton。
+2. 在该entry的`semanticTraversalOrder.edgeIds[]`中筛选从root出发、`kind=NEXT,ruleId=control-flow-entry-root-v1,resolution=EXACT,guardNodeId=null,polarity=null`的edge，必须恰一条。
+3. edge的`toNodeId`必须命中CodeStructure `kind=METHOD` node，且其`canonicalValue`满足`<type>#<method>(<parameter-types>)` grammar；`entryTargetKey`就是这个完整canonical value，不做任何normalize。
+
+缺/重entry-root edge、foreign traversal edge、缺METHOD endpoint或canonical grammar错误均fatal `PROCESS_ENTRY_TARGET_INVALID`，不是可由名称或模型补的Gap。两个不同entry Flow合法共享同一METHOD target时，二者都进入该key的callee集合；这不是source ownership冲突，Step 05 §8.4已用per-Flow span identity隔离证据。
+
+随后对每个Flow的每条proof-closed `EXPLICIT_CALL{direction=INVOKES,anchorKind=CALL_TARGET}`，若`anchorKey`逐字命中一个或多个**其他**Flow的`entryTargetKey`，就为每个matching callee枚举一项`EXPLICIT_CALL_TO_ENTRY/PROVEN_HANDOFF` positive pair。caller落在canonical left/right哪一侧，哪一侧的signal ID数组就恰含该signal，callee侧数组为空；`anchorKey`保存exact entry target，direction为caller→callee。若同一Flow pair有多个qualifying call signal全部保留，reciprocal directions按§5聚合成`UNDIRECTED`；anchor不匹配只是零pair，两个Flow仍各进singleton/其他合法group。`GENERIC_TECHNICAL`不阻止这一条exact-call pair，因为call→entry关系本身由ProgramGraphs+Fact Proof闭合；它仍不能让`JAVA_TYPE_ANCHOR`、tenant/audit字段或同名方法单独成边，也不能证明调用已执行、业务先后或外部效果。
+
+domain分类仅是`SHARED_ANCHOR`行和Step 05 §8.6完整domain acceptance的门，不是本节direct-call v0的门。当前没有一个持久化Fact/atom/Proof/rule能区分domain type与repository-local logger/util；因此M6必须保留generic specificity且不得把repository ownership当分类器。这个缺口若进入完整Step 05验收才需要另一个有界Sol合同，不影响本节candidate compiler实现。
+
+**Luna RED / Terra GREEN与增量工时。** Luna先在`RegistryProposalRunnerTest`固定raw decomposed Unicode经NFC后写入normalized label/purpose且identity使用normalized值，并固定control/bidi/normalized-byte-budget拒绝；Terra在`RegistryProposalRunner`实现该deterministic normalization，并让M3 freezer revalidate。Luna再在未来public `CrossFlowCandidateCompilerTest`用fresh-reopenedStep 03–05 artifacts固定四个断言：(1) caller `EXPLICIT_CALL.anchorKey`等于第二Flow exact target时得到一条有方向`PROVEN_HANDOFF`，caller侧signal array非空而callee侧为空；(2) target key只差case/参数、或call指向普通同名METHOD时零relation，删除entry-root edge则`PROCESS_ENTRY_TARGET_INVALID`；(3) 两Flow frozen `BUSINESS_TERM.normalizedLabel`与same-Flow atom basis逐字相等时只产生`REGISTRY_BUSINESS_TERM/PENDING_ONLY`；(4) case/space不同、non-NFC frozen value、空/foreign basis或仅lexicon命中不得产生specialized cue，malformed profile fatal。Terra只实现M6 typed reader/compiler及上述确定性规则；不改Provider、八步、十五文件、57项、Step 07或九章。此澄清相对当前已经计划的counter/M2 publisher/zero-Flow工作约增加18–26连续小时：Step 04 v3 Fact/Proof/public migration约8–12h，Step 05 v3/v6映射与fixture migration约4–6h，per-Flow span identity约2–3h，M6这两条public seam及R0 normalization correction约4–5h；不重复计算完整M6–M9或已GREEN M2 publisher。
 
 规范候选边的可读投影如下；`leftFlowSliceId < rightFlowSliceId`按UTF-8 byte order，direction另存。它不是identity replay specimen；§7.1才是包含locator等完整字段的wire合同：
 
@@ -1289,7 +1323,7 @@ R2/P2因上游typed GAP/FAILED未运行时，必须持久化`NOT_RUN_UPSTREAM_FA
 - generic-only成边、edge在全部`A`上多owner/无owner、groups漏Flow、P2扩张或跨hypothesis借refs；
 - task/round/receipt/disposition缺失或重复、部分publication或count伪造。
 
-稳定Gap/failure codes至少包括：`PROCESS_SIGNAL_LEVEL_INVALID`、`PROCESS_GENERIC_SIGNAL_ONLY`、`PROCESS_COUNTER_SCOPE_UNRESOLVED`、`PROCESS_GROUP_COVERAGE_BROKEN`、`PROCESS_EDGE_OWNERSHIP_BROKEN`、`PROCESS_TASK_BUDGET_EXCEEDED`、`PROCESS_P1_HYPOTHESIS_FAILED`、`PROCESS_P2_RESPONSE_GAP`、`PROCESS_P2_REVIEW_FAILED`、`PROCESS_P2_REVIEW_PENDING_CONFIRMATION`、`PROCESS_P2_REVIEW_PRECISION_AMBIGUITY`、`PROCESS_MODEL_PACKET_PATH_LEAK`、`PROCESS_MODEL_REQUEST_HASH_MISMATCH`、`PROCESS_MODEL_RESPONSE_INVALID`、`PROCESS_MODEL_REFERENCE_INVALID`、`PROCESS_REVIEW_EXPANDED`、`PROCESS_DISPOSITION_INCOMPLETE`，并沿用局部`PROVIDER_FAILURE_AFTER_START`、`MODEL_TASK_NOT_RUN_UPSTREAM_INVALID`与`FLOW_INTERPRETATION_RESOURCE_LIMIT_EXCEEDED`。
+稳定Gap/failure codes至少包括：`PROCESS_SIGNAL_LEVEL_INVALID`、`PROCESS_GENERIC_SIGNAL_ONLY`、`PROCESS_COUNTER_SCOPE_UNRESOLVED`、`PROCESS_ENTRY_TARGET_INVALID`、`PROCESS_CUE_PROFILE_INVALID`、`PROCESS_GROUP_COVERAGE_BROKEN`、`PROCESS_EDGE_OWNERSHIP_BROKEN`、`PROCESS_TASK_BUDGET_EXCEEDED`、`PROCESS_P1_HYPOTHESIS_FAILED`、`PROCESS_P2_RESPONSE_GAP`、`PROCESS_P2_REVIEW_FAILED`、`PROCESS_P2_REVIEW_PENDING_CONFIRMATION`、`PROCESS_P2_REVIEW_PRECISION_AMBIGUITY`、`PROCESS_MODEL_PACKET_PATH_LEAK`、`PROCESS_MODEL_REQUEST_HASH_MISMATCH`、`PROCESS_MODEL_RESPONSE_INVALID`、`PROCESS_MODEL_REFERENCE_INVALID`、`PROCESS_REVIEW_EXPANDED`、`PROCESS_DISPOSITION_INCOMPLETE`，并沿用局部`PROVIDER_FAILURE_AFTER_START`、`MODEL_TASK_NOT_RUN_UPSTREAM_INVALID`与`FLOW_INTERPRETATION_RESOURCE_LIMIT_EXCEEDED`。
 
 ## 10. 给Step 07的下游保证
 
