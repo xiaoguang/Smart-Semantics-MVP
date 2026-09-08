@@ -34,12 +34,14 @@ class RegistryProposalRunnerTest {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("registry-proposal-runner"))) {
-      BusinessFlowsReference businessFlows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+      BusinessFlowsReference businessFlows =
+          RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
       RegistryProposalTaskSet taskSet =
           new RegistryProposalTaskCompiler(fixture.stepArtifacts())
               .compileRegistryProposalTasks(businessFlows, profile(fixture));
       ModulePublicationReference persistedTaskSet =
-          new RegistryProposalTaskSetModulePublisher(fixture.moduleArtifacts(), fixture.stepArtifacts())
+          new RegistryProposalTaskSetModulePublisher(
+                  fixture.moduleArtifacts(), fixture.stepArtifacts())
               .publish(businessFlows, taskSet);
 
       Object executionSet = run(fixture.moduleArtifacts(), persistedTaskSet, this::validResponse);
@@ -61,15 +63,17 @@ class RegistryProposalRunnerTest {
                   org.sourceanalysis.app.artifact.AnalysisStepKey.FLOW_INTERPRETATION,
                   2,
                   "registry-proposal-runner"));
-      assertThat(reopened.payloads()).singleElement().satisfies(
-          payload -> {
-            assertThat(payload.descriptor().fileName())
-                .isEqualTo("registry-proposal-execution-set.json");
-            assertThat(payload.descriptor().artifactType())
-                .isEqualTo("FLOW_INTERPRETATION_REGISTRY_PROPOSAL_EXECUTION_SET");
-            assertThat(payload.descriptor().schemaVersion())
-                .isEqualTo("flow-interpretation-registry-proposal-execution-set-v3");
-          });
+      assertThat(reopened.payloads())
+          .singleElement()
+          .satisfies(
+              payload -> {
+                assertThat(payload.descriptor().fileName())
+                    .isEqualTo("registry-proposal-execution-set.json");
+                assertThat(payload.descriptor().artifactType())
+                    .isEqualTo("FLOW_INTERPRETATION_REGISTRY_PROPOSAL_EXECUTION_SET");
+                assertThat(payload.descriptor().schemaVersion())
+                    .isEqualTo("flow-interpretation-registry-proposal-execution-set-v3");
+              });
     }
   }
 
@@ -78,15 +82,18 @@ class RegistryProposalRunnerTest {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("registry-proposal-typed-failure"))) {
-      BusinessFlowsReference businessFlows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+      BusinessFlowsReference businessFlows =
+          RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
       RegistryProposalTaskSet taskSet =
           new RegistryProposalTaskCompiler(fixture.stepArtifacts())
               .compileRegistryProposalTasks(businessFlows, profile(fixture));
       ModulePublicationReference persistedTaskSet =
-          new RegistryProposalTaskSetModulePublisher(fixture.moduleArtifacts(), fixture.stepArtifacts())
+          new RegistryProposalTaskSetModulePublisher(
+                  fixture.moduleArtifacts(), fixture.stepArtifacts())
               .publish(businessFlows, taskSet);
 
-      Object executionSet = run(fixture.moduleArtifacts(), persistedTaskSet, this::typedFailureResponse);
+      Object executionSet =
+          run(fixture.moduleArtifacts(), persistedTaskSet, this::typedFailureResponse);
 
       assertThat(list(executionSet, "rounds")).hasSize(taskSet.tasks().size());
       assertThat(list(executionSet, "validatedProposals")).isEmpty();
@@ -100,15 +107,18 @@ class RegistryProposalRunnerTest {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("registry-proposal-typed-gap"))) {
-      BusinessFlowsReference businessFlows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+      BusinessFlowsReference businessFlows =
+          RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
       RegistryProposalTaskSet taskSet =
           new RegistryProposalTaskCompiler(fixture.stepArtifacts())
               .compileRegistryProposalTasks(businessFlows, profile(fixture));
       ModulePublicationReference persistedTaskSet =
-          new RegistryProposalTaskSetModulePublisher(fixture.moduleArtifacts(), fixture.stepArtifacts())
+          new RegistryProposalTaskSetModulePublisher(
+                  fixture.moduleArtifacts(), fixture.stepArtifacts())
               .publish(businessFlows, taskSet);
 
-      Object executionSet = run(fixture.moduleArtifacts(), persistedTaskSet, this::typedGapResponse);
+      Object executionSet =
+          run(fixture.moduleArtifacts(), persistedTaskSet, this::typedGapResponse);
 
       assertThat(list(executionSet, "rounds")).hasSize(taskSet.tasks().size());
       assertThat(list(executionSet, "validatedProposals")).isEmpty();
@@ -127,12 +137,14 @@ class RegistryProposalRunnerTest {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("registry-proposal-provider-failure"))) {
-      BusinessFlowsReference businessFlows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+      BusinessFlowsReference businessFlows =
+          RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
       RegistryProposalTaskSet taskSet =
           new RegistryProposalTaskCompiler(fixture.stepArtifacts())
               .compileRegistryProposalTasks(businessFlows, profile(fixture));
       ModulePublicationReference persistedTaskSet =
-          new RegistryProposalTaskSetModulePublisher(fixture.moduleArtifacts(), fixture.stepArtifacts())
+          new RegistryProposalTaskSetModulePublisher(
+                  fixture.moduleArtifacts(), fixture.stepArtifacts())
               .publish(businessFlows, taskSet);
       AtomicInteger calls = new AtomicInteger();
 
@@ -159,7 +171,8 @@ class RegistryProposalRunnerTest {
       throws Exception {
     try {
       Class<?> providerType =
-          Class.forName("org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalProvider");
+          Class.forName(
+              "org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalProvider");
       Class<?> responseType =
           Class.forName(
               "org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalProviderResponse");
@@ -168,14 +181,16 @@ class RegistryProposalRunnerTest {
               getClass().getClassLoader(),
               new Class<?>[] {providerType},
               (proxy, method, arguments) -> {
-                if (!"propose".equals(method.getName())) throw new AssertionError("UNEXPECTED_PROVIDER_METHOD");
+                if (!"propose".equals(method.getName()))
+                  throw new AssertionError("UNEXPECTED_PROVIDER_METHOD");
                 RegistryProposalTask task = (RegistryProposalTask) arguments[0];
                 return responseType
                     .getConstructor(ArtifactReference.class, ImmutableBytes.class)
                     .newInstance(task.expectedRuntime(), response.apply(task));
               });
       Class<?> runnerType =
-          Class.forName("org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalRunner");
+          Class.forName(
+              "org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalRunner");
       Object runner =
           runnerType
               .getConstructor(org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore.class)
@@ -192,9 +207,7 @@ class RegistryProposalRunnerTest {
   }
 
   private ModulePublicationReference publishExecution(
-      ProgramGraphsPublicFixture fixture,
-      ModulePublicationReference taskSet,
-      Object executionSet)
+      ProgramGraphsPublicFixture fixture, ModulePublicationReference taskSet, Object executionSet)
       throws Exception {
     try {
       Class<?> executionType =
@@ -212,7 +225,8 @@ class RegistryProposalRunnerTest {
               .getMethod("publish", ModulePublicationReference.class, executionType)
               .invoke(publisher, taskSet, executionSet);
     } catch (ClassNotFoundException missing) {
-      throw new AssertionError("REGISTRY_PROPOSAL_EXECUTION_SET_PUBLISHER_NOT_IMPLEMENTED", missing);
+      throw new AssertionError(
+          "REGISTRY_PROPOSAL_EXECUTION_SET_PUBLISHER_NOT_IMPLEMENTED", missing);
     } catch (InvocationTargetException failure) {
       Throwable cause = failure.getCause() == null ? failure : failure.getCause();
       throw new AssertionError("REGISTRY_PROPOSAL_EXECUTION_SET_PUBLISHER_FAILED", cause);
@@ -227,10 +241,7 @@ class RegistryProposalRunnerTest {
     response.put("kind", "R0_REGISTRY_PROPOSAL_RESPONSE");
     ArrayNode proposals = response.putArray("proposals");
     ObjectNode proposal = proposals.addObject();
-    proposal
-        .put("proposalKind", "BUSINESS_TERM")
-        .put("label", "订单审批")
-        .put("purpose", "说明订单状态处理");
+    proposal.put("proposalKind", "BUSINESS_TERM").put("label", "订单审批").put("purpose", "说明订单状态处理");
     proposal.putArray("basisAtomIds").add(atomId);
     proposal.putArray("basisGapIds");
     proposal.putNull("sourceSeedKey");
@@ -274,7 +285,8 @@ class RegistryProposalRunnerTest {
 
   private static List<?> list(Object source, String method) {
     Object value = property(source, method);
-    if (!(value instanceof List<?> list)) throw new AssertionError("REGISTRY_PROPOSAL_RUNNER_SHAPE_INVALID");
+    if (!(value instanceof List<?> list))
+      throw new AssertionError("REGISTRY_PROPOSAL_RUNNER_SHAPE_INVALID");
     return list;
   }
 

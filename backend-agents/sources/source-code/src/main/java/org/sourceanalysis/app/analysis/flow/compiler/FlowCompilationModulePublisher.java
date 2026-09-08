@@ -34,7 +34,9 @@ import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.ModuleInstallRequest;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 
-/** Installs M1's sole canonical FlowCompilation payload after reopening every public predecessor. */
+/**
+ * Installs M1's sole canonical FlowCompilation payload after reopening every public predecessor.
+ */
 public final class FlowCompilationModulePublisher {
 
   private static final String FILE_NAME = "flow-compilation.json";
@@ -93,7 +95,9 @@ public final class FlowCompilationModulePublisher {
             .distinct()
             .toList();
     ModuleCompletionStatus status =
-        gapIds.isEmpty() ? ModuleCompletionStatus.SUCCEEDED : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
+        gapIds.isEmpty()
+            ? ModuleCompletionStatus.SUCCEEDED
+            : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
     CanonicalModulePayload payload = payload(address, compilation, reopened, status, gapIds);
     InstalledModulePublication publication =
         moduleArtifacts.install(
@@ -116,7 +120,9 @@ public final class FlowCompilationModulePublisher {
             .map(PersistedFlowCompilationInputReader.FlowEntry::entryId)
             .toList();
     List<String> actualEntryIds =
-        compilation.entryDispositions().stream().map(FlowCompilation.EntryDisposition::entryId).toList();
+        compilation.entryDispositions().stream()
+            .map(FlowCompilation.EntryDisposition::entryId)
+            .toList();
     if (!expectedEntryIds.equals(actualEntryIds)) {
       throw broken();
     }
@@ -126,7 +132,9 @@ public final class FlowCompilationModulePublisher {
                 java.util.stream.Collectors.toMap(
                     FlowCompilation.FlowSlice::flowSliceId, value -> value));
     Set<String> knownGapIds =
-        compilation.flowGaps().stream().map(FlowCompilation.FlowGap::gapId).collect(java.util.stream.Collectors.toSet());
+        compilation.flowGaps().stream()
+            .map(FlowCompilation.FlowGap::gapId)
+            .collect(java.util.stream.Collectors.toSet());
     for (FlowCompilation.EntryDisposition disposition : compilation.entryDispositions()) {
       FlowCompilation.FlowSlice flow =
           disposition.flowSliceId() == null ? null : flowsById.get(disposition.flowSliceId());
@@ -148,7 +156,8 @@ public final class FlowCompilationModulePublisher {
               .map(PersistedFlowCompilationInputReader.PersistedGap::gapId)
               .sorted(UTF8_ORDER)
               .toList();
-      if (!expectedFacts.equals(flow.factIds()) || !expectedGaps.equals(flow.gapIds())) throw broken();
+      if (!expectedFacts.equals(flow.factIds()) || !expectedGaps.equals(flow.gapIds()))
+        throw broken();
     }
     Map<String, PersistedFlowCompilationInputReader.PersistedGap> sourceGaps = new HashMap<>();
     reopened.gapsByEntry().values().stream()
@@ -158,10 +167,12 @@ public final class FlowCompilationModulePublisher {
               if (sourceGaps.put(gap.gapId(), gap) != null) throw broken();
             });
     Map<String, FlowCompilation.FlowGap> compilationGaps = new HashMap<>();
-    compilation.flowGaps().forEach(
-        gap -> {
-          if (compilationGaps.put(gap.gapId(), gap) != null) throw broken();
-        });
+    compilation
+        .flowGaps()
+        .forEach(
+            gap -> {
+              if (compilationGaps.put(gap.gapId(), gap) != null) throw broken();
+            });
     for (PersistedFlowCompilationInputReader.PersistedGap sourceGap : sourceGaps.values()) {
       FlowCompilation.FlowGap actual = compilationGaps.get(sourceGap.gapId());
       if (actual == null
@@ -281,7 +292,8 @@ public final class FlowCompilationModulePublisher {
   private static void disposition(ObjectNode node, FlowCompilation.EntryDisposition value) {
     node.put("entryId", value.entryId());
     node.put("disposition", value.disposition());
-    if (value.flowSliceId() == null) node.putNull("flowSliceId"); else node.put("flowSliceId", value.flowSliceId());
+    if (value.flowSliceId() == null) node.putNull("flowSliceId");
+    else node.put("flowSliceId", value.flowSliceId());
     strings(node.putArray("gapIds"), value.gapIds());
     if (value.reasonCode() == null) node.putNull("reasonCode");
     else node.put("reasonCode", value.reasonCode());
@@ -333,10 +345,14 @@ public final class FlowCompilationModulePublisher {
     node.put("shardId", contentId("flow-entry-shard", "all-entries"));
     strings(
         node.putArray("denominatorEntryIds"),
-        compilation.entryDispositions().stream().map(FlowCompilation.EntryDisposition::entryId).toList());
+        compilation.entryDispositions().stream()
+            .map(FlowCompilation.EntryDisposition::entryId)
+            .toList());
     strings(
         node.putArray("dispositionEntryIds"),
-        compilation.entryDispositions().stream().map(FlowCompilation.EntryDisposition::entryId).toList());
+        compilation.entryDispositions().stream()
+            .map(FlowCompilation.EntryDisposition::entryId)
+            .toList());
     strings(
         node.putArray("flowSliceIds"),
         compilation.flowSlices().stream().map(FlowCompilation.FlowSlice::flowSliceId).toList());
@@ -355,7 +371,9 @@ public final class FlowCompilationModulePublisher {
       FlowCompilation compilation,
       PersistedFlowCompilationInputReader.PersistedFlowCompilationInputs reopened) {
     List<String> entryIds =
-        compilation.entryDispositions().stream().map(FlowCompilation.EntryDisposition::entryId).toList();
+        compilation.entryDispositions().stream()
+            .map(FlowCompilation.EntryDisposition::entryId)
+            .toList();
     strings(node.putArray("entryIds"), entryIds);
     strings(
         node.putArray("compiledEntryIds"),
@@ -414,22 +432,26 @@ public final class FlowCompilationModulePublisher {
     List<String> values = new ArrayList<>();
     values.add(compilation.profile().profileRef().artifactId().value());
     values.add(compilation.profile().profileRef().sha256().value());
-    compilation.entryDispositions().forEach(
-        value -> {
-          values.add(value.entryId());
-          values.add(value.disposition());
-          values.add(value.flowSliceId() == null ? "" : value.flowSliceId());
-          values.add(value.reasonCode() == null ? "" : value.reasonCode());
-          values.addAll(value.gapIds());
-        });
-    compilation.flowGaps().forEach(
-        value -> {
-          values.add(value.gapId());
-          values.add(value.scope());
-          values.add(value.reasonCode());
-          values.addAll(value.affectedEntryIds());
-          values.addAll(value.evidenceNodeIds());
-        });
+    compilation
+        .entryDispositions()
+        .forEach(
+            value -> {
+              values.add(value.entryId());
+              values.add(value.disposition());
+              values.add(value.flowSliceId() == null ? "" : value.flowSliceId());
+              values.add(value.reasonCode() == null ? "" : value.reasonCode());
+              values.addAll(value.gapIds());
+            });
+    compilation
+        .flowGaps()
+        .forEach(
+            value -> {
+              values.add(value.gapId());
+              values.add(value.scope());
+              values.add(value.reasonCode());
+              values.addAll(value.affectedEntryIds());
+              values.addAll(value.evidenceNodeIds());
+            });
     return contentId("flow-compilation", values.toArray(String[]::new));
   }
 

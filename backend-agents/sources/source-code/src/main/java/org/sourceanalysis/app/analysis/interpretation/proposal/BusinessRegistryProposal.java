@@ -34,6 +34,7 @@ public record BusinessRegistryProposal(
   }
 
   private static void required(String value, String label) {
-    if (value == null || value.isBlank()) throw new IllegalArgumentException(label + " is required");
+    if (value == null || value.isBlank())
+      throw new IllegalArgumentException(label + " is required");
   }
 }

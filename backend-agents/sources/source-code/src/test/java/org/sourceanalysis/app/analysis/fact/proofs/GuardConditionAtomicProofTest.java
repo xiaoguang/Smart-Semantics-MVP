@@ -12,7 +12,9 @@ import org.sourceanalysis.app.analysis.fact.candidates.FactRegistry;
 import org.sourceanalysis.app.analysis.fact.candidates.PersistedFactCandidateInputReader;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 
-/** Public M2 contract: a guard condition has one source-backed condition Proof and no effect Gap. */
+/**
+ * Public M2 contract: a guard condition has one source-backed condition Proof and no effect Gap.
+ */
 class GuardConditionAtomicProofTest {
 
   @TempDir Path temporaryDirectory;
@@ -25,7 +27,9 @@ class GuardConditionAtomicProofTest {
       FactCandidateInputs inputs =
           new PersistedFactCandidateInputReader(fixture.stepArtifacts(), fixture.sourceReader())
               .reopen(
-                  fixture.sourceInventory(), fixture.applicationDiscovery(), fixture.programGraphs());
+                  fixture.sourceInventory(),
+                  fixture.applicationDiscovery(),
+                  fixture.programGraphs());
       FactCandidateSet candidates =
           new FactCandidateEnumerator().enumerate(inputs, FactRegistry.standardJavaFacts());
       FactCandidateSet.FactCandidate guard =

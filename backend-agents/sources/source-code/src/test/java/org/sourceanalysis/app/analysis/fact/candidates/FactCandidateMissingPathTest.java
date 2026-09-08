@@ -37,7 +37,6 @@ import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalModulePayload;
 import org.sourceanalysis.app.artifact.FileSystemCanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.FileSystemCanonicalModuleArtifactStore;
-import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.InstalledAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.InstalledModulePublication;
 import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
@@ -265,9 +264,7 @@ class FactCandidateMissingPathTest {
       String argumentId =
           stream(document.path("nodes"))
               .filter(node -> boundaryId.equals(node.path("nodeId").asText()))
-              .flatMap(
-                  node ->
-                      stream(node.path("boundaryInvocation").path("orderedArguments")))
+              .flatMap(node -> stream(node.path("boundaryInvocation").path("orderedArguments")))
               .map(node -> node.path("argumentNodeId").asText())
               .findFirst()
               .orElseThrow();
@@ -284,11 +281,14 @@ class FactCandidateMissingPathTest {
     }
 
     private static CanonicalModulePayload mutateIndex(
-        CanonicalModulePayload original, CanonicalJsonCodec json, CanonicalModulePayload changedData) {
+        CanonicalModulePayload original,
+        CanonicalJsonCodec json,
+        CanonicalModulePayload changedData) {
       ObjectNode document = (ObjectNode) json.parseCanonical(original.canonicalUtf8());
       ObjectNode descriptor =
           stream(document.path("graphs"))
-              .filter(node -> ProgramGraphKind.DATA_FLOW.name().equals(node.path("graphKind").asText()))
+              .filter(
+                  node -> ProgramGraphKind.DATA_FLOW.name().equals(node.path("graphKind").asText()))
               .map(node -> (ObjectNode) node)
               .findFirst()
               .orElseThrow();
@@ -301,7 +301,10 @@ class FactCandidateMissingPathTest {
     private static CanonicalModulePayload standalonePayload(
         CanonicalModulePayload original, ObjectNode document, CanonicalJsonCodec json) {
       String prefix =
-          original.artifactId().value().substring(0, original.artifactId().value().lastIndexOf(':'));
+          original
+              .artifactId()
+              .value()
+              .substring(0, original.artifactId().value().lastIndexOf(':'));
       ObjectNode withoutId = document.deepCopy();
       withoutId.remove("artifactId");
       String id =
@@ -376,8 +379,7 @@ class FactCandidateMissingPathTest {
 
   private static String digest(byte[] value) {
     try {
-      return java.util.HexFormat.of()
-          .formatHex(MessageDigest.getInstance("SHA-256").digest(value));
+      return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
     } catch (NoSuchAlgorithmException impossible) {
       throw new AssertionError(impossible);
     }

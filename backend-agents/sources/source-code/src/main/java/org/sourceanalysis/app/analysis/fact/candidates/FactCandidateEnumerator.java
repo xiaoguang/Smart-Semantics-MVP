@@ -9,7 +9,8 @@ import java.util.Set;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphKind;
 
 /**
- * Enumerates exact frozen-Java boundary and guard-condition candidates from persisted public graphs.
+ * Enumerates exact frozen-Java boundary and guard-condition candidates from persisted public
+ * graphs.
  *
  * <p>This module does not choose a Proof, admit a Fact, inspect source text, parse canonical
  * values, or infer any external system behavior.
@@ -26,7 +27,10 @@ public final class FactCandidateEnumerator {
   private static final String EXACT = "EXACT";
   private static final String NOT_APPLICABLE_REASON = "DATA_FLOW_BINDING_UNPROVEN";
 
-  /** Enumerates the complete applicable/not-applicable denominator governed by the supplied registry. */
+  /**
+   * Enumerates the complete applicable/not-applicable denominator governed by the supplied
+   * registry.
+   */
   public FactCandidateSet enumerate(FactCandidateInputs inputs, FactRegistry registry) {
     Objects.requireNonNull(inputs, "fact candidate inputs");
     Objects.requireNonNull(registry, "fact registry");
@@ -196,7 +200,8 @@ public final class FactCandidateEnumerator {
             .sorted(Comparator.comparing(FactCandidateInputs.PublicProgramEdge::edgeId))
             .toList();
     if (branches.size() != 2
-        || branches.stream().map(FactCandidateInputs.PublicProgramEdge::kind).distinct().count() != 2) {
+        || branches.stream().map(FactCandidateInputs.PublicProgramEdge::kind).distinct().count()
+            != 2) {
       missing.add("GUARD_BRANCHES");
     }
     FactCandidateInputs.SubjectEvidence closure =
@@ -226,7 +231,11 @@ public final class FactCandidateEnumerator {
     return inputs.evidenceGraph().edges().stream()
         .filter(edge -> guardNodeId.equals(edge.subjectProgramElementId()))
         .filter(edge -> closure.sourceEvidenceNodeIds().contains(edge.sourceEvidenceNodeId()))
-        .filter(edge -> closure.ruleApplicationEvidenceNodeIds().contains(edge.ruleApplicationEvidenceNodeId()))
+        .filter(
+            edge ->
+                closure
+                    .ruleApplicationEvidenceNodeIds()
+                    .contains(edge.ruleApplicationEvidenceNodeId()))
         .map(edge -> inputs.evidenceGraph().nodesById().get(edge.ruleApplicationEvidenceNodeId()))
         .filter(Objects::nonNull)
         .map(FactCandidateInputs.EvidenceNode::ruleApplication)
@@ -239,9 +248,7 @@ public final class FactCandidateEnumerator {
   }
 
   private static CandidatePath exactPath(
-      FactCandidateInputs inputs,
-      String entryId,
-      FactCandidateInputs.PublicProgramNode boundary) {
+      FactCandidateInputs inputs, String entryId, FactCandidateInputs.PublicProgramNode boundary) {
     List<String> missing = new ArrayList<>();
     FactCandidateInputs.BoundaryInvocation invocation = boundary.boundaryInvocation();
     if (invocation == null) {
@@ -252,7 +259,8 @@ public final class FactCandidateEnumerator {
     FactCandidateInputs.PublicProgramGraph control = inputs.graph(ProgramGraphKind.CONTROL_FLOW);
     FactCandidateInputs.PublicProgramGraph data = inputs.graph(ProgramGraphKind.DATA_FLOW);
 
-    FactCandidateInputs.PublicProgramNode callSite = calls.nodesById().get(invocation.invocationCallId());
+    FactCandidateInputs.PublicProgramNode callSite =
+        calls.nodesById().get(invocation.invocationCallId());
     if (callSite == null
         || !CALL_SITE.equals(callSite.kind())
         || !callSite.owningEntryIds().contains(entryId)) {
@@ -301,7 +309,9 @@ public final class FactCandidateEnumerator {
     if (invocation.controlContext().guardNodeId() != null) {
       FactCandidateInputs.PublicProgramNode guard =
           control.nodesById().get(invocation.controlContext().guardNodeId());
-      if (guard == null || !GUARD.equals(guard.kind()) || !guard.owningEntryIds().contains(entryId)) {
+      if (guard == null
+          || !GUARD.equals(guard.kind())
+          || !guard.owningEntryIds().contains(entryId)) {
         missing.add("CONTROL_GUARD");
       }
     }
@@ -323,20 +333,18 @@ public final class FactCandidateEnumerator {
             boundary.sourceEvidenceNodeIds()));
     if (callTarget != null) {
       evidenceRequests.add(
-            new SubjectRequest(
+          new SubjectRequest(
               ProgramGraphKind.CALL,
               FactCandidateInputs.EvidenceSupportKind.SUPPORTS_PROGRAM_EDGE,
               callTarget.edgeId(),
               callTarget.sourceEvidenceNodeIds()));
     }
     for (FactCandidateInputs.PublicProgramEdge argumentEdge :
-        bindings.stream()
-            .map(binding -> data.edgesById().get(binding.argumentEdgeId()))
-            .toList()) {
+        bindings.stream().map(binding -> data.edgesById().get(binding.argumentEdgeId())).toList()) {
       evidenceRequests.add(
-            new SubjectRequest(
-                ProgramGraphKind.DATA_FLOW,
-                FactCandidateInputs.EvidenceSupportKind.SUPPORTS_PROGRAM_EDGE,
+          new SubjectRequest(
+              ProgramGraphKind.DATA_FLOW,
+              FactCandidateInputs.EvidenceSupportKind.SUPPORTS_PROGRAM_EDGE,
               argumentEdge.edgeId(),
               argumentEdge.sourceEvidenceNodeIds()));
     }
@@ -352,7 +360,7 @@ public final class FactCandidateEnumerator {
     }
     if (block != null) {
       evidenceRequests.add(
-            new SubjectRequest(
+          new SubjectRequest(
               ProgramGraphKind.CONTROL_FLOW,
               FactCandidateInputs.EvidenceSupportKind.SUPPORTS_PROGRAM_NODE,
               block.nodeId(),
@@ -397,7 +405,8 @@ public final class FactCandidateEnumerator {
     return new CandidatePath(List.of(), argumentEdgeIds, bindings, evidence);
   }
 
-  private static SubjectRequest programNodeEvidenceRequest(FactCandidateInputs inputs, String nodeId) {
+  private static SubjectRequest programNodeEvidenceRequest(
+      FactCandidateInputs inputs, String nodeId) {
     SubjectRequest result = null;
     for (ProgramGraphKind graphKind :
         List.of(

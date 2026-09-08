@@ -1,15 +1,13 @@
 package org.sourceanalysis.app.analysis.fact.candidates;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import org.junit.jupiter.api.Test;
 import org.assertj.core.api.SoftAssertions;
+import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.Sha256Digest;
@@ -47,28 +45,36 @@ class FactCandidateIdentityTest {
         FactCandidateSet.create(
             roots,
             List.of(
-                candidate("approve", "approve", "approve", "approve", "CONTROL_CONTEXT"),
-                cancel),
+                candidate("approve", "approve", "approve", "approve", "CONTROL_CONTEXT"), cancel),
             List.of());
-    softly.assertThat(changedRequiredAtom.candidateSetId())
+    softly
+        .assertThat(changedRequiredAtom.candidateSetId())
         .as("required atom changes are wire-visible candidate semantics")
         .isNotEqualTo(base.candidateSetId());
 
     FactCandidateSet changedJavaOrigin =
         FactCandidateSet.create(
             roots,
-            List.of(candidate("approve", "approve", "different-origin", "approve", "INVOCATION_CALL_ID"), cancel),
+            List.of(
+                candidate(
+                    "approve", "approve", "different-origin", "approve", "INVOCATION_CALL_ID"),
+                cancel),
             List.of());
-    softly.assertThat(changedJavaOrigin.candidateSetId())
+    softly
+        .assertThat(changedJavaOrigin.candidateSetId())
         .as("Java-local argument origin changes are wire-visible candidate semantics")
         .isNotEqualTo(base.candidateSetId());
 
     FactCandidateSet changedEvidence =
         FactCandidateSet.create(
             roots,
-            List.of(candidate("approve", "approve", "approve", "different-evidence", "INVOCATION_CALL_ID"), cancel),
+            List.of(
+                candidate(
+                    "approve", "approve", "approve", "different-evidence", "INVOCATION_CALL_ID"),
+                cancel),
             List.of());
-    softly.assertThat(changedEvidence.candidateSetId())
+    softly
+        .assertThat(changedEvidence.candidateSetId())
         .as("evidence closure changes are wire-visible candidate semantics")
         .isNotEqualTo(base.candidateSetId());
     softly.assertAll();
@@ -111,7 +117,10 @@ class FactCandidateIdentityTest {
                 List.of(id("evidence", evidenceToken + "-rule")))),
         List.of(
             new FactCandidateSet.RequiredAtom(
-                atomKey, "RELATIONSHIP", "SYMBOL_REF", List.of("SOURCE_EXCERPT", "RULE_APPLICATION"))));
+                atomKey,
+                "RELATIONSHIP",
+                "SYMBOL_REF",
+                List.of("SOURCE_EXCERPT", "RULE_APPLICATION"))));
   }
 
   private static List<ArtifactReference> roots() {
@@ -136,8 +145,7 @@ class FactCandidateIdentityTest {
     try {
       return java.util.HexFormat.of()
           .formatHex(
-              MessageDigest.getInstance("SHA-256")
-                  .digest(value.getBytes(StandardCharsets.UTF_8)));
+              MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
     } catch (NoSuchAlgorithmException impossible) {
       throw new AssertionError(impossible);
     }

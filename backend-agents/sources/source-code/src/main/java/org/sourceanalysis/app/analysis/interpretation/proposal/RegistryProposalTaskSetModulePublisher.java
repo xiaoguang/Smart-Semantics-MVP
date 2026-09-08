@@ -14,8 +14,8 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
-import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
+import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
@@ -55,7 +55,9 @@ public final class RegistryProposalTaskSetModulePublisher {
     compiler = new RegistryProposalTaskCompiler(analysisSteps);
   }
 
-  /** Recomputes the task set from public BusinessFlows bytes, then installs its canonical snapshot. */
+  /**
+   * Recomputes the task set from public BusinessFlows bytes, then installs its canonical snapshot.
+   */
   public ModulePublicationReference publish(
       BusinessFlowsReference businessFlows, RegistryProposalTaskSet taskSet) {
     try {
@@ -70,7 +72,10 @@ public final class RegistryProposalTaskSetModulePublisher {
       ReopenedAnalysisStepPublication source = analysisSteps.reopen(businessFlows.publication());
       List<ArtifactReference> upstream =
           source.semanticPayloads().stream()
-              .map(value -> new ArtifactReference(value.descriptor().artifactId(), value.descriptor().sha256()))
+              .map(
+                  value ->
+                      new ArtifactReference(
+                          value.descriptor().artifactId(), value.descriptor().sha256()))
               .sorted(Comparator.comparing(value -> value.artifactId().value(), UTF8_ORDER))
               .toList();
       if (upstream.size() != 5) throw failure();
@@ -80,7 +85,8 @@ public final class RegistryProposalTaskSetModulePublisher {
               AnalysisStepKey.FLOW_INTERPRETATION,
               1,
               "registry-task-compiler");
-      CanonicalModulePayload payload = payload(address, taskSet, upstream, source.receipt().controls());
+      CanonicalModulePayload payload =
+          payload(address, taskSet, upstream, source.receipt().controls());
       InstalledModulePublication installed =
           moduleArtifacts.install(
               new ModuleInstallRequest(

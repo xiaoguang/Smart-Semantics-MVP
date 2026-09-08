@@ -8,10 +8,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.sourceanalysis.app.analysis.graph.ProgramGraphKind;
 import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
-import org.sourceanalysis.app.analysis.graph.ProgramGraphKind;
 import org.sourceanalysis.app.evidence.SourceExcerptV1;
 
 /**
@@ -37,7 +37,8 @@ public record FactCandidateInputs(
     controls = Objects.requireNonNull(controls, "artifact controls");
     entryIds = orderedArtifactIds(entryIds, "entry IDs");
     sourceInventoryRef = Objects.requireNonNull(sourceInventoryRef, "source inventory reference");
-    verifiedSnapshotRef = Objects.requireNonNull(verifiedSnapshotRef, "verified snapshot reference");
+    verifiedSnapshotRef =
+        Objects.requireNonNull(verifiedSnapshotRef, "verified snapshot reference");
     if (sourceInventoryRef.equals(verifiedSnapshotRef)) {
       throw new IllegalArgumentException("PROOF_PACK_REFERENCE_BROKEN");
     }
@@ -52,12 +53,14 @@ public record FactCandidateInputs(
     }
     programGraphs = immutableProgramGraphs(programGraphs, entryIds);
     evidenceGraph = Objects.requireNonNull(evidenceGraph, "evidence graph");
-    if (!programGraphs.keySet().equals(
-        Set.of(
-            ProgramGraphKind.CODE_STRUCTURE,
-            ProgramGraphKind.CALL,
-            ProgramGraphKind.CONTROL_FLOW,
-            ProgramGraphKind.DATA_FLOW))) {
+    if (!programGraphs
+        .keySet()
+        .equals(
+            Set.of(
+                ProgramGraphKind.CODE_STRUCTURE,
+                ProgramGraphKind.CALL,
+                ProgramGraphKind.CONTROL_FLOW,
+                ProgramGraphKind.DATA_FLOW))) {
       throw new IllegalArgumentException("PROOF_PACK_REFERENCE_BROKEN");
     }
     String applicationProfileId =
@@ -103,9 +106,7 @@ public record FactCandidateInputs(
   static List<ArtifactReference> orderedReferences(List<ArtifactReference> values) {
     Objects.requireNonNull(values, "source graph roots");
     List<ArtifactReference> ordered =
-        values.stream()
-            .sorted(Comparator.comparing(value -> value.artifactId().value()))
-            .toList();
+        values.stream().sorted(Comparator.comparing(value -> value.artifactId().value())).toList();
     if (ordered.size() != ordered.stream().map(ArtifactReference::artifactId).distinct().count()) {
       throw new IllegalArgumentException("PROOF_PACK_REFERENCE_BROKEN");
     }
@@ -268,7 +269,8 @@ public record FactCandidateInputs(
       requireText(staticTargetType, "boundary static target type");
       requireText(staticTargetMethod, "boundary static target method");
       requireText(staticTargetSignature, "boundary static target signature");
-      orderedArguments = List.copyOf(Objects.requireNonNull(orderedArguments, "boundary arguments"));
+      orderedArguments =
+          List.copyOf(Objects.requireNonNull(orderedArguments, "boundary arguments"));
       for (int ordinal = 0; ordinal < orderedArguments.size(); ordinal++) {
         if (orderedArguments.get(ordinal).ordinal() != ordinal) {
           throw new IllegalArgumentException("PROOF_PACK_REFERENCE_BROKEN");
@@ -297,7 +299,8 @@ public record FactCandidateInputs(
   }
 
   /** The exact control context exported by the data-flow boundary variant. */
-  public record BoundaryControlContext(String basicBlockNodeId, String guardNodeId, String polarity) {
+  public record BoundaryControlContext(
+      String basicBlockNodeId, String guardNodeId, String polarity) {
 
     public BoundaryControlContext {
       basicBlockNodeId = checkedId(basicBlockNodeId, "boundary basic block node ID");
@@ -352,7 +355,8 @@ public record FactCandidateInputs(
       String subjectId = checkedId(subjectElementId, "evidence subject ID");
       EvidenceSupportKind requiredSupportKind =
           Objects.requireNonNull(expectedSupportKind, "expected evidence support kind");
-      List<String> expected = orderedArtifactIds(expectedSourceEvidenceNodeIds, "expected source evidence IDs");
+      List<String> expected =
+          orderedArtifactIds(expectedSourceEvidenceNodeIds, "expected source evidence IDs");
       List<EvidenceEdge> scoped =
           edges.stream()
               .filter(
@@ -381,7 +385,8 @@ public record FactCandidateInputs(
       }
       List<String> actualSources = orderedArtifactIds(sourceIds, "scoped source evidence IDs");
       if (!actualSources.equals(expected)) return null;
-      return new SubjectEvidence(subjectId, actualSources, orderedArtifactIds(ruleIds, "scoped rule evidence IDs"));
+      return new SubjectEvidence(
+          subjectId, actualSources, orderedArtifactIds(ruleIds, "scoped rule evidence IDs"));
     }
 
     private static Map<String, EvidenceNode> immutableEvidenceNodes(
@@ -411,10 +416,8 @@ public record FactCandidateInputs(
     public EvidenceNode {
       evidenceNodeId = checkedId(evidenceNodeId, "evidence node ID");
       requireText(kind, "evidence node kind");
-      if (("SOURCE_EXCERPT".equals(kind)
-              && (sourceExcerpt == null || ruleApplication != null))
-          || ("RULE_APPLICATION".equals(kind)
-              && (sourceExcerpt != null || ruleApplication == null))
+      if (("SOURCE_EXCERPT".equals(kind) && (sourceExcerpt == null || ruleApplication != null))
+          || ("RULE_APPLICATION".equals(kind) && (sourceExcerpt != null || ruleApplication == null))
           || (!"SOURCE_EXCERPT".equals(kind) && !"RULE_APPLICATION".equals(kind))) {
         throw new IllegalArgumentException("PROOF_PACK_REFERENCE_BROKEN");
       }
@@ -442,7 +445,9 @@ public record FactCandidateInputs(
     SUPPORTS_PROGRAM_EDGE
   }
 
-  /** One public Evidence edge linking a program subject to a source excerpt and rule application. */
+  /**
+   * One public Evidence edge linking a program subject to a source excerpt and rule application.
+   */
   public record EvidenceEdge(
       String evidenceEdgeId,
       EvidenceSupportKind supportKind,
@@ -455,7 +460,8 @@ public record FactCandidateInputs(
       evidenceEdgeId = checkedId(evidenceEdgeId, "evidence edge ID");
       supportKind = Objects.requireNonNull(supportKind, "evidence support kind");
       subjectGraphKind = Objects.requireNonNull(subjectGraphKind, "evidence subject graph kind");
-      subjectProgramElementId = checkedId(subjectProgramElementId, "evidence subject program element ID");
+      subjectProgramElementId =
+          checkedId(subjectProgramElementId, "evidence subject program element ID");
       sourceEvidenceNodeId = checkedId(sourceEvidenceNodeId, "evidence source node ID");
       ruleApplicationEvidenceNodeId =
           checkedId(ruleApplicationEvidenceNodeId, "evidence rule application node ID");

@@ -1,9 +1,9 @@
 package org.sourceanalysis.app.analysis.fact.candidates;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
@@ -37,12 +37,14 @@ public record FactCandidateSet(
         notApplicableDispositions.stream().map(NotApplicableDisposition::denominatorKey).toList();
     if (!actualApplicable.equals(denominator.applicableKeys())
         || !actualNotApplicable.equals(denominator.notApplicableKeys())) {
-      throw new IllegalArgumentException("FACT_PROFILE_INVALID: candidate denominator does not close");
+      throw new IllegalArgumentException(
+          "FACT_PROFILE_INVALID: candidate denominator does not close");
     }
     List<String> all = new ArrayList<>(actualApplicable);
     all.addAll(actualNotApplicable);
     if (all.size() != all.stream().distinct().count()) {
-      throw new IllegalArgumentException("FACT_PROFILE_INVALID: candidate denominator is not unique");
+      throw new IllegalArgumentException(
+          "FACT_PROFILE_INVALID: candidate denominator is not unique");
     }
     ArtifactId expected = identity(sourceGraphRoots, candidates, notApplicableDispositions);
     if (!expected.equals(candidateSetId)) {
@@ -50,14 +52,17 @@ public record FactCandidateSet(
     }
   }
 
-  /** Creates the one canonical candidate set for these exact graph roots and enumeration results. */
+  /**
+   * Creates the one canonical candidate set for these exact graph roots and enumeration results.
+   */
   static FactCandidateSet create(
       List<ArtifactReference> sourceGraphRoots,
       List<FactCandidate> candidates,
       List<NotApplicableDisposition> notApplicableDispositions) {
     List<ArtifactReference> roots = orderedReferences(sourceGraphRoots);
     List<FactCandidate> orderedCandidates = orderedCandidates(candidates);
-    List<NotApplicableDisposition> orderedDispositions = orderedDispositions(notApplicableDispositions);
+    List<NotApplicableDisposition> orderedDispositions =
+        orderedDispositions(notApplicableDispositions);
     return new FactCandidateSet(
         SCHEMA_VERSION,
         identity(roots, orderedCandidates, orderedDispositions),
@@ -72,9 +77,7 @@ public record FactCandidateSet(
   private static List<ArtifactReference> orderedReferences(List<ArtifactReference> values) {
     Objects.requireNonNull(values, "source graph roots");
     List<ArtifactReference> ordered =
-        values.stream()
-            .sorted(Comparator.comparing(value -> value.artifactId().value()))
-            .toList();
+        values.stream().sorted(Comparator.comparing(value -> value.artifactId().value())).toList();
     if (ordered.size() != ordered.stream().map(ArtifactReference::artifactId).distinct().count()) {
       throw new FactCandidateReferenceException();
     }
@@ -95,10 +98,13 @@ public record FactCandidateSet(
       List<NotApplicableDisposition> values) {
     Objects.requireNonNull(values, "not-applicable dispositions");
     List<NotApplicableDisposition> ordered =
-        values.stream().sorted(Comparator.comparing(NotApplicableDisposition::denominatorKey)).toList();
+        values.stream()
+            .sorted(Comparator.comparing(NotApplicableDisposition::denominatorKey))
+            .toList();
     if (ordered.size()
         != ordered.stream().map(NotApplicableDisposition::denominatorKey).distinct().count()) {
-      throw new IllegalArgumentException("FACT_PROFILE_INVALID: candidate dispositions must be unique");
+      throw new IllegalArgumentException(
+          "FACT_PROFILE_INVALID: candidate dispositions must be unique");
     }
     return List.copyOf(ordered);
   }
@@ -201,7 +207,10 @@ public record FactCandidateSet(
       evidenceBySubject =
           List.copyOf(Objects.requireNonNull(evidenceBySubject, "evidence by subject"));
       if (evidenceBySubject.isEmpty()
-          || evidenceBySubject.stream().map(SubjectEvidenceBinding::subjectElementId).distinct().count()
+          || evidenceBySubject.stream()
+                  .map(SubjectEvidenceBinding::subjectElementId)
+                  .distinct()
+                  .count()
               != evidenceBySubject.size()) {
         throw new IllegalArgumentException("FACT_PROFILE_INVALID: subject evidence is invalid");
       }
@@ -214,7 +223,8 @@ public record FactCandidateSet(
       branchEdgeIds = orderedDistinctIds(branchEdgeIds, "branch edge IDs");
       if ("JAVA_BOUNDARY_INVOCATION".equals(kind)) {
         if (!"JAVA_BOUNDARY_INVOCATION".equals(candidateFactKey)) {
-          throw new IllegalArgumentException("FACT_PROFILE_INVALID: boundary candidate key is invalid");
+          throw new IllegalArgumentException(
+              "FACT_PROFILE_INVALID: boundary candidate key is invalid");
         }
         boundaryNodeId = requiredId(boundaryNodeId, "boundary node ID");
         invocationCallId = requiredId(invocationCallId, "invocation call ID");
@@ -222,22 +232,27 @@ public record FactCandidateSet(
         requireText(staticTargetType, "static target type");
         requireText(staticTargetMethod, "static target method");
         requireText(staticTargetSignature, "static target signature");
-        orderedArgumentEdgeIds = orderedDistinctIds(orderedArgumentEdgeIds, "ordered argument edge IDs");
-        orderedArguments = List.copyOf(Objects.requireNonNull(orderedArguments, "ordered arguments"));
+        orderedArgumentEdgeIds =
+            orderedDistinctIds(orderedArgumentEdgeIds, "ordered argument edge IDs");
+        orderedArguments =
+            List.copyOf(Objects.requireNonNull(orderedArguments, "ordered arguments"));
         if (orderedArgumentEdgeIds.size() != orderedArguments.size()) {
-          throw new IllegalArgumentException("FACT_PROFILE_INVALID: boundary arguments do not close");
+          throw new IllegalArgumentException(
+              "FACT_PROFILE_INVALID: boundary arguments do not close");
         }
         for (int ordinal = 0; ordinal < orderedArguments.size(); ordinal++) {
           BoundaryArgumentBinding binding = orderedArguments.get(ordinal);
           if (binding.ordinal() != ordinal
               || !orderedArgumentEdgeIds.get(ordinal).equals(binding.argumentEdgeId())) {
-            throw new IllegalArgumentException("FACT_PROFILE_INVALID: boundary argument order is invalid");
+            throw new IllegalArgumentException(
+                "FACT_PROFILE_INVALID: boundary argument order is invalid");
           }
         }
         controlBlockId = requiredId(controlBlockId, "control block ID");
         if (guardId != null) guardId = requiredId(guardId, "guard ID");
         if (guardNodeId != null || normalizedCondition != null || !branchEdgeIds.isEmpty()) {
-          throw new IllegalArgumentException("FACT_PROFILE_INVALID: boundary guard fields are invalid");
+          throw new IllegalArgumentException(
+              "FACT_PROFILE_INVALID: boundary guard fields are invalid");
         }
       } else {
         if (!"JAVA_GUARD_CONDITION".equals(candidateFactKey)
@@ -253,13 +268,18 @@ public record FactCandidateSet(
             || !orderedArguments.isEmpty()
             || controlBlockId != null
             || guardId != null) {
-          throw new IllegalArgumentException("FACT_PROFILE_INVALID: guard candidate boundary fields are invalid");
+          throw new IllegalArgumentException(
+              "FACT_PROFILE_INVALID: guard candidate boundary fields are invalid");
         }
         guardNodeId = requiredId(guardNodeId, "guard node ID");
         requireText(normalizedCondition, "normalized condition");
         if (branchEdgeIds.size() != 2
-            || !requiredAtoms.stream().map(RequiredAtom::atomKey).toList().equals(List.of("CONTROL_CONDITION"))) {
-          throw new IllegalArgumentException("FACT_PROFILE_INVALID: guard candidate shape is invalid");
+            || !requiredAtoms.stream()
+                .map(RequiredAtom::atomKey)
+                .toList()
+                .equals(List.of("CONTROL_CONDITION"))) {
+          throw new IllegalArgumentException(
+              "FACT_PROFILE_INVALID: guard candidate shape is invalid");
         }
       }
     }
@@ -318,10 +338,14 @@ public record FactCandidateSet(
 
   /** One exact argument-to-boundary relation together with only its Java-local origin node IDs. */
   public record BoundaryArgumentBinding(
-      int ordinal, String argumentNodeId, String argumentEdgeId, List<String> javaLocalOriginNodeIds) {
+      int ordinal,
+      String argumentNodeId,
+      String argumentEdgeId,
+      List<String> javaLocalOriginNodeIds) {
 
     public BoundaryArgumentBinding {
-      if (ordinal < 0) throw new IllegalArgumentException("FACT_PROFILE_INVALID: argument ordinal is invalid");
+      if (ordinal < 0)
+        throw new IllegalArgumentException("FACT_PROFILE_INVALID: argument ordinal is invalid");
       argumentNodeId = requiredId(argumentNodeId, "argument node ID");
       argumentEdgeId = requiredId(argumentEdgeId, "argument edge ID");
       javaLocalOriginNodeIds = orderedIds(javaLocalOriginNodeIds, "Java-local origin node IDs");
@@ -337,7 +361,8 @@ public record FactCandidateSet(
     public SubjectEvidenceBinding {
       subjectElementId = requiredId(subjectElementId, "evidence subject ID");
       sourceEvidenceNodeIds = orderedIds(sourceEvidenceNodeIds, "source evidence IDs");
-      ruleApplicationEvidenceNodeIds = orderedIds(ruleApplicationEvidenceNodeIds, "rule evidence IDs");
+      ruleApplicationEvidenceNodeIds =
+          orderedIds(ruleApplicationEvidenceNodeIds, "rule evidence IDs");
       if (sourceEvidenceNodeIds.isEmpty() || ruleApplicationEvidenceNodeIds.isEmpty()) {
         throw new IllegalArgumentException("FACT_PROFILE_INVALID: evidence closure is empty");
       }
@@ -373,7 +398,8 @@ public record FactCandidateSet(
       subjectNodeId = requiredId(subjectNodeId, "disposition subject node ID");
       requireText(templateKey, "disposition template key");
       missingRoles = List.copyOf(Objects.requireNonNull(missingRoles, "missing roles"));
-      if (missingRoles.isEmpty() || missingRoles.stream().anyMatch(value -> value == null || value.isBlank())) {
+      if (missingRoles.isEmpty()
+          || missingRoles.stream().anyMatch(value -> value == null || value.isBlank())) {
         throw new IllegalArgumentException("FACT_PROFILE_INVALID: missing roles are invalid");
       }
       requireText(reasonCode, "disposition reason code");
@@ -392,7 +418,9 @@ public record FactCandidateSet(
     }
   }
 
-  /** Complete, disjoint denominator accounting for M1's applicable and scoped failed combinations. */
+  /**
+   * Complete, disjoint denominator accounting for M1's applicable and scoped failed combinations.
+   */
   public record CandidateDenominator(List<String> applicableKeys, List<String> notApplicableKeys) {
 
     public CandidateDenominator {

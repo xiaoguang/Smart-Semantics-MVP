@@ -39,7 +39,8 @@ class AtomicProofBuilderTest {
           new FactCandidateEnumerator().enumerate(inputs, FactRegistry.standardJavaBoundary());
 
       assertThat(candidates.candidates()).hasSize(2);
-      Object decisions = prove(fixture.sourceReader(), candidates, inputs, fixture.sourceInventory());
+      Object decisions =
+          prove(fixture.sourceReader(), candidates, inputs, fixture.sourceInventory());
       Set<String> candidateKeys =
           candidates.candidates().stream()
               .map(AtomicProofBuilderTest::candidateDenominatorKey)
@@ -53,8 +54,7 @@ class AtomicProofBuilderTest {
       assertThat(factDispositions).hasSize(2);
       assertThat(strings(factDispositions, "candidateDenominatorKey"))
           .containsExactlyInAnyOrderElementsOf(candidateKeys);
-      assertThat(strings(factDispositions, "disposition"))
-          .containsOnly("ADMITTED");
+      assertThat(strings(factDispositions, "disposition")).containsOnly("ADMITTED");
 
       List<?> atomDispositions = list(decisions, "atomDispositions");
       assertThat(atomDispositions).hasSize(16);
@@ -64,8 +64,7 @@ class AtomicProofBuilderTest {
       assertThat(externalEffectGaps).hasSize(2);
       assertThat(strings(externalEffectGaps, "candidateDenominatorKey"))
           .containsExactlyInAnyOrderElementsOf(candidateKeys);
-      assertThat(strings(externalEffectGaps, "code"))
-          .containsOnly("DATA_FLOW_BINDING_UNPROVEN");
+      assertThat(strings(externalEffectGaps, "code")).containsOnly("DATA_FLOW_BINDING_UNPROVEN");
     }
   }
 
@@ -80,7 +79,8 @@ class AtomicProofBuilderTest {
       Object rules = registryType.getMethod("standardJavaBoundary").invoke(null);
       Class<?> builderType =
           Class.forName("org.sourceanalysis.app.analysis.fact.proofs.AtomicProofBuilder");
-      Object builder = builderType.getConstructor(VerifiedSourceTextReader.class).newInstance(sourceReader);
+      Object builder =
+          builderType.getConstructor(VerifiedSourceTextReader.class).newInstance(sourceReader);
       return builderType
           .getMethod(
               "prove",

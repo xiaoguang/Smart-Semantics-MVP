@@ -105,7 +105,8 @@ final class DataFlowGraphWire {
     if (item.boundaryInvocation() == null) value.putNull("boundaryInvocation");
     else value.set("boundaryInvocation", boundaryInvocationValue(item.boundaryInvocation()));
     if (item.unknownBoundaryReturn() == null) value.putNull("unknownBoundaryReturn");
-    else value.set("unknownBoundaryReturn", unknownBoundaryReturnValue(item.unknownBoundaryReturn()));
+    else
+      value.set("unknownBoundaryReturn", unknownBoundaryReturnValue(item.unknownBoundaryReturn()));
     return value;
   }
 

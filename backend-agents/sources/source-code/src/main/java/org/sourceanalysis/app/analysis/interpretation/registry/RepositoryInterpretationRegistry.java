@@ -17,7 +17,9 @@ public record RepositoryInterpretationRegistry(
     boolean closed) {
 
   private static final Comparator<String> UTF8_ORDER =
-      Comparator.comparing(value -> value.getBytes(StandardCharsets.UTF_8), RepositoryInterpretationRegistry::compare);
+      Comparator.comparing(
+          value -> value.getBytes(StandardCharsets.UTF_8),
+          RepositoryInterpretationRegistry::compare);
 
   public RepositoryInterpretationRegistry {
     required(repositoryInterpretationRegistryId, "repository registry ID");
@@ -36,8 +38,12 @@ public record RepositoryInterpretationRegistry(
                 .map(RepositoryInterpretationRegistryFlowDisposition::flowSliceId)
                 .toList())
         || !eligibleFlowSliceIds.equals(proposalAccounting.eligibleFlowSliceIds())
-        || !proposalAccounting.repositoryInterpretationRegistryItemIds().equals(
-            items.stream().map(RepositoryInterpretationRegistryItem::provisionalKey).toList())) {
+        || !proposalAccounting
+            .repositoryInterpretationRegistryItemIds()
+            .equals(
+                items.stream()
+                    .map(RepositoryInterpretationRegistryItem::provisionalKey)
+                    .toList())) {
       throw new IllegalArgumentException("repository interpretation registry is not closed");
     }
   }
@@ -63,12 +69,14 @@ public record RepositoryInterpretationRegistry(
   }
 
   private static void required(String value, String label) {
-    if (value == null || value.isBlank()) throw new IllegalArgumentException(label + " is required");
+    if (value == null || value.isBlank())
+      throw new IllegalArgumentException(label + " is required");
   }
 
   private static int compare(byte[] left, byte[] right) {
     for (int index = 0; index < Math.min(left.length, right.length); index++) {
-      int comparison = Integer.compare(Byte.toUnsignedInt(left[index]), Byte.toUnsignedInt(right[index]));
+      int comparison =
+          Integer.compare(Byte.toUnsignedInt(left[index]), Byte.toUnsignedInt(right[index]));
       if (comparison != 0) return comparison;
     }
     return Integer.compare(left.length, right.length);

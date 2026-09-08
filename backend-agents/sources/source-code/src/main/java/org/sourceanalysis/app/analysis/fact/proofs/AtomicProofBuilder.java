@@ -6,7 +6,6 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -22,7 +21,9 @@ import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.evidence.SourceExcerptV1;
 
-/** Builds closed atomic Proofs solely from an M1 candidate, its persisted evidence, and frozen text. */
+/**
+ * Builds closed atomic Proofs solely from an M1 candidate, its persisted evidence, and frozen text.
+ */
 public final class AtomicProofBuilder {
 
   private static final String PROOF_SOURCE_REOPEN_MISMATCH = "PROOF_SOURCE_REOPEN_MISMATCH";
@@ -64,12 +65,15 @@ public final class AtomicProofBuilder {
       for (FactCandidateSet.RequiredAtom atom : candidate.requiredAtoms()) {
         attempts.add(attemptAtom(candidate, key.value(), atom, inputs, documents, rules));
       }
-      AtomAttempt firstFailure = attempts.stream().filter(attempt -> !attempt.closed()).findFirst().orElse(null);
+      AtomAttempt firstFailure =
+          attempts.stream().filter(attempt -> !attempt.closed()).findFirst().orElse(null);
       if (firstFailure == null) {
         AdmittedFact admitted = admittedFact(candidate, key.value(), attempts);
         codeFacts.add(admitted.fact());
         atomProofs.addAll(admitted.proofs());
-        factDispositions.add(new ProofDecisionSet.FactDisposition(key.value(), "ADMITTED", admitted.fact().factId(), null));
+        factDispositions.add(
+            new ProofDecisionSet.FactDisposition(
+                key.value(), "ADMITTED", admitted.fact().factId(), null));
         Map<String, String> proofIdsByAtom =
             admitted.fact().atoms().stream()
                 .collect(
@@ -114,7 +118,8 @@ public final class AtomicProofBuilder {
         externalEffectGaps);
   }
 
-  private static void verifyCandidateRoots(FactCandidateSet candidates, FactCandidateInputs inputs) {
+  private static void verifyCandidateRoots(
+      FactCandidateSet candidates, FactCandidateInputs inputs) {
     if (!candidates.sourceGraphRoots().equals(inputs.sourceGraphRoots())) {
       throw new IllegalArgumentException("PROOF_PACK_REFERENCE_BROKEN");
     }
@@ -161,12 +166,21 @@ public final class AtomicProofBuilder {
     }
     List<SubjectRequirement> all = allSubjects(candidate);
     return switch (atomKey) {
-      case "INVOCATION_CALL_ID" -> select(all, ProofRuleRegistry.SubjectCategory.CALL_SITE, ProofRuleRegistry.SubjectCategory.BOUNDARY_INVOCATION);
+      case "INVOCATION_CALL_ID" ->
+          select(
+              all,
+              ProofRuleRegistry.SubjectCategory.CALL_SITE,
+              ProofRuleRegistry.SubjectCategory.BOUNDARY_INVOCATION);
       case "STATIC_TARGET_TYPE", "STATIC_TARGET_METHOD", "STATIC_TARGET_SIGNATURE" ->
           select(all, ProofRuleRegistry.SubjectCategory.CALL_TARGET);
-      case "ORDERED_ARGUMENTS" -> select(all, ProofRuleRegistry.SubjectCategory.ARGUMENT_TO_BOUNDARY);
+      case "ORDERED_ARGUMENTS" ->
+          select(all, ProofRuleRegistry.SubjectCategory.ARGUMENT_TO_BOUNDARY);
       case "JAVA_LOCAL_ORIGINS" -> select(all, ProofRuleRegistry.SubjectCategory.JAVA_LOCAL_ORIGIN);
-      case "CONTROL_CONTEXT" -> select(all, ProofRuleRegistry.SubjectCategory.BASIC_BLOCK, ProofRuleRegistry.SubjectCategory.GUARD);
+      case "CONTROL_CONTEXT" ->
+          select(
+              all,
+              ProofRuleRegistry.SubjectCategory.BASIC_BLOCK,
+              ProofRuleRegistry.SubjectCategory.GUARD);
       case "INVOCATION_EVIDENCE" -> all;
       default -> List.of();
     };
@@ -175,21 +189,44 @@ public final class AtomicProofBuilder {
   private static List<SubjectRequirement> allSubjects(FactCandidateSet.FactCandidate candidate) {
     if ("JAVA_GUARD_CONDITION".equals(candidate.kind())) {
       return List.of(
-          new SubjectRequirement(candidate.guardNodeId(), ProofRuleRegistry.SubjectCategory.GUARD, null));
+          new SubjectRequirement(
+              candidate.guardNodeId(), ProofRuleRegistry.SubjectCategory.GUARD, null));
     }
     List<SubjectRequirement> subjects = new ArrayList<>();
-    subjects.add(new SubjectRequirement(candidate.invocationCallId(), ProofRuleRegistry.SubjectCategory.CALL_SITE, null));
-    subjects.add(new SubjectRequirement(candidate.boundaryNodeId(), ProofRuleRegistry.SubjectCategory.BOUNDARY_INVOCATION, null));
-    subjects.add(new SubjectRequirement(candidate.callTargetEdgeId(), ProofRuleRegistry.SubjectCategory.CALL_TARGET, candidate.callTargetEdgeId()));
+    subjects.add(
+        new SubjectRequirement(
+            candidate.invocationCallId(), ProofRuleRegistry.SubjectCategory.CALL_SITE, null));
+    subjects.add(
+        new SubjectRequirement(
+            candidate.boundaryNodeId(),
+            ProofRuleRegistry.SubjectCategory.BOUNDARY_INVOCATION,
+            null));
+    subjects.add(
+        new SubjectRequirement(
+            candidate.callTargetEdgeId(),
+            ProofRuleRegistry.SubjectCategory.CALL_TARGET,
+            candidate.callTargetEdgeId()));
     for (FactCandidateSet.BoundaryArgumentBinding argument : candidate.orderedArguments()) {
-      subjects.add(new SubjectRequirement(argument.argumentEdgeId(), ProofRuleRegistry.SubjectCategory.ARGUMENT_TO_BOUNDARY, argument.argumentEdgeId()));
+      subjects.add(
+          new SubjectRequirement(
+              argument.argumentEdgeId(),
+              ProofRuleRegistry.SubjectCategory.ARGUMENT_TO_BOUNDARY,
+              argument.argumentEdgeId()));
       for (String origin : argument.javaLocalOriginNodeIds()) {
-        subjects.add(new SubjectRequirement(origin, ProofRuleRegistry.SubjectCategory.JAVA_LOCAL_ORIGIN, argument.argumentEdgeId()));
+        subjects.add(
+            new SubjectRequirement(
+                origin,
+                ProofRuleRegistry.SubjectCategory.JAVA_LOCAL_ORIGIN,
+                argument.argumentEdgeId()));
       }
     }
-    subjects.add(new SubjectRequirement(candidate.controlBlockId(), ProofRuleRegistry.SubjectCategory.BASIC_BLOCK, null));
+    subjects.add(
+        new SubjectRequirement(
+            candidate.controlBlockId(), ProofRuleRegistry.SubjectCategory.BASIC_BLOCK, null));
     if (candidate.guardId() != null) {
-      subjects.add(new SubjectRequirement(candidate.guardId(), ProofRuleRegistry.SubjectCategory.GUARD, null));
+      subjects.add(
+          new SubjectRequirement(
+              candidate.guardId(), ProofRuleRegistry.SubjectCategory.GUARD, null));
     }
     return subjects;
   }
@@ -215,16 +252,20 @@ public final class AtomicProofBuilder {
     LinkedHashSet<String> programEdgeIds = new LinkedHashSet<>();
     for (SubjectRequirement subject : subjects) {
       FactCandidateSet.SubjectEvidenceBinding binding = bindings.get(subject.subjectId());
-      if (binding == null || binding.sourceEvidenceNodeIds().isEmpty() || binding.ruleApplicationEvidenceNodeIds().isEmpty()) return null;
+      if (binding == null
+          || binding.sourceEvidenceNodeIds().isEmpty()
+          || binding.ruleApplicationEvidenceNodeIds().isEmpty()) return null;
       EvidencePair pair = exactAllowedPair(subject, binding, inputs, documents, rules);
       if (pair == null) return null;
       evidenceIds.add(pair.sourceEvidenceNodeId());
       evidenceIds.add(pair.ruleApplicationEvidenceNodeId());
       ruleIds.add(pair.ruleId());
-      if (subject.requiredProgramEdgeId() != null) programEdgeIds.add(subject.requiredProgramEdgeId());
+      if (subject.requiredProgramEdgeId() != null)
+        programEdgeIds.add(subject.requiredProgramEdgeId());
     }
     if (evidenceIds.isEmpty() || ruleIds.isEmpty()) return null;
-    return new EvidenceClosure(List.copyOf(evidenceIds), List.copyOf(programEdgeIds), List.copyOf(ruleIds));
+    return new EvidenceClosure(
+        List.copyOf(evidenceIds), List.copyOf(programEdgeIds), List.copyOf(ruleIds));
   }
 
   private static EvidencePair exactAllowedPair(
@@ -236,7 +277,11 @@ public final class AtomicProofBuilder {
     return inputs.evidenceGraph().edges().stream()
         .filter(edge -> edge.subjectProgramElementId().equals(subject.subjectId()))
         .filter(edge -> binding.sourceEvidenceNodeIds().contains(edge.sourceEvidenceNodeId()))
-        .filter(edge -> binding.ruleApplicationEvidenceNodeIds().contains(edge.ruleApplicationEvidenceNodeId()))
+        .filter(
+            edge ->
+                binding
+                    .ruleApplicationEvidenceNodeIds()
+                    .contains(edge.ruleApplicationEvidenceNodeId()))
         .sorted(Comparator.comparing(FactCandidateInputs.EvidenceEdge::evidenceEdgeId))
         .map(
             edge -> {
@@ -252,7 +297,8 @@ public final class AtomicProofBuilder {
                   || rule.ruleApplication() == null) return null;
               FactCandidateInputs.RuleApplication application = rule.ruleApplication();
               if (!application.inputProgramElementIds().contains(subject.subjectId())
-                  || !rules.permits(subject.category(), application.ruleId(), application.ruleVersion())) {
+                  || !rules.permits(
+                      subject.category(), application.ruleId(), application.ruleVersion())) {
                 return null;
               }
               validateExcerpt(source.sourceExcerpt(), documents);
@@ -276,10 +322,13 @@ public final class AtomicProofBuilder {
         || !utf8Boundary(bytes, end)) {
       throw sourceMismatch();
     }
-    byte[] actual = java.util.Arrays.copyOfRange(bytes, Math.toIntExact(start), Math.toIntExact(end));
+    byte[] actual =
+        java.util.Arrays.copyOfRange(bytes, Math.toIntExact(start), Math.toIntExact(end));
     if (!java.util.Arrays.equals(actual, excerpt.rawUtf8().copyToByteArray())
-        || !lineColumn(bytes, start).equals(new LineColumn(excerpt.locator().startLine(), excerpt.locator().startColumn()))
-        || !lineColumn(bytes, end).equals(new LineColumn(excerpt.locator().endLine(), excerpt.locator().endColumn()))) {
+        || !lineColumn(bytes, start)
+            .equals(new LineColumn(excerpt.locator().startLine(), excerpt.locator().startColumn()))
+        || !lineColumn(bytes, end)
+            .equals(new LineColumn(excerpt.locator().endLine(), excerpt.locator().endColumn()))) {
       throw sourceMismatch();
     }
   }
@@ -321,7 +370,13 @@ public final class AtomicProofBuilder {
       FactCandidateSet.FactCandidate candidate, String candidateKey, List<AtomAttempt> attempts) {
     List<ProofSeed> seeds = new ArrayList<>();
     for (AtomAttempt attempt : attempts) {
-      String atomId = identity("fact-atom", candidateKey, attempt.atom().atomKey(), attempt.value().type(), attempt.value().canonical());
+      String atomId =
+          identity(
+              "fact-atom",
+              candidateKey,
+              attempt.atom().atomKey(),
+              attempt.value().type(),
+              attempt.value().canonical());
       seeds.add(new ProofSeed(attempt, atomId));
     }
     String factId =
@@ -370,11 +425,19 @@ public final class AtomicProofBuilder {
       FactCandidateSet.FactCandidate candidate, String atomKey) {
     return switch (atomKey) {
       case "INVOCATION_CALL_ID" -> symbol(candidate.invocationCallId());
-      case "STATIC_TARGET_TYPE" -> new ProofDecisionSet.AtomValue("STRING", candidate.staticTargetType());
-      case "STATIC_TARGET_METHOD" -> new ProofDecisionSet.AtomValue("STRING", candidate.staticTargetMethod());
-      case "STATIC_TARGET_SIGNATURE" -> new ProofDecisionSet.AtomValue("STRING", candidate.staticTargetSignature());
+      case "STATIC_TARGET_TYPE" ->
+          new ProofDecisionSet.AtomValue("STRING", candidate.staticTargetType());
+      case "STATIC_TARGET_METHOD" ->
+          new ProofDecisionSet.AtomValue("STRING", candidate.staticTargetMethod());
+      case "STATIC_TARGET_SIGNATURE" ->
+          new ProofDecisionSet.AtomValue("STRING", candidate.staticTargetSignature());
       case "ORDERED_ARGUMENTS" ->
-          symbol(String.join(",", candidate.orderedArguments().stream().map(FactCandidateSet.BoundaryArgumentBinding::argumentNodeId).toList()));
+          symbol(
+              String.join(
+                  ",",
+                  candidate.orderedArguments().stream()
+                      .map(FactCandidateSet.BoundaryArgumentBinding::argumentNodeId)
+                      .toList()));
       case "JAVA_LOCAL_ORIGINS" ->
           symbol(
               String.join(
@@ -383,7 +446,9 @@ public final class AtomicProofBuilder {
                       .flatMap(argument -> argument.javaLocalOriginNodeIds().stream())
                       .toList()));
       case "CONTROL_CONTEXT" ->
-          symbol(candidate.controlBlockId() + (candidate.guardId() == null ? "" : "|" + candidate.guardId()));
+          symbol(
+              candidate.controlBlockId()
+                  + (candidate.guardId() == null ? "" : "|" + candidate.guardId()));
       case "INVOCATION_EVIDENCE" ->
           symbol(
               String.join(
@@ -454,7 +519,8 @@ public final class AtomicProofBuilder {
   private record FrozenDocuments(Map<String, VerifiedSourceTextDocument> byFileAndPath) {
     private VerifiedSourceTextDocument find(SourceExcerptV1 excerpt) {
       VerifiedSourceTextDocument document =
-          byFileAndPath.get(excerpt.locator().fileId().value() + "\u0000" + excerpt.locator().path());
+          byFileAndPath.get(
+              excerpt.locator().fileId().value() + "\u0000" + excerpt.locator().path());
       if (document == null) throw sourceMismatch();
       return document;
     }
@@ -476,7 +542,9 @@ public final class AtomicProofBuilder {
       String reasonCode) {
 
     private static AtomAttempt closed(
-        FactCandidateSet.RequiredAtom atom, ProofDecisionSet.AtomValue value, EvidenceClosure closure) {
+        FactCandidateSet.RequiredAtom atom,
+        ProofDecisionSet.AtomValue value,
+        EvidenceClosure closure) {
       return new AtomAttempt(atom, value, closure, null);
     }
 
@@ -491,7 +559,8 @@ public final class AtomicProofBuilder {
 
   private record ProofSeed(AtomAttempt attempt, String atomId) {}
 
-  private record AdmittedFact(ProofDecisionSet.CodeFact fact, List<ProofDecisionSet.AtomProof> proofs) {}
+  private record AdmittedFact(
+      ProofDecisionSet.CodeFact fact, List<ProofDecisionSet.AtomProof> proofs) {}
 
   private record LineColumn(int line, int column) {}
 }

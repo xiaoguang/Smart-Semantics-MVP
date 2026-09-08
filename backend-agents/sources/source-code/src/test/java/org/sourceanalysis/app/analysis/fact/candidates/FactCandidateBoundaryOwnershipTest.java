@@ -29,10 +29,8 @@ class FactCandidateBoundaryOwnershipTest {
                 FactCandidateBoundaryOwnershipTest::removeApproveBoundaryOwner)) {
       assertThatThrownBy(
               () ->
-                  new PersistedFactCandidateInputReader(
-                          mutation.steps(), mutation.sourceReader())
-                      .reopen(
-                          mutation.source(), mutation.discovery(), mutation.graphs()))
+                  new PersistedFactCandidateInputReader(mutation.steps(), mutation.sourceReader())
+                      .reopen(mutation.source(), mutation.discovery(), mutation.graphs()))
           .isInstanceOf(FactCandidateReferenceException.class)
           .hasMessage("PROOF_PACK_REFERENCE_BROKEN");
     }
@@ -70,9 +68,7 @@ class FactCandidateBoundaryOwnershipTest {
             payloads.stream()
                 .map(
                     payload ->
-                        payload.fileName().equals("data-flow-graph.json")
-                            ? changedData
-                            : payload)
+                        payload.fileName().equals("data-flow-graph.json") ? changedData : payload)
                 .toList(),
             json);
     return payloads.stream()

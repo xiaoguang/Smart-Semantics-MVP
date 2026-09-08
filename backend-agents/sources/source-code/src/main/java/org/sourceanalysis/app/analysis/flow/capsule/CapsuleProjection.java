@@ -20,9 +20,11 @@ public record CapsuleProjection(
     Objects.requireNonNull(flowCompilationRef, "flow compilation reference");
     Objects.requireNonNull(proofPackRef, "proof pack reference");
     capsules = ordered(capsules, EvidenceCapsule::evidenceCapsuleId, "capsules");
-    modelEvidenceSpans = ordered(modelEvidenceSpans, ModelEvidenceSpan::spanId, "model evidence spans");
+    modelEvidenceSpans =
+        ordered(modelEvidenceSpans, ModelEvidenceSpan::spanId, "model evidence spans");
     projectionObligations =
-        ordered(projectionObligations, ProjectionObligation::obligationId, "projection obligations");
+        ordered(
+            projectionObligations, ProjectionObligation::obligationId, "projection obligations");
     List<ModelEvidenceSpan> closedSpans = modelEvidenceSpans;
     List<ProjectionObligation> closedObligations = projectionObligations;
     if (capsules.stream().map(EvidenceCapsule::flowSliceId).distinct().count() != capsules.size()
@@ -67,9 +69,12 @@ public record CapsuleProjection(
       entryView = Objects.requireNonNull(entryView, "entry view");
       factViews = ordered(factViews, FlowFactView::factId, "Fact views");
       gapViews = ordered(gapViews, FlowGapView::gapId, "Gap views");
-      outcomePathViews = ordered(outcomePathViews, FlowOutcomePathView::outcomePathId, "outcome views");
-      registryProposalBasisAtomIds = orderedStrings(registryProposalBasisAtomIds, "registry atom basis");
-      registryProposalBasisGapIds = orderedStrings(registryProposalBasisGapIds, "registry Gap basis");
+      outcomePathViews =
+          ordered(outcomePathViews, FlowOutcomePathView::outcomePathId, "outcome views");
+      registryProposalBasisAtomIds =
+          orderedStrings(registryProposalBasisAtomIds, "registry atom basis");
+      registryProposalBasisGapIds =
+          orderedStrings(registryProposalBasisGapIds, "registry Gap basis");
       modelEvidenceSpanIds = orderedStrings(modelEvidenceSpanIds, "model evidence spans");
       projectionObligationIds = orderedStrings(projectionObligationIds, "projection obligations");
       budgetUsage = Objects.requireNonNull(budgetUsage, "budget usage");
@@ -95,7 +100,10 @@ public record CapsuleProjection(
     }
   }
 
-  /** Exact admitted Fact projection; atoms deliberately preserve their persisted values and proof IDs. */
+  /**
+   * Exact admitted Fact projection; atoms deliberately preserve their persisted values and proof
+   * IDs.
+   */
   public record FlowFactView(
       String factId, String kind, List<String> subjectNodeIds, List<FlowAtomView> atoms) {
     public FlowFactView {
@@ -109,7 +117,12 @@ public record CapsuleProjection(
 
   /** One verbatim atom-to-proof binding from Proven Code Facts. */
   public record FlowAtomView(
-      String atomId, String role, String name, String valueType, String canonicalValue, String proofId) {
+      String atomId,
+      String role,
+      String name,
+      String valueType,
+      String canonicalValue,
+      String proofId) {
     public FlowAtomView {
       required(atomId, "atom ID");
       required(role, "atom role");

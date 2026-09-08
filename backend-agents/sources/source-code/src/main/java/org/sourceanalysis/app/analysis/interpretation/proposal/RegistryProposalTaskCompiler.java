@@ -68,7 +68,8 @@ public final class RegistryProposalTaskCompiler {
     try {
       Objects.requireNonNull(businessFlows, "business flows");
       Objects.requireNonNull(taskProfile, "task profile");
-      ReopenedAnalysisStepPublication publication = analysisSteps.reopen(businessFlows.publication());
+      ReopenedAnalysisStepPublication publication =
+          analysisSteps.reopen(businessFlows.publication());
       verifyPublication(businessFlows, publication, taskProfile);
       PublicFlows publicFlows = reopenPublicFlows(publication);
       if (publicFlows.eligibleFlowSliceIds().size() > taskProfile.maxTasks()) {
@@ -151,7 +152,10 @@ public final class RegistryProposalTaskCompiler {
     JsonNode coverage = canonicalJson.parseCanonical(coveragePayload.canonicalUtf8());
     List<String> allFlows = identifierArray(coverage, "flowSliceIds");
     List<String> flowItems =
-        array(flows, "flowSlices").stream().map(value -> identifier(value, "flowSliceId")).sorted(UTF8_ORDER).toList();
+        array(flows, "flowSlices").stream()
+            .map(value -> identifier(value, "flowSliceId"))
+            .sorted(UTF8_ORDER)
+            .toList();
     List<String> eligible = identifierArray(coverage, "modelEligibleFlowSliceIds");
     List<String> ineligible = identifierArray(coverage, "modelIneligibleFlowSliceIds");
     if (!booleanValue(coverage, "closed")
@@ -261,7 +265,11 @@ public final class RegistryProposalTaskCompiler {
     return new RegistryProposalTask(
         contentId(
             "registry-proposal-task",
-            List.of(flowSliceId, capsuleId, digest.value(), profile.promptBundleRef().sha256().value())),
+            List.of(
+                flowSliceId,
+                capsuleId,
+                digest.value(),
+                profile.promptBundleRef().sha256().value())),
         "R0_REGISTRY_PROPOSAL",
         flowSliceId,
         capsuleId,
@@ -355,7 +363,9 @@ public final class RegistryProposalTaskCompiler {
     List<JsonNode> result = new ArrayList<>();
     for (String line : text.substring(0, text.length() - 1).split("\n", -1)) {
       if (line.isEmpty()) throw failure("FLOW_INTERPRETATION_INPUT_INVALID");
-      result.add(canonicalJson.parseCanonical(ImmutableBytes.copyOf(line.getBytes(StandardCharsets.UTF_8))));
+      result.add(
+          canonicalJson.parseCanonical(
+              ImmutableBytes.copyOf(line.getBytes(StandardCharsets.UTF_8))));
     }
     return List.copyOf(result);
   }
@@ -404,7 +414,10 @@ public final class RegistryProposalTaskCompiler {
 
   private static List<String> identifierArray(JsonNode source, String field) {
     List<String> values =
-        array(source, field).stream().map(RegistryProposalTaskCompiler::identifierValue).sorted(UTF8_ORDER).toList();
+        array(source, field).stream()
+            .map(RegistryProposalTaskCompiler::identifierValue)
+            .sorted(UTF8_ORDER)
+            .toList();
     if (values.size() != values.stream().distinct().count()) {
       throw failure("CAPSULE_CLOSURE_BROKEN");
     }
@@ -431,7 +444,8 @@ public final class RegistryProposalTaskCompiler {
   private static String contentId(String prefix, List<String> values) {
     byte[][] frames = new byte[values.size() + 1][];
     frames[0] = frame(prefix);
-    for (int index = 0; index < values.size(); index++) frames[index + 1] = frame(values.get(index));
+    for (int index = 0; index < values.size(); index++)
+      frames[index + 1] = frame(values.get(index));
     return prefix + ":" + sha256(frames);
   }
 

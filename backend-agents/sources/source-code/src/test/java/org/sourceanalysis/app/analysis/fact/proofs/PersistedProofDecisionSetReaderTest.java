@@ -63,10 +63,7 @@ class PersistedProofDecisionSetReaderTest {
                   ProofRuleRegistry.standardJavaBoundary());
       ModulePublicationReference candidatePublication =
           new FactCandidateSetModulePublisher(store)
-              .publish(
-                  address(fixture, 1, "candidates"),
-                  inputs,
-                  candidates);
+              .publish(address(fixture, 1, "candidates"), inputs, candidates);
       ModulePublicationReference proofPublication =
           new ProofDecisionSetModulePublisher(store)
               .publish(address(fixture, 2, "proofs"), inputs, candidatePublication, expected);
@@ -117,5 +114,4 @@ class PersistedProofDecisionSetReaderTest {
       throw new AssertionError("PERSISTED_PROOF_DECISION_READER_FAILED", cause);
     }
   }
-
 }

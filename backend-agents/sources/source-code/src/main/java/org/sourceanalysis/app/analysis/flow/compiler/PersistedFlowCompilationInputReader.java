@@ -226,9 +226,12 @@ final class PersistedFlowCompilationInputReader {
     graphs.values().forEach(payload -> values.add(reference(payload)));
     facts.values().forEach(payload -> values.add(reference(payload)));
     List<ArtifactReference> ordered =
-        values.stream().sorted(Comparator.comparing(value -> value.artifactId().value(), UTF8_ORDER)).toList();
+        values.stream()
+            .sorted(Comparator.comparing(value -> value.artifactId().value(), UTF8_ORDER))
+            .toList();
     if (ordered.size() != 13
-        || ordered.size() != ordered.stream().map(ArtifactReference::artifactId).distinct().count()) {
+        || ordered.size()
+            != ordered.stream().map(ArtifactReference::artifactId).distinct().count()) {
       throw broken();
     }
     return ordered;
@@ -303,11 +306,7 @@ final class PersistedFlowCompilationInputReader {
               || controlNodes.put(
                       nodeId,
                       new ControlNode(
-                          nodeId,
-                          kind,
-                          text(node, "canonicalValue"),
-                          normalizedCondition,
-                          owners))
+                          nodeId, kind, text(node, "canonicalValue"), normalizedCondition, owners))
                   != null) {
             throw broken();
           }
@@ -360,8 +359,8 @@ final class PersistedFlowCompilationInputReader {
     parseJsonLines(payloads.get("graph-gaps.jsonl"));
     if (controlNodes.isEmpty()
         || controlEdges.isEmpty()
-        || !entryIds(discovery.entries()).equals(
-            controlTraversals.keySet().stream().sorted(UTF8_ORDER).toList())
+        || !entryIds(discovery.entries())
+            .equals(controlTraversals.keySet().stream().sorted(UTF8_ORDER).toList())
         || dataNodeIds.isEmpty()
         || controlEdges.values().stream()
             .anyMatch(
@@ -483,7 +482,8 @@ final class PersistedFlowCompilationInputReader {
   private static void requireFactSubjects(
       String kind, List<String> subjectNodeIds, GraphMaterial graphs) {
     if ("JAVA_BOUNDARY_INVOCATION".equals(kind)) {
-      if (subjectNodeIds.isEmpty() || !graphs.dataNodeIds().containsAll(subjectNodeIds)) throw broken();
+      if (subjectNodeIds.isEmpty() || !graphs.dataNodeIds().containsAll(subjectNodeIds))
+        throw broken();
       return;
     }
     ControlNode guard =
@@ -589,7 +589,8 @@ final class PersistedFlowCompilationInputReader {
   }
 
   private static List<String> orderedIds(JsonNode value, String field) {
-    List<String> values = array(value, field).stream().map(PersistedFlowCompilationInputReader::textValueId).toList();
+    List<String> values =
+        array(value, field).stream().map(PersistedFlowCompilationInputReader::textValueId).toList();
     if (values.size() != new HashSet<>(values).size()) throw broken();
     return values;
   }

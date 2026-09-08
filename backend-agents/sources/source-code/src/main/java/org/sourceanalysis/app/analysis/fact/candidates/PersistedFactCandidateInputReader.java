@@ -19,9 +19,9 @@ import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
-import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactDescriptor;
+import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactPolicyRegistryReference;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
@@ -41,7 +41,8 @@ public final class PersistedFactCandidateInputReader {
   private static final String APPLICATION_PROFILE_SCHEMA =
       "application-discovery-application-profile-v2";
   private static final String CAPABILITY_REPORT_TYPE = "APPLICATION_DISCOVERY_CAPABILITY_REPORT";
-  private static final String CAPABILITY_REPORT_SCHEMA = "application-discovery-capability-report-v2";
+  private static final String CAPABILITY_REPORT_SCHEMA =
+      "application-discovery-capability-report-v2";
   private static final String ENTRY_POINTS_TYPE = "APPLICATION_DISCOVERY_ENTRY_POINTS";
   private static final String ENTRY_POINTS_SCHEMA = "application-discovery-entry-points-v2";
   private static final String MAPPER_CATALOG_TYPE = "APPLICATION_DISCOVERY_MAPPER_CATALOG";
@@ -60,8 +61,7 @@ public final class PersistedFactCandidateInputReader {
   private static final String INDEX_SCHEMA = "program-graphs-graph-index-v2";
   private static final String GAPS_TYPE = "PROGRAM_GRAPHS_GRAPH_GAP";
   private static final String GAPS_SCHEMA = "program-graphs-graph-gap-v1";
-  private static final String SOURCE_INVENTORY_TYPE =
-      "VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY";
+  private static final String SOURCE_INVENTORY_TYPE = "VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY";
   private static final String SOURCE_INVENTORY_SCHEMA =
       "verified-source-inventory-source-inventory-v2";
   private static final String VERIFIED_SNAPSHOT_TYPE = "VERIFIED_SNAPSHOT";
@@ -82,11 +82,11 @@ public final class PersistedFactCandidateInputReader {
   /**
    * Reopens a same-run, same-snapshot, same-controls discovery and five-graph publication set.
    *
-   * <p>Any publication, schema, root, controls, source, or cross-graph mismatch is a fatal
-   * {@code PROOF_PACK_REFERENCE_BROKEN}; malformed graph relations that remain within a valid
-   * public graph are left for the enumerator to record as scoped not-applicable combinations.
-   * Program-edge references to absent program nodes, however, are malformed public input and fail
-   * closed before enumeration.
+   * <p>Any publication, schema, root, controls, source, or cross-graph mismatch is a fatal {@code
+   * PROOF_PACK_REFERENCE_BROKEN}; malformed graph relations that remain within a valid public graph
+   * are left for the enumerator to record as scoped not-applicable combinations. Program-edge
+   * references to absent program nodes, however, are malformed public input and fail closed before
+   * enumeration.
    */
   public FactCandidateInputs reopen(
       VerifiedSourceInventoryReference verifiedSource,
@@ -114,7 +114,9 @@ public final class PersistedFactCandidateInputReader {
       if (!sourceText.snapshotId().equals(reopenedDiscovery.snapshotId())
           || !sourceText.snapshotId().equals(reopenedGraphs.snapshotId())
           || !reopenedDiscovery.entryIds().equals(reopenedGraphs.entryIds())
-          || !reopenedDiscovery.applicationProfileId().equals(reopenedGraphs.applicationProfileId())) {
+          || !reopenedDiscovery
+              .applicationProfileId()
+              .equals(reopenedGraphs.applicationProfileId())) {
         throw broken();
       }
 
@@ -123,15 +125,9 @@ public final class PersistedFactCandidateInputReader {
           source.receipt().controls(),
           reopenedDiscovery.entryIds(),
           sourcePayloadReference(
-              source,
-              "source-inventory.jsonl",
-              SOURCE_INVENTORY_TYPE,
-              SOURCE_INVENTORY_SCHEMA),
+              source, "source-inventory.jsonl", SOURCE_INVENTORY_TYPE, SOURCE_INVENTORY_SCHEMA),
           sourcePayloadReference(
-              source,
-              "verified-snapshot.json",
-              VERIFIED_SNAPSHOT_TYPE,
-              VERIFIED_SNAPSHOT_SCHEMA),
+              source, "verified-snapshot.json", VERIFIED_SNAPSHOT_TYPE, VERIFIED_SNAPSHOT_SCHEMA),
           reopenedGraphs.graphRoots(),
           candidateModuleUpstreamArtifacts(reopenedDiscovery, reopenedGraphs),
           reopenedGraphs.programGraphs(),
@@ -151,7 +147,10 @@ public final class PersistedFactCandidateInputReader {
         || !reference.equals(reopened.reference())
         || reopened.receipt() == null
         || reopened.receipt().address().analysisStepKey() != expectedKey
-        || !reopened.receipt().analysisStepArtifactRoot().equals(reference.analysisStepArtifactRoot())
+        || !reopened
+            .receipt()
+            .analysisStepArtifactRoot()
+            .equals(reference.analysisStepArtifactRoot())
         || !reopened.receipt().analysisStepReceiptId().equals(reference.analysisStepReceiptId())
         || reopened.semanticPayloads().isEmpty()) throw broken();
     List<ArtifactDescriptor> descriptors =
@@ -187,7 +186,8 @@ public final class PersistedFactCandidateInputReader {
                 key(CAPABILITY_REPORT_TYPE, CAPABILITY_REPORT_SCHEMA),
                 key(ENTRY_POINTS_TYPE, ENTRY_POINTS_SCHEMA),
                 key(MAPPER_CATALOG_TYPE, MAPPER_CATALOG_SCHEMA)));
-    JsonNode profile = parseJson(payloads.get(key(APPLICATION_PROFILE_TYPE, APPLICATION_PROFILE_SCHEMA)));
+    JsonNode profile =
+        parseJson(payloads.get(key(APPLICATION_PROFILE_TYPE, APPLICATION_PROFILE_SCHEMA)));
     fields(
         profile,
         Set.of(
@@ -206,34 +206,44 @@ public final class PersistedFactCandidateInputReader {
             "sourceInventoryRef",
             "verifiedSnapshotRef",
             "controls"));
-    requireHeader(profile, APPLICATION_PROFILE_TYPE, APPLICATION_PROFILE_SCHEMA, payloads.get(key(APPLICATION_PROFILE_TYPE, APPLICATION_PROFILE_SCHEMA)));
+    requireHeader(
+        profile,
+        APPLICATION_PROFILE_TYPE,
+        APPLICATION_PROFILE_SCHEMA,
+        payloads.get(key(APPLICATION_PROFILE_TYPE, APPLICATION_PROFILE_SCHEMA)));
     String snapshotId = snapshot(profile, "snapshotId");
     String applicationProfileId = id(profile, "applicationProfileId");
     controls(profile.get("controls"), publication.receipt().controls());
     if (!sourcePayloadReference(
-            source,
-            "source-inventory.jsonl",
-            SOURCE_INVENTORY_TYPE,
-            SOURCE_INVENTORY_SCHEMA)
-        .equals(reference(profile.get("sourceInventoryRef")))
+                source, "source-inventory.jsonl", SOURCE_INVENTORY_TYPE, SOURCE_INVENTORY_SCHEMA)
+            .equals(reference(profile.get("sourceInventoryRef")))
         || !sourcePayloadReference(
-                source,
-                "verified-snapshot.json",
-                VERIFIED_SNAPSHOT_TYPE,
-                VERIFIED_SNAPSHOT_SCHEMA)
+                source, "verified-snapshot.json", VERIFIED_SNAPSHOT_TYPE, VERIFIED_SNAPSHOT_SCHEMA)
             .equals(reference(profile.get("verifiedSnapshotRef")))) {
       throw broken();
     }
 
     List<String> entryIds = parseEntries(payloads.get(key(ENTRY_POINTS_TYPE, ENTRY_POINTS_SCHEMA)));
-    JsonNode capability = parseJson(payloads.get(key(CAPABILITY_REPORT_TYPE, CAPABILITY_REPORT_SCHEMA)));
+    JsonNode capability =
+        parseJson(payloads.get(key(CAPABILITY_REPORT_TYPE, CAPABILITY_REPORT_SCHEMA)));
     fields(
         capability,
-        Set.of("schemaVersion", "artifactType", "artifactId", "applicationProfileId", "repositoryEntryCoverage"));
-    requireHeader(capability, CAPABILITY_REPORT_TYPE, CAPABILITY_REPORT_SCHEMA, payloads.get(key(CAPABILITY_REPORT_TYPE, CAPABILITY_REPORT_SCHEMA)));
+        Set.of(
+            "schemaVersion",
+            "artifactType",
+            "artifactId",
+            "applicationProfileId",
+            "repositoryEntryCoverage"));
+    requireHeader(
+        capability,
+        CAPABILITY_REPORT_TYPE,
+        CAPABILITY_REPORT_SCHEMA,
+        payloads.get(key(CAPABILITY_REPORT_TYPE, CAPABILITY_REPORT_SCHEMA)));
     if (!applicationProfileId.equals(id(capability, "applicationProfileId"))) throw broken();
     JsonNode coverage = capability.get("repositoryEntryCoverage");
-    fields(coverage, Set.of("entryIds", "mapperCatalogEntryIds", "entryCount", "mapperCatalogEntryCount"));
+    fields(
+        coverage,
+        Set.of("entryIds", "mapperCatalogEntryIds", "entryCount", "mapperCatalogEntryCount"));
     if (!entryIds.equals(ids(coverage.get("entryIds"), "capability entry IDs"))
         || coverage.get("entryCount").asInt(-1) != entryIds.size()) throw broken();
 
@@ -340,7 +350,10 @@ public final class PersistedFactCandidateInputReader {
             CODE_STRUCTURE_SCHEMA);
     ParsedProgramGraph calls =
         parseProgramGraph(
-            payloads.get(key(CALL_TYPE, CALL_SCHEMA)), ProgramGraphKind.CALL, CALL_TYPE, CALL_SCHEMA);
+            payloads.get(key(CALL_TYPE, CALL_SCHEMA)),
+            ProgramGraphKind.CALL,
+            CALL_TYPE,
+            CALL_SCHEMA);
     ParsedProgramGraph control =
         parseProgramGraph(
             payloads.get(key(CONTROL_TYPE, CONTROL_SCHEMA)),
@@ -349,8 +362,12 @@ public final class PersistedFactCandidateInputReader {
             CONTROL_SCHEMA);
     ParsedProgramGraph data =
         parseProgramGraph(
-            payloads.get(key(DATA_TYPE, DATA_SCHEMA)), ProgramGraphKind.DATA_FLOW, DATA_TYPE, DATA_SCHEMA);
-    ParsedEvidenceGraph evidence = parseEvidenceGraph(payloads.get(key(EVIDENCE_TYPE, EVIDENCE_SCHEMA)));
+            payloads.get(key(DATA_TYPE, DATA_SCHEMA)),
+            ProgramGraphKind.DATA_FLOW,
+            DATA_TYPE,
+            DATA_SCHEMA);
+    ParsedEvidenceGraph evidence =
+        parseEvidenceGraph(payloads.get(key(EVIDENCE_TYPE, EVIDENCE_SCHEMA)));
     validateGraphIdentity(codeStructure, calls, control, data, evidence);
     validateProgramEdgeEndpoints(List.of(codeStructure, calls, control, data));
     validateEvidenceSubjectKinds(evidence.value(), List.of(codeStructure, calls, control, data));
@@ -379,10 +396,10 @@ public final class PersistedFactCandidateInputReader {
   /**
    * Validates the complete public program-node universe before Fact M1 uses any graph relation.
    *
-   * <p>Program graphs can legitimately reference a node declared by another program graph, so
-   * this deliberately checks the union rather than requiring an edge to remain inside its own
-   * graph. Evidence edges are intentionally excluded: their program-subject closure has separate
-   * typed validation.
+   * <p>Program graphs can legitimately reference a node declared by another program graph, so this
+   * deliberately checks the union rather than requiring an edge to remain inside its own graph.
+   * Evidence edges are intentionally excluded: their program-subject closure has separate typed
+   * validation.
    */
   private static void validateProgramEdgeEndpoints(List<ParsedProgramGraph> graphs) {
     Set<String> nodeIds = new HashSet<>();
@@ -401,8 +418,8 @@ public final class PersistedFactCandidateInputReader {
   }
 
   /**
-   * Fails closed when an Evidence edge claims to support a subject of the wrong graph element
-   * type. Evidence is never permitted to relabel a program edge as a node (or the reverse).
+   * Fails closed when an Evidence edge claims to support a subject of the wrong graph element type.
+   * Evidence is never permitted to relabel a program edge as a node (or the reverse).
    */
   private static void validateEvidenceSubjectKinds(
       FactCandidateInputs.PublicEvidenceGraph evidence, List<ParsedProgramGraph> graphs) {
@@ -412,7 +429,8 @@ public final class PersistedFactCandidateInputReader {
       graphsByKind.put(graph.graphKind(), graph.value());
     }
     for (FactCandidateInputs.EvidenceEdge edge : evidence.edges()) {
-      FactCandidateInputs.PublicProgramGraph subjectGraph = graphsByKind.get(edge.subjectGraphKind());
+      FactCandidateInputs.PublicProgramGraph subjectGraph =
+          graphsByKind.get(edge.subjectGraphKind());
       if (subjectGraph == null) throw broken();
       boolean subjectExists =
           switch (edge.supportKind()) {
@@ -476,13 +494,7 @@ public final class PersistedFactCandidateInputReader {
         entryIds,
         graphProfileRef,
         new FactCandidateInputs.PublicProgramGraph(
-            expectedKind,
-            root(payload),
-            snapshotId,
-            applicationProfileId,
-            entryIds,
-            nodes,
-            edges));
+            expectedKind, root(payload), snapshotId, applicationProfileId, entryIds, nodes, edges));
   }
 
   private Map<String, FactCandidateInputs.PublicProgramNode> parseProgramNodes(
@@ -491,7 +503,8 @@ public final class PersistedFactCandidateInputReader {
     Map<String, FactCandidateInputs.PublicProgramNode> result = new LinkedHashMap<>();
     for (JsonNode value : values) {
       Set<String> fields =
-          new HashSet<>(Set.of("nodeId", "kind", "canonicalValue", "owningEntryIds", "evidenceNodeIds"));
+          new HashSet<>(
+              Set.of("nodeId", "kind", "canonicalValue", "owningEntryIds", "evidenceNodeIds"));
       if (graphKind == ProgramGraphKind.CONTROL_FLOW) {
         fields.add("normalizedCondition");
       }
@@ -568,7 +581,8 @@ public final class PersistedFactCandidateInputReader {
         text(value, "staticTargetMethod"),
         text(value, "staticTargetSignature"),
         arguments,
-        new FactCandidateInputs.BoundaryControlContext(id(control, "basicBlockNodeId"), guard, polarity),
+        new FactCandidateInputs.BoundaryControlContext(
+            id(control, "basicBlockNodeId"), guard, polarity),
         text(value, "ruleId"));
   }
 
@@ -657,9 +671,11 @@ public final class PersistedFactCandidateInputReader {
       if ("SOURCE_EXCERPT".equals(kind)) {
         if (node.get("sourceExcerpt") == null || node.get("sourceExcerpt").isNull()) throw broken();
         sourceExcerpt = sourceExcerpt(node.get("sourceExcerpt"));
-        if (node.get("ruleApplication") == null || !node.get("ruleApplication").isNull()) throw broken();
+        if (node.get("ruleApplication") == null || !node.get("ruleApplication").isNull())
+          throw broken();
       } else if ("RULE_APPLICATION".equals(kind)) {
-        if (node.get("sourceExcerpt") == null || !node.get("sourceExcerpt").isNull()) throw broken();
+        if (node.get("sourceExcerpt") == null || !node.get("sourceExcerpt").isNull())
+          throw broken();
         JsonNode rule = node.get("ruleApplication");
         fields(rule, Set.of("ruleId", "ruleVersion", "inputProgramElementIds"));
         ruleApplication =
@@ -802,7 +818,8 @@ public final class PersistedFactCandidateInputReader {
     for (JsonNode descriptor : descriptors) {
       fields(
           descriptor,
-          Set.of("graphKind", "fileName", "artifactType", "schemaVersion", "graphId", "artifactRef"));
+          Set.of(
+              "graphKind", "fileName", "artifactType", "schemaVersion", "graphId", "artifactRef"));
       ProgramGraphKind kind = ProgramGraphKind.valueOf(text(descriptor, "graphKind"));
       GraphDescriptor expected = expectedDescriptors.get(kind);
       if (!seenKinds.add(kind)
@@ -819,19 +836,34 @@ public final class PersistedFactCandidateInputReader {
     Map<String, ProgramGraphKind> actualNodes = new HashMap<>();
     Map<String, ProgramGraphKind> actualEdges = new HashMap<>();
     for (ParsedProgramGraph graph : graphs) {
-      graph.value().nodesById().keySet().forEach(value -> actualNodes.put(value, graph.graphKind()));
-      graph.value().edgesById().keySet().forEach(value -> actualEdges.put(value, graph.graphKind()));
+      graph
+          .value()
+          .nodesById()
+          .keySet()
+          .forEach(value -> actualNodes.put(value, graph.graphKind()));
+      graph
+          .value()
+          .edgesById()
+          .keySet()
+          .forEach(value -> actualEdges.put(value, graph.graphKind()));
     }
-    evidence.value().nodesById().keySet().forEach(value -> actualNodes.put(value, ProgramGraphKind.EVIDENCE));
+    evidence
+        .value()
+        .nodesById()
+        .keySet()
+        .forEach(value -> actualNodes.put(value, ProgramGraphKind.EVIDENCE));
     evidence
         .value()
         .edges()
         .forEach(edge -> actualEdges.put(edge.evidenceEdgeId(), ProgramGraphKind.EVIDENCE));
-    Map<String, ProgramGraphKind> indexedNodes = catalog(index.get("nodeCatalog"), "nodeId", "owningGraphKind", "nodeKind");
-    Map<String, ProgramGraphKind> indexedEdges = catalog(index.get("edgeCatalog"), "edgeId", "owningGraphKind", "edgeKind");
+    Map<String, ProgramGraphKind> indexedNodes =
+        catalog(index.get("nodeCatalog"), "nodeId", "owningGraphKind", "nodeKind");
+    Map<String, ProgramGraphKind> indexedEdges =
+        catalog(index.get("edgeCatalog"), "edgeId", "owningGraphKind", "edgeKind");
     if (!actualNodes.equals(indexedNodes) || !actualEdges.equals(indexedEdges)) throw broken();
     if (!root(gapsPayload).equals(reference(index.get("graphGapsRef")))) throw broken();
-    if (!ids(index.get("gapIds"), "index gap IDs").equals(parseGraphGaps(gapsPayload))) throw broken();
+    if (!ids(index.get("gapIds"), "index gap IDs").equals(parseGraphGaps(gapsPayload)))
+      throw broken();
   }
 
   private Map<String, ProgramGraphKind> catalog(
@@ -841,7 +873,8 @@ public final class PersistedFactCandidateInputReader {
     for (JsonNode value : values) {
       fields(value, Set.of(idField, ownerField, kindField));
       String id = id(value, idField);
-      if (result.putIfAbsent(id, ProgramGraphKind.valueOf(text(value, ownerField))) != null) throw broken();
+      if (result.putIfAbsent(id, ProgramGraphKind.valueOf(text(value, ownerField))) != null)
+        throw broken();
       text(value, kindField);
     }
     return Map.copyOf(result);
@@ -875,8 +908,10 @@ public final class PersistedFactCandidateInputReader {
       ReopenedAnalysisStepPublication publication, Set<String> expected) {
     Map<String, VerifiedCanonicalPayload> result = new HashMap<>();
     for (VerifiedCanonicalPayload payload : publication.semanticPayloads()) {
-      String identity = key(payload.descriptor().artifactType(), payload.descriptor().schemaVersion());
-      if (!expected.contains(identity) || result.putIfAbsent(identity, payload) != null) throw broken();
+      String identity =
+          key(payload.descriptor().artifactType(), payload.descriptor().schemaVersion());
+      if (!expected.contains(identity) || result.putIfAbsent(identity, payload) != null)
+        throw broken();
     }
     if (!result.keySet().equals(expected)) throw broken();
     return Map.copyOf(result);
@@ -904,10 +939,14 @@ public final class PersistedFactCandidateInputReader {
   }
 
   private void requireHeader(
-      JsonNode value, String expectedType, String expectedSchema, VerifiedCanonicalPayload payload) {
+      JsonNode value,
+      String expectedType,
+      String expectedSchema,
+      VerifiedCanonicalPayload payload) {
     if (!expectedType.equals(text(value, "artifactType"))
         || !expectedSchema.equals(text(value, "schemaVersion"))
-        || !payload.descriptor().artifactId().value().equals(id(value, "artifactId"))) throw broken();
+        || !payload.descriptor().artifactId().value().equals(id(value, "artifactId")))
+      throw broken();
   }
 
   private static void requireJsonlHeader(JsonNode value, String type, String schema) {
@@ -1021,7 +1060,8 @@ public final class PersistedFactCandidateInputReader {
     id(value, "fileId");
     text(value, "path");
     for (String numeric :
-        List.of("startByte", "endByteExclusive", "startLine", "startColumn", "endLine", "endColumn")) {
+        List.of(
+            "startByte", "endByteExclusive", "startLine", "startColumn", "endLine", "endColumn")) {
       if (!value.get(numeric).canConvertToLong()) throw broken();
     }
   }

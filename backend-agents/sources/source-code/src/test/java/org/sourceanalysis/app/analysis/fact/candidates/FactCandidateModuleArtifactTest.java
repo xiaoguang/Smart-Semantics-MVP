@@ -62,7 +62,10 @@ class FactCandidateModuleArtifactTest {
 
       FactCandidateInputs inputs =
           new PersistedFactCandidateInputReader(fixture.stepArtifacts(), fixture.sourceReader())
-              .reopen(fixture.sourceInventory(), fixture.applicationDiscovery(), fixture.programGraphs());
+              .reopen(
+                  fixture.sourceInventory(),
+                  fixture.applicationDiscovery(),
+                  fixture.programGraphs());
       FactCandidateSet candidateSet =
           new FactCandidateEnumerator().enumerate(inputs, FactRegistry.standardJavaBoundary());
 
@@ -158,7 +161,8 @@ class FactCandidateModuleArtifactTest {
   private static List<String> referenceValues(JsonNode values) {
     List<String> result = new ArrayList<>();
     values.forEach(
-        value -> result.add(value.path("artifactId").asText() + "|" + value.path("sha256").asText()));
+        value ->
+            result.add(value.path("artifactId").asText() + "|" + value.path("sha256").asText()));
     return result;
   }
 
@@ -168,5 +172,4 @@ class FactCandidateModuleArtifactTest {
         .map(value -> value.artifactId().value() + "|" + value.sha256().value())
         .toList();
   }
-
 }

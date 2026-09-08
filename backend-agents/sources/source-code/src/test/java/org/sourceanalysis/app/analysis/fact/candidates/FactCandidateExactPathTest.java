@@ -36,8 +36,7 @@ class FactCandidateExactPathTest {
       assertThat(result.candidates())
           .extracting(FactCandidateSet.FactCandidate::entryId)
           .doesNotHaveDuplicates()
-          .containsExactlyInAnyOrder(
-              "entry:" + digest("approve"), "entry:" + digest("cancel"));
+          .containsExactlyInAnyOrder("entry:" + digest("approve"), "entry:" + digest("cancel"));
       assertThat(result.candidates())
           .extracting(FactCandidateSet.FactCandidate::subjectNodeIds)
           .allSatisfy(subjects -> assertThat(subjects).hasSize(1));

@@ -3,7 +3,6 @@ package org.sourceanalysis.app.analysis.fact.candidates;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
@@ -22,7 +21,6 @@ import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.FileSystemCanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
-import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 import org.sourceanalysis.app.artifact.RunStoreBootstrap;
 import org.sourceanalysis.app.artifact.RunStoreHandle;
 
@@ -40,7 +38,7 @@ class FactCandidateModuleReaderTest {
   void freshReopenReturnsTypedCandidateSetAndRejectsPersistedPayloadTamper() throws Exception {
     Path storeRoot = temporaryDirectory.resolve("candidate-reader-store");
     Files.createDirectory(storeRoot);
-      try (ProgramGraphsPublicFixture fixture =
+    try (ProgramGraphsPublicFixture fixture =
             ProgramGraphsPublicFixture.createWithGuardedApprove(
                 temporaryDirectory.resolve("graph-input"));
         RunStoreHandle handle = RunStoreBootstrap.openForTest(storeRoot)) {
@@ -53,7 +51,10 @@ class FactCandidateModuleReaderTest {
               handle, json, policies, new ArtifactStoreLimits(8, 2_000_000, 4_000_000, 16));
       FactCandidateInputs inputs =
           new PersistedFactCandidateInputReader(fixture.stepArtifacts(), fixture.sourceReader())
-              .reopen(fixture.sourceInventory(), fixture.applicationDiscovery(), fixture.programGraphs());
+              .reopen(
+                  fixture.sourceInventory(),
+                  fixture.applicationDiscovery(),
+                  fixture.programGraphs());
       FactRegistry registry = FactRegistry.standardJavaBoundary();
       FactCandidateSet expected = new FactCandidateEnumerator().enumerate(inputs, registry);
       AnalysisStepModuleAddress destination =
@@ -63,8 +64,7 @@ class FactCandidateModuleReaderTest {
               1,
               "candidates");
 
-      ModulePublicationReference reference =
-          invokePublisher(store, destination, inputs, expected);
+      ModulePublicationReference reference = invokePublisher(store, destination, inputs, expected);
       FactCandidateSet reopened = invokeReader(store, reference, inputs, registry);
       assertThat(reopened).isEqualTo(expected);
       assertThat(reopened.candidateSetId()).isEqualTo(expected.candidateSetId());
@@ -83,7 +83,8 @@ class FactCandidateModuleReaderTest {
       Path payloadPath = payloadPath(storeRoot, reference);
       ObjectNode envelope =
           (ObjectNode)
-              json.parseCanonical(ImmutableBytes.copyOf(Files.readAllBytes(payloadPath))).deepCopy();
+              json.parseCanonical(ImmutableBytes.copyOf(Files.readAllBytes(payloadPath)))
+                  .deepCopy();
       ObjectNode payload = (ObjectNode) envelope.path("payload");
       payload.put(
           "candidateSetId",
@@ -118,7 +119,10 @@ class FactCandidateModuleReaderTest {
     try {
       reopen =
           readerType.getMethod(
-              "reopen", ModulePublicationReference.class, FactCandidateInputs.class, FactRegistry.class);
+              "reopen",
+              ModulePublicationReference.class,
+              FactCandidateInputs.class,
+              FactRegistry.class);
     } catch (NoSuchMethodException missing) {
       throw new AssertionError("FACT_CANDIDATE_MODULE_READER_SEAM_MISSING", missing);
     }
@@ -141,7 +145,8 @@ class FactCandidateModuleReaderTest {
       FactCandidateSet candidateSet)
       throws Exception {
     Class<?> publisherType =
-        Class.forName("org.sourceanalysis.app.analysis.fact.candidates.FactCandidateSetModulePublisher");
+        Class.forName(
+            "org.sourceanalysis.app.analysis.fact.candidates.FactCandidateSetModulePublisher");
     Constructor<?> constructor = publisherType.getConstructor(CanonicalModuleArtifactStore.class);
     Method publish =
         publisherType.getMethod(
@@ -150,7 +155,8 @@ class FactCandidateModuleReaderTest {
             FactCandidateInputs.class,
             FactCandidateSet.class);
     try {
-      Object result = publish.invoke(constructor.newInstance(store), destination, inputs, candidateSet);
+      Object result =
+          publish.invoke(constructor.newInstance(store), destination, inputs, candidateSet);
       return (ModulePublicationReference) result;
     } catch (InvocationTargetException failure) {
       Throwable cause = failure.getCause() == null ? failure : failure.getCause();
@@ -168,5 +174,4 @@ class FactCandidateModuleReaderTest {
         .resolve("01-candidates")
         .resolve("fact-candidate-set.json");
   }
-
 }

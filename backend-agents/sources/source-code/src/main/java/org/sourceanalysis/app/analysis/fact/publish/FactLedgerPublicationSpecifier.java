@@ -15,7 +15,6 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateSet;
@@ -129,14 +128,19 @@ public final class FactLedgerPublicationSpecifier {
       List<LedgerGap> gaps = gaps(candidates, decisions);
       List<String> gapRefs = gaps.stream().map(LedgerGap::gapId).sorted(UTF8_ORDER).toList();
       ModuleCompletionStatus status =
-          gapRefs.isEmpty() ? ModuleCompletionStatus.SUCCEEDED : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
+          gapRefs.isEmpty()
+              ? ModuleCompletionStatus.SUCCEEDED
+              : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
       List<CanonicalModulePayload> payloads =
           payloads(candidates, decisions, proofPayload, gaps).stream()
               .sorted(Comparator.comparing(CanonicalModulePayload::fileName, UTF8_ORDER))
               .toList();
       AnalysisStepModuleAddress moduleAddress =
           new AnalysisStepModuleAddress(
-              source.publication().address().runId(), AnalysisStepKey.PROVEN_CODE_FACTS, 3, "publish");
+              source.publication().address().runId(),
+              AnalysisStepKey.PROVEN_CODE_FACTS,
+              3,
+              "publish");
       InstalledModulePublication module =
           moduleArtifacts.install(
               new ModuleInstallRequest(
@@ -150,7 +154,8 @@ public final class FactLedgerPublicationSpecifier {
       InstalledAnalysisStepPublication step =
           analysisStepArtifacts.install(
               new AnalysisStepInstallRequest(
-                  new AnalysisStepPublicationAddress(moduleAddress.runId(), AnalysisStepKey.PROVEN_CODE_FACTS),
+                  new AnalysisStepPublicationAddress(
+                      moduleAddress.runId(), AnalysisStepKey.PROVEN_CODE_FACTS),
                   new AnalysisStepPublisherModuleProvenance(module.reference()),
                   List.of(source.publication(), discovery.publication(), graphs.publication()),
                   inputs.controls(),
@@ -159,7 +164,8 @@ public final class FactLedgerPublicationSpecifier {
                   payloads.stream().map(FactLedgerPublicationSpecifier::stepPayload).toList(),
                   null));
       ReopenedAnalysisStepPublication reopened = analysisStepArtifacts.reopen(step.reference());
-      if (!step.reference().equals(reopened.reference()) || reopened.semanticPayloads().size() != 4) {
+      if (!step.reference().equals(reopened.reference())
+          || reopened.semanticPayloads().size() != 4) {
         throw broken();
       }
       return new ProvenCodeFactsReference(step.reference());
@@ -175,7 +181,8 @@ public final class FactLedgerPublicationSpecifier {
       AnalysisStepPublicationReference reference, AnalysisStepKey expected) {
     if (reference == null || reference.address().analysisStepKey() != expected) throw broken();
     ReopenedAnalysisStepPublication reopened = analysisStepArtifacts.reopen(reference);
-    if (!reference.equals(reopened.reference()) || reopened.receipt().address().analysisStepKey() != expected) {
+    if (!reference.equals(reopened.reference())
+        || reopened.receipt().address().analysisStepKey() != expected) {
       throw broken();
     }
     return reopened;
@@ -215,7 +222,8 @@ public final class FactLedgerPublicationSpecifier {
   }
 
   private static ArtifactReference onlyPayload(ReopenedModulePublication module) {
-    if (module.payloads().size() != 1 || module.receipt().payloadArtifacts().size() != 1) throw broken();
+    if (module.payloads().size() != 1 || module.receipt().payloadArtifacts().size() != 1)
+      throw broken();
     VerifiedCanonicalPayload payload = module.payloads().get(0);
     if (!payload.descriptor().equals(module.receipt().payloadArtifacts().get(0))) throw broken();
     return new ArtifactReference(payload.descriptor().artifactId(), payload.descriptor().sha256());
@@ -291,7 +299,9 @@ public final class FactLedgerPublicationSpecifier {
     ObjectNode body = commonBody(candidates, decisions, proofPayload);
     List<String> candidateKeys =
         sortedStrings(
-            candidates.candidates().stream().map(FactLedgerPublicationSpecifier::candidateKey).toList());
+            candidates.candidates().stream()
+                .map(FactLedgerPublicationSpecifier::candidateKey)
+                .toList());
     List<String> boundaryCandidateKeys =
         sortedStrings(
             candidates.candidates().stream()
@@ -305,7 +315,8 @@ public final class FactLedgerPublicationSpecifier {
                 .map(FactLedgerPublicationSpecifier::candidateKey)
                 .toList());
     List<String> admittedFacts =
-        sortedStrings(decisions.codeFacts().stream().map(ProofDecisionSet.CodeFact::factId).toList());
+        sortedStrings(
+            decisions.codeFacts().stream().map(ProofDecisionSet.CodeFact::factId).toList());
     List<String> rejectedCandidates =
         sortedStrings(
             decisions.factDispositions().stream()
@@ -410,7 +421,8 @@ public final class FactLedgerPublicationSpecifier {
     for (ProofDecisionSet.CodeFact fact : decisions.codeFacts()) {
       ProofDecisionSet.FactDisposition disposition =
           dispositionByKey.get(fact.candidateDenominatorKey());
-      if (disposition == null || !fact.factId().equals(disposition.admittedFactId())) throw broken();
+      if (disposition == null || !fact.factId().equals(disposition.admittedFactId()))
+        throw broken();
     }
   }
 
@@ -438,14 +450,11 @@ public final class FactLedgerPublicationSpecifier {
     for (ProofDecisionSet.ExternalEffectGap gap : decisions.externalEffectGaps()) {
       FactCandidateSet.FactCandidate candidate = candidateByKey.get(gap.candidateDenominatorKey());
       if (candidate == null || !"JAVA_BOUNDARY_INVOCATION".equals(candidate.kind())) throw broken();
-      result.add(
-          LedgerGap.external(
-              gap.gapId(),
-              candidate,
-              gap.basisEvidenceNodeIds()));
+      result.add(LedgerGap.external(gap.gapId(), candidate, gap.basisEvidenceNodeIds()));
     }
     for (ProofDecisionSet.RootCauseRejection rejection : decisions.rootCauseRejections()) {
-      FactCandidateSet.FactCandidate candidate = candidateByKey.get(rejection.candidateDenominatorKey());
+      FactCandidateSet.FactCandidate candidate =
+          candidateByKey.get(rejection.candidateDenominatorKey());
       if (candidate == null) throw broken();
       List<String> evidence =
           candidate.evidenceBySubject().stream()
@@ -459,7 +468,8 @@ public final class FactLedgerPublicationSpecifier {
               .toList();
       result.add(LedgerGap.rejection(rejection, candidate, evidence));
     }
-    List<LedgerGap> ordered = result.stream().sorted(Comparator.comparing(LedgerGap::gapId, UTF8_ORDER)).toList();
+    List<LedgerGap> ordered =
+        result.stream().sorted(Comparator.comparing(LedgerGap::gapId, UTF8_ORDER)).toList();
     if (ordered.size() != ordered.stream().map(LedgerGap::gapId).distinct().count()) throw broken();
     return ordered;
   }
@@ -511,17 +521,19 @@ public final class FactLedgerPublicationSpecifier {
     node.put("kind", value.kind());
     strings(node.putArray("subjectNodeIds"), value.subjectNodeIds());
     ArrayNode atoms = node.putArray("atoms");
-    value.atoms().forEach(
-        atom -> {
-          ObjectNode item = atoms.addObject();
-          item.put("atomId", atom.atomId());
-          item.put("role", atom.role());
-          item.put("name", atom.name());
-          item.putObject("value")
-              .put("type", atom.value().type())
-              .put("canonical", atom.value().canonical());
-          item.put("proofId", atom.proofId());
-        });
+    value
+        .atoms()
+        .forEach(
+            atom -> {
+              ObjectNode item = atoms.addObject();
+              item.put("atomId", atom.atomId());
+              item.put("role", atom.role());
+              item.put("name", atom.name());
+              item.putObject("value")
+                  .put("type", atom.value().type())
+                  .put("canonical", atom.value().canonical());
+              item.put("proofId", atom.proofId());
+            });
     return node;
   }
 
@@ -543,8 +555,10 @@ public final class FactLedgerPublicationSpecifier {
     ObjectNode node = JsonNodeFactory.instance.objectNode();
     node.put("candidateDenominatorKey", value.candidateDenominatorKey());
     node.put("disposition", value.disposition());
-    if (value.admittedFactId() == null) node.putNull("admittedFactId"); else node.put("admittedFactId", value.admittedFactId());
-    if (value.reasonCode() == null) node.putNull("reasonCode"); else node.put("reasonCode", value.reasonCode());
+    if (value.admittedFactId() == null) node.putNull("admittedFactId");
+    else node.put("admittedFactId", value.admittedFactId());
+    if (value.reasonCode() == null) node.putNull("reasonCode");
+    else node.put("reasonCode", value.reasonCode());
     return node;
   }
 
@@ -553,8 +567,10 @@ public final class FactLedgerPublicationSpecifier {
     node.put("candidateDenominatorKey", value.candidateDenominatorKey());
     node.put("atomKey", value.atomKey());
     node.put("disposition", value.disposition());
-    if (value.proofId() == null) node.putNull("proofId"); else node.put("proofId", value.proofId());
-    if (value.reasonCode() == null) node.putNull("reasonCode"); else node.put("reasonCode", value.reasonCode());
+    if (value.proofId() == null) node.putNull("proofId");
+    else node.put("proofId", value.proofId());
+    if (value.reasonCode() == null) node.putNull("reasonCode");
+    else node.put("reasonCode", value.reasonCode());
     return node;
   }
 
@@ -573,8 +589,11 @@ public final class FactLedgerPublicationSpecifier {
 
   private static List<ArtifactReference> sortedReferences(List<ArtifactReference> values) {
     List<ArtifactReference> ordered =
-        values.stream().sorted(Comparator.comparing(value -> value.artifactId().value(), UTF8_ORDER)).toList();
-    if (ordered.size() != ordered.stream().map(ArtifactReference::artifactId).distinct().count()) throw broken();
+        values.stream()
+            .sorted(Comparator.comparing(value -> value.artifactId().value(), UTF8_ORDER))
+            .toList();
+    if (ordered.size() != ordered.stream().map(ArtifactReference::artifactId).distinct().count())
+      throw broken();
     return ordered;
   }
 
@@ -593,13 +612,15 @@ public final class FactLedgerPublicationSpecifier {
   }
 
   private static int compareUtf8(String left, String right) {
-    return compareUtf8(left.getBytes(StandardCharsets.UTF_8), right.getBytes(StandardCharsets.UTF_8));
+    return compareUtf8(
+        left.getBytes(StandardCharsets.UTF_8), right.getBytes(StandardCharsets.UTF_8));
   }
 
   private static int compareUtf8(byte[] left, byte[] right) {
     int length = Math.min(left.length, right.length);
     for (int index = 0; index < length; index++) {
-      int compared = Integer.compare(Byte.toUnsignedInt(left[index]), Byte.toUnsignedInt(right[index]));
+      int compared =
+          Integer.compare(Byte.toUnsignedInt(left[index]), Byte.toUnsignedInt(right[index]));
       if (compared != 0) return compared;
     }
     return Integer.compare(left.length, right.length);

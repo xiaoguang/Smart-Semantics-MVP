@@ -88,11 +88,7 @@ public final class EntryRootedFlowCompiler {
         .map(
             gap ->
                 new FlowCompilation.FlowGap(
-                    gap.gapId(),
-                    "FLOW",
-                    gap.code(),
-                    gap.affectedEntryIds(),
-                    gap.evidenceNodeIds()))
+                    gap.gapId(), "FLOW", gap.code(), gap.affectedEntryIds(), gap.evidenceNodeIds()))
         .sorted(Comparator.comparing(FlowCompilation.FlowGap::gapId, UTF8_ORDER))
         .toList();
   }
@@ -231,7 +227,8 @@ public final class EntryRootedFlowCompiler {
       return;
     }
     if (current != null
-        && ("ENTRY_RETURN_TERMINAL".equals(current.kind()) || "THROW_TERMINAL".equals(current.kind()))) {
+        && ("ENTRY_RETURN_TERMINAL".equals(current.kind())
+            || "THROW_TERMINAL".equals(current.kind()))) {
       outcomes.add(path.terminated(current.kind()));
       return;
     }
@@ -280,12 +277,7 @@ public final class EntryRootedFlowCompiler {
           profile,
           traversal,
           new TraversalPath(
-              nextNodes,
-              decisions,
-              nextEdges,
-              callStack,
-              path.completedCallEdgeIds(),
-              null),
+              nextNodes, decisions, nextEdges, callStack, path.completedCallEdgeIds(), null),
           outcomes);
     }
   }
@@ -412,7 +404,9 @@ public final class EntryRootedFlowCompiler {
     for (int pathIndex = 1; pathIndex < paths.size(); pathIndex++) {
       List<String> next = paths.get(pathIndex);
       int common = 0;
-      while (common < prefix.size() && common < next.size() && prefix.get(common).equals(next.get(common))) {
+      while (common < prefix.size()
+          && common < next.size()
+          && prefix.get(common).equals(next.get(common))) {
         common++;
       }
       prefix = new ArrayList<>(prefix.subList(0, common));
@@ -482,8 +476,7 @@ public final class EntryRootedFlowCompiler {
       if (kind == null || kind.isBlank() || terminalKind != null) {
         throw broken("FLOW_OUTCOME_CLOSURE_BROKEN");
       }
-      return new TraversalPath(
-          nodeIds, decisions, edgeIds, callStack, completedCallEdgeIds, kind);
+      return new TraversalPath(nodeIds, decisions, edgeIds, callStack, completedCallEdgeIds, kind);
     }
   }
 

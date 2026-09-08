@@ -42,8 +42,8 @@ import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
-import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
+import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 import org.sourceanalysis.app.artifact.Sha256Digest;
 
 /** M1 contract: each eligible persisted capsule becomes one isolated, complete R0 task. */
@@ -106,8 +106,7 @@ public class RegistryProposalTaskCompilerTest {
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("registry-proposal-task-set-module"))) {
       BusinessFlowsReference businessFlows = publishBusinessFlows(fixture);
-      RegistryProposalTaskSet taskSet =
-          (RegistryProposalTaskSet) compile(fixture, businessFlows);
+      RegistryProposalTaskSet taskSet = (RegistryProposalTaskSet) compile(fixture, businessFlows);
 
       ModulePublicationReference publication = publishTaskSet(fixture, businessFlows, taskSet);
       ReopenedModulePublication reopened = fixture.moduleArtifacts().reopen(publication);
@@ -119,16 +118,19 @@ public class RegistryProposalTaskCompilerTest {
                   AnalysisStepKey.FLOW_INTERPRETATION,
                   1,
                   "registry-task-compiler"));
-      assertThat(reopened.payloads()).singleElement().satisfies(
-          payload -> {
-            assertThat(payload.descriptor().fileName())
-                .isEqualTo("registry-proposal-task-set.json");
-            assertThat(payload.descriptor().artifactType())
-                .isEqualTo("FLOW_INTERPRETATION_REGISTRY_PROPOSAL_TASK_SET");
-            assertThat(payload.descriptor().schemaVersion())
-                .isEqualTo("flow-interpretation-registry-proposal-task-set-v2");
-          });
-      JsonNode stored = new CanonicalJsonCodec().parseCanonical(reopened.payloads().get(0).canonicalUtf8());
+      assertThat(reopened.payloads())
+          .singleElement()
+          .satisfies(
+              payload -> {
+                assertThat(payload.descriptor().fileName())
+                    .isEqualTo("registry-proposal-task-set.json");
+                assertThat(payload.descriptor().artifactType())
+                    .isEqualTo("FLOW_INTERPRETATION_REGISTRY_PROPOSAL_TASK_SET");
+                assertThat(payload.descriptor().schemaVersion())
+                    .isEqualTo("flow-interpretation-registry-proposal-task-set-v2");
+              });
+      JsonNode stored =
+          new CanonicalJsonCodec().parseCanonical(reopened.payloads().get(0).canonicalUtf8());
       assertThat(stored.at("/payload/eligibleFlowSliceIds"))
           .extracting(JsonNode::asText)
           .containsExactlyElementsOf(taskSet.eligibleFlowSliceIds());
@@ -196,8 +198,7 @@ public class RegistryProposalTaskCompilerTest {
               .newInstance(fixture.moduleArtifacts(), fixture.stepArtifacts());
       return (ModulePublicationReference)
           publisherType
-              .getMethod(
-                  "publish", BusinessFlowsReference.class, RegistryProposalTaskSet.class)
+              .getMethod("publish", BusinessFlowsReference.class, RegistryProposalTaskSet.class)
               .invoke(publisher, businessFlows, taskSet);
     } catch (ClassNotFoundException missing) {
       throw new AssertionError("REGISTRY_PROPOSAL_TASK_SET_PUBLISHER_NOT_IMPLEMENTED", missing);

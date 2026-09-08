@@ -5,7 +5,10 @@ import java.util.Objects;
 
 /** Exact R1 or R2 flow denominator and output-task set. */
 public record FlowModelTaskShardReceipt(
-    String shardId, String round, List<String> denominatorFlowSliceIds, List<String> outputTaskSpecIds) {
+    String shardId,
+    String round,
+    List<String> denominatorFlowSliceIds,
+    List<String> outputTaskSpecIds) {
 
   /** Requires a nonempty unique sorted-per-record shard for one model round. */
   public FlowModelTaskShardReceipt {

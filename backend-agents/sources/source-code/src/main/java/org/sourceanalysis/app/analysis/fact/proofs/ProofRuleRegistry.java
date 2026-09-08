@@ -77,7 +77,8 @@ public record ProofRuleRegistry(String schemaVersion, List<RuleAllowance> allowa
     public RuleAllowance {
       subjectCategory = Objects.requireNonNull(subjectCategory, "subject category");
       ruleIds = List.copyOf(Objects.requireNonNull(ruleIds, "rule IDs"));
-      if (ruleIds.isEmpty() || ruleIds.stream().anyMatch(value -> value == null || value.isBlank())) {
+      if (ruleIds.isEmpty()
+          || ruleIds.stream().anyMatch(value -> value == null || value.isBlank())) {
         throw new IllegalArgumentException("PROOF_RULE_REGISTRY_INVALID");
       }
       if (ruleIds.size() != ruleIds.stream().distinct().count()

@@ -57,7 +57,9 @@ public final class RegistryProposalExecutionSetModulePublisher {
     this.moduleArtifacts = Objects.requireNonNull(moduleArtifacts, "module artifact store");
   }
 
-  /** Fresh-reopens M1, verifies every R0 result against its denominator, and installs one payload. */
+  /**
+   * Fresh-reopens M1, verifies every R0 result against its denominator, and installs one payload.
+   */
   public ModulePublicationReference publish(
       ModulePublicationReference taskSetPublication, RegistryProposalExecutionSet executionSet) {
     try {
@@ -116,7 +118,8 @@ public final class RegistryProposalExecutionSetModulePublisher {
     String taskSetId = identifier(body, "taskSetId");
     List<TaskDenominatorItem> tasks = new ArrayList<>();
     for (JsonNode task : array(body, "tasks")) {
-      tasks.add(new TaskDenominatorItem(identifier(task, "taskSpecId"), identifier(task, "flowSliceId")));
+      tasks.add(
+          new TaskDenominatorItem(identifier(task, "taskSpecId"), identifier(task, "flowSliceId")));
     }
     tasks.sort(Comparator.comparing(TaskDenominatorItem::flowSliceId, UTF8_ORDER));
     List<String> eligibleFlowIds = identifierArray(body, "eligibleFlowSliceIds");
@@ -129,7 +132,11 @@ public final class RegistryProposalExecutionSetModulePublisher {
     ArrayNode shards = array(body, "taskShardReceipts");
     if (!closedShardPartition(shards, tasks)) throw failure();
     return new TaskSetView(
-        taskSetId, List.copyOf(tasks), shards.deepCopy(), publication.receipt().controls(), payload);
+        taskSetId,
+        List.copyOf(tasks),
+        shards.deepCopy(),
+        publication.receipt().controls(),
+        payload);
   }
 
   private void verifyExecutionSet(TaskSetView taskSet, RegistryProposalExecutionSet executionSet) {
@@ -163,7 +170,9 @@ public final class RegistryProposalExecutionSetModulePublisher {
           || proposal.registryProposalId().isBlank()) {
         throw failure();
       }
-      proposalsByTask.computeIfAbsent(proposal.taskSpecId(), ignored -> new ArrayList<>()).add(proposal);
+      proposalsByTask
+          .computeIfAbsent(proposal.taskSpecId(), ignored -> new ArrayList<>())
+          .add(proposal);
     }
     Set<String> dispositionFlows = new HashSet<>();
     Set<String> dispositionIds = new HashSet<>();
@@ -354,7 +363,8 @@ public final class RegistryProposalExecutionSetModulePublisher {
     return actual.size() == expected.size() && expected.equals(new HashSet<>(actual));
   }
 
-  private static Map<String, RegistryProposalRound> uniqueByTask(List<RegistryProposalRound> values) {
+  private static Map<String, RegistryProposalRound> uniqueByTask(
+      List<RegistryProposalRound> values) {
     Map<String, RegistryProposalRound> result = new HashMap<>();
     for (RegistryProposalRound value : values) {
       if (result.put(value.taskSpecId(), value) != null) throw failure();

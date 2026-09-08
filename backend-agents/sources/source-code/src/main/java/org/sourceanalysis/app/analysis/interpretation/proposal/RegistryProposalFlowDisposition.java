@@ -1,8 +1,8 @@
 package org.sourceanalysis.app.analysis.interpretation.proposal;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
-import java.nio.charset.StandardCharsets;
 
 /** The one closed R0 outcome for one eligible Flow. */
 public record RegistryProposalFlowDisposition(
@@ -45,7 +45,8 @@ public record RegistryProposalFlowDisposition(
 
   private static List<String> ordered(List<String> values, String label) {
     Objects.requireNonNull(values, label);
-    List<String> ordered = values.stream().sorted(RegistryProposalFlowDisposition::compareUtf8).toList();
+    List<String> ordered =
+        values.stream().sorted(RegistryProposalFlowDisposition::compareUtf8).toList();
     if (ordered.stream().anyMatch(value -> value == null || value.isBlank())
         || ordered.size() != ordered.stream().distinct().count()) {
       throw new IllegalArgumentException(label + " must be unique and nonblank");
@@ -57,13 +58,15 @@ public record RegistryProposalFlowDisposition(
     byte[] first = left.getBytes(StandardCharsets.UTF_8);
     byte[] second = right.getBytes(StandardCharsets.UTF_8);
     for (int index = 0; index < Math.min(first.length, second.length); index++) {
-      int comparison = Integer.compare(Byte.toUnsignedInt(first[index]), Byte.toUnsignedInt(second[index]));
+      int comparison =
+          Integer.compare(Byte.toUnsignedInt(first[index]), Byte.toUnsignedInt(second[index]));
       if (comparison != 0) return comparison;
     }
     return Integer.compare(first.length, second.length);
   }
 
   private static void required(String value, String label) {
-    if (value == null || value.isBlank()) throw new IllegalArgumentException(label + " is required");
+    if (value == null || value.isBlank())
+      throw new IllegalArgumentException(label + " is required");
   }
 }

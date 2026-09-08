@@ -13,10 +13,7 @@ public record CapsuleProjectionProfile(
 
   public CapsuleProjectionProfile {
     Objects.requireNonNull(profileRef, "projection profile reference");
-    if (maxCapsules < 1
-        || maxSpansPerCapsule < 1
-        || maxSpanBytes < 1
-        || maxCapsuleUtf8Bytes < 1) {
+    if (maxCapsules < 1 || maxSpansPerCapsule < 1 || maxSpanBytes < 1 || maxCapsuleUtf8Bytes < 1) {
       throw new IllegalArgumentException("CAPSULE_PROJECTION_PROFILE_INVALID");
     }
   }

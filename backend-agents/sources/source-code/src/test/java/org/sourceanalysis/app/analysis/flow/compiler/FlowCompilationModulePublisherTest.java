@@ -28,7 +28,9 @@ import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 import org.sourceanalysis.app.artifact.Sha256Digest;
 
-/** M1 persistence seam: Flow compilation must be a canonical module artifact before M2 can use it. */
+/**
+ * M1 persistence seam: Flow compilation must be a canonical module artifact before M2 can use it.
+ */
 class FlowCompilationModulePublisherTest {
 
   private static final String PUBLISHER_CLASS =
@@ -68,7 +70,9 @@ class FlowCompilationModulePublisherTest {
   }
 
   private static ModulePublicationReference publish(
-      ProgramGraphsPublicFixture fixture, ProvenCodeFactsReference facts, FlowCompilation compilation)
+      ProgramGraphsPublicFixture fixture,
+      ProvenCodeFactsReference facts,
+      FlowCompilation compilation)
       throws Exception {
     try {
       Class<?> publisherType = Class.forName(PUBLISHER_CLASS);
@@ -87,7 +91,11 @@ class FlowCompilationModulePublisherTest {
               FlowCompilation.class);
       return (ModulePublicationReference)
           method.invoke(
-              publisher, fixture.applicationDiscovery(), fixture.programGraphs(), facts, compilation);
+              publisher,
+              fixture.applicationDiscovery(),
+              fixture.programGraphs(),
+              facts,
+              compilation);
     } catch (ClassNotFoundException missing) {
       throw new AssertionError("FLOW_COMPILATION_MODULE_PUBLISHER_NOT_IMPLEMENTED", missing);
     } catch (InvocationTargetException failure) {

@@ -17,7 +17,6 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
@@ -44,11 +43,13 @@ public final class RepositoryInterpretationRegistryModulePublisher {
   private static final String TASK_SET_TYPE = "FLOW_INTERPRETATION_REGISTRY_PROPOSAL_TASK_SET";
   private static final String TASK_SET_SCHEMA = "flow-interpretation-registry-proposal-task-set-v2";
   private static final String EXECUTION_FILE = "registry-proposal-execution-set.json";
-  private static final String EXECUTION_TYPE = "FLOW_INTERPRETATION_REGISTRY_PROPOSAL_EXECUTION_SET";
+  private static final String EXECUTION_TYPE =
+      "FLOW_INTERPRETATION_REGISTRY_PROPOSAL_EXECUTION_SET";
   private static final String EXECUTION_SCHEMA =
       "flow-interpretation-registry-proposal-execution-set-v3";
   private static final String FILE_NAME = "repository-interpretation-registry.json";
-  private static final String ARTIFACT_TYPE = "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY";
+  private static final String ARTIFACT_TYPE =
+      "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY";
   private static final String SCHEMA_VERSION =
       "flow-interpretation-repository-interpretation-registry-v2";
   private static final String ARTIFACT_PREFIX = "flow-interpretation-repository-registry";
@@ -79,7 +80,8 @@ public final class RepositoryInterpretationRegistryModulePublisher {
       Objects.requireNonNull(executionSetPublication, "execution set publication");
       Objects.requireNonNull(businessFlows, "business Flows");
       Objects.requireNonNull(registry, "repository interpretation registry");
-      if (!businessFlows.publication().equals(registry.businessFlowsPublicationRef())) throw failure();
+      if (!businessFlows.publication().equals(registry.businessFlowsPublicationRef()))
+        throw failure();
       ReopenedModulePublication taskSet = reopenTaskSet(taskSetPublication);
       ReopenedModulePublication executionSet = reopenExecutionSet(executionSetPublication);
       ReopenedAnalysisStepPublication flowStep = analysisSteps.reopen(businessFlows.publication());
@@ -95,7 +97,8 @@ public final class RepositoryInterpretationRegistryModulePublisher {
               AnalysisStepKey.FLOW_INTERPRETATION,
               3,
               "registry-freezer");
-      CanonicalModulePayload payload = payload(address, upstream, taskSet.receipt().controls(), registry);
+      CanonicalModulePayload payload =
+          payload(address, upstream, taskSet.receipt().controls(), registry);
       InstalledModulePublication installed =
           moduleArtifacts.install(
               new ModuleInstallRequest(
@@ -116,7 +119,14 @@ public final class RepositoryInterpretationRegistryModulePublisher {
 
   private ReopenedModulePublication reopenTaskSet(ModulePublicationReference reference) {
     ReopenedModulePublication publication = moduleArtifacts.reopen(reference);
-    requireModule(publication, reference, 1, "registry-task-compiler", TASK_SET_FILE, TASK_SET_TYPE, TASK_SET_SCHEMA);
+    requireModule(
+        publication,
+        reference,
+        1,
+        "registry-task-compiler",
+        TASK_SET_FILE,
+        TASK_SET_TYPE,
+        TASK_SET_SCHEMA);
     return publication;
   }
 
@@ -173,9 +183,10 @@ public final class RepositoryInterpretationRegistryModulePublisher {
       if (taskFlowById.put(taskId, flowId) != null) throw failure();
     }
     taskIds.sort(UTF8_ORDER);
-    if (!taskFlows.equals(
-        taskFlowById.values().stream().sorted(UTF8_ORDER).toList())) throw failure();
-    if (!identifier(executionSet, "taskSetId").equals(identifier(taskSet, "taskSetId"))) throw failure();
+    if (!taskFlows.equals(taskFlowById.values().stream().sorted(UTF8_ORDER).toList()))
+      throw failure();
+    if (!identifier(executionSet, "taskSetId").equals(identifier(taskSet, "taskSetId")))
+      throw failure();
     Map<String, JsonNode> executionDispositions = new HashMap<>();
     for (JsonNode disposition : array(executionSet, "flowDispositions")) {
       String flowId = identifier(disposition, "flowSliceId");
@@ -188,8 +199,10 @@ public final class RepositoryInterpretationRegistryModulePublisher {
       String proposalId = identifier(proposal, "registryProposalId");
       if (proposals.put(proposalId, proposal) != null) throw failure();
     }
-    Map<String, RepositoryInterpretationRegistryFlowDisposition> registryDispositions = new HashMap<>();
-    for (RepositoryInterpretationRegistryFlowDisposition disposition : registry.flowDispositions()) {
+    Map<String, RepositoryInterpretationRegistryFlowDisposition> registryDispositions =
+        new HashMap<>();
+    for (RepositoryInterpretationRegistryFlowDisposition disposition :
+        registry.flowDispositions()) {
       if (registryDispositions.put(disposition.flowSliceId(), disposition) != null) throw failure();
       JsonNode execution = executionDispositions.get(disposition.flowSliceId());
       if (execution == null
@@ -198,7 +211,8 @@ public final class RepositoryInterpretationRegistryModulePublisher {
           || !identifier(execution, "registryProposalRoundId")
               .equals(disposition.registryProposalRoundId())
           || !identifier(execution, "generationReceiptId").equals(disposition.generationReceiptId())
-          || !identifierArray(execution, "registryProposalIds").equals(disposition.registryProposalIds())
+          || !identifierArray(execution, "registryProposalIds")
+              .equals(disposition.registryProposalIds())
           || !identifierArray(execution, "gapIds").equals(disposition.gapIds())
           || !Objects.equals(nullableText(execution, "reasonCode"), disposition.reasonCode())) {
         throw failure();
@@ -207,7 +221,8 @@ public final class RepositoryInterpretationRegistryModulePublisher {
     for (RepositoryInterpretationRegistryItem item : registry.items()) {
       JsonNode proposal = proposals.get(item.registryProposalId());
       if (proposal == null
-          || !identifier(proposal, "taskSpecId").equals(taskIdForFlow(taskFlowById, item.flowSliceId()))
+          || !identifier(proposal, "taskSpecId")
+              .equals(taskIdForFlow(taskFlowById, item.flowSliceId()))
           || !identifier(proposal, "flowSliceId").equals(item.flowSliceId())
           || !identifier(proposal, "evidenceCapsuleId").equals(item.evidenceCapsuleId())
           || !text(proposal, "proposalKind").equals(item.proposalKind())
@@ -293,7 +308,9 @@ public final class RepositoryInterpretationRegistryModulePublisher {
   }
 
   private static JsonNode payload(ReopenedModulePublication publication) {
-    return new CanonicalJsonCodec().parseCanonical(publication.payloads().get(0).canonicalUtf8()).path("payload");
+    return new CanonicalJsonCodec()
+        .parseCanonical(publication.payloads().get(0).canonicalUtf8())
+        .path("payload");
   }
 
   private static ArtifactReference reference(VerifiedCanonicalPayload payload) {
@@ -449,7 +466,8 @@ public final class RepositoryInterpretationRegistryModulePublisher {
     byte[] first = left.getBytes(StandardCharsets.UTF_8);
     byte[] second = right.getBytes(StandardCharsets.UTF_8);
     for (int index = 0; index < Math.min(first.length, second.length); index++) {
-      int comparison = Integer.compare(Byte.toUnsignedInt(first[index]), Byte.toUnsignedInt(second[index]));
+      int comparison =
+          Integer.compare(Byte.toUnsignedInt(first[index]), Byte.toUnsignedInt(second[index]));
       if (comparison != 0) return comparison;
     }
     return Integer.compare(first.length, second.length);

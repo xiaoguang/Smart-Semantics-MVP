@@ -54,7 +54,8 @@ class ProgramGraphPublicWireTest {
   @Test
   void publicGraphsCloseEvidenceAndIndexWithoutDraftFields() {
     try (ControlFlowGraphBuilderTest.Fixture fixture =
-        ControlFlowGraphBuilderTest.Fixture.createWithConsumedAuditClientReturn(temporaryDirectory)) {
+        ControlFlowGraphBuilderTest.Fixture.createWithConsumedAuditClientReturn(
+            temporaryDirectory)) {
       CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
       CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
       ArtifactControls controls = controls(policies);
@@ -337,15 +338,15 @@ class ProgramGraphPublicWireTest {
     assertThat(sawUnknownReturn).isTrue();
   }
 
-  private static void assertBoundaryInvocation(
-      JsonNode actual, JavaBoundaryInvocationV1 expected) {
+  private static void assertBoundaryInvocation(JsonNode actual, JavaBoundaryInvocationV1 expected) {
     assertThat(actual.isObject()).isTrue();
     assertThat(actual.path("invocationCallId").textValue())
         .isEqualTo(expected.invocationCallId().value());
     assertThat(actual.path("callTargetEdgeId").textValue())
         .isEqualTo(expected.callTargetEdgeId().value());
     assertThat(actual.path("staticTargetType").textValue()).isEqualTo(expected.staticTargetType());
-    assertThat(actual.path("staticTargetMethod").textValue()).isEqualTo(expected.staticTargetMethod());
+    assertThat(actual.path("staticTargetMethod").textValue())
+        .isEqualTo(expected.staticTargetMethod());
     assertThat(actual.path("staticTargetSignature").textValue())
         .isEqualTo(expected.staticTargetSignature());
     assertThat(actual.path("orderedArguments")).hasSize(expected.orderedArguments().size());
@@ -373,7 +374,8 @@ class ProgramGraphPublicWireTest {
     assertThat(actual.path("ruleId").textValue()).isEqualTo(expected.ruleId());
   }
 
-  private static void assertUnknownBoundaryReturn(JsonNode actual, UnknownBoundaryReturnV1 expected) {
+  private static void assertUnknownBoundaryReturn(
+      JsonNode actual, UnknownBoundaryReturnV1 expected) {
     assertThat(actual.isObject()).isTrue();
     assertThat(actual.path("boundaryInvocationNodeId").textValue())
         .isEqualTo(expected.boundaryInvocationNodeId().value());

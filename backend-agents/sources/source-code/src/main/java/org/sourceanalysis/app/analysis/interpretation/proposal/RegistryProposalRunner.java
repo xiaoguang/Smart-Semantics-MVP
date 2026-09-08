@@ -65,8 +65,10 @@ public final class RegistryProposalRunner {
         }
         ValidatedTaskResponse taskResponse = validate(task, response.canonicalResponseJson());
         List<BusinessRegistryProposal> taskProposals = taskResponse.proposals();
-        Sha256Digest responseSha = new Sha256Digest(sha256(response.canonicalResponseJson().copyToByteArray()));
-        String roundId = contentId("registry-proposal-round", List.of(task.taskSpecId(), responseSha.value()));
+        Sha256Digest responseSha =
+            new Sha256Digest(sha256(response.canonicalResponseJson().copyToByteArray()));
+        String roundId =
+            contentId("registry-proposal-round", List.of(task.taskSpecId(), responseSha.value()));
         String receiptId =
             contentId(
                 "registry-proposal-generation-receipt",
@@ -110,7 +112,9 @@ public final class RegistryProposalRunner {
               "registry-proposal-execution-set",
               List.of(
                   persistedTaskSet.moduleArtifactRoot().value(),
-                  rounds.stream().map(RegistryProposalRound::registryProposalRoundId).collect(java.util.stream.Collectors.joining("|")))),
+                  rounds.stream()
+                      .map(RegistryProposalRound::registryProposalRoundId)
+                      .collect(java.util.stream.Collectors.joining("|")))),
           persistedTaskSet,
           rounds,
           receipts,
@@ -119,7 +123,8 @@ public final class RegistryProposalRunner {
     } catch (RegistryProposalTaskCompilationException failure) {
       throw failure;
     } catch (RuntimeException failure) {
-      throw new RegistryProposalTaskCompilationException("REGISTRY_PROPOSAL_RESPONSE_INVALID", failure);
+      throw new RegistryProposalTaskCompilationException(
+          "REGISTRY_PROPOSAL_RESPONSE_INVALID", failure);
     }
   }
 
@@ -173,7 +178,8 @@ public final class RegistryProposalRunner {
 
   private ValidatedTaskResponse validate(RegistryProposalTask task, ImmutableBytes responseBytes) {
     JsonNode response = canonicalJson.parseCanonical(responseBytes);
-    if (!"flow-interpretation-registry-proposal-response-v1".equals(text(response, "schemaVersion"))) {
+    if (!"flow-interpretation-registry-proposal-response-v1"
+        .equals(text(response, "schemaVersion"))) {
       throw failure("REGISTRY_PROPOSAL_RESPONSE_INVALID");
     }
     String responseKind = text(response, "kind");
@@ -191,8 +197,10 @@ public final class RegistryProposalRunner {
       throw failure("REGISTRY_PROPOSAL_REFERENCE_INVALID");
     }
     JsonNode capsule = field(input, "capsuleView");
-    Set<String> allowedAtoms = new HashSet<>(identifierArray(capsule, "registryProposalBasisAtomIds"));
-    Set<String> allowedGaps = new HashSet<>(identifierArray(capsule, "registryProposalBasisGapIds"));
+    Set<String> allowedAtoms =
+        new HashSet<>(identifierArray(capsule, "registryProposalBasisAtomIds"));
+    Set<String> allowedGaps =
+        new HashSet<>(identifierArray(capsule, "registryProposalBasisGapIds"));
     if ("R0_REGISTRY_PROPOSAL_GAP".equals(responseKind)) {
       requireExactFields(response, Set.of("schemaVersion", "kind", "gapIds", "reasonCode"));
       List<String> gapIds = identifierArray(response, "gapIds");
@@ -215,7 +223,13 @@ public final class RegistryProposalRunner {
       Set<String> actualFields = new HashSet<>();
       proposal.fieldNames().forEachRemaining(actualFields::add);
       if (!actualFields.equals(
-          Set.of("proposalKind", "label", "purpose", "basisAtomIds", "basisGapIds", "sourceSeedKey"))) {
+          Set.of(
+              "proposalKind",
+              "label",
+              "purpose",
+              "basisAtomIds",
+              "basisGapIds",
+              "sourceSeedKey"))) {
         throw failure("REGISTRY_PROPOSAL_RESPONSE_INVALID");
       }
       String proposalKind = text(proposal, "proposalKind");
@@ -230,15 +244,23 @@ public final class RegistryProposalRunner {
           || !allowedAtoms.containsAll(atomIds)
           || !allowedGaps.containsAll(gapIds)
           || proposal.get("sourceSeedKey") == null
-          || (!proposal.get("sourceSeedKey").isNull() && !proposal.get("sourceSeedKey").isTextual())) {
+          || (!proposal.get("sourceSeedKey").isNull()
+              && !proposal.get("sourceSeedKey").isTextual())) {
         throw failure("REGISTRY_PROPOSAL_REFERENCE_INVALID");
       }
-      String sourceSeedKey = proposal.get("sourceSeedKey").isNull() ? null : proposal.get("sourceSeedKey").textValue();
+      String sourceSeedKey =
+          proposal.get("sourceSeedKey").isNull() ? null : proposal.get("sourceSeedKey").textValue();
       result.add(
           new BusinessRegistryProposal(
               contentId(
                   "registry-proposal",
-                  List.of(task.taskSpecId(), proposalKind, label, purpose, String.join("|", atomIds), String.join("|", gapIds))),
+                  List.of(
+                      task.taskSpecId(),
+                      proposalKind,
+                      label,
+                      purpose,
+                      String.join("|", atomIds),
+                      String.join("|", gapIds))),
               task.taskSpecId(),
               task.flowSliceId(),
               task.evidenceCapsuleId(),
@@ -321,7 +343,8 @@ public final class RegistryProposalRunner {
   private static String contentId(String prefix, List<String> values) {
     byte[][] framed = new byte[values.size() + 1][];
     framed[0] = frame(prefix);
-    for (int index = 0; index < values.size(); index++) framed[index + 1] = frame(values.get(index));
+    for (int index = 0; index < values.size(); index++)
+      framed[index + 1] = frame(values.get(index));
     return prefix + ":" + sha256(framed);
   }
 

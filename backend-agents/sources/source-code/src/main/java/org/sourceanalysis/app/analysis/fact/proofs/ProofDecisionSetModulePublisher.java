@@ -60,10 +60,12 @@ public final class ProofDecisionSetModulePublisher {
     Objects.requireNonNull(decisions, "proof decisions");
     ArtifactReference candidatePayload = candidatePayload(candidatePublication, decisions);
     List<ArtifactReference> upstream =
-        List.of(candidatePayload, inputs.sourceInventoryRef(), inputs.verifiedSnapshotRef()).stream()
+        List.of(candidatePayload, inputs.sourceInventoryRef(), inputs.verifiedSnapshotRef())
+            .stream()
             .sorted(Comparator.comparing(reference -> reference.artifactId().value()))
             .toList();
-    if (upstream.size() != upstream.stream().map(ArtifactReference::artifactId).distinct().count()) {
+    if (upstream.size()
+        != upstream.stream().map(ArtifactReference::artifactId).distinct().count()) {
       throw broken();
     }
     List<String> gaps =
@@ -71,8 +73,12 @@ public final class ProofDecisionSetModulePublisher {
             .map(ProofDecisionSet.ExternalEffectGap::gapId)
             .sorted()
             .toList();
-    ModuleCompletionStatus status = gaps.isEmpty() ? ModuleCompletionStatus.SUCCEEDED : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
-    CanonicalModulePayload payload = payload(destination, decisions, upstream, inputs.controls(), status, gaps);
+    ModuleCompletionStatus status =
+        gaps.isEmpty()
+            ? ModuleCompletionStatus.SUCCEEDED
+            : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
+    CanonicalModulePayload payload =
+        payload(destination, decisions, upstream, inputs.controls(), status, gaps);
     InstalledModulePublication installed =
         moduleArtifacts.install(
             new ModuleInstallRequest(
@@ -111,7 +117,10 @@ public final class ProofDecisionSetModulePublisher {
       throw broken();
     }
     JsonNode envelope = canonicalJson.parseCanonical(payload.canonicalUtf8());
-    if (!decisions.candidateSetId().value().equals(envelope.path("payload").path("candidateSetId").asText())) {
+    if (!decisions
+        .candidateSetId()
+        .value()
+        .equals(envelope.path("payload").path("candidateSetId").asText())) {
       throw broken();
     }
     return new ArtifactReference(descriptor.artifactId(), descriptor.sha256());
@@ -177,15 +186,18 @@ public final class ProofDecisionSetModulePublisher {
     node.put("kind", fact.kind());
     strings(node.putArray("subjectNodeIds"), fact.subjectNodeIds());
     ArrayNode atoms = node.putArray("atoms");
-    fact.atoms().forEach(
-        atom -> {
-          ObjectNode item = atoms.addObject();
-          item.put("atomId", atom.atomId());
-          item.put("role", atom.role());
-          item.put("name", atom.name());
-          item.putObject("value").put("type", atom.value().type()).put("canonical", atom.value().canonical());
-          item.put("proofId", atom.proofId());
-        });
+    fact.atoms()
+        .forEach(
+            atom -> {
+              ObjectNode item = atoms.addObject();
+              item.put("atomId", atom.atomId());
+              item.put("role", atom.role());
+              item.put("name", atom.name());
+              item.putObject("value")
+                  .put("type", atom.value().type())
+                  .put("canonical", atom.value().canonical());
+              item.put("proofId", atom.proofId());
+            });
     return node;
   }
 
@@ -207,8 +219,10 @@ public final class ProofDecisionSetModulePublisher {
     ObjectNode node = JsonNodeFactory.instance.objectNode();
     node.put("candidateDenominatorKey", value.candidateDenominatorKey());
     node.put("disposition", value.disposition());
-    if (value.admittedFactId() == null) node.putNull("admittedFactId"); else node.put("admittedFactId", value.admittedFactId());
-    if (value.reasonCode() == null) node.putNull("reasonCode"); else node.put("reasonCode", value.reasonCode());
+    if (value.admittedFactId() == null) node.putNull("admittedFactId");
+    else node.put("admittedFactId", value.admittedFactId());
+    if (value.reasonCode() == null) node.putNull("reasonCode");
+    else node.put("reasonCode", value.reasonCode());
     return node;
   }
 
@@ -217,8 +231,10 @@ public final class ProofDecisionSetModulePublisher {
     node.put("candidateDenominatorKey", value.candidateDenominatorKey());
     node.put("atomKey", value.atomKey());
     node.put("disposition", value.disposition());
-    if (value.proofId() == null) node.putNull("proofId"); else node.put("proofId", value.proofId());
-    if (value.reasonCode() == null) node.putNull("reasonCode"); else node.put("reasonCode", value.reasonCode());
+    if (value.proofId() == null) node.putNull("proofId");
+    else node.put("proofId", value.proofId());
+    if (value.reasonCode() == null) node.putNull("reasonCode");
+    else node.put("reasonCode", value.reasonCode());
     return node;
   }
 
@@ -259,7 +275,11 @@ public final class ProofDecisionSetModulePublisher {
 
   private static ArrayNode references(List<ArtifactReference> values) {
     ArrayNode node = JsonNodeFactory.instance.arrayNode();
-    values.forEach(value -> node.addObject().put("artifactId", value.artifactId().value()).put("sha256", value.sha256().value()));
+    values.forEach(
+        value ->
+            node.addObject()
+                .put("artifactId", value.artifactId().value())
+                .put("sha256", value.sha256().value()));
     return node;
   }
 
@@ -268,7 +288,8 @@ public final class ProofDecisionSetModulePublisher {
     node.put("toolchainSha256", controls.toolchainSha256().value());
     node.put("profileSha256", controls.profileSha256().value());
     node.put("schemaBundleSha256", controls.schemaBundleSha256().value());
-    if (controls.promptBundleSha256() == null) node.putNull("promptBundleSha256"); else node.put("promptBundleSha256", controls.promptBundleSha256().value());
+    if (controls.promptBundleSha256() == null) node.putNull("promptBundleSha256");
+    else node.put("promptBundleSha256", controls.promptBundleSha256().value());
     node.putObject("artifactPolicyRegistryRef")
         .put("artifactId", controls.artifactPolicyRegistryRef().artifactId().value())
         .put("sha256", controls.artifactPolicyRegistryRef().sha256().value());
