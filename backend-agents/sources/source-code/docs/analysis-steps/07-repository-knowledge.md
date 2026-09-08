@@ -9,12 +9,12 @@
 Step 06的局部解释和跨Flow过程都是受限模型提案，不自动成为业务事实。RepositoryKnowledge用零模型调用完成唯一权威合并：
 
 1. 准入每条Flow的局部meaning或technical fallback；
-2. 验证每个process claim的证据闭包与certainty；
+2. 验证每个admission-eligible process claim的证据闭包，并只为实际准入claim分配certainty；
 3. 比较冲突、备选和待确认，不强行选唯一故事；
 4. 建立Flow ↔ BusinessProcess多对多membership；
 5. 生成全仓唯一一份RepositoryKnowledge。
 
-顺序固定为`local admission → process claim validation → conflict/alternative comparison → many-to-many membership → one knowledge`。本步骤没有Provider参数，运行时模型调用数严格为0。
+顺序固定为`local admission → admission-eligible process claim validation / terminal-no-model typed exclusion → conflict/alternative comparison → many-to-many membership → one knowledge`。本步骤没有Provider参数，运行时模型调用数严格为0。
 
 ## 2. 实际上游交接
 
@@ -61,7 +61,7 @@ Step 07可准入有证据的活动/对象/角色和某些转换；把并行费�
 
 | 模块 | 唯一职责 | 模型调用 |
 | --- | --- | --- |
-| M1 `ProposalAdmissionEngine` | 对全部Flow做局部total admission；验证所有process claims并给出process admission decisions | 0 |
+| M1 `ProposalAdmissionEngine` | 对全部Flow做局部total admission；验证六路process partition，只为admission-eligible hypotheses/claims给出process admission decisions，其余走typed exclusion | 0 |
 | M2 `AnchoredKnowledgeMerger` | 按Proof-backed技术锚点合并、比较冲突/备选、建立多对多membership与唯一knowledge | 0 |
 | M3 `KnowledgePublicationSpecifier` | 重算coverage/accounting，发布五项semantic payload；store receipt-last | 0 |
 
@@ -70,8 +70,8 @@ Step 07可准入有证据的活动/对象/角色和某些转换；把并行费�
 1. fresh-reopen前六步并重验refs、root、controls、Step 05 Flow denominator和Step 06十五文件。
 2. **Local admission**：按全部`flowSliceId`排序。eligible Flow exact-join一个local disposition；ineligible Flow要求非空ineligibility Gap且Step 06局部objects为零。每条Flow恰一个`FlowAdmissionDecisionV2`。
 3. READY local candidate逐跳验证`registryProposalId → provisionalKey → interpretationProposalId → selectedKey`；程序只能与R2相同或更保守。无法准入时使用冻结`TechnicalDisplayRegistry`的total fallback。
-4. **Process shard total validation**：先验证全部`A`个shard与`ProcessInterpretationDispositionV2`一一对应，并验证每个Step 06-owned `ProcessInterpretationGapV1`在全体`processGaps[]`中恰一canonical value、各disposition `gapIds` union闭合。`MODEL_TASKS`且P2 `REVIEWS`的分支逐hypothesis核对P1/P2 task、round、统一generation receipt、review、disposition、group/relation/signal、Flow/Capsule、Fact/Proof/Evidence/source refs及逐hypothesis P2非扩张；仅retained/narrowed/pending集合中的每个hypothesis恰一个`ProcessAdmissionDecisionV1`，DROP没有public hypothesis或admission。P2 `GAP/FAILED`分支保留全部P1 hypothesis与P1/P2 task/round/receipt，但review字段为null且没有process admission；这些hypothesis、claims及owner relations连同typed Step 06 Gap逐项进入`reasonedSemanticExclusionIds`。`MODEL_TASKS`但P1 GAP/FAILED的分支没有hypothesis/admission，必须保留P1 task/round/receipt、planned P2 task与`NOT_RUN_UPSTREAM_FAILED` disposition，并把owner relations带process disposition Gap进入同一exclusion集合。`NO_MODEL`分支必须没有hypothesis/admission/model object，其owner candidate relations也逐条reasoned exclusion。后三类非准入分支的context Flow仍由步骤7生成independent或带显式Gap的unassigned membership，不得丢失。
-5. 给每个claim分配恰一certainty：`SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION`。不允许numeric confidence或`HIGH/MEDIUM/LOW`等旁路。
+4. **Process shard total validation**：先验证全部`A`个shard与`ProcessInterpretationDispositionV2`一一对应，并验证每个Step 06-owned `ProcessInterpretationGapV1`在全体`processGaps[]`中恰一canonical value、各disposition `gapIds` union闭合。`MODEL_TASKS`且P2 `REVIEWS`的分支逐hypothesis核对P1/P2 task、round、统一generation receipt、review、disposition、group/relation/signal、Flow/Capsule、Fact/Proof/Evidence/source refs及逐hypothesis P2非扩张；仅retained/narrowed/pending集合中的每个hypothesis恰一个`ProcessAdmissionDecisionV1`，DROP没有public hypothesis或admission。P2 `GAP/FAILED`分支保留全部P1 hypothesis与P1/P2 task/round/receipt，但review字段为null且没有process admission；这些hypothesis、claims及owner relations连同typed Step 06 Gap逐项进入`reasonedSemanticExclusionIds`。`MODEL_TASKS`但P1 GAP/FAILED的分支没有hypothesis/admission，必须保留P1 task/round/receipt、planned P2 task与`NOT_RUN_UPSTREAM_FAILED` disposition；P1 FAILED还必须把唯一`PROCESS_P1_HYPOTHESIS_FAILED` carrier与owner relations带入同一exclusion集合。`NO_MODEL`分支必须没有hypothesis/admission/model object，其owner candidate relations也逐条reasoned exclusion。后三类非准入分支的context Flow仍由步骤7生成independent或带显式Gap的unassigned membership，不得丢失。
+5. 给每个实际准入的process claim分配恰一certainty：`SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION`。DROP、P1 terminal、P2 GAP/FAILED和no-model分支没有process certainty；不允许numeric confidence或`HIGH/MEDIUM/LOW`等旁路。
 6. **Conflict/alternative comparison**：相同anchor上的兼容claims可合并；相斥且无优先Proof的claims保留为`processAlternatives`或pending，不得挑一个更流畅的叙事。
 7. **Many-to-many membership**：为准入/保留的process建立activities、relations、roles、states和memberships。每条Flow必须属于至少一个BusinessProcess、一个`INDEPENDENT_ACTIVITY`，或一个带显式Gap的`UNASSIGNED_PENDING`。
 8. **One knowledge**：按FQN、SQL table/column、Flow/Outcome ID、exact graph endpoint或Proof-backed equivalence合并；display/simple name/registry term不作identity。生成一份且仅一份RepositoryKnowledge。
@@ -158,6 +158,22 @@ certainty规则：
 - `EVIDENCE_SUPPORTED_INFERENCE`要求P1响应accepted、P2对同一hypothesis/claim为`KEEP | NARROW`、至少一个经M6验证的`PROVEN_HANDOFF | SHARED_ANCHOR` supporting relation/signal、完整Fact/Proof/Evidence/source闭包，并且`blockingCounterSignalIds=[]`；任何仅有`SEMANTIC_CUE`、P2 review为pending、或blocking数组非空的admitted claim只能`PENDING_CONFIRMATION`；P2 GAP/FAILED或NOT_RUN根本不进入claim admission；
 - `PENDING_CONFIRMATION`要求非空Gap或counter refs，只能进入pending/alternative，不得用于确定性转换；
 - reader wording不能提升certainty；P1/P2文字也不是Fact。
+
+对每条实际创建的`ProcessAdmissionDecisionV1 d`，Step 06 Gap传播不是启发式。令`h`为`d.businessProcessHypothesisId`指向的唯一hypothesis，`owner`为`d.processInterpretationDispositionId`指向的唯一disposition；必须满足：
+
+~~~text
+affectedStep06GapIds(d) = sorted exact set of owner.processGaps[].gapId where
+  h.businessProcessHypothesisId is in g.businessProcessHypothesisIds
+  OR intersection(d.claimDecisions.processClaimId, g.processClaimIds) is nonempty
+  OR intersection(d.candidateRelationIds, g.candidateRelationIds) is nonempty
+
+d.gapIds = exactUnion(
+  all d.claimDecisions[].gapIds,
+  review(h.processHypothesisReviewId).reviewGapIds,
+  affectedStep06GapIds(d))
+~~~
+
+这里`review(...)`必须fresh-reopen `h.processHypothesisReviewId`唯一指向的P2 `REVIEWS` record；本record只为该分支创建，所以该ref必为non-null。不得按group共现、Flow重叠、message或遍历顺序附Gap。该规则使`PROCESS_COUNTER_SCOPE_UNRESOLVED`在受影响relation确被一个准入过程使用时进入该decision并把certainty限制为pending；若没有这样的准入decision，它不虚构process owner。
 
 ### 5.1 过程知识数组
 
@@ -422,19 +438,23 @@ MergedGapV3
   messageKey!
 ~~~
 
-Step 06-owned Gap不得经lossy归并。每个`ProcessInterpretationGapV1 g`确定性产生一条member-singleton `MergedGapV3`，即`memberGapIds=[g.gapId]`；这条记录逐字复制`gapCode/messageKey/failureCode/limitKind/configuredLimit/observedValue`、`affectedFlowSliceIds/factIds/proofIds/evidenceNodeIds/sourceLocators/searchedScopeRefs`，并固定：
+Step 06-owned Gap不得经lossy归并。每个`ProcessInterpretationGapV1 g`确定性产生一条member-singleton `MergedGapV3`；这条记录逐字复制`gapCode/messageKey/failureCode/limitKind/configuredLimit/observedValue`、`affectedFlowSliceIds/factIds/proofIds/evidenceNodeIds/sourceLocators/searchedScopeRefs`，并固定：
 
 ~~~text
 merged.gapScope = BUSINESS_PROCESS
+merged.canonicalGapId = g.gapId
+merged.memberGapIds = [g.gapId]
 merged.affectedSemanticIds = exactUnion(
   g.processEvidenceGroupId, g.taskShardId, g.candidateRelationIds,
   g.businessProcessHypothesisIds, g.processClaimIds, g.processModelTaskIds,
   g.affectedFlowSliceIds, g.processJoinSignalIds, g.processSemanticCueIds,
   g.repositoryInterpretationRegistryItemIds)
-merged.affectedBusinessProcessIds = exact IDs of already-admitted processes affected by g
+merged.affectedBusinessProcessIds = sorted exact set of d.businessProcessId where
+  d is a ProcessAdmissionDecisionV1 AND d.businessProcessId is nonnull
+  AND g.gapId is in d.gapIds
 ~~~
 
-P2 GAP/FAILED、counter-scope和budget的非准入分支没有admitted process，所以其`affectedBusinessProcessIds=[]`，但hypothesis/relation/shard IDs仍完整存在于`affectedSemanticIds`。上述singleton规则加上fresh-reopened Step 06 carrier，使mapping从`MergedGapV3.memberGapIds[0]`回到原typed value完全可逆；不同Step 06 Gap不得因message相同而合并。其他上游Gap仍可按既有canonical equivalence合并，但新增字段必须取各member exact union，required-nullable值不一致时不得合并。
+因此P1/P2 terminal和budget/no-model等没有non-null process decision的分支自然得到`affectedBusinessProcessIds=[]`；counter-scope或P2 review Gap则可在且仅在某个实际准入decision按上式携带它时得到非空process IDs。禁止因为Gap code、group/Flow共现或“非准入分支”标签硬编码空/非空。上述singleton规则加上fresh-reopened Step 06 carrier，使mapping从`MergedGapV3.canonicalGapId = MergedGapV3.memberGapIds[0]`回到原typed value完全可逆；不同Step 06 Gap不得因message相同而合并。其他上游Gap仍可按既有canonical equivalence合并，但新增字段必须取各member exact union，required-nullable值不一致时不得合并。
 
 discriminator与nullable规则是闭集：`FLOW`只允许`flowDecision`非null，`BUSINESS_PROCESS`只允许`processDecision`非null；`KnowledgeConflictV3.winningSemanticItemId`只在`MERGE | REJECT`时非null；`fromActivityId/toActivityId`仅在关系端点确实未知且该记录为`PENDING_CONFIRMATION`、同时有非空Gap时可null。所有过程记录必须保留其own certainty；不得从process继承。
 
@@ -548,11 +568,14 @@ flowSliceIds ↔ evidenceCapsuleIds
 flowSliceIds ↔ flowAdmissionDecision.flowSliceIds
 publishedBusinessProcessHypothesisIds = admissionEligibleHypothesisIds ⊎
                                         p2GapHypothesisIds ⊎ p2FailedHypothesisIds
-admissionEligibleHypothesisIds ↔ processAdmissionDecision.hypothesisIds
+admissionEligibleHypothesisIds = sorted exact set of d.businessProcessHypothesisId
+                                   over all ProcessAdmissionDecisionV1 d
 p2GapHypothesisIds ⊆ reasonedSemanticExclusionIds
 p2FailedHypothesisIds ⊆ reasonedSemanticExclusionIds
 claims and owner relations of p2Gap/p2Failed hypotheses ⊆ reasonedSemanticExclusionIds
-step06OwnedGapIds ↔ singleton MergedGapV3.memberGapIds
+step06OwnedGapIds ↔ singleton MergedGapV3.canonicalGapIds
+step06OwnedGapIds ↔ singleton MergedGapV3.memberGapIds[0]
+each singleton MergedGapV3.affectedBusinessProcessIds = exact nonnull admitted process IDs whose decision gapIds contains its canonicalGapId
 candidateRelationIds = disjoint union(ownerCandidateRelationIds over processTaskShardIds)
 processTaskShardIds = modelSafeTaskShardIds ⊎ noModelTaskShardIds
 processInterpretationDisposition.taskShardIds = processTaskShardIds
@@ -572,13 +595,15 @@ Step 08只读本步骤五semantic files、receipt和前序typed refs；不读raw
 
 P2 GAP/FAILED的`GAP_QUESTION`则可沿独立链回放：`ReaderItem → MergedGapV3 → BusinessProcessHypothesisV2 → ProcessInterpretationDispositionV2 → P1/P2 task、round、receipt → ProcessEvidenceGroup / Signal → Flow / EvidenceCapsule → Fact / Proof / Evidence / Source-or-searched-scope`，其中不得出现ProcessAdmissionDecision、ProcessKnowledge或review。
 
+P1 GAP/FAILED导致P2 `NOT_RUN_UPSTREAM_FAILED`时使用另一条链：`ReaderItem → MergedGapV3 → ProcessInterpretationDispositionV2 → P1 task/round/receipt → planned P2 task → ProcessEvidenceGroup / Signal → Flow / EvidenceCapsule → 实际Fact / Proof / Evidence / Source-or-searched-scope`；P1 FAILED的owner必须是Step 06唯一`PROCESS_P1_HYPOTHESIS_FAILED` singleton，不得缺Gap，也不得伪造hypothesis、process admission/knowledge或P2 round/receipt/review。
+
 下游得到的保证是：每条Flow有局部准入结果；每个admission-eligible hypothesis有过程准入结果；P2 GAP/FAILED hypothesis有typed Gap及reasoned exclusion；每个no-model shard有显式Step 06 disposition且其owner edge被reasoned exclusion覆盖；每个admitted claim有certainty；冲突/备选/pending未被隐藏；每条Flow有至少一个process/independent/unassigned membership；全仓只有一个knowledge。
 
 ## 9. 成功、Gap与fatal
 
 ### 成功
 
-- 全Flow local decisions total；全部admission-eligible hypothesis有process decision，P2 GAP/FAILED hypothesis有唯一typed exclusion；九个过程数组引用闭合；唯一knowledge与六文件receipt-last安装。
+- 全Flow local decisions total；全部admission-eligible hypothesis有process decision，P2 GAP/FAILED hypothesis有唯一typed exclusion，P1 FAILED有唯一canonical failure Gap/exclusion；九个过程数组引用闭合；唯一knowledge与六文件receipt-last安装。
 - 0 Flow仍发布一份technical/Gaps knowledge、空decisions/过程数组和完整六文件。
 - `COMPLETE_CAPTURE`且所有集合式闭合时draft可`closedThroughRepositoryKnowledge=true`；合法Gap不等于coverage不闭合。
 
@@ -602,7 +627,7 @@ P2 GAP/FAILED的`GAP_QUESTION`则可沿独立链回放：`ReaderItem → MergedG
 
 - local fixtures覆盖eligible/ineligible五个decision variants、R0/R1/R2 disposition闭包、fallback 0/1/2、basis expansion和0 Flow。
 - process fixtures覆盖P1/P2 keep/narrow/drop/pending/GAP/FAILED、missing/duplicate decision、cross-shard ref、counter完整union（含不同业务对象）、三种certainty、numeric confidence拒绝和external-effect unproven。
-- 对每类Step 06 process Gap做singleton `MergedGapV3` mutation：code/affected IDs/evidence/searched scope/message/nullable failure-limit字段逐项不等、丢member或重复member均fail closed；P2 GAP/FAILED不得产生process admission或knowledge。
+- 对每类Step 06 process Gap（含P1 FAILED）做singleton `MergedGapV3` mutation：断言`canonicalGapId=g.gapId=memberGapIds[0]`，code/affected IDs/evidence/searched scope/message/nullable failure-limit字段逐项不等、丢member或重复member均fail closed；另以同一counter-scope Gap分别覆盖“被pending admitted decision携带→非空affected process IDs”和“无admitted decision→空集合”，P2 GAP/FAILED不得产生process admission或knowledge。
 - synthetic七Flow fixture必须得到至少两个BusinessProcess并复用一个Flow；另测每条Flow仅`INDEPENDENT_ACTIVITY`和显式Gap的`UNASSIGNED_PENDING`。
 - DepotHead fixture只能产生静态边界knowledge和pending external-effect Gap，不能出现“已更新”。
 - coverage测试逐集合验证57总数相关Step 06 IDs、九个新数组、唯一owner/knowledge、旧文件名不存在、输入/并发顺序不改变bytes。
@@ -611,7 +636,7 @@ P2 GAP/FAILED的`GAP_QUESTION`则可沿独立链回放：`ReaderItem → MergedG
 ## 11. Terra GREEN指南
 
 - 仅在Sol/ultra合同与Luna RED冻结后实现，保持零Provider和三个module；不要改公开`RepositoryAnalysisAgent`。
-- 先升级M1为local+process total admissions，再升级M2为many-to-many merge，最后升级M3/accounting/filename；不要双写旧文件。
+- 先升级M1为all-Flow local total admission、admission-eligible process decisions与terminal/no-model typed exclusions，再升级M2为many-to-many merge，最后升级M3/accounting/filename；不要双写旧文件。
 - 所有certainty、decision、membership、claim kind使用closed enum；程序重算证据闭包，reader slots不能成为identity或Proof。
 - technical fallback来自冻结registry，外部效果默认Gap；不在线扩词表、不回读源码、不引入numeric score。
 

@@ -92,17 +92,23 @@
   never proof of sequence, causality, uniqueness, or an external effect.
 - P1/P2 are the sole bounded multi-Flow model exception. They read only a
   program-built, recursively path-free `ProcessModelPacketV1`; path-bearing
-  persisted group material is program-only. P2 may only KEEP, NARROW, DROP,
-  or PENDING_CONFIRMATION, and every protected reference set is a subset of
-  the same P1 hypothesis. Only deterministic review Gaps may be added, and
-  they cannot support a claim.
+  persisted group material is program-only. A P2 `REVIEWS` response may only
+  decide KEEP, NARROW, DROP, or PENDING_CONFIRMATION per hypothesis, and every
+  protected reference set is a subset of that same P1 hypothesis. The whole
+  P2 task may instead return typed GAP or FAILED: preserve the P1 hypotheses
+  and actual P2 round/receipt, but create no review, process admission,
+  process knowledge, or certainty. The program creates every response/review
+  Gap and the canonical P1-failure Gap; no such Gap can support a claim.
 - Let `C` be candidate cross-Flow edges, `G` the groups covering every Flow,
   `A` all persisted ownership shards, and `S` the model-safe subset of `A`.
   Every edge has exactly one owner across `A`; every shard has one process
   disposition, including no-model shards with zero model objects. Planned model tasks are exactly
   `E + 2R + 2S`; actual calls are exactly
   `E + R + accepted local R1 + S + accepted process P1`. Unrun R2/P2 tasks
-  persist `NOT_RUN_UPSTREAM_FAILED`.
+  persist `NOT_RUN_UPSTREAM_FAILED`. Proposed process hypotheses partition
+  exactly into retained, narrowed, dropped, pending, P2-gap, and P2-failed;
+  only the first, second, and fourth are process-admission eligible, while the
+  two P2-terminal sets remain published with typed reasoned exclusions.
 - Once a Provider call starts, never retry it, switch provider, fall back to
   an API key, or resume it automatically. Fail the current run and preserve
   safe diagnostics.
@@ -279,13 +285,19 @@
 - RepositoryKnowledge has zero model calls, admits local meanings before
   process claims, preserves conflicts/alternatives/pending confirmations, and
   assigns every Flow to at least one BusinessProcess, independent activity, or
-  explicit-Gap unassigned membership. Certainty is only `SOURCE_CONFIRMED`,
-  `EVIDENCE_SUPPORTED_INFERENCE`, or `PENDING_CONFIRMATION`.
+  explicit-Gap unassigned membership. Process admission/certainty exists only
+  for P2-reviewed retained, narrowed, or pending hypotheses; P1/P2 terminal
+  and no-model branches use typed reasoned exclusions. Certainty is only
+  `SOURCE_CONFIRMED`, `EVIDENCE_SUPPORTED_INFERENCE`, or
+  `PENDING_CONFIRMATION`.
 - Chapter 4 is process-first. Its process ReaderItems trace through Process
   Knowledge and admission, hypothesis, typed ProcessInterpretationDisposition,
   P1/P2 task/round/receipt, group/signal, Flow/Capsule, Fact/Proof/Evidence,
-  and SourceExcerpt. A P2 NOT_RUN trace keeps its task/disposition and omits a
-  fabricated P2 round/receipt/review. Body prose hides IDs, SHA, paths, and
+  and SourceExcerpt. A P2 NOT_RUN trace keeps its task/disposition, uses the
+  canonical P1-failure Gap when P1 is FAILED, and omits a fabricated P2
+  round/receipt/review. A typed P2 GAP/FAILED trace instead keeps both actual
+  rounds/receipts and the unreviewed P1 hypothesis, while omitting fabricated
+  review/admission/knowledge hops. Body prose hides IDs, SHA, paths, and
   technical enums; unproved external effects remain pending.
 - Standard MyBatis mapper `DOCTYPE` syntax is accepted only with external DTD,
   general/parameter entity, schema, and all network resolution disabled.

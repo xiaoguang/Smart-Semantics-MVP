@@ -258,11 +258,11 @@ Each row also installs one semantic receipt. The document step additionally inst
 - [ ] **Step 1: RED/GREEN `RegistryProposalTaskCompilerTest`, `RegistryProposalRunnerTest`, and `RepositoryInterpretationRegistryFreezerTest` serially.**
 - [ ] **Step 2: RED/GREEN `FiniteKeyFlowTaskCompilerTest` for local `E + 2R` task/disposition conservation.**
 - [ ] **Step 3: RED/GREEN `InterpretationRunnerTest` with a recording scripted Provider adapter.**
-- [ ] **Step 4: RED/GREEN `CrossFlowCandidateCompilerTest` for four signal levels, generic-only rejection, `C` edges, `G` groups covering all Flows, and zero model calls.**
-- [ ] **Step 5: RED/GREEN `BusinessProcessTaskCompilerTest` for all `A` ownership shards, `S⊆A` model-safe shards, one owner across `A` per candidate edge, explicit no-model dispositions, and exact path-bearing persisted→path-free packet projection.**
-- [ ] **Step 6: RED/GREEN `BusinessProcessInterpretationRunnerTest` for the canonical `ProcessModelRequestV1`, task/round/receipt hash equalities, Luna P1/P2, per-hypothesis P2 protected-ref subsets, typed GAP/FAILED, and P2 `NOT_RUN_UPSTREAM_FAILED`.**
-- [ ] **Step 7: Prove `planned=E+2R+2S`, the exact actual-call formula, `|process dispositions|=A`, `A>0,S=0` no-model closure, and started Provider failure with no retry/switch/resume/API fallback.**
-- [ ] **Step 8: RED/GREEN `FlowInterpretationPublicationSpecifierTest`; verify fourteen payloads plus receipt, all-shard ownership, request hashes/path-leak rejection, distinct M3/public registry pairs, and commit.**
+- [ ] **Step 4: RED/GREEN `CrossFlowCandidateCompilerTest` for four signal levels, generic-only rejection, `C` edges, `G` groups covering all Flows, every qualifying `positivePairBases[]`, every scoped `counterBases[]`, exact aggregate unions/direction, deterministic `PROCESS_COUNTER_SCOPE_UNRESOLVED`, and zero model calls.**
+- [ ] **Step 5: RED/GREEN `BusinessProcessTaskCompilerTest` for all `A` ownership shards, `S⊆A` model-safe shards, one owner across `A` per candidate edge, explicit no-model/budget Gap dispositions, and exact path-bearing persisted→path-free packet projection.**
+- [ ] **Step 6: RED/GREEN `BusinessProcessInterpretationRunnerTest` for the canonical `ProcessModelRequestV1`, task/round/receipt hash equalities, Luna P1/P2, all six P1/P2 response variants, per-hypothesis P2 `REVIEWS` protected-ref subsets, typed task-level P2 GAP/FAILED with actual P2 round/receipt, canonical `PROCESS_P1_HYPOTHESIS_FAILED`, and P2 `NOT_RUN_UPSTREAM_FAILED`.**
+- [ ] **Step 7: Prove `planned=E+2R+2S`, the exact actual-call formula, `|process dispositions|=A`, `A>0,S=0` no-model closure, the retained/narrowed/dropped/pending/P2-gap/P2-failed disjoint partition, published and Step 07-admission-eligible subsets, one canonical Step 06 Gap carrier per owned Gap, and started Provider failure with no retry/switch/resume/API fallback.**
+- [ ] **Step 8: RED/GREEN `FlowInterpretationPublicationSpecifierTest`; verify fourteen payloads plus receipt, all-shard ownership, every P1/P2 response/review Gap value and exact `gapIds` union in `process-interpretation-dispositions.jsonl`, six-way hypothesis accounting, request hashes/path-leak rejection, distinct M3/public registry pairs, and commit.**
 
 ### Task 9: Deliver repository knowledge
 
@@ -274,10 +274,11 @@ Each row also installs one semantic receipt. The document step additionally inst
 - Consumes: proven facts, all business flows, and all local/process interpretation artifacts.
 - Produces: `RepositoryKnowledgeReference`, five semantic payloads, and `repository-knowledge-receipt.json`.
 
-- [ ] **Step 1: RED/GREEN `ProposalAdmissionEngineTest` for local total admission, model-safe process claim admission, no-model owner-edge reasoned exclusions, P1/P2 lineage, exact counter/blocking propagation, and exactly three certainty values.**
-- [ ] **Step 2: RED/GREEN `AnchoredKnowledgeMergerTest` for lossless plural claim keys, conflict/alternative preservation, nine process arrays, many-to-many membership totality, and one knowledge.**
-- [ ] **Step 3: RED/GREEN `RepositoryKnowledgePublicationSpecifierTest` for the renamed `knowledge-admission-decisions.jsonl`, five payloads, process-aware draft ledger, receipt, and acyclic lineage.**
-- [ ] **Step 4: Verify model-ineligible Flows never gain fabricated interpretation records, then commit.**
+- [ ] **Step 1: RED/GREEN `ProposalAdmissionEngineTest` for all-Flow local total admission; process admission only for P2-reviewed retained/narrowed/pending hypotheses; dropped, P1-terminal, P2 GAP/FAILED, and no-model reasoned exclusions; exact P1/P2 lineage; exact counter/blocking propagation; six-way hypothesis accounting; and exactly three certainty values only on admitted claims.**
+- [ ] **Step 2: RED/GREEN `MergedGapCompilerTest` for every Step 06-owned singleton: `canonicalGapId=g.gapId=memberGapIds[0]`, lossless typed-field reversal, P1-failure ownership, and `affectedBusinessProcessIds` equal to the exact non-null admitted process IDs whose decision `gapIds` carries that Gap; cover both nonempty and empty counter-scope cases.**
+- [ ] **Step 3: RED/GREEN `AnchoredKnowledgeMergerTest` for lossless plural claim keys, conflict/alternative preservation, nine process arrays, many-to-many membership totality, and one knowledge.**
+- [ ] **Step 4: RED/GREEN `RepositoryKnowledgePublicationSpecifierTest` for the renamed `knowledge-admission-decisions.jsonl`, five payloads, admission-eligible/P2-terminal partitions, singleton Gap accounting, process-aware draft ledger, receipt, and acyclic lineage.**
+- [ ] **Step 5: Verify model-ineligible Flows and P1/P2 terminal hypotheses never gain fabricated interpretation/admission/certainty records, then commit.**
 
 ### Task 10: Deliver the nine-section document and exterior validation
 
@@ -290,11 +291,11 @@ Each row also installs one semantic receipt. The document step additionally inst
 - Consumes: exact references from all seven upstream analysis steps.
 - Produces: five semantic document payloads, `nine-section-archive-manifest.json`, `nine-section-document-receipt.json`, root `run-manifest.json`, and a separate validation publication.
 
-- [ ] **Step 1: RED/GREEN `NineSectionPlannerTest` for one fixed-nine plan, process-first Chapter 4, five process ReaderItem kinds, certainty grouping, and body-cleanliness fields.**
+- [ ] **Step 1: RED/GREEN `NineSectionPlannerTest` for one fixed-nine plan, process-first Chapter 4, five process ReaderItem kinds, certainty grouping, body-cleanliness fields, and Gap-owned process-terminal `GAP_QUESTION` items for no-model/P1/P2 terminal branches.**
 - [ ] **Step 2: RED/GREEN `PlanOnlyRendererTest` for deterministic UTF-8/LF Markdown from plan bytes only.**
-- [ ] **Step 3: RED/GREEN `TypedTraceCompilerTest` for the exact ReaderItem→ProcessKnowledge→Admission→Hypothesis→ProcessInterpretationDisposition→P1/P2→Group/Signal→Flow/Capsule→Fact/Proof/Evidence/SourceExcerpt chain, including the P2 NOT_RUN task/disposition branch with no fabricated review/round/receipt.**
+- [ ] **Step 3: RED/GREEN `TypedTraceCompilerTest` for three exact process branches: reviewed ReaderItem→ProcessKnowledge→Admission→Hypothesis→ProcessInterpretationDisposition→actual P1/P2/review→evidence; P1 GAP/FAILED→canonical MergedGap→disposition→actual P1 plus planned P2 NOT_RUN with no fabricated hypothesis/P2 round/receipt/review; and P2 GAP/FAILED→canonical MergedGap→unreviewed P1 hypothesis→disposition→both actual P1/P2 rounds/receipts with no fabricated review/admission/knowledge.**
 - [ ] **Step 4: RED/GREEN `CandidateRunArchiverTest` for five semantic payloads → archive manifest → semantic receipt → root run manifest.**
-- [ ] **Step 5: RED/GREEN `IndependentRunValidatorTest`; reopen only explicit typed references and write idempotent exterior validation artifacts.**
+- [ ] **Step 5: RED/GREEN `IndependentRunValidatorTest`; reopen only explicit typed references, revalidate the six-way hypothesis/admission/exclusion partition and every `canonicalGapId=memberGapIds[0]` owner/Trace branch, and write idempotent exterior validation artifacts.**
 - [ ] **Step 6: Count and fresh-reopen all 57 official outputs; verify validation/module artifacts are excluded, then commit.**
 
 ### Task 11: Deliver the public seam and adapters

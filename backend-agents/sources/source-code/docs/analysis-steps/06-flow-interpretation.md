@@ -9,7 +9,7 @@
 BusinessFlows证明每个局部活动“代码中发生了什么”，却不能单凭单个入口回答“多个入口是否共同构成从申请到结算的过程”。FlowInterpretation因此承担两层解释：
 
 1. 既有局部层：R0提出全仓有限业务词表，R1解释一条Flow，R2只复核同一条Flow；R0/R1/R2始终严格单Flow。
-2. 新增过程层：程序汇编全仓候选关系和有界组，P1为每个有界任务提出一个或多个`BusinessProcessHypothesis`，P2只能`KEEP | NARROW | DROP | PENDING_CONFIRMATION`。
+2. 新增过程层：程序汇编全仓候选关系和有界组，P1为每个有界任务提出一个或多个`BusinessProcessHypothesis`；P2 `REVIEWS`逐hypothesis只能给`KEEP | NARROW | DROP | PENDING_CONFIRMATION`，整个P2 task另可形成typed `GAP | FAILED`终态。
 
 P1/P2是整个八步工作流中**唯一**允许模型同时看到多个Flow的例外。它们仍只能看程序构造的有界`ProcessEvidenceGroup`，不能读仓库、源码路径、运行日志或别的任务。信号只是候选线索；不能单独证明先后、因果、唯一性或外部系统结果。
 
@@ -76,7 +76,7 @@ M2、M5、M8之外不得调用Provider。M6/M7/M9的相同输入必须产生逐�
 3. M4仅为`R`条ready Flow编R1/R2。M5先R1；只有R1 `RESPONSE_ACCEPTED`才调用R2。R1 typed GAP/FAILED时仍保留已规划R2并写`NOT_RUN_UPSTREAM_FAILED`。
 4. M6按§5的信号等级比较所有Flow，形成`C`条规范候选边；generic-only依据不得成边。再按正向边的连通分量形成组，并为孤立Flow形成singleton组，得到覆盖`N`的`G`组。
 5. M7应用固定partition profile/budget，为每个group产生至少一个`BusinessProcessTaskShardV1`，总数为`A`。每条candidate edge恰由一个shard拥有；同一Flow可作为只读上下文重复，但不能因此复制edge ownership或扩大其Capsule材料。含model-ineligible Flow、或无法在原子Flow/relation不截断的前提下形成安全packet的shard标为`NO_MODEL`，`processModelPacket=null`且写非空ineligibility Gap；其余shard标为`MODEL_SAFE`，按§6.2从path-bearing persisted material精确投影一个path-free packet。只有`MODEL_SAFE`子集计入`S`。
-6. M8只为`S`个model-safe shard各编一个P1和一个P2 `ProcessModelTaskV1`，并把唯一`ProcessModelRequestV1`的canonical bytes作为Provider application request。对每个model-safe shard执行一次P1；P1可返回一个或多个hypothesis或typed GAP/FAILED。只有P1 accepted才调用同shard P2；否则仍保留P2计划任务并写`NOT_RUN_UPSTREAM_FAILED`。每个`NO_MODEL` shard不创建task/request/round/receipt，而创建一条显式`NO_MODEL_ADMISSION_PENDING` process disposition。
+6. M8只为`S`个model-safe shard各编一个P1和一个P2 `ProcessModelTaskV1`，并把唯一`ProcessModelRequestV1`的canonical bytes作为Provider application request。对每个model-safe shard执行一次P1；P1可返回一个或多个hypothesis或typed GAP/FAILED，P1 FAILED由程序生成唯一canonical `PROCESS_P1_HYPOTHESIS_FAILED`。只有P1 accepted才调用同shard P2；否则仍保留P2计划任务并写`NOT_RUN_UPSTREAM_FAILED`。每个`NO_MODEL` shard不创建task/request/round/receipt，而创建一条显式`NO_MODEL_ADMISSION_PENDING` process disposition。
 7. P2成功给出reviews时逐个覆盖P1 hypothesis，只能KEEP、NARROW、DROP或PENDING_CONFIRMATION，且不能新增Flow、candidate edge、Fact、Proof、Evidence、registry key或hypothesis。P2也可对整个review task返回typed GAP/FAILED；这两个终态不含逐hypothesis review，保留全部P1 hypothesis并按§7.1进入明确非准入分区。
 8. M9重算`N/E/R/C/G/A/S`和完整集合等式，验证每个candidate edge在`A`中恰一owner、每个shard恰一process disposition、每个Step 06-owned Gap恰一canonical carrier、每个model task恰有一个task disposition、每个实际调用恰有round与typed receipt、未调用P2没有round/receipt、P2 GAP/FAILED没有review、no-model shard没有任何模型对象，然后原子发布。
 
@@ -1036,11 +1036,12 @@ ProcessInterpretationDispositionV2
 ProcessInterpretationGapV1               // Step 06-internal; canonical value is embedded above
   gapId!
   gapCode!: PROCESS_COUNTER_SCOPE_UNRESOLVED | PROCESS_TASK_BUDGET_EXCEEDED |
-            PROCESS_P2_RESPONSE_GAP | PROCESS_P2_REVIEW_FAILED |
+            PROCESS_P1_HYPOTHESIS_FAILED | PROCESS_P2_RESPONSE_GAP |
+            PROCESS_P2_REVIEW_FAILED |
             PROCESS_P2_REVIEW_PENDING_CONFIRMATION |
             PROCESS_P2_REVIEW_PRECISION_AMBIGUITY
-  gapScope!: PROCESS_RELATION | PROCESS_TASK_SHARD | PROCESS_P2_RESPONSE |
-             PROCESS_HYPOTHESIS_REVIEW
+  gapScope!: PROCESS_RELATION | PROCESS_TASK_SHARD | PROCESS_P1_RESPONSE |
+             PROCESS_P2_RESPONSE | PROCESS_HYPOTHESIS_REVIEW
   taskShardId!                            // later-lineage field; excluded from gap ID
   processEvidenceGroupId!
   candidateRelationIds[]!
@@ -1053,7 +1054,7 @@ ProcessInterpretationGapV1               // Step 06-internal; canonical value is
   repositoryInterpretationRegistryItemIds[]!
   factIds[]!, proofIds[]!, evidenceNodeIds[]!, sourceLocators[]!
   searchedScopeRefs[]!: ArtifactReference // nonempty; frozen inputs/controls actually searched
-  failureCode?                            // nonnull iff PROCESS_P2_REVIEW_FAILED
+  failureCode?                            // nonnull iff PROCESS_P1_HYPOTHESIS_FAILED or PROCESS_P2_REVIEW_FAILED
   limitKind?: FLOW_COUNT | RELATION_COUNT | SIGNAL_COUNT |
               REGISTRY_ITEM_COUNT | INPUT_BYTES
   configuredLimit?, observedValue?        // nonnull iff PROCESS_TASK_BUDGET_EXCEEDED
@@ -1100,6 +1101,7 @@ code/discriminator矩阵是闭集：
 | --- | --- | --- | --- |
 | `PROCESS_COUNTER_SCOPE_UNRESOLVED` | `PROCESS_RELATION`；`candidateRelationIds`与`processJoinSignalIds`非空 | failure/limit三字段全null | `process-counter-scope-unresolved` |
 | `PROCESS_TASK_BUDGET_EXCEEDED` | `PROCESS_TASK_SHARD`；group、受影响Flow及owner relation集合精确 | `limitKind/configuredLimit/observedValue`全non-null，failure null | `process-task-budget-exceeded` |
+| `PROCESS_P1_HYPOTHESIS_FAILED` | `PROCESS_P1_RESPONSE`；`processModelTaskIds=[p1TaskId]`，hypothesis/claim数组为空，group、owner relation、context Flow及其signal/cue/registry/Fact/Proof/Evidence/source闭包逐字等于同shard P1 packet | `failureCode` non-null且逐字等于P1 round failure，limit三字段null | `process-p1-hypothesis-failed` |
 | `PROCESS_P2_RESPONSE_GAP` | `PROCESS_P2_RESPONSE`；同shard全部P1 hypothesis IDs及P2 task ID精确 | failure/limit三字段全null | `process-p2-response-gap` |
 | `PROCESS_P2_REVIEW_FAILED` | `PROCESS_P2_RESPONSE`；同shard全部P1 hypothesis IDs及P2 task ID精确 | `failureCode` non-null，limit三字段null | `process-p2-review-failed` |
 | `PROCESS_P2_REVIEW_PENDING_CONFIRMATION` | `PROCESS_HYPOTHESIS_REVIEW`；恰一hypothesis及该review pending claim IDs | failure/limit三字段全null | `process-p2-review-pending-confirmation` |
@@ -1119,12 +1121,14 @@ code/discriminator矩阵是闭集：
 | --- | --- | --- | --- | --- |
 | `P1_HYPOTHESES` | nonempty、等于P1完整hypothesis ID集 | empty | empty | null |
 | `P1_GAP` | empty | empty | nonempty且为packet中已有upstream Gap ID子集 | null |
-| `P1_FAILED` | empty | empty | empty | non-null stable typed code |
+| `P1_FAILED` | empty | empty | 恰一`PROCESS_P1_HYPOTHESIS_FAILED` ID | non-null且逐字等于该Gap的`failureCode` |
 | `P2_REVIEWS` | 逐字等于reviewed P1 ID集 | 每个P1 ID恰一review，不多不少 | 全部`reviewGapIds[]`的exact union | null |
 | `P2_GAP` | 逐字等于reviewed P1 ID集 | empty | 恰一`PROCESS_P2_RESPONSE_GAP` ID | null |
 | `P2_FAILED` | 逐字等于reviewed P1 ID集 | empty | 恰一`PROCESS_P2_REVIEW_FAILED` ID | non-null且逐字等于该Gap的`failureCode` |
 
 `P2_REVIEWS`中`PENDING_CONFIRMATION` review必须恰有一条`PROCESS_P2_REVIEW_PENDING_CONFIRMATION`；程序发现不违反subset但无法唯一收窄的precision ambiguity时必须恰有一条`PROCESS_P2_REVIEW_PRECISION_AMBIGUITY`。两条件可同时成立，除此之外`reviewGapIds=[]`。所有这些ID都必须在owner disposition的typed `processGaps[]`找到唯一值。raw Provider response由adapter先hash、strict-decode，再由程序生成上述canonical Step 06 Gap value与round；模型不能提供或预测`gapId`。
+
+P1 `FAILED`同样先由adapter验证raw response hash/schema，再由程序从该P1 task、同shard packet闭包和stable failure code生成唯一`PROCESS_P1_HYPOTHESIS_FAILED` value。令其ID为`p1FailureGapId`，则P1 `ProcessModelRoundV1.gapIds = ModelTaskDispositionV2.gapIds = [p1FailureGapId]`；owner `ProcessInterpretationDispositionV2.processGaps[]`中恰有这一个P1-failure value，而owner `gapIds[]`按通用union规则包含该ID及所有适用upstream Gap IDs。它不创建hypothesis或claim，却为Step 07 singleton merge及Step 08 process-terminal ReaderItem/Trace提供canonical owner；模型仍不能提供Gap ID或扩大证据闭包。
 
 对每个实际Provider调用，exact equality固定为：
 
@@ -1150,10 +1154,10 @@ process disposition discriminator也固定。所有六个hypothesis outcome arra
 | branch | P1/P2 task disposition | hypothesis partitions | process disposition |
 | --- | --- | --- | --- |
 | P2 `REVIEWS` | 两者`RESPONSE_ACCEPTED`，均有round/receipt | proposed恰分为retained、narrowed、dropped、pending；两个P2 terminal数组空 | `READY_FOR_ADMISSION`；review Gaps按上表进入`processGaps/gapIds` |
-| P2 `GAP` | P1 accepted；P2 `RESPONSE_GAP`且有round/receipt | proposed=`p2GapBusinessProcessHypothesisIds`；其余五个outcome数组空 | `GAP`，恰含该response Gap，`failureRef=null`、`reasonCode=PROCESS_P2_RESPONSE_GAP` |
-| P2 `FAILED` | P1 accepted；P2 `RESPONSE_FAILED`且有round/receipt | proposed=`p2FailedBusinessProcessHypothesisIds`；其余五个outcome数组空 | `FAILED`，恰含该failed Gap，`failureRef=p2RoundId`、`reasonCode=PROCESS_P2_REVIEW_FAILED` |
+| P2 `GAP` | P1 accepted；P2 `RESPONSE_GAP`且有round/receipt | proposed=`p2GapBusinessProcessHypothesisIds`；其余五个outcome数组空 | `GAP`，`processGaps`中恰一response Gap、`gapIds`按owner union含该ID；`failureRef=null`、`reasonCode=PROCESS_P2_RESPONSE_GAP` |
+| P2 `FAILED` | P1 accepted；P2 `RESPONSE_FAILED`且有round/receipt | proposed=`p2FailedBusinessProcessHypothesisIds`；其余五个outcome数组空 | `FAILED`，`processGaps`中恰一failed Gap、`gapIds`按owner union含该ID；`failureRef=p2RoundId`、`reasonCode=PROCESS_P2_REVIEW_FAILED` |
 | P1 `GAP` | P1 `RESPONSE_GAP`；P2 `NOT_RUN_UPSTREAM_FAILED`且无round/receipt | proposed及六个outcome数组全空 | `GAP`，P1 upstream Gap IDs保留，`failureRef=null` |
-| P1 `FAILED` | P1 `RESPONSE_FAILED`；P2 `NOT_RUN_UPSTREAM_FAILED`且无round/receipt | proposed及六个outcome数组全空 | `FAILED`，`failureRef=p1RoundId` |
+| P1 `FAILED` | P1 `RESPONSE_FAILED`且round/task disposition各有恰一typed failure Gap；P2 `NOT_RUN_UPSTREAM_FAILED`且无round/receipt | proposed及六个outcome数组全空 | `FAILED`，`processGaps`中恰一`PROCESS_P1_HYPOTHESIS_FAILED`、`gapIds`按owner union含该ID；`failureRef=p1RoundId`、`reasonCode=PROCESS_P1_HYPOTHESIS_FAILED` |
 | `NO_MODEL` | P1/P2 task ID和disposition全null | proposed及六个outcome数组全空 | `NO_MODEL_ADMISSION_PENDING`，`gapIds=taskShard.modelIneligibilityGapIds`、`failureRef=null`、`reasonCode=NO_MODEL_SHARD` |
 
 这里“六个outcome数组”是retained/narrowed/dropped/pending/P2-gap/P2-failed；`proposedBusinessProcessHypothesisIds`是它们的disjoint union。P2 GAP/FAILED时每个P1 hypothesis仍按`BusinessProcessHypothesisV2`发布，只有review lineage为null；它们不伪造DROP或PENDING decision。typed `P2_FAILED`表示Provider成功返回、hash和schema均有效的业务级失败回答，所以可随完整Gap账本发布并进入`COMPLETED_WITH_GAPS`；transport/runtime failure、started call不完整或raw response schema无效仍是当前run fatal，不发布该分支。任何混搭以`PROCESS_DISPOSITION_INCOMPLETE` fatal。
@@ -1181,7 +1185,7 @@ process disposition discriminator也固定。所有六个hypothesis outcome arra
 
 无self ID的`ProcessRelationPositivePairBasisV1`、`ProcessRelationCounterBasisV1`、`ProcessPersistedMaterialV1`、`ProcessPersistedFlowViewV1`、全部`ProcessModel*ViewV1`、`ProcessModelPacketV1`、`ProcessModelRequestV1`、`ProcessP1HypothesisReviewInputV1`、`ProcessP2AllowedReferencesV1`、path-free source records、`ProcessMaterialLimitsV1`、`BusinessProcessFlowMemberV1`、`RegistryOrTechnicalKeyV1`、`HypothesisRelationBindingV1`、`ProcessClaimBoundSlotV1`和`ModelTaskDispositionV2`不单独计算identity；其完整规范值只参加上表明确拥有它的parent projection，且不得含parent/later ID。
 
-唯一合法计算/物化顺序为：upstream Flow/Capsule/Fact/Proof/Evidence/Registry IDs → semantic cue → 全部positive/counter bases与candidate relation → evidence group → M6 counter-scope/M7 budget Gap semantic IDs → 全部`A`个task shard → 回填这些Gap的`taskShardId` → 对每个model-safe shard物化P1 request/task → P1 Provider response bytes → P1 generation receipt与claim IDs（同rank）→ hypothesis semantic ID → P1 round → P2 request/task（即使随后`NOT_RUN_UPSTREAM_FAILED`也在P1 terminal round后物化）→ P2 response bytes → P2 generation receipt及P2 response/review Gap IDs（同rank；NOT_RUN时均不存在）→ P2 review（仅REVIEWS）→ P2 round → 回填published hypothesis的五个later-lineage excluded字段 → 全部`A`个process disposition及其canonical Gap carriers。no-model分支固定为`evidence group → counter/budget Gap ID（如有）→ task shard → Gap taskShardId回填 → process disposition`，不越过任何模型节点。P1 round引用hypothesis semantic ID，hypothesis ID不引用round；review引用hypothesis/Gap，Gap ID不引用review或round；P2 round引用review/Gap，review/Gap都不引用round。
+唯一合法计算/物化顺序为：upstream Flow/Capsule/Fact/Proof/Evidence/Registry IDs → semantic cue → 全部positive/counter bases与candidate relation → evidence group → M6 counter-scope/M7 budget Gap semantic IDs → 全部`A`个task shard → 回填这些Gap的`taskShardId` → 对每个model-safe shard物化P1 request/task → P1 Provider response bytes → P1 generation receipt及`claim IDs + hypothesis semantic ID`或同rank的P1 failure Gap semantic ID → P1 round → P2 request/task（即使随后`NOT_RUN_UPSTREAM_FAILED`也在P1 terminal round后物化）→ P2 response bytes → P2 generation receipt及P2 response/review Gap IDs（同rank；NOT_RUN时均不存在）→ P2 review（仅REVIEWS）→ P2 round → 回填published hypothesis的五个later-lineage excluded字段 → 全部`A`个process disposition及其canonical Gap carriers。no-model分支固定为`evidence group → counter/budget Gap ID（如有）→ task shard → Gap taskShardId回填 → process disposition`，不越过任何模型节点。P1 round引用hypothesis或P1 failure Gap semantic ID，二者都不引用round；review引用hypothesis/Gap，Gap ID不引用review或round；P2 round引用review/Gap，review/Gap都不引用round。
 
 `BusinessProcessHypothesisV2`的五个later-lineage excluded字段必须满足：`p1RoundId`指向唯一含本hypothesis ID的同task/shard P1 round；`p2TaskId`指向reviewed P1 task/round及本ID的同shard P2 task；`p2RoundId`指向该task且其round hypothesis IDs含本ID。若P2为`P2_REVIEWS`，review ID与decision必须同时non-null，review反向指向本ID，decision逐字等于review且不是`DROP`；若P2为`P2_GAP | P2_FAILED`，二者必须同时null，且本ID必须分别出现在同一disposition的P2-gap或P2-failed集合。任一不符fatal；完整record bytes仍随这些字段（包括null）变化而改变artifact SHA/root。
 
@@ -1276,7 +1280,7 @@ R2/P2因上游typed GAP/FAILED未运行时，必须持久化`NOT_RUN_UPSTREAM_FA
 - 没有正向domain signal的孤立Flow保留singleton group；不是fatal。
 - signal冲突、顺序不确定、外部效果未证明或P2 `PENDING_CONFIRMATION`进入显式Gap/待确认，不得被自然语言抹平。
 - typed P2 `GAP/FAILED`是已完成调用的业务级终态：保留P1 hypothesis、null review lineage、typed process Gap和非准入处置；不得伪装成DROP、NOT_RUN或transport failure。
-- typed `R0/R1/P1` GAP/FAILED可使后继R2/P2 `NOT_RUN_UPSTREAM_FAILED`；计划任务仍计数。
+- typed `R0/R1/P1` GAP/FAILED可使后继R2/P2 `NOT_RUN_UPSTREAM_FAILED`；计划任务仍计数。P1 FAILED必须携带唯一`PROCESS_P1_HYPOTHESIS_FAILED`，不得留下空Gap owner。
 
 ### 当前run fatal
 
@@ -1285,15 +1289,15 @@ R2/P2因上游typed GAP/FAILED未运行时，必须持久化`NOT_RUN_UPSTREAM_FA
 - generic-only成边、edge在全部`A`上多owner/无owner、groups漏Flow、P2扩张或跨hypothesis借refs；
 - task/round/receipt/disposition缺失或重复、部分publication或count伪造。
 
-稳定Gap/failure codes至少包括：`PROCESS_SIGNAL_LEVEL_INVALID`、`PROCESS_GENERIC_SIGNAL_ONLY`、`PROCESS_COUNTER_SCOPE_UNRESOLVED`、`PROCESS_GROUP_COVERAGE_BROKEN`、`PROCESS_EDGE_OWNERSHIP_BROKEN`、`PROCESS_TASK_BUDGET_EXCEEDED`、`PROCESS_P2_RESPONSE_GAP`、`PROCESS_P2_REVIEW_FAILED`、`PROCESS_P2_REVIEW_PENDING_CONFIRMATION`、`PROCESS_P2_REVIEW_PRECISION_AMBIGUITY`、`PROCESS_MODEL_PACKET_PATH_LEAK`、`PROCESS_MODEL_REQUEST_HASH_MISMATCH`、`PROCESS_MODEL_RESPONSE_INVALID`、`PROCESS_MODEL_REFERENCE_INVALID`、`PROCESS_REVIEW_EXPANDED`、`PROCESS_DISPOSITION_INCOMPLETE`，并沿用局部`PROVIDER_FAILURE_AFTER_START`、`MODEL_TASK_NOT_RUN_UPSTREAM_INVALID`与`FLOW_INTERPRETATION_RESOURCE_LIMIT_EXCEEDED`。
+稳定Gap/failure codes至少包括：`PROCESS_SIGNAL_LEVEL_INVALID`、`PROCESS_GENERIC_SIGNAL_ONLY`、`PROCESS_COUNTER_SCOPE_UNRESOLVED`、`PROCESS_GROUP_COVERAGE_BROKEN`、`PROCESS_EDGE_OWNERSHIP_BROKEN`、`PROCESS_TASK_BUDGET_EXCEEDED`、`PROCESS_P1_HYPOTHESIS_FAILED`、`PROCESS_P2_RESPONSE_GAP`、`PROCESS_P2_REVIEW_FAILED`、`PROCESS_P2_REVIEW_PENDING_CONFIRMATION`、`PROCESS_P2_REVIEW_PRECISION_AMBIGUITY`、`PROCESS_MODEL_PACKET_PATH_LEAK`、`PROCESS_MODEL_REQUEST_HASH_MISMATCH`、`PROCESS_MODEL_RESPONSE_INVALID`、`PROCESS_MODEL_REFERENCE_INVALID`、`PROCESS_REVIEW_EXPANDED`、`PROCESS_DISPOSITION_INCOMPLETE`，并沿用局部`PROVIDER_FAILURE_AFTER_START`、`MODEL_TASK_NOT_RUN_UPSTREAM_INVALID`与`FLOW_INTERPRETATION_RESOURCE_LIMIT_EXCEEDED`。
 
 ## 10. 给Step 07的下游保证
 
-RepositoryKnowledge无需回读源码或调用模型即可：先准入local meanings，再验证process claims，再比较conflict/alternative，再建立多对多membership，最后生成一个全仓知识。它接收的每个process claim都能沿以下链路回放：
+RepositoryKnowledge无需回读源码或调用模型即可：先准入local meanings，再验证admission-eligible process claims，并把terminal/no-model分支编译为typed reasoned exclusions，再比较conflict/alternative，再建立多对多membership，最后生成一个全仓知识。每个实际准入的process claim都能沿以下链路回放：
 
 `BusinessProcessHypothesis → ProcessInterpretationDisposition → P1/P2 task、round、generation receipt → ProcessEvidenceGroup / ProcessJoinSignal → Flow / EvidenceCapsule → Fact / Proof / Evidence / Source`。
 
-Step 07必须先从`ProcessInterpretationDispositionV2.processGaps[]`验证每个Step 06-owned Gap value，再按`memberGapIds`可逆映射进`MergedGapV3`；P2 GAP/FAILED hypothesis只进入reasoned exclusion，不产生`ProcessAdmissionDecision`或过程知识。Step 06只发布hypothesis，不把它们宣称为最终事实；确定性准入和certainty由Step 07负责。Step 08只消费Step 07的知识与Gap provenance，不直接读模型文本。
+Step 07必须先从`ProcessInterpretationDispositionV2.processGaps[]`验证每个Step 06-owned Gap value，再按`canonicalGapId=g.gapId=memberGapIds[0]`可逆映射进singleton `MergedGapV3`；P1 FAILED的typed Gap进入reasoned exclusion/terminal ReaderItem，P2 GAP/FAILED hypothesis只进入reasoned exclusion，二者都不产生`ProcessAdmissionDecision`或过程知识。Step 06只发布hypothesis，不把它们宣称为最终事实；确定性准入和certainty由Step 07负责。Step 08只消费Step 07的知识与Gap provenance，不直接读模型文本。
 
 ## 11. Luna RED 与 Terra GREEN 指南
 
@@ -1301,7 +1305,7 @@ Step 07必须先从`ProcessInterpretationDispositionV2.processGaps[]`验证每�
 
 - 先写`N=0`、`N>0,E=0,A>0,S=0`、`E=1,R=1,A=1,S=1`、R1/P1 typed GAP、R2/P2 NOT_RUN的失败fixture；逐式断言planned/actual call公式。
 - 反例覆盖四级signal、generic-only禁边、一个relation含多个positive pairs时的完整pair/counter union、业务对象集合交叠/互斥、counter exact blocking、全部`A`上的edge唯一owner、group全覆盖、Flow只读重复、packet path leak、request/round/receipt hash不等、P2新增Flow/edge/fact或跨hypothesis借ref、外部效果无Proof、M3/public registry pair冲突。
-- 为counter-scope、单unit预算、P2 review pending/ambiguity、P2 GAP与P2 FAILED逐一断言typed Gap preimage、唯一disposition carrier、gapIds union、nullable hypothesis lineage与六路hypothesis accounting；删value、重复carrier、伪review或把typed FAILED冒充transport failure都必须fail closed。
+- 为counter-scope、单unit预算、P1 FAILED、P2 review pending/ambiguity、P2 GAP与P2 FAILED逐一断言typed Gap preimage、唯一disposition carrier、gapIds union、nullable hypothesis lineage与六路hypothesis accounting；P1 FAILED的round/task/process disposition必须共用同一canonical Gap ID。删value、重复carrier、伪review或把typed FAILED冒充transport failure都必须fail closed。
 - 显式改变partition limits的fixture须保持candidate relation records/IDs、关系拓扑与每个逻辑group的成员集合，却必须允许group ID/bytes及shard/downstream identity变化；任何断言changed controls下group ID稳定的测试都是错误测试。
 - 用真实DepotHead bounded fixture证明“调用参数可见但外部更新未证”；用显式synthetic七Flow fixture证明顺序/并行/alternative、Flow复用及P2删除“唯一采购单”“已经记账”。
 - Reader slots只测试JSON字段与引用，不让模型生成Markdown。真实Provider测试必须另行授权并先做preflight；默认只用scripted provider，禁止API fallback。
