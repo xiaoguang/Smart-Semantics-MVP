@@ -241,8 +241,8 @@ P1只可引用该shard的Flow、owner/context relation、signal、Fact/Proof/Evi
       },
       "supportingProcessClaimIds": [
         "process-claim:0e00c4760f23ede28ac71ebfe65c1cbec305dd5516f35a148487be8da6b9a9bc",
-        "process-claim:e33055efd6795247d749111a7c14d002be6f5779c9c705d1385361d2f82c768c",
-        "process-claim:9ee5ffed0169a6702e61d085fdc82509749550fb0f7e7d7b046b096677d9a277"
+        "process-claim:9ee5ffed0169a6702e61d085fdc82509749550fb0f7e7d7b046b096677d9a277",
+        "process-claim:e33055efd6795247d749111a7c14d002be6f5779c9c705d1385361d2f82c768c"
       ]
     },
     {
@@ -317,8 +317,8 @@ P1只可引用该shard的Flow、owner/context relation、signal、Fact/Proof/Evi
       ],
       "gapIds": [],
       "memberFlowSliceIds": [
-        "flow:845923e67c18ae248ef98ecdb1276637fd51b8307b4f4c62bad353eae30219a8",
-        "flow:5a17c1e9844e07d878309fac255adc8fc0204b2a9cc64bed9e5e6e10b8477fdf"
+        "flow:5a17c1e9844e07d878309fac255adc8fc0204b2a9cc64bed9e5e6e10b8477fdf",
+        "flow:845923e67c18ae248ef98ecdb1276637fd51b8307b4f4c62bad353eae30219a8"
       ],
       "objectKeys": [
         {
@@ -472,8 +472,8 @@ P1只可引用该shard的Flow、owner/context relation、signal、Fact/Proof/Evi
       ],
       "gapIds": [],
       "memberFlowSliceIds": [
-        "flow:845923e67c18ae248ef98ecdb1276637fd51b8307b4f4c62bad353eae30219a8",
-        "flow:5a17c1e9844e07d878309fac255adc8fc0204b2a9cc64bed9e5e6e10b8477fdf"
+        "flow:5a17c1e9844e07d878309fac255adc8fc0204b2a9cc64bed9e5e6e10b8477fdf",
+        "flow:845923e67c18ae248ef98ecdb1276637fd51b8307b4f4c62bad353eae30219a8"
       ],
       "objectKeys": [
         {
@@ -587,11 +587,11 @@ P1只可引用该shard的Flow、owner/context relation、signal、Fact/Proof/Evi
     },
     {
       "processClaimIds": [
-        "process-claim:0e00c4760f23ede28ac71ebfe65c1cbec305dd5516f35a148487be8da6b9a9bc",
-        "process-claim:e33055efd6795247d749111a7c14d002be6f5779c9c705d1385361d2f82c768c",
         "process-claim:01f5a1365c478440e7faa99e8ef40cc5381c313d1e8d9c72db1b0601c725e3a1",
+        "process-claim:0e00c4760f23ede28ac71ebfe65c1cbec305dd5516f35a148487be8da6b9a9bc",
         "process-claim:9ee5ffed0169a6702e61d085fdc82509749550fb0f7e7d7b046b096677d9a277",
-        "process-claim:aa9f85d770d04544261522449d3f13d08c8d565142edc1f30bf3a92042ff49e7"
+        "process-claim:aa9f85d770d04544261522449d3f13d08c8d565142edc1f30bf3a92042ff49e7",
+        "process-claim:e33055efd6795247d749111a7c14d002be6f5779c9c705d1385361d2f82c768c"
       ],
       "registryOrTechnicalKeys": [
         {
