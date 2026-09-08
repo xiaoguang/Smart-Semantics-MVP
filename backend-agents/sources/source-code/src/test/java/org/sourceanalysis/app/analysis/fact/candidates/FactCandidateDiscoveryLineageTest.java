@@ -33,8 +33,7 @@ class FactCandidateDiscoveryLineageTest {
                 FactCandidateDiscoveryLineageTest::replaceSourceInventoryReference)) {
       assertThatThrownBy(
               () ->
-                  new PersistedFactCandidateInputReader(
-                          mutation.steps(), mutation.sourceReader())
+                  new PersistedFactCandidateInputReader(mutation.steps(), mutation.sourceReader())
                       .reopen(mutation.source(), mutation.discovery(), mutation.graphs()))
           .isInstanceOf(FactCandidateReferenceException.class)
           .hasMessage("PROOF_PACK_REFERENCE_BROKEN");
@@ -80,8 +79,7 @@ class FactCandidateDiscoveryLineageTest {
     try {
       return java.util.HexFormat.of()
           .formatHex(
-              MessageDigest.getInstance("SHA-256")
-                  .digest(value.getBytes(StandardCharsets.UTF_8)));
+              MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
     } catch (NoSuchAlgorithmException impossible) {
       throw new AssertionError(impossible);
     }

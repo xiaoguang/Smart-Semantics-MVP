@@ -84,8 +84,10 @@ public final class EvidenceCapsuleProjector {
       Objects.requireNonNull(profile, "projection profile");
 
       ReopenedModulePublication compilationPublication = moduleArtifacts.reopen(flowCompilation);
-      ArtifactReference compilationPayload = requireCompilation(flowCompilation, compilationPublication);
-      ReopenedAnalysisStepPublication sourceStep = reopen(source, AnalysisStepKey.VERIFIED_SOURCE_INVENTORY);
+      ArtifactReference compilationPayload =
+          requireCompilation(flowCompilation, compilationPublication);
+      ReopenedAnalysisStepPublication sourceStep =
+          reopen(source, AnalysisStepKey.VERIFIED_SOURCE_INVENTORY);
       ReopenedAnalysisStepPublication graphStep = reopen(graphs, AnalysisStepKey.PROGRAM_GRAPHS);
       ReopenedAnalysisStepPublication factStep = reopen(facts, AnalysisStepKey.PROVEN_CODE_FACTS);
       requireSharedRunAndControls(sourceStep, graphStep, factStep, compilationPublication);
@@ -111,12 +113,7 @@ public final class EvidenceCapsuleProjector {
               .toList();
       requireProjectionClosure(capsules, obligations, spans);
       return new CapsuleProjection(
-          profile,
-          compilationPayload,
-          inputs.proofPackRef(),
-          capsules,
-          spans,
-          obligations);
+          profile, compilationPayload, inputs.proofPackRef(), capsules, spans, obligations);
     } catch (CapsuleProjectionException failure) {
       throw failure;
     } catch (RuntimeException failure) {
@@ -184,7 +181,8 @@ public final class EvidenceCapsuleProjector {
                 profile,
                 selectedSpans,
                 flowSpanIds);
-        String obligationId = contentId("projection-obligation", "ATOM_DIRECT_SEMANTICS", atom.atomId());
+        String obligationId =
+            contentId("projection-obligation", "ATOM_DIRECT_SEMANTICS", atom.atomId());
         obligations.add(
             new CapsuleProjection.ProjectionObligation(
                 obligationId, "ATOM_DIRECT_SEMANTICS", atom.atomId(), spanIds));
@@ -273,7 +271,8 @@ public final class EvidenceCapsuleProjector {
             new CapsuleProjection.BudgetUsage(orderedSpanIds.size(), totalBytes)));
   }
 
-  private static List<PersistedFact> exactFacts(PersistedFlow flow, Map<String, PersistedFact> factsById) {
+  private static List<PersistedFact> exactFacts(
+      PersistedFlow flow, Map<String, PersistedFact> factsById) {
     List<PersistedFact> values = new ArrayList<>();
     for (String factId : flow.factIds()) {
       PersistedFact fact = factsById.get(factId);
@@ -283,12 +282,17 @@ public final class EvidenceCapsuleProjector {
       values.add(fact);
     }
     List<String> atoms =
-        values.stream().flatMap(value -> value.atoms().stream()).map(PersistedAtom::atomId).sorted(UTF8_ORDER).toList();
+        values.stream()
+            .flatMap(value -> value.atoms().stream())
+            .map(PersistedAtom::atomId)
+            .sorted(UTF8_ORDER)
+            .toList();
     if (!atoms.equals(flow.atomIds())) throw failure("FLOW_FACT_PROOF_REFERENCE_BROKEN");
     return List.copyOf(values);
   }
 
-  private static List<PersistedGap> exactGaps(PersistedFlow flow, Map<String, PersistedGap> gapsById) {
+  private static List<PersistedGap> exactGaps(
+      PersistedFlow flow, Map<String, PersistedGap> gapsById) {
     List<PersistedGap> values = new ArrayList<>();
     for (String gapId : flow.gapIds()) {
       PersistedGap gap = gapsById.get(gapId);
@@ -336,7 +340,8 @@ public final class EvidenceCapsuleProjector {
       if (evidence.sourceExcerpt() == null) continue;
       String spanId = contentId("model-evidence-span", evidenceNodeId);
       SpanBuilder builder =
-          selectedSpans.computeIfAbsent(spanId, ignored -> new SpanBuilder(spanId, evidence.sourceExcerpt()));
+          selectedSpans.computeIfAbsent(
+              spanId, ignored -> new SpanBuilder(spanId, evidence.sourceExcerpt()));
       if (atomId != null) builder.supportedAtomIds.add(atomId);
       if (outcomePathId != null) builder.supportedOutcomePathIds.add(outcomePathId);
       spanIds.add(spanId);
@@ -388,16 +393,23 @@ public final class EvidenceCapsuleProjector {
                     "proven-code-facts-gap-ledger-v2",
                     CanonicalMediaType.APPLICATION_JSON)));
     Map<String, PersistedControlNode> controlNodes =
-        parseControlNodes(canonicalJson.parseCanonical(graphPayloads.get("control-flow-graph.json").canonicalUtf8()));
+        parseControlNodes(
+            canonicalJson.parseCanonical(
+                graphPayloads.get("control-flow-graph.json").canonicalUtf8()));
     Map<String, PersistedEvidence> evidence =
         parseEvidence(
-            canonicalJson.parseCanonical(graphPayloads.get("evidence-graph.json").canonicalUtf8()), texts);
+            canonicalJson.parseCanonical(graphPayloads.get("evidence-graph.json").canonicalUtf8()),
+            texts);
     Map<String, PersistedFact> codeFacts =
-        parseFacts(canonicalJson.parseCanonical(factPayloads.get("proven-facts.json").canonicalUtf8()));
+        parseFacts(
+            canonicalJson.parseCanonical(factPayloads.get("proven-facts.json").canonicalUtf8()));
     Map<String, PersistedProof> proofs =
-        parseProofs(canonicalJson.parseCanonical(factPayloads.get("proof-pack.json").canonicalUtf8()), evidence);
+        parseProofs(
+            canonicalJson.parseCanonical(factPayloads.get("proof-pack.json").canonicalUtf8()),
+            evidence);
     Map<String, PersistedGap> gaps =
-        parseGaps(canonicalJson.parseCanonical(factPayloads.get("gap-ledger.json").canonicalUtf8()));
+        parseGaps(
+            canonicalJson.parseCanonical(factPayloads.get("gap-ledger.json").canonicalUtf8()));
     ArtifactReference proofPack = reference(factPayloads.get("proof-pack.json"));
     requireFlowReferences(flows, controlNodes, codeFacts, proofs, gaps);
     return new Inputs(flows, controlNodes, evidence, codeFacts, proofs, gaps, proofPack);
@@ -408,7 +420,8 @@ public final class EvidenceCapsuleProjector {
     if (!reference.equals(reopened.reference())
         || reopened.payloads().size() != 1
         || reopened.receipt().payloadArtifacts().size() != 1
-        || !(reopened.receipt().address() instanceof org.sourceanalysis.app.artifact.AnalysisStepModuleAddress address)
+        || !(reopened.receipt().address()
+            instanceof org.sourceanalysis.app.artifact.AnalysisStepModuleAddress address)
         || address.analysisStepKey() != AnalysisStepKey.BUSINESS_FLOWS
         || address.moduleNumber() != 1
         || !"flow-compiler".equals(address.moduleKey())) {
@@ -443,7 +456,9 @@ public final class EvidenceCapsuleProjector {
     ReopenedAnalysisStepPublication reopened = analysisSteps.reopen(reference);
     if (!reference.equals(reopened.reference())
         || reopened.receipt().address().analysisStepKey() != expectedStep
-        || !reference.analysisStepArtifactRoot().equals(reopened.receipt().analysisStepArtifactRoot())
+        || !reference
+            .analysisStepArtifactRoot()
+            .equals(reopened.receipt().analysisStepArtifactRoot())
         || !reference.analysisStepReceiptId().equals(reopened.receipt().analysisStepReceiptId())) {
       throw failure("UPSTREAM_ARTIFACT_REPLAY_MISMATCH");
     }
@@ -493,7 +508,8 @@ public final class EvidenceCapsuleProjector {
         }
       }
     }
-    if (!values.keySet().equals(required.keySet())) throw failure("UPSTREAM_ARTIFACT_REPLAY_MISMATCH");
+    if (!values.keySet().equals(required.keySet()))
+      throw failure("UPSTREAM_ARTIFACT_REPLAY_MISMATCH");
     return Map.copyOf(values);
   }
 
@@ -541,7 +557,8 @@ public final class EvidenceCapsuleProjector {
   }
 
   private static Map<String, PersistedControlNode> parseControlNodes(JsonNode graph) {
-    requireHeader(graph, "PROGRAM_GRAPHS_CONTROL_FLOW_GRAPH", "program-graphs-control-flow-graph-v2");
+    requireHeader(
+        graph, "PROGRAM_GRAPHS_CONTROL_FLOW_GRAPH", "program-graphs-control-flow-graph-v2");
     Map<String, PersistedControlNode> values = new HashMap<>();
     for (JsonNode node : array(graph, "nodes")) {
       String nodeId = id(node, "nodeId");
@@ -637,7 +654,8 @@ public final class EvidenceCapsuleProjector {
               text(fact, "kind"),
               ids(fact, "subjectNodeIds"),
               ordered(atoms, PersistedAtom::atomId));
-      if (values.put(value.factId(), value) != null) throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
+      if (values.put(value.factId(), value) != null)
+        throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
     }
     return Map.copyOf(values);
   }
@@ -647,14 +665,16 @@ public final class EvidenceCapsuleProjector {
     requireHeader(payload, "PROVEN_CODE_FACTS_PROOF_PACK", "proven-code-facts-proof-pack-v2");
     Map<String, PersistedProof> values = new HashMap<>();
     for (JsonNode proof : array(payload, "atomProofs")) {
-      if (!"CLOSED".equals(text(proof, "status"))) throw failure("FLOW_FACT_PROOF_REFERENCE_BROKEN");
+      if (!"CLOSED".equals(text(proof, "status")))
+        throw failure("FLOW_FACT_PROOF_REFERENCE_BROKEN");
       List<String> required = ids(proof, "requiredEvidenceNodeIds");
       if (required.isEmpty() || required.stream().anyMatch(id -> !evidenceById.containsKey(id))) {
         throw failure("FLOW_FACT_PROOF_REFERENCE_BROKEN");
       }
       PersistedProof value =
           new PersistedProof(id(proof, "proofId"), id(proof, "atomId"), required);
-      if (values.put(value.proofId(), value) != null) throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
+      if (values.put(value.proofId(), value) != null)
+        throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
     }
     return Map.copyOf(values);
   }
@@ -669,7 +689,8 @@ public final class EvidenceCapsuleProjector {
               text(gap, "code"),
               ids(gap, "affectedEntryIds"),
               ids(gap, "evidenceNodeIds"));
-      if (values.put(value.gapId(), value) != null) throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
+      if (values.put(value.gapId(), value) != null)
+        throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
     }
     return Map.copyOf(values);
   }
@@ -682,7 +703,8 @@ public final class EvidenceCapsuleProjector {
       Map<String, PersistedGap> gaps) {
     for (PersistedFlow flow : flows) {
       if (!controls.containsKey(flow.rootNodeId())
-          || flow.outcomes().stream().anyMatch(value -> !controls.containsKey(value.terminalNodeId()))
+          || flow.outcomes().stream()
+              .anyMatch(value -> !controls.containsKey(value.terminalNodeId()))
           || flow.factIds().stream().anyMatch(id -> !facts.containsKey(id))
           || flow.gapIds().stream().anyMatch(id -> !gaps.containsKey(id))
           || flow.outcomes().stream()
@@ -697,10 +719,20 @@ public final class EvidenceCapsuleProjector {
       List<CapsuleProjection.EvidenceCapsule> capsules,
       List<CapsuleProjection.ProjectionObligation> obligations,
       List<CapsuleProjection.ModelEvidenceSpan> spans) {
-    Set<String> spanIds = spans.stream().map(CapsuleProjection.ModelEvidenceSpan::spanId).collect(java.util.stream.Collectors.toSet());
-    if (capsules.size() != capsules.stream().map(CapsuleProjection.EvidenceCapsule::flowSliceId).distinct().count()
+    Set<String> spanIds =
+        spans.stream()
+            .map(CapsuleProjection.ModelEvidenceSpan::spanId)
+            .collect(java.util.stream.Collectors.toSet());
+    if (capsules.size()
+            != capsules.stream()
+                .map(CapsuleProjection.EvidenceCapsule::flowSliceId)
+                .distinct()
+                .count()
         || obligations.size()
-            != obligations.stream().map(CapsuleProjection.ProjectionObligation::obligationId).distinct().count()
+            != obligations.stream()
+                .map(CapsuleProjection.ProjectionObligation::obligationId)
+                .distinct()
+                .count()
         || obligations.stream()
             .flatMap(value -> value.satisfyingSpanIds().stream())
             .anyMatch(id -> !spanIds.contains(id))) {
@@ -749,7 +781,11 @@ public final class EvidenceCapsuleProjector {
   }
 
   private static List<String> ids(JsonNode source, String field) {
-    List<String> values = array(source, field).stream().map(value -> ArtifactId.parse(text(value))).map(ArtifactId::value).toList();
+    List<String> values =
+        array(source, field).stream()
+            .map(value -> ArtifactId.parse(text(value)))
+            .map(ArtifactId::value)
+            .toList();
     List<String> ordered = values.stream().sorted(UTF8_ORDER).toList();
     if (!ordered.equals(values) || ordered.size() != new HashSet<>(ordered).size()) {
       throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
@@ -766,13 +802,15 @@ public final class EvidenceCapsuleProjector {
 
   private static int integer(JsonNode source, String field) {
     JsonNode value = source.get(field);
-    if (value == null || !value.canConvertToInt()) throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
+    if (value == null || !value.canConvertToInt())
+      throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
     return value.intValue();
   }
 
   private static long longValue(JsonNode source, String field) {
     JsonNode value = source.get(field);
-    if (value == null || !value.canConvertToLong()) throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
+    if (value == null || !value.canConvertToLong())
+      throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
     return value.longValue();
   }
 
@@ -806,7 +844,8 @@ public final class EvidenceCapsuleProjector {
 
   private static int compare(byte[] left, byte[] right) {
     for (int index = 0; index < Math.min(left.length, right.length); index++) {
-      int compared = Integer.compare(Byte.toUnsignedInt(left[index]), Byte.toUnsignedInt(right[index]));
+      int compared =
+          Integer.compare(Byte.toUnsignedInt(left[index]), Byte.toUnsignedInt(right[index]));
       if (compared != 0) return compared;
     }
     return Integer.compare(left.length, right.length);
@@ -816,7 +855,8 @@ public final class EvidenceCapsuleProjector {
     return new CapsuleProjectionException(code);
   }
 
-  private record PayloadSpec(String artifactType, String schemaVersion, CanonicalMediaType mediaType) {}
+  private record PayloadSpec(
+      String artifactType, String schemaVersion, CanonicalMediaType mediaType) {}
 
   private record Inputs(
       List<PersistedFlow> flows,
@@ -868,7 +908,8 @@ public final class EvidenceCapsuleProjector {
       String canonicalValue,
       String proofId) {}
 
-  private record PersistedProof(String proofId, String atomId, List<String> requiredEvidenceNodeIds) {}
+  private record PersistedProof(
+      String proofId, String atomId, List<String> requiredEvidenceNodeIds) {}
 
   private record PersistedGap(
       String gapId, String code, List<String> affectedEntryIds, List<String> evidenceNodeIds) {}

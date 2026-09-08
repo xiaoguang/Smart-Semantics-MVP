@@ -33,7 +33,8 @@ class GuardConditionFactCandidateTest {
           .satisfies(
               candidate ->
                   assertThat(candidate.normalizedCondition())
-                      .as("the fact condition must use the public control-flow v2 field, never its technical key")
+                      .as(
+                          "the fact condition must use the public control-flow v2 field, never its technical key")
                       .isEqualTo("status == null"));
     }
   }

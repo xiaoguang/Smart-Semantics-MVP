@@ -39,14 +39,18 @@ public final class FiniteKeyFlowTaskCompiler {
   private static final String CAPSULE_TYPE = "BUSINESS_FLOWS_EVIDENCE_CAPSULE";
   private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v2";
   private static final String REGISTRY_FILE = "repository-interpretation-registry.json";
-  private static final String REGISTRY_TYPE = "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY";
-  private static final String REGISTRY_SCHEMA = "flow-interpretation-repository-interpretation-registry-v2";
+  private static final String REGISTRY_TYPE =
+      "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY";
+  private static final String REGISTRY_SCHEMA =
+      "flow-interpretation-repository-interpretation-registry-v2";
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
   private final CanonicalAnalysisStepArtifactStore analysisSteps;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
 
-  /** Creates an M4 compiler that can fresh-reopen the M3 registry and BusinessFlows public bytes. */
+  /**
+   * Creates an M4 compiler that can fresh-reopen the M3 registry and BusinessFlows public bytes.
+   */
   public FiniteKeyFlowTaskCompiler(
       CanonicalModuleArtifactStore moduleArtifacts,
       CanonicalAnalysisStepArtifactStore analysisSteps) {
@@ -63,7 +67,8 @@ public final class FiniteKeyFlowTaskCompiler {
       Objects.requireNonNull(businessFlows, "business flows");
       Objects.requireNonNull(registryPublication, "registry publication");
       Objects.requireNonNull(taskProfile, "flow model task profile");
-      ReopenedAnalysisStepPublication flowPublication = analysisSteps.reopen(businessFlows.publication());
+      ReopenedAnalysisStepPublication flowPublication =
+          analysisSteps.reopen(businessFlows.publication());
       verifyBusinessFlows(businessFlows, flowPublication, taskProfile);
       Registry registry = reopenRegistry(registryPublication, businessFlows.publication());
       Map<String, JsonNode> capsules = reopenCapsules(flowPublication);
@@ -80,13 +85,24 @@ public final class FiniteKeyFlowTaskCompiler {
         tasks.add(r1(flowId, capsule, registry, items, taskProfile));
         tasks.add(r2(flowId, capsule, registry, items, taskProfile, tasks.get(tasks.size() - 1)));
       }
-      tasks.sort(Comparator.comparing(FlowModelTask::flowSliceId).thenComparing(FlowModelTask::round));
-      List<String> r1Ids = tasks.stream().filter(value -> "R1".equals(value.round())).map(FlowModelTask::taskSpecId).toList();
-      List<String> r2Ids = tasks.stream().filter(value -> "R2".equals(value.round())).map(FlowModelTask::taskSpecId).toList();
+      tasks.sort(
+          Comparator.comparing(FlowModelTask::flowSliceId).thenComparing(FlowModelTask::round));
+      List<String> r1Ids =
+          tasks.stream()
+              .filter(value -> "R1".equals(value.round()))
+              .map(FlowModelTask::taskSpecId)
+              .toList();
+      List<String> r2Ids =
+          tasks.stream()
+              .filter(value -> "R2".equals(value.round()))
+              .map(FlowModelTask::taskSpecId)
+              .toList();
       FlowModelTaskShardReceipt r1Shard =
-          new FlowModelTaskShardReceipt(contentId("flow-model-r1-shard", readyFlows), "R1", readyFlows, r1Ids);
+          new FlowModelTaskShardReceipt(
+              contentId("flow-model-r1-shard", readyFlows), "R1", readyFlows, r1Ids);
       FlowModelTaskShardReceipt r2Shard =
-          new FlowModelTaskShardReceipt(contentId("flow-model-r2-shard", readyFlows), "R2", readyFlows, r2Ids);
+          new FlowModelTaskShardReceipt(
+              contentId("flow-model-r2-shard", readyFlows), "R2", readyFlows, r2Ids);
       return new FlowModelTaskSet(
           contentId(
               "flow-model-task-set",
@@ -134,7 +150,8 @@ public final class FiniteKeyFlowTaskCompiler {
       org.sourceanalysis.app.artifact.AnalysisStepPublicationReference businessFlowsPublication) {
     ReopenedModulePublication publication = moduleArtifacts.reopen(reference);
     if (!reference.equals(publication.reference())
-        || !(publication.receipt().address() instanceof org.sourceanalysis.app.artifact.AnalysisStepModuleAddress address)
+        || !(publication.receipt().address()
+            instanceof org.sourceanalysis.app.artifact.AnalysisStepModuleAddress address)
         || address.analysisStepKey() != AnalysisStepKey.FLOW_INTERPRETATION
         || address.moduleNumber() != 3
         || !"registry-freezer".equals(address.moduleKey())
@@ -155,7 +172,9 @@ public final class FiniteKeyFlowTaskCompiler {
       String flowId = identifier(item, "flowSliceId");
       String capsuleId = identifier(item, "evidenceCapsuleId");
       String key = text(item, "provisionalKey");
-      if (!key.startsWith("TERM_P_") && !key.startsWith("CLAIM_P_") && !key.startsWith("QUESTION_P_")) {
+      if (!key.startsWith("TERM_P_")
+          && !key.startsWith("CLAIM_P_")
+          && !key.startsWith("QUESTION_P_")) {
         throw failure("MODEL_TASK_INVALID");
       }
       if (!eligible.contains(flowId) || capsuleId.isBlank()) throw failure("MODEL_TASK_INVALID");
@@ -171,7 +190,10 @@ public final class FiniteKeyFlowTaskCompiler {
     }
     if (!eligible.isEmpty()) throw failure("MODEL_TASK_INVALID");
     ready.sort(String::compareTo);
-    items.values().forEach(values -> values.sort(Comparator.comparing(value -> text(value, "provisionalKey"))));
+    items
+        .values()
+        .forEach(
+            values -> values.sort(Comparator.comparing(value -> text(value, "provisionalKey"))));
     return new Registry(registryId, List.copyOf(ready), Map.copyOf(items));
   }
 
@@ -189,7 +211,9 @@ public final class FiniteKeyFlowTaskCompiler {
     if (!raw.endsWith("\n")) throw failure("FLOW_CAPSULE_SET_INVALID");
     Map<String, JsonNode> result = new HashMap<>();
     for (String line : raw.substring(0, raw.length() - 1).split("\n", -1)) {
-      JsonNode capsule = canonicalJson.parseCanonical(ImmutableBytes.copyOf(line.getBytes(StandardCharsets.UTF_8)));
+      JsonNode capsule =
+          canonicalJson.parseCanonical(
+              ImmutableBytes.copyOf(line.getBytes(StandardCharsets.UTF_8)));
       if (!CAPSULE_TYPE.equals(text(capsule, "artifactType"))
           || !CAPSULE_SCHEMA.equals(text(capsule, "schemaVersion"))) {
         throw failure("FLOW_CAPSULE_SET_INVALID");
@@ -206,16 +230,22 @@ public final class FiniteKeyFlowTaskCompiler {
       Registry registry,
       List<JsonNode> items,
       FlowModelTaskProfile profile) {
-    ObjectNode input = input("R1_INTERPRETATION_INPUT", flowId, capsule, registry, items, profile.maxSelectedKeys());
+    ObjectNode input =
+        input(
+            "R1_INTERPRETATION_INPUT", flowId, capsule, registry, items, profile.maxSelectedKeys());
     ImmutableBytes bytes = canonicalJson.encodeCanonical(input);
     Sha256Digest digest = new Sha256Digest(sha256(bytes.copyToByteArray()));
     return new FlowModelTask(
-        contentId("flow-model-task", List.of("R1", flowId, identifier(capsule, "evidenceCapsuleId"), digest.value())),
+        contentId(
+            "flow-model-task",
+            List.of("R1", flowId, identifier(capsule, "evidenceCapsuleId"), digest.value())),
         "R1_INTERPRETATION",
         "R1",
         flowId,
         identifier(capsule, "evidenceCapsuleId"),
-        contentId("flow-model-session", List.of(flowId, identifier(capsule, "evidenceCapsuleId"), registry.registryId())),
+        contentId(
+            "flow-model-session",
+            List.of(flowId, identifier(capsule, "evidenceCapsuleId"), registry.registryId())),
         keys(items),
         bytes,
         digest,
@@ -231,14 +261,18 @@ public final class FiniteKeyFlowTaskCompiler {
       List<JsonNode> items,
       FlowModelTaskProfile profile,
       FlowModelTask r1) {
-    ObjectNode input = input("R2_REVIEW_INPUT", flowId, capsule, registry, items, profile.maxSelectedKeys());
-    input.putObject("reviewTarget")
+    ObjectNode input =
+        input("R2_REVIEW_INPUT", flowId, capsule, registry, items, profile.maxSelectedKeys());
+    input
+        .putObject("reviewTarget")
         .put("protocol", "SAME_SESSION_PRIOR_R1_RESPONSE")
         .put("r1TaskSpecId", r1.taskSpecId());
     ImmutableBytes bytes = canonicalJson.encodeCanonical(input);
     Sha256Digest digest = new Sha256Digest(sha256(bytes.copyToByteArray()));
     return new FlowModelTask(
-        contentId("flow-model-task", List.of("R2", flowId, identifier(capsule, "evidenceCapsuleId"), digest.value())),
+        contentId(
+            "flow-model-task",
+            List.of("R2", flowId, identifier(capsule, "evidenceCapsuleId"), digest.value())),
         "R2_PRECISION_REVIEW",
         "R2",
         flowId,
@@ -316,13 +350,18 @@ public final class FiniteKeyFlowTaskCompiler {
   private static String contentId(String prefix, List<String> fields) {
     byte[][] frames = new byte[fields.size() + 1][];
     frames[0] = frame(prefix);
-    for (int index = 0; index < fields.size(); index++) frames[index + 1] = frame(fields.get(index));
+    for (int index = 0; index < fields.size(); index++)
+      frames[index + 1] = frame(fields.get(index));
     return prefix + ":" + sha256(frames);
   }
 
   private static byte[] frame(String value) {
     byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-    return ByteBuffer.allocate(Long.BYTES + bytes.length).order(ByteOrder.BIG_ENDIAN).putLong(bytes.length).put(bytes).array();
+    return ByteBuffer.allocate(Long.BYTES + bytes.length)
+        .order(ByteOrder.BIG_ENDIAN)
+        .putLong(bytes.length)
+        .put(bytes)
+        .array();
   }
 
   private static String sha256(byte[]... values) {
@@ -339,5 +378,6 @@ public final class FiniteKeyFlowTaskCompiler {
     return new FlowModelTaskException(code);
   }
 
-  private record Registry(String registryId, List<String> readyFlowIds, Map<String, List<JsonNode>> itemsByFlow) {}
+  private record Registry(
+      String registryId, List<String> readyFlowIds, Map<String, List<JsonNode>> itemsByFlow) {}
 }

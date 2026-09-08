@@ -51,7 +51,9 @@ public final class FactCandidateSetModulePublisher {
    * roots agree with that input, but it neither rebuilds graphs nor selects any Proof.
    */
   public ModulePublicationReference publish(
-      AnalysisStepModuleAddress destination, FactCandidateInputs inputs, FactCandidateSet candidateSet) {
+      AnalysisStepModuleAddress destination,
+      FactCandidateInputs inputs,
+      FactCandidateSet candidateSet) {
     requireDestination(destination);
     Objects.requireNonNull(inputs, "fact candidate inputs");
     Objects.requireNonNull(candidateSet, "fact candidate set");
@@ -59,7 +61,8 @@ public final class FactCandidateSetModulePublisher {
       throw new FactCandidateReferenceException();
     }
     List<ArtifactReference> upstream = inputs.candidateModuleUpstreamArtifacts();
-    CanonicalModulePayload payload = payload(destination, candidateSet, upstream, inputs.controls());
+    CanonicalModulePayload payload =
+        payload(destination, candidateSet, upstream, inputs.controls());
     InstalledModulePublication installed =
         moduleArtifacts.install(
             new ModuleInstallRequest(
@@ -73,7 +76,8 @@ public final class FactCandidateSetModulePublisher {
     ModulePublicationReference reference = installed.reference();
     ReopenedModulePublication reopened = moduleArtifacts.reopen(reference);
     if (!reference.equals(reopened.reference())) {
-      throw new IllegalStateException("fact candidate module publication reopen identity is invalid");
+      throw new IllegalStateException(
+          "fact candidate module publication reopen identity is invalid");
     }
     return reference;
   }
@@ -295,5 +299,4 @@ public final class FactCandidateSetModulePublisher {
       throw new IllegalStateException("SHA-256 unavailable", unavailable);
     }
   }
-
 }

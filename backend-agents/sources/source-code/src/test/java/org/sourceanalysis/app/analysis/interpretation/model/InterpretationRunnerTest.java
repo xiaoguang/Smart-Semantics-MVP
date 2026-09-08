@@ -59,14 +59,16 @@ class InterpretationRunnerTest {
           .containsOnly("RESPONSE_ACCEPTED");
       ModulePublicationReference persisted = publish(fixture, prepared, execution);
       ReopenedModulePublication reopened = fixture.moduleArtifacts().reopen(persisted);
-      assertThat(reopened.payloads()).singleElement().satisfies(
-          payload -> {
-            assertThat(payload.descriptor().fileName()).isEqualTo("model-execution-set.json");
-            assertThat(payload.descriptor().artifactType())
-                .isEqualTo("FLOW_INTERPRETATION_MODEL_EXECUTION_SET");
-            assertThat(payload.descriptor().schemaVersion())
-                .isEqualTo("flow-interpretation-model-execution-set-v5");
-          });
+      assertThat(reopened.payloads())
+          .singleElement()
+          .satisfies(
+              payload -> {
+                assertThat(payload.descriptor().fileName()).isEqualTo("model-execution-set.json");
+                assertThat(payload.descriptor().artifactType())
+                    .isEqualTo("FLOW_INTERPRETATION_MODEL_EXECUTION_SET");
+                assertThat(payload.descriptor().schemaVersion())
+                    .isEqualTo("flow-interpretation-model-execution-set-v5");
+              });
     }
   }
 
@@ -74,7 +76,8 @@ class InterpretationRunnerTest {
       ProgramGraphsPublicFixture fixture, Prepared prepared, Object execution) throws Exception {
     try {
       Class<?> executionType =
-          Class.forName("org.sourceanalysis.app.analysis.interpretation.model.InterpretationExecutionSet");
+          Class.forName(
+              "org.sourceanalysis.app.analysis.interpretation.model.InterpretationExecutionSet");
       Class<?> publisherType =
           Class.forName(
               "org.sourceanalysis.app.analysis.interpretation.model.InterpretationExecutionSetModulePublisher");
@@ -83,9 +86,7 @@ class InterpretationRunnerTest {
               .getConstructor(org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore.class)
               .newInstance(fixture.moduleArtifacts());
       return (ModulePublicationReference)
-          publisherType
-              .getMethod("publish", executionType)
-              .invoke(publisher, execution);
+          publisherType.getMethod("publish", executionType).invoke(publisher, execution);
     } catch (ClassNotFoundException missing) {
       throw new AssertionError("INTERPRETATION_EXECUTION_SET_PUBLISHER_NOT_IMPLEMENTED", missing);
     } catch (InvocationTargetException failure) {
@@ -98,9 +99,13 @@ class InterpretationRunnerTest {
   private Object run(ProgramGraphsPublicFixture fixture, Prepared prepared, AtomicInteger calls)
       throws Exception {
     try {
-      Class<?> taskType = Class.forName("org.sourceanalysis.app.analysis.interpretation.model.FlowModelTask");
-      Class<?> providerType = Class.forName("org.sourceanalysis.app.analysis.interpretation.model.FlowModelProvider");
-      Class<?> responseType = Class.forName("org.sourceanalysis.app.analysis.interpretation.model.FlowModelProviderResponse");
+      Class<?> taskType =
+          Class.forName("org.sourceanalysis.app.analysis.interpretation.model.FlowModelTask");
+      Class<?> providerType =
+          Class.forName("org.sourceanalysis.app.analysis.interpretation.model.FlowModelProvider");
+      Class<?> responseType =
+          Class.forName(
+              "org.sourceanalysis.app.analysis.interpretation.model.FlowModelProviderResponse");
       Object provider =
           Proxy.newProxyInstance(
               providerType.getClassLoader(),
@@ -109,14 +114,18 @@ class InterpretationRunnerTest {
                 Object task = args[0];
                 calls.incrementAndGet();
                 JsonNode input =
-                    new CanonicalJsonCodec().parseCanonical(
-                        (ImmutableBytes) task.getClass().getMethod("inputJson").invoke(task));
+                    new CanonicalJsonCodec()
+                        .parseCanonical(
+                            (ImmutableBytes) task.getClass().getMethod("inputJson").invoke(task));
                 ImmutableBytes response = response(input);
                 return responseType
                     .getConstructor(ArtifactReference.class, ImmutableBytes.class)
-                    .newInstance(task.getClass().getMethod("expectedRuntime").invoke(task), response);
+                    .newInstance(
+                        task.getClass().getMethod("expectedRuntime").invoke(task), response);
               });
-      Class<?> runnerType = Class.forName("org.sourceanalysis.app.analysis.interpretation.model.InterpretationRunner");
+      Class<?> runnerType =
+          Class.forName(
+              "org.sourceanalysis.app.analysis.interpretation.model.InterpretationRunner");
       return runnerType
           .getConstructor(org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore.class)
           .newInstance(fixture.moduleArtifacts())
@@ -129,7 +138,8 @@ class InterpretationRunnerTest {
               providerType)
           .invoke(
               runnerType
-                  .getConstructor(org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore.class)
+                  .getConstructor(
+                      org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore.class)
                   .newInstance(fixture.moduleArtifacts()),
               prepared.r0Execution(),
               prepared.registry(),
@@ -172,20 +182,23 @@ class InterpretationRunnerTest {
         new RegistryProposalTaskCompiler(fixture.stepArtifacts())
             .compileRegistryProposalTasks(flows, r0Profile(fixture));
     ModulePublicationReference persistedR0Tasks =
-        new RegistryProposalTaskSetModulePublisher(fixture.moduleArtifacts(), fixture.stepArtifacts())
+        new RegistryProposalTaskSetModulePublisher(
+                fixture.moduleArtifacts(), fixture.stepArtifacts())
             .publish(flows, r0Tasks);
     RegistryProposalExecutionSet r0Execution =
         new RegistryProposalRunner(fixture.moduleArtifacts())
             .runRegistryProposals(
                 persistedR0Tasks,
-                task -> new RegistryProposalProviderResponse(task.expectedRuntime(), r0Response(task)));
+                task ->
+                    new RegistryProposalProviderResponse(task.expectedRuntime(), r0Response(task)));
     ModulePublicationReference persistedR0Execution =
         new RegistryProposalExecutionSetModulePublisher(fixture.moduleArtifacts())
             .publish(persistedR0Tasks, r0Execution);
     RepositoryInterpretationRegistry registry =
         new RepositoryInterpretationRegistryFreezer().freeze(r0Tasks, r0Execution, flows);
     ModulePublicationReference persistedRegistry =
-        new RepositoryInterpretationRegistryModulePublisher(fixture.moduleArtifacts(), fixture.stepArtifacts())
+        new RepositoryInterpretationRegistryModulePublisher(
+                fixture.moduleArtifacts(), fixture.stepArtifacts())
             .publish(persistedR0Tasks, persistedR0Execution, flows, registry);
     FlowModelTaskProfile profile = profile(fixture);
     FlowModelTaskSet taskSet =
@@ -203,20 +216,33 @@ class InterpretationRunnerTest {
   }
 
   private static FlowModelTaskProfile profile(ProgramGraphsPublicFixture fixture) {
-    ArtifactReference prompt = RegistryProposalTaskCompilerTest.reference("model-prompt", "model-prompt");
-    ArtifactReference schema = RegistryProposalTaskCompilerTest.reference("model-schema", fixture.artifactControls().schemaBundleSha256());
-    ArtifactReference runtime = RegistryProposalTaskCompilerTest.reference("model-runtime", fixture.artifactControls().profileSha256());
-    ArtifactReference budget = RegistryProposalTaskCompilerTest.reference("model-budget", "model-budget");
-    return new FlowModelTaskProfile(prompt, schema, runtime, budget, prompt, schema, runtime, budget, 16, 4096, 16, 16);
+    ArtifactReference prompt =
+        RegistryProposalTaskCompilerTest.reference("model-prompt", "model-prompt");
+    ArtifactReference schema =
+        RegistryProposalTaskCompilerTest.reference(
+            "model-schema", fixture.artifactControls().schemaBundleSha256());
+    ArtifactReference runtime =
+        RegistryProposalTaskCompilerTest.reference(
+            "model-runtime", fixture.artifactControls().profileSha256());
+    ArtifactReference budget =
+        RegistryProposalTaskCompilerTest.reference("model-budget", "model-budget");
+    return new FlowModelTaskProfile(
+        prompt, schema, runtime, budget, prompt, schema, runtime, budget, 16, 4096, 16, 16);
   }
 
   private static RegistryProposalTaskProfile r0Profile(ProgramGraphsPublicFixture fixture) {
     return new RegistryProposalTaskProfile(
         RegistryProposalTaskCompilerTest.reference("registry-prompt", "registry-prompt"),
-        RegistryProposalTaskCompilerTest.reference("registry-schema", fixture.artifactControls().schemaBundleSha256()),
-        RegistryProposalTaskCompilerTest.reference("registry-runtime", fixture.artifactControls().profileSha256()),
+        RegistryProposalTaskCompilerTest.reference(
+            "registry-schema", fixture.artifactControls().schemaBundleSha256()),
+        RegistryProposalTaskCompilerTest.reference(
+            "registry-runtime", fixture.artifactControls().profileSha256()),
         RegistryProposalTaskCompilerTest.reference("registry-budget", "registry-budget"),
-        16, 16, 4096, 256, 1024);
+        16,
+        16,
+        4096,
+        256,
+        1024);
   }
 
   private static ImmutableBytes r0Response(RegistryProposalTask task) {
@@ -228,7 +254,9 @@ class InterpretationRunnerTest {
     proposal.put("proposalKind", "BUSINESS_TERM");
     proposal.put("label", "订单审批");
     proposal.put("purpose", "说明订单状态处理");
-    proposal.putArray("basisAtomIds").add(input.at("/capsuleView/registryProposalBasisAtomIds/0").asText());
+    proposal
+        .putArray("basisAtomIds")
+        .add(input.at("/capsuleView/registryProposalBasisAtomIds/0").asText());
     proposal.putArray("basisGapIds");
     proposal.putNull("sourceSeedKey");
     return new CanonicalJsonCodec().encodeCanonical(response);

@@ -36,8 +36,10 @@ import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 public final class FlowModelTaskSetModulePublisher {
 
   private static final String REGISTRY_FILE = "repository-interpretation-registry.json";
-  private static final String REGISTRY_TYPE = "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY";
-  private static final String REGISTRY_SCHEMA = "flow-interpretation-repository-interpretation-registry-v2";
+  private static final String REGISTRY_TYPE =
+      "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY";
+  private static final String REGISTRY_SCHEMA =
+      "flow-interpretation-repository-interpretation-registry-v2";
   private static final String FILE_NAME = "flow-task-set.json";
   private static final String ARTIFACT_TYPE = "FLOW_INTERPRETATION_FLOW_TASK_SET";
   private static final String SCHEMA_VERSION = "flow-interpretation-flow-task-set-v4";
@@ -58,7 +60,9 @@ public final class FlowModelTaskSetModulePublisher {
     compiler = new FiniteKeyFlowTaskCompiler(moduleArtifacts, analysisSteps);
   }
 
-  /** Recomputes the plan from fresh public/M3 bytes and atomically installs its canonical snapshot. */
+  /**
+   * Recomputes the plan from fresh public/M3 bytes and atomically installs its canonical snapshot.
+   */
   public ModulePublicationReference publish(
       BusinessFlowsReference businessFlows,
       ModulePublicationReference registryPublication,
@@ -76,10 +80,20 @@ public final class FlowModelTaskSetModulePublisher {
       requireRegistry(registry, registryPublication);
       if (!flows.receipt().controls().equals(registry.receipt().controls())) throw failure();
       List<ArtifactReference> upstream = new ArrayList<>();
-      flows.semanticPayloads().forEach(value -> upstream.add(reference(value.descriptor().artifactId(), value.descriptor().sha256())));
-      upstream.add(reference(registry.payloads().get(0).descriptor().artifactId(), registry.payloads().get(0).descriptor().sha256()));
+      flows
+          .semanticPayloads()
+          .forEach(
+              value ->
+                  upstream.add(
+                      reference(value.descriptor().artifactId(), value.descriptor().sha256())));
+      upstream.add(
+          reference(
+              registry.payloads().get(0).descriptor().artifactId(),
+              registry.payloads().get(0).descriptor().sha256()));
       upstream.sort(Comparator.comparing(value -> value.artifactId().value()));
-      if (upstream.size() != 6 || upstream.stream().map(ArtifactReference::artifactId).distinct().count() != 6) throw failure();
+      if (upstream.size() != 6
+          || upstream.stream().map(ArtifactReference::artifactId).distinct().count() != 6)
+        throw failure();
       AnalysisStepModuleAddress address =
           new AnalysisStepModuleAddress(
               businessFlows.publication().address().runId(),
@@ -104,7 +118,8 @@ public final class FlowModelTaskSetModulePublisher {
     }
   }
 
-  private static void requireRegistry(ReopenedModulePublication value, ModulePublicationReference reference) {
+  private static void requireRegistry(
+      ReopenedModulePublication value, ModulePublicationReference reference) {
     if (!reference.equals(value.reference())
         || !(value.receipt().address() instanceof AnalysisStepModuleAddress address)
         || address.analysisStepKey() != AnalysisStepKey.FLOW_INTERPRETATION
@@ -143,9 +158,23 @@ public final class FlowModelTaskSetModulePublisher {
     envelope.set("controls", controls(controls));
     envelope.set("completion", completion());
     envelope.set("payload", body);
-    ArtifactId artifactId = ArtifactId.parse(PREFIX + ":" + sha256(frame("canonical-module-artifact-id-v1"), frame(SCHEMA_VERSION), frame(ARTIFACT_TYPE), frame(canonicalJson.encodeCanonical(envelope).copyToByteArray())));
+    ArtifactId artifactId =
+        ArtifactId.parse(
+            PREFIX
+                + ":"
+                + sha256(
+                    frame("canonical-module-artifact-id-v1"),
+                    frame(SCHEMA_VERSION),
+                    frame(ARTIFACT_TYPE),
+                    frame(canonicalJson.encodeCanonical(envelope).copyToByteArray())));
     envelope.put("artifactId", artifactId.value());
-    return new CanonicalModulePayload(FILE_NAME, ARTIFACT_TYPE, SCHEMA_VERSION, artifactId, CanonicalMediaType.APPLICATION_JSON, canonicalJson.encodeCanonical(envelope));
+    return new CanonicalModulePayload(
+        FILE_NAME,
+        ARTIFACT_TYPE,
+        SCHEMA_VERSION,
+        artifactId,
+        CanonicalMediaType.APPLICATION_JSON,
+        canonicalJson.encodeCanonical(envelope));
   }
 
   private void task(ObjectNode node, FlowModelTask value) {
@@ -215,7 +244,8 @@ public final class FlowModelTaskSetModulePublisher {
     node.put("sha256", value.sha256().value());
   }
 
-  private static ArtifactReference reference(ArtifactId artifactId, org.sourceanalysis.app.artifact.Sha256Digest sha) {
+  private static ArtifactReference reference(
+      ArtifactId artifactId, org.sourceanalysis.app.artifact.Sha256Digest sha) {
     return new ArtifactReference(artifactId, sha);
   }
 
@@ -224,7 +254,8 @@ public final class FlowModelTaskSetModulePublisher {
     node.put("toolchainSha256", value.toolchainSha256().value());
     node.put("profileSha256", value.profileSha256().value());
     node.put("schemaBundleSha256", value.schemaBundleSha256().value());
-    if (value.promptBundleSha256() == null) node.putNull("promptBundleSha256"); else node.put("promptBundleSha256", value.promptBundleSha256().value());
+    if (value.promptBundleSha256() == null) node.putNull("promptBundleSha256");
+    else node.put("promptBundleSha256", value.promptBundleSha256().value());
     node.putObject("artifactPolicyRegistryRef")
         .put("artifactId", value.artifactPolicyRegistryRef().artifactId().value())
         .put("sha256", value.artifactPolicyRegistryRef().sha256().value());
@@ -258,7 +289,11 @@ public final class FlowModelTaskSetModulePublisher {
   }
 
   private static byte[] frame(byte[] value) {
-    return ByteBuffer.allocate(Long.BYTES + value.length).order(ByteOrder.BIG_ENDIAN).putLong(value.length).put(value).array();
+    return ByteBuffer.allocate(Long.BYTES + value.length)
+        .order(ByteOrder.BIG_ENDIAN)
+        .putLong(value.length)
+        .put(value)
+        .array();
   }
 
   private static FlowModelTaskException failure() {

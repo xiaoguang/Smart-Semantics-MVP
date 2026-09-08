@@ -55,14 +55,11 @@ class FactCandidateEvidenceSupportKindTest {
             .filter(edge -> callEdgeIds.contains(edge.path("subjectProgramElementId").asText()))
             .findFirst()
             .orElse(null);
-    assertThat(target)
-        .as("fixture must contain Evidence for a real CALL graph edge")
-        .isNotNull();
+    assertThat(target).as("fixture must contain Evidence for a real CALL graph edge").isNotNull();
     target.put("kind", "SUPPORTS_PROGRAM_NODE");
 
     CanonicalModulePayload changedEvidence =
-        ProgramGraphsPublicFixture.rebuildStandaloneGraphPayload(
-            evidencePayload, evidence, json);
+        ProgramGraphsPublicFixture.rebuildStandaloneGraphPayload(evidencePayload, evidence, json);
     List<CanonicalModulePayload> changed =
         replace(originals, "evidence-graph.json", changedEvidence);
     CanonicalModulePayload changedIndex =
@@ -72,9 +69,7 @@ class FactCandidateEvidenceSupportKindTest {
   }
 
   private static List<CanonicalModulePayload> replace(
-      List<CanonicalModulePayload> originals,
-      String fileName,
-      CanonicalModulePayload replacement) {
+      List<CanonicalModulePayload> originals, String fileName, CanonicalModulePayload replacement) {
     return originals.stream()
         .map(payload -> fileName.equals(payload.fileName()) ? replacement : payload)
         .toList();

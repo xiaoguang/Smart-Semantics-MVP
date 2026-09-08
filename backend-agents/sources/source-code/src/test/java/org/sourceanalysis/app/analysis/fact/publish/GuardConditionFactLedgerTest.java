@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateEnumerator;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateSet;
@@ -14,17 +13,13 @@ import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateSetModulePub
 import org.sourceanalysis.app.analysis.fact.candidates.FactRegistry;
 import org.sourceanalysis.app.analysis.fact.candidates.PersistedFactCandidateInputReader;
 import org.sourceanalysis.app.analysis.fact.proofs.AtomicProofBuilder;
+import org.sourceanalysis.app.analysis.fact.proofs.PersistedProofDecisionSetReader;
 import org.sourceanalysis.app.analysis.fact.proofs.ProofDecisionSet;
 import org.sourceanalysis.app.analysis.fact.proofs.ProofDecisionSetModulePublisher;
 import org.sourceanalysis.app.analysis.fact.proofs.ProofRuleRegistry;
-import org.sourceanalysis.app.analysis.fact.proofs.PersistedProofDecisionSetReader;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
-import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
-import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
-import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
-import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 
@@ -73,7 +68,8 @@ class GuardConditionFactLedgerTest {
                   fixture.sourceInventory(),
                   fixture.applicationDiscovery(),
                   fixture.programGraphs());
-      ReopenedAnalysisStepPublication publication = fixture.stepArtifacts().reopen(reference.publication());
+      ReopenedAnalysisStepPublication publication =
+          fixture.stepArtifacts().reopen(reference.publication());
       JsonNode accounting = payload(publication, "fact-accounting.json");
       JsonNode gaps = payload(publication, "gap-ledger.json");
 
@@ -82,8 +78,7 @@ class GuardConditionFactLedgerTest {
       assertThat(accounting.path("boundaryCandidateDenominatorKeys")).hasSize(2);
       assertThat(accounting.path("guardCandidateDenominatorKeys")).hasSize(1);
       assertThat(accounting.path("externalEffectGapCount").asInt()).isEqualTo(2);
-      assertThat(gaps.path("schemaVersion").asText())
-          .isEqualTo("proven-code-facts-gap-ledger-v2");
+      assertThat(gaps.path("schemaVersion").asText()).isEqualTo("proven-code-facts-gap-ledger-v2");
       assertThat(payload(publication, "proven-facts.json").path("schemaVersion").asText())
           .isEqualTo("proven-code-facts-proven-facts-v2");
       assertThat(payload(publication, "proof-pack.json").path("schemaVersion").asText())

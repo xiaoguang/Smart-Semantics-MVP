@@ -12,7 +12,8 @@ public record FactRegistry(String schemaVersion, List<FactTemplate> templates) {
 
   public FactRegistry {
     if (!SCHEMA_VERSION.equals(schemaVersion)) {
-      throw new IllegalArgumentException("FACT_PROFILE_INVALID: registry schema version is invalid");
+      throw new IllegalArgumentException(
+          "FACT_PROFILE_INVALID: registry schema version is invalid");
     }
     templates = List.copyOf(Objects.requireNonNull(templates, "fact templates"));
     if (templates.isEmpty()
@@ -51,7 +52,8 @@ public record FactRegistry(String schemaVersion, List<FactTemplate> templates) {
   }
 
   private static RequiredAtomTemplate atom(String key, String role, String valueType) {
-    return new RequiredAtomTemplate(key, role, valueType, List.of("SOURCE_EXCERPT", "RULE_APPLICATION"));
+    return new RequiredAtomTemplate(
+        key, role, valueType, List.of("SOURCE_EXCERPT", "RULE_APPLICATION"));
   }
 
   /** One explicit template in the frozen registry. */

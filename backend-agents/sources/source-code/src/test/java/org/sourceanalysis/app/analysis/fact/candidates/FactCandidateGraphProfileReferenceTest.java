@@ -11,13 +11,13 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModulePayload;
-import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
-import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 
 /** RED for M1 graph-profile lineage validation across each graph and the graph index. */
 class FactCandidateGraphProfileReferenceTest {
@@ -38,8 +38,7 @@ class FactCandidateGraphProfileReferenceTest {
 
       assertThatThrownBy(
               () ->
-                  new PersistedFactCandidateInputReader(
-                          mutation.steps(), mutation.sourceReader())
+                  new PersistedFactCandidateInputReader(mutation.steps(), mutation.sourceReader())
                       .reopen(source, discovery, mutation.graphs()))
           .isInstanceOf(FactCandidateReferenceException.class)
           .hasMessage("PROOF_PACK_REFERENCE_BROKEN");
@@ -59,7 +58,8 @@ class FactCandidateGraphProfileReferenceTest {
       if (payload.fileName().equals("call-graph.json")) {
         ObjectNode document = (ObjectNode) json.parseCanonical(payload.canonicalUtf8());
         document.set("graphProfileRef", referenceNode(decoy));
-        changedCall = ProgramGraphsPublicFixture.rebuildStandaloneGraphPayload(payload, document, json);
+        changedCall =
+            ProgramGraphsPublicFixture.rebuildStandaloneGraphPayload(payload, document, json);
       }
     }
     if (changedCall == null) throw new AssertionError("call graph payload missing");
@@ -96,8 +96,7 @@ class FactCandidateGraphProfileReferenceTest {
     try {
       return java.util.HexFormat.of()
           .formatHex(
-              MessageDigest.getInstance("SHA-256")
-                  .digest(value.getBytes(StandardCharsets.UTF_8)));
+              MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
     } catch (NoSuchAlgorithmException impossible) {
       throw new AssertionError(impossible);
     }

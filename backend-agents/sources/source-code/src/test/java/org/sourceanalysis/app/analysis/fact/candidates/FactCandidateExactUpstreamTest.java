@@ -25,8 +25,8 @@ import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.ArtifactStoreLimits;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
-import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalMediaType;
+import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalModulePayload;
 import org.sourceanalysis.app.artifact.FileSystemCanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.InstalledModulePublication;
@@ -44,8 +44,7 @@ class FactCandidateExactUpstreamTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void exposesExactDiscoveryAndGraphRootsAndRejectsAValidDecoyUpstreamReference()
-      throws Exception {
+  void exposesExactDiscoveryAndGraphRootsAndRejectsAValidDecoyUpstreamReference() throws Exception {
     Path storeRoot = temporaryDirectory.resolve("candidate-upstream-store");
     Files.createDirectory(storeRoot);
     try (ProgramGraphsPublicFixture fixture =
@@ -60,12 +59,17 @@ class FactCandidateExactUpstreamTest {
               new ArtifactStoreLimits(8, 2_000_000, 4_000_000, 16));
       FactCandidateInputs inputs =
           new PersistedFactCandidateInputReader(steps, fixture.sourceReader())
-              .reopen(fixture.sourceInventory(), fixture.applicationDiscovery(), fixture.programGraphs());
+              .reopen(
+                  fixture.sourceInventory(),
+                  fixture.applicationDiscovery(),
+                  fixture.programGraphs());
 
       List<ArtifactReference> expectedDiscovery = discoveryReferences(fixture);
       List<ArtifactReference> upstream = candidateModuleUpstreamArtifacts(inputs);
       assertThat(upstream).hasSize(7);
-      assertThat(upstream).containsExactlyElementsOf(sorted(concatenate(inputs.sourceGraphRoots(), expectedDiscovery)));
+      assertThat(upstream)
+          .containsExactlyElementsOf(
+              sorted(concatenate(inputs.sourceGraphRoots(), expectedDiscovery)));
       assertThat(upstream).contains(expectedDiscovery.get(0), expectedDiscovery.get(1));
 
       FactCandidateSet candidateSet =
@@ -157,7 +161,9 @@ class FactCandidateExactUpstreamTest {
       throw new AssertionError("FACT_CANDIDATE_STRICT_PUBLISHER_SEAM_NOT_IMPLEMENTED", missing);
     }
     try {
-      Object result = publish.invoke(new FactCandidateSetModulePublisher(modules), destination, inputs, candidateSet);
+      Object result =
+          publish.invoke(
+              new FactCandidateSetModulePublisher(modules), destination, inputs, candidateSet);
       if (!(result instanceof ModulePublicationReference reference)) {
         throw new AssertionError("FACT_CANDIDATE_STRICT_PUBLISHER_RETURN_TYPE_INVALID");
       }
@@ -168,8 +174,7 @@ class FactCandidateExactUpstreamTest {
     }
   }
 
-  private static void replaceUpstream(
-      ObjectNode envelope, List<ArtifactReference> replacement) {
+  private static void replaceUpstream(ObjectNode envelope, List<ArtifactReference> replacement) {
     ArrayNode upstream = envelope.putArray("upstreamArtifacts");
     replacement.forEach(
         reference ->
@@ -221,7 +226,11 @@ class FactCandidateExactUpstreamTest {
 
   private static List<ArtifactReference> discoveryReferences(ProgramGraphsPublicFixture fixture) {
     return sorted(
-        fixture.stepArtifacts().reopen(fixture.applicationDiscovery().publication()).semanticPayloads().stream()
+        fixture
+            .stepArtifacts()
+            .reopen(fixture.applicationDiscovery().publication())
+            .semanticPayloads()
+            .stream()
             .filter(
                 payload ->
                     payload.descriptor().fileName().equals("capability-report.json")
@@ -234,10 +243,10 @@ class FactCandidateExactUpstreamTest {
   }
 
   private static ArtifactReference validDecoy(ArtifactReference replaced) {
-    String prefix = replaced.artifactId().value().substring(0, replaced.artifactId().value().indexOf(':'));
+    String prefix =
+        replaced.artifactId().value().substring(0, replaced.artifactId().value().indexOf(':'));
     String digest = digest("fact-candidate-valid-upstream-decoy:" + prefix);
-    return new ArtifactReference(
-        ArtifactId.parse(prefix + ":" + digest), new Sha256Digest(digest));
+    return new ArtifactReference(ArtifactId.parse(prefix + ":" + digest), new Sha256Digest(digest));
   }
 
   private static List<ArtifactReference> concatenate(
@@ -254,7 +263,8 @@ class FactCandidateExactUpstreamTest {
                     (ArtifactReference reference) -> reference.artifactId().value(),
                     FactCandidateExactUpstreamTest::compareUtf8)
                 .thenComparing(
-                    reference -> reference.sha256().value(), FactCandidateExactUpstreamTest::compareUtf8))
+                    reference -> reference.sha256().value(),
+                    FactCandidateExactUpstreamTest::compareUtf8))
         .toList();
   }
 
@@ -262,7 +272,8 @@ class FactCandidateExactUpstreamTest {
     byte[] first = left.getBytes(StandardCharsets.UTF_8);
     byte[] second = right.getBytes(StandardCharsets.UTF_8);
     for (int index = 0; index < Math.min(first.length, second.length); index++) {
-      int comparison = Integer.compare(Byte.toUnsignedInt(first[index]), Byte.toUnsignedInt(second[index]));
+      int comparison =
+          Integer.compare(Byte.toUnsignedInt(first[index]), Byte.toUnsignedInt(second[index]));
       if (comparison != 0) return comparison;
     }
     return Integer.compare(first.length, second.length);
@@ -274,8 +285,7 @@ class FactCandidateExactUpstreamTest {
 
   private static String digest(byte[] value) {
     try {
-      return java.util.HexFormat.of()
-          .formatHex(MessageDigest.getInstance("SHA-256").digest(value));
+      return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
     } catch (NoSuchAlgorithmException unavailable) {
       throw new AssertionError(unavailable);
     }

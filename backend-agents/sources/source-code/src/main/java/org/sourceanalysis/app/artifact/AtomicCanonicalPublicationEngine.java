@@ -1579,8 +1579,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     if ("FLOW_INTERPRETATION_REGISTRY_PROPOSAL_TASK_SET".equals(payload.artifactType())
-        && "flow-interpretation-registry-proposal-task-set-v2"
-            .equals(payload.schemaVersion())) {
+        && "flow-interpretation-registry-proposal-task-set-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.FLOW_INTERPRETATION,
           1,
@@ -1598,8 +1597,7 @@ final class AtomicCanonicalPublicationEngine {
           "registry-proposal-execution-set.json",
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
-    if ("FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY".equals(
-            payload.artifactType())
+    if ("FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY".equals(payload.artifactType())
         && "flow-interpretation-repository-interpretation-registry-v2"
             .equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(

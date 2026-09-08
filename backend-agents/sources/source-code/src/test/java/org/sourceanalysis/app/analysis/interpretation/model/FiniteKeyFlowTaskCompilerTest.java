@@ -43,18 +43,21 @@ class FiniteKeyFlowTaskCompilerTest {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("finite-key-flow-tasks"))) {
-      BusinessFlowsReference businessFlows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+      BusinessFlowsReference businessFlows =
+          RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
       RegistryProposalTaskSet r0Tasks =
           new RegistryProposalTaskCompiler(fixture.stepArtifacts())
               .compileRegistryProposalTasks(businessFlows, r0Profile(fixture));
       ModulePublicationReference persistedR0Tasks =
-          new RegistryProposalTaskSetModulePublisher(fixture.moduleArtifacts(), fixture.stepArtifacts())
+          new RegistryProposalTaskSetModulePublisher(
+                  fixture.moduleArtifacts(), fixture.stepArtifacts())
               .publish(businessFlows, r0Tasks);
       RegistryProposalExecutionSet r0Execution =
           new RegistryProposalRunner(fixture.moduleArtifacts())
               .runRegistryProposals(
                   persistedR0Tasks,
-                  task -> new RegistryProposalProviderResponse(task.expectedRuntime(), response(task)));
+                  task ->
+                      new RegistryProposalProviderResponse(task.expectedRuntime(), response(task)));
       ModulePublicationReference persistedR0Execution =
           new RegistryProposalExecutionSetModulePublisher(fixture.moduleArtifacts())
               .publish(persistedR0Tasks, r0Execution);
@@ -75,7 +78,8 @@ class FiniteKeyFlowTaskCompilerTest {
                   .flatMap(flow -> java.util.stream.Stream.of(flow, flow))
                   .toList());
       for (Object task : tasks) {
-        JsonNode input = new CanonicalJsonCodec().parseCanonical((ImmutableBytes) property(task, "inputJson"));
+        JsonNode input =
+            new CanonicalJsonCodec().parseCanonical((ImmutableBytes) property(task, "inputJson"));
         String flowId = String.valueOf(property(task, "flowSliceId"));
         assertThat(input.path("flowSliceId").asText()).isEqualTo(flowId);
         assertThat(input.at("/allowedRegistryItems/0/flowSliceId").asText()).isEqualTo(flowId);
@@ -91,14 +95,16 @@ class FiniteKeyFlowTaskCompilerTest {
       ModulePublicationReference persistedTasks =
           publish(fixture, businessFlows, persistedRegistry, taskSet);
       ReopenedModulePublication reopened = fixture.moduleArtifacts().reopen(persistedTasks);
-      assertThat(reopened.payloads()).singleElement().satisfies(
-          payload -> {
-            assertThat(payload.descriptor().fileName()).isEqualTo("flow-task-set.json");
-            assertThat(payload.descriptor().artifactType())
-                .isEqualTo("FLOW_INTERPRETATION_FLOW_TASK_SET");
-            assertThat(payload.descriptor().schemaVersion())
-                .isEqualTo("flow-interpretation-flow-task-set-v4");
-          });
+      assertThat(reopened.payloads())
+          .singleElement()
+          .satisfies(
+              payload -> {
+                assertThat(payload.descriptor().fileName()).isEqualTo("flow-task-set.json");
+                assertThat(payload.descriptor().artifactType())
+                    .isEqualTo("FLOW_INTERPRETATION_FLOW_TASK_SET");
+                assertThat(payload.descriptor().schemaVersion())
+                    .isEqualTo("flow-interpretation-flow-task-set-v4");
+              });
     }
   }
 
@@ -148,7 +154,8 @@ class FiniteKeyFlowTaskCompilerTest {
           Class.forName(
               "org.sourceanalysis.app.analysis.interpretation.model.FiniteKeyFlowTaskCompiler");
       Class<?> profileType =
-          Class.forName("org.sourceanalysis.app.analysis.interpretation.model.FlowModelTaskProfile");
+          Class.forName(
+              "org.sourceanalysis.app.analysis.interpretation.model.FlowModelTaskProfile");
       return compilerType
           .getConstructor(
               org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore.class,
@@ -181,7 +188,8 @@ class FiniteKeyFlowTaskCompilerTest {
   private Object profile(ProgramGraphsPublicFixture fixture) throws Exception {
     try {
       Class<?> type =
-          Class.forName("org.sourceanalysis.app.analysis.interpretation.model.FlowModelTaskProfile");
+          Class.forName(
+              "org.sourceanalysis.app.analysis.interpretation.model.FlowModelTaskProfile");
       ArtifactReference prompt =
           RegistryProposalTaskCompilerTest.reference("flow-model-prompt", "flow-model-prompt");
       ArtifactReference schema =
@@ -192,8 +200,7 @@ class FiniteKeyFlowTaskCompilerTest {
               "flow-model-runtime", fixture.artifactControls().profileSha256());
       ArtifactReference budget =
           RegistryProposalTaskCompilerTest.reference("flow-model-budget", "flow-model-budget");
-      return type
-          .getConstructor(
+      return type.getConstructor(
               ArtifactReference.class,
               ArtifactReference.class,
               ArtifactReference.class,
@@ -206,7 +213,8 @@ class FiniteKeyFlowTaskCompilerTest {
               int.class,
               int.class,
               int.class)
-          .newInstance(prompt, schema, runtime, budget, prompt, schema, runtime, budget, 16, 4096, 16, 16);
+          .newInstance(
+              prompt, schema, runtime, budget, prompt, schema, runtime, budget, 16, 4096, 16, 16);
     } catch (ClassNotFoundException missing) {
       throw new AssertionError("FINITE_KEY_FLOW_TASK_COMPILER_NOT_IMPLEMENTED", missing);
     }
@@ -237,7 +245,9 @@ class FiniteKeyFlowTaskCompilerTest {
     proposal.put("proposalKind", "BUSINESS_TERM");
     proposal.put("label", "订单审批");
     proposal.put("purpose", "说明订单状态处理");
-    proposal.putArray("basisAtomIds").add(input.at("/capsuleView/registryProposalBasisAtomIds/0").asText());
+    proposal
+        .putArray("basisAtomIds")
+        .add(input.at("/capsuleView/registryProposalBasisAtomIds/0").asText());
     proposal.putArray("basisGapIds");
     proposal.putNull("sourceSeedKey");
     return new CanonicalJsonCodec().encodeCanonical(response);
@@ -245,7 +255,8 @@ class FiniteKeyFlowTaskCompilerTest {
 
   private static List<?> list(Object source, String method) {
     Object value = property(source, method);
-    if (!(value instanceof List<?> values)) throw new AssertionError("FLOW_MODEL_TASK_SET_SHAPE_INVALID");
+    if (!(value instanceof List<?> values))
+      throw new AssertionError("FLOW_MODEL_TASK_SET_SHAPE_INVALID");
     return values;
   }
 

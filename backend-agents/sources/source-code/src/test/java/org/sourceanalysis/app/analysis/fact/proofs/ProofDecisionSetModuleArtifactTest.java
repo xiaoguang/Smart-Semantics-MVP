@@ -97,7 +97,8 @@ class ProofDecisionSetModuleArtifactTest {
       JsonNode envelope = json.parseCanonical(payload.canonicalUtf8());
       assertThat(envelope.path("upstreamArtifacts").size()).isEqualTo(3);
       JsonNode body = envelope.path("payload");
-      assertThat(body.path("candidateSetId").asText()).isEqualTo(candidates.candidateSetId().value());
+      assertThat(body.path("candidateSetId").asText())
+          .isEqualTo(candidates.candidateSetId().value());
       assertThat(body.path("codeFacts").size()).isEqualTo(2);
       assertThat(body.path("atomProofs").size()).isEqualTo(16);
       assertThat(body.path("factDispositions").size()).isEqualTo(2);

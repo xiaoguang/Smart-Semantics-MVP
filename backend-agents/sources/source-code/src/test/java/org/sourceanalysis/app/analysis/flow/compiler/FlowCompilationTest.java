@@ -45,12 +45,17 @@ class FlowCompilationTest {
             List.of(),
             List.of(
                 new FlowCompilation.FlowGap(
-                    "gap:a", "ENTRY", "FLOW_GRAPH_REFERENCE_BROKEN", List.of("entry:a"), List.of())));
+                    "gap:a",
+                    "ENTRY",
+                    "FLOW_GRAPH_REFERENCE_BROKEN",
+                    List.of("entry:a"),
+                    List.of())));
 
     assertThat(empty.entryDispositions()).isEmpty();
     assertThat(empty.flowSlices()).isEmpty();
     assertThat(gapped.flowSlices()).isEmpty();
-    assertThat(gapped.flowGaps()).extracting(FlowCompilation.FlowGap::reasonCode)
+    assertThat(gapped.flowGaps())
+        .extracting(FlowCompilation.FlowGap::reasonCode)
         .containsExactly("FLOW_GRAPH_REFERENCE_BROKEN");
   }
 
@@ -90,7 +95,8 @@ class FlowCompilationTest {
   private static String sha256(String value) {
     try {
       return java.util.HexFormat.of()
-          .formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+          .formatHex(
+              MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
     } catch (NoSuchAlgorithmException unavailable) {
       throw new IllegalStateException("SHA-256 must be available", unavailable);
     }

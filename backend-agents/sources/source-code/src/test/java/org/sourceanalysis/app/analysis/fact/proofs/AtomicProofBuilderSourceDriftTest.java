@@ -38,7 +38,8 @@ class AtomicProofBuilderSourceDriftTest {
                   fixture.programGraphs());
       FactCandidateSet candidates =
           new FactCandidateEnumerator().enumerate(inputs, FactRegistry.standardJavaBoundary());
-      VerifiedSourceTextReader sourceDrift = ignored -> replaceEveryDocumentByte(fixture.sourceReader().reopen(ignored));
+      VerifiedSourceTextReader sourceDrift =
+          ignored -> replaceEveryDocumentByte(fixture.sourceReader().reopen(ignored));
 
       assertThatThrownBy(
               () ->

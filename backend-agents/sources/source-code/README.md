@@ -95,6 +95,24 @@ DepotHeadController.batchSetStatus
 
 源码里能看到这条路径，不等于当前程序已经证明整条路径。当前语义骨架尚未执行该样例；历史pre-reset审计暴露出的DepotHead dataflow/Facts缺口只作为后续目标验收的反例来源。
 
+## 本地 Java 格式与构建检查
+
+在本目录使用项目跟踪的 JDK 17 Toolchain，并保持离线。先检查格式；需要修复时显式执行 apply 后重跑 check：
+
+~~~bash
+mvn -o -t .mvn/toolchains.xml spotless:check
+mvn -o -t .mvn/toolchains.xml spotless:apply
+mvn -o -t .mvn/toolchains.xml spotless:check
+~~~
+
+本地 package 验证使用：
+
+~~~bash
+mvn -o -t .mvn/toolchains.xml -DskipUTs=true package
+~~~
+
+`skipUTs=true` 会有意跳过测试执行；该命令只证明 package 成功，不能表述为测试已通过。需要测试时，只运行当前 work unit 直接覆盖的定向 selector。
+
 ## 只读文档复验
 
 文档-only 工作不运行 Maven、模型、客户代码、来源 capture 或网络调用。确认八份目标设计存在：

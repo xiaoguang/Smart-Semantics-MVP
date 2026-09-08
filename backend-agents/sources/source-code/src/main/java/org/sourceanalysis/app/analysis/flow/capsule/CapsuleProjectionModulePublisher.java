@@ -32,7 +32,6 @@ import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.ModuleInstallRequest;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
-import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 
 /** Installs M2's complete evidence-capsule projection as one canonical module artifact. */
@@ -43,14 +42,17 @@ public final class CapsuleProjectionModulePublisher {
   private static final String SCHEMA_VERSION = "business-flows-capsule-projection-v4";
   private static final String ARTIFACT_PREFIX = "business-flows-capsule-projection";
   private static final String MODULE_VERSION = "v4";
-  private static final Comparator<String> UTF8_ORDER = CapsuleProjectionModulePublisher::compareUtf8;
+  private static final Comparator<String> UTF8_ORDER =
+      CapsuleProjectionModulePublisher::compareUtf8;
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
   private final CanonicalAnalysisStepArtifactStore analysisSteps;
   private final VerifiedSourceTextReader sourceReader;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
 
-  /** Creates M2's receipt-last publisher and the same fresh-reopen capability used by its projector. */
+  /**
+   * Creates M2's receipt-last publisher and the same fresh-reopen capability used by its projector.
+   */
   public CapsuleProjectionModulePublisher(
       CanonicalModuleArtifactStore moduleArtifacts,
       CanonicalAnalysisStepArtifactStore analysisSteps,
@@ -86,10 +88,15 @@ public final class CapsuleProjectionModulePublisher {
           upstream(flowCompilation, sourceStep, graphStep, factStep, projection);
       List<String> gapRefs = modelIneligibilityGapRefs(projection);
       ModuleCompletionStatus completionStatus =
-          gapRefs.isEmpty() ? ModuleCompletionStatus.SUCCEEDED : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
+          gapRefs.isEmpty()
+              ? ModuleCompletionStatus.SUCCEEDED
+              : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
       AnalysisStepModuleAddress address =
           new AnalysisStepModuleAddress(
-              source.publication().address().runId(), AnalysisStepKey.BUSINESS_FLOWS, 2, "capsule-projector");
+              source.publication().address().runId(),
+              AnalysisStepKey.BUSINESS_FLOWS,
+              2,
+              "capsule-projector");
       CanonicalModulePayload payload =
           payload(address, upstream, controls, projection, completionStatus, gapRefs);
       InstalledModulePublication publication =
@@ -119,7 +126,8 @@ public final class CapsuleProjectionModulePublisher {
     List<ArtifactReference> values = new ArrayList<>();
     values.add(projection.flowCompilationRef());
     requireModulePayload(compilation, projection.flowCompilationRef(), "flow-compilation.json");
-    values.addAll(requiredReferences(source, List.of("source-inventory.jsonl", "verified-snapshot.json")));
+    values.addAll(
+        requiredReferences(source, List.of("source-inventory.jsonl", "verified-snapshot.json")));
     values.addAll(
         requiredReferences(
             graphs,
@@ -134,9 +142,15 @@ public final class CapsuleProjectionModulePublisher {
     values.addAll(
         requiredReferences(
             facts,
-            List.of("fact-accounting.json", "gap-ledger.json", "proof-pack.json", "proven-facts.json")));
+            List.of(
+                "fact-accounting.json",
+                "gap-ledger.json",
+                "proof-pack.json",
+                "proven-facts.json")));
     List<ArtifactReference> ordered =
-        values.stream().sorted(Comparator.comparing(value -> value.artifactId().value(), UTF8_ORDER)).toList();
+        values.stream()
+            .sorted(Comparator.comparing(value -> value.artifactId().value(), UTF8_ORDER))
+            .toList();
     if (ordered.size() != 14
         || ordered.size() != ordered.stream().map(ArtifactReference::artifactId).distinct().count()
         || !ordered.contains(projection.proofPackRef())) {
@@ -147,7 +161,9 @@ public final class CapsuleProjectionModulePublisher {
 
   private static void requireModulePayload(
       ModulePublicationReference reference, ArtifactReference expected, String expectedFileName) {
-    if (reference == null || expected == null || !expectedFileName.equals("flow-compilation.json")) {
+    if (reference == null
+        || expected == null
+        || !expectedFileName.equals("flow-compilation.json")) {
       throw failure();
     }
     // The projector has just freshly reopened the complete M1 envelope. This check prevents a
@@ -164,7 +180,8 @@ public final class CapsuleProjectionModulePublisher {
               .filter(value -> fileName.equals(value.descriptor().fileName()))
               .findFirst()
               .orElseThrow(CapsuleProjectionModulePublisher::failure);
-      values.add(new ArtifactReference(payload.descriptor().artifactId(), payload.descriptor().sha256()));
+      values.add(
+          new ArtifactReference(payload.descriptor().artifactId(), payload.descriptor().sha256()));
     }
     return values;
   }
@@ -287,7 +304,8 @@ public final class CapsuleProjectionModulePublisher {
   private static void outcome(ObjectNode node, CapsuleProjection.FlowOutcomePathView outcome) {
     node.put("outcomePathId", outcome.outcomePathId());
     ArrayNode decisions = node.putArray("decisions");
-    outcome.decisions()
+    outcome
+        .decisions()
         .forEach(
             decision ->
                 decisions
@@ -315,13 +333,16 @@ public final class CapsuleProjectionModulePublisher {
     locator.put("startColumn", span.sourceExcerpt().locator().startColumn());
     locator.put("endLine", span.sourceExcerpt().locator().endLine());
     locator.put("endColumn", span.sourceExcerpt().locator().endColumn());
-    excerpt.put("rawUtf8", new String(span.sourceExcerpt().rawUtf8().copyToByteArray(), StandardCharsets.UTF_8));
+    excerpt.put(
+        "rawUtf8",
+        new String(span.sourceExcerpt().rawUtf8().copyToByteArray(), StandardCharsets.UTF_8));
     excerpt.put("rawUtf8Sha256", span.sourceExcerpt().rawUtf8Sha256().value());
     strings(node.putArray("supportedAtomIds"), span.supportedAtomIds());
     strings(node.putArray("supportedOutcomePathIds"), span.supportedOutcomePathIds());
   }
 
-  private static void obligation(ObjectNode node, CapsuleProjection.ProjectionObligation obligation) {
+  private static void obligation(
+      ObjectNode node, CapsuleProjection.ProjectionObligation obligation) {
     node.put("obligationId", obligation.obligationId());
     node.put("kind", obligation.kind());
     node.put("semanticItemId", obligation.semanticItemId());
@@ -434,7 +455,9 @@ public final class CapsuleProjectionModulePublisher {
     byte[] leftBytes = left.getBytes(StandardCharsets.UTF_8);
     byte[] rightBytes = right.getBytes(StandardCharsets.UTF_8);
     for (int index = 0; index < Math.min(leftBytes.length, rightBytes.length); index++) {
-      int compared = Integer.compare(Byte.toUnsignedInt(leftBytes[index]), Byte.toUnsignedInt(rightBytes[index]));
+      int compared =
+          Integer.compare(
+              Byte.toUnsignedInt(leftBytes[index]), Byte.toUnsignedInt(rightBytes[index]));
       if (compared != 0) return compared;
     }
     return Integer.compare(leftBytes.length, rightBytes.length);

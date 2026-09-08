@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -16,7 +15,6 @@ import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalExecutionSet;
 import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalExecutionSetModulePublisher;
-import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalProvider;
 import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalProviderResponse;
 import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalRunner;
 import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTask;
@@ -27,7 +25,6 @@ import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalT
 import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTaskSetModulePublisher;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
-import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
@@ -43,12 +40,14 @@ class RepositoryInterpretationRegistryFreezerTest {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("repository-interpretation-registry"))) {
-      BusinessFlowsReference businessFlows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+      BusinessFlowsReference businessFlows =
+          RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
       RegistryProposalTaskSet taskSet =
           new RegistryProposalTaskCompiler(fixture.stepArtifacts())
               .compileRegistryProposalTasks(businessFlows, profile(fixture));
       ModulePublicationReference persistedTaskSet =
-          new RegistryProposalTaskSetModulePublisher(fixture.moduleArtifacts(), fixture.stepArtifacts())
+          new RegistryProposalTaskSetModulePublisher(
+                  fixture.moduleArtifacts(), fixture.stepArtifacts())
               .publish(businessFlows, taskSet);
       RegistryProposalExecutionSet executionSet =
           new RegistryProposalRunner(fixture.moduleArtifacts())
@@ -74,7 +73,8 @@ class RepositoryInterpretationRegistryFreezerTest {
           .containsOnly("READY_FOR_FREEZE");
 
       ModulePublicationReference persistedRegistry =
-          publishRegistry(fixture, persistedTaskSet, persistedExecutionSet, businessFlows, registry);
+          publishRegistry(
+              fixture, persistedTaskSet, persistedExecutionSet, businessFlows, registry);
       ReopenedModulePublication reopened = fixture.moduleArtifacts().reopen(persistedRegistry);
       assertThat(reopened.receipt().address())
           .isEqualTo(
@@ -83,15 +83,17 @@ class RepositoryInterpretationRegistryFreezerTest {
                   AnalysisStepKey.FLOW_INTERPRETATION,
                   3,
                   "registry-freezer"));
-      assertThat(reopened.payloads()).singleElement().satisfies(
-          payload -> {
-            assertThat(payload.descriptor().fileName())
-                .isEqualTo("repository-interpretation-registry.json");
-            assertThat(payload.descriptor().artifactType())
-                .isEqualTo("FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY");
-            assertThat(payload.descriptor().schemaVersion())
-                .isEqualTo("flow-interpretation-repository-interpretation-registry-v2");
-          });
+      assertThat(reopened.payloads())
+          .singleElement()
+          .satisfies(
+              payload -> {
+                assertThat(payload.descriptor().fileName())
+                    .isEqualTo("repository-interpretation-registry.json");
+                assertThat(payload.descriptor().artifactType())
+                    .isEqualTo("FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY");
+                assertThat(payload.descriptor().schemaVersion())
+                    .isEqualTo("flow-interpretation-repository-interpretation-registry-v2");
+              });
     }
   }
 
@@ -112,7 +114,8 @@ class RepositoryInterpretationRegistryFreezerTest {
               BusinessFlowsReference.class)
           .invoke(freezerType.getConstructor().newInstance(), taskSet, executionSet, businessFlows);
     } catch (ClassNotFoundException missing) {
-      throw new AssertionError("REPOSITORY_INTERPRETATION_REGISTRY_FREEZER_NOT_IMPLEMENTED", missing);
+      throw new AssertionError(
+          "REPOSITORY_INTERPRETATION_REGISTRY_FREEZER_NOT_IMPLEMENTED", missing);
     } catch (InvocationTargetException failure) {
       Throwable cause = failure.getCause() == null ? failure : failure.getCause();
       throw new AssertionError("REPOSITORY_INTERPRETATION_REGISTRY_FREEZER_FAILED", cause);
@@ -149,7 +152,8 @@ class RepositoryInterpretationRegistryFreezerTest {
                   registryType)
               .invoke(publisher, taskSet, executionSet, businessFlows, registry);
     } catch (ClassNotFoundException missing) {
-      throw new AssertionError("REPOSITORY_INTERPRETATION_REGISTRY_PUBLISHER_NOT_IMPLEMENTED", missing);
+      throw new AssertionError(
+          "REPOSITORY_INTERPRETATION_REGISTRY_PUBLISHER_NOT_IMPLEMENTED", missing);
     } catch (InvocationTargetException failure) {
       Throwable cause = failure.getCause() == null ? failure : failure.getCause();
       throw new AssertionError("REPOSITORY_INTERPRETATION_REGISTRY_PUBLISHER_FAILED", cause);
@@ -164,10 +168,7 @@ class RepositoryInterpretationRegistryFreezerTest {
     response.put("kind", "R0_REGISTRY_PROPOSAL_RESPONSE");
     ArrayNode proposals = response.putArray("proposals");
     ObjectNode proposal = proposals.addObject();
-    proposal
-        .put("proposalKind", "BUSINESS_TERM")
-        .put("label", "订单审批")
-        .put("purpose", "说明订单状态处理");
+    proposal.put("proposalKind", "BUSINESS_TERM").put("label", "订单审批").put("purpose", "说明订单状态处理");
     proposal.putArray("basisAtomIds").add(atomId);
     proposal.putArray("basisGapIds");
     proposal.putNull("sourceSeedKey");
@@ -191,7 +192,8 @@ class RepositoryInterpretationRegistryFreezerTest {
 
   private static List<?> list(Object source, String method) {
     Object value = property(source, method);
-    if (!(value instanceof List<?> values)) throw new AssertionError("REGISTRY_FREEZER_SHAPE_INVALID");
+    if (!(value instanceof List<?> values))
+      throw new AssertionError("REGISTRY_FREEZER_SHAPE_INVALID");
     return values;
   }
 

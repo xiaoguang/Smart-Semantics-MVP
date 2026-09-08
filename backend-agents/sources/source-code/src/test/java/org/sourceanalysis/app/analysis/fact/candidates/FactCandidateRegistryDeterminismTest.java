@@ -78,8 +78,7 @@ class FactCandidateRegistryDeterminismTest {
 
     try (ProgramGraphsPublicFixture fixture = fixture("atom-order")) {
       FactCandidateSet declaredResult = enumerate(fixture, registry(List.of(standard)));
-      FactCandidateSet reversedResult =
-          enumerate(fixture, registry(List.of(reversedTemplate)));
+      FactCandidateSet reversedResult = enumerate(fixture, registry(List.of(reversedTemplate)));
 
       assertThat(declaredResult.candidates())
           .allSatisfy(
@@ -87,14 +86,18 @@ class FactCandidateRegistryDeterminismTest {
                   assertThat(candidate.requiredAtoms())
                       .extracting(FactCandidateSet.RequiredAtom::atomKey)
                       .containsExactlyElementsOf(
-                          declared.stream().map(FactRegistry.RequiredAtomTemplate::atomKey).toList()));
+                          declared.stream()
+                              .map(FactRegistry.RequiredAtomTemplate::atomKey)
+                              .toList()));
       assertThat(reversedResult.candidates())
           .allSatisfy(
               candidate ->
                   assertThat(candidate.requiredAtoms())
                       .extracting(FactCandidateSet.RequiredAtom::atomKey)
                       .containsExactlyElementsOf(
-                          reversed.stream().map(FactRegistry.RequiredAtomTemplate::atomKey).toList()));
+                          reversed.stream()
+                              .map(FactRegistry.RequiredAtomTemplate::atomKey)
+                              .toList()));
       assertThat(reversedResult.candidateSetId())
           .as("required atom order is semantic registry input")
           .isNotEqualTo(declaredResult.candidateSetId());
@@ -109,7 +112,8 @@ class FactCandidateRegistryDeterminismTest {
       ProgramGraphsPublicFixture fixture, FactRegistry registry) {
     FactCandidateInputs inputs =
         new PersistedFactCandidateInputReader(fixture.stepArtifacts(), fixture.sourceReader())
-            .reopen(fixture.sourceInventory(), fixture.applicationDiscovery(), fixture.programGraphs());
+            .reopen(
+                fixture.sourceInventory(), fixture.applicationDiscovery(), fixture.programGraphs());
     return new FactCandidateEnumerator().enumerate(inputs, registry);
   }
 

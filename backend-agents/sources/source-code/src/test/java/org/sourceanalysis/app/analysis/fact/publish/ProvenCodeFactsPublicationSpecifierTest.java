@@ -78,11 +78,14 @@ class ProvenCodeFactsPublicationSpecifierTest {
               fixture.programGraphs());
       Method publication = Class.forName(REFERENCE_CLASS).getMethod("publication");
       Object rawPublication = publication.invoke(reference);
-      assertThat(rawPublication).isInstanceOf(org.sourceanalysis.app.artifact.AnalysisStepPublicationReference.class);
+      assertThat(rawPublication)
+          .isInstanceOf(org.sourceanalysis.app.artifact.AnalysisStepPublicationReference.class);
       ReopenedAnalysisStepPublication reopened =
           fixture
               .stepArtifacts()
-              .reopen((org.sourceanalysis.app.artifact.AnalysisStepPublicationReference) rawPublication);
+              .reopen(
+                  (org.sourceanalysis.app.artifact.AnalysisStepPublicationReference)
+                      rawPublication);
 
       assertThat(reopened.semanticPayloads())
           .extracting(payload -> payload.descriptor().fileName())
@@ -101,7 +104,8 @@ class ProvenCodeFactsPublicationSpecifierTest {
   @Test
   void projectsRejectedCandidatesAsFactRejectionAndExternalEffectGaps() throws Exception {
     try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.create(temporaryDirectory.resolve("fact-ledger-rejection-graphs"))) {
+        ProgramGraphsPublicFixture.create(
+            temporaryDirectory.resolve("fact-ledger-rejection-graphs"))) {
       FactCandidateInputs inputs =
           new PersistedFactCandidateInputReader(fixture.stepArtifacts(), fixture.sourceReader())
               .reopen(
@@ -154,7 +158,11 @@ class ProvenCodeFactsPublicationSpecifierTest {
     java.util.List<ProofDecisionSet.ExternalEffectGap> gaps = new java.util.ArrayList<>();
     for (FactCandidateSet.FactCandidate candidate : candidates.candidates()) {
       String key =
-          candidate.entryId() + "|" + candidate.boundaryNodeId() + "|" + candidate.candidateFactKey();
+          candidate.entryId()
+              + "|"
+              + candidate.boundaryNodeId()
+              + "|"
+              + candidate.candidateFactKey();
       String directAtom = candidate.requiredAtoms().get(0).atomKey();
       facts.add(
           new ProofDecisionSet.FactDisposition(
@@ -199,7 +207,13 @@ class ProvenCodeFactsPublicationSpecifierTest {
               evidence));
     }
     return new ProofDecisionSet(
-        candidates.candidateSetId(), java.util.List.of(), java.util.List.of(), facts, atoms, roots, gaps);
+        candidates.candidateSetId(),
+        java.util.List.of(),
+        java.util.List.of(),
+        facts,
+        atoms,
+        roots,
+        gaps);
   }
 
   private static JsonNode payload(ReopenedAnalysisStepPublication publication, String fileName) {
@@ -244,7 +258,8 @@ class ProvenCodeFactsPublicationSpecifierTest {
               ProgramGraphsReference.class);
       return method.invoke(
           specifierType
-              .getConstructor(CanonicalModuleArtifactStore.class, CanonicalAnalysisStepArtifactStore.class)
+              .getConstructor(
+                  CanonicalModuleArtifactStore.class, CanonicalAnalysisStepArtifactStore.class)
               .newInstance(modules, steps),
           inputs,
           candidatePublication,

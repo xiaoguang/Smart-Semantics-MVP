@@ -1,17 +1,16 @@
 package org.sourceanalysis.app.analysis.fact.candidates;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.List;
+import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModulePayload;
-import org.assertj.core.api.SoftAssertions;
 
 /** RED for persisted SOURCE_EXCERPT byte-hash and locator invariants in Fact M1. */
 class FactCandidateSourceExcerptIntegrityTest {
@@ -24,15 +23,13 @@ class FactCandidateSourceExcerptIntegrityTest {
         catchThrowable(
             () ->
                 reopenMutatedGraphs(
-                    "changed-bytes",
-                    FactCandidateSourceExcerptIntegrityTest::changeRawUtf8Only));
+                    "changed-bytes", FactCandidateSourceExcerptIntegrityTest::changeRawUtf8Only));
     Throwable invalidLocator =
         catchThrowable(
-            ()
-                ->
-                    reopenMutatedGraphs(
-                        "invalid-locator",
-                        FactCandidateSourceExcerptIntegrityTest::makeLocatorInvalid));
+            () ->
+                reopenMutatedGraphs(
+                    "invalid-locator",
+                    FactCandidateSourceExcerptIntegrityTest::makeLocatorInvalid));
 
     SoftAssertions softly = new SoftAssertions();
     softly
@@ -50,7 +47,9 @@ class FactCandidateSourceExcerptIntegrityTest {
 
   private void reopenMutatedGraphs(
       String mutationName,
-      java.util.function.BiFunction<List<CanonicalModulePayload>, CanonicalJsonCodec, List<CanonicalModulePayload>> mutation) {
+      java.util.function.BiFunction<
+              List<CanonicalModulePayload>, CanonicalJsonCodec, List<CanonicalModulePayload>>
+          mutation) {
     try (ProgramGraphsPublicFixture base =
             ProgramGraphsPublicFixture.create(temporaryDirectory.resolve(mutationName + "-base"));
         ProgramGraphsPublicFixture.PersistedGraphMutation changed =
@@ -110,9 +109,7 @@ class FactCandidateSourceExcerptIntegrityTest {
   }
 
   private static List<CanonicalModulePayload> replace(
-      List<CanonicalModulePayload> originals,
-      String fileName,
-      CanonicalModulePayload replacement) {
+      List<CanonicalModulePayload> originals, String fileName, CanonicalModulePayload replacement) {
     return originals.stream()
         .map(payload -> fileName.equals(payload.fileName()) ? replacement : payload)
         .toList();

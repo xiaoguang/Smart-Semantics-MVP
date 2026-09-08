@@ -19,7 +19,8 @@ public record ProofDecisionSet(
     candidateSetId = Objects.requireNonNull(candidateSetId, "candidate set ID");
     codeFacts = sorted(codeFacts, Comparator.comparing(CodeFact::factId));
     atomProofs = sorted(atomProofs, Comparator.comparing(AtomProof::proofId));
-    factDispositions = sorted(factDispositions, Comparator.comparing(FactDisposition::candidateDenominatorKey));
+    factDispositions =
+        sorted(factDispositions, Comparator.comparing(FactDisposition::candidateDenominatorKey));
     atomDispositions =
         sorted(
             atomDispositions,
@@ -31,7 +32,8 @@ public record ProofDecisionSet(
             Comparator.comparing(RootCauseRejection::candidateDenominatorKey)
                 .thenComparing(RootCauseRejection::atomKey));
     externalEffectGaps =
-        sorted(externalEffectGaps, Comparator.comparing(ExternalEffectGap::candidateDenominatorKey));
+        sorted(
+            externalEffectGaps, Comparator.comparing(ExternalEffectGap::candidateDenominatorKey));
   }
 
   private static <T> List<T> sorted(List<T> values, Comparator<T> comparator) {
@@ -53,7 +55,8 @@ public record ProofDecisionSet(
       required(kind, "kind");
       subjectNodeIds = List.copyOf(Objects.requireNonNull(subjectNodeIds, "subject node IDs"));
       atoms = List.copyOf(Objects.requireNonNull(atoms, "atoms"));
-      if (subjectNodeIds.isEmpty() || atoms.isEmpty()) throw new IllegalArgumentException("PROOF_DECISION_INVALID");
+      if (subjectNodeIds.isEmpty() || atoms.isEmpty())
+        throw new IllegalArgumentException("PROOF_DECISION_INVALID");
     }
   }
 
@@ -115,7 +118,10 @@ public record ProofDecisionSet(
 
   /** Unique all-or-nothing disposition for one candidate instance. */
   public record FactDisposition(
-      String candidateDenominatorKey, String disposition, String admittedFactId, String reasonCode) {
+      String candidateDenominatorKey,
+      String disposition,
+      String admittedFactId,
+      String reasonCode) {
 
     public FactDisposition {
       required(candidateDenominatorKey, "candidate key");
@@ -131,7 +137,11 @@ public record ProofDecisionSet(
 
   /** Unique atom disposition in the parent candidate's registry order. */
   public record AtomDisposition(
-      String candidateDenominatorKey, String atomKey, String disposition, String proofId, String reasonCode) {
+      String candidateDenominatorKey,
+      String atomKey,
+      String disposition,
+      String proofId,
+      String reasonCode) {
 
     public AtomDisposition {
       required(candidateDenominatorKey, "candidate key");
@@ -182,7 +192,8 @@ public record ProofDecisionSet(
         throw new IllegalArgumentException("PROOF_DECISION_INVALID");
       }
       basisEvidenceNodeIds = ordered(basisEvidenceNodeIds, "basis evidence IDs");
-      if (basisEvidenceNodeIds.isEmpty()) throw new IllegalArgumentException("PROOF_DECISION_INVALID");
+      if (basisEvidenceNodeIds.isEmpty())
+        throw new IllegalArgumentException("PROOF_DECISION_INVALID");
     }
   }
 
@@ -195,7 +206,8 @@ public record ProofDecisionSet(
   }
 
   private static List<String> orderedOptional(List<String> values, String label) {
-    List<String> ordered = List.copyOf(Objects.requireNonNull(values, label)).stream().sorted().toList();
+    List<String> ordered =
+        List.copyOf(Objects.requireNonNull(values, label)).stream().sorted().toList();
     if (ordered.size() != ordered.stream().distinct().count()) {
       throw new IllegalArgumentException("PROOF_DECISION_INVALID");
     }
@@ -203,6 +215,7 @@ public record ProofDecisionSet(
   }
 
   private static void required(String value, String label) {
-    if (value == null || value.isBlank()) throw new IllegalArgumentException("PROOF_DECISION_INVALID: " + label);
+    if (value == null || value.isBlank())
+      throw new IllegalArgumentException("PROOF_DECISION_INVALID: " + label);
   }
 }

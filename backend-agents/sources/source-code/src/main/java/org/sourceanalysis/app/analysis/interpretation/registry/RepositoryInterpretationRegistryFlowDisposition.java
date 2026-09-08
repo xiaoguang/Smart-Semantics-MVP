@@ -60,12 +60,14 @@ public record RepositoryInterpretationRegistryFlowDisposition(
   }
 
   private static void required(String value, String label) {
-    if (value == null || value.isBlank()) throw new IllegalArgumentException(label + " is required");
+    if (value == null || value.isBlank())
+      throw new IllegalArgumentException(label + " is required");
   }
 
   private static int compare(byte[] left, byte[] right) {
     for (int index = 0; index < Math.min(left.length, right.length); index++) {
-      int comparison = Integer.compare(Byte.toUnsignedInt(left[index]), Byte.toUnsignedInt(right[index]));
+      int comparison =
+          Integer.compare(Byte.toUnsignedInt(left[index]), Byte.toUnsignedInt(right[index]));
       if (comparison != 0) return comparison;
     }
     return Integer.compare(left.length, right.length);

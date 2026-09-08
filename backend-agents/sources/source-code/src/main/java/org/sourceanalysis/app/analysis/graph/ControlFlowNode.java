@@ -22,10 +22,12 @@ public record ControlFlowNode(
     }
     if (kind == ControlFlowNodeKind.GUARD) {
       if (normalizedCondition == null || normalizedCondition.isBlank()) {
-        throw new IllegalArgumentException("guard control-flow node normalized condition is required");
+        throw new IllegalArgumentException(
+            "guard control-flow node normalized condition is required");
       }
     } else if (normalizedCondition != null) {
-      throw new IllegalArgumentException("only guard control-flow nodes may carry a normalized condition");
+      throw new IllegalArgumentException(
+          "only guard control-flow nodes may carry a normalized condition");
     }
     owningEntryIds = orderedDistinct(owningEntryIds, "control-flow node owners");
     evidenceDraftRefs = orderedDistinct(evidenceDraftRefs, "control-flow node evidence");

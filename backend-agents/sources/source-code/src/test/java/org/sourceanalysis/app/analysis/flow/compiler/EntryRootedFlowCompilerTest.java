@@ -100,8 +100,7 @@ class EntryRootedFlowCompilerTest {
               outcome -> {
                 assertThat(listProperty(outcome, "decisions")).hasSize(1);
                 Object decision = listProperty(outcome, "decisions").get(0);
-                assertThat(property(decision, "polarity"))
-                    .isIn("TRUE", "FALSE");
+                assertThat(property(decision, "polarity")).isIn("TRUE", "FALSE");
                 assertThat(property(decision, "normalizedCondition")).isEqualTo("status == null");
                 assertThat(
                         listProperty(outcome, "requiredAtomIds").stream()

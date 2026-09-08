@@ -29,8 +29,8 @@ import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 
 /**
- * Reopens M2's sole proof-decision payload and verifies it against the exact persisted M1
- * candidate publication and source lineage.
+ * Reopens M2's sole proof-decision payload and verifies it against the exact persisted M1 candidate
+ * publication and source lineage.
  *
  * <p>The public seam deliberately accepts only typed identifiers and records. It never takes a
  * filesystem path, raw JSON, source bytes, or a caller-made decision set.
@@ -125,7 +125,10 @@ public final class PersistedProofDecisionSetReader {
       ModulePublicationReference candidatePublication,
       FactCandidateSet candidateSet) {
     try {
-      if (proofPublication == null || inputs == null || candidatePublication == null || candidateSet == null) {
+      if (proofPublication == null
+          || inputs == null
+          || candidatePublication == null
+          || candidateSet == null) {
         throw broken();
       }
       FactCandidateSet persistedCandidates =
@@ -165,7 +168,8 @@ public final class PersistedProofDecisionSetReader {
     VerifiedCanonicalPayload payload = publication.payloads().get(0);
     if (!"fact-candidate-set.json".equals(payload.descriptor().fileName())
         || !"PROVEN_CODE_FACTS_FACT_CANDIDATE_SET".equals(payload.descriptor().artifactType())
-        || !"proven-code-facts-fact-candidate-set-v2".equals(payload.descriptor().schemaVersion())) {
+        || !"proven-code-facts-fact-candidate-set-v2"
+            .equals(payload.descriptor().schemaVersion())) {
       throw broken();
     }
     return new ArtifactReference(payload.descriptor().artifactId(), payload.descriptor().sha256());
@@ -186,14 +190,16 @@ public final class PersistedProofDecisionSetReader {
       throw broken();
     }
     List<ArtifactReference> expectedUpstream =
-        List.of(candidatePayload, inputs.sourceInventoryRef(), inputs.verifiedSnapshotRef()).stream()
+        List.of(candidatePayload, inputs.sourceInventoryRef(), inputs.verifiedSnapshotRef())
+            .stream()
             .sorted(Comparator.comparing(reference -> reference.artifactId().value()))
             .toList();
     if (!expectedUpstream.equals(publication.receipt().upstreamArtifacts())) throw broken();
   }
 
   private static VerifiedCanonicalPayload requiredPayload(ReopenedModulePublication publication) {
-    if (publication.payloads().size() != 1 || publication.receipt().payloadArtifacts().size() != 1) {
+    if (publication.payloads().size() != 1
+        || publication.receipt().payloadArtifacts().size() != 1) {
       throw broken();
     }
     VerifiedCanonicalPayload payload = publication.payloads().get(0);
@@ -217,14 +223,17 @@ public final class PersistedProofDecisionSetReader {
     requireExactFields(envelope, ENVELOPE_FIELDS);
     requireText(envelope, "schemaVersion", SCHEMA_VERSION);
     requireText(envelope, "artifactType", ARTIFACT_TYPE);
-    if (!persisted.descriptor().artifactId().equals(artifactId(envelope, "artifactId"))) throw broken();
+    if (!persisted.descriptor().artifactId().equals(artifactId(envelope, "artifactId")))
+      throw broken();
     requireProducer(requiredObject(envelope, "producer"), publication);
     List<ArtifactReference> upstream = references(requiredArray(envelope, "upstreamArtifacts"));
     List<ArtifactReference> expectedUpstream =
-        List.of(candidatePayload, inputs.sourceInventoryRef(), inputs.verifiedSnapshotRef()).stream()
+        List.of(candidatePayload, inputs.sourceInventoryRef(), inputs.verifiedSnapshotRef())
+            .stream()
             .sorted(Comparator.comparing(reference -> reference.artifactId().value()))
             .toList();
-    if (!upstream.equals(expectedUpstream) || !upstream.equals(publication.receipt().upstreamArtifacts())) {
+    if (!upstream.equals(expectedUpstream)
+        || !upstream.equals(publication.receipt().upstreamArtifacts())) {
       throw broken();
     }
     if (!controls(requiredObject(envelope, "controls")).equals(publication.receipt().controls())) {
@@ -255,9 +264,14 @@ public final class PersistedProofDecisionSetReader {
     requireExactFields(completion, COMPLETION_FIELDS);
     List<String> gaps = texts(requiredArray(completion, "gapRefs"));
     List<String> expectedGaps =
-        decisions.externalEffectGaps().stream().map(ProofDecisionSet.ExternalEffectGap::gapId).sorted().toList();
+        decisions.externalEffectGaps().stream()
+            .map(ProofDecisionSet.ExternalEffectGap::gapId)
+            .sorted()
+            .toList();
     ModuleCompletionStatus expectedStatus =
-        expectedGaps.isEmpty() ? ModuleCompletionStatus.SUCCEEDED : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
+        expectedGaps.isEmpty()
+            ? ModuleCompletionStatus.SUCCEEDED
+            : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
     if (!expectedStatus.name().equals(requiredText(completion, "status"))
         || !gaps.equals(expectedGaps)
         || completion.get("failureRef") == null
@@ -273,11 +287,16 @@ public final class PersistedProofDecisionSetReader {
     ArtifactId candidateSetId = artifactId(body, "candidateSetId");
     List<ProofDecisionSet.CodeFact> codeFacts = codeFacts(requiredArray(body, "codeFacts"));
     List<ProofDecisionSet.AtomProof> proofs = proofs(requiredArray(body, "atomProofs"));
-    List<ProofDecisionSet.FactDisposition> facts = factDispositions(requiredArray(body, "factDispositions"));
-    List<ProofDecisionSet.AtomDisposition> atoms = atomDispositions(requiredArray(body, "atomDispositions"));
-    List<ProofDecisionSet.RootCauseRejection> causes = rootCauses(requiredArray(body, "rootCauseRejections"));
-    List<ProofDecisionSet.ExternalEffectGap> gaps = externalGaps(requiredArray(body, "externalEffectGaps"));
-    ProofDecisionSet result = new ProofDecisionSet(candidateSetId, codeFacts, proofs, facts, atoms, causes, gaps);
+    List<ProofDecisionSet.FactDisposition> facts =
+        factDispositions(requiredArray(body, "factDispositions"));
+    List<ProofDecisionSet.AtomDisposition> atoms =
+        atomDispositions(requiredArray(body, "atomDispositions"));
+    List<ProofDecisionSet.RootCauseRejection> causes =
+        rootCauses(requiredArray(body, "rootCauseRejections"));
+    List<ProofDecisionSet.ExternalEffectGap> gaps =
+        externalGaps(requiredArray(body, "externalEffectGaps"));
+    ProofDecisionSet result =
+        new ProofDecisionSet(candidateSetId, codeFacts, proofs, facts, atoms, causes, gaps);
     if (!codeFacts.equals(result.codeFacts())
         || !proofs.equals(result.atomProofs())
         || !facts.equals(result.factDispositions())
@@ -317,7 +336,8 @@ public final class PersistedProofDecisionSetReader {
               requiredText(node, "atomId"),
               requiredText(node, "role"),
               requiredText(node, "name"),
-              new ProofDecisionSet.AtomValue(requiredText(scalar, "type"), requiredText(scalar, "canonical")),
+              new ProofDecisionSet.AtomValue(
+                  requiredText(scalar, "type"), requiredText(scalar, "canonical")),
               requiredText(node, "proofId")));
     }
     return List.copyOf(result);
@@ -419,26 +439,34 @@ public final class PersistedProofDecisionSetReader {
     Map<String, ProofDecisionSet.FactDisposition> facts = uniqueFacts(decisions.factDispositions());
     Map<String, ProofDecisionSet.CodeFact> admitted = uniqueCodeFacts(decisions.codeFacts());
     Map<String, ProofDecisionSet.AtomProof> proofs = uniqueProofs(decisions.atomProofs());
-    Map<String, ProofDecisionSet.ExternalEffectGap> gaps = uniqueExternalGaps(decisions.externalEffectGaps());
+    Map<String, ProofDecisionSet.ExternalEffectGap> gaps =
+        uniqueExternalGaps(decisions.externalEffectGaps());
     Set<String> boundaryKeys =
         candidateByKey.entrySet().stream()
             .filter(entry -> "JAVA_BOUNDARY_INVOCATION".equals(entry.getValue().kind()))
             .map(Map.Entry::getKey)
             .collect(java.util.stream.Collectors.toUnmodifiableSet());
     if (!facts.keySet().equals(keys) || !gaps.keySet().equals(boundaryKeys)) throw broken();
-    Map<String, ProofDecisionSet.AtomDisposition> atoms = uniqueAtomDispositions(decisions.atomDispositions());
-    Map<String, ProofDecisionSet.RootCauseRejection> causes = uniqueCauses(decisions.rootCauseRejections());
+    Map<String, ProofDecisionSet.AtomDisposition> atoms =
+        uniqueAtomDispositions(decisions.atomDispositions());
+    Map<String, ProofDecisionSet.RootCauseRejection> causes =
+        uniqueCauses(decisions.rootCauseRejections());
     for (Map.Entry<String, FactCandidateSet.FactCandidate> entry : candidateByKey.entrySet()) {
       String key = entry.getKey();
       FactCandidateSet.FactCandidate candidate = entry.getValue();
       if ("JAVA_BOUNDARY_INVOCATION".equals(candidate.kind())) {
         requireExternalGap(gaps.get(key), candidate, key);
       }
-      List<String> expectedAtomKeys = candidate.requiredAtoms().stream().map(FactCandidateSet.RequiredAtom::atomKey).toList();
+      List<String> expectedAtomKeys =
+          candidate.requiredAtoms().stream().map(FactCandidateSet.RequiredAtom::atomKey).toList();
       Set<String> expectedDispositionKeys =
-          expectedAtomKeys.stream().map(atomKey -> key + "\u0000" + atomKey).collect(java.util.stream.Collectors.toUnmodifiableSet());
+          expectedAtomKeys.stream()
+              .map(atomKey -> key + "\u0000" + atomKey)
+              .collect(java.util.stream.Collectors.toUnmodifiableSet());
       Set<String> actualDispositionKeys =
-          atoms.keySet().stream().filter(value -> value.startsWith(key + "\u0000")).collect(java.util.stream.Collectors.toUnmodifiableSet());
+          atoms.keySet().stream()
+              .filter(value -> value.startsWith(key + "\u0000"))
+              .collect(java.util.stream.Collectors.toUnmodifiableSet());
       if (!actualDispositionKeys.equals(expectedDispositionKeys)) throw broken();
       ProofDecisionSet.FactDisposition fact = facts.get(key);
       if ("ADMITTED".equals(fact.disposition())) {
@@ -447,13 +475,16 @@ public final class PersistedProofDecisionSetReader {
         requireRejected(key, fact, admitted, atoms, proofs, causes, expectedAtomKeys);
       }
     }
-    if (!atoms.keySet().stream().allMatch(key -> key.contains("\u0000")) || !causes.keySet().stream().allMatch(key -> key.contains("\u0000"))) {
+    if (!atoms.keySet().stream().allMatch(key -> key.contains("\u0000"))
+        || !causes.keySet().stream().allMatch(key -> key.contains("\u0000"))) {
       throw broken();
     }
   }
 
   private static void requireExternalGap(
-      ProofDecisionSet.ExternalEffectGap gap, FactCandidateSet.FactCandidate candidate, String key) {
+      ProofDecisionSet.ExternalEffectGap gap,
+      FactCandidateSet.FactCandidate candidate,
+      String key) {
     if (gap == null
         || !key.equals(gap.candidateDenominatorKey())
         || !candidate.entryId().equals(gap.entryId())
@@ -484,7 +515,9 @@ public final class PersistedProofDecisionSetReader {
       Map<String, ProofDecisionSet.RootCauseRejection> causes,
       List<String> expectedAtomKeys) {
     ProofDecisionSet.CodeFact fact = facts.get(disposition.admittedFactId());
-    if (fact == null || !key.equals(fact.candidateDenominatorKey()) || !candidate.kind().equals(fact.kind())) {
+    if (fact == null
+        || !key.equals(fact.candidateDenominatorKey())
+        || !candidate.kind().equals(fact.kind())) {
       throw broken();
     }
     Map<String, ProofDecisionSet.FactAtom> factAtoms = new HashMap<>();
@@ -518,7 +551,8 @@ public final class PersistedProofDecisionSetReader {
       Map<String, ProofDecisionSet.RootCauseRejection> causes,
       List<String> expectedAtomKeys) {
     if (facts.values().stream().anyMatch(fact -> key.equals(fact.candidateDenominatorKey()))
-        || proofs.values().stream().anyMatch(proof -> key.equals(proof.candidateDenominatorKey()))) {
+        || proofs.values().stream()
+            .anyMatch(proof -> key.equals(proof.candidateDenominatorKey()))) {
       throw broken();
     }
     List<ProofDecisionSet.AtomDisposition> directFailures =
@@ -624,7 +658,8 @@ public final class PersistedProofDecisionSetReader {
       requireExactFields(reference, REFERENCE_FIELDS);
       result.add(
           new ArtifactReference(
-              artifactId(reference, "artifactId"), Sha256Digest.parse(requiredText(reference, "sha256"))));
+              artifactId(reference, "artifactId"),
+              Sha256Digest.parse(requiredText(reference, "sha256"))));
     }
     List<ArtifactReference> ordered =
         result.stream().sorted(Comparator.comparing(value -> value.artifactId().value())).toList();

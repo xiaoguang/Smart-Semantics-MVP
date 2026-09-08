@@ -54,11 +54,13 @@ class FactCandidateProofEvidenceHandoffTest {
     expected.add(candidate.invocationCallId());
     expected.add(candidate.boundaryNodeId());
     expected.add(candidate.callTargetEdgeId());
-    candidate.orderedArguments().forEach(
-        argument -> {
-          expected.add(argument.argumentEdgeId());
-          expected.addAll(argument.javaLocalOriginNodeIds());
-        });
+    candidate
+        .orderedArguments()
+        .forEach(
+            argument -> {
+              expected.add(argument.argumentEdgeId());
+              expected.addAll(argument.javaLocalOriginNodeIds());
+            });
     expected.add(candidate.controlBlockId());
     if (candidate.guardId() != null) {
       expected.add(candidate.guardId());
@@ -83,7 +85,10 @@ class FactCandidateProofEvidenceHandoffTest {
     assertThat(typedExcerpt.rawUtf8Sha256()).isNotNull();
 
     FactCandidateInputs.EvidenceNode ruleNode =
-        inputs.evidenceGraph().nodesById().get(sourceBinding.ruleApplicationEvidenceNodeIds().get(0));
+        inputs
+            .evidenceGraph()
+            .nodesById()
+            .get(sourceBinding.ruleApplicationEvidenceNodeIds().get(0));
     assertThat(ruleNode).as("rule Evidence node must be persisted").isNotNull();
     Object ruleApplication = invokePublicAccessor(ruleNode, "ruleApplication");
     assertThat(ruleApplication)

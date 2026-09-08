@@ -720,13 +720,31 @@ public final class ProgramGraphSetPublicationSpecifier {
   private static PublicNode nodeValue(Object value) {
     if (value instanceof DraftProgramNode node)
       return new PublicNode(
-          node.nodeId(), node.kind().name(), node.canonicalValue(), null, node.owningEntryIds(), null, null);
+          node.nodeId(),
+          node.kind().name(),
+          node.canonicalValue(),
+          null,
+          node.owningEntryIds(),
+          null,
+          null);
     if (value instanceof CallGraphNode node)
       return new PublicNode(
-          node.nodeId(), node.kind().name(), node.canonicalValue(), null, node.owningEntryIds(), null, null);
+          node.nodeId(),
+          node.kind().name(),
+          node.canonicalValue(),
+          null,
+          node.owningEntryIds(),
+          null,
+          null);
     if (value instanceof ControlFlowNode node)
       return new PublicNode(
-          node.nodeId(), node.kind().name(), node.canonicalValue(), node.normalizedCondition(), node.owningEntryIds(), null, null);
+          node.nodeId(),
+          node.kind().name(),
+          node.canonicalValue(),
+          node.normalizedCondition(),
+          node.owningEntryIds(),
+          null,
+          null);
     if (value instanceof DataFlowNode node)
       return new PublicNode(
           node.nodeId(),

@@ -24,7 +24,8 @@ import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalT
 /** Freezes every closed R0 Flow outcome into the one repository-local finite-key registry. */
 public final class RepositoryInterpretationRegistryFreezer {
 
-  private static final Comparator<String> UTF8_ORDER = RepositoryInterpretationRegistryFreezer::compareUtf8;
+  private static final Comparator<String> UTF8_ORDER =
+      RepositoryInterpretationRegistryFreezer::compareUtf8;
 
   /** Creates one registry only after the complete eligible R0 denominator is closed. */
   public RepositoryInterpretationRegistry freeze(
@@ -37,7 +38,10 @@ public final class RepositoryInterpretationRegistryFreezer {
       Objects.requireNonNull(businessFlows, "business Flows");
       if (!businessFlows.publication().equals(taskSet.businessFlowsPublicationRef())
           || !taskSet.businessFlowsPublicationRef().equals(businessFlows.publication())
-          || !taskSet.businessFlowsPublicationRef().address().runId()
+          || !taskSet
+              .businessFlowsPublicationRef()
+              .address()
+              .runId()
               .equals(executionSet.taskSetPublicationRef().address().runId())) {
         throw failure("REGISTRY_FREEZE_INCOMPLETE");
       }
@@ -67,19 +71,23 @@ public final class RepositoryInterpretationRegistryFreezer {
       throw failure("REGISTRY_FREEZE_INCOMPLETE");
     }
     Map<String, String> roundIdByTask = new HashMap<>();
-    executionSet.rounds().forEach(
-        value -> {
-          if (roundIdByTask.put(value.taskSpecId(), value.registryProposalRoundId()) != null) {
-            throw failure("REGISTRY_FREEZE_INCOMPLETE");
-          }
-        });
+    executionSet
+        .rounds()
+        .forEach(
+            value -> {
+              if (roundIdByTask.put(value.taskSpecId(), value.registryProposalRoundId()) != null) {
+                throw failure("REGISTRY_FREEZE_INCOMPLETE");
+              }
+            });
     Map<String, String> receiptIdByTask = new HashMap<>();
-    executionSet.generationReceipts().forEach(
-        value -> {
-          if (receiptIdByTask.put(value.taskSpecId(), value.generationReceiptId()) != null) {
-            throw failure("REGISTRY_FREEZE_INCOMPLETE");
-          }
-        });
+    executionSet
+        .generationReceipts()
+        .forEach(
+            value -> {
+              if (receiptIdByTask.put(value.taskSpecId(), value.generationReceiptId()) != null) {
+                throw failure("REGISTRY_FREEZE_INCOMPLETE");
+              }
+            });
     if (!taskById.keySet().equals(roundIdByTask.keySet())
         || !taskById.keySet().equals(receiptIdByTask.keySet())) {
       throw failure("REGISTRY_FREEZE_INCOMPLETE");
@@ -95,7 +103,9 @@ public final class RepositoryInterpretationRegistryFreezer {
           || !proposalIds.add(proposal.registryProposalId())) {
         throw failure("REGISTRY_FREEZE_INCOMPLETE");
       }
-      proposalsByTask.computeIfAbsent(proposal.taskSpecId(), ignored -> new ArrayList<>()).add(proposal);
+      proposalsByTask
+          .computeIfAbsent(proposal.taskSpecId(), ignored -> new ArrayList<>())
+          .add(proposal);
     }
 
     List<RepositoryInterpretationRegistryItem> items = new ArrayList<>();
@@ -113,7 +123,8 @@ public final class RepositoryInterpretationRegistryFreezer {
       }
       List<BusinessRegistryProposal> flowProposals =
           proposalsByTask.getOrDefault(task.taskSpecId(), List.of()).stream()
-              .sorted(Comparator.comparing(BusinessRegistryProposal::registryProposalId, UTF8_ORDER))
+              .sorted(
+                  Comparator.comparing(BusinessRegistryProposal::registryProposalId, UTF8_ORDER))
               .toList();
       List<String> actualProposalIds =
           flowProposals.stream().map(BusinessRegistryProposal::registryProposalId).toList();
@@ -153,9 +164,11 @@ public final class RepositoryInterpretationRegistryFreezer {
     }
     if (!flowIds.equals(taskByFlow.keySet())) throw failure("REGISTRY_FREEZE_INCOMPLETE");
 
-    items.sort(Comparator.comparing(RepositoryInterpretationRegistryItem::provisionalKey, UTF8_ORDER));
+    items.sort(
+        Comparator.comparing(RepositoryInterpretationRegistryItem::provisionalKey, UTF8_ORDER));
     dispositions.sort(
-        Comparator.comparing(RepositoryInterpretationRegistryFlowDisposition::flowSliceId, UTF8_ORDER));
+        Comparator.comparing(
+            RepositoryInterpretationRegistryFlowDisposition::flowSliceId, UTF8_ORDER));
     RegistryProposalAccounting accounting =
         new RegistryProposalAccounting(
             taskSet.eligibleFlowSliceIds(),
@@ -179,11 +192,17 @@ public final class RepositoryInterpretationRegistryFreezer {
             List.of(
                 businessFlows.publication().analysisStepArtifactRoot().value(),
                 String.join("|", taskSet.eligibleFlowSliceIds()),
-                String.join("|", items.stream().map(RepositoryInterpretationRegistryItem::provisionalKey).toList()),
+                String.join(
+                    "|",
+                    items.stream()
+                        .map(RepositoryInterpretationRegistryItem::provisionalKey)
+                        .toList()),
                 String.join(
                     "|",
                     dispositions.stream()
-                        .map(RepositoryInterpretationRegistryFlowDisposition::registryFlowDispositionId)
+                        .map(
+                            RepositoryInterpretationRegistryFlowDisposition
+                                ::registryFlowDispositionId)
                         .toList()))),
         businessFlows.publication(),
         taskSet.eligibleFlowSliceIds(),
@@ -232,7 +251,8 @@ public final class RepositoryInterpretationRegistryFreezer {
   private static String contentId(String prefix, List<String> values) {
     byte[][] frames = new byte[values.size() + 1][];
     frames[0] = frame(prefix);
-    for (int index = 0; index < values.size(); index++) frames[index + 1] = frame(values.get(index));
+    for (int index = 0; index < values.size(); index++)
+      frames[index + 1] = frame(values.get(index));
     return prefix + ":" + sha256(frames);
   }
 
@@ -262,7 +282,8 @@ public final class RepositoryInterpretationRegistryFreezer {
     byte[] first = left.getBytes(StandardCharsets.UTF_8);
     byte[] second = right.getBytes(StandardCharsets.UTF_8);
     for (int index = 0; index < Math.min(first.length, second.length); index++) {
-      int comparison = Integer.compare(Byte.toUnsignedInt(first[index]), Byte.toUnsignedInt(second[index]));
+      int comparison =
+          Integer.compare(Byte.toUnsignedInt(first[index]), Byte.toUnsignedInt(second[index]));
       if (comparison != 0) return comparison;
     }
     return Integer.compare(first.length, second.length);

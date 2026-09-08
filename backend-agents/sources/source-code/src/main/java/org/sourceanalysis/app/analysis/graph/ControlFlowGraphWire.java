@@ -206,7 +206,12 @@ final class ControlFlowGraphWire {
               fields(
                   value,
                   Set.of(
-                      "nodeId", "kind", "canonicalValue", "normalizedCondition", "owningEntryIds", "evidenceDraftRefs"));
+                      "nodeId",
+                      "kind",
+                      "canonicalValue",
+                      "normalizedCondition",
+                      "owningEntryIds",
+                      "evidenceDraftRefs"));
               return new ControlFlowNode(
                   id(value, "nodeId"),
                   ControlFlowNodeKind.valueOf(text(value, "kind")),

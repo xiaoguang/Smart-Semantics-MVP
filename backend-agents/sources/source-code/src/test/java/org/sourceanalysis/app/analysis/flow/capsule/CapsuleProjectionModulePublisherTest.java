@@ -30,8 +30,8 @@ import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
-import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
+import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 import org.sourceanalysis.app.artifact.Sha256Digest;
 
@@ -59,7 +59,12 @@ class CapsuleProjectionModulePublisherTest {
       CapsuleProjection projection =
           new EvidenceCapsuleProjector(
                   fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
-              .project(flows, fixture.sourceInventory(), fixture.programGraphs(), facts, capsuleProfile());
+              .project(
+                  flows,
+                  fixture.sourceInventory(),
+                  fixture.programGraphs(),
+                  facts,
+                  capsuleProfile());
 
       ModulePublicationReference reference = publish(fixture, facts, flows, projection);
       ReopenedModulePublication reopened = fixture.moduleArtifacts().reopen(reference);
@@ -113,8 +118,7 @@ class CapsuleProjectionModulePublisherTest {
       ModulePublicationReference reference = publish(fixture, facts, flows, projection);
       ReopenedModulePublication reopened = fixture.moduleArtifacts().reopen(reference);
 
-      assertThat(reopened.receipt().status())
-          .isEqualTo(ModuleCompletionStatus.SUCCEEDED_WITH_GAPS);
+      assertThat(reopened.receipt().status()).isEqualTo(ModuleCompletionStatus.SUCCEEDED_WITH_GAPS);
       assertThat(reopened.receipt().gapRefs())
           .containsExactlyElementsOf(
               projection.capsules().stream()
@@ -138,7 +142,8 @@ class CapsuleProjectionModulePublisherTest {
                   org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore.class,
                   org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore.class,
                   org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader.class)
-              .newInstance(fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader());
+              .newInstance(
+                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader());
       Method publish =
           publisherType.getMethod(
               "publish",
@@ -148,7 +153,13 @@ class CapsuleProjectionModulePublisherTest {
               ProvenCodeFactsReference.class,
               CapsuleProjection.class);
       return (ModulePublicationReference)
-          publish.invoke(publisher, flows, fixture.sourceInventory(), fixture.programGraphs(), facts, projection);
+          publish.invoke(
+              publisher,
+              flows,
+              fixture.sourceInventory(),
+              fixture.programGraphs(),
+              facts,
+              projection);
     } catch (ClassNotFoundException missing) {
       throw new AssertionError("CAPSULE_PROJECTION_MODULE_PUBLISHER_NOT_IMPLEMENTED", missing);
     } catch (InvocationTargetException failure) {
@@ -214,7 +225,8 @@ class CapsuleProjectionModulePublisherTest {
   private static String digest(String value) {
     try {
       return java.util.HexFormat.of()
-          .formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+          .formatHex(
+              MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
     } catch (java.security.NoSuchAlgorithmException unavailable) {
       throw new IllegalStateException("SHA-256 must be available", unavailable);
     }

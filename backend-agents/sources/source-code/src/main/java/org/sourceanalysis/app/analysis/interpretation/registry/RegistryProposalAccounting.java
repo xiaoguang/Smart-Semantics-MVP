@@ -15,7 +15,8 @@ public record RegistryProposalAccounting(
     List<String> repositoryInterpretationRegistryItemIds) {
 
   private static final Comparator<String> UTF8_ORDER =
-      Comparator.comparing(value -> value.getBytes(StandardCharsets.UTF_8), RegistryProposalAccounting::compare);
+      Comparator.comparing(
+          value -> value.getBytes(StandardCharsets.UTF_8), RegistryProposalAccounting::compare);
 
   public RegistryProposalAccounting {
     eligibleFlowSliceIds = ordered(eligibleFlowSliceIds, "eligible Flow IDs");
@@ -48,7 +49,8 @@ public record RegistryProposalAccounting(
 
   private static int compare(byte[] left, byte[] right) {
     for (int index = 0; index < Math.min(left.length, right.length); index++) {
-      int comparison = Integer.compare(Byte.toUnsignedInt(left[index]), Byte.toUnsignedInt(right[index]));
+      int comparison =
+          Integer.compare(Byte.toUnsignedInt(left[index]), Byte.toUnsignedInt(right[index]));
       if (comparison != 0) return comparison;
     }
     return Integer.compare(left.length, right.length);

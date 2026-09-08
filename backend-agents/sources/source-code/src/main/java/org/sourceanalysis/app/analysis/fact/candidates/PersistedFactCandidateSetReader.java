@@ -164,7 +164,8 @@ public final class PersistedFactCandidateSetReader {
   }
 
   private static VerifiedCanonicalPayload requiredPayload(ReopenedModulePublication publication) {
-    if (publication.payloads().size() != 1 || publication.receipt().payloadArtifacts().size() != 1) {
+    if (publication.payloads().size() != 1
+        || publication.receipt().payloadArtifacts().size() != 1) {
       throw failure();
     }
     VerifiedCanonicalPayload payload = publication.payloads().get(0);
@@ -251,7 +252,8 @@ public final class PersistedFactCandidateSetReader {
     List<FactCandidateSet.FactCandidate> candidates = candidates(requiredArray(body, "candidates"));
     List<FactCandidateSet.NotApplicableDisposition> dispositions =
         dispositions(requiredArray(body, "notApplicableDispositions"));
-    FactCandidateSet.CandidateDenominator denominator = denominator(requiredObject(body, "denominator"));
+    FactCandidateSet.CandidateDenominator denominator =
+        denominator(requiredObject(body, "denominator"));
     FactCandidateSet result =
         new FactCandidateSet(
             SCHEMA_VERSION, candidateSetId, roots, candidates, dispositions, denominator);
@@ -419,7 +421,8 @@ public final class PersistedFactCandidateSetReader {
       requireExactFields(reference, REFERENCE_FIELDS);
       result.add(
           new ArtifactReference(
-              artifactId(reference, "artifactId"), Sha256Digest.parse(requiredText(reference, "sha256"))));
+              artifactId(reference, "artifactId"),
+              Sha256Digest.parse(requiredText(reference, "sha256"))));
     }
     requireOrderedUniqueReferences(result);
     return List.copyOf(result);

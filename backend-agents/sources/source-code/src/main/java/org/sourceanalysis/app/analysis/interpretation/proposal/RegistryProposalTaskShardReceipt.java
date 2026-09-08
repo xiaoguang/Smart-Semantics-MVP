@@ -1,10 +1,12 @@
 package org.sourceanalysis.app.analysis.interpretation.proposal;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
-import java.nio.charset.StandardCharsets;
 
-/** One deterministic R0 work shard; M1 currently publishes the complete denominator as one shard. */
+/**
+ * One deterministic R0 work shard; M1 currently publishes the complete denominator as one shard.
+ */
 public record RegistryProposalTaskShardReceipt(
     String shardId, List<String> denominatorFlowSliceIds, List<String> outputTaskSpecIds) {
 
@@ -21,7 +23,8 @@ public record RegistryProposalTaskShardReceipt(
 
   private static List<String> ordered(List<String> values, String label) {
     Objects.requireNonNull(values, label);
-    List<String> ordered = values.stream().sorted(RegistryProposalTaskShardReceipt::compareUtf8).toList();
+    List<String> ordered =
+        values.stream().sorted(RegistryProposalTaskShardReceipt::compareUtf8).toList();
     if (ordered.stream().anyMatch(value -> value == null || value.isBlank())
         || ordered.size() != ordered.stream().distinct().count()) {
       throw new IllegalArgumentException(label + " must be unique and nonblank");

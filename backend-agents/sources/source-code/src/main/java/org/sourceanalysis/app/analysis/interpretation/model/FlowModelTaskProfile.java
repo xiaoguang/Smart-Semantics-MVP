@@ -28,7 +28,10 @@ public record FlowModelTaskProfile(
     Objects.requireNonNull(r2OutputSchemaRef, "R2 output schema reference");
     Objects.requireNonNull(r2ExpectedRuntimeRef, "R2 expected runtime reference");
     Objects.requireNonNull(r2ResourceBudgetRef, "R2 resource budget reference");
-    if (maxTasks < 0 || maxResponseUtf8Bytes < 1 || maxSelectedKeys < 1 || maxCandidateProposals < 1) {
+    if (maxTasks < 0
+        || maxResponseUtf8Bytes < 1
+        || maxSelectedKeys < 1
+        || maxCandidateProposals < 1) {
       throw new IllegalArgumentException("flow model task profile is invalid");
     }
   }

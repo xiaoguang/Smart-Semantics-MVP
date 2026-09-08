@@ -19,7 +19,9 @@ public record RepositoryInterpretationRegistryItem(
     String sourceSeedKey) {
 
   private static final Comparator<String> UTF8_ORDER =
-      Comparator.comparing(value -> value.getBytes(StandardCharsets.UTF_8), RepositoryInterpretationRegistryItem::compare);
+      Comparator.comparing(
+          value -> value.getBytes(StandardCharsets.UTF_8),
+          RepositoryInterpretationRegistryItem::compare);
 
   public RepositoryInterpretationRegistryItem {
     required(provisionalKey, "provisional key");
@@ -49,12 +51,14 @@ public record RepositoryInterpretationRegistryItem(
   }
 
   private static void required(String value, String label) {
-    if (value == null || value.isBlank()) throw new IllegalArgumentException(label + " is required");
+    if (value == null || value.isBlank())
+      throw new IllegalArgumentException(label + " is required");
   }
 
   private static int compare(byte[] left, byte[] right) {
     for (int index = 0; index < Math.min(left.length, right.length); index++) {
-      int comparison = Integer.compare(Byte.toUnsignedInt(left[index]), Byte.toUnsignedInt(right[index]));
+      int comparison =
+          Integer.compare(Byte.toUnsignedInt(left[index]), Byte.toUnsignedInt(right[index]));
       if (comparison != 0) return comparison;
     }
     return Integer.compare(left.length, right.length);
