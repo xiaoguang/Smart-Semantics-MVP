@@ -377,6 +377,8 @@ RepositoryFlowCoverage
 
 direction是可验证语义，不是下游自行解释的提示：`COUNTER_CONDITION | CONFLICT_STATE | EXTERNAL_EFFECT_GAP`三种counter kind的`direction`必须逐字为`BLOCKS`，十三种positive kind禁止`BLOCKS`。因此Step 06可把进入某候选关系scope的全部counter signal确定性地视为blocking，而不需要在本record新增或猜测`blocking`字段；kind/direction组合不合法即`PROCESS_JOIN_SIGNAL_BASIS_INVALID`。
 
+`BUSINESS_OBJECT_ANCHOR | OBJECT_REFERENCE`仍是本Flow内部的positive material，Step 05不比较两个Flow、也不把它改写成`BLOCKS`。但是每个Flow必须分别保留其全部`DOMAIN_SPECIFIC`、Proof闭合的业务对象signal；Step 06在一条已由其他合法positive pair形成的候选关系上比较两端**完整对象anchorKey集合**。若两端集合都非空且交集为空，两个完整signal-ID集合的规范union就是该关系的`DIFFERENT_BUSINESS_OBJECT` relation-level `COUNTER_SIGNAL` basis并进入blocking集合。该派生不新增或改写Step 05 signal、不凭对象不同单独成边，也不得从不完整抽样或任意一对对象作结论。
+
 `processJoinSignalId`覆盖全部上述字段，排除且只排除self ID：
 
 ~~~text
@@ -486,6 +488,7 @@ BUSINESS_FLOWS_REQUEST_INVALID、UPSTREAM_ARTIFACT_REPLAY_MISMATCH、FLOW_GRAPH_
 - Capsule span 必须来自 Proof roots，不按文本相似命中 decoy。
 - 每条`processJoinSignal`必须同Flow闭合到Fact/Proof/Evidence/source或Gap；删除任一basis使signal消失、转Gap或fail closed，不能继续存在。
 - tenantId、用户审计字段、日志、通用工具类、方法名或中文名相似不能单独形成domain-specific signal；共享表最多形成`SQL_TABLE_ANCHOR`，不能形成顺序或因果。
+- 双Flow relation fixture须覆盖：两端完整业务对象key集合有交集时不产生对象反证；两端集合均非空且互斥时，Step 06以全部对应signal IDs形成唯一、稳定的`DIFFERENT_BUSINESS_OBJECT` counter basis。改变输入顺序或同一关系的其他positive pair不得改变该basis。
 - 每删一个直接语义 span，projection obligation 失败；proof-only span 注入被拒绝。
 - 0 Flow/0 Capsule 仍有完整 entry disposition/Gap/accounting，并让 分析步骤“流程解释” Provider calls=0。
 - 双Flow fixture必须让一个Flow为ELIGIBLE、一个为INELIGIBLE；`flow-coverage.json`的两个Flow集合互斥并集等于全部Flow，mapping domain、逐Flow非空Gap和全局Gap union都与Capsule逐字相等。任一overlap、omission、empty/foreign/missing Gap mutation都必须fail closed。

@@ -321,7 +321,7 @@ analysisRunDocuments = exactlyOneRepositoryNineSectionPlan + exactlyOneRepositor
 
 ### 3.6 全局 identity DAG
 
-唯一合法依赖方向是：run controls/source registration/optional organization registry seed → snapshot/file → application/entry/catalog → graph node/edge/evidence → candidate atom/fact → Proof → Outcome/Flow → Capsule/processJoinSignal → R0 task/round/registry proposal/disposition → frozen RepositoryInterpretationRegistry/provisional key → finite-key R1/R2 task/round/interpretation proposal/Flow disposition → process semantic cue/candidate relation/ProcessEvidenceGroup → 全部BusinessProcessTaskShard → 对每个model-safe shard依次P1 request/task → P1 response bytes → P1 receipt/claim → BusinessProcessHypothesis semantic ID → P1 round → P2 request/task → P2 review/receipt → P2 round → hypothesis later-lineage fields → 全部ProcessInterpretationDisposition → local/process admission decision → process knowledge/membership/ownership → RepositoryKnowledge coverage preparation → embedded RepositoryKnowledge coverage draft → NineSectionDocument coverage preparation → final coverage ledger → ReaderItem/plan → document/Trace roots → Candidate/run manifest。no-model分支从shard直接到process disposition，不创建模型对象。后项可以引用前项，前项不得含后项ID；publisher/receipt只在payload IDs固定后计算。Trace record不含candidateId，Candidate最后绑定traceRoot。R0不能引用R1/R2或meaning，P2不能创建P1之外的hypothesis/Flow/edge或任何受保护reference，registry item不能引用RepositoryKnowledge identity。
+唯一合法依赖方向是：run controls/source registration/optional organization registry seed → snapshot/file → application/entry/catalog → graph node/edge/evidence → candidate atom/fact → Proof → Outcome/Flow → Capsule/processJoinSignal → R0 task/round/registry proposal/disposition → frozen RepositoryInterpretationRegistry/provisional key → finite-key R1/R2 task/round/interpretation proposal/Flow disposition → process semantic cue/positive-counter bases/candidate relation/ProcessEvidenceGroup → counter-scope或budget Gap semantic ID → 全部BusinessProcessTaskShard与Gap shard回填 → 对每个model-safe shard依次P1 request/task → P1 response bytes → P1 receipt/claim → BusinessProcessHypothesis semantic ID → P1 round → P2 request/task → P2 response bytes/receipt/typed response-or-review Gap → P2 review（仅REVIEWS）→ P2 round → hypothesis later-lineage fields → 全部ProcessInterpretationDisposition及Gap carriers → eligible local/process admission decision或reasoned exclusion → process knowledge/membership/ownership → RepositoryKnowledge coverage preparation → embedded RepositoryKnowledge coverage draft → NineSectionDocument coverage preparation → final coverage ledger → ReaderItem/plan → document/Trace roots → Candidate/run manifest。no-model分支从typed Gap/shard直接到process disposition，不创建模型对象；P2 GAP/FAILED分支保留P1 hypothesis与两轮实际调用但不创建review/admission/process knowledge。后项可以引用前项，前项不得含后项ID；publisher/receipt只在payload IDs固定后计算。Trace record不含candidateId，Candidate最后绑定traceRoot。R0不能引用R1/R2或meaning，P2不能创建P1之外的hypothesis/Flow/edge或任何受保护reference，registry item不能引用RepositoryKnowledge identity。
 
 Candidate只绑定`upstreamAnalysisStepRoots[7]`、plan/document/Trace和lineage；NineSectionDocument `analysisStepArtifactRoot`在Candidate等五个semantic payload固定后计算，不含archive-manifest、receipt或run-manifest。archive-manifest/receipt依序绑定前项且都不含自身，`run-manifest.analysisStepPublications[8]`再包含八个semantic analysis step的address/root/receipt ID/SHA但不含自身；最后由analysis step外M4 publication envelope列齐八个public files。Candidate不得预先引用NineSectionDocument root，否则形成Candidate↔NineSectionDocument root环。其他analysis step receipt的artifact list同样排除receipt自身；父级publication/run manifest才记录receipt文件SHA。
 
@@ -486,7 +486,7 @@ requested analysis-step-range completion、terminal analysis result、诊断结�
 
 资源分片只能改变执行调度，不能改变范围或语义。shard key 固定为稳定 `fileId`、`entryId` 或 `flowSliceId`；每个 shard receipt 保存 denominator IDs、output IDs、controls 和 SHA。validator 要求 shard denominators 两两不相交，按 canonical ID union 后**精确等于**未分片分母；遗漏、重叠、first-N、sample 或超限截断均不允许 COMPLETE。策略明确停止且missing IDs/reason全部可重验时才可归档`FINISHED/INCOMPLETE_COVERAGE`；若缺失破坏引用、身份、安全或诊断闭包则当前run为`FAILED`。只有完整分母里的每项都被唯一处置时，已支持但静态不可知的事项才可作为 typed Gap 随闭合 ledger 进入 `COMPLETED_WITH_GAPS`。
 
-完整验收必须含至少两个不同入口、两个独立Flow/Capsule、两个隔离R0 proposal sets、一份冻结RepositoryInterpretationRegistry、两个`READY`有限key解释candidate/decision和一个跨Flow合并（含关系或指标、冲突或identity合并）。其中“正常全READY”fixture的`E`个eligible Flow各有一条完整`R0 proposal → provisionalKey → R1/R2 selectedKey → meaning` lineage，并精确产生`3E`started calls；另有model-ineligible Flow fixture，验证它保留Capsule/Gap、进入`A>0,S=0`的no-model shard与process disposition、产生零局部/过程模型任务，并由RepositoryKnowledge fallback/reasoned exclusion完整处置。另有R0失败、R0全拒绝与R1/R2失败fixture，证明每种都会成为typed Gap/FAILED disposition而不会吞掉Flow或用seed/别Flow补词。相同冻结输入、partition profile和budget仅改变线程调度、遍历或写盘顺序时，所有analysis step public bytes、registry、RepositoryKnowledge、NineSectionPlan和document.md必须逐字节相同；改变shard size/budget是control change，允许Step 06及下游bytes变化，但相同上游输入的M6 group/candidate-edge集合与全部`A`上的唯一edge ownership必须保持。业务上可表达的模型回答由FlowInterpretation写typed disposition，并可在全分母仍唯一处置时随闭合ledger进入`FINISHED/COMPLETED_WITH_GAPS`；Provider调用开始后的transport/runtime失败使当前run `FAILED`，不自动重试或切换。只有ledger全部分母均有唯一处置、所有analysisStepCoverageRoots验证通过且单一仓库文档closure成立，run才可进入`FINISHED`并得到`COMPLETE/COMPLETED_WITH_GAPS`；前者无Gap，后者仅含已显式计数且不破坏覆盖账本闭合的Gap。
+完整验收必须含至少两个不同入口、两个独立Flow/Capsule、两个隔离R0 proposal sets、一份冻结RepositoryInterpretationRegistry、两个`READY`有限key解释candidate/decision和一个跨Flow合并（含关系或指标、冲突或identity合并）。其中“正常全READY”fixture的`E`个eligible Flow各有一条完整`R0 proposal → provisionalKey → R1/R2 selectedKey → meaning` lineage，并精确产生`3E`started calls；另有model-ineligible Flow fixture，验证它保留Capsule/Gap、进入`A>0,S=0`的no-model shard与process disposition、产生零局部/过程模型任务，并由RepositoryKnowledge fallback/reasoned exclusion完整处置。另有R0失败、R0全拒绝与R1/R2失败fixture，证明每种都会成为typed Gap/FAILED disposition而不会吞掉Flow或用seed/别Flow补词。相同冻结输入、partition profile和budget仅改变线程调度、遍历或写盘顺序时，所有analysis step public bytes、registry、RepositoryKnowledge、NineSectionPlan和document.md必须逐字节相同；只改变M7 shard controls时，M6 candidate relation records/IDs、关系拓扑及每个逻辑group的成员Flow/relation集合保持稳定，但group record内嵌identity-significant limits，所以group ID/bytes以及shard和下游identity允许变化；全部`A`上的owner union仍须互斥且完整。业务上可表达的模型回答由FlowInterpretation写typed disposition，并可在全分母仍唯一处置时随闭合ledger进入`FINISHED/COMPLETED_WITH_GAPS`；Provider调用开始后的transport/runtime失败使当前run `FAILED`，不自动重试或切换。只有ledger全部分母均有唯一处置、所有analysisStepCoverageRoots验证通过且单一仓库文档closure成立，run才可进入`FINISHED`并得到`COMPLETE/COMPLETED_WITH_GAPS`；前者无Gap，后者仅含已显式计数且不破坏覆盖账本闭合的Gap。
 
 ## 4. 分析步骤“已验证源码清单”：冻结来源
 
@@ -671,7 +671,7 @@ Fact rejection 和非阻塞 Gap 可以属于成功结果；Proof reference 断�
 
 ### 下游如何消费
 
-FlowInterpretation为每个model-eligible Flow建立隔离R0，再冻结唯一RepositoryInterpretationRegistry，为R0 READY的同一Flow建立有限key R1/R2；三轮都只读该Flow/Capsule。随后程序从全仓`processJoinSignals`编候选/group及全部ownership shards，只有model-safe shard的P1/P2可读取从path-bearing persisted material精确映射的path-free `ProcessModelPacketV1`。optional seed不能替代Capsule basis；P1/P2不能读目录、全图、未准入Fact、`SourceLocatorV1`、`SourceExcerptV1`或Path。相同冻结partition profile/budget下，调度、遍历与写盘顺序可变而candidate ownership、group coverage、任务闭包与canonical bytes不变；改变分片control不要求Step 06逐字相同。
+FlowInterpretation为每个model-eligible Flow建立隔离R0，再冻结唯一RepositoryInterpretationRegistry，为R0 READY的同一Flow建立有限key R1/R2；三轮都只读该Flow/Capsule。随后程序从全仓`processJoinSignals`编候选/group及全部ownership shards，只有model-safe shard的P1/P2可读取从path-bearing persisted material精确映射的path-free `ProcessModelPacketV1`。optional seed不能替代Capsule basis；P1/P2不能读目录、全图、未准入Fact、`SourceLocatorV1`、`SourceExcerptV1`或Path。相同冻结partition profile/budget下，调度、遍历与写盘顺序可变而candidate ownership、group coverage、任务闭包与canonical bytes不变；改变分片control时只保证candidate records/topology和逻辑group membership稳定，不保证因内嵌limits而变化的group ID或bytes。
 
 ### 成功、Gap、fatal 与角色
 
@@ -696,10 +696,12 @@ FlowInterpretation为每个model-eligible Flow建立隔离R0，再冻结唯一Re
 5. 只为R0 READY Flow按其同Flow registry items编译有限key R1/R2；R1提出selectedKey+basis，且selectedKey必须逐字等于同Flow registry item的provisionalKey。只有R1返回`RESPONSE_ACCEPTED`才调用R2；若R1返回typed `RESPONSE_GAP|RESPONSE_FAILED`，已规划的同Flow R2 task写`NOT_RUN_UPSTREAM_FAILED` disposition并引用R1 taskSpecId，不调用Provider。R2在同一session只能保持该selectedKey；`NARROW`只可收窄decision、basis子集或meaning eligibility，不能替换/派生key，也不能增加来源、Fact、proposal或basis。
 6. Provider调用开始后若transport/runtime中断、响应缺失或无法形成可验证response record，当前run直接`FAILED`，不自动重试、不切换Provider，也不生成FlowInterpretation success publication。
 7. 程序按`PROVEN_HANDOFF | SHARED_ANCHOR | SEMANTIC_CUE`建立`C`条候选边并附`COUNTER_SIGNAL`；generic-only依据禁止成边。连通组和singleton共同形成覆盖全部Flow的`G`个ProcessEvidenceGroups。
-8. 程序为每组建立至少一个shard，形成全部`A`个ownership shards；每条candidate edge在`A`中恰有一个owner，Flow可重复但仅作为read-only context。`MODEL_SAFE`子集为`S`，只给它们生成path-free packet和P1/P2；`NO_MODEL` shard保存非空Gap与`NO_MODEL_ADMISSION_PENDING` disposition且模型对象为零。P1提出一个或多个hypothesis；P2只可KEEP/NARROW/DROP/PENDING_CONFIRMATION，全部受保护refs逐hypothesis为P1 subset，唯一新项是不能支持claim的deterministic review Gap。
-9. M9发布十四份semantic及receipt。planned tasks=`E+2R+2S`；actual calls=`E+R+accepted local R1+S+accepted process P1`。每个`A` shard恰一process disposition；R2/P2未运行仍有planned task与`NOT_RUN_UPSTREAM_FAILED`。
+8. 程序为每组建立至少一个shard，形成全部`A`个ownership shards；每条candidate edge在`A`中恰有一个owner，Flow可重复但仅作为read-only context。`MODEL_SAFE`子集为`S`，只给它们生成path-free packet和P1/P2；`NO_MODEL` shard保存非空Gap与`NO_MODEL_ADMISSION_PENDING` disposition且模型对象为零。P1提出一个或多个hypothesis；P2 `REVIEWS`只可KEEP/NARROW/DROP/PENDING_CONFIRMATION且全部受保护refs逐hypothesis为P1 subset；P2也可返回整个task的typed GAP/FAILED，保留P1 hypothesis但无review并进入非准入处置。
+9. M9发布十四份semantic及receipt。planned tasks=`E+2R+2S`；actual calls=`E+R+accepted local R1+S+accepted process P1`。每个`A` shard恰一process disposition，并作为Step 06-owned typed Gap的唯一carrier；R2/P2未运行仍有planned task与`NOT_RUN_UPSTREAM_FAILED`。
 
-信号等级是程序exact pair rule，不是模型评分：`PROVEN_HANDOFF`仅来自proof-closed的`EXPLICIT_CALL→exact entry target`、`IDENTIFIER_OUTPUT|RETURN_TRANSFER→IDENTIFIER_INPUT`、同non-generic key的`STATE_PRODUCTION→STATE_CHECK`或同event key的`EVENT_REFERENCE(PRODUCES)→EVENT_REFERENCE(CONSUMES)`；两端Step 05 positive signal都必须各自闭合到本Flow Fact→atom→Proof→Evidence→source。`SHARED_ANCHOR`只来自两Flow同`anchorKind+anchorKey`且`DOMAIN_SPECIFIC`的`BUSINESS_OBJECT_ANCHOR | JAVA_TYPE_ANCHOR | SQL_TABLE_ANCHOR | FIELD_ANCHOR | BUSINESS_IDENTIFIER_ANCHOR | OBJECT_REFERENCE`。`SEMANTIC_CUE`只来自程序在finite frozen Registry `BUSINESS_TERM`上按冻结entry-verb/state-word lexicon与同Capsule basis形成的`ProcessSemanticCueV1`，永远`PENDING_ONLY`；Step 05结构signal、裸状态、方法名或中文名不能直接映射到它。`COUNTER_SIGNAL`只来自Step 05 `COUNTER_CONDITION | CONFLICT_STATE | EXTERNAL_EFFECT_GAP`且`direction=BLOCKS`；M6按与positive pair相同anchor/key或显式关联Gap的exact scope收集全部counter，并固定relation `blockingCounterProcessJoinSignalIds = counterProcessJoinSignalIds`，claim两数组为所绑relation的exact union。无法唯一归属则写`PROCESS_COUNTER_SCOPE_UNRESOLVED`并只允许pending。不同domain key本身只使positive pair不成立，不会制造无ID counter。tenant/audit/log/generic utility及名称相似不能单独成边，外部效果无专门Proof始终为Gap。
+信号等级是程序exact pair rule，不是模型评分：`PROVEN_HANDOFF`仅来自proof-closed的`EXPLICIT_CALL→exact entry target`、`IDENTIFIER_OUTPUT|RETURN_TRANSFER→IDENTIFIER_INPUT`、同non-generic key的`STATE_PRODUCTION→STATE_CHECK`或同event key的`EVENT_REFERENCE(PRODUCES)→EVENT_REFERENCE(CONSUMES)`；两端Step 05 positive signal都必须各自闭合到本Flow Fact→atom→Proof→Evidence→source。`SHARED_ANCHOR`只来自两Flow同`anchorKind+anchorKey`且`DOMAIN_SPECIFIC`的`BUSINESS_OBJECT_ANCHOR | JAVA_TYPE_ANCHOR | SQL_TABLE_ANCHOR | FIELD_ANCHOR | BUSINESS_IDENTIFIER_ANCHOR | OBJECT_REFERENCE`。`SEMANTIC_CUE`只来自程序在finite frozen Registry `BUSINESS_TERM`上按冻结entry-verb/state-word lexicon与同Capsule basis形成的`ProcessSemanticCueV1`，永远`PENDING_ONLY`；Step 05结构signal、裸状态、方法名或中文名不能直接映射到它。
+
+M6为一对Flow枚举并持久化**全部**qualifying `ProcessRelationPositivePairBasisV1`，不选择“the pair”；support/cue IDs取完整union，最强等级取固定最大值，directed proven pairs全同向时才给方向，否则`UNDIRECTED`。`COUNTER_SIGNAL`包括两类`ProcessRelationCounterBasisV1`：对每个positive pair收集相同anchor/key或显式关联Gap的全部Step 05 blocking signal；以及两端完整、非空、Proof闭合的domain-specific `BUSINESS_OBJECT_ANCHOR | OBJECT_REFERENCE` anchorKey集合互斥时，为每个positive pair记录完整left/right signal集合的`DIFFERENT_BUSINESS_OBJECT`。有共同对象key不产生对象反证，对象不同也不能独立成边。relation `counterProcessJoinSignalIds`是全部counter bases的exact signal-ID union，`blockingCounterProcessJoinSignalIds`与之相等，claim两数组再取所绑relation的exact union。无法归属到任一完整positive basis时不挑first/min/max，而写typed `PROCESS_COUNTER_SCOPE_UNRESOLVED`并只允许pending。program-only pair/counter bases不进入path-free model view；模型只读既有aggregate字段。因此多个positive pairs、不同输入顺序下counter和Step 07 certainty都稳定。tenant/audit/log/generic utility及名称相似不能单独成边，外部效果无专门Proof始终为Gap。
 
 ### 可观察产物
 
@@ -723,11 +725,11 @@ M3 module envelope与公开`repository-interpretation-registry.json`必须使用
 
 ### 下游如何消费
 
-RepositoryKnowledge读取canonical local/process artifacts，重算`registryProposalId→provisionalKey→selectedKey`与`hypothesis→process disposition→P1/P2→group/signal→Flow/Capsule→Fact/Proof/Evidence/source`；它同时验证no-model shard/disposition的owner edge reasoned exclusions，不调用模型，也不信任模型自评。
+RepositoryKnowledge读取canonical local/process artifacts，重算`registryProposalId→provisionalKey→selectedKey`与`hypothesis→process disposition→P1/P2→group/signal→Flow/Capsule→Fact/Proof/Evidence/source`；它验证全部Step 06-owned Gap carrier、将其singleton可逆映射成`MergedGapV3`，并对no-model、P1 terminal及P2 GAP/FAILED执行完整reasoned exclusion，不调用模型，也不信任模型自评。
 
 ### 成功、Gap、fatal 与角色
 
-没有Flow时仍写出全部十五个命名文件，JSONL为零行、registry为空、调用数为0。孤立Flow、冲突和未证外部效果可带Gap成功。schema/runtime/ref、generic-only edge、group漏Flow、edge多owner、R2/P2扩张或Provider started后失败为fatal；不自动重试、换Provider或API fallback。程序拥有任务、候选、validation和publication；Luna/xhigh只执行五类bounded round。
+没有Flow时仍写出全部十五个命名文件，JSONL为零行、registry为空、调用数为0。孤立Flow、冲突、不同业务对象、预算超限、typed P2 GAP/FAILED和未证外部效果可在typed Gap与全分母闭合时成功。schema/runtime/ref、generic-only edge、group漏Flow、edge多owner、Gap carrier缺失、R2/P2扩张或Provider started后transport/runtime失败为fatal；不自动重试、换Provider或API fallback。程序拥有任务、候选、validation和publication；Luna/xhigh只执行五类bounded round。
 
 ## 10. 分析步骤“仓库知识”：准入解释并合并仓库业务知识
 
@@ -1147,13 +1149,13 @@ FlowInterpretationDisposition
 
 Cross-Flow standalone wire catalog（与流程解释详细设计§7.1同一合同；`!`为required non-null，`?`为required nullable，`[]!`为required array）：
 
-ProcessEvidenceGroupV1
-  schemaVersion!=flow-interpretation-process-evidence-group-v1
+ProcessEvidenceGroupV2
+  schemaVersion!=flow-interpretation-process-evidence-group-v2
   artifactType!=FLOW_INTERPRETATION_PROCESS_EVIDENCE_GROUP
   processEvidenceGroupId!
   groupKind!: CONNECTED_COMPONENT | SINGLETON
   memberFlowSliceIds[]!
-  candidateRelations[]!: ProcessCandidateRelationV1
+  candidateRelations[]!: ProcessCandidateRelationV2
   processSemanticCues[]!: ProcessSemanticCueV1
   supportingProcessJoinSignalIds[]!
   counterProcessJoinSignalIds[]!
@@ -1162,17 +1164,36 @@ ProcessEvidenceGroupV1
   modelIneligibilityGapIds[]!
   persistedMaterial!: ProcessPersistedMaterialV1
 
-ProcessCandidateRelationV1
+ProcessCandidateRelationV2
   candidateRelationId!
   leftFlowSliceId!, rightFlowSliceId!
   strongestSignalLevel!: PROVEN_HANDOFF | SHARED_ANCHOR | SEMANTIC_CUE
   direction!: LEFT_TO_RIGHT | RIGHT_TO_LEFT | UNDIRECTED
   relationUse!: PROCESS_CANDIDATE | PENDING_ONLY
+  positivePairBases[]!: ProcessRelationPositivePairBasisV1
+  counterBases[]!: ProcessRelationCounterBasisV1
   supportingProcessJoinSignalIds[]!
   processSemanticCueIds[]!
   counterProcessJoinSignalIds[]!
   blockingCounterProcessJoinSignalIds[]!
   factIds[]!, proofIds[]!, evidenceNodeIds[]!, sourceLocators[]!, gapIds[]!
+
+ProcessRelationPositivePairBasisV1       // program-only; every qualifying pair
+  pairKind!: EXPLICIT_CALL_TO_ENTRY | IDENTIFIER_HANDOFF | STATE_HANDOFF |
+             EVENT_HANDOFF | SHARED_ANCHOR | SEMANTIC_CUE
+  signalLevel!: PROVEN_HANDOFF | SHARED_ANCHOR | SEMANTIC_CUE
+  leftProcessJoinSignalIds[]!, rightProcessJoinSignalIds[]!
+  processSemanticCueIds[]!
+  anchorKind!: CALL_TARGET | BUSINESS_IDENTIFIER | STATE | EVENT |
+               BUSINESS_OBJECT | JAVA_TYPE | SQL_TABLE | FIELD | REGISTRY_TERM
+  anchorKey!
+  direction!: LEFT_TO_RIGHT | RIGHT_TO_LEFT | UNDIRECTED
+
+ProcessRelationCounterBasisV1            // program-only; scoped to one exact pair
+  counterKind!: EXPLICIT_BLOCKING_SIGNAL | DIFFERENT_BUSINESS_OBJECT
+  scopedPositivePair!: ProcessRelationPositivePairBasisV1
+  leftCounterProcessJoinSignalIds[]!
+  rightCounterProcessJoinSignalIds[]!
 
 ProcessSemanticCueV1
   processSemanticCueId!
@@ -1189,7 +1210,7 @@ ProcessSemanticCueV1
 
 ProcessPersistedMaterialV1                // program-only, path-bearing, never sent to Provider
   flowViews[]!: ProcessPersistedFlowViewV1
-  relationViews[]!: ProcessCandidateRelationV1
+  relationViews[]!: ProcessCandidateRelationV2
   registryItems[]!: RepositoryInterpretationRegistryItemV3
   limits!: ProcessMaterialLimitsV1
 
@@ -1343,8 +1364,8 @@ ProcessModelRoundV1
   failureCode?
   generationReceiptId!
 
-BusinessProcessHypothesisV1
-  schemaVersion!=flow-interpretation-business-process-hypothesis-v1
+BusinessProcessHypothesisV2
+  schemaVersion!=flow-interpretation-business-process-hypothesis-v2
   artifactType!=FLOW_INTERPRETATION_BUSINESS_PROCESS_HYPOTHESIS
   businessProcessHypothesisId!
   taskShardId!, p1TaskId!, p1RoundId!
@@ -1360,8 +1381,8 @@ BusinessProcessHypothesisV1
   pendingAssumptionClaimIds[]!
   readerSlots[]!: ProcessClaimBoundSlotV1
   p2TaskId!, p2RoundId!
-  processHypothesisReviewId!
-  finalReviewDecision!: KEEP | NARROW | PENDING_CONFIRMATION
+  processHypothesisReviewId?
+  finalReviewDecision?: KEEP | NARROW | PENDING_CONFIRMATION
 
 BusinessProcessFlowMemberV1
   flowSliceId!
@@ -1417,8 +1438,8 @@ ProcessHypothesisReviewV1
   retainedCandidateRelationIds[]!
   reasonCode?, reviewGapIds[]!              // deterministic review gaps only; never claim support
 
-ProcessInterpretationDispositionV1
-  schemaVersion!=flow-interpretation-process-interpretation-disposition-v1
+ProcessInterpretationDispositionV2
+  schemaVersion!=flow-interpretation-process-interpretation-disposition-v2
   artifactType!=FLOW_INTERPRETATION_PROCESS_INTERPRETATION_DISPOSITION
   processInterpretationDispositionId!
   taskShard!: BusinessProcessTaskShardV1
@@ -1430,8 +1451,37 @@ ProcessInterpretationDispositionV1
   narrowedBusinessProcessHypothesisIds[]!
   droppedBusinessProcessHypothesisIds[]!
   pendingBusinessProcessHypothesisIds[]!
+  p2GapBusinessProcessHypothesisIds[]!
+  p2FailedBusinessProcessHypothesisIds[]!
   disposition!: READY_FOR_ADMISSION | NO_MODEL_ADMISSION_PENDING | GAP | FAILED
+  processGaps[]!: ProcessInterpretationGapV1
   gapIds[]!, failureRef?, reasonCode?
+
+ProcessInterpretationGapV1               // canonical value embedded in owning disposition
+  gapId!
+  gapCode!: PROCESS_COUNTER_SCOPE_UNRESOLVED | PROCESS_TASK_BUDGET_EXCEEDED |
+            PROCESS_P2_RESPONSE_GAP | PROCESS_P2_REVIEW_FAILED |
+            PROCESS_P2_REVIEW_PENDING_CONFIRMATION |
+            PROCESS_P2_REVIEW_PRECISION_AMBIGUITY
+  gapScope!: PROCESS_RELATION | PROCESS_TASK_SHARD | PROCESS_P2_RESPONSE |
+             PROCESS_HYPOTHESIS_REVIEW
+  taskShardId!
+  processEvidenceGroupId!
+  candidateRelationIds[]!
+  businessProcessHypothesisIds[]!
+  processClaimIds[]!
+  processModelTaskIds[]!
+  affectedFlowSliceIds[]!
+  processJoinSignalIds[]!
+  processSemanticCueIds[]!
+  repositoryInterpretationRegistryItemIds[]!
+  factIds[]!, proofIds[]!, evidenceNodeIds[]!, sourceLocators[]!
+  searchedScopeRefs[]!: ArtifactReference
+  failureCode?
+  limitKind?: FLOW_COUNT | RELATION_COUNT | SIGNAL_COUNT |
+              REGISTRY_ITEM_COUNT | INPUT_BYTES
+  configuredLimit?, observedValue?
+  messageKey!
 
 ModelTaskDispositionV2
   taskSpecId!, taskScopeKind!: PROCESS_SHARD
@@ -1455,9 +1505,13 @@ GenerationReceiptV3
   observedRuntime!: ModelRuntimeIdentityV1
   started=true, completed=true
 
-`ProcessSemanticCueV1`两端registry item都必须是finite frozen `BUSINESS_TERM`并闭合到各自Capsule basis；`ENTRY_VERB`两端entry ref非null且命中冻结entry lexicon，`STATE_WORD`两端signal数组非空且命中冻结state lexicon，`REGISTRY_BUSINESS_TERM`则entry为null、state arrays为空。cue只能`PENDING_ONLY`。generation receipt恰一个scope字段非null。public hypothesis只保留P2 KEEP/NARROW/PENDING；DROP只在round/review/disposition计数。
+`ProcessSemanticCueV1`两端registry item都必须是finite frozen `BUSINESS_TERM`并闭合到各自Capsule basis；`ENTRY_VERB`两端entry ref非null且命中冻结entry lexicon，`STATE_WORD`两端signal数组非空且命中冻结state lexicon，`REGISTRY_BUSINESS_TERM`则entry为null、state arrays为空。cue只能`PENDING_ONLY`。generation receipt恰一个scope字段非null。public hypothesis保存P2 KEEP/NARROW/PENDING以及P2 GAP/FAILED下未review的P1 hypothesis；DROP只在round/review/disposition计数。
 
-每组至少一个`BusinessProcessTaskShardV1`，全部shard组成`A`；含model-ineligible Flow或无法在不截断原子Flow/relation的前提下形成安全packet的shard为`NO_MODEL`，packet为null且Gap非空，其他shard为`MODEL_SAFE`并组成`S`。每条candidate relation在全部`A`中恰一owner；每个shard恰一`ProcessInterpretationDispositionV1`。`NO_MODEL`的execution/disposition分别固定为`NO_MODEL/NO_MODEL_ADMISSION_PENDING`，P1/P2字段为null、hypothesis arrays为空且没有task/round/receipt。
+`positivePairBases[]`保存每条qualifying pair并按`(signalLevel,pairKind,anchorKind,anchorKey,direction,canonicalJson(fullBasis))`排序，`counterBases[]`按canonical bytes排序；两者只在program-only `ProcessCandidateRelationV2`，不进入`ProcessModelRelationViewV1`。aggregate support/cue/counter字段分别是bases的exact union，blocking=counter；direction只在所有directed proven pairs一致时采用该方向，否则`UNDIRECTED`。完整对象key集合都非空且互斥时，`DIFFERENT_BUSINESS_OBJECT` basis使用两端全部相关signal IDs；有共同key时不产生。由此多个positive pairs不会引入任意关联或不稳定certainty。
+
+`ProcessInterpretationGapV1.gapId`固定为`"gap:" + SHA-256(frame("flow-interpretation-process-gap-id-v1") || frame(canonicalJson(gap without gapId/taskShardId)))`的lowercase hex；只排除`gapId/taskShardId`，后填的taskShard仍进入完整disposition/artifact bytes。counter-scope、预算、P2 response GAP/FAILED和P2 pending/precision review Gap分别使用详细设计§7.1的闭集code/scope/message与failure/limit nullable矩阵；所有affected IDs、Fact/Proof/Evidence/source locator和非空`searchedScopeRefs`都来自实际闭包。每个Step 06-owned Gap恰在owner `ProcessInterpretationDispositionV2.processGaps[]`出现一次；其`gapIds`等于这些ID与所引upstream Gap IDs的exact union。relation自己的`gapIds`只含upstream Gap，counter-scope Gap通过affected relation ID反向定位，避免identity环。canonical carrier沿用`process-interpretation-dispositions.jsonl`，不新增第十六文件。
+
+每组至少一个`BusinessProcessTaskShardV1`，全部shard组成`A`；含model-ineligible Flow或无法在不截断原子Flow/relation的前提下形成安全packet的shard为`NO_MODEL`，packet为null且Gap非空，其他shard为`MODEL_SAFE`并组成`S`。每条candidate relation在全部`A`中恰一owner；每个shard恰一`ProcessInterpretationDispositionV2`。`NO_MODEL`的execution/disposition分别固定为`NO_MODEL/NO_MODEL_ADMISSION_PENDING`，P1/P2字段为null、proposed及六个outcome arrays为空且没有task/round/receipt。
 
 group `modelEligibility`只汇总member Capsules：全部eligible才是`MODEL_SAFE`/空Gap，否则是`MODEL_INELIGIBLE`并保存全部ineligible member Gap的规范union。它不替代shard判定；混合group的eligible-only atomic unit仍可model-safe，含ineligible endpoint的unit必须no-model。
 
@@ -1477,9 +1531,13 @@ processModelRound.processModelTaskId = generationReceipt.taskSpecId
 processModelRound.taskShardId = generationReceipt.taskShardId = processModelTask.taskShardId
 ~~~
 
-process disposition discriminator固定：safe shard当且仅当`executionKind=MODEL_TASKS`且两组task ID/disposition non-null；no-model shard当且仅当`executionKind=NO_MODEL`，四个task nullable字段全null、五个hypothesis arrays全空、disposition为`NO_MODEL_ADMISSION_PENDING`、`gapIds`逐字等于shard ineligibility Gaps、failure null、reason为`NO_MODEL_SHARD`。混搭fatal。
+round response矩阵固定：P1 HYPOTHESES要求nonempty hypothesis IDs、空review/gap和null failure；P1 GAP要求空hypothesis/review、packet中已有upstream Gap的nonempty子集、null failure；P1 FAILED要求空hypothesis/review/gap和non-null failure。P2 REVIEWS要求hypothesis IDs逐字等于P1，每ID恰一review，round gap IDs为所有review Gap exact union，failure null；P2 GAP/FAILED都要求hypothesis IDs逐字等于P1、reviews为空、恰一typed process Gap，前者failure null，后者failure non-null且等于Gap failure code。raw response先hash/strict-decode，再由程序生成canonical Gap/round；模型不提供Gap ID。
 
-P2按每个hypothesis独立验证；`P2.<refs>`指decision保留/收窄/pending的P1 claim/member/relation IDs所传递闭包出的exact refs。其Flow、relation、claim、Fact、Proof、Evidence、support signal、semantic cue、counter/blocking signal、Gap和registry/technical key集合均为同一P1 hypothesis相应集合的subset，不能与packet/同shard其他hypothesis作union。唯一可新增的是review record自己的deterministic `reviewGapIds`，且只用于schema-valid pending/precision ambiguity；它不进入hypothesis/claim、不能支持claim。schema/subset失败仍fatal，不能降成Gap。
+process disposition discriminator固定：safe shard当且仅当`executionKind=MODEL_TASKS`且两组task ID/disposition non-null；no-model shard当且仅当`executionKind=NO_MODEL`，四个task nullable字段全null、proposed及六个outcome arrays全空、disposition为`NO_MODEL_ADMISSION_PENDING`、`gapIds`逐字等于shard ineligibility Gaps、failure null、reason为`NO_MODEL_SHARD`。P2 REVIEWS把proposed精确分成retained/narrowed/dropped/pending，两个P2 terminal arrays为空并`READY_FOR_ADMISSION`；P2 GAP/FAILED分别让proposed等于唯一P2-gap/P2-failed array、其余五个outcome arrays为空，disposition分别为GAP/FAILED，且只有FAILED的`failureRef=p2RoundId`。P1 GAP/FAILED没有hypothesis，P2 NOT_RUN且无round/receipt。混搭fatal。
+
+`allProposed = retained ⊎ narrowed ⊎ dropped ⊎ pending ⊎ p2Gap ⊎ p2Failed`；public hypothesis恰为`retained ⊎ narrowed ⊎ pending ⊎ p2Gap ⊎ p2Failed`，Step 07 admission-eligible恰为前三项。P2 GAP/FAILED的`BusinessProcessHypothesisV2.p2TaskId/p2RoundId` non-null，review ID/decision同时null；typed P2 FAILED是完成调用的业务失败，可随闭合ledger成为`COMPLETED_WITH_GAPS`，而transport/runtime/invalid response仍fatal且不发布。
+
+仅P2 REVIEWS按每个hypothesis独立验证；`P2.<refs>`指decision保留/收窄/pending的P1 claim/member/relation IDs所传递闭包出的exact refs。其Flow、relation、claim、Fact、Proof、Evidence、support signal、semantic cue、counter/blocking signal、Gap和registry/technical key集合均为同一P1 hypothesis相应集合的subset，不能与packet/同shard其他hypothesis作union。唯一可新增的是review record自己的typed deterministic `reviewGapIds`，且只用于schema-valid pending/precision ambiguity；它同时在owner disposition canonical carrier中有唯一值，不进入hypothesis/claim、不能支持claim。schema/subset失败仍fatal，不能降成Gap。P2 GAP/FAILED没有review，不套用本subset式。
 
 ### Step 06显式无环identity DAG
 
@@ -1488,36 +1546,38 @@ P2按每个hypothesis独立验证；`P2.<refs>`指decision保留/收窄/pending�
 | record / self ID | semantic projection | 从semantic ID精确排除 | projection中必须先存在的reference字段 |
 | --- | --- | --- | --- |
 | `ProcessSemanticCueV1.processSemanticCueId` | §7.1全部字段减排除列 | `processSemanticCueId` | `leftFlowSliceId,rightFlowSliceId,leftRegistryItemId,rightRegistryItemId,leftBasisAtomIds,rightBasisAtomIds,leftEntryId,rightEntryId,leftStateSignalIds,rightStateSignalIds,processCueProfileRef` |
-| `ProcessCandidateRelationV1.candidateRelationId` | §7.1全部字段减排除列 | `candidateRelationId` | `leftFlowSliceId,rightFlowSliceId,supportingProcessJoinSignalIds,processSemanticCueIds,counterProcessJoinSignalIds,blockingCounterProcessJoinSignalIds,factIds,proofIds,evidenceNodeIds,sourceLocators,gapIds` |
-| `ProcessEvidenceGroupV1.processEvidenceGroupId` | §7.1全部字段减排除列 | `processEvidenceGroupId` | `memberFlowSliceIds,candidateRelations,processSemanticCues,supportingProcessJoinSignalIds,counterProcessJoinSignalIds,repositoryInterpretationRegistryItemIds,modelIneligibilityGapIds,persistedMaterial` |
+| `ProcessCandidateRelationV2.candidateRelationId` | §7.1全部字段减排除列 | `candidateRelationId` | `leftFlowSliceId,rightFlowSliceId,positivePairBases,counterBases,supportingProcessJoinSignalIds,processSemanticCueIds,counterProcessJoinSignalIds,blockingCounterProcessJoinSignalIds,factIds,proofIds,evidenceNodeIds,sourceLocators,gapIds` |
+| `ProcessEvidenceGroupV2.processEvidenceGroupId` | §7.1全部字段减排除列 | `processEvidenceGroupId` | `memberFlowSliceIds,candidateRelations,processSemanticCues,supportingProcessJoinSignalIds,counterProcessJoinSignalIds,repositoryInterpretationRegistryItemIds,modelIneligibilityGapIds,persistedMaterial` |
+| `ProcessInterpretationGapV1.gapId` | §7.1全部字段减`gapId,taskShardId` | `gapId,taskShardId` | `processEvidenceGroupId,candidateRelationIds,businessProcessHypothesisIds,processClaimIds,processModelTaskIds,affectedFlowSliceIds,processJoinSignalIds,processSemanticCueIds,repositoryInterpretationRegistryItemIds,factIds,proofIds,evidenceNodeIds,sourceLocators,searchedScopeRefs,failureCode,limitKind,configuredLimit,observedValue,messageKey` |
 | `BusinessProcessTaskShardV1.taskShardId` | §7.1全部字段减排除列 | `taskShardId` | `processEvidenceGroupId,ownerCandidateRelationIds,contextFlowSliceIds,modelIneligibilityGapIds,processModelPacket` |
 | `ProcessModelTaskV1.processModelTaskId` | §7.1全部字段减排除列 | `processModelTaskId` | `taskShardId,request`；`inputJsonSha256`必须是该request canonical bytes的hash，作为显式冗余完整性字段参与identity |
 | `ProcessHypothesisClaimV1.processClaimId` | §7.1全部字段减排除列 | `processClaimId` | `subjectKeys,predicateKey,objectKeys,memberFlowSliceIds,candidateRelationIds,supportProcessJoinSignalIds,processSemanticCueIds,counterProcessJoinSignalIds,blockingCounterProcessJoinSignalIds,factIds,proofIds,evidenceNodeIds,gapIds` |
-| `BusinessProcessHypothesisV1.businessProcessHypothesisId` | §7.1的P1 semantic content减排除列 | `businessProcessHypothesisId,p1RoundId,p2TaskId,p2RoundId,processHypothesisReviewId,finalReviewDecision` | `taskShardId,p1TaskId,processEvidenceGroupIds,memberFlows,businessRoleKeys,stageKeys,activityKeys,inputObjectKeys,outputObjectKeys,objectKeys,stateKeys,processClaims,conditionClaimIds,branchClaimIds,parallelClaimIds,alternativeClaimIds,fallbackClaimIds,candidateRelations,purposeClaimId,endResultClaimId,pendingAssumptionClaimIds,readerSlots` |
+| `BusinessProcessHypothesisV2.businessProcessHypothesisId` | §7.1的P1 semantic content减排除列 | `businessProcessHypothesisId,p1RoundId,p2TaskId,p2RoundId,processHypothesisReviewId,finalReviewDecision` | `taskShardId,p1TaskId,processEvidenceGroupIds,memberFlows,businessRoleKeys,stageKeys,activityKeys,inputObjectKeys,outputObjectKeys,objectKeys,stateKeys,processClaims,conditionClaimIds,branchClaimIds,parallelClaimIds,alternativeClaimIds,fallbackClaimIds,candidateRelations,purposeClaimId,endResultClaimId,pendingAssumptionClaimIds,readerSlots` |
 | `GenerationReceiptV3.generationReceiptId` | §7.1全部字段减排除列 | `generationReceiptId` | `taskSpecId,expectedRuntime,observedRuntime`；request/response SHA是调用bytes preimage，不是round/hypothesis back-reference |
 | `ProcessHypothesisReviewV1.processHypothesisReviewId` | §7.1全部字段减排除列 | `processHypothesisReviewId` | `businessProcessHypothesisId,retainedProcessClaimIds,narrowedProcessClaimIds,droppedProcessClaimIds,pendingProcessClaimIds,retainedMemberFlowSliceIds,retainedCandidateRelationIds,reviewGapIds` |
 | `ProcessModelRoundV1.processModelRoundId` | §7.1全部字段减排除列 | `processModelRoundId` | `processModelTaskId,businessProcessHypothesisIds,processHypothesisReviews,gapIds,generationReceiptId` |
-| `ProcessInterpretationDispositionV1.processInterpretationDispositionId` | §7.1全部字段减排除列 | `processInterpretationDispositionId` | `taskShard,p1TaskId,p1TaskDisposition,p2TaskId,p2TaskDisposition,proposedBusinessProcessHypothesisIds,retainedBusinessProcessHypothesisIds,narrowedBusinessProcessHypothesisIds,droppedBusinessProcessHypothesisIds,pendingBusinessProcessHypothesisIds,gapIds,failureRef` |
+| `ProcessInterpretationDispositionV2.processInterpretationDispositionId` | §7.1全部字段减排除列 | `processInterpretationDispositionId` | `taskShard,p1TaskId,p1TaskDisposition,p2TaskId,p2TaskDisposition,proposedBusinessProcessHypothesisIds,retainedBusinessProcessHypothesisIds,narrowedBusinessProcessHypothesisIds,droppedBusinessProcessHypothesisIds,pendingBusinessProcessHypothesisIds,p2GapBusinessProcessHypothesisIds,p2FailedBusinessProcessHypothesisIds,processGaps,gapIds,failureRef` |
 
-无self ID的`ProcessPersistedMaterialV1`、`ProcessPersistedFlowViewV1`、全部`ProcessModel*ViewV1`、`ProcessModelPacketV1`、`ProcessModelRequestV1`、`ProcessP1HypothesisReviewInputV1`、`ProcessP2AllowedReferencesV1`、path-free source records、`ProcessMaterialLimitsV1`、`BusinessProcessFlowMemberV1`、`RegistryOrTechnicalKeyV1`、`HypothesisRelationBindingV1`、`ProcessClaimBoundSlotV1`和`ModelTaskDispositionV2`不单独计算identity；其完整规范值只参加上表明确拥有它的parent projection，且不得含parent/later ID。
+无self ID的`ProcessRelationPositivePairBasisV1`、`ProcessRelationCounterBasisV1`、`ProcessPersistedMaterialV1`、`ProcessPersistedFlowViewV1`、全部`ProcessModel*ViewV1`、`ProcessModelPacketV1`、`ProcessModelRequestV1`、`ProcessP1HypothesisReviewInputV1`、`ProcessP2AllowedReferencesV1`、path-free source records、`ProcessMaterialLimitsV1`、`BusinessProcessFlowMemberV1`、`RegistryOrTechnicalKeyV1`、`HypothesisRelationBindingV1`、`ProcessClaimBoundSlotV1`和`ModelTaskDispositionV2`不单独计算identity；其完整规范值只参加上表明确拥有它的parent projection，且不得含parent/later ID。
 
-唯一合法计算/物化顺序为：upstream Flow/Capsule/Fact/Proof/Evidence/Registry IDs → semantic cue → candidate relation → evidence group → 全部`A`个task shard → 对每个model-safe shard物化P1 request/task → P1 Provider response bytes → P1 generation receipt与claim IDs（同rank）→ hypothesis semantic ID → P1 round → P2 request/task（即使随后`NOT_RUN_UPSTREAM_FAILED`也在P1 terminal round后物化）→ P2 review与generation receipt（同rank；NOT_RUN时二者都不存在）→ P2 round → 回填hypothesis的五个later-lineage excluded字段 → 全部`A`个process disposition。no-model分支固定为`evidence group → task shard → process disposition`，不越过任何模型节点。P1 round引用hypothesis semantic ID，hypothesis ID不引用round；review引用hypothesis，hypothesis ID不引用review；P2 round引用review，review不引用round。
+唯一合法计算/物化顺序为：upstream Flow/Capsule/Fact/Proof/Evidence/Registry IDs → semantic cue → positive/counter bases与candidate relation → evidence group → counter-scope/budget Gap semantic IDs → task shard → 回填Gap taskShardId → P1 request/task/response/receipt/claim/hypothesis/P1 round → P2 request/task/response → P2 receipt与response/review Gap IDs → review（仅REVIEWS）→ P2 round → 回填published hypothesis later lineage → canonical Gap carrier与process disposition。no-model分支固定为`group → Gap ID（如有）→ shard → Gap taskShardId → disposition`。review/round可引用Gap ID，Gap ID不引用review/round；relation只引用upstream Gap，所以全图无环。
 
-`BusinessProcessHypothesisV1`的五个later-lineage excluded字段必须满足：`p1RoundId`指向唯一含本hypothesis ID的同task/shard P1 round；`p2TaskId`指向reviewed P1 task/round及本ID的同shard P2 task；`p2RoundId`指向该task且含`processHypothesisReviewId`的P2 round；review反向指向本ID；`finalReviewDecision`逐字等于review decision且不是`DROP`。任一不符fatal；完整record bytes仍随这些字段变化而改变artifact SHA/root。
+`BusinessProcessHypothesisV2`的五个later-lineage excluded字段必须满足：P1/P2 round/task均反向包含本ID且同shard；P2 REVIEWS时review ID/decision同时non-null、反向一致且不是DROP；P2 GAP/FAILED时二者同时null且本ID分别进入同一disposition的P2-gap/P2-failed集合。任一不符fatal；完整record bytes仍随这些字段（包括null）变化而改变artifact SHA/root。
 
 各semantic ID固定为`<prefix> + lowercaseHex(SHA-256(frame(UTF8(<domain>)) || frame(canonicalJson(semanticProjection))))`，其中prefix/domain依次为：
 
 ~~~text
-process-evidence-group: / flow-interpretation-process-evidence-group-id-v1
-process-relation: / flow-interpretation-process-candidate-relation-id-v1
+process-evidence-group: / flow-interpretation-process-evidence-group-id-v2
+process-relation: / flow-interpretation-process-candidate-relation-id-v2
+gap: / flow-interpretation-process-gap-id-v1
 process-semantic-cue: / flow-interpretation-process-semantic-cue-id-v1
 process-shard: / flow-interpretation-business-process-task-shard-id-v1
 process-model-task: / flow-interpretation-process-model-task-id-v1
 process-model-round: / flow-interpretation-process-model-round-id-v1
-business-process-hypothesis: / flow-interpretation-business-process-hypothesis-id-v1
+business-process-hypothesis: / flow-interpretation-business-process-hypothesis-id-v2
 process-claim: / flow-interpretation-process-hypothesis-claim-id-v1
 process-hypothesis-review: / flow-interpretation-process-hypothesis-review-id-v1
-process-interpretation-disposition: / flow-interpretation-process-interpretation-disposition-id-v1
+process-interpretation-disposition: / flow-interpretation-process-interpretation-disposition-id-v2
 generation-receipt: / flow-interpretation-generation-receipt-id-v3
 ~~~
 
@@ -1812,26 +1872,37 @@ KnowledgeAccountingV3
   gapIds[]!
   status!: COMPLETE | COMPLETE_WITH_GAPS
 
-MergedGapV2
-  schemaVersion!: repository-knowledge-merged-gap-v2
+MergedGapV3
+  schemaVersion!: repository-knowledge-merged-gap-v3
   artifactType!: REPOSITORY_KNOWLEDGE_MERGED_GAP
   artifactId!
   canonicalGapId!
   memberGapIds[]!
   gapCode!
   gapScope!: LOCAL | BUSINESS_PROCESS | REPOSITORY
+  affectedSemanticIds[]!
   affectedFlowSliceIds[]!
   affectedBusinessProcessIds[]!
   factIds[]!
   proofIds[]!
+  evidenceNodeIds[]!
   sourceLocators[]!
+  searchedScopeRefs[]!: ArtifactReference
+  failureCode?
+  limitKind?: FLOW_COUNT | RELATION_COUNT | SIGNAL_COUNT |
+              REGISTRY_ITEM_COUNT | INPUT_BYTES
+  configuredLimit?, observedValue?
   messageKey!
 
-`decisionScope=FLOW`只允许`flowDecision`非null，`BUSINESS_PROCESS`只允许`processDecision`非null。process admission只为model-safe shard产生的hypothesis创建；no-model shard没有hypothesis/admission，其owner candidate relations必须带shard Gap进入reasoned exclusions，context Flow仍获total membership。`processCertainty`只在`ADMIT | ADMIT_WITH_PENDING`时非null，并与创建的process knowledge相等；其余为null。
+`decisionScope=FLOW`只允许`flowDecision`非null，`BUSINESS_PROCESS`只允许`processDecision`非null。process admission只为P2-reviewed且retained/narrowed/pending的hypothesis创建；P2 DROP没有public hypothesis/admission，P2 GAP/FAILED保留P1 hypothesis但无review/admission，P1 terminal与no-model也没有hypothesis/admission。这些非准入分支的hypothesis/claims/owner relations按适用范围带typed Gap进入reasoned exclusions，context Flow仍获total membership。`processCertainty`只在`ADMIT | ADMIT_WITH_PENDING`时非null，并与创建的process knowledge相等；其余为null。
 
-Step 07不重新推断counter：每个`ProcessClaimDecisionV1.counterSignalIds/blockingCounterSignalIds`分别逐字复制source claim的`counterProcessJoinSignalIds/blockingCounterProcessJoinSignalIds`，并因Step 06 exact-union合同二者相等；后续relation/claim/pending records取source decisions的exact union。`SOURCE_CONFIRMED`要求P1 accepted、P2对同一hypothesis/claim为KEEP/NARROW、直接Fact/Proof和空blocking array；`EVIDENCE_SUPPORTED_INFERENCE`要求同一P1/P2条件、至少一个经程序验证的`PROVEN_HANDOFF | SHARED_ANCHOR` relation/signal、完整Fact/Proof/Evidence/source闭包且空blocking array；仅SEMANTIC_CUE、P2 pending/not-run或blocking array非空都只能pending。Reader slot/prose不能绕过claim decision。
+每个Step 06-owned `ProcessInterpretationGapV1 g`恰映射一条member-singleton `MergedGapV3`：`memberGapIds=[g.gapId]`，code/message/failure/limit字段及Flow/Fact/Proof/Evidence/source/searched-scope逐字复制；`gapScope=BUSINESS_PROCESS`，`affectedSemanticIds`是g的group/shard/relation/hypothesis/claim/task/Flow/signal/cue/registry IDs exact union。`affectedBusinessProcessIds`只含已准入process；P2 GAP/FAILED、counter-scope与budget的非准入分支为空。不同Step 06 Gap不得合并，故可由member ID fresh-reopen owner carrier并完全逆映射；上游Gap只有全部nullable detail一致时才可按既有equivalence合并。
 
-`ProcessClaimKnowledgeV1.subjectKeys/objectKeys`逐字等于其唯一source `ProcessHypothesisClaimV1`的plural arrays；`predicateKey`逐字复制。P2 NARROW只改变整条claim的admission/certainty或保留集合，不得任选scalar、笛卡尔fan-out、拆分、合并或重排keys。每个admitted source claim恰一个knowledge claim，转换无损。
+Step 07 accounting必须证明：`publishedHypotheses = admissionEligible ⊎ p2Gap ⊎ p2Failed`；`admissionEligible ↔ ProcessAdmissionDecision.businessProcessHypothesisId`；P2-gap/P2-failed hypothesis、其claims和owner relations全部进入`reasonedSemanticExclusionIds`；`step06OwnedGapIds ↔ singleton MergedGapV3.memberGapIds`。每个非准入分支的context Flow仍有`INDEPENDENT_ACTIVITY`或带显式Gap的`UNASSIGNED_PENDING` membership。这样P2的每个schema-valid终态都有唯一publication/admission-or-exclusion/accounting结果。
+
+Step 07不重新推断counter：先在program-only `ProcessCandidateRelationV2`重验全部positive/counter bases与aggregate exact union，再让每个`ProcessClaimDecisionV1.counterSignalIds/blockingCounterSignalIds`逐字复制source claim的对应数组；后续relation/claim/pending records取source decisions的exact union。`DIFFERENT_BUSINESS_OBJECT`与任何其他counter一样blocking，因此多positive-pair关系的certainty不受输入顺序影响。`SOURCE_CONFIRMED`要求P1 accepted、P2对同一hypothesis/claim为KEEP/NARROW、直接Fact/Proof和空blocking array；`EVIDENCE_SUPPORTED_INFERENCE`要求同一P1/P2条件、至少一个经程序验证的`PROVEN_HANDOFF | SHARED_ANCHOR` relation/signal、完整Fact/Proof/Evidence/source闭包且空blocking array；仅SEMANTIC_CUE、P2 review pending或blocking array非空的admitted claim都只能pending；P2 GAP/FAILED/NOT_RUN不进入admission。Reader slot/prose不能绕过claim decision。
+
+`ProcessClaimKnowledgeV1.subjectKeys/objectKeys`逐字等于其唯一source `BusinessProcessHypothesisV2.processClaims[]`的plural arrays；`predicateKey`逐字复制。P2 NARROW只改变整条claim的admission/certainty或保留集合，不得任选scalar、笛卡尔fan-out、拆分、合并或重排keys。每个admitted source claim恰一个knowledge claim，转换无损。
 
 `BUSINESS_PROCESS` membership要求process非null；`INDEPENDENT_ACTIVITY`要求process为null且activity非空；`UNASSIGNED_PENDING`要求process为null、activity为空、Gap非空。Conflict winner只在MERGE/REJECT时非null；relation端点只有pending且Gap非空时可null。
 
@@ -1854,7 +1925,7 @@ Step 07不重新推断counter：每个`ProcessClaimDecisionV1.counterSignalIds/b
 
 `ProcessClaimDecisionV1`和`RegistryOrTechnicalKeyV1`没有self ID；其完整值参加拥有record的projection。`ProcessRelationKnowledgeV1.conditionClaimIds`与`RoleKnowledgeV1.responsibilityClaimIds`都逐字引用已计算的`processClaimKnowledgeId`，不能引用上游裸claim ID冒充知识ID。
 
-唯一合法计算/物化顺序为：Step 06全部task shards/dispositions及model-safe分支的hypothesis/task/round/review与证据IDs → no-model owner-relation reasoned exclusions（无process admission）和model-safe hypothesis的process admission semantic ID → business-process、activity、claim、alternative、pending semantic IDs（同rank）→ relation、membership、role、state IDs → 回填admission的三个excluded output字段、business-process的十个excluded child/claim字段、activity的三个excluded association字段及alternative mutual refs → admission wrapper/conflict/merged-Gap standalone IDs → `RepositoryBusinessKnowledgeV4.artifactId` → `KnowledgeAccountingV3.artifactId`。任何child不得在自己的semantic projection中引用一个尚未计算的parent/peer ID。
+唯一合法计算/物化顺序为：Step 06全部task shards/dispositions/typed Gap carriers及hypothesis/task/round/review与证据IDs → no-model/P1 terminal/P2 GAP-or-FAILED reasoned exclusions（无process admission）和P2-reviewed admission-eligible hypothesis的process admission semantic ID → business-process、activity、claim、alternative、pending semantic IDs（同rank）→ relation、membership、role、state IDs → 回填admission的三个excluded output字段、business-process的十个excluded child/claim字段、activity的三个excluded association字段及alternative mutual refs → admission wrapper/conflict/`MergedGapV3` standalone IDs → `RepositoryBusinessKnowledgeV4.artifactId` → `KnowledgeAccountingV3.artifactId`。任何child不得在自己的semantic projection中引用一个尚未计算的parent/peer ID。
 
 excluded字段必须闭合：admission的`businessProcessId`非null时，目标process必须反向携带同一admission ID；alternative/pending集合必须等于以该admission为source且被decision保留的精确IDs。BusinessProcess purpose/end refs必须指向其`processClaimIds`中的对应knowledge claim；其八个child arrays必须等于反向引用该process/admission的规范集合。Activity的process/role/state集合必须等于反向引用集合。Alternative mutual refs必须无self、双向对称。任何遗漏、额外或不对称均fatal，且改变完整artifact SHA/root。
 
@@ -1873,7 +1944,7 @@ process-alternative: / process-alternative-v1
 pending-confirmation: / pending-confirmation-v1
 ~~~
 
-五个standalone root `KnowledgeAdmissionDecisionRecordV5`、`RepositoryBusinessKnowledgeV4`、`KnowledgeConflictV3`、`KnowledgeAccountingV3`、`MergedGapV2`仍按各自`STANDALONE_JSON` policy排除且只排除`artifactId`，并覆盖已经完成back-reference校验的完整final record；因此semantic projection exclusions不会传播到artifact identity。standalone JSON对象按§5.2字段顺序；JSONL先按`decisionScope`（`FLOW`在前）再按对应decision ID；九数组按自身ID、内部ID数组按UTF-8 bytewise排序去重。业务展示顺序只由Step 08显式表达。
+五个standalone root `KnowledgeAdmissionDecisionRecordV5`、`RepositoryBusinessKnowledgeV4`、`KnowledgeConflictV3`、`KnowledgeAccountingV3`、`MergedGapV3`仍按各自`STANDALONE_JSON` policy排除且只排除`artifactId`，并覆盖已经完成back-reference校验的完整final record；因此semantic projection exclusions不会传播到artifact identity。standalone JSON对象按§5.2字段顺序；JSONL先按`decisionScope`（`FLOW`在前）再按对应decision ID；九数组按自身ID、内部ID数组按UTF-8 bytewise排序去重。业务展示顺序只由Step 08显式表达。
 
 RepositoryCoverageLedgerDraftV3
   schemaVersion=repository-coverage-ledger-draft-v3
@@ -2199,7 +2270,7 @@ NineSectionPlanCoverageV4
   sectionOwnerBySemanticItem[]!: SectionOwnerV4
   traceExpectedReaderItemIds[]!
 
-`EMPTY_SECTION`要求owner/certainty为null且全部lineage数组为空；其他kind要求owner/certainty非null。`ADMITTED_TO_READER`要求reader/section非null且reason为null；`REASONED_EXCLUSION`要求reader/section为null、reason非null。所有引用数组按UTF-8 bytewise排序去重；sections按number，section内ReaderItems按冻结profile的显式business order。`readerItemKey = "reader-item-v4:" + lowercaseHex(SHA-256(frame(UTF8("reader-item-id-v4")) || frame(canonicalJson(recordWithoutReaderItemKey))))`，覆盖kind/template/slots、全部typed refs和required-nullable certainty。plan `artifactId`按`STANDALONE_JSON`排除且只排除自身；wire没有`nineSectionPlanId`第二self ID。
+`EMPTY_SECTION`要求owner/certainty为null且全部lineage数组为空；其他kind要求owner/certainty非null。五个process-knowledge kind要求非空process knowledge/admission/hypothesis/claim lineage。`GAP_QUESTION`另有process-terminal variant：Gap非空，owner/knowledge item指向`MergedGapV3.canonicalGapId`，certainty为pending，而business-process/process-knowledge/admission/claim arrays为空；P2 GAP/FAILED时hypothesis IDs等于disposition相应terminal集合，P1 terminal/no-model时hypothesis IDs为空。`ADMITTED_TO_READER`要求reader/section非null且reason为null；`REASONED_EXCLUSION`要求reader/section为null、reason非null。所有引用数组按UTF-8 bytewise排序去重；sections按number，section内ReaderItems按冻结profile的显式business order。`readerItemKey = "reader-item-v4:" + lowercaseHex(SHA-256(frame(UTF8("reader-item-id-v4")) || frame(canonicalJson(recordWithoutReaderItemKey))))`，覆盖kind/template/slots、全部typed refs和required-nullable certainty。plan `artifactId`按`STANDALONE_JSON`排除且只排除自身；wire没有`nineSectionPlanId`第二self ID。
 
 Boundary projection rule: `JavaBoundaryInvocation` can only populate `TECHNICAL_FALLBACK / technical-scope-v1`
 with its static target and ordered arguments. `FACT_SENTENCE / field-write-v1` requires an upstream Fact whose Proof
@@ -2249,7 +2320,7 @@ TraceHopV4
   }
   TEMPLATE {templateKey!}
 
-五个TraceHop variant恰一成立。`PROCESS_KNOWLEDGE_CLAIM`只配五个process ReaderItem，其他八值与同名kind一一配对。正常process最短有序链为`READER_ITEM → SECTION → TEMPLATE → PROCESS_KNOWLEDGE → PROCESS_ADMISSION_DECISION → BUSINESS_PROCESS_HYPOTHESIS → PROCESS_INTERPRETATION_DISPOSITION → P1 task/round/receipt → P2 task/round/receipt/review → PROCESS_EVIDENCE_GROUP → supporting/counter SIGNAL → FLOW_SLICE → EVIDENCE_CAPSULE → FACT → PROOF → EVIDENCE_NODE → SOURCE_EXCERPT`。P1 GAP/FAILED导致的P2 `NOT_RUN_UPSTREAM_FAILED`没有hypothesis/admission/knowledge，必须由对应`GAP_QUESTION`使用`READER_ITEM → SECTION → TEMPLATE → PROCESS_INTERPRETATION_DISPOSITION → P1 task/round/receipt → P2 task → PROCESS_EVIDENCE_GROUP → relevant SIGNAL/GAP → FLOW/CAPSULE → 实际evidence/source闭包`；disposition hop指向同shard且保存该P2 state/P1 upstream ID，不含P2 round/receipt/review或伪hypothesis。每个ReaderItem恰一record，records按readerItemKey排序，hops不排序。`traceId = "trace-record-v4:" + lowercaseHex(SHA-256(frame(UTF8("trace-record-id-v4")) || frame(canonicalJson(recordWithoutTraceId))))`，排除且只排除traceId。
+五个TraceHop variant恰一成立。`PROCESS_KNOWLEDGE_CLAIM`只配五个process ReaderItem；`GAP_QUESTION`允许上述process-terminal variant。正常reviewed process最短有序链为`READER_ITEM → SECTION → TEMPLATE → PROCESS_KNOWLEDGE → PROCESS_ADMISSION_DECISION → BUSINESS_PROCESS_HYPOTHESIS → PROCESS_INTERPRETATION_DISPOSITION → P1 task/round/receipt → P2 task/round/receipt/review → PROCESS_EVIDENCE_GROUP → supporting/counter SIGNAL → FLOW_SLICE → EVIDENCE_CAPSULE → FACT → PROOF → EVIDENCE_NODE → SOURCE_EXCERPT-or-SEARCHED_SCOPE`；review Gap还带原Gap ID、singleton `MergedGapV3`与artifact ref。P1 GAP/FAILED导致的P2 `NOT_RUN_UPSTREAM_FAILED`没有hypothesis/admission/knowledge，走`GAP_QUESTION → MergedGap → disposition → P1 task/round/receipt → P2 task → group/signal/Flow/Capsule → 实际evidence/source-or-searched-scope`，不含P2 round/receipt/review。P1 accepted后P2 GAP/FAILED走`GAP_QUESTION → MergedGap → BusinessProcessHypothesisV2 → disposition → P1 task/round/receipt → P2 task/round/receipt → group/relation/signal/Flow/Capsule → evidence/source-or-searched-scope`，hypothesis review fields为null，并明确禁止process knowledge/admission/review hop。`sourceLocators`为空时必须使用Gap的至少一个exact `SEARCHED_SCOPE` ref且不得合成excerpt。每个ReaderItem恰一record，records按readerItemKey排序，hops不排序。`traceId = "trace-record-v4:" + lowercaseHex(SHA-256(frame(UTF8("trace-record-id-v4")) || frame(canonicalJson(recordWithoutTraceId))))`，排除且只排除traceId。
 
 ValidationReceiptV4
   validationId, runId
@@ -2381,7 +2452,7 @@ request bytes是整个record的canonical JSON，wire本身没有self ID字段，
 
 `ReaderItemV4`不是开放`kind+Map`。既有八种local kind和新增五种process kind逐项与固定template/typed-slot record唯一配对；所有ID arrays按UTF-8 byte order排序去重。`EMPTY_SECTION`必须使用`empty-section-v2`并保存closed `sectionKey`、完整`effectiveProfileRef`和closed reason，且profile ref逐字等于owner plan的`nineSectionProfileRef`；只有该variant允许`ownerKnowledgeItemId=null`。过程kind必须含process knowledge/admission/hypothesis refs与三值certainty。任何字段、enum或配对变化都升级plan schema。
 
-`TraceHopV4`只允许`IDENTITY | ARTIFACT_REFERENCE | SOURCE_EXCERPT | SECTION | TEMPLATE`五个tagged variants；identity/reference-role闭集与每种ReaderItem的最短合法hop序列以NineSectionDocument详细设计为准。`SOURCE_EXCERPT`必须嵌入下文同一个`SourceExcerptV1`；`SEARCHED_SCOPE`和profile lineage必须是完整`ArtifactReference`，不得回退到裸ID、`path:line`或合成raw excerpt。过程Trace不得跳过ProcessAdmissionDecision、ProcessInterpretationDisposition或P1/P2 lineage；P2 NOT_RUN分支按详细设计保留task/disposition并拒绝伪round/receipt/review。Trace records按readerItemKey排序且一项ReaderItem恰一record。
+`TraceHopV4`只允许`IDENTITY | ARTIFACT_REFERENCE | SOURCE_EXCERPT | SECTION | TEMPLATE`五个tagged variants；identity/reference-role闭集与每种ReaderItem的最短合法hop序列以NineSectionDocument详细设计为准。`SOURCE_EXCERPT`必须嵌入下文同一个`SourceExcerptV1`；`SEARCHED_SCOPE`和profile lineage必须是完整`ArtifactReference`，不得回退到裸ID、`path:line`或合成raw excerpt。reviewed process Trace不得跳过ProcessAdmissionDecision、ProcessInterpretationDisposition或P1/P2 lineage；P1 terminal的P2 NOT_RUN分支保留task/disposition并拒绝伪round/receipt/review，P2 GAP/FAILED分支则保留实际P2 round/receipt并拒绝伪admission/knowledge/review。Trace records按readerItemKey排序且一项ReaderItem恰一record。
 
 `nine-section-document-validation-receipt-v4`把实际读取闭包作为自身identity material：payload `directArtifactRefs[]`与module envelope `upstreamArtifacts[]`必须逐字相同并按artifactId严格排序，列齐fresh validator打开的每个control/profile/policy、source-registration、semantic/archive/receipt、module payload/receipt、M4、Candidate、root manifest和coverage artifact；`sourceFilePreimages[]`另按fileId绑定每个实际打开source file的完整SHA。validator只根据immutable manifest/publications证明AnalysisResult与业务闭包，不把轻量execution status当作identity preimage。manifest/root/descriptor不能代替被读bytes。payload中的八个`analysisStepPublicationRefs`、八个`validatedAnalysisStepRoots`必须逐项等于同一M4 publication和root run manifest，`traceRoot`等于它们指向的NineSectionDocument Trace。显式analysis step链允许不同producer runId，但必须重新验证12.2的连续lineage；额外读取任何bytes都必须先加入preimage并改变validation identity。
 
@@ -2830,8 +2901,8 @@ runManifestId = "run-manifest:" + lowercaseHex(SHA-256(
 | artifact policy/analysis step/run persistence | 新增`artifact-policy-registry-v2`、`analysis-step-receipt-v1`、`run-manifest-v1` | 固定type/version→prefix/media/envelope/empty/public-content policy、analysis step provenance与唯一root manifest |
 | per-module receipt | 新增`module-receipt-v1` | module完成现在要求独立、无自引用receipt |
 | VerifiedSourceInventory target payloads | `verified-snapshot-v1`→`v2`；`verified-source-inventory-admitted-source-request-v1`→`v2`；`verified-source-inventory-verified-source-index-v1`→`v2`；删除旧M3 summary envelope | 加入git mode、text/media disposition、nullable line index及分母计数；M3 module publication恰含三个已注册semantic payload与receipt，analysis step store另建analysis step receipt |
-| FlowInterpretation process outputs | `flow-interpretation-process-evidence-group-v1`、nested `flow-interpretation-process-model-packet-v1`/`flow-interpretation-process-model-request-v1`、`flow-interpretation-process-model-task-v1`、`flow-interpretation-process-model-round-v1`、`flow-interpretation-business-process-hypothesis-v1`、`flow-interpretation-process-interpretation-disposition-v1`、`flow-interpretation-generation-receipt-v3` | 五项新增semantic不变；disposition内持久化全部shard，task内持久化path-free request；统一receipt discriminator覆盖R0/R1/R2/P1/P2；M3 module registry pair与public v3 pair严格不同 |
-| RepositoryKnowledge process outputs | `repository-knowledge-admission-decision-v5`、`repository-knowledge-business-knowledge-v4`、`repository-knowledge-accounting-v3`、`repository-coverage-ledger-draft-v3` | 改名为`knowledge-admission-decisions.jsonl`；三值certainty、九个过程数组和membership totality |
+| FlowInterpretation process outputs | `flow-interpretation-process-evidence-group-v2`、nested `flow-interpretation-process-model-packet-v1`/`flow-interpretation-process-model-request-v1`、`flow-interpretation-process-model-task-v1`、`flow-interpretation-process-model-round-v1`、`flow-interpretation-business-process-hypothesis-v2`、`flow-interpretation-process-interpretation-disposition-v2`、`flow-interpretation-generation-receipt-v3` | 五项新增semantic不变；relation v2保存program-only complete pair/counter bases，disposition v2持久化全部shard和Step 06-owned typed Gap carrier，hypothesis v2关闭P2 GAP/FAILED nullable lineage；task内仍是path-free request；统一receipt discriminator覆盖R0/R1/R2/P1/P2；M3 module registry pair与public v3 pair严格不同 |
+| RepositoryKnowledge process outputs | `repository-knowledge-admission-decision-v5`、`repository-knowledge-business-knowledge-v4`、`repository-knowledge-accounting-v3`、`repository-coverage-ledger-draft-v3`、`repository-knowledge-merged-gap-v3` | 改名为`knowledge-admission-decisions.jsonl`；三值certainty、九个过程数组、membership totality及Step 06 Gap singleton可逆映射 |
 | NineSectionDocument standalone outputs | `nine-section-document-nine-section-plan-v4`、`nine-section-document-document-markdown-v1`、`nine-section-document-trace-record-v4`、`nine-section-document-candidate-v4`、`nine-section-document-validation-baseline-v1`、`nine-section-document-archive-manifest-v1`、`analysis-step-receipt-v1`、`run-manifest-v1` | v4封闭五种process ReaderItem与完整过程Trace；八项位置/identity独立，五semantic→archive→receipt→root manifest→M4 publication/receipt |
 | NineSectionDocument module/external payloads | `nine-section-document-repository-coverage-ledger-v2`、`nine-section-document-nine-section-plan-draft-v4`、`nine-section-document-rendered-document-v2`、`nine-section-document-trace-set-v4`、`nine-section-document-candidate-run-publication-v4`、`nine-section-document-validation-receipt-v4` | M1先安装无环final ledger再安装plan draft；planner/trace跟随process closed union升版 |
 
@@ -2875,7 +2946,7 @@ Profile 至少固定：
 - maxProcessJoinSignals、maxCandidateProcessRelations、maxProcessEvidenceGroups、maxFlowsPerProcessGroup、maxRelationsPerProcessGroup、maxProcessTaskShards、maxProcessInputBytes、maxProcessHypotheses；每个model-safe shard恰一个P1/P2 planned pair；
 - maxKnowledgeItems、maxReaderItems、maxArchiveFiles/Bytes。
 
-超限不得截断后声称 COMPLETE。可安全隔离并形成合法业务处置时进入 Gap，在 RepositoryCoverageLedger 记录原 denominator 与受影响 IDs；破坏引用、覆盖或完整性时 fatal。分片只允许按稳定 fileId/entryId/flowSliceId 调度，不能降低覆盖。相同冻结partition profile/budget下，线程、遍历与写盘顺序不得改变canonical输出；改变分片size/budget是control change，可改变shard/task及下游bytes，但不能改变同一上游输入的candidate/group集合或全部`A`上的唯一edge ownership。
+超限不得截断后声称 COMPLETE。可安全隔离并形成合法业务处置时进入 Gap，在 RepositoryCoverageLedger 记录原 denominator 与受影响 IDs；破坏引用、覆盖或完整性时 fatal。分片只允许按稳定 fileId/entryId/flowSliceId 调度，不能降低覆盖。相同冻结partition profile/budget下，线程、遍历与写盘顺序不得改变canonical输出；只改变M7分片size/budget时，candidate relation records/IDs、关系拓扑和每个逻辑group的成员Flow/relation集合保持稳定，但因`ProcessEvidenceGroupV2.persistedMaterial.limits`参与identity，group IDs/bytes及shard/task/downstream identity允许变化；全部`A`上的owner union始终必须精确且互斥。
 
 ### 13.6 安全
 
@@ -2902,7 +2973,7 @@ Profile 至少固定：
 | 03 | GRAPH_REFERENCE_BROKEN、CALL_TARGET_AMBIGUOUS、CFG_POLARITY_MISSING、DATA_FLOW_BINDING_UNPROVEN、EVIDENCE_GRAPH_INVARIANT_BROKEN、XML_EXTERNAL_RESOLUTION_ATTEMPT |
 | 04 | PROOF_REFERENCE_BROKEN、PROOF_SOURCE_REOPEN_MISMATCH、FACT_ACCOUNTING_INVARIANT_BROKEN、CONFLICTING_FACTS |
 | 05 | FLOW_OUTCOME_CLOSURE_BROKEN、FLOW_ACCOUNTING_INVARIANT_BROKEN、EVIDENCE_PROJECTION_UNSATISFIABLE、CAPSULE_BUDGET_EXCEEDED |
-| 06 | REGISTRY_PROPOSAL_TASK_INVALID、REGISTRY_PROPOSAL_RESPONSE_INVALID、REGISTRY_PROPOSAL_REFERENCE_INVALID、REGISTRY_SEED_MISMATCH、REGISTRY_FREEZE_INCOMPLETE、REGISTRY_IDENTITY_COLLISION、MODEL_TASK_INVALID、MODEL_TASK_NOT_RUN_UPSTREAM_INVALID、MODEL_RESPONSE_INVALID、MODEL_REFERENCE_INVALID、MODEL_REVIEW_EXPANDED、PROCESS_GENERIC_SIGNAL_ONLY、PROCESS_COUNTER_SCOPE_UNRESOLVED、PROCESS_GROUP_COVERAGE_BROKEN、PROCESS_EDGE_OWNERSHIP_BROKEN、PROCESS_MODEL_PACKET_PATH_LEAK、PROCESS_MODEL_REQUEST_HASH_MISMATCH、PROCESS_MODEL_RESPONSE_INVALID、PROCESS_REVIEW_EXPANDED、MODEL_RUNTIME_IDENTITY_MISMATCH、PROVIDER_FAILURE_AFTER_START |
+| 06 | REGISTRY_PROPOSAL_TASK_INVALID、REGISTRY_PROPOSAL_RESPONSE_INVALID、REGISTRY_PROPOSAL_REFERENCE_INVALID、REGISTRY_SEED_MISMATCH、REGISTRY_FREEZE_INCOMPLETE、REGISTRY_IDENTITY_COLLISION、MODEL_TASK_INVALID、MODEL_TASK_NOT_RUN_UPSTREAM_INVALID、MODEL_RESPONSE_INVALID、MODEL_REFERENCE_INVALID、MODEL_REVIEW_EXPANDED、PROCESS_GENERIC_SIGNAL_ONLY、PROCESS_COUNTER_SCOPE_UNRESOLVED、PROCESS_TASK_BUDGET_EXCEEDED、PROCESS_P2_RESPONSE_GAP、PROCESS_P2_REVIEW_FAILED、PROCESS_P2_REVIEW_PENDING_CONFIRMATION、PROCESS_P2_REVIEW_PRECISION_AMBIGUITY、PROCESS_GROUP_COVERAGE_BROKEN、PROCESS_EDGE_OWNERSHIP_BROKEN、PROCESS_MODEL_PACKET_PATH_LEAK、PROCESS_MODEL_REQUEST_HASH_MISMATCH、PROCESS_MODEL_RESPONSE_INVALID、PROCESS_REVIEW_EXPANDED、PROCESS_DISPOSITION_INCOMPLETE、MODEL_RUNTIME_IDENTITY_MISMATCH、PROVIDER_FAILURE_AFTER_START |
 | 07 | INTERPRETATION_ADMISSION_INVALID、FLOW_INTERPRETATION_TASK_DISPOSITION_CLOSURE_INVALID、PROCESS_ADMISSION_COVERAGE_BROKEN、PROCESS_CLAIM_REFERENCE_INVALID、PROCESS_CLAIM_CERTAINTY_INVALID、PROCESS_CONFLICT_UNRESOLVED、PROCESS_MEMBERSHIP_NOT_TOTAL、TECHNICAL_FALLBACK_NOT_TOTAL、KNOWLEDGE_OWNER_INVALID |
 | runtime/08 | ANALYSIS_RUN_REQUEST_UNSUPPORTED、ANALYSIS_STEP_EXECUTION_REQUEST_INVALID、ANALYSIS_STEP_EXECUTION_UPSTREAM_INVALID、PROCESS_INTERRUPTED、PROVIDER_FAILURE_AFTER_START、NINE_SECTION_INVALID、PROCESS_READER_ITEM_INVALID、PROCESS_READER_COVERAGE_BROKEN、PROCESS_TRACE_CLOSURE_BROKEN、PROCESS_CERTAINTY_RENDERING_INVALID、PENDING_CONFIRMATION_DISCLOSURE_INVALID、READER_ATOM_LOSS、REPOSITORY_COVERAGE_LEDGER_INVALID、DOCUMENT_HASH_MISMATCH、TRACE_CLOSURE_BROKEN、ARCHIVE_IDENTITY_COLLISION、RUN_LIFECYCLE_TRANSITION_INVALID、RUN_WORKER_ALREADY_ACTIVE、RUN_NOT_FOUND、ARTIFACT_QUERY_INVALID、ARTIFACT_NOT_FOUND、ARTIFACT_IDENTITY_MISMATCH、ARTIFACT_CONTENT_NOT_PUBLIC、ARTIFACT_RESPONSE_BUDGET_EXCEEDED、RENDER_NOT_AVAILABLE、RUN_NOT_VALIDATABLE、OBSERVATION_BUDGET_EXCEEDED、VALIDATION_SOURCE_INVALID、VALIDATION_ANALYSIS_STEP_PUBLICATION_INVALID、VALIDATION_MODULE_PUBLICATION_INVALID、VALIDATION_REPOSITORY_SCOPE_INCOMPLETE、VALIDATION_REPOSITORY_COVERAGE_INCOMPLETE、VALIDATION_REGISTRY_LINEAGE_INVALID、VALIDATION_DOCUMENT_RERENDER_MISMATCH、VALIDATION_SOURCE_TRACE_INVALID、VALIDATION_CANDIDATE_MANIFEST_MISMATCH |
 
@@ -2916,9 +2987,10 @@ Profile 至少固定：
 - 五张图分别有引用闭包、覆盖和跨图 edge mutation 测试。
 - DepotHead walkthrough 必须先补齐通用 frozen-Java 数据流与 boundary-invocation Fact 能力，再以 real fixed slice 验收“精确调用+有序参数+Java-local origins+外部效果 Gap”；不得用目标 JSON、Mapper→XML结构绑定或 SQL 文本当外部效果 golden。
 - 0 Flow/0 Capsule 有直接测试，断言 0 Provider call 且 Gap 仍进入九章计划。
-- 至少两个入口/Flow的fixture验证独立Capsule、evidence-backed signals、局部R0/R1/R2与全仓registry，再以`C/G/A/S`覆盖候选边、全部Flow、全部ownership shards、model-safe子集和唯一edge owner。planned=`E+2R+2S`、actual=`E+R+accepted local R1+S+accepted process P1`；`A>0,S=0`有no-model dispositions而无过程模型对象；R1/P1 typed GAP/FAILED让对应R2/P2保留`NOT_RUN_UPSTREAM_FAILED`。synthetic七Flow fixture验证P1顺序/并行/备选、P2逐hypothesis subset并删除“唯一采购单”“已经记账”、Flow多过程复用；RepositoryKnowledge仍只有一份且每Flow membership total，NineSectionDocument只一份九章plan/document。
+- 至少两个入口/Flow的fixture验证独立Capsule、evidence-backed signals、局部R0/R1/R2与全仓registry，再以`C/G/A/S`覆盖候选边、全部Flow、全部ownership shards、model-safe子集和唯一edge owner。planned=`E+2R+2S`、actual=`E+R+accepted local R1+S+accepted process P1`；`A>0,S=0`有no-model dispositions而无过程模型对象；R1/P1 typed GAP/FAILED让对应R2/P2保留`NOT_RUN_UPSTREAM_FAILED`。同一relation的多positive-pair fixture断言complete pair/counter union、对象key集合交叠不产反证、互斥时产`DIFFERENT_BUSINESS_OBJECT`且certainty稳定。synthetic七Flow fixture验证P1顺序/并行/备选、P2逐hypothesis subset并删除“唯一采购单”“已经记账”、Flow多过程复用；另逐一覆盖P2 GAP/FAILED的hypothesis nullable lineage、非准入accounting和实际P2 round/receipt Trace。RepositoryKnowledge仍只有一份且每Flow membership total，NineSectionDocument只一份九章plan/document。
+- counter-scope、task budget、P2 response/review Gap逐项做carrier/preimage/nullable mutation；每个Step 06-owned Gap恰一disposition value和恰一singleton `MergedGapV3`，code、affected IDs、evidence/search scope、message与failure/limit字段全部可逆。source locator为空时Trace必须走exact `SEARCHED_SCOPE`，不得补source excerpt。
 - R0 测试覆盖 novel repository term、同 label 不同 Flow 不误合并、optional seed exact-match/拒绝、basis缺失、非法 Unicode/控制字符、预算、单 Flow R0业务处置后其他 Flow bytes不变，以及 registry freeze 的排序/identity determinism；R0不得产生 Fact/locator/Flow/Markdown。
-- 同一 multi-flow fixture在冻结partition profile/budget下改变线程、程序遍历与写盘顺序，最终analysis step bytes/knowledge/plan/document必须一致；另一个显式改变shard size/budget的fixture允许Step 06及下游identity变化，但要求M6 candidate/group集合稳定且全部`A`上的owner union仍精确。缺shard、重叠owner、单Flow PASS冒充run complete均fail closed。
+- 同一 multi-flow fixture在冻结partition profile/budget下改变线程、程序遍历与写盘顺序，最终analysis step bytes/knowledge/plan/document必须一致；另一个显式改变shard size/budget的fixture要求candidate relation records/IDs、拓扑及逻辑group membership稳定，同时明确允许group IDs/bytes与Step 06下游identity变化，并保持全部`A`上的owner union精确互斥。缺shard、重叠owner、错误断言changed-control group ID稳定、单Flow PASS冒充run complete均fail closed。
 - 相同canonical rounds与task dispositions必须产生相同admitted knowledge、plan和Markdown bytes。
 - M2 renderer测试用只含M1 verified plan-draft payload的隔离目录；外部rerender/validator测试只含public `nine-section-plan.json`。两者都证明没有source/model读取能力并产出相同Markdown bytes。
 - 独立 validation 重开 snapshot，逐项重算 source、graphs、Proof、Capsule、rounds、knowledge、plan、document 和 Trace roots。
@@ -2982,7 +3054,9 @@ Luna/xhigh 或 Terra/xhigh 在以下任一情况必须停止受影响 vertical s
 
 **用户保留的MUST/STOP边界只有以下六类**：改变八个analysis step的集合、顺序或stable key；改变固定九章的数量、顺序、key或语义；改变evidence/Proof/Trace信任规则；改变模型可见材料、职责或调用边界（包括P1/P2唯一多Flow例外）；改变跨analysis-step identity/publication语义；改变公开`RepositoryAnalysisAgent`或正式artifact/accounting边界（包括57总数）。任一命中时，Sol/ultra也必须停止，整理证据、影响、可行备选、推荐项与不变项交用户确认。其他局部或相邻模块protocol变化不因“artifact field semantics”这一泛化理由自动升级用户；仍必须由Sol/ultra按上一段书面裁决。
 
-本轮cross-Flow设计使用用户直接批准的闭合protocol：理由是消除Step 06分母、模型输入、P2引用、identity/request hash，Step 07 counter/certainty与plural claim保存，以及Step 08 NOT_RUN Trace的联合实现歧义。受影响合同仅为`flow-interpretation` M6–M9、RepositoryKnowledge M1–M3与NineSectionDocument M1/M3及其本文/三份详细设计中的已版本化wire。全部ownership shards组成`A`，model-safe子集`S`才产生P1/P2；no-model shard嵌入既有process disposition文件。path-bearing persisted material确定性映射为path-free model packet，task内canonical request是task/round/receipt hash的唯一preimage；P2 protected refs逐hypothesis为P1 subset。Step 05 counter kind/direction决定exact blocking union，Step 07 plural keys无损复制；Trace增加typed process disposition hop。Step 06 hypothesis语义ID排除后续round/task/review/final-decision refs，Step 07 admission/process语义ID排除后生成child/back-reference refs，而完整wire继续进入artifact SHA/root。保持不变的是八步与`flow-interpretation` key、固定九章、P1/P2唯一多Flow边界、Fact/Proof/Evidence/Trace closure、跨步骤content-addressed验证、公开七方法、五十七项正式accounting及外部效果无Proof即Gap。旧歧义/循环公式不设alias、dual-write或兼容reader，未来实现fail closed。
+本轮cross-Flow设计及其最后的相邻模块protocol修复使用用户已给的有界授权。可复验理由是：Step 06自己创建的counter/budget/P2-review Gaps此前只有ID没有value，P2 GAP/FAILED虽是合法response却没有publication/admission/Trace分支，一个relation的多个positive pairs没有counter scope，而group identity实际包含可变partition limits。受影响范围只限`flow-interpretation` M6–M9、RepositoryKnowledge M1–M3、NineSectionDocument M1/M3，以及Step 05的下游signal解释；版本化wire为`ProcessCandidateRelationV2/ProcessEvidenceGroupV2/BusinessProcessHypothesisV2/ProcessInterpretationDispositionV2`和`MergedGapV3`。
+
+批准后的闭合策略是：现有disposition文件内嵌唯一`ProcessInterpretationGapV1` carrier；P2 GAP/FAILED保留P1 hypothesis与实际P2 round/receipt、null review lineage并进入reasoned exclusion；relation记录全部positive/counter bases且恢复`DIFFERENT_BUSINESS_OBJECT`；changed partition controls只保证candidate/topology/logical membership，不保证group ID/bytes。旧draft V1/V2 wire无alias、dual-write或兼容reader，未来实现必须fail closed。保持不变的invariants逐项是：八步集合/顺序/stable keys（含`flow-interpretation`）、固定九章、一仓一文档、P1/P2唯一bounded多Flow模型例外、path-bearing evidence与path-free model packet信任边界、Fact/Proof/Evidence/Trace closure、跨步骤content-addressed validation、公开`RepositoryAnalysisAgent`七方法、Step 06十五文件和全run **57** 项正式accounting、以及外部效果无专门Proof即Gap。
 
 progress 只记录编码Agent中断后的继续工作证据与下一动作；durable design 只保存当前有效产品合同，不写时间流水账。两者不得被误建成产品runtime recovery。每个模块 handoff 的 Luna/Terra 指南都必须显式引用本节。
 

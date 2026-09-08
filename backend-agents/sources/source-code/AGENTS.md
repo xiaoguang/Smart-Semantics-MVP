@@ -222,10 +222,12 @@
   `AnalysisResult` values.
 - Under the same frozen partition profile and budget, resource sharding and
   scheduling order cannot change canonical bytes. Changing shard size/budget
-  is a control change and may change shard/task/downstream identities, but
-  shard denominator ID sets remain disjoint, their canonical union equals the
-  complete denominator, and the fixed upstream candidate/group sets do not
-  change.
+  is a control change and may change group/shard/task/downstream identities.
+  Candidate-relation records and topology, plus each logical group's member
+  Flow/relation sets, remain stable; group IDs and bytes do not, because the
+  group record embeds identity-significant persisted-material limits. Shard
+  denominator ID sets remain disjoint and their canonical union equals the
+  complete denominator under every control value.
 - The DepotHead eight-file `BOUNDED_PATH_SET` is a walkthrough/local fixture,
   never repository-completion eligible. Every discovered entry becomes one
   Flow or one evidence-backed Gap/EXCLUDED disposition.

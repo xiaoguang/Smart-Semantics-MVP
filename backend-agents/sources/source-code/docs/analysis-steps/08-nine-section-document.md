@@ -119,7 +119,7 @@ processJoinSignalIds[]!, processSemanticCueIds[]!, counterSignalIds[]!
 certainty?: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
 ~~~
 
-只有`EMPTY_SECTION`允许`ownerKnowledgeItemId=null`且要求`certainty=null`、所有lineage数组为空；其他kind两字段都必须非null。process kind还必须有非空process knowledge、admission、hypothesis与claim lineage；local kind的process数组必须为空。任何Proof/Evidence、relation/metric或Gap ref都必须出现在上述对应数组，不能藏进slot prose。
+只有`EMPTY_SECTION`允许`ownerKnowledgeItemId=null`且要求`certainty=null`、所有lineage数组为空；其他kind两字段都必须非null。五个process-knowledge kind还必须有非空process knowledge、admission、hypothesis与claim lineage。`GAP_QUESTION`有两个封闭scope：local variant的process数组全空；process-terminal variant要求`gapIds`非空、`ownerKnowledgeItemId`等于对应`MergedGapV3.canonicalGapId`、`knowledgeItemIds`包含该ID、`certainty=PENDING_CONFIRMATION`，且business process/process knowledge/admission/claim数组全空。process-terminal variant若源自P2 GAP/FAILED，则`businessProcessHypothesisIds`逐字等于同一disposition的P2-gap或P2-failed集合；若源自P1 GAP/FAILED或NO_MODEL则该数组为空。任何Proof/Evidence、relation/metric或Gap ref都必须出现在上述对应数组，不能藏进slot prose。
 
 过程kind的template与slot闭集：
 
@@ -379,11 +379,15 @@ TraceHopV4
   TEMPLATE {templateKey!}
 ~~~
 
-五个variant恰一成立，不存在null payload或开放extra字段。`traceKind=PROCESS_KNOWLEDGE_CLAIM`只配五个process ReaderItem；其他八值与同名local ReaderItem一一配对。process hop顺序必须是`READER_ITEM → SECTION → TEMPLATE → PROCESS_KNOWLEDGE → PROCESS_ADMISSION_DECISION → BUSINESS_PROCESS_HYPOTHESIS → PROCESS_INTERPRETATION_DISPOSITION → P1 task/round/receipt → P2 task[/round/receipt] → PROCESS_EVIDENCE_GROUP → supporting/counter SIGNAL → FLOW_SLICE → EVIDENCE_CAPSULE → FACT → PROOF → EVIDENCE_NODE → SOURCE_EXCERPT`；artifact refs紧邻其拥有identity，Gap可紧邻受影响identity。每个ReaderItem恰一record，records按`readerItemKey` bytewise升序；hops保持上述语义次序，不排序。
+五个hop variant恰一成立，不存在null payload或开放extra字段。`traceKind=PROCESS_KNOWLEDGE_CLAIM`只配五个process ReaderItem；`GAP_QUESTION`还允许§6定义的process-terminal variant，其他七值只配local ReaderItem。正常reviewed process hop顺序必须是`READER_ITEM → SECTION → TEMPLATE → PROCESS_KNOWLEDGE → PROCESS_ADMISSION_DECISION → BUSINESS_PROCESS_HYPOTHESIS → PROCESS_INTERPRETATION_DISPOSITION → P1 task/round/receipt → P2 task/round/receipt → PROCESS_HYPOTHESIS_REVIEW → PROCESS_EVIDENCE_GROUP → supporting/counter SIGNAL → FLOW_SLICE → EVIDENCE_CAPSULE → FACT → PROOF → EVIDENCE_NODE → SOURCE_EXCERPT-or-SEARCHED_SCOPE`；artifact refs紧邻其拥有identity，Gap可紧邻受影响identity。若review含Step 06 review Gap，还必须在review附近加入原`ProcessInterpretationGapV1.gapId`、其singleton `MergedGapV3.canonicalGapId`和`MERGED_GAPS` artifact ref。每个ReaderItem恰一record，records按`readerItemKey` bytewise升序；hops保持本节分支的语义次序，不排序。
 
 `traceId = "trace-record-v4:" + lowercaseHex(SHA-256(frame(UTF8("trace-record-id-v4")) || frame(canonicalJson(recordWithoutTraceId))))`，排除且只排除`traceId`，所以reader key、kind和完整有序hops都参与identity。`SOURCE_EXCERPT`必须使用统一`SourceExcerptV1`并由validator重验；`SEARCHED_SCOPE`和profile lineage必须是完整ArtifactReference，禁止裸ID、`path:line`或合成excerpt。
 
-若P1 GAP/FAILED使P2为`NOT_RUN_UPSTREAM_FAILED`，该shard没有BusinessProcessHypothesis或ProcessAdmissionDecision；Step 07将其Gap/owner exclusion形成的`GAP_QUESTION` ReaderItem走独立exact branch：`READER_ITEM → SECTION → TEMPLATE → PROCESS_INTERPRETATION_DISPOSITION → P1 task/round/receipt → P2 task → PROCESS_EVIDENCE_GROUP → relevant SIGNAL/GAP → FLOW_SLICE → EVIDENCE_CAPSULE → FACT/PROOF/EVIDENCE_NODE/SOURCE_EXCERPT（按Gap实际闭包）`。disposition identity hop必须指向同shard、含`p2TaskDisposition.state=NOT_RUN_UPSTREAM_FAILED`且`upstreamTaskSpecId`等于该P1 task ID的record，并紧邻`PROCESS_INTERPRETATION_DISPOSITIONS` artifact ref；不得伪造BusinessProcessHypothesis、ProcessAdmissionDecision、ProcessKnowledge、P2 round、P2 receipt或`PROCESS_HYPOTHESIS_REVIEW` hop。正常`PROCESS_KNOWLEDGE_CLAIM` P2 branch必须包含P2 review/round/receipt。`SOURCE_CONFIRMED`可要求直接Fact/Proof链；推断/pending还必须带support/counter/Gap。source location只在完整Candidate/run validation之后对外返回，且不是Proof。
+若P1 GAP/FAILED使P2为`NOT_RUN_UPSTREAM_FAILED`，该shard没有BusinessProcessHypothesis或ProcessAdmissionDecision；Step 07将其Gap/owner exclusion形成的`GAP_QUESTION` ReaderItem走独立exact branch：`READER_ITEM → SECTION → TEMPLATE → canonical GAP / MERGED_GAPS → PROCESS_INTERPRETATION_DISPOSITION → P1 task/round/receipt → P2 task → PROCESS_EVIDENCE_GROUP → relevant SIGNAL/GAP → FLOW_SLICE → EVIDENCE_CAPSULE → FACT/PROOF/EVIDENCE_NODE/SOURCE_EXCERPT-or-SEARCHED_SCOPE（按Gap实际闭包）`。disposition identity hop必须指向同shard、含`p2TaskDisposition.state=NOT_RUN_UPSTREAM_FAILED`且`upstreamTaskSpecId`等于该P1 task ID的record，并紧邻`PROCESS_INTERPRETATION_DISPOSITIONS` artifact ref；不得伪造BusinessProcessHypothesis、ProcessAdmissionDecision、ProcessKnowledge、P2 round、P2 receipt或`PROCESS_HYPOTHESIS_REVIEW` hop。
+
+若P1 accepted后P2返回typed `P2_GAP | P2_FAILED`，Step 07同样形成process-terminal `GAP_QUESTION`，但exact branch不同：`READER_ITEM → SECTION → TEMPLATE → MergedGapV3 canonical GAP / MERGED_GAPS → BusinessProcessHypothesisV2 / BUSINESS_PROCESS_HYPOTHESES → ProcessInterpretationDispositionV2 / PROCESS_INTERPRETATION_DISPOSITIONS → P1 task/round/receipt → P2 task/round/receipt → PROCESS_EVIDENCE_GROUP → PROCESS_CANDIDATE_RELATION → relevant supporting/counter SIGNAL-or-CUE → FLOW_SLICE → EVIDENCE_CAPSULE → FACT/PROOF/EVIDENCE_NODE → SOURCE_EXCERPT-or-SEARCHED_SCOPE`。hypothesis的`processHypothesisReviewId/finalReviewDecision`必须同时null；disposition分别含该ID于P2-gap/P2-failed集合；P2 round必须是对应terminal response并引用carrier中的原`ProcessInterpretationGapV1.gapId`。本分支明确禁止`PROCESS_KNOWLEDGE`、`PROCESS_ADMISSION_DECISION`和`PROCESS_HYPOTHESIS_REVIEW` hop，却必须保留两个实际调用的round/receipt；把typed P2 FAILED写成NOT_RUN或transport failure同样fatal。
+
+正常`PROCESS_KNOWLEDGE_CLAIM` P2 branch必须包含P2 review/round/receipt。`SOURCE_CONFIRMED`可要求直接Fact/Proof链；推断/pending还必须带support/counter/Gap。任何Gap若`sourceLocators[]`非空则逐项闭合到真实`SOURCE_EXCERPT`；若为空则至少一个`SEARCHED_SCOPE` ArtifactReference必须逐字来自`MergedGapV3.searchedScopeRefs[]`，Trace在此终止且不得合成excerpt。source location只在完整Candidate/run validation之后对外返回，且不是Proof。
 
 真实DepotHead的外部效果问题走`GAP_QUESTION → canonical Gap → searched source scope`，不得从Mapper/XML locator补成write。synthetic过程Trace必须显式标识fixture source，不得指向jshERP source。
 
@@ -446,7 +450,8 @@ formal run artifact count = 57
 - 九章少/多/乱序/改名，Chapter 4以controller/method为顶层清单；
 - process knowledge漏ReaderItem/Trace，pending被confirmed、正文泄漏ID/SHA/path/enum；
 - renderer读取plan外材料或相同plan输出不同bytes；
-- Trace跳过process admission/P1/P2/evidence链、伪造未运行round、locator冒充Proof；
+- reviewed-process Trace跳过process admission/P1/P2/review/evidence链，P1 terminal分支伪造未运行P2 round，P2 GAP/FAILED分支漏实际P2 round/receipt或伪造review/admission/knowledge，locator冒充Proof；
+- Step 06-owned Gap缺`MergedGapV3` singleton mapping，或无source locator时Trace既无`SEARCHED_SCOPE`又合成excerpt；
 - coverage count/集合/owner/cardinality不闭合、per-Flow Markdown、identity cycle、partial install、57总数漂移。
 
 稳定codes至少包括：`PROCESS_READER_ITEM_INVALID`、`PROCESS_READER_COVERAGE_BROKEN`、`PROCESS_TRACE_CLOSURE_BROKEN`、`PROCESS_CERTAINTY_RENDERING_INVALID`、`PENDING_CONFIRMATION_DISCLOSURE_INVALID`，并沿用`NINE_SECTION_INVALID`、`SECTION_OWNER_INVALID`、`READER_ITEM_INVALID`、`BODY_CLEANLINESS_FAILED`、`DOCUMENT_HASH_MISMATCH`、`REPOSITORY_COVERAGE_LEDGER_INVALID`、`TRACE_CLOSURE_BROKEN`、`RUN_MANIFEST_INVALID`。
@@ -457,7 +462,8 @@ formal run artifact count = 57
 - synthetic七Flow fixture：Chapter 4顺序为overview/activity/transition/role/alternative；同一Flow在两process复用；“唯一采购单”“已经记账”不出现；每个过程item有完整Trace。
 - DepotHead fixture：只陈述guard/ID/边界调用，external effect短提示+Chapter 9完整pending；任何“已更新”使测试失败。
 - 五种新ReaderItem逐个检查exact template/slots/shared refs；三certainty渲染、inference grouping、pending两层披露、正文ID/SHA/path/enum清洁。
-- Trace mutation覆盖ProcessKnowledge/Admission/Hypothesis/P1/P2/group/signal/Flow/Capsule/Fact/Proof/Evidence/source每一hop；P2 NOT_RUN不能有round/receipt。
+- Trace mutation覆盖ProcessKnowledge/Admission/Hypothesis/P1/P2/group/signal/Flow/Capsule/Fact/Proof/Evidence/source每一hop；P2 NOT_RUN不能有round/receipt，P2 GAP/FAILED必须有round/receipt且不能有review/admission/knowledge。
+- 为counter-scope、budget、P2 review Gap和P2 GAP/FAILED逐一验证`ProcessInterpretationGapV1 → MergedGapV3 → GAP_QUESTION → Trace`；source locator为空时只能走至少一个exact `SEARCHED_SCOPE`。
 - plan-only capability测试让renderer无法取得source/model/registry；相同plan bytes/SHA稳定。coverage测试断言57、1:1:1、owner total和partial-install fail-closed。
 - 只运行直接覆盖M1–M4/validator/public contract的targeted tests；不跑全suite、live provider或network。
 
