@@ -10,7 +10,7 @@ DepotHead 八文件只是贯穿讲解和局部 fixture，不是产品分析范�
 
 1. 读 [总体设计 §1–2](docs/DESIGN.md#1-先说业务结果)：先理解业务/信任目标，以及真实 jshERP DepotHead status 路径。
 2. 读 [八个分析步骤主线](docs/DESIGN.md#3-八个分析步骤纵向主线)及[仓库完成门禁](docs/DESIGN.md#37-repository-completion-gate)：确认每个模块和分析步骤立即产生 canonical JSON/JSONL，分片不降低覆盖，单 Flow PASS 不能完成运行。
-3. 读 [当前实现审计](docs/DESIGN.md#15-当前实现审计与目标设计分开)：当前完成了语义目录/Maven/package骨架、JDK 17 Toolchain、新wire头门禁，以及源码清单M1–M3的共享模块持久化预备；八步业务分析仍未实现，当前代码也尚未运行jshERP。
+3. 读 [当前实现审计](docs/DESIGN.md#15-当前实现审计与目标设计分开)：当前源码已有VerifiedSourceInventory M1–M3、ApplicationDiscovery M1–M4、ProgramGraphs M1–M6、ProvenCodeFacts v2 M1–M3、BusinessFlows M1–M3及FlowInterpretation局部M1–M5的受控纵切；跨Flow M6–M9、RepositoryKnowledge和NineSectionDocument仍未实现，当前代码也尚未运行jshERP。
 4. 需要细节时选择一份分析步骤文档；不要先从当前 Java 类名推断目标架构。
 5. 执行未来改造时读 [命名与交付实施计划](docs/plans/source-analysis-naming-and-delivery-plan.md)和[工具链计划](docs/plans/target-standards-and-toolchain-plan.md)。
 
@@ -57,7 +57,7 @@ POC 记录位于 `docs/history/`，只用于历史审计，不属于阅读路线
 
 ## Wire Reset
 
-结构性 Wire Reset 已完成：工程已经移动到目标目录，Maven/Java/package身份已经替换，pre-reset生产代码、测试与fixture已经删除。当前只有语义包骨架和通用wire头门禁，后续八步实现只写新格式。没有兼容 reader、alias、迁移 bridge、双写或旧 artifact 转换；旧 `stages/` 路径、编号类型、旧 schema/receipt/package identity 必须 fail closed。Git 历史和 `progress/*.md` 保留用于审计，但不能成为运行时输入。
+结构性 Wire Reset 已完成：工程已经移动到目标目录，Maven/Java/package身份已经替换，pre-reset生产代码、测试与fixture已经删除。reset后的代码已经在新格式上实现若干受控纵切（详见下表），未实现部分仍保留语义包骨架；它不是“只有骨架”的工程。没有兼容 reader、alias、迁移 bridge、双写或旧 artifact 转换；旧 `stages/` 路径、编号类型、旧 schema/receipt/package identity 必须 fail closed。Git 历史和 `progress/*.md` 保留用于审计，但不能成为运行时输入。
 
 每个分析步骤写入`steps/<ordered-semantic-key>/`。47个semantic payload、八个语义receipt、一个`nine-section-archive-manifest.json`和一个root `run-manifest.json`合计**57**个正式run outputs。五个新增semantic全部属于仍名为`flow-interpretation`的Step 06；module artifact/receipt和外部validation不计入57。
 
@@ -65,17 +65,17 @@ POC 记录位于 `docs/history/`，只用于历史审计，不属于阅读路线
 
 ## 当前实现审计
 
-以下只描述 2026-09-01 Wire Reset 后的工作树，不把已删除代码的历史测试结果当成当前能力：
+以下是对当前生产源码与定向测试树的只读审计；只描述 2026-09-01 Wire Reset 后仍存在的实现，不把已删除代码的历史测试结果当成当前能力：
 
 | 当前能力 | 中文状态 | 诚实边界 |
 | --- | --- | --- |
 | 工程身份与目录 | **已实现（结构）** | 目录为`backend-agents/sources/source-code/`，Maven坐标为`org.sourceanalysis:source-code-analysis-agent`，生产包全部位于`org.sourceanalysis.app`语义根下 |
 | 程序图 | **部分实现（受控fixture）** | 五张图、图索引和Gap的构建、canonical发布与重新打开已通过定向测试；当前尚未连接完整客户仓库输入 |
-| 代码事实候选 | **部分实现（受控fixture）** | 程序能从重新打开的应用发现和五图中列出当前已收集证据闭合的Java边界调用候选，或保留缺口处置；M1仍需保留完整source/rule记录并覆盖调用点与局部来源后，才能交给逐原子的Proof模块；这不是已证明的业务Fact |
+| 已证明代码事实 | **部分实现（v2 M1–M3受控纵切）** | 现有`FactCandidateEnumerator`、`AtomicProofBuilder`与`FactLedgerPublicationSpecifier`已经形成candidate→逐atom Proof decision→publication链，并发布/重开`proven-facts.json`、`proof-pack.json`、`gap-ledger.json`、`fact-accounting.json`；定向fixture覆盖可准入的Java boundary/guard Fact与拒绝Gap。它仍不是完整目标Fact taxonomy或客户仓库证明结果 |
 | Java构建选择 | **已实现（构建）** | 项目提供JDK 17 Toolchain配置，compiler release固定为17；这只约束Agent自身构建，不代表任何业务分析步骤已实现 |
 | 新wire头门禁 | **已实现（窄门禁）** | `AnalysisWireFormatGuard`只接受对象头`wireKind=SOURCE_ANALYSIS`且`wireVersion=v1`，并以`UNSUPPORTED_ANALYSIS_WIRE`拒绝顶层描述符元数据中的pre-reset path、编号stage、stage receipt/schema、旧Maven/Java package身份和wire alias；不扫描业务内容。owner-specific schema、canonical artifact reader与八步artifact校验尚未实现 |
-| Canonical artifact foundation | **部分实现（源码清单模块持久化纵切）** | 已有canonical JSON、不可变bytes、typed identity/address和policy registry；module store已能原子安装、receipt-last并fresh reopen源码盘点M1/M2的JSON payload，以及M3恰好三项独立JSON/JSONL payload，并重算descriptor/root/receipt、拒绝策略/符号链接/碰撞/文件组和顺序错误。它不是完整store：RAW UTF-8、其他模块payload、analysis-step/run store、生产root bootstrap和runtime仍未实现 |
-| 八个业务分析步骤 | **部分纵切，未形成完整run** | capture与前序若干模块已有synthetic纵切；BusinessFlows当前纵切尚无signals，FlowInterpretation仅有局部M1–M5 scripted路径。跨Flow M6–M9、P1/P2、RepositoryKnowledge过程准入、process-first九章与完整Trace均未实现；没有jshERP当前run产物 |
+| Canonical artifact foundation | **部分实现（多步骤受控纵切）** | 已有canonical JSON、不可变bytes、typed identity/address、policy registry及module/analysis-step persistence，被当前inventory、discovery、graph、fact、flow与local interpretation纵切实际使用；现有publisher能重算descriptor/root/receipt并拒绝策略、符号链接、碰撞、文件组和顺序错误。run manifest、完整runtime/public observation与NineSectionDocument RAW UTF-8链仍未实现 |
+| 八个业务分析步骤 | **部分纵切，未形成完整run** | VerifiedSourceInventory M1–M3、ApplicationDiscovery M1–M4、ProgramGraphs M1–M6、ProvenCodeFacts v2 M1–M3、BusinessFlows M1–M3均已有生产类；FlowInterpretation已有局部registry proposal/freeze与finite-key M1–M5 scripted路径。当前BusinessFlows wire尚无目标`processJoinSignals`，跨Flow M6–M9/P1/P2、RepositoryKnowledge M1–M3、process-first NineSectionDocument M1–M4和完整Trace均未实现；没有jshERP当前run产物 |
 | public Java/CLI/HTTP | **尚未实现** | `RepositoryAnalysisAgent`七方法、`source-analysis` CLI和loopback HTTP adapter均不存在 |
 | pre-reset Stage/POC实现 | **已删除；仅历史证据** | 旧纵切、POC、fixture和旧接口不在当前生产/测试树中，不得包装成兼容层或作为当前jshERP结果 |
 

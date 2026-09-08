@@ -315,19 +315,21 @@ ReaderItem
 → ProcessKnowledge
 → ProcessAdmissionDecision
 → BusinessProcessHypothesis
+→ ProcessInterpretationDisposition
 → P1/P2 task, round, generation receipt
 → ProcessEvidenceGroup / ProcessJoinSignal
 → Flow / EvidenceCapsule
 → Fact / Proof / Evidence / Source
 ~~~
 
-每个process Trace至少包含这些hop kinds：
+每个`PROCESS_KNOWLEDGE_CLAIM`正常process Trace至少包含这些hop kinds：
 
 ~~~text
 READER_ITEM, PROCESS_KNOWLEDGE, PROCESS_ADMISSION_DECISION,
-BUSINESS_PROCESS_HYPOTHESIS, PROCESS_MODEL_TASK, PROCESS_MODEL_ROUND,
+BUSINESS_PROCESS_HYPOTHESIS, PROCESS_INTERPRETATION_DISPOSITION,
+PROCESS_MODEL_TASK, PROCESS_MODEL_ROUND,
 GENERATION_RECEIPT, PROCESS_EVIDENCE_GROUP, PROCESS_JOIN_SIGNAL,
-FLOW_SLICE, EVIDENCE_CAPSULE, FACT, PROOF, EVIDENCE_NODE, SOURCE_LOCATOR
+FLOW_SLICE, EVIDENCE_CAPSULE, FACT, PROOF, EVIDENCE_NODE, SOURCE_EXCERPT
 ~~~
 
 ### 8.1 TraceV4完整wire合同
@@ -349,7 +351,8 @@ TraceHopV4
                    INTERPRETATION_PROPOSAL | REPOSITORY_REGISTRY_ITEM |
                    REGISTRY_PROPOSAL | FLOW_INTERPRETATION_DISPOSITION |
                    PROCESS_KNOWLEDGE | PROCESS_ADMISSION_DECISION |
-                   BUSINESS_PROCESS_HYPOTHESIS | PROCESS_HYPOTHESIS_REVIEW |
+                   BUSINESS_PROCESS_HYPOTHESIS | PROCESS_INTERPRETATION_DISPOSITION |
+                   PROCESS_HYPOTHESIS_REVIEW |
                    PROCESS_MODEL_TASK | PROCESS_MODEL_ROUND | GENERATION_RECEIPT |
                    PROCESS_EVIDENCE_GROUP | PROCESS_CANDIDATE_RELATION |
                    PROCESS_JOIN_SIGNAL | PROCESS_SEMANTIC_CUE | COUNTER_SIGNAL |
@@ -376,11 +379,11 @@ TraceHopV4
   TEMPLATE {templateKey!}
 ~~~
 
-五个variant恰一成立，不存在null payload或开放extra字段。`traceKind=PROCESS_KNOWLEDGE_CLAIM`只配五个process ReaderItem；其他八值与同名local ReaderItem一一配对。process hop顺序必须是`READER_ITEM → SECTION → TEMPLATE → PROCESS_KNOWLEDGE → PROCESS_ADMISSION_DECISION → BUSINESS_PROCESS_HYPOTHESIS → P1 task/round/receipt → P2 task[/round/receipt] → PROCESS_EVIDENCE_GROUP → supporting/counter SIGNAL → FLOW_SLICE → EVIDENCE_CAPSULE → FACT → PROOF → EVIDENCE_NODE → SOURCE_EXCERPT`；artifact refs紧邻其拥有identity，Gap可紧邻受影响identity。每个ReaderItem恰一record，records按`readerItemKey` bytewise升序；hops保持上述语义次序，不排序。
+五个variant恰一成立，不存在null payload或开放extra字段。`traceKind=PROCESS_KNOWLEDGE_CLAIM`只配五个process ReaderItem；其他八值与同名local ReaderItem一一配对。process hop顺序必须是`READER_ITEM → SECTION → TEMPLATE → PROCESS_KNOWLEDGE → PROCESS_ADMISSION_DECISION → BUSINESS_PROCESS_HYPOTHESIS → PROCESS_INTERPRETATION_DISPOSITION → P1 task/round/receipt → P2 task[/round/receipt] → PROCESS_EVIDENCE_GROUP → supporting/counter SIGNAL → FLOW_SLICE → EVIDENCE_CAPSULE → FACT → PROOF → EVIDENCE_NODE → SOURCE_EXCERPT`；artifact refs紧邻其拥有identity，Gap可紧邻受影响identity。每个ReaderItem恰一record，records按`readerItemKey` bytewise升序；hops保持上述语义次序，不排序。
 
 `traceId = "trace-record-v4:" + lowercaseHex(SHA-256(frame(UTF8("trace-record-id-v4")) || frame(canonicalJson(recordWithoutTraceId))))`，排除且只排除`traceId`，所以reader key、kind和完整有序hops都参与identity。`SOURCE_EXCERPT`必须使用统一`SourceExcerptV1`并由validator重验；`SEARCHED_SCOPE`和profile lineage必须是完整ArtifactReference，禁止裸ID、`path:line`或合成excerpt。
 
-若P2 `NOT_RUN_UPSTREAM_FAILED`，Trace保存P2 task/disposition和P1 upstream ref，但不伪造P2 round/receipt。`SOURCE_CONFIRMED`可要求直接Fact/Proof链；推断/pending还必须带support/counter/Gap。source locator只在完整Candidate/run validation之后对外返回，且不是Proof。
+若P1 GAP/FAILED使P2为`NOT_RUN_UPSTREAM_FAILED`，该shard没有BusinessProcessHypothesis或ProcessAdmissionDecision；Step 07将其Gap/owner exclusion形成的`GAP_QUESTION` ReaderItem走独立exact branch：`READER_ITEM → SECTION → TEMPLATE → PROCESS_INTERPRETATION_DISPOSITION → P1 task/round/receipt → P2 task → PROCESS_EVIDENCE_GROUP → relevant SIGNAL/GAP → FLOW_SLICE → EVIDENCE_CAPSULE → FACT/PROOF/EVIDENCE_NODE/SOURCE_EXCERPT（按Gap实际闭包）`。disposition identity hop必须指向同shard、含`p2TaskDisposition.state=NOT_RUN_UPSTREAM_FAILED`且`upstreamTaskSpecId`等于该P1 task ID的record，并紧邻`PROCESS_INTERPRETATION_DISPOSITIONS` artifact ref；不得伪造BusinessProcessHypothesis、ProcessAdmissionDecision、ProcessKnowledge、P2 round、P2 receipt或`PROCESS_HYPOTHESIS_REVIEW` hop。正常`PROCESS_KNOWLEDGE_CLAIM` P2 branch必须包含P2 review/round/receipt。`SOURCE_CONFIRMED`可要求直接Fact/Proof链；推断/pending还必须带support/counter/Gap。source location只在完整Candidate/run validation之后对外返回，且不是Proof。
 
 真实DepotHead的外部效果问题走`GAP_QUESTION → canonical Gap → searched source scope`，不得从Mapper/XML locator补成write。synthetic过程Trace必须显式标识fixture source，不得指向jshERP source。
 

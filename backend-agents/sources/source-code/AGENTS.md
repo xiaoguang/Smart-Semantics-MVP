@@ -91,10 +91,15 @@
   BusinessFlows emits evidence-backed `processJoinSignals`; signals are clues,
   never proof of sequence, causality, uniqueness, or an external effect.
 - P1/P2 are the sole bounded multi-Flow model exception. They read only a
-  program-built `ProcessEvidenceGroup` shard. P2 may only KEEP, NARROW, DROP,
-  or PENDING_CONFIRMATION and cannot add a Flow, edge, Fact, or Evidence.
+  program-built, recursively path-free `ProcessModelPacketV1`; path-bearing
+  persisted group material is program-only. P2 may only KEEP, NARROW, DROP,
+  or PENDING_CONFIRMATION, and every protected reference set is a subset of
+  the same P1 hypothesis. Only deterministic review Gaps may be added, and
+  they cannot support a claim.
 - Let `C` be candidate cross-Flow edges, `G` the groups covering every Flow,
-  and `S` model-safe process shards. Planned model tasks are exactly
+  `A` all persisted ownership shards, and `S` the model-safe subset of `A`.
+  Every edge has exactly one owner across `A`; every shard has one process
+  disposition, including no-model shards with zero model objects. Planned model tasks are exactly
   `E + 2R + 2S`; actual calls are exactly
   `E + R + accepted local R1 + S + accepted process P1`. Unrun R2/P2 tasks
   persist `NOT_RUN_UPSTREAM_FAILED`.
@@ -215,8 +220,12 @@
   with `analysisResult=null` and no root run manifest. Only an execution
   through the nine-section document produces one of the four repository
   `AnalysisResult` values.
-- Resource sharding changes scheduling only. Shard denominator ID sets are
-  disjoint and their canonical union equals the complete denominator.
+- Under the same frozen partition profile and budget, resource sharding and
+  scheduling order cannot change canonical bytes. Changing shard size/budget
+  is a control change and may change shard/task/downstream identities, but
+  shard denominator ID sets remain disjoint, their canonical union equals the
+  complete denominator, and the fixed upstream candidate/group sets do not
+  change.
 - The DepotHead eight-file `BOUNDED_PATH_SET` is a walkthrough/local fixture,
   never repository-completion eligible. Every discovered entry becomes one
   Flow or one evidence-backed Gap/EXCLUDED disposition.
@@ -271,9 +280,11 @@
   explicit-Gap unassigned membership. Certainty is only `SOURCE_CONFIRMED`,
   `EVIDENCE_SUPPORTED_INFERENCE`, or `PENDING_CONFIRMATION`.
 - Chapter 4 is process-first. Its process ReaderItems trace through Process
-  Knowledge and admission, hypothesis, P1/P2 task/round/receipt, group/signal,
-  Flow/Capsule, Fact/Proof/Evidence, and Source. Body prose hides IDs, SHA,
-  paths, and technical enums; unproved external effects remain pending.
+  Knowledge and admission, hypothesis, typed ProcessInterpretationDisposition,
+  P1/P2 task/round/receipt, group/signal, Flow/Capsule, Fact/Proof/Evidence,
+  and SourceExcerpt. A P2 NOT_RUN trace keeps its task/disposition and omits a
+  fabricated P2 round/receipt/review. Body prose hides IDs, SHA, paths, and
+  technical enums; unproved external effects remain pending.
 - Standard MyBatis mapper `DOCTYPE` syntax is accepted only with external DTD,
   general/parameter entity, schema, and all network resolution disabled.
   Inability to enforce those settings fails closed.
