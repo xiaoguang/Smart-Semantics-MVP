@@ -387,10 +387,24 @@ direction是可验证语义，不是下游自行解释的提示：`COUNTER_CONDI
 | --- | --- | --- | --- |
 | 一个 admitted `JAVA_BOUNDARY_INVOCATION` Fact的唯一`STATIC_TARGET_TYPE{role=ATTRIBUTE,type=STRING}` atom；typed data-flow boundary的`staticTargetType`必须逐字相等 | `JAVA_TYPE_ANCHOR / JAVA_TYPE / STATIC_TARGET_TYPE.canonical` | `REFERENCES / GENERIC_TECHNICAL / STATIC_STRUCTURE` | `factIds`只含该Fact，`atomIds`只含该atom，proof/evidence/locator按下述exact closure；仓库内声明type也不能仅凭“属于本仓库”升级为domain-specific |
 | 同一个boundary Fact的唯一`INVOCATION_CALL_ID{RELATIONSHIP,SYMBOL_REF}`、`STATIC_TARGET_TYPE{ATTRIBUTE,STRING}`、`STATIC_TARGET_METHOD{ATTRIBUTE,STRING}`、`STATIC_TARGET_SIGNATURE{ATTRIBUTE,STRING}`；四值须逐字等于同subject typed boundary，且signature必须以`method + "("`开头并以`)`结束 | `EXPLICIT_CALL / CALL_TARGET / STATIC_TARGET_TYPE.canonical + "#" + STATIC_TARGET_SIGNATURE.canonical` | `INVOKES / GENERIC_TECHNICAL / FROZEN_JAVA` | basis恰为该Fact及上述四atom的closed Proof union；它证明冻结Java的确切调用，不证明callee外部效果。Step 06仅在该key逐字等于某entry exact target时才可将其作为direct-call `PROVEN_HANDOFF` |
-| 上一行boundary的typed `controlContext`含non-null guard ID/polarity；唯一同Flow `JAVA_GUARD_CONDITION/CONTROL_CONDITION{CONDITION,STRING}` Fact逐字匹配该guard；完整TraversalPath集合同时含该guard TRUE/FALSE outcomes，boundary control block只出现在记录polarity一侧且不出现在另一侧 | `COUNTER_CONDITION / CALL_TARGET / 与该boundary EXPLICIT_CALL相同的key` | `BLOCKS / GENERIC_TECHNICAL / FROZEN_JAVA` | basis恰为guard Fact的`CONTROL_CONDITION`以及boundary Fact的`INVOCATION_CALL_ID,STATIC_TARGET_TYPE,STATIC_TARGET_METHOD,STATIC_TARGET_SIGNATURE,CONTROL_CONTEXT` atoms及其closed Proof union；任一双极性/唯一性/路径门不成立则不发此signal，不能把裸guard或任意状态词改写成counter/state signal |
+| 上一行boundary的typed `controlContext`含non-null guard ID/polarity；唯一同Flow `JAVA_GUARD_CONDITION/CONTROL_CONDITION{CONDITION,STRING}` Fact逐字匹配该guard；完整TraversalPath集合同时含该guard TRUE/FALSE outcomes；typed boundary的exact `invocationCallId`（逐字等于`INVOCATION_CALL_ID.canonical`）至少出现在一个记录polarity path且不出现在任何相反polarity path。`controlBlockNodeId`仍须逐字等于唯一包含该调用source locator的basic block，但statement-level block不是polarity discriminator | `COUNTER_CONDITION / CALL_TARGET / 与该boundary EXPLICIT_CALL相同的key` | `BLOCKS / GENERIC_TECHNICAL / FROZEN_JAVA` | basis恰为guard Fact的`CONTROL_CONDITION`以及boundary Fact的`INVOCATION_CALL_ID,STATIC_TARGET_TYPE,STATIC_TARGET_METHOD,STATIC_TARGET_SIGNATURE,CONTROL_CONTEXT` atoms及其closed Proof union；任一双极性/唯一性/路径门不成立则不发此signal，不能把裸guard或任意状态词改写成counter/state signal |
 | `gap-ledger.json`中唯一`kind=EXTERNAL_EFFECT,code=DATA_FLOW_BINDING_UNPROVEN` Gap的singleton `affectedCandidateDenominatorKeys`逐字等于一个admitted boundary Fact的`candidateDenominatorKey`，且其Evidence closure含typed boundary的确切invocation locator | `EXTERNAL_EFFECT_GAP / CALL_TARGET / 与该boundary EXPLICIT_CALL相同的key` | `BLOCKS / GENERIC_TECHNICAL / GAP_ONLY` | 使用该boundary的四个call atoms/Proof、该Gap ID及Gap Evidence；`gapIds`恰含该Gap。缺失、重复、foreign candidate或没有boundary locator均为`PROCESS_JOIN_SIGNAL_EXTERNAL_EFFECT_UNPROVEN`，不得声称外部写入/状态变化 |
 
 当前`ProgramGraphsPublicFixture.createWithGuardedApprove`的early-return guard只标注`guard → continuation block`边；`continuation block → approvalClient.record` call-site是无guard的`NEXT`边，所以该boundary持久化的`controlContext.guardNodeId/polarity`均为null。独立guard Fact和TRUE/FALSE Outcomes仍必须保留并闭合，但它们不能替代typed-boundary link；因此该fixture按上一表必须不发`COUNTER_CONDITION`。counter正例另由后续public stored-artifact fixture/rule同时证明non-null boundary context、唯一matching guard Fact和双极性path gate，不得为挽救fixture而弱化规则或改ProgramGraphs合同。
+
+counter正例的最小source shape固定为：
+
+~~~java
+void approve(String status) {
+  if (status == null) {
+    return;
+  } else {
+    approvalClient.record(status);
+  }
+}
+~~~
+
+这里只有一个top-level `IfStmt` block。CFG将TRUE接return terminal、FALSE从guard直接接`approvalClient.record` invocation call-site；DataFlow因而保存non-null guard/FALSE。Flow两条path都含外围`IfStmt` block，但只有FALSE path含exact `invocationCallId`，所以新predicate证明的是调用本身受guard支配，不把共享statement block误当作分支专属。M1在private `TraversalPath.nodeIds`仍存在时验证该式；不新增public path字段、schema或上游合同。
 
 表中每条signal的数组都按以下同一规则物化：`factIds`、`atomIds`为该行列出的exact set；`proofIds`恰为这些FactAtom的`proofId` set，且每个Proof必须`status=CLOSED`并反向逐字指向同一`factId/atomId`；`evidenceNodeIds`恰为这些Proof的`requiredEvidenceNodeIds`规范union，`EXTERNAL_EFFECT_GAP`再并入Gap的`evidenceNodeIds`；`sourceLocators`恰为该evidence set中所有`SOURCE_EXCERPT` node的完整`SourceLocatorV1`规范union，rule-application node没有locator但仍留在evidence集合。任何丢失、foreign或额外hop，以及atom role/type/name不符，是malformed proven basis并fatal，不能按“不支持”静默省略。
 
@@ -506,7 +520,7 @@ BUSINESS_FLOWS_REQUEST_INVALID、UPSTREAM_ARTIFACT_REPLAY_MISMATCH、FLOW_GRAPH_
 - 第二 entry 不能借用共享 Service 的 Fact/span。
 - Capsule span 必须来自 Proof roots，不按文本相似命中 decoy。
 - 每条`processJoinSignal`必须同Flow闭合到Fact/Proof/Evidence/source或Gap；删除任一basis使signal消失、转Gap或fail closed，不能继续存在。
-- 首个双entry stored-artifact RED必须精确产生approve 3条、cancel 3条：每个boundary各有`JAVA_TYPE_ANCHOR + EXPLICIT_CALL + EXTERNAL_EFFECT_GAP`。approve仍须保留独立guard Fact和TRUE/FALSE Outcomes，但其typed boundary guard/polarity为null，故两Flow都明确没有`COUNTER_CONDITION`；不得跨Flow借用guard或弱化§8.1.1。两端application target不同只证明Flow隔离，不证明端到端顺序；三family全部为`GENERIC_TECHNICAL`，因此该fixture不得产生`SHARED_ANCHOR`。随后由同一compiler selector族的独立public stored-artifact正例证明non-null typed boundary guard context后，才验收`COUNTER_CONDITION`。
+- 首个双entry stored-artifact RED必须精确产生approve 3条、cancel 3条：每个boundary各有`JAVA_TYPE_ANCHOR + EXPLICIT_CALL + EXTERNAL_EFFECT_GAP`。approve仍须保留独立guard Fact和TRUE/FALSE Outcomes，但其typed boundary guard/polarity为null，故两Flow都明确没有`COUNTER_CONDITION`；不得跨Flow借用guard或弱化§8.1.1。两端application target不同只证明Flow隔离，不证明端到端顺序；三family全部为`GENERIC_TECHNICAL`，因此该fixture不得产生`SHARED_ANCHOR`。随后`EntryRootedFlowCompilerTest#emitsCounterConditionOnlyForProofClosedTypedBoundaryGuardContext`使用§8.1.1 exact `if/else` stored-artifact fixture，证明non-null guard/FALSE、唯一guard Fact、TRUE/FALSE Outcomes及`invocationCallId`仅在FALSE path后，才验收`COUNTER_CONDITION`。
 - tenantId、用户审计字段、日志、通用工具类、方法名或中文名相似不能单独形成domain-specific signal；共享表最多形成`SQL_TABLE_ANCHOR`，不能形成顺序或因果。
 - 双Flow relation fixture须覆盖：两端完整业务对象key集合有交集时不产生对象反证；两端集合均非空且互斥时，Step 06以全部对应signal IDs形成唯一、稳定的`DIFFERENT_BUSINESS_OBJECT` counter basis。改变输入顺序或同一关系的其他positive pair不得改变该basis。
 - 每删一个直接语义 span，projection obligation 失败；proof-only span 注入被拒绝。
@@ -541,6 +555,6 @@ BUSINESS_FLOWS_REQUEST_INVALID、UPSTREAM_ARTIFACT_REPLAY_MISMATCH、FLOW_GRAPH_
 | **应当修复（跨步骤证据交接）** | 在不新增文件的前提下，把每Flow完整`processJoinSignals[]`加入M1 Flow与M2/public Capsule，升级M1为v2、M2为v5、public flow/capsule schemas为v2/v3，并以Fact/Proof/Evidence/source closure、Flow-Capsule逐字相等、ID-set equality、跨Flow隔离和fresh-reopen测试验证。当前v2 ProvenCodeFacts只足以按§8.1.1产生四种`GENERIC_TECHNICAL` family；完成该纵切不等于具备`DOMAIN_SPECIFIC/SHARED_ANCHOR`或完整过程重建能力。当前已发布Capsule是否已经补齐旧span/obligation value应以合入commit重新审计，不能用旧v1/v2成熟度陈述冒充本次目标。 |
 | **尚未交付（完整仓库能力）** | 仍缺真实完整 jshERP 从源码清单至本步骤的离线运行、0 Flow persisted fixture、循环/多实现/歧义调用的系统性处置、entry 分片与跨 Flow 的完整隔离测试，以及正式运行核心接线。该纵切不得用于仓库完成判定，也不产生可供真实模型调用的已发布 Flow。 |
 | **历史证据，不是当前能力** | 已删除的pre-reset compiler曾在有限fixture上编译Flow/Outcome/Capsule；固定八文件历史审计为blocking Gap、0 Flow、0 Capsule。该结果只作为0调用和证明不足的回归baseline。 |
-| **下一实现门** | Luna先以当前public stored-artifact fixture写approve 3/cancel 3的signal RED，Terra再按既定模块补最小GREEN；之后在不改ProgramGraphs合同的独立已证明fixture/rule slice中补`COUNTER_CONDITION`正例，再继续M2/M3和至少双入口、双Flow、多Outcome、跨Flow隔离、eligible/ineligible、0Flow、真实DepotHead有限材料及明确合成的补货到结算场景的全仓分母闭合。 |
+| **下一实现门** | Luna先以当前public stored-artifact fixture写approve 3/cancel 3的signal RED，Terra再按既定模块补最小GREEN；之后用§8.1.1 exact `if/else` fixture和invocation-call-site polarity predicate补`COUNTER_CONDITION`正例，不改ProgramGraphs合同，再继续M2/M3和至少双入口、双Flow、多Outcome、跨Flow隔离、eligible/ineligible、0Flow、真实DepotHead有限材料及明确合成的补货到结算场景的全仓分母闭合。 |
 
 若新实现对某Flow没有Capsule，分析步骤“流程解释”对该Flow必须零调用，而不是让模型直接读Service/XML；历史0 Capsule本身不是当前运行结果。
