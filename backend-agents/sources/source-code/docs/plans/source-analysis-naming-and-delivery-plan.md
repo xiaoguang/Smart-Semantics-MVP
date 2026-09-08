@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Current maturity (2026-09-01):** The directory/Maven/package cutover and physical deletion described by the early Wire Reset tasks have been completed. Any `sources/github-code`, `com.linguan.codemd`, numbered Stage, or pre-reset fixture path below names a historical pre-move input or rejection case, never an active workspace path. The eight business-analysis steps remain to be implemented under the current semantic tree.
+> **Current maturity:** The Wire Reset is complete and several bounded deterministic/scripted vertical slices exist, but there is no complete run. BusinessFlows lacks process signals; FlowInterpretation has only local M1–M5; cross-Flow M6–M9, process knowledge, and process-first documentation remain target work.
 
 **Goal:** Replace the current prototype-shaped source-code analyzer with one coherently named, fail-closed Source Code Analysis Agent that implements the approved eight-analysis-step contract without compatibility readers.
 
@@ -24,10 +24,12 @@
 - Do not create `target`, `mvp`, numbered package names, `common`, `shared`, `misc`, `utils`, `codemd`, `github`, or `linguan` in a target package or public wire name.
 - Numerical ordering appears only in documentation filenames and runtime paths such as `steps/03-program-graphs/`; Java types, package names, fields, schema names, IDs, and commands use semantic names.
 - This is a full Wire Reset. Do not add a dual reader, fallback reader, migration reader, alias, bridge, symlink, old-to-new translator, or dual writer. Old directories, packages, artifact types, schema versions, receipts, and run stores fail closed.
-- Preserve the official cardinality: 42 semantic analysis-step payloads, eight analysis-step receipts, one nine-section archive manifest, and one root run manifest: 52 reader-visible run outputs.
+- Preserve the official cardinality: 47 semantic analysis-step payloads, eight analysis-step receipts, one nine-section archive manifest, and one root run manifest: **57** formal run outputs.
 - Preserve the fixed jshERP scope and commit `8c30ce7861570458920175e200bb2a6442713580`. Do not run customer Maven, plugins, tests, scripts, or application code.
 - A Provider call that starts is never retried or switched automatically. Same-run process recovery, worker takeover, model-call recovery, and terminal repair remain out of scope.
 - Implementation and automated verification use frozen fixtures and scripted Provider fakes only. This plan authorizes no live LLM/product-content generation, source capture, network source access, candidate generation, freeze, package, deployment, or runtime activation.
+- R0/R1/R2 remain single-Flow. P1/P2 are the sole bounded multi-Flow model exception; their explicit synthetic replenishment-to-settlement fixture is never jshERP evidence. All external effects remain unproven without dedicated Proof.
+- Sol/ultra owns design; Luna/xhigh owns RED, bounded reads/rounds/review/reader slots; Terra/xhigh implements only after design+RED; Sol/xhigh only debugs root causes. Contract/schema uncertainty returns to Sol/ultra; eight-step/nine-section/identity/57-count/model-boundary changes stop for user confirmation.
 - Run only tests added by or directly covering the current work unit. Maven-heavy commands are serial.
 
 ---
@@ -56,11 +58,11 @@ The semantic keys in this table are closed. The two-digit prefixes order documen
 | Program graphs | `code-structure-graph.json`, `call-graph.json`, `control-flow-graph.json`, `data-flow-graph.json`, `evidence-graph.json`, `graph-index.json`, `graph-gaps.jsonl` | 7 |
 | Proven code facts | `proven-facts.json`, `proof-pack.json`, `gap-ledger.json`, `fact-accounting.json` | 4 |
 | Business flows | `flow-slices.json`, `flow-coverage.json`, `entry-dispositions.jsonl`, `evidence-capsules.jsonl`, `flow-gaps.jsonl` | 5 |
-| Flow interpretation | `registry-proposal-tasks.jsonl`, `registry-proposal-rounds.jsonl`, `registry-proposal-dispositions.jsonl`, `repository-interpretation-registry.json`, `flow-model-tasks.jsonl`, `model-rounds.jsonl`, `generation-receipts.jsonl`, `interpretation-candidates.jsonl`, `flow-interpretation-dispositions.jsonl` | 9 |
-| Repository knowledge | `admitted-flow-meanings.jsonl`, `repository-business-knowledge.json`, `knowledge-conflicts.jsonl`, `knowledge-accounting.json`, `merged-gaps.json` | 5 |
+| Flow interpretation | `registry-proposal-tasks.jsonl`, `registry-proposal-rounds.jsonl`, `registry-proposal-dispositions.jsonl`, `repository-interpretation-registry.json`, `flow-model-tasks.jsonl`, `model-rounds.jsonl`, `generation-receipts.jsonl`, `interpretation-candidates.jsonl`, `flow-interpretation-dispositions.jsonl`, `process-evidence-groups.jsonl`, `process-model-tasks.jsonl`, `process-model-rounds.jsonl`, `business-process-hypotheses.jsonl`, `process-interpretation-dispositions.jsonl` | 14 |
+| Repository knowledge | `knowledge-admission-decisions.jsonl`, `repository-business-knowledge.json`, `knowledge-conflicts.jsonl`, `knowledge-accounting.json`, `merged-gaps.json` | 5 |
 | Nine-section document | `nine-section-plan.json`, `document.md`, `trace.jsonl`, `candidate.json`, `validation-baseline.json` | 5 |
 
-Each row also installs the one semantic receipt named in the target registry. The nine-section document step additionally installs `nine-section-archive-manifest.json`; the completed run installs root `run-manifest.json`. Module payloads/receipts and exterior validation publications do not enter the 52-output count.
+Each row also installs one semantic receipt. The document step additionally installs its archive manifest and the run installs one root manifest. Module/validation artifacts do not enter the 57-output count.
 
 ### Task 1: Publish the naming design
 
@@ -238,7 +240,7 @@ Each row also installs the one semantic receipt named in the target registry. Th
 - Produces: `BusinessFlowsReference`, five semantic payloads, and `business-flows-receipt.json`.
 
 - [ ] **Step 1: RED/GREEN `EntryRootedFlowCompilerTest` for one disposition per discovered entry.**
-- [ ] **Step 2: RED/GREEN `EvidenceCapsuleProjectorTest` for one persisted minimal Capsule per supported Flow.**
+- [ ] **Step 2: RED/GREEN `EvidenceCapsuleProjectorTest` for one persisted Capsule per Flow and evidence-backed `processJoinSignals`; reject generic-only joins and preserve counter/Gap/source lineage.**
 - [ ] **Step 3: RED/GREEN `BusinessFlowsPublicationSpecifierTest` for complete denominators, zero-Flow accounting, and receipt-last installation.**
 - [ ] **Step 4: Verify the fixed jshERP audit remains Gap / zero Flow / zero Capsule until a new authorized full run proves otherwise, then commit.**
 
@@ -250,14 +252,17 @@ Each row also installs the one semantic receipt named in the target registry. Th
 - Test: matching packages under `src/test/java/org/sourceanalysis/app/`
 
 **Interfaces:**
-- Consumes: `BusinessFlowsReference` and the same persisted `EvidenceCapsule` for each eligible Flow.
-- Produces: `FlowInterpretationReference`, nine semantic payloads, and `flow-interpretation-receipt.json`.
+- Consumes: `BusinessFlowsReference`, each local Capsule, and the whole-repository `processJoinSignals` projection.
+- Produces: `FlowInterpretationReference`, fourteen semantic payloads, and `flow-interpretation-receipt.json` (15 files).
 
 - [ ] **Step 1: RED/GREEN `RegistryProposalTaskCompilerTest`, `RegistryProposalRunnerTest`, and `RepositoryInterpretationRegistryFreezerTest` serially.**
-- [ ] **Step 2: RED/GREEN `FiniteKeyFlowTaskCompilerTest` for `E + 2R` task/disposition conservation.**
+- [ ] **Step 2: RED/GREEN `FiniteKeyFlowTaskCompilerTest` for local `E + 2R` task/disposition conservation.**
 - [ ] **Step 3: RED/GREEN `InterpretationRunnerTest` with a recording scripted Provider adapter.**
-- [ ] **Step 4: Prove a started Provider failure fails the run with no retry, provider switch, or same-run resume.**
-- [ ] **Step 5: RED/GREEN `FlowInterpretationPublicationSpecifierTest`; verify nine payloads, semantic receipt, runtime identity fields, and commit.**
+- [ ] **Step 4: RED/GREEN `CrossFlowCandidateCompilerTest` for four signal levels, generic-only rejection, `C` edges, `G` groups covering all Flows, every qualifying `positivePairBases[]`, every scoped `counterBases[]`, exact aggregate unions/direction, deterministic `PROCESS_COUNTER_SCOPE_UNRESOLVED`, and zero model calls.**
+- [ ] **Step 5: RED/GREEN `BusinessProcessTaskCompilerTest` for all `A` ownership shards, `S⊆A` model-safe shards, one owner across `A` per candidate edge, explicit no-model/budget Gap dispositions, and exact path-bearing persisted→path-free packet projection.**
+- [ ] **Step 6: RED/GREEN `BusinessProcessInterpretationRunnerTest` for the canonical `ProcessModelRequestV1`, task/round/receipt hash equalities, Luna P1/P2, all six P1/P2 response variants, per-hypothesis P2 `REVIEWS` protected-ref subsets, typed task-level P2 GAP/FAILED with actual P2 round/receipt, canonical `PROCESS_P1_HYPOTHESIS_FAILED`, and P2 `NOT_RUN_UPSTREAM_FAILED`.**
+- [ ] **Step 7: Prove `planned=E+2R+2S`, the exact actual-call formula, `|process dispositions|=A`, `A>0,S=0` no-model closure, the retained/narrowed/dropped/pending/P2-gap/P2-failed disjoint partition, published and Step 07-admission-eligible subsets, one canonical Step 06 Gap carrier per owned Gap, and started Provider failure with no retry/switch/resume/API fallback.**
+- [ ] **Step 8: RED/GREEN `FlowInterpretationPublicationSpecifierTest`; verify fourteen payloads plus receipt, all-shard ownership, every P1/P2 response/review Gap value and exact `gapIds` union in `process-interpretation-dispositions.jsonl`, six-way hypothesis accounting, request hashes/path-leak rejection, distinct M3/public registry pairs, and commit.**
 
 ### Task 9: Deliver repository knowledge
 
@@ -266,13 +271,14 @@ Each row also installs the one semantic receipt named in the target registry. Th
 - Test: `src/test/java/org/sourceanalysis/app/analysis/knowledge/`
 
 **Interfaces:**
-- Consumes: proven facts, all business flows, and eligible flow interpretations.
+- Consumes: proven facts, all business flows, and all local/process interpretation artifacts.
 - Produces: `RepositoryKnowledgeReference`, five semantic payloads, and `repository-knowledge-receipt.json`.
 
-- [ ] **Step 1: RED/GREEN `ProposalAdmissionEngineTest` for KEEP/NARROW/DROP/NEEDS_EVIDENCE and every technical fallback.**
-- [ ] **Step 2: RED/GREEN `AnchoredKnowledgeMergerTest` for one repository knowledge object, typed ownership, conflicts, gaps, and full Flow denominator.**
-- [ ] **Step 3: RED/GREEN `RepositoryKnowledgePublicationSpecifierTest` for five payloads, draft coverage ledger, semantic receipt, and acyclic lineage.**
-- [ ] **Step 4: Verify model-ineligible Flows never gain fabricated interpretation records, then commit.**
+- [ ] **Step 1: RED/GREEN `ProposalAdmissionEngineTest` for all-Flow local total admission; process admission only for P2-reviewed retained/narrowed/pending hypotheses; dropped, P1-terminal, P2 GAP/FAILED, and no-model reasoned exclusions; exact P1/P2 lineage; exact counter/blocking propagation; six-way hypothesis accounting; and exactly three certainty values only on admitted claims.**
+- [ ] **Step 2: RED/GREEN `MergedGapCompilerTest` for every Step 06-owned singleton: `canonicalGapId=g.gapId=memberGapIds[0]`, lossless typed-field reversal, P1-failure ownership, and `affectedBusinessProcessIds` equal to the exact non-null admitted process IDs whose decision `gapIds` carries that Gap; cover both nonempty and empty counter-scope cases.**
+- [ ] **Step 3: RED/GREEN `AnchoredKnowledgeMergerTest` for lossless plural claim keys, conflict/alternative preservation, nine process arrays, many-to-many membership totality, and one knowledge.**
+- [ ] **Step 4: RED/GREEN `RepositoryKnowledgePublicationSpecifierTest` for the renamed `knowledge-admission-decisions.jsonl`, five payloads, admission-eligible/P2-terminal partitions, singleton Gap accounting, process-aware draft ledger, receipt, and acyclic lineage.**
+- [ ] **Step 5: Verify model-ineligible Flows and P1/P2 terminal hypotheses never gain fabricated interpretation/admission/certainty records, then commit.**
 
 ### Task 10: Deliver the nine-section document and exterior validation
 
@@ -285,12 +291,12 @@ Each row also installs the one semantic receipt named in the target registry. Th
 - Consumes: exact references from all seven upstream analysis steps.
 - Produces: five semantic document payloads, `nine-section-archive-manifest.json`, `nine-section-document-receipt.json`, root `run-manifest.json`, and a separate validation publication.
 
-- [ ] **Step 1: RED/GREEN `NineSectionPlannerTest` for exactly one repository plan and nine fixed H2 owners.**
+- [ ] **Step 1: RED/GREEN `NineSectionPlannerTest` for one fixed-nine plan, process-first Chapter 4, five process ReaderItem kinds, certainty grouping, body-cleanliness fields, and Gap-owned process-terminal `GAP_QUESTION` items for no-model/P1/P2 terminal branches.**
 - [ ] **Step 2: RED/GREEN `PlanOnlyRendererTest` for deterministic UTF-8/LF Markdown from plan bytes only.**
-- [ ] **Step 3: RED/GREEN `TypedTraceCompilerTest` for complete registry→meaning→proof→source hops.**
+- [ ] **Step 3: RED/GREEN `TypedTraceCompilerTest` for three exact process branches: reviewed ReaderItem→ProcessKnowledge→Admission→Hypothesis→ProcessInterpretationDisposition→actual P1/P2/review→evidence; P1 GAP/FAILED→canonical MergedGap→disposition→actual P1 plus planned P2 NOT_RUN with no fabricated hypothesis/P2 round/receipt/review; and P2 GAP/FAILED→canonical MergedGap→unreviewed P1 hypothesis→disposition→both actual P1/P2 rounds/receipts with no fabricated review/admission/knowledge.**
 - [ ] **Step 4: RED/GREEN `CandidateRunArchiverTest` for five semantic payloads → archive manifest → semantic receipt → root run manifest.**
-- [ ] **Step 5: RED/GREEN `IndependentRunValidatorTest`; reopen only explicit typed references and write idempotent exterior validation artifacts.**
-- [ ] **Step 6: Count and fresh-reopen all 52 official outputs; verify validation/module artifacts are excluded from that count, then commit.**
+- [ ] **Step 5: RED/GREEN `IndependentRunValidatorTest`; reopen only explicit typed references, revalidate the six-way hypothesis/admission/exclusion partition and every `canonicalGapId=memberGapIds[0]` owner/Trace branch, and write idempotent exterior validation artifacts.**
+- [ ] **Step 6: Count and fresh-reopen all 57 official outputs; verify validation/module artifacts are excluded, then commit.**
 
 ### Task 11: Deliver the public seam and adapters
 
@@ -342,7 +348,7 @@ Each row also installs the one semantic receipt named in the target registry. Th
 
 - [ ] **Step 3: Reopen all official outputs in a fresh process.**
 
-  Verify 42 semantic payloads + eight receipts + one archive manifest + one run manifest = 52, exact lineage, and partial-install rejection.
+  Verify 47 semantic payloads + eight receipts + one archive manifest + one run manifest = 57, exact lineage, and partial-install rejection.
 
 - [ ] **Step 4: Verify Wire Reset rejection and no recovery.**
 
