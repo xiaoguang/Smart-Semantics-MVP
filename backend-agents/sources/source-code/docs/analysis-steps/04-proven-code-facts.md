@@ -254,6 +254,40 @@ atom value使用8.1 typed union；静态unknown不允许story value，必须使a
 
 **示例分类：STRUCTURAL_WIRE_SPECIMEN（isolated candidate semantics）。** 会把静态XML/SQL结构误写成boundary side effect的旧正例已删除。M1/M2 wire字段形状仍以上表为准；v2 Fact registry只能从ProgramGraphs v3/v2枚举`JAVA_BOUNDARY_INVOCATION`和`JAVA_GUARD_CONDITION`，并只把前者的外部effect作为独立Gap。
 
+### 8.0.2 已批准的最小后继合同：`JAVA_EXACT_CALL`（v3）
+
+本小节冻结 eventual cross-Flow compiler 所需的最小上游增量；它不把当前v2的boundary/guard纵切改写成“已实现”。v3在同一四个公开文件内增加一个且仅一个Fact family：`JAVA_EXACT_CALL`。它只证明“某entry拥有的Java call-site经已持久化EXACT call edge指向同一ProgramGraphs publication中的`METHOD`”，不证明target有具体body、调用成功、外部效果、业务顺序或domain specificity。interface/abstract method只要是冻结CodeStructure中的`METHOD`且call edge为EXACT，仍属于本family；unresolved/ambiguous call没有EXACT `CALL_TARGET`，继续只由Step 03 Graph Gap表达。
+
+**M1 exact join及wire。** `FactCandidateEnumerator`对每个Call graph `CALL_SITE` node，按其`owningEntryIds`与ApplicationDiscovery/五图共同entry分母的交集逐entry枚举；每个实例必须命中恰一条`kind=CALL_TARGET,resolution=EXACT,ruleId=java-static-field-receiver-call-v1`且`fromNodeId=callSiteNodeId`的edge，并且`toNodeId`命中CodeStructure `kind=METHOD` node。METHOD `canonicalValue`必须恰为`<staticTargetType>#<staticTargetMethod>(<parameter-types>)`：取第一个`#`前的完整串为type、`#`后第一个`(`前的完整串为method、`#`后至末尾（含括号）为signature；不trim、不case-fold、不按simple name匹配。candidate denominator key固定为`entryId + "|" + callTargetEdgeId + "|JAVA_EXACT_CALL"`。同一call-site合法被多个entry拥有时逐entry产生独立candidate，绝不能要求`owningEntryIds=[entryId]`。
+
+v3 M1 closed-union新增以下variant，其他两个v2 variant逐字段保持：
+
+~~~text
+JAVA_EXACT_CALL {
+  candidateFactKey=JAVA_EXACT_CALL
+  entryId
+  callSiteNodeId
+  callTargetEdgeId
+  targetMethodNodeId
+  targetCanonicalMethod
+  evidenceNodeIdsBySubject[]
+  requiredAtoms=[
+    INVOCATION_CALL_ID       {role=RELATIONSHIP,valueType=SYMBOL_REF},
+    STATIC_TARGET_TYPE       {role=ATTRIBUTE,valueType=STRING},
+    STATIC_TARGET_METHOD     {role=ATTRIBUTE,valueType=STRING},
+    STATIC_TARGET_SIGNATURE  {role=ATTRIBUTE,valueType=STRING}
+  ]
+}
+~~~
+
+call edge引用不存在的endpoint仍是fresh-reopen reference fatal `PROOF_PACK_REFERENCE_BROKEN`；endpoint存在但不是`METHOD`时，这个entry-edge-template只写`NOT_APPLICABLE/JAVA_EXACT_CALL_TARGET_NOT_METHOD`。不存在EXACT edge时不制造Fact candidate；对应Step 03 unresolved/ambiguous Gap不得被M1猜回。candidate的存在也不依赖DataFlow是否另外投影了`JAVA_BOUNDARY_INVOCATION`，所以冻结interface boundary可同时有两个不同Fact candidate；下游去重优先级由Step 05 §8.1.2固定，而不是M1静默删分母。
+
+**M2 atom、Proof和Fact。** `AtomicProofBuilder`令admitted Fact的`subjectNodeIds`恰为UTF-8排序的`[callSiteNodeId,targetMethodNodeId]`，四个atom value依次是call-site ID及上段从METHOD canonical value切出的三个串。`INVOCATION_CALL_ID` Proof必须同时闭合call-site的source-excerpt→`java-static-field-receiver-call-v1/v1` pair和该call-target edge的同rule pair，并把`callTargetEdgeId`列入`requiredProgramEdgeIds`；三个`STATIC_TARGET_*` Proof各自必须同时闭合该edge的`java-static-field-receiver-call-v1/v1` pair、target METHOD node的source-excerpt→`source-element-parser-v1/v1` pair，并把同一edge列入`requiredProgramEdgeIds`。任一pair/endpoint/value不等按既有all-or-nothing规则拒绝整个Fact；不得重解析源码或从boundary typed fields补target METHOD Proof。这个Fact不产生`ExternalEffectGap`，也不能关闭boundary已有的`DATA_FLOW_BINDING_UNPROVEN`。
+
+**版本与守恒级联（没有占位版本）。** Fact registry与Proof rule registry升为`proven-code-facts-fact-registry-v3`、`proven-code-facts-proof-rules-v3`；M1/M2 payload升为`proven-code-facts-fact-candidate-set-v3`、`proven-code-facts-proof-decision-set-v3`；四个M3 public schema分别升为`proven-code-facts-proven-facts-v3`、`proven-code-facts-proof-pack-v3`、`proven-code-facts-gap-ledger-v3`、`proven-code-facts-fact-accounting-v3`。`fact-accounting.json`新增`exactCallCandidateDenominatorKeys[]`，并把candidate分区方程固定为`candidateDenominatorKeys = disjointUnion(boundaryCandidateDenominatorKeys,guardCandidateDenominatorKeys,exactCallCandidateDenominatorKeys)`；其他count/ID方程和四文件/五项reader-visible数量不变。ProgramGraphs schema不变，因为上述字段、edge、METHOD及Evidence已经持久化。协调cutover之前，当前v2 registration/reader继续完成当前工作；cutover时必须在同一work unit以v3 registration/reader**替换**v2并迁移全部依赖fixture，v3只接受完整v3 Step 04 set。禁止dual registration、compatibility reader、v2/v3混搭或保留可执行旧schema测试路径；历史v2 bytes由v3明确拒绝，不能原地重解释。
+
+**Luna RED / Terra GREEN交接。** Luna在`FactCandidateEnumeratorTest`与`AtomicProofBuilderTest`各增加一个public stored-artifact seam：(1) 两entry fixture中caller的共享service call-site同时可达callee entry target，断言按call-site owner产生准确`JAVA_EXACT_CALL`分母、四atom及edge+METHOD Proof；(2) 删除target METHOD Evidence pair时只拒绝该Fact，改target kind时得到typed NOT_APPLICABLE，unresolved/ambiguous call只保留Step 03 Gap。Terra只修改`analysis.fact.candidates`、`analysis.fact.proofs`和`analysis.fact.publish`及其v3 schema/registry安装；不得改Step 03、重跑parser、添加effect atom或借名称分类domain。cutover前的boundary/guard行为断言必须在迁移后的v3 fixture中继续成立；旧v2 schema fixture不得为了保留第二条执行路径而长期留在suite中。
+
 ### 8.1 Interface 与 records
 
 ~~~java

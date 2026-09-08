@@ -410,7 +410,20 @@ void approve(String status) {
 
 当前taxonomy对`BUSINESS_OBJECT_ANCHOR | SQL_TABLE_ANCHOR | FIELD_ANCHOR | BUSINESS_IDENTIFIER_ANCHOR | IDENTIFIER_OUTPUT | IDENTIFIER_INPUT | STATE_PRODUCTION | STATE_CHECK | RETURN_TRANSFER | EVENT_REFERENCE | OBJECT_REFERENCE | CONFLICT_STATE`没有可用atom，因而这些family在当前Flow中是exact absence；裸参数名、条件文本、ordered argument/origin node ID、repository-owned type、Mapper/XML文本或方法名都不能补造它们。无候选语义时不为每个缺失family制造Gap；已有上游Gap仍逐字保留。若某upstream record自称提供表中支持的basis却closure malformed，则按上一段fatal，而不是降级成absence。
 
-因此当前有限规则最多交付四种family的可信结构材料和counter/Gap，但首个3/3纵切只覆盖`JAVA_TYPE_ANCHOR`、`EXPLICIT_CALL`和`EXTERNAL_EFFECT_GAP`，不构成counter正例验收。它没有任何可证明的`DOMAIN_SPECIFIC` anchor，不能单独产生Step 06 `SHARED_ANCHOR` relation，也不满足本步骤最终的domain/generic/counter综合验收。仓库内声明的exact user type仍可能被`EXPLICIT_CALL → exact entry target`规则使用，但“在仓库中声明”无法区分业务类型与repository-local logger/util，所以不能作为domain specificity。完整过程重建仍必须在已批准计划内补齐Proof闭合的domain Fact/classification能力，且这是Step 05完整验收及Step 06有效process reconstruction的前置条件；当前有限纵切不替它设计新字段或schema，后续由Sol/ultra在既有范围内作有界合同决定。
+因此当前有限规则最多交付四种family的可信结构材料和counter/Gap，但首个3/3纵切只覆盖`JAVA_TYPE_ANCHOR`、`EXPLICIT_CALL`和`EXTERNAL_EFFECT_GAP`，不构成counter正例验收。它没有任何可证明的`DOMAIN_SPECIFIC` anchor，不能单独产生Step 06 `SHARED_ANCHOR` relation，也不满足§8.6明确命名的domain/generic/counter/external-effect完整验收。仓库内声明的exact user type仍可能被`EXPLICIT_CALL → exact entry target`规则使用，但“在仓库中声明”无法区分业务类型与repository-local logger/util，所以不能作为domain specificity。这个domain分类缺口只阻断`SHARED_ANCHOR`及上述完整Step 05验收；它**不**阻断proof-closed exact call形成Step 06 `PROVEN_HANDOFF`，也不阻断R0 finite Registry形成`SEMANTIC_CUE/PENDING_ONLY`。当前持久化Fact/atom/Proof/rule没有任何一个能诚实完成domain分类，所以本次最小v3 slice不升级specificity、不新增分类Fact；将来若单独进入完整Step 05验收，仍须由Sol/ultra冻结一个Proof闭合的有限分类来源。
+
+#### 8.1.2 `JAVA_EXACT_CALL`的v3投影与边界调用证据回退
+
+`business-flows-flow-compilation-v3`只读取完整Step 04 v3 publication。`PersistedFlowCompilationInputReader`必须保留`JAVA_EXACT_CALL`的candidate denominator key、entry owner、四个typed atom及其Proof/edge/METHOD Evidence closure；`EntryRootedFlowCompiler`按以下唯一规则投影：
+
+- 一个admitted `JAVA_EXACT_CALL`的四个required atom恰满足§8.1.1 `EXPLICIT_CALL`的role/type门时，产生`EXPLICIT_CALL / CALL_TARGET / STATIC_TARGET_TYPE.canonical + "#" + STATIC_TARGET_SIGNATURE.canonical`，值不trim、不case-fold；direction仍为`INVOKES`、specificity仍为`GENERIC_TECHNICAL`、claimScope仍为`FROZEN_JAVA`。basis恰为这个Fact与四atom的closed Proof union。即使specificity为generic，只要Step 06逐字匹配exact entry target，它仍是结构性`PROVEN_HANDOFF`；generic audit anchor仍不能单独成边。
+- 对同一`(entryId,INVOCATION_CALL_ID.canonical,anchorKey)`，若恰有一个admitted `JAVA_EXACT_CALL`，只发布上述signal，不再为匹配的`JAVA_BOUNDARY_INVOCATION`发布第二条`EXPLICIT_CALL`；boundary仍独立发布适用的`JAVA_TYPE_ANCHOR`、`COUNTER_CONDITION`和`EXTERNAL_EFFECT_GAP`。这是有优先级的单一basis选择，不是跨Fact合并。
+- 若没有admitted `JAVA_EXACT_CALL`，但现有boundary四atom/typed-boundary closure完整，继续按§8.1.1 boundary行发布`EXPLICIT_CALL`。因此当前interface/external-boundary fixture不会因后继合同静默失去call signal；当target是冻结CodeStructure `METHOD`且v3 exact-call Proof闭合时，它只迁移signal basis/ID，family和每Flow 3条的首个golden计数不变。两个exact Facts命中同tuple、exact与boundary的tuple字段冲突、或选择后basis closure不唯一均fatal `PROCESS_JOIN_SIGNAL_BASIS_INVALID`。
+- call edge endpoint缺失由Step 04 v3 reader先以reference fatal拒绝；target存在但不是`METHOD`时没有admitted exact-call Fact，boundary若独立闭合仍可使用上一条fallback。unresolved/ambiguous Java target只有Step 03 Gap，不能由方法名、source文字或boundary字段猜成exact-call Fact。
+
+该增量只实现十六种signal中已存在的`EXPLICIT_CALL` family，不要求其余十五种先完成，也不改变counter、effect或domain语义。协调cutover前，当前`business-flows-flow-compilation-v2`/Step 04 v2继续按§8.1.1完成在途工作；cutover时v3/v6及Step 04 v3一次性替换旧registration/reader并迁移全部依赖fixture，不保留compatibility path、dual reader或新旧混合执行。v3不回读或重解释旧bytes。
+
+**精确版本/owner级联。** Step 04 v3之后，M1 payload升为`business-flows-flow-compilation-v3`，M2 payload升为`business-flows-capsule-projection-v6`，public `flow-slices.json`升为`business-flows-flow-slices-v3`，public `evidence-capsules.jsonl`升为`business-flows-evidence-capsule-v4`。`flow-coverage.json`、`entry-dispositions.jsonl`、`flow-gaps.jsonl`的字段/含义未变，分别保持现有v1；五项semantic/六项reader-visible数量、receipt/root规则均不变。Luna迁移测试归`EntryRootedFlowCompilerTest`、`EvidenceCapsuleProjectorTest`和`BusinessFlowsPublicationSpecifierTest`；Terra生产owner依次为`analysis.flow.compiler`、`analysis.flow.capsule`、`analysis.flow.publish`。当前v2/v5的3/3、counter及M2 publisher GREEN可先完成且不等待本slice；协调cutover随后把全部依赖stored-artifact fixtures一起迁到v3/v6/v3/v4并保留原行为断言，不保留旧schema fixture作为第二套可执行合同。
 
 `processJoinSignalId`覆盖全部上述字段，排除且只排除self ID：
 
@@ -501,6 +514,17 @@ ProofPack 回答事实为何成立；Capsule 回答模型最少读什么。Capsu
 
 `FlowCompilationProfile`拥有`maxFlows`、`maxOutcomesPerFlow`、`maxFlowNodes/Edges`、`maxTraversalDepth`、`maxProcessJoinSignalsPerFlow`与`maxProcessJoinSignalBasisRefs`；后者逐signal限制`factIds + atomIds + proofIds + evidenceNodeIds + sourceLocators + gapIds`六个数组的元素总数。`CapsuleProjectionProfile`只拥有`maxCapsules`、`maxSpansPerCapsule`、`maxSpanBytes`、`maxCapsuleUtf8Bytes`。超限不截断 paths/spans/signals或删除basis；可安全隔离时把受影响signal/Flow明确置Gap，否则fatal。
 
+v6 projector把span selection/identity的owner固定为Flow，而不是全run evidence node。对每个需要的Evidence source node，`EvidenceCapsuleProjector`以tuple `(flowSliceId,evidenceNodeId)`为selection key，并精确计算：
+
+~~~text
+spanId = "model-evidence-span:" + lowercaseHex(SHA-256(
+    frame(UTF8("business-flows-model-evidence-span-id-v2")) ||
+    frame(UTF8(flowSliceId)) ||
+    frame(UTF8(evidenceNodeId))))
+~~~
+
+同一个冻结source Evidence node被两个entry Flow合法遍历时，必须产生两个不同span ID；二者`SourceExcerptV1`可以逐字相等，但每个span的atom/outcome/signal support只来自自己的Flow，且每个span ID在整个projection中被恰一个Capsule的`modelEvidenceSpanIds[]`引用。`selectedSpans`不得以裸`evidenceNodeId`作全局key后拒绝第二个Flow，也不得让一个span ID的support union跨Flow。`ModelEvidenceSpanV4`字段形状不增加`flowSliceId`；owner由上述ID preimage、唯一Capsule membership及同Flow obligation closure共同验证。这个identity/rule变化由M2 v6和public capsule v4承载，不新增public字段、文件或reader-visible artifact。
+
 只读 persisted artifacts/verified handles；不执行客户代码、模型或网络。Capsule 中的 prompt injection 文本只是 data。
 
 ### 8.5 Gap 与 failure codes
@@ -517,13 +541,15 @@ BUSINESS_FLOWS_REQUEST_INVALID、UPSTREAM_ARTIFACT_REPLAY_MISMATCH、FLOW_GRAPH_
 
 - 每删一条 CFG/call/data/Proof edge，对应 Outcome/Flow 必须 Gap/fatal，不能猜回。
 - 同一 entry 多 terminals 编成一个 Flow 多 Outcomes，不复制成多个 Flow。
-- 第二 entry 不能借用共享 Service 的 Fact/span。
+- 第二entry不能借用第一entry的Fact ID、span ID或support集合；同一个共享Service source Evidence合法属于两条entry traversal时，必须按§8.4为每个Flow独立Fact/Proof ownership并投影不同span ID。
 - Capsule span 必须来自 Proof roots，不按文本相似命中 decoy。
 - 每条`processJoinSignal`必须同Flow闭合到Fact/Proof/Evidence/source或Gap；删除任一basis使signal消失、转Gap或fail closed，不能继续存在。
 - 首个双entry stored-artifact RED必须精确产生approve 3条、cancel 3条：每个boundary各有`JAVA_TYPE_ANCHOR + EXPLICIT_CALL + EXTERNAL_EFFECT_GAP`。approve仍须保留独立guard Fact和TRUE/FALSE Outcomes，但其typed boundary guard/polarity为null，故两Flow都明确没有`COUNTER_CONDITION`；不得跨Flow借用guard或弱化§8.1.1。两端application target不同只证明Flow隔离，不证明端到端顺序；三family全部为`GENERIC_TECHNICAL`，因此该fixture不得产生`SHARED_ANCHOR`。随后`EntryRootedFlowCompilerTest#emitsCounterConditionOnlyForProofClosedTypedBoundaryGuardContext`使用§8.1.1 exact `if/else` stored-artifact fixture，证明non-null guard/FALSE、唯一guard Fact、TRUE/FALSE Outcomes及`invocationCallId`仅在FALSE path后，才验收`COUNTER_CONDITION`。
+- v3 exact-call public seam增加一正一负：caller Flow的EXACT call target逐字等于第二entry target时，`EntryRootedFlowCompilerTest`只产生一条以`JAVA_EXACT_CALL`为basis的`EXPLICIT_CALL`；删除target METHOD Proof后exact Fact不能被投影，但同tuple boundary若独立闭合仍产生唯一fallback signal，若两者都不闭合则零signal。cutover时现有3/3 fixture同步迁移schema并继续承担原3/3行为断言；suite不保留v2执行分支。
 - tenantId、用户审计字段、日志、通用工具类、方法名或中文名相似不能单独形成domain-specific signal；共享表最多形成`SQL_TABLE_ANCHOR`，不能形成顺序或因果。
 - 双Flow relation fixture须覆盖：两端完整业务对象key集合有交集时不产生对象反证；两端集合均非空且互斥时，Step 06以全部对应signal IDs形成唯一、稳定的`DIFFERENT_BUSINESS_OBJECT` counter basis。改变输入顺序或同一关系的其他positive pair不得改变该basis。
 - 每删一个直接语义 span，projection obligation 失败；proof-only span 注入被拒绝。
+- shared-source public seam增加一正一负：同一个Evidence node被两个合法Flow需要时，`EvidenceCapsuleProjectorTest`断言产生两个按`(flowSliceId,evidenceNodeId)`计算的span ID且各自obligation闭合；把任一ID/support放进另一个Capsule或复用裸evidence-node span ID必须以`PROCESS_JOIN_SIGNAL_FLOW_MISMATCH`或`EVIDENCE_PROJECTION_INVARIANT_BROKEN` fail closed。
 - 0 Flow/0 Capsule 仍有完整 entry disposition/Gap/accounting，并让 分析步骤“流程解释” Provider calls=0。
 - 双Flow fixture必须让一个Flow为ELIGIBLE、一个为INELIGIBLE；`flow-coverage.json`的两个Flow集合互斥并集等于全部Flow，mapping domain、逐Flow非空Gap和全局Gap union都与Capsule逐字相等。任一overlap、omission、empty/foreign/missing Gap mutation都必须fail closed。
 - 不同 root/input order 产生相同 canonical artifacts。
