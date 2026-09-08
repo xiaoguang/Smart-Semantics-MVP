@@ -7,7 +7,7 @@
 - Last updated: 2026-09-08
 - Scope: Continue the approved eight-step implementation; first close the explicitly requested Java formatting debt, then implement remaining contracts without repeating completed work.
 - Approved inputs: Published design PR #7 / main 6f34e9422d56850f09066949343ff01b7e6535fc; docs/DESIGN.md; eight step designs; both implementation plans; current source/tests/progress; scripted Providers only.
-- Current branch/worktree: codex/source-analysis-format-cleanup; /private/tmp/linguan-source-analysis-process-design
+- Current branch/worktree: codex/source-analysis-flow-signals-contract; /private/tmp/linguan-source-analysis-process-design
 
 ## Completed
 
@@ -16,10 +16,13 @@
 - Read implementation plans and existing local-interpretation checkpoint: local M1–M5 exist, but no complete interpretation publication or cross-Flow reconstruction exists.
 - Terra applied the pinned formatter to 83 Java files (50 main, 33 test). All 402 files are now format-clean; package compiles 314 main and 88 test sources, and the architecture selector passes 3/3. Package test execution was intentionally skipped.
 - Independent Luna/xhigh review approves the formatting delivery: no P0/P1/P2; zero non-import/comment token or literal changes, 17 unused imports removed.
+- Formatter PR #8 merged to main as 71a67ed9aa78e9a27c858040944356aca5cdae32; verified exact tree equality before creating the next main-based branch.
 
 ## Current state
 
-Formatting-only branch starts from exact merged main; implementation, local checks and independent review are complete. Commit d4ee7df contains the formatter delivery; review metadata is being finalized before the single squash PR. Formatting and subsequent feature delivery use separate PRs. No customer capture, customer build, or live Provider call is authorized in this slice.
+Formatting delivery is closed on remote main. Sol/ultra is preparing the bounded Step05 signal extraction handoff on a new branch, grounded in current proven Fact/graph fields. Root is checking the existing M1/M2/M3 direct baseline before new RED. No customer capture, customer build, or live Provider call is authorized in this slice.
+
+Handoff complete: current persisted inputs support the first RED for type/call, guarded-call counter-condition, and external-effect Gap signals. The private M1 reader must expose already-persisted Proof/Evidence and typed graph fields; it does not need a new customer scan. Exact current extraction is frozen in Step05 §8.1.1; current four families are generic technical material. Proof-closed domain/classification capability remains a required task in the approved plan before whole Step05/effective reconstruction acceptance, not an optional deferred feature. The bounded first slice is not blocked by that later prerequisite.
 
 Current implementation audit: steps 1–4 have existing bounded production chains and prior targeted verification; step 5 has M1–M3 but lacks processJoinSignals; step 6 has local M1–M5 but no process M6–M9 or final publication; steps 7/8 and runtime/adapters/validator have package skeletons only. Current-code jshERP acceptance has not run. Existing evidence is not full-repository completion.
 
@@ -40,6 +43,8 @@ Remaining continuous estimate reported to user: step 5 6–10h; step 6 20–30h;
 | Formatter task offline package with skipUTs=true | PASS | 314 main / 88 test source compilation; tests skipped |
 | Formatter task SourceAnalysisArchitectureTest | PASS | 3 tests, 0 failures/errors/skips |
 | Formatter task git diff --check | PASS | No whitespace errors |
+| PR #8 merge verification | PASS | MERGED; main 71a67ed; exact formatter branch tree matches main |
+| mvn -o -t .mvn/toolchains.xml -Dtest=EntryRootedFlowCompilerTest,EvidenceCapsuleProjectorTest,BusinessFlowsPublicationSpecifierTest test | PASS | 8 tests, 0 failures/errors/skips; 21.767s. Existing SLF4J/jqwik output is inherited, not task instructions. |
 
 ## Decisions
 
@@ -54,7 +59,7 @@ None for formatting. The prior registry module/public envelope collision has a p
 
 ## Exact next action
 
-Merge the locally verified formatting PR, then create a fresh main-based branch for the bounded Step05 signal implementation handoff. Keep heavy Maven execution serial.
+Publish the bounded Sol/ultra clarification after scoped review, then dispatch Luna for EntryRootedFlowCompilerTest#emitsExactProofClosedSignalsForTwoPersistedFlowsWithoutCrossFlowBorrowing, followed by Terra GREEN. Exact migration sequence is in .superpowers/flow-signals-implementation-handoff.md. Existing M1/M2/M3 baseline is green (8/8); Maven slot is free. Do not close whole Step05 until the still-required domain/classification and repository coverage gates are met.
 
 ## Resume checks
 

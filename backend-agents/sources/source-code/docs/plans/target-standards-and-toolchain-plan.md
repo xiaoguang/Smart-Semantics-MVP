@@ -236,15 +236,15 @@ Taplo 与 markdownlint-cli2 不在本计划中伪造版本。它们的确定门�
 | Program graphs | `CodeStructureGraphBuilderTest`, `CallGraphBuilderTest`, `ControlFlowGraphBuilderTest`, `DataFlowGraphBuilderTest`, `EvidenceGraphBuilderTest`, `ProgramGraphsPublicationSpecifierTest` | 五 graph JSON + `graph-index.json` + `graph-gaps.jsonl` + `program-graphs-receipt.json`（7 + receipt） |
 | Proven code facts | `FactCandidateEnumeratorTest`, `AtomicProofBuilderTest`, `ProvenCodeFactsPublicationSpecifierTest` | `proven-facts.json`, `proof-pack.json`, `gap-ledger.json`, `fact-accounting.json`, `proven-code-facts-receipt.json`（4 + receipt） |
 | Business flows | `EntryRootedFlowCompilerTest`, `EvidenceCapsuleProjectorTest`, `BusinessFlowsPublicationSpecifierTest` | `flow-slices.json`, `flow-coverage.json`, `entry-dispositions.jsonl`, `evidence-capsules.jsonl`, `flow-gaps.jsonl`, `business-flows-receipt.json`（5 + receipt） |
-| Flow interpretation | `RegistryProposalTaskCompilerTest`, `RegistryProposalRunnerTest`, `RepositoryInterpretationRegistryFreezerTest`, `FiniteKeyFlowTaskCompilerTest`, `InterpretationRunnerTest`, `FlowInterpretationPublicationSpecifierTest` | 三个 registry JSONL/registry JSON + task/round/receipt/candidate/disposition 五 JSONL + `flow-interpretation-receipt.json`（9 + receipt） |
-| Repository knowledge | `ProposalAdmissionEngineTest`, `AnchoredKnowledgeMergerTest`, `RepositoryKnowledgePublicationSpecifierTest` | `admitted-flow-meanings.jsonl`, `repository-business-knowledge.json`, `knowledge-conflicts.jsonl`, `knowledge-accounting.json`, `merged-gaps.json`, `repository-knowledge-receipt.json`（5 + receipt） |
+| Flow interpretation | `RegistryProposalTaskCompilerTest`, `RegistryProposalRunnerTest`, `RepositoryInterpretationRegistryFreezerTest`, `FiniteKeyFlowTaskCompilerTest`, `InterpretationRunnerTest`, `CrossFlowCandidateCompilerTest`, `BusinessProcessTaskCompilerTest`, `BusinessProcessInterpretationRunnerTest`, `FlowInterpretationPublicationSpecifierTest` | 九项local registry/task/round/candidate/disposition payload + 五项cross-Flow process payload + `flow-interpretation-receipt.json`（14 + receipt） |
+| Repository knowledge | `ProposalAdmissionEngineTest`, `AnchoredKnowledgeMergerTest`, `RepositoryKnowledgePublicationSpecifierTest` | `knowledge-admission-decisions.jsonl`, `repository-business-knowledge.json`, `knowledge-conflicts.jsonl`, `knowledge-accounting.json`, `merged-gaps.json`, `repository-knowledge-receipt.json`（5 + receipt） |
 | Nine-section document | `NineSectionPlannerTest`, `PlanOnlyRendererTest`, `TypedTraceCompilerTest`, `CandidateRunArchiverTest` | 五 semantic → `nine-section-archive-manifest.json` → `nine-section-document-receipt.json` → root `run-manifest.json`；然后 observation-only M4 module receipt |
 | Exterior validation | `IndependentRunValidatorTest` | run 外 validation publication/receipt；不改 Candidate 或 analysis step publications |
 | Public/adapters | `RepositoryAnalysisAgentContractTest`, `RepositoryAnalysisCliAdapterTest`, `RepositoryAnalysisLoopbackHttpAdapterTest`; integration：`RepositoryAnalysisLoopbackHttpAdapterIT` | 同一 public request/query/result seam；`executeStep`只接精确上游publication refs并创建新执行；应用发现至仓库知识的分析步骤区间可`FINISHED`但result/root manifest为空，执行到九章文档才有四值result；CLI/loopback HTTP 不增业务分支、不接收 caller paths |
 
-程序图的“五 graph JSON”精确为 `code-structure-graph.json`, `call-graph.json`, `control-flow-graph.json`, `data-flow-graph.json`, `evidence-graph.json`。流程解释的九项精确为 `registry-proposal-tasks.jsonl`, `registry-proposal-rounds.jsonl`, `registry-proposal-dispositions.jsonl`, `repository-interpretation-registry.json`, `flow-model-tasks.jsonl`, `model-rounds.jsonl`, `generation-receipts.jsonl`, `interpretation-candidates.jsonl`, `flow-interpretation-dispositions.jsonl`。
+程序图的“五 graph JSON”精确为 `code-structure-graph.json`, `call-graph.json`, `control-flow-graph.json`, `data-flow-graph.json`, `evidence-graph.json`。流程解释的十四项精确为 `registry-proposal-tasks.jsonl`, `registry-proposal-rounds.jsonl`, `registry-proposal-dispositions.jsonl`, `repository-interpretation-registry.json`, `flow-model-tasks.jsonl`, `model-rounds.jsonl`, `generation-receipts.jsonl`, `interpretation-candidates.jsonl`, `flow-interpretation-dispositions.jsonl`, `process-evidence-groups.jsonl`, `process-model-tasks.jsonl`, `process-model-rounds.jsonl`, `business-process-hypotheses.jsonl`, `process-interpretation-dispositions.jsonl`。
 
-全 run reader-visible 基数保持：42 个 semantic 分析步骤 payload + 8 个语义 receipt + 1 个 `nine-section-archive-manifest.json` + 1 个 root run manifest = 52。Module artifacts/receipts 和 exterior validation publication 不混入这 52 项；新的分析步骤执行产生普通目标 publication，不新增第53种正式输出。
+全 run reader-visible 基数保持：47 个 semantic 分析步骤 payload + 8 个语义 receipt + 1 个 `nine-section-archive-manifest.json` + 1 个 root run manifest = 57。Module artifacts/receipts 和 exterior validation publication 不混入这 57 项；新的分析步骤执行产生普通目标 publication，不新增第58种正式输出。
 
 ## 7. 按分析步骤执行地图
 
@@ -298,15 +298,18 @@ Taplo 与 markdownlint-cli2 不在本计划中伪造版本。它们的确定门�
 
 ### Task 6：业务流程
 
-- [ ] `EntryRootedFlowCompilerTest` 覆盖每 ApplicationDiscovery entry 唯一 COMPILED/GAP/EXCLUDED、outcomes/branches/calls/facts accounting。
-- [ ] `EvidenceCapsuleProjectorTest` 覆盖 raw continuous excerpts、projection obligations、minimal closure、每 compiled flow 恰一 capsule。
-- [ ] `BusinessFlowsPublicationSpecifierTest` 覆盖五 semantic 与 0Flow 非空 accounting；analysis step gate/review/提交/推送。
+- [ ] `EntryRootedFlowCompilerTest` 覆盖每 ApplicationDiscovery entry 唯一 COMPILED/GAP/EXCLUDED、outcomes/branches/calls/facts accounting，以及从当前Fact/Proof/Evidence/source closure有限提取的`processJoinSignals`；不得从名称或仓库归属猜`DOMAIN_SPECIFIC`。
+- [ ] `EvidenceCapsuleProjectorTest` 覆盖 raw continuous excerpts、signal-basis projection obligations、minimal closure、每 compiled flow 恰一 capsule且Flow/Capsule signals逐字相等。
+- [ ] `BusinessFlowsPublicationSpecifierTest` 覆盖M1 v2、M2 v5、public Flow v2/Capsule v3、五 semantic、signal ID coverage与0Flow非空 accounting；同步store和R0/R1/R2 local readers，不保留旧wire alias；analysis step gate/review/提交/推送。
 
 ### Task 7：流程解释
 
 - [ ] R0 compiler/runner/freeze 三 selector 严格串行冻结 registry；Provider fake 记录 exact request bytes、configured/expected/observed runtime、round与generation receipt identity。
 - [ ] R1/R2 task compiler 保存 canonical provider input bytes 或其直接内容寻址 ref，作为可观察业务输入与下游复用格式；runner 只从已验证artifact重开，不依赖内存草稿。
-- [ ] M6 publication 验九 semantic、`E+2R` task/disposition双射、R0/R1/R2 shard denominator=`E/R/R`和READY/GAP/FAILED守恒；不把 Provider nondeterminism 混入 identity 规则。
+- [ ] M6 `CrossFlowCandidateCompilerTest`只从已发布、Proof闭合的signals和finite Registry cues编`C`条候选edge与覆盖全部Flow的`G`个evidence group；generic-only anchor不得形成`SHARED_ANCHOR`，全部positive/counter bases与blocking集合必须闭合。
+- [ ] M7 `BusinessProcessTaskCompilerTest`对全部`A`个owner shard与`S⊆A`个model-safe shard守恒，确定性地把path-bearing persisted material投影为path-free packet；预算超限形成typed no-model Gap而不截断。
+- [ ] M8 `BusinessProcessInterpretationRunnerTest`覆盖P1/P2 request、round、receipt、review与GAP/FAILED/NOT_RUN分支；started Provider failure无retry/switch/resume。
+- [ ] M9 publication 验十四 semantic、planned=`E+2R+2S`、actual=`E+R+acceptedLocalR1+S+acceptedProcessP1`、local R0/R1/R2 shard denominator=`E/R/R`、`|process dispositions|=A`及六类hypothesis分区；不把 Provider nondeterminism 混入 identity 规则。
 - [ ] Provider/runtime failure integration 属重型 selector，单独串行；started调用失败必须令run失败且不得自动重试/切换；analysis step gate/review/提交/推送。
 
 ### Task 8：仓库知识
@@ -333,7 +336,7 @@ Taplo 与 markdownlint-cli2 不在本计划中伪造版本。它们的确定门�
 ### Task 11：最终验收
 
 - [ ] 从 clean checkout 和已批准 JDK/Maven toolchain 开始；先离线 direct/regression selectors，再串行 integration/quality/release。
-- [ ] 对 52 个 reader-visible outputs、module/analysis step/run receipts和validation artifacts做 fresh-process reopen，并验证FlowInterpretation→RepositoryKnowledge显式新执行。
+- [ ] 对 57 个 reader-visible outputs、module/analysis step/run receipts和validation artifacts做 fresh-process reopen，并验证FlowInterpretation→RepositoryKnowledge显式新执行。
 - [ ] 重跑 identity property tests、partial-install matrix、bounded/complete analysis-result matrix、CLI/HTTP contract tests。
 - [ ] 生成 SBOM；只有漏洞DB feed、所需credentials与持久cache环境门满足后才运行并报告OWASP result，否则明确记为“环境未就绪，未执行”，不能写PASS。
 - [ ] 独立 Standards/Spec 双轴 review；零 P0/P1；父任务提交/推送最终验收文档/必要修正。
@@ -345,7 +348,7 @@ Taplo 与 markdownlint-cli2 不在本计划中伪造版本。它们的确定门�
 1. 同时最多两个活跃代理，包括 orchestrator；任何 Maven 重型命令开始前，另一代理不得运行 Maven。
 2. Luna/xhigh 负责 RED：先把权威记录/identity/partial-install/negative case 变成最小直接测试；不得先写 production。
 3. Terra/xhigh 负责 GREEN：只编辑该 selector 所属 implementation/package；不得顺手改下一 analysis step、POM 或权威 schema。
-4. Sol/ultra 负责 unexpected RED/debug、跨模块一致性和 review；不得把本地 bug 包装成新架构。发现需改已批准合同立即停止并请求用户决定。
+4. Sol/xhigh 负责 unexpected RED/debug；Sol/ultra 负责跨模块一致性和 review，并可在既定目标内作有界local/adjacent合同决定而不逐项重请批准；不得把本地 bug 包装成新架构。只有需要改变已批准的material架构边界、信任强度、accounting/守恒合同或公开API时才停止并请求用户决定。
 5. 每个代理在编辑前创建自己唯一的 progress，例如应用发现 M2 使用 `progress/source-analysis-application-discovery-http-entry.md`；记录 owner、范围、exact selectors、RED/GREEN 输出、文件、阻塞、下一动作。代理不得共写同一 progress。
 6. 每个模块安全边界更新 progress；每个 analysis step 完成后运行 direct selectors、doc/golden gates、质量 gate、独立 review。
 7. 代码任务只在 authoritative docs 已发布到 origin/main 后开始。每个 toolchain/analysis step/adapters work unit 独立 review、独立 commit、独立 push；不得把不相关 dirty changes 混入。
@@ -360,8 +363,8 @@ Taplo 与 markdownlint-cli2 不在本计划中伪造版本。它们的确定门�
 | --- | ---: | --- |
 | 工具链 foundation | 8–12 小时 | 批准后的 POM、profiles、codec/policy、三 stores、最小四状态execution、architecture tests、quality gate |
 | 已验证源码清单至业务流程 | 58–82 小时 | 3+4+6+3+3 个模块的 RED/GREEN、goldens、analysis step review/commit/push |
-| 流程解释至九章文档 + validation + adapters | 38–54 小时 | 6+3+4 模块、一个 exterior validator、显式analysis step execution、public/CLI/HTTP、Provider失败门 |
-| 最终验收 | 10–14 小时 | clean/offline fresh-reopen、52-output reopen、quality/release/SBOM、独立双轴 review |
+| 流程解释至九章文档 + validation + adapters | 38–54 小时 | 9+3+4 模块、一个 exterior validator、显式analysis step execution、public/CLI/HTTP、Provider失败门 |
+| 最终验收 | 10–14 小时 | clean/offline fresh-reopen、57-output reopen、quality/release/SBOM、独立双轴 review |
 | **active v0总计** | **114–162 连续小时** | 约 15–21 个 8 小时工作日；不含等待用户审批、下载或外部 CI 排队，也不含同一run自动恢复TODO |
 
 关键路径不可压缩为并行 analysis step：
@@ -401,7 +404,7 @@ Taplo 与 markdownlint-cli2 不在本计划中伪造版本。它们的确定门�
 - 已覆盖 Git、Java 符号、Maven model、TOML、JSON Schema、CLI 和五类测试库。
 - 已覆盖 Enforcer、Toolchains、Compiler、Surefire/Failsafe、Spotless/gjf、SpotBugs、PMD、dependency analysis、CycloneDX、OWASP、Javadoc、Shade。
 - 已覆盖 Java、JSON/JSONL、TOML/config、Markdown、XML 的 parser/linter/formatter/schema 规则与 canonical-byte 例外。
-- 已覆盖 八个分析步骤、exterior validation、显式analysis step execution、public/CLI/HTTP、52 项 analysis step/run outputs、直接 selectors、docs-only publish gate、review/commit/push。
+- 已覆盖 八个分析步骤、exterior validation、显式analysis step execution、public/CLI/HTTP、57 项 analysis step/run outputs、直接 selectors、docs-only publish gate、review/commit/push。
 - 已覆盖双代理限制、重型 Maven 串行、Luna RED/Terra GREEN/Sol debug、每代理独立 progress、连续工期与审批等待分离。
 
 ### 11.2 工具重叠
