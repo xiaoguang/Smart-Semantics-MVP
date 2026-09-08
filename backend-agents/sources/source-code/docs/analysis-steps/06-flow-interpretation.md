@@ -119,7 +119,7 @@ pendingOnly=true
   "strongestSignalLevel": "PROVEN_HANDOFF",
   "direction": "LEFT_TO_RIGHT",
   "supportingProcessJoinSignalIds": ["process-join-signal:request-id-return"],
-  "counterSignalIds": ["process-join-signal:status-conflict"],
+  "counterProcessJoinSignalIds": ["process-join-signal:status-conflict"],
   "factIds": ["fact:request-id"],
   "proofIds": ["proof:return-to-input"],
   "evidenceNodeIds": ["evidence:request-id"],
@@ -158,48 +158,184 @@ M6不能把edge拓扑排序成“真实顺序”。顺序、并行、替代、�
 
 P1只可引用该shard的Flow、owner/context relation、signal、Fact/Proof/Evidence/Gap和registry keys。P2收到同一bounded material、P1的accepted response和固定review allowlist；它不能用语言合理性补材料。
 
-`BusinessProcessHypothesisV1`最少包含：
+`BusinessProcessHypothesisV1`使用以下完整字段/闭合引用specimen。它是明确合成的结构fixture，不代表jshERP；ID值只作schema-valid fixture token，不是从下列展示bytes重算的replay golden：
 
 ~~~json
 {
-  "businessProcessHypothesisId": "business-process-hypothesis:sha256…",
-  "memberFlows": [{"flowSliceId":"flow:store-approve","role":"INTERMEDIATE"}],
-  "businessRoleKeys": [{"keyKind":"REGISTRY","key":"ROLE_P_…"}],
-  "stageKeys": [{"keyKind":"TECHNICAL","key":"stage:approval"}],
-  "activityKeys": [{"keyKind":"REGISTRY","key":"ACTIVITY_P_…"}],
-  "inputObjectKeys": [{"keyKind":"TECHNICAL","key":"object:replenishment-request"}],
-  "outputObjectKeys": [{"keyKind":"TECHNICAL","key":"object:purchase-order"}],
-  "processClaims": [{
-    "processClaimId": "process-claim:approval-to-order",
-    "claimKind": "TRANSITION",
-    "subjectKeys": [{"keyKind":"REGISTRY","key":"ACTIVITY_P_STORE_APPROVAL"}],
-    "predicateKey": {"keyKind":"TECHNICAL","key":"transition:accepted-to"},
-    "objectKeys": [{"keyKind":"REGISTRY","key":"ACTIVITY_P_REGION_APPROVAL"}],
-    "memberFlowSliceIds": ["flow:store-approve", "flow:region-approve"],
-    "candidateRelationIds": ["process-relation:approval-to-order"],
-    "supportSignalIds": ["process-join-signal:po-id"],
-    "semanticCueIds": [],
-    "counterSignalIds": [],
-    "factIds": ["fact:approval-id-transfer"],
-    "proofIds": ["proof:approval-id-transfer"],
-    "evidenceNodeIds": ["evidence:approval-id-transfer"],
-    "gapIds": []
-  }],
+  "schemaVersion": "flow-interpretation-business-process-hypothesis-v1",
+  "artifactType": "FLOW_INTERPRETATION_BUSINESS_PROCESS_HYPOTHESIS",
+  "businessProcessHypothesisId": "business-process-hypothesis:fixture-approval-to-procurement",
+  "taskShardId": "process-shard:fixture-approval",
+  "p1TaskId": "process-model-task:fixture-p1-approval",
+  "p1RoundId": "process-model-round:fixture-p1-approval",
+  "processEvidenceGroupIds": ["process-evidence-group:fixture-approval"],
+  "memberFlows": [
+    {
+      "flowSliceId": "flow:store-approve",
+      "role": "START",
+      "stageKey": {"keyKind":"TECHNICAL","key":"stage:10-store-approval","registryItemId":null,"technicalAnchorIds":["entry:store-approve"]},
+      "activityKey": {"keyKind":"REGISTRY","key":"ACTIVITY_P_STORE_APPROVAL","registryItemId":"registry-item:store-approval","technicalAnchorIds":[]},
+      "supportingProcessClaimIds": ["process-claim:01-purpose","process-claim:02-store-activity","process-claim:04-transition"]
+    },
+    {
+      "flowSliceId": "flow:region-approve",
+      "role": "TERMINAL",
+      "stageKey": {"keyKind":"TECHNICAL","key":"stage:20-region-approval","registryItemId":null,"technicalAnchorIds":["entry:region-approve"]},
+      "activityKey": {"keyKind":"REGISTRY","key":"ACTIVITY_P_REGION_APPROVAL","registryItemId":"registry-item:region-approval","technicalAnchorIds":[]},
+      "supportingProcessClaimIds": ["process-claim:03-region-activity","process-claim:04-transition","process-claim:05-result"]
+    }
+  ],
+  "businessRoleKeys": [
+    {"keyKind":"REGISTRY","key":"ROLE_P_STORE_APPROVER","registryItemId":"registry-item:store-approver","technicalAnchorIds":[]},
+    {"keyKind":"REGISTRY","key":"ROLE_P_REGION_APPROVER","registryItemId":"registry-item:region-approver","technicalAnchorIds":[]}
+  ],
+  "stageKeys": [
+    {"keyKind":"TECHNICAL","key":"stage:10-store-approval","registryItemId":null,"technicalAnchorIds":["entry:store-approve"]},
+    {"keyKind":"TECHNICAL","key":"stage:20-region-approval","registryItemId":null,"technicalAnchorIds":["entry:region-approve"]}
+  ],
+  "activityKeys": [
+    {"keyKind":"REGISTRY","key":"ACTIVITY_P_STORE_APPROVAL","registryItemId":"registry-item:store-approval","technicalAnchorIds":[]},
+    {"keyKind":"REGISTRY","key":"ACTIVITY_P_REGION_APPROVAL","registryItemId":"registry-item:region-approval","technicalAnchorIds":[]}
+  ],
+  "inputObjectKeys": [
+    {"keyKind":"TECHNICAL","key":"object:replenishment-request","registryItemId":null,"technicalAnchorIds":["java-type:ReplenishmentRequest"]}
+  ],
+  "outputObjectKeys": [
+    {"keyKind":"TECHNICAL","key":"object:approved-procurement-request","registryItemId":null,"technicalAnchorIds":["java-type:ProcurementRequest"]}
+  ],
+  "objectKeys": [
+    {"keyKind":"TECHNICAL","key":"object:replenishment-request","registryItemId":null,"technicalAnchorIds":["java-type:ReplenishmentRequest"]},
+    {"keyKind":"TECHNICAL","key":"object:approved-procurement-request","registryItemId":null,"technicalAnchorIds":["java-type:ProcurementRequest"]}
+  ],
+  "stateKeys": [],
+  "processClaims": [
+    {
+      "processClaimId": "process-claim:01-purpose",
+      "claimKind": "PURPOSE",
+      "subjectKeys": [{"keyKind":"TECHNICAL","key":"process:replenishment-approval","registryItemId":null,"technicalAnchorIds":["process-evidence-group:fixture-approval"]}],
+      "predicateKey": {"keyKind":"TECHNICAL","key":"purpose:authorize-replenishment","registryItemId":null,"technicalAnchorIds":["fact:replenishment-request-id"]},
+      "objectKeys": [{"keyKind":"TECHNICAL","key":"object:replenishment-request","registryItemId":null,"technicalAnchorIds":["java-type:ReplenishmentRequest"]}],
+      "memberFlowSliceIds": ["flow:store-approve","flow:region-approve"],
+      "candidateRelationIds": [],
+      "supportProcessJoinSignalIds": ["process-join-signal:request-id"],
+      "processSemanticCueIds": [],
+      "counterProcessJoinSignalIds": [],
+      "blockingCounterProcessJoinSignalIds": [],
+      "factIds": ["fact:replenishment-request-id"],
+      "proofIds": ["proof:replenishment-request-id"],
+      "evidenceNodeIds": ["evidence:replenishment-request-id"],
+      "gapIds": []
+    },
+    {
+      "processClaimId": "process-claim:02-store-activity",
+      "claimKind": "ACTIVITY",
+      "subjectKeys": [{"keyKind":"REGISTRY","key":"ACTIVITY_P_STORE_APPROVAL","registryItemId":"registry-item:store-approval","technicalAnchorIds":[]}],
+      "predicateKey": {"keyKind":"TECHNICAL","key":"activity:checks-request","registryItemId":null,"technicalAnchorIds":["entry:store-approve"]},
+      "objectKeys": [{"keyKind":"TECHNICAL","key":"object:replenishment-request","registryItemId":null,"technicalAnchorIds":["java-type:ReplenishmentRequest"]}],
+      "memberFlowSliceIds": ["flow:store-approve"],
+      "candidateRelationIds": [],
+      "supportProcessJoinSignalIds": ["process-join-signal:request-id"],
+      "processSemanticCueIds": [],
+      "counterProcessJoinSignalIds": [],
+      "blockingCounterProcessJoinSignalIds": [],
+      "factIds": ["fact:store-approval-guard"],
+      "proofIds": ["proof:store-approval-guard"],
+      "evidenceNodeIds": ["evidence:store-approval-guard"],
+      "gapIds": []
+    },
+    {
+      "processClaimId": "process-claim:03-region-activity",
+      "claimKind": "ACTIVITY",
+      "subjectKeys": [{"keyKind":"REGISTRY","key":"ACTIVITY_P_REGION_APPROVAL","registryItemId":"registry-item:region-approval","technicalAnchorIds":[]}],
+      "predicateKey": {"keyKind":"TECHNICAL","key":"activity:reviews-approved-request","registryItemId":null,"technicalAnchorIds":["entry:region-approve"]},
+      "objectKeys": [{"keyKind":"TECHNICAL","key":"object:approved-procurement-request","registryItemId":null,"technicalAnchorIds":["java-type:ProcurementRequest"]}],
+      "memberFlowSliceIds": ["flow:region-approve"],
+      "candidateRelationIds": [],
+      "supportProcessJoinSignalIds": ["process-join-signal:request-id"],
+      "processSemanticCueIds": [],
+      "counterProcessJoinSignalIds": [],
+      "blockingCounterProcessJoinSignalIds": [],
+      "factIds": ["fact:region-approval-guard"],
+      "proofIds": ["proof:region-approval-guard"],
+      "evidenceNodeIds": ["evidence:region-approval-guard"],
+      "gapIds": []
+    },
+    {
+      "processClaimId": "process-claim:04-transition",
+      "claimKind": "TRANSITION",
+      "subjectKeys": [{"keyKind":"REGISTRY","key":"ACTIVITY_P_STORE_APPROVAL","registryItemId":"registry-item:store-approval","technicalAnchorIds":[]}],
+      "predicateKey": {"keyKind":"TECHNICAL","key":"transition:request-id-handoff","registryItemId":null,"technicalAnchorIds":["process-relation:approval-to-region"]},
+      "objectKeys": [{"keyKind":"REGISTRY","key":"ACTIVITY_P_REGION_APPROVAL","registryItemId":"registry-item:region-approval","technicalAnchorIds":[]}],
+      "memberFlowSliceIds": ["flow:store-approve","flow:region-approve"],
+      "candidateRelationIds": ["process-relation:approval-to-region"],
+      "supportProcessJoinSignalIds": ["process-join-signal:request-id"],
+      "processSemanticCueIds": [],
+      "counterProcessJoinSignalIds": [],
+      "blockingCounterProcessJoinSignalIds": [],
+      "factIds": ["fact:approval-id-transfer"],
+      "proofIds": ["proof:approval-id-transfer"],
+      "evidenceNodeIds": ["evidence:approval-id-transfer"],
+      "gapIds": []
+    },
+    {
+      "processClaimId": "process-claim:05-result",
+      "claimKind": "END_RESULT",
+      "subjectKeys": [{"keyKind":"TECHNICAL","key":"process:replenishment-approval","registryItemId":null,"technicalAnchorIds":["process-evidence-group:fixture-approval"]}],
+      "predicateKey": {"keyKind":"TECHNICAL","key":"result:approved-request-ready","registryItemId":null,"technicalAnchorIds":["fact:approved-request-output"]},
+      "objectKeys": [{"keyKind":"TECHNICAL","key":"object:approved-procurement-request","registryItemId":null,"technicalAnchorIds":["java-type:ProcurementRequest"]}],
+      "memberFlowSliceIds": ["flow:region-approve"],
+      "candidateRelationIds": [],
+      "supportProcessJoinSignalIds": ["process-join-signal:approved-request-output"],
+      "processSemanticCueIds": [],
+      "counterProcessJoinSignalIds": [],
+      "blockingCounterProcessJoinSignalIds": [],
+      "factIds": ["fact:approved-request-output"],
+      "proofIds": ["proof:approved-request-output"],
+      "evidenceNodeIds": ["evidence:approved-request-output"],
+      "gapIds": []
+    }
+  ],
   "conditionClaimIds": [],
   "branchClaimIds": [],
-  "parallelClaimIds": ["process-claim:parallel-fee-handling"],
-  "alternativeClaimIds": ["process-claim:return-for-correction"],
-  "fallbackClaimIds": ["process-claim:manual-confirmation"],
-  "candidateRelations": [{"candidateRelationId":"process-relation:approval-to-order","supportSignalIds":["process-join-signal:po-id"],"counterSignalIds":[]}],
-  "purposeClaimId": "process-claim:replenishment-purpose",
-  "endResultClaimId": "process-claim:settlement-result",
-  "pendingAssumptionClaimIds": ["process-claim:accounting-effect-pending"],
-  "readerSlots": [{
-    "slotKind": "PROCESS_SUMMARY",
-    "text": "补货到结算（合成）",
-    "processClaimIds": ["process-claim:replenishment-purpose", "process-claim:settlement-result"],
-    "registryOrTechnicalKeys": [{"keyKind":"REGISTRY","key":"CLAIM_P_…"}]
-  }]
+  "parallelClaimIds": [],
+  "alternativeClaimIds": [],
+  "fallbackClaimIds": [],
+  "candidateRelations": [
+    {
+      "candidateRelationId": "process-relation:approval-to-region",
+      "processClaimIds": ["process-claim:04-transition"],
+      "supportProcessJoinSignalIds": ["process-join-signal:request-id"],
+      "processSemanticCueIds": [],
+      "counterProcessJoinSignalIds": []
+    }
+  ],
+  "purposeClaimId": "process-claim:01-purpose",
+  "endResultClaimId": "process-claim:05-result",
+  "pendingAssumptionClaimIds": [],
+  "readerSlots": [
+    {
+      "slotKind": "PROCESS_NAME",
+      "text": "补货审批到采购准备（合成）",
+      "processClaimIds": ["process-claim:01-purpose","process-claim:05-result"],
+      "registryOrTechnicalKeys": [{"keyKind":"TECHNICAL","key":"process:replenishment-approval","registryItemId":null,"technicalAnchorIds":["process-evidence-group:fixture-approval"]}]
+    },
+    {
+      "slotKind": "PROCESS_SUMMARY",
+      "text": "门店检查补货申请后，将同一申请标识交给区域审批；结果仅表示已批准的采购准备材料，不表示外部系统已经建单（合成）。",
+      "processClaimIds": ["process-claim:01-purpose","process-claim:02-store-activity","process-claim:03-region-activity","process-claim:04-transition","process-claim:05-result"],
+      "registryOrTechnicalKeys": [{"keyKind":"TECHNICAL","key":"process:replenishment-approval","registryItemId":null,"technicalAnchorIds":["process-evidence-group:fixture-approval"]}]
+    },
+    {
+      "slotKind": "TRANSITION",
+      "text": "同一补货申请标识从门店审批交给区域审批（合成）。",
+      "processClaimIds": ["process-claim:04-transition"],
+      "registryOrTechnicalKeys": [{"keyKind":"TECHNICAL","key":"transition:request-id-handoff","registryItemId":null,"technicalAnchorIds":["process-relation:approval-to-region"]}]
+    }
+  ],
+  "p2TaskId": "process-model-task:fixture-p2-approval",
+  "p2RoundId": "process-model-round:fixture-p2-approval",
+  "processHypothesisReviewId": "process-hypothesis-review:fixture-approval",
+  "finalReviewDecision": "NARROW"
 }
 ~~~
 
@@ -455,7 +591,30 @@ GenerationReceiptV3
 
 `ModelTaskDispositionV2`是仅用于P1/P2 scope的版本化扩展，不改局部V1。`ProcessModelRoundV1.generationReceiptId`单向指向先固定的receipt；receipt不含round ID，避免identity环。`BusinessProcessHypothesisV1`公开文件只保存P2 KEEP/NARROW/PENDING的记录；DROP仍由round/review/disposition计数，不在hypothesis文件伪装保留。P2字段在成功public record中均non-null；P1 GAP/FAILED时不存在hypothesis record。
 
-每个上述self ID固定为`<prefix> + lowercaseHex(SHA-256(frame(UTF8(<domain-v1>)) || frame(canonicalJson(recordWithoutSelfId))))`，其中prefix/domain依次为：
+### 7.2 Step 06显式无环identity DAG
+
+经用户直接确认，语义ID与完整wire/artifact identity分层：语义ID只哈希下表的semantic projection；required later-lineage字段仍保存在wire中、进入JSONL/artifact descriptor SHA与analysis-step root，并由M9逐引用验证。排除后向引用不会隐藏篡改。除表内明确字段外，不得再排除字段；没有alias、dual-write或旧公式兼容路径。
+
+| record / self ID | semantic projection | 从semantic ID精确排除 | projection中必须先存在的reference字段 |
+| --- | --- | --- | --- |
+| `ProcessSemanticCueV1.processSemanticCueId` | §7.1全部字段减排除列 | `processSemanticCueId` | `leftFlowSliceId,rightFlowSliceId,leftRegistryItemId,rightRegistryItemId,leftBasisAtomIds,rightBasisAtomIds,leftEntryId,rightEntryId,leftStateSignalIds,rightStateSignalIds,processCueProfileRef` |
+| `ProcessCandidateRelationV1.candidateRelationId` | §7.1全部字段减排除列 | `candidateRelationId` | `leftFlowSliceId,rightFlowSliceId,supportingProcessJoinSignalIds,processSemanticCueIds,counterProcessJoinSignalIds,blockingCounterProcessJoinSignalIds,factIds,proofIds,evidenceNodeIds,sourceLocators,gapIds` |
+| `ProcessEvidenceGroupV1.processEvidenceGroupId` | §7.1全部字段减排除列 | `processEvidenceGroupId` | `memberFlowSliceIds,candidateRelations,processSemanticCues,supportingProcessJoinSignalIds,counterProcessJoinSignalIds,repositoryInterpretationRegistryItemIds,modelIneligibilityGapIds,boundedMaterial` |
+| `ProcessModelTaskV1.processModelTaskId` | §7.1全部字段减排除列 | `processModelTaskId` | `processEvidenceGroupIds,ownerCandidateRelationIds,contextFlowSliceIds,boundedMaterial,reviewedP1TaskId,reviewedP1RoundId,reviewedBusinessProcessHypothesisIds,promptBundleRef,responseSchemaRef,expectedRuntime` |
+| `ProcessHypothesisClaimV1.processClaimId` | §7.1全部字段减排除列 | `processClaimId` | `subjectKeys,predicateKey,objectKeys,memberFlowSliceIds,candidateRelationIds,supportProcessJoinSignalIds,processSemanticCueIds,counterProcessJoinSignalIds,blockingCounterProcessJoinSignalIds,factIds,proofIds,evidenceNodeIds,gapIds` |
+| `BusinessProcessHypothesisV1.businessProcessHypothesisId` | §7.1的P1 semantic content减排除列 | `businessProcessHypothesisId,p1RoundId,p2TaskId,p2RoundId,processHypothesisReviewId,finalReviewDecision` | `taskShardId,p1TaskId,processEvidenceGroupIds,memberFlows,businessRoleKeys,stageKeys,activityKeys,inputObjectKeys,outputObjectKeys,objectKeys,stateKeys,processClaims,conditionClaimIds,branchClaimIds,parallelClaimIds,alternativeClaimIds,fallbackClaimIds,candidateRelations,purposeClaimId,endResultClaimId,pendingAssumptionClaimIds,readerSlots` |
+| `GenerationReceiptV3.generationReceiptId` | §7.1全部字段减排除列 | `generationReceiptId` | `taskSpecId,expectedRuntime,observedRuntime`；request/response SHA是调用bytes preimage，不是round/hypothesis back-reference |
+| `ProcessHypothesisReviewV1.processHypothesisReviewId` | §7.1全部字段减排除列 | `processHypothesisReviewId` | `businessProcessHypothesisId,retainedProcessClaimIds,narrowedProcessClaimIds,droppedProcessClaimIds,pendingProcessClaimIds,retainedMemberFlowSliceIds,retainedCandidateRelationIds,gapIds` |
+| `ProcessModelRoundV1.processModelRoundId` | §7.1全部字段减排除列 | `processModelRoundId` | `processModelTaskId,businessProcessHypothesisIds,processHypothesisReviews,gapIds,generationReceiptId` |
+| `ProcessInterpretationDispositionV1.processInterpretationDispositionId` | §7.1全部字段减排除列 | `processInterpretationDispositionId` | `taskShardId,p1TaskId,p1TaskDisposition,p2TaskId,p2TaskDisposition,proposedBusinessProcessHypothesisIds,retainedBusinessProcessHypothesisIds,narrowedBusinessProcessHypothesisIds,droppedBusinessProcessHypothesisIds,pendingBusinessProcessHypothesisIds,gapIds,failureRef` |
+
+无self ID的`ProcessBoundedMaterialV1`、`ProcessFlowEvidenceViewV1`、`ProcessMaterialLimitsV1`、`BusinessProcessFlowMemberV1`、`RegistryOrTechnicalKeyV1`、`HypothesisRelationBindingV1`、`ProcessClaimBoundSlotV1`和`ModelTaskDispositionV2`不单独计算identity；其完整规范值只参加上表明确拥有它的parent projection，且不得含parent/later ID。
+
+唯一合法计算/物化顺序为：upstream Flow/Capsule/Fact/Proof/Evidence/Registry IDs → semantic cue → candidate relation → evidence group → P1 task → P1 generation receipt与claim IDs（同rank）→ hypothesis semantic ID → P1 round → P2 task（即使随后`NOT_RUN_UPSTREAM_FAILED`也在P1 terminal round后物化）→ P2 review与generation receipt（同rank）→ P2 round → 回填hypothesis的五个later-lineage excluded字段 → process disposition。P1 round引用hypothesis semantic ID，hypothesis ID不引用round；review引用hypothesis，hypothesis ID不引用review；P2 round引用review，review不引用round。
+
+`BusinessProcessHypothesisV1`的五个later-lineage excluded字段必须满足：`p1RoundId`指向唯一含本hypothesis ID的同task/shard P1 round；`p2TaskId`指向reviewed P1 task/round及本ID的同shard P2 task；`p2RoundId`指向该task且含`processHypothesisReviewId`的P2 round；review反向指向本ID；`finalReviewDecision`逐字等于review decision且不是`DROP`。任一不符fatal；完整record bytes仍随这些字段变化而改变artifact SHA/root。
+
+各semantic ID固定为`<prefix> + lowercaseHex(SHA-256(frame(UTF8(<domain>)) || frame(canonicalJson(semanticProjection))))`，其中prefix/domain依次为：
 
 ~~~text
 process-evidence-group: / flow-interpretation-process-evidence-group-id-v1
@@ -470,7 +629,7 @@ process-interpretation-disposition: / flow-interpretation-process-interpretation
 generation-receipt: / flow-interpretation-generation-receipt-id-v3
 ~~~
 
-每个preimage删除且只删除该record的self ID；required-nullable字段以null参与。embedded record有自己ID时先算embedded ID，parent仍覆盖完整embedded value。`sourceLocators[]`按`(path,startByte,endByteExclusive)`；member/claim/slot业务序列不得由模型输出顺序决定，M8按`(stage ordinal,flowSliceId,claimKind,processClaimId)`规范化后再计算parent identity。
+非excluded required-nullable字段以null参加projection。embedded record有self ID时先按DAG计算embedded ID，owner projection覆盖该embedded record中属于semantic projection的完整值。`sourceLocators[]`按`(path,startByte,endByteExclusive)`；member/claim/slot业务序列由M8按`(stage ordinal,flowSliceId,claimKind,processClaimId)`规范化，不能信任模型顺序。
 
 ## 8. 集合、identity与处置合同
 

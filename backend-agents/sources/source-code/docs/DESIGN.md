@@ -1347,7 +1347,45 @@ GenerationReceiptV3
 
 `ProcessSemanticCueV1`两端registry item都必须是finite frozen `BUSINESS_TERM`并闭合到各自Capsule basis；`ENTRY_VERB`两端entry ref非null且命中冻结entry lexicon，`STATE_WORD`两端signal数组非空且命中冻结state lexicon，`REGISTRY_BUSINESS_TERM`则entry为null、state arrays为空。cue只能`PENDING_ONLY`。P1 task的两个review ref为null且reviewed IDs为空；P2反之。generation receipt恰一个scope字段非null。public hypothesis只保留P2 KEEP/NARROW/PENDING；DROP只在round/review/disposition计数。
 
-以上self ID使用`<prefix> + lowercaseHex(SHA-256(frame(UTF8(<domain>)) || frame(canonicalJson(recordWithoutSelfId))))`，prefix/domain依次为`process-evidence-group:/flow-interpretation-process-evidence-group-id-v1`、`process-relation:/flow-interpretation-process-candidate-relation-id-v1`、`process-semantic-cue:/flow-interpretation-process-semantic-cue-id-v1`、`process-model-task:/flow-interpretation-process-model-task-id-v1`、`process-model-round:/flow-interpretation-process-model-round-id-v1`、`business-process-hypothesis:/flow-interpretation-business-process-hypothesis-id-v1`、`process-claim:/flow-interpretation-process-hypothesis-claim-id-v1`、`process-hypothesis-review:/flow-interpretation-process-hypothesis-review-id-v1`、`process-interpretation-disposition:/flow-interpretation-process-interpretation-disposition-id-v1`、`generation-receipt:/flow-interpretation-generation-receipt-id-v3`。每个preimage只删除自身ID，required-nullable以null参与；JSONL按self ID，普通ID数组按UTF-8 bytewise排序去重；stage/member/claim/slot由程序按`(stage ordinal,flowSliceId,claimKind,processClaimId)`规范化，不能信任模型顺序。
+### Step 06显式无环identity DAG
+
+以下与流程解释详细设计§7.2相同，其中表内§7.1指该详细设计的完整record catalog。经用户直接确认，语义ID与完整wire/artifact identity分层：语义ID只哈希下表的semantic projection；required later-lineage字段仍保存在wire中、进入JSONL/artifact descriptor SHA与analysis-step root，并由M9逐引用验证。排除后向引用不会隐藏篡改。除表内明确字段外，不得再排除字段；没有alias、dual-write或旧公式兼容路径。
+
+| record / self ID | semantic projection | 从semantic ID精确排除 | projection中必须先存在的reference字段 |
+| --- | --- | --- | --- |
+| `ProcessSemanticCueV1.processSemanticCueId` | §7.1全部字段减排除列 | `processSemanticCueId` | `leftFlowSliceId,rightFlowSliceId,leftRegistryItemId,rightRegistryItemId,leftBasisAtomIds,rightBasisAtomIds,leftEntryId,rightEntryId,leftStateSignalIds,rightStateSignalIds,processCueProfileRef` |
+| `ProcessCandidateRelationV1.candidateRelationId` | §7.1全部字段减排除列 | `candidateRelationId` | `leftFlowSliceId,rightFlowSliceId,supportingProcessJoinSignalIds,processSemanticCueIds,counterProcessJoinSignalIds,blockingCounterProcessJoinSignalIds,factIds,proofIds,evidenceNodeIds,sourceLocators,gapIds` |
+| `ProcessEvidenceGroupV1.processEvidenceGroupId` | §7.1全部字段减排除列 | `processEvidenceGroupId` | `memberFlowSliceIds,candidateRelations,processSemanticCues,supportingProcessJoinSignalIds,counterProcessJoinSignalIds,repositoryInterpretationRegistryItemIds,modelIneligibilityGapIds,boundedMaterial` |
+| `ProcessModelTaskV1.processModelTaskId` | §7.1全部字段减排除列 | `processModelTaskId` | `processEvidenceGroupIds,ownerCandidateRelationIds,contextFlowSliceIds,boundedMaterial,reviewedP1TaskId,reviewedP1RoundId,reviewedBusinessProcessHypothesisIds,promptBundleRef,responseSchemaRef,expectedRuntime` |
+| `ProcessHypothesisClaimV1.processClaimId` | §7.1全部字段减排除列 | `processClaimId` | `subjectKeys,predicateKey,objectKeys,memberFlowSliceIds,candidateRelationIds,supportProcessJoinSignalIds,processSemanticCueIds,counterProcessJoinSignalIds,blockingCounterProcessJoinSignalIds,factIds,proofIds,evidenceNodeIds,gapIds` |
+| `BusinessProcessHypothesisV1.businessProcessHypothesisId` | §7.1的P1 semantic content减排除列 | `businessProcessHypothesisId,p1RoundId,p2TaskId,p2RoundId,processHypothesisReviewId,finalReviewDecision` | `taskShardId,p1TaskId,processEvidenceGroupIds,memberFlows,businessRoleKeys,stageKeys,activityKeys,inputObjectKeys,outputObjectKeys,objectKeys,stateKeys,processClaims,conditionClaimIds,branchClaimIds,parallelClaimIds,alternativeClaimIds,fallbackClaimIds,candidateRelations,purposeClaimId,endResultClaimId,pendingAssumptionClaimIds,readerSlots` |
+| `GenerationReceiptV3.generationReceiptId` | §7.1全部字段减排除列 | `generationReceiptId` | `taskSpecId,expectedRuntime,observedRuntime`；request/response SHA是调用bytes preimage，不是round/hypothesis back-reference |
+| `ProcessHypothesisReviewV1.processHypothesisReviewId` | §7.1全部字段减排除列 | `processHypothesisReviewId` | `businessProcessHypothesisId,retainedProcessClaimIds,narrowedProcessClaimIds,droppedProcessClaimIds,pendingProcessClaimIds,retainedMemberFlowSliceIds,retainedCandidateRelationIds,gapIds` |
+| `ProcessModelRoundV1.processModelRoundId` | §7.1全部字段减排除列 | `processModelRoundId` | `processModelTaskId,businessProcessHypothesisIds,processHypothesisReviews,gapIds,generationReceiptId` |
+| `ProcessInterpretationDispositionV1.processInterpretationDispositionId` | §7.1全部字段减排除列 | `processInterpretationDispositionId` | `taskShardId,p1TaskId,p1TaskDisposition,p2TaskId,p2TaskDisposition,proposedBusinessProcessHypothesisIds,retainedBusinessProcessHypothesisIds,narrowedBusinessProcessHypothesisIds,droppedBusinessProcessHypothesisIds,pendingBusinessProcessHypothesisIds,gapIds,failureRef` |
+
+无self ID的`ProcessBoundedMaterialV1`、`ProcessFlowEvidenceViewV1`、`ProcessMaterialLimitsV1`、`BusinessProcessFlowMemberV1`、`RegistryOrTechnicalKeyV1`、`HypothesisRelationBindingV1`、`ProcessClaimBoundSlotV1`和`ModelTaskDispositionV2`不单独计算identity；其完整规范值只参加上表明确拥有它的parent projection，且不得含parent/later ID。
+
+唯一合法计算/物化顺序为：upstream Flow/Capsule/Fact/Proof/Evidence/Registry IDs → semantic cue → candidate relation → evidence group → P1 task → P1 generation receipt与claim IDs（同rank）→ hypothesis semantic ID → P1 round → P2 task（即使随后`NOT_RUN_UPSTREAM_FAILED`也在P1 terminal round后物化）→ P2 review与generation receipt（同rank）→ P2 round → 回填hypothesis的五个later-lineage excluded字段 → process disposition。P1 round引用hypothesis semantic ID，hypothesis ID不引用round；review引用hypothesis，hypothesis ID不引用review；P2 round引用review，review不引用round。
+
+`BusinessProcessHypothesisV1`的五个later-lineage excluded字段必须满足：`p1RoundId`指向唯一含本hypothesis ID的同task/shard P1 round；`p2TaskId`指向reviewed P1 task/round及本ID的同shard P2 task；`p2RoundId`指向该task且含`processHypothesisReviewId`的P2 round；review反向指向本ID；`finalReviewDecision`逐字等于review decision且不是`DROP`。任一不符fatal；完整record bytes仍随这些字段变化而改变artifact SHA/root。
+
+各semantic ID固定为`<prefix> + lowercaseHex(SHA-256(frame(UTF8(<domain>)) || frame(canonicalJson(semanticProjection))))`，其中prefix/domain依次为：
+
+~~~text
+process-evidence-group: / flow-interpretation-process-evidence-group-id-v1
+process-relation: / flow-interpretation-process-candidate-relation-id-v1
+process-semantic-cue: / flow-interpretation-process-semantic-cue-id-v1
+process-model-task: / flow-interpretation-process-model-task-id-v1
+process-model-round: / flow-interpretation-process-model-round-id-v1
+business-process-hypothesis: / flow-interpretation-business-process-hypothesis-id-v1
+process-claim: / flow-interpretation-process-hypothesis-claim-id-v1
+process-hypothesis-review: / flow-interpretation-process-hypothesis-review-id-v1
+process-interpretation-disposition: / flow-interpretation-process-interpretation-disposition-id-v1
+generation-receipt: / flow-interpretation-generation-receipt-id-v3
+~~~
+
+非excluded required-nullable字段以null参加projection。embedded record有self ID时先按DAG计算embedded ID，owner projection覆盖该embedded record中属于semantic projection的完整值。`sourceLocators[]`按`(path,startByte,endByteExclusive)`；member/claim/slot业务序列由M8按`(stage ordinal,flowSliceId,claimKind,processClaimId)`规范化，不能信任模型顺序。
 
 For every eligible Flow, the R0 disposition has one R0 task disposition. The
 final interpretation disposition has both R1/R2 task dispositions iff its R0
@@ -1655,7 +1693,47 @@ MergedGapV2
 
 `decisionScope=FLOW`只允许`flowDecision`非null，`BUSINESS_PROCESS`只允许`processDecision`非null。`processCertainty`只在`ADMIT | ADMIT_WITH_PENDING`时非null，并与创建的process knowledge相等；其余为null。`SOURCE_CONFIRMED`要求P1 accepted、P2对同一hypothesis/claim为KEEP/NARROW、直接Fact/Proof和无blocking counter；`EVIDENCE_SUPPORTED_INFERENCE`要求同一P1/P2条件、至少一个经程序验证的`PROVEN_HANDOFF | SHARED_ANCHOR` relation/signal、完整Fact/Proof/Evidence/source闭包且无blocking counter；仅SEMANTIC_CUE、P2 pending/not-run或blocking counter都只能pending。Reader slot/prose不能绕过claim decision。
 
-`BUSINESS_PROCESS` membership要求process非null；`INDEPENDENT_ACTIVITY`要求process为null且activity非空；`UNASSIGNED_PENDING`要求process为null、activity为空、Gap非空。Conflict winner只在MERGE/REJECT时非null；relation端点只有pending且Gap非空时可null。standalone object按所列字段顺序；decision JSONL先FLOW后BUSINESS_PROCESS再按decision ID，九数组各按自身ID、内部ID数组按UTF-8 bytewise排序去重。root `artifactId = sha256(schemaVersion || artifactType || canonical payload excluding artifactId)`；内部prefix固定`bp-knowledge-v1`、`process-activity-v1`、`process-relation-v1`、`process-membership-v1`、`role-knowledge-v1`、`state-knowledge-v1`、`process-claim-knowledge-v1`、`process-alternative-v1`、`pending-confirmation-v1`并覆盖全部规范字段。
+`BUSINESS_PROCESS` membership要求process非null；`INDEPENDENT_ACTIVITY`要求process为null且activity非空；`UNASSIGNED_PENDING`要求process为null、activity为空、Gap非空。Conflict winner只在MERGE/REJECT时非null；relation端点只有pending且Gap非空时可null。
+
+### Step 07显式无环identity DAG
+
+以下与仓库知识详细设计§5.3相同，其中表内§5.2指该详细设计的完整record catalog。经用户直接确认，过程semantic ID只覆盖不含later child/back-reference的semantic projection；完整final wire仍进入standalone artifact SHA、semantic file root与receipt，M3逐项验证excluded refs。除下表明确字段外不得排除；没有alias、dual-write或旧循环公式兼容路径。
+
+| record / self ID | semantic projection | 从semantic ID精确排除 | projection中必须先存在的reference字段 |
+| --- | --- | --- | --- |
+| `ProcessAdmissionDecisionV1.processAdmissionDecisionId` | §5.2全部字段减排除列 | `processAdmissionDecisionId,businessProcessId,processAlternativeIds,pendingConfirmationIds` | `businessProcessHypothesisId,processInterpretationDispositionId,p1TaskId,p1RoundId,p2TaskId,p2RoundId,processHypothesisReviewId,claimDecisions,memberFlowSliceIds,candidateRelationIds,gapIds` |
+| `BusinessProcessKnowledgeV1.businessProcessId` | §5.2字段中`sourceBusinessProcessHypothesisId,processAdmissionDecisionId,nameKey,certainty,gapIds` | `businessProcessId,purposeClaimId,endResultClaimId,activityIds,relationIds,membershipIds,roleIds,stateIds,processClaimIds,alternativeIds,pendingConfirmationIds` | `sourceBusinessProcessHypothesisId,processAdmissionDecisionId,nameKey,gapIds` |
+| `ProcessActivityKnowledgeV1.processActivityId` | §5.2全部字段减排除列 | `processActivityId,businessProcessIds,roleIds,stateIds` | `sourceProcessClaimId,processAdmissionDecisionId,activityKey,memberFlowSliceIds,inputObjectKeys,outputObjectKeys,gapIds` |
+| `ProcessClaimKnowledgeV1.processClaimKnowledgeId` | §5.2全部字段减排除列 | `processClaimKnowledgeId` | `sourceProcessClaimId,processAdmissionDecisionId,processHypothesisReviewId,subjectKey,predicateKey,objectKey,memberFlowSliceIds,candidateRelationIds,processJoinSignalIds,processSemanticCueIds,counterSignalIds,blockingCounterSignalIds,factIds,proofIds,evidenceNodeIds,gapIds` |
+| `ProcessAlternativeKnowledgeV1.processAlternativeId` | §5.2全部字段减排除列 | `processAlternativeId,mutuallyExclusiveWithAlternativeIds` | `sourceProcessClaimIds,processAdmissionDecisionId,memberFlowSliceIds,candidateRelationIds,gapIds` |
+| `PendingConfirmationV1.pendingConfirmationId` | §5.2全部字段减排除列 | `pendingConfirmationId` | `sourceProcessClaimIds,processAdmissionDecisionId,subjectKey,questionKey,memberFlowSliceIds,processJoinSignalIds,processSemanticCueIds,counterSignalIds,blockingCounterSignalIds,gapIds` |
+| `ProcessRelationKnowledgeV1.processRelationId` | §5.2全部字段减排除列 | `processRelationId` | `sourceProcessClaimId,processAdmissionDecisionId,fromActivityId,toActivityId,conditionClaimIds,supportCandidateRelationIds,processJoinSignalIds,processSemanticCueIds,counterSignalIds,blockingCounterSignalIds,gapIds` |
+| `ProcessMembershipV1.processMembershipId` | §5.2全部字段减排除列 | `processMembershipId` | `flowSliceId,businessProcessId,activityIds,gapIds` |
+| `RoleKnowledgeV1.roleId` | §5.2全部字段减排除列 | `roleId` | `sourceProcessClaimId,processAdmissionDecisionId,roleKey,businessProcessIds,activityIds,responsibilityClaimIds,gapIds` |
+| `StateKnowledgeV1.stateId` | §5.2全部字段减排除列 | `stateId` | `sourceProcessClaimId,processAdmissionDecisionId,stateKey,objectKey,producerActivityIds,checkerActivityIds,processJoinSignalIds,gapIds` |
+
+`ProcessClaimDecisionV1`和`RegistryOrTechnicalKeyV1`没有self ID；其完整值参加拥有record的projection。`ProcessRelationKnowledgeV1.conditionClaimIds`与`RoleKnowledgeV1.responsibilityClaimIds`都逐字引用已计算的`processClaimKnowledgeId`，不能引用上游裸claim ID冒充知识ID。
+
+唯一合法计算/物化顺序为：Step 06 hypothesis/disposition/task/round/review与证据IDs → process admission semantic ID → business-process、activity、claim、alternative、pending semantic IDs（同rank）→ relation、membership、role、state IDs → 回填admission的三个excluded output字段、business-process的十个excluded child/claim字段、activity的三个excluded association字段及alternative mutual refs → admission wrapper/conflict/merged-Gap standalone IDs → `RepositoryBusinessKnowledgeV4.artifactId` → `KnowledgeAccountingV3.artifactId`。任何child不得在自己的semantic projection中引用一个尚未计算的parent/peer ID。
+
+excluded字段必须闭合：admission的`businessProcessId`非null时，目标process必须反向携带同一admission ID；alternative/pending集合必须等于以该admission为source且被decision保留的精确IDs。BusinessProcess purpose/end refs必须指向其`processClaimIds`中的对应knowledge claim；其八个child arrays必须等于反向引用该process/admission的规范集合。Activity的process/role/state集合必须等于反向引用集合。Alternative mutual refs必须无self、双向对称。任何遗漏、额外或不对称均fatal，且改变完整artifact SHA/root。
+
+各semantic ID公式固定为`<prefix> + lowercaseHex(SHA-256(frame(UTF8(<domain>)) || frame(canonicalJson(semanticProjection))))`，prefix/domain为：
+
+~~~text
+process-admission-decision: / repository-knowledge-process-admission-decision-id-v1
+business-process: / bp-knowledge-v1
+process-activity: / process-activity-v1
+process-relation-knowledge: / process-relation-v1
+process-membership: / process-membership-v1
+role-knowledge: / role-knowledge-v1
+state-knowledge: / state-knowledge-v1
+process-claim-knowledge: / process-claim-knowledge-v1
+process-alternative: / process-alternative-v1
+pending-confirmation: / pending-confirmation-v1
+~~~
+
+五个standalone root `KnowledgeAdmissionDecisionRecordV5`、`RepositoryBusinessKnowledgeV4`、`KnowledgeConflictV3`、`KnowledgeAccountingV3`、`MergedGapV2`仍按各自`STANDALONE_JSON` policy排除且只排除`artifactId`，并覆盖已经完成back-reference校验的完整final record；因此semantic projection exclusions不会传播到artifact identity。standalone JSON对象按§5.2字段顺序；JSONL先按`decisionScope`（`FLOW`在前）再按对应decision ID；九数组按自身ID、内部ID数组按UTF-8 bytewise排序去重。业务展示顺序只由Step 08显式表达。
 
 RepositoryCoverageLedgerDraftV3
   schemaVersion=repository-coverage-ledger-draft-v3
@@ -2761,7 +2839,7 @@ Luna/xhigh 或 Terra/xhigh 在以下任一情况必须停止受影响 vertical s
 
 **用户保留的MUST/STOP边界只有以下六类**：改变八个analysis step的集合、顺序或stable key；改变固定九章的数量、顺序、key或语义；改变evidence/Proof/Trace信任规则；改变模型可见材料、职责或调用边界（包括P1/P2唯一多Flow例外）；改变跨analysis-step identity/publication语义；改变公开`RepositoryAnalysisAgent`或正式artifact/accounting边界（包括57总数）。任一命中时，Sol/ultra也必须停止，整理证据、影响、可行备选、推荐项与不变项交用户确认。其他局部或相邻模块protocol变化不因“artifact field semantics”这一泛化理由自动升级用户；仍必须由Sol/ultra按上一段书面裁决。
 
-本轮cross-Flow设计采用一次有界protocol裁决：理由是消除Step 06信号等级、Step 07 claim certainty/standalone records以及Step 08 plan/ReaderItem/Trace的实现歧义；受影响合同仅为`flow-interpretation` M6–M9、RepositoryKnowledge M1–M3与NineSectionDocument M1/M3及其本文/三份详细设计中的已版本化wire。保持不变的invariants是八步与`flow-interpretation` key、固定九章、P1/P2模型边界、Fact/Proof/Evidence/Trace closure、跨步骤content identity、公开七方法、五十七项正式accounting及外部效果无Proof即Gap。旧歧义形状不设alias/dual-write，未来实现按新版本fail closed；因此未触发用户保留边界。
+本轮cross-Flow设计采用一次有界protocol裁决：理由是消除Step 06信号等级、Step 07 claim certainty/standalone records以及Step 08 plan/ReaderItem/Trace的实现歧义；受影响合同仅为`flow-interpretation` M6–M9、RepositoryKnowledge M1–M3与NineSectionDocument M1/M3及其本文/三份详细设计中的已版本化wire。保持不变的invariants是八步与`flow-interpretation` key、固定九章、P1/P2模型边界、Fact/Proof/Evidence/Trace closure、跨步骤content-addressed验证、公开七方法、五十七项正式accounting及外部效果无Proof即Gap。用户又直接批准其中的identity-chain修正：Step 06 hypothesis语义ID排除后续round/task/review/final-decision refs，Step 07 admission/process语义ID排除后生成child/back-reference refs，而完整wire继续进入artifact SHA/root。旧歧义/循环公式不设alias、dual-write或兼容reader，未来实现fail closed。
 
 progress 只记录编码Agent中断后的继续工作证据与下一动作；durable design 只保存当前有效产品合同，不写时间流水账。两者不得被误建成产品runtime recovery。每个模块 handoff 的 Luna/Terra 指南都必须显式引用本节。
 

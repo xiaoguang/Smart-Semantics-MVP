@@ -1,10 +1,10 @@
 # Progress: Business-process reconstruction design
 
-- Status: COMPLETE_POST_REVIEW_FIX_1
+- Status: COMPLETE_POST_REVIEW_FIX_2
 - Agent role: Sol/ultra Design Authority
 - Model: gpt-5.6-sol / ultra
 - Started: 2026-09-08 03:50:53 NDT
-- Last updated: 2026-09-08 06:00:17 NDT
+- Last updated: 2026-09-08 09:47:40 NDT
 - Scope: Documentation-only cross-Flow BusinessProcess reconstruction design under `backend-agents/sources/source-code/`.
 - Approved inputs: `task-1-brief.md` and `cross-flow-requirements.md` in `.superpowers/sdd/source-analysis-process-reconstruction-design-plan/`.
 - Current branch/worktree: `codex/source-analysis-process-reconstruction-design` at `/private/tmp/linguan-source-analysis-process-design`.
@@ -21,11 +21,15 @@
 - Aligned `docs/DESIGN.md`, `AGENTS.md`, `README.md`, the naming/delivery plan, and the ProgramGraphs backlog to the same eight-step/57-artifact/model-boundary contracts.
 - Read and verified the independent Task 2 review. All five P1 and two P2 findings were reproduced against baseline commit `5b5fc5b` and accepted for fix round 1.
 - Closed all seven review findings: exact four-tier signal mapping and thirteen-kind closure; local-versus-total task accounting; typed claim/slot lineage and closed certainty predicates; complete Step 06/07/08 wire catalogs aligned with DESIGN; bounded Sol/ultra local/inter-module authority; Capsule span V4; and this post-review progress handoff.
+- Read and verified fix-round-1 re-review. The two remaining P1s reproduce: generic all-fields self hashing creates Step 06 round/hypothesis/review and Step 07 process/child cycles, and the Step 06 hypothesis sample is not schema-conforming.
+- Replaced the Step 06 hypothesis example with a complete synthetic structural fixture: every mandatory field is present, support/cue/counter names match the exact schema, all claim/slot/relation references close, and full P1/P2 lineage is present.
+- Recorded the user's direct confirmation of the exact identity-chain repair after two earlier safety-gate rejections.
+- Replaced the circular Step 06 and Step 07 identity formulas with explicit acyclic semantic-ID DAGs, exact per-record exclusions/references, mandatory creation order, closed back-reference validation, unchanged full-wire artifact hashing, and no alias/dual-write/compatibility path. The detailed contracts and `docs/DESIGN.md` are byte-equivalent across each identity table and validation block.
 
 ## Current state
 
-- Commit `5b5fc5b` is the reviewed baseline. This record is the post-review fix-1 handoff contained in the next documentation commit; resolve that containing commit with `git rev-parse HEAD` after checkout rather than embedding a self-referential prospective SHA here.
-- The durable target now closes signal-tier semantics, task accounting, claim/certainty lineage, standalone wire fields/nullability/order/identity, and the Sol/ultra protocol-adjustment gate. No required documentation action remains before independent re-review or downstream RED planning.
+- Commit `376df3e` is the fix-round-2 reviewed baseline. This record and the three corrected durable design files form the post-review fix-2 handoff contained in the next documentation commit; resolve that containing commit with `git rev-parse HEAD` after checkout rather than embedding a self-referential prospective SHA here.
+- The two re-review P1s are closed in the target design: every new Step 06/07 process semantic ID now has a finite topological preimage, and the Step 06 `BusinessProcessHypothesisV1` fixture has the exact mandatory field sets and closed internal references. No production implementation is claimed.
 - No Java, tests, schemas, generated/runtime artifacts, source scans, or model calls are in scope.
 
 ## Changed files
@@ -48,6 +52,9 @@
 | `git status --short --branch` | PASS | Clean branch `codex/source-analysis-process-reconstruction-design` tracking `origin/main` before the progress-file edit. |
 | `git diff --check` | PASS | No whitespace errors. |
 | targeted `rg` contract checks | PASS | In the approved files: 57 count, five new Step 06 files, task/call formula, NOT_RUN semantics, exact signal tiers, nine process arrays, complete Plan/Reader/Trace fields, five ReaderItem kinds, and synthetic caveats are present; stale 52, `ModelEvidenceSpanV3`, and wire `nineSectionPlanId!` are absent. |
+| identity-block `cmp` and row counts | PASS | Step 06 and Step 07 detailed identity blocks match `docs/DESIGN.md`; each enumerates ten self-ID records. |
+| extracted fixture `jq -e` assertions | PASS | JSON parses; root/claim/member/relation/slot key sets are exact; typed purpose/end, member/relation/slot references close; obsolete abbreviated signal fields are absent. |
+| fix-2 targeted `rg` checks | PASS | Exact approved Step 06/07 exclusion sets, full-wire SHA/root validation, no-alias rule, fixed eight steps/nine sections/57 count, `flow-interpretation`, P1/P2 boundary, and synthetic/external-effect caveats remain present. |
 
 ## Decisions
 
@@ -63,7 +70,7 @@
 
 ## Exact next action
 
-- Independent review may inspect the containing fix commit. If accepted, Luna/xhigh may derive bounded RED tests from the frozen module contracts; no production implementation is part of this documentation work unit.
+- Independent review may inspect the containing fix-2 commit. If accepted, Luna/xhigh may derive bounded RED tests from the frozen contracts; no production implementation is part of this documentation work unit.
 
 ## Resume checks
 
