@@ -15,10 +15,11 @@
 - Verified local offline package succeeds with JDK 17; 314 main and 88 test sources compile. Prior format check identifies 83 existing files requiring formatting.
 - Read implementation plans and existing local-interpretation checkpoint: local M1–M5 exist, but no complete interpretation publication or cross-Flow reconstruction exists.
 - Terra applied the pinned formatter to 83 Java files (50 main, 33 test). All 402 files are now format-clean; package compiles 314 main and 88 test sources, and the architecture selector passes 3/3. Package test execution was intentionally skipped.
+- Independent Luna/xhigh review approves the formatting delivery: no P0/P1/P2; zero non-import/comment token or literal changes, 17 unused imports removed.
 
 ## Current state
 
-Formatting-only branch starts from exact merged main; implementation and checks have completed and independent review is next. Formatting and subsequent feature delivery use separate PRs. No customer capture, customer build, or live Provider call is authorized in this slice.
+Formatting-only branch starts from exact merged main; implementation, local checks and independent review are complete. Commit d4ee7df contains the formatter delivery; review metadata is being finalized before the single squash PR. Formatting and subsequent feature delivery use separate PRs. No customer capture, customer build, or live Provider call is authorized in this slice.
 
 Current implementation audit: steps 1–4 have existing bounded production chains and prior targeted verification; step 5 has M1–M3 but lacks processJoinSignals; step 6 has local M1–M5 but no process M6–M9 or final publication; steps 7/8 and runtime/adapters/validator have package skeletons only. Current-code jshERP acceptance has not run. Existing evidence is not full-repository completion.
 
@@ -53,7 +54,7 @@ None for formatting. The prior registry module/public envelope collision has a p
 
 ## Exact next action
 
-Independently review formatter-only changes, commit and merge the locally verified formatting PR, then create a fresh main-based branch for the bounded Step05 signal implementation handoff. Keep heavy Maven execution serial.
+Merge the locally verified formatting PR, then create a fresh main-based branch for the bounded Step05 signal implementation handoff. Keep heavy Maven execution serial.
 
 ## Resume checks
 
