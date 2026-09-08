@@ -1,6 +1,6 @@
 # Source Code Analysis Agent
 
-本 Agent 的目标是把一份**完整冻结的** Java/Spring MVC/MyBatis 仓库快照，整理成可信、可追溯、明确写出未知项的**一份仓库级**九章 Markdown 候选。程序先盘点全入口、构建五张程序图、证明 Fact，再为每个支持入口编译独立 Flow/EvidenceCapsule；流程解释为每个 Flow 提出有证据 basis 的仓库特定词，程序冻结唯一 `RepositoryInterpretationRegistry` 后再完成有限键 R1/R2 解释；最后把全部 Flow 准入并合成唯一 `RepositoryKnowledge`，只生成一份 `NineSectionPlan`、`document.md`、Trace 和完整分析运行归档。
+本 Agent 的目标是把一份**完整冻结的** Java/Spring MVC/MyBatis 仓库快照，整理成可信、可追溯、明确写出未知项的**一份仓库级**九章 Markdown 候选。程序先盘点入口、建五图、证明Fact并为每个入口编译局部Flow/Capsule及证据支持的连接信号；流程解释保持单Flow R0/R1/R2，再以P1/P2这一唯一有界多Flow模型例外提出BusinessProcess。程序在零模型调用的仓库知识步骤完成准入、冲突保留和多对多membership，最终只生成一份`NineSectionPlan`、`document.md`、Trace和归档。
 
 DepotHead 八文件只是贯穿讲解和局部 fixture，不是产品分析范围。一个 Flow 成功、一个 shard 完成或一个局部 slice 可读都不能完成仓库分析；只有 `RepositoryCoverageLedger` 对完整仓库的文件、site、入口、图、Fact/atom、Outcome、Flow、解释、知识和 section owner 逐项闭合，才可产生完整分析结果。禁止一 Flow 一 Markdown，也禁止先渲染片段再拼接。
 
@@ -24,10 +24,10 @@ POC 记录位于 `docs/history/`，只用于历史审计，不属于阅读路线
 | `steps/02-application-discovery/` | 这是什么应用，入口在哪里？ | [应用发现](docs/analysis-steps/02-application-discovery.md) |
 | `steps/03-program-graphs/` | 结构、调用、控制、数据和证据怎样连接？ | [程序图](docs/analysis-steps/03-program-graphs.md) |
 | `steps/04-proven-code-facts/` | 哪些代码事实逐原子可证明？ | [已证明代码事实](docs/analysis-steps/04-proven-code-facts.md) |
-| `steps/05-business-flows/` | 每个入口的完整流程和模型阅读包是什么？ | [业务流程](docs/analysis-steps/05-business-flows.md) |
-| `steps/06-flow-interpretation/` | 新仓库业务词怎样由 R0 提出、程序冻结，再由 R1/R2 安全选择？ | [流程解释](docs/analysis-steps/06-flow-interpretation.md) |
-| `steps/07-repository-knowledge/` | 谁决定解释能否进入仓库业务知识？ | [仓库知识](docs/analysis-steps/07-repository-knowledge.md) |
-| `steps/08-nine-section-document/` | 九章、Markdown、Trace、验证和归档怎样闭合？ | [九章文档](docs/analysis-steps/08-nine-section-document.md) |
+| `steps/05-business-flows/` | 每个入口的局部活动和跨Flow连接证据是什么？ | [业务流程](docs/analysis-steps/05-business-flows.md) |
+| `steps/06-flow-interpretation/` | 单Flow业务词与有界端到端过程怎样安全提出和复核？ | [流程解释](docs/analysis-steps/06-flow-interpretation.md) |
+| `steps/07-repository-knowledge/` | 谁准入process claim、保留冲突并建立多对多membership？ | [仓库知识](docs/analysis-steps/07-repository-knowledge.md) |
+| `steps/08-nine-section-document/` | process-first九章、plan-only Markdown和完整Trace怎样闭合？ | [九章文档](docs/analysis-steps/08-nine-section-document.md) |
 
 数字前缀只用于上述文档和运行目录排序。Java package、类型、字段、schema、artifact ID 和命令使用语义名称。
 
@@ -49,16 +49,17 @@ POC 记录位于 `docs/history/`，只用于历史审计，不属于阅读路线
 - 九章名称、顺序和基数的唯一权威：[共享 NineSectionProfile](../../../shared/source-agent-contracts/README.md)。
 - 所有 Source Agent 的中文共同语境：[backend-agents/CONTEXT.md](../../CONTEXT.md)。
 - Fact/Proof/Gap 技术合同：[已证明代码事实](docs/analysis-steps/04-proven-code-facts.md#8-技术合同)。
-- Flow/Capsule 技术合同：[业务流程](docs/analysis-steps/05-business-flows.md#8-技术合同)。
-- R0、唯一 registry、有限键 R1/R2、`E + 2R` 守恒和 Provider 失败边界：[流程解释](docs/analysis-steps/06-flow-interpretation.md#8-技术合同)。
-- run-centric `start/executeStep/inspect/artifact/render/validate/trace`、plan-only renderer、typed Trace 和显式新分析步骤执行：[九章文档](docs/analysis-steps/08-nine-section-document.md#8-技术合同)。
+- Flow/Capsule与`processJoinSignals`合同：[业务流程](docs/analysis-steps/05-business-flows.md)。
+- 九模块、十五文件、`E+2R+2S`与P1/P2边界：[流程解释](docs/analysis-steps/06-flow-interpretation.md)。
+- process admission、三值certainty与九过程数组：[仓库知识](docs/analysis-steps/07-repository-knowledge.md)。
+- run-centric七方法、process-first Chapter 4、plan-only renderer与typed Trace：[九章文档](docs/analysis-steps/08-nine-section-document.md)。
 - 同一运行自动恢复：[延期说明](docs/supplements/runtime-recovery-todo.md)，不属于 active v0 合同。
 
 ## Wire Reset
 
 结构性 Wire Reset 已完成：工程已经移动到目标目录，Maven/Java/package身份已经替换，pre-reset生产代码、测试与fixture已经删除。当前只有语义包骨架和通用wire头门禁，后续八步实现只写新格式。没有兼容 reader、alias、迁移 bridge、双写或旧 artifact 转换；旧 `stages/` 路径、编号类型、旧 schema/receipt/package identity 必须 fail closed。Git 历史和 `progress/*.md` 保留用于审计，但不能成为运行时输入。
 
-每个分析步骤写入 `steps/<ordered-semantic-key>/`。42 个 semantic payload、八个语义 receipt、一个 `nine-section-archive-manifest.json` 和一个 root `run-manifest.json` 仍合计 52 个 reader-visible run outputs。Module artifact/receipt 和 exterior validation publication 不混入这 52 项。
+每个分析步骤写入`steps/<ordered-semantic-key>/`。47个semantic payload、八个语义receipt、一个`nine-section-archive-manifest.json`和一个root `run-manifest.json`合计**57**个正式run outputs。五个新增semantic全部属于仍名为`flow-interpretation`的Step 06；module artifact/receipt和外部validation不计入57。
 
 同一运行不自动恢复。中断或 started Provider failure 令运行失败；调用者只能新建运行，或用精确已验证的上游 publication references 创建显式的新分析步骤执行。程序不自动重试、切换 Provider 或重扫来源。
 
@@ -74,11 +75,13 @@ POC 记录位于 `docs/history/`，只用于历史审计，不属于阅读路线
 | Java构建选择 | **已实现（构建）** | 项目提供JDK 17 Toolchain配置，compiler release固定为17；这只约束Agent自身构建，不代表任何业务分析步骤已实现 |
 | 新wire头门禁 | **已实现（窄门禁）** | `AnalysisWireFormatGuard`只接受对象头`wireKind=SOURCE_ANALYSIS`且`wireVersion=v1`，并以`UNSUPPORTED_ANALYSIS_WIRE`拒绝顶层描述符元数据中的pre-reset path、编号stage、stage receipt/schema、旧Maven/Java package身份和wire alias；不扫描业务内容。owner-specific schema、canonical artifact reader与八步artifact校验尚未实现 |
 | Canonical artifact foundation | **部分实现（源码清单模块持久化纵切）** | 已有canonical JSON、不可变bytes、typed identity/address和policy registry；module store已能原子安装、receipt-last并fresh reopen源码盘点M1/M2的JSON payload，以及M3恰好三项独立JSON/JSONL payload，并重算descriptor/root/receipt、拒绝策略/符号链接/碰撞/文件组和顺序错误。它不是完整store：RAW UTF-8、其他模块payload、analysis-step/run store、生产root bootstrap和runtime仍未实现 |
-| 八个业务分析步骤 | **尚未实现（独立capture与共享持久化预备已完成）** | `LocalGitCommitCaptureAdapter`已在synthetic local Git repository上验证exact commit的raw tree/blob capture、文本/二进制/100755处置、symlink拒绝和工作区独立性；它不是已完成的源码盘点。M1/M2/M3业务算法、reader-visible源码清单、应用发现、五图、Fact/Proof、Flow/Capsule、R0/R1/R2、RepositoryKnowledge、九章和Trace生产代码与运行产物仍不存在 |
+| 八个业务分析步骤 | **部分纵切，未形成完整run** | capture与前序若干模块已有synthetic纵切；BusinessFlows当前纵切尚无signals，FlowInterpretation仅有局部M1–M5 scripted路径。跨Flow M6–M9、P1/P2、RepositoryKnowledge过程准入、process-first九章与完整Trace均未实现；没有jshERP当前run产物 |
 | public Java/CLI/HTTP | **尚未实现** | `RepositoryAnalysisAgent`七方法、`source-analysis` CLI和loopback HTTP adapter均不存在 |
 | pre-reset Stage/POC实现 | **已删除；仅历史证据** | 旧纵切、POC、fixture和旧接口不在当前生产/测试树中，不得包装成兼容层或作为当前jshERP结果 |
 
 当前新实现尚未运行固定jshERP commit，因此不存在当前版的Flow、Capsule或九章结果。历史pre-reset审计曾得到“Gap、0 Flow、0 Capsule”，它只说明旧实现暴露过哪些证明缺口，不能冒充当前运行结果或当前能力。
+
+文档中的“提交补货申请→…→结算月度账单”仅是明确synthetic的跨Flow验收故事，永远不是jshERP行为。真实DepotHead材料也只证明静态入口、guard、ID与边界调用；没有专门Proof时，数据库、库存、账务、日志或配置效果均保持未证明。
 
 真实 walkthrough 固定为：
 

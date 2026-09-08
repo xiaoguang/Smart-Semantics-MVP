@@ -64,8 +64,9 @@
 - Critical reasoning, architecture, and important design documentation use
   `gpt-5.6-sol` with `ultra` reasoning. The sole design authority is
   `gpt-5.6-sol / ultra`; `gpt-5.6-sol / xhigh` is a debug role only.
-- Production implementation uses `gpt-5.6-terra / xhigh`. TDD test writing,
-  bounded source reading, code review, and nine-section proposal generation
+- Production implementation uses `gpt-5.6-terra / xhigh` only after target
+  design and corresponding RED are frozen. TDD test writing, bounded source
+  reading, R0/R1/R2/P1/P2 execution, code review, and reader-slot validation
   use `gpt-5.6-luna / xhigh`.
 - Automated tests use only frozen fixtures and a scripted fake Provider. They
   never invoke a live model, network source, API key, or customer build.
@@ -83,6 +84,18 @@
 - The same persisted EvidenceCapsule is the sole source-evidence input for a
   Flow's R0/R1/R2. R0 may propose bounded business labels/purposes with
   same-Capsule basis; it cannot create Facts, locators, Flows, or Markdown.
+- `Flow` is one entry-rooted local auditable activity; `BusinessProcess` is an
+  end-to-end process across Flows, and the relationship is many-to-many.
+  BusinessFlows emits evidence-backed `processJoinSignals`; signals are clues,
+  never proof of sequence, causality, uniqueness, or an external effect.
+- P1/P2 are the sole bounded multi-Flow model exception. They read only a
+  program-built `ProcessEvidenceGroup` shard. P2 may only KEEP, NARROW, DROP,
+  or PENDING_CONFIRMATION and cannot add a Flow, edge, Fact, or Evidence.
+- Let `C` be candidate cross-Flow edges, `G` the groups covering every Flow,
+  and `S` model-safe process shards. Planned model tasks are exactly
+  `E + 2R + 2S`; actual calls are exactly
+  `E + R + accepted local R1 + S + accepted process P1`. Unrun R2/P2 tasks
+  persist `NOT_RUN_UPSTREAM_FAILED`.
 - Once a Provider call starts, never retry it, switch provider, fall back to
   an API key, or resume it automatically. Fail the current run and preserve
   safe diagnostics.
@@ -99,6 +112,11 @@
   data is absent, implementation conflicts with design, or schema/failure/
   model-boundary semantics would need to change. Record evidence and ask the
   Sol/ultra Design Authority; do not silently change the contract.
+- Contract or schema uncertainty goes to Sol/ultra. Any change to the eight
+  steps, fixed nine sections, cross-step identity, 57-output count, or model
+  boundary stops and goes to the user. Sol/xhigh performs root-cause debugging
+  only. Scripted providers are the automated default; live Luna needs separate
+  authorization and preflight, and there is never an API fallback.
 
 ## Authoritative design and publication gate
 
@@ -219,9 +237,11 @@
   evidence, or replace an analysis-step publication/receipt.
 - The final body has exactly the nine agreed H2 sections. IDs, hashes, prompts,
   and receipts remain sidecars, not normal business prose.
-- Preserve exactly 42 semantic analysis-step payloads, eight semantic
+- Preserve exactly 47 semantic analysis-step payloads, eight semantic
   receipts, one `nine-section-archive-manifest.json`, and one root
-  `run-manifest.json`: 52 reader-visible run outputs. Module artifacts/
+  `run-manifest.json`: 57 reader-visible run outputs. The five added semantic
+  payloads all belong to `flow-interpretation`; its key and Step 06 name do
+  not change. Module artifacts/
   receipts and exterior validation publications are excluded from this count.
 - Every Agent-produced machine artifact is canonical UTF-8 JSON or append-only
   JSONL. Exceptions are final `document.md`, durable design/progress Markdown,
@@ -237,6 +257,15 @@
   literal values, and relationships—to appear in reader content, attached
   technical basis, an explicit Gap, or a reasoned exclusion. Silent atom loss
   is fatal; word count and file size are not quality gates.
+- RepositoryKnowledge has zero model calls, admits local meanings before
+  process claims, preserves conflicts/alternatives/pending confirmations, and
+  assigns every Flow to at least one BusinessProcess, independent activity, or
+  explicit-Gap unassigned membership. Certainty is only `SOURCE_CONFIRMED`,
+  `EVIDENCE_SUPPORTED_INFERENCE`, or `PENDING_CONFIRMATION`.
+- Chapter 4 is process-first. Its process ReaderItems trace through Process
+  Knowledge and admission, hypothesis, P1/P2 task/round/receipt, group/signal,
+  Flow/Capsule, Fact/Proof/Evidence, and Source. Body prose hides IDs, SHA,
+  paths, and technical enums; unproved external effects remain pending.
 - Standard MyBatis mapper `DOCTYPE` syntax is accepted only with external DTD,
   general/parameter entity, schema, and all network resolution disabled.
   Inability to enforce those settings fails closed.
@@ -248,7 +277,9 @@
   success/Gap/fatal and reuse, program/model roles, then records/identity/
   algorithm/budget/security/failure/tests/maturity.
 - Every analysis-step design points to the one main flow and uses the fixed
-  DepotHead path as shared walkthrough. Label real source, deterministic
+  DepotHead path as the real bounded walkthrough. Cross-Flow acceptance also
+  uses an explicitly synthetic replenishment-to-settlement story that must
+  never be presented as jshERP behavior. Label real source, deterministic
   conclusions, model interpretation, unknowns, and illustrative JSON
   separately.
 - Keep target design and current maturity in separate sections. Current audits

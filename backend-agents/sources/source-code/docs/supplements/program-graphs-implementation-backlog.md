@@ -25,8 +25,9 @@
 7. **M6 权限稳定。** M6 只重开、校验和投影 M1--M5；它不能重新解析源码、修补边、改写 Gap、创造 locator 或决定业务语义。`graph-gaps.jsonl` 恰投影 local Gap；index/receipts 使用 local 与 scope ID 的去重并集。
 8. **证据和安全边界稳定。** 每个 admitted 程序 node/edge 至少有一条 source-excerpt + rule-application 路径。parser 只读已验证 UTF-8 bytes；禁止客户 Maven、客户代码、外部 XML 资源、活动工作树和网络。
 9. **完成口径稳定。** 一个 DepotHead 切片或一个 GREEN 测试不能代表整个仓库完成。最终必须处理完整冻结仓库的全部已发现入口，每个 graph candidate 都有唯一 exact / Gap / reasoned exclusion 处置，且五图、index、Gap 和 receipt 可从磁盘重新验证。
+10. **跨Flow交接稳定。** ProgramGraphs不生成BusinessProcess、candidate process edge或`processJoinSignals`。它只提供可由Step 04证明并由Step 05投影的节点/边/Evidence；对象/类型/表/字段/业务ID、标识符产出消费、状态写检、显式调用/返回/事件与counter均沿现有图→Fact/Proof链交接。tenant/audit/log/generic utility/名称相似不能单独成关系，外部效果无专门Proof始终是Gap。
 
-这九项是未来 Luna/Terra 的上游约束，不是待重新讨论的选项。
+这十项是未来Luna/Terra的上游约束，不是待重新讨论的选项。
 
 ## 3. 仍未实现的能力
 
@@ -106,7 +107,7 @@ request status / ids
 
 ### P8：完成多入口和完整 jshERP 离线验收
 
-现有57/57是有界fixtures的直接测试，不是完整仓库运行。ProgramGraphs最终还需至少两个独立入口的graph ownership/Gap隔离，以及固定jshERP commit的完整离线输入。从完整入口分母出发，每个入口相关候选必须被五图唯一处置；DepotHead的frozen-Java链与generic boundary必须逐边证明，boundary外数据库效果必须留下准确Gap。
+现有57/57是有界fixtures的直接测试，不是完整仓库运行。ProgramGraphs最终还需至少两个独立入口的graph ownership/Gap隔离，以及固定jshERP commit的完整离线输入。从完整入口分母出发，每个入口相关候选必须被五图唯一处置；DepotHead的frozen-Java链与generic boundary必须逐边证明，boundary外数据库效果必须留下准确Gap。下游另用明确synthetic的“提交补货申请→…→结算月度账单”验收跨Flow重建；它只能复用已证明图材料，绝不冒充jshERP事实，也不要求ProgramGraphs调用模型或新增图种。
 
 **完成证据：** 完整 jshERP ProgramGraphs publication 可重新打开；仓库中不存在未计数入口、graph candidate 或 orphan Evidence。验收不运行客户 Maven/代码，不访问网络，不调用模型。
 
@@ -129,10 +130,10 @@ request status / ids
 - 需要改变 public wire 字段/schema、artifact type/name、identity preimage、Gap 三分法或 public Interface；
 - 想让 M6、ProvenCodeFacts、BusinessFlows 或模型重新解析源码补边；
 - 想把 local Gap、scope Gap、fatal 或 exclusion 相互替代；
-- 想改变 ProgramGraphs 的上游、下游、模型职责、安全范围或完整仓库完成口径；
+- 想改变 ProgramGraphs 的上游、下游、模型职责、安全范围或完整仓库完成口径，或为了跨Flow重建增加第六张图/直接生成process signal；
 - 一个业务必须能力无法用已注册 node/edge/rule/Gap 表达。
 
-前五类影响已稳定边界，不能由实现 Agent 权衡。最后一类先由 Sol/ultra 判断能否作为本步骤内的版本化扩展；若影响八步主线、跨步骤 postcondition、正式数量、公共 Interface 或业务目标，必须交回用户讨论确认。
+前五类影响已稳定边界，不能由实现 Agent 权衡。最后一类先由Sol/ultra判断能否作为本步骤内版本化扩展；若影响八步主线、跨步骤postcondition、**57**项正式数量、公共Interface、BusinessProcess证据边界或业务目标，必须交回用户讨论确认。
 
 ## 5. 后续每个实现切片的验收清单
 

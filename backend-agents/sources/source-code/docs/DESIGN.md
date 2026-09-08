@@ -54,13 +54,15 @@ Source Code Analysis Agent 的目标不是“让模型读一遍仓库并写篇�
 - **捕获可信**：显式本地维护命令只从用户给定的本地 Git 对象库读取一个完整 40 位 commit，枚举其整棵 tracked tree；不读 index/工作区、不解析 branch/ref、不联网。
 - **仓库覆盖可信**：冻结仓库中的每个文件、发现 site、入口和后续语义项都有唯一处置；单个 Flow 成功不能冒充整仓分析完成。
 - **推导可信**：业务事实的每个语义原子都能回到源码 span、程序图和确定性规则。
-- **模型受限**：模型只解释一个已经由程序编译完整的流程，不能发现调用、补路径、写 locator 或自批事实。
+- **模型受限**：R0/R1/R2只解释一条已经由程序编译完整的Flow；P1/P2是唯一受控例外，只读取程序编译的有界多Flow `ProcessEvidenceGroup`。模型不能发现调用、补路径、写locator、自批事实或证明外部效果。
 - **未知诚实**：静态代码不能证明的运行时、部署和企业政策进入 Gap，不进入事实。
 - **过程可见**：每一分析步骤成功后立即留下 canonical JSON/JSONL 生产资产；下游失败不抹掉上游成果。
 - **模块可复用**：每个命名模块完成时立即原子安装 canonical JSON/JSONL payload 与独立 receipt；下一模块或显式新执行只重开这组已安装 bytes，不接内存旁路。
 - **状态不混义**：运行状态只表达当前单进程执行；`FAILED` 没有最终分析结果，`INCOMPLETE_COVERAGE` 只属于完整归档的 `FINISHED` 诊断结果。
 - **复用精确**：新 analysis step execution 只接受完全相同的来源、工具、profile、schema、prompt 和 policy 哈希，不做“差不多”的上游引用。
 - **文档可重验**：Markdown 只读 nine-section-plan.json；独立验证可以重开冻结源码，但 renderer 不重新读源码。
+
+`Flow`与`BusinessProcess`不得混用：Flow是单入口、局部、可由Fact/Proof逐项回放的代码活动；BusinessProcess是可能跨多个Flow的端到端业务过程。它们是多对多关系：一个过程可以含多个Flow，同一Flow也可以服务多个过程。Step 05只交接证据支持的连接信号，Step 06才提出过程hypothesis，Step 07程序准入，Step 08在固定九章中展示；任何一步都不能把信号本身当成先后、因果或外部系统结果。
 
 ### 1.2 五种材料永不混写
 
@@ -143,6 +145,14 @@ DepotHead 只是完整仓库中 `N` 个入口/FlowSlice 之一的讲解 fixture�
 
 已删除的pre-reset `Stage02Compiler`曾对固定jshERP八文件得到 **Gap、0 Flow、0 Capsule**。这是一条历史工程证据：旧实现没有闭合跨层数据流、Fact registry和动态MyBatis证明，不是当前SourceAnalysis运行结果。Wire Reset后的代码尚未运行该仓库，也没有当前Flow/Capsule产物。后文目标JSON只能用于解释应当怎样闭合DepotHead，不能被引用为“当前DepotHead已成功”或“当前仍为0 Flow”。
 
+### 2.5 合成的跨Flow验收故事（明确不是jshERP）
+
+为了验证BusinessProcess重建而不伪造真实仓库行为，测试可以使用下列**明确合成**的流程：
+
+`提交补货申请 → 门店审批 → 区域审批并创建采购单 → 采购单审批及费用处理 → 执行采购并登记物流 → 收货并登记库存 → 生成、确认、结算月度账单`。
+
+每个节点是独立入口Flow；连接只能来自业务对象/类型/表/字段/业务ID、标识符产出与消费、状态生产与检查、显式调用/返回/事件引用及对应Fact/Proof/Evidence/source。P1可提出顺序、并行、备选和回退，P2必须删除无Proof的“唯一采购单”“已经记账”。一个收货Flow可被采购履约和月度结算两个过程复用。该故事在任何文档、fixture或ReaderItem中都必须标明synthetic，永远不得作为jshERP事实。
+
 ## 3. 八个分析步骤纵向主线
 
 唯一生产主线如下。每个箭头跨越的是已落盘、已自验的 canonical artifact，不是上一分析步骤的 Java 内存对象。主线之前有一个独立的本地维护 seam：`LocalGitCommitCaptureAdapter` 可以接收主机路径，但它不是分析 Interface，也不在 analysis worker 内运行。
@@ -202,10 +212,10 @@ runs/<run-id>/
 | 应用发现 | “仓库有哪些请求入口？” | 全入口 inventory 中包含 `POST /depotHead/batchSetStatus` 及 handler、Mapper 候选 | 图构建直接拿完整 entry/catalog denominator，不再猜 route或漏掉其他入口 |
 | 程序图 | “请求、条件、值和 SQL 怎样连起来？” | 五张图分别表达结构、调用、控制、数据和证据 | Fact prover 只消费 graph edges，不重写 parser |
 | 已证明代码事实 | “哪些整句结论真的证明了？” | 每个 candidate Fact 的所有 atom 要么有闭合 Proof，要么成为带原因的 Gap | Flow compiler 只引用 admitted Fact/Proof，不借附近源码 |
-| 业务流程 | “每个请求有哪些完整结局？” | 全入口逐一成为 Flow、多条 Outcome/一个 Capsule，或有证据的 GAP/EXCLUDED | 流程解释的 R0/R1/R2 都只能读各自 Flow 的同一 Capsule，不能跨流程补材料 |
-| 流程解释 | “新仓库的业务词从哪里来，又怎样安全使用？” | 每个 eligible Flow 先在隔离 R0 提出有 basis 的 bounded 业务词/claim/question；程序验证并冻结唯一 RepositoryInterpretationRegistry。只有R0已准备好的 Flow 才有同 Flow 的R1/R2，并且只能选择有限 provisional keys；planned task数为`E+2R`，实际Provider调用数是其可验证子集。ineligible Flow 不调用模型；当前 0 Capsule 所以 0 调用 | 仓库知识重验 registry proposal→provisionalKey→selectedKey 的完整 lineage 与所有 slice dispositions，不再调用模型 |
-| 仓库知识 | “所有流程的说法怎样形成一个仓库视图？” | 程序逐 slice 准入或丢弃有限 key 提案，再跨 Flow 合并 Facts、meanings、relations、metrics、conflicts、registry lineage 和 Gaps | 文档规划只读唯一一份 RepositoryKnowledge，Trace 可回到 R0 basis |
-| 九章文档 | “整个仓库的业务读者看到什么，怎样观察每个分析步骤？” | 每个完成的仓库分析链恰一份九章 plan、恰一份 document.md、Trace、未发布 Candidate 和完整 run manifest；同一 run-centric Interface 可 inspect/artifact/render/validate/trace | 审阅、Trace、Selection、validation、显式新分析步骤执行和Java/CLI/HTTP Adapter各读固定身份；禁止一 Flow 一 Markdown或用 Path 绕过 manifest |
+| 业务流程 | “每个请求有哪些完整结局，还给跨入口重建留下哪些证据？” | 全入口逐一成为Flow、多条Outcome/一个Capsule，或有证据的GAP/EXCLUDED；Flow/Capsule新增`processJoinSignals`，只保存对象/ID/状态/调用/返回/事件及counter/Gap的Fact/Proof/Evidence/source依据 | R0/R1/R2只读各自Flow；确定性跨Flow编译器可读取全仓signals，但signals本身不证明顺序、因果或外部效果 |
+| 流程解释 | “新仓库的业务词和端到端过程怎样安全形成？” | 局部R0→freeze registry→同Flow R1/R2保持不变；程序再编`C`条候选边、覆盖全部Flow的`G`个groups和`S`个有界shards，Luna P1/P2是唯一多Flow模型例外，P2只可KEEP/NARROW/DROP/PENDING_CONFIRMATION | 仓库知识可重验局部与过程lineage；planned tasks=`E+2R+2S`，actual calls=`E+R+accepted local R1+S+accepted process P1`，未运行R2/P2持久化`NOT_RUN_UPSTREAM_FAILED` |
+| 仓库知识 | “所有局部活动怎样形成可审计的端到端仓库视图？” | 程序按local admission→process claim validation→conflict/alternative→many-to-many membership→one knowledge执行；三值certainty，不调用模型 | 一份RepositoryKnowledge含九个过程数组；每条Flow属于至少一个process、独立活动或显式Gap unassigned，冲突/备选/pending不丢失 |
+| 九章文档 | “业务读者先看到什么，怎样回到证据？” | 固定九章且Chapter 4 process-first；新增五种process ReaderItem，renderer仍只读plan；正文隐藏ID/SHA/path/技术enum | 一份plan/document；过程Trace闭合到P1/P2、group/signal、Flow/Capsule与Fact/Proof/Evidence/source，公开`RepositoryAnalysisAgent`不变 |
 
 因果关系必须保持：来源不固定就不能可信定位；**完整入口分母**不固定就不能证明仓库覆盖；五图不闭合就不能证明 Fact；Fact 不闭合就不能编译 Flow；没有 Flow/Capsule 就不得调用模型。历史pre-reset DepotHead审计恰好停在Fact/Flow closure Gap，因此它成为“零任务而非绕过上游调用模型”的回归基线；目标实现仍须独立处理同一仓库的其他eligible Flow，并由分析步骤“仓库知识”和“九章文档”把全部slice的Facts、解释、失败、排除和Gaps合成非空、可审阅的单一仓库知识与九章文档。
 
@@ -225,14 +235,14 @@ runs/<run-id>/
 | Application discovery | valid complete VerifiedSourceInventory root；discovery profile 能解析全部声明文件 | application signals → 全 site/entry routes → Mapper candidates → capability accounting | applicationProfileId、全部 entryIds、catalog IDs、site dispositions、entry coverage root、ApplicationDiscovery root | ProgramGraphs 的 graph roots/candidate endpoints/coverage denominator 精确等于这些完整 ID 集合 |
 | Program graphs | valid VerifiedSourceInventory与ApplicationDiscovery roots；entry/catalog endpoints 可重开 | structure → call → CFG → data-flow → evidence → cross-graph validation | 五图 roots、exact node/edge IDs、entry ownership、graph Gaps | ProvenCodeFacts 只需 nodes/edges/evidence 枚举 Proof；BusinessFlows 可复用 entry-root call/control/data edges |
 | Proven code facts | valid five-graph set；Fact registry 固定 denominator | candidate/atoms → source+rule Proof closure → admit/reject → Gap/accounting | admitted fact/atom IDs 与 Proof IDs，rejection/Gap refs，ProvenCodeFacts root | BusinessFlows 的可用语义只来自 admitted Facts；缺项已是 typed Gap而非隐含未知 |
-| Business flows | valid complete entry set、graphs、Facts/Proof/Gaps | 对每 entry 遍历 → Outcomes → ownership → per-Flow minimal projection → repository entry accounting | `N` 个 Flow/Outcome/Capsule IDs 或 entry GAP/EXCLUDED；每 Capsule 封闭地携带 R0/R1/R2 共用的 Fact/Gap/Outcome views、basis atom/Gap、span 与 projection obligation；coverage、BusinessFlows root | 每个compiled Flow都有恰一个 evidence-complete Capsule；FlowInterpretation只把`ELIGIBLE` Capsule作为三轮唯一source projection，`INELIGIBLE` Capsule及其Gap直接交RepositoryKnowledge；一条 Flow 成功不能关闭其他 entry；0 Flow 精确推出 0 task/call |
-| Flow interpretation | valid全量 `N` Flow↔Capsule 双射、完整 `ELIGIBLE`/`INELIGIBLE` 分区、optional organization registry seed、R0/R1/R2 prompt/schema/runtime policy | 仅对 `E` 条eligible Flow建隔离R0 task → 单次Provider调用与程序validation/disposition → freeze唯一RepositoryInterpretationRegistry → 仅对其中 `R` 条`READY_FOR_FREEZE` Flow建finite-key R1/R2 tasks → canonical rounds/receipts/candidate/disposition/publication | `E`个R0 task/disposition、恰一冻结registry、`E`个最终interpretation dispositions 与 `2R`个R1/R2 planned tasks；公式始终为`E+2R`。每个成功发布的planned task都有恰一typed disposition；round records/started Provider calls只是planned tasks的可验证子集，R2可因同Flow R1业务失败而`NOT_RUN_UPSTREAM_FAILED`。仅当全部任务都启动且`R=E`时调用数为`3E`。每R0 proposal有basis/disposition/provisionalKey lineage；每eligible Flow恰一最终disposition；`I=N-E` 条model-ineligible Flow不创建FlowInterpretation per-Flow对象；`E=0`精确为0/0/0且仍安装空registry和FlowInterpretation root | RepositoryKnowledge 只重开FlowInterpretation九份semantic artifacts与receipt即可重验全部lineage，并从BusinessFlows读取model-ineligible Flow的eligibility/Gaps；无需 source、Provider 或未持久化session state |
-| Repository knowledge | valid full Facts/Flows、唯一FlowInterpretation registry、R0→R1/R2 lineage、每 slice closure | per-slice deterministic admission/fallback decision → validate `registryProposalId→provisionalKey→selectedKey` → cross-Flow proven-anchor merge → conflict/owner/account | **恰一个** repositoryKnowledgeId，含全部 flow/decision/meaning/anchor/relation/metric/Gap/owner/conflict refs及registry lineage；每条lineage原样携带registry的`proposalKind/normalizedLabel/normalizedPurpose` | NineSectionDocument 只接这一份 RepositoryKnowledge；每个 ReaderItem 候选都有 typed semantic item、唯一 knowledge owner、可追到R0 basis的lineage和无需重开FlowInterpretation即可读取的规范业务值 |
-| Nine-section document | valid七个上游semantic roots、RepositoryKnowledge coverage **draft**、唯一 RepositoryKnowledge、NineSectionProfile、run lineage | M1先计算无环的 final coverage ledger，再作repository section ownership → one plan → one isolated render → Trace（含registry lineage）→ validation/archive → run-centric observation projection | 每个完成链 **恰一份** exactly-nine plan、**恰一份** document.md、Trace root、UNPUBLISHED Candidate、run manifest；final ledger由同一M1内部artifact给M1/M3/M4与validator共用；inspect/artifact/render/validate/trace按run identity返回 | Review/Trace/Selection、显式新analysis step执行及Java/CLI/loopback HTTP各有完整immutable input，不需要重做有效上游或模型；不存在per-Flow Markdown、Path查询或Adapter私读目录 |
+| Business flows | valid complete entry set、graphs、Facts/Proof/Gaps | entry遍历→Outcomes→ownership→per-Flow projection→`processJoinSignals`→entry accounting | `N`个Flow/Capsule；每个signal保存kind/anchor/direction/specificity/Fact/Proof/Evidence/source/counter/Gap refs；五semantic+receipt | FlowInterpretation局部round仍只读单Flow；跨Flowcompiler只能把signals当候选线索；0 Flow精确推出0模型任务 |
+| Flow interpretation | valid `N` Flow↔Capsule、eligibility分区、processJoinSignals、runtime/prompt/schema/budgets | 单FlowR0→registry→R1/R2；确定性M6候选/group→M7有界shard→唯一多Flow模型例外P1/P2→M9发布 | 15文件；`C`候选边、`G`组覆盖全部Flow、`S`shards；planned=`E+2R+2S`，actual=`E+R+accepted local R1+S+accepted process P1`；P2不扩张，R2/P2可`NOT_RUN_UPSTREAM_FAILED` | RepositoryKnowledge重验14 semantic+receipt、过程claims/support/counter和全部dispositions；无需源码、Provider或session |
+| Repository knowledge | valid full Facts/Flows、Step 06 local/process lineage与唯一registry | local admission→process claim validation→conflict/alternative→many-to-many membership→one knowledge | **恰一个**knowledge；三值certainty；九个过程数组；每Flow有process/independent/unassigned membership；`knowledge-admission-decisions.jsonl` | Planner只读准入知识；每个process ReaderItem可回到ProcessAdmissionDecision与P1/P2 evidence chain |
+| Nine-section document | valid七个上游roots、coverage draft、唯一knowledge、fixed profile | final ledger→fixed-nine process-first plan→plan-only render→typed Trace→archive/manifest | 恰一plan/document；Chapter 4先过程后独立活动；五种process ReaderItem；Trace到Source；公开Interface不变 | Review/Trace/Selection与三Adapter使用immutable identities；不存在per-Flow Markdown、Path查询或模型正文 |
 
 组合成立的条件是：任何一行的 `artifactId + sha256 + controls + payload reference` 不匹配就停止在该边界；禁止下游用源码、当前内存对象、同名字符串或模型响应“修复”上游。这样每个 transformation 的输入都由上一 postcondition 唯一给出，且所有 identity 依赖保持无环。
 
-reader-visible正式输出总数固定为52，不因移除同run自动恢复而改变：VerifiedSourceInventory为`3 semantic + 1 receipt = 4`，ApplicationDiscovery为`4+1=5`，ProgramGraphs为`7+1=8`，ProvenCodeFacts为`4+1=5`，BusinessFlows为`5+1=6`，FlowInterpretation为`9+1=10`，RepositoryKnowledge为`5+1=6`，NineSectionDocument为`5 semantic + archive manifest + analysis step receipt + run manifest = 8`；因此`4+5+8+5+6+10+6+8=52`。module payload/receipt、external validation artifact和`execution-status.json`是实现/诊断资产，不加入这52项，也不能冒充新的reader-visible analysis step output。
+reader-visible正式输出总数固定为**57**：VerifiedSourceInventory为`3 semantic + 1 receipt = 4`，ApplicationDiscovery为`4+1=5`，ProgramGraphs为`7+1=8`，ProvenCodeFacts为`4+1=5`，BusinessFlows为`5+1=6`，FlowInterpretation由新增五项过程semantic扩为`14+1=15`，RepositoryKnowledge为`5+1=6`，NineSectionDocument为`5 semantic + archive manifest + analysis step receipt + run manifest = 8`；因此`4+5+8+5+6+15+6+8=57`。module payload/receipt、external validation artifact和`execution-status.json`不加入57项，也不能冒充正式输出。
 
 ### 3.4 同一 DepotHead identity 怎样贯穿
 
@@ -245,9 +255,11 @@ reader-visible正式输出总数固定为52，不因移除同run自动恢复而�
 | Controller→Service→Java boundary；Mapper→XML仅作独立结构关系 | `ProgramEdge.edgeId` 的 endpoints 与 `evidenceNodeIds` 原样进入 atom Proof 的 `requiredProgramEdgeIds/requiredEvidenceNodeIds`；M4 boundary node不得越过M2 Mapper→XML结构边推断外部效果 |
 | status 与 ids 事实 | `FactAtom.atomId` 原样进入 `Proof.atomId`、`FlowSlice.atomIds`、`EvidenceCapsule.factViews[].atoms/projectionObligations` |
 | 完整请求过程 | `FlowSlice.flowSliceId` 原样进入 Capsule、RegistryProposalTask、RepositoryInterpretationRegistry item、FlowModelTask、InterpretationProposal、AdmittedFlowMeaning 和 RepositoryBusinessKnowledge.flow refs |
+| 跨Flow候选 | `EvidenceCapsule.processJoinSignals[]`引用Fact/Proof/Evidence/source；M6按`PROVEN_HANDOFF | SHARED_ANCHOR | SEMANTIC_CUE`建候选并附`COUNTER_SIGNAL`，M7让每条候选边恰有一个owner shard |
+| 端到端过程 | `ProcessEvidenceGroup → P1/P2 task/round/receipt → BusinessProcessHypothesis → ProcessAdmissionDecision → BusinessProcess/Activity/Relation/Membership`；同一Flow可进入多个BusinessProcess，P2不能新增Flow/edge/fact/evidence |
 | 仓库特有业务词 | `BusinessRegistryProposal.registryProposalId/flowSliceId/basisAtomIds/basisGapIds/proposalKind/normalizedLabel/normalizedPurpose` 经程序 disposition 生成唯一 `provisionalKey`；R1/R2 的 `InterpretationProposal.selectedKey` 必须等于该 Flow registry item 的 provisionalKey；RepositoryKnowledge `RegistryMeaningLineage`逐字段复制三项规范值 |
 | 业务解释 | `registryProposalId → provisionalKey → InterpretationProposal.interpretationProposalId/selectedKey → meaningId` 原样进入 admission decision和RepositoryKnowledge；admitted meaning保留两类proposal IDs与basis refs |
-| 九章读者项 | `ReaderItem.factIds/meaningIds/gapIds/registryProposalIds/interpretationProposalIds` 原样引用 knowledge；ADMITTED_TERM 的typed slots从同一`RegistryMeaningLineage.normalizedLabel/normalizedPurpose`逐字节复制；Trace先引用该`registryLineageId`，再从 readerItemKey 逐跳回 registry proposal/round receipt、basis IDs、Proof、Evidence、VerifiedFile 和 snapshotId |
+| 九章读者项 | 局部ReaderItem保持原lineage；过程ReaderItem严格沿`ReaderItem → ProcessKnowledge → ProcessAdmissionDecision → BusinessProcessHypothesis → P1/P2 task/round/receipt → ProcessEvidenceGroup/Signal → Flow/Capsule → Fact/Proof/Evidence/Source`回放 |
 
 示意故事从 `POST /depotHead/batchSetStatus` 的 `status` 输入到 `DepotHeadMapper.updateByExampleSelective(record, example)` boundary invocation 时，任何分析步骤都不能把 `status` 改成另一个字段、把 `ids` argument 静默丢掉、或凭空加入“审核”业务词。`jsh_depot_head.status` 与 `WHERE id IN` 只能作为独立静态 XML/SQL 结构锚点，不能写成该调用已产生的效果；对应外部效果必须成为 Gap/待确认。“批量审核或反审核”只能先作为R0有basis的仓库词候选，经程序freeze得到provisionalKey，再被R1/R2有限选择并由RepositoryKnowledge准入；当前没有Flow时该链停在Gap，NineSectionDocument的ReaderItem引用gapId而不是伪registry item或meaningId。
 
@@ -286,39 +298,47 @@ r0FailedFlows maps one-to-one into finalFailedInterpretationFlows and has zero R
 readyInterpretationFlows = flowInterpretationCandidates
 flowInterpretationInterpretationProposals = keep + narrow + drop + needsEvidence + needsTermRegistry
 acceptedRegistryProposals = repositoryInterpretationRegistryItems
+candidateProcessRelations = disjointUnion(processShardOwnerCandidateRelations)
+processEvidenceGroups cover exactly compiledFlowSlices
+processTasks = processTaskDispositions = exactlyTwoTasksPer(processShards)
+processP2ResponseRounds is a subset of processP2Tasks
+processP2NotRunUpstreamFailedDispositions = processP2Tasks - processP2ResponseRounds
+businessProcessHypotheses = processAdmissionDecisions
+everyFlow = businessProcessMembershipFlows + independentActivityFlows + explicitlyGappedUnassignedFlows
+everyProcessClaim has exactly one of SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
 repositorySemanticItems = readerOwnedItems + reasonedReaderExclusions
 readerOwnedItems = exactlyOneSectionOwner
 sections = exactlyNineOrderedSections
 analysisRunDocuments = exactlyOneRepositoryNineSectionPlan + exactlyOneRepositoryMarkdown
 ~~~
 
-所有等式两侧都保存 ID 列表和 count，validator 不只比较 count。令 `E` 为 model-eligible Flow 数、`R` 为其R0处置中 `READY_FOR_FREEZE` 的子集数：FlowInterpretation恰有 `E` 个R0 tasks，且只对这 `R` 个Flow各有R1/R2，因此planned tasks恰为`E+2R`，每个task都有一个`ModelTaskDispositionV1`。R0/R1/R2 shard denominators分别固定为`E/R/R`。Provider calls等于`E + R + count(R1 RESPONSE_ACCEPTED)`；只有全部R1 accepted时等于`E+2R`，再加`R=E`才是`3E`。R1 typed GAP/FAILED不删除已规划R2 task，而是为它写`NOT_RUN_UPSTREAM_FAILED`并引用同Flow R1 task。R0 GAP/FAILED不创建该Flow的R1/R2 tasks。model-ineligible Flow的FlowInterpretation tasks与Provider calls恒为0，但仍进入RepositoryKnowledge的唯一technical-fallback decision，不能从总Flow分母消失。一个 ID 不能出现在两个互斥分子中；`mergedAliasGaps` 必须保存 canonicalGapId 和 memberGapIds；`reasoned*Exclusions` 必须有版本化 reason code，不能成为垃圾桶。图 node/edge、Fact atom、Outcome、Gap、registry proposal/provisional key、interpretation proposal、knowledge item 和 section owner 的 orphan/duplicate 都是 fatal。
+所有等式两侧都保存ID列表和count，validator不只比较count。令`E`为eligible Flow数、`R`为R0 READY子集、`S`为model-safe过程shard数：planned model tasks固定为`E + 2R + 2S`，actual calls固定为`E + R + count(local R1 RESPONSE_ACCEPTED) + S + count(process P1 RESPONSE_ACCEPTED)`。R0/R1/R2分母为`E/R/R`；P1/P2分母均为`S`。R1/P1 typed GAP/FAILED不删除已规划R2/P2，而为后者写`NOT_RUN_UPSTREAM_FAILED`并引用同Flow/同shard上游task。P2只能`KEEP | NARROW | DROP | PENDING_CONFIRMATION`且不得新增Flow、edge、Fact或Evidence。model-ineligible Flow的局部解释任务为0，但仍进入process grouping与RepositoryKnowledge total membership。一个ID不能出现在互斥分子；alias Gap保留canonical/member refs，reasoned exclusion有版本化reason；任何graph/Fact/Outcome/Flow/signal/task/hypothesis/claim/membership/reader owner orphan或duplicate均fatal。
 
 这些不变量共同给出三个出口性质：Proof/identity closure 保证准确，Flow ownership + typed knowledge + fixed templates 保证可读而不串故事，ReaderItem→source 的无断链 Trace 保证可追溯。不支持语法、动态配置或静态不可知行为只能把对应 denominator item 移到 Gap/明确 exclusion，影响的是完整性；它们不能污染已证明内容的准确性，也不能从“待确认事项”外消失。
 
 ### 3.6 全局 identity DAG
 
-唯一合法依赖方向是：run controls/source registration/optional organization registry seed → snapshot/file → application/entry/catalog → graph node/edge/evidence → candidate atom/fact → Proof → Outcome/Flow → Capsule → R0 task/round/registry proposal/disposition → frozen RepositoryInterpretationRegistry/provisional key → finite-key R1/R2 task/round/interpretation proposal/Flow disposition → admission decision/meaning/anchor → repository knowledge/ownership → RepositoryKnowledge coverage preparation → embedded RepositoryKnowledge coverage draft → NineSectionDocument coverage preparation → final coverage ledger → ReaderItem/plan → document/Trace roots → Candidate/run manifest。后项可以引用前项，前项不得含后项 ID；publisher/receipt 只在 payload IDs 固定后计算。Trace record 不含 candidateId，Candidate 最后绑定 traceRoot，避免 Candidate↔Trace 环。R0不能引用R1/R2或meaning，registry item不能引用RepositoryKnowledge identity；optional seed只有被某R0 proposal以`sourceSeedKey`引用并携带Capsule basis后才能进入冻结registry。
+唯一合法依赖方向是：run controls/source registration/optional organization registry seed → snapshot/file → application/entry/catalog → graph node/edge/evidence → candidate atom/fact → Proof → Outcome/Flow → Capsule/processJoinSignal → R0 task/round/registry proposal/disposition → frozen RepositoryInterpretationRegistry/provisional key → finite-key R1/R2 task/round/interpretation proposal/Flow disposition → ProcessEvidenceGroup/candidate relation/shard → P1/P2 task/round/receipt/disposition → BusinessProcessHypothesis → local/process admission decision → process knowledge/membership/ownership → RepositoryKnowledge coverage preparation → embedded RepositoryKnowledge coverage draft → NineSectionDocument coverage preparation → final coverage ledger → ReaderItem/plan → document/Trace roots → Candidate/run manifest。后项可以引用前项，前项不得含后项ID；publisher/receipt只在payload IDs固定后计算。Trace record不含candidateId，Candidate最后绑定traceRoot。R0不能引用R1/R2或meaning，P2不能创建P1之外的hypothesis/Flow/edge/fact/evidence，registry item不能引用RepositoryKnowledge identity。
 
 Candidate只绑定`upstreamAnalysisStepRoots[7]`、plan/document/Trace和lineage；NineSectionDocument `analysisStepArtifactRoot`在Candidate等五个semantic payload固定后计算，不含archive-manifest、receipt或run-manifest。archive-manifest/receipt依序绑定前项且都不含自身，`run-manifest.analysisStepPublications[8]`再包含八个semantic analysis step的address/root/receipt ID/SHA但不含自身；最后由analysis step外M4 publication envelope列齐八个public files。Candidate不得预先引用NineSectionDocument root，否则形成Candidate↔NineSectionDocument root环。其他analysis step receipt的artifact list同样排除receipt自身；父级publication/run manifest才记录receipt文件SHA。
 
 ### 3.7 Repository completion gate
 
-生产 run 的完成条件不是“DepotHead 或任意一个 Flow PASS”，而是一个 schema-versioned、content-addressed `RepositoryCoverageLedgerV3` 闭合。为了不形成 `plan ↔ ledger` 身份环，账本有两个**职责不同、引用方向固定**的版本：
+生产 run 的完成条件不是“DepotHead 或任意一个 Flow PASS”，而是一个 schema-versioned、content-addressed `RepositoryCoverageLedgerV4` 闭合。为了不形成 `plan ↔ ledger` 身份环，账本有两个**职责不同、引用方向固定**的版本：
 
-1. RepositoryKnowledge M3 在既有 `knowledge-accounting.json` 内发布 `RepositoryCoverageLedgerDraftV2`。它已经证明 VerifiedSourceInventory、ApplicationDiscovery、ProgramGraphs、ProvenCodeFacts、BusinessFlows、FlowInterpretation roots 加上 RepositoryKnowledge M1/M2 语义集合的分母、处置、Flow/模型/知识所有权闭包，但**绝不引用尚由自己所在 RepositoryKnowledge public set 计算的 root**；它还不知道九章 reader item 和 section owner，也不是新的对外文件。
-2. NineSectionDocument M1 从这份 draft、已经存在的 RepositoryKnowledge publication、唯一 RepositoryKnowledge 与九章 profiles 计算 `NineSectionDocumentCoveragePreparationV1`，再原子安装一个供M1/M3/M4、validator与后续显式执行共同读取的 `modules/01-planner/repository-coverage-ledger.json`。该 `nine-section-document-repository-coverage-ledger-v1` ModuleArtifact 是唯一 final ledger。它**不引用 plan artifactId**；随后 M1 才让 plan 引用它。因此仍保持单向 DAG，且不增加 NineSectionDocument 的八个 reader-visible 文件。
+1. RepositoryKnowledge M3 在既有 `knowledge-accounting.json` 内发布 `RepositoryCoverageLedgerDraftV3`。它已经证明 VerifiedSourceInventory、ApplicationDiscovery、ProgramGraphs、ProvenCodeFacts、BusinessFlows、FlowInterpretation roots 加上 RepositoryKnowledge M1/M2 的局部/过程准入、membership和知识所有权闭包，但**绝不引用尚由自己所在 RepositoryKnowledge public set 计算的 root**；它还不知道九章reader item和section owner，也不是新的对外文件。
+2. NineSectionDocument M1从这份draft、已存在的RepositoryKnowledge publication、唯一knowledge与profiles计算coverage preparation，再原子安装供M1/M3/M4/validator读取的`modules/01-planner/repository-coverage-ledger.json`。该`nine-section-document-repository-coverage-ledger-v2` ModuleArtifact是唯一final ledger。它不引用plan artifactId；随后plan才引用它，因此无环且不增加八项正式输出。
 
-M1、M3、M4、NineSectionDocument analysis step receipt、root run manifest和fresh validator都必须逐字引用同一个 final `ArtifactReference`。`RepositoryCoverageLedgerDraftV2` 只可进入M1；任何模块不得把 draft 冒充为可完成的 final ledger。
+M1、M3、M4、NineSectionDocument analysis step receipt、root run manifest和fresh validator都必须逐字引用同一个 final `ArtifactReference`。`RepositoryCoverageLedgerDraftV3`只可进入M1；任何模块不得把draft冒充为可完成的final ledger。
 
 ~~~text
 RepositoryCoverageLedgerDraftReferenceV1    // selects an exact nested value, never a loose JSON file reference
   knowledgeAccountingRef: ArtifactReference
   repositoryCoverageLedgerDraftId
-  schemaVersion=repository-coverage-ledger-draft-v2
+  schemaVersion=repository-coverage-ledger-draft-v3
 
-RepositoryCoverageLedgerDraftV2             // embedded in RepositoryKnowledge knowledge-accounting.json
-  schemaVersion=repository-coverage-ledger-draft-v2
+RepositoryCoverageLedgerDraftV3             // embedded in RepositoryKnowledge knowledge-accounting.json
+  schemaVersion=repository-coverage-ledger-draft-v3
   repositoryCoverageLedgerDraftId
   sourceScopeKind: COMPLETE_CAPTURE | BOUNDED_PATH_SET
   repositoryCompletionEligible: BOOLEAN
@@ -371,8 +391,8 @@ NineSectionDocumentCoveragePreparationV1                // M1 calculation; embed
   sectionOwnerBySemanticItem{}               // same values later copied into the plan
   nineSectionDocumentCoveragePreparationRoot            // hash excluding only this self field
 
-RepositoryCoverageLedgerV3                  // M1 module artifact, schema nine-section-document-repository-coverage-ledger-v1
-  schemaVersion=repository-coverage-ledger-v3
+RepositoryCoverageLedgerV4                  // M1 module artifact, schema nine-section-document-repository-coverage-ledger-v2
+  schemaVersion=repository-coverage-ledger-v4
   repositoryCoverageLedgerId
   repositoryCoverageLedgerDraftRef: RepositoryCoverageLedgerDraftReferenceV1
   nineSectionDocumentCoveragePreparation: NineSectionDocumentCoveragePreparationV1
@@ -405,7 +425,7 @@ RepositoryCoverageLedgerV3                  // M1 module artifact, schema nine-s
 
 `analysisStepCoverageRoots[0..5]`必须依 closed registry 的语义键顺序逐项等于 `upstreamAnalysisStepCoverageRoots` 中 VerifiedSourceInventory、ApplicationDiscovery、ProgramGraphs、ProvenCodeFacts、BusinessFlows、FlowInterpretation 的 `AnalysisStepPublicationReference.analysisStepArtifactRoot`；`analysisStepCoverageRoots[6]`必须逐字等于 `nineSectionDocumentCoveragePreparation.repositoryKnowledgePublicationRef.analysisStepArtifactRoot`；`analysisStepCoverageRoots[7]`必须逐字等于 `nineSectionDocumentCoveragePreparation.nineSectionDocumentCoveragePreparationRoot`。前者将已安装的 RepositoryKnowledge public set纳入final accounting，后者是**NineSectionDocument 发布前的 coverage root**，不是尚不存在的 NineSectionDocument analysis step root、analysis step receipt、archive、run manifest、M4 reference 或 plan identity。这样 final ledger 可在 plan 前产生并被 plan引用，却仍把NineSectionDocument reader ownership纳入完成性验证。
 
-`RepositoryCoverageLedgerV3`中为便于顶层查询而复制的三个值**不是第二套可选择的数据**。下面三条必须逐字段相等，任何一条不等都是`REPOSITORY_COVERAGE_LEDGER_INVALID`：
+`RepositoryCoverageLedgerV4`中为便于顶层查询而复制的三个值**不是第二套可选择的数据**。下面三条必须逐字段相等，任何一条不等都是`REPOSITORY_COVERAGE_LEDGER_INVALID`：
 
 ~~~text
 ledger.repositoryCoverageLedgerDraftRef == ledger.nineSectionDocumentCoveragePreparation.repositoryCoverageLedgerDraftRef
@@ -642,21 +662,21 @@ Fact rejection 和非阻塞 Gap 可以属于成功结果；Proof reference 断�
 
 ### 下游如何消费
 
-FlowInterpretation为BusinessFlows的每个model-eligible Flow先建立一个隔离R0 registry-proposal工作项，再在全仓R0分母处置并冻结唯一RepositoryInterpretationRegistry后，为R0 READY的同一Flow建立有限key R1/R2工作项。三轮都只能读这一条FlowSlice和它唯一对应的EvidenceCapsule；optional organization seed只是R0的content-addressed候选词输入，不能替代Capsule basis。FlowInterpretation不能读仓库目录、五张全图、其他Flow、未准入Fact或任意本地路径；调度/分片可变，但Flow集合、三轮closure和最终canonical bytes不变。一条Flow成功不能结束FlowInterpretation或整个run。
+FlowInterpretation为每个model-eligible Flow建立隔离R0，再冻结唯一RepositoryInterpretationRegistry，为R0 READY的同一Flow建立有限key R1/R2；三轮都只读该Flow/Capsule。随后程序从全仓`processJoinSignals`编候选/group/shard，只有P1/P2可读取一个有界多Flow shard。optional seed不能替代Capsule basis；P1/P2不能读目录、全图、未准入Fact或Path。调度/分片可变，但candidate ownership、group coverage、任务闭包与canonical bytes不变。
 
 ### 成功、Gap、fatal 与角色
 
-某入口无法闭合时可记录GAP disposition；0 Flow、0 Capsule仍可成为诚实的SUCCEEDED_WITH_GAPS分析步骤结果，并让后续生成零R0/R1/R2任务。引用断裂、coverage不守恒、Capsule source hash漂移或R0/R1/R2读取不同source projection为fatal。程序负责，LLM角色为零。
+某入口无法闭合时可记录GAP disposition；0 Flow、0 Capsule仍可成为诚实的SUCCEEDED_WITH_GAPS并生成零R0/R1/R2/P1/P2任务。引用断裂、coverage不守恒、Capsule hash漂移或signal没有Fact/Proof/Evidence/source闭包为fatal。BusinessFlows全程程序化，LLM角色为零。
 
-## 9. 分析步骤“流程解释”：一次只解释一个流程
+## 9. 分析步骤“流程解释”：局部单Flow与有界跨Flow过程
 
 ### 为什么存在
 
-确定性分析能证明“发生了什么”，但预置词表无法覆盖每个新客户仓库。模型先在隔离R0为单个Flow提出有证据basis的bounded业务词、claim和question；程序把全仓R0结果验证、处置并冻结为唯一RepositoryInterpretationRegistry，随后模型只能在同一Flow的有限provisional keys里做R1解释与R2精度复核。模型始终不是编译器、证明器、准入者或文档作者。
+确定性分析能证明“发生了什么”，但预置词表无法覆盖新仓库，局部入口也不能单独表达端到端过程。R0/R1/R2保持严格单Flow；程序汇编候选关系和有界groups后，P1/P2作为唯一多Flow模型例外提出并复核BusinessProcessHypothesis。模型始终不是编译器、证明器、准入者或文档作者。
 
 ### 具体输入
 
-全量eligible Flow/Capsule双射、optional content-addressed organization registry seed、R0/R1/R2严格output schemas与prompt bundles、expected runtime identity和预算；执行时一次只取其中一对，跨Flow session永不共享。DepotHead当前0 Capsule，所以它产生0 task、0 Provider call，不妨碍同仓库其他eligible Flow独立处理。
+全量Flow/Capsule双射及`processJoinSignals`、eligibility分区、optional seed、R0/R1/R2/P1/P2严格schemas/prompt/runtime/budgets。局部round一次只取一对；P1/P2一次只取一个有界ProcessEvidenceGroup shard。DepotHead当前没有正式run结果；任何外部效果仍需专门Proof。
 
 ### 工作步骤
 
@@ -666,7 +686,9 @@ FlowInterpretation为BusinessFlows的每个model-eligible Flow先建立一个隔
 4. 全部R0 dispositions闭合后，程序按flow/proposal排序生成provisional keys并原子冻结一份RepositoryInterpretationRegistry；失败Flow仍在coverage中。
 5. 只为R0 READY Flow按其同Flow registry items编译有限key R1/R2；R1提出selectedKey+basis，且selectedKey必须逐字等于同Flow registry item的provisionalKey。只有R1返回`RESPONSE_ACCEPTED`才调用R2；若R1返回typed `RESPONSE_GAP|RESPONSE_FAILED`，已规划的同Flow R2 task写`NOT_RUN_UPSTREAM_FAILED` disposition并引用R1 taskSpecId，不调用Provider。R2在同一session只能保持该selectedKey；`NARROW`只可收窄decision、basis子集或meaning eligibility，不能替换/派生key，也不能增加来源、Fact、proposal或basis。
 6. Provider调用开始后若transport/runtime中断、响应缺失或无法形成可验证response record，当前run直接`FAILED`，不自动重试、不切换Provider，也不生成FlowInterpretation success publication。
-7. 保存canonical tasks、rounds、generation receipts、registry、candidates和typed dispositions。RepositoryKnowledge只从FlowInterpretation的**九份语义文件及其analysis step receipt**枚举全部planned tasks与处置。令`E`为eligible Flow数、`R`为R0 READY数，FlowInterpretation精确产生`E + 2R`个planned tasks；成功发布时每个task恰有一个typed disposition。持久化round与started Provider call只是task集合的可验证子集；只有所有task都成功started且`R=E`的正常全READY分支才有`3E` calls。本分析步骤不自批最终业务解释。
+7. 程序按`PROVEN_HANDOFF | SHARED_ANCHOR | SEMANTIC_CUE`建立`C`条候选边并附`COUNTER_SIGNAL`；generic-only依据禁止成边。连通组和singleton共同形成覆盖全部Flow的`G`个ProcessEvidenceGroups。
+8. 程序切成`S`个model-safe shards；每条candidate edge恰有一个owner shard，Flow可重复但仅作为read-only context。P1提出一个或多个hypothesis；P2只可KEEP/NARROW/DROP/PENDING_CONFIRMATION且不得新增Flow、edge、Fact、Evidence或hypothesis。
+9. M9发布十四份semantic及receipt。planned tasks=`E+2R+2S`；actual calls=`E+R+accepted local R1+S+accepted process P1`。R2/P2未运行仍有planned task与`NOT_RUN_UPSTREAM_FAILED`。
 
 ### 可观察产物
 
@@ -679,25 +701,32 @@ FlowInterpretation为BusinessFlows的每个model-eligible Flow先建立一个隔
 - generation-receipts.jsonl
 - interpretation-candidates.jsonl
 - flow-interpretation-dispositions.jsonl
+- process-evidence-groups.jsonl
+- process-model-tasks.jsonl
+- process-model-rounds.jsonl
+- business-process-hypotheses.jsonl
+- process-interpretation-dispositions.jsonl
 - flow-interpretation-receipt.json
+
+M3 module envelope与公开`repository-interpretation-registry.json`必须使用不同store pair：前者为`flow-interpretation-repository-interpretation-registry-module-v1 / FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY_MODULE`，后者为`flow-interpretation-repository-interpretation-registry-v3 / FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY`；禁止dual write或同pair碰撞。五项过程调用与局部调用继续共用`generation-receipts.jsonl`，discriminator为`R0_REGISTRY_PROPOSAL | R1_FLOW_INTERPRETATION | R2_FLOW_PRECISION_REVIEW | PROCESS_P1_HYPOTHESIS | PROCESS_P2_PRECISION_REVIEW`。
 
 ### 下游如何消费
 
-RepositoryKnowledge读取canonical R0/R1/R2 rounds、唯一frozen registry、registry/interpretation proposal refs和Flow dispositions，逐项重算`registryProposalId→provisionalKey→selectedKey`及basis closure；它不重新调用模型，也不信任模型自报的decision。
+RepositoryKnowledge读取canonical local/process artifacts，重算`registryProposalId→provisionalKey→selectedKey`与`hypothesis→P1/P2→group/signal→Flow/Capsule→Fact/Proof/Evidence/source`；它不调用模型，也不信任模型自评。
 
 ### 成功、Gap、fatal 与角色
 
-没有Flow时仍写出全部十个命名文件，其中JSONL为零行、registry为canonical empty、调用数为0。R0没有可接受item、R0/R1/R2安全隔离失败或合法但没有合适term时，为该Flow写typed Gap/FAILED disposition并让RepositoryKnowledge使用技术回退；不能从分母删除。schema、runtime identity、unknown/cross-Flow reference、seed漂移、R2 expansion或Provider started后失败为fatal；当前run失败且不得自动重试、换Provider或回退API key。程序冻结任务、验证/冻结registry并校验传输；LLM在R0只提出bounded仓库词候选，在R1/R2只选择有限key。
+没有Flow时仍写出全部十五个命名文件，JSONL为零行、registry为空、调用数为0。孤立Flow、冲突和未证外部效果可带Gap成功。schema/runtime/ref、generic-only edge、group漏Flow、edge多owner、R2/P2扩张或Provider started后失败为fatal；不自动重试、换Provider或API fallback。程序拥有任务、候选、validation和publication；Luna/xhigh只执行五类bounded round。
 
 ## 10. 分析步骤“仓库知识”：准入解释并合并仓库业务知识
 
 ### 为什么存在
 
-模型提案不是事实，多个 Flow 的同名对象也不一定是同一对象。本分析步骤对**全部 slice** 的候选逐一作 KEEP、NARROW、DROP 或 NEEDS_EVIDENCE 决定，再把全部程序 Facts/Gaps 与 admitted interpretations 按 Proof-backed technical anchor 合并成**一份且仅一份** RepositoryKnowledge，显式保存跨 Flow identity、关系、指标和冲突。
+模型提案不是事实，多个Flow的同名对象也不一定是同一对象。本步骤以固定顺序`local admission → process claim validation → conflict/alternative comparison → many-to-many membership → one knowledge`执行，给每个claim恰一`SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION`，不使用numeric confidence，且模型调用数为0。
 
 ### 具体输入
 
-ProvenCodeFacts Facts/Proof/Gaps、BusinessFlows Flow/Capsule、FlowInterpretation canonical R0/R1/R2 artifacts、唯一RepositoryInterpretationRegistry、registry proposal dispositions、knowledge profile和预算。
+ProvenCodeFacts Facts/Proof/Gaps、BusinessFlows Flow/Capsule/signals、FlowInterpretation十四项semantic与receipt、唯一registry、local/process dispositions、knowledge profile和预算。
 
 ### 工作步骤
 
@@ -705,14 +734,14 @@ ProvenCodeFacts Facts/Proof/Gaps、BusinessFlows Flow/Capsule、FlowInterpretati
 2. 用更保守的程序 decision 覆盖模型自评；开放文本不进入知识。
 3. 没有 admitted term 时使用 total TechnicalDisplayRegistry。
 4. 按 FQN、SQL table、Flow/Outcome ID 或 Proof-backed equivalence edge 合并；中文名或 simple name 不能作为 identity。
-5. 保持 Proven Fact、Admitted Interpretation、Gap 三种知识等级。
-6. admitted meaning保留registryProposalId、provisionalKey、interpretationProposalIds和R0/R1/R2 basis/receipt lineage；跨Flow同名只有Proof-backed anchor equivalence才可在本分析步骤合并。
-7. 给每个atom、meaning、registry lineage和Gap唯一owner，解决或显式记录冲突。
-8. 重算仓库级accounting后原子安装。
+5. 逐hypothesis重验P1/P2、group/relation/signal、Flow/Capsule与Fact/Proof/Evidence/source闭包；每个process claim恰一certainty和准入处置。
+6. 相斥且没有优先Proof的claim保留为alternative/pending；不得选择更流畅的故事。每个Flow至少属于一个BusinessProcess、一个`INDEPENDENT_ACTIVITY`或一个带Gap的`UNASSIGNED_PENDING`。
+7. admitted meaning/process保留完整lineage；同一Flow可被多个BusinessProcess复用。给每个atom、meaning、claim、membership和Gap唯一owner或reasoned exclusion。
+8. 生成含九个过程数组的一份knowledge，重算仓库级accounting后原子安装。
 
 ### 可观察产物
 
-- admitted-flow-meanings.jsonl
+- knowledge-admission-decisions.jsonl
 - repository-business-knowledge.json
 - knowledge-conflicts.jsonl
 - knowledge-accounting.json
@@ -721,17 +750,17 @@ ProvenCodeFacts Facts/Proof/Gaps、BusinessFlows Flow/Capsule、FlowInterpretati
 
 ### 下游如何消费
 
-NineSectionDocument只读repository-business-knowledge.json、merged-gaps.json和ownership/accounting，并通过FlowInterpretation/07 typed IDs编译registry-aware Trace；它不读raw reasoning，也不重新决定term。ReaderItem可展示已准入label，但必须携带registryProposalId/interpretationProposalId lineage。
+NineSectionDocument只读五项semantic与receipt。`repository-business-knowledge.json`除既有知识外必须含`businessProcesses/processActivities/processRelations/processMemberships/roles/states/processClaims/processAlternatives/pendingConfirmations`九数组；Trace可回到local与process lineage，不读raw reasoning。
 
 ### 成功、Gap、fatal 与角色
 
-所有业务 term 被 DROP 仍可成功，技术显示保证文档可生成。未解决的业务问题保留为 Gap。双 owner、无 owner、anchor 冲突未处置或 registry 漂移为 fatal。程序拥有最终准入和 merge；LLM 在本分析步骤无执行角色。
+所有业务term/process hypothesis被DROP仍可成功，技术显示、独立活动和Gap保证诚实输出。未证外部效果、冲突与P2 pending必须保留。双/无owner、claim无certainty、Flow无membership、anchor冲突未处置或registry漂移为fatal。程序拥有最终准入与merge；LLM角色为零。
 
 ## 11. 分析步骤“九章文档”：九章、Markdown、Trace、验证、归档与观察
 
 ### 为什么存在
 
-唯一 RepositoryKnowledge 还需要稳定地分配到读者结构中，并与完整分析 lineage 一起保存。每个完成的分析链只生成一份仓库级 NineSectionPlan 和一份 document.md；只保存 document.md 不能证明它如何产生，也不能让validation或后续显式执行重验输入。禁止逐 Flow 生成 Markdown 或拼接预渲染片段。
+唯一RepositoryKnowledge还需要稳定分配到读者结构并保存完整lineage。每个完成链只有一份NineSectionPlan和一份`document.md`；Chapter 4必须process-first，先过程概览、活动、转换、角色、备选，再列独立活动，禁止controller/method顶层清单、per-Flow Markdown或片段拼接。
 
 ### 具体输入
 
@@ -740,11 +769,11 @@ NineSectionDocument只读repository-business-knowledge.json、merged-gaps.json�
 ### 工作步骤
 
 1. M1 fresh-reopen 仓库知识的五个semantic artifacts、`repository-knowledge-receipt.json` **以及唯一明确列出的流程解释 `repository-interpretation-registry.json`**，把全部七个实际读取的ArtifactReference放入自己的direct preimage/envelope；再用 `RepositoryCoverageLedgerDraftReferenceV1` 同时核对`knowledge-accounting.json` carrier artifact、nested draft ID和schema，并 fresh-reopen 已安装的仓库知识 publication。除这一份为 ReaderItem registry-lineage exact join 所必需的流程解释 registry 外，M1 **不**重开已验证源码清单至业务流程的原始bytes或其他流程解释 bytes；它只验证nested draft内的其余上游 `AnalysisStepPublicationReference` 的wire形状、同run/语义key、排序、唯一性以及与draft/preparation中被复制字段的逐字一致性。真正逐bytes重开全部上游bytes的职责属于外部 validator。拒绝把普通 ArtifactReference 或draft自身冒充final ledger。
-2. 将每个Fact atom、admitted meaning、registry lineage、technical fallback和Gap分配到唯一章节owner，先得到 prospective `readerSemanticItemIds[]` 与 `sectionOwnerBySemanticItem{}`。
-3. M1先计算不含plan identity的 `NineSectionDocumentCoveragePreparationV1`，再安装唯一`nine-section-document-repository-coverage-ledger-v1` final-ledger module artifact；它以上游六个语义roots、已安装仓库知识 publication和nested draft为输入。final ledger固定后，M1才生成并与ledger在同一receipt下原子安装恰好九章的`nine-section-document-nine-section-plan-draft-v3` module payload。这个draft是M2唯一可读的plan语义bytes，不是尚未创建的public analysis step file。
-4. 生成typed ReaderItem和disposition；每个语义原子必须进入正文、技术依据、Gap或有理由排除，admitted label必须引用registryProposalId/interpretationProposalId，且plan逐字引用刚安装的final ledger。
+2. 将每个local/process semantic item分配到唯一章节owner；五种新增kind固定为`BUSINESS_PROCESS_OVERVIEW | PROCESS_ACTIVITY | PROCESS_TRANSITION | ROLE_RESPONSIBILITY | PROCESS_ALTERNATIVE`。推断分组标记，pending在相关章短提示并在Chapter 9完整展开。
+3. M1先计算不含plan identity的coverage preparation，再安装唯一`nine-section-document-repository-coverage-ledger-v2` final ledger；固定后才与`nine-section-document-nine-section-plan-draft-v4`在同一receipt下安装。
+4. 生成typed ReaderItem/disposition。正文隐藏ID、SHA、路径和技术enum；每个过程item携带BusinessProcess/Activity/Relation/Claim/Admission/Hypothesis refs及三值certainty。
 5. M2 renderer **只读取从M1 receipt重开的plan-draft payload**，把UTF-8/LF Markdown bytes封入自己的machine artifact；不得打开源码、模型response或registry。run完成后的外部`render`/validator才读取public `nine-section-plan.json`作同义重渲染。
-6. M3用同一M1 plan/ledger编译 `reader item → knowledge → meaning → interpretationProposal/selectedKey → provisionalKey/registryProposal/R0 receipt/basis → Fact/Gap → Proof → Evidence → snapshot` 的typed Trace。
+6. M3编译局部Trace，并为过程item严格编译`ReaderItem → ProcessKnowledge → ProcessAdmissionDecision → BusinessProcessHypothesis → P1/P2 task/round/receipt → ProcessEvidenceGroup/Signal → Flow/Capsule → Fact/Proof/Evidence/Source`；未运行P2不伪造round/receipt。
 7. 每个模块先立即安装canonical JSON/JSONL+module receipt；renderer的Markdown bytes先封在machine artifact中。M4从fresh reopened M1 plan draft/final ledger、M2 document machine artifact和M3 trace确定性产生五个semantic analysis step payload：`nine-section-plan.json`、唯一`document.md`、`trace.jsonl`、`candidate.json`、`validation-baseline.json`。
 8. M4 coordinator按固定依赖顺序编排三个deep store：`CanonicalAnalysisStepArtifactStore`从五个semantic payload生成`nine-section-archive-manifest.json`并创建绑定M1–M3+request/upstream/final-ledger provenance（明确不绑定尚不存在的M4 reference）的`nine-section-document-receipt.json`；`CanonicalRunManifestStore`再把唯一`runs/<runId>/run-manifest.json`安装为第八个逻辑九章文档输出；最后`CanonicalModuleArtifactStore`才安装唯一M4 publication payload及其module receipt，使它反向绑定八项references。不得在analysis step目录或M4 payload内嵌第二份RunManifest。
 9. 只有M4 publication/receipt也已安装后，single worker才把运行状态写为`FINISHED`，绑定四选一`AnalysisResult`和root run-manifest reference；只有complete/eligible/closed映射COMPLETE类结果，合法诊断映射INCOMPLETE类结果。integrity、Provider或执行失败统一为`FAILED`且没有result。
@@ -752,9 +781,9 @@ NineSectionDocument只读repository-business-knowledge.json、merged-gaps.json�
 
 ### 可观察产物
 
-- `steps/08-nine-section-document/nine-section-plan.json` — `nine-section-document-nine-section-plan-v3`
+- `steps/08-nine-section-document/nine-section-plan.json` — `nine-section-document-nine-section-plan-v4`
 - `steps/08-nine-section-document/document.md` — `nine-section-document-document-markdown-v1`
-- `steps/08-nine-section-document/trace.jsonl` — `nine-section-document-trace-record-v3`
+- `steps/08-nine-section-document/trace.jsonl` — `nine-section-document-trace-record-v4`
 - `steps/08-nine-section-document/candidate.json` — `nine-section-document-candidate-v4`
 - `steps/08-nine-section-document/validation-baseline.json` — `nine-section-document-validation-baseline-v1`
 - `steps/08-nine-section-document/nine-section-archive-manifest.json` — `nine-section-document-archive-manifest-v1`
@@ -769,7 +798,7 @@ NineSectionDocument只读repository-business-knowledge.json、merged-gaps.json�
 
 ### 成功、Gap、fatal 与角色
 
-九章可以诚实呈现 Gap 和空业务覆盖，但不能静默丢失知识。只有 RepositoryCoverageLedger 对完整仓库闭合、唯一 knowledge→唯一 plan/document cardinality 成立才可完成 run；单一 Flow PASS 永远不足。缺章、多章、错序、atom loss、document hash drift、Trace 断裂、archive collision 或无法原子安装为 fatal。程序规划、渲染、验证、归档和显式artifact复用；LLM 不写 Markdown。
+九章可诚实呈现Gap和空业务覆盖，但不能静默丢失过程知识。只有final ledger闭合、唯一knowledge→plan→document为1:1:1才可完成；单Flow PASS永远不足。缺/多/错序章节、Chapter 4方法清单、process item/Trace遗漏、pending提升为confirmed、正文泄漏ID/SHA/path/enum、document drift或partial install为fatal。程序规划/渲染/验证/归档；LLM不写Markdown。
 
 ## 12. 业务产物持久化与显式复用
 
@@ -840,7 +869,7 @@ NineSectionDocument只读repository-business-knowledge.json、merged-gaps.json�
 
 **示例分类：STRUCTURAL_WIRE_SPECIMEN。** 上例字段/variant完整且ProgramGraphs direct lineage精确包含VerifiedSourceInventory、ApplicationDiscovery两个`AnalysisStepPublicationReference`并按closed registry依赖顺序排列；普通full-run路径中producer runId相同，显式`executeStep`路径允许producer runId不同，但必须通过12.2的同一frozen-basis/controls/连续analysis step验证。其中digest/size值只是grammar-valid specimen，并不声称是所示payload的实际重算结果。每个content ID仍严格满足13.3.1的`<prefix>:<64 lowercase hex>` safe grammar，production必须从canonical bytes重算，不能复制specimen digest。
 
-`semanticArtifacts`按UTF-8 `fileName` byte order严格递增且无重复；它不列archive manifest、receipt或root run manifest。前七个分析步骤的`publicationProvenance.kind=ANALYSIS_STEP_PUBLISHER_MODULE`并绑定已经安装的publisher **specification** module reference；例如VerifiedSourceInventory精确绑定M3，而M3只含三个已注册semantic payload bytes/descriptors，绝不预报analysis step root或receipt。NineSectionDocument因批准的依赖顺序要求M4最后，使用`NINE_SECTION_DOCUMENT_COORDINATOR_PREPARATION`，绑定M1–M3 module references、analysis request reference、七个上游分析步骤references与M1 `nine-section-document-repository-coverage-ledger-v1` final ledger reference，明确不含尚不存在的M4 reference；它绝不能绑定RepositoryKnowledge draft。M4稍后反向绑定analysis step receipt/run manifest，不形成cycle。
+`semanticArtifacts`按UTF-8 `fileName` byte order严格递增且无重复；它不列archive manifest、receipt或root run manifest。前七个分析步骤的`publicationProvenance.kind=ANALYSIS_STEP_PUBLISHER_MODULE`并绑定已经安装的publisher **specification** module reference；例如VerifiedSourceInventory精确绑定M3，而M3只含三个已注册semantic payload bytes/descriptors，绝不预报analysis step root或receipt。NineSectionDocument因批准的依赖顺序要求M4最后，使用`NINE_SECTION_DOCUMENT_COORDINATOR_PREPARATION`，绑定M1–M3 module references、analysis request reference、七个上游分析步骤references与M1 `nine-section-document-repository-coverage-ledger-v2` final ledger reference，明确不含尚不存在的M4 reference；它绝不能绑定RepositoryKnowledge draft。M4稍后反向绑定analysis step receipt/run manifest，不形成cycle。
 
 前七个分析步骤的`archiveManifest`恒为null；NineSectionDocument为`{fileName,artifactType,schemaVersion,artifactId,mediaType,sizeBytes,sha256}`，绑定已固定的五项semantic set/root。`analysisStepArtifactRoot`只由semantic descriptor list计算；analysis step receipt ID排除且只排除`analysisStepReceiptId`本身，receipt也不加入analysis step root。后继analysis step或最终run manifest记录receipt文件SHA，从而避免自引用。
 
@@ -1169,9 +1198,18 @@ RepositoryBusinessKnowledge
   gaps[]
   ownership[]
   conflicts[]
+  businessProcesses[]
+  processActivities[]
+  processRelations[]
+  processMemberships[]
+  roles[]
+  states[]
+  processClaims[]
+  processAlternatives[]
+  pendingConfirmations[]
 
-RepositoryCoverageLedgerDraftV2
-  schemaVersion=repository-coverage-ledger-draft-v2
+RepositoryCoverageLedgerDraftV3
+  schemaVersion=repository-coverage-ledger-draft-v3
   repositoryCoverageLedgerDraftId
   sourceScopeKind: COMPLETE_CAPTURE | BOUNDED_PATH_SET
   repositoryCompletionEligible: BOOLEAN
@@ -1209,6 +1247,22 @@ RepositoryCoverageLedgerDraftV2
   flowInterpretationCandidateIds[]
   interpretationProposalIds[]
   interpretationProposalDecisionIds[]
+  processEvidenceGroupIds[]
+  processCandidateRelationIds[]
+  processModelTaskIds[]
+  processModelRoundIds[]
+  businessProcessHypothesisIds[]
+  processInterpretationDispositionIds[]
+  processAdmissionDecisionIds[]
+  businessProcessIds[]
+  processActivityIds[]
+  processRelationIds[]
+  processMembershipIds[]
+  roleIds[]
+  stateIds[]
+  processClaimIds[]
+  processAlternativeIds[]
+  pendingConfirmationIds[]
   flowAdmissionDecisionIds[]
   admittedMeaningIds[]
   registryLineageIds[]
@@ -1251,7 +1305,7 @@ RepositoryKnowledgeCoveragePreparationV1
 RepositoryCoverageLedgerDraftReferenceV1
   knowledgeAccountingRef: ArtifactReference
   repositoryCoverageLedgerDraftId
-  schemaVersion=repository-coverage-ledger-draft-v2
+  schemaVersion=repository-coverage-ledger-draft-v3
 
 NineSectionDocumentCoveragePreparationV1
   schemaVersion=nine-section-document-coverage-preparation-v1
@@ -1265,8 +1319,8 @@ NineSectionDocumentCoveragePreparationV1
   sectionOwnerBySemanticItem{}
   nineSectionDocumentCoveragePreparationRoot
 
-RepositoryCoverageLedgerV3
-  schemaVersion=repository-coverage-ledger-v3
+RepositoryCoverageLedgerV4
+  schemaVersion=repository-coverage-ledger-v4
   repositoryCoverageLedgerId
   repositoryCoverageLedgerDraftRef: RepositoryCoverageLedgerDraftReferenceV1
   nineSectionDocumentCoveragePreparation: NineSectionDocumentCoveragePreparationV1
@@ -1304,6 +1358,22 @@ RepositoryCoverageLedgerV3
   flowInterpretationCandidateIds[]
   interpretationProposalIds[]
   interpretationProposalDecisionIds[]
+  processEvidenceGroupIds[]
+  processCandidateRelationIds[]
+  processModelTaskIds[]
+  processModelRoundIds[]
+  businessProcessHypothesisIds[]
+  processInterpretationDispositionIds[]
+  processAdmissionDecisionIds[]
+  businessProcessIds[]
+  processActivityIds[]
+  processRelationIds[]
+  processMembershipIds[]
+  roleIds[]
+  stateIds[]
+  processClaimIds[]
+  processAlternativeIds[]
+  pendingConfirmationIds[]
   flowAdmissionDecisionIds[]
   admittedMeaningIds[]
   registryLineageIds[]
@@ -1348,8 +1418,8 @@ CoverageEquationV1 = closed tagged union
   TOTAL_FUNCTION {equationKey, domainIds[], codomainIds[], mappings[] {domainId, codomainId}}
   NONEMPTY_SET_BY_DOMAIN {equationKey, domainIds[], mappings[] {domainId, memberIds[]}}
 
-NineSectionPlanV3
-  schemaVersion=nine-section-document-nine-section-plan-v3
+NineSectionPlanV4
+  schemaVersion=nine-section-document-nine-section-plan-v4
   artifactType                           // exact policy-registry value for this schema
   artifactId                             // canonical plan identity; public nineSectionPlanId aliases this value
   repositoryKnowledgeRef: ArtifactReference
@@ -1359,31 +1429,37 @@ NineSectionPlanV3
   profileBundleRef: ArtifactReference
   rendererProfileRef: ArtifactReference
   repositoryCardinality {knowledgeCount=1,planCount=1,documentCountExpected=1}
-  sections[9]: SectionPlanV3
+  sections[9]: SectionPlanV4
   dispositions[]
   coverage
 
-SectionPlanV3
+SectionPlanV4
   sectionNumber: 1..9
   sectionKey: DOCUMENT_GUIDE | BUSINESS_GOALS | BUSINESS_OBJECTS |
               BUSINESS_ACTIVITIES | FIELDS_AND_DIMENSIONS | OBJECT_RELATIONS |
               METRIC_DEFINITIONS | EXAMPLE_QUESTIONS | PENDING_CONFIRMATION
   title                                 // exact closed key/title pairing in NineSectionDocument §8.2
-  readerItems[]: ReaderItemV3
+  readerItems[]: ReaderItemV4
 
-ReaderItemV3                            // sealed by readerItemKind + templateKey + typedSlots
+ReaderItemV4                            // sealed by readerItemKind + templateKey + typedSlots
   readerItemKey
   readerItemKind: TECHNICAL_FALLBACK | EMPTY_SECTION | RECORD_REFERENCE |
                   ADMITTED_TERM | FACT_SENTENCE | RELATION_REFERENCE |
-                  METRIC_REFERENCE | GAP_QUESTION
+                  METRIC_REFERENCE | GAP_QUESTION | BUSINESS_PROCESS_OVERVIEW |
+                  PROCESS_ACTIVITY | PROCESS_TRANSITION | ROLE_RESPONSIBILITY |
+                  PROCESS_ALTERNATIVE
   templateKey
   typedSlots
   ownerKnowledgeItemId                  // required nullable; null iff EMPTY_SECTION
   knowledgeItemIds[], factIds[], meaningIds[]
   registryProposalIds[], provisionalKeys[], interpretationProposalIds[], selectedKeys[]
   gapIds[], relationIds[], metricIds[]
+  businessProcessIds[], processActivityIds[], processRelationIds[], processMembershipIds[]
+  roleIds[], stateIds[], processClaimIds[], processAdmissionDecisionIds[]
+  businessProcessHypothesisIds[], processAlternativeIds[], pendingConfirmationIds[]
+  certainty: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
 
-ReaderTemplateSlotsV3                   // exact kind/template pairing; no other variant
+ReaderTemplateSlotsV4                   // exact kind/template pairing; no other variant
   TECHNICAL_FALLBACK / technical-scope-v1 -> {display}
   EMPTY_SECTION / empty-section-v2 -> {sectionKey,effectiveProfileRef,reasonCode}
   RECORD_REFERENCE / record-anchor-v1 -> {record,evidence}
@@ -1393,20 +1469,25 @@ ReaderTemplateSlotsV3                   // exact kind/template pairing; no other
   RELATION_REFERENCE / relation-v1 -> {from,relation,to}
   METRIC_REFERENCE / metric-with-gap-v1 -> {metric,definitionState}
   GAP_QUESTION / gap-question-v1 -> {subject,missingRequirement}
+  BUSINESS_PROCESS_OVERVIEW / business-process-overview-v1 -> {processName,purpose,start,finish,certainty}
+  PROCESS_ACTIVITY / process-activity-v1 -> {process,activity,role,input,output,certainty}
+  PROCESS_TRANSITION / process-transition-v1 -> {process,fromActivity,condition,toActivity,certainty}
+  ROLE_RESPONSIBILITY / role-responsibility-v1 -> {role,responsibility,process,certainty}
+  PROCESS_ALTERNATIVE / process-alternative-v1 -> {process,alternative,when,certainty}
 
 Boundary projection rule: `JavaBoundaryInvocation` can only populate `TECHNICAL_FALLBACK / technical-scope-v1`
 with its static target and ordered arguments. `FACT_SENTENCE / field-write-v1` requires an upstream Fact whose Proof
 does not cross a generic Java boundary; Mapper→XML or XML/SQL static structure cannot supply `targetColumn`.
 Every external effect is rendered separately as `GAP_QUESTION` / 待确认.
 
-TraceRecordV3
-  schemaVersion=nine-section-document-trace-record-v3
+TraceRecordV4
+  schemaVersion=nine-section-document-trace-record-v4
   traceId
   readerItemKey
-  traceKind                             // same closed eight values as ReaderItemV3
-  hops[]: TraceHopV3
+  traceKind                             // local kinds plus PROCESS_KNOWLEDGE_CLAIM
+  hops[]: TraceHopV4
 
-TraceHopV3                              // sealed tagged union
+TraceHopV4                              // sealed tagged union
   IDENTITY {identityKind,id}
   ARTIFACT_REFERENCE {referenceRole,artifactRef}
   SOURCE_EXCERPT {sourceExcerpt: SourceExcerptV1}
@@ -1509,13 +1590,13 @@ TraceView
   validationReceiptRef: ArtifactReference  // matching validated Candidate
   readerItemKey
   traceRecordRef: ArtifactReference
-  traceKind                                // same closed eight values as TraceRecordV3
+  traceKind                                // local values plus PROCESS_KNOWLEDGE_CLAIM from TraceRecordV4
   sourceValidationState: NO_SOURCE_HOPS | ALL_SOURCE_HOPS_REOPENED_AND_HASH_VERIFIED
   hopCount
   hops[]: PublicTraceHopV1                 // exact stored order; hopCount == length
   allHopsReturned=true
 
-PublicTraceHopV1                           // path-free projection of a validated TraceHopV3
+PublicTraceHopV1                           // path-free projection of a validated TraceHopV4
   IDENTITY {identityKind,id}
   ARTIFACT_REFERENCE {referenceRole,artifactRef}
   SOURCE_EXCERPT {fileId,startByte,endByteExclusive,startLine,startColumn,endLine,endColumn,rawUtf8,rawUtf8Sha256}
@@ -1539,17 +1620,17 @@ request bytes是整个record的canonical JSON，wire本身没有self ID字段，
 
 `ArtifactQuery`必须同时有non-null `runId+artifactId`；三个`expected*`字段若给出，只做已安装receipt/root membership与discriminator校验，任一不等即`ARTIFACT_IDENTITY_MISMATCH`，绝不作为“找最近文件”的替代selector。analysis-step-range execution没有root manifest时仍可由其immutable analysis step/module receipts证明自身输出membership，不能从轻量execution status或目录枚举猜测。`expectedArtifactLocation`和返回的`artifactLocation`都使用同一个sealed union：module payload/receipt必须是准确的`ANALYSIS_STEP_MODULE | VALIDATION_MODULE`，analysis-step-owned semantic/archive/receipt必须是`ANALYSIS_STEP_PUBLICATION`，root `run-manifest.json`必须是`RUN_MANIFEST`。实现不得为方便查询而伪造module owner或analysis step fields。任何record都不含filesystem Path。数组按上述注释或stable ID canonical排序；`COMPLETE_UTF8`要求positive `maxBytes`且不得超过server ceiling，artifact大于任一ceiling时返回`ARTIFACT_RESPONSE_BUDGET_EXCEEDED`而不返回partial content。它还必须命中该artifact policy的`publicContentExposure=PATH_FREE_COMPLETE_UTF8`；否则以`ARTIFACT_CONTENT_NOT_PUBLIC`整体拒绝，即使bytes未超预算也不能返回“脱敏截断版”。含`SourceLocatorV1`、`SourceExcerptV1`、prompt或raw model response的原始artifact（包括raw `trace.jsonl`）一律标为`METADATA_ONLY`。`TraceView`是这些source hops唯一允许的、fresh-validated且path-free的public projection。
 
-`TraceView`是已验证内部`TraceRecordV3`的唯一公开、path-free投影。core先fresh reopen Candidate、匹配的`ValidationReceiptV4`、trace record和每个所需source file；`expectedCandidateId`非null时必须逐字等于该Candidate的artifact ID，否则`ARTIFACT_IDENTITY_MISMATCH`。`maxHops`必须在`1..resourceBudget.maxTraceHops`内；若完整record hop count超过它，返回`OBSERVATION_BUDGET_EXCEEDED`，不能裁剪或省略后声称成功。每个SOURCE_EXCERPT hop重新验证file SHA、span边界和excerpt SHA，再只投影fileId、span coordinates、excerpt bytes/SHA，绝不暴露本机或仓库Path。没有source hop时状态只能是`NO_SOURCE_HOPS`；否则所有source hops都通过才可为`ALL_SOURCE_HOPS_REOPENED_AND_HASH_VERIFIED`。candidate、validation、trace ref、status、hop count和完整有序hops共同构成返回值；任何source drift、validation不匹配、unknown hop或预算超限都整个查询失败。
+`TraceView`是已验证内部`TraceRecordV4`的唯一公开、path-free投影。core先fresh reopen Candidate、匹配的`ValidationReceiptV4`、trace record和每个所需source file；`expectedCandidateId`非null时必须逐字等于该Candidate的artifact ID，否则`ARTIFACT_IDENTITY_MISMATCH`。`maxHops`必须在`1..resourceBudget.maxTraceHops`内；若完整record hop count超过它，返回`OBSERVATION_BUDGET_EXCEEDED`，不能裁剪或省略后声称成功。每个SOURCE_EXCERPT hop重新验证file SHA、span边界和excerpt SHA，再只投影fileId、span coordinates、excerpt bytes/SHA，绝不暴露本机或仓库Path。没有source hop时状态只能是`NO_SOURCE_HOPS`；否则所有source hops都通过才可为`ALL_SOURCE_HOPS_REOPENED_AND_HASH_VERIFIED`。candidate、validation、trace ref、status、hop count和完整有序hops共同构成返回值；任何source drift、validation不匹配、unknown hop或预算超限都整个查询失败。
 
-`ReaderItemV3`不是开放`kind+Map`。NineSectionDocument §8.0.1列出的八个kind、八个template和八个typed-slot record逐项唯一配对；所有ID arrays按UTF-8 byte order排序去重。`EMPTY_SECTION`必须使用`empty-section-v2`并保存closed `sectionKey`、完整`effectiveProfileRef`和closed reason，且profile ref逐字等于owner plan的`nineSectionProfileRef`；只有该variant允许`ownerKnowledgeItemId=null`。其他variant不能借EMPTY reason或裸profile ID补身份。任何字段、enum或配对变化都升级plan schema。
+`ReaderItemV4`不是开放`kind+Map`。既有八种local kind和新增五种process kind逐项与固定template/typed-slot record唯一配对；所有ID arrays按UTF-8 byte order排序去重。`EMPTY_SECTION`必须使用`empty-section-v2`并保存closed `sectionKey`、完整`effectiveProfileRef`和closed reason，且profile ref逐字等于owner plan的`nineSectionProfileRef`；只有该variant允许`ownerKnowledgeItemId=null`。过程kind必须含process knowledge/admission/hypothesis refs与三值certainty。任何字段、enum或配对变化都升级plan schema。
 
-`TraceHopV3`只允许`IDENTITY | ARTIFACT_REFERENCE | SOURCE_EXCERPT | SECTION | TEMPLATE`五个tagged variants；identity/reference-role闭集与每种ReaderItem的最短合法hop序列以NineSectionDocument §8.0.1/§8.4为准。`SOURCE_EXCERPT`必须嵌入下文同一个`SourceExcerptV1`；`SEARCHED_SCOPE`和profile lineage必须是完整`ArtifactReference`，不得回退到裸ID、`path:line`或合成raw excerpt。Trace records按readerItemKey排序且一项ReaderItem恰一record。
+`TraceHopV4`只允许`IDENTITY | ARTIFACT_REFERENCE | SOURCE_EXCERPT | SECTION | TEMPLATE`五个tagged variants；identity/reference-role闭集与每种ReaderItem的最短合法hop序列以NineSectionDocument详细设计为准。`SOURCE_EXCERPT`必须嵌入下文同一个`SourceExcerptV1`；`SEARCHED_SCOPE`和profile lineage必须是完整`ArtifactReference`，不得回退到裸ID、`path:line`或合成raw excerpt。过程Trace不得跳过ProcessAdmissionDecision或P1/P2 lineage。Trace records按readerItemKey排序且一项ReaderItem恰一record。
 
 `nine-section-document-validation-receipt-v4`把实际读取闭包作为自身identity material：payload `directArtifactRefs[]`与module envelope `upstreamArtifacts[]`必须逐字相同并按artifactId严格排序，列齐fresh validator打开的每个control/profile/policy、source-registration、semantic/archive/receipt、module payload/receipt、M4、Candidate、root manifest和coverage artifact；`sourceFilePreimages[]`另按fileId绑定每个实际打开source file的完整SHA。validator只根据immutable manifest/publications证明AnalysisResult与业务闭包，不把轻量execution status当作identity preimage。manifest/root/descriptor不能代替被读bytes。payload中的八个`analysisStepPublicationRefs`、八个`validatedAnalysisStepRoots`必须逐项等于同一M4 publication和root run manifest，`traceRoot`等于它们指向的NineSectionDocument Trace。显式analysis step链允许不同producer runId，但必须重新验证12.2的连续lineage；额外读取任何bytes都必须先加入preimage并改变validation identity。
 
 `ValidationCheckV1.checkKey`闭集为`SOURCE_REGISTRATION | ANALYSIS_STEP_PUBLICATION_CHAIN | MODULE_RECEIPT_CHAIN | REPOSITORY_COVERAGE | REGISTRY_MEANING_LINEAGE | DOCUMENT_RERENDER | SOURCE_TRACE_CLOSURE | CANDIDATE_MANIFEST_BINDING`；status为`PASS | GAP | FAIL`。`failureCode`required-nullable，非null闭集为`VALIDATION_SOURCE_INVALID | VALIDATION_ANALYSIS_STEP_PUBLICATION_INVALID | VALIDATION_MODULE_PUBLICATION_INVALID | VALIDATION_REPOSITORY_SCOPE_INCOMPLETE | VALIDATION_REPOSITORY_COVERAGE_INCOMPLETE | VALIDATION_REGISTRY_LINEAGE_INVALID | VALIDATION_DOCUMENT_RERENDER_MISMATCH | VALIDATION_SOURCE_TRACE_INVALID | VALIDATION_CANDIDATE_MANIFEST_MISMATCH`；`GAP`只可配两种incomplete code，其余不一致为`FAIL`。fixture-only code一律拒绝。
 
-`NineSectionPlanV3.artifactId`是standalone plan唯一self ID，按`STANDALONE_JSON`公式排除且只排除该字段；Java/API中的`nineSectionPlanId`逐字承载这个`artifactId`，wire document不得再加入第二个self-ID字段。
+`NineSectionPlanV4.artifactId`是standalone plan唯一self ID，按`STANDALONE_JSON`公式排除且只排除该字段；Java/API中的`nineSectionPlanId`逐字承载这个`artifactId`，wire document不得再加入第二个self-ID字段。
 
 统一源码位置合同只有以下两个versioned value records；ApplicationDiscovery、ProgramGraphs、BusinessFlows、NineSectionDocument不得另造`path:line`、basename locator或拼接excerpt：
 
@@ -1709,7 +1790,7 @@ public record ArtifactStoreLimits(
 
 以上类型都位于`org.sourceanalysis.app.artifact`。三个constructor参数顺序都固定为`runStore, canonicalJson, artifactPolicies, limits`，不得新增隐藏global/default。具体实现全部委托同一package-private `AtomicCanonicalPublicationEngine`；该engine、filesystem locator、staging name和atomic move细节既不出现在public constructor，也不成为可替换public seam。`RunStoreHandle`拥有/共享这一私有engine，保证三个store使用相同NOFOLLOW、force、collision与cleanup语义。
 
-分析步骤的组合层还可注入一个**无路径、按完整`ArtifactReference`重开输入字节**的私有读取依赖。它只验证并返回某个已经登记的input artifact的完整immutable bytes；没有枚举、模糊查找、caller Path、写入或publication能力。它不是第四个canonical store、不是公共`RepositoryAnalysisAgent`方法，也不改变52项输出合同。VerifiedSourceInventory M3用它重开`analysis-run-request-v2`和`frozen-repository-request-v2`，再以其内容构造自己的三个semantic文件；各步骤仍自行执行所属schema验证和引用闭包检查。
+分析步骤的组合层还可注入一个**无路径、按完整`ArtifactReference`重开输入字节**的私有读取依赖。它只验证并返回某个已经登记的input artifact的完整immutable bytes；没有枚举、模糊查找、caller Path、写入或publication能力。它不是第四个canonical store、不是公共`RepositoryAnalysisAgent`方法，也不改变57项输出合同。VerifiedSourceInventory M3用它重开`analysis-run-request-v2`和`frozen-repository-request-v2`，再以其内容构造自己的三个semantic文件；各步骤仍自行执行所属schema验证和引用闭包检查。
 
 `CanonicalJsonCodec`的两个方法是canonical JSON唯一公开语法seam；它不暴露或接受可变Jackson配置。`encodeCanonical`接受一个完整`JsonNode`值并返回compact、严格UTF-8、无BOM、无无意义空白且**无final LF**的bytes。object key按其解码后Unicode scalar序列的unsigned UTF-8 bytes做lexicographic排序；array保持调用方给定的语义顺序。字符串不做Unicode normalization：`"`、`\\`和U+0000–U+001F必须转义，其中backspace/tab/newline/form-feed/carriage-return分别固定为`\b`、`\t`、`\n`、`\f`、`\r`，其余控制字符固定为lowercase-hex `\u00xx`；solidus与其他合法Unicode scalar直接编码为UTF-8，不用可选转义。number只接受integral `JsonNode`并写最短十进制形式；浮点、指数、leading plus、leading zero和negative zero不是canonical number，具体字段的正负/范围仍由owner schema验证。
 
@@ -1871,7 +1952,7 @@ application-discovery: 01=application-profile, 02=http-entry, 03=mapper-catalog,
 program-graphs: 01=code-structure, 02=call-graph, 03=control-flow, 04=data-flow, 05=evidence-graph, 06=publish
 proven-code-facts: 01=candidates, 02=proofs, 03=publish
 business-flows: 01=flow-compiler, 02=capsule-projector, 03=publish
-flow-interpretation: 01=registry-task-compiler, 02=registry-proposal-runner, 03=registry-freezer, 04=flow-task-compiler, 05=interpretation-runner, 06=publish
+flow-interpretation: 01=registry-task-compiler, 02=registry-proposal-runner, 03=registry-freezer, 04=flow-task-compiler, 05=interpretation-runner, 06=cross-flow-candidate-compiler, 07=business-process-task-compiler, 08=business-process-interpretation-runner, 09=publish
 repository-knowledge: 01=admission, 02=knowledge-merge, 03=publish
 nine-section-document: 01=planner, 02=renderer, 03=trace, 04=archive
 validation address: 01=run-validator
@@ -1992,8 +2073,10 @@ runManifestId = "run-manifest:" + lowercaseHex(SHA-256(
 | artifact policy/analysis step/run persistence | 新增`artifact-policy-registry-v2`、`analysis-step-receipt-v1`、`run-manifest-v1` | 固定type/version→prefix/media/envelope/empty/public-content policy、analysis step provenance与唯一root manifest |
 | per-module receipt | 新增`module-receipt-v1` | module完成现在要求独立、无自引用receipt |
 | VerifiedSourceInventory target payloads | `verified-snapshot-v1`→`v2`；`verified-source-inventory-admitted-source-request-v1`→`v2`；`verified-source-inventory-verified-source-index-v1`→`v2`；删除旧M3 summary envelope | 加入git mode、text/media disposition、nullable line index及分母计数；M3 module publication恰含三个已注册semantic payload与receipt，analysis step store另建analysis step receipt |
-| NineSectionDocument standalone outputs | `nine-section-document-nine-section-plan-v3`、`nine-section-document-document-markdown-v1`、`nine-section-document-trace-record-v3`、`nine-section-document-candidate-v4`、`nine-section-document-validation-baseline-v1`、`nine-section-document-archive-manifest-v1`、`analysis-step-receipt-v1`、`run-manifest-v1` | v3封闭ReaderItem/template-slot与typed Trace/source/profile lineage；八项位置/identity独立，五semantic→archive→receipt→root manifest→M4 publication/receipt，无嵌套或duplicate manifest |
-| NineSectionDocument module/external payloads | `nine-section-document-repository-coverage-ledger-v1`、`nine-section-document-nine-section-plan-draft-v3`、`nine-section-document-rendered-document-v2`、`nine-section-document-trace-set-v3`、`nine-section-document-candidate-run-publication-v4`、`nine-section-document-validation-receipt-v4` | M1先安装无环final ledger再安装plan draft；planner/trace跟随closed union升版；validator显式绑定全部实际direct preimages与八analysis step typed chain |
+| FlowInterpretation process outputs | `flow-interpretation-process-evidence-group-v1`、`flow-interpretation-process-model-task-v1`、`flow-interpretation-process-model-round-v1`、`flow-interpretation-business-process-hypothesis-v1`、`flow-interpretation-process-interpretation-disposition-v1`、`flow-interpretation-generation-receipt-v3` | 五项新增semantic；统一receipt discriminator覆盖R0/R1/R2/P1/P2；M3 module registry pair与public v3 pair严格不同 |
+| RepositoryKnowledge process outputs | `repository-knowledge-admission-decision-v5`、`repository-knowledge-business-knowledge-v4`、`repository-knowledge-accounting-v3`、`repository-coverage-ledger-draft-v3` | 改名为`knowledge-admission-decisions.jsonl`；三值certainty、九个过程数组和membership totality |
+| NineSectionDocument standalone outputs | `nine-section-document-nine-section-plan-v4`、`nine-section-document-document-markdown-v1`、`nine-section-document-trace-record-v4`、`nine-section-document-candidate-v4`、`nine-section-document-validation-baseline-v1`、`nine-section-document-archive-manifest-v1`、`analysis-step-receipt-v1`、`run-manifest-v1` | v4封闭五种process ReaderItem与完整过程Trace；八项位置/identity独立，五semantic→archive→receipt→root manifest→M4 publication/receipt |
+| NineSectionDocument module/external payloads | `nine-section-document-repository-coverage-ledger-v2`、`nine-section-document-nine-section-plan-draft-v4`、`nine-section-document-rendered-document-v2`、`nine-section-document-trace-set-v4`、`nine-section-document-candidate-run-publication-v4`、`nine-section-document-validation-receipt-v4` | M1先安装无环final ledger再安装plan draft；planner/trace跟随process closed union升版 |
 
 各AnalysisStep文档必须列出上述standalone schema的完整字段；同名module preimage schema和standalone output schema不是同一个artifact，不能互换。reader exact-version解析；旧artifact不可原位迁移。当前实现成熟度只以本文件第15节为准；本表不得被引用为“代码已支持”。
 
@@ -2014,9 +2097,9 @@ Schema 演进 fail closed：字段名、类型、必填/可空、来源规则、
 4. 数据流只在 frozen Java 内逐段保存 definition/use/argument/property binding；调用离开 frozen Java 时必须以通用 boundary invocation 截断。Mapper/Kafka/ES/HTTP/Redis/event/client/library 等不得形成技术专用边界语义；其外部效果不可证明，外部返回被 Java 使用时只能记录 unknown boundary-return source 与 Java use。
 5. Evidence graph 证明“图从何而来”；Proof 证明“这些图和字节为什么支持这个 atom”；Trace 只负责查询链，三者不互相冒充。
 6. EvidenceCapsule 是模型阅读投影，不是 ProofPack。
-7. 分析步骤“流程解释” 的 R0_REGISTRY_PROPOSAL 只提出有 Capsule basis 的仓库特定词、claim 和 question；程序先验证并冻结唯一 `RepositoryInterpretationRegistry`。之后 R1/R2 才能在同一 Flow 的 finite provisional keys 中选择。R0/R1/R2 是三个独立task kinds；R1/R2 属于同一产品 Candidate，ReaderCandidateRound 1/2 最多两份 Candidate，三者不能混用。
+7. 分析步骤“流程解释”的R0只提出有Capsule basis的词/claim/question，程序冻结唯一registry，R1/R2只在同Flow finite keys中选择。新增P1/P2是唯一多Flow模型例外，只读有界ProcessEvidenceGroup；P2只可KEEP/NARROW/DROP/PENDING_CONFIRMATION且不扩张。五类round共用typed generation receipts，但不能混用task kind。
 8. renderer永远只有一个plan输入：NineSectionDocument M2读取M1的verified plan-draft module payload；run完成后的外部rerender/validator读取语义等价的public `nine-section-plan.json`。两条路径都不得读取source、Proof、registry或model response。
-9. `N` 个 compiled Flow 精确产生 `N` 个 Capsule，并按 `ELIGIBLE ⊎ INELIGIBLE` 划分。令 `E` 为eligible子集：FlowInterpretation只为这 `E` 个Flow各产生恰一个R0 task/disposition；全部R0 dispositions闭合后精确冻结1个 `RepositoryInterpretationRegistry`。令 `R` 为R0 READY子集：只有这 `R` 个Flow各产生R1/R2两个tasks，最终每个eligible Flow各有一个`FlowInterpretationDisposition`。每个planned task恰有一个`ModelTaskDispositionV1`；round records和started Provider calls只是tasks的可验证子集。ineligible Flow没有任何FlowInterpretation task/round/disposition，而是保留其BusinessFlows gap并由RepositoryKnowledge生成唯一`MODEL_INELIGIBLE_TECHNICAL_FALLBACK`。于是RepositoryKnowledge仍为全部`N`个Flow一一生成admission/fallback decision并精确产生1个RepositoryKnowledge；NineSectionDocument每run精确产生1个NineSectionPlan和1个document.md。正常且每个eligible R0都READY、每个planned task都实际调用并成功时才是 `E+2E=3E` calls；任何较少调用必须由typed task dispositions与eligible R0/R1 GAP/FAILED或ineligible partition共同解释。
+9. `N`个Flow精确产生`N`个Capsule。令`E`为eligible、`R`为R0 READY、`C`为candidate edges、`G`为覆盖全部Flow的groups、`S`为model-safe shards。局部task=`E+2R`，过程task=`2S`，planned总数=`E+2R+2S`，actual calls=`E+R+accepted local R1+S+accepted process P1`；每planned task恰一disposition。ineligible Flow局部任务为0但仍进入group/membership。RepositoryKnowledge为全部Flow和hypothesis作total admission并精确产生1 knowledge；NineSectionDocument精确产生1 plan和1 document。
 10. Markdown 只能由仓库级 plan 一次渲染；不得先生成 per-Flow Markdown、再做文本拼接或让 renderer 读取多个 fragment。
 11. 分片 receipts 的 denominator ID 集合必须不交叠且 union 等于未分片完整分母；资源上限只能产生可计数 Gap/fatal，不得变成 truncation/sample/first-N。
 
@@ -2032,6 +2115,7 @@ Profile 至少固定：
 - maxSpansPerCapsule、maxSpanBytes、maxCapsuleUtf8Bytes；
 - maxRegistryProposalTasks、maxRegistryProposalResponseBytes、maxRegistryItems、maxRegistryLabelUtf8Bytes、maxRegistryPurposeUtf8Bytes；
 - maxInterpretationTasks、maxInterpretationResponseBytes；每个 eligible Flow 恰好一个 R0 task，R0 READY 的 Flow 恰好各一个 R1/R2 task；
+- maxProcessJoinSignals、maxCandidateProcessRelations、maxProcessEvidenceGroups、maxFlowsPerProcessGroup、maxRelationsPerProcessGroup、maxProcessTaskShards、maxProcessInputBytes、maxProcessHypotheses；每个model-safe shard恰一个P1/P2 planned pair；
 - maxKnowledgeItems、maxReaderItems、maxArchiveFiles/Bytes。
 
 超限不得截断后声称 COMPLETE。可安全隔离并形成合法业务处置时进入 Gap，在 RepositoryCoverageLedger 记录原 denominator 与受影响 IDs；破坏引用、覆盖或完整性时 fatal。分片只允许按稳定 fileId/entryId/flowSliceId 调度，不能降低覆盖或改变 canonical 输出。
@@ -2044,7 +2128,7 @@ Profile 至少固定：
 - 所有tracked regular files均验size/SHA并进入coverage；`NON_ANALYZABLE_MEDIA`保留bytes与identity但不给parser。symlink、gitlink/submodule和未知Git mode在capture时fail closed。
 - 所有路径逐段 NOFOLLOW；普通文件在分配前做 size gate，读取后复查；目录在收集 limit+1 前停止。
 - MyBatis DOCTYPE 可以存在，但 external DTD、general/parameter entity、schema 和所有网络 resolver 必须禁用；无法执行策略即 fatal。
-- 模型只看到 Capsule canonical JSON；源码中的 prompt injection 只是 evidence data。
+- R0/R1/R2只看到单Flow Capsule canonical JSON；P1/P2只看到程序编译的bounded ProcessEvidenceGroup shard。源码中的prompt injection只是evidence data。
 - R0 label/purpose 是不可信 JSON data：NFC、控制字符和双向覆盖检查、长度/字节/basis闭包都由程序执行；它们绝不成为 prompt 指令、Fact、locator、Flow 或 Markdown。可选组织 seed 只有被 R0 明确 `sourceSeedKey` 引用、值逐字段相等且同一 Capsule basis 非空时才可进入冻结 registry。
 - configuredAdapterId、configuredAuthMode、expected/observed upstream provider、model、reasoning effort、sandbox 分字段记录。
 - `RepositoryAnalysisAgent` 的 artifact/trace 查询只接受 run 与 typed identity；Java API、CLI 与 loopback HTTP 都不得接受或回显主机 `Path`。HTTP 只绑定 loopback 且每个请求校验 run-scoped bearer capability；inspect/artifact/render/validate/trace 不调用 Provider、不执行客户代码。
@@ -2061,9 +2145,9 @@ Profile 至少固定：
 | 03 | GRAPH_REFERENCE_BROKEN、CALL_TARGET_AMBIGUOUS、CFG_POLARITY_MISSING、DATA_FLOW_BINDING_UNPROVEN、EVIDENCE_GRAPH_INVARIANT_BROKEN、XML_EXTERNAL_RESOLUTION_ATTEMPT |
 | 04 | PROOF_REFERENCE_BROKEN、PROOF_SOURCE_REOPEN_MISMATCH、FACT_ACCOUNTING_INVARIANT_BROKEN、CONFLICTING_FACTS |
 | 05 | FLOW_OUTCOME_CLOSURE_BROKEN、FLOW_ACCOUNTING_INVARIANT_BROKEN、EVIDENCE_PROJECTION_UNSATISFIABLE、CAPSULE_BUDGET_EXCEEDED |
-| 06 | REGISTRY_PROPOSAL_TASK_INVALID、REGISTRY_PROPOSAL_RESPONSE_INVALID、REGISTRY_PROPOSAL_REFERENCE_INVALID、REGISTRY_SEED_MISMATCH、REGISTRY_FREEZE_INCOMPLETE、REGISTRY_IDENTITY_COLLISION、MODEL_TASK_INVALID、MODEL_TASK_NOT_RUN_UPSTREAM_INVALID、MODEL_RESPONSE_INVALID、MODEL_REFERENCE_INVALID、MODEL_REVIEW_EXPANDED、MODEL_RUNTIME_IDENTITY_MISMATCH、PROVIDER_FAILURE_AFTER_START |
-| 07 | INTERPRETATION_ADMISSION_INVALID、FLOW_INTERPRETATION_TASK_DISPOSITION_CLOSURE_INVALID、TECHNICAL_FALLBACK_NOT_TOTAL、KNOWLEDGE_OWNER_INVALID、KNOWLEDGE_CONFLICT_UNRESOLVED |
-| runtime/08 | ANALYSIS_RUN_REQUEST_UNSUPPORTED、ANALYSIS_STEP_EXECUTION_REQUEST_INVALID、ANALYSIS_STEP_EXECUTION_UPSTREAM_INVALID、PROCESS_INTERRUPTED、PROVIDER_FAILURE_AFTER_START、NINE_SECTION_INVALID、READER_ATOM_LOSS、REPOSITORY_COVERAGE_LEDGER_INVALID、DOCUMENT_HASH_MISMATCH、TRACE_CLOSURE_BROKEN、ARCHIVE_IDENTITY_COLLISION、RUN_LIFECYCLE_TRANSITION_INVALID、RUN_WORKER_ALREADY_ACTIVE、RUN_NOT_FOUND、ARTIFACT_QUERY_INVALID、ARTIFACT_NOT_FOUND、ARTIFACT_IDENTITY_MISMATCH、ARTIFACT_CONTENT_NOT_PUBLIC、ARTIFACT_RESPONSE_BUDGET_EXCEEDED、RENDER_NOT_AVAILABLE、RUN_NOT_VALIDATABLE、OBSERVATION_BUDGET_EXCEEDED、VALIDATION_SOURCE_INVALID、VALIDATION_ANALYSIS_STEP_PUBLICATION_INVALID、VALIDATION_MODULE_PUBLICATION_INVALID、VALIDATION_REPOSITORY_SCOPE_INCOMPLETE、VALIDATION_REPOSITORY_COVERAGE_INCOMPLETE、VALIDATION_REGISTRY_LINEAGE_INVALID、VALIDATION_DOCUMENT_RERENDER_MISMATCH、VALIDATION_SOURCE_TRACE_INVALID、VALIDATION_CANDIDATE_MANIFEST_MISMATCH |
+| 06 | REGISTRY_PROPOSAL_TASK_INVALID、REGISTRY_PROPOSAL_RESPONSE_INVALID、REGISTRY_PROPOSAL_REFERENCE_INVALID、REGISTRY_SEED_MISMATCH、REGISTRY_FREEZE_INCOMPLETE、REGISTRY_IDENTITY_COLLISION、MODEL_TASK_INVALID、MODEL_TASK_NOT_RUN_UPSTREAM_INVALID、MODEL_RESPONSE_INVALID、MODEL_REFERENCE_INVALID、MODEL_REVIEW_EXPANDED、PROCESS_GENERIC_SIGNAL_ONLY、PROCESS_GROUP_COVERAGE_BROKEN、PROCESS_EDGE_OWNERSHIP_BROKEN、PROCESS_MODEL_RESPONSE_INVALID、PROCESS_REVIEW_EXPANDED、MODEL_RUNTIME_IDENTITY_MISMATCH、PROVIDER_FAILURE_AFTER_START |
+| 07 | INTERPRETATION_ADMISSION_INVALID、FLOW_INTERPRETATION_TASK_DISPOSITION_CLOSURE_INVALID、PROCESS_ADMISSION_COVERAGE_BROKEN、PROCESS_CLAIM_REFERENCE_INVALID、PROCESS_CLAIM_CERTAINTY_INVALID、PROCESS_CONFLICT_UNRESOLVED、PROCESS_MEMBERSHIP_NOT_TOTAL、TECHNICAL_FALLBACK_NOT_TOTAL、KNOWLEDGE_OWNER_INVALID |
+| runtime/08 | ANALYSIS_RUN_REQUEST_UNSUPPORTED、ANALYSIS_STEP_EXECUTION_REQUEST_INVALID、ANALYSIS_STEP_EXECUTION_UPSTREAM_INVALID、PROCESS_INTERRUPTED、PROVIDER_FAILURE_AFTER_START、NINE_SECTION_INVALID、PROCESS_READER_ITEM_INVALID、PROCESS_READER_COVERAGE_BROKEN、PROCESS_TRACE_CLOSURE_BROKEN、PROCESS_CERTAINTY_RENDERING_INVALID、PENDING_CONFIRMATION_DISCLOSURE_INVALID、READER_ATOM_LOSS、REPOSITORY_COVERAGE_LEDGER_INVALID、DOCUMENT_HASH_MISMATCH、TRACE_CLOSURE_BROKEN、ARCHIVE_IDENTITY_COLLISION、RUN_LIFECYCLE_TRANSITION_INVALID、RUN_WORKER_ALREADY_ACTIVE、RUN_NOT_FOUND、ARTIFACT_QUERY_INVALID、ARTIFACT_NOT_FOUND、ARTIFACT_IDENTITY_MISMATCH、ARTIFACT_CONTENT_NOT_PUBLIC、ARTIFACT_RESPONSE_BUDGET_EXCEEDED、RENDER_NOT_AVAILABLE、RUN_NOT_VALIDATABLE、OBSERVATION_BUDGET_EXCEEDED、VALIDATION_SOURCE_INVALID、VALIDATION_ANALYSIS_STEP_PUBLICATION_INVALID、VALIDATION_MODULE_PUBLICATION_INVALID、VALIDATION_REPOSITORY_SCOPE_INCOMPLETE、VALIDATION_REPOSITORY_COVERAGE_INCOMPLETE、VALIDATION_REGISTRY_LINEAGE_INVALID、VALIDATION_DOCUMENT_RERENDER_MISMATCH、VALIDATION_SOURCE_TRACE_INVALID、VALIDATION_CANDIDATE_MANIFEST_MISMATCH |
 
 具体实现可以保留更细 code，但不能把 integrity/fatal 降级成普通 Gap。
 
@@ -2075,7 +2159,7 @@ Profile 至少固定：
 - 五张图分别有引用闭包、覆盖和跨图 edge mutation 测试。
 - DepotHead walkthrough 必须先补齐通用 frozen-Java 数据流与 boundary-invocation Fact 能力，再以 real fixed slice 验收“精确调用+有序参数+Java-local origins+外部效果 Gap”；不得用目标 JSON、Mapper→XML结构绑定或 SQL 文本当外部效果 golden。
 - 0 Flow/0 Capsule 有直接测试，断言 0 Provider call 且 Gap 仍进入九章计划。
-- 至少两个入口/Flow 的 repository fixture 验证：每 Flow 独立 Capsule；每个eligible Flow独立R0 proposal/disposition，同Flow finite-key R1/R2和FlowInterpretation disposition；每个ineligible Flow零FlowInterpretation artifact且保留BusinessFlows Gap；一个全仓 frozen registry。令`E`为eligible数、`R`为R0 READY数，planned tasks精确为`E+2R`，R0/R1/R2 shard denominators分别为`E/R/R`；正常`R=E`且所有task都实际调用成功时Provider calls为`3E`，R1 typed GAP/FAILED时对应R2 task保留并写`NOT_RUN_UPSTREAM_FAILED`且不调用Provider。READY子集独立candidate，RepositoryKnowledge为**全部**Flow各有独立decision且全仓只有一个跨 Flow RepositoryKnowledge，NineSectionDocument只有一个九章plan/document；任何per-Flow Markdown或片段拼接应失败。
+- 至少两个入口/Flow的fixture验证独立Capsule、evidence-backed signals、局部R0/R1/R2与全仓registry，再以`C/G/S`覆盖候选边、全部Flow和唯一edge owner。planned=`E+2R+2S`、actual=`E+R+accepted local R1+S+accepted process P1`；R1/P1 typed GAP/FAILED让对应R2/P2保留`NOT_RUN_UPSTREAM_FAILED`。synthetic七Flow fixture验证P1顺序/并行/备选、P2删除“唯一采购单”“已经记账”、Flow多过程复用；RepositoryKnowledge仍只有一份且每Flow membership total，NineSectionDocument只一份九章plan/document。
 - R0 测试覆盖 novel repository term、同 label 不同 Flow 不误合并、optional seed exact-match/拒绝、basis缺失、非法 Unicode/控制字符、预算、单 Flow R0业务处置后其他 Flow bytes不变，以及 registry freeze 的排序/identity determinism；R0不得产生 Fact/locator/Flow/Markdown。
 - 同一 multi-flow fixture 改变 shard size和程序遍历顺序，最终 analysis step bytes/knowledge/plan/document 必须一致；缺 shard、重叠 shard、单 Flow PASS 冒充 run complete 均 fail closed。
 - 相同canonical rounds与task dispositions必须产生相同admitted knowledge、plan和Markdown bytes。
@@ -2097,11 +2181,12 @@ Profile 至少固定：
 | 分析步骤“程序图” 恰有五张一等图；分析步骤“已证明代码事实” 的 Fact 必须逐 atom CLOSED Proof | 不用 repository blob、文件顺序、字符串相似或模型判断代替 graph/Proof |
 | 每个 compiled entry 恰一个入口根 Flow，每个 Flow 恰一个 Capsule，多个终点是 Outcomes | 不按终点拆 Flow，不让模型自行找入口、分支或补源码 |
 | 目标范围是完整冻结仓库；DepotHead 只是一条 walkthrough/fixture | 不把八文件 BOUNDED_PATH_SET、单入口或单 Flow PASS 当 repository completion；不得因分片/预算静默降覆盖 |
-| LLM 只在 分析步骤“流程解释”、只读单 Flow Capsule：R0可提出 bounded open label/purpose，程序验证并冻结一个 registry；同 Flow R1/R2只返回其 finite provisional keys；分析步骤“仓库知识” 程序最终准入 | 不让 R0 创建 Fact/locator/Flow/Markdown，不允许跨 Flow context、开放事实总结、模型自批或后续分析步骤补调模型 |
+| LLM只在分析步骤“流程解释”：R0/R1/R2只读单Flow Capsule；P1/P2是唯一多Flow例外且只读有界ProcessEvidenceGroup；Step 07程序最终准入 | 不让模型创建Fact/locator/Flow/edge/Markdown，不允许P2扩张、开放事实总结、模型自批或后续步骤补调模型 |
 | 每个 eligible Flow 恰一个隔离 R0 task/disposition；全部R0 dispositions闭合后恰一 frozen RepositoryInterpretationRegistry；R0 READY 才恰有R1/R2 tasks | 不从组织seed直接绕过R0，不在registry freeze前编R1/R2，不省略`E+2R` planned tasks；started Provider调用失败时当前run失败且不自动重试/切换 |
-| `N` FlowSlice → `N` Capsule；eligible子集才有FlowInterpretation disposition、ineligible子集零FlowInterpretation artifact；随后全部`N`个Flow各有RepositoryKnowledge decision → 恰1 RepositoryKnowledge → 恰1九章plan/document | 不一 Flow 一 Markdown，不预渲染片段再拼接，不为某个失败 Flow另开旁路文档 |
+| 程序从evidence-backed signals编`C`候选边/`G`覆盖组/`S`shards；P1/P2 planned为`2S`，每edge恰一owner | 不用tenant/audit/log/generic utility/名称相似单独连边，不让信号等同顺序/因果，不省略`NOT_RUN_UPSTREAM_FAILED` |
+| `N`Flow→`N`Capsule；全部Flow与process hypotheses有RepositoryKnowledge total decisions，Flow属于process/independent/explicit-Gap unassigned → 恰1 knowledge → 恰1九章plan/document | 不一Flow一Markdown，不把Flow强制一对一映射到BusinessProcess，不丢冲突/alternative/pending |
 | 0 Flow/0 Capsule 是合法带 Gap 结果且 Provider 调用数必须为 0 | 不为了“非空文档”伪造 Flow、Capsule 或模型解释 |
-| 分析步骤“九章文档” 计划恰九章；M2只读M1 verified plan draft，外部rerender只读public `nine-section-plan.json`，二者为同一plan语义 | 不让 renderer 回读 source、Proof、registry 或 model response，也不临时补章或制造analysis-step-publication前置依赖 |
+| 九章固定且Chapter 4 process-first；M2只读verified plan，五种process ReaderItem沿完整process Trace回Source | 不让renderer回读source/Proof/model，不把Chapter 4写成controller/method列表，不在正文泄漏ID/SHA/path/技术enum |
 | Candidate 始终 `UNPUBLISHED_CANDIDATE`，Selection/发布是后续显式流程 | 不自动发布，不把 analysis success 等同于业务批准 |
 | `executeStep`逐字段匹配frozen source/input/tool/profile/schema/prompt/policy hashes并重验连续upstream analysis step roots，再创建新run | 不做宽松版本兼容、隐式迁移、覆盖旧run、重扫源码或把显式新执行伪装成同run resume |
 | 单一 run-centric `RepositoryAnalysisAgent` 固定 start/executeStep/inspect/artifact/render/validate/trace，Java/CLI/loopback HTTP逐项同义 | 不暴露run目录或Path，不让Adapter各自发明状态/错误/渲染语义，不用final-only API替代分析步骤可观察性 |
@@ -2123,6 +2208,8 @@ Profile 至少固定：
 4. 每个 GREEN 后只运行该模块 selector 和直接跨模块 contract selector；不得运行 full suite，除非当次用户显式要求。测试/实现 Agent 均禁止网络、live Provider、客户 Maven/Gradle、客户代码执行、生成器和部署。
 
 本目标的唯一 Design Authority 是 **gpt-5.6-sol / ultra（Sol/ultra Design Authority）**。Sol/xhigh 是受限 debug 角色，不得替代 Sol/ultra 作架构裁决；Luna/xhigh、Terra/xhigh 和 Sol/xhigh 都不能自行改 durable design。
+
+跨Flow工作沿用同一纪律：Luna/xhigh拥有RED、bounded读取、R0/R1/R2/P1/P2、review与reader-slot验证；Terra/xhigh只能在设计和对应RED冻结后写production；Sol/xhigh只做可复验root-cause debug。任何contract/schema不确定先交Sol/ultra；任何八步、九章、跨步骤identity、57总数或模型边界变化必须STOP并交用户。默认只运行scripted provider；live Luna调用需单独授权与preflight，绝无API fallback。
 
 新目标模块的拥有范围固定为八个语义根：`org.sourceanalysis.app.analysis.inventory`、`.discovery`、`.graph`、`.fact`、`.flow`、`.interpretation`、`.knowledge`、`.document`。模块类留在其所属语义根内；不得派生编号、`common`、`shared`、`misc`或`utils`包。源码捕获属于`org.sourceanalysis.app.capture.localgit`；持久化wire/store、源码证据、运行编排、独立验证分别属于`org.sourceanalysis.app.artifact`、`.evidence`、`.runtime`、`.validation`；Adapter只属于`.adapter.cli`、`.adapter.http`、`.adapter.provider`。tests镜像生产package，冻结fixtures/goldens位于`src/test/resources/analysis/<semantic-package>/<module-key>/`，validator fixture位于`src/test/resources/validation/run-validator/`。未来数据库根保留为`org.sourceanalysis.db.analysis`，本设计不创建数据库代码。
 
@@ -2170,10 +2257,10 @@ plan 中每个 ReaderItem 有唯一 section owner。空章也使用 typed EMPTY_
 | 分析步骤“应用发现” | **部分实现（M1–M4 有界纵切）** | `ApplicationProfileDetector`、`SpringHttpEntryDiscoverer`和`MapperCapabilityCataloger`只经已验证的冻结文本读取 POM/Java/XML；M4 会从三份 fresh-reopened module publication 原子安装`application-profile.json`、`entry-points.jsonl`、`mapper-catalog.jsonl`、`capability-report.json`及 receipt。小型 Spring MVC/MyBatis fixture 覆盖 class/method route、Mapper candidate、DOCTYPE/XXE 门和空入口 Gap；不执行客户 Maven 或模型。 | 尚未由正式运行核心驱动完整冻结客户仓库；全量 route/config/Mapper 变体、完整入口分母和固定 jshERP 离线验收仍未完成。 |
 | 分析步骤“程序图” | **部分实现（M1–M6 图构建与发布纵切）** | 在schema-valid frozen fixture上，结构、调用、控制、数据、证据五图以及index/Gap可作为独立canonical输出安装并重新打开；数据图把离开Java的调用保留为边界调用及Java参数，不推断外部系统效果。 | 尚未接通完整源码盘点、应用发现和真实jshERP全仓输入；不得把fixture绿色测试外推为完整仓库图。 |
 | 分析步骤“已证明代码事实” | **部分实现（v1 的 M1–M3 有界纵切）** | 当前已能从重开的应用发现和完整五图建立边界调用候选、逐原子重验冻结源码 span 与图/规则 closure，并原子安装四项账本文件。正向 fixture 证明两条 Java boundary invocation Fact 可与不声称外部效果的 Gap 并存。 | 当前 v1 没有独立的 `JAVA_GUARD_CONDITION` / `CONTROL_CONDITION` 事实；本次发布的 v2 合同尚待实现。完整客户仓库分母、完整规则/预算矩阵、正式运行核心接线或 jshERP 离线验收也尚未完成；任何边界外 SQL、消息或 API 效果仍必须保持 Gap。 |
-| 分析步骤“业务流程” | **部分实现（开发分支的 M1–M3 纵切）** | 已从重新打开的双入口 fixture 上编译 entry-rooted Flow、TRUE/FALSE Outcome 与已证明 condition atom；每条 compiled Flow 有一份从 Proof/Evidence/source 重开的 Capsule。M3 已发布五项正式 payload、模型 eligible/ineligible 分区、预算 Gap 与 step receipt。模型预算不足不会丢弃 Flow 或证据，只使该 Flow 不进入后续模型任务。 | 尚未在完整 jshERP 固定仓库上从已验证源码清单运行至本步骤；0 Flow persisted fixture、循环/歧义/多实现系统测试、完整 entry 分片及运行核心均未交付。该未合入纵切不是仓库完成判定，也尚未调用真实模型。 |
-| 分析步骤“流程解释” | **尚未实现** | 只有`analysis.interpretation`package骨架；没有Provider adapter、R0/R1/R2 task、registry或十项输出。 | scripted、Codex Subscription和OpenAI-compatible实现均待后续工作；当前模型调用能力为零。 |
-| 分析步骤“仓库知识” | **尚未实现** | 只有`analysis.knowledge`package骨架；没有admission、anchor merge、RepositoryKnowledge或coverage draft。 | 需对全部Flow给唯一决定并汇总恰一份仓库知识。 |
-| 分析步骤“九章文档” | **尚未实现** | 只有`analysis.document`package骨架；没有planner、renderer、Trace、Candidate、run manifest或八项输出。 | 当前没有SourceAnalysis生成的Markdown。 |
+| 分析步骤“业务流程” | **部分实现（M1–M3局部纵切）** | 已在双入口fixture编译entry-rooted Flow/Outcome/Capsule并发布五semantic+receipt；模型预算不足不会丢Flow。 | 当前schema/实现尚无`processJoinSignals`，也未在完整jshERP固定仓库运行；跨Flow目标先需Luna RED与Terra GREEN。 |
+| 分析步骤“流程解释” | **部分实现（M1–M5有界纵切）** | scripted provider路径已覆盖单Flow R0/freeze/R1/R2的局部合同；不是完整analysis-step publication。 | M6–M9、P1/P2、五项过程semantic、15文件M9 publication、module/public registry pair隔离与真实provider均未实现。 |
+| 分析步骤“仓库知识” | **尚未实现** | `analysis.knowledge`仅有package骨架；没有local/process admission、merge、membership或coverage draft。 | 需零模型实现三值certainty、九过程数组、每Flow total membership和唯一knowledge。 |
+| 分析步骤“九章文档” | **尚未实现** | `analysis.document`、runtime、validation只有骨架；没有planner、renderer、Trace、Candidate、run manifest。 | 需PlanV4、process-first Chapter 4、五种process ReaderItem、TraceV4和八项出口；当前无生成Markdown。 |
 | Java/CLI/HTTP runtime与独立validation | **尚未实现** | `runtime`、`validation`与adapter package只有骨架；不存在`RepositoryAnalysisAgent`七方法、`source-analysis` CLI或loopback HTTP。 | 需在八步业务模块之上实现同一核心及其三个同义入口。 |
 | pre-reset Stage/POC代码 | **已删除；仅历史证据** | 旧Stage01–04、POC、旧tests/fixtures、`CodeToMarkdownAgent`与旧CLI/API均已物理删除。 | 只允许从Git历史和保留的history/progress中学习测试意图；禁止兼容层或旧wire复活。 |
 
