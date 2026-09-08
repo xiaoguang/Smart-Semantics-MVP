@@ -202,7 +202,7 @@ M1/M2使用 DESIGN 13.3 `ModuleArtifact<T>` envelope；M3直接安装五个analy
 
 | artifact | schemaVersion / artifactType | 精确 upstream | payload/排序 |
 | --- | --- | --- | --- |
-| `modules/01-flow-compiler/flow-compilation.json` | `business-flows-flow-compilation-v2` / `BUSINESS_FLOWS_FLOW_COMPILATION` | exact ApplicationDiscovery `capability-report/entry-points`、ProgramGraphs七项、ProvenCodeFacts `fact-accounting/gap-ledger/proof-pack/proven-facts` ArtifactReferences，以及 content-addressed `flowCompilationProfile` | `flowCompilationId!`、`flowCompilationProfile!{profileRef!,maxFlows!,maxOutcomesPerFlow!,maxFlowNodes!,maxFlowEdges!,maxTraversalDepth!,maxProcessJoinSignalsPerFlow!}`、`entryDispositions[]!{entryId!,disposition!,flowSliceId?,gapIds[]!,reasonCode?,evidenceRefs[]!}`、`flowSlices[]!`（每条含完整`processJoinSignals[]!:ProcessJoinSignalV1`）、`flowGaps[]!{gapId!,scope!,reasonCode!,affectedSemanticIds[]!,evidenceNodeIds[]!}`、`entryShardReceipts[]!{shardId!,denominatorEntryIds[]!,dispositionEntryIds[]!,flowSliceIds[]!,status!,gapIds[]!}`、`coverage!`；entries/flows/signals/gaps/shards按ID，steps/decisions保持语义顺序，outcomes按outcomePathId |
+| `modules/01-flow-compiler/flow-compilation.json` | `business-flows-flow-compilation-v2` / `BUSINESS_FLOWS_FLOW_COMPILATION` | exact ApplicationDiscovery `capability-report/entry-points`、ProgramGraphs七项、ProvenCodeFacts `fact-accounting/gap-ledger/proof-pack/proven-facts` ArtifactReferences，以及 content-addressed `flowCompilationProfile` | `flowCompilationId!`、`flowCompilationProfile!{profileRef!,maxFlows!,maxOutcomesPerFlow!,maxFlowNodes!,maxFlowEdges!,maxTraversalDepth!,maxProcessJoinSignalsPerFlow!,maxProcessJoinSignalBasisRefs!}`、`entryDispositions[]!{entryId!,disposition!,flowSliceId?,gapIds[]!,reasonCode?,evidenceRefs[]!}`、`flowSlices[]!`（每条含完整`processJoinSignals[]!:ProcessJoinSignalV1`）、`flowGaps[]!{gapId!,scope!,reasonCode!,affectedSemanticIds[]!,evidenceNodeIds[]!}`、`entryShardReceipts[]!{shardId!,denominatorEntryIds[]!,dispositionEntryIds[]!,flowSliceIds[]!,status!,gapIds[]!}`、`coverage!`；entries/flows/signals/gaps/shards按ID，steps/decisions保持语义顺序，outcomes按outcomePathId |
 | `modules/02-capsule-projector/capsule-projection.json` | `business-flows-capsule-projection-v5` / `BUSINESS_FLOWS_CAPSULE_PROJECTION` | exact M1 v2、VerifiedSourceInventory两项、ProgramGraphs七项、ProvenCodeFacts四项 ArtifactReferences | `capsuleProjectionId!`、`flowCompilationRef!`、`proofPackRef!`、`capsuleProjectionProfile!`、`capsules[]!{evidenceCapsuleId!,flowSliceId!,proofPackId!,modelEligibility!,modelIneligibilityGapIds[]!,entryView!:FlowEntryViewV1,factViews[]!:FlowFactViewV1,gapViews[]!:FlowGapViewV1,outcomePathViews[]!:FlowOutcomePathViewV1,processJoinSignals[]!:ProcessJoinSignalV1,registryProposalBasisAtomIds[]!,registryProposalBasisGapIds[]!,modelEvidenceSpanIds[]!,projectionObligationIds[]!,budgetUsage!}`、`modelEvidenceSpans[]!{spanId!,sourceExcerpt!:SourceExcerptV1,supportedAtomIds[]!,supportedOutcomePathIds[]!,supportedProcessJoinSignalIds[]!}`、`projectionObligations[]!{obligationId!,kind!,semanticItemId!,satisfyingSpanIds[]!}`、`budgetUsage!`；capsules/signals/spans/obligations按ID，fact/gap/outcome views按其stable ID，basis IDs按UTF-8 byte order |
 | `modules/03-publish/<five registered semantic filenames>` | 各public schema/type；无summary envelope | M1+M2 IDs/SHAs | 一次module install恰`flow-slices.json/flow-coverage.json/entry-dispositions.jsonl/evidence-capsules.jsonl/flow-gaps.jsonl`；其中`flow-coverage.json`的`RepositoryFlowCoverage`必须包含8.1列出的四项model eligibility字段及完整mapping；module receipt绑定五descriptors；禁止analysis step root/receipt或六项published list；AnalysisStep store provenance绑定M3 reference |
 
@@ -250,14 +250,14 @@ record FlowCompilationProfile(
     int maxFlowNodes,
     int maxFlowEdges,
     int maxTraversalDepth,
-    int maxProcessJoinSignalsPerFlow) {}
+    int maxProcessJoinSignalsPerFlow,
+    int maxProcessJoinSignalBasisRefs) {}
 ~~~
 
 这里的 `FlowCompilation` 是 M1 的不可变编译结果；M1 publisher 将它立即安装为
 `flow-compilation.json`，M2 只能重新打开该文件，不能读取这个内存对象。
 `BusinessFlowsReference` 只由 M3 `FlowPublicationSpecifier` 在五个正式语义文件和
-receipt 均安装后返回。`profileRef` 是调用者提供、内容寻址的分析配置身份；六个预算
-字段及新增signal上限均为正整数，并原样写入 M1 artifact，因此相同输入与 profile 才可得到相同结果。
+receipt 均安装后返回。`profileRef` 是调用者提供、内容寻址的分析配置身份；五个既有预算字段及两个新增signal上限均为正整数，并原样写入 M1 artifact，因此相同输入与 profile 才可得到相同结果。
 任何超限都形成对应 Flow 的 Gap 或明确 fatal，绝不截断遍历后把残余路径当作完整 Flow。
 
 ~~~text
@@ -379,6 +379,25 @@ direction是可验证语义，不是下游自行解释的提示：`COUNTER_CONDI
 
 `BUSINESS_OBJECT_ANCHOR | OBJECT_REFERENCE`仍是本Flow内部的positive material，Step 05不比较两个Flow、也不把它改写成`BLOCKS`。但是每个Flow必须分别保留其全部`DOMAIN_SPECIFIC`、Proof闭合的业务对象signal；Step 06在一条已由其他合法positive pair形成的候选关系上比较两端**完整对象anchorKey集合**。若两端集合都非空且交集为空，两个完整signal-ID集合的规范union就是该关系的`DIFFERENT_BUSINESS_OBJECT` relation-level `COUNTER_SIGNAL` basis并进入blocking集合。该派生不新增或改写Step 05 signal、不凭对象不同单独成边，也不得从不完整抽样或任意一对对象作结论。
 
+#### 8.1.1 当前 ProvenCodeFacts v2 的有限 signal 提取表
+
+下表是当前已持久化 `JAVA_BOUNDARY_INVOCATION` 与 `JAVA_GUARD_CONDITION` taxonomy 的**完整**提取集合，不是十六种kind的猜测性实现。每个 admitted boundary Fact 独立产生表中适用的record；不同Fact即使key相同也不合并basis。M1只可扩展自己的private typed view并重开既有ProgramGraphs/ProvenCodeFacts bytes，不得读取Fact步骤的内存对象或重解析源码。
+
+| 可用且必须逐字段验证的 persisted basis | 输出 `signalKind / anchorKind / anchorKey` | direction / specificity / claimScope | signal basis与额外门 |
+| --- | --- | --- | --- |
+| 一个 admitted `JAVA_BOUNDARY_INVOCATION` Fact的唯一`STATIC_TARGET_TYPE{role=ATTRIBUTE,type=STRING}` atom；typed data-flow boundary的`staticTargetType`必须逐字相等 | `JAVA_TYPE_ANCHOR / JAVA_TYPE / STATIC_TARGET_TYPE.canonical` | `REFERENCES / GENERIC_TECHNICAL / STATIC_STRUCTURE` | `factIds`只含该Fact，`atomIds`只含该atom，proof/evidence/locator按下述exact closure；仓库内声明type也不能仅凭“属于本仓库”升级为domain-specific |
+| 同一个boundary Fact的唯一`INVOCATION_CALL_ID{RELATIONSHIP,SYMBOL_REF}`、`STATIC_TARGET_TYPE{ATTRIBUTE,STRING}`、`STATIC_TARGET_METHOD{ATTRIBUTE,STRING}`、`STATIC_TARGET_SIGNATURE{ATTRIBUTE,STRING}`；四值须逐字等于同subject typed boundary，且signature必须以`method + "("`开头并以`)`结束 | `EXPLICIT_CALL / CALL_TARGET / STATIC_TARGET_TYPE.canonical + "#" + STATIC_TARGET_SIGNATURE.canonical` | `INVOKES / GENERIC_TECHNICAL / FROZEN_JAVA` | basis恰为该Fact及上述四atom的closed Proof union；它证明冻结Java的确切调用，不证明callee外部效果。Step 06仅在该key逐字等于某entry exact target时才可将其作为direct-call `PROVEN_HANDOFF` |
+| 上一行boundary的typed `controlContext`含non-null guard ID/polarity；唯一同Flow `JAVA_GUARD_CONDITION/CONTROL_CONDITION{CONDITION,STRING}` Fact逐字匹配该guard；完整TraversalPath集合同时含该guard TRUE/FALSE outcomes，boundary control block只出现在记录polarity一侧且不出现在另一侧 | `COUNTER_CONDITION / CALL_TARGET / 与该boundary EXPLICIT_CALL相同的key` | `BLOCKS / GENERIC_TECHNICAL / FROZEN_JAVA` | basis恰为guard Fact的`CONTROL_CONDITION`以及boundary Fact的`INVOCATION_CALL_ID,STATIC_TARGET_TYPE,STATIC_TARGET_METHOD,STATIC_TARGET_SIGNATURE,CONTROL_CONTEXT` atoms及其closed Proof union；任一双极性/唯一性/路径门不成立则不发此signal，不能把裸guard或任意状态词改写成counter/state signal |
+| `gap-ledger.json`中唯一`kind=EXTERNAL_EFFECT,code=DATA_FLOW_BINDING_UNPROVEN` Gap的singleton `affectedCandidateDenominatorKeys`逐字等于一个admitted boundary Fact的`candidateDenominatorKey`，且其Evidence closure含typed boundary的确切invocation locator | `EXTERNAL_EFFECT_GAP / CALL_TARGET / 与该boundary EXPLICIT_CALL相同的key` | `BLOCKS / GENERIC_TECHNICAL / GAP_ONLY` | 使用该boundary的四个call atoms/Proof、该Gap ID及Gap Evidence；`gapIds`恰含该Gap。缺失、重复、foreign candidate或没有boundary locator均为`PROCESS_JOIN_SIGNAL_EXTERNAL_EFFECT_UNPROVEN`，不得声称外部写入/状态变化 |
+
+当前`ProgramGraphsPublicFixture.createWithGuardedApprove`的early-return guard只标注`guard → continuation block`边；`continuation block → approvalClient.record` call-site是无guard的`NEXT`边，所以该boundary持久化的`controlContext.guardNodeId/polarity`均为null。独立guard Fact和TRUE/FALSE Outcomes仍必须保留并闭合，但它们不能替代typed-boundary link；因此该fixture按上一表必须不发`COUNTER_CONDITION`。counter正例另由后续public stored-artifact fixture/rule同时证明non-null boundary context、唯一matching guard Fact和双极性path gate，不得为挽救fixture而弱化规则或改ProgramGraphs合同。
+
+表中每条signal的数组都按以下同一规则物化：`factIds`、`atomIds`为该行列出的exact set；`proofIds`恰为这些FactAtom的`proofId` set，且每个Proof必须`status=CLOSED`并反向逐字指向同一`factId/atomId`；`evidenceNodeIds`恰为这些Proof的`requiredEvidenceNodeIds`规范union，`EXTERNAL_EFFECT_GAP`再并入Gap的`evidenceNodeIds`；`sourceLocators`恰为该evidence set中所有`SOURCE_EXCERPT` node的完整`SourceLocatorV1`规范union，rule-application node没有locator但仍留在evidence集合。任何丢失、foreign或额外hop，以及atom role/type/name不符，是malformed proven basis并fatal，不能按“不支持”静默省略。
+
+当前taxonomy对`BUSINESS_OBJECT_ANCHOR | SQL_TABLE_ANCHOR | FIELD_ANCHOR | BUSINESS_IDENTIFIER_ANCHOR | IDENTIFIER_OUTPUT | IDENTIFIER_INPUT | STATE_PRODUCTION | STATE_CHECK | RETURN_TRANSFER | EVENT_REFERENCE | OBJECT_REFERENCE | CONFLICT_STATE`没有可用atom，因而这些family在当前Flow中是exact absence；裸参数名、条件文本、ordered argument/origin node ID、repository-owned type、Mapper/XML文本或方法名都不能补造它们。无候选语义时不为每个缺失family制造Gap；已有上游Gap仍逐字保留。若某upstream record自称提供表中支持的basis却closure malformed，则按上一段fatal，而不是降级成absence。
+
+因此当前有限规则最多交付四种family的可信结构材料和counter/Gap，但首个3/3纵切只覆盖`JAVA_TYPE_ANCHOR`、`EXPLICIT_CALL`和`EXTERNAL_EFFECT_GAP`，不构成counter正例验收。它没有任何可证明的`DOMAIN_SPECIFIC` anchor，不能单独产生Step 06 `SHARED_ANCHOR` relation，也不满足本步骤最终的domain/generic/counter综合验收。仓库内声明的exact user type仍可能被`EXPLICIT_CALL → exact entry target`规则使用，但“在仓库中声明”无法区分业务类型与repository-local logger/util，所以不能作为domain specificity。完整过程重建仍必须在已批准计划内补齐Proof闭合的domain Fact/classification能力，且这是Step 05完整验收及Step 06有效process reconstruction的前置条件；当前有限纵切不替它设计新字段或schema，后续由Sol/ultra在既有范围内作有界合同决定。
+
 `processJoinSignalId`覆盖全部上述字段，排除且只排除self ID：
 
 ~~~text
@@ -464,9 +483,9 @@ ProofPack 回答事实为何成立；Capsule 回答模型最少读什么。Capsu
 
 ### 8.4 Identity、预算与安全
 
-Outcome ID 先于 Flow ID；span/obligation ID 先于 Capsule ID；coverage 和 BusinessFlows result/root 最后计算。预算进入 identity，即使没有触顶。
+合法identity顺序固定为 Outcome ID → Flow ID → ProcessJoinSignal ID → `flowCompilationId`/M1 artifact → span/obligation ID → Capsule ID → M2 projection/artifact → public coverage和BusinessFlows result/root。Flow ID沿用entry/root/profile ref与拥有的Fact/atom/Gap/Outcome ID preimage，明确排除`processJoinSignals`，否则signal所需`flowSliceId`会成环；signal ID随后覆盖该Flow ID及signal其余全部字段。M1 `flowCompilationId`/artifact、M2 Capsule/projection与M3 public artifact bytes都必须覆盖完整signal values；Capsule ID的直接preimage至少包含其排序signal/span/obligation IDs，不能只靠Flow ID间接假定signal未变化。预算进入 identity，即使没有触顶。
 
-预算至少有 maxFlows、maxOutcomesPerFlow、maxFlowNodes/Edges、maxCapsules、maxProcessJoinSignalsPerFlow、maxProcessJoinSignalBasisRefs、maxSpansPerCapsule、maxSpanBytes、maxCapsuleUtf8Bytes、maxTraversalDepth。超限不截断 paths/spans/signals；可安全隔离时把受影响signal/Flow明确置Gap，否则fatal。
+`FlowCompilationProfile`拥有`maxFlows`、`maxOutcomesPerFlow`、`maxFlowNodes/Edges`、`maxTraversalDepth`、`maxProcessJoinSignalsPerFlow`与`maxProcessJoinSignalBasisRefs`；后者逐signal限制`factIds + atomIds + proofIds + evidenceNodeIds + sourceLocators + gapIds`六个数组的元素总数。`CapsuleProjectionProfile`只拥有`maxCapsules`、`maxSpansPerCapsule`、`maxSpanBytes`、`maxCapsuleUtf8Bytes`。超限不截断 paths/spans/signals或删除basis；可安全隔离时把受影响signal/Flow明确置Gap，否则fatal。
 
 只读 persisted artifacts/verified handles；不执行客户代码、模型或网络。Capsule 中的 prompt injection 文本只是 data。
 
@@ -487,6 +506,7 @@ BUSINESS_FLOWS_REQUEST_INVALID、UPSTREAM_ARTIFACT_REPLAY_MISMATCH、FLOW_GRAPH_
 - 第二 entry 不能借用共享 Service 的 Fact/span。
 - Capsule span 必须来自 Proof roots，不按文本相似命中 decoy。
 - 每条`processJoinSignal`必须同Flow闭合到Fact/Proof/Evidence/source或Gap；删除任一basis使signal消失、转Gap或fail closed，不能继续存在。
+- 首个双entry stored-artifact RED必须精确产生approve 3条、cancel 3条：每个boundary各有`JAVA_TYPE_ANCHOR + EXPLICIT_CALL + EXTERNAL_EFFECT_GAP`。approve仍须保留独立guard Fact和TRUE/FALSE Outcomes，但其typed boundary guard/polarity为null，故两Flow都明确没有`COUNTER_CONDITION`；不得跨Flow借用guard或弱化§8.1.1。两端application target不同只证明Flow隔离，不证明端到端顺序；三family全部为`GENERIC_TECHNICAL`，因此该fixture不得产生`SHARED_ANCHOR`。随后由同一compiler selector族的独立public stored-artifact正例证明non-null typed boundary guard context后，才验收`COUNTER_CONDITION`。
 - tenantId、用户审计字段、日志、通用工具类、方法名或中文名相似不能单独形成domain-specific signal；共享表最多形成`SQL_TABLE_ANCHOR`，不能形成顺序或因果。
 - 双Flow relation fixture须覆盖：两端完整业务对象key集合有交集时不产生对象反证；两端集合均非空且互斥时，Step 06以全部对应signal IDs形成唯一、稳定的`DIFFERENT_BUSINESS_OBJECT` counter basis。改变输入顺序或同一关系的其他positive pair不得改变该basis。
 - 每删一个直接语义 span，projection obligation 失败；proof-only span 注入被拒绝。
@@ -518,9 +538,9 @@ BUSINESS_FLOWS_REQUEST_INVALID、UPSTREAM_ARTIFACT_REPLAY_MISMATCH、FLOW_GRAPH_
 | --- | --- |
 | **已实现（结构/构建门）** | 目标package与JDK 17 Toolchain已就位；通用wire头门禁只判断`SOURCE_ANALYSIS/v1`，不建立Flow eligibility。 |
 | **已实现（开发分支的受限纵切）** | M1 从重新打开的 ApplicationDiscovery、ProgramGraphs 与 ProvenCodeFacts v2 读取双入口 fixture，沿准确 call/return 和 TRUE/FALSE guard 生成 Flow/Outcome；每个入口都写 COMPILED 或带 reason 的 GAP。M2 从 M1 与 Proof/Evidence/source artifacts 重开后，给每个 compiled Flow 写一份 Capsule；模型预算超限时仍保留 Flow/Capsule 和证据，只写 `INELIGIBLE` 与明确 Gap。M3 已将 Flow、Capsule、入口处置、coverage 与 Flow Gap 发布为五项正式文件和 receipt；该纵切没有目标`processJoinSignals`字段，也未证明跨Flow候选材料。 |
-| **应当修复（跨步骤证据交接）** | 在不新增文件的前提下，把每Flow完整`processJoinSignals[]`加入M1 Flow与M2/public Capsule，升级M1为v2、M2为v5、public flow/capsule schemas为v2/v3，并以Fact/Proof/Evidence/source closure、Flow-Capsule逐字相等、ID-set equality、跨Flow隔离和fresh-reopen测试验证。当前已发布Capsule是否已经补齐旧span/obligation value应以合入commit重新审计，不能用旧v1/v2成熟度陈述冒充本次目标。 |
+| **应当修复（跨步骤证据交接）** | 在不新增文件的前提下，把每Flow完整`processJoinSignals[]`加入M1 Flow与M2/public Capsule，升级M1为v2、M2为v5、public flow/capsule schemas为v2/v3，并以Fact/Proof/Evidence/source closure、Flow-Capsule逐字相等、ID-set equality、跨Flow隔离和fresh-reopen测试验证。当前v2 ProvenCodeFacts只足以按§8.1.1产生四种`GENERIC_TECHNICAL` family；完成该纵切不等于具备`DOMAIN_SPECIFIC/SHARED_ANCHOR`或完整过程重建能力。当前已发布Capsule是否已经补齐旧span/obligation value应以合入commit重新审计，不能用旧v1/v2成熟度陈述冒充本次目标。 |
 | **尚未交付（完整仓库能力）** | 仍缺真实完整 jshERP 从源码清单至本步骤的离线运行、0 Flow persisted fixture、循环/多实现/歧义调用的系统性处置、entry 分片与跨 Flow 的完整隔离测试，以及正式运行核心接线。该纵切不得用于仓库完成判定，也不产生可供真实模型调用的已发布 Flow。 |
 | **历史证据，不是当前能力** | 已删除的pre-reset compiler曾在有限fixture上编译Flow/Outcome/Capsule；固定八文件历史审计为blocking Gap、0 Flow、0 Capsule。该结果只作为0调用和证明不足的回归baseline。 |
-| **下一实现门** | Luna先针对v2/v5与public v2/v3写signal RED，Terra再按既定模块补最小GREEN；随后至少用双入口、双Flow、多Outcome、跨Flow隔离、eligible/ineligible、0Flow、真实DepotHead有限材料和明确合成的补货到结算场景闭合全仓分母。 |
+| **下一实现门** | Luna先以当前public stored-artifact fixture写approve 3/cancel 3的signal RED，Terra再按既定模块补最小GREEN；之后在不改ProgramGraphs合同的独立已证明fixture/rule slice中补`COUNTER_CONDITION`正例，再继续M2/M3和至少双入口、双Flow、多Outcome、跨Flow隔离、eligible/ineligible、0Flow、真实DepotHead有限材料及明确合成的补货到结算场景的全仓分母闭合。 |
 
 若新实现对某Flow没有Capsule，分析步骤“流程解释”对该Flow必须零调用，而不是让模型直接读Service/XML；历史0 Capsule本身不是当前运行结果。
