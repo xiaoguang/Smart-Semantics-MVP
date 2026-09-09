@@ -555,6 +555,24 @@ BUSINESS_FLOWS_REQUEST_INVALID、UPSTREAM_ARTIFACT_REPLAY_MISMATCH、FLOW_GRAPH_
 - 不同 root/input order 产生相同 canonical artifacts。
 - multi-flow fixture 至少有 DepotHead与第二入口各自独立Flow/Capsule；一条成功、一条Gap或缺shard时，已完整安装slice保留但analysis step/run不得误报完成。相同BusinessFlows输入/profile/budget下改变线程、遍历或写盘顺序，六文件bytes必须相同；下游Step 06改变自己的process partition budget不反向改变这六个已安装文件。
 
+#### 固定仓库离线验收（显式 opt-in）
+
+唯一 selector 为 `org.sourceanalysis.app.analysis.inventory.FixedRepositoryBusinessFlowsIT`，只在 `sourceanalysis.fixedRepositoryAcceptance=true` 且同时给出 `sourceanalysis.fixedRepositoryPath=<absolute-local-path>` 与 `sourceanalysis.fixedRepositoryWorkspace=<absolute-empty-path-under-this-Agent-ignored-.workspace>` 时执行。普通 build/direct selector 不选择该 IT，因而没有 opt-in 只表示 **NOT RUN**，不是验收 PASS；显式选择 IT 后若 opt-in 缺失/不为 `true`、source 不是批准的本地 `https://github.com/jishenghua/jshERP.git` exact commit `8c30ce7861570458920175e200bb2a6442713580`，或 workspace 不是绝对、已 ignore、空且非 symlink，必须失败而不得 skip。
+
+IT 可在上述 workspace 内使用 `RunStoreBootstrap.openForTest` 的真实 filesystem/force/atomic-move infrastructure，并在 inventory 同包内组合现有 package-local publisher；这不表示 `RunStoreBootstrap.open`、生产 runtime 或 `RepositoryAnalysisAgent` 已交付。执行链必须是 `LocalGitCommitCaptureAdapter` 真实 capture/registry → 实际 VerifiedSourceInventory M1→M3 → `ApplicationDiscoveryExecutor` → `ProgramGraphsExecution` → persisted ProvenCodeFacts M1→M3 → BusinessFlows M1→M3，逐步 fresh reopen；`CaptureReceiptView` 只可从重开的真实 capture 按已冻结 file identity 公式机械投影。不得使用 `ProgramGraphsPublicFixture`、手装或伪造 inventory/discovery/graph/fact/flow predecessor、目标 JSON、活动 ref、客户 Maven/test/script/application、network 或 model/Provider。
+
+唯一 test-only 配置 oracle 固定为 `src/test/resources/analysis/flow/fixed-repository/fixed-repository-acceptance-config.json`：其 canonical bytes 必须完整列出当前 Step 01–05 实际已发布 artifact policy 的 exact sorted union 及所有 profile/control/budget 值与bytes。IT 在读取 source 前 strict parse 并重算每个 ID/SHA/reference，只从同一 oracle 建立 typed profiles 与 `ArtifactControls`；重复字符占位 digest、缺失/多余 policy、未登记bytes、引用漂移或typed值不一致都在分析前失败。该 oracle 只是验收配置，不是 customer/source/graph/result fixture、新生产schema/API或第58项正式输出。
+
+无论成功或下游失败，capture、已安装的module/analysis-step artifacts 及 canonical `fixed-repository-acceptance-report.json` 都必须保留在所给 ignored workspace，不得被默认 temp cleanup 删除；这是测试诊断材料，不是 runtime recovery 或正式输出。report 必须记录 exact source/capture refs、每个已尝试步骤的 fresh-reopen 结果，以及完整 file verified/unverified/text/media、entry COMPILED/GAP/EXCLUDED、Flow/Capsule 双射与 eligible/ineligible 分区；它不得把 fatal、Gap、未执行项或单 Flow PASS 改写为成功，也不豁免本节尚未解决的 domain-specific 验收门。
+
+唯一命令形状为（再追加上述三个 `-Dsourceanalysis...` 属性及其值）：
+
+~~~text
+mvn -o -t .mvn/toolchains.xml -DskipUTs=false -Dit.test=FixedRepositoryBusinessFlowsIT test-compile failsafe:integration-test failsafe:verify
+~~~
+
+不得使用 `-DskipUTs=true`（当前 POM 会同时 skip Failsafe IT），不得运行裸 `verify` lifecycle 或 full suite。
+
 验收必须同时覆盖至少两个非空Flow/Capsule（其中一个可用真实DepotHead讲解）、明确标注为合成的补货到结算七入口场景、eligible/ineligible各一Flow及完整逐Flow Gap mapping、一个多Outcome入口、第二入口ownership隔离、其中一Flow Gap、domain/generic/counter/external-effect signals、共享表/同名方法不可推序、缺/重叠shard、逐edge/span/signal-basis deletion mutation，以及从历史审计提炼的DepotHead 0/0回归baseline。只有每个COMPILED入口各生成一个入口根Flow/一个Capsule且所有终点闭合、Flow/Capsule signal逐字相等、完整entry ledger与eligibility分区/mapping守恒，0/0 baseline生成完整六文件/Gap/accounting并使Provider seam调用数为0，BusinessFlows才算可交付；单Flow PASS不构成验收。
 
 ### 8.7 已冻结裁决：实现者不得自由推断
