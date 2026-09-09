@@ -73,12 +73,19 @@
   `gpt-5.6-sol / ultra`; `gpt-5.6-sol / xhigh` is a debug role only.
 - Production implementation uses `gpt-5.6-terra / xhigh` only after target
   design and corresponding RED are frozen. TDD test writing, bounded source
-  reading, R0/R1/R2/P1/P2 execution, code review, and reader-slot validation
-  use `gpt-5.6-luna / xhigh`.
+  reading, code review, and reader-slot validation use
+  `gpt-5.6-luna / xhigh`.
+- Separately authorized live evidence-to-business-interpretation execution for
+  R0/R1/R2/P1/P2 uses `gpt-5.6-luna / high`, not `xhigh`.
 - Automated tests use only frozen fixtures and a scripted fake Provider. They
   never invoke a live model, network source, API key, or customer build.
 - A live Luna task requires current explicit authorization, the logged-in
   Codex-session preflight, and one frozen task package.
+- The live Provider receives only the persisted EvidenceCapsule for
+  R0/R1/R2, or the program-built path-free `ProcessModelPacketV1` for P1/P2;
+  it never receives the raw repository or arbitrary source paths and cannot
+  create Facts or locators. Publishing this profile does not itself authorize
+  or perform a live invocation.
 - For every eligible Flow, flow interpretation runs one isolated
   `R0_REGISTRY_PROPOSAL`. The program closes all R0 dispositions and freezes
   one `RepositoryInterpretationRegistry`; each R0-ready Flow then receives one
