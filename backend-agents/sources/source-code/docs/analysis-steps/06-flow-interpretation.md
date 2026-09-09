@@ -13,6 +13,8 @@ BusinessFlows证明每个局部活动“代码中发生了什么”，却不能�
 
 P1/P2是整个八步工作流中**唯一**允许模型同时看到多个Flow的例外。它们仍只能看程序构造的有界`ProcessEvidenceGroup`，不能读仓库、源码路径、运行日志或别的任务。信号只是候选线索；不能单独证明先后、因果、唯一性或外部系统结果。
 
+获单次明确执行授权后的live R0/R1/R2/P1/P2统一使用`gpt-5.6-luna / high`；live Provider的唯一source-evidence输入分别是fresh-reopened persisted `EvidenceCapsule`（R0/R1/R2）或程序构造的path-free `ProcessModelPacketV1`（P1/P2），不得接收raw repository或任意source path，也不得创建Fact或locator；本次docs-only任务不发起live调用。自动化测试继续只用scripted fake Provider，Luna/xhigh继续负责RED、测试编写与review。
+
 ## 2. 实际上游交接
 
 本步骤只读取fresh-reopened成功publication，文件归属不得靠概念名称猜测：
@@ -58,13 +60,13 @@ group eligibility只是可重算汇总：当且仅当全部`memberFlowSliceIds`�
 | 模块 | 性质 | 唯一职责 |
 | --- | --- | --- |
 | M1 `RegistryTaskCompiler` | 程序 | 为`E`条eligible Flow各编一个R0任务 |
-| M2 `RegistryProposalRunner` | Luna/xhigh | 每个R0任务一次Provider调用并验证typed响应 |
+| M2 `RegistryProposalRunner` | live Luna/high | 每个R0任务一次Provider调用并验证typed响应 |
 | M3 `RegistryFreezer` | 程序 | 等全部R0处置后冻结全仓finite registry |
 | M4 `FlowTaskCompiler` | 程序 | 为`R`条R0-ready Flow各编R1与R2 |
-| M5 `InterpretationRunner` | Luna/xhigh | 严格单Flow执行R1/R2并形成局部候选 |
+| M5 `InterpretationRunner` | live Luna/high | 严格单Flow执行R1/R2并形成局部候选 |
 | M6 `CrossFlowCandidateCompiler` | 程序 | 全仓确定性汇编候选边与有界`ProcessEvidenceGroup`；不排序业务过程、不调用模型 |
 | M7 `BusinessProcessTaskCompiler` | 程序 | 把每个组切成`A`个确定性ownership shards，持久化`MODEL_SAFE ⊎ NO_MODEL`分区；仅前者组成`S`并编P1/P2 request/task |
-| M8 `BusinessProcessInterpretationRunner` | Luna/xhigh | 执行P1/P2；P2不增Flow、边、Fact、Evidence或新过程 |
+| M8 `BusinessProcessInterpretationRunner` | live Luna/high | 执行P1/P2；P2不增Flow、边、Fact、Evidence或新过程 |
 | M9 `InterpretationPublicationSpecifier` | 程序 | 重验全部shard/edge处置、局部与过程任务/请求/响应/引用/count，receipt-last发布十五文件 |
 
 M2、M5、M8之外不得调用Provider。M6/M7/M9的相同输入必须产生逐字相同输出。
@@ -1363,6 +1365,7 @@ Step 07必须先从`ProcessInterpretationDispositionV2.processGaps[]`验证每�
 | --- | --- | --- |
 | 局部M1–M5 | 已有scripted-provider有界纵切；局部R0/R1/R2仍是单Flow | 保持单Flow，补齐公开闭包与失败fixture |
 | 跨Flow M6–M9 | 未实现 | 确定性candidate/group/shard、Luna P1/P2、十五文件M9 publication |
+| live Provider运行profile | **已发布合同；能力未实现** | R0/R1/R2/P1/P2固定为`gpt-5.6-luna / high`；本次docs-only任务未发起live调用，现有scripted-provider纵切也不证明live Provider能力 |
 | 公共文件 | 当前尚未形成完整Step 06 success publication | 从10文件变为15文件；全run总数57 |
 | registry envelope | 当前M3 module pair与拟公开pair存在冲突风险 | 使用§7明确分离的module/public schema/type pair |
 | 真实DepotHead | 没有模型或端到端process输出 | 仅把已有静态边界事实作为有界材料，外部效果继续Gap |
