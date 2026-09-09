@@ -13,6 +13,8 @@ BusinessFlows证明每个局部活动“代码中发生了什么”，却不能�
 
 P1/P2是整个八步工作流中**唯一**允许模型同时看到多个Flow的例外。它们仍只能看程序构造的有界`ProcessEvidenceGroup`，不能读仓库、源码路径、运行日志或别的任务。信号只是候选线索；不能单独证明先后、因果、唯一性或外部系统结果。
 
+本步骤按“业务过程完整性优先、结论强度分层”工作。已有Fact/Proof/Evidence精确闭包全部保留，并是`SOURCE_CONFIRMED`的唯一来源；但P1提出过程假设不要求每条跨Flow连接先有direct-call或data-flow Proof。多个Capsule中相互印证的对象、标识、状态、入口动作、边界目标和冻结业务术语可以进入`PENDING_ONLY`候选组，让模型解释可能的业务阶段、顺序、并行或回退。若只有文件+符号+行段/摘录或typed locator，仍可用于语义解释；缺少更细SHA、byte offset或列号只降低后续certainty，不中止P1。任何无可定位源码上下文的自由文本、低信息审计字段或模型自创连接仍被拒绝。
+
 获单次明确执行授权后的live R0/R1/R2/P1/P2统一使用`gpt-5.6-luna / high`；live Provider的唯一source-evidence输入分别是fresh-reopened persisted `EvidenceCapsule`（R0/R1/R2）或程序构造的path-free `ProcessModelPacketV1`（P1/P2），不得接收raw repository或任意source path，也不得创建Fact或locator；本次docs-only任务不发起live调用。自动化测试继续只用scripted fake Provider，Luna/xhigh继续负责RED、测试编写与review。
 
 ## 2. 实际上游交接
@@ -76,7 +78,7 @@ M2、M5、M8之外不得调用Provider。M6/M7/M9的相同输入必须产生逐�
 1. M1重验`N=E+(N-E)`、Flow/Capsule双射、Fact/Proof/Evidence/source locator闭包，为每条eligible Flow编R0；R0材料恰是一条Capsule。
 2. M2按稳定任务序调用R0。有效proposal须使用同Capsule basis；完成全部`E`条处置后M3才冻结registry。相同label跨Flow不合并。
 3. M4仅为`R`条ready Flow编R1/R2。M5先R1；只有R1 `RESPONSE_ACCEPTED`才调用R2。R1 typed GAP/FAILED时仍保留已规划R2并写`NOT_RUN_UPSTREAM_FAILED`。
-4. M6按§5的信号等级比较所有Flow，形成`C`条规范候选边；generic-only依据不得成边。再按正向边的连通分量形成组，并为孤立Flow形成singleton组，得到覆盖`N`的`G`组。
+4. M6按§5的信号等级比较所有Flow，形成`C`条规范候选边。精确handoff/domain anchor形成强候选；受限、可定位且非低信息的generic/semantic对应只能形成`PENDING_ONLY`弱候选。再按候选边的连通分量形成组，并为孤立Flow形成singleton组，得到覆盖`N`的`G`组。
 5. M7应用固定partition profile/budget，为每个group产生至少一个`BusinessProcessTaskShardV1`，总数为`A`。每条candidate edge恰由一个shard拥有；同一Flow可作为只读上下文重复，但不能因此复制edge ownership或扩大其Capsule材料。含model-ineligible Flow、或无法在原子Flow/relation不截断的前提下形成安全packet的shard标为`NO_MODEL`，`processModelPacket=null`且写非空ineligibility Gap；其余shard标为`MODEL_SAFE`，按§6.2从path-bearing persisted material精确投影一个path-free packet。只有`MODEL_SAFE`子集计入`S`。
 6. M8只为`S`个model-safe shard各编一个P1和一个P2 `ProcessModelTaskV1`，并把唯一`ProcessModelRequestV1`的canonical bytes作为Provider application request。对每个model-safe shard执行一次P1；P1可返回一个或多个hypothesis或typed GAP/FAILED，P1 FAILED由程序生成唯一canonical `PROCESS_P1_HYPOTHESIS_FAILED`。只有P1 accepted才调用同shard P2；否则仍保留P2计划任务并写`NOT_RUN_UPSTREAM_FAILED`。每个`NO_MODEL` shard不创建task/request/round/receipt，而创建一条显式`NO_MODEL_ADMISSION_PENDING` process disposition。
 7. P2成功给出reviews时逐个覆盖P1 hypothesis，只能KEEP、NARROW、DROP或PENDING_CONFIRMATION，且不能新增Flow、candidate edge、Fact、Proof、Evidence、registry key或hypothesis。P2也可对整个review task返回typed GAP/FAILED；这两个终态不含逐hypothesis review，保留全部P1 hypothesis并按§7.1进入明确非准入分区。
@@ -90,10 +92,12 @@ M6使用下列四个等级。等级不是模型判断；程序按exact pair rule
 | --- | --- | --- |
 | `PROVEN_HANDOFF` | 下列任一proof-closed pair：`EXPLICIT_CALL`匹配另一Flow的exact entry target；`IDENTIFIER_OUTPUT`或`RETURN_TRANSFER`匹配另一Flow的`IDENTIFIER_INPUT`；同一non-generic key的`STATE_PRODUCTION`匹配另一Flow的`STATE_CHECK`；同一event key的`EVENT_REFERENCE(direction=PRODUCES)`匹配`EVENT_REFERENCE(direction=CONSUMES)`。pair两端的十三种positive signal都必须各自闭合到本Flow Fact→atom→Proof→Evidence→source | 建有方向candidate edge；状态生产/消费不得降为较弱等级，但仍不自动证明完整业务因果或外部效果 |
 | `SHARED_ANCHOR` | 两Flow存在同`anchorKind+anchorKey`且`DOMAIN_SPECIFIC`的`BUSINESS_OBJECT_ANCHOR | JAVA_TYPE_ANCHOR | SQL_TABLE_ANCHOR | FIELD_ANCHOR | BUSINESS_IDENTIFIER_ANCHOR | OBJECT_REFERENCE`；两端各自Proof闭合 | 建默认无方向的相关性edge；共享表/字段/对象不能推顺序 |
-| `SEMANTIC_CUE` | 只来自§5.1的`ProcessSemanticCueV1`：finite frozen Registry business term，并由entry verb或state word的同Capsule basis限定；**任何Step 05结构signal、裸状态写/检查、方法名或中文名都不能直接映射到本级** | 只能建`PENDING_ONLY`弱候选；P1/P2和Step 07不得提升为confirmed transition |
+| `SEMANTIC_CUE` | 优先来自§5.1 finite frozen Registry business term；也可来自两个Capsule中逐字匹配、可定位且非低信息的generic Java type、boundary target、table/field、identifier或state上下文。后一分支必须保留两端Flow、signal和locator，不能只凭显示名称 | 只能建`PENDING_ONLY`弱候选；它使P1可以讨论完整过程，但自身不证明方向、顺序、对象同一或外部效果，Step 07不得据此提升为confirmed transition |
 | `COUNTER_SIGNAL` | 两类且仅两类程序basis：①Step 05中`signalKind=COUNTER_CONDITION | CONFLICT_STATE | EXTERNAL_EFFECT_GAP`且`direction=BLOCKS`的闭合signal；②关系两端各自完整、非空、Proof闭合的`BUSINESS_OBJECT_ANCHOR | OBJECT_REFERENCE` domain-specific anchorKey集合互斥时的`DIFFERENT_BUSINESS_OBJECT` basis | 只附在一条已由合法positive pair形成的候选关系上；进入关系的counter全部blocking，阻止confirmed/inferred claim，不能被正向信号吞掉；不同对象不能单独成边 |
 
-`tenantId`、创建/修改人等审计字段、日志、generic utility、方法名相似、中文名称相似，**单独都禁止成边**。只有同一个局部信号集合内存在domain-specific正向依据时，它们才可作为附加上下文。缺少专门Proof的外部影响始终是Gap。
+`tenantId`、创建/修改人等审计字段、日志、generic utility、方法名相似、中文名称相似仍属于低信息材料，**单独都禁止成边**。非低信息generic cue即使形成边也固定为`PENDING_ONLY/UNDIRECTED`，且至少需要两端可定位源码上下文；它只能让模型提出受限假设。缺少专门Proof的外部影响始终是Gap。
+
+§5.1仍是`ProcessSemanticCueV1`和`processSemanticCueIds`的唯一来源；generic contextual分支不伪造Registry item或该record，而只在`positivePairBases`中引用既有`ProcessJoinSignalV1`并把relation固定为`SEMANTIC_CUE/PENDING_ONLY`。因此这项放宽不改变十五文件、现有record字段或identity公式。
 
 固定jshERP没有业务表映射，因此精确Java→Mapper→XML→SQL引用仍是generic/pending静态结构，不能形成`SHARED_ANCHOR`。这类材料的存在或`DOMAIN_SPECIFIC`的缺席都不影响Step 05完成；M6只能按上述exact规则使用合法pair，业务含义只能经冻结R0/R1/R2与P1/P2提出和复核。
 
@@ -256,7 +260,7 @@ CrossFlowCandidateAccountingV1
 
 1. 从三个step stores分别fresh-reopen Step 03、04、05 publication，并从module store fresh-reopen M3 registry；再以`analysisRunRequestRef`重开exact run request、它引用的profile bundle和resource budget。五者必须是同run、同controls，且Step 05 receipt的upstream refs必须精确绑定所给Step 03/04 publication。禁止从Step 05内存draft或调用者inline profile补值。
 2. 重验Step 05全部`N`个Flow、Flow/Capsule双射、每个signal的Fact→atom→Proof→Evidence闭包、M3 registry item到同Flow Capsule basis的闭包，以及§5.2的exact entry target。引用或内容损坏直接fatal，不降级为弱关系。
-3. 对UTF-8排序后的每个不同Flow pair枚举§5的全部合法positive pairs；exact direct call、identifier/state/event handoff才可形成`PROVEN_HANDOFF`，只有两端Proof闭合且`DOMAIN_SPECIFIC`的相同anchor才可形成`SHARED_ANCHOR`，§5.1 finite registry exact match才可形成`SEMANTIC_CUE`。只有generic Java/Mapper/XML/SQL/tenant/audit/logger/method-name材料时正常产生零relation；若自检发现这样的材料进入relation则fatal `PROCESS_GENERIC_SIGNAL_ONLY`。
+3. 对UTF-8排序后的每个不同Flow pair枚举§5的全部合法positive pairs；exact direct call、identifier/state/event handoff才可形成`PROVEN_HANDOFF`，只有两端Proof闭合且`DOMAIN_SPECIFIC`的相同anchor才可形成`SHARED_ANCHOR`。§5.1 finite registry match或两端可定位、非低信息且逐字匹配的generic context可形成`SEMANTIC_CUE/PENDING_ONLY`。tenant/audit/logger/utility或名称相似仍产生零relation；把它们单独接入relation仍fatal `PROCESS_GENERIC_SIGNAL_ONLY`。
 4. 对每条已成立relation收集全部qualifying positive pair和全部可精确归属的counter basis，按§5计算完整union、direction、strongest level与`relationUse`。无法归属的blocking signal不被任意挂到某个pair：relation固定`PENDING_ONLY`，并生成一条`ProcessCounterScopeIssueV1`供M7在edge owner已确定后构造唯一typed Gap。
 5. 以全部candidate relation作为无向连通计算的边形成components；每个孤立Flow另形成singleton。每个Flow恰属一个group，每条relation的两个endpoint必须在同一group且只出现一次，全部groups的成员Flow不重不漏等于`flowSliceIds`。group eligibility按§2重算，不能由模型或遍历顺序决定。
 6. 规范排序、计算semantic IDs和accounting，验证`N/C/G`计数、关系与组闭包以及`providerCallCount=0`后返回。相同已发布输入、profile和budget在任意遍历顺序下必须逐字相同。
@@ -1395,7 +1399,7 @@ R2/P2因上游typed GAP/FAILED未运行时，必须持久化`NOT_RUN_UPSTREAM_FA
 
 - provider transport/runtime失败、started call无完整响应、observed runtime不符；
 - schema/extra-field/Unicode/budget/hash/identity/ref closure错误，或model request出现path-bearing字段；
-- generic-only成边、edge在全部`A`上多owner/无owner、groups漏Flow、P2扩张或跨hypothesis借refs；
+- 低信息generic-only（tenant/audit/logger/utility/名称相似）成边、edge在全部`A`上多owner/无owner、groups漏Flow、P2扩张或跨hypothesis借refs；
 - task/round/receipt/disposition缺失或重复、部分publication或count伪造。
 
 稳定Gap/failure codes至少包括：`PROCESS_SIGNAL_LEVEL_INVALID`、`PROCESS_GENERIC_SIGNAL_ONLY`、`PROCESS_COUNTER_SCOPE_UNRESOLVED`、`PROCESS_ENTRY_TARGET_INVALID`、`PROCESS_CUE_PROFILE_INVALID`、`PROCESS_GROUP_COVERAGE_BROKEN`、`PROCESS_EDGE_OWNERSHIP_BROKEN`、`PROCESS_TASK_BUDGET_EXCEEDED`、`PROCESS_P1_HYPOTHESIS_FAILED`、`PROCESS_P2_RESPONSE_GAP`、`PROCESS_P2_REVIEW_FAILED`、`PROCESS_P2_REVIEW_PENDING_CONFIRMATION`、`PROCESS_P2_REVIEW_PRECISION_AMBIGUITY`、`PROCESS_MODEL_PACKET_PATH_LEAK`、`PROCESS_MODEL_REQUEST_HASH_MISMATCH`、`PROCESS_MODEL_RESPONSE_INVALID`、`PROCESS_MODEL_REFERENCE_INVALID`、`PROCESS_REVIEW_EXPANDED`、`PROCESS_DISPOSITION_INCOMPLETE`，并沿用局部`PROVIDER_FAILURE_AFTER_START`、`MODEL_TASK_NOT_RUN_UPSTREAM_INVALID`与`FLOW_INTERPRETATION_RESOURCE_LIMIT_EXCEEDED`。

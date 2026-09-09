@@ -53,7 +53,7 @@ Source Code Analysis Agent 的目标不是“让模型读一遍仓库并写篇�
 - **来源可信**：同一 revision、路径和字节可以重开；不能静默换成分支最新值。
 - **捕获可信**：显式本地维护命令只从用户给定的本地 Git 对象库读取一个完整 40 位 commit，枚举其整棵 tracked tree；不读 index/工作区、不解析 branch/ref、不联网。
 - **仓库覆盖可信**：冻结仓库中的每个文件、发现 site、入口和后续语义项都有唯一处置；单个 Flow 成功不能冒充整仓分析完成。
-- **推导可信**：业务事实的每个语义原子都能回到源码 span、程序图和确定性规则。
+- **推导可信**：写成源码事实的每个语义原子都能回到源码 span、程序图和确定性规则；端到端业务过程还允许在有界 Flow/Capsule 材料上形成明确标注的证据支持推断或待确认假设，不能因为缺少一条直接调用边就把整个业务过程丢掉。
 - **模型受限**：R0/R1/R2只解释一条已经由程序编译完整的Flow；P1/P2是唯一受控例外，只读取程序编译的有界多Flow `ProcessEvidenceGroup`。模型不能发现调用、补路径、写locator、自批事实或证明外部效果。
 - **未知诚实**：静态代码不能证明的运行时、部署和企业政策进入 Gap，不进入事实。
 - **过程可见**：每一分析步骤成功后立即留下 canonical JSON/JSONL 生产资产；下游失败不抹掉上游成果。
@@ -63,6 +63,16 @@ Source Code Analysis Agent 的目标不是“让模型读一遍仓库并写篇�
 - **文档可重验**：Markdown 只读 nine-section-plan.json；独立验证可以重开冻结源码，但 renderer 不重新读源码。
 
 `Flow`与`BusinessProcess`不得混用：Flow是单入口、局部、可由Fact/Proof逐项回放的代码活动；BusinessProcess是可能跨多个Flow的端到端业务过程。它们是多对多关系：一个过程可以含多个Flow，同一Flow也可以服务多个过程。Step 05只交接证据支持的连接信号，Step 06才提出过程hypothesis，Step 07程序准入，Step 08在固定九章中展示；任何一步都不能把信号本身当成先后、因果或外部系统结果。
+
+### 1.1.1 业务流程与证据精度的优先级
+
+本系统首先要还原“仓库里有哪些业务活动，它们可能怎样组成完整业务过程”，其次才是在已有定位基础上追求字节、行列和哈希的最高精度。这个优先级不降低诚实性，而是把不同强度的结论放进不同可信层：
+
+1. 已有 Fact→Proof→Evidence→exact source span 闭合时，完整保留，不返工、不降级；它可以支持 `SOURCE_CONFIRMED`。
+2. 直接 handoff Proof 不闭合，但多个 Flow/Capsule 在业务对象、标识、状态、入口动作、边界调用和有限业务术语上形成相互印证的有界上下文时，模型可以提出跨 Flow 过程假设。P2 保留且没有阻断性反证后，程序最多准入为 `EVIDENCE_SUPPORTED_INFERENCE`。
+3. 若建立完整 Proof 的成本与业务价值不成比例，只要仍能定位到相关文件和符号，并至少有行段、摘录或另一种 typed locator，材料仍可进入受限解释；单一、弱、generic、方向不明或有反证的连接最多为 `PENDING_CONFIRMATION`。
+
+exact SHA、byte offset和列号在可获得时继续保存并校验；它们缺失本身不再阻断**过程语义工作**，但会限制certainty。完全没有可定位源码上下文的模型陈述不能成为业务知识：它只能被拒绝，或转成带searched-scope的待确认问题。任何层级都不能把generic线索写成源码事实，也不能把Java边界调用写成数据库、消息、库存或账务已经生效。
 
 固定jshERP的Step 05完整出口以全入口处置和证据闭包为门：每个入口都必须恰为`COMPILED | GAP | EXCLUDED`，但不要求出现`DOMAIN_SPECIFIC`。当前没有用户提供的业务表映射，因此精确Java→Mapper→XML→SQL引用仍是`GENERIC_TECHNICAL`/pending静态结构材料，不能证明业务对象、顺序、因果或外部效果，也不能形成`SHARED_ANCHOR`。`DOMAIN_SPECIFIC`与`SHARED_ANCHOR`保留为未来具备显式分类Authority时的更强证据；本次裁决不新增分类器。业务含义只可进入Step 06冻结的R0/R1/R2与P1/P2受限解释链。
 
@@ -155,7 +165,7 @@ DepotHead 只是完整仓库中 `N` 个入口/FlowSlice 之一的讲解 fixture�
 
 `提交补货申请 → 门店审批 → 区域审批并创建采购单 → 采购单审批及费用处理 → 执行采购并登记物流 → 收货并登记库存 → 生成、确认、结算月度账单`。
 
-每个节点是独立入口Flow；连接只能来自业务对象/类型/表/字段/业务ID、标识符产出与消费、状态生产与检查、显式调用/返回/事件引用及对应Fact/Proof/Evidence/source。P1可提出顺序、并行、备选和回退，P2必须删除无Proof的“唯一采购单”“已经记账”。一个收货Flow可被采购履约和月度结算两个过程复用。该故事在任何文档、fixture或ReaderItem中都必须标明synthetic，永远不得作为jshERP事实。
+每个节点是独立入口Flow。直接调用、标识传递和状态生产/检查的闭合Proof是最强连接；同一业务对象、类型、表/字段、入口动作、有限术语和可定位的代码上下文也可以让P1提出受限顺序、并行、备选或回退假设。后者必须以推断或待确认进入P2/Step 07，不能冒充源码事实。P2必须删除或降级没有足够支持的“唯一采购单”“已经记账”。一个收货Flow可被采购履约和月度结算两个过程复用。该故事在任何文档、fixture或ReaderItem中都必须标明synthetic，永远不得作为jshERP事实。
 
 ## 3. 八个分析步骤纵向主线
 
@@ -216,8 +226,8 @@ runs/<run-id>/
 | 应用发现 | “仓库有哪些请求入口？” | 全入口 inventory 中包含 `POST /depotHead/batchSetStatus` 及 handler、Mapper 候选 | 图构建直接拿完整 entry/catalog denominator，不再猜 route或漏掉其他入口 |
 | 程序图 | “请求、条件、值和 SQL 怎样连起来？” | 五张图分别表达结构、调用、控制、数据和证据 | Fact prover 只消费 graph edges，不重写 parser |
 | 已证明代码事实 | “哪些整句结论真的证明了？” | 每个 candidate Fact 的所有 atom 要么有闭合 Proof，要么成为带原因的 Gap | Flow compiler 只引用 admitted Fact/Proof，不借附近源码 |
-| 业务流程 | “每个请求有哪些完整结局，还给跨入口重建留下哪些证据？” | 全入口逐一成为Flow、多条Outcome/一个Capsule，或有证据的GAP/EXCLUDED；Flow/Capsule新增`processJoinSignals`，只保存对象/ID/状态/调用/返回/事件及counter/Gap的Fact/Proof/Evidence/source依据 | R0/R1/R2只读各自Flow；确定性跨Flow编译器可读取全仓signals，但signals本身不证明顺序、因果或外部效果 |
-| 流程解释 | “新仓库的业务词和端到端过程怎样安全形成？” | 局部R0→freeze registry→同Flow R1/R2保持不变；程序再编`C`条候选边、覆盖全部Flow的`G`个groups和`A`个ownership shards，其中`S`个model-safe shards才有P1/P2；Luna P1/P2是唯一多Flow模型例外，P2 `REVIEWS`逐hypothesis只可KEEP/NARROW/DROP/PENDING_CONFIRMATION，整个P2 task另可typed GAP/FAILED | 仓库知识可重验全部`A`个shard/disposition与局部/过程lineage；planned tasks=`E+2R+2S`，actual calls=`E+R+accepted local R1+S+accepted process P1`，no-model shard显式处置，未运行R2/P2持久化`NOT_RUN_UPSTREAM_FAILED`，P2 GAP/FAILED保留实际round/receipt并进入非准入分区 |
+| 业务流程 | “每个请求有哪些完整结局，还给跨入口重建留下哪些材料？” | 全入口逐一成为Flow、多条Outcome/一个Capsule，或有证据的GAP/EXCLUDED；Capsule除精确Fact/Proof外保留理解对象、状态、标识、边界调用和结局所需的有界上下文，`processJoinSignals`继续保存最强的可证明连接 | R0/R1/R2只读各自Flow；后续既可使用精确signals，也可使用同Capsule内可定位、相互印证的上下文形成较弱候选，但不能把候选写成外部效果事实 |
+| 流程解释 | “新仓库的业务词和端到端过程怎样安全形成？” | 局部R0→freeze registry→同Flow R1/R2保持不变；程序再编`C`条候选边、覆盖全部Flow的`G`个groups和`A`个ownership shards，其中`S`个model-safe shards才有P1/P2；候选同时容纳直接Proof、证据支持推断和pending线索；Luna P1/P2是唯一多Flow模型例外，P2 `REVIEWS`逐hypothesis只可KEEP/NARROW/DROP/PENDING_CONFIRMATION，整个P2 task另可typed GAP/FAILED | 仓库知识可按三档certainty验收全部`A`个shard/disposition与局部/过程lineage；planned tasks=`E+2R+2S`，actual calls=`E+R+accepted local R1+S+accepted process P1`，no-model shard显式处置，未运行R2/P2持久化`NOT_RUN_UPSTREAM_FAILED`，P2 GAP/FAILED保留实际round/receipt并进入非准入分区 |
 | 仓库知识 | “所有局部活动怎样形成可审计的端到端仓库视图？” | 程序按local admission→admission-eligible process claim validation，terminal/no-model→typed reasoned exclusion→conflict/alternative→many-to-many membership→one knowledge执行；只给实际准入claim三值certainty，不调用模型 | 一份RepositoryKnowledge含九个过程数组；每条Flow属于至少一个process、独立活动或显式Gap unassigned，冲突/备选/pending不丢失 |
 | 九章文档 | “业务读者先看到什么，怎样回到证据？” | 固定九章且Chapter 4 process-first；新增五种process ReaderItem，renderer仍只读plan；正文隐藏ID/SHA/path/技术enum | 一份plan/document；过程Trace闭合到P1/P2、group/signal、Flow/Capsule与Fact/Proof/Evidence/source，公开`RepositoryAnalysisAgent`不变 |
 
@@ -707,7 +717,7 @@ FlowInterpretation为每个model-eligible Flow建立隔离R0，再冻结唯一Re
 4. 全部R0 dispositions闭合后，程序按flow/proposal排序生成provisional keys并原子冻结一份RepositoryInterpretationRegistry；失败Flow仍在coverage中。
 5. 只为R0 READY Flow按其同Flow registry items编译有限key R1/R2；R1提出selectedKey+basis，且selectedKey必须逐字等于同Flow registry item的provisionalKey。只有R1返回`RESPONSE_ACCEPTED`才调用R2；若R1返回typed `RESPONSE_GAP|RESPONSE_FAILED`，已规划的同Flow R2 task写`NOT_RUN_UPSTREAM_FAILED` disposition并引用R1 taskSpecId，不调用Provider。R2在同一session只能保持该selectedKey；`NARROW`只可收窄decision、basis子集或meaning eligibility，不能替换/派生key，也不能增加来源、Fact、proposal或basis。
 6. Provider调用开始后若transport/runtime中断、响应缺失或无法形成可验证response record，当前run直接`FAILED`，不自动重试、不切换Provider，也不生成FlowInterpretation success publication。
-7. 程序按`PROVEN_HANDOFF | SHARED_ANCHOR | SEMANTIC_CUE`建立`C`条候选边并附`COUNTER_SIGNAL`；generic-only依据禁止成边。连通组和singleton共同形成覆盖全部Flow的`G`个ProcessEvidenceGroups。
+7. 程序按`PROVEN_HANDOFF | SHARED_ANCHOR | SEMANTIC_CUE`建立`C`条候选边并附`COUNTER_SIGNAL`；精确handoff和domain anchor是强候选，两个Capsule中可定位、相互印证且非低信息的上下文只能形成`PENDING_ONLY`语义候选。tenant/audit/logger/utility或名称相似仍禁止成边。连通组和singleton共同形成覆盖全部Flow的`G`个ProcessEvidenceGroups。
 8. 程序为每组建立至少一个shard，形成全部`A`个ownership shards；每条candidate edge在`A`中恰有一个owner，Flow可重复但仅作为read-only context。`MODEL_SAFE`子集为`S`，只给它们生成path-free packet和P1/P2；`NO_MODEL` shard保存非空Gap与`NO_MODEL_ADMISSION_PENDING` disposition且模型对象为零。P1可提出一个或多个hypothesis或返回typed GAP/FAILED；P1 FAILED由程序创建唯一canonical `PROCESS_P1_HYPOTHESIS_FAILED`，P2保持planned NOT_RUN。P1 accepted后，P2 `REVIEWS`只可KEEP/NARROW/DROP/PENDING_CONFIRMATION且全部受保护refs逐hypothesis为P1 subset；P2也可返回整个task的typed GAP/FAILED，保留P1 hypothesis但无review并进入非准入处置。
 9. M9发布十四份semantic及receipt。planned tasks=`E+2R+2S`；actual calls=`E+R+accepted local R1+S+accepted process P1`。每个`A` shard恰一process disposition，并作为Step 06-owned typed Gap的唯一carrier；R2/P2未运行仍有planned task与`NOT_RUN_UPSTREAM_FAILED`。
 
@@ -1917,7 +1927,7 @@ MergedGapV3
 
 Step 07 accounting必须证明：`publishedHypotheses = admissionEligible ⊎ p2Gap ⊎ p2Failed`；`admissionEligible ↔ ProcessAdmissionDecision.businessProcessHypothesisId`；P2-gap/P2-failed hypothesis、其claims和owner relations全部进入`reasonedSemanticExclusionIds`；`step06OwnedGapIds ↔ singleton MergedGapV3.canonicalGapIds ↔ singleton MergedGapV3.memberGapIds[0]`，且每条singleton的affected process IDs逐字等于携带其canonical Gap的non-null admitted process IDs。每个非准入分支的context Flow仍有`INDEPENDENT_ACTIVITY`或带显式Gap的`UNASSIGNED_PENDING` membership。这样P2的每个schema-valid终态都有唯一publication/admission-or-exclusion/accounting结果。
 
-Step 07不重新推断counter：先在program-only `ProcessCandidateRelationV2`重验全部positive/counter bases与aggregate exact union，再让每个`ProcessClaimDecisionV1.counterSignalIds/blockingCounterSignalIds`逐字复制source claim的对应数组；后续relation/claim/pending records取source decisions的exact union。`DIFFERENT_BUSINESS_OBJECT`与任何其他counter一样blocking，因此多positive-pair关系的certainty不受输入顺序影响。`SOURCE_CONFIRMED`要求P1 accepted、P2对同一hypothesis/claim为KEEP/NARROW、直接Fact/Proof和空blocking array；`EVIDENCE_SUPPORTED_INFERENCE`要求同一P1/P2条件、至少一个经程序验证的`PROVEN_HANDOFF | SHARED_ANCHOR` relation/signal、完整Fact/Proof/Evidence/source闭包且空blocking array；仅SEMANTIC_CUE、P2 review pending或blocking array非空的admitted claim都只能pending；P2 GAP/FAILED/NOT_RUN不进入admission。Reader slot/prose不能绕过claim decision。
+Step 07不重新推断counter：先在program-only `ProcessCandidateRelationV2`重验全部positive/counter bases与aggregate exact union，再让每个`ProcessClaimDecisionV1.counterSignalIds/blockingCounterSignalIds`逐字复制source claim的对应数组；后续relation/claim/pending records取source decisions的exact union。`DIFFERENT_BUSINESS_OBJECT`与任何其他counter一样blocking，因此多positive-pair关系的certainty不受输入顺序影响。`SOURCE_CONFIRMED`要求P1 accepted、P2对同一hypothesis/claim为KEEP/NARROW、直接Fact/Proof和空blocking array；`EVIDENCE_SUPPORTED_INFERENCE`要求同一P1/P2条件、空blocking array，并满足至少一个程序验证的`PROVEN_HANDOFF | SHARED_ANCHOR`，或至少两类相互独立的、属于允许Flow/Capsule且可回到file+symbol+line/excerpt或typed locator的对象/标识、状态、入口动作、边界目标、字段/表或冻结术语依据。后一分支不要求直接跨Flow Proof，模型文字不算依据。仅有一个generic/semantic cue、P2 review pending、blocking array、Gap或替代解释的claim只能pending；P2 GAP/FAILED/NOT_RUN不进入admission。Reader slot/prose不能绕过claim decision，也不能把推断写成源码事实或外部效果。
 
 `ProcessClaimKnowledgeV1.subjectKeys/objectKeys`逐字等于其唯一source `BusinessProcessHypothesisV2.processClaims[]`的plural arrays；`predicateKey`逐字复制。P2 NARROW只改变整条claim的admission/certainty或保留集合，不得任选scalar、笛卡尔fan-out、拆分、合并或重排keys。每个admitted source claim恰一个knowledge claim，转换无损。
 

@@ -9,7 +9,7 @@
 Step 06的局部解释和跨Flow过程都是受限模型提案，不自动成为业务事实。RepositoryKnowledge用零模型调用完成唯一权威合并：
 
 1. 准入每条Flow的局部meaning或technical fallback；
-2. 验证每个admission-eligible process claim的证据闭包，并只为实际准入claim分配certainty；
+2. 验证每个admission-eligible process claim的允许引用和可定位依据，并按证据强度为实际准入claim分配certainty；
 3. 比较冲突、备选和待确认，不强行选唯一故事；
 4. 建立Flow ↔ BusinessProcess多对多membership；
 5. 生成全仓唯一一份RepositoryKnowledge。
@@ -155,9 +155,9 @@ ProcessClaimDecisionV1.blockingCounterSignalIds = ProcessClaimDecisionV1.counter
 certainty规则：
 
 - `SOURCE_CONFIRMED`要求P1响应accepted、P2对该hypothesis/claim为`KEEP | NARROW`、专门Fact与Proof直接支持claim，且`blockingCounterSignalIds=[]`；
-- `EVIDENCE_SUPPORTED_INFERENCE`要求P1响应accepted、P2对同一hypothesis/claim为`KEEP | NARROW`、至少一个经M6验证的`PROVEN_HANDOFF | SHARED_ANCHOR` supporting relation/signal、完整Fact/Proof/Evidence/source闭包，并且`blockingCounterSignalIds=[]`；任何仅有`SEMANTIC_CUE`、P2 review为pending、或blocking数组非空的admitted claim只能`PENDING_CONFIRMATION`；P2 GAP/FAILED或NOT_RUN根本不进入claim admission；
-- `PENDING_CONFIRMATION`要求非空Gap或counter refs，只能进入pending/alternative，不得用于确定性转换；
-- reader wording不能提升certainty；P1/P2文字也不是Fact。
+- `EVIDENCE_SUPPORTED_INFERENCE`要求P1响应accepted、P2对同一hypothesis/claim为`KEEP | NARROW`、`blockingCounterSignalIds=[]`，并满足以下任一条件：存在一个经M6验证的`PROVEN_HANDOFF | SHARED_ANCHOR`；或至少两类相互独立的可定位依据（对象/标识、状态、入口动作、边界目标、字段/表、冻结业务术语中至少两类）共同支持同一关系。第二种情况不要求有一条直接跨Flow Proof，但每项依据都必须属于允许的Flow/Capsule，并至少能回到file+symbol+line/excerpt或typed locator；模型文字本身不计依据。
+- `PENDING_CONFIRMATION`用于仅有一个generic/semantic cue、方向不明、locator较粗、P2明确pending、存在Gap/counter或替代解释的claim；它只能进入pending/alternative，不得用于确定性转换。SHA、byte offset或列号缺失本身不使运行fatal，只限制certainty；完全没有可定位源码上下文的claim必须REJECT或转成searched-scope问题。
+- reader wording不能提升certainty；P1/P2文字也不是Fact。`SOURCE_CONFIRMED`仍只来自完整Fact/Proof/Evidence closure；本规则只放宽业务过程推断的准入，不改变源码事实、外部效果或现有精确证据的验证。
 
 对每条实际创建的`ProcessAdmissionDecisionV1 d`，Step 06 Gap传播不是启发式。令`h`为`d.businessProcessHypothesisId`指向的唯一hypothesis，`owner`为`d.processInterpretationDispositionId`指向的唯一disposition；必须满足：
 
