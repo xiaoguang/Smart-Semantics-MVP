@@ -198,6 +198,73 @@ domain分类仅是未来`SHARED_ANCHOR`更强信号的门，不是本节direct-c
 
 M6不能把edge拓扑排序成“真实顺序”。顺序、并行、替代、回退都是P1 hypothesis，最终由Step 07程序准入。
 
+### 5.3 M6最小公共Java seam
+
+M6是一个deep、program-only module。调用者只交content-addressed references，不能交`JsonNode`、已经解析的Flow/Capsule、文件路径或Provider。唯一行为seam固定为：
+
+~~~java
+package org.sourceanalysis.app.analysis.interpretation.process;
+
+public final class CrossFlowCandidateCompiler {
+    public CrossFlowCandidateCompilation compileCandidates(
+        CrossFlowCandidateCompilationRequest request);
+}
+~~~
+
+构造期由composition root注入既有`CanonicalAnalysisStepArtifactStore`、`CanonicalModuleArtifactStore`和只按完整`ArtifactReference`返回已重验bytes的path-free input reader；构造器形状不是调用者或测试应锁定的行为合同。输入、返回值和nested records固定为：
+
+~~~text
+CrossFlowCandidateCompilationRequest
+  programGraphs!: ProgramGraphsReference
+  provenCodeFacts!: ProvenCodeFactsReference
+  businessFlows!: BusinessFlowsReference
+  repositoryInterpretationRegistryPublication!: ModulePublicationReference
+  analysisRunRequestRef!: ArtifactReference
+
+CrossFlowCandidateCompilation
+  compilationId!
+  programGraphsPublicationRef!
+  provenCodeFactsPublicationRef!
+  businessFlowsPublicationRef!
+  repositoryInterpretationRegistryPublicationRef!
+  analysisRunRequestRef!
+  flowSliceIds[]!
+  candidateRelations[]!: ProcessCandidateRelationV2
+  processEvidenceGroups[]!: ProcessEvidenceGroupV2
+  counterScopeIssues[]!: ProcessCounterScopeIssueV1
+  accounting!: CrossFlowCandidateAccountingV1
+  closed=true
+
+ProcessCounterScopeIssueV1                 // internal M6→M7 value; not a sixteenth public file
+  candidateRelationId!
+  unscopedCounterProcessJoinSignalIds[]!   // nonempty
+  reasonCode!=PROCESS_COUNTER_SCOPE_UNRESOLVED
+
+CrossFlowCandidateAccountingV1
+  flowSliceIds[]!
+  candidateRelationIds[]!
+  processEvidenceGroupIds[]!
+  counterScopeRelationIds[]!
+  flowCount!, candidateRelationCount!, processEvidenceGroupCount!
+  providerCallCount=0
+  closed=true
+~~~
+
+`CrossFlowCandidateCompilation`只允许交给同一M6 module publisher；publisher把完整值和receipt原子安装后只把`ModulePublicationReference`交给M7。M7必须fresh-reopen该publication，禁止消费这里的内存对象。`ProcessCandidateRelationV2`、`ProcessEvidenceGroupV2`及其nested wire字段仍以§7.1为唯一正式定义；本节不增加Step 06 semantic file或改变十五文件/全run五十七项合同。
+
+`compileCandidates`按以下固定次序完成全部工作：
+
+1. 从三个step stores分别fresh-reopen Step 03、04、05 publication，并从module store fresh-reopen M3 registry；再以`analysisRunRequestRef`重开exact run request、它引用的profile bundle和resource budget。五者必须是同run、同controls，且Step 05 receipt的upstream refs必须精确绑定所给Step 03/04 publication。禁止从Step 05内存draft或调用者inline profile补值。
+2. 重验Step 05全部`N`个Flow、Flow/Capsule双射、每个signal的Fact→atom→Proof→Evidence闭包、M3 registry item到同Flow Capsule basis的闭包，以及§5.2的exact entry target。引用或内容损坏直接fatal，不降级为弱关系。
+3. 对UTF-8排序后的每个不同Flow pair枚举§5的全部合法positive pairs；exact direct call、identifier/state/event handoff才可形成`PROVEN_HANDOFF`，只有两端Proof闭合且`DOMAIN_SPECIFIC`的相同anchor才可形成`SHARED_ANCHOR`，§5.1 finite registry exact match才可形成`SEMANTIC_CUE`。只有generic Java/Mapper/XML/SQL/tenant/audit/logger/method-name材料时正常产生零relation；若自检发现这样的材料进入relation则fatal `PROCESS_GENERIC_SIGNAL_ONLY`。
+4. 对每条已成立relation收集全部qualifying positive pair和全部可精确归属的counter basis，按§5计算完整union、direction、strongest level与`relationUse`。无法归属的blocking signal不被任意挂到某个pair：relation固定`PENDING_ONLY`，并生成一条`ProcessCounterScopeIssueV1`供M7在edge owner已确定后构造唯一typed Gap。
+5. 以全部candidate relation作为无向连通计算的边形成components；每个孤立Flow另形成singleton。每个Flow恰属一个group，每条relation的两个endpoint必须在同一group且只出现一次，全部groups的成员Flow不重不漏等于`flowSliceIds`。group eligibility按§2重算，不能由模型或遍历顺序决定。
+6. 规范排序、计算semantic IDs和accounting，验证`N/C/G`计数、关系与组闭包以及`providerCallCount=0`后返回。相同已发布输入、profile和budget在任意遍历顺序下必须逐字相同。
+
+`N=0`是成功而不是Gap：返回`flowSliceIds=[]`、`candidateRelations=[]`、`processEvidenceGroups=[]`、`counterScopeIssues=[]`、`N=C=G=0`、`providerCallCount=0`和`closed=true`。`N>0,C=0`也成功，但必须产生恰好`N`个singleton group。
+
+M6只抛`CrossFlowCandidateCompilationException`，其`getMessage()`必须是下列稳定码之一：`FLOW_INTERPRETATION_INPUT_INVALID`（publication/run/control/receipt lineage错误）、`PROCESS_MODEL_REFERENCE_INVALID`（Flow/Capsule/Fact/Proof/Evidence/registry闭包错误）、`PROCESS_ENTRY_TARGET_INVALID`、`PROCESS_CUE_PROFILE_INVALID`、`PROCESS_SIGNAL_LEVEL_INVALID`、`PROCESS_GENERIC_SIGNAL_ONLY`、`PROCESS_GROUP_COVERAGE_BROKEN`或`FLOW_INTERPRETATION_RESOURCE_LIMIT_EXCEEDED`。`PROCESS_COUNTER_SCOPE_UNRESOLVED`不是异常；它只能经`counterScopeIssues`进入M7的typed Gap。任意其他`RuntimeException`必须在这个seam归一化为`FLOW_INTERPRETATION_INPUT_INVALID`并保留cause，不能泄漏裸`NullPointerException`或解析器异常。
+
 ## 6. 模型有界材料
 
 ### 6.1 局部R0/R1/R2
