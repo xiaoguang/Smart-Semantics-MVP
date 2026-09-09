@@ -412,7 +412,7 @@ void approve(String status) {
 
 当前taxonomy对`BUSINESS_OBJECT_ANCHOR | SQL_TABLE_ANCHOR | FIELD_ANCHOR | BUSINESS_IDENTIFIER_ANCHOR | IDENTIFIER_OUTPUT | IDENTIFIER_INPUT | STATE_PRODUCTION | STATE_CHECK | RETURN_TRANSFER | EVENT_REFERENCE | OBJECT_REFERENCE | CONFLICT_STATE`没有可用atom，因而这些family在当前Flow中是exact absence；裸参数名、条件文本、ordered argument/origin node ID、repository-owned type、Mapper/XML文本或方法名都不能补造它们。无候选语义时不为每个缺失family制造Gap；已有上游Gap仍逐字保留。若某upstream record自称提供表中支持的basis却closure malformed，则按上一段fatal，而不是降级成absence。
 
-因此当前有限规则最多交付四种family的可信结构材料和counter/Gap，但首个3/3纵切只覆盖`JAVA_TYPE_ANCHOR`、`EXPLICIT_CALL`和`EXTERNAL_EFFECT_GAP`，不构成counter正例验收。它没有任何可证明的`DOMAIN_SPECIFIC` anchor，不能单独产生Step 06 `SHARED_ANCHOR` relation，也不满足§8.6明确命名的domain/generic/counter/external-effect完整验收。仓库内声明的exact user type仍可能被`EXPLICIT_CALL → exact entry target`规则使用，但“在仓库中声明”无法区分业务类型与repository-local logger/util，所以不能作为domain specificity。这个domain分类缺口只阻断`SHARED_ANCHOR`及上述完整Step 05验收；它**不**阻断proof-closed exact call形成Step 06 `PROVEN_HANDOFF`，也不阻断R0 finite Registry形成`SEMANTIC_CUE/PENDING_ONLY`。当前持久化Fact/atom/Proof/rule没有任何一个能诚实完成domain分类，所以本次最小v3 slice不升级specificity、不新增分类Fact；将来若单独进入完整Step 05验收，仍须由Sol/ultra冻结一个Proof闭合的有限分类来源。
+因此当前有限规则最多交付四种family的可信结构材料和counter/Gap，但首个3/3纵切只覆盖`JAVA_TYPE_ANCHOR`、`EXPLICIT_CALL`和`EXTERNAL_EFFECT_GAP`，不构成counter正例验收。它没有任何可证明的`DOMAIN_SPECIFIC` anchor，不能单独产生Step 06 `SHARED_ANCHOR` relation；这不再阻断完整Step 05验收。固定jshERP没有用户提供的业务表映射，精确Java→Mapper→XML→SQL引用因此保持`GENERIC_TECHNICAL`/pending结构材料，不能证明业务对象、顺序、因果或外部效果。完整出口只要求每个entry恰为`COMPILED | GAP | EXCLUDED`，并满足Flow/Capsule双射、signal Proof/Evidence/source闭包与全量accounting。`DOMAIN_SPECIFIC`和`SHARED_ANCHOR`仍保留为未来显式分类Authority下的更强证据；本裁决不新增分类器。proof-closed exact call仍可形成Step 06 `PROVEN_HANDOFF`，业务含义仅由Step 06冻结的R0/R1/R2与P1/P2安全边界解释。
 
 #### 8.1.2 `JAVA_EXACT_CALL`的v3投影与边界调用证据回退
 
@@ -488,7 +488,7 @@ processJoinSignalId = "process-join-signal:" + lowercaseHex(SHA-256(
   "anchorKind": "BUSINESS_IDENTIFIER",
   "anchorKey": "depot-head-ids",
   "direction": "CONSUMES",
-  "specificity": "DOMAIN_SPECIFIC",
+  "specificity": "GENERIC_TECHNICAL",
   "claimScope": "FROZEN_JAVA",
   "factIds": ["fact:3333333333333333333333333333333333333333333333333333333333333333"],
   "atomIds": ["atom:4444444444444444444444444444444444444444444444444444444444444444"],
@@ -610,7 +610,7 @@ IT 可在上述 workspace 内使用 `RunStoreBootstrap.openForTest` 的真实 fi
 
 唯一 test-only 配置 oracle 固定为 `src/test/resources/analysis/flow/fixed-repository/fixed-repository-acceptance-config.json`：其 canonical bytes 必须完整列出当前 Step 01–05 实际已发布 artifact policy 的 exact sorted union 及所有 profile/control/budget 值与bytes。IT 在读取 source 前 strict parse 并重算每个 ID/SHA/reference，只从同一 oracle 建立 typed profiles 与 `ArtifactControls`；重复字符占位 digest、缺失/多余 policy、未登记bytes、引用漂移或typed值不一致都在分析前失败。该 oracle 只是验收配置，不是 customer/source/graph/result fixture、新生产schema/API或第58项正式输出。
 
-无论成功或下游失败，capture、已安装的module/analysis-step artifacts 及 canonical `fixed-repository-acceptance-report.json` 都必须保留在所给 ignored workspace，不得被默认 temp cleanup 删除；这是测试诊断材料，不是 runtime recovery 或正式输出。report 必须记录 exact source/capture refs、每个已尝试步骤的 fresh-reopen 结果，以及完整 file verified/unverified/text/media、entry COMPILED/GAP/EXCLUDED、Flow/Capsule 双射与 eligible/ineligible 分区；它不得把 fatal、Gap、未执行项或单 Flow PASS 改写为成功，也不豁免本节尚未解决的 domain-specific 验收门。
+验收路径必须指向同一批准commit的独立、完整、非promisor离线Git对象副本；原partial/promisor仓库保持不变且不得作为capture输入，副本不得使用alternates、lazy fetch或网络，也不得执行客户代码。无论成功或下游失败，capture、已安装的module/analysis-step artifacts 及 canonical `fixed-repository-acceptance-report.json` 都必须保留在所给 ignored workspace，不得被默认 temp cleanup 删除；report 必须记录 exact source/capture refs、每个已尝试步骤的 fresh-reopen 结果，以及完整 file verified/unverified/text/media、entry COMPILED/GAP/EXCLUDED、Flow/Capsule 双射与 eligible/ineligible 分区；它不得把 fatal、Gap、未执行项或单 Flow PASS 改写为成功。
 
 唯一命令形状为（再追加上述三个 `-Dsourceanalysis...` 属性及其值）：
 
@@ -620,7 +620,7 @@ mvn -o -t .mvn/toolchains.xml -DskipUTs=false -Dit.test=FixedRepositoryBusinessF
 
 不得使用 `-DskipUTs=true`（当前 POM 会同时 skip Failsafe IT），不得运行裸 `verify` lifecycle 或 full suite。
 
-验收必须同时覆盖至少两个非空Flow/Capsule（其中一个可用真实DepotHead讲解）、明确标注为合成的补货到结算七入口场景、eligible/ineligible各一Flow及完整逐Flow Gap mapping、一个多Outcome入口、第二入口ownership隔离、其中一Flow Gap、domain/generic/counter/external-effect signals、共享表/同名方法不可推序、缺/重叠shard、逐edge/span/signal-basis deletion mutation，以及从历史审计提炼的DepotHead 0/0回归baseline。只有每个COMPILED入口各生成一个入口根Flow/一个Capsule且所有终点闭合、Flow/Capsule signal逐字相等、完整entry ledger与eligibility分区/mapping守恒，0/0 baseline生成完整六文件/Gap/accounting并使Provider seam调用数为0，BusinessFlows才算可交付；单Flow PASS不构成验收。
+验收必须同时覆盖至少两个非空Flow/Capsule（其中一个可用真实DepotHead讲解）、明确标注为合成的补货到结算七入口场景、eligible/ineligible各一Flow及完整逐Flow Gap mapping、一个多Outcome入口、第二入口ownership隔离、其中一Flow Gap、generic/counter/external-effect signals、共享表/同名方法不可推序、缺/重叠shard、逐edge/span/signal-basis deletion mutation，以及从历史审计提炼的DepotHead 0/0回归baseline。只有每个入口恰为`COMPILED/GAP/EXCLUDED`、每个COMPILED入口各生成一个入口根Flow/一个Capsule且所有终点闭合、Flow/Capsule signal逐字相等、完整entry ledger与eligibility分区/mapping守恒，0/0 baseline生成完整六文件/Gap/accounting并使Provider seam调用数为0，BusinessFlows才算可交付；generic/pending足以通过当前出口，`DOMAIN_SPECIFIC`不是必需项且不能据静态表引用形成`SHARED_ANCHOR`，单Flow PASS不构成验收。
 
 ### 8.7 已冻结裁决：实现者不得自由推断
 
@@ -644,7 +644,7 @@ mvn -o -t .mvn/toolchains.xml -DskipUTs=false -Dit.test=FixedRepositoryBusinessF
 | **已实现（结构/构建门）** | 目标package与JDK 17 Toolchain已就位；通用wire头门禁只判断`SOURCE_ANALYSIS/v1`，不建立Flow eligibility。 |
 | **已实现（开发分支的受限纵切）** | M1 从重新打开的 ApplicationDiscovery、ProgramGraphs 与 ProvenCodeFacts v2 读取双入口 fixture，沿准确 call/return 和 TRUE/FALSE guard 生成 Flow/Outcome；每个入口都写 COMPILED 或带 reason 的 GAP。M2 从 M1 与 Proof/Evidence/source artifacts 重开后，给每个 compiled Flow 写一份 Capsule；模型预算超限时仍保留 Flow/Capsule 和证据，只写 `INELIGIBLE` 与明确 Gap。M3 已将 Flow、Capsule、入口处置、coverage 与 Flow Gap 发布为五项正式文件和 receipt；该纵切没有目标`processJoinSignals`字段，也未证明跨Flow候选材料。 |
 | **应当修复（跨步骤证据交接）** | 在不新增文件的前提下，把每Flow完整`processJoinSignals[]`加入M1 Flow与M2/public Capsule，升级M1为v2、M2为v5、public flow/capsule schemas为v2/v3，并以Fact/Proof/Evidence/source closure、Flow-Capsule逐字相等、ID-set equality、跨Flow隔离和fresh-reopen测试验证。当前v2 ProvenCodeFacts只足以按§8.1.1产生四种`GENERIC_TECHNICAL` family；完成该纵切不等于具备`DOMAIN_SPECIFIC/SHARED_ANCHOR`或完整过程重建能力。当前已发布Capsule是否已经补齐旧span/obligation value应以合入commit重新审计，不能用旧v1/v2成熟度陈述冒充本次目标。 |
-| **尚未交付（完整仓库能力）** | 仍缺真实完整 jshERP 从源码清单至本步骤的离线运行、0 Flow persisted fixture、循环/多实现/歧义调用的系统性处置、entry 分片与跨 Flow 的完整隔离测试，以及正式运行核心接线。该纵切不得用于仓库完成判定，也不产生可供真实模型调用的已发布 Flow。 |
+| **尚未交付（完整仓库能力）** | 用户已确认验收可使用同批准commit的独立完整非promisor对象副本，且当前出口不要求`DOMAIN_SPECIFIC`；这两项不再是未回答的合同问题。仍缺该副本上的真实jshERP离线运行、0 Flow persisted fixture、循环/多实现/歧义调用的系统性处置、entry分片与跨Flow完整隔离测试，以及正式运行核心接线。原partial/promisor仓库保持不变且不得联网补对象；已批准不等于已运行或PASS。 |
 | **历史证据，不是当前能力** | 已删除的pre-reset compiler曾在有限fixture上编译Flow/Outcome/Capsule；固定八文件历史审计为blocking Gap、0 Flow、0 Capsule。该结果只作为0调用和证明不足的回归baseline。 |
 | **下一实现门** | Luna先以当前public stored-artifact fixture写approve 3/cancel 3的signal RED，Terra再按既定模块补最小GREEN；之后用§8.1.1 exact `if/else` fixture和invocation-call-site polarity predicate补`COUNTER_CONDITION`正例，不改ProgramGraphs合同，再继续M2/M3和至少双入口、双Flow、多Outcome、跨Flow隔离、eligible/ineligible、0Flow、真实DepotHead有限材料及明确合成的补货到结算场景的全仓分母闭合。 |
 

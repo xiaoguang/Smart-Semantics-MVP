@@ -93,6 +93,8 @@ M6使用下列四个等级。等级不是模型判断；程序按exact pair rule
 
 `tenantId`、创建/修改人等审计字段、日志、generic utility、方法名相似、中文名称相似，**单独都禁止成边**。只有同一个局部信号集合内存在domain-specific正向依据时，它们才可作为附加上下文。缺少专门Proof的外部影响始终是Gap。
 
+固定jshERP没有业务表映射，因此精确Java→Mapper→XML→SQL引用仍是generic/pending静态结构，不能形成`SHARED_ANCHOR`。这类材料的存在或`DOMAIN_SPECIFIC`的缺席都不影响Step 05完成；M6只能按上述exact规则使用合法pair，业务含义只能经冻结R0/R1/R2与P1/P2提出和复核。
+
 counter归属与blocking集合完全由程序决定，而且不得从“某一个”positive pair任意选scope。对候选关系`r(left,right)`，M6先枚举并持久化两端之间**全部**qualifying positive pairs为`positivePairBases[]`；每项保存exact signal/cue IDs、level、`anchorKind+anchorKey`和direction。direct call的left/right signal数组允许仅调用方非空，但exact entry target仍进入`anchorKey`；identifier/state/event/shared-anchor pairs两端signal数组均非空；semantic cue只允许cue数组非空。数组按下节canonical tuple排序、重复项拒绝。
 
 随后M6对每个positive pair `p`收集两类basis：
@@ -166,7 +168,7 @@ M6不得从entry名称、route、方法simple name或Flow叙述猜callee。`Cros
 
 随后对每个Flow的每条proof-closed `EXPLICIT_CALL{direction=INVOKES,anchorKind=CALL_TARGET}`，若`anchorKey`逐字命中一个或多个**其他**Flow的`entryTargetKey`，就为每个matching callee枚举一项`EXPLICIT_CALL_TO_ENTRY/PROVEN_HANDOFF` positive pair。caller落在canonical left/right哪一侧，哪一侧的signal ID数组就恰含该signal，callee侧数组为空；`anchorKey`保存exact entry target，direction为caller→callee。若同一Flow pair有多个qualifying call signal全部保留，reciprocal directions按§5聚合成`UNDIRECTED`；anchor不匹配只是零pair，两个Flow仍各进singleton/其他合法group。`GENERIC_TECHNICAL`不阻止这一条exact-call pair，因为call→entry关系本身由ProgramGraphs+Fact Proof闭合；它仍不能让`JAVA_TYPE_ANCHOR`、tenant/audit字段或同名方法单独成边，也不能证明调用已执行、业务先后或外部效果。
 
-domain分类仅是`SHARED_ANCHOR`行和Step 05 §8.6完整domain acceptance的门，不是本节direct-call v0的门。当前没有一个持久化Fact/atom/Proof/rule能区分domain type与repository-local logger/util；因此M6必须保留generic specificity且不得把repository ownership当分类器。这个缺口若进入完整Step 05验收才需要另一个有界Sol合同，不影响本节candidate compiler实现。
+domain分类仅是未来`SHARED_ANCHOR`更强信号的门，不是本节direct-call v0或完整Step 05出口的门。当前没有持久化Fact/atom/Proof/rule能区分domain type与repository-local logger/util；因此M6必须保留generic specificity且不得把repository ownership当分类器。用户已确认不为当前固定仓库新增分类器；将来只有显式分类Authority和对应Proof合同才能产生`DOMAIN_SPECIFIC`。
 
 **Luna RED / Terra GREEN与增量工时。** Luna先在`RegistryProposalRunnerTest`固定raw decomposed Unicode经NFC后写入normalized label/purpose且identity使用normalized值，并固定control/bidi/normalized-byte-budget拒绝；Terra在`RegistryProposalRunner`实现该deterministic normalization，并让M3 freezer revalidate。Luna再在未来public `CrossFlowCandidateCompilerTest`用fresh-reopenedStep 03–05 artifacts固定四个断言：(1) caller `EXPLICIT_CALL.anchorKey`等于第二Flow exact target时得到一条有方向`PROVEN_HANDOFF`，caller侧signal array非空而callee侧为空；(2) target key只差case/参数、或call指向普通同名METHOD时零relation，删除entry-root edge则`PROCESS_ENTRY_TARGET_INVALID`；(3) 两Flow frozen `BUSINESS_TERM.normalizedLabel`与same-Flow atom basis逐字相等时只产生`REGISTRY_BUSINESS_TERM/PENDING_ONLY`；(4) case/space不同、non-NFC frozen value、空/foreign basis或仅lexicon命中不得产生specialized cue，malformed profile fatal。Terra只实现M6 typed reader/compiler及上述确定性规则；不改Provider、八步、十五文件、57项、Step 07或九章。此澄清相对当前已经计划的counter/M2 publisher/zero-Flow工作约增加18–26连续小时：Step 04 v3 Fact/Proof/public migration约8–12h，Step 05 v3/v6映射与fixture migration约4–6h，per-Flow span identity约2–3h，M6这两条public seam及R0 normalization correction约4–5h；不重复计算完整M6–M9或已GREEN M2 publisher。
 
@@ -1315,7 +1317,7 @@ R2/P2因上游typed GAP/FAILED未运行时，必须持久化`NOT_RUN_UPSTREAM_FA
 
 ### 业务Gap
 
-- 没有正向domain signal的孤立Flow保留singleton group；不是fatal。
+- 没有qualifying positive pair（包括没有可用`DOMAIN_SPECIFIC`）的孤立Flow保留singleton group；不是fatal，也不反向否定Step 05完成。
 - signal冲突、顺序不确定、外部效果未证明或P2 `PENDING_CONFIRMATION`进入显式Gap/待确认，不得被自然语言抹平。
 - typed P2 `GAP/FAILED`是已完成调用的业务级终态：保留P1 hypothesis、null review lineage、typed process Gap和非准入处置；不得伪装成DROP、NOT_RUN或transport failure。
 - typed `R0/R1/P1` GAP/FAILED可使后继R2/P2 `NOT_RUN_UPSTREAM_FAILED`；计划任务仍计数。P1 FAILED必须携带唯一`PROCESS_P1_HYPOTHESIS_FAILED`，不得留下空Gap owner。
@@ -1364,5 +1366,7 @@ Step 07必须先从`ProcessInterpretationDispositionV2.processGaps[]`验证每�
 | 公共文件 | 当前尚未形成完整Step 06 success publication | 从10文件变为15文件；全run总数57 |
 | registry envelope | 当前M3 module pair与拟公开pair存在冲突风险 | 使用§7明确分离的module/public schema/type pair |
 | 真实DepotHead | 没有模型或端到端process输出 | 仅把已有静态边界事实作为有界材料，外部效果继续Gap |
+
+用户已确认当前固定仓库不要求`DOMAIN_SPECIFIC`，也不提供业务表映射；这是已批准但尚未运行的输入/验收边界，不是M6已实现。未来Step 05输入可以全为generic signals，M6仍须按exact pair、singleton、R0/R1/R2和P1/P2合同安全处理。
 
 任何试图让R0/R1/R2读取多Flow、让P1/P2读源码、让Step 06输出Markdown、改变八步/九章/公开接口、改变57总数或跨步骤identity的实现都必须STOP并交Sol/ultra Design Authority；业务目标变化再由用户裁决。

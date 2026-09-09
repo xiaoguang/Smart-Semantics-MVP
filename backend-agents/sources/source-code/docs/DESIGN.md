@@ -64,6 +64,8 @@ Source Code Analysis Agent 的目标不是“让模型读一遍仓库并写篇�
 
 `Flow`与`BusinessProcess`不得混用：Flow是单入口、局部、可由Fact/Proof逐项回放的代码活动；BusinessProcess是可能跨多个Flow的端到端业务过程。它们是多对多关系：一个过程可以含多个Flow，同一Flow也可以服务多个过程。Step 05只交接证据支持的连接信号，Step 06才提出过程hypothesis，Step 07程序准入，Step 08在固定九章中展示；任何一步都不能把信号本身当成先后、因果或外部系统结果。
 
+固定jshERP的Step 05完整出口以全入口处置和证据闭包为门：每个入口都必须恰为`COMPILED | GAP | EXCLUDED`，但不要求出现`DOMAIN_SPECIFIC`。当前没有用户提供的业务表映射，因此精确Java→Mapper→XML→SQL引用仍是`GENERIC_TECHNICAL`/pending静态结构材料，不能证明业务对象、顺序、因果或外部效果，也不能形成`SHARED_ANCHOR`。`DOMAIN_SPECIFIC`与`SHARED_ANCHOR`保留为未来具备显式分类Authority时的更强证据；本次裁决不新增分类器。业务含义只可进入Step 06冻结的R0/R1/R2与P1/P2受限解释链。
+
 ### 1.2 五种材料永不混写
 
 | 标签 | 含义 | 可以进入最终正文吗 |
@@ -125,6 +127,8 @@ DepotHead 只是完整仓库中 `N` 个入口/FlowSlice 之一的讲解 fixture�
 8. M1 仍可发现 XML statement、table、column、placeholder/where 等静态结构，M2 仍可记录 Mapper Java→XML statement 的结构绑定；这些独立结构事实不得与第 7 点拼成“参数写入某列”或“criterion 进入某 where”的执行语义。
 
 因此目标结论只到“Java 在某控制上下文以这些已证明来源的参数调用此外部边界”。外部系统是否执行 SQL、更新 `jsh_depot_head.status`、采用 `WHERE id IN`，以及执行结果如何，统一保持 **UNKNOWN / GAP**；不能因为 Mapper/XML/SQL 字符串相似或 M2 结构绑定而成立。
+
+即使第5–8项的静态Java→Mapper→XML→SQL引用全部精确闭合，在没有显式业务分类Authority时也只形成generic/pending结构材料；它们不能把表名升级为业务对象或Step 06 `SHARED_ANCHOR`。
 
 ### 2.3 MODEL_INTERPRETATION 与 UNKNOWN
 
@@ -498,6 +502,8 @@ requested analysis-step-range completion、terminal analysis result、诊断结�
 
 `LocalGitCommitCaptureAdapter` 是显式维护 Adapter，不是 `RepositoryAnalysisAgent` 的第八个方法，也不在 analysis worker 内。它唯一允许接受主机路径：调用者给出本地 Git repository path 与小写完整 40-hex commit；Adapter 只按该 object ID 打开 commit/tree/blob objects，不读取 branch/ref、index、工作区文件、submodule 工作区、hooks、filters 或客户代码，也没有网络/fetch/promise-object fallback。v0实现固定使用本机Git CLI plumbing而不增加JGit依赖：Git executable先解析为受信absolute path，ProcessBuilder不经shell；每个子进程先`environment.clear()`，再只设置`LC_ALL=C`、`LANG=C`、`HOME=<private-empty-dir>`、`XDG_CONFIG_HOME=<private-empty-dir>`、`GIT_CONFIG_NOSYSTEM=1`、`GIT_CONFIG_GLOBAL=<private-empty-file>`、`GIT_NO_LAZY_FETCH=1`、`GIT_TERMINAL_PROMPT=0`、`GIT_OPTIONAL_LOCKS=0`、`GIT_PAGER=cat`、`PAGER=cat`。没有继承的`PATH`或其他ambient variable；`--git-dir=<NOFOLLOW-validated-absolute-git-dir>`与`--no-replace-objects`只作为固定argv传入。命令固定为`cat-file` raw bytes与NUL-delimited tree enumeration；不得调用alias、hook、filter、credential helper或pager。解析得到的git-dir及其object/config路径逐段NOFOLLOW验证；local config中的include/promisor/partial-clone/alternates相关设置、objects/info/alternates、replace/graft、shallow/missing object一律拒绝。任何命令前后对象库identity或安全检查漂移均使capture失败。
 
+后续固定jshERP Step 05验收可把`sourceanalysis.fixedRepositoryPath`指向同一批准commit `8c30ce7861570458920175e200bb2a6442713580`的独立、完整、非promisor离线Git对象副本。原partial/promisor仓库必须保持不变且不得作为capture输入；副本不得依赖alternates、lazy fetch或网络，也不得执行客户Maven、测试、脚本或应用。该许可不降低上一段capture校验。
+
 Adapter 递归枚举该 commit 的完整 tracked tree。tree 容器不计文件；`100644`/`100755` blob 是 regular-file denominator，每个 blob 均读取、算 SHA-256并原样安装到 content-addressed immutable snapshot。能严格解码为 UTF-8 且不含 NUL/禁用控制字节的 regular file 标为 `ANALYZABLE_TEXT`并建立line index；其余 regular file标为`NON_ANALYZABLE_MEDIA`，仍计数、验hash、保留bytes，但任何parser都不得打开它。`120000` symlink、`160000` gitlink/submodule或其他v0未知mode使整次capture fail closed；不得把它们记成media排除后继续。
 
 capture 原子产生 `snapshot-manifest.jsonl`、`capture-receipt.json`（`local-git-capture-receipt-v1`）和rootless `source-registration.json`（`source-registration-v1`），并把本机storage locator仅放进private registry。任一object缺失/损坏、commit不是exact 40-hex commit、unsupported tree entry或安装失败都不创建可用registration。分析调用者此后只传`sourceRegistrationId`与content-addressed request/ref；本地path不得进入run request、artifact、View、error或identity。
@@ -681,6 +687,8 @@ FlowInterpretation为每个model-eligible Flow建立隔离R0，再冻结唯一Re
 
 某入口无法闭合时可记录GAP disposition；0 Flow、0 Capsule仍可成为诚实的SUCCEEDED_WITH_GAPS并生成零R0/R1/R2/P1/P2任务。引用断裂、coverage不守恒、Capsule hash漂移或signal没有Fact/Proof/Evidence/source闭包为fatal。BusinessFlows全程程序化，LLM角色为零。
 
+完整Step 05出口要求全入口`COMPILED/GAP/EXCLUDED`守恒、每个COMPILED入口的Flow/Capsule双射和全部signal闭包；没有`DOMAIN_SPECIFIC`是合法结果，不是Gap或未决设计。无显式分类Authority时，精确表/字段/Mapper/XML链必须保持generic/pending，不能形成`SHARED_ANCHOR`。
+
 ## 9. 分析步骤“流程解释”：局部单Flow与有界跨Flow过程
 
 ### 为什么存在
@@ -704,6 +712,8 @@ FlowInterpretation为每个model-eligible Flow建立隔离R0，再冻结唯一Re
 9. M9发布十四份semantic及receipt。planned tasks=`E+2R+2S`；actual calls=`E+R+accepted local R1+S+accepted process P1`。每个`A` shard恰一process disposition，并作为Step 06-owned typed Gap的唯一carrier；R2/P2未运行仍有planned task与`NOT_RUN_UPSTREAM_FAILED`。
 
 信号等级是程序exact pair rule，不是模型评分：`PROVEN_HANDOFF`仅来自proof-closed的`EXPLICIT_CALL→exact entry target`、`IDENTIFIER_OUTPUT|RETURN_TRANSFER→IDENTIFIER_INPUT`、同non-generic key的`STATE_PRODUCTION→STATE_CHECK`或同event key的`EVENT_REFERENCE(PRODUCES)→EVENT_REFERENCE(CONSUMES)`；两端Step 05 positive signal都必须各自闭合到本Flow Fact→atom→Proof→Evidence→source。`SHARED_ANCHOR`只来自两Flow同`anchorKind+anchorKey`且`DOMAIN_SPECIFIC`的`BUSINESS_OBJECT_ANCHOR | JAVA_TYPE_ANCHOR | SQL_TABLE_ANCHOR | FIELD_ANCHOR | BUSINESS_IDENTIFIER_ANCHOR | OBJECT_REFERENCE`。`SEMANTIC_CUE`只来自程序在finite frozen Registry `BUSINESS_TERM`上按冻结entry-verb/state-word lexicon与同Capsule basis形成的`ProcessSemanticCueV1`，永远`PENDING_ONLY`；Step 05结构signal、裸状态、方法名或中文名不能直接映射到它。
+
+Step 05没有`DOMAIN_SPECIFIC`时M6正常跳过`SHARED_ANCHOR`配对；它不得把generic Java/Mapper/XML/SQL结构升级分类。业务对象与过程含义只能由冻结的R0/R1/R2和P1/P2合同提出、复核并保留pending，不能回写Step 05事实。
 
 M6为一对Flow枚举并持久化**全部**qualifying `ProcessRelationPositivePairBasisV1`，不选择“the pair”；support/cue IDs取完整union，最强等级取固定最大值，directed proven pairs全同向时才给方向，否则`UNDIRECTED`。`COUNTER_SIGNAL`包括两类`ProcessRelationCounterBasisV1`：对每个positive pair收集相同anchor/key或显式关联Gap的全部Step 05 blocking signal；以及两端完整、非空、Proof闭合的domain-specific `BUSINESS_OBJECT_ANCHOR | OBJECT_REFERENCE` anchorKey集合互斥时，为每个positive pair记录完整left/right signal集合的`DIFFERENT_BUSINESS_OBJECT`。有共同对象key不产生对象反证，对象不同也不能独立成边。relation `counterProcessJoinSignalIds`是全部counter bases的exact signal-ID union，`blockingCounterProcessJoinSignalIds`与之相等，claim两数组再取所绑relation的exact union。无法归属到任一完整positive basis时不挑first/min/max，而写typed `PROCESS_COUNTER_SCOPE_UNRESOLVED`并只允许pending。program-only pair/counter bases不进入path-free model view；模型只读既有aggregate字段。因此多个positive pairs、不同输入顺序下counter和Step 07 certainty都稳定。tenant/audit/log/generic utility及名称相似不能单独成边，外部效果无专门Proof始终为Gap。
 
@@ -3093,11 +3103,11 @@ plan 中每个 ReaderItem 有唯一 section owner。空章也使用 typed EMPTY_
 | JDK 17 Toolchain | **已实现（构建）** | 项目内Toolchain选择JDK 17，compiler release固定为17。 | 只约束Agent自身构建；不执行客户Maven，也不证明任一分析步骤。 |
 | 新wire头门禁 | **已实现（窄门禁）** | `AnalysisWireFormatGuard`只接受JSON对象头`wireKind=SOURCE_ANALYSIS`与`wireVersion=v1`，并以稳定`UNSUPPORTED_ANALYSIS_WIRE`拒绝顶层描述符元数据中的pre-reset path、编号stage、stage receipt/schema、旧Maven/Java package身份和wire alias；不扫描业务内容。 | 该guard明确把owner-specific descriptor验证留给未来实现；它不是canonical artifact store、schema registry或八步reader。 |
 | Canonical bytes、身份原语与artifact policy registry | **部分实现（多步骤持久化纵切）** | `CanonicalJsonCodec`、不可变bytes、typed identity/address、`CanonicalArtifactPolicyRegistry`、module store与analysis-step store已被当前inventory、discovery、ProgramGraphs、ProvenCodeFacts、BusinessFlows及local FlowInterpretation纵切使用；现有publishers可atomic receipt-last安装/fresh-reopen canonical payload，重算policy self-excluded ID、descriptor/root/receipt并拒绝碰撞、额外文件、符号链接与顺序错误。 | 尚无`CanonicalRunManifestStore`、NineSectionDocument archive/Markdown完整路径、生产root bootstrap、run runtime/public observation或完整跨八步执行；已支持的policy/schema集合不能外推到未实现步骤。 |
-| Local Git capture / 分析步骤“已验证源码清单” | **部分实现（capture、M1 writer与共享持久化预备）** | `LocalGitCommitCaptureAdapter`已在synthetic local Git repository上以exact commit、raw Git objects、text/media/100755 inventory和path-free registration验证一条私有快照安装链；symlink拒绝及工作区独立性已有定向测试。M1纯准入的结果现可作为canonical receipt-last module publication持久化和fresh reopen；M2/M3尚未由capture或M1 reader驱动，private source registry lookup、统一执行器和四项reader-visible正式输出仍不存在；没有任何jshERP capture或分析结果。 | 实现M1→M3的真实重新打开与analysis-step publish，再对完整固定commit做离线验收。 |
+| Local Git capture / 分析步骤“已验证源码清单” | **部分实现（capture、M1 writer与共享持久化预备）** | `LocalGitCommitCaptureAdapter`已在synthetic local Git repository上以exact commit、raw Git objects、text/media/100755 inventory和path-free registration验证一条私有快照安装链；symlink拒绝及工作区独立性已有定向测试。M1纯准入的结果现可作为canonical receipt-last module publication持久化和fresh reopen；M2/M3尚未由capture或M1 reader驱动，private source registry lookup、统一执行器和四项reader-visible正式输出仍不存在；没有任何jshERP capture或分析结果。用户已批准后续验收使用同commit的独立完整非promisor对象副本，原partial/promisor仓库保持不变。 | 实现M1→M3的真实重新打开与analysis-step publish，再以尚未创建/运行的独立完整离线副本做固定commit验收；不得联网补对象。 |
 | 分析步骤“应用发现” | **部分实现（M1–M4 有界纵切）** | `ApplicationProfileDetector`、`SpringHttpEntryDiscoverer`和`MapperCapabilityCataloger`只经已验证的冻结文本读取 POM/Java/XML；M4 会从三份 fresh-reopened module publication 原子安装`application-profile.json`、`entry-points.jsonl`、`mapper-catalog.jsonl`、`capability-report.json`及 receipt。小型 Spring MVC/MyBatis fixture 覆盖 class/method route、Mapper candidate、DOCTYPE/XXE 门和空入口 Gap；不执行客户 Maven 或模型。 | 尚未由正式运行核心驱动完整冻结客户仓库；全量 route/config/Mapper 变体、完整入口分母和固定 jshERP 离线验收仍未完成。 |
 | 分析步骤“程序图” | **部分实现（M1–M6 图构建与发布纵切）** | 在schema-valid frozen fixture上，结构、调用、控制、数据、证据五图以及index/Gap可作为独立canonical输出安装并重新打开；数据图把离开Java的调用保留为边界调用及Java参数，不推断外部系统效果。 | 尚未接通完整源码盘点、应用发现和真实jshERP全仓输入；不得把fixture绿色测试外推为完整仓库图。 |
 | 分析步骤“已证明代码事实” | **部分实现（v2 的 M1–M3 有界纵切）** | 当前`FactCandidateEnumerator`、`AtomicProofBuilder`与`FactLedgerPublicationSpecifier`能从重开的应用发现和完整五图建立Java boundary与`JAVA_GUARD_CONDITION` candidates，逐atom重验冻结源码span及图/规则closure，并原子安装/重开`proven-facts.json`、`proof-pack.json`、`gap-ledger.json`、`fact-accounting.json`；现有定向fixture覆盖`CONTROL_CONDITION` guard Fact及boundary Fact/Gap并存。 | 仍只覆盖当前有限Fact taxonomy/fixtures；完整客户仓库分母、完整规则/预算/mutation矩阵、正式运行核心接线和jshERP离线验收尚未完成。任何边界外SQL、消息或API效果仍必须保持Gap。 |
-| 分析步骤“业务流程” | **部分实现（M1–M3局部纵切）** | 已在双入口fixture编译entry-rooted Flow/Outcome/Capsule并发布五semantic+receipt；模型预算不足不会丢Flow。 | 当前schema/实现尚无`processJoinSignals`，也未在完整jshERP固定仓库运行；跨Flow目标先需Luna RED与Terra GREEN。 |
+| 分析步骤“业务流程” | **部分实现（M1–M3局部纵切）** | 已在双入口fixture编译entry-rooted Flow/Outcome/Capsule并发布五semantic+receipt；模型预算不足不会丢Flow。用户已确认完整出口不要求`DOMAIN_SPECIFIC`，没有业务表映射时static chain保持generic/pending。 | 当前schema/实现尚无`processJoinSignals`，也未在完整jshERP固定仓库运行；仍需signal cutover、固定仓库IT与全入口`COMPILED/GAP/EXCLUDED`闭包，但不再等待domain分类器。 |
 | 分析步骤“流程解释” | **部分实现（M1–M5有界纵切）** | scripted provider路径已覆盖单Flow R0/freeze/R1/R2的局部合同；不是完整analysis-step publication。 | M6–M9、P1/P2、五项过程semantic、15文件M9 publication、module/public registry pair隔离与真实provider均未实现。 |
 | 分析步骤“仓库知识” | **尚未实现** | `analysis.knowledge`仅有package骨架；没有local/process admission、merge、membership或coverage draft。 | 需零模型实现三值certainty、九过程数组、每Flow total membership和唯一knowledge。 |
 | 分析步骤“九章文档” | **尚未实现** | `analysis.document`、runtime、validation只有骨架；没有planner、renderer、Trace、Candidate、run manifest。 | 需PlanV4、process-first Chapter 4、五种process ReaderItem、TraceV4和八项出口；当前无生成Markdown。 |
@@ -3108,6 +3118,7 @@ plan 中每个 ReaderItem 有唯一 section owner。空章也使用 typed EMPTY_
 
 - Wire Reset后的前序步骤已有若干可重开纵切，但尚未完成跨Flow、仓库知识、九章、公开runtime与完整仓库run；
 - 当前代码没有对jshERP执行新主线，因此没有当前Flow、Capsule、RepositoryKnowledge或九章产物；
+- 独立完整对象副本与`DOMAIN_SPECIFIC`必要性已由用户裁决，不再是未回答的合同问题；该副本和固定仓库验收仍未实际运行，批准不等于实现或PASS；
 - 历史pre-reset的“Gap、0 Flow、0 Capsule”和POC语义审计只是实现新Proof/dataflow门禁的反例来源；
 - 后续Luna/Terra必须按八份详细设计逐步实现，不得把历史绿色测试写回成当前能力，也不得为复用旧类降低目标合同。
 

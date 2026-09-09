@@ -2,6 +2,8 @@
 
 本 Agent 的目标是把一份**完整冻结的** Java/Spring MVC/MyBatis 仓库快照，整理成可信、可追溯、明确写出未知项的**一份仓库级**九章 Markdown 候选。程序先盘点入口、建五图、证明Fact并为每个入口编译局部Flow/Capsule及证据支持的连接信号；流程解释保持单Flow R0/R1/R2，再以P1/P2这一唯一有界多Flow模型例外提出BusinessProcess。程序在零模型调用的仓库知识步骤完成准入、冲突保留和多对多membership，最终只生成一份`NineSectionPlan`、`document.md`、Trace和归档。
 
+固定jshERP的Step05完整出口要求全入口各自成为`COMPILED`、`GAP`或`EXCLUDED`，不要求出现`DOMAIN_SPECIFIC`。当前没有用户提供的业务表映射，因此精确的Java→Mapper→XML→SQL引用仍是`GENERIC_TECHNICAL`/待解释结构材料，不能证明业务对象、先后、因果或外部效果，也不能形成`SHARED_ANCHOR`；`DOMAIN_SPECIFIC`与`SHARED_ANCHOR`仍保留给未来具备显式分类Authority时的更强证据。业务含义只能由Step06既定的R0/R1/R2与P1/P2受限流程解释。
+
 DepotHead 八文件只是贯穿讲解和局部 fixture，不是产品分析范围。一个 Flow 成功、一个 shard 完成或一个局部 slice 可读都不能完成仓库分析；只有 `RepositoryCoverageLedger` 对完整仓库的文件、site、入口、图、Fact/atom、Outcome、Flow、解释、知识和 section owner 逐项闭合，才可产生完整分析结果。禁止一 Flow 一 Markdown，也禁止先渲染片段再拼接。
 
 目标设计权威是 [docs/DESIGN.md](docs/DESIGN.md)。当前代码和测试只验证或反驳目标的一部分，不能反向降低设计。
@@ -81,6 +83,8 @@ POC 记录位于 `docs/history/`，只用于历史审计，不属于阅读路线
 
 当前新实现尚未运行固定jshERP commit，因此不存在当前版的Flow、Capsule或九章结果。历史pre-reset审计曾得到“Gap、0 Flow、0 Capsule”，它只说明旧实现暴露过哪些证明缺口，不能冒充当前运行结果或当前能力。
 
+当前用户已确认后续固定仓库验收可改用同一批准commit的**独立、完整、非promisor离线Git对象副本**；原partial/promisor仓库保持不变，既不作为capture输入，也不通过网络补对象。该确认只关闭验收输入设计与`DOMAIN_SPECIFIC`必要性两个未决项：独立副本尚未在本工作单元创建或运行，Step04 v3、Step05 signal cutover、固定仓库IT和Step06跨Flow能力仍未交付。
+
 文档中的“提交补货申请→…→结算月度账单”仅是明确synthetic的跨Flow验收故事，永远不是jshERP行为。真实DepotHead材料也只证明静态入口、guard、ID与边界调用；没有专门Proof时，数据库、库存、账务、日志或配置效果均保持未证明。
 
 真实 walkthrough 固定为：
@@ -94,6 +98,8 @@ DepotHeadController.batchSetStatus
 ~~~
 
 源码里能看到这条路径，不等于当前程序已经证明整条路径。当前语义骨架尚未执行该样例；历史pre-reset审计暴露出的DepotHead dataflow/Facts缺口只作为后续目标验收的反例来源。
+
+即使未来对上述Java→Mapper→XML→SQL位置逐段建立精确静态引用，在没有显式业务分类Authority时，它们也只保持generic/pending；Step05不得借此声称DepotHead是某个业务对象、与另一Flow存在顺序或因果，或SQL已执行。
 
 ## 本地 Java 格式与构建检查
 

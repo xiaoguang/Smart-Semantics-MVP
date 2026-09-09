@@ -53,6 +53,13 @@
 - The user explicitly approved one read-only offline acceptance capture of
   `https://github.com/jishenghua/jshERP.git` at commit
   `8c30ce7861570458920175e200bb2a6442713580`.
+- The later fixed-repository Step 05 acceptance input may be a separately
+  prepared, independent offline Git object copy that is complete at that exact
+  commit. The copy must have no promisor/partial-clone configuration,
+  alternates, shallow boundary, or missing object. Keep the original
+  partial/promisor repository unmodified and do not pass it to capture; neither
+  preparing nor reading the accepted copy may use network access or execute
+  customer code.
 - Capture may populate only this Agent's ignored local workspace. Analysis
   consumes the generated immutable manifest, never `master` or a live working
   tree.
@@ -90,6 +97,16 @@
   end-to-end process across Flows, and the relationship is many-to-many.
   BusinessFlows emits evidence-backed `processJoinSignals`; signals are clues,
   never proof of sequence, causality, uniqueness, or an external effect.
+- No user-supplied business-table mapping exists for the fixed jshERP source.
+  Exact static Java-to-Mapper-to-XML-to-SQL references therefore remain
+  `GENERIC_TECHNICAL`/pending structural material: they do not prove a business
+  object, sequence, causality, or external effect and cannot form
+  `SHARED_ANCHOR`. Complete Step 05 acceptance requires every entry to be
+  `COMPILED`, `GAP`, or `EXCLUDED`; it does not require any
+  `DOMAIN_SPECIFIC` signal. Preserve `DOMAIN_SPECIFIC` and `SHARED_ANCHOR` for
+  a future explicit classification authority rather than inventing a
+  classifier now. Only Step 06's frozen R0/R1/R2 and P1/P2 safeguards may
+  interpret business meaning.
 - P1/P2 are the sole bounded multi-Flow model exception. They read only a
   program-built, recursively path-free `ProcessModelPacketV1`; path-bearing
   persisted group material is program-only. A P2 `REVIEWS` response may only
