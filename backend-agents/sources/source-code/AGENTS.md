@@ -81,11 +81,12 @@
   never invoke a live model, network source, API key, or customer build.
 - A live Luna task requires current explicit authorization, the logged-in
   Codex-session preflight, and one frozen task package.
-- The live Provider receives only the persisted EvidenceCapsule for
-  R0/R1/R2, or the program-built path-free `ProcessModelPacketV1` for P1/P2;
-  it never receives the raw repository or arbitrary source paths and cannot
-  create Facts or locators. Publishing this profile does not itself authorize
-  or perform a live invocation.
+- The live Provider receives only a `FlowReaderPacketV1` projected from one
+  persisted EvidenceCapsule for R0/R1/R2, or the program-built path-free
+  `ProcessModelPacketV2` for P1/P2; it never receives the raw repository,
+  arbitrary source paths, full audit records or controls and cannot create
+  Facts or locators. Publishing this profile does not itself authorize or
+  perform a live invocation.
 - For every eligible Flow, flow interpretation runs one isolated
   `R0_REGISTRY_PROPOSAL`. The program closes all R0 dispositions and freezes
   one `RepositoryInterpretationRegistry`; each R0-ready Flow then receives one
@@ -98,8 +99,22 @@
   process grouping and process-admission consideration and receive a local
   repository-knowledge technical fallback.
 - The same persisted EvidenceCapsule is the sole source-evidence input for a
-  Flow's R0/R1/R2. R0 may propose bounded business labels/purposes with
-  same-Capsule basis; it cannot create Facts, locators, Flows, or Markdown.
+  Flow's R0/R1/R2. The program keeps the complete Capsule, Fact/atom/Proof/
+  Evidence closure, artifact identities, receipts and controls; the Provider
+  sees only a deterministic **FlowReaderPacket** projection. It contains
+  packet-local keys, the activity, inputs, outcomes, conditions, states,
+  finite vocabulary, known limitations, and only the short excerpts plus
+  repository-relative file/line/symbol context needed to understand that one
+  Flow. It excludes SHA values, artifact/run/publication IDs, receipts, full
+  Proof/Evidence chains, archival metadata, provider controls, credentials,
+  host paths and raw repository bytes. A program-only binding maps every
+  packet-local key back to the complete Capsule material.
+- R0 may propose bounded business labels/purposes with same-Capsule basis; it
+  cannot create Facts, locators, Flows, or Markdown. M6/M7 retain the complete
+  Flow, Capsule, Fact, Gap, Outcome, signal, evidence-span/source-excerpt,
+  obligation, Registry, positive/counter relation basis, control-limit and
+  upstream-reference material even though those fields are not sent wholesale
+  to a model.
 - `Flow` is one entry-rooted local auditable activity; `BusinessProcess` is an
   end-to-end process across Flows, and the relationship is many-to-many.
   BusinessFlows emits evidence-backed `processJoinSignals`; signals are clues,
@@ -115,8 +130,8 @@
   classifier now. Only Step 06's frozen R0/R1/R2 and P1/P2 safeguards may
   interpret business meaning.
 - P1/P2 are the sole bounded multi-Flow model exception. They read only a
-  program-built, recursively path-free `ProcessModelPacketV1`; path-bearing
-  persisted group material is program-only. A P2 `REVIEWS` response may only
+  program-built, recursively path-free `ProcessModelPacketV2`; path-bearing
+  persisted group material and packet-key bindings are program-only. A P2 `REVIEWS` response may only
   decide KEEP, NARROW, DROP, or PENDING_CONFIRMATION per hypothesis, and every
   protected reference set is a subset of that same P1 hypothesis. The whole
   P2 task may instead return typed GAP or FAILED: preserve the P1 hypotheses
@@ -136,15 +151,27 @@
 - Once a Provider call starts, never retry it, switch provider, fall back to
   an API key, or resume it automatically. Fail the current run and preserve
   safe diagnostics.
+- Build and exercise model work progressively. First validate one isolated
+  FlowReaderPacket through R0/R1/R2; then validate the smallest eligible
+  ProcessModelPacket through P1/P2; only then advance through the remaining
+  deterministically sorted packets. Persist each task input, response,
+  receipt and disposition independently. A later packet failure preserves and
+  never replays an earlier verified packet; an uncertain started call remains
+  failed rather than retried. This is an internal module/publication rule, not
+  a sixteenth Step 06 reader-visible output.
 - Configured adapter identity, configured auth mode, expected runtime, and
   observed upstream provider are separate fields. Any missing or mismatched
   required identity fails closed.
 - The program, not the model, validates paths, locators, hashes, source facts,
   evidence references, section ownership, and final Markdown.
 - Each target module follows its analysis-step document. Luna/xhigh writes one
-  behavior-at-a-time RED tests against public seams and independent goldens;
-  Terra/xhigh begins after the expected RED and implements the smallest GREEN
-  vertical slice. Use only the listed targeted Maven selector.
+  behavior-at-a-time RED test against a public seam and independent golden,
+  then runs that exact selector and verifies the expected failure. Terra/xhigh
+  begins only after that RED, implements the smallest GREEN vertical slice,
+  formats the owned files, and reruns the same selector immediately. Do not
+  queue a batch of unrelated REDs, write a broad repair before observing its
+  failure, or postpone a module aggregate until a small behavior has become
+  green. Use only the listed targeted Maven selector.
 - Stop a slice when the expected RED cannot be established, required upstream
   data is absent, implementation conflicts with design, or schema/failure/
   model-boundary semantics would need to change. Record evidence and ask the

@@ -76,6 +76,14 @@ exact SHA、byte offset和列号在可获得时继续保存并校验；它们缺
 
 固定jshERP的Step 05完整出口以全入口处置和证据闭包为门：每个入口都必须恰为`COMPILED | GAP | EXCLUDED`，但不要求出现`DOMAIN_SPECIFIC`。当前没有用户提供的业务表映射，因此精确Java→Mapper→XML→SQL引用仍是`GENERIC_TECHNICAL`/pending静态结构材料，不能证明业务对象、顺序、因果或外部效果，也不能形成`SHARED_ANCHOR`。`DOMAIN_SPECIFIC`与`SHARED_ANCHOR`保留为未来具备显式分类Authority时的更强证据；本次裁决不新增分类器。业务含义只可进入Step 06冻结的R0/R1/R2与P1/P2受限解释链。
 
+### 1.1.2 模型读故事，程序保留审计链
+
+模型的工作是理解“这一段程序在业务上做了什么、几个局部活动可能怎样组成过程”，不是替程序校验hash、凭证、artifact或调用链。因此每次模型调用都使用一份小而干净的阅读包：单Flow包只给活动、输入、输出、条件、状态、有限业务词、已知限制，以及少量足以理解故事的源码摘录和文件/行段/符号；跨Flow包只给少量Flow、候选连接、反向材料和同样有限的摘录。
+
+阅读包使用`F01`、`R01`、`E01`之类的packet-local key。程序在包外保存这些key到完整Flow、Capsule、Fact、Proof、Evidence、Gap和Source的映射，并在接受回答时重新核对。模型看不到、也不能重写SHA、artifact/run/publication ID、receipt、完整Proof/Evidence链、archive、预算、认证、host路径或原始仓库字节。这样做的目的不是降低证据标准：完整审计链仍用于准入和Trace；只是避免无关技术细节挤占模型理解业务过程的上下文。
+
+模型执行按小包逐步扩大。先验证一个Flow的R0/R1/R2，再验证两个Flow的一组P1/P2，最后才处理规范排序后的其余包。每个包的输入、响应、receipt和disposition都独立持久化；后包失败不得重放已经确认的前包，已开始但结果不确定的调用仍按失败处理，绝不自动重试或换Provider。Step 06的详细字段与顺序见[流程解释 §6](analysis-steps/06-flow-interpretation.md#6-模型有界材料)。
+
 ### 1.2 五种材料永不混写
 
 | 标签 | 含义 | 可以进入最终正文吗 |
@@ -691,7 +699,7 @@ Fact rejection 和非阻塞 Gap 可以属于成功结果；Proof reference 断�
 
 ### 下游如何消费
 
-FlowInterpretation为每个model-eligible Flow建立隔离R0，再冻结唯一RepositoryInterpretationRegistry，为R0 READY的同一Flow建立有限key R1/R2；三轮都只读该Flow/Capsule。随后程序从全仓`processJoinSignals`编候选/group及全部ownership shards，只有model-safe shard的P1/P2可读取从path-bearing persisted material精确映射的path-free `ProcessModelPacketV1`。optional seed不能替代Capsule basis；P1/P2不能读目录、全图、未准入Fact、`SourceLocatorV1`、`SourceExcerptV1`或Path。相同冻结partition profile/budget下，调度、遍历与写盘顺序可变而candidate ownership、group coverage、任务闭包与canonical bytes不变；改变分片control时只保证candidate records/topology和逻辑group membership稳定，不保证因内嵌limits而变化的group ID或bytes。
+FlowInterpretation为每个model-eligible Flow建立隔离R0，再冻结唯一RepositoryInterpretationRegistry，为R0 READY的同一Flow建立有限key R1/R2；三轮都只读从该Flow/Capsule投影的干净`FlowReaderPacketV1`。随后程序从全仓`processJoinSignals`编候选/group及全部ownership shards，只有model-safe shard的P1/P2可读取从path-bearing persisted material精确映射的path-free `ProcessModelPacketV2`。完整审计链与reader key binding只留在程序侧。optional seed不能替代Capsule basis；P1/P2不能读目录、全图、未准入Fact、`SourceLocatorV1`、`SourceExcerptV1`、Path、hash或receipt。相同冻结partition profile/budget下，调度、遍历与写盘顺序可变而candidate ownership、group coverage、任务闭包与canonical bytes不变；改变分片control时只保证candidate records/topology和逻辑group membership稳定，不保证因内嵌limits而变化的group ID或bytes。
 
 ### 成功、Gap、fatal 与角色
 
@@ -707,7 +715,7 @@ FlowInterpretation为每个model-eligible Flow建立隔离R0，再冻结唯一Re
 
 ### 具体输入
 
-全量Flow/Capsule双射及`processJoinSignals`、eligibility分区、optional seed、R0/R1/R2/P1/P2严格schemas/prompt/runtime/partition budgets。局部round一次只取一对；P1/P2一次只取一个model-safe shard的path-free `ProcessModelPacketV1`，绝不接收path-bearing group material。DepotHead当前没有正式run结果；任何外部效果仍需专门Proof。
+全量Flow/Capsule双射及`processJoinSignals`、eligibility分区、optional seed、R0/R1/R2/P1/P2严格schemas/prompt/runtime/partition budgets。局部round一次只取一个`FlowReaderPacketV1`；P1/P2一次只取一个model-safe shard的path-free `ProcessModelPacketV2`，绝不接收path-bearing group material、审计控制或完整证明链。DepotHead当前没有正式run结果；任何外部效果仍需专门Proof。
 
 ### 工作步骤
 
@@ -1079,11 +1087,21 @@ RegistryProposalTask
 RegistryProposalInputV1
   schemaVersion=flow-interpretation-registry-proposal-input-v1
   kind=R0_REGISTRY_PROPOSAL_INPUT
-  flowSliceId, evidenceCapsuleId
-  capsuleView: ModelEvidenceCapsuleViewV1 // all fact/gap/outcome/span/obligation values from that Capsule
+  readerPacket: FlowReaderPacketV1         // the only local source projection visible to the Provider
   permittedProposalKinds[]
-  proposalLimits
-  seedEntries[]                            // required empty array when optional seed reference is null
+  responseShape
+
+FlowReaderPacketV1
+  packetKind=FLOW_READER
+  packetKey!                                // local, deterministic; never an artifact/Fact/Proof ID
+  entry!: {activity!, method!}
+  inputs[]!, outcomes[]!, conditions[]!, states[]!
+  knownLimits[]!, readerEvidence[]!, allowedTerms[]!
+
+FlowReaderKeyBindingsV1                     // program-only; never embedded in inputJson
+  packetKey!, localKeyBindings[]!
+  evidenceCapsuleId!, factIds[], proofIds[], evidenceNodeIds[], gapIds[], outcomePathIds[]!
+  sourceLocatorRefs[], obligationIds[], registryItemIds[]!
 
 BusinessRegistryProposal
   registryProposalId
@@ -1252,7 +1270,7 @@ ProcessMaterialLimitsV1
   maxFlows!, maxRelations!, maxSignals!, maxRegistryItems!
   maxInputBytes!, maxHypotheses!, maxClaimsPerHypothesis!, maxReaderSlots!
 
-BusinessProcessTaskShardV1
+BusinessProcessTaskShardV2
   taskShardId!
   shardOrdinal!                            // zero-based, contiguous within the group
   processEvidenceGroupId!
@@ -1260,108 +1278,61 @@ BusinessProcessTaskShardV1
   contextFlowSliceIds[]!                   // nonempty; may repeat read-only across shards
   shardModelDisposition!: MODEL_SAFE | NO_MODEL
   modelIneligibilityGapIds[]!              // empty iff MODEL_SAFE; nonempty iff NO_MODEL
-  processModelPacket?: ProcessModelPacketV1 // nonnull iff MODEL_SAFE
+  persistedMaterialSelection!: ProcessMaterialSelectionV1
+  processModelPacket?: ProcessModelPacketV2 // nonnull iff MODEL_SAFE
+  readerKeyBindings?: ProcessReaderKeyBindingsV1 // nonnull iff MODEL_SAFE; program-only
 
-ProcessModelPacketV1                       // only cross-Flow evidence packet visible to the model
-  schemaVersion!=flow-interpretation-process-model-packet-v1
-  packetKind!=PATH_FREE_PROCESS_EVIDENCE
-  processEvidenceGroupId!
-  ownerCandidateRelationIds[]!
-  contextFlowSliceIds[]!
-  flowViews[]!: ProcessModelFlowViewV1
-  relationViews[]!: ProcessModelRelationViewV1
-  registryItems[]!: ProcessModelRegistryItemViewV1
-  limits!: ProcessMaterialLimitsV1
+ProcessMaterialSelectionV1                 // program-only pointer set into ProcessPersistedMaterialV1
+  flowSliceIds[]!, candidateRelationIds[]!, registryItemIds[]!
+  factIds[]!, proofIds[]!, evidenceNodeIds[]!, gapIds[]!, outcomePathIds[]!
+  processJoinSignalIds[]!, counterSignalIds[]!, sourceLocatorRefs[], obligationIds[]!
 
-ProcessModelFlowViewV1
-  flowSliceId!, evidenceCapsuleId!, entryId!
-  factViews[]!: ProcessModelFactViewV1
-  gapViews[]!: ProcessModelGapViewV1
-  outcomePathViews[]!: ProcessModelOutcomePathViewV1
-  processJoinSignals[]!: ProcessModelJoinSignalViewV1
-  modelEvidenceSpans[]!: ProcessModelEvidenceSpanV1
-  projectionObligations[]!: ProcessModelProjectionObligationV1
+ProcessModelPacketV2                       // only cross-Flow evidence packet visible to the model
+  schemaVersion!=flow-interpretation-process-model-packet-v2
+  packetKind!=BUSINESS_PROCESS_READER
+  shardKey!                                 // local reader key, not taskShardId
+  flows[]!: ProcessReaderFlowV1
+  relations[]!: ProcessReaderRelationV1
+  allowedTerms[]!: ProcessReaderTermV1
+  readerEvidence[]!: ProcessReaderEvidenceV1
+  instruction!
 
-ProcessModelFactViewV1
-  factId!, kind!, subjectNodeIds[]!
-  atoms[]!: ProcessModelAtomViewV1
+ProcessReaderFlowV1
+  key!, activity!, inputs[]!, outputs[]!, conditions[]!, states[]!, knownLimits[]!
 
-ProcessModelAtomViewV1
-  atomId!, role!, name!, value!: {type!, canonical!}, proofId!
+ProcessReaderRelationV1
+  key!, fromFlowKey!, toFlowKey!, support!, counterEvidence[]!
 
-ProcessModelGapViewV1
-  gapId!, scope!: FLOW | OUTCOME | FACT | ATOM
-  reasonCode!, affectedSemanticIds[]!, evidenceRefs[]!: ArtifactReference
+ProcessReaderTermV1
+  key!, label!, purpose!
 
-ProcessModelOutcomePathViewV1
-  outcomePathId!, decisions[]!: ProcessModelBranchDecisionV1
-  terminalNodeId!, terminalKind!
-  terminalFactIds[]!, requiredAtomIds[]!, requiredProofIds[]!
+ProcessReaderEvidenceV1
+  key!, repositoryFile!, startLine!, endLine!, symbol!, excerpt?
 
-ProcessModelBranchDecisionV1
-  guardNodeId!, conditionAtomId!, polarity!, normalizedCondition!
-
-ProcessModelJoinSignalViewV1
-  processJoinSignalId!, flowSliceId!, signalKind!, anchorKind!, anchorKey!
-  direction!, specificity!, claimScope!
-  factIds[]!, atomIds[]!, proofIds[]!, evidenceNodeIds[]!
-  sourcePositions[]!: PathFreeSourcePositionV1
-  gapIds[]!
-
-ProcessModelRelationViewV1
-  candidateRelationId!, leftFlowSliceId!, rightFlowSliceId!
-  strongestSignalLevel!, direction!, relationUse!
-  supportingProcessJoinSignalIds[]!, processSemanticCueIds[]!
-  counterProcessJoinSignalIds[]!, blockingCounterProcessJoinSignalIds[]!
-  factIds[]!, proofIds[]!, evidenceNodeIds[]!
-  sourcePositions[]!: PathFreeSourcePositionV1
-  gapIds[]!
-
-ProcessModelRegistryItemViewV1
-  registryItemId!, provisionalKey!, flowSliceId!, evidenceCapsuleId!, proposalKind!
-  normalizedLabel!, normalizedPurpose!, basisAtomIds[]!, basisGapIds[]!
-
-PathFreeSourcePositionV1
-  fileId!, startByte!, endByteExclusive!
-  startLine!, startColumn!, endLine!, endColumn!
-
-PathFreeSourceExcerptV1
-  position!: PathFreeSourcePositionV1
-  rawUtf8!, rawUtf8Sha256!
-
-ProcessModelEvidenceSpanV1
-  spanId!, sourceExcerpt!: PathFreeSourceExcerptV1
-  supportedAtomIds[]!, supportedOutcomePathIds[]!, supportedProcessJoinSignalIds[]!
-
-ProcessModelProjectionObligationV1
-  obligationId!, kind!: ATOM_DIRECT_SEMANTICS | OUTCOME_TERMINAL | PROCESS_JOIN_SIGNAL_BASIS
-  semanticItemId!, satisfyingSpanIds[]!
+ProcessReaderKeyBindingsV1                 // program-only; never embedded in ProcessModelPacketV2
+  shardKey!, flowBindings[], relationBindings[], termBindings[], evidenceBindings[]!
+  completeMaterialRefs!: ProcessMaterialSelectionV1
 
 ProcessPromptMessageV1
   role!: SYSTEM | USER
   contentUtf8!
 
 ProcessP2AllowedReferencesV1
-  businessProcessHypothesisId!
-  memberFlowSliceIds[]!, candidateRelationIds[]!, processClaimIds[]!
-  factIds[]!, proofIds[]!, evidenceNodeIds[]!
-  supportProcessJoinSignalIds[]!, processSemanticCueIds[]!
-  counterProcessJoinSignalIds[]!, blockingCounterProcessJoinSignalIds[]!
-  gapIds[]!, registryOrTechnicalKeys[]!: RegistryOrTechnicalKeyV1
+  hypothesisKey!                           // P1 packet-local key
+  flowKeys[]!, relationKeys[]!, termKeys[]!, evidenceKeys[]!
+  claimKeys[]!, knownLimitKeys[]!
 
 ProcessP1HypothesisReviewInputV1
-  businessProcessHypothesisId!
-  p1SemanticProjection!
+  hypothesisKey!
+  p1ReaderProjection!                      // contains only packet-local keys and reader slots
   allowedReferences!: ProcessP2AllowedReferencesV1
 
-ProcessModelRequestV1
-  schemaVersion!=flow-interpretation-process-model-request-v1
+ProcessModelRequestV2                      // exact application bytes delivered to the Provider
+  schemaVersion!=flow-interpretation-process-model-request-v2
   requestKind!: PROCESS_P1_HYPOTHESIS_REQUEST | PROCESS_P2_PRECISION_REVIEW_REQUEST
-  taskShardId!, taskOrdinal!
-  processModelPacket!: ProcessModelPacketV1
-  promptBundleRef!, promptMessages[]!: ProcessPromptMessageV1
-  responseSchemaRef!, expectedRuntime!: ModelRuntimeIdentityV1
-  reviewedP1TaskId?, reviewedP1RoundId?
+  requestKey!, taskOrdinal!
+  processModelPacket!: ProcessModelPacketV2
+  promptMessages[]!: ProcessPromptMessageV1
   reviewedHypotheses[]!: ProcessP1HypothesisReviewInputV1
 
 ProcessModelTaskV1
@@ -1370,7 +1341,8 @@ ProcessModelTaskV1
   processModelTaskId!
   taskKind!: PROCESS_P1_HYPOTHESIS | PROCESS_P2_PRECISION_REVIEW
   taskShardId!, taskOrdinal!
-  request!: ProcessModelRequestV1
+  request!: ProcessModelRequestV2
+  promptBundleRef!, responseSchemaRef!, expectedRuntime!: ModelRuntimeIdentityV1 // program-side controls
   inputJsonSha256!                         // SHA-256(canonicalJson(request))
 
 ProcessModelRoundV1
@@ -1466,7 +1438,7 @@ ProcessInterpretationDispositionV2
   schemaVersion!=flow-interpretation-process-interpretation-disposition-v2
   artifactType!=FLOW_INTERPRETATION_PROCESS_INTERPRETATION_DISPOSITION
   processInterpretationDispositionId!
-  taskShard!: BusinessProcessTaskShardV1
+  taskShard!: BusinessProcessTaskShardV2
   executionKind!: MODEL_TASKS | NO_MODEL
   p1TaskId?, p1TaskDisposition?: ModelTaskDispositionV2
   p2TaskId?, p2TaskDisposition?: ModelTaskDispositionV2
@@ -1532,19 +1504,19 @@ GenerationReceiptV3
 
 `ProcessSemanticCueV1`两端registry item都必须是finite frozen `BUSINESS_TERM`并闭合到各自Capsule basis；`ENTRY_VERB`两端entry ref非null且命中冻结entry lexicon，`STATE_WORD`两端signal数组非空且命中冻结state lexicon，`REGISTRY_BUSINESS_TERM`则entry为null、state arrays为空。cue只能`PENDING_ONLY`。generation receipt恰一个scope字段非null。public hypothesis保存P2 KEEP/NARROW/PENDING以及P2 GAP/FAILED下未review的P1 hypothesis；DROP只在round/review/disposition计数。
 
-`positivePairBases[]`保存每条qualifying pair并按`(signalLevel,pairKind,anchorKind,anchorKey,direction,canonicalJson(fullBasis))`排序，`counterBases[]`按canonical bytes排序；两者只在program-only `ProcessCandidateRelationV2`，不进入`ProcessModelRelationViewV1`。aggregate support/cue/counter字段分别是bases的exact union，blocking=counter；direction只在所有directed proven pairs一致时采用该方向，否则`UNDIRECTED`。完整对象key集合都非空且互斥时，`DIFFERENT_BUSINESS_OBJECT` basis使用两端全部相关signal IDs；有共同key时不产生。由此多个positive pairs不会引入任意关联或不稳定certainty。
+`positivePairBases[]`保存每条qualifying pair并按`(signalLevel,pairKind,anchorKind,anchorKey,direction,canonicalJson(fullBasis))`排序，`counterBases[]`按canonical bytes排序；两者只在program-only `ProcessCandidateRelationV2`和持久化审计材料中，不进入`ProcessModelPacketV2`。模型只可看到由这些bases已经确定的简短关系支持或反向材料。aggregate support/cue/counter字段分别是bases的exact union，blocking=counter；direction只在所有directed proven pairs一致时采用该方向，否则`UNDIRECTED`。完整对象key集合都非空且互斥时，`DIFFERENT_BUSINESS_OBJECT` basis使用两端全部相关signal IDs；有共同key时不产生。由此多个positive pairs不会引入任意关联或不稳定certainty。
 
 `ProcessInterpretationGapV1.gapId`固定为`"gap:" + SHA-256(frame("flow-interpretation-process-gap-id-v1") || frame(canonicalJson(gap without gapId/taskShardId)))`的lowercase hex；只排除`gapId/taskShardId`，后填的taskShard仍进入完整disposition/artifact bytes。counter-scope、预算、P1 response FAILED、P2 response GAP/FAILED和P2 pending/precision review Gap分别使用详细设计§7.1的闭集code/scope/message与failure/limit nullable矩阵；所有affected IDs、Fact/Proof/Evidence/source locator和非空`searchedScopeRefs`都来自实际闭包。P1 FAILED固定使用`PROCESS_P1_HYPOTHESIS_FAILED/PROCESS_P1_RESPONSE`：P1 task ID唯一、hypothesis/claim为空、group/owner relation/context Flow及packet证据闭包精确，failure code与round逐字相等。每个Step 06-owned Gap恰在owner `ProcessInterpretationDispositionV2.processGaps[]`出现一次；其`gapIds`等于这些ID与所引upstream Gap IDs的exact union。relation自己的`gapIds`只含upstream Gap，counter-scope Gap通过affected relation ID反向定位，避免identity环。canonical carrier沿用`process-interpretation-dispositions.jsonl`，不新增第十六文件。
 
-每组至少一个`BusinessProcessTaskShardV1`，全部shard组成`A`；含model-ineligible Flow或无法在不截断原子Flow/relation的前提下形成安全packet的shard为`NO_MODEL`，packet为null且Gap非空，其他shard为`MODEL_SAFE`并组成`S`。每条candidate relation在全部`A`中恰一owner；每个shard恰一`ProcessInterpretationDispositionV2`。`NO_MODEL`的execution/disposition分别固定为`NO_MODEL/NO_MODEL_ADMISSION_PENDING`，P1/P2字段为null、proposed及六个outcome arrays为空且没有task/round/receipt。
+每组至少一个`BusinessProcessTaskShardV2`，全部shard组成`A`；含model-ineligible Flow或无法在不截断原子Flow/relation的前提下形成安全reader packet的shard为`NO_MODEL`，packet/binding为null且Gap非空，其他shard为`MODEL_SAFE`并组成`S`。每条candidate relation在全部`A`中恰一owner；每个shard恰一`ProcessInterpretationDispositionV2`。`NO_MODEL`的execution/disposition分别固定为`NO_MODEL/NO_MODEL_ADMISSION_PENDING`，P1/P2字段为null、proposed及六个outcome arrays为空且没有task/round/receipt。
 
 group `modelEligibility`只汇总member Capsules：全部eligible才是`MODEL_SAFE`/空Gap，否则是`MODEL_INELIGIBLE`并保存全部ineligible member Gap的规范union。它不替代shard判定；混合group的eligible-only atomic unit仍可model-safe，含ineligible endpoint的unit必须no-model。
 
 M7按group ID处理：组内每条按ID排序的relation是一个不可截断atomic unit，其两个endpoint是context；singleton无edge组有一个空owner/唯一member context unit。含ineligible context的unit各自成为no-model shard；其余units依次做deterministic greedy packing，只有加入完整unit仍满足全部Flow/relation/signal/registry/byte limits才合并，单unit超限则成为带预算Gap的no-model shard。owner IDs与endpoint context IDs取排序union，`shardOrdinal`在组内从0连续编号。因此同一partition controls下`A/S`和所有shard bytes唯一。
 
-`ProcessPersistedMaterialV1`含`SourceLocatorV1`和`SourceExcerptV1`，只能由程序审计。M7按shard context/owner集合精确选择records并投影packet：普通标量/ID/array/limits复制；Fact/Gap删除program-only origin artifact ref；Outcome只取catalog字段；JoinSignal/Relation的locator映射为`fileId+coordinates`的`PathFreeSourcePositionV1`；Evidence span映射为`PathFreeSourceExcerptV1(position,rawUtf8,rawUtf8Sha256)`；obligation/registry item只取catalog字段。不得引入新ID/text/evidence；request hash前递归拒绝字段名`path`、`SourceLocatorV1`或`SourceExcerptV1`值，失败码`PROCESS_MODEL_PACKET_PATH_LEAK`。
+`ProcessPersistedMaterialV1`含`SourceLocatorV1`和`SourceExcerptV1`以及完整Fact/Proof/Evidence/Gap/Outcome/signal/obligation/registry/relation-basis闭包，只能由程序审计。M7按shard context/owner集合精确选择records，先保存`ProcessMaterialSelectionV1`，再以确定性reader-key分配投影packet：每个Flow只给活动、输入/输出、条件、状态和限制；每个relation只给简短support/counter说明；每个term和证据摘录使用local key。repository-relative file/line/symbol和必要短摘录可见；真实ID、artifact reference、SHA、receipt、完整Proof/Evidence、预算、认证和host/path绝不复制。`ProcessReaderKeyBindingsV1`必须能从每个local key回到完整selection。不得引入新text/evidence；packet生成后递归拒绝`path`、`SourceLocatorV1`、`SourceExcerptV1`、hash/receipt/reference/control字段，失败码`PROCESS_MODEL_PACKET_PATH_LEAK`。
 
-Provider application request只允许`canonicalJson(ProcessModelRequestV1)`。每个model-safe shard的P1/P2 `taskOrdinal`分别固定为1/2。P1的两个review ref为null且reviewed array为空；P2两个ref都指向同shard terminal P1，reviewed inputs逐hypothesis保存其P1 semantic projection和由该hypothesis refs计算的allowlist。P1失败时planned P2 request的reviewed array为空并NOT_RUN。task/request kind、shard、ordinal逐字段相等。所有实际调用固定满足：
+Provider application request只允许`canonicalJson(ProcessModelRequestV2)`。每个model-safe shard的P1/P2 `taskOrdinal`分别固定为1/2；task保存真实shard/prompt/schema/runtime controls，request只用packet-local `requestKey`和reader keys。P1的reviewed array为空；P2逐hypothesis使用P1 reader projection和由该hypothesis reader keys计算的allowlist。P1失败时planned P2 request的reviewed array为空并NOT_RUN。task/request kind、packet-local ordinal与program-side task ordinal逐字段可核对。所有实际调用固定满足：
 
 ~~~text
 requestBytes = canonicalJson(processModelTask.request)
@@ -1574,7 +1546,7 @@ process disposition discriminator固定：safe shard当且仅当`executionKind=M
 | `ProcessCandidateRelationV2.candidateRelationId` | §7.1全部字段减排除列 | `candidateRelationId` | `leftFlowSliceId,rightFlowSliceId,positivePairBases,counterBases,supportingProcessJoinSignalIds,processSemanticCueIds,counterProcessJoinSignalIds,blockingCounterProcessJoinSignalIds,factIds,proofIds,evidenceNodeIds,sourceLocators,gapIds` |
 | `ProcessEvidenceGroupV2.processEvidenceGroupId` | §7.1全部字段减排除列 | `processEvidenceGroupId` | `memberFlowSliceIds,candidateRelations,processSemanticCues,supportingProcessJoinSignalIds,counterProcessJoinSignalIds,repositoryInterpretationRegistryItemIds,modelIneligibilityGapIds,persistedMaterial` |
 | `ProcessInterpretationGapV1.gapId` | §7.1全部字段减`gapId,taskShardId` | `gapId,taskShardId` | `processEvidenceGroupId,candidateRelationIds,businessProcessHypothesisIds,processClaimIds,processModelTaskIds,affectedFlowSliceIds,processJoinSignalIds,processSemanticCueIds,repositoryInterpretationRegistryItemIds,factIds,proofIds,evidenceNodeIds,sourceLocators,searchedScopeRefs,failureCode,limitKind,configuredLimit,observedValue,messageKey` |
-| `BusinessProcessTaskShardV1.taskShardId` | §7.1全部字段减排除列 | `taskShardId` | `processEvidenceGroupId,ownerCandidateRelationIds,contextFlowSliceIds,modelIneligibilityGapIds,processModelPacket` |
+| `BusinessProcessTaskShardV2.taskShardId` | §7.1全部字段减排除列 | `taskShardId` | `processEvidenceGroupId,ownerCandidateRelationIds,contextFlowSliceIds,modelIneligibilityGapIds,persistedMaterialSelection,processModelPacket,readerKeyBindings` |
 | `ProcessModelTaskV1.processModelTaskId` | §7.1全部字段减排除列 | `processModelTaskId` | `taskShardId,request`；`inputJsonSha256`必须是该request canonical bytes的hash，作为显式冗余完整性字段参与identity |
 | `ProcessHypothesisClaimV1.processClaimId` | §7.1全部字段减排除列 | `processClaimId` | `subjectKeys,predicateKey,objectKeys,memberFlowSliceIds,candidateRelationIds,supportProcessJoinSignalIds,processSemanticCueIds,counterProcessJoinSignalIds,blockingCounterProcessJoinSignalIds,factIds,proofIds,evidenceNodeIds,gapIds` |
 | `BusinessProcessHypothesisV2.businessProcessHypothesisId` | §7.1的P1 semantic content减排除列 | `businessProcessHypothesisId,p1RoundId,p2TaskId,p2RoundId,processHypothesisReviewId,finalReviewDecision` | `taskShardId,p1TaskId,processEvidenceGroupIds,memberFlows,businessRoleKeys,stageKeys,activityKeys,inputObjectKeys,outputObjectKeys,objectKeys,stateKeys,processClaims,conditionClaimIds,branchClaimIds,parallelClaimIds,alternativeClaimIds,fallbackClaimIds,candidateRelations,purposeClaimId,endResultClaimId,pendingAssumptionClaimIds,readerSlots` |
@@ -1583,7 +1555,7 @@ process disposition discriminator固定：safe shard当且仅当`executionKind=M
 | `ProcessModelRoundV1.processModelRoundId` | §7.1全部字段减排除列 | `processModelRoundId` | `processModelTaskId,businessProcessHypothesisIds,processHypothesisReviews,gapIds,generationReceiptId` |
 | `ProcessInterpretationDispositionV2.processInterpretationDispositionId` | §7.1全部字段减排除列 | `processInterpretationDispositionId` | `taskShard,p1TaskId,p1TaskDisposition,p2TaskId,p2TaskDisposition,proposedBusinessProcessHypothesisIds,retainedBusinessProcessHypothesisIds,narrowedBusinessProcessHypothesisIds,droppedBusinessProcessHypothesisIds,pendingBusinessProcessHypothesisIds,p2GapBusinessProcessHypothesisIds,p2FailedBusinessProcessHypothesisIds,processGaps,gapIds,failureRef` |
 
-无self ID的`ProcessRelationPositivePairBasisV1`、`ProcessRelationCounterBasisV1`、`ProcessPersistedMaterialV1`、`ProcessPersistedFlowViewV1`、全部`ProcessModel*ViewV1`、`ProcessModelPacketV1`、`ProcessModelRequestV1`、`ProcessP1HypothesisReviewInputV1`、`ProcessP2AllowedReferencesV1`、path-free source records、`ProcessMaterialLimitsV1`、`BusinessProcessFlowMemberV1`、`RegistryOrTechnicalKeyV1`、`HypothesisRelationBindingV1`、`ProcessClaimBoundSlotV1`和`ModelTaskDispositionV2`不单独计算identity；其完整规范值只参加上表明确拥有它的parent projection，且不得含parent/later ID。
+无self ID的`ProcessRelationPositivePairBasisV1`、`ProcessRelationCounterBasisV1`、`ProcessPersistedMaterialV1`、`ProcessPersistedFlowViewV1`、`ProcessMaterialSelectionV1`、`ProcessModelPacketV2`、`ProcessReader*V1`、`ProcessModelRequestV2`、`ProcessP1HypothesisReviewInputV1`、`ProcessP2AllowedReferencesV1`、`ProcessMaterialLimitsV1`、`BusinessProcessFlowMemberV1`、`RegistryOrTechnicalKeyV1`、`HypothesisRelationBindingV1`、`ProcessClaimBoundSlotV1`和`ModelTaskDispositionV2`不单独计算identity；其完整规范值只参加上表明确拥有它的parent projection，且不得含parent/later ID。
 
 唯一合法计算/物化顺序为：upstream Flow/Capsule/Fact/Proof/Evidence/Registry IDs → semantic cue → positive/counter bases与candidate relation → evidence group → counter-scope/budget Gap semantic IDs → task shard → 回填Gap taskShardId → P1 request/task/response/receipt → claim+hypothesis或同rank P1 failure Gap → P1 round → P2 request/task/response → P2 receipt与response/review Gap IDs → review（仅REVIEWS）→ P2 round → 回填published hypothesis later lineage → canonical Gap carrier与process disposition。no-model分支固定为`group → Gap ID（如有）→ shard → Gap taskShardId → disposition`。review/round可引用Gap ID，Gap ID不引用review/round；relation只引用upstream Gap，所以全图无环。
 
@@ -2952,7 +2924,7 @@ Schema 演进 fail closed：字段名、类型、必填/可空、来源规则、
 4. 数据流只在 frozen Java 内逐段保存 definition/use/argument/property binding；调用离开 frozen Java 时必须以通用 boundary invocation 截断。Mapper/Kafka/ES/HTTP/Redis/event/client/library 等不得形成技术专用边界语义；其外部效果不可证明，外部返回被 Java 使用时只能记录 unknown boundary-return source 与 Java use。
 5. Evidence graph 证明“图从何而来”；Proof 证明“这些图和字节为什么支持这个 atom”；Trace 只负责查询链，三者不互相冒充。
 6. EvidenceCapsule 是模型阅读投影，不是 ProofPack。
-7. 分析步骤“流程解释”的R0只提出有Capsule basis的词/claim/question，程序冻结唯一registry，R1/R2只在同Flow finite keys中选择。P1/P2是唯一多Flow模型例外，只读path-free `ProcessModelPacketV1`；只有P2 `REVIEWS`逐hypothesis可为KEEP/NARROW/DROP/PENDING_CONFIRMATION且所有受保护refs为对应P1 subset，整个P2 task另可typed GAP/FAILED并保留实际round/receipt、P1 hypotheses和canonical Gap但没有review/admission。五类round共用typed generation receipts，但不能混用task kind；task/round/receipt request和response hashes必须满足exact equality。
+7. 分析步骤“流程解释”的R0只提出有Capsule basis的词/claim/question，程序冻结唯一registry，R1/R2只在同Flow finite keys中选择。模型实际读取的是从Capsule投影的`FlowReaderPacketV1`，P1/P2是唯一多Flow例外，只读path-free、packet-local的`ProcessModelPacketV2`；只有P2 `REVIEWS`逐hypothesis可为KEEP/NARROW/DROP/PENDING_CONFIRMATION且所有受保护reader keys为对应P1 subset，整个P2 task另可typed GAP/FAILED并保留实际round/receipt、P1 hypotheses和canonical Gap但没有review/admission。五类round共用typed generation receipts，但不能混用task kind；task/round/receipt request和response hashes必须满足exact equality。
 8. renderer永远只有一个plan输入：NineSectionDocument M2读取M1的verified plan-draft module payload；run完成后的外部rerender/validator读取语义等价的public `nine-section-plan.json`。两条路径都不得读取source、Proof、registry或model response。
 9. `N`个Flow精确产生`N`个Capsule。令`E`为eligible、`R`为R0 READY、`C`为candidate edges、`G`为覆盖全部Flow的groups、`A`为全部ownership shards、`S⊆A`为model-safe shards。局部task=`E+2R`，过程task=`2S`，planned总数=`E+2R+2S`，actual calls=`E+R+accepted local R1+S+accepted process P1`；每planned task恰一task disposition，每个`A` shard恰一process disposition，每edge在`A`上恰一owner。ineligible Flow局部任务为0但仍进入group/no-model shard/membership。RepositoryKnowledge只对全部Flow作local total admission，并对P2-reviewed retained/narrowed/pending hypotheses作process admission；dropped、P1 terminal、P2 GAP/FAILED和no-model owner relations进入typed reasoned exclusions而不获certainty，最终仍精确产生1 knowledge；NineSectionDocument精确产生1 plan和1 document。
 10. Markdown 只能由仓库级 plan 一次渲染；不得先生成 per-Flow Markdown、再做文本拼接或让 renderer 读取多个 fragment。
@@ -2983,7 +2955,7 @@ Profile 至少固定：
 - 所有tracked regular files均验size/SHA并进入coverage；`NON_ANALYZABLE_MEDIA`保留bytes与identity但不给parser。symlink、gitlink/submodule和未知Git mode在capture时fail closed。
 - 所有路径逐段 NOFOLLOW；普通文件在分配前做 size gate，读取后复查；目录在收集 limit+1 前停止。
 - MyBatis DOCTYPE 可以存在，但 external DTD、general/parameter entity、schema 和所有网络 resolver 必须禁用；无法执行策略即 fatal。
-- R0/R1/R2只看到单Flow Capsule canonical JSON；P1/P2只看到程序从path-bearing persisted material精确投影的path-free `ProcessModelPacketV1`，且唯一application request是`ProcessModelRequestV1` canonical JSON。源码中的prompt injection只是evidence data。
+- R0/R1/R2只看到从单Flow Capsule投影的`FlowReaderPacketV1`；P1/P2只看到程序从path-bearing persisted material精确投影的packet-local、path-free `ProcessModelPacketV2`，唯一application request是`ProcessModelRequestV2` canonical JSON。完整Capsule、Proof/Evidence、ID/hash/receipt/control永远留在program-side binding；源码中的prompt injection只是evidence data。
 - R0 label/purpose 是不可信 JSON data：NFC、控制字符和双向覆盖检查、长度/字节/basis闭包都由程序执行；它们绝不成为 prompt 指令、Fact、locator、Flow 或 Markdown。可选组织 seed 只有被 R0 明确 `sourceSeedKey` 引用、值逐字段相等且同一 Capsule basis 非空时才可进入冻结 registry。
 - configuredAdapterId、configuredAuthMode、expected/observed upstream provider、model、reasoning effort、sandbox 分字段记录。
 - `RepositoryAnalysisAgent` 的 artifact/trace 查询只接受 run 与 typed identity；Java API、CLI 与 loopback HTTP 都不得接受或回显主机 `Path`。HTTP 只绑定 loopback 且每个请求校验 run-scoped bearer capability；inspect/artifact/render/validate/trace 不调用 Provider、不执行客户代码。
@@ -3037,7 +3009,7 @@ Profile 至少固定：
 | 分析步骤“程序图” 恰有五张一等图；分析步骤“已证明代码事实” 的 Fact 必须逐 atom CLOSED Proof | 不用 repository blob、文件顺序、字符串相似或模型判断代替 graph/Proof |
 | 每个 compiled entry 恰一个入口根 Flow，每个 Flow 恰一个 Capsule，多个终点是 Outcomes | 不按终点拆 Flow，不让模型自行找入口、分支或补源码 |
 | 目标范围是完整冻结仓库；DepotHead 只是一条 walkthrough/fixture | 不把八文件 BOUNDED_PATH_SET、单入口或单 Flow PASS 当 repository completion；不得因分片/预算静默降覆盖 |
-| LLM只在分析步骤“流程解释”：R0/R1/R2只读单Flow Capsule；P1/P2是唯一多Flow例外且只读path-free `ProcessModelPacketV1`；Step 07程序最终准入 | 不把path-bearing persisted material送给模型，不让模型创建Fact/locator/Flow/edge/Markdown，不允许P2逐hypothesis扩张、开放事实总结、模型自批或后续步骤补调模型 |
+| LLM只在分析步骤“流程解释”：R0/R1/R2只读单Flow `FlowReaderPacketV1`；P1/P2是唯一多Flow例外且只读packet-local、path-free `ProcessModelPacketV2`；Step 07程序最终准入 | 不把path-bearing persisted material、完整Proof/Evidence、artifact/run ID、hash/receipt/control送给模型，不让模型创建Fact/locator/Flow/edge/Markdown，不允许P2逐hypothesis扩张、开放事实总结、模型自批或后续步骤补调模型 |
 | 每个 eligible Flow 恰一个隔离 R0 task/disposition；全部R0 dispositions闭合后恰一 frozen RepositoryInterpretationRegistry；R0 READY 才恰有R1/R2 tasks | 不从组织seed直接绕过R0，不在registry freeze前编R1/R2，不省略`E+2R` planned tasks；started Provider调用失败时当前run失败且不自动重试/切换 |
 | 程序从evidence-backed signals编`C`候选边/`G`覆盖组/全部`A`个ownership shards，`S⊆A`才有`2S`个P1/P2 tasks；每edge在`A`中恰一owner，每shard恰一process disposition | 不用tenant/audit/log/generic utility/名称相似单独连边，不让信号等同顺序/因果，不把no-model shard从分母删除，不省略`NOT_RUN_UPSTREAM_FAILED` |
 | `N`Flow→`N`Capsule；全部Flow有local total decision，只有P2-reviewed retained/narrowed/pending hypotheses有process decision/certainty，P1/P2 terminal与no-model分支有typed exclusions；Flow属于process/independent/explicit-Gap unassigned → 恰1 knowledge → 恰1九章plan/document | 不为P2 GAP/FAILED或NOT_RUN伪造admission/certainty，不一Flow一Markdown，不把Flow强制一对一映射到BusinessProcess，不丢冲突/alternative/pending |
@@ -3058,14 +3030,14 @@ Profile 至少固定：
 
 目标实现采用固定 Agent handoff，不把设计选择留给实现 Agent：
 
-1. **Luna/xhigh 写 RED**：只对一个模块的 public Interface/record/artifact seam 写测试；从 detailed analysis step doc 的 fixture、independent expected values 和 failure code 构造一个行为一个 RED。golden 手写自合同/冻结输入，禁止由待测 production code 或生成器反推。
-2. **Terra/xhigh 做 GREEN**：只有观察到该 RED 因预期缺失能力失败后，才能修改模块拥有的 production package。按 artifact schema、确定性算法、identity、Gap/fatal 和显式artifact输入顺序做最小 vertical slice；不得顺手扩 schema、兼容错误旧设计或从未声明analysis step重读数据。
+1. **Luna/xhigh 写 RED**：只对一个模块的 public Interface/record/artifact seam 写测试；从 detailed analysis step doc 的 fixture、independent expected values 和 failure code 构造一个行为一个 RED。必须先运行该行为的直接selector，确认它因预期缺失能力失败；golden 手写自合同/冻结输入，禁止由待测 production code 或生成器反推。不得积攒一批RED、等很久后再一起定位。
+2. **Terra/xhigh 做 GREEN**：只有观察到该 RED 因预期缺失能力失败后，才能修改模块拥有的 production package。按 artifact schema、确定性算法、identity、Gap/fatal 和显式artifact输入顺序做最小 vertical slice；格式化后立刻重跑同一selector。不得顺手扩 schema、兼容错误旧设计、从未声明analysis step重读数据，或把小问题拖到后续模块aggregate才发现。
 3. **Sol/xhigh 只调试异常**：仅当 RED 不是预期原因，或同一 slice 在两次有根据的 GREEN 修订后仍失败时介入。Sol 查明实现/fixture/环境根因，但无权改合同；合同确需变更时先停下并更新详细设计/version。
-4. 每个 GREEN 后只运行该模块 selector 和直接跨模块 contract selector；不得运行 full suite，除非当次用户显式要求。测试/实现 Agent 均禁止网络、live Provider、客户 Maven/Gradle、客户代码执行、生成器和部署。
+4. 一个微循环GREEN后才可开始下一条RED；每个模块结束时才运行该模块 selector 与直接跨模块 contract selector。不得运行full suite，除非当次用户显式要求。测试/实现 Agent 均禁止网络、live Provider、客户 Maven/Gradle、客户代码执行、生成器和部署。
 
 本目标的唯一 Design Authority 是 **gpt-5.6-sol / ultra（Sol/ultra Design Authority）**。Sol/xhigh 是受限 debug 角色，不得替代 Sol/ultra 作架构裁决；Luna/xhigh、Terra/xhigh 和 Sol/xhigh 都不能自行改 durable design。
 
-跨Flow工作沿用同一纪律：Luna/xhigh拥有RED、bounded读取、R0/R1/R2/P1/P2、review与reader-slot验证；Terra/xhigh只能在设计和对应RED冻结后写production；Sol/xhigh只做可复验root-cause debug。任何contract/schema不确定先交Sol/ultra；任何八步、九章、跨步骤identity、57总数或模型边界变化必须STOP并交用户。默认只运行scripted provider；live Luna调用需单独授权与preflight，绝无API fallback。
+跨Flow工作沿用同一纪律：Luna/xhigh拥有RED、bounded读取、R0/R1/R2/P1/P2、review与reader-slot验证；Terra/xhigh只能在设计和对应RED冻结后写production；Sol/xhigh只做可复验root-cause debug。模型包也按微循环扩大：一个FlowReaderPacket先于两Flow ProcessModelPacket，验证过的packet input/response/receipt/disposition独立持久化，后包失败不得使前包重放。任何contract/schema不确定先交Sol/ultra；任何八步、九章、跨步骤identity、57总数或模型边界变化必须STOP并交用户。默认只运行scripted provider；live Luna调用需单独授权与preflight，绝无API fallback。
 
 新目标模块的拥有范围固定为八个语义根：`org.sourceanalysis.app.analysis.inventory`、`.discovery`、`.graph`、`.fact`、`.flow`、`.interpretation`、`.knowledge`、`.document`。模块类留在其所属语义根内；不得派生编号、`common`、`shared`、`misc`或`utils`包。源码捕获属于`org.sourceanalysis.app.capture.localgit`；持久化wire/store、源码证据、运行编排、独立验证分别属于`org.sourceanalysis.app.artifact`、`.evidence`、`.runtime`、`.validation`；Adapter只属于`.adapter.cli`、`.adapter.http`、`.adapter.provider`。tests镜像生产package，冻结fixtures/goldens位于`src/test/resources/analysis/<semantic-package>/<module-key>/`，validator fixture位于`src/test/resources/validation/run-validator/`。未来数据库根保留为`org.sourceanalysis.db.analysis`，本设计不创建数据库代码。
 
