@@ -256,7 +256,7 @@ atom value使用8.1 typed union；静态unknown不允许story value，必须使a
 
 ### 8.0.2 已批准的最小后继合同：`JAVA_EXACT_CALL`（v3）
 
-本小节冻结 eventual cross-Flow compiler 所需的最小上游增量；它不把当前v2的boundary/guard纵切改写成“已实现”。v3在同一四个公开文件内增加一个且仅一个Fact family：`JAVA_EXACT_CALL`。它只证明“某entry拥有的Java call-site经已持久化EXACT call edge指向同一ProgramGraphs publication中的`METHOD`”，不证明target有具体body、调用成功、外部效果、业务顺序或domain specificity。interface/abstract method只要是冻结CodeStructure中的`METHOD`且call edge为EXACT，仍属于本family；unresolved/ambiguous call没有EXACT `CALL_TARGET`，继续只由Step 03 Graph Gap表达。
+本小节冻结 eventual cross-Flow compiler 所需的最小上游增量；它不把当前v2的boundary/guard纵切改写成“已实现”。v3在同一四个公开文件内增加一个且仅一个Fact family：`JAVA_EXACT_CALL`。它只证明“某entry拥有的Java call-site经已持久化EXACT call edge指向同一ProgramGraphs publication中的`METHOD`”，不证明target有具体body、调用成功、外部效果、业务顺序或domain specificity。固定jshERP没有用户提供的业务表映射；即使Java→Mapper→XML→SQL静态引用分别闭合，也只形成generic/pending结构材料，不能证明业务对象或形成`SHARED_ANCHOR`。Step 05完整出口不要求`DOMAIN_SPECIFIC`；业务含义只能由Step 06冻结的R0/R1/R2与P1/P2解释。interface/abstract method只要是冻结CodeStructure中的`METHOD`且call edge为EXACT，仍属于本family；unresolved/ambiguous call没有EXACT `CALL_TARGET`，继续只由Step 03 Graph Gap表达。
 
 **M1 exact join及wire。** `FactCandidateEnumerator`对每个Call graph `CALL_SITE` node，按其`owningEntryIds`与ApplicationDiscovery/五图共同entry分母的交集逐entry枚举；每个实例必须命中恰一条`kind=CALL_TARGET,resolution=EXACT,ruleId=java-static-field-receiver-call-v1`且`fromNodeId=callSiteNodeId`的edge，并且`toNodeId`命中CodeStructure `kind=METHOD` node。METHOD `canonicalValue`必须恰为`<staticTargetType>#<staticTargetMethod>(<parameter-types>)`：取第一个`#`前的完整串为type、`#`后第一个`(`前的完整串为method、`#`后至末尾（含括号）为signature；不trim、不case-fold、不按simple name匹配。candidate denominator key固定为`entryId + "|" + callTargetEdgeId + "|JAVA_EXACT_CALL"`。同一call-site合法被多个entry拥有时逐entry产生独立candidate，绝不能要求`owningEntryIds=[entryId]`。
 
