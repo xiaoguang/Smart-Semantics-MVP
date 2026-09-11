@@ -1,6 +1,6 @@
 # 代码清理与可扩展活动覆盖设计（APPROVED DESIGN）
 
-> 状态：**APPROVED DESIGN / implementation not started**。用户已批准本文的清理范围，以及“合法但漏项的 DRAFT 进入唯一 REVIEW”和“REVIEW 以 required `unexplainedEntries` 闭合并把具体入口送到第 9 章”两项行为变化。本轮只同步设计，不删除或修改 Java、测试、resource Prompt、配置或 schema JSON，不运行 Maven、产品模型或客户源码扫描，不提交、不推送。
+> 状态：**APPROVED DESIGN / implementation in progress**。用户已批准本文的清理范围，以及“合法但漏项的 DRAFT 进入唯一 REVIEW”和“REVIEW 以 required `unexplainedEntries` 闭合并把具体入口送到第 9 章”两项行为变化。`fc6d67b` 是已推送的实施基线；后续工作按当前[实施衔接](coherent-code-context-implementation-plan.md)执行 TDD、定向 Maven 和交付提交。本文定义目标合同，不把尚未落地的 Java、resource、schema 或真实验证写成现状。
 
 ## 1. 结论
 
@@ -399,7 +399,7 @@ PARTIAL 变体把 E3/E4 放入 `unexplainedEntries`。Process repository input �
 | 四入口九章闭环 | `PersistedBusinessRunExecutorTest` | 完整 activity 字段→保守 process→固定九章，renderer 不缩水 |
 | 零入口 | `BusinessMaterialBuilderZeroEntryTest` 和直接 workflow/report test | Activity/Process Provider 为 0；显式报告仍走既有 DRAFT+REVIEW；九章语义验收 INCOMPLETE |
 
-未来只串行运行新增或直接覆盖变更的 selectors。POM 的 UT skip 与 IT opt-in 并不构成统一自动验收；live IT 只能在新的明确授权、相容 profile、命名样本和保存输入/response 条件下显式运行，且不能重放旧四入口失败。本轮不运行 Maven、产品模型或客户扫描；只读文件/Git 检查已用于事实核对。
+未来只串行运行新增或直接覆盖变更的 selectors。POM 的 UT skip 与 IT opt-in 并不构成统一自动验收；live IT 仅可按实施衔接 Task 7 的精确新候选、相容 profile、登录状态预检和保存输入/response 条件显式运行，且不能重放旧四入口失败。客户扫描与整仓模型运行仍不属于本次清理验收。
 
 ## 11. 文档同步、持久化缺口与旧工作树保护
 
@@ -432,4 +432,4 @@ PARTIAL 变体把 E3/E4 放入 `unexplainedEntries`。Process repository input �
 4. **独立缺口、本次不解决：**Activity/Process 每包即时 checkpoint；固定地址不能循环安装不同内容，必须另行设计聚合/分片语义，不能借清理扩成恢复系统。
 5. **需另行明确授权：**受保护旧主 worktree 的 stage01–04 后续如何处置；本次只记录，不删除、不清理。
 
-设计批准只允许把这些要求交给后续 TDD 实施，不构成修改 Java/test/resource/schema、真实 Provider、客户扫描、全套测试、提交或推送授权。
+本设计已进入用户授权的 TDD 实施：仅包含本文及实施衔接列出的 Java/test/resource/schema、定向验证、提交/推送和一次单材料真实 Activity 验证。它不授权客户扫描、客户构建、全套测试、整仓真实模型运行或 API-key fallback。

@@ -76,7 +76,9 @@ Luna/high 接收一个完整 material package，解释目的、参与者（有�
 
 目标 v2 把校验分成两层：DRAFT 的 JSON、字段、文本/数组、local ID、key/ref allowlist 和 output bytes 必须全部合法；只有 `draftCoveredKeys != expectedKeys` 不再在 REVIEW 前 fatal。程序计算 `missingEntryKeys=expectedKeys-draftCoveredKeys`，将它与完整实际 DRAFT 交给唯一 REVIEW。REVIEW 响应 shape 为 `{activities, unexplainedEntries}`；`unexplainedEntries` 字段 required，允许 `[]`，禁止 null/省略，只能包含本包唯一 key。最终要求 `coveredKeys ∪ unexplainedEntries = expectedKeys` 且交集为空；否则 `ACTIVITY_REVIEW_INVALID` fatal。
 
-模型响应的 `unexplainedEntries` 只含 local keys。程序根据 material 映射生成 `ActivityExplanationResult.unexplainedActivityEntries: List<UnexplainedActivityEntry>`，并在 `activity-coverage.json` v2 顶层同名数组保存 `{entryId, materialId, entryKey, materialContext, reasonCode}`；`reasonCode` 固定 `MODEL_NOT_EXPLAINED`。这两个数组名称和所属对象不同，不能把模型 key 数组反序列化为 sidecar record。`materialContext` 逐字来自现有 `modelPacket.context()`；不凭空添加 EntryDescriptor，不正则解析中文 context。
+模型响应的 `unexplainedEntries` 只含 local keys。程序根据 material 映射生成 `ActivityExplanationResult.unexplainedActivityEntries: List<UnexplainedActivityEntry>`，并在 `activity-coverage.json` v2 顶层同名 required 数组保存 `{entryId, materialId, entryKey, materialContext, reasonCode}`；`reasonCode` 固定 `MODEL_NOT_EXPLAINED`。这两个数组名称和所属对象不同，不能把模型 key 数组反序列化为 sidecar record。`materialContext` 逐字来自现有 `modelPacket.context()`；不凭空添加 EntryDescriptor，不正则解析中文 context。记录保存完整列表，`missingEntryKeys` 与后续 `unexplainedEntryKeys` 按原材料入口映射排列，不能用词典序把 E10 放在 E2 前。
+
+`ActivityExplanationResult` 的便利构造器可为新列表提供 `List.of()`；canonical v2 reader 必须要求 `unexplainedActivityEntries` 存在且为数组，空列表写 `[]`，不得将缺失/null 或旧 coverage v1 自动解释为空。ActivityExplainer 的 Module version 升到 v2，地址仍为 `FLOW_INTERPRETATION/11/activity-explainer`；DRAFT/REVIEW Prompt 切到 v2，`flow-interpretation-activity-coverage-v2` 与 engine、policy fixture、publisher/reader、版本测试同步。完整 ReviewedActivity shape 未变，`flow-interpretation-activity-explanations-v1` 保持 v1。
 
 以下为**目标活动投影，不是当前产品生成结果**：
 
@@ -109,12 +111,12 @@ Java 只校验结构、scope-local IDs/refs、集合闭合、预算与保存约�
 | 文件 | 内容 | 下一消费者 |
 | --- | --- | --- |
 | business-materials.jsonl | 一至多个相关入口的完整技术上下文、源码短 ref 映射、材料/入口关系与限制 | ActivityExplainer、ProcessExplainer 必要回查 |
-| activity-explanations.jsonl | 每份完成 REVIEW 的完整活动，不压缩为标题 | ProcessExplainer、报告章节材料 |
+| activity-explanations.jsonl | v1，每份完成 REVIEW 的完整活动，不压缩为标题 | ProcessExplainer、报告章节材料 |
 | activity-coverage.json | 全入口与材料的分析处置、未启动原因、容量限制；目标 v2 顶层 `unexplainedActivityEntries` 保存程序侧完整 records | Step07、Step08 与 inspect |
 
 目标是完成一个包 REVIEW 随即保存，后续包失败不删除已有结果；当前 ActivityExplainer 实际在循环结束后才以固定地址聚合 publish。把 publisher 移进循环会用同一地址安装不同 bytes 并 collision，因此即时逐包保存仍是独立已知缺口，本次覆盖修复保持现有聚合 publication，不假称解决，也不新增分片/恢复协议。DRAFT/REVIEW 原始执行材料按现有私有审计策略保存，不作为额外产品候选，不新增逐记录状态机或修复账本。
 
-Step07 可以按已保存 material/activity ID 读取必要内容，不回到扫描仓库或重构调用链。程序送给 Process/Report 模型前按 `materialId` 将完整 sidecar records 聚合成一项 `{materialContext, unexplainedEntryKeys, reasonCode}`：同一 context 只发送一次，删除 material/global entry IDs。活动之间是否属于同一过程由模型阅读多个活动决定，不由 Step06 强设唯一 owner。
+Step07 可以按已保存 material/activity ID 读取必要内容，不回到扫描仓库或重构调用链。`RepositoryBusinessKnowledge.unexplainedActivityEntries` 持有并保存完整记录。程序送给 Process 仓库总整理/Report 模型前按 `materialId` 将完整 sidecar records 聚合成一项 `{materialContext, unexplainedEntryKeys, reasonCode}`：同一 context 只发送一次，删除 material/global entry IDs，保持 E1…EN 的材料映射顺序。活动之间是否属于同一过程由模型阅读多个活动决定，不由 Step06 强设唯一 owner；process-group Prompt 不因这一仓库输入变化升版。
 
 ## 6. 覆盖、预算、失败与复用
 
@@ -140,4 +142,6 @@ maxMaterialsToStart 限制本执行实际启动的材料数；超限材料写 NO
 
 新的实测多入口质量点读取同一固定提交中的 `GET /account/getStatistics` 与 `GET /account/listWithBalance` 组包。一次 Luna/high DRAFT+完整 REVIEW 在 60.64 秒内产生两项完整活动，分别覆盖这两条入口：前者说明按名称和序列号查询结算账户统计、正常/异常返回分支及统计口径待确认；后者说明按相同输入查询带余额的账户报表、列表转表格返回及余额口径待确认。模型没有把同一 Controller 类误写成固定前后流程，也没有编造岗位、余额计算公式或一次实际运行成功。这证明组包可以降低调用数，同时用 scope-local key 保留入口级结果；它仍只验证局部活动，尚未验证跨活动过程或九章报告。
 
-下一步不是再次验证已完成的 Step05 接力，而是按已批准设计先用 scripted Luna/xhigh RED 覆盖：N=4 DRAFT 漏 E3/E4 后 REVIEW 收到完整 actualDraft/missing keys、N≥12 的 E10–E12、跨包 E1 不串、many-to-many、真实 REVIEW 预算、非法 key/ref/JSON、REVIEW 仍漏项与 specific partial 下传。Terra/xhigh 只在当前 Builder/Activity seams 作最小 GREEN。任何新的 live harness 仍需另行授权并使用不同命名样本，不能重放已结束的四入口失败。
+下一步按已批准设计先用 scripted Luna/xhigh RED 覆盖：N=4 DRAFT 漏 E3/E4 后 REVIEW 收到完整 actualDraft/missing keys、N≥12 的 E10–E12、跨包 E1 不串、many-to-many、真实 REVIEW 预算、非法 key/ref/JSON、REVIEW 仍漏项、v2 reader required 字段与 specific partial 下传。Terra/xhigh 只在现有 seams 作最小 GREEN，保持已完成的 Step05 接力。
+
+上述直接 scripted 测试通过后，已批准一次新候选的真实 Activity 验证，最多两次 Luna/high 调用。精确 material 为 `material:8be00d5562743218931b721c547d915076a08b7200bc06e415d1248c5ea663eb`，四个完整有序 entry IDs 和 S487/S722/S731/S898 见[实施计划 Task 7](../plans/coherent-code-context-implementation-plan.md#task-7脚本验收后执行已批准的单材料-live-验证)；选择器同时核对 material identity、完整 entry 集及顺序、refs，不用 context 子串查找。使用 `ActivityExplanationProfile(20000, 12000, 4, 24, 1000)` 并通过全部 preflight；无匹配或容量不相容时零请求。PARTIAL 或失败均保存可用输入/返回/结果并停止，不重试或重放旧候选，不运行真实 Process/Report/全仓扫描。这是计划验证输入，尚无本次 live 结果。

@@ -1,8 +1,8 @@
 # 已批准清理与可扩展活动覆盖实施衔接
 
-> **状态：APPROVED DESIGN INPUTS / IMPLEMENTATION NOT STARTED。** 这是 [总体设计](../DESIGN.md) 的唯一当前实施衔接，规格为[代码清理与可扩展活动覆盖设计](code-cleanup-and-scalable-activity-coverage-design.md)。用户批准设计不等于授权本轮修改 Java、测试、resource Prompt、配置或 schema JSON；本轮只同步 Markdown，也不运行 Maven、产品模型或客户源码扫描，不提交、不推送。
+> **状态：IMPLEMENTATION IN PROGRESS。** 这是 [总体设计](../DESIGN.md) 的唯一当前实施衔接，规格为[代码清理与可扩展活动覆盖设计](code-cleanup-and-scalable-activity-coverage-design.md)。基线 `fc6d67b` 已按用户授权提交并推送到 `origin/main`；本文件随后指导本 worktree 中的 TDD、定向 Maven 验证、每个完整交付的本地提交/推送，以及最后一次单材料 Luna/high 验收。它不授权客户 Maven、客户系统、整仓真实模型运行、API-key 回退或无关全仓测试。
 
-> **For agentic workers:** 获得新的实施授权后，先用 Luna/xhigh 建立本文列出的直接 RED，再由 Terra/xhigh 做最小 GREEN。使用 `superpowers:test-driven-development`，按 work unit 执行；不要把本文的批准状态解释成自动开始实施。
+> **For agentic workers:** 本计划已获实施授权。每个 work unit 先用 Luna/xhigh 建立本文列出的直接 RED，再由 Terra/xhigh 做最小 GREEN；使用 `superpowers:test-driven-development`，维护独立 progress，并且不扩大到本文明确排除的范围。
 
 **Goal:** 安全退役当前工作流不再使用的旧解释链，并让现有 ActivityExplainer 对任意 N 入口材料在一次 DRAFT + 一次完整 REVIEW 内做到可预算、可闭合、可具体下传。
 
@@ -34,7 +34,7 @@
 - 保留 10/11 module 地址、`ModelRuntimeIdentityV1`、`analysis.knowledge.ProcessExplainer`、EntryContext、facts、gaps、processJoinSignals、SourceRefs 和固定九章。
 - 不自动 replay/retry/switch Provider，不添加第三次模型调用、API key fallback、same-run takeover、兼容 reader、dual writer 或新 recovery protocol。
 - PARTIAL/INCOMPLETE 是文档语义和验收结论，不新增 runtime/report enum。
-- 只跑新增或直接覆盖改变的 selector，Maven 串行；live Provider、客户扫描/构建、全 suite、commit/push 均需新的明确授权。
+- 只跑新增或直接覆盖改变的 selector，Maven 串行；客户扫描/构建、全 suite 与整仓真实模型运行不在本轮授权内。Task 7 的精确单材料 Luna/high 调用是唯一例外；每个完整交付在本地验证后提交并推送，不等待远端 CI。
 - 每个实施 work unit 同步当时的当前事实；未真正删除/升版前不得把目标写成现状。
 
 ## Task 1：先迁移通用测试 fixture，保住当前测试面
@@ -153,9 +153,29 @@
 - [ ] 不把用户四动作强串成生命周期；合成补货故事继续标 SYNTHETIC，不冒充 jshERP。
 - [ ] 直接 selectors 串行通过后做一次 spec/standards review。当前失败 v1 response 不重放、不改名为 v2 结果。
 
+## Task 7：脚本验收后执行已批准的单材料 Live 验证
+
+**Files**
+
+- Modify: `LiveLunaAutomaticMaterialIT` 或其同等的精确选择器测试；仅创建新的命名候选目录
+- Output: 新候选的 DRAFT/REVIEW 请求、响应、结果与可读人工检查记录
+
+**Frozen input and limits**
+
+- 只选择 `material:8be00d5562743218931b721c547d915076a08b7200bc06e415d1248c5ea663eb`，并逐项核对有序入口 `entry:160b90d56d87df77d8ad02aadb61130b138af016d31edde06f30e517f4497ece`、`entry:2d16e9a0ceb9b9555823ff3b091485941d4e26fb0b8e75b0314fdedd837722bc`、`entry:2d573f55b3164ae226957503381cb4c22104e263ba0e36f316cd1ad609302439`、`entry:3bc9f42e69961211dec7e48baeffbb0bd61a4c4be03280eb02894f86b6e9b144`，以及 `[S487,S722,S731,S898]`。
+- 使用 `ActivityExplanationProfile(20000, 12000, 4, 24, 1000)`；只使用登录的 Codex Subscription Luna/high，一次 DRAFT 加一次完整 REVIEW，最多两次请求；不运行真实过程、报告或整仓调用。
+
+**Acceptance and stop rule**
+
+- [ ] 调用前先检查登录状态、子进程本地状态和全部预检；任一不匹配或容量不足时零请求并记录原因。
+- [ ] 理想结果是四个入口均有实质业务解释：不得仅以编号、方法名或技术类型充数，也不得把删除、会话、注册、退出强写成必然的用户生命周期。
+- [ ] 非法 JSON/ref/key、DRAFT/REVIEW 仍不能闭合、传输或运行失败均为该新候选的 fatal；保存输入、输出和结果后停止，不重试、不改用 API key、不重放旧失败请求。
+- [ ] 这一次 DRAFT+REVIEW 是同一候选的内容审阅，不是新的产品改进回合。本计划没有获批的第二个 Reader Candidate；若人工检查发现明确问题，保留 findings，等待用户另行授权后才可启动 Round 2 replacement。
+- [ ] 执行后人工核对业务语言、范围限定和四个入口覆盖；程序只验证 schema/ref/coverage/预算，不能把通过结构检查说成业务质量通过。
+
 ## 独立缺口与停止条件
 
 - Activity/Process 每包 REVIEW 即时保存仍未实现。固定 module 地址不能循环安装不同聚合内容；若用户以后单独授权，先确定不覆盖既有 publication 的聚合/分片语义。本计划不设计或实现它。
 - 受保护 dirty 主 worktree 中的 stage01–04 只记录待协调，不执行 worktree remove/reset/clean，也不把 target 构建目录当源码。
-- 任一实施任务若需要改变八步、四 Module、九章、source/Proof 信任、公共 Agent、当前 10/11 身份、Process/Report 其他 validator 或新增业务结果决定，立即停止并回 Sol/ultra/用户。
-- 设计批准未授权本轮 Maven、产品模型、客户扫描、Java/test/resource/schema 修改、commit 或 push。
+- 任一实施任务若需要改变八步、四 Module、九章、source/Proof 信任、公共 Agent、当前 10/11 身份、Process/Report 其他 validator 或新增业务结果决定，立即回 Astra/Sol ultra 作最小设计裁决；只有影响最终业务目标或跨模块身份的变化才交回用户。
+- 本轮授权范围限于本计划列出的 Java/test/resource/schema、定向 Maven、文档与本地验证、交付提交/推送，以及 Task 7 的单材料真实 Provider；其余客户扫描、客户构建、整仓模型运行和外部 API key 均不在范围内。

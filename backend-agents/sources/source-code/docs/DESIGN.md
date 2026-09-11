@@ -6,7 +6,7 @@
 
 这条路线保留八个步骤、五张程序图、严格技术 Fact/Proof，以及唯一公开 `RepositoryAnalysisAgent`。Java 负责来源、定位、代码关系、有限上下文、预算、检查和保存；Luna/high 负责业务含义、跨活动过程与业务语言。Java 不维护采购、销售、财务等行业词表来判业务动作。技术证据有用，但不应在每层反复证明同一件事，也不应把尚未被严格 Proof 覆盖的安全源码排除出阅读范围。
 
-本文是目标设计。当前代码中已经存在四个业务 Module 和工作流，Step05 EntryContext 已连续传到材料，普通 Flow/Capsule 发布已停止重复 compile/project，Spring unrestricted method condition 也已落地。用户已批准下一阶段的旧解释链清理与任意 N 活动覆盖修复；旧包、当前 v1 Activity Prompt/schema、coverage-before-REVIEW 和下游只传数量的行为仍未改变。本轮只同步 Markdown，没有修改 Java、测试、resource Prompt、Schema 或运行产物，也没有重新运行客户源码分析。
+本文是目标设计。当前代码中已经存在四个业务 Module 和工作流，Step05 EntryContext 已连续传到材料，普通 Flow/Capsule 发布已停止重复 compile/project，Spring unrestricted method condition 也已落地。旧解释链清理与任意 N 活动覆盖修复已获实施批准；当前仍处于设计同步步骤，旧包、v1 Activity Prompt/schema、coverage-before-REVIEW 和下游只传数量的行为尚未改变。实现按当前实施计划分步开展；本文不把目标合同写成代码或实测结果。
 
 ## 2. 一条端到端接力
 
@@ -32,7 +32,7 @@
 | ProcessExplainer | 全部完整已审活动、recall cues、必要材料、按 material 聚合的未解释入口 | 完整已审过程、RepositoryBusinessKnowledge、process coverage | 高召回分组后由 Luna 判断有依据的多对多过程，保留独立活动和 partial 范围 | 非法成员/ref/JSON、遗漏范围却报完整、started 失败 fatal；0 活动时过程 Provider 为 0 | BusinessReportPublisher | RED 覆盖完整字段、多对多、保守独立过程和 specific partial；GREEN 只扩现有 knowledge input/save/read seam |
 | BusinessReportPublisher | 完整知识、活动/过程、coverage、按 material 聚合的未解释入口、SourceRefs | 固定九章 JSON、source-refs、Markdown、validation | 一次报告 DRAFT + 完整 REVIEW；Java 只校验并确定性排版 | 缺章/非法 ref/虚假全量 fatal；显式空仓报告仍走既有 DRAFT+REVIEW；PARTIAL/INCOMPLETE 不新增 runtime enum | 业务读者与 public render/inspect/artifact | RED 覆盖第4章内容、第9章具体入口、九章/ref/纯 render；GREEN 只补 knowledge→report 与第9章，不建语义 parser |
 
-这张表是后续实现的 Interface 与测试面。前三个模块之间传 typed immutable 结果；内部测试 seam 不扩成新的公开 Interface。Activity/Process/Report 的 `unexplainedEntries`、聚合投影与 v2 Prompt 是已批准目标，尚未写入当前实现。
+这张表是后续实现的 Interface 与测试面。模块间传 typed immutable 结果；内部测试 seam 不扩成新的公开 Interface。Activity REVIEW 的 `unexplainedEntries`、程序侧完整记录与 Process/Report 聚合投影是已批准目标，尚未写入当前实现。Activity DRAFT/REVIEW、repository-summary DRAFT/REVIEW 与 report DRAFT/REVIEW Prompt 升 v2；process-group DRAFT/REVIEW Prompt 保持 v1。ActivityExplainer、ProcessExplainer、BusinessReportPublisher 因行为或输入变化将 Module version 升到 v2，现有地址不变。
 
 ## 3. 为什么同时保留 03、04、05
 
@@ -95,7 +95,9 @@ ActivityExplainer 用 Luna/high 对完整 material 做一次 DRAFT，再对原�
 
 已批准的目标把验证分为两层：DRAFT 的 JSON、字段、local ID、key/ref allowlist 与 bytes 必须合法；只有 coverage 不足时不再提前 fatal，程序计算 `missingEntryKeys` 并把它和完整实际 DRAFT 送入唯一 REVIEW。REVIEW 必须满足 `reviewed activity keys ∪ unexplainedEntries = expected keys` 且二者不相交；仍漏项或任何结构/范围错误 fatal，不发第三次请求。程序把未解释 key 映射为 global entry coverage 的 `MODEL_NOT_EXPLAINED`，它不是源码/Proof Gap。当前 Java 与 resource Prompt 仍是 v1，尚未实现这项 v2 合同。
 
-ProcessExplainer 接收全部已审活动、必要来源包，以及程序按 `materialId` 聚合的 `{materialContext, unexplainedEntryKeys, reasonCode}`。同一 context 只传一次，global IDs 留在程序 coverage；不新增 EntryDescriptor，也不从中文 context 正则反解入口。Java 用调用、参数/标识传递、数据关系、对象/术语候选及 processJoinSignals 做宽松召回；Luna 根据多入口材料判断它们可能组成怎样的过程。线索不能自动证明先后、因果、对象同一性或唯一归属。一个活动可以属于多个过程，同名不自动合并，异名也不自动排除。未解释入口随知识进入报告范围，但不能被模型升级为来源缺失或技术 Gap。
+`UnexplainedActivityEntry(entryId, materialId, entryKey, materialContext, reasonCode)` 是程序侧完整值类型，reasonCode 固定 `MODEL_NOT_EXPLAINED`。`ActivityExplanationResult` 和 `RepositoryBusinessKnowledge` 均持有完整 `unexplainedActivityEntries` 列表；便利构造器可默认 `List.of()`，canonical v2 磁盘 reader 必须读取 required 数组，拒绝字段缺失/null 和旧版 fallback。局部 key 数组的顺序服从材料入口映射，E10 保持第十入口含义，不能词典序重排为第二入口。
+
+ProcessExplainer 接收全部已审活动、必要来源包和程序侧完整未解释入口记录；仓库总整理模型与报告模型只接收按 `materialId` 聚合的 `{materialContext, unexplainedEntryKeys, reasonCode}`。同一 context 只传一次，global IDs 留在程序 coverage/knowledge；不新增 EntryDescriptor，也不从中文 context 正则反解入口。Java 用调用、参数/标识传递、数据关系、对象/术语候选及 processJoinSignals 做宽松召回；Luna 根据多入口材料判断它们可能组成怎样的过程。线索不能自动证明先后、因果、对象同一性或唯一归属。一个活动可以属于多个过程，同名不自动合并，异名也不自动排除。未解释入口随知识进入报告范围，但不能被模型升级为来源缺失或技术 Gap。
 
 大仓库按有界、可重叠的活动组工作，每组有一次 DRAFT 和完整 REVIEW，再对全部组摘要与跨组线索做有界仓库总整理。摘要可以帮助检索，但完整已审活动与过程保留到报告输入或按 ID 可取的有界章节材料；条件、规则、公式不能在分组后消失。无法在预算内送入某组或某章的内容明确列入未覆盖范围，不能静默压缩后宣称完成。
 
@@ -135,6 +137,8 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 | 07 | business-processes.jsonl、repository-business-knowledge.json、process-coverage.json |
 | 08 | business-report.json、source-refs.jsonl、document.md、report-validation.json |
 
+本次 owning wire 升版固定为：`flow-interpretation-activity-coverage-v2` required `unexplainedActivityEntries`；`repository-knowledge-business-knowledge-v2` required 同名完整记录数组；`repository-knowledge-process-coverage-v2` 修正现有 `semanticDeliveryStatus` 判定。任一 activity coverage 为 `NOT_ANALYZED`，或 unmatchedActivityIds/notConsolidatedProcessIds 任一非空时，process coverage 必须为 `PARTIAL`，不能只看过程归组。`activity-explanations.jsonl`、`business-processes.jsonl` 和报告九章 JSON 的输出 shape/版本保持 v1。publisher、engine、policy fixture、canonical readers 和直接版本测试须同步，不保留旧 reader fallback。
+
 材料在首次 Provider 前保存。目标仍是每个完成 REVIEW 的活动和过程随即保存，但当前 ActivityExplainer/ProcessExplainer 都在各自循环结束后才聚合 publish；固定 module 地址不能在循环中反复安装不同内容。即时逐包保存是独立已知缺口，本次批准的清理/覆盖修复不假称解决，也不扩建分片协议、恢复系统或逐记录状态机。inputFingerprint 包含实际内容输入（不含新的 runId）、实际 Prompt 文本/版本、有效模型与输出配置、Module 版本；显式复用要求相等，并通过磁盘边界完整性检查。
 
 ## 9. 覆盖、预算与失败
@@ -154,7 +158,7 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 
 0 入口时 Activity 与 Process Provider 调用均为 0；若调用方仍显式要求空仓九章范围报告，BusinessReportPublisher 保持现有 DRAFT+REVIEW，不承诺全链零调用。本文的 PARTIAL/INCOMPLETE 是文档语义完整度与业务验收结论，不新增 runtime/report 状态 enum；覆盖账闭合但含 `MODEL_NOT_EXPLAINED` 仍不能通过完整业务验收。
 
-业务质量观察顺序是一个真实小包、第二领域小包、再整仓；只有另行授权才发真实 Provider。本文没有工期或耗时改善实测，不以重复代码路径的存在推算性能倍数。
+业务质量观察顺序是一个真实小包、第二领域小包、再整仓。本次已批准的 live 范围仅为[实施计划 Task 7](plans/coherent-code-context-implementation-plan.md#task-7脚本验收后执行已批准的单材料-live-验证)固定的四入口材料：直接 scripted 测试通过后，新候选最多一次 Activity DRAFT + 一次 REVIEW，Luna/high，总调用数不超过 2；精确 material/entry/ref 身份和 `ActivityExplanationProfile(20000, 12000, 4, 24, 1000)` 不得替换。PARTIAL 或失败保留产物并停止；不重试，不运行真实 Process/Report，也不重扫整仓。更大范围不在本次批准内，本文不虚构耗时改善。
 
 ## 10. 当前实现与已批准但尚未实施的改动
 
@@ -162,9 +166,9 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 | --- | --- |
 | Step03/04 稳定算法、FactRegistry 三类技术模式与 AtomicProofBuilder 全 atoms 规则保留；普通 persisted candidate 读取与 Flow/Capsule 发布已不再重放 owner 算法 | 本次不修改 Step03/04 算法或恢复重复 replay；清理只删除旧解释链的专属消费者/注册 |
 | EntryRootedFlowCompiler 已在 flow-slices/Capsule 保存 EntryContext，传递 argument/return/data/control 与可选 Proof；BusinessMaterialBuilder 已直接消费它 | 保持 Step05 owner 与 Builder 单一包装 seam，不新增源码扫描、EntryDescriptor 或 regex context parser |
-| EvidenceCapsuleProjector 已按连贯上下文保留必要 guard、变量、调用/返回及 facts/gaps/signals；Capsule 仍带两个旧 registryProposal basis 字段 | 旧 proposal/process 消费者删除后，只移除这两个字段并将 capsule-projection v8→v9、evidence-capsule v6→v7；其余上下文不丢 |
+| EvidenceCapsuleProjector 已按连贯上下文保留必要 guard、变量、调用/返回及 facts/gaps/signals；Capsule 仍带两个旧 registryProposal basis 字段 | 旧消费者删除后，只移除 registryProposalBasisAtomIds/registryProposalBasisGapIds；capsule-projection v8→v9、evidence-capsule v6→v7，同步 FlowPublicationSpecifier、engine、Step05 fixtures/readers/版本测试 |
 | ActivityExplainer、ProcessExplainer、BusinessReportPublisher、BusinessAnalysisWorkflow 已存在，完整活动字段已能沿过程/报告传递 | 只在现有四个 Module 上实现任意 N、唯一 REVIEW 与具体 partial 下传；不建平行业务流水线 |
-| 旧 `analysis.interpretation.{model,proposal,registry,process}` 仍有 78 个生产类；14 个旧测试和 14 个当前测试的共享 fixture 依赖仍在；Step06 旧 1–9 与新 10/11 同时注册 | 先迁通用 testsupport，再删旧测试/生产链/注册；保留 10/11、`analysis.knowledge.ProcessExplainer` 和 `ModelRuntimeIdentityV1` |
+| 旧 `analysis.interpretation.{model,proposal,registry,process}` 仍有 78 个生产类；14 个旧测试和 14 个当前测试的共享 fixture 依赖仍在；Step06 旧 1–9 与新 10/11 同时注册 | 先迁 BusinessFlowTestSupport 并保留 BusinessFlowCoverageTest 非 R0 断言，再删旧包/1–9/engine 与 ProgramGraphsPublicFixture 的旧 policy；AnalysisStepAddressTest 拒绝 1–9、接受 10/11；保留当前 ProcessExplainer 与 ModelRuntimeIdentityV1 |
 | 当前 Activity v1 在 DRAFT 后、REVIEW 前要求全集覆盖；四入口实际 DRAFT 只返回 E1/E2，因而未进入 REVIEW | 目标 v2 允许该唯一合法缺口进入 REVIEW，携带完整实际 DRAFT 与 `missingEntryKeys=[E3,E4]`；最终活动或 `unexplainedEntries` 闭合 |
 | 当前 Process/report 模型输入只投影 NOT_ANALYZED 数量，Activity/Process 都在循环结束后聚合 publish | 按 material 只传一次 `{materialContext, unexplainedEntryKeys, reasonCode}` 到 knowledge/第9章；即时逐包 checkpoint 仍是独立未解决缺口 |
 | 完整冻结 jshERP 719 文件及图/Fact 运行已有保存证据；零 Provider 全仓材料 run 为 107 包覆盖 339 个入口 | 这些是历史实测，不写成固定 K/包数，不把它们当整仓语义验收 |
