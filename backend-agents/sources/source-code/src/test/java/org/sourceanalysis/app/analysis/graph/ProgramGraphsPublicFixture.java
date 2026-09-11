@@ -1931,7 +1931,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_CAPSULE_PROJECTION",
-        "business-flows-capsule-projection-v8",
+        "business-flows-capsule-projection-v9",
         "business-flows-capsule-projection",
         "application/json",
         "MODULE_ARTIFACT_JSON",
@@ -1963,7 +1963,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_EVIDENCE_CAPSULE",
-        "business-flows-evidence-capsule-v6",
+        "business-flows-evidence-capsule-v7",
         "business-flows-evidence-capsule",
         "application/x-ndjson",
         "CANONICAL_JSONL",

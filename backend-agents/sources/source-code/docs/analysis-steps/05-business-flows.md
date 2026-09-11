@@ -162,7 +162,7 @@ DepotHead#batchSetStatus 的源码包含状态检查、配置条件、更新调�
 
 ## 8. 当前实现与后续测试
 
-EntryRootedFlowCompiler 现已直接从持久化调用图/控制图保存每个入口的 EntryContext：调用关系、形参、边界、控制、返回、限制和固定源码 locator；无 strict Flow 的入口也保存同一结构。Fact/Proof 仍随上下文作为严格结论增强，但不再筛掉图中已定位的调用或控制关系。属于入口的图 Gap 也将其安全 locator 保留为限制，以便后续材料显示未知目标附近的真实源码。该对象已随 flow-compilation、Capsule 和 flow-slices 公开产物持久化。对应 schema 已升级为 flow-compilation v4、capsule-projection v8、flow-slices v4 与 evidence-capsule v6；旧版本不能被新读取路径静默当作包含连贯上下文的结果。
+EntryRootedFlowCompiler 现已直接从持久化调用图/控制图保存每个入口的 EntryContext：调用关系、形参、边界、控制、返回、限制和固定源码 locator；无 strict Flow 的入口也保存同一结构。Fact/Proof 仍随上下文作为严格结论增强，但不再筛掉图中已定位的调用或控制关系。属于入口的图 Gap 也将其安全 locator 保留为限制，以便后续材料显示未知目标附近的真实源码。该对象已随 flow-compilation、Capsule 和 flow-slices 公开产物持久化。对应 schema 已升级为 flow-compilation v4、capsule-projection v9、flow-slices v4 与 evidence-capsule v7；旧版本不能被新读取路径静默当作包含连贯上下文的结果。
 
 普通发布路径已停止重复 compile/project，只检查已保存对象的引用闭合和 Flow-rooted span 身份。Capsule span 同时保存 evidenceNodeId，因此发布器可拒绝跨 Flow 替换或裸 evidence-node 替换，而不重新执行完整投影算法。BusinessMaterialBuilder 已直接读取 flow-slices 的 EntryContext；其旧的源码重扫/直接 callee 猜测路径已删除。
 

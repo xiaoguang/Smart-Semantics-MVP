@@ -174,9 +174,9 @@ Schema 不是逻辑上绝对矛盾：一个活动允许覆盖多个 key；但配
 
 历史 docs/progress/artifacts 中的名称不批量改写；它们不是活动兼容入口。
 
-### 4.4 最后移除 Capsule 的旧专属字段
+### 4.4 已完成：移除 Capsule 的旧专属字段
 
-只有 4.3 的旧 proposal/process 消费者全部消失后，才从以下共享位置移除 `registryProposalBasisAtomIds`、`registryProposalBasisGapIds`：
+4.3 的旧 proposal/process 消费者删除后，已从以下共享位置移除 `registryProposalBasisAtomIds`、`registryProposalBasisGapIds`：
 
 - `CapsuleProjection.EvidenceCapsule` 主/兼容构造；
 - `EvidenceCapsuleProjector` 的赋值；
@@ -185,7 +185,7 @@ Schema 不是逻辑上绝对矛盾：一个活动允许覆盖多个 key；但配
 
 新 Builder 实际读取的是 `factViews.atoms`、`gapViews` 和 `processJoinSignals`，所以这里不删除新材料所需信息。`CapsuleProjection`、projector、publisher 文件本身保留。
 
-该 wire 变化只升级真正受影响的 `capsule-projection` 与 `evidence-capsule` schema（按当前 v8/v6 的下一版本 v9/v7），同步 `AtomicCanonicalPublicationEngine` 和直接 readers。旧磁盘产物仍按旧身份留存，不由新 reader 假装成新格式。
+该 wire 变化只升级真正受影响的 `capsule-projection` 与 `evidence-capsule` schema（v8/v6 的下一版本 v9/v7），并已同步 `AtomicCanonicalPublicationEngine` 和直接 readers。旧磁盘产物仍按旧身份留存，不由新 reader 假装成新格式。
 
 ### 4.5 有限命名整理边界
 

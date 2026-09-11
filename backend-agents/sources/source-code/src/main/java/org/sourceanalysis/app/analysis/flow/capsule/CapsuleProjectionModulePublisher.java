@@ -47,7 +47,7 @@ public final class CapsuleProjectionModulePublisher {
 
   private static final String FILE_NAME = "capsule-projection.json";
   private static final String ARTIFACT_TYPE = "BUSINESS_FLOWS_CAPSULE_PROJECTION";
-  private static final String SCHEMA_VERSION = "business-flows-capsule-projection-v8";
+  private static final String SCHEMA_VERSION = "business-flows-capsule-projection-v9";
   private static final String ARTIFACT_PREFIX = "business-flows-capsule-projection";
   private static final String PROJECTION_ID_DOMAIN = "business-flows-capsule-projection-id-v2";
   private static final String MODULE_VERSION = "v6";
@@ -311,8 +311,6 @@ public final class CapsuleProjectionModulePublisher {
     capsule.outcomePathViews().forEach(value -> outcome(outcomes.addObject(), value));
     ArrayNode signals = node.putArray("processJoinSignals");
     capsule.processJoinSignals().forEach(value -> signal(signals.addObject(), value));
-    strings(node.putArray("registryProposalBasisAtomIds"), capsule.registryProposalBasisAtomIds());
-    strings(node.putArray("registryProposalBasisGapIds"), capsule.registryProposalBasisGapIds());
     strings(node.putArray("modelEvidenceSpanIds"), capsule.modelEvidenceSpanIds());
     strings(node.putArray("projectionObligationIds"), capsule.projectionObligationIds());
     node.putObject("budgetUsage")

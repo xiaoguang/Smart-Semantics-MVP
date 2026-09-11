@@ -6,7 +6,7 @@
 
 这条路线保留八个步骤、五张程序图、严格技术 Fact/Proof，以及唯一公开 `RepositoryAnalysisAgent`。Java 负责来源、定位、代码关系、有限上下文、预算、检查和保存；Luna/high 负责业务含义、跨活动过程与业务语言。Java 不维护采购、销售、财务等行业词表来判业务动作。技术证据有用，但不应在每层反复证明同一件事，也不应把尚未被严格 Proof 覆盖的安全源码排除出阅读范围。
 
-本文是目标设计。当前代码中已经存在四个业务 Module 和工作流，Step05 EntryContext 已连续传到材料，普通 Flow/Capsule 发布已停止重复 compile/project，Spring unrestricted method condition 也已落地。旧解释链清理与任意 N 活动覆盖修复已获实施批准；当前仍处于设计同步步骤，旧包、v1 Activity Prompt/schema、coverage-before-REVIEW 和下游只传数量的行为尚未改变。实现按当前实施计划分步开展；本文不把目标合同写成代码或实测结果。
+本文是目标设计。当前代码中已经存在四个业务 Module 和工作流，Step05 EntryContext 已连续传到材料，普通 Flow/Capsule 发布已停止重复 compile/project，Spring unrestricted method condition 也已落地。旧解释链及其 Capsule registry basis 字段已退出；v1 Activity Prompt/schema、coverage-before-REVIEW 和下游只传数量的行为尚待修复。实现按当前实施计划分步开展；本文不把目标合同写成代码或实测结果。
 
 ## 2. 一条端到端接力
 
@@ -166,9 +166,9 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 | --- | --- |
 | Step03/04 稳定算法、FactRegistry 三类技术模式与 AtomicProofBuilder 全 atoms 规则保留；普通 persisted candidate 读取与 Flow/Capsule 发布已不再重放 owner 算法 | 本次不修改 Step03/04 算法或恢复重复 replay；清理只删除旧解释链的专属消费者/注册 |
 | EntryRootedFlowCompiler 已在 flow-slices/Capsule 保存 EntryContext，传递 argument/return/data/control 与可选 Proof；BusinessMaterialBuilder 已直接消费它 | 保持 Step05 owner 与 Builder 单一包装 seam，不新增源码扫描、EntryDescriptor 或 regex context parser |
-| EvidenceCapsuleProjector 已按连贯上下文保留必要 guard、变量、调用/返回及 facts/gaps/signals；Capsule 仍带两个旧 registryProposal basis 字段 | 旧消费者删除后，只移除 registryProposalBasisAtomIds/registryProposalBasisGapIds；capsule-projection v8→v9、evidence-capsule v6→v7，同步 FlowPublicationSpecifier、engine、Step05 fixtures/readers/版本测试 |
+| EvidenceCapsuleProjector 已按连贯上下文保留必要 guard、变量、调用/返回及 facts/gaps/signals；Capsule 已移除两个旧 registry proposal basis 字段，并以 capsule-projection v9 / evidence-capsule v7 持久化 | 新读取路径拒绝 v8/v6；后续不能以兼容 reader 恢复这两个字段。现有完整 provenance mutation 测试有一项既有 Fact atom replay 缺口，不属于 Capsule wire 的通过结论 |
 | ActivityExplainer、ProcessExplainer、BusinessReportPublisher、BusinessAnalysisWorkflow 已存在，完整活动字段已能沿过程/报告传递 | 只在现有四个 Module 上实现任意 N、唯一 REVIEW 与具体 partial 下传；不建平行业务流水线 |
-| 旧 `analysis.interpretation.{model,proposal,registry,process}` 的 78 个生产类、14 个专属测试、旧 Step06 1–9 地址、旧 artifact/schema 分支及测试 fixture policy 已删除；当前测试使用中性的 `BusinessFlowTestSupport` | 当前运行链只保留 Step06 10/11、`ModelRuntimeIdentityV1` 与 `analysis.knowledge.ProcessExplainer`；`AnalysisStepAddressTest` 拒绝 1–9、接受 10/11。接下来只移除 Capsule 的两个旧 registry proposal 字段，不能恢复兼容读取 |
+| 旧 `analysis.interpretation.{model,proposal,registry,process}` 的 78 个生产类、14 个专属测试、旧 Step06 1–9 地址、旧 artifact/schema 分支及测试 fixture policy 已删除；当前测试使用中性的 `BusinessFlowTestSupport` | 当前运行链只保留 Step06 10/11、`ModelRuntimeIdentityV1` 与 `analysis.knowledge.ProcessExplainer`；`AnalysisStepAddressTest` 拒绝 1–9、接受 10/11。后续工作是 Activity v2 的任意 N / 唯一 REVIEW 与具体 partial 下传 |
 | 当前 Activity v1 在 DRAFT 后、REVIEW 前要求全集覆盖；四入口实际 DRAFT 只返回 E1/E2，因而未进入 REVIEW | 目标 v2 允许该唯一合法缺口进入 REVIEW，携带完整实际 DRAFT 与 `missingEntryKeys=[E3,E4]`；最终活动或 `unexplainedEntries` 闭合 |
 | 当前 Process/report 模型输入只投影 NOT_ANALYZED 数量，Activity/Process 都在循环结束后聚合 publish | 按 material 只传一次 `{materialContext, unexplainedEntryKeys, reasonCode}` 到 knowledge/第9章；即时逐包 checkpoint 仍是独立未解决缺口 |
 | 完整冻结 jshERP 719 文件及图/Fact 运行已有保存证据；零 Provider 全仓材料 run 为 107 包覆盖 339 个入口 | 这些是历史实测，不写成固定 K/包数，不把它们当整仓语义验收 |

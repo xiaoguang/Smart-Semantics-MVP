@@ -91,9 +91,9 @@
 - Consumes: 不再有 registry proposal/process consumer 的 current Capsule
 - Produces: capsule-projection v9、evidence-capsule v7；不含两个 registryProposal basis 字段
 
-- [ ] Luna/xhigh RED 证明新 wire 不再接受/产生 `registryProposalBasisAtomIds` 与 `registryProposalBasisGapIds`，同时 EntryContext、factViews、gapViews、processJoinSignals、source/basis closure 逐项保留。
-- [ ] Terra/xhigh 删除两个字段、构造参数、赋值和 JSON 分支，只升级真正受影响的 v8→v9、v6→v7 owning schemas/readers。
-- [ ] 旧磁盘产物保留旧身份；新 reader 不兼容解释旧 payload，canonical bytes/hash 不宣称跨版本相等。
+- [x] Luna/xhigh RED 证明新 wire 不再接受/产生 `registryProposalBasisAtomIds` 与 `registryProposalBasisGapIds`，同时 EntryContext、factViews、gapViews、processJoinSignals、source/basis closure 逐项保留。
+- [x] Terra/xhigh 删除两个字段、构造参数、赋值和 JSON 分支，只升级真正受影响的 v8→v9、v6→v7 owning schemas/readers。
+- [x] 旧磁盘产物保留旧身份；新 reader 不兼容解释旧 payload，canonical bytes/hash 不宣称跨版本相等。范围外的完整 Fact provenance mutation selector 仍有一项既有 atom replay 缺口，未作为本任务修复或通过依据。
 
 ## Task 4：ActivityExplainer 任意 N、预算和唯一 REVIEW
 

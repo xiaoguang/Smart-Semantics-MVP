@@ -364,7 +364,7 @@ class BusinessFlowProvenanceTest {
       Map<String, String> expectedSchemas =
           Map.of(
               "entry-dispositions.jsonl", "business-flows-entry-disposition-v1",
-              "evidence-capsules.jsonl", "business-flows-evidence-capsule-v6",
+              "evidence-capsules.jsonl", "business-flows-evidence-capsule-v7",
               "flow-coverage.json", "business-flows-flow-coverage-v1",
               "flow-gaps.jsonl", "business-flows-flow-gap-v2",
               "flow-slices.json", "business-flows-flow-slices-v4");
@@ -410,7 +410,7 @@ class BusinessFlowProvenanceTest {
             assertThat(publicFactsById).isNotEmpty();
             assertThat(publicFactsById.keySet()).containsExactlyInAnyOrderElementsOf(m1FactIds);
             assertThat(requiredText(capsule, "schemaVersion"))
-                .isEqualTo("business-flows-evidence-capsule-v6");
+                .isEqualTo("business-flows-evidence-capsule-v7");
           });
       assertThat(publicCapsulesByFlow.keySet())
           .containsExactlyInAnyOrderElementsOf(flowSlicesById.keySet());

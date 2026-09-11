@@ -265,7 +265,7 @@ class BusinessFlowsPublicationSpecifierTest {
       lines.forEach(
           capsule -> {
             assertThat(capsule.path("schemaVersion").asText())
-                .isEqualTo("business-flows-evidence-capsule-v6");
+                .isEqualTo("business-flows-evidence-capsule-v7");
             List<String> referencedSpanIds = strings(capsule.path("modelEvidenceSpanIds"));
             List<String> embeddedSpanIds = strings(capsule.path("modelEvidenceSpans"), "spanId");
             List<String> referencedObligationIds = strings(capsule.path("projectionObligationIds"));
@@ -386,7 +386,7 @@ class BusinessFlowsPublicationSpecifierTest {
       JsonNode m2Envelope =
           canonicalJson.parseCanonical(m2Reopened.payloads().get(0).canonicalUtf8());
       assertThat(m2Envelope.path("schemaVersion").asText())
-          .isEqualTo("business-flows-capsule-projection-v8");
+          .isEqualTo("business-flows-capsule-projection-v9");
       JsonNode m2Payload = m2Envelope.path("payload");
       Map<String, JsonNode> m2Capsules = jsonNodesById(m2Payload.path("capsules"), "flowSliceId");
       assertThat(m2Capsules).hasSize(2);
@@ -424,7 +424,7 @@ class BusinessFlowsPublicationSpecifierTest {
       assertThat(reopened.semanticPayloads())
           .filteredOn(payload -> payload.descriptor().fileName().equals("evidence-capsules.jsonl"))
           .extracting(payload -> payload.descriptor().schemaVersion())
-          .containsExactly("business-flows-evidence-capsule-v6");
+          .containsExactly("business-flows-evidence-capsule-v7");
       assertThat(reopened.receipt().controls())
           .isEqualTo(
               fixture
@@ -484,7 +484,7 @@ class BusinessFlowsPublicationSpecifierTest {
         JsonNode m2Capsule = m2Capsules.get(flowSliceId);
         assertThat(m2Capsule).isNotNull();
         assertThat(publicCapsule.path("schemaVersion").asText())
-            .isEqualTo("business-flows-evidence-capsule-v6");
+            .isEqualTo("business-flows-evidence-capsule-v7");
         assertThat(publicCapsule.path("modelEligibility").asText())
             .isEqualTo(m2Capsule.path("modelEligibility").asText());
         if ("ELIGIBLE".equals(publicCapsule.path("modelEligibility").asText())) {

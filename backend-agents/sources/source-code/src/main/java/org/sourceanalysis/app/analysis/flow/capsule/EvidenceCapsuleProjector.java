@@ -301,8 +301,6 @@ public final class EvidenceCapsuleProjector {
             gapViews,
             outcomeViews,
             processJoinSignals,
-            flow.atomIds(),
-            flow.gapIds(),
             orderedSpanIds,
             obligationIds.stream().sorted(UTF8_ORDER).toList(),
             new CapsuleProjection.BudgetUsage(orderedSpanIds.size(), totalBytes)));

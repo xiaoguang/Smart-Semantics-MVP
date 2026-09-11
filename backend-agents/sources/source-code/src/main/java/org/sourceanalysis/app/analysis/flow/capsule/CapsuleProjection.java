@@ -59,8 +59,6 @@ public record CapsuleProjection(
       List<FlowGapView> gapViews,
       List<FlowOutcomePathView> outcomePathViews,
       List<FlowCompilation.ProcessJoinSignalV1> processJoinSignals,
-      List<String> registryProposalBasisAtomIds,
-      List<String> registryProposalBasisGapIds,
       List<String> modelEvidenceSpanIds,
       List<String> projectionObligationIds,
       BudgetUsage budgetUsage) {
@@ -91,10 +89,6 @@ public record CapsuleProjection(
           .anyMatch(signal -> !flowSliceId.equals(signal.flowSliceId()))) {
         throw broken();
       }
-      registryProposalBasisAtomIds =
-          List.copyOf(orderedStrings(registryProposalBasisAtomIds, "registry atom basis"));
-      registryProposalBasisGapIds =
-          List.copyOf(orderedStrings(registryProposalBasisGapIds, "registry Gap basis"));
       modelEvidenceSpanIds =
           List.copyOf(orderedStrings(modelEvidenceSpanIds, "model evidence spans"));
       projectionObligationIds =
@@ -126,8 +120,6 @@ public record CapsuleProjection(
         List<FlowGapView> gapViews,
         List<FlowOutcomePathView> outcomePathViews,
         List<FlowCompilation.ProcessJoinSignalV1> processJoinSignals,
-        List<String> registryProposalBasisAtomIds,
-        List<String> registryProposalBasisGapIds,
         List<String> modelEvidenceSpanIds,
         List<String> projectionObligationIds,
         BudgetUsage budgetUsage) {
@@ -155,8 +147,6 @@ public record CapsuleProjection(
           gapViews,
           outcomePathViews,
           processJoinSignals,
-          registryProposalBasisAtomIds,
-          registryProposalBasisGapIds,
           modelEvidenceSpanIds,
           projectionObligationIds,
           budgetUsage);

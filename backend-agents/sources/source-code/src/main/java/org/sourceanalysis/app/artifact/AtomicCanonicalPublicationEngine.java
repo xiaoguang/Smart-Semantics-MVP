@@ -1570,7 +1570,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("BUSINESS_FLOWS_CAPSULE_PROJECTION".equals(payload.artifactType())
-        && "business-flows-capsule-projection-v8".equals(payload.schemaVersion())) {
+        && "business-flows-capsule-projection-v9".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.BUSINESS_FLOWS,
           2,
@@ -1606,7 +1606,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     if ("BUSINESS_FLOWS_EVIDENCE_CAPSULE".equals(payload.artifactType())
-        && "business-flows-evidence-capsule-v6".equals(payload.schemaVersion())) {
+        && "business-flows-evidence-capsule-v7".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.BUSINESS_FLOWS,
           3,

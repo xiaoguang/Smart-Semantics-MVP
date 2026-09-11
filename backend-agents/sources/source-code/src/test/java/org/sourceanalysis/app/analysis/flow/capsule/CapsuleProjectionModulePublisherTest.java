@@ -93,7 +93,7 @@ class CapsuleProjectionModulePublisherTest {
       assertThat(reopened.payloads().get(0).descriptor().artifactType())
           .isEqualTo("BUSINESS_FLOWS_CAPSULE_PROJECTION");
       assertThat(reopened.payloads().get(0).descriptor().schemaVersion())
-          .isEqualTo("business-flows-capsule-projection-v8");
+          .isEqualTo("business-flows-capsule-projection-v9");
       assertThat(reopened.receipt().upstreamArtifacts()).hasSize(14);
     }
   }
@@ -172,7 +172,7 @@ class CapsuleProjectionModulePublisherTest {
       assertThat(reopened.payloads().get(0).descriptor().artifactType())
           .isEqualTo("BUSINESS_FLOWS_CAPSULE_PROJECTION");
       assertThat(reopened.payloads().get(0).descriptor().schemaVersion())
-          .isEqualTo("business-flows-capsule-projection-v8");
+          .isEqualTo("business-flows-capsule-projection-v9");
       assertThat(reopened.receipt().payloadArtifacts())
           .containsExactly(reopened.payloads().get(0).descriptor());
       assertThat(reopened.receipt().upstreamArtifacts()).hasSize(14);
@@ -180,7 +180,7 @@ class CapsuleProjectionModulePublisherTest {
       JsonNode m2Envelope =
           canonicalJson.parseCanonical(reopened.payloads().get(0).canonicalUtf8());
       assertThat(m2Envelope.path("schemaVersion").asText())
-          .isEqualTo("business-flows-capsule-projection-v8");
+          .isEqualTo("business-flows-capsule-projection-v9");
       JsonNode m2Payload = m2Envelope.path("payload");
       Map<String, JsonNode> m1Flows = jsonNodesById(m1Payload.path("flowSlices"), "flowSliceId");
       Map<String, JsonNode> m2Capsules = jsonNodesById(m2Payload.path("capsules"), "flowSliceId");
@@ -340,7 +340,7 @@ class CapsuleProjectionModulePublisherTest {
       ReopenedModulePublication reopened = fixture.moduleArtifacts().reopen(reference);
       assertThat(reopened.payloads()).hasSize(1);
       assertThat(reopened.payloads().get(0).descriptor().schemaVersion())
-          .isEqualTo("business-flows-capsule-projection-v8");
+          .isEqualTo("business-flows-capsule-projection-v9");
     }
   }
 
@@ -602,8 +602,6 @@ class CapsuleProjectionModulePublisherTest {
         capsule.gapViews(),
         capsule.outcomePathViews(),
         capsule.processJoinSignals(),
-        capsule.registryProposalBasisAtomIds(),
-        capsule.registryProposalBasisGapIds(),
         spanIds,
         capsule.projectionObligationIds(),
         capsule.budgetUsage());

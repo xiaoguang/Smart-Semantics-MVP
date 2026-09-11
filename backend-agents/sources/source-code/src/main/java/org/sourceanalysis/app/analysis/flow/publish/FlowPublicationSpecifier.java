@@ -65,7 +65,7 @@ public final class FlowPublicationSpecifier {
   private static final String ENTRY_TYPE = "BUSINESS_FLOWS_ENTRY_DISPOSITION";
   private static final String ENTRY_SCHEMA = "business-flows-entry-disposition-v1";
   private static final String CAPSULE_TYPE = "BUSINESS_FLOWS_EVIDENCE_CAPSULE";
-  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v6";
+  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v7";
   private static final String GAP_TYPE = "BUSINESS_FLOWS_FLOW_GAP";
   private static final String GAP_SCHEMA = "business-flows-flow-gap-v2";
 
@@ -125,7 +125,7 @@ public final class FlowPublicationSpecifier {
               "capsule-projector",
               "capsule-projection.json",
               "BUSINESS_FLOWS_CAPSULE_PROJECTION",
-              "business-flows-capsule-projection-v8",
+              "business-flows-capsule-projection-v9",
               source.publication().address().runId(),
               sourceStep.receipt().controls());
       FlowProvenanceSources sources = sourceRecords(factStep, graphStep);

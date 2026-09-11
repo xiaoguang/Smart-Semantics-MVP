@@ -75,8 +75,6 @@ class EvidenceCapsuleProjectorTest {
                     List.of(),
                     List.of())),
             List.of(),
-            List.of(),
-            List.of(),
             List.of("span:return"),
             List.of("obligation:return"),
             new CapsuleProjection.BudgetUsage(1, 42));
@@ -132,11 +130,8 @@ class EvidenceCapsuleProjectorTest {
                     .toList());
         assertThat(listProperty(capsule, "modelEvidenceSpanIds")).isNotEmpty();
         assertThat(listProperty(capsule, "projectionObligationIds")).isNotEmpty();
-        assertThat(
-                listProperty(capsule, "registryProposalBasisAtomIds").stream()
-                    .map(Object::toString)
-                    .toList())
-            .containsExactlyElementsOf(flow.atomIds());
+        assertThat(listProperty(capsule, "gapViews")).isNotNull();
+        assertThat(listProperty(capsule, "processJoinSignals")).isNotEmpty();
       }
     }
   }
