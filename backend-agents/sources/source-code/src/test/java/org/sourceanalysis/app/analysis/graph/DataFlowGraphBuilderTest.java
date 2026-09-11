@@ -380,6 +380,9 @@ class DataFlowGraphBuilderTest {
                 assertThat(gap.sourceLocator().path())
                     .isEqualTo("src/main/java/com/example/DepotHeadService.java");
               });
+      draft
+          .gapDrafts()
+          .forEach(gap -> GraphGapDraft.requireIdentity(ProgramGraphKind.DATA_FLOW, gap));
       assertThat(draft.worklistAccounting().enqueuedWorkItemIds())
           .anySatisfy(
               workItem ->
@@ -754,6 +757,11 @@ class DataFlowGraphBuilderTest {
   void recordsALocalGapForAnUnsupportedExactMapperBoundaryActual() {
     try (ControlFlowGraphBuilderTest.Fixture fixture =
         ControlFlowGraphBuilderTest.Fixture.createWithLiteralMapperArgument(temporaryDirectory)) {
+      assertThat(fixture.reopenedInputs().source().inventoryScopeKind())
+          .isEqualTo("COMPLETE_CAPTURE");
+      assertThat(fixture.reopenedInputs().source().repositoryCompletionEligible()).isTrue();
+      assertThat(fixture.structure().draft().coverage().scopeGapIds()).isEmpty();
+      assertThat(fixture.calls().draft().coverage().scopeGapIds()).isEmpty();
       DataFlowGraphDraft draft =
           assertDoesNotThrow(
               () -> buildDataFlow(fixture).dataFlowDraft(),
@@ -771,6 +779,10 @@ class DataFlowGraphBuilderTest {
               });
       assertThat(draft.nodes())
           .noneMatch(node -> node.kind() == DataFlowNodeKind.JAVA_BOUNDARY_INVOCATION);
+      assertThat(draft.coverage().scopeGapIds()).isEmpty();
+      assertThat(draft.coverage().closed())
+          .as("local Gap dispositions do not make complete-source coverage open")
+          .isTrue();
     }
   }
 
@@ -934,6 +946,29 @@ class DataFlowGraphBuilderTest {
               edge ->
                   List.of("PROPERTY_TO_PLACEHOLDER", "CRITERION_TO_WHERE", "PLACEHOLDER_TO_COLUMN")
                       .contains(edge.kind().name()));
+    }
+  }
+
+  @Test
+  void representsAZeroArgumentBoundaryWithoutOrphanedArgumentEvidence() {
+    try (ControlFlowGraphBuilderTest.Fixture fixture =
+        ControlFlowGraphBuilderTest.Fixture.createWithZeroArgumentMapper(temporaryDirectory)) {
+      DataFlowGraphDraft draft =
+          assertDoesNotThrow(
+              () -> buildDataFlow(fixture).dataFlowDraft(),
+              "a boundary with no arguments must not create orphaned argument evidence");
+
+      DataFlowNode boundary =
+          single(
+              draft.nodes().stream()
+                  .filter(node -> node.kind() == DataFlowNodeKind.JAVA_BOUNDARY_INVOCATION)
+                  .filter(
+                      node ->
+                          node.canonicalValue()
+                              .contains("com.example.DepotHeadMapper#selectAll()")));
+      assertThat(boundary.boundaryInvocation().orderedArguments()).isEmpty();
+      assertThat(draft.provenanceDrafts())
+          .noneMatch(provenance -> provenance.ruleId().equals("java-boundary-argument-v1"));
     }
   }
 
@@ -1222,11 +1257,26 @@ class DataFlowGraphBuilderTest {
                 assertThat(gap.affectedEntryIds()).containsExactly(fixture.entryId());
                 assertThat(gap.sourceLocator()).isNotNull();
               });
+      draft
+          .gapDrafts()
+          .forEach(gap -> GraphGapDraft.requireIdentity(ProgramGraphKind.DATA_FLOW, gap));
       assertThat(draft.coverage().gapDispositions())
           .hasSize(2)
           .allSatisfy(
               disposition ->
                   assertThat(disposition.gapId()).isEqualTo(draft.gapDrafts().get(0).gapId()));
+
+      DataFlowGraphDraftReference published =
+          new DataFlowGraphModulePublisher(fixture.store())
+              .publish(
+                  new AnalysisStepModuleAddress(
+                      fixture.runId(), AnalysisStepKey.PROGRAM_GRAPHS, 4, "data-flow"),
+                  fixture.structure(),
+                  fixture.calls(),
+                  controlFlow,
+                  fixture.reopenedInputs(),
+                  draft);
+      assertThat(published.publication()).isNotNull();
     }
   }
 

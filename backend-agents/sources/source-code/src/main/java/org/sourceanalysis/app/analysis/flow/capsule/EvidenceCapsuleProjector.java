@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import org.sourceanalysis.app.analysis.fact.publish.ProvenCodeFactsReference;
+import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilation;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
@@ -49,7 +50,11 @@ public final class EvidenceCapsuleProjector {
       Comparator.comparing(
           value -> value.getBytes(StandardCharsets.UTF_8), EvidenceCapsuleProjector::compare);
   private static final String M1_TYPE = "BUSINESS_FLOWS_FLOW_COMPILATION";
-  private static final String M1_SCHEMA = "business-flows-flow-compilation-v1";
+  private static final String M1_SCHEMA = "business-flows-flow-compilation-v3";
+  private static final Comparator<SourceLocatorV1> SOURCE_LOCATOR_ORDER =
+      Comparator.comparing(SourceLocatorV1::path)
+          .thenComparingLong(SourceLocatorV1::startByte)
+          .thenComparingLong(SourceLocatorV1::endByteExclusive);
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
   private final CanonicalAnalysisStepArtifactStore analysisSteps;
@@ -147,7 +152,8 @@ public final class EvidenceCapsuleProjector {
                                         atom.valueType(),
                                         atom.canonicalValue(),
                                         atom.proofId()))
-                            .toList()))
+                            .toList(),
+                        inputs.provenFactsRef()))
             .toList();
     List<CapsuleProjection.FlowGapView> gapViews =
         new ArrayList<>(
@@ -156,10 +162,14 @@ public final class EvidenceCapsuleProjector {
                     gap ->
                         new CapsuleProjection.FlowGapView(
                             gap.gapId(),
-                            "FLOW",
+                            "FACT",
                             gap.code(),
-                            List.of(flow.entryId()),
-                            gap.evidenceNodeIds()))
+                            gap.affectedCandidateDenominatorKeys(),
+                            gap.evidenceNodeIds().isEmpty()
+                                ? List.of()
+                                : List.of(inputs.evidenceGraphRef()),
+                            "PROVEN_CODE_FACTS_GAP_LEDGER",
+                            inputs.gapLedgerRef()))
                 .toList());
     List<CapsuleProjection.FlowOutcomePathView> outcomeViews =
         flow.outcomes().stream().map(EvidenceCapsuleProjector::outcomeView).toList();
@@ -177,6 +187,8 @@ public final class EvidenceCapsuleProjector {
                 proof.requiredEvidenceNodeIds(),
                 atom.atomId(),
                 null,
+                null,
+                flow.flowSliceId(),
                 inputs,
                 profile,
                 selectedSpans,
@@ -199,6 +211,8 @@ public final class EvidenceCapsuleProjector {
               terminal.evidenceNodeIds(),
               null,
               outcome.outcomePathId(),
+              null,
+              flow.flowSliceId(),
               inputs,
               profile,
               selectedSpans,
@@ -208,6 +222,19 @@ public final class EvidenceCapsuleProjector {
       obligations.add(
           new CapsuleProjection.ProjectionObligation(
               obligationId, "OUTCOME_TERMINAL", outcome.outcomePathId(), spanIds));
+      obligationIds.add(obligationId);
+    }
+    List<FlowCompilation.ProcessJoinSignalV1> processJoinSignals = flow.processJoinSignals();
+    for (FlowCompilation.ProcessJoinSignalV1 signal : processJoinSignals) {
+      List<String> spanIds =
+          selectProcessJoinSignalSpans(
+              signal, flow.flowSliceId(), inputs, profile, selectedSpans, flowSpanIds);
+      String obligationId =
+          contentId(
+              "projection-obligation", "PROCESS_JOIN_SIGNAL_BASIS", signal.processJoinSignalId());
+      obligations.add(
+          new CapsuleProjection.ProjectionObligation(
+              obligationId, "PROCESS_JOIN_SIGNAL_BASIS", signal.processJoinSignalId(), spanIds));
       obligationIds.add(obligationId);
     }
     PersistedControlNode root = inputs.controlNodesById().get(flow.rootNodeId());
@@ -244,8 +271,15 @@ public final class EvidenceCapsuleProjector {
               "FLOW",
               "CAPSULE_BUDGET_NO_SAFE_SPLIT",
               List.of(flow.flowSliceId()),
-              root.evidenceNodeIds()));
+              List.of(),
+              "CAPSULE_PROJECTION",
+              null));
     }
+    List<String> processJoinSignalIds =
+        processJoinSignals.stream()
+            .map(FlowCompilation.ProcessJoinSignalV1::processJoinSignalId)
+            .sorted(UTF8_ORDER)
+            .toList();
     return new ProjectedFlow(
         new CapsuleProjection.EvidenceCapsule(
             contentId(
@@ -253,6 +287,7 @@ public final class EvidenceCapsuleProjector {
                 flow.flowSliceId(),
                 inputs.proofPackRef().artifactId().value(),
                 inputs.proofPackRef().sha256().value(),
+                String.join("\u0000", processJoinSignalIds),
                 String.join("\u0000", orderedSpanIds),
                 String.join("\u0000", obligationIds.stream().sorted(UTF8_ORDER).toList())),
             flow.flowSliceId(),
@@ -264,6 +299,7 @@ public final class EvidenceCapsuleProjector {
             factViews,
             gapViews,
             outcomeViews,
+            processJoinSignals,
             flow.atomIds(),
             flow.gapIds(),
             orderedSpanIds,
@@ -327,6 +363,8 @@ public final class EvidenceCapsuleProjector {
       List<String> evidenceNodeIds,
       String atomId,
       String outcomePathId,
+      String processJoinSignalId,
+      String flowSliceId,
       Inputs inputs,
       CapsuleProjectionProfile profile,
       Map<String, SpanBuilder> selectedSpans,
@@ -338,18 +376,58 @@ public final class EvidenceCapsuleProjector {
       // Rule-application nodes explain how a Proof was derived. A capsule must expose only the
       // corresponding frozen source excerpts to a model, not an implementation-rule token.
       if (evidence.sourceExcerpt() == null) continue;
-      String spanId = contentId("model-evidence-span", evidenceNodeId);
+      String spanId = flowRootedSpanId(flowSliceId, evidenceNodeId);
       SpanBuilder builder =
           selectedSpans.computeIfAbsent(
-              spanId, ignored -> new SpanBuilder(spanId, evidence.sourceExcerpt()));
+              spanId, ignored -> new SpanBuilder(spanId, flowSliceId, evidence.sourceExcerpt()));
+      builder.requireOwningFlow(flowSliceId);
       if (atomId != null) builder.supportedAtomIds.add(atomId);
       if (outcomePathId != null) builder.supportedOutcomePathIds.add(outcomePathId);
+      if (processJoinSignalId != null)
+        builder.supportedProcessJoinSignalIds.add(processJoinSignalId);
       spanIds.add(spanId);
       flowSpanIds.add(spanId);
     }
     List<String> ordered = spanIds.stream().sorted(UTF8_ORDER).distinct().toList();
     if (ordered.isEmpty()) throw failure("EVIDENCE_PROJECTION_UNSATISFIABLE");
     return ordered;
+  }
+
+  private static List<String> selectProcessJoinSignalSpans(
+      FlowCompilation.ProcessJoinSignalV1 signal,
+      String flowSliceId,
+      Inputs inputs,
+      CapsuleProjectionProfile profile,
+      Map<String, SpanBuilder> selectedSpans,
+      Set<String> flowSpanIds) {
+    if (!flowSliceId.equals(signal.flowSliceId())) {
+      throw failure("PROCESS_JOIN_SIGNAL_FLOW_MISMATCH");
+    }
+    selectSourceSpans(
+        signal.evidenceNodeIds(),
+        null,
+        null,
+        signal.processJoinSignalId(),
+        flowSliceId,
+        inputs,
+        profile,
+        selectedSpans,
+        flowSpanIds);
+    List<String> matchingSpanIds =
+        flowSpanIds.stream()
+            .filter(
+                spanId -> {
+                  SpanBuilder span = selectedSpans.get(spanId);
+                  return span != null
+                      && signal.sourceLocators().contains(span.sourceExcerpt().locator());
+                })
+            .sorted(UTF8_ORDER)
+            .toList();
+    if (matchingSpanIds.isEmpty()) throw failure("EVIDENCE_PROJECTION_UNSATISFIABLE");
+    for (String spanId : matchingSpanIds) {
+      selectedSpans.get(spanId).supportedProcessJoinSignalIds.add(signal.processJoinSignalId());
+    }
+    return matchingSpanIds;
   }
 
   private Inputs inputs(
@@ -380,17 +458,17 @@ public final class EvidenceCapsuleProjector {
                 "proven-facts.json",
                 new PayloadSpec(
                     "PROVEN_CODE_FACTS_PROVEN_FACTS",
-                    "proven-code-facts-proven-facts-v2",
+                    "proven-code-facts-proven-facts-v3",
                     CanonicalMediaType.APPLICATION_JSON),
                 "proof-pack.json",
                 new PayloadSpec(
                     "PROVEN_CODE_FACTS_PROOF_PACK",
-                    "proven-code-facts-proof-pack-v2",
+                    "proven-code-facts-proof-pack-v3",
                     CanonicalMediaType.APPLICATION_JSON),
                 "gap-ledger.json",
                 new PayloadSpec(
                     "PROVEN_CODE_FACTS_GAP_LEDGER",
-                    "proven-code-facts-gap-ledger-v2",
+                    "proven-code-facts-gap-ledger-v3",
                     CanonicalMediaType.APPLICATION_JSON)));
     Map<String, PersistedControlNode> controlNodes =
         parseControlNodes(
@@ -409,10 +487,24 @@ public final class EvidenceCapsuleProjector {
             evidence);
     Map<String, PersistedGap> gaps =
         parseGaps(
-            canonicalJson.parseCanonical(factPayloads.get("gap-ledger.json").canonicalUtf8()));
+            canonicalJson.parseCanonical(factPayloads.get("gap-ledger.json").canonicalUtf8()),
+            evidence);
     ArtifactReference proofPack = reference(factPayloads.get("proof-pack.json"));
-    requireFlowReferences(flows, controlNodes, codeFacts, proofs, gaps);
-    return new Inputs(flows, controlNodes, evidence, codeFacts, proofs, gaps, proofPack);
+    ArtifactReference provenFacts = reference(factPayloads.get("proven-facts.json"));
+    ArtifactReference gapLedger = reference(factPayloads.get("gap-ledger.json"));
+    ArtifactReference evidenceGraph = reference(graphPayloads.get("evidence-graph.json"));
+    requireFlowReferences(flows, controlNodes, evidence, codeFacts, proofs, gaps);
+    return new Inputs(
+        flows,
+        controlNodes,
+        evidence,
+        codeFacts,
+        proofs,
+        gaps,
+        proofPack,
+        provenFacts,
+        gapLedger,
+        evidenceGraph);
   }
 
   private static ArtifactReference requireCompilation(
@@ -520,6 +612,10 @@ public final class EvidenceCapsuleProjector {
     for (JsonNode value : array(payload, "flowSlices")) {
       List<PersistedOutcome> outcomes = new ArrayList<>();
       for (JsonNode outcome : array(value, "outcomePaths")) outcomes.add(parseOutcome(outcome));
+      List<FlowCompilation.ProcessJoinSignalV1> processJoinSignals = new ArrayList<>();
+      for (JsonNode signal : array(value, "processJoinSignals")) {
+        processJoinSignals.add(parseProcessJoinSignal(signal));
+      }
       flows.add(
           new PersistedFlow(
               id(value, "flowSliceId"),
@@ -529,10 +625,11 @@ public final class EvidenceCapsuleProjector {
               ids(value, "factIds"),
               ids(value, "atomIds"),
               ordered(outcomes, PersistedOutcome::outcomePathId),
-              ids(value, "gapIds")));
+              ids(value, "gapIds"),
+              ordered(
+                  processJoinSignals, FlowCompilation.ProcessJoinSignalV1::processJoinSignalId)));
     }
     List<PersistedFlow> ordered = ordered(flows, PersistedFlow::flowSliceId);
-    if (ordered.isEmpty()) throw failure("FLOW_OUTCOME_CLOSURE_BROKEN");
     return ordered;
   }
 
@@ -554,6 +651,31 @@ public final class EvidenceCapsuleProjector {
         ids(value, "terminalFactIds"),
         ids(value, "requiredAtomIds"),
         ids(value, "requiredProofIds"));
+  }
+
+  private static FlowCompilation.ProcessJoinSignalV1 parseProcessJoinSignal(JsonNode value) {
+    try {
+      requireProcessJoinSignalFields(value);
+      return new FlowCompilation.ProcessJoinSignalV1(
+          id(value, "processJoinSignalId"),
+          id(value, "flowSliceId"),
+          text(value, "signalKind"),
+          text(value, "anchorKind"),
+          text(value, "anchorKey"),
+          text(value, "direction"),
+          text(value, "specificity"),
+          text(value, "claimScope"),
+          ids(value, "factIds"),
+          ids(value, "atomIds"),
+          ids(value, "proofIds"),
+          ids(value, "evidenceNodeIds"),
+          sourceLocators(value, "sourceLocators"),
+          ids(value, "gapIds"));
+    } catch (CapsuleProjectionException failure) {
+      throw failure;
+    } catch (RuntimeException malformed) {
+      throw failure("PROCESS_JOIN_SIGNAL_BASIS_INVALID");
+    }
   }
 
   private static Map<String, PersistedControlNode> parseControlNodes(JsonNode graph) {
@@ -627,8 +749,41 @@ public final class EvidenceCapsuleProjector {
     return excerpt;
   }
 
+  private static List<SourceLocatorV1> sourceLocators(JsonNode source, String field) {
+    List<SourceLocatorV1> values =
+        array(source, field).stream().map(EvidenceCapsuleProjector::sourceLocator).toList();
+    List<SourceLocatorV1> ordered = orderedLocators(values);
+    if (!values.equals(ordered)) throw failure("PROCESS_JOIN_SIGNAL_BASIS_INVALID");
+    return ordered;
+  }
+
+  private static SourceLocatorV1 sourceLocator(JsonNode value) {
+    requireProcessJoinSignalLocatorFields(value);
+    try {
+      return new SourceLocatorV1(
+          ArtifactId.parse(text(value, "fileId")),
+          text(value, "path"),
+          longValue(value, "startByte"),
+          longValue(value, "endByteExclusive"),
+          integer(value, "startLine"),
+          integer(value, "startColumn"),
+          integer(value, "endLine"),
+          integer(value, "endColumn"));
+    } catch (RuntimeException malformed) {
+      throw failure("PROCESS_JOIN_SIGNAL_BASIS_INVALID");
+    }
+  }
+
+  private static List<SourceLocatorV1> orderedLocators(List<SourceLocatorV1> values) {
+    List<SourceLocatorV1> ordered = values.stream().sorted(SOURCE_LOCATOR_ORDER).toList();
+    if (ordered.size() != ordered.stream().distinct().count()) {
+      throw failure("PROCESS_JOIN_SIGNAL_BASIS_INVALID");
+    }
+    return ordered;
+  }
+
   private static Map<String, PersistedFact> parseFacts(JsonNode payload) {
-    requireHeader(payload, "PROVEN_CODE_FACTS_PROVEN_FACTS", "proven-code-facts-proven-facts-v2");
+    requireHeader(payload, "PROVEN_CODE_FACTS_PROVEN_FACTS", "proven-code-facts-proven-facts-v3");
     Map<String, PersistedFact> values = new HashMap<>();
     for (JsonNode fact : array(payload, "codeFacts")) {
       List<PersistedAtom> atoms = new ArrayList<>();
@@ -662,7 +817,7 @@ public final class EvidenceCapsuleProjector {
 
   private static Map<String, PersistedProof> parseProofs(
       JsonNode payload, Map<String, PersistedEvidence> evidenceById) {
-    requireHeader(payload, "PROVEN_CODE_FACTS_PROOF_PACK", "proven-code-facts-proof-pack-v2");
+    requireHeader(payload, "PROVEN_CODE_FACTS_PROOF_PACK", "proven-code-facts-proof-pack-v3");
     Map<String, PersistedProof> values = new HashMap<>();
     for (JsonNode proof : array(payload, "atomProofs")) {
       if (!"CLOSED".equals(text(proof, "status")))
@@ -679,8 +834,9 @@ public final class EvidenceCapsuleProjector {
     return Map.copyOf(values);
   }
 
-  private static Map<String, PersistedGap> parseGaps(JsonNode payload) {
-    requireHeader(payload, "PROVEN_CODE_FACTS_GAP_LEDGER", "proven-code-facts-gap-ledger-v2");
+  private static Map<String, PersistedGap> parseGaps(
+      JsonNode payload, Map<String, PersistedEvidence> evidenceById) {
+    requireHeader(payload, "PROVEN_CODE_FACTS_GAP_LEDGER", "proven-code-facts-gap-ledger-v3");
     Map<String, PersistedGap> values = new HashMap<>();
     for (JsonNode gap : array(payload, "gaps")) {
       PersistedGap value =
@@ -688,7 +844,11 @@ public final class EvidenceCapsuleProjector {
               id(gap, "gapId"),
               text(gap, "code"),
               ids(gap, "affectedEntryIds"),
+              opaqueTexts(gap, "affectedCandidateDenominatorKeys"),
               ids(gap, "evidenceNodeIds"));
+      if (value.evidenceNodeIds().stream().anyMatch(id -> !evidenceById.containsKey(id))) {
+        throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
+      }
       if (values.put(value.gapId(), value) != null)
         throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
     }
@@ -698,6 +858,7 @@ public final class EvidenceCapsuleProjector {
   private static void requireFlowReferences(
       List<PersistedFlow> flows,
       Map<String, PersistedControlNode> controls,
+      Map<String, PersistedEvidence> evidence,
       Map<String, PersistedFact> facts,
       Map<String, PersistedProof> proofs,
       Map<String, PersistedGap> gaps) {
@@ -711,6 +872,96 @@ public final class EvidenceCapsuleProjector {
               .flatMap(value -> value.requiredProofIds().stream())
               .anyMatch(id -> !proofs.containsKey(id))) {
         throw failure("FLOW_GRAPH_REFERENCE_BROKEN");
+      }
+      requireProcessJoinSignalClosure(flow, evidence, facts, proofs, gaps);
+    }
+  }
+
+  private static void requireProcessJoinSignalClosure(
+      PersistedFlow flow,
+      Map<String, PersistedEvidence> evidence,
+      Map<String, PersistedFact> facts,
+      Map<String, PersistedProof> proofs,
+      Map<String, PersistedGap> gaps) {
+    Map<String, PersistedFact> ownedFacts = new HashMap<>();
+    Map<String, String> factIdsByAtomId = new HashMap<>();
+    Map<String, PersistedAtom> atomsById = new HashMap<>();
+    for (String factId : flow.factIds()) {
+      PersistedFact fact = facts.get(factId);
+      if (fact == null
+          || !flow.entryId().equals(fact.entryId())
+          || ownedFacts.put(factId, fact) != null) {
+        throw failure("PROCESS_JOIN_SIGNAL_FLOW_MISMATCH");
+      }
+      for (PersistedAtom atom : fact.atoms()) {
+        if (factIdsByAtomId.put(atom.atomId(), factId) != null
+            || atomsById.put(atom.atomId(), atom) != null) {
+          throw failure("PROCESS_JOIN_SIGNAL_BASIS_INVALID");
+        }
+      }
+    }
+    for (FlowCompilation.ProcessJoinSignalV1 signal : flow.processJoinSignals()) {
+      if (!flow.flowSliceId().equals(signal.flowSliceId())
+          || !signal.factIds().stream().allMatch(ownedFacts::containsKey)
+          || !signal.gapIds().stream().allMatch(flow.gapIds()::contains)) {
+        throw failure("PROCESS_JOIN_SIGNAL_FLOW_MISMATCH");
+      }
+      if (signal.atomIds().stream().anyMatch(atomId -> !atomsById.containsKey(atomId))) {
+        throw failure("PROCESS_JOIN_SIGNAL_FLOW_MISMATCH");
+      }
+      List<String> expectedFactIds =
+          signal.atomIds().stream()
+              .map(factIdsByAtomId::get)
+              .distinct()
+              .sorted(UTF8_ORDER)
+              .toList();
+      if (!signal.factIds().equals(expectedFactIds)) {
+        throw failure("PROCESS_JOIN_SIGNAL_BASIS_INVALID");
+      }
+      List<String> expectedProofIds =
+          signal.atomIds().stream()
+              .map(atomsById::get)
+              .map(PersistedAtom::proofId)
+              .distinct()
+              .sorted(UTF8_ORDER)
+              .toList();
+      if (!signal.proofIds().equals(expectedProofIds)) {
+        throw failure("PROCESS_JOIN_SIGNAL_BASIS_INVALID");
+      }
+      Set<String> expectedEvidenceIds = new HashSet<>();
+      for (String proofId : signal.proofIds()) {
+        PersistedProof proof = proofs.get(proofId);
+        if (proof == null
+            || !signal.atomIds().contains(proof.atomId())
+            || !proof.requiredEvidenceNodeIds().stream().allMatch(evidence::containsKey)) {
+          throw failure("PROCESS_JOIN_SIGNAL_BASIS_INVALID");
+        }
+        expectedEvidenceIds.addAll(proof.requiredEvidenceNodeIds());
+      }
+      for (String gapId : signal.gapIds()) {
+        PersistedGap gap = gaps.get(gapId);
+        if (gap == null
+            || !gap.affectedEntryIds().equals(List.of(flow.entryId()))
+            || !gap.evidenceNodeIds().stream().allMatch(evidence::containsKey)) {
+          throw failure("PROCESS_JOIN_SIGNAL_FLOW_MISMATCH");
+        }
+        expectedEvidenceIds.addAll(gap.evidenceNodeIds());
+      }
+      List<String> orderedEvidenceIds = expectedEvidenceIds.stream().sorted(UTF8_ORDER).toList();
+      if (orderedEvidenceIds.isEmpty() || !signal.evidenceNodeIds().equals(orderedEvidenceIds)) {
+        throw failure("PROCESS_JOIN_SIGNAL_BASIS_INVALID");
+      }
+      List<SourceLocatorV1> expectedLocators =
+          orderedLocators(
+              orderedEvidenceIds.stream()
+                  .map(evidence::get)
+                  .map(PersistedEvidence::sourceExcerpt)
+                  .filter(Objects::nonNull)
+                  .map(SourceExcerptV1::locator)
+                  .distinct()
+                  .toList());
+      if (expectedLocators.isEmpty() || !signal.sourceLocators().equals(expectedLocators)) {
+        throw failure("PROCESS_JOIN_SIGNAL_BASIS_INVALID");
       }
     }
   }
@@ -750,6 +1001,49 @@ public final class EvidenceCapsuleProjector {
     }
   }
 
+  private static void requireProcessJoinSignalFields(JsonNode value) {
+    requireExactFields(
+        value,
+        Set.of(
+            "processJoinSignalId",
+            "flowSliceId",
+            "signalKind",
+            "anchorKind",
+            "anchorKey",
+            "direction",
+            "specificity",
+            "claimScope",
+            "factIds",
+            "atomIds",
+            "proofIds",
+            "evidenceNodeIds",
+            "sourceLocators",
+            "gapIds"),
+        "PROCESS_JOIN_SIGNAL_BASIS_INVALID");
+  }
+
+  private static void requireProcessJoinSignalLocatorFields(JsonNode value) {
+    requireExactFields(
+        value,
+        Set.of(
+            "fileId",
+            "path",
+            "startByte",
+            "endByteExclusive",
+            "startLine",
+            "startColumn",
+            "endLine",
+            "endColumn"),
+        "PROCESS_JOIN_SIGNAL_BASIS_INVALID");
+  }
+
+  private static void requireExactFields(JsonNode value, Set<String> expected, String code) {
+    if (value == null || !value.isObject()) throw failure(code);
+    Set<String> actual = new HashSet<>();
+    value.fieldNames().forEachRemaining(actual::add);
+    if (!actual.equals(expected)) throw failure(code);
+  }
+
   private static JsonNode object(JsonNode source, String field) {
     JsonNode value = source.get(field);
     if (value == null || !value.isObject()) throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
@@ -786,6 +1080,16 @@ public final class EvidenceCapsuleProjector {
             .map(value -> ArtifactId.parse(text(value)))
             .map(ArtifactId::value)
             .toList();
+    List<String> ordered = values.stream().sorted(UTF8_ORDER).toList();
+    if (!ordered.equals(values) || ordered.size() != new HashSet<>(ordered).size()) {
+      throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
+    }
+    return ordered;
+  }
+
+  private static List<String> opaqueTexts(JsonNode source, String field) {
+    List<String> values =
+        array(source, field).stream().map(EvidenceCapsuleProjector::text).toList();
     List<String> ordered = values.stream().sorted(UTF8_ORDER).toList();
     if (!ordered.equals(values) || ordered.size() != new HashSet<>(ordered).size()) {
       throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
@@ -833,6 +1137,18 @@ public final class EvidenceCapsuleProjector {
     }
   }
 
+  private static String flowRootedSpanId(String flowSliceId, String evidenceNodeId) {
+    try {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      digest.update(frame("business-flows-model-evidence-span-id-v2"));
+      digest.update(frame(flowSliceId));
+      digest.update(frame(evidenceNodeId));
+      return "model-evidence-span:" + HexFormat.of().formatHex(digest.digest());
+    } catch (NoSuchAlgorithmException unavailable) {
+      throw new IllegalStateException("SHA-256 unavailable", unavailable);
+    }
+  }
+
   private static byte[] frame(String value) {
     byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
     return ByteBuffer.allocate(Long.BYTES + bytes.length)
@@ -865,7 +1181,10 @@ public final class EvidenceCapsuleProjector {
       Map<String, PersistedFact> factsById,
       Map<String, PersistedProof> proofsById,
       Map<String, PersistedGap> gapsById,
-      ArtifactReference proofPackRef) {}
+      ArtifactReference proofPackRef,
+      ArtifactReference provenFactsRef,
+      ArtifactReference gapLedgerRef,
+      ArtifactReference evidenceGraphRef) {}
 
   private record PersistedFlow(
       String flowSliceId,
@@ -875,7 +1194,8 @@ public final class EvidenceCapsuleProjector {
       List<String> factIds,
       List<String> atomIds,
       List<PersistedOutcome> outcomes,
-      List<String> gapIds) {}
+      List<String> gapIds,
+      List<FlowCompilation.ProcessJoinSignalV1> processJoinSignals) {}
 
   private record PersistedOutcome(
       String outcomePathId,
@@ -912,19 +1232,32 @@ public final class EvidenceCapsuleProjector {
       String proofId, String atomId, List<String> requiredEvidenceNodeIds) {}
 
   private record PersistedGap(
-      String gapId, String code, List<String> affectedEntryIds, List<String> evidenceNodeIds) {}
+      String gapId,
+      String code,
+      List<String> affectedEntryIds,
+      List<String> affectedCandidateDenominatorKeys,
+      List<String> evidenceNodeIds) {}
 
   private record ProjectedFlow(CapsuleProjection.EvidenceCapsule capsule) {}
 
   private static final class SpanBuilder {
     private final String spanId;
+    private final String flowSliceId;
     private final SourceExcerptV1 sourceExcerpt;
     private final Set<String> supportedAtomIds = new HashSet<>();
     private final Set<String> supportedOutcomePathIds = new HashSet<>();
+    private final Set<String> supportedProcessJoinSignalIds = new HashSet<>();
 
-    private SpanBuilder(String spanId, SourceExcerptV1 sourceExcerpt) {
+    private SpanBuilder(String spanId, String flowSliceId, SourceExcerptV1 sourceExcerpt) {
       this.spanId = spanId;
+      this.flowSliceId = flowSliceId;
       this.sourceExcerpt = sourceExcerpt;
+    }
+
+    private void requireOwningFlow(String candidateFlowSliceId) {
+      if (!flowSliceId.equals(candidateFlowSliceId)) {
+        throw failure("PROCESS_JOIN_SIGNAL_FLOW_MISMATCH");
+      }
     }
 
     private SourceExcerptV1 sourceExcerpt() {
@@ -936,7 +1269,8 @@ public final class EvidenceCapsuleProjector {
           spanId,
           sourceExcerpt,
           supportedAtomIds.stream().sorted(UTF8_ORDER).toList(),
-          supportedOutcomePathIds.stream().sorted(UTF8_ORDER).toList());
+          supportedOutcomePathIds.stream().sorted(UTF8_ORDER).toList(),
+          supportedProcessJoinSignalIds.stream().sorted(UTF8_ORDER).toList());
     }
   }
 }

@@ -116,7 +116,7 @@ class FactCandidateExactUpstreamTest {
           new CanonicalModulePayload(
               "fact-candidate-set.json",
               "PROVEN_CODE_FACTS_FACT_CANDIDATE_SET",
-              "proven-code-facts-fact-candidate-set-v2",
+              "proven-code-facts-fact-candidate-set-v3",
               ArtifactId.parse(decoyArtifactId),
               CanonicalMediaType.APPLICATION_JSON,
               json.encodeCanonical(decoyEnvelope));
@@ -124,7 +124,7 @@ class FactCandidateExactUpstreamTest {
           modules.install(
               new ModuleInstallRequest(
                   decoyDestination,
-                  "v2",
+                  "v3",
                   decoyUpstream,
                   fixture.artifactControls(),
                   ModuleCompletionStatus.SUCCEEDED,
@@ -191,7 +191,7 @@ class FactCandidateExactUpstreamTest {
         + digest(
             concatenate(
                 frame("canonical-module-artifact-id-v1"),
-                frame("proven-code-facts-fact-candidate-set-v2"),
+                frame("proven-code-facts-fact-candidate-set-v3"),
                 frame("PROVEN_CODE_FACTS_FACT_CANDIDATE_SET"),
                 frame(json.encodeCanonical(withoutArtifactId).copyToByteArray())));
   }

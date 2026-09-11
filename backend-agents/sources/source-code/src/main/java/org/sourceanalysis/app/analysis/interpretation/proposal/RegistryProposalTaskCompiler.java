@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilation;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.ArtifactControls;
@@ -28,6 +30,7 @@ import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
+import org.sourceanalysis.app.evidence.SourceLocatorV1;
 
 /**
  * Reopens one public BusinessFlows publication and makes one isolated R0 task per eligible Flow.
@@ -39,7 +42,7 @@ public final class RegistryProposalTaskCompiler {
 
   private static final String FLOW_SLICES_FILE = "flow-slices.json";
   private static final String FLOW_SLICES_TYPE = "BUSINESS_FLOWS_FLOW_SLICES";
-  private static final String FLOW_SLICES_SCHEMA = "business-flows-flow-slices-v1";
+  private static final String FLOW_SLICES_SCHEMA = "business-flows-flow-slices-v3";
   private static final String COVERAGE_FILE = "flow-coverage.json";
   private static final String COVERAGE_TYPE = "BUSINESS_FLOWS_FLOW_COVERAGE";
   private static final String COVERAGE_SCHEMA = "business-flows-flow-coverage-v1";
@@ -48,10 +51,10 @@ public final class RegistryProposalTaskCompiler {
   private static final String ENTRY_SCHEMA = "business-flows-entry-disposition-v1";
   private static final String CAPSULE_FILE = "evidence-capsules.jsonl";
   private static final String CAPSULE_TYPE = "BUSINESS_FLOWS_EVIDENCE_CAPSULE";
-  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v2";
+  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v5";
   private static final String GAP_FILE = "flow-gaps.jsonl";
   private static final String GAP_TYPE = "BUSINESS_FLOWS_FLOW_GAP";
-  private static final String GAP_SCHEMA = "business-flows-flow-gap-v1";
+  private static final String GAP_SCHEMA = "business-flows-flow-gap-v2";
   private static final Comparator<String> UTF8_ORDER = RegistryProposalTaskCompiler::compareUtf8;
 
   private final CanonicalAnalysisStepArtifactStore analysisSteps;
@@ -95,6 +98,12 @@ public final class RegistryProposalTaskCompiler {
                   taskProfile.promptBundleRef().sha256().value(),
                   taskProfile.outputSchemaRef().sha256().value(),
                   taskProfile.expectedRuntimeRef().sha256().value(),
+                  taskProfile.configuredAdapterId(),
+                  taskProfile.configuredAuthMode(),
+                  taskProfile.expectedRuntime().upstreamProvider(),
+                  taskProfile.expectedRuntime().model(),
+                  taskProfile.expectedRuntime().reasoningEffort(),
+                  taskProfile.expectedRuntime().sandbox(),
                   taskProfile.resourceBudgetRef().sha256().value())),
           businessFlows.publication(),
           publicFlows.eligibleFlowSliceIds(),
@@ -151,11 +160,12 @@ public final class RegistryProposalTaskCompiler {
     JsonNode flows = canonicalJson.parseCanonical(flowPayload.canonicalUtf8());
     JsonNode coverage = canonicalJson.parseCanonical(coveragePayload.canonicalUtf8());
     List<String> allFlows = identifierArray(coverage, "flowSliceIds");
-    List<String> flowItems =
-        array(flows, "flowSlices").stream()
-            .map(value -> identifier(value, "flowSliceId"))
-            .sorted(UTF8_ORDER)
-            .toList();
+    Map<String, JsonNode> flowsById = new HashMap<>();
+    for (JsonNode flow : array(flows, "flowSlices")) {
+      String flowSliceId = identifier(flow, "flowSliceId");
+      if (flowsById.put(flowSliceId, flow) != null) throw failure("FLOW_CAPSULE_SET_INVALID");
+    }
+    List<String> flowItems = flowsById.keySet().stream().sorted(UTF8_ORDER).toList();
     List<String> eligible = identifierArray(coverage, "modelEligibleFlowSliceIds");
     List<String> ineligible = identifierArray(coverage, "modelIneligibleFlowSliceIds");
     if (!booleanValue(coverage, "closed")
@@ -178,7 +188,10 @@ public final class RegistryProposalTaskCompiler {
           || flowByCapsule.put(capsuleId, flowSliceId) != null) {
         throw failure("FLOW_CAPSULE_SET_INVALID");
       }
-      validateCapsule(capsule, flowSliceId, eligible.contains(flowSliceId), ineligibilityByFlow);
+      JsonNode flow = flowsById.get(flowSliceId);
+      if (flow == null) throw failure("FLOW_CAPSULE_SET_INVALID");
+      validateCapsule(
+          capsule, flow, flowSliceId, eligible.contains(flowSliceId), ineligibilityByFlow);
     }
     if (!capsuleByFlow.keySet().equals(Set.copyOf(allFlows))
         || !Set.copyOf(identifierArray(coverage, "capsuleIds")).equals(flowByCapsule.keySet())) {
@@ -189,6 +202,7 @@ public final class RegistryProposalTaskCompiler {
 
   private void validateCapsule(
       JsonNode capsule,
+      JsonNode flow,
       String flowSliceId,
       boolean eligible,
       Map<String, List<String>> ineligibilityByFlow) {
@@ -208,7 +222,15 @@ public final class RegistryProposalTaskCompiler {
       throw failure("CAPSULE_CLOSURE_BROKEN");
     }
     for (JsonNode fact : array(capsule, "factViews")) validateFact(fact);
+    for (JsonNode gap : array(capsule, "gapViews")) validateGap(gap);
     for (JsonNode outcome : array(capsule, "outcomePathViews")) validateOutcome(outcome);
+    List<String> signalIds = validateProcessJoinSignals(capsule, flowSliceId);
+    validateProcessJoinSignals(flow, flowSliceId);
+    if (!Arrays.equals(
+        canonicalJson.encodeCanonical(field(flow, "processJoinSignals")).copyToByteArray(),
+        canonicalJson.encodeCanonical(field(capsule, "processJoinSignals")).copyToByteArray())) {
+      throw failure("CAPSULE_CLOSURE_BROKEN");
+    }
     List<String> spanIds = identifierArray(capsule, "modelEvidenceSpanIds");
     List<String> embeddedSpanIds =
         array(capsule, "modelEvidenceSpans").stream()
@@ -216,7 +238,17 @@ public final class RegistryProposalTaskCompiler {
             .sorted(UTF8_ORDER)
             .toList();
     if (!spanIds.equals(embeddedSpanIds)) throw failure("CAPSULE_CLOSURE_BROKEN");
-    for (JsonNode span : array(capsule, "modelEvidenceSpans")) validateSpan(span);
+    Map<String, List<String>> supportingSpanIdsBySignal = new HashMap<>();
+    for (JsonNode span : array(capsule, "modelEvidenceSpans")) {
+      validateSpan(span);
+      String spanId = identifier(span, "spanId");
+      for (String signalId : orderedIdentifierArray(span, "supportedProcessJoinSignalIds")) {
+        if (!signalIds.contains(signalId)) throw failure("CAPSULE_CLOSURE_BROKEN");
+        supportingSpanIdsBySignal
+            .computeIfAbsent(signalId, ignored -> new ArrayList<>())
+            .add(spanId);
+      }
+    }
     List<String> obligationIds = identifierArray(capsule, "projectionObligationIds");
     List<String> embeddedObligationIds =
         array(capsule, "projectionObligations").stream()
@@ -224,9 +256,25 @@ public final class RegistryProposalTaskCompiler {
             .sorted(UTF8_ORDER)
             .toList();
     if (!obligationIds.equals(embeddedObligationIds)) throw failure("CAPSULE_CLOSURE_BROKEN");
+    Map<String, List<JsonNode>> obligationsBySignal = new HashMap<>();
     for (JsonNode obligation : array(capsule, "projectionObligations")) {
       List<String> satisfying = identifierArray(obligation, "satisfyingSpanIds");
       if (satisfying.isEmpty() || !spanIds.containsAll(satisfying)) {
+        throw failure("CAPSULE_CLOSURE_BROKEN");
+      }
+      if ("PROCESS_JOIN_SIGNAL_BASIS".equals(text(obligation, "kind"))) {
+        String signalId = identifier(obligation, "semanticItemId");
+        if (!signalIds.contains(signalId)) throw failure("CAPSULE_CLOSURE_BROKEN");
+        obligationsBySignal.computeIfAbsent(signalId, ignored -> new ArrayList<>()).add(obligation);
+      }
+    }
+    for (String signalId : signalIds) {
+      List<String> supportingSpanIds = supportingSpanIdsBySignal.getOrDefault(signalId, List.of());
+      List<JsonNode> signalObligations = obligationsBySignal.getOrDefault(signalId, List.of());
+      if (supportingSpanIds.isEmpty()
+          || signalObligations.size() != 1
+          || !supportingSpanIds.equals(
+              identifierArray(signalObligations.get(0), "satisfyingSpanIds"))) {
         throw failure("CAPSULE_CLOSURE_BROKEN");
       }
     }
@@ -278,15 +326,27 @@ public final class RegistryProposalTaskCompiler {
         digest,
         profile.outputSchemaRef().sha256(),
         profile.promptBundleRef().sha256(),
-        profile.expectedRuntimeRef());
+        profile.configuredAdapterId(),
+        profile.configuredAuthMode(),
+        profile.expectedRuntimeRef(),
+        profile.expectedRuntime());
   }
 
   private static JsonNode view(JsonNode capsule) {
-    return ((ObjectNode) capsule).deepCopy();
+    ObjectNode result = ((ObjectNode) capsule).deepCopy();
+    for (JsonNode fact : array(result, "factViews")) {
+      ((ObjectNode) fact).remove("originFactArtifactRef");
+    }
+    for (JsonNode gap : array(result, "gapViews")) {
+      ((ObjectNode) gap).remove("originKind");
+      ((ObjectNode) gap).remove("originGapLedgerRef");
+    }
+    return result;
   }
 
   private void validateFact(JsonNode fact) {
     identifier(fact, "factId");
+    artifactReference(fact, "originFactArtifactRef");
     if (array(fact, "atoms").isEmpty()) throw failure("CAPSULE_CLOSURE_BROKEN");
     for (JsonNode atom : array(fact, "atoms")) {
       identifier(atom, "atomId");
@@ -296,6 +356,45 @@ public final class RegistryProposalTaskCompiler {
       JsonNode value = field(atom, "value");
       text(value, "type");
       text(value, "canonical");
+    }
+  }
+
+  private static void validateGap(JsonNode gap) {
+    identifier(gap, "gapId");
+    text(gap, "originKind");
+    nullableArtifactReference(gap, "originGapLedgerRef");
+    orderedArtifactReferences(gap, "evidenceRefs");
+  }
+
+  private static void artifactReference(JsonNode source, String field) {
+    artifactReferenceId(field(source, field));
+  }
+
+  private static void nullableArtifactReference(JsonNode source, String field) {
+    JsonNode value = source.get(field);
+    if (value == null) throw failure("CAPSULE_CLOSURE_BROKEN");
+    if (!value.isNull()) artifactReferenceId(value);
+  }
+
+  private static void orderedArtifactReferences(JsonNode source, String field) {
+    List<String> values =
+        array(source, field).stream()
+            .map(RegistryProposalTaskCompiler::artifactReferenceId)
+            .toList();
+    List<String> ordered = values.stream().sorted(UTF8_ORDER).toList();
+    if (!values.equals(ordered) || ordered.size() != ordered.stream().distinct().count()) {
+      throw failure("CAPSULE_CLOSURE_BROKEN");
+    }
+  }
+
+  private static String artifactReferenceId(JsonNode reference) {
+    requireExactFields(reference, Set.of("artifactId", "sha256"));
+    try {
+      String artifactId = ArtifactId.parse(text(reference, "artifactId")).value();
+      new Sha256Digest(text(reference, "sha256"));
+      return artifactId;
+    } catch (RuntimeException invalid) {
+      throw failure("CAPSULE_CLOSURE_BROKEN");
     }
   }
 
@@ -324,6 +423,105 @@ public final class RegistryProposalTaskCompiler {
     new Sha256Digest(text(excerpt, "rawUtf8Sha256"));
     identifierArray(span, "supportedAtomIds");
     identifierArray(span, "supportedOutcomePathIds");
+    orderedIdentifierArray(span, "supportedProcessJoinSignalIds");
+  }
+
+  private static List<String> validateProcessJoinSignals(JsonNode owner, String flowSliceId) {
+    List<String> signalIds = new ArrayList<>();
+    for (JsonNode signal : array(owner, "processJoinSignals")) {
+      requireProcessJoinSignalFields(signal);
+      FlowCompilation.ProcessJoinSignalV1 value =
+          new FlowCompilation.ProcessJoinSignalV1(
+              identifier(signal, "processJoinSignalId"),
+              identifier(signal, "flowSliceId"),
+              text(signal, "signalKind"),
+              text(signal, "anchorKind"),
+              text(signal, "anchorKey"),
+              text(signal, "direction"),
+              text(signal, "specificity"),
+              text(signal, "claimScope"),
+              orderedIdentifierArray(signal, "factIds"),
+              orderedIdentifierArray(signal, "atomIds"),
+              orderedIdentifierArray(signal, "proofIds"),
+              orderedIdentifierArray(signal, "evidenceNodeIds"),
+              sourceLocators(signal),
+              orderedIdentifierArray(signal, "gapIds"));
+      if (!flowSliceId.equals(value.flowSliceId())) throw failure("CAPSULE_CLOSURE_BROKEN");
+      signalIds.add(value.processJoinSignalId());
+    }
+    List<String> ordered = signalIds.stream().sorted(UTF8_ORDER).toList();
+    if (!signalIds.equals(ordered) || ordered.size() != ordered.stream().distinct().count()) {
+      throw failure("CAPSULE_CLOSURE_BROKEN");
+    }
+    return ordered;
+  }
+
+  private static List<SourceLocatorV1> sourceLocators(JsonNode signal) {
+    List<SourceLocatorV1> values =
+        array(signal, "sourceLocators").stream()
+            .map(RegistryProposalTaskCompiler::sourceLocator)
+            .toList();
+    List<SourceLocatorV1> ordered =
+        values.stream()
+            .sorted(
+                Comparator.comparing(SourceLocatorV1::path)
+                    .thenComparingLong(SourceLocatorV1::startByte)
+                    .thenComparingLong(SourceLocatorV1::endByteExclusive))
+            .toList();
+    if (!values.equals(ordered) || ordered.size() != ordered.stream().distinct().count()) {
+      throw failure("CAPSULE_CLOSURE_BROKEN");
+    }
+    return ordered;
+  }
+
+  private static SourceLocatorV1 sourceLocator(JsonNode locator) {
+    requireExactFields(
+        locator,
+        Set.of(
+            "fileId",
+            "path",
+            "startByte",
+            "endByteExclusive",
+            "startLine",
+            "startColumn",
+            "endLine",
+            "endColumn"));
+    return new SourceLocatorV1(
+        ArtifactId.parse(text(locator, "fileId")),
+        text(locator, "path"),
+        longValue(locator, "startByte"),
+        longValue(locator, "endByteExclusive"),
+        integer(locator, "startLine"),
+        integer(locator, "startColumn"),
+        integer(locator, "endLine"),
+        integer(locator, "endColumn"));
+  }
+
+  private static void requireProcessJoinSignalFields(JsonNode signal) {
+    requireExactFields(
+        signal,
+        Set.of(
+            "processJoinSignalId",
+            "flowSliceId",
+            "signalKind",
+            "anchorKind",
+            "anchorKey",
+            "direction",
+            "specificity",
+            "claimScope",
+            "factIds",
+            "atomIds",
+            "proofIds",
+            "evidenceNodeIds",
+            "sourceLocators",
+            "gapIds"));
+  }
+
+  private static void requireExactFields(JsonNode value, Set<String> expected) {
+    if (value == null || !value.isObject()) throw failure("CAPSULE_CLOSURE_BROKEN");
+    Set<String> actual = new HashSet<>();
+    value.fieldNames().forEachRemaining(actual::add);
+    if (!actual.equals(expected)) throw failure("CAPSULE_CLOSURE_BROKEN");
   }
 
   private static List<String> allAtomIds(JsonNode capsule) {
@@ -358,6 +556,7 @@ public final class RegistryProposalTaskCompiler {
   }
 
   private List<JsonNode> jsonLines(ImmutableBytes bytes) {
+    if (bytes.size() == 0) return List.of();
     String text = new String(bytes.copyToByteArray(), StandardCharsets.UTF_8);
     if (!text.endsWith("\n") || text.isBlank()) throw failure("FLOW_INTERPRETATION_INPUT_INVALID");
     List<JsonNode> result = new ArrayList<>();
@@ -424,6 +623,16 @@ public final class RegistryProposalTaskCompiler {
     return values;
   }
 
+  private static List<String> orderedIdentifierArray(JsonNode source, String field) {
+    List<String> values =
+        array(source, field).stream().map(RegistryProposalTaskCompiler::identifierValue).toList();
+    List<String> ordered = values.stream().sorted(UTF8_ORDER).toList();
+    if (!values.equals(ordered) || ordered.size() != ordered.stream().distinct().count()) {
+      throw failure("CAPSULE_CLOSURE_BROKEN");
+    }
+    return ordered;
+  }
+
   private static String identifierValue(JsonNode value) {
     if (!value.isTextual()) throw failure("CAPSULE_CLOSURE_BROKEN");
     try {
@@ -439,6 +648,22 @@ public final class RegistryProposalTaskCompiler {
       throw failure("CAPSULE_CLOSURE_BROKEN");
     }
     return value.textValue();
+  }
+
+  private static long longValue(JsonNode source, String field) {
+    JsonNode value = source.get(field);
+    if (value == null || !value.canConvertToLong()) {
+      throw failure("CAPSULE_CLOSURE_BROKEN");
+    }
+    return value.longValue();
+  }
+
+  private static int integer(JsonNode source, String field) {
+    JsonNode value = source.get(field);
+    if (value == null || !value.canConvertToInt()) {
+      throw failure("CAPSULE_CLOSURE_BROKEN");
+    }
+    return value.intValue();
   }
 
   private static String contentId(String prefix, List<String> values) {

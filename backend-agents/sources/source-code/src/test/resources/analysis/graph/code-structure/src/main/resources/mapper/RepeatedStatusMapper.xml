@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.RepeatedStatusMapper">
+  <update id="approve" parameterType="com.example.DepotHead">
+    UPDATE jsh_depot_head
+    SET status = #{status}
+  </update>
+  <update id="reverse" parameterType="com.example.DepotHead">
+    UPDATE jsh_depot_head
+    SET status = #{status}
+  </update>
+</mapper>

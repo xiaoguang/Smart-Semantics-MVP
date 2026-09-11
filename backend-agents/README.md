@@ -7,7 +7,7 @@
 1. [共享规则](AGENTS.md)：所有 Source Agent 的安全、所有权和两类轮次规则。
 2. [共享语言](CONTEXT.md)：`ReaderCandidateRound`、`FlowInterpretationRound` 等术语。
 3. [共享合同](../shared/source-agent-contracts/README.md)：固定 `NineSectionProfile` 与最小身份链。
-4. 来源 Agent 的总体设计与分析步骤设计；Source Code Analysis Agent 从 [总体设计](sources/github-code/docs/DESIGN.md) 进入，再按 [八个分析步骤索引](sources/github-code/README.md#八个分析步骤) 阅读。
+4. 来源 Agent 的总体设计与分析步骤设计；Source Code Analysis Agent 从 [总体设计](sources/source-code/docs/DESIGN.md) 进入，再按 [八个分析步骤索引](sources/source-code/README.md#八个分析步骤) 阅读。
 5. 对应实现、测试、归档 JSON 与只用于恢复的 progress。
 
 [管伊佳下游审阅/合并设计](../docs/design/data-standardization-review-experience.md) 负责多来源审阅、决定叠加、Selection、冻结和浏览器阅读体验，不定义单个来源 Agent 的生成架构。
@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | `../shared/source-agent-contracts/` | 语言无关九章、候选、验证、选择概念 | Java 类型或任一来源的 JSON Schema |
 | `sources/<source>/DESIGN.md` | 该来源的稳定总体架构和跨分析步骤不变量 | 某分析步骤实现流水账 |
-| `sources/github-code/docs/analysis-steps/` | Source Code Analysis Agent 各分析步骤的当前设计、实现结果、缺口与退出条件 | 跨分析步骤合同的另一份副本 |
+| `sources/source-code/docs/analysis-steps/` | Source Code Analysis Agent 各分析步骤的当前设计、实现结果、缺口与退出条件 | 跨分析步骤合同的另一份副本 |
 | `sources/<source>/README.md` | 入口、能力索引和复现命令 | 架构权威 |
 | `sources/<source>/progress/` | 中断恢复状态 | 设计或产品合同 |
 
@@ -30,7 +30,7 @@ backend-agents/
 ├── CONTEXT.md
 └── sources/
     ├── mysql/
-    ├── github-code/
+    ├── source-code/
     ├── business-docs/
     ├── erp-policy/
     └── terminology-graph/
@@ -51,4 +51,4 @@ Frozen Source Input
   -> separately authorized freeze/package/activation
 ```
 
-候选最多使用两次 `ReaderCandidateRound`；来源内部同一候选的 Flow R1/R2 是 `FlowInterpretationRound`，不是第二份产品候选。共享合同目前只定义概念，不新增 JSON Schema。
+候选最多使用两次 `ReaderCandidateRound`。Source Code Analysis Agent 内部的语义 `DRAFT/REVIEW` 是解释职责，不产生第二份产品候选，也不改变共享候选轮上限；其目标合同仍由该来源自己的设计拥有。共享合同目前只定义概念，不新增 JSON Schema。

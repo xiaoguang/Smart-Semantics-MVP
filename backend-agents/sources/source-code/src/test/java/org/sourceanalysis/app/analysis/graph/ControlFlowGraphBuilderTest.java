@@ -93,6 +93,26 @@ class ControlFlowGraphBuilderTest {
   }
 
   @Test
+  void ignoresNestedTypesThatAreOutsideThePersistedStructureGraphDomain() {
+    try (Fixture fixture = Fixture.createWithRepeatedNestedTypeNames(temporaryDirectory)) {
+      ControlFlowGraphDraft draft = buildControlFlow(fixture);
+
+      assertThat(draft.entryIds()).containsExactly(fixture.entryId());
+      assertThat(draft.semanticTraversalOrder()).singleElement();
+    }
+  }
+
+  @Test
+  void resolvesAnEntryParameterThroughItsDirectJavaImport() {
+    try (Fixture fixture = Fixture.createWithImportedEntryParameter(temporaryDirectory)) {
+      ControlFlowGraphDraft draft = buildControlFlow(fixture);
+
+      assertThat(draft.entryIds()).containsExactly(fixture.entryId());
+      assertThat(draft.semanticTraversalOrder()).singleElement();
+    }
+  }
+
+  @Test
   void sharesControlFlowNodesAndEdgesAcrossEntriesThatReachTheSameHandler() {
     ArtifactId firstEntryId = id("entry", "shared-handler-first");
     ArtifactId secondEntryId = id("entry", "shared-handler-second");
@@ -169,6 +189,14 @@ class ControlFlowGraphBuilderTest {
             Fixture.createWithTwoEntriesSharedUnsupportedNestedGuard(temporaryDirectory, false);
         Fixture reversedFixture =
             Fixture.createWithTwoEntriesSharedUnsupportedNestedGuard(temporaryDirectory, true)) {
+      assertThat(forwardFixture.reopenedInputs().source().inventoryScopeKind())
+          .isEqualTo("COMPLETE_CAPTURE");
+      assertThat(forwardFixture.reopenedInputs().source().repositoryCompletionEligible()).isTrue();
+      assertThat(forwardFixture.structure().draft().coverage().scopeGapIds()).isEmpty();
+      assertThat(reversedFixture.reopenedInputs().source().inventoryScopeKind())
+          .isEqualTo("COMPLETE_CAPTURE");
+      assertThat(reversedFixture.reopenedInputs().source().repositoryCompletionEligible()).isTrue();
+      assertThat(reversedFixture.structure().draft().coverage().scopeGapIds()).isEmpty();
       forward = buildControlFlow(forwardFixture);
       reversed = buildControlFlow(reversedFixture);
 
@@ -223,6 +251,10 @@ class ControlFlowGraphBuilderTest {
                     .isEqualTo(ControlFlowGraphDraft.profileStopCandidate(profileStop.nodeId()));
                 assertThat(disposition.gapId()).isEqualTo(forward.gapDrafts().get(0).gapId());
               });
+      assertThat(forward.coverage().scopeGapIds()).isEmpty();
+      assertThat(forward.coverage().closed())
+          .as("local Gap dispositions do not make complete-source coverage open")
+          .isTrue();
 
       List<ControlFlowEdge> terminalEdges =
           forward.edges().stream()
@@ -844,6 +876,58 @@ class ControlFlowGraphBuilderTest {
       return create(temporaryDirectory, standardService());
     }
 
+    static Fixture createWithRepeatedNestedTypeNames(java.nio.file.Path temporaryDirectory) {
+      return create(
+          temporaryDirectory,
+          """
+          package com.example;
+
+          class DepotHeadController {
+            private final DepotHeadService depotHeadService = new DepotHeadService();
+
+            void batchSetStatus(String status) {
+              depotHeadService.batchSetStatus(status);
+            }
+
+            static class Criterion {
+              void getCondition() {}
+            }
+          }
+          """,
+          """
+          package com.example;
+
+          class DepotHeadService {
+            private final DepotHeadMapper depotHeadMapper = null;
+
+            void batchSetStatus(String status) {
+              depotHeadMapper.updateStatus(status);
+            }
+
+            static class Criterion {
+              void getCondition() {}
+            }
+          }
+          """);
+    }
+
+    static Fixture createWithImportedEntryParameter(java.nio.file.Path temporaryDirectory) {
+      return create(
+          temporaryDirectory,
+          """
+          package com.example;
+
+          import java.math.BigDecimal;
+
+          class DepotHeadController {
+            void batchSetStatus(BigDecimal status) {
+              return;
+            }
+          }
+          """,
+          standardService());
+    }
+
     static Fixture createWithTwoEntriesSharedHandler(
         java.nio.file.Path temporaryDirectory, boolean reverseEntryOrder) {
       ArtifactId firstEntryId = id("entry", "shared-handler-first");
@@ -983,6 +1067,41 @@ class ControlFlowGraphBuilderTest {
           mapperAndAuditClientService(),
           null,
           mapperAndAuditClientSource());
+    }
+
+    static Fixture createWithZeroArgumentMapper(java.nio.file.Path temporaryDirectory) {
+      return create(
+          temporaryDirectory,
+          """
+          package com.example;
+
+          class DepotHeadController {
+            private final DepotHeadService depotHeadService = new DepotHeadService();
+
+            void batchSetStatus(String status) {
+              depotHeadService.batchSetStatus(status);
+            }
+          }
+          """,
+          """
+          package com.example;
+
+          class DepotHeadService {
+            private final DepotHeadMapper depotHeadMapper = null;
+
+            void batchSetStatus(String status) {
+              depotHeadMapper.selectAll();
+            }
+          }
+          """,
+          null,
+          """
+          package com.example;
+
+          interface DepotHeadMapper {
+            void selectAll();
+          }
+          """);
     }
 
     static Fixture createWithThrowingFirstCallAndAuditClient(

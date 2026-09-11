@@ -22,6 +22,7 @@ import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
+import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
@@ -37,12 +38,12 @@ public final class FiniteKeyFlowTaskCompiler {
 
   private static final String CAPSULE_FILE = "evidence-capsules.jsonl";
   private static final String CAPSULE_TYPE = "BUSINESS_FLOWS_EVIDENCE_CAPSULE";
-  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v2";
+  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v5";
   private static final String REGISTRY_FILE = "repository-interpretation-registry.json";
   private static final String REGISTRY_TYPE =
-      "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY";
+      "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY_MODULE";
   private static final String REGISTRY_SCHEMA =
-      "flow-interpretation-repository-interpretation-registry-v2";
+      "flow-interpretation-repository-interpretation-registry-module-v1";
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
   private final CanonicalAnalysisStepArtifactStore analysisSteps;
@@ -70,7 +71,7 @@ public final class FiniteKeyFlowTaskCompiler {
       ReopenedAnalysisStepPublication flowPublication =
           analysisSteps.reopen(businessFlows.publication());
       verifyBusinessFlows(businessFlows, flowPublication, taskProfile);
-      Registry registry = reopenRegistry(registryPublication, businessFlows.publication());
+      Registry registry = reopenRegistry(registryPublication, flowPublication);
       Map<String, JsonNode> capsules = reopenCapsules(flowPublication);
       List<String> readyFlows = registry.readyFlowIds();
       if (readyFlows.size() * 2 > taskProfile.maxTasks()) {
@@ -104,15 +105,7 @@ public final class FiniteKeyFlowTaskCompiler {
           new FlowModelTaskShardReceipt(
               contentId("flow-model-r2-shard", readyFlows), "R2", readyFlows, r2Ids);
       return new FlowModelTaskSet(
-          contentId(
-              "flow-model-task-set",
-              List.of(
-                  registryPublication.moduleArtifactRoot().value(),
-                  registry.registryId(),
-                  String.join("|", r1Ids),
-                  String.join("|", r2Ids),
-                  taskProfile.r1PromptBundleRef().sha256().value(),
-                  taskProfile.r2PromptBundleRef().sha256().value())),
+          taskSetId(registryPublication, registry.registryId(), r1Ids, r2Ids, taskProfile),
           registryPublication,
           registry.registryId(),
           readyFlows,
@@ -146,15 +139,22 @@ public final class FiniteKeyFlowTaskCompiler {
   }
 
   private Registry reopenRegistry(
-      ModulePublicationReference reference,
-      org.sourceanalysis.app.artifact.AnalysisStepPublicationReference businessFlowsPublication) {
+      ModulePublicationReference reference, ReopenedAnalysisStepPublication flowPublication) {
     ReopenedModulePublication publication = moduleArtifacts.reopen(reference);
+    List<ArtifactReference> flowPayloads =
+        flowPublication.semanticPayloads().stream()
+            .map(FiniteKeyFlowTaskCompiler::reference)
+            .toList();
     if (!reference.equals(publication.reference())
         || !(publication.receipt().address()
             instanceof org.sourceanalysis.app.artifact.AnalysisStepModuleAddress address)
         || address.analysisStepKey() != AnalysisStepKey.FLOW_INTERPRETATION
         || address.moduleNumber() != 3
         || !"registry-freezer".equals(address.moduleKey())
+        || !flowPublication.reference().address().runId().equals(address.runId())
+        || !flowPublication.receipt().controls().equals(publication.receipt().controls())
+        || publication.receipt().upstreamArtifacts().size() != 7
+        || !publication.receipt().upstreamArtifacts().containsAll(flowPayloads)
         || publication.payloads().size() != 1) {
       throw failure("FLOW_INTERPRETATION_INPUT_INVALID");
     }
@@ -197,6 +197,10 @@ public final class FiniteKeyFlowTaskCompiler {
     return new Registry(registryId, List.copyOf(ready), Map.copyOf(items));
   }
 
+  private static ArtifactReference reference(VerifiedCanonicalPayload payload) {
+    return new ArtifactReference(payload.descriptor().artifactId(), payload.descriptor().sha256());
+  }
+
   private Map<String, JsonNode> reopenCapsules(ReopenedAnalysisStepPublication publication) {
     VerifiedCanonicalPayload payload =
         publication.semanticPayloads().stream()
@@ -208,6 +212,7 @@ public final class FiniteKeyFlowTaskCompiler {
       throw failure("FLOW_INTERPRETATION_INPUT_INVALID");
     }
     String raw = new String(payload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8);
+    if (raw.isEmpty()) return Map.of();
     if (!raw.endsWith("\n")) throw failure("FLOW_CAPSULE_SET_INVALID");
     Map<String, JsonNode> result = new HashMap<>();
     for (String line : raw.substring(0, raw.length() - 1).split("\n", -1)) {
@@ -235,10 +240,7 @@ public final class FiniteKeyFlowTaskCompiler {
             "R1_INTERPRETATION_INPUT", flowId, capsule, registry, items, profile.maxSelectedKeys());
     ImmutableBytes bytes = canonicalJson.encodeCanonical(input);
     Sha256Digest digest = new Sha256Digest(sha256(bytes.copyToByteArray()));
-    return new FlowModelTask(
-        contentId(
-            "flow-model-task",
-            List.of("R1", flowId, identifier(capsule, "evidenceCapsuleId"), digest.value())),
+    return FlowModelTask.create(
         "R1_INTERPRETATION",
         "R1",
         flowId,
@@ -251,7 +253,10 @@ public final class FiniteKeyFlowTaskCompiler {
         digest,
         profile.r1OutputSchemaRef().sha256(),
         profile.r1PromptBundleRef().sha256(),
-        profile.r1ExpectedRuntimeRef());
+        profile.r1ConfiguredAdapterId(),
+        profile.r1ConfiguredAuthMode(),
+        profile.r1ExpectedRuntimeRef(),
+        profile.r1ExpectedRuntime());
   }
 
   private FlowModelTask r2(
@@ -269,10 +274,7 @@ public final class FiniteKeyFlowTaskCompiler {
         .put("r1TaskSpecId", r1.taskSpecId());
     ImmutableBytes bytes = canonicalJson.encodeCanonical(input);
     Sha256Digest digest = new Sha256Digest(sha256(bytes.copyToByteArray()));
-    return new FlowModelTask(
-        contentId(
-            "flow-model-task",
-            List.of("R2", flowId, identifier(capsule, "evidenceCapsuleId"), digest.value())),
+    return FlowModelTask.create(
         "R2_PRECISION_REVIEW",
         "R2",
         flowId,
@@ -283,7 +285,39 @@ public final class FiniteKeyFlowTaskCompiler {
         digest,
         profile.r2OutputSchemaRef().sha256(),
         profile.r2PromptBundleRef().sha256(),
-        profile.r2ExpectedRuntimeRef());
+        profile.r2ConfiguredAdapterId(),
+        profile.r2ConfiguredAuthMode(),
+        profile.r2ExpectedRuntimeRef(),
+        profile.r2ExpectedRuntime());
+  }
+
+  private static String taskSetId(
+      ModulePublicationReference registryPublication,
+      String registryId,
+      List<String> r1TaskIds,
+      List<String> r2TaskIds,
+      FlowModelTaskProfile profile) {
+    return contentId(
+        "flow-model-task-set",
+        List.of(
+            registryPublication.moduleArtifactRoot().value(),
+            registryId,
+            String.join("|", r1TaskIds),
+            String.join("|", r2TaskIds),
+            profile.r1PromptBundleRef().sha256().value(),
+            profile.r1ConfiguredAdapterId(),
+            profile.r1ConfiguredAuthMode(),
+            profile.r1ExpectedRuntime().upstreamProvider(),
+            profile.r1ExpectedRuntime().model(),
+            profile.r1ExpectedRuntime().reasoningEffort(),
+            profile.r1ExpectedRuntime().sandbox(),
+            profile.r2PromptBundleRef().sha256().value(),
+            profile.r2ConfiguredAdapterId(),
+            profile.r2ConfiguredAuthMode(),
+            profile.r2ExpectedRuntime().upstreamProvider(),
+            profile.r2ExpectedRuntime().model(),
+            profile.r2ExpectedRuntime().reasoningEffort(),
+            profile.r2ExpectedRuntime().sandbox()));
   }
 
   private ObjectNode input(
@@ -303,7 +337,7 @@ public final class FiniteKeyFlowTaskCompiler {
     input.put("flowSliceId", flowId);
     input.put("evidenceCapsuleId", capsuleId);
     input.put("repositoryInterpretationRegistryId", registry.registryId());
-    input.set("capsuleView", capsule.deepCopy());
+    input.set("capsuleView", view(capsule));
     ArrayNode allowed = input.putArray("allowedRegistryItems");
     for (JsonNode item : items) {
       if (!flowId.equals(identifier(item, "flowSliceId"))
@@ -313,6 +347,57 @@ public final class FiniteKeyFlowTaskCompiler {
       allowed.add(item.deepCopy());
     }
     return input;
+  }
+
+  private static ObjectNode view(JsonNode capsule) {
+    ObjectNode result = ((ObjectNode) capsule).deepCopy();
+    for (JsonNode fact : array(result, "factViews")) {
+      artifactReference(fact, "originFactArtifactRef");
+      ((ObjectNode) fact).remove("originFactArtifactRef");
+    }
+    for (JsonNode gap : array(result, "gapViews")) {
+      text(gap, "originKind");
+      nullableArtifactReference(gap, "originGapLedgerRef");
+      orderedArtifactReferences(gap, "evidenceRefs");
+      ((ObjectNode) gap).remove("originKind");
+      ((ObjectNode) gap).remove("originGapLedgerRef");
+    }
+    return result;
+  }
+
+  private static void artifactReference(JsonNode source, String name) {
+    JsonNode value = source.get(name);
+    if (value == null || value.isNull()) throw failure("MODEL_TASK_INVALID");
+    artifactReferenceId(value);
+  }
+
+  private static void nullableArtifactReference(JsonNode source, String name) {
+    JsonNode value = source.get(name);
+    if (value == null) throw failure("MODEL_TASK_INVALID");
+    if (!value.isNull()) artifactReferenceId(value);
+  }
+
+  private static void orderedArtifactReferences(JsonNode source, String name) {
+    List<String> values = new ArrayList<>();
+    for (JsonNode reference : array(source, name)) values.add(artifactReferenceId(reference));
+    List<String> ordered = values.stream().sorted().toList();
+    if (!values.equals(ordered) || ordered.size() != ordered.stream().distinct().count()) {
+      throw failure("MODEL_TASK_INVALID");
+    }
+  }
+
+  private static String artifactReferenceId(JsonNode reference) {
+    if (!reference.isObject()) throw failure("MODEL_TASK_INVALID");
+    Set<String> fields = new HashSet<>();
+    reference.fieldNames().forEachRemaining(fields::add);
+    if (!fields.equals(Set.of("artifactId", "sha256"))) throw failure("MODEL_TASK_INVALID");
+    try {
+      String artifactId = ArtifactId.parse(text(reference, "artifactId")).value();
+      new Sha256Digest(text(reference, "sha256"));
+      return artifactId;
+    } catch (RuntimeException invalid) {
+      throw failure("MODEL_TASK_INVALID");
+    }
   }
 
   private static List<String> keys(List<JsonNode> items) {

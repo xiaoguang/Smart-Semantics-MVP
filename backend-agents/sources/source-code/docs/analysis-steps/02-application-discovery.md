@@ -2,7 +2,9 @@
 
 > 总体设计权威：[Source Code Analysis Agent 总体设计](../DESIGN.md)。运行顺序只由文件名中的 `02-` 与运行目录 `steps/02-application-discovery/` 表达。
 
-本文示例严格使用DESIGN §1.3的`NARRATIVE_ILLUSTRATION | STRUCTURAL_WIRE_SPECIMEN | STRICT_REPLAY_GOLDEN`分类；未标为strict的digest/size/ID不可复制为golden。权威字段表、enum、identity和direct-preimage合同始终exact，不能靠示例降级删除。
+本文示例严格使用[基础合同 §3.1](../references/foundation-and-publication-contracts.md#31-文档示例分类)的`NARRATIVE_ILLUSTRATION | STRUCTURAL_WIRE_SPECIMEN | STRICT_REPLAY_GOLDEN`分类；未标为strict的digest/size/ID不可复制为golden。权威字段表、enum、identity和direct-preimage合同始终exact，不能靠示例降级删除。
+
+完整 entry inventory 是后续语义材料的分母，不是 Flow 数量的附属品。某入口在 Step 05 没有 compiled Flow 时，只要这里的 locator 仍能在冻结快照中安全重开，Step 06 就必须处置该入口，而不能把它从业务分析分母筛掉。
 
 ## 1. 为什么存在
 
@@ -46,7 +48,7 @@ DepotHead 八文件中可核对的 **REAL_SOURCE**：
 ## 3. 程序怎样工作
 
 1. 重验 分析步骤“已验证源码清单” receipt、snapshot root、source handles 和 complete-capture 资格。
-2. 从完整 inventory 的 Maven/config signal 识别 Java release 和候选依赖；依赖只启用 parser。
+2. 从完整 inventory 的 Maven/config signal 识别 Java release 和候选依赖；包括直接声明的框架核心依赖及其标准 starter（例如 Spring Boot Web、MyBatis Plus Boot starter）。依赖只启用 parser，绝不成为业务行为结论。
 3. 在完整 source denominator 上先枚举全部潜在 Spring HTTP site，再按稳定 fileId 分片解析；配置只能定位 inventory 内的 MyBatis mapper files。
 4. 解析 package/type/method/annotation，并合并类级、方法级 Spring MVC route；每个 candidate site 恰一处置。
 5. 记录 handler 参数、返回类型、注解与 locator，不在此解释业务意义。
@@ -140,6 +142,19 @@ M2 和 M3 共享同一个 applicationProfileId，但互不读取对方私有结�
 
 产品运行时模型调用数固定为 0。
 
+### 7.1 简化业务路线中的 M1–M4 I/O 映射
+
+本映射不改变第 8 节稳定 discovery 协议；它只明确 BusinessMaterialBuilder 怎样复用结果。
+
+| 现有 Module | 稳定技术输入 → 输出 | 业务路线的直接用途 |
+| --- | --- | --- |
+| M1 ApplicationProfileDetector | verified source/config → Java/Spring/MyBatis capability profile | 告诉 M2/M3 启用哪些静态 parser；不把 framework 判成业务领域 |
+| M2 SpringHttpEntryDiscoverer | profile + verified Java → 全部 entry、route、handler、parameter 与 site disposition | entry 是业务分析覆盖分母；每个 entry 最终必须有活动或未分析原因 |
+| M3 MapperCapabilityCataloger | profile + verified Java/XML/config → Mapper/statement candidates 与 disposition | 帮 BusinessMaterialBuilder 找到具有清楚 select/insert/update 语境的短 SQL；candidate 本身不证明运行效果 |
+| M4 ApplicationDiscoveryPublicationSpecifier | reopened M1–M3 → application profile、entries、mapper catalog、capability report | 提供同一快照的 typed discovery view；不为 Step 06 预写业务名称 |
+
+例如 POST /receipts 只在此被识别为 entry 及 handler。它不会被 Java 命名为“记录收货”，也不会把 Controller 当用户角色；BusinessMaterialBuilder 将 handler、必要 callee 和 Mapper SQL 编成少量材料，ActivityExplainer 才解释业务。0 entry、ambiguous route、unsupported mapper 继续按本步骤已有 Gap/fatal 规则处置。本步骤仍为 0 模型，M1–M4 的既有测试和 publication 均保留。
+
 ## 8. 技术合同
 
 ### 8.0 固定模块合同
@@ -157,7 +172,7 @@ M2 和 M3 共享同一个 applicationProfileId，但互不读取对方私有结�
 - **给下游的后置保证**：M2/M3 只使用该 profile 明示的 parser/rules，并知道 inventory 内哪些 config/Java/XML 资源可读。
 - **明确非目标**：不发现 HTTP entry，不唯一绑定 Mapper，不运行 Maven、classloader、Spring 或 MyBatis。
 - **公共测试 seam 与验收**：`detect(VerifiedSourceInventoryReference, DiscoveryProfile)` 对 Java 8/Spring/MyBatis fixture 产生唯一 profile；version conflict、inventory 外 config、dependency decoy 和不同 root replay 有确定结果。
-- **Luna/xhigh 测试指南**：创建 `ApplicationProfileDetectorTest`，冻结 VerifiedSourceInventory artifacts、pom/config和手写golden于 `src/test/resources/analysis/discovery/application-profile/`。一个行为一个RED：Java8/Spring/MyBatis正向、dependency仅signal、version conflict、inventory外config、budget Gap、root/order determinism；首RED应因public detector/schema缺失失败。只可fake只读source handle，禁止mock parser/canonical/identity。命令：`mvn -Dtest=ApplicationProfileDetectorTest test`；无网络/build/Provider。偏离按DESIGN 13.11交Sol/ultra。
+- **Luna/xhigh 测试指南**：创建 `ApplicationProfileDetectorTest`，冻结 VerifiedSourceInventory artifacts、pom/config和手写golden于 `src/test/resources/analysis/discovery/application-profile/`。一个行为一个RED：Java8/Spring/MyBatis正向、dependency仅signal、version conflict、inventory外config、budget Gap、root/order determinism；首RED应因public detector/schema缺失失败。只可fake只读source handle，禁止mock parser/canonical/identity。命令：`mvn -Dtest=ApplicationProfileDetectorTest test`；无网络/build/Provider。偏离按[总体设计](../DESIGN.md)的 Design Authority 边界交Sol/ultra。
 - **Terra/xhigh 实现指南**：观察RED后仅改 `analysis/discovery/application-profile/`，实现 public `ApplicationProfileDetector/ApplicationProfile` 与 `application-discovery-application-profile-draft-v2`；只读VerifiedSourceInventory artifact/handles，按Maven/config→typed source excerpts→closed signals→conflict→profile，禁止运行Maven或把dependency当行为。逐RED GREEN，最终canonical/root replay稳定并更新审计；需新signal语义/跨分析步骤字段时MUST STOP。
 
 #### M2 SpringHttpEntryDiscoverer
@@ -171,7 +186,7 @@ M2 和 M3 共享同一个 applicationProfileId，但互不读取对方私有结�
 - **给下游的后置保证**：M4/分析步骤“程序图” 获得稳定 entryId、route parts、handler/param nodes 和完整入口 denominator，无需 reparse annotation。
 - **明确非目标**：不沿调用链、不命名业务、不把 Controller 方法存在等同于完整 Flow。
 - **公共测试 seam 与验收**：`discoverEntries(ApplicationProfile, SourceHandleSet)` 覆盖 DepotHead prefix+suffix、第二个非空 HTTP entry、动态 route、overload/decoy、annotation deletion、无入口 Gap、缺/重叠 shard；两入口在不同 shard/顺序下产生同 bytes，只有 prefix/suffix/handler refs 都在才 admitted。
-- **Luna/xhigh 测试指南**：创建 `SpringHttpEntryDiscovererTest`，fixtures/goldens放 `src/test/resources/analysis/discovery/http-entry/`，冻结真实DepotHead route spans与decoys。RED依次为prefix+suffix正向golden、缺prefix、dynamic route Gap、overload/duplicate fatal、无入口Gap、order determinism；初始因seam/artifact未实现失败。只可fakeSourceHandle，不能mock annotation parser/route merge。命令：`mvn -Dtest=SpringHttpEntryDiscovererTest test`；禁网络/客户Maven/private耦合。偏离按DESIGN 13.11交`gpt-5.6-sol / ultra` Design Authority。
+- **Luna/xhigh 测试指南**：创建 `SpringHttpEntryDiscovererTest`，fixtures/goldens放 `src/test/resources/analysis/discovery/http-entry/`，冻结真实DepotHead route spans与decoys。RED依次为prefix+suffix正向golden、缺prefix、dynamic route Gap、overload/duplicate fatal、无入口Gap、order determinism；初始因seam/artifact未实现失败。只可fakeSourceHandle，不能mock annotation parser/route merge。命令：`mvn -Dtest=SpringHttpEntryDiscovererTest test`；禁网络/客户Maven/private耦合。偏离按[总体设计](../DESIGN.md)的 Design Authority 边界交`gpt-5.6-sol / ultra` Design Authority。
 - **Terra/xhigh 实现指南**：RED后仅拥有 `analysis/discovery/http-entry/`，实现 public `SpringHttpEntryDiscoverer/EntryDiscovery` 与 `application-discovery-http-entry-discovery-v2`；输入只取M1 artifact+VerifiedSourceInventory handles，按parse→enumerate→static evaluate→route product→typed excerpt/disposition。逐slice GREEN且golden route evidence同时含两个连续spans；不得用文件名/模型补route。schema或上游不足即STOP交Sol/ultra，完成后更新审计。
 
 #### M3 MapperCapabilityCataloger
@@ -185,7 +200,7 @@ M2 和 M3 共享同一个 applicationProfileId，但互不读取对方私有结�
 - **给下游的后置保证**：分析步骤“程序图” 可按 typed candidates 和 locators 做 receiver/method/namespace/statement 唯一 binding，不必重扫 config/XML。
 - **明确非目标**：不产生 CALL edge、SQL data-flow、Fact 或 Flow；不因字符串相同宣布 Mapper binding。
 - **公共测试 seam 与验收**：`catalogMappers(ApplicationProfile, SourceHandleSet)` 覆盖 DepotHead Java/XML、同名 decoy、namespace mismatch、standard DOCTYPE 零网络和 external entity fatal。
-- **Luna/xhigh 测试指南**：创建 `MapperCapabilityCatalogerTest`，fixtures/goldens在 `src/test/resources/analysis/discovery/mapper-catalog/`。RED顺序：DepotHead candidate catalog、同名decoy不合并、namespace mismatch Gap、standard DOCTYPE零resolver、external entity fatal、site accounting/determinism；首RED应因cataloger/schema缺失。只可fake resolver/source boundary并断言零外呼，禁止mock XML/catalog core。命令：`mvn -Dtest=MapperCapabilityCatalogerTest test`；禁网络/客户runtime。偏离按DESIGN 13.11。
+- **Luna/xhigh 测试指南**：创建 `MapperCapabilityCatalogerTest`，fixtures/goldens在 `src/test/resources/analysis/discovery/mapper-catalog/`。RED顺序：DepotHead candidate catalog、同名decoy不合并、namespace mismatch Gap、standard DOCTYPE零resolver、external entity fatal、site accounting/determinism；首RED应因cataloger/schema缺失。只可fake resolver/source boundary并断言零外呼，禁止mock XML/catalog core。命令：`mvn -Dtest=MapperCapabilityCatalogerTest test`；禁网络/客户runtime。偏离按[总体设计](../DESIGN.md)的 Design Authority 边界。
 - **Terra/xhigh 实现指南**：RED后仅改 `analysis/discovery/mapper-catalog/`，实现 public `MapperCapabilityCataloger/MapperCatalogDraft` 与 `application-discovery-mapper-catalog-draft-v2`；只用M1+VerifiedSourceInventory，config→Java→XML→typed site/evidence disposition，external resolution fail closed。GREEN逐个覆盖candidate/Gap/security/accounting；不得提前绑定Java→XML或扩inventory。缺必要config/跨analysis step调整MUST STOP，审计同步。
 
 #### M4 ApplicationDiscoveryPublicationSpecifier
@@ -195,6 +210,7 @@ M2 和 M3 共享同一个 applicationProfileId，但互不读取对方私有结�
 - **确定性顺序 / LLM**：合并全仓site/catalog→验证shards/accounting/refs→canonical四个semantic payload→M4 module install/receipt→AnalysisStep store fresh reopen/root/store-last receipt；0 LLM。
 - **目标输出与 DepotHead 示例**：M4恰四个semantic files；AnalysisStep store形成四项+receipt的五文件analysis step set。正向例含一个POST entry与Mapper candidates；无入口例仍有profile/capability和store receipt。
 - **必须保持的不变量**：complete discovery denominator = dispositions；每个 entry恰一状态，任何 omitted/failed均有Gap/排除证据；一entry成功不关闭其余entry；artifact names/roots/controls 完整；publisher 不改变 M1–M3 semantic decision。
+- **产物身份规则**：M4 在生成四个正式 payload 的 `artifactId` 前，从当前受控 Artifact Policy Registry 解析该 type/schema 的前缀；不得把测试或部署环境的前缀硬编码在 publisher 中。前缀变化会形成新的身份，但不改变 payload 的业务含义或文件名。
 - **Gap / fatal / artifact复用**：局部 Gap 进入 capability report；cross-module ref/accounting/canonical/install/collision 错误 fatal；下游只认完整 analysis step receipt，不读取 staging。
 - **给下游的后置保证**：分析步骤“程序图” 得到 immutable ApplicationDiscoveryReference，所有图根与 Mapper candidates 都能仅从 persisted artifacts 解析。
 - **明确非目标**：不补 entry/catalog、不重新解析源码、不构图或调用模型。
@@ -204,7 +220,7 @@ M2 和 M3 共享同一个 applicationProfileId，但互不读取对方私有结�
 
 ### 8.0.1 模块 artifact wire schemas
 
-M1–M3使用 DESIGN 13.3 `ModuleArtifact<T>` envelope；M4直接安装四个analysis step schema注册的JSON/JSONL semantic bytes而无summary envelope。`!`=required non-null，`?`=required nullable。
+M1–M3使用 [既有公共与模块合同 §5](../references/inherited-public-and-module-contracts.md#5-moduleartifactmodulereceipt-与-modulefailure) `ModuleArtifact<T>` envelope；M4直接安装四个analysis step schema注册的JSON/JSONL semantic bytes而无summary envelope。`!`=required non-null，`?`=required nullable。
 
 | module artifact | schemaVersion / artifactType | 精确 upstream | payload、来源、排序 |
 | --- | --- | --- | --- |
@@ -215,7 +231,7 @@ M1–M3使用 DESIGN 13.3 `ModuleArtifact<T>` envelope；M4直接安装四个ana
 
 ApplicationDiscovery v2的closed value registry只有：`FrameworkSignalKindV2={SPRING_MVC,MYBATIS}`、`ConfigSignalKindV2={MYBATIS_MAPPER_LOCATION}`、`SignalDispositionV2={SUPPORTED,UNSUPPORTED,AMBIGUOUS,OVER_LIMIT}`、`CapabilitySiteKindV2={HTTP_ENTRY_DECLARATION,MAPPER_RESOURCE_DECLARATION}`。未知kind不得作为字符串透传；需新kind时先升schema/profile version。
 
-exact records为：`FrameworkSignalV2(kind, sourceExcerpt, disposition, reasonCode)`；`ConfigSignalV2(kind, sourceExcerpt, value, disposition, reasonCode)`；其中`sourceExcerpt`必须是DESIGN §13.2的`SourceExcerptV1`，`value`与`reasonCode`是required-nullable。`CapabilityEvidenceRefV2(kind,sourceExcerpt,artifactEvidence)`是closed tagged union：`SOURCE_EXCERPT{sourceExcerpt!,artifactEvidence=null}`或`ARTIFACT_REFERENCE{sourceExcerpt=null,artifactEvidence!}`，两个required-nullable槽均必须出现且恰一非null；`VersionedArtifactEvidenceV2(artifactRef,artifactType,schemaVersion)`保存完整ArtifactReference与被policy registry验证的exact type/version，不得使用bare string ID或从artifactId prefix猜version。
+exact records为：`FrameworkSignalV2(kind, sourceExcerpt, disposition, reasonCode)`；`ConfigSignalV2(kind, sourceExcerpt, value, disposition, reasonCode)`；其中`sourceExcerpt`必须是[既有公共与模块合同 §4](../references/inherited-public-and-module-contracts.md#4-唯一源码位置合同)的`SourceExcerptV1`，`value`与`reasonCode`是required-nullable。`CapabilityEvidenceRefV2(kind,sourceExcerpt,artifactEvidence)`是closed tagged union：`SOURCE_EXCERPT{sourceExcerpt!,artifactEvidence=null}`或`ARTIFACT_REFERENCE{sourceExcerpt=null,artifactEvidence!}`，两个required-nullable槽均必须出现且恰一非null；`VersionedArtifactEvidenceV2(artifactRef,artifactType,schemaVersion)`保存完整ArtifactReference与被policy registry验证的exact type/version，不得使用bare string ID或从artifactId prefix猜version。
 
 `CapabilitySiteV2(siteId, kind, primaryLocator, affectedEntryIds, disposition, reasonCode, evidenceRefs)`在M2/M3只有这一个shape；`primaryLocator`是完整`SourceLocatorV1`，`reasonCode`是required-nullable，`evidenceRefs[]`是`CapabilityEvidenceRefV2`且至少有一个`SOURCE_EXCERPT`的locator逐字段等于`primaryLocator`。`affectedEntryIds[]`按UTF-8 ID，`evidenceRefs[]`按`kind`再按excerpt locator或artifactId/SHA排序。M2的HTTP site必须列出它生成或处置的entry，M3的Mapper site列出静态可关联的entry（无法关联时为空且有reason/Gap），二者都不能使用未声明的singular `entryId`、string locator或bare evidence ID。M4的完整module fixture用一次install request绑定M1 `application-profile`、M2 `entry-discovery`、M3 `mapper-catalog`三个ArtifactReferences，四个standalone payload本身不重复wrapper。
 

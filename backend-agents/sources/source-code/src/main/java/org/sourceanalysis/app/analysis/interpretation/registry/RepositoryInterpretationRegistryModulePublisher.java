@@ -49,9 +49,9 @@ public final class RepositoryInterpretationRegistryModulePublisher {
       "flow-interpretation-registry-proposal-execution-set-v3";
   private static final String FILE_NAME = "repository-interpretation-registry.json";
   private static final String ARTIFACT_TYPE =
-      "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY";
+      "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY_MODULE";
   private static final String SCHEMA_VERSION =
-      "flow-interpretation-repository-interpretation-registry-v2";
+      "flow-interpretation-repository-interpretation-registry-module-v1";
   private static final String ARTIFACT_PREFIX = "flow-interpretation-repository-registry";
   private static final String MODULE_VERSION = "v1";
   private static final Comparator<String> UTF8_ORDER =

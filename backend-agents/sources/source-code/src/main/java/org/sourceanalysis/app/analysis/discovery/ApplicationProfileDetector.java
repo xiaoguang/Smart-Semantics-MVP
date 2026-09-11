@@ -39,9 +39,10 @@ import org.sourceanalysis.app.evidence.SourceLocatorV1;
  */
 public final class ApplicationProfileDetector {
 
-  private static final Set<String> SPRING_MVC_ARTIFACTS = Set.of("spring-webmvc");
+  private static final Set<String> SPRING_MVC_ARTIFACTS =
+      Set.of("spring-webmvc", "spring-boot-starter-web");
   private static final Set<String> MYBATIS_ARTIFACTS =
-      Set.of("mybatis-spring", "mybatis-spring-boot-starter");
+      Set.of("mybatis-spring", "mybatis-spring-boot-starter", "mybatis-plus-boot-starter");
   private static final Pattern MAPPER_LOCATIONS =
       Pattern.compile("(?m)^\\s*mapper-locations\\s*:\\s*([^\\r\\n#]+)");
   private static final CanonicalJsonCodec CANONICAL_JSON = new CanonicalJsonCodec();

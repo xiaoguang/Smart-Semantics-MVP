@@ -14,6 +14,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
@@ -69,23 +70,18 @@ public final class RegistryProposalRunner {
             new Sha256Digest(sha256(response.canonicalResponseJson().copyToByteArray()));
         String roundId =
             contentId("registry-proposal-round", List.of(task.taskSpecId(), responseSha.value()));
-        String receiptId =
-            contentId(
-                "registry-proposal-generation-receipt",
-                List.of(
-                    task.taskSpecId(),
-                    task.inputJsonSha256().value(),
-                    responseSha.value(),
-                    response.observedRuntime().sha256().value()));
-        rounds.add(new RegistryProposalRound(roundId, task.taskSpecId(), responseSha));
-        receipts.add(
-            new RegistryProposalGenerationReceipt(
-                receiptId,
+        RegistryProposalGenerationReceipt receipt =
+            RegistryProposalGenerationReceipt.completedR0(
                 task.taskSpecId(),
-                task.expectedRuntime(),
-                response.observedRuntime(),
+                task.flowSliceId(),
                 task.inputJsonSha256(),
-                responseSha));
+                responseSha,
+                task.configuredAdapterId(),
+                task.configuredAuthMode(),
+                task.expectedRuntime(),
+                response.observedRuntime());
+        rounds.add(new RegistryProposalRound(roundId, task.taskSpecId(), responseSha));
+        receipts.add(receipt);
         proposals.addAll(taskProposals);
         dispositions.add(
             new RegistryProposalFlowDisposition(
@@ -95,14 +91,14 @@ public final class RegistryProposalRunner {
                         task.flowSliceId(),
                         task.taskSpecId(),
                         roundId,
-                        receiptId,
+                        receipt.generationReceiptId(),
                         String.join("|", taskResponse.gapIds()),
                         taskResponse.reasonCode() == null ? "" : taskResponse.reasonCode())),
                 task.flowSliceId(),
                 taskResponse.disposition(),
                 task.taskSpecId(),
                 roundId,
-                receiptId,
+                receipt.generationReceiptId(),
                 taskProposals.stream().map(BusinessRegistryProposal::registryProposalId).toList(),
                 taskResponse.gapIds(),
                 taskResponse.reasonCode()));
@@ -173,7 +169,10 @@ public final class RegistryProposalRunner {
         inputSha,
         digest(node, "outputSchemaSha256"),
         digest(node, "promptBundleSha256"),
-        reference(field(node, "expectedRuntime")));
+        text(node, "configuredAdapterId"),
+        text(node, "configuredAuthMode"),
+        reference(field(node, "expectedRuntimeRef")),
+        runtime(field(node, "expectedRuntime")));
   }
 
   private ValidatedTaskResponse validate(RegistryProposalTask task, ImmutableBytes responseBytes) {
@@ -324,6 +323,19 @@ public final class RegistryProposalRunner {
   private static ArtifactReference reference(JsonNode source) {
     return new ArtifactReference(
         ArtifactId.parse(text(source, "artifactId")), new Sha256Digest(text(source, "sha256")));
+  }
+
+  private static ModelRuntimeIdentityV1 runtime(JsonNode source) {
+    Set<String> actual = new HashSet<>();
+    source.fieldNames().forEachRemaining(actual::add);
+    if (!actual.equals(Set.of("upstreamProvider", "model", "reasoningEffort", "sandbox"))) {
+      throw failure("REGISTRY_PROPOSAL_RESPONSE_INVALID");
+    }
+    return new ModelRuntimeIdentityV1(
+        text(source, "upstreamProvider"),
+        text(source, "model"),
+        text(source, "reasoningEffort"),
+        text(source, "sandbox"));
   }
 
   private static String text(JsonNode source, String name) {

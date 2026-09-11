@@ -16,6 +16,7 @@ import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
+import org.sourceanalysis.app.artifact.ArtifactPolicyKey;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalMediaType;
@@ -29,7 +30,6 @@ import org.sourceanalysis.app.artifact.ModuleInstallRequest;
 public final class CodeStructureGraphModulePublisher {
 
   private static final String ARTIFACT_TYPE = "PROGRAM_GRAPHS_CODE_STRUCTURE_DRAFT";
-  private static final String ARTIFACT_PREFIX = "code-structure-graph";
   private static final Comparator<String> UTF8_ORDER =
       CodeStructureGraphModulePublisher::compareUtf8;
 
@@ -70,6 +70,11 @@ public final class CodeStructureGraphModulePublisher {
         gapRefs.isEmpty()
             ? ModuleCompletionStatus.SUCCEEDED
             : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
+    String artifactIdPrefix =
+        moduleArtifacts
+            .resolveArtifactPolicy(
+                new ArtifactPolicyKey(ARTIFACT_TYPE, CodeStructureGraphDraft.SCHEMA_VERSION))
+            .artifactIdPrefix();
     InstalledModulePublication installed =
         moduleArtifacts.install(
             new ModuleInstallRequest(
@@ -80,7 +85,14 @@ public final class CodeStructureGraphModulePublisher {
                 status,
                 gapRefs,
                 List.of(
-                    payload(destination, upstream, source.controls(), draft, status, gapRefs))));
+                    payload(
+                        destination,
+                        upstream,
+                        source.controls(),
+                        draft,
+                        status,
+                        gapRefs,
+                        artifactIdPrefix))));
     return new CodeStructureGraphDraftReference(installed.reference());
   }
 
@@ -90,7 +102,8 @@ public final class CodeStructureGraphModulePublisher {
       ArtifactControls controls,
       CodeStructureGraphDraft draft,
       ModuleCompletionStatus status,
-      List<String> gapRefs) {
+      List<String> gapRefs,
+      String artifactIdPrefix) {
     ObjectNode withoutArtifactId = JsonNodeFactory.instance.objectNode();
     withoutArtifactId.put("schemaVersion", CodeStructureGraphDraft.SCHEMA_VERSION);
     withoutArtifactId.put("artifactType", ARTIFACT_TYPE);
@@ -100,7 +113,7 @@ public final class CodeStructureGraphModulePublisher {
     withoutArtifactId.set("completion", completion(status, gapRefs));
     withoutArtifactId.set("payload", body(draft));
     String artifactId =
-        ARTIFACT_PREFIX
+        artifactIdPrefix
             + ":"
             + sha256(
                 concatenate(

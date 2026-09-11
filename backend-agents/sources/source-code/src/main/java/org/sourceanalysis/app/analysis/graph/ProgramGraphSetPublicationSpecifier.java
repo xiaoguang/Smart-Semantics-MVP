@@ -24,6 +24,7 @@ import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
 import org.sourceanalysis.app.artifact.AnalysisStepPublisherModuleProvenance;
 import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
+import org.sourceanalysis.app.artifact.ArtifactPolicyKey;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepPayload;
@@ -154,7 +155,7 @@ public final class ProgramGraphSetPublicationSpecifier {
     } catch (GraphReferenceException failure) {
       throw failure;
     } catch (RuntimeException failure) {
-      throw broken();
+      throw new GraphReferenceException(failure);
     }
   }
 
@@ -539,7 +540,7 @@ public final class ProgramGraphSetPublicationSpecifier {
       bytes = buffer.array();
     }
     return payloadJsonl(
-        "graph-gaps.jsonl", GAP_TYPE, GAP_SCHEMA, "program-graphs-graph-gaps", bytes);
+        "graph-gaps.jsonl", GAP_TYPE, GAP_SCHEMA, artifactPrefix(GAP_TYPE, GAP_SCHEMA), bytes);
   }
 
   private byte[] gapLine(GraphGap gap) {
@@ -615,7 +616,17 @@ public final class ProgramGraphSetPublicationSpecifier {
     document.put("status", status.name());
     document.put("closed", true);
     return payloadJson(
-        document, INDEX_TYPE, INDEX_SCHEMA, "program-graphs-graph-index", "graph-index.json");
+        document,
+        INDEX_TYPE,
+        INDEX_SCHEMA,
+        artifactPrefix(INDEX_TYPE, INDEX_SCHEMA),
+        "graph-index.json");
+  }
+
+  private String artifactPrefix(String artifactType, String schemaVersion) {
+    return moduleArtifacts
+        .resolveArtifactPolicy(new ArtifactPolicyKey(artifactType, schemaVersion))
+        .artifactIdPrefix();
   }
 
   private static ProgramGraphKind graphKind(CanonicalModulePayload payload) {
@@ -1064,7 +1075,7 @@ public final class ProgramGraphSetPublicationSpecifier {
         value.put("overLimit", worklist.overLimit());
       }
       document.set("coverage", publicCoverage(identity.coverage()));
-      return payloadJson(document, type, schema, prefix(type), fileName);
+      return payloadJson(document, type, schema, artifactPrefix(type, schema), fileName);
     }
   }
 
@@ -1094,7 +1105,7 @@ public final class ProgramGraphSetPublicationSpecifier {
           document,
           EVIDENCE_TYPE,
           EVIDENCE_SCHEMA,
-          "program-graphs-evidence-graph",
+          artifactPrefix(EVIDENCE_TYPE, EVIDENCE_SCHEMA),
           "evidence-graph.json");
     }
   }
@@ -1200,15 +1211,5 @@ public final class ProgramGraphSetPublicationSpecifier {
     ids(value.putArray("scopeGapIds"), coverage.scopeGapIds());
     value.put("closed", coverage.closed());
     return value;
-  }
-
-  private static String prefix(String type) {
-    return switch (type) {
-      case CODE_STRUCTURE_TYPE -> "program-graphs-code-structure-graph";
-      case CALL_TYPE -> "program-graphs-call-graph";
-      case CONTROL_FLOW_TYPE -> "program-graphs-control-flow-graph";
-      case DATA_FLOW_TYPE -> "program-graphs-data-flow-graph";
-      default -> throw broken();
-    };
   }
 }

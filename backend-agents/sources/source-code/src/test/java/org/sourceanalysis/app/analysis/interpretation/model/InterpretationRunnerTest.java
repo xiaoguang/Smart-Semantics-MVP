@@ -6,15 +6,27 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
+import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalExecutionSet;
 import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalExecutionSetModulePublisher;
 import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalProviderResponse;
@@ -72,6 +84,134 @@ class InterpretationRunnerTest {
     }
   }
 
+  @Test
+  void persistsSemanticTaskSetIdentityCompleteR1R2ReceiptsAndEmbeddedProposalsWithoutReplay()
+      throws Exception {
+    try (ProgramGraphsPublicFixture fixture =
+        ProgramGraphsPublicFixture.createWithGuardedApprove(
+            temporaryDirectory.resolve("interpretation-carrier"))) {
+      Prepared prepared = prepare(fixture, distinctProfile(fixture));
+      JsonNode taskSet = payload(fixture, prepared.flowTasks());
+      String semanticTaskSetId = taskSet.path("flowTaskSetId").asText();
+      assertThat(semanticTaskSetId).isNotBlank();
+      assertThat(semanticTaskSetId)
+          .as("M4 semantic task-set identity must not be a publication root")
+          .isNotEqualTo(prepared.flowTasks().moduleArtifactRoot().value());
+
+      List<JsonNode> tasks = nodes(taskSet, "tasks");
+      SoftAssertions softly = new SoftAssertions();
+      softly.assertThat(tasks).hasSize(prepared.modelTaskCount());
+      for (JsonNode task : tasks) {
+        String round = task.path("round").asText();
+        String adapter =
+            "R1".equals(round) ? "adapter-fixture-r1-alpha" : "adapter-fixture-r2-alpha";
+        String auth = "R1".equals(round) ? "auth-fixture-r1-beta" : "auth-fixture-r2-beta";
+        softly
+            .assertThat(task.path("configuredAdapterId").asText())
+            .as("configured adapter remains outside task input for %s", round)
+            .isEqualTo(adapter);
+        softly
+            .assertThat(task.path("configuredAuthMode").asText())
+            .as("configured auth remains outside task input for %s", round)
+            .isEqualTo(auth);
+        softly
+            .assertThat(containsText(task.path("inputJson"), adapter))
+            .as("adapter sentinel must not be model-visible")
+            .isFalse();
+        softly
+            .assertThat(containsText(task.path("inputJson"), auth))
+            .as("auth sentinel must not be model-visible")
+            .isFalse();
+        softly
+            .assertThat(task.path("expectedRuntime").path("upstreamProvider").asText())
+            .as("materialized expected runtime for %s", round)
+            .isEqualTo(
+                "R1".equals(round) ? "provider-fixture-r1-gamma" : "provider-fixture-r2-gamma");
+        softly
+            .assertThat(task.path("taskSpecId").asText())
+            .as("independent task identity for %s", round)
+            .isEqualTo(expectedTaskId(task));
+      }
+      AtomicInteger calls = new AtomicInteger();
+      Object execution = runWithTaskRuntime(fixture, prepared, calls);
+      ModulePublicationReference persisted = publish(fixture, prepared, execution);
+      int callsAfterRun = calls.get();
+      JsonNode published = payload(fixture, persisted);
+      SoftAssertions result = softly;
+      result
+          .assertThat(published.path("flowTaskSetId").asText())
+          .as("M5 must preserve M4 semantic task-set identity")
+          .isEqualTo(semanticTaskSetId);
+      result.assertThat(callsAfterRun).isEqualTo(tasks.size());
+      result.assertThat(published.path("receipts")).hasSize(tasks.size());
+      result
+          .assertThat(published.path("interpretationProposals").isMissingNode())
+          .as("candidate must be the only proposal owner")
+          .isTrue();
+
+      for (JsonNode receipt : nodes(published, "receipts")) {
+        JsonNode task =
+            tasks.stream()
+                .filter(
+                    candidate ->
+                        candidate
+                            .path("taskSpecId")
+                            .asText()
+                            .equals(receipt.path("taskSpecId").asText()))
+                .findFirst()
+                .orElse(JsonNodeFactory.instance.objectNode());
+        ObjectNode expected = expectedGenerationReceipt(receipt, task, published);
+        result
+            .assertThat(receipt)
+            .as("complete independent GenerationReceiptV3")
+            .isEqualTo(expected);
+        Set<String> actualFields = new HashSet<>();
+        receipt.fieldNames().forEachRemaining(actualFields::add);
+        Set<String> expectedFields = new HashSet<>();
+        expected.fieldNames().forEachRemaining(expectedFields::add);
+        result.assertThat(actualFields).isEqualTo(expectedFields);
+      }
+
+      List<JsonNode> candidates = nodes(published, "candidates");
+      result.assertThat(candidates).hasSize(prepared.readyFlowCount());
+      for (JsonNode candidate : candidates) {
+        result
+            .assertThat(candidate.has("interpretationProposalIds"))
+            .as("IDs-only candidate carrier is forbidden")
+            .isFalse();
+        result
+            .assertThat(candidate.path("interpretationProposals").isArray())
+            .as("candidate must embed complete proposal values")
+            .isTrue();
+        if (candidate.path("interpretationProposals").isArray()) {
+          List<String> proposalIds = new ArrayList<>();
+          for (JsonNode proposal : candidate.path("interpretationProposals")) {
+            proposalIds.add(proposal.path("interpretationProposalId").asText());
+            result
+                .assertThat(proposal.path("flowSliceId").asText())
+                .isEqualTo(candidate.path("flowSliceId").asText());
+            result
+                .assertThat(proposal.path("interpretationProposalId").asText())
+                .isEqualTo(expectedProposalId(proposal));
+          }
+          result.assertThat(proposalIds).isSortedAccordingTo(String::compareTo);
+        }
+        result
+            .assertThat(candidate.path("candidateId").asText())
+            .as("independent Candidate identity")
+            .isEqualTo(expectedCandidateId(candidate));
+      }
+      result
+          .assertThat(published.path("executionSetId").asText())
+          .as("independent execution-set identity")
+          .isEqualTo(expectedExecutionSetId(published, semanticTaskSetId));
+      result.assertThat(calls.get()).isEqualTo(callsAfterRun);
+      fixture.moduleArtifacts().reopen(persisted);
+      result.assertThat(calls.get()).isEqualTo(callsAfterRun);
+      result.assertAll();
+    }
+  }
+
   private ModulePublicationReference publish(
       ProgramGraphsPublicFixture fixture, Prepared prepared, Object execution) throws Exception {
     try {
@@ -119,7 +259,7 @@ class InterpretationRunnerTest {
                             (ImmutableBytes) task.getClass().getMethod("inputJson").invoke(task));
                 ImmutableBytes response = response(input);
                 return responseType
-                    .getConstructor(ArtifactReference.class, ImmutableBytes.class)
+                    .getConstructor(ModelRuntimeIdentityV1.class, ImmutableBytes.class)
                     .newInstance(
                         task.getClass().getMethod("expectedRuntime").invoke(task), response);
               });
@@ -154,6 +294,59 @@ class InterpretationRunnerTest {
     }
   }
 
+  private Object runWithTaskRuntime(
+      ProgramGraphsPublicFixture fixture, Prepared prepared, AtomicInteger calls) throws Exception {
+    Class<?> providerType =
+        Class.forName("org.sourceanalysis.app.analysis.interpretation.model.FlowModelProvider");
+    Class<?> responseType =
+        Class.forName(
+            "org.sourceanalysis.app.analysis.interpretation.model.FlowModelProviderResponse");
+    Object provider =
+        Proxy.newProxyInstance(
+            providerType.getClassLoader(),
+            new Class<?>[] {providerType},
+            (proxy, method, args) -> {
+              Object task = args[0];
+              calls.incrementAndGet();
+              JsonNode input =
+                  new CanonicalJsonCodec()
+                      .parseCanonical(
+                          (ImmutableBytes) task.getClass().getMethod("inputJson").invoke(task));
+              ImmutableBytes response = response(input);
+              Object observedRuntime = task.getClass().getMethod("expectedRuntime").invoke(task);
+              for (Constructor<?> constructor : responseType.getConstructors()) {
+                Class<?>[] parameterTypes = constructor.getParameterTypes();
+                if (parameterTypes.length == 2
+                    && parameterTypes[0].isInstance(observedRuntime)
+                    && parameterTypes[1].isInstance(response)) {
+                  return constructor.newInstance(observedRuntime, response);
+                }
+              }
+              throw new AssertionError("M5_PROVIDER_RESPONSE_CONSTRUCTOR_INVALID");
+            });
+    Class<?> runnerType =
+        Class.forName("org.sourceanalysis.app.analysis.interpretation.model.InterpretationRunner");
+    Object runner =
+        runnerType
+            .getConstructor(org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore.class)
+            .newInstance(fixture.moduleArtifacts());
+    try {
+      return runnerType
+          .getMethod(
+              "runInterpretations",
+              ModulePublicationReference.class,
+              ModulePublicationReference.class,
+              ModulePublicationReference.class,
+              providerType)
+          .invoke(
+              runner, prepared.r0Execution(), prepared.registry(), prepared.flowTasks(), provider);
+    } catch (InvocationTargetException failure) {
+      throw new AssertionError(
+          "INTERPRETATION_RUNNER_FAILED",
+          failure.getCause() == null ? failure : failure.getCause());
+    }
+  }
+
   private static ImmutableBytes response(JsonNode input) {
     ObjectNode response = JsonNodeFactory.instance.objectNode();
     response.put("schemaVersion", "flow-interpretation-model-response-v1");
@@ -177,6 +370,11 @@ class InterpretationRunnerTest {
   }
 
   private Prepared prepare(ProgramGraphsPublicFixture fixture) throws Exception {
+    return prepare(fixture, profile(fixture));
+  }
+
+  private Prepared prepare(ProgramGraphsPublicFixture fixture, FlowModelTaskProfile profile)
+      throws Exception {
     BusinessFlowsReference flows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
     RegistryProposalTaskSet r0Tasks =
         new RegistryProposalTaskCompiler(fixture.stepArtifacts())
@@ -200,7 +398,6 @@ class InterpretationRunnerTest {
         new RepositoryInterpretationRegistryModulePublisher(
                 fixture.moduleArtifacts(), fixture.stepArtifacts())
             .publish(persistedR0Tasks, persistedR0Execution, flows, registry);
-    FlowModelTaskProfile profile = profile(fixture);
     FlowModelTaskSet taskSet =
         new FiniteKeyFlowTaskCompiler(fixture.moduleArtifacts(), fixture.stepArtifacts())
             .compileFiniteKeyTasks(flows, persistedRegistry, profile);
@@ -215,6 +412,51 @@ class InterpretationRunnerTest {
         taskSet.eligibleR1R2FlowSliceIds().size());
   }
 
+  private static FlowModelTaskProfile distinctProfile(ProgramGraphsPublicFixture fixture)
+      throws Exception {
+    var components = FlowModelTaskProfile.class.getRecordComponents();
+    Object[] values = new Object[components.length];
+    Class<?>[] types = new Class<?>[components.length];
+    for (int index = 0; index < components.length; index++) {
+      var component = components[index];
+      types[index] = component.getType();
+      values[index] = profileValue(component.getName(), fixture);
+    }
+    return FlowModelTaskProfile.class.getDeclaredConstructor(types).newInstance(values);
+  }
+
+  private static Object profileValue(String name, ProgramGraphsPublicFixture fixture) {
+    boolean r1 = name.startsWith("r1");
+    String suffix = r1 ? "r1" : "r2";
+    return switch (name) {
+      case "r1ConfiguredAdapterId", "r2ConfiguredAdapterId" ->
+          "adapter-fixture-" + suffix + "-alpha";
+      case "r1ConfiguredAuthMode", "r2ConfiguredAuthMode" -> "auth-fixture-" + suffix + "-beta";
+      case "r1PromptBundleRef", "r2PromptBundleRef" ->
+          RegistryProposalTaskCompilerTest.reference(
+              "model-" + suffix + "-prompt", "model-" + suffix + "-prompt");
+      case "r1OutputSchemaRef", "r2OutputSchemaRef" ->
+          RegistryProposalTaskCompilerTest.reference(
+              "model-" + suffix + "-schema", fixture.artifactControls().schemaBundleSha256());
+      case "r1ExpectedRuntimeRef", "r2ExpectedRuntimeRef" ->
+          RegistryProposalTaskCompilerTest.reference(
+              "model-" + suffix + "-runtime", fixture.artifactControls().profileSha256());
+      case "r1ExpectedRuntime", "r2ExpectedRuntime" ->
+          new ModelRuntimeIdentityV1(
+              "provider-fixture-" + suffix + "-gamma",
+              "model-fixture-" + suffix + "-delta",
+              "reasoning-fixture-" + suffix + "-epsilon",
+              "sandbox-fixture-" + suffix + "-zeta");
+      case "r1ResourceBudgetRef", "r2ResourceBudgetRef" ->
+          RegistryProposalTaskCompilerTest.reference(
+              "model-" + suffix + "-budget", "model-" + suffix + "-budget");
+      case "maxTasks" -> 16;
+      case "maxResponseUtf8Bytes" -> 4096;
+      case "maxSelectedKeys", "maxCandidateProposals" -> 16;
+      default -> throw new AssertionError("UNEXPECTED_M5_PROFILE_COMPONENT_" + name);
+    };
+  }
+
   private static FlowModelTaskProfile profile(ProgramGraphsPublicFixture fixture) {
     ArtifactReference prompt =
         RegistryProposalTaskCompilerTest.reference("model-prompt", "model-prompt");
@@ -227,16 +469,40 @@ class InterpretationRunnerTest {
     ArtifactReference budget =
         RegistryProposalTaskCompilerTest.reference("model-budget", "model-budget");
     return new FlowModelTaskProfile(
-        prompt, schema, runtime, budget, prompt, schema, runtime, budget, 16, 4096, 16, 16);
+        "adapter-fixture-r1",
+        "auth-fixture-r1",
+        prompt,
+        schema,
+        runtime,
+        new ModelRuntimeIdentityV1("provider-fixture-r1", "model-fixture-r1", "none", "read-only"),
+        budget,
+        "adapter-fixture-r2",
+        "auth-fixture-r2",
+        prompt,
+        schema,
+        runtime,
+        new ModelRuntimeIdentityV1("provider-fixture-r2", "model-fixture-r2", "none", "read-only"),
+        budget,
+        16,
+        4096,
+        16,
+        16);
   }
 
   private static RegistryProposalTaskProfile r0Profile(ProgramGraphsPublicFixture fixture) {
     return new RegistryProposalTaskProfile(
+        "adapter-fixture-alpha",
+        "auth-fixture-beta",
         RegistryProposalTaskCompilerTest.reference("registry-prompt", "registry-prompt"),
         RegistryProposalTaskCompilerTest.reference(
             "registry-schema", fixture.artifactControls().schemaBundleSha256()),
         RegistryProposalTaskCompilerTest.reference(
             "registry-runtime", fixture.artifactControls().profileSha256()),
+        new ModelRuntimeIdentityV1(
+            "provider-fixture-gamma",
+            "model-fixture-delta",
+            "reasoning-fixture-epsilon",
+            "sandbox-fixture-zeta"),
         RegistryProposalTaskCompilerTest.reference("registry-budget", "registry-budget"),
         16,
         16,
@@ -260,6 +526,195 @@ class InterpretationRunnerTest {
     proposal.putArray("basisGapIds");
     proposal.putNull("sourceSeedKey");
     return new CanonicalJsonCodec().encodeCanonical(response);
+  }
+
+  private static JsonNode payload(
+      ProgramGraphsPublicFixture fixture, ModulePublicationReference publication) {
+    return new CanonicalJsonCodec()
+        .parseCanonical(
+            fixture.moduleArtifacts().reopen(publication).payloads().get(0).canonicalUtf8())
+        .path("payload");
+  }
+
+  private static List<JsonNode> nodes(JsonNode source, String field) {
+    List<JsonNode> values = new ArrayList<>();
+    source.path(field).forEach(values::add);
+    return values;
+  }
+
+  private static boolean containsText(JsonNode node, String expected) {
+    if (node.isTextual()) return expected.equals(node.textValue());
+    if (node.isContainerNode()) {
+      var fields = node.fields();
+      while (fields.hasNext()) {
+        if (containsText(fields.next().getValue(), expected)) return true;
+      }
+    }
+    return false;
+  }
+
+  private static ObjectNode expectedGenerationReceipt(
+      JsonNode actual, JsonNode task, JsonNode published) {
+    String round = task.path("round").asText();
+    String suffix = "R1".equals(round) ? "r1" : "r2";
+    String responseSha = actual.path("responseSha256").asText();
+    if (responseSha.isBlank()) {
+      for (JsonNode modelRound : published.path("rounds")) {
+        if (task.path("taskSpecId").asText().equals(modelRound.path("taskSpecId").asText())) {
+          responseSha = modelRound.path("canonicalResponseSha256").asText();
+        }
+      }
+    }
+    ObjectNode expected = JsonNodeFactory.instance.objectNode();
+    expected.put("schemaVersion", "flow-interpretation-generation-receipt-v3");
+    expected.put("artifactType", "FLOW_INTERPRETATION_GENERATION_RECEIPT");
+    expected.put("generationReceiptId", actual.path("generationReceiptId").asText());
+    expected.put(
+        "generationKind",
+        "R1".equals(round) ? "R1_FLOW_INTERPRETATION" : "R2_FLOW_PRECISION_REVIEW");
+    expected.put("taskSpecId", task.path("taskSpecId").asText());
+    expected.put("flowSliceId", task.path("flowSliceId").asText());
+    expected.putNull("taskShardId");
+    expected.put("requestSha256", task.path("inputJsonSha256").asText());
+    expected.put("responseSha256", responseSha);
+    expected.put("configuredAdapterId", "adapter-fixture-" + suffix + "-alpha");
+    expected.put("configuredAuthMode", "auth-fixture-" + suffix + "-beta");
+    expected.set("expectedRuntime", runtimeJson(suffix));
+    expected.set("observedRuntime", runtimeJson(suffix));
+    expected.put("started", true);
+    expected.put("completed", true);
+    expected.put("generationReceiptId", generationReceiptIdV3(expected));
+    return expected;
+  }
+
+  private static ObjectNode runtimeJson(String suffix) {
+    return JsonNodeFactory.instance
+        .objectNode()
+        .put("upstreamProvider", "provider-fixture-" + suffix + "-gamma")
+        .put("model", "model-fixture-" + suffix + "-delta")
+        .put("reasoningEffort", "reasoning-fixture-" + suffix + "-epsilon")
+        .put("sandbox", "sandbox-fixture-" + suffix + "-zeta");
+  }
+
+  private static String expectedTaskId(JsonNode task) {
+    ObjectNode projection = JsonNodeFactory.instance.objectNode();
+    copy(projection, task, "taskKind");
+    copy(projection, task, "round");
+    copy(projection, task, "flowSliceId");
+    copy(projection, task, "evidenceCapsuleId");
+    copy(projection, task, "isolatedSessionKey");
+    copy(projection, task, "allowedKeys");
+    copy(projection, task, "inputJson");
+    copy(projection, task, "inputJsonSha256");
+    copy(projection, task, "outputSchemaSha256");
+    copy(projection, task, "promptBundleSha256");
+    String suffix = "R1".equals(task.path("round").asText()) ? "r1" : "r2";
+    projection.put(
+        "configuredAdapterId",
+        task.path("configuredAdapterId").asText("adapter-fixture-" + suffix + "-alpha"));
+    projection.put(
+        "configuredAuthMode",
+        task.path("configuredAuthMode").asText("auth-fixture-" + suffix + "-beta"));
+    copy(projection, task, "expectedRuntimeRef");
+    if (task.has("expectedRuntime")) copy(projection, task, "expectedRuntime");
+    else projection.set("expectedRuntime", runtimeJson(suffix));
+    return identity("flow-model-task:", "flow-interpretation-flow-model-task-id-v1", projection);
+  }
+
+  private static String expectedProposalId(JsonNode proposal) {
+    ObjectNode projection = JsonNodeFactory.instance.objectNode();
+    copy(projection, proposal, "registryProposalId");
+    copy(projection, proposal, "flowSliceId");
+    copy(projection, proposal, "provisionalKey");
+    copy(projection, proposal, "selectedKey");
+    copy(projection, proposal, "basisAtomIds");
+    copy(projection, proposal, "basisGapIds");
+    copy(projection, proposal, "r2Decision");
+    return identity(
+        "interpretation-proposal:",
+        "flow-interpretation-interpretation-proposal-id-v1",
+        projection);
+  }
+
+  private static String expectedCandidateId(JsonNode candidate) {
+    ObjectNode projection = JsonNodeFactory.instance.objectNode();
+    copy(projection, candidate, "flowSliceId");
+    copy(projection, candidate, "evidenceCapsuleId");
+    copy(projection, candidate, "r1RoundId");
+    copy(projection, candidate, "r2RoundId");
+    copy(projection, candidate, "interpretationProposals");
+    return identity(
+        "flow-interpretation-candidate:",
+        "flow-interpretation-flow-interpretation-candidate-id-v1",
+        projection);
+  }
+
+  private static String expectedExecutionSetId(JsonNode published, String semanticTaskSetId) {
+    ObjectNode projection = JsonNodeFactory.instance.objectNode();
+    projection.put("flowTaskSetId", semanticTaskSetId);
+    projection.set("modelRoundIds", sortedValues(published.path("rounds"), "modelRoundId"));
+    projection.set(
+        "generationReceiptIds", sortedValues(published.path("receipts"), "generationReceiptId"));
+    projection.set("candidateIds", sortedValues(published.path("candidates"), "candidateId"));
+    ArrayNode dispositions = JsonNodeFactory.instance.arrayNode();
+    nodes(published, "modelTaskDispositions").stream()
+        .sorted(Comparator.comparing(value -> value.path("taskSpecId").asText()))
+        .forEach(value -> dispositions.add(value.deepCopy()));
+    projection.set("modelTaskDispositions", dispositions);
+    projection.set(
+        "flowInterpretationDispositionIds",
+        sortedValues(published.path("flowDispositions"), "flowInterpretationDispositionId"));
+    return identity(
+        "interpretation-execution-set:", "flow-interpretation-execution-set-id-v1", projection);
+  }
+
+  private static ArrayNode sortedValues(JsonNode values, String field) {
+    ArrayNode result = JsonNodeFactory.instance.arrayNode();
+    List<String> ordered = new ArrayList<>();
+    values.forEach(value -> ordered.add(value.path(field).asText()));
+    ordered.stream().sorted().forEach(result::add);
+    return result;
+  }
+
+  private static void copy(ObjectNode target, JsonNode source, String field) {
+    JsonNode value = source.get(field);
+    target.set(field, value == null ? JsonNodeFactory.instance.nullNode() : value.deepCopy());
+  }
+
+  private static String identity(String prefix, String domain, JsonNode projection) {
+    return prefix
+        + sha256(
+            frame(domain),
+            frame(new CanonicalJsonCodec().encodeCanonical(projection).copyToByteArray()));
+  }
+
+  private static String generationReceiptIdV3(JsonNode receipt) {
+    ObjectNode withoutId = (ObjectNode) receipt.deepCopy();
+    withoutId.remove("generationReceiptId");
+    return identity(
+        "generation-receipt:", "flow-interpretation-generation-receipt-id-v3", withoutId);
+  }
+
+  private static String sha256(byte[]... values) {
+    try {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      for (byte[] value : values) digest.update(value);
+      return java.util.HexFormat.of().formatHex(digest.digest());
+    } catch (NoSuchAlgorithmException unavailable) {
+      throw new IllegalStateException("SHA-256 unavailable", unavailable);
+    }
+  }
+
+  private static byte[] frame(String value) {
+    return frame(value.getBytes(StandardCharsets.UTF_8));
+  }
+
+  private static byte[] frame(byte[] value) {
+    return ByteBuffer.allocate(Long.BYTES + value.length)
+        .order(ByteOrder.BIG_ENDIAN)
+        .putLong(value.length)
+        .put(value)
+        .array();
   }
 
   private static List<?> list(Object value, String method) {

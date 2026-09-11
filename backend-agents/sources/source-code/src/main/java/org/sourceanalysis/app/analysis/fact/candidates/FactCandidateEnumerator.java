@@ -19,13 +19,24 @@ public final class FactCandidateEnumerator {
 
   private static final String JAVA_BOUNDARY_KIND = "JAVA_BOUNDARY_INVOCATION";
   private static final String JAVA_GUARD_KIND = "JAVA_GUARD_CONDITION";
+  private static final String JAVA_EXACT_CALL_KIND = "JAVA_EXACT_CALL";
   private static final String DATA_ARGUMENT_EDGE = "ARGUMENT_TO_BOUNDARY";
   private static final String CALL_SITE = "CALL_SITE";
   private static final String CALL_TARGET = "CALL_TARGET";
+  private static final String METHOD = "METHOD";
   private static final String BASIC_BLOCK = "BASIC_BLOCK";
   private static final String GUARD = "GUARD";
   private static final String EXACT = "EXACT";
+  private static final String STATIC_FIELD_RECEIVER_CALL_RULE =
+      "java-static-field-receiver-call-v1";
   private static final String NOT_APPLICABLE_REASON = "DATA_FLOW_BINDING_UNPROVEN";
+  private static final String EXACT_CALL_TARGET_NOT_METHOD = "JAVA_EXACT_CALL_TARGET_NOT_METHOD";
+  private static final String REQUIRED_ATOM_MISSING = "REQUIRED_ATOM_MISSING";
+  private static final String PROOF_NOT_CLOSED = "PROOF_NOT_CLOSED";
+  private static final String TARGET_METHOD_CANONICAL = "TARGET_METHOD_CANONICAL";
+  private static final String CALL_SITE_EVIDENCE = "CALL_SITE_EVIDENCE";
+  private static final String CALL_TARGET_EDGE_EVIDENCE = "CALL_TARGET_EDGE_EVIDENCE";
+  private static final String TARGET_METHOD_EVIDENCE = "TARGET_METHOD_EVIDENCE";
 
   /**
    * Enumerates the complete applicable/not-applicable denominator governed by the supplied
@@ -42,6 +53,8 @@ public final class FactCandidateEnumerator {
         enumerateBoundaryCandidates(inputs, template, candidates, notApplicable);
       } else if (JAVA_GUARD_KIND.equals(template.kind())) {
         enumerateGuardCandidates(inputs, template, candidates, notApplicable);
+      } else if (JAVA_EXACT_CALL_KIND.equals(template.kind())) {
+        enumerateExactCallCandidates(inputs, template, candidates, notApplicable);
       } else {
         throw new IllegalArgumentException("FACT_KIND_UNSUPPORTED");
       }
@@ -181,6 +194,158 @@ public final class FactCandidateEnumerator {
             path.branchEdgeIds()));
   }
 
+  private static void enumerateExactCallCandidates(
+      FactCandidateInputs inputs,
+      FactRegistry.FactTemplate template,
+      List<FactCandidateSet.FactCandidate> candidates,
+      List<FactCandidateSet.NotApplicableDisposition> notApplicable) {
+    inputs.graph(ProgramGraphKind.CALL).nodesById().values().stream()
+        .filter(node -> CALL_SITE.equals(node.kind()))
+        .sorted(Comparator.comparing(FactCandidateInputs.PublicProgramNode::nodeId))
+        .forEach(
+            callSite ->
+                callSite.owningEntryIds().stream()
+                    .filter(inputs.entryIds()::contains)
+                    .sorted()
+                    .forEach(
+                        entryId ->
+                            enumerateExactCallTemplate(
+                                inputs, template, entryId, callSite, candidates, notApplicable)));
+  }
+
+  private static void enumerateExactCallTemplate(
+      FactCandidateInputs inputs,
+      FactRegistry.FactTemplate template,
+      String entryId,
+      FactCandidateInputs.PublicProgramNode callSite,
+      List<FactCandidateSet.FactCandidate> candidates,
+      List<FactCandidateSet.NotApplicableDisposition> notApplicable) {
+    FactCandidateInputs.PublicProgramGraph calls = inputs.graph(ProgramGraphKind.CALL);
+    List<FactCandidateInputs.PublicProgramEdge> exactTargets =
+        calls.edgesById().values().stream()
+            .filter(edge -> CALL_TARGET.equals(edge.kind()))
+            .filter(edge -> EXACT.equals(edge.resolution()))
+            .filter(edge -> STATIC_FIELD_RECEIVER_CALL_RULE.equals(edge.ruleId()))
+            .filter(edge -> callSite.nodeId().equals(edge.fromNodeId()))
+            .sorted(Comparator.comparing(FactCandidateInputs.PublicProgramEdge::edgeId))
+            .toList();
+    if (exactTargets.size() != 1) return;
+
+    FactCandidateInputs.PublicProgramEdge callTarget = exactTargets.get(0);
+    FactCandidateInputs.PublicProgramNode targetMethod =
+        inputs.graph(ProgramGraphKind.CODE_STRUCTURE).nodesById().get(callTarget.toNodeId());
+    if (targetMethod == null || !METHOD.equals(targetMethod.kind())) {
+      notApplicable.add(
+          new FactCandidateSet.NotApplicableDisposition(
+              entryId,
+              callTarget.edgeId(),
+              template.candidateFactKey(),
+              List.of("TARGET_METHOD"),
+              EXACT_CALL_TARGET_NOT_METHOD));
+      return;
+    }
+    if (!isExactTargetCanonical(targetMethod.canonicalValue())) {
+      notApplicable.add(
+          new FactCandidateSet.NotApplicableDisposition(
+              entryId,
+              callTarget.edgeId(),
+              template.candidateFactKey(),
+              List.of(TARGET_METHOD_CANONICAL),
+              REQUIRED_ATOM_MISSING));
+      return;
+    }
+
+    ExactCallPath path = exactCallPath(inputs, callSite, callTarget, targetMethod);
+    if (!path.missingRoles().isEmpty()) {
+      notApplicable.add(
+          new FactCandidateSet.NotApplicableDisposition(
+              entryId,
+              callTarget.edgeId(),
+              template.candidateFactKey(),
+              path.missingRoles(),
+              PROOF_NOT_CLOSED));
+      return;
+    }
+    candidates.add(
+        new FactCandidateSet.FactCandidate(
+            template.candidateFactKey(),
+            entryId,
+            template.kind(),
+            callSite.nodeId(),
+            callTarget.edgeId(),
+            targetMethod.nodeId(),
+            targetMethod.canonicalValue(),
+            path.evidenceBySubject(),
+            template.requiredAtoms().stream()
+                .map(
+                    atom ->
+                        new FactCandidateSet.RequiredAtom(
+                            atom.atomKey(),
+                            atom.role(),
+                            atom.valueType(),
+                            atom.expectedEvidenceKinds()))
+                .toList()));
+  }
+
+  private static boolean isExactTargetCanonical(String canonicalMethod) {
+    int hash = canonicalMethod.indexOf('#');
+    int parameterStart = canonicalMethod.indexOf('(', hash + 1);
+    return hash > 0 && parameterStart > hash + 1 && canonicalMethod.endsWith(")");
+  }
+
+  private static ExactCallPath exactCallPath(
+      FactCandidateInputs inputs,
+      FactCandidateInputs.PublicProgramNode callSite,
+      FactCandidateInputs.PublicProgramEdge callTarget,
+      FactCandidateInputs.PublicProgramNode targetMethod) {
+    List<ExactCallEvidenceRequest> requests =
+        List.of(
+            new ExactCallEvidenceRequest(
+                new SubjectRequest(
+                    ProgramGraphKind.CALL,
+                    FactCandidateInputs.EvidenceSupportKind.SUPPORTS_PROGRAM_NODE,
+                    callSite.nodeId(),
+                    callSite.sourceEvidenceNodeIds()),
+                CALL_SITE_EVIDENCE),
+            new ExactCallEvidenceRequest(
+                new SubjectRequest(
+                    ProgramGraphKind.CALL,
+                    FactCandidateInputs.EvidenceSupportKind.SUPPORTS_PROGRAM_EDGE,
+                    callTarget.edgeId(),
+                    callTarget.sourceEvidenceNodeIds()),
+                CALL_TARGET_EDGE_EVIDENCE),
+            new ExactCallEvidenceRequest(
+                new SubjectRequest(
+                    ProgramGraphKind.CODE_STRUCTURE,
+                    FactCandidateInputs.EvidenceSupportKind.SUPPORTS_PROGRAM_NODE,
+                    targetMethod.nodeId(),
+                    targetMethod.sourceEvidenceNodeIds()),
+                TARGET_METHOD_EVIDENCE));
+    List<String> missingRoles = new ArrayList<>();
+    List<FactCandidateSet.SubjectEvidenceBinding> evidence = new ArrayList<>();
+    for (ExactCallEvidenceRequest request : requests) {
+      SubjectRequest subject = request.subject();
+      FactCandidateInputs.SubjectEvidence closure =
+          inputs
+              .evidenceGraph()
+              .closureFor(
+                  subject.graphKind(),
+                  subject.supportKind(),
+                  subject.subjectElementId(),
+                  subject.sourceEvidenceNodeIds());
+      if (closure == null) {
+        missingRoles.add(request.missingRole());
+      } else {
+        evidence.add(
+            new FactCandidateSet.SubjectEvidenceBinding(
+                closure.subjectElementId(),
+                closure.sourceEvidenceNodeIds(),
+                closure.ruleApplicationEvidenceNodeIds()));
+      }
+    }
+    return new ExactCallPath(missingRoles, evidence);
+  }
+
   private static GuardPath exactGuardPath(
       FactCandidateInputs inputs, String entryId, FactCandidateInputs.PublicProgramNode guard) {
     FactCandidateInputs.PublicProgramGraph control = inputs.graph(ProgramGraphKind.CONTROL_FLOW);
@@ -194,7 +359,7 @@ public final class FactCandidateEnumerator {
             .filter(
                 edge -> {
                   FactCandidateInputs.PublicProgramNode target =
-                      control.nodesById().get(edge.toNodeId());
+                      uniqueProgramNode(inputs, edge.toNodeId());
                   return target != null && target.owningEntryIds().contains(entryId);
                 })
             .sorted(Comparator.comparing(FactCandidateInputs.PublicProgramEdge::edgeId))
@@ -224,6 +389,16 @@ public final class FactCandidateEnumerator {
                 closure.subjectElementId(),
                 closure.sourceEvidenceNodeIds(),
                 closure.ruleApplicationEvidenceNodeIds())));
+  }
+
+  private static FactCandidateInputs.PublicProgramNode uniqueProgramNode(
+      FactCandidateInputs inputs, String nodeId) {
+    List<FactCandidateInputs.PublicProgramNode> matches =
+        inputs.programGraphs().values().stream()
+            .map(graph -> graph.nodesById().get(nodeId))
+            .filter(Objects::nonNull)
+            .toList();
+    return matches.size() == 1 ? matches.get(0) : null;
   }
 
   private static boolean hasGuardRulePair(
@@ -432,6 +607,17 @@ public final class FactCandidateEnumerator {
       FactCandidateInputs.EvidenceSupportKind supportKind,
       String subjectElementId,
       List<String> sourceEvidenceNodeIds) {}
+
+  private record ExactCallEvidenceRequest(SubjectRequest subject, String missingRole) {}
+
+  private record ExactCallPath(
+      List<String> missingRoles, List<FactCandidateSet.SubjectEvidenceBinding> evidenceBySubject) {
+
+    private ExactCallPath {
+      missingRoles = List.copyOf(missingRoles);
+      evidenceBySubject = List.copyOf(evidenceBySubject);
+    }
+  }
 
   private record CandidatePath(
       List<String> missingRoles,

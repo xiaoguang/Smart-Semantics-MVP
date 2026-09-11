@@ -17,12 +17,29 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
+import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryPublicationRequest;
+import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryPublicationSpecifier;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
+import org.sourceanalysis.app.analysis.discovery.ApplicationLanguage;
+import org.sourceanalysis.app.analysis.discovery.ApplicationProfile;
+import org.sourceanalysis.app.analysis.discovery.ApplicationProfileDraftReference;
+import org.sourceanalysis.app.analysis.discovery.ApplicationProfileModulePublisher;
+import org.sourceanalysis.app.analysis.discovery.HttpEntryDiscovery;
+import org.sourceanalysis.app.analysis.discovery.HttpEntryDiscoveryDraftReference;
+import org.sourceanalysis.app.analysis.discovery.HttpEntryDiscoveryModulePublisher;
 import org.sourceanalysis.app.analysis.discovery.HttpEntryKind;
 import org.sourceanalysis.app.analysis.discovery.HttpEntryPoint;
+import org.sourceanalysis.app.analysis.discovery.HttpEntryShardReceipt;
+import org.sourceanalysis.app.analysis.discovery.HttpEntrySite;
+import org.sourceanalysis.app.analysis.discovery.MapperCatalogDiscovery;
+import org.sourceanalysis.app.analysis.discovery.MapperCatalogDraftReference;
 import org.sourceanalysis.app.analysis.discovery.MapperCatalogEntry;
+import org.sourceanalysis.app.analysis.discovery.MapperCatalogModulePublisher;
+import org.sourceanalysis.app.analysis.discovery.MapperCatalogShardReceipt;
+import org.sourceanalysis.app.analysis.discovery.MapperCatalogSite;
 import org.sourceanalysis.app.analysis.discovery.MapperMethodCandidate;
 import org.sourceanalysis.app.analysis.discovery.MapperStatementCandidate;
+import org.sourceanalysis.app.analysis.discovery.SignalDisposition;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
@@ -69,9 +86,10 @@ import org.sourceanalysis.app.evidence.SourceLocatorV1;
 public final class ProgramGraphsPublicFixture implements AutoCloseable {
 
   private static final String CONTROLLER_PATH = "src/main/java/com/example/OrderController.java";
+  private static final String SYNTHETIC_CONTROLLER_PATH =
+      "src/main/java/com/example/SyntheticReplenishmentController.java";
   private static final String MAPPER_PATH = "src/main/java/com/example/OrderMapper.java";
   private static final String MAPPER_XML_PATH = "src/main/resources/mapper/OrderMapper.xml";
-  private static final String SNAPSHOT_ID = "snapshot:" + digest("fact-two-entry-snapshot");
 
   private final RunStoreHandle handle;
   private final CanonicalModuleArtifactStore moduleArtifacts;
@@ -109,18 +127,205 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     return create(emptyTemporaryDirectory, false);
   }
 
+  /**
+   * Creates the same two-entry source with bounded repository scope and no completion eligibility.
+   */
+  public static ProgramGraphsPublicFixture createWithBoundedPathSet(Path emptyTemporaryDirectory) {
+    return create(emptyTemporaryDirectory, false, false, false, false, true);
+  }
+
   /** Creates the persisted two-entry fixture with one real Java guard in {@code approve}. */
   public static ProgramGraphsPublicFixture createWithGuardedApprove(Path emptyTemporaryDirectory) {
     return create(emptyTemporaryDirectory, true);
   }
 
+  /**
+   * Creates the guarded fixture with the important direct call after the normal short-snippet
+   * window. It exercises generic source-material selection, not a domain rule.
+   */
+  public static ProgramGraphsPublicFixture createWithLongGuardedApprove(
+      Path emptyTemporaryDirectory) {
+    return create(
+        emptyTemporaryDirectory, false, false, false, false, false, false, false, false, true);
+  }
+
+  /**
+   * Creates the persisted two-entry fixture with a natural guarded boundary call in {@code
+   * approve}.
+   */
+  public static ProgramGraphsPublicFixture createWithGuardedElseApprove(
+      Path emptyTemporaryDirectory) {
+    return create(emptyTemporaryDirectory, false, true);
+  }
+
+  /** Creates two HTTP roots with one shared Java call-site and an exact target METHOD. */
+  public static ProgramGraphsPublicFixture createWithSharedJavaCall(Path emptyTemporaryDirectory) {
+    return create(emptyTemporaryDirectory, false, false, true);
+  }
+
+  /** Creates two HTTP roots where the exact handoff is guarded by a Java condition. */
+  public static ProgramGraphsPublicFixture createWithGuardedSharedJavaCall(
+      Path emptyTemporaryDirectory) {
+    return create(emptyTemporaryDirectory, false, false, false, false, false, false, true);
+  }
+
+  /** Creates three HTTP roots joined by two exact Java handoffs for M7 partition acceptance. */
+  public static ProgramGraphsPublicFixture createWithChainedJavaCalls(
+      Path emptyTemporaryDirectory) {
+    return create(emptyTemporaryDirectory, false, false, false, false, false, true);
+  }
+
+  /** Creates a persisted Java repository with no discovered HTTP-entry denominator. */
+  public static ProgramGraphsPublicFixture createWithoutHttpEntries(Path emptyTemporaryDirectory) {
+    return create(emptyTemporaryDirectory, false, false, false, false, false, false, false, true);
+  }
+
+  /** Creates a synthetic unit fixture with seven independently declared HTTP entry methods. */
+  public static ProgramGraphsPublicFixture createSyntheticReplenishmentToSettlement(
+      Path emptyTemporaryDirectory) {
+    return create(emptyTemporaryDirectory, false, false, false, true);
+  }
+
   private static ProgramGraphsPublicFixture create(
       Path emptyTemporaryDirectory, boolean guardedApprove) {
+    return create(emptyTemporaryDirectory, guardedApprove, false, false);
+  }
+
+  private static ProgramGraphsPublicFixture create(
+      Path emptyTemporaryDirectory, boolean guardedApprove, boolean guardedElseApprove) {
+    return create(emptyTemporaryDirectory, guardedApprove, guardedElseApprove, false);
+  }
+
+  private static ProgramGraphsPublicFixture create(
+      Path emptyTemporaryDirectory,
+      boolean guardedApprove,
+      boolean guardedElseApprove,
+      boolean sharedJavaCall) {
+    return create(
+        emptyTemporaryDirectory, guardedApprove, guardedElseApprove, sharedJavaCall, false);
+  }
+
+  private static ProgramGraphsPublicFixture create(
+      Path emptyTemporaryDirectory,
+      boolean guardedApprove,
+      boolean guardedElseApprove,
+      boolean sharedJavaCall,
+      boolean syntheticSevenEntries) {
+    return create(
+        emptyTemporaryDirectory,
+        guardedApprove,
+        guardedElseApprove,
+        sharedJavaCall,
+        syntheticSevenEntries,
+        false);
+  }
+
+  private static ProgramGraphsPublicFixture create(
+      Path emptyTemporaryDirectory,
+      boolean guardedApprove,
+      boolean guardedElseApprove,
+      boolean sharedJavaCall,
+      boolean syntheticSevenEntries,
+      boolean boundedPathSet) {
+    return create(
+        emptyTemporaryDirectory,
+        guardedApprove,
+        guardedElseApprove,
+        sharedJavaCall,
+        syntheticSevenEntries,
+        boundedPathSet,
+        false);
+  }
+
+  private static ProgramGraphsPublicFixture create(
+      Path emptyTemporaryDirectory,
+      boolean guardedApprove,
+      boolean guardedElseApprove,
+      boolean sharedJavaCall,
+      boolean syntheticSevenEntries,
+      boolean boundedPathSet,
+      boolean chainedJavaCalls) {
+    return create(
+        emptyTemporaryDirectory,
+        guardedApprove,
+        guardedElseApprove,
+        sharedJavaCall,
+        syntheticSevenEntries,
+        boundedPathSet,
+        chainedJavaCalls,
+        false);
+  }
+
+  private static ProgramGraphsPublicFixture create(
+      Path emptyTemporaryDirectory,
+      boolean guardedApprove,
+      boolean guardedElseApprove,
+      boolean sharedJavaCall,
+      boolean syntheticSevenEntries,
+      boolean boundedPathSet,
+      boolean chainedJavaCalls,
+      boolean guardedSharedJavaCall) {
+    return create(
+        emptyTemporaryDirectory,
+        guardedApprove,
+        guardedElseApprove,
+        sharedJavaCall,
+        syntheticSevenEntries,
+        boundedPathSet,
+        chainedJavaCalls,
+        guardedSharedJavaCall,
+        false);
+  }
+
+  private static ProgramGraphsPublicFixture create(
+      Path emptyTemporaryDirectory,
+      boolean guardedApprove,
+      boolean guardedElseApprove,
+      boolean sharedJavaCall,
+      boolean syntheticSevenEntries,
+      boolean boundedPathSet,
+      boolean chainedJavaCalls,
+      boolean guardedSharedJavaCall,
+      boolean withoutHttpEntries) {
+    return create(
+        emptyTemporaryDirectory,
+        guardedApprove,
+        guardedElseApprove,
+        sharedJavaCall,
+        syntheticSevenEntries,
+        boundedPathSet,
+        chainedJavaCalls,
+        guardedSharedJavaCall,
+        withoutHttpEntries,
+        false);
+  }
+
+  private static ProgramGraphsPublicFixture create(
+      Path emptyTemporaryDirectory,
+      boolean guardedApprove,
+      boolean guardedElseApprove,
+      boolean sharedJavaCall,
+      boolean syntheticSevenEntries,
+      boolean boundedPathSet,
+      boolean chainedJavaCalls,
+      boolean guardedSharedJavaCall,
+      boolean withoutHttpEntries,
+      boolean longGuardedApprove) {
     createEmptyTestStoreDirectory(emptyTemporaryDirectory);
     CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
     CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
     ArtifactControls controls = controls(policies);
-    AnalysisRunId runId = AnalysisRunId.parse("analysis-run:" + digest("fact-two-entry-run"));
+    String fixtureKey =
+        boundedPathSet
+            ? "fact-bounded-path-set"
+            : syntheticSevenEntries
+                ? "synthetic-seven-entry"
+                : chainedJavaCalls
+                    ? "fact-three-entry-chain"
+                    : guardedSharedJavaCall
+                        ? "fact-guarded-shared-java-call"
+                        : longGuardedApprove ? "fact-long-guarded-approve" : "fact-two-entry";
+    AnalysisRunId runId = AnalysisRunId.parse("analysis-run:" + digest(fixtureKey + "-run"));
     RunStoreHandle handle = RunStoreBootstrap.openForTest(emptyTemporaryDirectory);
     try {
       CanonicalModuleArtifactStore modules =
@@ -135,8 +340,29 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
               canonicalJson,
               policies,
               new ArtifactStoreLimits(16, 2_000_000, 8_000_000, 24));
-      SourceMaterial source = source(controls, guardedApprove);
+      SourceMaterial source =
+          source(
+              controls,
+              guardedApprove,
+              guardedElseApprove,
+              sharedJavaCall,
+              syntheticSevenEntries,
+              boundedPathSet,
+              chainedJavaCalls,
+              guardedSharedJavaCall,
+              longGuardedApprove);
+      if (withoutHttpEntries) {
+        source =
+            new SourceMaterial(
+                source.verifiedSource(),
+                List.of(),
+                source.mapperCatalog(),
+                source.documents(),
+                source.snapshotId(),
+                source.fixtureKey() + "-without-http-entries");
+      }
       List<CanonicalModulePayload> sourcePayloads = sourcePayloads(canonicalJson);
+      source = withPublishedSourceReferences(source, sourcePayloads);
       InstalledModulePublication sourceModule =
           modules.install(
               new ModuleInstallRequest(
@@ -161,41 +387,42 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
                   toStepPayloads(sourcePayloads),
                   null));
 
-      List<CanonicalModulePayload> discoveryPayloads =
-          discoveryPayloads(
-              canonicalJson,
-              controls,
-              source,
-              sourceArtifact(sourcePayloads, "source-inventory.jsonl"),
-              sourceArtifact(sourcePayloads, "verified-snapshot.json"));
-      InstalledModulePublication discoveryModule =
-          modules.install(
-              new ModuleInstallRequest(
-                  new AnalysisStepModuleAddress(
-                      runId, AnalysisStepKey.APPLICATION_DISCOVERY, 4, "publish"),
-                  "v1",
-                  List.of(),
-                  controls,
-                  ModuleCompletionStatus.SUCCEEDED,
-                  List.of(),
-                  discoveryPayloads));
-      var discoveryStep =
-          steps.install(
-              new AnalysisStepInstallRequest(
-                  new AnalysisStepPublicationAddress(runId, AnalysisStepKey.APPLICATION_DISCOVERY),
-                  new AnalysisStepPublisherModuleProvenance(discoveryModule.reference()),
-                  List.of(sourceStep.reference()),
-                  controls,
-                  ModuleCompletionStatus.SUCCEEDED,
-                  List.of(),
-                  toStepPayloads(discoveryPayloads),
-                  null));
-
       VerifiedSourceInventoryReference sourceReference =
           new VerifiedSourceInventoryReference(sourceStep.reference());
+      ApplicationProfile profile = discoveryProfile(source);
+      ApplicationProfileDraftReference profileDraft =
+          new ApplicationProfileModulePublisher(modules)
+              .publish(
+                  new AnalysisStepModuleAddress(
+                      runId, AnalysisStepKey.APPLICATION_DISCOVERY, 1, "application-profile"),
+                  profile);
+      HttpEntryDiscoveryDraftReference entryDraft =
+          new HttpEntryDiscoveryModulePublisher(modules)
+              .publish(
+                  new AnalysisStepModuleAddress(
+                      runId, AnalysisStepKey.APPLICATION_DISCOVERY, 2, "http-entry"),
+                  profileDraft,
+                  profile,
+                  discoveryEntries(source));
+      MapperCatalogDraftReference mapperDraft =
+          new MapperCatalogModulePublisher(modules)
+              .publish(
+                  new AnalysisStepModuleAddress(
+                      runId, AnalysisStepKey.APPLICATION_DISCOVERY, 3, "mapper-catalog"),
+                  profileDraft,
+                  profile,
+                  discoveryMappers(source));
       ApplicationDiscoveryReference discoveryReference =
-          new ApplicationDiscoveryReference(discoveryStep.reference());
-      ArtifactReference graphProfile = reference("graph-profile", "fact-two-entry-profile");
+          new ApplicationDiscoveryPublicationSpecifier(modules, steps)
+              .publish(
+                  new ApplicationDiscoveryPublicationRequest(
+                      new AnalysisStepPublicationAddress(
+                          runId, AnalysisStepKey.APPLICATION_DISCOVERY),
+                      sourceReference,
+                      profileDraft,
+                      entryDraft,
+                      mapperDraft));
+      ArtifactReference graphProfile = reference("graph-profile", fixtureKey + "-profile");
       ProgramGraphsReference graphReference =
           new ProgramGraphsExecution(source.reader(), modules, steps)
               .execute(sourceReference, discoveryReference, graphProfile, controls);
@@ -253,6 +480,17 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
   /** Returns the exact policy registry used to publish every fixture predecessor. */
   public CanonicalArtifactPolicyRegistry artifactPolicies() {
     return artifactPolicies;
+  }
+
+  /** Creates the complete test-only policy set required by production Step 01–05 executors. */
+  public static CanonicalArtifactPolicyRegistry policiesForRuntimeTest(
+      CanonicalJsonCodec canonicalJson) {
+    return policies(canonicalJson);
+  }
+
+  /** Creates controls bound to {@link #policiesForRuntimeTest(CanonicalJsonCodec)}. */
+  public static ArtifactControls controlsForRuntimeTest(CanonicalArtifactPolicyRegistry policies) {
+    return controls(policies);
   }
 
   /** Returns the exact controls recorded by the fixture's source/discovery/graph receipts. */
@@ -578,9 +816,375 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
   }
 
   private static SourceMaterial source(ArtifactControls controls, boolean guardedApprove) {
+    return source(controls, guardedApprove, false, false, false);
+  }
+
+  private static SourceMaterial source(
+      ArtifactControls controls, boolean guardedApprove, boolean guardedElseApprove) {
+    return source(controls, guardedApprove, guardedElseApprove, false, false);
+  }
+
+  private static SourceMaterial source(
+      ArtifactControls controls,
+      boolean guardedApprove,
+      boolean guardedElseApprove,
+      boolean sharedJavaCall,
+      boolean syntheticSevenEntries) {
+    return source(
+        controls, guardedApprove, guardedElseApprove, sharedJavaCall, syntheticSevenEntries, false);
+  }
+
+  private static SourceMaterial source(
+      ArtifactControls controls,
+      boolean guardedApprove,
+      boolean guardedElseApprove,
+      boolean sharedJavaCall,
+      boolean syntheticSevenEntries,
+      boolean boundedPathSet) {
+    return source(
+        controls,
+        guardedApprove,
+        guardedElseApprove,
+        sharedJavaCall,
+        syntheticSevenEntries,
+        boundedPathSet,
+        false);
+  }
+
+  private static SourceMaterial source(
+      ArtifactControls controls,
+      boolean guardedApprove,
+      boolean guardedElseApprove,
+      boolean sharedJavaCall,
+      boolean syntheticSevenEntries,
+      boolean boundedPathSet,
+      boolean chainedJavaCalls) {
+    return source(
+        controls,
+        guardedApprove,
+        guardedElseApprove,
+        sharedJavaCall,
+        syntheticSevenEntries,
+        boundedPathSet,
+        chainedJavaCalls,
+        false);
+  }
+
+  private static SourceMaterial source(
+      ArtifactControls controls,
+      boolean guardedApprove,
+      boolean guardedElseApprove,
+      boolean sharedJavaCall,
+      boolean syntheticSevenEntries,
+      boolean boundedPathSet,
+      boolean chainedJavaCalls,
+      boolean guardedSharedJavaCall) {
+    return source(
+        controls,
+        guardedApprove,
+        guardedElseApprove,
+        sharedJavaCall,
+        syntheticSevenEntries,
+        boundedPathSet,
+        chainedJavaCalls,
+        guardedSharedJavaCall,
+        false);
+  }
+
+  private static SourceMaterial source(
+      ArtifactControls controls,
+      boolean guardedApprove,
+      boolean guardedElseApprove,
+      boolean sharedJavaCall,
+      boolean syntheticSevenEntries,
+      boolean boundedPathSet,
+      boolean chainedJavaCalls,
+      boolean guardedSharedJavaCall,
+      boolean longGuardedApprove) {
     String controller =
-        guardedApprove
+        syntheticSevenEntries
             ? """
+        package com.example;
+
+        class SyntheticReplenishmentController {
+          private final SubmitReplenishmentBoundary submitReplenishmentBoundary = null;
+          private final StoreApprovalBoundary storeApprovalBoundary = null;
+          private final RegionalPurchaseOrderBoundary regionalPurchaseOrderBoundary = null;
+          private final PurchaseOrderExpenseBoundary purchaseOrderExpenseBoundary = null;
+          private final ProcurementLogisticsBoundary procurementLogisticsBoundary = null;
+          private final InventoryReceiptBoundary inventoryReceiptBoundary = null;
+          private final MonthlySettlementBoundary monthlySettlementBoundary = null;
+
+          void submitReplenishment(String status) {
+            submitReplenishmentBoundary.submitReplenishment(status);
+          }
+
+          void approveAtStore(String status) {
+            storeApprovalBoundary.approveAtStore(status);
+          }
+
+          void approveRegionAndCreatePurchaseOrder(String status) {
+            regionalPurchaseOrderBoundary.approveRegionAndCreatePurchaseOrder(status);
+          }
+
+          void approvePurchaseOrderAndProcessExpense(String status) {
+            purchaseOrderExpenseBoundary.approvePurchaseOrderAndProcessExpense(status);
+          }
+
+          void executePurchaseAndRegisterLogistics(String status) {
+            procurementLogisticsBoundary.executePurchaseAndRegisterLogistics(status);
+          }
+
+          void receiveAndRegisterInventory(String status) {
+            inventoryReceiptBoundary.receiveAndRegisterInventory(status);
+          }
+
+          void generateConfirmAndSettleMonthlyBill(String status) {
+            monthlySettlementBoundary.generateConfirmAndSettleMonthlyBill(status);
+          }
+        }
+
+        interface SubmitReplenishmentBoundary {
+          void submitReplenishment(String status);
+        }
+
+        interface StoreApprovalBoundary {
+          void approveAtStore(String status);
+        }
+
+        interface RegionalPurchaseOrderBoundary {
+          void approveRegionAndCreatePurchaseOrder(String status);
+        }
+
+        interface PurchaseOrderExpenseBoundary {
+          void approvePurchaseOrderAndProcessExpense(String status);
+        }
+
+        interface ProcurementLogisticsBoundary {
+          void executePurchaseAndRegisterLogistics(String status);
+        }
+
+        interface InventoryReceiptBoundary {
+          void receiveAndRegisterInventory(String status);
+        }
+
+        interface MonthlySettlementBoundary {
+          void generateConfirmAndSettleMonthlyBill(String status);
+        }
+        """
+            : chainedJavaCalls
+                ? """
+        package com.example;
+
+        class OrderController {
+          private final OrderService orderService = new OrderService();
+
+          void approve(String status) {
+            orderService.dispatch(status);
+          }
+        }
+
+        class OrderService {
+          private final ApprovalGateway approvalGateway = new ApprovalGateway();
+
+          void dispatch(String status) {
+            approvalGateway.record(status);
+          }
+        }
+
+        class ApprovalGateway {
+          private final ApprovalClient approvalClient = null;
+
+          void record(String status) {
+            approvalClient.record(status);
+          }
+        }
+
+        interface ApprovalClient {
+          void record(String status);
+        }
+        """
+                : guardedSharedJavaCall
+                    ? """
+        package com.example;
+
+        class OrderController {
+          private final OrderService orderService = new OrderService();
+
+          void approve(String status) {
+            if (status == null) {
+              return;
+            } else {
+              orderService.dispatch(status);
+            }
+          }
+        }
+
+        class OrderService {
+          private final ApprovalClient approvalClient = null;
+
+          void dispatch(String status) {
+            approvalClient.record(status);
+          }
+        }
+
+        interface ApprovalClient {
+          void record(String status);
+        }
+        """
+                    : sharedJavaCall
+                        ? """
+        package com.example;
+
+        class OrderController {
+          private final OrderService orderService = new OrderService();
+
+          void approve(String status) {
+            orderService.dispatch(status);
+          }
+        }
+
+        class OrderService {
+          private final ApprovalClient approvalClient = null;
+
+          void dispatch(String status) {
+            approvalClient.record(status);
+          }
+        }
+
+        interface ApprovalClient {
+          void record(String status);
+        }
+        """
+                        : guardedElseApprove
+                            ? """
+        package com.example;
+
+        class OrderController {
+          private final OrderService orderService = new OrderService();
+
+          void approve(String status) {
+            orderService.approve(status);
+          }
+
+          void cancel(String status) {
+            orderService.cancel(status);
+          }
+        }
+
+        class OrderService {
+          private final ApprovalClient approvalClient = null;
+          private final CancellationClient cancellationClient = null;
+
+          void approve(String status) {
+            if (status == null) {
+              return;
+            } else {
+              approvalClient.record(status);
+            }
+          }
+
+          void cancel(String status) {
+            cancellationClient.record(status);
+          }
+        }
+
+        interface ApprovalClient {
+          void record(String status);
+        }
+
+        interface CancellationClient {
+          void record(String status);
+        }
+        """
+                            : longGuardedApprove
+                                ? """
+        package com.example;
+
+        class OrderController {
+          private final OrderService orderService = new OrderService();
+
+          void approve(String status) {
+            orderService.approve(status);
+          }
+
+          void cancel(String status) {
+            orderService.cancel(status);
+          }
+        }
+
+        class OrderService {
+          private final ApprovalClient approvalClient = null;
+          private final AuditClient auditClient = null;
+          private final CancellationClient cancellationClient = null;
+          private final MetadataClient metadataClient = null;
+          private final OrderRecord record = new OrderRecord();
+          private final OrderMapper orderMapper = null;
+
+          void approve(String status) {
+            if (status == null) {
+              return;
+            }
+            String normalized = status.trim();
+            int first = 1;
+            int second = first + 1;
+            int third = second + 1;
+            int fourth = third + 1;
+            int fifth = fourth + 1;
+            int sixth = fifth + 1;
+            int seventh = sixth + 1;
+            int eighth = seventh + 1;
+            int ninth = eighth + 1;
+            int tenth = ninth + 1;
+            int eleventh = tenth + 1;
+            int twelfth = eleventh + 1;
+            int thirteenth = twelfth + 1;
+            int fourteenth = thirteenth + 1;
+            int fifteenth = fourteenth + 1;
+            int sixteenth = fifteenth + 1;
+            if (normalized.isEmpty()) {
+              return;
+            }
+            approvalClient.record(normalized);
+            metadataClient.lookup(normalized);
+            metadataClient.lookupAgain(normalized);
+            record.setStatus(normalized);
+            orderMapper.update(record);
+            auditClient.record(normalized);
+          }
+
+          void cancel(String status) {
+            cancellationClient.record(status);
+          }
+        }
+
+        interface ApprovalClient {
+          void record(String status);
+        }
+
+        interface AuditClient {
+          void record(String status);
+        }
+
+        interface MetadataClient {
+          void lookup(String status);
+          void lookupAgain(String status);
+        }
+
+        class OrderRecord {
+          void setStatus(String status) {}
+        }
+
+        interface OrderMapper {
+          void update(OrderRecord record);
+        }
+
+        interface CancellationClient {
+          void record(String status);
+        }
+        """
+                                : guardedApprove
+                                ? """
         package com.example;
 
         class OrderController {
@@ -619,7 +1223,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
           void record(String status);
         }
         """
-            : """
+                                : """
         package com.example;
 
         class OrderController {
@@ -656,7 +1260,8 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
           void record(String status);
         }
         """
-                .formatted(guardedApprove ? "if (status == null) { return; }" : "");
+                                    .formatted(
+                                        guardedApprove ? "if (status == null) { return; }" : "");
     String mapper =
         """
         package com.example;
@@ -675,37 +1280,114 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
           </update>
         </mapper>
         """;
+    String controllerPath = syntheticSevenEntries ? SYNTHETIC_CONTROLLER_PATH : CONTROLLER_PATH;
     Map<String, String> documents =
-        Map.of(CONTROLLER_PATH, controller, MAPPER_PATH, mapper, MAPPER_XML_PATH, mapperXml);
+        Map.of(controllerPath, controller, MAPPER_PATH, mapper, MAPPER_XML_PATH, mapperXml);
     List<VerifiedSourceTextDocument> verifiedDocuments =
         documents.entrySet().stream()
             .map(entry -> verifiedDocument(entry.getKey(), entry.getValue()))
             .sorted(Comparator.comparing(VerifiedSourceTextDocument::path))
             .toList();
+    String fixtureKey =
+        boundedPathSet
+            ? "fact-bounded-path-set"
+            : syntheticSevenEntries
+                ? "synthetic-seven-entry"
+                : chainedJavaCalls
+                    ? "fact-three-entry-chain"
+                    : guardedSharedJavaCall ? "fact-guarded-shared-java-call" : "fact-two-entry";
+    String snapshotId = "snapshot:" + digest(fixtureKey + "-snapshot");
     VerifiedSourceTextSet verifiedSource =
         new VerifiedSourceTextSet(
-            SNAPSHOT_ID,
-            "COMPLETE_CAPTURE",
-            true,
-            reference("capability-profile", "fact-two-entry-capability"),
-            reference("source-inventory", "fact-two-entry-inventory"),
-            reference("verified-snapshot", "fact-two-entry-snapshot"),
+            snapshotId,
+            boundedPathSet ? "BOUNDED_PATH_SET" : "COMPLETE_CAPTURE",
+            !boundedPathSet,
+            reference("capability-profile", fixtureKey + "-capability"),
+            reference("source-inventory", fixtureKey + "-inventory"),
+            reference("verified-snapshot", fixtureKey + "-snapshot"),
             controls,
             verifiedDocuments);
     List<HttpEntryPoint> entries =
-        List.of(
-            entry(
-                "approve",
-                "/orders/approve",
-                "approve",
-                excerpt(documents, CONTROLLER_PATH, "class OrderController"),
-                excerpt(documents, CONTROLLER_PATH, "void approve")),
-            entry(
-                "cancel",
-                "/orders/cancel",
-                "cancel",
-                excerpt(documents, CONTROLLER_PATH, "class OrderController"),
-                excerpt(documents, CONTROLLER_PATH, "void cancel")));
+        syntheticSevenEntries
+            ? List.of(
+                syntheticEntry(
+                    "submit-replenishment", "submitReplenishment", documents, controllerPath),
+                syntheticEntry("approve-at-store", "approveAtStore", documents, controllerPath),
+                syntheticEntry(
+                    "approve-region-and-create-purchase-order",
+                    "approveRegionAndCreatePurchaseOrder",
+                    documents,
+                    controllerPath),
+                syntheticEntry(
+                    "approve-purchase-order-and-process-expense",
+                    "approvePurchaseOrderAndProcessExpense",
+                    documents,
+                    controllerPath),
+                syntheticEntry(
+                    "execute-purchase-and-register-logistics",
+                    "executePurchaseAndRegisterLogistics",
+                    documents,
+                    controllerPath),
+                syntheticEntry(
+                    "receive-and-register-inventory",
+                    "receiveAndRegisterInventory",
+                    documents,
+                    controllerPath),
+                syntheticEntry(
+                    "generate-confirm-and-settle-monthly-bill",
+                    "generateConfirmAndSettleMonthlyBill",
+                    documents,
+                    controllerPath))
+            : chainedJavaCalls
+                ? List.of(
+                    entry(
+                        "approve",
+                        "/orders/approve",
+                        "approve",
+                        excerpt(documents, controllerPath, "class OrderController"),
+                        excerpt(documents, controllerPath, "void approve")),
+                    entryForHandler(
+                        "dispatch",
+                        "/orders/dispatch",
+                        "dispatch",
+                        "com.example.OrderService#dispatch",
+                        excerpt(documents, controllerPath, "class OrderService"),
+                        excerpt(documents, controllerPath, "void dispatch")),
+                    entryForHandler(
+                        "record",
+                        "/orders/record",
+                        "record",
+                        "com.example.ApprovalGateway#record",
+                        excerpt(documents, controllerPath, "class ApprovalGateway"),
+                        excerpt(documents, controllerPath, "void record")))
+                : sharedJavaCall || guardedSharedJavaCall
+                    ? List.of(
+                        entry(
+                            "approve",
+                            "/orders/approve",
+                            "approve",
+                            excerpt(documents, controllerPath, "class OrderController"),
+                            excerpt(documents, controllerPath, "void approve")),
+                        entryForHandler(
+                            "dispatch",
+                            "/orders/dispatch",
+                            "dispatch",
+                            "com.example.OrderService#dispatch",
+                            excerpt(documents, controllerPath, "class OrderService"),
+                            excerpt(documents, controllerPath, "void dispatch")))
+                    : List.of(
+                        entry(
+                            "approve",
+                            "/orders/approve",
+                            "approve",
+                            excerpt(documents, controllerPath, "class OrderController"),
+                            excerpt(documents, controllerPath, "void approve")),
+                        entry(
+                            "cancel",
+                            "/orders/cancel",
+                            "cancel",
+                            excerpt(documents, controllerPath, "class OrderController"),
+                            excerpt(documents, controllerPath, "void cancel")));
     MapperCatalogEntry mapperCatalog =
         new MapperCatalogEntry(
             id("mapper-catalog-entry", "order"),
@@ -724,7 +1406,8 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
                     "update",
                     excerpt(documents, MAPPER_XML_PATH, "id=\"noop\""))),
             "CANDIDATE_NOT_YET_BOUND");
-    return new SourceMaterial(verifiedSource, entries, mapperCatalog, documents);
+    return new SourceMaterial(
+        verifiedSource, entries, mapperCatalog, documents, snapshotId, fixtureKey);
   }
 
   private static VerifiedSourceTextDocument verifiedDocument(String path, String value) {
@@ -745,15 +1428,59 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
       String method,
       SourceExcerptV1 classExcerpt,
       SourceExcerptV1 methodExcerpt) {
+    return entryForHandler(
+        key, route, method, "com.example.OrderController#" + method, classExcerpt, methodExcerpt);
+  }
+
+  private static HttpEntryPoint syntheticEntry(
+      String key, String method, Map<String, String> documents, String controllerPath) {
+    return entryForHandler(
+        key,
+        "/synthetic/" + method,
+        method,
+        "com.example.SyntheticReplenishmentController#" + method,
+        List.of("/synthetic", "/" + method),
+        List.of("status"),
+        excerpt(documents, controllerPath, "class SyntheticReplenishmentController"),
+        excerpt(documents, controllerPath, "void " + method));
+  }
+
+  private static HttpEntryPoint entryForHandler(
+      String key,
+      String route,
+      String method,
+      String handlerFqn,
+      SourceExcerptV1 classExcerpt,
+      SourceExcerptV1 methodExcerpt) {
+    return entryForHandler(
+        key,
+        route,
+        method,
+        handlerFqn,
+        List.of("/orders", "/" + method),
+        List.of("status"),
+        classExcerpt,
+        methodExcerpt);
+  }
+
+  private static HttpEntryPoint entryForHandler(
+      String key,
+      String route,
+      String method,
+      String handlerFqn,
+      List<String> routeParts,
+      List<String> parameterNames,
+      SourceExcerptV1 classExcerpt,
+      SourceExcerptV1 methodExcerpt) {
     return new HttpEntryPoint(
         id("entry", key),
         HttpEntryKind.SPRING_MVC_HTTP,
         "HTTP",
         "POST",
         route,
-        List.of("/orders", "/" + method),
-        "com.example.OrderController#" + method,
-        List.of("status"),
+        routeParts,
+        handlerFqn,
+        parameterNames,
         List.of(classExcerpt, methodExcerpt));
   }
 
@@ -780,138 +1507,100 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
             "verified-snapshot"));
   }
 
-  private static List<CanonicalModulePayload> discoveryPayloads(
-      CanonicalJsonCodec json,
-      ArtifactControls controls,
-      SourceMaterial source,
-      ArtifactReference sourceInventory,
-      ArtifactReference verifiedSnapshot) {
-    ArtifactId applicationProfileId = id("application-profile", "fact-two-entry");
-    ObjectNode profile = JsonNodeFactory.instance.objectNode();
-    profile.put("schemaVersion", "application-discovery-application-profile-v2");
-    profile.put("artifactType", "APPLICATION_DISCOVERY_APPLICATION_PROFILE");
-    profile.put("applicationProfileId", applicationProfileId.value());
-    profile.put("snapshotId", SNAPSHOT_ID);
-    profile.put("inventoryScopeKind", "COMPLETE_CAPTURE");
-    profile.put("repositoryCompletionEligible", true);
-    profile.put("language", "JAVA");
-    profile.putNull("languageVersion");
-    profile.putArray("frameworkSignals");
-    profile.putArray("configSignals");
-    profile.set(
-        "capabilityProfileRef",
-        referenceNode(reference("capability-profile", "fact-two-entry-capability")));
-    profile.set("sourceInventoryRef", referenceNode(sourceInventory));
-    profile.set("verifiedSnapshotRef", referenceNode(verifiedSnapshot));
-    profile.set("controls", controlsNode(controls));
-    List<ObjectNode> entryLines =
-        source.entries().stream().map(ProgramGraphsPublicFixture::entryNode).toList();
-    ObjectNode capability = JsonNodeFactory.instance.objectNode();
-    capability.put("schemaVersion", "application-discovery-capability-report-v2");
-    capability.put("artifactType", "APPLICATION_DISCOVERY_CAPABILITY_REPORT");
-    capability.put("applicationProfileId", applicationProfileId.value());
-    ObjectNode coverage = capability.putObject("repositoryEntryCoverage");
-    ArrayNode entryIds = coverage.putArray("entryIds");
-    source.entries().stream()
-        .map(HttpEntryPoint::entryId)
-        .map(ArtifactId::value)
-        .sorted()
-        .forEach(entryIds::add);
-    coverage.putArray("mapperCatalogEntryIds").add(source.mapperCatalog().catalogEntryId().value());
-    coverage.put("entryCount", source.entries().size());
-    coverage.put("mapperCatalogEntryCount", 1);
-    return List.of(
-        standaloneBody(
-            json,
-            "application-profile.json",
-            "APPLICATION_DISCOVERY_APPLICATION_PROFILE",
-            "application-discovery-application-profile-v2",
-            "application-profile",
-            profile),
-        standaloneBody(
-            json,
-            "capability-report.json",
-            "APPLICATION_DISCOVERY_CAPABILITY_REPORT",
-            "application-discovery-capability-report-v2",
-            "capability-report",
-            capability),
-        jsonlBody(
-            json,
-            "entry-points.jsonl",
-            "APPLICATION_DISCOVERY_ENTRY_POINTS",
-            "application-discovery-entry-points-v2",
-            "entry-points",
-            entryLines),
-        jsonlBody(
-            json,
-            "mapper-catalog.jsonl",
-            "APPLICATION_DISCOVERY_MAPPER_CATALOG",
-            "application-discovery-mapper-catalog-v2",
-            "mapper-catalog",
-            List.of(mapperNode(source.mapperCatalog()))));
+  private static SourceMaterial withPublishedSourceReferences(
+      SourceMaterial source, List<CanonicalModulePayload> sourcePayloads) {
+    VerifiedSourceTextSet previous = source.verifiedSource();
+    VerifiedSourceTextSet aligned =
+        new VerifiedSourceTextSet(
+            previous.snapshotId(),
+            previous.inventoryScopeKind(),
+            previous.repositoryCompletionEligible(),
+            previous.capabilityProfileRef(),
+            sourceArtifact(sourcePayloads, "source-inventory.jsonl"),
+            sourceArtifact(sourcePayloads, "verified-snapshot.json"),
+            previous.controls(),
+            previous.documents());
+    return new SourceMaterial(
+        aligned,
+        source.entries(),
+        source.mapperCatalog(),
+        source.documents(),
+        source.snapshotId(),
+        source.fixtureKey());
   }
 
-  private static ObjectNode entryNode(HttpEntryPoint value) {
-    ObjectNode result = JsonNodeFactory.instance.objectNode();
-    result.put("entryId", value.entryId().value());
-    result.put("kind", value.kind().name());
-    result.put("protocol", value.protocol());
-    result.put("method", value.method());
-    result.put("route", value.route());
-    strings(result.putArray("routeParts"), value.routeParts());
-    result.put("handlerFqn", value.handlerFqn());
-    strings(result.putArray("parameterNames"), value.parameterNames());
-    ArrayNode excerpts = result.putArray("routeSourceExcerpts");
-    value.routeSourceExcerpts().forEach(valueExcerpt -> excerpts.add(excerptNode(valueExcerpt)));
-    return result;
+  private static ApplicationProfile discoveryProfile(SourceMaterial source) {
+    VerifiedSourceTextSet verifiedSource = source.verifiedSource();
+    return new ApplicationProfile(
+        id("application-profile", source.fixtureKey()),
+        source.snapshotId(),
+        verifiedSource.inventoryScopeKind(),
+        verifiedSource.repositoryCompletionEligible(),
+        ApplicationLanguage.JAVA,
+        17,
+        List.of(),
+        List.of(),
+        verifiedSource.capabilityProfileRef(),
+        verifiedSource.sourceInventoryRef(),
+        verifiedSource.verifiedSnapshotRef(),
+        verifiedSource.controls());
   }
 
-  private static ObjectNode mapperNode(MapperCatalogEntry value) {
-    ObjectNode result = JsonNodeFactory.instance.objectNode();
-    result.put("catalogEntryId", value.catalogEntryId().value());
-    result.put("javaInterfaceFqn", value.javaInterfaceFqn());
-    ArrayNode methods = result.putArray("javaMethodCandidates");
-    value.javaMethodCandidates().forEach(candidate -> methods.add(methodNode(candidate)));
-    result.put("xmlResourcePath", value.xmlResourcePath());
-    result.put("xmlNamespace", value.xmlNamespace());
-    ArrayNode statements = result.putArray("xmlStatementCandidates");
-    value.xmlStatementCandidates().forEach(candidate -> statements.add(statementNode(candidate)));
-    result.put("bindingState", value.bindingState());
-    return result;
+  private static HttpEntryDiscovery discoveryEntries(SourceMaterial source) {
+    List<HttpEntryPoint> entries =
+        source.entries().stream()
+            .sorted(Comparator.comparing(entry -> entry.entryId().value()))
+            .toList();
+    List<HttpEntrySite> sites =
+        entries.stream()
+            .map(
+                entry ->
+                    new HttpEntrySite(
+                        id("http-entry-site", entry.entryId().value()),
+                        entry.routeSourceExcerpts().get(entry.routeSourceExcerpts().size() - 1),
+                        List.of(entry.entryId()),
+                        SignalDisposition.SUPPORTED,
+                        null,
+                        null))
+            .sorted(Comparator.comparing(site -> site.siteId().value()))
+            .toList();
+    List<ArtifactId> siteIds = sites.stream().map(HttpEntrySite::siteId).toList();
+    return new HttpEntryDiscovery(
+        entries,
+        sites,
+        List.of(
+            new HttpEntryShardReceipt(
+                id("http-entry-shard", source.fixtureKey()),
+                siteIds,
+                siteIds,
+                "SUCCEEDED",
+                List.of())));
   }
 
-  private static ObjectNode methodNode(MapperMethodCandidate value) {
-    ObjectNode result = JsonNodeFactory.instance.objectNode();
-    result.put("methodCandidateId", value.methodCandidateId().value());
-    result.put("signature", value.signature());
-    result.set("declarationExcerpt", excerptNode(value.declarationExcerpt()));
-    return result;
-  }
-
-  private static ObjectNode statementNode(MapperStatementCandidate value) {
-    ObjectNode result = JsonNodeFactory.instance.objectNode();
-    result.put("statementCandidateId", value.statementCandidateId().value());
-    result.put("statementId", value.statementId());
-    result.put("statementKind", value.statementKind());
-    result.set("declarationExcerpt", excerptNode(value.declarationExcerpt()));
-    return result;
-  }
-
-  private static ObjectNode excerptNode(SourceExcerptV1 value) {
-    SourceLocatorV1 locator = value.locator();
-    ObjectNode result = JsonNodeFactory.instance.objectNode();
-    ObjectNode location = result.putObject("locator");
-    location.put("fileId", locator.fileId().value());
-    location.put("path", locator.path());
-    location.put("startByte", locator.startByte());
-    location.put("endByteExclusive", locator.endByteExclusive());
-    location.put("startLine", locator.startLine());
-    location.put("startColumn", locator.startColumn());
-    location.put("endLine", locator.endLine());
-    location.put("endColumn", locator.endColumn());
-    result.put("rawUtf8", new String(value.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8));
-    result.put("rawUtf8Sha256", value.rawUtf8Sha256().value());
-    return result;
+  private static MapperCatalogDiscovery discoveryMappers(SourceMaterial source) {
+    MapperCatalogEntry entry = source.mapperCatalog();
+    SourceExcerptV1 primaryExcerpt =
+        entry.javaMethodCandidates().isEmpty()
+            ? entry.xmlStatementCandidates().stream().findFirst().orElseThrow().declarationExcerpt()
+            : entry.javaMethodCandidates().get(0).declarationExcerpt();
+    MapperCatalogSite site =
+        new MapperCatalogSite(
+            id("mapper-catalog-site", entry.catalogEntryId().value()),
+            primaryExcerpt,
+            SignalDisposition.SUPPORTED,
+            null,
+            null);
+    ArtifactId siteId = site.siteId();
+    return new MapperCatalogDiscovery(
+        List.of(entry),
+        List.of(site),
+        List.of(
+            new MapperCatalogShardReceipt(
+                id("mapper-catalog-shard", source.fixtureKey()),
+                List.of(siteId),
+                List.of(siteId),
+                "SUCCEEDED",
+                List.of())));
   }
 
   private static CanonicalModulePayload standalonePayload(
@@ -1039,6 +1728,14 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         false);
     policy(
         entries,
+        "APPLICATION_DISCOVERY_APPLICATION_PROFILE_DRAFT",
+        "application-discovery-application-profile-draft-v2",
+        "application-profile",
+        "application/json",
+        "MODULE_ARTIFACT_JSON",
+        false);
+    policy(
+        entries,
         "APPLICATION_DISCOVERY_CAPABILITY_REPORT",
         "application-discovery-capability-report-v2",
         "capability-report",
@@ -1055,11 +1752,27 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         true);
     policy(
         entries,
+        "APPLICATION_DISCOVERY_HTTP_ENTRY_DISCOVERY",
+        "application-discovery-http-entry-discovery-v2",
+        "http-entry-discovery",
+        "application/json",
+        "MODULE_ARTIFACT_JSON",
+        false);
+    policy(
+        entries,
         "APPLICATION_DISCOVERY_MAPPER_CATALOG",
         "application-discovery-mapper-catalog-v2",
         "mapper-catalog",
         "application/x-ndjson",
         "CANONICAL_JSONL",
+        false);
+    policy(
+        entries,
+        "APPLICATION_DISCOVERY_MAPPER_CATALOG_DRAFT",
+        "application-discovery-mapper-catalog-draft-v2",
+        "mapper-catalog",
+        "application/json",
+        "MODULE_ARTIFACT_JSON",
         false);
     policy(
         entries,
@@ -1160,7 +1873,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "PROVEN_CODE_FACTS_FACT_CANDIDATE_SET",
-        "proven-code-facts-fact-candidate-set-v2",
+        "proven-code-facts-fact-candidate-set-v3",
         "proven-code-facts-fact-candidate-set",
         "application/json",
         "MODULE_ARTIFACT_JSON",
@@ -1168,7 +1881,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "PROVEN_CODE_FACTS_FACT_ACCOUNTING",
-        "proven-code-facts-fact-accounting-v2",
+        "proven-code-facts-fact-accounting-v3",
         "proven-code-facts-fact-accounting",
         "application/json",
         "STANDALONE_JSON",
@@ -1176,7 +1889,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "PROVEN_CODE_FACTS_GAP_LEDGER",
-        "proven-code-facts-gap-ledger-v2",
+        "proven-code-facts-gap-ledger-v3",
         "proven-code-facts-gap-ledger",
         "application/json",
         "STANDALONE_JSON",
@@ -1184,7 +1897,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "PROVEN_CODE_FACTS_PROOF_PACK",
-        "proven-code-facts-proof-pack-v2",
+        "proven-code-facts-proof-pack-v3",
         "proven-code-facts-proof-pack",
         "application/json",
         "STANDALONE_JSON",
@@ -1192,7 +1905,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "PROVEN_CODE_FACTS_PROOF_DECISION_SET",
-        "proven-code-facts-proof-decision-set-v2",
+        "proven-code-facts-proof-decision-set-v3",
         "proven-code-facts-proof-decision-set",
         "application/json",
         "MODULE_ARTIFACT_JSON",
@@ -1200,7 +1913,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "PROVEN_CODE_FACTS_PROVEN_FACTS",
-        "proven-code-facts-proven-facts-v2",
+        "proven-code-facts-proven-facts-v3",
         "proven-code-facts-proven-facts",
         "application/json",
         "STANDALONE_JSON",
@@ -1208,7 +1921,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_FLOW_COMPILATION",
-        "business-flows-flow-compilation-v1",
+        "business-flows-flow-compilation-v3",
         "business-flows-flow-compilation",
         "application/json",
         "MODULE_ARTIFACT_JSON",
@@ -1216,7 +1929,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_CAPSULE_PROJECTION",
-        "business-flows-capsule-projection-v4",
+        "business-flows-capsule-projection-v7",
         "business-flows-capsule-projection",
         "application/json",
         "MODULE_ARTIFACT_JSON",
@@ -1224,7 +1937,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_FLOW_SLICES",
-        "business-flows-flow-slices-v1",
+        "business-flows-flow-slices-v3",
         "business-flows-flow-slices",
         "application/json",
         "STANDALONE_JSON",
@@ -1248,7 +1961,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_EVIDENCE_CAPSULE",
-        "business-flows-evidence-capsule-v2",
+        "business-flows-evidence-capsule-v5",
         "business-flows-evidence-capsule",
         "application/x-ndjson",
         "CANONICAL_JSONL",
@@ -1256,8 +1969,88 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_FLOW_GAP",
-        "business-flows-flow-gap-v1",
+        "business-flows-flow-gap-v2",
         "business-flows-flow-gap",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        true);
+    policy(
+        entries,
+        "FLOW_INTERPRETATION_BUSINESS_MATERIAL",
+        "flow-interpretation-business-material-v1",
+        "business-materials",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        true);
+    policy(
+        entries,
+        "FLOW_INTERPRETATION_ACTIVITY_COVERAGE",
+        "flow-interpretation-activity-coverage-v1",
+        "activity-coverage",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "FLOW_INTERPRETATION_ACTIVITY_EXPLANATIONS",
+        "flow-interpretation-activity-explanations-v1",
+        "activity-explanations",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        true);
+    policy(
+        entries,
+        "REPOSITORY_KNOWLEDGE_BUSINESS_PROCESSES",
+        "repository-knowledge-business-processes-v1",
+        "business-processes",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        true);
+    policy(
+        entries,
+        "REPOSITORY_KNOWLEDGE_PROCESS_COVERAGE",
+        "repository-knowledge-process-coverage-v1",
+        "process-coverage",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "REPOSITORY_KNOWLEDGE_BUSINESS_KNOWLEDGE",
+        "repository-knowledge-business-knowledge-v1",
+        "repository-business-knowledge",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "BUSINESS_DOCUMENT_REPORT",
+        "business-document-report-v1",
+        "business-report",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "BUSINESS_DOCUMENT_MARKDOWN",
+        "business-document-markdown-v1",
+        "business-document-markdown",
+        "text/markdown",
+        "RAW_UTF8",
+        false);
+    policy(
+        entries,
+        "BUSINESS_DOCUMENT_VALIDATION",
+        "business-document-validation-v1",
+        "report-validation",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "BUSINESS_DOCUMENT_SOURCE_REFERENCES",
+        "business-document-source-references-v1",
+        "source-refs",
         "application/x-ndjson",
         "CANONICAL_JSONL",
         true);
@@ -1295,9 +2088,41 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         false);
     policy(
         entries,
-        "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY",
-        "flow-interpretation-repository-interpretation-registry-v2",
+        "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY_MODULE",
+        "flow-interpretation-repository-interpretation-registry-module-v1",
         "flow-interpretation-repository-registry",
+        "application/json",
+        "MODULE_ARTIFACT_JSON",
+        false);
+    policy(
+        entries,
+        "FLOW_INTERPRETATION_CROSS_FLOW_CANDIDATE_COMPILATION",
+        "flow-interpretation-cross-flow-candidate-compilation-v1",
+        "flow-interpretation-cross-flow",
+        "application/json",
+        "MODULE_ARTIFACT_JSON",
+        false);
+    policy(
+        entries,
+        "FLOW_INTERPRETATION_PROCESS_TASK_SHARDS",
+        "flow-interpretation-process-task-shards-v1",
+        "flow-interpretation-process-task-shards",
+        "application/json",
+        "MODULE_ARTIFACT_JSON",
+        false);
+    policy(
+        entries,
+        "FLOW_INTERPRETATION_PROCESS_INTERPRETATION_CHECKPOINT",
+        "flow-interpretation-process-interpretation-checkpoint-v1",
+        "process-interpretation-checkpoint",
+        "application/json",
+        "MODULE_ARTIFACT_JSON",
+        false);
+    policy(
+        entries,
+        "FLOW_INTERPRETATION_PROCESS_INTERPRETATION_CHECKPOINT_SET",
+        "flow-interpretation-process-interpretation-checkpoint-set-v1",
+        "process-interpretation-checkpoint",
         "application/json",
         "MODULE_ARTIFACT_JSON",
         false);
@@ -1368,26 +2193,6 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         policies.reference());
   }
 
-  private static ObjectNode controlsNode(ArtifactControls values) {
-    ObjectNode result = JsonNodeFactory.instance.objectNode();
-    result.put("toolchainSha256", values.toolchainSha256().value());
-    result.put("profileSha256", values.profileSha256().value());
-    result.put("schemaBundleSha256", values.schemaBundleSha256().value());
-    result.putNull("promptBundleSha256");
-    result
-        .putObject("artifactPolicyRegistryRef")
-        .put("artifactId", values.artifactPolicyRegistryRef().artifactId().value())
-        .put("sha256", values.artifactPolicyRegistryRef().sha256().value());
-    return result;
-  }
-
-  private static ObjectNode referenceNode(ArtifactReference value) {
-    return JsonNodeFactory.instance
-        .objectNode()
-        .put("artifactId", value.artifactId().value())
-        .put("sha256", value.sha256().value());
-  }
-
   private static ArtifactReference reference(String prefix, String value) {
     return new ArtifactReference(
         ArtifactId.parse(prefix + ":" + digest(value)), new Sha256Digest(digest(value)));
@@ -1421,10 +2226,6 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
             startColumn + token.length()),
         ImmutableBytes.copyOf(bytes),
         new Sha256Digest(digest(bytes)));
-  }
-
-  private static void strings(ArrayNode target, List<String> values) {
-    values.forEach(target::add);
   }
 
   private static byte[] frame(String value) {
@@ -1471,7 +2272,9 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
       VerifiedSourceTextSet verifiedSource,
       List<HttpEntryPoint> entries,
       MapperCatalogEntry mapperCatalog,
-      Map<String, String> documents) {
+      Map<String, String> documents,
+      String snapshotId,
+      String fixtureKey) {
 
     private SourceMaterial {
       entries = List.copyOf(entries);

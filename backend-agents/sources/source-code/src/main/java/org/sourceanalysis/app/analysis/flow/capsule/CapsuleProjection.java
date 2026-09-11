@@ -3,6 +3,7 @@ package org.sourceanalysis.app.analysis.flow.capsule;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilation;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.evidence.SourceExcerptV1;
 
@@ -19,12 +20,15 @@ public record CapsuleProjection(
     Objects.requireNonNull(profile, "projection profile");
     Objects.requireNonNull(flowCompilationRef, "flow compilation reference");
     Objects.requireNonNull(proofPackRef, "proof pack reference");
-    capsules = ordered(capsules, EvidenceCapsule::evidenceCapsuleId, "capsules");
+    capsules = List.copyOf(ordered(capsules, EvidenceCapsule::evidenceCapsuleId, "capsules"));
     modelEvidenceSpans =
-        ordered(modelEvidenceSpans, ModelEvidenceSpan::spanId, "model evidence spans");
+        List.copyOf(ordered(modelEvidenceSpans, ModelEvidenceSpan::spanId, "model evidence spans"));
     projectionObligations =
-        ordered(
-            projectionObligations, ProjectionObligation::obligationId, "projection obligations");
+        List.copyOf(
+            ordered(
+                projectionObligations,
+                ProjectionObligation::obligationId,
+                "projection obligations"));
     List<ModelEvidenceSpan> closedSpans = modelEvidenceSpans;
     List<ProjectionObligation> closedObligations = projectionObligations;
     if (capsules.stream().map(EvidenceCapsule::flowSliceId).distinct().count() != capsules.size()
@@ -39,6 +43,7 @@ public record CapsuleProjection(
                         .noneMatch(obligation -> obligation.obligationId().equals(id)))) {
       throw broken();
     }
+    requireProcessJoinSignalClosure(capsules, closedSpans, closedObligations);
   }
 
   /** Closed model-readable view for exactly one compiled flow. */
@@ -52,6 +57,7 @@ public record CapsuleProjection(
       List<FlowFactView> factViews,
       List<FlowGapView> gapViews,
       List<FlowOutcomePathView> outcomePathViews,
+      List<FlowCompilation.ProcessJoinSignalV1> processJoinSignals,
       List<String> registryProposalBasisAtomIds,
       List<String> registryProposalBasisGapIds,
       List<String> modelEvidenceSpanIds,
@@ -65,18 +71,32 @@ public record CapsuleProjection(
       if (!"ELIGIBLE".equals(modelEligibility) && !"INELIGIBLE".equals(modelEligibility)) {
         throw broken();
       }
-      modelIneligibilityGapIds = orderedStrings(modelIneligibilityGapIds, "ineligibility Gap IDs");
+      modelIneligibilityGapIds =
+          List.copyOf(orderedStrings(modelIneligibilityGapIds, "ineligibility Gap IDs"));
       entryView = Objects.requireNonNull(entryView, "entry view");
-      factViews = ordered(factViews, FlowFactView::factId, "Fact views");
-      gapViews = ordered(gapViews, FlowGapView::gapId, "Gap views");
+      factViews = List.copyOf(ordered(factViews, FlowFactView::factId, "Fact views"));
+      gapViews = List.copyOf(ordered(gapViews, FlowGapView::gapId, "Gap views"));
       outcomePathViews =
-          ordered(outcomePathViews, FlowOutcomePathView::outcomePathId, "outcome views");
+          List.copyOf(
+              ordered(outcomePathViews, FlowOutcomePathView::outcomePathId, "outcome views"));
+      processJoinSignals =
+          List.copyOf(
+              ordered(
+                  processJoinSignals,
+                  FlowCompilation.ProcessJoinSignalV1::processJoinSignalId,
+                  "process-join signals"));
+      if (processJoinSignals.stream()
+          .anyMatch(signal -> !flowSliceId.equals(signal.flowSliceId()))) {
+        throw broken();
+      }
       registryProposalBasisAtomIds =
-          orderedStrings(registryProposalBasisAtomIds, "registry atom basis");
+          List.copyOf(orderedStrings(registryProposalBasisAtomIds, "registry atom basis"));
       registryProposalBasisGapIds =
-          orderedStrings(registryProposalBasisGapIds, "registry Gap basis");
-      modelEvidenceSpanIds = orderedStrings(modelEvidenceSpanIds, "model evidence spans");
-      projectionObligationIds = orderedStrings(projectionObligationIds, "projection obligations");
+          List.copyOf(orderedStrings(registryProposalBasisGapIds, "registry Gap basis"));
+      modelEvidenceSpanIds =
+          List.copyOf(orderedStrings(modelEvidenceSpanIds, "model evidence spans"));
+      projectionObligationIds =
+          List.copyOf(orderedStrings(projectionObligationIds, "projection obligations"));
       budgetUsage = Objects.requireNonNull(budgetUsage, "budget usage");
       if (factViews.isEmpty()
           || outcomePathViews.isEmpty()
@@ -95,7 +115,8 @@ public record CapsuleProjection(
       required(entryId, "entry ID");
       required(trigger, "entry trigger");
       required(rootNodeId, "root node ID");
-      routeEvidenceNodeIds = orderedStrings(routeEvidenceNodeIds, "route evidence IDs");
+      routeEvidenceNodeIds =
+          List.copyOf(orderedStrings(routeEvidenceNodeIds, "route evidence IDs"));
       if (routeEvidenceNodeIds.isEmpty()) throw broken();
     }
   }
@@ -105,12 +126,18 @@ public record CapsuleProjection(
    * IDs.
    */
   public record FlowFactView(
-      String factId, String kind, List<String> subjectNodeIds, List<FlowAtomView> atoms) {
+      String factId,
+      String kind,
+      List<String> subjectNodeIds,
+      List<FlowAtomView> atoms,
+      ArtifactReference originFactArtifactRef) {
     public FlowFactView {
       required(factId, "Fact ID");
       required(kind, "Fact kind");
-      subjectNodeIds = orderedStrings(subjectNodeIds, "Fact subject nodes");
-      atoms = ordered(atoms, FlowAtomView::atomId, "Fact atoms");
+      subjectNodeIds = List.copyOf(orderedStrings(subjectNodeIds, "Fact subject nodes"));
+      atoms = List.copyOf(ordered(atoms, FlowAtomView::atomId, "Fact atoms"));
+      originFactArtifactRef =
+          Objects.requireNonNull(originFactArtifactRef, "Fact origin reference");
       if (subjectNodeIds.isEmpty() || atoms.isEmpty()) throw broken();
     }
   }
@@ -133,20 +160,31 @@ public record CapsuleProjection(
     }
   }
 
-  /** Flow-local Gap view copied from the proven-code-facts ledger. */
+  /** Flow-local Gap view with its exact persisted owner provenance. */
   public record FlowGapView(
       String gapId,
       String scope,
       String reasonCode,
       List<String> affectedSemanticIds,
-      List<String> evidenceNodeIds) {
+      List<ArtifactReference> evidenceRefs,
+      String originKind,
+      ArtifactReference originGapLedgerRef) {
     public FlowGapView {
       required(gapId, "Gap ID");
       required(scope, "Gap scope");
       required(reasonCode, "Gap reason");
-      affectedSemanticIds = orderedStrings(affectedSemanticIds, "affected semantic IDs");
-      evidenceNodeIds = orderedStrings(evidenceNodeIds, "Gap evidence IDs");
-      if (affectedSemanticIds.isEmpty() || evidenceNodeIds.isEmpty()) throw broken();
+      affectedSemanticIds =
+          List.copyOf(orderedStrings(affectedSemanticIds, "affected semantic IDs"));
+      evidenceRefs = List.copyOf(orderedReferences(evidenceRefs, "Gap evidence references"));
+      if (!"PROVEN_CODE_FACTS_GAP_LEDGER".equals(originKind)
+          && !"FLOW_COMPILATION".equals(originKind)
+          && !"CAPSULE_PROJECTION".equals(originKind)) {
+        throw broken();
+      }
+      if ("PROVEN_CODE_FACTS_GAP_LEDGER".equals(originKind) != (originGapLedgerRef != null)) {
+        throw broken();
+      }
+      if (affectedSemanticIds.isEmpty()) throw broken();
     }
   }
 
@@ -164,9 +202,9 @@ public record CapsuleProjection(
       decisions = List.copyOf(Objects.requireNonNull(decisions, "outcome decisions"));
       required(terminalNodeId, "terminal node ID");
       required(terminalKind, "terminal kind");
-      terminalFactIds = orderedStrings(terminalFactIds, "terminal Fact IDs");
-      requiredAtomIds = orderedStrings(requiredAtomIds, "outcome atom IDs");
-      requiredProofIds = orderedStrings(requiredProofIds, "outcome proof IDs");
+      terminalFactIds = List.copyOf(orderedStrings(terminalFactIds, "terminal Fact IDs"));
+      requiredAtomIds = List.copyOf(orderedStrings(requiredAtomIds, "outcome atom IDs"));
+      requiredProofIds = List.copyOf(orderedStrings(requiredProofIds, "outcome proof IDs"));
     }
   }
 
@@ -186,13 +224,20 @@ public record CapsuleProjection(
       String spanId,
       SourceExcerptV1 sourceExcerpt,
       List<String> supportedAtomIds,
-      List<String> supportedOutcomePathIds) {
+      List<String> supportedOutcomePathIds,
+      List<String> supportedProcessJoinSignalIds) {
     public ModelEvidenceSpan {
       required(spanId, "model evidence span ID");
       sourceExcerpt = Objects.requireNonNull(sourceExcerpt, "source excerpt");
-      supportedAtomIds = orderedStrings(supportedAtomIds, "supported atom IDs");
-      supportedOutcomePathIds = orderedStrings(supportedOutcomePathIds, "supported outcome IDs");
-      if (supportedAtomIds.isEmpty() && supportedOutcomePathIds.isEmpty()) throw broken();
+      supportedAtomIds = List.copyOf(orderedStrings(supportedAtomIds, "supported atom IDs"));
+      supportedOutcomePathIds =
+          List.copyOf(orderedStrings(supportedOutcomePathIds, "supported outcome IDs"));
+      supportedProcessJoinSignalIds =
+          List.copyOf(
+              orderedStrings(supportedProcessJoinSignalIds, "supported process-join signal IDs"));
+      if (supportedAtomIds.isEmpty()
+          && supportedOutcomePathIds.isEmpty()
+          && supportedProcessJoinSignalIds.isEmpty()) throw broken();
     }
   }
 
@@ -201,11 +246,13 @@ public record CapsuleProjection(
       String obligationId, String kind, String semanticItemId, List<String> satisfyingSpanIds) {
     public ProjectionObligation {
       required(obligationId, "projection obligation ID");
-      if (!"ATOM_DIRECT_SEMANTICS".equals(kind) && !"OUTCOME_TERMINAL".equals(kind)) {
+      if (!"ATOM_DIRECT_SEMANTICS".equals(kind)
+          && !"OUTCOME_TERMINAL".equals(kind)
+          && !"PROCESS_JOIN_SIGNAL_BASIS".equals(kind)) {
         throw broken();
       }
       required(semanticItemId, "obligation semantic item ID");
-      satisfyingSpanIds = orderedStrings(satisfyingSpanIds, "satisfying span IDs");
+      satisfyingSpanIds = List.copyOf(orderedStrings(satisfyingSpanIds, "satisfying span IDs"));
       if (satisfyingSpanIds.isEmpty()) throw broken();
     }
   }
@@ -230,6 +277,74 @@ public record CapsuleProjection(
     List<String> result = values.stream().peek(value -> required(value, label)).sorted().toList();
     if (result.size() != result.stream().distinct().count()) throw broken();
     return result;
+  }
+
+  private static List<ArtifactReference> orderedReferences(
+      List<ArtifactReference> values, String label) {
+    Objects.requireNonNull(values, label);
+    List<ArtifactReference> result =
+        values.stream()
+            .peek(value -> Objects.requireNonNull(value, label))
+            .sorted(
+                Comparator.comparing((ArtifactReference value) -> value.artifactId().value())
+                    .thenComparing(value -> value.sha256().value()))
+            .toList();
+    if (result.size() != result.stream().distinct().count()) throw broken();
+    return result;
+  }
+
+  private static void requireProcessJoinSignalClosure(
+      List<EvidenceCapsule> capsules,
+      List<ModelEvidenceSpan> spans,
+      List<ProjectionObligation> obligations) {
+    for (EvidenceCapsule capsule : capsules) {
+      List<ModelEvidenceSpan> capsuleSpans =
+          spans.stream()
+              .filter(span -> capsule.modelEvidenceSpanIds().contains(span.spanId()))
+              .toList();
+      List<ProjectionObligation> capsuleObligations =
+          obligations.stream()
+              .filter(
+                  obligation ->
+                      capsule.projectionObligationIds().contains(obligation.obligationId()))
+              .toList();
+      List<String> signalIds =
+          capsule.processJoinSignals().stream()
+              .map(FlowCompilation.ProcessJoinSignalV1::processJoinSignalId)
+              .toList();
+      List<String> obligationSignalIds =
+          capsuleObligations.stream()
+              .filter(obligation -> "PROCESS_JOIN_SIGNAL_BASIS".equals(obligation.kind()))
+              .map(ProjectionObligation::semanticItemId)
+              .sorted()
+              .toList();
+      List<String> spanSignalIds =
+          capsuleSpans.stream()
+              .flatMap(span -> span.supportedProcessJoinSignalIds().stream())
+              .distinct()
+              .sorted()
+              .toList();
+      if (!signalIds.equals(obligationSignalIds) || !signalIds.equals(spanSignalIds))
+        throw broken();
+      for (String signalId : signalIds) {
+        List<String> supportingSpanIds =
+            capsuleSpans.stream()
+                .filter(span -> span.supportedProcessJoinSignalIds().contains(signalId))
+                .map(ModelEvidenceSpan::spanId)
+                .sorted()
+                .toList();
+        List<ProjectionObligation> signalObligations =
+            capsuleObligations.stream()
+                .filter(obligation -> "PROCESS_JOIN_SIGNAL_BASIS".equals(obligation.kind()))
+                .filter(obligation -> signalId.equals(obligation.semanticItemId()))
+                .toList();
+        if (supportingSpanIds.isEmpty()
+            || signalObligations.size() != 1
+            || !supportingSpanIds.equals(signalObligations.get(0).satisfyingSpanIds())) {
+          throw broken();
+        }
+      }
+    }
   }
 
   private static void required(String value, String label) {

@@ -33,6 +33,7 @@ import org.sourceanalysis.app.artifact.InstalledModulePublication;
 import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.ModuleInstallRequest;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
+import org.sourceanalysis.app.evidence.SourceLocatorV1;
 
 /**
  * Installs M1's sole canonical FlowCompilation payload after reopening every public predecessor.
@@ -41,7 +42,7 @@ public final class FlowCompilationModulePublisher {
 
   private static final String FILE_NAME = "flow-compilation.json";
   private static final String ARTIFACT_TYPE = "BUSINESS_FLOWS_FLOW_COMPILATION";
-  private static final String SCHEMA_VERSION = "business-flows-flow-compilation-v1";
+  private static final String SCHEMA_VERSION = "business-flows-flow-compilation-v3";
   private static final String ARTIFACT_PREFIX = "business-flows-flow-compilation";
   private static final String MODULE_VERSION = "v1";
   private static final Comparator<String> UTF8_ORDER =
@@ -59,6 +60,7 @@ public final class FlowCompilationModulePublisher {
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
   private final PersistedFlowCompilationInputReader inputs;
+  private final EntryRootedFlowCompiler compiler;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
 
   /** Creates the M1 publisher with receipt-last module storage and its public-input reader. */
@@ -67,11 +69,13 @@ public final class FlowCompilationModulePublisher {
       CanonicalAnalysisStepArtifactStore analysisSteps) {
     this.moduleArtifacts = Objects.requireNonNull(moduleArtifacts, "module artifact store");
     inputs = new PersistedFlowCompilationInputReader(analysisSteps);
+    compiler = new EntryRootedFlowCompiler(analysisSteps);
   }
 
   /**
-   * Reopens the same predecessor wire used by the compiler, checks denominator closure, then
-   * installs the only M1 module payload. It never reconstructs a Flow from source or graphs.
+   * Reopens the same predecessor wire used by the compiler, rebuilds and verifies the supplied
+   * compilation, checks denominator closure, then installs the only M1 module payload. It never
+   * reads or reparses customer source.
    */
   public ModulePublicationReference publish(
       ApplicationDiscoveryReference discovery,
@@ -82,6 +86,8 @@ public final class FlowCompilationModulePublisher {
     PersistedFlowCompilationInputReader.PersistedFlowCompilationInputs reopened =
         inputs.reopen(discovery, graphs, facts);
     requireCompilationMatchesInputs(compilation, reopened);
+    FlowCompilation rebuilt = compiler.compile(discovery, graphs, facts, compilation.profile());
+    if (!compilation.equals(rebuilt)) throw broken();
     AnalysisStepModuleAddress address =
         new AnalysisStepModuleAddress(
             graphs.publication().address().runId(),
@@ -287,6 +293,8 @@ public final class FlowCompilationModulePublisher {
     node.put("maxFlowNodes", profile.maxFlowNodes());
     node.put("maxFlowEdges", profile.maxFlowEdges());
     node.put("maxTraversalDepth", profile.maxTraversalDepth());
+    node.put("maxProcessJoinSignalsPerFlow", profile.maxProcessJoinSignalsPerFlow());
+    node.put("maxProcessJoinSignalBasisRefs", profile.maxProcessJoinSignalBasisRefs());
   }
 
   private static void disposition(ObjectNode node, FlowCompilation.EntryDisposition value) {
@@ -311,8 +319,39 @@ public final class FlowCompilationModulePublisher {
     ArrayNode outcomes = node.putArray("outcomePaths");
     value.outcomePaths().forEach(outcome -> outcome(outcomes.addObject(), outcome));
     strings(node.putArray("gapIds"), value.gapIds());
+    ArrayNode signals = node.putArray("processJoinSignals");
+    value.processJoinSignals().forEach(signal -> signal(signals.addObject(), signal));
     node.putNull("parentFlowSliceId");
     node.putArray("childFlowSliceIds");
+  }
+
+  private static void signal(ObjectNode node, FlowCompilation.ProcessJoinSignalV1 value) {
+    node.put("processJoinSignalId", value.processJoinSignalId());
+    node.put("flowSliceId", value.flowSliceId());
+    node.put("signalKind", value.signalKind());
+    node.put("anchorKind", value.anchorKind());
+    node.put("anchorKey", value.anchorKey());
+    node.put("direction", value.direction());
+    node.put("specificity", value.specificity());
+    node.put("claimScope", value.claimScope());
+    strings(node.putArray("factIds"), value.factIds());
+    strings(node.putArray("atomIds"), value.atomIds());
+    strings(node.putArray("proofIds"), value.proofIds());
+    strings(node.putArray("evidenceNodeIds"), value.evidenceNodeIds());
+    ArrayNode locators = node.putArray("sourceLocators");
+    value.sourceLocators().forEach(locator -> sourceLocator(locators.addObject(), locator));
+    strings(node.putArray("gapIds"), value.gapIds());
+  }
+
+  private static void sourceLocator(ObjectNode node, SourceLocatorV1 value) {
+    node.put("fileId", value.fileId().value());
+    node.put("path", value.path());
+    node.put("startByte", value.startByte());
+    node.put("endByteExclusive", value.endByteExclusive());
+    node.put("startLine", value.startLine());
+    node.put("startColumn", value.startColumn());
+    node.put("endLine", value.endLine());
+    node.put("endColumn", value.endColumn());
   }
 
   private static void gap(ObjectNode node, FlowCompilation.FlowGap value) {
@@ -421,6 +460,14 @@ public final class FlowCompilationModulePublisher {
             .map(FlowCompilation.FlowGap::gapId)
             .sorted(UTF8_ORDER)
             .toList());
+    strings(
+        node.putArray("processJoinSignalIds"),
+        compilation.flowSlices().stream()
+            .flatMap(value -> value.processJoinSignals().stream())
+            .map(FlowCompilation.ProcessJoinSignalV1::processJoinSignalId)
+            .distinct()
+            .sorted(UTF8_ORDER)
+            .toList());
     node.put("closed", true);
   }
 
@@ -452,6 +499,11 @@ public final class FlowCompilationModulePublisher {
               values.addAll(value.affectedEntryIds());
               values.addAll(value.evidenceNodeIds());
             });
+    compilation.flowSlices().stream()
+        .flatMap(value -> value.processJoinSignals().stream())
+        .map(FlowCompilation.ProcessJoinSignalV1::processJoinSignalId)
+        .sorted(UTF8_ORDER)
+        .forEach(values::add);
     return contentId("flow-compilation", values.toArray(String[]::new));
   }
 

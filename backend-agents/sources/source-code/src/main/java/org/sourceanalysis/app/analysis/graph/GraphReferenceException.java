@@ -6,4 +6,8 @@ public final class GraphReferenceException extends IllegalArgumentException {
   public GraphReferenceException() {
     super("GRAPH_REFERENCE_BROKEN");
   }
+
+  public GraphReferenceException(Throwable cause) {
+    super("GRAPH_REFERENCE_BROKEN", cause);
+  }
 }

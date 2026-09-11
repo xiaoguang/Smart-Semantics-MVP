@@ -1,8 +1,20 @@
 package org.sourceanalysis.app.analysis.flow.compiler;
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
+import org.sourceanalysis.app.evidence.SourceLocatorV1;
 
 /** Immutable M1 result before its publisher writes the flow-compilation module artifact. */
 public record FlowCompilation(
@@ -13,9 +25,10 @@ public record FlowCompilation(
 
   public FlowCompilation {
     profile = Objects.requireNonNull(profile, "Flow compilation profile");
-    entryDispositions = ordered(entryDispositions, EntryDisposition::entryId, "entry dispositions");
-    flowSlices = ordered(flowSlices, FlowSlice::flowSliceId, "Flow slices");
-    flowGaps = ordered(flowGaps, FlowGap::gapId, "Flow Gaps");
+    entryDispositions =
+        List.copyOf(ordered(entryDispositions, EntryDisposition::entryId, "entry dispositions"));
+    flowSlices = List.copyOf(ordered(flowSlices, FlowSlice::flowSliceId, "Flow slices"));
+    flowGaps = List.copyOf(ordered(flowGaps, FlowGap::gapId, "Flow Gaps"));
     List<EntryDisposition> orderedDispositions = entryDispositions;
     if (entryDispositions.stream().map(EntryDisposition::entryId).distinct().count()
         != entryDispositions.size()) {
@@ -67,7 +80,7 @@ public record FlowCompilation(
           || "EXCLUDED".equals(disposition))) {
         throw broken();
       }
-      gapIds = orderedStrings(gapIds, "entry Gap IDs");
+      gapIds = List.copyOf(orderedStrings(gapIds, "entry Gap IDs"));
       if (("COMPILED".equals(disposition) != (flowSliceId != null))
           || (!"COMPILED".equals(disposition) && gapIds.isEmpty())
           || ("COMPILED".equals(disposition) != (reasonCode == null))) {
@@ -90,8 +103,8 @@ public record FlowCompilation(
       required(gapId, "Flow Gap ID");
       required(scope, "Flow Gap scope");
       required(reasonCode, "Flow Gap reason");
-      affectedEntryIds = orderedStrings(affectedEntryIds, "Flow Gap affected entries");
-      evidenceNodeIds = orderedStrings(evidenceNodeIds, "Flow Gap evidence IDs");
+      affectedEntryIds = List.copyOf(orderedStrings(affectedEntryIds, "Flow Gap affected entries"));
+      evidenceNodeIds = List.copyOf(orderedStrings(evidenceNodeIds, "Flow Gap evidence IDs"));
       if (affectedEntryIds.isEmpty()) throw broken();
     }
   }
@@ -106,7 +119,8 @@ public record FlowCompilation(
       List<String> factIds,
       List<String> atomIds,
       List<OutcomePath> outcomePaths,
-      List<String> gapIds) {
+      List<String> gapIds,
+      List<ProcessJoinSignalV1> processJoinSignals) {
 
     public FlowSlice {
       required(flowSliceId, "Flow slice ID");
@@ -114,11 +128,267 @@ public record FlowCompilation(
       required(trigger, "Flow trigger");
       required(rootNodeId, "Flow root node ID");
       sharedSteps = List.copyOf(Objects.requireNonNull(sharedSteps, "shared steps"));
-      factIds = orderedStrings(factIds, "Fact IDs");
-      atomIds = orderedStrings(atomIds, "atom IDs");
-      outcomePaths = ordered(outcomePaths, OutcomePath::outcomePathId, "outcome paths");
-      gapIds = orderedStrings(gapIds, "Flow Gap IDs");
+      factIds = List.copyOf(orderedStrings(factIds, "Fact IDs"));
+      atomIds = List.copyOf(orderedStrings(atomIds, "atom IDs"));
+      outcomePaths =
+          List.copyOf(ordered(outcomePaths, OutcomePath::outcomePathId, "outcome paths"));
+      gapIds = List.copyOf(orderedStrings(gapIds, "Flow Gap IDs"));
+      processJoinSignals =
+          List.copyOf(
+              ordered(
+                  processJoinSignals,
+                  ProcessJoinSignalV1::processJoinSignalId,
+                  "process-join signals"));
+      if (processJoinSignals.stream()
+          .anyMatch(signal -> !flowSliceId.equals(signal.flowSliceId()))) {
+        throw broken();
+      }
       if (outcomePaths.isEmpty()) throw broken();
+    }
+  }
+
+  /** One proof-closed, single-Flow comparison material record for later process reconstruction. */
+  public record ProcessJoinSignalV1(
+      String processJoinSignalId,
+      String flowSliceId,
+      String signalKind,
+      String anchorKind,
+      String anchorKey,
+      String direction,
+      String specificity,
+      String claimScope,
+      List<String> factIds,
+      List<String> atomIds,
+      List<String> proofIds,
+      List<String> evidenceNodeIds,
+      List<SourceLocatorV1> sourceLocators,
+      List<String> gapIds) {
+
+    private static final Set<String> SIGNAL_KINDS =
+        Set.of(
+            "BUSINESS_OBJECT_ANCHOR",
+            "JAVA_TYPE_ANCHOR",
+            "SQL_TABLE_ANCHOR",
+            "FIELD_ANCHOR",
+            "BUSINESS_IDENTIFIER_ANCHOR",
+            "IDENTIFIER_OUTPUT",
+            "IDENTIFIER_INPUT",
+            "STATE_PRODUCTION",
+            "STATE_CHECK",
+            "EXPLICIT_CALL",
+            "RETURN_TRANSFER",
+            "EVENT_REFERENCE",
+            "OBJECT_REFERENCE",
+            "COUNTER_CONDITION",
+            "CONFLICT_STATE",
+            "EXTERNAL_EFFECT_GAP");
+    private static final Set<String> ANCHOR_KINDS =
+        Set.of(
+            "BUSINESS_OBJECT",
+            "JAVA_TYPE",
+            "SQL_TABLE",
+            "FIELD",
+            "BUSINESS_IDENTIFIER",
+            "CALL_TARGET",
+            "RETURN_VALUE",
+            "EVENT",
+            "STATE",
+            "CONDITION",
+            "GAP");
+    private static final Set<String> DIRECTIONS =
+        Set.of(
+            "PRODUCES",
+            "CONSUMES",
+            "CHECKS",
+            "REFERENCES",
+            "INVOKES",
+            "RETURNS",
+            "BLOCKS",
+            "UNKNOWN");
+    private static final Set<String> SPECIFICITIES = Set.of("DOMAIN_SPECIFIC", "GENERIC_TECHNICAL");
+    private static final Set<String> CLAIM_SCOPES =
+        Set.of("FROZEN_JAVA", "STATIC_STRUCTURE", "GAP_ONLY");
+    private static final Set<String> POSITIVE_SIGNAL_KINDS =
+        Set.of(
+            "BUSINESS_OBJECT_ANCHOR",
+            "JAVA_TYPE_ANCHOR",
+            "SQL_TABLE_ANCHOR",
+            "FIELD_ANCHOR",
+            "BUSINESS_IDENTIFIER_ANCHOR",
+            "IDENTIFIER_OUTPUT",
+            "IDENTIFIER_INPUT",
+            "STATE_PRODUCTION",
+            "STATE_CHECK",
+            "EXPLICIT_CALL",
+            "RETURN_TRANSFER",
+            "EVENT_REFERENCE",
+            "OBJECT_REFERENCE");
+    private static final Comparator<SourceLocatorV1> SOURCE_LOCATOR_ORDER =
+        Comparator.comparing(SourceLocatorV1::path)
+            .thenComparingLong(SourceLocatorV1::startByte)
+            .thenComparingLong(SourceLocatorV1::endByteExclusive);
+
+    public ProcessJoinSignalV1 {
+      required(flowSliceId, "process-join signal Flow slice ID");
+      requireMember(signalKind, SIGNAL_KINDS, "process-join signal kind");
+      requireMember(anchorKind, ANCHOR_KINDS, "process-join signal anchor kind");
+      required(anchorKey, "process-join signal anchor key");
+      requireMember(direction, DIRECTIONS, "process-join signal direction");
+      requireMember(specificity, SPECIFICITIES, "process-join signal specificity");
+      requireMember(claimScope, CLAIM_SCOPES, "process-join signal claim scope");
+      factIds = List.copyOf(orderedStrings(factIds, "process-join signal Fact IDs"));
+      atomIds = List.copyOf(orderedStrings(atomIds, "process-join signal atom IDs"));
+      proofIds = List.copyOf(orderedStrings(proofIds, "process-join signal Proof IDs"));
+      evidenceNodeIds =
+          List.copyOf(orderedStrings(evidenceNodeIds, "process-join signal evidence node IDs"));
+      sourceLocators = List.copyOf(orderedLocators(sourceLocators));
+      gapIds = List.copyOf(orderedStrings(gapIds, "process-join signal Gap IDs"));
+      boolean positive = POSITIVE_SIGNAL_KINDS.contains(signalKind);
+      boolean counter =
+          "COUNTER_CONDITION".equals(signalKind)
+              || "CONFLICT_STATE".equals(signalKind)
+              || "EXTERNAL_EFFECT_GAP".equals(signalKind);
+      if ((positive && "BLOCKS".equals(direction))
+          || (counter && !"BLOCKS".equals(direction))
+          || (positive
+              && (factIds.isEmpty()
+                  || atomIds.isEmpty()
+                  || proofIds.isEmpty()
+                  || evidenceNodeIds.isEmpty()
+                  || sourceLocators.isEmpty()))
+          || ("EXTERNAL_EFFECT_GAP".equals(signalKind) && gapIds.isEmpty())) {
+        throw broken();
+      }
+      String calculatedId =
+          signalId(
+              flowSliceId,
+              signalKind,
+              anchorKind,
+              anchorKey,
+              direction,
+              specificity,
+              claimScope,
+              factIds,
+              atomIds,
+              proofIds,
+              evidenceNodeIds,
+              sourceLocators,
+              gapIds);
+      if (processJoinSignalId != null && !processJoinSignalId.equals(calculatedId)) throw broken();
+      processJoinSignalId = calculatedId;
+    }
+
+    static ProcessJoinSignalV1 create(
+        String flowSliceId,
+        String signalKind,
+        String anchorKind,
+        String anchorKey,
+        String direction,
+        String specificity,
+        String claimScope,
+        List<String> factIds,
+        List<String> atomIds,
+        List<String> proofIds,
+        List<String> evidenceNodeIds,
+        List<SourceLocatorV1> sourceLocators,
+        List<String> gapIds) {
+      return new ProcessJoinSignalV1(
+          null,
+          flowSliceId,
+          signalKind,
+          anchorKind,
+          anchorKey,
+          direction,
+          specificity,
+          claimScope,
+          factIds,
+          atomIds,
+          proofIds,
+          evidenceNodeIds,
+          sourceLocators,
+          gapIds);
+    }
+
+    private static List<SourceLocatorV1> orderedLocators(List<SourceLocatorV1> values) {
+      Objects.requireNonNull(values, "process-join signal source locators");
+      List<SourceLocatorV1> ordered =
+          values.stream()
+              .peek(value -> Objects.requireNonNull(value, "process-join source locator"))
+              .sorted(SOURCE_LOCATOR_ORDER)
+              .toList();
+      if (ordered.size() != ordered.stream().distinct().count()) throw broken();
+      return ordered;
+    }
+
+    private static void requireMember(String value, Set<String> allowed, String label) {
+      required(value, label);
+      if (!allowed.contains(value)) throw broken();
+    }
+
+    private static String signalId(
+        String flowSliceId,
+        String signalKind,
+        String anchorKind,
+        String anchorKey,
+        String direction,
+        String specificity,
+        String claimScope,
+        List<String> factIds,
+        List<String> atomIds,
+        List<String> proofIds,
+        List<String> evidenceNodeIds,
+        List<SourceLocatorV1> sourceLocators,
+        List<String> gapIds) {
+      ObjectNode value = JsonNodeFactory.instance.objectNode();
+      value.put("flowSliceId", flowSliceId);
+      value.put("signalKind", signalKind);
+      value.put("anchorKind", anchorKind);
+      value.put("anchorKey", anchorKey);
+      value.put("direction", direction);
+      value.put("specificity", specificity);
+      value.put("claimScope", claimScope);
+      strings(value.putArray("factIds"), factIds);
+      strings(value.putArray("atomIds"), atomIds);
+      strings(value.putArray("proofIds"), proofIds);
+      strings(value.putArray("evidenceNodeIds"), evidenceNodeIds);
+      ArrayNode locators = value.putArray("sourceLocators");
+      for (SourceLocatorV1 locator : sourceLocators) {
+        locators
+            .addObject()
+            .put("fileId", locator.fileId().value())
+            .put("path", locator.path())
+            .put("startByte", locator.startByte())
+            .put("endByteExclusive", locator.endByteExclusive())
+            .put("startLine", locator.startLine())
+            .put("startColumn", locator.startColumn())
+            .put("endLine", locator.endLine())
+            .put("endColumn", locator.endColumn());
+      }
+      strings(value.putArray("gapIds"), gapIds);
+      try {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        digest.update(frame("business-flows-process-join-signal-id-v1"));
+        digest.update(frame(new CanonicalJsonCodec().encodeCanonical(value).copyToByteArray()));
+        return "process-join-signal:" + HexFormat.of().formatHex(digest.digest());
+      } catch (NoSuchAlgorithmException unavailable) {
+        throw new IllegalStateException("SHA-256 is unavailable", unavailable);
+      }
+    }
+
+    private static void strings(ArrayNode destination, List<String> values) {
+      values.forEach(destination::add);
+    }
+
+    private static byte[] frame(String value) {
+      return frame(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static byte[] frame(byte[] value) {
+      return ByteBuffer.allocate(Long.BYTES + value.length)
+          .order(ByteOrder.BIG_ENDIAN)
+          .putLong(value.length)
+          .put(value)
+          .array();
     }
   }
 
@@ -137,9 +407,9 @@ public record FlowCompilation(
       decisions = List.copyOf(Objects.requireNonNull(decisions, "branch decisions"));
       required(terminalNodeId, "terminal node ID");
       required(terminalKind, "terminal kind");
-      terminalFactIds = orderedStrings(terminalFactIds, "terminal Fact IDs");
-      requiredAtomIds = orderedStrings(requiredAtomIds, "required atom IDs");
-      requiredProofIds = orderedStrings(requiredProofIds, "required proof IDs");
+      terminalFactIds = List.copyOf(orderedStrings(terminalFactIds, "terminal Fact IDs"));
+      requiredAtomIds = List.copyOf(orderedStrings(requiredAtomIds, "required atom IDs"));
+      requiredProofIds = List.copyOf(orderedStrings(requiredProofIds, "required proof IDs"));
     }
   }
 

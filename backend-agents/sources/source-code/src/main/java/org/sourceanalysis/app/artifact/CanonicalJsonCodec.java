@@ -54,6 +54,23 @@ public final class CanonicalJsonCodec {
     Objects.requireNonNull(canonicalUtf8, "canonicalUtf8");
 
     byte[] input = canonicalUtf8.copyToByteArray();
+    JsonNode parsed = parseStrictJson(canonicalUtf8);
+    if (!Arrays.equals(input, encodeCanonical(parsed).copyToByteArray())) {
+      throw new IllegalArgumentException("JSON bytes are not canonical");
+    }
+    return parsed;
+  }
+
+  /**
+   * Parses one strict UTF-8 JSON value without requiring its transport bytes to be canonical.
+   *
+   * <p>This is the ingress boundary for external JSON responses. Callers must canonicalize the
+   * returned value before persistence or content identity calculation.
+   */
+  public JsonNode parseStrictJson(ImmutableBytes utf8Json) {
+    Objects.requireNonNull(utf8Json, "utf8Json");
+
+    byte[] input = utf8Json.copyToByteArray();
     rejectByteOrderMark(input);
     requireStrictUtf8(input);
 
@@ -66,11 +83,12 @@ public final class CanonicalJsonCodec {
     if (parsed == null) {
       throw new IllegalArgumentException("canonical JSON must contain one value");
     }
-
-    if (!Arrays.equals(input, encodeCanonical(parsed).copyToByteArray())) {
-      throw new IllegalArgumentException("JSON bytes are not canonical");
-    }
     return parsed;
+  }
+
+  /** Strictly parses external JSON and returns its single canonical internal representation. */
+  public ImmutableBytes canonicalizeStrictJson(ImmutableBytes utf8Json) {
+    return encodeCanonical(parseStrictJson(utf8Json));
   }
 
   private void rejectByteOrderMark(byte[] input) {

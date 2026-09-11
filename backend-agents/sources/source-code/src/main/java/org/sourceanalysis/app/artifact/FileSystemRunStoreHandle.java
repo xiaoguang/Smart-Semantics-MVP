@@ -17,6 +17,24 @@ final class FileSystemRunStoreHandle implements RunStoreHandle {
     this.root = root;
   }
 
+  static RunStoreHandle openExistingDirectory(Path storeRoot) {
+    if (storeRoot == null) {
+      throw new IllegalArgumentException("store root must be an existing non-symlink directory");
+    }
+    try {
+      if (Files.isSymbolicLink(storeRoot)) {
+        throw new IllegalArgumentException("store root must be an existing non-symlink directory");
+      }
+      Path canonicalRoot = storeRoot.toRealPath();
+      if (!Files.isDirectory(canonicalRoot, LinkOption.NOFOLLOW_LINKS)) {
+        throw new IllegalArgumentException("store root must be an existing non-symlink directory");
+      }
+      return new FileSystemRunStoreHandle(canonicalRoot);
+    } catch (IOException | SecurityException failure) {
+      throw new IllegalArgumentException("store root cannot be inspected", failure);
+    }
+  }
+
   static RunStoreHandle openEmptyTemporaryDirectory(Path emptyTemporaryDirectory) {
     Objects.requireNonNull(emptyTemporaryDirectory, "emptyTemporaryDirectory");
     try {
@@ -41,6 +59,9 @@ final class FileSystemRunStoreHandle implements RunStoreHandle {
 
   Path rootForStore() {
     if (closed) {
+      throw new ArtifactStoreException("MODULE_PUBLICATION_INVALID");
+    }
+    if (Files.isSymbolicLink(root) || !Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) {
       throw new ArtifactStoreException("MODULE_PUBLICATION_INVALID");
     }
     return root;

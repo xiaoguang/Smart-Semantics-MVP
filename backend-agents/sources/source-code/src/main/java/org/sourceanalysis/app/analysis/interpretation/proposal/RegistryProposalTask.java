@@ -1,6 +1,7 @@
 package org.sourceanalysis.app.analysis.interpretation.proposal;
 
 import java.util.Objects;
+import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.Sha256Digest;
@@ -16,7 +17,10 @@ public record RegistryProposalTask(
     Sha256Digest inputJsonSha256,
     Sha256Digest outputSchemaSha256,
     Sha256Digest promptBundleSha256,
-    ArtifactReference expectedRuntime) {
+    String configuredAdapterId,
+    String configuredAuthMode,
+    ArtifactReference expectedRuntimeRef,
+    ModelRuntimeIdentityV1 expectedRuntime) {
 
   public RegistryProposalTask {
     required(taskSpecId, "task specification ID");
@@ -30,6 +34,9 @@ public record RegistryProposalTask(
     Objects.requireNonNull(inputJsonSha256, "input JSON SHA-256");
     Objects.requireNonNull(outputSchemaSha256, "output schema SHA-256");
     Objects.requireNonNull(promptBundleSha256, "prompt bundle SHA-256");
+    required(configuredAdapterId, "configured adapter ID");
+    required(configuredAuthMode, "configured auth mode");
+    Objects.requireNonNull(expectedRuntimeRef, "expected runtime reference");
     Objects.requireNonNull(expectedRuntime, "expected runtime");
   }
 

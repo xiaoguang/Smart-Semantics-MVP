@@ -29,9 +29,9 @@ import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 public final class FactCandidateSetModulePublisher {
 
   private static final String ARTIFACT_TYPE = "PROVEN_CODE_FACTS_FACT_CANDIDATE_SET";
-  private static final String SCHEMA_VERSION = "proven-code-facts-fact-candidate-set-v2";
+  private static final String SCHEMA_VERSION = "proven-code-facts-fact-candidate-set-v3";
   private static final String ARTIFACT_PREFIX = "proven-code-facts-fact-candidate-set";
-  private static final String MODULE_VERSION = "v2";
+  private static final String MODULE_VERSION = "v3";
   private static final String FILE_NAME = "fact-candidate-set.json";
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
@@ -154,10 +154,17 @@ public final class FactCandidateSetModulePublisher {
       } else {
         body.put("guardId", candidate.guardId());
       }
-    } else {
+    } else if ("JAVA_GUARD_CONDITION".equals(candidate.kind())) {
       body.put("guardNodeId", candidate.guardNodeId());
       body.put("normalizedCondition", candidate.normalizedCondition());
       strings(body.putArray("branchEdgeIds"), candidate.branchEdgeIds());
+    } else if ("JAVA_EXACT_CALL".equals(candidate.kind())) {
+      body.put("callSiteNodeId", candidate.callSiteNodeId());
+      body.put("callTargetEdgeId", candidate.callTargetEdgeId());
+      body.put("targetMethodNodeId", candidate.targetMethodNodeId());
+      body.put("targetCanonicalMethod", candidate.targetCanonicalMethod());
+    } else {
+      throw new FactCandidateReferenceException();
     }
     ArrayNode evidence = body.putArray("evidenceNodeIdsBySubject");
     candidate.evidenceBySubject().forEach(binding -> evidence.add(evidence(binding)));

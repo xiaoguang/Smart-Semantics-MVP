@@ -21,16 +21,16 @@ public record FactCandidateSet(
     List<NotApplicableDisposition> notApplicableDispositions,
     CandidateDenominator denominator) {
 
-  private static final String SCHEMA_VERSION = "proven-code-facts-fact-candidate-set-v2";
+  private static final String SCHEMA_VERSION = "proven-code-facts-fact-candidate-set-v3";
 
   public FactCandidateSet {
     if (!SCHEMA_VERSION.equals(schemaVersion)) {
       throw new IllegalArgumentException("FACT_PROFILE_INVALID: candidate-set schema is invalid");
     }
-    sourceGraphRoots = orderedReferences(sourceGraphRoots);
+    sourceGraphRoots = List.copyOf(orderedReferences(sourceGraphRoots));
     if (sourceGraphRoots.size() != 5) throw new FactCandidateReferenceException();
-    candidates = orderedCandidates(candidates);
-    notApplicableDispositions = orderedDispositions(notApplicableDispositions);
+    candidates = List.copyOf(orderedCandidates(candidates));
+    notApplicableDispositions = List.copyOf(orderedDispositions(notApplicableDispositions));
     denominator = Objects.requireNonNull(denominator, "candidate denominator");
     List<String> actualApplicable = candidates.stream().map(FactCandidate::denominatorKey).toList();
     List<String> actualNotApplicable =
@@ -114,7 +114,7 @@ public record FactCandidateSet(
       List<FactCandidate> candidates,
       List<NotApplicableDisposition> dispositions) {
     IdentityBytes material = new IdentityBytes();
-    material.text("proven-code-facts-fact-candidate-set-identity-v2");
+    material.text("proven-code-facts-fact-candidate-set-identity-v3");
     material.count(roots.size());
     for (ArtifactReference root : roots) {
       material.text(root.artifactId().value());
@@ -158,7 +158,10 @@ public record FactCandidateSet(
       List<RequiredAtom> requiredAtoms,
       String guardNodeId,
       String normalizedCondition,
-      List<String> branchEdgeIds) {
+      List<String> branchEdgeIds,
+      String callSiteNodeId,
+      String targetMethodNodeId,
+      String targetCanonicalMethod) {
 
     /** Convenience constructor for a boundary candidate with no guard-condition union fields. */
     public FactCandidate(
@@ -195,13 +198,97 @@ public record FactCandidateSet(
           requiredAtoms,
           null,
           null,
-          List.of());
+          List.of(),
+          null,
+          null,
+          null);
+    }
+
+    /** Constructor for the unchanged boundary and guard v3 variant fields. */
+    public FactCandidate(
+        String candidateFactKey,
+        String entryId,
+        String kind,
+        String boundaryNodeId,
+        String invocationCallId,
+        String callTargetEdgeId,
+        String staticTargetType,
+        String staticTargetMethod,
+        String staticTargetSignature,
+        List<String> orderedArgumentEdgeIds,
+        List<BoundaryArgumentBinding> orderedArguments,
+        String controlBlockId,
+        String guardId,
+        List<SubjectEvidenceBinding> evidenceBySubject,
+        List<RequiredAtom> requiredAtoms,
+        String guardNodeId,
+        String normalizedCondition,
+        List<String> branchEdgeIds) {
+      this(
+          candidateFactKey,
+          entryId,
+          kind,
+          boundaryNodeId,
+          invocationCallId,
+          callTargetEdgeId,
+          staticTargetType,
+          staticTargetMethod,
+          staticTargetSignature,
+          orderedArgumentEdgeIds,
+          orderedArguments,
+          controlBlockId,
+          guardId,
+          evidenceBySubject,
+          requiredAtoms,
+          guardNodeId,
+          normalizedCondition,
+          branchEdgeIds,
+          null,
+          null,
+          null);
+    }
+
+    /** Convenience constructor for a persisted exact Java call with no boundary or guard fields. */
+    public FactCandidate(
+        String candidateFactKey,
+        String entryId,
+        String kind,
+        String callSiteNodeId,
+        String callTargetEdgeId,
+        String targetMethodNodeId,
+        String targetCanonicalMethod,
+        List<SubjectEvidenceBinding> evidenceBySubject,
+        List<RequiredAtom> requiredAtoms) {
+      this(
+          candidateFactKey,
+          entryId,
+          kind,
+          null,
+          null,
+          callTargetEdgeId,
+          null,
+          null,
+          null,
+          List.of(),
+          List.of(),
+          null,
+          null,
+          evidenceBySubject,
+          requiredAtoms,
+          null,
+          null,
+          List.of(),
+          callSiteNodeId,
+          targetMethodNodeId,
+          targetCanonicalMethod);
     }
 
     public FactCandidate {
       requireText(candidateFactKey, "candidate fact key");
       entryId = requiredId(entryId, "entry ID");
-      if (!("JAVA_BOUNDARY_INVOCATION".equals(kind) || "JAVA_GUARD_CONDITION".equals(kind))) {
+      if (!("JAVA_BOUNDARY_INVOCATION".equals(kind)
+          || "JAVA_GUARD_CONDITION".equals(kind)
+          || "JAVA_EXACT_CALL".equals(kind))) {
         throw new IllegalArgumentException("FACT_KIND_UNSUPPORTED");
       }
       evidenceBySubject =
@@ -220,7 +307,10 @@ public record FactCandidateSet(
               != requiredAtoms.size()) {
         throw new IllegalArgumentException("FACT_PROFILE_INVALID: required atoms are invalid");
       }
-      branchEdgeIds = orderedDistinctIds(branchEdgeIds, "branch edge IDs");
+      orderedArgumentEdgeIds =
+          List.copyOf(orderedDistinctIds(orderedArgumentEdgeIds, "ordered argument edge IDs"));
+      orderedArguments = List.copyOf(Objects.requireNonNull(orderedArguments, "ordered arguments"));
+      branchEdgeIds = List.copyOf(orderedDistinctIds(branchEdgeIds, "branch edge IDs"));
       if ("JAVA_BOUNDARY_INVOCATION".equals(kind)) {
         if (!"JAVA_BOUNDARY_INVOCATION".equals(candidateFactKey)) {
           throw new IllegalArgumentException(
@@ -232,10 +322,6 @@ public record FactCandidateSet(
         requireText(staticTargetType, "static target type");
         requireText(staticTargetMethod, "static target method");
         requireText(staticTargetSignature, "static target signature");
-        orderedArgumentEdgeIds =
-            orderedDistinctIds(orderedArgumentEdgeIds, "ordered argument edge IDs");
-        orderedArguments =
-            List.copyOf(Objects.requireNonNull(orderedArguments, "ordered arguments"));
         if (orderedArgumentEdgeIds.size() != orderedArguments.size()) {
           throw new IllegalArgumentException(
               "FACT_PROFILE_INVALID: boundary arguments do not close");
@@ -254,7 +340,11 @@ public record FactCandidateSet(
           throw new IllegalArgumentException(
               "FACT_PROFILE_INVALID: boundary guard fields are invalid");
         }
-      } else {
+        if (callSiteNodeId != null || targetMethodNodeId != null || targetCanonicalMethod != null) {
+          throw new IllegalArgumentException(
+              "FACT_PROFILE_INVALID: boundary exact-call fields are invalid");
+        }
+      } else if ("JAVA_GUARD_CONDITION".equals(kind)) {
         if (!"JAVA_GUARD_CONDITION".equals(candidateFactKey)
             || boundaryNodeId != null
             || invocationCallId != null
@@ -267,7 +357,10 @@ public record FactCandidateSet(
             || orderedArguments == null
             || !orderedArguments.isEmpty()
             || controlBlockId != null
-            || guardId != null) {
+            || guardId != null
+            || callSiteNodeId != null
+            || targetMethodNodeId != null
+            || targetCanonicalMethod != null) {
           throw new IllegalArgumentException(
               "FACT_PROFILE_INVALID: guard candidate boundary fields are invalid");
         }
@@ -281,18 +374,62 @@ public record FactCandidateSet(
           throw new IllegalArgumentException(
               "FACT_PROFILE_INVALID: guard candidate shape is invalid");
         }
+      } else {
+        if (!"JAVA_EXACT_CALL".equals(candidateFactKey)
+            || boundaryNodeId != null
+            || invocationCallId != null
+            || staticTargetType != null
+            || staticTargetMethod != null
+            || staticTargetSignature != null
+            || orderedArgumentEdgeIds == null
+            || !orderedArgumentEdgeIds.isEmpty()
+            || orderedArguments == null
+            || !orderedArguments.isEmpty()
+            || controlBlockId != null
+            || guardId != null
+            || guardNodeId != null
+            || normalizedCondition != null
+            || !branchEdgeIds.isEmpty()) {
+          throw new IllegalArgumentException(
+              "FACT_PROFILE_INVALID: exact-call candidate variant fields are invalid");
+        }
+        callTargetEdgeId = requiredId(callTargetEdgeId, "exact-call target edge ID");
+        callSiteNodeId = requiredId(callSiteNodeId, "exact-call site node ID");
+        targetMethodNodeId = requiredId(targetMethodNodeId, "exact-call target method node ID");
+        requireText(targetCanonicalMethod, "exact-call target canonical method");
+        if (!requiredAtoms.stream()
+                .map(RequiredAtom::atomKey)
+                .toList()
+                .equals(
+                    List.of(
+                        "INVOCATION_CALL_ID",
+                        "STATIC_TARGET_TYPE",
+                        "STATIC_TARGET_METHOD",
+                        "STATIC_TARGET_SIGNATURE"))
+            || !evidenceBySubject.stream()
+                .map(SubjectEvidenceBinding::subjectElementId)
+                .toList()
+                .equals(List.of(callSiteNodeId, callTargetEdgeId, targetMethodNodeId))) {
+          throw new IllegalArgumentException(
+              "FACT_PROFILE_INVALID: exact-call candidate shape is invalid");
+        }
       }
     }
 
-    /** The one program subject exposed by this specific Fact kind. */
+    /** The program subjects exposed by this specific Fact kind in deterministic UTF-8 order. */
     public List<String> subjectNodeIds() {
-      return List.of("JAVA_GUARD_CONDITION".equals(kind) ? guardNodeId : boundaryNodeId);
+      if ("JAVA_GUARD_CONDITION".equals(kind)) return List.of(guardNodeId);
+      if ("JAVA_EXACT_CALL".equals(kind))
+        return List.of(callSiteNodeId, targetMethodNodeId).stream().sorted().toList();
+      return List.of(boundaryNodeId);
     }
 
     public String denominatorKey() {
       return entryId
           + "|"
-          + ("JAVA_GUARD_CONDITION".equals(kind) ? guardNodeId : boundaryNodeId)
+          + ("JAVA_EXACT_CALL".equals(kind)
+              ? callTargetEdgeId
+              : "JAVA_GUARD_CONDITION".equals(kind) ? guardNodeId : boundaryNodeId)
           + "|"
           + candidateFactKey;
     }
@@ -320,6 +457,9 @@ public record FactCandidateSet(
       material.nullableText(guardNodeId);
       material.nullableText(normalizedCondition);
       material.texts(branchEdgeIds);
+      material.nullableText(callSiteNodeId);
+      material.nullableText(targetMethodNodeId);
+      material.nullableText(targetCanonicalMethod);
       material.count(evidenceBySubject.size());
       for (SubjectEvidenceBinding evidence : evidenceBySubject) {
         material.text(evidence.subjectElementId());
@@ -348,7 +488,8 @@ public record FactCandidateSet(
         throw new IllegalArgumentException("FACT_PROFILE_INVALID: argument ordinal is invalid");
       argumentNodeId = requiredId(argumentNodeId, "argument node ID");
       argumentEdgeId = requiredId(argumentEdgeId, "argument edge ID");
-      javaLocalOriginNodeIds = orderedIds(javaLocalOriginNodeIds, "Java-local origin node IDs");
+      javaLocalOriginNodeIds =
+          List.copyOf(orderedIds(javaLocalOriginNodeIds, "Java-local origin node IDs"));
     }
   }
 
@@ -360,9 +501,9 @@ public record FactCandidateSet(
 
     public SubjectEvidenceBinding {
       subjectElementId = requiredId(subjectElementId, "evidence subject ID");
-      sourceEvidenceNodeIds = orderedIds(sourceEvidenceNodeIds, "source evidence IDs");
+      sourceEvidenceNodeIds = List.copyOf(orderedIds(sourceEvidenceNodeIds, "source evidence IDs"));
       ruleApplicationEvidenceNodeIds =
-          orderedIds(ruleApplicationEvidenceNodeIds, "rule evidence IDs");
+          List.copyOf(orderedIds(ruleApplicationEvidenceNodeIds, "rule evidence IDs"));
       if (sourceEvidenceNodeIds.isEmpty() || ruleApplicationEvidenceNodeIds.isEmpty()) {
         throw new IllegalArgumentException("FACT_PROFILE_INVALID: evidence closure is empty");
       }
@@ -424,8 +565,8 @@ public record FactCandidateSet(
   public record CandidateDenominator(List<String> applicableKeys, List<String> notApplicableKeys) {
 
     public CandidateDenominator {
-      applicableKeys = orderedKeys(applicableKeys, "applicable keys");
-      notApplicableKeys = orderedKeys(notApplicableKeys, "not-applicable keys");
+      applicableKeys = List.copyOf(orderedKeys(applicableKeys, "applicable keys"));
+      notApplicableKeys = List.copyOf(orderedKeys(notApplicableKeys, "not-applicable keys"));
     }
   }
 

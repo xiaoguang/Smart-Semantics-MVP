@@ -203,8 +203,7 @@ public final class DataFlowGraphModulePublisher {
     coverage.gapDispositions().forEach(value -> values.add(value.gapId().value()));
     coverage.scopeGapIds().forEach(value -> values.add(value.value()));
     values.sort(String::compareTo);
-    if (values.size() != values.stream().distinct().count()) throw new GraphReferenceException();
-    return List.copyOf(values);
+    return values.stream().distinct().toList();
   }
 
   private static boolean sameInputClosure(ProgramGraphInputBasis basis, DataFlowGraphDraft draft) {

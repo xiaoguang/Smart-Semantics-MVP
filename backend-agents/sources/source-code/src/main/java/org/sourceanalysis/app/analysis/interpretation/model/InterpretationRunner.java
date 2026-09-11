@@ -48,7 +48,8 @@ public final class InterpretationRunner {
       Objects.requireNonNull(provider, "flow model provider");
       Map<String, R0Disposition> r0 = reopenR0(r0ExecutionPublication);
       Registry registry = reopenRegistry(registryPublication);
-      List<FlowModelTask> tasks = reopenTasks(flowTaskSetPublication, registryPublication);
+      ReopenedTasks reopenedTasks = reopenTasks(flowTaskSetPublication, registry);
+      List<FlowModelTask> tasks = reopenedTasks.tasks();
       Map<String, FlowModelTask> r1 = new HashMap<>();
       Map<String, FlowModelTask> r2 = new HashMap<>();
       for (FlowModelTask task : tasks) {
@@ -58,7 +59,6 @@ public final class InterpretationRunner {
       }
       List<ModelRound> rounds = new ArrayList<>();
       List<GenerationReceipt> receipts = new ArrayList<>();
-      List<InterpretationProposal> proposals = new ArrayList<>();
       List<FlowInterpretationCandidate> candidates = new ArrayList<>();
       List<ModelTaskDisposition> taskDispositions = new ArrayList<>();
       List<FlowInterpretationDisposition> finalDispositions = new ArrayList<>();
@@ -138,23 +138,22 @@ public final class InterpretationRunner {
                 List.of(),
                 null);
         taskDispositions.add(r2Disposition);
-        List<String> interpretationIds = new ArrayList<>();
+        List<InterpretationProposal> flowProposals = new ArrayList<>();
         for (ReviewedSelection review : reviews) {
           String registryProposalId = registry.proposalIdByKey().get(review.key());
-          String proposalId =
-              contentId(
-                  "interpretation-proposal",
-                  List.of(
-                      flowId,
-                      registryProposalId,
-                      review.key(),
-                      review.decision(),
-                      String.join("|", review.atomIds()),
-                      String.join("|", review.gapIds())));
-          interpretationIds.add(proposalId);
-          proposals.add(
+          InterpretationProposal provisional =
               new InterpretationProposal(
-                  proposalId,
+                  "interpretation-proposal:placeholder",
+                  registryProposalId,
+                  flowId,
+                  review.key(),
+                  review.key(),
+                  review.atomIds(),
+                  review.gapIds(),
+                  review.decision());
+          flowProposals.add(
+              new InterpretationProposal(
+                  FlowInterpretationIdentity.proposalId(provisional),
                   registryProposalId,
                   flowId,
                   review.key(),
@@ -163,15 +162,14 @@ public final class InterpretationRunner {
                   review.gapIds(),
                   review.decision()));
         }
-        interpretationIds.sort(String::compareTo);
+        flowProposals.sort(Comparator.comparing(InterpretationProposal::interpretationProposalId));
         String candidateId =
-            contentId(
-                "flow-interpretation-candidate",
-                List.of(
-                    flowId,
-                    r1Result.round().modelRoundId(),
-                    r2Result.round().modelRoundId(),
-                    String.join("|", interpretationIds)));
+            FlowInterpretationIdentity.candidateId(
+                flowId,
+                r1Task.evidenceCapsuleId(),
+                r1Result.round().modelRoundId(),
+                r2Result.round().modelRoundId(),
+                flowProposals);
         candidates.add(
             new FlowInterpretationCandidate(
                 candidateId,
@@ -179,7 +177,7 @@ public final class InterpretationRunner {
                 r1Task.evidenceCapsuleId(),
                 r1Result.round().modelRoundId(),
                 r2Result.round().modelRoundId(),
-                interpretationIds));
+                flowProposals));
         finalDispositions.add(
             finalDisposition(
                 flowId,
@@ -194,27 +192,23 @@ public final class InterpretationRunner {
         throw failure("INTERPRETATION_COVERAGE_BROKEN");
       rounds.sort(Comparator.comparing(ModelRound::taskSpecId));
       receipts.sort(Comparator.comparing(GenerationReceipt::taskSpecId));
-      proposals.sort(Comparator.comparing(InterpretationProposal::interpretationProposalId));
       candidates.sort(Comparator.comparing(FlowInterpretationCandidate::flowSliceId));
       taskDispositions.sort(Comparator.comparing(ModelTaskDisposition::taskSpecId));
       finalDispositions.sort(Comparator.comparing(FlowInterpretationDisposition::flowSliceId));
       return new InterpretationExecutionSet(
-          contentId(
-              "interpretation-execution-set",
-              List.of(
-                  flowTaskSetPublication.moduleArtifactRoot().value(),
-                  String.join("|", rounds.stream().map(ModelRound::modelRoundId).toList()),
-                  String.join(
-                      "|",
-                      finalDispositions.stream()
-                          .map(FlowInterpretationDisposition::flowInterpretationDispositionId)
-                          .toList()))),
+          FlowInterpretationIdentity.executionSetId(
+              reopenedTasks.flowTaskSetId(),
+              rounds,
+              receipts,
+              candidates,
+              taskDispositions,
+              finalDispositions),
+          reopenedTasks.flowTaskSetId(),
           r0ExecutionPublication,
           registryPublication,
           flowTaskSetPublication,
           rounds,
           receipts,
-          proposals,
           candidates,
           taskDispositions,
           finalDispositions);
@@ -238,24 +232,8 @@ public final class InterpretationRunner {
         new Sha256Digest(sha256(response.canonicalResponseJson().copyToByteArray()));
     String roundId =
         contentId("model-round", List.of(task.taskSpecId(), task.round(), responseSha.value()));
-    String receiptId =
-        contentId(
-            "generation-receipt",
-            List.of(
-                task.taskSpecId(),
-                task.inputJsonSha256().value(),
-                responseSha.value(),
-                response.observedRuntime().sha256().value()));
     ModelRound round = new ModelRound(roundId, task.taskSpecId(), task.round(), responseSha);
-    GenerationReceipt receipt =
-        new GenerationReceipt(
-            receiptId,
-            task.taskSpecId(),
-            task.expectedRuntime(),
-            task.expectedRuntime(),
-            response.observedRuntime(),
-            task.inputJsonSha256(),
-            responseSha);
+    GenerationReceipt receipt = GenerationReceipt.completed(task, responseSha);
     return new CallResult(round, receipt, response.canonicalResponseJson());
   }
 
@@ -280,20 +258,30 @@ public final class InterpretationRunner {
     if (!"flow-interpretation-model-response-v1".equals(text(response, "schemaVersion"))
         || !"R2_PRECISION_REVIEW_RESPONSE".equals(text(response, "kind")))
       throw failure("MODEL_RESPONSE_INVALID");
-    Set<String> r1Keys =
-        r1.stream().map(Selection::key).collect(java.util.stream.Collectors.toSet());
+    Map<String, Selection> r1ByKey = new HashMap<>();
+    for (Selection selection : r1) {
+      if (r1ByKey.put(selection.key(), selection) != null) {
+        throw failure("MODEL_RESPONSE_INVALID");
+      }
+    }
     List<ReviewedSelection> values = new ArrayList<>();
     for (JsonNode review : array(response, "reviews")) {
       String key = text(review, "selectedKey");
       String decision = text(review, "r2Decision");
-      if (!List.of("KEEP", "NARROW", "DROP", "NEEDS_EVIDENCE").contains(decision)
-          || !r1Keys.remove(key)) throw failure("MODEL_REVIEW_EXPANDED");
+      if (!List.of("KEEP", "NARROW", "DROP", "NEEDS_EVIDENCE").contains(decision)) {
+        throw failure("MODEL_REVIEW_EXPANDED");
+      }
+      Selection r1Selection = r1ByKey.remove(key);
+      if (r1Selection == null) throw failure("MODEL_REVIEW_EXPANDED");
       List<String> atoms = identifiers(review, "basisAtomIds");
       List<String> gaps = identifiers(review, "basisGapIds");
       validateBasis(task, key, atoms, gaps, registry);
+      if (!r1Selection.atomIds().containsAll(atoms) || !r1Selection.gapIds().containsAll(gaps)) {
+        throw failure("MODEL_REVIEW_EXPANDED");
+      }
       values.add(new ReviewedSelection(key, decision, atoms, gaps));
     }
-    if (!r1Keys.isEmpty()) throw failure("MODEL_REVIEW_NOT_CLOSED");
+    if (!r1ByKey.isEmpty()) throw failure("MODEL_REVIEW_NOT_CLOSED");
     values.sort(Comparator.comparing(ReviewedSelection::key));
     return values;
   }
@@ -317,9 +305,15 @@ public final class InterpretationRunner {
 
   private static void validateBasis(
       FlowModelTask task, String key, List<String> atoms, List<String> gaps, Registry registry) {
-    if (!task.allowedKeys().contains(key)
-        || !task.flowSliceId().equals(registry.flowByKey().get(key)))
+    RegistryItem item = registry.itemsByKey().get(key);
+    if (item == null
+        || !task.allowedKeys().contains(key)
+        || !task.flowSliceId().equals(item.flowSliceId())
+        || !task.evidenceCapsuleId().equals(item.evidenceCapsuleId())
+        || !item.basisAtomIds().containsAll(atoms)
+        || !item.basisGapIds().containsAll(gaps)) {
       throw failure("MODEL_REFERENCE_INVALID");
+    }
   }
 
   private Map<String, R0Disposition> reopenR0(ModulePublicationReference reference) {
@@ -352,25 +346,34 @@ public final class InterpretationRunner {
             3,
             "registry-freezer",
             "repository-interpretation-registry.json",
-            "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY",
-            "flow-interpretation-repository-interpretation-registry-v2");
+            "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY_MODULE",
+            "flow-interpretation-repository-interpretation-registry-module-v1");
     Map<String, String> proposal = new HashMap<>();
-    Map<String, String> flow = new HashMap<>();
+    Map<String, RegistryItem> items = new HashMap<>();
     Set<String> ready = new HashSet<>();
     for (JsonNode item : array(body, "items")) {
       String key = text(item, "provisionalKey");
-      if (proposal.put(key, identifier(item, "registryProposalId")) != null)
+      String proposalId = identifier(item, "registryProposalId");
+      if (proposal.put(key, proposalId) != null) throw failure("MODEL_REFERENCE_INVALID");
+      RegistryItem registryItem =
+          new RegistryItem(
+              proposalId,
+              identifier(item, "flowSliceId"),
+              identifier(item, "evidenceCapsuleId"),
+              identifiers(item, "basisAtomIds"),
+              identifiers(item, "basisGapIds"));
+      if (registryItem.basisAtomIds().isEmpty() && registryItem.basisGapIds().isEmpty()) {
         throw failure("MODEL_REFERENCE_INVALID");
-      flow.put(key, identifier(item, "flowSliceId"));
+      }
+      items.put(key, registryItem);
     }
     for (JsonNode disposition : array(body, "flowDispositions"))
       if ("READY_FOR_FREEZE".equals(text(disposition, "disposition")))
         ready.add(identifier(disposition, "flowSliceId"));
-    return new Registry(proposal, flow, Set.copyOf(ready));
+    return new Registry(proposal, Map.copyOf(items), Set.copyOf(ready));
   }
 
-  private List<FlowModelTask> reopenTasks(
-      ModulePublicationReference reference, ModulePublicationReference registryReference) {
+  private ReopenedTasks reopenTasks(ModulePublicationReference reference, Registry registry) {
     JsonNode body =
         body(
             reference,
@@ -379,13 +382,14 @@ public final class InterpretationRunner {
             "flow-task-set.json",
             "FLOW_INTERPRETATION_FLOW_TASK_SET",
             "flow-interpretation-flow-task-set-v4");
+    String flowTaskSetId = identifier(body, "flowTaskSetId");
     List<FlowModelTask> values = new ArrayList<>();
     for (JsonNode task : array(body, "tasks")) {
       ImmutableBytes input = canonicalJson.encodeCanonical(task.get("inputJson"));
       Sha256Digest digest = new Sha256Digest(text(task, "inputJsonSha256"));
       if (!digest.equals(new Sha256Digest(sha256(input.copyToByteArray()))))
         throw failure("MODEL_TASK_HASH_MISMATCH");
-      values.add(
+      FlowModelTask materialized =
           new FlowModelTask(
               identifier(task, "taskSpecId"),
               text(task, "taskKind"),
@@ -398,9 +402,52 @@ public final class InterpretationRunner {
               digest,
               new Sha256Digest(text(task, "outputSchemaSha256")),
               new Sha256Digest(text(task, "promptBundleSha256")),
-              reference(task.get("expectedRuntime"))));
+              text(task, "configuredAdapterId"),
+              text(task, "configuredAuthMode"),
+              reference(task.get("expectedRuntimeRef")),
+              runtime(task.get("expectedRuntime")));
+      if (!materialized.taskSpecId().equals(FlowInterpretationIdentity.taskId(materialized))) {
+        throw failure("FLOW_INTERPRETATION_INPUT_INVALID");
+      }
+      validateTaskRegistryInput(materialized, task.get("inputJson"), registry);
+      values.add(materialized);
     }
-    return List.copyOf(values);
+    values.sort(
+        Comparator.comparing(FlowModelTask::flowSliceId).thenComparing(FlowModelTask::round));
+    return new ReopenedTasks(flowTaskSetId, List.copyOf(values));
+  }
+
+  private static void validateTaskRegistryInput(
+      FlowModelTask task, JsonNode input, Registry registry) {
+    if (!input.isObject()
+        || !task.flowSliceId().equals(identifier(input, "flowSliceId"))
+        || !task.evidenceCapsuleId().equals(identifier(input, "evidenceCapsuleId"))
+        || !("R1".equals(task.round()) && "R1_INTERPRETATION_INPUT".equals(text(input, "kind")))
+            && !("R2".equals(task.round()) && "R2_REVIEW_INPUT".equals(text(input, "kind")))) {
+      throw failure("FLOW_INTERPRETATION_INPUT_INVALID");
+    }
+    Map<String, RegistryItem> allowed = new HashMap<>();
+    for (JsonNode item : array(input, "allowedRegistryItems")) {
+      String key = text(item, "provisionalKey");
+      RegistryItem registryItem = registry.itemsByKey().get(key);
+      RegistryItem taskItem =
+          new RegistryItem(
+              identifier(item, "registryProposalId"),
+              identifier(item, "flowSliceId"),
+              identifier(item, "evidenceCapsuleId"),
+              identifiers(item, "basisAtomIds"),
+              identifiers(item, "basisGapIds"));
+      if (registryItem == null
+          || !registryItem.equals(taskItem)
+          || !task.flowSliceId().equals(taskItem.flowSliceId())
+          || !task.evidenceCapsuleId().equals(taskItem.evidenceCapsuleId())
+          || allowed.put(key, taskItem) != null) {
+        throw failure("FLOW_INTERPRETATION_INPUT_INVALID");
+      }
+    }
+    if (!task.allowedKeys().equals(allowed.keySet().stream().sorted().toList())) {
+      throw failure("FLOW_INTERPRETATION_INPUT_INVALID");
+    }
   }
 
   private JsonNode body(
@@ -507,6 +554,15 @@ public final class InterpretationRunner {
         ArtifactId.parse(text(value, "artifactId")), new Sha256Digest(text(value, "sha256")));
   }
 
+  private static org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1 runtime(
+      JsonNode value) {
+    return new org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1(
+        text(value, "upstreamProvider"),
+        text(value, "model"),
+        text(value, "reasoningEffort"),
+        text(value, "sandbox"));
+  }
+
   private static String contentId(String prefix, List<String> values) {
     byte[][] frames = new byte[values.size() + 1][];
     frames[0] = frame(prefix);
@@ -553,6 +609,17 @@ public final class InterpretationRunner {
 
   private record R0Disposition(String disposition, List<String> gapIds, String reasonCode) {}
 
+  private record ReopenedTasks(String flowTaskSetId, List<FlowModelTask> tasks) {}
+
   private record Registry(
-      Map<String, String> proposalIdByKey, Map<String, String> flowByKey, Set<String> readyFlows) {}
+      Map<String, String> proposalIdByKey,
+      Map<String, RegistryItem> itemsByKey,
+      Set<String> readyFlows) {}
+
+  private record RegistryItem(
+      String registryProposalId,
+      String flowSliceId,
+      String evidenceCapsuleId,
+      List<String> basisAtomIds,
+      List<String> basisGapIds) {}
 }

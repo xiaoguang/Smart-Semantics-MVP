@@ -34,15 +34,15 @@ VerifiedSnapshot 中一段边界明确的原始材料及其 locator 和摘要。
 
 **流程切片（FlowSlice）**
 
-程序按入口、条件分支、终点和副作用切出的最小业务流程单元。FlowSlice 的边界由已证明事实决定，不由模型自由扩大、合并或发现。
+程序按入口、条件分支、终点和边界调用切出的**技术执行切片**。它帮助解释器定位代码行为，但不是“最小业务流程”：一个 FlowSlice 可对应零到多个业务 Action，一个 Action/BusinessProcess 也可跨多个 FlowSlice。模型不能改写其技术边界，却可以基于多份已定位材料提出可审阅的业务映射。
 
 **流程证据包（EvidenceCapsule）**
 
-只包含解释一个 FlowSlice 所需 CodeFact、Proof、Gap、Evidence 和 allowlist 的最小冻结包。它不是整个仓库的上下文转储。
+只包含重验一个 FlowSlice 技术主张所需 CodeFact、Proof、Gap 和 Evidence 的最小冻结包。它不是整个仓库的上下文转储，也不是所有业务解释的唯一材料：来源 Agent 可在同一 VerifiedSnapshot 内提供有界、带 locator 的补充片段，但这种解释材料不能冒充 Capsule/Proof。
 
 **流程解释候选（FlowInterpretationCandidate）**
 
-模型针对一个 EvidenceCapsule 提出的局部业务名称、活动或关系解释。它只能引用包内材料，并且必须经程序准入；它不是 CodeFact，也不是最终文档。
+模型针对有界 source-backed packet 提出的局部或过程业务语义记录。它只能引用 packet-local material handle，并经 `DRAFT/REVIEW` 与程序准入；术语是数据，不是有限 key 门。它不是 CodeFact，也不是最终文档。
 
 **已准入仓库知识（AdmittedRepositoryKnowledge）**
 
@@ -62,7 +62,7 @@ VerifiedSnapshot 中一段边界明确的原始材料及其 locator 和摘要。
 
 **追溯链（Trace）**
 
-从候选中的知识项回到 Evidence locator 和 VerifiedSnapshot 的可查询链。Trace 帮助读者找到来源；它必须与 Proof 配合，不能独自完成事实准入。
+从候选中的知识项回到准入、DRAFT/REVIEW、packet binding、Evidence locator 和 VerifiedSnapshot 的可查询链。精确技术 Fact 的 `SOURCE_CONFIRMED` 状态必须有 Proof；带 locator 但无完整 Proof 的片段仍可支持明确标注的 interpretation/hypothesis。Trace 能定位来源，不能把自由业务文本自动升级为事实。
 
 **语义原子（Semantic Atom）**
 
@@ -70,7 +70,7 @@ VerifiedSnapshot 中一段边界明确的原始材料及其 locator 和摘要。
 
 **流程解释轮（FlowInterpretationRound）**
 
-同一个 Candidate 内、同一个 FlowSlice 的 R1 解释和 R2 精度复核。R2 只能检查或收窄 R1，不能增加来源事实，也不产生第二份产品候选。
+同一个 Candidate 内对来源语义进行草拟与审阅的内部职责。Source Code Analysis Agent 的目标名称是 `DRAFT/REVIEW`；旧 R1/R2 是其当前有限实现术语。REVIEW 只能保留、收窄、丢弃或标待确认，不能增加来源事实，也不产生第二份产品候选。
 
 **读者候选轮（ReaderCandidateRound）**
 
@@ -91,5 +91,5 @@ VerifiedSnapshot 中一段边界明确的原始材料及其 locator 和摘要。
 | 哈希完整性 vs 语义证明 | 哈希完整性说明所指字节与冻结时一致。 | 语义证明说明这些字节和规则足以支持 CodeFact 的每个原子。 | 哈希正确但 locator 指错行时，完整性通过、Proof 仍失败。 |
 | Trace locator vs Proof | Trace locator 告诉读者去哪里找来源。 | Proof 解释从来源字节到事实结论的可重验推导。 | 能打开某行不等于那一行支持所声明含义。 |
 | Candidate ID vs 内容正确 | Candidate ID 区分一组确定内容和 lineage。 | 内容正确要求来源、Proof、原子守恒和读者门禁分别通过。 | 同一个错误内容也能有稳定 ID；ID 不能用作质量结论。 |
-| FlowInterpretationRound vs ReaderCandidateRound | 前者在同一 Candidate 内复核一个 FlowSlice 的解释。 | 后者产生或替换整份产品候选，最多 Round 1 和 Round 2。 | 流程解释 R2 不消耗 Reader Candidate Round 2。 |
+| 内部 DRAFT/REVIEW vs ReaderCandidateRound | 前者在同一 Candidate 内草拟并复核来源语义记录。 | 后者产生或替换整份产品候选，最多 Round 1 和 Round 2。 | 内部语义 REVIEW 不消耗 Reader Candidate Round 2。 |
 | configured Adapter/Auth vs observed upstream provider | configuredAdapterId 与 configuredAuthMode 说明本地选择的调用适配器和认证方式。 | observedUpstreamProvider 说明实际响应来自哪个上游服务；observed model、reasoning effort 和 sandbox 也需独立观测。 | 这些字段分别记录、分别验证；配置值不能冒充观测值，缺失或不匹配应 fail closed。 |

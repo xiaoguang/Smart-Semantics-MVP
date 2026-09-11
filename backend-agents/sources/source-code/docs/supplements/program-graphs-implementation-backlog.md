@@ -12,6 +12,8 @@
 
 只有确实无法用已稳定合同表达时，才按第 4 节升级；不能把普通实现缺口包装成架构问题。
 
+本轮语义框架不改变这份清单的五图、index、Gap、module 或 publication 边界。未来 Step 06 可以把 graph/source locator 当作有界取材和高召回连接 cue，但图本身不证明业务对象同一、Action、跨请求顺序或制度关系；缺少 compiled Flow 时也只能经同一冻结快照的安全 locator 取材，不能要求 ProgramGraphs 新增领域 parser。
+
 ## 2. 已稳定的边界
 
 下面各项在后续 ProgramGraphs 开发中视为关闭的设计决定。实现者可以修 bug 或扩充内部算法，但不得重新选择另一条数据流。
@@ -133,7 +135,7 @@ request status / ids
 - 想改变 ProgramGraphs 的上游、下游、模型职责、安全范围或完整仓库完成口径，或为了跨Flow重建增加第六张图/直接生成process signal；
 - 一个业务必须能力无法用已注册 node/edge/rule/Gap 表达。
 
-前五类影响已稳定边界，不能由实现 Agent 权衡。最后一类先由Sol/ultra判断能否作为本步骤内版本化扩展；若影响八步主线、跨步骤postcondition、**57**项正式数量、公共Interface、BusinessProcess证据边界或业务目标，必须交回用户讨论确认。
+前五类影响已稳定边界，不能由实现 Agent 权衡。最后一类先由Sol/ultra判断能否作为本步骤内版本化扩展；若影响八步主线、跨步骤postcondition、目标 **52** 项正式数量、公共Interface、BusinessProcess证据边界或业务目标，必须交回用户讨论确认。
 
 ## 5. 后续每个实现切片的验收清单
 

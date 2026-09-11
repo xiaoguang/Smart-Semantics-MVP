@@ -58,16 +58,39 @@ class FactCandidateMissingPathTest {
     try (ProgramGraphsPublicFixture base = ProgramGraphsPublicFixture.create(baseRoot);
         PersistedMutation mutation =
             PersistedMutation.republishWithoutApproveArgumentEvidence(base, mutatedRoot)) {
+      FactCandidateInputs baselineInputs =
+          new PersistedFactCandidateInputReader(base.stepArtifacts(), base.sourceReader())
+              .reopen(base.sourceInventory(), base.applicationDiscovery(), base.programGraphs());
+      FactCandidateSet baseline =
+          new FactCandidateEnumerator()
+              .enumerate(baselineInputs, FactRegistry.standardJavaBoundary());
+      List<String> baselineExactKeys =
+          baseline.candidates().stream()
+              .filter(candidate -> "JAVA_EXACT_CALL".equals(candidate.kind()))
+              .map(FactCandidateSet.FactCandidate::denominatorKey)
+              .toList();
+
       FactCandidateInputs inputs =
           new PersistedFactCandidateInputReader(mutation.steps(), mutation.sourceReader())
               .reopen(mutation.source(), mutation.discovery(), mutation.graphs());
 
       FactCandidateSet result =
           new FactCandidateEnumerator().enumerate(inputs, FactRegistry.standardJavaBoundary());
+      List<FactCandidateSet.FactCandidate> boundaryCandidates =
+          result.candidates().stream()
+              .filter(candidate -> "JAVA_BOUNDARY_INVOCATION".equals(candidate.kind()))
+              .toList();
+      List<String> exactKeys =
+          result.candidates().stream()
+              .filter(candidate -> "JAVA_EXACT_CALL".equals(candidate.kind()))
+              .map(FactCandidateSet.FactCandidate::denominatorKey)
+              .toList();
 
-      assertThat(result.candidates())
+      assertThat(exactKeys).containsExactlyElementsOf(baselineExactKeys);
+      assertThat(boundaryCandidates)
           .extracting(FactCandidateSet.FactCandidate::entryId)
           .containsExactly("entry:" + digest("cancel"));
+      assertThat(result.candidates()).hasSize(baselineExactKeys.size() + 1);
       assertThat(result.notApplicableDispositions()).hasSize(1);
       FactCandidateSet.NotApplicableDisposition disposition =
           result.notApplicableDispositions().get(0);
@@ -78,7 +101,7 @@ class FactCandidateMissingPathTest {
 
       // The generic boundary candidate records only the Java invocation. It must not manufacture
       // a database/message/search effect after the argument evidence was removed.
-      assertThat(result.candidates())
+      assertThat(boundaryCandidates)
           .allSatisfy(candidate -> assertThat(candidate.staticTargetType()).isNotBlank());
     }
   }
@@ -130,6 +153,36 @@ class FactCandidateMissingPathTest {
         AnalysisRunId runId = AnalysisRunId.parse("analysis-run:" + digest("missing-path-run"));
         InstalledAnalysisStepPublication sourceStep =
             copyStep(baseSource, runId, modules, steps, List.of(), controls, json);
+        List<CanonicalModulePayload> discoveryPayloads =
+            modulePayloads(baseDiscovery.semanticPayloads());
+        CanonicalModulePayload capabilityPayload =
+            find(discoveryPayloads, "capability-report.json");
+        ObjectNode capabilityDocument =
+            (ObjectNode) json.parseCanonical(capabilityPayload.canonicalUtf8());
+        ObjectNode sourcePublication =
+            (ObjectNode) capabilityDocument.get("verifiedSourceInventoryPublicationRef");
+        if (sourcePublication == null) {
+          throw new IllegalStateException("capability report has no source publication reference");
+        }
+        sourcePublication.put(
+            "analysisStepKey", sourceStep.reference().address().analysisStepKey().wireValue());
+        sourcePublication.put(
+            "analysisStepArtifactRoot", sourceStep.reference().analysisStepArtifactRoot().value());
+        sourcePublication.put(
+            "analysisStepReceiptId", sourceStep.reference().analysisStepReceiptId().value());
+        sourcePublication.put(
+            "analysisStepReceiptSha256",
+            sourceStep.reference().analysisStepReceiptSha256().value());
+        CanonicalModulePayload reboundCapability =
+            standalonePayload(capabilityPayload, capabilityDocument, json);
+        List<CanonicalModulePayload> reboundDiscoveryPayloads =
+            discoveryPayloads.stream()
+                .map(
+                    payload ->
+                        "capability-report.json".equals(payload.fileName())
+                            ? reboundCapability
+                            : payload)
+                .toList();
         InstalledAnalysisStepPublication discoveryStep =
             copyStep(
                 baseDiscovery,
@@ -138,7 +191,8 @@ class FactCandidateMissingPathTest {
                 steps,
                 List.of(sourceStep.reference()),
                 controls,
-                json);
+                json,
+                reboundDiscoveryPayloads);
 
         List<CanonicalModulePayload> originalGraphPayloads =
             modulePayloads(baseGraphs.semanticPayloads());
@@ -226,9 +280,28 @@ class FactCandidateMissingPathTest {
         List<org.sourceanalysis.app.artifact.AnalysisStepPublicationReference> upstream,
         ArtifactControls controls,
         CanonicalJsonCodec json) {
+      return copyStep(
+          base,
+          runId,
+          modules,
+          steps,
+          upstream,
+          controls,
+          json,
+          modulePayloads(base.semanticPayloads()));
+    }
+
+    private static InstalledAnalysisStepPublication copyStep(
+        ReopenedAnalysisStepPublication base,
+        AnalysisRunId runId,
+        CanonicalModuleArtifactStore modules,
+        CanonicalAnalysisStepArtifactStore steps,
+        List<org.sourceanalysis.app.artifact.AnalysisStepPublicationReference> upstream,
+        ArtifactControls controls,
+        CanonicalJsonCodec json,
+        List<CanonicalModulePayload> payloads) {
       AnalysisStepKey key = base.reference().address().analysisStepKey();
       int moduleNumber = key == AnalysisStepKey.VERIFIED_SOURCE_INVENTORY ? 3 : 4;
-      List<CanonicalModulePayload> payloads = modulePayloads(base.semanticPayloads());
       InstalledModulePublication module =
           modules.install(
               new ModuleInstallRequest(

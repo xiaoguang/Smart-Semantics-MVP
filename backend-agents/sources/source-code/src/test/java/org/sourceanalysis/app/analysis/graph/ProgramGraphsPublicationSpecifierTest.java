@@ -412,7 +412,7 @@ class ProgramGraphsPublicationSpecifierTest {
         entries,
         "PROGRAM_GRAPHS_DATA_FLOW_GRAPH",
         "program-graphs-data-flow-graph-v2",
-        "program-graphs-data-flow-graph",
+        "data-flow-graph",
         "application/json",
         "STANDALONE_JSON",
         false);

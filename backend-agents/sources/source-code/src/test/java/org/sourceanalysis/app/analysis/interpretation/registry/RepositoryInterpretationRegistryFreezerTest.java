@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
+import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalExecutionSet;
 import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalExecutionSetModulePublisher;
 import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalProviderResponse;
@@ -90,9 +91,9 @@ class RepositoryInterpretationRegistryFreezerTest {
                 assertThat(payload.descriptor().fileName())
                     .isEqualTo("repository-interpretation-registry.json");
                 assertThat(payload.descriptor().artifactType())
-                    .isEqualTo("FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY");
+                    .isEqualTo("FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY_MODULE");
                 assertThat(payload.descriptor().schemaVersion())
-                    .isEqualTo("flow-interpretation-repository-interpretation-registry-v2");
+                    .isEqualTo("flow-interpretation-repository-interpretation-registry-module-v1");
               });
     }
   }
@@ -177,11 +178,18 @@ class RepositoryInterpretationRegistryFreezerTest {
 
   private static RegistryProposalTaskProfile profile(ProgramGraphsPublicFixture fixture) {
     return new RegistryProposalTaskProfile(
+        "adapter-fixture-alpha",
+        "auth-fixture-beta",
         RegistryProposalTaskCompilerTest.reference("registry-prompt", "registry-freezer-r0-prompt"),
         RegistryProposalTaskCompilerTest.reference(
             "registry-schema", fixture.artifactControls().schemaBundleSha256()),
         RegistryProposalTaskCompilerTest.reference(
             "registry-runtime", fixture.artifactControls().profileSha256()),
+        new ModelRuntimeIdentityV1(
+            "provider-fixture-gamma",
+            "model-fixture-delta",
+            "reasoning-fixture-epsilon",
+            "sandbox-fixture-zeta"),
         RegistryProposalTaskCompilerTest.reference("registry-budget", "registry-freezer-r0-budget"),
         16,
         16,

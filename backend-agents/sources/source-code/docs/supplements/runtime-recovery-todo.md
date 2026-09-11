@@ -4,7 +4,7 @@
 
 ## 1. 为什么退出 active v0
 
-本能力原本试图让一个 analysis run 在进程崩溃后，自动接回同一个 runId、队列、worker 与模型调用状态，并修补跨进程终态。它不直接增加完整仓库冻结、五图、Fact/Proof/Gap、Flow/EvidenceCapsule、逐 Flow R0/R1/R2、RepositoryKnowledge、九章、Trace 或归档的业务分析能力，却会显著扩大 runtime 状态机、持久化协议和故障矩阵。
+本能力原本试图让一个 analysis run 在进程崩溃后，自动接回同一个 runId、队列、worker 与模型调用状态，并修补跨进程终态。它不直接增加完整仓库冻结、五图、Fact/Proof/Gap、Flow/EvidenceCapsule、有界语义材料与局部/过程 DRAFT+REVIEW、RepositoryKnowledge、九章、Trace 或归档的业务分析能力，却会显著扩大 runtime 状态机、持久化协议和故障矩阵。
 
 active v0 只需要把核心八个分析步骤做正确，并允许新执行显式消费已验证的上游 analysis step/module artifacts。因此，同一运行自动恢复整体延期。
 
@@ -40,7 +40,7 @@ active v0 只需要把核心八个分析步骤做正确，并允许新执行显�
 
 未来能力若重新立项，可能覆盖“同一 run 的跨进程自动续跑与终态修复”。它仍不应改变：
 
-- 八个分析步骤业务目标、N/E/I/R、逐 Flow R0/R1/R2 与九章结构；
+- 八个分析步骤业务目标、技术/语义双分母、有界局部/过程 DRAFT+REVIEW 与九章结构；
 - 52 个 reader-visible 正式输出；
 - canonical JSON/JSONL、Evidence、Proof、Trace 与完整仓库覆盖；
 - AnalysisStep/module artifacts 作为业务分析产物和上下游对话格式的地位；

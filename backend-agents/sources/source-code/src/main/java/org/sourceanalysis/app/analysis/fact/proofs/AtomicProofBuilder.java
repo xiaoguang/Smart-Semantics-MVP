@@ -27,7 +27,7 @@ import org.sourceanalysis.app.evidence.SourceExcerptV1;
 public final class AtomicProofBuilder {
 
   private static final String PROOF_SOURCE_REOPEN_MISMATCH = "PROOF_SOURCE_REOPEN_MISMATCH";
-  private static final String EVIDENCE_CLOSURE_UNPROVEN = "PROOF_EVIDENCE_CLOSURE_UNPROVEN";
+  private static final String PROOF_NOT_CLOSED = "PROOF_NOT_CLOSED";
   private static final String COMPOSITE_FACT_REJECTED = "COMPOSITE_FACT_REJECTED";
 
   private final VerifiedSourceTextReader sourceReader;
@@ -149,9 +149,9 @@ public final class AtomicProofBuilder {
       FrozenDocuments documents,
       ProofRuleRegistry rules) {
     List<SubjectRequirement> subjects = subjectsFor(candidate, atom.atomKey());
-    if (subjects.isEmpty()) return AtomAttempt.rejected(atom, EVIDENCE_CLOSURE_UNPROVEN);
+    if (subjects.isEmpty()) return AtomAttempt.rejected(atom, PROOF_NOT_CLOSED);
     EvidenceClosure closure = evidenceClosure(candidate, subjects, inputs, documents, rules);
-    if (closure == null) return AtomAttempt.rejected(atom, EVIDENCE_CLOSURE_UNPROVEN);
+    if (closure == null) return AtomAttempt.rejected(atom, PROOF_NOT_CLOSED);
     return AtomAttempt.closed(atom, canonicalValue(candidate, atom.atomKey()), closure);
   }
 
@@ -165,6 +165,21 @@ public final class AtomicProofBuilder {
           : List.of();
     }
     List<SubjectRequirement> all = allSubjects(candidate);
+    if ("JAVA_EXACT_CALL".equals(candidate.kind())) {
+      return switch (atomKey) {
+        case "INVOCATION_CALL_ID" ->
+            select(
+                all,
+                ProofRuleRegistry.SubjectCategory.CALL_SITE,
+                ProofRuleRegistry.SubjectCategory.CALL_TARGET);
+        case "STATIC_TARGET_TYPE", "STATIC_TARGET_METHOD", "STATIC_TARGET_SIGNATURE" ->
+            select(
+                all,
+                ProofRuleRegistry.SubjectCategory.CALL_TARGET,
+                ProofRuleRegistry.SubjectCategory.METHOD);
+        default -> List.of();
+      };
+    }
     return switch (atomKey) {
       case "INVOCATION_CALL_ID" ->
           select(
@@ -191,6 +206,17 @@ public final class AtomicProofBuilder {
       return List.of(
           new SubjectRequirement(
               candidate.guardNodeId(), ProofRuleRegistry.SubjectCategory.GUARD, null));
+    }
+    if ("JAVA_EXACT_CALL".equals(candidate.kind())) {
+      return List.of(
+          new SubjectRequirement(
+              candidate.callSiteNodeId(), ProofRuleRegistry.SubjectCategory.CALL_SITE, null),
+          new SubjectRequirement(
+              candidate.callTargetEdgeId(),
+              ProofRuleRegistry.SubjectCategory.CALL_TARGET,
+              candidate.callTargetEdgeId()),
+          new SubjectRequirement(
+              candidate.targetMethodNodeId(), ProofRuleRegistry.SubjectCategory.METHOD, null));
     }
     List<SubjectRequirement> subjects = new ArrayList<>();
     subjects.add(
@@ -423,6 +449,22 @@ public final class AtomicProofBuilder {
 
   private static ProofDecisionSet.AtomValue canonicalValue(
       FactCandidateSet.FactCandidate candidate, String atomKey) {
+    if ("JAVA_EXACT_CALL".equals(candidate.kind())) {
+      String targetCanonicalMethod = candidate.targetCanonicalMethod();
+      int hash = targetCanonicalMethod.indexOf('#');
+      int parameterStart = targetCanonicalMethod.indexOf('(', hash + 1);
+      return switch (atomKey) {
+        case "INVOCATION_CALL_ID" -> symbol(candidate.callSiteNodeId());
+        case "STATIC_TARGET_TYPE" ->
+            new ProofDecisionSet.AtomValue("STRING", targetCanonicalMethod.substring(0, hash));
+        case "STATIC_TARGET_METHOD" ->
+            new ProofDecisionSet.AtomValue(
+                "STRING", targetCanonicalMethod.substring(hash + 1, parameterStart));
+        case "STATIC_TARGET_SIGNATURE" ->
+            new ProofDecisionSet.AtomValue("STRING", targetCanonicalMethod.substring(hash + 1));
+        default -> throw new IllegalArgumentException("PROOF_RULE_REGISTRY_INVALID");
+      };
+    }
     return switch (atomKey) {
       case "INVOCATION_CALL_ID" -> symbol(candidate.invocationCallId());
       case "STATIC_TARGET_TYPE" ->

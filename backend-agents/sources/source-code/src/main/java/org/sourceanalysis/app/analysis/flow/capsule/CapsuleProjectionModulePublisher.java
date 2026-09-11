@@ -1,5 +1,6 @@
 package org.sourceanalysis.app.analysis.flow.capsule;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -14,6 +15,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import org.sourceanalysis.app.analysis.fact.publish.ProvenCodeFactsReference;
+import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilation;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
@@ -27,21 +29,24 @@ import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalMediaType;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalModulePayload;
+import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.InstalledModulePublication;
 import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.ModuleInstallRequest;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
+import org.sourceanalysis.app.evidence.SourceLocatorV1;
 
 /** Installs M2's complete evidence-capsule projection as one canonical module artifact. */
 public final class CapsuleProjectionModulePublisher {
 
   private static final String FILE_NAME = "capsule-projection.json";
   private static final String ARTIFACT_TYPE = "BUSINESS_FLOWS_CAPSULE_PROJECTION";
-  private static final String SCHEMA_VERSION = "business-flows-capsule-projection-v4";
+  private static final String SCHEMA_VERSION = "business-flows-capsule-projection-v7";
   private static final String ARTIFACT_PREFIX = "business-flows-capsule-projection";
-  private static final String MODULE_VERSION = "v4";
+  private static final String PROJECTION_ID_DOMAIN = "business-flows-capsule-projection-id-v2";
+  private static final String MODULE_VERSION = "v6";
   private static final Comparator<String> UTF8_ORDER =
       CapsuleProjectionModulePublisher::compareUtf8;
 
@@ -193,24 +198,9 @@ public final class CapsuleProjectionModulePublisher {
       CapsuleProjection projection,
       ModuleCompletionStatus completionStatus,
       List<String> gapRefs) {
-    ObjectNode body = JsonNodeFactory.instance.objectNode();
-    body.put("capsuleProjectionId", projectionId(projection));
-    body.set("flowCompilationRef", reference(projection.flowCompilationRef()));
-    body.set("proofPackRef", reference(projection.proofPackRef()));
-    profile(body.putObject("capsuleProjectionProfile"), projection.profile());
-    ArrayNode capsules = body.putArray("capsules");
-    projection.capsules().forEach(value -> capsule(capsules.addObject(), value));
-    ArrayNode spans = body.putArray("modelEvidenceSpans");
-    projection.modelEvidenceSpans().forEach(value -> span(spans.addObject(), value));
-    ArrayNode obligations = body.putArray("projectionObligations");
-    projection.projectionObligations().forEach(value -> obligation(obligations.addObject(), value));
-    ObjectNode budget = body.putObject("budgetUsage");
-    budget.put("spanCount", projection.modelEvidenceSpans().size());
-    budget.put(
-        "sourceUtf8Bytes",
-        projection.modelEvidenceSpans().stream()
-            .mapToLong(value -> value.sourceExcerpt().rawUtf8().size())
-            .sum());
+    JsonNode bodyValue = canonicalJson.parseCanonical(canonicalProjectionPayloadBody(projection));
+    if (!bodyValue.isObject()) throw failure();
+    ObjectNode body = (ObjectNode) bodyValue;
 
     ObjectNode withoutArtifactId = JsonNodeFactory.instance.objectNode();
     withoutArtifactId.put("schemaVersion", SCHEMA_VERSION);
@@ -240,6 +230,36 @@ public final class CapsuleProjectionModulePublisher {
         canonicalJson.encodeCanonical(envelope));
   }
 
+  private static ObjectNode projectionBody(CapsuleProjection projection) {
+    ObjectNode body = JsonNodeFactory.instance.objectNode();
+    body.set("flowCompilationRef", reference(projection.flowCompilationRef()));
+    body.set("proofPackRef", reference(projection.proofPackRef()));
+    profile(body.putObject("capsuleProjectionProfile"), projection.profile());
+    ArrayNode capsules = body.putArray("capsules");
+    projection.capsules().forEach(value -> capsule(capsules.addObject(), value));
+    ArrayNode spans = body.putArray("modelEvidenceSpans");
+    projection.modelEvidenceSpans().forEach(value -> span(spans.addObject(), value));
+    ArrayNode obligations = body.putArray("projectionObligations");
+    projection.projectionObligations().forEach(value -> obligation(obligations.addObject(), value));
+    ObjectNode budget = body.putObject("budgetUsage");
+    budget.put("spanCount", projection.modelEvidenceSpans().size());
+    budget.put(
+        "sourceUtf8Bytes",
+        projection.modelEvidenceSpans().stream()
+            .mapToLong(value -> value.sourceExcerpt().rawUtf8().size())
+            .sum());
+    return body;
+  }
+
+  /** Canonical full M2 payload body shared with the M3 owner replay check. */
+  public static ImmutableBytes canonicalProjectionPayloadBody(CapsuleProjection projection) {
+    Objects.requireNonNull(projection, "capsule projection");
+    CanonicalJsonCodec codec = new CanonicalJsonCodec();
+    ObjectNode body = projectionBody(projection);
+    body.put("capsuleProjectionId", projectionId(body, codec));
+    return codec.encodeCanonical(body);
+  }
+
   private static void profile(ObjectNode node, CapsuleProjectionProfile profile) {
     node.set("profileRef", reference(profile.profileRef()));
     node.put("maxCapsules", profile.maxCapsules());
@@ -265,6 +285,8 @@ public final class CapsuleProjectionModulePublisher {
     capsule.gapViews().forEach(value -> gap(gaps.addObject(), value));
     ArrayNode outcomes = node.putArray("outcomePathViews");
     capsule.outcomePathViews().forEach(value -> outcome(outcomes.addObject(), value));
+    ArrayNode signals = node.putArray("processJoinSignals");
+    capsule.processJoinSignals().forEach(value -> signal(signals.addObject(), value));
     strings(node.putArray("registryProposalBasisAtomIds"), capsule.registryProposalBasisAtomIds());
     strings(node.putArray("registryProposalBasisGapIds"), capsule.registryProposalBasisGapIds());
     strings(node.putArray("modelEvidenceSpanIds"), capsule.modelEvidenceSpanIds());
@@ -291,6 +313,7 @@ public final class CapsuleProjectionModulePublisher {
                   .put("canonical", atom.canonicalValue());
               item.put("proofId", atom.proofId());
             });
+    node.set("originFactArtifactRef", reference(fact.originFactArtifactRef()));
   }
 
   private static void gap(ObjectNode node, CapsuleProjection.FlowGapView gap) {
@@ -298,7 +321,10 @@ public final class CapsuleProjectionModulePublisher {
     node.put("scope", gap.scope());
     node.put("reasonCode", gap.reasonCode());
     strings(node.putArray("affectedSemanticIds"), gap.affectedSemanticIds());
-    strings(node.putArray("evidenceNodeIds"), gap.evidenceNodeIds());
+    node.set("evidenceRefs", references(gap.evidenceRefs()));
+    node.put("originKind", gap.originKind());
+    if (gap.originGapLedgerRef() == null) node.putNull("originGapLedgerRef");
+    else node.set("originGapLedgerRef", reference(gap.originGapLedgerRef()));
   }
 
   private static void outcome(ObjectNode node, CapsuleProjection.FlowOutcomePathView outcome) {
@@ -321,6 +347,35 @@ public final class CapsuleProjectionModulePublisher {
     strings(node.putArray("requiredProofIds"), outcome.requiredProofIds());
   }
 
+  private static void signal(ObjectNode node, FlowCompilation.ProcessJoinSignalV1 signal) {
+    node.put("processJoinSignalId", signal.processJoinSignalId());
+    node.put("flowSliceId", signal.flowSliceId());
+    node.put("signalKind", signal.signalKind());
+    node.put("anchorKind", signal.anchorKind());
+    node.put("anchorKey", signal.anchorKey());
+    node.put("direction", signal.direction());
+    node.put("specificity", signal.specificity());
+    node.put("claimScope", signal.claimScope());
+    strings(node.putArray("factIds"), signal.factIds());
+    strings(node.putArray("atomIds"), signal.atomIds());
+    strings(node.putArray("proofIds"), signal.proofIds());
+    strings(node.putArray("evidenceNodeIds"), signal.evidenceNodeIds());
+    ArrayNode locators = node.putArray("sourceLocators");
+    signal.sourceLocators().forEach(locator -> sourceLocator(locators.addObject(), locator));
+    strings(node.putArray("gapIds"), signal.gapIds());
+  }
+
+  private static void sourceLocator(ObjectNode node, SourceLocatorV1 locator) {
+    node.put("fileId", locator.fileId().value());
+    node.put("path", locator.path());
+    node.put("startByte", locator.startByte());
+    node.put("endByteExclusive", locator.endByteExclusive());
+    node.put("startLine", locator.startLine());
+    node.put("startColumn", locator.startColumn());
+    node.put("endLine", locator.endLine());
+    node.put("endColumn", locator.endColumn());
+  }
+
   private static void span(ObjectNode node, CapsuleProjection.ModelEvidenceSpan span) {
     node.put("spanId", span.spanId());
     ObjectNode excerpt = node.putObject("sourceExcerpt");
@@ -339,6 +394,7 @@ public final class CapsuleProjectionModulePublisher {
     excerpt.put("rawUtf8Sha256", span.sourceExcerpt().rawUtf8Sha256().value());
     strings(node.putArray("supportedAtomIds"), span.supportedAtomIds());
     strings(node.putArray("supportedOutcomePathIds"), span.supportedOutcomePathIds());
+    strings(node.putArray("supportedProcessJoinSignalIds"), span.supportedProcessJoinSignalIds());
   }
 
   private static void obligation(
@@ -349,16 +405,10 @@ public final class CapsuleProjectionModulePublisher {
     strings(node.putArray("satisfyingSpanIds"), obligation.satisfyingSpanIds());
   }
 
-  private static String projectionId(CapsuleProjection projection) {
-    List<String> values = new ArrayList<>();
-    values.add(projection.profile().profileRef().artifactId().value());
-    values.add(projection.profile().profileRef().sha256().value());
-    values.add(projection.flowCompilationRef().artifactId().value());
-    values.add(projection.flowCompilationRef().sha256().value());
-    projection.capsules().forEach(value -> values.add(value.evidenceCapsuleId()));
-    projection.modelEvidenceSpans().forEach(value -> values.add(value.spanId()));
-    projection.projectionObligations().forEach(value -> values.add(value.obligationId()));
-    return contentId("capsule-projection", values.toArray(String[]::new));
+  private static String projectionId(ObjectNode body, CanonicalJsonCodec codec) {
+    return ARTIFACT_PREFIX
+        + ":"
+        + sha256(frame(PROJECTION_ID_DOMAIN), frame(codec.encodeCanonical(body).copyToByteArray()));
   }
 
   private static ObjectNode producer(AnalysisStepModuleAddress address) {
@@ -420,13 +470,6 @@ public final class CapsuleProjectionModulePublisher {
 
   private static void strings(ArrayNode node, List<String> values) {
     values.forEach(node::add);
-  }
-
-  private static String contentId(String prefix, String... values) {
-    byte[][] framed = new byte[values.length + 1][];
-    framed[0] = frame(prefix);
-    for (int index = 0; index < values.length; index++) framed[index + 1] = frame(values[index]);
-    return prefix + ":" + sha256(framed);
   }
 
   private static byte[] frame(String value) {

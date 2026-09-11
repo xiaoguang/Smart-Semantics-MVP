@@ -32,9 +32,26 @@ class FactCandidateProofEvidenceHandoffTest {
                   fixture.programGraphs());
       FactCandidateSet candidateSet =
           new FactCandidateEnumerator().enumerate(inputs, FactRegistry.standardJavaBoundary());
+      var boundaryCandidates =
+          candidateSet.candidates().stream()
+              .filter(candidate -> "JAVA_BOUNDARY_INVOCATION".equals(candidate.kind()))
+              .toList();
+      var exactCandidates =
+          candidateSet.candidates().stream()
+              .filter(candidate -> "JAVA_EXACT_CALL".equals(candidate.kind()))
+              .toList();
 
-      assertThat(candidateSet.candidates()).hasSize(2);
-      for (FactCandidateSet.FactCandidate candidate : candidateSet.candidates()) {
+      assertThat(candidateSet.candidates()).hasSize(6);
+      assertThat(boundaryCandidates).hasSize(2);
+      assertThat(exactCandidates).hasSize(4);
+      assertThat(exactCandidates)
+          .allSatisfy(
+              candidate -> {
+                assertThat(candidate.candidateFactKey()).isEqualTo("JAVA_EXACT_CALL");
+                assertThat(candidate.subjectNodeIds()).hasSize(2);
+                assertThat(candidate.evidenceBySubject()).hasSize(3);
+              });
+      for (FactCandidateSet.FactCandidate candidate : boundaryCandidates) {
         Set<String> expectedSubjectIds = expectedProofSubjectIds(candidate);
         Set<String> actualSubjectIds =
             candidate.evidenceBySubject().stream()

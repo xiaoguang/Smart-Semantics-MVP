@@ -18,6 +18,7 @@ import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
 import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactDescriptor;
+import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
@@ -25,6 +26,7 @@ import org.sourceanalysis.app.artifact.CanonicalMediaType;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
+import org.sourceanalysis.app.evidence.SourceLocatorV1;
 
 /**
  * Reopens only BusinessFlows' public predecessor bytes and rejects malformed or foreign lineage.
@@ -126,22 +128,22 @@ final class PersistedFlowCompilationInputReader {
                   "proven-facts.json",
                   new PayloadSpec(
                       "PROVEN_CODE_FACTS_PROVEN_FACTS",
-                      "proven-code-facts-proven-facts-v2",
+                      "proven-code-facts-proven-facts-v3",
                       CanonicalMediaType.APPLICATION_JSON),
                   "proof-pack.json",
                   new PayloadSpec(
                       "PROVEN_CODE_FACTS_PROOF_PACK",
-                      "proven-code-facts-proof-pack-v2",
+                      "proven-code-facts-proof-pack-v3",
                       CanonicalMediaType.APPLICATION_JSON),
                   "gap-ledger.json",
                   new PayloadSpec(
                       "PROVEN_CODE_FACTS_GAP_LEDGER",
-                      "proven-code-facts-gap-ledger-v2",
+                      "proven-code-facts-gap-ledger-v3",
                       CanonicalMediaType.APPLICATION_JSON),
                   "fact-accounting.json",
                   new PayloadSpec(
                       "PROVEN_CODE_FACTS_FACT_ACCOUNTING",
-                      "proven-code-facts-fact-accounting-v2",
+                      "proven-code-facts-fact-accounting-v3",
                       CanonicalMediaType.APPLICATION_JSON)));
       FactMaterial factMaterial = parseFacts(factPayloads, discoveryMaterial, graphMaterial);
       List<ArtifactReference> upstreamArtifacts =
@@ -154,6 +156,9 @@ final class PersistedFlowCompilationInputReader {
           graphMaterial.controlTraversalsByEntry(),
           factMaterial.factsByEntry(),
           factMaterial.gapsByEntry(),
+          factMaterial.proofsById(),
+          graphMaterial.evidenceNodesById(),
+          graphMaterial.boundariesByNodeId(),
           upstreamArtifacts);
     } catch (FlowCompilationReferenceException failure) {
       throw failure;
@@ -251,10 +256,16 @@ final class PersistedFlowCompilationInputReader {
         "application-discovery-application-profile-v2");
     String snapshotId = text(profile, "snapshotId");
     String applicationProfileId = id(profile, "applicationProfileId");
+    String inventoryScopeKind = text(profile, "inventoryScopeKind");
+    boolean repositoryCompletionEligible = requiredBoolean(profile, "repositoryCompletionEligible");
+    if ((!"COMPLETE_CAPTURE".equals(inventoryScopeKind)
+            && !"BOUNDED_PATH_SET".equals(inventoryScopeKind))
+        || (repositoryCompletionEligible && !"COMPLETE_CAPTURE".equals(inventoryScopeKind))) {
+      throw broken();
+    }
     List<FlowEntry> entries = new ArrayList<>();
     for (JsonNode entry : parseJsonLines(payloads.get("entry-points.jsonl"))) {
-      requireJsonLineHeader(
-          entry, "APPLICATION_DISCOVERY_ENTRY_POINTS", "application-discovery-entry-points-v2");
+      requireJsonLineHeader(entry, "application-discovery-entry-point-v2");
       String entryId = id(entry, "entryId");
       if (!"HTTP".equals(text(entry, "protocol"))) throw broken();
       String method = text(entry, "method");
@@ -266,7 +277,28 @@ final class PersistedFlowCompilationInputReader {
     if (entries.size() != entries.stream().map(FlowEntry::entryId).distinct().count()) {
       throw broken();
     }
-    return new DiscoveryMaterial(snapshotId, applicationProfileId, List.copyOf(entries));
+    JsonNode capability = parseJson(payloads.get("capability-report.json"));
+    requireHeader(
+        capability,
+        payloads.get("capability-report.json"),
+        "APPLICATION_DISCOVERY_CAPABILITY_REPORT",
+        "application-discovery-capability-report-v2");
+    if (!applicationProfileId.equals(id(capability, "applicationProfileId"))) throw broken();
+    JsonNode coverage = capability.get("repositoryEntryCoverage");
+    if (coverage == null || !coverage.isObject()) throw broken();
+    List<String> coverageEntryIds = ids(coverage, "entryIds");
+    if (!entryIds(entries).equals(coverageEntryIds)
+        || nonnegativeInt(coverage, "entryCount") != coverageEntryIds.size()
+        || requiredBoolean(coverage, "noEntryDiscovered") != coverageEntryIds.isEmpty()) {
+      throw broken();
+    }
+    boolean repositoryEntryCoverageClosed = requiredBoolean(coverage, "closed");
+    if (repositoryEntryCoverageClosed
+        != ("COMPLETE_CAPTURE".equals(inventoryScopeKind) && repositoryCompletionEligible)) {
+      throw broken();
+    }
+    return new DiscoveryMaterial(
+        snapshotId, applicationProfileId, List.copyOf(entries), repositoryEntryCoverageClosed);
   }
 
   private GraphMaterial parseGraphs(
@@ -274,7 +306,11 @@ final class PersistedFlowCompilationInputReader {
     Map<String, ControlNode> controlNodes = new HashMap<>();
     Map<String, ControlEdge> controlEdges = new HashMap<>();
     Map<String, ControlTraversal> controlTraversals = new HashMap<>();
+    Map<String, BoundaryInvocation> boundariesByNodeId = new HashMap<>();
     Set<String> dataNodeIds = new HashSet<>();
+    Map<String, ProgramNode> programNodesById = new HashMap<>();
+    Set<String> programEdgeIds = new HashSet<>();
+    Map<String, CallTargetEdge> callTargetEdgesById = new HashMap<>();
     for (GraphSpec graph :
         List.of(
             new GraphSpec("code-structure-graph.json", "CODE_STRUCTURE"),
@@ -299,7 +335,12 @@ final class PersistedFlowCompilationInputReader {
         String nodeId = id(node, "nodeId");
         String kind = text(node, "kind");
         List<String> owners = ids(node, "owningEntryIds");
-        if (!entryIds(discovery.entries()).containsAll(owners)) throw broken();
+        if (!entryIds(discovery.entries()).containsAll(owners)
+            || programNodesById.put(
+                    nodeId, new ProgramNode(nodeId, kind, text(node, "canonicalValue"), owners))
+                != null) {
+          throw broken();
+        }
         if ("CONTROL_FLOW".equals(graph.graphKind())) {
           String normalizedCondition = nullableText(node, "normalizedCondition");
           if ("GUARD".equals(kind) != (normalizedCondition != null)
@@ -311,7 +352,32 @@ final class PersistedFlowCompilationInputReader {
             throw broken();
           }
         }
-        if ("DATA_FLOW".equals(graph.graphKind())) dataNodeIds.add(nodeId);
+        if ("DATA_FLOW".equals(graph.graphKind())) {
+          dataNodeIds.add(nodeId);
+          if ("JAVA_BOUNDARY_INVOCATION".equals(kind)
+              && boundariesByNodeId.put(nodeId, boundaryInvocation(node, owners)) != null) {
+            throw broken();
+          }
+        }
+      }
+      JsonNode edges = value.get("edges");
+      if (edges == null || !edges.isArray()) throw broken();
+      for (JsonNode edge : edges) {
+        String edgeId = id(edge, "edgeId");
+        if (!programEdgeIds.add(edgeId)) throw broken();
+        if ("CALL".equals(graph.graphKind())
+            && "CALL_TARGET".equals(text(edge, "kind"))
+            && callTargetEdgesById.put(
+                    edgeId,
+                    new CallTargetEdge(
+                        edgeId,
+                        id(edge, "fromNodeId"),
+                        id(edge, "toNodeId"),
+                        text(edge, "ruleId"),
+                        text(edge, "resolution")))
+                != null) {
+          throw broken();
+        }
       }
       if ("CONTROL_FLOW".equals(graph.graphKind())) {
         for (JsonNode edge : array(value, "edges")) {
@@ -355,8 +421,24 @@ final class PersistedFlowCompilationInputReader {
         || !discovery.applicationProfileId().equals(id(evidence, "applicationProfileId"))) {
       throw broken();
     }
+    Map<String, PersistedEvidenceNode> evidenceNodesById = evidenceNodes(evidence);
     parseJson(payloads.get("graph-index.json"));
     parseJsonLines(payloads.get("graph-gaps.jsonl"));
+    if (discovery.entries().isEmpty()) {
+      if (!controlTraversals.isEmpty()) {
+        throw broken();
+      }
+      return new GraphMaterial(
+          Map.copyOf(controlNodes),
+          Map.copyOf(controlEdges),
+          Map.copyOf(controlTraversals),
+          Set.copyOf(dataNodeIds),
+          Map.copyOf(programNodesById),
+          Set.copyOf(programEdgeIds),
+          Map.copyOf(callTargetEdgesById),
+          Map.copyOf(boundariesByNodeId),
+          Map.copyOf(evidenceNodesById));
+    }
     if (controlNodes.isEmpty()
         || controlEdges.isEmpty()
         || !entryIds(discovery.entries())
@@ -379,7 +461,125 @@ final class PersistedFlowCompilationInputReader {
         Map.copyOf(controlNodes),
         Map.copyOf(controlEdges),
         Map.copyOf(controlTraversals),
-        Set.copyOf(dataNodeIds));
+        Set.copyOf(dataNodeIds),
+        Map.copyOf(programNodesById),
+        Set.copyOf(programEdgeIds),
+        Map.copyOf(callTargetEdgesById),
+        Map.copyOf(boundariesByNodeId),
+        Map.copyOf(evidenceNodesById));
+  }
+
+  private static BoundaryInvocation boundaryInvocation(JsonNode node, List<String> owners) {
+    requireFields(
+        node,
+        Set.of(
+            "nodeId",
+            "kind",
+            "canonicalValue",
+            "owningEntryIds",
+            "evidenceNodeIds",
+            "boundaryInvocation",
+            "unknownBoundaryReturn"));
+    JsonNode invocation = node.get("boundaryInvocation");
+    requireFields(
+        invocation,
+        Set.of(
+            "invocationCallId",
+            "callTargetEdgeId",
+            "staticTargetType",
+            "staticTargetMethod",
+            "staticTargetSignature",
+            "orderedArguments",
+            "controlContext",
+            "sourceLocator",
+            "ruleId"));
+    if (node.get("unknownBoundaryReturn") == null
+        || !node.get("unknownBoundaryReturn").isNull()
+        || owners.isEmpty()
+        || !"java-boundary-invocation-v1".equals(text(invocation, "ruleId"))) {
+      throw broken();
+    }
+    validateBoundaryArguments(invocation.get("orderedArguments"));
+    JsonNode control = invocation.get("controlContext");
+    requireFields(control, Set.of("basicBlockNodeId", "guardNodeId", "polarity"));
+    String guardNodeId = nullableId(control, "guardNodeId");
+    String polarity = nullableText(control, "polarity");
+    if ((guardNodeId == null) != (polarity == null)
+        || (polarity != null && !Set.of("TRUE", "FALSE").contains(polarity))) {
+      throw broken();
+    }
+    return new BoundaryInvocation(
+        id(node, "nodeId"),
+        owners,
+        id(invocation, "invocationCallId"),
+        id(invocation, "callTargetEdgeId"),
+        text(invocation, "staticTargetType"),
+        text(invocation, "staticTargetMethod"),
+        text(invocation, "staticTargetSignature"),
+        id(control, "basicBlockNodeId"),
+        guardNodeId,
+        polarity,
+        locator(invocation.get("sourceLocator")),
+        text(invocation, "ruleId"));
+  }
+
+  private static void validateBoundaryArguments(JsonNode arguments) {
+    List<JsonNode> values = array(arguments);
+    for (int ordinal = 0; ordinal < values.size(); ordinal++) {
+      JsonNode argument = values.get(ordinal);
+      requireFields(argument, Set.of("ordinal", "argumentNodeId", "javaLocalOriginNodeIds"));
+      JsonNode ordinalValue = argument.get("ordinal");
+      if (ordinalValue == null
+          || !ordinalValue.canConvertToInt()
+          || ordinalValue.intValue() != ordinal) {
+        throw broken();
+      }
+      id(argument, "argumentNodeId");
+      ids(argument, "javaLocalOriginNodeIds");
+    }
+  }
+
+  private static Map<String, PersistedEvidenceNode> evidenceNodes(JsonNode evidence) {
+    Map<String, PersistedEvidenceNode> values = new HashMap<>();
+    for (JsonNode node : array(evidence, "nodes")) {
+      requireFields(node, Set.of("evidenceNodeId", "kind", "sourceExcerpt", "ruleApplication"));
+      String evidenceNodeId = id(node, "evidenceNodeId");
+      String kind = text(node, "kind");
+      JsonNode sourceExcerpt = node.get("sourceExcerpt");
+      JsonNode ruleApplication = node.get("ruleApplication");
+      SourceLocatorV1 locator;
+      String ruleId;
+      String ruleVersion;
+      List<String> inputProgramElementIds;
+      if ("SOURCE_EXCERPT".equals(kind)) {
+        requireFields(sourceExcerpt, Set.of("locator", "rawUtf8", "rawUtf8Sha256"));
+        if (ruleApplication == null || !ruleApplication.isNull()) throw broken();
+        text(sourceExcerpt, "rawUtf8");
+        text(sourceExcerpt, "rawUtf8Sha256");
+        locator = locator(sourceExcerpt.get("locator"));
+        ruleId = null;
+        ruleVersion = null;
+        inputProgramElementIds = List.of();
+      } else if ("RULE_APPLICATION".equals(kind)) {
+        if (sourceExcerpt == null || !sourceExcerpt.isNull()) throw broken();
+        requireFields(ruleApplication, Set.of("ruleId", "ruleVersion", "inputProgramElementIds"));
+        ruleId = text(ruleApplication, "ruleId");
+        ruleVersion = text(ruleApplication, "ruleVersion");
+        inputProgramElementIds = ids(ruleApplication, "inputProgramElementIds");
+        locator = null;
+      } else {
+        throw broken();
+      }
+      if (values.put(
+              evidenceNodeId,
+              new PersistedEvidenceNode(
+                  evidenceNodeId, kind, locator, ruleId, ruleVersion, inputProgramElementIds))
+          != null) {
+        throw broken();
+      }
+    }
+    if (values.isEmpty()) throw broken();
+    return values;
   }
 
   private FactMaterial parseFacts(
@@ -391,15 +591,16 @@ final class PersistedFlowCompilationInputReader {
         proven,
         payloads.get("proven-facts.json"),
         "PROVEN_CODE_FACTS_PROVEN_FACTS",
-        "proven-code-facts-proven-facts-v2");
+        "proven-code-facts-proven-facts-v3");
     Map<String, PersistedFact> factsById = new HashMap<>();
     for (JsonNode fact : array(proven, "codeFacts")) {
       String factId = id(fact, "factId");
       String kind = text(fact, "kind");
-      String entryId = entryFromCandidateKey(text(fact, "candidateDenominatorKey"));
+      String candidateDenominatorKey = text(fact, "candidateDenominatorKey");
+      String entryId = entryFromCandidateKey(candidateDenominatorKey);
       if (!entryIds(discovery.entries()).contains(entryId)) throw broken();
       List<String> subjectNodeIds = ids(fact, "subjectNodeIds");
-      requireFactSubjects(kind, subjectNodeIds, graphs);
+      requireFactSubjects(kind, entryId, subjectNodeIds, graphs);
       List<PersistedAtom> atoms = new ArrayList<>();
       for (JsonNode atom : array(fact, "atoms")) {
         atoms.add(
@@ -408,10 +609,14 @@ final class PersistedFlowCompilationInputReader {
                 id(atom, "proofId"),
                 text(atom, "role"),
                 text(atom, "name"),
+                atomValueType(atom),
                 atomCanonicalValue(atom)));
       }
       if (atoms.isEmpty()
-          || factsById.put(factId, new PersistedFact(factId, entryId, kind, subjectNodeIds, atoms))
+          || factsById.put(
+                  factId,
+                  new PersistedFact(
+                      factId, candidateDenominatorKey, entryId, kind, subjectNodeIds, atoms))
               != null) {
         throw broken();
       }
@@ -421,45 +626,87 @@ final class PersistedFlowCompilationInputReader {
         proofs,
         payloads.get("proof-pack.json"),
         "PROVEN_CODE_FACTS_PROOF_PACK",
-        "proven-code-facts-proof-pack-v2");
-    Set<String> closedProofIds = new HashSet<>();
+        "proven-code-facts-proof-pack-v3");
+    Map<String, PersistedProof> proofsById = new HashMap<>();
     for (JsonNode proof : array(proofs, "atomProofs")) {
-      if (!"CLOSED".equals(text(proof, "status")) || !factsById.containsKey(id(proof, "factId"))) {
+      String proofId = id(proof, "proofId");
+      String factId = id(proof, "factId");
+      String atomId = id(proof, "atomId");
+      PersistedFact fact = factsById.get(factId);
+      List<String> requiredEvidenceNodeIds = ids(proof, "requiredEvidenceNodeIds");
+      List<String> requiredProgramEdgeIds = ids(proof, "requiredProgramEdgeIds");
+      List<String> ruleIds = strings(proof, "ruleIds");
+      if (!"CLOSED".equals(text(proof, "status"))
+          || fact == null
+          || !fact.candidateDenominatorKey().equals(text(proof, "candidateDenominatorKey"))
+          || fact.atoms().stream().noneMatch(atom -> atom.atomId().equals(atomId))
+          || !graphs.evidenceNodesById().keySet().containsAll(requiredEvidenceNodeIds)
+          || !graphs.programEdgeIds().containsAll(requiredProgramEdgeIds)
+          || !requiredEvidenceNodeIds.contains(id(proof, "rootEvidenceNodeId"))
+          || proofsById.put(
+                  proofId,
+                  new PersistedProof(
+                      proofId,
+                      factId,
+                      atomId,
+                      id(proof, "rootEvidenceNodeId"),
+                      requiredEvidenceNodeIds,
+                      requiredProgramEdgeIds,
+                      ruleIds,
+                      text(proof, "status")))
+              != null) {
         throw broken();
       }
-      closedProofIds.add(id(proof, "proofId"));
     }
-    if (!factsById.values().stream()
-        .flatMap(value -> value.atoms().stream())
-        .map(PersistedAtom::proofId)
-        .allMatch(closedProofIds::contains)) {
-      throw broken();
+    for (PersistedFact fact : factsById.values()) {
+      for (PersistedAtom atom : fact.atoms()) {
+        PersistedProof proof = proofsById.get(atom.proofId());
+        if (proof == null
+            || !fact.factId().equals(proof.factId())
+            || !atom.atomId().equals(proof.atomId())) {
+          throw broken();
+        }
+      }
+      if ("JAVA_EXACT_CALL".equals(fact.kind())) {
+        requireExactCallClosure(fact, proofsById, graphs);
+      }
     }
     JsonNode ledger = parseJson(payloads.get("gap-ledger.json"));
     requireHeader(
         ledger,
         payloads.get("gap-ledger.json"),
         "PROVEN_CODE_FACTS_GAP_LEDGER",
-        "proven-code-facts-gap-ledger-v2");
+        "proven-code-facts-gap-ledger-v3");
     Map<String, List<PersistedGap>> gapsByEntry = new HashMap<>();
     for (JsonNode gap : array(ledger, "gaps")) {
       String gapId = id(gap, "gapId");
       List<String> affectedEntries = ids(gap, "affectedEntryIds");
+      List<String> affectedCandidateDenominatorKeys =
+          strings(gap, "affectedCandidateDenominatorKeys");
       List<String> evidenceNodeIds = ids(gap, "evidenceNodeIds");
       if (affectedEntries.size() != 1
-          || !entryIds(discovery.entries()).contains(affectedEntries.get(0))) {
+          || !entryIds(discovery.entries()).contains(affectedEntries.get(0))
+          || affectedCandidateDenominatorKeys.isEmpty()
+          || !graphs.evidenceNodesById().keySet().containsAll(evidenceNodeIds)) {
         throw broken();
       }
       gapsByEntry
           .computeIfAbsent(affectedEntries.get(0), ignored -> new ArrayList<>())
-          .add(new PersistedGap(gapId, text(gap, "code"), affectedEntries, evidenceNodeIds));
+          .add(
+              new PersistedGap(
+                  gapId,
+                  text(gap, "kind"),
+                  text(gap, "code"),
+                  affectedEntries,
+                  affectedCandidateDenominatorKeys,
+                  evidenceNodeIds));
     }
     JsonNode accounting = parseJson(payloads.get("fact-accounting.json"));
     requireHeader(
         accounting,
         payloads.get("fact-accounting.json"),
         "PROVEN_CODE_FACTS_FACT_ACCOUNTING",
-        "proven-code-facts-fact-accounting-v2");
+        "proven-code-facts-fact-accounting-v3");
     if (!new HashSet<>(ids(accounting, "admittedFactIds")).equals(factsById.keySet()))
       throw broken();
     Map<String, List<PersistedFact>> groupedFacts = new HashMap<>();
@@ -476,14 +723,33 @@ final class PersistedFlowCompilationInputReader {
     gapsByEntry
         .values()
         .forEach(values -> values.sort(Comparator.comparing(PersistedGap::gapId, UTF8_ORDER)));
-    return new FactMaterial(Map.copyOf(groupedFacts), Map.copyOf(gapsByEntry));
+    return new FactMaterial(
+        Map.copyOf(groupedFacts), Map.copyOf(gapsByEntry), Map.copyOf(proofsById));
   }
 
   private static void requireFactSubjects(
-      String kind, List<String> subjectNodeIds, GraphMaterial graphs) {
+      String kind, String entryId, List<String> subjectNodeIds, GraphMaterial graphs) {
     if ("JAVA_BOUNDARY_INVOCATION".equals(kind)) {
       if (subjectNodeIds.isEmpty() || !graphs.dataNodeIds().containsAll(subjectNodeIds))
         throw broken();
+      return;
+    }
+    if ("JAVA_EXACT_CALL".equals(kind)) {
+      List<ProgramNode> subjects =
+          subjectNodeIds.stream().map(graphs.programNodesById()::get).toList();
+      List<ProgramNode> callSites =
+          subjects.stream()
+              .filter(node -> node != null && "CALL_SITE".equals(node.kind()))
+              .toList();
+      List<ProgramNode> methods =
+          subjects.stream().filter(node -> node != null && "METHOD".equals(node.kind())).toList();
+      if (subjectNodeIds.size() != 2
+          || callSites.size() != 1
+          || methods.size() != 1
+          || !callSites.get(0).owners().contains(entryId)
+          || !methodCanonical(methods.get(0).canonicalValue()).isValid()) {
+        throw broken();
+      }
       return;
     }
     ControlNode guard =
@@ -497,10 +763,153 @@ final class PersistedFlowCompilationInputReader {
     throw broken();
   }
 
+  private static void requireExactCallClosure(
+      PersistedFact fact, Map<String, PersistedProof> proofsById, GraphMaterial graphs) {
+    List<ProgramNode> subjects =
+        fact.subjectNodeIds().stream().map(graphs.programNodesById()::get).toList();
+    ProgramNode callSite =
+        subjects.stream()
+            .filter(node -> node != null && "CALL_SITE".equals(node.kind()))
+            .findFirst()
+            .orElseThrow(PersistedFlowCompilationInputReader::broken);
+    ProgramNode targetMethod =
+        subjects.stream()
+            .filter(node -> node != null && "METHOD".equals(node.kind()))
+            .findFirst()
+            .orElseThrow(PersistedFlowCompilationInputReader::broken);
+    CanonicalMethod target = methodCanonical(targetMethod.canonicalValue());
+    if (!target.isValid() || !callSite.owners().contains(fact.entryId())) throw broken();
+    String callTargetEdgeId = exactCallTargetEdgeId(fact);
+    CallTargetEdge callTarget = graphs.callTargetEdgesById().get(callTargetEdgeId);
+    if (callTarget == null
+        || !callSite.nodeId().equals(callTarget.fromNodeId())
+        || !targetMethod.nodeId().equals(callTarget.toNodeId())
+        || !"java-static-field-receiver-call-v1".equals(callTarget.ruleId())
+        || !"EXACT".equals(callTarget.resolution())) {
+      throw broken();
+    }
+    Map<String, PersistedAtom> atomsByName = new HashMap<>();
+    for (PersistedAtom atom : fact.atoms()) {
+      if (atomsByName.put(atom.name(), atom) != null) throw broken();
+    }
+    if (!atomsByName
+            .keySet()
+            .equals(
+                Set.of(
+                    "INVOCATION_CALL_ID",
+                    "STATIC_TARGET_TYPE",
+                    "STATIC_TARGET_METHOD",
+                    "STATIC_TARGET_SIGNATURE"))
+        || !matchesExactAtom(
+            atomsByName.get("INVOCATION_CALL_ID"), "RELATIONSHIP", "SYMBOL_REF", callSite.nodeId())
+        || !matchesExactAtom(
+            atomsByName.get("STATIC_TARGET_TYPE"), "ATTRIBUTE", "STRING", target.type())
+        || !matchesExactAtom(
+            atomsByName.get("STATIC_TARGET_METHOD"), "ATTRIBUTE", "STRING", target.method())
+        || !matchesExactAtom(
+            atomsByName.get("STATIC_TARGET_SIGNATURE"),
+            "ATTRIBUTE",
+            "STRING",
+            target.signature())) {
+      throw broken();
+    }
+    for (PersistedAtom atom : atomsByName.values()) {
+      PersistedProof proof = proofsById.get(atom.proofId());
+      boolean invocation = "INVOCATION_CALL_ID".equals(atom.name());
+      if (proof == null
+          || !proof.requiredProgramEdgeIds().contains(callTargetEdgeId)
+          || !hasEvidencePair(
+              proof,
+              graphs.evidenceNodesById(),
+              invocation ? callSite.nodeId() : callTargetEdgeId,
+              "java-static-field-receiver-call-v1")
+          || (invocation
+              ? !hasEvidencePair(
+                  proof,
+                  graphs.evidenceNodesById(),
+                  callTargetEdgeId,
+                  "java-static-field-receiver-call-v1")
+              : !hasEvidencePair(
+                  proof,
+                  graphs.evidenceNodesById(),
+                  targetMethod.nodeId(),
+                  "source-element-parser-v1"))) {
+        throw broken();
+      }
+    }
+  }
+
+  private static boolean matchesExactAtom(
+      PersistedAtom atom, String role, String valueType, String canonicalValue) {
+    return atom != null
+        && role.equals(atom.role())
+        && valueType.equals(atom.valueType())
+        && canonicalValue.equals(atom.canonicalValue());
+  }
+
+  private static boolean hasEvidencePair(
+      PersistedProof proof,
+      Map<String, PersistedEvidenceNode> evidenceNodesById,
+      String programNodeId,
+      String ruleId) {
+    boolean hasSource = false;
+    boolean hasRule = false;
+    for (String evidenceNodeId : proof.requiredEvidenceNodeIds()) {
+      PersistedEvidenceNode evidence = evidenceNodesById.get(evidenceNodeId);
+      if (evidence == null) throw broken();
+      hasSource |= "SOURCE_EXCERPT".equals(evidence.kind()) && evidence.sourceLocator() != null;
+      hasRule |=
+          "RULE_APPLICATION".equals(evidence.kind())
+              && ruleId.equals(evidence.ruleId())
+              && "v1".equals(evidence.ruleVersion())
+              && evidence.inputProgramElementIds().contains(programNodeId);
+    }
+    return hasSource && hasRule;
+  }
+
+  private static String exactCallTargetEdgeId(PersistedFact fact) {
+    String prefix = fact.entryId() + "|";
+    String suffix = "|JAVA_EXACT_CALL";
+    if (!fact.candidateDenominatorKey().startsWith(prefix)
+        || !fact.candidateDenominatorKey().endsWith(suffix)) {
+      throw broken();
+    }
+    String value =
+        fact.candidateDenominatorKey()
+            .substring(prefix.length(), fact.candidateDenominatorKey().length() - suffix.length());
+    try {
+      return ArtifactId.parse(value).value();
+    } catch (RuntimeException invalid) {
+      throw broken();
+    }
+  }
+
+  private static CanonicalMethod methodCanonical(String value) {
+    int hash = value.indexOf('#');
+    int parameters = value.indexOf('(', hash + 1);
+    if (hash <= 0
+        || hash != value.lastIndexOf('#')
+        || parameters <= hash + 1
+        || !value.endsWith(")")) {
+      return CanonicalMethod.invalid();
+    }
+    return new CanonicalMethod(
+        value.substring(0, hash),
+        value.substring(hash + 1, parameters),
+        value.substring(hash + 1),
+        true);
+  }
+
   private static String atomCanonicalValue(JsonNode atom) {
     JsonNode value = atom.get("value");
     if (value == null || !value.isObject()) throw broken();
     return text(value, "canonical");
+  }
+
+  private static String atomValueType(JsonNode atom) {
+    JsonNode value = atom.get("value");
+    if (value == null || !value.isObject()) throw broken();
+    return text(value, "type");
   }
 
   private JsonNode parseJson(VerifiedCanonicalPayload payload) {
@@ -536,10 +945,10 @@ final class PersistedFlowCompilationInputReader {
     }
   }
 
-  private static void requireJsonLineHeader(JsonNode value, String type, String schema) {
+  private static void requireJsonLineHeader(JsonNode value, String schema) {
     if (!value.isObject()
         || !schema.equals(text(value, "schemaVersion"))
-        || !type.equals(text(value, "artifactType"))
+        || value.has("artifactType")
         || value.has("artifactId")) {
       throw broken();
     }
@@ -548,21 +957,30 @@ final class PersistedFlowCompilationInputReader {
   private static List<JsonNode> array(JsonNode value, String field) {
     JsonNode child = value.get(field);
     if (child == null || !child.isArray()) throw broken();
+    return array(child);
+  }
+
+  private static List<JsonNode> array(JsonNode value) {
+    if (value == null || !value.isArray()) throw broken();
     List<JsonNode> result = new ArrayList<>();
-    child.forEach(result::add);
+    value.forEach(result::add);
     return List.copyOf(result);
   }
 
   private static String text(JsonNode value, String field) {
     JsonNode child = value.get(field);
-    if (child == null || !child.isTextual() || child.textValue().isBlank()) throw broken();
-    return child.textValue();
+    return text(child);
+  }
+
+  private static String text(JsonNode value) {
+    if (value == null || !value.isTextual() || value.textValue().isBlank()) throw broken();
+    return value.textValue();
   }
 
   private static String id(JsonNode value, String field) {
     String result = text(value, field);
     try {
-      org.sourceanalysis.app.artifact.ArtifactId.parse(result);
+      ArtifactId.parse(result);
       return result;
     } catch (RuntimeException invalid) {
       throw broken();
@@ -588,6 +1006,14 @@ final class PersistedFlowCompilationInputReader {
     return ordered;
   }
 
+  private static List<String> strings(JsonNode value, String field) {
+    List<String> values =
+        array(value, field).stream().map(PersistedFlowCompilationInputReader::text).toList();
+    List<String> ordered = values.stream().sorted(UTF8_ORDER).toList();
+    if (!ordered.equals(values) || ordered.size() != new HashSet<>(ordered).size()) throw broken();
+    return ordered;
+  }
+
   private static List<String> orderedIds(JsonNode value, String field) {
     List<String> values =
         array(value, field).stream().map(PersistedFlowCompilationInputReader::textValueId).toList();
@@ -598,10 +1024,64 @@ final class PersistedFlowCompilationInputReader {
   private static String textValueId(JsonNode value) {
     if (!value.isTextual()) throw broken();
     try {
-      return org.sourceanalysis.app.artifact.ArtifactId.parse(value.textValue()).value();
+      return ArtifactId.parse(value.textValue()).value();
     } catch (RuntimeException invalid) {
       throw broken();
     }
+  }
+
+  private static SourceLocatorV1 locator(JsonNode value) {
+    requireFields(
+        value,
+        Set.of(
+            "fileId",
+            "path",
+            "startByte",
+            "endByteExclusive",
+            "startLine",
+            "startColumn",
+            "endLine",
+            "endColumn"));
+    return new SourceLocatorV1(
+        ArtifactId.parse(id(value, "fileId")),
+        text(value, "path"),
+        longValue(value, "startByte"),
+        longValue(value, "endByteExclusive"),
+        integer(value, "startLine"),
+        integer(value, "startColumn"),
+        integer(value, "endLine"),
+        integer(value, "endColumn"));
+  }
+
+  private static long longValue(JsonNode value, String field) {
+    JsonNode child = value.get(field);
+    if (child == null || !child.canConvertToLong()) throw broken();
+    return child.longValue();
+  }
+
+  private static int integer(JsonNode value, String field) {
+    JsonNode child = value.get(field);
+    if (child == null || !child.canConvertToInt()) throw broken();
+    return child.intValue();
+  }
+
+  private static int nonnegativeInt(JsonNode value, String field) {
+    JsonNode child = value.get(field);
+    if (child == null || !child.isInt() || child.intValue() < 0) throw broken();
+    return child.intValue();
+  }
+
+  private static boolean requiredBoolean(JsonNode value, String field) {
+    JsonNode child = value.get(field);
+    if (child == null || !child.isBoolean()) throw broken();
+    return child.booleanValue();
+  }
+
+  private static void requireFields(JsonNode value, Set<String> expected) {
+    if (value == null || !value.isObject()) throw broken();
+    Set<String> actual = new HashSet<>();
+    value.fieldNames().forEachRemaining(actual::add);
+    if (!actual.equals(expected)) throw broken();
   }
 
   private static List<String> entryIds(List<FlowEntry> entries) {
@@ -612,8 +1092,7 @@ final class PersistedFlowCompilationInputReader {
     int separator = value.indexOf('|');
     if (separator <= 0) throw broken();
     try {
-      return org.sourceanalysis.app.artifact.ArtifactId.parse(value.substring(0, separator))
-          .value();
+      return ArtifactId.parse(value.substring(0, separator)).value();
     } catch (RuntimeException invalid) {
       throw broken();
     }
@@ -636,6 +1115,9 @@ final class PersistedFlowCompilationInputReader {
       Map<String, ControlTraversal> controlTraversalsByEntry,
       Map<String, List<PersistedFact>> factsByEntry,
       Map<String, List<PersistedGap>> gapsByEntry,
+      Map<String, PersistedProof> proofsById,
+      Map<String, PersistedEvidenceNode> evidenceNodesById,
+      Map<String, BoundaryInvocation> boundariesByNodeId,
       List<ArtifactReference> upstreamArtifacts) {}
 
   record FlowEntry(String entryId, String trigger) {}
@@ -659,26 +1141,91 @@ final class PersistedFlowCompilationInputReader {
 
   record PersistedFact(
       String factId,
+      String candidateDenominatorKey,
       String entryId,
       String kind,
       List<String> subjectNodeIds,
       List<PersistedAtom> atoms) {}
 
   record PersistedAtom(
-      String atomId, String proofId, String role, String name, String canonicalValue) {}
+      String atomId,
+      String proofId,
+      String role,
+      String name,
+      String valueType,
+      String canonicalValue) {}
 
   record PersistedGap(
-      String gapId, String code, List<String> affectedEntryIds, List<String> evidenceNodeIds) {}
+      String gapId,
+      String kind,
+      String code,
+      List<String> affectedEntryIds,
+      List<String> affectedCandidateDenominatorKeys,
+      List<String> evidenceNodeIds) {}
+
+  record PersistedProof(
+      String proofId,
+      String factId,
+      String atomId,
+      String rootEvidenceNodeId,
+      List<String> requiredEvidenceNodeIds,
+      List<String> requiredProgramEdgeIds,
+      List<String> ruleIds,
+      String status) {}
+
+  record PersistedEvidenceNode(
+      String evidenceNodeId,
+      String kind,
+      SourceLocatorV1 sourceLocator,
+      String ruleId,
+      String ruleVersion,
+      List<String> inputProgramElementIds) {}
+
+  private record ProgramNode(
+      String nodeId, String kind, String canonicalValue, List<String> owners) {}
+
+  private record CallTargetEdge(
+      String edgeId, String fromNodeId, String toNodeId, String ruleId, String resolution) {}
+
+  private record CanonicalMethod(String type, String method, String signature, boolean isValid) {
+    private static CanonicalMethod invalid() {
+      return new CanonicalMethod(null, null, null, false);
+    }
+  }
+
+  record BoundaryInvocation(
+      String nodeId,
+      List<String> owningEntryIds,
+      String invocationCallId,
+      String callTargetEdgeId,
+      String staticTargetType,
+      String staticTargetMethod,
+      String staticTargetSignature,
+      String controlBlockNodeId,
+      String guardNodeId,
+      String polarity,
+      SourceLocatorV1 sourceLocator,
+      String ruleId) {}
 
   private record DiscoveryMaterial(
-      String snapshotId, String applicationProfileId, List<FlowEntry> entries) {}
+      String snapshotId,
+      String applicationProfileId,
+      List<FlowEntry> entries,
+      boolean repositoryEntryCoverageClosed) {}
 
   private record GraphMaterial(
       Map<String, ControlNode> controlNodesById,
       Map<String, ControlEdge> controlEdgesById,
       Map<String, ControlTraversal> controlTraversalsByEntry,
-      Set<String> dataNodeIds) {}
+      Set<String> dataNodeIds,
+      Map<String, ProgramNode> programNodesById,
+      Set<String> programEdgeIds,
+      Map<String, CallTargetEdge> callTargetEdgesById,
+      Map<String, BoundaryInvocation> boundariesByNodeId,
+      Map<String, PersistedEvidenceNode> evidenceNodesById) {}
 
   private record FactMaterial(
-      Map<String, List<PersistedFact>> factsByEntry, Map<String, List<PersistedGap>> gapsByEntry) {}
+      Map<String, List<PersistedFact>> factsByEntry,
+      Map<String, List<PersistedGap>> gapsByEntry,
+      Map<String, PersistedProof> proofsById) {}
 }

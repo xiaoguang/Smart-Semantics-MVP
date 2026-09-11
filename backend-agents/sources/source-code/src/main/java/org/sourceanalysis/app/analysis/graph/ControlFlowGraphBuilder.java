@@ -14,6 +14,7 @@ import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.stmt.ThrowStmt;
 import com.github.javaparser.ast.stmt.WhileStmt;
+import com.github.javaparser.ast.type.Type;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -1000,7 +1001,7 @@ public final class ControlFlowGraphBuilder {
               graphGaps,
               List.of(),
               inputs.structure().draft().coverage().scopeGapIds(),
-              graphGaps.isEmpty() && inputs.reopened().source().repositoryCompletionEligible()));
+              inputs.structure().draft().coverage().scopeGapIds().isEmpty()));
     }
 
     private static String publicGraphIdentity(
@@ -1194,7 +1195,18 @@ public final class ControlFlowGraphBuilder {
         CompilationUnit unit = parsed.getResult().orElseThrow();
         String packageName =
             unit.getPackageDeclaration().map(value -> value.getNameAsString()).orElse("");
-        for (TypeDeclaration<?> type : unit.findAll(TypeDeclaration.class)) {
+        Map<String, String> explicitImports = new LinkedHashMap<>();
+        unit.getImports().stream()
+            .filter(
+                importDeclaration ->
+                    !importDeclaration.isAsterisk() && !importDeclaration.isStatic())
+            .forEach(
+                importDeclaration -> {
+                  String importedType = importDeclaration.getNameAsString();
+                  explicitImports.put(
+                      importedType.substring(importedType.lastIndexOf('.') + 1), importedType);
+                });
+        for (TypeDeclaration<?> type : unit.getTypes()) {
           String owner =
               packageName.isEmpty()
                   ? type.getNameAsString()
@@ -1203,7 +1215,9 @@ public final class ControlFlowGraphBuilder {
             if (method.getRange().isEmpty()) {
               throw new GraphReferenceException();
             }
-            MethodInfo info = new MethodInfo(document, text, owner, method);
+            MethodInfo info =
+                new MethodInfo(
+                    document, text, owner, method, packageName, Map.copyOf(explicitImports));
             if (methods.putIfAbsent(info.signature(), info) != null) {
               throw new GraphReferenceException();
             }
@@ -1218,7 +1232,9 @@ public final class ControlFlowGraphBuilder {
       CodeStructureSourceDocument document,
       String sourceText,
       String ownerFqn,
-      MethodDeclaration method) {
+      MethodDeclaration method,
+      String packageName,
+      Map<String, String> explicitImports) {
 
     private String signature() {
       return ownerFqn
@@ -1226,7 +1242,7 @@ public final class ControlFlowGraphBuilder {
           + method.getNameAsString()
           + "("
           + method.getParameters().stream()
-              .map(parameter -> typeName(parameter.getTypeAsString()))
+              .map(parameter -> typeName(parameter.getType(), packageName, explicitImports))
               .collect(java.util.stream.Collectors.joining(","))
           + ")";
     }
@@ -1266,13 +1282,28 @@ public final class ControlFlowGraphBuilder {
     }
   }
 
-  private static String typeName(String value) {
-    return switch (value) {
+  private static String typeName(
+      Type type, String packageName, Map<String, String> explicitImports) {
+    String name = type.asString();
+    if (name.endsWith("[]")) {
+      return typeNameString(name.substring(0, name.length() - 2), packageName, explicitImports)
+          + "[]";
+    }
+    return typeNameString(name, packageName, explicitImports);
+  }
+
+  private static String typeNameString(
+      String typeName, String packageName, Map<String, String> explicitImports) {
+    return switch (typeName) {
       case "String" -> "java.lang.String";
       case "Integer" -> "java.lang.Integer";
       case "Long" -> "java.lang.Long";
       case "Boolean" -> "java.lang.Boolean";
-      default -> value;
+      case "int", "long", "boolean", "void", "double", "float", "short", "byte", "char" -> typeName;
+      default ->
+          typeName.contains(".")
+              ? typeName
+              : explicitImports.getOrDefault(typeName, packageName + "." + typeName);
     };
   }
 

@@ -1,5 +1,6 @@
 package org.sourceanalysis.app.analysis.interpretation.model;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -21,11 +22,13 @@ import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalMediaType;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalModulePayload;
+import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.InstalledModulePublication;
 import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.ModuleInstallRequest;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
+import org.sourceanalysis.app.artifact.Sha256Digest;
 
 /** Receipt-last publisher for M5's complete model execution result. */
 public final class InterpretationExecutionSetModulePublisher {
@@ -59,8 +62,8 @@ public final class InterpretationExecutionSetModulePublisher {
           3,
           "registry-freezer",
           "repository-interpretation-registry.json",
-          "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY",
-          "flow-interpretation-repository-interpretation-registry-v2");
+          "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY_MODULE",
+          "flow-interpretation-repository-interpretation-registry-module-v1");
       require(
           tasks,
           4,
@@ -71,6 +74,7 @@ public final class InterpretationExecutionSetModulePublisher {
       ArtifactControls controls = r0.receipt().controls();
       if (!controls.equals(registry.receipt().controls())
           || !controls.equals(tasks.receipt().controls())) throw failure();
+      validateExecution(execution, tasks);
       List<ArtifactReference> upstream =
           List.of(reference(r0), reference(registry), reference(tasks)).stream()
               .sorted(Comparator.comparing(value -> value.artifactId().value()))
@@ -124,7 +128,7 @@ public final class InterpretationExecutionSetModulePublisher {
       InterpretationExecutionSet execution) {
     ObjectNode body = JsonNodeFactory.instance.objectNode();
     body.put("executionSetId", execution.executionSetId());
-    body.put("flowTaskSetId", execution.flowTaskSetPublicationRef().moduleArtifactRoot().value());
+    body.put("flowTaskSetId", execution.flowTaskSetId());
     refs(body.putObject("registryProposalExecutionRef"), execution.registryProposalExecutionRef());
     refs(body.putObject("registryPublicationRef"), execution.registryPublicationRef());
     refs(body.putObject("flowTaskSetPublicationRef"), execution.flowTaskSetPublicationRef());
@@ -132,8 +136,6 @@ public final class InterpretationExecutionSetModulePublisher {
     execution.rounds().forEach(v -> round(rounds.addObject(), v));
     ArrayNode receipts = body.putArray("receipts");
     execution.generationReceipts().forEach(v -> receipt(receipts.addObject(), v));
-    ArrayNode proposals = body.putArray("interpretationProposals");
-    execution.interpretationProposals().forEach(v -> proposal(proposals.addObject(), v));
     ArrayNode candidates = body.putArray("candidates");
     execution.candidates().forEach(v -> candidate(candidates.addObject(), v));
     ArrayNode tasks = body.putArray("modelTaskDispositions");
@@ -175,13 +177,8 @@ public final class InterpretationExecutionSetModulePublisher {
   }
 
   private static void receipt(ObjectNode n, GenerationReceipt v) {
-    n.put("generationReceiptId", v.generationReceiptId());
-    n.put("taskSpecId", v.taskSpecId());
-    ref(n.putObject("configuredRuntime"), v.configuredRuntime());
-    ref(n.putObject("expectedRuntime"), v.expectedRuntime());
-    ref(n.putObject("observedRuntime"), v.observedRuntime());
-    n.put("canonicalRequestSha256", v.canonicalRequestSha256().value());
-    n.put("canonicalResponseSha256", v.canonicalResponseSha256().value());
+    JsonNode value = FlowInterpretationIdentity.receiptProjection(v, true);
+    n.setAll((ObjectNode) value);
   }
 
   private static void proposal(ObjectNode n, InterpretationProposal v) {
@@ -201,7 +198,8 @@ public final class InterpretationExecutionSetModulePublisher {
     n.put("evidenceCapsuleId", v.evidenceCapsuleId());
     n.put("r1RoundId", v.r1RoundId());
     n.put("r2RoundId", v.r2RoundId());
-    strings(n.putArray("interpretationProposalIds"), v.interpretationProposalIds());
+    ArrayNode proposals = n.putArray("interpretationProposals");
+    v.interpretationProposals().forEach(value -> proposal(proposals.addObject(), value));
   }
 
   private static void taskDisposition(ObjectNode n, ModelTaskDisposition v) {
@@ -234,6 +232,188 @@ public final class InterpretationExecutionSetModulePublisher {
   private static void ref(ObjectNode n, ArtifactReference v) {
     n.put("artifactId", v.artifactId().value());
     n.put("sha256", v.sha256().value());
+  }
+
+  private static void validateExecution(
+      InterpretationExecutionSet execution, ReopenedModulePublication taskPublication) {
+    JsonNode taskBody =
+        new CanonicalJsonCodec()
+            .parseCanonical(taskPublication.payloads().get(0).canonicalUtf8())
+            .path("payload");
+    String flowTaskSetId = text(taskBody, "flowTaskSetId");
+    if (!flowTaskSetId.equals(execution.flowTaskSetId())) throw failure();
+    if (!execution.flowTaskSetPublicationRef().equals(taskPublication.reference())
+        || !moduleReferenceMatches(
+            taskBody.path("registryPublicationRef"), execution.registryPublicationRef())) {
+      throw failure();
+    }
+    java.util.Map<String, JsonNode> tasks = new java.util.HashMap<>();
+    for (JsonNode task : taskBody.path("tasks")) {
+      String taskId = text(task, "taskSpecId");
+      FlowModelTask materialized = materializeTask(task);
+      if (!taskId.equals(FlowInterpretationIdentity.taskId(materialized))
+          || tasks.put(taskId, task) != null) throw failure();
+    }
+    validateTaskRuntimePolicy(taskBody.path("runtimePolicy"), tasks.values());
+    if (execution.generationReceipts().size() != execution.rounds().size()
+        || execution.modelTaskDispositions().size() != tasks.size()) throw failure();
+    java.util.Map<String, ModelRound> rounds = new java.util.HashMap<>();
+    for (ModelRound round : execution.rounds()) {
+      if (rounds.put(round.taskSpecId(), round) != null || !tasks.containsKey(round.taskSpecId())) {
+        throw failure();
+      }
+    }
+    java.util.Map<String, GenerationReceipt> receipts = new java.util.HashMap<>();
+    for (GenerationReceipt receipt : execution.generationReceipts()) {
+      JsonNode task = tasks.get(receipt.taskSpecId());
+      ModelRound round = rounds.get(receipt.taskSpecId());
+      if (task == null
+          || round == null
+          || receipts.put(receipt.taskSpecId(), receipt) != null
+          || !receipt.generationReceiptId().equals(FlowInterpretationIdentity.receiptId(receipt))
+          || !text(task, "flowSliceId").equals(receipt.flowSliceId())
+          || !text(task, "inputJsonSha256").equals(receipt.requestSha256().value())
+          || !round.canonicalResponseSha256().equals(receipt.responseSha256())
+          || !text(task, "configuredAdapterId").equals(receipt.configuredAdapterId())
+          || !text(task, "configuredAuthMode").equals(receipt.configuredAuthMode())
+          || !runtime(task.path("expectedRuntime")).equals(receipt.expectedRuntime())
+          || !receipt.expectedRuntime().equals(receipt.observedRuntime())
+          || receipt.taskShardId() != null
+          || !receipt.started()
+          || !receipt.completed()) throw failure();
+    }
+    java.util.Map<String, ModelTaskDisposition> dispositions = new java.util.HashMap<>();
+    for (ModelTaskDisposition disposition : execution.modelTaskDispositions()) {
+      JsonNode task = tasks.get(disposition.taskSpecId());
+      if (task == null
+          || dispositions.put(disposition.taskSpecId(), disposition) != null
+          || !text(task, "flowSliceId").equals(disposition.flowSliceId())
+          || !text(task, "round").equals(disposition.round())) throw failure();
+      if ("RESPONSE_ACCEPTED".equals(disposition.state())) {
+        ModelRound round = rounds.get(disposition.taskSpecId());
+        GenerationReceipt receipt = receipts.get(disposition.taskSpecId());
+        if (round == null
+            || receipt == null
+            || !round.modelRoundId().equals(disposition.modelRoundId())
+            || !receipt.generationReceiptId().equals(disposition.generationReceiptId()))
+          throw failure();
+      }
+    }
+    for (FlowInterpretationCandidate candidate : execution.candidates()) {
+      if (!candidate.candidateId().equals(FlowInterpretationIdentity.candidateId(candidate))
+          || candidate.interpretationProposals().stream()
+              .anyMatch(
+                  proposal ->
+                      !candidate.flowSliceId().equals(proposal.flowSliceId())
+                          || !proposal
+                              .interpretationProposalId()
+                              .equals(FlowInterpretationIdentity.proposalId(proposal))))
+        throw failure();
+      ModelTaskDisposition r1 = dispositionForFlow(dispositions, candidate.flowSliceId(), "R1");
+      ModelTaskDisposition r2 = dispositionForFlow(dispositions, candidate.flowSliceId(), "R2");
+      if (r1 == null
+          || r2 == null
+          || !"RESPONSE_ACCEPTED".equals(r1.state())
+          || !"RESPONSE_ACCEPTED".equals(r2.state())
+          || !candidate.r1RoundId().equals(r1.modelRoundId())
+          || !candidate.r2RoundId().equals(r2.modelRoundId())) throw failure();
+    }
+    String expectedId =
+        FlowInterpretationIdentity.executionSetId(
+            flowTaskSetId,
+            execution.rounds(),
+            execution.generationReceipts(),
+            execution.candidates(),
+            execution.modelTaskDispositions(),
+            execution.flowDispositions());
+    if (!expectedId.equals(execution.executionSetId())) throw failure();
+  }
+
+  private static String text(JsonNode source, String field) {
+    JsonNode value = source.get(field);
+    if (value == null || !value.isTextual() || value.textValue().isBlank()) throw failure();
+    return value.textValue();
+  }
+
+  private static FlowModelTask materializeTask(JsonNode task) {
+    ImmutableBytes input = new CanonicalJsonCodec().encodeCanonical(task.path("inputJson"));
+    Sha256Digest inputSha = new Sha256Digest(text(task, "inputJsonSha256"));
+    if (!inputSha.equals(new Sha256Digest(sha256(input.copyToByteArray())))) throw failure();
+    return new FlowModelTask(
+        text(task, "taskSpecId"),
+        text(task, "taskKind"),
+        text(task, "round"),
+        text(task, "flowSliceId"),
+        text(task, "evidenceCapsuleId"),
+        text(task, "isolatedSessionKey"),
+        strings(task.path("allowedKeys")),
+        input,
+        inputSha,
+        new Sha256Digest(text(task, "outputSchemaSha256")),
+        new Sha256Digest(text(task, "promptBundleSha256")),
+        text(task, "configuredAdapterId"),
+        text(task, "configuredAuthMode"),
+        reference(task.path("expectedRuntimeRef")),
+        runtime(task.path("expectedRuntime")));
+  }
+
+  private static void validateTaskRuntimePolicy(
+      JsonNode runtimePolicy, java.util.Collection<JsonNode> taskNodes) {
+    if (!runtimePolicy.isObject()) throw failure();
+    for (JsonNode task : taskNodes) {
+      String prefix = "R1".equals(text(task, "round")) ? "r1" : "r2";
+      if (!text(runtimePolicy, prefix + "ConfiguredAdapterId")
+              .equals(text(task, "configuredAdapterId"))
+          || !text(runtimePolicy, prefix + "ConfiguredAuthMode")
+              .equals(text(task, "configuredAuthMode"))
+          || !reference(runtimePolicy.path(prefix + "ExpectedRuntimeRef"))
+              .equals(reference(task.path("expectedRuntimeRef")))
+          || !runtime(runtimePolicy.path(prefix + "ExpectedRuntime"))
+              .equals(runtime(task.path("expectedRuntime")))) throw failure();
+    }
+  }
+
+  private static ModelTaskDisposition dispositionForFlow(
+      java.util.Map<String, ModelTaskDisposition> dispositions, String flowSliceId, String round) {
+    return dispositions.values().stream()
+        .filter(value -> flowSliceId.equals(value.flowSliceId()) && round.equals(value.round()))
+        .findFirst()
+        .orElse(null);
+  }
+
+  private static boolean moduleReferenceMatches(
+      JsonNode source, ModulePublicationReference reference) {
+    return source.isObject()
+        && reference.moduleArtifactRoot().value().equals(text(source, "moduleArtifactRoot"))
+        && reference.moduleReceiptId().value().equals(text(source, "moduleReceiptId"))
+        && reference.moduleReceiptSha256().value().equals(text(source, "moduleReceiptSha256"));
+  }
+
+  private static java.util.List<String> strings(JsonNode source) {
+    if (!source.isArray()) throw failure();
+    java.util.List<String> values = new java.util.ArrayList<>();
+    for (JsonNode value : source) {
+      if (!value.isTextual() || value.textValue().isBlank()) throw failure();
+      values.add(value.textValue());
+    }
+    values.sort(String::compareTo);
+    if (values.size() != new java.util.HashSet<>(values).size()) throw failure();
+    return java.util.List.copyOf(values);
+  }
+
+  private static ArtifactReference reference(JsonNode source) {
+    if (!source.isObject()) throw failure();
+    return new ArtifactReference(
+        ArtifactId.parse(text(source, "artifactId")), new Sha256Digest(text(source, "sha256")));
+  }
+
+  private static org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1 runtime(
+      JsonNode source) {
+    return new org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1(
+        text(source, "upstreamProvider"),
+        text(source, "model"),
+        text(source, "reasoningEffort"),
+        text(source, "sandbox"));
   }
 
   private static ArtifactReference reference(ReopenedModulePublication p) {

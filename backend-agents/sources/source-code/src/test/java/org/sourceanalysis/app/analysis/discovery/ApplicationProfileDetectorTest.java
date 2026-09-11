@@ -79,6 +79,36 @@ class ApplicationProfileDetectorTest {
   }
 
   @Test
+  void recognizesStandardSpringBootWebAndMyBatisPlusStartersAsStaticCapabilities() {
+    VerifiedSourceInventoryReference frozenSource = frozenSource();
+    VerifiedSourceTextReader sourceHandle =
+        reference ->
+            sourceTextSet(
+                List.of(
+                    text(
+                        "service/pom.xml",
+                        """
+                        <project>
+                          <dependencies>
+                            <dependency><artifactId>spring-boot-starter-web</artifactId></dependency>
+                            <dependency><artifactId>mybatis-plus-boot-starter</artifactId></dependency>
+                          </dependencies>
+                        </project>
+                        """)));
+
+    ApplicationProfile profile =
+        new ApplicationProfileDetector(sourceHandle)
+            .detect(frozenSource, DiscoveryProfile.standard());
+
+    assertThat(profile.frameworkSignals())
+        .extracting(FrameworkSignal::kind)
+        .containsExactly(FrameworkSignalKind.MYBATIS, FrameworkSignalKind.SPRING_MVC);
+    assertThat(profile.frameworkSignals())
+        .extracting(signal -> signal.sourceExcerpt().locator().path())
+        .containsOnly("service/pom.xml");
+  }
+
+  @Test
   void rejectsConflictingJavaReleaseSignalsFromTheSameVerifiedRepository() {
     VerifiedSourceInventoryReference frozenSource = frozenSource();
     VerifiedSourceTextReader sourceHandle =

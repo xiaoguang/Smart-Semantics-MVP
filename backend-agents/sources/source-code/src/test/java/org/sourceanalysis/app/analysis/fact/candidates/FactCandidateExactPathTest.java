@@ -31,18 +31,34 @@ class FactCandidateExactPathTest {
 
       FactRegistry registry = FactRegistry.standardJavaBoundary();
       FactCandidateSet result = new FactCandidateEnumerator().enumerate(inputs, registry);
+      var boundaryCandidates =
+          result.candidates().stream()
+              .filter(candidate -> "JAVA_BOUNDARY_INVOCATION".equals(candidate.kind()))
+              .toList();
+      var exactCandidates =
+          result.candidates().stream()
+              .filter(candidate -> "JAVA_EXACT_CALL".equals(candidate.kind()))
+              .toList();
 
-      assertThat(result.candidates()).hasSize(2);
-      assertThat(result.candidates())
+      assertThat(result.candidates()).hasSize(6);
+      assertThat(boundaryCandidates).hasSize(2);
+      assertThat(boundaryCandidates)
           .extracting(FactCandidateSet.FactCandidate::entryId)
           .doesNotHaveDuplicates()
           .containsExactlyInAnyOrder("entry:" + digest("approve"), "entry:" + digest("cancel"));
-      assertThat(result.candidates())
+      assertThat(boundaryCandidates)
           .extracting(FactCandidateSet.FactCandidate::subjectNodeIds)
           .allSatisfy(subjects -> assertThat(subjects).hasSize(1));
-      assertThat(result.candidates())
+      assertThat(boundaryCandidates)
           .extracting(FactCandidateSet.FactCandidate::candidateFactKey)
           .containsOnly("JAVA_BOUNDARY_INVOCATION");
+      assertThat(exactCandidates)
+          .hasSize(4)
+          .extracting(FactCandidateSet.FactCandidate::candidateFactKey)
+          .containsOnly("JAVA_EXACT_CALL");
+      assertThat(exactCandidates)
+          .extracting(FactCandidateSet.FactCandidate::denominatorKey)
+          .doesNotHaveDuplicates();
 
       // The implementation must expose a complete denominator, including scoped failures. A
       // second test will remove one required argument/control/evidence relation through a
@@ -51,6 +67,7 @@ class FactCandidateExactPathTest {
       assertThat(result.notApplicableDispositions()).isEmpty();
       assertThat(
               result.candidates().stream()
+                  .filter(candidate -> "JAVA_BOUNDARY_INVOCATION".equals(candidate.kind()))
                   .sorted(java.util.Comparator.comparing(FactCandidateSet.FactCandidate::entryId))
                   .toList())
           .extracting(FactCandidateSet.FactCandidate::boundaryNodeId)

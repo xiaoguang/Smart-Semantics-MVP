@@ -59,17 +59,17 @@ public final class FactLedgerPublicationSpecifier {
 
   private static final String PROVEN_FACTS_FILE = "proven-facts.json";
   private static final String PROVEN_FACTS_TYPE = "PROVEN_CODE_FACTS_PROVEN_FACTS";
-  private static final String PROVEN_FACTS_SCHEMA = "proven-code-facts-proven-facts-v2";
+  private static final String PROVEN_FACTS_SCHEMA = "proven-code-facts-proven-facts-v3";
   private static final String PROOF_PACK_FILE = "proof-pack.json";
   private static final String PROOF_PACK_TYPE = "PROVEN_CODE_FACTS_PROOF_PACK";
-  private static final String PROOF_PACK_SCHEMA = "proven-code-facts-proof-pack-v2";
+  private static final String PROOF_PACK_SCHEMA = "proven-code-facts-proof-pack-v3";
   private static final String GAP_LEDGER_FILE = "gap-ledger.json";
   private static final String GAP_LEDGER_TYPE = "PROVEN_CODE_FACTS_GAP_LEDGER";
-  private static final String GAP_LEDGER_SCHEMA = "proven-code-facts-gap-ledger-v2";
+  private static final String GAP_LEDGER_SCHEMA = "proven-code-facts-gap-ledger-v3";
   private static final String FACT_ACCOUNTING_FILE = "fact-accounting.json";
   private static final String FACT_ACCOUNTING_TYPE = "PROVEN_CODE_FACTS_FACT_ACCOUNTING";
-  private static final String FACT_ACCOUNTING_SCHEMA = "proven-code-facts-fact-accounting-v2";
-  private static final String MODULE_VERSION = "v2";
+  private static final String FACT_ACCOUNTING_SCHEMA = "proven-code-facts-fact-accounting-v3";
+  private static final String MODULE_VERSION = "v3";
   private static final Comparator<String> UTF8_ORDER = FactLedgerPublicationSpecifier::compareUtf8;
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
@@ -314,6 +314,12 @@ public final class FactLedgerPublicationSpecifier {
                 .filter(candidate -> "JAVA_GUARD_CONDITION".equals(candidate.kind()))
                 .map(FactLedgerPublicationSpecifier::candidateKey)
                 .toList());
+    List<String> exactCallCandidateKeys =
+        sortedStrings(
+            candidates.candidates().stream()
+                .filter(candidate -> "JAVA_EXACT_CALL".equals(candidate.kind()))
+                .map(FactLedgerPublicationSpecifier::candidateKey)
+                .toList());
     List<String> admittedFacts =
         sortedStrings(
             decisions.codeFacts().stream().map(ProofDecisionSet.CodeFact::factId).toList());
@@ -346,6 +352,7 @@ public final class FactLedgerPublicationSpecifier {
         candidateKeys,
         boundaryCandidateKeys,
         guardCandidateKeys,
+        exactCallCandidateKeys,
         admittedFacts,
         rejectedCandidates,
         admittedAtoms,
@@ -359,6 +366,7 @@ public final class FactLedgerPublicationSpecifier {
     strings(body.putArray("externalEffectGapIds"), externalGapIds);
     strings(body.putArray("boundaryCandidateDenominatorKeys"), boundaryCandidateKeys);
     strings(body.putArray("guardCandidateDenominatorKeys"), guardCandidateKeys);
+    strings(body.putArray("exactCallCandidateDenominatorKeys"), exactCallCandidateKeys);
     body.put("candidateFactCount", candidateKeys.size());
     body.put("admittedFactCount", admittedFacts.size());
     body.put("rejectedFactCount", rejectedCandidates.size());
@@ -376,17 +384,21 @@ public final class FactLedgerPublicationSpecifier {
       List<String> candidateKeys,
       List<String> boundaryCandidateKeys,
       List<String> guardCandidateKeys,
+      List<String> exactCallCandidateKeys,
       List<String> admittedFacts,
       List<String> rejectedCandidates,
       List<String> admittedAtoms,
       List<String> rejectedAtoms,
       List<String> externalGapIds) {
+    List<String> partitionedCandidateKeys = new ArrayList<>(boundaryCandidateKeys);
+    partitionedCandidateKeys.addAll(guardCandidateKeys);
+    partitionedCandidateKeys.addAll(exactCallCandidateKeys);
     if (!sameKeys(
             candidateKeys,
             decisions.factDispositions().stream()
                 .map(ProofDecisionSet.FactDisposition::candidateDenominatorKey)
                 .toList())
-        || candidateKeys.size() != boundaryCandidateKeys.size() + guardCandidateKeys.size()
+        || !sameKeys(candidateKeys, partitionedCandidateKeys)
         || !sameKeys(
             boundaryCandidateKeys,
             decisions.externalEffectGaps().stream()

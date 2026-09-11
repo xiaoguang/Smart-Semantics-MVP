@@ -77,6 +77,7 @@ class FlowCompilationTest {
                 List.of(),
                 List.of(),
                 List.of())),
+        List.of(),
         List.of());
   }
 
@@ -89,7 +90,9 @@ class FlowCompilationTest {
         8,
         64,
         96,
-        32);
+        32,
+        64,
+        256);
   }
 
   private static String sha256(String value) {

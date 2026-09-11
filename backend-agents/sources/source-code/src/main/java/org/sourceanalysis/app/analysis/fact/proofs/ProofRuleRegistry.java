@@ -6,7 +6,7 @@ import java.util.Objects;
 /** Closed, versioned registry of source-rule pairs that can close a frozen-Java Fact atom. */
 public record ProofRuleRegistry(String schemaVersion, List<RuleAllowance> allowances) {
 
-  private static final String SCHEMA_VERSION = "proven-code-facts-proof-rules-v1";
+  private static final String SCHEMA_VERSION = "proven-code-facts-proof-rules-v3";
 
   public ProofRuleRegistry {
     if (!SCHEMA_VERSION.equals(schemaVersion)) {
@@ -20,13 +20,14 @@ public record ProofRuleRegistry(String schemaVersion, List<RuleAllowance> allowa
     }
   }
 
-  /** Returns the complete v0 allowlist for generic Java boundary invocation candidates. */
+  /** Returns the complete v3 allowlist for Java boundary, guard-condition, and exact-call facts. */
   public static ProofRuleRegistry standardJavaBoundary() {
     return new ProofRuleRegistry(
         SCHEMA_VERSION,
         List.of(
             allowance(SubjectCategory.CALL_SITE, List.of("java-static-field-receiver-call-v1")),
             allowance(SubjectCategory.CALL_TARGET, List.of("java-static-field-receiver-call-v1")),
+            allowance(SubjectCategory.METHOD, List.of("source-element-parser-v1")),
             allowance(SubjectCategory.BOUNDARY_INVOCATION, List.of("java-boundary-invocation-v1")),
             allowance(SubjectCategory.ARGUMENT_TO_BOUNDARY, List.of("java-boundary-argument-v1")),
             allowance(
@@ -63,6 +64,7 @@ public record ProofRuleRegistry(String schemaVersion, List<RuleAllowance> allowa
   public enum SubjectCategory {
     CALL_SITE,
     CALL_TARGET,
+    METHOD,
     BOUNDARY_INVOCATION,
     ARGUMENT_TO_BOUNDARY,
     JAVA_LOCAL_ORIGIN,

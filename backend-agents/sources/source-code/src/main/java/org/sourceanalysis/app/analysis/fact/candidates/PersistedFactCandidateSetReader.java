@@ -35,9 +35,9 @@ import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 public final class PersistedFactCandidateSetReader {
 
   private static final String ARTIFACT_TYPE = "PROVEN_CODE_FACTS_FACT_CANDIDATE_SET";
-  private static final String SCHEMA_VERSION = "proven-code-facts-fact-candidate-set-v2";
+  private static final String SCHEMA_VERSION = "proven-code-facts-fact-candidate-set-v3";
   private static final String FILE_NAME = "fact-candidate-set.json";
-  private static final String MODULE_VERSION = "v2";
+  private static final String MODULE_VERSION = "v3";
   private static final Set<String> ENVELOPE_FIELDS =
       Set.of(
           "artifactId",
@@ -94,6 +94,17 @@ public final class PersistedFactCandidateSetReader {
           "kind",
           "normalizedCondition",
           "requiredAtoms");
+  private static final Set<String> EXACT_CALL_CANDIDATE_FIELDS =
+      Set.of(
+          "callSiteNodeId",
+          "callTargetEdgeId",
+          "candidateFactKey",
+          "entryId",
+          "evidenceNodeIdsBySubject",
+          "kind",
+          "requiredAtoms",
+          "targetCanonicalMethod",
+          "targetMethodNodeId");
   private static final Set<String> ARGUMENT_FIELDS =
       Set.of("argumentEdgeId", "argumentNodeId", "javaLocalOriginNodeIds", "ordinal");
   private static final Set<String> EVIDENCE_FIELDS =
@@ -313,6 +324,19 @@ public final class PersistedFactCandidateSetReader {
                 requiredText(candidate, "guardNodeId"),
                 requiredText(candidate, "normalizedCondition"),
                 texts(requiredArray(candidate, "branchEdgeIds"))));
+      } else if ("JAVA_EXACT_CALL".equals(kind)) {
+        requireExactFields(candidate, EXACT_CALL_CANDIDATE_FIELDS);
+        result.add(
+            new FactCandidateSet.FactCandidate(
+                requiredText(candidate, "candidateFactKey"),
+                requiredText(candidate, "entryId"),
+                kind,
+                requiredText(candidate, "callSiteNodeId"),
+                requiredText(candidate, "callTargetEdgeId"),
+                requiredText(candidate, "targetMethodNodeId"),
+                requiredText(candidate, "targetCanonicalMethod"),
+                evidence(requiredArray(candidate, "evidenceNodeIdsBySubject")),
+                atoms(requiredArray(candidate, "requiredAtoms"))));
       } else {
         throw failure();
       }

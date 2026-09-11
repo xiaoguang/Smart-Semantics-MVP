@@ -1,12 +1,12 @@
 package org.sourceanalysis.app.analysis.interpretation.proposal;
 
 import java.util.Objects;
-import org.sourceanalysis.app.artifact.ArtifactReference;
+import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 
 /** One complete provider response, retaining the observed runtime identity outside model JSON. */
 public record RegistryProposalProviderResponse(
-    ArtifactReference observedRuntime, ImmutableBytes canonicalResponseJson) {
+    ModelRuntimeIdentityV1 observedRuntime, ImmutableBytes canonicalResponseJson) {
 
   public RegistryProposalProviderResponse {
     Objects.requireNonNull(observedRuntime, "observed runtime");

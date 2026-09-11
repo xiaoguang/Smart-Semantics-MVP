@@ -292,7 +292,10 @@ final class PersistedProgramGraphInputReader implements ProgramGraphInputReader 
 
   private List<ObjectNode> jsonLines(byte[] bytes) {
     String text = new String(bytes, StandardCharsets.UTF_8);
-    if (text.isEmpty() || !text.endsWith("\n")) {
+    if (text.isEmpty()) {
+      return List.of();
+    }
+    if (!text.endsWith("\n")) {
       throw failure();
     }
     List<ObjectNode> lines = new ArrayList<>();

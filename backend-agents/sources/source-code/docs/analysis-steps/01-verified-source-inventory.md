@@ -2,7 +2,9 @@
 
 > 总体设计权威：[Source Code Analysis Agent 总体设计](../DESIGN.md)。运行顺序只由文件名中的 `01-` 与运行目录 `steps/01-verified-source-inventory/` 表达。
 
-本文示例严格使用DESIGN §1.3的`NARRATIVE_ILLUSTRATION | STRUCTURAL_WIRE_SPECIMEN | STRICT_REPLAY_GOLDEN`分类；未标为strict的digest/size/ID不可复制为golden。权威字段表、enum、identity和direct-preimage合同始终exact，不能靠示例降级删除。
+本文示例严格使用[基础合同 §3.1](../references/foundation-and-publication-contracts.md#31-文档示例分类)的`NARRATIVE_ILLUSTRATION | STRUCTURAL_WIRE_SPECIMEN | STRICT_REPLAY_GOLDEN`分类；未标为strict的digest/size/ID不可复制为golden。权威字段表、enum、identity和direct-preimage合同始终exact，不能靠示例降级删除。
+
+本步骤冻结的 source inventory、source locator/excerpt 与 private read handle 也为 Step 06 的 noFlow 入口取材提供唯一来源边界；它只保证材料身份，不解释业务语义。
 
 ## 1. 为什么存在
 
@@ -19,7 +21,7 @@ analysis core的输入是exact `analysis-run-request-v2`中的`sourceRegistratio
 capture是VerifiedSourceInventory之前的显式本地maintenance Adapter，不是`RepositoryAnalysisAgent`方法，也不由analysis worker隐式触发。唯一允许路径的命令形状是：
 
 ~~~text
-capture-local-git --repository <local-path> --commit <exact-40-lower-hex>
+source-analysis capture-local-git --repository-path <absolute-local-path> --commit <exact-40-lower-hex>
 ~~~
 
 `repository`只用于定位本地Git object database，`commit`必须直接命名一个commit object；不接受branch/tag/short SHA。v0明确选择**受约束Git CLI plumbing实现**，不引入JGit/Maven依赖：bootstrap只解析一次本地git-dir和受信absolute Git executable；ProcessBuilder不经shell。每个子进程先`environment.clear()`，再只设置`LC_ALL=C`、`LANG=C`、`HOME=<private-empty-dir>`、`XDG_CONFIG_HOME=<private-empty-dir>`、`GIT_CONFIG_NOSYSTEM=1`、`GIT_CONFIG_GLOBAL=<private-empty-file>`、`GIT_NO_LAZY_FETCH=1`、`GIT_TERMINAL_PROMPT=0`、`GIT_OPTIONAL_LOCKS=0`、`GIT_PAGER=cat`、`PAGER=cat`；不继承`PATH`或其他ambient variable。`--git-dir=<NOFOLLOW-validated-absolute-git-dir>`与`--no-replace-objects`只作为固定argv传入。用`cat-file`验证commit/tree/blob并读取raw blob bytes，用NUL分隔的tree plumbing枚举；不经alias/pager/credential/helper。解析后的git-dir/object/config路径逐段NOFOLLOW，命令前后identity不变。它不读ref/index/工作区文件、hooks、filters、submodule工作区或客户代码，不联网；检测到local config include/promisor/partial-clone/alternates设置、objects/info/alternates、replace/graft/shallow输入、missing object或需要lazy fetch时直接失败，不尝试fallback。
@@ -79,7 +81,7 @@ Adapter从commit tree递归枚举全部tracked entries：tree只作容器，`100
 6. 按canonical path排序，证明`trackedRegularFileIds = verifiedRegularFileIds ⊎ unverifiedRegularFileIds`及`verifiedRegularFileIds = analyzableTextFileIds ⊎ nonAnalyzableMediaFileIds`；安装成功要求`unverifiedRegularFileIds=∅`，不能把unverified项记成Gap后发布成功。随后计算与绝对root、时间和线程无关的snapshotId。
 7. 对`COMPLETE_CAPTURE`重算capture completeness proof：declared regular-file ID集必须精确等于capture manifest regular-file ID集；对`BOUNDED_PATH_SET`固定completion-ineligible Gap。
 8. 文件可按稳定fileId分片验证；所有shard denominator必须两两不交叠且union精确等于声明inventory，改变shard size/顺序不能改变输出。
-9. M1/M2使用DESIGN 13.3.1 `CanonicalModuleArtifactStore`立即安装canonical payload+`module-receipt.json`。M3只从reopened M1/M2 publications构造并在自己的module publication中安装**恰好三个**semantic payload：`source-input.json`、`verified-snapshot.json`、`source-inventory.jsonl`，再写M3 module receipt；M3不含analysis step root、analysis step receipt bytes或receipt descriptor。`CanonicalAnalysisStepArtifactStore`fresh reopen M3 reference，逐bytes安装同三项public payload，计算analysis step root，并最后创建绑定M3 reference的`verified-source-inventory-receipt.json`。
+9. M1/M2使用[Canonical 持久化合同](../references/canonical-persistence-identity-contracts.md) `CanonicalModuleArtifactStore`立即安装canonical payload+`module-receipt.json`。M3只从reopened M1/M2 publications构造并在自己的module publication中安装**恰好三个**semantic payload：`source-input.json`、`verified-snapshot.json`、`source-inventory.jsonl`，再写M3 module receipt；M3不含analysis step root、analysis step receipt bytes或receipt descriptor。`CanonicalAnalysisStepArtifactStore`fresh reopen M3 reference，逐bytes安装同三项public payload，计算analysis step root，并最后创建绑定M3 reference的`verified-source-inventory-receipt.json`。
 
 ## 4. 生成的可观察产物
 
@@ -158,6 +160,18 @@ Adapter从commit tree递归枚举全部tracked entries：tree只作容器，`100
 
 产品运行时模型调用数固定为 0。
 
+### 7.1 简化业务路线中的 M1–M3 I/O 映射
+
+这张表只补充下游业务用途，不修改第 8 节的稳定技术 Interface、wire、Proof、持久化或测试。
+
+| 现有 Module | 稳定技术输入 → 输出 | BusinessMaterialBuilder 的直接用途 |
+| --- | --- | --- |
+| M1 FrozenRequestAdmission | frozen request/registration → 已接受的精确来源请求 | 提供 source snapshot/revision/scope 的最小输入绑定；不提供业务含义 |
+| M2 VerifiedSourceIndexer | 已接受请求 + opaque source handle → 完整 verified file index 与安全 read handles | 只允许从冻结、已验证、可定位文件生成 SourceRef；media/unsupported disposition 继续保留 |
+| M3 VerifiedSourceInventoryPublicationSpecifier | reopened M1/M2 → source-input、verified-snapshot、source-inventory | 给 Step 02–06 一个共同源码身份；BusinessMaterialBuilder 可通过既有 reader 读短片段，不 walk 工作区 |
+
+示例：若下游要解释 DepotHeadController 中一个入口，M1 只证明请求绑定哪个快照，M2 只证明该 Java 文件和行索引可安全读取，M3 只发布稳定引用。业务名称、目的、岗位、活动和结果均由后续模型从完整材料解释。本步骤仍为 0 模型；source/hash/path 漂移仍按既有 fatal 规则停止。M1–M3 的开发测试继续覆盖其现有 public seams，不增加业务词典或业务结果断言。
+
 ## 8. 技术合同
 
 ### 8.0 Capture wire records（VerifiedSourceInventory外部maintenance seam）
@@ -216,8 +230,8 @@ SourceRegistration
 - **给下游的后置保证**：M1 publication已由shared store安装并可重开；列表已排序/计数，每项都有gitMode/mediaType/size/SHA/disposition，textEncoding按disposition必为UTF-8或null，M2没有inventory发现职责。
 - **明确非目标**：不访问文件 bytes，不 clone/fetch，不补文件，不判断 Java/MyBatis 语义。
 - **公共测试 seam 与验收**：以 `admit(byte[] exactRequestJson, CaptureReceiptView receipt, ProfileView profile)` 做纯函数测试；八文件 fixture 通过但 completion-ineligible，完整多目录 capture 为 eligible；unknown/duplicate/path escape/empty inventory/capture mismatch/伪 COMPLETE 各以指定 code 失败或指定 Gap。
-- **Luna/xhigh 测试指南**：创建 `FrozenRequestAdmissionTest`，冻结输入/golden 放 `src/test/resources/analysis/inventory/request-admission/`。依次只加一个 RED：八文件 exact request→golden artifact、unknown/duplicate、empty/path escape、capture mismatch、乱序 determinism；expected JSON/IDs 由本 schema 手写，首个 RED 应因 public seam/artifact 尚缺而失败。仅可 mock `CaptureReceiptView/ProfileView` 的只读边界，禁止 mock parser/canonical/identity或碰 private 实现。精确命令：`mvn -Dtest=FrozenRequestAdmissionTest test`；禁网络/live Provider/客户 Maven。偏离按 DESIGN 13.11 MUST STOP并交 Sol/ultra Design Authority。
-- **Terra/xhigh 实现指南**：仅观察上述预期RED后修改`analysis/inventory/request-admission/`，实现public `FrozenRequestAdmission`、`AdmittedSourceRequest`及`verified-source-inventory-admitted-source-request-v2` writer/parser；通过DESIGN 13.3.1 store安装payload+receipt，按strict parse→registration/capture refs→path/mode/disposition→budget，复用run/capture artifacts，不从filesystem补字段。不得兼容v1默认、改golden/schema/failure。
+- **Luna/xhigh 测试指南**：创建 `FrozenRequestAdmissionTest`，冻结输入/golden 放 `src/test/resources/analysis/inventory/request-admission/`。依次只加一个 RED：八文件 exact request→golden artifact、unknown/duplicate、empty/path escape、capture mismatch、乱序 determinism；expected JSON/IDs 由本 schema 手写，首个 RED 应因 public seam/artifact 尚缺而失败。仅可 mock `CaptureReceiptView/ProfileView` 的只读边界，禁止 mock parser/canonical/identity或碰 private 实现。精确命令：`mvn -Dtest=FrozenRequestAdmissionTest test`；禁网络/live Provider/客户 Maven。偏离按 [总体设计](../DESIGN.md)的 Design Authority 边界 MUST STOP并交 Sol/ultra Design Authority。
+- **Terra/xhigh 实现指南**：仅观察上述预期RED后修改`analysis/inventory/request-admission/`，实现public `FrozenRequestAdmission`、`AdmittedSourceRequest`及`verified-source-inventory-admitted-source-request-v2` writer/parser；通过[Canonical 持久化合同](../references/canonical-persistence-identity-contracts.md) store安装payload+receipt，按strict parse→registration/capture refs→path/mode/disposition→budget，复用run/capture artifacts，不从filesystem补字段。不得兼容v1默认、改golden/schema/failure。
 
 #### M2 VerifiedSourceIndexer
 
@@ -230,7 +244,7 @@ SourceRegistration
 - **给下游的后置保证**：M3 得到完整、排序、rootless 的 snapshot/inventory drafts，任一 record 都可通过 registry handle 重开并重验 SHA。
 - **明确非目标**：不解析 Java/XML，不生成 route/Fact，不缓存可变 byte buffer 供下游绕过 source handle。
 - **公共测试 seam 与验收**：以可注入的 read-only `SnapshotHandle` 测试 stat/read/reopen；八文件局部正例、非空完整多目录 capture、single-byte mutation、ancestor/file symlink、UTF-8、size race、缺/重叠 shard、不同 root/shard replay 全部命中预期。
-- **Luna/xhigh 测试指南**：创建 `VerifiedSourceIndexerTest`，fixtures/goldens 放 `src/test/resources/analysis/inventory/source-index/`。RED 顺序：八文件 verify→golden index、hash/size、UTF-8、ancestor/file symlink、read-race、different-root same IDs、fresh-reopen重验；每个测试只暴露一个行为，初始应因indexer/artifact缺失失败。只可 fake `SnapshotHandle` 与文件stat/read故障，canonicalizer/hash/identity不得mock。命令：`mvn -Dtest=VerifiedSourceIndexerTest test`；无网络/客户执行。异常 RED/偏离按 DESIGN 13.10–13.11。
+- **Luna/xhigh 测试指南**：创建 `VerifiedSourceIndexerTest`，fixtures/goldens 放 `src/test/resources/analysis/inventory/source-index/`。RED 顺序：八文件 verify→golden index、hash/size、UTF-8、ancestor/file symlink、read-race、different-root same IDs、fresh-reopen重验；每个测试只暴露一个行为，初始应因indexer/artifact缺失失败。只可 fake `SnapshotHandle` 与文件stat/read故障，canonicalizer/hash/identity不得mock。命令：`mvn -Dtest=VerifiedSourceIndexerTest test`；无网络/客户执行。异常 RED/偏离按 [总体设计](../DESIGN.md)的安全与变更边界。
 - **Terra/xhigh 实现指南**：RED后仅拥有`analysis/inventory/source-index/`，实现public `VerifiedSourceIndexer`、`VerifiedFile`、`VerifiedSnapshotDraft`与`verified-source-inventory-verified-source-index-v2`；输入只能来自reopened M1 publication+opaque registered handle，输出通过shared store安装payload+receipt。逐片实现NOFOLLOW/stat→hash→post-read→text/media分支→accounting→snapshot ID；禁止缓存/Java对象旁路、解析media或调整failure等级。
 
 #### M3 VerifiedSourceInventoryPublicationSpecifier
@@ -244,12 +258,12 @@ SourceRegistration
 - **给下游的后置保证**：分析步骤“应用发现” 获得一个 immutable VerifiedSourceInventoryReference，能只凭 receipt/artifact roots 验证输入并按 source identity 重开 bytes。
 - **明确非目标**：不重新读取/修复文件，不启动 分析步骤“应用发现”，不把本地 root/异常/时间写入 identity。
 - **公共测试 seam 与验收**：M1–M3 module publication统一使用`CanonicalModuleArtifactStore.install/reopen`，随后必须通过真实`CanonicalAnalysisStepArtifactStore`；测试M3 exact three descriptors、store-last analysis step receipt、M3→analysis step provenance、各partial-install点、identical collision=`ALREADY_INSTALLED`、different collision和unsupported atomic move。只有三组完整module publications加四文件reader-visible analysis step set能返回VerifiedSourceInventoryReference。
-- **Luna/xhigh 测试指南**：创建 `VerifiedSourceInventoryPublicationSpecifierTest`，fixtures/goldens放 `src/test/resources/analysis/inventory/publish/`。RED顺序：M3 exact-three golden、AnalysisStep store four-file output、receipt-last/provenance、missing/SHA mutation、各partial-install点、collision/atomic unsupported、valid receipt reopen；禁止mock canonical/root/receipt stores。命令：`mvn -Dtest=VerifiedSourceInventoryPublicationSpecifierTest test`；禁网络/live Provider/客户Maven。偏离遵循DESIGN 13.11。
-- **Terra/xhigh 实现指南**：RED后仅拥有`analysis/inventory/publish/`，共享存储只调用DESIGN 13.3.1两个store；实现package-internal `VerifiedSourceInventoryPublicationSpecifier`与public`VerifiedSourceInventoryReference`。只读reopened M1/M2 payloads+receipts，安装exact-three M3 payload+receipt，再用typed `AnalysisStepInstallRequest`发布三项+store receipt；不得生成旧的单一publication envelope或预报root/receipt。任何store/schema/cross-analysis step contract改变MUST STOP。
+- **Luna/xhigh 测试指南**：创建 `VerifiedSourceInventoryPublicationSpecifierTest`，fixtures/goldens放 `src/test/resources/analysis/inventory/publish/`。RED顺序：M3 exact-three golden、AnalysisStep store four-file output、receipt-last/provenance、missing/SHA mutation、各partial-install点、collision/atomic unsupported、valid receipt reopen；禁止mock canonical/root/receipt stores。命令：`mvn -Dtest=VerifiedSourceInventoryPublicationSpecifierTest test`；禁网络/live Provider/客户Maven。偏离遵循[总体设计](../DESIGN.md)的 Design Authority 边界。
+- **Terra/xhigh 实现指南**：RED后仅拥有`analysis/inventory/publish/`，共享存储只调用[Canonical 持久化合同](../references/canonical-persistence-identity-contracts.md)两个store；实现package-internal `VerifiedSourceInventoryPublicationSpecifier`与public`VerifiedSourceInventoryReference`。只读reopened M1/M2 payloads+receipts，安装exact-three M3 payload+receipt，再用typed `AnalysisStepInstallRequest`发布三项+store receipt；不得生成旧的单一publication envelope或预报root/receipt。任何store/schema/cross-analysis step contract改变MUST STOP。
 
 ### 8.1.1 模块 artifact wire schemas
 
-M1/M2 JSON payload使用DESIGN 13.3的`ModuleArtifact<T>` envelope；M3使用analysis step schema注册的两个JSON policies和一个`CANONICAL_JSONL` policy，`source-inventory.jsonl`不是伪JSON envelope。每个目录另有DESIGN 13.3.1 `module-receipt-v1`且必须经shared store原子安装/重开。以下字段集合固定；`!`=required non-null，`?`=required nullable。未列字段是unknown field并拒绝。
+M1/M2 JSON payload使用[既有公共与模块合同 §5](../references/inherited-public-and-module-contracts.md#5-moduleartifactmodulereceipt-与-modulefailure)的`ModuleArtifact<T>` envelope；M3使用analysis step schema注册的两个JSON policies和一个`CANONICAL_JSONL` policy，`source-inventory.jsonl`不是伪JSON envelope。每个目录另有[Canonical 持久化合同](../references/canonical-persistence-identity-contracts.md) `module-receipt-v1`且必须经shared store原子安装/重开。以下字段集合固定；`!`=required non-null，`?`=required nullable。未列字段是unknown field并拒绝。
 
 | module artifact | schemaVersion / artifactType | 精确 upstream | payload、来源和排序 |
 | --- | --- | --- | --- |
@@ -259,7 +273,7 @@ M1/M2 JSON payload使用DESIGN 13.3的`ModuleArtifact<T>` envelope；M3使用ana
 | `modules/03-publish/verified-snapshot.json` | `verified-snapshot-v2` / `VERIFIED_SNAPSHOT` | 与上一行相同的M3 install request/receipt binding | `snapshotId!`、`declaredRepositoryIdentity!`、`objectFormat=SHA1!`、`originRevision!`、`captureReceiptRef!`、`snapshotManifestRef!`、scope/eligibility、`verificationPolicyRef!`、`capabilityProfileRef!`、`resourceBudgetRef!`、`trackedRegularFileCount!`、`verifiedRegularFileCount!`、`unverifiedRegularFileCount=0!`、text/media counts、五个sorted file-ID sets、shard/accounting proof、`sourceIntegrity!`；不含analysis step root/receipt |
 | `modules/03-publish/source-inventory.jsonl` | `verified-source-inventory-source-inventory-v2` / `VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY` | 与上一行相同的M3 install request/receipt binding | 每行exact `source-inventory-entry-v2 {fileId!,path!,gitMode!,mediaType!,sizeBytes!,sha256!,analysisDisposition!,textEncoding?,lineIndexDigest?}`；按path UTF-8 bytes严格排序，零行禁止；不含summary/root/receipt |
 
-`inventoryScope.scopeRoot`只在scope kind需要逻辑相对根时非空，绝不保存本地绝对root。M3这三行共同属于**一次**module install和一个`module-receipt.json`，不是三个模块；它们的exact bytes随后由AnalysisStep store安装成同名analysis step semantic files。M3 install request的`upstreamArtifacts`是按ArtifactReference规则排序/去重的四项闭包：M1 payload ref、M2 payload ref、run-request ref、frozen-request ref；M3 receipt必须逐bytes重复该集合。其他模块每个上述payload同目录也必须有receipt；下一模块以完整`ModulePublicationReference`重开，不能只拿artifact ID。`completion.gapRefs`可记录bounded-scope Gap；fatal只写DESIGN 13.3 `ModuleFailure`。旧request/payload versions与旧单一publication envelope均拒绝，不能从extension、UTF-8尝试、ApplicationDiscovery或未来receipt补默认。
+`inventoryScope.scopeRoot`只在scope kind需要逻辑相对根时非空，绝不保存本地绝对root。M3这三行共同属于**一次**module install和一个`module-receipt.json`，不是三个模块；它们的exact bytes随后由AnalysisStep store安装成同名analysis step semantic files。M3 install request的`upstreamArtifacts`是按ArtifactReference规则排序/去重的四项闭包：M1 payload ref、M2 payload ref、run-request ref、frozen-request ref；M3 receipt必须逐bytes重复该集合。其他模块每个上述payload同目录也必须有receipt；下一模块以完整`ModulePublicationReference`重开，不能只拿artifact ID。`completion.gapRefs`可记录bounded-scope Gap；fatal只写[既有公共与模块合同 §5](../references/inherited-public-and-module-contracts.md#5-moduleartifactmodulereceipt-与-modulefailure) `ModuleFailure`。旧request/payload versions与旧单一publication envelope均拒绝，不能从extension、UTF-8尝试、ApplicationDiscovery或未来receipt补默认。
 
 M3的exact调用边界为`VerifiedSourceInventoryPublicationSpecificationInputV1(runId, destination, admittedSourceRequestPublication, verifiedSourceIndexPublication, analysisRunRequestRef, frozenRepositoryRequestRef)`。前两个publication都是完整`ModulePublicationReference`；后两个是完整`ArtifactReference`；`destination`是validated `AnalysisStepPublicationAddress`。这六个组件全部required，未知/重复字段拒绝。specifier从两个publication重开各自payload ref，并把这两个payload ref与两个显式request refs组成上述四项identity闭包；不得将publication receipt/root ID冒充semantic preimage。
 
@@ -318,7 +332,7 @@ ExpectedOriginV2
 
 ### 8.3 Identity 与 canonicalization
 
-`snapshotId = snapshot:lowercaseHex(SHA-256(frame(UTF8("verified-snapshot-id-v2")) || frame(canonicalJson(snapshotIdentityMaterial))))`，其中`frame`严格采用DESIGN 13.3.1的U64BE length framing。identity material包含origin、capture receipt/snapshot-manifest refs、scope、policy/profile/budget refs，以及按path UTF-8 bytes排序的regular-file path/gitMode/mediaType/size/SHA/analysisDisposition/textEncoding-nullability；排除self ID、private root、line-index digest、时间和异常。v1 snapshot ID不得在缺字段时升级或复用为v2。
+`snapshotId = snapshot:lowercaseHex(SHA-256(frame(UTF8("verified-snapshot-id-v2")) || frame(canonicalJson(snapshotIdentityMaterial))))`，其中`frame`严格采用[Canonical 持久化合同](../references/canonical-persistence-identity-contracts.md)的U64BE length framing。identity material包含origin、capture receipt/snapshot-manifest refs、scope、policy/profile/budget refs，以及按path UTF-8 bytes排序的regular-file path/gitMode/mediaType/size/SHA/analysisDisposition/textEncoding-nullability；排除self ID、private root、line-index digest、时间和异常。v1 snapshot ID不得在缺字段时升级或复用为v2。
 
 ### 8.3.1 稳定 source file ID
 
@@ -424,8 +438,8 @@ Wire Reset后的`org.sourceanalysis.app.analysis.inventory`已开始形成源码
 | **已实现（独立capture纵切）** | `LocalGitCommitCaptureAdapter`已在synthetic local Git repository上按exact commit读取raw tree/blob并安装manifest、receipt、content-addressed blob与path-free registration；`LocalGitSourceRegistry`已能只凭registration ID fresh-reopen并核验registration、receipt和manifest，且其返回值不泄露workspace/blob路径或原始字节。它对text/media/100755分类，拒绝tree symlink，且工作区修改不会影响相同commit的capture identity。 |
 | **已实现（M1准入与落盘 writer）** | `FrozenRequestAdmission`已严格解析canonical `analysis-run-request-v2`的ROUND_1/ROUND_2顶层形态，对注入的rootless capture/profile view核对source-registration、frozen request、profile/budget、canonical path、完整regular-file分母与资源预算，并按UTF-8 path顺序生成`AdmittedSourceRequest`。`AdmittedSourceRequestModulePublisher`已将该结果与八项精确上游引用写为`admitted-source-request.json`及store-last module receipt，并可fresh reopen；其direct selector验证完整capture的text/media payload、上游闭包和无Path seam。它不读来源字节。 |
 | **已实现（M2字节核验与module publication）** | `VerifiedSourceIndexer`的唯一public M2 entry接收M1 `ModulePublicationReference`、shared module store与opaque source registry；它先委托`AdmittedSourceRequestModuleReader`严格重开M1 publication，验证module address、success receipt、唯一payload与payload字段，并把payload中真正持久化的source-file declaration与M1 receipt中的source-registration/capture/manifest refs投影为内部`VerifiedSourceIndexInput`。外部调用者不能传M1 Java内存对象或路径；M2不会虚构controls、file ID和partition。随后它只通过注册表提供的opaque snapshot handle重新读取每个已准入文件，逐项重新核对capture身份、path/mode/size/SHA/处置并在字节验证后派生统一`file:` ID；文本以strict UTF-8解码、拒绝NUL/禁用控制字符并建立稳定的行起始byte索引，媒体保持无文本索引。`VerifiedSourceIndexModulePublisher`将结果与exact M1 payload/source-registration closure安装为receipt-last `verified-source-index.json`，并以8.3.2的single full-inventory shard绑定全量`fileId`分母。direct selectors已覆盖M1 fresh reopen、public M2 seam、text/media分区、稳定ID、同长度单字节漂移的`SOURCE_HASH_MISMATCH`、M2 payload/receipt、canonical upstream排序与shard ID重算。 |
-| **已实现（M1→M2→M3真实模块接力）** | `VerifiedSourceInventoryPublicationSpecifier`已在同一个synthetic local Git capture中接收`FrozenRequestAdmission`生成的M1、fresh-reopened M2，以及按完整`ArtifactReference`重验的run/frozen request bytes，构造`source-input.json`、`verified-snapshot.json`与`source-inventory.jsonl`；随后`CanonicalAnalysisStepArtifactStore`原子安装三项并最后写`verified-source-inventory-receipt.json`。该端到端测试包含一项text和一项binary regular file，验证实际M1/M2 publication、单full-inventory shard重算、三项semantic文件和store-last receipt的fresh reopen。共享AnalysisStep store同时已覆盖非空`promptBundleSha256`的持久化往返，避免首次安装成功而重开失败。 |
-| **本步骤产品入口尚未实现** | 统一`RepositoryAnalysisAgent`、CLI和HTTP Adapter尚未实现；因此当前能力仍通过package-internal modules和测试组装，而不能由外部分析请求从已登记客户commit直接启动。它没有产生任何jshERP正式运行结果。后续Adapter阶段应只编排并复用这些已验证publication，不重写M1–M3逻辑。 |
+| **已实现（M1→M2→M3真实模块接力）** | `VerifiedSourceInventoryPublicationSpecifier`已在同一个synthetic local Git capture中接收`FrozenRequestAdmission`生成的M1、fresh-reopened M2，以及按完整`ArtifactReference`重验的run/frozen request bytes，构造`source-input.json`、`verified-snapshot.json`与`source-inventory.jsonl`；随后`CanonicalAnalysisStepArtifactStore`原子安装三项并最后写`verified-source-inventory-receipt.json`。`RegisteredCaptureReceiptProjector`先从fresh-reopened Local Git registration机械投影既有path-free `CaptureReceiptView`，使production runtime不再复制验收测试的file identity/文本媒体处置逻辑。`VerifiedSourceInventoryExecutor`再将既有接力收进一个 production execution seam：它接收注册冻结来源、封闭的请求/冻结请求字节与配置引用，依序委托原有 M1/M2/M3，不接受来源路径也不复制算法。该端到端测试包含一项text和一项binary regular file，验证实际M1/M2 publication、单full-inventory shard重算、三项semantic文件和store-last receipt的fresh reopen。共享AnalysisStep store同时已覆盖非空`promptBundleSha256`的持久化往返，避免首次安装成功而重开失败。 |
+| **本步骤全局产品入口部分实现** | `RepositoryAnalysisAgent`已有`start/inspect`。运行时现在可在新进程中重新打开`start`持久化的**原始canonical request bytes、typed request与run reference**；`PersistedTechnicalRunExecutor`可先完成 Step01/Step02 并返回 `TechnicalDiscoveryWorkflowResult`，供普通业务报告直接生成带 `FLOW_NOT_AVAILABLE` 限制的材料。需要更深技术结论时，同一 executor 仍可显式继续编排 Step03–05，输出五图、Fact/Proof 与 Flow/Capsule，不重做上游 source read。最小 CLI 已有独立`capture-local-git`：它只接受绝对 local path 与完整commit，并经bootstrap固定的 repository identity/policy/budget 写出registration ID；之后分析CLI只接收该ID。完整 executor/bootstrap、HTTP 和任何jshERP正式运行结果仍未完成。后续Adapter阶段只应复用该 executor/publication，不重写M1–M3逻辑。 |
 | **历史证据，不是当前能力** | 已删除的pre-reset纵切曾在小型synthetic repository上验证只读capture、text/media disposition、hash与原子重开。这些结果只保留在Git历史/progress中，不能作为当前SourceAnalysis artifact或jshERP运行结果。 |
 | **下一实现门** | 在统一产品入口实现前，补齐本章尚未覆盖的完整tree、100755、symlink/gitlink、不同private root与资源预算反例；随后由后续Adapter阶段把已登记的完整jshERP commit编排到这条M1→M2→M3链，仍不执行客户Maven或调用模型。 |
 

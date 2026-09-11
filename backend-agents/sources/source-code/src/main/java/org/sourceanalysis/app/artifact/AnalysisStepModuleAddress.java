@@ -29,17 +29,22 @@ public record AnalysisStepModuleAddress(
           AnalysisStepKey.BUSINESS_FLOWS,
           Map.of(1, "flow-compiler", 2, "capsule-projector", 3, "publish"),
           AnalysisStepKey.FLOW_INTERPRETATION,
-          Map.of(
-              1, "registry-task-compiler",
-              2, "registry-proposal-runner",
-              3, "registry-freezer",
-              4, "flow-task-compiler",
-              5, "interpretation-runner",
-              6, "publish"),
+          Map.ofEntries(
+              Map.entry(1, "registry-task-compiler"),
+              Map.entry(2, "registry-proposal-runner"),
+              Map.entry(3, "registry-freezer"),
+              Map.entry(4, "flow-task-compiler"),
+              Map.entry(5, "interpretation-runner"),
+              Map.entry(6, "cross-flow-candidate-compiler"),
+              Map.entry(7, "business-process-task-compiler"),
+              Map.entry(8, "business-process-interpretation-runner"),
+              Map.entry(9, "publish"),
+              Map.entry(10, "business-material-builder"),
+              Map.entry(11, "activity-explainer")),
           AnalysisStepKey.REPOSITORY_KNOWLEDGE,
-          Map.of(1, "admission", 2, "knowledge-merge", 3, "publish"),
+          Map.of(1, "process-explainer"),
           AnalysisStepKey.NINE_SECTION_DOCUMENT,
-          Map.of(1, "planner", 2, "renderer", 3, "trace", 4, "archive"));
+          Map.of(1, "business-report-publisher"));
 
   public AnalysisStepModuleAddress {
     if (runId == null) {

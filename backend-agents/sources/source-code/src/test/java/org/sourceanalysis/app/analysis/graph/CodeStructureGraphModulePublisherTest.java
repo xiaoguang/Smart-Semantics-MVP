@@ -39,9 +39,9 @@ class CodeStructureGraphModulePublisherTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void persistsAndFreshReopensTheCodeStructureDraftBeforeLaterGraphsCanReadIt() {
+  void persistsAndFreshReopensTheCodeStructureDraftUsingThePolicyConfiguredArtifactPrefix() {
     CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
-    CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
+    CanonicalArtifactPolicyRegistry policies = policies(canonicalJson, "code-structure");
     ArtifactControls controls = controls(policies);
     CodeStructureSource source = source(controls);
     CodeStructureDiscovery discovery = discovery();
@@ -258,6 +258,11 @@ class CodeStructureGraphModulePublisherTest {
   }
 
   private static CanonicalArtifactPolicyRegistry policies(CanonicalJsonCodec canonicalJson) {
+    return policies(canonicalJson, "code-structure-graph");
+  }
+
+  private static CanonicalArtifactPolicyRegistry policies(
+      CanonicalJsonCodec canonicalJson, String codeStructureArtifactPrefix) {
     ObjectNode withoutId = JsonNodeFactory.instance.objectNode();
     withoutId.put("schemaVersion", "artifact-policy-registry-v2");
     ArrayNode entries = withoutId.putArray("policies");
@@ -265,7 +270,7 @@ class CodeStructureGraphModulePublisherTest {
         .addObject()
         .put("artifactType", "PROGRAM_GRAPHS_CODE_STRUCTURE_DRAFT")
         .put("schemaVersion", CodeStructureGraphDraft.SCHEMA_VERSION)
-        .put("artifactIdPrefix", "code-structure-graph")
+        .put("artifactIdPrefix", codeStructureArtifactPrefix)
         .put("mediaType", "application/json")
         .put("envelopeKind", "MODULE_ARTIFACT_JSON")
         .put("emptyJsonlAllowed", false)

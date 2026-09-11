@@ -83,10 +83,12 @@
   Round 2 is the only replacement and may run only when explicitly authorized
   against named findings. Never retry automatically, create a third product
   candidate, or rerun another source because one source failed.
-- `FlowInterpretationRound` is a source-Agent-internal review protocol within
-  one reader candidate. Its R1 interpretation and R2 precision review operate
-  on the same frozen Flow and contribute to the same candidate; R2 is not a
-  replacement reader candidate and does not consume another
+- `FlowInterpretationRound` is a Source-Agent-internal interpretation/review
+  protocol within one reader candidate. Its named rounds, inputs, and review
+  semantics are defined only by the nearest source-scoped target design; this
+  shared layer does not prescribe R1/R2 or another fixed internal sequence.
+  Internal flow interpretation contributes to the same candidate, does not
+  create a replacement candidate, and does not consume another
   `ReaderCandidateRound`.
 - Reader Candidate Round 1 prioritizes factual correctness, source identity,
   required coverage, schema, structure, and traceability. Reader Candidate

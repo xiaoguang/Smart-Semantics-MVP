@@ -35,10 +35,10 @@ import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 public final class ProofDecisionSetModulePublisher {
 
   private static final String ARTIFACT_TYPE = "PROVEN_CODE_FACTS_PROOF_DECISION_SET";
-  private static final String SCHEMA_VERSION = "proven-code-facts-proof-decision-set-v2";
+  private static final String SCHEMA_VERSION = "proven-code-facts-proof-decision-set-v3";
   private static final String ARTIFACT_PREFIX = "proven-code-facts-proof-decision-set";
   private static final String FILE_NAME = "proof-decision-set.json";
-  private static final String MODULE_VERSION = "v2";
+  private static final String MODULE_VERSION = "v3";
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
   private final CanonicalJsonCodec canonicalJson;
@@ -113,7 +113,7 @@ public final class ProofDecisionSetModulePublisher {
     ArtifactDescriptor descriptor = payload.descriptor();
     if (!"fact-candidate-set.json".equals(descriptor.fileName())
         || !"PROVEN_CODE_FACTS_FACT_CANDIDATE_SET".equals(descriptor.artifactType())
-        || !"proven-code-facts-fact-candidate-set-v2".equals(descriptor.schemaVersion())) {
+        || !"proven-code-facts-fact-candidate-set-v3".equals(descriptor.schemaVersion())) {
       throw broken();
     }
     JsonNode envelope = canonicalJson.parseCanonical(payload.canonicalUtf8());

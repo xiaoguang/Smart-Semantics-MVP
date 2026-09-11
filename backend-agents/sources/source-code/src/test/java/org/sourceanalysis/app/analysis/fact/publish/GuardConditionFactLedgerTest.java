@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateEnumerator;
@@ -23,7 +25,7 @@ import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 
-/** Locks the v2 fact ledger rule: guards are proved facts, never external-effect gaps. */
+/** Locks the v3 fact ledger rule: guards are proved facts, never external-effect gaps. */
 class GuardConditionFactLedgerTest {
 
   @TempDir Path temporaryDirectory;
@@ -72,17 +74,30 @@ class GuardConditionFactLedgerTest {
           fixture.stepArtifacts().reopen(reference.publication());
       JsonNode accounting = payload(publication, "fact-accounting.json");
       JsonNode gaps = payload(publication, "gap-ledger.json");
+      List<String> exactKeys =
+          candidates.candidates().stream()
+              .filter(candidate -> "JAVA_EXACT_CALL".equals(candidate.kind()))
+              .map(FactCandidateSet.FactCandidate::denominatorKey)
+              .sorted()
+              .toList();
+      assertThat(exactKeys).hasSize(4);
 
       assertThat(accounting.path("schemaVersion").asText())
-          .isEqualTo("proven-code-facts-fact-accounting-v2");
+          .isEqualTo("proven-code-facts-fact-accounting-v3");
       assertThat(accounting.path("boundaryCandidateDenominatorKeys")).hasSize(2);
       assertThat(accounting.path("guardCandidateDenominatorKeys")).hasSize(1);
+      assertThat(accounting.path("exactCallCandidateDenominatorKeys").isArray()).isTrue();
+      List<String> publishedExactKeys = new ArrayList<>();
+      accounting
+          .path("exactCallCandidateDenominatorKeys")
+          .forEach(value -> publishedExactKeys.add(value.asText()));
+      assertThat(publishedExactKeys).containsExactlyElementsOf(exactKeys);
       assertThat(accounting.path("externalEffectGapCount").asInt()).isEqualTo(2);
-      assertThat(gaps.path("schemaVersion").asText()).isEqualTo("proven-code-facts-gap-ledger-v2");
+      assertThat(gaps.path("schemaVersion").asText()).isEqualTo("proven-code-facts-gap-ledger-v3");
       assertThat(payload(publication, "proven-facts.json").path("schemaVersion").asText())
-          .isEqualTo("proven-code-facts-proven-facts-v2");
+          .isEqualTo("proven-code-facts-proven-facts-v3");
       assertThat(payload(publication, "proof-pack.json").path("schemaVersion").asText())
-          .isEqualTo("proven-code-facts-proof-pack-v2");
+          .isEqualTo("proven-code-facts-proof-pack-v3");
       java.util.List<String> gapCandidateKeys = new java.util.ArrayList<>();
       gaps.path("gaps")
           .forEach(
@@ -90,6 +105,7 @@ class GuardConditionFactLedgerTest {
                   gap.path("affectedCandidateDenominatorKeys")
                       .forEach(value -> gapCandidateKeys.add(value.asText())));
       assertThat(gapCandidateKeys).noneMatch(key -> key.contains("|JAVA_GUARD_CONDITION"));
+      assertThat(gapCandidateKeys).doesNotContainAnyElementsOf(exactKeys);
     }
   }
 

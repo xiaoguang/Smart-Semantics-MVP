@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.lang.reflect.Constructor;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -55,6 +56,35 @@ import org.sourceanalysis.app.capture.localgit.SourceRegistrationReference;
 class VerifiedSourceInventoryPublicationSpecifierTest {
 
   @TempDir Path emptyTemporaryDirectory;
+
+  @Test
+  void projectsARegisteredCaptureIntoTheExistingPathFreeReceiptView() throws Exception {
+    CapturedFixture captured = capturedFixture();
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    InputArtifacts inputs =
+        inputArtifacts(canonicalJson, sourceInventoryPolicies(canonicalJson), captured.capture());
+    Class<?> projector =
+        typeOrNull("org.sourceanalysis.app.analysis.inventory.RegisteredCaptureReceiptProjector");
+
+    assertThat(projector)
+        .as(
+            "runtime composition needs the existing capture receipt view without copying test helpers")
+        .isNotNull();
+    assertThat(projector.getDeclaredConstructors())
+        .allSatisfy(
+            constructor -> assertThat(constructor.getParameterTypes()).doesNotContain(Path.class));
+
+    CaptureReceiptView projected =
+        (CaptureReceiptView)
+            projector
+                .getMethod("project", RegisteredSourceCapture.class, ArtifactReference.class)
+                .invoke(
+                    projector.getConstructor().newInstance(),
+                    captured.capture(),
+                    inputs.frozenRequest());
+
+    assertThat(projected).isEqualTo(captureReceipt(captured.capture(), inputs.frozenRequest()));
+  }
 
   @Test
   void exposesThePathFreeM3PublicationSeamBeforeWritingSourceInventoryArtifacts() {
@@ -269,6 +299,113 @@ class VerifiedSourceInventoryPublicationSpecifierTest {
       assertThat(reopened.receipt().status()).isEqualTo(ModuleCompletionStatus.SUCCEEDED);
       assertThat(reopened.semanticPayloads()).hasSize(3);
     }
+  }
+
+  @Test
+  void executesTheExistingM1ThroughM3InventoryModulesFromOneRegisteredCapture() throws Exception {
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = sourceInventoryPolicies(canonicalJson);
+    CapturedFixture captured = capturedFixture();
+    InputArtifacts inputs = inputArtifacts(canonicalJson, policies, captured.capture());
+    AnalysisRunId runId = runId();
+    CaptureReceiptView receipt = captureReceipt(captured.capture(), inputs.frozenRequest());
+    ProfileView profile =
+        new ProfileView(inputs.profileBundleRef(), inputs.resourceBudgetRef(), 10, 1_000_000L);
+    Path executionStore = emptyTemporaryDirectory.resolve("executor");
+    Files.createDirectory(executionStore);
+    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(executionStore)) {
+      CanonicalModuleArtifactStore modules =
+          new FileSystemCanonicalModuleArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(3, 1_000_000, 2_000_000, 8));
+      CanonicalAnalysisStepArtifactStore steps =
+          new FileSystemCanonicalAnalysisStepArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(3, 1_000_000, 2_000_000, 8));
+
+      Object request =
+          newExecutionRequest(
+              runId,
+              inputs.runRequest(),
+              inputs.reopen(inputs.runRequest()),
+              inputs.frozenRequest(),
+              inputs.reopen(inputs.frozenRequest()),
+              captured.capture().sourceRegistrationRef(),
+              inputs.verificationPolicyRef(),
+              inputs.capabilityProfileRef(),
+              receipt,
+              profile);
+      Object executor = newExecutor(modules, steps, captured.registry());
+      VerifiedSourceInventoryReference inventory =
+          (VerifiedSourceInventoryReference)
+              executor
+                  .getClass()
+                  .getMethod("execute", request.getClass())
+                  .invoke(executor, request);
+
+      assertThat(steps.reopen(inventory.publication()).semanticPayloads())
+          .extracting(value -> value.descriptor().fileName())
+          .containsExactly("source-input.json", "source-inventory.jsonl", "verified-snapshot.json");
+    }
+  }
+
+  private static Object newExecutionRequest(
+      AnalysisRunId runId,
+      ArtifactReference requestReference,
+      ImmutableBytes requestBytes,
+      ArtifactReference frozenReference,
+      ImmutableBytes frozenBytes,
+      ArtifactReference sourceRegistration,
+      ArtifactReference verificationPolicy,
+      ArtifactReference capabilityProfile,
+      CaptureReceiptView receipt,
+      ProfileView profile)
+      throws Exception {
+    Class<?> requestType =
+        typeOrNull(
+            "org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryExecutionRequest");
+    assertThat(requestType)
+        .as("the M1-M3 execution seam needs one closed, typed request")
+        .isNotNull();
+    Constructor<?> constructor =
+        requestType.getConstructor(
+            AnalysisRunId.class,
+            ArtifactReference.class,
+            ImmutableBytes.class,
+            ArtifactReference.class,
+            ImmutableBytes.class,
+            ArtifactReference.class,
+            ArtifactReference.class,
+            ArtifactReference.class,
+            CaptureReceiptView.class,
+            ProfileView.class);
+    return constructor.newInstance(
+        runId,
+        requestReference,
+        requestBytes,
+        frozenReference,
+        frozenBytes,
+        sourceRegistration,
+        verificationPolicy,
+        capabilityProfile,
+        receipt,
+        profile);
+  }
+
+  private static Object newExecutor(
+      CanonicalModuleArtifactStore modules,
+      CanonicalAnalysisStepArtifactStore steps,
+      LocalGitSourceRegistry registry)
+      throws Exception {
+    Class<?> executorType =
+        typeOrNull("org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryExecutor");
+    assertThat(executorType)
+        .as("the public runtime needs a production M1-M3 execution module")
+        .isNotNull();
+    return executorType
+        .getConstructor(
+            CanonicalModuleArtifactStore.class,
+            CanonicalAnalysisStepArtifactStore.class,
+            LocalGitSourceRegistry.class)
+        .newInstance(modules, steps, registry);
   }
 
   private static org.sourceanalysis.app.artifact.VerifiedCanonicalPayload payload(

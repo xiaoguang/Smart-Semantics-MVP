@@ -19,10 +19,8 @@ import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
-import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactDescriptor;
 import org.sourceanalysis.app.artifact.ArtifactId;
-import org.sourceanalysis.app.artifact.ArtifactPolicyRegistryReference;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
@@ -45,8 +43,11 @@ public final class PersistedFactCandidateInputReader {
       "application-discovery-capability-report-v2";
   private static final String ENTRY_POINTS_TYPE = "APPLICATION_DISCOVERY_ENTRY_POINTS";
   private static final String ENTRY_POINTS_SCHEMA = "application-discovery-entry-points-v2";
+  private static final String ENTRY_POINT_SCHEMA = "application-discovery-entry-point-v2";
   private static final String MAPPER_CATALOG_TYPE = "APPLICATION_DISCOVERY_MAPPER_CATALOG";
   private static final String MAPPER_CATALOG_SCHEMA = "application-discovery-mapper-catalog-v2";
+  private static final String MAPPER_CATALOG_ENTRY_SCHEMA =
+      "application-discovery-mapper-catalog-entry-v2";
   private static final String CODE_STRUCTURE_TYPE = "PROGRAM_GRAPHS_CODE_STRUCTURE_GRAPH";
   private static final String CODE_STRUCTURE_SCHEMA = "program-graphs-code-structure-graph-v1";
   private static final String CALL_TYPE = "PROGRAM_GRAPHS_CALL_GRAPH";
@@ -109,7 +110,7 @@ public final class PersistedFactCandidateInputReader {
         throw broken();
       }
 
-      ParsedDiscovery reopenedDiscovery = parseDiscovery(source, discovery);
+      ParsedDiscovery reopenedDiscovery = parseDiscovery(source, discovery, sourceText);
       ParsedProgramGraphs reopenedGraphs = parseProgramGraphs(graphs);
       if (!sourceText.snapshotId().equals(reopenedDiscovery.snapshotId())
           || !sourceText.snapshotId().equals(reopenedGraphs.snapshotId())
@@ -177,7 +178,9 @@ public final class PersistedFactCandidateInputReader {
   }
 
   private ParsedDiscovery parseDiscovery(
-      ReopenedAnalysisStepPublication source, ReopenedAnalysisStepPublication publication) {
+      ReopenedAnalysisStepPublication source,
+      ReopenedAnalysisStepPublication publication,
+      VerifiedSourceTextSet sourceText) {
     Map<String, VerifiedCanonicalPayload> payloads =
         requiredPayloads(
             publication,
@@ -202,10 +205,7 @@ public final class PersistedFactCandidateInputReader {
             "languageVersion",
             "frameworkSignals",
             "configSignals",
-            "capabilityProfileRef",
-            "sourceInventoryRef",
-            "verifiedSnapshotRef",
-            "controls"));
+            "capabilityProfileRef"));
     requireHeader(
         profile,
         APPLICATION_PROFILE_TYPE,
@@ -213,13 +213,27 @@ public final class PersistedFactCandidateInputReader {
         payloads.get(key(APPLICATION_PROFILE_TYPE, APPLICATION_PROFILE_SCHEMA)));
     String snapshotId = snapshot(profile, "snapshotId");
     String applicationProfileId = id(profile, "applicationProfileId");
-    controls(profile.get("controls"), publication.receipt().controls());
-    if (!sourcePayloadReference(
-                source, "source-inventory.jsonl", SOURCE_INVENTORY_TYPE, SOURCE_INVENTORY_SCHEMA)
-            .equals(reference(profile.get("sourceInventoryRef")))
-        || !sourcePayloadReference(
-                source, "verified-snapshot.json", VERIFIED_SNAPSHOT_TYPE, VERIFIED_SNAPSHOT_SCHEMA)
-            .equals(reference(profile.get("verifiedSnapshotRef")))) {
+    if (!snapshotId.equals(sourceText.snapshotId())
+        || !sourceText.inventoryScopeKind().equals(text(profile, "inventoryScopeKind"))
+        || sourceText.repositoryCompletionEligible()
+            != requiredBoolean(profile, "repositoryCompletionEligible")
+        || !sourceText.capabilityProfileRef().equals(reference(profile.get("capabilityProfileRef")))
+        || !sourceText
+            .sourceInventoryRef()
+            .equals(
+                sourcePayloadReference(
+                    source,
+                    "source-inventory.jsonl",
+                    SOURCE_INVENTORY_TYPE,
+                    SOURCE_INVENTORY_SCHEMA))
+        || !sourceText
+            .verifiedSnapshotRef()
+            .equals(
+                sourcePayloadReference(
+                    source,
+                    "verified-snapshot.json",
+                    VERIFIED_SNAPSHOT_TYPE,
+                    VERIFIED_SNAPSHOT_SCHEMA))) {
       throw broken();
     }
 
@@ -233,21 +247,65 @@ public final class PersistedFactCandidateInputReader {
             "artifactType",
             "artifactId",
             "applicationProfileId",
-            "repositoryEntryCoverage"));
+            "applicationProfileDraftRef",
+            "httpEntryDiscoveryDraftRef",
+            "mapperCatalogDraftRef",
+            "verifiedSourceInventoryPublicationRef",
+            "httpEntrySites",
+            "mapperCatalogSites",
+            "httpEntryShardReceipts",
+            "mapperCatalogShardReceipts",
+            "repositoryEntryCoverage",
+            "gapRefs",
+            "noEntryDisposition"));
     requireHeader(
         capability,
         CAPABILITY_REPORT_TYPE,
         CAPABILITY_REPORT_SCHEMA,
         payloads.get(key(CAPABILITY_REPORT_TYPE, CAPABILITY_REPORT_SCHEMA)));
     if (!applicationProfileId.equals(id(capability, "applicationProfileId"))) throw broken();
+    reference(capability.get("applicationProfileDraftRef"));
+    reference(capability.get("httpEntryDiscoveryDraftRef"));
+    reference(capability.get("mapperCatalogDraftRef"));
+    sourcePublicationReference(capability.get("verifiedSourceInventoryPublicationRef"), source);
     JsonNode coverage = capability.get("repositoryEntryCoverage");
     fields(
         coverage,
-        Set.of("entryIds", "mapperCatalogEntryIds", "entryCount", "mapperCatalogEntryCount"));
+        Set.of(
+            "entryIds",
+            "mapperCatalogEntryIds",
+            "entryCount",
+            "mapperCatalogEntryCount",
+            "httpEntrySiteCount",
+            "mapperCatalogSiteCount",
+            "noEntryDiscovered",
+            "closed"));
+    if (requiredBoolean(coverage, "closed")
+        != ("COMPLETE_CAPTURE".equals(sourceText.inventoryScopeKind())
+            && sourceText.repositoryCompletionEligible())) throw broken();
     if (!entryIds.equals(ids(coverage.get("entryIds"), "capability entry IDs"))
-        || coverage.get("entryCount").asInt(-1) != entryIds.size()) throw broken();
+        || nonnegativeInt(coverage, "entryCount") != entryIds.size()
+        || requiredBoolean(coverage, "noEntryDiscovered") != entryIds.isEmpty()) throw broken();
 
-    validateMapperCatalog(payloads.get(key(MAPPER_CATALOG_TYPE, MAPPER_CATALOG_SCHEMA)));
+    List<String> mapperCatalogEntryIds =
+        validateMapperCatalog(payloads.get(key(MAPPER_CATALOG_TYPE, MAPPER_CATALOG_SCHEMA)));
+    if (!mapperCatalogEntryIds.equals(
+            ids(coverage.get("mapperCatalogEntryIds"), "capability mapper catalog entry IDs"))
+        || nonnegativeInt(coverage, "mapperCatalogEntryCount") != mapperCatalogEntryIds.size()
+        || nonnegativeInt(coverage, "httpEntrySiteCount")
+            != validateSiteAndShardClosure(
+                capability.get("httpEntrySites"),
+                capability.get("httpEntryShardReceipts"),
+                "HTTP_ENTRY_DECLARATION")
+        || nonnegativeInt(coverage, "mapperCatalogSiteCount")
+            != validateSiteAndShardClosure(
+                capability.get("mapperCatalogSites"),
+                capability.get("mapperCatalogShardReceipts"),
+                "MAPPER_RESOURCE_DECLARATION")) {
+      throw broken();
+    }
+    ids(capability.get("gapRefs"), "capability gap IDs");
+    validateNoEntryDisposition(capability.get("noEntryDisposition"), source, entryIds.isEmpty());
     return new ParsedDiscovery(
         snapshotId,
         applicationProfileId,
@@ -295,7 +353,6 @@ public final class PersistedFactCandidateInputReader {
           entry,
           Set.of(
               "schemaVersion",
-              "artifactType",
               "entryId",
               "kind",
               "protocol",
@@ -305,19 +362,19 @@ public final class PersistedFactCandidateInputReader {
               "handlerFqn",
               "parameterNames",
               "routeSourceExcerpts"));
-      requireJsonlHeader(entry, ENTRY_POINTS_TYPE, ENTRY_POINTS_SCHEMA);
+      requireJsonlSchema(entry, ENTRY_POINT_SCHEMA);
       entries.add(id(entry, "entryId"));
     }
     return FactCandidateInputs.orderedArtifactIds(entries, "discovery entry IDs");
   }
 
-  private void validateMapperCatalog(VerifiedCanonicalPayload payload) {
+  private List<String> validateMapperCatalog(VerifiedCanonicalPayload payload) {
+    List<String> catalogEntryIds = new ArrayList<>();
     for (JsonNode catalog : parseJsonl(payload)) {
       fields(
           catalog,
           Set.of(
               "schemaVersion",
-              "artifactType",
               "catalogEntryId",
               "javaInterfaceFqn",
               "javaMethodCandidates",
@@ -325,8 +382,122 @@ public final class PersistedFactCandidateInputReader {
               "xmlNamespace",
               "xmlStatementCandidates",
               "bindingState"));
-      requireJsonlHeader(catalog, MAPPER_CATALOG_TYPE, MAPPER_CATALOG_SCHEMA);
-      id(catalog, "catalogEntryId");
+      requireJsonlSchema(catalog, MAPPER_CATALOG_ENTRY_SCHEMA);
+      catalogEntryIds.add(id(catalog, "catalogEntryId"));
+    }
+    return FactCandidateInputs.orderedArtifactIds(catalogEntryIds, "mapper catalog entry IDs");
+  }
+
+  private static int validateSiteAndShardClosure(
+      JsonNode sitesValue, JsonNode shardsValue, String expectedSiteKind) {
+    if (sitesValue == null
+        || !sitesValue.isArray()
+        || shardsValue == null
+        || !shardsValue.isArray()) {
+      throw broken();
+    }
+    Set<String> siteIds = new HashSet<>();
+    for (JsonNode site : sitesValue) {
+      fields(
+          site,
+          Set.of(
+              "siteId",
+              "kind",
+              "primaryLocator",
+              "affectedEntryIds",
+              "disposition",
+              "reasonCode",
+              "gapId",
+              "evidenceRefs"));
+      if (!expectedSiteKind.equals(text(site, "kind")) || !siteIds.add(id(site, "siteId"))) {
+        throw broken();
+      }
+      validateLocator(site.get("primaryLocator"));
+      ids(site.get("affectedEntryIds"), "site affected entry IDs");
+      if (!Set.of("SUPPORTED", "UNSUPPORTED", "AMBIGUOUS", "OVER_LIMIT")
+          .contains(text(site, "disposition"))) {
+        throw broken();
+      }
+      nullableText(site, "reasonCode");
+      nullableId(site, "gapId");
+      validateSiteEvidence(site.get("evidenceRefs"));
+    }
+    Set<String> accountedSiteIds = new HashSet<>();
+    Set<String> shardIds = new HashSet<>();
+    for (JsonNode shard : shardsValue) {
+      fields(
+          shard, Set.of("shardId", "denominatorSiteIds", "dispositionSiteIds", "status", "gapIds"));
+      if (!shardIds.add(id(shard, "shardId"))
+          || !Set.of("SUCCEEDED", "SUCCEEDED_WITH_GAPS").contains(text(shard, "status"))) {
+        throw broken();
+      }
+      List<String> denominatorSiteIds = ids(shard.get("denominatorSiteIds"), "shard site IDs");
+      if (!denominatorSiteIds.equals(
+              ids(shard.get("dispositionSiteIds"), "shard disposition site IDs"))
+          || denominatorSiteIds.stream().anyMatch(siteId -> !accountedSiteIds.add(siteId))) {
+        throw broken();
+      }
+      ids(shard.get("gapIds"), "shard gap IDs");
+    }
+    if (!accountedSiteIds.equals(siteIds)) throw broken();
+    return siteIds.size();
+  }
+
+  private static void validateSiteEvidence(JsonNode value) {
+    if (value == null || !value.isArray() || value.isEmpty()) throw broken();
+    for (JsonNode evidence : value) {
+      fields(evidence, Set.of("kind", "sourceExcerpt", "artifactEvidence"));
+      if (!"SOURCE_EXCERPT".equals(text(evidence, "kind"))
+          || evidence.get("sourceExcerpt") == null
+          || evidence.get("sourceExcerpt").isNull()
+          || evidence.get("artifactEvidence") == null
+          || !evidence.get("artifactEvidence").isNull()) {
+        throw broken();
+      }
+      sourceExcerpt(evidence.get("sourceExcerpt"));
+    }
+  }
+
+  private static void validateNoEntryDisposition(
+      JsonNode value, ReopenedAnalysisStepPublication source, boolean noEntries) {
+    if (!noEntries) {
+      if (value == null || !value.isNull()) throw broken();
+      return;
+    }
+    fields(value, Set.of("gapId", "reasonCode", "sourceInventoryPublicationRef"));
+    id(value, "gapId");
+    if (!"NO_ENTRY_DISCOVERED".equals(text(value, "reasonCode"))) throw broken();
+    sourcePublicationReference(value.get("sourceInventoryPublicationRef"), source);
+  }
+
+  private static void sourcePublicationReference(
+      JsonNode value, ReopenedAnalysisStepPublication source) {
+    fields(
+        value,
+        Set.of(
+            "analysisStepKey",
+            "analysisStepArtifactRoot",
+            "analysisStepReceiptId",
+            "analysisStepReceiptSha256"));
+    if (!AnalysisStepKey.VERIFIED_SOURCE_INVENTORY
+            .wireValue()
+            .equals(text(value, "analysisStepKey"))
+        || !source
+            .reference()
+            .analysisStepArtifactRoot()
+            .value()
+            .equals(id(value, "analysisStepArtifactRoot"))
+        || !source
+            .reference()
+            .analysisStepReceiptId()
+            .value()
+            .equals(id(value, "analysisStepReceiptId"))
+        || !source
+            .reference()
+            .analysisStepReceiptSha256()
+            .value()
+            .equals(text(value, "analysisStepReceiptSha256"))) {
+      throw broken();
     }
   }
 
@@ -370,12 +541,16 @@ public final class PersistedFactCandidateInputReader {
         parseEvidenceGraph(payloads.get(key(EVIDENCE_TYPE, EVIDENCE_SCHEMA)));
     validateGraphIdentity(codeStructure, calls, control, data, evidence);
     validateProgramEdgeEndpoints(List.of(codeStructure, calls, control, data));
+    List<String> scopeGapIds =
+        validateCommonScopeCoverage(List.of(codeStructure, calls, control, data));
+    validateEvidenceCoverage(evidence, List.of(codeStructure, calls, control, data));
     validateEvidenceSubjectKinds(evidence.value(), List.of(codeStructure, calls, control, data));
     validateIndex(
         payloads.get(key(INDEX_TYPE, INDEX_SCHEMA)),
         payloads.get(key(GAPS_TYPE, GAPS_SCHEMA)),
         List.of(codeStructure, calls, control, data),
-        evidence);
+        evidence,
+        scopeGapIds);
 
     EnumMap<ProgramGraphKind, FactCandidateInputs.PublicProgramGraph> graphs =
         new EnumMap<>(ProgramGraphKind.class);
@@ -481,7 +656,7 @@ public final class PersistedFactCandidateInputReader {
         parseProgramNodes(document.get("nodes"), expectedKind);
     Map<String, FactCandidateInputs.PublicProgramEdge> edges =
         parseProgramEdges(document.get("edges"));
-    validateCoverage(document.get("coverage"));
+    CoverageProjection coverage = validateCoverage(document.get("coverage"));
     return new ParsedProgramGraph(
         expectedKind,
         root(payload),
@@ -493,6 +668,7 @@ public final class PersistedFactCandidateInputReader {
         applicationProfileId,
         entryIds,
         graphProfileRef,
+        coverage,
         new FactCandidateInputs.PublicProgramGraph(
             expectedKind, root(payload), snapshotId, applicationProfileId, entryIds, nodes, edges));
   }
@@ -719,7 +895,7 @@ public final class PersistedFactCandidateInputReader {
               id(edge, "evidenceNodeId"),
               id(edge, "ruleApplicationNodeId")));
     }
-    validateEvidenceCoverage(document.get("coverage"));
+    CoverageProjection coverage = validateEvidenceCoverage(document.get("coverage"));
     String graphId = id(document, "graphId");
     String snapshotId = snapshot(document, "snapshotId");
     String applicationProfileId = id(document, "applicationProfileId");
@@ -735,8 +911,29 @@ public final class PersistedFactCandidateInputReader {
         applicationProfileId,
         entryIds,
         graphProfileRef,
+        coverage,
         new FactCandidateInputs.PublicEvidenceGraph(
             root(payload), snapshotId, applicationProfileId, entryIds, nodes, edges));
+  }
+
+  private static List<String> validateCommonScopeCoverage(List<ParsedProgramGraph> graphs) {
+    List<String> scopeGapIds = graphs.get(0).coverage().scopeGapIds();
+    for (ParsedProgramGraph graph : graphs) {
+      if (!scopeGapIds.equals(graph.coverage().scopeGapIds())) throw broken();
+    }
+    return scopeGapIds;
+  }
+
+  private static void validateEvidenceCoverage(
+      ParsedEvidenceGraph evidence, List<ParsedProgramGraph> graphs) {
+    Set<String> programElementIds = new HashSet<>();
+    for (ParsedProgramGraph graph : graphs) {
+      programElementIds.addAll(graph.value().nodesById().keySet());
+      programElementIds.addAll(graph.value().edgesById().keySet());
+    }
+    if (!programElementIds.equals(Set.copyOf(evidence.coverage().candidateElementIds()))) {
+      throw broken();
+    }
   }
 
   private void validateGraphIdentity(
@@ -764,7 +961,8 @@ public final class PersistedFactCandidateInputReader {
       VerifiedCanonicalPayload indexPayload,
       VerifiedCanonicalPayload gapsPayload,
       List<ParsedProgramGraph> graphs,
-      ParsedEvidenceGraph evidence) {
+      ParsedEvidenceGraph evidence,
+      List<String> scopeGapIds) {
     JsonNode index = parseJson(indexPayload);
     fields(
         index,
@@ -861,9 +1059,67 @@ public final class PersistedFactCandidateInputReader {
     Map<String, ProgramGraphKind> indexedEdges =
         catalog(index.get("edgeCatalog"), "edgeId", "owningGraphKind", "edgeKind");
     if (!actualNodes.equals(indexedNodes) || !actualEdges.equals(indexedEdges)) throw broken();
+    validateIndexCoverage(index.get("coverage"), graphs, evidence);
     if (!root(gapsPayload).equals(reference(index.get("graphGapsRef")))) throw broken();
-    if (!ids(index.get("gapIds"), "index gap IDs").equals(parseGraphGaps(gapsPayload)))
+    List<String> localGapIds = parseGraphGaps(gapsPayload);
+    List<String> allGapIds = new ArrayList<>(localGapIds);
+    allGapIds.addAll(scopeGapIds);
+    List<String> expectedGapIds =
+        FactCandidateInputs.orderedArtifactIds(allGapIds, "index gap IDs");
+    if (!canonicalIds(index.get("gapIds"), "index gap IDs").equals(expectedGapIds)
+        || !(expectedGapIds.isEmpty() ? "SUCCEEDED" : "SUCCEEDED_WITH_GAPS")
+            .equals(text(index, "status"))) {
       throw broken();
+    }
+  }
+
+  private static void validateIndexCoverage(
+      JsonNode values, List<ParsedProgramGraph> graphs, ParsedEvidenceGraph evidence) {
+    if (values == null || !values.isArray() || values.size() != ProgramGraphKind.values().length) {
+      throw broken();
+    }
+    Map<ProgramGraphKind, CoverageProjection> expected = new EnumMap<>(ProgramGraphKind.class);
+    for (ParsedProgramGraph graph : graphs) {
+      expected.put(graph.graphKind(), graph.coverage());
+    }
+    expected.put(ProgramGraphKind.EVIDENCE, evidence.coverage());
+    for (int index = 0; index < ProgramGraphKind.values().length; index++) {
+      ProgramGraphKind kind = ProgramGraphKind.values()[index];
+      JsonNode value = values.get(index);
+      fields(
+          value,
+          Set.of(
+              "graphKind",
+              "candidateElementIds",
+              "exactElementIds",
+              "gapCandidateElementIds",
+              "excludedCandidateElementIds",
+              "scopeGapIds",
+              "closed"));
+      CoverageProjection projection = expected.get(kind);
+      if (projection == null
+          || !kind.name().equals(text(value, "graphKind"))
+          || !projection
+              .candidateElementIds()
+              .equals(canonicalIds(value.get("candidateElementIds"), "index candidate IDs"))
+          || !projection
+              .exactElementIds()
+              .equals(canonicalIds(value.get("exactElementIds"), "index exact IDs"))
+          || !projection
+              .gapCandidateElementIds()
+              .equals(canonicalIds(value.get("gapCandidateElementIds"), "index gap candidates"))
+          || !projection
+              .excludedCandidateElementIds()
+              .equals(
+                  canonicalIds(
+                      value.get("excludedCandidateElementIds"), "index excluded candidates"))
+          || !projection
+              .scopeGapIds()
+              .equals(canonicalIds(value.get("scopeGapIds"), "index scope gap IDs"))
+          || projection.closed() != requiredBoolean(value, "closed")) {
+        throw broken();
+      }
+    }
   }
 
   private Map<String, ProgramGraphKind> catalog(
@@ -949,8 +1205,8 @@ public final class PersistedFactCandidateInputReader {
       throw broken();
   }
 
-  private static void requireJsonlHeader(JsonNode value, String type, String schema) {
-    if (!type.equals(text(value, "artifactType")) || !schema.equals(text(value, "schemaVersion"))) {
+  private static void requireJsonlSchema(JsonNode value, String schema) {
+    if (!schema.equals(text(value, "schemaVersion"))) {
       throw broken();
     }
   }
@@ -963,40 +1219,10 @@ public final class PersistedFactCandidateInputReader {
   private static ArtifactReference reference(JsonNode value) {
     fields(value, Set.of("artifactId", "sha256"));
     return new ArtifactReference(
-        org.sourceanalysis.app.artifact.ArtifactId.parse(text(value, "artifactId")),
-        new org.sourceanalysis.app.artifact.Sha256Digest(text(value, "sha256")));
+        ArtifactId.parse(text(value, "artifactId")), new Sha256Digest(text(value, "sha256")));
   }
 
-  private static ArtifactPolicyRegistryReference policyRegistryReference(JsonNode value) {
-    fields(value, Set.of("artifactId", "sha256"));
-    return new ArtifactPolicyRegistryReference(
-        org.sourceanalysis.app.artifact.ArtifactId.parse(text(value, "artifactId")),
-        new org.sourceanalysis.app.artifact.Sha256Digest(text(value, "sha256")));
-  }
-
-  private static void controls(JsonNode value, ArtifactControls controls) {
-    fields(
-        value,
-        Set.of(
-            "toolchainSha256",
-            "profileSha256",
-            "schemaBundleSha256",
-            "promptBundleSha256",
-            "artifactPolicyRegistryRef"));
-    if (!controls.toolchainSha256().value().equals(text(value, "toolchainSha256"))
-        || !controls.profileSha256().value().equals(text(value, "profileSha256"))
-        || !controls.schemaBundleSha256().value().equals(text(value, "schemaBundleSha256"))
-        || ((controls.promptBundleSha256() == null) != value.get("promptBundleSha256").isNull())
-        || (controls.promptBundleSha256() != null
-            && !controls.promptBundleSha256().value().equals(text(value, "promptBundleSha256")))
-        || !controls
-            .artifactPolicyRegistryRef()
-            .equals(policyRegistryReference(value.get("artifactPolicyRegistryRef")))) {
-      throw broken();
-    }
-  }
-
-  private static void validateCoverage(JsonNode value) {
+  private static CoverageProjection validateCoverage(JsonNode value) {
     fields(
         value,
         Set.of(
@@ -1006,12 +1232,82 @@ public final class PersistedFactCandidateInputReader {
             "exclusionDispositions",
             "scopeGapIds",
             "closed"));
-    if (!value.get("closed").isBoolean() || !value.get("closed").booleanValue()) throw broken();
+    List<String> candidateElementIds =
+        canonicalIds(value.get("candidateElementIds"), "coverage candidate IDs");
+    List<String> exactElementIds = canonicalIds(value.get("exactElementIds"), "coverage exact IDs");
+    List<String> gapCandidateElementIds = gapCandidateElementIds(value.get("gapDispositions"));
+    List<String> excludedCandidateElementIds =
+        excludedCandidateElementIds(value.get("exclusionDispositions"));
+    List<String> scopeGapIds = canonicalIds(value.get("scopeGapIds"), "coverage scope gap IDs");
+    if (requiredBoolean(value, "closed") != scopeGapIds.isEmpty()) throw broken();
+
+    Set<String> candidates = Set.copyOf(candidateElementIds);
+    Set<String> dispositions = new HashSet<>(exactElementIds);
+    dispositions.addAll(gapCandidateElementIds);
+    dispositions.addAll(excludedCandidateElementIds);
+    if (!candidates.equals(dispositions)
+        || candidateElementIds.size()
+            != exactElementIds.size()
+                + gapCandidateElementIds.size()
+                + excludedCandidateElementIds.size()) {
+      throw broken();
+    }
+    return new CoverageProjection(
+        candidateElementIds,
+        exactElementIds,
+        gapCandidateElementIds,
+        excludedCandidateElementIds,
+        scopeGapIds,
+        requiredBoolean(value, "closed"));
   }
 
-  private static void validateEvidenceCoverage(JsonNode value) {
+  private static CoverageProjection validateEvidenceCoverage(JsonNode value) {
     fields(value, Set.of("candidateProgramElementIds", "evidencedProgramElementIds", "closed"));
-    if (!value.get("closed").isBoolean() || !value.get("closed").booleanValue()) throw broken();
+    List<String> candidateElementIds =
+        canonicalIds(value.get("candidateProgramElementIds"), "evidence candidate IDs");
+    List<String> exactElementIds =
+        canonicalIds(value.get("evidencedProgramElementIds"), "evidenced program element IDs");
+    if (!candidateElementIds.equals(exactElementIds) || !requiredBoolean(value, "closed")) {
+      throw broken();
+    }
+    return new CoverageProjection(
+        candidateElementIds, exactElementIds, List.of(), List.of(), List.of(), true);
+  }
+
+  private static List<String> gapCandidateElementIds(JsonNode values) {
+    if (values == null || !values.isArray()) throw broken();
+    List<String> candidateElementIds = new ArrayList<>();
+    for (JsonNode value : values) {
+      fields(value, Set.of("candidateElementId", "gapId"));
+      candidateElementIds.add(id(value, "candidateElementId"));
+      id(value, "gapId");
+    }
+    return canonicalIdValues(candidateElementIds, "coverage gap candidate IDs");
+  }
+
+  private static List<String> excludedCandidateElementIds(JsonNode values) {
+    if (values == null || !values.isArray()) throw broken();
+    List<String> candidateElementIds = new ArrayList<>();
+    for (JsonNode value : values) {
+      fields(value, Set.of("candidateElementId", "reasonCode", "evidenceNodeIds"));
+      candidateElementIds.add(id(value, "candidateElementId"));
+      text(value, "reasonCode");
+      canonicalIds(value.get("evidenceNodeIds"), "coverage exclusion evidence IDs");
+    }
+    return canonicalIdValues(candidateElementIds, "coverage exclusion candidate IDs");
+  }
+
+  private static List<String> canonicalIds(JsonNode value, String label) {
+    if (value == null || !value.isArray()) throw broken();
+    List<String> values = new ArrayList<>();
+    value.forEach(item -> values.add(text(item)));
+    return canonicalIdValues(values, label);
+  }
+
+  private static List<String> canonicalIdValues(List<String> values, String label) {
+    List<String> ordered = FactCandidateInputs.orderedArtifactIds(values, label);
+    if (!values.equals(ordered)) throw broken();
+    return ordered;
   }
 
   private static SourceExcerptV1 sourceExcerpt(JsonNode value) {
@@ -1076,6 +1372,18 @@ public final class PersistedFactCandidateInputReader {
     JsonNode numeric = value == null ? null : value.get(field);
     if (numeric == null || !numeric.canConvertToInt()) throw broken();
     return numeric.intValue();
+  }
+
+  private static int nonnegativeInt(JsonNode value, String field) {
+    JsonNode numeric = value == null ? null : value.get(field);
+    if (numeric == null || !numeric.isInt() || numeric.intValue() < 0) throw broken();
+    return numeric.intValue();
+  }
+
+  private static boolean requiredBoolean(JsonNode value, String field) {
+    JsonNode result = value == null ? null : value.get(field);
+    if (result == null || !result.isBoolean()) throw broken();
+    return result.booleanValue();
   }
 
   private static List<String> ids(JsonNode value, String label) {
@@ -1148,6 +1456,7 @@ public final class PersistedFactCandidateInputReader {
       String applicationProfileId,
       List<String> entryIds,
       ArtifactReference graphProfileRef,
+      CoverageProjection coverage,
       FactCandidateInputs.PublicProgramGraph value) {}
 
   private record ParsedEvidenceGraph(
@@ -1160,7 +1469,16 @@ public final class PersistedFactCandidateInputReader {
       String applicationProfileId,
       List<String> entryIds,
       ArtifactReference graphProfileRef,
+      CoverageProjection coverage,
       FactCandidateInputs.PublicEvidenceGraph value) {}
+
+  private record CoverageProjection(
+      List<String> candidateElementIds,
+      List<String> exactElementIds,
+      List<String> gapCandidateElementIds,
+      List<String> excludedCandidateElementIds,
+      List<String> scopeGapIds,
+      boolean closed) {}
 
   private record GraphDescriptor(
       ArtifactReference root,

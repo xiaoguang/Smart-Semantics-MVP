@@ -571,8 +571,7 @@ public final class CallGraphBuilder {
               gapDispositions,
               List.of(),
               inputs.structure().draft().coverage().scopeGapIds(),
-              gapDispositions.isEmpty()
-                  && inputs.reopened().source().repositoryCompletionEligible());
+              inputs.structure().draft().coverage().scopeGapIds().isEmpty());
       return new CallGraphDraft(
           CallGraphDraft.SCHEMA_VERSION,
           ProgramGraphKind.CALL,

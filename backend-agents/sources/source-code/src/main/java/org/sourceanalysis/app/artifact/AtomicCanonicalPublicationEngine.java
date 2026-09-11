@@ -8,6 +8,9 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -82,6 +85,10 @@ final class AtomicCanonicalPublicationEngine {
     } catch (IOException failure) {
       throw new ArtifactStoreException("MODULE_PUBLICATION_INVALID");
     }
+  }
+
+  CanonicalArtifactPolicy resolveArtifactPolicy(ArtifactPolicyKey key) {
+    return artifactPolicies.resolve(key);
   }
 
   ReopenedModulePublication reopenModule(ModulePublicationReference reference) {
@@ -233,7 +240,7 @@ final class AtomicCanonicalPublicationEngine {
       case STANDALONE_JSON ->
           validateStandaloneJsonArtifact(payload, parseCanonicalPayload(payload), policy);
       case CANONICAL_JSONL -> validateCanonicalJsonlArtifact(payload, policy);
-      case RAW_UTF8 -> throw invalidInstall();
+      case RAW_UTF8 -> validateRawUtf8Artifact(payload, policy);
     }
     return new ArtifactDescriptor(
         payload.fileName(),
@@ -339,6 +346,39 @@ final class AtomicCanonicalPublicationEngine {
             + sha256Hex(
                 concatenate(
                     frame("canonical-jsonl-artifact-id-v1"),
+                    frame(payload.schemaVersion()),
+                    frame(payload.artifactType()),
+                    frame(bytes)));
+    if (!expectedId.equals(payload.artifactId().value())) {
+      throw invalidInstall();
+    }
+  }
+
+  private void validateRawUtf8Artifact(
+      CanonicalModulePayload payload, CanonicalArtifactPolicy policy) {
+    byte[] bytes = payload.canonicalUtf8().copyToByteArray();
+    if (bytes.length == 0
+        || (bytes.length >= 3
+            && bytes[0] == (byte) 0xef
+            && bytes[1] == (byte) 0xbb
+            && bytes[2] == (byte) 0xbf)) {
+      throw invalidInstall();
+    }
+    try {
+      StandardCharsets.UTF_8
+          .newDecoder()
+          .onMalformedInput(CodingErrorAction.REPORT)
+          .onUnmappableCharacter(CodingErrorAction.REPORT)
+          .decode(ByteBuffer.wrap(bytes));
+    } catch (CharacterCodingException invalidUtf8) {
+      throw payloadNotCanonical();
+    }
+    String expectedId =
+        policy.artifactIdPrefix()
+            + ":"
+            + sha256Hex(
+                concatenate(
+                    frame("canonical-raw-artifact-id-v1"),
                     frame(payload.schemaVersion()),
                     frame(payload.artifactType()),
                     frame(bytes)));
@@ -1119,8 +1159,45 @@ final class AtomicCanonicalPublicationEngine {
                     "interpretation-runner".equals(analysisStepAddress.moduleKey())
                         ? List.of("model-execution-set.json")
                         : null;
+                case 6 ->
+                    "cross-flow-candidate-compiler".equals(analysisStepAddress.moduleKey())
+                        ? List.of("cross-flow-candidate-compilation.json")
+                        : null;
+                case 7 ->
+                    "business-process-task-compiler".equals(analysisStepAddress.moduleKey())
+                        ? List.of("process-task-shards.json")
+                        : null;
+                case 8 ->
+                    "business-process-interpretation-runner".equals(analysisStepAddress.moduleKey())
+                        ? List.of("process-interpretation-checkpoint.json")
+                        : null;
+                case 10 ->
+                    "business-material-builder".equals(analysisStepAddress.moduleKey())
+                        ? List.of("business-materials.jsonl")
+                        : null;
+                case 11 ->
+                    "activity-explainer".equals(analysisStepAddress.moduleKey())
+                        ? List.of("activity-coverage.json", "activity-explanations.jsonl")
+                        : null;
                 default -> null;
               };
+          case REPOSITORY_KNOWLEDGE ->
+              "process-explainer".equals(analysisStepAddress.moduleKey())
+                      && analysisStepAddress.moduleNumber() == 1
+                  ? List.of(
+                      "business-processes.jsonl",
+                      "process-coverage.json",
+                      "repository-business-knowledge.json")
+                  : null;
+          case NINE_SECTION_DOCUMENT ->
+              "business-report-publisher".equals(analysisStepAddress.moduleKey())
+                      && analysisStepAddress.moduleNumber() == 1
+                  ? List.of(
+                      "business-report.json",
+                      "document.md",
+                      "report-validation.json",
+                      "source-refs.jsonl")
+                  : null;
           default -> null;
         };
     if (expectedFileNames == null
@@ -1516,7 +1593,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("BUSINESS_FLOWS_FLOW_COMPILATION".equals(payload.artifactType())
-        && "business-flows-flow-compilation-v1".equals(payload.schemaVersion())) {
+        && "business-flows-flow-compilation-v3".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.BUSINESS_FLOWS,
           1,
@@ -1525,7 +1602,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("BUSINESS_FLOWS_CAPSULE_PROJECTION".equals(payload.artifactType())
-        && "business-flows-capsule-projection-v4".equals(payload.schemaVersion())) {
+        && "business-flows-capsule-projection-v7".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.BUSINESS_FLOWS,
           2,
@@ -1534,7 +1611,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("BUSINESS_FLOWS_FLOW_SLICES".equals(payload.artifactType())
-        && "business-flows-flow-slices-v1".equals(payload.schemaVersion())) {
+        && "business-flows-flow-slices-v3".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.BUSINESS_FLOWS,
           3,
@@ -1561,7 +1638,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     if ("BUSINESS_FLOWS_EVIDENCE_CAPSULE".equals(payload.artifactType())
-        && "business-flows-evidence-capsule-v2".equals(payload.schemaVersion())) {
+        && "business-flows-evidence-capsule-v5".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.BUSINESS_FLOWS,
           3,
@@ -1570,12 +1647,102 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     if ("BUSINESS_FLOWS_FLOW_GAP".equals(payload.artifactType())
-        && "business-flows-flow-gap-v1".equals(payload.schemaVersion())) {
+        && "business-flows-flow-gap-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.BUSINESS_FLOWS,
           3,
           "publish",
           "flow-gaps.jsonl",
+          CanonicalEnvelopeKind.CANONICAL_JSONL);
+    }
+    if ("FLOW_INTERPRETATION_BUSINESS_MATERIAL".equals(payload.artifactType())
+        && "flow-interpretation-business-material-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.FLOW_INTERPRETATION,
+          10,
+          "business-material-builder",
+          "business-materials.jsonl",
+          CanonicalEnvelopeKind.CANONICAL_JSONL);
+    }
+    if ("FLOW_INTERPRETATION_ACTIVITY_COVERAGE".equals(payload.artifactType())
+        && "flow-interpretation-activity-coverage-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.FLOW_INTERPRETATION,
+          11,
+          "activity-explainer",
+          "activity-coverage.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("FLOW_INTERPRETATION_ACTIVITY_EXPLANATIONS".equals(payload.artifactType())
+        && "flow-interpretation-activity-explanations-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.FLOW_INTERPRETATION,
+          11,
+          "activity-explainer",
+          "activity-explanations.jsonl",
+          CanonicalEnvelopeKind.CANONICAL_JSONL);
+    }
+    if ("REPOSITORY_KNOWLEDGE_BUSINESS_PROCESSES".equals(payload.artifactType())
+        && "repository-knowledge-business-processes-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+          1,
+          "process-explainer",
+          "business-processes.jsonl",
+          CanonicalEnvelopeKind.CANONICAL_JSONL);
+    }
+    if ("REPOSITORY_KNOWLEDGE_PROCESS_COVERAGE".equals(payload.artifactType())
+        && "repository-knowledge-process-coverage-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+          1,
+          "process-explainer",
+          "process-coverage.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("REPOSITORY_KNOWLEDGE_BUSINESS_KNOWLEDGE".equals(payload.artifactType())
+        && "repository-knowledge-business-knowledge-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+          1,
+          "process-explainer",
+          "repository-business-knowledge.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("BUSINESS_DOCUMENT_REPORT".equals(payload.artifactType())
+        && "business-document-report-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.NINE_SECTION_DOCUMENT,
+          1,
+          "business-report-publisher",
+          "business-report.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("BUSINESS_DOCUMENT_MARKDOWN".equals(payload.artifactType())
+        && "business-document-markdown-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.NINE_SECTION_DOCUMENT,
+          1,
+          "business-report-publisher",
+          "document.md",
+          CanonicalEnvelopeKind.RAW_UTF8);
+    }
+    if ("BUSINESS_DOCUMENT_VALIDATION".equals(payload.artifactType())
+        && "business-document-validation-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.NINE_SECTION_DOCUMENT,
+          1,
+          "business-report-publisher",
+          "report-validation.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("BUSINESS_DOCUMENT_SOURCE_REFERENCES".equals(payload.artifactType())
+        && "business-document-source-references-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.NINE_SECTION_DOCUMENT,
+          1,
+          "business-report-publisher",
+          "source-refs.jsonl",
           CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     if ("FLOW_INTERPRETATION_REGISTRY_PROPOSAL_TASK_SET".equals(payload.artifactType())
@@ -1597,14 +1764,54 @@ final class AtomicCanonicalPublicationEngine {
           "registry-proposal-execution-set.json",
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
-    if ("FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY".equals(payload.artifactType())
-        && "flow-interpretation-repository-interpretation-registry-v2"
+    if ("FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY_MODULE"
+            .equals(payload.artifactType())
+        && "flow-interpretation-repository-interpretation-registry-module-v1"
             .equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.FLOW_INTERPRETATION,
           3,
           "registry-freezer",
           "repository-interpretation-registry.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("FLOW_INTERPRETATION_CROSS_FLOW_CANDIDATE_COMPILATION".equals(payload.artifactType())
+        && "flow-interpretation-cross-flow-candidate-compilation-v1"
+            .equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.FLOW_INTERPRETATION,
+          6,
+          "cross-flow-candidate-compiler",
+          "cross-flow-candidate-compilation.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("FLOW_INTERPRETATION_PROCESS_TASK_SHARDS".equals(payload.artifactType())
+        && "flow-interpretation-process-task-shards-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.FLOW_INTERPRETATION,
+          7,
+          "business-process-task-compiler",
+          "process-task-shards.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("FLOW_INTERPRETATION_PROCESS_INTERPRETATION_CHECKPOINT".equals(payload.artifactType())
+        && "flow-interpretation-process-interpretation-checkpoint-v1"
+            .equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.FLOW_INTERPRETATION,
+          8,
+          "business-process-interpretation-runner",
+          "process-interpretation-checkpoint.json",
+          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("FLOW_INTERPRETATION_PROCESS_INTERPRETATION_CHECKPOINT_SET".equals(payload.artifactType())
+        && "flow-interpretation-process-interpretation-checkpoint-set-v1"
+            .equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.FLOW_INTERPRETATION,
+          8,
+          "business-process-interpretation-runner",
+          "process-interpretation-checkpoint.json",
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("FLOW_INTERPRETATION_FLOW_TASK_SET".equals(payload.artifactType())
@@ -1626,7 +1833,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("PROVEN_CODE_FACTS_FACT_CANDIDATE_SET".equals(payload.artifactType())
-        && "proven-code-facts-fact-candidate-set-v2".equals(payload.schemaVersion())) {
+        && "proven-code-facts-fact-candidate-set-v3".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROVEN_CODE_FACTS,
           1,
@@ -1635,7 +1842,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("PROVEN_CODE_FACTS_PROOF_DECISION_SET".equals(payload.artifactType())
-        && "proven-code-facts-proof-decision-set-v2".equals(payload.schemaVersion())) {
+        && "proven-code-facts-proof-decision-set-v3".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROVEN_CODE_FACTS,
           2,
@@ -1644,7 +1851,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("PROVEN_CODE_FACTS_FACT_ACCOUNTING".equals(payload.artifactType())
-        && "proven-code-facts-fact-accounting-v2".equals(payload.schemaVersion())) {
+        && "proven-code-facts-fact-accounting-v3".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROVEN_CODE_FACTS,
           3,
@@ -1653,7 +1860,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("PROVEN_CODE_FACTS_GAP_LEDGER".equals(payload.artifactType())
-        && "proven-code-facts-gap-ledger-v2".equals(payload.schemaVersion())) {
+        && "proven-code-facts-gap-ledger-v3".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROVEN_CODE_FACTS,
           3,
@@ -1662,7 +1869,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("PROVEN_CODE_FACTS_PROOF_PACK".equals(payload.artifactType())
-        && "proven-code-facts-proof-pack-v2".equals(payload.schemaVersion())) {
+        && "proven-code-facts-proof-pack-v3".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROVEN_CODE_FACTS,
           3,
@@ -1671,7 +1878,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("PROVEN_CODE_FACTS_PROVEN_FACTS".equals(payload.artifactType())
-        && "proven-code-facts-proven-facts-v2".equals(payload.schemaVersion())) {
+        && "proven-code-facts-proven-facts-v3".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROVEN_CODE_FACTS,
           3,

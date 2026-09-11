@@ -15,6 +15,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
+import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.ArtifactControls;
@@ -37,9 +38,9 @@ public final class FlowModelTaskSetModulePublisher {
 
   private static final String REGISTRY_FILE = "repository-interpretation-registry.json";
   private static final String REGISTRY_TYPE =
-      "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY";
+      "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY_MODULE";
   private static final String REGISTRY_SCHEMA =
-      "flow-interpretation-repository-interpretation-registry-v2";
+      "flow-interpretation-repository-interpretation-registry-module-v1";
   private static final String FILE_NAME = "flow-task-set.json";
   private static final String ARTIFACT_TYPE = "FLOW_INTERPRETATION_FLOW_TASK_SET";
   private static final String SCHEMA_VERSION = "flow-interpretation-flow-task-set-v4";
@@ -190,7 +191,10 @@ public final class FlowModelTaskSetModulePublisher {
     node.put("inputJsonSha256", value.inputJsonSha256().value());
     node.put("outputSchemaSha256", value.outputSchemaSha256().value());
     node.put("promptBundleSha256", value.promptBundleSha256().value());
-    reference(node.putObject("expectedRuntime"), value.expectedRuntime());
+    node.put("configuredAdapterId", value.configuredAdapterId());
+    node.put("configuredAuthMode", value.configuredAuthMode());
+    reference(node.putObject("expectedRuntimeRef"), value.expectedRuntimeRef());
+    runtime(node.putObject("expectedRuntime"), value.expectedRuntime());
   }
 
   private static void shard(ObjectNode node, FlowModelTaskShardReceipt value) {
@@ -201,13 +205,19 @@ public final class FlowModelTaskSetModulePublisher {
   }
 
   private static void runtimePolicy(ObjectNode node, FlowModelTaskProfile value) {
+    node.put("r1ConfiguredAdapterId", value.r1ConfiguredAdapterId());
+    node.put("r1ConfiguredAuthMode", value.r1ConfiguredAuthMode());
     reference(node.putObject("r1PromptBundleRef"), value.r1PromptBundleRef());
     reference(node.putObject("r1OutputSchemaRef"), value.r1OutputSchemaRef());
     reference(node.putObject("r1ExpectedRuntimeRef"), value.r1ExpectedRuntimeRef());
+    runtime(node.putObject("r1ExpectedRuntime"), value.r1ExpectedRuntime());
     reference(node.putObject("r1ResourceBudgetRef"), value.r1ResourceBudgetRef());
+    node.put("r2ConfiguredAdapterId", value.r2ConfiguredAdapterId());
+    node.put("r2ConfiguredAuthMode", value.r2ConfiguredAuthMode());
     reference(node.putObject("r2PromptBundleRef"), value.r2PromptBundleRef());
     reference(node.putObject("r2OutputSchemaRef"), value.r2OutputSchemaRef());
     reference(node.putObject("r2ExpectedRuntimeRef"), value.r2ExpectedRuntimeRef());
+    runtime(node.putObject("r2ExpectedRuntime"), value.r2ExpectedRuntime());
     reference(node.putObject("r2ResourceBudgetRef"), value.r2ResourceBudgetRef());
     node.put("maxTasks", value.maxTasks());
     node.put("maxResponseUtf8Bytes", value.maxResponseUtf8Bytes());
@@ -242,6 +252,13 @@ public final class FlowModelTaskSetModulePublisher {
   private static void reference(ObjectNode node, ArtifactReference value) {
     node.put("artifactId", value.artifactId().value());
     node.put("sha256", value.sha256().value());
+  }
+
+  private static void runtime(ObjectNode node, ModelRuntimeIdentityV1 value) {
+    node.put("upstreamProvider", value.upstreamProvider());
+    node.put("model", value.model());
+    node.put("reasoningEffort", value.reasoningEffort());
+    node.put("sandbox", value.sandbox());
   }
 
   private static ArtifactReference reference(

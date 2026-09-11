@@ -6,9 +6,10 @@ import java.util.Objects;
 /** Closed, versioned templates that determine which frozen-Java facts M1 must enumerate. */
 public record FactRegistry(String schemaVersion, List<FactTemplate> templates) {
 
-  private static final String SCHEMA_VERSION = "proven-code-facts-registry-v2";
+  private static final String SCHEMA_VERSION = "proven-code-facts-fact-registry-v3";
   private static final String JAVA_BOUNDARY_KIND = "JAVA_BOUNDARY_INVOCATION";
   private static final String JAVA_GUARD_KIND = "JAVA_GUARD_CONDITION";
+  private static final String JAVA_EXACT_CALL_KIND = "JAVA_EXACT_CALL";
 
   public FactRegistry {
     if (!SCHEMA_VERSION.equals(schemaVersion)) {
@@ -23,7 +24,7 @@ public record FactRegistry(String schemaVersion, List<FactTemplate> templates) {
     }
   }
 
-  /** Returns the closed frozen-Java templates for boundaries and independently proven guards. */
+  /** Returns the closed frozen-Java templates for boundaries, guards, and exact Java calls. */
   public static FactRegistry standardJavaFacts() {
     return new FactRegistry(
         SCHEMA_VERSION,
@@ -43,10 +44,18 @@ public record FactRegistry(String schemaVersion, List<FactTemplate> templates) {
             new FactTemplate(
                 JAVA_GUARD_KIND,
                 JAVA_GUARD_KIND,
-                List.of(atom("CONTROL_CONDITION", "CONDITION", "STRING")))));
+                List.of(atom("CONTROL_CONDITION", "CONDITION", "STRING"))),
+            new FactTemplate(
+                JAVA_EXACT_CALL_KIND,
+                JAVA_EXACT_CALL_KIND,
+                List.of(
+                    atom("INVOCATION_CALL_ID", "RELATIONSHIP", "SYMBOL_REF"),
+                    atom("STATIC_TARGET_TYPE", "ATTRIBUTE", "STRING"),
+                    atom("STATIC_TARGET_METHOD", "ATTRIBUTE", "STRING"),
+                    atom("STATIC_TARGET_SIGNATURE", "ATTRIBUTE", "STRING")))));
   }
 
-  /** Internal v0 callers now receive the complete v2 frozen-Java registry. */
+  /** Internal v0 callers receive the complete v3 frozen-Java registry. */
   public static FactRegistry standardJavaBoundary() {
     return standardJavaFacts();
   }
@@ -62,7 +71,9 @@ public record FactRegistry(String schemaVersion, List<FactTemplate> templates) {
 
     public FactTemplate {
       requireText(candidateFactKey, "candidate fact key");
-      if (!(JAVA_BOUNDARY_KIND.equals(kind) || JAVA_GUARD_KIND.equals(kind))) {
+      if (!(JAVA_BOUNDARY_KIND.equals(kind)
+          || JAVA_GUARD_KIND.equals(kind)
+          || JAVA_EXACT_CALL_KIND.equals(kind))) {
         throw new IllegalArgumentException("FACT_KIND_UNSUPPORTED");
       }
       requiredAtoms = List.copyOf(Objects.requireNonNull(requiredAtoms, "required atoms"));

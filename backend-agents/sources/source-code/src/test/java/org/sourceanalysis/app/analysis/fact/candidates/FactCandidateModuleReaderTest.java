@@ -30,7 +30,7 @@ class FactCandidateModuleReaderTest {
   private static final String READER_CLASS =
       "org.sourceanalysis.app.analysis.fact.candidates.PersistedFactCandidateSetReader";
   private static final String ARTIFACT_TYPE = "PROVEN_CODE_FACTS_FACT_CANDIDATE_SET";
-  private static final String SCHEMA_VERSION = "proven-code-facts-fact-candidate-set-v2";
+  private static final String SCHEMA_VERSION = "proven-code-facts-fact-candidate-set-v3";
 
   @TempDir Path temporaryDirectory;
 

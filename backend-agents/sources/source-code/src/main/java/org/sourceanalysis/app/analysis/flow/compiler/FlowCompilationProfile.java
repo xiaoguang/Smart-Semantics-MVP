@@ -10,7 +10,9 @@ public record FlowCompilationProfile(
     int maxOutcomesPerFlow,
     int maxFlowNodes,
     int maxFlowEdges,
-    int maxTraversalDepth) {
+    int maxTraversalDepth,
+    int maxProcessJoinSignalsPerFlow,
+    int maxProcessJoinSignalBasisRefs) {
 
   public FlowCompilationProfile {
     profileRef = Objects.requireNonNull(profileRef, "flow compilation profile reference");
@@ -19,6 +21,8 @@ public record FlowCompilationProfile(
     requirePositive(maxFlowNodes, "max Flow nodes");
     requirePositive(maxFlowEdges, "max Flow edges");
     requirePositive(maxTraversalDepth, "max traversal depth");
+    requirePositive(maxProcessJoinSignalsPerFlow, "max process-join signals per Flow");
+    requirePositive(maxProcessJoinSignalBasisRefs, "max process-join signal basis references");
   }
 
   private static void requirePositive(int value, String label) {

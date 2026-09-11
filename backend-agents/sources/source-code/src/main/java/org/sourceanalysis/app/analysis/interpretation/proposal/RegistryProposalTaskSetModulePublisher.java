@@ -14,6 +14,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
+import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.ArtifactControls;
@@ -170,7 +171,10 @@ public final class RegistryProposalTaskSetModulePublisher {
     node.put("inputJsonSha256", task.inputJsonSha256().value());
     node.put("outputSchemaSha256", task.outputSchemaSha256().value());
     node.put("promptBundleSha256", task.promptBundleSha256().value());
-    reference(node.putObject("expectedRuntime"), task.expectedRuntime());
+    node.put("configuredAdapterId", task.configuredAdapterId());
+    node.put("configuredAuthMode", task.configuredAuthMode());
+    reference(node.putObject("expectedRuntimeRef"), task.expectedRuntimeRef());
+    runtime(node.putObject("expectedRuntime"), task.expectedRuntime());
   }
 
   private static void shard(ObjectNode node, RegistryProposalTaskShardReceipt receipt) {
@@ -180,9 +184,12 @@ public final class RegistryProposalTaskSetModulePublisher {
   }
 
   private static void runtimePolicy(ObjectNode node, RegistryProposalTaskProfile profile) {
+    node.put("configuredAdapterId", profile.configuredAdapterId());
+    node.put("configuredAuthMode", profile.configuredAuthMode());
     reference(node.putObject("promptBundleRef"), profile.promptBundleRef());
     reference(node.putObject("outputSchemaRef"), profile.outputSchemaRef());
     reference(node.putObject("expectedRuntimeRef"), profile.expectedRuntimeRef());
+    runtime(node.putObject("expectedRuntime"), profile.expectedRuntime());
     reference(node.putObject("resourceBudgetRef"), profile.resourceBudgetRef());
     node.put("maxTasks", profile.maxTasks());
     node.put("maxProposalsPerTask", profile.maxProposalsPerTask());
@@ -212,6 +219,13 @@ public final class RegistryProposalTaskSetModulePublisher {
   private static void reference(ObjectNode node, ArtifactReference value) {
     node.put("artifactId", value.artifactId().value());
     node.put("sha256", value.sha256().value());
+  }
+
+  private static void runtime(ObjectNode node, ModelRuntimeIdentityV1 value) {
+    node.put("upstreamProvider", value.upstreamProvider());
+    node.put("model", value.model());
+    node.put("reasoningEffort", value.reasoningEffort());
+    node.put("sandbox", value.sandbox());
   }
 
   private static ObjectNode controls(ArtifactControls values) {

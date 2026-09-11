@@ -96,10 +96,27 @@ public final class CodeStructureGraphBuilder {
         accumulator.gap(document, "JAVA_PACKAGE_DECLARATION_UNSUPPORTED");
         return;
       }
+      Map<String, String> explicitImports = new LinkedHashMap<>();
+      unit.getImports().stream()
+          .filter(
+              importDeclaration -> !importDeclaration.isAsterisk() && !importDeclaration.isStatic())
+          .forEach(
+              importDeclaration -> {
+                String importedType = importDeclaration.getNameAsString();
+                explicitImports.put(
+                    importedType.substring(importedType.lastIndexOf('.') + 1), importedType);
+              });
       ArtifactId packageNode =
           accumulator.node(ProgramNodeKind.PACKAGE, packageName, document, SOURCE_RULE);
       for (TypeDeclaration<?> declaration : unit.getTypes()) {
-        parseType(declaration, packageName, packageNode, document, source, accumulator);
+        parseType(
+            declaration,
+            packageName,
+            Map.copyOf(explicitImports),
+            packageNode,
+            document,
+            source,
+            accumulator);
       }
     } catch (ParseProblemException | IllegalArgumentException exception) {
       accumulator.gap(document, "JAVA_PARSE_UNSUPPORTED");
@@ -109,6 +126,7 @@ public final class CodeStructureGraphBuilder {
   private void parseType(
       TypeDeclaration<?> declaration,
       String packageName,
+      Map<String, String> explicitImports,
       ArtifactId packageNode,
       CodeStructureSourceDocument document,
       String source,
@@ -159,7 +177,15 @@ public final class CodeStructureGraphBuilder {
                       fieldSpan);
                 });
       } else if (member instanceof MethodDeclaration method) {
-        parseMethod(method, packageName, typeName, typeNode, document, source, accumulator);
+        parseMethod(
+            method,
+            packageName,
+            explicitImports,
+            typeName,
+            typeNode,
+            document,
+            source,
+            accumulator);
       }
     }
   }
@@ -167,6 +193,7 @@ public final class CodeStructureGraphBuilder {
   private void parseMethod(
       MethodDeclaration method,
       String packageName,
+      Map<String, String> explicitImports,
       String typeName,
       ArtifactId typeNode,
       CodeStructureSourceDocument document,
@@ -174,7 +201,7 @@ public final class CodeStructureGraphBuilder {
       GraphAccumulator accumulator) {
     List<String> parameterTypes =
         method.getParameters().stream()
-            .map(parameter -> typeName(parameter.getType(), packageName))
+            .map(parameter -> typeName(parameter.getType(), packageName, explicitImports))
             .toList();
     String signature =
         typeName + "#" + method.getNameAsString() + "(" + String.join(",", parameterTypes) + ")";
@@ -186,7 +213,7 @@ public final class CodeStructureGraphBuilder {
     for (int ordinal = 0; ordinal < method.getParameters().size(); ordinal++) {
       var parameter = method.getParameter(ordinal);
       SourceSpan parameterSpan = javaSpan(document, source, parameter.getRange());
-      String declaredType = typeName(parameter.getType(), packageName);
+      String declaredType = typeName(parameter.getType(), packageName, explicitImports);
       ArtifactId parameterNode =
           accumulator.parameterNode(
               methodNode, signature, ordinal, declaredType, document, parameterSpan);
@@ -200,22 +227,27 @@ public final class CodeStructureGraphBuilder {
     }
   }
 
-  private String typeName(Type type, String packageName) {
+  private String typeName(Type type, String packageName, Map<String, String> explicitImports) {
     String name = type.asString();
     if (name.endsWith("[]")) {
-      return typeNameString(name.substring(0, name.length() - 2), packageName) + "[]";
+      return typeNameString(name.substring(0, name.length() - 2), packageName, explicitImports)
+          + "[]";
     }
-    return typeNameString(name, packageName);
+    return typeNameString(name, packageName, explicitImports);
   }
 
-  private String typeNameString(String typeName, String packageName) {
+  private String typeNameString(
+      String typeName, String packageName, Map<String, String> explicitImports) {
     return switch (typeName) {
       case "String" -> "java.lang.String";
       case "Integer" -> "java.lang.Integer";
       case "Long" -> "java.lang.Long";
       case "Boolean" -> "java.lang.Boolean";
       case "int", "long", "boolean", "void", "double", "float", "short", "byte", "char" -> typeName;
-      default -> typeName.contains(".") ? typeName : packageName + "." + typeName;
+      default ->
+          typeName.contains(".")
+              ? typeName
+              : explicitImports.getOrDefault(typeName, packageName + "." + typeName);
     };
   }
 
@@ -741,11 +773,7 @@ public final class CodeStructureGraphBuilder {
               ruleId);
       DraftProgramNode candidate =
           new DraftProgramNode(id, kind, canonicalValue, discovery.entryIds(), List.of(sourceRef));
-      DraftProgramNode previous = nodes.putIfAbsent(id, candidate);
-      if (previous != null && !previous.equals(candidate)) {
-        throw new IllegalArgumentException("CODE_STRUCTURE_DUPLICATE_NODE_ID");
-      }
-      return id;
+      return retainNode(candidate);
     }
 
     private ArtifactId parameterNode(
@@ -772,11 +800,30 @@ public final class CodeStructureGraphBuilder {
               canonicalValue,
               discovery.entryIds(),
               List.of(sourceRef));
-      DraftProgramNode previous = nodes.putIfAbsent(id, candidate);
-      if (previous != null && !previous.equals(candidate)) {
+      return retainNode(candidate);
+    }
+
+    private ArtifactId retainNode(DraftProgramNode candidate) {
+      DraftProgramNode previous = nodes.putIfAbsent(candidate.nodeId(), candidate);
+      if (previous == null || previous.equals(candidate)) {
+        return candidate.nodeId();
+      }
+      if (previous.kind() != candidate.kind()
+          || !previous.canonicalValue().equals(candidate.canonicalValue())
+          || !previous.owningEntryIds().equals(candidate.owningEntryIds())) {
         throw new IllegalArgumentException("CODE_STRUCTURE_DUPLICATE_NODE_ID");
       }
-      return id;
+      List<ArtifactId> mergedEvidence = new ArrayList<>(previous.evidenceDraftRefs());
+      mergedEvidence.addAll(candidate.evidenceDraftRefs());
+      nodes.put(
+          candidate.nodeId(),
+          new DraftProgramNode(
+              candidate.nodeId(),
+              candidate.kind(),
+              candidate.canonicalValue(),
+              candidate.owningEntryIds(),
+              mergedEvidence));
+      return candidate.nodeId();
     }
 
     private void edge(

@@ -1,488 +1,371 @@
-# 九章文档
+# 分析步骤 08：Nine-section Document（ACTIVE 目标设计）
 
-> 总体设计权威：[Source Code Analysis Agent 总体设计](../DESIGN.md)。本步骤仍是`nine-section-document`，固定九章，且是八步工作流的唯一人读Markdown出口。
-
-本文描述目标合同；§13单列当前实现。一个仓库始终只有一份RepositoryKnowledge、一份NineSectionPlan和一个`document.md`。禁止per-Flow Markdown、模型写正文或把Flow片段拼成仓库报告。
+> 本步骤由一个深 Module——BusinessReportPublisher——完成。Luna/high 负责九章业务正文 DRAFT 与一次整体 REVIEW；程序验证简单 JSON、来源 allowlist、覆盖披露和九章顺序，再确定性组装 Markdown。旧 planner/renderer/trace/archive 四模块与固定五 payload/52-output 门槛退出业务核心路径。当前已实现 scripted Provider 的完整最小垂直链与四项检查点，并完成一次明确 opt-in 的合成九章 Luna/high DRAFT + REVIEW 质量验证；正式运行入口与整仓容量规划仍未实现。
 
 ## 1. 为什么存在
 
-Step 07已经程序化准入局部meaning与跨Flow BusinessProcess，但结构化JSON不是业务读者的交付物。NineSectionDocument把唯一RepositoryKnowledge转换成固定九章：业务stakeholder先看到端到端过程、角色、活动、条件和待确认；审计者仍能把每个句子回放到source。Chapter 4必须**process-first**，不能退回controller/method清单。
+RepositoryBusinessKnowledge 已经包含业务目标、完整活动、过程、对象关系、条件、规则、公式、问题和覆盖，但直接交 JSON 会让业务读者读不出主线。把正文全部硬编码进 Java 模板又会重复早期问题：程序只能按字段拼套话，无法写出连贯、重点明确的业务章节。
 
-本步骤所有模块和renderer的模型调用数严格为0。它只使用Step 07已准入的知识和受限reader slots；不读取raw P1/P2文本、不重新解释源码。
+BusinessReportPublisher 把“业务写作”集中交给 Luna/high，同时保留程序擅长的确定性职责：
 
-## 2. 实际上游交接
+- 九章名称、顺序和基数；
+- 段落/list item JSON 结构；
+- ref allowlist；
+- entry/process coverage 是否如实披露；
+- SourceRef 到冻结 file + lines + snippet 的默认可点击呈现；
+- Markdown 标题、列表、间距和最终 bytes。
 
-输入只来自fresh-reopened前七步publication及冻结controls，重点为：
+模型可以写自然正文，但不能写 Markdown styling、源码路径、行号、hash 或技术身份。
 
-- `knowledge-admission-decisions.jsonl`：local与process准入决定；
-- `repository-business-knowledge.json`：唯一knowledge及`businessProcesses`、`processActivities`、`processRelations`、`processMemberships`、`roles`、`states`、`processClaims`、`processAlternatives`、`pendingConfirmations`；
-- `knowledge-conflicts.jsonl`、`merged-gaps.json`、`knowledge-accounting.json`和Step 07 receipt；
-- `RepositoryCoverageLedgerDraftReferenceV1`、frozen nine-section/template profiles、candidate/trace/archive/validation budgets。
-
-Planner会为Trace验证读取typed upstream references，但正文不得包含内部ID、SHA、源码路径、FQN、schema enum或技术状态枚举。所有这些只留在plan/trace。
-
-### 2.1 真实DepotHead边界
-
-如果知识只证明批量状态入口、guard、允许ID和边界调用参数，Chapter 4可说“系统在满足条件时发起批量状态处理调用”；不得写“数据库已更新”“库存已变化”。未证明的外部效果在Chapter 9完整列为待确认，并由Trace回到原Gap。
-
-### 2.2 明确合成、不是jshERP行为
-
-以下只验证展示能力，不代表jshERP：
-
-`提交补货申请 → 门店审批 → 区域审批并创建采购单 → 采购单审批及费用处理 → 执行采购并登记物流 → 收货并登记库存 → 生成、确认、结算月度账单`。
-
-Chapter 4可按过程概览→活动→转换→角色→备选显示该链，标注费用处理可能并行、退回修改是备选，并复用“收货”Flow于采购履约与月度结算。P2/Step 07已拒绝或pending的“唯一采购单”“已经记账”不得在正文复活。Chapter 9集中列出完整pending依据。
-
-## 3. 四个程序模块
-
-| 模块 | 唯一职责 | 模型调用 |
-| --- | --- | --- |
-| M1 `NineSectionPlanner` | 从唯一knowledge与coverage draft形成final ledger和九章typed plan | 0 |
-| M2 `PlanOnlyRenderer` | 只读plan bytes，按冻结模板输出UTF-8/LF Markdown | 0 |
-| M3 `TraceCompiler` | 为每个ReaderItem形成typed lineage | 0 |
-| M4 `DocumentPublicationSpecifier` | 组装Candidate、analysis-step archive、root manifest并receipt-last发布 | 0 |
-
-独立run validator是run级模块，不是第五个analysis-step module。它只能重验，不修改Candidate、plan或document。
-
-## 4. 程序过程
-
-1. M1按typed draft reference重开`knowledge-accounting.json`，核对carrier schema/hash、nested draft ID、前七步publication refs和唯一RepositoryKnowledge；单Flow PASS不能替代全仓coverage。
-2. Planner为全部local/process semantic items计算唯一`readerItemKey`和section owner；未展示项必须有reasoned exclusion，不能silent loss。
-3. Chapter 4固定按BusinessProcess排序，过程内按`overview → activities → transitions → role responsibilities → alternatives/fallbacks`规划。独立活动随后显示；技术Flow/method只可作为从属依据或pending，不能成为主列表。
-4. `EVIDENCE_SUPPORTED_INFERENCE`集中使用明确的“根据现有证据推断”标记；`PENDING_CONFIRMATION`在相关章节仅作短提示，在Chapter 9完整展开。`SOURCE_CONFIRMED`也不得越过Proof措辞。
-5. M1把Step 07 draft补齐reader IDs/section ownership，形成唯一final `RepositoryCoverageLedgerV4`和`NineSectionPlanV4`；ledger不反向引用plan。
-6. M2只重开plan，按deterministic template和escaping规则渲染。相同plan bytes必须产生相同Markdown bytes与SHA；renderer无source/model/registry/network能力。
-7. M3用plan中的typed refs编译Trace。每个ReaderItem恰一TraceRecord，路径逐跳校验，不让locator代替Proof。
-8. M4 fresh-reopen M1–M3，组装不可变`UNPUBLISHED_CANDIDATE`、validation baseline、archive manifest、analysis-step receipt和root run manifest；public store按payload→archive→receipt安装。
-9. 完成后`RepositoryAnalysisAgent`仍只通过现有`start/executeStep/inspect/artifact/render/validate/trace`公开能力观察或复用；不新增process专用public方法。
-
-## 5. 固定九章
-
-每章恰好一次，顺序、key和标题不可改变：
-
-1. `DOCUMENT_GUIDE / 文档说明`
-2. `BUSINESS_GOALS / 业务目标`
-3. `BUSINESS_OBJECTS / 业务对象`
-4. `BUSINESS_ACTIVITIES / 业务活动`
-5. `FIELDS_AND_DIMENSIONS / 字段与维度`
-6. `OBJECT_RELATIONS / 对象关系`
-7. `METRIC_DEFINITIONS / 指标口径`
-8. `EXAMPLE_QUESTIONS / 示例问题`
-9. `PENDING_CONFIRMATION / 待确认事项`
-
-不得增加第十章、改名或交换。空章使用typed `EMPTY_SECTION`，不能由renderer临时写filler。
-
-### 5.1 Chapter 4 process-first合同
-
-对每个BusinessProcess，先显示目的和端点，再显示活动、转换条件/分支/并行、角色责任、备选/回退。排序依据是稳定process/activity/relation identity和显式stage order；如果顺序只是推断，必须保留推断标记。相同Flow在多个过程中的展示引用同一knowledge identity，不能复制成不同事实。
-
-Controller、Service、Mapper、方法名、SQL ID和路径不是业务活动标题。若只有technical fallback，则归入“独立活动（技术边界）”并附待确认，不得冒充端到端过程。
-
-## 6. ReaderItemV4
-
-既有八种kind继续保留：
+## 2. Interface、具体输入与完成点
 
 ~~~text
-FACT_SENTENCE
-ADMITTED_TERM
-TECHNICAL_FALLBACK
-GAP_QUESTION
-RELATION_REFERENCE
-METRIC_REFERENCE
-RECORD_REFERENCE
-EMPTY_SECTION
+publish(PublishBusinessReportRequest) -> BusinessReportPublication
 ~~~
 
-新增且只新增五种过程kind：
-
-~~~text
-BUSINESS_PROCESS_OVERVIEW
-PROCESS_ACTIVITY
-PROCESS_TRANSITION
-ROLE_RESPONSIBILITY
-PROCESS_ALTERNATIVE
-~~~
-
-所有ReaderItem共享同一封闭wire字段集；`?`表示字段必有但值可为null，`[]!`表示字段必有、可为空数组：
-
-~~~text
-readerItemKey!, readerItemKind!, templateKey!, typedSlots!
-ownerKnowledgeItemId?, knowledgeItemIds[]!
-factIds[]!, proofIds[]!, evidenceNodeIds[]!, gapIds[]!, relationIds[]!, metricIds[]!
-meaningIds[]!, registryProposalIds[]!, provisionalKeys[]!
-interpretationProposalIds[]!, selectedKeys[]!
-businessProcessIds[]!, processActivityIds[]!, processRelationIds[]!
-processMembershipIds[]!, roleIds[]!, stateIds[]!, processClaimIds[]!
-processAdmissionDecisionIds[]!, businessProcessHypothesisIds[]!
-processAlternativeIds[]!, pendingConfirmationIds[]!
-processJoinSignalIds[]!, processSemanticCueIds[]!, counterSignalIds[]!
-certainty?: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
-~~~
-
-只有`EMPTY_SECTION`允许`ownerKnowledgeItemId=null`且要求`certainty=null`、所有lineage数组为空；其他kind两字段都必须非null。五个process-knowledge kind还必须有非空process knowledge、admission、hypothesis与claim lineage。`GAP_QUESTION`有两个封闭scope：local variant的process数组全空；process-terminal variant要求`gapIds`非空、`ownerKnowledgeItemId`等于对应`MergedGapV3.canonicalGapId`、`knowledgeItemIds`包含该ID、`certainty=PENDING_CONFIRMATION`，且business process/process knowledge/admission/claim数组全空。process-terminal variant若源自P2 GAP/FAILED，则`businessProcessHypothesisIds`逐字等于同一disposition的P2-gap或P2-failed集合；若源自P1 GAP/FAILED或NO_MODEL则该数组为空，其中P1 FAILED的owner必须是`canonicalGapId=memberGapIds[0]=PROCESS_P1_HYPOTHESIS_FAILED gapId`的Step 06 singleton。任何Proof/Evidence、relation/metric或Gap ref都必须出现在上述对应数组，不能藏进slot prose。
-
-过程kind的template与slot闭集：
-
-| kind | templateKey | exact typed slots |
-| --- | --- | --- |
-| `BUSINESS_PROCESS_OVERVIEW` | `business-process-overview-v1` | `processName,purpose,start,finish,certainty` |
-| `PROCESS_ACTIVITY` | `process-activity-v1` | `process,activity,role,input,output,certainty` |
-| `PROCESS_TRANSITION` | `process-transition-v1` | `process,fromActivity,condition,toActivity,certainty` |
-| `ROLE_RESPONSIBILITY` | `role-responsibility-v1` | `role,responsibility,process,certainty` |
-| `PROCESS_ALTERNATIVE` | `process-alternative-v1` | `process,alternative,when,certainty` |
-
-结构示例（synthetic）：
+PublishBusinessReportRequest：
 
 ~~~json
 {
-  "readerItemKey": "reader-item:sha256…",
-  "readerItemKind": "PROCESS_TRANSITION",
-  "templateKey": "process-transition-v1",
-  "typedSlots": {
-    "process": "补货到采购（合成）",
-    "fromActivity": "门店审批",
-    "condition": "审批通过；根据现有证据推断",
-    "toActivity": "区域审批并创建采购单",
-    "certainty": "EVIDENCE_SUPPORTED_INFERENCE"
-  },
-  "businessProcessIds": ["business-process:sha256…"],
-  "processRelationIds": ["process-relation-knowledge:sha256…"],
-  "processClaimIds": ["process-claim:sha256…"],
-  "processAdmissionDecisionIds": ["process-admission-decision:sha256…"],
-  "businessProcessHypothesisIds": ["business-process-hypothesis:sha256…"],
-  "factIds": ["fact:sha256…"],
-  "proofIds": ["proof:sha256…"],
-  "evidenceNodeIds": ["evidence:sha256…"],
-  "gapIds": [],
-  "certainty": "EVIDENCE_SUPPORTED_INFERENCE"
+  "runInputBindingId": "run-input:synthetic-v1",
+  "knowledgeCheckpoint": "steps/07-repository-knowledge/repository-business-knowledge.json",
+  "processCoverageCheckpoint": "steps/07-repository-knowledge/process-coverage.json",
+  "sourceRefCheckpoint": "steps/06-flow-interpretation/business-materials.jsonl",
+  "generationProfile": {
+    "promptVersion": "business-report-v1",
+    "moduleVersion": "business-report-publisher-v1",
+    "maxInputChars": 48000,
+    "maxResponseChars": 32000
+  }
 }
 ~~~
 
-上例为字段投影示意，公共wire还包含共享字段中的空数组；省略的空数组不可在真实record省略。正文必须翻译certainty，不直接显示技术enum。
+同一进程可直接传 typed RepositoryBusinessKnowledge 与 BusinessMaterialBuilder 生成的 SourceRef map。跨进程时 sourceRefCheckpoint 指向 Step 06 business-materials.jsonl；Publisher 只提取其中程序生成的 ref/file/lines/snippet 映射，并与 Step 07 知识中的 ref allowlist 交叉验证，不重新扫描源码。复用时，inputFingerprint 覆盖实际知识/coverage/ref 内容、实际 Prompt 内容及版本、有效模型与输出配置和 Module 版本，不包含新 runId。
 
-### 6.1 正文清洁与pending分层
+完成检查点：
 
-正文禁止显示：内部IDs、SHA、artifact/path、FQN、schemaVersion、`SOURCE_CONFIRMED`等技术enum、prompt/model/provider信息。可读名称来自Step 07受控display/reader slots，不从ID猜测。
+~~~text
+steps/08-nine-section-document/
+  business-report.json
+  source-refs.jsonl
+  document.md
+  report-validation.json
+~~~
 
-- confirmed：直接、克制陈述；
-- evidence-supported inference：相邻项目合并为一个清晰标注的推断组，避免每句重复噪音；
-- pending：相关章节仅一句短提示，Chapter 9按业务对象/过程归组完整列出缺失证据、counter和确认问题；
-- rejected：正文不出现，但plan/accounting保存reasoned exclusion。
+这些文件可由现有 canonical publication 基础保存，但不要求为 Publisher 的每个内部动作再建 receipt/fresh-reopen 链，也不参与固定 52 项计数。
 
-## 7. 可观察产物与schema
+## 3. M1 BusinessReportPublisher
 
-NineSectionDocument的七项analysis-step文件与一项run-root文件保持不变：
+### 3.1 为什么是一个深 Module
 
-| 文件 | 唯一职责 |
+写作、审阅、结构校验、refs 呈现和 Markdown 排版都是“把一份已审知识发布为业务报告”的内部复杂度。把它们拆成 planner/renderer/trace/archive 四个 public-ish Module，会让调用者学习中间状态、逐层 publication 和恢复规则，却没有增加业务能力。
+
+Publisher 的小 Interface 一次返回可审阅业务 JSON、可读 Markdown、简单 refs 与验证结果。内部可分别测试 authoring、validation、rendering，但这些是 internal seams。
+
+### 3.2 输入示例：必须包含报告实际需要的信息
+
+输入不能只给 repositorySummary 或 process 名称。以下精简样例仍包含条件、步骤、结果、关系、公式、问题和来源：
+
+~~~json
+{
+  "repositorySummary": {
+    "text": "仓库围绕补货单、收货记录和应付账单定义了三个可串联活动。",
+    "coverage": "COMPLETE_FOR_DISCOVERED_ENTRIES",
+    "sourceRefs": ["S2", "S4", "S6"]
+  },
+  "businessGoals": [
+    {"text":"形成并保存补货单","sourceRefs":["S1","S2","S3"]},
+    {"text":"保存关联收货记录","sourceRefs":["S4","S5"]},
+    {"text":"按收货数据形成并保存应付账单","sourceRefs":["S6","S7","S8"]}
+  ],
+  "activities": [
+    {
+      "activityId":"activity:create-replenishment",
+      "name":"创建补货单",
+      "triggerOrInput":["补货明细集合"],
+      "conditions":["补货明细集合不能为空"],
+      "activitySteps":["校验明细","生成补货单","保存补货单"],
+      "codeDefinedResults":["系统生成并保存补货单"],
+      "businessRules":["没有补货明细时不进入补货单生成"],
+      "sourceRefs":["S1","S2","S3"]
+    },
+    {
+      "activityId":"activity:record-receipt",
+      "name":"记录收货",
+      "triggerOrInput":["补货单标识","收货数量","单价"],
+      "conditions":[],
+      "activitySteps":["读取收货数据","生成收货记录","保存收货记录"],
+      "codeDefinedResults":["系统生成并保存关联收货记录"],
+      "businessRules":[],
+      "sourceRefs":["S4","S5"]
+    },
+    {
+      "activityId":"activity:create-payable-bill",
+      "name":"创建应付账单",
+      "triggerOrInput":["收货记录标识"],
+      "conditions":[],
+      "activitySteps":["读取收货记录","计算金额","生成并保存应付账单"],
+      "codeDefinedResults":["系统计算金额并生成及保存应付账单"],
+      "businessRules":[],
+      "sourceRefs":["S6","S7","S8"]
+    }
+  ],
+  "processes": [
+    {
+      "name":"补货到应付账单形成",
+      "activityIds":["activity:create-replenishment","activity:record-receipt","activity:create-payable-bill"],
+      "certainty":"REASONABLE_INFERENCE",
+      "confirmationNotes":["源码承接支持该串联，但组织制度是否强制仍待确认"],
+      "sourceRefs":["S2","S4","S5","S6","S8"]
+    }
+  ],
+  "objectsAndRelations": [
+    {"text":"收货记录用补货单标识关联补货单","sourceRefs":["S4","S5"]},
+    {"text":"应付账单用收货记录标识关联收货记录","sourceRefs":["S6","S8"]}
+  ],
+  "formulasOrMetrics": [
+    {"text":"应付金额 = 收货数量 × 单价","sourceRefs":["S7"]}
+  ],
+  "confirmationTopics": [
+    "哪些岗位或系统执行三个活动？",
+    "币种、舍入、审核、过账和付款如何处理？"
+  ],
+  "coverage": {
+    "discoveredEntryCount":3,
+    "analyzedEntryIds":["entry:create-replenishment","entry:record-receipt","entry:create-payable-bill"],
+    "notAnalyzed":[],
+    "notConsolidatedGroups":[],
+    "repositorySummaryCoverage":"COMPLETE_FOR_DISCOVERED_ENTRIES",
+    "semanticDeliveryStatus":"READY_FOR_REPORT"
+  }
+}
+~~~
+
+模型安全包把 SourceRef map 投影为 allowlistedRefs=["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"]，不传 file、line、hash、Proof 或 Provider controls。活动会保留已审阅的`terms`与`certainty`；过程阶段把内部`activityId`投影为相应的已审阅活动名称，例如`{"order":1,"activity":"创建补货单","description":"生成并保存补货单"}`。因此模型能读到“哪项业务活动构成哪个阶段”，却看不到技术内部 ID。
+
+### 3.3 程序动作
+
+1. 验证 knowledge、coverage 和 SourceRef map 的 inputFingerprint/run input 一致。
+2. 做报告输入/输出容量 preflight；不能容纳完整关键知识时不截断调用。
+3. 生成 Business Report DRAFT Prompt，将 knowledge 当不可信数据隔离。
+4. 发起一次 DRAFT，保存 started request/response 诊断。
+5. 解析完整九章 JSON，拒绝 Markdown styling、未知 ref、路径、行号、hash、Proof 和技术身份字段。
+6. 把完整 knowledge 与完整实际 draft 交给一次 REVIEW；接收完整替换 JSON，不接收 patch/decision table。
+7. 重新验证恰好九章、固定标题/顺序、文本非空、refs allowlisted，并验证结构化 coverage 字段与输入机器覆盖一致；程序不判断中文是否蕴含某条来源。
+8. 从程序侧 SourceRef map 生成 source-refs.jsonl。
+9. 确定性渲染 document.md：H1、九个 H2、段落、列表、ref 链接以及第 1 章内的可折叠技术依据。
+10. 重读最终 bytes，生成 report-validation.json；不做第三次模型补修。
+
+程序不评判每个自然句是否被形式 Proof 逐字蕴含，也不写规则识别“某次成功”或判断指标中文是否真的来自输入。Publisher 由 renderer 在第 1 章固定插入“本文描述静态源码定义行为，不代表某次运行成功”的范围声明；正文其余语义质量由整篇 Luna REVIEW 与后续真实小样本人工审阅负责。程序只检查 schema、allowlisted refs、九章顺序和机器 coverage。
+
+两次报告调用各自携带相同的完整 JSON Schema：它要求 title、恰好九个 section、固定标题集合，以及 paragraph/item 的完整 text 与 refs 结构；refs 只能选择本次知识输入已有的短引用，文本和列表服从当前 profile 的容量。这样模型在生成前就知道最终可保存的形状；Java 仍重新检查九章、引用和 coverage，不把 Schema 遵守误当成业务语义已经正确。
+
+### 3.4 Luna/high 动作
+
+DRAFT 是 business chapter author：
+
+- 将完整知识写成连贯、面向业务读者的九章正文；
+- 使用中文业务词为主，技术字段只作为括号内依据；
+- 业务活动以完整活动和过程组织，不按类/方法清单堆砌；
+- 清楚代码中的 construct/save/insert 可写“系统生成并保存”；
+- 某次运行成功、岗位、制度、唯一性、库存/记账/付款结果没有来源时集中放第 9 章；
+- 第 7 章只使用实际公式/口径，没有则明确未识别到可定义指标；
+- 每个事实段落或条目引用 allowlisted ref。
+
+REVIEW 以整份九章为单位检查遗漏、误写、业务语言、来源、覆盖和章节归属，返回完整修订 JSON。模型不输出 Markdown headings/bullets，也不生成 ref reverse binding。
+
+### 3.5 输出示例：完整九章结构 JSON
+
+~~~json
+{
+  "title": "合成补货仓库业务说明",
+  "sections": [
+    {"number":1,"title":"文档说明","paragraphs":[{"text":"本文描述冻结源码定义的系统行为，不代表某次生产运行已经成功；三个发现入口均已分析，跨入口顺序仍需制度确认。","refs":[]}],"items":[]},
+    {"number":2,"title":"业务目标","paragraphs":[{"text":"系统支持形成补货单、记录关联收货并依据收货数据形成应付账单。","refs":["S1","S2","S3","S4","S5","S6","S7","S8"]}],"items":[]},
+    {"number":3,"title":"业务对象","paragraphs":[{"text":"主要对象是补货单、补货明细、收货记录和应付账单。","refs":["S2","S4","S5","S6","S8"]}],"items":[]},
+    {"number":4,"title":"业务活动","paragraphs":[{"text":"系统校验补货明细后生成并保存补货单，再可按补货单记录收货，并按收货数据计算金额及保存应付账单。该串联有标识承接支持，但制度顺序待确认。","refs":["S1","S2","S3","S4","S5","S6","S7","S8"]}],"items":[]},
+    {"number":5,"title":"字段与维度","paragraphs":[{"text":"业务数据包括补货明细、补货单编号、收货数量、单价、收货记录编号和账单金额。","refs":["S1","S4","S5","S6","S8"]}],"items":[]},
+    {"number":6,"title":"对象关系","paragraphs":[{"text":"收货记录关联补货单，应付账单关联收货记录；源码未定义这些关系的业务唯一性。","refs":["S4","S5","S6","S8"]}],"items":[]},
+    {"number":7,"title":"指标口径","paragraphs":[{"text":"本例按单条收货记录计算账单金额：应付金额 = 收货数量 × 单价；未定义按期间汇总、税费、币种或舍入。","refs":["S7"]}],"items":[]},
+    {"number":8,"title":"示例问题","paragraphs":[],"items":[{"text":"没有补货明细时系统是否生成补货单？","refs":["S1"]},{"text":"应付金额怎样计算？","refs":["S7"]}]},
+    {"number":9,"title":"待确认事项","paragraphs":[],"items":[{"text":"需要确认执行岗位、制度顺序、唯一性、币种、舍入、审核、过账和付款。","refs":[]},{"text":"静态源码不证明某次保存成功或成功次数。","refs":[]}]}
+  ]
+}
+~~~
+
+完整、逐段来源可见的版本见 [端到端 walkthrough](../examples/semantic-framework-walkthrough.md)。
+
+### 3.6 程序确定性 Markdown 与默认 refs
+
+Renderer 只接受已验证 BusinessReport JSON。它固定：
+
+~~~text
+# {title}
+## 1. 文档说明
+{paragraphs/items with [S1](#source-ref-s1)}
+{program-generated collapsible technical basis}
+## 2. 业务目标
+...
+## 9. 待确认事项
+~~~
+
+上面的三点只表示此处省略排版模板重复行，不是输出样例；实际 renderer 必须产生全部九章，walkthrough 已给出完整 document.md。
+
+HTTP/前端源码查看器尚未实现，因此默认不能只生成指向未来 UI 的死链接。程序把 source-refs.jsonl 的内容插入第 1 章末尾，不增加第 10 个 H2：
+
+~~~markdown
+<details>
+<summary>技术依据（可选）</summary>
+
+<a id="source-ref-s1"></a>
+- S1 — src/main/java/example/ReplenishmentService.java:21–23
+  <pre><code>if (command.lines().isEmpty()) {
+      throw new IllegalArgumentException("lines required");
+  }</code></pre>
+
+</details>
+~~~
+
+正文 [S1](#source-ref-s1) 因而在同一 document.md 内可点击。每个条目含 repository-relative file、行范围和短 snippet；host absolute path 不进入正文。未来本地/HTTP source viewer 可把相同 ref 增强成外部打开动作，但不是业务质量或发布前置。
+
+这个技术依据区域由程序从 ref map 排版，不由模型生成。它属于第 1 章内容，不改变“恰好九个 H2”。
+
+### 3.7 report-validation.json
+
+~~~json
+{
+  "status": "VALID",
+  "sectionCount": 9,
+  "sectionOrderValid": true,
+  "sourceRefsValid": true,
+  "sourceAnchorsEmbedded": true,
+  "coverageDisclosureValid": true,
+  "inputKnowledgeHasFormula": true,
+  "sectionSevenHasAllowlistedRefs": true,
+  "runtimeBoundaryNoticeInsertedByRenderer": true,
+  "semanticDeliveryStatus": "READY_FOR_REPORT"
+}
+~~~
+
+inputKnowledgeHasFormula 只表示结构化输入存在公式，sectionSevenHasAllowlistedRefs 只表示该章引用合法；二者都不是对中文蕴含关系的证明。这里没有自然语言判定器、逐句 Proof verdict、reader item ledger 或 52-output inventory。
+
+### 3.8 下游直接使用
+
+BusinessReportPublication 提供：
+
+- business-report.json：人工审阅或经明确授权创建 ReaderCandidateRound 2 时的基线；
+- document.md：业务读者直接阅读；
+- source-refs.jsonl：程序重渲染、技术查看和 ref 验证；
+- report-validation.json：候选选择/冻结前确认结构与来源。
+
+共享候选 selection/freeze/package 仍是 Source Agent 外的显式动作。Publisher 不自动选择、冻结、部署或覆盖旧 Candidate。
+
+### 3.9 Gap、fatal 与停止
+
+可以形成带限制报告：
+
+- 少量 entry 为 ANALYZED_WITH_GAPS，且原因和影响在第 1/9 章出现；
+- 岗位、制度、跨系统效果、币种/舍入未知；
+- 没有公式：第 7 章明确“本次未从源码识别到可定义指标”；
+- 0 entry：可生成范围说明九章，但 semanticDeliveryStatus=INCOMPLETE，不能称完成业务分析。
+
+不能发布伪成功：
+
+- knowledge/coverage/ref 的 fingerprint 不匹配；
+- 报告输入无法完整容纳关键知识，却静默截断；
+- DRAFT/REVIEW 非法 JSON、未知 ref 或生成路径/行号/hash；
+- sections 不是恰好 1..9 或标题/顺序不符；
+- notAnalyzed/notConsolidatedGroups 未披露却称 COMPLETE；
+- started Provider request 失败。
+
+模型新增无来源公式、币种、聚合/KPI，或把静态行为写成某次运行成功，是 Luna REVIEW 与真实样本人工审阅必须拦截的内容质量 fatal；Java 不靠关键词识别它们。review 后结构仍非法，或人工评审发现这些 fatal，都停止候选且不自动发第三个请求。上游知识和安全诊断保留，可在新的显式 execution 中按相同 fingerprint 复用；不 replay 不确定 started call。
+
+### 3.10 调用、编辑、观察与重渲染
+
+~~~text
+capacity PASS -> one report DRAFT + one full-report REVIEW
+capacity FAIL -> zero Provider requests
+~~~
+
+- author/edit：显式产品生成动作，需当次授权并受 ReaderCandidateRound 上限约束；
+- review：authoring execution 内唯一一次内容审阅；
+- render/rerender：只读已验证 JSON + refs，0 model；
+- inspect/artifact/validate/trace：只读，0 model。
+
+内部 DRAFT/REVIEW 不创建额外产品 candidate。一份冻结来源最多仍有 Round 1 与针对明确问题另行授权的 Round 2；无自动 retry、fallback、Provider switch 或无限修订。
+
+### 3.11 开发与测试
+
+测试只跨 BusinessReportPublisher Interface：
+
+1. scripted DRAFT/REVIEW 收到完整知识并各调用一次。
+2. 输出恰好九章、固定标题和顺序。
+3. 模型输出没有 Markdown styling，renderer bytes 确定。
+4. unknown ref、路径/行号/hash 注入失败。
+5. source-refs 在第 1 章生成有效同文档锚点，不增加第 10 个 H2。
+6. scripted REVIEW 收到“清楚保存动作可写业务行为、不得冒充某次运行成功”的完整要求并返回修订正文；程序只保留审阅结果，不实现业务关键词识别。
+7. scripted REVIEW 在有公式/无公式两个 fixture 中保留正确第 7 章；程序只验证章节与 allowlisted refs，不判断中文公式蕴含。
+8. 业务章节使用中文业务名，技术字段只是辅助。
+9. notAnalyzed/notConsolidatedGroups 必须披露。
+10. rerender/inspect/validate 为 0 Provider。
+11. preflight 超预算为 0 started request；started failure 无伪 document.md。
+
+真实 Luna/high 质量验证按小型核心样本、不同领域样本、整仓推进。当前合成“补货→收货→应付账单”样本已完整生成九章：第 4 章用业务活动列表表达过程，第 7 章只保留已有金额公式，第 9 章集中列出顺序与运行效果的不确定性。该结果只证明报告 Prompt、结构校验、ref 渲染和整篇 REVIEW 能共同产生业务语言，不代表客户整仓结果。HTTP 和第二产品 Provider adapter 不阻塞。
+
+## 4. 旧 Step 08 Module 的去向
+
+| 旧名 | 新路线 |
 | --- | --- |
-| `nine-section-plan.json` | `nine-section-document-nine-section-plan-v4`，九章typed reader AST |
-| `document.md` | `nine-section-document-document-markdown-v1`，唯一reader-facing Markdown |
-| `trace.jsonl` | `nine-section-document-trace-record-v4`，每个ReaderItem一条typed lineage |
-| `candidate.json` | 不可变`UNPUBLISHED_CANDIDATE`及上游roots |
-| `validation-baseline.json` | 安装前deterministic checks baseline |
-| `nine-section-archive-manifest.json` | 五semantic payload descriptor/root |
-| `nine-section-document-receipt.json` | analysis-step receipt，最后创建 |
-| `runs/<runId>/run-manifest.json` | 八分析步骤refs、final ledger、唯一knowledge/plan/document/Candidate/result |
+| NineSectionPlanner | 九章映射成为 BusinessReportPublisher 内部 Prompt/input projection |
+| NineSectionRenderer | 确定性排版成为 Publisher internal seam |
+| ReaderTraceCompiler | 简化为 source-refs.jsonl + 同文档 anchors |
+| NineSectionDocumentPublisher/archive module | 简单四检查点写入成为 Publisher 内部实现 |
 
-M1的module-only `repository-coverage-ledger.json`和plan draft、M2 rendered JSON、M3 trace set、M4 publication及各module receipt不增加正式run清单。Step 08数量不变；Step 06恰增5项后整个run正式artifact总数恰为**57**。
+既有 candidate/archive 技术能力可在 Publisher 验证成功后复用，不删除、不降级；旧五 payload 和 52-output 数量不再决定业务核心完成。迁移不建立兼容 alias、dual writer、第二 public Interface 或旁路 POC。
 
-### 7.1 PlanV4完整wire合同
+## 5. 当前实现成熟度
 
-此合同与总体设计§13.2的同名catalog逐字段相同。standalone plan只有`artifactId`一个self ID；Java/API中的`nineSectionPlanId`只是该值的别名，wire不得同时携带两者。
+- 已实现 M1 in-memory 垂直链：`BusinessReportPublisher` 接收完整 reviewed activities、
+  processes、coverage/confirmation topics 与程序侧 short `SourceReference` map；scripted
+  Provider 执行一次 `BUSINESS_REPORT_DRAFT` 加一次完整 `BUSINESS_REPORT_REVIEW`。REVIEW
+  阅读实际 DRAFT，最终只保留完整审阅结果。
+- 已实现：程序严格检查九章固定标题/顺序、段落与条目结构、每个短 ref 的 allowlist；未知 ref
+  fail closed。Renderer 确定性生成九个 H2，并在第一章追加同文档的可点击 source snippet
+  anchors。模型输入没有 file、line、hash、Proof、Flow 或 run identity。
+- 已实现：当输入来自已持久化 Step 07 knowledge checkpoint 时，Publisher 安装并 fresh reopen
+  `business-report.json`、`source-refs.jsonl`、`document.md` 和
+  `report-validation.json`。Markdown 是受严格 UTF-8/no-BOM/content-ID 校验的 RAW_UTF8
+  artifact，不把正文塞回 JSON 伪装成报告。
+- 已实现：`BusinessReportCheckpointReader`从同一四文件 checkpoint 重建完整 typed
+  `BusinessReportPublication`，重新检查模块地址、文件集合、schema/type、九章、短来源、validation
+  和 strict UTF-8 Markdown；这一路径不读源码、不重写 Markdown、也不调用 Provider，供后续
+  inspect/render Adapter 复用已有报告。
+- 已实现：保存后的 typed `BusinessReport`与短来源可经独立的确定性 renderer 再生成 Markdown；
+  此行为不读取已保存 Markdown 字段、不读源码、也不调用 Provider。checkpoint 测试会故意替换
+  内存中保存的正文，再断言重渲染仍逐字节回到已审阅文档，防止未来 render Adapter 把“返回旧文本”
+  误当成“重新渲染”。
+- 已实现：`BusinessAnalysisWorkflow` 从一个已持久化 Step 05 `BusinessFlowsReference` 依次接通
+  materials、reviewed activities、repository knowledge 与本 Publisher，并返回四层 typed result；
+  该 internal composition 是未来 Runtime/CLI 的唯一业务接线，避免 CLI 或测试重新拼装四模块。
+- 已实现：`PersistedBusinessRunExecutor`以该 Step 05 publication 作为唯一业务输入，安装四层
+  checkpoint 并生成一份 nine-section report；scripted runtime test 证明它没有回头扫描源码或重建
+  技术结论。
+- 已实现：`RepositoryAnalysisRunCoordinator`将一个内部 runId 的技术执行结果唯一地交给上述
+  continuation；它只转交已经持久化的 Flow publication，不能额外读取源码或创建另一套模型调用路径。
+- 已实现：public `RepositoryAnalysisAgent.executeStep`在唯一 final-document target 成功后保存四个
+  typed business checkpoint reference，再从 `RUNNING` 转为 `FINISHED`；`inspect`只在 finished run
+  上重开这个 output manifest。它不会复制 report 内容，也不会重放任一 Provider 调用。
+- 已实现：public `render(runId)`只将该 finished run 的 report checkpoint 交给 read-only adapter；
+  adapter fresh-reopen 四个报告文件、确定性 rerender 并核对保存的 Markdown，再返回 document SHA 与
+  byte length。此操作不读源码、不调用 Provider、也不修改 run。
+- 已实现：public `artifact(query)`以 closed business-output key 在已完成 run 的既有四个 checkpoint
+  中 fresh-reopen 材料、活动、过程、报告、source-ref 或 validation 文件。它要求正向完整字节预算，
+  不截断、不收路径、不开放 prompt/raw model response。
+- 已实现：最小 CLI 可通过同一 `RepositoryAnalysisAgent`对已登记 sourceRegistrationId 排队、对已有 run
+  执行最终目标和 inspect；它不读源码路径、不传 Provider 配置。render/artifact 命令已映射，但当前 composition
+  root 尚未装配它们的只读依赖。尚未实现：用户配置加载、capture command、完整整仓输入下的容量规划与真实整仓
+  Luna/high author/review。已完成的合成小包 author/review 不能替代这些出口。
+  旧 planner/renderer/trace/archive 目标与当前骨架不能冒充本设计。
+- walkthrough 是完整合成推演，不是 jshERP 或 DepotHead 当前产物。
 
-~~~text
-NineSectionPlanV4
-  schemaVersion!: nine-section-document-nine-section-plan-v4
-  artifactType!: NINE_SECTION_DOCUMENT_NINE_SECTION_PLAN
-  artifactId!
-  repositoryKnowledgeRef!: ArtifactReference
-  repositoryInterpretationRegistryRef!: ArtifactReference
-  repositoryCoverageLedgerRef!: ArtifactReference
-  nineSectionProfileRef!: ArtifactReference
-  profileBundleRef!: ArtifactReference
-  rendererProfileRef!: ArtifactReference
-  repositoryCardinality!: {knowledgeCount!: 1, planCount!: 1, documentCountExpected!: 1}
-  sections[9]!: SectionPlanV4
-  dispositions[]!: ReaderItemDispositionV4
-  coverage!: NineSectionPlanCoverageV4
-  readerSemanticItemIds[]!
-  sectionOwnerBySemanticItem[]!: SectionOwnerV4
-  readerItemIds[]!
-  processReaderItemIds[]!
-  reasonedExclusionIds[]!
-
-SectionPlanV4
-  sectionNumber!: 1..9
-  sectionKey!: DOCUMENT_GUIDE | BUSINESS_GOALS | BUSINESS_OBJECTS |
-               BUSINESS_ACTIVITIES | FIELDS_AND_DIMENSIONS | OBJECT_RELATIONS |
-               METRIC_DEFINITIONS | EXAMPLE_QUESTIONS | PENDING_CONFIRMATION
-  title!
-  readerItems[]!: ReaderItemV4
-
-ReaderItemV4
-  readerItemKey!
-  readerItemKind!: TECHNICAL_FALLBACK | EMPTY_SECTION | RECORD_REFERENCE |
-                   ADMITTED_TERM | FACT_SENTENCE | RELATION_REFERENCE |
-                   METRIC_REFERENCE | GAP_QUESTION | BUSINESS_PROCESS_OVERVIEW |
-                   PROCESS_ACTIVITY | PROCESS_TRANSITION | ROLE_RESPONSIBILITY |
-                   PROCESS_ALTERNATIVE
-  templateKey!
-  typedSlots!: ReaderTemplateSlotsV4
-  ownerKnowledgeItemId?
-  knowledgeItemIds[]!
-  factIds[]!
-  proofIds[]!
-  evidenceNodeIds[]!
-  meaningIds[]!
-  registryProposalIds[]!
-  provisionalKeys[]!
-  interpretationProposalIds[]!
-  selectedKeys[]!
-  gapIds[]!
-  relationIds[]!
-  metricIds[]!
-  businessProcessIds[]!
-  processActivityIds[]!
-  processRelationIds[]!
-  processMembershipIds[]!
-  roleIds[]!
-  stateIds[]!
-  processClaimIds[]!
-  processAdmissionDecisionIds[]!
-  businessProcessHypothesisIds[]!
-  processAlternativeIds[]!
-  pendingConfirmationIds[]!
-  processJoinSignalIds[]!
-  processSemanticCueIds[]!
-  counterSignalIds[]!
-  certainty?: SOURCE_CONFIRMED | EVIDENCE_SUPPORTED_INFERENCE | PENDING_CONFIRMATION
-
-ReaderTemplateSlotsV4
-  TECHNICAL_FALLBACK / technical-scope-v1 -> {display!}
-  EMPTY_SECTION / empty-section-v2 -> {sectionKey!, effectiveProfileRef!: ArtifactReference, reasonCode!}
-  RECORD_REFERENCE / record-anchor-v1 -> {record!, evidence!}
-  ADMITTED_TERM / activity-with-anchor-v1 ->
-      {businessTerm!, businessPurpose!, technicalAnchor!, flow!, outcomes[]!}
-  FACT_SENTENCE / field-write-v1 -> {inputField!, targetColumn!}
-  RELATION_REFERENCE / relation-v1 -> {from!, relation!, to!}
-  METRIC_REFERENCE / metric-with-gap-v1 -> {metric!, definitionState!}
-  GAP_QUESTION / gap-question-v1 -> {subject!, missingRequirement!}
-  BUSINESS_PROCESS_OVERVIEW / business-process-overview-v1 ->
-      {processName!, purpose!, start!, finish!, certainty!}
-  PROCESS_ACTIVITY / process-activity-v1 ->
-      {process!, activity!, role!, input!, output!, certainty!}
-  PROCESS_TRANSITION / process-transition-v1 ->
-      {process!, fromActivity!, condition!, toActivity!, certainty!}
-  ROLE_RESPONSIBILITY / role-responsibility-v1 ->
-      {role!, responsibility!, process!, certainty!}
-  PROCESS_ALTERNATIVE / process-alternative-v1 ->
-      {process!, alternative!, when!, certainty!}
-
-ReaderItemDispositionV4
-  semanticItemId!
-  disposition!: ADMITTED_TO_READER | REASONED_EXCLUSION
-  readerItemKey?
-  sectionKey?
-  reasonCode?
-  gapIds[]!
-
-SectionOwnerV4
-  semanticItemId!
-  sectionKey!: DOCUMENT_GUIDE | BUSINESS_GOALS | BUSINESS_OBJECTS |
-               BUSINESS_ACTIVITIES | FIELDS_AND_DIMENSIONS | OBJECT_RELATIONS |
-               METRIC_DEFINITIONS | EXAMPLE_QUESTIONS | PENDING_CONFIRMATION
-
-NineSectionPlanCoverageV4
-  semanticItemIds[]!
-  ownerSemanticItemIds[]!
-  readerSemanticItemIds[]!
-  ownedReaderSemanticItemIds[]!
-  reasonedExclusionIds[]!
-  processKnowledgeItemIds[]!
-  processReaderItemIds[]!
-  sectionOwnerBySemanticItem[]!: SectionOwnerV4
-  traceExpectedReaderItemIds[]!
-~~~
-
-`EMPTY_SECTION`要求owner/certainty为null且全部lineage数组为空；其他kind要求owner/certainty非null。`ADMITTED_TO_READER`要求reader/section非null且reason为null；`REASONED_EXCLUSION`要求reader为null、section为null、reason非null并可有Gap。`title`必须与§5固定key逐字配对。所有引用数组去重后UTF-8 bytewise升序；`sections`按number升序，section内ReaderItems按冻结profile的显式business order，不能借上游输入顺序推断。`readerItemKey = "reader-item-v4:" + lowercaseHex(SHA-256(frame(UTF8("reader-item-id-v4")) || frame(canonicalJson(recordWithoutReaderItemKey))))`，preimage覆盖kind/template/slots、全部typed refs和required-nullable certainty。`artifactId`按`STANDALONE_JSON`公式排除且只排除自身；plan identity因此覆盖九章与ReaderItem顺序，Markdown bytes不参与plan identity。
-
-## 8. TraceV4
-
-既有八种traceKind继续与旧ReaderItem对应；新增过程kind统一使用typed `PROCESS_KNOWLEDGE_CLAIM`，其必经链严格为：
-
-~~~text
-ReaderItem
-→ ProcessKnowledge
-→ ProcessAdmissionDecision
-→ BusinessProcessHypothesis
-→ ProcessInterpretationDisposition
-→ P1/P2 task, round, generation receipt
-→ ProcessEvidenceGroup / ProcessJoinSignal
-→ Flow / EvidenceCapsule
-→ Fact / Proof / Evidence / Source
-~~~
-
-每个`PROCESS_KNOWLEDGE_CLAIM`正常process Trace至少包含这些hop kinds：
-
-~~~text
-READER_ITEM, PROCESS_KNOWLEDGE, PROCESS_ADMISSION_DECISION,
-BUSINESS_PROCESS_HYPOTHESIS, PROCESS_INTERPRETATION_DISPOSITION,
-PROCESS_MODEL_TASK, PROCESS_MODEL_ROUND,
-GENERATION_RECEIPT, PROCESS_EVIDENCE_GROUP, PROCESS_JOIN_SIGNAL,
-FLOW_SLICE, EVIDENCE_CAPSULE, FACT, PROOF, EVIDENCE_NODE, SOURCE_EXCERPT
-~~~
-
-### 8.1 TraceV4完整wire合同
-
-~~~text
-TraceRecordV4
-  schemaVersion!: nine-section-document-trace-record-v4
-  artifactType!: NINE_SECTION_DOCUMENT_TRACE_RECORD
-  traceId!
-  readerItemKey!
-  traceKind!: FACT_SENTENCE | ADMITTED_TERM | TECHNICAL_FALLBACK | GAP_QUESTION |
-              RELATION_REFERENCE | METRIC_REFERENCE | RECORD_REFERENCE | EMPTY_SECTION |
-              PROCESS_KNOWLEDGE_CLAIM
-  hops[]!: TraceHopV4
-
-TraceHopV4
-  IDENTITY {
-    identityKind!: READER_ITEM | KNOWLEDGE_ITEM | FLOW_ADMISSION_DECISION |
-                   INTERPRETATION_PROPOSAL | REPOSITORY_REGISTRY_ITEM |
-                   REGISTRY_PROPOSAL | FLOW_INTERPRETATION_DISPOSITION |
-                   PROCESS_KNOWLEDGE | PROCESS_ADMISSION_DECISION |
-                   BUSINESS_PROCESS_HYPOTHESIS | PROCESS_INTERPRETATION_DISPOSITION |
-                   PROCESS_HYPOTHESIS_REVIEW |
-                   PROCESS_MODEL_TASK | PROCESS_MODEL_ROUND | GENERATION_RECEIPT |
-                   PROCESS_EVIDENCE_GROUP | PROCESS_CANDIDATE_RELATION |
-                   PROCESS_JOIN_SIGNAL | PROCESS_SEMANTIC_CUE | COUNTER_SIGNAL |
-                   FLOW_SLICE | EVIDENCE_CAPSULE | FACT | PROOF | EVIDENCE_NODE | GAP,
-    id!
-  }
-  ARTIFACT_REFERENCE {
-    referenceRole!: REPOSITORY_BUSINESS_KNOWLEDGE | KNOWLEDGE_ADMISSION_DECISIONS |
-                    KNOWLEDGE_CONFLICTS | KNOWLEDGE_ACCOUNTING | MERGED_GAPS |
-                    REPOSITORY_INTERPRETATION_REGISTRY | BUSINESS_PROCESS_HYPOTHESES |
-                    PROCESS_INTERPRETATION_DISPOSITIONS | PROCESS_MODEL_TASKS |
-                    PROCESS_MODEL_ROUNDS | GENERATION_RECEIPTS | PROCESS_EVIDENCE_GROUPS |
-                    BUSINESS_FLOW_ARTIFACT | PROVEN_CODE_FACT_ARTIFACT |
-                    PROGRAM_GRAPH_ARTIFACT | VERIFIED_SOURCE_INVENTORY | SEARCHED_SCOPE |
-                    NINE_SECTION_PROFILE | PROFILE_BUNDLE | RENDERER_PROFILE,
-    artifactRef!: ArtifactReference
-  }
-  SOURCE_EXCERPT {sourceExcerpt!: SourceExcerptV1}
-  SECTION {
-    sectionKey!: DOCUMENT_GUIDE | BUSINESS_GOALS | BUSINESS_OBJECTS |
-                 BUSINESS_ACTIVITIES | FIELDS_AND_DIMENSIONS | OBJECT_RELATIONS |
-                 METRIC_DEFINITIONS | EXAMPLE_QUESTIONS | PENDING_CONFIRMATION
-  }
-  TEMPLATE {templateKey!}
-~~~
-
-五个hop variant恰一成立，不存在null payload或开放extra字段。`traceKind=PROCESS_KNOWLEDGE_CLAIM`只配五个process ReaderItem；`GAP_QUESTION`还允许§6定义的process-terminal variant，其他七值只配local ReaderItem。正常reviewed process hop顺序必须是`READER_ITEM → SECTION → TEMPLATE → PROCESS_KNOWLEDGE → PROCESS_ADMISSION_DECISION → BUSINESS_PROCESS_HYPOTHESIS → PROCESS_INTERPRETATION_DISPOSITION → P1 task/round/receipt → P2 task/round/receipt → PROCESS_HYPOTHESIS_REVIEW → PROCESS_EVIDENCE_GROUP → supporting/counter SIGNAL → FLOW_SLICE → EVIDENCE_CAPSULE → FACT → PROOF → EVIDENCE_NODE → SOURCE_EXCERPT-or-SEARCHED_SCOPE`；artifact refs紧邻其拥有identity，Gap可紧邻受影响identity。若review含Step 06 review Gap，还必须在review附近加入原`ProcessInterpretationGapV1.gapId`、其singleton `MergedGapV3.canonicalGapId`和`MERGED_GAPS` artifact ref。每个ReaderItem恰一record，records按`readerItemKey` bytewise升序；hops保持本节分支的语义次序，不排序。
-
-`traceId = "trace-record-v4:" + lowercaseHex(SHA-256(frame(UTF8("trace-record-id-v4")) || frame(canonicalJson(recordWithoutTraceId))))`，排除且只排除`traceId`，所以reader key、kind和完整有序hops都参与identity。`SOURCE_EXCERPT`必须使用统一`SourceExcerptV1`并由validator重验；`SEARCHED_SCOPE`和profile lineage必须是完整ArtifactReference，禁止裸ID、`path:line`或合成excerpt。
-
-若P1 GAP/FAILED使P2为`NOT_RUN_UPSTREAM_FAILED`，该shard没有BusinessProcessHypothesis或ProcessAdmissionDecision；Step 07将其Gap/owner exclusion形成的`GAP_QUESTION` ReaderItem走独立exact branch：`READER_ITEM → SECTION → TEMPLATE → canonical GAP / MERGED_GAPS → PROCESS_INTERPRETATION_DISPOSITION → P1 task/round/receipt → P2 task → PROCESS_EVIDENCE_GROUP → relevant SIGNAL/GAP → FLOW_SLICE → EVIDENCE_CAPSULE → FACT/PROOF/EVIDENCE_NODE/SOURCE_EXCERPT-or-SEARCHED_SCOPE（按Gap实际闭包）`。P1 FAILED时canonical Gap必须是同一disposition携带的唯一`PROCESS_P1_HYPOTHESIS_FAILED`，其member singleton的`canonicalGapId`逐字等于该Gap ID；P1 round、P1 task disposition及process disposition也必须共用该ID。disposition identity hop必须指向同shard、含`p2TaskDisposition.state=NOT_RUN_UPSTREAM_FAILED`且`upstreamTaskSpecId`等于该P1 task ID的record，并紧邻`PROCESS_INTERPRETATION_DISPOSITIONS` artifact ref；不得伪造BusinessProcessHypothesis、ProcessAdmissionDecision、ProcessKnowledge、P2 round、P2 receipt或`PROCESS_HYPOTHESIS_REVIEW` hop。
-
-若P1 accepted后P2返回typed `P2_GAP | P2_FAILED`，Step 07同样形成process-terminal `GAP_QUESTION`，但exact branch不同：`READER_ITEM → SECTION → TEMPLATE → MergedGapV3 canonical GAP / MERGED_GAPS → BusinessProcessHypothesisV2 / BUSINESS_PROCESS_HYPOTHESES → ProcessInterpretationDispositionV2 / PROCESS_INTERPRETATION_DISPOSITIONS → P1 task/round/receipt → P2 task/round/receipt → PROCESS_EVIDENCE_GROUP → PROCESS_CANDIDATE_RELATION → relevant supporting/counter SIGNAL-or-CUE → FLOW_SLICE → EVIDENCE_CAPSULE → FACT/PROOF/EVIDENCE_NODE → SOURCE_EXCERPT-or-SEARCHED_SCOPE`。hypothesis的`processHypothesisReviewId/finalReviewDecision`必须同时null；disposition分别含该ID于P2-gap/P2-failed集合；P2 round必须是对应terminal response并引用carrier中的原`ProcessInterpretationGapV1.gapId`。本分支明确禁止`PROCESS_KNOWLEDGE`、`PROCESS_ADMISSION_DECISION`和`PROCESS_HYPOTHESIS_REVIEW` hop，却必须保留两个实际调用的round/receipt；把typed P2 FAILED写成NOT_RUN或transport failure同样fatal。
-
-正常`PROCESS_KNOWLEDGE_CLAIM` P2 branch必须包含P2 review/round/receipt。`SOURCE_CONFIRMED`可要求直接Fact/Proof链；推断/pending还必须带support/counter/Gap。任何Gap若`sourceLocators[]`非空则逐项闭合到真实`SOURCE_EXCERPT`；若为空则至少一个`SEARCHED_SCOPE` ArtifactReference必须逐字来自`MergedGapV3.searchedScopeRefs[]`，Trace在此终止且不得合成excerpt。source location只在完整Candidate/run validation之后对外返回，且不是Proof。
-
-真实DepotHead的外部效果问题走`GAP_QUESTION → canonical Gap → searched source scope`，不得从Mapper/XML locator补成write。synthetic过程Trace必须显式标识fixture source，不得指向jshERP source。
-
-## 9. Renderer与公开接口边界
-
-renderer内部唯一接口：
-
-~~~java
-byte[] render(NineSectionPlanArtifact exactPlan);
-~~~
-
-它只能读一个已验证plan：UTF-8、LF、final LF、固定标题、deterministic template、Markdown escaping。不得读取source、Facts、model rounds、registry、Path或network。
-
-对外公开接口保持且仅保持`RepositoryAnalysisAgent`：
-
-~~~text
-start(AnalysisRunRequest)
-executeStep(AnalysisStepExecutionRequest)
-inspect(...)
-artifact(...)
-render(...)
-validate(...)
-trace(...)
-~~~
-
-CLI与loopback HTTP只是同义adapter。`executeStep`使用显式、连续、已验证的上游publication refs创建新run；不是旧run恢复。观察方法模型调用数为0。active v0仍无resume、retry、Provider switching或API fallback。
-
-## 10. Coverage、成功、Gap与fatal
-
-final `RepositoryCoverageLedgerV4`保留Step 07 draft全部集合，并新增/验证：
-
-~~~text
-readerSemanticItemIds = ownedReaderIds ⊎ reasonedReaderExclusionIds
-processKnowledgeItemIds -> nonempty processReaderItemIds or reasoned exclusion
-readerItemIds ↔ traceRecord.readerItemIds
-sectionOwnerBySemanticItem is a total function over readerSemanticItemIds
-sectionKeys = exact ordered fixed nine keys
-repositoryKnowledge : nineSectionPlan : document = 1 : 1 : 1
-formal run artifact count = 57
-~~~
-
-### 成功
-
-- `COMPLETE_CAPTURE`、repository completion eligible、ledger `closed=true`、九章恰一次、所有semantic items有owner/disposition、plan-only rerender逐字一致、Trace闭合、八项出口原子安装。
-- 无Gap映射`COMPLETE`；有合法Gap但完整分母仍闭合映射`COMPLETED_WITH_GAPS`。
-
-### 诊断成功但不可Selection
-
-- `BOUNDED_PATH_SET`映射`INCOMPLETE_SCOPE`；完整capture但coverage未闭合映射`INCOMPLETE_COVERAGE`。
-- 两者可生成诚实九章与immutable Candidate，但不是repository completion，不能因单Flow PASS升级。
-
-### 带Gap内容
-
-- 无过程的Flow显示为独立活动或Chapter 9 unassigned pending；
-- counter、alternative、inference和外部效果未证明按§6.1分层；
-- 0 Flow仍有九章plan/document/trace/manifest，业务章用typed EMPTY_SECTION，Chapter 9说明范围/Gaps。
-
-### Fatal
-
-- 九章少/多/乱序/改名，Chapter 4以controller/method为顶层清单；
-- process knowledge漏ReaderItem/Trace，pending被confirmed、正文泄漏ID/SHA/path/enum；
-- renderer读取plan外材料或相同plan输出不同bytes；
-- reviewed-process Trace跳过process admission/P1/P2/review/evidence链，P1 terminal分支伪造未运行P2 round，P2 GAP/FAILED分支漏实际P2 round/receipt或伪造review/admission/knowledge，locator冒充Proof；
-- Step 06-owned Gap缺`MergedGapV3` singleton mapping，或无source locator时Trace既无`SEARCHED_SCOPE`又合成excerpt；
-- coverage count/集合/owner/cardinality不闭合、per-Flow Markdown、identity cycle、partial install、57总数漂移。
-
-稳定codes至少包括：`PROCESS_READER_ITEM_INVALID`、`PROCESS_READER_COVERAGE_BROKEN`、`PROCESS_TRACE_CLOSURE_BROKEN`、`PROCESS_CERTAINTY_RENDERING_INVALID`、`PENDING_CONFIRMATION_DISCLOSURE_INVALID`，并沿用`NINE_SECTION_INVALID`、`SECTION_OWNER_INVALID`、`READER_ITEM_INVALID`、`BODY_CLEANLINESS_FAILED`、`DOCUMENT_HASH_MISMATCH`、`REPOSITORY_COVERAGE_LEDGER_INVALID`、`TRACE_CLOSURE_BROKEN`、`RUN_MANIFEST_INVALID`。
-
-## 11. Luna RED指南
-
-- 九章少/多/乱序/改名、EMPTY_SECTION、0 Flow、双Flow只生成一个plan/document。
-- synthetic七Flow fixture：Chapter 4顺序为overview/activity/transition/role/alternative；同一Flow在两process复用；“唯一采购单”“已经记账”不出现；每个过程item有完整Trace。
-- DepotHead fixture：只陈述guard/ID/边界调用，external effect短提示+Chapter 9完整pending；任何“已更新”使测试失败。
-- 五种新ReaderItem逐个检查exact template/slots/shared refs；三certainty渲染、inference grouping、pending两层披露、正文ID/SHA/path/enum清洁。
-- Trace mutation覆盖ProcessKnowledge/Admission/Hypothesis/P1/P2/group/signal/Flow/Capsule/Fact/Proof/Evidence/source每一hop；P2 NOT_RUN不能有round/receipt，P2 GAP/FAILED必须有round/receipt且不能有review/admission/knowledge。
-- 为counter-scope、budget、P1 FAILED、P2 review Gap和P2 GAP/FAILED逐一验证`ProcessInterpretationGapV1 → MergedGapV3(canonicalGapId=memberGapIds[0]) → GAP_QUESTION → Trace`；source locator为空时只能走至少一个exact `SEARCHED_SCOPE`。
-- plan-only capability测试让renderer无法取得source/model/registry；相同plan bytes/SHA稳定。coverage测试断言57、1:1:1、owner total和partial-install fail-closed。
-- 只运行直接覆盖M1–M4/validator/public contract的targeted tests；不跑全suite、live provider或network。
-
-## 12. Terra GREEN指南
-
-- 仅在Sol/ultra合同和Luna RED冻结后实现；保持八步骤、九标题和公开`RepositoryAnalysisAgent`不变。
-- 先升级M1的process ReaderItems/final ledger，再做M2 templates/body cleanliness，再做M3 TraceV4，最后M4/archive；不要让renderer补知识。
-- Chapter 4只从Step 07过程数组编译；没有BusinessProcess时走独立活动/pending，不按方法名猜过程。
-- process IDs和技术enum只留plan/Trace；正文使用受控slots与certainty翻译。模板/escaping可内部选择，字段/kind/lineage不可改变。
-
-## 13. 当前实现差距
-
-| 层 | 当前事实 | 目标合同 |
-| --- | --- | --- |
-| document/runtime | Wire Reset后只有package骨架，没有正式九章、Trace、Candidate或run manifest | M1–M4、validator与八项出口 |
-| planner | 尚无process-first计划 | PlanV4、13种ReaderItem、Chapter 4过程优先 |
-| renderer | 尚无plan-only生产实现 | 零模型、确定性模板、正文清洁与certainty分层 |
-| trace | 尚无当前Trace closure | TraceV4完整跨Flow链，NOT_RUN不伪造round |
-| public interface | 当前目标仍是run-centric interface，未完整实现 | 保持七方法，不增加process专用API |
-| examples | 没有当前DepotHead或synthetic输出 | 只作fixture；synthetic永不冒充jshERP |
-
-任何改变固定九章、Chapter 4 process-first含义、P1/P2唯一多Flow边界、57总数、Trace主链、八步workflow或公开接口的实现必须STOP并交Sol/ultra Design Authority；业务目标变化再由用户裁决。
+Prompt 细则见 [业务解释与九章写作中文 Prompt](../references/semantic-interpretation-prompts.md)。

@@ -88,6 +88,85 @@ class CodeStructureGraphBuilderTest {
   }
 
   @Test
+  void accumulatesExactOccurrencesWhenTwoStaticStatementsUseTheSameTableAndColumn()
+      throws Exception {
+    CodeStructureSource source =
+        new CodeStructureSource(
+            "snapshot:" + digest("repeated-static-sql-snapshot"),
+            "COMPLETE_CAPTURE",
+            true,
+            reference("source-inventory", "repeated-static-sql-inventory"),
+            reference("verified-snapshot", "repeated-static-sql-verified"),
+            controls(),
+            List.of(document("src/main/resources/mapper/RepeatedStatusMapper.xml")));
+
+    CodeStructureGraphDraft draft =
+        new CodeStructureGraphBuilder()
+            .buildStructure(
+                source,
+                discovery("repeated-static-sql"),
+                new CodeStructureGraphProfile(reference("graph-profile", "code-structure-v1")));
+
+    DraftProgramNode table =
+        draft.nodes().stream()
+            .filter(
+                candidate ->
+                    candidate.kind() == ProgramNodeKind.SQL_TABLE
+                        && candidate.canonicalValue().equals("jsh_depot_head"))
+            .findFirst()
+            .orElseThrow();
+    DraftProgramNode column =
+        draft.nodes().stream()
+            .filter(
+                candidate ->
+                    candidate.kind() == ProgramNodeKind.SQL_COLUMN
+                        && candidate.canonicalValue().equals("jsh_depot_head.status"))
+            .findFirst()
+            .orElseThrow();
+
+    assertThat(
+            draft.nodes().stream()
+                .filter(candidate -> candidate.kind() == ProgramNodeKind.SQL_TABLE)
+                .toList())
+        .containsExactly(table);
+    assertThat(table.evidenceDraftRefs()).hasSize(2);
+    assertThat(column.evidenceDraftRefs()).hasSize(2);
+    assertThat(
+            draft.edges().stream()
+                .filter(
+                    edge ->
+                        edge.kind() == ProgramEdgeKind.STATEMENT_CONTAINS_SQL
+                            && edge.toNodeId().equals(table.nodeId()))
+                .toList())
+        .hasSize(2);
+  }
+
+  @Test
+  void qualifiesDirectlyImportedMethodParameterTypesUsingTheirImportedFqn() throws Exception {
+    CodeStructureSource source =
+        new CodeStructureSource(
+            "snapshot:" + digest("imported-parameter-snapshot"),
+            "COMPLETE_CAPTURE",
+            true,
+            reference("source-inventory", "imported-parameter-inventory"),
+            reference("verified-snapshot", "imported-parameter-verified"),
+            controls(),
+            List.of(document("src/main/java/com/example/ImportedAmountHandler.java")));
+
+    CodeStructureGraphDraft draft =
+        new CodeStructureGraphBuilder()
+            .buildStructure(
+                source,
+                discovery("imported-parameter"),
+                new CodeStructureGraphProfile(reference("graph-profile", "code-structure-v1")));
+
+    assertThat(draft.nodes())
+        .extracting(DraftProgramNode::canonicalValue)
+        .contains("com.example.ImportedAmountHandler#record(java.math.BigDecimal)")
+        .doesNotContain("com.example.ImportedAmountHandler#record(com.example.BigDecimal)");
+  }
+
+  @Test
   void recordsMalformedJavaAsAnExplicitGapInsteadOfUsingAPartialParse() throws Exception {
     CodeStructureSource source =
         new CodeStructureSource(

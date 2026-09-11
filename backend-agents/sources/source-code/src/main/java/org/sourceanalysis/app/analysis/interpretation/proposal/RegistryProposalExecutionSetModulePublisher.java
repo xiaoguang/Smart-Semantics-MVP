@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.ArtifactControls;
@@ -32,6 +33,7 @@ import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.ModuleInstallRequest;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
+import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 
 /** Installs M2's already-validated R0 results without replaying any Provider call. */
@@ -118,8 +120,7 @@ public final class RegistryProposalExecutionSetModulePublisher {
     String taskSetId = identifier(body, "taskSetId");
     List<TaskDenominatorItem> tasks = new ArrayList<>();
     for (JsonNode task : array(body, "tasks")) {
-      tasks.add(
-          new TaskDenominatorItem(identifier(task, "taskSpecId"), identifier(task, "flowSliceId")));
+      tasks.add(task(task));
     }
     tasks.sort(Comparator.comparing(TaskDenominatorItem::flowSliceId, UTF8_ORDER));
     List<String> eligibleFlowIds = identifierArray(body, "eligibleFlowSliceIds");
@@ -190,6 +191,7 @@ public final class RegistryProposalExecutionSetModulePublisher {
           || !dispositionIds.add(disposition.registryProposalDispositionId())) {
         throw failure();
       }
+      verifyReceipt(taskById.get(disposition.taskSpecId()), round, receipt);
       List<String> actualProposalIds =
           proposalsByTask.getOrDefault(disposition.taskSpecId(), List.of()).stream()
               .map(BusinessRegistryProposal::registryProposalId)
@@ -264,12 +266,7 @@ public final class RegistryProposalExecutionSetModulePublisher {
   }
 
   private static void receipt(ObjectNode node, RegistryProposalGenerationReceipt value) {
-    node.put("generationReceiptId", value.generationReceiptId());
-    node.put("taskSpecId", value.taskSpecId());
-    reference(node.putObject("expectedRuntime"), value.expectedRuntime());
-    reference(node.putObject("observedRuntime"), value.observedRuntime());
-    node.put("canonicalRequestSha256", value.canonicalRequestSha256().value());
-    node.put("canonicalResponseSha256", value.canonicalResponseSha256().value());
+    node.setAll(RegistryProposalGenerationReceipt.json(value));
   }
 
   private static void proposal(ObjectNode node, BusinessRegistryProposal value) {
@@ -381,6 +378,41 @@ public final class RegistryProposalExecutionSetModulePublisher {
     return result;
   }
 
+  private static TaskDenominatorItem task(JsonNode node) {
+    return new TaskDenominatorItem(
+        identifier(node, "taskSpecId"),
+        identifier(node, "flowSliceId"),
+        digest(node, "inputJsonSha256"),
+        text(node, "configuredAdapterId"),
+        text(node, "configuredAuthMode"),
+        reference(object(node, "expectedRuntimeRef")),
+        runtime(object(node, "expectedRuntime")));
+  }
+
+  private static void verifyReceipt(
+      TaskDenominatorItem task,
+      RegistryProposalRound round,
+      RegistryProposalGenerationReceipt receipt) {
+    if (!RegistryProposalGenerationReceipt.SCHEMA_VERSION.equals(receipt.schemaVersion())
+        || !RegistryProposalGenerationReceipt.ARTIFACT_TYPE.equals(receipt.artifactType())
+        || !RegistryProposalGenerationReceipt.GENERATION_KIND.equals(receipt.generationKind())
+        || !task.taskSpecId().equals(receipt.taskSpecId())
+        || !task.flowSliceId().equals(receipt.flowSliceId())
+        || receipt.taskShardId() != null
+        || !task.inputJsonSha256().equals(receipt.requestSha256())
+        || !round.canonicalResponseSha256().equals(receipt.responseSha256())
+        || !task.configuredAdapterId().equals(receipt.configuredAdapterId())
+        || !task.configuredAuthMode().equals(receipt.configuredAuthMode())
+        || !task.expectedRuntime().equals(receipt.expectedRuntime())
+        || !receipt.expectedRuntime().equals(receipt.observedRuntime())
+        || !receipt.started()
+        || !receipt.completed()
+        || !RegistryProposalGenerationReceipt.recomputeId(receipt)
+            .equals(receipt.generationReceiptId())) {
+      throw failure();
+    }
+  }
+
   private static JsonNode object(JsonNode source, String name) {
     JsonNode value = source.get(name);
     if (value == null || !value.isObject()) throw failure();
@@ -397,6 +429,49 @@ public final class RegistryProposalExecutionSetModulePublisher {
     JsonNode value = source.get(name);
     if (value == null || !value.isTextual()) throw failure();
     return ArtifactId.parse(value.textValue()).value();
+  }
+
+  private static String text(JsonNode source, String name) {
+    JsonNode value = source.get(name);
+    if (value == null || !value.isTextual() || value.textValue().isBlank()) throw failure();
+    return value.textValue();
+  }
+
+  private static Sha256Digest digest(JsonNode source, String name) {
+    try {
+      return new Sha256Digest(text(source, name));
+    } catch (RuntimeException invalid) {
+      throw failure();
+    }
+  }
+
+  private static ArtifactReference reference(JsonNode source) {
+    try {
+      Set<String> fields = new HashSet<>();
+      source.fieldNames().forEachRemaining(fields::add);
+      if (!fields.equals(Set.of("artifactId", "sha256"))) throw failure();
+      return new ArtifactReference(
+          ArtifactId.parse(text(source, "artifactId")), new Sha256Digest(text(source, "sha256")));
+    } catch (RuntimeException invalid) {
+      throw failure();
+    }
+  }
+
+  private static ModelRuntimeIdentityV1 runtime(JsonNode source) {
+    try {
+      Set<String> fields = new HashSet<>();
+      source.fieldNames().forEachRemaining(fields::add);
+      if (!fields.equals(Set.of("upstreamProvider", "model", "reasoningEffort", "sandbox"))) {
+        throw failure();
+      }
+      return new ModelRuntimeIdentityV1(
+          text(source, "upstreamProvider"),
+          text(source, "model"),
+          text(source, "reasoningEffort"),
+          text(source, "sandbox"));
+    } catch (RuntimeException invalid) {
+      throw failure();
+    }
   }
 
   private static List<String> identifierArray(JsonNode source, String name) {
@@ -457,7 +532,14 @@ public final class RegistryProposalExecutionSetModulePublisher {
     return new RegistryProposalTaskCompilationException("REGISTRY_PROPOSAL_EXECUTION_SET_INVALID");
   }
 
-  private record TaskDenominatorItem(String taskSpecId, String flowSliceId) {}
+  private record TaskDenominatorItem(
+      String taskSpecId,
+      String flowSliceId,
+      Sha256Digest inputJsonSha256,
+      String configuredAdapterId,
+      String configuredAuthMode,
+      ArtifactReference expectedRuntimeRef,
+      ModelRuntimeIdentityV1 expectedRuntime) {}
 
   private record TaskSetView(
       String taskSetId,

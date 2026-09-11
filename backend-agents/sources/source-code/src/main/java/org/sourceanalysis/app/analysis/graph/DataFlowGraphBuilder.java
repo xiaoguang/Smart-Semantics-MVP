@@ -157,13 +157,7 @@ public final class DataFlowGraphBuilder {
       List<ArtifactId> scopeGapIds = inputs.structure().draft().coverage().scopeGapIds();
       GraphCoverage coverage =
           new GraphCoverage(
-              candidates,
-              exact,
-              gapDispositions,
-              List.of(),
-              scopeGapIds,
-              gapDispositions.isEmpty()
-                  && inputs.reopened().source().repositoryCompletionEligible());
+              candidates, exact, gapDispositions, List.of(), scopeGapIds, scopeGapIds.isEmpty());
       return new DataFlowGraphDraft(
           DataFlowGraphDraft.SCHEMA_VERSION,
           ProgramGraphKind.DATA_FLOW,
@@ -418,9 +412,12 @@ public final class DataFlowGraphBuilder {
       ControlFlowNode basicBlock = index.activatedCallBlock(callTarget, activationEntries);
       GuardContext guard = index.guardContext(callTarget, activationEntries);
       ProvenanceDraftV1 invocationProvenance = index.boundaryInvocationProvenance(callTarget);
-      ProvenanceDraftV1 argumentProvenance = index.boundaryArgumentProvenance(callTarget);
       importProvenance(invocationProvenance);
-      importProvenance(argumentProvenance);
+      ProvenanceDraftV1 argumentProvenance =
+          arguments.isEmpty() ? null : index.boundaryArgumentProvenance(callTarget);
+      if (argumentProvenance != null) {
+        importProvenance(argumentProvenance);
+      }
       callTarget.evidenceDraftRefs().stream()
           .map(index::callProvenance)
           .forEach(this::importProvenance);
@@ -514,7 +511,7 @@ public final class DataFlowGraphBuilder {
                 guard.nodeId(),
                 guard.polarity(),
                 edgeEvidence(
-                    List.of(argumentProvenance.provenanceDraftId()),
+                    List.of(Objects.requireNonNull(argumentProvenance).provenanceDraftId()),
                     List.of(invocationProvenance.provenanceDraftId()),
                     callTarget.evidenceDraftRefs(),
                     binding.node().evidenceDraftRefs())));
@@ -1099,12 +1096,11 @@ public final class DataFlowGraphBuilder {
       ArtifactId candidate =
           identity(
               "data-flow-transfer-gap-candidate-v1", workItemId.value(), "DIRECT_SETTER_UNPROVEN");
-      ArtifactId gapId = identity("graph-gap", candidate.value(), "DATA_FLOW_BINDING_UNPROVEN");
       PendingGap pending =
           new PendingGap(
               workItemId,
-              new GraphGapDraft(
-                  gapId,
+              GraphGapDraft.forLocalOccurrence(
+                  ProgramGraphKind.DATA_FLOW,
                   "DATA_FLOW_BINDING_UNPROVEN",
                   argument.activationEntries(),
                   List.of(candidate),
@@ -1196,12 +1192,11 @@ public final class DataFlowGraphBuilder {
                 formal.nodeId().value(),
                 ARGUMENT_RULE));
       }
-      ArtifactId gapId = identity("graph-gap", workItemId.value(), "DATA_FLOW_BINDING_UNPROVEN");
       PendingGap candidate =
           new PendingGap(
               workItemId,
-              new GraphGapDraft(
-                  gapId,
+              GraphGapDraft.forLocalOccurrence(
+                  ProgramGraphKind.DATA_FLOW,
                   "DATA_FLOW_BINDING_UNPROVEN",
                   activationEntries,
                   candidateElementIds,

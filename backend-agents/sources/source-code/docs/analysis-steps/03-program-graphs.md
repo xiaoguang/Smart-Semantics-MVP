@@ -2,7 +2,9 @@
 
 > 总体设计权威：[Source Code Analysis Agent 总体设计](../DESIGN.md)。运行顺序只由文件名中的 `03-` 与运行目录 `steps/03-program-graphs/` 表达。
 
-本文示例严格使用DESIGN §1.3的`NARRATIVE_ILLUSTRATION | STRUCTURAL_WIRE_SPECIMEN | STRICT_REPLAY_GOLDEN`分类；未标为strict的digest/size/ID不可复制为golden。权威字段表、enum、identity和direct-preimage合同始终exact，不能靠示例降级删除。
+本文示例严格使用[基础合同 §3.1](../references/foundation-and-publication-contracts.md#31-文档示例分类)的`NARRATIVE_ILLUSTRATION | STRUCTURAL_WIRE_SPECIMEN | STRICT_REPLAY_GOLDEN`分类；未标为strict的digest/size/ID不可复制为golden。权威字段表、enum、identity和direct-preimage合同始终exact，不能靠示例降级删除。
+
+五图、graph index 与 Gap/accounting 是稳定技术能力，本轮语义重设计不重做它们。图关系既可支持精确 Fact/Flow，也可作为 Step 06 高召回取材 cue；它本身不等于业务 Action、对象 identity 或跨请求制度关系。
 
 ## 1. 为什么存在
 
@@ -61,6 +63,12 @@ Service.updateByExampleSelective(record, example)
 6. 建证据图：graph node/edge（含boundary invocation/unknown return）→ source span、file SHA、span SHA、parser rule、binding rule；Evidence node不直接等于 Fact，也不证明外部效果。
 7. 做逐图 reference/accounting、跨图 endpoint、entry ownership、unique binding 和 resource validation。
 8. 写满五图及 index/gaps，在同文件系统原子安装整个 分析步骤“程序图” 目录。
+
+同一个冻结 Mapper 文件中，多条静态 SQL 可以引用同一张表或同一列。结构图把它们保留为一个语义 table/column node，并在该 node 上保存每一个精确源码位置；每条 statement→table edge 仍各自保留其出现位置。因此既不会把同一数据库对象误报成多个对象，也不会丢掉“哪一条语句使用了它”。
+
+每个图模块的 artifact ID 前缀由本次运行已经冻结的 artifact policy registry 决定。发布器在生成 module envelope 前解析该受信 policy；不得把前缀写死在 Java 中，也不得用测试环境的默认前缀覆盖运行期 policy。
+
+对 Java 方法签名，M1 和 M2 都采用同一项轻量规则：`String` 等已知 JDK 简名保持既定 FQN；直接、非 static、非 wildcard 的 import 将同名参数类型写成被 import 的 FQN；没有这类 import 时才使用声明包。该规则不要求 classpath、Maven 或运行客户代码。wildcard import 仍不在本规则中猜测类型。
 
 ## 4. 生成的可观察产物
 
@@ -156,6 +164,21 @@ Service.updateByExampleSelective(record, example)
 | 从图解释业务名称 | 否，留到 分析步骤“流程解释” | 否 |
 
 产品运行时模型调用数固定为 0。
+
+### 7.1 简化业务路线中的 M1–M6 I/O 映射
+
+五图和 publication 的技术语义不变。新路线只将它们作为“选择连贯材料与发现候选关系”的线索：
+
+| 现有 Module | 稳定技术输入 → 输出 | BusinessMaterialBuilder / ProcessExplainer 的直接用途 |
+| --- | --- | --- |
+| M1 CodeStructureGraphBuilder | verified source + discovery → type/method/field 结构图 | 找到 entry 所在方法、必要相邻声明和对象构造位置 |
+| M2 CallGraphBuilder | structure + mapper candidates → typed call graph/Gap | 选取完整活动所需的直接 callee；跨活动 call 只作 process recall cue |
+| M3 ControlFlowGraphBuilder | entry roots + structure/calls → branch/return/throw 图 | 把关键条件、分支和局部顺序放进同一材料包 |
+| M4 DataFlowGraphBuilder | verified source + prior graphs → 参数/字段/SQL 数据关系 | 找到显式标识承接候选；不自动宣布同一业务对象 |
+| M5 EvidenceGraphBuilder | graph elements + source locators → evidence graph | 让程序生成可重读的短 SourceRef；不要求把整张 EvidenceGraph 传给模型 |
+| M6 ProgramGraphSetPublicationSpecifier | M1–M5 → 五图、index 与 Gap | 提供同 snapshot 的完整 typed view；保留技术覆盖与可选技术查看 |
+
+Java 仍只表达 type、call、condition、data relation 与 locator，不输出“采购”“收货”“审批”等业务结论。ProcessExplainer 可把 call/data relation 作为高召回 cue，但同名、邻接或共享字段都不证明顺序、因果或 merge。未知 edge 继续是既有 graph Gap；业务材料不会靠模型补造 graph。M1–M6 的详细输入、算法、输出、failure 与测试仍完全由第 8 节定义。
 
 ## 8. 技术合同
 
@@ -325,7 +348,7 @@ basis或payload不一致统一以`GRAPH_REFERENCE_BROKEN`失败，不返回raw d
 - **给下游的后置保证**：M2–M5 获得稳定 endpoint IDs 和可重新验证的 source-span provenance drafts；分析步骤“已证明代码事实” 可引用结构节点而无需再解析声明。
 - **明确非目标**：不绑定调用、不生成 CFG/data-flow、不证明 Fact。
 - **公共测试 seam 与验收**：`buildStructure(source, discovery, profile)` 覆盖 DepotHead FQN/method/property/table/column、同名 decoy、XML include/statement、每个 provenance draft 的 locator/file/excerpt digest以及 root-order determinism；unsupported Java/XML/config fixture还必须直接断言共享Gap的reason/entry/candidate/locator/identity及coverage闭包。至少一个malformed Java与一个forbidden XML entity fixture使用`entryIds=[]`，仍必须各产生一条`affectedEntryIds=[]`、candidate非空、locator非空的M1 local Gap；所有 expected nodes/edges/gap drafts/provenance/coverage 必须闭合。
-- **Luna/xhigh 测试指南**：创建 `CodeStructureGraphBuilderTest`，冻结VerifiedSourceInventory与ApplicationDiscovery artifacts、DepotHead bytes和独立node/edge/provenance golden于 `src/test/resources/analysis/graph/code-structure/`。逐RED：完整结构与provenance、同名FQN隔离、XML statement/table/column、配置key→resource、零entry的malformed Java/forbidden XML entity local Gap、broken containment/provenance fatal、root/order determinism。零entry正例必须检查空owner没有被全仓entry代填、candidate与coverage disposition双向相等、locator命中同一verified file/span、Gap identity可重算且COMPLETE_CAPTURE下`coverage.closed=true`；首RED因public builder/schema缺失失败。只fake source handle，parser/canonical/identity不可mock。命令：`mvn -Dtest=CodeStructureGraphBuilderTest test`；禁网络/客户执行。偏离按DESIGN 13.11。
+- **Luna/xhigh 测试指南**：创建 `CodeStructureGraphBuilderTest`，冻结VerifiedSourceInventory与ApplicationDiscovery artifacts、DepotHead bytes和独立node/edge/provenance golden于 `src/test/resources/analysis/graph/code-structure/`。逐RED：完整结构与provenance、同名FQN隔离、XML statement/table/column、配置key→resource、零entry的malformed Java/forbidden XML entity local Gap、broken containment/provenance fatal、root/order determinism。零entry正例必须检查空owner没有被全仓entry代填、candidate与coverage disposition双向相等、locator命中同一verified file/span、Gap identity可重算且COMPLETE_CAPTURE下`coverage.closed=true`；首RED因public builder/schema缺失失败。只fake source handle，parser/canonical/identity不可mock。命令：`mvn -Dtest=CodeStructureGraphBuilderTest test`；禁网络/客户执行。偏离按[总体设计](../DESIGN.md)的 Design Authority 边界。
 - **Terra/xhigh 实现指南**：RED后仅改 `analysis/graph/code-structure/`，实现 public `CodeStructureGraphBuilder/CodeStructureGraphDraft` 与 `program-graphs-code-structure-draft-v3`；只读VerifiedSourceInventory与ApplicationDiscovery artifacts，parse→nodes/gap drafts→provenance drafts→edges→coverage。逐slice GREEN，输出IDs/golden稳定；不得合并同名、产生其他图或改registry。缺schema/upstream时STOP交Sol/ultra，完成更新审计。
 
 #### M2 CallGraphBuilder
@@ -405,7 +428,7 @@ M4只消费M2中已有唯一`CALL_TARGET`的M3-activated call。上述site在fre
 - **给下游的后置保证**：BusinessFlows 可按 entry root 枚举 Outcomes；ProvenCodeFacts 可证明条件 atom，无需从行号推路径。
 - **明确非目标**：不执行代码、不假定异常处理器/事务运行时、不命名业务 Outcome。
 - **公共测试 seam 与验收**：`buildControlFlow(ControlFlowInputs inputs, ControlFlowGraphProfile profile)` 覆盖 TRUE/FALSE swap、terminal deletion、loop budget、call/return mutation，以及direct-throw-only call anchor保留M2 RETURN projection但无continuation、也不向lexical successor贡献path；DepotHead 每个目标 guard 与 terminal 必须可达且 polarity 稳定。profile-stop/unsupported fixture必须直接断言共享Gap五字段、identity、terminal disposition和coverage同一candidate/gapId闭包。
-- **Luna/xhigh 测试指南**：创建 `ControlFlowGraphBuilderTest`，fixtures/goldens置 `src/test/resources/analysis/graph/control-flow/`。RED顺序：entry/guards/terminals正向、TRUE/FALSE swap、terminal deletion、call-return mismatch、direct-throw与mixed return/throw continuation、loop budget Gap、order determinism；首RED应因CFG seam缺失。direct-throw golden必须同时保留projected RETURN、call anchor无continuation NEXT且不向successor贡献path；只有无独立可达前驱时才省略并exclude该successor。mixed golden只允许normal callee branch激活同一continuation。只fake verified method reader，禁止mock CFG/accounting。命令：`mvn -Dtest=ControlFlowGraphBuilderTest test`；禁客户运行/网络。偏离按DESIGN 13.11交`gpt-5.6-sol / ultra` Design Authority。
+- **Luna/xhigh 测试指南**：创建 `ControlFlowGraphBuilderTest`，fixtures/goldens置 `src/test/resources/analysis/graph/control-flow/`。RED顺序：entry/guards/terminals正向、TRUE/FALSE swap、terminal deletion、call-return mismatch、direct-throw与mixed return/throw continuation、loop budget Gap、order determinism；首RED应因CFG seam缺失。direct-throw golden必须同时保留projected RETURN、call anchor无continuation NEXT且不向successor贡献path；只有无独立可达前驱时才省略并exclude该successor。mixed golden只允许normal callee branch激活同一continuation。只fake verified method reader，禁止mock CFG/accounting。命令：`mvn -Dtest=ControlFlowGraphBuilderTest test`；禁客户运行/网络。偏离按[总体设计](../DESIGN.md)的 Design Authority 边界交`gpt-5.6-sol / ultra` Design Authority。
 - **Terra/xhigh 实现指南**：RED后只改 `analysis/graph/control-flow/`，实现 public `ControlFlowGraphBuilder/ControlFlowGraphDraft` 与 `program-graphs-control-flow-draft-v4`；M1/M2 artifacts→blocks/guards→typed edges/Gap drafts→structural return frames→path-sensitive terminals/continuations→provenance drafts→coverage。每个RED独立GREEN；禁止把M2 RETURN pair当无条件successor、按行号补flow或运行代码。必要异常语义不在上游即STOP 13.11，审计同步。
 
 M3 的唯一 public Java seam 与 exact JSON payload 采用下列最小 records；`ControlFlowInputs`和
@@ -711,7 +734,7 @@ Variant closure固定：普通`DEFINITION/USE/ARGUMENT`的两个payload均为nul
 
 ### 8.0.1 模块 artifact wire schemas
 
-M1–M5使用 DESIGN 13.3 `ModuleArtifact<T>` envelope并采用8.1 ProgramGraph records；M6直接安装七个analysis step schema注册的JSON/JSONL semantic bytes而无summary envelope。`!`=required non-null，`?`=required nullable。
+M1–M5使用 [既有公共与模块合同 §5](../references/inherited-public-and-module-contracts.md#5-moduleartifactmodulereceipt-与-modulefailure) `ModuleArtifact<T>` envelope并采用8.1 ProgramGraph records；M6直接安装七个analysis step schema注册的JSON/JSONL semantic bytes而无summary envelope。`!`=required non-null，`?`=required nullable。
 
 | artifact | schemaVersion / artifactType | 精确 upstream | payload/排序 |
 | --- | --- | --- | --- |
@@ -843,7 +866,7 @@ over-limit时，各自在返回draft前计算candidate IDs、affected entries、
 Gap；若预算/解析停止导致剩余candidate denominator未知，则按既有resource/accounting code fatal，禁止
 partial draft。
 
-M5不复用ProgramEdge字段冒充“evidence指向program edge”。`EvidenceNodeV3(evidenceNodeId,kind,sourceExcerpt,ruleApplication)`是closed union：`SOURCE_EXCERPT{sourceExcerpt!,ruleApplication=null}`或`RULE_APPLICATION{sourceExcerpt=null,ruleApplication!}`，两个required-nullable槽必须都出现且恰一非null。`sourceExcerpt`逐字段使用DESIGN §13.2 `SourceExcerptV1`；`RuleApplicationV3(ruleId,ruleVersion,inputProgramElementIds)`三项required，input IDs按UTF-8排序。v3字段形状与v2相同，但注册rule语义增加generic boundary invocation/return且明确禁止external-effect support，因此仍必须exact-version拒绝v2。
+M5不复用ProgramEdge字段冒充“evidence指向program edge”。`EvidenceNodeV3(evidenceNodeId,kind,sourceExcerpt,ruleApplication)`是closed union：`SOURCE_EXCERPT{sourceExcerpt!,ruleApplication=null}`或`RULE_APPLICATION{sourceExcerpt=null,ruleApplication!}`，两个required-nullable槽必须都出现且恰一非null。`sourceExcerpt`逐字段使用[既有公共与模块合同 §4](../references/inherited-public-and-module-contracts.md#4-唯一源码位置合同)的 `SourceExcerptV1`；`RuleApplicationV3(ruleId,ruleVersion,inputProgramElementIds)`三项required，input IDs按UTF-8排序。v3字段形状与v2相同，但注册rule语义增加generic boundary invocation/return且明确禁止external-effect support，因此仍必须exact-version拒绝v2。
 
 `EvidenceEdge`固定为`edgeId/kind/evidenceNodeId/subjectGraphKind/subjectProgramElementId/ruleApplicationNodeId`，六项全required；subject必须是M1–M4已登记nodeId或edgeId。M6发布时把M1–M4的`evidenceDraftRefs`替换为排序非空`evidenceNodeIds`，把M5 v3 nodes写入`program-graphs-evidence-graph-v3`。boundary invocation/unknown return只由generic Java boundary rules支持；XML/SQL evidence不能支持不存在的external-effect edge。unknown binding不生成node/edge而写Gap。
 
@@ -938,7 +961,7 @@ accounting等式已全部验证，成功安装时固定`true`；它不把已有G
 `status=SUCCEEDED`当且仅当`G ∪ S=[]`，否则恰为`SUCCEEDED_WITH_GAPS`；M6 module completion、
 analysis-step receipt status和gap refs必须与它逐字一致。
 
-所有JSON object key按DESIGN §13.3 canonical UTF-8规则；普通ID集合按ID UTF-8 bytes严格递增。例外的语义数组只保留既有定义：M3 traversal/terminal顺序和M4 worklist顺序。`graphs/coverage`按CODE_STRUCTURE、CALL、CONTROL_FLOW、DATA_FLOW、EVIDENCE；catalog按ID；GraphGap行按上述四种graphKind顺序再gapId；receipt descriptors仍按fileName。五图和gap bytes先算，index引用它们后算；五图/index的`artifactId`按`STANDALONE_JSON`删除且只删除自身顶层artifactId，Gap artifact ID按完整exact JSONL bytes计算。绝对root、运行时间、迭代顺序或caller选择不得参与identity。
+所有JSON object key按[既有公共与模块合同 §5](../references/inherited-public-and-module-contracts.md#5-moduleartifactmodulereceipt-与-modulefailure) canonical UTF-8规则；普通ID集合按ID UTF-8 bytes严格递增。例外的语义数组只保留既有定义：M3 traversal/terminal顺序和M4 worklist顺序。`graphs/coverage`按CODE_STRUCTURE、CALL、CONTROL_FLOW、DATA_FLOW、EVIDENCE；catalog按ID；GraphGap行按上述四种graphKind顺序再gapId；receipt descriptors仍按fileName。五图和gap bytes先算，index引用它们后算；五图/index的`artifactId`按`STANDALONE_JSON`删除且只删除自身顶层artifactId，Gap artifact ID按完整exact JSONL bytes计算。绝对root、运行时间、迭代顺序或caller选择不得参与identity。
 
 public Java seam固定为：
 
@@ -960,7 +983,7 @@ record ProgramGraphsReference(AnalysisStepPublicationReference publication) {}
 
 两个step reference必须分别为`verified-source-inventory`、`application-discovery`并按closed dependency order进入ProgramGraphs receipt；specifier须从analysis-step store fresh reopen二者。五个sealed aggregates必须恰为M1–M5且相同basis/profile/controls/entry denominator，保存的predecessor payload refs逐级精确闭合；M6只取其typed references再从module store fresh reopen五次并与输入逐字段相等。不得接受raw draft/bytes/Path/list、detached Gap或第六张图。M6 module upstream恰为五个draft payload refs；它先原子安装七payload+module receipt，再让analysis-step store绑定该M6 module reference和两个upstream step references安装七payload+`program-graphs-receipt.json`，fresh reopen八文件成功后才返回reference。`ProgramGraphsReference` constructor必须拒绝null或非`program-graphs` key，且不暴露按图选择器。
 
-reference/basis/schema/type/五图数量错误统一`GRAPH_REFERENCE_BROKEN`；catalog/coverage/Gap/status/order守恒错误统一`GRAPH_ACCOUNTING_INVARIANT_BROKEN`；Evidence support/source/rule闭包错误统一`EVIDENCE_GRAPH_INVARIANT_BROKEN`；canonical、resource、install/collision错误沿用DESIGN §13.3稳定code。任何一种都不得改写成GraphGap、返回partial reference或留下reader-visible半套publication。
+reference/basis/schema/type/五图数量错误统一`GRAPH_REFERENCE_BROKEN`；catalog/coverage/Gap/status/order守恒错误统一`GRAPH_ACCOUNTING_INVARIANT_BROKEN`；Evidence support/source/rule闭包错误统一`EVIDENCE_GRAPH_INVARIANT_BROKEN`；canonical、resource、install/collision错误沿用[既有公共与模块合同 §5](../references/inherited-public-and-module-contracts.md#5-moduleartifactmodulereceipt-与-modulefailure)稳定code。任何一种都不得改写成GraphGap、返回partial reference或留下reader-visible半套publication。
 
 M6 selector测试必须直接断言七个注册版本、M4 v3/DataFlow public v2 exact variants、M5/public Evidence v3、index v2、resolved evidence且无draft refs、catalog双向闭合、既有Gap/accounting、两个upstream refs、五次fresh reopen、M6 exact-seven与analysis-step exact-eight/receipt-last；M4 v2/public v1、M5/public v2、index v1及任意混搭必须fail closed。测试只用真实canonical stores，禁止mock validator、detached gap、production生成golden或补读source/AST。
 

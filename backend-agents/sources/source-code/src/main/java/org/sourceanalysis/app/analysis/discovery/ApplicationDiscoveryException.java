@@ -10,6 +10,15 @@ public final class ApplicationDiscoveryException extends IllegalArgumentExceptio
     this.code = code;
   }
 
+  /**
+   * Creates a stable public failure code while retaining the internal causal detail for
+   * diagnostics.
+   */
+  public ApplicationDiscoveryException(String code, Throwable cause) {
+    super(code, cause);
+    this.code = code;
+  }
+
   /** Returns the documented, path-free failure code. */
   public String code() {
     return code;

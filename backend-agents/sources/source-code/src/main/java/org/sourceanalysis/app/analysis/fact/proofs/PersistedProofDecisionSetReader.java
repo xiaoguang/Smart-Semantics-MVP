@@ -38,9 +38,9 @@ import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 public final class PersistedProofDecisionSetReader {
 
   private static final String ARTIFACT_TYPE = "PROVEN_CODE_FACTS_PROOF_DECISION_SET";
-  private static final String SCHEMA_VERSION = "proven-code-facts-proof-decision-set-v2";
+  private static final String SCHEMA_VERSION = "proven-code-facts-proof-decision-set-v3";
   private static final String FILE_NAME = "proof-decision-set.json";
-  private static final String MODULE_VERSION = "v2";
+  private static final String MODULE_VERSION = "v3";
   private static final Set<String> ENVELOPE_FIELDS =
       Set.of(
           "artifactId",
@@ -168,7 +168,7 @@ public final class PersistedProofDecisionSetReader {
     VerifiedCanonicalPayload payload = publication.payloads().get(0);
     if (!"fact-candidate-set.json".equals(payload.descriptor().fileName())
         || !"PROVEN_CODE_FACTS_FACT_CANDIDATE_SET".equals(payload.descriptor().artifactType())
-        || !"proven-code-facts-fact-candidate-set-v2"
+        || !"proven-code-facts-fact-candidate-set-v3"
             .equals(payload.descriptor().schemaVersion())) {
       throw broken();
     }

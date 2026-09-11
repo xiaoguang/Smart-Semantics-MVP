@@ -28,6 +28,11 @@ public final class FileSystemCanonicalModuleArtifactStore implements CanonicalMo
   }
 
   @Override
+  public CanonicalArtifactPolicy resolveArtifactPolicy(ArtifactPolicyKey key) {
+    return publicationEngine.resolveArtifactPolicy(key);
+  }
+
+  @Override
   public ReopenedModulePublication reopen(ModulePublicationReference reference) {
     return publicationEngine.reopenModule(reference);
   }

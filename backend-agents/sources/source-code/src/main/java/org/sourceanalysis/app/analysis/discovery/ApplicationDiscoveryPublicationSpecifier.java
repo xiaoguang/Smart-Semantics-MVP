@@ -22,6 +22,7 @@ import org.sourceanalysis.app.artifact.AnalysisStepPublicationAddress;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
 import org.sourceanalysis.app.artifact.AnalysisStepPublisherModuleProvenance;
 import org.sourceanalysis.app.artifact.ArtifactId;
+import org.sourceanalysis.app.artifact.ArtifactPolicyKey;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepPayload;
@@ -164,7 +165,7 @@ public final class ApplicationDiscoveryPublicationSpecifier {
     } catch (ApplicationDiscoveryException failure) {
       throw failure;
     } catch (RuntimeException failure) {
-      throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_PUBLICATION_INVALID");
+      throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_PUBLICATION_INVALID", failure);
     }
   }
 
@@ -214,6 +215,7 @@ public final class ApplicationDiscoveryPublicationSpecifier {
     coverage.put("httpEntrySiteCount", array(entryBody, "sites").size());
     coverage.put("mapperCatalogSiteCount", array(mapperBody, "sites").size());
     coverage.put("noEntryDiscovered", entryLines.isEmpty());
+    coverage.put("closed", repositoryEntryCoverageClosed(profileBody));
     ArrayNode capabilityGaps = capability.putArray("gapRefs");
     gapRefs.forEach(capabilityGaps::add);
     if (noEntryGapId == null) {
@@ -228,28 +230,18 @@ public final class ApplicationDiscoveryPublicationSpecifier {
     }
 
     return List.of(
-        standalone(
-            "application-profile.json",
-            PROFILE_TYPE,
-            PROFILE_SCHEMA,
-            "application-profile",
-            finalProfile),
-        standalone(
-            "capability-report.json",
-            CAPABILITY_TYPE,
-            CAPABILITY_SCHEMA,
-            "capability-report",
-            capability),
-        jsonl("entry-points.jsonl", ENTRY_TYPE, ENTRY_SCHEMA, "entry-points", entryLines),
-        jsonl("mapper-catalog.jsonl", MAPPER_TYPE, MAPPER_SCHEMA, "mapper-catalog", mapperLines));
+        standalone("application-profile.json", PROFILE_TYPE, PROFILE_SCHEMA, finalProfile),
+        standalone("capability-report.json", CAPABILITY_TYPE, CAPABILITY_SCHEMA, capability),
+        jsonl("entry-points.jsonl", ENTRY_TYPE, ENTRY_SCHEMA, entryLines),
+        jsonl("mapper-catalog.jsonl", MAPPER_TYPE, MAPPER_SCHEMA, mapperLines));
   }
 
   private CanonicalModulePayload standalone(
-      String fileName, String artifactType, String schemaVersion, String prefix, ObjectNode body) {
+      String fileName, String artifactType, String schemaVersion, ObjectNode body) {
     ObjectNode withoutArtifactId = body.deepCopy();
     withoutArtifactId.remove("artifactId");
     String artifactId =
-        prefix
+        artifactIdPrefix(artifactType, schemaVersion)
             + ":"
             + sha256(
                 concatenate(
@@ -269,11 +261,7 @@ public final class ApplicationDiscoveryPublicationSpecifier {
   }
 
   private CanonicalModulePayload jsonl(
-      String fileName,
-      String artifactType,
-      String schemaVersion,
-      String prefix,
-      List<ObjectNode> entries) {
+      String fileName, String artifactType, String schemaVersion, List<ObjectNode> entries) {
     StringBuilder lines = new StringBuilder();
     for (ObjectNode entry : entries) {
       lines.append(
@@ -283,7 +271,7 @@ public final class ApplicationDiscoveryPublicationSpecifier {
     }
     ImmutableBytes bytes = ImmutableBytes.copyOf(lines.toString().getBytes(StandardCharsets.UTF_8));
     String artifactId =
-        prefix
+        artifactIdPrefix(artifactType, schemaVersion)
             + ":"
             + sha256(
                 concatenate(
@@ -298,6 +286,12 @@ public final class ApplicationDiscoveryPublicationSpecifier {
         ArtifactId.parse(artifactId),
         CanonicalMediaType.APPLICATION_X_NDJSON,
         bytes);
+  }
+
+  private String artifactIdPrefix(String artifactType, String schemaVersion) {
+    return moduleArtifacts
+        .resolveArtifactPolicy(new ArtifactPolicyKey(artifactType, schemaVersion))
+        .artifactIdPrefix();
   }
 
   private void requireDestination(AnalysisStepPublicationAddress destination) {
@@ -402,6 +396,24 @@ public final class ApplicationDiscoveryPublicationSpecifier {
   private static void requireSiteAndShardClosure(ObjectNode entries, ObjectNode mapper) {
     requireShardClosure(entries, "sites", "shardReceipts");
     requireShardClosure(mapper, "sites", "shardReceipts");
+  }
+
+  private static boolean repositoryEntryCoverageClosed(ObjectNode profile) {
+    String inventoryScopeKind = text(profile, "inventoryScopeKind");
+    if (!"COMPLETE_CAPTURE".equals(inventoryScopeKind)
+        && !"BOUNDED_PATH_SET".equals(inventoryScopeKind)) {
+      throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_UPSTREAM_INVALID");
+    }
+    JsonNode repositoryCompletionEligible = profile.get("repositoryCompletionEligible");
+    if (repositoryCompletionEligible == null || !repositoryCompletionEligible.isBoolean()) {
+      throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_UPSTREAM_INVALID");
+    }
+    if (repositoryCompletionEligible.booleanValue()
+        && !"COMPLETE_CAPTURE".equals(inventoryScopeKind)) {
+      throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_UPSTREAM_INVALID");
+    }
+    return "COMPLETE_CAPTURE".equals(inventoryScopeKind)
+        && repositoryCompletionEligible.booleanValue();
   }
 
   private static void requireShardClosure(ObjectNode body, String sitesField, String shardsField) {

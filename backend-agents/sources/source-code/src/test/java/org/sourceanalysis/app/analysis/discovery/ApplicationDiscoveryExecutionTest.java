@@ -1,13 +1,16 @@
 package org.sourceanalysis.app.analysis.discovery;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -106,11 +109,169 @@ class ApplicationDiscoveryExecutionTest {
     }
   }
 
+  @Test
+  void closesRepositoryEntryCoverageOnlyForCompleteFullyAccountedSource() {
+    assertAll(
+        () ->
+            assertCoverageClosure(
+                "complete", "COMPLETE_CAPTURE", true, true, temporaryDirectory.resolve("complete")),
+        () ->
+            assertCoverageClosure(
+                "bounded",
+                "BOUNDED_PATH_SET",
+                false,
+                false,
+                temporaryDirectory.resolve("bounded")));
+  }
+
+  private void assertCoverageClosure(
+      String caseName,
+      String scopeKind,
+      boolean completionEligible,
+      boolean expectedClosed,
+      Path storeDirectory)
+      throws java.io.IOException {
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
+    ArtifactControls controls = controls(policies);
+    VerifiedSourceInventoryReference frozenSource = frozenSource();
+    VerifiedSourceTextSet source = source(controls, scopeKind, completionEligible);
+    VerifiedSourceTextReader sourceHandle = reference -> source;
+    Files.createDirectory(storeDirectory);
+
+    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(storeDirectory)) {
+      FileSystemCanonicalModuleArtifactStore modules =
+          new FileSystemCanonicalModuleArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(4, 100_000, 300_000, 10));
+      FileSystemCanonicalAnalysisStepArtifactStore steps =
+          new FileSystemCanonicalAnalysisStepArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(4, 100_000, 300_000, 10));
+
+      ApplicationDiscoveryReference result =
+          new ApplicationDiscoveryExecutor(sourceHandle, modules, steps)
+              .execute(
+                  new ApplicationDiscoveryRequest(
+                      new AnalysisStepPublicationAddress(
+                          frozenSource.publication().address().runId(),
+                          AnalysisStepKey.APPLICATION_DISCOVERY),
+                      frozenSource,
+                      DiscoveryProfile.standard()));
+
+      var reopened = steps.reopen(result.publication());
+      var entryPayload =
+          reopened.semanticPayloads().stream()
+              .filter(payload -> payload.descriptor().fileName().equals("entry-points.jsonl"))
+              .findFirst()
+              .orElseThrow();
+      var mapperPayload =
+          reopened.semanticPayloads().stream()
+              .filter(payload -> payload.descriptor().fileName().equals("mapper-catalog.jsonl"))
+              .findFirst()
+              .orElseThrow();
+      JsonNode capability =
+          canonicalJson.parseCanonical(
+              reopened.semanticPayloads().stream()
+                  .filter(
+                      payload -> payload.descriptor().fileName().equals("capability-report.json"))
+                  .findFirst()
+                  .orElseThrow()
+                  .canonicalUtf8());
+      long entryCount =
+          new String(entryPayload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8)
+              .strip()
+              .lines()
+              .count();
+      long mapperCatalogEntryCount =
+          new String(mapperPayload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8)
+              .strip()
+              .lines()
+              .count();
+
+      assertThat(entryCount).as(caseName + " must discover local entries").isPositive();
+      assertThat(mapperCatalogEntryCount)
+          .as(caseName + " must discover local mapper catalog entries")
+          .isPositive();
+      assertThat(capability.at("/httpEntrySites").size())
+          .as(caseName + " must publish HTTP site accounting")
+          .isPositive();
+      assertThat(capability.at("/httpEntryShardReceipts").size())
+          .as(caseName + " must publish HTTP shard accounting")
+          .isPositive();
+      assertThat(capability.at("/mapperCatalogSites").size())
+          .as(caseName + " must publish mapper site accounting")
+          .isPositive();
+      assertThat(capability.at("/mapperCatalogShardReceipts").size())
+          .as(caseName + " must publish mapper shard accounting")
+          .isPositive();
+      assertThat(capability.at("/repositoryEntryCoverage/entryCount").intValue())
+          .isEqualTo(entryCount);
+      assertThat(capability.at("/repositoryEntryCoverage/mapperCatalogEntryCount").intValue())
+          .isEqualTo(mapperCatalogEntryCount);
+      assertThat(capability.at("/repositoryEntryCoverage/httpEntrySiteCount").intValue())
+          .isEqualTo(capability.at("/httpEntrySites").size());
+      assertThat(capability.at("/repositoryEntryCoverage/mapperCatalogSiteCount").intValue())
+          .isEqualTo(capability.at("/mapperCatalogSites").size());
+
+      JsonNode closed = capability.at("/repositoryEntryCoverage/closed");
+      assertThat(closed.isBoolean())
+          .as(caseName + " repositoryEntryCoverage.closed must be a boolean")
+          .isTrue();
+      assertThat(closed.booleanValue())
+          .as(caseName + " repositoryEntryCoverage.closed")
+          .isEqualTo(expectedClosed);
+    }
+  }
+
   private static VerifiedSourceTextSet source(ArtifactControls controls) {
     return new VerifiedSourceTextSet(
         "snapshot:" + "1".repeat(64),
         "COMPLETE_CAPTURE",
         true,
+        reference("capability-profile", '2'),
+        reference("verified-source-inventory-source-inventory", '3'),
+        reference("verified-snapshot", '4'),
+        controls,
+        List.of(
+            document(
+                "pom.xml",
+                """
+                <project><modelVersion>4.0.0</modelVersion><properties><maven.compiler.release>17</maven.compiler.release></properties><dependencies><dependency><artifactId>spring-webmvc</artifactId></dependency><dependency><artifactId>mybatis-spring</artifactId></dependency></dependencies></project>
+                """),
+            document(
+                "src/main/resources/application.yml",
+                "mybatis:\n  mapper-locations: classpath:mapper/*.xml\n"),
+            document(
+                "src/main/java/com/example/DepotHeadController.java",
+                """
+                package com.example;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RequestMapping;
+                @RequestMapping("/depotHead")
+                public class DepotHeadController {
+                  @PostMapping("/batchSetStatus")
+                  public String batchSetStatus(String status, String ids) { return "ok"; }
+                }
+                """),
+            document(
+                "src/main/java/com/example/DepotHeadMapper.java",
+                """
+                package com.example;
+                public interface DepotHeadMapper { int updateStatus(String status); }
+                """),
+            document(
+                "src/main/resources/mapper/DepotHeadMapper.xml",
+                """
+                <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+                <mapper namespace="com.example.DepotHeadMapper"><update id="updateStatus">update jsh_depot_head set status = #{status}</update></mapper>
+                """)));
+  }
+
+  private static VerifiedSourceTextSet source(
+      ArtifactControls controls, String scopeKind, boolean completionEligible) {
+    return new VerifiedSourceTextSet(
+        "snapshot:" + "1".repeat(64),
+        scopeKind,
+        completionEligible,
         reference("capability-profile", '2'),
         reference("verified-source-inventory-source-inventory", '3'),
         reference("verified-snapshot", '4'),

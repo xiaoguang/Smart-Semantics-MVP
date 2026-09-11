@@ -1,8 +1,10 @@
 # Source Code Analysis Naming and Delivery Implementation Plan
 
+> Current delivery order and batch exit criteria are owned by the [Semantic Framework Ten-Batch Implementation Plan](semantic-framework-ten-batch-implementation-plan.md). This document remains the detailed naming, wire-reset, and delivery reference; it does not define a competing execution sequence.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Current maturity:** The Wire Reset is complete and several bounded deterministic/scripted vertical slices exist, but there is no complete run. BusinessFlows lacks process signals; FlowInterpretation has only local M1–M5; cross-Flow M6–M9, process knowledge, and process-first documentation remain target work.
+> **Current maturity:** The Wire Reset and several bounded deterministic/scripted vertical slices exist, but there is no complete run. Current FlowInterpretation still implements the old mandatory R0/finite-key carrier. The approved six-module DRAFT/REVIEW semantic framework, RepositoryKnowledge, and NineSectionDocument remain `NOT IMPLEMENTED`.
 
 **Goal:** Replace the current prototype-shaped source-code analyzer with one coherently named, fail-closed Source Code Analysis Agent that implements the approved eight-analysis-step contract without compatibility readers.
 
@@ -24,12 +26,12 @@
 - Do not create `target`, `mvp`, numbered package names, `common`, `shared`, `misc`, `utils`, `codemd`, `github`, or `linguan` in a target package or public wire name.
 - Numerical ordering appears only in documentation filenames and runtime paths such as `steps/03-program-graphs/`; Java types, package names, fields, schema names, IDs, and commands use semantic names.
 - This is a full Wire Reset. Do not add a dual reader, fallback reader, migration reader, alias, bridge, symlink, old-to-new translator, or dual writer. Old directories, packages, artifact types, schema versions, receipts, and run stores fail closed.
-- Preserve the official cardinality: 47 semantic analysis-step payloads, eight analysis-step receipts, one nine-section archive manifest, and one root run manifest: **57** formal run outputs.
+- Implement the approved target cardinality: 42 semantic analysis-step payloads, eight analysis-step receipts, one nine-section archive manifest, and one root run manifest: **52** formal run outputs. The current 57-output wire is migration input, not a target to preserve.
 - Preserve the fixed jshERP scope and commit `8c30ce7861570458920175e200bb2a6442713580`. Do not run customer Maven, plugins, tests, scripts, or application code.
 - A Provider call that starts is never retried or switched automatically. Same-run process recovery, worker takeover, model-call recovery, and terminal repair remain out of scope.
 - Implementation and automated verification use frozen fixtures and scripted Provider fakes only. This plan authorizes no live LLM/product-content generation, source capture, network source access, candidate generation, freeze, package, deployment, or runtime activation.
-- R0/R1/R2 remain single-Flow. P1/P2 are the sole bounded multi-Flow model exception; their explicit synthetic replenishment-to-settlement fixture is never jshERP evidence. All external effects remain unproven without dedicated Proof.
-- Sol/ultra owns design; Luna/xhigh owns RED, bounded reads/rounds/review/reader slots; Terra/xhigh implements only after design+RED; Sol/xhigh only debugs root causes. Contract/schema uncertainty returns to Sol/ultra; eight-step/nine-section/identity/57-count/model-boundary changes stop for user confirmation.
+- Local and process semantics use whole-record DRAFT+REVIEW over bounded source-backed packets. Mandatory R0/finite vocabulary and fixed P1/P2 carriers are removed; terminology is ordinary data. The synthetic replenishment-to-settlement fixture is never jshERP evidence, and external effects remain unconfirmed without adequate source/Proof/human basis.
+- Sol/ultra owns design; Luna/xhigh owns RED, bounded reads/review/reader slots; Terra/xhigh implements only after design+RED; Luna/high owns product semantic DRAFT/REVIEW; Sol/xhigh only debugs root causes. Contract/schema uncertainty returns to Sol/ultra; eight-step/nine-section/identity/52-count/model-boundary changes stop for user confirmation.
 - Run only tests added by or directly covering the current work unit. Maven-heavy commands are serial.
 
 ---
@@ -58,11 +60,11 @@ The semantic keys in this table are closed. The two-digit prefixes order documen
 | Program graphs | `code-structure-graph.json`, `call-graph.json`, `control-flow-graph.json`, `data-flow-graph.json`, `evidence-graph.json`, `graph-index.json`, `graph-gaps.jsonl` | 7 |
 | Proven code facts | `proven-facts.json`, `proof-pack.json`, `gap-ledger.json`, `fact-accounting.json` | 4 |
 | Business flows | `flow-slices.json`, `flow-coverage.json`, `entry-dispositions.jsonl`, `evidence-capsules.jsonl`, `flow-gaps.jsonl` | 5 |
-| Flow interpretation | `registry-proposal-tasks.jsonl`, `registry-proposal-rounds.jsonl`, `registry-proposal-dispositions.jsonl`, `repository-interpretation-registry.json`, `flow-model-tasks.jsonl`, `model-rounds.jsonl`, `generation-receipts.jsonl`, `interpretation-candidates.jsonl`, `flow-interpretation-dispositions.jsonl`, `process-evidence-groups.jsonl`, `process-model-tasks.jsonl`, `process-model-rounds.jsonl`, `business-process-hypotheses.jsonl`, `process-interpretation-dispositions.jsonl` | 14 |
+| Flow interpretation | `semantic-evidence-packets.jsonl`, `local-semantic-drafts.jsonl`, `local-semantic-reviews.jsonl`, `local-interpretation-dispositions.jsonl`, `process-evidence-groups.jsonl`, `business-process-drafts.jsonl`, `business-process-reviews.jsonl`, `process-interpretation-dispositions.jsonl`, `semantic-accounting.json` | 9 |
 | Repository knowledge | `knowledge-admission-decisions.jsonl`, `repository-business-knowledge.json`, `knowledge-conflicts.jsonl`, `knowledge-accounting.json`, `merged-gaps.json` | 5 |
 | Nine-section document | `nine-section-plan.json`, `document.md`, `trace.jsonl`, `candidate.json`, `validation-baseline.json` | 5 |
 
-Each row also installs one semantic receipt. The document step additionally installs its archive manifest and the run installs one root manifest. Module/validation artifacts do not enter the 57-output count.
+Each row also installs one semantic receipt. The document step additionally installs its archive manifest and the run installs one root manifest. Module/validation artifacts do not enter the 52-output count. This inventory is an approved migration target; current Java/Schema still use the old Step 06 inventory.
 
 ### Task 1: Publish the naming design
 
@@ -247,22 +249,22 @@ Each row also installs one semantic receipt. The document step additionally inst
 ### Task 8: Deliver flow interpretation
 
 **Files:**
-- Create: `src/main/java/org/sourceanalysis/app/analysis/interpretation/`
-- Create: `src/main/java/org/sourceanalysis/app/adapter/provider/`
-- Test: matching packages under `src/test/java/org/sourceanalysis/app/`
+- Modify/replace the old implementation under `src/main/java/org/sourceanalysis/app/analysis/interpretation/`.
+- Modify the provider adapter only through the frozen semantic seam.
+- Test matching packages under `src/test/java/org/sourceanalysis/app/`.
 
 **Interfaces:**
-- Consumes: `BusinessFlowsReference`, each local Capsule, and the whole-repository `processJoinSignals` projection.
-- Produces: `FlowInterpretationReference`, fourteen semantic payloads, and `flow-interpretation-receipt.json` (15 files).
+- Consumes: Step 01–05 typed references, with Step 05 Flow/Capsule preferred and Step 02/01/03 safe noFlow material fallback.
+- Produces: `FlowInterpretationReference`, nine semantic payloads, and `flow-interpretation-receipt.json` (10 reader-visible files).
 
-- [ ] **Step 1: RED/GREEN `RegistryProposalTaskCompilerTest`, `RegistryProposalRunnerTest`, and `RepositoryInterpretationRegistryFreezerTest` serially.**
-- [ ] **Step 2: RED/GREEN `FiniteKeyFlowTaskCompilerTest` for local `E + 2R` task/disposition conservation.**
-- [ ] **Step 3: RED/GREEN `InterpretationRunnerTest` with a recording scripted Provider adapter.**
-- [ ] **Step 4: RED/GREEN `CrossFlowCandidateCompilerTest` for four signal levels, generic-only rejection, `C` edges, `G` groups covering all Flows, every qualifying `positivePairBases[]`, every scoped `counterBases[]`, exact aggregate unions/direction, deterministic `PROCESS_COUNTER_SCOPE_UNRESOLVED`, and zero model calls.**
-- [ ] **Step 5: RED/GREEN `BusinessProcessTaskCompilerTest` for all `A` ownership shards, `S⊆A` model-safe shards, one owner across `A` per candidate edge, explicit no-model/budget Gap dispositions, and exact path-bearing persisted→path-free packet projection.**
-- [ ] **Step 6: RED/GREEN `BusinessProcessInterpretationRunnerTest` for the canonical `ProcessModelRequestV1`, task/round/receipt hash equalities, Luna P1/P2, all six P1/P2 response variants, per-hypothesis P2 `REVIEWS` protected-ref subsets, typed task-level P2 GAP/FAILED with actual P2 round/receipt, canonical `PROCESS_P1_HYPOTHESIS_FAILED`, and P2 `NOT_RUN_UPSTREAM_FAILED`.**
-- [ ] **Step 7: Prove `planned=E+2R+2S`, the exact actual-call formula, `|process dispositions|=A`, `A>0,S=0` no-model closure, the retained/narrowed/dropped/pending/P2-gap/P2-failed disjoint partition, published and Step 07-admission-eligible subsets, one canonical Step 06 Gap carrier per owned Gap, and started Provider failure with no retry/switch/resume/API fallback.**
-- [ ] **Step 8: RED/GREEN `FlowInterpretationPublicationSpecifierTest`; verify fourteen payloads plus receipt, all-shard ownership, every P1/P2 response/review Gap value and exact `gapIds` union in `process-interpretation-dispositions.jsonl`, six-way hypothesis accounting, request hashes/path-leak rejection, distinct M3/public registry pairs, and commit.**
+- [ ] **Step 1: RED/GREEN M1 `semantic-material` for every entry disposition, including readable noFlow material and unsafe-material Gap.**
+- [ ] **Step 2: RED/GREEN M2 `semantic-packet` for DRY handles, reverse bindings, narrative grouping, shared overview, omission accounting, and pre-call REVIEW capacity.**
+- [ ] **Step 3: RED/GREEN M3 `local-semantic-interpretation` for Luna/high DRAFT+REVIEW of complete `SemanticFragment` records, actual request/response/receipt persistence, protected evidence classes, and no retry/switch.**
+- [ ] **Step 4: RED/GREEN M4 `process-context-retrieval` for bounded high-recall cues, deterministic scopes, bridge needs, many-to-many candidates, and repository coverage without pre-approving relations.**
+- [ ] **Step 5: RED/GREEN M5 `process-semantic-interpretation` for complete BusinessProcess/mapping DRAFT+REVIEW, branch transitions, base scopes plus one bounded reconciliation pass, and omission Gaps.**
+- [ ] **Step 6: RED/GREEN M6 `publish` for the exact nine-payload inventory, entry/material/process/relation double accounting, nullable Flow refs, fresh-reopen lineage, and receipt-last install.**
+- [ ] **Step 7: Run a separately authorized frozen Luna/high sample from an unrelated domain only after scripted contracts pass; human-review false merges, invented actors/effects, missing semantics, and confirmation burden before broadening.**
+
 
 ### Task 9: Deliver repository knowledge
 
@@ -274,11 +276,10 @@ Each row also installs one semantic receipt. The document step additionally inst
 - Consumes: proven facts, all business flows, and all local/process interpretation artifacts.
 - Produces: `RepositoryKnowledgeReference`, five semantic payloads, and `repository-knowledge-receipt.json`.
 
-- [ ] **Step 1: RED/GREEN `ProposalAdmissionEngineTest` for all-Flow local total admission; process admission only for P2-reviewed retained/narrowed/pending hypotheses; dropped, P1-terminal, P2 GAP/FAILED, and no-model reasoned exclusions; exact P1/P2 lineage; exact counter/blocking propagation; six-way hypothesis accounting; and exactly three certainty values only on admitted claims.**
-- [ ] **Step 2: RED/GREEN `MergedGapCompilerTest` for every Step 06-owned singleton: `canonicalGapId=g.gapId=memberGapIds[0]`, lossless typed-field reversal, P1-failure ownership, and `affectedBusinessProcessIds` equal to the exact non-null admitted process IDs whose decision `gapIds` carries that Gap; cover both nonempty and empty counter-scope cases.**
-- [ ] **Step 3: RED/GREEN `AnchoredKnowledgeMergerTest` for lossless plural claim keys, conflict/alternative preservation, nine process arrays, many-to-many membership totality, and one knowledge.**
-- [ ] **Step 4: RED/GREEN `RepositoryKnowledgePublicationSpecifierTest` for the renamed `knowledge-admission-decisions.jsonl`, five payloads, admission-eligible/P2-terminal partitions, singleton Gap accounting, process-aware draft ledger, receipt, and acyclic lineage.**
-- [ ] **Step 5: Verify model-ineligible Flows and P1/P2 terminal hypotheses never gain fabricated interpretation/admission/certainty records, then commit.**
+- [ ] **Step 1: RED/GREEN admission for every complete reviewed fragment/process/mapping record; `NARROW` installs its full replacement, `PENDING_CONFIRMATION` stays visible, and `DROP` keeps a reason.**
+- [ ] **Step 2: Verify `SOURCE_CONFIRMED` only copies exact Fact/Proof values and `HUMAN_CONFIRMED` only applies a version-matched bundle from the fixed profile pointer; stale/conflicting confirmations produce Gap.**
+- [ ] **Step 3: RED/GREEN deterministic knowledge merge for reviewed aliases/object mappings, conflicts/alternatives, many-to-many process membership, example questions, limitations, and separate technical/semantic accounting.**
+- [ ] **Step 4: RED/GREEN publication of the exact five payloads, receipt, acyclic lineage, and no Java free-text entailment/conflict engine.**
 
 ### Task 10: Deliver the nine-section document and exterior validation
 
@@ -291,12 +292,12 @@ Each row also installs one semantic receipt. The document step additionally inst
 - Consumes: exact references from all seven upstream analysis steps.
 - Produces: five semantic document payloads, `nine-section-archive-manifest.json`, `nine-section-document-receipt.json`, root `run-manifest.json`, and a separate validation publication.
 
-- [ ] **Step 1: RED/GREEN `NineSectionPlannerTest` for one fixed-nine plan, process-first Chapter 4, five process ReaderItem kinds, certainty grouping, body-cleanliness fields, and Gap-owned process-terminal `GAP_QUESTION` items for no-model/P1/P2 terminal branches.**
+- [ ] **Step 1: RED/GREEN `NineSectionPlannerTest` for one fixed-nine plan, process-first Chapter 4, branch/noFlow preservation, reviewed example questions, dual coverage, and typed GUIDE/GAP/EMPTY items without fabricated semantic refs.**
 - [ ] **Step 2: RED/GREEN `PlanOnlyRendererTest` for deterministic UTF-8/LF Markdown from plan bytes only.**
-- [ ] **Step 3: RED/GREEN `TypedTraceCompilerTest` for three exact process branches: reviewed ReaderItem→ProcessKnowledge→Admission→Hypothesis→ProcessInterpretationDisposition→actual P1/P2/review→evidence; P1 GAP/FAILED→canonical MergedGap→disposition→actual P1 plus planned P2 NOT_RUN with no fabricated hypothesis/P2 round/receipt/review; and P2 GAP/FAILED→canonical MergedGap→unreviewed P1 hypothesis→disposition→both actual P1/P2 rounds/receipts with no fabricated review/admission/knowledge.**
+- [ ] **Step 3: RED/GREEN `TypedTraceCompilerTest` for exact Fact/Proof source paths, located-interpretation paths with optional Flow/Proof, and GUIDE/GAP/EMPTY lineage; no branch may fabricate semantic, Flow, Proof, review, or confirmation hops.**
 - [ ] **Step 4: RED/GREEN `CandidateRunArchiverTest` for five semantic payloads → archive manifest → semantic receipt → root run manifest.**
 - [ ] **Step 5: RED/GREEN `IndependentRunValidatorTest`; reopen only explicit typed references, revalidate the six-way hypothesis/admission/exclusion partition and every `canonicalGapId=memberGapIds[0]` owner/Trace branch, and write idempotent exterior validation artifacts.**
-- [ ] **Step 6: Count and fresh-reopen all 57 official outputs; verify validation/module artifacts are excluded, then commit.**
+- [ ] **Step 6: Count and fresh-reopen all 52 official outputs; verify validation/module artifacts are excluded, then commit.**
 
 ### Task 11: Deliver the public seam and adapters
 
@@ -348,7 +349,7 @@ Each row also installs one semantic receipt. The document step additionally inst
 
 - [ ] **Step 3: Reopen all official outputs in a fresh process.**
 
-  Verify 47 semantic payloads + eight receipts + one archive manifest + one run manifest = 57, exact lineage, and partial-install rejection.
+  Verify 42 semantic payloads + eight receipts + one archive manifest + one run manifest = 52, exact lineage, and partial-install rejection.
 
 - [ ] **Step 4: Verify Wire Reset rejection and no recovery.**
 

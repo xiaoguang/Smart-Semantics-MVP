@@ -2,7 +2,9 @@
 
 > 总体设计权威：[Source Code Analysis Agent 总体设计](../DESIGN.md)。运行顺序只由文件名中的 `04-` 与运行目录 `steps/04-proven-code-facts/` 表达。
 
-本文示例严格使用DESIGN §1.3的`NARRATIVE_ILLUSTRATION | STRUCTURAL_WIRE_SPECIMEN | STRICT_REPLAY_GOLDEN`分类；未标为strict的digest/size/ID不可复制为golden。权威字段表、enum、identity和direct-preimage合同始终exact，不能靠示例降级删除。
+本文示例严格使用[基础合同 §3.1](../references/foundation-and-publication-contracts.md#31-文档示例分类)的`NARRATIVE_ILLUSTRATION | STRUCTURAL_WIRE_SPECIMEN | STRICT_REPLAY_GOLDEN`分类；未标为strict的digest/size/ID不可复制为golden。权威字段表、enum、identity和direct-preimage合同始终exact，不能靠示例降级删除。
+
+当前 `FactRegistry.standardJavaFacts()` 只登记 `JAVA_BOUNDARY_INVOCATION`、`JAVA_GUARD_CONDITION` 与 `JAVA_EXACT_CALL` 三类通用 Java 技术事实；继续保留。它们可证明受支持的代码行为，却不负责生成 purpose、actor、业务对象或跨入口过程文本；Step 06 以模型解释这些材料并保留不确定性。
 
 ## 1. 为什么存在
 
@@ -23,10 +25,6 @@ DepotHead 的 **REAL_SOURCE** 在 Controller :43,:178-191、Service :741-822、M
 ~~~text
 kind: JAVA_BOUNDARY_INVOCATION
 required atoms:
-  ENTRY_ROUTE = POST /depotHead/batchSetStatus
-  INPUT_FIELD = status
-  SERVICE_HANDLER = DepotHeadService.batchSetStatus
-  ELIGIBLE_ID_SET = dhIds
   INVOCATION_CALL_ID = exact M2 call-site ID
   STATIC_TARGET_TYPE = DepotHeadMapper
   STATIC_TARGET_METHOD = updateByExampleSelective
@@ -37,7 +35,7 @@ required atoms:
   INVOCATION_EVIDENCE = Java call locator + java-boundary-invocation-v1
 ~~~
 
-这是candidate denominator，不是当前admitted Fact。`jsh_depot_head.status`、`WHERE id IN`等可作为独立M1/M2静态结构Fact；“该boundary invocation执行了更新/筛选”必须始终是外部效果Gap，不能成为这个candidate的atom。
+这是 candidate denominator，不是当前 admitted Fact。`POST /depotHead/batchSetStatus`、`status`、`dhIds` 等是本段人类讲解标签，不是 `standardJavaFacts()` 的 required atom，也不得据此扩展领域 Fact。`jsh_depot_head.status`、`WHERE id IN`等静态结构即使由其他通用分析精确观测，也不能自动合并成“该 boundary invocation 执行了更新/筛选”；外部效果必须继续保留 Gap。
 
 另一个独立目标候选是控制条件，而不是把它塞回某一次调用的上下文：
 
@@ -143,6 +141,18 @@ required proof:
 
 产品运行时模型调用数固定为 0。
 
+### 7.1 简化业务路线中的 M1–M3 I/O 映射
+
+ProvenCodeFacts 的稳定技术 Proof 强度保持；变化只是它不再成为每个业务语义原子的强制形式证明。
+
+| 现有 Module | 稳定技术输入 → 输出 | 业务路线的直接用途 |
+| --- | --- | --- |
+| M1 FactCandidateEnumerator | 五图/entry/evidence → 可证明技术 candidate 与 Gap | 给材料选择提供 guard、exact call、boundary invocation 候选；不编 business action |
+| M2 AtomicProofBuilder | candidate + exact Evidence → Fact/Proof decision | 支持“exact call/guard 已被程序证明”的技术详情；失败不得被业务解释反向补成 Proof |
+| M3 FactLedgerPublicationSpecifier | reopened M1/M2 → proven-facts、proof-pack、gap-ledger、fact-accounting | 给 BusinessMaterialBuilder typed facts/technicalProofRefs；最终读者可选打开技术链 |
+
+例如构造对象并处于清楚的 insert/save 源码语境时，ActivityExplainer 可以说明“系统生成并保存该对象”，其最低业务来源可以是短 SourceRef；这不要求 Java 新增“补货单保存”行业 Fact。若正文或技术视图声称 JAVA_EXACT_CALL 已被证明，则仍必须满足本步骤既有 Proof/Evidence 闭包。模型不能创造 Fact/Proof/path/line/hash。本步骤仍 0 模型，M1–M3 的既有算法、accounting、failure 与测试不删不改。
+
 ## 8. 技术合同
 
 ### 8.0 固定模块合同
@@ -227,7 +237,7 @@ required proof:
 
 ### 8.0.1 模块 artifact wire schemas
 
-M1/M2使用 DESIGN 13.3 `ModuleArtifact<T>` envelope；M3直接安装四个analysis step schema注册的semantic JSON bytes而无summary envelope。`!`=required non-null，`?`=required nullable。
+M1/M2使用 [既有公共与模块合同 §5](../references/inherited-public-and-module-contracts.md#5-moduleartifactmodulereceipt-与-modulefailure) `ModuleArtifact<T>` envelope；M3直接安装四个analysis step schema注册的semantic JSON bytes而无summary envelope。`!`=required non-null，`?`=required nullable。
 
 | artifact | schemaVersion / artifactType | 精确 upstream | payload/排序 |
 | --- | --- | --- | --- |
@@ -419,15 +429,35 @@ FACT_PROFILE_INVALID、FACT_KIND_UNSUPPORTED、REQUIRED_ATOM_MISSING、GUARD_CON
 
 ## 9. 当前实现成熟度审计
 
-以下是正式实现分支已由定向测试验证的当前事实；它不把候选清单外推成已证明Fact，也不把synthetic fixture外推成jshERP运行结果。M1/M2/M3的 v2 guard-condition 合同已交付；这仍不是完整jshERP业务事实验收。
+以下只记录当前development worktree中的实现与直接证据。代码尚未形成implementation PR或交付到main，也没有把synthetic fixture或历史结果外推成当前jshERP验收；本节不修改§8冻结合同。
 
-| 状态 | 当前事实 |
-| --- | --- |
-| **已实现（结构/构建门）** | 目标package与JDK 17 Toolchain已就位；通用wire头门禁不理解Fact、Proof或Evidence语义。 |
-| **已实现（v2 M1 候选清单）** | `PersistedFactCandidateInputReader`从同一冻结依据重新打开应用发现与完整五图，校验五图、graph index、应用画像和源码清单之间的身份闭合；`FactCandidateEnumerator`为证据、调用、参数、控制路径均精确闭合的Java边界调用建立候选，并为每个可达且证据闭合的`if` guard建立独立`JAVA_GUARD_CONDITION`候选。guard仅保存控制图v2的`normalizedCondition`、自身TRUE/FALSE branch和自身Evidence；不闭合组合保留`NOT_APPLICABLE`。`FactCandidateSetModulePublisher`安装唯一v2 `fact-candidate-set.json`与七项上游引用；独立reader重开、重枚举并拒绝内容漂移。 |
-| **已实现（v2 M2 原子证明）** | `AtomicProofBuilder`只从已保存M1输入、Evidence和冻结源码构造逐atom CLOSED Proof；它逐字节重验span/hash、选择同一Evidence边上的允许source/rule pair，并在任一atom失败时拒绝整个复合Fact。boundary继续留下不声称外部效果的`DATA_FLOW_BINDING_UNPROVEN` Gap；独立guard只证明一个`CONTROL_CONDITION` atom，绝不产生外部效果Gap。`ProofDecisionSetModulePublisher`与`PersistedProofDecisionSetReader`将M1 candidate、source inventory、snapshot和M2 decision严格重开闭合；源码字节漂移会fatal。 |
-| **已实现（v2 M3 事实账本）** | `FactLedgerPublicationSpecifier`只消费重开的M1/M2与三个已保存analysis-step predecessor，生成并原子安装v2 `proven-facts.json`、`proof-pack.json`、`gap-ledger.json`、`fact-accounting.json`及receipt。账本分别保存boundary与guard候选分母，并强制`externalEffectGapCount = boundaryCandidateCount`：guard绝不会被记成外部效果Gap。正向fixture验证两条内部Java invocation Fact、一个guard Fact和两条外部效果Gap可共存；反向样例证明每条rejected boundary Fact同时保留根因Gap与外部效果Gap。 |
-| **历史证据，不是当前能力** | 已删除的pre-reset代码曾验证有限profile的Fact/Proof/Gap/accounting；旧POC五个人工LockedFact独立审计仅两条成立。它们说明“hash闭合不等于语义证据闭合”，不能复制为当前Fact。 |
-| **下一实现门** | 进入分析步骤“业务流程”。后者只能重新打开 v2 四个semantic files与五图，以每个入口为根编译Flow与Evidence Capsule；不能重新扫描源码、重建Fact或把本步骤external-effect Gap升级成SQL/消息/API效果。 |
+### 八大步交付计数
 
-分析步骤“已证明代码事实”的成功允许有Gap；但只有当前新实现 admitted-with-Proof 的Fact才能进入分析步骤“业务流程”。
+- 当前按“已交付且不过度外推”计为 **3/8**：分析步骤01–03已有既定有界交付。
+- 分析步骤04 **不计为完整完成**。M1/M2/M3模块出口、真实ApplicationDiscovery交接和bounded ProgramGraphs→Fact reader交接均已有独立验证；但固定完整jshERP尚未通过Capture，因而没有该完整仓库的Fact分母、Proof/Gap守恒、四个semantic payload加receipt共五项正式出口验收，也没有本轮implementation main交付。这个判断不以含糊的“联合收口未完成”代替具体缺口。
+
+### 已实现的有界能力
+
+- **M1–M3 顺序执行入口。** `ProvenCodeFactsExecutor`现已作为只接收已持久化 Step 01–03 引用的薄执行入口：它按固定顺序重开 Fact 输入、枚举候选、安装 M1、构造并安装 M2 Proof，最后调用既有 M3 发布器。这个入口不重新解析源码、不接受调用方组装的图或 JSON，也不承担任何业务解释；它只是让已经独立验证的三个技术模块能被后续运行核心连续调用。`ProvenCodeFactsExecutionTest`用现有两入口持久化图 fixture 验证它确实生成四项 Step 04 语义文件。
+- **M1 v3候选清单与真实/bounded输入交接。** `PersistedFactCandidateInputReader`现可fresh-reopen真实ApplicationDiscovery publisher形状，并对完整或bounded ProgramGraphs强制共享scope-Gap集合、各图局部分母和graph-index `G∪S`投影闭合；它不会把缺失字段或任意`closed=false`当成合法输入。`FactRegistry`、`FactCandidateEnumerator`、`FactCandidateSetModulePublisher`与`PersistedFactCandidateSetReader`使用v3合同。在既有`JAVA_BOUNDARY_INVOCATION`和`JAVA_GUARD_CONDITION`之外，M1会把一个exact `CALL_SITE`及其唯一`CALL_TARGET` `METHOD`枚举为`JAVA_EXACT_CALL`，并要求`INVOCATION_CALL_ID`、目标类型、目标方法名与目标方法签名四个atom；缺调用点、目标边或目标`METHOD`时保留typed `NOT_APPLICABLE`，不会补猜目标。
+- **M2 v3原子证明。** `AtomicProofBuilder`、`ProofDecisionSetModulePublisher`与`PersistedProofDecisionSetReader`已按Fact family校验exact-call所需的`CALL_SITE`、`CALL_TARGET`与`METHOD` Evidence/Proof。复合Fact仍全有或全无；只有boundary候选产生external-effect Gap，guard与exact-call不会被计成外部效果证明。
+- **M3 v3事实账本。** `FactLedgerPublicationSpecifier`生成v3 `proven-facts.json`、`proof-pack.json`、`gap-ledger.json`、`fact-accounting.json`及receipt。accounting把boundary、guard、exact-call三个候选分母分区且互斥，四个semantic artifacts和receipt数量不变；Step05只接受并重验这条v3 wire，并把exact `proven-facts.json` descriptor与source Gap ledger/EvidenceGraph descriptor作为下游provenance authority，不能从ID或名称反推来源。
+
+### 已直接验证的检查
+
+| 检查 | 当前结果 | 证据边界 |
+| --- | --- | --- |
+| 冻结44-selector Fact+Flow/handoff aggregate | **PASS：90 tests，0 failures，0 errors，0 skips，numeric exit 0** | root在同一fresh session逐一读取44份Surefire TXT；包含此前唯一`FactCandidateMissingPathTest` stale-source republisher lineage用例的修复后PASS，以及real/bounded handoff、Fact/Proof、Flow/Capsule、provenance、owner replay与reader-lineage定向回归。它不是客户源码运行或完整analysis-step验收。 |
+| 真实discovery与bounded Fact输入直测 | **PASS：分别12/0/0/0与6/0/0/0** | 前者覆盖真实discovery→graphs→Fact及Flow reader形状；后者覆盖bounded共享scope-Gap/index闭包并保留完整输入回归。两者证明交接，不产生固定jshERP Fact结果。 |
+| 最后Fact-reader机械清理后直测 | **PASS：7 tests，0 failures/errors/skips，numeric exit 0** | 删除经`rg`证明不可达的private helper/import后，exact一文件Spotless apply/check、四份raw report与JDK 17 JAR均由root重验；不改变reader校验语义，也不替代完整Step04验收。 |
+| M2 v3 publication/fresh reader selector | **PASS：8 tests** | 直接覆盖v3 writer/reader/policy及旧boundary材料的family-aware重开；源码见`ProofDecisionSetModulePublisher`与`PersistedProofDecisionSetReader`。 |
+| M3 v3 publication/accounting selector | **PASS：5 tests** | `ProvenCodeFactsPublicationSpecifierTest` 3、`GuardConditionFactLedgerTest` 1、`FactCandidateExactUpstreamTest` 1；验证exact分母与boundary-only external-effect Gap。 |
+
+### 仍未闭合的验收边界
+
+- **当前固定仓库没有新Fact结果。** config-only IT现已fresh PASS（1 test，0 failures/errors/skips；main 314、test 98个sources以JDK 17编译），但它没有读取客户源码。唯一实际完整IT仍是先前numeric exit 1：固定本地commit `8c30ce7861570458920175e200bb2a6442713580`在任何源码冻结前被`LocalGitCommitCaptureAdapter`以`LOCAL_GIT_PROMISOR_UNSUPPORTED`拒绝。保留报告`.workspace/fixed-repository-flow-acceptance.HFfWil/fixed-repository-acceptance-report.json`明确为`captureCompleted=false`且11个下游阶段全部`NOT_RUN`。只读对象检查得到805 objects、0 missing不等于Capture通过；独立offline copy选择仍未回答。这不是Fact编译失败，也不是新的0 Fact/Gap结论。
+- `JAVA_EXACT_CALL`只证明静态调用结构，不证明数据库更新、业务领域、跨 Flow 顺序或因果。当前 Fact/Proof 中没有诚实的 `DOMAIN_SPECIFIC` 来源；这保留为旧实现审计事实，但本轮批准的目标已取消 Step 05 领域分类退出门，改由 Step 06 在 source-backed packet 上提出可审阅解释/假设。本步骤仍不会用名称或结构相似代填业务结论。
+- 完整jshERP Fact分母、全入口Proof/Gap守恒、四个semantic payload加receipt的正式Step04出口与§8.6整体验收仍未完成。已删除pre-reset实现及旧POC仍只作历史反例；它们不是当前能力。
+- 当前语义实现尚无implementation PR/main交付；已合并的PR #15只发布既有规范修订，不包含这些Java、测试或本轮当前审计。
+
+分析步骤“已证明代码事实”的成功允许有Gap；但只有当前v3账本中admitted-with-Proof的Fact才能进入分析步骤“业务流程”。
