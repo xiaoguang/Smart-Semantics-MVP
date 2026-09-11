@@ -95,7 +95,8 @@ public final class ProcessExplainer {
 
     List<String> unmatched = new ArrayList<>();
     List<BusinessProcess> processes = new ArrayList<>();
-    for (ActivityGroup group : groups(activities, request.materials(), request.profile(), unmatched)) {
+    for (ActivityGroup group :
+        groups(activities, request.materials(), request.profile(), unmatched)) {
       if (group.activities().size() < 2) {
         unmatched.add(group.activities().get(0).activityId());
         continue;
@@ -390,6 +391,7 @@ public final class ProcessExplainer {
     value.put("activityId", activity.activityId());
     value.put("name", activity.name());
     value.put("businessPurpose", activity.businessPurpose());
+    strings(value.putArray("participants"), activity.participants());
     strings(value.putArray("businessObjects"), activity.businessObjects());
     strings(value.putArray("triggerOrInput"), activity.triggerOrInput());
     strings(value.putArray("conditions"), activity.conditions());
@@ -397,7 +399,10 @@ public final class ProcessExplainer {
     strings(value.putArray("codeDefinedResults"), activity.codeDefinedResults());
     strings(value.putArray("businessRules"), activity.businessRules());
     strings(value.putArray("formulasOrMetrics"), activity.formulasOrMetrics());
+    strings(value.putArray("terms"), activity.terms());
+    value.put("certainty", activity.certainty());
     strings(value.putArray("questions"), activity.questions());
+    strings(value.putArray("scopeLimitations"), activity.scopeLimitations());
     strings(value.putArray("sourceRefs"), activity.sourceRefs());
   }
 

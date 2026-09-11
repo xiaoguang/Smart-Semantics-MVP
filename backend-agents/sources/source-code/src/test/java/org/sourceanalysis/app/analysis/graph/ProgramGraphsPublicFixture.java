@@ -1184,7 +1184,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         }
         """
                                 : guardedApprove
-                                ? """
+                                    ? """
         package com.example;
 
         class OrderController {
@@ -1223,7 +1223,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
           void record(String status);
         }
         """
-                                : """
+                                    : """
         package com.example;
 
         class OrderController {
@@ -1260,8 +1260,10 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
           void record(String status);
         }
         """
-                                    .formatted(
-                                        guardedApprove ? "if (status == null) { return; }" : "");
+                                        .formatted(
+                                            guardedApprove
+                                                ? "if (status == null) { return; }"
+                                                : "");
     String mapper =
         """
         package com.example;
@@ -1921,7 +1923,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_FLOW_COMPILATION",
-        "business-flows-flow-compilation-v3",
+        "business-flows-flow-compilation-v4",
         "business-flows-flow-compilation",
         "application/json",
         "MODULE_ARTIFACT_JSON",
@@ -1929,7 +1931,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_CAPSULE_PROJECTION",
-        "business-flows-capsule-projection-v7",
+        "business-flows-capsule-projection-v8",
         "business-flows-capsule-projection",
         "application/json",
         "MODULE_ARTIFACT_JSON",
@@ -1937,7 +1939,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_FLOW_SLICES",
-        "business-flows-flow-slices-v3",
+        "business-flows-flow-slices-v4",
         "business-flows-flow-slices",
         "application/json",
         "STANDALONE_JSON",
@@ -1961,7 +1963,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_EVIDENCE_CAPSULE",
-        "business-flows-evidence-capsule-v5",
+        "business-flows-evidence-capsule-v6",
         "business-flows-evidence-capsule",
         "application/x-ndjson",
         "CANONICAL_JSONL",

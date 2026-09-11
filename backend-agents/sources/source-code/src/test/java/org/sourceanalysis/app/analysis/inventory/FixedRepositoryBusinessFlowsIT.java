@@ -27,12 +27,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryExecutor;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryRequest;
 import org.sourceanalysis.app.analysis.discovery.DiscoveryProfile;
+import org.sourceanalysis.app.analysis.document.BusinessReportProfile;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateEnumerator;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateSet;
@@ -57,11 +59,10 @@ import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.analysis.flow.publish.FlowPublicationSpecifier;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsExecution;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
-import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
+import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
+import org.sourceanalysis.app.analysis.knowledge.ProcessExplanationProfile;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
@@ -91,6 +92,8 @@ import org.sourceanalysis.app.capture.localgit.LocalGitSourceRegistry;
 import org.sourceanalysis.app.capture.localgit.RegisteredSourceCapture;
 import org.sourceanalysis.app.capture.localgit.RegisteredSourceFile;
 import org.sourceanalysis.app.capture.localgit.SourceRegistrationReference;
+import org.sourceanalysis.app.runtime.PersistedBusinessRunConfiguration;
+import org.sourceanalysis.app.runtime.PersistedBusinessRunExecutor;
 
 /** Opt-in, real-filesystem Step01→05 acceptance over the one approved jshERP commit. */
 class FixedRepositoryBusinessFlowsIT {
@@ -111,13 +114,13 @@ class FixedRepositoryBusinessFlowsIT {
           "APPLICATION_DISCOVERY_HTTP_ENTRY_DISCOVERY|application-discovery-http-entry-discovery-v2",
           "APPLICATION_DISCOVERY_MAPPER_CATALOG|application-discovery-mapper-catalog-v2",
           "APPLICATION_DISCOVERY_MAPPER_CATALOG_DRAFT|application-discovery-mapper-catalog-draft-v2",
-          "BUSINESS_FLOWS_CAPSULE_PROJECTION|business-flows-capsule-projection-v7",
-          "BUSINESS_FLOWS_EVIDENCE_CAPSULE|business-flows-evidence-capsule-v5",
+          "BUSINESS_FLOWS_CAPSULE_PROJECTION|business-flows-capsule-projection-v8",
+          "BUSINESS_FLOWS_EVIDENCE_CAPSULE|business-flows-evidence-capsule-v6",
           "BUSINESS_FLOWS_ENTRY_DISPOSITION|business-flows-entry-disposition-v1",
-          "BUSINESS_FLOWS_FLOW_COMPILATION|business-flows-flow-compilation-v3",
+          "BUSINESS_FLOWS_FLOW_COMPILATION|business-flows-flow-compilation-v4",
           "BUSINESS_FLOWS_FLOW_COVERAGE|business-flows-flow-coverage-v1",
           "BUSINESS_FLOWS_FLOW_GAP|business-flows-flow-gap-v2",
-          "BUSINESS_FLOWS_FLOW_SLICES|business-flows-flow-slices-v3",
+          "BUSINESS_FLOWS_FLOW_SLICES|business-flows-flow-slices-v4",
           "FLOW_INTERPRETATION_BUSINESS_MATERIAL|flow-interpretation-business-material-v1",
           "PROGRAM_GRAPHS_CALL_GRAPH|program-graphs-call-graph-v1",
           "PROGRAM_GRAPHS_CALL_GRAPH_DRAFT|program-graphs-call-graph-draft-v3",
@@ -205,147 +208,6 @@ class FixedRepositoryBusinessFlowsIT {
         .isEqualTo("business-materials");
     assertThat(config.factRegistry.templates()).hasSize(3);
     assertThat(config.proofRules.allowances()).hasSize(8);
-  }
-
-  @Test
-  void plansBusinessMaterialsFromTheFrozenRepositoryWithoutGraphsOrProviderWhenExplicitlyOptedIn()
-      throws Exception {
-    assertThat(System.getProperty(ACCEPTANCE_PROPERTY))
-        .as("direct selection requires explicit fixed-repository opt-in")
-        .isEqualTo("true");
-    AcceptanceConfig config = AcceptanceConfig.load();
-    Path sourcePath = requiredAbsolutePath(SOURCE_PROPERTY);
-    Path workspace = requiredWorkspace();
-
-    SourceRegistrationReference registration =
-        new LocalGitCommitCaptureAdapter(workspace.resolve("capture"), Path.of("/usr/bin/git"))
-            .capture(
-                new LocalGitCaptureRequest(
-                    ORIGIN,
-                    COMMIT,
-                    sourcePath,
-                    config.capturePolicy.ref(),
-                    config.resourceBudget.ref()));
-    LocalGitSourceRegistry registry = new LocalGitSourceRegistry(workspace.resolve("capture"));
-    RegisteredSourceCapture capture = registry.reopen(registration.sourceRegistrationId());
-    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
-    InputArtifacts inputArtifacts = inputArtifacts(canonicalJson, config, capture, registration);
-    CaptureReceiptView receipt = captureReceipt(capture, inputArtifacts.frozenRequest());
-    AdmittedSourceRequest admitted =
-        new FrozenRequestAdmission()
-            .admit(
-                inputArtifacts.runRequestBytes().copyToByteArray(),
-                receipt,
-                new ProfileView(
-                    config.profileBundle.ref(),
-                    config.resourceBudget.ref(),
-                    config.inventoryMaxFiles,
-                    config.inventoryMaxBytes));
-
-    Path storeDirectory = workspace.resolve("stores");
-    Files.createDirectories(storeDirectory);
-    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(storeDirectory)) {
-      CanonicalModuleArtifactStore modules =
-          new FileSystemCanonicalModuleArtifactStore(
-              handle, canonicalJson, config.policies, config.storeLimits);
-      CanonicalAnalysisStepArtifactStore steps =
-          new FileSystemCanonicalAnalysisStepArtifactStore(
-              handle, canonicalJson, config.policies, config.storeLimits);
-      ModulePublicationReference inventoryM1 =
-          new AdmittedSourceRequestModulePublisher(modules)
-              .publish(
-                  new AdmittedSourceRequestPublicationInput(
-                      inputArtifacts.runId,
-                      inputArtifacts.runRequest,
-                      capture.sourceRegistrationRef(),
-                      config.verificationPolicy.ref(),
-                      config.capabilityProfile.ref(),
-                      sorted(
-                          List.of(
-                              inputArtifacts.runRequest,
-                              capture.sourceRegistrationRef(),
-                              inputArtifacts.frozenRequest,
-                              capture.captureReceiptRef(),
-                              capture.snapshotManifestRef(),
-                              config.verificationPolicy.ref(),
-                              config.capabilityProfile.ref(),
-                              config.resourceBudget.ref())),
-                      admitted));
-      ModulePublicationReference inventoryM2 =
-          new VerifiedSourceIndexModulePublisher(modules).publish(inventoryM1, registry);
-      VerifiedSourceInventoryReference inventory =
-          new VerifiedSourceInventoryPublicationSpecifier(modules, steps, inputArtifacts::reopen)
-              .publish(
-                  new VerifiedSourceInventoryPublicationSpecificationInputV1(
-                      new AnalysisStepPublicationAddress(
-                          inputArtifacts.runId, AnalysisStepKey.VERIFIED_SOURCE_INVENTORY),
-                      inventoryM1,
-                      inventoryM2,
-                      inputArtifacts.runRequest,
-                      inputArtifacts.frozenRequest));
-      VerifiedSourceTextReader sourceReader =
-          new PersistedVerifiedSourceTextReader(steps, registry);
-      ApplicationDiscoveryReference discovery =
-          new ApplicationDiscoveryExecutor(sourceReader, modules, steps)
-              .execute(
-                  new ApplicationDiscoveryRequest(
-                      new AnalysisStepPublicationAddress(
-                          inputArtifacts.runId, AnalysisStepKey.APPLICATION_DISCOVERY),
-                      inventory,
-                      config.discoveryProfile));
-
-      BusinessMaterialBuildResult result =
-          new BusinessMaterialBuilder(modules, steps, sourceReader)
-              .build(
-                  new BuildBusinessMaterialsRequest(
-                      inventory, discovery, new BusinessMaterialProfile(4, 24, 12_000)));
-
-      Set<String> entryIds =
-          discoveryEntryIds(steps.reopen(discovery.publication()), canonicalJson);
-      assertThat(result.materialSet().entryCoverage())
-          .extracting(value -> value.entryId())
-          .containsExactlyInAnyOrderElementsOf(entryIds);
-      assertThat(result.materialSet().materials()).isNotEmpty();
-      assertThat(result.materialSet().materials())
-          .anySatisfy(material -> assertThat(material.sourceRefs()).hasSizeGreaterThan(1))
-          .allSatisfy(material -> assertThat(material.sourceRefs()).hasSizeLessThanOrEqualTo(4));
-      assertThat(result.materialSet().materials())
-          .anySatisfy(
-              material -> {
-                assertThat(material.sourceRefs())
-                    .anySatisfy(reference -> assertThat(reference.snippet()).contains("batchSetStatus"));
-                assertThat(material.modelPacket().technicalObservations())
-                    .anySatisfy(value -> assertThat(value).startsWith("源码输入："))
-                    .anySatisfy(value -> assertThat(value).startsWith("源码条件："))
-                    .anySatisfy(value -> assertThat(value).startsWith("源码调用："));
-              });
-      BusinessMaterial depotHead =
-          result.materialSet().materials().stream()
-              .filter(
-                  material ->
-                      material.modelPacket().technicalObservations().stream()
-                          .anyMatch(
-                              value ->
-                                  value.contains("DepotHeadController#batchSetStatus")))
-              .findFirst()
-              .orElseThrow();
-      assertThat(depotHead.modelPacket().technicalObservations())
-          .contains(
-              "源码调用：depotHead.setStatus(status)。",
-              "源码调用：depotHeadMapper.updateByExampleSelective(depotHead, example)。",
-              "源码调用：depotItemService.updateCurrentStock(depotItem)。");
-      ReopenedModulePublication materialPublication = modules.reopen(result.checkpoint());
-      assertThat(materialPublication.reference().address())
-          .isEqualTo(
-              new AnalysisStepModuleAddress(
-                  inputArtifacts.runId,
-                  AnalysisStepKey.FLOW_INTERPRETATION,
-                  10,
-                  "business-material-builder"));
-      assertThat(materialPublication.payloads())
-          .extracting(value -> value.descriptor().fileName())
-          .containsExactly("business-materials.jsonl");
-    }
   }
 
   @Test
@@ -547,6 +409,39 @@ class FixedRepositoryBusinessFlowsIT {
         assertThat(publication.receipt().status())
             .isIn(ModuleCompletionStatus.SUCCEEDED, ModuleCompletionStatus.SUCCEEDED_WITH_GAPS);
         verifyBusinessFlowClosure(publication, discoveryEntryIds, canonicalJson);
+
+        currentStage = "interpretation-M1-business-materials";
+        markAttempt(evidence, currentStage);
+        AtomicInteger providerCalls = new AtomicInteger();
+        BusinessMaterialBuildResult materials =
+            new PersistedBusinessRunExecutor(
+                    modules,
+                    steps,
+                    sourceReader,
+                    request -> {
+                      providerCalls.incrementAndGet();
+                      throw new AssertionError(
+                          "materials-only planning must not call the model Provider");
+                    },
+                    new PersistedBusinessRunConfiguration(
+                        new BusinessMaterialProfile(24, 80, 48_000),
+                        new ActivityExplanationProfile(64_000, 16_000, 2, 32, 2_000),
+                        new ProcessExplanationProfile(4, 8, 16_000, 12_000, 2, 16, 2_000, 0),
+                        new BusinessReportProfile(64_000, 16_000, 32, 2_000),
+                        1))
+                .buildMaterials(businessFlows);
+        recordModule(
+            modules, "interpretation-M1-business-materials", materials.checkpoint(), evidence);
+        assertThat(providerCalls).hasValue(0);
+        assertThat(materials.materialSet().entryCoverage())
+            .hasSize(discoveryEntryIds.size())
+            .allSatisfy(
+                coverage ->
+                    assertThat(coverage.disposition())
+                        .isIn("ANALYZED_MATERIAL", "MATERIAL_WITH_GAPS", "NOT_MATERIALIZED"));
+        assertThat(materials.materialSet().materials())
+            .as("a nonempty fixed repository must produce inspectable model-reading material")
+            .isNotEmpty();
         status =
             publication.receipt().status() == ModuleCompletionStatus.SUCCEEDED ? "COMPLETE" : "GAP";
         writeReport(workspace, status, capture, publication, evidence, accounting, canonicalJson);
@@ -903,7 +798,9 @@ class FixedRepositoryBusinessFlowsIT {
         .containsExactlyInAnyOrderElementsOf(capsuleIds);
     Set<String> eligible = strings(coverage.path("modelEligibleFlowSliceIds"));
     Set<String> ineligible = strings(coverage.path("modelIneligibleFlowSliceIds"));
-    assertThat(eligible).doesNotContainAnyElementsOf(ineligible);
+    if (!ineligible.isEmpty()) {
+      assertThat(eligible).doesNotContainAnyElementsOf(ineligible);
+    }
     Set<String> partition = new HashSet<>(eligible);
     partition.addAll(ineligible);
     assertThat(partition).containsExactlyInAnyOrderElementsOf(flows);

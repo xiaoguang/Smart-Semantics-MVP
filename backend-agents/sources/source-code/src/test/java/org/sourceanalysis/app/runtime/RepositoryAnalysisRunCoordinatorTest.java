@@ -14,6 +14,7 @@ import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMate
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
+import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTaskCompilerTest;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.knowledge.RepositoryBusinessKnowledge;
 
@@ -32,8 +33,7 @@ class RepositoryAnalysisRunCoordinatorTest {
                   fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
               .build(
                   new BuildBusinessMaterialsRequest(
-                      fixture.sourceInventory(),
-                      fixture.applicationDiscovery(),
+                      RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture),
                       new BusinessMaterialProfile(8, 24, 12_000)));
       TechnicalDiscoveryWorkflowResult technical =
           new TechnicalDiscoveryWorkflowResult(

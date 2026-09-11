@@ -85,6 +85,9 @@ class CodeStructureGraphBuilderTest {
         .containsExactlyElementsOf(draft.coverage().exactElementIds());
     assertThat(draft.coverage().gapDispositions()).isEmpty();
     assertThat(draft.coverage().exclusionDispositions()).isEmpty();
+    assertThat(draft.nodes())
+        .as("declaration inventory is neutral; call/control traversal assigns entry ownership")
+        .allSatisfy(node -> assertThat(node.owningEntryIds()).isEmpty());
   }
 
   @Test

@@ -11,9 +11,13 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import org.sourceanalysis.app.analysis.fact.publish.ProvenCodeFactsReference;
 import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilation;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
@@ -43,7 +47,7 @@ public final class CapsuleProjectionModulePublisher {
 
   private static final String FILE_NAME = "capsule-projection.json";
   private static final String ARTIFACT_TYPE = "BUSINESS_FLOWS_CAPSULE_PROJECTION";
-  private static final String SCHEMA_VERSION = "business-flows-capsule-projection-v7";
+  private static final String SCHEMA_VERSION = "business-flows-capsule-projection-v8";
   private static final String ARTIFACT_PREFIX = "business-flows-capsule-projection";
   private static final String PROJECTION_ID_DOMAIN = "business-flows-capsule-projection-id-v2";
   private static final String MODULE_VERSION = "v6";
@@ -52,24 +56,21 @@ public final class CapsuleProjectionModulePublisher {
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
   private final CanonicalAnalysisStepArtifactStore analysisSteps;
-  private final VerifiedSourceTextReader sourceReader;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
 
-  /**
-   * Creates M2's receipt-last publisher and the same fresh-reopen capability used by its projector.
-   */
+  /** Creates M2's receipt-last publisher. Projection is performed once by the owning projector. */
   public CapsuleProjectionModulePublisher(
       CanonicalModuleArtifactStore moduleArtifacts,
       CanonicalAnalysisStepArtifactStore analysisSteps,
       VerifiedSourceTextReader sourceReader) {
     this.moduleArtifacts = Objects.requireNonNull(moduleArtifacts, "module artifact store");
     this.analysisSteps = Objects.requireNonNull(analysisSteps, "analysis step artifact store");
-    this.sourceReader = Objects.requireNonNull(sourceReader, "verified source reader");
+    Objects.requireNonNull(sourceReader, "verified source reader");
   }
 
   /**
-   * Reprojects the exact persisted input and rejects a caller's stale or altered in-memory result
-   * before installing the only M2 payload.
+   * Checks the exact persisted inputs and installs the one already-projected M2 payload. The
+   * ordinary path never projects a second time.
    */
   public ModulePublicationReference publish(
       ModulePublicationReference flowCompilation,
@@ -79,10 +80,7 @@ public final class CapsuleProjectionModulePublisher {
       CapsuleProjection projection) {
     try {
       Objects.requireNonNull(projection, "capsule projection");
-      CapsuleProjection rebuilt =
-          new EvidenceCapsuleProjector(moduleArtifacts, analysisSteps, sourceReader)
-              .project(flowCompilation, source, graphs, facts, projection.profile());
-      if (!rebuilt.equals(projection)) throw failure();
+      requireProjectionIntegrity(projection);
       ReopenedAnalysisStepPublication sourceStep = analysisSteps.reopen(source.publication());
       ReopenedAnalysisStepPublication graphStep = analysisSteps.reopen(graphs.publication());
       ReopenedAnalysisStepPublication factStep = analysisSteps.reopen(facts.publication());
@@ -119,6 +117,31 @@ public final class CapsuleProjectionModulePublisher {
       throw failure;
     } catch (RuntimeException failure) {
       throw failure();
+    }
+  }
+
+  /**
+   * Checks the submitted projection's own closure without rerunning its owner algorithm. In
+   * particular, a source span is flow-rooted: a caller cannot move it to another Capsule merely
+   * because both capsules happen to cite the same frozen evidence node.
+   */
+  private static void requireProjectionIntegrity(CapsuleProjection projection) {
+    Map<String, CapsuleProjection.ModelEvidenceSpan> spansById = new HashMap<>();
+    for (CapsuleProjection.ModelEvidenceSpan span : projection.modelEvidenceSpans()) {
+      if (spansById.put(span.spanId(), span) != null) throw failure();
+    }
+    for (CapsuleProjection.EvidenceCapsule capsule : projection.capsules()) {
+      Set<String> capsuleSpanIds = new HashSet<>(capsule.modelEvidenceSpanIds());
+      if (capsuleSpanIds.size() != capsule.modelEvidenceSpanIds().size()
+          || !spansById.keySet().containsAll(capsuleSpanIds)) {
+        throw failure();
+      }
+      for (String spanId : capsuleSpanIds) {
+        CapsuleProjection.ModelEvidenceSpan span = spansById.get(spanId);
+        if (!flowRootedSpanId(capsule.flowSliceId(), span.evidenceNodeId()).equals(spanId)) {
+          throw failure();
+        }
+      }
     }
   }
 
@@ -279,6 +302,7 @@ public final class CapsuleProjectionModulePublisher {
     entry.put("trigger", capsule.entryView().trigger());
     entry.put("rootNodeId", capsule.entryView().rootNodeId());
     strings(entry.putArray("routeEvidenceNodeIds"), capsule.entryView().routeEvidenceNodeIds());
+    entryContext(node.putObject("entryContext"), capsule.entryContext());
     ArrayNode facts = node.putArray("factViews");
     capsule.factViews().forEach(value -> fact(facts.addObject(), value));
     ArrayNode gaps = node.putArray("gapViews");
@@ -294,6 +318,58 @@ public final class CapsuleProjectionModulePublisher {
     node.putObject("budgetUsage")
         .put("spanCount", capsule.budgetUsage().spanCount())
         .put("sourceUtf8Bytes", capsule.budgetUsage().sourceUtf8Bytes());
+  }
+
+  private static void entryContext(
+      ObjectNode node,
+      org.sourceanalysis.app.analysis.flow.compiler.FlowCompilation.EntryContext value) {
+    node.put("entryContextId", value.entryContextId());
+    node.put("entryId", value.entryId());
+    if (value.flowSliceId() == null) node.putNull("flowSliceId");
+    else node.put("flowSliceId", value.flowSliceId());
+    node.put("trigger", value.trigger());
+    node.put("entrySignature", value.entrySignature());
+    ArrayNode calls = node.putArray("calls");
+    value
+        .calls()
+        .forEach(
+            call -> {
+              ObjectNode item = calls.addObject();
+              item.put("callerSignature", call.callerSignature());
+              item.put("targetSignature", call.targetSignature());
+              strings(item.putArray("argumentExpressions"), call.argumentExpressions());
+              item.put("resolution", call.resolution());
+              item.put("boundary", call.boundary());
+              strings(item.putArray("factIds"), call.factIds());
+              strings(item.putArray("proofIds"), call.proofIds());
+              strings(item.putArray("evidenceNodeIds"), call.evidenceNodeIds());
+            });
+    ArrayNode controls = node.putArray("controls");
+    value
+        .controls()
+        .forEach(
+            control -> {
+              ObjectNode item = controls.addObject();
+              item.put("controlNodeId", control.controlNodeId());
+              item.put("ownerSignature", control.ownerSignature());
+              item.put("condition", control.condition());
+              strings(item.putArray("evidenceNodeIds"), control.evidenceNodeIds());
+            });
+    ArrayNode returns = node.putArray("returns");
+    value
+        .returns()
+        .forEach(
+            terminal -> {
+              ObjectNode item = returns.addObject();
+              item.put("terminalNodeId", terminal.terminalNodeId());
+              item.put("terminalKind", terminal.terminalKind());
+              strings(item.putArray("evidenceNodeIds"), terminal.evidenceNodeIds());
+            });
+    ArrayNode sourceLocators = node.putArray("sourceLocators");
+    value.sourceLocators().forEach(locator -> sourceLocator(sourceLocators.addObject(), locator));
+    strings(node.putArray("factIds"), value.factIds());
+    strings(node.putArray("gapIds"), value.gapIds());
+    strings(node.putArray("limitations"), value.limitations());
   }
 
   private static void fact(ObjectNode node, CapsuleProjection.FlowFactView fact) {
@@ -378,6 +454,7 @@ public final class CapsuleProjectionModulePublisher {
 
   private static void span(ObjectNode node, CapsuleProjection.ModelEvidenceSpan span) {
     node.put("spanId", span.spanId());
+    node.put("evidenceNodeId", span.evidenceNodeId());
     ObjectNode excerpt = node.putObject("sourceExcerpt");
     ObjectNode locator = excerpt.putObject("locator");
     locator.put("fileId", span.sourceExcerpt().locator().fileId().value());
@@ -403,6 +480,14 @@ public final class CapsuleProjectionModulePublisher {
     node.put("kind", obligation.kind());
     node.put("semanticItemId", obligation.semanticItemId());
     strings(node.putArray("satisfyingSpanIds"), obligation.satisfyingSpanIds());
+  }
+
+  private static String flowRootedSpanId(String flowSliceId, String evidenceNodeId) {
+    return "model-evidence-span:"
+        + sha256(
+            frame("business-flows-model-evidence-span-id-v2"),
+            frame(flowSliceId),
+            frame(evidenceNodeId));
   }
 
   private static String projectionId(ObjectNode body, CanonicalJsonCodec codec) {

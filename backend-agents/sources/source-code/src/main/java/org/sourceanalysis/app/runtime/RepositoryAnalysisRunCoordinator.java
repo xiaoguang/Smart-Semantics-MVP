@@ -12,10 +12,9 @@ import org.sourceanalysis.app.artifact.AnalysisRunId;
 /**
  * Internal one-way composition from a persisted run identifier to one business-language report.
  *
- * <p>The technical executor remains the only owner of source capture and Steps 01–05. Material
- * planning stops after persisted inventory and discovery, while final document execution continues
- * through the persisted Flow/Capsule publication. It does not create a second source-reading or
- * model execution path.
+ * <p>The technical executor remains the only owner of source capture and Steps 01–05. Both material
+ * planning and final document execution consume the persisted Flow/Capsule publication; they do not
+ * create a second source-reading or model execution path.
  */
 public final class RepositoryAnalysisRunCoordinator {
 
@@ -31,7 +30,9 @@ public final class RepositoryAnalysisRunCoordinator {
           ApplicationDiscoveryReference,
           BusinessAnalysisWorkflowResult>
       fallbackBusinessExecution;
-  private final Function<BusinessFlowsReference, BusinessAnalysisWorkflowResult> flowBusinessExecution;
+  private final Function<BusinessFlowsReference, BusinessMaterialBuildResult> flowMaterialPlanning;
+  private final Function<BusinessFlowsReference, BusinessAnalysisWorkflowResult>
+      flowBusinessExecution;
 
   public RepositoryAnalysisRunCoordinator(
       PersistedTechnicalRunExecutor technicalExecutor,
@@ -39,8 +40,9 @@ public final class RepositoryAnalysisRunCoordinator {
     this(
         technicalExecutor::executeThroughApplicationDiscovery,
         technicalExecutor::execute,
+        null,
+        null,
         businessExecutor::buildMaterials,
-        businessExecutor::execute,
         businessExecutor::execute);
   }
 
@@ -48,9 +50,9 @@ public final class RepositoryAnalysisRunCoordinator {
   RepositoryAnalysisRunCoordinator(
       Function<AnalysisRunId, TechnicalDiscoveryWorkflowResult> technicalExecution,
       BiFunction<
-          VerifiedSourceInventoryReference,
-          ApplicationDiscoveryReference,
-          BusinessAnalysisWorkflowResult>
+              VerifiedSourceInventoryReference,
+              ApplicationDiscoveryReference,
+              BusinessAnalysisWorkflowResult>
           businessExecution) {
     this(
         technicalExecution,
@@ -59,6 +61,7 @@ public final class RepositoryAnalysisRunCoordinator {
           throw new IllegalStateException("REPOSITORY_MATERIAL_PLANNING_NOT_CONFIGURED");
         },
         businessExecution,
+        null,
         null);
   }
 
@@ -75,7 +78,7 @@ public final class RepositoryAnalysisRunCoordinator {
               ApplicationDiscoveryReference,
               BusinessAnalysisWorkflowResult>
           businessExecution) {
-    this(technicalExecution, null, materialPlanning, businessExecution, null);
+    this(technicalExecution, null, materialPlanning, businessExecution, null, null);
   }
 
   private RepositoryAnalysisRunCoordinator(
@@ -91,20 +94,43 @@ public final class RepositoryAnalysisRunCoordinator {
               ApplicationDiscoveryReference,
               BusinessAnalysisWorkflowResult>
           fallbackBusinessExecution,
+      Function<BusinessFlowsReference, BusinessMaterialBuildResult> flowMaterialPlanning,
       Function<BusinessFlowsReference, BusinessAnalysisWorkflowResult> flowBusinessExecution) {
     this.discoveryExecution = Objects.requireNonNull(discoveryExecution, "discovery execution");
     this.completeTechnicalExecution = completeTechnicalExecution;
-    this.materialPlanning = Objects.requireNonNull(materialPlanning, "material planning");
-    this.fallbackBusinessExecution = Objects.requireNonNull(fallbackBusinessExecution, "business execution");
+    if (materialPlanning == null && flowMaterialPlanning == null) {
+      throw new IllegalArgumentException("material planning is required");
+    }
+    if (fallbackBusinessExecution == null && flowBusinessExecution == null) {
+      throw new IllegalArgumentException("business execution is required");
+    }
+    this.materialPlanning = materialPlanning;
+    this.fallbackBusinessExecution = fallbackBusinessExecution;
+    this.flowMaterialPlanning = flowMaterialPlanning;
     this.flowBusinessExecution = flowBusinessExecution;
   }
 
   /** Executes the persisted technical prefix and the zero-Provider business material build only. */
   public RepositoryMaterialPlanningResult planMaterials(AnalysisRunId runId) {
     Objects.requireNonNull(runId, "analysis run ID");
-    TechnicalDiscoveryWorkflowResult technical = technical(runId);
-    BusinessMaterialBuildResult materials =
-        materialPlanning.apply(technical.verifiedSourceInventory(), technical.applicationDiscovery());
+    TechnicalDiscoveryWorkflowResult technical;
+    BusinessMaterialBuildResult materials;
+    if (completeTechnicalExecution != null && flowMaterialPlanning != null) {
+      TechnicalAnalysisWorkflowResult completedTechnical = completeTechnicalExecution.apply(runId);
+      if (completedTechnical == null) {
+        throw new IllegalStateException("REPOSITORY_ANALYSIS_TECHNICAL_RESULT_INVALID");
+      }
+      technical =
+          new TechnicalDiscoveryWorkflowResult(
+              completedTechnical.verifiedSourceInventory(),
+              completedTechnical.applicationDiscovery());
+      materials = flowMaterialPlanning.apply(completedTechnical.businessFlows());
+    } else {
+      technical = technical(runId);
+      materials =
+          materialPlanning.apply(
+              technical.verifiedSourceInventory(), technical.applicationDiscovery());
+    }
     if (materials == null) {
       throw new IllegalStateException("REPOSITORY_ANALYSIS_MATERIAL_RESULT_INVALID");
     }
@@ -123,7 +149,8 @@ public final class RepositoryAnalysisRunCoordinator {
     }
     TechnicalDiscoveryWorkflowResult technical =
         new TechnicalDiscoveryWorkflowResult(
-            completedTechnical.verifiedSourceInventory(), completedTechnical.applicationDiscovery());
+            completedTechnical.verifiedSourceInventory(),
+            completedTechnical.applicationDiscovery());
     BusinessAnalysisWorkflowResult business =
         flowBusinessExecution.apply(completedTechnical.businessFlows());
     if (business == null) {

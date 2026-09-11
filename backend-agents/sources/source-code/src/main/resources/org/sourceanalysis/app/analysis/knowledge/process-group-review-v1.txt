@@ -7,6 +7,13 @@
 活动属于多个过程的可能性。可以收窄过程或将关系写为待确认，但不要编造岗位、唯一单据、
 记账、付款、库存变化、运行次数或无来源指标。
 
+输出顶层只能包含 processes 和 unmatchedActivityIds。完整修订后的每个 processes 元素
+必须保留 processLocalId、name、businessPurpose、activityIds、stages、branches、
+sharedObjects、codeDefinedResults、certainty、sourceRefs、confirmationNotes。stages 可以
+为空；若不为空，每项只能包含正整数且不重复的 order、来自输入活动的 activityId、以及
+description。不确定两个活动是否属于同一过程时，应删除虚构的衔接；可以保留各自的单活动
+过程，或将它们放入 unmatchedActivityIds。
+
 只能引用 allowlistedRefs 中出现的短 ref。不得输出源码路径、行号、hash、Proof、Flow、
 artifact/run identity、Provider 身份、控制参数或凭据。返回完整修订 JSON，不返回 patch、
 decision table、Markdown、代码围栏或额外说明。

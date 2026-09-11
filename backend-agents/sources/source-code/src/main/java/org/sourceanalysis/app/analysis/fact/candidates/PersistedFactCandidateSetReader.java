@@ -25,12 +25,12 @@ import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 
 /**
- * Fresh-reopens M1's only candidate-set module artifact and proves it still agrees with its
- * persisted graph input and frozen Fact registry.
+ * Fresh-reopens M1's only candidate-set module artifact and validates its persisted basis, shape,
+ * and canonical publication identity.
  *
- * <p>The public seam deliberately accepts neither paths nor untyped JSON. The module store first
+ * <p>The normal seam deliberately accepts neither paths nor untyped JSON. The module store first
  * validates the receipt-last publication; this reader then validates the M1-specific envelope and
- * re-enumerates the full candidate denominator from {@link FactCandidateInputs}.
+ * its saved graph roots. Explicit audit callers can additionally re-enumerate the denominator.
  */
 public final class PersistedFactCandidateSetReader {
 
@@ -125,22 +125,36 @@ public final class PersistedFactCandidateSetReader {
     canonicalJson = new CanonicalJsonCodec();
   }
 
+  /** Reopens a normal M1 candidate artifact without rerunning its expensive enumeration. */
+  public FactCandidateSet reopen(
+      ModulePublicationReference publicationReference, FactCandidateInputs inputs) {
+    try {
+      if (publicationReference == null || inputs == null) {
+        throw failure();
+      }
+      ReopenedModulePublication publication = moduleArtifacts.reopen(publicationReference);
+      requirePublication(publication, publicationReference, inputs);
+      return parse(requiredPayload(publication), publication, inputs);
+    } catch (FactCandidateReferenceException failure) {
+      throw failure;
+    } catch (RuntimeException invalid) {
+      throw failure();
+    }
+  }
+
   /**
-   * Reopens one M1 candidate artifact and returns it only when every persisted field agrees with
-   * the same frozen inputs and registry that deterministically enumerate the candidate set.
+   * Reopens and independently audits one M1 candidate artifact against a supplied frozen registry.
+   * This costly replay is for validation and tests, not ordinary downstream consumption.
    */
   public FactCandidateSet reopen(
       ModulePublicationReference publicationReference,
       FactCandidateInputs inputs,
       FactRegistry registry) {
     try {
-      if (publicationReference == null || inputs == null || registry == null) {
+      if (registry == null) {
         throw failure();
       }
-      ReopenedModulePublication publication = moduleArtifacts.reopen(publicationReference);
-      requirePublication(publication, publicationReference, inputs);
-      VerifiedCanonicalPayload payload = requiredPayload(publication);
-      FactCandidateSet persisted = parse(payload, publication, inputs);
+      FactCandidateSet persisted = reopen(publicationReference, inputs);
       FactCandidateSet expected = new FactCandidateEnumerator().enumerate(inputs, registry);
       if (!persisted.equals(expected)) {
         throw failure();

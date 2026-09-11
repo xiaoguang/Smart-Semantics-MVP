@@ -490,12 +490,12 @@ public final class CrossFlowCandidateCompiler {
     }
     JsonNode flowDocument = payload(publication, "flow-slices.json");
     JsonNode coverage = payload(publication, "flow-coverage.json");
-    requireEnvelope(flowDocument, "BUSINESS_FLOWS_FLOW_SLICES", "business-flows-flow-slices-v3");
+    requireEnvelope(flowDocument, "BUSINESS_FLOWS_FLOW_SLICES", "business-flows-flow-slices-v4");
     requireEnvelope(coverage, "BUSINESS_FLOWS_FLOW_COVERAGE", "business-flows-flow-coverage-v1");
     Map<String, Capsule> capsules = new HashMap<>();
     for (JsonNode capsule : jsonLines(payloadBytes(publication, "evidence-capsules.jsonl"))) {
       requireLineEnvelope(
-          capsule, "BUSINESS_FLOWS_EVIDENCE_CAPSULE", "business-flows-evidence-capsule-v5");
+          capsule, "BUSINESS_FLOWS_EVIDENCE_CAPSULE", "business-flows-evidence-capsule-v6");
       String flowId = identifier(capsule, "flowSliceId");
       Capsule value =
           new Capsule(

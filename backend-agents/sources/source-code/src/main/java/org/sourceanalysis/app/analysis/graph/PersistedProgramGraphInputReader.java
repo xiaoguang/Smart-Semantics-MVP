@@ -14,6 +14,7 @@ import java.util.Set;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.discovery.HttpEntryKind;
 import org.sourceanalysis.app.analysis.discovery.HttpEntryPoint;
+import org.sourceanalysis.app.analysis.discovery.HttpMethodCondition;
 import org.sourceanalysis.app.analysis.discovery.MapperCatalogEntry;
 import org.sourceanalysis.app.analysis.discovery.MapperMethodCandidate;
 import org.sourceanalysis.app.analysis.discovery.MapperStatementCandidate;
@@ -218,7 +219,7 @@ final class PersistedProgramGraphInputReader implements ProgramGraphInputReader 
               ArtifactId.parse(text(line, "entryId")),
               enumValue(HttpEntryKind.class, text(line, "kind")),
               text(line, "protocol"),
-              text(line, "method"),
+              methodCondition(line),
               text(line, "route"),
               strings(line, "routeParts"),
               text(line, "handlerFqn"),
@@ -321,6 +322,16 @@ final class PersistedProgramGraphInputReader implements ProgramGraphInputReader 
       values.add(value.textValue());
     }
     return List.copyOf(values);
+  }
+
+  private static HttpMethodCondition methodCondition(ObjectNode node) {
+    ObjectNode condition = object(node.get("methodCondition"));
+    try {
+      return new HttpMethodCondition(
+          HttpMethodCondition.Kind.valueOf(text(condition, "kind")), strings(condition, "methods"));
+    } catch (IllegalArgumentException invalid) {
+      throw failure();
+    }
   }
 
   private static List<SourceExcerptV1> excerpts(ObjectNode node, String fieldName) {

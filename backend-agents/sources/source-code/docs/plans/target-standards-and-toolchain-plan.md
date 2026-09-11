@@ -1,6 +1,9 @@
 # 目标实现标准与工具链实施计划（核心包已批准）
 
-> 当前交付顺序和逐批退出条件以[语义框架十批实施计划](semantic-framework-ten-batch-implementation-plan.md)为准。本文只提供工具链、质量门与逐步骤机械细节，不定义另一套实施顺序。
+> **SUPERSEDED / 历史计划，不再执行。** 当前实施次序见[实施衔接](coherent-code-context-implementation-plan.md)，当前规格见[已批准清理与可扩展覆盖设计](code-cleanup-and-scalable-activity-coverage-design.md)。下文保留制定时的 Wire Reset、模块数量、授权、工具版本、验收和估时记录，不作为当前合同或当前授权；不重新执行已完成迁移，不恢复旧 R0/52/57 项或逐层 replay 路线。当前工具链以本仓库 pom.xml/.mvn 为准，本轮不变更依赖。
+
+
+> 下文交付顺序与逐批退出条件只保留制定时历史语境；当前顺序仅由上方实施衔接和批准设计决定。本文历史授权不激活本轮下载、POM、测试、提交或推送。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task, and use `superpowers:verification-before-completion` before claiming any task complete.
 

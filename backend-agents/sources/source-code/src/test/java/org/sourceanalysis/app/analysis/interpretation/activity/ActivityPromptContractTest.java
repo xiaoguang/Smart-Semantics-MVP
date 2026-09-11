@@ -44,7 +44,7 @@ class ActivityPromptContractTest {
                   fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
               .build(
                   new BuildBusinessMaterialsRequest(
-                      flows, new BusinessMaterialProfile(8, 24, 12_000)));
+                      flows, new BusinessMaterialProfile(8, 24, 12_000, 1)));
       BusinessMaterial material = allMaterials.materialSet().materials().get(0);
       BusinessMaterialEntryCoverage entry =
           allMaterials.materialSet().entryCoverage().stream()
@@ -72,6 +72,10 @@ class ActivityPromptContractTest {
                       .contains("不得创建、修改或猜测 ref"));
       assertThat(provider.instructions().get(0)).contains("请把整个材料包解释为零个或多个完整局部业务活动");
       assertThat(provider.instructions().get(1)).contains("请审阅这些完整活动是否真正回答业务问题");
+      assertThat(provider.instructions())
+          .allSatisfy(
+              instruction ->
+                  assertThat(instruction).contains("完整 HTTP 方法与路径").contains("Java 类型、变量名或技术层名"));
       assertThat(provider.instructions().get(0)).isNotEqualTo(provider.instructions().get(1));
     }
   }
@@ -87,6 +91,7 @@ class ActivityPromptContractTest {
       ObjectNode response = JsonNodeFactory.instance.objectNode();
       ObjectNode activity = response.putArray("activities").addObject();
       activity.put("activityLocalId", "activity-1");
+      activity.putArray("entryKeys").add("E1");
       activity.put("name", "保存业务对象");
       activity.put("businessPurpose", "把入口提交的数据整理为业务对象并保存。");
       activity.putArray("participants");

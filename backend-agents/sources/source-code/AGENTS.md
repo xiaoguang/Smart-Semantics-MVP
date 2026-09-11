@@ -101,9 +101,13 @@
   - nine-section-document -> steps/08-nine-section-document/
 - Numerical prefixes order docs/directories only. Java types, fields, packages,
   schemas, artifact IDs, tests and commands use semantic names.
-- Step 01–05 preserve their stable frozen source, five graph, Fact, Proof,
-  Flow, Capsule, Gap, locator, publication and technical coverage contracts.
-  Do not rewrite or weaken them to simplify business interpretation.
+- Keep all eight steps and useful persisted technical outputs. Step 01 verifies
+  source once; Step 03 indexes code relationships; Step 04 adds optional strict
+  technical Facts; Step 05 alone assembles coherent per-entry code context
+  with actual/formal arguments, controls, returns, boundaries and code fragments.
+  Keep exact Proof truthfulness. Incomplete strict Proof is not the sole gate
+  for reading safely located code. Remove repeated ordinary-path enumeration,
+  compilation and projection; do not introduce another evidence hierarchy.
 - Step 06 uses exactly two target business Modules:
   BusinessMaterialBuilder and ActivityExplainer.
 - Step 07 uses exactly one target business Module: ProcessExplainer.
@@ -124,11 +128,49 @@
 - A live Luna task needs current explicit authorization, logged-in Codex
   session preflight, one frozen input package and declared limits. There is no
   API-key fallback.
-- BusinessMaterialBuilder uses existing frozen source/entry/five-graph/Fact/
-  Flow views to select a few coherent excerpts and technical observations.
-  Java does not use an industry dictionary to assign business purpose, actor,
-  action, outcome or process.
-- ActivityExplainer reads a complete local activity package. ProcessExplainer
+- Step 05 is the sole owner of entry-context relationships and related source
+  excerpts, including safe entries without a strict Flow. Its existing files
+  hold the context; Capsule is its budgeted projection, not another chain model.
+- Step 05 must project admitted call/control graph relationships and their
+  source locations directly. Facts and Proofs classify conclusions that have
+  passed strict rules; they must never become a filter that makes an otherwise
+  located call, guard, return, or graph-gap source location invisible to the
+  business reader.
+- BusinessMaterialBuilder only packages Step 05 contexts, selects complete
+  in-budget units and maps SourceRefs. It must not independently reconstruct
+  a direct callee from source text. Java does not use an
+  industry dictionary to assign purpose, actor, action, outcome or process.
+- ActivityExplainer reads a complete local activity package and REVIEW sees
+  the complete actual DRAFT. Preserve full reviewed conditions, rules, formulas
+  and narrative through process knowledge and final report, not only labels.
+- An Activity package has an arbitrary positive number `N` of entries and
+  scope-local keys `E1...EN`; package-local keys always map through the owning
+  material to global entry IDs. Never hard-code four entries, compare by
+  prefixes/substrings, or join bare `E1` across packages. Configuration `K`
+  limits Builder packaging but is not the repository entry count.
+- Before an Activity Provider starts, the effective profile must be able to
+  express `N` independent activities, every activity must be able to reference
+  any subset of `E1...EN`, and the complete DRAFT plus REVIEW envelope must fit
+  the real serialized input/output budgets. ActivityExplainer does not split
+  or truncate an already-built material; incompatible material receives a
+  concrete zero-request coverage reason.
+- A structurally and scope-valid Activity DRAFT may omit entry keys. It still
+  enters the one allowed REVIEW with the complete actual DRAFT and
+  program-computed `missingEntryKeys`. Invalid JSON, unknown keys/refs, output
+  budget violations, or a failed started request remain fatal and never enter
+  a repair path.
+- The Activity REVIEW output has a required, possibly empty,
+  `unexplainedEntries` key array. Reviewed activity keys union unexplained keys
+  must equal the material keys and be disjoint; any remaining omission is
+  fatal, with no third call. Java maps unexplained keys to program-owned
+  `MODEL_NOT_EXPLAINED`, not a source/Proof Gap. Process/report model input
+  groups them by material as `{materialContext, unexplainedEntryKeys,
+  reasonCode}`, sends the context once, and keeps global IDs program-side.
+  Chapter 9 names the corresponding HTTP entries and reason category.
+- `PARTIAL` and `INCOMPLETE` in this semantic design are document-quality and
+  acceptance conclusions, not new runtime/report enums. Closing a coverage
+  set with unexplained entries cannot pass complete business acceptance.
+- ProcessExplainer
   performs programmatic loose recall, then model-backed whole-process and
   bounded repository synthesis. BusinessReportPublisher lets the model author
   natural paragraph JSON and review the complete nine chapters; Java supplies
@@ -193,6 +235,18 @@
   general/parameter entity, schema and network resolution disabled. Inability
   to enforce those settings fails closed.
 
+## Spring entry legality
+
+- @RequestMapping with omitted method or method={} is valid, never a Gap just
+  for being unrestricted. No restriction on either level means UNRESTRICTED;
+  one explicit level retains that set; two explicit levels combine by union
+  as Spring RequestMethodsRequestCondition does, not intersection.
+- Do not invent GET or separate business activities for framework HEAD/OPTIONS.
+  The target methodCondition is explicit and versioned; do not silently place
+  it in the current EntryPointV2 schema. Correct the current misclassification
+  of UserController#getOrganizationUserTree and
+  MaterialCategoryController#getMaterialCategoryTree with targeted future tests.
+
 ## Coverage, grouping and the nine chapters
 
 - FlowSlice is an entry-rooted technical slice, not a smallest business
@@ -226,8 +280,13 @@
 
 ## Persistence, reuse and recovery
 
-- Step 01–05 keep their existing ModuleArtifact/receipt/canonical publication
-  rules. Do not remove or weaken existing technical artifacts.
+- Keep observable ModuleArtifact/receipt and step publications. On the normal
+  trusted path, build/compile/project each owned result once and pass immutable
+  typed views. Publishers serialize, check type/ID/ref/budget and atomically
+  install; they must not replay the producer's algorithm.
+- Disk/new-process/import reuse verifies stored identity/hash/schema/ref/basis
+  and read source bytes at the boundary. Explicit independent audits and
+  mutation tests may replay algorithms; ordinary internal consumers must not.
 - New business checkpoints are:
   - Step 06: business-materials.jsonl, activity-explanations.jsonl,
     activity-coverage.json
@@ -236,9 +295,14 @@
   - Step 08: business-report.json, source-refs.jsonl, document.md,
     report-validation.json
 - Save business-materials after compilation and before the first model call.
-  Save each completed reviewed activity/process package immediately. Later
-  failures preserve completed checkpoints. In-process callers may pass typed
-  immutable objects and need not fresh-reopen between internal operations.
+  The target is to save each completed reviewed activity/process package
+  immediately so later failures preserve completed checkpoints. Current
+  ActivityExplainer/ProcessExplainer aggregate and publish after their loops;
+  fixed module addresses cannot be repeatedly installed with differing bytes.
+  Immediate per-package persistence remains an independent known gap and must
+  not be claimed complete or expanded into a recovery subsystem. In-process
+  callers may pass typed immutable objects and need not fresh-reopen between
+  internal operations.
 - A simple inputFingerprint covers actual content inputs excluding a new
   runId, actual Prompt content/version, effective model/output configuration
   and Module version. Reuse requires equality; Prompt text or effective input
@@ -280,8 +344,18 @@
   routes, six-module Step 06, three-module Step 07, four-module Step 08 and
   their fixed output inventories are retired targets. Existing Java/schema/
   fixture/artifact instances are migration input only; do not extend them.
-- Migrate within the existing semantic packages to the four deep Modules.
-  Preserve Git history and progress files; do not create a POC namespace.
+- The approved cleanup removes the old
+  `analysis.interpretation.{model,proposal,registry,process}` production and
+  test packages only after shared current-test fixtures move to neutral
+  testsupport. Retire old Step06 addresses 1-9 and their artifact branches,
+  then remove only the two registry-proposal Capsule fields with the owning
+  schema versions. Preserve current addresses 10/11,
+  `analysis.knowledge.ProcessExplainer`, `ModelRuntimeIdentityV1`, EntryContext,
+  facts, gaps, signals and SourceRefs. This cleanup is designed but not yet
+  implemented.
+- Adjust the existing semantic packages and four existing business Modules.
+  No new Wire Reset, source scanner, context-chain Module or storage/recovery
+  subsystem is needed. Preserve Git history and progress files.
 
 ## Testing and stop rules
 
@@ -307,9 +381,10 @@
 - Designs are function-first: why, concrete input example, program action,
   model action, output example, direct downstream use, Gap/stop/reuse, then
   development tests and current maturity.
-- Step 01–05 retain their stable technical detail and only map their Module
-  I/O into the simplified business route. Step 06–08 must not retain active
-  rules from the retired heavy route under a disclaimer.
+- Explain actual input, owned computation, concrete output, next consumer and
+  failures in every step. Remove contradictory retired gates in place; do not
+  prepend a disclaimer while leaving must-replay or closed-Proof-only reading
+  requirements active. Preserve current implementation facts separately.
 - Use the explicit synthetic replenishment-to-receipt-to-payable-bill story
   for cross-process design. Never present it as jshERP behavior.
 - Reader chapters use Chinese business language first; technical fields may

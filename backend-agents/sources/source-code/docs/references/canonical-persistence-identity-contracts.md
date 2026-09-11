@@ -1,10 +1,8 @@
 # Canonical 持久化与身份合同（ACTIVE 技术附录）
 
-> **适用范围：** 第 1–6 节继续约束 Step 01–05 已保留的技术 publication 和任何显式选择使用既有 canonical store 的 artifact；它们不要求新的 Step 06–08 每个内部动作都拥有 ModuleArtifact/receipt/fresh-reopen。四个业务深 Module 的检查点、inputFingerprint 与保存时机以 [总体设计](../DESIGN.md) 为准。旧 Step 06–08 registry 只记录当前实现/迁移事实，不是 target DAG。
+本附录保留已实现 canonical bytes、typed identity、module/analysis-step publication 和原子存储公式。普通计算结果的传递遵循 [总体设计](../DESIGN.md)：owner 只计算一次，publisher 不重放算法；同进程可复用 immutable typed view，磁盘/新进程/import 边界才核验保存身份/hash/schema/ref/basis。
 
-本附录保留 Source Code Analysis Agent 已经验证的 canonical bytes、typed identity、module/analysis-step publication 与 atomic store 合同。本轮只简化业务语义职责，**不改这些公式、存储语义或已有身份**。
-
-> 实现现状：`CanonicalJsonCodec`、`CanonicalArtifactPolicyRegistry`、`CanonicalModuleArtifactStore` 和 `CanonicalAnalysisStepArtifactStore` 已有生产纵切；`CanonicalRunManifestStore` 仍是批准的未实现目标。Step 06 新 module/payload registry 也是 `NOT IMPLEMENTED`。不得从本附录反推完整运行已经存在。
+CanonicalJsonCodec、CanonicalArtifactPolicyRegistry、CanonicalModuleArtifactStore、CanonicalAnalysisStepArtifactStore 已有实现。下文 CanonicalRunManifestStore 签名/完成身份仅保留为既有技术提案的参照，不是本轮新增实现任务或业务交付前置；现有 runtime 使用其实际 run/checkpoint stores，不为此次减法再建存储系统。
 
 ## 1. Canonical JSON 与 JSONL
 
@@ -239,42 +237,31 @@ runManifestId = "run-manifest:" + lowercaseHex(SHA-256(
 
 `Without...Id` 删除且只删除命名的顶层 self ID；不删其他字段，不加入该文件自身 SHA。Receipt/manifest file SHA 始终对含已计算 ID 的完整 canonical bytes 求普通 SHA-256。
 
-## 6. 原子 install/reopen（保留技术 publication）
+## 6. 原子 install/reopen
 
-对 Step 01–05 已保留 Module 和现有 analysis-step store，使用同一语义：
+对已选择 canonical store 的既有 artifacts 保留以下存储边界：
 
-1. 在写入前验证 exact policy、schema、address/filename registry、upstream refs、controls、canonical bytes 和 budget。
-2. 在同文件系统不可见 sibling staging 中按 payload 先、receipt 后写入并 force。
-3. 在 staging 中 fresh reopen，重算 size/SHA/artifact ID/descriptor/root/receipt ID，再 atomic move。不支持 atomic move 则 fail closed。
-4. 目标已存在且逐 byte 一致返回 `ALREADY_INSTALLED`；任何差异是 collision，不覆盖。
-5. `reopen` 只接受完整 typed reference；NOFOLLOW 检查精确文件集，拒绝 symlink、嵌套目录、缺失/多余文件、引用或字节漂移。
-6. 这些技术 publication 的下游只能消费 `Reopened*Publication` 的 defensive immutable bytes；新的 Step 06–08 在同进程可以直接传 immutable typed object，并在有意义检查点保存，不适用逐内部动作重开要求。
+1. 验证 exact policy、schema、address/filename registry、upstream refs、controls 和预算，序列化 canonical bytes。
+2. 在同文件系统不可见 staging 内先写 payload，再写 receipt，并 force。
+3. 核对实际写入 size/hash/descriptor/root/receipt bytes 后 atomic move；不支持原子安装则 fail closed。这是存储完整性检查，不运行任何 graph builder、Fact enumerator、Flow compiler 或 Capsule projector。
+4. 目标存在且逐 byte 相等为 ALREADY_INSTALLED；不同为 collision，不覆盖。
+5. 外部 reopen 接受完整 typed reference；NOFOLLOW 验证 exact file set，拒绝 symlink、缺失/多余文件、引用及 bytes 漂移。
+6. 正常可信进程可传 owner 已验证的 immutable typed objects/bytes；不要求逐内部模块 fresh reopen，也不把它增加为内容准入层。
 
-Module 目录的文件集等于 receipt 声明的 payloads + `module-receipt.json`。Analysis-step 公开文件集等于该步 exact semantic payloads + 可选 archive manifest + registered receipt；`modules/` 不计入 step root，也不被当作 semantic payload 遍历。
+Module 文件集是 receipt 声明 payloads 加 module-receipt.json。Analysis-step 集是命名 semantic payloads 加 registered receipt；modules/ 不计入 semantic root。已有目录、版本、identity preimage 不在本文重新设计。
 
-## 7. Module registry：保留技术目标与迁移事实分开
+## 7. 当前模块与目标减法
 
-下列是当前已编译 module key。Step 01–05 继续作为目标技术 Module；Step 06–08 的旧 key 仅是迁移输入：
+Step01 request-admission/source-index/publish、Step02 application-profile/http-entry/mapper-catalog/publish、Step03 五图/publish、Step04 candidates/proofs/publish、Step05 flow-compiler/capsule-projector/publish 的可观察产物保留。
 
-~~~text
-verified-source-inventory: 01=request-admission, 02=source-index, 03=publish
-application-discovery:     01=application-profile, 02=http-entry, 03=mapper-catalog, 04=publish
-program-graphs:            01=code-structure, 02=call-graph, 03=control-flow,
-                           04=data-flow, 05=evidence-graph, 06=publish
-proven-code-facts:         01=candidates, 02=proofs, 03=publish
-business-flows:            01=flow-compiler, 02=capsule-projector, 03=publish
-repository-knowledge:      01=admission, 02=knowledge-merge, 03=publish
-nine-section-document:     01=planner, 02=renderer, 03=trace, 04=archive
-~~~
+Step05 使用既有文件保存一个 EntryContext 关系模型和对应有界 Capsule 投影；新增字段遵循所属 record 的新 schema version，不创建另一 module registry、文件系统或身份框架。Step06–08 的 BusinessMaterialBuilder、ActivityExplainer、ProcessExplainer、BusinessReportPublisher 已有实现，保存总体设计列出的业务 checkpoints。旧 R0/finite-key 以及六/三/四模块目标是历史，不恢复其固定 52/57 输出要求。
 
-当前 Step 06 的 R0/R1/R2 九模块、Step 07 admission/knowledge-merge/publish 和 Step 08 planner/renderer/trace/archive 在迁移前仍是实现事实，但不是新业务目标规范。目标只保留 BusinessMaterialBuilder、ActivityExplainer、ProcessExplainer、BusinessReportPublisher 四个深 Module；它们写总体设计列出的简单检查点，不另建新的六模块 registry。后续切换不得使用 alias、dual reader、第二 namespace 或旁路 POC。Step 01–05 的既有 canonical 机制不变。
+## 8. 不变量与实际边界
 
-## 8. 不变量与未实现边界
+- identity-significant bytes/refs/controls 改变产生新身份，不能覆写旧 publication。
+- ID 相同只说明 canonical preimage 相同，不说明业务完整、语义真实或已人工确认。
+- 原文、prompt、raw response、秘密及 repository path 继续受既有 artifact exposure policy 保护；无路径且可完整公开的类型才使用 PATH_FREE_COMPLETE_UTF8。
+- 显式跨 run 复用校验保存输入/Prompt/model/output/Module 的 fingerprint 及边界完整性；不恢复不确定的 started Provider 调用。
+- 同 run 崩溃接管和 terminal repair 延后；本轮不增加 journals、hash chains、recovery readers 或完整 run manifest 新机制。
 
-- 源、upstream reference、controls、model raw response 或任何 identity-significant payload 变化都生成新身份，不覆盖旧 publication。
-- ID 相同只表示 canonical preimage 相同，不表示语义真实、完整或已人工确认。
-- `METADATA_ONLY` 是含 source locator/excerpt、prompt、raw response、secret 或 repository path 材料的默认 exposure。只有 schema 能静态保证 path-free 且可完整公开时才用 `PATH_FREE_COMPLETE_UTF8`。
-- Active v0 不从半成 staging/module 恢复。已完整安装的上游 publication 可在新 execution 中显式重用；不是 same-run resume。
-- Run manifest store、完整 runtime、NineSection archive 路径仍须后续实现，本文不把目标当现状。
-
-任何修改 domain separator、framing、prefix、ordering、self-exclusion 集或目录推导都是独立、显式的 versioned 持久化设计变更；不可作为语义框架迁移的顺手修改。
+改变 domain separator、framing、prefix、ordering、self-exclusion 或目录推导属于独立明确的 versioned 持久化变更。本轮不改这些公式，只删除普通调用链的重复计算和过强上下文准入条件。

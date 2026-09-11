@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
@@ -38,16 +39,49 @@ class ProcessMaterialRecallTest {
     RecordingProvider provider = new RecordingProvider();
 
     new ProcessExplainer(provider)
-        .explain(request(disjointActivities(), materials(), new ProcessExplanationProfile(4, 2, 16_000, 12_000, 2, 16, 2_000)));
+        .explain(
+            request(
+                disjointActivities(),
+                materials(),
+                new ProcessExplanationProfile(4, 2, 16_000, 12_000, 2, 16, 2_000)));
 
-    assertThat(provider.taskKinds())
-        .containsExactly("PROCESS_GROUP_DRAFT", "PROCESS_GROUP_REVIEW");
+    assertThat(provider.taskKinds()).containsExactly("PROCESS_GROUP_DRAFT", "PROCESS_GROUP_REVIEW");
     assertThat(provider.groupInput().path("activities"))
         .extracting(value -> value.path("activityId").asText())
         .containsExactly("activity:record-receipt", "activity:submit-request");
     assertThat(provider.groupInput().path("recallReasons"))
         .extracting(JsonNode::asText)
         .contains("技术材料来自同一冻结源码文件");
+    assertThat(provider.groupInput().path("activities").get(0).properties())
+        .extracting(Map.Entry::getKey)
+        .containsExactlyInAnyOrder(
+            "activityId",
+            "name",
+            "businessPurpose",
+            "participants",
+            "businessObjects",
+            "triggerOrInput",
+            "conditions",
+            "activitySteps",
+            "codeDefinedResults",
+            "businessRules",
+            "formulasOrMetrics",
+            "terms",
+            "certainty",
+            "questions",
+            "scopeLimitations",
+            "sourceRefs");
+    assertThat(provider.groupInput().path("activities").get(0).path("participants"))
+        .extracting(JsonNode::asText)
+        .containsExactly("经办人员");
+    assertThat(provider.groupInput().path("activities").get(0).path("terms"))
+        .extracting(JsonNode::asText)
+        .containsExactly("术语：收货记录");
+    assertThat(provider.groupInput().path("activities").get(0).path("certainty").asText())
+        .isEqualTo("REASONABLE_INFERENCE");
+    assertThat(provider.groupInput().path("activities").get(0).path("scopeLimitations"))
+        .extracting(JsonNode::asText)
+        .containsExactly("静态源码不证明某次保存成功");
     assertThat(provider.groupInput().toString())
         .doesNotContain("ReplenishmentWorkflow.java", "src/main/java", "proof:", "flow:");
   }
@@ -60,7 +94,9 @@ class ProcessMaterialRecallTest {
     try {
       Constructor<ExplainRepositoryProcessesRequest> constructor =
           ExplainRepositoryProcessesRequest.class.getConstructor(
-              ActivityExplanationResult.class, BusinessMaterialSet.class, ProcessExplanationProfile.class);
+              ActivityExplanationResult.class,
+              BusinessMaterialSet.class,
+              ProcessExplanationProfile.class);
       return constructor.newInstance(activities, materials, profile);
     } catch (NoSuchMethodException missing) {
       fail("PROCESS_MATERIAL_RECALL_NOT_IMPLEMENTED", missing);
@@ -114,7 +150,7 @@ class ProcessMaterialRecallTest {
         List.of(entryId),
         name,
         purpose,
-        List.of(),
+        List.of("经办人员"),
         List.of(object),
         List.of(input),
         List.of(),
@@ -122,7 +158,7 @@ class ProcessMaterialRecallTest {
         List.of("系统保存" + object),
         List.of(),
         List.of(),
-        List.of(object),
+        List.of("术语：" + object),
         "REASONABLE_INFERENCE",
         List.of("S" + activityId.substring("activity:".length(), "activity:".length() + 1)),
         List.of(),
@@ -130,8 +166,10 @@ class ProcessMaterialRecallTest {
   }
 
   private static BusinessMaterialSet materials() {
-    BusinessMaterial submit = material("material:submit-request", "entry:submit-request", "Ssubmit");
-    BusinessMaterial receipt = material("material:record-receipt", "entry:record-receipt", "Sreceipt");
+    BusinessMaterial submit =
+        material("material:submit-request", "entry:submit-request", "Ssubmit");
+    BusinessMaterial receipt =
+        material("material:record-receipt", "entry:record-receipt", "Sreceipt");
     return new BusinessMaterialSet(
         "business-material-set:technical-recall",
         List.of(submit, receipt),

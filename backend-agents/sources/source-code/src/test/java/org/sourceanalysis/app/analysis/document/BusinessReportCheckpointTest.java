@@ -253,6 +253,7 @@ class BusinessReportCheckpointTest {
       ObjectNode response = JsonNodeFactory.instance.objectNode();
       ObjectNode activity = response.putArray("activities").addObject();
       activity.put("activityLocalId", "activity-1");
+      activity.putArray("entryKeys").add("E1");
       activity.put("name", "保存业务对象");
       activity.put("businessPurpose", "把入口提交的数据整理为业务对象并保存。");
       activity.putArray("participants");

@@ -84,7 +84,243 @@ public final class EntryRootedFlowCompiler {
                 entry.entryId(), "GAP", null, List.of(gapId), reasonCode));
       }
     }
-    return new FlowCompilation(profile, dispositions, flows, flowGaps);
+    Map<String, FlowCompilation.FlowSlice> flowsByEntry =
+        flows.stream()
+            .collect(
+                java.util.stream.Collectors.toMap(
+                    FlowCompilation.FlowSlice::entryId, value -> value));
+    List<FlowCompilation.EntryContext> entryContexts =
+        reopened.entries().stream()
+            .map(
+                entry ->
+                    compileEntryContext(
+                        entry,
+                        flowsByEntry.get(entry.entryId()),
+                        reopened,
+                        flowGaps.stream()
+                            .filter(gap -> gap.affectedEntryIds().contains(entry.entryId()))
+                            .toList()))
+            .toList();
+    return new FlowCompilation(profile, dispositions, flows, entryContexts, flowGaps);
+  }
+
+  /**
+   * Preserves the code relationship needed by Step06 without assigning a business label. This is
+   * intentionally assembled from persisted graph/fact records rather than reparsing Java source.
+   */
+  private static FlowCompilation.EntryContext compileEntryContext(
+      PersistedFlowCompilationInputReader.FlowEntry entry,
+      FlowCompilation.FlowSlice flow,
+      PersistedFlowCompilationInputReader.PersistedFlowCompilationInputs reopened,
+      List<FlowCompilation.FlowGap> flowGaps) {
+    Map<String, PersistedFlowCompilationInputReader.BoundaryInvocation> boundariesByCallId =
+        reopened.boundariesByNodeId().values().stream()
+            .collect(
+                java.util.stream.Collectors.toMap(
+                    PersistedFlowCompilationInputReader.BoundaryInvocation::invocationCallId,
+                    value -> value,
+                    (left, right) -> {
+                      throw broken("FLOW_GRAPH_REFERENCE_BROKEN");
+                    }));
+    List<FlowCompilation.CallContext> calls =
+        graphCallContexts(entry, reopened, boundariesByCallId);
+    List<FlowCompilation.ControlContext> controls = graphControlContexts(entry, reopened);
+    List<FlowCompilation.ReturnContext> returns =
+        flow == null
+            ? List.of()
+            : flow.outcomePaths().stream()
+                .map(
+                    outcome -> {
+                      PersistedFlowCompilationInputReader.ControlNode terminal =
+                          reopened.controlNodesById().get(outcome.terminalNodeId());
+                      if (terminal == null || terminal.evidenceNodeIds().isEmpty()) {
+                        throw broken("FLOW_GRAPH_REFERENCE_BROKEN");
+                      }
+                      return new FlowCompilation.ReturnContext(
+                          outcome.terminalNodeId(),
+                          outcome.terminalKind(),
+                          terminal.evidenceNodeIds());
+                    })
+                .distinct()
+                .toList();
+    PersistedFlowCompilationInputReader.ControlNode root =
+        reopened.controlNodesById().values().stream()
+            .filter(node -> "ENTRY".equals(node.kind()))
+            .filter(node -> node.owners().equals(List.of(entry.entryId())))
+            .findFirst()
+            .orElse(null);
+    String entrySignature = root == null ? entry.trigger() : root.canonicalValue();
+    List<String> factIds = flow == null ? List.of() : flow.factIds();
+    List<String> gapIds =
+        flowGaps.stream().map(FlowCompilation.FlowGap::gapId).sorted(UTF8_ORDER).toList();
+    List<PersistedFlowCompilationInputReader.GraphGap> graphGaps =
+        reopened.graphGaps().stream()
+            .filter(gap -> gap.affectedEntryIds().contains(entry.entryId()))
+            .toList();
+    List<String> limitations = new ArrayList<>();
+    if (flow == null) limitations.add("STRICT_FLOW_NOT_COMPILED");
+    if (calls.isEmpty()) limitations.add("NO_EXACT_CALL_RELATION_AVAILABLE");
+    graphGaps.stream()
+        .map(PersistedFlowCompilationInputReader.GraphGap::reasonCode)
+        .distinct()
+        .forEach(reasonCode -> limitations.add("GRAPH_CONTEXT_GAP:" + reasonCode));
+    List<SourceLocatorV1> sourceLocators =
+        entryContextSourceLocators(root, calls, controls, returns, flowGaps, graphGaps, reopened);
+    return new FlowCompilation.EntryContext(
+        contentId(
+            "entry-context",
+            entry.entryId(),
+            flow == null ? "" : flow.flowSliceId(),
+            entry.trigger(),
+            entrySignature,
+            calls.stream()
+                .map(FlowCompilation.CallContext::sortKey)
+                .sorted(UTF8_ORDER)
+                .collect(java.util.stream.Collectors.joining("\u0000")),
+            controls.stream()
+                .map(FlowCompilation.ControlContext::controlNodeId)
+                .sorted(UTF8_ORDER)
+                .collect(java.util.stream.Collectors.joining("\u0000")),
+            returns.stream()
+                .map(FlowCompilation.ReturnContext::terminalNodeId)
+                .sorted(UTF8_ORDER)
+                .collect(java.util.stream.Collectors.joining("\u0000"))),
+        entry.entryId(),
+        flow == null ? null : flow.flowSliceId(),
+        entry.trigger(),
+        entrySignature,
+        calls,
+        controls,
+        returns,
+        sourceLocators,
+        factIds,
+        gapIds,
+        limitations);
+  }
+
+  /**
+   * Chooses source locations already owned by the persisted graph/fact basis. This is deliberately
+   * a projection: it does not reopen or parse source text, and it gives the material builder the
+   * exact locations it may turn into short reader snippets.
+   */
+  private static List<SourceLocatorV1> entryContextSourceLocators(
+      PersistedFlowCompilationInputReader.ControlNode root,
+      List<FlowCompilation.CallContext> calls,
+      List<FlowCompilation.ControlContext> controls,
+      List<FlowCompilation.ReturnContext> returns,
+      List<FlowCompilation.FlowGap> flowGaps,
+      List<PersistedFlowCompilationInputReader.GraphGap> graphGaps,
+      PersistedFlowCompilationInputReader.PersistedFlowCompilationInputs reopened) {
+    Set<String> evidenceNodeIds = new java.util.TreeSet<>(UTF8_ORDER);
+    if (root != null) evidenceNodeIds.addAll(root.evidenceNodeIds());
+    calls.forEach(call -> evidenceNodeIds.addAll(call.evidenceNodeIds()));
+    controls.forEach(control -> evidenceNodeIds.addAll(control.evidenceNodeIds()));
+    returns.forEach(terminal -> evidenceNodeIds.addAll(terminal.evidenceNodeIds()));
+    flowGaps.forEach(gap -> evidenceNodeIds.addAll(gap.evidenceNodeIds()));
+    List<SourceLocatorV1> locators =
+        evidenceNodeIds.stream()
+            .map(reopened.evidenceNodesById()::get)
+            .filter(Objects::nonNull)
+            .map(PersistedFlowCompilationInputReader.PersistedEvidenceNode::sourceLocator)
+            .filter(Objects::nonNull)
+            .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+    graphGaps.stream()
+        .map(PersistedFlowCompilationInputReader.GraphGap::sourceLocator)
+        .filter(Objects::nonNull)
+        .forEach(locators::add);
+    return locators.stream()
+        .distinct()
+        .sorted(
+            Comparator.comparing(SourceLocatorV1::path, UTF8_ORDER)
+                .thenComparingLong(SourceLocatorV1::startByte)
+                .thenComparingLong(SourceLocatorV1::endByteExclusive))
+        .toList();
+  }
+
+  /**
+   * Keeps every graph-resolved call reachable from this entry. Facts certify selected conclusions;
+   * they must not decide which code path a later business reader is allowed to see.
+   */
+  private static List<FlowCompilation.CallContext> graphCallContexts(
+      PersistedFlowCompilationInputReader.FlowEntry entry,
+      PersistedFlowCompilationInputReader.PersistedFlowCompilationInputs reopened,
+      Map<String, PersistedFlowCompilationInputReader.BoundaryInvocation> boundariesByCallId) {
+    return reopened.callTargetEdgesById().values().stream()
+        .filter(edge -> "EXACT".equals(edge.resolution()))
+        .map(
+            edge -> {
+              PersistedFlowCompilationInputReader.ProgramNode caller =
+                  reopened.programNodesById().get(edge.fromNodeId());
+              PersistedFlowCompilationInputReader.ProgramNode target =
+                  reopened.programNodesById().get(edge.toNodeId());
+              if (caller == null
+                  || !"CALL_SITE".equals(caller.kind())
+                  || !caller.owners().contains(entry.entryId())) {
+                return null;
+              }
+              String canonicalCall = caller.canonicalValue();
+              int separator = canonicalCall.indexOf(':');
+              if (separator <= 0) {
+                throw broken("FLOW_GRAPH_REFERENCE_BROKEN");
+              }
+              java.util.TreeSet<String> evidenceNodeIds = new java.util.TreeSet<>(UTF8_ORDER);
+              evidenceNodeIds.addAll(caller.evidenceNodeIds());
+              evidenceNodeIds.addAll(edge.evidenceNodeIds());
+              if (target != null) evidenceNodeIds.addAll(target.evidenceNodeIds());
+              if (evidenceNodeIds.isEmpty()) throw broken("FLOW_GRAPH_REFERENCE_BROKEN");
+              String invocation = canonicalCall.substring(separator + 1);
+              return new FlowCompilation.CallContext(
+                  canonicalCall.substring(0, separator),
+                  target == null ? "未解析目标：" + invocation : target.canonicalValue(),
+                  callArguments(invocation),
+                  target == null ? "UNRESOLVED" : "EXACT",
+                  boundariesByCallId.containsKey(caller.nodeId()),
+                  List.of(),
+                  List.of(),
+                  List.copyOf(evidenceNodeIds));
+            })
+        .filter(Objects::nonNull)
+        .distinct()
+        .sorted(Comparator.comparing(FlowCompilation.CallContext::sortKey, UTF8_ORDER))
+        .toList();
+  }
+
+  /** Uses the already-persisted control graph rather than the narrower Fact candidate catalog. */
+  private static List<FlowCompilation.ControlContext> graphControlContexts(
+      PersistedFlowCompilationInputReader.FlowEntry entry,
+      PersistedFlowCompilationInputReader.PersistedFlowCompilationInputs reopened) {
+    return reopened.controlNodesById().values().stream()
+        .filter(node -> "GUARD".equals(node.kind()))
+        .filter(node -> node.owners().contains(entry.entryId()))
+        .filter(node -> node.normalizedCondition() != null)
+        .map(
+            node ->
+                new FlowCompilation.ControlContext(
+                    node.nodeId(),
+                    node.canonicalValue(),
+                    node.normalizedCondition(),
+                    node.evidenceNodeIds()))
+        .sorted(Comparator.comparing(FlowCompilation.ControlContext::controlNodeId, UTF8_ORDER))
+        .toList();
+  }
+
+  private static List<String> callArguments(String call) {
+    int opening = call.indexOf('(');
+    int closing = call.lastIndexOf(')');
+    if (opening < 0 || closing < opening) throw broken("FLOW_GRAPH_REFERENCE_BROKEN");
+    String arguments = call.substring(opening + 1, closing);
+    if (arguments.isBlank()) return List.of("无参数");
+    return java.util.Arrays.stream(arguments.split(",", -1))
+        .map(String::strip)
+        .map(EntryRootedFlowCompiler::displayExpression)
+        .toList();
+  }
+
+  private static String displayExpression(String canonical) {
+    int separator = canonical.lastIndexOf('|');
+    String result = separator < 0 ? canonical : canonical.substring(separator + 1);
+    if (result.isBlank()) throw broken("FLOW_GRAPH_REFERENCE_BROKEN");
+    return result;
   }
 
   private static List<FlowCompilation.FlowGap> upstreamFlowGaps(

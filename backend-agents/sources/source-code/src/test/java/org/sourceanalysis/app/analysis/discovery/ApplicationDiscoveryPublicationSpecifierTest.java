@@ -134,7 +134,16 @@ class ApplicationDiscoveryPublicationSpecifierTest {
               payload(reopened, "application-profile.json").canonicalUtf8());
       assertThat(publishedProfile.get("applicationProfileId").textValue())
           .isEqualTo(profile.applicationProfileId().value());
-      assertThat(jsonl(payload(reopened, "entry-points.jsonl"), canonicalJson)).hasSize(1);
+      assertThat(jsonl(payload(reopened, "entry-points.jsonl"), canonicalJson))
+          .singleElement()
+          .satisfies(
+              entry -> {
+                assertThat(entry.path("methodCondition").path("kind").asText())
+                    .isEqualTo("EXPLICIT");
+                assertThat(entry.path("methodCondition").path("methods"))
+                    .extracting(JsonNode::asText)
+                    .containsExactly("POST");
+              });
       assertThat(jsonl(payload(reopened, "mapper-catalog.jsonl"), canonicalJson)).isEmpty();
     }
   }

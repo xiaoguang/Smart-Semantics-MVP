@@ -19,20 +19,21 @@ import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialMode;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
+import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTaskCompilerTest;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 
-/** Verifies that safe direct service context survives the material-to-activity boundary. */
+/** Verifies that saved Step05 service context survives the material-to-activity boundary. */
 class ActivityExplainerDirectEntryContextTest {
 
   @TempDir Path temporaryDirectory;
 
   @Test
-  void sendsAHandlerAndDirectTargetWithoutLocatorsThenPreservesReviewedActivityFields()
-      throws Exception {
+  void sendsAHandlerAndSavedDirectTargetThenPreservesReviewedActivityFields() throws Exception {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("activity-direct-context"))) {
@@ -41,15 +42,15 @@ class ActivityExplainerDirectEntryContextTest {
                   fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
               .build(
                   new BuildBusinessMaterialsRequest(
-                      fixture.sourceInventory(),
-                      fixture.applicationDiscovery(),
-                      new BusinessMaterialProfile(8, 24, 12_000)));
+                      RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture),
+                      new BusinessMaterialProfile(8, 24, 12_000, 1)));
       BusinessMaterial material =
           allMaterials.materialSet().materials().stream()
               .filter(
                   value ->
                       value.sourceRefs().stream()
-                          .anyMatch(reference -> reference.snippet().contains("approvalClient.record")))
+                          .anyMatch(
+                              reference -> reference.snippet().contains("approvalClient.record")))
               .findFirst()
               .orElseThrow();
       BusinessMaterialEntryCoverage materialCoverage =
@@ -96,6 +97,56 @@ class ActivityExplainerDirectEntryContextTest {
     }
   }
 
+  @Test
+  void doesNotTurnTheGenericSnippetBudgetNoticeIntoABusinessCoverageGap() throws Exception {
+    try (ProgramGraphsPublicFixture fixture =
+        ProgramGraphsPublicFixture.createWithGuardedApprove(
+            temporaryDirectory.resolve("activity-budget-notice"))) {
+      BusinessMaterialBuildResult allMaterials =
+          new BusinessMaterialBuilder(
+                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
+              .build(
+                  new BuildBusinessMaterialsRequest(
+                      RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture),
+                      new BusinessMaterialProfile(8, 24, 12_000, 1)));
+      BusinessMaterial original = allMaterials.materialSet().materials().get(0);
+      BusinessMaterial completeFlow =
+          new BusinessMaterial(
+              original.materialId(),
+              original.entryIds(),
+              BusinessMaterialMode.FLOW_PREFERRED,
+              original.context(),
+              original.technicalObservations(),
+              original.sourceRefs(),
+              original.flowRefs(),
+              original.technicalProofRefs(),
+              List.of(BusinessMaterial.SNIPPET_BUDGET_NOTICE),
+              original.modelPacket());
+      BusinessMaterialBuildResult oneMaterial =
+          new BusinessMaterialBuildResult(
+              new BusinessMaterialSet(
+                  allMaterials.materialSet().materialSetId(),
+                  List.of(completeFlow),
+                  List.of(
+                      new BusinessMaterialEntryCoverage(
+                          completeFlow.entryIds().get(0),
+                          "ANALYZED_MATERIAL",
+                          completeFlow.materialId(),
+                          null))),
+              allMaterials.checkpoint());
+
+      ActivityExplanationResult result =
+          new ActivityExplainer(new ContextCapturingProvider())
+              .explain(
+                  new ExplainActivitiesRequest(
+                      oneMaterial, new ActivityExplanationProfile(64_000, 16_000, 1, 24, 2_000)));
+
+      assertThat(result.coverage())
+          .singleElement()
+          .satisfies(value -> assertThat(value.disposition()).isEqualTo("ANALYZED"));
+    }
+  }
+
   private static final class ContextCapturingProvider implements StructuredModelProvider {
     private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
     private final List<String> taskKinds = new ArrayList<>();
@@ -120,30 +171,29 @@ class ActivityExplainerDirectEntryContextTest {
     }
 
     static void assertCleanDirectContext(JsonNode packet) {
-      assertThat(packet.path("allowlistedRefs")).hasSize(2);
+      assertThat(packet.path("allowlistedRefs")).hasSizeBetween(2, 8);
       assertThat(packet.toString())
           .doesNotContain("file", "startLine", "endLine", "sha", "proof", "flow");
-      assertThat(packet.path("allowlistedRefs").get(0).path("snippet").asText())
-          .contains("orderService.approve");
-      assertThat(packet.path("allowlistedRefs").get(1).path("snippet").asText())
-          .contains("approvalClient.record");
+      assertThat(packet.path("allowlistedRefs"))
+          .anySatisfy(
+              value -> assertThat(value.path("snippet").asText()).contains("orderService.approve"))
+          .anySatisfy(
+              value ->
+                  assertThat(value.path("snippet").asText()).contains("approvalClient.record"));
     }
 
     private static ObjectNode activity(JsonNode packet) {
       ObjectNode root = JsonNodeFactory.instance.objectNode();
       ObjectNode activity = root.putArray("activities").addObject();
       activity.put("activityLocalId", "approve-order");
+      activity.putArray("entryKeys").add("E1");
       activity.put("name", "处理订单审批");
       activity.put("businessPurpose", "根据状态请求执行订单审批处理。");
       activity.putArray("participants");
       activity.putArray("businessObjects").add("订单").add("审批状态");
       activity.putArray("triggerOrInput").add("状态请求");
       activity.putArray("conditions").add("状态不能为空时才记录审批处理。");
-      activity
-          .putArray("activitySteps")
-          .add("接收状态请求")
-          .add("调用订单审批处理")
-          .add("记录审批处理");
+      activity.putArray("activitySteps").add("接收状态请求").add("调用订单审批处理").add("记录审批处理");
       activity.putArray("codeDefinedResults").add("代码调用审批记录处理。");
       activity.putArray("businessRules");
       activity.putArray("formulasOrMetrics");

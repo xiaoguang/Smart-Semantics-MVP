@@ -26,6 +26,7 @@ import org.sourceanalysis.app.analysis.inventory.RegisteredCaptureReceiptProject
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryExecutionRequest;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryExecutor;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
+import org.sourceanalysis.app.analysis.knowledge.ProcessExplanationProfile;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactPolicyKey;
 import org.sourceanalysis.app.artifact.ArtifactPolicyRegistryReference;
@@ -49,7 +50,6 @@ import org.sourceanalysis.app.capture.localgit.LocalGitCaptureRequest;
 import org.sourceanalysis.app.capture.localgit.LocalGitCommitCaptureAdapter;
 import org.sourceanalysis.app.capture.localgit.LocalGitSourceRegistry;
 import org.sourceanalysis.app.capture.localgit.RegisteredSourceCapture;
-import org.sourceanalysis.app.analysis.knowledge.ProcessExplanationProfile;
 
 /** Proves the runtime can run persisted technical analysis after verified source inventory. */
 class TechnicalAnalysisWorkflowTest {
@@ -345,8 +345,7 @@ class TechnicalAnalysisWorkflowTest {
         limits,
         new DiscoveryProfile("application-discovery-v2"),
         reference("graph-profile", 'a', 'b'),
-        new FlowCompilationProfile(
-            reference("flow-profile", 'c', 'd'), 16, 8, 64, 96, 32, 64, 256),
+        new FlowCompilationProfile(reference("flow-profile", 'c', 'd'), 16, 8, 64, 96, 32, 64, 256),
         new CapsuleProjectionProfile(
             reference("capsule-profile", 'e', 'f'), 16, 32, 4_096, 24_576));
   }

@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.fail;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintWriter;
 import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,9 +42,7 @@ class SourceAnalysisApplicationTest {
                   .invoke(application, output, output);
 
       ArtifactId sourceRegistrationId = artifactId("source-registration", 'a');
-      assertThat(
-              cli.execute(
-                  "start", "--source-registration", sourceRegistrationId.value()))
+      assertThat(cli.execute("start", "--source-registration", sourceRegistrationId.value()))
           .isZero();
 
       String runId = outputBytes.toString(StandardCharsets.UTF_8).lines().findFirst().orElseThrow();
@@ -67,7 +64,9 @@ class SourceAnalysisApplicationTest {
     }
     Constructor<?> constructor =
         type.getConstructor(
-            RunStoreHandle.class, RepositoryAnalysisRunCoordinator.class, AnalysisRunRequestTemplate.class);
+            RunStoreHandle.class,
+            RepositoryAnalysisRunCoordinator.class,
+            AnalysisRunRequestTemplate.class);
     return constructor.newInstance(
         store,
         new RepositoryAnalysisRunCoordinator(

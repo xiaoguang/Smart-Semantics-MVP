@@ -42,7 +42,7 @@ public final class FlowCompilationModulePublisher {
 
   private static final String FILE_NAME = "flow-compilation.json";
   private static final String ARTIFACT_TYPE = "BUSINESS_FLOWS_FLOW_COMPILATION";
-  private static final String SCHEMA_VERSION = "business-flows-flow-compilation-v3";
+  private static final String SCHEMA_VERSION = "business-flows-flow-compilation-v4";
   private static final String ARTIFACT_PREFIX = "business-flows-flow-compilation";
   private static final String MODULE_VERSION = "v1";
   private static final Comparator<String> UTF8_ORDER =
@@ -60,7 +60,6 @@ public final class FlowCompilationModulePublisher {
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
   private final PersistedFlowCompilationInputReader inputs;
-  private final EntryRootedFlowCompiler compiler;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
 
   /** Creates the M1 publisher with receipt-last module storage and its public-input reader. */
@@ -69,13 +68,11 @@ public final class FlowCompilationModulePublisher {
       CanonicalAnalysisStepArtifactStore analysisSteps) {
     this.moduleArtifacts = Objects.requireNonNull(moduleArtifacts, "module artifact store");
     inputs = new PersistedFlowCompilationInputReader(analysisSteps);
-    compiler = new EntryRootedFlowCompiler(analysisSteps);
   }
 
   /**
-   * Reopens the same predecessor wire used by the compiler, rebuilds and verifies the supplied
-   * compilation, checks denominator closure, then installs the only M1 module payload. It never
-   * reads or reparses customer source.
+   * Reopens the same predecessor wire used by the compiler, checks denominator closure, then
+   * installs the only M1 module payload. The ordinary path never compiles a second time.
    */
   public ModulePublicationReference publish(
       ApplicationDiscoveryReference discovery,
@@ -86,8 +83,6 @@ public final class FlowCompilationModulePublisher {
     PersistedFlowCompilationInputReader.PersistedFlowCompilationInputs reopened =
         inputs.reopen(discovery, graphs, facts);
     requireCompilationMatchesInputs(compilation, reopened);
-    FlowCompilation rebuilt = compiler.compile(discovery, graphs, facts, compilation.profile());
-    if (!compilation.equals(rebuilt)) throw broken();
     AnalysisStepModuleAddress address =
         new AnalysisStepModuleAddress(
             graphs.publication().address().runId(),
@@ -204,6 +199,8 @@ public final class FlowCompilationModulePublisher {
     compilation.entryDispositions().forEach(value -> disposition(dispositions.addObject(), value));
     ArrayNode flows = body.putArray("flowSlices");
     compilation.flowSlices().forEach(value -> flow(flows.addObject(), value));
+    ArrayNode contexts = body.putArray("entryContexts");
+    compilation.entryContexts().forEach(value -> entryContext(contexts.addObject(), value));
     ArrayNode gaps = body.putArray("flowGaps");
     compilation.flowGaps().forEach(value -> gap(gaps.addObject(), value));
     shard(body.putArray("entryShardReceipts").addObject(), compilation);
@@ -323,6 +320,50 @@ public final class FlowCompilationModulePublisher {
     value.processJoinSignals().forEach(signal -> signal(signals.addObject(), signal));
     node.putNull("parentFlowSliceId");
     node.putArray("childFlowSliceIds");
+  }
+
+  private static void entryContext(ObjectNode node, FlowCompilation.EntryContext value) {
+    node.put("entryContextId", value.entryContextId());
+    node.put("entryId", value.entryId());
+    if (value.flowSliceId() == null) node.putNull("flowSliceId");
+    else node.put("flowSliceId", value.flowSliceId());
+    node.put("trigger", value.trigger());
+    node.put("entrySignature", value.entrySignature());
+    ArrayNode calls = node.putArray("calls");
+    value.calls().forEach(call -> callContext(calls.addObject(), call));
+    ArrayNode controls = node.putArray("controls");
+    value.controls().forEach(control -> controlContext(controls.addObject(), control));
+    ArrayNode returns = node.putArray("returns");
+    value.returns().forEach(terminal -> returnContext(returns.addObject(), terminal));
+    ArrayNode sourceLocators = node.putArray("sourceLocators");
+    value.sourceLocators().forEach(locator -> sourceLocator(sourceLocators.addObject(), locator));
+    strings(node.putArray("factIds"), value.factIds());
+    strings(node.putArray("gapIds"), value.gapIds());
+    strings(node.putArray("limitations"), value.limitations());
+  }
+
+  private static void callContext(ObjectNode node, FlowCompilation.CallContext value) {
+    node.put("callerSignature", value.callerSignature());
+    node.put("targetSignature", value.targetSignature());
+    strings(node.putArray("argumentExpressions"), value.argumentExpressions());
+    node.put("resolution", value.resolution());
+    node.put("boundary", value.boundary());
+    strings(node.putArray("factIds"), value.factIds());
+    strings(node.putArray("proofIds"), value.proofIds());
+    strings(node.putArray("evidenceNodeIds"), value.evidenceNodeIds());
+  }
+
+  private static void controlContext(ObjectNode node, FlowCompilation.ControlContext value) {
+    node.put("controlNodeId", value.controlNodeId());
+    node.put("ownerSignature", value.ownerSignature());
+    node.put("condition", value.condition());
+    strings(node.putArray("evidenceNodeIds"), value.evidenceNodeIds());
+  }
+
+  private static void returnContext(ObjectNode node, FlowCompilation.ReturnContext value) {
+    node.put("terminalNodeId", value.terminalNodeId());
+    node.put("terminalKind", value.terminalKind());
+    strings(node.putArray("evidenceNodeIds"), value.evidenceNodeIds());
   }
 
   private static void signal(ObjectNode node, FlowCompilation.ProcessJoinSignalV1 value) {

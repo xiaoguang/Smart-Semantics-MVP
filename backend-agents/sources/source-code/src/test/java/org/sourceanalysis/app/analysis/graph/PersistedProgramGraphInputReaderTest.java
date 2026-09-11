@@ -215,6 +215,7 @@ class PersistedProgramGraphInputReaderTest {
     entry.put("kind", "SPRING_MVC_HTTP");
     entry.put("protocol", "HTTP");
     entry.put("method", "POST");
+    entry.putObject("methodCondition").put("kind", "EXPLICIT").putArray("methods").add("POST");
     entry.put("route", "/depotHead/batchSetStatus");
     entry.putArray("routeParts").add("/depotHead").add("/batchSetStatus");
     entry.put("handlerFqn", "com.example.DepotHeadController#batchSetStatus(java.lang.String)");

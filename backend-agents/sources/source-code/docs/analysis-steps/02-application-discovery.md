@@ -1,444 +1,110 @@
 # 应用发现
 
-> 总体设计权威：[Source Code Analysis Agent 总体设计](../DESIGN.md)。运行顺序只由文件名中的 `02-` 与运行目录 `steps/02-application-discovery/` 表达。
-
-本文示例严格使用[基础合同 §3.1](../references/foundation-and-publication-contracts.md#31-文档示例分类)的`NARRATIVE_ILLUSTRATION | STRUCTURAL_WIRE_SPECIMEN | STRICT_REPLAY_GOLDEN`分类；未标为strict的digest/size/ID不可复制为golden。权威字段表、enum、identity和direct-preimage合同始终exact，不能靠示例降级删除。
-
-完整 entry inventory 是后续语义材料的分母，不是 Flow 数量的附属品。某入口在 Step 05 没有 compiled Flow 时，只要这里的 locator 仍能在冻结快照中安全重开，Step 06 就必须处置该入口，而不能把它从业务分析分母筛掉。
+> [总体设计](../DESIGN.md)；固定 key：application-discovery，目录：steps/02-application-discovery/。本步骤运行时模型调用为 0。
 
 ## 1. 为什么存在
 
-分析步骤“已验证源码清单” 只证明“完整冻结仓库的文件没有变”，还没有回答“它们组成什么应用、全部入口在哪里、哪些框架构造能被可靠分析”。本分析步骤先固定应用形态、**全入口 inventory** 和能力边界，让后面的图以每个真实入口为根，而不是从文件名或模型猜测业务。DepotHead 只占仓库入口集合中的一项。
+业务分析必须先知道系统有哪些入口。Step02 从固定源码识别 Spring route/handler/参数及 Mapper 候选，建立全入口分母；入口后来没有 strict Flow 或 Fact，也不能从业务分析范围消失。
 
-## 2. 具体输入与 DepotHead 例子
+它回答技术触发点在哪里，不替方法起业务名称，也不把 Controller 当参与者。语义意义留给模型，已定位入口先交 Step03 建图和 Step05 组织代码上下文。
 
-输入是 分析步骤“已验证源码清单” 的 persisted verified **完整仓库** snapshot 与 inventory，加上 application-discovery profile、schema/toolchain hashes 和预算。生产前置要求 `scopeKind=COMPLETE_CAPTURE` 且 `repositoryCompletionEligible=true`；八文件 DepotHead `BOUNDED_PATH_SET` 只能运行局部 walkthrough/诊断，不能关闭 repository coverage。
+## 2. 输入与处理
 
-> Walkthrough 示例声明 — **TARGET_ILLUSTRATIVE_NOT_CURRENT_OUTPUT**：本文件用连贯目标值展示模块artifact接力，不声称当前SourceAnalysis已运行或闭合DepotHead；技术unknown只用nullable/UNRESOLVED/Gap/fatal表达。
+输入为 Step01 verified source view、版本化语言/框架 capability profile 和预算。只解析清单内 ANALYZABLE_TEXT；不运行 Maven 解析 classpath、不执行应用，不从活动工作树补缺项。
 
-DepotHead 八文件中可核对的 **REAL_SOURCE**：
+| 模块 | 输入 → 工作 → 输出 |
+| --- | --- |
+| ApplicationProfileDetector | POM/config/Java source → 静态语言和 Spring MVC/MyBatis signals → application profile |
+| SpringHttpEntryDiscoverer | profile + Java annotations → 路由/方法条件/handler/参数 → 全入口及 site dispositions |
+| MapperCapabilityCataloger | profile + Java/XML/config → Mapper/statement 候选与定位 → catalog |
+| ApplicationDiscoveryPublicationSpecifier | 已完成不可变结果 → 合并完整分母、序列化并原子安装 → 五文件步骤 publication |
 
-- pom.xml 和 application.yml 提供 Java/Spring/MyBatis 候选信号；
-- DepotHeadController.java:43 是类级 /depotHead；
-- DepotHeadController.java:178-191 是 POST /batchSetStatus 方法；
-- DepotHeadMapper.java:8,23 声明 mapper interface 与 updateByExampleSelective；
-- DepotHeadMapper.xml:3 声明相同 namespace，:385 声明 statement。
+M2/M3 可共享 immutable M1 view，但不共享 mutable 决策。Mapper catalog 只标 CANDIDATE_NOT_YET_BOUND，唯一 Java→XML binding 属于 Step03。发布器不重新解析 annotations 或运行发现器来验证自己。
 
-**示例分类：NARRATIVE_ILLUSTRATION。** 目标 **DETERMINISTIC_CONCLUSION** 是发现一个 HTTP entry；下列简写使用旧式locator显示，不是wire：
+## 3. Spring RequestMapping 的明确合同
+
+@RequestMapping 省略 method 与 method={} 都是合法 Spring MVC 映射，不得仅因没有 HTTP verb 标 GAP。类级没有 method 限制表示 unrestricted，不是未知。HTTP method conditions 的 class/method combine 规则如下：
+
+| 类级 condition | 方法级 condition | 有效 condition |
+| --- | --- | --- |
+| 空或未指定 | 空或未指定 | UNRESTRICTED |
+| {GET} | 空或未指定 | EXPLICIT {GET} |
+| 空或未指定 | {POST} | EXPLICIT {POST} |
+| {GET} | {POST} | EXPLICIT {GET,POST}，并集 |
+| {GET,POST} | {POST} | EXPLICIT {GET,POST}，并集 |
+
+这是 Spring RequestMethodsRequestCondition.combine 的集合行为，不要盲目求交集。@GetMapping 等组合注解相应提供显式 method condition。GET 的 HEAD 支持和框架的 OPTIONS 处理是 HTTP 框架行为，不据此发明新的 handler、GET 默认值或多个业务活动。
+
+依据：[Spring RequestMapping 文档](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-controller/ann-requestmapping.html)，[HEAD/OPTIONS 说明](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-controller/ann-requestmapping.html#requestmapping-head-options)，[Spring v5.3.39 RequestMethodsRequestCondition.combine](https://github.com/spring-projects/spring-framework/blob/v5.3.39/spring-webmvc/src/main/java/org/springframework/web/servlet/mvc/condition/RequestMethodsRequestCondition.java#L88-L106)。
+
+### 3.1 最小目标字段
+
+单值 `method` 不能完整表达 unrestricted/集合，不能把 ANY 或空串偷偷当成 HTTP verb。当前实现已在每个 EntryPoint 与 `entry-points.jsonl` 写入下面 required 的 `methodCondition`。现有 `method` 仅保留为由该对象导出的展示文本；下游必须读取 `methodCondition`，不能从展示文本推断条件。缺少该对象的输入会被新读取器拒绝：
+
+~~~text
+methodCondition: {
+  kind: UNRESTRICTED | EXPLICIT,
+  methods: RequestMethod[]
+}
+~~~
+
+UNRESTRICTED 要求 methods=[]；EXPLICIT 要求非空、去重并按稳定枚举顺序 GET、HEAD、POST、PUT、PATCH、DELETE、OPTIONS、TRACE 排序。RequestMethod 只取这八个枚举值。class/method 原始注解 excerpts 与 route parts 继续保存，effective methodCondition 进入 entry identity；由 source/组合规则计算，不由模型修改。
+
+同一 route/handler 的方法集合是一个入口条件，不按每个 verb 复制业务活动。一个 handler 关联多个真实 route 时仍按明确 route identity 记录，Step07 可解释多入口对应同一活动。该字段随新生成产物一同出现；读取旧单值、缺少 `methodCondition` 的输入不会被静默解释为 unrestricted。
+
+### 3.2 真实待修复例子
+
+UserController#getOrganizationUserTree 和 MaterialCategoryController#getMaterialCategoryTree 使用无 method 的 RequestMapping。此前它们会被误标限制；发现器现已将省略或空 method 的映射保存为准确 route/handler/UNRESTRICTED 入口，并继续保留相同完整 discovery site 分母。完整 jshERP 重新运行仍属于后续验收，不能由 fixture 代替。
+
+## 4. 输出示例与下一消费者
+
+以下是**目标阅读投影，不是现有 EntryPointV2 wire 或本轮运行产物**：
 
 ~~~json
 {
-  "entryId": "entry:2222222222222222222222222222222222222222222222222222222222222222",
-  "kind": "SPRING_MVC_HTTP",
-  "protocol": "HTTP",
-  "method": "POST",
-  "route": "/depotHead/batchSetStatus",
-  "routeParts": ["/depotHead", "/batchSetStatus"],
-  "handlerFqn": "com.jsh.erp.controller.DepotHeadController#batchSetStatus",
-  "parameterNames": ["status", "ids"],
-  "routeLocators": [
-    "jshERP-boot/src/main/java/com/jsh/erp/controller/DepotHeadController.java:43",
-    "jshERP-boot/src/main/java/com/jsh/erp/controller/DepotHeadController.java:178-191"
-  ]
+  "handler": "UserController#getOrganizationUserTree",
+  "methodCondition": {"kind": "UNRESTRICTED", "methods": []},
+  "reason": "RequestMapping has no explicit method condition",
+  "nextConsumer": "Step03 indexes the handler; Step05 assembles its source context"
 }
 ~~~
 
-这不是已删除pre-reset `Stage02Compiler`（旧四分析步骤编号）的DepotHead success声明。历史pre-reset整体slice曾在目标分析步骤“业务流程”对应位置得到Gap、0 Flow、0 Capsule；当前SourceAnalysis尚未运行该slice，不能继承该结果。
+正式 entry 还必须含准确 route、class/method route parts、handler signature、参数和原始注解 excerpts，不能用本例省略的 route 作为 fixture。财务例的 GET /accountHead/getFinancialBillNoByBillId 则为 EXPLICIT ["GET"]；这项来自 @GetMapping，不能推广成所有没有 method 的默认值。
 
-## 3. 程序怎样工作
-
-1. 重验 分析步骤“已验证源码清单” receipt、snapshot root、source handles 和 complete-capture 资格。
-2. 从完整 inventory 的 Maven/config signal 识别 Java release 和候选依赖；包括直接声明的框架核心依赖及其标准 starter（例如 Spring Boot Web、MyBatis Plus Boot starter）。依赖只启用 parser，绝不成为业务行为结论。
-3. 在完整 source denominator 上先枚举全部潜在 Spring HTTP site，再按稳定 fileId 分片解析；配置只能定位 inventory 内的 MyBatis mapper files。
-4. 解析 package/type/method/annotation，并合并类级、方法级 Spring MVC route；每个 candidate site 恰一处置。
-5. 记录 handler 参数、返回类型、注解与 locator，不在此解释业务意义。
-6. 发现 MyBatis namespace、Mapper method 和 XML statement 候选，形成 catalog；唯一 binding 留给 分析步骤“程序图” call graph。
-7. 对每个 site/entry记录 SUPPORTED、UNSUPPORTED、AMBIGUOUS 或 OVER_LIMIT；EXCLUDED 必须有 reasonCode/evidenceRefs，Gap 必须有 gapId。
-8. 验证 shard denominator 不交叠且 union 等于全 inventory discovery denominator；禁止 sample、first-N 或因超限丢 site。
-9. 重算 source/site/entry/catalog coverage，canonicalize、自验、原子安装 steps/02-application-discovery/。
-
-## 4. 生成的可观察产物
-
-| 文件 | 唯一职责 |
+| 文件 | 内容与用途 |
 | --- | --- |
-| application-profile.json | 观察到的语言/框架/config signals 与有效 capability profile |
-| entry-points.jsonl | 每行一个入口、route parts、handler、params/return 和 locator refs |
-| mapper-catalog.jsonl | Mapper Java/XML 候选、namespace、statement 和配置来源 |
-| capability-report.json | 全仓 source/site/entry/catalog dispositions、shard receipts 与 repositoryEntryCoverage |
-| application-discovery-receipt.json | upstream root、control hashes、artifact set 和 Gap 计数 |
+| application-profile.json | 语言/框架静态 signals、配置及 capability profile |
+| entry-points.jsonl | 全部入口、route parts、method condition、handler、参数、定位 |
+| mapper-catalog.jsonl | Mapper Java/XML 候选，尚不宣布唯一绑定 |
+| capability-report.json | 每个发现 site 的处置、明确限制、全入口分母 |
+| application-discovery-receipt.json | 同源 inputs/controls、四项 semantic descriptors 与状态 |
 
-**示例分类：NARRATIVE_ILLUSTRATION。** DepotHead target application profile投影如下；locator简写和signals不是可加载wire：
+Step03 复用 entry/catalog identities 建图，不重新发现入口。Step05 接收同一分母，为每个安全入口整理代码；即使没有 strict Flow，也应有上下文或具体不可读原因。Step06 只封装 Step05 结果，不重新解析 route 或建立另一分母。
 
-~~~json
-{
-  "applicationProfileId": "application-profile:1111111111111111111111111111111111111111111111111111111111111111",
-  "snapshotId": "snapshot:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "inventoryScopeKind": "BOUNDED_PATH_SET",
-  "repositoryCompletionEligible": false,
-  "language": "JAVA",
-  "languageVersion": 8,
-  "frameworkSignals": [
-    {"kind": "MYBATIS", "locator": "jshERP-boot/pom.xml:1", "disposition": "SUPPORTED"},
-    {"kind": "SPRING_MVC", "locator": "jshERP-boot/pom.xml:1", "disposition": "SUPPORTED"}
-  ],
-  "configSignals": [
-    {"kind": "MYBATIS_MAPPER_LOCATION", "locator": "jshERP-boot/src/main/resources/application.yml:1", "value": "classpath:mapper_xml/*.xml", "disposition": "SUPPORTED"}
-  ],
-  "capabilityProfileRef": {"artifactId": "capability-profile:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
-}
-~~~
+## 5. 技术、来源与完整性
 
-上面的profile是字段完整的目标record；“一个HTTP entry”只指本文 walkthrough 的entry投影，不是全八文件中所有可能入口的实测 golden，也不是profile内的额外计数字段。
+route 必须依据能静态读取的 class/method 注解合并，保留每部分的准确 SourceExcerptV1；动态表达式或真正歧义的 mapping 写带定位 Gap，不用名称、注释或 LLM 猜 route。不存在类级 prefix 时按实际注解语义处理，不能凭空补 DepotHead 的类级路由。
 
-目标 DepotHead 正向出口必须至少包含上面的完整 HTTP entry、一个 application profile、相关 Mapper catalog candidates、全部发现 site 的 disposition 和非空 receipt；它只是全仓入口 inventory 中一项。若完整仓库没有可发现入口，仍要安装完整五文件 artifact set，并在 `capability-report.json` 中记录 `NO_ENTRY_DISCOVERED`、全 inventory 搜索证据与零分母依据，状态只能是 SUCCEEDED_WITH_GAPS；不得省略文件或假造入口。
+Mapper XML 标准 DOCTYPE 允许声明，但外部 DTD、general/parameter entity、schema 与网络解析必须禁用；不能保证这些设置则 fatal。config/catalog 路径只解析到 Step01 inventory，禁止外部文件。源码定位、canonical 身份、public request 继承 [公共接口附录](../references/inherited-public-and-module-contracts.md)，存储继承 [Canonical 合同](../references/canonical-persistence-identity-contracts.md)。
 
-分析步骤“应用发现” completion 还要求 `repositoryEntryCoverage` 闭合：每个 discovery site 和每个形成的 `entryId` 都有唯一 disposition，所有 shard receipts 的 denominator union 与未分片 ID 集完全相同。一条 DepotHead entry 成功、其他 entry 未处置时，分析步骤“应用发现” 和整个 run 都不能完成。
-
-### 4.1 人类 walkthrough：模块用什么文件接力
-
-**示例分类：NARRATIVE_ILLUSTRATION。** 下列每行只解释接力，不是module envelope或跨analysis step replay fixture。
-
-~~~jsonl
-{"module":"application-profile","artifact":"modules/01-application-profile/application-profile-draft.json","takesFrom":["VerifiedSourceInventoryReference"],"says":{"snapshotId":"snapshot:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","language":"JAVA","languageVersion":8,"frameworkSignalKinds":["SPRING_MVC","MYBATIS"]}}
-{"module":"http-entry","artifact":"modules/02-http-entry/http-entry-discovery.json","takesFrom":["application-profile-draft.json","verified Java bytes"],"says":{"entryId":"entry:2222222222222222222222222222222222222222222222222222222222222222","protocol":"HTTP","method":"POST","route":"/depotHead/batchSetStatus","handlerFqn":"com.jsh.erp.controller.DepotHeadController#batchSetStatus"}}
-{"module":"mapper-catalog","artifact":"modules/03-mapper-catalog/mapper-catalog-draft.json","takesFrom":["application-profile-draft.json","verified config/Mapper bytes"],"says":{"catalogEntryId":"mapper-catalog-entry:4444444444444444444444444444444444444444444444444444444444444444","javaMethod":"DepotHeadMapper#updateByExampleSelective","xmlStatement":"com.jsh.erp.datasource.mappers.DepotHeadMapper#updateByExampleSelective","bindingState":"CANDIDATE_NOT_YET_BOUND"}}
-{"module":"publish","artifacts":"modules/04-publish/<four-semantic-files>","receipt":"modules/04-publish/module-receipt.json","takesFrom":["application-profile-draft.json","http-entry-discovery.json","mapper-catalog-draft.json"],"says":{"entryCount":1,"catalogEntryCount":1,"semanticFileCount":4,"analysisStepReceipt":null,"nextStep":"CanonicalAnalysisStepArtifactStore"}}
-~~~
-
-M2 和 M3 共享同一个 applicationProfileId，但互不读取对方私有结果；M4 才把 HTTP entry 与 Mapper candidates放入同一个可交给 分析步骤“程序图” 的 ApplicationDiscoveryReference。`CANDIDATE_NOT_YET_BOUND` 明确阻止 M3 提前宣布 Java→XML 唯一绑定。
-
-## 5. 下游怎样消费而不返工
-
-分析步骤“程序图” 直接读取 application-profile.json、entry-points.jsonl、mapper-catalog.jsonl 和 capability-report.json。它按 entryId 建图根，按 catalog identity 寻找唯一 binding；不能重新解析 pom/config/annotation 来改变入口分母。
-
-若 分析步骤“程序图” 发现 catalog 不足，应产生 graph Gap 或要求新版本 分析步骤“应用发现” schema/profile；不得在 分析步骤“程序图” 私下“多读一个文件”。
-
-### 下游前置条件与后置保证
-
-| 分析步骤“程序图” 开始前必须成立 | 分析步骤“应用发现” 成功后保证 |
-| --- | --- |
-| 分析步骤“已验证源码清单” root 与 分析步骤“应用发现” receipt/control hashes 重验一致 | 每个发现入口、Mapper candidate 和 capability site 都有 stable identity 与 disposition |
-| application profile 唯一，四个数据文件及 receipt 的 artifact set/root 闭合 | route 同时保留 class/method parts；入口分母不会因 unsupported/ambiguous 而缩小 |
-| `entry-points.jsonl` 非空，或 capability report 明确给出 `NO_ENTRY_DISCOVERED` Gap | 分析步骤“程序图” 可只靠 persisted entry/catalog identities 选择图根，无需重解析发现材料 |
-| `repositoryEntryCoverage` 的 source/site/entry ID 集与 VerifiedSourceInventory complete inventory/shard receipts 精确闭合 | ProgramGraphs 获得全入口 graph roots；所有 unsupported/failed/omitted item都有 evidence-backed disposition而非孤儿 |
-
-分析步骤“程序图” 只能接受这些保证；发现缺项时必须 Gap/fatal 或触发新 run，不能局部重做 分析步骤“应用发现”。
-
-## 6. 成功、Gap、fatal 与显式复用
-
-- **成功**：完整仓库的应用 profile 可确定，全部 discovery site/entry 有唯一处置，shard union、entry/catalog/site accounting 闭合，分析步骤目录安装。
-- **带 Gap 成功**：某 entry/site 为 UNSUPPORTED、AMBIGUOUS 或 OVER_LIMIT，但保留 locator、affected entries 和 reason。
-- **fatal**：snapshot reopen 漂移、application profile 与声明 dependency 自相矛盾、catalog duplicate identity、XML parser 安全策略不可执行、coverage 方程不闭合或 artifact install 失败。
-- **显式复用**：新ProgramGraphs execution只有在upstream artifact root、shard receipts和input/tool/profile/schema/prompt hashes完全相等时才读取ApplicationDiscovery；缺/重叠shard不能宣布完成，prompt hash本分析步骤必须为null。
-
-## 7. 程序与模型责任
-
-| 责任 | 程序 | LLM |
-| --- | --- | --- |
-| 识别语言/框架候选 | 是 | 否 |
-| 发现 route/handler/mapper catalog | 是 | 否 |
-| 决定支持/歧义/范围外 | 是，按版本化 profile | 否 |
-| 给入口起业务名称 | 否，留到 分析步骤“流程解释” | 否 |
-
-产品运行时模型调用数固定为 0。
-
-### 7.1 简化业务路线中的 M1–M4 I/O 映射
-
-本映射不改变第 8 节稳定 discovery 协议；它只明确 BusinessMaterialBuilder 怎样复用结果。
-
-| 现有 Module | 稳定技术输入 → 输出 | 业务路线的直接用途 |
-| --- | --- | --- |
-| M1 ApplicationProfileDetector | verified source/config → Java/Spring/MyBatis capability profile | 告诉 M2/M3 启用哪些静态 parser；不把 framework 判成业务领域 |
-| M2 SpringHttpEntryDiscoverer | profile + verified Java → 全部 entry、route、handler、parameter 与 site disposition | entry 是业务分析覆盖分母；每个 entry 最终必须有活动或未分析原因 |
-| M3 MapperCapabilityCataloger | profile + verified Java/XML/config → Mapper/statement candidates 与 disposition | 帮 BusinessMaterialBuilder 找到具有清楚 select/insert/update 语境的短 SQL；candidate 本身不证明运行效果 |
-| M4 ApplicationDiscoveryPublicationSpecifier | reopened M1–M3 → application profile、entries、mapper catalog、capability report | 提供同一快照的 typed discovery view；不为 Step 06 预写业务名称 |
-
-例如 POST /receipts 只在此被识别为 entry 及 handler。它不会被 Java 命名为“记录收货”，也不会把 Controller 当用户角色；BusinessMaterialBuilder 将 handler、必要 callee 和 Mapper SQL 编成少量材料，ActivityExplainer 才解释业务。0 entry、ambiguous route、unsupported mapper 继续按本步骤已有 Gap/fatal 规则处置。本步骤仍为 0 模型，M1–M4 的既有测试和 publication 均保留。
-
-## 8. 技术合同
-
-### 8.0 固定模块合同
-
-模块执行顺序固定为 `ApplicationProfileDetector` → `SpringHttpEntryDiscoverer` 与 `MapperCapabilityCataloger`（二者只共享M1输出，可并行）→ `ApplicationDiscoveryPublicationSpecifier` → `CanonicalAnalysisStepArtifactStore`。specifier先安装四个semantic payload+module receipt；AnalysisStep store重开它并最后创建receipt，且不是第五个业务模块。
-
-#### M1 ApplicationProfileDetector
-
-- **解决的问题**：在不运行构建的前提下确定应启用哪些静态 parser/profile，并把“依赖信号”与“已证明行为”分开。
-- **精确上游输入及前置**：valid VerifiedSourceInventoryReference、`verified-snapshot.json`、complete inventory/source handles、版本化 discovery profile/toolchain/budget；生产路径还要求 VerifiedSourceInventory `repositoryCompletionEligible=true`，bounded fixture只能诊断。
-- **确定性顺序 / LLM**：按 profile 指定 path 解析 Maven/config → 提取 Java release、dependency/config signals → 交叉检查冲突 → 选择唯一 capability profile；0 LLM。
-- **目标输出与 DepotHead 示例**：`ApplicationProfile{language=JAVA,languageVersion=8,frameworkSignals=[SPRING_MVC,MYBATIS],inventoryScope,repositoryCompletionEligible}` 加 signal dispositions；DepotHead例为 BOUNDED/false，只启用 parser，不声称运行时已部署；生产 complete profile继承true。
-- **必须保持的不变量**：每个 signal 有 locator/disposition；dependency 只启用 capability；profile identity 绑定 snapshot/profile/toolchain，不能绑定显示名称或机器 root。
-- **Gap / fatal / artifact复用**：可隔离的未知 version/config site 是 Gap；profile 无法唯一确定、signal 冲突、source drift 或安全 parser 不可执行是 fatal；模块只读取相同bytes/profile的已验证上游。
-- **给下游的后置保证**：M2/M3 只使用该 profile 明示的 parser/rules，并知道 inventory 内哪些 config/Java/XML 资源可读。
-- **明确非目标**：不发现 HTTP entry，不唯一绑定 Mapper，不运行 Maven、classloader、Spring 或 MyBatis。
-- **公共测试 seam 与验收**：`detect(VerifiedSourceInventoryReference, DiscoveryProfile)` 对 Java 8/Spring/MyBatis fixture 产生唯一 profile；version conflict、inventory 外 config、dependency decoy 和不同 root replay 有确定结果。
-- **Luna/xhigh 测试指南**：创建 `ApplicationProfileDetectorTest`，冻结 VerifiedSourceInventory artifacts、pom/config和手写golden于 `src/test/resources/analysis/discovery/application-profile/`。一个行为一个RED：Java8/Spring/MyBatis正向、dependency仅signal、version conflict、inventory外config、budget Gap、root/order determinism；首RED应因public detector/schema缺失失败。只可fake只读source handle，禁止mock parser/canonical/identity。命令：`mvn -Dtest=ApplicationProfileDetectorTest test`；无网络/build/Provider。偏离按[总体设计](../DESIGN.md)的 Design Authority 边界交Sol/ultra。
-- **Terra/xhigh 实现指南**：观察RED后仅改 `analysis/discovery/application-profile/`，实现 public `ApplicationProfileDetector/ApplicationProfile` 与 `application-discovery-application-profile-draft-v2`；只读VerifiedSourceInventory artifact/handles，按Maven/config→typed source excerpts→closed signals→conflict→profile，禁止运行Maven或把dependency当行为。逐RED GREEN，最终canonical/root replay稳定并更新审计；需新signal语义/跨分析步骤字段时MUST STOP。
-
-#### M2 SpringHttpEntryDiscoverer
-
-- **解决的问题**：固定 HTTP 入口分母、完整 route、handler 和参数身份，让图构建有明确根。
-- **精确上游输入及前置**：M1 `ApplicationProfile`、分析步骤“已验证源码清单” complete verified Java handles、Spring route registry、stable file shards 与 entry budget；profile 必须声明 SPRING_MVC capability。
-- **确定性顺序 / LLM**：先枚举全 inventory annotation-site denominator → 按 fileId shard解析 package/type/method/annotations → 静态求值 route parts → 确定性笛卡尔合并 method/path → 建 EntryPoint/dispositions → shard union/accounting；0 LLM。
-- **目标输出与 DepotHead 示例**：`EntryPointV2{entryId,kind=SPRING_MVC_HTTP,protocol=HTTP,method=POST,route=/depotHead/batchSetStatus,routeParts,handlerFqn,parameterNames,routeSourceExcerpts}`；两个连续`SourceExcerptV1`分别覆盖类级 :43 和方法级 :178-191，不能合成一个span。
-- **必须保持的不变量**：每个 complete-capture candidate site 恰一 disposition；shard denominators不交叠且union精确等于总site IDs；完整 route 保留 parts；同 protocol/method/route/handler identity 不重复；动态表达式不猜值。
-- **Gap / fatal / artifact复用**：单 site dynamic/ambiguous/over-limit 是带 affected entry 的 Gap；route identity 冲突、accounting/reference/source drift 是 fatal；模块只读取相同profile/root。
-- **给下游的后置保证**：M4/分析步骤“程序图” 获得稳定 entryId、route parts、handler/param nodes 和完整入口 denominator，无需 reparse annotation。
-- **明确非目标**：不沿调用链、不命名业务、不把 Controller 方法存在等同于完整 Flow。
-- **公共测试 seam 与验收**：`discoverEntries(ApplicationProfile, SourceHandleSet)` 覆盖 DepotHead prefix+suffix、第二个非空 HTTP entry、动态 route、overload/decoy、annotation deletion、无入口 Gap、缺/重叠 shard；两入口在不同 shard/顺序下产生同 bytes，只有 prefix/suffix/handler refs 都在才 admitted。
-- **Luna/xhigh 测试指南**：创建 `SpringHttpEntryDiscovererTest`，fixtures/goldens放 `src/test/resources/analysis/discovery/http-entry/`，冻结真实DepotHead route spans与decoys。RED依次为prefix+suffix正向golden、缺prefix、dynamic route Gap、overload/duplicate fatal、无入口Gap、order determinism；初始因seam/artifact未实现失败。只可fakeSourceHandle，不能mock annotation parser/route merge。命令：`mvn -Dtest=SpringHttpEntryDiscovererTest test`；禁网络/客户Maven/private耦合。偏离按[总体设计](../DESIGN.md)的 Design Authority 边界交`gpt-5.6-sol / ultra` Design Authority。
-- **Terra/xhigh 实现指南**：RED后仅拥有 `analysis/discovery/http-entry/`，实现 public `SpringHttpEntryDiscoverer/EntryDiscovery` 与 `application-discovery-http-entry-discovery-v2`；输入只取M1 artifact+VerifiedSourceInventory handles，按parse→enumerate→static evaluate→route product→typed excerpt/disposition。逐slice GREEN且golden route evidence同时含两个连续spans；不得用文件名/模型补route。schema或上游不足即STOP交Sol/ultra，完成后更新审计。
-
-#### M3 MapperCapabilityCataloger
-
-- **解决的问题**：登记后续建图所需的 Mapper Java/XML/config candidates 和所有受支持/不支持 site，而不抢先做调用绑定。
-- **精确上游输入及前置**：M1 profile、complete verified Mapper Java/XML/config handles、resource shards、MyBatis parser/security policy 与 budget；所有资源必须在 分析步骤“已验证源码清单” inventory且每个匹配/未匹配 resource都有处置。
-- **确定性顺序 / LLM**：解析 config mapper resources → Java interface/method candidates → XML namespace/statements/includes → 建 catalog entries → 对全部 sites 分类/account；0 LLM。
-- **目标输出与 DepotHead 示例**：`MapperCatalogEntry{javaInterfaceTypeId,javaMethodCandidateIds,xmlResourcePath,xmlNamespaceNodeId,xmlStatementCandidates}`；例子把 Mapper Java :23 与 XML :3/:385 作为 candidates，不在此声称唯一 binding。
-- **必须保持的不变量**：catalog candidate 有 source identity；全 inventory相关resources/sites进入四种 disposition；resource shard union闭合；XML resolver 零外部访问；candidate 相同名称不自动合并。
-- **Gap / fatal / artifact复用**：局部 dynamic resource/ambiguous candidate 为 Gap；duplicate identity、broken resource ref、XML 安全失败、accounting 不闭合为 fatal；模块只读取已验证persisted source/profile。
-- **给下游的后置保证**：分析步骤“程序图” 可按 typed candidates 和 locators 做 receiver/method/namespace/statement 唯一 binding，不必重扫 config/XML。
-- **明确非目标**：不产生 CALL edge、SQL data-flow、Fact 或 Flow；不因字符串相同宣布 Mapper binding。
-- **公共测试 seam 与验收**：`catalogMappers(ApplicationProfile, SourceHandleSet)` 覆盖 DepotHead Java/XML、同名 decoy、namespace mismatch、standard DOCTYPE 零网络和 external entity fatal。
-- **Luna/xhigh 测试指南**：创建 `MapperCapabilityCatalogerTest`，fixtures/goldens在 `src/test/resources/analysis/discovery/mapper-catalog/`。RED顺序：DepotHead candidate catalog、同名decoy不合并、namespace mismatch Gap、standard DOCTYPE零resolver、external entity fatal、site accounting/determinism；首RED应因cataloger/schema缺失。只可fake resolver/source boundary并断言零外呼，禁止mock XML/catalog core。命令：`mvn -Dtest=MapperCapabilityCatalogerTest test`；禁网络/客户runtime。偏离按[总体设计](../DESIGN.md)的 Design Authority 边界。
-- **Terra/xhigh 实现指南**：RED后仅改 `analysis/discovery/mapper-catalog/`，实现 public `MapperCapabilityCataloger/MapperCatalogDraft` 与 `application-discovery-mapper-catalog-draft-v2`；只用M1+VerifiedSourceInventory，config→Java→XML→typed site/evidence disposition，external resolution fail closed。GREEN逐个覆盖candidate/Gap/security/accounting；不得提前绑定Java→XML或扩inventory。缺必要config/跨analysis step调整MUST STOP，审计同步。
-
-#### M4 ApplicationDiscoveryPublicationSpecifier
-
-- **解决的问题**：合并 M1–M3 的独立发现结果，验证分母和引用后形成不可变 分析步骤“应用发现” 出口。
-- **精确上游输入及前置**：一个 ApplicationProfile、M2 entries/sites/shard receipts/dispositions、M3 catalog/sites/shard receipts/dispositions、VerifiedSourceInventory complete root 和 ApplicationDiscovery controls；各模块结果均已局部验证。
-- **确定性顺序 / LLM**：合并全仓site/catalog→验证shards/accounting/refs→canonical四个semantic payload→M4 module install/receipt→AnalysisStep store fresh reopen/root/store-last receipt；0 LLM。
-- **目标输出与 DepotHead 示例**：M4恰四个semantic files；AnalysisStep store形成四项+receipt的五文件analysis step set。正向例含一个POST entry与Mapper candidates；无入口例仍有profile/capability和store receipt。
-- **必须保持的不变量**：complete discovery denominator = dispositions；每个 entry恰一状态，任何 omitted/failed均有Gap/排除证据；一entry成功不关闭其余entry；artifact names/roots/controls 完整；publisher 不改变 M1–M3 semantic decision。
-- **产物身份规则**：M4 在生成四个正式 payload 的 `artifactId` 前，从当前受控 Artifact Policy Registry 解析该 type/schema 的前缀；不得把测试或部署环境的前缀硬编码在 publisher 中。前缀变化会形成新的身份，但不改变 payload 的业务含义或文件名。
-- **Gap / fatal / artifact复用**：局部 Gap 进入 capability report；cross-module ref/accounting/canonical/install/collision 错误 fatal；下游只认完整 analysis step receipt，不读取 staging。
-- **给下游的后置保证**：分析步骤“程序图” 得到 immutable ApplicationDiscoveryReference，所有图根与 Mapper candidates 都能仅从 persisted artifacts 解析。
-- **明确非目标**：不补 entry/catalog、不重新解析源码、不构图或调用模型。
-- **公共测试 seam 与验收**：`specify(profile, entries, catalog, capabilityReport)`覆盖相同accounting，并验证M4 exact-four、AnalysisStep store five-output、receipt-last/provenance和各partial-install/collision。
-- **Luna/xhigh 测试指南**：创建 `ApplicationDiscoveryPublicationSpecifierTest`，模块/goldens放 `src/test/resources/analysis/discovery/publish/`；RED依次four-semantic→five-analysis-step-output→NO_ENTRY→accounting→receipt-last/partial-install/fresh-reopen，使用真实module/analysis step stores。命令：`mvn -Dtest=ApplicationDiscoveryPublicationSpecifierTest test`；无网络/Provider/客户Maven。
-- **Terra/xhigh 实现指南**：只读M1–M3，安装exact-four M4 payload+receipt，再用typed AnalysisStep store产生receipt/ApplicationDiscoveryReference；不得生成旧single publication summary或预报root/receipt。
-
-### 8.0.1 模块 artifact wire schemas
-
-M1–M3使用 [既有公共与模块合同 §5](../references/inherited-public-and-module-contracts.md#5-moduleartifactmodulereceipt-与-modulefailure) `ModuleArtifact<T>` envelope；M4直接安装四个analysis step schema注册的JSON/JSONL semantic bytes而无summary envelope。`!`=required non-null，`?`=required nullable。
-
-| module artifact | schemaVersion / artifactType | 精确 upstream | payload、来源、排序 |
-| --- | --- | --- | --- |
-| `modules/01-application-profile/application-profile-draft.json` | `application-discovery-application-profile-draft-v2` / `APPLICATION_DISCOVERY_APPLICATION_PROFILE_DRAFT` | exact `capability-profile`、VerifiedSourceInventory `source-inventory`、`verified-snapshot` ArtifactReferences | `applicationProfileId!`、`snapshotId!`、`inventoryScopeKind!`、`repositoryCompletionEligible!`、`language!`、`languageVersion?`、`frameworkSignals[]!`FrameworkSignalV2`、`configSignals[]!`ConfigSignalV2`、`capabilityProfileRef!`；signals按kind+`sourceExcerpt.locator.(path,startByte,endByteExclusive)`排序，unknown version用null+Gap |
-| `modules/02-http-entry/http-entry-discovery.json` | `application-discovery-http-entry-discovery-v2` / `APPLICATION_DISCOVERY_HTTP_ENTRY_DISCOVERY` | exact M1 `application-profile`、VerifiedSourceInventory `source-inventory`、`verified-snapshot` ArtifactReferences | `applicationProfileId!`、`entries[]!{entryId!,kind!,protocol!,method!,route!,routeParts[]!,handlerFqn!,parameterNames[]!,routeSourceExcerpts[]!}`、`sites[]!`为下述exact `CapabilitySiteV2`、`shardReceipts[]!{shardId!,denominatorSiteIds[]!,dispositionSiteIds[]!,status!,gapIds[]!}`、`denominator!`；entries按entryId，sites/shards按ID，参数/routeParts保持源码语义顺序，excerpts按locator排序 |
-| `modules/03-mapper-catalog/mapper-catalog-draft.json` | `application-discovery-mapper-catalog-draft-v2` / `APPLICATION_DISCOVERY_MAPPER_CATALOG_DRAFT` | exact M1 `application-profile`、VerifiedSourceInventory `source-inventory`、`verified-snapshot` ArtifactReferences | `applicationProfileId!`、`catalogEntries[]!{catalogEntryId!,javaInterfaceFqn!,javaMethodCandidates[]!,xmlResourcePath!,xmlNamespace!,xmlStatementCandidates[]!,bindingState!}`、`sites[]!`为同一个exact `CapabilitySiteV2`、`shardReceipts[]!`、`denominator!`；catalog/sites/shards按ID，candidate arrays按canonical signature/statement key |
-| `modules/04-publish/<four registered semantic filenames>` | `application-discovery-application-profile-v2`、`application-discovery-entry-points-v2`、`application-discovery-mapper-catalog-v2`、`application-discovery-capability-report-v2`；无summary envelope | M1/M2/M3 IDs+SHAs | 一次module install恰`application-profile.json/entry-points.jsonl/mapper-catalog.jsonl/capability-report.json`；各payload含自己的coverage/accounting，module receipt绑定四descriptors；禁止analysis step root/receipt或五项published list；AnalysisStep store绑定M4 reference |
-
-ApplicationDiscovery v2的closed value registry只有：`FrameworkSignalKindV2={SPRING_MVC,MYBATIS}`、`ConfigSignalKindV2={MYBATIS_MAPPER_LOCATION}`、`SignalDispositionV2={SUPPORTED,UNSUPPORTED,AMBIGUOUS,OVER_LIMIT}`、`CapabilitySiteKindV2={HTTP_ENTRY_DECLARATION,MAPPER_RESOURCE_DECLARATION}`。未知kind不得作为字符串透传；需新kind时先升schema/profile version。
-
-exact records为：`FrameworkSignalV2(kind, sourceExcerpt, disposition, reasonCode)`；`ConfigSignalV2(kind, sourceExcerpt, value, disposition, reasonCode)`；其中`sourceExcerpt`必须是[既有公共与模块合同 §4](../references/inherited-public-and-module-contracts.md#4-唯一源码位置合同)的`SourceExcerptV1`，`value`与`reasonCode`是required-nullable。`CapabilityEvidenceRefV2(kind,sourceExcerpt,artifactEvidence)`是closed tagged union：`SOURCE_EXCERPT{sourceExcerpt!,artifactEvidence=null}`或`ARTIFACT_REFERENCE{sourceExcerpt=null,artifactEvidence!}`，两个required-nullable槽均必须出现且恰一非null；`VersionedArtifactEvidenceV2(artifactRef,artifactType,schemaVersion)`保存完整ArtifactReference与被policy registry验证的exact type/version，不得使用bare string ID或从artifactId prefix猜version。
-
-`CapabilitySiteV2(siteId, kind, primaryLocator, affectedEntryIds, disposition, reasonCode, evidenceRefs)`在M2/M3只有这一个shape；`primaryLocator`是完整`SourceLocatorV1`，`reasonCode`是required-nullable，`evidenceRefs[]`是`CapabilityEvidenceRefV2`且至少有一个`SOURCE_EXCERPT`的locator逐字段等于`primaryLocator`。`affectedEntryIds[]`按UTF-8 ID，`evidenceRefs[]`按`kind`再按excerpt locator或artifactId/SHA排序。M2的HTTP site必须列出它生成或处置的entry，M3的Mapper site列出静态可关联的entry（无法关联时为空且有reason/Gap），二者都不能使用未声明的singular `entryId`、string locator或bare evidence ID。M4的完整module fixture用一次install request绑定M1 `application-profile`、M2 `entry-discovery`、M3 `mapper-catalog`三个ArtifactReferences，四个standalone payload本身不重复wrapper。
-
-resolved值只能来自静态parser/rules。动态route/config使用nullable field+site Gap；不能填故事值。`bindingState` v2只允许 `CANDIDATE_NOT_YET_BOUND`，唯一binding由ProgramGraphs产生。fatal写ModuleFailure；success failureRef=null。任何field/enum/source/sort/identity语义变化先改设计并升version，旧reader exact-version fail closed。
-
-`repositoryEntryCoverage.closed` 当且仅当 VerifiedSourceInventory `COMPLETE_CAPTURE/repositoryCompletionEligible=true`、全部 discovery shards闭合且每site/entry有唯一处置；bounded walkthrough即使其局部ID集守恒也必须为false。
-
-**示例分类：STRUCTURAL_WIRE_SPECIMEN（两个隔离的 CapabilitySiteV2 records，不可replay）。** 两个对象逐字段展示同一个authoritative record、closed enum、typed locator/excerpt和versioned artifact evidence；hex/offset/line-column未从本页展示的完整source bytes重算，所以不得直接复制为golden，也不与其他analysis step的显示ID建立映射。
-
-~~~jsonl
-{"siteId":"site:3333333333333333333333333333333333333333333333333333333333333333","kind":"HTTP_ENTRY_DECLARATION","primaryLocator":{"fileId":"file:1111111111111111111111111111111111111111111111111111111111111111","path":"jshERP-boot/src/main/java/com/jsh/erp/controller/DepotHeadController.java","startByte":6400,"endByteExclusive":6431,"startLine":178,"startColumn":5,"endLine":178,"endColumn":36},"affectedEntryIds":["entry:2222222222222222222222222222222222222222222222222222222222222222"],"disposition":"SUPPORTED","reasonCode":null,"evidenceRefs":[{"kind":"SOURCE_EXCERPT","sourceExcerpt":{"locator":{"fileId":"file:1111111111111111111111111111111111111111111111111111111111111111","path":"jshERP-boot/src/main/java/com/jsh/erp/controller/DepotHeadController.java","startByte":6400,"endByteExclusive":6431,"startLine":178,"startColumn":5,"endLine":178,"endColumn":36},"rawUtf8":"@PostMapping(\"/batchSetStatus\")","rawUtf8Sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"artifactEvidence":null}]}
-{"siteId":"site:5555555555555555555555555555555555555555555555555555555555555555","kind":"MAPPER_RESOURCE_DECLARATION","primaryLocator":{"fileId":"file:4444444444444444444444444444444444444444444444444444444444444444","path":"jshERP-boot/src/main/resources/mapper_xml/DepotHeadMapper.xml","startByte":28,"endByteExclusive":86,"startLine":3,"startColumn":9,"endLine":3,"endColumn":67},"affectedEntryIds":["entry:2222222222222222222222222222222222222222222222222222222222222222"],"disposition":"SUPPORTED","reasonCode":null,"evidenceRefs":[{"kind":"ARTIFACT_REFERENCE","sourceExcerpt":null,"artifactEvidence":{"artifactRef":{"artifactId":"capability-profile:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},"artifactType":"CAPABILITY_PROFILE","schemaVersion":"capability-profile-v2"}},{"kind":"SOURCE_EXCERPT","sourceExcerpt":{"locator":{"fileId":"file:4444444444444444444444444444444444444444444444444444444444444444","path":"jshERP-boot/src/main/resources/mapper_xml/DepotHeadMapper.xml","startByte":28,"endByteExclusive":86,"startLine":3,"startColumn":9,"endLine":3,"endColumn":67},"rawUtf8":"namespace=\"com.jsh.erp.datasource.mappers.DepotHeadMapper\"","rawUtf8Sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"artifactEvidence":null}]}
-~~~
-
-**示例分类：NARRATIVE_ILLUSTRATION（三个隔离投影）。** 下面保留DepotHead数据接力故事，其string locator/evidence是人类简写，不是v2 wire、schema-valid fixture或cross-analysis step replay chain。Luna fixture必须以上述单一权威records替换这些简写，并从实际bytes重算全部ID/SHA；不存在从下列story IDs到ProgramGraphs的隐式remap。
-
-~~~jsonl
-{"storyProjection":"application-profile","artifactId":"application-profile:1111111111111111111111111111111111111111111111111111111111111111","producer":{"address":{"kind":"ANALYSIS_STEP","runId":"analysis-run:9999999999999999999999999999999999999999999999999999999999999999","analysisStepKey":"application-discovery","moduleNumber":1,"moduleKey":"application-profile"},"storyModuleVersion":"illustrative"},"upstreamArtifacts":[{"artifactId":"capability-profile:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},{"artifactId":"verified-source-inventory-source-inventory:5555555555555555555555555555555555555555555555555555555555555555","sha256":"5555555555555555555555555555555555555555555555555555555555555555"},{"artifactId":"verified-snapshot:4444444444444444444444444444444444444444444444444444444444444444","sha256":"4444444444444444444444444444444444444444444444444444444444444444"}],"controls":{"toolchainSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","profileSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","schemaBundleSha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","promptBundleSha256":null,"artifactPolicyRegistryRef":{"artifactId":"artifact-policy-registry:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","sha256":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}},"completion":{"status":"SUCCEEDED_WITH_GAPS","gapRefs":["gap:bounded-path-set"],"failureRef":null},"payload":{"applicationProfileId":"application-profile:1111111111111111111111111111111111111111111111111111111111111111","snapshotId":"snapshot:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","inventoryScopeKind":"BOUNDED_PATH_SET","repositoryCompletionEligible":false,"language":"JAVA","languageVersion":8,"frameworkSignals":[{"kind":"MYBATIS","locator":"jshERP-boot/pom.xml:1","disposition":"SUPPORTED"},{"kind":"SPRING_MVC","locator":"jshERP-boot/pom.xml:1","disposition":"SUPPORTED"}],"configSignals":[{"kind":"MYBATIS_MAPPER_LOCATION","locator":"jshERP-boot/src/main/resources/application.yml:1","value":"classpath:mapper_xml/*.xml","disposition":"SUPPORTED"}],"capabilityProfileRef":{"artifactId":"capability-profile:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}}}
-{"storyProjection":"http-entry","artifactId":"entry-discovery:2222222222222222222222222222222222222222222222222222222222222222","producer":{"address":{"kind":"ANALYSIS_STEP","runId":"analysis-run:9999999999999999999999999999999999999999999999999999999999999999","analysisStepKey":"application-discovery","moduleNumber":2,"moduleKey":"http-entry"},"storyModuleVersion":"illustrative"},"upstreamArtifacts":[{"artifactId":"application-profile:1111111111111111111111111111111111111111111111111111111111111111","sha256":"1111111111111111111111111111111111111111111111111111111111111111"},{"artifactId":"verified-source-inventory-source-inventory:5555555555555555555555555555555555555555555555555555555555555555","sha256":"5555555555555555555555555555555555555555555555555555555555555555"},{"artifactId":"verified-snapshot:4444444444444444444444444444444444444444444444444444444444444444","sha256":"4444444444444444444444444444444444444444444444444444444444444444"}],"controls":{"toolchainSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","profileSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","schemaBundleSha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","promptBundleSha256":null,"artifactPolicyRegistryRef":{"artifactId":"artifact-policy-registry:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","sha256":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}},"completion":{"status":"SUCCEEDED_WITH_GAPS","gapRefs":["gap:bounded-path-set"],"failureRef":null},"payload":{"applicationProfileId":"application-profile:1111111111111111111111111111111111111111111111111111111111111111","entries":[{"entryId":"entry:2222222222222222222222222222222222222222222222222222222222222222","kind":"SPRING_MVC_HTTP","protocol":"HTTP","method":"POST","route":"/depotHead/batchSetStatus","routeParts":["/depotHead","/batchSetStatus"],"handlerFqn":"com.jsh.erp.controller.DepotHeadController#batchSetStatus","parameterNames":["status","ids"],"routeLocators":["jshERP-boot/src/main/java/com/jsh/erp/controller/DepotHeadController.java:43","jshERP-boot/src/main/java/com/jsh/erp/controller/DepotHeadController.java:178-191"]}],"sites":[{"siteId":"site:3333333333333333333333333333333333333333333333333333333333333333","locator":"jshERP-boot/src/main/java/com/jsh/erp/controller/DepotHeadController.java:178-191","disposition":"SUPPORTED","reasonCode":null,"evidenceRefs":["jshERP-boot/src/main/java/com/jsh/erp/controller/DepotHeadController.java:178-191"],"kind":"HTTP_ENTRY_DECLARATION","affectedEntryIds":["entry:2222222222222222222222222222222222222222222222222222222222222222"]}],"shardReceipts":[{"shardId":"entry-shard:6666666666666666666666666666666666666666666666666666666666666666","denominatorSiteIds":["site:3333333333333333333333333333333333333333333333333333333333333333"],"dispositionSiteIds":["site:3333333333333333333333333333333333333333333333333333333333333333"],"status":"SUCCEEDED","gapIds":[]}],"denominator":{"candidateSites":1,"supported":1,"unsupported":0,"ambiguous":0,"overLimit":0}}}
-{"storyProjection":"mapper-catalog","artifactId":"mapper-catalog:3333333333333333333333333333333333333333333333333333333333333333","producer":{"address":{"kind":"ANALYSIS_STEP","runId":"analysis-run:9999999999999999999999999999999999999999999999999999999999999999","analysisStepKey":"application-discovery","moduleNumber":3,"moduleKey":"mapper-catalog"},"storyModuleVersion":"illustrative"},"upstreamArtifacts":[{"artifactId":"application-profile:1111111111111111111111111111111111111111111111111111111111111111","sha256":"1111111111111111111111111111111111111111111111111111111111111111"},{"artifactId":"verified-source-inventory-source-inventory:5555555555555555555555555555555555555555555555555555555555555555","sha256":"5555555555555555555555555555555555555555555555555555555555555555"},{"artifactId":"verified-snapshot:4444444444444444444444444444444444444444444444444444444444444444","sha256":"4444444444444444444444444444444444444444444444444444444444444444"}],"controls":{"toolchainSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","profileSha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","schemaBundleSha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","promptBundleSha256":null,"artifactPolicyRegistryRef":{"artifactId":"artifact-policy-registry:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","sha256":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}},"completion":{"status":"SUCCEEDED_WITH_GAPS","gapRefs":["gap:bounded-path-set"],"failureRef":null},"payload":{"applicationProfileId":"application-profile:1111111111111111111111111111111111111111111111111111111111111111","catalogEntries":[{"catalogEntryId":"mapper-catalog-entry:4444444444444444444444444444444444444444444444444444444444444444","javaInterfaceFqn":"com.jsh.erp.datasource.mappers.DepotHeadMapper","javaMethodCandidates":["updateByExampleSelective(DepotHead,DepotHeadExample)"],"xmlResourcePath":"jshERP-boot/src/main/resources/mapper_xml/DepotHeadMapper.xml","xmlNamespace":"com.jsh.erp.datasource.mappers.DepotHeadMapper","xmlStatementCandidates":["updateByExampleSelective"],"bindingState":"CANDIDATE_NOT_YET_BOUND"}],"sites":[{"siteId":"site:5555555555555555555555555555555555555555555555555555555555555555","locator":"jshERP-boot/src/main/resources/mapper_xml/DepotHeadMapper.xml:385","disposition":"SUPPORTED","reasonCode":null,"kind":"MAPPER_RESOURCE_DECLARATION","affectedEntryIds":["entry:2222222222222222222222222222222222222222222222222222222222222222"],"evidenceRefs":["jshERP-boot/src/main/resources/mapper_xml/DepotHeadMapper.xml:385"]}],"shardReceipts":[{"shardId":"mapper-shard:7777777777777777777777777777777777777777777777777777777777777777","denominatorSiteIds":["site:5555555555555555555555555555555555555555555555555555555555555555"],"dispositionSiteIds":["site:5555555555555555555555555555555555555555555555555555555555555555"],"status":"SUCCEEDED","gapIds":[]}],"denominator":{"candidateSites":1,"supported":1,"unsupported":0,"ambiguous":0,"overLimit":0}}}
-~~~
-
-### 8.1 Interface 与 records
-
-~~~java
-interface ApplicationDiscoverer {
-    ApplicationDiscoveryReference discover(VerifiedSourceInventoryReference frozenSource);
-}
-~~~
-
-#### 8.1.1 已验证源码字节边界
-
-上面的 public Interface 故意没有 `Path`、工作区目录、裸文件名或 `byte[]` 参数。它收到的
-`VerifiedSourceInventoryReference` 是已经落盘的第一步出口；实现开始时必须先重开并验证该出口的
-`source-input.json`、`verified-snapshot.json`、`source-inventory.jsonl` 和 receipt，才能取得其中唯一的
-`sourceRegistrationId`、完整 file inventory 与 file SHA。
-
-随后，运行时的**私有 composition dependency**按下面顺序取得一份不泄露存储位置的源码读取能力：
+完整分母守恒：
 
 ~~~text
-VerifiedSourceInventoryReference
-  → fresh reopen 第一分析步骤的四项正式文件
-  → sourceRegistrationId + exact inventory member
-  → private LocalGitSourceRegistry.openSnapshot(sourceRegistrationId)
-  → RegisteredSourceSnapshot.read(registered member)
-  → compare size + SHA-256 + text/media disposition
-  → parser-only ImmutableBytes
+reachableDiscoverySites = supported ⊎ unsupported ⊎ ambiguous ⊎ overLimit
+discoveredEntries = supportedEntries ⊎ gappedEntries ⊎ reasonedExclusions
+allSiteIds = exactDisjointUnion(shardSiteIds)
 ~~~
 
-这个 dependency 不是新的 public API、不是 JSON field，也不是可由调用者替换的任意文件系统 reader。
-它只能读取 inventory 中已登记的 regular file；每次读取都必须重新核对该 member 的 path、git mode、
-size、SHA-256、text encoding 和分析处置。媒体文件或 inventory 外路径绝不能交给 Java、POM、配置或 XML
-parser。注册、snapshot、blob 或私有 workspace 的绝对路径永远不能进入 application-discovery artifact、
-错误正文、identity 或 trace。
+一个入口成功不能关闭其他未处置入口；0 入口也保存四项 semantic 文件和 receipt，用 NO_ENTRY_DISCOVERED 说明范围，不能省文件或伪造入口。hash/reference 正确但漏掉合法 unrestricted entry 仍是功能错误。
 
-因此 M1/M2/M3 的“verified source handles”不是内存捷径：它们是上述从 persisted 第一分析步骤输出到
-private registry 的一次 fresh reopen。此规则也解释了为什么 M2/M3 可以并行读取同一冻结仓库，却不能通过
-彼此的 draft 或一个调用者提供的路径来补文件。后续 ProgramGraphs 沿用相同边界；若该边界无法验证，使用
-`SNAPSHOT_REOPEN_MISMATCH` 或 `APPLICATION_DISCOVERY_REQUEST_INVALID` 失败，不能猜测、降级或改读工作区。
+## 6. 保存、复用、预算与失败
 
-~~~text
-ApplicationProfile
-  applicationProfileId
-  snapshotId
-  inventoryScopeKind
-  repositoryCompletionEligible
-  language
-  languageVersion
-  frameworkSignals[]
-  configSignals[]
-  capabilityProfileRef
+同进程消费者复用已验证 immutable source/discovery view；各模块结果和步骤产物仍保存。跨磁盘、新进程、导入边界核验 identity/hash/schema/ref/basis；重新读取源码验证所读字节，不能每个模块都重新遍历并校验全仓。
 
-EntryPointV2
-  entryId
-  kind
-  protocol
-  method
-  route
-  routeParts[]
-  handlerFqn
-  parameterNames[]
-  routeSourceExcerpts[]: SourceExcerptV1
+预算覆盖 AST/XML nodes、配置条目、entries/catalog/site 数与深度。unsupported/动态 route 是局部 Gap；unrestricted method 不在此列。来源漂移、schema/ref 冲突、重复身份、catalog 引用断裂、XML 安全策略失败、coverage 不守恒或安装错误 fatal。保留上游完成产物，不补扫或改写旧 run。
 
-MapperCatalogEntry
-  catalogEntryId
-  javaInterfaceFqn
-  javaMethodCandidates[]
-  xmlResourcePath
-  xmlNamespace
-  xmlStatementCandidates[]
-  bindingState
+## 7. 当前实现与最小测试
 
-FrameworkSignalV2
-  kind: SPRING_MVC | MYBATIS
-  sourceExcerpt: SourceExcerptV1
-  disposition: SUPPORTED | UNSUPPORTED | AMBIGUOUS | OVER_LIMIT
-  reasonCode?
+ApplicationProfileDetector、SpringHttpEntryDiscoverer、MapperCapabilityCataloger、步骤 publisher/executor 已有实现，固定完整 jshERP 入口发现已有保存证据；不是仅 package 骨架。现有材料规划处理 337 个发现入口，但这只证明当前发现分母的处理，不证明所有合法 Spring 变体已正确发现。省略 method、`method={}`、显式方法集合及类/方法条件组合现在由直接回归覆盖；两个真实端点要在后续完整仓库重跑中确认进入新分母。
 
-ConfigSignalV2
-  kind: MYBATIS_MAPPER_LOCATION
-  sourceExcerpt: SourceExcerptV1
-  value?
-  disposition: SUPPORTED | UNSUPPORTED | AMBIGUOUS | OVER_LIMIT
-  reasonCode?
-
-CapabilityEvidenceRefV2
-  kind: SOURCE_EXCERPT | ARTIFACT_REFERENCE
-  sourceExcerpt?: SourceExcerptV1
-  artifactEvidence?: VersionedArtifactEvidenceV2
-
-VersionedArtifactEvidenceV2
-  artifactRef: ArtifactReference
-  artifactType
-  schemaVersion
-
-CapabilitySiteV2
-  siteId
-  kind: HTTP_ENTRY_DECLARATION | MAPPER_RESOURCE_DECLARATION
-  primaryLocator: SourceLocatorV1
-  affectedEntryIds[]
-  disposition: SUPPORTED | UNSUPPORTED | AMBIGUOUS | OVER_LIMIT
-  reasonCode?
-  evidenceRefs[]: CapabilityEvidenceRefV2
-
-RepositoryEntryCoverage
-  sourceFileIds[]
-  discoverySiteIds[]
-  entryIds[]
-  supportedEntryIds[]
-  gappedEntryIds[]
-  excludedEntryIds[]
-  shardReceiptIds[]
-  closed
-~~~
-
-Entry route 必须同时保存 class/method route parts；完整 route 不得只引用 DepotHeadController.java:178 而遗漏 :43。
-
-### 8.2 Identity 与 accounting
-
-entryId 依赖 snapshotId、entry kind、protocol、route parts、handlerFqn、parameter names、排序`routeSourceExcerpts[]`的exact locator/rawUtf8/SHA 和 discovery rule version。它不依赖显示名称。
-
-必须满足：
-
-~~~text
-reachableSemanticSites =
-  supported + unsupported + ambiguous + overLimit
-
-discoveredEntries =
-  supportedEntries + gappedEntries + reasonedExclusions
-
-allDiscoveryShardSiteIds = exactDisjointUnion(shardDenominatorSiteIds)
-allDiscoveryShardSiteIds = reachableSemanticSiteIds
-~~~
-
-失败不能缩小分母。applicationProfileId、catalog IDs、capabilityReportId 和 ApplicationDiscovery receipt root 按无环顺序计算。
-
-### 8.3 算法、预算与安全
-
-- package/type/method/annotation 由静态 parser 读取 verified bytes。
-- Spring route 只在 annotation value 可静态确定时合并；动态表达式为 Gap。
-- config path 只能解析到 分析步骤“已验证源码清单” inventory。
-- MyBatis standard DOCTYPE 可以存在；external DTD/entity/schema/network resolver 必须禁用。
-- 预算至少覆盖 AST/XML nodes、config entries、entries、catalog entries、semantic sites 和 recursion depth。
-
-### 8.4 Gap 与稳定 failure codes
-
-`NO_ENTRY_DISCOVERED` 是可计数 Gap reason，仅用于 profile 已确定但入口集合为空；应用 profile 无法确定仍是 fatal。
-
-APPLICATION_DISCOVERY_REQUEST_INVALID、SNAPSHOT_REOPEN_MISMATCH、APPLICATION_PROFILE_UNRESOLVED、APPLICATION_PROFILE_CONFLICT、ENTRY_ROUTE_INVALID、ENTRY_DISCOVERY_INVARIANT_BROKEN、MAPPER_CATALOG_AMBIGUOUS、MAPPER_CATALOG_REFERENCE_BROKEN、CAPABILITY_ACCOUNTING_BROKEN、XML_SECURITY_POLICY_UNENFORCEABLE、XML_EXTERNAL_RESOLUTION_ATTEMPT、APPLICATION_DISCOVERY_RESOURCE_LIMIT_EXCEEDED。
-
-局部动态 route 或 ambiguous mapper 是 Gap；全局 identity/reference/security failure 不得降级。
-
-### 8.5 测试 seam 与验收
-
-- DepotHead class prefix :43 与 method suffix :178-191 缺一时，完整 route 不能 admitted。
-- decoy Controller/Mapper、同名 method、overload 和 inventory 外文件不能改变结果。
-- application/config/catalog input 顺序和不同 root 不改变 canonical bytes。
-- 每种 capability disposition 都进入 denominator；删除 unsupported site 必须触发 accounting failure。
-- standard MyBatis DOCTYPE 不联网；external entity mutation fatal。
-- ProgramGraphs 只能通过 persisted entry/catalog artifacts 建图，测试阻止重新 walk/reparse 的旁路。
-- 非空 multi-entry fixture 至少含 DepotHead 与另一 HTTP entry；两者都必须进入 entry inventory，后续各自可成为Flow/GAP/EXCLUDED。改变 file shard size/order 输出bytes相同；缺/重叠 shard或仅DepotHead成功时 ApplicationDiscovery 不得完成。
-
-验收 fixture 必须让 DepotHead 正向投影产生 `POST /depotHead/batchSetStatus`、handler identity 和 Mapper Java/XML candidates，同时至少有第二个非空入口证明 repository inventory 不等于 walkthrough；删除类级 route、制造同名 decoy、遗漏第二入口、缺/重叠 shard或移除全部入口时分别得到指定 Gap/fatal/accounting 结果。只有五个 exact output files 可独立重开、完整 entry ledger闭合且不同 root/input/shard order 的 canonical bytes 相同，分析步骤“应用发现” 才算可交付。
-
-### 8.6 已冻结裁决：实现者不得自由推断
-
-- Maven dependency/config 只启用版本化 parser capability，不直接证明运行时框架行为。
-- Spring route 必须由 class/method parts 确定性合并；不能用文件名、注释、模型或约定补 route。
-- 分析步骤“应用发现” 只产生 Mapper candidates/catalog；唯一 Java→XML binding 属于 分析步骤“程序图”，不能提前用字符串命中定案。
-- 所有发现 site 必须进入 SUPPORTED、UNSUPPORTED、AMBIGUOUS 或 OVER_LIMIT；无入口时使用 `NO_ENTRY_DISCOVERED`，不能删除分母。
-- 生产范围固定为 VerifiedSourceInventory COMPLETE_CAPTURE 的完整 site/entry denominator；DepotHead BOUNDED fixture和任意单入口成功都不能令 repository entry coverage closed。
-- 分析步骤“程序图” 只能消费 persisted artifacts；缺 catalog 要新 profile/schema/run，不允许隐式 reparse。
-- parser library、内部索引和并行策略可自行选择；入口语义、文件名、disposition、accounting、Gap/fatal 边界不得改变。
-
-## 9. 当前实现成熟度审计
-
-Wire Reset后的`org.sourceanalysis.app.analysis.discovery`目前只有语义package骨架；共享`SOURCE_ANALYSIS/v1`头门禁不解析POM、Java注解或MyBatis XML。
-
-| 状态 | 当前事实 |
-| --- | --- |
-| **已实现（结构/构建门）** | 目标package和JDK 17 Toolchain已经就位，旧编号package与旧wire已从当前树删除。 |
-| **部分实现（M1 静态画像）** | 已实现 `ApplicationProfileDetector` 的 path-free parser seam：它从已验证文本读取 Java release、Spring MVC/MyBatis dependency/config signals、冲突和精确 source excerpt；`PersistedVerifiedSourceContentHandle` 会 fresh-reopen 第一分析步骤三项payload、核对清单成员与注册快照的 path/mode/media/size/SHA/file ID 后才交出 parser bytes；`ApplicationProfileModulePublisher` 则把画像、三条上游引用和 controls 以 canonical draft + receipt-last module publication 保存并 fresh-reopen 验证。当前验证是小型冻结 Git fixture 与 exact artifact seam，不是完整客户仓库运行，不能据此宣称任何完整仓库已经完成应用发现。 |
-| **部分实现（M2 静态 HTTP 入口）** | `SpringHttpEntryDiscoverer`只经private verified-source handle读取冻结Java字节，验证显式Spring imports后识别静态类级`RequestMapping`与方法级GET/POST/PUT/DELETE/PATCH mapping，以及带显式`RequestMethod`的通用`RequestMapping`。它把静态route、handler、参数和两个精确注解excerpt写成Entry；动态route、未指定HTTP method、缺类级route和同方法多mapping不猜测而产生带Gap的site。`HttpEntryShardReceipt`要求每个源码shard的site分母与处置集相等，所有shard并集闭合所有site/Gap；`HttpEntryDiscoveryModulePublisher`把这个结果以receipt-last的`http-entry-discovery.json`模块artifact保存并fresh-reopen。当前验证是小型冻结fixture，不是完整客户仓库入口盘点。 |
-| **部分实现（M3 Mapper catalog）** | `MapperCapabilityCataloger`只读取同一private verified-source handle提供的Java/XML文本；它保留Java interface、method、XML namespace、statement的精确excerpt，只输出`CANDIDATE_NOT_YET_BOUND`，不把名称相同冒充调用绑定。标准MyBatis DOCTYPE允许声明但禁用外部DTD、实体和网络解析；namespace缺配对变成两条明确Gap。`MapperCatalogModulePublisher`即使空catalog也保存receipt-last的`mapper-catalog-draft.json`。当前验证是小型冻结fixture，尚未覆盖完整客户仓库的所有Mapper资源。 |
-| **部分实现（M4 与步骤执行）** | `ApplicationDiscoveryPublicationSpecifier`会fresh-reopen M1/M2/M3 drafts，核对controls、applicationProfileId、inventory/snapshot引用和site/shard闭合后，保存恰四个semantic文件及`application-discovery-receipt.json`。空入口分母保留四文件，并以可重算的`NO_ENTRY_DISCOVERED` Gap结束。`ApplicationDiscoveryExecutor`已按M1 detect/publish → persisted profile reopen → M2/M3 → M4的固定顺序串起这些模块；它不运行客户Maven或模型。当前端到端验证只使用一个小型Spring MVC/MyBatis冻结fixture，因此不能作为jshERP或任意完整仓库完成的证据。 |
-| **本步骤尚未实现** | 完整冻结客户仓库的实际ApplicationDiscovery运行、全部Spring route变体/配置来源、显式Mapper-location路径筛选、真正由第一步骤publication重开产生的产品级run orchestrator、完整入口分母验收及固定jshERP的离线验证尚未完成。第一分析步骤已经持久化`sourceRegistrationId`、完整inventory和可私有重开的 frozen snapshot；后续实施必须通过正式运行核心驱动这一执行器，而不能把小型fixture当成完整仓库结论。 |
-| **历史证据，不是当前能力** | 已删除的pre-reset纵切曾用小型fixture验证部分Java/Spring MVC/MyBatis signals、双Controller、DOCTYPE/XXE和五文件发布意图。它只能指导新测试，不能作为当前implementation、artifact或兼容seam。 |
-| **下一实现门** | 为正式运行核心接入该执行器，并用完整固定jshERP的第一步骤publication验证每个发现入口进入Entry、Gap或显式排除；随后才进入“程序图”步骤，且程序图只能重开这五个已发布文件。 |
-
-目标分析步骤只固定入口和能力分母。调用、控制、数据、证据关系属于分析步骤“程序图”；已删除pre-reset类不得恢复或包装成兼容层。
+Luna/xhigh 已为省略 method、method={}、类有限制+方法空、类方法显式并集建立直接 RED；Terra/xhigh 已以 `HttpMethodCondition`、发现器、持久化输出和直接读取器完成最小 GREEN。GET 不增 HEAD/OPTIONS 活动。保留 route 定位、全入口分母和 XML 安全测试，普通发布不重新调用发现算法；真实源端点仍待整仓验收。

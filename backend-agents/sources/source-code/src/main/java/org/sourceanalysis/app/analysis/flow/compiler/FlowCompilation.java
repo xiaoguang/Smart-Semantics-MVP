@@ -21,13 +21,27 @@ public record FlowCompilation(
     FlowCompilationProfile profile,
     List<EntryDisposition> entryDispositions,
     List<FlowSlice> flowSlices,
+    List<EntryContext> entryContexts,
     List<FlowGap> flowGaps) {
+
+  /**
+   * Compatibility constructor for unit fixtures that predate persisted entry context. Production
+   * compilation always supplies a real context per discovered entry.
+   */
+  public FlowCompilation(
+      FlowCompilationProfile profile,
+      List<EntryDisposition> entryDispositions,
+      List<FlowSlice> flowSlices,
+      List<FlowGap> flowGaps) {
+    this(profile, entryDispositions, flowSlices, legacyEntryContexts(entryDispositions), flowGaps);
+  }
 
   public FlowCompilation {
     profile = Objects.requireNonNull(profile, "Flow compilation profile");
     entryDispositions =
         List.copyOf(ordered(entryDispositions, EntryDisposition::entryId, "entry dispositions"));
     flowSlices = List.copyOf(ordered(flowSlices, FlowSlice::flowSliceId, "Flow slices"));
+    entryContexts = List.copyOf(ordered(entryContexts, EntryContext::entryId, "entry contexts"));
     flowGaps = List.copyOf(ordered(flowGaps, FlowGap::gapId, "Flow Gaps"));
     List<EntryDisposition> orderedDispositions = entryDispositions;
     if (entryDispositions.stream().map(EntryDisposition::entryId).distinct().count()
@@ -40,6 +54,10 @@ public record FlowCompilation(
             .map(EntryDisposition::flowSliceId)
             .toList();
     List<String> knownGapIds = flowGaps.stream().map(FlowGap::gapId).toList();
+    Set<String> knownFlowFactIds =
+        flowSlices.stream()
+            .flatMap(flow -> flow.factIds().stream())
+            .collect(java.util.stream.Collectors.toSet());
     if (compiledFlowIds.contains(null)
         || compiledFlowIds.size() != flowSlices.size()
         || compiledFlowIds.size() != compiledFlowIds.stream().distinct().count()
@@ -55,9 +73,46 @@ public record FlowCompilation(
             .anyMatch(
                 entryId ->
                     orderedDispositions.stream()
-                        .noneMatch(disposition -> disposition.entryId().equals(entryId)))) {
+                        .noneMatch(disposition -> disposition.entryId().equals(entryId)))
+        || entryContexts.size() != entryDispositions.size()
+        || entryContexts.stream()
+            .anyMatch(
+                context ->
+                    orderedDispositions.stream()
+                        .noneMatch(
+                            disposition ->
+                                disposition.entryId().equals(context.entryId())
+                                    && Objects.equals(
+                                        disposition.flowSliceId(), context.flowSliceId())))
+        || entryContexts.stream()
+            .flatMap(context -> context.factIds().stream())
+            .anyMatch(factId -> !knownFlowFactIds.contains(factId))
+        || entryContexts.stream()
+            .flatMap(context -> context.gapIds().stream())
+            .anyMatch(gapId -> !knownGapIds.contains(gapId))) {
       throw broken();
     }
+  }
+
+  private static List<EntryContext> legacyEntryContexts(List<EntryDisposition> entryDispositions) {
+    Objects.requireNonNull(entryDispositions, "entry dispositions");
+    return entryDispositions.stream()
+        .map(
+            disposition ->
+                new EntryContext(
+                    "entry-context:legacy:" + disposition.entryId(),
+                    disposition.entryId(),
+                    disposition.flowSliceId(),
+                    "legacy-entry-context",
+                    "unknown",
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    disposition.gapIds(),
+                    List.of("LEGACY_CONTEXT_WITHOUT_GRAPH_RELATIONS")))
+        .toList();
   }
 
   /** One complete, unique terminal disposition for an ApplicationDiscovery entry. */
@@ -88,6 +143,115 @@ public record FlowCompilation(
       }
       if (flowSliceId != null) required(flowSliceId, "Flow slice ID");
       if (reasonCode != null) required(reasonCode, "entry disposition reason");
+    }
+  }
+
+  /**
+   * One entry-owned technical narrative for the model-material projector. It is intentionally a
+   * relationship record, not a business classification: Step05 says which code calls which code,
+   * which values cross that call, which guard matters, and where the source excerpts belong.
+   */
+  public record EntryContext(
+      String entryContextId,
+      String entryId,
+      String flowSliceId,
+      String trigger,
+      String entrySignature,
+      List<CallContext> calls,
+      List<ControlContext> controls,
+      List<ReturnContext> returns,
+      List<SourceLocatorV1> sourceLocators,
+      List<String> factIds,
+      List<String> gapIds,
+      List<String> limitations) {
+
+    public EntryContext {
+      required(entryContextId, "entry context ID");
+      required(entryId, "entry context entry ID");
+      required(trigger, "entry context trigger");
+      required(entrySignature, "entry context entry signature");
+      calls = List.copyOf(ordered(calls, CallContext::sortKey, "entry context calls"));
+      controls =
+          List.copyOf(ordered(controls, ControlContext::controlNodeId, "entry context controls"));
+      returns =
+          List.copyOf(ordered(returns, ReturnContext::terminalNodeId, "entry context returns"));
+      sourceLocators =
+          List.copyOf(
+              Objects.requireNonNull(sourceLocators, "entry context source locators").stream()
+                  .peek(value -> Objects.requireNonNull(value, "entry context source locator"))
+                  .distinct()
+                  .sorted(
+                      Comparator.comparing(SourceLocatorV1::path)
+                          .thenComparingLong(SourceLocatorV1::startByte)
+                          .thenComparingLong(SourceLocatorV1::endByteExclusive))
+                  .toList());
+      factIds = List.copyOf(orderedStrings(factIds, "entry context Fact IDs"));
+      gapIds = List.copyOf(orderedStrings(gapIds, "entry context Gap IDs"));
+      limitations = List.copyOf(orderedStrings(limitations, "entry context limitations"));
+    }
+  }
+
+  /** A static call relation, including the exact source expression values that cross it. */
+  public record CallContext(
+      String callerSignature,
+      String targetSignature,
+      List<String> argumentExpressions,
+      String resolution,
+      boolean boundary,
+      List<String> factIds,
+      List<String> proofIds,
+      List<String> evidenceNodeIds) {
+
+    public CallContext {
+      required(callerSignature, "call context caller signature");
+      required(targetSignature, "call context target signature");
+      if (!"EXACT".equals(resolution) && !"UNRESOLVED".equals(resolution)) throw broken();
+      argumentExpressions = List.copyOf(Objects.requireNonNull(argumentExpressions, "arguments"));
+      if (argumentExpressions.stream().anyMatch(value -> value == null || value.isBlank())) {
+        throw broken();
+      }
+      factIds = List.copyOf(orderedStrings(factIds, "call context Fact IDs"));
+      proofIds = List.copyOf(orderedStrings(proofIds, "call context Proof IDs"));
+      evidenceNodeIds = List.copyOf(orderedStrings(evidenceNodeIds, "call context evidence IDs"));
+      if ("EXACT".equals(resolution) && evidenceNodeIds.isEmpty()) {
+        throw broken();
+      }
+    }
+
+    String sortKey() {
+      return callerSignature
+          + "\u0000"
+          + targetSignature
+          + "\u0000"
+          + String.join("\u0000", argumentExpressions)
+          + "\u0000"
+          + String.join("\u0000", evidenceNodeIds);
+    }
+  }
+
+  /** One source-proven branch condition that can change the local activity path. */
+  public record ControlContext(
+      String controlNodeId, String ownerSignature, String condition, List<String> evidenceNodeIds) {
+
+    public ControlContext {
+      required(controlNodeId, "control context node ID");
+      required(ownerSignature, "control context owner signature");
+      required(condition, "control context condition");
+      evidenceNodeIds =
+          List.copyOf(orderedStrings(evidenceNodeIds, "control context evidence IDs"));
+      if (evidenceNodeIds.isEmpty()) throw broken();
+    }
+  }
+
+  /** One terminal return or throw observed on the compiled local flow. */
+  public record ReturnContext(
+      String terminalNodeId, String terminalKind, List<String> evidenceNodeIds) {
+
+    public ReturnContext {
+      required(terminalNodeId, "return context terminal node ID");
+      required(terminalKind, "return context terminal kind");
+      evidenceNodeIds = List.copyOf(orderedStrings(evidenceNodeIds, "return context evidence IDs"));
+      if (evidenceNodeIds.isEmpty()) throw broken();
     }
   }
 

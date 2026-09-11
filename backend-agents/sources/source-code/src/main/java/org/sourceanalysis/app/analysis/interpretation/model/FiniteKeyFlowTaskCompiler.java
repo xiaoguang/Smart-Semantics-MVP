@@ -38,7 +38,7 @@ public final class FiniteKeyFlowTaskCompiler {
 
   private static final String CAPSULE_FILE = "evidence-capsules.jsonl";
   private static final String CAPSULE_TYPE = "BUSINESS_FLOWS_EVIDENCE_CAPSULE";
-  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v5";
+  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v6";
   private static final String REGISTRY_FILE = "repository-interpretation-registry.json";
   private static final String REGISTRY_TYPE =
       "FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY_MODULE";

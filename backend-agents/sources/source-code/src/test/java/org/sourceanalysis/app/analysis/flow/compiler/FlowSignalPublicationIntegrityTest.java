@@ -232,7 +232,7 @@ class FlowSignalPublicationIntegrityTest {
     CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
     JsonNode envelope = canonicalJson.parseCanonical(reopened.payloads().get(0).canonicalUtf8());
     assertThat(envelope.path("schemaVersion").asText())
-        .isEqualTo("business-flows-flow-compilation-v3");
+        .isEqualTo("business-flows-flow-compilation-v4");
     JsonNode payload = envelope.path("payload");
     assertThat(payload.path("flowCompilationId").asText())
         .isEqualTo(expectedFlowCompilationId(expected));

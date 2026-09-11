@@ -308,7 +308,9 @@ class ProgramGraphsExecutionTest {
     result.put("entryId", value.entryId().value());
     result.put("kind", value.kind().name());
     result.put("protocol", value.protocol());
-    result.put("method", value.method());
+    ObjectNode methodCondition = result.putObject("methodCondition");
+    methodCondition.put("kind", value.methodCondition().kind().name());
+    putStrings(methodCondition.putArray("methods"), value.methodCondition().methods());
     result.put("route", value.route());
     putStrings(result.putArray("routeParts"), value.routeParts());
     result.put("handlerFqn", value.handlerFqn());

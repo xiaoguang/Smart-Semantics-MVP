@@ -9,6 +9,7 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
+import com.github.javaparser.ast.expr.ArrayInitializerExpr;
 import com.github.javaparser.ast.expr.FieldAccessExpr;
 import com.github.javaparser.ast.expr.MemberValuePair;
 import com.github.javaparser.ast.expr.StringLiteralExpr;
@@ -193,8 +194,8 @@ public final class SpringHttpEntryDiscoverer {
                 gapId(snapshotId, classExcerpt, "DYNAMIC_ROUTE")));
         continue;
       }
+      HttpMethodCondition classMethodCondition = requestMappingMethodCondition(classMapping.get());
       for (MethodDeclaration method : type.getMethods()) {
-        Optional<AnnotationExpr> requestMapping = annotation(unit, method, "RequestMapping");
         List<HttpMethodMapping> mappings = httpMethodMappings(unit, method);
         if (mappings.size() > 1) {
           SourceExcerptV1 methodExcerpt = excerpt(document, source, mappings.get(0).annotation());
@@ -215,22 +216,6 @@ public final class SpringHttpEntryDiscoverer {
         }
         Optional<HttpMethodMapping> mapping = mappings.stream().findFirst();
         if (mapping.isEmpty()) {
-          if (requestMapping.isPresent()) {
-            SourceExcerptV1 methodExcerpt = excerpt(document, source, requestMapping.get());
-            sites.add(
-                new HttpEntrySite(
-                    siteId(
-                        snapshotId,
-                        methodExcerpt,
-                        List.of(),
-                        SignalDisposition.UNSUPPORTED,
-                        "UNSPECIFIED_HTTP_METHOD"),
-                    methodExcerpt,
-                    List.of(),
-                    SignalDisposition.UNSUPPORTED,
-                    "UNSPECIFIED_HTTP_METHOD",
-                    gapId(snapshotId, methodExcerpt, "UNSPECIFIED_HTTP_METHOD")));
-          }
           continue;
         }
         SourceExcerptV1 methodExcerpt = excerpt(document, source, mapping.get().annotation());
@@ -261,7 +246,7 @@ public final class SpringHttpEntryDiscoverer {
             new HttpEntryPoint(
                 entryId(
                     snapshotId,
-                    mapping.get().method(),
+                    classMethodCondition.combine(mapping.get().methodCondition()),
                     routeParts,
                     handlerFqn,
                     parameters,
@@ -269,7 +254,7 @@ public final class SpringHttpEntryDiscoverer {
                     methodExcerpt),
                 HttpEntryKind.SPRING_MVC_HTTP,
                 "HTTP",
-                mapping.get().method(),
+                classMethodCondition.combine(mapping.get().methodCondition()),
                 route,
                 routeParts,
                 handlerFqn,
@@ -362,16 +347,19 @@ public final class SpringHttpEntryDiscoverer {
             .flatMap(
                 known ->
                     annotation(unit, method, known.annotationName()).stream()
-                        .map(annotation -> new HttpMethodMapping(annotation, known.method())))
+                        .map(
+                            annotation ->
+                                new HttpMethodMapping(
+                                    annotation,
+                                    HttpMethodCondition.explicit(List.of(known.method())))))
             .toList();
     if (!mappings.isEmpty()) {
       return mappings;
     }
     return annotation(unit, method, "RequestMapping")
-        .flatMap(
+        .map(
             annotation ->
-                explicitRequestMappingMethod(annotation)
-                    .map(httpMethod -> new HttpMethodMapping(annotation, httpMethod)))
+                new HttpMethodMapping(annotation, requestMappingMethodCondition(annotation)))
         .stream()
         .toList();
   }
@@ -398,24 +386,51 @@ public final class SpringHttpEntryDiscoverer {
     return Optional.empty();
   }
 
-  private static Optional<String> explicitRequestMappingMethod(AnnotationExpr annotation) {
+  private static HttpMethodCondition requestMappingMethodCondition(AnnotationExpr annotation) {
     if (!annotation.isNormalAnnotationExpr()) {
-      return Optional.empty();
+      return HttpMethodCondition.unrestricted();
     }
     List<MemberValuePair> methodPairs =
         annotation.asNormalAnnotationExpr().getPairs().stream()
             .filter(pair -> pair.getNameAsString().equals("method"))
             .toList();
-    if (methodPairs.size() != 1
-        || !(methodPairs.get(0).getValue() instanceof FieldAccessExpr method)) {
-      return Optional.empty();
+    if (methodPairs.isEmpty()) {
+      return HttpMethodCondition.unrestricted();
     }
+    if (methodPairs.size() != 1) {
+      throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
+    }
+    List<String> methods = requestMethods(methodPairs.get(0).getValue());
+    return methods.isEmpty()
+        ? HttpMethodCondition.unrestricted()
+        : HttpMethodCondition.explicit(methods);
+  }
+
+  private static List<String> requestMethods(com.github.javaparser.ast.expr.Expression value) {
+    if (value instanceof FieldAccessExpr method) {
+      return List.of(requestMethod(method));
+    }
+    if (value instanceof ArrayInitializerExpr values) {
+      List<String> methods = new ArrayList<>();
+      for (com.github.javaparser.ast.expr.Expression item : values.getValues()) {
+        if (!(item instanceof FieldAccessExpr method)) {
+          throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
+        }
+        methods.add(requestMethod(method));
+      }
+      return List.copyOf(methods);
+    }
+    throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
+  }
+
+  private static String requestMethod(FieldAccessExpr method) {
     if (!method.getScope().toString().equals("RequestMethod")) {
-      return Optional.empty();
+      throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
     }
     return switch (method.getNameAsString()) {
-      case "GET", "POST", "PUT", "DELETE", "PATCH" -> Optional.of(method.getNameAsString());
-      default -> Optional.empty();
+      case "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE" ->
+          method.getNameAsString();
+      default -> throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
     };
   }
 
@@ -488,7 +503,7 @@ public final class SpringHttpEntryDiscoverer {
 
   private static ArtifactId entryId(
       String snapshotId,
-      String method,
+      HttpMethodCondition methodCondition,
       List<String> routeParts,
       String handlerFqn,
       List<String> parameterNames,
@@ -498,7 +513,10 @@ public final class SpringHttpEntryDiscoverer {
     material.put("snapshotId", snapshotId);
     material.put("kind", HttpEntryKind.SPRING_MVC_HTTP.name());
     material.put("protocol", "HTTP");
-    material.put("method", method);
+    ObjectNode method = material.putObject("methodCondition");
+    method.put("kind", methodCondition.kind().name());
+    ArrayNode methods = method.putArray("methods");
+    methodCondition.methods().forEach(methods::add);
     ArrayNode routes = material.putArray("routeParts");
     routeParts.forEach(routes::add);
     material.put("handlerFqn", handlerFqn);
@@ -656,7 +674,8 @@ public final class SpringHttpEntryDiscoverer {
 
   private record HttpMethodAnnotation(String annotationName, String method) {}
 
-  private record HttpMethodMapping(AnnotationExpr annotation, String method) {}
+  private record HttpMethodMapping(
+      AnnotationExpr annotation, HttpMethodCondition methodCondition) {}
 
   private record ParsedHttpEntries(List<HttpEntryPoint> entries, List<HttpEntrySite> sites) {}
 }

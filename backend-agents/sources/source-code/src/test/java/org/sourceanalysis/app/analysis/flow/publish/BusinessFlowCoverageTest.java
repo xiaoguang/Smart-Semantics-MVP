@@ -171,7 +171,7 @@ public class BusinessFlowCoverageTest {
 
   private static void assertCompleteCapsule(
       JsonNode capsule, boolean expectedEligible, int spanBudget) {
-    assertThat(text(capsule, "schemaVersion")).isEqualTo("business-flows-evidence-capsule-v5");
+    assertThat(text(capsule, "schemaVersion")).isEqualTo("business-flows-evidence-capsule-v6");
     assertThat(text(capsule, "artifactType")).isEqualTo("BUSINESS_FLOWS_EVIDENCE_CAPSULE");
     String flowSliceId = text(capsule, "flowSliceId");
     List<String> ineligibilityGapIds = strings(requiredArray(capsule, "modelIneligibilityGapIds"));

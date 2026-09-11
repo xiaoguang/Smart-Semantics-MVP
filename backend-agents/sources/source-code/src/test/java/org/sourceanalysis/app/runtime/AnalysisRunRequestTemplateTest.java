@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.fail;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
@@ -21,8 +20,7 @@ class AnalysisRunRequestTemplateTest {
     ArtifactId sourceRegistrationId = artifactId("source-registration", 'a');
     Method create = template.getClass().getMethod("create", ArtifactId.class);
 
-    AnalysisRunRequest request =
-        (AnalysisRunRequest) create.invoke(template, sourceRegistrationId);
+    AnalysisRunRequest request = (AnalysisRunRequest) create.invoke(template, sourceRegistrationId);
 
     assertThat(request.sourceRegistrationId()).isEqualTo(sourceRegistrationId);
     assertThat(request.frozenRepositoryRequestRef()).isEqualTo(reference("frozen-request", 'b'));

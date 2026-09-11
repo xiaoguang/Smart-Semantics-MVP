@@ -6,12 +6,8 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ast.CompilationUnit;
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
-import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.MethodCallExpr;
-import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.stmt.IfStmt;
 import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.stmt.ThrowStmt;
@@ -53,6 +49,7 @@ import org.sourceanalysis.app.artifact.ModuleInstallRequest;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
+import org.sourceanalysis.app.evidence.SourceLocatorV1;
 
 /**
  * Converts persisted technical Flow/Capsule output into short, coherent model-reading packets.
@@ -69,8 +66,10 @@ public final class BusinessMaterialBuilder {
   private static final String ARTIFACT_PREFIX = "business-materials";
   private static final Set<String> MODEL_SAFE_ATOM_ROLES =
       Set.of("STATIC_TARGET_TYPE", "STATIC_TARGET_METHOD", "STATIC_TARGET_SIGNATURE");
-  private static final int MAX_CODE_OUTLINE_OBSERVATIONS = 12;
-  private static final int MAX_CODE_OUTLINE_CALLS = 6;
+  // One entry can legitimately carry a short call chain plus a few source-level conditions and
+  // writes. Keeping this bounded but larger than a single handler avoids losing the persistence
+  // call that gives an otherwise coherent activity its observable result.
+  private static final int MAX_CODE_OUTLINE_OBSERVATIONS = 24;
   private static final Comparator<String> UTF8_ORDER = BusinessMaterialBuilder::compareUtf8;
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
@@ -92,9 +91,6 @@ public final class BusinessMaterialBuilder {
   public BusinessMaterialBuildResult build(BuildBusinessMaterialsRequest request) {
     try {
       Objects.requireNonNull(request, "business material request");
-      if (!request.usesPublishedFlows()) {
-        return buildFromDiscoveredEntries(request);
-      }
       ReopenedAnalysisStepPublication flows = reopenFlows(request.businessFlows());
       VerifiedSourceTextSet source = reopenSource(flows);
       MaterialInput input = materialInput(flows, source);
@@ -105,52 +101,6 @@ public final class BusinessMaterialBuilder {
       throw failure;
     } catch (RuntimeException failure) {
       throw failure("BUSINESS_MATERIAL_INPUT_INVALID", failure);
-    }
-  }
-
-  private BusinessMaterialBuildResult buildFromDiscoveredEntries(
-      BuildBusinessMaterialsRequest request) {
-    ReopenedAnalysisStepPublication sourcePublication =
-        analysisSteps.reopen(request.sourceInventory().publication());
-    ReopenedAnalysisStepPublication discoveryPublication =
-        analysisSteps.reopen(request.applicationDiscovery().publication());
-    requireDirectEntryBasis(request, sourcePublication, discoveryPublication);
-    VerifiedSourceTextSet source = sourceReader.reopen(request.sourceInventory());
-    Map<String, EntryMetadata> metadata = entryMetadata(discoveryPublication);
-    List<EntryDisposition> entries =
-        metadata.values().stream()
-            .map(
-                entry ->
-                    new EntryDisposition(
-                        entry.entryId(), "FLOW_UNAVAILABLE", null, List.of("FLOW_NOT_AVAILABLE")))
-            .sorted(Comparator.comparing(EntryDisposition::entryId, UTF8_ORDER))
-            .toList();
-    BusinessMaterialSet materialSet =
-        materialSet(
-            new MaterialInput(entries, Map.of(), metadata, sourceContexts(metadata, source)),
-            request.profile());
-    ModulePublicationReference checkpoint =
-        install(
-            sourcePublication.reference().address().runId(),
-            discoveryPublication.receipt().controls(),
-            upstreamPayloads(sourcePublication, discoveryPublication),
-            materialSet);
-    return new BusinessMaterialBuildResult(materialSet, checkpoint);
-  }
-
-  private static void requireDirectEntryBasis(
-      BuildBusinessMaterialsRequest request,
-      ReopenedAnalysisStepPublication source,
-      ReopenedAnalysisStepPublication discovery) {
-    if (source.reference().address().analysisStepKey() != AnalysisStepKey.VERIFIED_SOURCE_INVENTORY
-        || discovery.reference().address().analysisStepKey()
-            != AnalysisStepKey.APPLICATION_DISCOVERY
-        || !source.reference().equals(request.sourceInventory().publication())
-        || !discovery.reference().equals(request.applicationDiscovery().publication())
-        || !source.reference().address().runId().equals(discovery.reference().address().runId())
-        || !source.receipt().controls().equals(discovery.receipt().controls())
-        || !discovery.receipt().upstreamAnalysisStepReferences().contains(source.reference())) {
-      throw failure("BUSINESS_MATERIAL_SOURCE_BINDING_INVALID");
     }
   }
 
@@ -180,40 +130,54 @@ public final class BusinessMaterialBuilder {
     Map<String, VerifiedCanonicalPayload> payloads = byFileName(flows.semanticPayloads());
     VerifiedCanonicalPayload dispositions = payloads.get("entry-dispositions.jsonl");
     VerifiedCanonicalPayload capsules = payloads.get("evidence-capsules.jsonl");
-    if (dispositions == null || capsules == null) {
+    VerifiedCanonicalPayload flowSlices = payloads.get("flow-slices.json");
+    if (dispositions == null || capsules == null || flowSlices == null) {
       throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
     }
     List<EntryDisposition> entries = entryDispositions(dispositions);
     Map<String, Capsule> capsuleByEntry = capsules(capsules, source);
     Map<String, EntryMetadata> metadata = entryMetadataFromFlows(flows);
-    return new MaterialInput(entries, capsuleByEntry, metadata, sourceContexts(metadata, source));
+    Map<String, EntryContext> entryContexts = entryContexts(flowSlices);
+    if (!entryContexts
+        .keySet()
+        .equals(
+            entries.stream()
+                .map(EntryDisposition::entryId)
+                .collect(java.util.stream.Collectors.toSet()))) {
+      throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
+    }
+    return new MaterialInput(entries, capsuleByEntry, metadata, entryContexts, source);
   }
 
   private BusinessMaterialSet materialSet(MaterialInput input, BusinessMaterialProfile profile) {
     SourceRefAllocator allocator = new SourceRefAllocator();
-    List<BusinessMaterial> materials = new ArrayList<>();
+    List<EntryMaterial> entryMaterials = new ArrayList<>();
     List<BusinessMaterialEntryCoverage> coverage = new ArrayList<>();
     for (EntryDisposition entry : input.entries()) {
       Capsule capsule = input.capsuleByEntry().get(entry.entryId());
       if (!"COMPILED".equals(entry.disposition()) || capsule == null) {
+        EntryContext entryContext = input.entryContextsByEntryId().get(entry.entryId());
         BusinessMaterial fallback =
-            fallbackMaterial(
-                entry,
-                input.entryMetadata().get(entry.entryId()),
-                input.sourceContextsByHandlerFqn(),
-                allocator,
-                profile);
+            entryContext == null
+                ? null
+                : fallbackMaterialFromPersistedContext(
+                    entry,
+                    input.entryMetadata().get(entry.entryId()),
+                    entryContext,
+                    input.source(),
+                    allocator,
+                    profile);
         if (fallback == null) {
           coverage.add(
               new BusinessMaterialEntryCoverage(
                   entry.entryId(), "NOT_MATERIALIZED", null, "FLOW_NOT_COMPILED"));
         } else {
-          materials.add(fallback);
-          coverage.add(
-              new BusinessMaterialEntryCoverage(
-                  entry.entryId(),
+          entryMaterials.add(
+              new EntryMaterial(
+                  entry,
+                  input.entryMetadata().get(entry.entryId()),
+                  fallback,
                   "MATERIAL_WITH_GAPS",
-                  fallback.materialId(),
                   "ENTRY_SOURCE_FALLBACK"));
         }
         continue;
@@ -225,15 +189,30 @@ public final class BusinessMaterialBuilder {
                 entry.entryId(), "NOT_MATERIALIZED", null, "SOURCE_MATERIAL_OVER_BUDGET"));
         continue;
       }
-      materials.add(candidate.material());
-      coverage.add(
-          new BusinessMaterialEntryCoverage(
-              entry.entryId(),
-              candidate.material().limitations().isEmpty()
-                  ? "ANALYZED_MATERIAL"
-                  : "MATERIAL_WITH_GAPS",
-              candidate.material().materialId(),
+      entryMaterials.add(
+          new EntryMaterial(
+              entry,
+              input.entryMetadata().get(entry.entryId()),
+              candidate.material(),
+              candidate.material().hasSubstantiveLimitation()
+                  ? "MATERIAL_WITH_GAPS"
+                  : "ANALYZED_MATERIAL",
               candidate.reasonCode()));
+    }
+    List<GroupedMaterial> grouped = groupMaterials(entryMaterials, profile);
+    List<BusinessMaterial> materials = new ArrayList<>();
+    for (GroupedMaterial group : grouped) {
+      materials.add(group.material());
+      for (EntryMaterial member : group.members()) {
+        coverage.add(
+            new BusinessMaterialEntryCoverage(
+                member.entry().entryId(),
+                group.material().hasSubstantiveLimitation()
+                    ? "MATERIAL_WITH_GAPS"
+                    : member.coverageDisposition(),
+                group.material().materialId(),
+                member.reasonCode()));
+      }
     }
     materials.sort(Comparator.comparing(BusinessMaterial::materialId, UTF8_ORDER));
     coverage.sort(Comparator.comparing(BusinessMaterialEntryCoverage::entryId, UTF8_ORDER));
@@ -241,6 +220,217 @@ public final class BusinessMaterialBuilder {
         "business-material-set:"
             + sha256(frame("business-material-set-v1"), frame(jsonl(materials, coverage)));
     return new BusinessMaterialSet(setId, materials, coverage);
+  }
+
+  /**
+   * Groups already-built entry context packets only to reduce repeated model reading.
+   *
+   * <p>A group is bounded by handler class, material mode, entry count, source-reference budget,
+   * and final packet size. It deliberately does not claim a business purpose, sequence, shared
+   * identity, or process; those remain model work in the next Module.
+   */
+  private List<GroupedMaterial> groupMaterials(
+      List<EntryMaterial> entryMaterials, BusinessMaterialProfile profile) {
+    Map<String, List<EntryMaterial>> byStructure = new LinkedHashMap<>();
+    entryMaterials.stream()
+        .sorted(Comparator.comparing(value -> value.entry().entryId(), UTF8_ORDER))
+        .forEach(
+            entry ->
+                byStructure
+                    .computeIfAbsent(groupingKey(entry), ignored -> new ArrayList<>())
+                    .add(entry));
+    List<GroupedMaterial> groups = new ArrayList<>();
+    for (List<EntryMaterial> sameStructure : byStructure.values()) {
+      List<EntryMaterial> current = new ArrayList<>();
+      for (EntryMaterial next : sameStructure) {
+        List<EntryMaterial> trial = new ArrayList<>(current);
+        trial.add(next);
+        BusinessMaterial combined = combinedMaterial(trial, profile);
+        if (combined != null) {
+          current = trial;
+          continue;
+        }
+        if (current.isEmpty()) {
+          groups.add(new GroupedMaterial(next.material(), List.of(next)));
+          continue;
+        }
+        groups.add(
+            new GroupedMaterial(
+                combinedMaterialOrOriginal(current, profile), List.copyOf(current)));
+        current = new ArrayList<>(List.of(next));
+      }
+      if (!current.isEmpty()) {
+        groups.add(
+            new GroupedMaterial(
+                combinedMaterialOrOriginal(current, profile), List.copyOf(current)));
+      }
+    }
+    return groups.stream()
+        .sorted(Comparator.comparing(value -> value.material().materialId(), UTF8_ORDER))
+        .toList();
+  }
+
+  private static String groupingKey(EntryMaterial entry) {
+    String handler = entry.metadata() == null ? null : entry.metadata().handlerFqn();
+    if (handler == null || handler.isBlank()) {
+      return "entry\u0000" + entry.entry().entryId();
+    }
+    int methodSeparator = handler.indexOf('#');
+    String owner = methodSeparator < 0 ? handler : handler.substring(0, methodSeparator);
+    return "handler\u0000" + owner + "\u0000" + entry.material().materialMode().name();
+  }
+
+  private static BusinessMaterial combinedMaterialOrOriginal(
+      List<EntryMaterial> members, BusinessMaterialProfile profile) {
+    BusinessMaterial combined = combinedMaterial(members, profile);
+    if (combined != null) {
+      return combined;
+    }
+    if (members.size() == 1) {
+      return members.get(0).material();
+    }
+    throw failure("BUSINESS_MATERIAL_GROUPING_INVALID");
+  }
+
+  private static BusinessMaterial combinedMaterial(
+      List<EntryMaterial> members, BusinessMaterialProfile profile) {
+    if (members.isEmpty()
+        || members.size() > profile.maxEntriesPerMaterial()
+        || members.size() > profile.maxSourceRefsPerMaterial()) {
+      return null;
+    }
+    if (members.size() == 1) {
+      return members.get(0).material();
+    }
+    BusinessMaterialMode mode = members.get(0).material().materialMode();
+    if (members.stream().anyMatch(member -> member.material().materialMode() != mode)) {
+      return null;
+    }
+    List<String> entryIds =
+        members.stream().map(member -> member.entry().entryId()).sorted(UTF8_ORDER).toList();
+    List<SourceReference> references =
+        selectedGroupReferences(members, profile.maxSourceRefsPerMaterial());
+    if (references.size() < members.size()) {
+      return null;
+    }
+    List<String> observations =
+        distinctStrings(
+            members.stream().flatMap(member -> member.material().technicalObservations().stream()));
+    List<String> limitations =
+        distinctStrings(
+            members.stream().flatMap(member -> member.material().limitations().stream()));
+    List<String> flowRefs =
+        distinctStrings(members.stream().flatMap(member -> member.material().flowRefs().stream()));
+    List<String> proofRefs =
+        distinctStrings(
+            members.stream().flatMap(member -> member.material().technicalProofRefs().stream()));
+    String context =
+        "本材料包包括 "
+            + members.size()
+            + " 个相关 HTTP 入口：\n"
+            + members.stream()
+                .map(member -> member.material().context())
+                .collect(java.util.stream.Collectors.joining("\n"));
+    String modelContext =
+        "本包包含以下相关 HTTP 入口：\n"
+            + java.util.stream.IntStream.range(0, members.size())
+                .mapToObj(
+                    index ->
+                        "入口 E"
+                            + (index + 1)
+                            + "：\n"
+                            + members.get(index).material().modelPacket().context())
+                .collect(java.util.stream.Collectors.joining("\n"))
+            + "\n请分别解释每个入口的局部业务活动；只有片段明确支持时才说明它们之间的关系。";
+    ModelActivityPacket packet =
+        new ModelActivityPacket(
+            modelContext,
+            modelObservations(observations),
+            references.stream()
+                .map(
+                    reference ->
+                        new ModelActivityPacket.AllowlistedReference(
+                            reference.ref(), reference.snippet()))
+                .toList(),
+            modelLimitations(limitations));
+    if (packetCharacterCount(packet) > profile.maxMaterialChars()) {
+      return null;
+    }
+    String materialId =
+        "material:"
+            + sha256(
+                frame("business-material-group-v1"),
+                frame(String.join("\u0000", entryIds)),
+                frame(String.join("\u0000", flowRefs)));
+    return new BusinessMaterial(
+        materialId,
+        entryIds,
+        mode,
+        context,
+        observations,
+        references,
+        flowRefs,
+        proofRefs,
+        limitations,
+        packet);
+  }
+
+  private static List<SourceReference> selectedGroupReferences(
+      List<EntryMaterial> members, int maximum) {
+    LinkedHashMap<String, SourceReference> selected = new LinkedHashMap<>();
+    members.stream()
+        .flatMap(member -> essentialReferences(member.material().sourceRefs()).stream())
+        .sorted(Comparator.comparing(SourceReference::ref, UTF8_ORDER))
+        .forEach(reference -> selected.putIfAbsent(reference.ref(), reference));
+    if (selected.size() > maximum) {
+      return List.of();
+    }
+    return selected.values().stream()
+        .sorted(Comparator.comparing(SourceReference::ref, UTF8_ORDER))
+        .toList();
+  }
+
+  /**
+   * Retains every distinct source region needed to read an entry while removing nested duplicate
+   * excerpts. For example, a method excerpt already contains its parameter and an individual call
+   * line, so keeping all three would spend the group budget without adding source context.
+   */
+  private static List<SourceReference> essentialReferences(List<SourceReference> references) {
+    return references.stream()
+        .filter(
+            candidate ->
+                references.stream()
+                    .noneMatch(
+                        container ->
+                            !container.ref().equals(candidate.ref())
+                                && sameFile(container, candidate)
+                                && contains(container, candidate)))
+        .sorted(Comparator.comparing(SourceReference::ref, UTF8_ORDER))
+        .toList();
+  }
+
+  private static boolean sameFile(SourceReference left, SourceReference right) {
+    return left.file().equals(right.file());
+  }
+
+  private static boolean contains(SourceReference container, SourceReference candidate) {
+    return container.startLine() <= candidate.startLine()
+        && container.endLine() >= candidate.endLine()
+        && (container.startLine() < candidate.startLine()
+            || container.endLine() > candidate.endLine());
+  }
+
+  private static List<String> distinctStrings(java.util.stream.Stream<String> values) {
+    return values.filter(value -> !value.isBlank()).distinct().toList();
+  }
+
+  private static int packetCharacterCount(ModelActivityPacket packet) {
+    return packet.context().length()
+        + packet.technicalObservations().stream().mapToInt(String::length).sum()
+        + packet.allowlistedRefs().stream()
+            .mapToInt(value -> value.ref().length() + value.snippet().length())
+            .sum()
+        + packet.limitations().stream().mapToInt(String::length).sum();
   }
 
   private MaterialCandidate materialCandidate(
@@ -268,7 +458,8 @@ public final class BusinessMaterialBuilder {
       return null;
     }
     List<String> observations =
-        mergeObservations(codeOutlineObservations(capsule.spans(), references), observations(capsule));
+        mergeObservations(
+            codeOutlineObservations(capsule.spans(), references), observations(capsule));
     List<String> limitations = limitations(entry, capsule, profile, references, observations);
     String materialId =
         "material:"
@@ -315,54 +506,60 @@ public final class BusinessMaterialBuilder {
         material, limitations.isEmpty() ? null : "TECHNICAL_GAPS_RETAINED");
   }
 
-  private BusinessMaterial fallbackMaterial(
+  private BusinessMaterial fallbackMaterialFromPersistedContext(
       EntryDisposition entry,
       EntryMetadata metadata,
-      Map<String, List<SourceSpan>> sourceContextsByHandlerFqn,
+      EntryContext entryContext,
+      VerifiedSourceTextSet source,
       SourceRefAllocator allocator,
       BusinessMaterialProfile profile) {
     if (metadata == null) {
       return null;
     }
-    List<SourceSpan> contextSpans = sourceContextsByHandlerFqn.get(metadata.handlerFqn());
-    if (contextSpans == null || contextSpans.isEmpty()) {
+    Map<String, VerifiedSourceTextDocument> documents = new HashMap<>();
+    source.documents().forEach(document -> documents.put(document.fileId().value(), document));
+    List<SourceSpan> contextSpans = sourceSpans(entryContext.sourceLocators(), documents);
+    if (contextSpans.isEmpty()) {
       return null;
     }
     List<SourceReference> references = new ArrayList<>();
+    Set<String> referenceIds = new HashSet<>();
     for (SourceSpan span : contextSpans) {
       if (references.size() == profile.maxSourceRefsPerMaterial()) {
         break;
       }
-      references.addAll(
+      for (SourceReference reference :
           allocator.references(
               span,
               profile.maxLinesPerRef(),
-              profile.maxSourceRefsPerMaterial() - references.size()));
+              profile.maxSourceRefsPerMaterial() - references.size())) {
+        if (referenceIds.add(reference.ref())) {
+          references.add(reference);
+        }
+      }
+    }
+    if (references.isEmpty()) {
+      return null;
     }
     String materialId =
         "material:"
             + sha256(
-                frame("business-material-fallback-v1"),
+                frame("business-material-persisted-context-v1"),
                 frame(entry.entryId()),
-                frame(metadata.handlerFqn()));
-    String context = "已发现 HTTP 入口 " + metadata.method() + " " + metadata.route() + " 对应入口处理方法。";
+                frame(entryContext.entryContextId()));
+    String context = "已发现 HTTP 入口 " + metadata.method() + " " + metadata.route() + "，技术流程尚未完整编译。";
     List<String> observations = new ArrayList<>();
     observations.add("已定位 HTTP 入口 " + metadata.method() + " " + metadata.route());
-    observations.add("已定位入口处理方法 " + metadata.handlerFqn());
-    if (references.size() > 1) {
-      observations.add("已附上入口直接调用的同仓库方法实现，供理解局部处理结果。");
-    }
-    observations =
-        new ArrayList<>(
-            mergeObservations(
-                observations, codeOutlineObservations(contextSpans, references)));
-    List<String> limitations =
-        List.of(
-            "技术流程尚未完整编译：" + String.join("、", entry.gapIds()), "本材料来自冻结源码中的入口处理方法，不把它伪装成已编译 Flow。");
+    observations.addAll(entryContextObservations(entryContext));
+    observations.addAll(codeOutlineObservations(contextSpans, references));
+    observations = new ArrayList<>(mergeObservations(observations, List.of()));
+    List<String> limitations = new ArrayList<>(entryContext.limitations());
+    limitations.add("技术流程尚未完整编译：" + String.join("、", entry.gapIds()));
+    limitations.add("本材料来自 Step05 已保存的入口上下文，不把它伪装成已编译 Flow。");
     ModelActivityPacket packet =
         new ModelActivityPacket(
             "已发现 HTTP 入口 " + metadata.method() + " " + metadata.route() + "。请仅依据本包片段和观察，解释其局部业务活动。",
-            List.copyOf(observations),
+            modelObservations(observations),
             references.stream()
                 .map(
                     reference ->
@@ -389,158 +586,8 @@ public final class BusinessMaterialBuilder {
         references,
         List.of(),
         List.of(),
-        limitations,
+        List.copyOf(limitations),
         packet);
-  }
-
-  private Map<String, List<SourceSpan>> sourceContexts(
-      Map<String, EntryMetadata> entryMetadata, VerifiedSourceTextSet source) {
-    Set<String> handlers =
-        entryMetadata.values().stream()
-            .map(EntryMetadata::handlerFqn)
-            .filter(value -> value.contains("#"))
-            .collect(java.util.stream.Collectors.toSet());
-    if (handlers.isEmpty()) {
-      return Map.of();
-    }
-    JavaParser parser = new JavaParser();
-    Map<String, List<TypeContext>> types = new HashMap<>();
-    for (VerifiedSourceTextDocument document : source.documents()) {
-      if (!document.path().endsWith(".java")) {
-        continue;
-      }
-      String text = new String(document.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8);
-      var parsed = parser.parse(text).getResult();
-      if (parsed.isEmpty()) {
-        continue;
-      }
-      CompilationUnit unit = parsed.get();
-      String packageName =
-          unit.getPackageDeclaration().map(value -> value.getNameAsString()).orElse("");
-      Map<String, String> explicitImports = explicitImports(unit);
-      for (ClassOrInterfaceDeclaration type : unit.findAll(ClassOrInterfaceDeclaration.class)) {
-        String qualifiedType =
-            packageName.isEmpty()
-                ? type.getNameAsString()
-                : packageName + "." + type.getNameAsString();
-        Map<String, String> fieldTypes = fieldTypes(type, packageName, explicitImports);
-        List<MethodContext> methods = new ArrayList<>();
-        for (MethodDeclaration method : type.getMethods()) {
-          if (method.getRange().isEmpty()) {
-            continue;
-          }
-          int startLine = method.getRange().orElseThrow().begin.line;
-          int endLine = method.getRange().orElseThrow().end.line;
-          methods.add(
-              new MethodContext(
-                  method,
-                  new SourceSpan(
-                      document.path(), startLine, endLine, lines(text, startLine, endLine))));
-        }
-        types
-            .computeIfAbsent(qualifiedType, ignored -> new ArrayList<>())
-            .add(new TypeContext(qualifiedType, fieldTypes, methods));
-      }
-    }
-    Map<String, List<SourceSpan>> contexts = new HashMap<>();
-    for (String handler : handlers) {
-      int separator = handler.lastIndexOf('#');
-      List<TypeContext> ownerCandidates = types.get(handler.substring(0, separator));
-      if (ownerCandidates == null || ownerCandidates.isEmpty()) {
-        continue;
-      }
-      // Preserve the prior handler-only fallback behavior: the first frozen source occurrence
-      // supplies the handler text. In contrast, optional target context below fails closed when
-      // a receiver type is not unique across Maven modules.
-      TypeContext owner = ownerCandidates.get(0);
-      String methodName = handler.substring(separator + 1);
-      MethodContext method =
-          owner.methods().stream()
-              .filter(value -> value.method().getNameAsString().equals(methodName))
-              .findFirst()
-              .orElse(null);
-      if (method == null) {
-        continue;
-      }
-      List<SourceSpan> values = new ArrayList<>();
-      values.add(method.span());
-      directTargetSpans(owner, method, types)
-          .forEach(
-              value -> {
-                if (!values.contains(value)) {
-                  values.add(value);
-                }
-              });
-      contexts.put(handler, List.copyOf(values));
-    }
-    return Map.copyOf(contexts);
-  }
-
-  private static Map<String, String> explicitImports(CompilationUnit unit) {
-    Map<String, String> values = new HashMap<>();
-    unit.getImports().stream()
-        .filter(value -> !value.isAsterisk() && !value.isStatic())
-        .forEach(
-            value -> {
-              String qualified = value.getNameAsString();
-              int separator = qualified.lastIndexOf('.');
-              values.put(qualified.substring(separator + 1), qualified);
-            });
-    return Map.copyOf(values);
-  }
-
-  private static Map<String, String> fieldTypes(
-      ClassOrInterfaceDeclaration type, String packageName, Map<String, String> explicitImports) {
-    Map<String, String> values = new HashMap<>();
-    for (FieldDeclaration field : type.getFields()) {
-      String typeName =
-          resolveType(field.getElementType().asString(), packageName, explicitImports);
-      for (VariableDeclarator variable : field.getVariables()) {
-        if (values.put(variable.getNameAsString(), typeName) != null) {
-          throw failure("BUSINESS_MATERIAL_SOURCE_BINDING_INVALID");
-        }
-      }
-    }
-    return Map.copyOf(values);
-  }
-
-  private static String resolveType(
-      String rawType, String packageName, Map<String, String> explicitImports) {
-    String simple = rawType.replaceAll("<.*>", "").strip();
-    if (simple.contains(".") || simple.isEmpty()) {
-      return simple;
-    }
-    String imported = explicitImports.get(simple);
-    if (imported != null) {
-      return imported;
-    }
-    return packageName.isEmpty() ? simple : packageName + "." + simple;
-  }
-
-  private static List<SourceSpan> directTargetSpans(
-      TypeContext owner, MethodContext source, Map<String, List<TypeContext>> types) {
-    List<SourceSpan> values = new ArrayList<>();
-    for (MethodCallExpr call : source.method().findAll(MethodCallExpr.class)) {
-      if (!(call.getScope().orElse(null) instanceof NameExpr receiver)) {
-        continue;
-      }
-      String receiverType = owner.fieldTypes().get(receiver.getNameAsString());
-      List<TypeContext> targetOwners = types.get(receiverType);
-      if (targetOwners == null || targetOwners.size() != 1) {
-        continue;
-      }
-      TypeContext targetOwner = targetOwners.get(0);
-      List<MethodContext> candidates =
-          targetOwner.methods().stream()
-              .filter(value -> value.method().getBody().isPresent())
-              .filter(value -> value.method().getNameAsString().equals(call.getNameAsString()))
-              .filter(value -> value.method().getParameters().size() == call.getArguments().size())
-              .toList();
-      if (candidates.size() == 1 && !values.contains(candidates.get(0).span())) {
-        values.add(candidates.get(0).span());
-      }
-    }
-    return List.copyOf(values);
   }
 
   private static String lines(String text, int startLine, int endLine) {
@@ -554,6 +601,7 @@ public final class BusinessMaterialBuilder {
   private List<String> observations(Capsule capsule) {
     List<String> values = new ArrayList<>();
     values.add("入口触发方式为 " + capsule.trigger());
+    values.addAll(entryContextObservations(capsule.entryContext()));
     capsule.atoms().stream()
         .filter(atom -> MODEL_SAFE_ATOM_ROLES.contains(atom.role()))
         .limit(8)
@@ -564,6 +612,36 @@ public final class BusinessMaterialBuilder {
         .limit(4)
         .forEach(signal -> values.add("代码观察：存在明确调用 " + signal.anchorKey()));
     return values.stream().distinct().toList();
+  }
+
+  private static List<String> entryContextObservations(EntryContext context) {
+    List<String> values = new ArrayList<>();
+    context
+        .calls()
+        .forEach(
+            call ->
+                values.add(
+                    "代码路径："
+                        + call.callerSignature()
+                        + " 将参数 "
+                        + String.join("、", call.argumentExpressions())
+                        + " 传给 "
+                        + call.targetSignature()
+                        + (call.boundary() ? "（离开当前 Java 实现边界）。" : "。")));
+    context
+        .controls()
+        .forEach(
+            control ->
+                values.add(
+                    "代码分支："
+                        + control.ownerSignature()
+                        + " 在 "
+                        + control.condition()
+                        + " 时改变后续处理。"));
+    context
+        .returns()
+        .forEach(terminal -> values.add("代码终止：存在 " + terminal.terminalKind() + " 返回路径。"));
+    return List.copyOf(values);
   }
 
   /**
@@ -614,7 +692,8 @@ public final class BusinessMaterialBuilder {
         .flatMap(method -> method.findAll(MethodCallExpr.class).stream())
         .filter(MethodCallExpr::hasScope)
         .filter(BusinessMaterialBuilder::isStateOrPersistenceCall)
-        .forEach(call -> addOutlineObservation(values, "源码调用：" + compactCode(call.toString()) + "。"));
+        .forEach(
+            call -> addOutlineObservation(values, "源码调用：" + compactCode(call.toString()) + "。"));
     methods.stream()
         .flatMap(method -> method.findAll(IfStmt.class).stream())
         .forEach(
@@ -624,11 +703,13 @@ public final class BusinessMaterialBuilder {
     methods.stream()
         .map(BusinessMaterialBuilder::firstDirectCallAfterLastGuard)
         .flatMap(java.util.Optional::stream)
-        .forEach(call -> addOutlineObservation(values, "源码调用：" + compactCode(call.toString()) + "。"));
+        .forEach(
+            call -> addOutlineObservation(values, "源码调用：" + compactCode(call.toString()) + "。"));
     methods.stream()
         .flatMap(method -> method.findAll(MethodCallExpr.class).stream())
         .filter(MethodCallExpr::hasScope)
-        .forEach(call -> addOutlineObservation(values, "源码调用：" + compactCode(call.toString()) + "。"));
+        .forEach(
+            call -> addOutlineObservation(values, "源码调用：" + compactCode(call.toString()) + "。"));
     methods.stream()
         .flatMap(method -> method.findAll(ReturnStmt.class).stream())
         .forEach(
@@ -693,10 +774,7 @@ public final class BusinessMaterialBuilder {
       return direct.orElseThrow();
     }
     var wrappedType =
-        parser
-        .parse("class SourceMaterialSnippet {\n" + snippet + "\n}")
-        .getResult()
-        .orElse(null);
+        parser.parse("class SourceMaterialSnippet {\n" + snippet + "\n}").getResult().orElse(null);
     if (wrappedType != null && !wrappedType.findAll(MethodDeclaration.class).isEmpty()) {
       return wrappedType;
     }
@@ -710,8 +788,7 @@ public final class BusinessMaterialBuilder {
     return value.replaceAll("\\s+", " ").strip();
   }
 
-  private static List<String> mergeObservations(
-      List<String> primary, List<String> secondary) {
+  private static List<String> mergeObservations(List<String> primary, List<String> secondary) {
     return java.util.stream.Stream.concat(primary.stream(), secondary.stream())
         .filter(value -> !value.isBlank())
         .distinct()
@@ -758,7 +835,7 @@ public final class BusinessMaterialBuilder {
       values.add("原技术 Capsule 未满足旧模型预算；当前材料只保留已验证的短片段。");
     }
     if (references.size() < capsule.spans().size()) {
-      values.add("为保持局部活动上下文，本材料仅选择了预算内的来源片段。");
+      values.add(BusinessMaterial.SNIPPET_BUDGET_NOTICE);
     }
     if (!entry.gapIds().isEmpty()) {
       values.add("入口的技术流程处置保留了 Gap：" + String.join("、", entry.gapIds()));
@@ -966,11 +1043,18 @@ public final class BusinessMaterialBuilder {
               .map(value -> text(value, "reasonCode"))
               .distinct()
               .toList();
+      EntryContext context = entryContext(object(node, "entryContext"));
+      if (!entryId.equals(context.entryId())
+          || !text(node, "flowSliceId").equals(context.flowSliceId())) {
+        throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
+      }
+      spans.addAll(sourceSpans(context.sourceLocators(), documents));
       Capsule capsule =
           new Capsule(
               text(node, "flowSliceId"),
               text(entry, "trigger"),
               text(node, "modelEligibility"),
+              context,
               spans.stream().sorted(Comparator.comparing(SourceSpan::sortKey, UTF8_ORDER)).toList(),
               atoms,
               proofIds.stream().distinct().sorted(UTF8_ORDER).toList(),
@@ -981,6 +1065,101 @@ public final class BusinessMaterialBuilder {
       }
     }
     return Map.copyOf(values);
+  }
+
+  private Map<String, EntryContext> entryContexts(VerifiedCanonicalPayload flowSlices) {
+    JsonNode document = canonicalJson.parseCanonical(flowSlices.canonicalUtf8());
+    Map<String, EntryContext> values = new HashMap<>();
+    for (JsonNode contextNode : array(document, "entryContexts")) {
+      EntryContext context = entryContext(contextNode);
+      if (values.put(context.entryId(), context) != null) {
+        throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
+      }
+    }
+    return Map.copyOf(values);
+  }
+
+  private static EntryContext entryContext(JsonNode node) {
+    List<CallContext> calls = new ArrayList<>();
+    for (JsonNode call : array(node, "calls")) {
+      calls.add(
+          new CallContext(
+              text(call, "callerSignature"),
+              text(call, "targetSignature"),
+              strings(call.path("argumentExpressions")),
+              text(call, "resolution"),
+              call.path("boundary").asBoolean(false)));
+    }
+    List<ControlContext> controls = new ArrayList<>();
+    for (JsonNode control : array(node, "controls")) {
+      controls.add(new ControlContext(text(control, "ownerSignature"), text(control, "condition")));
+    }
+    List<ReturnContext> returns = new ArrayList<>();
+    for (JsonNode terminal : array(node, "returns")) {
+      returns.add(new ReturnContext(text(terminal, "terminalKind")));
+    }
+    return new EntryContext(
+        text(node, "entryContextId"),
+        text(node, "entryId"),
+        nullableText(node, "flowSliceId"),
+        text(node, "entrySignature"),
+        List.copyOf(calls),
+        List.copyOf(controls),
+        List.copyOf(returns),
+        sourceLocators(node, "sourceLocators"),
+        strings(node.path("limitations")));
+  }
+
+  private static List<SourceLocatorV1> sourceLocators(JsonNode node, String field) {
+    List<SourceLocatorV1> values = new ArrayList<>();
+    for (JsonNode locator : array(node, field)) {
+      try {
+        values.add(
+            new SourceLocatorV1(
+                ArtifactId.parse(text(locator, "fileId")),
+                text(locator, "path"),
+                longValue(locator, "startByte"),
+                longValue(locator, "endByteExclusive"),
+                integer(locator, "startLine"),
+                integer(locator, "startColumn"),
+                integer(locator, "endLine"),
+                integer(locator, "endColumn")));
+      } catch (RuntimeException invalid) {
+        throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
+      }
+    }
+    return values.stream()
+        .distinct()
+        .sorted(
+            Comparator.comparing(SourceLocatorV1::path, UTF8_ORDER)
+                .thenComparingLong(SourceLocatorV1::startByte)
+                .thenComparingLong(SourceLocatorV1::endByteExclusive))
+        .toList();
+  }
+
+  private List<SourceSpan> sourceSpans(
+      List<SourceLocatorV1> locators, Map<String, VerifiedSourceTextDocument> documents) {
+    return locators.stream()
+        .map(locator -> sourceSpan(locator, documents))
+        .distinct()
+        .sorted(Comparator.comparing(SourceSpan::sortKey, UTF8_ORDER))
+        .toList();
+  }
+
+  private SourceSpan sourceSpan(
+      SourceLocatorV1 locator, Map<String, VerifiedSourceTextDocument> documents) {
+    VerifiedSourceTextDocument document = documents.get(locator.fileId().value());
+    if (document == null
+        || !document.path().equals(locator.path())
+        || locator.endByteExclusive() > document.rawUtf8().size()) {
+      throw failure("BUSINESS_MATERIAL_SOURCE_BINDING_INVALID");
+    }
+    byte[] bytes = document.rawUtf8().copyToByteArray();
+    String snippet =
+        new String(
+            Arrays.copyOfRange(bytes, (int) locator.startByte(), (int) locator.endByteExclusive()),
+            StandardCharsets.UTF_8);
+    return new SourceSpan(locator.path(), locator.startLine(), locator.endLine(), snippet);
   }
 
   private SourceSpan sourceSpan(JsonNode span, Map<String, VerifiedSourceTextDocument> documents) {
@@ -1042,7 +1221,7 @@ public final class BusinessMaterialBuilder {
       EntryMetadata metadata =
           new EntryMetadata(
               text(node, "entryId"),
-              text(node, "method"),
+              methodConditionDisplay(node),
               text(node, "route"),
               text(node, "handlerFqn"));
       if (values.put(metadata.entryId(), metadata) != null) {
@@ -1111,6 +1290,15 @@ public final class BusinessMaterialBuilder {
     return value.textValue();
   }
 
+  private static String methodConditionDisplay(JsonNode node) {
+    ObjectNode condition = object(node, "methodCondition");
+    String kind = text(condition, "kind");
+    List<String> methods = strings(condition.get("methods"));
+    if ("UNRESTRICTED".equals(kind) && methods.isEmpty()) return "UNRESTRICTED";
+    if ("EXPLICIT".equals(kind) && !methods.isEmpty()) return String.join(",", methods);
+    throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
+  }
+
   private static String nullableText(JsonNode node, String field) {
     JsonNode value = node.get(field);
     if (value == null || value.isNull()) {
@@ -1128,6 +1316,14 @@ public final class BusinessMaterialBuilder {
       throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
     }
     return value.intValue();
+  }
+
+  private static long longValue(JsonNode node, String field) {
+    JsonNode value = node.get(field);
+    if (value == null || !value.canConvertToLong() || value.longValue() < 0) {
+      throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
+    }
+    return value.longValue();
   }
 
   private static void strings(ArrayNode target, List<String> values) {
@@ -1182,7 +1378,8 @@ public final class BusinessMaterialBuilder {
       List<EntryDisposition> entries,
       Map<String, Capsule> capsuleByEntry,
       Map<String, EntryMetadata> entryMetadata,
-      Map<String, List<SourceSpan>> sourceContextsByHandlerFqn) {}
+      Map<String, EntryContext> entryContextsByEntryId,
+      VerifiedSourceTextSet source) {}
 
   private record EntryDisposition(
       String entryId, String disposition, String flowSliceId, List<String> gapIds) {}
@@ -1195,11 +1392,6 @@ public final class BusinessMaterialBuilder {
     }
   }
 
-  private record MethodContext(MethodDeclaration method, SourceSpan span) {}
-
-  private record TypeContext(
-      String qualifiedType, Map<String, String> fieldTypes, List<MethodContext> methods) {}
-
   private record Atom(String role, String name, String value) {}
 
   private record Signal(String signalKind, String anchorKey) {}
@@ -1208,13 +1400,45 @@ public final class BusinessMaterialBuilder {
       String flowSliceId,
       String trigger,
       String modelEligibility,
+      EntryContext entryContext,
       List<SourceSpan> spans,
       List<Atom> atoms,
       List<String> proofIds,
       List<Signal> signals,
       List<String> gapReasons) {}
 
+  private record EntryContext(
+      String entryContextId,
+      String entryId,
+      String flowSliceId,
+      String entrySignature,
+      List<CallContext> calls,
+      List<ControlContext> controls,
+      List<ReturnContext> returns,
+      List<SourceLocatorV1> sourceLocators,
+      List<String> limitations) {}
+
+  private record CallContext(
+      String callerSignature,
+      String targetSignature,
+      List<String> argumentExpressions,
+      String resolution,
+      boolean boundary) {}
+
+  private record ControlContext(String ownerSignature, String condition) {}
+
+  private record ReturnContext(String terminalKind) {}
+
   private record MaterialCandidate(BusinessMaterial material, String reasonCode) {}
+
+  private record EntryMaterial(
+      EntryDisposition entry,
+      EntryMetadata metadata,
+      BusinessMaterial material,
+      String coverageDisposition,
+      String reasonCode) {}
+
+  private record GroupedMaterial(BusinessMaterial material, List<EntryMaterial> members) {}
 
   private static final class SourceRefAllocator {
     private final Map<String, SourceReference> byLocation = new LinkedHashMap<>();
@@ -1274,8 +1498,7 @@ public final class BusinessMaterialBuilder {
 
     private SourceReference reference(String file, int startLine, String snippet) {
       int endLine = startLine + lineCount(snippet) - 1;
-      String key =
-          file + "\u0000" + startLine + "\u0000" + endLine + "\u0000" + snippet;
+      String key = file + "\u0000" + startLine + "\u0000" + endLine + "\u0000" + snippet;
       return byLocation.computeIfAbsent(
           key,
           ignored ->

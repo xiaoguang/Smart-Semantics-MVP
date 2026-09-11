@@ -2,22 +2,19 @@ package org.sourceanalysis.app.runtime;
 
 import java.util.Objects;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
-import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.document.BusinessReportPublisher;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplainer;
 import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
-import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
 import org.sourceanalysis.app.analysis.knowledge.ProcessExplainer;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 
 /**
- * Executes the business-first portion of one analysis from either an already-persisted Flow
- * publication or matched source-inventory and entry-discovery publications.
+ * Executes the business-first portion of one analysis from an already-persisted Flow publication.
  *
  * <p>Referenced publications are reopened by {@link BusinessMaterialBuilder}; this executor
  * therefore neither accepts a source path nor rebuilds technical graphs, Facts, Proofs, or Flows.
@@ -60,34 +57,11 @@ public final class PersistedBusinessRunExecutor {
             configuration.reportProfile());
   }
 
-  /**
-   * Produces the same business checkpoints from matched persisted source and discovered entries.
-   */
-  public BusinessAnalysisWorkflowResult execute(
-      VerifiedSourceInventoryReference sourceInventory,
-      ApplicationDiscoveryReference applicationDiscovery) {
-    Objects.requireNonNull(sourceInventory, "verified source inventory");
-    Objects.requireNonNull(applicationDiscovery, "application discovery");
-    return workflow()
-        .run(
-            new BuildBusinessMaterialsRequest(
-                sourceInventory, applicationDiscovery, configuration.materialProfile()),
-            configuration.activityProfile(),
-            configuration.maxMaterialsToStart(),
-            configuration.processProfile(),
-            configuration.reportProfile());
-  }
-
-  /** Builds and saves model-readable materials without creating any Provider request. */
-  public BusinessMaterialBuildResult buildMaterials(
-      VerifiedSourceInventoryReference sourceInventory,
-      ApplicationDiscoveryReference applicationDiscovery) {
-    Objects.requireNonNull(sourceInventory, "verified source inventory");
-    Objects.requireNonNull(applicationDiscovery, "application discovery");
+  /** Builds saved model-reading material from the completed Step05 publication only. */
+  public BusinessMaterialBuildResult buildMaterials(BusinessFlowsReference businessFlows) {
+    Objects.requireNonNull(businessFlows, "business flows");
     return new BusinessMaterialBuilder(moduleArtifacts, analysisSteps, sourceReader)
-        .build(
-            new BuildBusinessMaterialsRequest(
-                sourceInventory, applicationDiscovery, configuration.materialProfile()));
+        .build(new BuildBusinessMaterialsRequest(businessFlows, configuration.materialProfile()));
   }
 
   private BusinessAnalysisWorkflow workflow() {

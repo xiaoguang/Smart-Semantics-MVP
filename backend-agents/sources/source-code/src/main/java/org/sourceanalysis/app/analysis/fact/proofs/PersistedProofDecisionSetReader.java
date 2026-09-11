@@ -13,7 +13,6 @@ import java.util.Objects;
 import java.util.Set;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateSet;
-import org.sourceanalysis.app.analysis.fact.candidates.FactRegistry;
 import org.sourceanalysis.app.analysis.fact.candidates.PersistedFactCandidateSetReader;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
@@ -132,8 +131,7 @@ public final class PersistedProofDecisionSetReader {
         throw broken();
       }
       FactCandidateSet persistedCandidates =
-          new PersistedFactCandidateSetReader(moduleArtifacts)
-              .reopen(candidatePublication, inputs, FactRegistry.standardJavaBoundary());
+          new PersistedFactCandidateSetReader(moduleArtifacts).reopen(candidatePublication, inputs);
       if (!persistedCandidates.equals(candidateSet)) throw broken();
       ArtifactReference candidatePayload = candidatePayload(candidatePublication);
       ReopenedModulePublication publication = moduleArtifacts.reopen(proofPublication);

@@ -59,6 +59,47 @@ class FlowCompilationTest {
         .containsExactly("FLOW_GRAPH_REFERENCE_BROKEN");
   }
 
+  @Test
+  void retainsRepeatedCallShapeWhenTheFrozenSourceEvidenceShowsSeparateOccurrences() {
+    FlowCompilation.CallContext first =
+        new FlowCompilation.CallContext(
+            "example.Controller#submit()",
+            "example.Service#save(java.lang.String)",
+            List.of("requestId"),
+            "EXACT",
+            false,
+            List.of(),
+            List.of(),
+            List.of("evidence:call-at-12"));
+    FlowCompilation.CallContext second =
+        new FlowCompilation.CallContext(
+            "example.Controller#submit()",
+            "example.Service#save(java.lang.String)",
+            List.of("requestId"),
+            "EXACT",
+            false,
+            List.of(),
+            List.of(),
+            List.of("evidence:call-at-23"));
+
+    FlowCompilation.EntryContext context =
+        new FlowCompilation.EntryContext(
+            "entry-context:two-source-occurrences",
+            "entry:submit",
+            null,
+            "HTTP POST /submit",
+            "example.Controller#submit()",
+            List.of(first, second),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of());
+
+    assertThat(context.calls()).containsExactly(first, second);
+  }
+
   private static FlowCompilation.FlowSlice flow(String flowId, String entryId) {
     return new FlowCompilation.FlowSlice(
         flowId,

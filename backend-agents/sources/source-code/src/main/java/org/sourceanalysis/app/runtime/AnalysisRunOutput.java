@@ -15,13 +15,18 @@ public record AnalysisRunOutput(
     ModulePublicationReference reportCheckpoint) {
 
   public AnalysisRunOutput {
-    require(businessMaterialCheckpoint, AnalysisStepKey.FLOW_INTERPRETATION, 10, "business-material-builder");
+    require(
+        businessMaterialCheckpoint,
+        AnalysisStepKey.FLOW_INTERPRETATION,
+        10,
+        "business-material-builder");
     boolean materialsOnly =
         activityCheckpoint == null && knowledgeCheckpoint == null && reportCheckpoint == null;
     if (!materialsOnly) {
       require(activityCheckpoint, AnalysisStepKey.FLOW_INTERPRETATION, 11, "activity-explainer");
       require(knowledgeCheckpoint, AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, "process-explainer");
-      require(reportCheckpoint, AnalysisStepKey.NINE_SECTION_DOCUMENT, 1, "business-report-publisher");
+      require(
+          reportCheckpoint, AnalysisStepKey.NINE_SECTION_DOCUMENT, 1, "business-report-publisher");
     }
     AnalysisRunId owner = runId(businessMaterialCheckpoint);
     if (!materialsOnly

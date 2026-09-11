@@ -50,7 +50,7 @@ public final class EvidenceCapsuleProjector {
       Comparator.comparing(
           value -> value.getBytes(StandardCharsets.UTF_8), EvidenceCapsuleProjector::compare);
   private static final String M1_TYPE = "BUSINESS_FLOWS_FLOW_COMPILATION";
-  private static final String M1_SCHEMA = "business-flows-flow-compilation-v3";
+  private static final String M1_SCHEMA = "business-flows-flow-compilation-v4";
   private static final Comparator<SourceLocatorV1> SOURCE_LOCATOR_ORDER =
       Comparator.comparing(SourceLocatorV1::path)
           .thenComparingLong(SourceLocatorV1::startByte)
@@ -296,6 +296,7 @@ public final class EvidenceCapsuleProjector {
             modelIneligibilityGapIds,
             new CapsuleProjection.FlowEntryView(
                 flow.entryId(), flow.trigger(), flow.rootNodeId(), root.evidenceNodeIds()),
+            flow.entryContext(),
             factViews,
             gapViews,
             outcomeViews,
@@ -379,7 +380,9 @@ public final class EvidenceCapsuleProjector {
       String spanId = flowRootedSpanId(flowSliceId, evidenceNodeId);
       SpanBuilder builder =
           selectedSpans.computeIfAbsent(
-              spanId, ignored -> new SpanBuilder(spanId, flowSliceId, evidence.sourceExcerpt()));
+              spanId,
+              ignored ->
+                  new SpanBuilder(spanId, flowSliceId, evidenceNodeId, evidence.sourceExcerpt()));
       builder.requireOwningFlow(flowSliceId);
       if (atomId != null) builder.supportedAtomIds.add(atomId);
       if (outcomePathId != null) builder.supportedOutcomePathIds.add(outcomePathId);
@@ -608,6 +611,7 @@ public final class EvidenceCapsuleProjector {
   private List<PersistedFlow> parseFlows(JsonNode envelope) {
     requireHeader(envelope, M1_TYPE, M1_SCHEMA);
     JsonNode payload = object(envelope, "payload");
+    Map<String, FlowCompilation.EntryContext> contexts = parseEntryContexts(payload);
     List<PersistedFlow> flows = new ArrayList<>();
     for (JsonNode value : array(payload, "flowSlices")) {
       List<PersistedOutcome> outcomes = new ArrayList<>();
@@ -616,21 +620,85 @@ public final class EvidenceCapsuleProjector {
       for (JsonNode signal : array(value, "processJoinSignals")) {
         processJoinSignals.add(parseProcessJoinSignal(signal));
       }
+      String entryId = id(value, "entryId");
+      String flowSliceId = id(value, "flowSliceId");
+      FlowCompilation.EntryContext entryContext = contexts.get(entryId);
+      if (entryContext == null || !flowSliceId.equals(entryContext.flowSliceId())) {
+        throw failure("FLOW_CONTEXT_REFERENCE_BROKEN");
+      }
       flows.add(
           new PersistedFlow(
-              id(value, "flowSliceId"),
-              id(value, "entryId"),
+              flowSliceId,
+              entryId,
               text(value, "trigger"),
               id(value, "rootNodeId"),
               ids(value, "factIds"),
               ids(value, "atomIds"),
               ordered(outcomes, PersistedOutcome::outcomePathId),
               ids(value, "gapIds"),
+              entryContext,
               ordered(
                   processJoinSignals, FlowCompilation.ProcessJoinSignalV1::processJoinSignalId)));
     }
     List<PersistedFlow> ordered = ordered(flows, PersistedFlow::flowSliceId);
     return ordered;
+  }
+
+  private static Map<String, FlowCompilation.EntryContext> parseEntryContexts(JsonNode payload) {
+    Map<String, FlowCompilation.EntryContext> values = new HashMap<>();
+    for (JsonNode value : array(payload, "entryContexts")) {
+      List<FlowCompilation.CallContext> calls = new ArrayList<>();
+      for (JsonNode call : array(value, "calls")) {
+        calls.add(
+            new FlowCompilation.CallContext(
+                text(call, "callerSignature"),
+                text(call, "targetSignature"),
+                textSequence(call, "argumentExpressions"),
+                text(call, "resolution"),
+                booleanValue(call, "boundary"),
+                ids(call, "factIds"),
+                ids(call, "proofIds"),
+                ids(call, "evidenceNodeIds")));
+      }
+      List<FlowCompilation.ControlContext> controls = new ArrayList<>();
+      for (JsonNode control : array(value, "controls")) {
+        controls.add(
+            new FlowCompilation.ControlContext(
+                id(control, "controlNodeId"),
+                text(control, "ownerSignature"),
+                text(control, "condition"),
+                ids(control, "evidenceNodeIds")));
+      }
+      List<FlowCompilation.ReturnContext> returns = new ArrayList<>();
+      for (JsonNode terminal : array(value, "returns")) {
+        returns.add(
+            new FlowCompilation.ReturnContext(
+                id(terminal, "terminalNodeId"),
+                text(terminal, "terminalKind"),
+                ids(terminal, "evidenceNodeIds")));
+      }
+      JsonNode flowSlice = value.get("flowSliceId");
+      String flowSliceId =
+          flowSlice == null || flowSlice.isNull() ? null : id(value, "flowSliceId");
+      FlowCompilation.EntryContext context =
+          new FlowCompilation.EntryContext(
+              id(value, "entryContextId"),
+              id(value, "entryId"),
+              flowSliceId,
+              text(value, "trigger"),
+              text(value, "entrySignature"),
+              calls,
+              controls,
+              returns,
+              sourceLocators(value, "sourceLocators"),
+              ids(value, "factIds"),
+              ids(value, "gapIds"),
+              opaqueTexts(value, "limitations"));
+      if (values.put(context.entryId(), context) != null) {
+        throw failure("FLOW_CONTEXT_REFERENCE_BROKEN");
+      }
+    }
+    return Map.copyOf(values);
   }
 
   private static PersistedOutcome parseOutcome(JsonNode value) {
@@ -1066,6 +1134,14 @@ public final class EvidenceCapsuleProjector {
     return value.textValue();
   }
 
+  private static boolean booleanValue(JsonNode source, String field) {
+    JsonNode value = source.get(field);
+    if (value == null || !value.isBoolean()) {
+      throw failure("FLOW_CONTEXT_REFERENCE_BROKEN");
+    }
+    return value.booleanValue();
+  }
+
   private static String id(JsonNode source, String field) {
     try {
       return ArtifactId.parse(text(source, field)).value();
@@ -1095,6 +1171,11 @@ public final class EvidenceCapsuleProjector {
       throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
     }
     return ordered;
+  }
+
+  /** Preserves argument ordinal and repeated values; this is not a set-shaped reference field. */
+  private static List<String> textSequence(JsonNode source, String field) {
+    return array(source, field).stream().map(EvidenceCapsuleProjector::text).toList();
   }
 
   private static String text(JsonNode value) {
@@ -1195,6 +1276,7 @@ public final class EvidenceCapsuleProjector {
       List<String> atomIds,
       List<PersistedOutcome> outcomes,
       List<String> gapIds,
+      FlowCompilation.EntryContext entryContext,
       List<FlowCompilation.ProcessJoinSignalV1> processJoinSignals) {}
 
   private record PersistedOutcome(
@@ -1243,14 +1325,17 @@ public final class EvidenceCapsuleProjector {
   private static final class SpanBuilder {
     private final String spanId;
     private final String flowSliceId;
+    private final String evidenceNodeId;
     private final SourceExcerptV1 sourceExcerpt;
     private final Set<String> supportedAtomIds = new HashSet<>();
     private final Set<String> supportedOutcomePathIds = new HashSet<>();
     private final Set<String> supportedProcessJoinSignalIds = new HashSet<>();
 
-    private SpanBuilder(String spanId, String flowSliceId, SourceExcerptV1 sourceExcerpt) {
+    private SpanBuilder(
+        String spanId, String flowSliceId, String evidenceNodeId, SourceExcerptV1 sourceExcerpt) {
       this.spanId = spanId;
       this.flowSliceId = flowSliceId;
+      this.evidenceNodeId = evidenceNodeId;
       this.sourceExcerpt = sourceExcerpt;
     }
 
@@ -1267,6 +1352,7 @@ public final class EvidenceCapsuleProjector {
     private CapsuleProjection.ModelEvidenceSpan materialize() {
       return new CapsuleProjection.ModelEvidenceSpan(
           spanId,
+          evidenceNodeId,
           sourceExcerpt,
           supportedAtomIds.stream().sorted(UTF8_ORDER).toList(),
           supportedOutcomePathIds.stream().sorted(UTF8_ORDER).toList(),

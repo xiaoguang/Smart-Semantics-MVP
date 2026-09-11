@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
@@ -27,7 +28,7 @@ class BusinessMaterialBuilderReplenishmentTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void createsOneBoundedReadablePacketForEachReplenishmentActivity() throws Exception {
+  void groupsRelatedReplenishmentEntriesIntoBoundedReadablePackets() throws Exception {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createSyntheticReplenishmentToSettlement(
             temporaryDirectory.resolve("replenishment-materials"))) {
@@ -40,12 +41,32 @@ class BusinessMaterialBuilderReplenishmentTest {
                   new BuildBusinessMaterialsRequest(
                       flows, new BusinessMaterialProfile(4, 24, 12_000)));
 
-      assertThat(result.materialSet().materials()).hasSize(7);
+      assertThat(result.materialSet().materials()).hasSize(2);
+      assertThat(result.materialSet().materials())
+          .allSatisfy(
+              material -> {
+                assertThat(material.entryIds()).hasSizeBetween(3, 4);
+                assertThat(material.entryIds()).doesNotHaveDuplicates();
+                assertThat(material.modelPacket().context())
+                    .contains("HTTP 入口")
+                    .contains("请仅依据本包片段和观察，解释其局部业务活动");
+                IntStream.rangeClosed(1, material.entryIds().size())
+                    .forEach(
+                        entryIndex ->
+                            assertThat(material.modelPacket().context())
+                                .contains("入口 E" + entryIndex + "："));
+              });
       assertThat(result.materialSet().entryCoverage())
           .allSatisfy(
               coverage -> {
                 assertThat(coverage.disposition()).isIn("ANALYZED_MATERIAL", "MATERIAL_WITH_GAPS");
                 assertThat(coverage.materialId()).isNotBlank();
+                BusinessMaterial material =
+                    result.materialSet().materials().stream()
+                        .filter(candidate -> candidate.materialId().equals(coverage.materialId()))
+                        .findFirst()
+                        .orElseThrow();
+                assertThat(material.entryIds()).contains(coverage.entryId());
               });
       Set<String> methodsInPackets =
           result.materialSet().materials().stream()

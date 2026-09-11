@@ -18,7 +18,6 @@ import java.util.Objects;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateSet;
-import org.sourceanalysis.app.analysis.fact.candidates.FactRegistry;
 import org.sourceanalysis.app.analysis.fact.candidates.PersistedFactCandidateSetReader;
 import org.sourceanalysis.app.analysis.fact.proofs.PersistedProofDecisionSetReader;
 import org.sourceanalysis.app.analysis.fact.proofs.ProofDecisionSet;
@@ -116,8 +115,7 @@ public final class FactLedgerPublicationSpecifier {
       requireSourcePayloadLineage(sourceStep, inputs);
 
       FactCandidateSet candidates =
-          new PersistedFactCandidateSetReader(moduleArtifacts)
-              .reopen(candidatePublication, inputs, FactRegistry.standardJavaFacts());
+          new PersistedFactCandidateSetReader(moduleArtifacts).reopen(candidatePublication, inputs);
       ProofDecisionSet decisions =
           new PersistedProofDecisionSetReader(moduleArtifacts)
               .reopen(proofPublication, inputs, candidatePublication, candidates);

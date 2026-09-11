@@ -105,6 +105,35 @@ class BusinessFlowsPublicationSpecifierTest {
               "flow-slices.json");
       assertThat(reopened.semanticPayloads()).hasSize(5);
       CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+      JsonNode publicFlows =
+          canonicalJson.parseCanonical(
+              reopened.semanticPayloads().stream()
+                  .filter(value -> "flow-slices.json".equals(value.descriptor().fileName()))
+                  .findFirst()
+                  .orElseThrow()
+                  .canonicalUtf8());
+      assertThat(publicFlows.path("entryContexts")).hasSize(2);
+      assertThat(publicFlows.path("entryContexts"))
+          .allSatisfy(
+              context -> {
+                assertThat(context.path("entryId").asText()).isNotBlank();
+                assertThat(context.path("entrySignature").asText()).isNotBlank();
+                assertThat(context.path("sourceLocators")).isNotEmpty();
+              });
+      assertThat(publicFlows.path("entryContexts"))
+          .anySatisfy(
+              context ->
+                  assertThat(context.path("calls"))
+                      .anySatisfy(
+                          call -> {
+                            assertThat(call.path("callerSignature").asText())
+                                .contains("OrderController");
+                            assertThat(call.path("targetSignature").asText())
+                                .contains("OrderService");
+                            assertThat(call.path("argumentExpressions"))
+                                .extracting(JsonNode::asText)
+                                .contains("java.lang.String");
+                          }));
       ReopenedAnalysisStepPublication reopenedFacts =
           fixture.stepArtifacts().reopen(facts.publication());
       VerifiedCanonicalPayload gapLedgerPayload =
@@ -236,7 +265,7 @@ class BusinessFlowsPublicationSpecifierTest {
       lines.forEach(
           capsule -> {
             assertThat(capsule.path("schemaVersion").asText())
-                .isEqualTo("business-flows-evidence-capsule-v5");
+                .isEqualTo("business-flows-evidence-capsule-v6");
             List<String> referencedSpanIds = strings(capsule.path("modelEvidenceSpanIds"));
             List<String> embeddedSpanIds = strings(capsule.path("modelEvidenceSpans"), "spanId");
             List<String> referencedObligationIds = strings(capsule.path("projectionObligationIds"));
@@ -299,7 +328,7 @@ class BusinessFlowsPublicationSpecifierTest {
           canonicalJson.parseCanonical(
               fixture.moduleArtifacts().reopen(flowCompilation).payloads().get(0).canonicalUtf8());
       assertThat(m1Envelope.path("schemaVersion").asText())
-          .isEqualTo("business-flows-flow-compilation-v3");
+          .isEqualTo("business-flows-flow-compilation-v4");
       JsonNode m1Payload = m1Envelope.path("payload");
       assertThat(m1Payload.isObject()).isTrue();
       Map<String, JsonNode> m1Flows = jsonNodesById(m1Payload.path("flowSlices"), "flowSliceId");
@@ -357,7 +386,7 @@ class BusinessFlowsPublicationSpecifierTest {
       JsonNode m2Envelope =
           canonicalJson.parseCanonical(m2Reopened.payloads().get(0).canonicalUtf8());
       assertThat(m2Envelope.path("schemaVersion").asText())
-          .isEqualTo("business-flows-capsule-projection-v7");
+          .isEqualTo("business-flows-capsule-projection-v8");
       JsonNode m2Payload = m2Envelope.path("payload");
       Map<String, JsonNode> m2Capsules = jsonNodesById(m2Payload.path("capsules"), "flowSliceId");
       assertThat(m2Capsules).hasSize(2);
@@ -391,11 +420,11 @@ class BusinessFlowsPublicationSpecifierTest {
       assertThat(reopened.semanticPayloads())
           .filteredOn(payload -> payload.descriptor().fileName().equals("flow-slices.json"))
           .extracting(payload -> payload.descriptor().schemaVersion())
-          .containsExactly("business-flows-flow-slices-v3");
+          .containsExactly("business-flows-flow-slices-v4");
       assertThat(reopened.semanticPayloads())
           .filteredOn(payload -> payload.descriptor().fileName().equals("evidence-capsules.jsonl"))
           .extracting(payload -> payload.descriptor().schemaVersion())
-          .containsExactly("business-flows-evidence-capsule-v5");
+          .containsExactly("business-flows-evidence-capsule-v6");
       assertThat(reopened.receipt().controls())
           .isEqualTo(
               fixture
@@ -418,7 +447,7 @@ class BusinessFlowsPublicationSpecifierTest {
                   .orElseThrow()
                   .canonicalUtf8());
       assertThat(publicFlowDocument.path("schemaVersion").asText())
-          .isEqualTo("business-flows-flow-slices-v3");
+          .isEqualTo("business-flows-flow-slices-v4");
       Map<String, JsonNode> publicFlows =
           jsonNodesById(publicFlowDocument.path("flowSlices"), "flowSliceId");
       assertThat(publicFlows).hasSize(2);
@@ -455,7 +484,7 @@ class BusinessFlowsPublicationSpecifierTest {
         JsonNode m2Capsule = m2Capsules.get(flowSliceId);
         assertThat(m2Capsule).isNotNull();
         assertThat(publicCapsule.path("schemaVersion").asText())
-            .isEqualTo("business-flows-evidence-capsule-v5");
+            .isEqualTo("business-flows-evidence-capsule-v6");
         assertThat(publicCapsule.path("modelEligibility").asText())
             .isEqualTo(m2Capsule.path("modelEligibility").asText());
         if ("ELIGIBLE".equals(publicCapsule.path("modelEligibility").asText())) {

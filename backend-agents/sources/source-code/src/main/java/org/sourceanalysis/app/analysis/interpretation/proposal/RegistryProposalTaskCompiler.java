@@ -42,7 +42,7 @@ public final class RegistryProposalTaskCompiler {
 
   private static final String FLOW_SLICES_FILE = "flow-slices.json";
   private static final String FLOW_SLICES_TYPE = "BUSINESS_FLOWS_FLOW_SLICES";
-  private static final String FLOW_SLICES_SCHEMA = "business-flows-flow-slices-v3";
+  private static final String FLOW_SLICES_SCHEMA = "business-flows-flow-slices-v4";
   private static final String COVERAGE_FILE = "flow-coverage.json";
   private static final String COVERAGE_TYPE = "BUSINESS_FLOWS_FLOW_COVERAGE";
   private static final String COVERAGE_SCHEMA = "business-flows-flow-coverage-v1";
@@ -51,7 +51,7 @@ public final class RegistryProposalTaskCompiler {
   private static final String ENTRY_SCHEMA = "business-flows-entry-disposition-v1";
   private static final String CAPSULE_FILE = "evidence-capsules.jsonl";
   private static final String CAPSULE_TYPE = "BUSINESS_FLOWS_EVIDENCE_CAPSULE";
-  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v5";
+  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v6";
   private static final String GAP_FILE = "flow-gaps.jsonl";
   private static final String GAP_TYPE = "BUSINESS_FLOWS_FLOW_GAP";
   private static final String GAP_SCHEMA = "business-flows-flow-gap-v2";

@@ -62,11 +62,6 @@ public final class SourceAnalysisApplication {
   /** Creates a thin CLI adapter over the same configured Agent. */
   public SourceAnalysisCli cli(PrintWriter output, PrintWriter errors) {
     return new SourceAnalysisCli(
-        agent,
-        requestTemplate::create,
-        localSourceCapture,
-        localCaptureTemplate,
-        output,
-        errors);
+        agent, requestTemplate::create, localSourceCapture, localCaptureTemplate, output, errors);
   }
 }

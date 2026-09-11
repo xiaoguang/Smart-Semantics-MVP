@@ -11,10 +11,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.adapter.provider.CodexSubscriptionProfile;
 import org.sourceanalysis.app.adapter.provider.CodexSubscriptionStructuredProvider;
+import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
+import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
@@ -33,7 +36,8 @@ import org.sourceanalysis.app.artifact.ModuleReceiptId;
 import org.sourceanalysis.app.artifact.Sha256Digest;
 
 /**
- * Explicit, one-packet live quality check for a material produced by {@code BusinessMaterialBuilder}.
+ * Explicit, one-packet live quality check for a named material produced by {@code
+ * BusinessMaterialBuilder}.
  *
  * <p>Surefire does not select {@code *IT}; callers must explicitly opt in and name the persisted
  * material JSONL file. The model receives only {@link ModelActivityPacket}, never its source
@@ -45,49 +49,95 @@ class LiveLunaAutomaticMaterialIT {
   private static final String ZERO = "0".repeat(64);
 
   @Test
-  void explainsOneInspectedAutomaticDepotHeadPacketThroughRealLunaHigh() throws Exception {
+  void explainsOneNamedAutomaticPacketThroughRealLunaHigh() throws Exception {
     requireExact("sourceanalysis.liveLuna", "true");
-    requireExact("sourceanalysis.liveLunaSample", "automatic-depothead");
+    String sample = requiredSample();
     Path materialsFile = requiredFile("sourceanalysis.liveLunaMaterials");
     Path outputDirectory = requiredDirectory("sourceanalysis.liveLunaOutput");
     assertThat(outputDirectory.normalize().toString())
         .as("diagnostics remain in the ignored workspace")
         .contains("/.workspace/");
 
-    BusinessMaterial material = automaticDepotHeadMaterial(materialsFile);
+    BusinessMaterial material = automaticMaterial(materialsFile, sample);
     BusinessMaterialBuildResult materials =
         new BusinessMaterialBuildResult(
             new BusinessMaterialSet(
-                "business-material-set:live-automatic-depothead",
+                "business-material-set:live-automatic-" + sample,
                 List.of(material),
-                List.of(
-                    new BusinessMaterialEntryCoverage(
-                        material.entryIds().get(0),
-                        "MATERIAL_WITH_GAPS",
-                        material.materialId(),
-                        "ENTRY_SOURCE_FALLBACK"))),
+                material.entryIds().stream()
+                    .map(
+                        entryId ->
+                            new BusinessMaterialEntryCoverage(
+                                entryId,
+                                material.hasSubstantiveLimitation()
+                                    ? "MATERIAL_WITH_GAPS"
+                                    : "ANALYZED_MATERIAL",
+                                material.materialId(),
+                                material.hasSubstantiveLimitation()
+                                    ? "ENTRY_SOURCE_FALLBACK"
+                                    : null))
+                    .toList()),
             placeholderCheckpoint());
 
     ActivityExplanationResult explanation =
         new ActivityExplainer(
-                new CodexSubscriptionStructuredProvider(
-                    new CodexSubscriptionProfile(
-                        Path.of(EXECUTABLE), "gpt-5.6-luna", "high", Duration.ofMinutes(3))))
+                recordingProvider(
+                    outputDirectory,
+                    new CodexSubscriptionStructuredProvider(
+                        new CodexSubscriptionProfile(
+                            Path.of(EXECUTABLE),
+                            "gpt-5.6-luna",
+                            "high",
+                            Duration.ofMinutes(3)))))
             .explain(
                 new ExplainActivitiesRequest(
                     materials, new ActivityExplanationProfile(20_000, 12_000, 2, 24, 1_000)));
 
-    assertThat(explanation.reviewedActivities()).hasSize(1);
+    assertThat(explanation.reviewedActivities()).isNotEmpty();
     assertThat(explanation.coverage())
-        .allSatisfy(value -> assertThat(value.disposition()).isEqualTo("ANALYZED_WITH_GAPS"));
+        .allSatisfy(
+            value ->
+                assertThat(value.disposition())
+                    .isEqualTo(
+                        material.hasSubstantiveLimitation() ? "ANALYZED_WITH_GAPS" : "ANALYZED"));
     writeOutput(
-        outputDirectory.resolve("live-luna-automatic-depothead-activity.json"),
-        material,
-        explanation);
+        outputDirectory.resolve("live-luna-" + sample + "-activity.json"), material, explanation);
   }
 
-  private static BusinessMaterial automaticDepotHeadMaterial(Path materialsFile) throws IOException {
+  private static StructuredModelProvider recordingProvider(
+      Path outputDirectory, StructuredModelProvider delegate) {
+    AtomicInteger sequence = new AtomicInteger();
+    return request -> {
+      int call = sequence.incrementAndGet();
+      writeDiagnostic(outputDirectory, call, request.taskKind(), "input", request.untrustedInputJson());
+      StructuredModelResponse response = delegate.generate(request);
+      writeDiagnostic(outputDirectory, call, request.taskKind(), "response", response.responseJson());
+      return response;
+    };
+  }
+
+  private static void writeDiagnostic(
+      Path outputDirectory, int call, String taskKind, String suffix, ImmutableBytes bytes) {
+    try {
+      Files.write(
+          outputDirectory.resolve(String.format("%02d-%s-%s.json", call, taskKind, suffix)),
+          bytes.copyToByteArray());
+    } catch (IOException failure) {
+      throw new IllegalStateException("LIVE_LUNA_ACTIVITY_DIAGNOSTIC_WRITE_FAILED", failure);
+    }
+  }
+
+  static BusinessMaterial automaticMaterial(Path materialsFile, String sample) throws IOException {
     CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    String triggerMarker =
+        switch (sample) {
+          case "automatic-depothead" -> "HTTP POST /depotHead/batchSetStatus";
+          case "automatic-user-registration" -> "HTTP POST /user/registerUser";
+          case "automatic-user-login" -> "HTTP POST /user/login";
+          case "automatic-account-balance-group" -> "HTTP GET /account/getStatistics";
+          case "automatic-serial-number" -> "POST /serialNumber/getEnableSerialNumberList";
+          default -> throw new IllegalArgumentException("LIVE_LUNA_SAMPLE_UNSUPPORTED:" + sample);
+        };
     JsonNode selected;
     try (Stream<String> lines = Files.lines(materialsFile)) {
       selected =
@@ -101,13 +151,16 @@ class LiveLunaAutomaticMaterialIT {
               .filter(record -> "BUSINESS_MATERIAL".equals(record.path("recordType").asText()))
               .filter(
                   record ->
-                      record.path("modelPacket").path("technicalObservations").toString()
-                          .contains("DepotHeadController#batchSetStatus"))
+                      record.path("modelPacket").path("context").asText().contains(triggerMarker))
               .findFirst()
-              .orElseThrow(() -> new IllegalArgumentException("automatic DepotHead material missing"));
+              .orElseThrow(
+                  () ->
+                      new IllegalArgumentException("LIVE_LUNA_SAMPLE_MATERIAL_MISSING:" + sample));
     }
     List<SourceReference> sourceRefs =
-        selected.path("sourceRefs").valueStream()
+        selected
+            .path("sourceRefs")
+            .valueStream()
             .map(
                 value ->
                     new SourceReference(
@@ -122,7 +175,9 @@ class LiveLunaAutomaticMaterialIT {
         new ModelActivityPacket(
             requiredText(packet, "context"),
             strings(packet, "technicalObservations"),
-            packet.path("allowlistedRefs").valueStream()
+            packet
+                .path("allowlistedRefs")
+                .valueStream()
                 .map(
                     value ->
                         new ModelActivityPacket.AllowlistedReference(
@@ -246,6 +301,18 @@ class LiveLunaAutomaticMaterialIT {
 
   private static void requireExact(String property, String expected) {
     assertThat(System.getProperty(property)).as(property).isEqualTo(expected);
+  }
+
+  private static String requiredSample() {
+    String sample = requiredText(System.getProperty("sourceanalysis.liveLunaSample"));
+    assertThat(sample)
+        .isIn(
+            "automatic-depothead",
+            "automatic-user-registration",
+            "automatic-user-login",
+            "automatic-account-balance-group",
+            "automatic-serial-number");
+    return sample;
   }
 
   private static String requiredText(JsonNode node, String field) {

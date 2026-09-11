@@ -77,8 +77,7 @@ public final class BusinessAnalysisWorkflow {
       ActivityExplanationProfile activityProfile,
       ProcessExplanationProfile processProfile,
       BusinessReportProfile reportProfile) {
-    return run(
-        materialRequest, activityProfile, Integer.MAX_VALUE, processProfile, reportProfile);
+    return run(materialRequest, activityProfile, Integer.MAX_VALUE, processProfile, reportProfile);
   }
 
   /** Keeps Flow/Capsule-preferred callers on the same one business workflow. */

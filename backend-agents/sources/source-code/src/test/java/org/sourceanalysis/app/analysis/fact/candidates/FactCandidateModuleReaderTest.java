@@ -65,6 +65,8 @@ class FactCandidateModuleReaderTest {
               "candidates");
 
       ModulePublicationReference reference = invokePublisher(store, destination, inputs, expected);
+      FactCandidateSet normalReopened = invokeNormalReader(store, reference, inputs);
+      assertThat(normalReopened).isEqualTo(expected);
       FactCandidateSet reopened = invokeReader(store, reference, inputs, registry);
       assertThat(reopened).isEqualTo(expected);
       assertThat(reopened.candidateSetId()).isEqualTo(expected.candidateSetId());
@@ -128,6 +130,41 @@ class FactCandidateModuleReaderTest {
     }
     try {
       Object result = reopen.invoke(constructor.newInstance(store), reference, inputs, registry);
+      if (!(result instanceof FactCandidateSet candidateSet)) {
+        throw new AssertionError("FACT_CANDIDATE_MODULE_READER_RETURN_TYPE_INVALID");
+      }
+      return candidateSet;
+    } catch (InvocationTargetException failure) {
+      Throwable cause = failure.getCause() == null ? failure : failure.getCause();
+      throw new AssertionError("FACT_CANDIDATE_MODULE_REOPEN_FAILED", cause);
+    }
+  }
+
+  private static FactCandidateSet invokeNormalReader(
+      CanonicalModuleArtifactStore store,
+      ModulePublicationReference reference,
+      FactCandidateInputs inputs)
+      throws Exception {
+    Class<?> readerType;
+    try {
+      readerType = Class.forName(READER_CLASS);
+    } catch (ClassNotFoundException missing) {
+      throw new AssertionError("FACT_CANDIDATE_MODULE_READER_NOT_IMPLEMENTED", missing);
+    }
+    Method reopen;
+    try {
+      reopen =
+          readerType.getMethod(
+              "reopen", ModulePublicationReference.class, FactCandidateInputs.class);
+    } catch (NoSuchMethodException missing) {
+      throw new AssertionError("FACT_CANDIDATE_NORMAL_REOPEN_SEAM_MISSING", missing);
+    }
+    try {
+      Object result =
+          reopen.invoke(
+              readerType.getConstructor(CanonicalModuleArtifactStore.class).newInstance(store),
+              reference,
+              inputs);
       if (!(result instanceof FactCandidateSet candidateSet)) {
         throw new AssertionError("FACT_CANDIDATE_MODULE_READER_RETURN_TYPE_INVALID");
       }

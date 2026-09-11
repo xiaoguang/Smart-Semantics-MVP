@@ -36,12 +36,13 @@ class PersistedBusinessRunExecutorTest {
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("persisted-business-run"))) {
       BusinessFlowsReference flows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+      ScriptedBusinessProvider provider = new ScriptedBusinessProvider();
       PersistedBusinessRunExecutor executor =
           new PersistedBusinessRunExecutor(
               fixture.moduleArtifacts(),
               fixture.stepArtifacts(),
               fixture.sourceReader(),
-              new ScriptedBusinessProvider(),
+              provider,
               new PersistedBusinessRunConfiguration(
                   new BusinessMaterialProfile(8, 24, 12_000),
                   new ActivityExplanationProfile(64_000, 16_000, 2, 32, 2_000),
@@ -55,7 +56,14 @@ class PersistedBusinessRunExecutorTest {
       assertThat(result.knowledge().checkpoint()).isNotNull();
       assertThat(result.report().checkpoint()).isNotNull();
       assertThat(result.report().documentMarkdown())
-          .contains("## 1. 文档说明", "## 4. 业务活动", "## 9. 待确认事项");
+          .contains(
+              "## 1. 文档说明",
+              "## 4. 业务活动",
+              "## 9. 待确认事项",
+              "审阅后的业务目的：根据入口提交的数据执行业务处理。",
+              "入口数据为空时不进入更新",
+              "只有通过入口校验的数据才传给更新边界",
+              "输入不合法时返回什么？");
       assertThat(
               result
                   .report()
@@ -64,72 +72,35 @@ class PersistedBusinessRunExecutorTest {
                   .filter(line -> line.startsWith("## "))
                   .count())
           .isEqualTo(9);
-    }
-  }
-
-  @Test
-  void turnsPersistedSourceAndDiscoveryIntoBusinessCheckpointsBeforeFlowPublicationExists() {
-    try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.createWithGuardedApprove(
-            temporaryDirectory.resolve("persisted-direct-entry-business-run"))) {
-      PersistedBusinessRunExecutor executor =
-          new PersistedBusinessRunExecutor(
-              fixture.moduleArtifacts(),
-              fixture.stepArtifacts(),
-              fixture.sourceReader(),
-              new ScriptedBusinessProvider(),
-              new PersistedBusinessRunConfiguration(
-                  new BusinessMaterialProfile(8, 24, 12_000),
-                  new ActivityExplanationProfile(64_000, 16_000, 2, 32, 2_000),
-                  new ProcessExplanationProfile(4, 8, 16_000, 12_000, 2, 16, 2_000, 0),
-                  new BusinessReportProfile(64_000, 16_000, 32, 2_000)));
-
-      BusinessAnalysisWorkflowResult result =
-          executor.execute(fixture.sourceInventory(), fixture.applicationDiscovery());
-
-      assertThat(result.materials().materialSet().materials())
-          .allSatisfy(
-              material -> {
-                assertThat(material.materialMode().name()).isEqualTo("ENTRY_SOURCE_FALLBACK");
-                assertThat(material.limitations()).contains("技术流程尚未完整编译：FLOW_NOT_AVAILABLE");
-              });
-      assertThat(result.activities().checkpoint()).isNotNull();
-      assertThat(result.knowledge().checkpoint()).isNotNull();
-      assertThat(
-              result
-                  .report()
-                  .documentMarkdown()
-                  .lines()
-                  .filter(line -> line.startsWith("## "))
-                  .count())
-          .isEqualTo(9);
-    }
-  }
-
-  @Test
-  void appliesTheConfiguredActivityLaunchLimitToThePersistedDirectEntryWorkflow()
-      throws Exception {
-    try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.createWithGuardedApprove(
-            temporaryDirectory.resolve("persisted-direct-entry-launch-limit"))) {
-      PersistedBusinessRunExecutor executor =
-          new PersistedBusinessRunExecutor(
-              fixture.moduleArtifacts(),
-              fixture.stepArtifacts(),
-              fixture.sourceReader(),
-              new ScriptedBusinessProvider(),
-              configurationWithActivityLaunchLimit(1));
-
-      BusinessAnalysisWorkflowResult result =
-          executor.execute(fixture.sourceInventory(), fixture.applicationDiscovery());
-
-      assertThat(result.activities().reviewedActivities()).hasSize(1);
-      assertThat(result.activities().coverage())
-          .filteredOn(value -> "NOT_ANALYZED".equals(value.disposition()))
-          .singleElement()
-          .satisfies(
-              value ->
-                  assertThat(value.reasonCode()).isEqualTo("NOT_ANALYZED_EXECUTION_CAPACITY"));
+      assertThat(provider.taskKinds())
+          .containsExactly(
+              "ACTIVITY_DRAFT",
+              "ACTIVITY_REVIEW",
+              "PROCESS_GROUP_DRAFT",
+              "PROCESS_GROUP_REVIEW",
+              "BUSINESS_REPORT_DRAFT",
+              "BUSINESS_REPORT_REVIEW");
+      assertThat(provider.activityReviewActualDraft()).isEqualTo(provider.activityDraft());
+      assertThat(provider.processReviewActualDraft()).isEqualTo(provider.processDraft());
+      assertThat(provider.processDraftInput().path("activities").get(0).path("conditions"))
+          .extracting(JsonNode::asText)
+          .containsExactly("入口数据为空时不进入更新");
+      assertThat(provider.processDraftInput().path("activities").get(0).path("businessRules"))
+          .extracting(JsonNode::asText)
+          .containsExactly("只有通过入口校验的数据才传给更新边界");
+      assertThat(provider.processDraftInput().path("activities").get(0).path("scopeLimitations"))
+          .extracting(JsonNode::asText)
+          .containsExactly("静态源码不证明某次更新成功");
+      assertThat(provider.reportReviewActualDraft()).isEqualTo(provider.reportDraft());
+      assertThat(provider.reportDraftInput().path("activities").get(0).path("conditions"))
+          .extracting(JsonNode::asText)
+          .containsExactly("入口数据为空时不进入更新");
+      assertThat(provider.reportDraftInput().path("activities").get(0).path("businessRules"))
+          .extracting(JsonNode::asText)
+          .containsExactly("只有通过入口校验的数据才传给更新边界");
+      assertThat(provider.reportDraftInput().path("activities").get(0).path("questions"))
+          .extracting(JsonNode::asText)
+          .containsExactly("输入不合法时返回什么？");
     }
   }
 
@@ -174,15 +145,51 @@ class PersistedBusinessRunExecutorTest {
         List.of("文档说明", "业务目标", "业务对象", "业务活动", "字段与维度", "对象关系", "指标口径", "示例问题", "待确认事项");
 
     private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    private final List<String> taskKinds = new java.util.ArrayList<>();
+    private JsonNode activityDraft;
+    private JsonNode activityReviewActualDraft;
+    private JsonNode processDraft;
+    private JsonNode processDraftInput;
+    private JsonNode processReviewActualDraft;
+    private JsonNode reportDraft;
+    private JsonNode reportDraftInput;
+    private JsonNode reportReviewActualDraft;
 
     @Override
     public StructuredModelResponse generate(StructuredModelRequest request) {
+      taskKinds.add(request.taskKind());
       JsonNode input = canonicalJson.parseCanonical(request.untrustedInputJson());
       JsonNode response =
           switch (request.taskKind()) {
-            case "ACTIVITY_DRAFT", "ACTIVITY_REVIEW" -> activity(input);
-            case "PROCESS_GROUP_DRAFT", "PROCESS_GROUP_REVIEW" -> process(input);
-            case "BUSINESS_REPORT_DRAFT", "BUSINESS_REPORT_REVIEW" -> report(input);
+            case "ACTIVITY_DRAFT" -> {
+              JsonNode draft = activity(input, false);
+              activityDraft = draft;
+              yield draft;
+            }
+            case "ACTIVITY_REVIEW" -> {
+              activityReviewActualDraft = input.path("actualDraft");
+              yield activity(input, true);
+            }
+            case "PROCESS_GROUP_DRAFT" -> {
+              processDraftInput = input;
+              JsonNode draft = process(input);
+              processDraft = draft;
+              yield draft;
+            }
+            case "PROCESS_GROUP_REVIEW" -> {
+              processReviewActualDraft = input.path("actualDraft");
+              yield process(input);
+            }
+            case "BUSINESS_REPORT_DRAFT" -> {
+              reportDraftInput = input;
+              JsonNode draft = report(input);
+              reportDraft = draft;
+              yield draft;
+            }
+            case "BUSINESS_REPORT_REVIEW" -> {
+              reportReviewActualDraft = input.path("actualDraft");
+              yield report(input);
+            }
             default ->
                 throw new IllegalArgumentException(
                     "unexpected scripted task " + request.taskKind());
@@ -192,27 +199,51 @@ class PersistedBusinessRunExecutorTest {
           new ModelRuntimeIdentityV1("scripted", "business-runtime", "none", "none"));
     }
 
-    private static JsonNode activity(JsonNode input) {
+    private static JsonNode activity(JsonNode input, boolean reviewed) {
       ObjectNode response = JsonNodeFactory.instance.objectNode();
-      ObjectNode activity = response.putArray("activities").addObject();
-      activity.put("activityLocalId", "activity-1");
+      List<String> entryKeys = new java.util.ArrayList<>();
+      input.path("entryKeys").forEach(value -> entryKeys.add(value.asText()));
+      int activityCount = Math.min(2, entryKeys.size());
+      ArrayNode activities = response.putArray("activities");
+      for (int index = 0; index < activityCount; index++) {
+        int start = index * entryKeys.size() / activityCount;
+        int end = (index + 1) * entryKeys.size() / activityCount;
+        addActivity(
+            activities.addObject(),
+            "activity-" + (index + 1),
+            entryKeys.subList(start, end),
+            input,
+            reviewed);
+      }
+      return response;
+    }
+
+    private static void addActivity(
+        ObjectNode activity,
+        String localId,
+        List<String> entryKeys,
+        JsonNode input,
+        boolean reviewed) {
+      activity.put("activityLocalId", localId);
+      ArrayNode activityEntryKeys = activity.putArray("entryKeys");
+      entryKeys.forEach(activityEntryKeys::add);
       activity.put("name", "处理业务请求");
-      activity.put("businessPurpose", "根据入口提交的数据执行业务处理。");
+      activity.put(
+          "businessPurpose", reviewed ? "根据入口提交的数据执行业务处理。" : "草稿业务目的。");
       activity.putArray("participants");
       activity.putArray("businessObjects").add("业务记录");
       activity.putArray("triggerOrInput").add("入口提交的数据");
-      activity.putArray("conditions");
+      activity.putArray("conditions").add("入口数据为空时不进入更新");
       activity.putArray("activitySteps").add("校验输入").add("更新业务记录");
       activity.putArray("codeDefinedResults").add("系统调用可见的数据更新边界");
-      activity.putArray("businessRules");
+      activity.putArray("businessRules").add("只有通过入口校验的数据才传给更新边界");
       activity.putArray("formulasOrMetrics");
       activity.putArray("terms").add("业务记录");
       activity.put("certainty", "DIRECT_CODE_BEHAVIOR");
       ArrayNode refs = activity.putArray("sourceRefs");
       input.path("allowlistedRefs").forEach(ref -> refs.add(ref.path("ref").asText()));
-      activity.putArray("questions");
+      activity.putArray("questions").add("输入不合法时返回什么？");
       activity.putArray("scopeLimitations").add("静态源码不证明某次更新成功");
-      return response;
     }
 
     private static JsonNode process(JsonNode input) {
@@ -257,7 +288,17 @@ class PersistedBusinessRunExecutorTest {
         section.put("title", SECTION_TITLES.get(index));
         ObjectNode paragraph = section.putArray("paragraphs").addObject();
         paragraph.put(
-            "text", index == 3 ? "系统校验入口数据后处理业务记录，并调用可见的数据更新边界。" : "本章根据已审阅的业务活动说明冻结源码定义的系统行为。");
+            "text",
+            index == 3
+                ? "审阅后的业务目的："
+                    + input.path("activities").get(0).path("businessPurpose").asText()
+                    + " 条件："
+                    + input.path("activities").get(0).path("conditions").get(0).asText()
+                    + "。规则："
+                    + input.path("activities").get(0).path("businessRules").get(0).asText()
+                    + "。问题："
+                    + input.path("activities").get(0).path("questions").get(0).asText()
+                : "本章根据已审阅的业务活动说明冻结源码定义的系统行为。");
         ArrayNode refs = paragraph.putArray("refs");
         if (ref != null) {
           refs.add(ref);
@@ -265,6 +306,42 @@ class PersistedBusinessRunExecutorTest {
         section.putArray("items");
       }
       return response;
+    }
+
+    private List<String> taskKinds() {
+      return List.copyOf(taskKinds);
+    }
+
+    private JsonNode activityDraft() {
+      return activityDraft;
+    }
+
+    private JsonNode activityReviewActualDraft() {
+      return activityReviewActualDraft;
+    }
+
+    private JsonNode reportDraft() {
+      return reportDraft;
+    }
+
+    private JsonNode reportDraftInput() {
+      return reportDraftInput;
+    }
+
+    private JsonNode reportReviewActualDraft() {
+      return reportReviewActualDraft;
+    }
+
+    private JsonNode processDraft() {
+      return processDraft;
+    }
+
+    private JsonNode processDraftInput() {
+      return processDraftInput;
+    }
+
+    private JsonNode processReviewActualDraft() {
+      return processReviewActualDraft;
     }
   }
 }

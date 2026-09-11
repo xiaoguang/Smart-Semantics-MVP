@@ -313,7 +313,7 @@ class SpringHttpEntryDiscovererTest {
   }
 
   @Test
-  void recordsARequestMappingWithoutAnExplicitHttpMethodAsAnExplicitGap() {
+  void discoversARequestMappingWithoutAnExplicitHttpMethodAsOneUnrestrictedEntry() {
     VerifiedSourceInventoryReference frozenSource = frozenSource();
     VerifiedSourceTextDocument controller =
         text(
@@ -337,18 +337,111 @@ class SpringHttpEntryDiscovererTest {
         new SpringHttpEntryDiscoverer(sourceHandle)
             .discoverEntries(profile(controller), frozenSource);
 
-    assertThat(discovery.entries()).isEmpty();
+    assertThat(discovery.entries())
+        .singleElement()
+        .satisfies(
+            entry -> {
+              assertThat(entry.method()).isEqualTo("UNRESTRICTED");
+              assertThat(entry.methodCondition().kind())
+                  .isEqualTo(HttpMethodCondition.Kind.UNRESTRICTED);
+              assertThat(entry.methodCondition().methods()).isEmpty();
+              assertThat(entry.route()).isEqualTo("/depotHead/batchSetStatus");
+              assertThat(entry.handlerFqn())
+                  .isEqualTo("com.example.DepotHeadController#batchSetStatus");
+            });
     assertThat(discovery.sites())
         .singleElement()
         .satisfies(
             site -> {
-              assertThat(site.disposition()).isEqualTo(SignalDisposition.UNSUPPORTED);
-              assertThat(site.reasonCode()).isEqualTo("UNSPECIFIED_HTTP_METHOD");
-              assertThat(site.gapId()).isNotNull();
-              assertThat(site.primaryExcerpt().rawUtf8().copyToByteArray())
-                  .isEqualTo(
-                      "@RequestMapping(\"/batchSetStatus\")".getBytes(StandardCharsets.UTF_8));
+              assertThat(site.disposition()).isEqualTo(SignalDisposition.SUPPORTED);
+              assertThat(site.reasonCode()).isNull();
+              assertThat(site.gapId()).isNull();
             });
+  }
+
+  @Test
+  void discoversARequestMappingWithAnEmptyHttpMethodArrayAsOneUnrestrictedEntry() {
+    VerifiedSourceInventoryReference frozenSource = frozenSource();
+    VerifiedSourceTextDocument controller =
+        text(
+            "src/main/java/com/example/DepotHeadController.java",
+            """
+            package com.example;
+
+            import org.springframework.web.bind.annotation.RequestMapping;
+
+            @RequestMapping("/depotHead")
+            public class DepotHeadController {
+              @RequestMapping(value = "/batchSetStatus", method = {})
+              public String batchSetStatus(String status, String ids) {
+                return "ok";
+              }
+            }
+            """);
+    VerifiedSourceTextReader sourceHandle = reference -> sourceTextSet(controller);
+
+    HttpEntryDiscovery discovery =
+        new SpringHttpEntryDiscoverer(sourceHandle)
+            .discoverEntries(profile(controller), frozenSource);
+
+    assertThat(discovery.entries())
+        .singleElement()
+        .satisfies(
+            entry -> {
+              assertThat(entry.method()).isEqualTo("UNRESTRICTED");
+              assertThat(entry.methodCondition().kind())
+                  .isEqualTo(HttpMethodCondition.Kind.UNRESTRICTED);
+              assertThat(entry.methodCondition().methods()).isEmpty();
+              assertThat(entry.route()).isEqualTo("/depotHead/batchSetStatus");
+            });
+    assertThat(discovery.sites())
+        .singleElement()
+        .satisfies(
+            site -> {
+              assertThat(site.disposition()).isEqualTo(SignalDisposition.SUPPORTED);
+              assertThat(site.reasonCode()).isNull();
+              assertThat(site.gapId()).isNull();
+            });
+  }
+
+  @Test
+  void combinesClassAndMethodHttpConditionsWithoutSplittingOneHandlerIntoMultipleEntries() {
+    VerifiedSourceInventoryReference frozenSource = frozenSource();
+    VerifiedSourceTextDocument controller =
+        text(
+            "src/main/java/com/example/DepotHeadController.java",
+            """
+            package com.example;
+
+            import org.springframework.web.bind.annotation.RequestMapping;
+            import org.springframework.web.bind.annotation.RequestMethod;
+
+            @RequestMapping(value = "/depotHead", method = RequestMethod.GET)
+            public class DepotHeadController {
+              @RequestMapping(value = "/batchSetStatus", method = RequestMethod.POST)
+              public String batchSetStatus(String status, String ids) {
+                return "ok";
+              }
+            }
+            """);
+    VerifiedSourceTextReader sourceHandle = reference -> sourceTextSet(controller);
+
+    HttpEntryDiscovery discovery =
+        new SpringHttpEntryDiscoverer(sourceHandle)
+            .discoverEntries(profile(controller), frozenSource);
+
+    assertThat(discovery.entries())
+        .singleElement()
+        .satisfies(
+            entry -> {
+              assertThat(entry.methodCondition().kind())
+                  .isEqualTo(HttpMethodCondition.Kind.EXPLICIT);
+              assertThat(entry.methodCondition().methods()).containsExactly("GET", "POST");
+              assertThat(entry.route()).isEqualTo("/depotHead/batchSetStatus");
+            });
+    assertThat(discovery.sites())
+        .singleElement()
+        .satisfies(site -> assertThat(site.gapId()).isNull());
   }
 
   @Test

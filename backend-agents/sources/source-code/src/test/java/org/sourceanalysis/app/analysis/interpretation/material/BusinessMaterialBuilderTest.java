@@ -38,8 +38,29 @@ class BusinessMaterialBuilderTest {
                   new BuildBusinessMaterialsRequest(
                       flows, new BusinessMaterialProfile(8, 24, 12_000)));
 
-      assertThat(result.materialSet().materials()).hasSize(2);
+      assertThat(result.materialSet().materials())
+          .singleElement()
+          .satisfies(
+              material -> {
+                assertThat(material.entryIds()).hasSize(2);
+                assertThat(material.modelPacket().context())
+                    .contains("HTTP POST /orders/cancel", "HTTP POST /orders/approve");
+              });
       assertThat(result.materialSet().entryCoverage()).hasSize(2);
+      assertThat(result.materialSet().entryCoverage())
+          .allSatisfy(
+              coverage -> {
+                BusinessMaterial material =
+                    result.materialSet().materials().stream()
+                        .filter(value -> coverage.materialId().equals(value.materialId()))
+                        .findFirst()
+                        .orElseThrow();
+                assertThat(coverage.disposition())
+                    .isEqualTo(
+                        material.hasSubstantiveLimitation()
+                            ? "MATERIAL_WITH_GAPS"
+                            : "ANALYZED_MATERIAL");
+              });
       assertThat(result.materialSet().materials())
           .allSatisfy(
               material -> {
@@ -94,7 +115,7 @@ class BusinessMaterialBuilderTest {
                           .parseCanonical(
                               ImmutableBytes.copyOf(line.getBytes(StandardCharsets.UTF_8))))
               .toList();
-      assertThat(lines).hasSize(4);
+      assertThat(lines).hasSize(3);
       List<JsonNode> materialRecords =
           lines.stream()
               .filter(line -> line.path("recordType").asText().equals("BUSINESS_MATERIAL"))
@@ -103,7 +124,7 @@ class BusinessMaterialBuilderTest {
           lines.stream()
               .filter(line -> line.path("recordType").asText().equals("ENTRY_COVERAGE"))
               .toList();
-      assertThat(materialRecords).hasSize(2);
+      assertThat(materialRecords).hasSize(1);
       assertThat(coverageRecords).hasSize(2);
       assertThat(materialRecords.get(0).path("sourceRefs").get(0).path("file").asText())
           .endsWith(".java");
@@ -184,6 +205,54 @@ class BusinessMaterialBuilderTest {
               value -> value.startsWith("源码调用：") && value.contains("approvalClient.record(status)"))
           .anyMatch(value -> value.startsWith("源码终止：") && value.contains("return"))
           .noneMatch(value -> value.contains("订单") || value.contains("审批"));
+    }
+  }
+
+  @Test
+  void keepsCallerArgumentsBoundaryAndSourceTogetherInOneModelPacket() throws Exception {
+    try (ProgramGraphsPublicFixture fixture =
+        ProgramGraphsPublicFixture.createWithGuardedApprove(
+            temporaryDirectory.resolve("connected-entry-context"))) {
+      BusinessFlowsReference flows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+
+      BusinessMaterial approve =
+          new BusinessMaterialBuilder(
+                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
+                  .build(
+                      new BuildBusinessMaterialsRequest(
+                          flows, new BusinessMaterialProfile(8, 24, 12_000)))
+                  .materialSet()
+                  .materials()
+                  .stream()
+                  .filter(
+                      material ->
+                          material.sourceRefs().stream()
+                              .anyMatch(
+                                  reference ->
+                                      reference.snippet().contains("orderService.approve")))
+                  .findFirst()
+                  .orElseThrow();
+
+      assertThat(approve.modelPacket().allowlistedRefs())
+          .extracting(ModelActivityPacket.AllowlistedReference::snippet)
+          .anySatisfy(snippet -> assertThat(snippet).contains("orderService.approve(status)"))
+          .anySatisfy(snippet -> assertThat(snippet).contains("approvalClient.record(status)"));
+      assertThat(approve.modelPacket().technicalObservations())
+          .anySatisfy(
+              observation ->
+                  assertThat(observation)
+                      .contains(
+                          "OrderController#approve", "OrderService#approve", "java.lang.String"))
+          .anySatisfy(
+              observation ->
+                  assertThat(observation)
+                      .contains(
+                          "OrderService#approve",
+                          "ApprovalClient#record",
+                          "java.lang.String",
+                          "边界"))
+          .anySatisfy(observation -> assertThat(observation).contains("status == null"))
+          .anySatisfy(observation -> assertThat(observation).contains("返回路径"));
     }
   }
 }

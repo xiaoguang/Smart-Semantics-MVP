@@ -154,11 +154,14 @@ final class PersistedFlowCompilationInputReader {
           graphMaterial.controlNodesById(),
           graphMaterial.controlEdgesById(),
           graphMaterial.controlTraversalsByEntry(),
+          graphMaterial.programNodesById(),
+          graphMaterial.callTargetEdgesById(),
           factMaterial.factsByEntry(),
           factMaterial.gapsByEntry(),
           factMaterial.proofsById(),
           graphMaterial.evidenceNodesById(),
           graphMaterial.boundariesByNodeId(),
+          graphMaterial.graphGaps(),
           upstreamArtifacts);
     } catch (FlowCompilationReferenceException failure) {
       throw failure;
@@ -268,7 +271,7 @@ final class PersistedFlowCompilationInputReader {
       requireJsonLineHeader(entry, "application-discovery-entry-point-v2");
       String entryId = id(entry, "entryId");
       if (!"HTTP".equals(text(entry, "protocol"))) throw broken();
-      String method = text(entry, "method");
+      String method = methodConditionDisplay(entry);
       String route = text(entry, "route");
       if (!route.startsWith("/")) throw broken();
       entries.add(new FlowEntry(entryId, "HTTP " + method + " " + route));
@@ -335,9 +338,12 @@ final class PersistedFlowCompilationInputReader {
         String nodeId = id(node, "nodeId");
         String kind = text(node, "kind");
         List<String> owners = ids(node, "owningEntryIds");
+        List<String> evidenceNodeIds = ids(node, "evidenceNodeIds");
         if (!entryIds(discovery.entries()).containsAll(owners)
             || programNodesById.put(
-                    nodeId, new ProgramNode(nodeId, kind, text(node, "canonicalValue"), owners))
+                    nodeId,
+                    new ProgramNode(
+                        nodeId, kind, text(node, "canonicalValue"), owners, evidenceNodeIds))
                 != null) {
           throw broken();
         }
@@ -347,7 +353,12 @@ final class PersistedFlowCompilationInputReader {
               || controlNodes.put(
                       nodeId,
                       new ControlNode(
-                          nodeId, kind, text(node, "canonicalValue"), normalizedCondition, owners))
+                          nodeId,
+                          kind,
+                          text(node, "canonicalValue"),
+                          normalizedCondition,
+                          owners,
+                          ids(node, "evidenceNodeIds")))
                   != null) {
             throw broken();
           }
@@ -374,7 +385,8 @@ final class PersistedFlowCompilationInputReader {
                         id(edge, "fromNodeId"),
                         id(edge, "toNodeId"),
                         text(edge, "ruleId"),
-                        text(edge, "resolution")))
+                        text(edge, "resolution"),
+                        ids(edge, "evidenceNodeIds")))
                 != null) {
           throw broken();
         }
@@ -422,8 +434,14 @@ final class PersistedFlowCompilationInputReader {
       throw broken();
     }
     Map<String, PersistedEvidenceNode> evidenceNodesById = evidenceNodes(evidence);
+    if (programNodesById.values().stream()
+            .anyMatch(node -> !evidenceNodesById.keySet().containsAll(node.evidenceNodeIds()))
+        || callTargetEdgesById.values().stream()
+            .anyMatch(edge -> !evidenceNodesById.keySet().containsAll(edge.evidenceNodeIds()))) {
+      throw broken();
+    }
     parseJson(payloads.get("graph-index.json"));
-    parseJsonLines(payloads.get("graph-gaps.jsonl"));
+    List<GraphGap> graphGaps = graphGaps(payloads.get("graph-gaps.jsonl"), discovery);
     if (discovery.entries().isEmpty()) {
       if (!controlTraversals.isEmpty()) {
         throw broken();
@@ -437,7 +455,8 @@ final class PersistedFlowCompilationInputReader {
           Set.copyOf(programEdgeIds),
           Map.copyOf(callTargetEdgesById),
           Map.copyOf(boundariesByNodeId),
-          Map.copyOf(evidenceNodesById));
+          Map.copyOf(evidenceNodesById),
+          graphGaps);
     }
     if (controlNodes.isEmpty()
         || controlEdges.isEmpty()
@@ -466,7 +485,43 @@ final class PersistedFlowCompilationInputReader {
         Set.copyOf(programEdgeIds),
         Map.copyOf(callTargetEdgesById),
         Map.copyOf(boundariesByNodeId),
-        Map.copyOf(evidenceNodesById));
+        Map.copyOf(evidenceNodesById),
+        graphGaps);
+  }
+
+  private List<GraphGap> graphGaps(VerifiedCanonicalPayload payload, DiscoveryMaterial discovery) {
+    List<GraphGap> values = new ArrayList<>();
+    for (JsonNode value : parseJsonLines(payload)) {
+      requireJsonLineHeader(value, "program-graphs-graph-gap-v1");
+      requireFields(
+          value,
+          Set.of(
+              "schemaVersion",
+              "gapId",
+              "graphKind",
+              "reasonCode",
+              "affectedEntryIds",
+              "candidateElementIds",
+              "sourceLocator"));
+      String graphKind = text(value, "graphKind");
+      if (!Set.of("CODE_STRUCTURE", "CALL", "CONTROL_FLOW", "DATA_FLOW").contains(graphKind)) {
+        throw broken();
+      }
+      List<String> affectedEntryIds = ids(value, "affectedEntryIds");
+      boolean neutralStructureGap =
+          "CODE_STRUCTURE".equals(graphKind) && affectedEntryIds.isEmpty();
+      if (!neutralStructureGap
+          && (affectedEntryIds.isEmpty()
+              || !entryIds(discovery.entries()).containsAll(affectedEntryIds))) {
+        throw broken();
+      }
+      JsonNode source = value.get("sourceLocator");
+      SourceLocatorV1 locator = source == null || source.isNull() ? null : locator(source);
+      values.add(
+          new GraphGap(
+              id(value, "gapId"), graphKind, text(value, "reasonCode"), affectedEntryIds, locator));
+    }
+    return values.stream().sorted(Comparator.comparing(GraphGap::gapId, UTF8_ORDER)).toList();
   }
 
   private static BoundaryInvocation boundaryInvocation(JsonNode node, List<String> owners) {
@@ -972,6 +1027,16 @@ final class PersistedFlowCompilationInputReader {
     return text(child);
   }
 
+  private static String methodConditionDisplay(JsonNode entry) {
+    JsonNode condition = entry.get("methodCondition");
+    if (condition == null || !condition.isObject()) throw broken();
+    String kind = text(condition, "kind");
+    List<String> methods = strings(condition, "methods");
+    if ("UNRESTRICTED".equals(kind) && methods.isEmpty()) return "UNRESTRICTED";
+    if ("EXPLICIT".equals(kind) && !methods.isEmpty()) return String.join(",", methods);
+    throw broken();
+  }
+
   private static String text(JsonNode value) {
     if (value == null || !value.isTextual() || value.textValue().isBlank()) throw broken();
     return value.textValue();
@@ -1113,11 +1178,14 @@ final class PersistedFlowCompilationInputReader {
       Map<String, ControlNode> controlNodesById,
       Map<String, ControlEdge> controlEdgesById,
       Map<String, ControlTraversal> controlTraversalsByEntry,
+      Map<String, ProgramNode> programNodesById,
+      Map<String, CallTargetEdge> callTargetEdgesById,
       Map<String, List<PersistedFact>> factsByEntry,
       Map<String, List<PersistedGap>> gapsByEntry,
       Map<String, PersistedProof> proofsById,
       Map<String, PersistedEvidenceNode> evidenceNodesById,
       Map<String, BoundaryInvocation> boundariesByNodeId,
+      List<GraphGap> graphGaps,
       List<ArtifactReference> upstreamArtifacts) {}
 
   record FlowEntry(String entryId, String trigger) {}
@@ -1127,7 +1195,8 @@ final class PersistedFlowCompilationInputReader {
       String kind,
       String canonicalValue,
       String normalizedCondition,
-      List<String> owners) {}
+      List<String> owners,
+      List<String> evidenceNodeIds) {}
 
   record ControlEdge(
       String edgeId,
@@ -1181,11 +1250,20 @@ final class PersistedFlowCompilationInputReader {
       String ruleVersion,
       List<String> inputProgramElementIds) {}
 
-  private record ProgramNode(
-      String nodeId, String kind, String canonicalValue, List<String> owners) {}
+  record ProgramNode(
+      String nodeId,
+      String kind,
+      String canonicalValue,
+      List<String> owners,
+      List<String> evidenceNodeIds) {}
 
-  private record CallTargetEdge(
-      String edgeId, String fromNodeId, String toNodeId, String ruleId, String resolution) {}
+  record CallTargetEdge(
+      String edgeId,
+      String fromNodeId,
+      String toNodeId,
+      String ruleId,
+      String resolution,
+      List<String> evidenceNodeIds) {}
 
   private record CanonicalMethod(String type, String method, String signature, boolean isValid) {
     private static CanonicalMethod invalid() {
@@ -1207,6 +1285,13 @@ final class PersistedFlowCompilationInputReader {
       SourceLocatorV1 sourceLocator,
       String ruleId) {}
 
+  record GraphGap(
+      String gapId,
+      String graphKind,
+      String reasonCode,
+      List<String> affectedEntryIds,
+      SourceLocatorV1 sourceLocator) {}
+
   private record DiscoveryMaterial(
       String snapshotId,
       String applicationProfileId,
@@ -1222,7 +1307,8 @@ final class PersistedFlowCompilationInputReader {
       Set<String> programEdgeIds,
       Map<String, CallTargetEdge> callTargetEdgesById,
       Map<String, BoundaryInvocation> boundariesByNodeId,
-      Map<String, PersistedEvidenceNode> evidenceNodesById) {}
+      Map<String, PersistedEvidenceNode> evidenceNodesById,
+      List<GraphGap> graphGaps) {}
 
   private record FactMaterial(
       Map<String, List<PersistedFact>> factsByEntry,

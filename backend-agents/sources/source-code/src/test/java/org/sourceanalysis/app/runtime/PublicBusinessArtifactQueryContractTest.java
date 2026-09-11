@@ -91,7 +91,8 @@ class PublicBusinessArtifactQueryContractTest {
 
   @Test
   void materialsOnlyRunExposesOnlyItsBusinessMaterialsWithoutCallingTheReader() throws Exception {
-    try (RunStoreHandle store = openStore(temporaryDirectory.resolve("materials-only-artifact-store"))) {
+    try (RunStoreHandle store =
+        openStore(temporaryDirectory.resolve("materials-only-artifact-store"))) {
       LocalRepositoryAnalysisAgent queuedAgent = new LocalRepositoryAnalysisAgent(store);
       AnalysisRunReference queued = queuedAgent.start(request());
       AnalysisRunOutput output =
@@ -105,8 +106,7 @@ class PublicBusinessArtifactQueryContractTest {
           (runId, savedOutput, key, maxBytes) -> {
             throw new AssertionError("reader must not receive an unavailable artifact");
           };
-      RepositoryAnalysisAgent agent =
-          new LocalRepositoryAnalysisAgent(store, null, null, reader);
+      RepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store, null, null, reader);
 
       assertThatThrownBy(
               () ->

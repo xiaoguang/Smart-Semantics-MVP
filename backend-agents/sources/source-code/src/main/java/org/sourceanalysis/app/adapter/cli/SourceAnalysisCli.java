@@ -6,9 +6,9 @@ import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.function.Function;
 import org.sourceanalysis.app.RepositoryAnalysisAgent;
-import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
+import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.capture.localgit.LocalGitCaptureRequestTemplate;
 import org.sourceanalysis.app.capture.localgit.LocalSourceCapture;
 import org.sourceanalysis.app.capture.localgit.SourceRegistrationReference;
@@ -101,7 +101,8 @@ public final class SourceAnalysisCli {
     @Parameters(
         index = "0",
         paramLabel = "operation",
-        description = "capture-local-git, start, plan-materials, execute-step, inspect, render, or artifact")
+        description =
+            "capture-local-git, start, plan-materials, execute-step, inspect, render, or artifact")
     private String operation;
 
     @Option(names = "--run", paramLabel = "RUN_ID")
@@ -167,7 +168,8 @@ public final class SourceAnalysisCli {
         throw new IllegalStateException("LOCAL_GIT_CAPTURE_NOT_CONFIGURED");
       }
       SourceRegistrationReference registration =
-          localSourceCapture.capture(localCaptureTemplate.create(Path.of(repositoryPath), commitId));
+          localSourceCapture.capture(
+              localCaptureTemplate.create(Path.of(repositoryPath), commitId));
       output.printf("sourceRegistrationId=%s%n", registration.sourceRegistrationId().value());
       return 0;
     }
@@ -231,8 +233,7 @@ public final class SourceAnalysisCli {
             new CommandLine(this), "artifact requires both --key and --max-bytes");
       }
       ArtifactView artifact =
-          agent.artifact(
-              new ArtifactQuery(requireRunId(), businessOutputArtifactKey, maxBytes));
+          agent.artifact(new ArtifactQuery(requireRunId(), businessOutputArtifactKey, maxBytes));
       output.print(artifact.contentUtf8());
       return 0;
     }

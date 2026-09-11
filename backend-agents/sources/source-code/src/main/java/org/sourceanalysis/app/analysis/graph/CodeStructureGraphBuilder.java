@@ -772,7 +772,7 @@ public final class CodeStructureGraphBuilder {
               document.fileId().value(),
               ruleId);
       DraftProgramNode candidate =
-          new DraftProgramNode(id, kind, canonicalValue, discovery.entryIds(), List.of(sourceRef));
+          new DraftProgramNode(id, kind, canonicalValue, List.of(), List.of(sourceRef));
       return retainNode(candidate);
     }
 
@@ -795,11 +795,7 @@ public final class CodeStructureGraphBuilder {
               declaredType);
       DraftProgramNode candidate =
           new DraftProgramNode(
-              id,
-              ProgramNodeKind.PARAMETER,
-              canonicalValue,
-              discovery.entryIds(),
-              List.of(sourceRef));
+              id, ProgramNodeKind.PARAMETER, canonicalValue, List.of(), List.of(sourceRef));
       return retainNode(candidate);
     }
 

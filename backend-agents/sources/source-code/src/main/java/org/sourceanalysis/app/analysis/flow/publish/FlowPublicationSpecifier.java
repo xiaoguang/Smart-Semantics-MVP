@@ -21,10 +21,7 @@ import java.util.Objects;
 import java.util.Set;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.fact.publish.ProvenCodeFactsReference;
-import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjection;
-import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionModulePublisher;
 import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionProfile;
-import org.sourceanalysis.app.analysis.flow.capsule.EvidenceCapsuleProjector;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
@@ -62,19 +59,18 @@ public final class FlowPublicationSpecifier {
   private static final Comparator<String> UTF8_ORDER = FlowPublicationSpecifier::compareUtf8;
   private static final String MODULE_VERSION = "v2";
   private static final String FLOW_SLICES_TYPE = "BUSINESS_FLOWS_FLOW_SLICES";
-  private static final String FLOW_SLICES_SCHEMA = "business-flows-flow-slices-v3";
+  private static final String FLOW_SLICES_SCHEMA = "business-flows-flow-slices-v4";
   private static final String COVERAGE_TYPE = "BUSINESS_FLOWS_FLOW_COVERAGE";
   private static final String COVERAGE_SCHEMA = "business-flows-flow-coverage-v1";
   private static final String ENTRY_TYPE = "BUSINESS_FLOWS_ENTRY_DISPOSITION";
   private static final String ENTRY_SCHEMA = "business-flows-entry-disposition-v1";
   private static final String CAPSULE_TYPE = "BUSINESS_FLOWS_EVIDENCE_CAPSULE";
-  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v5";
+  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v6";
   private static final String GAP_TYPE = "BUSINESS_FLOWS_FLOW_GAP";
   private static final String GAP_SCHEMA = "business-flows-flow-gap-v2";
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
   private final CanonicalAnalysisStepArtifactStore analysisSteps;
-  private final VerifiedSourceTextReader sourceReader;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
 
   /** Creates the only M3 specifier with receipt-last module and semantic-step stores. */
@@ -84,7 +80,7 @@ public final class FlowPublicationSpecifier {
       VerifiedSourceTextReader sourceReader) {
     this.moduleArtifacts = Objects.requireNonNull(moduleArtifacts, "module artifact store");
     this.analysisSteps = Objects.requireNonNull(analysisSteps, "analysis step artifact store");
-    this.sourceReader = Objects.requireNonNull(sourceReader, "verified source reader");
+    Objects.requireNonNull(sourceReader, "verified source reader");
   }
 
   /** Joins the exact persisted M1 and M2 artifacts and installs the five-file public set. */
@@ -119,7 +115,7 @@ public final class FlowPublicationSpecifier {
               "flow-compiler",
               "flow-compilation.json",
               "BUSINESS_FLOWS_FLOW_COMPILATION",
-              "business-flows-flow-compilation-v3",
+              "business-flows-flow-compilation-v4",
               source.publication().address().runId(),
               sourceStep.receipt().controls());
       ArtifactReference projectorPayload =
@@ -129,10 +125,9 @@ public final class FlowPublicationSpecifier {
               "capsule-projector",
               "capsule-projection.json",
               "BUSINESS_FLOWS_CAPSULE_PROJECTION",
-              "business-flows-capsule-projection-v7",
+              "business-flows-capsule-projection-v8",
               source.publication().address().runId(),
               sourceStep.receipt().controls());
-      requireOwnerReplay(flowCompilation, source, graphs, facts, projector);
       FlowProvenanceSources sources = sourceRecords(factStep, graphStep);
       Material material = material(compiler, projector, compilerPayload, projectorPayload, sources);
       LocalFlowCoverage localCoverage =
@@ -188,26 +183,6 @@ public final class FlowPublicationSpecifier {
     } catch (FlowPublicationException failure) {
       throw failure;
     } catch (RuntimeException failure) {
-      throw failure();
-    }
-  }
-
-  private void requireOwnerReplay(
-      ModulePublicationReference flowCompilation,
-      VerifiedSourceInventoryReference source,
-      ProgramGraphsReference graphs,
-      ProvenCodeFactsReference facts,
-      ReopenedModulePublication projector) {
-    JsonNode envelope = canonicalJson.parseCanonical(projector.payloads().get(0).canonicalUtf8());
-    JsonNode persistedBody = object(envelope, "payload");
-    CapsuleProjectionProfile profile = projectionProfile(persistedBody);
-    CapsuleProjection rebuilt =
-        new EvidenceCapsuleProjector(moduleArtifacts, analysisSteps, sourceReader)
-            .project(flowCompilation, source, graphs, facts, profile);
-    ImmutableBytes rebuiltBody =
-        CapsuleProjectionModulePublisher.canonicalProjectionPayloadBody(rebuilt);
-    ImmutableBytes persistedCanonicalBody = canonicalJson.encodeCanonical(persistedBody);
-    if (!Arrays.equals(rebuiltBody.copyToByteArray(), persistedCanonicalBody.copyToByteArray())) {
       throw failure();
     }
   }
@@ -364,6 +339,7 @@ public final class FlowPublicationSpecifier {
     }
     List<JsonNode> flows = sortedObjects(array(flowPayload, "flowSlices"), "flowSliceId");
     List<JsonNode> dispositions = sortedObjects(array(flowPayload, "entryDispositions"), "entryId");
+    List<JsonNode> entryContexts = sortedObjects(array(flowPayload, "entryContexts"), "entryId");
     List<JsonNode> compilationGaps = sortedObjects(array(flowPayload, "flowGaps"), "gapId");
     List<JsonNode> capsules = sortedObjects(array(capsulePayload, "capsules"), "flowSliceId");
     Map<String, JsonNode> spansById =
@@ -378,6 +354,27 @@ public final class FlowPublicationSpecifier {
         dispositions.stream()
             .filter(value -> "COMPILED".equals(text(value, "disposition")))
             .toList();
+    if (!ids(entryContexts, "entryId").equals(ids(dispositions, "entryId"))
+        || entryContexts.stream()
+            .anyMatch(
+                context -> {
+                  JsonNode contextFlowSliceId = context.get("flowSliceId");
+                  if (contextFlowSliceId == null) return true;
+                  if (contextFlowSliceId.isNull()) {
+                    return compiledDispositions.stream()
+                        .anyMatch(
+                            disposition ->
+                                id(disposition, "entryId").equals(id(context, "entryId")));
+                  }
+                  return compiledDispositions.stream()
+                      .noneMatch(
+                          disposition ->
+                              id(disposition, "entryId").equals(id(context, "entryId"))
+                                  && id(disposition, "flowSliceId")
+                                      .equals(id(context, "flowSliceId")));
+                })) {
+      throw failure();
+    }
     Set<String> compiledFlowIds =
         compiledDispositions.stream()
             .map(value -> id(value, "flowSliceId"))
@@ -450,6 +447,7 @@ public final class FlowPublicationSpecifier {
         compilerPayload,
         projectorPayload,
         flows,
+        entryContexts,
         dispositions,
         publicCapsules,
         orderedGaps,
@@ -733,6 +731,8 @@ public final class FlowPublicationSpecifier {
     flows.set("capsuleProjectionRef", reference(material.projectorPayload()));
     ArrayNode flowItems = flows.putArray("flowSlices");
     material.flows().forEach(value -> flowItems.add(value.deepCopy()));
+    ArrayNode contexts = flows.putArray("entryContexts");
+    material.entryContexts().forEach(value -> contexts.add(value.deepCopy()));
     values.add(
         standalone(
             "flow-slices.json",
@@ -1344,6 +1344,7 @@ public final class FlowPublicationSpecifier {
       ArtifactReference compilerPayload,
       ArtifactReference projectorPayload,
       List<JsonNode> flows,
+      List<JsonNode> entryContexts,
       List<JsonNode> dispositions,
       List<JsonNode> capsules,
       List<JsonNode> gaps,

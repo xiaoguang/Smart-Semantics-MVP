@@ -110,7 +110,8 @@ class LocalRepositoryAnalysisAgentExecutionTest {
 
       AnalysisRunReference finished =
           agent.executeStep(
-              new AnalysisStepExecutionRequest(queued.runId(), AnalysisStepKey.FLOW_INTERPRETATION));
+              new AnalysisStepExecutionRequest(
+                  queued.runId(), AnalysisStepKey.FLOW_INTERPRETATION));
 
       assertThat(finished.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.FINISHED);
       AnalysisRunOutput output = agent.inspect(queued.runId().value()).output();
@@ -157,8 +158,7 @@ class LocalRepositoryAnalysisAgentExecutionTest {
               (inventory, discovery) -> {
                 throw new AssertionError("materials-only execution must not start business models");
               };
-      return constructor.newInstance(
-          new Object[] {technical, materials, business});
+      return constructor.newInstance(new Object[] {technical, materials, business});
     } catch (ReflectiveOperationException missing) {
       fail("MATERIALS_ONLY_RUNTIME_NOT_IMPLEMENTED", missing);
       throw new AssertionError("unreachable");

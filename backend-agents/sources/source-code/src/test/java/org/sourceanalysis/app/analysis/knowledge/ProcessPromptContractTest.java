@@ -36,6 +36,18 @@ class ProcessPromptContractTest {
             instruction -> assertThat(instruction).contains("不是顺序或因果证明").contains("不得输出源码路径"));
     assertThat(provider.instructions().get(0)).contains("提出零个或多个完整过程").doesNotContain("返回完整修订");
     assertThat(provider.instructions().get(1)).contains("审阅完整过程").contains("返回完整修订 JSON");
+    assertThat(provider.instructions())
+        .allSatisfy(
+            instruction ->
+                assertThat(instruction)
+                    .contains(
+                        "processLocalId",
+                        "activityIds",
+                        "stages",
+                        "order",
+                        "activityId",
+                        "confirmationNotes")
+                    .contains("不确定两个活动是否属于同一过程时"));
     assertThat(provider.instructions().get(0)).isNotEqualTo(provider.instructions().get(1));
   }
 

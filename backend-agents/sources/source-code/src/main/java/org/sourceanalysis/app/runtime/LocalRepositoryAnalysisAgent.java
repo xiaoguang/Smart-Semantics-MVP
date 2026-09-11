@@ -72,8 +72,7 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
           request.targetStep() == AnalysisStepKey.FLOW_INTERPRETATION
               ? AnalysisRunOutput.from(coordinator.planMaterials(running.runId()))
               : AnalysisRunOutput.from(coordinator.execute(running.runId()));
-      RunStoreBootstrap.recordAnalysisRunOutput(
-          store, running.runId(), output);
+      RunStoreBootstrap.recordAnalysisRunOutput(store, running.runId(), output);
       return RunStoreBootstrap.transitionAnalysisRun(
           store,
           running.runId(),

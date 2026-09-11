@@ -198,7 +198,6 @@ class BusinessReportPublisherTest {
         null);
   }
 
-
   private static ReviewedActivity activity(
       String activityId,
       String entryId,

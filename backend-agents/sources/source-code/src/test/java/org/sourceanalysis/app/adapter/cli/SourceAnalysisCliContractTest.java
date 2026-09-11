@@ -7,8 +7,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintWriter;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
-import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.RepositoryAnalysisAgent;
@@ -32,8 +32,8 @@ import org.sourceanalysis.app.runtime.AnalysisStepExecutionRequest;
 import org.sourceanalysis.app.runtime.ArtifactQuery;
 import org.sourceanalysis.app.runtime.ArtifactView;
 import org.sourceanalysis.app.runtime.BusinessOutputArtifactKey;
-import org.sourceanalysis.app.runtime.RenderedDocumentReference;
 import org.sourceanalysis.app.runtime.ReaderCandidateRound;
+import org.sourceanalysis.app.runtime.RenderedDocumentReference;
 import org.sourceanalysis.app.runtime.RunInspection;
 
 /** Defines the thin Picocli observation adapter before a command implementation exists. */
@@ -100,13 +100,12 @@ class SourceAnalysisCliContractTest {
     assertThat(
             (Integer)
                 execute.invoke(
-                    cli,
-                    (Object)
-                        new String[] {"execute-step", "--run", agent.runId.value()}))
+                    cli, (Object) new String[] {"execute-step", "--run", agent.runId.value()}))
         .isZero();
 
     assertThat(agent.executeRequest)
-        .isEqualTo(new AnalysisStepExecutionRequest(agent.runId, AnalysisStepKey.NINE_SECTION_DOCUMENT));
+        .isEqualTo(
+            new AnalysisStepExecutionRequest(agent.runId, AnalysisStepKey.NINE_SECTION_DOCUMENT));
     assertThat(bytes.toString(StandardCharsets.UTF_8))
         .contains(agent.runId.value(), "FINISHED")
         .doesNotContain("/private/", "prompt", "model response");
@@ -126,12 +125,12 @@ class SourceAnalysisCliContractTest {
     assertThat(
             (Integer)
                 execute.invoke(
-                    cli,
-                    (Object) new String[] {"plan-materials", "--run", agent.runId.value()}))
+                    cli, (Object) new String[] {"plan-materials", "--run", agent.runId.value()}))
         .isZero();
 
     assertThat(agent.executeRequest)
-        .isEqualTo(new AnalysisStepExecutionRequest(agent.runId, AnalysisStepKey.FLOW_INTERPRETATION));
+        .isEqualTo(
+            new AnalysisStepExecutionRequest(agent.runId, AnalysisStepKey.FLOW_INTERPRETATION));
     assertThat(bytes.toString(StandardCharsets.UTF_8))
         .contains(agent.runId.value(), "FINISHED")
         .doesNotContain("/private/", "prompt", "model response");
@@ -150,7 +149,8 @@ class SourceAnalysisCliContractTest {
     Object captureTemplate =
         captureTemplateType
             .getConstructor(String.class, ArtifactReference.class, ArtifactReference.class)
-            .newInstance("https://example.invalid/customer/orders.git", capturePolicy, resourceBudget);
+            .newInstance(
+                "https://example.invalid/customer/orders.git", capturePolicy, resourceBudget);
     SourceRegistrationReference registration =
         new SourceRegistrationReference(
             artifactId("source-registration", '9'),
@@ -222,7 +222,9 @@ class SourceAnalysisCliContractTest {
                 execute.invoke(
                     cli,
                     (Object)
-                        new String[] {"start", "--source-registration", sourceRegistration.value()}))
+                        new String[] {
+                          "start", "--source-registration", sourceRegistration.value()
+                        }))
         .isZero();
 
     assertThat(agent.startedRequest).isEqualTo(request(sourceRegistration));
@@ -309,8 +311,7 @@ class SourceAnalysisCliContractTest {
 
   private static ArtifactReference reference(String prefix, char fill) {
     return new ArtifactReference(
-        artifactId(prefix, fill),
-        new Sha256Digest(String.valueOf(fill).repeat(64)));
+        artifactId(prefix, fill), new Sha256Digest(String.valueOf(fill).repeat(64)));
   }
 
   private static ArtifactId artifactId(String prefix, char fill) {

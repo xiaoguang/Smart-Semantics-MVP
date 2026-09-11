@@ -155,10 +155,10 @@ class FiniteKeyFlowTaskCompilerTest {
               .findFirst()
               .orElseThrow();
       assertThat(flowPayload.descriptor().schemaVersion())
-          .isEqualTo("business-flows-flow-slices-v3");
+          .isEqualTo("business-flows-flow-slices-v4");
       JsonNode flowDocument = canonicalJson.parseCanonical(flowPayload.canonicalUtf8());
       assertThat(flowDocument.path("schemaVersion").asText())
-          .isEqualTo("business-flows-flow-slices-v3");
+          .isEqualTo("business-flows-flow-slices-v4");
       Map<String, JsonNode> flows = jsonNodesById(flowDocument.path("flowSlices"), "flowSliceId");
       assertThat(flows).hasSize(2);
 
@@ -168,7 +168,7 @@ class FiniteKeyFlowTaskCompilerTest {
               .findFirst()
               .orElseThrow();
       assertThat(capsulePayload.descriptor().schemaVersion())
-          .isEqualTo("business-flows-evidence-capsule-v5");
+          .isEqualTo("business-flows-evidence-capsule-v6");
       Map<String, JsonNode> capsules =
           jsonNodesById(jsonLines(capsulePayload.canonicalUtf8()), "flowSliceId");
       assertThat(capsules).hasSize(2);
@@ -402,15 +402,15 @@ class FiniteKeyFlowTaskCompilerTest {
 
       var flowPayload = semanticPayload(publicStep, "flow-slices.json");
       assertThat(flowPayload.descriptor().schemaVersion())
-          .isEqualTo("business-flows-flow-slices-v3");
+          .isEqualTo("business-flows-flow-slices-v4");
       JsonNode flowDocument = canonicalJson.parseCanonical(flowPayload.canonicalUtf8());
       assertThat(flowDocument.path("schemaVersion").asText())
-          .isEqualTo("business-flows-flow-slices-v3");
+          .isEqualTo("business-flows-flow-slices-v4");
       assertEmptyArray(flowDocument.path("flowSlices"));
 
       var capsulePayload = semanticPayload(publicStep, "evidence-capsules.jsonl");
       assertThat(capsulePayload.descriptor().schemaVersion())
-          .isEqualTo("business-flows-evidence-capsule-v5");
+          .isEqualTo("business-flows-evidence-capsule-v6");
       assertThat(capsulePayload.canonicalUtf8().size()).isZero();
 
       List<JsonNode> dispositions =

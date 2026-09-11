@@ -9,7 +9,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -24,7 +23,6 @@ import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialB
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTaskCompilerTest;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
-import org.sourceanalysis.app.artifact.ImmutableBytes;
 
 /** Guards the product rule that a capacity miss is coverage, not a failed provider execution. */
 class ActivityExplanationBudgetTest {
@@ -42,7 +40,7 @@ class ActivityExplanationBudgetTest {
                   fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
               .build(
                   new BuildBusinessMaterialsRequest(
-                      flows, new BusinessMaterialProfile(8, 24, 12_000)));
+                      flows, new BusinessMaterialProfile(8, 24, 12_000, 1)));
       AtomicInteger providerCalls = new AtomicInteger();
       StructuredModelProvider provider =
           ignored -> {
@@ -105,7 +103,7 @@ class ActivityExplanationBudgetTest {
                   fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
               .build(
                   new BuildBusinessMaterialsRequest(
-                      flows, new BusinessMaterialProfile(8, 24, 12_000)));
+                      flows, new BusinessMaterialProfile(8, 24, 12_000, 1)));
       assertThat(materials.materialSet().materials()).hasSize(2);
       AtomicInteger providerCalls = new AtomicInteger();
       StructuredModelProvider provider =
@@ -121,9 +119,7 @@ class ActivityExplanationBudgetTest {
                 .getConstructor(
                     BusinessMaterialBuildResult.class, ActivityExplanationProfile.class, int.class)
                 .newInstance(
-                    materials,
-                    new ActivityExplanationProfile(64_000, 16_000, 2, 32, 2_000),
-                    1);
+                    materials, new ActivityExplanationProfile(64_000, 16_000, 2, 32, 2_000), 1);
       } catch (NoSuchMethodException missing) {
         fail("ACTIVITY_EXECUTION_BUDGET_NOT_IMPLEMENTED", missing);
         throw new AssertionError("unreachable");
@@ -156,6 +152,7 @@ class ActivityExplanationBudgetTest {
     ObjectNode root = JsonNodeFactory.instance.objectNode();
     ObjectNode activity = root.putArray("activities").addObject();
     activity.put("activityLocalId", "activity-1");
+    activity.putArray("entryKeys").add("E1");
     activity.put("name", "处理业务请求");
     activity.put("businessPurpose", "根据入口输入执行业务处理。");
     activity.putArray("participants");
@@ -168,7 +165,9 @@ class ActivityExplanationBudgetTest {
     activity.putArray("formulasOrMetrics");
     activity.putArray("terms").add("业务记录");
     activity.put("certainty", "DIRECT_CODE_BEHAVIOR");
-    input.path("allowlistedRefs").forEach(reference -> activity.putArray("sourceRefs").add(reference.path("ref").asText()));
+    input
+        .path("allowlistedRefs")
+        .forEach(reference -> activity.putArray("sourceRefs").add(reference.path("ref").asText()));
     activity.putArray("questions");
     activity.putArray("scopeLimitations").add("静态源码不证明某次执行成功");
     return new StructuredModelResponse(

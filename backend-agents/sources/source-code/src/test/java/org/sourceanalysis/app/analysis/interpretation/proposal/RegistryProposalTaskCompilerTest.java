@@ -99,10 +99,10 @@ public class RegistryProposalTaskCompilerTest {
               .findFirst()
               .orElseThrow();
       assertThat(flowPayload.descriptor().schemaVersion())
-          .isEqualTo("business-flows-flow-slices-v3");
+          .isEqualTo("business-flows-flow-slices-v4");
       JsonNode flowDocument = canonicalJson.parseCanonical(flowPayload.canonicalUtf8());
       assertThat(flowDocument.path("schemaVersion").asText())
-          .isEqualTo("business-flows-flow-slices-v3");
+          .isEqualTo("business-flows-flow-slices-v4");
       Map<String, JsonNode> flows = jsonNodesById(flowDocument.path("flowSlices"), "flowSliceId");
       assertThat(flows).hasSize(2);
       assertThat(flows.values())
@@ -125,7 +125,7 @@ public class RegistryProposalTaskCompilerTest {
               .findFirst()
               .orElseThrow();
       assertThat(capsulePayload.descriptor().schemaVersion())
-          .isEqualTo("business-flows-evidence-capsule-v5");
+          .isEqualTo("business-flows-evidence-capsule-v6");
       List<JsonNode> capsules = jsonLines(capsulePayload.canonicalUtf8());
       assertThat(capsules).hasSize(2);
       Map<String, JsonNode> capsulesByFlow = jsonNodesById(toArray(capsules), "flowSliceId");

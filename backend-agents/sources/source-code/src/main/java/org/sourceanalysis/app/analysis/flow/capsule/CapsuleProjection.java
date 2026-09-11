@@ -54,6 +54,7 @@ public record CapsuleProjection(
       String modelEligibility,
       List<String> modelIneligibilityGapIds,
       FlowEntryView entryView,
+      FlowCompilation.EntryContext entryContext,
       List<FlowFactView> factViews,
       List<FlowGapView> gapViews,
       List<FlowOutcomePathView> outcomePathViews,
@@ -74,6 +75,7 @@ public record CapsuleProjection(
       modelIneligibilityGapIds =
           List.copyOf(orderedStrings(modelIneligibilityGapIds, "ineligibility Gap IDs"));
       entryView = Objects.requireNonNull(entryView, "entry view");
+      entryContext = Objects.requireNonNull(entryContext, "entry context");
       factViews = List.copyOf(ordered(factViews, FlowFactView::factId, "Fact views"));
       gapViews = List.copyOf(ordered(gapViews, FlowGapView::gapId, "Gap views"));
       outcomePathViews =
@@ -98,13 +100,66 @@ public record CapsuleProjection(
       projectionObligationIds =
           List.copyOf(orderedStrings(projectionObligationIds, "projection obligations"));
       budgetUsage = Objects.requireNonNull(budgetUsage, "budget usage");
-      if (factViews.isEmpty()
-          || outcomePathViews.isEmpty()
+      if (outcomePathViews.isEmpty()
           || modelEvidenceSpanIds.isEmpty()
           || projectionObligationIds.isEmpty()
           || ("ELIGIBLE".equals(modelEligibility) != modelIneligibilityGapIds.isEmpty())) {
         throw broken();
       }
+      if (!flowSliceId.equals(entryContext.flowSliceId())
+          || !entryView.entryId().equals(entryContext.entryId())) {
+        throw broken();
+      }
+    }
+
+    /**
+     * Compatibility constructor for historical unit fixtures; production always projects context.
+     */
+    public EvidenceCapsule(
+        String evidenceCapsuleId,
+        String flowSliceId,
+        String proofPackId,
+        String modelEligibility,
+        List<String> modelIneligibilityGapIds,
+        FlowEntryView entryView,
+        List<FlowFactView> factViews,
+        List<FlowGapView> gapViews,
+        List<FlowOutcomePathView> outcomePathViews,
+        List<FlowCompilation.ProcessJoinSignalV1> processJoinSignals,
+        List<String> registryProposalBasisAtomIds,
+        List<String> registryProposalBasisGapIds,
+        List<String> modelEvidenceSpanIds,
+        List<String> projectionObligationIds,
+        BudgetUsage budgetUsage) {
+      this(
+          evidenceCapsuleId,
+          flowSliceId,
+          proofPackId,
+          modelEligibility,
+          modelIneligibilityGapIds,
+          entryView,
+          new FlowCompilation.EntryContext(
+              "entry-context:legacy:" + entryView.entryId(),
+              entryView.entryId(),
+              flowSliceId,
+              entryView.trigger(),
+              entryView.trigger(),
+              List.of(),
+              List.of(),
+              List.of(),
+              List.of(),
+              List.of(),
+              List.of(),
+              List.of("LEGACY_CONTEXT_WITHOUT_GRAPH_RELATIONS")),
+          factViews,
+          gapViews,
+          outcomePathViews,
+          processJoinSignals,
+          registryProposalBasisAtomIds,
+          registryProposalBasisGapIds,
+          modelEvidenceSpanIds,
+          projectionObligationIds,
+          budgetUsage);
     }
   }
 
@@ -222,12 +277,14 @@ public record CapsuleProjection(
   /** One original, continuous frozen source span selected for a model capsule. */
   public record ModelEvidenceSpan(
       String spanId,
+      String evidenceNodeId,
       SourceExcerptV1 sourceExcerpt,
       List<String> supportedAtomIds,
       List<String> supportedOutcomePathIds,
       List<String> supportedProcessJoinSignalIds) {
     public ModelEvidenceSpan {
       required(spanId, "model evidence span ID");
+      required(evidenceNodeId, "evidence node ID");
       sourceExcerpt = Objects.requireNonNull(sourceExcerpt, "source excerpt");
       supportedAtomIds = List.copyOf(orderedStrings(supportedAtomIds, "supported atom IDs"));
       supportedOutcomePathIds =

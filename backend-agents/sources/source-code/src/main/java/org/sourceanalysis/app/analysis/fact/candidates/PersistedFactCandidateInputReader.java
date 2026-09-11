@@ -357,12 +357,14 @@ public final class PersistedFactCandidateInputReader {
               "kind",
               "protocol",
               "method",
+              "methodCondition",
               "route",
               "routeParts",
               "handlerFqn",
               "parameterNames",
               "routeSourceExcerpts"));
       requireJsonlSchema(entry, ENTRY_POINT_SCHEMA);
+      requireMethodCondition(entry.get("methodCondition"));
       entries.add(id(entry, "entryId"));
     }
     return FactCandidateInputs.orderedArtifactIds(entries, "discovery entry IDs");
@@ -1422,6 +1424,24 @@ public final class PersistedFactCandidateInputReader {
   private static String text(JsonNode value) {
     if (value == null || !value.isTextual() || value.textValue().isBlank()) throw broken();
     return value.textValue();
+  }
+
+  private static void requireMethodCondition(JsonNode value) {
+    fields(value, Set.of("kind", "methods"));
+    String kind = text(value, "kind");
+    JsonNode methods = value.get("methods");
+    if (methods == null || !methods.isArray()) throw broken();
+    List<String> values = new ArrayList<>();
+    methods.forEach(item -> values.add(text(item)));
+    List<String> canonical =
+        List.of("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE").stream()
+            .filter(values::contains)
+            .toList();
+    if (("UNRESTRICTED".equals(kind) && values.isEmpty())
+        || ("EXPLICIT".equals(kind) && !values.isEmpty() && values.equals(canonical))) {
+      return;
+    }
+    throw broken();
   }
 
   private static void fields(JsonNode value, Set<String> expected) {

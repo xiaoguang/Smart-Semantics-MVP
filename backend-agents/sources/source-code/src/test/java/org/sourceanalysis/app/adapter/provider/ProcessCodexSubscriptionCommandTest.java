@@ -17,6 +17,49 @@ class ProcessCodexSubscriptionCommandTest {
   @TempDir Path temporaryDirectory;
 
   @Test
+  void returnsTheStructuredOutputProducedByALoggedInCliProcessWithoutInvokingALiveModel()
+      throws Exception {
+    Path executable = temporaryDirectory.resolve("fake-codex-success");
+    Files.writeString(
+        executable,
+        """
+        #!/bin/sh
+        if [ "$1" = "login" ]; then
+          exit 0
+        fi
+        output=""
+        while [ "$#" -gt 0 ]; do
+          if [ "$1" = "--output-last-message" ]; then
+            output="$2"
+            shift 2
+          else
+            shift
+          fi
+        done
+        if [ -z "$output" ]; then
+          exit 41
+        fi
+        cat >/dev/null
+        printf '{"answer":"ok"}' > "$output"
+        """,
+        StandardCharsets.UTF_8);
+    if (!executable.toFile().setExecutable(true, true)) {
+      throw new IllegalStateException("TEST_EXECUTABLE_PERMISSION_NOT_SET");
+    }
+
+    ImmutableBytes response =
+        new ProcessCodexSubscriptionCommand()
+            .execute(
+                new CodexSubscriptionProfile(
+                    executable, "gpt-5.6-luna", "high", Duration.ofSeconds(2)),
+                "only structured output",
+                ImmutableBytes.copyOf("{\"type\":\"object\"}".getBytes(StandardCharsets.UTF_8)));
+
+    assertThat(new String(response.copyToByteArray(), StandardCharsets.UTF_8))
+        .isEqualTo("{\"answer\":\"ok\"}");
+  }
+
+  @Test
   void exposesOnlyABoundedModelConfigurationCategoryWhenCliWritesSensitiveLookingStderr()
       throws Exception {
     Path executable = temporaryDirectory.resolve("fake-codex");

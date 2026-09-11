@@ -45,7 +45,7 @@ class ActivityExplanationCheckpointTest {
                   fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
               .build(
                   new BuildBusinessMaterialsRequest(
-                      flows, new BusinessMaterialProfile(8, 24, 12_000)));
+                      flows, new BusinessMaterialProfile(8, 24, 12_000, 1)));
 
       Constructor<ActivityExplainer> constructor;
       try {
@@ -140,6 +140,7 @@ class ActivityExplanationCheckpointTest {
       ObjectNode response = JsonNodeFactory.instance.objectNode();
       ObjectNode activity = response.putArray("activities").addObject();
       activity.put("activityLocalId", "activity-1");
+      activity.putArray("entryKeys").add("E1");
       activity.put("name", "保存业务对象");
       activity.put("businessPurpose", "把入口提交的数据整理为业务对象并保存。");
       activity.putArray("participants");

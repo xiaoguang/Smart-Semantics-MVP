@@ -50,6 +50,42 @@ class EvidenceCapsuleProjectorTest {
   @TempDir Path temporaryDirectory;
 
   @Test
+  void allowsAReadableFlowCapsuleWhenTheTechnicalContextHasNoAdmittedFact() {
+    CapsuleProjection.EvidenceCapsule capsule =
+        new CapsuleProjection.EvidenceCapsule(
+            "capsule:context-without-fact",
+            "flow:context-without-fact",
+            "proof-pack:context-without-fact",
+            "ELIGIBLE",
+            List.of(),
+            new CapsuleProjection.FlowEntryView(
+                "entry:context-without-fact",
+                "HTTP POST /context-without-fact",
+                "node:entry",
+                List.of("evidence:entry")),
+            List.of(),
+            List.of(),
+            List.of(
+                new CapsuleProjection.FlowOutcomePathView(
+                    "outcome:return",
+                    List.of(),
+                    "node:return",
+                    "ENTRY_RETURN_TERMINAL",
+                    List.of(),
+                    List.of(),
+                    List.of())),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of("span:return"),
+            List.of("obligation:return"),
+            new CapsuleProjection.BudgetUsage(1, 42));
+
+    assertThat(capsule.factViews()).isEmpty();
+    assertThat(capsule.entryContext().entryId()).isEqualTo("entry:context-without-fact");
+  }
+
+  @Test
   void projectsOneSameFlowEvidenceCapsuleForEveryPersistedCompiledFlow() throws Exception {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
@@ -134,7 +170,7 @@ class EvidenceCapsuleProjectorTest {
       JsonNode compilationEnvelope =
           canonicalJson.parseCanonical(reopenedCompilation.payloads().get(0).canonicalUtf8());
       assertThat(requiredText(compilationEnvelope, "schemaVersion"))
-          .isEqualTo("business-flows-flow-compilation-v3");
+          .isEqualTo("business-flows-flow-compilation-v4");
       JsonNode persistedFlows =
           requiredArray(requiredObject(compilationEnvelope, "payload"), "flowSlices");
       assertThat(persistedFlows.size()).isEqualTo(2);
@@ -359,7 +395,7 @@ class EvidenceCapsuleProjectorTest {
       JsonNode envelope =
           new CanonicalJsonCodec().parseCanonical(reopened.payloads().get(0).canonicalUtf8());
       assertThat(envelope.path("schemaVersion").asText())
-          .isEqualTo("business-flows-flow-compilation-v3");
+          .isEqualTo("business-flows-flow-compilation-v4");
       JsonNode persistedFlows = envelope.path("payload").path("flowSlices");
       assertThat(persistedFlows.isArray()).isTrue();
       assertThat(persistedFlows.size()).isEqualTo(2);
@@ -532,7 +568,7 @@ class EvidenceCapsuleProjectorTest {
       JsonNode envelope =
           new CanonicalJsonCodec().parseCanonical(reopenedBefore.payloads().get(0).canonicalUtf8());
       assertThat(envelope.path("schemaVersion").asText())
-          .isEqualTo("business-flows-flow-compilation-v3");
+          .isEqualTo("business-flows-flow-compilation-v4");
       JsonNode payload = envelope.path("payload");
       assertThat(payload.path("flowCompilationProfile").path("maxFlowNodes").asInt()).isEqualTo(1);
 

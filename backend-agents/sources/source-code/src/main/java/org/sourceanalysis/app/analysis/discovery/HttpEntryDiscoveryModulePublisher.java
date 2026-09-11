@@ -159,6 +159,10 @@ public final class HttpEntryDiscoveryModulePublisher {
       item.put("kind", entry.kind().name());
       item.put("protocol", entry.protocol());
       item.put("method", entry.method());
+      ObjectNode methodCondition = item.putObject("methodCondition");
+      methodCondition.put("kind", entry.methodCondition().kind().name());
+      ArrayNode methods = methodCondition.putArray("methods");
+      entry.methodCondition().methods().forEach(methods::add);
       item.put("route", entry.route());
       ArrayNode routeParts = item.putArray("routeParts");
       entry.routeParts().forEach(routeParts::add);

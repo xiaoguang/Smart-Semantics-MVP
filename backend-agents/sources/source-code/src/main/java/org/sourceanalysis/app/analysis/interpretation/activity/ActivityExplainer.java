@@ -39,6 +39,7 @@ public final class ActivityExplainer {
   private static final List<String> ACTIVITY_FIELD_ORDER =
       List.of(
           "activityLocalId",
+          "entryKeys",
           "name",
           "businessPurpose",
           "participants",
@@ -116,7 +117,7 @@ public final class ActivityExplainer {
             .sorted(Comparator.comparing(BusinessMaterial::materialId))
             .toList();
     for (BusinessMaterial material : orderedMaterials) {
-      JsonNode cleanPacket = cleanPacket(material.modelPacket());
+      JsonNode cleanPacket = cleanPacket(material);
       ImmutableBytes cleanBytes = canonicalJson.encodeCanonical(cleanPacket);
       if (cleanBytes.size() > request.profile().maxModelInputBytes()) {
         coverage.addAll(notAnalyzed(material, "NOT_ANALYZED_BUDGET"));
@@ -168,11 +169,19 @@ public final class ActivityExplainer {
 
   private List<ActivityEntryCoverage> analyzedCoverage(
       BusinessMaterial material, List<ReviewedActivity> activities) {
-    List<String> activityIds =
-        activities.stream().map(ReviewedActivity::activityId).sorted().toList();
-    String disposition = material.limitations().isEmpty() ? "ANALYZED" : "ANALYZED_WITH_GAPS";
+    String disposition = material.hasSubstantiveLimitation() ? "ANALYZED_WITH_GAPS" : "ANALYZED";
     return material.entryIds().stream()
-        .map(entryId -> new ActivityEntryCoverage(entryId, disposition, activityIds, null))
+        .map(
+            entryId ->
+                new ActivityEntryCoverage(
+                    entryId,
+                    disposition,
+                    activities.stream()
+                        .filter(activity -> activity.entryIds().contains(entryId))
+                        .map(ReviewedActivity::activityId)
+                        .sorted()
+                        .toList(),
+                    null))
         .toList();
   }
 
@@ -212,9 +221,12 @@ public final class ActivityExplainer {
     return parsed;
   }
 
-  private ObjectNode cleanPacket(ModelActivityPacket packet) {
+  private ObjectNode cleanPacket(BusinessMaterial material) {
+    ModelActivityPacket packet = material.modelPacket();
     ObjectNode root = JsonNodeFactory.instance.objectNode();
     root.put("context", packet.context());
+    ArrayNode entryKeys = root.putArray("entryKeys");
+    entryKeys(material).forEach(entryKeys::add);
     root.set("technicalObservations", strings(packet.technicalObservations()));
     ArrayNode refs = root.putArray("allowlistedRefs");
     for (ModelActivityPacket.AllowlistedReference ref : packet.allowlistedRefs()) {
@@ -258,6 +270,7 @@ public final class ActivityExplainer {
     ACTIVITY_FIELD_ORDER.forEach(required::add);
     ObjectNode properties = activity.putObject("properties");
     textProperty(properties, "activityLocalId", profile);
+    listProperty(properties, "entryKeys", profile, true, entryKeys(material));
     textProperty(properties, "name", profile);
     textProperty(properties, "businessPurpose", profile);
     listProperty(properties, "participants", profile, false, null);
@@ -336,14 +349,22 @@ public final class ActivityExplainer {
     for (ModelActivityPacket.AllowlistedReference ref : material.modelPacket().allowlistedRefs()) {
       allowlistedRefs.add(ref.ref());
     }
+    Set<String> expectedEntryKeys = Set.copyOf(entryKeys(material));
+    Set<String> coveredEntryKeys = new HashSet<>();
     for (JsonNode activity : activities) {
-      validateActivity(activity, allowlistedRefs, localIds, profile, taskKind);
+      coveredEntryKeys.addAll(
+          validateActivity(
+              activity, allowlistedRefs, expectedEntryKeys, localIds, profile, taskKind));
+    }
+    if (!activities.isEmpty() && !coveredEntryKeys.equals(expectedEntryKeys)) {
+      throw invalid(taskKind, null);
     }
   }
 
-  private void validateActivity(
+  private List<String> validateActivity(
       JsonNode activity,
       Set<String> allowlistedRefs,
+      Set<String> expectedEntryKeys,
       Set<String> localIds,
       ActivityExplanationProfile profile,
       String taskKind) {
@@ -358,6 +379,11 @@ public final class ActivityExplainer {
     requiredText(activity, "businessPurpose", profile, taskKind);
     String certainty = requiredText(activity, "certainty", profile, taskKind);
     if (!CERTAINTIES.contains(certainty) || !localIds.add(localId)) {
+      throw invalid(taskKind, null);
+    }
+    List<String> activityEntryKeys = textList(activity, "entryKeys", profile, taskKind);
+    if (activityEntryKeys.isEmpty()
+        || activityEntryKeys.stream().anyMatch(key -> !expectedEntryKeys.contains(key))) {
       throw invalid(taskKind, null);
     }
     for (String field : LIST_FIELDS) {
@@ -376,19 +402,26 @@ public final class ActivityExplainer {
         }
       }
     }
+    return activityEntryKeys;
   }
 
   private List<ReviewedActivity> toReviewedActivities(
       JsonNode reviewedResponse, BusinessMaterial material, ActivityExplanationProfile profile) {
     List<ReviewedActivity> result = new ArrayList<>();
+    Map<String, String> entryIdsByKey = entryIdsByKey(material);
     for (JsonNode activity : reviewedResponse.path("activities")) {
       String localId = activity.path("activityLocalId").textValue();
+      List<String> activityEntryIds =
+          textList(activity, "entryKeys", profile, REVIEW_KIND).stream()
+              .map(entryIdsByKey::get)
+              .sorted()
+              .toList();
       result.add(
           new ReviewedActivity(
               stableActivityId(
                   material.materialId(), localId, canonicalJson.encodeCanonical(activity)),
               material.materialId(),
-              material.entryIds(),
+              activityEntryIds,
               activity.path("name").textValue(),
               activity.path("businessPurpose").textValue(),
               textList(activity, "participants", profile, REVIEW_KIND),
@@ -406,6 +439,21 @@ public final class ActivityExplainer {
               textList(activity, "scopeLimitations", profile, REVIEW_KIND)));
     }
     return result;
+  }
+
+  private static List<String> entryKeys(BusinessMaterial material) {
+    return java.util.stream.IntStream.range(0, material.entryIds().size())
+        .mapToObj(index -> "E" + (index + 1))
+        .toList();
+  }
+
+  private static Map<String, String> entryIdsByKey(BusinessMaterial material) {
+    Map<String, String> result = new java.util.LinkedHashMap<>();
+    List<String> entryIds = material.entryIds();
+    for (int index = 0; index < entryIds.size(); index++) {
+      result.put("E" + (index + 1), entryIds.get(index));
+    }
+    return Map.copyOf(result);
   }
 
   private String requiredText(

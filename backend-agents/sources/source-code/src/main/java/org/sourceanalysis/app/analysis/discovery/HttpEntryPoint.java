@@ -10,19 +10,41 @@ public record HttpEntryPoint(
     ArtifactId entryId,
     HttpEntryKind kind,
     String protocol,
-    String method,
+    HttpMethodCondition methodCondition,
     String route,
     List<String> routeParts,
     String handlerFqn,
     List<String> parameterNames,
     List<SourceExcerptV1> routeSourceExcerpts) {
 
+  /** Convenience constructor for static explicit-method fixtures. */
+  public HttpEntryPoint(
+      ArtifactId entryId,
+      HttpEntryKind kind,
+      String protocol,
+      String explicitMethod,
+      String route,
+      List<String> routeParts,
+      String handlerFqn,
+      List<String> parameterNames,
+      List<SourceExcerptV1> routeSourceExcerpts) {
+    this(
+        entryId,
+        kind,
+        protocol,
+        HttpMethodCondition.explicit(List.of(explicitMethod)),
+        route,
+        routeParts,
+        handlerFqn,
+        parameterNames,
+        routeSourceExcerpts);
+  }
+
   public HttpEntryPoint {
     Objects.requireNonNull(entryId, "entry ID");
     Objects.requireNonNull(kind, "entry kind");
     if (!"HTTP".equals(protocol)
-        || method == null
-        || method.isBlank()
+        || methodCondition == null
         || route == null
         || !route.startsWith("/")
         || handlerFqn == null
@@ -36,5 +58,10 @@ public record HttpEntryPoint(
       throw new IllegalArgumentException(
           "HTTP entry must preserve class and method route evidence");
     }
+  }
+
+  /** Readable method-condition text for logging and business-material display only. */
+  public String method() {
+    return methodCondition.display();
   }
 }
