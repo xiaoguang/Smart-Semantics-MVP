@@ -4,7 +4,7 @@
 - Agent role: Primary implementation coordinator
 - Model: GPT-5
 - Started: 2026-09-11
-- Last updated: 2026-09-11 (Task 3 Capsule wire reduction complete; known v1 coverage failure recorded)
+- Last updated: 2026-09-11 (Task 4 Activity v2 coverage complete; Task 5 partial propagation next)
 - Scope: Approved cleanup, arbitrary-N Activity coverage, Knowledge/Report partial propagation, and bounded live Activity validation
 - Approved inputs: User-approved implementation plan; baseline commit `fc6d67b` pushed to `origin/main`; current design contracts
 - Current branch/worktree: `codex/source-analysis-business-flows-closeout`; `/private/tmp/linguan-source-analysis-process-design`
@@ -21,10 +21,13 @@
 - Investigated the two direct-selector failures. Both enter `ActivityExplainer.validateResponse` before Process/Report work and fail `ACTIVITY_DRAFT_INVALID`; the migrated tests differ from HEAD only in the helper import/call, and the neutral helper preserves the prior Step05 publication algorithm. This is the approved Task 4 v1 coverage limitation, not a Task 1 fixture regression.
 - Completed Task 2 retirement: deleted the 78 obsolete interpretation production classes and 14 dedicated tests, removed their Step06 addresses 1–9, canonical file/schema branches and fixture policies, and retained only the current Step06 addresses 10/11, `ModelRuntimeIdentityV1`, materials, activities, and `analysis.knowledge.ProcessExplainer`.
 - Completed Task 3 Capsule wire reduction: removed the two registry proposal basis fields, advanced only capsule-projection v8→v9 and public evidence-capsule v6→v7, and verified new publication/reopen while old policy lookup rejects v8/v6.
+- Corrected one newly added Task 4 RED assertion before GREEN: REVIEW `actualDraft` must equal the first model response, not the first material request. This implements the approved DRAFT→REVIEW contract and preserves the remaining RED cases.
+- Corrected a second contradictory Task 4 RED assertion: keys explicitly returned in REVIEW `unexplainedEntries` are `NOT_ANALYZED` with `MODEL_NOT_EXPLAINED`, not analyzed coverage. This keeps the coverage record honest while preserving the explicit sidecar.
+- Completed Task 4 Activity v2: arbitrary-N capacity preflight, DRAFT structure/scope validation, one REVIEW over the complete actual DRAFT plus `missingEntryKeys`, required union/disjoint `unexplainedEntries`, `UnexplainedActivityEntry` sidecar, activity coverage v2, and v2 prompt resources. The existing reviewed-activity JSONL shape remains v1.
 
 ## Current state
 
-- Task 3 GREEN is complete. The next work unit is Activity v2: arbitrary N entries, one complete REVIEW and explicit unexplained-entry closure; the known v1 coverage failure remains intentionally unfixed until that work.
+- Tasks 1–4 are complete and their current facts are synchronized into the target design. The next work unit is Task 5: carry the saved, concrete unexplained entries into repository knowledge and Chapter 9 without inventing activities or business processes.
 - No customer source scan or Provider call has started in this work unit.
 
 ## Changed files
@@ -50,6 +53,9 @@
 | `git diff --check` | PASS | Task 2 deletion and registration change have no whitespace errors. |
 | Task 3 Capsule wire selectors | PASS | 1 wire test plus projector, publisher, Flow coverage and focused provenance selectors pass with v9/v7. |
 | Full `BusinessFlowProvenanceTest` | Existing unrelated failure | 5/6; Fact atom replay mutation is not rejected by `FlowPublicationSpecifier.validateFactOrigins`. This task did not alter or hide it. |
+| Task 4 direct selector | PASS | 18 tests, 0 failures/errors/skips across arbitrary-N coverage, activity schema/prompt/checkpoint, Process/Report checkpoint and persisted workflow seams. |
+| Task 4 scoped Spotless | PASS | 17 Task 4 Java files are formatted. |
+| Task 4 full Spotless | Existing unrelated limitation | 24 already-out-of-scope Java files remain noncompliant; no broad formatting change was made. |
 
 ## Decisions
 
@@ -62,7 +68,7 @@
 
 ## Exact next action
 
-- Create Task 4 RED coverage for arbitrary N entry keys, DRAFT coverage shortfall entering one complete REVIEW, and required explicit unexplained-entry closure.
+- Create Task 5 RED coverage proving that complete program-side unexplained records are grouped once per material for Process/Report input and become concrete Chapter 9 scope disclosures.
 
 ## Resume checks
 

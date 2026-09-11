@@ -31,7 +31,7 @@ import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 final class ActivityExplanationCheckpointPublisher {
 
   private static final String COVERAGE_TYPE = "FLOW_INTERPRETATION_ACTIVITY_COVERAGE";
-  private static final String COVERAGE_SCHEMA = "flow-interpretation-activity-coverage-v1";
+  private static final String COVERAGE_SCHEMA = "flow-interpretation-activity-coverage-v2";
   private static final String EXPLANATIONS_TYPE = "FLOW_INTERPRETATION_ACTIVITY_EXPLANATIONS";
   private static final String EXPLANATIONS_SCHEMA = "flow-interpretation-activity-explanations-v1";
   private static final Comparator<String> UTF8_ORDER =
@@ -60,7 +60,8 @@ final class ActivityExplanationCheckpointPublisher {
   ModulePublicationReference publish(
       BusinessMaterialBuildResult materials,
       List<ReviewedActivity> activities,
-      List<ActivityEntryCoverage> coverage) {
+      List<ActivityEntryCoverage> coverage,
+      List<UnexplainedActivityEntry> unexplainedActivityEntries) {
     ReopenedModulePublication materialCheckpoint = artifacts.reopen(materials.checkpoint());
     List<ArtifactReference> upstream =
         materialCheckpoint.receipt().payloadArtifacts().stream()
@@ -82,23 +83,29 @@ final class ActivityExplanationCheckpointPublisher {
                     AnalysisStepKey.FLOW_INTERPRETATION,
                     11,
                     "activity-explainer"),
-                "v1",
+                "v2",
                 upstream,
                 materialCheckpoint.receipt().controls(),
                 gaps.isEmpty()
                     ? ModuleCompletionStatus.SUCCEEDED
                     : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS,
                 gaps,
-                List.of(coveragePayload(coverage), explanationsPayload(activities))));
+                List.of(
+                    coveragePayload(coverage, unexplainedActivityEntries),
+                    explanationsPayload(activities))));
     return installed.reference();
   }
 
-  private CanonicalModulePayload coveragePayload(List<ActivityEntryCoverage> coverage) {
+  private CanonicalModulePayload coveragePayload(
+      List<ActivityEntryCoverage> coverage,
+      List<UnexplainedActivityEntry> unexplainedActivityEntries) {
     ObjectNode value = JsonNodeFactory.instance.objectNode();
     value.put("schemaVersion", COVERAGE_SCHEMA);
     value.put("artifactType", COVERAGE_TYPE);
     ArrayNode entries = value.putArray("entryCoverage");
     coverage.forEach(entry -> coverageJson(entries.addObject(), entry));
+    ArrayNode unexplained = value.putArray("unexplainedActivityEntries");
+    unexplainedActivityEntries.forEach(entry -> unexplainedJson(unexplained.addObject(), entry));
     value.put(
         "semanticDeliveryStatus",
         coverage.stream().anyMatch(entry -> "NOT_ANALYZED".equals(entry.disposition()))
@@ -172,6 +179,14 @@ final class ActivityExplanationCheckpointPublisher {
     } else {
       value.put("reasonCode", coverage.reasonCode());
     }
+  }
+
+  private static void unexplainedJson(ObjectNode value, UnexplainedActivityEntry entry) {
+    value.put("entryId", entry.entryId());
+    value.put("materialId", entry.materialId());
+    value.put("entryKey", entry.entryKey());
+    value.put("materialContext", entry.materialContext());
+    value.put("reasonCode", entry.reasonCode());
   }
 
   private static void strings(ArrayNode node, List<String> values) {

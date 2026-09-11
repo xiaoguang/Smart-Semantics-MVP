@@ -21,8 +21,8 @@ import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMate
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
+import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Guards the real model boundary against an arbitrary-object output schema. */
 class ActivityOutputSchemaTest {
@@ -49,14 +49,24 @@ class ActivityOutputSchemaTest {
                   materials, new ActivityExplanationProfile(64_000, 16_000, 2, 32, 2_000)));
 
       assertThat(provider.schemas()).isNotEmpty();
-      provider.schemas().forEach(ActivityOutputSchemaTest::assertCompleteActivityResponseSchema);
+      assertThat(provider.schemas().size()).isEven();
+      for (int index = 0; index < provider.schemas().size(); index += 2) {
+        assertCompleteActivityResponseSchema(provider.schemas().get(index), false);
+        assertCompleteActivityResponseSchema(provider.schemas().get(index + 1), true);
+      }
     }
   }
 
-  private static void assertCompleteActivityResponseSchema(JsonNode schema) {
+  private static void assertCompleteActivityResponseSchema(JsonNode schema, boolean review) {
     assertThat(schema.path("type").asText()).isEqualTo("object");
     assertThat(schema.path("additionalProperties").asBoolean()).isFalse();
-    assertThat(textValues(schema.path("required"))).containsExactly("activities");
+    assertThat(textValues(schema.path("required")))
+        .containsExactlyElementsOf(
+            review ? List.of("activities", "unexplainedEntries") : List.of("activities"));
+    if (review) {
+      assertThat(schema.path("properties").path("unexplainedEntries").path("type").asText())
+          .isEqualTo("array");
+    }
     JsonNode activity = schema.path("properties").path("activities").path("items");
     assertThat(activity.path("type").asText()).isEqualTo("object");
     assertThat(activity.path("additionalProperties").asBoolean()).isFalse();
@@ -98,7 +108,7 @@ class ActivityOutputSchemaTest {
       schemas.add(canonicalJson.parseCanonical(request.outputJsonSchema()));
       JsonNode input = canonicalJson.parseCanonical(request.untrustedInputJson());
       return new StructuredModelResponse(
-          canonicalJson.encodeCanonical(activityResponse(input)),
+          canonicalJson.encodeCanonical(activityResponse(input, request.taskKind())),
           new ModelRuntimeIdentityV1("scripted", "fixture", "none", "none"));
     }
 
@@ -106,7 +116,7 @@ class ActivityOutputSchemaTest {
       return List.copyOf(schemas);
     }
 
-    private static ObjectNode activityResponse(JsonNode input) {
+    private static ObjectNode activityResponse(JsonNode input, String taskKind) {
       ObjectNode root = JsonNodeFactory.instance.objectNode();
       ObjectNode activity = root.putArray("activities").addObject();
       activity.put("activityLocalId", "activity-1");
@@ -127,6 +137,9 @@ class ActivityOutputSchemaTest {
       input.path("allowlistedRefs").forEach(ref -> refs.add(ref.path("ref").asText()));
       activity.putArray("questions");
       activity.putArray("scopeLimitations").add("静态源码不证明某次保存成功");
+      if ("ACTIVITY_REVIEW".equals(taskKind)) {
+        root.putArray("unexplainedEntries");
+      }
       return root;
     }
   }

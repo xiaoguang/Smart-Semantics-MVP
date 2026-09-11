@@ -27,10 +27,10 @@ import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialB
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
+import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Public-seam RED for the first bounded ActivityExplainer package. */
 class ActivityExplainerTest {
@@ -87,7 +87,8 @@ class ActivityExplainerTest {
 
       JsonNode draft = activityResponse("草稿目的", "草稿结果", allowedSourceRefs, List.of("E1"));
       JsonNode review =
-          activityResponse("审阅后的业务目的", "审阅后的代码定义结果", allowedSourceRefs, List.of("E1"));
+          reviewResponse(
+              activityResponse("审阅后的业务目的", "审阅后的代码定义结果", allowedSourceRefs, List.of("E1")));
       ScriptedProvider validProvider =
           new ScriptedProvider(providerType, responseType, List.of(draft, review));
       Object request =
@@ -188,7 +189,7 @@ class ActivityExplainerTest {
       Class<?> requestType = requireType(REQUEST_TYPE);
       Class<?> profileType = requireType(PROFILE_TYPE);
       JsonNode draft = activitiesResponse(sourceRefs, entryKeys);
-      JsonNode review = activitiesResponse(sourceRefs, entryKeys);
+      JsonNode review = reviewResponse(activitiesResponse(sourceRefs, entryKeys));
       ScriptedProvider provider =
           new ScriptedProvider(providerType, responseType, List.of(draft, review));
       Object request =
@@ -310,6 +311,12 @@ class ActivityExplainerTest {
     activity.putArray("questions").add("哪类岗位负责确认？");
     activity.putArray("scopeLimitations").add("静态源码不证明某次保存成功");
     return root;
+  }
+
+  private static JsonNode reviewResponse(JsonNode draftResponse) {
+    ObjectNode review = ((ObjectNode) draftResponse).deepCopy();
+    review.putArray("unexplainedEntries");
+    return review;
   }
 
   private static Object activityFromResult(Object result) throws Exception {

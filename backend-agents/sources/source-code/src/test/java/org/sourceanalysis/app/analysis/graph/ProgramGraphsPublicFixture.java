@@ -1987,7 +1987,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "FLOW_INTERPRETATION_ACTIVITY_COVERAGE",
-        "flow-interpretation-activity-coverage-v1",
+        "flow-interpretation-activity-coverage-v2",
         "activity-coverage",
         "application/json",
         "STANDALONE_JSON",

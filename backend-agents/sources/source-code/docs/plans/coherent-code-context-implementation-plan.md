@@ -20,12 +20,12 @@
 - Spring `methodCondition` 对 unrestricted/explicit 的区分；
 - BusinessMaterialBuilder → ActivityExplainer → `analysis.knowledge.ProcessExplainer` → BusinessReportPublisher 的当前工作流。
 
-尚未实施、由本文接手：
+已完成的前置清理/Activity 交付：
 
 - 旧 `analysis.interpretation.{model,proposal,registry,process}` 的 78 个生产类、四个旧测试包的 14 个文件、旧 Step06 地址 1–9、旧 artifact/schema 分支和 `ProgramGraphsPublicFixture` 的旧 policy 已删除；
 - 14 个当前测试已改用中性 `BusinessFlowTestSupport`；`BusinessFlowCoverageTest` 的 R0 尾段已删除，同时保留 Flow/Capsule 覆盖断言；
-- Capsule 仍有 `registryProposalBasisAtomIds`、`registryProposalBasisGapIds`；
-- Activity resource/schema/validator 仍是 v1：四入口 DRAFT 只覆盖 E1/E2 时在 REVIEW 前终止；
+- Capsule 的 `registryProposalBasisAtomIds`、`registryProposalBasisGapIds` 已删除，projection/capsule wire 已分别升至 v9/v7；
+- Activity resource/schema/validator 已是 v2：四入口 DRAFT 只覆盖 E1/E2 时会将完整实际草稿与 `missingEntryKeys` 交给唯一 REVIEW，并以活动或明确未解释入口闭合；
 - Process/report 模型输入仍只传 NOT_ANALYZED 数量；
 - Activity/Process 仍在循环结束后聚合 publish；逐包即时保存是独立缺口，不在本计划实现。
 
@@ -74,7 +74,7 @@
 
 - [x] Luna/xhigh 建立 active source/test 依赖守卫：旧包 import、旧 1–9 module 注册和旧 artifact type 不得被当前工作流引用，同时 10/11 与 `ModelRuntimeIdentityV1` 必须存在。
 - [x] Terra/xhigh 在一个可审查变更中删除 78 类/14 旧测试及其专属 registry；不留 alias、bridge、compatibility reader 或复制包。
-- [x] 运行 Task 1 当前测试面、module-address/canonical-engine 的直接 selector 与当前 workflow selector；历史 docs/progress/artifacts 不参与 stale-name 失败。当前 Process/Report checkpoint 仍只触发已知的 Task 4 `ACTIVITY_DRAFT_INVALID`，未在本任务修复。
+- [x] 运行 Task 1 当前测试面、module-address/canonical-engine 的直接 selector 与当前 workflow selector；历史 docs/progress/artifacts 不参与 stale-name 失败。Task 4 已修复 `ACTIVITY_DRAFT_INVALID`，当前 Process/Report checkpoint 直接覆盖已恢复通过。
 
 ## Task 3：在旧消费者消失后做 Capsule 两字段减法
 
@@ -111,14 +111,14 @@
 - Consumes: 一个完整 material、实际 `N=entryIds.size()`、E1…EN/ref allowlists、相容 profile
 - Produces: ReviewedActivity、global coverage、`ActivityExplanationResult.unexplainedActivityEntries`
 
-- [ ] Luna/xhigh RED：N=4 合法 DRAFT 只含 A1/E1、A2/E2 时，唯一 REVIEW 收到完整 material、完整实际 DRAFT、`missingEntryKeys=[E3,E4]`。
-- [ ] RED：单包 N≥12 的 schema/Prompt/映射准确包含 E10/E11/E12；跨包相同 E1 仅按 `(materialId,key)` 映射，不用前缀/substring/词典序。
-- [ ] RED：活动与入口 many-to-many 合法；输出容量允许 N 项独立活动但不强制恰好 N 项。
-- [ ] RED：首次调用前检查 `maxActivitiesPerMaterial≥N`、单活动 key 容量≥N、N 项最小 REVIEW output、实际 cleanPacket 和完整 REVIEW 预留；DRAFT 后对真实 actualDraft REVIEW packet 再 canonical serialize。
-- [ ] RED：不相容材料零请求并写具体 NOT_ANALYZED；ActivityExplainer 不拆已保存 material。非法 JSON/key/ref/ID/bytes 或 started 失败立即 fatal，不进 REVIEW。
-- [ ] RED：REVIEW 响应 required `unexplainedEntries` 允许 `[]`、禁止 null/省略；activities keys 与它 union 为全集且 disjoint。REVIEW 仍漏项 fatal，无第三次调用。
-- [ ] Terra/xhigh 将现有 validator 拆成 structure/scope 与 final closure 两层，程序生成 `UnexplainedActivityEntry(entryId,materialId,entryKey,materialContext,MODEL_NOT_EXPLAINED)`。
-- [ ] `activity-coverage.json` v2 顶层 `unexplainedActivityEntries` 保存完整 record 数组；模型 `unexplainedEntries` 只保存 scope-local keys，二者不得混用。
+- [x] Luna/xhigh RED：N=4 合法 DRAFT 只含 A1/E1、A2/E2 时，唯一 REVIEW 收到完整 material、完整实际 DRAFT、`missingEntryKeys=[E3,E4]`。
+- [x] RED：单包 N≥12 的 schema/Prompt/映射准确包含 E10/E11/E12；跨包相同 E1 仅按 `(materialId,key)` 映射，不用前缀/substring/词典序。
+- [x] RED：活动与入口 many-to-many 合法；输出容量允许 N 项独立活动但不强制恰好 N 项。
+- [x] RED：首次调用前检查 `maxActivitiesPerMaterial≥N`、单活动 key 容量≥N、N 项最小 REVIEW output、实际 cleanPacket 和完整 REVIEW 预留；DRAFT 后对真实 actualDraft REVIEW packet 再 canonical serialize。
+- [x] RED：不相容材料零请求并写具体 NOT_ANALYZED；ActivityExplainer 不拆已保存 material。非法 JSON/key/ref/ID/bytes 或 started 失败立即 fatal，不进 REVIEW。
+- [x] RED：REVIEW 响应 required `unexplainedEntries` 允许 `[]`、禁止 null/省略；activities keys 与它 union 为全集且 disjoint。REVIEW 仍漏项 fatal，无第三次调用。
+- [x] Terra/xhigh 将现有 validator 拆成 structure/scope 与 final closure 两层，程序生成 `UnexplainedActivityEntry(entryId,materialId,entryKey,materialContext,MODEL_NOT_EXPLAINED)`。
+- [x] `activity-coverage.json` v2 顶层 `unexplainedActivityEntries` 保存完整 record 数组；模型 `unexplainedEntries` 只保存 scope-local keys，二者不得混用。
 
 ## Task 5：具体 partial 经 knowledge 进入第 9 章
 

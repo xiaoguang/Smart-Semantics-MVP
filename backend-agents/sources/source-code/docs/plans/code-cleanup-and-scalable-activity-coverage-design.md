@@ -1,6 +1,6 @@
 # 代码清理与可扩展活动覆盖设计（APPROVED DESIGN）
 
-> 状态：**APPROVED DESIGN / implementation in progress**。用户已批准本文的清理范围，以及“合法但漏项的 DRAFT 进入唯一 REVIEW”和“REVIEW 以 required `unexplainedEntries` 闭合并把具体入口送到第 9 章”两项行为变化。`fc6d67b` 是已推送的实施基线；后续工作按当前[实施衔接](coherent-code-context-implementation-plan.md)执行 TDD、定向 Maven 和交付提交。本文定义目标合同，不把尚未落地的 Java、resource、schema 或真实验证写成现状。
+> 状态：**APPROVED DESIGN / implementation in progress**。用户已批准本文的清理范围，以及“合法但漏项的 DRAFT 进入唯一 REVIEW”和“REVIEW 以 required `unexplainedEntries` 闭合并把具体入口送到第 9 章”两项行为变化。`fc6d67b` 是实施基线；旧链清理、Capsule 字段减法和 Activity v2 已推送，具体入口向知识与第 9 章的下游投影仍待实施。后续工作按当前[实施衔接](coherent-code-context-implementation-plan.md)执行 TDD、定向 Maven 和交付提交。本文定义目标合同，不把尚未落地的 Process/Report Java、schema 或真实验证写成现状。
 
 ## 1. 结论
 
@@ -86,7 +86,7 @@ BusinessMaterialBuilder
 
 Schema 不是逻辑上绝对矛盾：一个活动允许覆盖多个 key；但配置没有保证“每个入口各自表达”这一合法最坏形状。`ActivityExplainer.validateResponse` 又在 DRAFT 后、REVIEW 前要求已覆盖 key 集等于全集，所以该次 response 直接以 DRAFT invalid 终止，REVIEW 未启动。
 
-这次已开始并失败的产品调用不能被重命名为可重放请求。本文示例中的修复结果都是未来新执行的验收期望，不是原 response，也不是兼容读取旧 response。
+这次已开始并失败的产品调用不能被重命名为可重放请求。它是 v1 的历史反例；当前 Activity v2 已用 scripted RED/GREEN 实现相容性预检、完整实际 DRAFT 的唯一 REVIEW 和 `unexplainedEntries` 闭合，但尚未以该历史调用重放验证。
 
 ### 2.5 当前持久化与下游缺口
 
@@ -132,7 +132,7 @@ Schema 不是逻辑上绝对矛盾：一个活动允许覆盖多个 key；但配
 | `ProcessExplainer` | 全部已审活动、召回线索、必要材料、按 material 聚合的未解释入口 | 已审过程、`RepositoryBusinessKnowledge`、process coverage | 宽松召回后解释有依据的多对多过程，保留独立活动与未解释范围 | 非法成员/ref/JSON、started 失败 fatal；0 活动零过程调用；不能把 partial 说成完成 | `BusinessReportPublisher` | 完整活动字段、多对多、保守独立过程、具体 partial 投影 | 只扩现有 knowledge 输入/保存/read seam，不改变其他过程 validator |
 | `BusinessReportPublisher` | 已审 knowledge、完整活动/过程、coverage、按 material 聚合的未解释入口、SourceRefs | 九章 JSON、source refs、Markdown、validation | 一次报告 DRAFT + 完整 REVIEW，Java 仅校验并排版固定九章 | 缺章/非法 ref/虚假全量 fatal；显式空仓报告仍调用既有 DRAFT+REVIEW；PARTIAL/INCOMPLETE 不是新 runtime enum | 业务读者及 `render/inspect/artifact` | 第4章完整内容、第9章具体未解释入口、固定九章、纯 render | 仅补 knowledge→report 输入和第9章合同，不新增语义 parser 或空报告捷径 |
 
-表中 Activity/Process/Report 的新覆盖字段与 v2 Prompt 都是已批准目标，尚未写入当前 Java、resource、Schema 或已有产物。Luna RED 和 Terra GREEN 是后续另行授权实施的交接，不是本次文档同步已执行的测试或代码结果。
+Activity 行的新覆盖字段、v2 Prompt、schema 和 sidecar 已写入当前 Java/resource/Schema，并经过 Luna RED 与 Terra GREEN。Process/Report 的具体 partial 投影仍是后续交接，不得把它写成已经进入仓库知识或第九章。
 
 ## 4. 清理设计与依赖迁移顺序
 
@@ -243,7 +243,7 @@ DRAFT 返回后仍须把真实 `actualDraft` 和 `missingEntryKeys` 装入 REVIE
 
 ## 6. 已批准的最小 `unexplainedEntries` 协议
 
-> **批准的目标变化：**现行“DRAFT 在 REVIEW 前必须全覆盖”改为“结构与范围合法但 coverage 不足时进入唯一 REVIEW”；REVIEW output 增加 required `unexplainedEntries`。设计已批准，代码与 wire 尚未实施。
+> **已落地的变化：**“DRAFT 在 REVIEW 前必须全覆盖”已改为“结构与范围合法但 coverage 不足时进入唯一 REVIEW”；REVIEW output 已增加 required `unexplainedEntries`。Activity 代码与 wire 已实施；后续仅把程序侧完整记录投影给 Process/Report。
 
 为避免模型自由文字被误当技术 Gap，DRAFT output 仍为 `{ "activities": [...] }`；REVIEW output 改为闭合对象：
 
@@ -403,7 +403,7 @@ PARTIAL 变体把 E3/E4 放入 `unexplainedEntries`。Process repository input �
 
 ## 11. 文档同步、持久化缺口与旧工作树保护
 
-本次文档同步把已批准规则写入 `AGENTS.md`、`README.md`、`docs/DESIGN.md`、Step05–08、Prompt 设计、walkthrough 和当前实施衔接计划；这不表示 Java/test/resource/schema 已改变。未来每个代码/test/schema 批次仍须在同一 work unit 校准当前事实；旧链真正删除后才能把“旧模块仍注册”改成已清理，v2 真正落地后才能把覆盖修复写成当前实现。
+本次文档同步把已批准规则写入 `AGENTS.md`、`README.md`、`docs/DESIGN.md`、Step05–08、Prompt 设计、walkthrough 和当前实施衔接计划。旧链已删除，Activity v2 已落地；未来每个 Process/Report 代码/test/schema 批次仍须在同一 work unit 校准当前事实，不能把下游投影提前写成完成。
 
 “每包 REVIEW 随即保存”仍列为独立已知缺口。本次最小实现保持现有单 module 聚合 publication，不声称已解决即时 checkpoint。若用户另行优先处理，须先为 Activity/Process 各自确定不覆盖既有 publication 的聚合/分片语义；不得在当前固定地址循环 install，也不得借本次清理扩成恢复系统。
 
@@ -426,8 +426,8 @@ PARTIAL 变体把 E3/E4 放入 `unexplainedEntries`。Process repository input �
 
 ## 13. 已批准决定与独立后续范围
 
-1. **已批准、尚未实施：**把 DRAFT 缺入口从“REVIEW 前 fatal”改为“结构/范围合法则交唯一 REVIEW”，并采用 required `unexplainedEntries` 最终闭合合同。
-2. **已批准、尚未实施：**增加程序侧 `UnexplainedActivityEntry`，升级 activity coverage 与确实承载该数组的 Step07 schemas/readers，并把具体 partial 输入送到报告第 9 章；模型不能自造 reason 或技术 Gap。
+1. **已实施：**DRAFT 缺入口从“REVIEW 前 fatal”改为“结构/范围合法则交唯一 REVIEW”，并采用 required `unexplainedEntries` 最终闭合合同。
+2. **部分已实施：**程序侧 `UnexplainedActivityEntry` 和 activity coverage v2 已落地；确实承载该数组的 Step07 schemas/readers 以及把具体 partial 输入送到报告第 9 章仍待实施。模型不能自造 reason 或技术 Gap。
 3. **保持现状：**Step06 有效 module 地址继续为 10/11，不为清理旧 1–9 而改号。重编号属于另一个持久化身份设计，不在本次范围。
 4. **独立缺口、本次不解决：**Activity/Process 每包即时 checkpoint；固定地址不能循环安装不同内容，必须另行设计聚合/分片语义，不能借清理扩成恢复系统。
 5. **需另行明确授权：**受保护旧主 worktree 的 stage01–04 后续如何处置；本次只记录，不删除、不清理。

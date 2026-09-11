@@ -21,9 +21,9 @@ import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.analysis.knowledge.ProcessExplanationProfile;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
+import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Proves that a persisted Step 05 publication is enough to reach a durable business report. */
 class PersistedBusinessRunExecutorTest {
@@ -215,6 +215,9 @@ class PersistedBusinessRunExecutorTest {
             input,
             reviewed);
       }
+      if (reviewed) {
+        response.putArray("unexplainedEntries");
+      }
       return response;
     }
 
@@ -228,8 +231,7 @@ class PersistedBusinessRunExecutorTest {
       ArrayNode activityEntryKeys = activity.putArray("entryKeys");
       entryKeys.forEach(activityEntryKeys::add);
       activity.put("name", "处理业务请求");
-      activity.put(
-          "businessPurpose", reviewed ? "根据入口提交的数据执行业务处理。" : "草稿业务目的。");
+      activity.put("businessPurpose", reviewed ? "根据入口提交的数据执行业务处理。" : "草稿业务目的。");
       activity.putArray("participants");
       activity.putArray("businessObjects").add("业务记录");
       activity.putArray("triggerOrInput").add("入口提交的数据");

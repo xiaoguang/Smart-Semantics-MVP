@@ -1633,7 +1633,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     if ("FLOW_INTERPRETATION_ACTIVITY_COVERAGE".equals(payload.artifactType())
-        && "flow-interpretation-activity-coverage-v1".equals(payload.schemaVersion())) {
+        && "flow-interpretation-activity-coverage-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.FLOW_INTERPRETATION,
           11,

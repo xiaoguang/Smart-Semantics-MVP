@@ -23,11 +23,11 @@ import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMate
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
+import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Guards the durable local-activity checkpoint promised before process reconstruction begins. */
 class ActivityExplanationCheckpointTest {
@@ -157,6 +157,9 @@ class ActivityExplanationCheckpointTest {
       packet.path("allowlistedRefs").forEach(ref -> refs.add(ref.path("ref").asText()));
       activity.putArray("questions");
       activity.putArray("scopeLimitations").add("静态源码不证明某次保存成功");
+      if ("ACTIVITY_REVIEW".equals(request.taskKind())) {
+        response.putArray("unexplainedEntries");
+      }
       return new StructuredModelResponse(
           canonicalJson.encodeCanonical(response),
           new ModelRuntimeIdentityV1("scripted", "fixture", "none", "none"));

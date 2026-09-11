@@ -35,7 +35,9 @@ public final class ActivityExplainer {
 
   private static final String DRAFT_KIND = "ACTIVITY_DRAFT";
   private static final String REVIEW_KIND = "ACTIVITY_REVIEW";
-  private static final Set<String> TOP_LEVEL_FIELDS = Set.of("activities");
+  private static final Set<String> DRAFT_TOP_LEVEL_FIELDS = Set.of("activities");
+  private static final Set<String> REVIEW_TOP_LEVEL_FIELDS =
+      Set.of("activities", "unexplainedEntries");
   private static final List<String> ACTIVITY_FIELD_ORDER =
       List.of(
           "activityLocalId",
@@ -95,6 +97,7 @@ public final class ActivityExplainer {
 
     List<ReviewedActivity> reviewed = new ArrayList<>();
     List<ActivityEntryCoverage> coverage = new ArrayList<>();
+    List<UnexplainedActivityEntry> unexplained = new ArrayList<>();
     Map<String, BusinessMaterialEntryCoverage> materialCoverage =
         request.materials().materialSet().entryCoverage().stream()
             .collect(
@@ -123,42 +126,97 @@ public final class ActivityExplainer {
         coverage.addAll(notAnalyzed(material, "NOT_ANALYZED_BUDGET"));
         continue;
       }
+      String capacityFailure = preflightFailure(cleanBytes, material, request.profile());
+      if (capacityFailure != null) {
+        coverage.addAll(notAnalyzed(material, capacityFailure));
+        continue;
+      }
       if (startedMaterials >= request.maxMaterialsToStart()) {
         coverage.addAll(notAnalyzed(material, "NOT_ANALYZED_EXECUTION_CAPACITY"));
         continue;
       }
       startedMaterials++;
 
-      JsonNode draft = generateAndValidate(DRAFT_KIND, cleanBytes, material, request.profile());
+      ValidatedActivityResponse draft =
+          generateAndValidate(DRAFT_KIND, cleanBytes, material, request.profile());
       ObjectNode reviewPacket = cleanPacket.deepCopy();
-      reviewPacket.set("actualDraft", draft);
-      JsonNode review =
-          generateAndValidate(
-              REVIEW_KIND,
-              canonicalJson.encodeCanonical(reviewPacket),
-              material,
-              request.profile());
-      List<ReviewedActivity> activities = toReviewedActivities(review, material, request.profile());
-      if (activities.isEmpty()) {
-        coverage.addAll(notAnalyzed(material, "MODEL_NO_ACTIVITY"));
-        continue;
+      reviewPacket.set("actualDraft", draft.response());
+      ArrayNode missingEntryKeys = reviewPacket.putArray("missingEntryKeys");
+      missingEntryKeys(material, draft.coveredEntryKeys()).forEach(missingEntryKeys::add);
+      ImmutableBytes reviewInput = canonicalJson.encodeCanonical(reviewPacket);
+      if (reviewInput.size() > request.profile().maxModelInputBytes()) {
+        throw new ActivityExplanationException("ACTIVITY_REVIEW_INPUT_BUDGET");
       }
+      ValidatedActivityResponse review =
+          generateAndValidate(REVIEW_KIND, reviewInput, material, request.profile());
+      List<ReviewedActivity> activities =
+          toReviewedActivities(review.response(), material, request.profile());
       reviewed.addAll(activities);
-      coverage.addAll(analyzedCoverage(material, activities));
+      coverage.addAll(analyzedCoverage(material, activities, review.unexplainedEntryKeys()));
+      unexplained.addAll(unexplainedEntries(material, review.unexplainedEntryKeys()));
     }
     coverage.sort(Comparator.comparing(ActivityEntryCoverage::entryId));
     if (coverage.size() != materialCoverage.size()) {
       throw new ActivityExplanationException("ACTIVITY_COVERAGE_INPUT_INVALID");
     }
-    ActivityExplanationResult result = new ActivityExplanationResult(reviewed, coverage);
+    ActivityExplanationResult result =
+        new ActivityExplanationResult(reviewed, coverage, unexplained, null);
     if (checkpointStore == null) {
       return result;
     }
     return new ActivityExplanationResult(
         result.reviewedActivities(),
         result.coverage(),
+        result.unexplainedActivityEntries(),
         new ActivityExplanationCheckpointPublisher(checkpointStore)
-            .publish(request.materials(), result.reviewedActivities(), result.coverage()));
+            .publish(
+                request.materials(),
+                result.reviewedActivities(),
+                result.coverage(),
+                result.unexplainedActivityEntries()));
+  }
+
+  private String preflightFailure(
+      ImmutableBytes cleanPacket, BusinessMaterial material, ActivityExplanationProfile profile) {
+    int entryCount = material.entryIds().size();
+    if (entryCount > profile.maxActivitiesPerMaterial()
+        || entryCount > profile.maxValuesPerField()
+        || minimumReviewedResponseBytes(material, profile) > profile.maxModelOutputBytes()
+        || (long) cleanPacket.size() + profile.maxModelOutputBytes() + 1_024L
+            > profile.maxModelInputBytes()) {
+      return "NOT_ANALYZED_ACTIVITY_OUTPUT_CAPACITY";
+    }
+    return null;
+  }
+
+  private int minimumReviewedResponseBytes(
+      BusinessMaterial material, ActivityExplanationProfile profile) {
+    ObjectNode response = JsonNodeFactory.instance.objectNode();
+    ArrayNode activities = response.putArray("activities");
+    String reference =
+        material.modelPacket().allowlistedRefs().isEmpty()
+            ? "R"
+            : material.modelPacket().allowlistedRefs().get(0).ref();
+    int requiredTextLength = Math.min(1, profile.maxTextCharsPerValue());
+    String text = "x".repeat(requiredTextLength);
+    for (String entryKey : entryKeys(material)) {
+      ObjectNode activity = activities.addObject();
+      activity.put("activityLocalId", entryKey);
+      activity.putArray("entryKeys").add(entryKey);
+      activity.put("name", text);
+      activity.put("businessPurpose", text);
+      for (String field : LIST_FIELDS) {
+        ArrayNode values = activity.putArray(field);
+        if (field.equals("activitySteps")
+            || field.equals("codeDefinedResults")
+            || field.equals("sourceRefs")) {
+          values.add(field.equals("sourceRefs") ? reference : text);
+        }
+      }
+      activity.put("certainty", CERTAINTY_ORDER.get(0));
+    }
+    response.putArray("unexplainedEntries");
+    return canonicalJson.encodeCanonical(response).size();
   }
 
   private List<ActivityEntryCoverage> notAnalyzed(BusinessMaterial material, String reasonCode) {
@@ -168,24 +226,49 @@ public final class ActivityExplainer {
   }
 
   private List<ActivityEntryCoverage> analyzedCoverage(
-      BusinessMaterial material, List<ReviewedActivity> activities) {
+      BusinessMaterial material,
+      List<ReviewedActivity> activities,
+      List<String> unexplainedEntryKeys) {
     String disposition = material.hasSubstantiveLimitation() ? "ANALYZED_WITH_GAPS" : "ANALYZED";
-    return material.entryIds().stream()
+    Set<String> unexplained = Set.copyOf(unexplainedEntryKeys);
+    Map<String, String> entryIdsByKey = entryIdsByKey(material);
+    return entryKeys(material).stream()
         .map(
-            entryId ->
-                new ActivityEntryCoverage(
-                    entryId,
-                    disposition,
-                    activities.stream()
-                        .filter(activity -> activity.entryIds().contains(entryId))
-                        .map(ReviewedActivity::activityId)
-                        .sorted()
-                        .toList(),
-                    null))
+            entryKey -> {
+              String entryId = entryIdsByKey.get(entryKey);
+              if (unexplained.contains(entryKey)) {
+                return new ActivityEntryCoverage(
+                    entryId, "NOT_ANALYZED", List.of(), "MODEL_NOT_EXPLAINED");
+              }
+              return new ActivityEntryCoverage(
+                  entryId,
+                  disposition,
+                  activities.stream()
+                      .filter(activity -> activity.entryIds().contains(entryId))
+                      .map(ReviewedActivity::activityId)
+                      .sorted()
+                      .toList(),
+                  null);
+            })
         .toList();
   }
 
-  private JsonNode generateAndValidate(
+  private List<UnexplainedActivityEntry> unexplainedEntries(
+      BusinessMaterial material, List<String> unexplainedEntryKeys) {
+    Map<String, String> entryIdsByKey = entryIdsByKey(material);
+    return unexplainedEntryKeys.stream()
+        .map(
+            entryKey ->
+                new UnexplainedActivityEntry(
+                    entryIdsByKey.get(entryKey),
+                    material.materialId(),
+                    entryKey,
+                    material.modelPacket().context(),
+                    "MODEL_NOT_EXPLAINED"))
+        .toList();
+  }
+
+  private ValidatedActivityResponse generateAndValidate(
       String taskKind,
       ImmutableBytes input,
       BusinessMaterial material,
@@ -199,7 +282,7 @@ public final class ActivityExplainer {
                   taskKind,
                   ActivityPromptCatalog.instructionsFor(taskKind),
                   input,
-                  outputJsonSchema(material, profile),
+                  outputJsonSchema(material, profile, taskKind),
                   profile.maxModelOutputBytes()));
     } catch (RuntimeException failure) {
       throw new ActivityExplanationException("ACTIVITY_PROVIDER_FAILED_AFTER_START", failure);
@@ -217,8 +300,7 @@ public final class ActivityExplainer {
     } catch (IllegalArgumentException failure) {
       throw invalid(taskKind, failure);
     }
-    validateResponse(parsed, material, profile, taskKind);
-    return parsed;
+    return validateResponse(parsed, material, profile, taskKind);
   }
 
   private ObjectNode cleanPacket(BusinessMaterial material) {
@@ -250,15 +332,21 @@ public final class ActivityExplainer {
    * String)}.
    */
   private ImmutableBytes outputJsonSchema(
-      BusinessMaterial material, ActivityExplanationProfile profile) {
+      BusinessMaterial material, ActivityExplanationProfile profile, String taskKind) {
     ObjectNode root = JsonNodeFactory.instance.objectNode();
     root.put("type", "object");
     root.put("additionalProperties", false);
-    root.putArray("required").add("activities");
-    ObjectNode activities = root.putObject("properties").putObject("activities");
+    ArrayNode required = root.putArray("required");
+    required.add("activities");
+    ObjectNode properties = root.putObject("properties");
+    ObjectNode activities = properties.putObject("activities");
     activities.put("type", "array");
     activities.put("maxItems", profile.maxActivitiesPerMaterial());
     activities.set("items", activitySchema(material, profile));
+    if (REVIEW_KIND.equals(taskKind)) {
+      required.add("unexplainedEntries");
+      listProperty(properties, "unexplainedEntries", profile, false, entryKeys(material));
+    }
     return canonicalJson.encodeCanonical(root);
   }
 
@@ -330,14 +418,14 @@ public final class ActivityExplainer {
     }
   }
 
-  private void validateResponse(
+  private ValidatedActivityResponse validateResponse(
       JsonNode root,
       BusinessMaterial material,
       ActivityExplanationProfile profile,
       String taskKind) {
     if (!root.isObject()
         || hasProhibitedIdentity(root)
-        || !fieldNames(root).equals(TOP_LEVEL_FIELDS)) {
+        || !fieldNames(root).equals(expectedTopLevelFields(taskKind))) {
       throw invalid(taskKind, null);
     }
     JsonNode activities = root.path("activities");
@@ -356,9 +444,28 @@ public final class ActivityExplainer {
           validateActivity(
               activity, allowlistedRefs, expectedEntryKeys, localIds, profile, taskKind));
     }
-    if (!activities.isEmpty() && !coveredEntryKeys.equals(expectedEntryKeys)) {
-      throw invalid(taskKind, null);
+    List<String> unexplainedEntryKeys = List.of();
+    if (REVIEW_KIND.equals(taskKind)) {
+      unexplainedEntryKeys = textList(root, "unexplainedEntries", profile, taskKind);
+      Set<String> unexplained = new HashSet<>(unexplainedEntryKeys);
+      if (unexplained.size() != unexplainedEntryKeys.size()
+          || unexplained.stream().anyMatch(key -> !expectedEntryKeys.contains(key))
+          || !java.util.Collections.disjoint(coveredEntryKeys, unexplained)
+          || !union(coveredEntryKeys, unexplained).equals(expectedEntryKeys)) {
+        throw invalid(taskKind, null);
+      }
     }
+    return new ValidatedActivityResponse(root, Set.copyOf(coveredEntryKeys), unexplainedEntryKeys);
+  }
+
+  private static Set<String> expectedTopLevelFields(String taskKind) {
+    return REVIEW_KIND.equals(taskKind) ? REVIEW_TOP_LEVEL_FIELDS : DRAFT_TOP_LEVEL_FIELDS;
+  }
+
+  private static Set<String> union(Set<String> left, Set<String> right) {
+    Set<String> values = new HashSet<>(left);
+    values.addAll(right);
+    return Set.copyOf(values);
   }
 
   private List<String> validateActivity(
@@ -383,7 +490,8 @@ public final class ActivityExplainer {
     }
     List<String> activityEntryKeys = textList(activity, "entryKeys", profile, taskKind);
     if (activityEntryKeys.isEmpty()
-        || activityEntryKeys.stream().anyMatch(key -> !expectedEntryKeys.contains(key))) {
+        || activityEntryKeys.stream().anyMatch(key -> !expectedEntryKeys.contains(key))
+        || new HashSet<>(activityEntryKeys).size() != activityEntryKeys.size()) {
       throw invalid(taskKind, null);
     }
     for (String field : LIST_FIELDS) {
@@ -414,7 +522,6 @@ public final class ActivityExplainer {
       List<String> activityEntryIds =
           textList(activity, "entryKeys", profile, REVIEW_KIND).stream()
               .map(entryIdsByKey::get)
-              .sorted()
               .toList();
       result.add(
           new ReviewedActivity(
@@ -454,6 +561,11 @@ public final class ActivityExplainer {
       result.put("E" + (index + 1), entryIds.get(index));
     }
     return Map.copyOf(result);
+  }
+
+  private static List<String> missingEntryKeys(
+      BusinessMaterial material, Set<String> coveredEntryKeys) {
+    return entryKeys(material).stream().filter(key -> !coveredEntryKeys.contains(key)).toList();
   }
 
   private String requiredText(
@@ -541,6 +653,14 @@ public final class ActivityExplainer {
 
   private ActivityExplanationException sourceScopeInvalid(String taskKind) {
     return new ActivityExplanationException("ACTIVITY_SOURCE_SCOPE_INVALID during " + taskKind);
+  }
+
+  private record ValidatedActivityResponse(
+      JsonNode response, Set<String> coveredEntryKeys, List<String> unexplainedEntryKeys) {
+    private ValidatedActivityResponse {
+      coveredEntryKeys = Set.copyOf(coveredEntryKeys);
+      unexplainedEntryKeys = List.copyOf(unexplainedEntryKeys);
+    }
   }
 
   private static final class ActivityExplanationException extends IllegalArgumentException {

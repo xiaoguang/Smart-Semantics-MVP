@@ -23,7 +23,6 @@ import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplainer
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.analysis.knowledge.ProcessExplainer;
 import org.sourceanalysis.app.analysis.knowledge.ProcessExplanationProfile;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
@@ -38,6 +37,7 @@ import org.sourceanalysis.app.runtime.AnalysisRunOutput;
 import org.sourceanalysis.app.runtime.ArtifactView;
 import org.sourceanalysis.app.runtime.BusinessCheckpointArtifactReader;
 import org.sourceanalysis.app.runtime.BusinessOutputArtifactKey;
+import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Proves the final business report can be fresh-reopened without a report-time model call. */
 class BusinessReportCheckpointTest {
@@ -270,6 +270,17 @@ class BusinessReportCheckpointTest {
       packet.path("allowlistedRefs").forEach(ref -> refs.add(ref.path("ref").asText()));
       activity.putArray("questions");
       activity.putArray("scopeLimitations").add("静态源码不证明某次保存成功");
+      if ("ACTIVITY_REVIEW".equals(request.taskKind())) {
+        ArrayNode unexplained = response.putArray("unexplainedEntries");
+        packet
+            .path("entryKeys")
+            .forEach(
+                entryKey -> {
+                  if (!"E1".equals(entryKey.asText())) {
+                    unexplained.add(entryKey.asText());
+                  }
+                });
+      }
       return new StructuredModelResponse(
           canonicalJson.encodeCanonical(response),
           new ModelRuntimeIdentityV1("scripted", "fixture", "none", "none"));

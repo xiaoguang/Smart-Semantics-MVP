@@ -21,8 +21,8 @@ import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMate
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
+import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Guards the product rule that a capacity miss is coverage, not a failed provider execution. */
 class ActivityExplanationBudgetTest {
@@ -170,6 +170,9 @@ class ActivityExplanationBudgetTest {
         .forEach(reference -> activity.putArray("sourceRefs").add(reference.path("ref").asText()));
     activity.putArray("questions");
     activity.putArray("scopeLimitations").add("静态源码不证明某次执行成功");
+    if ("ACTIVITY_REVIEW".equals(request.taskKind())) {
+      root.putArray("unexplainedEntries");
+    }
     return new StructuredModelResponse(
         canonicalJson.encodeCanonical(root),
         new org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1(

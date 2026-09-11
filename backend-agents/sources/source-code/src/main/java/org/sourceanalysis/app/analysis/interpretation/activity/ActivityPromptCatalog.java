@@ -7,8 +7,8 @@ import java.nio.charset.StandardCharsets;
 /** Versioned, classpath-owned Chinese instructions for the two local-activity model tasks. */
 final class ActivityPromptCatalog {
 
-  private static final String DRAFT = load("activity-draft-v1.txt");
-  private static final String REVIEW = load("activity-review-v1.txt");
+  private static final String DRAFT = load("activity-draft-v2.txt");
+  private static final String REVIEW = load("activity-review-v2.txt");
 
   private ActivityPromptCatalog() {}
 

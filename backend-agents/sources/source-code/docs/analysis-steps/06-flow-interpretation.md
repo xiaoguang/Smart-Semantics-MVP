@@ -16,7 +16,7 @@ BusinessMaterialBuilder 不再构造第二套调用链。它不丢弃 Step05 上
 
 配置包容量记为 `K`，只规定 Builder 一包最多接纳多少入口；每个实际包的 `N=material.entryIds().size()` 可以是任意正数且 `N≤K`，K 和 N 都不固定为 4。每包按稳定入口顺序独立生成 E1…EN，并保存 `(materialId, local key) → global entry ID` 映射；不同包可以都含 E1，不能用 key 前缀、substring 或词典序跨包连接。E10、E11、E12 与 E1 一样是完整枚举值。一个活动可覆盖多个 key，一个 key 也可由多个有依据的活动覆盖；活动数不等于入口数。
 
-以下为**目标阅读投影，不是当前 Schema 或保存文件**：
+以下为阅读投影示意；当前 Activity v2 的程序产物已支持其 scope-local key 与完整未解释入口闭合，但例中的业务内容不是一次当前运行结果：
 
 ~~~json
 {
@@ -104,7 +104,7 @@ Luna/high 接收一个完整 material package，解释目的、参与者（有�
 
 没有业务 guard 不强造条件；try/catch 属于错误处理，可解释在 steps/results。没有岗位依据 participants 为空，不能把 Controller、Service 当业务角色。关于代码定义行为、运行事实与合理推断的中文 Prompt 见 [模型解释附录](../references/semantic-interpretation-prompts.md)。
 
-Java 只校验结构、scope-local IDs/refs、集合闭合、预算与保存约束。内容 review 判断必须体现在模型完整修订结果与诊断中；程序不通过关键词词表决定业务语义正确。上述 v2 output、Prompt 和 coverage sidecar 是已批准目标；当前 Java、`activity-draft-v1.txt`、`activity-review-v1.txt` 与已有产物尚未改变，也不兼容读取旧失败为新结果。
+Java 只校验结构、scope-local IDs/refs、集合闭合、预算与保存约束。内容 review 判断必须体现在模型完整修订结果与诊断中；程序不通过关键词词表决定业务语义正确。上述 v2 output、Prompt 和 coverage sidecar 已在当前 Java、`activity-draft-v2.txt`、`activity-review-v2.txt` 与 coverage v2 中实现；旧 v1 资源和旧 coverage wire 不会被解释成新结果。尚未落地的是 Process/Report 对完整 sidecar 的聚合投影。
 
 ## 5. 输出与下一消费者
 
@@ -112,11 +112,11 @@ Java 只校验结构、scope-local IDs/refs、集合闭合、预算与保存约�
 | --- | --- | --- |
 | business-materials.jsonl | 一至多个相关入口的完整技术上下文、源码短 ref 映射、材料/入口关系与限制 | ActivityExplainer、ProcessExplainer 必要回查 |
 | activity-explanations.jsonl | v1，每份完成 REVIEW 的完整活动，不压缩为标题 | ProcessExplainer、报告章节材料 |
-| activity-coverage.json | 全入口与材料的分析处置、未启动原因、容量限制；目标 v2 顶层 `unexplainedActivityEntries` 保存程序侧完整 records | Step07、Step08 与 inspect |
+| activity-coverage.json | v2：全入口与材料的分析处置、未启动原因、容量限制，以及顶层 `unexplainedActivityEntries` 程序侧完整 records | Step07、Step08 与 inspect |
 
 目标是完成一个包 REVIEW 随即保存，后续包失败不删除已有结果；当前 ActivityExplainer 实际在循环结束后才以固定地址聚合 publish。把 publisher 移进循环会用同一地址安装不同 bytes 并 collision，因此即时逐包保存仍是独立已知缺口，本次覆盖修复保持现有聚合 publication，不假称解决，也不新增分片/恢复协议。DRAFT/REVIEW 原始执行材料按现有私有审计策略保存，不作为额外产品候选，不新增逐记录状态机或修复账本。
 
-Step07 可以按已保存 material/activity ID 读取必要内容，不回到扫描仓库或重构调用链。`RepositoryBusinessKnowledge.unexplainedActivityEntries` 持有并保存完整记录。程序送给 Process 仓库总整理/Report 模型前按 `materialId` 将完整 sidecar records 聚合成一项 `{materialContext, unexplainedEntryKeys, reasonCode}`：同一 context 只发送一次，删除 material/global entry IDs，保持 E1…EN 的材料映射顺序。活动之间是否属于同一过程由模型阅读多个活动决定，不由 Step06 强设唯一 owner；process-group Prompt 不因这一仓库输入变化升版。
+Step07 可以按已保存 material/activity ID 读取必要内容，不回到扫描仓库或重构调用链。下一项会让 `RepositoryBusinessKnowledge.unexplainedActivityEntries` 持有并保存完整记录。程序送给 Process 仓库总整理/Report 模型前将按 `materialId` 把完整 sidecar records 聚合成一项 `{materialContext, unexplainedEntryKeys, reasonCode}`：同一 context 只发送一次，删除 material/global entry IDs，保持 E1…EN 的材料映射顺序。活动之间是否属于同一过程由模型阅读多个活动决定，不由 Step06 强设唯一 owner；process-group Prompt 不因这一仓库输入变化升版。
 
 ## 6. 覆盖、预算、失败与复用
 
@@ -138,10 +138,10 @@ maxMaterialsToStart 限制本执行实际启动的材料数；超限材料写 NO
 
 已对自动生成的 `POST /user/registerUser` `FLOW_PREFERRED` 材料完成一次授权的 Luna/high DRAFT+完整 REVIEW。9 个短片段使模型识别出“接收注册请求 → 将登录名写为用户名 → 校验验证码 → 检查登录名 → 调用注册服务 → 返回标准结果”的局部活动，并明确没有把调用服务写成一次已成功持久化。它同时暴露两项文字质量问题：HTTP 路径被截短、Java 类型/变量名泄漏进业务对象。因此 DRAFT/REVIEW Prompt 已增加完整 HTTP 方法与路径原样保留、业务语言优先的规则；这不重放已结束的产品候选。
 
-另一个真实保存的四入口包使用 E1 `DELETE /user/delete`/S487、E2 `GET /user/getUserSession`/S722、E3 `POST /user/registerUser`/S731、E4 `GET /user/logout`/S898。它以 `maxActivitiesPerMaterial=2` 约束四入口，实际 DRAFT 只返回 A1/E1、A2/E2，并在当前 coverage-before-REVIEW 验证处终止，REVIEW 没有启动。这个失败证明 current v1 尚未满足任意 N 合同；未来 v2 的补齐或显式 unexplained 结果只是验收期望，不能冒充原 response 或重放该调用。
+另一个真实保存的四入口包使用 E1 `DELETE /user/delete`/S487、E2 `GET /user/getUserSession`/S722、E3 `POST /user/registerUser`/S731、E4 `GET /user/logout`/S898。历史 v1 候选以 `maxActivitiesPerMaterial=2` 约束四入口，实际 DRAFT 只返回 A1/E1、A2/E2，并在 coverage-before-REVIEW 验证处终止，REVIEW 没有启动。它证明了 v1 的缺陷；当前 v2 会对不相容 profile 在首次请求前失败，或用完整实际 DRAFT 与 `missingEntryKeys` 启动唯一 REVIEW。历史已开始候选仍不会被重放。
 
 新的实测多入口质量点读取同一固定提交中的 `GET /account/getStatistics` 与 `GET /account/listWithBalance` 组包。一次 Luna/high DRAFT+完整 REVIEW 在 60.64 秒内产生两项完整活动，分别覆盖这两条入口：前者说明按名称和序列号查询结算账户统计、正常/异常返回分支及统计口径待确认；后者说明按相同输入查询带余额的账户报表、列表转表格返回及余额口径待确认。模型没有把同一 Controller 类误写成固定前后流程，也没有编造岗位、余额计算公式或一次实际运行成功。这证明组包可以降低调用数，同时用 scope-local key 保留入口级结果；它仍只验证局部活动，尚未验证跨活动过程或九章报告。
 
-下一步按已批准设计先用 scripted Luna/xhigh RED 覆盖：N=4 DRAFT 漏 E3/E4 后 REVIEW 收到完整 actualDraft/missing keys、N≥12 的 E10–E12、跨包 E1 不串、many-to-many、真实 REVIEW 预算、非法 key/ref/JSON、REVIEW 仍漏项、v2 reader required 字段与 specific partial 下传。Terra/xhigh 只在现有 seams 作最小 GREEN，保持已完成的 Step05 接力。
+已用 scripted Luna/xhigh RED 与 Terra/xhigh GREEN 覆盖：N=4 DRAFT 漏 E3/E4 后 REVIEW 收到完整 actualDraft/missing keys、N≥12 的 E10–E12、跨包 E1 不串、many-to-many、真实 REVIEW 预算、非法 key/ref/JSON、REVIEW 仍漏项与 v2 reader required 字段。下一项只测试并实现 specific partial 向知识和报告的下传；保持已完成的 Step05 接力。
 
 上述直接 scripted 测试通过后，已批准一次新候选的真实 Activity 验证，最多两次 Luna/high 调用。精确 material 为 `material:8be00d5562743218931b721c547d915076a08b7200bc06e415d1248c5ea663eb`，四个完整有序 entry IDs 和 S487/S722/S731/S898 见[实施计划 Task 7](../plans/coherent-code-context-implementation-plan.md#task-7脚本验收后执行已批准的单材料-live-验证)；选择器同时核对 material identity、完整 entry 集及顺序、refs，不用 context 子串查找。使用 `ActivityExplanationProfile(20000, 12000, 4, 24, 1000)` 并通过全部 preflight；无匹配或容量不相容时零请求。PARTIAL 或失败均保存可用输入/返回/结果并停止，不重试或重放旧候选，不运行真实 Process/Report/全仓扫描。这是计划验证输入，尚无本次 live 结果。

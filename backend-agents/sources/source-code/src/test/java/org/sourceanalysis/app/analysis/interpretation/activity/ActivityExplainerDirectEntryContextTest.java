@@ -24,8 +24,8 @@ import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialE
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialMode;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
+import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Verifies that saved Step05 service context survives the material-to-activity boundary. */
 class ActivityExplainerDirectEntryContextTest {
@@ -158,7 +158,7 @@ class ActivityExplainerDirectEntryContextTest {
       JsonNode packet = canonicalJson.parseCanonical(request.untrustedInputJson());
       packets.add(packet);
       return new StructuredModelResponse(
-          canonicalJson.encodeCanonical(activity(packet)),
+          canonicalJson.encodeCanonical(activity(packet, request.taskKind())),
           new ModelRuntimeIdentityV1("scripted", "direct-context", "none", "none"));
     }
 
@@ -182,7 +182,7 @@ class ActivityExplainerDirectEntryContextTest {
                   assertThat(value.path("snippet").asText()).contains("approvalClient.record"));
     }
 
-    private static ObjectNode activity(JsonNode packet) {
+    private static ObjectNode activity(JsonNode packet, String taskKind) {
       ObjectNode root = JsonNodeFactory.instance.objectNode();
       ObjectNode activity = root.putArray("activities").addObject();
       activity.put("activityLocalId", "approve-order");
@@ -203,6 +203,9 @@ class ActivityExplainerDirectEntryContextTest {
       packet.path("allowlistedRefs").forEach(value -> refs.add(value.path("ref").asText()));
       activity.putArray("questions").add("审批记录的外部效果是什么？");
       activity.putArray("scopeLimitations").add("静态源码不证明一次审批已经成功完成。");
+      if ("ACTIVITY_REVIEW".equals(taskKind)) {
+        root.putArray("unexplainedEntries");
+      }
       return root;
     }
   }

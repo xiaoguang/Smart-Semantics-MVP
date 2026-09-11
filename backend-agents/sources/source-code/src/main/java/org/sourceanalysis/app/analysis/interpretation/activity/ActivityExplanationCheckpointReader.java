@@ -29,15 +29,22 @@ final class ActivityExplanationCheckpointReader {
 
   private static final String COVERAGE_FILE = "activity-coverage.json";
   private static final String COVERAGE_TYPE = "FLOW_INTERPRETATION_ACTIVITY_COVERAGE";
-  private static final String COVERAGE_SCHEMA = "flow-interpretation-activity-coverage-v1";
+  private static final String COVERAGE_SCHEMA = "flow-interpretation-activity-coverage-v2";
   private static final String EXPLANATIONS_FILE = "activity-explanations.jsonl";
   private static final String EXPLANATIONS_TYPE = "FLOW_INTERPRETATION_ACTIVITY_EXPLANATIONS";
   private static final String EXPLANATIONS_SCHEMA = "flow-interpretation-activity-explanations-v1";
   private static final Set<String> COVERAGE_FIELDS =
       Set.of(
-          "artifactId", "artifactType", "entryCoverage", "schemaVersion", "semanticDeliveryStatus");
+          "artifactId",
+          "artifactType",
+          "entryCoverage",
+          "schemaVersion",
+          "semanticDeliveryStatus",
+          "unexplainedActivityEntries");
   private static final Set<String> ENTRY_COVERAGE_FIELDS =
       Set.of("activityIds", "disposition", "entryId", "reasonCode");
+  private static final Set<String> UNEXPLAINED_ENTRY_FIELDS =
+      Set.of("entryId", "entryKey", "materialContext", "materialId", "reasonCode");
   private static final Set<String> ACTIVITY_FIELDS =
       Set.of(
           "activityId",
@@ -73,10 +80,11 @@ final class ActivityExplanationCheckpointReader {
       ReopenedModulePublication reopened = artifacts.reopen(checkpoint);
       verifyCheckpoint(checkpoint, reopened);
       Map<String, VerifiedCanonicalPayload> payloads = payloads(reopened.payloads());
-      List<ActivityEntryCoverage> coverage = coverage(payloads.get(COVERAGE_FILE));
+      CoverageCheckpoint coverage = coverage(payloads.get(COVERAGE_FILE));
       List<ReviewedActivity> activities = activities(payloads.get(EXPLANATIONS_FILE));
-      verifyCoverage(coverage, activities);
-      return new ActivityExplanationResult(activities, coverage, checkpoint);
+      verifyCoverage(coverage.entries(), activities, coverage.unexplainedEntries());
+      return new ActivityExplanationResult(
+          activities, coverage.entries(), coverage.unexplainedEntries(), checkpoint);
     } catch (ActivityCheckpointException failure) {
       throw failure;
     } catch (RuntimeException failure) {
@@ -122,7 +130,7 @@ final class ActivityExplanationCheckpointReader {
     return Map.copyOf(byName);
   }
 
-  private List<ActivityEntryCoverage> coverage(VerifiedCanonicalPayload payload) {
+  private CoverageCheckpoint coverage(VerifiedCanonicalPayload payload) {
     ObjectNode root = parseObject(payload, COVERAGE_FIELDS);
     requireIdentity(root, payload, COVERAGE_TYPE, COVERAGE_SCHEMA);
     JsonNode entries = root.path("entryCoverage");
@@ -155,7 +163,29 @@ final class ActivityExplanationCheckpointReader {
     if (!expected.equals(requiredText(root, "semanticDeliveryStatus"))) {
       throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
     }
-    return List.copyOf(restored);
+    JsonNode unexplained = root.path("unexplainedActivityEntries");
+    if (!unexplained.isArray()) {
+      throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
+    }
+    List<UnexplainedActivityEntry> restoredUnexplained = new ArrayList<>();
+    Set<String> unexplainedEntryIds = new HashSet<>();
+    for (JsonNode entry : unexplained) {
+      if (!(entry instanceof ObjectNode value) || !fields(value).equals(UNEXPLAINED_ENTRY_FIELDS)) {
+        throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
+      }
+      UnexplainedActivityEntry restoredEntry =
+          new UnexplainedActivityEntry(
+              requiredText(value, "entryId"),
+              requiredText(value, "materialId"),
+              requiredText(value, "entryKey"),
+              requiredText(value, "materialContext"),
+              requiredText(value, "reasonCode"));
+      if (!unexplainedEntryIds.add(restoredEntry.entryId())) {
+        throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
+      }
+      restoredUnexplained.add(restoredEntry);
+    }
+    return new CoverageCheckpoint(List.copyOf(restored), List.copyOf(restoredUnexplained));
   }
 
   private List<ReviewedActivity> activities(VerifiedCanonicalPayload payload) {
@@ -205,22 +235,49 @@ final class ActivityExplanationCheckpointReader {
   }
 
   private static void verifyCoverage(
-      List<ActivityEntryCoverage> coverage, List<ReviewedActivity> activities) {
-    Set<String> activityIds =
-        activities.stream()
-            .map(ReviewedActivity::activityId)
-            .collect(java.util.stream.Collectors.toSet());
-    Set<String> coveredActivityIds = new HashSet<>();
-    for (ActivityEntryCoverage entry : coverage) {
-      if (!activityIds.containsAll(entry.activityIds())
-          || !coveredActivityIds.addAll(entry.activityIds())) {
+      List<ActivityEntryCoverage> coverage,
+      List<ReviewedActivity> activities,
+      List<UnexplainedActivityEntry> unexplainedActivityEntries) {
+    Map<String, ReviewedActivity> activitiesById = new HashMap<>();
+    for (ReviewedActivity activity : activities) {
+      if (activitiesById.put(activity.activityId(), activity) != null) {
         throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
       }
     }
-    if (!coveredActivityIds.equals(activityIds)) {
+    Set<String> unexplainedEntryIds = new HashSet<>();
+    for (UnexplainedActivityEntry unexplained : unexplainedActivityEntries) {
+      if (!unexplainedEntryIds.add(unexplained.entryId())) {
+        throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
+      }
+    }
+    Set<String> seenActivityIds = new HashSet<>();
+    for (ActivityEntryCoverage entry : coverage) {
+      List<String> expectedActivityIds =
+          activities.stream()
+              .filter(activity -> activity.entryIds().contains(entry.entryId()))
+              .map(ReviewedActivity::activityId)
+              .sorted()
+              .toList();
+      if (!activitiesById.keySet().containsAll(entry.activityIds())
+          || !entry.activityIds().equals(expectedActivityIds)) {
+        throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
+      }
+      seenActivityIds.addAll(entry.activityIds());
+      boolean unexplained = unexplainedEntryIds.contains(entry.entryId());
+      if (unexplained
+          != ("NOT_ANALYZED".equals(entry.disposition())
+              && "MODEL_NOT_EXPLAINED".equals(entry.reasonCode())
+              && entry.activityIds().isEmpty())) {
+        throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
+      }
+    }
+    if (!seenActivityIds.equals(activitiesById.keySet())) {
       throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
     }
   }
+
+  private record CoverageCheckpoint(
+      List<ActivityEntryCoverage> entries, List<UnexplainedActivityEntry> unexplainedEntries) {}
 
   private ObjectNode parseObject(VerifiedCanonicalPayload payload, Set<String> expectedFields) {
     JsonNode parsed = canonicalJson.parseCanonical(payload.canonicalUtf8());
