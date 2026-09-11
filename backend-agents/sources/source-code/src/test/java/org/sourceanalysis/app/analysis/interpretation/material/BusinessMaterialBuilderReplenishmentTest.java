@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
-import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTaskCompilerTest;
+import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Confirms that a multi-activity replenishment scenario produces reviewable local packets. */
 class BusinessMaterialBuilderReplenishmentTest {
@@ -32,7 +32,7 @@ class BusinessMaterialBuilderReplenishmentTest {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createSyntheticReplenishmentToSettlement(
             temporaryDirectory.resolve("replenishment-materials"))) {
-      BusinessFlowsReference flows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
 
       BusinessMaterialBuildResult result =
           new BusinessMaterialBuilder(

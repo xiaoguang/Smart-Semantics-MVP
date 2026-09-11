@@ -4,7 +4,7 @@
 - Agent role: Primary implementation coordinator
 - Model: GPT-5
 - Started: 2026-09-11
-- Last updated: 2026-09-11 (design synchronization complete)
+- Last updated: 2026-09-11 (Task 1 fixture migration complete; known v1 coverage failure recorded)
 - Scope: Approved cleanup, arbitrary-N Activity coverage, Knowledge/Report partial propagation, and bounded live Activity validation
 - Approved inputs: User-approved implementation plan; baseline commit `fc6d67b` pushed to `origin/main`; current design contracts
 - Current branch/worktree: `codex/source-analysis-business-flows-closeout`; `/private/tmp/linguan-source-analysis-process-design`
@@ -15,10 +15,14 @@
 - Read the approved cleanup/coverage design, current implementation handoff, and directly affected implementation seams.
 - Confirmed the old interpretation chain is isolated from the active four-Module workflow and that Activity v1 rejects DRAFT coverage shortfalls before REVIEW.
 - Synchronized the approved v2 coverage contract, exact single-material live-validation task, and current authorization boundaries into the implementation guidance.
+- Committed and pushed that design delivery as `4c65f47` (`docs: align cleanup implementation contract`).
+- Received the Task 1 neutral-testsupport RED: `BusinessFlowTestSupportContractTest` compiled and failed as expected because the new neutral helper does not yet exist (1 failure, 0 errors).
+- Completed Task 1 fixture migration: the 14 active consumers and retained Flow/Capsule coverage test now use neutral testsupport; no legacy source/test package has been deleted yet.
+- Investigated the two direct-selector failures. Both enter `ActivityExplainer.validateResponse` before Process/Report work and fail `ACTIVITY_DRAFT_INVALID`; the migrated tests differ from HEAD only in the helper import/call, and the neutral helper preserves the prior Step05 publication algorithm. This is the approved Task 4 v1 coverage limitation, not a Task 1 fixture regression.
 
 ## Current state
 
-- Design synchronization is complete. The next work unit is the neutral testsupport RED that removes current tests' accidental dependency on the retired interpretation chain.
+- Task 1 GREEN is complete. The next work unit is legacy-chain retirement; the known v1 Activity coverage failure remains intentionally unfixed until Task 4.
 - No production implementation, test execution, source scan, or Provider call has started in this work unit.
 
 ## Changed files
@@ -34,6 +38,10 @@
 | --- | --- | --- |
 | `git ls-remote origin refs/heads/main` | PASS | Baseline branch was at `6a191017` before the approved push. |
 | `git push origin HEAD:main` | PASS | `fc6d67b` is now `origin/main`. |
+| `git push origin HEAD:main` | PASS after DNS retry | `4c65f47` is now `origin/main`. |
+| `git diff --check` | PASS | Documentation synchronization has no whitespace errors. |
+| `mvn -o -t .mvn/toolchains.xml -Dtest=BusinessFlowTestSupportContractTest test` | Expected RED | 1 failure, 0 errors: neutral support seam absent. |
+| Task 1 direct combined selector | PARTIAL | 12 current test classes plus support/coverage green; `BusinessReportCheckpointTest` and `ProcessKnowledgeCheckpointTest` stop at existing `ACTIVITY_DRAFT_INVALID`. |
 | Targeted source inspection | PASS | Identified v1 coverage early-fail, count-only downstream input, old-module registrations, and capsule v8/v6 consumers. |
 
 ## Decisions
@@ -47,7 +55,7 @@
 
 ## Exact next action
 
-- Commit and push the synchronized design, then begin the neutral testsupport RED for legacy-chain cleanup.
+- Add a RED guard for obsolete interpretation packages/module addresses, then retire the legacy chain without changing the active workflow.
 
 ## Resume checks
 

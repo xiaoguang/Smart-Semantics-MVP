@@ -23,7 +23,7 @@ import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialB
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
-import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTaskCompilerTest;
+import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 
 /**
@@ -38,7 +38,7 @@ class ActivityPromptContractTest {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("activity-prompts"))) {
-      BusinessFlowsReference flows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
       BusinessMaterialBuildResult allMaterials =
           new BusinessMaterialBuilder(
                   fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())

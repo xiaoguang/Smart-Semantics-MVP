@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
-import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTaskCompilerTest;
+import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
@@ -29,7 +29,7 @@ class BusinessMaterialBuilderTest {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("materials"))) {
-      BusinessFlowsReference flows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
 
       BusinessMaterialBuildResult result =
           new BusinessMaterialBuilder(
@@ -155,7 +155,7 @@ class BusinessMaterialBuilderTest {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("over-budget"))) {
-      BusinessFlowsReference flows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
 
       BusinessMaterialBuildResult result =
           new BusinessMaterialBuilder(
@@ -180,7 +180,7 @@ class BusinessMaterialBuilderTest {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("code-outline"))) {
-      BusinessFlowsReference flows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
 
       BusinessMaterialBuildResult result =
           new BusinessMaterialBuilder(
@@ -213,7 +213,7 @@ class BusinessMaterialBuilderTest {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("connected-entry-context"))) {
-      BusinessFlowsReference flows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
 
       BusinessMaterial approve =
           new BusinessMaterialBuilder(

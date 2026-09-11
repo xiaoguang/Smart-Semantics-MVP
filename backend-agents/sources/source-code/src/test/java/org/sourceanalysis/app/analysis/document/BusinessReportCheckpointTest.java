@@ -23,7 +23,7 @@ import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplainer
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
-import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTaskCompilerTest;
+import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.analysis.knowledge.ProcessExplainer;
 import org.sourceanalysis.app.analysis.knowledge.ProcessExplanationProfile;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
@@ -49,7 +49,7 @@ class BusinessReportCheckpointTest {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("business-report-checkpoint"))) {
-      BusinessFlowsReference flows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
       Class<?> workflowType =
           requireType("org.sourceanalysis.app.runtime.BusinessAnalysisWorkflow");
       Object workflow =

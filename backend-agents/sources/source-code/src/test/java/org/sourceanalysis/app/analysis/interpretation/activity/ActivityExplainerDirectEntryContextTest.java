@@ -24,7 +24,7 @@ import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialE
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialMode;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
-import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTaskCompilerTest;
+import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 
 /** Verifies that saved Step05 service context survives the material-to-activity boundary. */
@@ -42,7 +42,7 @@ class ActivityExplainerDirectEntryContextTest {
                   fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
               .build(
                   new BuildBusinessMaterialsRequest(
-                      RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture),
+                      BusinessFlowTestSupport.publishBusinessFlows(fixture),
                       new BusinessMaterialProfile(8, 24, 12_000, 1)));
       BusinessMaterial material =
           allMaterials.materialSet().materials().stream()
@@ -107,7 +107,7 @@ class ActivityExplainerDirectEntryContextTest {
                   fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
               .build(
                   new BuildBusinessMaterialsRequest(
-                      RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture),
+                      BusinessFlowTestSupport.publishBusinessFlows(fixture),
                       new BusinessMaterialProfile(8, 24, 12_000, 1)));
       BusinessMaterial original = allMaterials.materialSet().materials().get(0);
       BusinessMaterial completeFlow =

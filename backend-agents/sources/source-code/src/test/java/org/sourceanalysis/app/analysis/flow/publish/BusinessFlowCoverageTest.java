@@ -3,7 +3,6 @@ package org.sourceanalysis.app.analysis.flow.publish;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -18,16 +17,11 @@ import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionProfile;
 import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilationProfile;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
-import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
-import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTask;
-import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTaskCompiler;
-import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTaskCompilerTest;
-import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTaskProfile;
-import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTaskSet;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
+import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Stored-artifact coverage for a two-Flow mixed model-eligibility publication. */
 public class BusinessFlowCoverageTest {
@@ -35,13 +29,13 @@ public class BusinessFlowCoverageTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void preservesBothCompleteCapsulesWhileR0UsesOnlyTheEligibleFlow() throws Exception {
+  void preservesBothCompleteCapsulesAndAccurateModelEligibilityUnderBudget() throws Exception {
     Map<String, Integer> generousSpanCounts;
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("mixed-eligibility-generous"))) {
       BusinessFlowsReference publication =
-          RegistryProposalTaskCompilerTest.publishBusinessFlows(
+          BusinessFlowTestSupport.publishBusinessFlows(
               fixture, generousFlowProfile(), capsuleProfile(1_024));
       generousSpanCounts = capsuleSpanCounts(reopen(fixture, publication));
       assertThat(generousSpanCounts).hasSize(2);
@@ -55,7 +49,7 @@ public class BusinessFlowCoverageTest {
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("mixed-eligibility-bounded"))) {
       BusinessFlowsReference publication =
-          RegistryProposalTaskCompilerTest.publishBusinessFlows(
+          BusinessFlowTestSupport.publishBusinessFlows(
               fixture, generousFlowProfile(), capsuleProfile(spanBudget));
       ReopenedAnalysisStepPublication reopened = reopen(fixture, publication);
       CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
@@ -130,42 +124,6 @@ public class BusinessFlowCoverageTest {
         boolean expectedEligible = count <= spanBudget;
         assertCompleteCapsule(capsule, expectedEligible, spanBudget);
       }
-      RegistryProposalTaskProfile taskProfile =
-          new RegistryProposalTaskProfile(
-              "adapter-fixture-alpha",
-              "auth-fixture-beta",
-              RegistryProposalTaskCompilerTest.reference(
-                  "registry-prompt", "mixed-eligibility-prompt"),
-              RegistryProposalTaskCompilerTest.reference(
-                  "registry-schema", fixture.artifactControls().schemaBundleSha256()),
-              RegistryProposalTaskCompilerTest.reference(
-                  "registry-runtime", fixture.artifactControls().profileSha256()),
-              new ModelRuntimeIdentityV1(
-                  "provider-fixture-gamma",
-                  "model-fixture-delta",
-                  "reasoning-fixture-epsilon",
-                  "sandbox-fixture-zeta"),
-              RegistryProposalTaskCompilerTest.reference(
-                  "registry-budget", "mixed-eligibility-budget"),
-              16,
-              16,
-              4_096,
-              256,
-              1_024);
-      RegistryProposalTaskSet taskSet =
-          new RegistryProposalTaskCompiler(fixture.stepArtifacts())
-              .compileRegistryProposalTasks(publication, taskProfile);
-      assertThat(taskSet.eligibleFlowSliceIds()).containsExactlyElementsOf(eligible);
-      assertThat(taskSet.tasks()).hasSize(1);
-      RegistryProposalTask task = taskSet.tasks().get(0);
-      assertThat(task.taskKind()).isEqualTo("R0_REGISTRY_PROPOSAL");
-      assertThat(task.flowSliceId()).isEqualTo(eligible.get(0));
-      JsonNode taskInput = canonicalJson.parseCanonical(task.inputJson());
-      JsonNode capsuleView = requiredObject(taskInput, "capsuleView");
-      JsonNode owningCapsule = capsulesByFlow.get(task.flowSliceId());
-      assertThat(canonicalJson.encodeCanonical(capsuleView).copyToByteArray())
-          .containsExactly(
-              canonicalJson.encodeCanonical(modelCapsuleView(owningCapsule)).copyToByteArray());
     }
   }
 
@@ -373,23 +331,9 @@ public class BusinessFlowCoverageTest {
     return values.stream().sorted().toList();
   }
 
-  private static JsonNode modelCapsuleView(JsonNode capsule) {
-    ObjectNode copy = (ObjectNode) capsule.deepCopy();
-    for (JsonNode fact : requiredArray(copy, "factViews")) {
-      assertThat(fact.isObject()).isTrue();
-      ((ObjectNode) fact).remove("originFactArtifactRef");
-    }
-    for (JsonNode gap : requiredArray(copy, "gapViews")) {
-      assertThat(gap.isObject()).isTrue();
-      ((ObjectNode) gap).remove("originKind");
-      ((ObjectNode) gap).remove("originGapLedgerRef");
-    }
-    return copy;
-  }
-
   private static FlowCompilationProfile generousFlowProfile() {
     return new FlowCompilationProfile(
-        RegistryProposalTaskCompilerTest.reference("flow-profile", "mixed-eligibility-flow"),
+        BusinessFlowTestSupport.reference("flow-profile", "mixed-eligibility-flow"),
         16,
         8,
         64,
@@ -401,7 +345,7 @@ public class BusinessFlowCoverageTest {
 
   private static CapsuleProjectionProfile capsuleProfile(int maxSpansPerCapsule) {
     return new CapsuleProjectionProfile(
-        RegistryProposalTaskCompilerTest.reference(
+        BusinessFlowTestSupport.reference(
             "capsule-profile", "mixed-eligibility-" + maxSpansPerCapsule),
         16,
         maxSpansPerCapsule,

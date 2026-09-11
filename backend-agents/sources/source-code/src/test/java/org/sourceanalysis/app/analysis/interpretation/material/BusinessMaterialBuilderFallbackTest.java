@@ -12,7 +12,7 @@ import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionProfile;
 import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilationProfile;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
-import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTaskCompilerTest;
+import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.Sha256Digest;
@@ -28,7 +28,7 @@ class BusinessMaterialBuilderFallbackTest {
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("fallback"))) {
       BusinessFlowsReference flows =
-          RegistryProposalTaskCompilerTest.publishBusinessFlows(
+          BusinessFlowTestSupport.publishBusinessFlows(
               fixture, zeroFlowProfile(), capsuleProfile());
 
       BusinessMaterialBuildResult result =
@@ -64,7 +64,7 @@ class BusinessMaterialBuilderFallbackTest {
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("saved-gapped-entry-context"))) {
       BusinessFlowsReference flows =
-          RegistryProposalTaskCompilerTest.publishBusinessFlows(
+          BusinessFlowTestSupport.publishBusinessFlows(
               fixture, zeroFlowProfile(), capsuleProfile());
 
       BusinessMaterial approve =
@@ -111,7 +111,7 @@ class BusinessMaterialBuilderFallbackTest {
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("direct-entry-fallback"))) {
       BusinessFlowsReference flows =
-          RegistryProposalTaskCompilerTest.publishBusinessFlows(
+          BusinessFlowTestSupport.publishBusinessFlows(
               fixture, zeroFlowProfile(), capsuleProfile());
       BusinessMaterialBuildResult result =
           new BusinessMaterialBuilder(
@@ -146,7 +146,7 @@ class BusinessMaterialBuilderFallbackTest {
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("direct-entry-context"))) {
       BusinessFlowsReference flows =
-          RegistryProposalTaskCompilerTest.publishBusinessFlows(
+          BusinessFlowTestSupport.publishBusinessFlows(
               fixture, zeroFlowProfile(), capsuleProfile());
       BusinessMaterialBuildResult result =
           new BusinessMaterialBuilder(
@@ -185,7 +185,7 @@ class BusinessMaterialBuilderFallbackTest {
         ProgramGraphsPublicFixture.createWithLongGuardedApprove(
             temporaryDirectory.resolve("long-direct-entry-context"))) {
       BusinessFlowsReference flows =
-          RegistryProposalTaskCompilerTest.publishBusinessFlows(
+          BusinessFlowTestSupport.publishBusinessFlows(
               fixture, zeroFlowProfile(), capsuleProfile());
       BusinessMaterialBuildResult result =
           new BusinessMaterialBuilder(
@@ -214,7 +214,7 @@ class BusinessMaterialBuilderFallbackTest {
         ProgramGraphsPublicFixture.createWithLongGuardedApprove(
             temporaryDirectory.resolve("middle-direct-entry-context"))) {
       BusinessFlowsReference flows =
-          RegistryProposalTaskCompilerTest.publishBusinessFlows(
+          BusinessFlowTestSupport.publishBusinessFlows(
               fixture, zeroFlowProfile(), capsuleProfile());
       BusinessMaterialBuildResult result =
           new BusinessMaterialBuilder(
@@ -247,7 +247,7 @@ class BusinessMaterialBuilderFallbackTest {
         ProgramGraphsPublicFixture.createWithLongGuardedApprove(
             temporaryDirectory.resolve("middle-state-change-context"))) {
       BusinessFlowsReference flows =
-          RegistryProposalTaskCompilerTest.publishBusinessFlows(
+          BusinessFlowTestSupport.publishBusinessFlows(
               fixture, zeroFlowProfile(), capsuleProfile());
       BusinessMaterialBuildResult result =
           new BusinessMaterialBuilder(

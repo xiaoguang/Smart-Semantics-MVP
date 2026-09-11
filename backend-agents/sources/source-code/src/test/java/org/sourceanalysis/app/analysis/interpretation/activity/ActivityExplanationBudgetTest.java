@@ -21,7 +21,7 @@ import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMate
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
-import org.sourceanalysis.app.analysis.interpretation.proposal.RegistryProposalTaskCompilerTest;
+import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 
 /** Guards the product rule that a capacity miss is coverage, not a failed provider execution. */
@@ -34,7 +34,7 @@ class ActivityExplanationBudgetTest {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("activity-budget"))) {
-      BusinessFlowsReference flows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
       BusinessMaterialBuildResult materials =
           new BusinessMaterialBuilder(
                   fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
@@ -97,7 +97,7 @@ class ActivityExplanationBudgetTest {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
             temporaryDirectory.resolve("activity-execution-budget"))) {
-      BusinessFlowsReference flows = RegistryProposalTaskCompilerTest.publishBusinessFlows(fixture);
+      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
       BusinessMaterialBuildResult materials =
           new BusinessMaterialBuilder(
                   fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
