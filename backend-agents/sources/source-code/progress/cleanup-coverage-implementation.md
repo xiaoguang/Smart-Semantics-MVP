@@ -4,7 +4,7 @@
 - Agent role: Primary implementation coordinator
 - Model: GPT-5
 - Started: 2026-09-11
-- Last updated: 2026-09-11 (Task 1 fixture migration complete; known v1 coverage failure recorded)
+- Last updated: 2026-09-11 (Task 2 legacy retirement complete; known v1 coverage failure recorded)
 - Scope: Approved cleanup, arbitrary-N Activity coverage, Knowledge/Report partial propagation, and bounded live Activity validation
 - Approved inputs: User-approved implementation plan; baseline commit `fc6d67b` pushed to `origin/main`; current design contracts
 - Current branch/worktree: `codex/source-analysis-business-flows-closeout`; `/private/tmp/linguan-source-analysis-process-design`
@@ -19,11 +19,12 @@
 - Received the Task 1 neutral-testsupport RED: `BusinessFlowTestSupportContractTest` compiled and failed as expected because the new neutral helper does not yet exist (1 failure, 0 errors).
 - Completed Task 1 fixture migration: the 14 active consumers and retained Flow/Capsule coverage test now use neutral testsupport; no legacy source/test package has been deleted yet.
 - Investigated the two direct-selector failures. Both enter `ActivityExplainer.validateResponse` before Process/Report work and fail `ACTIVITY_DRAFT_INVALID`; the migrated tests differ from HEAD only in the helper import/call, and the neutral helper preserves the prior Step05 publication algorithm. This is the approved Task 4 v1 coverage limitation, not a Task 1 fixture regression.
+- Completed Task 2 retirement: deleted the 78 obsolete interpretation production classes and 14 dedicated tests, removed their Step06 addresses 1–9, canonical file/schema branches and fixture policies, and retained only the current Step06 addresses 10/11, `ModelRuntimeIdentityV1`, materials, activities, and `analysis.knowledge.ProcessExplainer`.
 
 ## Current state
 
-- Task 1 GREEN is complete. The next work unit is legacy-chain retirement; the known v1 Activity coverage failure remains intentionally unfixed until Task 4.
-- No production implementation, test execution, source scan, or Provider call has started in this work unit.
+- Task 2 GREEN is complete. The next work unit is the approved Capsule field/version reduction (Task 3); the known v1 Activity coverage failure remains intentionally unfixed until Task 4.
+- No customer source scan or Provider call has started in this work unit.
 
 ## Changed files
 
@@ -43,6 +44,9 @@
 | `mvn -o -t .mvn/toolchains.xml -Dtest=BusinessFlowTestSupportContractTest test` | Expected RED | 1 failure, 0 errors: neutral support seam absent. |
 | Task 1 direct combined selector | PARTIAL | 12 current test classes plus support/coverage green; `BusinessReportCheckpointTest` and `ProcessKnowledgeCheckpointTest` stop at existing `ACTIVITY_DRAFT_INVALID`. |
 | Targeted source inspection | PASS | Identified v1 coverage early-fail, count-only downstream input, old-module registrations, and capsule v8/v6 consumers. |
+| Task 2 retirement selector | PASS | 1 guard test; old 1–9 registrations and legacy class are gone while 10/11 and runtime identity remain. |
+| Task 2 direct regressions | PASS / known unrelated limitation | 26 material/activity-related tests pass; Process/Report checkpoint selectors only hit the pre-existing Task 4 `ACTIVITY_DRAFT_INVALID`. |
+| `git diff --check` | PASS | Task 2 deletion and registration change have no whitespace errors. |
 
 ## Decisions
 
@@ -55,7 +59,7 @@
 
 ## Exact next action
 
-- Add a RED guard for obsolete interpretation packages/module addresses, then retire the legacy chain without changing the active workflow.
+- Create Task 3 RED coverage for removing the two obsolete Capsule registry-proposal basis fields and changing only the affected persisted versions.
 
 ## Resume checks
 

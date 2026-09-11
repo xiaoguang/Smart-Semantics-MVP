@@ -1139,38 +1139,6 @@ final class AtomicCanonicalPublicationEngine {
               };
           case FLOW_INTERPRETATION ->
               switch (analysisStepAddress.moduleNumber()) {
-                case 1 ->
-                    "registry-task-compiler".equals(analysisStepAddress.moduleKey())
-                        ? List.of("registry-proposal-task-set.json")
-                        : null;
-                case 2 ->
-                    "registry-proposal-runner".equals(analysisStepAddress.moduleKey())
-                        ? List.of("registry-proposal-execution-set.json")
-                        : null;
-                case 3 ->
-                    "registry-freezer".equals(analysisStepAddress.moduleKey())
-                        ? List.of("repository-interpretation-registry.json")
-                        : null;
-                case 4 ->
-                    "flow-task-compiler".equals(analysisStepAddress.moduleKey())
-                        ? List.of("flow-task-set.json")
-                        : null;
-                case 5 ->
-                    "interpretation-runner".equals(analysisStepAddress.moduleKey())
-                        ? List.of("model-execution-set.json")
-                        : null;
-                case 6 ->
-                    "cross-flow-candidate-compiler".equals(analysisStepAddress.moduleKey())
-                        ? List.of("cross-flow-candidate-compilation.json")
-                        : null;
-                case 7 ->
-                    "business-process-task-compiler".equals(analysisStepAddress.moduleKey())
-                        ? List.of("process-task-shards.json")
-                        : null;
-                case 8 ->
-                    "business-process-interpretation-runner".equals(analysisStepAddress.moduleKey())
-                        ? List.of("process-interpretation-checkpoint.json")
-                        : null;
                 case 10 ->
                     "business-material-builder".equals(analysisStepAddress.moduleKey())
                         ? List.of("business-materials.jsonl")
@@ -1744,93 +1712,6 @@ final class AtomicCanonicalPublicationEngine {
           "business-report-publisher",
           "source-refs.jsonl",
           CanonicalEnvelopeKind.CANONICAL_JSONL);
-    }
-    if ("FLOW_INTERPRETATION_REGISTRY_PROPOSAL_TASK_SET".equals(payload.artifactType())
-        && "flow-interpretation-registry-proposal-task-set-v2".equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.FLOW_INTERPRETATION,
-          1,
-          "registry-task-compiler",
-          "registry-proposal-task-set.json",
-          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
-    }
-    if ("FLOW_INTERPRETATION_REGISTRY_PROPOSAL_EXECUTION_SET".equals(payload.artifactType())
-        && "flow-interpretation-registry-proposal-execution-set-v3"
-            .equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.FLOW_INTERPRETATION,
-          2,
-          "registry-proposal-runner",
-          "registry-proposal-execution-set.json",
-          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
-    }
-    if ("FLOW_INTERPRETATION_REPOSITORY_INTERPRETATION_REGISTRY_MODULE"
-            .equals(payload.artifactType())
-        && "flow-interpretation-repository-interpretation-registry-module-v1"
-            .equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.FLOW_INTERPRETATION,
-          3,
-          "registry-freezer",
-          "repository-interpretation-registry.json",
-          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
-    }
-    if ("FLOW_INTERPRETATION_CROSS_FLOW_CANDIDATE_COMPILATION".equals(payload.artifactType())
-        && "flow-interpretation-cross-flow-candidate-compilation-v1"
-            .equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.FLOW_INTERPRETATION,
-          6,
-          "cross-flow-candidate-compiler",
-          "cross-flow-candidate-compilation.json",
-          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
-    }
-    if ("FLOW_INTERPRETATION_PROCESS_TASK_SHARDS".equals(payload.artifactType())
-        && "flow-interpretation-process-task-shards-v1".equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.FLOW_INTERPRETATION,
-          7,
-          "business-process-task-compiler",
-          "process-task-shards.json",
-          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
-    }
-    if ("FLOW_INTERPRETATION_PROCESS_INTERPRETATION_CHECKPOINT".equals(payload.artifactType())
-        && "flow-interpretation-process-interpretation-checkpoint-v1"
-            .equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.FLOW_INTERPRETATION,
-          8,
-          "business-process-interpretation-runner",
-          "process-interpretation-checkpoint.json",
-          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
-    }
-    if ("FLOW_INTERPRETATION_PROCESS_INTERPRETATION_CHECKPOINT_SET".equals(payload.artifactType())
-        && "flow-interpretation-process-interpretation-checkpoint-set-v1"
-            .equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.FLOW_INTERPRETATION,
-          8,
-          "business-process-interpretation-runner",
-          "process-interpretation-checkpoint.json",
-          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
-    }
-    if ("FLOW_INTERPRETATION_FLOW_TASK_SET".equals(payload.artifactType())
-        && "flow-interpretation-flow-task-set-v4".equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.FLOW_INTERPRETATION,
-          4,
-          "flow-task-compiler",
-          "flow-task-set.json",
-          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
-    }
-    if ("FLOW_INTERPRETATION_MODEL_EXECUTION_SET".equals(payload.artifactType())
-        && "flow-interpretation-model-execution-set-v5".equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.FLOW_INTERPRETATION,
-          5,
-          "interpretation-runner",
-          "model-execution-set.json",
-          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("PROVEN_CODE_FACTS_FACT_CANDIDATE_SET".equals(payload.artifactType())
         && "proven-code-facts-fact-candidate-set-v3".equals(payload.schemaVersion())) {

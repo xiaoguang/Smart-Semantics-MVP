@@ -22,8 +22,8 @@
 
 尚未实施、由本文接手：
 
-- `analysis.interpretation.{model,proposal,registry,process}` 共 78 个旧生产类、四个旧测试包 14 个文件、旧 Step06 地址 1–9 和旧 artifact/schema 分支仍在；
-- 14 个当前测试仍借 `RegistryProposalTaskCompilerTest` 的通用 Step05 fixture；`BusinessFlowCoverageTest` 仍有 R0 尾段；
+- 旧 `analysis.interpretation.{model,proposal,registry,process}` 的 78 个生产类、四个旧测试包的 14 个文件、旧 Step06 地址 1–9、旧 artifact/schema 分支和 `ProgramGraphsPublicFixture` 的旧 policy 已删除；
+- 14 个当前测试已改用中性 `BusinessFlowTestSupport`；`BusinessFlowCoverageTest` 的 R0 尾段已删除，同时保留 Flow/Capsule 覆盖断言；
 - Capsule 仍有 `registryProposalBasisAtomIds`、`registryProposalBasisGapIds`；
 - Activity resource/schema/validator 仍是 v1：四入口 DRAFT 只覆盖 E1/E2 时在 REVIEW 前终止；
 - Process/report 模型输入仍只传 NOT_ANALYZED 数量；
@@ -72,9 +72,9 @@
 - Consumes: Task 1 已独立的测试 fixture 和当前四 Module 工作流
 - Produces: 只保留 Step06 10/11 与当前 Step07 ProcessExplainer 的运行注册
 
-- [ ] Luna/xhigh 建立 active source/test 依赖守卫：旧包 import、旧 1–9 module 注册和旧 artifact type 不得被当前工作流引用，同时 10/11 与 `ModelRuntimeIdentityV1` 必须存在。
-- [ ] Terra/xhigh 在一个可审查变更中删除 78 类/14 旧测试及其专属 registry；不留 alias、bridge、compatibility reader 或复制包。
-- [ ] 运行 Task 1 当前测试面、module-address/canonical-engine 的直接 selector 与当前 workflow selector；历史 docs/progress/artifacts 不参与 stale-name 失败。
+- [x] Luna/xhigh 建立 active source/test 依赖守卫：旧包 import、旧 1–9 module 注册和旧 artifact type 不得被当前工作流引用，同时 10/11 与 `ModelRuntimeIdentityV1` 必须存在。
+- [x] Terra/xhigh 在一个可审查变更中删除 78 类/14 旧测试及其专属 registry；不留 alias、bridge、compatibility reader 或复制包。
+- [x] 运行 Task 1 当前测试面、module-address/canonical-engine 的直接 selector 与当前 workflow selector；历史 docs/progress/artifacts 不参与 stale-name 失败。当前 Process/Report checkpoint 仍只触发已知的 Task 4 `ACTIVITY_DRAFT_INVALID`，未在本任务修复。
 
 ## Task 3：在旧消费者消失后做 Capsule 两字段减法
 
