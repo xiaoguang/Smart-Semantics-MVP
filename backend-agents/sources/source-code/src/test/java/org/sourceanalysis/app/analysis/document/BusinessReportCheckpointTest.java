@@ -296,10 +296,10 @@ class BusinessReportCheckpointTest {
       String ref = input.path("allowlistedRefs").get(0).asText();
       ObjectNode report = JsonNodeFactory.instance.objectNode();
       report.put("title", "业务对象说明");
-      ArrayNode sections = report.putArray("sections");
+      ObjectNode sections = report.putObject("sections");
       String[] titles = {"文档说明", "业务目标", "业务对象", "业务活动", "字段与维度", "对象关系", "指标口径", "示例问题", "待确认事项"};
       for (int index = 0; index < titles.length; index++) {
-        ObjectNode section = sections.addObject();
+        ObjectNode section = sections.putObject("section" + (index + 1));
         section.put("number", index + 1);
         section.put("title", titles[index]);
         ArrayNode paragraphs = section.putArray("paragraphs");

@@ -283,9 +283,9 @@ class PersistedBusinessRunExecutorTest {
           input.path("allowlistedRefs").isEmpty()
               ? null
               : input.path("allowlistedRefs").get(0).asText();
-      ArrayNode sections = response.putArray("sections");
+      ObjectNode sections = response.putObject("sections");
       for (int index = 0; index < SECTION_TITLES.size(); index++) {
-        ObjectNode section = sections.addObject();
+        ObjectNode section = sections.putObject("section" + (index + 1));
         section.put("number", index + 1);
         section.put("title", SECTION_TITLES.get(index));
         ObjectNode paragraph = section.putArray("paragraphs").addObject();

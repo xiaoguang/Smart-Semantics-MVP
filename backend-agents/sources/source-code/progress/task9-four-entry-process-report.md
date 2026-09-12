@@ -21,6 +21,8 @@
 
 - The candidate stopped after `BUSINESS_REPORT_DRAFT`: its returned JSON has nine sections but duplicates `指标口径` at section 6 instead of `对象关系`. `BusinessReportPublisher` correctly rejected it as `BUSINESS_REPORT_INVALID` before REVIEW.
 - The direct cause is a product contract gap: the generated report JSON Schema constrains section shape but does not constrain the exact title for each position, so the provider can emit an invalid draft despite structured output.
+- The corrected Schema and a zero-Provider reopener are committed on `main`. The next candidate is report-only: it consumes the already completed Task 8 activity result plus Task 9 process/summary REVIEW bytes, and has exactly one DRAFT plus one REVIEW call.
+- The first report-only replacement did not start content generation: Codex rejected the `prefixItems` plus boolean `items` Schema at `MODEL_CONFIGURATION`; the diagnostic directory has only `01-BUSINESS_REPORT_DRAFT-input.json` and no response. This is a pre-start provider-schema incompatibility, not a consumed report draft. The next repair uses nine named section slots in a closed object and preserves the persisted array-shaped BusinessReport contract.
 
 ## Changed files
 
@@ -47,16 +49,18 @@
 - Live limit: at most 6 ProcessExplainer calls (one or two bounded process groups plus optional repository summary), then exactly 2 report calls; total maximum 8. A started failure is terminal for this candidate.
 - The completed Process REVIEW retained four distinct local activities rather than forcing a lifecycle; its DRAFT's two loose process hypotheses are preserved in diagnostics but not promoted over the REVIEW.
 - A corrected report schema is a local contract repair, not an architecture change. Any later real report call is a separately saved replacement candidate, never a replay of the terminal draft.
-- The report output Schema now binds each `sections` array position to its one fixed number/title pair, matching the Java response validator.
+- The report output contract must bind each fixed section number/title pair at the provider boundary, matching the Java response validator. The first array-tuple encoding was rejected by Codex before generation; the replacement is a closed object with `section1` through `section9`.
 - Added a zero-Provider reopener for the completed process REVIEW and repository-summary REVIEW. It rebuilds `RepositoryBusinessKnowledge` only from saved candidate bytes and rejects activity/ref scope drift.
+- Replacement report call limit: exactly 2 Luna/high calls. A started failure remains terminal and will not replay activity, process, summary or report work.
+- Observed the direct RED after changing the report contract test: the former `array/prefixItems` schema failed the expected named-object assertion. Implemented the named-slot adapter and updated all scripted report responders; direct report/runtime tests and full local quality verification pass.
 
 ## Blockers
 
-- The report candidate is terminal. Before an explicitly tracked replacement candidate, add a direct RED/GREEN proving each report section position requires its one fixed title.
+- The first content-bearing report candidate remains terminal. Before the next explicitly tracked report-only replacement, complete a direct RED/GREEN proving the Codex-compatible nine-slot object schema maps deterministically to the existing persisted nine-section array.
 
 ## Exact next action
 
-- Commit/push the zero-Provider reopener, then create the one replacement report candidate from the already-completed repository knowledge only.
+- Commit the validated pre-start schema repair, then preflight the logged-in host session and run one independent report-only replacement candidate.
 
 ## Resume checks
 

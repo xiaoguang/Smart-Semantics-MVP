@@ -38,6 +38,17 @@ public final class BusinessReportPublisher {
   private static final String REVIEW_KIND = "BUSINESS_REPORT_REVIEW";
   private static final List<String> SECTION_TITLES =
       List.of("文档说明", "业务目标", "业务对象", "业务活动", "字段与维度", "对象关系", "指标口径", "示例问题", "待确认事项");
+  private static final List<String> SECTION_SLOT_NAMES =
+      List.of(
+          "section1",
+          "section2",
+          "section3",
+          "section4",
+          "section5",
+          "section6",
+          "section7",
+          "section8",
+          "section9");
   private static final List<String> SECTION_FIELD_ORDER =
       List.of("number", "title", "paragraphs", "items");
   private static final List<String> CONTENT_FIELD_ORDER = List.of("text", "refs");
@@ -280,12 +291,12 @@ public final class BusinessReportPublisher {
     }
     String title = requiredText(root, "title", profile);
     JsonNode sections = root.path("sections");
-    if (!sections.isArray() || sections.size() != SECTION_TITLES.size()) {
+    if (!sections.isObject() || !fieldNames(sections).equals(Set.copyOf(SECTION_SLOT_NAMES))) {
       throw failure("BUSINESS_REPORT_INVALID", null);
     }
     List<BusinessReportSection> result = new ArrayList<>();
     for (int index = 0; index < SECTION_TITLES.size(); index++) {
-      JsonNode section = sections.get(index);
+      JsonNode section = sections.path(SECTION_SLOT_NAMES.get(index));
       if (!section.isObject()
           || !fieldNames(section).equals(SECTION_FIELDS)
           || !section.path("number").canConvertToInt()
@@ -312,14 +323,16 @@ public final class BusinessReportPublisher {
     ObjectNode properties = root.putObject("properties");
     textProperty(properties, "title", profile);
     ObjectNode sections = properties.putObject("sections");
-    sections.put("type", "array");
-    sections.put("minItems", SECTION_TITLES.size());
-    sections.put("maxItems", SECTION_TITLES.size());
-    ArrayNode fixedSections = sections.putArray("prefixItems");
+    sections.put("type", "object");
+    sections.put("additionalProperties", false);
+    ArrayNode requiredSections = sections.putArray("required");
+    ObjectNode sectionProperties = sections.putObject("properties");
     for (int index = 0; index < SECTION_TITLES.size(); index++) {
-      fixedSections.add(sectionSchema(allowedRefs, profile, index + 1, SECTION_TITLES.get(index)));
+      String slotName = SECTION_SLOT_NAMES.get(index);
+      requiredSections.add(slotName);
+      sectionProperties.set(
+          slotName, sectionSchema(allowedRefs, profile, index + 1, SECTION_TITLES.get(index)));
     }
-    sections.put("items", false);
     return canonicalJson.encodeCanonical(root);
   }
 
@@ -333,10 +346,10 @@ public final class BusinessReportPublisher {
     ObjectNode properties = section.putObject("properties");
     ObjectNode number = properties.putObject("number");
     number.put("type", "integer");
-    number.put("const", numberValue);
+    number.putArray("enum").add(numberValue);
     ObjectNode title = properties.putObject("title");
     title.put("type", "string");
-    title.put("const", titleValue);
+    title.putArray("enum").add(titleValue);
     contentsProperty(properties, "paragraphs", allowedRefs, profile);
     contentsProperty(properties, "items", allowedRefs, profile);
     return section;

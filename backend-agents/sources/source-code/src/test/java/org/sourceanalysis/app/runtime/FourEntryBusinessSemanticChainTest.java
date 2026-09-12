@@ -486,22 +486,31 @@ class FourEntryBusinessSemanticChainTest {
       boolean partial = !input.path("unexplainedActivityEntries").isEmpty();
       List<String> activityNames = new ArrayList<>();
       input.path("activities").forEach(value -> activityNames.add(value.path("name").asText()));
-      ArrayNode sections = root.putArray("sections");
+      ObjectNode sections = root.putObject("sections");
       section(
           sections,
+          "section1",
           1,
           "文档说明",
           "本文依据冻结源码说明已经形成业务解释的用户账户入口；未解释入口列入第9章。",
           refsFor(partial ? List.of("E1", "E2") : List.of("E1", "E2", "E3", "E4")));
       section(
           sections,
+          "section2",
           2,
           "业务目标",
           partial ? "已形成解释的入口用于处理用户删除和读取当前会话用户信息。" : "系统提供用户登记、查询、删除和退出相关的入口处理。",
           refsFor(partial ? List.of("E1", "E2") : List.of("E1", "E2", "E3", "E4")));
-      section(sections, 3, "业务对象", "已形成解释的代码片段围绕用户、当前会话和用户标识处理请求。", refsFor(List.of("E1", "E2")));
       section(
           sections,
+          "section3",
+          3,
+          "业务对象",
+          "已形成解释的代码片段围绕用户、当前会话和用户标识处理请求。",
+          refsFor(List.of("E1", "E2")));
+      section(
+          sections,
+          "section4",
           4,
           "业务活动",
           partial
@@ -512,20 +521,30 @@ class FourEntryBusinessSemanticChainTest {
           refsFor(partial ? List.of("E1", "E2") : List.of("E1", "E2", "E3", "E4")));
       section(
           sections,
+          "section5",
           5,
           "字段与维度",
           partial ? "用户标识和会话中的用户标识参与已解释片段的处理。" : "用户标识、登录名、验证码和会话中的用户标识参与片段中的处理。",
           refsFor(partial ? List.of("E1", "E2") : List.of("E1", "E2", "E3", "E4")));
-      section(sections, 6, "对象关系", "会话读取到的用户标识被传给用户查询服务；其他关系以代码片段为限。", refsFor(List.of("E2")));
-      section(sections, 7, "指标口径", "本次片段没有定义可作为经营指标的公式或口径。", refsFor(List.of("E1", "E2")));
       section(
           sections,
+          "section6",
+          6,
+          "对象关系",
+          "会话读取到的用户标识被传给用户查询服务；其他关系以代码片段为限。",
+          refsFor(List.of("E2")));
+      section(
+          sections, "section7", 7, "指标口径", "本次片段没有定义可作为经营指标的公式或口径。", refsFor(List.of("E1", "E2")));
+      section(
+          sections,
+          "section8",
           8,
           "示例问题",
           partial ? "用户删除处理如何界定权限？会话读取异常时返回什么？" : "用户登记前执行了哪些校验？会话读取异常时返回什么？",
           refsFor(partial ? List.of("E1", "E2") : List.of("E2", "E3")));
       section(
           sections,
+          "section9",
           9,
           "待确认事项",
           partial
@@ -536,8 +555,13 @@ class FourEntryBusinessSemanticChainTest {
     }
 
     private static void section(
-        ArrayNode sections, int number, String title, String text, List<String> refs) {
-      ObjectNode section = sections.addObject();
+        ObjectNode sections,
+        String slotName,
+        int number,
+        String title,
+        String text,
+        List<String> refs) {
+      ObjectNode section = sections.putObject(slotName);
       section.put("number", number);
       section.put("title", title);
       ArrayNode paragraphRefs =

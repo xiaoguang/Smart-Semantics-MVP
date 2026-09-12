@@ -100,7 +100,7 @@ publisher 保存时只做必要结构检查、序列化与原子安装，不能�
 
 BusinessReportPublisher 已有 DRAFT+完整 REVIEW、九章 Markdown 和四个报告文件，BusinessAnalysisWorkflow 已接通它。`PersistedBusinessRunExecutorTest` 以一个真实的已保存 Step05 fixture 和 scripted Provider 直接验证：活动 REVIEW 的目的、条件、规则、问题先进入过程/报告模型输入，报告 DRAFT 再完整进入报告 REVIEW，最终 Markdown 保留该业务段落。另有一次明确授权的 Luna/high 小包验收：它只重用已完成的 jshERP 用户登录、用户注册活动及其保守的两个独立过程，生成一份九章报告；没有把注册和登录伪造成有源码顺序的单一过程。该结果证明小包的业务语言与报告链路可用，不证明自动 Builder→整仓业务九章已经通过真实质量验收。
 
-报告任务的结构化输出 Schema 还必须固定数组的每一个位置：第 1 项只能是“文档说明”、第 6 项只能是“对象关系”，依此直到第 9 项。仅把标题限制为九个可选值不足以保证九章顺序；一次真实报告 DRAFT 曾把第 6 项错误写成第二个“指标口径”，Java 在 REVIEW 前拒绝了它。现在 Provider Schema 与 Java 返回校验都按位置约束，避免把本可在输出边界阻止的错误留到一次已启动候选之后。
+报告任务的结构化输出 Schema 还必须固定九个命名槽位：`section1` 只能是“文档说明”、`section6` 只能是“对象关系”，依此直到 `section9`。这只是模型临时返回形状；Java 立即把它转换为既有的顺序九章 `BusinessReport`，持久化 JSON 和 Markdown 不变。仅把标题限制为九个可选值不足以保证章节对应关系；一次真实报告 DRAFT 曾把第 6 章错误写成第二个“指标口径”，Java 在 REVIEW 前拒绝了它。数组 tuple 的 `prefixItems` 编码随后被本机 Codex 在生成前以 `MODEL_CONFIGURATION` 拒绝，因此改用这个 Provider 路径已经使用过的闭合对象属性、`required` 和单值 `enum`。Provider Schema 与 Java 返回校验都按固定槽位约束，避免把本可在输出边界阻止的错误留到一次已启动候选之后。
 
 当前报告输入已获得 Activity v2 的具体 `unexplainedActivityEntries` 的按 material 聚合投影；E1–E4 这样的 PARTIAL 输入会把完整 HTTP context 和 `MODEL_NOT_EXPLAINED` 原因交给报告模型。报告 prompt 要求第9章说明这些具体范围，而第4章不得为它们编造活动。`cleanKnowledge`/Prompt/input 与真正承载字段的 owning schema/readers 已升级；报告九章 output shape 不因内部新增输入而强制升版。
 

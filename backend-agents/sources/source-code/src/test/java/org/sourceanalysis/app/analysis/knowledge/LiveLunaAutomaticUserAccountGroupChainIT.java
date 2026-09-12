@@ -234,13 +234,19 @@ class LiveLunaAutomaticUserAccountGroupChainIT {
   private static RepositoryBusinessKnowledge loadCompletedKnowledge(ChainInput input)
       throws IOException {
     JsonNode processRoot = parseFile(requiredFile("sourceanalysis.liveLunaProcessReview"));
-    JsonNode summaryRoot = parseFile(requiredFile("sourceanalysis.liveLunaRepositorySummaryReview"));
+    JsonNode summaryRoot =
+        parseFile(requiredFile("sourceanalysis.liveLunaRepositorySummaryReview"));
     Map<String, ReviewedActivity> activitiesById = new LinkedHashMap<>();
-    input.activities().reviewedActivities().forEach(activity -> activitiesById.put(activity.activityId(), activity));
+    input
+        .activities()
+        .reviewedActivities()
+        .forEach(activity -> activitiesById.put(activity.activityId(), activity));
     List<String> allowedRefs =
         input.sourceReferences().stream().map(SourceReference::ref).sorted().toList();
     List<BusinessProcess> processes =
-        processRoot.path("processes").valueStream()
+        processRoot
+            .path("processes")
+            .valueStream()
             .map(value -> readProcess(value, activitiesById, allowedRefs))
             .sorted(Comparator.comparing(BusinessProcess::processId))
             .toList();

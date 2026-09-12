@@ -347,17 +347,18 @@ class Task5PartialPropagationRedTest {
       if (request.taskKind().equals("BUSINESS_REPORT_DRAFT")) draftInput = input;
       ObjectNode report = JsonNodeFactory.instance.objectNode();
       report.put("title", "用户入口 partial 业务说明");
-      ArrayNode sections = report.putArray("sections");
-      section(sections, 1, "文档说明", "本报告区分源码行为与未解释入口范围。", List.of());
-      section(sections, 2, "业务目标", "读取已解释的用户信息。", List.of());
-      section(sections, 3, "业务对象", "用户与会话。", List.of());
-      section(sections, 4, "业务活动", "仅记录已解释的登录与会话读取活动。", List.of());
-      section(sections, 5, "字段与维度", "用户请求。", List.of());
-      section(sections, 6, "对象关系", "用户与会话存在代码上下文联系。", List.of());
-      section(sections, 7, "指标口径", "本次未从源码识别到可定义指标。", List.of());
-      section(sections, 8, "示例问题", "已解释活动有哪些返回分支？", List.of());
+      ObjectNode sections = report.putObject("sections");
+      section(sections, "section1", 1, "文档说明", "本报告区分源码行为与未解释入口范围。", List.of());
+      section(sections, "section2", 2, "业务目标", "读取已解释的用户信息。", List.of());
+      section(sections, "section3", 3, "业务对象", "用户与会话。", List.of());
+      section(sections, "section4", 4, "业务活动", "仅记录已解释的登录与会话读取活动。", List.of());
+      section(sections, "section5", 5, "字段与维度", "用户请求。", List.of());
+      section(sections, "section6", 6, "对象关系", "用户与会话存在代码上下文联系。", List.of());
+      section(sections, "section7", 7, "指标口径", "本次未从源码识别到可定义指标。", List.of());
+      section(sections, "section8", 8, "示例问题", "已解释活动有哪些返回分支？", List.of());
       section(
           sections,
+          "section9",
           9,
           "待确认事项",
           "POST /user/registerUser、GET /user/logout：MODEL_NOT_EXPLAINED，尚未形成活动解释。",
@@ -368,8 +369,13 @@ class Task5PartialPropagationRedTest {
     }
 
     private static void section(
-        ArrayNode sections, int number, String title, String paragraph, List<String> refs) {
-      ObjectNode section = sections.addObject();
+        ObjectNode sections,
+        String slotName,
+        int number,
+        String title,
+        String paragraph,
+        List<String> refs) {
+      ObjectNode section = sections.putObject(slotName);
       section.put("number", number);
       section.put("title", title);
       ArrayNode paragraphs = section.putArray("paragraphs");

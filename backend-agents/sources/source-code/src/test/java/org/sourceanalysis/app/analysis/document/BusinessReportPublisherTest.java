@@ -12,6 +12,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
@@ -252,24 +253,43 @@ class BusinessReportPublisherTest {
     assertThat(schema.path("additionalProperties").asBoolean()).isFalse();
     assertThat(textValues(schema.path("required"))).containsExactly("title", "sections");
     JsonNode sections = schema.path("properties").path("sections");
-    assertThat(sections.path("items").isBoolean()).isTrue();
-    assertThat(sections.path("items").asBoolean()).isFalse();
-    JsonNode fixedSections = sections.path("prefixItems");
-    assertThat(fixedSections).hasSize(9);
-    for (int index = 0; index < fixedSections.size(); index++) {
-      JsonNode section = fixedSections.get(index);
+    assertThat(sections.path("type").asText()).isEqualTo("object");
+    assertThat(sections.path("additionalProperties").asBoolean()).isFalse();
+    List<String> slotNames =
+        List.of(
+            "section1",
+            "section2",
+            "section3",
+            "section4",
+            "section5",
+            "section6",
+            "section7",
+            "section8",
+            "section9");
+    assertThat(textValues(sections.path("required"))).containsExactlyElementsOf(slotNames);
+    assertThat(sections.path("properties").properties())
+        .extracting(Map.Entry::getKey)
+        .containsExactlyInAnyOrderElementsOf(slotNames);
+    for (int index = 0; index < slotNames.size(); index++) {
+      JsonNode section = sections.path("properties").path(slotNames.get(index));
       assertThat(section.path("type").asText()).isEqualTo("object");
       assertThat(section.path("additionalProperties").asBoolean()).isFalse();
       assertThat(textValues(section.path("required")))
           .containsExactly("number", "title", "paragraphs", "items");
-      assertThat(section.path("properties").path("number").path("const").asInt())
-          .isEqualTo(index + 1);
-      assertThat(section.path("properties").path("title").path("const").asText())
-          .isEqualTo(
+      assertThat(textValues(section.path("properties").path("number").path("enum")))
+          .containsExactly(String.valueOf(index + 1));
+      assertThat(textValues(section.path("properties").path("title").path("enum")))
+          .containsExactly(
               List.of("文档说明", "业务目标", "业务对象", "业务活动", "字段与维度", "对象关系", "指标口径", "示例问题", "待确认事项")
                   .get(index));
     }
-    JsonNode content = fixedSections.get(0).path("properties").path("paragraphs").path("items");
+    JsonNode content =
+        sections
+            .path("properties")
+            .path("section1")
+            .path("properties")
+            .path("paragraphs")
+            .path("items");
     assertThat(content.path("type").asText()).isEqualTo("object");
     assertThat(textValues(content.path("required"))).containsExactly("text", "refs");
   }
@@ -319,10 +339,11 @@ class BusinessReportPublisherTest {
     private JsonNode report() {
       ObjectNode report = JsonNodeFactory.instance.objectNode();
       report.put("title", "合成补货仓库业务说明");
-      ArrayNode sections = report.putArray("sections");
-      section(sections, 1, "文档说明", "本文描述冻结源码定义的系统行为，不代表某次运行成功。", List.of(), List.of());
+      ObjectNode sections = report.putObject("sections");
+      section(sections, "section1", 1, "文档说明", "本文描述冻结源码定义的系统行为，不代表某次运行成功。", List.of(), List.of());
       section(
           sections,
+          "section2",
           2,
           "业务目标",
           "系统支持形成补货单、记录收货并形成应付账单。",
@@ -330,6 +351,7 @@ class BusinessReportPublisherTest {
           List.of());
       section(
           sections,
+          "section3",
           3,
           "业务对象",
           "主要对象是补货单、补货明细、收货记录和应付账单。",
@@ -337,6 +359,7 @@ class BusinessReportPublisherTest {
           List.of());
       section(
           sections,
+          "section4",
           4,
           "业务活动",
           "补货到应付账单形成：先形成补货单，再记录收货并形成应付账单；制度顺序仍待确认。",
@@ -344,26 +367,35 @@ class BusinessReportPublisherTest {
           List.of());
       section(
           sections,
+          "section5",
           5,
           "字段与维度",
           "业务输入包括补货明细、补货单标识、收货数量、单价和收货记录标识。",
           List.of("S1", "S2", "S3"),
           List.of());
-      section(sections, 6, "对象关系", "收货记录承接补货单，应付账单承接收货记录。", List.of("S2", "S3", "S4"), List.of());
-      section(sections, 7, "指标口径", "应付金额 = 收货数量 × 单价。", List.of("S4"), List.of());
-      section(sections, 8, "示例问题", null, List.of(), List.of("没有补货明细时系统如何处理？"));
-      section(sections, 9, "待确认事项", null, List.of(), List.of("需要确认岗位、制度顺序、审核和付款。"));
+      section(
+          sections,
+          "section6",
+          6,
+          "对象关系",
+          "收货记录承接补货单，应付账单承接收货记录。",
+          List.of("S2", "S3", "S4"),
+          List.of());
+      section(sections, "section7", 7, "指标口径", "应付金额 = 收货数量 × 单价。", List.of("S4"), List.of());
+      section(sections, "section8", 8, "示例问题", null, List.of(), List.of("没有补货明细时系统如何处理？"));
+      section(sections, "section9", 9, "待确认事项", null, List.of(), List.of("需要确认岗位、制度顺序、审核和付款。"));
       return report;
     }
 
     private static void section(
-        ArrayNode sections,
+        ObjectNode sections,
+        String slotName,
         int number,
         String title,
         String paragraph,
         List<String> paragraphRefs,
         List<String> items) {
-      ObjectNode section = sections.addObject();
+      ObjectNode section = sections.putObject(slotName);
       section.put("number", number);
       section.put("title", title);
       ArrayNode paragraphs = section.putArray("paragraphs");
