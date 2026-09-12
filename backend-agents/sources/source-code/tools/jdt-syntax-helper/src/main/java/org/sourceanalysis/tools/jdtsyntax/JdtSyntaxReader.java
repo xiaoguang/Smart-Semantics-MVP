@@ -158,7 +158,7 @@ public final class JdtSyntaxReader {
 
     @Override
     public boolean visit(TypeDeclaration node) {
-      enterType(node.getName().getIdentifier(), "TYPE", node, node.modifiers());
+      enterType(node.getName().getIdentifier(), "TYPE", node.getName(), node, node.modifiers());
       return true;
     }
 
@@ -169,7 +169,7 @@ public final class JdtSyntaxReader {
 
     @Override
     public boolean visit(EnumDeclaration node) {
-      enterType(node.getName().getIdentifier(), "TYPE", node, node.modifiers());
+      enterType(node.getName().getIdentifier(), "TYPE", node.getName(), node, node.modifiers());
       return true;
     }
 
@@ -180,7 +180,7 @@ public final class JdtSyntaxReader {
 
     @Override
     public boolean visit(RecordDeclaration node) {
-      enterType(node.getName().getIdentifier(), "TYPE", node, node.modifiers());
+      enterType(node.getName().getIdentifier(), "TYPE", node.getName(), node, node.modifiers());
       return true;
     }
 
@@ -191,7 +191,7 @@ public final class JdtSyntaxReader {
 
     @Override
     public boolean visit(AnnotationTypeDeclaration node) {
-      enterType(node.getName().getIdentifier(), "TYPE", node, node.modifiers());
+      enterType(node.getName().getIdentifier(), "TYPE", node.getName(), node, node.modifiers());
       return true;
     }
 
@@ -211,7 +211,8 @@ public final class JdtSyntaxReader {
       typeNames.pop();
     }
 
-    private void enterType(String name, String kind, ASTNode node, List<?> modifiers) {
+    private void enterType(
+        String name, String kind, ASTNode navigation, ASTNode node, List<?> modifiers) {
       String qualified = typeNames.isEmpty() ? name : typeNames.peek() + "." + name;
       declarations.add(
           declaration(
@@ -225,6 +226,7 @@ public final class JdtSyntaxReader {
               annotations(modifiers),
               List.of(),
               null,
+              navigation,
               node,
               false));
       typeNames.push(qualified);
@@ -263,6 +265,7 @@ public final class JdtSyntaxReader {
               annotations(node.modifiers()),
               parameters,
               returnType,
+              node.getName(),
               node,
               node.getBody() != null));
       callables.push(new CallableState(id, false));
@@ -307,6 +310,7 @@ public final class JdtSyntaxReader {
               List.of(),
               parameters,
               null,
+              null,
               node,
               true));
       callables.push(new CallableState(id, true));
@@ -332,6 +336,7 @@ public final class JdtSyntaxReader {
               modifiers(node.modifiers()),
               List.of(),
               List.of(),
+              null,
               null,
               node,
               true));
@@ -360,6 +365,7 @@ public final class JdtSyntaxReader {
                 annotations(node.modifiers()),
                 List.of(),
                 text(node.getType()),
+                fragment.getName(),
                 node,
                 fragment.getInitializer() != null));
       }
@@ -636,6 +642,7 @@ public final class JdtSyntaxReader {
         List<String> annotations,
         List<JdtSyntaxProtocol.ParameterView> parameters,
         String returnType,
+        ASTNode navigation,
         ASTNode node,
         boolean bodyPresent) {
       return new JdtSyntaxProtocol.Declaration(
@@ -649,6 +656,7 @@ public final class JdtSyntaxReader {
           List.copyOf(annotations),
           List.copyOf(parameters),
           returnType,
+          navigation == null ? null : range(navigation),
           range(node),
           text(node),
           bodyPresent);

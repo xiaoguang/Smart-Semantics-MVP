@@ -1,6 +1,7 @@
 package org.sourceanalysis.app.analysis.code.jdt;
 
 import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -26,6 +27,8 @@ public final class JdtProjectSession implements JavaCodeSession {
   private final Path languageServerDataDirectory;
   private final EngineDescriptor descriptor;
   private final JdtLanguageServerClient languageServer;
+  private EntryCodeCollector collector;
+  private JdtSyntaxHelperClient syntaxHelper;
   private boolean closed;
 
   private JdtProjectSession(
@@ -117,18 +120,14 @@ public final class JdtProjectSession implements JavaCodeSession {
   @Override
   public synchronized JavaDeclarationCatalog catalog() {
     ensureOpen();
-    throw new CodeEngineException(
-        CodeEngineException.JDT_INDEX_FAILED,
-        "JDT catalog extraction is not integrated until the syntax-helper task");
+    return collector().catalog();
   }
 
   @Override
   public synchronized EntryCodeContext collect(EntrySeed entry) {
     Objects.requireNonNull(entry, "entry seed");
     ensureOpen();
-    throw new CodeEngineException(
-        CodeEngineException.JDT_QUERY_FAILED,
-        "JDT entry collection is not integrated until the navigation task");
+    return collector().collect(entry);
   }
 
   @Override
@@ -143,10 +142,21 @@ public final class JdtProjectSession implements JavaCodeSession {
     }
     closed = true;
     RuntimeException failure = null;
+    if (syntaxHelper != null) {
+      try {
+        syntaxHelper.close();
+      } catch (RuntimeException closeFailure) {
+        failure = closeFailure;
+      }
+    }
     try {
       languageServer.close();
     } catch (RuntimeException closeFailure) {
-      failure = closeFailure;
+      if (failure == null) {
+        failure = closeFailure;
+      } else {
+        failure.addSuppressed(closeFailure);
+      }
     }
     try {
       deleteWorkspace(workspace);
@@ -171,6 +181,87 @@ public final class JdtProjectSession implements JavaCodeSession {
     if (closed) {
       throw new CodeEngineException(
           CodeEngineException.JDT_QUERY_FAILED, "JDT project session is already closed");
+    }
+  }
+
+  private EntryCodeCollector collector() {
+    if (collector == null) {
+      syntaxHelper = languageServer.openSyntaxHelper(JdtSyntaxHelperArtifact.locate());
+      ProjectedSourceAccess sourceAccess =
+          new ProjectedSourceAccess(projectRoot, project.sourceEntries(), languageServer);
+      JdtNavigationResolver navigation = new JdtNavigationResolver(languageServer, sourceAccess);
+      collector =
+          new EntryCodeCollector(
+              project.snapshotId(),
+              project.sourceLevel(),
+              project.sourceEntries().stream().filter(path -> path.endsWith(".java")).toList(),
+              sourceAccess,
+              syntaxHelper::describe,
+              navigation,
+              CollectionBudget.standard());
+    }
+    return collector;
+  }
+
+  private static final class ProjectedSourceAccess implements JdtNavigationResolver.SourceAccess {
+
+    private final Path root;
+    private final java.util.Set<String> admitted;
+    private final JdtLanguageServerClient languageServer;
+
+    private ProjectedSourceAccess(
+        Path root, List<String> sourceEntries, JdtLanguageServerClient languageServer) {
+      try {
+        this.root = root.toRealPath();
+      } catch (IOException failure) {
+        throw new CodeEngineException(
+            CodeEngineException.SOURCE_INVALID,
+            "JDT projected source root cannot be canonicalized",
+            failure);
+      }
+      this.admitted = java.util.Set.copyOf(sourceEntries);
+      this.languageServer = languageServer;
+    }
+
+    @Override
+    public JdtNavigationResolver.SourceDocument open(String uri) {
+      try {
+        URI parsed = URI.create(uri);
+        if (!"file".equalsIgnoreCase(parsed.getScheme())) {
+          return null;
+        }
+        Path path = Path.of(parsed).toRealPath();
+        if (!path.startsWith(root)) {
+          return null;
+        }
+        String relative = root.relativize(path).toString().replace('\\', '/');
+        if (!admitted.contains(relative) || !Files.isRegularFile(path)) {
+          return null;
+        }
+        return new JdtNavigationResolver.SourceDocument(
+            relative, Files.readString(path, StandardCharsets.UTF_8));
+      } catch (IOException | IllegalArgumentException failure) {
+        return null;
+      }
+    }
+
+    @Override
+    public String uri(String sourcePath) {
+      if (!admitted.contains(sourcePath)) {
+        throw new IllegalArgumentException("source path is not admitted by the snapshot");
+      }
+      return root.resolve(sourcePath).normalize().toUri().toString();
+    }
+
+    @Override
+    public void activate(String uri) {
+      JdtNavigationResolver.SourceDocument document = open(uri);
+      if (document == null) {
+        throw new CodeEngineException(
+            CodeEngineException.SOURCE_INVALID,
+            "JDT navigation source is outside the admitted snapshot");
+      }
+      languageServer.openDocument(uri, document.text());
     }
   }
 

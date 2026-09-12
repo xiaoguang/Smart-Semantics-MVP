@@ -255,7 +255,11 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
         .forEach(
             item -> {
               ranges.add(item.sourceRange());
+              if (item.navigationRange() != null) {
+                ranges.add(item.navigationRange());
+              }
               item.parameters().forEach(parameter -> ranges.add(parameter.sourceRange()));
+              validateRange(source, item.sourceRange());
               if (!source
                   .substring(
                       item.sourceRange().startOffsetUtf16(), item.sourceRange().endOffsetUtf16())
@@ -274,14 +278,18 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
     response.exits().forEach(item -> ranges.add(item.sourceRange()));
     response.diagnostics().forEach(item -> ranges.add(item.sourceRange()));
     for (JdtSyntaxProtocol.SourceRange range : ranges) {
-      if (range == null
-          || range.startOffsetUtf16() < 0
-          || range.lengthUtf16() < 0
-          || range.endOffsetUtf16() > source.length()
-          || range.startLine() < 1
-          || range.endLine() < range.startLine()) {
-        throw invalidProtocol("JDT syntax helper returned an invalid source range");
-      }
+      validateRange(source, range);
+    }
+  }
+
+  private void validateRange(String source, JdtSyntaxProtocol.SourceRange range) {
+    if (range == null
+        || range.startOffsetUtf16() < 0
+        || range.lengthUtf16() < 0
+        || range.endOffsetUtf16() > source.length()
+        || range.startLine() < 1
+        || range.endLine() < range.startLine()) {
+      throw invalidProtocol("JDT syntax helper returned an invalid source range");
     }
   }
 

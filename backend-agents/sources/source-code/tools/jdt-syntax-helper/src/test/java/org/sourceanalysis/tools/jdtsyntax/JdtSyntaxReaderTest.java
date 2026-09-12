@@ -42,6 +42,12 @@ class JdtSyntaxReaderTest {
             .findFirst()
             .orElseThrow();
     assertThat(method.sourceText()).startsWith("@Transactional").contains("return user;");
+    assertThat(method.navigationRange()).isNotNull();
+    assertThat(
+            source.substring(
+                method.navigationRange().startOffsetUtf16(),
+                method.navigationRange().endOffsetUtf16()))
+        .isEqualTo("register");
     assertThat(method.bodyPresent()).isTrue();
     assertThat(method.parameters()).hasSize(2);
     assertThat(method.parameters().get(0).annotationTexts()).containsExactly("@Valid");
@@ -178,7 +184,11 @@ class JdtSyntaxReaderTest {
         .containsExactly(0, 1);
     assertThat(response.declarations())
         .filteredOn(declaration -> "INITIALIZER".equals(declaration.kind()))
-        .hasSize(1);
+        .singleElement()
+        .satisfies(declaration -> assertThat(declaration.navigationRange()).isNull());
+    assertThat(response.declarations())
+        .filteredOn(declaration -> "LAMBDA".equals(declaration.kind()))
+        .allSatisfy(declaration -> assertThat(declaration.navigationRange()).isNull());
     assertThat(response.callSites())
         .extracting(JdtSyntaxProtocol.CallSiteView::kind)
         .contains("THIS_CONSTRUCTOR", "METHOD");

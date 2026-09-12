@@ -46,6 +46,7 @@ public final class JdtSyntaxProtocol {
       List<String> annotations,
       List<ParameterView> parameters,
       String returnTypeText,
+      SourceRange navigationRange,
       SourceRange sourceRange,
       String sourceText,
       boolean bodyPresent) {}
