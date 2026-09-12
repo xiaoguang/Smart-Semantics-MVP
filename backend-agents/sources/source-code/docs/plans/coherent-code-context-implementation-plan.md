@@ -157,7 +157,8 @@
 
 **Files**
 
-- Modify: `LiveLunaAutomaticMaterialIT` 或其同等的精确选择器测试；仅创建新的命名候选目录
+- Modify: `LiveLunaAutomaticMaterialIT` 与其精确选择器测试；仅创建新的命名候选目录。选择器必须在
+  Provider 启动前逐项拒绝错误 material、entry 顺序或 short ref 顺序。
 - Output: 新候选的 DRAFT/REVIEW 请求、响应、结果与可读人工检查记录
 
 **Frozen input and limits**

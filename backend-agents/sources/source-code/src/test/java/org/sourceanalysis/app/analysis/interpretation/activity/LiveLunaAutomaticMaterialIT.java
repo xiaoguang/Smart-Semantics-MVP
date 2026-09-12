@@ -47,6 +47,16 @@ class LiveLunaAutomaticMaterialIT {
 
   private static final String EXECUTABLE = "/Applications/ChatGPT.app/Contents/Resources/codex";
   private static final String ZERO = "0".repeat(64);
+  private static final String USER_ACCOUNT_GROUP_MATERIAL_ID =
+      "material:8be00d5562743218931b721c547d915076a08b7200bc06e415d1248c5ea663eb";
+  private static final List<String> USER_ACCOUNT_GROUP_ENTRY_IDS =
+      List.of(
+          "entry:160b90d56d87df77d8ad02aadb61130b138af016d31edde06f30e517f4497ece",
+          "entry:2d16e9a0ceb9b9555823ff3b091485941d4e26fb0b8e75b0314fdedd837722bc",
+          "entry:2d573f55b3164ae226957503381cb4c22104e263ba0e36f316cd1ad609302439",
+          "entry:3bc9f42e69961211dec7e48baeffbb0bd61a4c4be03280eb02894f86b6e9b144");
+  private static final List<String> USER_ACCOUNT_GROUP_REFS =
+      List.of("S487", "S722", "S731", "S898");
 
   @Test
   void explainsOneNamedAutomaticPacketThroughRealLunaHigh() throws Exception {
@@ -86,9 +96,7 @@ class LiveLunaAutomaticMaterialIT {
                     new CodexSubscriptionStructuredProvider(
                         new CodexSubscriptionProfile(
                             Path.of(EXECUTABLE), "gpt-5.6-luna", "high", Duration.ofMinutes(3)))))
-            .explain(
-                new ExplainActivitiesRequest(
-                    materials, new ActivityExplanationProfile(20_000, 12_000, 2, 24, 1_000)));
+            .explain(new ExplainActivitiesRequest(materials, activityProfile(sample)));
 
     assertThat(explanation.reviewedActivities()).isNotEmpty();
     assertThat(explanation.coverage())
@@ -135,6 +143,7 @@ class LiveLunaAutomaticMaterialIT {
           case "automatic-user-login" -> "HTTP POST /user/login";
           case "automatic-account-balance-group" -> "HTTP GET /account/getStatistics";
           case "automatic-serial-number" -> "POST /serialNumber/getEnableSerialNumberList";
+          case "automatic-user-account-group" -> null;
           default -> throw new IllegalArgumentException("LIVE_LUNA_SAMPLE_UNSUPPORTED:" + sample);
         };
     JsonNode selected;
@@ -150,7 +159,14 @@ class LiveLunaAutomaticMaterialIT {
               .filter(record -> "BUSINESS_MATERIAL".equals(record.path("recordType").asText()))
               .filter(
                   record ->
-                      record.path("modelPacket").path("context").asText().contains(triggerMarker))
+                      triggerMarker == null
+                          ? USER_ACCOUNT_GROUP_MATERIAL_ID.equals(
+                              record.path("materialId").asText())
+                          : record
+                              .path("modelPacket")
+                              .path("context")
+                              .asText()
+                              .contains(triggerMarker))
               .findFirst()
               .orElseThrow(
                   () ->
@@ -183,17 +199,22 @@ class LiveLunaAutomaticMaterialIT {
                             requiredText(value, "ref"), requiredText(value, "snippet")))
                 .toList(),
             strings(packet, "limitations"));
-    return new BusinessMaterial(
-        requiredText(selected, "materialId"),
-        strings(selected, "entryIds"),
-        BusinessMaterialMode.valueOf(requiredText(selected, "materialMode")),
-        requiredText(selected, "context"),
-        strings(selected, "technicalObservations"),
-        sourceRefs,
-        strings(selected, "flowRefs"),
-        strings(selected, "technicalProofRefs"),
-        strings(selected, "limitations"),
-        modelPacket);
+    BusinessMaterial material =
+        new BusinessMaterial(
+            requiredText(selected, "materialId"),
+            strings(selected, "entryIds"),
+            BusinessMaterialMode.valueOf(requiredText(selected, "materialMode")),
+            requiredText(selected, "context"),
+            strings(selected, "technicalObservations"),
+            sourceRefs,
+            strings(selected, "flowRefs"),
+            strings(selected, "technicalProofRefs"),
+            strings(selected, "limitations"),
+            modelPacket);
+    if ("automatic-user-account-group".equals(sample)) {
+      verifyExactUserAccountGroup(material);
+    }
+    return material;
   }
 
   private static void writeOutput(
@@ -310,8 +331,27 @@ class LiveLunaAutomaticMaterialIT {
             "automatic-user-registration",
             "automatic-user-login",
             "automatic-account-balance-group",
-            "automatic-serial-number");
+            "automatic-serial-number",
+            "automatic-user-account-group");
     return sample;
+  }
+
+  private static ActivityExplanationProfile activityProfile(String sample) {
+    int maxActivities = "automatic-user-account-group".equals(sample) ? 4 : 2;
+    return new ActivityExplanationProfile(20_000, 12_000, maxActivities, 24, 1_000);
+  }
+
+  private static void verifyExactUserAccountGroup(BusinessMaterial material) {
+    if (!USER_ACCOUNT_GROUP_MATERIAL_ID.equals(material.materialId())
+        || !USER_ACCOUNT_GROUP_ENTRY_IDS.equals(material.entryIds())
+        || !USER_ACCOUNT_GROUP_REFS.equals(
+            material.sourceRefs().stream().map(SourceReference::ref).toList())
+        || !USER_ACCOUNT_GROUP_REFS.equals(
+            material.modelPacket().allowlistedRefs().stream()
+                .map(ModelActivityPacket.AllowlistedReference::ref)
+                .toList())) {
+      throw new IllegalArgumentException("LIVE_LUNA_FOUR_ENTRY_MATERIAL_MISMATCH");
+    }
   }
 
   private static String requiredText(JsonNode node, String field) {

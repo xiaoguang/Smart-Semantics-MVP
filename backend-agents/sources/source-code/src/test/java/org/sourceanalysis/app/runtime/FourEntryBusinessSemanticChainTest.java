@@ -89,11 +89,15 @@ class FourEntryBusinessSemanticChainTest {
                   public BaseResponseInfo getSessionUser(HttpServletRequest request)throws Exception {
                       BaseResponseInfo res = new BaseResponseInfo();
                       try {
+                          Map<String, Object> data = new HashMap<>();
                           Long userId = Long.parseLong(redisService.getObjectFromSessionByKey(request,"userId").toString());
                           User user = userService.getUser(userId);
                           user.setPassword(null);
+                          data.put("user", user);
                           res.code = 200;
+                          res.data = data;
                       } catch(Exception e){
+                          logger.error(e.getMessage(), e);
                           res.code = 500;
                           res.data = "获取session失败";
                       }
@@ -592,7 +596,7 @@ class FourEntryBusinessSemanticChainTest {
     private static String codeResult(String key) {
       return switch (key) {
         case "E1" -> "系统返回用户删除处理的包装结果。";
-        case "E2" -> "正常路径完成用户查询并清除密码字段；异常路径设置失败信息。";
+        case "E2" -> "正常路径返回去除密码的用户信息；异常路径返回失败信息。";
         case "E3" -> "系统调用用户登记服务并返回标准成功对象。";
         case "E4" -> "系统尝试清除会话标识并返回退出处理结果。";
         default -> throw new AssertionError("unexpected entry key: " + key);

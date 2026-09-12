@@ -19,19 +19,26 @@
 
 ## Current state
 
-- No live Provider request has started. The next action is a read-only preflight of the exact saved
-  material identity, its four ordered entries and refs, the Codex Subscription login state, and the
-  Java-to-Codex subprocess contract. Any mismatch records a zero-request stop for this candidate.
+- No live Provider request has started. The exact material was found in the existing ignored Step06
+  material publication; its ID, ordered four entry IDs and `[S487,S722,S731,S898]` refs match the
+  approved Task 7 input. The live-only test selector is being narrowed to reject every other record
+  before a Provider can start. The next action is its zero-Provider selection test.
 
 ## Changed files
 
 - `progress/task7-live-luna-four-entry.md`
+- `src/test/java/org/sourceanalysis/app/analysis/interpretation/activity/LiveLunaAutomaticMaterialIT.java`
+- `src/test/java/org/sourceanalysis/app/analysis/interpretation/activity/LiveLunaAutomaticMaterialSelectionTest.java`
+- `src/test/java/org/sourceanalysis/app/runtime/FourEntryBusinessSemanticChainTest.java`
 
 ## Verification
 
 | Command | Result | Key output |
 | --- | --- | --- |
-| Not started | N/A | No live request has started. |
+| Existing material identity check | PASS | One stored record has the approved material ID, four ordered entries and S487/S722/S731/S898. |
+| `mvn -Dtest=LiveLunaAutomaticMaterialSelectionTest,FourEntryBusinessSemanticChainTest test` | PASS | 4 tests; exact frozen selector and scripted four-entry chain are green with zero Provider calls. |
+| `mvn spotless:apply && git diff --check` | PASS | Formatted only the two changed live-selector tests; no whitespace errors. |
+| Local CI: `spotless:check`, `mvn test`, `-Pquality -DskipTests verify` | PASS | 134 test classes / 358 tests, 0 failures or errors; SpotBugs and PMD reports contain no findings. |
 
 ## Decisions
 
@@ -45,8 +52,8 @@
 
 ## Exact next action
 
-- Locate the existing exact-material live selector and provider command contract, then run only its
-  read-only preflight checks before deciding whether a request may start.
+- Commit and push the exact selector preparation. Then run the read-only Codex Subscription login
+  preflight. Only a successful preflight permits the one DRAFT plus one REVIEW candidate attempt.
 
 ## Resume checks
 
