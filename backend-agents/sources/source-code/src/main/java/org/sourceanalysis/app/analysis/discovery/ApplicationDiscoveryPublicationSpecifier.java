@@ -46,7 +46,7 @@ public final class ApplicationDiscoveryPublicationSpecifier {
   private static final String PROFILE_DRAFT_SCHEMA =
       "application-discovery-application-profile-draft-v2";
   private static final String ENTRY_DRAFT_TYPE = "APPLICATION_DISCOVERY_HTTP_ENTRY_DISCOVERY";
-  private static final String ENTRY_DRAFT_SCHEMA = "application-discovery-http-entry-discovery-v2";
+  private static final String ENTRY_DRAFT_SCHEMA = "application-discovery-http-entry-discovery-v3";
   private static final String MAPPER_DRAFT_TYPE = "APPLICATION_DISCOVERY_MAPPER_CATALOG_DRAFT";
   private static final String MAPPER_DRAFT_SCHEMA = "application-discovery-mapper-catalog-draft-v2";
   private static final String PROFILE_TYPE = "APPLICATION_DISCOVERY_APPLICATION_PROFILE";
@@ -54,7 +54,7 @@ public final class ApplicationDiscoveryPublicationSpecifier {
   private static final String CAPABILITY_TYPE = "APPLICATION_DISCOVERY_CAPABILITY_REPORT";
   private static final String CAPABILITY_SCHEMA = "application-discovery-capability-report-v2";
   private static final String ENTRY_TYPE = "APPLICATION_DISCOVERY_ENTRY_POINTS";
-  private static final String ENTRY_SCHEMA = "application-discovery-entry-points-v2";
+  private static final String ENTRY_SCHEMA = "application-discovery-entry-points-v3";
   private static final String MAPPER_TYPE = "APPLICATION_DISCOVERY_MAPPER_CATALOG";
   private static final String MAPPER_SCHEMA = "application-discovery-mapper-catalog-v2";
   private static final Comparator<String> UTF8_ORDER =
@@ -144,7 +144,7 @@ public final class ApplicationDiscoveryPublicationSpecifier {
                       AnalysisStepKey.APPLICATION_DISCOVERY,
                       4,
                       "publish"),
-                  "v2",
+                  "v3",
                   upstream,
                   profile.receipt().controls(),
                   status,
@@ -187,7 +187,7 @@ public final class ApplicationDiscoveryPublicationSpecifier {
     List<ObjectNode> entryLines = arrayObjects(entryBody, "entries");
     List<ObjectNode> mapperLines = arrayObjects(mapperBody, "catalogEntries");
     for (ObjectNode entry : entryLines) {
-      entry.put("schemaVersion", "application-discovery-entry-point-v2");
+      entry.put("schemaVersion", "application-discovery-entry-point-v3");
     }
     for (ObjectNode catalogEntry : mapperLines) {
       catalogEntry.put("schemaVersion", "application-discovery-mapper-catalog-entry-v2");

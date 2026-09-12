@@ -1,6 +1,8 @@
 package org.sourceanalysis.app.analysis.discovery;
 
 import java.util.Objects;
+import org.sourceanalysis.app.analysis.code.JavaCodeSession;
+import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
@@ -11,6 +13,7 @@ public final class ApplicationDiscoveryExecutor {
   private final VerifiedSourceTextReader sourceReader;
   private final CanonicalModuleArtifactStore moduleArtifacts;
   private final CanonicalAnalysisStepArtifactStore stepArtifacts;
+  private final JavaCodeSession javaCodeSession;
 
   /** Creates a path-free executor over verified source bytes and the canonical stores. */
   public ApplicationDiscoveryExecutor(
@@ -20,6 +23,19 @@ public final class ApplicationDiscoveryExecutor {
     this.sourceReader = Objects.requireNonNull(sourceReader, "verified source reader");
     this.moduleArtifacts = Objects.requireNonNull(moduleArtifacts, "module artifact store");
     this.stepArtifacts = Objects.requireNonNull(stepArtifacts, "analysis step artifact store");
+    this.javaCodeSession = null;
+  }
+
+  /** Creates an executor whose Java declarations come only from the selected engine session. */
+  public ApplicationDiscoveryExecutor(
+      VerifiedSourceTextReader sourceReader,
+      CanonicalModuleArtifactStore moduleArtifacts,
+      CanonicalAnalysisStepArtifactStore stepArtifacts,
+      JavaCodeSession javaCodeSession) {
+    this.sourceReader = Objects.requireNonNull(sourceReader, "verified source reader");
+    this.moduleArtifacts = Objects.requireNonNull(moduleArtifacts, "module artifact store");
+    this.stepArtifacts = Objects.requireNonNull(stepArtifacts, "analysis step artifact store");
+    this.javaCodeSession = Objects.requireNonNull(javaCodeSession, "Java code session");
   }
 
   /** Runs M1 through M4 in their sole allowed order. */
@@ -41,9 +57,14 @@ public final class ApplicationDiscoveryExecutor {
       ApplicationProfile profile =
           new PersistedApplicationProfileReader(moduleArtifacts, sourceReader)
               .reopen(profileDraft, request.verifiedSourceInventory());
+      JavaDeclarationCatalog javaCatalog =
+          javaCodeSession == null ? null : javaCodeSession.catalog();
       HttpEntryDiscovery entries =
-          new SpringHttpEntryDiscoverer(sourceReader)
-              .discoverEntries(profile, request.verifiedSourceInventory());
+          javaCatalog == null
+              ? new SpringHttpEntryDiscoverer(sourceReader)
+                  .discoverEntries(profile, request.verifiedSourceInventory())
+              : new SpringHttpEntryDiscoverer(sourceReader)
+                  .discoverEntries(profile, request.verifiedSourceInventory(), javaCatalog);
       HttpEntryDiscoveryDraftReference entryDraft =
           new HttpEntryDiscoveryModulePublisher(moduleArtifacts)
               .publish(
@@ -56,8 +77,11 @@ public final class ApplicationDiscoveryExecutor {
                   profile,
                   entries);
       MapperCatalogDiscovery catalog =
-          new MapperCapabilityCataloger(sourceReader)
-              .catalogMappers(profile, request.verifiedSourceInventory());
+          javaCatalog == null
+              ? new MapperCapabilityCataloger(sourceReader)
+                  .catalogMappers(profile, request.verifiedSourceInventory())
+              : new MapperCapabilityCataloger(sourceReader)
+                  .catalogMappers(profile, request.verifiedSourceInventory(), javaCatalog);
       MapperCatalogDraftReference catalogDraft =
           new MapperCatalogModulePublisher(moduleArtifacts)
               .publish(

@@ -330,6 +330,8 @@ class ApplicationDiscoveryPublicationSpecifierTest {
                 "/depotHead/batchSetStatus",
                 List.of("/depotHead", "/batchSetStatus"),
                 "com.example.DepotHeadController#batchSetStatus",
+                "method:" + "1".repeat(64),
+                new org.sourceanalysis.app.analysis.code.SourceRange(0, 1, 1, 1),
                 List.of("status", "ids"),
                 List.of(classRoute, methodRoute))),
         List.of(
@@ -415,7 +417,7 @@ class ApplicationDiscoveryPublicationSpecifierTest {
     policy(
         policies,
         "APPLICATION_DISCOVERY_ENTRY_POINTS",
-        "application-discovery-entry-points-v2",
+        "application-discovery-entry-points-v3",
         "entry-points",
         "application/x-ndjson",
         "CANONICAL_JSONL",
@@ -423,7 +425,7 @@ class ApplicationDiscoveryPublicationSpecifierTest {
     policy(
         policies,
         "APPLICATION_DISCOVERY_HTTP_ENTRY_DISCOVERY",
-        "application-discovery-http-entry-discovery-v2",
+        "application-discovery-http-entry-discovery-v3",
         "http-entry-discovery",
         "application/json",
         "MODULE_ARTIFACT_JSON",

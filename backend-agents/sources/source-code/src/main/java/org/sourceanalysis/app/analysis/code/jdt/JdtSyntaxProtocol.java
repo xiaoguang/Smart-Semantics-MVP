@@ -1,11 +1,12 @@
 package org.sourceanalysis.app.analysis.code.jdt;
 
 import java.util.List;
+import java.util.Map;
 
 /** Private JSONL protocol shared by the Java 17 host and the standalone JDT Core helper. */
 final class JdtSyntaxProtocol {
 
-  static final String VERSION = "jdt-syntax-v1";
+  static final String VERSION = "jdt-syntax-v2";
   static final String DESCRIBE_COMPILATION_UNIT = "DESCRIBE_COMPILATION_UNIT";
 
   private JdtSyntaxProtocol() {}
@@ -17,6 +18,8 @@ final class JdtSyntaxProtocol {
       String sourceKey,
       String languageLevel,
       String sourceSha256,
+      List<String> sourcepathEntries,
+      List<String> classpathEntries,
       String text) {}
 
   record Response(
@@ -27,6 +30,7 @@ final class JdtSyntaxProtocol {
       String packageName,
       List<ImportView> imports,
       List<Declaration> declarations,
+      List<AnnotationView> annotations,
       List<CallSiteView> callSites,
       List<ControlView> controls,
       List<ExitView> exits,
@@ -34,6 +38,18 @@ final class JdtSyntaxProtocol {
 
   record ImportView(
       String text, String name, boolean onDemand, boolean isStatic, SourceRange sourceRange) {}
+
+  record AnnotationView(
+      String localId,
+      String ownerDeclarationId,
+      String nameText,
+      String qualifiedName,
+      SourceRange sourceRange,
+      SourceRange nameSelection,
+      String memberSource,
+      Map<String, StaticValue> staticValues) {}
+
+  record StaticValue(String kind, String source, String value, List<StaticValue> elements) {}
 
   record Declaration(
       String localId,

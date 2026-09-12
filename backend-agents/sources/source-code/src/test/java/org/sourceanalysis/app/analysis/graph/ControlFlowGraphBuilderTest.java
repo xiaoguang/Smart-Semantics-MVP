@@ -1952,6 +1952,8 @@ class ControlFlowGraphBuilderTest {
         route,
         routeSegments,
         "com.example.DepotHeadController#batchSetStatus",
+        "method:" + entryId.value().substring("entry:".length()),
+        new org.sourceanalysis.app.analysis.code.SourceRange(0, 1, 1, 1),
         List.of("status"),
         List.of(
             excerpt("src/main/java/com/example/DepotHeadController.java", classEvidence),

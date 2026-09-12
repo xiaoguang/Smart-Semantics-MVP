@@ -1,5 +1,6 @@
 package org.sourceanalysis.app.analysis.code.jdt;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -214,45 +215,175 @@ final class EntryCodeCollector {
         if (!errors.isEmpty()) {
           diagnostics.put(path, errors.get(0).code() + ":" + errors.get(0).message());
         }
-        for (JdtSyntaxProtocol.Declaration declaration : response.declarations()) {
-          if (!callable(declaration.kind())) {
-            continue;
-          }
-          String methodKey = methodKey(path, declaration);
-          methods.put(
-              methodKey, new MethodInfo(methodKey, path, source.text(), response, declaration));
-        }
       } catch (RuntimeException failure) {
         diagnostics.put(path, "SYNTAX_UNAVAILABLE:" + failure.getMessage());
       }
     }
+    for (Map.Entry<String, JdtSyntaxProtocol.Response> source : responses.entrySet()) {
+      String path = source.getKey();
+      String text = texts.get(path);
+      for (JdtSyntaxProtocol.Declaration declaration : source.getValue().declarations()) {
+        if (!callable(declaration.kind())) {
+          continue;
+        }
+        String methodKey = methodKey(path, declaration);
+        methods.put(
+            methodKey, new MethodInfo(methodKey, path, text, source.getValue(), declaration));
+      }
+    }
+    Map<String, List<String>> annotationKeysByOwner = new LinkedHashMap<>();
+    List<JavaDeclarationCatalog.AnnotationView> annotationViews = new ArrayList<>();
+    for (Map.Entry<String, JdtSyntaxProtocol.Response> source : responses.entrySet()) {
+      for (JdtSyntaxProtocol.AnnotationView annotation : source.getValue().annotations()) {
+        String annotationKey = annotationKey(source.getKey(), annotation);
+        if (annotation.ownerDeclarationId() != null) {
+          annotationKeysByOwner
+              .computeIfAbsent(
+                  ownerKey(source.getKey(), annotation.ownerDeclarationId()),
+                  ignored -> new ArrayList<>())
+              .add(annotationKey);
+        }
+        annotationViews.add(
+            new JavaDeclarationCatalog.AnnotationView(
+                annotationKey,
+                annotation.nameText(),
+                annotationQualifiedName(
+                    source.getKey(),
+                    texts.get(source.getKey()),
+                    source.getValue(),
+                    annotation,
+                    responses),
+                annotation.memberSource(),
+                sourceRange(annotation.sourceRange()),
+                sourceRange(annotation.nameSelection()),
+                annotationValues(annotation.staticValues()),
+                source.getKey()));
+      }
+    }
     List<JavaDeclarationCatalog.MethodDeclarationView> methodViews =
         methods.values().stream()
-            .map(this::methodView)
+            .map(method -> methodView(method, annotationKeysByOwner))
             .sorted(
                 Comparator.comparing(JavaDeclarationCatalog.MethodDeclarationView::sourcePath)
                     .thenComparing(method -> method.sourceRange().startOffsetUtf16()))
             .toList();
+    List<JavaDeclarationCatalog.FieldDeclarationView> fieldViews =
+        responses.entrySet().stream()
+            .flatMap(
+                source ->
+                    source.getValue().declarations().stream()
+                        .filter(declaration -> "FIELD".equals(declaration.kind()))
+                        .map(
+                            declaration ->
+                                fieldView(source.getKey(), declaration, annotationKeysByOwner)))
+            .sorted(
+                Comparator.comparing(JavaDeclarationCatalog.FieldDeclarationView::sourcePath)
+                    .thenComparing(field -> field.sourceRange().startOffsetUtf16()))
+            .toList();
+    Map<String, List<String>> fieldKeysByType = new LinkedHashMap<>();
+    for (Map.Entry<String, JdtSyntaxProtocol.Response> source : responses.entrySet()) {
+      for (JdtSyntaxProtocol.Declaration declaration : source.getValue().declarations()) {
+        if ("FIELD".equals(declaration.kind())) {
+          fieldKeysByType
+              .computeIfAbsent(
+                  qualifiedDeclaringType(source.getValue(), declaration),
+                  ignored -> new ArrayList<>())
+              .add(fieldKey(source.getKey(), declaration));
+        }
+      }
+    }
+    Map<String, List<String>> methodKeysByType = new LinkedHashMap<>();
+    methods
+        .values()
+        .forEach(
+            method ->
+                methodKeysByType
+                    .computeIfAbsent(
+                        qualifiedDeclaringType(method.response(), method.declaration()),
+                        ignored -> new ArrayList<>())
+                    .add(method.methodKey()));
+    List<JavaDeclarationCatalog.TypeDeclaration> typeViews =
+        responses.entrySet().stream()
+            .flatMap(
+                source ->
+                    source.getValue().declarations().stream()
+                        .filter(declaration -> typeDeclaration(declaration.kind()))
+                        .map(
+                            declaration ->
+                                typeView(
+                                    source.getKey(),
+                                    source.getValue(),
+                                    declaration,
+                                    annotationKeysByOwner,
+                                    fieldKeysByType,
+                                    methodKeysByType)))
+            .sorted(
+                Comparator.comparing(JavaDeclarationCatalog.TypeDeclaration::sourcePath)
+                    .thenComparing(type -> type.sourceRange().startOffsetUtf16()))
+            .toList();
+    annotationViews.sort(
+        Comparator.comparing(JavaDeclarationCatalog.AnnotationView::sourcePath)
+            .thenComparing(annotation -> annotation.sourceRange().startOffsetUtf16()));
     JavaDeclarationCatalog catalog =
         new JavaDeclarationCatalog(
-            snapshotId, sourcePaths, List.of(), methodViews, List.of(), List.of(), diagnostics);
+            snapshotId,
+            sourcePaths,
+            typeViews,
+            methodViews,
+            List.copyOf(annotationViews),
+            fieldViews,
+            diagnostics);
     return new ProjectIndex(catalog, Map.copyOf(responses), Map.copyOf(texts), Map.copyOf(methods));
   }
 
-  private JavaDeclarationCatalog.MethodDeclarationView methodView(MethodInfo method) {
+  private JavaDeclarationCatalog.MethodDeclarationView methodView(
+      MethodInfo method, Map<String, List<String>> annotationKeysByOwner) {
     JdtSyntaxProtocol.Declaration declaration = method.declaration();
     return new JavaDeclarationCatalog.MethodDeclarationView(
         method.methodKey(),
-        declaration.declaringTypeName(),
+        qualifiedDeclaringType(method.response(), declaration),
         declaration.name(),
         declaration.kind(),
         declaration.modifiers(),
         declaration.parameters().stream().map(EntryCodeCollector::parameter).toList(),
         declaration.returnTypeText(),
-        List.of(),
+        annotationKeys(annotationKeysByOwner, method.sourcePath(), declaration.localId()),
         method.sourcePath(),
         sourceRange(declaration.sourceRange()),
         declaration.bodyPresent());
+  }
+
+  private static JavaDeclarationCatalog.TypeDeclaration typeView(
+      String sourcePath,
+      JdtSyntaxProtocol.Response response,
+      JdtSyntaxProtocol.Declaration declaration,
+      Map<String, List<String>> annotationKeysByOwner,
+      Map<String, List<String>> fieldKeysByType,
+      Map<String, List<String>> methodKeysByType) {
+    String qualifiedName = qualifiedType(response, declaration);
+    return new JavaDeclarationCatalog.TypeDeclaration(
+        sourcePath,
+        sourceRange(declaration.sourceRange()),
+        qualifiedName,
+        declaration.kind(),
+        annotationKeys(annotationKeysByOwner, sourcePath, declaration.localId()),
+        List.copyOf(fieldKeysByType.getOrDefault(qualifiedName, List.of())),
+        List.copyOf(methodKeysByType.getOrDefault(qualifiedName, List.of())),
+        List.of());
+  }
+
+  private static JavaDeclarationCatalog.FieldDeclarationView fieldView(
+      String sourcePath,
+      JdtSyntaxProtocol.Declaration declaration,
+      Map<String, List<String>> annotationKeysByOwner) {
+    return new JavaDeclarationCatalog.FieldDeclarationView(
+        fieldKey(sourcePath, declaration),
+        declaration.name(),
+        declaration.returnTypeText(),
+        annotationKeys(annotationKeysByOwner, sourcePath, declaration.localId()),
+        declaration.bodyPresent() ? declaration.sourceText() : null,
+        sourcePath,
+        sourceRange(declaration.sourceRange()));
   }
 
   private EntryCodeContext.MethodCode methodCode(MethodInfo method) {
@@ -453,6 +584,247 @@ final class EntryCodeCollector {
       JdtSyntaxProtocol.ParameterView value) {
     return new JavaDeclarationCatalog.ParameterView(
         value.ordinal(), value.name(), value.typeText(), value.varArgs(), value.annotationTexts());
+  }
+
+  private String annotationQualifiedName(
+      String sourcePath,
+      String sourceText,
+      JdtSyntaxProtocol.Response response,
+      JdtSyntaxProtocol.AnnotationView annotation,
+      Map<String, JdtSyntaxProtocol.Response> responses) {
+    if (annotation.qualifiedName() != null && !annotation.qualifiedName().isBlank()) {
+      return annotation.qualifiedName();
+    }
+    if (annotation.nameText().contains(".")) {
+      return annotation.nameText();
+    }
+    List<String> explicit =
+        response.imports().stream()
+            .filter(value -> !value.isStatic() && !value.onDemand())
+            .map(JdtSyntaxProtocol.ImportView::name)
+            .filter(value -> value.endsWith("." + annotation.nameText()))
+            .distinct()
+            .toList();
+    if (explicit.size() == 1) {
+      return explicit.get(0);
+    }
+    String local = localAnnotationName(response, annotation.nameText());
+    if (local != null) {
+      return local;
+    }
+    try {
+      List<JdtNavigationResolver.Location> definitionLocations =
+          navigation.definitionsAt(sourcePath, sourceText, annotation.nameSelection());
+      List<String> resolved =
+          definitionLocations.stream()
+              .map(location -> annotationDefinitionName(location, annotation.nameText(), responses))
+              .filter(Objects::nonNull)
+              .distinct()
+              .toList();
+      if (resolved.size() == 1) {
+        return resolved.get(0);
+      }
+    } catch (RuntimeException ignored) {
+      // The annotation remains a located candidate with unresolved identity.
+    }
+    List<String> wildcardCandidates =
+        response.imports().stream()
+            .filter(value -> !value.isStatic() && value.onDemand())
+            .map(value -> value.name() + "." + annotation.nameText())
+            .filter(candidate -> sourceTypeExists(candidate, responses))
+            .distinct()
+            .toList();
+    return wildcardCandidates.size() == 1 ? wildcardCandidates.get(0) : null;
+  }
+
+  private String annotationDefinitionName(
+      JdtNavigationResolver.Location location,
+      String expectedSimpleName,
+      Map<String, JdtSyntaxProtocol.Response> responses) {
+    JdtNavigationResolver.SourceDocument source = sources.open(location.uri());
+    if (source != null) {
+      JdtSyntaxProtocol.Response response = responses.get(source.path());
+      if (response == null) {
+        return null;
+      }
+      JdtSyntaxProtocol.SourceRange selection =
+          navigationRange(source.text(), location.selectionRange());
+      return response.declarations().stream()
+          .filter(declaration -> typeDeclaration(declaration.kind()))
+          .filter(declaration -> expectedSimpleName.equals(declaration.name()))
+          .filter(declaration -> contains(declaration.sourceRange(), selection))
+          .map(declaration -> qualifiedType(response, declaration))
+          .findFirst()
+          .orElse(null);
+    }
+    return externalClassName(location.uri(), expectedSimpleName);
+  }
+
+  private static JdtSyntaxProtocol.SourceRange navigationRange(
+      String source, JdtNavigationResolver.TextRange range) {
+    int start = offset(source, range.start());
+    int end = offset(source, range.end());
+    return new JdtSyntaxProtocol.SourceRange(
+        start, end - start, range.start().line() + 1, range.end().line() + 1);
+  }
+
+  private static int offset(String source, JdtNavigationResolver.Position position) {
+    int start = 0;
+    for (int line = 0; line < position.line(); line++) {
+      int newline = source.indexOf('\n', start);
+      if (newline < 0) {
+        throw new IllegalArgumentException("navigation line is outside the source");
+      }
+      start = newline + 1;
+    }
+    int result = start + position.character();
+    int lineEnd = source.indexOf('\n', start);
+    if (lineEnd < 0) {
+      lineEnd = source.length();
+    }
+    if (result < start || result > lineEnd) {
+      throw new IllegalArgumentException("navigation character is outside the source");
+    }
+    return result;
+  }
+
+  private static String externalClassName(String uri, String expectedSimpleName) {
+    String path;
+    try {
+      path = URI.create(uri).getPath();
+    } catch (IllegalArgumentException invalid) {
+      return null;
+    }
+    if (path == null) {
+      return null;
+    }
+    String suffix = "/" + expectedSimpleName + ".class";
+    int end = path.indexOf(suffix);
+    if (end < 0) {
+      return null;
+    }
+    String prefix = path.substring(0, end);
+    int archive = prefix.lastIndexOf(".jar/");
+    if (archive >= 0) {
+      prefix = prefix.substring(archive + ".jar/".length());
+    } else {
+      int packageStart = packageStart(prefix);
+      if (packageStart < 0) {
+        return null;
+      }
+      prefix = prefix.substring(packageStart + 1);
+    }
+    if (prefix.isBlank()) {
+      return null;
+    }
+    return prefix.replace('/', '.').replace('$', '.') + "." + expectedSimpleName;
+  }
+
+  private static int packageStart(String value) {
+    return java.util.stream.Stream.of(
+            "/org/", "/com/", "/net/", "/io/", "/java/", "/javax/", "/jakarta/")
+        .mapToInt(value::lastIndexOf)
+        .filter(index -> index >= 0)
+        .min()
+        .orElse(-1);
+  }
+
+  private static String localAnnotationName(
+      JdtSyntaxProtocol.Response response, String simpleName) {
+    return response.declarations().stream()
+        .filter(declaration -> "ANNOTATION_TYPE".equals(declaration.kind()))
+        .filter(declaration -> simpleName.equals(declaration.name()))
+        .map(declaration -> qualifiedType(response, declaration))
+        .findFirst()
+        .orElse(null);
+  }
+
+  private static boolean sourceTypeExists(
+      String qualifiedName, Map<String, JdtSyntaxProtocol.Response> responses) {
+    return responses.values().stream()
+        .flatMap(
+            response ->
+                response.declarations().stream()
+                    .map(declaration -> Map.entry(response, declaration)))
+        .filter(entry -> typeDeclaration(entry.getValue().kind()))
+        .anyMatch(entry -> qualifiedName.equals(qualifiedType(entry.getKey(), entry.getValue())));
+  }
+
+  private static Map<String, Object> annotationValues(
+      Map<String, JdtSyntaxProtocol.StaticValue> values) {
+    Map<String, Object> result = new LinkedHashMap<>();
+    values.forEach((key, value) -> result.put(key, annotationValue(value)));
+    return Map.copyOf(result);
+  }
+
+  private static Object annotationValue(JdtSyntaxProtocol.StaticValue value) {
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("kind", value.kind());
+    result.put("source", value.source());
+    if (value.value() != null) {
+      result.put("value", value.value());
+    }
+    if (value.elements() != null && !value.elements().isEmpty()) {
+      result.put(
+          "elements", value.elements().stream().map(EntryCodeCollector::annotationValue).toList());
+    } else if ("ARRAY".equals(value.kind())) {
+      result.put("elements", List.of());
+    }
+    return Map.copyOf(result);
+  }
+
+  private static List<String> annotationKeys(
+      Map<String, List<String>> byOwner, String sourcePath, String ownerLocalId) {
+    return List.copyOf(byOwner.getOrDefault(ownerKey(sourcePath, ownerLocalId), List.of()));
+  }
+
+  private static String ownerKey(String sourcePath, String localId) {
+    return sourcePath + '|' + localId;
+  }
+
+  private static String annotationKey(
+      String sourcePath, JdtSyntaxProtocol.AnnotationView annotation) {
+    return "annotation:"
+        + identity(
+            "jdt-annotation-v1",
+            sourcePath,
+            Integer.toString(annotation.sourceRange().startOffsetUtf16()),
+            Integer.toString(annotation.sourceRange().lengthUtf16()));
+  }
+
+  private static String fieldKey(String sourcePath, JdtSyntaxProtocol.Declaration declaration) {
+    return "field:"
+        + identity(
+            "jdt-field-v1",
+            sourcePath,
+            Integer.toString(declaration.sourceRange().startOffsetUtf16()),
+            declaration.name());
+  }
+
+  private static String qualifiedDeclaringType(
+      JdtSyntaxProtocol.Response response, JdtSyntaxProtocol.Declaration declaration) {
+    String declaring = declaration.declaringTypeName();
+    if (declaring == null || declaring.isBlank()) {
+      return null;
+    }
+    return qualify(response.packageName(), declaring);
+  }
+
+  private static String qualifiedType(
+      JdtSyntaxProtocol.Response response, JdtSyntaxProtocol.Declaration declaration) {
+    String local =
+        declaration.declaringTypeName() == null || declaration.declaringTypeName().isBlank()
+            ? declaration.name()
+            : declaration.declaringTypeName() + "." + declaration.name();
+    return qualify(response.packageName(), local);
+  }
+
+  private static String qualify(String packageName, String localName) {
+    return packageName == null || packageName.isBlank() ? localName : packageName + "." + localName;
+  }
+
+  private static boolean typeDeclaration(String kind) {
+    return Set.of("CLASS", "INTERFACE", "ENUM", "RECORD", "ANNOTATION_TYPE").contains(kind);
   }
 
   private static SourceRange sourceRange(JdtSyntaxProtocol.SourceRange value) {

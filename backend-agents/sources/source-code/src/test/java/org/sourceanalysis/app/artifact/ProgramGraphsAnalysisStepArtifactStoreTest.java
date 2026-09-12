@@ -227,7 +227,7 @@ class ProgramGraphsAnalysisStepArtifactStoreTest {
             canonicalJson,
             "entry-points.jsonl",
             "APPLICATION_DISCOVERY_ENTRY_POINTS",
-            "application-discovery-entry-points-v2",
+            "application-discovery-entry-points-v3",
             "application-discovery-entry-points"),
         jsonlPayload(
             canonicalJson,
@@ -385,7 +385,7 @@ class ProgramGraphsAnalysisStepArtifactStoreTest {
     policy(
         entries,
         "APPLICATION_DISCOVERY_ENTRY_POINTS",
-        "application-discovery-entry-points-v2",
+        "application-discovery-entry-points-v3",
         "application-discovery-entry-points",
         "application/x-ndjson",
         "CANONICAL_JSONL",

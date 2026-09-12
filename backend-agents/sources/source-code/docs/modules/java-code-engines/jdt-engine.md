@@ -47,22 +47,24 @@ helper 是同一工程中独立构建的工具产物，不进入宿主 Java 17 c
 
 ```json
 {
-  "protocolVersion": "jdt-syntax-v1",
+  "protocolVersion": "jdt-syntax-v2",
   "operation": "DESCRIBE_COMPILATION_UNIT",
   "requestId": "parse-1",
   "sourceKey": "source:user-controller",
   "languageLevel": "8",
+  "sourcepathEntries": ["受控投影下的源码根"],
+  "classpathEntries": ["已经验证并显式批准的本地依赖"],
   "text": "本字段在真实请求中必须是完整冻结Java文件原文"
 }
 ```
 
 这是协议形状示例，不是可执行源码。响应含`protocolVersion, requestId, declarations, callSites, controls, exits, diagnostics`，各位置沿用[统一字段](contracts-and-configuration.md)。请求不传仓库根供helper自行扫描，也不给它源码目标答案。JSON字符串正确转义换行，一条请求/响应一行；stdout仅协议、stderr限量诊断，用现有Jackson序列化，不手拼JSON。未知operation/版本/字段或进程断流为工具错误，不装作空语法树。
 
-`jdt-syntax-v1` 的传输语义也属于冻结合同：同一进程同一时间恰有一个请求在途，成功响应必须逐字回显 `protocolVersion/requestId`；stdout 的每一非空行只能是一条响应，stderr 有上限且只作诊断。单请求超过配置的正值 query timeout 时不重试，终止 helper、使 session 不可继续并报 `JDT_SYNTAX_TIMEOUT`。非 JSON、未知字段/版本、requestId 不符或请求在途时 EOF 报 `JDT_SYNTAX_PROTOCOL_INVALID`；意外非零退出报 `JDT_SYNTAX_PROCESS_FAILED`。正常关闭先关 stdin、在 shutdown timeout 内只接受 exit 0；超时则强杀并报 `JDT_SYNTAX_SHUTDOWN_TIMEOUT`。这些状态都不能返回空 declarations 冒充成功。
+`jdt-syntax-v2` 的传输语义也属于冻结合同：同一进程同一时间恰有一个请求在途，成功响应必须逐字回显 `protocolVersion/requestId`；stdout 的每一非空行只能是一条响应，stderr 有上限且只作诊断。单请求超过配置的正值 query timeout 时不重试，终止 helper、使 session 不可继续并报 `JDT_SYNTAX_TIMEOUT`。非 JSON、未知字段/版本、requestId 不符或请求在途时 EOF 报 `JDT_SYNTAX_PROTOCOL_INVALID`；意外非零退出报 `JDT_SYNTAX_PROCESS_FAILED`。正常关闭先关 stdin、在 shutdown timeout 内只接受 exit 0；超时则强杀并报 `JDT_SYNTAX_SHUTDOWN_TIMEOUT`。这些状态都不能返回空 declarations 冒充成功。
 
 ### Core内部算法
 
-使用 `ASTParser` 的 compilation-unit模式，`setSource(char[])`，明确compiler source/compliance，启用方法体，`setResolveBindings(false)`。DOM API版本取固定Core支持版本；**DOM级别、源码语言级别、工具JDK版本不是同一个概念**。helper不设置另一套project/classpath来解析绑定，LS是唯一导航权威。
+使用 `ASTParser` 的 compilation-unit模式，`setSource(char[])`，明确compiler source/compliance，启用方法体。helper只接受会话已经验证的源码投影根和显式批准且校验过内容的本地classpath；它启用JDT Core binding，仅把确定解析到的注解限定名投影给catalog，以支持外部通配import。调用目标、定义和实现候选仍完全由LS导航决定，helper不按绑定建立第二张调用图，也不自行扫描依赖。DOM API版本取固定Core支持版本；**DOM级别、源码语言级别、工具JDK版本不是同一个概念**。
 
 从AST节点的start/length截取**原文**；禁止用`ASTNode.toString()`重新排版后当原文。每文件每有效source level只解析一次并缓存；缓存键至少包括源码内容、Core版本和language level。
 
@@ -93,7 +95,7 @@ JDT DOM的offset是UTF-16 code unit，LSP协商也固定UTF-16，行/character�
 
 这项职责在JDT Adapter内，使用同一SyntaxReader和LS会话，不新增扫描器。Core返回package、imports（含onDemand/static标记）、AnnotationView的完整范围及nameSelection。对已写全限定名可保留该源码名；需要确认声明身份的注解，在nameSelection上询问LS definition并归一化位置。
 
-仓库内返回位置用Core读取注解类型的package/name；外部声明只有工具提供的确定身份才填qualifiedName，不从本机缓存路径或simple name猜包。对源码内自定义组合注解，递归读取其元注解，按声明位置去重防环；只应用既有支持的Spring组合规则，未知AliasFor/动态表达式保留限制。
+Core优先使用相同受控sourcepath/classpath解析注解binding；确定解析成功才填qualifiedName。仍未解析时可询问LS definition，并只接受可以归一为确定声明身份的返回；不得从本机缓存路径、simple name或“annotation包”惯例猜包。对源码内自定义组合注解，递归读取其元注解，按声明位置去重防环；只应用既有支持的Spring组合规则，未知AliasFor/动态表达式保留限制。
 
 在通配import或缺依赖下LS仍不能确认时，qualifiedName=null并记录`ANNOTATION_IDENTITY_UNRESOLVED`。Spring消费者保留该已定位mapping候选方法、原注解及具体限制，允许后续读取其源码；不能把未确认候选宣布为准确HTTP路由，也不能从发现site/材料范围中静默过滤。合法省略method仍是UNRESTRICTED，和注解identity无法确认不是同一种问题。
 

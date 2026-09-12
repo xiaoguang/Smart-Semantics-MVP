@@ -384,6 +384,8 @@ class AmbiguousCallHandoffTest {
         "/depotHead/batchSetStatus",
         List.of("/depotHead", "/batchSetStatus"),
         "com.example.DepotHeadController#batchSetStatus",
+        "method:" + "1".repeat(64),
+        new org.sourceanalysis.app.analysis.code.SourceRange(0, 1, 1, 1),
         List.of("status"),
         List.of(
             excerpt(controller, text, "class DepotHeadController"),
@@ -486,7 +488,7 @@ class AmbiguousCallHandoffTest {
             json,
             "entry-points.jsonl",
             "APPLICATION_DISCOVERY_ENTRY_POINTS",
-            "application-discovery-entry-points-v2",
+            "application-discovery-entry-points-v3",
             "entry-points"),
         jsonlPayload(
             json,
@@ -534,7 +536,7 @@ class AmbiguousCallHandoffTest {
     policy(
         entries,
         "APPLICATION_DISCOVERY_ENTRY_POINTS",
-        "application-discovery-entry-points-v2",
+        "application-discovery-entry-points-v3",
         "entry-points",
         "application/x-ndjson",
         "CANONICAL_JSONL",

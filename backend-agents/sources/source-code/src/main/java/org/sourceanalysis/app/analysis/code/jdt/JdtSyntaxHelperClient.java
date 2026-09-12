@@ -34,6 +34,8 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
 
   private final Duration queryTimeout;
   private final Duration shutdownTimeout;
+  private final List<String> sourcepathEntries;
+  private final List<String> classpathEntries;
   private final ObjectMapper json;
   private final Process process;
   private final BufferedReader stdout;
@@ -46,9 +48,15 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
   private boolean closed;
 
   private JdtSyntaxHelperClient(
-      List<String> command, Duration queryTimeout, Duration shutdownTimeout) {
+      List<String> command,
+      Duration queryTimeout,
+      Duration shutdownTimeout,
+      List<String> sourcepathEntries,
+      List<String> classpathEntries) {
     this.queryTimeout = positive(queryTimeout, "JDT syntax query timeout");
     this.shutdownTimeout = positive(shutdownTimeout, "JDT syntax shutdown timeout");
+    this.sourcepathEntries = absolutePaths(sourcepathEntries, "JDT sourcepath entries");
+    this.classpathEntries = absolutePaths(classpathEntries, "JDT classpath entries");
     json =
         new ObjectMapper(
                 JsonFactory.builder().enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
@@ -79,6 +87,16 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
 
   static JdtSyntaxHelperClient start(
       Path javaHome, Path helperJar, Duration queryTimeout, Duration shutdownTimeout) {
+    return start(javaHome, helperJar, queryTimeout, shutdownTimeout, List.of(), List.of());
+  }
+
+  static JdtSyntaxHelperClient start(
+      Path javaHome,
+      Path helperJar,
+      Duration queryTimeout,
+      Duration shutdownTimeout,
+      List<Path> sourcepathEntries,
+      List<Path> classpathEntries) {
     Path java = Objects.requireNonNull(javaHome, "JDT Java home").resolve("bin").resolve("java");
     Path jar = Objects.requireNonNull(helperJar, "JDT syntax helper jar");
     if (!Files.isRegularFile(java) || !Files.isExecutable(java)) {
@@ -93,12 +111,14 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
     return new JdtSyntaxHelperClient(
         List.of(java.toAbsolutePath().toString(), "-jar", jar.toAbsolutePath().toString()),
         queryTimeout,
-        shutdownTimeout);
+        shutdownTimeout,
+        sourcepathEntries.stream().map(Path::toString).toList(),
+        classpathEntries.stream().map(Path::toString).toList());
   }
 
   static JdtSyntaxHelperClient start(
       List<String> command, Duration queryTimeout, Duration shutdownTimeout) {
-    return new JdtSyntaxHelperClient(command, queryTimeout, shutdownTimeout);
+    return new JdtSyntaxHelperClient(command, queryTimeout, shutdownTimeout, List.of(), List.of());
   }
 
   synchronized JdtSyntaxProtocol.Response describe(
@@ -114,6 +134,8 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
             requireText(sourceKey, "source key"),
             requireText(languageLevel, "Java language level"),
             sourceSha256,
+            sourcepathEntries,
+            classpathEntries,
             source);
     try {
       stdin.write(json.writeValueAsString(request));
@@ -150,7 +172,7 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
           failure.getCause());
     }
     if (responseLine == null) {
-      if (!process.isAlive() && process.exitValue() != 0) {
+      if (awaitExitedAfterEndOfOutput() && process.exitValue() != 0) {
         throw fail(
             CodeEngineException.JDT_SYNTAX_PROCESS_FAILED,
             "JDT syntax helper exited without a response" + diagnosticSuffix(),
@@ -227,6 +249,16 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
     }
   }
 
+  private static List<String> absolutePaths(List<String> values, String label) {
+    List<String> copied = List.copyOf(Objects.requireNonNull(values, label));
+    if (copied.stream().anyMatch(value -> value == null || value.isBlank())) {
+      throw new IllegalArgumentException(label + " cannot contain blank paths");
+    }
+    return copied.stream()
+        .map(value -> Path.of(value).toAbsolutePath().normalize().toString())
+        .toList();
+  }
+
   private void validateResponse(
       JdtSyntaxProtocol.Request request, JdtSyntaxProtocol.Response response) {
     if (response == null
@@ -241,6 +273,7 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
     }
     requireList(response.imports(), "imports");
     requireList(response.declarations(), "declarations");
+    requireList(response.annotations(), "annotations");
     requireList(response.callSites(), "call sites");
     requireList(response.controls(), "controls");
     requireList(response.exits(), "exits");
@@ -266,6 +299,13 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
                   .equals(item.sourceText())) {
                 throw invalidProtocol("JDT declaration source does not match its reported range");
               }
+            });
+    response
+        .annotations()
+        .forEach(
+            item -> {
+              ranges.add(item.sourceRange());
+              ranges.add(item.nameSelection());
             });
     response
         .callSites()
@@ -295,6 +335,21 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
 
   private CodeEngineException invalidProtocol(String detail) {
     return fail(CodeEngineException.JDT_SYNTAX_PROTOCOL_INVALID, detail, null);
+  }
+
+  private boolean awaitExitedAfterEndOfOutput() {
+    if (!process.isAlive()) {
+      return true;
+    }
+    try {
+      return process.waitFor(Math.min(250L, queryTimeout.toMillis()), TimeUnit.MILLISECONDS);
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw fail(
+          CodeEngineException.JDT_SYNTAX_PROCESS_FAILED,
+          "JDT syntax helper exit observation was interrupted",
+          interrupted);
+    }
   }
 
   private CodeEngineException fail(String code, String detail, Throwable cause) {

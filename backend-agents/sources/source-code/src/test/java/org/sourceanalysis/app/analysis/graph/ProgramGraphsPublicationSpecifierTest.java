@@ -130,7 +130,7 @@ class ProgramGraphsPublicationSpecifierTest {
                   canonicalJson,
                   "entry-points.jsonl",
                   "APPLICATION_DISCOVERY_ENTRY_POINTS",
-                  "application-discovery-entry-points-v2",
+                  "application-discovery-entry-points-v3",
                   "entry-points"),
               jsonlPayload(
                   canonicalJson,
@@ -360,7 +360,7 @@ class ProgramGraphsPublicationSpecifierTest {
     policy(
         entries,
         "APPLICATION_DISCOVERY_ENTRY_POINTS",
-        "application-discovery-entry-points-v2",
+        "application-discovery-entry-points-v3",
         "entry-points",
         "application/x-ndjson",
         "CANONICAL_JSONL",

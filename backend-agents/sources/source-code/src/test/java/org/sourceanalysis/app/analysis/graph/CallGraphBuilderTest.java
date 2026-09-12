@@ -654,6 +654,8 @@ class CallGraphBuilderTest {
             "/depotHead/batchSetStatus",
             List.of("/depotHead", "/batchSetStatus"),
             "com.example.DepotHeadController#batchSetStatus",
+            "method:" + "1".repeat(64),
+            new org.sourceanalysis.app.analysis.code.SourceRange(0, 1, 1, 1),
             List.of("status"),
             List.of(
                 excerpt(
@@ -1053,6 +1055,8 @@ class CallGraphBuilderTest {
         route,
         List.of("/depotHead", route.substring("/depotHead".length())),
         "com.example.DepotHeadController#batchSetStatus",
+        "method:" + entryId.value().substring("entry:".length()),
+        new org.sourceanalysis.app.analysis.code.SourceRange(0, 1, 1, 1),
         List.of("status"),
         List.of(
             excerpt(
@@ -1081,6 +1085,8 @@ class CallGraphBuilderTest {
         route,
         List.of("/depotHead", route.substring("/depotHead".length())),
         "com.example.DepotHeadController#" + handlerMethod,
+        "method:" + entryId.value().substring("entry:".length()),
+        new org.sourceanalysis.app.analysis.code.SourceRange(0, 1, 1, 1),
         List.of("status"),
         List.of(
             excerpt(

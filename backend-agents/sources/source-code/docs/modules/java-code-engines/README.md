@@ -101,10 +101,10 @@ ProcessExplainer → BusinessReportPublisher → 一份九章
 JDT LS 已提供定位声明、实现和调用层次；JDT Core 能读取方法、构造器、参数和语法节点。两者分工如下：
 
 - **LS 拥有唯一的项目语义索引与目标定位。** 不自己拼包名、实现继承规则或匹配重载。
-- **Core 只做精确语法读取。** 使用同一源码文本，找完整声明/方法体、实参、形参、if/try/return 等位置；不再维护第二个类型解析上下文。
+- **Core 做精确语法读取，并在受控环境内解析注解身份。** 使用同一源码文本，找完整声明/方法体、实参、形参、if/try/return 等位置；它只消费已验证源码根与显式批准classpath来确定注解限定名，不建立第二张调用图。
 - LS 返回整方法 range 时直接按范围查证并取源码；返回方法名位置时，Core 找包含该位置的精确声明。标准 LSP 并没有一个可直接远程调用 `IMethod.getSource()` 的请求，不能把 Java API 当成现成 LSP 接口。
 
-选择独立的 Core 语法辅助进程，使用已固定工具 JDK；主应用维持 Java 17。不编写 JDT LS 插件、OSGi 扩展或另一套工程导入器。LS 与 Core 各有必要解析，**一份负责语义索引、一份负责语法输出，Core 不解析绑定**；不是每个步骤再解析一次。
+选择独立的 Core 语法辅助进程，使用已固定工具 JDK；主应用维持 Java 17。不编写 JDT LS 插件、OSGi 扩展或另一套工程导入器。LS 与 Core 各有必要解析：**LS负责调用/定义/实现导航，Core负责语法输出和注解限定名binding**；后者不扩展成通用调用解析器，也不是每个步骤再解析一次。
 
 依据：[JDT LS 官方功能](https://github.com/eclipse-jdtls/eclipse.jdt.ls)、[ASTParser](https://help.eclipse.org/latest/topic/org.eclipse.jdt.doc.isv/reference/api/org/eclipse/jdt/core/dom/ASTParser.html)、[MethodDeclaration](https://help.eclipse.org/latest/topic/org.eclipse.jdt.doc.isv/reference/api/org/eclipse/jdt/core/dom/MethodDeclaration.html)。具体启动与缓存见[JDT详细设计](jdt-engine.md)。
 

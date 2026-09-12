@@ -6,7 +6,7 @@
 
 **Architecture:** One `JavaCodeEngine` opens one snapshot-bound `JavaCodeSession`. Step02 persists overload-safe `methodKey` plus `SourceRange`; Step03 publishes the session's neutral `java-code-index`; Step04 truthfully publishes whether strict graph-derived facts exist; Step05 consumes persisted `EntryCodeContext` first. JDT LS owns project navigation and a separately built JDT Core helper owns exact source/syntax extraction. JavaParser is connected only after the JDT contract is released.
 
-**Tech stack:** Java 17 host application, Maven, JUnit 5, Jackson JSON/YAML, Eclipse LSP4J/Gson for JDT LS, a shaded JDT Core 3.47.0 helper launched by the configured tool JDK, JSONL protocol `jdt-syntax-v1`.
+**Tech stack:** Java 17 host application, Maven, JUnit 5, Jackson JSON/YAML, Eclipse LSP4J/Gson for JDT LS, a shaded JDT Core 3.47.0 helper launched by the configured tool JDK, JSONL protocol `jdt-syntax-v2`.
 
 **Authoritative design:** [Java engine overview](../modules/java-code-engines/README.md), [contracts and configuration](../modules/java-code-engines/contracts-and-configuration.md), [JDT engine](../modules/java-code-engines/jdt-engine.md), and [integration/JavaParser](../modules/java-code-engines/integration-and-javaparser.md). These documents decide behavior when a task below names a contract but does not repeat every field.
 
@@ -161,6 +161,7 @@
 **GREEN**
 
 - Make Java declaration and annotation identity come from the selected session catalog; retain shared Spring route and mapper XML semantics.
+- The helper receives only the session's verified projected source roots and explicitly approved classpath. JDT Core binding supplies annotation qualified names for external wildcard imports; the host must not infer them from package-name conventions. JDT LS remains the authority for call/definition/implementation navigation.
 - Persist `methodKey` and `methodRange={startOffsetUtf16,lengthUtf16,startLine,endLine}` on every entry and include both in `entryId` framing. Derive `EntrySeed` from those values. Range means the complete declaration and its path is resolved through `methodKey`/catalog, so overload selection is exact.
 - Bump the application-discovery draft and entry-point line contracts to version 3 in the writer, every direct reader, artifact policy, and fixtures in one change. Do not add a v2 fallback or infer missing keys.
 

@@ -74,6 +74,18 @@ final class JdtNavigationResolver {
     return List.copyOf(result);
   }
 
+  List<Location> definitionsAt(
+      String sourcePath, String sourceText, JdtSyntaxProtocol.SourceRange navigationRange) {
+    requireText(sourcePath, "definition source path");
+    Objects.requireNonNull(sourceText, "definition source");
+    Objects.requireNonNull(navigationRange, "definition navigation range");
+    String uri = sources.uri(sourcePath);
+    sources.activate(uri);
+    List<Location> locations =
+        gateway.definitions(uri, position(sourceText, navigationRange.startOffsetUtf16()));
+    return locations == null ? List.of() : List.copyOf(locations);
+  }
+
   private ResolvedCall normalize(String callId, List<SourcedLocation> locations) {
     Map<String, MutableCandidate> byExactLocation = new LinkedHashMap<>();
     List<String> diagnostics = new ArrayList<>();

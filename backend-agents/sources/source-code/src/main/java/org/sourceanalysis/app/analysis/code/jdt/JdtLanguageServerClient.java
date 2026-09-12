@@ -147,12 +147,15 @@ final class JdtLanguageServerClient implements AutoCloseable, JdtNavigationResol
     }
   }
 
-  JdtSyntaxHelperClient openSyntaxHelper(Path helperJar) {
+  JdtSyntaxHelperClient openSyntaxHelper(
+      Path helperJar, VerifiedJavaProject project, Path projectRoot) {
     return JdtSyntaxHelperClient.start(
         configuration.javaHome(),
         helperJar,
         configuration.queryTimeout(),
-        configuration.shutdownTimeout());
+        configuration.shutdownTimeout(),
+        project.sourceRoots().stream().map(projectRoot::resolve).toList(),
+        project.classpath());
   }
 
   @Override

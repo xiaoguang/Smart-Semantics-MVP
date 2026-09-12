@@ -4,9 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class JdtSyntaxReaderTest {
 
@@ -28,7 +31,7 @@ class JdtSyntaxReaderTest {
     JdtSyntaxProtocol.Response response =
         new JdtSyntaxReader().describe(request("req-1", "source:registration", "17", source));
 
-    assertThat(response.protocolVersion()).isEqualTo("jdt-syntax-v1");
+    assertThat(response.protocolVersion()).isEqualTo(JdtSyntaxProtocol.VERSION);
     assertThat(response.requestId()).isEqualTo("req-1");
     assertThat(response.sourceSha256()).isEqualTo(sha256(source));
     assertThat(response.packageName()).isEqualTo("example");
@@ -119,6 +122,91 @@ class JdtSyntaxReaderTest {
   }
 
   @Test
+  void describesDeclarationKindsFieldsAndStructuredAnnotationsForSharedDiscovery() {
+    String source =
+        "package example;\n"
+            + "import org.springframework.web.bind.annotation.*;\n"
+            + "@RequestMapping(value = \"/users\", method = {})\n"
+            + "class UserController {\n"
+            + "  @Resource private UserService users;\n"
+            + "  @PostMapping(path = \"/register\")\n"
+            + "  Object register(@RequestBody User user) { return users.register(user); }\n"
+            + "}\n"
+            + "interface UserMapper { User find(Long id); }\n";
+
+    JdtSyntaxProtocol.Response response =
+        new JdtSyntaxReader().describe(request("req-catalog", "source:catalog", "17", source));
+
+    assertThat(response.declarations())
+        .filteredOn(declaration -> "CLASS".equals(declaration.kind()))
+        .extracting(JdtSyntaxProtocol.Declaration::name)
+        .containsExactly("UserController");
+    assertThat(response.declarations())
+        .filteredOn(declaration -> "INTERFACE".equals(declaration.kind()))
+        .extracting(JdtSyntaxProtocol.Declaration::name)
+        .containsExactly("UserMapper");
+    assertThat(response.declarations())
+        .filteredOn(declaration -> "FIELD".equals(declaration.kind()))
+        .singleElement()
+        .satisfies(field -> assertThat(field.sourceText()).contains("UserService users"));
+
+    JdtSyntaxProtocol.AnnotationView requestMapping =
+        response.annotations().stream()
+            .filter(annotation -> annotation.nameText().equals("RequestMapping"))
+            .findFirst()
+            .orElseThrow();
+    assertThat(requestMapping.ownerDeclarationId()).startsWith("decl:class:");
+    assertThat(requestMapping.staticValues().get("value").kind()).isEqualTo("STRING");
+    assertThat(requestMapping.staticValues().get("value").value()).isEqualTo("/users");
+    assertThat(requestMapping.staticValues().get("method").kind()).isEqualTo("ARRAY");
+    assertThat(requestMapping.staticValues().get("method").elements()).isEmpty();
+    assertThat(
+            source.substring(
+                requestMapping.nameSelection().startOffsetUtf16(),
+                requestMapping.nameSelection().endOffsetUtf16()))
+        .isEqualTo("RequestMapping");
+
+    assertThat(response.annotations())
+        .filteredOn(annotation -> annotation.nameText().equals("PostMapping"))
+        .singleElement()
+        .satisfies(
+            mapping -> {
+              assertThat(mapping.ownerDeclarationId()).startsWith("decl:method:");
+              assertThat(mapping.staticValues().get("path").value()).isEqualTo("/register");
+            });
+  }
+
+  @Test
+  void resolvesWildcardImportedAnnotationIdentityWithJdtBindings(@TempDir Path sourceRoot)
+      throws Exception {
+    Path annotation = sourceRoot.resolve("framework/HttpPost.java");
+    Files.createDirectories(annotation.getParent());
+    Files.writeString(annotation, "package framework; public @interface HttpPost {}\n");
+    String source =
+        "package example;\n"
+            + "import framework.*;\n"
+            + "class Controller { @HttpPost void register() {} }\n";
+    JdtSyntaxProtocol.Request request =
+        new JdtSyntaxProtocol.Request(
+            JdtSyntaxProtocol.VERSION,
+            JdtSyntaxProtocol.DESCRIBE_COMPILATION_UNIT,
+            "req-binding",
+            "example/Controller.java",
+            "17",
+            sha256(source),
+            java.util.List.of(sourceRoot.toString()),
+            java.util.List.of(),
+            source);
+
+    JdtSyntaxProtocol.Response response = new JdtSyntaxReader().describe(request);
+
+    assertThat(response.annotations())
+        .filteredOn(value -> "HttpPost".equals(value.nameText()))
+        .singleElement()
+        .satisfies(value -> assertThat(value.qualifiedName()).isEqualTo("framework.HttpPost"));
+  }
+
+  @Test
   void exposesElseAndFinallyBranchesWithoutInventingControlFlow() {
     String source =
         "class Example {\n"
@@ -203,12 +291,14 @@ class JdtSyntaxReaderTest {
             () ->
                 reader.describe(
                     new JdtSyntaxProtocol.Request(
-                        "jdt-syntax-v1",
+                        JdtSyntaxProtocol.VERSION,
                         "DESCRIBE_COMPILATION_UNIT",
                         "req-4",
                         "source:bad",
                         "17",
                         "0".repeat(64),
+                        java.util.List.of(),
+                        java.util.List.of(),
                         source)))
         .isInstanceOf(JdtSyntaxProtocol.ProtocolException.class)
         .hasMessageContaining("fingerprint");
@@ -222,6 +312,8 @@ class JdtSyntaxReaderTest {
                         "source:bad",
                         "17",
                         sha256(source),
+                        java.util.List.of(),
+                        java.util.List.of(),
                         source)))
         .isInstanceOf(JdtSyntaxProtocol.ProtocolException.class)
         .hasMessageContaining("protocol");
@@ -230,12 +322,14 @@ class JdtSyntaxReaderTest {
   private static JdtSyntaxProtocol.Request request(
       String requestId, String sourceKey, String languageLevel, String source) {
     return new JdtSyntaxProtocol.Request(
-        "jdt-syntax-v1",
+        JdtSyntaxProtocol.VERSION,
         "DESCRIBE_COMPILATION_UNIT",
         requestId,
         sourceKey,
         languageLevel,
         sha256(source),
+        java.util.List.of(),
+        java.util.List.of(),
         source);
   }
 

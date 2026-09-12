@@ -186,7 +186,8 @@ public final class JdtProjectSession implements JavaCodeSession {
 
   private EntryCodeCollector collector() {
     if (collector == null) {
-      syntaxHelper = languageServer.openSyntaxHelper(JdtSyntaxHelperArtifact.locate());
+      syntaxHelper =
+          languageServer.openSyntaxHelper(JdtSyntaxHelperArtifact.locate(), project, projectRoot);
       ProjectedSourceAccess sourceAccess =
           new ProjectedSourceAccess(projectRoot, project.sourceEntries(), languageServer);
       JdtNavigationResolver navigation = new JdtNavigationResolver(languageServer, sourceAccess);
@@ -277,7 +278,12 @@ public final class JdtProjectSession implements JavaCodeSession {
           <name>%s</name>
           <comment></comment>
           <projects></projects>
-          <buildSpec></buildSpec>
+          <buildSpec>
+            <buildCommand>
+              <name>org.eclipse.jdt.core.javabuilder</name>
+              <arguments></arguments>
+            </buildCommand>
+          </buildSpec>
           <natures><nature>org.eclipse.jdt.core.javanature</nature></natures>
         </projectDescription>
         """

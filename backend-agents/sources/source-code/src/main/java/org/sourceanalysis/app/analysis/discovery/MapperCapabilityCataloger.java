@@ -26,6 +26,8 @@ import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
+import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
+import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
@@ -65,6 +67,31 @@ public final class MapperCapabilityCataloger {
       VerifiedSourceTextSet source = sourceReader.reopen(frozenSource);
       requireSameVerifiedBasis(profile, source);
       Map<String, JavaMapperInterface> interfaces = javaInterfaces(source, profile.snapshotId());
+      List<XmlMapperResource> resources = xmlMapperResources(source, profile.snapshotId());
+      return catalog(profile.snapshotId(), interfaces, resources);
+    } catch (ApplicationDiscoveryException failure) {
+      throw failure;
+    } catch (RuntimeException failure) {
+      throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN");
+    }
+  }
+
+  /**
+   * Uses the selected Java engine's catalog for Java declarations and the verified bytes for XML.
+   */
+  public MapperCatalogDiscovery catalogMappers(
+      ApplicationProfile profile,
+      VerifiedSourceInventoryReference frozenSource,
+      JavaDeclarationCatalog javaCatalog) {
+    try {
+      requireMyBatisProfile(profile);
+      VerifiedSourceTextSet source = sourceReader.reopen(frozenSource);
+      requireSameVerifiedBasis(profile, source);
+      if (javaCatalog == null || !profile.snapshotId().equals(javaCatalog.snapshotId())) {
+        throw new ApplicationDiscoveryException("SNAPSHOT_REOPEN_MISMATCH");
+      }
+      Map<String, JavaMapperInterface> interfaces =
+          javaInterfaces(source, profile.snapshotId(), javaCatalog);
       List<XmlMapperResource> resources = xmlMapperResources(source, profile.snapshotId());
       return catalog(profile.snapshotId(), interfaces, resources);
     } catch (ApplicationDiscoveryException failure) {
@@ -145,6 +172,51 @@ public final class MapperCapabilityCataloger {
         if (interfaces.put(fqn, mapperInterface) != null) {
           throw new ApplicationDiscoveryException("MAPPER_CATALOG_AMBIGUOUS");
         }
+      }
+    }
+    return interfaces;
+  }
+
+  private static Map<String, JavaMapperInterface> javaInterfaces(
+      VerifiedSourceTextSet source, String snapshotId, JavaDeclarationCatalog catalog) {
+    Map<String, VerifiedSourceTextDocument> documents = new HashMap<>();
+    for (VerifiedSourceTextDocument document : source.documents()) {
+      documents.put(document.path(), document);
+    }
+    Map<String, JavaDeclarationCatalog.MethodDeclarationView> methods = new HashMap<>();
+    for (JavaDeclarationCatalog.MethodDeclarationView method : catalog.methods()) {
+      if (methods.put(method.methodKey(), method) != null) {
+        throw new ApplicationDiscoveryException("MAPPER_CATALOG_AMBIGUOUS");
+      }
+    }
+    Map<String, JavaMapperInterface> interfaces = new HashMap<>();
+    for (JavaDeclarationCatalog.TypeDeclaration type : catalog.types()) {
+      if (!"INTERFACE".equals(type.kind()) || type.qualifiedName() == null) {
+        continue;
+      }
+      VerifiedSourceTextDocument document = documents.get(type.sourcePath());
+      if (document == null) {
+        throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN");
+      }
+      String text = new String(document.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8);
+      List<MapperMethodCandidate> candidates = new ArrayList<>();
+      for (String methodKey : type.methodKeys()) {
+        JavaDeclarationCatalog.MethodDeclarationView method = methods.get(methodKey);
+        if (method == null
+            || !type.qualifiedName().equals(method.declaringType())
+            || !type.sourcePath().equals(method.sourcePath())) {
+          throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN");
+        }
+        candidates.add(methodCandidate(snapshotId, type.qualifiedName(), document, text, method));
+      }
+      candidates.sort(Comparator.comparing(candidate -> candidate.methodCandidateId().value()));
+      JavaMapperInterface mapperInterface =
+          new JavaMapperInterface(
+              type.qualifiedName(),
+              excerpt(document, text, type.sourceRange()),
+              List.copyOf(candidates));
+      if (interfaces.put(type.qualifiedName(), mapperInterface) != null) {
+        throw new ApplicationDiscoveryException("MAPPER_CATALOG_AMBIGUOUS");
       }
     }
     return interfaces;
@@ -238,6 +310,31 @@ public final class MapperCapabilityCataloger {
             + "("
             + method.getParameters().stream()
                 .map(parameter -> parameter.getType().asString())
+                .reduce("", (left, right) -> left.isEmpty() ? right : left + "," + right)
+            + ")";
+    return new MapperMethodCandidate(
+        artifactId(
+            "mapper-method-candidate",
+            "application-discovery-mapper-method-candidate-id-v2",
+            material(snapshotId, "signature", signature, declaration)),
+        signature,
+        declaration);
+  }
+
+  private static MapperMethodCandidate methodCandidate(
+      String snapshotId,
+      String interfaceFqn,
+      VerifiedSourceTextDocument document,
+      String text,
+      JavaDeclarationCatalog.MethodDeclarationView method) {
+    SourceExcerptV1 declaration = excerpt(document, text, method.sourceRange());
+    String signature =
+        interfaceFqn
+            + "#"
+            + method.name()
+            + "("
+            + method.parameters().stream()
+                .map(JavaDeclarationCatalog.ParameterView::typeText)
                 .reduce("", (left, right) -> left.isEmpty() ? right : left + "," + right)
             + ")";
     return new MapperMethodCandidate(
@@ -362,6 +459,22 @@ public final class MapperCapabilityCataloger {
         range.begin.column,
         range.end.line,
         range.end.column + 1);
+  }
+
+  private static SourceExcerptV1 excerpt(
+      VerifiedSourceTextDocument document, String source, SourceRange range) {
+    int start = range.startOffsetUtf16();
+    int end = start + range.lengthUtf16();
+    if (end < start || end > source.length()) {
+      throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN");
+    }
+    int[] begin = lineColumn(source, start);
+    int[] finish = lineColumn(source, end);
+    int[] last = lineColumn(source, range.lengthUtf16() == 0 ? start : end - 1);
+    if (begin[0] != range.startLine() || last[0] != range.endLine()) {
+      throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN");
+    }
+    return excerpt(document, source, start, end, begin[0], begin[1], finish[0], finish[1]);
   }
 
   private static SourceExcerptV1 literalExcerpt(

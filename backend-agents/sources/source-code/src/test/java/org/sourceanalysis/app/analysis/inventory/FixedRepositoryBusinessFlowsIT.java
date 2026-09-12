@@ -110,8 +110,8 @@ class FixedRepositoryBusinessFlowsIT {
           "APPLICATION_DISCOVERY_APPLICATION_PROFILE|application-discovery-application-profile-v2",
           "APPLICATION_DISCOVERY_APPLICATION_PROFILE_DRAFT|application-discovery-application-profile-draft-v2",
           "APPLICATION_DISCOVERY_CAPABILITY_REPORT|application-discovery-capability-report-v2",
-          "APPLICATION_DISCOVERY_ENTRY_POINTS|application-discovery-entry-points-v2",
-          "APPLICATION_DISCOVERY_HTTP_ENTRY_DISCOVERY|application-discovery-http-entry-discovery-v2",
+          "APPLICATION_DISCOVERY_ENTRY_POINTS|application-discovery-entry-points-v3",
+          "APPLICATION_DISCOVERY_HTTP_ENTRY_DISCOVERY|application-discovery-http-entry-discovery-v3",
           "APPLICATION_DISCOVERY_MAPPER_CATALOG|application-discovery-mapper-catalog-v2",
           "APPLICATION_DISCOVERY_MAPPER_CATALOG_DRAFT|application-discovery-mapper-catalog-draft-v2",
           "BUSINESS_FLOWS_CAPSULE_PROJECTION|business-flows-capsule-projection-v9",
@@ -185,7 +185,7 @@ class FixedRepositoryBusinessFlowsIT {
                 .resolve(
                     new ArtifactPolicyKey(
                         "APPLICATION_DISCOVERY_ENTRY_POINTS",
-                        "application-discovery-entry-points-v2"))
+                        "application-discovery-entry-points-v3"))
                 .artifactIdPrefix())
         .isEqualTo("application-discovery-entry-points");
     assertThat(

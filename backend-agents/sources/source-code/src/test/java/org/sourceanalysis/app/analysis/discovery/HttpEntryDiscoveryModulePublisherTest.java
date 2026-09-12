@@ -112,7 +112,7 @@ class HttpEntryDiscoveryModulePublisherTest {
                 assertThat(payload.descriptor().artifactType())
                     .isEqualTo("APPLICATION_DISCOVERY_HTTP_ENTRY_DISCOVERY");
                 assertThat(payload.descriptor().schemaVersion())
-                    .isEqualTo("application-discovery-http-entry-discovery-v2");
+                    .isEqualTo("application-discovery-http-entry-discovery-v3");
                 assertThat(
                         canonicalJson
                             .parseCanonical(payload.canonicalUtf8())
@@ -225,7 +225,7 @@ class HttpEntryDiscoveryModulePublisherTest {
     policy(
         policies,
         "APPLICATION_DISCOVERY_HTTP_ENTRY_DISCOVERY",
-        "application-discovery-http-entry-discovery-v2",
+        "application-discovery-http-entry-discovery-v3",
         "http-entry-discovery");
     withoutId.put(
         "artifactPolicyRegistryId",

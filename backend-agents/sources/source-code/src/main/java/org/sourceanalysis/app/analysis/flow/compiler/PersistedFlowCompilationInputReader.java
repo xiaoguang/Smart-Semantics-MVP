@@ -78,7 +78,7 @@ final class PersistedFlowCompilationInputReader {
                   "entry-points.jsonl",
                   new PayloadSpec(
                       "APPLICATION_DISCOVERY_ENTRY_POINTS",
-                      "application-discovery-entry-points-v2",
+                      "application-discovery-entry-points-v3",
                       CanonicalMediaType.APPLICATION_X_NDJSON),
                   "mapper-catalog.jsonl",
                   new PayloadSpec(
@@ -268,9 +268,11 @@ final class PersistedFlowCompilationInputReader {
     }
     List<FlowEntry> entries = new ArrayList<>();
     for (JsonNode entry : parseJsonLines(payloads.get("entry-points.jsonl"))) {
-      requireJsonLineHeader(entry, "application-discovery-entry-point-v2");
+      requireJsonLineHeader(entry, "application-discovery-entry-point-v3");
       String entryId = id(entry, "entryId");
       if (!"HTTP".equals(text(entry, "protocol"))) throw broken();
+      text(entry, "methodKey");
+      requireMethodRange(entry.get("methodRange"));
       String method = methodConditionDisplay(entry);
       String route = text(entry, "route");
       if (!route.startsWith("/")) throw broken();
@@ -1134,6 +1136,17 @@ final class PersistedFlowCompilationInputReader {
     JsonNode child = value.get(field);
     if (child == null || !child.isInt() || child.intValue() < 0) throw broken();
     return child.intValue();
+  }
+
+  private static void requireMethodRange(JsonNode value) {
+    requireFields(value, Set.of("startOffsetUtf16", "lengthUtf16", "startLine", "endLine"));
+    int offset = nonnegativeInt(value, "startOffsetUtf16");
+    int length = nonnegativeInt(value, "lengthUtf16");
+    int startLine = nonnegativeInt(value, "startLine");
+    int endLine = nonnegativeInt(value, "endLine");
+    if (offset + (long) length > Integer.MAX_VALUE || startLine < 1 || endLine < startLine) {
+      throw broken();
+    }
   }
 
   private static boolean requiredBoolean(JsonNode value, String field) {

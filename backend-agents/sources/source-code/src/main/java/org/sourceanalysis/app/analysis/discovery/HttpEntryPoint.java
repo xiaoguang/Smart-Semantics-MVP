@@ -2,6 +2,7 @@ package org.sourceanalysis.app.analysis.discovery;
 
 import java.util.List;
 import java.util.Objects;
+import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.evidence.SourceExcerptV1;
 
@@ -14,6 +15,8 @@ public record HttpEntryPoint(
     String route,
     List<String> routeParts,
     String handlerFqn,
+    String methodKey,
+    SourceRange methodRange,
     List<String> parameterNames,
     List<SourceExcerptV1> routeSourceExcerpts) {
 
@@ -26,6 +29,8 @@ public record HttpEntryPoint(
       String route,
       List<String> routeParts,
       String handlerFqn,
+      String methodKey,
+      SourceRange methodRange,
       List<String> parameterNames,
       List<SourceExcerptV1> routeSourceExcerpts) {
     this(
@@ -36,6 +41,8 @@ public record HttpEntryPoint(
         route,
         routeParts,
         handlerFqn,
+        methodKey,
+        methodRange,
         parameterNames,
         routeSourceExcerpts);
   }
@@ -48,7 +55,10 @@ public record HttpEntryPoint(
         || route == null
         || !route.startsWith("/")
         || handlerFqn == null
-        || handlerFqn.isBlank()) {
+        || handlerFqn.isBlank()
+        || methodKey == null
+        || methodKey.isBlank()
+        || methodRange == null) {
       throw new IllegalArgumentException("HTTP entry has invalid required values");
     }
     routeParts = List.copyOf(routeParts);

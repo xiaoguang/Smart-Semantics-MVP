@@ -31,7 +31,7 @@ import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 public final class HttpEntryDiscoveryModulePublisher {
 
   private static final String ARTIFACT_TYPE = "APPLICATION_DISCOVERY_HTTP_ENTRY_DISCOVERY";
-  private static final String SCHEMA_VERSION = "application-discovery-http-entry-discovery-v2";
+  private static final String SCHEMA_VERSION = "application-discovery-http-entry-discovery-v3";
   private static final String ARTIFACT_PREFIX = "http-entry-discovery";
   private static final String PROFILE_ARTIFACT_TYPE =
       "APPLICATION_DISCOVERY_APPLICATION_PROFILE_DRAFT";
@@ -82,7 +82,7 @@ public final class HttpEntryDiscoveryModulePublisher {
           moduleArtifacts.install(
               new ModuleInstallRequest(
                   destination,
-                  "v2",
+                  "v3",
                   upstream,
                   profile.controls(),
                   status,
@@ -167,6 +167,12 @@ public final class HttpEntryDiscoveryModulePublisher {
       ArrayNode routeParts = item.putArray("routeParts");
       entry.routeParts().forEach(routeParts::add);
       item.put("handlerFqn", entry.handlerFqn());
+      item.put("methodKey", entry.methodKey());
+      ObjectNode methodRange = item.putObject("methodRange");
+      methodRange.put("startOffsetUtf16", entry.methodRange().startOffsetUtf16());
+      methodRange.put("lengthUtf16", entry.methodRange().lengthUtf16());
+      methodRange.put("startLine", entry.methodRange().startLine());
+      methodRange.put("endLine", entry.methodRange().endLine());
       ArrayNode parameters = item.putArray("parameterNames");
       entry.parameterNames().forEach(parameters::add);
       ArrayNode excerpts = item.putArray("routeSourceExcerpts");
@@ -249,7 +255,7 @@ public final class HttpEntryDiscoveryModulePublisher {
     producerAddress.put("analysisStepKey", address.analysisStepKey().wireValue());
     producerAddress.put("moduleNumber", address.moduleNumber());
     producerAddress.put("moduleKey", address.moduleKey());
-    producer.put("moduleVersion", "v2");
+    producer.put("moduleVersion", "v3");
     return producer;
   }
 

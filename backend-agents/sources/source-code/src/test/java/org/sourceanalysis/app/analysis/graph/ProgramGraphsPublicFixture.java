@@ -1482,6 +1482,8 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         route,
         routeParts,
         handlerFqn,
+        "method:" + id("method", key + handlerFqn).value().substring("method:".length()),
+        new org.sourceanalysis.app.analysis.code.SourceRange(0, 1, 1, 1),
         parameterNames,
         List.of(classExcerpt, methodExcerpt));
   }
@@ -1747,7 +1749,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "APPLICATION_DISCOVERY_ENTRY_POINTS",
-        "application-discovery-entry-points-v2",
+        "application-discovery-entry-points-v3",
         "entry-points",
         "application/x-ndjson",
         "CANONICAL_JSONL",
@@ -1755,7 +1757,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "APPLICATION_DISCOVERY_HTTP_ENTRY_DISCOVERY",
-        "application-discovery-http-entry-discovery-v2",
+        "application-discovery-http-entry-discovery-v3",
         "http-entry-discovery",
         "application/json",
         "MODULE_ARTIFACT_JSON",

@@ -19,6 +19,7 @@ import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.Annotation;
 import org.eclipse.jdt.core.dom.AnnotationTypeDeclaration;
 import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
+import org.eclipse.jdt.core.dom.ArrayInitializer;
 import org.eclipse.jdt.core.dom.Block;
 import org.eclipse.jdt.core.dom.CatchClause;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
@@ -32,6 +33,7 @@ import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.ExpressionMethodReference;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.ForStatement;
+import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IfStatement;
 import org.eclipse.jdt.core.dom.ImportDeclaration;
 import org.eclipse.jdt.core.dom.Initializer;
@@ -40,9 +42,12 @@ import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.MethodReference;
 import org.eclipse.jdt.core.dom.Modifier;
+import org.eclipse.jdt.core.dom.NormalAnnotation;
 import org.eclipse.jdt.core.dom.RecordDeclaration;
 import org.eclipse.jdt.core.dom.ReturnStatement;
+import org.eclipse.jdt.core.dom.SingleMemberAnnotation;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
+import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
@@ -64,8 +69,16 @@ public final class JdtSyntaxReader {
     ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
     parser.setKind(ASTParser.K_COMPILATION_UNIT);
     parser.setSource(request.text().toCharArray());
-    parser.setResolveBindings(false);
-    parser.setBindingsRecovery(false);
+    parser.setUnitName(request.sourceKey());
+    parser.setEnvironment(
+        request.classpathEntries().toArray(String[]::new),
+        request.sourcepathEntries().toArray(String[]::new),
+        request.sourcepathEntries().stream()
+            .map(ignored -> StandardCharsets.UTF_8.name())
+            .toArray(String[]::new),
+        true);
+    parser.setResolveBindings(true);
+    parser.setBindingsRecovery(true);
     parser.setStatementsRecovery(true);
     Map<String, String> options = new HashMap<>();
     options.put(JavaCore.COMPILER_SOURCE, request.languageLevel());
@@ -86,6 +99,7 @@ public final class JdtSyntaxReader {
         packageName,
         collector.imports,
         collector.declarations,
+        collector.annotations,
         collector.calls,
         collector.controls,
         collector.exits,
@@ -106,8 +120,16 @@ public final class JdtSyntaxReader {
     required(request.sourceKey(), "source key");
     required(request.languageLevel(), "language level");
     required(request.text(), "source text");
+    requirePaths(request.sourcepathEntries(), "sourcepath entries");
+    requirePaths(request.classpathEntries(), "classpath entries");
     if (!sha256(request.text()).equals(request.sourceSha256())) {
       throw new JdtSyntaxProtocol.ProtocolException("source fingerprint mismatch");
+    }
+  }
+
+  private static void requirePaths(List<String> values, String label) {
+    if (values == null || values.stream().anyMatch(value -> value == null || value.isBlank())) {
+      throw new JdtSyntaxProtocol.ProtocolException(label + " must be a non-null path list");
     }
   }
 
@@ -132,6 +154,7 @@ public final class JdtSyntaxReader {
     private final CompilationUnit unit;
     private final List<JdtSyntaxProtocol.ImportView> imports = new ArrayList<>();
     private final List<JdtSyntaxProtocol.Declaration> declarations = new ArrayList<>();
+    private final List<JdtSyntaxProtocol.AnnotationView> annotations = new ArrayList<>();
     private final List<JdtSyntaxProtocol.CallSiteView> calls = new ArrayList<>();
     private final List<JdtSyntaxProtocol.ControlView> controls = new ArrayList<>();
     private final List<JdtSyntaxProtocol.ExitView> exits = new ArrayList<>();
@@ -158,7 +181,12 @@ public final class JdtSyntaxReader {
 
     @Override
     public boolean visit(TypeDeclaration node) {
-      enterType(node.getName().getIdentifier(), "TYPE", node.getName(), node, node.modifiers());
+      enterType(
+          node.getName().getIdentifier(),
+          node.isInterface() ? "INTERFACE" : "CLASS",
+          node.getName(),
+          node,
+          node.modifiers());
       return true;
     }
 
@@ -169,7 +197,7 @@ public final class JdtSyntaxReader {
 
     @Override
     public boolean visit(EnumDeclaration node) {
-      enterType(node.getName().getIdentifier(), "TYPE", node.getName(), node, node.modifiers());
+      enterType(node.getName().getIdentifier(), "ENUM", node.getName(), node, node.modifiers());
       return true;
     }
 
@@ -180,7 +208,7 @@ public final class JdtSyntaxReader {
 
     @Override
     public boolean visit(RecordDeclaration node) {
-      enterType(node.getName().getIdentifier(), "TYPE", node.getName(), node, node.modifiers());
+      enterType(node.getName().getIdentifier(), "RECORD", node.getName(), node, node.modifiers());
       return true;
     }
 
@@ -191,7 +219,12 @@ public final class JdtSyntaxReader {
 
     @Override
     public boolean visit(AnnotationTypeDeclaration node) {
-      enterType(node.getName().getIdentifier(), "TYPE", node.getName(), node, node.modifiers());
+      enterType(
+          node.getName().getIdentifier(),
+          "ANNOTATION_TYPE",
+          node.getName(),
+          node,
+          node.modifiers());
       return true;
     }
 
@@ -370,6 +403,93 @@ public final class JdtSyntaxReader {
                 fragment.getInitializer() != null));
       }
       return true;
+    }
+
+    @Override
+    public boolean visit(NormalAnnotation node) {
+      Map<String, JdtSyntaxProtocol.StaticValue> values = new java.util.LinkedHashMap<>();
+      for (Object raw : node.values()) {
+        org.eclipse.jdt.core.dom.MemberValuePair pair =
+            (org.eclipse.jdt.core.dom.MemberValuePair) raw;
+        values.put(pair.getName().getIdentifier(), staticValue(pair.getValue()));
+      }
+      addAnnotation(node, values);
+      return true;
+    }
+
+    @Override
+    public boolean visit(SingleMemberAnnotation node) {
+      addAnnotation(node, Map.of("value", staticValue(node.getValue())));
+      return true;
+    }
+
+    @Override
+    public boolean visit(org.eclipse.jdt.core.dom.MarkerAnnotation node) {
+      addAnnotation(node, Map.of());
+      return true;
+    }
+
+    private void addAnnotation(
+        Annotation node, Map<String, JdtSyntaxProtocol.StaticValue> staticValues) {
+      ITypeBinding binding = node.resolveTypeBinding();
+      String qualifiedName = binding == null ? null : binding.getErasure().getQualifiedName();
+      if (qualifiedName != null && qualifiedName.isBlank()) {
+        qualifiedName = null;
+      }
+      annotations.add(
+          new JdtSyntaxProtocol.AnnotationView(
+              localId("ANNOTATION", node),
+              annotationOwner(node),
+              node.getTypeName().getFullyQualifiedName(),
+              qualifiedName,
+              range(node),
+              range(node.getTypeName()),
+              text(node),
+              Map.copyOf(staticValues)));
+    }
+
+    private String annotationOwner(Annotation annotation) {
+      ASTNode current = annotation.getParent();
+      while (current != null) {
+        if (current instanceof MethodDeclaration method) {
+          return localId(method.isConstructor() ? "CONSTRUCTOR" : "METHOD", method);
+        }
+        if (current instanceof TypeDeclaration type) {
+          return localId(type.isInterface() ? "INTERFACE" : "CLASS", type);
+        }
+        if (current instanceof EnumDeclaration type) {
+          return localId("ENUM", type);
+        }
+        if (current instanceof RecordDeclaration type) {
+          return localId("RECORD", type);
+        }
+        if (current instanceof AnnotationTypeDeclaration type) {
+          return localId("ANNOTATION_TYPE", type);
+        }
+        if (current instanceof FieldDeclaration field && !field.fragments().isEmpty()) {
+          return localId("FIELD", (ASTNode) field.fragments().get(0));
+        }
+        current = current.getParent();
+      }
+      return null;
+    }
+
+    private JdtSyntaxProtocol.StaticValue staticValue(Expression expression) {
+      if (expression instanceof StringLiteral literal) {
+        return new JdtSyntaxProtocol.StaticValue(
+            "STRING", text(expression), literal.getLiteralValue(), List.of());
+      }
+      if (expression instanceof ArrayInitializer array) {
+        List<JdtSyntaxProtocol.StaticValue> elements =
+            array.expressions().stream().map(value -> staticValue((Expression) value)).toList();
+        return new JdtSyntaxProtocol.StaticValue("ARRAY", text(expression), null, elements);
+      }
+      if (expression instanceof org.eclipse.jdt.core.dom.Name
+          || expression instanceof org.eclipse.jdt.core.dom.FieldAccess) {
+        return new JdtSyntaxProtocol.StaticValue(
+            "SYMBOL", text(expression), text(expression), List.of());
+      }
+      return new JdtSyntaxProtocol.StaticValue("UNSUPPORTED", text(expression), null, List.of());
     }
 
     @Override

@@ -182,7 +182,9 @@ class JdtSyntaxHelperClientTest {
       String requestId =
           "wrong-id".equals(mode) ? "different-request" : request.path("requestId").asText();
       String response =
-          "{\"protocolVersion\":\"jdt-syntax-v1\","
+          "{\"protocolVersion\":\""
+              + request.path("protocolVersion").asText()
+              + "\","
               + "\"requestId\":\""
               + requestId
               + "\","
@@ -192,7 +194,7 @@ class JdtSyntaxHelperClientTest {
               + "\"sourceSha256\":\""
               + request.path("sourceSha256").asText()
               + "\","
-              + "\"packageName\":null,\"imports\":[],\"declarations\":[],"
+              + "\"packageName\":null,\"imports\":[],\"declarations\":[],\"annotations\":[],"
               + "\"callSites\":[],\"controls\":[],\"exits\":[],\"diagnostics\":[]"
               + ("unknown-field".equals(mode) ? ",\"unexpected\":true" : "")
               + "}";

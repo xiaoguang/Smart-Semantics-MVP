@@ -205,7 +205,7 @@ public final class FlowPublicationSpecifier {
             discovery,
             "entry-points.jsonl",
             "APPLICATION_DISCOVERY_ENTRY_POINTS",
-            "application-discovery-entry-points-v2",
+            "application-discovery-entry-points-v3",
             CanonicalMediaType.APPLICATION_X_NDJSON);
     VerifiedCanonicalPayload capabilityPayload =
         semanticPayload(
@@ -238,7 +238,9 @@ public final class FlowPublicationSpecifier {
     }
     List<String> entryIds = new ArrayList<>();
     for (JsonNode entry : parseJsonLines(entryPayload)) {
-      requireJsonLineHeader(entry, "application-discovery-entry-point-v2");
+      requireJsonLineHeader(entry, "application-discovery-entry-point-v3");
+      text(entry, "methodKey");
+      requireMethodRange(entry.get("methodRange"));
       entryIds.add(id(entry, "entryId"));
     }
     List<String> orderedEntryIds = entryIds.stream().sorted(UTF8_ORDER).toList();
@@ -967,7 +969,7 @@ public final class FlowPublicationSpecifier {
                 discovery,
                 "entry-points.jsonl",
                 "APPLICATION_DISCOVERY_ENTRY_POINTS",
-                "application-discovery-entry-points-v2",
+                "application-discovery-entry-points-v3",
                 CanonicalMediaType.APPLICATION_X_NDJSON)));
     values.addAll(graphUpstream(graphs));
     values.addAll(factUpstream(facts));
@@ -1314,6 +1316,22 @@ public final class FlowPublicationSpecifier {
     JsonNode value = source.get(field);
     if (value == null || !value.isInt() || value.intValue() < 0) throw failure();
     return value.intValue();
+  }
+
+  private static void requireMethodRange(JsonNode value) {
+    if (value == null || !value.isObject()) throw failure();
+    Set<String> actual = new HashSet<>();
+    value.fieldNames().forEachRemaining(actual::add);
+    if (!actual.equals(Set.of("startOffsetUtf16", "lengthUtf16", "startLine", "endLine"))) {
+      throw failure();
+    }
+    int offset = nonnegativeInt(value, "startOffsetUtf16");
+    int length = nonnegativeInt(value, "lengthUtf16");
+    int startLine = nonnegativeInt(value, "startLine");
+    int endLine = nonnegativeInt(value, "endLine");
+    if (offset + (long) length > Integer.MAX_VALUE || startLine < 1 || endLine < startLine) {
+      throw failure();
+    }
   }
 
   private static List<String> flowOutcomePathIds(List<JsonNode> flows) {

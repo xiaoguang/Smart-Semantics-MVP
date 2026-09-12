@@ -210,7 +210,7 @@ class PersistedProgramGraphInputReaderTest {
     coverage.putArray("mapperCatalogEntryIds").add(mapperCatalogEntryId.value());
 
     ObjectNode entry = JsonNodeFactory.instance.objectNode();
-    entry.put("schemaVersion", "application-discovery-entry-point-v2");
+    entry.put("schemaVersion", "application-discovery-entry-point-v3");
     entry.put("entryId", entryId.value());
     entry.put("kind", "SPRING_MVC_HTTP");
     entry.put("protocol", "HTTP");
@@ -219,6 +219,12 @@ class PersistedProgramGraphInputReaderTest {
     entry.put("route", "/depotHead/batchSetStatus");
     entry.putArray("routeParts").add("/depotHead").add("/batchSetStatus");
     entry.put("handlerFqn", "com.example.DepotHeadController#batchSetStatus(java.lang.String)");
+    entry.put("methodKey", "method:batch-set-status");
+    ObjectNode methodRange = entry.putObject("methodRange");
+    methodRange.put("startOffsetUtf16", 0);
+    methodRange.put("lengthUtf16", 1);
+    methodRange.put("startLine", 1);
+    methodRange.put("endLine", 1);
     entry.putArray("parameterNames").add("status");
     ArrayNode routeEvidence = entry.putArray("routeSourceExcerpts");
     routeEvidence.add(excerpt(fileId, document.path(), "@RequestMapping(\"/depotHead\")"));
@@ -260,7 +266,7 @@ class PersistedProgramGraphInputReaderTest {
                 canonicalJson,
                 "entry-points.jsonl",
                 "APPLICATION_DISCOVERY_ENTRY_POINTS",
-                "application-discovery-entry-points-v2",
+                "application-discovery-entry-points-v3",
                 List.of(entry)),
             jsonlPayload(
                 canonicalJson,

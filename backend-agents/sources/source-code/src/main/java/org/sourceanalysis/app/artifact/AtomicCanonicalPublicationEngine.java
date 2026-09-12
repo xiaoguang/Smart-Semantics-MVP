@@ -1399,7 +1399,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("APPLICATION_DISCOVERY_HTTP_ENTRY_DISCOVERY".equals(payload.artifactType())
-        && "application-discovery-http-entry-discovery-v2".equals(payload.schemaVersion())) {
+        && "application-discovery-http-entry-discovery-v3".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.APPLICATION_DISCOVERY,
           2,
@@ -1435,7 +1435,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("APPLICATION_DISCOVERY_ENTRY_POINTS".equals(payload.artifactType())
-        && "application-discovery-entry-points-v2".equals(payload.schemaVersion())) {
+        && "application-discovery-entry-points-v3".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.APPLICATION_DISCOVERY,
           4,

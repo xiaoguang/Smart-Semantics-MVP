@@ -38,6 +38,15 @@ class JdtRealSourceCollectionTest {
       Path.of(".workspace", "jdtls-source-navigation-feasibility", "tools", "selected");
   private static final Path TOOL_JAVA =
       Path.of("/Library/Java/JavaVirtualMachines/jdk-26.jdk/Contents/Home");
+  private static final Path SPRING_WEB =
+      Path.of(
+          "/Users/yexiaoguang/.m2/repository/org/springframework/spring-web/5.0.4.RELEASE/spring-web-5.0.4.RELEASE.jar");
+  private static final Path SPRING_CORE =
+      Path.of(
+          "/Users/yexiaoguang/.m2/repository/org/springframework/spring-core/5.0.4.RELEASE/spring-core-5.0.4.RELEASE.jar");
+  private static final Path SPRING_JCL =
+      Path.of(
+          "/Users/yexiaoguang/.m2/repository/org/springframework/spring-jcl/5.0.4.RELEASE/spring-jcl-5.0.4.RELEASE.jar");
   private static final Path ACTUAL_OUTPUT = Path.of(".workspace", "jdt-production-navigation");
 
   @Test
@@ -45,6 +54,9 @@ class JdtRealSourceCollectionTest {
     Assumptions.assumeTrue(Files.isDirectory(FIXTURE));
     Assumptions.assumeTrue(Files.isDirectory(JDT));
     Assumptions.assumeTrue(Files.isExecutable(TOOL_JAVA.resolve("bin/java")));
+    Assumptions.assumeTrue(Files.isRegularFile(SPRING_WEB));
+    Assumptions.assumeTrue(Files.isRegularFile(SPRING_CORE));
+    Assumptions.assumeTrue(Files.isRegularFile(SPRING_JCL));
     Assumptions.assumeTrue(Files.isRegularFile(JdtSyntaxHelperArtifact.locate()));
     VerifiedJavaProject project = frozenProject();
     EffectiveEngineConfiguration configuration =
@@ -58,12 +70,25 @@ class JdtRealSourceCollectionTest {
                 Duration.ofSeconds(10)));
 
     try (JavaCodeSession session = new JdtCodeEngine(configuration).open(project)) {
+      JavaDeclarationCatalog catalog = session.catalog();
       JavaDeclarationCatalog.MethodDeclarationView entry =
-          session.catalog().methods().stream()
+          catalog.methods().stream()
               .filter(method -> method.sourcePath().endsWith("controller/UserController.java"))
               .filter(method -> method.name().equals("registerUser"))
               .findFirst()
               .orElseThrow();
+      assertThat(catalog.types())
+          .filteredOn(type -> "com.jsh.erp.controller.UserController".equals(type.qualifiedName()))
+          .singleElement()
+          .satisfies(type -> assertThat(type.kind()).isEqualTo("CLASS"));
+      assertThat(catalog.annotations())
+          .filteredOn(annotation -> entry.annotationKeys().contains(annotation.annotationKey()))
+          .filteredOn(annotation -> "PostMapping".equals(annotation.nameText()))
+          .singleElement()
+          .satisfies(
+              annotation ->
+                  assertThat(annotation.qualifiedName())
+                      .isEqualTo("org.springframework.web.bind.annotation.PostMapping"));
 
       EntryCodeContext context =
           session.collect(
@@ -96,7 +121,7 @@ class JdtRealSourceCollectionTest {
       writePacket("registration-context.json", context);
 
       JavaDeclarationCatalog.MethodDeclarationView financialEntry =
-          session.catalog().methods().stream()
+          catalog.methods().stream()
               .filter(
                   method -> method.sourcePath().endsWith("controller/AccountHeadController.java"))
               .filter(method -> method.name().equals("getFinancialBillNoByBillId"))
@@ -190,7 +215,7 @@ class JdtRealSourceCollectionTest {
             controls(seed),
             documents);
     return VerifiedJavaProject.fromVerifiedSourceTextSet(
-        sourceTexts, List.of("src/main/java"), List.of(), "17");
+        sourceTexts, List.of("src/main/java"), List.of(SPRING_WEB, SPRING_CORE, SPRING_JCL), "17");
   }
 
   private static VerifiedSourceTextDocument document(Path source) {

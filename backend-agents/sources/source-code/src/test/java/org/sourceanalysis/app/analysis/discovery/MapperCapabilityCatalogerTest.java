@@ -8,7 +8,10 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
+import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
@@ -106,6 +109,84 @@ class MapperCapabilityCatalogerTest {
                   .isEqualTo(
                       "namespace=\"com.example.DepotHeadMapper\"".getBytes(StandardCharsets.UTF_8));
             });
+  }
+
+  @Test
+  void catalogsMapperInterfacesFromTheSelectedJavaEngineCatalog() {
+    String mapperSource =
+        """
+        this text deliberately is not a Java compilation unit
+        public interface DepotHeadMapper {
+          int updateByExampleSelective(DepotHead record, DepotHeadExample example);
+        }
+        """;
+    VerifiedSourceTextDocument mapperJava =
+        text("src/main/java/com/example/DepotHeadMapper.java", mapperSource);
+    VerifiedSourceTextDocument mapperXml =
+        text(
+            "src/main/resources/mapper/DepotHeadMapper.xml",
+            """
+            <mapper namespace="com.example.DepotHeadMapper">
+              <update id="updateByExampleSelective">
+                update jsh_depot_head set status = #{record.status}
+              </update>
+            </mapper>
+            """);
+    int typeStart = mapperSource.indexOf("public interface");
+    int methodStart = mapperSource.indexOf("int updateByExampleSelective");
+    int methodLength = mapperSource.indexOf(';', methodStart) + 1 - methodStart;
+    String methodKey = "method:depot-head-update";
+    JavaDeclarationCatalog catalog =
+        new JavaDeclarationCatalog(
+            "snapshot:" + "2".repeat(64),
+            List.of(mapperJava.path()),
+            List.of(
+                new JavaDeclarationCatalog.TypeDeclaration(
+                    mapperJava.path(),
+                    new SourceRange(typeStart, mapperSource.length() - typeStart, 2, 4),
+                    "com.example.DepotHeadMapper",
+                    "INTERFACE",
+                    List.of(),
+                    List.of(),
+                    List.of(methodKey),
+                    List.of())),
+            List.of(
+                new JavaDeclarationCatalog.MethodDeclarationView(
+                    methodKey,
+                    "com.example.DepotHeadMapper",
+                    "updateByExampleSelective",
+                    "METHOD",
+                    List.of("public"),
+                    List.of(
+                        new JavaDeclarationCatalog.ParameterView(
+                            0, "record", "DepotHead", false, List.of()),
+                        new JavaDeclarationCatalog.ParameterView(
+                            1, "example", "DepotHeadExample", false, List.of())),
+                    "int",
+                    List.of(),
+                    mapperJava.path(),
+                    new SourceRange(methodStart, methodLength, 3, 3),
+                    false)),
+            List.of(),
+            List.of(),
+            Map.of());
+    ArtifactControls controls = controls();
+    ApplicationProfile profile = profile(mapperJava, controls);
+    VerifiedSourceTextReader sourceHandle =
+        reference -> sourceTextSet(mapperJava, mapperXml, controls);
+
+    MapperCatalogDiscovery discovered =
+        new MapperCapabilityCataloger(sourceHandle)
+            .catalogMappers(profile, frozenSource(), catalog);
+
+    assertThat(discovered.entries())
+        .singleElement()
+        .satisfies(
+            entry ->
+                assertThat(entry.javaMethodCandidates())
+                    .extracting(MapperMethodCandidate::signature)
+                    .containsExactly(
+                        "com.example.DepotHeadMapper#updateByExampleSelective(DepotHead,DepotHeadExample)"));
   }
 
   @Test

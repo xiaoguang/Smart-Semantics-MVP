@@ -249,6 +249,7 @@ class EntryCodeCollectorTest {
         null,
         List.of(),
         List.of(declaration),
+        List.of(),
         calls,
         controls,
         exits,

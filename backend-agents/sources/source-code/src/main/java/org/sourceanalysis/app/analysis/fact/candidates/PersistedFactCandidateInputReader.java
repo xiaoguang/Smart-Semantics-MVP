@@ -42,8 +42,8 @@ public final class PersistedFactCandidateInputReader {
   private static final String CAPABILITY_REPORT_SCHEMA =
       "application-discovery-capability-report-v2";
   private static final String ENTRY_POINTS_TYPE = "APPLICATION_DISCOVERY_ENTRY_POINTS";
-  private static final String ENTRY_POINTS_SCHEMA = "application-discovery-entry-points-v2";
-  private static final String ENTRY_POINT_SCHEMA = "application-discovery-entry-point-v2";
+  private static final String ENTRY_POINTS_SCHEMA = "application-discovery-entry-points-v3";
+  private static final String ENTRY_POINT_SCHEMA = "application-discovery-entry-point-v3";
   private static final String MAPPER_CATALOG_TYPE = "APPLICATION_DISCOVERY_MAPPER_CATALOG";
   private static final String MAPPER_CATALOG_SCHEMA = "application-discovery-mapper-catalog-v2";
   private static final String MAPPER_CATALOG_ENTRY_SCHEMA =
@@ -361,10 +361,14 @@ public final class PersistedFactCandidateInputReader {
               "route",
               "routeParts",
               "handlerFqn",
+              "methodKey",
+              "methodRange",
               "parameterNames",
               "routeSourceExcerpts"));
       requireJsonlSchema(entry, ENTRY_POINT_SCHEMA);
       requireMethodCondition(entry.get("methodCondition"));
+      text(entry, "methodKey");
+      requireMethodRange(entry.get("methodRange"));
       entries.add(id(entry, "entryId"));
     }
     return FactCandidateInputs.orderedArtifactIds(entries, "discovery entry IDs");
@@ -1442,6 +1446,17 @@ public final class PersistedFactCandidateInputReader {
       return;
     }
     throw broken();
+  }
+
+  private static void requireMethodRange(JsonNode value) {
+    fields(value, Set.of("startOffsetUtf16", "lengthUtf16", "startLine", "endLine"));
+    int offset = nonnegativeInt(value, "startOffsetUtf16");
+    int length = nonnegativeInt(value, "lengthUtf16");
+    int startLine = nonnegativeInt(value, "startLine");
+    int endLine = nonnegativeInt(value, "endLine");
+    if (offset + (long) length > Integer.MAX_VALUE || startLine < 1 || endLine < startLine) {
+      throw broken();
+    }
   }
 
   private static void fields(JsonNode value, Set<String> expected) {

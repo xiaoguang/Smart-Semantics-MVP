@@ -7,7 +7,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
+import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
@@ -28,6 +31,107 @@ import org.sourceanalysis.app.evidence.SourceExcerptV1;
 import org.sourceanalysis.app.evidence.SourceLocatorV1;
 
 class SpringHttpEntryDiscovererTest {
+
+  @Test
+  void jdtCatalogKeepsOverloadedHandlersDistinctWithoutInvokingAJavaParserDiscoverer() {
+    VerifiedSourceInventoryReference frozenSource = frozenSource();
+    String source =
+        "package com.example; @RequestMapping(\"/users\") class UserController { "
+            + "@PostMapping(\"/by-name\") Object register(String name) { return name; } "
+            + "@PostMapping(\"/by-id\") Object register(Long id) { return id; } }\n";
+    VerifiedSourceTextDocument controller =
+        text("src/main/java/com/example/UserController.java", source);
+    VerifiedSourceTextReader sourceHandle = reference -> sourceTextSet(controller);
+    int typeStart = source.indexOf("class UserController");
+    int firstMethodStart = source.indexOf("Object register(String");
+    int secondMethodStart = source.indexOf("Object register(Long");
+    SourceRange firstMethod =
+        range(source, firstMethodStart, source.indexOf('}', firstMethodStart) + 1);
+    SourceRange secondMethod =
+        range(source, secondMethodStart, source.indexOf('}', secondMethodStart) + 1);
+    JavaDeclarationCatalog catalog =
+        new JavaDeclarationCatalog(
+            "snapshot:" + "6".repeat(64),
+            List.of(controller.path()),
+            List.of(
+                new JavaDeclarationCatalog.TypeDeclaration(
+                    controller.path(),
+                    range(source, typeStart, source.length() - 1),
+                    "com.example.UserController",
+                    "CLASS",
+                    List.of("annotation:type"),
+                    List.of(),
+                    List.of("method:first", "method:second"),
+                    List.of())),
+            List.of(
+                new JavaDeclarationCatalog.MethodDeclarationView(
+                    "method:first",
+                    "com.example.UserController",
+                    "register",
+                    "METHOD",
+                    List.of("public"),
+                    List.of(
+                        new JavaDeclarationCatalog.ParameterView(
+                            0, "name", "String", false, List.of())),
+                    "Object",
+                    List.of("annotation:first"),
+                    controller.path(),
+                    firstMethod,
+                    true),
+                new JavaDeclarationCatalog.MethodDeclarationView(
+                    "method:second",
+                    "com.example.UserController",
+                    "register",
+                    "METHOD",
+                    List.of("public"),
+                    List.of(
+                        new JavaDeclarationCatalog.ParameterView(
+                            0, "id", "Long", false, List.of())),
+                    "Object",
+                    List.of("annotation:second"),
+                    controller.path(),
+                    secondMethod,
+                    true)),
+            List.of(
+                annotation(
+                    "annotation:type",
+                    "RequestMapping",
+                    "/users",
+                    source,
+                    source.indexOf("@RequestMapping"),
+                    controller.path()),
+                annotation(
+                    "annotation:first",
+                    "PostMapping",
+                    "/by-name",
+                    source,
+                    source.indexOf("@PostMapping"),
+                    controller.path()),
+                annotation(
+                    "annotation:second",
+                    "PostMapping",
+                    "/by-id",
+                    source,
+                    source.lastIndexOf("@PostMapping"),
+                    controller.path())),
+            List.of(),
+            Map.of());
+
+    HttpEntryDiscovery discovery =
+        new SpringHttpEntryDiscoverer(sourceHandle)
+            .discoverEntries(profile(controller), frozenSource, catalog);
+
+    assertThat(discovery.entries()).hasSize(2);
+    assertThat(discovery.entries())
+        .extracting(HttpEntryPoint::methodKey)
+        .containsExactlyInAnyOrder("method:first", "method:second");
+    assertThat(discovery.entries())
+        .extracting(HttpEntryPoint::methodRange)
+        .containsExactlyInAnyOrder(firstMethod, secondMethod);
+    assertThat(discovery.entries())
+        .extracting(HttpEntryPoint::route)
+        .containsExactlyInAnyOrder("/users/by-name", "/users/by-id");
+  }
 
   @Test
   void composesStaticClassAndMethodRoutesIntoOneProvenHttpEntry() {
@@ -554,6 +658,42 @@ class SpringHttpEntryDiscovererTest {
         reference("verified-source-inventory-source-inventory", '8'),
         reference("verified-snapshot", '9'),
         controls);
+  }
+
+  private static JavaDeclarationCatalog.AnnotationView annotation(
+      String key,
+      String simpleName,
+      String route,
+      String source,
+      int annotationStart,
+      String sourcePath) {
+    int annotationEnd = source.indexOf(')', annotationStart) + 1;
+    int nameStart = annotationStart + 1;
+    return new JavaDeclarationCatalog.AnnotationView(
+        key,
+        simpleName,
+        "org.springframework.web.bind.annotation." + simpleName,
+        source.substring(annotationStart, annotationEnd),
+        range(source, annotationStart, annotationEnd),
+        range(source, nameStart, nameStart + simpleName.length()),
+        Map.of("value", Map.of("kind", "STRING", "source", '"' + route + '"', "value", route)),
+        sourcePath);
+  }
+
+  private static SourceRange range(String source, int start, int endExclusive) {
+    int startLine = 1;
+    for (int index = 0; index < start; index++) {
+      if (source.charAt(index) == '\n') {
+        startLine++;
+      }
+    }
+    int endLine = startLine;
+    for (int index = start; index < Math.max(start, endExclusive - 1); index++) {
+      if (source.charAt(index) == '\n') {
+        endLine++;
+      }
+    }
+    return new SourceRange(start, endExclusive - start, startLine, endLine);
   }
 
   private static VerifiedSourceTextSet sourceTextSet(VerifiedSourceTextDocument document) {

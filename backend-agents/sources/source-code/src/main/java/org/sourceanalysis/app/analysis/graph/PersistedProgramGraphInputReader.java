@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.discovery.HttpEntryKind;
 import org.sourceanalysis.app.analysis.discovery.HttpEntryPoint;
@@ -64,7 +65,7 @@ final class PersistedProgramGraphInputReader implements ProgramGraphInputReader 
           ENTRY_POINTS_FILE,
           new ExpectedArtifact(
               "APPLICATION_DISCOVERY_ENTRY_POINTS",
-              "application-discovery-entry-points-v2",
+              "application-discovery-entry-points-v3",
               CanonicalMediaType.APPLICATION_X_NDJSON),
           MAPPER_CATALOG_FILE,
           new ExpectedArtifact(
@@ -223,6 +224,8 @@ final class PersistedProgramGraphInputReader implements ProgramGraphInputReader 
               text(line, "route"),
               strings(line, "routeParts"),
               text(line, "handlerFqn"),
+              text(line, "methodKey"),
+              sourceRange(object(line.get("methodRange"))),
               strings(line, "parameterNames"),
               excerpts(line, "routeSourceExcerpts")));
     }
@@ -332,6 +335,14 @@ final class PersistedProgramGraphInputReader implements ProgramGraphInputReader 
     } catch (IllegalArgumentException invalid) {
       throw failure();
     }
+  }
+
+  private static SourceRange sourceRange(ObjectNode node) {
+    return new SourceRange(
+        intValue(node, "startOffsetUtf16"),
+        intValue(node, "lengthUtf16"),
+        intValue(node, "startLine"),
+        intValue(node, "endLine"));
   }
 
   private static List<SourceExcerptV1> excerpts(ObjectNode node, String fieldName) {

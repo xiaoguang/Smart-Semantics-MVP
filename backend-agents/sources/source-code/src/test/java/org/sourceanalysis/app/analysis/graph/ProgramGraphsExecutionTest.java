@@ -291,7 +291,7 @@ class ProgramGraphsExecutionTest {
             canonicalJson,
             "entry-points.jsonl",
             "APPLICATION_DISCOVERY_ENTRY_POINTS",
-            "application-discovery-entry-points-v2",
+            "application-discovery-entry-points-v3",
             "entry-points",
             List.of(entryLine)),
         jsonlBody(
@@ -314,6 +314,12 @@ class ProgramGraphsExecutionTest {
     result.put("route", value.route());
     putStrings(result.putArray("routeParts"), value.routeParts());
     result.put("handlerFqn", value.handlerFqn());
+    result.put("methodKey", value.methodKey());
+    ObjectNode methodRange = result.putObject("methodRange");
+    methodRange.put("startOffsetUtf16", value.methodRange().startOffsetUtf16());
+    methodRange.put("lengthUtf16", value.methodRange().lengthUtf16());
+    methodRange.put("startLine", value.methodRange().startLine());
+    methodRange.put("endLine", value.methodRange().endLine());
     putStrings(result.putArray("parameterNames"), value.parameterNames());
     ArrayNode excerpts = result.putArray("routeSourceExcerpts");
     value.routeSourceExcerpts().forEach(excerpt -> excerpts.add(excerpt(excerpt)));
@@ -517,7 +523,7 @@ class ProgramGraphsExecutionTest {
             },
             new String[] {
               "APPLICATION_DISCOVERY_ENTRY_POINTS",
-              "application-discovery-entry-points-v2",
+              "application-discovery-entry-points-v3",
               "entry-points",
               "application/x-ndjson",
               "CANONICAL_JSONL",

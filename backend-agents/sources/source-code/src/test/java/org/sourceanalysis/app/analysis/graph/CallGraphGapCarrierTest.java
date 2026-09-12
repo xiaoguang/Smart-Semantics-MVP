@@ -138,6 +138,8 @@ class CallGraphGapCarrierTest {
             "/depotHead/batchSetStatus",
             List.of("/depotHead", "/batchSetStatus"),
             "com.example.DepotHeadController#batchSetStatus",
+            "method:" + "1".repeat(64),
+            new org.sourceanalysis.app.analysis.code.SourceRange(0, 1, 1, 1),
             List.of("status"),
             List.of(
                 excerpt(

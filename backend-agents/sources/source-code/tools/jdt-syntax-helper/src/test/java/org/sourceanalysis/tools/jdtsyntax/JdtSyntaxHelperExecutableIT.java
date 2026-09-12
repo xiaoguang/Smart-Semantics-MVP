@@ -26,6 +26,8 @@ class JdtSyntaxHelperExecutableIT {
                     "source:example",
                     "17",
                     sha256(source),
+                    java.util.List.of(),
+                    java.util.List.of(),
                     source))
             + "\n";
     Path jar = Path.of("target", "source-code-analysis-jdt-syntax-helper.jar").toAbsolutePath();

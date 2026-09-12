@@ -15,9 +15,16 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.sourceanalysis.app.analysis.code.EngineDescriptor;
+import org.sourceanalysis.app.analysis.code.EntryCodeContext;
+import org.sourceanalysis.app.analysis.code.EntrySeed;
+import org.sourceanalysis.app.analysis.code.JavaCodeSession;
+import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
+import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
@@ -106,6 +113,81 @@ class ApplicationDiscoveryExecutionTest {
       assertThat(reopenCount.get())
           .as("M1, persisted profile verification, M2 and M3 each reopen verified source bytes")
           .isEqualTo(4);
+    }
+  }
+
+  @Test
+  void executesHttpAndMapperDiscoveryFromOneSelectedJavaEngineCatalog() {
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
+    ArtifactControls controls = controls(policies);
+    VerifiedSourceInventoryReference frozenSource = frozenSource();
+    VerifiedSourceTextSet source = source(controls);
+    AtomicInteger catalogCalls = new AtomicInteger();
+    JavaDeclarationCatalog declarationCatalog = declarationCatalog(source);
+    JavaCodeSession session =
+        new JavaCodeSession() {
+          @Override
+          public JavaDeclarationCatalog catalog() {
+            catalogCalls.incrementAndGet();
+            return declarationCatalog;
+          }
+
+          @Override
+          public EntryCodeContext collect(EntrySeed entry) {
+            throw new AssertionError("application discovery must not collect an entry context");
+          }
+
+          @Override
+          public EngineDescriptor descriptor() {
+            return new EngineDescriptor(
+                "test-jdt", "v1", Map.of("jdt-core", "test"), "17", List.of("CATALOG"));
+          }
+
+          @Override
+          public void close() {}
+        };
+
+    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(temporaryDirectory)) {
+      FileSystemCanonicalModuleArtifactStore modules =
+          new FileSystemCanonicalModuleArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(4, 100_000, 300_000, 10));
+      FileSystemCanonicalAnalysisStepArtifactStore steps =
+          new FileSystemCanonicalAnalysisStepArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(4, 100_000, 300_000, 10));
+
+      ApplicationDiscoveryReference result =
+          new ApplicationDiscoveryExecutor(reference -> source, modules, steps, session)
+              .execute(
+                  new ApplicationDiscoveryRequest(
+                      new AnalysisStepPublicationAddress(
+                          frozenSource.publication().address().runId(),
+                          AnalysisStepKey.APPLICATION_DISCOVERY),
+                      frozenSource,
+                      DiscoveryProfile.standard()));
+
+      var reopened = steps.reopen(result.publication());
+      String entries =
+          reopened.semanticPayloads().stream()
+              .filter(payload -> payload.descriptor().fileName().equals("entry-points.jsonl"))
+              .findFirst()
+              .map(
+                  payload ->
+                      new String(payload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8))
+              .orElseThrow();
+      String mappers =
+          reopened.semanticPayloads().stream()
+              .filter(payload -> payload.descriptor().fileName().equals("mapper-catalog.jsonl"))
+              .findFirst()
+              .map(
+                  payload ->
+                      new String(payload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8))
+              .orElseThrow();
+      assertThat(catalogCalls).hasValue(1);
+      assertThat(entries)
+          .contains("\"methodKey\":\"method:controller-batch-set-status\"")
+          .contains("\"methodRange\"");
+      assertThat(mappers).contains("com.example.DepotHeadMapper").contains("updateStatus");
     }
   }
 
@@ -324,6 +406,143 @@ class ApplicationDiscoveryExecutionTest {
         ImmutableBytes.copyOf(bytes));
   }
 
+  private static JavaDeclarationCatalog declarationCatalog(VerifiedSourceTextSet source) {
+    VerifiedSourceTextDocument controller =
+        source.documents().stream()
+            .filter(value -> value.path().endsWith("DepotHeadController.java"))
+            .findFirst()
+            .orElseThrow();
+    VerifiedSourceTextDocument mapper =
+        source.documents().stream()
+            .filter(value -> value.path().endsWith("DepotHeadMapper.java"))
+            .findFirst()
+            .orElseThrow();
+    String controllerText =
+        new String(controller.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8);
+    String mapperText = new String(mapper.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8);
+    SourceRange controllerType = range(controllerText, "@RequestMapping", controllerText.length());
+    SourceRange controllerMethod =
+        range(
+            controllerText,
+            "public String batchSetStatus",
+            controllerText.indexOf('}', controllerText.indexOf("public String batchSetStatus"))
+                + 1);
+    SourceRange classMapping = rangeOf(controllerText, "@RequestMapping(\"/depotHead\")");
+    SourceRange methodMapping = rangeOf(controllerText, "@PostMapping(\"/batchSetStatus\")");
+    SourceRange mapperType = range(mapperText, "public interface", mapperText.length());
+    SourceRange mapperMethod = rangeOf(mapperText, "int updateStatus(String status);");
+    String controllerMethodKey = "method:controller-batch-set-status";
+    String mapperMethodKey = "method:mapper-update-status";
+    return new JavaDeclarationCatalog(
+        source.snapshotId(),
+        List.of(controller.path(), mapper.path()),
+        List.of(
+            new JavaDeclarationCatalog.TypeDeclaration(
+                controller.path(),
+                controllerType,
+                "com.example.DepotHeadController",
+                "CLASS",
+                List.of("annotation:controller-route"),
+                List.of(),
+                List.of(controllerMethodKey),
+                List.of()),
+            new JavaDeclarationCatalog.TypeDeclaration(
+                mapper.path(),
+                mapperType,
+                "com.example.DepotHeadMapper",
+                "INTERFACE",
+                List.of(),
+                List.of(),
+                List.of(mapperMethodKey),
+                List.of())),
+        List.of(
+            new JavaDeclarationCatalog.MethodDeclarationView(
+                controllerMethodKey,
+                "com.example.DepotHeadController",
+                "batchSetStatus",
+                "METHOD",
+                List.of("public"),
+                List.of(
+                    new JavaDeclarationCatalog.ParameterView(
+                        0, "status", "String", false, List.of()),
+                    new JavaDeclarationCatalog.ParameterView(1, "ids", "String", false, List.of())),
+                "String",
+                List.of("annotation:method-route"),
+                controller.path(),
+                controllerMethod,
+                true),
+            new JavaDeclarationCatalog.MethodDeclarationView(
+                mapperMethodKey,
+                "com.example.DepotHeadMapper",
+                "updateStatus",
+                "METHOD",
+                List.of("public"),
+                List.of(
+                    new JavaDeclarationCatalog.ParameterView(
+                        0, "status", "String", false, List.of())),
+                "int",
+                List.of(),
+                mapper.path(),
+                mapperMethod,
+                false)),
+        List.of(
+            annotation(
+                "annotation:controller-route",
+                "RequestMapping",
+                "org.springframework.web.bind.annotation.RequestMapping",
+                "/depotHead",
+                controller.path(),
+                classMapping,
+                controllerText.indexOf("RequestMapping")),
+            annotation(
+                "annotation:method-route",
+                "PostMapping",
+                "org.springframework.web.bind.annotation.PostMapping",
+                "/batchSetStatus",
+                controller.path(),
+                methodMapping,
+                controllerText.indexOf("PostMapping"))),
+        List.of(),
+        Map.of());
+  }
+
+  private static JavaDeclarationCatalog.AnnotationView annotation(
+      String key,
+      String name,
+      String qualifiedName,
+      String route,
+      String path,
+      SourceRange sourceRange,
+      int nameStart) {
+    return new JavaDeclarationCatalog.AnnotationView(
+        key,
+        name,
+        qualifiedName,
+        "(\"" + route + "\")",
+        sourceRange,
+        new SourceRange(nameStart, name.length(), sourceRange.startLine(), sourceRange.startLine()),
+        Map.of("value", Map.of("kind", "STRING", "value", route)),
+        path);
+  }
+
+  private static SourceRange rangeOf(String source, String expected) {
+    int start = source.indexOf(expected);
+    return range(source, start, start + expected.length());
+  }
+
+  private static SourceRange range(String source, String expectedStart, int end) {
+    int start = source.indexOf(expectedStart);
+    return range(source, start, end);
+  }
+
+  private static SourceRange range(String source, int start, int end) {
+    return new SourceRange(start, end - start, line(source, start), line(source, end - 1));
+  }
+
+  private static int line(String source, int offset) {
+    return 1 + (int) source.substring(0, offset).chars().filter(value -> value == '\n').count();
+  }
+
   private static VerifiedSourceInventoryReference frozenSource() {
     AnalysisRunId runId = AnalysisRunId.parse("analysis-run:" + "5".repeat(64));
     return new VerifiedSourceInventoryReference(
@@ -378,7 +597,7 @@ class ApplicationDiscoveryExecutionTest {
     policy(
         policies,
         "APPLICATION_DISCOVERY_ENTRY_POINTS",
-        "application-discovery-entry-points-v2",
+        "application-discovery-entry-points-v3",
         "entry-points",
         "application/x-ndjson",
         "CANONICAL_JSONL",
@@ -386,7 +605,7 @@ class ApplicationDiscoveryExecutionTest {
     policy(
         policies,
         "APPLICATION_DISCOVERY_HTTP_ENTRY_DISCOVERY",
-        "application-discovery-http-entry-discovery-v2",
+        "application-discovery-http-entry-discovery-v3",
         "http-entry-discovery",
         "application/json",
         "MODULE_ARTIFACT_JSON",
