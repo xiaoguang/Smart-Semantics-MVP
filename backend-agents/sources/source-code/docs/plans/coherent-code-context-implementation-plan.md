@@ -1,8 +1,8 @@
 # 已批准清理与可扩展活动覆盖实施衔接
 
-> **状态：IMPLEMENTATION IN PROGRESS。** 这是 [总体设计](../DESIGN.md) 的唯一当前实施衔接，规格为[代码清理与可扩展活动覆盖设计](code-cleanup-and-scalable-activity-coverage-design.md)。基线 `fc6d67b` 已按用户授权提交并推送到 `origin/main`；本文件随后指导本 worktree 中的 TDD、定向 Maven 验证、每个完整交付的本地提交/推送，以及最后一次单材料 Luna/high 验收。它不授权客户 Maven、客户系统、整仓真实模型运行、API-key 回退或无关全仓测试。
+> **用途：保留原清理/覆盖工作单及其验证记录，不再作为下一项取材改造的唯一计划。** 原规格为[代码清理与可扩展活动覆盖设计](code-cleanup-and-scalable-activity-coverage-design.md)，基线`fc6d67b`及以下checkbox保持原工作事实。新的[JDT/JavaParser完整设计](../modules/java-code-engines/README.md)规定先JDT独立贯通、再恢复JavaParser现有能力；实现前按该设计另列工作单，不重新执行这里的已完成清理或真实模型调用。
 
-> **For agentic workers:** 本计划已获实施授权。每个 work unit 先用 Luna/xhigh 建立本文列出的直接 RED，再由 Terra/xhigh 做最小 GREEN；使用 `superpowers:test-driven-development`，维护独立 progress，并且不扩大到本文明确排除的范围。
+> **For agentic workers:** 以下属于原授权工作范围及记录，不给新模型运行或引擎接入自动授权。需要查证旧行为时使用相应直接测试及progress；新引擎按新设计执行，不能混合两个计划。
 
 **Goal:** 安全退役当前工作流不再使用的旧解释链，并让现有 ActivityExplainer 对任意 N 入口材料在一次 DRAFT + 一次完整 REVIEW 内做到可预算、可闭合、可具体下传。
 

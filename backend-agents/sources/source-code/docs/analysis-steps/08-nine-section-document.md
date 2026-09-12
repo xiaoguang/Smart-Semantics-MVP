@@ -1,5 +1,7 @@
 # 九章文档
 
+> JDT/JavaParser接入不新增报告路线。按[插件设计](../modules/java-code-engines/README.md)，两种引擎统一提供代码材料，经相同活动/过程模块进入本步。报告不能再只收到方法名摘要；[真实注册/财务推演](../examples/java-code-engine-walkthrough.md)说明完整实现怎样贡献九章。本次仅改设计，未重新生成报告。
+
 > [总体设计](../DESIGN.md)；固定 key：nine-section-document，目录：steps/08-nine-section-document/。唯一业务 Module：BusinessReportPublisher。
 
 ## 1. 为什么存在

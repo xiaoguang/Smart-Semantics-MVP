@@ -1,5 +1,7 @@
 # 仓库知识
 
+> 上游取材正在按[JDT/JavaParser插件设计](../modules/java-code-engines/README.md)改为统一完整代码材料；本步仍消费同一已审活动/来源合同，不按工具品牌另设业务路线。先JDT贯通，第二阶段仅适配JavaParser现有能力。
+
 > [总体设计](../DESIGN.md)；固定 key：repository-knowledge，目录：steps/07-repository-knowledge/。唯一业务 Module：ProcessExplainer。
 
 ## 1. 为什么存在

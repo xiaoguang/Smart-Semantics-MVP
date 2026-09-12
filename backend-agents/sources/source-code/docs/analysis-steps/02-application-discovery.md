@@ -10,16 +10,16 @@
 
 ## 2. 输入与处理
 
-输入为 Step01 verified source view、版本化语言/框架 capability profile 和预算。只解析清单内 ANALYZABLE_TEXT；不运行 Maven 解析 classpath、不执行应用，不从活动工作树补缺项。
+输入为Step01 verified source view、静态工程画像和选定Java引擎的catalog。配置/POM/XML仍共用现有读取器；Java类型、方法、参数与注解来自[JDT/JavaParser统一Interface](../modules/java-code-engines/contracts-and-configuration.md)。先完成JDT接线，第二阶段再适配JavaParser现有能力。只读清单内文本，不执行客户构建或应用。
 
 | 模块 | 输入 → 工作 → 输出 |
 | --- | --- |
-| ApplicationProfileDetector | POM/config/Java source → 静态语言和 Spring MVC/MyBatis signals → application profile |
-| SpringHttpEntryDiscoverer | profile + Java annotations → 路由/方法条件/handler/参数 → 全入口及 site dispositions |
-| MapperCapabilityCataloger | profile + Java/XML/config → Mapper/statement 候选与定位 → catalog |
+| ApplicationProfileDetector | POM/config静态画像 + 选定engine catalog → Java/Spring MVC/MyBatis signals → profile |
+| SpringHttpEntryDiscoverer | profile + 中立AnnotationView/MethodDeclarationView → route/methodCondition/handler → 全入口及处置；不再自建JavaParser |
+| MapperCapabilityCataloger | 同一catalog + 安全XML/config → Mapper/statement候选与定位；Java读取不得绕回未选引擎 |
 | ApplicationDiscoveryPublicationSpecifier | 已完成不可变结果 → 合并完整分母、序列化并原子安装 → 五文件步骤 publication |
 
-M2/M3 可共享 immutable M1 view，但不共享 mutable 决策。Mapper catalog 只标 CANDIDATE_NOT_YET_BOUND，唯一 Java→XML binding 属于 Step03。发布器不重新解析 annotations 或运行发现器来验证自己。
+M2/M3共享immutable profile/catalog，不重复解析Java。Mapper catalog只记录静态候选；现有可证明的Java→XML绑定保留为技术增强，不能因为尚无SQL绑定就不交付Java方法。发布器不重跑发现。JDT仅提供Java语法/导航，Spring route规则仍是一份公共规则，不让两个插件自行解释不同HTTP合同。
 
 ## 3. Spring RequestMapping 的明确合同
 
@@ -104,6 +104,8 @@ allSiteIds = exactDisjointUnion(shardSiteIds)
 预算覆盖 AST/XML nodes、配置条目、entries/catalog/site 数与深度。unsupported/动态 route 是局部 Gap；unrestricted method 不在此列。来源漂移、schema/ref 冲突、重复身份、catalog 引用断裂、XML 安全策略失败、coverage 不守恒或安装错误 fatal。保留上游完成产物，不补扫或改写旧 run。
 
 ## 7. 当前实现与最小测试
+
+插件化尚未实施：下述是现有JavaParser路径的状态。第一阶段要把Java读取搬到JDT catalog；不能通过仅改YAML声明就称“全用JDT”。新增定向验收包括JDT模式不调用JavaParser、同一索引支持多入口、通配import及缺依赖的明确诊断，规则详见[JDT详细设计](../modules/java-code-engines/jdt-engine.md)。
 
 ApplicationProfileDetector、SpringHttpEntryDiscoverer、MapperCapabilityCataloger、步骤 publisher/executor 已有实现，固定完整 jshERP 入口发现已有保存证据；不是仅 package 骨架。现有材料规划处理 337 个发现入口，但这只证明当前发现分母的处理，不证明所有合法 Spring 变体已正确发现。省略 method、`method={}`、显式方法集合及类/方法条件组合现在由直接回归覆盖；两个真实端点要在后续完整仓库重跑中确认进入新分母。
 

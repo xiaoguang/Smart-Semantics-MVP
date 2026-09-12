@@ -1,6 +1,6 @@
 # 程序图：稳定能力与当前待办
 
-权威设计是 [Step03](../analysis-steps/03-program-graphs.md)，当前实施次序是 [连贯代码上下文计划](../plans/coherent-code-context-implementation-plan.md)。本页更新当前事实与剩余范围，不重新设计五图，也不把历史测试记录当本轮实测。
+权威设计是[Step03](../analysis-steps/03-program-graphs.md)与[JDT/JavaParser插件设计](../modules/java-code-engines/README.md)。先打通JDT导航及完整源码材料，第二阶段只恢复JavaParser已有能力。五图算法和证据保留为技术增强，不为JDT取材补齐全部图能力；以下未完成算法仍是backlog，不自动进入本次两阶段。本页不把历史测试当本轮实测。
 
 ## 1. 已有能力
 

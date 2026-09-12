@@ -1,5 +1,7 @@
 # 已证明代码事实
 
+> 新目标的引擎接入见[各子模块设计](../modules/java-code-engines/README.md)。本步保留严格Fact能力，但不是读取完整Service的门禁：JDT未提供原五图增强时，按[接入合同](../modules/java-code-engines/integration-and-javaparser.md)明确保存NOT_PRODUCED与原因，不运行旧Fact枚举，不伪称0候选均通过。以下Proof规则只适用于实际提供并请求分析的图输入。
+
 > [总体设计](../DESIGN.md)；固定 key：proven-code-facts，目录：steps/04-proven-code-facts/。本步骤保留，运行时模型调用为 0。
 
 ## 1. 为什么存在

@@ -4,20 +4,24 @@
 
 先读 [总体设计](docs/DESIGN.md)，再看 [真实财务查询与合成业务 walkthrough](docs/examples/semantic-framework-walkthrough.md)。全部文档以目标设计与当前实现分开表述；单个真实 Luna/high 活动样本只证明局部语义链可用，不代表整仓报告已生成。
 
+新的取材方向已形成[完整JDT/JavaParser插件设计](docs/modules/java-code-engines/README.md)，包括配置/统一JSON、JDT各子模块、现有接线及开发测试指南；先看[真实注册与财务代码如何进入业务解释](docs/examples/java-code-engine-walkthrough.md)更容易理解。**先独立打通JDT，再适配保留的JavaParser到现有能力；不同时开发两套，也不要求JavaParser追平JDT。** 本次仅完成设计，尚未实现YAML插件或切换生产引擎。
+
 ## 分析路线
 
 | 步骤 | 职责 | 详细设计 |
 | --- | --- | --- |
 | 01 verified-source-inventory | 一次验证固定源码清单、字节与位置 | [已验证源码清单](docs/analysis-steps/01-verified-source-inventory.md) |
 | 02 application-discovery | 发现合法 Spring 入口及全入口分母 | [应用发现](docs/analysis-steps/02-application-discovery.md) |
-| 03 program-graphs | 五图索引结构、调用、控制、数据、来源 | [程序图](docs/analysis-steps/03-program-graphs.md) |
-| 04 proven-code-facts | 对选定技术模式提供严格 Fact/Proof 增强 | [已证明代码事实](docs/analysis-steps/04-proven-code-facts.md) |
+| 03 program-graphs | 选定引擎建立导航索引；保留实际可提供的五图增强 | [程序图](docs/analysis-steps/03-program-graphs.md) |
+| 04 proven-code-facts | 有实际图输入时提供严格Fact/Proof，否则明确未生成增强 | [已证明代码事实](docs/analysis-steps/04-proven-code-facts.md) |
 | 05 business-flows | 一次组织入口执行上下文并投影 Capsule | [业务流程](docs/analysis-steps/05-business-flows.md) |
 | 06 flow-interpretation | 连贯材料与活动 DRAFT/完整 REVIEW | [流程解释](docs/analysis-steps/06-flow-interpretation.md) |
 | 07 repository-knowledge | 宽松召回、跨活动过程与仓库知识 | [仓库知识](docs/analysis-steps/07-repository-knowledge.md) |
 | 08 nine-section-document | 九章段落 DRAFT/完整 REVIEW 与确定性排版 | [九章文档](docs/analysis-steps/08-nine-section-document.md) |
 
 步骤 04、05 保留。严格 Fact 没有覆盖的安全源码仍可用于业务理解；未知技术边保持未知。普通 publisher 不重新运行 compiler/projector，保存的步骤产物和来源完整性仍保留。
+
+JDT目标不以重做全部五图为取材前置，也不自动调用JavaParser兜底。完整源码、候选与边界使用统一合同交给同一业务链；两个引擎的解析能力可以不同，差异必须如实可见。
 
 ## 当前能力与明确差距
 
@@ -38,6 +42,11 @@
 SourceRef 定位冻结文件、行段和原文。Fact/Proof 只证明支持的精确技术陈述；源码行为不证明某次运行成功。所有发现入口必须有分析结果或未分析原因，一个好切片不能宣布整仓完成。
 
 ## 开发与文档入口
+
+- [引擎完整设计和各子模块](docs/modules/java-code-engines/README.md)：本轮设计主入口。
+- [配置与共同材料合同](docs/modules/java-code-engines/contracts-and-configuration.md)
+- [JDT子模块算法与失败行为](docs/modules/java-code-engines/jdt-engine.md)
+- [先JDT、后JavaParser的接入与测试指南](docs/modules/java-code-engines/integration-and-javaparser.md)
 
 - [JDT LS 最小可行性验证](docs/plans/jdtls-source-navigation-feasibility-plan.md)：独立调研，先验证能否自动取齐业务实现；尚未替换生产分析路线。
 - [源目录约束](AGENTS.md)

@@ -1,0 +1,67 @@
+{
+  "oracleVersion": "jdtls-source-navigation-feasibility-checks-v1",
+  "exampleKind": "INDEPENDENT_CHECKER_INPUT_NOT_NAVIGATOR_INPUT",
+  "snapshotCommit": "8c30ce7861570458920175e200bb2a6442713580",
+  "sources": [
+    {
+      "path": "jshERP-boot/src/main/java/com/jsh/erp/controller/UserController.java",
+      "gitBlob": "aa46f148b32818078a93e051253d58006fde2695",
+      "sha256": "afb1b350543031fa4b2f3c8a0570a75f738b471e6d6d54d982c74043e9f18c67",
+      "entryRange": {"startLine": 357, "endLine": 367},
+      "requiredLines": {
+        "serviceImport": 16,
+        "classMapping": 39,
+        "validateCaptchaCall": 363,
+        "checkLoginNameCall": 364,
+        "registerUserCall": 365
+      }
+    },
+    {
+      "path": "jshERP-boot/src/main/java/com/jsh/erp/service/UserService.java",
+      "gitBlob": "592be4a9a0795fda635358436e533f217df677d7",
+      "sha256": "95552b925cec2902502f2b1dcd6631164c5497eeb9f48c3104b25e7f553c343a",
+      "expectedMethods": [
+        {
+          "name": "validateCaptcha",
+          "range": {"startLine": 297, "endLine": 319},
+          "requiredText": [
+            "platformConfigService.getInfoByKey(\"checkcode_flag\")",
+            "redisService.getCacheObject(verifyKey)",
+            "redisService.deleteObject(verifyKey)",
+            "throw new BusinessRunTimeException"
+          ],
+          "reviewPoints": ["checkcode_flag condition", "captcha read/delete", "expired and mismatched captcha errors"]
+        },
+        {
+          "name": "registerUser",
+          "range": {"startLine": 607, "endLine": 661},
+          "requiredText": [
+            "BusinessConstants.DEFAULT_MANAGER.equals(ue.getLoginName())",
+            "userMapper.insertSelective(ue)",
+            "userService.updateUserTenant(user)",
+            "userBusinessService.insertUserBusiness(ubObj, null)",
+            "tenantMapper.insertSelective(tenant)"
+          ],
+          "reviewPoints": ["DEFAULT_MANAGER restriction", "default user status", "user persistence", "tenant and role relations", "tenant defaults"]
+        },
+        {
+          "name": "checkLoginName",
+          "range": {"startLine": 776, "endLine": 805},
+          "requiredText": [
+            "getUserListByloginName(loginName)",
+            "USER_LOGIN_NAME_ALREADY_EXISTS_CODE",
+            "throw new BusinessRunTimeException"
+          ],
+          "reviewPoints": ["duplicate login-name restriction"]
+        }
+      ]
+    }
+  ],
+  "entry": {
+    "method": "POST",
+    "path": "/user/registerUser",
+    "controller": "jshERP-boot/src/main/java/com/jsh/erp/controller/UserController.java",
+    "range": {"startLine": 357, "endLine": 367}
+  },
+  "checkerReview": "The packet must contain complete source bodies and call-site actual argument text. This oracle is read only after packet persistence/hash and must never be passed to the navigator or used as a target/callee list."
+}

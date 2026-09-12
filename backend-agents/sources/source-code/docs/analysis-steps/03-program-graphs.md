@@ -1,16 +1,18 @@
 # 程序图
 
-> [总体设计](../DESIGN.md)；固定 key：program-graphs，目录：steps/03-program-graphs/。五图保持独立、可观察，运行时模型调用为 0。
+> [总体设计](../DESIGN.md)；固定key：program-graphs，目录不变。目标由选定引擎提供Java导航索引；现有五图保留为技术增强。运行时模型调用为0。插件合同见[各子模块设计](../modules/java-code-engines/README.md)。
 
 ## 1. 为什么存在
 
-Step03 建立可复用的代码导航：方法在哪里，调用连接谁，参数怎样传，哪些条件包围哪些动作，返回值流到哪里，以及每个关系对应哪段源码。关系分散存于五张图，是为了各自表达准确的技术内容；人类和模型所需的连贯入口上下文由 Step05 统一组织。
+Step03建立可复用的代码导航：方法在哪里，调用有哪些声明/候选，参数与条件写在哪里，原文是什么。JDT第一阶段直接发布完整方法/调用索引，不先重做五图；JavaParser第二阶段恢复现有五图增强。Step05组织入口材料，Step06不再次解析源码。
 
 图不是业务流程，也不是已证明业务事实。缺一条严格 edge 时保持 Gap，但安全代码片段仍可被 Step05 定位阅读，不能要求所有关系都转成 Step04 Fact 后才展示。Java 不在图层按行业字典判断采购、财务或销售。
 
 ## 2. 输入与五图分工
 
-输入是同一已验证源码、ApplicationDiscovery 全入口/catalog/profile 和有界 graph controls。只解析已验证文本，不运行客户 Maven、应用、反射或外部系统。
+输入为同一已验证源码、ApplicationDiscovery全入口/catalog/profile和选定引擎会话。JDT的LS负责绑定，Core负责语法；不执行客户构建或应用。主出口为`java-code-index.jsonl`，字段与数量见[共同合同](../modules/java-code-engines/contracts-and-configuration.md)。
+
+以下五图分工及第8节精确合同仅适用于**实际启用的既有严格图增强**；不要求JDT为了产出源码材料实现等价图。未产生的增强记录NOT_PRODUCED，不产生假的空图成功结果，也不影响已定位的Service正文。
 
 | 图/拥有者 | 一次建立的关系 | Step05 怎样使用 |
 | --- | --- | --- |
@@ -53,9 +55,9 @@ Controller parameter billId
 | graph-gaps.jsonl | 局部 unsupported/ambiguous/over-limit site |
 | program-graphs-receipt.json | 同源上游、controls、artifact descriptors 与状态 |
 
-五图即使某一类没有 edge 仍保存完整 envelope；不省空图、不静默缩小入口/文件分母。仓库 scope Gap 与局部 graph Gap 分开保存，已定义 identity/ID 集守恒不变。
+实际运行五图增强时，即使某类没有edge仍保存其真实envelope；没有运行增强则不冒充空图，step receipt写明确可用性和实际artifact列表。JDT导航索引独立存在，全入口/文件诊断分母不静默缩小。
 
-Step04 只对选定技术模式建立严格 Fact。Step05 读取五图一次组织带代码的 EntryContext，区分图关系与 SOURCE_CONTEXT。Step06 仅封装 Step05 的结果，不能再解析图重构另一条链。这样所有材料使用同一导航结果。
+Step04只对实际图增强按原规则建立Fact；Step05消费选定引擎的完整代码索引，附可用图/Fact引用，不重新导航。Step06只封装Step05。具体编排和reader变化见[接入设计](../modules/java-code-engines/integration-and-javaparser.md)。
 
 ## 5. 构建和保存的界限
 
@@ -63,7 +65,7 @@ Step04 只对选定技术模式建立严格 Fact。Step05 读取五图一次组�
 
 初次图构建核对 inputs、endpoints/owners、source/rules 和预算；publisher 序列化并做必要 type/ID/ref/budget 与原子安装检查，不运行 graph builder。磁盘/新进程/import 才经 typed refs 检查保存身份/hash/schema/ref/basis；同进程 immutable view 无需逐模块重开全仓。下文 Reopened 类型表示经过该边界验证的不可变输入，实现可直接复用已有实例，不要求每次调用再次 I/O。
 
-完整 technical publication 和 module artifacts 保留。独立 audit/mutation tests 可以从保存输入重放相关算法；普通链路不把重放当每层准入条件。source bytes 漂移、broken refs、unsafe path 仍 fatal，源码本身不支持的技术构造记明确 Gap。
+已完成technical publications与算法保留。JDT导航采用其独立的中立索引，不把每个LS候选强转成旧EXACT边。独立audit可重放明确启用的增强，普通路径不重复执行。来源漂移/unsafe path仍fatal，工具未解析的调用保留原文和限制。
 
 ## 6. DepotHead 边界与预算
 
@@ -78,6 +80,8 @@ DepotHead#batchSetStatus 用于复杂条件和 Java-local status/ids 的局部�
 以下保留具体图 registry、类型、绑定算法、局部 Gap 与身份不变量，供现有实现复用；它们不赋予下游重跑图或建立行业分类器的职责。
 
 ## 8. 技术合同
+
+本节固定**既有五图增强**的含义，继续供JavaParser能力维护与精确证据核验使用，不是JDT取材插件的前置接口。JDT内部records不得为了通过本节校验器而伪造CFG/DFG/Proof；其正式主合同由[代码引擎设计](../modules/java-code-engines/contracts-and-configuration.md)定义。第一阶段保留本节算法源码不作重写。
 
 ### 8.0 固定模块合同
 

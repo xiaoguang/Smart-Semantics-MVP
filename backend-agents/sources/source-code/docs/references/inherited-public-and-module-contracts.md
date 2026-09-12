@@ -2,6 +2,8 @@
 
 本文保留唯一 RepositoryAnalysisAgent、现有 request identities、SourceLocator/Excerpt 和 canonical envelope；不恢复旧全链 typed-hop Trace、NineSectionPlan 或强制 validation receipt 前置。来源阅读只需要短 ref 能准确回到冻结文件、行段和片段。
 
+Java工具替换采用[内部JavaCodeEngine Interface](../modules/java-code-engines/contracts-and-configuration.md)，不新增公开Agent方法。YAML工具路径只属于宿主配置；新run保存有效engine/version以避免跨引擎错误复用。Step03/04技术增强可用性按[接入设计](../modules/java-code-engines/integration-and-javaparser.md)处理，不以旧固定图文件集合阻断JDT源码材料。
+
 ## 1. 唯一公开 Agent 与当前能力
 
 当前 RepositoryAnalysisAgent 已有以下五个实际方法：

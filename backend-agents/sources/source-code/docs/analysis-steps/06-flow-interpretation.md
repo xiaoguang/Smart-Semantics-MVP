@@ -1,5 +1,7 @@
 # 流程解释
 
+> 引擎接入后的材料统一使用[EntryCodeContext合同](../modules/java-code-engines/contracts-and-configuration.md)：完整方法、调用位置、实参/形参、声明与实现候选。先JDT、后JavaParser，两个阶段均复用本步BusinessMaterialBuilder与ActivityExplainer，不另建业务模型路线。
+
 > [总体设计](../DESIGN.md)；固定 key：flow-interpretation，目录：steps/06-flow-interpretation/。两个业务 Module：BusinessMaterialBuilder、ActivityExplainer。
 
 ## 1. 为什么存在
@@ -37,6 +39,8 @@ BusinessMaterialBuilder 不再构造第二套调用链。它不丢弃 Step05 上
 上面 text 是形状说明，不能当证据发送给 Provider。真实包只能包含冻结源码原文；完整财务小例见 [walkthrough](../examples/semantic-framework-walkthrough.md)。
 
 ## 3. BusinessMaterialBuilder：封装已有上下文
+
+插件化后的硬边界：本Module不得import或调用JavaParser/JDT，也不得在读取阶段再找Service。当前残留的语法观察和源码切片解析移到选定引擎。模型包必须实际包含已选入口的完整直接实现；不能仅把Service保存在Step03文件中。候选实现、未展开点和条件正文一起传递；没有strict Flow/Proof不是丢弃正文的理由。新材料字段和完整方法组包规则见[接入详细设计](../modules/java-code-engines/integration-and-javaparser.md)。
 
 | Interface 项 | 合同 |
 | --- | --- |
@@ -129,6 +133,8 @@ maxMaterialsToStart 限制本执行实际启动的材料数；超限材料写 NO
 同进程复用不可变对象；跨进程/磁盘/导入复用检查 identity/hash/schema/ref/basis 和 inputFingerprint。fingerprint 覆盖内容输入、实际 Prompt、模型/output 配置和 Module 版本，变动就不复用旧内容。已开始但结果不确定的 Provider 调用不得恢复或重放。
 
 ## 7. 当前实现与最小修改
+
+本节历史实测只证明当时的材料链，不代表已实现JDT插件。代码审计仍发现Builder内JavaParser语法调用，当前窄CallContext也未提供通用候选/完整正文合同；第一阶段需与JDT及直接readers一起接通。现有Activity/Process/Report不重写，JavaParser适配推迟到第二阶段，仅恢复已有能力。
 
 当前 BusinessMaterialBuilder 已读取 flow-slices 的 EntryContext，并将已保存的调用、实参/形参、边界、条件、返回和固定 locator 组织成短引用材料。无 strict Flow 时仍消费同一 EntryContext；不再存在从源码盘点直接重扫 Java、按 field type/name/arity 猜测 callee 的业务材料路径。Capsule 的 span 仍保留技术增强；EntryContext 是连贯关系的唯一 owner。已实现按同一 handler 类和材料模式的有界分组：每个成员的完整已选上下文都保留，模型 context 以 `E1…En` 标明成员，模型的活动响应也必须用这些短键声明覆盖范围；程序再将短键映射回实际入口。该分组不改变 Step05、不命名业务过程，也不替代后续业务解释。
 

@@ -34,6 +34,7 @@
   - org.sourceanalysis.app.analysis.knowledge
   - org.sourceanalysis.app.analysis.document
 - The cross-cutting roots are exactly:
+  - org.sourceanalysis.app.analysis.code (approved Java engine seam; not a ninth step)
   - org.sourceanalysis.app.capture.localgit
   - org.sourceanalysis.app.artifact
   - org.sourceanalysis.app.evidence
@@ -87,6 +88,35 @@
   capture, freeze, package or deployment; follow the user's explicit scope.
 - README is navigation/capability indexing. Analysis-step documents own their
   step's detailed design, tests, Gaps, stops and current maturity.
+- docs/modules/java-code-engines/ owns the approved engine Interface,
+  JDT/Core internals, common material contract and two-phase migration.
+  These are internal Modules, not extra production analysis steps.
+
+## Selectable Java code engines
+
+- First implement the JDT route independently. Protocols and direct
+  producers/readers may change for a sound JDT design without accommodating
+  JavaParser. Preserve JavaParser code. Only in the second phase adapt it to
+  the completed contract and restore CURRENT capability; do not add symbol
+  resolution features or require JDT-equivalent coverage.
+- YAML selects exactly jdt or javaparser for a run. No automatic fallback,
+  merged engines, dual writers or compatibility readers. An unintegrated
+  selection is an explicit error, not silent use of the old pipeline.
+- On the JDT route, JDT LS owns navigation/resolution; a syntax-only JDT Core
+  helper on the tool JVM owns Java declarations, full bodies and call syntax.
+  Neither discovery nor BusinessMaterialBuilder may secretly invoke
+  JavaParser. Do not implement Java wildcard imports, inheritance, overload
+  resolution or Spring runtime dispatch by guessed names.
+- A hierarchy hit is not grounds to skip implementation lookup for virtual
+  or abstract/interface targets. Preserve every candidate, constructor,
+  deferred callback and unresolved/boundary call with its actual source.
+- Engine-normalized code material is sufficient input to Step05. Existing
+  five-graph/Fact/strict-Flow capability is optional technical enrichment,
+  never a JDT reading gate. Missing enrichment is NOT_PRODUCED with a reason,
+  not fake empty graphs, fake Proof or a smaller entry denominator.
+- Preserve full method code and its conditions/returns in the material path.
+  Verify that Service bodies reach actual model input, not only an index.
+  Evidence exists to locate code, not to repeatedly re-prove ordinary reads.
 
 ## Eight analysis steps and the four deep Modules
 
@@ -102,8 +132,9 @@
 - Numerical prefixes order docs/directories only. Java types, fields, packages,
   schemas, artifact IDs, tests and commands use semantic names.
 - Keep all eight steps and useful persisted technical outputs. Step 01 verifies
-  source once; Step 03 indexes code relationships; Step 04 adds optional strict
-  technical Facts; Step 05 alone assembles coherent per-entry code context
+  source once; Step03 indexes selected-engine code relationships and reports
+  actual graph-enrichment availability; Step04 adds optional strict Facts or
+  records that enhancement was not produced; Step05 assembles per-entry context
   with actual/formal arguments, controls, returns, boundaries and code fragments.
   Keep exact Proof truthfulness. Incomplete strict Proof is not the sole gate
   for reading safely located code. Remove repeated ordinary-path enumeration,
@@ -131,11 +162,9 @@
 - Step 05 is the sole owner of entry-context relationships and related source
   excerpts, including safe entries without a strict Flow. Its existing files
   hold the context; Capsule is its budgeted projection, not another chain model.
-- Step 05 must project admitted call/control graph relationships and their
-  source locations directly. Facts and Proofs classify conclusions that have
-  passed strict rules; they must never become a filter that makes an otherwise
-  located call, guard, return, or graph-gap source location invisible to the
-  business reader.
+- Step05 consumes the selected engine's normalized methods/calls/candidates
+  and optional actual graph relationships. Facts/Proofs keep their strict
+  meaning but never filter safely located code from business reading.
 - BusinessMaterialBuilder only packages Step 05 contexts, selects complete
   in-budget units and maps SourceRefs. It must not independently reconstruct
   a direct callee from source text. Java does not use an
@@ -353,9 +382,10 @@
   `analysis.knowledge.ProcessExplainer`, `ModelRuntimeIdentityV1`, EntryContext,
   facts, gaps, signals and SourceRefs. Current work must not restore or extend
   that retired route; it only verifies the active business chain.
-- Adjust the existing semantic packages and four existing business Modules.
-  No new Wire Reset, source scanner, context-chain Module or storage/recovery
-  subsystem is needed. Preserve Git history and progress files.
+- Adjust existing semantic packages and four business Modules. The approved
+  analysis.code engine seam replaces hardwired Java parsing only; it does not
+  authorize another business runtime, broad Wire Reset or storage/recovery
+  subsystem. Preserve Git history, JavaParser algorithms and progress files.
 
 ## Testing and stop rules
 

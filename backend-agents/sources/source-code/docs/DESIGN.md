@@ -4,7 +4,9 @@
 
 读者需要知道系统做什么、围绕哪些业务对象、一次活动经过什么条件、多个活动怎样组成业务过程。证据的首要用途是可靠地找到代码；图把相关代码的结构和执行关系连起来；模型在连贯代码上下文上解释业务。最终交付是一份可回到冻结源码的九章业务报告。
 
-这条路线保留八个步骤、五张程序图、严格技术 Fact/Proof，以及唯一公开 `RepositoryAnalysisAgent`。Java 负责来源、定位、代码关系、有限上下文、预算、检查和保存；Luna/high 负责业务含义、跨活动过程与业务语言。Java 不维护采购、销售、财务等行业词表来判业务动作。技术证据有用，但不应在每层反复证明同一件事，也不应把尚未被严格 Proof 覆盖的安全源码排除出阅读范围。
+这条路线保留八个步骤和唯一公开 `RepositoryAnalysisAgent`。现有五张程序图、严格技术 Fact/Proof继续保留为技术增强；它们不是每种工具把完整源码交给模型的前置门槛。Java负责来源、工具导航、代码材料、检查和保存；Luna/high负责业务含义、跨活动过程与业务语言。Java不维护行业词表，也不自己补全编译器的类型解析规则。
+
+新的取材目标是[JDT/JavaParser可切换引擎](modules/java-code-engines/README.md)：YAML选择一个引擎，统一交付声明、完整方法、调用位置、实参/形参、实现候选和边界。**先独立打通JDT，协议不迁就JavaParser；第二阶段才把保留的JavaParser恢复到当前能力。** 当前尚未实现插件化，两个研究入口的成功不能写成生产已切换。
 
 本文是目标设计。当前代码中已经存在四个业务 Module 和工作流，Step05 EntryContext 已连续传到材料，普通 Flow/Capsule 发布已停止重复 compile/project，Spring unrestricted method condition 也已落地。旧解释链及其 Capsule registry basis 字段已退出；Activity 的 v2 Prompt/schema、coverage-after-REVIEW 和程序侧未解释入口记录已落地。Process/Report 也已把具体未解释入口按材料投影到仓库知识和第九章。实现按当前实施计划分步开展；本文不把目标合同写成代码或实测结果。
 
@@ -13,10 +15,10 @@
 | 步骤与固定 key | 输入 | 本步工作 | 可观察输出与下一消费者 |
 | --- | --- | --- | --- |
 | 01 已验证源码清单 / verified-source-inventory | 已注册固定 commit 的离线快照 | 一次核对完整清单、字节、路径和行索引 | source inventory、snapshot；02 与受限源码读取器使用 |
-| 02 应用发现 / application-discovery | 已验证文本和框架配置 | 发现 Spring 入口、route、参数、Mapper 候选，保留全部入口分母 | entry inventory、profile、catalog；03、05、06 使用 |
-| 03 程序图 / program-graphs | 同一源码和入口 | 建结构、调用、控制、数据、证据五图，记录真实关系与局部缺口 | 五图、index、gaps；04 选事实，05 组织入口执行上下文 |
-| 04 已证明代码事实 / proven-code-facts | 已建五图和版本化技术规则 | 对选定模式补充严格、可验证的 Fact/Proof，一次构建 | Facts、Proof、rejection、accounting；05/06 作为可选增强 |
-| 05 业务流程 / business-flows | 全入口、五图、可选技术 Facts | 按入口直接读取已持久化调用/控制图，组织调用、实参→形参、条件、返回、边界；一次投影 Capsule | FlowSlice、Capsule、处置、覆盖；06 直接复用关系 |
+| 02 应用发现 / application-discovery | 已验证文本、框架配置、选定引擎catalog | 共享Spring规则识别入口，Java语法只由选定引擎读取 | entry inventory、profile、catalog；03、05使用 |
+| 03 程序图 / program-graphs | 同一源码和入口、选定引擎 | 建可复用Java导航索引；保留实际可提供的五图增强 | java-code-index、实际图增强及可用性；05直接取完整方法/调用 |
+| 04 已证明代码事实 / proven-code-facts | 实际存在的图增强和规则 | 有图时按原义生成严格Fact；无增强则明确NOT_PRODUCED | 实际Facts/Proof或未生成说明；不阻断源码阅读 |
+| 05 业务流程 / business-flows | 全入口、引擎代码上下文、可选技术增强 | 归属并保存完整方法/候选/参数/条件/返回；一次投影Capsule | entryContexts、实际strict Flow、Capsule、处置与覆盖；06复用 |
 | 06 流程解释 / flow-interpretation | 入口上下文、图关系、同快照源码 | BusinessMaterialBuilder 封装已有上下文；ActivityExplainer DRAFT + 完整 REVIEW | 材料、已审活动、活动或显式未解释处置闭合的入口覆盖；07 使用 |
 | 07 仓库知识 / repository-knowledge | 已审活动、具体未解释入口、连接线索与必要原始材料 | ProcessExplainer 宽松分组、解释跨活动过程、整理仓库知识 | 已审过程、知识、具体 partial 范围与过程覆盖；08 使用 |
 | 08 九章文档 / nine-section-document | 完整已审知识、活动/过程、具体未解释入口与来源短 ref | BusinessReportPublisher 写并审阅九章 paragraph JSON，Java 排版 | JSON、SourceRef、Markdown、验证结果；第 9 章保留未解释入口 |
@@ -36,13 +38,13 @@
 
 ## 3. 为什么同时保留 03、04、05
 
-03 是代码索引。它回答“这个调用连接谁、这个值传给哪个参数、分支在哪里、返回到哪里、原文在哪里”。它的输出是可跨入口复用的代码关系，不是业务描述。
+03 是代码索引。它回答“这个调用可导航到谁、有哪些候选、实参与形参是什么、条件和返回写在哪里”。JDT LS/Core负责导航与语法读取；JavaParser作为第二阶段备选。调用位置与参数对照不冒充完整数据流证明，其输出是源码材料，不是业务判断。
 
 04 是严格技术增强。当前 `FactRegistry` 只登记 `JAVA_EXACT_CALL`、`JAVA_BOUNDARY_INVOCATION`、`JAVA_GUARD_CONDITION`。每个声称成立的 Fact 必须满足该模式全部 required atoms，缺一个就拒绝该 Fact。它既不是全代码摘要，也不是所有有用信息的白名单。没有 SQL 效果 Proof，仍可以把安全定位的 SQL 原文交给模型；但不能把原文、模型推断或 hash 改名为该 Proof。
 
-05 是入口上下文组织。它复用 03 的关系和 04 的增强，把分散在图中的代码拼成可阅读的技术执行视图，然后生成 Capsule。它不再分析一遍图来创造另一套证明层，不要求 04 先为每一个条件提供 CLOSED atom，也不要求枚举所有组合路径才能描述已经明确的分支。未知边停在边界，已知的条件、调用和结果仍保留。
+05 是入口上下文保存与组织。它复用03选定引擎已经取得的方法和关系，附可选04增强，再投影Capsule；不重新找Service或解析一遍Java。未知候选、外部边界及原文保留，完整body不因缺CLOSED atom而消失。
 
-因此“可选 Facts”指下游可以没有某类或某条已准入 Fact 仍然组织安全上下文。Step04 本身保留，正常八步运行仍保存其处理结果；若该步产物被提交为输入，身份损坏、断引用或伪造 Proof 必须拒绝，不能借“可选”跳过完整性检查。
+Step04本身保留。JDT第一阶段没有提供原严格五图增强时，步骤明确保存“未生成技术增强”，不制造空图/假Fact满足旧接口；JavaParser现有五图/Fact能力不删除，第二阶段接回。已有产物若被提交，损坏或伪造仍拒绝。具体产物可用性、读写器变化见[接入设计](modules/java-code-engines/integration-and-javaparser.md)。
 
 ## 4. 真实小例：按业务单据查财务单号
 
@@ -79,11 +81,11 @@
 
 ## 5. 连贯业务材料怎样形成
 
-Step05 是关系与相关代码上下文的唯一拥有者。它直接读取已保存的调用图与控制图，取完整实参/形参关系、包围条件、必要声明和返回代码，在现有 flow-slices.json 的 entryContexts 内保存一份连贯对象；Facts/Proofs 只标明少数严格结论，不能过滤可阅读的图关系。Capsule 仅作其有界投影。最小 required 字段与 nullable flowRef 合同已在 Step05 冻结，不新增链路 Module 或文件。BusinessMaterialBuilder 只消费这份对象，做容量选择、短 ref 映射与模型包排版，不重新连接图、猜 callee 或推导业务逻辑。
+Step05拥有下游读取的入口上下文：消费选定引擎一次取得的完整方法、调用、参数和候选，在flow-slices.json的entryContexts保存；Capsule只投影，不重新判定。统一字段以[代码引擎合同](modules/java-code-engines/contracts-and-configuration.md)为准，替换旧单target的窄CallContext；必要producer/schema/reader同步升版。BusinessMaterialBuilder只选择完整方法、分配短ref并组包，禁止隐藏JavaParser/JDT调用。源码缺失必须在context中说明，不能让模型只读Controller却称连贯取材完成。
 
-一个材料包至少能让读者看清入口参数、主要被调方法、条件及分支归属、结果怎样返回或传到边界，以及具体哪里不知道。片段可以是完整短方法；较长方法选连续片段并保留条件及变量定义。不能仅为“最小证据”删掉理解所需的上下文，也不能用更多随机相邻行代替已知关系。
+一个材料包至少能看清入口、直接实现、条件归属、结果及未知位置。引擎先保存完整方法，不以模型费用裁源码；Builder按完整方法组包，不能仅为“最小证据”删除Service主体。物理上下文装不下时，具体列出未交给模型的方法/入口，而不是静默截短后宣称完整。
 
-无正式 Flow 时仍由 Step05 生成 flowRef=null 的安全入口上下文，保留 FLOW_NOT_AVAILABLE、CALL_TARGET_AMBIGUOUS 等局部限制。已定位的 Graph Gap 同样保留其源码位置，使模型读到未知调用/条件附近的原文而不会被误导为已解析 target。当前材料路径要求 Step05 已完成；若以后增加更早的无图材料模式，也必须在 Step05 创建明确的安全上下文和限制，不能让 Step06 重新扫描 Java 或猜 callee。不得把未知调用目标写成唯一调用，也不得因没有严格 condition atom 丢掉已经可读的 if/try/catch。若确实无法安全定位或超预算，则该入口明确 NOT_ANALYZED；不是删掉入口。
+无strict Flow时仍由Step05保存flowRef=null的引擎上下文。JDT不需要先生成五图/Proof才可提供Service；未知目标/候选以原文和限制保留。Step06仍只读Step05结果，不扫描Java或猜callee。无法安全定位的入口单独处置，不删入口分母。
 
 程序保存 SourceRef→冻结文件/精确行段/原文映射。模型包只携带 S1 等短 ref、必要代码、连贯技术观察与限制；不含本机路径、行号、hash、完整 Proof、控制预算或 Provider 配置。模型不能创造 refs、来源身份或技术 Fact。
 
@@ -125,7 +127,7 @@ BusinessReportPublisher 用完整已审仓库知识和必要活动/过程材料�
 
 ## 8. 一次计算，可靠保存，边界核验
 
-正常可信进程只建立一次源码验证视图、五图、选定 Facts、入口执行上下文和 Capsule 投影。已由拥有者完成的算法不在 publisher、specifier 或每层 reader 中重跑。内部可传不可变 typed view；有意义的步骤/module 产物和 receipts 仍保存，便于观察、定位和显式复用。
+正常可信进程建立一次源码验证视图及选定引擎会话；LS语义索引、Core每文件语法读取分别缓存，不按步骤重复。实际启用的图/Fact增强、上下文和Capsule由各自拥有者计算一次，publisher不重跑。内部可传不可变view；持久化仍用于观察和显式复用。
 
 publisher 负责序列化、最小必要的 type/ID/ref/budget 检查、canonical bytes/hash 和原子安装；写入完整性不等于再次运行图编译、Fact 枚举或 Capsule projector。磁盘重新打开、新进程、导入或跨 run 复用才校验保存身份/hash/schema/ref/basis 以及需要读取的源码 bytes。已验证的同进程 immutable bytes 可重复利用，不重复扫描全仓。显式独立审计或 mutation tests 可以重放算法，不能变成普通消费的必经层。
 
@@ -162,6 +164,8 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 
 ## 10. 当前实现与已批准但尚未实施的改动
 
+本表先记录当前旧路径，不代表下一个任务仍执行旧清理计划。新增目标为[两阶段引擎接入](modules/java-code-engines/integration-and-javaparser.md)：先JDT-only，再JavaParser现有能力适配。研究仍混用JDT导航和JavaParser语法；尚无生产YAML插件。当前Builder仍有JavaParser语法读取，现有“已消费上下文”不等于已经做到引擎无关。
+
 | 当前可确认事实 | 已批准、尚未实施的最小改动或保持项 |
 | --- | --- |
 | Step03/04 稳定算法、FactRegistry 三类技术模式与 AtomicProofBuilder 全 atoms 规则保留；普通 persisted candidate 读取与 Flow/Capsule 发布已不再重放 owner 算法 | 本次不修改 Step03/04 算法或恢复重复 replay；清理只删除旧解释链的专属消费者/注册 |
@@ -176,7 +180,7 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 
 Spring 细则：`@RequestMapping` 省略 method 或 `method={}` 都合法。类和方法均无限制时保持 unrestricted；一方有限制时保留该限制；双方非空按 Spring method-condition combine 取并集。不要猜 GET，也不要把 HEAD/OPTIONS 框架处理拆成多个业务活动。现有 `methodCondition` 已实现该区分，UserController#getOrganizationUserTree 和 MaterialCategoryController#getMaterialCategoryTree 是直接回归样例；未来完整仓库重跑只核对新的真实分母。
 
-后续按 [实施衔接](plans/coherent-code-context-implementation-plan.md) 和[已批准清理/覆盖设计](plans/code-cleanup-and-scalable-activity-coverage-design.md)做 Luna/xhigh RED、Terra/xhigh 最小 GREEN，只运行直接相关测试。旧依赖安全退役、任意 N 与 REVIEW 预算、合法缺项修订、具体 partial 到第 9 章及其 scripted 全链均已完成；普通沙箱的 Task 7 候选失败后，独立宿主会话候选已完成四入口局部 Activity 验证。已稳定的 Step03–05 接力不重新实现，也不开展第二轮架构扩展。
+旧[实施衔接](plans/coherent-code-context-implementation-plan.md)与[清理/覆盖设计](plans/code-cleanup-and-scalable-activity-coverage-design.md)用于已完成能力的历史核对，不限制当前获准的引擎接入。后续先按JDT目标合同更新必要接线，再适配JavaParser；不重做其五图/Fact算法，不复活旧语义路线。所有产品实测范围与结果仍按其原记录说明。
 
 ## 11. 阅读导航
 
@@ -191,6 +195,8 @@ Spring 细则：`@RequestMapping` 省略 method 或 `method={}` 都合法。类�
 - [07 仓库知识](analysis-steps/07-repository-knowledge.md)
 - [08 九章文档](analysis-steps/08-nine-section-document.md)
 - [真实与合成 walkthrough](examples/semantic-framework-walkthrough.md)
+- [Java代码引擎完整设计与各子模块](modules/java-code-engines/README.md)
+- [JDT真实注册/财务材料到业务解释](examples/java-code-engine-walkthrough.md)
 - [Prompt 与完整审阅](references/semantic-interpretation-prompts.md)
 - [来源与发布边界](references/foundation-and-publication-contracts.md)
 - [持久化身份](references/canonical-persistence-identity-contracts.md)

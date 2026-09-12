@@ -1,0 +1,63 @@
+{
+  "oracleVersion": "jdtls-source-navigation-feasibility-checks-v1",
+  "exampleKind": "INDEPENDENT_CHECKER_INPUT_NOT_NAVIGATOR_INPUT",
+  "snapshotCommit": "8c30ce7861570458920175e200bb2a6442713580",
+  "sources": [
+    {
+      "path": "jshERP-boot/src/main/java/com/jsh/erp/controller/AccountHeadController.java",
+      "gitBlob": "9455500ffa7355368e8ad591246b4eb5a3a9749c",
+      "sha256": "0d0ef06b07e8b60c297e1005f239aac1d446b8e87c02cb5ec4bbcaafb444b520",
+      "entryRange": {"startLine": 181, "endLine": 196},
+      "requiredLines": {
+        "mapping": 181,
+        "serviceCall": 187,
+        "catch": 190,
+        "return": 195
+      }
+    },
+    {
+      "path": "jshERP-boot/src/main/java/com/jsh/erp/service/AccountHeadService.java",
+      "gitBlob": "68081dd4132a0d8358f884ccffa1d1a0acac755d",
+      "sha256": "def5bb314ee9185efff5978f73d3f236eb5b5171fc90139181ab82b3211ae1b4",
+      "expectedMethods": [
+        {
+          "name": "getFinancialBillNoByBillId",
+          "range": {"startLine": 442, "endLine": 444},
+          "requiredLines": {"serviceMethodStart": 442, "serviceMethodCall": 443},
+          "requiredText": ["getFinancialBillNoByBillId(Long billId)", "accountHeadMapperEx.getFinancialBillNoByBillId(billId)"],
+          "reviewPoints": ["service delegates billId to mapper boundary"]
+        }
+      ]
+    },
+    {
+      "path": "jshERP-boot/src/main/java/com/jsh/erp/datasource/mappers/AccountHeadMapperEx.java",
+      "gitBlob": "be14215efe632791be9e87df168b0895a78d35c5",
+      "sha256": "31bc1092b847a69673b99727bd4081228d2cf4402cb3f4ef5f6a675c23bd3a7d",
+      "expectedMethods": [
+        {
+          "name": "getFinancialBillNoByBillId",
+          "range": {"startLine": 44, "endLine": 45},
+          "requiredLines": {"mapperMethodStart": 44, "mapperMethodParameter": 45},
+          "requiredText": ["getFinancialBillNoByBillId(", "@Param(\"billId\") Long billId"],
+          "boundary": "MAPPER_INTERFACE"
+        }
+      ]
+    },
+    {
+      "path": "jshERP-boot/src/main/resources/mapper_xml/AccountHeadMapperEx.xml",
+      "gitBlob": "d2c4a090bb3c7fd1d70e4adddad7004781995930",
+      "sha256": "cf7f17843da43f8648616dbe9ebb166230bee54440b09014228bd60ceb517229",
+      "expectedRange": {"startLine": 150, "endLine": 155},
+      "requiredLines": {"xmlSelect": 150, "xmlWhere": 153},
+      "requiredText": ["<select id=\"getFinancialBillNoByBillId\"", "where ai.bill_id=#{billId}"],
+      "boundary": "MAPPER_XML_OPTIONAL"
+    }
+  ],
+  "entry": {
+    "method": "GET",
+    "path": "/accountHead/getFinancialBillNoByBillId",
+    "controller": "jshERP-boot/src/main/java/com/jsh/erp/controller/AccountHeadController.java",
+    "range": {"startLine": 181, "endLine": 196}
+  },
+  "checkerReview": "The financial gate requires the controller try/catch/return, the complete three-line service body, billId actual text, and an explicit mapper-interface boundary. XML is an optional static cross-check and cannot replace the service body."
+}
