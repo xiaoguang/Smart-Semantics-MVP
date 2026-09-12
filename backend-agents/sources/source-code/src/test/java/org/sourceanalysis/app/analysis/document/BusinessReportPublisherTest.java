@@ -251,12 +251,25 @@ class BusinessReportPublisherTest {
     assertThat(schema.path("type").asText()).isEqualTo("object");
     assertThat(schema.path("additionalProperties").asBoolean()).isFalse();
     assertThat(textValues(schema.path("required"))).containsExactly("title", "sections");
-    JsonNode section = schema.path("properties").path("sections").path("items");
-    assertThat(section.path("type").asText()).isEqualTo("object");
-    assertThat(section.path("additionalProperties").asBoolean()).isFalse();
-    assertThat(textValues(section.path("required")))
-        .containsExactly("number", "title", "paragraphs", "items");
-    JsonNode content = section.path("properties").path("paragraphs").path("items");
+    JsonNode sections = schema.path("properties").path("sections");
+    assertThat(sections.path("items").isBoolean()).isTrue();
+    assertThat(sections.path("items").asBoolean()).isFalse();
+    JsonNode fixedSections = sections.path("prefixItems");
+    assertThat(fixedSections).hasSize(9);
+    for (int index = 0; index < fixedSections.size(); index++) {
+      JsonNode section = fixedSections.get(index);
+      assertThat(section.path("type").asText()).isEqualTo("object");
+      assertThat(section.path("additionalProperties").asBoolean()).isFalse();
+      assertThat(textValues(section.path("required")))
+          .containsExactly("number", "title", "paragraphs", "items");
+      assertThat(section.path("properties").path("number").path("const").asInt())
+          .isEqualTo(index + 1);
+      assertThat(section.path("properties").path("title").path("const").asText())
+          .isEqualTo(
+              List.of("文档说明", "业务目标", "业务对象", "业务活动", "字段与维度", "对象关系", "指标口径", "示例问题", "待确认事项")
+                  .get(index));
+    }
+    JsonNode content = fixedSections.get(0).path("properties").path("paragraphs").path("items");
     assertThat(content.path("type").asText()).isEqualTo("object");
     assertThat(textValues(content.path("required"))).containsExactly("text", "refs");
   }

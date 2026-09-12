@@ -315,11 +315,16 @@ public final class BusinessReportPublisher {
     sections.put("type", "array");
     sections.put("minItems", SECTION_TITLES.size());
     sections.put("maxItems", SECTION_TITLES.size());
-    sections.set("items", sectionSchema(allowedRefs, profile));
+    ArrayNode fixedSections = sections.putArray("prefixItems");
+    for (int index = 0; index < SECTION_TITLES.size(); index++) {
+      fixedSections.add(sectionSchema(allowedRefs, profile, index + 1, SECTION_TITLES.get(index)));
+    }
+    sections.put("items", false);
     return canonicalJson.encodeCanonical(root);
   }
 
-  private ObjectNode sectionSchema(Set<String> allowedRefs, BusinessReportProfile profile) {
+  private ObjectNode sectionSchema(
+      Set<String> allowedRefs, BusinessReportProfile profile, int numberValue, String titleValue) {
     ObjectNode section = JsonNodeFactory.instance.objectNode();
     section.put("type", "object");
     section.put("additionalProperties", false);
@@ -328,12 +333,10 @@ public final class BusinessReportPublisher {
     ObjectNode properties = section.putObject("properties");
     ObjectNode number = properties.putObject("number");
     number.put("type", "integer");
-    number.put("minimum", 1);
-    number.put("maximum", SECTION_TITLES.size());
+    number.put("const", numberValue);
     ObjectNode title = properties.putObject("title");
     title.put("type", "string");
-    ArrayNode titleValues = title.putArray("enum");
-    SECTION_TITLES.forEach(titleValues::add);
+    title.put("const", titleValue);
     contentsProperty(properties, "paragraphs", allowedRefs, profile);
     contentsProperty(properties, "items", allowedRefs, profile);
     return section;

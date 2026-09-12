@@ -100,6 +100,8 @@ publisher 保存时只做必要结构检查、序列化与原子安装，不能�
 
 BusinessReportPublisher 已有 DRAFT+完整 REVIEW、九章 Markdown 和四个报告文件，BusinessAnalysisWorkflow 已接通它。`PersistedBusinessRunExecutorTest` 以一个真实的已保存 Step05 fixture 和 scripted Provider 直接验证：活动 REVIEW 的目的、条件、规则、问题先进入过程/报告模型输入，报告 DRAFT 再完整进入报告 REVIEW，最终 Markdown 保留该业务段落。另有一次明确授权的 Luna/high 小包验收：它只重用已完成的 jshERP 用户登录、用户注册活动及其保守的两个独立过程，生成一份九章报告；没有把注册和登录伪造成有源码顺序的单一过程。该结果证明小包的业务语言与报告链路可用，不证明自动 Builder→整仓业务九章已经通过真实质量验收。
 
+报告任务的结构化输出 Schema 还必须固定数组的每一个位置：第 1 项只能是“文档说明”、第 6 项只能是“对象关系”，依此直到第 9 项。仅把标题限制为九个可选值不足以保证九章顺序；一次真实报告 DRAFT 曾把第 6 项错误写成第二个“指标口径”，Java 在 REVIEW 前拒绝了它。现在 Provider Schema 与 Java 返回校验都按位置约束，避免把本可在输出边界阻止的错误留到一次已启动候选之后。
+
 当前报告输入已获得 Activity v2 的具体 `unexplainedActivityEntries` 的按 material 聚合投影；E1–E4 这样的 PARTIAL 输入会把完整 HTTP context 和 `MODEL_NOT_EXPLAINED` 原因交给报告模型。报告 prompt 要求第9章说明这些具体范围，而第4章不得为它们编造活动。`cleanKnowledge`/Prompt/input 与真正承载字段的 owning schema/readers 已升级；报告九章 output shape 不因内部新增输入而强制升版。
 
 Luna/xhigh RED 已直接验证按 material 一次投影具体未解释入口到第9章，Terra/xhigh 已在 publisher/input/render 接力处做最小 GREEN；不新增业务语义 parser或空报告捷径。四入口与任意 N scripted 全链现已复核：完整 REVIEW 可补齐 E3/E4，partial 时第2–8章只消费已审 E1/E2，第9章保留 E3/E4 的实际 HTTP entry 和 `MODEL_NOT_EXPLAINED`，并输出恰好九章。条件/规则字段仍通过 Report 模型 input 保留；最终自然语言质量不由 scripted Provider 假称已验收。本轮没有调用真实模型。
