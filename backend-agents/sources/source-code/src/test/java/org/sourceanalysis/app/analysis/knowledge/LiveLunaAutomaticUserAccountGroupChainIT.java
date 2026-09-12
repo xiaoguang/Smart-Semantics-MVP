@@ -81,6 +81,28 @@ class LiveLunaAutomaticUserAccountGroupChainIT {
   }
 
   @Test
+  @EnabledIfSystemProperty(
+      named = "sourceanalysis.liveLunaUserAccountGroupReportReplacementInput",
+      matches = "true")
+  void reopensCompletedProcessReviewsWithoutCallingTheProvider() throws Exception {
+    ChainInput input = loadInput();
+
+    RepositoryBusinessKnowledge knowledge = loadCompletedKnowledge(input);
+
+    assertThat(knowledge.activities()).hasSize(4);
+    assertThat(knowledge.processes()).hasSize(4);
+    assertThat(knowledge.processes())
+        .allSatisfy(
+            process -> {
+              assertThat(process.activityIds()).hasSize(1);
+              assertThat(knowledge.activities())
+                  .extracting(ReviewedActivity::activityId)
+                  .containsAll(process.activityIds());
+            });
+    assertThat(knowledge.repositorySummary()).isNotNull();
+  }
+
+  @Test
   @EnabledIfSystemProperty(named = "sourceanalysis.liveLunaUserAccountGroupChain", matches = "true")
   void reconstructsProcessesAndWritesOneNineSectionReportFromTheCompletedActivities()
       throws Exception {
@@ -130,6 +152,45 @@ class LiveLunaAutomaticUserAccountGroupChainIT {
     writeOutput(outputDirectory, input, knowledge, report, calls.get());
   }
 
+  @Test
+  @EnabledIfSystemProperty(
+      named = "sourceanalysis.liveLunaUserAccountGroupReportReplacement",
+      matches = "true")
+  void writesOneReplacementNineSectionReportWithoutReplayingActivitiesOrProcesses()
+      throws Exception {
+    ChainInput input = loadInput();
+    RepositoryBusinessKnowledge knowledge = loadCompletedKnowledge(input);
+    Path outputDirectory = requiredDirectory("sourceanalysis.liveLunaOutput");
+    assertThat(outputDirectory.normalize().toString())
+        .as("diagnostics remain in the ignored workspace")
+        .contains("/.workspace/");
+
+    AtomicInteger calls = new AtomicInteger();
+    StructuredModelProvider provider =
+        recordingProvider(
+            outputDirectory,
+            calls,
+            new CodexSubscriptionStructuredProvider(
+                new CodexSubscriptionProfile(
+                    Path.of(EXECUTABLE), "gpt-5.6-luna", "high", Duration.ofMinutes(3))));
+    BusinessReportPublication report =
+        new BusinessReportPublisher(provider)
+            .publish(
+                new PublishBusinessReportRequest(
+                    knowledge,
+                    input.sourceReferences(),
+                    new BusinessReportProfile(32_000, 18_000, 32, 2_000)));
+
+    assertThat(report.businessReport().sections())
+        .extracting(BusinessReportSection::title)
+        .containsExactlyElementsOf(CHAPTERS);
+    assertThat(report.documentMarkdown())
+        .contains("## 1. 文档说明", "## 4. 业务活动", "## 9. 待确认事项")
+        .doesNotContain("sha256", "proof:", "artifact/run");
+    assertThat(calls.get()).isEqualTo(2);
+    writeOutput(outputDirectory, input, knowledge, report, calls.get());
+  }
+
   private static ChainInput loadInput() throws IOException {
     CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
     JsonNode root = parseFile(requiredFile("sourceanalysis.liveLunaActivityResult"));
@@ -168,6 +229,86 @@ class LiveLunaAutomaticUserAccountGroupChainIT {
         new BusinessMaterialSet(
             "business-material-set:live-user-account-group", List.of(material), List.of()),
         material.sourceRefs());
+  }
+
+  private static RepositoryBusinessKnowledge loadCompletedKnowledge(ChainInput input)
+      throws IOException {
+    JsonNode processRoot = parseFile(requiredFile("sourceanalysis.liveLunaProcessReview"));
+    JsonNode summaryRoot = parseFile(requiredFile("sourceanalysis.liveLunaRepositorySummaryReview"));
+    Map<String, ReviewedActivity> activitiesById = new LinkedHashMap<>();
+    input.activities().reviewedActivities().forEach(activity -> activitiesById.put(activity.activityId(), activity));
+    List<String> allowedRefs =
+        input.sourceReferences().stream().map(SourceReference::ref).sorted().toList();
+    List<BusinessProcess> processes =
+        processRoot.path("processes").valueStream()
+            .map(value -> readProcess(value, activitiesById, allowedRefs))
+            .sorted(Comparator.comparing(BusinessProcess::processId))
+            .toList();
+    if (processes.isEmpty() || processes.size() > input.activities().reviewedActivities().size()) {
+      throw new IllegalArgumentException("LIVE_LUNA_CHAIN_PROCESS_RESULT_INVALID");
+    }
+    RepositoryProcessSummary summary =
+        new RepositoryProcessSummary(
+            requiredText(summaryRoot, "text"),
+            strings(summaryRoot, "businessGoals"),
+            strings(summaryRoot, "objectsAndRelations"),
+            strings(summaryRoot, "confirmationTopics"),
+            checkedRefs(strings(summaryRoot, "sourceRefs"), allowedRefs));
+    return new RepositoryBusinessKnowledge(
+        input.activities().reviewedActivities(),
+        processes,
+        input.activities().coverage(),
+        List.of(),
+        strings(processRoot, "unmatchedActivityIds"),
+        summary.confirmationTopics(),
+        List.of(),
+        summary,
+        null);
+  }
+
+  private static BusinessProcess readProcess(
+      JsonNode value, Map<String, ReviewedActivity> activitiesById, List<String> allowedRefs) {
+    List<String> activityIds = strings(value, "activityIds");
+    if (activityIds.isEmpty() || !activitiesById.keySet().containsAll(activityIds)) {
+      throw new IllegalArgumentException("LIVE_LUNA_CHAIN_PROCESS_ACTIVITY_SCOPE_INVALID");
+    }
+    List<BusinessProcessStage> stages =
+        value
+            .path("stages")
+            .valueStream()
+            .map(
+                stage ->
+                    new BusinessProcessStage(
+                        stage.path("order").asInt(),
+                        requiredText(stage, "activityId"),
+                        requiredText(stage, "description")))
+            .toList();
+    if (!activityIds.containsAll(stages.stream().map(BusinessProcessStage::activityId).toList())) {
+      throw new IllegalArgumentException("LIVE_LUNA_CHAIN_PROCESS_STAGE_SCOPE_INVALID");
+    }
+    return new BusinessProcess(
+        stableProcessId(value),
+        requiredText(value, "name"),
+        requiredText(value, "businessPurpose"),
+        activityIds,
+        stages,
+        strings(value, "branches"),
+        strings(value, "sharedObjects"),
+        strings(value, "codeDefinedResults"),
+        requiredText(value, "certainty"),
+        checkedRefs(strings(value, "sourceRefs"), allowedRefs),
+        strings(value, "confirmationNotes"));
+  }
+
+  private static String stableProcessId(JsonNode process) {
+    return "process:live-user-account-" + requiredText(process, "processLocalId");
+  }
+
+  private static List<String> checkedRefs(List<String> refs, List<String> allowedRefs) {
+    if (!allowedRefs.containsAll(refs)) {
+      throw new IllegalArgumentException("LIVE_LUNA_CHAIN_PROCESS_SOURCE_SCOPE_INVALID");
+    }
+    return refs;
   }
 
   private static StructuredModelProvider recordingProvider(

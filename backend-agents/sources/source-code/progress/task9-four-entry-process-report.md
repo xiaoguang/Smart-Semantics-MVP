@@ -36,6 +36,8 @@
 | Live `LiveLunaAutomaticUserAccountGroupChainIT` | TERMINAL CANDIDATE FAILURE | 4 process/summary calls completed, 1 report DRAFT call completed, report DRAFT rejected before REVIEW as `BUSINESS_REPORT_INVALID`; no replay. |
 | `mvn -o -t .mvn/toolchains.xml test` | PASS | 361 tests, 0 failures, 0 errors, 1 explicit live-test skip. |
 | `mvn -o -t .mvn/toolchains.xml -Pquality -DskipTests verify` | PASS | Full local quality build, including SpotBugs/PMD, completed in 9m13s. |
+| `mvn -o -t .mvn/toolchains.xml -Dtest=LiveLunaAutomaticUserAccountGroupChainIT …ReportReplacementInput=true test` | PASS | 1 enabled zero-Provider process/summary reopen test; 3 live tests skipped. |
+| `mvn -o -t .mvn/toolchains.xml -Pquality -DskipTests verify` (replacement reader) | PASS | Full local quality build, including all tests, SpotBugs and PMD, completed in 5m36s. |
 
 ## Decisions
 
@@ -46,6 +48,7 @@
 - The completed Process REVIEW retained four distinct local activities rather than forcing a lifecycle; its DRAFT's two loose process hypotheses are preserved in diagnostics but not promoted over the REVIEW.
 - A corrected report schema is a local contract repair, not an architecture change. Any later real report call is a separately saved replacement candidate, never a replay of the terminal draft.
 - The report output Schema now binds each `sections` array position to its one fixed number/title pair, matching the Java response validator.
+- Added a zero-Provider reopener for the completed process REVIEW and repository-summary REVIEW. It rebuilds `RepositoryBusinessKnowledge` only from saved candidate bytes and rejects activity/ref scope drift.
 
 ## Blockers
 
@@ -53,7 +56,7 @@
 
 ## Exact next action
 
-- Commit/push the schema and live-harness work, then create a replacement report candidate from the already-completed repository knowledge only.
+- Commit/push the zero-Provider reopener, then create the one replacement report candidate from the already-completed repository knowledge only.
 
 ## Resume checks
 
