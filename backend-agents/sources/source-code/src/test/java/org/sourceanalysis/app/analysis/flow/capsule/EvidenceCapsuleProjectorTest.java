@@ -63,6 +63,10 @@ class EvidenceCapsuleProjectorTest {
                 "HTTP POST /context-without-fact",
                 "node:entry",
                 List.of("evidence:entry")),
+            unavailableContext(
+                "entry:context-without-fact",
+                "flow:context-without-fact",
+                "HTTP POST /context-without-fact"),
             List.of(),
             List.of(),
             List.of(
@@ -81,6 +85,23 @@ class EvidenceCapsuleProjectorTest {
 
     assertThat(capsule.factViews()).isEmpty();
     assertThat(capsule.entryContext().entryId()).isEqualTo("entry:context-without-fact");
+  }
+
+  private static FlowCompilation.EntryContext unavailableContext(
+      String entryId, String flowId, String trigger) {
+    return new FlowCompilation.EntryContext(
+        "entry-context:" + entryId,
+        entryId,
+        flowId,
+        trigger,
+        "NOT_COLLECTED",
+        "JAVA_CODE_CONTEXT_NOT_AVAILABLE_ON_STRICT_GRAPH_PATH",
+        null,
+        new FlowCompilation.StrictTechnicalContext(
+            "example.Controller#entry()", List.of(), List.of(), List.of(), List.of()),
+        List.of(),
+        List.of(),
+        List.of("JAVA_CODE_CONTEXT_NOT_AVAILABLE_ON_STRICT_GRAPH_PATH"));
   }
 
   @Test

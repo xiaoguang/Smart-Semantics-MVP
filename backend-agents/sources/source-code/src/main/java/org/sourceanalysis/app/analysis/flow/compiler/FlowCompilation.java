@@ -13,6 +13,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import org.sourceanalysis.app.analysis.code.EntryCodeContext;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.evidence.SourceLocatorV1;
 
@@ -23,18 +24,6 @@ public record FlowCompilation(
     List<FlowSlice> flowSlices,
     List<EntryContext> entryContexts,
     List<FlowGap> flowGaps) {
-
-  /**
-   * Compatibility constructor for unit fixtures that predate persisted entry context. Production
-   * compilation always supplies a real context per discovered entry.
-   */
-  public FlowCompilation(
-      FlowCompilationProfile profile,
-      List<EntryDisposition> entryDispositions,
-      List<FlowSlice> flowSlices,
-      List<FlowGap> flowGaps) {
-    this(profile, entryDispositions, flowSlices, legacyEntryContexts(entryDispositions), flowGaps);
-  }
 
   public FlowCompilation {
     profile = Objects.requireNonNull(profile, "Flow compilation profile");
@@ -94,27 +83,6 @@ public record FlowCompilation(
     }
   }
 
-  private static List<EntryContext> legacyEntryContexts(List<EntryDisposition> entryDispositions) {
-    Objects.requireNonNull(entryDispositions, "entry dispositions");
-    return entryDispositions.stream()
-        .map(
-            disposition ->
-                new EntryContext(
-                    "entry-context:legacy:" + disposition.entryId(),
-                    disposition.entryId(),
-                    disposition.flowSliceId(),
-                    "legacy-entry-context",
-                    "unknown",
-                    List.of(),
-                    List.of(),
-                    List.of(),
-                    List.of(),
-                    List.of(),
-                    disposition.gapIds(),
-                    List.of("LEGACY_CONTEXT_WITHOUT_GRAPH_RELATIONS")))
-        .toList();
-  }
-
   /** One complete, unique terminal disposition for an ApplicationDiscovery entry. */
   public record EntryDisposition(
       String entryId,
@@ -131,13 +99,15 @@ public record FlowCompilation(
     public EntryDisposition {
       required(entryId, "entry ID");
       if (!("COMPILED".equals(disposition)
+          || "CONTEXT_ONLY".equals(disposition)
           || "GAP".equals(disposition)
           || "EXCLUDED".equals(disposition))) {
         throw broken();
       }
       gapIds = List.copyOf(orderedStrings(gapIds, "entry Gap IDs"));
       if (("COMPILED".equals(disposition) != (flowSliceId != null))
-          || (!"COMPILED".equals(disposition) && gapIds.isEmpty())
+          || (("GAP".equals(disposition) || "EXCLUDED".equals(disposition)) && gapIds.isEmpty())
+          || ("CONTEXT_ONLY".equals(disposition) && !gapIds.isEmpty())
           || ("COMPILED".equals(disposition) != (reasonCode == null))) {
         throw broken();
       }
@@ -147,20 +117,19 @@ public record FlowCompilation(
   }
 
   /**
-   * One entry-owned technical narrative for the model-material projector. It is intentionally a
-   * relationship record, not a business classification: Step05 says which code calls which code,
-   * which values cross that call, which guard matters, and where the source excerpts belong.
+   * One entry-owned neutral code context plus optional strict technical enrichment. The neutral
+   * context is the common engine contract and is sufficient for a model-readable Capsule; a strict
+   * Flow/Fact result may be attached but is never required for collected source.
    */
   public record EntryContext(
       String entryContextId,
       String entryId,
       String flowSliceId,
       String trigger,
-      String entrySignature,
-      List<CallContext> calls,
-      List<ControlContext> controls,
-      List<ReturnContext> returns,
-      List<SourceLocatorV1> sourceLocators,
+      String collectionStatus,
+      String collectionReason,
+      EntryCodeContext codeContext,
+      StrictTechnicalContext strictTechnicalContext,
       List<String> factIds,
       List<String> gapIds,
       List<String> limitations) {
@@ -169,25 +138,47 @@ public record FlowCompilation(
       required(entryContextId, "entry context ID");
       required(entryId, "entry context entry ID");
       required(trigger, "entry context trigger");
-      required(entrySignature, "entry context entry signature");
-      calls = List.copyOf(ordered(calls, CallContext::sortKey, "entry context calls"));
-      controls =
-          List.copyOf(ordered(controls, ControlContext::controlNodeId, "entry context controls"));
-      returns =
-          List.copyOf(ordered(returns, ReturnContext::terminalNodeId, "entry context returns"));
+      if ("COLLECTED".equals(collectionStatus)) {
+        if (collectionReason != null
+            || codeContext == null
+            || !entryId.equals(codeContext.entryId())) {
+          throw broken();
+        }
+      } else if ("NOT_COLLECTED".equals(collectionStatus)) {
+        required(collectionReason, "entry context collection reason");
+        if (codeContext != null) throw broken();
+      } else {
+        throw broken();
+      }
+      factIds = List.copyOf(orderedStrings(factIds, "entry context Fact IDs"));
+      gapIds = List.copyOf(orderedStrings(gapIds, "entry context Gap IDs"));
+      limitations = List.copyOf(orderedStrings(limitations, "entry context limitations"));
+    }
+  }
+
+  /** Optional exact output of the legacy graph/fact enhancement path. */
+  public record StrictTechnicalContext(
+      String entrySignature,
+      List<CallContext> calls,
+      List<ControlContext> controls,
+      List<ReturnContext> returns,
+      List<SourceLocatorV1> sourceLocators) {
+
+    public StrictTechnicalContext {
+      required(entrySignature, "strict entry signature");
+      calls = List.copyOf(ordered(calls, CallContext::sortKey, "strict entry calls"));
+      controls = List.copyOf(ordered(controls, ControlContext::controlNodeId, "strict controls"));
+      returns = List.copyOf(ordered(returns, ReturnContext::terminalNodeId, "strict returns"));
       sourceLocators =
           List.copyOf(
-              Objects.requireNonNull(sourceLocators, "entry context source locators").stream()
-                  .peek(value -> Objects.requireNonNull(value, "entry context source locator"))
+              Objects.requireNonNull(sourceLocators, "strict source locators").stream()
+                  .peek(value -> Objects.requireNonNull(value, "strict source locator"))
                   .distinct()
                   .sorted(
                       Comparator.comparing(SourceLocatorV1::path)
                           .thenComparingLong(SourceLocatorV1::startByte)
                           .thenComparingLong(SourceLocatorV1::endByteExclusive))
                   .toList());
-      factIds = List.copyOf(orderedStrings(factIds, "entry context Fact IDs"));
-      gapIds = List.copyOf(orderedStrings(gapIds, "entry context Gap IDs"));
-      limitations = List.copyOf(orderedStrings(limitations, "entry context limitations"));
     }
   }
 

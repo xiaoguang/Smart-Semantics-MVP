@@ -19,7 +19,6 @@ public record CapsuleProjection(
   public CapsuleProjection {
     Objects.requireNonNull(profile, "projection profile");
     Objects.requireNonNull(flowCompilationRef, "flow compilation reference");
-    Objects.requireNonNull(proofPackRef, "proof pack reference");
     capsules = List.copyOf(ordered(capsules, EvidenceCapsule::evidenceCapsuleId, "capsules"));
     modelEvidenceSpans =
         List.copyOf(ordered(modelEvidenceSpans, ModelEvidenceSpan::spanId, "model evidence spans"));
@@ -31,7 +30,10 @@ public record CapsuleProjection(
                 "projection obligations"));
     List<ModelEvidenceSpan> closedSpans = modelEvidenceSpans;
     List<ProjectionObligation> closedObligations = projectionObligations;
-    if (capsules.stream().map(EvidenceCapsule::flowSliceId).distinct().count() != capsules.size()
+    if (capsules.stream().map(EvidenceCapsule::evidenceCapsuleId).distinct().count()
+            != capsules.size()
+        || capsules.stream().map(value -> value.entryView().entryId()).distinct().count()
+            != capsules.size()
         || capsules.stream()
             .flatMap(value -> value.modelEvidenceSpanIds().stream())
             .anyMatch(id -> closedSpans.stream().noneMatch(span -> span.spanId().equals(id)))
@@ -65,8 +67,8 @@ public record CapsuleProjection(
 
     public EvidenceCapsule {
       required(evidenceCapsuleId, "evidence capsule ID");
-      required(flowSliceId, "Flow slice ID");
-      required(proofPackId, "proof pack ID");
+      if (flowSliceId != null) required(flowSliceId, "Flow slice ID");
+      if (proofPackId != null) required(proofPackId, "proof pack ID");
       if (!"ELIGIBLE".equals(modelEligibility) && !"INELIGIBLE".equals(modelEligibility)) {
         throw broken();
       }
@@ -86,7 +88,7 @@ public record CapsuleProjection(
                   FlowCompilation.ProcessJoinSignalV1::processJoinSignalId,
                   "process-join signals"));
       if (processJoinSignals.stream()
-          .anyMatch(signal -> !flowSliceId.equals(signal.flowSliceId()))) {
+          .anyMatch(signal -> flowSliceId == null || !flowSliceId.equals(signal.flowSliceId()))) {
         throw broken();
       }
       modelEvidenceSpanIds =
@@ -94,62 +96,13 @@ public record CapsuleProjection(
       projectionObligationIds =
           List.copyOf(orderedStrings(projectionObligationIds, "projection obligations"));
       budgetUsage = Objects.requireNonNull(budgetUsage, "budget usage");
-      if (outcomePathViews.isEmpty()
-          || modelEvidenceSpanIds.isEmpty()
-          || projectionObligationIds.isEmpty()
-          || ("ELIGIBLE".equals(modelEligibility) != modelIneligibilityGapIds.isEmpty())) {
+      if (("ELIGIBLE".equals(modelEligibility) != modelIneligibilityGapIds.isEmpty())) {
         throw broken();
       }
-      if (!flowSliceId.equals(entryContext.flowSliceId())
+      if (!Objects.equals(flowSliceId, entryContext.flowSliceId())
           || !entryView.entryId().equals(entryContext.entryId())) {
         throw broken();
       }
-    }
-
-    /**
-     * Compatibility constructor for historical unit fixtures; production always projects context.
-     */
-    public EvidenceCapsule(
-        String evidenceCapsuleId,
-        String flowSliceId,
-        String proofPackId,
-        String modelEligibility,
-        List<String> modelIneligibilityGapIds,
-        FlowEntryView entryView,
-        List<FlowFactView> factViews,
-        List<FlowGapView> gapViews,
-        List<FlowOutcomePathView> outcomePathViews,
-        List<FlowCompilation.ProcessJoinSignalV1> processJoinSignals,
-        List<String> modelEvidenceSpanIds,
-        List<String> projectionObligationIds,
-        BudgetUsage budgetUsage) {
-      this(
-          evidenceCapsuleId,
-          flowSliceId,
-          proofPackId,
-          modelEligibility,
-          modelIneligibilityGapIds,
-          entryView,
-          new FlowCompilation.EntryContext(
-              "entry-context:legacy:" + entryView.entryId(),
-              entryView.entryId(),
-              flowSliceId,
-              entryView.trigger(),
-              entryView.trigger(),
-              List.of(),
-              List.of(),
-              List.of(),
-              List.of(),
-              List.of(),
-              List.of(),
-              List.of("LEGACY_CONTEXT_WITHOUT_GRAPH_RELATIONS")),
-          factViews,
-          gapViews,
-          outcomePathViews,
-          processJoinSignals,
-          modelEvidenceSpanIds,
-          projectionObligationIds,
-          budgetUsage);
     }
   }
 
@@ -162,7 +115,6 @@ public record CapsuleProjection(
       required(rootNodeId, "root node ID");
       routeEvidenceNodeIds =
           List.copyOf(orderedStrings(routeEvidenceNodeIds, "route evidence IDs"));
-      if (routeEvidenceNodeIds.isEmpty()) throw broken();
     }
   }
 

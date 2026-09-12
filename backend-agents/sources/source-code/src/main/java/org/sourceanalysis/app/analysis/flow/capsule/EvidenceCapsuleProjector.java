@@ -1,6 +1,7 @@
 package org.sourceanalysis.app.analysis.flow.capsule;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.sourceanalysis.app.analysis.code.EntryCodeContext;
 import org.sourceanalysis.app.analysis.fact.publish.ProvenCodeFactsReference;
 import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilation;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
@@ -50,7 +52,8 @@ public final class EvidenceCapsuleProjector {
       Comparator.comparing(
           value -> value.getBytes(StandardCharsets.UTF_8), EvidenceCapsuleProjector::compare);
   private static final String M1_TYPE = "BUSINESS_FLOWS_FLOW_COMPILATION";
-  private static final String M1_SCHEMA = "business-flows-flow-compilation-v4";
+  private static final String M1_SCHEMA = "business-flows-flow-compilation-v5";
+  private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final Comparator<SourceLocatorV1> SOURCE_LOCATOR_ORDER =
       Comparator.comparing(SourceLocatorV1::path)
           .thenComparingLong(SourceLocatorV1::startByte)
@@ -99,6 +102,10 @@ public final class EvidenceCapsuleProjector {
 
       VerifiedSourceTextSet texts = sourceReader.reopen(source);
       requireSourceTextSet(texts, sourceStep);
+      if (isNavigationOnly(graphStep, factStep)) {
+        return projectNavigationContexts(
+            compilationPublication, compilationPayload, texts, profile);
+      }
       Inputs inputs = inputs(compilationPublication, graphStep, factStep, texts);
       if (inputs.flows().size() > profile.maxCapsules()) {
         throw failure("BUSINESS_FLOWS_RESOURCE_LIMIT_EXCEEDED");
@@ -124,6 +131,118 @@ public final class EvidenceCapsuleProjector {
     } catch (RuntimeException failure) {
       throw failure("EVIDENCE_PROJECTION_INVARIANT_BROKEN");
     }
+  }
+
+  private CapsuleProjection projectNavigationContexts(
+      ReopenedModulePublication compilation,
+      ArtifactReference compilationPayload,
+      VerifiedSourceTextSet texts,
+      CapsuleProjectionProfile profile) {
+    JsonNode envelope = canonicalJson.parseCanonical(compilation.payloads().get(0).canonicalUtf8());
+    requireHeader(envelope, M1_TYPE, M1_SCHEMA);
+    List<FlowCompilation.EntryContext> contexts =
+        parseEntryContexts(object(envelope, "payload")).values().stream()
+            .sorted(Comparator.comparing(FlowCompilation.EntryContext::entryId, UTF8_ORDER))
+            .toList();
+    long collected =
+        contexts.stream().filter(value -> "COLLECTED".equals(value.collectionStatus())).count();
+    if (collected > profile.maxCapsules()) {
+      throw failure("BUSINESS_FLOWS_RESOURCE_LIMIT_EXCEEDED");
+    }
+    Map<String, VerifiedSourceTextDocument> documents =
+        texts.documents().stream()
+            .collect(
+                java.util.stream.Collectors.toMap(
+                    VerifiedSourceTextDocument::path, value -> value));
+    List<CapsuleProjection.EvidenceCapsule> capsules = new ArrayList<>();
+    for (FlowCompilation.EntryContext context : contexts) {
+      if (!"COLLECTED".equals(context.collectionStatus())) continue;
+      validateCodeContextSources(context.codeContext(), documents);
+      long sourceBytes = codeContextBytes(context.codeContext());
+      boolean exceeds = sourceBytes > profile.maxCapsuleUtf8Bytes();
+      String gapId =
+          exceeds
+              ? contentId(
+                  "flow-gap",
+                  "CAPSULE_BUDGET_NO_SAFE_SPLIT",
+                  context.entryId(),
+                  profile.profileRef().artifactId().value())
+              : null;
+      List<CapsuleProjection.FlowGapView> gapViews =
+          gapId == null
+              ? List.of()
+              : List.of(
+                  new CapsuleProjection.FlowGapView(
+                      gapId,
+                      "ENTRY_CONTEXT",
+                      "CAPSULE_BUDGET_NO_SAFE_SPLIT",
+                      List.of(context.entryId()),
+                      List.of(),
+                      "CAPSULE_PROJECTION",
+                      null));
+      capsules.add(
+          new CapsuleProjection.EvidenceCapsule(
+              contentId(
+                  "evidence-capsule",
+                  context.entryContextId(),
+                  context.codeContext().entryMethodKey()),
+              null,
+              null,
+              exceeds ? "INELIGIBLE" : "ELIGIBLE",
+              gapId == null ? List.of() : List.of(gapId),
+              new CapsuleProjection.FlowEntryView(
+                  context.entryId(),
+                  context.trigger(),
+                  context.codeContext().entryMethodKey(),
+                  List.of()),
+              context,
+              List.of(),
+              gapViews,
+              List.of(),
+              List.of(),
+              List.of(),
+              List.of(),
+              new CapsuleProjection.BudgetUsage(
+                  context.codeContext().methods().size()
+                      + context.codeContext().supportingSources().size(),
+                  sourceBytes)));
+    }
+    return new CapsuleProjection(profile, compilationPayload, null, capsules, List.of(), List.of());
+  }
+
+  private static boolean isNavigationOnly(
+      ReopenedAnalysisStepPublication graphs, ReopenedAnalysisStepPublication facts) {
+    return graphs.semanticPayloads().size() == 1
+        && "java-code-index.jsonl".equals(graphs.semanticPayloads().get(0).descriptor().fileName())
+        && facts.semanticPayloads().size() == 1
+        && "fact-accounting.json".equals(facts.semanticPayloads().get(0).descriptor().fileName())
+        && "proven-code-facts-fact-accounting-v4"
+            .equals(facts.semanticPayloads().get(0).descriptor().schemaVersion());
+  }
+
+  private static void validateCodeContextSources(
+      EntryCodeContext context, Map<String, VerifiedSourceTextDocument> documents) {
+    List<EntryCodeContext.SourceSource> sources = new ArrayList<>();
+    context.methods().forEach(value -> sources.add(value.source()));
+    context.supportingSources().forEach(value -> sources.add(value.source()));
+    for (EntryCodeContext.SourceSource source : sources) {
+      VerifiedSourceTextDocument document = documents.get(source.path());
+      if (document == null) throw failure("EVIDENCE_SOURCE_REOPEN_MISMATCH");
+      String text = new String(document.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8);
+      int start = source.startOffsetUtf16();
+      int end = Math.addExact(start, source.lengthUtf16());
+      if (end > text.length() || !text.substring(start, end).equals(source.text())) {
+        throw failure("EVIDENCE_SOURCE_REOPEN_MISMATCH");
+      }
+    }
+  }
+
+  private static long codeContextBytes(EntryCodeContext context) {
+    return java.util.stream.Stream.concat(
+            context.methods().stream().map(value -> value.source().text()),
+            context.supportingSources().stream().map(value -> value.source().text()))
+        .mapToLong(value -> value.getBytes(StandardCharsets.UTF_8).length)
+        .sum();
   }
 
   private ProjectedFlow projectFlow(
@@ -645,53 +764,12 @@ public final class EvidenceCapsuleProjector {
   private static Map<String, FlowCompilation.EntryContext> parseEntryContexts(JsonNode payload) {
     Map<String, FlowCompilation.EntryContext> values = new HashMap<>();
     for (JsonNode value : array(payload, "entryContexts")) {
-      List<FlowCompilation.CallContext> calls = new ArrayList<>();
-      for (JsonNode call : array(value, "calls")) {
-        calls.add(
-            new FlowCompilation.CallContext(
-                text(call, "callerSignature"),
-                text(call, "targetSignature"),
-                textSequence(call, "argumentExpressions"),
-                text(call, "resolution"),
-                booleanValue(call, "boundary"),
-                ids(call, "factIds"),
-                ids(call, "proofIds"),
-                ids(call, "evidenceNodeIds")));
+      FlowCompilation.EntryContext context;
+      try {
+        context = MAPPER.treeToValue(value, FlowCompilation.EntryContext.class);
+      } catch (com.fasterxml.jackson.core.JsonProcessingException malformed) {
+        throw failure("FLOW_CONTEXT_REFERENCE_BROKEN");
       }
-      List<FlowCompilation.ControlContext> controls = new ArrayList<>();
-      for (JsonNode control : array(value, "controls")) {
-        controls.add(
-            new FlowCompilation.ControlContext(
-                id(control, "controlNodeId"),
-                text(control, "ownerSignature"),
-                text(control, "condition"),
-                ids(control, "evidenceNodeIds")));
-      }
-      List<FlowCompilation.ReturnContext> returns = new ArrayList<>();
-      for (JsonNode terminal : array(value, "returns")) {
-        returns.add(
-            new FlowCompilation.ReturnContext(
-                id(terminal, "terminalNodeId"),
-                text(terminal, "terminalKind"),
-                ids(terminal, "evidenceNodeIds")));
-      }
-      JsonNode flowSlice = value.get("flowSliceId");
-      String flowSliceId =
-          flowSlice == null || flowSlice.isNull() ? null : id(value, "flowSliceId");
-      FlowCompilation.EntryContext context =
-          new FlowCompilation.EntryContext(
-              id(value, "entryContextId"),
-              id(value, "entryId"),
-              flowSliceId,
-              text(value, "trigger"),
-              text(value, "entrySignature"),
-              calls,
-              controls,
-              returns,
-              sourceLocators(value, "sourceLocators"),
-              ids(value, "factIds"),
-              ids(value, "gapIds"),
-              opaqueTexts(value, "limitations"));
       if (values.put(context.entryId(), context) != null) {
         throw failure("FLOW_CONTEXT_REFERENCE_BROKEN");
       }

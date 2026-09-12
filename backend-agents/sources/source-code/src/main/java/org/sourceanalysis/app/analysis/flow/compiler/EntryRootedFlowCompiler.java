@@ -188,11 +188,11 @@ public final class EntryRootedFlowCompiler {
         entry.entryId(),
         flow == null ? null : flow.flowSliceId(),
         entry.trigger(),
-        entrySignature,
-        calls,
-        controls,
-        returns,
-        sourceLocators,
+        "NOT_COLLECTED",
+        "JAVA_CODE_CONTEXT_NOT_AVAILABLE_ON_STRICT_GRAPH_PATH",
+        null,
+        new FlowCompilation.StrictTechnicalContext(
+            entrySignature, calls, controls, returns, sourceLocators),
         factIds,
         gapIds,
         limitations);

@@ -1986,7 +1986,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_FLOW_COMPILATION",
-        "business-flows-flow-compilation-v4",
+        "business-flows-flow-compilation-v5",
         "business-flows-flow-compilation",
         "application/json",
         "MODULE_ARTIFACT_JSON",
@@ -1994,7 +1994,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_CAPSULE_PROJECTION",
-        "business-flows-capsule-projection-v9",
+        "business-flows-capsule-projection-v10",
         "business-flows-capsule-projection",
         "application/json",
         "MODULE_ARTIFACT_JSON",
@@ -2002,7 +2002,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_FLOW_SLICES",
-        "business-flows-flow-slices-v4",
+        "business-flows-flow-slices-v5",
         "business-flows-flow-slices",
         "application/json",
         "STANDALONE_JSON",
@@ -2010,7 +2010,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_FLOW_COVERAGE",
-        "business-flows-flow-coverage-v1",
+        "business-flows-flow-coverage-v2",
         "business-flows-flow-coverage",
         "application/json",
         "STANDALONE_JSON",
@@ -2018,7 +2018,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_ENTRY_DISPOSITION",
-        "business-flows-entry-disposition-v1",
+        "business-flows-entry-disposition-v2",
         "business-flows-entry-disposition",
         "application/x-ndjson",
         "CANONICAL_JSONL",
@@ -2026,7 +2026,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_EVIDENCE_CAPSULE",
-        "business-flows-evidence-capsule-v7",
+        "business-flows-evidence-capsule-v8",
         "business-flows-evidence-capsule",
         "application/x-ndjson",
         "CANONICAL_JSONL",

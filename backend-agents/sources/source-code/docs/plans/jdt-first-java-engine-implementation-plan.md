@@ -213,7 +213,7 @@
 - Run `mvn -Dtest=JavaCodeIndexPublicationSpecifierTest,ProgramGraphsExecutionTest,ProgramGraphsPublicationSpecifierTest,ProgramGraphsAnalysisStepArtifactStoreTest,ProvenCodeFactsExecutionTest,ProvenCodeFactsPublicationSpecifierTest,BusinessFlowsPublicationSpecifierTest,CanonicalArtifactPolicyRegistryContractTest test`.
 - Inspect one JDT fixture run's receipts. Pass means Step03 lists one semantic descriptor, Step04 lists one semantic descriptor, counts are null rather than zero, and no graph/fact placeholder exists.
 
-## Task 6: Make Step05 context-first and update Capsule/readers (approved 1.7)
+## Task 6: Make Step05 context-first and update Capsule/readers (COMPLETE)
 
 **Files**
 

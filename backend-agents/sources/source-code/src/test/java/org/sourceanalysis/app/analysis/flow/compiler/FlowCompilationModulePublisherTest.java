@@ -79,7 +79,7 @@ class FlowCompilationModulePublisherTest {
       assertThat(reopened.payloads().get(0).descriptor().artifactType())
           .isEqualTo("BUSINESS_FLOWS_FLOW_COMPILATION");
       assertThat(reopened.payloads().get(0).descriptor().schemaVersion())
-          .isEqualTo("business-flows-flow-compilation-v4");
+          .isEqualTo("business-flows-flow-compilation-v5");
       assertThat(reopened.receipt().upstreamArtifacts()).hasSize(13);
     }
   }
@@ -101,7 +101,7 @@ class FlowCompilationModulePublisherTest {
       JsonNode payload = envelope.path("payload");
 
       assertThat(envelope.path("schemaVersion").asText())
-          .isEqualTo("business-flows-flow-compilation-v4");
+          .isEqualTo("business-flows-flow-compilation-v5");
       assertThat(compilation.flowSlices()).hasSize(2);
       assertThat(
               compilation.flowSlices().stream()

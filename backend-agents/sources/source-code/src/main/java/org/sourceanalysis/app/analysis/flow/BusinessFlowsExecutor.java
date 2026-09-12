@@ -4,6 +4,7 @@ import java.util.Objects;
 import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjection;
 import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionModulePublisher;
 import org.sourceanalysis.app.analysis.flow.capsule.EvidenceCapsuleProjector;
+import org.sourceanalysis.app.analysis.flow.compiler.EntryContextAssembler;
 import org.sourceanalysis.app.analysis.flow.compiler.EntryRootedFlowCompiler;
 import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilation;
 import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilationModulePublisher;
@@ -41,12 +42,19 @@ public final class BusinessFlowsExecutor {
   public BusinessFlowsReference execute(BusinessFlowsExecutionRequest request) {
     Objects.requireNonNull(request, "business flows execution request");
     FlowCompilation compilation =
-        new EntryRootedFlowCompiler(stepArtifacts)
-            .compile(
-                request.applicationDiscovery(),
-                request.programGraphs(),
-                request.provenCodeFacts(),
-                request.flowProfile());
+        navigationOnly(request)
+            ? new EntryContextAssembler(stepArtifacts)
+                .assemble(
+                    request.applicationDiscovery(),
+                    request.programGraphs(),
+                    request.provenCodeFacts(),
+                    request.flowProfile())
+            : new EntryRootedFlowCompiler(stepArtifacts)
+                .compile(
+                    request.applicationDiscovery(),
+                    request.programGraphs(),
+                    request.provenCodeFacts(),
+                    request.flowProfile());
     ModulePublicationReference flowCompilation =
         new FlowCompilationModulePublisher(moduleArtifacts, stepArtifacts)
             .publish(
@@ -80,5 +88,12 @@ public final class BusinessFlowsExecutor {
             request.provenCodeFacts(),
             flowCompilation,
             capsuleProjection);
+  }
+
+  private boolean navigationOnly(BusinessFlowsExecutionRequest request) {
+    var reopened = stepArtifacts.reopen(request.programGraphs().publication());
+    return reopened.semanticPayloads().size() == 1
+        && "java-code-index.jsonl"
+            .equals(reopened.semanticPayloads().get(0).descriptor().fileName());
   }
 }

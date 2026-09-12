@@ -1,5 +1,6 @@
 package org.sourceanalysis.app.analysis.flow.compiler;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -17,6 +18,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndex;
+import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndexReader;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.fact.publish.ProvenCodeFactsReference;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
@@ -34,6 +37,7 @@ import org.sourceanalysis.app.artifact.InstalledModulePublication;
 import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.ModuleInstallRequest;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
+import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.evidence.SourceLocatorV1;
 
 /**
@@ -43,9 +47,10 @@ public final class FlowCompilationModulePublisher {
 
   private static final String FILE_NAME = "flow-compilation.json";
   private static final String ARTIFACT_TYPE = "BUSINESS_FLOWS_FLOW_COMPILATION";
-  private static final String SCHEMA_VERSION = "business-flows-flow-compilation-v4";
+  private static final String SCHEMA_VERSION = "business-flows-flow-compilation-v5";
   private static final String ARTIFACT_PREFIX = "business-flows-flow-compilation";
-  private static final String MODULE_VERSION = "v1";
+  private static final String MODULE_VERSION = "v2";
+  private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final Comparator<String> UTF8_ORDER =
       (left, right) -> {
         byte[] leftBytes = left.getBytes(StandardCharsets.UTF_8);
@@ -60,6 +65,7 @@ public final class FlowCompilationModulePublisher {
       };
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
+  private final CanonicalAnalysisStepArtifactStore analysisSteps;
   private final PersistedFlowCompilationInputReader inputs;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
 
@@ -68,6 +74,7 @@ public final class FlowCompilationModulePublisher {
       CanonicalModuleArtifactStore moduleArtifacts,
       CanonicalAnalysisStepArtifactStore analysisSteps) {
     this.moduleArtifacts = Objects.requireNonNull(moduleArtifacts, "module artifact store");
+    this.analysisSteps = Objects.requireNonNull(analysisSteps, "analysis step artifact store");
     inputs = new PersistedFlowCompilationInputReader(analysisSteps);
   }
 
@@ -81,6 +88,9 @@ public final class FlowCompilationModulePublisher {
       ProvenCodeFactsReference facts,
       FlowCompilation compilation) {
     Objects.requireNonNull(compilation, "Flow compilation");
+    if (isNavigationOnly(graphs)) {
+      return publishNavigation(discovery, graphs, facts, compilation);
+    }
     PersistedFlowCompilationInputReader.PersistedFlowCompilationInputs reopened =
         inputs.reopen(discovery, graphs, facts);
     requireCompilationMatchesInputs(compilation, reopened);
@@ -100,7 +110,14 @@ public final class FlowCompilationModulePublisher {
         gapIds.isEmpty()
             ? ModuleCompletionStatus.SUCCEEDED
             : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
-    CanonicalModulePayload payload = payload(address, compilation, reopened, status, gapIds);
+    CanonicalModulePayload payload =
+        payload(
+            address,
+            compilation,
+            reopened.controls(),
+            reopened.upstreamArtifacts(),
+            status,
+            gapIds);
     InstalledModulePublication publication =
         moduleArtifacts.install(
             new ModuleInstallRequest(
@@ -112,6 +129,82 @@ public final class FlowCompilationModulePublisher {
                 gapIds,
                 List.of(payload)));
     return publication.reference();
+  }
+
+  private ModulePublicationReference publishNavigation(
+      ApplicationDiscoveryReference discovery,
+      ProgramGraphsReference graphs,
+      ProvenCodeFactsReference facts,
+      FlowCompilation compilation) {
+    JavaCodeIndex index = new JavaCodeIndexReader(analysisSteps).reopen(graphs);
+    ReopenedAnalysisStepPublication discoveryStep = analysisSteps.reopen(discovery.publication());
+    ReopenedAnalysisStepPublication graphStep = analysisSteps.reopen(graphs.publication());
+    ReopenedAnalysisStepPublication factStep = analysisSteps.reopen(facts.publication());
+    if (!discoveryStep.receipt().controls().equals(graphStep.receipt().controls())
+        || !discoveryStep.receipt().controls().equals(factStep.receipt().controls())
+        || compilation.flowSlices().size() != 0
+        || compilation.entryContexts().size() != index.entries().size()) {
+      throw broken();
+    }
+    Map<String, JavaCodeIndex.EntryCollection> entries =
+        index.entries().stream()
+            .collect(
+                java.util.stream.Collectors.toMap(value -> value.seed().entryId(), value -> value));
+    for (FlowCompilation.EntryContext context : compilation.entryContexts()) {
+      JavaCodeIndex.EntryCollection source = entries.get(context.entryId());
+      if (source == null
+          || !source.seed().trigger().equals(context.trigger())
+          || !source.collectionStatus().equals(context.collectionStatus())
+          || !Objects.equals(source.reason(), context.collectionReason())
+          || !Objects.equals(source.context(), context.codeContext())
+          || context.strictTechnicalContext() != null) {
+        throw broken();
+      }
+    }
+    List<ArtifactReference> upstream =
+        java.util.stream.Stream.of(discoveryStep, graphStep, factStep)
+            .flatMap(step -> step.semanticPayloads().stream())
+            .map(
+                value ->
+                    new ArtifactReference(
+                        value.descriptor().artifactId(), value.descriptor().sha256()))
+            .sorted(Comparator.comparing(value -> value.artifactId().value(), UTF8_ORDER))
+            .toList();
+    List<String> gapIds =
+        compilation.entryDispositions().stream()
+            .flatMap(value -> value.gapIds().stream())
+            .distinct()
+            .sorted(UTF8_ORDER)
+            .toList();
+    ModuleCompletionStatus status =
+        gapIds.isEmpty()
+            ? ModuleCompletionStatus.SUCCEEDED
+            : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
+    AnalysisStepModuleAddress address =
+        new AnalysisStepModuleAddress(
+            graphs.publication().address().runId(),
+            AnalysisStepKey.BUSINESS_FLOWS,
+            1,
+            "flow-compiler");
+    CanonicalModulePayload payload =
+        payload(address, compilation, discoveryStep.receipt().controls(), upstream, status, gapIds);
+    return moduleArtifacts
+        .install(
+            new ModuleInstallRequest(
+                address,
+                MODULE_VERSION,
+                upstream,
+                discoveryStep.receipt().controls(),
+                status,
+                gapIds,
+                List.of(payload)))
+        .reference();
+  }
+
+  private boolean isNavigationOnly(ProgramGraphsReference graphs) {
+    ReopenedAnalysisStepPublication step = analysisSteps.reopen(graphs.publication());
+    return step.semanticPayloads().size() == 1
+        && "java-code-index.jsonl".equals(step.semanticPayloads().get(0).descriptor().fileName());
   }
 
   private void requireCompilationMatchesInputs(
@@ -307,7 +400,8 @@ public final class FlowCompilationModulePublisher {
   private CanonicalModulePayload payload(
       AnalysisStepModuleAddress address,
       FlowCompilation compilation,
-      PersistedFlowCompilationInputReader.PersistedFlowCompilationInputs reopened,
+      ArtifactControls controls,
+      List<ArtifactReference> upstreamArtifacts,
       ModuleCompletionStatus status,
       List<String> gapIds) {
     ObjectNode body = JsonNodeFactory.instance.objectNode();
@@ -322,13 +416,13 @@ public final class FlowCompilationModulePublisher {
     ArrayNode gaps = body.putArray("flowGaps");
     compilation.flowGaps().forEach(value -> gap(gaps.addObject(), value));
     shard(body.putArray("entryShardReceipts").addObject(), compilation);
-    coverage(body.putObject("coverage"), compilation, reopened);
+    coverage(body.putObject("coverage"), compilation);
     ObjectNode withoutArtifactId = JsonNodeFactory.instance.objectNode();
     withoutArtifactId.put("schemaVersion", SCHEMA_VERSION);
     withoutArtifactId.put("artifactType", ARTIFACT_TYPE);
     withoutArtifactId.set("producer", producer(address));
-    withoutArtifactId.set("upstreamArtifacts", references(reopened.upstreamArtifacts()));
-    withoutArtifactId.set("controls", controls(reopened.controls()));
+    withoutArtifactId.set("upstreamArtifacts", references(upstreamArtifacts));
+    withoutArtifactId.set("controls", controls(controls));
     withoutArtifactId.set("completion", completion(status, gapIds));
     withoutArtifactId.set("payload", body);
     ArtifactId artifactId =
@@ -446,15 +540,19 @@ public final class FlowCompilationModulePublisher {
     if (value.flowSliceId() == null) node.putNull("flowSliceId");
     else node.put("flowSliceId", value.flowSliceId());
     node.put("trigger", value.trigger());
-    node.put("entrySignature", value.entrySignature());
-    ArrayNode calls = node.putArray("calls");
-    value.calls().forEach(call -> callContext(calls.addObject(), call));
-    ArrayNode controls = node.putArray("controls");
-    value.controls().forEach(control -> controlContext(controls.addObject(), control));
-    ArrayNode returns = node.putArray("returns");
-    value.returns().forEach(terminal -> returnContext(returns.addObject(), terminal));
-    ArrayNode sourceLocators = node.putArray("sourceLocators");
-    value.sourceLocators().forEach(locator -> sourceLocator(sourceLocators.addObject(), locator));
+    node.put("collectionStatus", value.collectionStatus());
+    if (value.collectionReason() == null) node.putNull("collectionReason");
+    else node.put("collectionReason", value.collectionReason());
+    node.set(
+        "codeContext",
+        value.codeContext() == null
+            ? JsonNodeFactory.instance.nullNode()
+            : MAPPER.valueToTree(value.codeContext()));
+    node.set(
+        "strictTechnicalContext",
+        value.strictTechnicalContext() == null
+            ? JsonNodeFactory.instance.nullNode()
+            : MAPPER.valueToTree(value.strictTechnicalContext()));
     strings(node.putArray("factIds"), value.factIds());
     strings(node.putArray("gapIds"), value.gapIds());
     strings(node.putArray("limitations"), value.limitations());
@@ -564,10 +662,7 @@ public final class FlowCompilationModulePublisher {
             .toList());
   }
 
-  private static void coverage(
-      ObjectNode node,
-      FlowCompilation compilation,
-      PersistedFlowCompilationInputReader.PersistedFlowCompilationInputs reopened) {
+  private static void coverage(ObjectNode node, FlowCompilation compilation) {
     List<String> entryIds =
         compilation.entryDispositions().stream()
             .map(FlowCompilation.EntryDisposition::entryId)
@@ -583,6 +678,12 @@ public final class FlowCompilationModulePublisher {
         node.putArray("gappedEntryIds"),
         compilation.entryDispositions().stream()
             .filter(value -> "GAP".equals(value.disposition()))
+            .map(FlowCompilation.EntryDisposition::entryId)
+            .toList());
+    strings(
+        node.putArray("contextOnlyEntryIds"),
+        compilation.entryDispositions().stream()
+            .filter(value -> "CONTEXT_ONLY".equals(value.disposition()))
             .map(FlowCompilation.EntryDisposition::entryId)
             .toList());
     strings(

@@ -23,6 +23,9 @@ class FlowCompilationTest {
                 new FlowCompilation.EntryDisposition("entry:a", "COMPILED", "flow:z", List.of()),
                 new FlowCompilation.EntryDisposition("entry:b", "COMPILED", "flow:a", List.of())),
             List.of(flow("flow:a", "entry:b"), flow("flow:z", "entry:a")),
+            List.of(
+                unavailableContext("entry:a", "flow:z", List.of()),
+                unavailableContext("entry:b", "flow:a", List.of())),
             List.of());
 
     assertThat(compilation.entryDispositions())
@@ -35,7 +38,8 @@ class FlowCompilationTest {
 
   @Test
   void acceptsACompleteZeroFlowDenominatorAndAnEntryGapThatHasNoCompiledFlow() {
-    FlowCompilation empty = new FlowCompilation(profile(), List.of(), List.of(), List.of());
+    FlowCompilation empty =
+        new FlowCompilation(profile(), List.of(), List.of(), List.of(), List.of());
     FlowCompilation gapped =
         new FlowCompilation(
             profile(),
@@ -43,6 +47,7 @@ class FlowCompilationTest {
                 new FlowCompilation.EntryDisposition(
                     "entry:a", "GAP", null, List.of("gap:a"), "FLOW_GRAPH_REFERENCE_BROKEN")),
             List.of(),
+            List.of(unavailableContext("entry:a", null, List.of("gap:a"))),
             List.of(
                 new FlowCompilation.FlowGap(
                     "gap:a",
@@ -88,16 +93,37 @@ class FlowCompilationTest {
             "entry:submit",
             null,
             "HTTP POST /submit",
-            "example.Controller#submit()",
-            List.of(first, second),
-            List.of(),
-            List.of(),
-            List.of(),
+            "NOT_COLLECTED",
+            "JAVA_CODE_CONTEXT_NOT_AVAILABLE_ON_STRICT_GRAPH_PATH",
+            null,
+            new FlowCompilation.StrictTechnicalContext(
+                "example.Controller#submit()",
+                List.of(first, second),
+                List.of(),
+                List.of(),
+                List.of()),
             List.of(),
             List.of(),
             List.of());
 
-    assertThat(context.calls()).containsExactly(first, second);
+    assertThat(context.strictTechnicalContext().calls()).containsExactly(first, second);
+  }
+
+  private static FlowCompilation.EntryContext unavailableContext(
+      String entryId, String flowId, List<String> gapIds) {
+    return new FlowCompilation.EntryContext(
+        "entry-context:" + entryId,
+        entryId,
+        flowId,
+        "HTTP POST /" + entryId.substring("entry:".length()),
+        "NOT_COLLECTED",
+        "JAVA_CODE_CONTEXT_NOT_AVAILABLE_ON_STRICT_GRAPH_PATH",
+        null,
+        new FlowCompilation.StrictTechnicalContext(
+            "example.Controller#entry()", List.of(), List.of(), List.of(), List.of()),
+        List.of(),
+        gapIds,
+        List.of("JAVA_CODE_CONTEXT_NOT_AVAILABLE_ON_STRICT_GRAPH_PATH"));
   }
 
   private static FlowCompilation.FlowSlice flow(String flowId, String entryId) {

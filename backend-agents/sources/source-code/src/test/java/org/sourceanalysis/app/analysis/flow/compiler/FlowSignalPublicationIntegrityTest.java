@@ -167,7 +167,11 @@ class FlowSignalPublicationIntegrityTest {
                     flow.flowSliceId().equals(target.flowSliceId()) ? copy(flow, signals) : flow)
             .toList();
     return new FlowCompilation(
-        original.profile(), original.entryDispositions(), flows, original.flowGaps());
+        original.profile(),
+        original.entryDispositions(),
+        flows,
+        original.entryContexts(),
+        original.flowGaps());
   }
 
   private static FlowCompilation.FlowSlice copy(

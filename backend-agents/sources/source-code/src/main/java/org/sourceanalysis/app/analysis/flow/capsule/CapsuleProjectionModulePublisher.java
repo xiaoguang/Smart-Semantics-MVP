@@ -1,6 +1,7 @@
 package org.sourceanalysis.app.analysis.flow.capsule;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -47,10 +48,11 @@ public final class CapsuleProjectionModulePublisher {
 
   private static final String FILE_NAME = "capsule-projection.json";
   private static final String ARTIFACT_TYPE = "BUSINESS_FLOWS_CAPSULE_PROJECTION";
-  private static final String SCHEMA_VERSION = "business-flows-capsule-projection-v9";
+  private static final String SCHEMA_VERSION = "business-flows-capsule-projection-v10";
   private static final String ARTIFACT_PREFIX = "business-flows-capsule-projection";
   private static final String PROJECTION_ID_DOMAIN = "business-flows-capsule-projection-id-v2";
-  private static final String MODULE_VERSION = "v6";
+  private static final String MODULE_VERSION = "v7";
+  private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final Comparator<String> UTF8_ORDER =
       CapsuleProjectionModulePublisher::compareUtf8;
 
@@ -156,32 +158,38 @@ public final class CapsuleProjectionModulePublisher {
     requireModulePayload(compilation, projection.flowCompilationRef(), "flow-compilation.json");
     values.addAll(
         requiredReferences(source, List.of("source-inventory.jsonl", "verified-snapshot.json")));
-    values.addAll(
-        requiredReferences(
-            graphs,
-            List.of(
-                "call-graph.json",
-                "code-structure-graph.json",
-                "control-flow-graph.json",
-                "data-flow-graph.json",
-                "evidence-graph.json",
-                "graph-gaps.jsonl",
-                "graph-index.json")));
-    values.addAll(
-        requiredReferences(
-            facts,
-            List.of(
-                "fact-accounting.json",
-                "gap-ledger.json",
-                "proof-pack.json",
-                "proven-facts.json")));
+    if (projection.proofPackRef() == null) {
+      values.addAll(requiredReferences(graphs, List.of("java-code-index.jsonl")));
+      values.addAll(requiredReferences(facts, List.of("fact-accounting.json")));
+    } else {
+      values.addAll(
+          requiredReferences(
+              graphs,
+              List.of(
+                  "call-graph.json",
+                  "code-structure-graph.json",
+                  "control-flow-graph.json",
+                  "data-flow-graph.json",
+                  "evidence-graph.json",
+                  "graph-gaps.jsonl",
+                  "graph-index.json")));
+      values.addAll(
+          requiredReferences(
+              facts,
+              List.of(
+                  "fact-accounting.json",
+                  "gap-ledger.json",
+                  "proof-pack.json",
+                  "proven-facts.json")));
+    }
     List<ArtifactReference> ordered =
         values.stream()
             .sorted(Comparator.comparing(value -> value.artifactId().value(), UTF8_ORDER))
             .toList();
-    if (ordered.size() != 14
+    int expectedSize = projection.proofPackRef() == null ? 5 : 14;
+    if (ordered.size() != expectedSize
         || ordered.size() != ordered.stream().map(ArtifactReference::artifactId).distinct().count()
-        || !ordered.contains(projection.proofPackRef())) {
+        || (projection.proofPackRef() != null && !ordered.contains(projection.proofPackRef()))) {
       throw failure();
     }
     return ordered;
@@ -256,7 +264,8 @@ public final class CapsuleProjectionModulePublisher {
   private static ObjectNode projectionBody(CapsuleProjection projection) {
     ObjectNode body = JsonNodeFactory.instance.objectNode();
     body.set("flowCompilationRef", reference(projection.flowCompilationRef()));
-    body.set("proofPackRef", reference(projection.proofPackRef()));
+    if (projection.proofPackRef() == null) body.putNull("proofPackRef");
+    else body.set("proofPackRef", reference(projection.proofPackRef()));
     profile(body.putObject("capsuleProjectionProfile"), projection.profile());
     ArrayNode capsules = body.putArray("capsules");
     projection.capsules().forEach(value -> capsule(capsules.addObject(), value));
@@ -293,8 +302,10 @@ public final class CapsuleProjectionModulePublisher {
 
   private static void capsule(ObjectNode node, CapsuleProjection.EvidenceCapsule capsule) {
     node.put("evidenceCapsuleId", capsule.evidenceCapsuleId());
-    node.put("flowSliceId", capsule.flowSliceId());
-    node.put("proofPackId", capsule.proofPackId());
+    if (capsule.flowSliceId() == null) node.putNull("flowSliceId");
+    else node.put("flowSliceId", capsule.flowSliceId());
+    if (capsule.proofPackId() == null) node.putNull("proofPackId");
+    else node.put("proofPackId", capsule.proofPackId());
     node.put("modelEligibility", capsule.modelEligibility());
     strings(node.putArray("modelIneligibilityGapIds"), capsule.modelIneligibilityGapIds());
     ObjectNode entry = node.putObject("entryView");
@@ -326,45 +337,19 @@ public final class CapsuleProjectionModulePublisher {
     if (value.flowSliceId() == null) node.putNull("flowSliceId");
     else node.put("flowSliceId", value.flowSliceId());
     node.put("trigger", value.trigger());
-    node.put("entrySignature", value.entrySignature());
-    ArrayNode calls = node.putArray("calls");
-    value
-        .calls()
-        .forEach(
-            call -> {
-              ObjectNode item = calls.addObject();
-              item.put("callerSignature", call.callerSignature());
-              item.put("targetSignature", call.targetSignature());
-              strings(item.putArray("argumentExpressions"), call.argumentExpressions());
-              item.put("resolution", call.resolution());
-              item.put("boundary", call.boundary());
-              strings(item.putArray("factIds"), call.factIds());
-              strings(item.putArray("proofIds"), call.proofIds());
-              strings(item.putArray("evidenceNodeIds"), call.evidenceNodeIds());
-            });
-    ArrayNode controls = node.putArray("controls");
-    value
-        .controls()
-        .forEach(
-            control -> {
-              ObjectNode item = controls.addObject();
-              item.put("controlNodeId", control.controlNodeId());
-              item.put("ownerSignature", control.ownerSignature());
-              item.put("condition", control.condition());
-              strings(item.putArray("evidenceNodeIds"), control.evidenceNodeIds());
-            });
-    ArrayNode returns = node.putArray("returns");
-    value
-        .returns()
-        .forEach(
-            terminal -> {
-              ObjectNode item = returns.addObject();
-              item.put("terminalNodeId", terminal.terminalNodeId());
-              item.put("terminalKind", terminal.terminalKind());
-              strings(item.putArray("evidenceNodeIds"), terminal.evidenceNodeIds());
-            });
-    ArrayNode sourceLocators = node.putArray("sourceLocators");
-    value.sourceLocators().forEach(locator -> sourceLocator(sourceLocators.addObject(), locator));
+    node.put("collectionStatus", value.collectionStatus());
+    if (value.collectionReason() == null) node.putNull("collectionReason");
+    else node.put("collectionReason", value.collectionReason());
+    node.set(
+        "codeContext",
+        value.codeContext() == null
+            ? JsonNodeFactory.instance.nullNode()
+            : MAPPER.valueToTree(value.codeContext()));
+    node.set(
+        "strictTechnicalContext",
+        value.strictTechnicalContext() == null
+            ? JsonNodeFactory.instance.nullNode()
+            : MAPPER.valueToTree(value.strictTechnicalContext()));
     strings(node.putArray("factIds"), value.factIds());
     strings(node.putArray("gapIds"), value.gapIds());
     strings(node.putArray("limitations"), value.limitations());

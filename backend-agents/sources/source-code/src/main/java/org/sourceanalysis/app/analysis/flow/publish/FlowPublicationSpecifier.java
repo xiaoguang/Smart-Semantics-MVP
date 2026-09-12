@@ -57,15 +57,15 @@ import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 public final class FlowPublicationSpecifier {
 
   private static final Comparator<String> UTF8_ORDER = FlowPublicationSpecifier::compareUtf8;
-  private static final String MODULE_VERSION = "v2";
+  private static final String MODULE_VERSION = "v3";
   private static final String FLOW_SLICES_TYPE = "BUSINESS_FLOWS_FLOW_SLICES";
-  private static final String FLOW_SLICES_SCHEMA = "business-flows-flow-slices-v4";
+  private static final String FLOW_SLICES_SCHEMA = "business-flows-flow-slices-v5";
   private static final String COVERAGE_TYPE = "BUSINESS_FLOWS_FLOW_COVERAGE";
-  private static final String COVERAGE_SCHEMA = "business-flows-flow-coverage-v1";
+  private static final String COVERAGE_SCHEMA = "business-flows-flow-coverage-v2";
   private static final String ENTRY_TYPE = "BUSINESS_FLOWS_ENTRY_DISPOSITION";
-  private static final String ENTRY_SCHEMA = "business-flows-entry-disposition-v1";
+  private static final String ENTRY_SCHEMA = "business-flows-entry-disposition-v2";
   private static final String CAPSULE_TYPE = "BUSINESS_FLOWS_EVIDENCE_CAPSULE";
-  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v7";
+  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v8";
   private static final String GAP_TYPE = "BUSINESS_FLOWS_FLOW_GAP";
   private static final String GAP_SCHEMA = "business-flows-flow-gap-v2";
 
@@ -105,6 +105,7 @@ public final class FlowPublicationSpecifier {
       ReopenedAnalysisStepPublication factStep =
           reopen(facts.publication(), AnalysisStepKey.PROVEN_CODE_FACTS);
       requireLineage(sourceStep, discoveryStep, graphStep, factStep);
+      boolean navigationOnly = isNavigationOnly(graphStep, factStep);
       DiscoveryCoverage discoveryCoverage = requireDiscoveryCoverage(discoveryStep);
       ReopenedModulePublication compiler = moduleArtifacts.reopen(flowCompilation);
       ReopenedModulePublication projector = moduleArtifacts.reopen(capsuleProjection);
@@ -117,7 +118,7 @@ public final class FlowPublicationSpecifier {
               "flow-compiler",
               "flow-compilation.json",
               "BUSINESS_FLOWS_FLOW_COMPILATION",
-              "business-flows-flow-compilation-v4",
+              "business-flows-flow-compilation-v5",
               source.publication().address().runId(),
               sourceStep.receipt().controls(),
               compilerUpstream);
@@ -130,12 +131,19 @@ public final class FlowPublicationSpecifier {
               "capsule-projector",
               "capsule-projection.json",
               "BUSINESS_FLOWS_CAPSULE_PROJECTION",
-              "business-flows-capsule-projection-v9",
+              "business-flows-capsule-projection-v10",
               source.publication().address().runId(),
               sourceStep.receipt().controls(),
               projectorUpstream);
-      FlowProvenanceSources sources = sourceRecords(factStep, graphStep);
-      Material material = material(compiler, projector, compilerPayload, projectorPayload, sources);
+      Material material =
+          navigationOnly
+              ? navigationMaterial(compiler, projector, compilerPayload, projectorPayload)
+              : material(
+                  compiler,
+                  projector,
+                  compilerPayload,
+                  projectorPayload,
+                  sourceRecords(factStep, graphStep));
       LocalFlowCoverage localCoverage =
           requireLocalFlowCoverage(compiler, material, discoveryCoverage.entryIds());
       boolean publicAccountingClosed =
@@ -191,6 +199,16 @@ public final class FlowPublicationSpecifier {
     } catch (RuntimeException failure) {
       throw failure();
     }
+  }
+
+  private static boolean isNavigationOnly(
+      ReopenedAnalysisStepPublication graphs, ReopenedAnalysisStepPublication facts) {
+    return graphs.semanticPayloads().size() == 1
+        && "java-code-index.jsonl".equals(graphs.semanticPayloads().get(0).descriptor().fileName())
+        && facts.semanticPayloads().size() == 1
+        && "fact-accounting.json".equals(facts.semanticPayloads().get(0).descriptor().fileName())
+        && "proven-code-facts-fact-accounting-v4"
+            .equals(facts.semanticPayloads().get(0).descriptor().schemaVersion());
   }
 
   private DiscoveryCoverage requireDiscoveryCoverage(ReopenedAnalysisStepPublication discovery) {
@@ -272,6 +290,7 @@ public final class FlowPublicationSpecifier {
         Set.of(
             "entryIds",
             "compiledEntryIds",
+            "contextOnlyEntryIds",
             "gappedEntryIds",
             "excludedEntryIds",
             "flowSliceIds",
@@ -285,6 +304,8 @@ public final class FlowPublicationSpecifier {
     if (!discoveryEntryIds.equals(coverageEntryIds)
         || !entryIdsWithDisposition(material.dispositions(), "COMPILED")
             .equals(orderedIdentifierArray(coverage, "compiledEntryIds"))
+        || !entryIdsWithDisposition(material.dispositions(), "CONTEXT_ONLY")
+            .equals(orderedIdentifierArray(coverage, "contextOnlyEntryIds"))
         || !entryIdsWithDisposition(material.dispositions(), "GAP")
             .equals(orderedIdentifierArray(coverage, "gappedEntryIds"))
         || !entryIdsWithDisposition(material.dispositions(), "EXCLUDED")
@@ -317,6 +338,7 @@ public final class FlowPublicationSpecifier {
         material.dispositions().stream().map(value -> id(value, "entryId")).toList();
     List<String> classifiedEntryIds = new ArrayList<>();
     classifiedEntryIds.addAll(entryIdsWithDisposition(material.dispositions(), "COMPILED"));
+    classifiedEntryIds.addAll(entryIdsWithDisposition(material.dispositions(), "CONTEXT_ONLY"));
     classifiedEntryIds.addAll(entryIdsWithDisposition(material.dispositions(), "GAP"));
     classifiedEntryIds.addAll(entryIdsWithDisposition(material.dispositions(), "EXCLUDED"));
     classifiedEntryIds.sort(UTF8_ORDER);
@@ -326,6 +348,126 @@ public final class FlowPublicationSpecifier {
       throw failure();
     }
     return true;
+  }
+
+  private Material navigationMaterial(
+      ReopenedModulePublication compiler,
+      ReopenedModulePublication projector,
+      ArtifactReference compilerPayload,
+      ArtifactReference projectorPayload) {
+    JsonNode flowEnvelope =
+        canonicalJson.parseCanonical(compiler.payloads().get(0).canonicalUtf8());
+    JsonNode capsuleEnvelope =
+        canonicalJson.parseCanonical(projector.payloads().get(0).canonicalUtf8());
+    JsonNode flowPayload = object(flowEnvelope, "payload");
+    JsonNode capsulePayload = object(capsuleEnvelope, "payload");
+    if (!"v2".equals(text(object(flowEnvelope, "producer"), "moduleVersion"))
+        || !"v7".equals(text(object(capsuleEnvelope, "producer"), "moduleVersion"))
+        || !compilerPayload.equals(readReference(capsulePayload, "flowCompilationRef"))
+        || !capsulePayload.path("proofPackRef").isNull()) {
+      throw failure();
+    }
+    List<JsonNode> flows = sortedObjects(array(flowPayload, "flowSlices"), "flowSliceId");
+    List<JsonNode> dispositions = sortedObjects(array(flowPayload, "entryDispositions"), "entryId");
+    List<JsonNode> contexts = sortedObjects(array(flowPayload, "entryContexts"), "entryId");
+    List<JsonNode> compilationGaps = sortedObjects(array(flowPayload, "flowGaps"), "gapId");
+    List<JsonNode> capsules =
+        sortedObjectsByNestedId(array(capsulePayload, "capsules"), "entryView", "entryId");
+    if (!flows.isEmpty()
+        || !array(capsulePayload, "modelEvidenceSpans").isEmpty()
+        || !array(capsulePayload, "projectionObligations").isEmpty()
+        || !ids(contexts, "entryId").equals(ids(dispositions, "entryId"))) {
+      throw failure();
+    }
+    Map<String, JsonNode> contextsByEntry = indexed(contexts, "entryId");
+    Map<String, JsonNode> capsulesByEntry = new HashMap<>();
+    List<JsonNode> publicCapsules = new ArrayList<>();
+    List<String> eligibleEntries = new ArrayList<>();
+    List<String> ineligibleEntries = new ArrayList<>();
+    Map<String, List<String>> ineligibilityByEntry = new HashMap<>();
+    for (JsonNode capsule : capsules) {
+      JsonNode entryView = object(capsule, "entryView");
+      String entryId = id(entryView, "entryId");
+      if (capsulesByEntry.put(entryId, capsule) != null
+          || !capsule.path("flowSliceId").isNull()
+          || !capsule.path("proofPackId").isNull()
+          || !canonicalJson
+              .encodeCanonical(contextsByEntry.get(entryId))
+              .equals(canonicalJson.encodeCanonical(object(capsule, "entryContext")))) {
+        throw failure();
+      }
+      String eligibility = text(capsule, "modelEligibility");
+      List<String> gapIds = identifierArray(capsule, "modelIneligibilityGapIds");
+      if ("ELIGIBLE".equals(eligibility) && gapIds.isEmpty()) {
+        eligibleEntries.add(entryId);
+      } else if ("INELIGIBLE".equals(eligibility) && !gapIds.isEmpty()) {
+        ineligibleEntries.add(entryId);
+        ineligibilityByEntry.put(entryId, gapIds);
+      } else {
+        throw failure();
+      }
+      ObjectNode publicCapsule = ((ObjectNode) capsule).deepCopy();
+      publicCapsule.putArray("modelEvidenceSpans");
+      publicCapsule.putArray("projectionObligations");
+      publicCapsules.add(publicCapsule);
+    }
+    List<String> collectedEntries =
+        contexts.stream()
+            .filter(value -> "COLLECTED".equals(text(value, "collectionStatus")))
+            .map(value -> id(value, "entryId"))
+            .sorted(UTF8_ORDER)
+            .toList();
+    if (!collectedEntries.equals(capsulesByEntry.keySet().stream().sorted(UTF8_ORDER).toList())
+        || dispositions.stream()
+            .filter(value -> "CONTEXT_ONLY".equals(text(value, "disposition")))
+            .anyMatch(value -> !collectedEntries.contains(id(value, "entryId")))) {
+      throw failure();
+    }
+    List<JsonNode> gaps = navigationGaps(compilationGaps, capsules);
+    return new Material(
+        compilerPayload,
+        projectorPayload,
+        flows,
+        contexts,
+        dispositions,
+        publicCapsules,
+        gaps,
+        gaps.stream().map(value -> id(value, "gapId")).toList(),
+        List.of(),
+        List.of(),
+        List.of(),
+        Map.of(),
+        eligibleEntries.stream().sorted(UTF8_ORDER).toList(),
+        ineligibleEntries.stream().sorted(UTF8_ORDER).toList(),
+        Map.copyOf(ineligibilityByEntry));
+  }
+
+  private static List<JsonNode> navigationGaps(
+      List<JsonNode> compilationGaps, List<JsonNode> capsules) {
+    Map<String, JsonNode> values = new HashMap<>();
+    for (JsonNode gap : compilationGaps) {
+      ObjectNode normalized = JsonNodeFactory.instance.objectNode();
+      String gapId = id(gap, "gapId");
+      normalized.put("gapId", gapId);
+      normalized.put("scope", "ENTRY_CONTEXT");
+      normalized.put("reasonCode", text(gap, "reasonCode"));
+      strings(
+          normalized.putArray("affectedSemanticIds"),
+          orderedIdentifierArray(gap, "affectedSemanticIds"));
+      normalized.putArray("evidenceRefs");
+      normalized.put("originKind", "FLOW_COMPILATION");
+      normalized.putNull("originGapLedgerRef");
+      if (values.put(gapId, normalized) != null) throw failure();
+    }
+    for (JsonNode capsule : capsules) {
+      for (JsonNode gap : array(capsule, "gapViews")) {
+        ObjectNode copy = ((ObjectNode) gap).deepCopy();
+        if (values.put(id(gap, "gapId"), copy) != null) throw failure();
+      }
+    }
+    return values.values().stream()
+        .sorted(Comparator.comparing(value -> id(value, "gapId"), UTF8_ORDER))
+        .toList();
   }
 
   private Material material(
@@ -340,7 +482,7 @@ public final class FlowPublicationSpecifier {
         canonicalJson.parseCanonical(projector.payloads().get(0).canonicalUtf8());
     JsonNode flowPayload = object(flowEnvelope, "payload");
     JsonNode capsulePayload = object(capsuleEnvelope, "payload");
-    if (!"v6".equals(text(object(capsuleEnvelope, "producer"), "moduleVersion"))
+    if (!"v7".equals(text(object(capsuleEnvelope, "producer"), "moduleVersion"))
         || !compilerPayload.equals(readReference(capsulePayload, "flowCompilationRef"))
         || !sources.proofPack().equals(readReference(capsulePayload, "proofPackRef"))) {
       throw failure();
@@ -409,8 +551,12 @@ public final class FlowPublicationSpecifier {
     List<String> modelEligibleFlowIds = new ArrayList<>();
     List<String> modelIneligibleFlowIds = new ArrayList<>();
     Map<String, List<String>> modelIneligibilityByFlow = new HashMap<>();
+    List<String> modelEligibleEntryIds = new ArrayList<>();
+    List<String> modelIneligibleEntryIds = new ArrayList<>();
+    Map<String, List<String>> modelIneligibilityByEntry = new HashMap<>();
     for (JsonNode capsule : capsules) {
       String flowSliceId = id(capsule, "flowSliceId");
+      String entryId = id(object(capsule, "entryView"), "entryId");
       String eligibility = text(capsule, "modelEligibility");
       List<String> ineligibilityGapIds = identifierArray(capsule, "modelIneligibilityGapIds");
       if (!sources.proofPack().artifactId().value().equals(text(capsule, "proofPackId"))) {
@@ -422,6 +568,12 @@ public final class FlowPublicationSpecifier {
         modelIneligibilityByFlow.put(flowSliceId, ineligibilityGapIds);
       } else {
         throw failure();
+      }
+      if ("ELIGIBLE".equals(eligibility)) {
+        modelEligibleEntryIds.add(entryId);
+      } else {
+        modelIneligibleEntryIds.add(entryId);
+        modelIneligibilityByEntry.put(entryId, ineligibilityGapIds);
       }
     }
     List<JsonNode> orderedGaps = normalizeGaps(compilationGaps, capsules, sources);
@@ -463,7 +615,10 @@ public final class FlowPublicationSpecifier {
         processJoinSignalIds.stream().distinct().sorted(UTF8_ORDER).toList(),
         modelEligibleFlowIds.stream().sorted(UTF8_ORDER).toList(),
         modelIneligibleFlowIds.stream().sorted(UTF8_ORDER).toList(),
-        Map.copyOf(modelIneligibilityByFlow));
+        Map.copyOf(modelIneligibilityByFlow),
+        modelEligibleEntryIds.stream().sorted(UTF8_ORDER).toList(),
+        modelIneligibleEntryIds.stream().sorted(UTF8_ORDER).toList(),
+        Map.copyOf(modelIneligibilityByEntry));
   }
 
   private FlowProvenanceSources sourceRecords(
@@ -782,6 +937,9 @@ public final class FlowPublicationSpecifier {
         coverage.putArray("compiledEntryIds"),
         entryIdsWithDisposition(material.dispositions(), "COMPILED"));
     strings(
+        coverage.putArray("contextOnlyEntryIds"),
+        entryIdsWithDisposition(material.dispositions(), "CONTEXT_ONLY"));
+    strings(
         coverage.putArray("gappedEntryIds"),
         entryIdsWithDisposition(material.dispositions(), "GAP"));
     strings(
@@ -796,6 +954,8 @@ public final class FlowPublicationSpecifier {
         material.capsules().stream().map(value -> id(value, "evidenceCapsuleId")).toList());
     strings(coverage.putArray("modelEligibleFlowSliceIds"), material.modelEligibleFlowIds());
     strings(coverage.putArray("modelIneligibleFlowSliceIds"), material.modelIneligibleFlowIds());
+    strings(coverage.putArray("modelEligibleEntryIds"), material.modelEligibleEntryIds());
+    strings(coverage.putArray("modelIneligibleEntryIds"), material.modelIneligibleEntryIds());
     strings(
         coverage.putArray("modelIneligibilityGapIds"),
         material.modelIneligibilityByFlow().values().stream()
@@ -811,6 +971,15 @@ public final class FlowPublicationSpecifier {
               item.put("flowSliceId", flowSliceId);
               strings(
                   item.putArray("gapIds"), material.modelIneligibilityByFlow().get(flowSliceId));
+            });
+    ArrayNode ineligibilityByEntry = coverage.putArray("modelIneligibilityByEntry");
+    material
+        .modelIneligibleEntryIds()
+        .forEach(
+            entryId -> {
+              ObjectNode item = ineligibilityByEntry.addObject();
+              item.put("entryId", entryId);
+              strings(item.putArray("gapIds"), material.modelIneligibilityByEntry().get(entryId));
             });
     strings(coverage.putArray("gapIds"), material.gapIds());
     coverage.put("closed", closed);
@@ -955,6 +1124,14 @@ public final class FlowPublicationSpecifier {
       ReopenedAnalysisStepPublication discovery,
       ReopenedAnalysisStepPublication graphs,
       ReopenedAnalysisStepPublication facts) {
+    if (isNavigationOnly(graphs, facts)) {
+      List<ArtifactReference> values = new ArrayList<>();
+      java.util.stream.Stream.of(discovery, graphs, facts)
+          .flatMap(step -> step.semanticPayloads().stream())
+          .map(FlowPublicationSpecifier::payloadReference)
+          .forEach(values::add);
+      return orderedModuleUpstream(values, 6);
+    }
     List<ArtifactReference> values = new ArrayList<>();
     values.add(
         payloadReference(
@@ -995,6 +1172,11 @@ public final class FlowPublicationSpecifier {
         payloadReference(
             semanticPayload(
                 source, "verified-snapshot.json", "VERIFIED_SNAPSHOT", "verified-snapshot-v2")));
+    if (isNavigationOnly(graphs, facts)) {
+      values.add(payloadReference(graphs.semanticPayloads().get(0)));
+      values.add(payloadReference(facts.semanticPayloads().get(0)));
+      return orderedModuleUpstream(values, 5);
+    }
     values.addAll(graphUpstream(graphs));
     values.addAll(factUpstream(facts));
     return orderedModuleUpstream(values, 14);
@@ -1251,6 +1433,25 @@ public final class FlowPublicationSpecifier {
     if (result.size() != values.size()
         || result.size() != result.stream().map(value -> id(value, idField)).distinct().count())
       throw failure();
+    return result;
+  }
+
+  private static List<JsonNode> sortedObjectsByNestedId(
+      List<JsonNode> values, String objectField, String idField) {
+    List<JsonNode> result =
+        values.stream()
+            .filter(JsonNode::isObject)
+            .sorted(
+                Comparator.comparing(value -> id(object(value, objectField), idField), UTF8_ORDER))
+            .toList();
+    if (result.size() != values.size()
+        || result.size()
+            != result.stream()
+                .map(value -> id(object(value, objectField), idField))
+                .distinct()
+                .count()) {
+      throw failure();
+    }
     return result;
   }
 
@@ -1554,7 +1755,10 @@ public final class FlowPublicationSpecifier {
       List<String> processJoinSignalIds,
       List<String> modelEligibleFlowIds,
       List<String> modelIneligibleFlowIds,
-      Map<String, List<String>> modelIneligibilityByFlow) {}
+      Map<String, List<String>> modelIneligibilityByFlow,
+      List<String> modelEligibleEntryIds,
+      List<String> modelIneligibleEntryIds,
+      Map<String, List<String>> modelIneligibilityByEntry) {}
 
   private record DiscoveryCoverage(List<String> entryIds, boolean closed) {}
 
