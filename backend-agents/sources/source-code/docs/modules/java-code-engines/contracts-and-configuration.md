@@ -49,6 +49,8 @@ interface JavaCodeSession extends AutoCloseable {
 
 `catalog` 返回所有可分析Java文件的声明、参数、注解和文件诊断；不输出行业标签。现有Spring映射规则消费它形成 `EntrySeed(entryId, methodLocation, trigger)`。入口源位置来自发现器；调用方不能注入预期Service文件、实现方法列表或解析答案。
 
+这里的 `methodLocation` 精确展开为 `methodKey + methodRange`。`methodKey` 是公共 catalog 中的跨引擎稳定声明键；`methodRange` 是完整方法/构造器声明的 `SourceRange(startOffsetUtf16,lengthUtf16,startLine,endLine)`。Step02 必须将两者写入每一条入口记录并把它们纳入 `entryId` framed identity，Step03/05 必须用两者校验并选择入口；handler FQN、方法名或路由不能替代它们。M2 `http-entry` moduleVersion、`application-discovery-http-entry-discovery-v2` draft，以及 M4 `publish` moduleVersion 都升级到 v3；公开 descriptor `application-discovery-entry-points-v2` 与每行 `application-discovery-entry-point-v2` 同步升级到 v3。profile、capability、mapper schema 保持 v2。所有直接 reader 同步拒绝旧 entry wire，不靠缺字段推断。
+
 `collect` 隐藏工具的查询、递归、去重与候选处理。相同会话同一入口重复读取使用缓存；不同入口可共享方法记录和解析缓存，但入口成员范围独立。只支持当前单worker顺序调用，不要求并发会话或分布式索引。
 
 `descriptor` 保存engineId、adapterVersion、toolVersions、languageLevel和能力说明。descriptor在程序侧，不让模型为不同工具选择不同业务答案。工具不具备的能力必须真实披露，不能写成“整个仓库不可分析”。
@@ -185,6 +187,20 @@ Step05仍在`flow-slices.json`的`entryContexts`保存可自包含阅读的上�
 可用性保存在索引ENGINE记录及对应Fact accounting中；现有generic step receipt仍通过实际artifact descriptors引用它们，不给每层receipt新增一套状态。只有实际产物集合变化的拥有者和readers调整，不全工程schema重置。
 
 历史产物不覆盖，旧context版本用稳定`UNSUPPORTED_CODE_CONTEXT_VERSION`拒绝，不能缺新字段就当空列表。新语义下游不提供旧wire双读/别名；第二阶段JavaParser生产新格式，而非读取旧格式冒充。
+
+### 5.1 实际产物集合与现有存储复用
+
+`java-code-index` 注册为 `PROGRAM_GRAPHS` module 7，artifact type 为 `PROGRAM_GRAPHS_JAVA_CODE_INDEX`，schema 为 `java-code-index-v1`，media type 为 JSONL，sensitivity 为 `METADATA_ONLY`。沿用现有 module/step store、原子发布、run registry 和两种 receipt；不建立新 step、存储层或生命周期。
+
+| 选择与步骤 | 合法的实际语义 payload | receipt之外不得出现 |
+| --- | --- | --- |
+| JDT / Step03 | `java-code-index.jsonl` | 五图占位文件 |
+| JDT / Step04 | `fact-accounting.json` | candidate/fact/proof占位文件 |
+| 任一引擎 / Step05 | `flow-slices.json`、`flow-coverage.json`、`entry-dispositions.jsonl`、`evidence-capsules.jsonl`、`flow-gaps.jsonl` | 另一套context别名或旧版wire |
+| JavaParser / Step03（第二阶段） | `java-code-index.jsonl` 加当前七个实际五图/证据图语义文件 | JDT结果或未运行文件 |
+| JavaParser / Step04（第二阶段） | 当前四个严格Fact语义文件，accounting为v4且`AVAILABLE` | 旧v3 accounting |
+
+module publisher、step publisher、exact-set allowlist、`CanonicalArtifactPolicyRegistry`、直接 reader 与测试 fixture 必须把同一实际集合视为一个原子合同。`NOT_PRODUCED` 是 accounting/index 内容中的能力状态，不是给 receipt 新增通用状态机；已声明 AVAILABLE 的损坏产物仍是失败。
 
 Step06 SourceRef编号仍由Builder分配，模型只看短ref和正文；methods/calls全局key、路径、行号、engine信息留在程序侧。一个context可含多个方法，不强制每方法单独生成一个业务活动。
 

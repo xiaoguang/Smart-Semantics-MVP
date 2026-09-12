@@ -52,6 +52,8 @@ UNRESTRICTED 要求 methods=[]；EXPLICIT 要求非空、去重并按稳定枚�
 
 同一 route/handler 的方法集合是一个入口条件，不按每个 verb 复制业务活动。一个 handler 关联多个真实 route 时仍按明确 route identity 记录，Step07 可解释多入口对应同一活动。该字段随新生成产物一同出现；读取旧单值、缺少 `methodCondition` 的输入不会被静默解释为 unrestricted。
 
+入口还必须保存 `methodKey` 与 `methodRange`。前者是 catalog 的跨引擎稳定声明键；后者是完整声明的 `SourceRange(startOffsetUtf16,lengthUtf16,startLine,endLine)`。两者进入 `entryId` framed identity并共同使 Step03/05 在同名重载中选择准确方法；`handler`/FQN/方法名只供展示，不能代替选择键。M2 `http-entry` moduleVersion 与 `application-discovery-http-entry-discovery-v2` 升为 v3，M4 `publish` moduleVersion 升为 v3，公开 `application-discovery-entry-points-v2` 及逐行 `application-discovery-entry-point-v2` 升为 v3；profile/capability/mapper 保持 v2。所有直接 reader、artifact policy 和 fixture 同步拒绝旧 entry wire，不以缺字段回退。
+
 ### 3.2 真实待修复例子
 
 UserController#getOrganizationUserTree 和 MaterialCategoryController#getMaterialCategoryTree 使用无 method 的 RequestMapping。此前它们会被误标限制；发现器现已将省略或空 method 的映射保存为准确 route/handler/UNRESTRICTED 入口，并继续保留相同完整 discovery site 分母。完整 jshERP 重新运行仍属于后续验收，不能由 fixture 代替。
@@ -74,7 +76,7 @@ UserController#getOrganizationUserTree 和 MaterialCategoryController#getMateria
 | 文件 | 内容与用途 |
 | --- | --- |
 | application-profile.json | 语言/框架静态 signals、配置及 capability profile |
-| entry-points.jsonl | 全部入口、route parts、method condition、handler、参数、定位 |
+| entry-points.jsonl | v3；全部入口、route parts、method condition、handler、参数、`methodKey` 与完整声明 `methodRange` |
 | mapper-catalog.jsonl | Mapper Java/XML 候选，尚不宣布唯一绑定 |
 | capability-report.json | 每个发现 site 的处置、明确限制、全入口分母 |
 | application-discovery-receipt.json | 同源 inputs/controls、四项 semantic descriptors 与状态 |

@@ -86,6 +86,16 @@ ProcessExplainer → BusinessReportPublisher → 一份九章
 
 因此不能将现有 `ProgramGraphsExecution → ProvenCodeFactsExecutor` 硬接线原样留在 JDT 主路径：否则“选择 JDT”仍会暗中运行 JavaParser。目标仍保留八步 key，但步骤回执必须区分实际产生的导航材料和未生成的技术增强。没有执行的 graph/Fact 模块记录 `NOT_PRODUCED` 及原因，不冒充空图成功；这是产物可用性，不新增运行生命周期。具体接线和旧消费者处理见[接入设计](integration-and-javaparser.md)。
 
+### 5.1 已冻结的步骤接线
+
+- Step02 的每个入口必须同时保存 `methodKey` 和完整声明的 `SourceRange`；handler 名/FQN 只供展示，不能作为重载选择键。
+- `java-code-index` 固定为现有 `PROGRAM_GRAPHS` 的 module 7，地址为 `(PROGRAM_GRAPHS, 7, "java-code-index")`。它不是新 step，也不改变八步编号。
+- JDT 第一阶段 Step03 的实际语义产物只有 `java-code-index.jsonl`，再由现有步骤发布器写 `program-graphs-receipt.json`；未执行的五图不写空文件。
+- JDT 第一阶段 Step04 的实际语义产物只有 `fact-accounting.json`，再写 `proven-code-facts-receipt.json`。accounting 为 v4、`availability=NOT_PRODUCED`、`reason` 非空且所有数量为 `null`，不包含伪造的 Candidate/Fact/Proof 引用。
+- Step05 以保存的 `EntryCodeContext` 为第一输入；严格 Flow/Fact 只是可选增强。实际语义产物仍是既有五件套及 receipt，版本以[合同版本表](contracts-and-configuration.md#5-保存格式位置与复用)为准。
+
+这些差异必须进入 receipt 的实际 artifact descriptors，并同步现有 exact-set allowlist、artifact policy、直接 reader 与公共 fixture；不把固定旧文件数当成步骤成功条件。
+
 ## 6. 为什么使用 JDT LS 加 JDT Core
 
 JDT LS 已提供定位声明、实现和调用层次；JDT Core 能读取方法、构造器、参数和语法节点。两者分工如下：

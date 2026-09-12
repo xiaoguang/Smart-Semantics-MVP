@@ -186,6 +186,8 @@ ModuleReceipt
 
 对已保留的 Step 01–05 技术 Module 和当前既有 artifact，每个模块至少一个 payload + receipt；payload 先固定，receipt 最后计算且排除自身。该规则不施加给新的 BusinessMaterialBuilder、ActivityExplainer、ProcessExplainer、BusinessReportPublisher 内部动作。它们按总体设计保存少量有意义检查点，最终 document.md 由已验证 paragraph JSON 与 source refs 确定性组装，不把 Markdown 先包进内部 Module JSON。
 
+引擎接线沿用这一机制并允许经合同登记的实际 payload 集：Step03 的 `java-code-index` 是 `PROGRAM_GRAPHS` module 7，不是新 step；JDT Step03 为 index 一项、JDT Step04 为 v4 NOT_PRODUCED accounting 一项，分别再由现有 step store 生成 receipt。Receipt 的 `payloadArtifacts[]` 只列实际 semantic payload。所有 exact-set allowlist、artifact policy、reader 与 fixture 必须和[引擎实际集合表](../modules/java-code-engines/contracts-and-configuration.md#51-实际产物集合与现有存储复用)一致；未执行增强不写空文件，已声明 AVAILABLE 的损坏产物仍失败。
+
 失败不安装 success envelope，只在既有外部 failure area 写：
 
 ~~~text

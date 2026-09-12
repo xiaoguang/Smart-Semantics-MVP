@@ -110,10 +110,20 @@
 - A hierarchy hit is not grounds to skip implementation lookup for virtual
   or abstract/interface targets. Preserve every candidate, constructor,
   deferred callback and unresolved/boundary call with its actual source.
+- Step02 entry records persist both the engine-neutral methodKey and the full
+  declaration SourceRange. A handler name/FQN alone is never an overload key.
+- The syntax-only JDT Core helper is the separately built same-repository
+  tools/jdt-syntax-helper artifact. Launch it with the configured tool JDK and
+  enforce the jdt-syntax-v1 JSONL timeout/exit/protocol contract; stdout is
+  protocol-only and every fatal protocol/process condition remains explicit.
 - Engine-normalized code material is sufficient input to Step05. Existing
   five-graph/Fact/strict-Flow capability is optional technical enrichment,
   never a JDT reading gate. Missing enrichment is NOT_PRODUCED with a reason,
   not fake empty graphs, fake Proof or a smaller entry denominator.
+- java-code-index is PROGRAM_GRAPHS module 7, not a new analysis step. On the
+  JDT route Step03 publishes index+receipt; Step04 publishes only v4
+  NOT_PRODUCED fact-accounting (nullable counts)+receipt. Exact artifact-set
+  allowlists, policies, readers and fixtures must describe these actual sets.
 - Preserve full method code and its conditions/returns in the material path.
   Verify that Service bodies reach actual model input, not only an index.
   Evidence exists to locate code, not to repeatedly re-prove ordinary reads.
@@ -165,6 +175,10 @@
 - Step05 consumes the selected engine's normalized methods/calls/candidates
   and optional actual graph relationships. Facts/Proofs keep their strict
   meaning but never filter safely located code from business reading.
+- Step05 is context-first and uses the versions frozen in the Java engine
+  contract. It never reparses or re-navigates; each entry has a collected
+  context or a specific not-collected reason, and each collected context has
+  a Capsule even when strict Flow is not produced.
 - BusinessMaterialBuilder only packages Step 05 contexts, selects complete
   in-budget units and maps SourceRefs. It must not independently reconstruct
   a direct callee from source text. Java does not use an

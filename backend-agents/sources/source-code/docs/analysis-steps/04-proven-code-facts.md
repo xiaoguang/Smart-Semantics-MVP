@@ -96,6 +96,8 @@ externalEffectGapCount = count(boundaryKeys)
 | fact-accounting.json | 三类 candidate/atoms 的 ID 集与计数守恒 |
 | proven-code-facts-receipt.json | 保存上游身份、controls 与 artifact descriptors |
 
+上表的四个语义文件是技术图增强 AVAILABLE 时的严格路线。JDT 第一阶段未生产五图时，合法 actual set 精确为 `fact-accounting.json + proven-code-facts-receipt.json`：accounting 使用 `proven-code-facts-fact-accounting-v4`，`availability=NOT_PRODUCED`、`reason` 非空，保留 Step03 navigation/index basis，所有数值 count 为 `null`，且没有 Candidate/Fact/Proof 引用。publisher、step exact-set allowlist、artifact policy、直接 reader 与 fixture 必须同步该实际集合；不得写其余三个空文件，也不得调用候选枚举器。
+
 以下是**目标阅读投影**：
 
 ~~~json

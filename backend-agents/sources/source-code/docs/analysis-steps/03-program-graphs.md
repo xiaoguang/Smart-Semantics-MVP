@@ -85,7 +85,9 @@ DepotHead#batchSetStatus 用于复杂条件和 Java-local status/ids 的局部�
 
 ### 8.0 固定模块合同
 
-模块集合固定为五个 graph builder 加一个 graph-set publication specifier。顺序为 `CodeStructureGraphBuilder` → `CallGraphBuilder` / `ControlFlowGraphBuilder` / `DataFlowGraphBuilder` → `EvidenceGraphBuilder` → `ProgramGraphSetPublicationSpecifier` → `CanonicalAnalysisStepArtifactStore`；analysis step store不是第七个业务模块。中间只能交换 typed node/edge/provenance drafts。任何 builder 都不能调用 LLM。
+既有严格图增强子链固定为五个 graph builder 加一个 graph-set publication specifier。顺序为 `CodeStructureGraphBuilder` → `CallGraphBuilder` / `ControlFlowGraphBuilder` / `DataFlowGraphBuilder` → `EvidenceGraphBuilder` → `ProgramGraphSetPublicationSpecifier`。新增的选定引擎索引固定为 `PROGRAM_GRAPHS` module 7 `java-code-index`，由它作为步骤最终 publisher；`CanonicalAnalysisStepArtifactStore` 仍只是 store，不是业务 module，也没有新增 analysis step。中间只能交换 typed node/edge/provenance drafts。任何 builder 都不能调用 LLM。
+
+JDT 第一阶段不执行上述 module 1–6 增强子链；module 7 的 semantic payload 精确为 `java-code-index.jsonl`，Step03 公开集合精确为该文件加 `program-graphs-receipt.json`。第二阶段 JavaParser 真正运行增强时，module 7 登记 index 加 M6 现有七个 semantic payload。两种 actual set 都须在 publisher、step store exact-set allowlist、artifact policy、reader 与 fixture 中显式列出，不能靠缺文件猜引擎，也不能制造空图。
 
 在 M1 前、并在每一个 graph builder 需要上游输入时，内部的
 `PersistedProgramGraphInputReader`执行一次**输入重新打开**。它不是第六种图、不是
@@ -637,6 +639,8 @@ Variant closure固定：普通`DEFINITION/USE/ARGUMENT`的两个payload均为nul
 ### 8.0.1 模块 artifact wire schemas
 
 M1–M5使用 [既有公共与模块合同 §5](../references/inherited-public-and-module-contracts.md#5-moduleartifactmodulereceipt-与-modulefailure) `ModuleArtifact<T>` envelope并采用8.1 ProgramGraph records；M6直接安装七个analysis step schema注册的JSON/JSONL semantic bytes而无summary envelope。`!`=required non-null，`?`=required nullable。
+
+M7 `java-code-index` 使用 `PROGRAM_GRAPHS_JAVA_CODE_INDEX / java-code-index-v1 / CANONICAL_JSONL / METADATA_ONLY`。记录 envelope 精确为 `{schemaVersion,recordType,key,payload}`，recordType 闭集为 `ENGINE / TYPE / METHOD / CALL / ENTRY_MEMBERSHIP / DIAGNOSTIC`；字段、不变量与排序由[共同合同](../modules/java-code-engines/contracts-and-configuration.md#5-保存格式位置与复用)定义。
 
 | artifact | schemaVersion / artifactType | 精确 upstream | payload/排序 |
 | --- | --- | --- | --- |

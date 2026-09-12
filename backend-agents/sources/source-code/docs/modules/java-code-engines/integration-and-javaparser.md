@@ -31,9 +31,13 @@ org.sourceanalysis.app.analysis.flow
 
 Step03调选定会话建立导航材料，保存`java-code-index.jsonl`。JDT第一阶段不调用JavaParser五图builders、不制造完整CFG/DFG。旧五图能力保留代码和既有有效产物；只有真正运行技术增强时才登记graph descriptors。
 
+索引固定登记为现有 `PROGRAM_GRAPHS` 的 module 7 `java-code-index`，不是 module 6 的别名，也不创建新 step。JDT 路径 Step03 的实际公开集合精确为 `java-code-index.jsonl + program-graphs-receipt.json`；module/step receipt 只列这一项语义 payload。第二阶段 JavaParser 真正运行现有增强时，由 module 7 作为最终发布模块登记 index 加现有七个图语义 payload，避免修改现有 step store 的单一最终 publisher 规则。
+
 同一step receipt的artifact列表描述实际文件；索引ENGINE记录中的technicalEnhancements说明严格五图增强`NOT_PRODUCED`及原因，不给generic receipt另增状态机。**不是写五个空文件骗过旧reader，也不是吞掉一次运行失败后当作optional。** 已提供的图如果损坏仍拒绝；没有请求/没有实现的增强才可未生成。
 
 Step04无graph增强输入时仍有明确的步骤结果：没有评估严格事实，并关联Step03导航basis。保存原有`fact-accounting.json`位置中的新版本状态与step receipt，明确`availability=NOT_PRODUCED`，不声称“候选0条，全部已证明”。不调用旧FactCandidateEnumerator。已有可用图时运行现有严格Fact算法一次并保存原有结果，不改变Fact.kind或Proof准入意义。
+
+JDT 路径 Step04 的实际公开集合精确为 `fact-accounting.json + proven-code-facts-receipt.json`。v4 accounting 的 `reason` 非空，所有数值 counts 为 `null`，并保留 Step03 navigation/index basis；它不得含 Candidate/Fact/Proof 引用。Step05 不以这个状态阻断入口：先读 `EntryCodeContext`，再按 AVAILABLE 与否附严格增强。
 
 这要求同步实际artifact policy、schema、step store、run检查器和直接消费者。校验目标是“当前能力的产物集合正确”，不是历史固定数量齐全。具体owner版本已列在[合同版本表](contracts-and-configuration.md#5-保存格式位置与复用)，不要全工程Wire Reset或让JavaParser兼容需求阻止JDT接线。
 
@@ -131,3 +135,7 @@ ActivityExplainer、ProcessExplainer、BusinessReportPublisher的现有职责不
 第二阶段从第一阶段冻结合同出发，恢复可选JavaParser及当前能力。不要开展两引擎自动投票、混合结果、失败fallback、runtime插件安装、跨引擎缓存复用、完整编译器/外部效果证明、复杂恢复，也不要求重新设计报告模块。
 
 最终一次YAML选择决定取材引擎；业务模块始终一套。源码能力可以不同，来源正确、内容保存、入口处置和业务职责边界必须相同。
+
+现有 `CanonicalModuleArtifactStore`、`CanonicalAnalysisStepArtifactStore`、CLI 操作面、`RepositoryAnalysisAgent`、`SourceAnalysisApplication`、`BusinessAnalysisWorkflow`、`PersistedBusinessRunExecutor`、`ActivityExplainer`、`ProcessExplainer` 和 `BusinessReportPublisher` 都复用；实施任务只扩展组合接线、actual-set 校验与材料输入，不把这些组件列为重写对象。
+
+JavaParser 迁移 oracle 固定在 git `cec1997`。迁移前先记录 `SpringHttpEntryDiscovererTest`、`MapperCapabilityCatalogerTest`、四个 graph builder 测试、`EvidenceGraphBuilderTest`、`ProvenCodeFactsExecutionTest`、`BusinessFlowsExecutionTest`、`BusinessMaterialBuilderTest`、`TechnicalAnalysisWorkflowTest` 与 `FourEntryBusinessSemanticChainTest` 的行为；第二阶段保留可观察能力和诚实 gap，不比较两引擎数量、解析率或 JSON SHA。可执行清单见[实施计划](../../plans/jdt-first-java-engine-implementation-plan.md#javaparser-pre-migration-capability-baseline-at-cec1997)。

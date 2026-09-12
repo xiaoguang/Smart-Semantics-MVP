@@ -25,6 +25,8 @@
 
 01–05 不调用模型。06–08 内部正好四个业务 Module：BusinessMaterialBuilder、ActivityExplainer、ProcessExplainer、BusinessReportPublisher。它们隐藏在同一个 Agent 后，不新增业务分类器、证明层、POC runtime 或恢复系统。数值前缀只用于文档与 steps 目录排序，语义 package/key 不变。
 
+Step02 入口以 `methodKey + SourceRange` 定位完整声明，不能只凭 handler 名区分重载。`java-code-index` 是 Step03 既有 `PROGRAM_GRAPHS` 下的新 module 7，不是第九步。JDT 第一阶段的实际集合固定为 Step03 `java-code-index.jsonl + program-graphs-receipt.json`，Step04 `fact-accounting.json + proven-code-facts-receipt.json`；后者 v4 为 `NOT_PRODUCED`、reason 非空且 counts 为 null。Step05 context-first，继续发布既有五个语义文件与 receipt，具体 schema 版本见[代码引擎合同](modules/java-code-engines/contracts-and-configuration.md#5-保存格式位置与复用)。
+
 ### 2.1 四个业务 Module 的深接口
 
 | Module | 输入 | 输出 | 隐藏的职责 | 失败/停止 | 下一消费者 | Luna/xhigh RED → Terra/xhigh GREEN |
@@ -177,6 +179,8 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 | Process/report 模型输入按 material 只投影一次 `{materialContext, unexplainedEntryKeys, reasonCode}`；全局/material ID 保留在程序侧，`MODEL_NOT_EXPLAINED` 不进入技术 receipt Gap | Prompt 要求第9章显示 context 的 HTTP 方法/路径与原因，禁止第4章为未解释入口编造活动；即时逐包 checkpoint 仍是独立未解决缺口 |
 | 完整冻结 jshERP 719 文件及图/Fact 运行已有保存证据；零 Provider 全仓材料 run 为 107 包覆盖 339 个入口 | 这些是历史实测，不写成固定 K/包数，不把它们当整仓语义验收 |
 | `methodCondition` 已区分 UNRESTRICTED 与 EXPLICIT 集合 | 保持该实现；未来完整仓库重跑只确认真实端点分母，不再写成代码待修正 |
+| Step02 入口当前仍以 handler 展示身份为主，不能稳定区分同名重载 | 新 v3 entry wire 同时保存中立 `methodKey` 与完整声明 `SourceRange`，所有直接 reader/policy/fixture 同步且拒绝旧版 |
+| Step03 当前最终 publisher 固定为 module 6 七个图文件；Step04 固定四个严格 Fact 文件 | 增加 PROGRAM_GRAPHS module 7 `java-code-index`；JDT 路径按实际 1+receipt / 1+receipt 集合发布，exact-set allowlist、policy、step contract 和 fixture 同步，不写空图/Fact |
 
 Spring 细则：`@RequestMapping` 省略 method 或 `method={}` 都合法。类和方法均无限制时保持 unrestricted；一方有限制时保留该限制；双方非空按 Spring method-condition combine 取并集。不要猜 GET，也不要把 HEAD/OPTIONS 框架处理拆成多个业务活动。现有 `methodCondition` 已实现该区分，UserController#getOrganizationUserTree 和 MaterialCategoryController#getMaterialCategoryTree 是直接回归样例；未来完整仓库重跑只核对新的真实分母。
 

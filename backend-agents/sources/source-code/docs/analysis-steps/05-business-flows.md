@@ -91,6 +91,8 @@ JDT或JavaParser已经找出方法、调用和源码。Step05负责让这些结�
 | flow-gaps.jsonl | 入口取材/导航/技术增强的已知限制及来源，不发明业务制度Gap |
 | business-flows-receipt.json | 实际输入、产物、引擎basis与状态 |
 
+本次 wire reset 固定版本为：`entry-code-context-v1`、flow compilation v5、capsule projection v10、flow slices v5、evidence capsule v8、flow coverage v2、entry disposition v2。五个语义文件加 receipt 的实际集合不因严格增强 NOT_PRODUCED 而缩小；writer、reader、exact-set allowlist、artifact policy 与 fixture 同步升版，旧 context/version 稳定拒绝，不提供双读或字段缺失别名。
+
 保留技术处置`COMPILED/GAP/EXCLUDED`的原义。context处置单独使用`COLLECTED/NOT_COLLECTED`和reason，不把“没有strict Flow”误判成没有材料，也不把SOURCE_CONFIRMED之类业务状态塞进technical ledger。
 
 ```text

@@ -41,6 +41,8 @@ JDT启动JDK和客户source level不同：当前调研使用LS1.61.0与JDK26；�
 
 输入一个经过验证的Java文件文本和source level，输出声明/语法位置记录。主应用Java17拥有来源验证；一个常驻helper运行在固定工具JDK上，Core classpath固定为审阅过的依赖闭包，不把整个未知plugins目录作为可执行扩展平台。
 
+helper 是同一工程中独立构建的工具产物，不进入宿主 Java 17 classpath。源码固定放在 `tools/jdt-syntax-helper/src/main/java/org/sourceanalysis/tools/jdtsyntax/`，其独立 Maven 工程生成自包含的 `tools/jdt-syntax-helper/target/source-code-analysis-jdt-syntax-helper.jar`；生产版本固定 JDT Core 3.47.0 与 Jackson 2.21.4。宿主只用 `${jdt.javaHome}/bin/java -jar <上述产物>` 的参数数组通过 `ProcessBuilder` 启动，禁止 shell、`java` PATH 查找或当前 JVM 代替 tool JDK。
+
 私有协议只需要一个操作：
 
 ```json
@@ -55,6 +57,8 @@ JDT启动JDK和客户source level不同：当前调研使用LS1.61.0与JDK26；�
 ```
 
 这是协议形状示例，不是可执行源码。响应含`protocolVersion, requestId, declarations, callSites, controls, exits, diagnostics`，各位置沿用[统一字段](contracts-and-configuration.md)。请求不传仓库根供helper自行扫描，也不给它源码目标答案。JSON字符串正确转义换行，一条请求/响应一行；stdout仅协议、stderr限量诊断，用现有Jackson序列化，不手拼JSON。未知operation/版本/字段或进程断流为工具错误，不装作空语法树。
+
+`jdt-syntax-v1` 的传输语义也属于冻结合同：同一进程同一时间恰有一个请求在途，成功响应必须逐字回显 `protocolVersion/requestId`；stdout 的每一非空行只能是一条响应，stderr 有上限且只作诊断。单请求超过配置的正值 query timeout 时不重试，终止 helper、使 session 不可继续并报 `JDT_SYNTAX_TIMEOUT`。非 JSON、未知字段/版本、requestId 不符或请求在途时 EOF 报 `JDT_SYNTAX_PROTOCOL_INVALID`；意外非零退出报 `JDT_SYNTAX_PROCESS_FAILED`。正常关闭先关 stdin、在 shutdown timeout 内只接受 exit 0；超时则强杀并报 `JDT_SYNTAX_SHUTDOWN_TIMEOUT`。这些状态都不能返回空 declarations 冒充成功。
 
 ### Core内部算法
 
