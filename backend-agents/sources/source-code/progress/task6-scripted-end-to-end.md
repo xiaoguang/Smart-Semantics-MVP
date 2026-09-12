@@ -1,6 +1,6 @@
 # Progress: Task 6 scripted end-to-end verification
 
-- Status: IN_PROGRESS
+- Status: COMPLETE
 - Agent role: Primary implementation coordinator
 - Model: GPT-5
 - Started: 2026-09-12
@@ -42,6 +42,7 @@
   the persisted executor, REVIEW rather than DRAFT repairs E3/E4, partial sections 2–8 exclude
   E3/E4 semantics, each paragraph uses relevant short refs, and the session-read result no longer
   claims a user object is returned when the captured excerpt only assigns a response code.
+- Completed and pushed as `6550eb8` (`test: verify scalable activity reporting`).
 
 ## Changed files
 
@@ -81,8 +82,8 @@
 
 ## Exact next action
 
-- Check the staged diff, commit and push the completed Task 6 verification. Then start the separate
-  Task 7 exact frozen-input/login/subprocess preflight before any live Luna request.
+- Read Task 7's separate progress record. It owns the exact frozen-input/login/subprocess preflight
+  and any authorized live Luna call; this task has no remaining work.
 
 ## Resume checks
 
