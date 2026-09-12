@@ -1,6 +1,6 @@
 # Progress: Task 9 four-entry process and report candidate
 
-- Status: IN_PROGRESS
+- Status: COMPLETE
 - Agent role: primary implementation and live-candidate operator
 - Model: gpt-5.6-terra/xhigh for code; gpt-5.6-luna/high for approved business content
 - Started: 2026-09-12
@@ -24,6 +24,8 @@
 - The corrected Schema and a zero-Provider reopener are committed on `main`. The next candidate is report-only: it consumes the already completed Task 8 activity result plus Task 9 process/summary REVIEW bytes, and has exactly one DRAFT plus one REVIEW call.
 - The first report-only replacement did not start content generation: Codex rejected the `prefixItems` plus boolean `items` Schema at `MODEL_CONFIGURATION`; the diagnostic directory has only `01-BUSINESS_REPORT_DRAFT-input.json` and no response. This is a pre-start provider-schema incompatibility, not a consumed report draft. The next repair uses nine named section slots in a closed object and preserves the persisted array-shaped BusinessReport contract.
 - The named-slot report-only candidate completed DRAFT and REVIEW in 124.9 seconds and persisted a nine-chapter document for the four activities and refs S487/S722/S731/S898. It exposed one reader-language finding: the otherwise correct Chapter 9 repeated internal input names when its unexplained-entry collection was empty. That is a bounded report-prompt issue, not a source/flow/process issue.
+- The generic reader-language repair is committed and pushed as `5370868` after full local quality verification. The next execution is the final, report-only replacement candidate and may make exactly two Luna/high requests; it retains all completed source/activity/process outputs.
+- The final report-only replacement completed in 99.26 seconds with exactly two Luna/high requests. Its Markdown has the fixed nine chapters, four source-reference sections, readable activity/process language and no internal coverage key leakage. It is retained under `.workspace/live-luna-automatic-user-account-group-v7-report-reader-language-round2-host-session/`.
 
 ## Changed files
 
@@ -42,6 +44,7 @@
 | `mvn -o -t .mvn/toolchains.xml -Dtest=LiveLunaAutomaticUserAccountGroupChainIT …ReportReplacementInput=true test` | PASS | 1 enabled zero-Provider process/summary reopen test; 3 live tests skipped. |
 | `MAVEN_OPTS='-Xmx8g' mvn -o -t .mvn/toolchains.xml -Dtest=BusinessReportPublisherTest,Task5PartialPropagationRedTest test` | PASS | 6 targeted reader-language and partial-coverage regression tests passed after Spotless. |
 | `MAVEN_OPTS='-Xmx8g' mvn -o -t .mvn/toolchains.xml -Pquality -DskipTests verify` | PASS | 358 tests passed; SpotBugs and PMD reported zero findings; completed in 5m37s. |
+| Live `LiveLunaAutomaticUserAccountGroupChainIT` report replacement | PASS | 1 live report test passed; exactly 2 Provider calls in 99.26s, 3 non-selected live tests skipped; output has nine chapters and no internal coverage tokens. |
 
 ## Decisions
 
@@ -56,15 +59,16 @@
 - Replacement report call limit: exactly 2 Luna/high calls. A started failure remains terminal and will not replay activity, process, summary or report work.
 - Observed the direct RED after changing the report contract test: the former `array/prefixItems` schema failed the expected named-object assertion. Implemented the named-slot adapter and updated all scripted report responders; direct report/runtime tests and full local quality verification pass.
 - The next permitted report replacement is limited to verifying only the generic reader-language rule: internal coverage keys remain model input but never appear in final paragraphs; an empty collection is not mentioned. Any further prose refinements become backlog unless they affect chapter structure, source scope, factual truthfulness or deliverability.
-- Added the reader-language prompt contract and a partial-report regression assertion. The direct report/partial selectors are green (6 tests); the pending local quality build is the final pre-commit verification for this bounded repair.
+- Local `main` contains `5370868 fix: keep report coverage terms reader-facing`; it updates generic report prompts and regression tests, not any repository-specific semantic rule.
+- The named reader-language finding is closed. Further prose preferences from this one sample are quality backlog only unless they affect chapter structure, source scope, factual truthfulness or deliverability.
 
 ## Blockers
 
-- The first content-bearing report candidate remains terminal. Before the next explicitly tracked report-only replacement, complete a direct RED/GREEN proving the Codex-compatible nine-slot object schema maps deterministically to the existing persisted nine-section array.
+- None within this bounded Task 9 candidate. The terminal initial report and the non-started `prefixItems` diagnostic remain preserved for audit; neither is replayed.
 
 ## Exact next action
 
-- Run `git diff --check`, commit/push the verified reader-language repair, then run one final report-only replacement candidate; do not reopen activities, processes or source analysis.
+- Begin the next approved plan item: select a distinct frozen business-material package for the second-domain ActivityExplainer quality check; do not modify this closed report candidate.
 
 ## Resume checks
 
