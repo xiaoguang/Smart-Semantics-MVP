@@ -12,6 +12,10 @@ public final class CodeEngineException extends RuntimeException {
   public static final String JDT_INDEX_FAILED = "JDT_INDEX_FAILED";
   public static final String JDT_QUERY_FAILED = "JDT_QUERY_FAILED";
   public static final String JDT_PROTOCOL_INVALID = "JDT_PROTOCOL_INVALID";
+  public static final String JDT_SYNTAX_TIMEOUT = "JDT_SYNTAX_TIMEOUT";
+  public static final String JDT_SYNTAX_PROTOCOL_INVALID = "JDT_SYNTAX_PROTOCOL_INVALID";
+  public static final String JDT_SYNTAX_PROCESS_FAILED = "JDT_SYNTAX_PROCESS_FAILED";
+  public static final String JDT_SYNTAX_SHUTDOWN_TIMEOUT = "JDT_SYNTAX_SHUTDOWN_TIMEOUT";
   public static final String SOURCE_INVALID = "SOURCE_INVALID";
 
   private final String code;
@@ -58,6 +62,10 @@ public final class CodeEngineException extends RuntimeException {
             JDT_INDEX_FAILED,
             JDT_QUERY_FAILED,
             JDT_PROTOCOL_INVALID,
+            JDT_SYNTAX_TIMEOUT,
+            JDT_SYNTAX_PROTOCOL_INVALID,
+            JDT_SYNTAX_PROCESS_FAILED,
+            JDT_SYNTAX_SHUTDOWN_TIMEOUT,
             SOURCE_INVALID)
         .contains(code)) {
       throw new IllegalArgumentException("unknown code engine failure code");
