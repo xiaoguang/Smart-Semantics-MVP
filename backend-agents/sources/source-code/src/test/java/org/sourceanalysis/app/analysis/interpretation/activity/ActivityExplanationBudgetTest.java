@@ -16,13 +16,13 @@ import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
+import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Guards the product rule that a capacity miss is coverage, not a failed provider execution. */
 class ActivityExplanationBudgetTest {

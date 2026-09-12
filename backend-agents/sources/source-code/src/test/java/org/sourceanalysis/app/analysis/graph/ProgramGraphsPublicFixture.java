@@ -2011,7 +2011,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "REPOSITORY_KNOWLEDGE_PROCESS_COVERAGE",
-        "repository-knowledge-process-coverage-v1",
+        "repository-knowledge-process-coverage-v2",
         "process-coverage",
         "application/json",
         "STANDALONE_JSON",
@@ -2019,7 +2019,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "REPOSITORY_KNOWLEDGE_BUSINESS_KNOWLEDGE",
-        "repository-knowledge-business-knowledge-v1",
+        "repository-knowledge-business-knowledge-v2",
         "repository-business-knowledge",
         "application/json",
         "STANDALONE_JSON",

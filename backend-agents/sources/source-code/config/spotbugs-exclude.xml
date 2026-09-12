@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpotBugs 4.10 reports EI_EXPOSE_REP for Java 17 record accessors even when the compact
+  constructor has already copied and canonicalized every collection component. Each exception
+  below is deliberately type-specific: new record types remain checked until they establish the
+  same immutable-value contract.
+-->
+<FindBugsFilter>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs$BoundaryArgument"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs$PublicEvidenceGraph"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs$PublicProgramEdge"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs$PublicProgramGraph"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs$PublicProgramNode"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs$RuleApplication"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs$SubjectEvidence"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.fact.proofs.ProofDecisionSet"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.fact.proofs.ProofDecisionSet$AtomProof"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.fact.proofs.ProofDecisionSet$ExternalEffectGap"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.graph.CallGraphDraft"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.graph.CallGraphNode"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.graph.ControlFlowEdge"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.graph.ControlFlowGraphDraft"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.graph.ControlFlowNode"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.graph.ControlFlowTraversal"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.graph.DataFlowGraphDraft"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.graph.DataFlowNode"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.graph.DataFlowWorklistAccounting"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.graph.EvidenceGraphCoverage"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.graph.EvidenceGraphDraft"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.graph.GraphGapDraft"/></Match>
+</FindBugsFilter>

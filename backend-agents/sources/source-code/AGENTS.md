@@ -344,15 +344,15 @@
   routes, six-module Step 06, three-module Step 07, four-module Step 08 and
   their fixed output inventories are retired targets. Existing Java/schema/
   fixture/artifact instances are migration input only; do not extend them.
-- The approved cleanup removes the old
+- The approved cleanup removed the old
   `analysis.interpretation.{model,proposal,registry,process}` production and
   test packages only after shared current-test fixtures move to neutral
   testsupport. Retire old Step06 addresses 1-9 and their artifact branches,
   then remove only the two registry-proposal Capsule fields with the owning
   schema versions. Preserve current addresses 10/11,
   `analysis.knowledge.ProcessExplainer`, `ModelRuntimeIdentityV1`, EntryContext,
-  facts, gaps, signals and SourceRefs. This cleanup is designed but not yet
-  implemented.
+  facts, gaps, signals and SourceRefs. Current work must not restore or extend
+  that retired route; it only verifies the active business chain.
 - Adjust the existing semantic packages and four existing business Modules.
   No new Wire Reset, source scanner, context-chain Module or storage/recovery
   subsystem is needed. Preserve Git history and progress files.

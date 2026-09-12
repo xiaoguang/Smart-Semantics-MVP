@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -16,6 +17,7 @@ import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.activity.ReviewedActivity;
+import org.sourceanalysis.app.analysis.interpretation.activity.UnexplainedActivityEntry;
 import org.sourceanalysis.app.analysis.interpretation.material.SourceReference;
 import org.sourceanalysis.app.analysis.knowledge.BusinessProcess;
 import org.sourceanalysis.app.analysis.knowledge.BusinessProcessStage;
@@ -122,6 +124,15 @@ public final class BusinessReportPublisher {
     coverage.put("notAnalyzedEntries", count(knowledge.activityCoverage(), "NOT_ANALYZED"));
     coverage.put("unmatchedActivities", knowledge.unmatchedActivityIds().size());
     coverage.put("notConsolidatedProcesses", knowledge.notConsolidatedProcessIds().size());
+    ArrayNode unexplained = root.putArray("unexplainedActivityEntries");
+    modelUnexplainedActivityEntries(knowledge.unexplainedActivityEntries())
+        .forEach(
+            entry -> {
+              ObjectNode value = unexplained.addObject();
+              value.put("materialContext", entry.materialContext());
+              strings(value.putArray("unexplainedEntryKeys"), entry.entryKeys());
+              value.put("reasonCode", entry.reasonCode());
+            });
     if (knowledge.repositorySummary() == null) {
       root.putNull("repositorySummary");
     } else {
@@ -149,6 +160,32 @@ public final class BusinessReportPublisher {
 
   private static int count(List<ActivityEntryCoverage> coverage, String disposition) {
     return (int) coverage.stream().filter(value -> disposition.equals(value.disposition())).count();
+  }
+
+  private static List<ModelUnexplainedActivityEntries> modelUnexplainedActivityEntries(
+      List<UnexplainedActivityEntry> unexplainedActivityEntries) {
+    Map<String, ModelUnexplainedActivityEntries> byMaterial = new LinkedHashMap<>();
+    for (UnexplainedActivityEntry entry : unexplainedActivityEntries) {
+      ModelUnexplainedActivityEntries existing = byMaterial.get(entry.materialId());
+      if (existing == null) {
+        existing =
+            new ModelUnexplainedActivityEntries(
+                entry.materialContext(), entry.reasonCode(), new ArrayList<>());
+        byMaterial.put(entry.materialId(), existing);
+      }
+      if (!existing.materialContext().equals(entry.materialContext())
+          || !existing.reasonCode().equals(entry.reasonCode())
+          || existing.entryKeys().contains(entry.entryKey())) {
+        throw failure("BUSINESS_REPORT_KNOWLEDGE_INVALID", null);
+      }
+      existing.entryKeys().add(entry.entryKey());
+    }
+    return byMaterial.values().stream()
+        .map(
+            value ->
+                new ModelUnexplainedActivityEntries(
+                    value.materialContext(), value.reasonCode(), List.copyOf(value.entryKeys())))
+        .toList();
   }
 
   private static void activityJson(ObjectNode value, ReviewedActivity activity) {
@@ -396,6 +433,9 @@ public final class BusinessReportPublisher {
   private static void strings(ArrayNode node, List<String> values) {
     values.forEach(node::add);
   }
+
+  private record ModelUnexplainedActivityEntries(
+      String materialContext, String reasonCode, List<String> entryKeys) {}
 
   private static BusinessReportException failure(String code, Throwable cause) {
     return new BusinessReportException(code, cause);

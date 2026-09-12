@@ -17,6 +17,7 @@ import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
+import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplainer;
@@ -37,7 +38,6 @@ import org.sourceanalysis.app.runtime.AnalysisRunOutput;
 import org.sourceanalysis.app.runtime.ArtifactView;
 import org.sourceanalysis.app.runtime.BusinessCheckpointArtifactReader;
 import org.sourceanalysis.app.runtime.BusinessOutputArtifactKey;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Proves the final business report can be fresh-reopened without a report-time model call. */
 class BusinessReportCheckpointTest {

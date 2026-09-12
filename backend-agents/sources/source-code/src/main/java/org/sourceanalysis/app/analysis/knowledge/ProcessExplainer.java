@@ -23,6 +23,7 @@ import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationResult;
 import org.sourceanalysis.app.analysis.interpretation.activity.ReviewedActivity;
+import org.sourceanalysis.app.analysis.interpretation.activity.UnexplainedActivityEntry;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
@@ -91,7 +92,7 @@ public final class ProcessExplainer {
         source.reviewedActivities().stream()
             .sorted(Comparator.comparing(ReviewedActivity::activityId))
             .toList();
-    verifyCoverage(source.coverage(), activities);
+    verifyCoverage(source, activities);
 
     List<String> unmatched = new ArrayList<>();
     List<BusinessProcess> processes = new ArrayList<>();
@@ -118,7 +119,13 @@ public final class ProcessExplainer {
     }
     List<String> uniqueUnmatched = unmatched.stream().distinct().sorted().toList();
     Consolidation consolidation =
-        consolidate(activities, processes, source.coverage(), uniqueUnmatched, request.profile());
+        consolidate(
+            activities,
+            processes,
+            source.coverage(),
+            source.unexplainedActivityEntries(),
+            uniqueUnmatched,
+            request.profile());
     List<String> topics =
         confirmationTopics(
             activities,
@@ -131,6 +138,7 @@ public final class ProcessExplainer {
             activities,
             processes.stream().sorted(Comparator.comparing(BusinessProcess::processId)).toList(),
             source.coverage(),
+            source.unexplainedActivityEntries(),
             uniqueUnmatched,
             topics,
             consolidation.notConsolidatedProcessIds(),
@@ -143,6 +151,7 @@ public final class ProcessExplainer {
         result.activities(),
         result.processes(),
         result.activityCoverage(),
+        result.unexplainedActivityEntries(),
         result.unmatchedActivityIds(),
         result.confirmationTopics(),
         result.notConsolidatedProcessIds(),
@@ -154,6 +163,7 @@ public final class ProcessExplainer {
       List<ReviewedActivity> activities,
       List<BusinessProcess> processes,
       List<ActivityEntryCoverage> coverage,
+      List<UnexplainedActivityEntry> unexplainedActivityEntries,
       List<String> unmatched,
       ProcessExplanationProfile profile) {
     if (profile.maxRepositorySummaryItems() == 0 || processes.isEmpty()) {
@@ -164,7 +174,8 @@ public final class ProcessExplainer {
     if (ordered.size() > profile.maxRepositorySummaryItems()) {
       return Consolidation.notConsolidated(ordered);
     }
-    ObjectNode input = repositoryInput(activities, ordered, coverage, unmatched);
+    ObjectNode input =
+        repositoryInput(activities, ordered, coverage, unexplainedActivityEntries, unmatched);
     ImmutableBytes draftInput = canonicalJson.encodeCanonical(input);
     if (draftInput.size() > profile.maxModelInputBytes()) {
       return Consolidation.notConsolidated(ordered);
@@ -183,6 +194,7 @@ public final class ProcessExplainer {
       List<ReviewedActivity> activities,
       List<BusinessProcess> processes,
       List<ActivityEntryCoverage> coverage,
+      List<UnexplainedActivityEntry> unexplainedActivityEntries,
       List<String> unmatched) {
     ObjectNode root = JsonNodeFactory.instance.objectNode();
     ArrayNode activityValues = root.putArray("activities");
@@ -194,6 +206,15 @@ public final class ProcessExplainer {
     coverageValue.put("analyzedWithGapsEntries", count(coverage, "ANALYZED_WITH_GAPS"));
     coverageValue.put("notAnalyzedEntries", count(coverage, "NOT_ANALYZED"));
     coverageValue.put("unmatchedActivities", unmatched.size());
+    ArrayNode unexplained = root.putArray("unexplainedActivityEntries");
+    modelUnexplainedActivityEntries(unexplainedActivityEntries)
+        .forEach(
+            entry -> {
+              ObjectNode value = unexplained.addObject();
+              value.put("materialContext", entry.materialContext());
+              strings(value.putArray("unexplainedEntryKeys"), entry.entryKeys());
+              value.put("reasonCode", entry.reasonCode());
+            });
     strings(root.putArray("allowlistedRefs"), sourceRefs(activities).stream().sorted().toList());
     return root;
   }
@@ -228,19 +249,68 @@ public final class ProcessExplainer {
     strings(value.putArray("confirmationNotes"), process.confirmationNotes());
   }
 
-  private void verifyCoverage(
-      List<ActivityEntryCoverage> coverage, List<ReviewedActivity> activities) {
-    Set<String> entries = new HashSet<>();
-    for (ActivityEntryCoverage value : coverage) {
-      if (!entries.add(value.entryId())) {
+  private void verifyCoverage(ActivityExplanationResult source, List<ReviewedActivity> activities) {
+    Map<String, ActivityEntryCoverage> coverage = new HashMap<>();
+    for (ActivityEntryCoverage value : source.coverage()) {
+      if (coverage.put(value.entryId(), value) != null) {
         throw failure("PROCESS_ACTIVITY_COVERAGE_INVALID", null);
       }
     }
     for (ReviewedActivity activity : activities) {
-      if (!entries.containsAll(activity.entryIds())) {
+      if (!coverage.keySet().containsAll(activity.entryIds())) {
         throw failure("PROCESS_ACTIVITY_COVERAGE_INVALID", null);
       }
     }
+    Set<String> unexplainedEntryIds = new HashSet<>();
+    for (UnexplainedActivityEntry unexplained : source.unexplainedActivityEntries()) {
+      ActivityEntryCoverage entry = coverage.get(unexplained.entryId());
+      if (!unexplainedEntryIds.add(unexplained.entryId())
+          || entry == null
+          || !"NOT_ANALYZED".equals(entry.disposition())
+          || !"MODEL_NOT_EXPLAINED".equals(entry.reasonCode())
+          || !entry.activityIds().isEmpty()
+          || activities.stream()
+              .anyMatch(activity -> activity.entryIds().contains(unexplained.entryId()))) {
+        throw failure("PROCESS_ACTIVITY_COVERAGE_INVALID", null);
+      }
+    }
+    Set<String> modelNotExplainedIds =
+        coverage.values().stream()
+            .filter(
+                entry ->
+                    "NOT_ANALYZED".equals(entry.disposition())
+                        && "MODEL_NOT_EXPLAINED".equals(entry.reasonCode()))
+            .map(ActivityEntryCoverage::entryId)
+            .collect(java.util.stream.Collectors.toSet());
+    if (!modelNotExplainedIds.equals(unexplainedEntryIds)) {
+      throw failure("PROCESS_ACTIVITY_COVERAGE_INVALID", null);
+    }
+  }
+
+  private static List<ModelUnexplainedActivityEntries> modelUnexplainedActivityEntries(
+      List<UnexplainedActivityEntry> unexplainedActivityEntries) {
+    Map<String, ModelUnexplainedActivityEntries> byMaterial = new java.util.LinkedHashMap<>();
+    for (UnexplainedActivityEntry entry : unexplainedActivityEntries) {
+      ModelUnexplainedActivityEntries existing = byMaterial.get(entry.materialId());
+      if (existing == null) {
+        existing =
+            new ModelUnexplainedActivityEntries(
+                entry.materialContext(), entry.reasonCode(), new ArrayList<>());
+        byMaterial.put(entry.materialId(), existing);
+      }
+      if (!existing.materialContext().equals(entry.materialContext())
+          || !existing.reasonCode().equals(entry.reasonCode())
+          || existing.entryKeys().contains(entry.entryKey())) {
+        throw failure("PROCESS_ACTIVITY_COVERAGE_INVALID", null);
+      }
+      existing.entryKeys().add(entry.entryKey());
+    }
+    return byMaterial.values().stream()
+        .map(
+            value ->
+                new ModelUnexplainedActivityEntries(
+                    value.materialContext(), value.reasonCode(), List.copyOf(value.entryKeys())))
+        .toList();
   }
 
   private List<ActivityGroup> groups(
@@ -805,6 +875,9 @@ public final class ProcessExplainer {
   }
 
   private record ActivityGroup(List<ReviewedActivity> activities, List<String> recallReasons) {}
+
+  private record ModelUnexplainedActivityEntries(
+      String materialContext, String reasonCode, List<String> entryKeys) {}
 
   private record Consolidation(
       RepositoryProcessSummary summary, List<String> notConsolidatedProcessIds) {

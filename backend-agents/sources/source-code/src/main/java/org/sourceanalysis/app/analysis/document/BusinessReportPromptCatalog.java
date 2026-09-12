@@ -7,8 +7,8 @@ import java.nio.charset.StandardCharsets;
 /** Versioned Chinese instructions for business-report writing and its whole-document review. */
 final class BusinessReportPromptCatalog {
 
-  private static final String DRAFT = load("business-report-draft-v1.txt");
-  private static final String REVIEW = load("business-report-review-v1.txt");
+  private static final String DRAFT = load("business-report-draft-v2.txt");
+  private static final String REVIEW = load("business-report-review-v2.txt");
 
   private BusinessReportPromptCatalog() {}
 

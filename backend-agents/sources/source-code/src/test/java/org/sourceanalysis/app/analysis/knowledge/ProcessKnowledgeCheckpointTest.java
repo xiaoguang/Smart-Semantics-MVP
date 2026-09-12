@@ -17,6 +17,7 @@ import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
+import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplainer;
@@ -31,7 +32,6 @@ import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Guards the reopenable repository-knowledge checkpoint promised after process reconstruction. */
 class ProcessKnowledgeCheckpointTest {

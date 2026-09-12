@@ -16,12 +16,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionProfile;
 import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilationProfile;
+import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Stored-artifact coverage for a two-Flow mixed model-eligibility publication. */
 public class BusinessFlowCoverageTest {

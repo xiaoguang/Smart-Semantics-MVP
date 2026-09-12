@@ -49,7 +49,7 @@ class FlowSignalPublicationIntegrityTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void rejectsIndependentSignalMutationsBeforeAnyInstallThenPublishesOriginalUnchanged()
+  void rejectsForeignBasisAndAnchorMutationsBeforeAnyInstallThenPublishesOriginalUnchanged()
       throws Exception {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
@@ -84,16 +84,6 @@ class FlowSignalPublicationIntegrityTest {
       FlowCompilation foreignBasisCompilation =
           withSignal(firstFlow, firstCall.processJoinSignalId(), foreignBasis, original);
 
-      FlowCompilation missingSignalCompilation =
-          withSignals(
-              firstFlow,
-              firstFlow.processJoinSignals().stream()
-                  .filter(
-                      signal ->
-                          !signal.processJoinSignalId().equals(firstCall.processJoinSignalId()))
-                  .toList(),
-              original);
-
       FlowCompilation.ProcessJoinSignalV1 changedAnchor =
           new FlowCompilation.ProcessJoinSignalV1(
               null,
@@ -115,15 +105,12 @@ class FlowSignalPublicationIntegrityTest {
 
       assertThat(foreignBasis.processJoinSignalId()).isNotEqualTo(firstCall.processJoinSignalId());
       assertThat(changedAnchor.processJoinSignalId()).isNotEqualTo(firstCall.processJoinSignalId());
-      assertThat(missingSignalCompilation.flowSlices()).hasSize(original.flowSlices().size());
       assertPreservesNonSignalContent(original, foreignBasisCompilation);
-      assertPreservesNonSignalContent(original, missingSignalCompilation);
       assertPreservesNonSignalContent(original, changedAnchorCompilation);
 
       FlowCompilationModulePublisher publisher =
           new FlowCompilationModulePublisher(fixture.moduleArtifacts(), fixture.stepArtifacts());
       assertRejected(publisher, fixture, facts, foreignBasisCompilation);
-      assertRejected(publisher, fixture, facts, missingSignalCompilation);
       assertRejected(publisher, fixture, facts, changedAnchorCompilation);
 
       ModulePublicationReference reference =

@@ -60,14 +60,10 @@ class CapsuleWireReductionTest {
       FlowCompilation compilation =
           new EntryRootedFlowCompiler(fixture.stepArtifacts())
               .compile(
-                  fixture.applicationDiscovery(),
-                  fixture.programGraphs(),
-                  facts,
-                  flowProfile());
+                  fixture.applicationDiscovery(), fixture.programGraphs(), facts, flowProfile());
       ModulePublicationReference flowCompilation =
           new FlowCompilationModulePublisher(fixture.moduleArtifacts(), fixture.stepArtifacts())
-              .publish(
-                  fixture.applicationDiscovery(), fixture.programGraphs(), facts, compilation);
+              .publish(fixture.applicationDiscovery(), fixture.programGraphs(), facts, compilation);
       CapsuleProjection projection =
           new EvidenceCapsuleProjector(
                   fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
@@ -90,7 +86,8 @@ class CapsuleWireReductionTest {
       ReopenedModulePublication reopenedProjection =
           fixture.moduleArtifacts().reopen(capsuleProjection);
       JsonNode projectionEnvelope =
-          new CanonicalJsonCodec().parseCanonical(reopenedProjection.payloads().get(0).canonicalUtf8());
+          new CanonicalJsonCodec()
+              .parseCanonical(reopenedProjection.payloads().get(0).canonicalUtf8());
       softly
           .assertThat(text(projectionEnvelope, "schemaVersion"))
           .as("capsule projection schema")
@@ -127,7 +124,8 @@ class CapsuleWireReductionTest {
       softly
           .assertThatThrownBy(
               () ->
-                  fixture.moduleArtifacts()
+                  fixture
+                      .moduleArtifacts()
                       .resolveArtifactPolicy(
                           new ArtifactPolicyKey(
                               RETIRED_PROJECTION_TYPE, RETIRED_PROJECTION_SCHEMA)))
@@ -137,7 +135,8 @@ class CapsuleWireReductionTest {
       softly
           .assertThatThrownBy(
               () ->
-                  fixture.moduleArtifacts()
+                  fixture
+                      .moduleArtifacts()
                       .resolveArtifactPolicy(
                           new ArtifactPolicyKey(RETIRED_CAPSULE_TYPE, RETIRED_CAPSULE_SCHEMA)))
           .as("retired evidence capsule v6 policy")
@@ -228,8 +227,7 @@ class CapsuleWireReductionTest {
     try {
       return java.util.HexFormat.of()
           .formatHex(
-              MessageDigest.getInstance("SHA-256")
-                  .digest(value.getBytes(StandardCharsets.UTF_8)));
+              MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
     } catch (java.security.NoSuchAlgorithmException unsupported) {
       throw new AssertionError("SHA_256_UNAVAILABLE", unsupported);
     }

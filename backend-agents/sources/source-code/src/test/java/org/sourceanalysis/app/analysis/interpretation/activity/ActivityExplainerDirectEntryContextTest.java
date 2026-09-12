@@ -14,6 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
+import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
@@ -25,7 +26,6 @@ import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialM
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Verifies that saved Step05 service context survives the material-to-activity boundary. */
 class ActivityExplainerDirectEntryContextTest {

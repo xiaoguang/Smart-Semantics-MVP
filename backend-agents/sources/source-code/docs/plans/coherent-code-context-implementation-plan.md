@@ -26,7 +26,7 @@
 - 14 个当前测试已改用中性 `BusinessFlowTestSupport`；`BusinessFlowCoverageTest` 的 R0 尾段已删除，同时保留 Flow/Capsule 覆盖断言；
 - Capsule 的 `registryProposalBasisAtomIds`、`registryProposalBasisGapIds` 已删除，projection/capsule wire 已分别升至 v9/v7；
 - Activity resource/schema/validator 已是 v2：四入口 DRAFT 只覆盖 E1/E2 时会将完整实际草稿与 `missingEntryKeys` 交给唯一 REVIEW，并以活动或明确未解释入口闭合；
-- Process/report 模型输入仍只传 NOT_ANALYZED 数量；
+- Process/report 模型输入已按 material 传递具体 partial；
 - Activity/Process 仍在循环结束后聚合 publish；逐包即时保存是独立缺口，不在本计划实现。
 
 所有 work unit 共同遵守：
@@ -134,11 +134,11 @@
 - Consumes: Task 4 程序侧完整 unexplained records
 - Produces: knowledge/report 模型输入中按 material 聚合的 `{materialContext, unexplainedEntryKeys, reasonCode}`
 
-- [ ] Luna/xhigh RED：同一 materialContext 只发送一次，包含全部 local missing keys；material/global entry IDs 留程序侧，不 regex 解析中文 context，不新增 EntryDescriptor。
-- [ ] RED：Process 模型不得把 `MODEL_NOT_EXPLAINED` 变成虚构活动、过程、SOURCE 缺失或技术 Gap；其现有 member/ref/JSON/fatal validator 保持不变。
-- [ ] RED：报告第9章以 context 中完整 HTTP 方法/路径列出具体入口与原因类别，不只写数量或裸 E3/E4；第4章不替未解释入口编造活动。
-- [ ] Terra/xhigh 只扩现有 result/checkpoint/read/input seams 和确实承载数组的 schema；报告九章 output shape 未变则不强制升版。
-- [ ] 0 入口时 Activity/Process Provider 为 0；显式空仓报告仍走现有 DRAFT+REVIEW，文档验收 INCOMPLETE。
+- [x] Luna/xhigh RED：同一 materialContext 只发送一次，包含全部 local missing keys；material/global entry IDs 留程序侧，不 regex 解析中文 context，不新增 EntryDescriptor。
+- [x] RED：Process 模型不得把 `MODEL_NOT_EXPLAINED` 变成虚构活动、过程、SOURCE 缺失或技术 Gap；其现有 member/ref/JSON/fatal validator 保持不变。
+- [x] RED：报告第9章以 context 中完整 HTTP 方法/路径列出具体入口与原因类别，不只写数量或裸 E3/E4；第4章不替未解释入口编造活动。
+- [x] Terra/xhigh 只扩现有 result/checkpoint/read/input seams 和确实承载数组的 schema；报告九章 output shape 未变则不强制升版。
+- [x] 0 入口时 Activity/Process Provider 为 0；显式空仓报告仍走现有 DRAFT+REVIEW，文档验收 INCOMPLETE。
 
 ## Task 6：四入口与可扩展性闭环验收
 

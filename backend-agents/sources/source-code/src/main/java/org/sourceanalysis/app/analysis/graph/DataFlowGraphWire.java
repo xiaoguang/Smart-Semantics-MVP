@@ -171,8 +171,7 @@ final class DataFlowGraphWire {
     value.put("reasonCode", item.reasonCode());
     ids(value.putArray("affectedEntryIds"), item.affectedEntryIds());
     ids(value.putArray("candidateElementIds"), item.candidateElementIds());
-    if (item.sourceLocator() == null) value.putNull("sourceLocator");
-    else value.set("sourceLocator", locator(item.sourceLocator()));
+    value.set("sourceLocator", locator(item.sourceLocator()));
     return value;
   }
 
@@ -362,7 +361,7 @@ final class DataFlowGraphWire {
                   text(value, "reasonCode"),
                   ids(value.get("affectedEntryIds")),
                   ids(value.get("candidateElementIds")),
-                  nullableLocator(value, "sourceLocator"));
+                  locator(value.get("sourceLocator")));
             })
         .toList();
   }
@@ -449,11 +448,6 @@ final class DataFlowGraphWire {
         integer(value, "startColumn"),
         integer(value, "endLine"),
         integer(value, "endColumn"));
-  }
-
-  private static SourceLocatorV1 nullableLocator(JsonNode value, String field) {
-    JsonNode item = value.get(field);
-    return item != null && item.isNull() ? null : locator(item);
   }
 
   private static void ids(ArrayNode destination, List<ArtifactId> values) {

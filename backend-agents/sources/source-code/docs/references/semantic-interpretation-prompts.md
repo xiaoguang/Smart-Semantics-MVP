@@ -2,7 +2,7 @@
 
 本文服务 [Step06](../analysis-steps/06-flow-interpretation.md)、[Step07](../analysis-steps/07-repository-knowledge.md) 和 [Step08](../analysis-steps/08-nine-section-document.md)。模型使用 Luna/high；Java 先提供已经连贯的代码上下文，再由模型理解业务。自动测试使用 scripted Provider；已完成一次授权的自动用户注册小包 DRAFT+REVIEW，用于校验局部活动的可读性，不代表整仓业务验收。
 
-本文以下 Activity 缺项/处置文字是**已批准的目标 v2 中文设计 Prompt**。当前 `src/main/resources` 的 Activity DRAFT/REVIEW 文件仍是 v1，本轮不修改 resource、catalog、schema 或 Java，也不把旧 v1 response 兼容读取成 v2。Process/Report 只增加具体 partial 输入与第9章要求；不借此放宽它们现有的其他 JSON/member/ref 校验。
+本文 Activity 缺项/处置文字是当前 v2 中文设计 Prompt。`src/main/resources` 的 Activity DRAFT/REVIEW 已切至 v2，旧 v1 response 不兼容读取为 v2。Process/Report 已增加具体 partial 输入与第9章要求；不借此放宽它们现有的其他 JSON/member/ref 校验。
 
 ## 1. 通用输入规则
 

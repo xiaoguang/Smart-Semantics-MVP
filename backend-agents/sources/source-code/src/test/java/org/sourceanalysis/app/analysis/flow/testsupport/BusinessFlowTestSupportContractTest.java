@@ -1,4 +1,4 @@
-package org.sourceanalysis.app.testsupport;
+package org.sourceanalysis.app.analysis.flow.testsupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -15,7 +15,7 @@ import org.sourceanalysis.app.artifact.ArtifactReference;
 class BusinessFlowTestSupportContractTest {
 
   private static final String SUPPORT_CLASS =
-      "org.sourceanalysis.app.testsupport.BusinessFlowTestSupport";
+      "org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport";
 
   @Test
   void exposesIndependentBusinessFlowPublicationAndReferenceMethods() throws Exception {
@@ -27,8 +27,12 @@ class BusinessFlowTestSupportContractTest {
       return;
     }
 
-    assertThat(hasPublicStaticMethod(support, "publishBusinessFlows", BusinessFlowsReference.class,
-        ProgramGraphsPublicFixture.class))
+    assertThat(
+            hasPublicStaticMethod(
+                support,
+                "publishBusinessFlows",
+                BusinessFlowsReference.class,
+                ProgramGraphsPublicFixture.class))
         .as("one-argument business-flow publisher")
         .isTrue();
     assertThat(
@@ -41,8 +45,9 @@ class BusinessFlowTestSupportContractTest {
                 CapsuleProjectionProfile.class))
         .as("profile-aware business-flow publisher")
         .isTrue();
-    assertThat(hasPublicStaticMethod(support, "reference", ArtifactReference.class, String.class,
-        String.class))
+    assertThat(
+            hasPublicStaticMethod(
+                support, "reference", ArtifactReference.class, String.class, String.class))
         .as("stable artifact-reference helper")
         .isTrue();
   }

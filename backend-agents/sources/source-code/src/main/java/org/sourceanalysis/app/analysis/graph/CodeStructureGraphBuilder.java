@@ -827,15 +827,6 @@ public final class CodeStructureGraphBuilder {
         ArtifactId from,
         ArtifactId to,
         String ruleId,
-        CodeStructureSourceDocument document) {
-      edge(kind, from, to, ruleId, document, fullSpan(document));
-    }
-
-    private void edge(
-        ProgramEdgeKind kind,
-        ArtifactId from,
-        ArtifactId to,
-        String ruleId,
         CodeStructureSourceDocument document,
         SourceSpan span) {
       if (!nodes.containsKey(from) || !nodes.containsKey(to)) {

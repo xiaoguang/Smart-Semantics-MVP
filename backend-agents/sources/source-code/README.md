@@ -29,7 +29,7 @@
 
 自动 `POST /user/registerUser` 与 `POST /user/login` 小包均已完成一次真实 Luna/high DRAFT+REVIEW；现有业务语言 Prompt 已在登录样本中保留完整路径并避免不必要的 Java 标识泄漏。两份完成活动的一次真实过程审阅没有把它们仅因同一 Controller/验证码硬拼成顺序过程，而是保守地保留为两个独立局部过程。它们证明局部语义和“拒绝无依据连接”的过程边界可用，不证明跨入口过程或整仓九章报告已经验收。四个业务 Module 已实现不等于自动语义和整仓九章已验收。
 
-用户已批准[旧解释链清理与任意 N 活动覆盖设计](docs/plans/code-cleanup-and-scalable-activity-coverage-design.md)：结构/范围合法但漏入口的 Activity DRAFT 将进入唯一 REVIEW，REVIEW 必须用活动或显式 `unexplainedEntries` 闭合，并把具体未解释入口传到第 9 章。该 v2 Prompt/schema、旧链删除和下游字段尚未实施；当前 resource 仍是 v1，旧四入口失败也不能重放或冒充修复结果。
+已完成[旧解释链清理与任意 N 活动覆盖设计](docs/plans/code-cleanup-and-scalable-activity-coverage-design.md)的代码收口：结构/范围合法但漏入口的 Activity DRAFT 会进入唯一 REVIEW，REVIEW 必须用活动或显式 `unexplainedEntries` 闭合；程序把具体未解释入口按材料投影给过程与报告，第 9 章必须说明对应 HTTP 入口及原因。当前资源、coverage 和 knowledge/report checkpoint 都使用 v2；历史 v1 调用不会被重放或冒充为修复后的结果。下一项是 scripted 全链验收，而不是再次改写业务模块。
 
 ## 九章与阅读依据
 

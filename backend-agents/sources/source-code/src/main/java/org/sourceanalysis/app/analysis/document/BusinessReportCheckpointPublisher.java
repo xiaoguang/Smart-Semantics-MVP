@@ -81,7 +81,7 @@ final class BusinessReportCheckpointPublisher {
                     AnalysisStepKey.NINE_SECTION_DOCUMENT,
                     1,
                     "business-report-publisher"),
-                "v1",
+                "v2",
                 upstream,
                 knowledgeCheckpoint.receipt().controls(),
                 ModuleCompletionStatus.SUCCEEDED,

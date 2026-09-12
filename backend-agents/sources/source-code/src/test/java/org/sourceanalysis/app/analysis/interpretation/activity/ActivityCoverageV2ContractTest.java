@@ -9,7 +9,6 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,6 +19,7 @@ import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
+import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
@@ -29,7 +29,6 @@ import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialB
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 
@@ -39,8 +38,7 @@ class ActivityCoverageV2ContractTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void sendsCompleteDraftAndMissingKeysToOneReviewAndPersistsUnexplainedEntries()
-      throws Exception {
+  void sendsCompleteDraftAndMissingKeysToOneReviewAndPersistsUnexplainedEntries() throws Exception {
     try (ProgramGraphsPublicFixture fixture = fixture("review-missing-entries")) {
       BusinessMaterialBuildResult materials = materialWithEntries(fixture, 4);
       JsonNode actualDraft = response(materials, List.of("E1", "E2"), false);
@@ -56,12 +54,10 @@ class ActivityCoverageV2ContractTest {
       assertThat(provider.calls()).isEqualTo(2);
       assertThat(provider.requests()).hasSize(2);
       JsonNode reviewInput = provider.input(1);
-      assertThat(textValues(reviewInput.path("entryKeys")))
-          .containsExactly("E1", "E2", "E3", "E4");
+      assertThat(textValues(reviewInput.path("entryKeys"))).containsExactly("E1", "E2", "E3", "E4");
       assertThat(reviewInput.path("actualDraft").isObject()).isTrue();
       assertThat(reviewInput.path("actualDraft")).isEqualTo(actualDraft);
-      assertThat(textValues(reviewInput.path("missingEntryKeys")))
-          .containsExactly("E3", "E4");
+      assertThat(textValues(reviewInput.path("missingEntryKeys"))).containsExactly("E3", "E4");
 
       List<?> unexplained = listProperty(result, "unexplainedActivityEntries");
       assertThat(unexplained).hasSize(2);
@@ -105,8 +101,7 @@ class ActivityCoverageV2ContractTest {
       assertThat(provider.calls()).isEqualTo(2);
       assertThat(textValues(provider.input(0).path("entryKeys")))
           .containsExactlyElementsOf(expectedKeys);
-      assertThat(textValues(provider.input(0).path("entryKeys")))
-          .contains("E10", "E11", "E12");
+      assertThat(textValues(provider.input(0).path("entryKeys"))).contains("E10", "E11", "E12");
       assertThat(result.reviewedActivities()).hasSize(1);
       assertThat(result.reviewedActivities().get(0).entryIds())
           .containsExactlyElementsOf(materials.materialSet().materials().get(0).entryIds());
@@ -305,9 +300,7 @@ class ActivityCoverageV2ContractTest {
     try {
       return explainer.explain(request);
     } catch (RuntimeException failure) {
-      assertThat(failure)
-          .as("ActivityExplainer must satisfy the Task4 success contract")
-          .isNull();
+      assertThat(failure).as("ActivityExplainer must satisfy the Task4 success contract").isNull();
       throw new AssertionError("unreachable");
     }
   }
@@ -326,12 +319,10 @@ class ActivityCoverageV2ContractTest {
 
   private static void assertUnexplainedEntry(Object value) {
     try {
-      assertThat((String) value.getClass().getMethod("entryKey").invoke(value))
-          .isIn("E3", "E4");
+      assertThat((String) value.getClass().getMethod("entryKey").invoke(value)).isIn("E3", "E4");
       assertThat((String) value.getClass().getMethod("reasonCode").invoke(value))
           .isEqualTo("MODEL_NOT_EXPLAINED");
-      assertThat((String) value.getClass().getMethod("materialContext").invoke(value))
-          .isNotBlank();
+      assertThat((String) value.getClass().getMethod("materialContext").invoke(value)).isNotBlank();
     } catch (ReflectiveOperationException failure) {
       throw new AssertionError("UNEXPLAINED_ACTIVITY_ENTRY_SHAPE_MISSING", failure);
     }

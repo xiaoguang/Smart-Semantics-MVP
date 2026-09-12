@@ -12,6 +12,7 @@ import java.util.Objects;
 import java.util.Set;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.activity.ReviewedActivity;
+import org.sourceanalysis.app.analysis.interpretation.activity.UnexplainedActivityEntry;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
@@ -34,9 +35,9 @@ final class ProcessKnowledgeCheckpointReader {
   private static final String PROCESSES_TYPE = "REPOSITORY_KNOWLEDGE_BUSINESS_PROCESSES";
   private static final String PROCESSES_SCHEMA = "repository-knowledge-business-processes-v1";
   private static final String COVERAGE_TYPE = "REPOSITORY_KNOWLEDGE_PROCESS_COVERAGE";
-  private static final String COVERAGE_SCHEMA = "repository-knowledge-process-coverage-v1";
+  private static final String COVERAGE_SCHEMA = "repository-knowledge-process-coverage-v2";
   private static final String KNOWLEDGE_TYPE = "REPOSITORY_KNOWLEDGE_BUSINESS_KNOWLEDGE";
-  private static final String KNOWLEDGE_SCHEMA = "repository-knowledge-business-knowledge-v1";
+  private static final String KNOWLEDGE_SCHEMA = "repository-knowledge-business-knowledge-v2";
   private static final Set<String> KNOWLEDGE_FIELDS =
       Set.of(
           "activities",
@@ -48,6 +49,7 @@ final class ProcessKnowledgeCheckpointReader {
           "processes",
           "repositorySummary",
           "schemaVersion",
+          "unexplainedActivityEntries",
           "unmatchedActivityIds");
   private static final Set<String> COVERAGE_FIELDS =
       Set.of(
@@ -58,6 +60,7 @@ final class ProcessKnowledgeCheckpointReader {
           "processCount",
           "schemaVersion",
           "semanticDeliveryStatus",
+          "unexplainedActivityEntries",
           "unmatchedActivityIds");
   private static final Set<String> ACTIVITY_FIELDS =
       Set.of(
@@ -97,6 +100,8 @@ final class ProcessKnowledgeCheckpointReader {
           "stages");
   private static final Set<String> ENTRY_COVERAGE_FIELDS =
       Set.of("activityIds", "disposition", "entryId", "reasonCode");
+  private static final Set<String> UNEXPLAINED_ENTRY_FIELDS =
+      Set.of("entryId", "entryKey", "materialContext", "materialId", "reasonCode");
   private static final Set<String> STAGE_FIELDS = Set.of("activityId", "description", "order");
   private static final Set<String> SUMMARY_FIELDS =
       Set.of("businessGoals", "confirmationTopics", "objectsAndRelations", "sourceRefs", "text");
@@ -127,11 +132,14 @@ final class ProcessKnowledgeCheckpointReader {
       List<ReviewedActivity> activities = activities(root.path("activities"));
       List<BusinessProcess> processes = processes(root.path("processes"));
       List<ActivityEntryCoverage> coverage = coverage(root.path("activityCoverage"));
+      List<UnexplainedActivityEntry> unexplained =
+          unexplained(root.path("unexplainedActivityEntries"));
       RepositoryBusinessKnowledge result =
           new RepositoryBusinessKnowledge(
               activities,
               processes,
               coverage,
+              unexplained,
               strings(root.path("unmatchedActivityIds")),
               strings(root.path("confirmationTopics")),
               strings(root.path("notConsolidatedProcessIds")),
@@ -193,18 +201,18 @@ final class ProcessKnowledgeCheckpointReader {
     ObjectNode root = object(payload, COVERAGE_FIELDS);
     identity(root, payload, COVERAGE_TYPE, COVERAGE_SCHEMA);
     List<ActivityEntryCoverage> coverage = coverage(root.path("activityCoverage"));
-    String expectedStatus =
-        knowledge.unmatchedActivityIds().isEmpty()
-                && knowledge.notConsolidatedProcessIds().isEmpty()
-            ? "READY_FOR_REPORT"
-            : "PARTIAL";
+    List<UnexplainedActivityEntry> unexplained =
+        unexplained(root.path("unexplainedActivityEntries"));
+    String expectedStatus = semanticDeliveryStatus(knowledge);
     if (!coverage.equals(knowledge.activityCoverage())
+        || !unexplained.equals(knowledge.unexplainedActivityEntries())
         || !strings(root.path("unmatchedActivityIds")).equals(knowledge.unmatchedActivityIds())
         || !strings(root.path("notConsolidatedProcessIds"))
             .equals(knowledge.notConsolidatedProcessIds())
         || !root.path("processCount").canConvertToInt()
         || root.path("processCount").intValue() != knowledge.processes().size()
         || !expectedStatus.equals(text(root, "semanticDeliveryStatus"))) throw failure();
+    verifyUnexplainedCoverage(knowledge);
   }
 
   private List<ReviewedActivity> activities(JsonNode node) {
@@ -289,6 +297,64 @@ final class ProcessKnowledgeCheckpointReader {
               value.path("reasonCode").isNull() ? null : text(value, "reasonCode")));
     }
     return List.copyOf(values);
+  }
+
+  private List<UnexplainedActivityEntry> unexplained(JsonNode node) {
+    if (!node.isArray()) throw failure();
+    List<UnexplainedActivityEntry> values = new ArrayList<>();
+    Set<String> entryIds = new HashSet<>();
+    for (JsonNode nodeValue : node) {
+      ObjectNode value = object(nodeValue);
+      if (!fields(value).equals(UNEXPLAINED_ENTRY_FIELDS)) throw failure();
+      UnexplainedActivityEntry entry =
+          new UnexplainedActivityEntry(
+              text(value, "entryId"),
+              text(value, "materialId"),
+              text(value, "entryKey"),
+              text(value, "materialContext"),
+              text(value, "reasonCode"));
+      if (!entryIds.add(entry.entryId())) throw failure();
+      values.add(entry);
+    }
+    return List.copyOf(values);
+  }
+
+  private static String semanticDeliveryStatus(RepositoryBusinessKnowledge knowledge) {
+    return knowledge.activityCoverage().stream()
+                .anyMatch(value -> "NOT_ANALYZED".equals(value.disposition()))
+            || !knowledge.unmatchedActivityIds().isEmpty()
+            || !knowledge.notConsolidatedProcessIds().isEmpty()
+            || !knowledge.unexplainedActivityEntries().isEmpty()
+        ? "PARTIAL"
+        : "READY_FOR_REPORT";
+  }
+
+  private static void verifyUnexplainedCoverage(RepositoryBusinessKnowledge knowledge) {
+    Map<String, ActivityEntryCoverage> coverageByEntry = new HashMap<>();
+    for (ActivityEntryCoverage coverage : knowledge.activityCoverage()) {
+      if (coverageByEntry.put(coverage.entryId(), coverage) != null) throw failure();
+    }
+    Set<String> unexplainedEntryIds = new HashSet<>();
+    for (UnexplainedActivityEntry unexplained : knowledge.unexplainedActivityEntries()) {
+      ActivityEntryCoverage coverage = coverageByEntry.get(unexplained.entryId());
+      if (!unexplainedEntryIds.add(unexplained.entryId())
+          || coverage == null
+          || !"NOT_ANALYZED".equals(coverage.disposition())
+          || !"MODEL_NOT_EXPLAINED".equals(coverage.reasonCode())
+          || !coverage.activityIds().isEmpty()
+          || knowledge.activities().stream()
+              .anyMatch(activity -> activity.entryIds().contains(unexplained.entryId()))) {
+        throw failure();
+      }
+    }
+    Set<String> modelNotExplained = new HashSet<>();
+    for (ActivityEntryCoverage coverage : knowledge.activityCoverage()) {
+      if ("NOT_ANALYZED".equals(coverage.disposition())
+          && "MODEL_NOT_EXPLAINED".equals(coverage.reasonCode())) {
+        modelNotExplained.add(coverage.entryId());
+      }
+    }
+    if (!modelNotExplained.equals(unexplainedEntryIds)) throw failure();
   }
 
   private RepositoryProcessSummary summary(JsonNode node) {

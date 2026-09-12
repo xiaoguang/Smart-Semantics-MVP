@@ -1660,7 +1660,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     if ("REPOSITORY_KNOWLEDGE_PROCESS_COVERAGE".equals(payload.artifactType())
-        && "repository-knowledge-process-coverage-v1".equals(payload.schemaVersion())) {
+        && "repository-knowledge-process-coverage-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.REPOSITORY_KNOWLEDGE,
           1,
@@ -1669,7 +1669,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("REPOSITORY_KNOWLEDGE_BUSINESS_KNOWLEDGE".equals(payload.artifactType())
-        && "repository-knowledge-business-knowledge-v1".equals(payload.schemaVersion())) {
+        && "repository-knowledge-business-knowledge-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.REPOSITORY_KNOWLEDGE,
           1,

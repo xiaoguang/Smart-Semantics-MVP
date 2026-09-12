@@ -14,6 +14,7 @@ import java.util.Objects;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationResult;
 import org.sourceanalysis.app.analysis.interpretation.activity.ReviewedActivity;
+import org.sourceanalysis.app.analysis.interpretation.activity.UnexplainedActivityEntry;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.ArtifactId;
@@ -35,9 +36,9 @@ final class ProcessKnowledgeCheckpointPublisher {
   private static final String PROCESSES_TYPE = "REPOSITORY_KNOWLEDGE_BUSINESS_PROCESSES";
   private static final String PROCESSES_SCHEMA = "repository-knowledge-business-processes-v1";
   private static final String COVERAGE_TYPE = "REPOSITORY_KNOWLEDGE_PROCESS_COVERAGE";
-  private static final String COVERAGE_SCHEMA = "repository-knowledge-process-coverage-v1";
+  private static final String COVERAGE_SCHEMA = "repository-knowledge-process-coverage-v2";
   private static final String KNOWLEDGE_TYPE = "REPOSITORY_KNOWLEDGE_BUSINESS_KNOWLEDGE";
-  private static final String KNOWLEDGE_SCHEMA = "repository-knowledge-business-knowledge-v1";
+  private static final String KNOWLEDGE_SCHEMA = "repository-knowledge-business-knowledge-v2";
   private static final Comparator<String> UTF8_ORDER =
       (left, right) -> {
         byte[] leftBytes = left.getBytes(StandardCharsets.UTF_8);
@@ -74,14 +75,17 @@ final class ProcessKnowledgeCheckpointPublisher {
             .toList();
     List<String> gaps =
         knowledge.activityCoverage().stream()
-            .filter(value -> "NOT_ANALYZED".equals(value.disposition()))
+            .filter(
+                value ->
+                    "NOT_ANALYZED".equals(value.disposition())
+                        && !"MODEL_NOT_EXPLAINED".equals(value.reasonCode()))
             .map(ActivityEntryCoverage::reasonCode)
             .filter(Objects::nonNull)
             .distinct()
             .sorted(UTF8_ORDER)
             .toList();
     ModuleCompletionStatus status =
-        gaps.isEmpty() && knowledge.unmatchedActivityIds().isEmpty()
+        gaps.isEmpty()
             ? ModuleCompletionStatus.SUCCEEDED
             : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
     InstalledModulePublication installed =
@@ -92,7 +96,7 @@ final class ProcessKnowledgeCheckpointPublisher {
                     AnalysisStepKey.REPOSITORY_KNOWLEDGE,
                     1,
                     "process-explainer"),
-                "v1",
+                "v2",
                 upstream,
                 activityCheckpoint.receipt().controls(),
                 status,
@@ -134,15 +138,14 @@ final class ProcessKnowledgeCheckpointPublisher {
     knowledge.activityCoverage().stream()
         .sorted(Comparator.comparing(ActivityEntryCoverage::entryId, UTF8_ORDER))
         .forEach(item -> coverageJson(coverage.addObject(), item));
+    ArrayNode unexplained = value.putArray("unexplainedActivityEntries");
+    knowledge
+        .unexplainedActivityEntries()
+        .forEach(item -> unexplainedJson(unexplained.addObject(), item));
     strings(value.putArray("unmatchedActivityIds"), knowledge.unmatchedActivityIds());
     strings(value.putArray("notConsolidatedProcessIds"), knowledge.notConsolidatedProcessIds());
     value.put("processCount", knowledge.processes().size());
-    value.put(
-        "semanticDeliveryStatus",
-        knowledge.unmatchedActivityIds().isEmpty()
-                && knowledge.notConsolidatedProcessIds().isEmpty()
-            ? "READY_FOR_REPORT"
-            : "PARTIAL");
+    value.put("semanticDeliveryStatus", semanticDeliveryStatus(knowledge));
     return standalonePayload(
         "process-coverage.json", "process-coverage", COVERAGE_TYPE, COVERAGE_SCHEMA, value);
   }
@@ -163,6 +166,10 @@ final class ProcessKnowledgeCheckpointPublisher {
     knowledge.activityCoverage().stream()
         .sorted(Comparator.comparing(ActivityEntryCoverage::entryId, UTF8_ORDER))
         .forEach(item -> coverageJson(coverage.addObject(), item));
+    ArrayNode unexplained = value.putArray("unexplainedActivityEntries");
+    knowledge
+        .unexplainedActivityEntries()
+        .forEach(item -> unexplainedJson(unexplained.addObject(), item));
     strings(value.putArray("unmatchedActivityIds"), knowledge.unmatchedActivityIds());
     strings(value.putArray("confirmationTopics"), knowledge.confirmationTopics());
     strings(value.putArray("notConsolidatedProcessIds"), knowledge.notConsolidatedProcessIds());
@@ -259,6 +266,24 @@ final class ProcessKnowledgeCheckpointPublisher {
     } else {
       value.put("reasonCode", coverage.reasonCode());
     }
+  }
+
+  private static void unexplainedJson(ObjectNode value, UnexplainedActivityEntry entry) {
+    value.put("entryId", entry.entryId());
+    value.put("materialId", entry.materialId());
+    value.put("entryKey", entry.entryKey());
+    value.put("materialContext", entry.materialContext());
+    value.put("reasonCode", entry.reasonCode());
+  }
+
+  private static String semanticDeliveryStatus(RepositoryBusinessKnowledge knowledge) {
+    return knowledge.activityCoverage().stream()
+                .anyMatch(value -> "NOT_ANALYZED".equals(value.disposition()))
+            || !knowledge.unmatchedActivityIds().isEmpty()
+            || !knowledge.notConsolidatedProcessIds().isEmpty()
+            || !knowledge.unexplainedActivityEntries().isEmpty()
+        ? "PARTIAL"
+        : "READY_FOR_REPORT";
   }
 
   private static void strings(ArrayNode target, List<String> values) {

@@ -198,7 +198,8 @@ class LocalRepositoryAnalysisAgentExecutionTest {
             new BusinessMaterialSet("synthetic-material-set", List.of(), List.of()), materials),
         new ActivityExplanationResult(List.of(), List.of(), activities),
         new RepositoryBusinessKnowledge(
-            List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), null, knowledge),
+            List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), null,
+            knowledge),
         new BusinessReportPublication(
             new BusinessReport("synthetic report", List.of()),
             "# synthetic report\n",

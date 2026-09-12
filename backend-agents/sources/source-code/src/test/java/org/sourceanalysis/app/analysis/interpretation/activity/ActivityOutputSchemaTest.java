@@ -15,6 +15,7 @@ import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
+import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
@@ -22,7 +23,6 @@ import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialB
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Guards the real model boundary against an arbitrary-object output schema. */
 class ActivityOutputSchemaTest {

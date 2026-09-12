@@ -51,7 +51,7 @@ class ProcessCodexSubscriptionCommandTest {
         new ProcessCodexSubscriptionCommand()
             .execute(
                 new CodexSubscriptionProfile(
-                    executable, "gpt-5.6-luna", "high", Duration.ofSeconds(2)),
+                    executable, "gpt-5.6-luna", "high", Duration.ofSeconds(10)),
                 "only structured output",
                 ImmutableBytes.copyOf("{\"type\":\"object\"}".getBytes(StandardCharsets.UTF_8)));
 

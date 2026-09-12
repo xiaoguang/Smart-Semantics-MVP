@@ -9,8 +9,8 @@ final class ProcessPromptCatalog {
 
   private static final String DRAFT = load("process-group-draft-v1.txt");
   private static final String REVIEW = load("process-group-review-v1.txt");
-  private static final String REPOSITORY_DRAFT = load("repository-summary-draft-v1.txt");
-  private static final String REPOSITORY_REVIEW = load("repository-summary-review-v1.txt");
+  private static final String REPOSITORY_DRAFT = load("repository-summary-draft-v2.txt");
+  private static final String REPOSITORY_REVIEW = load("repository-summary-review-v2.txt");
 
   private ProcessPromptCatalog() {}
 

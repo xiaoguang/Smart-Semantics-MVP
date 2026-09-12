@@ -71,6 +71,6 @@ fatal：错误 source identity、坏 bytes、危险 path、断 refs、伪 exact 
 
 ## 7. 当前实现审计
 
-Canonical stores、源码/图/Fact 纵切、四个业务 Module、BusinessAnalysisWorkflow、RepositoryAnalysisAgent 和持久化运行基础均已存在。Step05 EntryContext→Builder 接力、普通 Flow/Capsule 发布去重与 Spring unrestricted `methodCondition` 已实现，不再列为当前差距。当前批准但尚未实施的是旧 interpretation 链清理、Activity 任意 N/v2 REVIEW 闭合，以及具体未解释入口到 knowledge/第9章；四个业务 Module 不能写为 NOT IMPLEMENTED，也不能把这些新目标写成已完成。
+Canonical stores、源码/图/Fact 纵切、四个业务 Module、BusinessAnalysisWorkflow、RepositoryAnalysisAgent 和持久化运行基础均已存在。Step05 EntryContext→Builder 接力、普通 Flow/Capsule 发布去重与 Spring unrestricted `methodCondition` 已实现；旧 interpretation 链清理、Activity 任意 N/v2 REVIEW 闭合，以及具体未解释入口到 knowledge/第9章也已实现。四个业务 Module 不能写为 NOT IMPLEMENTED；下一项是 scripted 四入口与任意 N 的全链验收，不能把它提前写成真实整仓业务验收。
 
 固定完整 jshERP 捕获和图/Fact 产物已有证据；相关财务图/Fact 历史 run 没有 Step05 正式 publication，另一历史 material run 只提供受限 fallback，不能跨 run 拼接。较新的全仓材料 run 为 107 包覆盖 339 个入口。存在实现或人工小包结果均不证明自动整仓九章已验收。本轮只改文档，不改变现有 artifact、Schema、resource Prompt 或代码。

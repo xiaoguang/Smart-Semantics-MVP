@@ -187,6 +187,7 @@ class BusinessReportPublisherTest {
                         null))
             .toList(),
         List.of(),
+        List.of(),
         List.of("组织制度是否强制三个入口依次执行仍待确认"),
         List.of(),
         new RepositoryProcessSummary(

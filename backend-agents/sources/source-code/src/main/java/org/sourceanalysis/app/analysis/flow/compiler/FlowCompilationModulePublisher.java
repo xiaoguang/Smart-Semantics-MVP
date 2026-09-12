@@ -11,6 +11,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -184,6 +185,123 @@ public final class FlowCompilationModulePublisher {
         throw broken();
       }
     }
+    requireProcessJoinSignalClosure(compilation, reopened);
+  }
+
+  private static void requireProcessJoinSignalClosure(
+      FlowCompilation compilation,
+      PersistedFlowCompilationInputReader.PersistedFlowCompilationInputs inputs) {
+    for (FlowCompilation.FlowSlice flow : compilation.flowSlices()) {
+      Map<String, PersistedFlowCompilationInputReader.PersistedFact> factsById = new HashMap<>();
+      Map<String, String> factIdsByAtomId = new HashMap<>();
+      Map<String, PersistedFlowCompilationInputReader.PersistedAtom> atomsById = new HashMap<>();
+      for (PersistedFlowCompilationInputReader.PersistedFact fact :
+          inputs.factsByEntry().getOrDefault(flow.entryId(), List.of())) {
+        if (factsById.put(fact.factId(), fact) != null) throw broken();
+        for (PersistedFlowCompilationInputReader.PersistedAtom atom : fact.atoms()) {
+          if (factIdsByAtomId.put(atom.atomId(), fact.factId()) != null
+              || atomsById.put(atom.atomId(), atom) != null) {
+            throw broken();
+          }
+        }
+      }
+      Map<String, PersistedFlowCompilationInputReader.PersistedGap> gapsById = new HashMap<>();
+      for (PersistedFlowCompilationInputReader.PersistedGap gap :
+          inputs.gapsByEntry().getOrDefault(flow.entryId(), List.of())) {
+        if (gapsById.put(gap.gapId(), gap) != null) throw broken();
+      }
+      for (FlowCompilation.ProcessJoinSignalV1 signal : flow.processJoinSignals()) {
+        if (!flow.flowSliceId().equals(signal.flowSliceId())
+            || !factsById.keySet().containsAll(signal.factIds())
+            || !flow.gapIds().containsAll(signal.gapIds())
+            || !atomsById.keySet().containsAll(signal.atomIds())) {
+          throw broken();
+        }
+        List<String> expectedFactIds =
+            signal.atomIds().stream()
+                .map(factIdsByAtomId::get)
+                .distinct()
+                .sorted(UTF8_ORDER)
+                .toList();
+        List<String> expectedProofIds =
+            signal.atomIds().stream()
+                .map(atomsById::get)
+                .map(PersistedFlowCompilationInputReader.PersistedAtom::proofId)
+                .distinct()
+                .sorted(UTF8_ORDER)
+                .toList();
+        if (!signal.factIds().equals(expectedFactIds)
+            || !signal.proofIds().equals(expectedProofIds)) {
+          throw broken();
+        }
+        requireAnchorMatchesAtomBasis(signal, atomsById);
+        Set<String> expectedEvidenceIds = new HashSet<>();
+        for (String proofId : signal.proofIds()) {
+          PersistedFlowCompilationInputReader.PersistedProof proof =
+              inputs.proofsById().get(proofId);
+          if (proof == null
+              || !signal.atomIds().contains(proof.atomId())
+              || !proof.requiredEvidenceNodeIds().stream()
+                  .allMatch(inputs.evidenceNodesById()::containsKey)) {
+            throw broken();
+          }
+          expectedEvidenceIds.addAll(proof.requiredEvidenceNodeIds());
+        }
+        for (String gapId : signal.gapIds()) {
+          PersistedFlowCompilationInputReader.PersistedGap gap = gapsById.get(gapId);
+          if (gap == null
+              || !gap.affectedEntryIds().equals(List.of(flow.entryId()))
+              || !gap.evidenceNodeIds().stream()
+                  .allMatch(inputs.evidenceNodesById()::containsKey)) {
+            throw broken();
+          }
+          expectedEvidenceIds.addAll(gap.evidenceNodeIds());
+        }
+        List<String> orderedEvidenceIds = expectedEvidenceIds.stream().sorted(UTF8_ORDER).toList();
+        if (orderedEvidenceIds.isEmpty() || !signal.evidenceNodeIds().equals(orderedEvidenceIds)) {
+          throw broken();
+        }
+        List<SourceLocatorV1> expectedLocators =
+            orderedEvidenceIds.stream()
+                .map(inputs.evidenceNodesById()::get)
+                .map(PersistedFlowCompilationInputReader.PersistedEvidenceNode::sourceLocator)
+                .filter(Objects::nonNull)
+                .distinct()
+                .sorted(
+                    Comparator.comparing(SourceLocatorV1::path)
+                        .thenComparingLong(SourceLocatorV1::startByte)
+                        .thenComparingLong(SourceLocatorV1::endByteExclusive))
+                .toList();
+        if (expectedLocators.isEmpty() || !signal.sourceLocators().equals(expectedLocators)) {
+          throw broken();
+        }
+      }
+    }
+  }
+
+  private static void requireAnchorMatchesAtomBasis(
+      FlowCompilation.ProcessJoinSignalV1 signal,
+      Map<String, PersistedFlowCompilationInputReader.PersistedAtom> atomsById) {
+    Map<String, String> atomValuesByName = new HashMap<>();
+    for (String atomId : signal.atomIds()) {
+      PersistedFlowCompilationInputReader.PersistedAtom atom = atomsById.get(atomId);
+      if (atomValuesByName.put(atom.name(), atom.canonicalValue()) != null) throw broken();
+    }
+    if ("JAVA_TYPE".equals(signal.anchorKind())) {
+      if (!atomValuesByName.get("STATIC_TARGET_TYPE").equals(signal.anchorKey())) throw broken();
+      return;
+    }
+    if ("CALL_TARGET".equals(signal.anchorKind())) {
+      String type = atomValuesByName.get("STATIC_TARGET_TYPE");
+      String signature = atomValuesByName.get("STATIC_TARGET_SIGNATURE");
+      if (type == null
+          || signature == null
+          || !(type + "#" + signature).equals(signal.anchorKey())) {
+        throw broken();
+      }
+      return;
+    }
+    throw broken();
   }
 
   private CanonicalModulePayload payload(

@@ -206,4 +206,4 @@ ModuleFailure
 3. 跨进程复用 Step 06–08 检查点比较覆盖实际内容、实际 Prompt、有效模型/输出配置与 Module 版本的 inputFingerprint，并核验磁盘身份/hash/schema/ref/basis；不恢复旧六/三/四模块 DAG、固定五/九 payload 或 52-output 顺序。
 4. 公开 artifact 查询不接受 Path，也不返回截断内容。
 5. Source excerpt/SourceRef 验证来源；Proof 证明受支持的 exact technical fact；两者都不自动证明模型自由业务文本，也不要求每个业务原子拥有 Proof。
-6. 四个业务 Module、runtime、Step05 EntryContext 与 Builder 消费均已存在。已批准但尚未写入当前 Schema/Java/resource 的是 Activity v2 `missingEntryKeys`/required `unexplainedEntries`、程序侧 `unexplainedActivityEntries` 及其 knowledge/report 投影；字段变化必须显式 version，不存在兼容 alias、dual reader 或“缺字段按旧语义”。
+6. 四个业务 Module、runtime、Step05 EntryContext 与 Builder 消费均已存在。Activity v2 `missingEntryKeys`/required `unexplainedEntries`、程序侧 `unexplainedActivityEntries` 及其 knowledge/report 按材料投影均已写入当前 Schema/Java/resource；字段变化已显式升版，不存在兼容 alias、dual reader 或“缺字段按旧语义”。下一项仅验证完整链路，而不再扩展该 wire。

@@ -10,8 +10,8 @@ import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 /**
  * Defines the public cleanup boundary for the retired finite-key interpretation route.
  *
- * <p>This is intentionally RED until the old module registrations and implementation are
- * removed. The active material/activity seam and runtime identity must remain available.
+ * <p>This is intentionally RED until the old module registrations and implementation are removed.
+ * The active material/activity seam and runtime identity must remain available.
  */
 class LegacySemanticRouteRetirementTest {
 
@@ -33,24 +33,26 @@ class LegacySemanticRouteRetirementTest {
         () -> rejectsRetiredModule(8, "business-process-interpretation-runner"),
         () -> rejectsRetiredModule(9, "publish"),
         () ->
-            assertThat(classExists(
-                    "org.sourceanalysis.app.analysis.interpretation.model.FiniteKeyFlowTaskCompiler"))
+            assertThat(
+                    classExists(
+                        "org.sourceanalysis.app.analysis.interpretation.model.FiniteKeyFlowTaskCompiler"))
                 .as("the retired finite-key compiler must not remain on the production classpath")
                 .isFalse(),
         () ->
-            assertThat(new AnalysisStepModuleAddress(
-                    RUN_ID,
-                    AnalysisStepKey.FLOW_INTERPRETATION,
-                    10,
-                    "business-material-builder").moduleKey())
+            assertThat(
+                    new AnalysisStepModuleAddress(
+                            RUN_ID,
+                            AnalysisStepKey.FLOW_INTERPRETATION,
+                            10,
+                            "business-material-builder")
+                        .moduleKey())
                 .as("the active material builder module remains registered")
                 .isEqualTo("business-material-builder"),
         () ->
-            assertThat(new AnalysisStepModuleAddress(
-                    RUN_ID,
-                    AnalysisStepKey.FLOW_INTERPRETATION,
-                    11,
-                    "activity-explainer").moduleKey())
+            assertThat(
+                    new AnalysisStepModuleAddress(
+                            RUN_ID, AnalysisStepKey.FLOW_INTERPRETATION, 11, "activity-explainer")
+                        .moduleKey())
                 .as("the active activity explainer module remains registered")
                 .isEqualTo("activity-explainer"),
         () ->
@@ -65,8 +67,10 @@ class LegacySemanticRouteRetirementTest {
   }
 
   private static void rejectsRetiredModule(int number, String key) {
-    assertThatThrownBy(() -> new AnalysisStepModuleAddress(
-            RUN_ID, AnalysisStepKey.FLOW_INTERPRETATION, number, key))
+    assertThatThrownBy(
+            () ->
+                new AnalysisStepModuleAddress(
+                    RUN_ID, AnalysisStepKey.FLOW_INTERPRETATION, number, key))
         .as("retired flow-interpretation module %s (%s) must be rejected", number, key)
         .isInstanceOf(IllegalArgumentException.class);
   }

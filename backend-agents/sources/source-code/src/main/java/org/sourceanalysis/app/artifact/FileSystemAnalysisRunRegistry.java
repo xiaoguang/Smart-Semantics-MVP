@@ -264,7 +264,7 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     if (Files.exists(destination, LinkOption.NOFOLLOW_LINKS)) {
       throw failure("ANALYSIS_RUN_STORE_WRITE_FAILED", null);
     }
-    Path temporary = Files.createTempFile(destination.getParent(), ".write-", ".tmp");
+    Path temporary = Files.createTempFile(parentDirectory(destination), ".write-", ".tmp");
     try {
       Files.write(temporary, bytes);
       try {
@@ -279,7 +279,7 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
 
   private void replaceAtomic(Path destination, byte[] bytes) throws IOException {
     readRegular(destination);
-    Path temporary = Files.createTempFile(destination.getParent(), ".replace-", ".tmp");
+    Path temporary = Files.createTempFile(parentDirectory(destination), ".replace-", ".tmp");
     try {
       Files.write(temporary, bytes);
       try {
@@ -294,6 +294,14 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     } finally {
       Files.deleteIfExists(temporary);
     }
+  }
+
+  private Path parentDirectory(Path destination) {
+    Path parent = destination.getParent();
+    if (parent == null) {
+      throw failure("ANALYSIS_RUN_STORE_WRITE_FAILED", null);
+    }
+    return parent;
   }
 
   private ObjectNode requestJson(AnalysisRunRequest request) {

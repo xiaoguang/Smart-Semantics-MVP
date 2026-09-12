@@ -1,6 +1,6 @@
 # 代码清理与可扩展活动覆盖设计（APPROVED DESIGN）
 
-> 状态：**APPROVED DESIGN / implementation in progress**。用户已批准本文的清理范围，以及“合法但漏项的 DRAFT 进入唯一 REVIEW”和“REVIEW 以 required `unexplainedEntries` 闭合并把具体入口送到第 9 章”两项行为变化。`fc6d67b` 是实施基线；旧链清理、Capsule 字段减法和 Activity v2 已推送，具体入口向知识与第 9 章的下游投影仍待实施。后续工作按当前[实施衔接](coherent-code-context-implementation-plan.md)执行 TDD、定向 Maven 和交付提交。本文定义目标合同，不把尚未落地的 Process/Report Java、schema 或真实验证写成现状。
+> 状态：**APPROVED DESIGN / implementation in progress**。用户已批准本文的清理范围，以及“合法但漏项的 DRAFT 进入唯一 REVIEW”和“REVIEW 以 required `unexplainedEntries` 闭合并把具体入口送到第 9 章”两项行为变化。`fc6d67b` 是实施基线；旧链清理、Capsule 字段减法、Activity v2 和具体入口向知识与第 9 章的下游投影均已实施。后续工作按当前[实施衔接](coherent-code-context-implementation-plan.md)执行完整 scripted 全链与本地 CI，再决定受限真实验收。本文定义目标合同，不把尚未执行的真实验证写成现状。
 
 ## 1. 结论
 
@@ -92,7 +92,7 @@ Schema 不是逻辑上绝对矛盾：一个活动允许覆盖多个 key；但配
 
 `ActivityExplainer` 和 `ProcessExplainer` 都在循环全部结束后才 publish。设计要求的“每包 REVIEW 完成立即保存”尚未实现；把 publisher 直接移进循环会反复安装同一 module 地址并因不同内容发生 collision，所以它是独立持久化缺口，不是本次覆盖修复中的一行移动。
 
-当前 `ProcessExplainer.repositoryInput` 与 `BusinessReportPublisher.cleanKnowledge` 只向模型投影 NOT_ANALYZED 数量，不投影具体入口及原因。若接受本文的显式未解释入口合同，必须同步下游，不能在 activity coverage 保存后又从第九章静默丢失。
+`ProcessExplainer.repositoryInput` 与 `BusinessReportPublisher.cleanKnowledge` 已按 material 投影具体入口的 context、local keys 和原因，不传 global/material ID。process coverage 与 repository knowledge v2 持久化完整程序侧记录；第九章输入不再在 activity coverage 之后静默丢失这些范围。
 
 ## 3. 范围与保持不变项
 
@@ -132,7 +132,7 @@ Schema 不是逻辑上绝对矛盾：一个活动允许覆盖多个 key；但配
 | `ProcessExplainer` | 全部已审活动、召回线索、必要材料、按 material 聚合的未解释入口 | 已审过程、`RepositoryBusinessKnowledge`、process coverage | 宽松召回后解释有依据的多对多过程，保留独立活动与未解释范围 | 非法成员/ref/JSON、started 失败 fatal；0 活动零过程调用；不能把 partial 说成完成 | `BusinessReportPublisher` | 完整活动字段、多对多、保守独立过程、具体 partial 投影 | 只扩现有 knowledge 输入/保存/read seam，不改变其他过程 validator |
 | `BusinessReportPublisher` | 已审 knowledge、完整活动/过程、coverage、按 material 聚合的未解释入口、SourceRefs | 九章 JSON、source refs、Markdown、validation | 一次报告 DRAFT + 完整 REVIEW，Java 仅校验并排版固定九章 | 缺章/非法 ref/虚假全量 fatal；显式空仓报告仍调用既有 DRAFT+REVIEW；PARTIAL/INCOMPLETE 不是新 runtime enum | 业务读者及 `render/inspect/artifact` | 第4章完整内容、第9章具体未解释入口、固定九章、纯 render | 仅补 knowledge→report 输入和第9章合同，不新增语义 parser 或空报告捷径 |
 
-Activity 行的新覆盖字段、v2 Prompt、schema 和 sidecar 已写入当前 Java/resource/Schema，并经过 Luna RED 与 Terra GREEN。Process/Report 的具体 partial 投影仍是后续交接，不得把它写成已经进入仓库知识或第九章。
+Activity、Process 和 Report 的新覆盖字段、v2 Prompt、schema 与 sidecar 已写入当前 Java/resource/Schema，并经过 Luna RED 与 Terra GREEN。下一项是 scripted 四入口/大 N 全链验收；不得把它或真实 Provider 验收写成完成。
 
 ## 4. 清理设计与依赖迁移顺序
 
@@ -280,8 +280,8 @@ record UnexplainedActivityEntry(
 - `ActivityExplainer`、`ActivityExplanationResult`、`ActivityExplanationCheckpointPublisher/Reader`；
 - `ActivityPromptCatalog` 及 versioned DRAFT/REVIEW prompt（新执行使用 v2；旧 v1 response 不兼容读取）；
 - `activity-coverage` schema v2；`activity-explanations` 记录未变则保持 v1；
-- `RepositoryBusinessKnowledge`、`ProcessExplainer.repositoryInput`、`ProcessKnowledgeCheckpointPublisher/Reader`，并升级实际增加该数组的 process-coverage / repository-knowledge schemas；
-- `BusinessReportPublisher.cleanKnowledge` 与报告 prompt，让第 9 章收到具体 context/key/reason，而非只有数量；报告输出九章 shape 不变则不为字段未变的输出强行升版；
+- `RepositoryBusinessKnowledge`、`ProcessExplainer.repositoryInput`、`ProcessKnowledgeCheckpointPublisher/Reader`，并已升级实际增加该数组的 process-coverage / repository-knowledge schemas；
+- `BusinessReportPublisher.cleanKnowledge` 与报告 prompt，已让第 9 章收到具体 context/key/reason，而非只有数量；报告输出九章 shape 未因字段未变而强行升版；
 - `AtomicCanonicalPublicationEngine` 中对应新 schema contract，以及直接 checkpoint/read/reopen tests。
 
 `MODEL_NOT_EXPLAINED` 只表示模型在一次 DRAFT+REVIEW 内未形成可用活动，不表示源码丢失、Step05 context 损坏或技术 Gap。若 source/hash/ref 本身错误，仍走原 fatal，不得转成 unexplained。
@@ -427,7 +427,7 @@ PARTIAL 变体把 E3/E4 放入 `unexplainedEntries`。Process repository input �
 ## 13. 已批准决定与独立后续范围
 
 1. **已实施：**DRAFT 缺入口从“REVIEW 前 fatal”改为“结构/范围合法则交唯一 REVIEW”，并采用 required `unexplainedEntries` 最终闭合合同。
-2. **部分已实施：**程序侧 `UnexplainedActivityEntry` 和 activity coverage v2 已落地；确实承载该数组的 Step07 schemas/readers 以及把具体 partial 输入送到报告第 9 章仍待实施。模型不能自造 reason 或技术 Gap。
+2. **已实施：**程序侧 `UnexplainedActivityEntry`、activity coverage v2、确实承载该数组的 Step07 schemas/readers，以及把具体 partial 输入送到报告第 9 章均已落地。模型不能自造 reason 或技术 Gap。
 3. **保持现状：**Step06 有效 module 地址继续为 10/11，不为清理旧 1–9 而改号。重编号属于另一个持久化身份设计，不在本次范围。
 4. **独立缺口、本次不解决：**Activity/Process 每包即时 checkpoint；固定地址不能循环安装不同内容，必须另行设计聚合/分片语义，不能借清理扩成恢复系统。
 5. **需另行明确授权：**受保护旧主 worktree 的 stage01–04 后续如何处置；本次只记录，不删除、不清理。

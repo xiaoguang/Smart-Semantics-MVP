@@ -116,7 +116,7 @@ Java 只校验结构、scope-local IDs/refs、集合闭合、预算与保存约�
 
 目标是完成一个包 REVIEW 随即保存，后续包失败不删除已有结果；当前 ActivityExplainer 实际在循环结束后才以固定地址聚合 publish。把 publisher 移进循环会用同一地址安装不同 bytes 并 collision，因此即时逐包保存仍是独立已知缺口，本次覆盖修复保持现有聚合 publication，不假称解决，也不新增分片/恢复协议。DRAFT/REVIEW 原始执行材料按现有私有审计策略保存，不作为额外产品候选，不新增逐记录状态机或修复账本。
 
-Step07 可以按已保存 material/activity ID 读取必要内容，不回到扫描仓库或重构调用链。下一项会让 `RepositoryBusinessKnowledge.unexplainedActivityEntries` 持有并保存完整记录。程序送给 Process 仓库总整理/Report 模型前将按 `materialId` 把完整 sidecar records 聚合成一项 `{materialContext, unexplainedEntryKeys, reasonCode}`：同一 context 只发送一次，删除 material/global entry IDs，保持 E1…EN 的材料映射顺序。活动之间是否属于同一过程由模型阅读多个活动决定，不由 Step06 强设唯一 owner；process-group Prompt 不因这一仓库输入变化升版。
+Step07 可以按已保存 material/activity ID 读取必要内容，不回到扫描仓库或重构调用链。`RepositoryBusinessKnowledge.unexplainedActivityEntries` 已持有并保存完整记录。程序送给 Process 仓库总整理/Report 模型前按 `materialId` 把完整 sidecar records 聚合成一项 `{materialContext, unexplainedEntryKeys, reasonCode}`：同一 context 只发送一次，删除 material/global entry IDs，保持 E1…EN 的材料映射顺序。活动之间是否属于同一过程由模型阅读多个活动决定，不由 Step06 强设唯一 owner；process-group Prompt 不因这一仓库输入变化升版。
 
 ## 6. 覆盖、预算、失败与复用
 

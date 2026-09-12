@@ -13,15 +13,14 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.sourceanalysis.app.adapter.provider.CodexSubscriptionProfile;
 import org.sourceanalysis.app.adapter.provider.CodexSubscriptionStructuredProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
-import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
 import org.sourceanalysis.app.analysis.interpretation.activity.ReviewedActivity;
 
 /**
  * One explicit, bounded process-quality call over two persisted account-query activities.
  *
- * <p>The test only reuses the reviewed activity file; it never invokes {@code ActivityExplainer}.
- * A combined process is allowed only when Luna preserves the relationship as an inference with a
+ * <p>The test only reuses the reviewed activity file; it never invokes {@code ActivityExplainer}. A
+ * combined process is allowed only when Luna preserves the relationship as an inference with a
  * confirmation note. Two independent processes are equally valid for this material.
  */
 class LiveLunaAutomaticAccountBalanceProcessIT {
@@ -32,7 +31,8 @@ class LiveLunaAutomaticAccountBalanceProcessIT {
 
   @Test
   @EnabledIfSystemProperty(named = "sourceanalysis.liveLunaAccountBalanceProcess", matches = "true")
-  void reviewsTwoPersistedAccountActivitiesWithoutReplayingTheirActivityRequests() throws Exception {
+  void reviewsTwoPersistedAccountActivitiesWithoutReplayingTheirActivityRequests()
+      throws Exception {
     Path materials = requiredFile("sourceanalysis.liveLunaMaterials");
     Path activities = requiredFile("sourceanalysis.liveLunaAccountBalanceActivity");
     Path outputDirectory = requiredDirectory("sourceanalysis.liveLunaOutput");
@@ -51,10 +51,7 @@ class LiveLunaAutomaticAccountBalanceProcessIT {
                     outputDirectory,
                     new CodexSubscriptionStructuredProvider(
                         new CodexSubscriptionProfile(
-                            Path.of(EXECUTABLE),
-                            "gpt-5.6-luna",
-                            "high",
-                            Duration.ofMinutes(3)))))
+                            Path.of(EXECUTABLE), "gpt-5.6-luna", "high", Duration.ofMinutes(3)))))
             .explain(
                 new ExplainRepositoryProcessesRequest(
                     input.activities(),
@@ -72,9 +69,7 @@ class LiveLunaAutomaticAccountBalanceProcessIT {
             .collect(java.util.stream.Collectors.toSet());
     assertThat(accountedActivityIds).containsExactlyInAnyOrderElementsOf(expectedActivityIds);
     assertThat(knowledge.processes()).isNotEmpty();
-    knowledge
-        .processes()
-        .stream()
+    knowledge.processes().stream()
         .filter(process -> process.activityIds().size() > 1)
         .forEach(
             process -> {
@@ -85,7 +80,9 @@ class LiveLunaAutomaticAccountBalanceProcessIT {
             });
 
     LiveLunaAutomaticUserLifecycleProcessIT.writeOutput(
-        outputDirectory.resolve("live-luna-automatic-account-balance-process.json"), input, knowledge);
+        outputDirectory.resolve("live-luna-automatic-account-balance-process.json"),
+        input,
+        knowledge);
   }
 
   private static StructuredModelProvider recordingProvider(
@@ -93,9 +90,11 @@ class LiveLunaAutomaticAccountBalanceProcessIT {
     AtomicInteger sequence = new AtomicInteger();
     return request -> {
       int call = sequence.incrementAndGet();
-      writeDiagnostic(outputDirectory, call, request.taskKind(), "input", request.untrustedInputJson());
+      writeDiagnostic(
+          outputDirectory, call, request.taskKind(), "input", request.untrustedInputJson());
       StructuredModelResponse response = delegate.generate(request);
-      writeDiagnostic(outputDirectory, call, request.taskKind(), "response", response.responseJson());
+      writeDiagnostic(
+          outputDirectory, call, request.taskKind(), "response", response.responseJson());
       return response;
     };
   }

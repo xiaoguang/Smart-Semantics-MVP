@@ -7,8 +7,8 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
+import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 
 /** Prevents a zero-entry repository from being turned into invented model-reading material. */

@@ -108,6 +108,8 @@ public final class FlowPublicationSpecifier {
       DiscoveryCoverage discoveryCoverage = requireDiscoveryCoverage(discoveryStep);
       ReopenedModulePublication compiler = moduleArtifacts.reopen(flowCompilation);
       ReopenedModulePublication projector = moduleArtifacts.reopen(capsuleProjection);
+      List<ArtifactReference> compilerUpstream =
+          compilerUpstream(discoveryStep, graphStep, factStep);
       ArtifactReference compilerPayload =
           requireModule(
               compiler,
@@ -117,7 +119,10 @@ public final class FlowPublicationSpecifier {
               "BUSINESS_FLOWS_FLOW_COMPILATION",
               "business-flows-flow-compilation-v4",
               source.publication().address().runId(),
-              sourceStep.receipt().controls());
+              sourceStep.receipt().controls(),
+              compilerUpstream);
+      List<ArtifactReference> projectorUpstream =
+          projectorUpstream(compilerPayload, sourceStep, graphStep, factStep);
       ArtifactReference projectorPayload =
           requireModule(
               projector,
@@ -127,7 +132,8 @@ public final class FlowPublicationSpecifier {
               "BUSINESS_FLOWS_CAPSULE_PROJECTION",
               "business-flows-capsule-projection-v9",
               source.publication().address().runId(),
-              sourceStep.receipt().controls());
+              sourceStep.receipt().controls(),
+              projectorUpstream);
       FlowProvenanceSources sources = sourceRecords(factStep, graphStep);
       Material material = material(compiler, projector, compilerPayload, projectorPayload, sources);
       LocalFlowCoverage localCoverage =
@@ -502,7 +508,12 @@ public final class FlowPublicationSpecifier {
         evidenceGraphRef,
         "PROGRAM_GRAPHS_EVIDENCE_GRAPH",
         "program-graphs-evidence-graph-v3");
-    Set<String> factIds = ids(sortedObjects(array(facts, "codeFacts"), "factId"), "factId");
+    Map<String, List<FactAtom>> factAtomsByFactId = new HashMap<>();
+    for (JsonNode fact : sortedObjects(array(facts, "codeFacts"), "factId")) {
+      String factId = id(fact, "factId");
+      List<FactAtom> atoms = factAtoms(fact);
+      if (atoms.isEmpty() || factAtomsByFactId.put(factId, atoms) != null) throw failure();
+    }
     Set<String> evidenceNodeIds =
         ids(sortedObjects(array(evidence, "nodes"), "evidenceNodeId"), "evidenceNodeId");
     Map<String, SourceLedgerGap> ledgerGaps = new HashMap<>();
@@ -536,7 +547,7 @@ public final class FlowPublicationSpecifier {
         provenFactsRef,
         gapLedgerRef,
         evidenceGraphRef,
-        Set.copyOf(factIds),
+        Map.copyOf(factAtomsByFactId),
         Set.copyOf(evidenceNodeIds),
         Map.copyOf(ledgerGaps));
   }
@@ -652,12 +663,32 @@ public final class FlowPublicationSpecifier {
   private static void validateFactOrigins(List<JsonNode> capsules, FlowProvenanceSources sources) {
     for (JsonNode capsule : capsules) {
       for (JsonNode fact : array(capsule, "factViews")) {
-        if (!sources.factIds().contains(id(fact, "factId"))
+        List<FactAtom> expectedAtoms = sources.factAtomsByFactId().get(id(fact, "factId"));
+        if (expectedAtoms == null
+            || !expectedAtoms.equals(factAtoms(fact))
             || !sources.provenFactsRef().equals(readReference(fact, "originFactArtifactRef"))) {
           throw failure();
         }
       }
     }
+  }
+
+  private static List<FactAtom> factAtoms(JsonNode fact) {
+    List<FactAtom> atoms = new ArrayList<>();
+    for (JsonNode atom : array(fact, "atoms")) {
+      requireExactFields(atom, Set.of("atomId", "role", "name", "value", "proofId"));
+      JsonNode value = object(atom, "value");
+      requireExactFields(value, Set.of("type", "canonical"));
+      atoms.add(
+          new FactAtom(
+              id(atom, "atomId"),
+              text(atom, "role"),
+              text(atom, "name"),
+              text(value, "type"),
+              text(value, "canonical"),
+              id(atom, "proofId")));
+    }
+    return atoms.stream().sorted(Comparator.comparing(FactAtom::atomId, UTF8_ORDER)).toList();
   }
 
   private static List<JsonNode> completePublicCapsules(
@@ -901,19 +932,172 @@ public final class FlowPublicationSpecifier {
       String type,
       String schema,
       org.sourceanalysis.app.artifact.AnalysisRunId expectedRunId,
-      ArtifactControls expectedControls) {
+      ArtifactControls expectedControls,
+      List<ArtifactReference> expectedUpstream) {
     if (publication.payloads().size() != 1
         || !(publication.receipt().address() instanceof AnalysisStepModuleAddress address)
         || address.analysisStepKey() != AnalysisStepKey.BUSINESS_FLOWS
         || address.moduleNumber() != number
         || !key.equals(address.moduleKey())
         || !expectedRunId.equals(address.runId())
-        || !expectedControls.equals(publication.receipt().controls())) throw failure();
+        || !expectedControls.equals(publication.receipt().controls())
+        || !expectedUpstream.equals(publication.receipt().upstreamArtifacts())) throw failure();
     VerifiedCanonicalPayload payload = publication.payloads().get(0);
     if (!fileName.equals(payload.descriptor().fileName())
         || !type.equals(payload.descriptor().artifactType())
         || !schema.equals(payload.descriptor().schemaVersion())) throw failure();
     return new ArtifactReference(payload.descriptor().artifactId(), payload.descriptor().sha256());
+  }
+
+  private static List<ArtifactReference> compilerUpstream(
+      ReopenedAnalysisStepPublication discovery,
+      ReopenedAnalysisStepPublication graphs,
+      ReopenedAnalysisStepPublication facts) {
+    List<ArtifactReference> values = new ArrayList<>();
+    values.add(
+        payloadReference(
+            semanticPayload(
+                discovery,
+                "capability-report.json",
+                "APPLICATION_DISCOVERY_CAPABILITY_REPORT",
+                "application-discovery-capability-report-v2")));
+    values.add(
+        payloadReference(
+            semanticPayload(
+                discovery,
+                "entry-points.jsonl",
+                "APPLICATION_DISCOVERY_ENTRY_POINTS",
+                "application-discovery-entry-points-v2",
+                CanonicalMediaType.APPLICATION_X_NDJSON)));
+    values.addAll(graphUpstream(graphs));
+    values.addAll(factUpstream(facts));
+    return orderedModuleUpstream(values, 13);
+  }
+
+  private static List<ArtifactReference> projectorUpstream(
+      ArtifactReference compilerPayload,
+      ReopenedAnalysisStepPublication source,
+      ReopenedAnalysisStepPublication graphs,
+      ReopenedAnalysisStepPublication facts) {
+    List<ArtifactReference> values = new ArrayList<>();
+    values.add(compilerPayload);
+    values.add(
+        payloadReference(
+            semanticPayload(
+                source,
+                "source-inventory.jsonl",
+                "VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY",
+                "verified-source-inventory-source-inventory-v2",
+                CanonicalMediaType.APPLICATION_X_NDJSON)));
+    values.add(
+        payloadReference(
+            semanticPayload(
+                source, "verified-snapshot.json", "VERIFIED_SNAPSHOT", "verified-snapshot-v2")));
+    values.addAll(graphUpstream(graphs));
+    values.addAll(factUpstream(facts));
+    return orderedModuleUpstream(values, 14);
+  }
+
+  private static List<ArtifactReference> graphUpstream(ReopenedAnalysisStepPublication graphs) {
+    List<ArtifactReference> values = new ArrayList<>();
+    values.add(
+        payloadReference(
+            semanticPayload(
+                graphs,
+                "call-graph.json",
+                "PROGRAM_GRAPHS_CALL_GRAPH",
+                "program-graphs-call-graph-v1")));
+    values.add(
+        payloadReference(
+            semanticPayload(
+                graphs,
+                "code-structure-graph.json",
+                "PROGRAM_GRAPHS_CODE_STRUCTURE_GRAPH",
+                "program-graphs-code-structure-graph-v1")));
+    values.add(
+        payloadReference(
+            semanticPayload(
+                graphs,
+                "control-flow-graph.json",
+                "PROGRAM_GRAPHS_CONTROL_FLOW_GRAPH",
+                "program-graphs-control-flow-graph-v2")));
+    values.add(
+        payloadReference(
+            semanticPayload(
+                graphs,
+                "data-flow-graph.json",
+                "PROGRAM_GRAPHS_DATA_FLOW_GRAPH",
+                "program-graphs-data-flow-graph-v2")));
+    values.add(
+        payloadReference(
+            semanticPayload(
+                graphs,
+                "evidence-graph.json",
+                "PROGRAM_GRAPHS_EVIDENCE_GRAPH",
+                "program-graphs-evidence-graph-v3")));
+    values.add(
+        payloadReference(
+            semanticPayload(
+                graphs,
+                "graph-gaps.jsonl",
+                "PROGRAM_GRAPHS_GRAPH_GAP",
+                "program-graphs-graph-gap-v1",
+                CanonicalMediaType.APPLICATION_X_NDJSON)));
+    values.add(
+        payloadReference(
+            semanticPayload(
+                graphs,
+                "graph-index.json",
+                "PROGRAM_GRAPHS_GRAPH_INDEX",
+                "program-graphs-graph-index-v2")));
+    return values;
+  }
+
+  private static List<ArtifactReference> factUpstream(ReopenedAnalysisStepPublication facts) {
+    List<ArtifactReference> values = new ArrayList<>();
+    values.add(
+        payloadReference(
+            semanticPayload(
+                facts,
+                "fact-accounting.json",
+                "PROVEN_CODE_FACTS_FACT_ACCOUNTING",
+                "proven-code-facts-fact-accounting-v3")));
+    values.add(
+        payloadReference(
+            semanticPayload(
+                facts,
+                "gap-ledger.json",
+                "PROVEN_CODE_FACTS_GAP_LEDGER",
+                "proven-code-facts-gap-ledger-v3")));
+    values.add(
+        payloadReference(
+            semanticPayload(
+                facts,
+                "proof-pack.json",
+                "PROVEN_CODE_FACTS_PROOF_PACK",
+                "proven-code-facts-proof-pack-v3")));
+    values.add(
+        payloadReference(
+            semanticPayload(
+                facts,
+                "proven-facts.json",
+                "PROVEN_CODE_FACTS_PROVEN_FACTS",
+                "proven-code-facts-proven-facts-v3")));
+    return values;
+  }
+
+  private static List<ArtifactReference> orderedModuleUpstream(
+      List<ArtifactReference> values, int expectedSize) {
+    List<ArtifactReference> ordered =
+        values.stream()
+            .sorted(Comparator.comparing(value -> value.artifactId().value(), UTF8_ORDER))
+            .toList();
+    if (ordered.size() != expectedSize
+        || ordered.size()
+            != ordered.stream().map(value -> value.artifactId().value()).distinct().count()) {
+      throw failure();
+    }
+    return ordered;
   }
 
   private static VerifiedCanonicalPayload semanticPayload(
@@ -1370,7 +1554,15 @@ public final class FlowPublicationSpecifier {
       ArtifactReference provenFactsRef,
       ArtifactReference gapLedgerRef,
       ArtifactReference evidenceGraphRef,
-      Set<String> factIds,
+      Map<String, List<FactAtom>> factAtomsByFactId,
       Set<String> evidenceNodeIds,
       Map<String, SourceLedgerGap> ledgerGapsById) {}
+
+  private record FactAtom(
+      String atomId,
+      String role,
+      String name,
+      String valueType,
+      String canonicalValue,
+      String proofId) {}
 }

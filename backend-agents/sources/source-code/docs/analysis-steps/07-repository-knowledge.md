@@ -10,7 +10,7 @@ Step07 用完整已审活动及必要代码上下文解释跨活动过程，形�
 
 ## 2. 输入与宽松分组
 
-输入是完整 activity-explanations、activity-coverage（含目标 v2 的程序侧 `unexplainedActivityEntries`）和必要 business-materials。材料中已经携带 Step05 组织的 actual/formal、控制与返回关系；不丢掉这些信息后另行扫描仓库。
+输入是完整 activity-explanations、activity-coverage（含 v2 的程序侧 `unexplainedActivityEntries`）和必要 business-materials。材料中已经携带 Step05 组织的 actual/formal、控制与返回关系；不丢掉这些信息后另行扫描仓库。
 
 coverage/checkpoint 内每个 `UnexplainedActivityEntry` 保存 global `entryId`、`materialId`、包内 `entryKey`、原 `materialContext` 与程序固定 `MODEL_NOT_EXPLAINED`。Process 模型输入不逐入口重复整包 context，而按 materialId 聚合为 `{materialContext, unexplainedEntryKeys, reasonCode}`，同一 context 只出现一次，并移除 material/global entry IDs。聚合使用程序持有的 local-key 映射，不从中文 context 正则提取路径，也不假设 BusinessMaterial 已有 EntryDescriptor。
 
@@ -66,8 +66,8 @@ Java 可以根据直接调用、显式标识传递、数据联系、已审对象
 | 文件 | 内容 |
 | --- | --- |
 | business-processes.jsonl | 完整已审过程、活动成员、关系、条件/结果、依据与待确认项 |
-| repository-business-knowledge.json | 全部活动/过程引用、必要完整内容、对象术语、仓库说明、待确认主题、覆盖；目标新版本保留程序侧具体 unexplained records |
-| process-coverage.json | 已整理组、未整理组、活动归属/未归组原因、仓库总整理覆盖及真正需要该数组的具体 partial 范围 |
+| repository-business-knowledge.json | v2：全部活动/过程引用、必要完整内容、对象术语、仓库说明、待确认主题、覆盖及程序侧具体 unexplained records |
+| process-coverage.json | v2：已整理组、未整理组、活动归属/未归组原因、仓库总整理覆盖及具体 partial 范围 |
 
 **目标业务知识投影，非保存 wire：**
 
@@ -103,7 +103,7 @@ Java 可以根据直接调用、显式标识传递、数据联系、已审对象
 
 ProcessExplainer 以及 BusinessAnalysisWorkflow 的 material→activity→process→report 调用顺序已经存在。过程模型输入现在保留完整已审活动字段：参与者、对象、输入、条件、步骤、代码定义结果、规则、公式、术语、可信度、问题、范围限制和短 ref；它不能只看到活动标题、对象或摘要。`ProcessMaterialRecallTest` 已以 scripted Provider 直接验证这些字段和完整 DRAFT→REVIEW 输入。
 
-尚未实施的是 Activity v2 的具体未解释入口接力：当前 `repositoryInput` 只投影 NOT_ANALYZED 数量，没有 `unexplainedActivityEntries` 或按 material 聚合的 `{materialContext, unexplainedEntryKeys, reasonCode}`。后续 owning schema/readers 只为实际增加的字段升版；不修改 Process DRAFT/REVIEW 的其他成员、ref、JSON 或 fatal 校验，也不把 PARTIAL 增加为 runtime 状态。
+Activity v2 的具体未解释入口接力已实施：`repositoryInput` 按 material 投影 `{materialContext, unexplainedEntryKeys, reasonCode}`，不发送 global/material identity。owning knowledge/coverage schema 与 reader 已升至 v2，Process DRAFT/REVIEW 的其他成员、ref、JSON 或 fatal 校验未改变，PARTIAL 仍不是新的 runtime 状态。`MODEL_NOT_EXPLAINED` 保持模型本次未形成活动解释的范围说明，不能变成技术 Gap、活动或过程。
 
 固定 jshERP 的一次受控真实小包把已经完成的“用户注册”和“用户登录”活动放进同一过程候选组。Luna/high 保守地保留为两个独立的局部过程，没有因为它们来自同一 Controller、都涉及验证码而写成“注册后登录”的必然顺序。这是期望的边界行为：召回线索只决定哪些活动一起阅读，模型仍可拒绝不存在充分业务交接依据的跨入口关系。该小包不代表固定 jshERP 的自动跨活动过程或九章已经验收。
 

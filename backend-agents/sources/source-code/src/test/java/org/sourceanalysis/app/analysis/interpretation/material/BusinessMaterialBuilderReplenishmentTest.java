@@ -9,8 +9,8 @@ import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
+import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Confirms that a multi-activity replenishment scenario produces reviewable local packets. */
 class BusinessMaterialBuilderReplenishmentTest {

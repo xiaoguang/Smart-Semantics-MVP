@@ -17,13 +17,13 @@ import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
 import org.sourceanalysis.app.analysis.document.BusinessReportProfile;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
+import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.knowledge.ProcessExplanationProfile;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
-import org.sourceanalysis.app.testsupport.BusinessFlowTestSupport;
 
 /** Proves that a persisted Step 05 publication is enough to reach a durable business report. */
 class PersistedBusinessRunExecutorTest {

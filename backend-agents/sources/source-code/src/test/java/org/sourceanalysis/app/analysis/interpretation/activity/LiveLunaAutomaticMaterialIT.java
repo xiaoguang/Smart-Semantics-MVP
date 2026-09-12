@@ -85,10 +85,7 @@ class LiveLunaAutomaticMaterialIT {
                     outputDirectory,
                     new CodexSubscriptionStructuredProvider(
                         new CodexSubscriptionProfile(
-                            Path.of(EXECUTABLE),
-                            "gpt-5.6-luna",
-                            "high",
-                            Duration.ofMinutes(3)))))
+                            Path.of(EXECUTABLE), "gpt-5.6-luna", "high", Duration.ofMinutes(3)))))
             .explain(
                 new ExplainActivitiesRequest(
                     materials, new ActivityExplanationProfile(20_000, 12_000, 2, 24, 1_000)));
@@ -109,9 +106,11 @@ class LiveLunaAutomaticMaterialIT {
     AtomicInteger sequence = new AtomicInteger();
     return request -> {
       int call = sequence.incrementAndGet();
-      writeDiagnostic(outputDirectory, call, request.taskKind(), "input", request.untrustedInputJson());
+      writeDiagnostic(
+          outputDirectory, call, request.taskKind(), "input", request.untrustedInputJson());
       StructuredModelResponse response = delegate.generate(request);
-      writeDiagnostic(outputDirectory, call, request.taskKind(), "response", response.responseJson());
+      writeDiagnostic(
+          outputDirectory, call, request.taskKind(), "response", response.responseJson());
       return response;
     };
   }

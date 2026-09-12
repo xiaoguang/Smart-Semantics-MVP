@@ -169,7 +169,8 @@ class LiveLunaAutomaticUserLifecycleProcessIT {
   static ProcessInput loadInput(
       Path materialsFile, List<Path> activityOutputs, List<String> expectedEntryContexts)
       throws IOException {
-    Map<String, BusinessMaterial> materialsById = loadMaterials(materialsFile, expectedEntryContexts);
+    Map<String, BusinessMaterial> materialsById =
+        loadMaterials(materialsFile, expectedEntryContexts);
     List<ReviewedActivity> activities = new ArrayList<>();
     List<ActivityEntryCoverage> coverage = new ArrayList<>();
     for (Path output : activityOutputs) {
@@ -213,9 +214,9 @@ class LiveLunaAutomaticUserLifecycleProcessIT {
   }
 
   private static Map<String, BusinessMaterial> loadMaterials(
-      Path materialsFile, List<String> expectedEntryContexts)
-      throws IOException {
-    if (expectedEntryContexts.isEmpty() || expectedEntryContexts.stream().anyMatch(String::isBlank)) {
+      Path materialsFile, List<String> expectedEntryContexts) throws IOException {
+    if (expectedEntryContexts.isEmpty()
+        || expectedEntryContexts.stream().anyMatch(String::isBlank)) {
       throw new IllegalArgumentException("LIVE_LUNA_PROCESS_ENTRY_CONTEXT_INVALID");
     }
     Map<String, BusinessMaterial> byId = new HashMap<>();
@@ -325,8 +326,8 @@ class LiveLunaAutomaticUserLifecycleProcessIT {
     return Map.copyOf(result);
   }
 
-  static void writeOutput(
-      Path output, ProcessInput input, RepositoryBusinessKnowledge knowledge) throws IOException {
+  static void writeOutput(Path output, ProcessInput input, RepositoryBusinessKnowledge knowledge)
+      throws IOException {
     CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
     ObjectNode root = JsonNodeFactory.instance.objectNode();
     root.put("schemaVersion", "live-luna-automatic-process-sample-v1");

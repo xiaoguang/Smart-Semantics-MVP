@@ -300,6 +300,7 @@
                         </executions>
                         <configuration>
                             <failOnError>true</failOnError>
+                            <excludeFilterFile>${project.basedir}/config/spotbugs-exclude.xml</excludeFilterFile>
                         </configuration>
                     </plugin>
                     <plugin>
@@ -315,6 +316,9 @@
                         <configuration>
                             <failOnViolation>true</failOnViolation>
                             <printFailingErrors>true</printFailingErrors>
+                            <rulesets>
+                                <ruleset>${project.basedir}/config/pmd-rules.xml</ruleset>
+                            </rulesets>
                             <jdkToolchain>
                                 <version>17</version>
                             </jdkToolchain>
