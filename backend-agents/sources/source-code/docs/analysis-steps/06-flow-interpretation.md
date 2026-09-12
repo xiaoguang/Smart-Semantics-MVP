@@ -104,7 +104,7 @@ Luna/high 接收一个完整 material package，解释目的、参与者（有�
 
 没有业务 guard 不强造条件；try/catch 属于错误处理，可解释在 steps/results。没有岗位依据 participants 为空，不能把 Controller、Service 当业务角色。关于代码定义行为、运行事实与合理推断的中文 Prompt 见 [模型解释附录](../references/semantic-interpretation-prompts.md)。
 
-Java 只校验结构、scope-local IDs/refs、集合闭合、预算与保存约束。内容 review 判断必须体现在模型完整修订结果与诊断中；程序不通过关键词词表决定业务语义正确。上述 v2 output、Prompt 和 coverage sidecar 已在当前 Java、`activity-draft-v2.txt`、`activity-review-v2.txt` 与 coverage v2 中实现；旧 v1 资源和旧 coverage wire 不会被解释成新结果。尚未落地的是 Process/Report 对完整 sidecar 的聚合投影。
+Java 只校验结构、scope-local IDs/refs、集合闭合、预算与保存约束。内容 review 判断必须体现在模型完整修订结果与诊断中；程序不通过关键词词表决定业务语义正确。上述 v2 output、Prompt 和 coverage sidecar 已在当前 Java、`activity-draft-v2.txt`、`activity-review-v2.txt` 与 coverage v2 中实现；旧 v1 资源和旧 coverage wire 不会被解释成新结果。Process/Report 对完整 sidecar 的按 material 聚合投影也已落地并经过 partial scripted 链验证。
 
 ## 5. 输出与下一消费者
 
@@ -142,6 +142,6 @@ maxMaterialsToStart 限制本执行实际启动的材料数；超限材料写 NO
 
 新的实测多入口质量点读取同一固定提交中的 `GET /account/getStatistics` 与 `GET /account/listWithBalance` 组包。一次 Luna/high DRAFT+完整 REVIEW 在 60.64 秒内产生两项完整活动，分别覆盖这两条入口：前者说明按名称和序列号查询结算账户统计、正常/异常返回分支及统计口径待确认；后者说明按相同输入查询带余额的账户报表、列表转表格返回及余额口径待确认。模型没有把同一 Controller 类误写成固定前后流程，也没有编造岗位、余额计算公式或一次实际运行成功。这证明组包可以降低调用数，同时用 scope-local key 保留入口级结果；它仍只验证局部活动，尚未验证跨活动过程或九章报告。
 
-已用 scripted Luna/xhigh RED 与 Terra/xhigh GREEN 覆盖：N=4 DRAFT 漏 E3/E4 后 REVIEW 收到完整 actualDraft/missing keys、N≥12 的 E10–E12、跨包 E1 不串、many-to-many、真实 REVIEW 预算、非法 key/ref/JSON、REVIEW 仍漏项与 v2 reader required 字段。下一项只测试并实现 specific partial 向知识和报告的下传；保持已完成的 Step05 接力。
+已用 scripted Luna/xhigh RED 与 Terra/xhigh GREEN 覆盖：N=4 DRAFT 漏 E3/E4 后 REVIEW 收到完整 actualDraft/missing keys、N≥12 的 E10–E12、跨包 E1 不串、many-to-many、真实 REVIEW 预算、非法 key/ref/JSON、REVIEW 仍漏项与 v2 reader required 字段。四入口 active Module 链进一步确认：REVIEW 可补齐 E3/E4；partial 时 E3/E4 只以具体 `MODEL_NOT_EXPLAINED` 范围进入第9章，不能泄漏为第2–8章业务结论；三包本地 E1…E3 映射到九个不同 global entry，零材料时 Activity/Process 调用均为零。保持已完成的 Step05 接力。
 
 上述直接 scripted 测试通过后，已批准一次新候选的真实 Activity 验证，最多两次 Luna/high 调用。精确 material 为 `material:8be00d5562743218931b721c547d915076a08b7200bc06e415d1248c5ea663eb`，四个完整有序 entry IDs 和 S487/S722/S731/S898 见[实施计划 Task 7](../plans/coherent-code-context-implementation-plan.md#task-7脚本验收后执行已批准的单材料-live-验证)；选择器同时核对 material identity、完整 entry 集及顺序、refs，不用 context 子串查找。使用 `ActivityExplanationProfile(20000, 12000, 4, 24, 1000)` 并通过全部 preflight；无匹配或容量不相容时零请求。PARTIAL 或失败均保存可用输入/返回/结果并停止，不重试或重放旧候选，不运行真实 Process/Report/全仓扫描。这是计划验证输入，尚无本次 live 结果。

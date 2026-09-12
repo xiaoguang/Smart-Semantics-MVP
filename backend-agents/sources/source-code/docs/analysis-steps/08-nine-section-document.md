@@ -102,4 +102,4 @@ BusinessReportPublisher 已有 DRAFT+完整 REVIEW、九章 Markdown 和四个�
 
 当前报告输入已获得 Activity v2 的具体 `unexplainedActivityEntries` 的按 material 聚合投影；E1–E4 这样的 PARTIAL 输入会把完整 HTTP context 和 `MODEL_NOT_EXPLAINED` 原因交给报告模型。报告 prompt 要求第9章说明这些具体范围，而第4章不得为它们编造活动。`cleanKnowledge`/Prompt/input 与真正承载字段的 owning schema/readers 已升级；报告九章 output shape 不因内部新增输入而强制升版。
 
-Luna/xhigh RED 已直接验证按 material 一次投影具体未解释入口到第9章，Terra/xhigh 已在 publisher/input/render 接力处做最小 GREEN；不新增业务语义 parser或空报告捷径。下一项用四入口与大 N scripted 全链复核完整 REVIEW 长段落、条件/规则/公式保留到 Markdown、精确九章/ref、纯 render 零 Provider、非法 source/ref 拒绝和 PARTIAL 不伪装完整；本轮没有调用真实模型。
+Luna/xhigh RED 已直接验证按 material 一次投影具体未解释入口到第9章，Terra/xhigh 已在 publisher/input/render 接力处做最小 GREEN；不新增业务语义 parser或空报告捷径。四入口与任意 N scripted 全链现已复核：完整 REVIEW 可补齐 E3/E4，partial 时第2–8章只消费已审 E1/E2，第9章保留 E3/E4 的实际 HTTP entry 和 `MODEL_NOT_EXPLAINED`，并输出恰好九章。条件/规则字段仍通过 Report 模型 input 保留；最终自然语言质量不由 scripted Provider 假称已验收。本轮没有调用真实模型。

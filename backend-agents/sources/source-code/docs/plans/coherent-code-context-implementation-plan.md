@@ -147,11 +147,11 @@
 - Test: `PersistedBusinessRunExecutorTest` 及 Tasks 1–5 的直接 selectors
 - Docs: 只在实现事实真正改变后同步当前权威文档
 
-- [ ] Scripted complete 分支使用真实四 ref：E1 DELETE /user/delete S487、E2 GET /user/getUserSession S722、E3 POST /user/registerUser S731、E4 GET /user/logout S898；REVIEW 补齐四入口，Process 可保守输出独立过程，报告固定九章。
-- [ ] Scripted PARTIAL 分支用 `unexplainedEntries=[E3,E4]`；knowledge/report 收到一次 context + keys + `MODEL_NOT_EXPLAINED`，第9章具体列入口；该结果不得通过完整业务验收。
-- [ ] 同时覆盖跨包 N=9、单包 N≥12、零入口、输出/REVIEW 超预算、非法首轮和 REVIEW 仍遗漏。
-- [ ] 不把用户四动作强串成生命周期；合成补货故事继续标 SYNTHETIC，不冒充 jshERP。
-- [ ] 直接 selectors 串行通过后做一次 spec/standards review。当前失败 v1 response 不重放、不改名为 v2 结果。
+- [x] Scripted complete 分支使用真实四 ref：E1 DELETE /user/delete S487、E2 GET /user/getUserSession S722、E3 POST /user/registerUser S731、E4 GET /user/logout S898；DRAFT 只覆盖 E1/E2，REVIEW 用完整 actual draft 与 `missingEntryKeys=[E3,E4]` 补齐四入口；Process 保守输出独立过程，报告固定九章。
+- [x] Scripted PARTIAL 分支用 `unexplainedEntries=[E3,E4]`；knowledge/report 收到一次 context + keys + `MODEL_NOT_EXPLAINED`，第9章具体列入口；第2–8章只使用 E1/E2 的已审内容，不能通过完整业务验收。
+- [x] 同时覆盖跨包 N=9、单包 N≥12、零入口、输出/REVIEW 超预算、非法首轮和 REVIEW 仍遗漏。
+- [x] 不把用户四动作强串成生命周期；合成补货故事继续标 SYNTHETIC，不冒充 jshERP。
+- [x] 直接 selectors 串行通过后完成一次 spec/standards review；发现的测试范围、REVIEW 修补、partial 正文和 source-ref 问题已在本任务修正。历史失败 v1 response 不重放、不改名为 v2 结果。
 
 ## Task 7：脚本验收后执行已批准的单材料 Live 验证
 

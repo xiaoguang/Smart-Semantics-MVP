@@ -387,17 +387,17 @@ PARTIAL 变体把 E3/E4 放入 `unexplainedEntries`。Process repository input �
 | Step05 Capsule 覆盖 | `BusinessFlowCoverageTest` | 保留 Flow/Capsule/budget Gap；删 R0 task 尾段 |
 | 旧 R0/R1/R2/registry/process seams | 四个旧测试目录 14 文件 | 随 78 个旧生产类删除，不搬旧行为 |
 | Capsule 字段减法 | `EvidenceCapsuleProjectorTest`, `CapsuleProjectionModulePublisherTest` | 新 v9/v7 不含两个 registryProposal 字段；facts/gaps/signals/context 仍在 |
-| N=4 漏两项后修复 | `ActivityExplainerTest` | DRAFT 2 项；REVIEW 收完整 actualDraft + E3/E4；最终覆盖四入口或显式 partial |
-| N≥12 单包 | `ActivityExplainerTest`, `ActivityOutputSchemaTest` | E10/E11/E12 精确 enum/映射；多对多合法 |
-| N=9 三包 | `ActivityExplainerTest` | 各包 E1 重用不串 global IDs；union G1…G9 |
+| N=4 漏两项后修复 | `FourEntryBusinessSemanticChainTest`, `ActivityCoverageV2ContractTest` | DRAFT 2 项；REVIEW 收完整 actualDraft + E3/E4；最终覆盖四入口或显式 partial |
+| N≥12 单包 | `ActivityCoverageV2ContractTest`, `ActivityOutputSchemaTest` | E10/E11/E12 精确 enum/映射；多对多合法 |
+| N=9 三包 | `ActivityPackageBoundaryCoverageTest` | 各包 E1 重用不串 global IDs；union G1…G9 |
 | 输出/REVIEW 预算 | `ActivityExplanationBudgetTest` | 不相容和预留不足均 0 请求；实际 review packet 再核 bytes |
 | 非法 JSON/ref/key | `ActivityExplainerTest` | 首次非法立即 fatal；无 REVIEW/重试 |
 | REVIEW 仍漏 | `ActivityExplainerTest` | 两次调用后 fatal；不生成第三次 |
 | unexplained sidecar reopen | `ActivityExplanationCheckpointTest`, reader test | global ID、material context、reasonCode 完整且未冒充技术 Gap |
 | Prompt/schema | `ActivityPromptContractTest`, `ActivityOutputSchemaTest` | DRAFT 与 REVIEW shape 区分；missing keys；unexplained union/disjoint |
 | 下游 PARTIAL | `ProcessMaterialRecallTest`, `ProcessKnowledgeCheckpointTest`, `BusinessReportPublisherTest` | 具体入口/理由到第9章，不只计数 |
-| 四入口九章闭环 | `PersistedBusinessRunExecutorTest` | 完整 activity 字段→保守 process→固定九章，renderer 不缩水 |
-| 零入口 | `BusinessMaterialBuilderZeroEntryTest` 和直接 workflow/report test | Activity/Process Provider 为 0；显式报告仍走既有 DRAFT+REVIEW；九章语义验收 INCOMPLETE |
+| 四入口九章闭环 | `FourEntryBusinessSemanticChainTest`, `PersistedBusinessRunExecutorTest` | 直接 Module 链验证真实四 ref 的 REVIEW 补齐/partial 边界；持久化 executor 单独验证保存链与固定九章 |
+| 零入口 | `BusinessMaterialBuilderZeroEntryTest`, `ActivityPackageBoundaryCoverageTest` 和直接 workflow/report test | Activity/Process Provider 为 0；显式报告仍走既有 DRAFT+REVIEW；九章语义验收 INCOMPLETE |
 
 未来只串行运行新增或直接覆盖变更的 selectors。POM 的 UT skip 与 IT opt-in 并不构成统一自动验收；live IT 仅可按实施衔接 Task 7 的精确新候选、相容 profile、登录状态预检和保存输入/response 条件显式运行，且不能重放旧四入口失败。客户扫描与整仓模型运行仍不属于本次清理验收。
 
