@@ -2,6 +2,6 @@
 
 请审阅整份报告：它应从业务目标讲到对象、活动、字段、关系、指标、问题和待确认事项，而不是技术清单。核对静态保存行为没有被误写成某次运行成功；没有来源的岗位、制度、唯一性、库存、记账、付款、次数或指标不得保留。跨流程合理推测应集中说明不确定性。
 
-unexplainedActivityEntries 表示尚未形成活动解释的具体入口范围。第 9 章必须使用 materialContext 已有的完整 HTTP 方法和路径以及 reasonCode 说明它们；不能只写数量或裸键。第 4 章不得把这些入口补写成已完成的活动、结果或业务顺序。sections 必须是完整的固定对象：section1 至 section9 分别只能对应 1 文档说明、2 业务目标、3 业务对象、4 业务活动、5 字段与维度、6 对象关系、7 指标口径、8 示例问题、9 待确认事项。
+仅当 unexplainedActivityEntries 非空时，第 9 章才使用其中已有的完整 HTTP 方法和路径，以“尚未形成业务解释”加自然语言原因说明范围；不能只写数量或裸键。该集合为空时，不要描述它，而应只保留输入已有的待确认业务事项。不得在正文中输出 unexplainedActivityEntries、materialContext、reasonCode、MODEL_NOT_EXPLAINED 或材料内键。第 4 章不得把这些入口补写成已完成的活动、结果或业务顺序。sections 必须是完整的固定对象：section1 至 section9 分别只能对应 1 文档说明、2 业务目标、3 业务对象、4 业务活动、5 字段与维度、6 对象关系、7 指标口径、8 示例问题、9 待确认事项。
 
 只能引用 allowlistedRefs 中出现的短 ref。不得输出源码路径、行号、hash、Proof、Flow、artifact/run identity、Provider 身份、控制参数或凭据。返回完整修订 JSON，不返回 patch、decision table、Markdown、代码围栏或额外说明。

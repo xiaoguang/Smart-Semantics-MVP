@@ -23,6 +23,7 @@
 - The direct cause is a product contract gap: the generated report JSON Schema constrains section shape but does not constrain the exact title for each position, so the provider can emit an invalid draft despite structured output.
 - The corrected Schema and a zero-Provider reopener are committed on `main`. The next candidate is report-only: it consumes the already completed Task 8 activity result plus Task 9 process/summary REVIEW bytes, and has exactly one DRAFT plus one REVIEW call.
 - The first report-only replacement did not start content generation: Codex rejected the `prefixItems` plus boolean `items` Schema at `MODEL_CONFIGURATION`; the diagnostic directory has only `01-BUSINESS_REPORT_DRAFT-input.json` and no response. This is a pre-start provider-schema incompatibility, not a consumed report draft. The next repair uses nine named section slots in a closed object and preserves the persisted array-shaped BusinessReport contract.
+- The named-slot report-only candidate completed DRAFT and REVIEW in 124.9 seconds and persisted a nine-chapter document for the four activities and refs S487/S722/S731/S898. It exposed one reader-language finding: the otherwise correct Chapter 9 repeated internal input names when its unexplained-entry collection was empty. That is a bounded report-prompt issue, not a source/flow/process issue.
 
 ## Changed files
 
@@ -39,7 +40,8 @@
 | `mvn -o -t .mvn/toolchains.xml test` | PASS | 361 tests, 0 failures, 0 errors, 1 explicit live-test skip. |
 | `mvn -o -t .mvn/toolchains.xml -Pquality -DskipTests verify` | PASS | Full local quality build, including SpotBugs/PMD, completed in 9m13s. |
 | `mvn -o -t .mvn/toolchains.xml -Dtest=LiveLunaAutomaticUserAccountGroupChainIT …ReportReplacementInput=true test` | PASS | 1 enabled zero-Provider process/summary reopen test; 3 live tests skipped. |
-| `mvn -o -t .mvn/toolchains.xml -Pquality -DskipTests verify` (replacement reader) | PASS | Full local quality build, including all tests, SpotBugs and PMD, completed in 5m36s. |
+| `MAVEN_OPTS='-Xmx8g' mvn -o -t .mvn/toolchains.xml -Dtest=BusinessReportPublisherTest,Task5PartialPropagationRedTest test` | PASS | 6 targeted reader-language and partial-coverage regression tests passed after Spotless. |
+| `MAVEN_OPTS='-Xmx8g' mvn -o -t .mvn/toolchains.xml -Pquality -DskipTests verify` | PASS | 358 tests passed; SpotBugs and PMD reported zero findings; completed in 5m37s. |
 
 ## Decisions
 
@@ -53,6 +55,8 @@
 - Added a zero-Provider reopener for the completed process REVIEW and repository-summary REVIEW. It rebuilds `RepositoryBusinessKnowledge` only from saved candidate bytes and rejects activity/ref scope drift.
 - Replacement report call limit: exactly 2 Luna/high calls. A started failure remains terminal and will not replay activity, process, summary or report work.
 - Observed the direct RED after changing the report contract test: the former `array/prefixItems` schema failed the expected named-object assertion. Implemented the named-slot adapter and updated all scripted report responders; direct report/runtime tests and full local quality verification pass.
+- The next permitted report replacement is limited to verifying only the generic reader-language rule: internal coverage keys remain model input but never appear in final paragraphs; an empty collection is not mentioned. Any further prose refinements become backlog unless they affect chapter structure, source scope, factual truthfulness or deliverability.
+- Added the reader-language prompt contract and a partial-report regression assertion. The direct report/partial selectors are green (6 tests); the pending local quality build is the final pre-commit verification for this bounded repair.
 
 ## Blockers
 
@@ -60,7 +64,7 @@
 
 ## Exact next action
 
-- Commit the validated pre-start schema repair, then preflight the logged-in host session and run one independent report-only replacement candidate.
+- Run `git diff --check`, commit/push the verified reader-language repair, then run one final report-only replacement candidate; do not reopen activities, processes or source analysis.
 
 ## Resume checks
 

@@ -102,6 +102,17 @@ class BusinessReportPublisherTest {
         .hasMessage("BUSINESS_REPORT_SOURCE_SCOPE_INVALID");
   }
 
+  @Test
+  void reportPromptsKeepInternalCoverageKeysOutOfReaderLanguage() {
+    assertThat(BusinessReportPromptCatalog.instructionsFor("BUSINESS_REPORT_DRAFT"))
+        .contains("仅当 unexplainedActivityEntries 非空时")
+        .contains(
+            "不得在正文中输出 unexplainedActivityEntries、materialContext、reasonCode、MODEL_NOT_EXPLAINED 或材料内键");
+    assertThat(BusinessReportPromptCatalog.instructionsFor("BUSINESS_REPORT_REVIEW"))
+        .contains(
+            "不得在正文中输出 unexplainedActivityEntries、materialContext、reasonCode、MODEL_NOT_EXPLAINED 或材料内键");
+  }
+
   private static Class<?> requireType(String className) {
     try {
       return Class.forName(className);

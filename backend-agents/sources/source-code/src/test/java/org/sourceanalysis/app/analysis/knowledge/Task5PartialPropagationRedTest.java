@@ -122,8 +122,14 @@ class Task5PartialPropagationRedTest {
     assertThat(textValues(aggregate.path("unexplainedEntryKeys"))).containsExactly("E3", "E4");
     assertThat(aggregate.path("reasonCode").asText()).isEqualTo("MODEL_NOT_EXPLAINED");
     assertThat(markdown)
-        .contains("POST /user/registerUser", "GET /user/logout", "MODEL_NOT_EXPLAINED")
-        .doesNotContain("未解释入口数量：2", "E3、E4");
+        .contains("POST /user/registerUser", "GET /user/logout", "尚未形成业务解释")
+        .doesNotContain(
+            "未解释入口数量：2",
+            "E3、E4",
+            "unexplainedActivityEntries",
+            "materialContext",
+            "reasonCode",
+            "MODEL_NOT_EXPLAINED");
     assertThat(markdown).contains("## 4. 业务活动").doesNotContain("注册活动已完成", "退出活动已完成");
   }
 
@@ -361,7 +367,7 @@ class Task5PartialPropagationRedTest {
           "section9",
           9,
           "待确认事项",
-          "POST /user/registerUser、GET /user/logout：MODEL_NOT_EXPLAINED，尚未形成活动解释。",
+          "POST /user/registerUser、GET /user/logout：本次材料尚未形成业务解释，需要补充相应代码材料后再确认。",
           List.of());
       return new StructuredModelResponse(
           json.encodeCanonical(report),

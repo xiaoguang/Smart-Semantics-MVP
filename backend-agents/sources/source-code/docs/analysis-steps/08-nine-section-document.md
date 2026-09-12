@@ -12,7 +12,7 @@
 
 输入是同源 repository-business-knowledge、已审 activity/process 内容、coverage、程序侧具体 unexplained records 和 SourceRef allowlist。必要时按已知 IDs 装入相应章节需要的完整活动/过程材料；摘要可以用于导航，不能代替关键条件和原有解释。
 
-送给报告模型的未解释入口也按 materialId 聚合为 `{materialContext, unexplainedEntryKeys, reasonCode}`，同一 material context 只发送一次，global IDs 留在程序侧。第 9 章必须用 materialContext 中已有的完整 HTTP 方法/路径说明具体入口和 `MODEL_NOT_EXPLAINED` 原因类别，不能只写 `notAnalyzedEntries=2`，也不能仅输出读者无法定位的 E3/E4。程序不反解析中文 context，不凭空创建 EntryDescriptor。
+送给报告模型的未解释入口也按 materialId 聚合为 `{materialContext, unexplainedEntryKeys, reasonCode}`，同一 material context 只发送一次，global IDs 留在程序侧。这是模型输入，不是读者语言：第 9 章只在存在未解释入口时，用其中已有的完整 HTTP 方法/路径说明“尚未形成业务解释”及自然语言原因；不能只写数量，也不能泄露 `unexplainedActivityEntries`、`materialContext`、`reasonCode`、`MODEL_NOT_EXPLAINED` 或 E3/E4。集合为空时，第 9 章只保留已有的业务待确认项。程序不反解析中文 context，不凭空创建 EntryDescriptor。
 
 模型包只给短 ref 和内容，文件路径、行号、hash、run identity 留在程序侧。程序在调用前计算完整输入/输出预算；容量不足应明确未覆盖材料并给出 PARTIAL 状态，不能截断后把剩余文字标为全仓报告。
 
