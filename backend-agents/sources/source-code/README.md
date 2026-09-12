@@ -39,6 +39,7 @@ SourceRef 定位冻结文件、行段和原文。Fact/Proof 只证明支持的�
 
 ## 开发与文档入口
 
+- [JDT LS 最小可行性验证](docs/plans/jdtls-source-navigation-feasibility-plan.md)：独立调研，先验证能否自动取齐业务实现；尚未替换生产分析路线。
 - [源目录约束](AGENTS.md)
 - [来源、发布和失败边界](docs/references/foundation-and-publication-contracts.md)
 - [Canonical 身份公式](docs/references/canonical-persistence-identity-contracts.md)
