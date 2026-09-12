@@ -247,7 +247,7 @@
 - Run `mvn -Dtest=FlowCompilationTest,FlowCompilationModulePublisherTest,CapsuleProjectionModulePublisherTest,BusinessFlowsExecutionTest test`.
 - Pass means the JDT no-graph fixture still publishes the existing five Step05 semantic files, each entry is accounted for, and every collected context is reachable from an evidence capsule.
 
-## Task 7: Feed unified code context into business material and the existing run chain (approved 1.8)
+## Task 7: Feed unified code context into business material and the existing run chain (COMPLETE)
 
 **Files**
 

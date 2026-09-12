@@ -25,7 +25,8 @@ public record PersistedTechnicalRunConfiguration(
     DiscoveryProfile discoveryProfile,
     ArtifactReference graphProfileRef,
     FlowCompilationProfile flowProfile,
-    CapsuleProjectionProfile capsuleProfile) {
+    CapsuleProjectionProfile capsuleProfile,
+    EffectiveEngineConfiguration engineConfiguration) {
 
   public PersistedTechnicalRunConfiguration {
     Objects.requireNonNull(frozenRepositoryRequestBytes, "frozen repository request bytes");
@@ -37,5 +38,31 @@ public record PersistedTechnicalRunConfiguration(
     Objects.requireNonNull(graphProfileRef, "graph profile reference");
     Objects.requireNonNull(flowProfile, "flow profile");
     Objects.requireNonNull(capsuleProfile, "capsule profile");
+  }
+
+  /**
+   * Retains the pre-engine technical route until the JavaParser adapter is connected in phase 2.
+   */
+  public PersistedTechnicalRunConfiguration(
+      ImmutableBytes frozenRepositoryRequestBytes,
+      ArtifactReference verificationPolicyRef,
+      ArtifactReference capabilityProfileRef,
+      ProfileView inventoryProfile,
+      ArtifactStoreLimits storeLimits,
+      DiscoveryProfile discoveryProfile,
+      ArtifactReference graphProfileRef,
+      FlowCompilationProfile flowProfile,
+      CapsuleProjectionProfile capsuleProfile) {
+    this(
+        frozenRepositoryRequestBytes,
+        verificationPolicyRef,
+        capabilityProfileRef,
+        inventoryProfile,
+        storeLimits,
+        discoveryProfile,
+        graphProfileRef,
+        flowProfile,
+        capsuleProfile,
+        null);
   }
 }

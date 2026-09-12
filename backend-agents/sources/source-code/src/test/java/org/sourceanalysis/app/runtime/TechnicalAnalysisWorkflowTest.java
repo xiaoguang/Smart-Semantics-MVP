@@ -9,8 +9,15 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.sourceanalysis.app.analysis.code.EngineDescriptor;
+import org.sourceanalysis.app.analysis.code.EntryCodeContext;
+import org.sourceanalysis.app.analysis.code.EntrySeed;
+import org.sourceanalysis.app.analysis.code.JavaCodeSession;
+import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
+import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.analysis.discovery.DiscoveryProfile;
 import org.sourceanalysis.app.analysis.document.BusinessReportCheckpointRenderer;
 import org.sourceanalysis.app.analysis.document.BusinessReportProfile;
@@ -55,6 +62,60 @@ import org.sourceanalysis.app.capture.localgit.RegisteredSourceCapture;
 class TechnicalAnalysisWorkflowTest {
 
   @TempDir Path temporaryDirectory;
+
+  @Test
+  void continuesASelectedJdtSessionThroughNavigationFactsAndBusinessContexts() throws Exception {
+    try (ProgramGraphsPublicFixture fixture =
+        ProgramGraphsPublicFixture.createForJavaCodeIndex(
+            temporaryDirectory.resolve("jdt-technical-workflow"))) {
+      var source = fixture.sourceReader().reopen(fixture.sourceInventory());
+      String javaSource =
+          source.documents().stream()
+              .filter(value -> value.path().endsWith("OrderController.java"))
+              .findFirst()
+              .map(value -> new String(value.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8))
+              .orElseThrow();
+      TechnicalAnalysisWorkflowResult result =
+          new TechnicalAnalysisWorkflow(
+                  fixture.sourceReader(), fixture.moduleArtifacts(), fixture.stepArtifacts())
+              .continueAfterDiscovery(
+                  new TechnicalDiscoveryWorkflowResult(
+                      fixture.sourceInventory(), fixture.applicationDiscovery()),
+                  minimalJdtSession(source.snapshotId(), javaSource),
+                  fixture.artifactControls(),
+                  new FlowCompilationProfile(
+                      reference("flow-profile", 'c', 'd'), 16, 8, 64, 96, 32, 64, 256),
+                  new CapsuleProjectionProfile(
+                      reference("capsule-profile", 'e', 'f'), 16, 32, 4_096, 100_000));
+
+      assertThat(
+              fixture
+                  .stepArtifacts()
+                  .reopen(result.programGraphs().publication())
+                  .semanticPayloads())
+          .extracting(value -> value.descriptor().fileName())
+          .containsExactly("java-code-index.jsonl");
+      assertThat(
+              fixture
+                  .stepArtifacts()
+                  .reopen(result.provenCodeFacts().publication())
+                  .semanticPayloads())
+          .extracting(value -> value.descriptor().fileName())
+          .containsExactly("fact-accounting.json");
+      assertThat(
+              fixture
+                  .stepArtifacts()
+                  .reopen(result.businessFlows().publication())
+                  .semanticPayloads())
+          .extracting(value -> value.descriptor().fileName())
+          .containsExactly(
+              "entry-dispositions.jsonl",
+              "evidence-capsules.jsonl",
+              "flow-coverage.json",
+              "flow-gaps.jsonl",
+              "flow-slices.json");
+    }
+  }
 
   @Test
   void composesDiscoveryGraphsFactsAndFlowsFromOnePersistedSourceInventory() throws Exception {
@@ -348,6 +409,62 @@ class TechnicalAnalysisWorkflowTest {
         new FlowCompilationProfile(reference("flow-profile", 'c', 'd'), 16, 8, 64, 96, 32, 64, 256),
         new CapsuleProjectionProfile(
             reference("capsule-profile", 'e', 'f'), 16, 32, 4_096, 24_576));
+  }
+
+  private static JavaCodeSession minimalJdtSession(String snapshotId, String source) {
+    return new JavaCodeSession() {
+      @Override
+      public JavaDeclarationCatalog catalog() {
+        return new JavaDeclarationCatalog(
+            snapshotId,
+            List.of("src/main/java/com/example/OrderController.java"),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            Map.of());
+      }
+
+      @Override
+      public EntryCodeContext collect(EntrySeed entry) {
+        SourceRange whole =
+            new SourceRange(0, source.length(), 1, 1 + (int) source.lines().count());
+        EntryCodeContext.MethodCode method =
+            new EntryCodeContext.MethodCode(
+                entry.methodKey(),
+                "METHOD",
+                "com.example.OrderController",
+                "entry",
+                List.of(),
+                "Object",
+                new EntryCodeContext.SourceSource(
+                    "src/main/java/com/example/OrderController.java", whole, source),
+                true);
+        return new EntryCodeContext(
+            EntryCodeContext.SCHEMA_VERSION,
+            entry.entryId(),
+            entry.methodKey(),
+            List.of(method),
+            List.of(),
+            List.of(),
+            List.of(),
+            new EntryCodeContext.TechnicalEnhancements(
+                EntryCodeContext.Availability.NOT_PRODUCED,
+                "strict graphs were not requested",
+                List.of(),
+                List.of(),
+                null));
+      }
+
+      @Override
+      public EngineDescriptor descriptor() {
+        return new EngineDescriptor(
+            "jdt", "test-adapter-v1", Map.of("jdtls", "1.61.0"), "17", List.of("METHODS"));
+      }
+
+      @Override
+      public void close() {}
+    };
   }
 
   private CapturedSource capturedSpringRepository() throws Exception {

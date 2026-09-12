@@ -3,7 +3,11 @@ package org.sourceanalysis.app.runtime;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Objects;
+import org.sourceanalysis.app.analysis.code.JavaCodeEngine;
+import org.sourceanalysis.app.analysis.code.JavaCodeSession;
+import org.sourceanalysis.app.analysis.code.VerifiedJavaProject;
 import org.sourceanalysis.app.analysis.inventory.CaptureReceiptView;
 import org.sourceanalysis.app.analysis.inventory.PersistedVerifiedSourceTextReader;
 import org.sourceanalysis.app.analysis.inventory.RegisteredCaptureReceiptProjector;
@@ -40,6 +44,7 @@ public final class PersistedTechnicalRunExecutor {
   private final CanonicalArtifactPolicyRegistry policies;
   private final LocalGitSourceRegistry sourceRegistry;
   private final PersistedTechnicalRunConfiguration configuration;
+  private final JavaCodeEngineFactory engineFactory;
 
   /** Creates the application-internal technical executor from already-open dependencies. */
   public PersistedTechnicalRunExecutor(
@@ -48,11 +53,23 @@ public final class PersistedTechnicalRunExecutor {
       CanonicalArtifactPolicyRegistry policies,
       LocalGitSourceRegistry sourceRegistry,
       PersistedTechnicalRunConfiguration configuration) {
+    this(
+        store, canonicalJson, policies, sourceRegistry, configuration, new JavaCodeEngineFactory());
+  }
+
+  PersistedTechnicalRunExecutor(
+      RunStoreHandle store,
+      CanonicalJsonCodec canonicalJson,
+      CanonicalArtifactPolicyRegistry policies,
+      LocalGitSourceRegistry sourceRegistry,
+      PersistedTechnicalRunConfiguration configuration,
+      JavaCodeEngineFactory engineFactory) {
     this.store = Objects.requireNonNull(store, "run store");
     this.canonicalJson = Objects.requireNonNull(canonicalJson, "canonical JSON");
     this.policies = Objects.requireNonNull(policies, "artifact policies");
     this.sourceRegistry = Objects.requireNonNull(sourceRegistry, "source registry");
     this.configuration = Objects.requireNonNull(configuration, "technical run configuration");
+    this.engineFactory = Objects.requireNonNull(engineFactory, "Java code engine factory");
   }
 
   /** Fresh-reopens a queued run and executes Step 01 plus application discovery only. */
@@ -60,11 +77,17 @@ public final class PersistedTechnicalRunExecutor {
     Objects.requireNonNull(runId, "analysis run ID");
     PreparedTechnicalRun prepared = prepare(runId);
     VerifiedSourceInventoryReference inventory = publishVerifiedSourceInventory(prepared);
-    return new TechnicalAnalysisWorkflow(
+    TechnicalAnalysisWorkflow workflow =
+        new TechnicalAnalysisWorkflow(
             new PersistedVerifiedSourceTextReader(prepared.steps(), sourceRegistry),
             prepared.modules(),
-            prepared.steps())
-        .discover(inventory, configuration.discoveryProfile());
+            prepared.steps());
+    if (configuration.engineConfiguration() == null) {
+      return workflow.discover(inventory, configuration.discoveryProfile());
+    }
+    try (JavaCodeSession session = openSession(prepared, inventory)) {
+      return workflow.discover(inventory, configuration.discoveryProfile(), session);
+    }
   }
 
   /**
@@ -79,14 +102,63 @@ public final class PersistedTechnicalRunExecutor {
             new PersistedVerifiedSourceTextReader(prepared.steps(), sourceRegistry),
             prepared.modules(),
             prepared.steps());
-    TechnicalDiscoveryWorkflowResult discovery =
-        workflow.discover(inventory, configuration.discoveryProfile());
-    return workflow.continueAfterDiscovery(
-        discovery,
-        configuration.graphProfileRef(),
-        controls(prepared.request()),
-        configuration.flowProfile(),
-        configuration.capsuleProfile());
+    if (configuration.engineConfiguration() == null) {
+      TechnicalDiscoveryWorkflowResult discovery =
+          workflow.discover(inventory, configuration.discoveryProfile());
+      return workflow.continueAfterDiscovery(
+          discovery,
+          configuration.graphProfileRef(),
+          controls(prepared.request()),
+          configuration.flowProfile(),
+          configuration.capsuleProfile());
+    }
+    try (JavaCodeSession session = openSession(prepared, inventory)) {
+      TechnicalDiscoveryWorkflowResult discovery =
+          workflow.discover(inventory, configuration.discoveryProfile(), session);
+      return workflow.continueAfterDiscovery(
+          discovery,
+          session,
+          controls(prepared.request()),
+          configuration.flowProfile(),
+          configuration.capsuleProfile());
+    }
+  }
+
+  private JavaCodeSession openSession(
+      PreparedTechnicalRun prepared, VerifiedSourceInventoryReference inventory) {
+    PersistedVerifiedSourceTextReader reader =
+        new PersistedVerifiedSourceTextReader(prepared.steps(), sourceRegistry);
+    var source = reader.reopen(inventory);
+    VerifiedJavaProject project =
+        VerifiedJavaProject.fromVerifiedSourceTextSet(
+            source, sourceRoots(source.documents()), List.of(), "17");
+    JavaCodeEngine engine = engineFactory.create(configuration.engineConfiguration());
+    return engine.open(project);
+  }
+
+  private static List<String> sourceRoots(
+      List<org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument> documents) {
+    List<String> roots =
+        documents.stream()
+            .map(org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument::path)
+            .filter(path -> path.endsWith(".java"))
+            .map(PersistedTechnicalRunExecutor::conventionalJavaRoot)
+            .distinct()
+            .sorted()
+            .toList();
+    if (roots.isEmpty()) {
+      throw failure("RUNTIME_JAVA_SOURCE_ROOT_NOT_FOUND");
+    }
+    return roots;
+  }
+
+  private static String conventionalJavaRoot(String path) {
+    int marker = path.lastIndexOf("/java/");
+    if (marker >= 0) {
+      return path.substring(0, marker + "/java".length());
+    }
+    int slash = path.lastIndexOf('/');
+    return slash < 0 ? "." : path.substring(0, slash);
   }
 
   private PreparedTechnicalRun prepare(AnalysisRunId runId) {

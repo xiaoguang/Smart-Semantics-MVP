@@ -1,16 +1,10 @@
 package org.sourceanalysis.app.analysis.interpretation.material;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.github.javaparser.JavaParser;
-import com.github.javaparser.ast.CompilationUnit;
-import com.github.javaparser.ast.body.MethodDeclaration;
-import com.github.javaparser.ast.expr.MethodCallExpr;
-import com.github.javaparser.ast.stmt.IfStmt;
-import com.github.javaparser.ast.stmt.ReturnStmt;
-import com.github.javaparser.ast.stmt.ThrowStmt;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -27,6 +21,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.sourceanalysis.app.analysis.code.EntryCodeContext;
+import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
@@ -64,12 +60,9 @@ public final class BusinessMaterialBuilder {
   private static final String ARTIFACT_TYPE = "FLOW_INTERPRETATION_BUSINESS_MATERIAL";
   private static final String SCHEMA_VERSION = "flow-interpretation-business-material-v1";
   private static final String ARTIFACT_PREFIX = "business-materials";
+  private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final Set<String> MODEL_SAFE_ATOM_ROLES =
       Set.of("STATIC_TARGET_TYPE", "STATIC_TARGET_METHOD", "STATIC_TARGET_SIGNATURE");
-  // One entry can legitimately carry a short call chain plus a few source-level conditions and
-  // writes. Keeping this bounded but larger than a single handler avoids losing the persistence
-  // call that gives an otherwise coherent activity its observable result.
-  private static final int MAX_CODE_OUTLINE_OBSERVATIONS = 24;
   private static final Comparator<String> UTF8_ORDER = BusinessMaterialBuilder::compareUtf8;
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
@@ -271,6 +264,9 @@ public final class BusinessMaterialBuilder {
   }
 
   private static String groupingKey(EntryMaterial entry) {
+    if (entry.material().materialMode() == BusinessMaterialMode.NAVIGATED_SOURCE) {
+      return "navigated-entry\u0000" + entry.entry().entryId();
+    }
     String handler = entry.metadata() == null ? null : entry.metadata().handlerFqn();
     if (handler == null || handler.isBlank()) {
       return "entry\u0000" + entry.entry().entryId();
@@ -457,9 +453,7 @@ public final class BusinessMaterialBuilder {
     if (references.isEmpty()) {
       return null;
     }
-    List<String> observations =
-        mergeObservations(
-            codeOutlineObservations(capsule.spans(), references), observations(capsule));
+    List<String> observations = observations(capsule);
     List<String> limitations = limitations(entry, capsule, profile, references, observations);
     String materialId =
         "material:"
@@ -516,6 +510,10 @@ public final class BusinessMaterialBuilder {
     if (metadata == null) {
       return null;
     }
+    if (entryContext.codeContext() != null) {
+      return materialFromNavigatedContext(
+          entry, metadata, entryContext, source, allocator, profile);
+    }
     Map<String, VerifiedSourceTextDocument> documents = new HashMap<>();
     source.documents().forEach(document -> documents.put(document.fileId().value(), document));
     List<SourceSpan> contextSpans = sourceSpans(entryContext.sourceLocators(), documents);
@@ -551,8 +549,7 @@ public final class BusinessMaterialBuilder {
     List<String> observations = new ArrayList<>();
     observations.add("已定位 HTTP 入口 " + metadata.method() + " " + metadata.route());
     observations.addAll(entryContextObservations(entryContext));
-    observations.addAll(codeOutlineObservations(contextSpans, references));
-    observations = new ArrayList<>(mergeObservations(observations, List.of()));
+    observations = new ArrayList<>(distinctStrings(observations.stream()));
     List<String> limitations = new ArrayList<>(entryContext.limitations());
     limitations.add("技术流程尚未完整编译：" + String.join("、", entry.gapIds()));
     limitations.add("本材料来自 Step05 已保存的入口上下文，不把它伪装成已编译 Flow。");
@@ -590,12 +587,218 @@ public final class BusinessMaterialBuilder {
         packet);
   }
 
-  private static String lines(String text, int startLine, int endLine) {
-    String[] values = text.split("\\R", -1);
-    if (startLine < 1 || endLine < startLine || endLine > values.length) {
+  private BusinessMaterial materialFromNavigatedContext(
+      EntryDisposition entry,
+      EntryMetadata metadata,
+      EntryContext persisted,
+      VerifiedSourceTextSet source,
+      SourceRefAllocator allocator,
+      BusinessMaterialProfile profile) {
+    EntryCodeContext code = persisted.codeContext();
+    List<SourceSpan> spans = navigatedSourceSpans(code, source);
+    List<SourceReference> references = new ArrayList<>();
+    for (SourceSpan span : spans) {
+      int remaining = profile.maxSourceRefsPerMaterial() - references.size();
+      if (remaining < 1) {
+        return null;
+      }
+      List<SourceReference> selected =
+          allocator.references(span, profile.maxLinesPerRef(), remaining);
+      if (selected.size() < SourceRefAllocator.requiredChunks(span, profile.maxLinesPerRef())) {
+        return null;
+      }
+      references.addAll(selected);
+    }
+    if (references.isEmpty()) {
+      return null;
+    }
+    List<String> observations = navigatedObservations(code);
+    List<String> limitations =
+        java.util.stream.Stream.concat(
+                persisted.limitations().stream(),
+                code.limitations().stream().map(value -> value.code() + "：" + value.detail()))
+            .filter(value -> !value.isBlank())
+            .distinct()
+            .toList();
+    ModelActivityPacket packet =
+        new ModelActivityPacket(
+            "入口 E1：HTTP "
+                + metadata.method()
+                + " "
+                + metadata.route()
+                + "。以下 M、C、S 编号属于本入口；请阅读完整方法、调用候选、条件和返回后解释局部业务活动。",
+            modelObservations(observations),
+            references.stream()
+                .map(
+                    value ->
+                        new ModelActivityPacket.AllowlistedReference(value.ref(), value.snippet()))
+                .toList(),
+            modelLimitations(limitations));
+    if (packetCharacterCount(packet) > profile.maxMaterialChars()) {
+      return null;
+    }
+    String materialId =
+        "material:"
+            + sha256(
+                frame("business-material-navigated-source-v1"),
+                frame(entry.entryId()),
+                frame(persisted.entryContextId()));
+    return new BusinessMaterial(
+        materialId,
+        List.of(entry.entryId()),
+        BusinessMaterialMode.NAVIGATED_SOURCE,
+        "已取得入口 " + metadata.method() + " " + metadata.route() + " 的仓库内完整调用源码。",
+        observations,
+        references,
+        code.technicalEnhancements().flowRef() == null
+            ? List.of()
+            : List.of(code.technicalEnhancements().flowRef()),
+        code.technicalEnhancements().factRefs(),
+        limitations,
+        packet);
+  }
+
+  private List<SourceSpan> navigatedSourceSpans(
+      EntryCodeContext context, VerifiedSourceTextSet source) {
+    Map<String, VerifiedSourceTextDocument> documents =
+        source.documents().stream()
+            .collect(
+                java.util.stream.Collectors.toMap(
+                    VerifiedSourceTextDocument::path, value -> value));
+    List<EntryCodeContext.SourceSource> sources = new ArrayList<>();
+    context.methods().stream()
+        .filter(EntryCodeContext.MethodCode::bodyPresent)
+        .map(EntryCodeContext.MethodCode::source)
+        .forEach(sources::add);
+    context.supportingSources().stream()
+        .map(EntryCodeContext.SupportingSource::source)
+        .forEach(sources::add);
+    return sources.stream()
+        .map(value -> verifiedNavigatedSpan(value, documents))
+        .distinct()
+        .sorted(Comparator.comparing(SourceSpan::sortKey, UTF8_ORDER))
+        .toList();
+  }
+
+  private static SourceSpan verifiedNavigatedSpan(
+      EntryCodeContext.SourceSource source, Map<String, VerifiedSourceTextDocument> documents) {
+    VerifiedSourceTextDocument document = documents.get(source.path());
+    if (document == null) {
       throw failure("BUSINESS_MATERIAL_SOURCE_BINDING_INVALID");
     }
-    return String.join("\n", Arrays.copyOfRange(values, startLine - 1, endLine));
+    String full = new String(document.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8);
+    int end = Math.addExact(source.startOffsetUtf16(), source.lengthUtf16());
+    if (end > full.length()
+        || !full.substring(source.startOffsetUtf16(), end).equals(source.text())) {
+      throw failure("BUSINESS_MATERIAL_SOURCE_BINDING_INVALID");
+    }
+    return new SourceSpan(source.path(), source.startLine(), source.endLine(), source.text());
+  }
+
+  private static List<String> navigatedObservations(EntryCodeContext context) {
+    Map<String, String> methodIds = new LinkedHashMap<>();
+    for (int index = 0; index < context.methods().size(); index++) {
+      methodIds.put(context.methods().get(index).methodKey(), "M" + (index + 1));
+    }
+    List<String> values = new ArrayList<>();
+    for (EntryCodeContext.MethodCode method : context.methods()) {
+      String methodId = methodIds.get(method.methodKey());
+      String parameters =
+          method.parameters().stream()
+              .map(value -> "形参[" + value.ordinal() + "]=" + value.name() + ":" + value.typeText())
+              .collect(java.util.stream.Collectors.joining("，"));
+      values.add(
+          methodId
+              + " 完整方法："
+              + method.signature()
+              + (parameters.isBlank() ? "。" : "；" + parameters + "。"));
+      for (EntryCodeContext.Control control : method.controls()) {
+        values.add(
+            methodId
+                + " 条件："
+                + control.kind()
+                + (control.expression() == null ? "" : " " + control.expression())
+                + "。");
+      }
+      for (EntryCodeContext.Exit exit : method.exits()) {
+        values.add(
+            methodId
+                + " 终止："
+                + exit.kind()
+                + (exit.expression() == null ? "" : " " + exit.expression())
+                + "。");
+      }
+    }
+    for (int index = 0; index < context.calls().size(); index++) {
+      EntryCodeContext.CallSite call = context.calls().get(index);
+      String actuals =
+          call.actualArguments().stream()
+              .map(value -> "实参[" + value.ordinal() + "]=" + value.expression())
+              .collect(java.util.stream.Collectors.joining("，"));
+      String targets =
+          call.targets().stream()
+              .map(target -> targetObservation(target, methodIds, context))
+              .collect(java.util.stream.Collectors.joining("；"));
+      values.add(
+          "C"
+              + (index + 1)
+              + " 调用："
+              + methodIds.get(call.callerMethodKey())
+              + " 执行 "
+              + call.expression()
+              + (actuals.isBlank() ? "" : "；" + actuals)
+              + "；候选="
+              + (targets.isBlank() ? "无（" + call.resolutionDetail() + "）" : targets)
+              + (call.deferred() ? "；延迟执行" : "")
+              + "。");
+    }
+    context.supportingSources().stream()
+        .forEach(value -> values.add("辅助源码：" + value.kind() + "，用途=" + value.reason() + "。"));
+    return List.copyOf(values);
+  }
+
+  private static String targetObservation(
+      EntryCodeContext.CallTarget target, Map<String, String> methodIds, EntryCodeContext context) {
+    String targetId =
+        target.methodKey() == null
+            ? target.displayName()
+            : methodIds.getOrDefault(target.methodKey(), target.displayName());
+    EntryCodeContext.MethodCode targetMethod =
+        target.methodKey() == null
+            ? null
+            : context.methods().stream()
+                .filter(value -> value.methodKey().equals(target.methodKey()))
+                .findFirst()
+                .orElse(null);
+    String associations =
+        target.argumentAssociations().stream()
+            .map(
+                value -> {
+                  String actual =
+                      value.actualOrdinals().stream()
+                          .map(String::valueOf)
+                          .collect(java.util.stream.Collectors.joining(","));
+                  String formal =
+                      value.formalOrdinal() == null
+                          ? "未知"
+                          : formalDisplay(targetMethod, value.formalOrdinal());
+                  return "实参[" + actual + "]→" + formal;
+                })
+            .collect(java.util.stream.Collectors.joining("，"));
+    return targetId
+        + "["
+        + target.expansion()
+        + "]"
+        + (associations.isBlank() ? "" : " " + associations)
+        + (target.reason() == null ? "" : "，停止原因=" + target.reason());
+  }
+
+  private static String formalDisplay(EntryCodeContext.MethodCode method, int ordinal) {
+    if (method == null || ordinal >= method.parameters().size()) {
+      return "形参[" + ordinal + "]=未知";
+    }
+    JavaDeclarationCatalog.ParameterView parameter = method.parameters().get(ordinal);
+    return "形参[" + ordinal + "]=" + parameter.name() + ":" + parameter.typeText();
   }
 
   private List<String> observations(Capsule capsule) {
@@ -616,183 +819,49 @@ public final class BusinessMaterialBuilder {
 
   private static List<String> entryContextObservations(EntryContext context) {
     List<String> values = new ArrayList<>();
+    if (context.entrySignature() != null) {
+      values.add("源码输入：入口签名 " + context.entrySignature() + "。");
+    }
     context
         .calls()
         .forEach(
-            call ->
-                values.add(
-                    "代码路径："
-                        + call.callerSignature()
-                        + " 将参数 "
-                        + String.join("、", call.argumentExpressions())
-                        + " 传给 "
-                        + call.targetSignature()
-                        + (call.boundary() ? "（离开当前 Java 实现边界）。" : "。")));
+            call -> {
+              values.add(
+                  "代码路径："
+                      + call.callerSignature()
+                      + " 将参数 "
+                      + String.join("、", call.argumentExpressions())
+                      + " 传给 "
+                      + call.targetSignature()
+                      + (call.boundary() ? "（离开当前 Java 实现边界）。" : "。"));
+              values.add(
+                  "源码调用："
+                      + call.targetSignature()
+                      + "("
+                      + String.join("、", call.argumentExpressions())
+                      + ")。"
+                      + (call.boundary() ? "该调用到达仓库外边界。" : ""));
+            });
     context
         .controls()
         .forEach(
             control ->
                 values.add(
-                    "代码分支："
+                    "源码条件："
                         + control.ownerSignature()
                         + " 在 "
                         + control.condition()
                         + " 时改变后续处理。"));
     context
         .returns()
-        .forEach(terminal -> values.add("代码终止：存在 " + terminal.terminalKind() + " 返回路径。"));
+        .forEach(terminal -> values.add("源码终止：存在 " + terminal.terminalKind() + " 返回路径。"));
     return List.copyOf(values);
-  }
-
-  /**
-   * Converts only the already selected frozen snippets into short Java-syntax observations.
-   *
-   * <p>This is deliberately not a business classifier: parameters, conditions, calls and terminal
-   * statements are copied from the parsed snippet, while naming the business activity remains the
-   * model's task. A malformed or non-Java selected snippet simply contributes no outline item; its
-   * original short reference remains available to the model.
-   */
-  private static List<String> codeOutlineObservations(
-      List<SourceSpan> selectedSpans, List<SourceReference> references) {
-    JavaParser parser = new JavaParser();
-    List<String> snippets =
-        java.util.stream.Stream.concat(
-                selectedSpans.stream().map(SourceSpan::snippet),
-                references.stream().map(SourceReference::snippet))
-            .distinct()
-            .toList();
-    List<MethodDeclaration> methods = new ArrayList<>();
-    Set<String> methodBodies = new HashSet<>();
-    for (String snippet : snippets) {
-      CompilationUnit unit = parseSnippet(parser, snippet);
-      if (unit == null) {
-        continue;
-      }
-      for (MethodDeclaration method : unit.findAll(MethodDeclaration.class)) {
-        if (methodBodies.add(method.toString())) {
-          methods.add(method);
-        }
-      }
-    }
-    List<String> values = new ArrayList<>();
-    methods.stream()
-        .filter(method -> !method.getParameters().isEmpty())
-        .forEach(
-            method ->
-                addOutlineObservation(
-                    values,
-                    "源码输入：方法 "
-                        + method.getNameAsString()
-                        + " 接收参数 "
-                        + method.getParameters().stream()
-                            .map(parameter -> parameter.getNameAsString())
-                            .collect(java.util.stream.Collectors.joining("、"))
-                        + "。"));
-    methods.stream()
-        .flatMap(method -> method.findAll(MethodCallExpr.class).stream())
-        .filter(MethodCallExpr::hasScope)
-        .filter(BusinessMaterialBuilder::isStateOrPersistenceCall)
-        .forEach(
-            call -> addOutlineObservation(values, "源码调用：" + compactCode(call.toString()) + "。"));
-    methods.stream()
-        .flatMap(method -> method.findAll(IfStmt.class).stream())
-        .forEach(
-            condition ->
-                addOutlineObservation(
-                    values, "源码条件：" + compactCode(condition.getCondition().toString()) + "。"));
-    methods.stream()
-        .map(BusinessMaterialBuilder::firstDirectCallAfterLastGuard)
-        .flatMap(java.util.Optional::stream)
-        .forEach(
-            call -> addOutlineObservation(values, "源码调用：" + compactCode(call.toString()) + "。"));
-    methods.stream()
-        .flatMap(method -> method.findAll(MethodCallExpr.class).stream())
-        .filter(MethodCallExpr::hasScope)
-        .forEach(
-            call -> addOutlineObservation(values, "源码调用：" + compactCode(call.toString()) + "。"));
-    methods.stream()
-        .flatMap(method -> method.findAll(ReturnStmt.class).stream())
-        .forEach(
-            terminal ->
-                addOutlineObservation(
-                    values,
-                    "源码终止：return"
-                        + terminal
-                            .getExpression()
-                            .map(value -> " " + compactCode(value.toString()))
-                            .orElse("")
-                        + "。"));
-    methods.stream()
-        .flatMap(method -> method.findAll(ThrowStmt.class).stream())
-        .forEach(
-            terminal ->
-                addOutlineObservation(
-                    values,
-                    "源码终止：throw " + compactCode(terminal.getExpression().toString()) + "。"));
-    return mergeObservations(values, List.of());
-  }
-
-  private static boolean isStateOrPersistenceCall(MethodCallExpr call) {
-    String name = call.getNameAsString().toLowerCase(java.util.Locale.ROOT);
-    return name.startsWith("set")
-        || name.contains("update")
-        || name.contains("insert")
-        || name.contains("save")
-        || name.contains("delete")
-        || name.contains("remove")
-        || name.contains("persist");
-  }
-
-  private static java.util.Optional<MethodCallExpr> firstDirectCallAfterLastGuard(
-      MethodDeclaration method) {
-    int lastGuardEndLine =
-        method.findAll(IfStmt.class).stream()
-            .map(IfStmt::getRange)
-            .flatMap(java.util.Optional::stream)
-            .mapToInt(range -> range.end.line)
-            .max()
-            .orElse(-1);
-    if (lastGuardEndLine < 0) {
-      return java.util.Optional.empty();
-    }
-    return method.findAll(MethodCallExpr.class).stream()
-        .filter(MethodCallExpr::hasScope)
-        .filter(call -> call.getRange().isPresent())
-        .filter(call -> call.getRange().orElseThrow().begin.line > lastGuardEndLine)
-        .findFirst();
-  }
-
-  private static void addOutlineObservation(List<String> values, String observation) {
-    if (values.size() < MAX_CODE_OUTLINE_OBSERVATIONS && !values.contains(observation)) {
-      values.add(observation);
-    }
-  }
-
-  private static CompilationUnit parseSnippet(JavaParser parser, String snippet) {
-    var direct = parser.parse(snippet).getResult();
-    if (direct.isPresent() && !direct.orElseThrow().findAll(MethodDeclaration.class).isEmpty()) {
-      return direct.orElseThrow();
-    }
-    var wrappedType =
-        parser.parse("class SourceMaterialSnippet {\n" + snippet + "\n}").getResult().orElse(null);
-    if (wrappedType != null && !wrappedType.findAll(MethodDeclaration.class).isEmpty()) {
-      return wrappedType;
-    }
-    return parser
-        .parse("class SourceMaterialSnippet { void selected() {\n" + snippet + "\n} }")
-        .getResult()
-        .orElse(null);
-  }
-
-  private static String compactCode(String value) {
-    return value.replaceAll("\\s+", " ").strip();
   }
 
   private static List<String> mergeObservations(List<String> primary, List<String> secondary) {
     return java.util.stream.Stream.concat(primary.stream(), secondary.stream())
         .filter(value -> !value.isBlank())
         .distinct()
-        .limit(MAX_CODE_OUTLINE_OBSERVATIONS)
         .toList();
   }
 
@@ -1044,14 +1113,15 @@ public final class BusinessMaterialBuilder {
               .distinct()
               .toList();
       EntryContext context = entryContext(object(node, "entryContext"));
+      String flowSliceId = nullableText(node, "flowSliceId");
       if (!entryId.equals(context.entryId())
-          || !text(node, "flowSliceId").equals(context.flowSliceId())) {
+          || !Objects.equals(flowSliceId, context.flowSliceId())) {
         throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
       }
       spans.addAll(sourceSpans(context.sourceLocators(), documents));
       Capsule capsule =
           new Capsule(
-              text(node, "flowSliceId"),
+              flowSliceId,
               text(entry, "trigger"),
               text(node, "modelEligibility"),
               context,
@@ -1080,33 +1150,62 @@ public final class BusinessMaterialBuilder {
   }
 
   private static EntryContext entryContext(JsonNode node) {
+    EntryCodeContext codeContext = null;
+    JsonNode codeContextNode = node.path("codeContext");
+    if (!codeContextNode.isMissingNode() && !codeContextNode.isNull()) {
+      if (!codeContextNode.isObject()) {
+        throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
+      }
+      try {
+        codeContext = MAPPER.treeToValue(codeContextNode, EntryCodeContext.class);
+      } catch (com.fasterxml.jackson.core.JsonProcessingException invalid) {
+        throw failure("BUSINESS_MATERIAL_INPUT_INVALID", new IllegalArgumentException(invalid));
+      }
+    }
+    JsonNode strict = node.path("strictTechnicalContext");
     List<CallContext> calls = new ArrayList<>();
-    for (JsonNode call : array(node, "calls")) {
-      calls.add(
-          new CallContext(
-              text(call, "callerSignature"),
-              text(call, "targetSignature"),
-              strings(call.path("argumentExpressions")),
-              text(call, "resolution"),
-              call.path("boundary").asBoolean(false)));
-    }
     List<ControlContext> controls = new ArrayList<>();
-    for (JsonNode control : array(node, "controls")) {
-      controls.add(new ControlContext(text(control, "ownerSignature"), text(control, "condition")));
-    }
     List<ReturnContext> returns = new ArrayList<>();
-    for (JsonNode terminal : array(node, "returns")) {
-      returns.add(new ReturnContext(text(terminal, "terminalKind")));
+    List<SourceLocatorV1> sourceLocators = List.of();
+    String entrySignature = null;
+    if (!strict.isMissingNode() && !strict.isNull()) {
+      if (!strict.isObject()) {
+        throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
+      }
+      entrySignature = text(strict, "entrySignature");
+      for (JsonNode call : array(strict, "calls")) {
+        calls.add(
+            new CallContext(
+                text(call, "callerSignature"),
+                text(call, "targetSignature"),
+                strings(call.path("argumentExpressions")),
+                text(call, "resolution"),
+                call.path("boundary").asBoolean(false)));
+      }
+      for (JsonNode control : array(strict, "controls")) {
+        controls.add(
+            new ControlContext(text(control, "ownerSignature"), text(control, "condition")));
+      }
+      for (JsonNode terminal : array(strict, "returns")) {
+        returns.add(new ReturnContext(text(terminal, "terminalKind")));
+      }
+      sourceLocators = sourceLocators(strict, "sourceLocators");
+    }
+    if (codeContext == null && (strict.isMissingNode() || strict.isNull())) {
+      throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
     }
     return new EntryContext(
         text(node, "entryContextId"),
         text(node, "entryId"),
         nullableText(node, "flowSliceId"),
-        text(node, "entrySignature"),
+        text(node, "collectionStatus"),
+        nullableText(node, "collectionReason"),
+        codeContext,
+        entrySignature,
         List.copyOf(calls),
         List.copyOf(controls),
         List.copyOf(returns),
-        sourceLocators(node, "sourceLocators"),
+        sourceLocators,
         strings(node.path("limitations")));
   }
 
@@ -1114,9 +1213,11 @@ public final class BusinessMaterialBuilder {
     List<SourceLocatorV1> values = new ArrayList<>();
     for (JsonNode locator : array(node, field)) {
       try {
+        JsonNode fileId = locator.path("fileId");
         values.add(
             new SourceLocatorV1(
-                ArtifactId.parse(text(locator, "fileId")),
+                ArtifactId.parse(
+                    fileId.isObject() ? text(fileId, "value") : text(locator, "fileId")),
                 text(locator, "path"),
                 longValue(locator, "startByte"),
                 longValue(locator, "endByteExclusive"),
@@ -1411,6 +1512,9 @@ public final class BusinessMaterialBuilder {
       String entryContextId,
       String entryId,
       String flowSliceId,
+      String collectionStatus,
+      String collectionReason,
+      EntryCodeContext codeContext,
       String entrySignature,
       List<CallContext> calls,
       List<ControlContext> controls,
@@ -1448,52 +1552,28 @@ public final class BusinessMaterialBuilder {
         return List.of();
       }
       List<SourceReference> values = new ArrayList<>();
-      String head = limitedSnippet(span.snippet(), maxLines);
-      values.add(reference(span.file(), span.startLine(), head));
-      if (values.size() == maximum || lineCount(span.snippet()) <= maxLines) {
-        return List.copyOf(values);
-      }
-      for (SnippetAnchor anchor : laterDirectCallAnchors(span, maxLines, maximum - values.size())) {
-        SourceReference reference = reference(span.file(), anchor.startLine(), anchor.snippet());
-        if (!values.contains(reference)) {
-          values.add(reference);
+      String[] lines = span.snippet().split("\\R", -1);
+      for (int start = 0; start < lines.length && values.size() < maximum; start += maxLines) {
+        int end = Math.min(start + maxLines, lines.length);
+        String snippet = String.join("\n", Arrays.copyOfRange(lines, start, end)).stripTrailing();
+        if (!snippet.isBlank()) {
+          values.add(reference(span.file(), span.startLine() + start, snippet));
         }
       }
       return List.copyOf(values);
     }
 
-    private static List<SnippetAnchor> laterDirectCallAnchors(
-        SourceSpan span, int headLines, int maximum) {
-      JavaParser parser = new JavaParser();
-      var parsed = parser.parse(span.snippet()).getResult();
-      if (parsed.isEmpty()) {
-        return List.of();
+    static int requiredChunks(SourceSpan span, int maxLines) {
+      String[] lines = span.snippet().split("\\R", -1);
+      int required = 0;
+      for (int start = 0; start < lines.length; start += maxLines) {
+        int end = Math.min(start + maxLines, lines.length);
+        String snippet = String.join("\n", Arrays.copyOfRange(lines, start, end)).stripTrailing();
+        if (!snippet.isBlank()) {
+          required++;
+        }
       }
-      List<SnippetAnchor> eligible =
-          parsed.orElseThrow().findAll(MethodCallExpr.class).stream()
-              .filter(call -> call.getScope().isPresent())
-              .filter(call -> call.getRange().isPresent())
-              .map(call -> call.getRange().orElseThrow())
-              .filter(range -> range.begin.line > headLines)
-              .map(
-                  range ->
-                      new SnippetAnchor(
-                          span.startLine() + range.begin.line - 1,
-                          lines(span.snippet(), range.begin.line, range.end.line)))
-              .toList();
-      if (eligible.isEmpty()) {
-        return List.of();
-      }
-      if (maximum == 1) {
-        return List.of(eligible.get(eligible.size() - 1));
-      }
-      List<SnippetAnchor> selected = new ArrayList<>();
-      selected.add(eligible.get(0));
-      SnippetAnchor last = eligible.get(eligible.size() - 1);
-      if (!selected.contains(last)) {
-        selected.add(last);
-      }
-      return selected.stream().limit(maximum).toList();
+      return required;
     }
 
     private SourceReference reference(String file, int startLine, String snippet) {
@@ -1506,16 +1586,8 @@ public final class BusinessMaterialBuilder {
                   "S" + (byLocation.size() + 1), file, startLine, endLine, snippet));
     }
 
-    private static String limitedSnippet(String source, int maxLines) {
-      String[] lines = source.split("\\R", -1);
-      int count = Math.min(maxLines, lines.length);
-      return String.join("\n", Arrays.copyOf(lines, count)).stripTrailing();
-    }
-
     private static int lineCount(String value) {
-      return (int) value.lines().count();
+      return value.split("\\R", -1).length;
     }
-
-    private record SnippetAnchor(int startLine, String snippet) {}
   }
 }

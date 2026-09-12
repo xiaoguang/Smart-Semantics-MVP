@@ -1,6 +1,7 @@
 package org.sourceanalysis.app.runtime;
 
 import java.util.Objects;
+import org.sourceanalysis.app.analysis.code.JavaCodeSession;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryExecutor;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryRequest;
@@ -63,6 +64,27 @@ public final class TechnicalAnalysisWorkflow {
     return new TechnicalDiscoveryWorkflowResult(verifiedSourceInventory, discovery);
   }
 
+  /** Runs application discovery from the selected engine's snapshot-bound declaration catalog. */
+  public TechnicalDiscoveryWorkflowResult discover(
+      VerifiedSourceInventoryReference verifiedSourceInventory,
+      DiscoveryProfile discoveryProfile,
+      JavaCodeSession javaCodeSession) {
+    Objects.requireNonNull(verifiedSourceInventory, "verified source inventory");
+    Objects.requireNonNull(discoveryProfile, "discovery profile");
+    Objects.requireNonNull(javaCodeSession, "Java code session");
+    ApplicationDiscoveryReference discovery =
+        new ApplicationDiscoveryExecutor(
+                sourceReader, moduleArtifacts, stepArtifacts, javaCodeSession)
+            .execute(
+                new ApplicationDiscoveryRequest(
+                    new AnalysisStepPublicationAddress(
+                        verifiedSourceInventory.publication().address().runId(),
+                        AnalysisStepKey.APPLICATION_DISCOVERY),
+                    verifiedSourceInventory,
+                    discoveryProfile));
+    return new TechnicalDiscoveryWorkflowResult(verifiedSourceInventory, discovery);
+  }
+
   /** Runs optional program graphs, technical facts, and flows after a verified discovery prefix. */
   public TechnicalAnalysisWorkflowResult continueAfterDiscovery(
       TechnicalDiscoveryWorkflowResult discoveryResult,
@@ -98,6 +120,38 @@ public final class TechnicalAnalysisWorkflow {
         verifiedSourceInventory, discovery, graphs, facts, flows);
   }
 
+  /** Runs the JDT navigation-index route after discovery without invoking legacy graph builders. */
+  public TechnicalAnalysisWorkflowResult continueAfterDiscovery(
+      TechnicalDiscoveryWorkflowResult discoveryResult,
+      JavaCodeSession javaCodeSession,
+      ArtifactControls artifactControls,
+      FlowCompilationProfile flowProfile,
+      CapsuleProjectionProfile capsuleProfile) {
+    Objects.requireNonNull(discoveryResult, "technical discovery result");
+    Objects.requireNonNull(javaCodeSession, "Java code session");
+    VerifiedSourceInventoryReference verifiedSourceInventory =
+        discoveryResult.verifiedSourceInventory();
+    ApplicationDiscoveryReference discovery = discoveryResult.applicationDiscovery();
+    ProgramGraphsReference graphs =
+        new ProgramGraphsExecution(sourceReader, moduleArtifacts, stepArtifacts)
+            .execute(verifiedSourceInventory, discovery, javaCodeSession, artifactControls);
+    ProvenCodeFactsReference facts =
+        new ProvenCodeFactsExecutor(sourceReader, moduleArtifacts, stepArtifacts)
+            .execute(verifiedSourceInventory, discovery, graphs);
+    BusinessFlowsReference flows =
+        new BusinessFlowsExecutor(sourceReader, moduleArtifacts, stepArtifacts)
+            .execute(
+                new BusinessFlowsExecutionRequest(
+                    verifiedSourceInventory,
+                    discovery,
+                    graphs,
+                    facts,
+                    flowProfile,
+                    capsuleProfile));
+    return new TechnicalAnalysisWorkflowResult(
+        verifiedSourceInventory, discovery, graphs, facts, flows);
+  }
+
   /** Runs Step 02–05 in fixed order from one previously published verified-source inventory. */
   public TechnicalAnalysisWorkflowResult run(
       VerifiedSourceInventoryReference verifiedSourceInventory,
@@ -109,6 +163,22 @@ public final class TechnicalAnalysisWorkflow {
     return continueAfterDiscovery(
         discover(verifiedSourceInventory, discoveryProfile),
         graphProfileRef,
+        artifactControls,
+        flowProfile,
+        capsuleProfile);
+  }
+
+  /** Runs discovery through Step 05 using one selected Java session and no parser fallback. */
+  public TechnicalAnalysisWorkflowResult run(
+      VerifiedSourceInventoryReference verifiedSourceInventory,
+      DiscoveryProfile discoveryProfile,
+      JavaCodeSession javaCodeSession,
+      ArtifactControls artifactControls,
+      FlowCompilationProfile flowProfile,
+      CapsuleProjectionProfile capsuleProfile) {
+    return continueAfterDiscovery(
+        discover(verifiedSourceInventory, discoveryProfile, javaCodeSession),
+        javaCodeSession,
         artifactControls,
         flowProfile,
         capsuleProfile);

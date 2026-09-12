@@ -143,6 +143,23 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         false);
   }
 
+  /** Creates the guarded persisted source/discovery prefix without installing Step 03. */
+  public static ProgramGraphsPublicFixture createForGuardedJavaCodeIndex(
+      Path emptyTemporaryDirectory) {
+    return create(
+        emptyTemporaryDirectory,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false);
+  }
+
   /**
    * Creates the same two-entry source with bounded repository scope and no completion eligibility.
    */
