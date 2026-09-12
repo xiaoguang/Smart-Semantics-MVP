@@ -32,7 +32,7 @@
 | ProcessExplainer | 全部完整已审活动、recall cues、必要材料、按 material 聚合的未解释入口 | 完整已审过程、RepositoryBusinessKnowledge、process coverage | 高召回分组后由 Luna 判断有依据的多对多过程，保留独立活动和 partial 范围 | 非法成员/ref/JSON、遗漏范围却报完整、started 失败 fatal；0 活动时过程 Provider 为 0 | BusinessReportPublisher | RED 覆盖完整字段、多对多、保守独立过程和 specific partial；GREEN 只扩现有 knowledge input/save/read seam |
 | BusinessReportPublisher | 完整知识、活动/过程、coverage、按 material 聚合的未解释入口、SourceRefs | 固定九章 JSON、source-refs、Markdown、validation | 一次报告 DRAFT + 完整 REVIEW；Java 只校验并确定性排版 | 缺章/非法 ref/虚假全量 fatal；显式空仓报告仍走既有 DRAFT+REVIEW；PARTIAL/INCOMPLETE 不新增 runtime enum | 业务读者与 public render/inspect/artifact | RED 覆盖第4章内容、第9章具体入口、九章/ref/纯 render；GREEN 只补 knowledge→report 与第9章，不建语义 parser |
 
-这张表是后续实现的 Interface 与测试面。模块间传 typed immutable 结果；内部测试 seam 不扩成新的公开 Interface。Activity REVIEW 的 `unexplainedEntries`、程序侧完整记录、v2 Prompt/schema 和 coverage v2 已写入当前实现。Process/Report 的按材料聚合投影也已接通：repository-summary 与 report DRAFT/REVIEW Prompt、ProcessExplainer 与 BusinessReportPublisher 已升到 Module v2；process-group DRAFT/REVIEW Prompt 保持 v1。四入口 complete/partial、跨包 N=9、单包 N≥12、零入口和预算/非法响应边界的 scripted 全链已通过；下一项仅是计划 Task 7 的受限真实 Activity 小包验证。
+这张表是后续实现的 Interface 与测试面。模块间传 typed immutable 结果；内部测试 seam 不扩成新的公开 Interface。Activity REVIEW 的 `unexplainedEntries`、程序侧完整记录、v2 Prompt/schema 和 coverage v2 已写入当前实现。Process/Report 的按材料聚合投影也已接通：repository-summary 与 report DRAFT/REVIEW Prompt、ProcessExplainer 与 BusinessReportPublisher 已升到 Module v2；process-group DRAFT/REVIEW Prompt 保持 v1。四入口 complete/partial、跨包 N=9、单包 N≥12、零入口和预算/非法响应边界的 scripted 全链已通过；独立宿主会话候选也已对固定四入口材料完成一次真实 Activity DRAFT+REVIEW，结果只作为局部语义质量样本。
 
 ## 3. 为什么同时保留 03、04、05
 
@@ -167,7 +167,7 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 | Step03/04 稳定算法、FactRegistry 三类技术模式与 AtomicProofBuilder 全 atoms 规则保留；普通 persisted candidate 读取与 Flow/Capsule 发布已不再重放 owner 算法 | 本次不修改 Step03/04 算法或恢复重复 replay；清理只删除旧解释链的专属消费者/注册 |
 | EntryRootedFlowCompiler 已在 flow-slices/Capsule 保存 EntryContext，传递 argument/return/data/control 与可选 Proof；BusinessMaterialBuilder 已直接消费它 | 保持 Step05 owner 与 Builder 单一包装 seam，不新增源码扫描、EntryDescriptor 或 regex context parser |
 | EvidenceCapsuleProjector 已按连贯上下文保留必要 guard、变量、调用/返回及 facts/gaps/signals；Capsule 已移除两个旧 registry proposal basis 字段，并以 capsule-projection v9 / evidence-capsule v7 持久化 | 新读取路径拒绝 v8/v6；Flow/Capsule 正常发布重开会核对已保存的 M1/M2 upstream 列表、Fact atom tuple，以及 signal 的本地 Fact/Proof/Evidence/locator/可从 atom 推导的 anchor 闭包，但不会重跑 compiler 来臆造一份完整 signal 分母 |
-| ActivityExplainer、ProcessExplainer、BusinessReportPublisher、BusinessAnalysisWorkflow 已存在，完整活动字段与具体 `UnexplainedActivityEntry` 已能沿过程/报告传递；四入口和任意 N 的 scripted 全链已验收 | 不建平行业务流水线；受限四入口真实候选已在 DRAFT 子进程失败后按 no-retry 规则终止，未来若需诊断须单独授权 |
+| ActivityExplainer、ProcessExplainer、BusinessReportPublisher、BusinessAnalysisWorkflow 已存在，完整活动字段与具体 `UnexplainedActivityEntry` 已能沿过程/报告传递；四入口和任意 N 的 scripted 全链已验收 | 不建平行业务流水线；普通沙箱候选失败后，独立宿主会话候选以同一材料完成四项局部 Activity。它不是过程、报告或整仓验收 |
 | 旧 `analysis.interpretation.{model,proposal,registry,process}` 的 78 个生产类、14 个专属测试、旧 Step06 1–9 地址、旧 artifact/schema 分支及测试 fixture policy 已删除；当前测试使用中性的 `BusinessFlowTestSupport` | 当前运行链只保留 Step06 10/11、`ModelRuntimeIdentityV1` 与 `analysis.knowledge.ProcessExplainer`；`AnalysisStepAddressTest` 拒绝 1–9、接受 10/11。四入口与任意 N 的全链验收已通过 |
 | Activity v2 对任意 N 入口先做容量预检，合法但遗漏 E3/E4 的 DRAFT 会进入唯一 REVIEW；完整实际 DRAFT、`missingEntryKeys` 与 required `unexplainedEntries` 均在程序侧校验 | `activity-coverage.json` v2、`ActivityExplanationResult` 和仓库知识 v2 已保存全量 `UnexplainedActivityEntry` |
 | Process/report 模型输入按 material 只投影一次 `{materialContext, unexplainedEntryKeys, reasonCode}`；全局/material ID 保留在程序侧，`MODEL_NOT_EXPLAINED` 不进入技术 receipt Gap | Prompt 要求第9章显示 context 的 HTTP 方法/路径与原因，禁止第4章为未解释入口编造活动；即时逐包 checkpoint 仍是独立未解决缺口 |
@@ -176,7 +176,7 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 
 Spring 细则：`@RequestMapping` 省略 method 或 `method={}` 都合法。类和方法均无限制时保持 unrestricted；一方有限制时保留该限制；双方非空按 Spring method-condition combine 取并集。不要猜 GET，也不要把 HEAD/OPTIONS 框架处理拆成多个业务活动。现有 `methodCondition` 已实现该区分，UserController#getOrganizationUserTree 和 MaterialCategoryController#getMaterialCategoryTree 是直接回归样例；未来完整仓库重跑只核对新的真实分母。
 
-后续按 [实施衔接](plans/coherent-code-context-implementation-plan.md) 和[已批准清理/覆盖设计](plans/code-cleanup-and-scalable-activity-coverage-design.md)做 Luna/xhigh RED、Terra/xhigh 最小 GREEN，只运行直接相关测试。旧依赖安全退役、任意 N 与 REVIEW 预算、合法缺项修订、具体 partial 到第 9 章及其 scripted 全链均已完成；Task 7 的精确冻结输入已完成一次受限真实尝试，但在 DRAFT 子进程失败后终止且没有语义结果。已稳定的 Step03–05 接力不重新实现，也不开展第二轮架构扩展。
+后续按 [实施衔接](plans/coherent-code-context-implementation-plan.md) 和[已批准清理/覆盖设计](plans/code-cleanup-and-scalable-activity-coverage-design.md)做 Luna/xhigh RED、Terra/xhigh 最小 GREEN，只运行直接相关测试。旧依赖安全退役、任意 N 与 REVIEW 预算、合法缺项修订、具体 partial 到第 9 章及其 scripted 全链均已完成；普通沙箱的 Task 7 候选失败后，独立宿主会话候选已完成四入口局部 Activity 验证。已稳定的 Step03–05 接力不重新实现，也不开展第二轮架构扩展。
 
 ## 11. 阅读导航
 
