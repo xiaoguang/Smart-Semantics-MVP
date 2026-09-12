@@ -167,7 +167,7 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 | Step03/04 稳定算法、FactRegistry 三类技术模式与 AtomicProofBuilder 全 atoms 规则保留；普通 persisted candidate 读取与 Flow/Capsule 发布已不再重放 owner 算法 | 本次不修改 Step03/04 算法或恢复重复 replay；清理只删除旧解释链的专属消费者/注册 |
 | EntryRootedFlowCompiler 已在 flow-slices/Capsule 保存 EntryContext，传递 argument/return/data/control 与可选 Proof；BusinessMaterialBuilder 已直接消费它 | 保持 Step05 owner 与 Builder 单一包装 seam，不新增源码扫描、EntryDescriptor 或 regex context parser |
 | EvidenceCapsuleProjector 已按连贯上下文保留必要 guard、变量、调用/返回及 facts/gaps/signals；Capsule 已移除两个旧 registry proposal basis 字段，并以 capsule-projection v9 / evidence-capsule v7 持久化 | 新读取路径拒绝 v8/v6；Flow/Capsule 正常发布重开会核对已保存的 M1/M2 upstream 列表、Fact atom tuple，以及 signal 的本地 Fact/Proof/Evidence/locator/可从 atom 推导的 anchor 闭包，但不会重跑 compiler 来臆造一份完整 signal 分母 |
-| ActivityExplainer、ProcessExplainer、BusinessReportPublisher、BusinessAnalysisWorkflow 已存在，完整活动字段与具体 `UnexplainedActivityEntry` 已能沿过程/报告传递；四入口和任意 N 的 scripted 全链已验收 | 不建平行业务流水线；下一项仅做受限真实 Activity 小包验证 |
+| ActivityExplainer、ProcessExplainer、BusinessReportPublisher、BusinessAnalysisWorkflow 已存在，完整活动字段与具体 `UnexplainedActivityEntry` 已能沿过程/报告传递；四入口和任意 N 的 scripted 全链已验收 | 不建平行业务流水线；受限四入口真实候选已在 DRAFT 子进程失败后按 no-retry 规则终止，未来若需诊断须单独授权 |
 | 旧 `analysis.interpretation.{model,proposal,registry,process}` 的 78 个生产类、14 个专属测试、旧 Step06 1–9 地址、旧 artifact/schema 分支及测试 fixture policy 已删除；当前测试使用中性的 `BusinessFlowTestSupport` | 当前运行链只保留 Step06 10/11、`ModelRuntimeIdentityV1` 与 `analysis.knowledge.ProcessExplainer`；`AnalysisStepAddressTest` 拒绝 1–9、接受 10/11。四入口与任意 N 的全链验收已通过 |
 | Activity v2 对任意 N 入口先做容量预检，合法但遗漏 E3/E4 的 DRAFT 会进入唯一 REVIEW；完整实际 DRAFT、`missingEntryKeys` 与 required `unexplainedEntries` 均在程序侧校验 | `activity-coverage.json` v2、`ActivityExplanationResult` 和仓库知识 v2 已保存全量 `UnexplainedActivityEntry` |
 | Process/report 模型输入按 material 只投影一次 `{materialContext, unexplainedEntryKeys, reasonCode}`；全局/material ID 保留在程序侧，`MODEL_NOT_EXPLAINED` 不进入技术 receipt Gap | Prompt 要求第9章显示 context 的 HTTP 方法/路径与原因，禁止第4章为未解释入口编造活动；即时逐包 checkpoint 仍是独立未解决缺口 |
@@ -176,7 +176,7 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 
 Spring 细则：`@RequestMapping` 省略 method 或 `method={}` 都合法。类和方法均无限制时保持 unrestricted；一方有限制时保留该限制；双方非空按 Spring method-condition combine 取并集。不要猜 GET，也不要把 HEAD/OPTIONS 框架处理拆成多个业务活动。现有 `methodCondition` 已实现该区分，UserController#getOrganizationUserTree 和 MaterialCategoryController#getMaterialCategoryTree 是直接回归样例；未来完整仓库重跑只核对新的真实分母。
 
-后续按 [实施衔接](plans/coherent-code-context-implementation-plan.md) 和[已批准清理/覆盖设计](plans/code-cleanup-and-scalable-activity-coverage-design.md)做 Luna/xhigh RED、Terra/xhigh 最小 GREEN，只运行直接相关测试。旧依赖安全退役、任意 N 与 REVIEW 预算、合法缺项修订、具体 partial 到第 9 章及其 scripted 全链均已完成；接下来仅按 Task 7 的精确冻结输入进行受限真实活动质量验证。已稳定的 Step03–05 接力不重新实现，也不开展第二轮架构扩展。
+后续按 [实施衔接](plans/coherent-code-context-implementation-plan.md) 和[已批准清理/覆盖设计](plans/code-cleanup-and-scalable-activity-coverage-design.md)做 Luna/xhigh RED、Terra/xhigh 最小 GREEN，只运行直接相关测试。旧依赖安全退役、任意 N 与 REVIEW 预算、合法缺项修订、具体 partial 到第 9 章及其 scripted 全链均已完成；Task 7 的精确冻结输入已完成一次受限真实尝试，但在 DRAFT 子进程失败后终止且没有语义结果。已稳定的 Step03–05 接力不重新实现，也不开展第二轮架构扩展。
 
 ## 11. 阅读导航
 

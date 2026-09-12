@@ -174,6 +174,11 @@
 - [ ] 这一次 DRAFT+REVIEW 是同一候选的内容审阅，不是新的产品改进回合。本计划没有获批的第二个 Reader Candidate；若人工检查发现明确问题，保留 findings，等待用户另行授权后才可启动 Round 2 replacement。
 - [ ] 执行后人工核对业务语言、范围限定和四个入口覆盖；程序只验证 schema/ref/coverage/预算，不能把通过结构检查说成业务质量通过。
 
+首次精确四入口候选已于 2026-09-12 在 DRAFT 启动后、写出任何结构化响应前以
+`CODEX_SUBSCRIPTION_EXECUTION_FAILED:UNKNOWN` 终止。仅保留忽略工作区中的 DRAFT 输入，未启动
+REVIEW，未重试、未切换 Provider。登录与无模型 CLI 契约检查已成功；现有适配器销毁私有 stderr，
+因此更细的子进程根因需要未来单独授权的诊断任务。该候选不证明或否定材料的业务质量。
+
 ## 独立缺口与停止条件
 
 - Activity/Process 每包 REVIEW 即时保存仍未实现。固定 module 地址不能循环安装不同聚合内容；若用户以后单独授权，先确定不覆盖既有 publication 的聚合/分片语义。本计划不设计或实现它。
