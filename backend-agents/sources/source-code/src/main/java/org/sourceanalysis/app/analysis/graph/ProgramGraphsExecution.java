@@ -2,6 +2,12 @@ package org.sourceanalysis.app.analysis.graph;
 
 import java.util.List;
 import java.util.Objects;
+import org.sourceanalysis.app.analysis.code.CodeEngineException;
+import org.sourceanalysis.app.analysis.code.EntryCodeContext;
+import org.sourceanalysis.app.analysis.code.EntrySeed;
+import org.sourceanalysis.app.analysis.code.JavaCodeSession;
+import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndex;
+import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndexPublicationSpecifier;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
@@ -214,6 +220,72 @@ public final class ProgramGraphsExecution {
                 publicationData,
                 publicationEvidence),
             controls);
+  }
+
+  /**
+   * Collects and publishes the selected JDT session's neutral navigation index without invoking the
+   * legacy JavaParser graph builders.
+   */
+  public ProgramGraphsReference execute(
+      VerifiedSourceInventoryReference verifiedSource,
+      ApplicationDiscoveryReference applicationDiscovery,
+      JavaCodeSession session,
+      ArtifactControls controls) {
+    Objects.requireNonNull(verifiedSource, "verified source inventory");
+    Objects.requireNonNull(applicationDiscovery, "application discovery");
+    Objects.requireNonNull(session, "Java code session");
+    Objects.requireNonNull(controls, "artifact controls");
+    ReopenedProgramGraphInputs reopened = inputs.reopen(verifiedSource, applicationDiscovery);
+    requireControls(reopened, controls);
+    var catalog = session.catalog();
+    if (!catalog.snapshotId().equals(reopened.source().snapshotId())) {
+      throw new GraphReferenceException();
+    }
+    List<JavaCodeIndex.EntryCollection> entries =
+        reopened.discovery().entries().stream()
+            .map(
+                entry -> {
+                  EntrySeed seed =
+                      new EntrySeed(
+                          entry.entryId().value(),
+                          entry.methodKey(),
+                          entry.methodRange(),
+                          entry.methodCondition().display() + " " + entry.route());
+                  try {
+                    return JavaCodeIndex.EntryCollection.collected(seed, session.collect(seed));
+                  } catch (CodeEngineException failure) {
+                    return JavaCodeIndex.EntryCollection.notCollected(
+                        seed, failure.code() + ": " + failure.getMessage());
+                  }
+                })
+            .sorted(java.util.Comparator.comparing(value -> value.seed().entryId()))
+            .toList();
+    EntryCodeContext.TechnicalEnhancements enhancements =
+        entries.stream()
+            .map(JavaCodeIndex.EntryCollection::context)
+            .filter(Objects::nonNull)
+            .map(EntryCodeContext::technicalEnhancements)
+            .findFirst()
+            .orElseGet(
+                () ->
+                    new EntryCodeContext.TechnicalEnhancements(
+                        EntryCodeContext.Availability.NOT_PRODUCED,
+                        "STRICT_GRAPH_ENRICHMENT_NOT_REQUESTED_BY_JDT_EXECUTION",
+                        List.of(),
+                        List.of(),
+                        null));
+    return new JavaCodeIndexPublicationSpecifier(modules, analysisSteps)
+        .publish(
+            verifiedSource,
+            applicationDiscovery,
+            controls,
+            new JavaCodeIndex(
+                session.descriptor(),
+                catalog.snapshotId(),
+                reopened.source().verifiedSnapshotRef(),
+                catalog,
+                entries,
+                enhancements));
   }
 
   private static AnalysisStepModuleAddress address(

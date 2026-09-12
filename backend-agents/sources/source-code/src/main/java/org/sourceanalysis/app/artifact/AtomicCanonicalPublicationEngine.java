@@ -1094,6 +1094,10 @@ final class AtomicCanonicalPublicationEngine {
                             "graph-gaps.jsonl",
                             "graph-index.json")
                         : null;
+                case 7 ->
+                    "java-code-index".equals(analysisStepAddress.moduleKey())
+                        ? List.of("java-code-index.jsonl")
+                        : null;
                 default -> null;
               };
           case PROVEN_CODE_FACTS ->
@@ -1108,11 +1112,7 @@ final class AtomicCanonicalPublicationEngine {
                         : null;
                 case 3 ->
                     "publish".equals(analysisStepAddress.moduleKey())
-                        ? List.of(
-                            "fact-accounting.json",
-                            "gap-ledger.json",
-                            "proof-pack.json",
-                            "proven-facts.json")
+                        ? factPublicationFiles(descriptors)
                         : null;
                 default -> null;
               };
@@ -1175,6 +1175,14 @@ final class AtomicCanonicalPublicationEngine {
             .equals(expectedFileNames)) {
       throw installRequest ? invalidInstall() : invalidPublication();
     }
+  }
+
+  private static List<String> factPublicationFiles(List<ArtifactDescriptor> descriptors) {
+    List<String> actual = descriptors.stream().map(ArtifactDescriptor::fileName).toList();
+    return actual.equals(List.of("fact-accounting.json"))
+        ? List.of("fact-accounting.json")
+        : List.of(
+            "fact-accounting.json", "gap-ledger.json", "proof-pack.json", "proven-facts.json");
   }
 
   private static void requireStrictDescriptorOrder(List<ArtifactDescriptor> descriptors) {
@@ -1560,6 +1568,15 @@ final class AtomicCanonicalPublicationEngine {
           "graph-index.json",
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
+    if ("PROGRAM_GRAPHS_JAVA_CODE_INDEX".equals(payload.artifactType())
+        && "java-code-index-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROGRAM_GRAPHS,
+          7,
+          "java-code-index",
+          "java-code-index.jsonl",
+          CanonicalEnvelopeKind.CANONICAL_JSONL);
+    }
     if ("BUSINESS_FLOWS_FLOW_COMPILATION".equals(payload.artifactType())
         && "business-flows-flow-compilation-v4".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
@@ -1732,7 +1749,8 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("PROVEN_CODE_FACTS_FACT_ACCOUNTING".equals(payload.artifactType())
-        && "proven-code-facts-fact-accounting-v3".equals(payload.schemaVersion())) {
+        && ("proven-code-facts-fact-accounting-v3".equals(payload.schemaVersion())
+            || "proven-code-facts-fact-accounting-v4".equals(payload.schemaVersion()))) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROVEN_CODE_FACTS,
           3,

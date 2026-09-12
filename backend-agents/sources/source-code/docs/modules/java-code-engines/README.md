@@ -147,7 +147,8 @@ JDT LS 已提供定位声明、实现和调用层次；JDT Core 能读取方法�
 | 原始结果处理 | 部分 hierarchy 成功路径提前返回；可能没询问 implementation；构造位置未完整处理 | 统一归一化、实现候选查询、构造器支持 |
 | JavaParser现状 | 现有 CallGraphBuilder 对 import/type 采用有限规则；POM有 Symbol Solver 不等于生产已接线 | 第二阶段保持真实能力；不宣称 JavaParser库做不到 |
 | Builder | 消费已有上下文，但仍有 JavaParser语法读取与观察提取 | parser相关工作移入对应引擎，公共Builder禁止重新解析 |
-| 正式编排 | 五图/Fact executor与发现器硬接线，尚无 YAML engine factory | 第一阶段改组合位置，保留公共Agent |
+| 正式编排 | YAML engine factory、JDT发现、module 7导航索引发布和Step04 `NOT_PRODUCED` accounting已经接通；Step05仍只读取旧图/Fact/Flow | 下一交付使Step05从持久化导航索引组装入口上下文，保留公共Agent |
+| JDT导航索引 | `java-code-index-v1`已保存ENGINE/TYPE/METHOD/CALL/ENTRY_MEMBERSHIP/DIAGNOSTIC，读取器可从磁盘重建完整入口上下文 | Step05直接消费该读取器，不得重新启动JDT或JavaParser |
 | 业务模块 | Activity/Process/Report已经存在 | 接收内容变丰富；不另建业务路线 |
 
 调研细节和准确限制见[贯穿例子](../../examples/java-code-engine-walkthrough.md)。本设计不改写历史运行结果，不把目标 JSON 当作已生成产物。

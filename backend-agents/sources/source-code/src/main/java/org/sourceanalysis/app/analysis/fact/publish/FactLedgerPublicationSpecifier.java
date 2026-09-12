@@ -68,6 +68,8 @@ public final class FactLedgerPublicationSpecifier {
   private static final String FACT_ACCOUNTING_FILE = "fact-accounting.json";
   private static final String FACT_ACCOUNTING_TYPE = "PROVEN_CODE_FACTS_FACT_ACCOUNTING";
   private static final String FACT_ACCOUNTING_SCHEMA = "proven-code-facts-fact-accounting-v3";
+  private static final String FACT_ACCOUNTING_NOT_PRODUCED_SCHEMA =
+      "proven-code-facts-fact-accounting-v4";
   private static final String MODULE_VERSION = "v3";
   private static final Comparator<String> UTF8_ORDER = FactLedgerPublicationSpecifier::compareUtf8;
 
@@ -173,6 +175,113 @@ public final class FactLedgerPublicationSpecifier {
     } catch (RuntimeException failure) {
       throw broken();
     }
+  }
+
+  /**
+   * Publishes an explicit accounting-only Step 04 result when the selected engine did not produce
+   * strict program-graph enrichment. No candidate enumerator or proof builder participates.
+   */
+  public ProvenCodeFactsReference specifyNotProduced(
+      VerifiedSourceInventoryReference source,
+      ApplicationDiscoveryReference discovery,
+      ProgramGraphsReference navigation,
+      String reason) {
+    try {
+      if (source == null
+          || discovery == null
+          || navigation == null
+          || reason == null
+          || reason.isBlank()) {
+        throw broken();
+      }
+      ReopenedAnalysisStepPublication sourceStep =
+          reopenStepInstance(source.publication(), AnalysisStepKey.VERIFIED_SOURCE_INVENTORY);
+      ReopenedAnalysisStepPublication discoveryStep =
+          reopenStepInstance(discovery.publication(), AnalysisStepKey.APPLICATION_DISCOVERY);
+      ReopenedAnalysisStepPublication navigationStep =
+          reopenStepInstance(navigation.publication(), AnalysisStepKey.PROGRAM_GRAPHS);
+      ArtifactControls controls = sourceStep.receipt().controls();
+      requireSharedPredecessors(sourceStep, discoveryStep, navigationStep, controls);
+      if (navigationStep.semanticPayloads().size() != 1
+          || !"java-code-index.jsonl"
+              .equals(navigationStep.semanticPayloads().get(0).descriptor().fileName())) {
+        throw broken();
+      }
+      VerifiedCanonicalPayload index = navigationStep.semanticPayloads().get(0);
+      ArtifactReference indexRef =
+          new ArtifactReference(index.descriptor().artifactId(), index.descriptor().sha256());
+      CanonicalModulePayload accounting = notProducedAccounting(indexRef, reason);
+      String gapRef =
+          "strict-facts-gap:"
+              + sha256(
+                  (indexRef.artifactId().value() + "\u0000" + reason)
+                      .getBytes(StandardCharsets.UTF_8));
+      List<String> gaps = List.of(gapRef);
+      AnalysisStepModuleAddress address =
+          new AnalysisStepModuleAddress(
+              source.publication().address().runId(),
+              AnalysisStepKey.PROVEN_CODE_FACTS,
+              3,
+              "publish");
+      InstalledModulePublication module =
+          moduleArtifacts.install(
+              new ModuleInstallRequest(
+                  address,
+                  "v4",
+                  List.of(indexRef),
+                  controls,
+                  ModuleCompletionStatus.SUCCEEDED_WITH_GAPS,
+                  gaps,
+                  List.of(accounting)));
+      InstalledAnalysisStepPublication step =
+          analysisStepArtifacts.install(
+              new AnalysisStepInstallRequest(
+                  new AnalysisStepPublicationAddress(
+                      address.runId(), AnalysisStepKey.PROVEN_CODE_FACTS),
+                  new AnalysisStepPublisherModuleProvenance(module.reference()),
+                  List.of(source.publication(), discovery.publication(), navigation.publication()),
+                  controls,
+                  ModuleCompletionStatus.SUCCEEDED_WITH_GAPS,
+                  gaps,
+                  List.of(stepPayload(accounting)),
+                  null));
+      ReopenedAnalysisStepPublication reopened = analysisStepArtifacts.reopen(step.reference());
+      if (!step.reference().equals(reopened.reference())
+          || reopened.semanticPayloads().size() != 1) {
+        throw broken();
+      }
+      return new ProvenCodeFactsReference(step.reference());
+    } catch (RuntimeException failure) {
+      throw broken();
+    }
+  }
+
+  private CanonicalModulePayload notProducedAccounting(
+      ArtifactReference navigationInput, String reason) {
+    ObjectNode body = JsonNodeFactory.instance.objectNode();
+    body.put("schemaVersion", FACT_ACCOUNTING_NOT_PRODUCED_SCHEMA);
+    body.put("artifactType", FACT_ACCOUNTING_TYPE);
+    body.put("availability", "NOT_PRODUCED");
+    body.put("reason", reason);
+    body.set("navigationInputRef", referenceNode(navigationInput));
+    for (String name :
+        List.of(
+            "candidateFactCount",
+            "admittedFactCount",
+            "rejectedFactCount",
+            "candidateAtomCount",
+            "admittedAtomDispositionCount",
+            "rejectedAtomCount",
+            "provenFactAtomCount",
+            "externalEffectGapCount")) {
+      body.putNull(name);
+    }
+    return standalone(
+        FACT_ACCOUNTING_FILE,
+        FACT_ACCOUNTING_TYPE,
+        FACT_ACCOUNTING_NOT_PRODUCED_SCHEMA,
+        "proven-code-facts-fact-accounting",
+        body);
   }
 
   private ReopenedAnalysisStepPublication reopenStepInstance(
@@ -595,6 +704,13 @@ public final class FactLedgerPublicationSpecifier {
 
   private static void strings(ArrayNode node, List<String> values) {
     values.forEach(node::add);
+  }
+
+  private static ObjectNode referenceNode(ArtifactReference reference) {
+    return JsonNodeFactory.instance
+        .objectNode()
+        .put("artifactId", reference.artifactId().value())
+        .put("sha256", reference.sha256().value());
   }
 
   private static List<ArtifactReference> sortedReferences(List<ArtifactReference> values) {

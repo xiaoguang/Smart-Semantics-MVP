@@ -170,7 +170,7 @@
 - Run `mvn -Dtest=SpringHttpEntryDiscovererTest,HttpEntryDiscoveryModulePublisherTest,ApplicationDiscoveryExecutionTest,ApplicationDiscoveryPublicationSpecifierTest,MapperCapabilityCatalogerTest,PersistedProgramGraphInputReaderTest,AmbiguousCallHandoffTest,DiscoveryToFactHandoffTest,ProgramGraphGapProjectionTest,ProgramGraphPublicWireTest,ProgramGraphsPublicationSpecifierTest,ProgramGraphsAnalysisStepArtifactStoreTest,CanonicalArtifactPolicyRegistryContractTest test`.
 - Pass means both overloads survive publish/read round-trip with distinct keys/ranges and the JDT test path has no JavaParser interaction.
 
-## Task 5: Publish navigation and truthful technical-enhancement availability (approved 1.6)
+## Task 5: Publish navigation and truthful technical-enhancement availability (COMPLETE 2026-09-12)
 
 **Files**
 

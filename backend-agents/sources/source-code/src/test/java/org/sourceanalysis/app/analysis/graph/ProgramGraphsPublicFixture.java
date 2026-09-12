@@ -127,6 +127,22 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     return create(emptyTemporaryDirectory, false);
   }
 
+  /** Creates the persisted source/discovery prefix without installing a Step 03 publication. */
+  public static ProgramGraphsPublicFixture createForJavaCodeIndex(Path emptyTemporaryDirectory) {
+    return create(
+        emptyTemporaryDirectory,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false);
+  }
+
   /**
    * Creates the same two-entry source with bounded repository scope and no completion eligibility.
    */
@@ -311,6 +327,32 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
       boolean guardedSharedJavaCall,
       boolean withoutHttpEntries,
       boolean longGuardedApprove) {
+    return create(
+        emptyTemporaryDirectory,
+        guardedApprove,
+        guardedElseApprove,
+        sharedJavaCall,
+        syntheticSevenEntries,
+        boundedPathSet,
+        chainedJavaCalls,
+        guardedSharedJavaCall,
+        withoutHttpEntries,
+        longGuardedApprove,
+        true);
+  }
+
+  private static ProgramGraphsPublicFixture create(
+      Path emptyTemporaryDirectory,
+      boolean guardedApprove,
+      boolean guardedElseApprove,
+      boolean sharedJavaCall,
+      boolean syntheticSevenEntries,
+      boolean boundedPathSet,
+      boolean chainedJavaCalls,
+      boolean guardedSharedJavaCall,
+      boolean withoutHttpEntries,
+      boolean longGuardedApprove,
+      boolean publishLegacyGraphs) {
     createEmptyTestStoreDirectory(emptyTemporaryDirectory);
     CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
     CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
@@ -422,10 +464,13 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
                       profileDraft,
                       entryDraft,
                       mapperDraft));
-      ArtifactReference graphProfile = reference("graph-profile", fixtureKey + "-profile");
-      ProgramGraphsReference graphReference =
-          new ProgramGraphsExecution(source.reader(), modules, steps)
-              .execute(sourceReference, discoveryReference, graphProfile, controls);
+      ProgramGraphsReference graphReference = null;
+      if (publishLegacyGraphs) {
+        ArtifactReference graphProfile = reference("graph-profile", fixtureKey + "-profile");
+        graphReference =
+            new ProgramGraphsExecution(source.reader(), modules, steps)
+                .execute(sourceReference, discoveryReference, graphProfile, controls);
+      }
       return new ProgramGraphsPublicFixture(
           handle,
           modules,
@@ -1876,6 +1921,14 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         false);
     policy(
         entries,
+        "PROGRAM_GRAPHS_JAVA_CODE_INDEX",
+        "java-code-index-v1",
+        "java-code-index",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        false);
+    policy(
+        entries,
         "PROVEN_CODE_FACTS_FACT_CANDIDATE_SET",
         "proven-code-facts-fact-candidate-set-v3",
         "proven-code-facts-fact-candidate-set",
@@ -1886,6 +1939,14 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         entries,
         "PROVEN_CODE_FACTS_FACT_ACCOUNTING",
         "proven-code-facts-fact-accounting-v3",
+        "proven-code-facts-fact-accounting",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "PROVEN_CODE_FACTS_FACT_ACCOUNTING",
+        "proven-code-facts-fact-accounting-v4",
         "proven-code-facts-fact-accounting",
         "application/json",
         "STANDALONE_JSON",

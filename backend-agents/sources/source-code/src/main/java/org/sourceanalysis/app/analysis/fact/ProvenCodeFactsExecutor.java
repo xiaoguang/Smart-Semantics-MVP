@@ -22,6 +22,7 @@ import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
+import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 
 /**
  * Executes the existing M1 candidate, M2 Proof, and M3 ledger modules for one persisted graph set.
@@ -54,6 +55,19 @@ public final class ProvenCodeFactsExecutor {
     Objects.requireNonNull(verifiedSource, "verified source inventory");
     Objects.requireNonNull(applicationDiscovery, "application discovery");
     Objects.requireNonNull(programGraphs, "program graphs");
+
+    ReopenedAnalysisStepPublication graphPublication =
+        stepArtifacts.reopen(programGraphs.publication());
+    if (graphPublication.semanticPayloads().size() == 1
+        && "java-code-index.jsonl"
+            .equals(graphPublication.semanticPayloads().get(0).descriptor().fileName())) {
+      return new FactLedgerPublicationSpecifier(moduleArtifacts, stepArtifacts)
+          .specifyNotProduced(
+              verifiedSource,
+              applicationDiscovery,
+              programGraphs,
+              "STRICT_GRAPH_ENRICHMENT_NOT_PRODUCED_FOR_JDT");
+    }
 
     FactCandidateInputs inputs =
         new PersistedFactCandidateInputReader(stepArtifacts, sourceReader)
