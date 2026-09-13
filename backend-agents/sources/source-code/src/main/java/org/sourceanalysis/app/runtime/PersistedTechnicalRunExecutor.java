@@ -118,6 +118,7 @@ public final class PersistedTechnicalRunExecutor {
       return workflow.continueAfterDiscovery(
           discovery,
           session,
+          configuration.graphProfileRef(),
           controls(prepared.request()),
           configuration.flowProfile(),
           configuration.capsuleProfile());

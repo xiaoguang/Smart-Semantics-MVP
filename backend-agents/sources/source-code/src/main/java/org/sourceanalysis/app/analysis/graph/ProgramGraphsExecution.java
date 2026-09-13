@@ -54,6 +54,19 @@ public final class ProgramGraphsExecution {
       ApplicationDiscoveryReference applicationDiscovery,
       ArtifactReference graphProfileRef,
       ArtifactControls controls) {
+    PreparedProgramGraphSet prepared =
+        prepare(verifiedSource, applicationDiscovery, graphProfileRef, controls);
+    return new ProgramGraphSetPublicationSpecifier(modules, analysisSteps)
+        .publishPrepared(
+            verifiedSource.publication(), applicationDiscovery.publication(), controls, prepared);
+  }
+
+  /** Builds and installs M1 through M6 without installing the public Step 03 boundary. */
+  public PreparedProgramGraphSet prepare(
+      VerifiedSourceInventoryReference verifiedSource,
+      ApplicationDiscoveryReference applicationDiscovery,
+      ArtifactReference graphProfileRef,
+      ArtifactControls controls) {
     Objects.requireNonNull(verifiedSource, "verified source inventory");
     Objects.requireNonNull(applicationDiscovery, "application discovery");
     Objects.requireNonNull(graphProfileRef, "graph profile reference");
@@ -210,7 +223,7 @@ public final class ProgramGraphsExecution {
                 publicationData,
                 graphProfileRef);
     return new ProgramGraphSetPublicationSpecifier(modules, analysisSteps)
-        .specifyGraphSet(
+        .prepareGraphSet(
             new ProgramGraphsPublicationInputs(
                 verifiedSource.publication(),
                 applicationDiscovery.publication(),
@@ -231,6 +244,53 @@ public final class ProgramGraphsExecution {
       ApplicationDiscoveryReference applicationDiscovery,
       JavaCodeSession session,
       ArtifactControls controls) {
+    return publishNavigationIndex(
+        verifiedSource,
+        applicationDiscovery,
+        session,
+        controls,
+        null,
+        new EntryCodeContext.TechnicalEnhancements(
+            EntryCodeContext.Availability.NOT_PRODUCED,
+            "STRICT_GRAPH_ENRICHMENT_NOT_REQUESTED_BY_JDT_EXECUTION",
+            List.of(),
+            List.of(),
+            null));
+  }
+
+  /** Publishes the selected engine route, retaining strict graphs for JavaParser only. */
+  public ProgramGraphsReference execute(
+      VerifiedSourceInventoryReference verifiedSource,
+      ApplicationDiscoveryReference applicationDiscovery,
+      JavaCodeSession session,
+      ArtifactReference graphProfileRef,
+      ArtifactControls controls) {
+    Objects.requireNonNull(session, "Java code session");
+    if (!"javaparser".equals(session.descriptor().engineId())) {
+      return execute(verifiedSource, applicationDiscovery, session, controls);
+    }
+    PreparedProgramGraphSet graphSet =
+        prepare(verifiedSource, applicationDiscovery, graphProfileRef, controls);
+    EntryCodeContext.TechnicalEnhancements enhancements =
+        new EntryCodeContext.TechnicalEnhancements(
+            EntryCodeContext.Availability.AVAILABLE,
+            null,
+            graphSet.semanticPayloadReferences().stream()
+                .map(value -> value.artifactId().value())
+                .toList(),
+            List.of(),
+            null);
+    return publishNavigationIndex(
+        verifiedSource, applicationDiscovery, session, controls, graphSet, enhancements);
+  }
+
+  private ProgramGraphsReference publishNavigationIndex(
+      VerifiedSourceInventoryReference verifiedSource,
+      ApplicationDiscoveryReference applicationDiscovery,
+      JavaCodeSession session,
+      ArtifactControls controls,
+      PreparedProgramGraphSet graphSet,
+      EntryCodeContext.TechnicalEnhancements enhancements) {
     Objects.requireNonNull(verifiedSource, "verified source inventory");
     Objects.requireNonNull(applicationDiscovery, "application discovery");
     Objects.requireNonNull(session, "Java code session");
@@ -260,32 +320,41 @@ public final class ProgramGraphsExecution {
                 })
             .sorted(java.util.Comparator.comparing(value -> value.seed().entryId()))
             .toList();
-    EntryCodeContext.TechnicalEnhancements enhancements =
-        entries.stream()
-            .map(JavaCodeIndex.EntryCollection::context)
-            .filter(Objects::nonNull)
-            .map(EntryCodeContext::technicalEnhancements)
-            .findFirst()
-            .orElseGet(
-                () ->
-                    new EntryCodeContext.TechnicalEnhancements(
-                        EntryCodeContext.Availability.NOT_PRODUCED,
-                        "STRICT_GRAPH_ENRICHMENT_NOT_REQUESTED_BY_JDT_EXECUTION",
-                        List.of(),
-                        List.of(),
-                        null));
-    return new JavaCodeIndexPublicationSpecifier(modules, analysisSteps)
-        .publish(
-            verifiedSource,
-            applicationDiscovery,
-            controls,
-            new JavaCodeIndex(
-                session.descriptor(),
-                catalog.snapshotId(),
-                reopened.source().verifiedSnapshotRef(),
-                catalog,
-                entries,
-                enhancements));
+    List<JavaCodeIndex.EntryCollection> enrichedEntries =
+        entries.stream().map(entry -> withEnhancements(entry, enhancements)).toList();
+    JavaCodeIndex index =
+        new JavaCodeIndex(
+            session.descriptor(),
+            catalog.snapshotId(),
+            reopened.source().verifiedSnapshotRef(),
+            catalog,
+            enrichedEntries,
+            enhancements);
+    JavaCodeIndexPublicationSpecifier publisher =
+        new JavaCodeIndexPublicationSpecifier(modules, analysisSteps);
+    return graphSet == null
+        ? publisher.publish(verifiedSource, applicationDiscovery, controls, index)
+        : publisher.publishWithGraphEnhancements(
+            verifiedSource, applicationDiscovery, controls, index, graphSet);
+  }
+
+  private static JavaCodeIndex.EntryCollection withEnhancements(
+      JavaCodeIndex.EntryCollection entry, EntryCodeContext.TechnicalEnhancements enhancements) {
+    if (entry.context() == null) {
+      return entry;
+    }
+    EntryCodeContext context = entry.context();
+    return JavaCodeIndex.EntryCollection.collected(
+        entry.seed(),
+        new EntryCodeContext(
+            context.schemaVersion(),
+            context.entryId(),
+            context.entryMethodKey(),
+            context.methods(),
+            context.calls(),
+            context.supportingSources(),
+            context.limitations(),
+            enhancements));
   }
 
   private static AnalysisStepModuleAddress address(

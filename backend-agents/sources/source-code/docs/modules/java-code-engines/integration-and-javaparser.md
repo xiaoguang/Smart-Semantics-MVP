@@ -6,7 +6,7 @@
 
 ### 1.1 组合根与应用发现
 
-组合根已经可以加载 engine 配置并打开一次 snapshot-bound JDT session；`PersistedTechnicalRunExecutor` 将同一会话交给 application discovery、navigation publication 与 Step05，再由业务运行链消费已保存结果。JDT 路径不 hardcode 或调用 JavaParser；尚未适配的 JavaParser 选择明确失败。
+组合根加载 engine 配置并打开一次 snapshot-bound session；`PersistedTechnicalRunExecutor` 将同一会话交给 application discovery、navigation publication 与 Step05，再由业务运行链消费已保存结果。JDT 路径不 hardcode 或调用 JavaParser；JavaParser 路径也不启动 JDT。未知配置值明确失败。
 
 ApplicationProfileDetector继续静态读POM/配置以形成VerifiedJavaProject；涉及Java声明的部分改为消费`session.catalog()`。SpringHttpEntryDiscoverer消费统一AnnotationView/MethodDeclarationView，route组合规则只有一份，继续支持省略method及method={}，不制造默认GET。Mapper catalog的Java声明来自选定引擎；XML安全读取继续复用。
 
@@ -18,7 +18,7 @@ ApplicationProfileDetector继续静态读POM/配置以形成VerifiedJavaProject�
 org.sourceanalysis.app.analysis.code
   JavaCodeEngine / JavaCodeSession / 中立records
   jdt/                 LS会话、Core语法客户端、导航和收集
-  javaparser/          第二阶段Adapter，保留现有能力
+  javaparser/          已接入的Adapter，保留迁移前现有能力
 org.sourceanalysis.app.runtime
   引擎配置和组合根
 org.sourceanalysis.app.analysis.flow
@@ -31,7 +31,7 @@ org.sourceanalysis.app.analysis.flow
 
 Step03调选定会话建立导航材料，保存`java-code-index.jsonl`。JDT第一阶段不调用JavaParser五图builders、不制造完整CFG/DFG。旧五图能力保留代码和既有有效产物；只有真正运行技术增强时才登记graph descriptors。
 
-索引固定登记为现有 `PROGRAM_GRAPHS` 的 module 7 `java-code-index`，不是 module 6 的别名，也不创建新 step。JDT 路径 Step03 的实际公开集合精确为 `java-code-index.jsonl + program-graphs-receipt.json`；module/step receipt 只列这一项语义 payload。第二阶段 JavaParser 真正运行现有增强时，由 module 7 作为最终发布模块登记 index 加现有七个图语义 payload，避免修改现有 step store 的单一最终 publisher 规则。
+索引固定登记为现有 `PROGRAM_GRAPHS` 的 module 7 `java-code-index`，不是 module 6 的别名，也不创建新 step。JDT 路径 Step03 的实际公开集合精确为 `java-code-index.jsonl + program-graphs-receipt.json`；module/step receipt 只列这一项语义 payload。JavaParser 路径由 module 7 作为最终发布模块登记 index 加现有七个图语义 payload，避免修改 step store 的单一最终 publisher 规则。
 
 同一step receipt的artifact列表描述实际文件；索引ENGINE记录中的technicalEnhancements说明严格五图增强`NOT_PRODUCED`及原因，不给generic receipt另增状态机。**不是写五个空文件骗过旧reader，也不是吞掉一次运行失败后当作optional。** 已提供的图如果损坏仍拒绝；没有请求/没有实现的增强才可未生成。
 
@@ -63,11 +63,11 @@ Builder 已不含 JavaParser 语法读取或引擎分支。它只做完整方法
 
 ActivityExplainer、ProcessExplainer、BusinessReportPublisher的现有职责不重写。模型能够解释对象、条件与业务目的，Java不能用新的行业词典替代。现有missingEntryKeys/完整REVIEW/具体未解释入口下传规则继续生效。
 
-## 2. JavaParserCodeEngine：第二阶段只恢复已有能力
+## 2. JavaParserCodeEngine：已完成的第二阶段适配
 
 ### 为什么保留
 
-现有实现积累了五图、Fact/Flow、来源和大量有效边界测试，可以是不用JDT工具进程时的备选。已经发现的有限名称处理缺陷说明当前实现的能力边界，不等于JavaParser库天生不能导航。
+现有实现积累了五图、Fact/Flow、来源和大量有效边界测试，现在是不使用 JDT 工具进程时的可选引擎。已经发现的有限名称处理缺陷说明当前 Adapter 的能力边界，不等于 JavaParser 库天生不能导航。
 
 ### 输入、处理和输出
 
@@ -84,7 +84,7 @@ ActivityExplainer、ProcessExplainer、BusinessReportPublisher的现有职责不
 
 包装所必需的通用语法字段可以用JavaParser已有AST读取，但**不新增定位能力**：不额外实现wildcard/继承/重载修正，不新增Symbol Solver工程接线，不逐项追平JDT。新增字段若是旧能力无法给出的语义结果，填合法的未知/缺失状态；若是已存在完整源码可直接给出的范围/参数，则正常映射，不以旧DTO没有为由丢掉。
 
-第二阶段验收对照迁移前保存的现有能力测试和代表输出，不对照JDT更丰富的结果计数。已能找到的调用/参数/正文不能退化，当前找不到的Service不要求此阶段修复。源码和通用测试保留；仅替换不再被消费的旧context DTO glue，不删除解析算法以求编译方便。
+第二阶段已对照迁移前保存的现有能力测试和代表输出验收，不对照 JDT 更丰富的结果计数。已能找到的调用、参数和正文没有退化；当前找不到的 Service 未在此阶段补写解析规则。源码和通用测试保留，统一 context 直接供下游消费。
 
 ## 3. 具体代码改动地图
 
@@ -132,10 +132,10 @@ ActivityExplainer、ProcessExplainer、BusinessReportPublisher的现有职责不
 
 第一阶段已经交付可运行 JDT 取材及既有业务链：真实位置、完整代码和候选可观察，保存重开后进入 BusinessMaterialBuilder，并在自包含 Spring/MyBatis 验收中到达 scripted 九章。固定 jshERP 注册/财务入口也通过真实工具检查。JavaParser 仍保持未适配状态，不影响该结论。
 
-第二阶段从第一阶段冻结合同出发，恢复可选JavaParser及当前能力。不要开展两引擎自动投票、混合结果、失败fallback、runtime插件安装、跨引擎缓存复用、完整编译器/外部效果证明、复杂恢复，也不要求重新设计报告模块。
+第二阶段已经从第一阶段冻结合同出发，恢复可选 JavaParser 及其迁移前能力。后续不要开展两引擎自动投票、混合结果、失败 fallback、runtime 插件安装、跨引擎缓存复用、完整编译器/外部效果证明、复杂恢复，也不要求重新设计报告模块。
 
 最终一次YAML选择决定取材引擎；业务模块始终一套。源码能力可以不同，来源正确、内容保存、入口处置和业务职责边界必须相同。
 
-现有 `CanonicalModuleArtifactStore`、`CanonicalAnalysisStepArtifactStore`、CLI 操作面、`RepositoryAnalysisAgent`、`SourceAnalysisApplication`、`BusinessAnalysisWorkflow`、`PersistedBusinessRunExecutor`、`ActivityExplainer`、`ProcessExplainer` 和 `BusinessReportPublisher` 均已在 JDT 路径复用。第二阶段只增加 JavaParser Adapter 与双引擎选择回归，不重写这些组件。
+现有 `CanonicalModuleArtifactStore`、`CanonicalAnalysisStepArtifactStore`、CLI 操作面、`RepositoryAnalysisAgent`、`SourceAnalysisApplication`、`BusinessAnalysisWorkflow`、`PersistedBusinessRunExecutor`、`ActivityExplainer`、`ProcessExplainer` 和 `BusinessReportPublisher` 已由两个引擎共用。JavaParser Adapter 与双引擎选择回归没有重写这些组件。
 
 JavaParser 迁移 oracle 固定在 git `cec1997`。迁移前先记录 `SpringHttpEntryDiscovererTest`、`MapperCapabilityCatalogerTest`、四个 graph builder 测试、`EvidenceGraphBuilderTest`、`ProvenCodeFactsExecutionTest`、`BusinessFlowsExecutionTest`、`BusinessMaterialBuilderTest`、`TechnicalAnalysisWorkflowTest` 与 `FourEntryBusinessSemanticChainTest` 的行为；第二阶段保留可观察能力和诚实 gap，不比较两引擎数量、解析率或 JSON SHA。可执行清单见[实施计划](../../plans/jdt-first-java-engine-implementation-plan.md#javaparser-pre-migration-capability-baseline-at-cec1997)。

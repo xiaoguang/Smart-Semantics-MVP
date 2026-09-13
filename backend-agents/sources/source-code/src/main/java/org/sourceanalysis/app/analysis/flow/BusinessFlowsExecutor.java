@@ -41,20 +41,29 @@ public final class BusinessFlowsExecutor {
   /** Compiles every discovered entry, projects each compiled Flow, and publishes the five files. */
   public BusinessFlowsReference execute(BusinessFlowsExecutionRequest request) {
     Objects.requireNonNull(request, "business flows execution request");
-    FlowCompilation compilation =
-        navigationOnly(request)
-            ? new EntryContextAssembler(stepArtifacts)
-                .assemble(
-                    request.applicationDiscovery(),
-                    request.programGraphs(),
-                    request.provenCodeFacts(),
-                    request.flowProfile())
-            : new EntryRootedFlowCompiler(stepArtifacts)
-                .compile(
-                    request.applicationDiscovery(),
-                    request.programGraphs(),
-                    request.provenCodeFacts(),
-                    request.flowProfile());
+    FlowCompilation compilation;
+    if (navigationOnly(request)) {
+      compilation =
+          new EntryContextAssembler(stepArtifacts)
+              .assemble(
+                  request.applicationDiscovery(),
+                  request.programGraphs(),
+                  request.provenCodeFacts(),
+                  request.flowProfile());
+    } else {
+      compilation =
+          new EntryRootedFlowCompiler(stepArtifacts)
+              .compile(
+                  request.applicationDiscovery(),
+                  request.programGraphs(),
+                  request.provenCodeFacts(),
+                  request.flowProfile());
+      if (hasNavigationIndex(request)) {
+        compilation =
+            new EntryContextAssembler(stepArtifacts)
+                .attachNavigationContexts(compilation, request.programGraphs());
+      }
+    }
     ModulePublicationReference flowCompilation =
         new FlowCompilationModulePublisher(moduleArtifacts, stepArtifacts)
             .publish(
@@ -95,5 +104,10 @@ public final class BusinessFlowsExecutor {
     return reopened.semanticPayloads().size() == 1
         && "java-code-index.jsonl"
             .equals(reopened.semanticPayloads().get(0).descriptor().fileName());
+  }
+
+  private boolean hasNavigationIndex(BusinessFlowsExecutionRequest request) {
+    return stepArtifacts.reopen(request.programGraphs().publication()).semanticPayloads().stream()
+        .anyMatch(value -> "java-code-index.jsonl".equals(value.descriptor().fileName()));
   }
 }

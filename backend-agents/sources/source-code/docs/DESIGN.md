@@ -6,7 +6,7 @@
 
 这条路线保留八个步骤和唯一公开 `RepositoryAnalysisAgent`。现有五张程序图、严格技术 Fact/Proof继续保留为技术增强；它们不是每种工具把完整源码交给模型的前置门槛。Java负责来源、工具导航、代码材料、检查和保存；Luna/high负责业务含义、跨活动过程与业务语言。Java不维护行业词表，也不自己补全编译器的类型解析规则。
 
-新的取材方式是[JDT/JavaParser可切换引擎](modules/java-code-engines/README.md)：YAML选择一个引擎，统一交付声明、完整方法、调用位置、实参/形参、实现候选和边界。**JDT 第一阶段已独立接入正式分析链；第二阶段才把保留的 JavaParser 恢复到原有能力。** 当前选择 `jdt` 会经过正式配置、发现、索引、Step05、业务材料及既有业务链；选择尚未适配的 `javaparser` 会明确失败，不存在隐式回退。
+新的取材方式是[JDT/JavaParser可切换引擎](modules/java-code-engines/README.md)：YAML选择一个引擎，统一交付声明、完整方法、调用位置、实参/形参、实现候选和边界。**JDT 与 JavaParser 已按先 JDT、后 JavaParser 的顺序接入同一正式分析链。** 选择 `jdt` 会使用 JDT LS/Core 的导航材料并诚实省略未生成的严格增强；选择 `javaparser` 会保留原有七图、Fact/Proof 和 Flow 能力，同时增加统一导航索引。两者都经过 Step05、业务材料和既有业务链，不存在隐式回退或混合运行。
 
 本文是目标设计。当前代码中已经存在四个业务 Module 和工作流，Step05 EntryContext 已连续传到材料，普通 Flow/Capsule 发布已停止重复 compile/project，Spring unrestricted method condition 也已落地。旧解释链及其 Capsule registry basis 字段已退出；Activity 的 v2 Prompt/schema、coverage-after-REVIEW 和程序侧未解释入口记录已落地。Process/Report 也已把具体未解释入口按材料投影到仓库知识和第九章。实现按当前实施计划分步开展；本文不把目标合同写成代码或实测结果。
 
@@ -40,13 +40,13 @@ Step02 入口以 `methodKey + SourceRange` 定位完整声明，不能只凭 han
 
 ## 3. 为什么同时保留 03、04、05
 
-03 是代码索引。它回答“这个调用可导航到谁、有哪些候选、实参与形参是什么、条件和返回写在哪里”。JDT LS/Core负责导航与语法读取；JavaParser作为第二阶段备选。调用位置与参数对照不冒充完整数据流证明，其输出是源码材料，不是业务判断。
+03 是代码索引。它回答“这个调用可导航到谁、有哪些候选、实参与形参是什么、条件和返回写在哪里”。JDT LS/Core负责完整导航与语法读取；JavaParser Adapter 提供迁移前已有的有限名称解析和七图增强。调用位置与参数对照不冒充完整数据流证明，其输出是源码材料，不是业务判断。
 
 04 是严格技术增强。当前 `FactRegistry` 只登记 `JAVA_EXACT_CALL`、`JAVA_BOUNDARY_INVOCATION`、`JAVA_GUARD_CONDITION`。每个声称成立的 Fact 必须满足该模式全部 required atoms，缺一个就拒绝该 Fact。它既不是全代码摘要，也不是所有有用信息的白名单。没有 SQL 效果 Proof，仍可以把安全定位的 SQL 原文交给模型；但不能把原文、模型推断或 hash 改名为该 Proof。
 
 05 是入口上下文保存与组织。它复用03选定引擎已经取得的方法和关系，附可选04增强，再投影Capsule；不重新找Service或解析一遍Java。未知候选、外部边界及原文保留，完整body不因缺CLOSED atom而消失。
 
-Step04本身保留。JDT第一阶段没有提供原严格五图增强时，步骤明确保存“未生成技术增强”，不制造空图/假Fact满足旧接口；JavaParser现有五图/Fact能力不删除，第二阶段接回。已有产物若被提交，损坏或伪造仍拒绝。具体产物可用性、读写器变化见[接入设计](modules/java-code-engines/integration-and-javaparser.md)。
+Step04本身保留。JDT 没有提供原严格五图增强时，步骤明确保存“未生成技术增强”，不制造空图/假Fact满足旧接口；JavaParser 路径已经接回现有五图/Fact能力。已有产物若被提交，损坏或伪造仍拒绝。具体产物可用性、读写器变化见[接入设计](modules/java-code-engines/integration-and-javaparser.md)。
 
 ## 4. 真实小例：按业务单据查财务单号
 
@@ -179,14 +179,14 @@ JDT-only 第一阶段已经完成；本表只区分已验证能力与下一阶�
 | Process/report 模型输入按 material 只投影一次 `{materialContext, unexplainedEntryKeys, reasonCode}`；全局/material ID 保留在程序侧，`MODEL_NOT_EXPLAINED` 不进入技术 receipt Gap | Prompt 要求第9章显示 context 的 HTTP 方法/路径与原因，禁止第4章为未解释入口编造活动；即时逐包 checkpoint 仍是独立未解决缺口 |
 | 完整冻结 jshERP 719 文件及图/Fact 运行已有保存证据；零 Provider 全仓材料 run 为 107 包覆盖 339 个入口 | 这些是历史实测，不写成固定 K/包数，不把它们当整仓语义验收 |
 | `methodCondition` 已区分 UNRESTRICTED 与 EXPLICIT 集合 | 保持该实现；未来完整仓库重跑只确认真实端点分母，不再写成代码待修正 |
-| Step02 v3 入口 wire 已保存中立 `methodKey` 与完整声明 `SourceRange`，可稳定定位重载；Spring unrestricted method condition 继续合法 | JavaParser 第二阶段必须写同一最终格式，不能退回 handler 名匹配 |
-| Step03 module 7 已发布 `java-code-index`；JDT 路径实际集合为 index+receipt。Step04 已发布 v4 `NOT_PRODUCED` accounting+receipt，不运行旧 Fact 枚举器，也不写空图/Fact | JavaParser 第二阶段恢复已有七图增强和严格 Fact 实际集合；不能削弱 JDT 合同或混合两个引擎 |
+| Step02 v3 入口 wire 已保存中立 `methodKey` 与完整声明 `SourceRange`，可稳定定位重载；Spring unrestricted method condition 继续合法 | 两个引擎都写同一最终入口格式；JavaParser 的有限解析不能退回只按 handler 名匹配 |
+| Step03 module 7 已发布 `java-code-index`；JDT 路径实际集合为 index+receipt。Step04 发布 v4 `NOT_PRODUCED` accounting+receipt，不运行旧 Fact 枚举器，也不写空图/Fact | JavaParser 路径发布 index 加既有七个图语义 payload，并恢复既有四项严格 Fact/Proof 集合；两个引擎不混合 |
 | JDT LS 1.61.0 与独立 JDT Core helper 已在固定 jshERP 注册/财务入口验证；正式选择 JDT 的自包含 Spring/MyBatis 运行已从 capture 一直进入 scripted 九章 | 尚未进行产品 Luna 或完整 jshERP 仓库的业务语义验收；缺依赖、多模块 classpath、反射和运行时代理仍须如实报告限制 |
-| BusinessMaterialBuilder 只消费已保存的 EntryCodeContext，并把声明类型、完整方法、调用、参数、控制和限制送入模型材料；生产类不再引用 JavaParser AST | JavaParser Adapter 尚未开始；在完成第二阶段前 `javaparser` 仍为 `ENGINE_NOT_INTEGRATED` |
+| BusinessMaterialBuilder 只消费已保存的 EntryCodeContext，并把声明类型、完整方法、调用、参数、控制和限制送入模型材料；生产类不引用任何引擎 AST | JDT 与 JavaParser 都经同一 Builder、Activity、Process 和 Report 消费；产品 Luna 与整仓业务质量另验 |
 
 Spring 细则：`@RequestMapping` 省略 method 或 `method={}` 都合法。类和方法均无限制时保持 unrestricted；一方有限制时保留该限制；双方非空按 Spring method-condition combine 取并集。不要猜 GET，也不要把 HEAD/OPTIONS 框架处理拆成多个业务活动。现有 `methodCondition` 已实现该区分，UserController#getOrganizationUserTree 和 MaterialCategoryController#getMaterialCategoryTree 是直接回归样例；未来完整仓库重跑只核对新的真实分母。
 
-旧[实施衔接](plans/coherent-code-context-implementation-plan.md)与[清理/覆盖设计](plans/code-cleanup-and-scalable-activity-coverage-design.md)用于已完成能力的历史核对，不限制当前引擎接入。JDT 合同与必要接线已经完成；后续只按第二阶段适配 JavaParser，不重做其五图/Fact算法，不复活旧语义路线。所有产品实测范围与结果仍按其原记录说明。
+旧[实施衔接](plans/coherent-code-context-implementation-plan.md)与[清理/覆盖设计](plans/code-cleanup-and-scalable-activity-coverage-design.md)用于已完成能力的历史核对，不限制当前引擎接入。JDT 合同和 JavaParser Adapter 均已完成；后续不得重做 JavaParser 五图/Fact算法、补写编译器规则或复活旧语义路线。所有产品实测范围与结果仍按其原记录说明。
 
 ## 11. 阅读导航
 

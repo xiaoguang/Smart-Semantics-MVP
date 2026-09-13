@@ -1149,8 +1149,18 @@ public final class FlowPublicationSpecifier {
                 "application-discovery-entry-points-v3",
                 CanonicalMediaType.APPLICATION_X_NDJSON)));
     values.addAll(graphUpstream(graphs));
+    if (graphs.semanticPayloads().size() == 8) {
+      values.add(
+          payloadReference(
+              semanticPayload(
+                  graphs,
+                  "java-code-index.jsonl",
+                  "PROGRAM_GRAPHS_JAVA_CODE_INDEX",
+                  "java-code-index-v1",
+                  CanonicalMediaType.APPLICATION_X_NDJSON)));
+    }
     values.addAll(factUpstream(facts));
-    return orderedModuleUpstream(values, 13);
+    return orderedModuleUpstream(values, graphs.semanticPayloads().size() == 8 ? 14 : 13);
   }
 
   private static List<ArtifactReference> projectorUpstream(

@@ -18,6 +18,7 @@ import java.util.Objects;
 import org.sourceanalysis.app.analysis.code.EntryCodeContext;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
+import org.sourceanalysis.app.analysis.graph.PreparedProgramGraphSet;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.artifact.AnalysisStepInstallRequest;
@@ -68,6 +69,26 @@ public final class JavaCodeIndexPublicationSpecifier {
       ApplicationDiscoveryReference discovery,
       ArtifactControls controls,
       JavaCodeIndex index) {
+    return publish(source, discovery, controls, index, null);
+  }
+
+  /** Publishes JavaParser navigation together with an installed strict graph enhancement set. */
+  public ProgramGraphsReference publishWithGraphEnhancements(
+      VerifiedSourceInventoryReference source,
+      ApplicationDiscoveryReference discovery,
+      ArtifactControls controls,
+      JavaCodeIndex index,
+      PreparedProgramGraphSet graphSet) {
+    return publish(
+        source, discovery, controls, index, Objects.requireNonNull(graphSet, "prepared graph set"));
+  }
+
+  private ProgramGraphsReference publish(
+      VerifiedSourceInventoryReference source,
+      ApplicationDiscoveryReference discovery,
+      ArtifactControls controls,
+      JavaCodeIndex index,
+      PreparedProgramGraphSet graphSet) {
     try {
       Objects.requireNonNull(source, "verified source inventory");
       Objects.requireNonNull(discovery, "application discovery");
@@ -103,16 +124,51 @@ public final class JavaCodeIndexPublicationSpecifier {
               AnalysisStepKey.PROGRAM_GRAPHS,
               7,
               "java-code-index");
+      List<ArtifactReference> upstream =
+          new ArrayList<>(upstreamPayloadRefs(sourceStep, discoveryStep));
+      if (graphSet != null) {
+        var graphPublication = modules.reopen(graphSet.publisher());
+        if (!(graphPublication.receipt().address()
+                instanceof AnalysisStepModuleAddress graphAddress)
+            || graphAddress.analysisStepKey() != AnalysisStepKey.PROGRAM_GRAPHS
+            || graphAddress.moduleNumber() != 6
+            || !"publish".equals(graphAddress.moduleKey())
+            || !graphAddress.runId().equals(address.runId())
+            || !graphPublication.receipt().controls().equals(controls)
+            || graphPublication.receipt().status() != graphSet.completionStatus()
+            || !graphPublication.receipt().gapRefs().equals(graphSet.gapRefs())) {
+          throw invalid();
+        }
+        upstream.addAll(graphSet.semanticPayloadReferences());
+      }
+      upstream =
+          upstream.stream()
+              .distinct()
+              .sorted(Comparator.comparing(value -> value.artifactId().value(), UTF8_ORDER))
+              .toList();
+      List<String> gaps = new ArrayList<>(gapRefs(index));
+      if (graphSet != null) {
+        gaps.addAll(graphSet.gapRefs());
+      }
+      gaps = gaps.stream().distinct().sorted(UTF8_ORDER).toList();
+      ModuleCompletionStatus status =
+          gaps.isEmpty()
+              ? ModuleCompletionStatus.SUCCEEDED
+              : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
+      List<CanonicalModulePayload> modulePayloads = new ArrayList<>();
+      if (graphSet != null) {
+        graphSet.semanticPayloads().stream()
+            .map(JavaCodeIndexPublicationSpecifier::modulePayload)
+            .forEach(modulePayloads::add);
+      }
+      modulePayloads.add(payload);
+      modulePayloads.sort(Comparator.comparing(CanonicalModulePayload::fileName, UTF8_ORDER));
       var module =
           modules.install(
               new ModuleInstallRequest(
-                  address,
-                  MODULE_VERSION,
-                  upstreamPayloadRefs(sourceStep, discoveryStep),
-                  controls,
-                  completion(index),
-                  gapRefs(index),
-                  List.of(payload)));
+                  address, MODULE_VERSION, upstream, controls, status, gaps, modulePayloads));
+      List<CanonicalAnalysisStepPayload> stepPayloads =
+          modulePayloads.stream().map(JavaCodeIndexPublicationSpecifier::stepPayload).toList();
       var step =
           steps.install(
               new AnalysisStepInstallRequest(
@@ -121,13 +177,13 @@ public final class JavaCodeIndexPublicationSpecifier {
                   new AnalysisStepPublisherModuleProvenance(module.reference()),
                   List.of(sourceStep.reference(), discoveryStep.reference()),
                   controls,
-                  completion(index),
-                  gapRefs(index),
-                  List.of(stepPayload(payload)),
+                  status,
+                  gaps,
+                  stepPayloads,
                   null));
       ReopenedAnalysisStepPublication reopened = steps.reopen(step.reference());
       if (!reopened.reference().equals(step.reference())
-          || reopened.semanticPayloads().size() != 1) {
+          || reopened.semanticPayloads().size() != (graphSet == null ? 1 : 8)) {
         throw invalid();
       }
       return new ProgramGraphsReference(step.reference());
@@ -136,8 +192,18 @@ public final class JavaCodeIndexPublicationSpecifier {
           && "JAVA_CODE_INDEX_INVALID".equals(failure.getMessage())) {
         throw failure;
       }
-      throw invalid();
+      throw invalid(failure);
     }
+  }
+
+  private static CanonicalModulePayload modulePayload(CanonicalAnalysisStepPayload payload) {
+    return new CanonicalModulePayload(
+        payload.fileName(),
+        payload.artifactType(),
+        payload.schemaVersion(),
+        payload.artifactId(),
+        payload.mediaType(),
+        payload.canonicalUtf8());
   }
 
   private CanonicalModulePayload indexPayload(JavaCodeIndex index) {
@@ -417,6 +483,10 @@ public final class JavaCodeIndexPublicationSpecifier {
 
   private static IllegalArgumentException invalid() {
     return new IllegalArgumentException("JAVA_CODE_INDEX_INVALID");
+  }
+
+  private static IllegalArgumentException invalid(Throwable cause) {
+    return new IllegalArgumentException("JAVA_CODE_INDEX_INVALID", cause);
   }
 
   private record IndexRecord(String type, String key, ObjectNode payload) {}

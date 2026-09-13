@@ -220,7 +220,8 @@ final class AtomicCanonicalPublicationEngine {
     }
     ModuleArtifactContract contract = moduleArtifactContract(payload);
     if (!contract.fileName().equals(payload.fileName())
-        || !contract.addressFor(request.address().runId()).equals(request.address())) {
+        || (!contract.addressFor(request.address().runId()).equals(request.address())
+            && !isJavaCodeIndexGraphEnhancement(request.address(), payload))) {
       throw invalidInstall();
     }
     if (!artifactPolicies.reference().equals(request.controls().artifactPolicyRegistryRef())) {
@@ -1096,7 +1097,7 @@ final class AtomicCanonicalPublicationEngine {
                         : null;
                 case 7 ->
                     "java-code-index".equals(analysisStepAddress.moduleKey())
-                        ? List.of("java-code-index.jsonl")
+                        ? javaCodeIndexPublicationFiles(descriptors)
                         : null;
                 default -> null;
               };
@@ -1183,6 +1184,38 @@ final class AtomicCanonicalPublicationEngine {
         ? List.of("fact-accounting.json")
         : List.of(
             "fact-accounting.json", "gap-ledger.json", "proof-pack.json", "proven-facts.json");
+  }
+
+  private static List<String> javaCodeIndexPublicationFiles(List<ArtifactDescriptor> descriptors) {
+    List<String> actual = descriptors.stream().map(ArtifactDescriptor::fileName).toList();
+    return actual.equals(List.of("java-code-index.jsonl"))
+        ? List.of("java-code-index.jsonl")
+        : List.of(
+            "call-graph.json",
+            "code-structure-graph.json",
+            "control-flow-graph.json",
+            "data-flow-graph.json",
+            "evidence-graph.json",
+            "graph-gaps.jsonl",
+            "graph-index.json",
+            "java-code-index.jsonl");
+  }
+
+  private static boolean isJavaCodeIndexGraphEnhancement(
+      ModulePublicationAddress address, CanonicalModulePayload payload) {
+    return address instanceof AnalysisStepModuleAddress module
+        && module.analysisStepKey() == AnalysisStepKey.PROGRAM_GRAPHS
+        && module.moduleNumber() == 7
+        && "java-code-index".equals(module.moduleKey())
+        && Set.of(
+                "call-graph.json",
+                "code-structure-graph.json",
+                "control-flow-graph.json",
+                "data-flow-graph.json",
+                "evidence-graph.json",
+                "graph-gaps.jsonl",
+                "graph-index.json")
+            .contains(payload.fileName());
   }
 
   private static void requireStrictDescriptorOrder(List<ArtifactDescriptor> descriptors) {

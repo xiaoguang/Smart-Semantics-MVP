@@ -358,12 +358,14 @@ class TechnicalAnalysisWorkflowTest {
               policies,
               captured.registry(),
               technicalConfiguration(captured, profileBundle, resourceBudget, limits));
+      PersistedBusinessRunExecutorTest.ScriptedBusinessProvider provider =
+          new PersistedBusinessRunExecutorTest.ScriptedBusinessProvider();
       PersistedBusinessRunExecutor business =
           new PersistedBusinessRunExecutor(
               modules,
               steps,
               new PersistedVerifiedSourceTextReader(steps, captured.registry()),
-              new PersistedBusinessRunExecutorTest.ScriptedBusinessProvider(),
+              provider,
               new PersistedBusinessRunConfiguration(
                   new BusinessMaterialProfile(8, 24, 12_000),
                   new ActivityExplanationProfile(64_000, 16_000, 2, 32, 2_000),
@@ -392,6 +394,105 @@ class TechnicalAnalysisWorkflowTest {
           .contains("\"materialMode\":\"FLOW_PREFERRED\"")
           .doesNotContain("\"materialMode\":\"ENTRY_SOURCE_FALLBACK\"");
       assertThat(agent.render(queued.runId().value()).sizeBytes()).isPositive();
+    }
+  }
+
+  @Test
+  void productionSelectedJavaParserKeepsStrictGraphsAndAddsNavigatedSourceMaterials()
+      throws Exception {
+    CapturedSource captured = capturedSpringRepository();
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = allTechnicalPolicies(canonicalJson);
+    ArtifactReference resourceBudget = reference("resource-budget", 'a', 'b');
+    ArtifactReference profileBundle = reference("profile-bundle", 'c', 'd');
+    Path storeRoot = temporaryDirectory.resolve("javaparser-public-runtime-store");
+    java.nio.file.Files.createDirectory(storeRoot);
+
+    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(storeRoot)) {
+      ArtifactStoreLimits limits = new ArtifactStoreLimits(16, 4_000_000, 16_000_000, 24);
+      CanonicalModuleArtifactStore modules =
+          new FileSystemCanonicalModuleArtifactStore(handle, canonicalJson, policies, limits);
+      CanonicalAnalysisStepArtifactStore steps =
+          new FileSystemCanonicalAnalysisStepArtifactStore(handle, canonicalJson, policies, limits);
+      EffectiveEngineConfiguration engine =
+          new EffectiveEngineConfiguration(EffectiveEngineConfiguration.JAVAPARSER, null);
+      PersistedTechnicalRunExecutor technical =
+          new PersistedTechnicalRunExecutor(
+              handle,
+              canonicalJson,
+              policies,
+              captured.registry(),
+              technicalConfiguration(captured, profileBundle, resourceBudget, limits, engine));
+
+      AnalysisRunReference queued =
+          RunStoreBootstrap.queueAnalysisRun(
+              handle,
+              queuedRequest(
+                  captured.capture(),
+                  frozenRequest(canonicalJson, captured.capture(), resourceBudget),
+                  policies,
+                  resourceBudget,
+                  profileBundle));
+      TechnicalAnalysisWorkflowResult technicalResult = technical.execute(queued.runId());
+
+      assertThat(steps.reopen(technicalResult.programGraphs().publication()).semanticPayloads())
+          .extracting(value -> value.descriptor().fileName())
+          .containsExactly(
+              "call-graph.json",
+              "code-structure-graph.json",
+              "control-flow-graph.json",
+              "data-flow-graph.json",
+              "evidence-graph.json",
+              "graph-gaps.jsonl",
+              "graph-index.json",
+              "java-code-index.jsonl");
+      assertThat(steps.reopen(technicalResult.provenCodeFacts().publication()).semanticPayloads())
+          .extracting(value -> value.descriptor().fileName())
+          .containsExactly(
+              "fact-accounting.json", "gap-ledger.json", "proof-pack.json", "proven-facts.json");
+
+      PersistedBusinessRunExecutorTest.ScriptedBusinessProvider provider =
+          new PersistedBusinessRunExecutorTest.ScriptedBusinessProvider();
+      PersistedBusinessRunExecutor business =
+          new PersistedBusinessRunExecutor(
+              modules,
+              steps,
+              new PersistedVerifiedSourceTextReader(steps, captured.registry()),
+              provider,
+              new PersistedBusinessRunConfiguration(
+                  new BusinessMaterialProfile(16, 48, 64_000),
+                  new ActivityExplanationProfile(128_000, 32_000, 4, 64, 8_000),
+                  new ProcessExplanationProfile(8, 16, 32_000, 24_000, 4, 32, 8_000, 0),
+                  new BusinessReportProfile(128_000, 32_000, 64, 8_000)));
+      BusinessMaterialBuildResult planned =
+          business.buildMaterials(technicalResult.businessFlows());
+
+      assertThat(planned.materialSet().materials()).isNotEmpty();
+      assertThat(planned.materialSet().materials())
+          .allSatisfy(
+              material -> {
+                assertThat(
+                        java.util.stream.Stream.concat(
+                                material.modelPacket().technicalObservations().stream(),
+                                material.modelPacket().allowlistedRefs().stream()
+                                    .map(value -> value.ref() + "=" + value.snippet()))
+                            .collect(java.util.stream.Collectors.joining("\n")))
+                    .contains("OrderController", "OrderService", "service.approve(status)");
+                assertThat(material.sourceRefs()).isNotEmpty();
+              });
+      BusinessAnalysisWorkflowResult businessResult =
+          business.execute(technicalResult.businessFlows());
+      assertThat(businessResult.report().businessReport().sections()).hasSize(9);
+      assertThat(
+              businessResult
+                  .report()
+                  .documentMarkdown()
+                  .lines()
+                  .filter(line -> line.startsWith("## ")))
+          .hasSize(9);
+      assertThat(provider.reportDraftInput().path("activities"))
+          .as("JavaParser-derived material reaches the unchanged report consumer")
+          .isNotEmpty();
     }
   }
 

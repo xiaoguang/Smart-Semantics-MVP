@@ -127,14 +127,34 @@ public final class TechnicalAnalysisWorkflow {
       ArtifactControls artifactControls,
       FlowCompilationProfile flowProfile,
       CapsuleProjectionProfile capsuleProfile) {
+    return continueAfterDiscovery(
+        discoveryResult, javaCodeSession, null, artifactControls, flowProfile, capsuleProfile);
+  }
+
+  /** Runs the selected engine, with strict graph enrichment when its profile is supplied. */
+  public TechnicalAnalysisWorkflowResult continueAfterDiscovery(
+      TechnicalDiscoveryWorkflowResult discoveryResult,
+      JavaCodeSession javaCodeSession,
+      ArtifactReference graphProfileRef,
+      ArtifactControls artifactControls,
+      FlowCompilationProfile flowProfile,
+      CapsuleProjectionProfile capsuleProfile) {
     Objects.requireNonNull(discoveryResult, "technical discovery result");
     Objects.requireNonNull(javaCodeSession, "Java code session");
     VerifiedSourceInventoryReference verifiedSourceInventory =
         discoveryResult.verifiedSourceInventory();
     ApplicationDiscoveryReference discovery = discoveryResult.applicationDiscovery();
     ProgramGraphsReference graphs =
-        new ProgramGraphsExecution(sourceReader, moduleArtifacts, stepArtifacts)
-            .execute(verifiedSourceInventory, discovery, javaCodeSession, artifactControls);
+        graphProfileRef == null
+            ? new ProgramGraphsExecution(sourceReader, moduleArtifacts, stepArtifacts)
+                .execute(verifiedSourceInventory, discovery, javaCodeSession, artifactControls)
+            : new ProgramGraphsExecution(sourceReader, moduleArtifacts, stepArtifacts)
+                .execute(
+                    verifiedSourceInventory,
+                    discovery,
+                    javaCodeSession,
+                    graphProfileRef,
+                    artifactControls);
     ProvenCodeFactsReference facts =
         new ProvenCodeFactsExecutor(sourceReader, moduleArtifacts, stepArtifacts)
             .execute(verifiedSourceInventory, discovery, graphs);

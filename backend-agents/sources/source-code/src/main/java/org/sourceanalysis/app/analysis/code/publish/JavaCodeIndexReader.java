@@ -48,10 +48,20 @@ public final class JavaCodeIndexReader {
       ReopenedAnalysisStepPublication step = steps.reopen(reference.publication());
       if (!step.reference().equals(reference.publication())
           || step.reference().address().analysisStepKey() != AnalysisStepKey.PROGRAM_GRAPHS
-          || step.semanticPayloads().size() != 1) {
+          || (step.semanticPayloads().size() != 1 && step.semanticPayloads().size() != 8)) {
         throw invalid();
       }
-      VerifiedCanonicalPayload payload = step.semanticPayloads().get(0);
+      List<VerifiedCanonicalPayload> matches =
+          step.semanticPayloads().stream()
+              .filter(
+                  value ->
+                      JavaCodeIndexPublicationSpecifier.FILE_NAME.equals(
+                          value.descriptor().fileName()))
+              .toList();
+      if (matches.size() != 1) {
+        throw invalid();
+      }
+      VerifiedCanonicalPayload payload = matches.get(0);
       if (!JavaCodeIndexPublicationSpecifier.FILE_NAME.equals(payload.descriptor().fileName())
           || !JavaCodeIndexPublicationSpecifier.ARTIFACT_TYPE.equals(
               payload.descriptor().artifactType())

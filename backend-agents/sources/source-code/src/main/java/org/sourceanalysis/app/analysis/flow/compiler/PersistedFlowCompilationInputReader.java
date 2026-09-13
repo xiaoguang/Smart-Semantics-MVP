@@ -147,7 +147,7 @@ final class PersistedFlowCompilationInputReader {
                       CanonicalMediaType.APPLICATION_JSON)));
       FactMaterial factMaterial = parseFacts(factPayloads, discoveryMaterial, graphMaterial);
       List<ArtifactReference> upstreamArtifacts =
-          upstreamArtifacts(discoveryPayloads, graphPayloads, factPayloads);
+          upstreamArtifacts(discoveryPayloads, graphPayloads, factPayloads, graphs);
       return new PersistedFlowCompilationInputs(
           discovery.receipt().controls(),
           discoveryMaterial.entries(),
@@ -203,14 +203,28 @@ final class PersistedFlowCompilationInputReader {
 
   private Map<String, VerifiedCanonicalPayload> payloads(
       ReopenedAnalysisStepPublication publication, Map<String, PayloadSpec> expected) {
-    if (publication.semanticPayloads().size() != expected.size()
-        || publication.receipt().semanticArtifacts().size() != expected.size()) {
+    boolean graphSetWithNavigation =
+        expected.containsKey("graph-index.json")
+            && publication.semanticPayloads().stream()
+                .anyMatch(
+                    payload -> "java-code-index.jsonl".equals(payload.descriptor().fileName()));
+    int expectedCount = expected.size() + (graphSetWithNavigation ? 1 : 0);
+    if (publication.semanticPayloads().size() != expectedCount
+        || publication.receipt().semanticArtifacts().size() != expectedCount) {
       throw broken();
     }
     Map<String, VerifiedCanonicalPayload> values = new LinkedHashMap<>();
     for (VerifiedCanonicalPayload payload : publication.semanticPayloads()) {
       ArtifactDescriptor descriptor = payload.descriptor();
       PayloadSpec spec = expected.get(descriptor.fileName());
+      if (spec == null
+          && expected.containsKey("graph-index.json")
+          && "java-code-index.jsonl".equals(descriptor.fileName())
+          && "PROGRAM_GRAPHS_JAVA_CODE_INDEX".equals(descriptor.artifactType())
+          && "java-code-index-v1".equals(descriptor.schemaVersion())
+          && descriptor.mediaType() == CanonicalMediaType.APPLICATION_X_NDJSON) {
+        continue;
+      }
       if (spec == null
           || !spec.artifactType().equals(descriptor.artifactType())
           || !spec.schemaVersion().equals(descriptor.schemaVersion())
@@ -226,18 +240,22 @@ final class PersistedFlowCompilationInputReader {
   private static List<ArtifactReference> upstreamArtifacts(
       Map<String, VerifiedCanonicalPayload> discovery,
       Map<String, VerifiedCanonicalPayload> graphs,
-      Map<String, VerifiedCanonicalPayload> facts) {
+      Map<String, VerifiedCanonicalPayload> facts,
+      ReopenedAnalysisStepPublication graphPublication) {
     List<ArtifactReference> values = new ArrayList<>();
     for (String fileName : List.of("capability-report.json", "entry-points.jsonl")) {
       values.add(reference(discovery.get(fileName)));
     }
     graphs.values().forEach(payload -> values.add(reference(payload)));
     facts.values().forEach(payload -> values.add(reference(payload)));
+    graphPublication.semanticPayloads().stream()
+        .filter(payload -> "java-code-index.jsonl".equals(payload.descriptor().fileName()))
+        .forEach(payload -> values.add(reference(payload)));
     List<ArtifactReference> ordered =
         values.stream()
             .sorted(Comparator.comparing(value -> value.artifactId().value(), UTF8_ORDER))
             .toList();
-    if (ordered.size() != 13
+    if ((ordered.size() != 13 && ordered.size() != 14)
         || ordered.size()
             != ordered.stream().map(ArtifactReference::artifactId).distinct().count()) {
       throw broken();

@@ -759,7 +759,17 @@ final class AtomicAnalysisStepPublicationEngine {
               ? new StepContract(
                   7,
                   "java-code-index",
-                  List.of(List.of("java-code-index.jsonl")),
+                  List.of(
+                      List.of("java-code-index.jsonl"),
+                      List.of(
+                          "call-graph.json",
+                          "code-structure-graph.json",
+                          "control-flow-graph.json",
+                          "data-flow-graph.json",
+                          "evidence-graph.json",
+                          "graph-gaps.jsonl",
+                          "graph-index.json",
+                          "java-code-index.jsonl")),
                   List.of(
                       AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
                       AnalysisStepKey.APPLICATION_DISCOVERY))

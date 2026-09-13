@@ -4,7 +4,7 @@
 
 先读 [总体设计](docs/DESIGN.md)，再看 [真实财务查询与合成业务 walkthrough](docs/examples/semantic-framework-walkthrough.md)。全部文档以目标设计与当前实现分开表述；单个真实 Luna/high 活动样本只证明局部语义链可用，不代表整仓报告已生成。
 
-新的取材方向已形成并完成第一阶段的[完整JDT/JavaParser插件设计](docs/modules/java-code-engines/README.md)，包括配置/统一JSON、JDT各子模块、现有接线及开发测试指南；先看[真实注册与财务代码如何进入业务解释](docs/examples/java-code-engine-walkthrough.md)更容易理解。**JDT 已经独立接入正式分析链；下一阶段只适配保留的 JavaParser 到其原有能力，不要求它追平 JDT。** 配置加载、引擎工厂和运行时显式配置已经存在；第一阶段选择 `javaparser` 仍明确返回 `ENGINE_NOT_INTEGRATED`，不会暗中回退。
+新的取材方向及其[完整 JDT/JavaParser 插件设计](docs/modules/java-code-engines/README.md)已经落地，包括配置、统一材料合同、JDT 各子模块、JavaParser 适配和开发测试指南；先看[真实注册与财务代码如何进入业务解释](docs/examples/java-code-engine-walkthrough.md)更容易理解。**JDT 与 JavaParser 都已接入同一正式分析链。** YAML 每次只选择一个引擎，不自动回退或混合；JDT 提供完整导航能力，JavaParser 只保留迁移前已有的有限解析、五图、Fact 和 Flow 能力。
 
 ## 分析路线
 
@@ -35,7 +35,7 @@ JDT 第一阶段已经通过两层验收：安装的 JDT LS 1.61.0 与独立 JDT
 
 自动 `POST /user/registerUser` 与 `POST /user/login` 小包均已完成一次真实 Luna/high DRAFT+REVIEW；现有业务语言 Prompt 已在登录样本中保留完整路径并避免不必要的 Java 标识泄漏。两份完成活动的一次真实过程审阅没有把它们仅因同一 Controller/验证码硬拼成顺序过程，而是保守地保留为两个独立局部过程。它们证明局部语义和“拒绝无依据连接”的过程边界可用，不证明跨入口过程或整仓九章报告已经验收。四个业务 Module 已实现不等于自动语义和整仓九章已验收。
 
-已完成[旧解释链清理与任意 N 活动覆盖设计](docs/plans/code-cleanup-and-scalable-activity-coverage-design.md)的代码收口：结构/范围合法但漏入口的 Activity DRAFT 会进入唯一 REVIEW，REVIEW 必须用活动或显式 `unexplainedEntries` 闭合；程序把具体未解释入口按材料投影给过程与报告，第 9 章必须说明对应 HTTP 入口及原因。当前资源、coverage 和 knowledge/report checkpoint 都使用 v2；历史 v1 调用不会被重放或冒充为修复后的结果。scripted 全链已纳入 JDT 发布验收；下一项引擎工作是 JavaParser 第二阶段适配。
+已完成[旧解释链清理与任意 N 活动覆盖设计](docs/plans/code-cleanup-and-scalable-activity-coverage-design.md)的代码收口：结构/范围合法但漏入口的 Activity DRAFT 会进入唯一 REVIEW，REVIEW 必须用活动或显式 `unexplainedEntries` 闭合；程序把具体未解释入口按材料投影给过程与报告，第 9 章必须说明对应 HTTP 入口及原因。当前资源、coverage 和 knowledge/report checkpoint 都使用 v2；历史 v1 调用不会被重放或冒充为修复后的结果。双引擎都已通过正式材料接力与 scripted 九章回归；产品 Luna 与完整仓库业务质量仍需单独验收。
 
 ## 九章与阅读依据
 

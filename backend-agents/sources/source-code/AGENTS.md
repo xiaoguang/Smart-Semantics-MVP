@@ -94,20 +94,22 @@
 
 ## Selectable Java code engines
 
-- The independent JDT path was implemented and accepted on 2026-09-12:
+- The independent JDT path and the follow-up JavaParser adapter were implemented
+  and accepted on 2026-09-12:
   configuration/session, JDT Core syntax, JDT LS navigation, discovery,
   navigation publication, truthful NOT_PRODUCED strict facts, Step05
   contexts, persisted business material and the scripted report chain are
-  connected. Do not reopen these as unimplemented design. JavaParser remains
-  ENGINE_NOT_INTEGRATED until the explicit second-phase adapter is complete.
+  connected. JavaParser additionally preserves its existing seven graph
+  payloads, strict Fact/Proof path, Flow/Capsule path and the same persisted
+  business consumers. Do not reopen these as unimplemented design.
 - First implement the JDT route independently. Protocols and direct
   producers/readers may change for a sound JDT design without accommodating
   JavaParser. Preserve JavaParser code. Only in the second phase adapt it to
   the completed contract and restore CURRENT capability; do not add symbol
   resolution features or require JDT-equivalent coverage.
 - YAML selects exactly jdt or javaparser for a run. No automatic fallback,
-  merged engines, dual writers or compatibility readers. An unintegrated
-  selection is an explicit error, not silent use of the old pipeline.
+  merged engines, dual writers or compatibility readers. An unknown selection
+  is an explicit error, not silent use of another engine.
 - On the JDT route, JDT LS owns navigation/resolution; a syntax-only JDT Core
   helper on the tool JVM owns Java declarations, full bodies and call syntax.
   Neither discovery nor BusinessMaterialBuilder may secretly invoke

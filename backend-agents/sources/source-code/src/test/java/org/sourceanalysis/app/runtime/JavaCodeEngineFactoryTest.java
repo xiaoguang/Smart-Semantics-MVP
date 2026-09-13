@@ -28,21 +28,17 @@ class JavaCodeEngineFactoryTest {
   }
 
   @Test
-  void javaParserSelectionFailsExplicitlyWhileStageOneIsNotIntegrated() throws Exception {
+  void javaParserSelectionCreatesTheRetainedEngineWithoutJdtPrerequisites() throws Exception {
     Path missingInstallation = temporaryDirectory.resolve("unused-installation");
     Path missingJavaHome = temporaryDirectory.resolve("unused-jdk");
     Object configuration =
         EngineTestReflection.loadYaml(jdtYaml("javaparser", missingInstallation, missingJavaHome));
 
-    Throwable failure = null;
-    try {
-      EngineTestReflection.factoryCreate(configuration);
-    } catch (Throwable expected) {
-      failure = expected;
-    }
+    Object engine = EngineTestReflection.factoryCreate(configuration);
 
-    assertThat(failure).as("stage-one JavaParser selection must fail explicitly").isNotNull();
-    assertThat(EngineTestReflection.codeOf(failure)).isEqualTo("ENGINE_NOT_INTEGRATED");
+    assertThat(engine).isNotNull();
+    assertThat(engine.getClass().getName())
+        .isEqualTo("org.sourceanalysis.app.analysis.code.javaparser.JavaParserCodeEngine");
   }
 
   @Test

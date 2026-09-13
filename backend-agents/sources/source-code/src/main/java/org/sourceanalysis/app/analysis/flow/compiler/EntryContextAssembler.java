@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndex;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndexReader;
@@ -109,6 +110,68 @@ public final class EntryContextAssembler {
       }
     }
     return new FlowCompilation(profile, dispositions, List.of(), contexts, gaps);
+  }
+
+  /** Attaches persisted Java source contexts to an already compiled strict Flow result. */
+  public FlowCompilation attachNavigationContexts(
+      FlowCompilation strictCompilation, ProgramGraphsReference graphs) {
+    Objects.requireNonNull(strictCompilation, "strict Flow compilation");
+    Objects.requireNonNull(graphs, "program graphs");
+    JavaCodeIndex index = new JavaCodeIndexReader(steps).reopen(graphs);
+    Map<String, JavaCodeIndex.EntryCollection> navigationByEntry =
+        index.entries().stream()
+            .collect(
+                java.util.stream.Collectors.toMap(value -> value.seed().entryId(), value -> value));
+    if (!navigationByEntry
+        .keySet()
+        .equals(
+            strictCompilation.entryContexts().stream()
+                .map(FlowCompilation.EntryContext::entryId)
+                .collect(java.util.stream.Collectors.toSet()))) {
+      throw invalid();
+    }
+    List<FlowCompilation.EntryContext> contexts =
+        strictCompilation.entryContexts().stream()
+            .map(context -> attach(context, navigationByEntry.get(context.entryId())))
+            .toList();
+    return new FlowCompilation(
+        strictCompilation.profile(),
+        strictCompilation.entryDispositions(),
+        strictCompilation.flowSlices(),
+        contexts,
+        strictCompilation.flowGaps());
+  }
+
+  private static FlowCompilation.EntryContext attach(
+      FlowCompilation.EntryContext strict, JavaCodeIndex.EntryCollection navigation) {
+    List<String> limitations = new ArrayList<>(strict.limitations());
+    if (navigation.context() != null) {
+      navigation.context().limitations().stream()
+          .map(value -> value.code() + ":" + value.detail())
+          .forEach(limitations::add);
+    } else {
+      limitations.add(navigation.reason());
+    }
+    limitations = limitations.stream().distinct().sorted(UTF8_ORDER).toList();
+    String status = navigation.context() == null ? "NOT_COLLECTED" : "COLLECTED";
+    String reason = navigation.context() == null ? navigation.reason() : null;
+    return new FlowCompilation.EntryContext(
+        contentId(
+            "entry-context",
+            strict.entryContextId(),
+            navigation.seed().methodKey(),
+            status,
+            reason == null ? "" : reason),
+        strict.entryId(),
+        strict.flowSliceId(),
+        navigation.seed().trigger(),
+        status,
+        reason,
+        navigation.context(),
+        strict.strictTechnicalContext(),
+        strict.factIds(),
+        strict.gapIds(),
+        limitations);
   }
 
   private void requireAccountingOnlyLineage(

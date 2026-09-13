@@ -16,12 +16,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/**
- * Describes the target Java project identity before the pre-reset implementation is replaced.
- *
- * <p>This test deliberately fails against the current checkout. It is the public architecture seam
- * for the wire-reset delivery; it must not be weakened to make the old coordinates pass.
- */
+/** Guards the target Java project identity and its approved semantic package registry. */
 class SourceAnalysisArchitectureTest {
 
   private static final Pattern PACKAGE_DECLARATION =
@@ -31,6 +26,7 @@ class SourceAnalysisArchitectureTest {
       Set.of(
           "org.sourceanalysis.app.analysis.inventory",
           "org.sourceanalysis.app.analysis.discovery",
+          "org.sourceanalysis.app.analysis.code",
           "org.sourceanalysis.app.analysis.graph",
           "org.sourceanalysis.app.analysis.fact",
           "org.sourceanalysis.app.analysis.flow",

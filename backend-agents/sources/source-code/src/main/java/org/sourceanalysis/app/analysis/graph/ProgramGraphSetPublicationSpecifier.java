@@ -84,6 +84,49 @@ public final class ProgramGraphSetPublicationSpecifier {
    */
   public ProgramGraphsReference specifyGraphSet(
       ProgramGraphsPublicationInputs inputs, ArtifactControls controls) {
+    return publishPrepared(
+        inputs.verifiedSourceInventoryPublication(),
+        inputs.applicationDiscoveryPublication(),
+        controls,
+        prepareGraphSet(inputs, controls));
+  }
+
+  /** Installs the public Step 03 view after its M6 graph set has already been installed. */
+  public ProgramGraphsReference publishPrepared(
+      org.sourceanalysis.app.artifact.AnalysisStepPublicationReference source,
+      org.sourceanalysis.app.artifact.AnalysisStepPublicationReference discovery,
+      ArtifactControls controls,
+      PreparedProgramGraphSet prepared) {
+    try {
+      AnalysisStepModuleAddress moduleAddress =
+          (AnalysisStepModuleAddress) prepared.publisher().address();
+      if (!moduleAddress.runId().equals(source.address().runId())
+          || !moduleAddress.runId().equals(discovery.address().runId())) {
+        throw broken();
+      }
+      InstalledAnalysisStepPublication step =
+          analysisStepArtifacts.install(
+              new AnalysisStepInstallRequest(
+                  new AnalysisStepPublicationAddress(
+                      moduleAddress.runId(), AnalysisStepKey.PROGRAM_GRAPHS),
+                  new AnalysisStepPublisherModuleProvenance(prepared.publisher()),
+                  List.of(source, discovery),
+                  controls,
+                  prepared.completionStatus(),
+                  prepared.gapRefs(),
+                  prepared.semanticPayloads(),
+                  null));
+      return new ProgramGraphsReference(step.reference());
+    } catch (GraphReferenceException failure) {
+      throw failure;
+    } catch (RuntimeException failure) {
+      throw new GraphReferenceException(failure);
+    }
+  }
+
+  /** Installs M6 and returns its seven payloads without prematurely installing Step 03. */
+  public PreparedProgramGraphSet prepareGraphSet(
+      ProgramGraphsPublicationInputs inputs, ArtifactControls controls) {
     try {
       Objects.requireNonNull(inputs, "program graph publication inputs");
       Objects.requireNonNull(controls, "program graph controls");
@@ -139,19 +182,12 @@ public final class ProgramGraphSetPublicationSpecifier {
                   status,
                   gapRefs,
                   payloads));
-      InstalledAnalysisStepPublication step =
-          analysisStepArtifacts.install(
-              new AnalysisStepInstallRequest(
-                  new AnalysisStepPublicationAddress(
-                      moduleAddress.runId(), AnalysisStepKey.PROGRAM_GRAPHS),
-                  new AnalysisStepPublisherModuleProvenance(module.reference()),
-                  List.of(source.reference(), discovery.reference()),
-                  controls,
-                  status,
-                  gapRefs,
-                  payloads.stream().map(ProgramGraphSetPublicationSpecifier::stepPayload).toList(),
-                  null));
-      return new ProgramGraphsReference(step.reference());
+      return new PreparedProgramGraphSet(
+          module.reference(),
+          payloads.stream().map(ProgramGraphSetPublicationSpecifier::stepPayload).toList(),
+          payloads.stream().map(ProgramGraphSetPublicationSpecifier::reference).toList(),
+          status,
+          gapRefs);
     } catch (GraphReferenceException failure) {
       throw failure;
     } catch (RuntimeException failure) {
