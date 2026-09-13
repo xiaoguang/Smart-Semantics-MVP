@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
@@ -154,7 +155,7 @@ class ActivityPackageBoundaryCoverageTest {
 
   private static final class EchoingProvider implements StructuredModelProvider {
     private final CanonicalJsonCodec json = new CanonicalJsonCodec();
-    private final List<List<String>> entryKeySets = new ArrayList<>();
+    private final List<List<String>> entryKeySets = new CopyOnWriteArrayList<>();
 
     @Override
     public StructuredModelResponse generate(StructuredModelRequest request) {

@@ -6,6 +6,9 @@ import org.sourceanalysis.app.artifact.ImmutableBytes;
 @FunctionalInterface
 public interface CodexSubscriptionCommand {
 
+  /** Verifies the declared local subscription identity before any job is dispatched. */
+  default void preflight(CodexSubscriptionProfile profile) {}
+
   ImmutableBytes execute(
       CodexSubscriptionProfile profile, String prompt, ImmutableBytes outputJsonSchema);
 }

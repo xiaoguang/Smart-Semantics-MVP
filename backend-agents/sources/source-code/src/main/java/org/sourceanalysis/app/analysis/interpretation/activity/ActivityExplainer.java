@@ -18,12 +18,15 @@ import java.util.stream.Collectors;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
+import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.material.ModelActivityPacket;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
+import org.sourceanalysis.app.runtime.modeljob.ModelJobExecutionConfiguration;
+import org.sourceanalysis.app.runtime.modeljob.ModelJobProviderBinding;
 
 /**
  * Explains one or more persisted material packets through exactly one DRAFT and one REVIEW each.
@@ -35,6 +38,8 @@ public final class ActivityExplainer {
 
   private static final String DRAFT_KIND = "ACTIVITY_DRAFT";
   private static final String REVIEW_KIND = "ACTIVITY_REVIEW";
+  private static final int DEFAULT_MAX_CONCURRENT_JOBS = 4;
+  private static final String SINGLE_PROVIDER_BINDING = "single-provider";
   private static final Set<String> DRAFT_TOP_LEVEL_FIELDS = Set.of("activities");
   private static final Set<String> REVIEW_TOP_LEVEL_FIELDS =
       Set.of("activities", "unexplainedEntries");
@@ -76,8 +81,10 @@ public final class ActivityExplainer {
       List.of("DIRECT_CODE_BEHAVIOR", "REASONABLE_INFERENCE", "NEEDS_CONFIRMATION");
   private static final Set<String> CERTAINTIES = Set.copyOf(CERTAINTY_ORDER);
 
-  private final StructuredModelProvider provider;
   private final CanonicalModuleArtifactStore checkpointStore;
+  private final ActivityJobCoordinator jobCoordinator;
+  private final ActivityJobCompletionSink completionSink;
+  private final List<ModelJobProviderBinding> providerRoute;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
 
   public ActivityExplainer(StructuredModelProvider provider) {
@@ -87,8 +94,99 @@ public final class ActivityExplainer {
   /** Creates the durable production seam; output is stored after all denominator entries close. */
   public ActivityExplainer(
       StructuredModelProvider provider, CanonicalModuleArtifactStore checkpointStore) {
-    this.provider = Objects.requireNonNull(provider, "structured model provider");
+    this(
+        checkpointStore,
+        new BoundedActivityJobCoordinator(DEFAULT_MAX_CONCURRENT_JOBS),
+        completedJob -> {},
+        List.of(
+            new ModelJobProviderBinding(
+                SINGLE_PROVIDER_BINDING,
+                "direct-single-provider",
+                DEFAULT_MAX_CONCURRENT_JOBS,
+                provider,
+                null)));
+  }
+
+  /** Internal constructor for replacing only the Activity job-coordination seam in direct tests. */
+  ActivityExplainer(
+      StructuredModelProvider provider,
+      CanonicalModuleArtifactStore checkpointStore,
+      ActivityJobCoordinator jobCoordinator) {
+    this(
+        checkpointStore,
+        jobCoordinator,
+        completedJob -> {},
+        List.of(
+            new ModelJobProviderBinding(
+                SINGLE_PROVIDER_BINDING,
+                "direct-single-provider",
+                DEFAULT_MAX_CONCURRENT_JOBS,
+                provider,
+                null)));
+  }
+
+  /** Creates an Activity explainer with composition-root-provided bounded job execution values. */
+  public static ActivityExplainer forExecution(
+      StructuredModelProvider provider, ActivityJobExecutionConfiguration configuration) {
+    return forExecution(provider, null, configuration);
+  }
+
+  /** Creates the durable Activity seam with private reviewed-job persistence for one run. */
+  public static ActivityExplainer forExecution(
+      StructuredModelProvider provider,
+      CanonicalModuleArtifactStore checkpointStore,
+      ActivityJobExecutionConfiguration configuration) {
+    Objects.requireNonNull(configuration, "activity job execution configuration");
+    ModelJobProviderBinding providerBinding =
+        new ModelJobProviderBinding(
+            configuration.providerBindingKey(),
+            configuration.quotaScope(),
+            configuration.maxConcurrentJobs(),
+            provider,
+            configuration.expectedRuntimeIdentity());
+    return new ActivityExplainer(
+        checkpointStore,
+        new BoundedActivityJobCoordinator(
+            configuration.maxConcurrentJobs(),
+            Map.of(providerBinding.key(), providerBinding.maxConcurrentJobs())),
+        new ActivityJobPrivateResultStore(configuration),
+        List.of(providerBinding));
+  }
+
+  /** Creates the multi-Provider Activity seam from one validated run execution configuration. */
+  public static ActivityExplainer forExecution(ModelJobExecutionConfiguration configuration) {
+    return forExecution(null, configuration);
+  }
+
+  /** Creates the durable multi-Provider Activity seam for one persisted analysis run. */
+  public static ActivityExplainer forExecution(
+      CanonicalModuleArtifactStore checkpointStore, ModelJobExecutionConfiguration configuration) {
+    Objects.requireNonNull(configuration, "model job execution configuration");
+    List<ModelJobProviderBinding> route = configuration.providerRoute("activity");
+    Map<String, Integer> providerCaps =
+        route.stream()
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    ModelJobProviderBinding::key, ModelJobProviderBinding::maxConcurrentJobs));
+    return new ActivityExplainer(
+        checkpointStore,
+        new BoundedActivityJobCoordinator(configuration.maxConcurrentJobs(), providerCaps),
+        new ActivityJobPrivateResultStore(configuration),
+        route);
+  }
+
+  private ActivityExplainer(
+      CanonicalModuleArtifactStore checkpointStore,
+      ActivityJobCoordinator jobCoordinator,
+      ActivityJobCompletionSink completionSink,
+      List<ModelJobProviderBinding> providerRoute) {
     this.checkpointStore = checkpointStore;
+    this.jobCoordinator = Objects.requireNonNull(jobCoordinator, "activity job coordinator");
+    this.completionSink = Objects.requireNonNull(completionSink, "activity job completion sink");
+    this.providerRoute = List.copyOf(providerRoute);
+    if (this.providerRoute.isEmpty()) {
+      throw new IllegalArgumentException("activity job provider route is required");
+    }
   }
 
   /** Produces complete reviewed activities from an already-persisted material checkpoint. */
@@ -119,6 +217,7 @@ public final class ActivityExplainer {
         request.materials().materialSet().materials().stream()
             .sorted(Comparator.comparing(BusinessMaterial::materialId))
             .toList();
+    List<ActivityJob> jobs = new ArrayList<>();
     for (BusinessMaterial material : orderedMaterials) {
       JsonNode cleanPacket = cleanPacket(material);
       ImmutableBytes cleanBytes = canonicalJson.encodeCanonical(cleanPacket);
@@ -136,24 +235,44 @@ public final class ActivityExplainer {
         continue;
       }
       startedMaterials++;
+      int jobOrdinal = jobs.size();
+      ModelJobProviderBinding providerBinding =
+          providerRoute
+              .get(jobOrdinal % providerRoute.size())
+              .forJobOrdinal(jobOrdinal / providerRoute.size());
+      ActivityJobIdentity identity =
+          jobIdentity(
+              material,
+              cleanBytes,
+              request.profile(),
+              providerBinding.key(),
+              providerBinding.expectedRuntimeIdentity());
+      jobs.add(
+          new ActivityJob(
+              material.materialId(),
+              providerBinding,
+              identity,
+              () ->
+                  explainMaterial(
+                      material,
+                      canonicalJson.encodeCanonical(cleanPacket(material)),
+                      request.profile(),
+                      identity,
+                      providerBinding)));
+    }
 
-      ValidatedActivityResponse draft =
-          generateAndValidate(DRAFT_KIND, cleanBytes, material, request.profile());
-      ObjectNode reviewPacket = cleanPacket.deepCopy();
-      reviewPacket.set("actualDraft", draft.response());
-      ArrayNode missingEntryKeys = reviewPacket.putArray("missingEntryKeys");
-      missingEntryKeys(material, draft.coveredEntryKeys()).forEach(missingEntryKeys::add);
-      ImmutableBytes reviewInput = canonicalJson.encodeCanonical(reviewPacket);
-      if (reviewInput.size() > request.profile().maxModelInputBytes()) {
-        throw new ActivityExplanationException("ACTIVITY_REVIEW_INPUT_BUDGET");
-      }
-      ValidatedActivityResponse review =
-          generateAndValidate(REVIEW_KIND, reviewInput, material, request.profile());
-      List<ReviewedActivity> activities =
-          toReviewedActivities(review.response(), material, request.profile());
-      reviewed.addAll(activities);
-      coverage.addAll(analyzedCoverage(material, activities, review.unexplainedEntryKeys()));
-      unexplained.addAll(unexplainedEntries(material, review.unexplainedEntryKeys()));
+    List<CompletedActivityJob> completedJobs =
+        jobCoordinator.execute(jobs, completionSink).stream()
+            .sorted(Comparator.comparing(completedJob -> completedJob.job().materialId()))
+            .toList();
+    if (completedJobs.size() != jobs.size()) {
+      throw new ActivityExplanationException("ACTIVITY_JOB_COORDINATION_INCOMPLETE");
+    }
+    for (CompletedActivityJob completedJob : completedJobs) {
+      ActivityJobResult completed = completedJob.result();
+      reviewed.addAll(completed.reviewedActivities());
+      coverage.addAll(completed.coverage());
+      unexplained.addAll(completed.unexplainedEntries());
     }
     coverage.sort(Comparator.comparing(ActivityEntryCoverage::entryId));
     if (coverage.size() != materialCoverage.size()) {
@@ -174,6 +293,48 @@ public final class ActivityExplainer {
                 result.reviewedActivities(),
                 result.coverage(),
                 result.unexplainedActivityEntries()));
+  }
+
+  private ActivityJobResult explainMaterial(
+      BusinessMaterial material,
+      ImmutableBytes cleanBytes,
+      ActivityExplanationProfile profile,
+      ActivityJobIdentity identity,
+      ModelJobProviderBinding providerBinding) {
+    ValidatedActivityResponse draft =
+        generateAndValidate(
+            providerBinding,
+            DRAFT_KIND,
+            taskId(identity, DRAFT_KIND),
+            cleanBytes,
+            material,
+            profile);
+    ObjectNode reviewPacket = (ObjectNode) canonicalJson.parseCanonical(cleanBytes);
+    reviewPacket.set("actualDraft", draft.response());
+    ArrayNode missingEntryKeys = reviewPacket.putArray("missingEntryKeys");
+    missingEntryKeys(material, draft.coveredEntryKeys()).forEach(missingEntryKeys::add);
+    ImmutableBytes reviewInput = canonicalJson.encodeCanonical(reviewPacket);
+    if (reviewInput.size() > profile.maxModelInputBytes()) {
+      throw new ActivityExplanationException("ACTIVITY_REVIEW_INPUT_BUDGET");
+    }
+    ValidatedActivityResponse review =
+        generateAndValidate(
+            providerBinding,
+            REVIEW_KIND,
+            taskId(identity, REVIEW_KIND),
+            reviewInput,
+            material,
+            profile);
+    if (!draft.runtimeIdentity().equals(review.runtimeIdentity())) {
+      throw new ActivityExplanationException("ACTIVITY_JOB_RUNTIME_IDENTITY_MISMATCH");
+    }
+    List<ReviewedActivity> activities = toReviewedActivities(review.response(), material, profile);
+    return new ActivityJobResult(
+        material.materialId(),
+        activities,
+        analyzedCoverage(material, activities, review.unexplainedEntryKeys()),
+        unexplainedEntries(material, review.unexplainedEntryKeys()),
+        review.runtimeIdentity());
   }
 
   private String preflightFailure(
@@ -269,21 +430,25 @@ public final class ActivityExplainer {
   }
 
   private ValidatedActivityResponse generateAndValidate(
+      ModelJobProviderBinding providerBinding,
       String taskKind,
+      String taskId,
       ImmutableBytes input,
       BusinessMaterial material,
       ActivityExplanationProfile profile) {
     StructuredModelResponse response;
     try {
       response =
-          provider.generate(
-              new StructuredModelRequest(
-                  taskKind.toLowerCase(),
-                  taskKind,
-                  ActivityPromptCatalog.instructionsFor(taskKind),
-                  input,
-                  outputJsonSchema(material, profile, taskKind),
-                  profile.maxModelOutputBytes()));
+          providerBinding
+              .provider()
+              .generate(
+                  new StructuredModelRequest(
+                      taskId,
+                      taskKind,
+                      ActivityPromptCatalog.instructionsFor(taskKind),
+                      input,
+                      outputJsonSchema(material, profile, taskKind),
+                      profile.maxModelOutputBytes()));
     } catch (RuntimeException failure) {
       throw new ActivityExplanationException("ACTIVITY_PROVIDER_FAILED_AFTER_START", failure);
     }
@@ -300,7 +465,62 @@ public final class ActivityExplainer {
     } catch (IllegalArgumentException failure) {
       throw invalid(taskKind, failure);
     }
-    return validateResponse(parsed, material, profile, taskKind);
+    ValidatedActivityResponse validated =
+        validateResponse(parsed, material, profile, taskKind, response.runtimeIdentity());
+    if (providerBinding.expectedRuntimeIdentity() != null
+        && !providerBinding.expectedRuntimeIdentity().equals(validated.runtimeIdentity())) {
+      throw new ActivityExplanationException("ACTIVITY_JOB_RUNTIME_IDENTITY_MISMATCH");
+    }
+    return validated;
+  }
+
+  private ActivityJobIdentity jobIdentity(
+      BusinessMaterial material,
+      ImmutableBytes cleanBytes,
+      ActivityExplanationProfile profile,
+      String providerBindingKey,
+      ModelRuntimeIdentityV1 expectedRuntimeIdentity) {
+    ImmutableBytes draftSchema = outputJsonSchema(material, profile, DRAFT_KIND);
+    ImmutableBytes reviewSchema = outputJsonSchema(material, profile, REVIEW_KIND);
+    ObjectNode fingerprint = JsonNodeFactory.instance.objectNode();
+    fingerprint.put("schemaVersion", "activity-job-input-fingerprint-v1");
+    fingerprint.put("moduleVersion", "flow-interpretation-activity-explanations-v1");
+    fingerprint.put("providerBindingKey", providerBindingKey);
+    fingerprint.put("cleanPacketSha256", sha256(cleanBytes));
+    fingerprint.put("draftInstructions", ActivityPromptCatalog.instructionsFor(DRAFT_KIND));
+    fingerprint.put("draftSchemaSha256", sha256(draftSchema));
+    fingerprint.put("reviewInstructions", ActivityPromptCatalog.instructionsFor(REVIEW_KIND));
+    fingerprint.put("reviewSchemaSha256", sha256(reviewSchema));
+    fingerprint.put("maxModelInputBytes", profile.maxModelInputBytes());
+    fingerprint.put("maxModelOutputBytes", profile.maxModelOutputBytes());
+    if (expectedRuntimeIdentity != null) {
+      ObjectNode runtimeIdentity = fingerprint.putObject("expectedRuntimeIdentity");
+      runtimeIdentity.put("upstreamProvider", expectedRuntimeIdentity.upstreamProvider());
+      runtimeIdentity.put("model", expectedRuntimeIdentity.model());
+      runtimeIdentity.put("reasoningEffort", expectedRuntimeIdentity.reasoningEffort());
+      runtimeIdentity.put("sandbox", expectedRuntimeIdentity.sandbox());
+    }
+    String inputFingerprint = sha256(canonicalJson.encodeCanonical(fingerprint));
+
+    ObjectNode key = JsonNodeFactory.instance.objectNode();
+    key.put("schemaVersion", "activity-job-key-v1");
+    key.put("phase", "activity");
+    key.put("materialId", material.materialId());
+    key.put("inputFingerprint", inputFingerprint);
+    return new ActivityJobIdentity(sha256(canonicalJson.encodeCanonical(key)), inputFingerprint);
+  }
+
+  private static String taskId(ActivityJobIdentity identity, String taskKind) {
+    return "activity:" + identity.jobKey() + ":" + taskKind.toLowerCase(java.util.Locale.ROOT);
+  }
+
+  private static String sha256(ImmutableBytes bytes) {
+    try {
+      return java.util.HexFormat.of()
+          .formatHex(MessageDigest.getInstance("SHA-256").digest(bytes.copyToByteArray()));
+    } catch (NoSuchAlgorithmException unavailable) {
+      throw new IllegalStateException("SHA-256 is unavailable", unavailable);
+    }
   }
 
   private ObjectNode cleanPacket(BusinessMaterial material) {
@@ -329,7 +549,7 @@ public final class ActivityExplainer {
   /**
    * Builds the provider-facing JSON Schema from the same limits and source-ref allowlist enforced
    * again by {@link #validateResponse(JsonNode, BusinessMaterial, ActivityExplanationProfile,
-   * String)}.
+   * String, ModelRuntimeIdentityV1)}.
    */
   private ImmutableBytes outputJsonSchema(
       BusinessMaterial material, ActivityExplanationProfile profile, String taskKind) {
@@ -422,7 +642,8 @@ public final class ActivityExplainer {
       JsonNode root,
       BusinessMaterial material,
       ActivityExplanationProfile profile,
-      String taskKind) {
+      String taskKind,
+      ModelRuntimeIdentityV1 runtimeIdentity) {
     if (!root.isObject()
         || hasProhibitedIdentity(root)
         || !fieldNames(root).equals(expectedTopLevelFields(taskKind))) {
@@ -455,7 +676,8 @@ public final class ActivityExplainer {
         throw invalid(taskKind, null);
       }
     }
-    return new ValidatedActivityResponse(root, Set.copyOf(coveredEntryKeys), unexplainedEntryKeys);
+    return new ValidatedActivityResponse(
+        root, Set.copyOf(coveredEntryKeys), unexplainedEntryKeys, runtimeIdentity);
   }
 
   private static Set<String> expectedTopLevelFields(String taskKind) {
@@ -656,10 +878,14 @@ public final class ActivityExplainer {
   }
 
   private record ValidatedActivityResponse(
-      JsonNode response, Set<String> coveredEntryKeys, List<String> unexplainedEntryKeys) {
+      JsonNode response,
+      Set<String> coveredEntryKeys,
+      List<String> unexplainedEntryKeys,
+      ModelRuntimeIdentityV1 runtimeIdentity) {
     private ValidatedActivityResponse {
       coveredEntryKeys = Set.copyOf(coveredEntryKeys);
       unexplainedEntryKeys = List.copyOf(unexplainedEntryKeys);
+      runtimeIdentity = Objects.requireNonNull(runtimeIdentity, "activity runtime identity");
     }
   }
 

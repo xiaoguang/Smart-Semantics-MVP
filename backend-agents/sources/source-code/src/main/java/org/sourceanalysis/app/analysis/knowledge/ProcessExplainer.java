@@ -1,6 +1,7 @@
 package org.sourceanalysis.app.analysis.knowledge;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -29,6 +30,10 @@ import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialS
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
+import org.sourceanalysis.app.runtime.modeljob.BoundedModelJobExecutor;
+import org.sourceanalysis.app.runtime.modeljob.ModelJobExecutionConfiguration;
+import org.sourceanalysis.app.runtime.modeljob.ModelJobProviderBinding;
+import org.sourceanalysis.app.runtime.modeljob.PrivateModelJobResultStore;
 
 /**
  * Builds loose, deterministic activity groups and lets a Provider review the business-process
@@ -66,9 +71,11 @@ public final class ProcessExplainer {
   private static final Set<String> REPOSITORY_SUMMARY_FIELDS =
       Set.copyOf(REPOSITORY_SUMMARY_FIELD_ORDER);
   private static final Set<String> CERTAINTIES = Set.copyOf(CERTAINTY_ORDER);
+  private static final ObjectMapper JSON = new ObjectMapper();
 
   private final StructuredModelProvider provider;
   private final CanonicalModuleArtifactStore checkpointStore;
+  private final ModelJobExecutionConfiguration modelJobExecutionConfiguration;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
 
   public ProcessExplainer(StructuredModelProvider provider) {
@@ -80,6 +87,26 @@ public final class ProcessExplainer {
       StructuredModelProvider provider, CanonicalModuleArtifactStore checkpointStore) {
     this.provider = Objects.requireNonNull(provider, "structured model provider");
     this.checkpointStore = checkpointStore;
+    this.modelJobExecutionConfiguration = null;
+  }
+
+  /** Creates a process explainer using the run's process-group and summary Provider routes. */
+  public static ProcessExplainer forExecution(ModelJobExecutionConfiguration configuration) {
+    return forExecution(null, configuration);
+  }
+
+  /** Creates the durable process seam using one validated run execution configuration. */
+  public static ProcessExplainer forExecution(
+      CanonicalModuleArtifactStore checkpointStore, ModelJobExecutionConfiguration configuration) {
+    Objects.requireNonNull(configuration, "model job execution configuration");
+    return new ProcessExplainer(checkpointStore, configuration);
+  }
+
+  private ProcessExplainer(
+      CanonicalModuleArtifactStore checkpointStore, ModelJobExecutionConfiguration configuration) {
+    this.provider = configuration.binding("repositorySummary", 0).provider();
+    this.checkpointStore = checkpointStore;
+    this.modelJobExecutionConfiguration = configuration;
   }
 
   /**
@@ -96,6 +123,8 @@ public final class ProcessExplainer {
 
     List<String> unmatched = new ArrayList<>();
     List<BusinessProcess> processes = new ArrayList<>();
+    List<ProcessGroupWork> processGroupWork = new ArrayList<>();
+    int groupOrdinal = 0;
     for (ActivityGroup group :
         groups(activities, request.materials(), request.profile(), unmatched)) {
       if (group.activities().size() < 2) {
@@ -107,15 +136,11 @@ public final class ProcessExplainer {
         unmatched.addAll(group.activities().stream().map(ReviewedActivity::activityId).toList());
         continue;
       }
-      JsonNode draft = callAndValidate(DRAFT_KIND, draftInput, group, request.profile());
-      ObjectNode reviewInput = groupInput(group);
-      reviewInput.set("actualDraft", draft);
-      JsonNode review =
-          callAndValidate(
-              REVIEW_KIND, canonicalJson.encodeCanonical(reviewInput), group, request.profile());
-      List<BusinessProcess> reviewed = processes(review, group, request.profile());
-      processes.addAll(reviewed);
-      unmatched.addAll(strings(review, "unmatchedActivityIds", request.profile(), REVIEW_KIND));
+      processGroupWork.add(new ProcessGroupWork(groupOrdinal++, group));
+    }
+    for (ProcessGroupResult completed : executeProcessGroups(processGroupWork, request.profile())) {
+      processes.addAll(completed.processes());
+      unmatched.addAll(completed.unmatchedActivityIds());
     }
     List<String> uniqueUnmatched = unmatched.stream().distinct().sorted().toList();
     Consolidation consolidation =
@@ -157,6 +182,135 @@ public final class ProcessExplainer {
         result.notConsolidatedProcessIds(),
         result.repositorySummary(),
         new ProcessKnowledgeCheckpointPublisher(checkpointStore).publish(source, result));
+  }
+
+  private List<ProcessGroupResult> executeProcessGroups(
+      List<ProcessGroupWork> work, ProcessExplanationProfile profile) {
+    if (modelJobExecutionConfiguration == null) {
+      ModelJobProviderBinding binding =
+          new ModelJobProviderBinding(
+              "single-provider", "direct-single-provider", 1, provider, null);
+      return work.stream().map(value -> explainProcessGroup(value, profile, binding)).toList();
+    }
+    List<ModelJobProviderBinding> route =
+        modelJobExecutionConfiguration.providerRoute("processGroup");
+    Map<String, Integer> providerCaps =
+        route.stream()
+            .collect(
+                java.util.stream.Collectors.toUnmodifiableMap(
+                    ModelJobProviderBinding::key, ModelJobProviderBinding::maxConcurrentJobs));
+    BoundedModelJobExecutor executor =
+        new BoundedModelJobExecutor(
+            modelJobExecutionConfiguration.maxConcurrentJobs(), providerCaps);
+    List<BoundedModelJobExecutor.ModelJob<ProcessGroupResult>> jobs = new ArrayList<>();
+    for (ProcessGroupWork value : work) {
+      ModelJobProviderBinding binding =
+          route.get(value.ordinal() % route.size()).forJobOrdinal(value.ordinal() / route.size());
+      ProcessGroupJobIdentity identity = processGroupJobIdentity(value, profile, binding);
+      jobs.add(
+          new BoundedModelJobExecutor.ModelJob<>(
+              identity.jobKey(),
+              identity.inputFingerprint(),
+              binding,
+              () -> explainProcessGroup(value, profile, binding, identity)));
+    }
+    PrivateModelJobResultStore resultStore =
+        new PrivateModelJobResultStore(
+            modelJobExecutionConfiguration.journalDirectory(),
+            modelJobExecutionConfiguration.runId(),
+            "process-group");
+    return executor
+        .execute(
+            jobs,
+            completed ->
+                resultStore.write(completed.job().jobKey(), processGroupResultRecord(completed)))
+        .stream()
+        .map(BoundedModelJobExecutor.CompletedJob::result)
+        .sorted(Comparator.comparingInt(ProcessGroupResult::ordinal))
+        .toList();
+  }
+
+  private ObjectNode processGroupResultRecord(
+      BoundedModelJobExecutor.CompletedJob<ProcessGroupResult> completed) {
+    ProcessGroupResult result = completed.result();
+    ObjectNode record = JsonNodeFactory.instance.objectNode();
+    record.put("schemaVersion", "process-group-reviewed-job-result-v2");
+    record.put("runId", modelJobExecutionConfiguration.runId().value());
+    record.put("phase", "processGroup");
+    record.put("jobKey", completed.job().jobKey());
+    record.put("inputFingerprint", completed.job().inputFingerprint());
+    record.put("providerBindingKey", completed.job().providerBinding().key());
+    record.put("quotaScope", completed.job().providerBinding().quotaScope());
+    ObjectNode runtimeIdentity = record.putObject("runtimeIdentity");
+    runtimeIdentity.put("upstreamProvider", result.runtimeIdentity().upstreamProvider());
+    runtimeIdentity.put("model", result.runtimeIdentity().model());
+    runtimeIdentity.put("reasoningEffort", result.runtimeIdentity().reasoningEffort());
+    runtimeIdentity.put("sandbox", result.runtimeIdentity().sandbox());
+    record.set("processes", JSON.valueToTree(result.processes()));
+    record.set("unmatchedActivityIds", JSON.valueToTree(result.unmatchedActivityIds()));
+    return record;
+  }
+
+  private ProcessGroupResult explainProcessGroup(
+      ProcessGroupWork work, ProcessExplanationProfile profile, ModelJobProviderBinding binding) {
+    ProcessGroupJobIdentity identity = processGroupJobIdentity(work, profile, binding);
+    return explainProcessGroup(work, profile, binding, identity);
+  }
+
+  private ProcessGroupResult explainProcessGroup(
+      ProcessGroupWork work,
+      ProcessExplanationProfile profile,
+      ModelJobProviderBinding binding,
+      ProcessGroupJobIdentity identity) {
+    String jobKey = identity.jobKey();
+    ImmutableBytes draftInput = canonicalJson.encodeCanonical(groupInput(work.group()));
+    ValidatedProcessResponse draft =
+        callAndValidate(
+            binding, DRAFT_KIND, "process:" + jobKey + ":draft", draftInput, work.group(), profile);
+    ObjectNode reviewInput = groupInput(work.group());
+    reviewInput.set("actualDraft", draft.value());
+    ValidatedProcessResponse review =
+        callAndValidate(
+            binding,
+            REVIEW_KIND,
+            "process:" + jobKey + ":review",
+            canonicalJson.encodeCanonical(reviewInput),
+            work.group(),
+            profile);
+    if (!draft.runtimeIdentity().equals(review.runtimeIdentity())) {
+      throw failure("PROCESS_JOB_RUNTIME_IDENTITY_MISMATCH", null);
+    }
+    return new ProcessGroupResult(
+        work.ordinal(),
+        processes(review.value(), work.group(), profile),
+        strings(review.value(), "unmatchedActivityIds", profile, REVIEW_KIND),
+        review.runtimeIdentity());
+  }
+
+  private ProcessGroupJobIdentity processGroupJobIdentity(
+      ProcessGroupWork work, ProcessExplanationProfile profile, ModelJobProviderBinding binding) {
+    ImmutableBytes draftInput = canonicalJson.encodeCanonical(groupInput(work.group()));
+    ObjectNode fingerprint = JsonNodeFactory.instance.objectNode();
+    fingerprint.put("schemaVersion", "process-group-input-fingerprint-v1");
+    fingerprint.put("moduleVersion", "repository-knowledge-business-knowledge-v2");
+    fingerprint.put("providerBindingKey", binding.key());
+    fingerprint.put("groupInputSha256", sha256(draftInput));
+    fingerprint.put("draftInstructions", ProcessPromptCatalog.instructionsFor(DRAFT_KIND));
+    fingerprint.put("reviewInstructions", ProcessPromptCatalog.instructionsFor(REVIEW_KIND));
+    fingerprint.put("outputSchemaSha256", sha256(processGroupOutputSchema(work.group(), profile)));
+    fingerprint.put("maxModelInputBytes", profile.maxModelInputBytes());
+    fingerprint.put("maxModelOutputBytes", profile.maxModelOutputBytes());
+    if (binding.expectedRuntimeIdentity() != null) {
+      ObjectNode runtimeIdentity = fingerprint.putObject("expectedRuntimeIdentity");
+      runtimeIdentity.put("upstreamProvider", binding.expectedRuntimeIdentity().upstreamProvider());
+      runtimeIdentity.put("model", binding.expectedRuntimeIdentity().model());
+      runtimeIdentity.put("reasoningEffort", binding.expectedRuntimeIdentity().reasoningEffort());
+      runtimeIdentity.put("sandbox", binding.expectedRuntimeIdentity().sandbox());
+    }
+    String inputFingerprint = sha256(canonicalJson.encodeCanonical(fingerprint));
+    return new ProcessGroupJobIdentity(
+        String.format(java.util.Locale.ROOT, "%08d-%s", work.ordinal(), inputFingerprint),
+        inputFingerprint);
   }
 
   private Consolidation consolidate(
@@ -476,22 +630,26 @@ public final class ProcessExplainer {
     strings(value.putArray("sourceRefs"), activity.sourceRefs());
   }
 
-  private JsonNode callAndValidate(
+  private ValidatedProcessResponse callAndValidate(
+      ModelJobProviderBinding providerBinding,
       String taskKind,
+      String taskId,
       ImmutableBytes input,
       ActivityGroup group,
       ProcessExplanationProfile profile) {
     StructuredModelResponse response;
     try {
       response =
-          provider.generate(
-              new StructuredModelRequest(
-                  taskKind.toLowerCase(),
-                  taskKind,
-                  ProcessPromptCatalog.instructionsFor(taskKind),
-                  input,
-                  processGroupOutputSchema(group, profile),
-                  profile.maxModelOutputBytes()));
+          providerBinding
+              .provider()
+              .generate(
+                  new StructuredModelRequest(
+                      taskId,
+                      taskKind,
+                      ProcessPromptCatalog.instructionsFor(taskKind),
+                      input,
+                      processGroupOutputSchema(group, profile),
+                      profile.maxModelOutputBytes()));
     } catch (RuntimeException failure) {
       throw failure("PROCESS_PROVIDER_FAILED_AFTER_START", failure);
     }
@@ -505,7 +663,11 @@ public final class ProcessExplainer {
       throw failure(taskKind + "_INVALID", invalid);
     }
     validateResponse(parsed, group, profile, taskKind);
-    return parsed;
+    if (providerBinding.expectedRuntimeIdentity() != null
+        && !providerBinding.expectedRuntimeIdentity().equals(response.runtimeIdentity())) {
+      throw failure("PROCESS_JOB_RUNTIME_IDENTITY_MISMATCH", null);
+    }
+    return new ValidatedProcessResponse(parsed, response.runtimeIdentity());
   }
 
   private JsonNode callRepositoryAndValidate(
@@ -853,6 +1015,15 @@ public final class ProcessExplainer {
     values.forEach(node::add);
   }
 
+  private static String sha256(ImmutableBytes bytes) {
+    try {
+      return java.util.HexFormat.of()
+          .formatHex(MessageDigest.getInstance("SHA-256").digest(bytes.copyToByteArray()));
+    } catch (NoSuchAlgorithmException unavailable) {
+      throw new IllegalStateException("SHA-256 is unavailable", unavailable);
+    }
+  }
+
   private String stableId(ActivityGroup group, String localId, ImmutableBytes canonicalProcess) {
     try {
       MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -875,6 +1046,31 @@ public final class ProcessExplainer {
   }
 
   private record ActivityGroup(List<ReviewedActivity> activities, List<String> recallReasons) {}
+
+  private record ProcessGroupWork(int ordinal, ActivityGroup group) {}
+
+  private record ProcessGroupJobIdentity(String jobKey, String inputFingerprint) {}
+
+  private record ProcessGroupResult(
+      int ordinal,
+      List<BusinessProcess> processes,
+      List<String> unmatchedActivityIds,
+      org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1 runtimeIdentity) {
+    private ProcessGroupResult {
+      processes = List.copyOf(processes);
+      unmatchedActivityIds = List.copyOf(unmatchedActivityIds);
+      runtimeIdentity = Objects.requireNonNull(runtimeIdentity, "process job runtime identity");
+    }
+  }
+
+  private record ValidatedProcessResponse(
+      JsonNode value,
+      org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1 runtimeIdentity) {
+    private ValidatedProcessResponse {
+      value = Objects.requireNonNull(value, "validated process response");
+      runtimeIdentity = Objects.requireNonNull(runtimeIdentity, "process runtime identity");
+    }
+  }
 
   private record ModelUnexplainedActivityEntries(
       String materialContext, String reasonCode, List<String> entryKeys) {}

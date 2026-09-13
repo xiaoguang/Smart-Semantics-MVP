@@ -91,8 +91,8 @@
 - docs/modules/java-code-engines/ owns the approved engine Interface,
   JDT/Core internals, common material contract and two-phase migration.
   These are internal Modules, not extra production analysis steps.
-- docs/modules/model-job-execution.md owns the approved, not-yet-implemented
-  Java 17 model job pool, single YAML configuration, Provider/auth binding,
+- docs/modules/model-job-execution.md owns the implemented Java 17 model job
+  pool, single YAML configuration, Provider/auth binding,
   private per-job saving, failure handling and direct verification. Synchronize
   its affected active consumers; preserve historical runs and completed plans.
 
@@ -387,9 +387,9 @@
   The approved job design has the coordinator save each complete reviewed job
   to a private run result immediately, then aggregate in stable material/group
   order and publish once at the existing fixed address. Process publication
-  waits for summary completion or an explicit existing skip. Current
-  ActivityExplainer/ProcessExplainer still publish after their serial loops;
-  per-job saving and concurrency must not be claimed implemented. Workers do
+  waits for summary completion or an explicit existing skip. Activity and
+  process-group jobs now execute with bounded two-level concurrency and
+  private per-job saving before stable aggregate publication. Workers do
   not mutate shared collections or repeatedly install differing bytes at one
   address. Keep Provider/job journal namespaces isolated, execution metadata
   outside model input, and each job submitted once. No recovery subsystem or

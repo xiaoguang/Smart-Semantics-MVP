@@ -1,15 +1,21 @@
 # JDT repository materials run
 
-The commands below describe the current serial, single-provider JSON launcher.
-The approved [model job execution design](../../docs/modules/model-job-execution.md)
-is not implemented: it moves provider settings into the existing `--config`
-document as `sourceAnalysis.modelJobs` YAML, with global and per-provider
-`maxConcurrentJobs` (default global/Pro 4), fixed DRAFT/REVIEW bindings, isolated
-authentication and private completed-job results. Target v2 replaces
-`--provider-config`; its YAML is not executable with today's v1 launcher.
-The v2 technical/material configuration basis remains independently verified,
-so changing concurrency does not require another JDT run. Follow that design
-for new implementation; preserve these current command examples until cutover.
+The launcher now accepts one `repository-run-config-v2` YAML or JSON document.
+In model modes, `sourceAnalysis.modelJobs` replaces the old second
+`--provider-config` file. It validates the global and per-Provider job limits,
+fixed routes, model/effort, non-secret authentication environment references and
+the v2 state identity before it opens a saved materials run. The technical/material
+base identity excludes only `sourceAnalysis.modelJobs`, so a concurrency change
+does not require another JDT run. `materials-only` may omit `modelJobs` and never
+resolves an authentication environment or constructs a Provider.
+
+The launcher executes the approved
+[model job execution design](../../docs/modules/model-job-execution.md).
+Activity and process-group work use bounded global and per-Provider concurrency,
+stable routes, whole DRAFT-to-REVIEW jobs, and private reviewed-result records.
+Codex Subscription and explicit OpenAI Responses API providers can share one
+run without fallback; repository summary and whole-report generation each remain
+a single job after their upstream barrier closes.
 
 `RepositoryRunMain` is a maintenance entry point for one fixed, complete local Git commit.
 `materials-only` captures the configured commit, queues one run, executes the persisted JDT
@@ -68,35 +74,20 @@ The run coordinator can then start the approved materials-only run with Java 17:
   --mode materials-only
 ```
 
-On success the launcher writes an exact state document containing the configuration digest, run ID,
+On success the launcher writes an exact state document containing the base configuration digest, run ID,
 and complete persisted Step 05 publication reference. It also prints the material count and
 checkpoint. An unexpected execution error retains its stack and causal chain on stderr; a rejected
 configuration exits before creating a capture, run, or tool process.
 
 ## Provider continuation
 
-Create this separate, ignored Provider configuration with exactly these five fields. Its paths are
-absolute, `journalDirectory` and `outputDirectory` are existing non-symlink directories, and it
-contains no credential or API-key field. The continuation launcher fixes the model to Luna/high and
-requires the resulting `codex_subscription` / `read-only` runtime identity.
-
-This is the current capability, not proof of strict subscription authentication:
-the current subprocess inherits environment and login-status success alone does
-not establish its auth mode. The approved design requires explicit ChatGPT auth,
-API environment isolation and local-state preflight. It cannot promise to prevent
-use of already-paid account credits; account-side verification is required before
-an authorized subscription-only run. Explicit API routes are future configured
-services, never automatic fallback after a failed call.
-
-```json
-{
-  "schemaVersion": "repository-run-provider-v1",
-  "executable": "/absolute/path/to/codex",
-  "timeoutSeconds": 600,
-  "journalDirectory": "/absolute/path/to/ignored/run-journal",
-  "outputDirectory": "/absolute/path/to/ignored/inspection"
-}
-```
+Add a `sourceAnalysis.modelJobs` block to that same ignored run configuration.
+Codex uses `auth.mode: chatgpt` and a named existing login-context environment
+variable; API keys are environment-variable names, never YAML values. The
+OpenAI API provider uses the official Responses Java SDK with automatic retries
+disabled. Codex Subscription forces ChatGPT authentication in the selected
+`CODEX_HOME` context and removes inherited API-key settings. Routes are fixed
+before dispatch; no Provider failure retries or falls back to another service.
 
 The journal records every complete request field and the expected runtime identity before a Codex
 call. Only an exact completed canonical response is reusable. A `STARTED`, malformed, or
@@ -111,7 +102,6 @@ placeholders with absolute paths and the selected material ID:
   org.sourceanalysis.app.adapter.cli.RepositoryRunMain \
   --config /absolute/path/to/ignored/repository-run.json \
   --mode activities-sample \
-  --provider-config /absolute/path/to/ignored/provider-run.json \
   --material-id "exact-material-id"
 ```
 
@@ -124,8 +114,7 @@ sample is accepted, generate the durable report from the same state and same run
   -cp "target/classes:$(cat target/repository-run-classpath.txt)" \
   org.sourceanalysis.app.adapter.cli.RepositoryRunMain \
   --config /absolute/path/to/ignored/repository-run.json \
-  --mode generate \
-  --provider-config /absolute/path/to/ignored/provider-run.json
+  --mode generate
 ```
 
 Generation prints the run ID, `FINISHED` lifecycle, and the verified on-disk `document.md` path.

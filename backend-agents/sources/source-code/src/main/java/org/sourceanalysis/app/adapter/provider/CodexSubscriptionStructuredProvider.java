@@ -22,6 +22,7 @@ public final class CodexSubscriptionStructuredProvider implements StructuredMode
       CodexSubscriptionProfile profile, CodexSubscriptionCommand command) {
     this.profile = Objects.requireNonNull(profile, "Codex Subscription profile");
     this.command = Objects.requireNonNull(command, "Codex Subscription command");
+    this.command.preflight(this.profile);
   }
 
   @Override

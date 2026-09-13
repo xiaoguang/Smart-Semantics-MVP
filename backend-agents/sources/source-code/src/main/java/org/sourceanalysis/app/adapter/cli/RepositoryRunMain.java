@@ -1,29 +1,39 @@
 package org.sourceanalysis.app.adapter.cli;
 
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import org.sourceanalysis.app.adapter.provider.CodexSubscriptionProfile;
 import org.sourceanalysis.app.adapter.provider.CodexSubscriptionStructuredProvider;
+import org.sourceanalysis.app.adapter.provider.OpenAiResponsesProfile;
+import org.sourceanalysis.app.adapter.provider.OpenAiResponsesStructuredProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.analysis.discovery.DiscoveryProfile;
 import org.sourceanalysis.app.analysis.document.BusinessReportProfile;
@@ -34,6 +44,7 @@ import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplainer;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationProfile;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationResult;
+import org.sourceanalysis.app.analysis.interpretation.activity.ActivityJobExecutionConfiguration;
 import org.sourceanalysis.app.analysis.interpretation.activity.ExplainActivitiesRequest;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
@@ -82,26 +93,31 @@ import org.sourceanalysis.app.runtime.PersistedTechnicalRunExecutor;
 import org.sourceanalysis.app.runtime.RepositoryAnalysisRunCoordinator;
 import org.sourceanalysis.app.runtime.SourceAnalysisApplication;
 import org.sourceanalysis.app.runtime.TechnicalAnalysisWorkflowResult;
+import org.sourceanalysis.app.runtime.modeljob.ModelJobExecutionConfiguration;
+import org.sourceanalysis.app.runtime.modeljob.ModelJobProviderBinding;
 
 /**
  * Explicit maintenance launcher for one complete, frozen JDT repository material-planning run.
  *
  * <p>It is intentionally not another public analysis adapter. The configuration is resolved here,
  * then the existing application, capture, canonical-store, technical, and material-building seams
- * execute once. This initial launcher mode never constructs or calls a live model provider.
+ * execute once. The materials-only mode never constructs a model Provider; continuation modes use
+ * the validated model-job routes and bounded execution configuration.
  */
 public final class RepositoryRunMain {
 
   private static final String MODE_MATERIALS_ONLY = "materials-only";
   private static final String MODE_ACTIVITIES_SAMPLE = "activities-sample";
   private static final String MODE_GENERATE = "generate";
-  private static final String CONFIG_SCHEMA = "repository-run-config-v1";
-  private static final String PROVIDER_CONFIG_SCHEMA = "repository-run-provider-v1";
+  private static final String CONFIG_SCHEMA = "repository-run-config-v2";
   private static final String POLICY_SCHEMA = "artifact-policy-registry-policy-set-v1";
-  private static final String STATE_SCHEMA = "repository-run-materials-state-v1";
+  private static final String STATE_SCHEMA = "repository-run-state-v2";
+  private static final String MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA =
+      "model-job-execution-config-v1";
   private static final String POLICY_ID_DOMAIN = "canonical-artifact-policy-registry-id-v2";
   private static final int CONFIG_MAX_BYTES = 1_048_576;
   private static final ObjectMapper JSON = new ObjectMapper();
+  private static final ObjectMapper YAML = yaml();
 
   private RepositoryRunMain() {}
 
@@ -113,17 +129,12 @@ public final class RepositoryRunMain {
     try {
       Arguments parsed = Arguments.parse(arguments);
       RepositoryRunConfiguration configuration = RepositoryRunConfiguration.load(parsed.config());
+      parsed.rejectLegacyProviderConfiguration();
       switch (parsed.mode()) {
         case MODE_MATERIALS_ONLY -> executeMaterialsOnly(configuration, output, errors);
         case MODE_ACTIVITIES_SAMPLE ->
-            executeActivitiesSample(
-                configuration,
-                ProviderRunConfiguration.load(parsed.providerConfig()),
-                parsed.materialId(),
-                output);
-        case MODE_GENERATE ->
-            executeGenerate(
-                configuration, ProviderRunConfiguration.load(parsed.providerConfig()), output);
+            executeActivitiesSample(configuration, parsed.materialId(), output);
+        case MODE_GENERATE -> executeGenerate(configuration, output);
         default -> throw failure("MODE_UNSUPPORTED");
       }
       output.flush();
@@ -258,23 +269,24 @@ public final class RepositoryRunMain {
   }
 
   private static void executeActivitiesSample(
-      RepositoryRunConfiguration configuration,
-      ProviderRunConfiguration providerConfiguration,
-      String materialId,
-      PrintWriter output) {
+      RepositoryRunConfiguration configuration, String materialId, PrintWriter output) {
+    ModelJobsConfiguration modelJobs = configuration.requireModelJobsForExecution();
     SavedMaterialsState state = SavedMaterialsState.load(configuration);
     try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
       requireRunningState(store, state);
-      StructuredModelProvider provider = provider(providerConfiguration);
-      PersistedBusinessRunExecutor business = businessExecutor(configuration, store, provider);
+      writeModelJobExecutionConfiguration(configuration, modelJobs, state.runId());
+      ModelJobExecutionConfiguration execution =
+          modelJobExecutionConfiguration(modelJobs, state.runId());
+      PersistedBusinessRunExecutor business =
+          businessExecutor(
+              configuration, store, execution.binding("processGroup", 0).provider(), null);
       try {
         BusinessMaterialBuildResult materials = business.buildMaterials(state.businessFlows());
         BusinessMaterialBuildResult sample = exactSample(materials, materialId);
         ActivityExplanationResult result =
-            new ActivityExplainer(provider)
+            ActivityExplainer.forExecution(execution)
                 .explain(new ExplainActivitiesRequest(sample, configuration.activityProfile(), 1));
-        Path resultFile =
-            writeSampleResult(providerConfiguration.outputDirectory(), materialId, result);
+        Path resultFile = writeSampleResult(modelJobs.outputDirectory(), materialId, result);
         output.printf("runId=%s%n", state.runId().value());
         output.printf("activitySampleFile=%s%n", resultFile);
       } catch (RuntimeException failure) {
@@ -285,14 +297,15 @@ public final class RepositoryRunMain {
   }
 
   private static void executeGenerate(
-      RepositoryRunConfiguration configuration,
-      ProviderRunConfiguration providerConfiguration,
-      PrintWriter output) {
+      RepositoryRunConfiguration configuration, PrintWriter output) {
+    ModelJobsConfiguration modelJobs = configuration.requireModelJobsForExecution();
     SavedMaterialsState state = SavedMaterialsState.load(configuration);
     try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
       requireRunningState(store, state);
-      PersistedBusinessRunExecutor business =
-          businessExecutor(configuration, store, provider(providerConfiguration));
+      writeModelJobExecutionConfiguration(configuration, modelJobs, state.runId());
+      ModelJobExecutionConfiguration execution =
+          modelJobExecutionConfiguration(modelJobs, state.runId());
+      PersistedBusinessRunExecutor business = businessExecutor(configuration, store, execution);
       try {
         BusinessAnalysisWorkflowResult result = business.execute(state.businessFlows());
         AnalysisRunOutput runOutput =
@@ -322,7 +335,8 @@ public final class RepositoryRunMain {
   private static PersistedBusinessRunExecutor businessExecutor(
       RepositoryRunConfiguration configuration,
       RunStoreHandle store,
-      StructuredModelProvider provider) {
+      StructuredModelProvider provider,
+      ActivityJobExecutionConfiguration activityJobs) {
     CanonicalModuleArtifactStore modules =
         new FileSystemCanonicalModuleArtifactStore(
             store,
@@ -342,18 +356,148 @@ public final class RepositoryRunMain {
         steps,
         new PersistedVerifiedSourceTextReader(steps, sourceRegistry),
         provider,
-        configuration.businessConfiguration());
+        configuration.businessConfiguration(),
+        activityJobs);
   }
 
-  private static StructuredModelProvider provider(ProviderRunConfiguration configuration) {
+  private static PersistedBusinessRunExecutor businessExecutor(
+      RepositoryRunConfiguration configuration,
+      RunStoreHandle store,
+      ModelJobExecutionConfiguration modelJobs) {
+    CanonicalModuleArtifactStore modules =
+        new FileSystemCanonicalModuleArtifactStore(
+            store,
+            configuration.canonicalJson(),
+            configuration.policyRegistry(),
+            configuration.storeLimits());
+    CanonicalAnalysisStepArtifactStore steps =
+        new FileSystemCanonicalAnalysisStepArtifactStore(
+            store,
+            configuration.canonicalJson(),
+            configuration.policyRegistry(),
+            configuration.storeLimits());
+    LocalGitSourceRegistry sourceRegistry =
+        new LocalGitSourceRegistry(configuration.captureWorkspace());
+    return new PersistedBusinessRunExecutor(
+        modules,
+        steps,
+        new PersistedVerifiedSourceTextReader(steps, sourceRegistry),
+        configuration.businessConfiguration(),
+        modelJobs);
+  }
+
+  /** Maps one configured binding for legacy direct inspection and single-Provider seams. */
+  private static ActivityJobExecutionConfiguration activityJobExecutionConfiguration(
+      ModelJobsConfiguration modelJobs, String providerBindingKey, AnalysisRunId runId) {
+    ModelJobProviderConfiguration provider = modelJobs.provider(providerBindingKey);
+    String upstream =
+        provider.kind() == ModelProviderKind.CODEX_SUBSCRIPTION
+            ? "codex_subscription"
+            : "openai_api";
+    return new ActivityJobExecutionConfiguration(
+        Math.min(modelJobs.maxConcurrentJobs(), provider.maxConcurrentJobs()),
+        providerBindingKey,
+        provider.quotaScope(),
+        modelJobs.journalDirectory(),
+        runId,
+        new ModelRuntimeIdentityV1(
+            upstream, provider.model(), provider.reasoningEffort(), "read-only"));
+  }
+
+  private static ModelJobExecutionConfiguration modelJobExecutionConfiguration(
+      ModelJobsConfiguration modelJobs, AnalysisRunId runId) {
+    Map<String, ModelJobProviderBinding> providers = new LinkedHashMap<>();
+    modelJobs.providers().entrySet().stream()
+        .sorted(Map.Entry.comparingByKey())
+        .forEach(
+            entry ->
+                providers.put(
+                    entry.getKey(), providerBinding(modelJobs, entry.getKey(), entry.getValue())));
+    return new ModelJobExecutionConfiguration(
+        modelJobs.maxConcurrentJobs(),
+        providers,
+        modelJobs.routing(),
+        modelJobs.journalDirectory(),
+        runId);
+  }
+
+  private static ModelJobProviderBinding providerBinding(
+      ModelJobsConfiguration modelJobs,
+      String providerKey,
+      ModelJobProviderConfiguration configuration) {
+    String upstream =
+        configuration.kind() == ModelProviderKind.CODEX_SUBSCRIPTION
+            ? "codex_subscription"
+            : "openai_api";
     ModelRuntimeIdentityV1 expected =
-        new ModelRuntimeIdentityV1("codex_subscription", "gpt-5.6-luna", "high", "read-only");
-    return new RunJournalStructuredProvider(
-        configuration.journalDirectory(),
-        expected,
-        new CodexSubscriptionStructuredProvider(
-            new CodexSubscriptionProfile(
-                configuration.executable(), "gpt-5.6-luna", "high", configuration.timeout())));
+        new ModelRuntimeIdentityV1(
+            upstream, configuration.model(), configuration.reasoningEffort(), "read-only");
+    Path providerJournal = providerJournalDirectory(modelJobs.journalDirectory(), providerKey);
+    List<StructuredModelProvider> clients =
+        configuration.authentication().environmentNames().stream()
+            .map(
+                environmentName ->
+                    journaledProvider(configuration, environmentName, providerJournal, expected))
+            .toList();
+    return new ModelJobProviderBinding(
+        providerKey,
+        configuration.quotaScope(),
+        configuration.maxConcurrentJobs(),
+        clients,
+        expected);
+  }
+
+  private static StructuredModelProvider journaledProvider(
+      ModelJobProviderConfiguration configuration,
+      String environmentName,
+      Path providerJournal,
+      ModelRuntimeIdentityV1 expected) {
+    String credential = System.getenv(environmentName);
+    if (credential == null || credential.isBlank()) {
+      throw failure("MODEL_AUTH_ENV_MISSING");
+    }
+    StructuredModelProvider delegate;
+    if (configuration.kind() == ModelProviderKind.CODEX_SUBSCRIPTION) {
+      delegate =
+          new CodexSubscriptionStructuredProvider(
+              new CodexSubscriptionProfile(
+                  configuration.executable(),
+                  Path.of(credential),
+                  configuration.model(),
+                  configuration.reasoningEffort(),
+                  configuration.timeout()));
+    } else {
+      delegate =
+          new OpenAiResponsesStructuredProvider(
+              new OpenAiResponsesProfile(
+                  URI.create(configuration.endpoint()),
+                  credential,
+                  configuration.model(),
+                  configuration.reasoningEffort(),
+                  configuration.timeout()));
+    }
+    return new RunJournalStructuredProvider(providerJournal, expected, delegate);
+  }
+
+  private static Path providerJournalDirectory(Path journalRoot, String providerKey) {
+    Path providers = checkedDirectory(journalRoot, "providers");
+    return checkedDirectory(providers, providerKey);
+  }
+
+  private static Path checkedDirectory(Path parent, String name) {
+    Path child = parent.resolve(name);
+    try {
+      if (Files.exists(child, LinkOption.NOFOLLOW_LINKS)) {
+        if (Files.isSymbolicLink(child) || !Files.isDirectory(child, LinkOption.NOFOLLOW_LINKS)) {
+          throw failure("MODEL_JOURNAL_DIRECTORY_INVALID");
+        }
+      } else {
+        Files.createDirectory(child);
+      }
+      return child.toRealPath();
+    } catch (IOException | SecurityException invalid) {
+      throw failure("MODEL_JOURNAL_DIRECTORY_INVALID", invalid);
+    }
   }
 
   private static void requireRunningState(RunStoreHandle store, SavedMaterialsState state) {
@@ -445,7 +589,7 @@ public final class RepositoryRunMain {
     }
     ObjectNode state = JsonNodeFactory.instance.objectNode();
     state.put("schemaVersion", STATE_SCHEMA);
-    state.put("configurationSha256", configuration.configurationSha256().value());
+    state.put("baseConfigurationSha256", configuration.baseConfigurationSha256().value());
     state.put("runId", running.runId().value());
     ObjectNode flow = state.putObject("businessFlowsPublication");
     flow.put("analysisStepArtifactRoot", reference.analysisStepArtifactRoot().value());
@@ -458,6 +602,30 @@ public final class RepositoryRunMain {
         configuration.canonicalJson().encodeCanonical(state).copyToByteArray(),
         "STATE_DESTINATION_INVALID",
         "STATE_WRITE_FAILED");
+  }
+
+  private static void writeModelJobExecutionConfiguration(
+      RepositoryRunConfiguration configuration,
+      ModelJobsConfiguration modelJobs,
+      AnalysisRunId runId) {
+    ObjectNode record = JsonNodeFactory.instance.objectNode();
+    record.put("schemaVersion", MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA);
+    record.put("runId", runId.value());
+    record.put("modelJobsSha256", modelJobs.canonicalSha256());
+    record.set("modelJobs", modelJobs.normalizedNonSecretDocument());
+    Path destination =
+        modelJobs
+            .journalDirectory()
+            .resolve(
+                "model-job-execution-"
+                    + sha256(runId.value().getBytes(StandardCharsets.UTF_8))
+                    + ".json");
+    writeIdempotentlyAtomically(
+        destination,
+        configuration.canonicalJson().encodeCanonical(record).copyToByteArray(),
+        "MODEL_EXECUTION_CONFIGURATION_DESTINATION_INVALID",
+        "MODEL_EXECUTION_CONFIGURATION_CONFLICT",
+        "MODEL_EXECUTION_CONFIGURATION_WRITE_FAILED");
   }
 
   private static void requireFreshStateDestination(Path stateFile) {
@@ -515,6 +683,58 @@ public final class RepositoryRunMain {
     }
   }
 
+  private static void writeIdempotentlyAtomically(
+      Path destination,
+      byte[] bytes,
+      String destinationInvalidCode,
+      String conflictCode,
+      String writeFailedCode) {
+    Path temporary = null;
+    try {
+      Path parent = destination.getParent();
+      if (parent == null
+          || Files.isSymbolicLink(parent)
+          || !Files.isDirectory(parent, LinkOption.NOFOLLOW_LINKS)
+          || Files.isSymbolicLink(destination)) {
+        throw failure(destinationInvalidCode);
+      }
+      if (Files.exists(destination, LinkOption.NOFOLLOW_LINKS)) {
+        requireIdenticalExisting(destination, bytes, conflictCode);
+        return;
+      }
+      temporary = Files.createTempFile(parent, ".repository-run-", ".tmp");
+      Files.write(temporary, bytes);
+      try {
+        // createLink never replaces an existing destination. Moving with ATOMIC_MOVE leaves
+        // replacement semantics implementation-defined when a concurrent writer wins.
+        Files.createLink(destination, temporary);
+      } catch (FileAlreadyExistsException raced) {
+        requireIdenticalExisting(destination, bytes, conflictCode);
+      } catch (UnsupportedOperationException unavailable) {
+        throw failure(writeFailedCode, unavailable);
+      }
+    } catch (IOException failure) {
+      throw failure(writeFailedCode, failure);
+    } finally {
+      if (temporary != null) {
+        try {
+          Files.deleteIfExists(temporary);
+        } catch (IOException ignored) {
+          // A completed destination or rejected collision remains authoritative.
+        }
+      }
+    }
+  }
+
+  private static void requireIdenticalExisting(
+      Path destination, byte[] expected, String conflictCode) throws IOException {
+    if (!Files.isRegularFile(destination, LinkOption.NOFOLLOW_LINKS)
+        || Files.isSymbolicLink(destination)
+        || !Arrays.equals(expected, Files.readAllBytes(destination))) {
+      throw failure(conflictCode);
+    }
+  }
+
   private static String code(Throwable failure) {
     if (failure instanceof LauncherException launcher) {
       return launcher.code();
@@ -530,7 +750,7 @@ public final class RepositoryRunMain {
     return new LauncherException(code, cause);
   }
 
-  private record Arguments(Path config, String mode, Path providerConfig, String materialId) {
+  private record Arguments(Path config, String mode, Path legacyProviderConfig, String materialId) {
 
     private static Arguments parse(String[] arguments) {
       if (arguments.length < 4
@@ -547,12 +767,20 @@ public final class RepositoryRunMain {
         return new Arguments(config, mode, null, null);
       }
       if (MODE_GENERATE.equals(mode)) {
+        if (arguments.length == 4) {
+          return new Arguments(config, mode, null, null);
+        }
         if (arguments.length != 6 || !"--provider-config".equals(arguments[4])) {
           throw failure("ARGUMENTS_INVALID");
         }
         return new Arguments(config, mode, argumentPath(arguments[5]), null);
       }
       if (MODE_ACTIVITIES_SAMPLE.equals(mode)) {
+        if (arguments.length == 6
+            && "--material-id".equals(arguments[4])
+            && !arguments[5].isBlank()) {
+          return new Arguments(config, mode, null, arguments[5]);
+        }
         if (arguments.length != 8
             || !"--provider-config".equals(arguments[4])
             || !"--material-id".equals(arguments[6])
@@ -563,35 +791,398 @@ public final class RepositoryRunMain {
       }
       return new Arguments(config, mode, null, null);
     }
+
+    private void rejectLegacyProviderConfiguration() {
+      if (legacyProviderConfig != null) {
+        throw failure("ARGUMENTS_INVALID");
+      }
+    }
   }
 
-  private record ProviderRunConfiguration(
-      Path executable, Duration timeout, Path journalDirectory, Path outputDirectory) {
+  private enum ModelProviderKind {
+    CODEX_SUBSCRIPTION,
+    OPENAI_API
+  }
 
-    private static ProviderRunConfiguration load(Path providerConfig) {
-      CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
-      ObjectNode document = readConfiguration(providerConfig, canonicalJson);
-      requireFields(
+  static record ModelJobsConfiguration(
+      int maxConcurrentJobs,
+      Map<String, ModelJobProviderConfiguration> providers,
+      Map<String, List<String>> routing,
+      Path journalDirectory,
+      Path outputDirectory,
+      String canonicalSha256) {
+
+    private static final Set<String> ROUTES =
+        Set.of("activity", "processGroup", "repositorySummary", "report");
+
+    ModelJobsConfiguration {
+      providers = Map.copyOf(providers);
+      routing = Map.copyOf(routing);
+    }
+
+    private static ModelJobsConfiguration load(
+        ObjectNode document, CanonicalJsonCodec canonicalJson) {
+      requireFieldsAllowingOptional(
           document,
-          Set.of(
-              "executable",
-              "journalDirectory",
-              "outputDirectory",
-              "schemaVersion",
-              "timeoutSeconds"));
-      requireText(document, "schemaVersion", PROVIDER_CONFIG_SCHEMA);
-      Path executable = absolutePath(requiredText(document, "executable"), "Codex executable");
-      Path journalDirectory =
-          absolutePath(requiredText(document, "journalDirectory"), "journal directory");
-      Path outputDirectory =
-          absolutePath(requiredText(document, "outputDirectory"), "output directory");
+          Set.of("providers", "routing"),
+          Set.of("journalDirectory", "maxConcurrentJobs", "outputDirectory"));
+      int globalCap =
+          document.has("maxConcurrentJobs") ? positiveInt(document, "maxConcurrentJobs") : 4;
+      Path journalDirectory = optionalAbsolutePath(document, "journalDirectory");
+      Path outputDirectory = optionalAbsolutePath(document, "outputDirectory");
+      if ((journalDirectory == null) != (outputDirectory == null)) {
+        throw failure("CONFIGURATION_INVALID");
+      }
+
+      ObjectNode providersNode = object(document, "providers");
+      if (providersNode.isEmpty()) {
+        throw failure("CONFIGURATION_INVALID");
+      }
+      Map<String, ModelJobProviderConfiguration> providers = new LinkedHashMap<>();
+      Set<String> quotaScopes = new java.util.HashSet<>();
+      for (java.util.Iterator<Map.Entry<String, JsonNode>> entries = providersNode.fields();
+          entries.hasNext(); ) {
+        Map.Entry<String, JsonNode> entry = entries.next();
+        String providerKey = entry.getKey();
+        if (!providerKey.matches("[a-z][a-z0-9-]{0,47}")
+            || !(entry.getValue() instanceof ObjectNode value)) {
+          throw failure("CONFIGURATION_INVALID");
+        }
+        ModelJobProviderConfiguration provider = ModelJobProviderConfiguration.load(value);
+        if (providers.put(providerKey, provider) != null
+            || !quotaScopes.add(provider.quotaScope())) {
+          throw failure("CONFIGURATION_INVALID");
+        }
+      }
+
+      ObjectNode routingNode = object(document, "routing");
+      requireFields(routingNode, ROUTES);
+      Map<String, List<String>> routing = new LinkedHashMap<>();
+      for (String route : List.of("activity", "processGroup", "repositorySummary", "report")) {
+        JsonNode configured = routingNode.get(route);
+        if (!(configured instanceof ArrayNode configuredProviders)
+            || configuredProviders.isEmpty()) {
+          throw failure("CONFIGURATION_INVALID");
+        }
+        List<String> providerKeys = new java.util.ArrayList<>(configuredProviders.size());
+        for (JsonNode providerKey : configuredProviders) {
+          if (!providerKey.isTextual()
+              || providerKey.textValue().isBlank()
+              || !providers.containsKey(providerKey.textValue())
+              || providerKeys.contains(providerKey.textValue())) {
+            throw failure("CONFIGURATION_INVALID");
+          }
+          providerKeys.add(providerKey.textValue());
+        }
+        routing.put(route, List.copyOf(providerKeys));
+      }
+
+      ObjectNode normalized =
+          normalizedNonSecretDocument(
+              globalCap, journalDirectory, outputDirectory, providers, routing);
+      return new ModelJobsConfiguration(
+          globalCap,
+          providers,
+          routing,
+          journalDirectory,
+          outputDirectory,
+          sha256(canonicalJson.encodeCanonical(normalized).copyToByteArray()));
+    }
+
+    private ModelJobProviderConfiguration provider(String key) {
+      ModelJobProviderConfiguration provider = providers.get(key);
+      if (provider == null) {
+        throw failure("CONFIGURATION_INVALID");
+      }
+      return provider;
+    }
+
+    private void validateExecutionEnvironment() {
       requireExistingDirectory(journalDirectory, "CONFIGURATION_INVALID");
       requireExistingDirectory(outputDirectory, "CONFIGURATION_INVALID");
-      return new ProviderRunConfiguration(
-          executable,
-          Duration.ofSeconds(positiveInt(document, "timeoutSeconds")),
-          journalDirectory,
-          outputDirectory);
+      Set<String> resolvedCredentials = new java.util.HashSet<>();
+      for (ModelJobProviderConfiguration provider : providers.values()) {
+        provider.validateExecutionEnvironment();
+        for (String credential : provider.authentication().resolvedCredentialIdentities()) {
+          if (!resolvedCredentials.add(credential)) {
+            throw failure("CONFIGURATION_INVALID");
+          }
+        }
+      }
+    }
+
+    private ModelJobProviderConfiguration requireCurrentSerialCodexProvider() {
+      return provider(requireCurrentSerialCodexProviderKey());
+    }
+
+    private String requireCurrentSerialCodexProviderKey() {
+      List<String> activityRoute = routing.get("activity");
+      if (activityRoute == null || activityRoute.size() != 1) {
+        throw failure("MODEL_ROUTING_UNSUPPORTED");
+      }
+      String providerKey = activityRoute.get(0);
+      for (String route : List.of("processGroup", "repositorySummary", "report")) {
+        if (!List.of(providerKey).equals(routing.get(route))) {
+          throw failure("MODEL_ROUTING_UNSUPPORTED");
+        }
+      }
+      ModelJobProviderConfiguration configuration = provider(providerKey);
+      if (configuration.kind() != ModelProviderKind.CODEX_SUBSCRIPTION) {
+        throw failure("MODEL_PROVIDER_UNSUPPORTED");
+      }
+      return providerKey;
+    }
+
+    ObjectNode normalizedNonSecretDocument() {
+      return normalizedNonSecretDocument(
+          maxConcurrentJobs, journalDirectory, outputDirectory, providers, routing);
+    }
+
+    private static ObjectNode normalizedNonSecretDocument(
+        int globalCap,
+        Path journalDirectory,
+        Path outputDirectory,
+        Map<String, ModelJobProviderConfiguration> providers,
+        Map<String, List<String>> routing) {
+      ObjectNode normalized = JsonNodeFactory.instance.objectNode();
+      normalized.put("maxConcurrentJobs", globalCap);
+      if (journalDirectory == null) {
+        normalized.putNull("journalDirectory");
+      } else {
+        normalized.put("journalDirectory", journalDirectory.toString());
+      }
+      if (outputDirectory == null) {
+        normalized.putNull("outputDirectory");
+      } else {
+        normalized.put("outputDirectory", outputDirectory.toString());
+      }
+      ObjectNode normalizedProviders = normalized.putObject("providers");
+      providers.entrySet().stream()
+          .sorted(Map.Entry.comparingByKey())
+          .forEach(
+              entry ->
+                  normalizedProviders.set(
+                      entry.getKey(), entry.getValue().normalizedNonSecretNode()));
+      ObjectNode normalizedRouting = normalized.putObject("routing");
+      for (String route : List.of("activity", "processGroup", "repositorySummary", "report")) {
+        ArrayNode values = normalizedRouting.putArray(route);
+        routing.get(route).forEach(values::add);
+      }
+      return normalized;
+    }
+  }
+
+  static record ModelJobProviderConfiguration(
+      ModelProviderKind kind,
+      String quotaScope,
+      int maxConcurrentJobs,
+      String model,
+      String reasoningEffort,
+      Duration timeout,
+      Path executable,
+      String endpoint,
+      ModelJobAuthentication authentication) {
+
+    private static final Set<String> SUPPORTED_REASONING_EFFORTS =
+        Set.of("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra");
+    private static final String MODEL_PATTERN = "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}";
+
+    private static ModelJobProviderConfiguration load(ObjectNode document) {
+      String kind = requiredText(document, "kind");
+      return switch (kind) {
+        case "codexSubscription" -> loadCodex(document);
+        case "openaiApi" -> loadOpenAi(document);
+        default -> throw failure("CONFIGURATION_INVALID");
+      };
+    }
+
+    private static ModelJobProviderConfiguration loadCodex(ObjectNode document) {
+      requireFieldsAllowingOptional(
+          document,
+          Set.of("auth", "kind", "quotaScope"),
+          Set.of("executable", "maxConcurrentJobs", "model", "reasoningEffort", "timeoutSeconds"));
+      ModelJobAuthentication authentication =
+          ModelJobAuthentication.loadCodex(object(document, "auth"));
+      String model = document.has("model") ? requiredText(document, "model") : "gpt-5.6-luna";
+      String reasoningEffort =
+          document.has("reasoningEffort") ? requiredText(document, "reasoningEffort") : "high";
+      requireSupportedModelDeclaration(model, reasoningEffort);
+      return new ModelJobProviderConfiguration(
+          ModelProviderKind.CODEX_SUBSCRIPTION,
+          quotaScope(document),
+          document.has("maxConcurrentJobs") ? positiveInt(document, "maxConcurrentJobs") : 4,
+          model,
+          reasoningEffort,
+          timeout(document),
+          document.has("executable")
+              ? absolutePath(requiredText(document, "executable"), "Codex executable")
+              : null,
+          null,
+          authentication);
+    }
+
+    private static ModelJobProviderConfiguration loadOpenAi(ObjectNode document) {
+      requireFieldsAllowingOptional(
+          document,
+          Set.of("auth", "kind", "maxConcurrentJobs", "model", "quotaScope", "reasoningEffort"),
+          Set.of("endpoint", "timeoutSeconds"));
+      String endpoint =
+          document.has("endpoint")
+              ? requiredText(document, "endpoint")
+              : "https://api.openai.com/v1";
+      requireSupportedHttpsEndpoint(endpoint);
+      String model = requiredText(document, "model");
+      String reasoningEffort = requiredText(document, "reasoningEffort");
+      requireSupportedModelDeclaration(model, reasoningEffort);
+      return new ModelJobProviderConfiguration(
+          ModelProviderKind.OPENAI_API,
+          quotaScope(document),
+          positiveInt(document, "maxConcurrentJobs"),
+          model,
+          reasoningEffort,
+          timeout(document),
+          null,
+          endpoint,
+          ModelJobAuthentication.loadApi(object(document, "auth")));
+    }
+
+    private static String quotaScope(ObjectNode document) {
+      String scope = requiredText(document, "quotaScope");
+      if (scope.length() > 256) {
+        throw failure("CONFIGURATION_INVALID");
+      }
+      return scope;
+    }
+
+    private static Duration timeout(ObjectNode document) {
+      return Duration.ofSeconds(
+          document.has("timeoutSeconds") ? positiveInt(document, "timeoutSeconds") : 600);
+    }
+
+    private static void requireSupportedModelDeclaration(String model, String reasoningEffort) {
+      if (!model.matches(MODEL_PATTERN) || !SUPPORTED_REASONING_EFFORTS.contains(reasoningEffort)) {
+        throw failure("CONFIGURATION_INVALID");
+      }
+    }
+
+    private void validateExecutionEnvironment() {
+      authentication.validateEnvironment();
+      if (kind == ModelProviderKind.CODEX_SUBSCRIPTION) {
+        try {
+          if (executable == null
+              || !Files.isRegularFile(executable, LinkOption.NOFOLLOW_LINKS)
+              || Files.isSymbolicLink(executable)
+              || !Files.isExecutable(executable)) {
+            throw failure("CONFIGURATION_INVALID");
+          }
+        } catch (SecurityException failure) {
+          throw failure("CONFIGURATION_INVALID", failure);
+        }
+      }
+    }
+
+    private ObjectNode normalizedNonSecretNode() {
+      ObjectNode normalized = JsonNodeFactory.instance.objectNode();
+      normalized.put(
+          "kind", kind == ModelProviderKind.CODEX_SUBSCRIPTION ? "codexSubscription" : "openaiApi");
+      normalized.put("quotaScope", quotaScope);
+      normalized.put("maxConcurrentJobs", maxConcurrentJobs);
+      normalized.put("model", model);
+      normalized.put("reasoningEffort", reasoningEffort);
+      normalized.put("timeoutSeconds", timeout.toSeconds());
+      if (kind == ModelProviderKind.CODEX_SUBSCRIPTION) {
+        if (executable == null) {
+          normalized.putNull("executable");
+        } else {
+          normalized.put("executable", executable.toString());
+        }
+      } else {
+        normalized.put("endpoint", endpoint);
+      }
+      normalized.set("auth", authentication.identityNode());
+      return normalized;
+    }
+  }
+
+  static record ModelJobAuthentication(String mode, List<String> environmentNames) {
+
+    private static ModelJobAuthentication loadCodex(ObjectNode document) {
+      requireFields(document, Set.of("codexHomeEnv", "mode"));
+      requireText(document, "mode", "chatgpt");
+      return new ModelJobAuthentication(
+          "chatgpt", List.of(environmentName(document, "codexHomeEnv")));
+    }
+
+    private static ModelJobAuthentication loadApi(ObjectNode document) {
+      requireFields(document, Set.of("apiKeyEnvs", "mode"));
+      requireText(document, "mode", "apiKey");
+      JsonNode configured = document.get("apiKeyEnvs");
+      if (!(configured instanceof ArrayNode names) || names.isEmpty()) {
+        throw failure("CONFIGURATION_INVALID");
+      }
+      List<String> environmentNames = new java.util.ArrayList<>(names.size());
+      for (JsonNode name : names) {
+        if (!name.isTextual()
+            || !name.textValue().matches("[A-Z_][A-Z0-9_]*")
+            || environmentNames.contains(name.textValue())) {
+          throw failure("CONFIGURATION_INVALID");
+        }
+        environmentNames.add(name.textValue());
+      }
+      return new ModelJobAuthentication("apiKey", List.copyOf(environmentNames));
+    }
+
+    private static String environmentName(ObjectNode document, String field) {
+      String name = requiredText(document, field);
+      if (!name.matches("[A-Z_][A-Z0-9_]*")) {
+        throw failure("CONFIGURATION_INVALID");
+      }
+      return name;
+    }
+
+    private void validateEnvironment() {
+      for (String environmentName : environmentNames) {
+        String value = System.getenv(environmentName);
+        if (value == null || value.isBlank()) {
+          throw failure("CONFIGURATION_INVALID");
+        }
+        if ("chatgpt".equals(mode)) {
+          Path context = absolutePath(value, "Codex home context");
+          requireExistingDirectory(context, "CONFIGURATION_INVALID");
+        }
+      }
+    }
+
+    private List<String> resolvedCredentialIdentities() {
+      List<String> identities = new java.util.ArrayList<>(environmentNames.size());
+      for (String environmentName : environmentNames) {
+        String value = System.getenv(environmentName);
+        if (value == null || value.isBlank()) {
+          throw failure("CONFIGURATION_INVALID");
+        }
+        if ("chatgpt".equals(mode)) {
+          try {
+            identities.add("chatgpt:" + Path.of(value).toRealPath());
+          } catch (IOException | InvalidPathException | SecurityException invalid) {
+            throw failure("CONFIGURATION_INVALID", invalid);
+          }
+        } else {
+          identities.add("api-key:" + value);
+        }
+      }
+      return List.copyOf(identities);
+    }
+
+    private ObjectNode identityNode() {
+      ObjectNode identity = JsonNodeFactory.instance.objectNode();
+      identity.put("mode", mode);
+      if ("chatgpt".equals(mode)) {
+        identity.put("codexHomeEnv", environmentNames.get(0));
+      } else {
+        ArrayNode names = identity.putArray("apiKeyEnvs");
+        environmentNames.forEach(names::add);
+      }
+      return identity;
     }
   }
 
@@ -601,14 +1192,14 @@ public final class RepositoryRunMain {
       ObjectNode document = readState(configuration.stateFile(), configuration.canonicalJson());
       requireStateFields(
           document,
-          Set.of("businessFlowsPublication", "configurationSha256", "runId", "schemaVersion"));
+          Set.of("baseConfigurationSha256", "businessFlowsPublication", "runId", "schemaVersion"));
       if (!STATE_SCHEMA.equals(stateText(document, "schemaVersion"))) {
         throw failure("MATERIALS_STATE_INVALID");
       }
       if (!configuration
-          .configurationSha256()
+          .baseConfigurationSha256()
           .value()
-          .equals(stateText(document, "configurationSha256"))) {
+          .equals(stateText(document, "baseConfigurationSha256"))) {
         throw failure("MATERIALS_STATE_CONFIGURATION_MISMATCH");
       }
       try {
@@ -666,9 +1257,10 @@ public final class RepositoryRunMain {
     }
   }
 
-  private record RepositoryRunConfiguration(
+  static record RepositoryRunConfiguration(
       CanonicalJsonCodec canonicalJson,
-      Sha256Digest configurationSha256,
+      Sha256Digest baseConfigurationSha256,
+      ModelJobsConfiguration modelJobs,
       CanonicalArtifactPolicyRegistry policyRegistry,
       Path repositoryPath,
       String repositoryIdentity,
@@ -702,7 +1294,7 @@ public final class RepositoryRunMain {
       BusinessReportProfile reportProfile,
       int maxMaterialsToStart) {
 
-    private static RepositoryRunConfiguration load(Path configPath) {
+    static RepositoryRunConfiguration load(Path configPath) {
       CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
       ObjectNode document = readConfiguration(configPath, canonicalJson);
       requireFields(
@@ -735,14 +1327,26 @@ public final class RepositoryRunMain {
       Path stateFile = absolutePath(requiredText(paths, "stateFile"), "state file");
       Path gitExecutable = absolutePath(requiredText(paths, "gitExecutable"), "Git executable");
 
+      ObjectNode sourceAnalysis = object(document, "sourceAnalysis");
+      requireFieldsAllowingOptional(
+          sourceAnalysis, Set.of("javaEngine"), Set.of("jdt", "modelJobs"));
+      ObjectNode engineSourceAnalysis = JsonNodeFactory.instance.objectNode();
+      engineSourceAnalysis.set("javaEngine", sourceAnalysis.get("javaEngine"));
+      if (sourceAnalysis.has("jdt")) {
+        engineSourceAnalysis.set("jdt", sourceAnalysis.get("jdt"));
+      }
       ObjectNode engineDocument = JsonNodeFactory.instance.objectNode();
-      engineDocument.set("sourceAnalysis", object(document, "sourceAnalysis"));
+      engineDocument.set("sourceAnalysis", engineSourceAnalysis);
       EffectiveEngineConfiguration engine =
           new EngineConfigurationLoader()
               .load(canonicalJson.encodeCanonical(engineDocument).copyToByteArray());
       if (!EffectiveEngineConfiguration.JDT.equals(engine.javaEngine())) {
         throw failure("JDT_ENGINE_REQUIRED");
       }
+      ModelJobsConfiguration modelJobs =
+          sourceAnalysis.has("modelJobs")
+              ? ModelJobsConfiguration.load(object(sourceAnalysis, "modelJobs"), canonicalJson)
+              : null;
 
       Path policyPath = resolvePolicyPath(configPath, requiredText(document, "policyRegistry"));
       CanonicalArtifactPolicyRegistry policies = loadPolicies(policyPath, canonicalJson);
@@ -837,7 +1441,8 @@ public final class RepositoryRunMain {
 
       return new RepositoryRunConfiguration(
           canonicalJson,
-          Sha256Digest.parse(sha256(canonicalJson.encodeCanonical(document).copyToByteArray())),
+          RepositoryRunMain.baseConfigurationSha256(document, canonicalJson),
+          modelJobs,
           policies,
           repositoryPath,
           repositoryIdentity,
@@ -870,6 +1475,14 @@ public final class RepositoryRunMain {
           processProfile,
           reportProfile,
           maxMaterialsToStart);
+    }
+
+    private ModelJobsConfiguration requireModelJobsForExecution() {
+      if (modelJobs == null) {
+        throw failure("CONFIGURATION_INVALID");
+      }
+      modelJobs.validateExecutionEnvironment();
+      return modelJobs;
     }
 
     private PersistedTechnicalRunConfiguration technicalConfiguration(ImmutableBytes frozenBytes) {
@@ -1006,6 +1619,14 @@ public final class RepositoryRunMain {
     }
   }
 
+  private static Sha256Digest baseConfigurationSha256(
+      ObjectNode document, CanonicalJsonCodec canonicalJson) {
+    ObjectNode baseDocument = document.deepCopy();
+    object(baseDocument, "sourceAnalysis").remove("modelJobs");
+    return Sha256Digest.parse(
+        sha256(canonicalJson.encodeCanonical(baseDocument).copyToByteArray()));
+  }
+
   private static ObjectNode readConfiguration(Path path, CanonicalJsonCodec canonicalJson) {
     try {
       if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
@@ -1013,12 +1634,13 @@ public final class RepositoryRunMain {
           || Files.size(path) > CONFIG_MAX_BYTES) {
         throw failure("CONFIGURATION_INVALID");
       }
-      JsonNode parsed =
-          canonicalJson.parseStrictJson(ImmutableBytes.copyOf(Files.readAllBytes(path)));
-      if (!(parsed instanceof ObjectNode object)) {
-        throw failure("CONFIGURATION_INVALID");
+      try (JsonParser parser = YAML.getFactory().createParser(Files.readAllBytes(path))) {
+        JsonNode parsed = YAML.readTree(parser);
+        if (!(parsed instanceof ObjectNode object) || parser.nextToken() != null) {
+          throw failure("CONFIGURATION_INVALID");
+        }
+        return object;
       }
-      return object;
     } catch (IOException | IllegalArgumentException failure) {
       throw failure("CONFIGURATION_INVALID", failure);
     }
@@ -1342,6 +1964,30 @@ public final class RepositoryRunMain {
     } catch (RuntimeException failure) {
       throw failure("CONFIGURATION_INVALID", failure);
     }
+  }
+
+  private static Path optionalAbsolutePath(ObjectNode parent, String field) {
+    return parent.has(field) ? absolutePath(requiredText(parent, field), field) : null;
+  }
+
+  private static void requireSupportedHttpsEndpoint(String value) {
+    try {
+      java.net.URI endpoint = new java.net.URI(value);
+      if (!"https".equals(endpoint.getScheme())
+          || endpoint.getHost() == null
+          || endpoint.getUserInfo() != null
+          || endpoint.getFragment() != null) {
+        throw failure("CONFIGURATION_INVALID");
+      }
+    } catch (java.net.URISyntaxException failure) {
+      throw failure("CONFIGURATION_INVALID", failure);
+    }
+  }
+
+  private static ObjectMapper yaml() {
+    YAMLFactory factory = new YAMLFactory();
+    factory.enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+    return new ObjectMapper(factory);
   }
 
   private static Path argumentPath(String value) {

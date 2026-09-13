@@ -12,7 +12,7 @@
 
 2026-09-13 批准的[导航复用、单次本地 CI 与正文减负](plans/navigation-reuse-and-readable-report-design.md)已经交付：同一冻结会话的相同 JDT 导航操作只执行一次，方法正文全仓共享，入口保持独立成员/展开状态；Step05/Capsule用索引引用保存，模型请求仍包含完整代码；九章只显示业务正文与来源编号。测量记录保留在原验收节。
 
-后续已批准的[模型任务并行执行](modules/model-job-execution.md)尚未实施。只增加 Java 17 有界 job 池及全局/每 Provider 两级 YAML 并发；不改材料或业务含义。每 job 固定 Provider/model/effort，完整 DRAFT→REVIEW 后保存。当前 Activity/Process 外循环仍串行，CLI 仍硬编码单 Provider，逐 job 保存和认证约束还需按该设计接线。
+已批准的[模型任务并行执行](modules/model-job-execution.md)已接入正式组合根。严格 v2 单 YAML/JSON 配置将每个 Activity 或 Process-group 的完整 DRAFT→REVIEW 固定到一个 Provider/model/effort；Java 17 有界池同时执行全局与每 Provider 两级上限，结果先私有保存再稳定聚合。Codex Subscription 与 OpenAI Responses API 都通过同一 Provider seam，前者强制 ChatGPT 登录隔离，后者关闭 SDK 自动重试。全部活动完成后才组织过程，全部过程组完成后才做至多一次仓库总结，其后才生成唯一九章；混合路由不再是只解析不执行的占位合同。
 
 ## 2. 一条端到端接力
 
@@ -149,7 +149,7 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 
 本次 owning wire 升版固定为：`flow-interpretation-activity-coverage-v2` required `unexplainedActivityEntries`；`repository-knowledge-business-knowledge-v2` required 同名完整记录数组；`repository-knowledge-process-coverage-v2` 修正现有 `semanticDeliveryStatus` 判定。任一 activity coverage 为 `NOT_ANALYZED`，或 unmatchedActivityIds/notConsolidatedProcessIds 任一非空时，process coverage 必须为 `PARTIAL`，不能只看过程归组。`activity-explanations.jsonl`、`business-processes.jsonl` 和报告九章 JSON 的输出 shape/版本保持 v1。publisher、engine、policy fixture、canonical readers 和直接版本测试须同步，不保留旧 reader fallback。
 
-材料在首次 Provider 前保存。并行目标由 coordinator 收到完整已审 job 结果后立即原子保存到既有运行私有目录，全部完成后按稳定材料/组顺序一次聚合并安装既有 module publication。当前两个 Explainer 仍在串行外循环后聚合 publish；不能将固定地址 publisher 移进 worker 反复安装不同 bytes。私有逐 job 结果、Provider/job journal namespace 与单次提交的最小合同见[执行设计](modules/model-job-execution.md#5-保存身份与失败)，不新增公开产物、恢复系统或逐记录状态机。inputFingerprint 包含实际内容输入（不含新的 runId）、实际 Prompt 文本/版本、有效模型与输出配置、Module 版本；显式复用要求相等，并通过磁盘边界完整性检查。
+材料在首次 Provider 前保存。Activity 与 Process-group coordinator 收到完整已审 job 结果后立即原子保存到运行私有目录，全部完成后按稳定材料/组顺序一次聚合并安装既有 module publication；固定地址 publisher 不在 worker 内反复安装不同 bytes。私有逐 job 结果、Provider/job journal namespace 与单次提交合同见[执行设计](modules/model-job-execution.md#5-保存身份与失败)，不新增公开产物、恢复系统或逐记录状态机。inputFingerprint 包含实际内容输入（不含新的 runId）、实际 Prompt 文本/版本、有效模型与输出配置、Module 版本；显式复用要求相等，并通过磁盘边界完整性检查。
 
 ## 9. 覆盖、预算与失败
 
@@ -176,7 +176,7 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 
 ## 10. 当前实现与剩余边界
 
-JDT与JavaParser接入，以及跨入口 query 复用、Step05/Capsule 引用去重、源码外置排版、unit/IT/quality 单次执行均已交付，后者记录见[优化设计](plans/navigation-reuse-and-readable-report-design.md)。下表保留此前能力记录，不是本轮新做的整套代码审计。当前待实现的是上述模型 job 并行、两级 YAML 配置、认证隔离和逐 job 私有保存；不把已完成的小包或原导航优化重算为这次并行验收。
+JDT与JavaParser接入，以及跨入口 query 复用、Step05/Capsule 引用去重、源码外置排版、unit/IT/quality 单次执行均已交付，后者记录见[优化设计](plans/navigation-reuse-and-readable-report-design.md)。模型 job 并行、两级限流、Provider认证隔离、OpenAI Responses adapter、逐 Activity/Process-group 保存及阶段屏障也已实现；下表保留此前能力记录，不是重新进行整套代码审计。真实多服务加速比仍须在具体账户、模型和材料上测量，不能由 scripted 并发测试推算。
 
 | 当前可确认事实 | 剩余边界或保持项 |
 | --- | --- |
