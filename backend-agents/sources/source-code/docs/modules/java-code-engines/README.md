@@ -148,7 +148,7 @@ JDT LS 已提供定位声明、实现和调用层次；JDT Core 能读取方法�
 | JavaParser现状 | Adapter 已封装迁移前的有限名称解析、方法正文、调用/参数、七图、Fact/Proof 和 Flow；POM有 Symbol Solver 不等于生产已接线 | wildcard/import、继承和重载增强不在本阶段；不宣称 JavaParser 库做不到 |
 | Builder | 只消费已保存 EntryCodeContext，输出声明类型、完整方法、调用、参数、控制和限制 | 两个引擎共用同一无解析器 Builder，Builder 不按 engine 分支 |
 | 正式编排 | YAML、factory、同会话发现、索引、Step05、材料及 scripted 九章已接通；JDT 写 NOT_PRODUCED strict facts，JavaParser 写实际七图和 strict facts | 产品 Luna 与整仓业务质量另验；两个引擎不自动回退或混合 |
-| JDT导航索引 | `java-code-index-v1`保存ENGINE/TYPE/METHOD/CALL/ENTRY_MEMBERSHIP/DIAGNOSTIC，读取器可从磁盘重建完整入口上下文 | 不把未生成的严格图/Fact伪造成空成功 |
+| JDT导航索引 | v1已实现；真实整仓发现共享调用的入口投影冲突，当前修复目标为`java-code-index-v2`：METHOD共享、CALL按入口保存，其他记录类型不变 | v2尚待定向回归及整仓重跑；不把未生成的严格图/Fact伪造成空成功 |
 | 业务模块 | Activity/Process/Report 使用同一正式材料；真实选择 JDT 的自包含运行已生成九章 | 该九章使用 scripted Provider，只证明接线与内容保留 |
 
 调研细节和准确限制见[贯穿例子](../../examples/java-code-engine-walkthrough.md)。历史调研产物仍保留；当前状态以正式 JDT 验收为准。

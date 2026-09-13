@@ -5,7 +5,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -133,11 +137,19 @@ public final class JavaCodeIndexReader {
     }
     List<JavaDeclarationCatalog.MethodDeclarationView> declarations =
         methods.values().stream().map(MethodRecord::declaration).filter(Objects::nonNull).toList();
-    Map<String, EntryCodeContext.CallSite> calls = new HashMap<>();
+    Map<EntryCallKey, EntryCodeContext.CallSite> calls = new HashMap<>();
+    Map<String, CallSourceSyntax> syntaxByPhysicalCallKey = new HashMap<>();
     for (Line line : lines) {
       if (!"CALL".equals(line.type())) continue;
-      EntryCodeContext.CallSite call = convert(line.payload(), EntryCodeContext.CallSite.class);
-      if (!line.key().equals(call.callKey()) || calls.put(line.key(), call) != null) {
+      requireFields(line.payload(), Set.of("entryId", "call"));
+      String entryId = text(line.payload(), "entryId");
+      EntryCodeContext.CallSite call =
+          convert(line.payload().get("call"), EntryCodeContext.CallSite.class);
+      EntryCallKey owner = new EntryCallKey(entryId, call.callKey());
+      CallSourceSyntax syntax = CallSourceSyntax.from(call);
+      if (!line.key().equals(entryCallKey(entryId, call.callKey()))
+          || calls.put(owner, call) != null
+          || !samePhysicalCall(syntaxByPhysicalCallKey, call.callKey(), syntax)) {
         throw invalid();
       }
     }
@@ -155,6 +167,7 @@ public final class JavaCodeIndexReader {
         new JavaDeclarationCatalog(
             snapshotId, files, types, declarations, annotations, fields, diagnostics);
     List<JavaCodeIndex.EntryCollection> entries = new ArrayList<>();
+    Set<EntryCallKey> referencedCalls = new HashSet<>();
     for (Line line : lines) {
       if (!"ENTRY_MEMBERSHIP".equals(line.type())) continue;
       ObjectNode membership = line.payload();
@@ -184,10 +197,14 @@ public final class JavaCodeIndexReader {
             strings(membership.get("methodKeys")).stream()
                 .map(key -> requiredCode(methods, key))
                 .toList();
+        List<String> callKeys = strings(membership.get("callKeys"));
+        if (new HashSet<>(callKeys).size() != callKeys.size()) throw invalid();
         List<EntryCodeContext.CallSite> entryCalls =
-            strings(membership.get("callKeys")).stream()
-                .map(key -> requiredCall(calls, key))
-                .toList();
+            callKeys.stream().map(key -> requiredCall(calls, seed.entryId(), key)).toList();
+        callKeys.forEach(
+            key -> {
+              if (!referencedCalls.add(new EntryCallKey(seed.entryId(), key))) throw invalid();
+            });
         EntryCodeContext context =
             new EntryCodeContext(
                 EntryCodeContext.SCHEMA_VERSION,
@@ -204,6 +221,7 @@ public final class JavaCodeIndexReader {
         throw invalid();
       }
     }
+    if (!calls.keySet().equals(referencedCalls)) throw invalid();
     return new JavaCodeIndex(descriptor, snapshotId, snapshotRef, catalog, entries, enhancements);
   }
 
@@ -239,10 +257,49 @@ public final class JavaCodeIndexReader {
   }
 
   private static EntryCodeContext.CallSite requiredCall(
-      Map<String, EntryCodeContext.CallSite> calls, String key) {
-    EntryCodeContext.CallSite call = calls.get(key);
+      Map<EntryCallKey, EntryCodeContext.CallSite> calls, String entryId, String callKey) {
+    EntryCodeContext.CallSite call = calls.get(new EntryCallKey(entryId, callKey));
     if (call == null) throw invalid();
     return call;
+  }
+
+  private static boolean samePhysicalCall(
+      Map<String, CallSourceSyntax> syntaxByPhysicalCallKey,
+      String physicalCallKey,
+      CallSourceSyntax syntax) {
+    CallSourceSyntax existing = syntaxByPhysicalCallKey.putIfAbsent(physicalCallKey, syntax);
+    return existing == null || existing.equals(syntax);
+  }
+
+  private static String entryCallKey(String entryId, String physicalCallKey) {
+    return "entry-call:"
+        + sha256(
+            concatenate(frame("entry-call-record-v1"), frame(entryId), frame(physicalCallKey)));
+  }
+
+  private static String sha256(byte[] value) {
+    try {
+      return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
+    } catch (NoSuchAlgorithmException impossible) {
+      throw new IllegalStateException(impossible);
+    }
+  }
+
+  private static byte[] frame(String value) {
+    byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+    return ByteBuffer.allocate(Long.BYTES + bytes.length)
+        .order(ByteOrder.BIG_ENDIAN)
+        .putLong(bytes.length)
+        .put(bytes)
+        .array();
+  }
+
+  private static byte[] concatenate(byte[]... values) {
+    int size = 0;
+    for (byte[] value : values) size = Math.addExact(size, value.length);
+    ByteBuffer result = ByteBuffer.allocate(size);
+    for (byte[] value : values) result.put(value);
+    return result.array();
   }
 
   private static Line only(List<Line> lines, String type) {
@@ -296,6 +353,33 @@ public final class JavaCodeIndexReader {
   }
 
   private record Line(String type, String key, ObjectNode payload) {}
+
+  private record EntryCallKey(String entryId, String physicalCallKey) {}
+
+  private record CallSourceSyntax(
+      String callerMethodKey,
+      String kind,
+      org.sourceanalysis.app.analysis.code.SourceRange site,
+      org.sourceanalysis.app.analysis.code.SourceRange navigationSite,
+      String expression,
+      String receiverExpression,
+      List<EntryCodeContext.ActualArgument> actualArguments,
+      List<Integer> enclosingControlIndexes,
+      boolean deferred) {
+
+    private static CallSourceSyntax from(EntryCodeContext.CallSite call) {
+      return new CallSourceSyntax(
+          call.callerMethodKey(),
+          call.kind(),
+          call.site(),
+          call.navigationSite(),
+          call.expression(),
+          call.receiverExpression(),
+          call.actualArguments(),
+          call.enclosingControlIndexes(),
+          call.deferred());
+    }
+  }
 
   private record MethodRecord(
       JavaDeclarationCatalog.MethodDeclarationView declaration, EntryCodeContext.MethodCode code) {}

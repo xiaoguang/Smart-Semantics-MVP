@@ -1939,7 +1939,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "PROGRAM_GRAPHS_JAVA_CODE_INDEX",
-        "java-code-index-v1",
+        "java-code-index-v2",
         "java-code-index",
         "application/x-ndjson",
         "CANONICAL_JSONL",

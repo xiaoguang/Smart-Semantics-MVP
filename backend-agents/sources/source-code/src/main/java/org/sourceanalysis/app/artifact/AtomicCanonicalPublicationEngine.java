@@ -1602,7 +1602,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("PROGRAM_GRAPHS_JAVA_CODE_INDEX".equals(payload.artifactType())
-        && "java-code-index-v1".equals(payload.schemaVersion())) {
+        && "java-code-index-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROGRAM_GRAPHS,
           7,

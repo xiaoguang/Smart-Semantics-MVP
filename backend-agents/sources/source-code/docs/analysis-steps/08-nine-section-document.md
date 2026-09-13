@@ -34,6 +34,8 @@
 3. Java 检查 exact section IDs/titles、文本类型、scope-local ID/ref、coverage 和预算，保存完整已审 JSON。
 4. renderer 只按结构排 H1/H2、段落、列表与 ref，不截断、不重新摘要、不改业务正文。原子安装报告文件。
 
+报告传输 Schema 对段落的 `refs` 使用有长度限制的字符串数组；**完整合法 ref 集合在模型输入中提供，并由 Java 在接收时逐项校验**，不在九章的 18 个 paragraph/item 位置重复展开同一份大枚举。九章编号、标题和结构仍使用固定槽位及单值枚举，未知来源仍以 `BUSINESS_REPORT_SOURCE_SCOPE_INVALID` 拒绝。这样来源数量增大不会因为重复枚举而触发 Provider 的 Schema 容量限制，也不减少可引用来源或改变保存格式。直接测试必须同时证明大来源集合能形成传输 Schema，以及集合外 ref 仍被拒绝。这是传输表示的缩减，不把引用合法性交给模型自行保证。
+
 业务 review 检查的是源码定义行为和实际运行事实是否混淆、是否捏造岗位/制度/唯一性、推断是否有依据且有适当限定、原有条件和公式是否保留。Java 不用术语匹配或字符串 blacklist 假装已经判断业务正确。
 
 ## 4. 九章固定职责

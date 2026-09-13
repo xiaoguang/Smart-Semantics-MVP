@@ -47,7 +47,7 @@ public final class JavaCodeIndexPublicationSpecifier {
 
   public static final String FILE_NAME = "java-code-index.jsonl";
   public static final String ARTIFACT_TYPE = "PROGRAM_GRAPHS_JAVA_CODE_INDEX";
-  public static final String SCHEMA_VERSION = "java-code-index-v1";
+  public static final String SCHEMA_VERSION = "java-code-index-v2";
   private static final String MODULE_VERSION = "v1";
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final Comparator<String> UTF8_ORDER =
@@ -263,13 +263,20 @@ public final class JavaCodeIndexPublicationSpecifier {
             type -> records.add(new IndexRecord("TYPE", typeKey(type), MAPPER.valueToTree(type))));
 
     Map<String, EntryCodeContext.MethodCode> codeByMethod = new HashMap<>();
-    Map<String, EntryCodeContext.CallSite> callByKey = new HashMap<>();
+    Map<String, CallSourceSyntax> syntaxByPhysicalCallKey = new HashMap<>();
     for (JavaCodeIndex.EntryCollection entry : index.entries()) {
       if (entry.context() == null) {
         continue;
       }
       entry.context().methods().forEach(value -> putSame(codeByMethod, value.methodKey(), value));
-      entry.context().calls().forEach(value -> putSame(callByKey, value.callKey(), value));
+      entry
+          .context()
+          .calls()
+          .forEach(
+              value -> {
+                requireSamePhysicalCall(syntaxByPhysicalCallKey, value);
+                records.add(entryCall(entry.seed().entryId(), value));
+              });
     }
     for (JavaDeclarationCatalog.MethodDeclarationView declaration : index.catalog().methods()) {
       ObjectNode method = JsonNodeFactory.instance.objectNode();
@@ -285,10 +292,6 @@ public final class JavaCodeIndexPublicationSpecifier {
       method.set("code", MAPPER.valueToTree(code));
       records.add(new IndexRecord("METHOD", code.methodKey(), method));
     }
-    callByKey
-        .values()
-        .forEach(
-            call -> records.add(new IndexRecord("CALL", call.callKey(), MAPPER.valueToTree(call))));
     index.entries().forEach(entry -> records.add(membership(entry)));
     index
         .catalog()
@@ -303,6 +306,28 @@ public final class JavaCodeIndexPublicationSpecifier {
         Comparator.comparingInt((IndexRecord value) -> recordOrder(value.type()))
             .thenComparing(IndexRecord::key, UTF8_ORDER));
     return List.copyOf(records);
+  }
+
+  private static IndexRecord entryCall(String entryId, EntryCodeContext.CallSite call) {
+    ObjectNode payload = JsonNodeFactory.instance.objectNode();
+    payload.put("entryId", entryId);
+    payload.set("call", MAPPER.valueToTree(call));
+    return new IndexRecord("CALL", entryCallKey(entryId, call.callKey()), payload);
+  }
+
+  private static void requireSamePhysicalCall(
+      Map<String, CallSourceSyntax> syntaxByPhysicalCallKey, EntryCodeContext.CallSite call) {
+    CallSourceSyntax syntax = CallSourceSyntax.from(call);
+    CallSourceSyntax existing = syntaxByPhysicalCallKey.putIfAbsent(call.callKey(), syntax);
+    if (existing != null && !existing.equals(syntax)) {
+      throw invalid();
+    }
+  }
+
+  private static String entryCallKey(String entryId, String physicalCallKey) {
+    return "entry-call:"
+        + sha256(
+            concatenate(frame("entry-call-record-v1"), frame(entryId), frame(physicalCallKey)));
   }
 
   private static IndexRecord membership(JavaCodeIndex.EntryCollection entry) {
@@ -490,4 +515,29 @@ public final class JavaCodeIndexPublicationSpecifier {
   }
 
   private record IndexRecord(String type, String key, ObjectNode payload) {}
+
+  private record CallSourceSyntax(
+      String callerMethodKey,
+      String kind,
+      org.sourceanalysis.app.analysis.code.SourceRange site,
+      org.sourceanalysis.app.analysis.code.SourceRange navigationSite,
+      String expression,
+      String receiverExpression,
+      List<EntryCodeContext.ActualArgument> actualArguments,
+      List<Integer> enclosingControlIndexes,
+      boolean deferred) {
+
+    private static CallSourceSyntax from(EntryCodeContext.CallSite call) {
+      return new CallSourceSyntax(
+          call.callerMethodKey(),
+          call.kind(),
+          call.site(),
+          call.navigationSite(),
+          call.expression(),
+          call.receiverExpression(),
+          call.actualArguments(),
+          call.enclosingControlIndexes(),
+          call.deferred());
+    }
+  }
 }

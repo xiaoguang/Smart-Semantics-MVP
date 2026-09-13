@@ -350,13 +350,13 @@ public final class BusinessReportPublisher {
     ObjectNode title = properties.putObject("title");
     title.put("type", "string");
     title.putArray("enum").add(titleValue);
-    contentsProperty(properties, "paragraphs", allowedRefs, profile);
-    contentsProperty(properties, "items", allowedRefs, profile);
+    contentsProperty(properties, "paragraphs", profile);
+    contentsProperty(properties, "items", profile);
     return section;
   }
 
   private static void contentsProperty(
-      ObjectNode properties, String field, Set<String> allowedRefs, BusinessReportProfile profile) {
+      ObjectNode properties, String field, BusinessReportProfile profile) {
     ObjectNode contents = properties.putObject(field);
     contents.put("type", "array");
     contents.put("maxItems", profile.maxValuesPerField());
@@ -372,8 +372,8 @@ public final class BusinessReportPublisher {
     refs.put("maxItems", profile.maxValuesPerField());
     ObjectNode ref = refs.putObject("items");
     ref.put("type", "string");
-    ArrayNode refValues = ref.putArray("enum");
-    allowedRefs.stream().sorted().forEach(refValues::add);
+    ref.put("minLength", 1);
+    ref.put("maxLength", profile.maxTextCharsPerValue());
   }
 
   private static void textProperty(

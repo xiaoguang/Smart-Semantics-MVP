@@ -1156,7 +1156,7 @@ public final class FlowPublicationSpecifier {
                   graphs,
                   "java-code-index.jsonl",
                   "PROGRAM_GRAPHS_JAVA_CODE_INDEX",
-                  "java-code-index-v1",
+                  "java-code-index-v2",
                   CanonicalMediaType.APPLICATION_X_NDJSON)));
     }
     values.addAll(factUpstream(facts));

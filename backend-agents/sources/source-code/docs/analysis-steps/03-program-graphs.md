@@ -640,7 +640,7 @@ Variant closure固定：普通`DEFINITION/USE/ARGUMENT`的两个payload均为nul
 
 M1–M5使用 [既有公共与模块合同 §5](../references/inherited-public-and-module-contracts.md#5-moduleartifactmodulereceipt-与-modulefailure) `ModuleArtifact<T>` envelope并采用8.1 ProgramGraph records；M6直接安装七个analysis step schema注册的JSON/JSONL semantic bytes而无summary envelope。`!`=required non-null，`?`=required nullable。
 
-M7 `java-code-index` 使用 `PROGRAM_GRAPHS_JAVA_CODE_INDEX / java-code-index-v1 / CANONICAL_JSONL / METADATA_ONLY`。记录 envelope 精确为 `{schemaVersion,recordType,key,payload}`，recordType 闭集为 `ENGINE / TYPE / METHOD / CALL / ENTRY_MEMBERSHIP / DIAGNOSTIC`；字段、不变量与排序由[共同合同](../modules/java-code-engines/contracts-and-configuration.md#5-保存格式位置与复用)定义。
+M7 `java-code-index` 使用 `PROGRAM_GRAPHS_JAVA_CODE_INDEX / java-code-index-v2 / CANONICAL_JSONL / METADATA_ONLY`。记录 envelope 精确为 `{schemaVersion,recordType,key,payload}`，recordType 闭集为 `ENGINE / TYPE / METHOD / CALL / ENTRY_MEMBERSHIP / DIAGNOSTIC`；字段、不变量与排序由[共同合同](../modules/java-code-engines/contracts-and-configuration.md#5-保存格式位置与复用)定义。METHOD按全仓methodKey共享；CALL按entryId和物理callKey保存，允许同一调用在不同入口有不同展开状态，但源码固有字段冲突仍拒绝。v2是当前整仓保存故障的修复合同，验收状态须以新的定向及整仓结果为准。
 
 | artifact | schemaVersion / artifactType | 精确 upstream | payload/排序 |
 | --- | --- | --- | --- |

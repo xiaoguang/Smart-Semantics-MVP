@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -327,6 +329,80 @@ class TechnicalAnalysisWorkflowTest {
                   .address()
                   .runId())
           .isEqualTo(queued.runId());
+    }
+  }
+
+  @Test
+  void selectedJdtRuntimePassesApprovedClasspathToDiscoveryAndTechnicalExecution()
+      throws Exception {
+    Path jdt = Path.of(".workspace", "jdtls-source-navigation-feasibility", "tools", "selected");
+    Path toolJava = Path.of("/Library/Java/JavaVirtualMachines/jdk-26.jdk/Contents/Home");
+    Path syntaxHelper =
+        Path.of(
+            "tools", "jdt-syntax-helper", "target", "source-code-analysis-jdt-syntax-helper.jar");
+    List<Path> approvedClasspath =
+        List.of(
+            Path.of(
+                "/Users/yexiaoguang/.m2/repository/org/springframework/spring-web/5.0.4.RELEASE/spring-web-5.0.4.RELEASE.jar"),
+            Path.of(
+                "/Users/yexiaoguang/.m2/repository/org/springframework/spring-core/5.0.4.RELEASE/spring-core-5.0.4.RELEASE.jar"),
+            Path.of(
+                "/Users/yexiaoguang/.m2/repository/org/springframework/spring-jcl/5.0.4.RELEASE/spring-jcl-5.0.4.RELEASE.jar"));
+    org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isDirectory(jdt));
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        java.nio.file.Files.isExecutable(toolJava.resolve("bin/java")));
+    org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isRegularFile(syntaxHelper));
+    approvedClasspath.forEach(
+        path ->
+            org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isRegularFile(path)));
+
+    CapturedSource captured =
+        capturedSpringRepository("import org.springframework.web.bind.annotation.*;\n");
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = allTechnicalPolicies(canonicalJson);
+    ArtifactReference resourceBudget = reference("resource-budget", 'a', 'b');
+    ArtifactReference profileBundle = reference("profile-bundle", 'c', 'd');
+    ArtifactReference frozenRequest =
+        frozenRequest(canonicalJson, captured.capture(), resourceBudget);
+    AnalysisRunRequest request =
+        queuedRequest(captured.capture(), frozenRequest, policies, resourceBudget, profileBundle);
+    Path storeRoot = temporaryDirectory.resolve("approved-classpath-runtime-store");
+    java.nio.file.Files.createDirectory(storeRoot);
+
+    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(storeRoot)) {
+      ArtifactStoreLimits limits = new ArtifactStoreLimits(16, 4_000_000, 16_000_000, 24);
+      PersistedTechnicalRunConfiguration configuration =
+          technicalConfiguration(
+              captured,
+              profileBundle,
+              resourceBudget,
+              limits,
+              new EffectiveEngineConfiguration(
+                  EffectiveEngineConfiguration.JDT,
+                  new EffectiveEngineConfiguration.JdtConfiguration(
+                      jdt.toAbsolutePath(),
+                      toolJava,
+                      java.time.Duration.ofSeconds(90),
+                      java.time.Duration.ofSeconds(30),
+                      java.time.Duration.ofSeconds(10))),
+              approvedClasspath);
+      PersistedTechnicalRunExecutor technical =
+          new PersistedTechnicalRunExecutor(
+              handle, canonicalJson, policies, captured.registry(), configuration);
+      AnalysisRunReference queued = RunStoreBootstrap.queueAnalysisRun(handle, request);
+
+      TechnicalDiscoveryWorkflowResult discovery =
+          technical.executeThroughApplicationDiscovery(queued.runId());
+      long discoveryEntryCount = entryCount(handle, canonicalJson, policies, discovery);
+      assertThat(discoveryEntryCount)
+          .as("wildcard Spring annotations resolve with the approved runtime classpath")
+          .isEqualTo(1);
+
+      TechnicalAnalysisWorkflowResult result = technical.execute(queued.runId());
+      long executionEntryCount = entryCount(handle, canonicalJson, policies, result);
+      assertThat(executionEntryCount)
+          .as("full technical execution retains the discovered entry")
+          .isEqualTo(1);
     }
   }
 
@@ -664,6 +740,93 @@ class TechnicalAnalysisWorkflowTest {
         engineConfiguration);
   }
 
+  private static PersistedTechnicalRunConfiguration technicalConfiguration(
+      CapturedSource captured,
+      ArtifactReference profileBundle,
+      ArtifactReference resourceBudget,
+      ArtifactStoreLimits limits,
+      EffectiveEngineConfiguration engineConfiguration,
+      List<Path> approvedClasspath)
+      throws Exception {
+    Class<?> configurationType = PersistedTechnicalRunConfiguration.class;
+    java.lang.reflect.RecordComponent approvedClasspathComponent =
+        Arrays.stream(configurationType.getRecordComponents())
+            .filter(component -> component.getName().equals("approvedClasspath"))
+            .findFirst()
+            .orElse(null);
+    assertThat(approvedClasspathComponent)
+        .as("persisted JDT runtime must expose the approved classpath input")
+        .isNotNull();
+    assertThat(approvedClasspathComponent.getType()).isEqualTo(List.class);
+
+    Map<String, Object> values = new HashMap<>();
+    values.put("frozenRepositoryRequestBytes", captured.frozenRequestBytes());
+    values.put("verificationPolicyRef", reference("verification-policy", 'e', 'f'));
+    values.put("capabilityProfileRef", reference("capability-profile", '1', '2'));
+    values.put("inventoryProfile", new ProfileView(profileBundle, resourceBudget, 32, 1_000_000));
+    values.put("storeLimits", limits);
+    values.put("discoveryProfile", new DiscoveryProfile("application-discovery-v3"));
+    values.put("graphProfileRef", reference("graph-profile", 'a', 'b'));
+    values.put(
+        "flowProfile",
+        new FlowCompilationProfile(
+            reference("flow-profile", 'c', 'd'), 16, 8, 64, 96, 32, 64, 256));
+    values.put(
+        "capsuleProfile",
+        new CapsuleProjectionProfile(
+            reference("capsule-profile", 'e', 'f'), 16, 32, 4_096, 256_000));
+    values.put("engineConfiguration", engineConfiguration);
+    values.put("approvedClasspath", approvedClasspath);
+    values.put("selectedEntryIds", List.of());
+
+    java.lang.reflect.RecordComponent[] components = configurationType.getRecordComponents();
+    Class<?>[] parameterTypes =
+        Arrays.stream(components)
+            .map(java.lang.reflect.RecordComponent::getType)
+            .toArray(Class<?>[]::new);
+    Object[] arguments =
+        Arrays.stream(components).map(component -> values.get(component.getName())).toArray();
+    return (PersistedTechnicalRunConfiguration)
+        configurationType.getConstructor(parameterTypes).newInstance(arguments);
+  }
+
+  private static long entryCount(
+      RunStoreHandle handle,
+      CanonicalJsonCodec canonicalJson,
+      CanonicalArtifactPolicyRegistry policies,
+      TechnicalDiscoveryWorkflowResult result) {
+    CanonicalAnalysisStepArtifactStore steps =
+        new FileSystemCanonicalAnalysisStepArtifactStore(
+            handle,
+            canonicalJson,
+            policies,
+            new ArtifactStoreLimits(16, 4_000_000, 16_000_000, 24));
+    return steps.reopen(result.applicationDiscovery().publication()).semanticPayloads().stream()
+        .filter(payload -> payload.descriptor().fileName().equals("entry-points.jsonl"))
+        .findFirst()
+        .map(
+            payload ->
+                new String(payload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8)
+                    .strip()
+                    .lines()
+                    .filter(line -> !line.isBlank())
+                    .count())
+        .orElseThrow();
+  }
+
+  private static long entryCount(
+      RunStoreHandle handle,
+      CanonicalJsonCodec canonicalJson,
+      CanonicalArtifactPolicyRegistry policies,
+      TechnicalAnalysisWorkflowResult result) {
+    return entryCount(
+        handle,
+        canonicalJson,
+        policies,
+        new TechnicalDiscoveryWorkflowResult(
+            result.verifiedSourceInventory(), result.applicationDiscovery()));
+  }
+
   private static JavaCodeSession minimalJdtSession(String snapshotId, String source) {
     return new JavaCodeSession() {
       @Override
@@ -721,6 +884,16 @@ class TechnicalAnalysisWorkflowTest {
   }
 
   private CapturedSource capturedSpringRepository() throws Exception {
+    return capturedSpringRepository(
+        """
+        import org.springframework.web.bind.annotation.PostMapping;
+        import org.springframework.web.bind.annotation.RequestMapping;
+        import org.springframework.web.bind.annotation.RequestParam;
+        import org.springframework.web.bind.annotation.RestController;
+        """);
+  }
+
+  private CapturedSource capturedSpringRepository(String springImports) throws Exception {
     Path physicalTemporaryDirectory = temporaryDirectory.toRealPath();
     Path repository = physicalTemporaryDirectory.resolve("repository");
     runGit(physicalTemporaryDirectory, "init", repository.toString());
@@ -745,10 +918,7 @@ class TechnicalAnalysisWorkflowTest {
         javaDirectory.resolve("OrderController.java"),
         """
         package example;
-        import org.springframework.web.bind.annotation.PostMapping;
-        import org.springframework.web.bind.annotation.RequestMapping;
-        import org.springframework.web.bind.annotation.RequestParam;
-        import org.springframework.web.bind.annotation.RestController;
+        %s
         @RestController @RequestMapping(\"/orders\")
         final class OrderController {
           private final OrderService service = new OrderService();
@@ -763,7 +933,8 @@ class TechnicalAnalysisWorkflowTest {
             mapper.updateStatus(status); return \"ok\";
           }
         }
-        """,
+        """
+            .formatted(springImports),
         StandardCharsets.UTF_8);
     java.nio.file.Files.writeString(
         javaDirectory.resolve("OrderMapper.java"),

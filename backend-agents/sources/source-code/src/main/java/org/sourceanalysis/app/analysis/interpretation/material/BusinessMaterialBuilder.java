@@ -163,7 +163,12 @@ public final class BusinessMaterialBuilder {
         if (fallback == null) {
           coverage.add(
               new BusinessMaterialEntryCoverage(
-                  entry.entryId(), "NOT_MATERIALIZED", null, "FLOW_NOT_COMPILED"));
+                  entry.entryId(),
+                  "NOT_MATERIALIZED",
+                  null,
+                  entryContext != null && "NOT_COLLECTED".equals(entryContext.collectionStatus())
+                      ? entryContext.collectionReason()
+                      : "FLOW_NOT_COMPILED"));
         } else {
           entryMaterials.add(
               new EntryMaterial(
@@ -1193,15 +1198,28 @@ public final class BusinessMaterialBuilder {
       }
       sourceLocators = sourceLocators(strict, "sourceLocators");
     }
-    if (codeContext == null && (strict.isMissingNode() || strict.isNull())) {
+    String entryId = text(node, "entryId");
+    String collectionStatus = text(node, "collectionStatus");
+    String collectionReason = nullableText(node, "collectionReason");
+    if ("COLLECTED".equals(collectionStatus)) {
+      if (collectionReason != null
+          || codeContext == null
+          || !entryId.equals(codeContext.entryId())) {
+        throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
+      }
+    } else if ("NOT_COLLECTED".equals(collectionStatus)) {
+      if (collectionReason == null || codeContext != null) {
+        throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
+      }
+    } else {
       throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
     }
     return new EntryContext(
         text(node, "entryContextId"),
-        text(node, "entryId"),
+        entryId,
         nullableText(node, "flowSliceId"),
-        text(node, "collectionStatus"),
-        nullableText(node, "collectionReason"),
+        collectionStatus,
+        collectionReason,
         codeContext,
         entrySignature,
         List.copyOf(calls),

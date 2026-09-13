@@ -1,7 +1,10 @@
 package org.sourceanalysis.app.analysis.graph;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import org.sourceanalysis.app.analysis.code.CodeEngineException;
 import org.sourceanalysis.app.analysis.code.EntryCodeContext;
 import org.sourceanalysis.app.analysis.code.EntrySeed;
@@ -28,6 +31,9 @@ import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
  * source bytes, a raw graph draft, or an assembled intermediate input.
  */
 public final class ProgramGraphsExecution {
+
+  private static final System.Logger LOGGER =
+      System.getLogger(ProgramGraphsExecution.class.getName());
 
   private final ProgramGraphInputReader inputs;
   private final CanonicalModuleArtifactStore modules;
@@ -255,7 +261,39 @@ public final class ProgramGraphsExecution {
             "STRICT_GRAPH_ENRICHMENT_NOT_REQUESTED_BY_JDT_EXECUTION",
             List.of(),
             List.of(),
-            null));
+            null),
+        List.of());
+  }
+
+  /**
+   * Publishes only the selected JDT entry contexts while retaining the complete discovery
+   * denominator.
+   */
+  public ProgramGraphsReference execute(
+      VerifiedSourceInventoryReference verifiedSource,
+      ApplicationDiscoveryReference applicationDiscovery,
+      JavaCodeSession session,
+      ArtifactReference graphProfileRef,
+      ArtifactControls controls,
+      List<String> selectedEntryIds) {
+    Objects.requireNonNull(session, "Java code session");
+    Objects.requireNonNull(graphProfileRef, "graph profile reference");
+    if (!"jdt".equals(session.descriptor().engineId())) {
+      throw new IllegalArgumentException("selected entry collection requires the JDT engine");
+    }
+    return publishNavigationIndex(
+        verifiedSource,
+        applicationDiscovery,
+        session,
+        controls,
+        null,
+        new EntryCodeContext.TechnicalEnhancements(
+            EntryCodeContext.Availability.NOT_PRODUCED,
+            "STRICT_GRAPH_ENRICHMENT_NOT_REQUESTED_BY_JDT_EXECUTION",
+            List.of(),
+            List.of(),
+            null),
+        selectedEntryIds);
   }
 
   /** Publishes the selected engine route, retaining strict graphs for JavaParser only. */
@@ -281,7 +319,7 @@ public final class ProgramGraphsExecution {
             List.of(),
             null);
     return publishNavigationIndex(
-        verifiedSource, applicationDiscovery, session, controls, graphSet, enhancements);
+        verifiedSource, applicationDiscovery, session, controls, graphSet, enhancements, List.of());
   }
 
   private ProgramGraphsReference publishNavigationIndex(
@@ -290,36 +328,98 @@ public final class ProgramGraphsExecution {
       JavaCodeSession session,
       ArtifactControls controls,
       PreparedProgramGraphSet graphSet,
-      EntryCodeContext.TechnicalEnhancements enhancements) {
+      EntryCodeContext.TechnicalEnhancements enhancements,
+      List<String> selectedEntryIds) {
     Objects.requireNonNull(verifiedSource, "verified source inventory");
     Objects.requireNonNull(applicationDiscovery, "application discovery");
     Objects.requireNonNull(session, "Java code session");
     Objects.requireNonNull(controls, "artifact controls");
     ReopenedProgramGraphInputs reopened = inputs.reopen(verifiedSource, applicationDiscovery);
     requireControls(reopened, controls);
+    List<EntrySeed> seeds =
+        reopened.discovery().entries().stream()
+            .map(
+                entry ->
+                    new EntrySeed(
+                        entry.entryId().value(),
+                        entry.methodKey(),
+                        entry.methodRange(),
+                        entry.methodCondition().display() + " " + entry.route()))
+            .toList();
+    List<String> selected = selectedEntryIds(selectedEntryIds, seeds);
+    Set<String> selectedSet = Set.copyOf(selected);
+    boolean selectedScope = !selectedSet.isEmpty();
+    int selectedTotal = selectedScope ? selectedSet.size() : seeds.size();
     var catalog = session.catalog();
     if (!catalog.snapshotId().equals(reopened.source().snapshotId())) {
       throw new GraphReferenceException();
     }
-    List<JavaCodeIndex.EntryCollection> entries =
-        reopened.discovery().entries().stream()
-            .map(
-                entry -> {
-                  EntrySeed seed =
-                      new EntrySeed(
-                          entry.entryId().value(),
-                          entry.methodKey(),
-                          entry.methodRange(),
-                          entry.methodCondition().display() + " " + entry.route());
-                  try {
-                    return JavaCodeIndex.EntryCollection.collected(seed, session.collect(seed));
-                  } catch (CodeEngineException failure) {
-                    return JavaCodeIndex.EntryCollection.notCollected(
-                        seed, failure.code() + ": " + failure.getMessage());
-                  }
-                })
-            .sorted(java.util.Comparator.comparing(value -> value.seed().entryId()))
-            .toList();
+    List<JavaCodeIndex.EntryCollection> entries = new ArrayList<>(seeds.size());
+    int completedSelected = 0;
+    for (EntrySeed seed : seeds) {
+      if (selectedScope && !selectedSet.contains(seed.entryId())) {
+        entries.add(JavaCodeIndex.EntryCollection.notCollected(seed, "NOT_SELECTED_FOR_SAMPLE"));
+        continue;
+      }
+      long started = System.nanoTime();
+      LOGGER.log(
+          System.Logger.Level.INFO,
+          () ->
+              "JDT_NAVIGATION_ENTRY_START entryId=%s selectedTotal=%d"
+                  .formatted(seed.entryId(), selectedTotal));
+      try {
+        EntryCodeContext context = session.collect(seed);
+        completedSelected++;
+        long elapsed = System.nanoTime() - started;
+        int completed = completedSelected;
+        LOGGER.log(
+            System.Logger.Level.INFO,
+            () ->
+                ("JDT_NAVIGATION_ENTRY_COMPLETE entryId=%s completedSelected=%d selectedTotal=%d"
+                        + " methods=%d calls=%d elapsedNanos=%d")
+                    .formatted(
+                        seed.entryId(),
+                        completed,
+                        selectedTotal,
+                        context.methods().size(),
+                        context.calls().size(),
+                        elapsed));
+        entries.add(JavaCodeIndex.EntryCollection.collected(seed, context));
+      } catch (CodeEngineException failure) {
+        completedSelected++;
+        long elapsed = System.nanoTime() - started;
+        int completed = completedSelected;
+        LOGGER.log(
+            System.Logger.Level.INFO,
+            () ->
+                ("JDT_NAVIGATION_ENTRY_FAILED entryId=%s completedSelected=%d selectedTotal=%d"
+                        + " code=%s elapsedNanos=%d")
+                    .formatted(seed.entryId(), completed, selectedTotal, failure.code(), elapsed));
+        entries.add(
+            JavaCodeIndex.EntryCollection.notCollected(
+                seed, failure.code() + ": " + failure.getMessage()));
+      } catch (RuntimeException failure) {
+        long elapsed = System.nanoTime() - started;
+        LOGGER.log(
+            System.Logger.Level.INFO,
+            () ->
+                ("JDT_NAVIGATION_ENTRY_FAILED entryId=%s selectedTotal=%d failureType=%s"
+                        + " elapsedNanos=%d")
+                    .formatted(
+                        seed.entryId(),
+                        selectedTotal,
+                        failure.getClass().getSimpleName(),
+                        elapsed));
+        throw failure;
+      }
+    }
+    int completed = completedSelected;
+    LOGGER.log(
+        System.Logger.Level.INFO,
+        () ->
+            "JDT_NAVIGATION_COLLECTION_COMPLETE completedSelected=%d selectedTotal=%d"
+                .formatted(completed, selectedTotal));
+    entries.sort(java.util.Comparator.comparing(value -> value.seed().entryId()));
     List<JavaCodeIndex.EntryCollection> enrichedEntries =
         entries.stream().map(entry -> withEnhancements(entry, enhancements)).toList();
     JavaCodeIndex index =
@@ -332,10 +432,58 @@ public final class ProgramGraphsExecution {
             enhancements);
     JavaCodeIndexPublicationSpecifier publisher =
         new JavaCodeIndexPublicationSpecifier(modules, analysisSteps);
-    return graphSet == null
-        ? publisher.publish(verifiedSource, applicationDiscovery, controls, index)
-        : publisher.publishWithGraphEnhancements(
-            verifiedSource, applicationDiscovery, controls, index, graphSet);
+    long publicationStarted = System.nanoTime();
+    LOGGER.log(
+        System.Logger.Level.INFO,
+        () -> "JDT_NAVIGATION_PUBLICATION_START selectedTotal=%d".formatted(selectedTotal));
+    try {
+      ProgramGraphsReference reference =
+          graphSet == null
+              ? publisher.publish(verifiedSource, applicationDiscovery, controls, index)
+              : publisher.publishWithGraphEnhancements(
+                  verifiedSource, applicationDiscovery, controls, index, graphSet);
+      long elapsed = System.nanoTime() - publicationStarted;
+      LOGGER.log(
+          System.Logger.Level.INFO,
+          () ->
+              "JDT_NAVIGATION_PUBLICATION_COMPLETE selectedTotal=%d elapsedNanos=%d"
+                  .formatted(selectedTotal, elapsed));
+      return reference;
+    } catch (RuntimeException failure) {
+      long elapsed = System.nanoTime() - publicationStarted;
+      LOGGER.log(
+          System.Logger.Level.INFO,
+          () ->
+              "JDT_NAVIGATION_PUBLICATION_FAILED selectedTotal=%d failureType=%s elapsedNanos=%d"
+                  .formatted(selectedTotal, failure.getClass().getSimpleName(), elapsed));
+      throw failure;
+    }
+  }
+
+  private static List<String> selectedEntryIds(
+      List<String> requestedEntryIds, List<EntrySeed> discoveredEntries) {
+    if (requestedEntryIds == null) {
+      throw new IllegalArgumentException("selected entry IDs are required");
+    }
+    List<String> selected = new ArrayList<>(requestedEntryIds.size());
+    for (String entryId : requestedEntryIds) {
+      if (entryId == null || entryId.isBlank()) {
+        throw new IllegalArgumentException("selected entry ID cannot be blank");
+      }
+      selected.add(entryId);
+    }
+    selected.sort(java.util.Comparator.naturalOrder());
+    if (new HashSet<>(selected).size() != selected.size()) {
+      throw new IllegalArgumentException("selected entry IDs cannot repeat");
+    }
+    Set<String> discovered =
+        discoveredEntries.stream()
+            .map(EntrySeed::entryId)
+            .collect(java.util.stream.Collectors.toSet());
+    if (!discovered.containsAll(selected)) {
+      throw new IllegalArgumentException("selected entry ID is not in application discovery");
+    }
+    return List.copyOf(selected);
   }
 
   private static JavaCodeIndex.EntryCollection withEnhancements(

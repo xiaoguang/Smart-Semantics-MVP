@@ -45,7 +45,7 @@ JDT 路径 Step04 的实际公开集合精确为 `fact-accounting.json + proven-
 
 输入：Step02所有入口、Step03统一索引、可选同源图/Fact/strict Flow。输出：`FlowCompilation.entryContexts`中的新合同对象、原样Capsule投影与每入口处置。
 
-处理：按ENTRY_MEMBERSHIP重新组装完整MethodCode/CallSite，不重新定位方法；附有效技术refs，不用refs筛掉原文。一个safe entry没有strict Flow时`flowRef=null`。现有严格Flow仍可单独保留，但不得要求新context伪造OutcomePath/obligation才能过publisher。
+处理：按ENTRY_MEMBERSHIP重新组装完整MethodCode/CallSite，不重新定位方法。导航索引v2的METHOD仍全仓共享，CALL必须按入口owner及物理callKey读取；不能把另一入口已经展开的目标替换本入口的NOT_EXPANDED。附有效技术refs，不用refs筛掉原文。一个safe entry没有strict Flow时`flowRef=null`。现有严格Flow仍可单独保留，但不得要求新context伪造OutcomePath/obligation才能过publisher。
 
 唯一依据模型为[EntryCodeContext](contracts-and-configuration.md)，替换当前`FlowCompilation.CallContext`单target、actual-only和`EXACT/UNRESOLVED`窄形状；不会长期并存两套互相补字段的context。Capsule引用context或原样投影，不另判一次调用是不是可信；读取器只检查来源/引用/版本。
 

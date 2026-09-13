@@ -221,7 +221,7 @@ final class PersistedFlowCompilationInputReader {
           && expected.containsKey("graph-index.json")
           && "java-code-index.jsonl".equals(descriptor.fileName())
           && "PROGRAM_GRAPHS_JAVA_CODE_INDEX".equals(descriptor.artifactType())
-          && "java-code-index-v1".equals(descriptor.schemaVersion())
+          && "java-code-index-v2".equals(descriptor.schemaVersion())
           && descriptor.mediaType() == CanonicalMediaType.APPLICATION_X_NDJSON) {
         continue;
       }

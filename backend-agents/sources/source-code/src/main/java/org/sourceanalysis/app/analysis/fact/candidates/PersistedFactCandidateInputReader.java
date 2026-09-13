@@ -1173,7 +1173,7 @@ public final class PersistedFactCandidateInputReader {
       String identity =
           key(payload.descriptor().artifactType(), payload.descriptor().schemaVersion());
       if (expected.contains(key(CODE_STRUCTURE_TYPE, CODE_STRUCTURE_SCHEMA))
-          && identity.equals(key("PROGRAM_GRAPHS_JAVA_CODE_INDEX", "java-code-index-v1"))) {
+          && identity.equals(key("PROGRAM_GRAPHS_JAVA_CODE_INDEX", "java-code-index-v2"))) {
         continue;
       }
       if (!expected.contains(identity) || result.putIfAbsent(identity, payload) != null)

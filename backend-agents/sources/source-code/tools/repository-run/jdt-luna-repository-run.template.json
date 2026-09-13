@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "repository-run-config-v1",
+  "policyRegistry": "jdt-artifact-policy-set-v1.json",
+  "source": {
+    "repositoryPath": "/absolute/path/to/read-only/jshERP-checkout",
+    "declaredRepositoryIdentity": "https://github.com/jishenghua/jshERP.git",
+    "commitId": "8c30ce7861570458920175e200bb2a6442713580"
+  },
+  "paths": {
+    "runStore": "/absolute/path/to/ignored/run-store",
+    "captureWorkspace": "/absolute/path/to/ignored/capture-workspace",
+    "stateFile": "/absolute/path/to/ignored/materials-state.json",
+    "gitExecutable": "/usr/bin/git"
+  },
+  "sourceAnalysis": {
+    "javaEngine": "jdt",
+    "jdt": {
+      "installation": "/absolute/path/to/jdtls-distribution",
+      "javaHome": "/absolute/path/to/java-17-home"
+    }
+  },
+  "inputs": {
+    "capturePolicy": {"schemaVersion": "capture-policy-v1", "mode": "LOCAL_GIT_COMMIT", "commitObjectFormat": "SHA1", "networkAccess": "DISABLED", "worktreeRead": "FORBIDDEN"},
+    "candidateSeries": {"schemaVersion": "candidate-series-v1", "readerCandidateRound": "ROUND_1"},
+    "capabilityProfile": {"schemaVersion": "capability-profile-v1", "languages": ["JAVA"], "frameworks": ["MYBATIS", "SPRING_MVC"]},
+    "verificationPolicy": {"schemaVersion": "verification-policy-v1", "allowUnverified": false, "sourceDisposition": "VERIFIED"},
+    "profileBundle": {"schemaVersion": "profile-bundle-v1", "discoveryRuleVersion": "application-discovery-v2"},
+    "resourceBudget": {"schemaVersion": "resource-budget-v1", "maxSourceFiles": 200000, "maxSourceBytes": 2000000000},
+    "toolchain": {"schemaVersion": "toolchain-java-local-git-v1", "provider": "NONE", "networkAccess": "DISABLED"},
+    "schemaBundle": {"schemaVersion": "schema-bundle-step05-v1", "analysisStepKeys": ["verified-source-inventory", "application-discovery", "program-graphs", "proven-code-facts", "business-flows"]},
+    "promptBundle": {"schemaVersion": "prompt-bundle-v1", "provider": "NONE", "messageCount": 0},
+    "graphProfile": {"schemaVersion": "graph-profile-v1", "graphProfileVersion": "program-graphs-v2"},
+    "flowProfile": {"schemaVersion": "flow-profile-v1", "maxFlows": 200000, "maxOutcomesPerFlow": 100000, "maxFlowNodes": 2000000, "maxFlowEdges": 4000000, "maxTraversalDepth": 200000, "maxProcessJoinSignalsPerFlow": 100000, "maxProcessJoinSignalBasisRefs": 100000},
+    "capsuleProfile": {"schemaVersion": "capsule-profile-v1", "maxCapsules": 200000, "maxSpansPerCapsule": 32, "maxSpanBytes": 4096, "maxCapsuleUtf8Bytes": 24576}
+  },
+  "technical": {
+    "approvedClasspath": [
+      "/absolute/path/to/spring-web.jar",
+      "/absolute/path/to/spring-core.jar",
+      "/absolute/path/to/spring-jcl.jar"
+    ],
+    "selectedEntryIds": [],
+    "inventory": {"maxSourceFiles": 200000, "maxSourceBytes": 2000000000},
+    "store": {"maxPayloadFiles": 100000, "maxArtifactBytes": 1000000000, "maxPublicationBytes": 2000000000, "maxDirectoryEntries": 1000000},
+    "flow": {"maxFlows": 200000, "maxOutcomesPerFlow": 100000, "maxFlowNodes": 2000000, "maxFlowEdges": 4000000, "maxTraversalDepth": 200000, "maxProcessJoinSignalsPerFlow": 100000, "maxProcessJoinSignalBasisRefs": 100000},
+    "capsule": {"maxCapsules": 200000, "maxSpansPerCapsule": 32, "maxSpanBytes": 4096, "maxCapsuleUtf8Bytes": 24576}
+  },
+  "business": {
+    "material": {"maxSourceRefsPerMaterial": 24, "maxLinesPerRef": 80, "maxMaterialChars": 48000, "maxEntriesPerMaterial": 8},
+    "activity": {"maxModelInputBytes": 128000, "maxModelOutputBytes": 32000, "maxActivitiesPerMaterial": 16, "maxValuesPerField": 64, "maxTextCharsPerValue": 8000},
+    "process": {"maxActivitiesPerGroup": 48, "maxProcessGroups": 512, "maxModelInputBytes": 128000, "maxModelOutputBytes": 32000, "maxProcessesPerGroup": 16, "maxValuesPerField": 64, "maxTextCharsPerValue": 8000, "maxRepositorySummaryItems": 2048},
+    "report": {"maxModelInputBytes": 128000, "maxModelOutputBytes": 32000, "maxValuesPerField": 64, "maxTextCharsPerValue": 8000},
+    "maxMaterialsToStart": 100000
+  }
+}

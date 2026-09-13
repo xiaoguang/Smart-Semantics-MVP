@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -31,8 +32,13 @@ import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
+import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 import org.sourceanalysis.app.artifact.Sha256Digest;
+import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
+import org.sourceanalysis.app.runtime.TechnicalAnalysisWorkflow;
+import org.sourceanalysis.app.runtime.TechnicalAnalysisWorkflowResult;
+import org.sourceanalysis.app.runtime.TechnicalDiscoveryWorkflowResult;
 
 /** Public-seam contract for the model-readable material checkpoint. */
 class BusinessMaterialBuilderTest {
@@ -109,6 +115,68 @@ class BusinessMaterialBuilderTest {
               "DECLARATION_ONLY",
               "RETURN")
           .doesNotContain("OrderController.java", "startLine", "sha256");
+    }
+  }
+
+  @Test
+  void preservesNotCollectedEntryMaterialCoverageFromSelectedPublicWorkflow() throws Exception {
+    try (ProgramGraphsPublicFixture fixture =
+        ProgramGraphsPublicFixture.createForGuardedJavaCodeIndex(
+            temporaryDirectory.resolve("selected-material"))) {
+      var sourceSet = fixture.sourceReader().reopen(fixture.sourceInventory());
+      String source =
+          sourceSet.documents().stream()
+              .filter(value -> value.path().endsWith("OrderController.java"))
+              .findFirst()
+              .map(value -> new String(value.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8))
+              .orElseThrow();
+      String selectedEntryId = discoveryEntryIds(fixture).get(0);
+      TechnicalAnalysisWorkflowResult technical =
+          new TechnicalAnalysisWorkflow(
+                  fixture.sourceReader(), fixture.moduleArtifacts(), fixture.stepArtifacts())
+              .continueAfterDiscovery(
+                  new TechnicalDiscoveryWorkflowResult(
+                      fixture.sourceInventory(), fixture.applicationDiscovery()),
+                  coherentJdtSession(sourceSet.snapshotId(), source),
+                  reference("graph-profile", 'a', 'b'),
+                  fixture.artifactControls(),
+                  flowProfile(),
+                  capsuleProfile(),
+                  List.of(selectedEntryId));
+
+      BusinessMaterialSet set =
+          new BusinessMaterialBuilder(
+                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
+              .build(
+                  new BuildBusinessMaterialsRequest(
+                      technical.businessFlows(), new BusinessMaterialProfile(24, 200, 100_000)))
+              .materialSet();
+
+      assertThat(set.entryCoverage()).hasSize(2);
+      List<BusinessMaterial> selectedMaterials =
+          set.materials().stream()
+              .filter(value -> value.entryIds().contains(selectedEntryId))
+              .toList();
+      assertThat(selectedMaterials).singleElement();
+      BusinessMaterial selectedMaterial = selectedMaterials.get(0);
+      assertThat(selectedMaterial.sourceRefs()).isNotEmpty();
+      assertThat(set.entryCoverage())
+          .filteredOn(value -> value.entryId().equals(selectedEntryId))
+          .singleElement()
+          .satisfies(
+              value -> {
+                assertThat(value.disposition()).isIn("ANALYZED_MATERIAL", "MATERIAL_WITH_GAPS");
+                assertThat(value.materialId()).isEqualTo(selectedMaterial.materialId());
+              });
+      assertThat(set.entryCoverage())
+          .filteredOn(value -> !value.entryId().equals(selectedEntryId))
+          .singleElement()
+          .satisfies(
+              value -> {
+                assertThat(value.disposition()).isEqualTo("NOT_MATERIALIZED");
+                assertThat(value.materialId()).isNull();
+                assertThat(value.reasonCode()).isEqualTo("NOT_SELECTED_FOR_SAMPLE");
+              });
     }
   }
 
@@ -362,6 +430,25 @@ class BusinessMaterialBuilderTest {
     return new ArtifactReference(
         ArtifactId.parse(prefix + ":" + String.valueOf(identity).repeat(64)),
         Sha256Digest.parse(String.valueOf(content).repeat(64)));
+  }
+
+  private static List<String> discoveryEntryIds(ProgramGraphsPublicFixture fixture) {
+    ReopenedAnalysisStepPublication discovery =
+        fixture.stepArtifacts().reopen(fixture.applicationDiscovery().publication());
+    VerifiedCanonicalPayload payload =
+        discovery.semanticPayloads().stream()
+            .filter(value -> "entry-points.jsonl".equals(value.descriptor().fileName()))
+            .findFirst()
+            .orElseThrow();
+    String content = new String(payload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8);
+    List<String> ids = new ArrayList<>();
+    for (String line : content.strip().split("\\R")) {
+      JsonNode entry =
+          new CanonicalJsonCodec()
+              .parseCanonical(ImmutableBytes.copyOf(line.getBytes(StandardCharsets.UTF_8)));
+      ids.add(entry.path("entryId").textValue());
+    }
+    return List.copyOf(ids);
   }
 
   private static JavaCodeSession coherentJdtSession(String snapshotId, String source) {

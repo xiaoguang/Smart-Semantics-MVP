@@ -128,7 +128,13 @@ public final class TechnicalAnalysisWorkflow {
       FlowCompilationProfile flowProfile,
       CapsuleProjectionProfile capsuleProfile) {
     return continueAfterDiscovery(
-        discoveryResult, javaCodeSession, null, artifactControls, flowProfile, capsuleProfile);
+        discoveryResult,
+        javaCodeSession,
+        null,
+        artifactControls,
+        flowProfile,
+        capsuleProfile,
+        java.util.List.of());
   }
 
   /** Runs the selected engine, with strict graph enrichment when its profile is supplied. */
@@ -139,22 +145,62 @@ public final class TechnicalAnalysisWorkflow {
       ArtifactControls artifactControls,
       FlowCompilationProfile flowProfile,
       CapsuleProjectionProfile capsuleProfile) {
+    return continueAfterDiscovery(
+        discoveryResult,
+        javaCodeSession,
+        graphProfileRef,
+        artifactControls,
+        flowProfile,
+        capsuleProfile,
+        java.util.List.of());
+  }
+
+  /** Runs the selected JDT entries while retaining all persisted discovery entries downstream. */
+  public TechnicalAnalysisWorkflowResult continueAfterDiscovery(
+      TechnicalDiscoveryWorkflowResult discoveryResult,
+      JavaCodeSession javaCodeSession,
+      ArtifactReference graphProfileRef,
+      ArtifactControls artifactControls,
+      FlowCompilationProfile flowProfile,
+      CapsuleProjectionProfile capsuleProfile,
+      java.util.List<String> selectedEntryIds) {
     Objects.requireNonNull(discoveryResult, "technical discovery result");
     Objects.requireNonNull(javaCodeSession, "Java code session");
+    Objects.requireNonNull(selectedEntryIds, "selected entry IDs");
     VerifiedSourceInventoryReference verifiedSourceInventory =
         discoveryResult.verifiedSourceInventory();
     ApplicationDiscoveryReference discovery = discoveryResult.applicationDiscovery();
-    ProgramGraphsReference graphs =
-        graphProfileRef == null
-            ? new ProgramGraphsExecution(sourceReader, moduleArtifacts, stepArtifacts)
-                .execute(verifiedSourceInventory, discovery, javaCodeSession, artifactControls)
-            : new ProgramGraphsExecution(sourceReader, moduleArtifacts, stepArtifacts)
-                .execute(
-                    verifiedSourceInventory,
-                    discovery,
-                    javaCodeSession,
-                    graphProfileRef,
-                    artifactControls);
+    ProgramGraphsExecution programGraphs =
+        new ProgramGraphsExecution(sourceReader, moduleArtifacts, stepArtifacts);
+    ProgramGraphsReference graphs;
+    if (graphProfileRef == null) {
+      if (!selectedEntryIds.isEmpty()) {
+        throw new IllegalArgumentException("selected entry IDs require a graph profile reference");
+      }
+      graphs =
+          programGraphs.execute(
+              verifiedSourceInventory, discovery, javaCodeSession, artifactControls);
+    } else if ("jdt".equals(javaCodeSession.descriptor().engineId())) {
+      graphs =
+          programGraphs.execute(
+              verifiedSourceInventory,
+              discovery,
+              javaCodeSession,
+              graphProfileRef,
+              artifactControls,
+              selectedEntryIds);
+    } else {
+      if (!selectedEntryIds.isEmpty()) {
+        throw new IllegalArgumentException("selected entry IDs require the JDT engine");
+      }
+      graphs =
+          programGraphs.execute(
+              verifiedSourceInventory,
+              discovery,
+              javaCodeSession,
+              graphProfileRef,
+              artifactControls);
+    }
     ProvenCodeFactsReference facts =
         new ProvenCodeFactsExecutor(sourceReader, moduleArtifacts, stepArtifacts)
             .execute(verifiedSourceInventory, discovery, graphs);

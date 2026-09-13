@@ -59,6 +59,8 @@ BusinessMaterialBuilder 不再构造第二套调用链。它不丢弃 Step05 上
 
 保存 business-materials.jsonl 后才可开始模型。入口无安全上下文记 NOT_ANALYZED_SOURCE；有已知代码但关系未完成则可 ANALYZED_WITH_GAPS，保留具体缺口。为控制长度而保留的“仅选择预算内片段”说明不是业务或技术缺口：完整 Flow 仍可记 ANALYZED。不能把无 strict Fact 或 FLOW_NOT_AVAILABLE 一律当作没有业务材料。
 
+读取 Step05 时必须保留合法的 `NOT_COLLECTED` 记录：它要求非空 `collectionReason`、空 `codeContext`，而 `strictTechnicalContext` 可选；两个上下文同时为空不是文件损坏。没有可读上下文时不生成模型包，实际材料覆盖记录为 `NOT_MATERIALIZED` 并保留该具体原因（例如用户选样后的 `NOT_SELECTED_FOR_SAMPLE`），不删入口、不重新扫描或伪报导航失败。`COLLECTED` 仍要求同入口的 `codeContext` 与空 reason；状态未知或互相矛盾继续拒绝。
+
 模型可见内容只有短 refs、代码、必要技术观察和限制；不可见本机路径、行号、hash、完整五图/Proof、run/artifact/publication identities、Provider 控制或预算配置。Java 不给材料贴采购、销售、财务等行业类型标签来决定模型答案。
 
 ## 4. ActivityExplainer：DRAFT 与完整 REVIEW

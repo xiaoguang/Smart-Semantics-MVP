@@ -121,7 +121,8 @@ public final class PersistedTechnicalRunExecutor {
           configuration.graphProfileRef(),
           controls(prepared.request()),
           configuration.flowProfile(),
-          configuration.capsuleProfile());
+          configuration.capsuleProfile(),
+          configuration.selectedEntryIds());
     }
   }
 
@@ -132,7 +133,7 @@ public final class PersistedTechnicalRunExecutor {
     var source = reader.reopen(inventory);
     VerifiedJavaProject project =
         VerifiedJavaProject.fromVerifiedSourceTextSet(
-            source, sourceRoots(source.documents()), List.of(), "17");
+            source, sourceRoots(source.documents()), configuration.approvedClasspath(), "17");
     JavaCodeEngine engine = engineFactory.create(configuration.engineConfiguration());
     return engine.open(project);
   }

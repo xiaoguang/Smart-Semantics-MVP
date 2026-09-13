@@ -103,6 +103,34 @@ class BusinessReportPublisherTest {
   }
 
   @Test
+  void boundsSourceReferenceSchemaWithoutRepeatingLargeAllowlist() {
+    RecordingReportProvider provider = new RecordingReportProvider();
+
+    new BusinessReportPublisher(provider)
+        .publish(
+            new PublishBusinessReportRequest(
+                knowledge(),
+                largeSourceReferences(),
+                new BusinessReportProfile(24_000, 16_000, 32, 2_000)));
+
+    List<String> expectedRefs = new ArrayList<>();
+    for (int index = 1; index <= 1_001; index++) {
+      expectedRefs.add("S" + index);
+    }
+    assertThat(textValues(provider.draftInput().path("allowlistedRefs")))
+        .containsExactlyInAnyOrderElementsOf(expectedRefs);
+    assertThat(provider.outputSchemas())
+        .hasSize(2)
+        .allSatisfy(
+            schema -> {
+              // The nine fixed chapter numbers and nine fixed titles remain enums.
+              assertThat(schema.findValues("enum").stream().mapToInt(JsonNode::size).sum())
+                  .isEqualTo(18);
+              assertSourceReferenceTransportSchema(schema);
+            });
+  }
+
+  @Test
   void reportPromptsKeepInternalCoverageKeysOutOfReaderLanguage() {
     assertThat(BusinessReportPromptCatalog.instructionsFor("BUSINESS_REPORT_DRAFT"))
         .contains("仅当 unexplainedActivityEntries 非空时")
@@ -257,6 +285,53 @@ class BusinessReportPublisherTest {
         new SourceReference(
             "S3", "src/main/java/example/ReceiptService.java", 41, 44, "save(receipt);"),
         new SourceReference("S4", "src/main/java/example/BillService.java", 51, 55, "save(bill);"));
+  }
+
+  private static List<SourceReference> largeSourceReferences() {
+    List<SourceReference> result = new ArrayList<>();
+    for (int index = 1; index <= 1_001; index++) {
+      result.add(
+          new SourceReference(
+              "S" + index,
+              "src/main/java/example/Generated" + index + ".java",
+              index,
+              index,
+              "source line " + index));
+    }
+    return List.copyOf(result);
+  }
+
+  private static void assertSourceReferenceTransportSchema(JsonNode schema) {
+    for (String slotName :
+        List.of(
+            "section1",
+            "section2",
+            "section3",
+            "section4",
+            "section5",
+            "section6",
+            "section7",
+            "section8",
+            "section9")) {
+      for (String fieldName : List.of("paragraphs", "items")) {
+        JsonNode refItems =
+            schema
+                .path("properties")
+                .path("sections")
+                .path("properties")
+                .path(slotName)
+                .path("properties")
+                .path(fieldName)
+                .path("items")
+                .path("properties")
+                .path("refs")
+                .path("items");
+        assertThat(refItems.path("type").asText()).isEqualTo("string");
+        assertThat(refItems.path("minLength").asInt()).isEqualTo(1);
+        assertThat(refItems.path("maxLength").asInt()).isEqualTo(2_000);
+        assertThat(refItems.has("enum")).isFalse();
+      }
+    }
   }
 
   private static void assertReportSchema(JsonNode schema) {

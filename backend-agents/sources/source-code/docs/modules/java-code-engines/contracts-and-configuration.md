@@ -167,7 +167,17 @@ controls/exits是语法导航提示，不是CFG Proof。全部条件与return仍
 
 ## 5. 保存格式、位置与复用
 
-Step03增加`java-code-index.jsonl`，保存记录类型`ENGINE / TYPE / METHOD / CALL / ENTRY_MEMBERSHIP / DIAGNOSTIC`。每条外壳为`{schemaVersion, recordType, key, payload}`，schemaVersion固定`java-code-index-v1`。ENGINE恰一条，payload保存descriptor、snapshotRef和technicalEnhancements；METHOD和CALL按全仓key去重；ENTRY_MEMBERSHIP保存`entryId, methodKeys, callKeys, collectionStatus, reason`，status为COLLECTED/NOT_COLLECTED，后者必须有原因且不制造入口body。DIAGNOSTIC保留文件/工具问题。该文件不是新的“第九步”。
+Step03保存`java-code-index.jsonl`，记录类型仍为`ENGINE / TYPE / METHOD / CALL / ENTRY_MEMBERSHIP / DIAGNOSTIC`。每条外壳为`{schemaVersion, recordType, key, payload}`，schemaVersion为`java-code-index-v2`。ENGINE恰一条，payload保存descriptor、snapshotRef和technicalEnhancements；METHOD按全仓methodKey去重且正文必须一致。DIAGNOSTIC保留文件/工具问题。该文件不是新的“第九步”。
+
+**调用位置是全仓身份，调用的展开结果属于本次入口上下文，两者不能混为一个全仓对象。**例如两个入口均经过`Service.load()`中的同一调用：入口A已收集目标正文，入口B在到达目标前触及遍历限制。A的`BODY_INCLUDED`与B的`NOT_EXPANDED`可以同时为真，不能要求整条CallSite相等，也不能拿A的完整结果覆盖B的限制。
+
+- CALL的payload精确为`{entryId,call}`，call仍是未改动的`EntryCodeContext.CallSite`。记录key为`entry-call:`加SHA-256，输入依次为三个带8字节big-endian字节长度前缀的UTF-8字符串：`entry-call-record-v1`、entryId、物理callKey。该key只标识保存记录，不替换源码调用位置callKey，不进入模型业务语义。
+- ENTRY_MEMBERSHIP的payload仍为`{seed,collectionStatus,reason,methodKeys,callKeys,supportingSources,limitations}`；seed携带entryId和精确入口位置，callKeys仍按原顺序保存物理调用key。reader用该entryId及每个callKey找到唯一所属CALL，不跨入口借用。COLLECTED恢复原始方法集合、完整调用投影和限制；NOT_COLLECTED必须有原因，方法、调用、补充来源和限制列表为空。
+- 同一物理callKey的源码固有字段仍必须一致：callerMethodKey、kind、site、navigationSite、expression、receiverExpression、actualArguments、enclosingControlIndexes、deferred。不同入口的targets、resolution、resolutionDetail允许不同并原样保留。来源固有字段冲突、同一入口重复调用key、错误owner、缺少或悬空CALL仍拒绝；不是用first-win、last-win或候选并集隐藏冲突。
+- publisher与reader均执行上述规则。重开不查询JDT、不扩展方法集合，也不提升任何入口的展开状态。记录排序仍按recordType固定顺序，再按key的UTF-8字节序；membership内部列表保留该入口原顺序。
+- v1的全仓唯一完整CallSite假设已被真实整仓运行否定。仅导航索引及其直接policy/readers升级v2，内嵌context、Step05和模型材料结构不变；历史v1文件保留且不静默转换。
+
+最小回归使用两个不同入口共享同一调用位置：A保留正文、形参关联，B保留未展开原因，保存重开后二者逐字段不变；再把B的实参源码改成不一致值，必须拒绝。先完成这项公开发布/读取接口验证，再重新执行整仓导航，不以整仓长跑代替此检查。
 
 Step05仍在`flow-slices.json`的`entryContexts`保存可自包含阅读的上下文，在`evidence-capsules.jsonl`保存同一context投影；不新增第二套业务包。完整text只保留一种权威值；Capsule按引用复用或原样投影，不再次分析。
 
@@ -175,7 +185,7 @@ JDT 第一阶段已经按下列版本落地。后续局部修正必须同步 own
 
 | 内容 | 当前 JDT schema |
 | --- | --- |
-| 导航索引 | java-code-index-v1；file记录envelope见上文 |
+| 导航索引 | java-code-index-v2；CALL按入口保存，file记录envelope见上文 |
 | 内嵌上下文 | entry-code-context-v1；完整字段按本页 |
 | module compilation | business-flows-flow-compilation-v5 |
 | module projection | business-flows-capsule-projection-v10 |
@@ -190,7 +200,7 @@ JDT 第一阶段已经按下列版本落地。后续局部修正必须同步 own
 
 ### 5.1 实际产物集合与现有存储复用
 
-`java-code-index` 注册为 `PROGRAM_GRAPHS` module 7，artifact type 为 `PROGRAM_GRAPHS_JAVA_CODE_INDEX`，schema 为 `java-code-index-v1`，media type 为 JSONL，sensitivity 为 `METADATA_ONLY`。沿用现有 module/step store、原子发布、run registry 和两种 receipt；不建立新 step、存储层或生命周期。
+`java-code-index` 注册为 `PROGRAM_GRAPHS` module 7，artifact type 为 `PROGRAM_GRAPHS_JAVA_CODE_INDEX`，schema 为 `java-code-index-v2`，media type 为 JSONL，sensitivity 为 `METADATA_ONLY`。沿用现有 module/step store、原子发布、run registry 和两种 receipt；不建立新 step、存储层或生命周期。
 
 | 选择与步骤 | 合法的实际语义 payload | receipt之外不得出现 |
 | --- | --- | --- |
