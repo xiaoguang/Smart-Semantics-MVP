@@ -40,6 +40,8 @@ BusinessMaterialBuilder 不再构造第二套调用链。它不丢弃 Step05 上
 
 ## 3. BusinessMaterialBuilder：封装已有上下文
 
+本次[共享正文优化](../plans/navigation-reuse-and-readable-report-design.md#7-businessmaterialbuilder存储去重不变成模型缺料)不改变Activity协议：Step05的reader解开索引/context引用，Builder仍得到完整方法、候选和来源。一个模型包内共享方法正文只出现一次，入口以短编号复用；不同请求仍各自携带必要源码，不能假定模型记得上一个请求。business-materials.jsonl及实际请求快照继续自包含，代码去重不等于降低模型输入质量。
+
 插件化后的硬边界：本Module不得import或调用JavaParser/JDT，也不得在读取阶段再找Service。当前残留的语法观察和源码切片解析移到选定引擎。模型包必须实际包含已选入口的完整直接实现；不能仅把Service保存在Step03文件中。候选实现、未展开点和条件正文一起传递；没有strict Flow/Proof不是丢弃正文的理由。新材料字段和完整方法组包规则见[接入详细设计](../modules/java-code-engines/integration-and-javaparser.md)。
 
 | Interface 项 | 合同 |

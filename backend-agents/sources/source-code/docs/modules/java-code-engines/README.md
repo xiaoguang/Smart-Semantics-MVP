@@ -19,6 +19,7 @@
 | JDT 各子模块具体怎样找代码、取正文、处理调用 | [JDT 引擎详细设计](jdt-engine.md) |
 | 怎样接入现有步骤，怎样保留并迁回 JavaParser，如何测试 | [接入与第二阶段适配](integration-and-javaparser.md) |
 | 一个真实例子从请求到完整材料，再到业务解释 | [注册与财务贯穿例子](../../examples/java-code-engine-walkthrough.md) |
+| 共享方法如何只查一次、保存去重、CI与正文怎样减负 | [已批准优化设计](../../plans/navigation-reuse-and-readable-report-design.md) |
 
 这组文档是代码引擎的唯一详细合同；[八步总体设计](../../DESIGN.md)和各步骤文档引用它，不另复制一套字段定义。统一 Interface 与 JSON 已成为当前生产合同；JavaParser 的第二阶段段落同时保留为已完成迁移边界。
 
@@ -59,12 +60,12 @@ ProcessExplainer → BusinessReportPublisher → 一份九章
 | --- | --- | --- | --- |
 | EngineConfigurationLoader | 本地工具 YAML | 严格解析、选择引擎、启动参数预检 | EffectiveEngineConfiguration → factory |
 | JavaCodeEngineFactory | 配置、冻结来源能力 | 只创建选定 Adapter，不加载未选工具 | JavaCodeSession → discovery/Step03 |
-| JdtProjectSession | 源码清单、源码根、语言级别、已批准本地依赖 | 建隔离只读源码投影、启动 LS、复用一个索引 | 私有 LS 会话与投影映射 → JDT 内部 |
+| JdtProjectSession | 源码清单、源码根、语言级别、已批准本地依赖 | 建受控源码投影、启动 LS；拥有语法/导航缓存与共享方法表 | 私有会话、投影及复用基础 → JDT 内部 |
 | JdtSyntaxReader | 同一冻结 Java 文件 | 用 JDT Core 枚举声明、形参、调用语法、条件、返回与原文范围 | 工具中立的语法记录 → catalog/navigator |
-| JdtNavigationResolver | 具体调用位置、LS 会话 | call hierarchy / definition / implementation，保留所有返回候选 | NavigationResult → collector |
-| EntryCodeCollector | 一个入口、语法记录、导航结果 | 沿仓库实现展开、去重、保留循环及每个调用的处置 | EntryCodeContext → Step03 publication/Step05 |
+| JdtNavigationResolver | 具体调用位置、LS 会话 | 相同操作/位置只查询一次；保留原始返回、全部候选与失败 | NavigationResult → collector |
+| EntryCodeCollector | 一个入口、共享语法/导航结果 | 计算入口成员与展开状态，复用方法正文，保留循环和调用发生点 | EntryCodeContext → Step03 publication/Step05 |
 | JavaParserCodeEngine | 同样的冻结来源与入口 | 第二阶段封装现有解析/图算法，映射已有信息 | 同一种 EntryCodeContext，缺项如实记录 |
-| EntryContextAssembler | 引擎上下文、可选现有技术增强 | 归属到入口、附来源与既有技术引用，不再次找实现 | Step05 上下文及 Capsule → Builder |
+| EntryContextAssembler | 引擎上下文、可选现有技术增强 | 归属到入口、持久化索引/context引用；读取时恢复完整视图，不复制方法正文 | Step05 上下文及 Capsule → Builder |
 | BusinessMaterialBuilder（已有） | 保存的上下文 | 完整单元组包、短引用、模型可见投影 | BusinessMaterialSet → 既有业务模型链 |
 
 这些是代码内部职责，不意味着九个独立部署服务、九层 receipt 或九个公共 Interface。配置与 factory 可以很小；只有两种工具实现真正可替换。JDT 内部 LS/Core 类型不得泄漏到公共 records。
@@ -148,7 +149,8 @@ JDT LS 已提供定位声明、实现和调用层次；JDT Core 能读取方法�
 | JavaParser现状 | Adapter 已封装迁移前的有限名称解析、方法正文、调用/参数、七图、Fact/Proof 和 Flow；POM有 Symbol Solver 不等于生产已接线 | wildcard/import、继承和重载增强不在本阶段；不宣称 JavaParser 库做不到 |
 | Builder | 只消费已保存 EntryCodeContext，输出声明类型、完整方法、调用、参数、控制和限制 | 两个引擎共用同一无解析器 Builder，Builder 不按 engine 分支 |
 | 正式编排 | YAML、factory、同会话发现、索引、Step05、材料及 scripted 九章已接通；JDT 写 NOT_PRODUCED strict facts，JavaParser 写实际七图和 strict facts | 产品 Luna 与整仓业务质量另验；两个引擎不自动回退或混合 |
-| JDT导航索引 | v1已实现；真实整仓发现共享调用的入口投影冲突，当前修复目标为`java-code-index-v2`：METHOD共享、CALL按入口保存，其他记录类型不变 | v2尚待定向回归及整仓重跑；不把未生成的严格图/Fact伪造成空成功 |
+| JDT导航索引 | 080a86d已实现v2：METHOD共享、CALL按入口保存；四入口结果已保存。原v1入口投影冲突不再列为待实施 | 全仓运行尚非已验收；不能把方法去重误称跨入口RPC缓存已完成 |
+| 已批准复用优化 | 本轮设计明确会话query复用、Step05/Capsule引用保存、正文来源外置与CI单次测试 | 尚待代码实现；不新增缓存服务，不重新适配JavaParser解析算法 |
 | 业务模块 | Activity/Process/Report 使用同一正式材料；真实选择 JDT 的自包含运行已生成九章 | 该九章使用 scripted Provider，只证明接线与内容保留 |
 
 调研细节和准确限制见[贯穿例子](../../examples/java-code-engine-walkthrough.md)。历史调研产物仍保留；当前状态以正式 JDT 验收为准。

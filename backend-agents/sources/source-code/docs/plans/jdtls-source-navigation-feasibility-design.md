@@ -2,7 +2,9 @@
 
 > **目标：仅给一个 Controller 入口，自动展开仓库内可导航调用并组织完整方法正文，保留实参、形参、条件和返回；在外部库、无源码、歧义、回调/异步或反射边界明确停下。**
 
-本设计取代“固定空 client capabilities 是否一次跑通”的试验口径，但不改写[历史报告](../../research/jdtls-source-navigation-feasibility/REPORT.md)的原始测量。它只设计一次复用现有 research harness 的后续试验，不设计生产接入。
+本设计取代“固定空 client capabilities 是否一次跑通”的试验口径，但不改写[历史报告](https://github.com/xiaoguang/Smart-Semantics-MVP/blob/080a86db04c4917b27c5a48c88ca136d11bd0f2b/backend-agents/sources/source-code/research/jdtls-source-navigation-feasibility/REPORT.md)的原始测量。它只设计一次复用现有 research harness 的后续试验，不设计生产接入。
+
+本页保留调研时的设计与原材料位置，不是当前实施任务；/private/tmp链接仅指历史只读产物。当前优化与全部后续编辑使用正式目录，见[优化设计](navigation-reuse-and-readable-report-design.md)。
 
 ## 1. 要回答的三个问题
 
@@ -10,7 +12,7 @@
 2. **比现有 JavaParser 路径改善什么？** 比较的是现有自研 resolver + graph/material assembly，不是 JavaParser 工具本身的能力。旧实现只登记 explicit imports，遇到 `com.jsh.erp.service.*` 时会把 `UserService` 推到错误包，自动材料因此只有 Controller。新试验让 JDT 负责声明绑定，JavaParser 只在 JDT 返回位置附近做语法切片。
 3. **为什么有助于业务解释？** 只有新 packet 实际含 Service/helper 正文后，读者或后续 LLM 才能依据其中条件、异常、默认值和持久化调用写出更具体、仍受源码约束的业务说明。本试验不调用 LLM，只写一段“这些实测代码可支持怎样表述”的人工示例。
 
-历史自动材料是 [business-materials.jsonl](../../.workspace/fixed-material-plan-neutral-owners-v6/stores/runs/analysis-run--76cef36fb4437a0ad4f8811f2e151343bf7e0e68ed3e7f36a64c840b82083abb/steps/06-flow-interpretation/modules/10-business-material-builder/business-materials.jsonl)（SHA-256 `5105f2a2…6912`）第 151 条：`S731`–`S739` 全来自 `UserController.java`，没有 `UserService.java`。验证码、登录名、默认用户、保存、租户和角色细节来自之后的人工源码检查，只能作为 packet 落盘后的独立完整性参照；它们不是旧材料内容、navigator 输入或遍历规则。
+历史自动材料是 [business-materials.jsonl](/private/tmp/linguan-source-analysis-process-design/backend-agents/sources/source-code/.workspace/fixed-material-plan-neutral-owners-v6/stores/runs/analysis-run--76cef36fb4437a0ad4f8811f2e151343bf7e0e68ed3e7f36a64c840b82083abb/steps/06-flow-interpretation/modules/10-business-material-builder/business-materials.jsonl)（SHA-256 `5105f2a2…6912`）第 151 条：`S731`–`S739` 全来自 `UserController.java`，没有 `UserService.java`。验证码、登录名、默认用户、保存、租户和角色细节来自之后的人工源码检查，只能作为 packet 落盘后的独立完整性参照；它们不是旧材料内容、navigator 输入或遍历规则。
 
 ## 2. 当前测量应如何解释
 

@@ -10,6 +10,8 @@
 
 本文是目标设计。当前代码中已经存在四个业务 Module 和工作流，Step05 EntryContext 已连续传到材料，普通 Flow/Capsule 发布已停止重复 compile/project，Spring unrestricted method condition 也已落地。旧解释链及其 Capsule registry basis 字段已退出；Activity 的 v2 Prompt/schema、coverage-after-REVIEW 和程序侧未解释入口记录已落地。Process/Report 也已把具体未解释入口按材料投影到仓库知识和第九章。实现按当前实施计划分步开展；本文不把目标合同写成代码或实测结果。
 
+2026-09-13 已批准[导航复用、单次本地 CI 与正文减负](plans/navigation-reuse-and-readable-report-design.md)：同一冻结会话的相同 JDT 导航操作只执行一次，方法正文全仓共享，入口保持独立成员/展开状态；Step05/Capsule用索引引用保存，模型请求仍包含完整代码；九章只显示业务正文与来源编号。**这些优化本轮完成设计，尚未实施。** 整体设计/代码符合性审计留到下次。
+
 ## 2. 一条端到端接力
 
 | 步骤与固定 key | 输入 | 本步工作 | 可观察输出与下一消费者 |
@@ -83,7 +85,7 @@ Step04本身保留。JDT 没有提供原严格五图增强时，步骤明确保�
 
 ## 5. 连贯业务材料怎样形成
 
-Step05拥有下游读取的入口上下文：消费选定引擎一次取得的完整方法、调用、参数和候选，在flow-slices.json的entryContexts保存；Capsule只投影，不重新判定。统一字段以[代码引擎合同](modules/java-code-engines/contracts-and-configuration.md)为准，替换旧单target的窄CallContext；必要producer/schema/reader同步升版。BusinessMaterialBuilder只选择完整方法、分配短ref并组包，禁止隐藏JavaParser/JDT调用。源码缺失必须在context中说明，不能让模型只读Controller却称连贯取材完成。
+Step05拥有下游读取的入口上下文：消费选定引擎一次取得的完整方法、调用、参数和候选。目标保存方式为 flow-slices.json 的 entryContexts 引用 Step03 索引及各自入口，Capsule引用该上下文，不再次复制方法正文或重新判定。reader解开引用，业务消费者仍取得完整不可变视图；模型请求不能只有内部key。统一字段与局部版本变化见[代码引擎合同](modules/java-code-engines/contracts-and-configuration.md)。BusinessMaterialBuilder只选择完整方法、分配短ref并组包，禁止隐藏JavaParser/JDT调用。源码缺失必须在context中说明，不能让模型只读Controller却称连贯取材完成。
 
 一个材料包至少能看清入口、直接实现、条件归属、结果及未知位置。引擎先保存完整方法，不以模型费用裁源码；Builder按完整方法组包，不能仅为“最小证据”删除Service主体。物理上下文装不下时，具体列出未交给模型的方法/入口，而不是静默截短后宣称完整。
 
@@ -123,7 +125,7 @@ BusinessReportPublisher 用完整已审仓库知识和必要活动/过程材料�
 
 正文使用自然业务段落；已审草稿中的有用解释、条件、规则和公式应进入对应章节，不能在 renderer 中重新摘要或只留下标题。第 7 章没有源码支持的公式/定义时明确“本次未从源码识别到可定义指标”。第 8 章的问题应可由已识别活动/对象理解，不能用问题形式夹带未证实制度。
 
-来源标记采用简单短 ref。默认在第一章内放折叠来源区，含同文档锚点和经验证的真实文件、行段、片段；不增加第十章。业务推断可按活动或段落标注依据和不确定性，不要求每个自然语言原子配一个 Proof。
+来源标记采用 `[S123]` 这样的短编号。document.md不再附源码折叠区、路径或行号；完整文件/行段/原始片段单独保存在已有source-refs.jsonl。第一章只说明来源、范围、局限和在哪里查依据，不增加第十章。移除的是最后的排版附加物，不改变模型输入、已审九章JSON或后八章业务内容，纯重渲染零模型调用。业务推断可按活动或段落标注依据和不确定性，不要求每个自然语言原子配一个Proof。
 
 清楚的源码构造对象并调用明确 save/insert 时，可以说“系统生成并保存该对象”；这是代码定义的行为。没有运行证据不能写本次已成功保存、库存实际增加、付款完成、唯一单据或成功数量。只看到模糊调用边界时，应缩窄结论或列待确认。业务真伪由模型完整 REVIEW 与授权后的人工样本审查判断，不建立 Java 行业语言解析器。
 
@@ -166,7 +168,7 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 
 ## 10. 当前实现与剩余边界
 
-JDT-only 第一阶段已经完成；本表只区分已验证能力与下一阶段边界，不把调研程序、目标合同或 JavaParser 的未来适配混写成当前 JDT 实现。
+JDT与JavaParser接入已完成。下表保留此前能力记录，不是本轮新做的整套代码审计。已交付代码基线为080a86d；正式目录较旧的Java25未提交修改不属于该验证基线。新增优化尚未落地：跨入口query缓存、Step05/Capsule引用去重、源码外置排版、unit/IT/quality单次执行。详细范围见[优化设计](plans/navigation-reuse-and-readable-report-design.md)。
 
 | 当前可确认事实 | 剩余边界或保持项 |
 | --- | --- |
@@ -207,3 +209,4 @@ Spring 细则：`@RequestMapping` 省略 method 或 `method={}` 都合法。类�
 - [来源与发布边界](references/foundation-and-publication-contracts.md)
 - [持久化身份](references/canonical-persistence-identity-contracts.md)
 - [公共接口与源码位置](references/inherited-public-and-module-contracts.md)
+- [导航复用、单次本地 CI 与正文减负](plans/navigation-reuse-and-readable-report-design.md)

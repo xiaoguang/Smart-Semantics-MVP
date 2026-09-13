@@ -16,7 +16,9 @@ JDT必须看见仓库中的类型和源码根，才能从 Controller 的 `UserSe
 2. 一个确定的module一个项目；已知本地module关系写入项目引用，源码根只取inventory。未知parent/property/profile或缺依赖标诊断，不用扫描全盘/Maven仓库来猜classpath。
 3. 启动固定JDT LS版本。禁止Maven/Gradle import、自动构建、annotation processing、下载源码和联网配置更新；使用进程/网络隔离保证不能运行客户构建，仅设置一个flag不算安全保证。
 4. initialize完成后等待索引可用并做一次声明查询检查。不能将任意sleep时间当作“全部绑定已经完备”。索引部分失败需保留按项目/文件诊断；进程未初始化成功为运行失败。
-5. 全仓入口复用这一会话与索引；结束关闭LS和Core helper。新run可复用已验证产物，但本设计不新增持久化LS workspace恢复/锁接管。
+5. 全仓入口复用这一会话、Core语法缓存、原始导航查询缓存和方法表；不同入口保留独立成员与展开状态。结束关闭LS和Core helper并释放缓存。新run可复用已验证规范化产物，不复用LS handle，不新增持久化LS workspace恢复/锁接管。
+
+缓存只在索引就绪后启用。源码、模块/源码根、language level、本地classpath内容、工具/Adapter版本或有效解析配置变化都需要新会话；注解binding缓存也受classpath影响。会话内相同操作/位置只查询一次的精确键、错误复用和比较指标见[已批准优化设计第3–5节](../../plans/navigation-reuse-and-readable-report-design.md#3-jdtprojectsession一次会话拥有复用范围)。该优化尚待实现。
 
 JDT启动JDK和客户source level不同：当前调研使用LS1.61.0与JDK26；官方LS要求Java21或更新版本。应用本身保持Java17，不能因为工具要新JDK就偷偷把客户代码按Java26语法解释。[官方1.61说明](https://github.com/eclipse-jdtls/eclipse.jdt.ls/blob/v1.61.0/README.md)
 
@@ -66,7 +68,7 @@ helper 是同一工程中独立构建的工具产物，不进入宿主 Java 17 c
 
 使用 `ASTParser` 的 compilation-unit模式，`setSource(char[])`，明确compiler source/compliance，启用方法体。helper只接受会话已经验证的源码投影根和显式批准且校验过内容的本地classpath；它启用JDT Core binding，仅把确定解析到的注解限定名投影给catalog，以支持外部通配import。调用目标、定义和实现候选仍完全由LS导航决定，helper不按绑定建立第二张调用图，也不自行扫描依赖。DOM API版本取固定Core支持版本；**DOM级别、源码语言级别、工具JDK版本不是同一个概念**。
 
-从AST节点的start/length截取**原文**；禁止用`ASTNode.toString()`重新排版后当原文。每文件每有效source level只解析一次并缓存；缓存键至少包括源码内容、Core版本和language level。
+从AST节点的start/length截取**原文**；禁止用`ASTNode.toString()`重新排版后当原文。每文件每有效解析配置只解析一次并缓存；缓存基础包括源码内容、Core版本、language level以及参与注解binding的受控sourcepath/classpath，不能在依赖变化后复用旧注解身份。
 
 | Core节点/语法 | 收集什么 | 不能宣称什么 |
 | --- | --- | --- |
@@ -121,7 +123,7 @@ Luna须测试显式全名、通配import、同名自定义注解、源码组合�
 4. 将声明与实现候选按同源位置去重，合并`roles`和`navigationKinds`集合；多个实现全部记录。即使只发现一个实现也不宣称它一定是Spring实际bean。
 5. 用SyntaxReader读取候选声明和body。LS位置落在类型而非构造器时，不随机选一个构造器；继续用明确构造调用位置查询，仍不明确则保留`CONSTRUCTOR_TARGET_UNRESOLVED`。
 
-可在同一会话缓存相同位置的definition/implementation结果，不重复查已处理位置。是否需要额外查询由工具返回类型决定，不针对`registerUser`等案例硬编码。
+同一会话必须缓存相同操作/位置的原始结果：prepare按方法位置，outgoing按每个hierarchy item，definition/implementation按实际navigationSite。相同key最多一次实际RPC；不同操作不共用结果，必要implementation不因hierarchy命中省略。合法空、失败与候选分开保存，局部失败复用原诊断而非换入口重试。原始请求/响应首次保存一次，cache hit关联key；私有诊断不进模型或公开metadata。是否需要额外查询由工具返回类型决定，不针对`registerUser`等案例硬编码。
 
 ### 输出与边界
 
@@ -150,8 +152,8 @@ Luna须测试显式全名、通配import、同名自定义注解、源码组合�
 ### 处理步骤
 
 1. 输入真实EntrySeed，取入口完整MethodCode。
-2. 对该body的每个调用执行resolver；返回的仓库内concrete候选进入工作队列。
-3. 按稳定源码位置顺序遍历队列，方法正文以methodKey去重。每个调用点及目标关系仍独立保存，递归/互递归通过key引用，不递归复制无限正文。
+2. 对该body的每个调用取得resolver结果；会话内已有结果直接复用，返回的仓库内concrete候选进入本入口工作队列。
+3. 按稳定源码位置顺序遍历队列，完整方法正文以会话级methodKey去重，本入口只记录成员关系。每个调用点及入口展开投影仍独立保存，递归/互递归通过key引用，不递归复制无限正文。不把其他入口的BODY_INCLUDED覆盖本入口的NOT_EXPANDED。
 4. 取形参与有序实参做位置对照，保留原文；类型适配/重载选择交LS，不自己证明数据流。多候选分别关联，不能拿A实现的形参配B实现。
 5. 记录外部、无实现、未知目标及停止原因；lambda/回调引用保留deferred，不能排成业务顺序。
 6. 入口上下文引用全部已取得methods/calls、必要字段/配置声明与限制，交给Step03保存索引、Step05组织发布。
@@ -168,13 +170,15 @@ Luna须测试显式全名、通配import、同名自定义注解、源码组合�
 
 ### 下游保证
 
-Step05不再重跑JDT或解析器，只归属/保存已经取得的关系。Builder无需再查“缺少的Service”——它应在本模块交付物中，或者有准确原因；若有body却没传到模型，是组包错误，不是导航缺口。
+Step05不再重跑JDT或解析器，只归属/保存指向索引的引用；重开后恢复完整视图。Builder无需再查“缺少的Service”——它应在本模块交付物中，或者有准确原因；若有body却没传到模型，是组包错误，不是导航缺口。技术文件去重不意味着给模型发送它无法读取的文件key，实际请求仍含必要完整方法。
 
 验收同时读取保存的context和实际模型请求：注册三段Service不能只存在技术索引中。直接业务callee优先完整进入核心包；若所有相关方法不能放进一次请求，按完整方法组合并如实记录未进入该包的方法，不切掉关键条件或假称完整。如何选择可读单元归Builder，不能由Collector按行业词猜哪些方法重要。
 
 ### Luna RED / Terra GREEN
 
 测试重复方法、重复调用位置、循环、多入口共享、interface多候选、构造器、无body边界、部分取消与源码定位；再以真实注册/财务和一个不同结构的fixture验证。禁止为达到expected count人工加入Service路径，禁止把非空body全部压成label后宣称完成。
+
+缓存增量测试直接统计query key的真实调用数；N个入口共享同一方法不会多发相同RPC。还要验证不同调用位置、工具/依赖配置改变、QUERY_FAILED、A完整/B未展开和源码冲突。真实JDT用显式集成测试，普通录制响应测试不启动LS；[CI分类规则](../../plans/navigation-reuse-and-readable-report-design.md#9-本地-ci一个测试只由一个阶段执行)保持本地单次测试，不删除有效断言。
 
 ## 5. 已验证范围与剩余边界
 

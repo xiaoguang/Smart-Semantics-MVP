@@ -102,7 +102,7 @@ record SourceReference(
     String ref, String file, int startLine, int endLine, String snippet) {}
 ~~~
 
-ref 在 BusinessMaterialSet 内全局唯一，同 ref 只能定位一处；file 为冻结 repository-relative path，行号从 1 开始，snippet 为真实原文。允许在第一章折叠来源区显示该映射，无需第十章或完整技术 Trace 系统。SourceReference 本身的基本构造检查不能替代磁盘边界对来源/basis/bytes 的验证。
+ref 在 BusinessMaterialSet 内全局唯一，同 ref 只能定位一处；file 为冻结 repository-relative path，行号从 1 开始，snippet 为真实原文。该映射保存在独立source-refs.jsonl；九章正文仅显示短编号，不再附源码折叠区，不新增第十章或完整技术Trace系统。SourceReference本身的基本构造检查不能替代磁盘边界对来源/basis/bytes的验证。来源外置不改变模型已读材料或已审业务JSON。
 
 同进程可复用已验证 immutable source/context/checkpoint views。磁盘、新进程或导入验证保存 hash/schema/ID/ref/basis，实际读取源码时验证对应 bytes；publisher 不运行 compiler/projector 重证业务关系。纯 render 不改正文、不调用 Provider、不重扫源码。
 
