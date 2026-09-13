@@ -1,6 +1,6 @@
 # Progress: navigation reuse and readable report implementation
 
-- Status: IN_PROGRESS
+- Status: COMPLETE
 - Agent role: primary implementation coordinator
 - Model: GPT-5
 - Started: 2026-09-13
@@ -37,12 +37,22 @@
 - Task 5 completed the full local unit/real-JDT/quality lifecycle and the fixed
   four-entry comparison. The successful comparison observed 4,466 physical
   navigation RPCs and 1,766 cache hits across 6,232 logical requests.
+- Independent Standards/Spec review found three applicable delivery issues:
+  the helper IT had an implicit tool-JDK fallback, a material build/projector
+  reopened the same Step03 index publication, and a malformed COLLECTED context
+  could carry a non-null failure reason. All three now have RED/GREEN coverage
+  and minimal fixes. The remote-real-JDT finding was rejected because the
+  approved contract deliberately reserves those frozen prerequisites for local
+  CI and the remote workflow makes no real-JDT claim.
+- Final post-review local CI passed: 457 Surefire tests (0 failures/errors,
+  2 skipped), 2 real-JDT Failsafe tests (0 failures/errors/skips), SpotBugs
+  reported 0 bugs/errors, and PMD passed in 8:11.
 
 ## Current state
 
-- Tasks 1 through 4 are implemented and verified.
-- Task 5 implementation and measurement are complete; independent review and
-  Git delivery remain.
+- Tasks 1 through 5 are implemented, independently reviewed, and locally
+  verified. Git delivery is the remaining repository operation, not an
+  implementation task.
 
 ## Changed files
 
@@ -65,6 +75,10 @@
 | normalized model-packet comparison | PASS | only session-owned temporary JDT project roots differed before normalization; packets and observations otherwise identical |
 | persisted size comparison | PASS | flow slices 3,792,840→169,652 bytes; capsules 3,630,318→4,515 bytes |
 | preserved report JSON rerender | PASS | 9 chapters; 249,102→12,033 bytes; 61 cited refs all present in the 457-record sidecar; no embedded source blocks |
+| reviewer-finding RED selectors | RED | Builder opened Step03 three times; projector opened it twice; helper IT accepted an implicit JDK; COLLECTED context accepted a reason |
+| reviewer-finding GREEN selectors | PASS | 34 directly affected tests plus four focused RED/GREEN tests passed; each reader now reuses one verified Step03 publication |
+| final post-review `MAVEN_OPTS=-Xmx8g mvn -o -t .mvn/toolchains.xml -Pquality,real-jdt-it ... verify` | PASS | 457 Surefire tests (0 failures/errors, 2 skipped), 2 real-JDT Failsafe tests (0 failures/errors/skips), SpotBugs 0 bugs/errors, PMD PASS; total 8:11 |
+| `git diff --check` | PASS | no whitespace errors after the final local CI |
 
 ## Decisions
 
@@ -81,9 +95,7 @@
 
 ## Exact next action
 
-- Complete the independent Standards/Spec review, apply any required findings,
-  rerun final verification if code changes, then commit, push, merge, and verify
-  `origin/main`.
+- Commit the verified review corrections, push, merge, and verify `origin/main`.
 
 ## Resume checks
 

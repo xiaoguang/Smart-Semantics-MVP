@@ -699,7 +699,9 @@ public final class EvidenceCapsuleProjector {
   private JavaCodeIndex reopenCodeIndex(
       ProgramGraphsReference graphs, ReopenedAnalysisStepPublication graphStep) {
     ArtifactReference reference = codeIndexReference(graphStep);
-    return reference == null ? null : new JavaCodeIndexReader(analysisSteps).reopen(graphs);
+    return reference == null
+        ? null
+        : new JavaCodeIndexReader(analysisSteps).reopen(graphs, graphStep);
   }
 
   private static ArtifactReference codeIndexReference(ReopenedAnalysisStepPublication graphStep) {

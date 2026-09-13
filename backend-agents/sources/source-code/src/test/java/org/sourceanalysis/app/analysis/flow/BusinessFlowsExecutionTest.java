@@ -30,13 +30,18 @@ import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.analysis.flow.publish.FlowPublicationSpecifier;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsExecution;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
+import org.sourceanalysis.app.artifact.AnalysisStepInstallRequest;
+import org.sourceanalysis.app.artifact.AnalysisStepKey;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
+import org.sourceanalysis.app.artifact.InstalledAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
+import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 
@@ -118,15 +123,17 @@ class BusinessFlowsExecutionTest {
       ModulePublicationReference compilationPublication =
           new FlowCompilationModulePublisher(fixture.moduleArtifacts(), fixture.stepArtifacts())
               .publish(fixture.applicationDiscovery(), graphs, facts, compilation);
+      CountingAnalysisStepArtifactStore counting =
+          new CountingAnalysisStepArtifactStore(fixture.stepArtifacts());
       CapsuleProjection projection =
-          new EvidenceCapsuleProjector(
-                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
+          new EvidenceCapsuleProjector(fixture.moduleArtifacts(), counting, fixture.sourceReader())
               .project(
                   compilationPublication,
                   fixture.sourceInventory(),
                   graphs,
                   facts,
                   capsuleProfile());
+      assertThat(counting.programGraphReopenCount()).isEqualTo(1);
       ModulePublicationReference capsulePublication =
           new CapsuleProjectionModulePublisher(
                   fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
@@ -233,6 +240,33 @@ class BusinessFlowsExecutionTest {
                 assertThat(capsule.path("flowSliceId").isNull()).isTrue();
                 assertThat(capsule.path("proofPackId").isNull()).isTrue();
               });
+    }
+  }
+
+  private static final class CountingAnalysisStepArtifactStore
+      implements CanonicalAnalysisStepArtifactStore {
+    private final CanonicalAnalysisStepArtifactStore delegate;
+    private int programGraphReopenCount;
+
+    private CountingAnalysisStepArtifactStore(CanonicalAnalysisStepArtifactStore delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public InstalledAnalysisStepPublication install(AnalysisStepInstallRequest request) {
+      return delegate.install(request);
+    }
+
+    @Override
+    public ReopenedAnalysisStepPublication reopen(AnalysisStepPublicationReference reference) {
+      if (reference.address().analysisStepKey() == AnalysisStepKey.PROGRAM_GRAPHS) {
+        programGraphReopenCount++;
+      }
+      return delegate.reopen(reference);
+    }
+
+    private int programGraphReopenCount() {
+      return programGraphReopenCount;
     }
   }
 

@@ -2,10 +2,9 @@ package org.sourceanalysis.app.analysis.code.jdt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 /** Real JDT Core helper integration coverage; this class is Failsafe-only. */
@@ -59,36 +58,15 @@ class JdtSyntaxHelperRealIT {
 
   private static Path installedToolJavaHome() {
     String configured = System.getProperty("sourceanalysis.jdt.testJavaHome");
-    if (configured != null && !configured.isBlank()) {
-      return Path.of(configured);
+    if (configured == null || configured.isBlank()) {
+      throw new IllegalStateException(
+          "Missing required real-jdt-it prerequisite: sourceanalysis.jdt.testJavaHome is blank");
     }
-    try {
-      Path macJavaHome = Path.of("/usr/libexec/java_home");
-      if (java.nio.file.Files.isExecutable(macJavaHome)) {
-        Process selection = new ProcessBuilder(macJavaHome.toString(), "-v", "21+").start();
-        assertThat(selection.waitFor(10, TimeUnit.SECONDS)).isTrue();
-        if (selection.exitValue() == 0) {
-          return Path.of(
-              new String(selection.getInputStream().readAllBytes(), StandardCharsets.UTF_8)
-                  .strip());
-        }
-      }
-      Process probe =
-          new ProcessBuilder("java", "-XshowSettings:properties", "-version")
-              .redirectErrorStream(true)
-              .start();
-      assertThat(probe.waitFor(10, TimeUnit.SECONDS)).isTrue();
-      String output = new String(probe.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-      return output
-          .lines()
-          .map(String::strip)
-          .filter(line -> line.startsWith("java.home ="))
-          .map(line -> Path.of(line.substring(line.indexOf('=') + 1).strip()))
-          .findFirst()
-          .orElseThrow(() -> new AssertionError("PATH Java did not report java.home"));
-    } catch (Exception failure) {
-      throw new AssertionError(
-          "A Java 21+ tool runtime is required for the JDT helper test", failure);
+    Path javaHome = Path.of(configured);
+    if (!Files.isExecutable(javaHome.resolve("bin").resolve("java"))) {
+      throw new IllegalStateException(
+          "Missing required real-jdt-it prerequisite: sourceanalysis.jdt.testJavaHome/bin/java is not executable");
     }
+    return javaHome;
   }
 }

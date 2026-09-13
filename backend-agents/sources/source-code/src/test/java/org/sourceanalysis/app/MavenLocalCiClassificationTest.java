@@ -98,6 +98,14 @@ class MavenLocalCiClassificationTest {
         .contains("throw new IllegalStateException", "Missing required real-jdt-it prerequisite");
   }
 
+  @Test
+  void realSyntaxHelperItFailsClosedWithoutItsConfiguredToolJavaHome() throws Exception {
+    assertThat(Files.readString(REAL_HELPER_IT))
+        .as("real helper IT must use the same explicit tool-JDK prerequisite")
+        .contains("sourceanalysis.jdt.testJavaHome", "Missing required real-jdt-it prerequisite")
+        .doesNotContain("/usr/libexec/java_home", "new ProcessBuilder(\"java\"");
+  }
+
   private static Document readPom() throws Exception {
     var factory = javax.xml.parsers.DocumentBuilderFactory.newInstance();
     factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);

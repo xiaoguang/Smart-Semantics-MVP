@@ -18,7 +18,7 @@ JDT必须看见仓库中的类型和源码根，才能从 Controller 的 `UserSe
 4. initialize完成后等待索引可用并做一次声明查询检查。不能将任意sleep时间当作“全部绑定已经完备”。索引部分失败需保留按项目/文件诊断；进程未初始化成功为运行失败。
 5. 全仓入口复用这一会话、Core语法缓存、原始导航查询缓存和方法表；不同入口保留独立成员与展开状态。结束关闭LS和Core helper并释放缓存。新run可复用已验证规范化产物，不复用LS handle，不新增持久化LS workspace恢复/锁接管。
 
-缓存只在索引就绪后启用。源码、模块/源码根、language level、本地classpath内容、工具/Adapter版本或有效解析配置变化都需要新会话；注解binding缓存也受classpath影响。会话内相同操作/位置只查询一次的精确键、错误复用和比较指标见[已批准优化设计第3–5节](../../plans/navigation-reuse-and-readable-report-design.md#3-jdtprojectsession一次会话拥有复用范围)。该优化尚待实现。
+缓存只在索引就绪后启用。源码、模块/源码根、language level、本地classpath内容、工具/Adapter版本或有效解析配置变化都需要新会话；注解binding缓存也受classpath影响。会话内相同操作/位置只查询一次的精确键、错误复用和比较指标见[已批准优化设计第3–5节](../../plans/navigation-reuse-and-readable-report-design.md#3-jdtprojectsession一次会话拥有复用范围)。该优化已经实现并通过固定四入口对照。
 
 JDT启动JDK和客户source level不同：当前调研使用LS1.61.0与JDK26；官方LS要求Java21或更新版本。应用本身保持Java17，不能因为工具要新JDK就偷偷把客户代码按Java26语法解释。[官方1.61说明](https://github.com/eclipse-jdtls/eclipse.jdt.ls/blob/v1.61.0/README.md)
 

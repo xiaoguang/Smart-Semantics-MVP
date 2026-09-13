@@ -1,6 +1,7 @@
 package org.sourceanalysis.app.analysis.flow.publish;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -55,6 +56,34 @@ class BusinessFlowsPublicationSpecifierTest {
       "org.sourceanalysis.app.analysis.flow.publish.FlowPublicationSpecifier";
 
   @TempDir Path temporaryDirectory;
+
+  @Test
+  void rejectsACollectedContextThatCarriesACollectionFailureReason() throws Exception {
+    ArtifactReference index = reference("java-code-index", "collected-context-reason");
+    String entryId = "entry:" + digest("collected-context-reason-entry");
+    ObjectNode context = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+    context.put("entryId", entryId);
+    context.put("collectionStatus", "COLLECTED");
+    context.put("collectionReason", "UNEXPECTED_FAILURE_REASON");
+    ObjectNode codeContextRef = context.putObject("codeContextRef");
+    codeContextRef.put("entryId", entryId);
+    codeContextRef
+        .putObject("indexArtifact")
+        .put("artifactId", index.artifactId().value())
+        .put("sha256", index.sha256().value());
+    Method validator =
+        Class.forName(SPECIFIER_CLASS)
+            .getDeclaredMethod(
+                "requireContextReferenceClosure", List.class, ArtifactReference.class);
+    validator.setAccessible(true);
+
+    ObjectNode valid = context.deepCopy();
+    valid.putNull("collectionReason");
+    validator.invoke(null, List.of(valid), index);
+
+    assertThatThrownBy(() -> validator.invoke(null, List.of(context), index))
+        .hasRootCauseInstanceOf(IllegalArgumentException.class);
+  }
 
   @Test
   void installsTheExactFiveSemanticFilesAfterJoiningEveryPersistedFlowAndCapsule()

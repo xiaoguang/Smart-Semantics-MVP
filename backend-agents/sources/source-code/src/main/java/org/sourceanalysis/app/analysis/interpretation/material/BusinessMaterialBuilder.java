@@ -122,19 +122,6 @@ public final class BusinessMaterialBuilder {
     return sourceReader.reopen(new VerifiedSourceInventoryReference(sourcePublication));
   }
 
-  /** Reopens the existing Step03 index once; it never constructs or starts a code engine. */
-  private JavaCodeIndex reopenCodeIndex(ReopenedAnalysisStepPublication flows) {
-    ReopenedAnalysisStepPublication graphs = reopenGraphs(flows);
-    return codeIndexReference(graphs) == null
-        ? null
-        : new JavaCodeIndexReader(analysisSteps)
-            .reopen(new ProgramGraphsReference(graphs.reference()));
-  }
-
-  private ArtifactReference codeIndexReferenceForFlows(ReopenedAnalysisStepPublication flows) {
-    return codeIndexReference(reopenGraphs(flows));
-  }
-
   private ReopenedAnalysisStepPublication reopenGraphs(ReopenedAnalysisStepPublication flows) {
     AnalysisStepPublicationReference graphPublication =
         flows.receipt().upstreamAnalysisStepReferences().stream()
@@ -185,8 +172,13 @@ public final class BusinessMaterialBuilder {
     }
     List<EntryDisposition> entries = entryDispositions(dispositions);
     JsonNode flowSlicesDocument = canonicalJson.parseCanonical(flowSlices.canonicalUtf8());
-    JavaCodeIndex codeIndex = reopenCodeIndex(flows);
-    ArtifactReference codeIndexReference = codeIndexReferenceForFlows(flows);
+    ReopenedAnalysisStepPublication graphs = reopenGraphs(flows);
+    ArtifactReference codeIndexReference = codeIndexReference(graphs);
+    JavaCodeIndex codeIndex =
+        codeIndexReference == null
+            ? null
+            : new JavaCodeIndexReader(analysisSteps)
+                .reopen(new ProgramGraphsReference(graphs.reference()), graphs);
     ArtifactReference compilationReference =
         readReference(flowSlicesDocument, "flowCompilationRef");
     Map<String, EntryContext> entryContexts =

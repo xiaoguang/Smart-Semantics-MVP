@@ -136,7 +136,7 @@
   Verify that Service bodies reach actual model input, not only an index.
   Evidence exists to locate code, not to repeatedly re-prove ordinary reads.
 - Follow docs/plans/navigation-reuse-and-readable-report-design.md for the
-  approved optimization (design complete, implementation pending): cache each
+  implemented optimization: cache each
   distinct JDT operation/location once per frozen, ready session; share method
   bodies, not entry-specific expansion state. Keep index v2 METHOD sharing and
   entry-owned CALL. Persist Step05/Capsule references and hydrate full immutable
@@ -340,7 +340,7 @@
   do not append source blocks to Chapter 1, another chapter, or a tenth H2.
   Remove links to deleted same-document source anchors. Keep model inputs and
   reviewed chapter text unchanged; pure rerender calls no Provider and never
-  overwrites historical comparison artifacts. This target is not yet code.
+  overwrites historical comparison artifacts. This target is implemented.
 
 ## Persistence, reuse and recovery
 

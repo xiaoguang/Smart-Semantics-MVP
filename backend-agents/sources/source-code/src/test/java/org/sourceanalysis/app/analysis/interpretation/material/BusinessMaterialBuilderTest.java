@@ -28,10 +28,15 @@ import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsExecution;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
+import org.sourceanalysis.app.artifact.AnalysisStepInstallRequest;
+import org.sourceanalysis.app.artifact.AnalysisStepKey;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
+import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
+import org.sourceanalysis.app.artifact.InstalledAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 import org.sourceanalysis.app.artifact.Sha256Digest;
@@ -44,6 +49,53 @@ import org.sourceanalysis.app.runtime.TechnicalDiscoveryWorkflowResult;
 class BusinessMaterialBuilderTest {
 
   @TempDir Path temporaryDirectory;
+
+  @Test
+  void reopensTheSharedProgramGraphIndexOnlyOncePerMaterialBuild() throws Exception {
+    try (ProgramGraphsPublicFixture fixture =
+        ProgramGraphsPublicFixture.createForGuardedJavaCodeIndex(
+            temporaryDirectory.resolve("single-index-reopen"))) {
+      var sourceSet = fixture.sourceReader().reopen(fixture.sourceInventory());
+      String source =
+          sourceSet.documents().stream()
+              .filter(value -> value.path().endsWith("OrderController.java"))
+              .findFirst()
+              .map(value -> new String(value.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8))
+              .orElseThrow();
+      var graphs =
+          new ProgramGraphsExecution(
+                  fixture.sourceReader(), fixture.moduleArtifacts(), fixture.stepArtifacts())
+              .execute(
+                  fixture.sourceInventory(),
+                  fixture.applicationDiscovery(),
+                  coherentJdtSession(sourceSet.snapshotId(), source),
+                  fixture.artifactControls());
+      var facts =
+          new ProvenCodeFactsExecutor(
+                  fixture.sourceReader(), fixture.moduleArtifacts(), fixture.stepArtifacts())
+              .execute(fixture.sourceInventory(), fixture.applicationDiscovery(), graphs);
+      BusinessFlowsReference flows =
+          new BusinessFlowsExecutor(
+                  fixture.sourceReader(), fixture.moduleArtifacts(), fixture.stepArtifacts())
+              .execute(
+                  new BusinessFlowsExecutionRequest(
+                      fixture.sourceInventory(),
+                      fixture.applicationDiscovery(),
+                      graphs,
+                      facts,
+                      flowProfile(),
+                      capsuleProfile()));
+      CountingAnalysisStepArtifactStore counting =
+          new CountingAnalysisStepArtifactStore(fixture.stepArtifacts());
+
+      new BusinessMaterialBuilder(fixture.moduleArtifacts(), counting, fixture.sourceReader())
+          .build(
+              new BuildBusinessMaterialsRequest(
+                  flows, new BusinessMaterialProfile(24, 200, 100_000)));
+
+      assertThat(counting.programGraphReopenCount()).isEqualTo(1);
+    }
+  }
 
   @Test
   void formatsPersistedJdtMethodsCallsArgumentsControlsAndBoundariesWithoutReparsingSource()
@@ -115,6 +167,33 @@ class BusinessMaterialBuilderTest {
               "DECLARATION_ONLY",
               "RETURN")
           .doesNotContain("OrderController.java", "startLine", "sha256");
+    }
+  }
+
+  private static final class CountingAnalysisStepArtifactStore
+      implements CanonicalAnalysisStepArtifactStore {
+    private final CanonicalAnalysisStepArtifactStore delegate;
+    private int programGraphReopenCount;
+
+    private CountingAnalysisStepArtifactStore(CanonicalAnalysisStepArtifactStore delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public InstalledAnalysisStepPublication install(AnalysisStepInstallRequest request) {
+      return delegate.install(request);
+    }
+
+    @Override
+    public ReopenedAnalysisStepPublication reopen(AnalysisStepPublicationReference reference) {
+      if (reference.address().analysisStepKey() == AnalysisStepKey.PROGRAM_GRAPHS) {
+        programGraphReopenCount++;
+      }
+      return delegate.reopen(reference);
+    }
+
+    private int programGraphReopenCount() {
+      return programGraphReopenCount;
     }
   }
 

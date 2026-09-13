@@ -1373,9 +1373,12 @@ public final class FlowPublicationSpecifier {
       String status = text(context, "collectionStatus");
       JsonNode reference = context.get("codeContextRef");
       if ("COLLECTED".equals(status)) {
+        JsonNode collectionReason = context.get("collectionReason");
         if (codeIndexReference == null
             || reference == null
             || !reference.isObject()
+            || collectionReason == null
+            || !collectionReason.isNull()
             || !id(context, "entryId").equals(id(reference, "entryId"))
             || !codeIndexReference.equals(readReference(reference, "indexArtifact"))) {
           throw failure();

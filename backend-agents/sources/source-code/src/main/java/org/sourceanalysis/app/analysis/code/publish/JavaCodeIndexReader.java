@@ -47,9 +47,16 @@ public final class JavaCodeIndexReader {
 
   /** Returns the exact index stored by the supplied Step 03 reference. */
   public JavaCodeIndex reopen(ProgramGraphsReference reference) {
+    Objects.requireNonNull(reference, "program graphs reference");
+    return reopen(reference, steps.reopen(reference.publication()));
+  }
+
+  /** Reconstructs the index from an already verified Step 03 publication. */
+  public JavaCodeIndex reopen(
+      ProgramGraphsReference reference, ReopenedAnalysisStepPublication step) {
     try {
       Objects.requireNonNull(reference, "program graphs reference");
-      ReopenedAnalysisStepPublication step = steps.reopen(reference.publication());
+      Objects.requireNonNull(step, "reopened program graphs publication");
       if (!step.reference().equals(reference.publication())
           || step.reference().address().analysisStepKey() != AnalysisStepKey.PROGRAM_GRAPHS
           || (step.semanticPayloads().size() != 1 && step.semanticPayloads().size() != 8)) {
