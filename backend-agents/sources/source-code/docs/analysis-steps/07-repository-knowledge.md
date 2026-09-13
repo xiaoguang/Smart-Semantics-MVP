@@ -1,6 +1,6 @@
 # 仓库知识
 
-> 上游取材正在按[JDT/JavaParser插件设计](../modules/java-code-engines/README.md)改为统一完整代码材料；本步仍消费同一已审活动/来源合同，不按工具品牌另设业务路线。先JDT贯通，第二阶段仅适配JavaParser现有能力。
+> 上游取材已按[JDT/JavaParser插件设计](../modules/java-code-engines/README.md)统一完整代码材料；本步消费同一已审活动/来源合同，不按工具品牌另设业务路线。新的[模型 job 并行](../modules/model-job-execution.md)尚未实施。
 
 > [总体设计](../DESIGN.md)；固定 key：repository-knowledge，目录：steps/07-repository-knowledge/。唯一业务 Module：ProcessExplainer。
 
@@ -49,7 +49,9 @@ Java 可以根据直接调用、显式标识传递、数据联系、已审对象
 | 下游 | BusinessReportPublisher 读取完整活动/过程/coverage 与具体未解释入口 |
 | Luna RED / Terra GREEN | RED 覆盖完整活动字段、同名/异名、多对多、保守独立过程、按 material partial；GREEN 只扩现有 input/save/read seam，不放宽其他 validator |
 
-先为全部已审活动建立有界且可重叠的候选组，并记录单独活动与未分组范围。Luna 对每组做一次过程 DRAFT，再用同组完整输入和完整 DRAFT 做一次 REVIEW，返回完整修订结果。
+等待 Step06 全部活动 job 完成并稳定聚合后，为全部已审活动建立有界且可重叠的候选组，记录单独活动与未分组范围。每组是一个可并行的 job：同一绑定 Provider/model/effort（默认 Pro Luna/high）做一次 DRAFT，再用同组完整输入和完整实际 DRAFT 做一次 REVIEW，返回完整修订结果。原材料、长字段和来源不为并发缩短。每 job 的 schema、容量与 runtime identity 检查均使用其绑定的有效 profile。
+
+候选组输入只读共享已审活动，一个活动可同时属于 G1/G2；worker 不改共享活动或全局成员表。coordinator 独占全局 ID/coverage 合并，按原组顺序聚合，不以完成顺序推导业务先后或唯一归属。所有组完成之后才可开始仓库总整理；与 Activity 使用同一两级并发池，不另设 process concurrency 配置。
 
 模型可以提出源码未由 Java 预计算、但材料两端有根据的业务联系，使用合理限定。例如“收货信息可能用于形成应付账单；具体汇总时点待确认”。没有标识/控制/业务上下文支撑时，不能仅凭常识把多个查询和更新拼成必然流程。明确条件、分支、回退、并行与结果应保留；不存在的角色、制度、唯一性及运行事实不能发明。
 
@@ -59,7 +61,7 @@ Java 可以根据直接调用、显式标识传递、数据联系、已审对象
 
 ## 4. 大仓库与完整内容
 
-按组解释后，对全部已审过程摘要、跨组 cue 和覆盖表进行一次有界仓库总整理，同样最多 DRAFT + 完整 REVIEW。摘要只用于汇总导航；完整已审活动、过程段落、条件、规则、公式和来源继续保存在输出中，报告按明确 ID 获取相应章节需要的完整内容。
+等全部组完成并稳定聚合后，对全部已审过程摘要、跨组 cue 和覆盖表最多进行一个仓库总整理 job（DRAFT + 完整 REVIEW），固定其 Provider/model/effort，不与过程组或报告重叠。保留现有准入：`maxRepositorySummaryItems=0`、无过程或条目/输入容量不足时不发总结请求，记录既有具体 notConsolidated/范围说明。总结完成或上述显式跳过后才一次发布完整 knowledge/process aggregate 并向 Step08 放行，不能在组屏障处提前发布缺少总结处置的知识。摘要只用于汇总导航；完整已审活动、过程段落、条件、规则、公式和来源继续保存在输出中，报告装入必要完整内容，不按章另开模型任务。
 
 不能把每个活动压缩成一句标题就丢掉原文，再让报告模型凭摘要补写。若某组或报告章节无法在预算内包含必要完整内容，明确列未覆盖 IDs/原因，文档语义与验收结论为 PARTIAL；不得静默截断后声称已整理全仓。PARTIAL 不是新增 Process/runtime enum。也不通过重复 REVIEW、无限分组或不透明自动续跑增加候选轮次。
 
@@ -95,15 +97,17 @@ Java 可以根据直接调用、显式标识传递、数据联系、已审对象
 
 ## 6. 失败与复用
 
-每个候选组和总整理都是预先有界内容任务。超容量在启动前记 NOT_CONSOLIDATED_BUDGET，Provider 为 0；已有完成组不删除。started 后请求失败终止执行，无自动重试、Provider switch 或 API-key fallback。
+每个候选组和总整理都是预先有界内容任务。超容量在启动前记 NOT_CONSOLIDATED_BUDGET，Provider 为 0；等待并发空位不是超容量，合格排队组不能被跳过。started 后请求失败关闭新 job 派发；其他已开始且自身合法的 pair 在既有超时内完成 REVIEW 并保存，之后以现有失败路径终止，不启动仓库总结或报告。无自动重试、Provider switch 或 API-key fallback；显式 API 只能处理启动前已绑定给它的 jobs。
 
 模型越界 ref、缺活动成员、重复冲突 ID、source/basis 不一致、损坏 JSON、覆盖表遗漏后假称 COMPLETE 都是 fatal。业务顺序、岗位、对象同一性待确认是知识内容限制；不需要把整个组排除。
 
-目标是完成 REVIEW 随即保存，不等全仓完成；当前 ProcessExplainer 实际在循环结束后才用固定 module 地址聚合 publish。即时逐包保存与地址/聚合语义是独立已知缺口，本次只保持现有 publication，不循环安装不同 bytes，也不新建恢复/桥接账本。跨磁盘/新进程复用核验实际输入 fingerprint、hash/schema/ref/basis；同进程直接复用 immutable view，不重构图和 Proof。0 活动只保存明确范围和已有 unexplained records，不调用过程模型，不能宣称理解仓库业务。
+目标由 coordinator 在每组 REVIEW 完成时立即原子保存私有 job 结果，等全部组及总结完成/显式跳过后一次安装既有固定 module publication。当前 ProcessExplainer 仍在串行循环结束后聚合 publish；私有保存、独立 Provider/job journal 与单次提交按[执行合同](../modules/model-job-execution.md#5-保存身份与失败)实现，不循环安装不同 bytes，也不新建恢复/桥接账本。跨磁盘/新进程复用核验实际输入 fingerprint、hash/schema/ref/basis；同进程直接复用 immutable view，不重构图和 Proof。0 活动只保存明确范围和已有 unexplained records，不调用过程模型，不能宣称理解仓库业务。
 
 ## 7. 当前实现与后续测试
 
 ProcessExplainer 以及 BusinessAnalysisWorkflow 的 material→activity→process→report 调用顺序已经存在。过程模型输入现在保留完整已审活动字段：参与者、对象、输入、条件、步骤、代码定义结果、规则、公式、术语、可信度、问题、范围限制和短 ref；它不能只看到活动标题、对象或摘要。`ProcessMaterialRecallTest` 已以 scripted Provider 直接验证这些字段和完整 DRAFT→REVIEW 输入。
+
+并行实现尚未开始。后续在现有 ProcessExplainer 提取单组不可变结果函数，保留 repository-summary 在全部组后的最多一个 job。直接 scripted 测试增加 G1/G2 重叠成员并发、两级上限、完成顺序无关聚合、所有组完成前总结调用为 0、总结准入时只有一次 DRAFT/REVIEW、跳过时具体范围保存，以及组失败保留已完成结果/不启动报告；不创建新的公开 Module 或状态 enum。
 
 Activity v2 的具体未解释入口接力已实施：`repositoryInput` 按 material 投影 `{materialContext, unexplainedEntryKeys, reasonCode}`，不发送 global/material identity。owning knowledge/coverage schema 与 reader 已升至 v2，Process DRAFT/REVIEW 的其他成员、ref、JSON 或 fatal 校验未改变，PARTIAL 仍不是新的 runtime 状态。`MODEL_NOT_EXPLAINED` 保持模型本次未形成活动解释的范围说明，不能变成技术 Gap、活动或过程。
 

@@ -1,6 +1,6 @@
 # Source Code Analysis Agent
 
-从一份已注册、冻结的 Java/Spring MVC/MyBatis 源码，整理代码关系，解释业务活动与跨活动过程，生成可回到源码的九章业务报告。唯一公开入口是 `RepositoryAnalysisAgent`；Java 管来源、导航、上下文、预算与保存，Luna/high 解释业务。
+从一份已注册、冻结的 Java/Spring MVC/MyBatis 源码，整理代码关系，解释业务活动与跨活动过程，生成可回到源码的九章业务报告。唯一公开入口是 `RepositoryAnalysisAgent`；Java 管来源、导航、上下文、预算与保存，配置的模型解释业务，默认 Pro Luna/high。
 
 先读 [总体设计](docs/DESIGN.md)，再看 [真实财务查询与合成业务 walkthrough](docs/examples/semantic-framework-walkthrough.md)。全部文档以目标设计与当前实现分开表述；单个真实 Luna/high 活动样本只证明局部语义链可用，不代表整仓报告已生成。
 
@@ -39,7 +39,7 @@ JDT 第一阶段已经通过两层验收：安装的 JDT LS 1.61.0 与独立 JDT
 
 ## 九章与阅读依据
 
-已批准[导航复用、共享正文、单次本地CI与来源外置设计](docs/plans/navigation-reuse-and-readable-report-design.md)，总体与模块文档已同步，代码尚未实施。后续编辑只在正式目录；完整设计/代码符合性审计留到下次，不与这组优化混做。
+[导航复用、共享正文、单次本地CI与来源外置](docs/plans/navigation-reuse-and-readable-report-design.md)已交付，测量结果保留在该设计的验收节。新的[模型任务并行设计](docs/modules/model-job-execution.md)已批准但尚未实施：活动包并行 → 全部完成 → 过程组并行 → 全部完成 → 仓库总结（最多一个，保留既有显式跳过规则）→ 唯一整篇九章 → 零模型排版。每个 job 固定 Provider/model 做一次 DRAFT 与完整 REVIEW；YAML 配置全局和每 Provider 两级并发，默认 Pro Luna/high 各 4。显式 API 服务独立配置，共享账户额度不因多 key/新会话增加；失败不重试或转路。当前 CLI 仍是串行单 Provider，目标 YAML 不能直接用于当前版本。
 
 固定章节为：文档说明、业务目标、业务对象、业务活动、字段与维度、对象关系、指标口径、示例问题、待确认事项。模型写自然段 JSON 并完整审阅；程序排 Markdown 和短 ref。完整已审条件、规则与长段落保留到报告，不只传递摘要标题。
 
@@ -51,6 +51,7 @@ SourceRef 定位冻结文件、行段和原文。Fact/Proof 只证明支持的�
 
 - [引擎完整设计和各子模块](docs/modules/java-code-engines/README.md)：本轮设计主入口。
 - [配置与共同材料合同](docs/modules/java-code-engines/contracts-and-configuration.md)
+- [模型任务、两级并发 YAML、认证与保存](docs/modules/model-job-execution.md)：后续并行实现依据。
 - [JDT子模块算法与失败行为](docs/modules/java-code-engines/jdt-engine.md)
 - [先JDT、后JavaParser的接入与测试指南](docs/modules/java-code-engines/integration-and-javaparser.md)
 

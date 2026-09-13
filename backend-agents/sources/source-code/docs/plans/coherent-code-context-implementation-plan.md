@@ -1,5 +1,7 @@
 # 已批准清理与可扩展活动覆盖实施衔接
 
+> 当前后续模型执行工作以[并行 job 设计](../modules/model-job-execution.md)为依据：同一 YAML 全局/Provider 两级并发、完整 DRAFT/REVIEW、阶段屏障和私有逐 job 保存。该新设计尚未实施，当前工作仅文档；下面已完成清理/覆盖任务、原授权与实测记录保留，不重新执行其中 live 任务或重开已完成计划。
+
 > **用途：保留原清理/覆盖工作单及其验证记录，不再作为下一项取材改造的唯一计划。** 原规格为[代码清理与可扩展活动覆盖设计](code-cleanup-and-scalable-activity-coverage-design.md)，基线`fc6d67b`及以下checkbox保持原工作事实。新的[JDT/JavaParser完整设计](../modules/java-code-engines/README.md)规定先JDT独立贯通、再恢复JavaParser现有能力；实现前按该设计另列工作单，不重新执行这里的已完成清理或真实模型调用。
 
 > **For agentic workers:** 以下属于原授权工作范围及记录，不给新模型运行或引擎接入自动授权。需要查证旧行为时使用相应直接测试及progress；新引擎按新设计执行，不能混合两个计划。

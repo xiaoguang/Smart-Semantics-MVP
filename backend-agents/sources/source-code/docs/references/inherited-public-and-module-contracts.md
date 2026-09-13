@@ -26,6 +26,8 @@ start 创建 path-free QUEUED run；executeStep 按明确目标经已配置内�
 
 Java、CLI、未来 authenticated loopback HTTP 都复用同一 Agent。当前 CLI composition root 从预登记来源及固定配置创建请求，不允许任意 Provider/path 参数进入 analysis core。capture-local-git 是分析前独立维护适配器，路径只用于显式 capture，不是第二分析入口。HTTP、validate/trace 适配不是本轮业务质量验收前置。
 
+已批准的[模型 job 执行配置](../modules/model-job-execution.md#2-唯一配置入口与精确-yaml)归现有 CLI 组合根：目标 v2 同一 `--config` YAML 的 sourceAnalysis.modelJobs 配置全局/Provider 并发、路由、模型与认证引用，取代当前单 Provider 的第二配置文件。它不增加公开请求字段或 Path。技术/材料复用基础与模型执行配置分别严格校验，调整并发不强制重跑 JDT。当前 loader/CLI 尚未实现此升级。
+
 ## 2. 启动、单步执行与运行引用
 
 以下是已冻结字段，不因 semantic profile 改写：
@@ -206,7 +208,7 @@ ModuleFailure
 ## 6. 不变量
 
 1. Step 01–05 继续遵守既有 canonical framing、identity、store、source locator 与 Module publication；业务简化不削弱这些技术产物。
-2. Step 06–08 的四个深 Module 使用总体设计规定的简单检查点：材料在首次模型调用前保存，目标是完成的 activity/process 随即保存，进程内可直接传 immutable typed object，不要求逐内部 Module fresh-reopen。当前 Activity/Process 是循环结束后固定地址聚合 publish；逐包即时保存仍是独立缺口，不能循环安装不同 bytes 或假称已完成。
+2. Step 06–08 的四个深 Module 使用总体设计规定的简单检查点：材料在首次模型调用前保存，coordinator 立即保存每个已审 job 的私有不可变结果，再按稳定顺序一次安装原 aggregate；过程知识等待总结完成/显式跳过。当前 Activity/Process 仍是串行循环结束后 publish，并行/私有逐包保存待实施。不能循环安装不同 bytes，不增加公开 artifact key、Module 地址或状态 enum，进程内无需逐内部 Module fresh-reopen。
 3. 跨进程复用 Step 06–08 检查点比较覆盖实际内容、实际 Prompt、有效模型/输出配置与 Module 版本的 inputFingerprint，并核验磁盘身份/hash/schema/ref/basis；不恢复旧六/三/四模块 DAG、固定五/九 payload 或 52-output 顺序。
 4. 公开 artifact 查询不接受 Path，也不返回截断内容。
 5. Source excerpt/SourceRef 验证来源；Proof 证明受支持的 exact technical fact；两者都不自动证明模型自由业务文本，也不要求每个业务原子拥有 Proof。

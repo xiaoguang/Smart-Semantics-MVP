@@ -8,7 +8,7 @@
 
 Step05 已经把每个入口的代码关系和相关代码片段放进连贯上下文。Step06 把这份上下文整理成模型可读的有界包，再解释一次业务活动。最重要的输入是“实际怎样调用、传参、分支和返回”的代码，而不是一串证明 ID。
 
-BusinessMaterialBuilder 不再构造第二套调用链。它不丢弃 Step05 上下文，重新用字段类型、方法名和 arity 推导一个直接 callee；它只选择完整上下文、映射短 ref、检查预算并保存模型材料。业务解释全部由 ActivityExplainer 的 Luna/high 完成。
+BusinessMaterialBuilder 不再构造第二套调用链。它不丢弃 Step05 上下文，重新用字段类型、方法名和 arity 推导一个直接 callee；它只选择完整上下文、映射短 ref、检查预算并保存模型材料。业务解释全部由 ActivityExplainer 的配置模型完成，默认 Pro Luna/high。
 
 ## 2. 输入：一个或多个已经连贯的入口上下文
 
@@ -80,6 +80,8 @@ Luna/high 接收一个完整 material package，解释目的、参与者（有�
 
 每个包最多一次 DRAFT 和一次 REVIEW。REVIEW 输入必须包含原始材料及完整实际 DRAFT，输出完整修订后的活动；不是只返回“通过”或一个修订 patch。完整 purpose/conditions/steps/results/rules/formulas/questions、长段落及来源 refs 都进入持久化结果，供过程和报告继续消费。
 
+每包这对 DRAFT/REVIEW 是一个 job。已批准的[并行执行合同](../modules/model-job-execution.md)允许不同包同时运行，job 启动前固定 Provider/model/effort 与认证引用，两轮不切换。Module 从已绑定服务形成每 job 的有效 profile，容量预检、output schema 与 runtime identity 校验都用同一配置；不能沿用固定 Luna 的 identity 检查再绕过失败。workers 只返回各自不可变结果，coordinator 拥有全局映射、覆盖聚合与保存。所有活动完成并聚合后才向 Step07 放行。
+
 在第一次调用前按实际 N 完成容量闭环：`maxActivitiesPerMaterial≥N`；单项活动的 key 数容量至少 N；用当前 schema 构造的 N 项最小合法 REVIEW 输出不超过 `maxModelOutputBytes`；实际 `cleanPacket` 不超过 `maxModelInputBytes`；并为 `cleanPacket + 最大 DRAFT + missingEntryKeys envelope(N)` 预留完整 REVIEW input budget。DRAFT 返回后再把真实 `actualDraft` 与 `missingEntryKeys` 装包并 canonical serialize，精确核对实际 REVIEW bytes。前置不相容时整份材料零请求并记 `NOT_ANALYZED_ACTIVITY_OUTPUT_CAPACITY`、`NOT_ANALYZED_BUDGET` 或 `NOT_ANALYZED_REVIEW_INPUT_BUDGET`；DRAFT 已开始后才发现预留不变量失效则 fatal，不能伪装为零请求。
 
 目标 v2 把校验分成两层：DRAFT 的 JSON、字段、文本/数组、local ID、key/ref allowlist 和 output bytes 必须全部合法；只有 `draftCoveredKeys != expectedKeys` 不再在 REVIEW 前 fatal。程序计算 `missingEntryKeys=expectedKeys-draftCoveredKeys`，将它与完整实际 DRAFT 交给唯一 REVIEW。REVIEW 响应 shape 为 `{activities, unexplainedEntries}`；`unexplainedEntries` 字段 required，允许 `[]`，禁止 null/省略，只能包含本包唯一 key。最终要求 `coveredKeys ∪ unexplainedEntries = expectedKeys` 且交集为空；否则 `ACTIVITY_REVIEW_INVALID` fatal。
@@ -122,7 +124,7 @@ Java 只校验结构、scope-local IDs/refs、集合闭合、预算与保存约�
 | activity-explanations.jsonl | v1，每份完成 REVIEW 的完整活动，不压缩为标题 | ProcessExplainer、报告章节材料 |
 | activity-coverage.json | v2：全入口与材料的分析处置、未启动原因、容量限制，以及顶层 `unexplainedActivityEntries` 程序侧完整 records | Step07、Step08 与 inspect |
 
-目标是完成一个包 REVIEW 随即保存，后续包失败不删除已有结果；当前 ActivityExplainer 实际在循环结束后才以固定地址聚合 publish。把 publisher 移进循环会用同一地址安装不同 bytes 并 collision，因此即时逐包保存仍是独立已知缺口，本次覆盖修复保持现有聚合 publication，不假称解决，也不新增分片/恢复协议。DRAFT/REVIEW 原始执行材料按现有私有审计策略保存，不作为额外产品候选，不新增逐记录状态机或修复账本。
+并行目标是完成一个包 REVIEW 后由 coordinator 随即在运行私有目录原子保存完整 job 结果，不等前序慢包；全部完成后再按原材料顺序一次聚合并安装上述固定地址 publication。当前 ActivityExplainer 仍在串行循环结束后才聚合 publish，逐 job 保存尚未实施。不能把固定 publisher 移进 worker 反复安装不同 bytes。私有结果、Provider/job journal namespace 与重复提交防护归[执行设计](../modules/model-job-execution.md#5-保存身份与失败)，原始 DRAFT/REVIEW 按既有私有策略保存，不成为额外产品候选或新恢复系统。
 
 Step07 可以按已保存 material/activity ID 读取必要内容，不回到扫描仓库或重构调用链。`RepositoryBusinessKnowledge.unexplainedActivityEntries` 已持有并保存完整记录。程序送给 Process 仓库总整理/Report 模型前按 `materialId` 把完整 sidecar records 聚合成一项 `{materialContext, unexplainedEntryKeys, reasonCode}`：同一 context 只发送一次，删除 material/global entry IDs，保持 E1…EN 的材料映射顺序。活动之间是否属于同一过程由模型阅读多个活动决定，不由 Step06 强设唯一 owner；process-group Prompt 不因这一仓库输入变化升版。
 
@@ -130,15 +132,17 @@ Step07 可以按已保存 material/activity ID 读取必要内容，不回到扫
 
 所有发现入口必须进入 ANALYZED、ANALYZED_WITH_GAPS 或有具体原因的 NOT_ANALYZED。一个 material 可能支持多个活动，多个材料也可能共同解释活动，但入口分母不能减少。集合账中由 `MODEL_NOT_EXPLAINED` 闭合的入口仍是 NOT_ANALYZED；账闭合不等于业务内容完整，PARTIAL/INCOMPLETE 只是文档语义与验收结论，不新增 runtime/report enum。
 
-maxMaterialsToStart 限制本执行实际启动的材料数；超限材料写 NOT_ANALYZED_EXECUTION_CAPACITY，零请求。材料数是预算后实际分组数，不等于 HTTP 入口数。materials-only 不调用 Provider，但仍必须先完成 Step05 并从其保存的 EntryContext 读取；Builder 不暗中补边、重新定位调用或扫描 Java。
+maxMaterialsToStart 限制本执行实际启动的材料总数；超限材料写 NOT_ANALYZED_EXECUTION_CAPACITY，零请求。YAML 的全局与每 Provider `maxConcurrentJobs` 只限制同时在途数量（默认 Pro/全局各 4），不排除其余合格队列项，不等于组包 K/N 或材料总数。107 包且总启动上限足够时，并发 4 仍处理全部 107 包。materials-only 不调用 Provider，但仍必须先完成 Step05 并从其保存的 EntryContext 读取；Builder 不暗中补边、重新定位调用或扫描 Java。
 
-只有结构与 scope 合法、但 coverage 不足的 DRAFT 能进入唯一 REVIEW。started 后 transport/schema/runtime 失败停止本执行，不重试或切 Provider。source/hash/ref 错误、模型使用 allowlist 外 key/ref、损坏 JSON、重复冲突 local ID 或超安全预算 fatal；REVIEW 两边仍漏 key 也 fatal且不发第三次调用。未知业务含义、局部 graph 缺口和无 strict Flow 限制对应结论；`MODEL_NOT_EXPLAINED` 只表示本次模型未形成活动解释，不自动升级成这些技术缺口。
+只有结构与 scope 合法、但 coverage 不足的 DRAFT 能进入唯一 REVIEW。started 后 transport/schema/runtime 失败关闭新 job 派发，不重试或切 Provider；其他已开始且自身合法的 job 在既有超时内完成其唯一 REVIEW 并保留，协调器收齐终态后报告失败，不启动 Step07。未开始队列项明确未启动，不冒称容量排除。source/hash/ref 错误、模型使用 allowlist 外 key/ref、损坏 JSON、重复冲突 local ID 或超安全预算 fatal；REVIEW 两边仍漏 key 也 fatal且不发第三次调用。未知业务含义、局部 graph 缺口和无 strict Flow 限制对应结论；`MODEL_NOT_EXPLAINED` 只表示本次模型未形成活动解释，不自动升级成这些技术缺口。
 
 同进程复用不可变对象；跨进程/磁盘/导入复用检查 identity/hash/schema/ref/basis 和 inputFingerprint。fingerprint 覆盖内容输入、实际 Prompt、模型/output 配置和 Module 版本，变动就不复用旧内容。已开始但结果不确定的 Provider 调用不得恢复或重放。
 
 ## 7. 当前实现与最小修改
 
-本节历史实测只证明当时的材料链，不代表已实现JDT插件。代码审计仍发现Builder内JavaParser语法调用，当前窄CallContext也未提供通用候选/完整正文合同；第一阶段需与JDT及直接readers一起接通。现有Activity/Process/Report不重写，JavaParser适配推迟到第二阶段，仅恢复已有能力。
+本节历史实测只证明各自当时的材料链；JDT 与 JavaParser 现在均已接通完整 context 和 Builder，不能把历史取材缺口写成当前能力。新的 job 并行尚未实施：后续只提取 ActivityExplainer 外循环中的单包函数，接入有效 Provider profile、不可变结果和 coordinator 保存；保留现有内容、v2 coverage 与校验。
+
+直接 fixture 测试须新增：两级在途上限、超过 12 包与并发 1 时全部合格 job 不漏、完成次序改变但聚合相同、同 job 绑定不变、不同账户 journal 隔离、重复提交只有一次，以及 fatal 后已开始合法 pair 完成/保存且未开始项不调用。完整材料/actualDraft/missingEntryKeys/unexplainedEntries 的既有测试继续直接覆盖；不跑真实模型来证明线程调度。
 
 当前 BusinessMaterialBuilder 已读取 flow-slices 的 EntryContext，并将已保存的调用、实参/形参、边界、条件、返回和固定 locator 组织成短引用材料。无 strict Flow 时仍消费同一 EntryContext；不再存在从源码盘点直接重扫 Java、按 field type/name/arity 猜测 callee 的业务材料路径。Capsule 的 span 仍保留技术增强；EntryContext 是连贯关系的唯一 owner。已实现按同一 handler 类和材料模式的有界分组：每个成员的完整已选上下文都保留，模型 context 以 `E1…En` 标明成员，模型的活动响应也必须用这些短键声明覆盖范围；程序再将短键映射回实际入口。该分组不改变 Step05、不命名业务过程，也不替代后续业务解释。
 

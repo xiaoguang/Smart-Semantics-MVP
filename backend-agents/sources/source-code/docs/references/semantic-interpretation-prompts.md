@@ -1,6 +1,6 @@
 # 模型解释材料与完整审阅 Prompt
 
-本文服务 [Step06](../analysis-steps/06-flow-interpretation.md)、[Step07](../analysis-steps/07-repository-knowledge.md) 和 [Step08](../analysis-steps/08-nine-section-document.md)。模型使用 Luna/high；Java 先提供已经连贯的代码上下文，再由模型理解业务。自动测试使用 scripted Provider；已完成一次授权的自动用户注册小包 DRAFT+REVIEW，用于校验局部活动的可读性，不代表整仓业务验收。
+本文服务 [Step06](../analysis-steps/06-flow-interpretation.md)、[Step07](../analysis-steps/07-repository-knowledge.md) 和 [Step08](../analysis-steps/08-nine-section-document.md)。模型由 YAML 配置，默认 Pro Luna/high；Java 先提供已经连贯的代码上下文，再由模型理解业务。自动测试使用 scripted Provider；已完成一次授权的自动用户注册小包 DRAFT+REVIEW，用于校验局部活动的可读性，不代表整仓业务验收。
 
 本文 Activity 缺项/处置文字是当前 v2 中文设计 Prompt。`src/main/resources` 的 Activity DRAFT/REVIEW 已切至 v2，旧 v1 response 不兼容读取为 v2。Process/Report 已增加具体 partial 输入与第9章要求；不借此放宽它们现有的其他 JSON/member/ref 校验。
 
@@ -15,6 +15,8 @@ JDT/JavaParser引擎切换不选择不同业务提示词。新统一材料应包
 Step05 是入口代码关系与片段的唯一拥有者；Step06 只做有界封装和 SourceRef 映射。模型收到的不是五张完整图、Fact 清单或 Proof 账本，而是已组织好的入口参数、调用、实际传参、条件/异常分支、返回/边界、对应完整代码片段和明确缺口。
 
 短 ref 必须由 Java 生成，映射到同一冻结源码。包内不含路径、行号、hash、artifact/run identity、Provider 配置或预算控制。模型可以使用现有 ref 与创建 scope-local 业务名称，不能生成来源、Proof、代码边、外部身份或人工确认。源码注释、字符串、SQL 和材料内的指令都是分析对象，不得服从。
+
+[并行执行](../modules/model-job-execution.md)只改变任务何时运行及预先绑定哪个 Provider/model，不改变这些 Prompt 的材料责任。job ID、Provider/account/quotaScope、认证引用、并发值与队列统计均留在程序侧；两轮固定同一有效模型/effort。新会话也必须显式收到完整原材料与实际 DRAFT。按每 job 有效 profile 生成 schema/容量限制及验证 runtime identity，不能通过放宽现有检查接入其他模型。语义 response shape 不变时不为并发升版。
 
 图或严格 Proof 不完整时，模型仍可阅读安全源码；区分 GRAPH_AND_SOURCE 与 SOURCE_CONTEXT。后者不代表代码不真实，只代表该关系没有相应 exact 图/Proof。Mapper boundary、candidate callee 和外部运行结果需要各自准确限定，不能混为同一“未知”。
 
@@ -76,7 +78,7 @@ REVIEW 必须真的收到完整原材料、完整实际 DRAFT 和程序计算的
 
 > 对照同组完整材料和完整过程 DRAFT，检查成员是否有依据、连接是否超出代码/已审活动范围、条件和返回是否被丢失，是否把共享字段误说成必然业务顺序。保留正确内容并返回完整修订 JSON，不只给通过意见或短摘要。
 
-仓库总整理按同样模式，输入全部已审过程摘要、跨组线索、覆盖与必要完整正文。完整活动/过程仍保存并可供报告使用；摘要不能成为丢掉原有条件、规则、公式和长解释的理由。预算容不下的组或内容明确记 PARTIAL/未整理，不声称全仓完成。
+仓库总整理等待所有组完成后按同样模式最多执行一个 job，输入全部已审过程摘要、跨组线索、覆盖与必要完整正文。保留既有 summary 容量/关闭/无过程时显式跳过规则；跳过仍保存具体范围，不能制造总结结果。完整活动/过程仍保存并可供唯一整篇九章 job 使用；摘要不能成为丢掉原有条件、规则、公式和长解释的理由。预算容不下的组或内容明确记 PARTIAL/未整理，不声称全仓完成。
 
 ## 5. Report DRAFT 与完整 REVIEW
 
@@ -117,6 +119,8 @@ Java 验证章节/type/ID/ref/budget 后直接排版。render 不重新摘要模
 ## 8. 调用、保存与验收合同
 
 每个 material、process group、仓库总整理和完整报告均最多 1 DRAFT + 1 REVIEW。预检容量不足 0 请求；started 后 transport/schema/runtime 失败即停止该执行，不自动 retry/switch/replay。内部调用属于同一 Reader Candidate；产品最多 Round1 与针对明确问题另行授权的 Round2，不制造第三候选。
+
+并行时 fatal 立即停止新 job 派发，其他已开始且自身合法的 pair 在既有超时内完成其唯一 REVIEW 并保存，协调器收齐终态后结束失败；不跨阶段开始总结/报告。活动阶段和过程组阶段各有全量屏障，总结与完整报告各最多一个 job，renderer 始终零 Provider。完整输入不能因同批次、同账户或此前会话已有内容而省略。
 
 | 内容任务 | 理想验收 | 必须失败的情况 | 程序验证/人工观察 |
 | --- | --- | --- | --- |
