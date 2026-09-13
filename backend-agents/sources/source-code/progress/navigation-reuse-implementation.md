@@ -7,7 +7,7 @@
 - Last updated: 2026-09-13
 - Scope: implement the approved JDT query reuse, reference-based Step05/Capsule persistence, local CI separation, and report source externalization
 - Approved inputs: docs/plans/navigation-reuse-and-readable-report-design.md and user-approved implementation plan
-- Current branch/worktree: codex/navigation-reuse-implementation in the formal repository checkout
+- Current branch/worktree: delivered to `main` in the formal repository checkout
 
 ## Completed
 
@@ -50,9 +50,8 @@
 
 ## Current state
 
-- Tasks 1 through 5 are implemented, independently reviewed, and locally
-  verified. Git delivery is the remaining repository operation, not an
-  implementation task.
+- Tasks 1 through 5 are implemented, independently reviewed, locally verified,
+  and delivered through PR 23 as `main` commit `2f5af19`.
 
 ## Changed files
 
@@ -79,6 +78,7 @@
 | reviewer-finding GREEN selectors | PASS | 34 directly affected tests plus four focused RED/GREEN tests passed; each reader now reuses one verified Step03 publication |
 | final post-review `MAVEN_OPTS=-Xmx8g mvn -o -t .mvn/toolchains.xml -Pquality,real-jdt-it ... verify` | PASS | 457 Surefire tests (0 failures/errors, 2 skipped), 2 real-JDT Failsafe tests (0 failures/errors/skips), SpotBugs 0 bugs/errors, PMD PASS; total 8:11 |
 | `git diff --check` | PASS | no whitespace errors after the final local CI |
+| GitHub PR 23 | MERGED | squash commit `2f5af19fbe2cdb008dbbf4499746da12137f4fa0`; formal local `main` and `origin/main` verified equal |
 
 ## Decisions
 
@@ -95,7 +95,7 @@
 
 ## Exact next action
 
-- Commit the verified review corrections, push, merge, and verify `origin/main`.
+- None. The approved implementation plan and repository delivery are complete.
 
 ## Resume checks
 
