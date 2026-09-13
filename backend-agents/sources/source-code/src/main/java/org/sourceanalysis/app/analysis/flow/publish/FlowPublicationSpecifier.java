@@ -59,13 +59,13 @@ public final class FlowPublicationSpecifier {
   private static final Comparator<String> UTF8_ORDER = FlowPublicationSpecifier::compareUtf8;
   private static final String MODULE_VERSION = "v3";
   private static final String FLOW_SLICES_TYPE = "BUSINESS_FLOWS_FLOW_SLICES";
-  private static final String FLOW_SLICES_SCHEMA = "business-flows-flow-slices-v5";
+  private static final String FLOW_SLICES_SCHEMA = "business-flows-flow-slices-v6";
   private static final String COVERAGE_TYPE = "BUSINESS_FLOWS_FLOW_COVERAGE";
   private static final String COVERAGE_SCHEMA = "business-flows-flow-coverage-v2";
   private static final String ENTRY_TYPE = "BUSINESS_FLOWS_ENTRY_DISPOSITION";
   private static final String ENTRY_SCHEMA = "business-flows-entry-disposition-v2";
   private static final String CAPSULE_TYPE = "BUSINESS_FLOWS_EVIDENCE_CAPSULE";
-  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v8";
+  private static final String CAPSULE_SCHEMA = "business-flows-evidence-capsule-v9";
   private static final String GAP_TYPE = "BUSINESS_FLOWS_FLOW_GAP";
   private static final String GAP_SCHEMA = "business-flows-flow-gap-v2";
 
@@ -118,7 +118,7 @@ public final class FlowPublicationSpecifier {
               "flow-compiler",
               "flow-compilation.json",
               "BUSINESS_FLOWS_FLOW_COMPILATION",
-              "business-flows-flow-compilation-v5",
+              "business-flows-flow-compilation-v6",
               source.publication().address().runId(),
               sourceStep.receipt().controls(),
               compilerUpstream);
@@ -131,19 +131,25 @@ public final class FlowPublicationSpecifier {
               "capsule-projector",
               "capsule-projection.json",
               "BUSINESS_FLOWS_CAPSULE_PROJECTION",
-              "business-flows-capsule-projection-v10",
+              "business-flows-capsule-projection-v11",
               source.publication().address().runId(),
               sourceStep.receipt().controls(),
               projectorUpstream);
       Material material =
           navigationOnly
-              ? navigationMaterial(compiler, projector, compilerPayload, projectorPayload)
+              ? navigationMaterial(
+                  compiler,
+                  projector,
+                  compilerPayload,
+                  projectorPayload,
+                  codeIndexReference(graphStep))
               : material(
                   compiler,
                   projector,
                   compilerPayload,
                   projectorPayload,
-                  sourceRecords(factStep, graphStep));
+                  sourceRecords(factStep, graphStep),
+                  codeIndexReference(graphStep));
       LocalFlowCoverage localCoverage =
           requireLocalFlowCoverage(compiler, material, discoveryCoverage.entryIds());
       boolean publicAccountingClosed =
@@ -354,7 +360,8 @@ public final class FlowPublicationSpecifier {
       ReopenedModulePublication compiler,
       ReopenedModulePublication projector,
       ArtifactReference compilerPayload,
-      ArtifactReference projectorPayload) {
+      ArtifactReference projectorPayload,
+      ArtifactReference codeIndexReference) {
     JsonNode flowEnvelope =
         canonicalJson.parseCanonical(compiler.payloads().get(0).canonicalUtf8());
     JsonNode capsuleEnvelope =
@@ -380,6 +387,7 @@ public final class FlowPublicationSpecifier {
       throw failure();
     }
     Map<String, JsonNode> contextsByEntry = indexed(contexts, "entryId");
+    requireContextReferenceClosure(contexts, codeIndexReference);
     Map<String, JsonNode> capsulesByEntry = new HashMap<>();
     List<JsonNode> publicCapsules = new ArrayList<>();
     List<String> eligibleEntries = new ArrayList<>();
@@ -391,9 +399,7 @@ public final class FlowPublicationSpecifier {
       if (capsulesByEntry.put(entryId, capsule) != null
           || !capsule.path("flowSliceId").isNull()
           || !capsule.path("proofPackId").isNull()
-          || !canonicalJson
-              .encodeCanonical(contextsByEntry.get(entryId))
-              .equals(canonicalJson.encodeCanonical(object(capsule, "entryContext")))) {
+          || !referencesEntryContext(capsule, compilerPayload, contextsByEntry.get(entryId))) {
         throw failure();
       }
       String eligibility = text(capsule, "modelEligibility");
@@ -475,7 +481,8 @@ public final class FlowPublicationSpecifier {
       ReopenedModulePublication projector,
       ArtifactReference compilerPayload,
       ArtifactReference projectorPayload,
-      FlowProvenanceSources sources) {
+      FlowProvenanceSources sources,
+      ArtifactReference codeIndexReference) {
     JsonNode flowEnvelope =
         canonicalJson.parseCanonical(compiler.payloads().get(0).canonicalUtf8());
     JsonNode capsuleEnvelope =
@@ -490,6 +497,7 @@ public final class FlowPublicationSpecifier {
     List<JsonNode> flows = sortedObjects(array(flowPayload, "flowSlices"), "flowSliceId");
     List<JsonNode> dispositions = sortedObjects(array(flowPayload, "entryDispositions"), "entryId");
     List<JsonNode> entryContexts = sortedObjects(array(flowPayload, "entryContexts"), "entryId");
+    requireContextReferenceClosure(entryContexts, codeIndexReference);
     List<JsonNode> compilationGaps = sortedObjects(array(flowPayload, "flowGaps"), "gapId");
     List<JsonNode> capsules = sortedObjects(array(capsulePayload, "capsules"), "flowSliceId");
     Map<String, JsonNode> spansById =
@@ -500,6 +508,7 @@ public final class FlowPublicationSpecifier {
     Set<String> capsuleFlowIds = ids(capsules, "flowSliceId");
     Map<String, JsonNode> flowsById = indexed(flows, "flowSliceId");
     Map<String, JsonNode> capsulesByFlowId = indexed(capsules, "flowSliceId");
+    Map<String, JsonNode> contextsByEntry = indexed(entryContexts, "entryId");
     List<JsonNode> compiledDispositions =
         dispositions.stream()
             .filter(value -> "COMPILED".equals(text(value, "disposition")))
@@ -557,6 +566,9 @@ public final class FlowPublicationSpecifier {
     for (JsonNode capsule : capsules) {
       String flowSliceId = id(capsule, "flowSliceId");
       String entryId = id(object(capsule, "entryView"), "entryId");
+      if (!referencesEntryContext(capsule, compilerPayload, contextsByEntry.get(entryId))) {
+        throw failure();
+      }
       String eligibility = text(capsule, "modelEligibility");
       List<String> ineligibilityGapIds = identifierArray(capsule, "modelIneligibilityGapIds");
       if (!sources.proofPack().artifactId().value().equals(text(capsule, "proofPackId"))) {
@@ -1336,6 +1348,65 @@ public final class FlowPublicationSpecifier {
 
   private static ArtifactReference payloadReference(VerifiedCanonicalPayload payload) {
     return new ArtifactReference(payload.descriptor().artifactId(), payload.descriptor().sha256());
+  }
+
+  private static ArtifactReference codeIndexReference(ReopenedAnalysisStepPublication graphs) {
+    List<VerifiedCanonicalPayload> indexes =
+        graphs.semanticPayloads().stream()
+            .filter(value -> "java-code-index.jsonl".equals(value.descriptor().fileName()))
+            .toList();
+    if (indexes.isEmpty()) return null;
+    if (indexes.size() != 1
+        || !"PROGRAM_GRAPHS_JAVA_CODE_INDEX".equals(indexes.get(0).descriptor().artifactType())
+        || !"java-code-index-v2".equals(indexes.get(0).descriptor().schemaVersion())
+        || indexes.get(0).descriptor().mediaType() != CanonicalMediaType.APPLICATION_X_NDJSON) {
+      throw failure();
+    }
+    return payloadReference(indexes.get(0));
+  }
+
+  /** Ensures persisted M1 contexts name their only owning Step03 index membership. */
+  private static void requireContextReferenceClosure(
+      List<JsonNode> contexts, ArtifactReference codeIndexReference) {
+    for (JsonNode context : contexts) {
+      if (context.has("codeContext")) throw failure();
+      String status = text(context, "collectionStatus");
+      JsonNode reference = context.get("codeContextRef");
+      if ("COLLECTED".equals(status)) {
+        JsonNode collectionReason = context.get("collectionReason");
+        if (codeIndexReference == null
+            || reference == null
+            || !reference.isObject()
+            || collectionReason == null
+            || !collectionReason.isNull()
+            || !id(context, "entryId").equals(id(reference, "entryId"))
+            || !codeIndexReference.equals(readReference(reference, "indexArtifact"))) {
+          throw failure();
+        }
+      } else if ("NOT_COLLECTED".equals(status)) {
+        JsonNode collectionReason = context.get("collectionReason");
+        if (reference == null
+            || !reference.isNull()
+            || collectionReason == null
+            || !collectionReason.isTextual()
+            || collectionReason.textValue().isBlank()) {
+          throw failure();
+        }
+      } else {
+        throw failure();
+      }
+    }
+  }
+
+  /** Ensures M2 references the published M1 context rather than embedding a second copy. */
+  private static boolean referencesEntryContext(
+      JsonNode capsule, ArtifactReference compilationPayload, JsonNode context) {
+    if (context == null || capsule.has("entryContext")) return false;
+    JsonNode reference = capsule.get("entryContextRef");
+    return reference != null
+        && reference.isObject()
+        && compilationPayload.equals(readReference(reference, "compilationArtifact"))
+        && id(context, "entryContextId").equals(id(reference, "entryContextId"));
   }
 
   private static void requireStandaloneHeader(

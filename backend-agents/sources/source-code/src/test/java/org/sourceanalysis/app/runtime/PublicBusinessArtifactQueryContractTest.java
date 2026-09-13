@@ -64,7 +64,7 @@ class PublicBusinessArtifactQueryContractTest {
                   queued.runId(),
                   documentKey,
                   reference("business-document-markdown", 'f'),
-                  "business-document-markdown-v1",
+                  "business-document-markdown-v2",
                   "text/markdown",
                   "# report\n");
       Object reader =

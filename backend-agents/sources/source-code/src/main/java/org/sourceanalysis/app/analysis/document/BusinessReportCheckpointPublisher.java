@@ -34,7 +34,7 @@ final class BusinessReportCheckpointPublisher {
   private static final String REPORT_TYPE = "BUSINESS_DOCUMENT_REPORT";
   private static final String REPORT_SCHEMA = "business-document-report-v1";
   private static final String MARKDOWN_TYPE = "BUSINESS_DOCUMENT_MARKDOWN";
-  private static final String MARKDOWN_SCHEMA = "business-document-markdown-v1";
+  private static final String MARKDOWN_SCHEMA = "business-document-markdown-v2";
   private static final String SOURCE_REFS_TYPE = "BUSINESS_DOCUMENT_SOURCE_REFERENCES";
   private static final String SOURCE_REFS_SCHEMA = "business-document-source-references-v1";
   private static final String VALIDATION_TYPE = "BUSINESS_DOCUMENT_VALIDATION";
@@ -81,7 +81,7 @@ final class BusinessReportCheckpointPublisher {
                     AnalysisStepKey.NINE_SECTION_DOCUMENT,
                     1,
                     "business-report-publisher"),
-                "v2",
+                "v3",
                 upstream,
                 knowledgeCheckpoint.receipt().controls(),
                 ModuleCompletionStatus.SUCCEEDED,

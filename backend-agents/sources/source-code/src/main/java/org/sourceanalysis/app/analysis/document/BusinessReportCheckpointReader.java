@@ -33,7 +33,7 @@ final class BusinessReportCheckpointReader {
   private static final String REPORT_SCHEMA = "business-document-report-v1";
   private static final String MARKDOWN_FILE = "document.md";
   private static final String MARKDOWN_TYPE = "BUSINESS_DOCUMENT_MARKDOWN";
-  private static final String MARKDOWN_SCHEMA = "business-document-markdown-v1";
+  private static final String MARKDOWN_SCHEMA = "business-document-markdown-v2";
   private static final String SOURCE_REFS_FILE = "source-refs.jsonl";
   private static final String SOURCE_REFS_TYPE = "BUSINESS_DOCUMENT_SOURCE_REFERENCES";
   private static final String SOURCE_REFS_SCHEMA = "business-document-source-references-v1";

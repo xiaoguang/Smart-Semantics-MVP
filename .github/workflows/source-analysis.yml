@@ -46,8 +46,5 @@ jobs:
       - name: Check formatting
         run: mvn -t .mvn/toolchains.xml spotless:check
 
-      - name: Run unit tests
-        run: mvn -t .mvn/toolchains.xml test
-
-      - name: Run quality checks
-        run: mvn -t .mvn/toolchains.xml -Pquality -DskipTests verify
+      - name: Run unit tests and quality checks
+        run: mvn -t .mvn/toolchains.xml -Pquality verify

@@ -18,6 +18,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import org.sourceanalysis.app.analysis.code.EntryCodeContext;
+import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndex;
+import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndexReader;
 import org.sourceanalysis.app.analysis.fact.publish.ProvenCodeFactsReference;
 import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilation;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
@@ -52,7 +54,7 @@ public final class EvidenceCapsuleProjector {
       Comparator.comparing(
           value -> value.getBytes(StandardCharsets.UTF_8), EvidenceCapsuleProjector::compare);
   private static final String M1_TYPE = "BUSINESS_FLOWS_FLOW_COMPILATION";
-  private static final String M1_SCHEMA = "business-flows-flow-compilation-v5";
+  private static final String M1_SCHEMA = "business-flows-flow-compilation-v6";
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final Comparator<SourceLocatorV1> SOURCE_LOCATOR_ORDER =
       Comparator.comparing(SourceLocatorV1::path)
@@ -100,13 +102,22 @@ public final class EvidenceCapsuleProjector {
       ReopenedAnalysisStepPublication factStep = reopen(facts, AnalysisStepKey.PROVEN_CODE_FACTS);
       requireSharedRunAndControls(sourceStep, graphStep, factStep, compilationPublication);
 
+      JavaCodeIndex codeIndex = reopenCodeIndex(graphs, graphStep);
+      ArtifactReference codeIndexReference = codeIndexReference(graphStep);
+
       VerifiedSourceTextSet texts = sourceReader.reopen(source);
       requireSourceTextSet(texts, sourceStep);
       if (isNavigationOnly(graphStep, factStep)) {
         return projectNavigationContexts(
-            compilationPublication, compilationPayload, texts, profile);
+            compilationPublication,
+            compilationPayload,
+            texts,
+            profile,
+            codeIndex,
+            codeIndexReference);
       }
-      Inputs inputs = inputs(compilationPublication, graphStep, factStep, texts);
+      Inputs inputs =
+          inputs(compilationPublication, graphStep, factStep, texts, codeIndex, codeIndexReference);
       if (inputs.flows().size() > profile.maxCapsules()) {
         throw failure("BUSINESS_FLOWS_RESOURCE_LIMIT_EXCEEDED");
       }
@@ -137,11 +148,15 @@ public final class EvidenceCapsuleProjector {
       ReopenedModulePublication compilation,
       ArtifactReference compilationPayload,
       VerifiedSourceTextSet texts,
-      CapsuleProjectionProfile profile) {
+      CapsuleProjectionProfile profile,
+      JavaCodeIndex codeIndex,
+      ArtifactReference codeIndexReference) {
     JsonNode envelope = canonicalJson.parseCanonical(compilation.payloads().get(0).canonicalUtf8());
     requireHeader(envelope, M1_TYPE, M1_SCHEMA);
     List<FlowCompilation.EntryContext> contexts =
-        parseEntryContexts(object(envelope, "payload")).values().stream()
+        parseEntryContexts(object(envelope, "payload"), codeIndex, codeIndexReference)
+            .values()
+            .stream()
             .sorted(Comparator.comparing(FlowCompilation.EntryContext::entryId, UTF8_ORDER))
             .toList();
     long collected =
@@ -554,9 +569,13 @@ public final class EvidenceCapsuleProjector {
       ReopenedModulePublication compilation,
       ReopenedAnalysisStepPublication graphs,
       ReopenedAnalysisStepPublication facts,
-      VerifiedSourceTextSet texts) {
+      VerifiedSourceTextSet texts,
+      JavaCodeIndex codeIndex,
+      ArtifactReference codeIndexReference) {
     VerifiedCanonicalPayload m1Payload = compilation.payloads().get(0);
-    List<PersistedFlow> flows = parseFlows(canonicalJson.parseCanonical(m1Payload.canonicalUtf8()));
+    List<PersistedFlow> flows =
+        parseFlows(
+            canonicalJson.parseCanonical(m1Payload.canonicalUtf8()), codeIndex, codeIndexReference);
     Map<String, VerifiedCanonicalPayload> graphPayloads =
         payloads(
             graphs,
@@ -677,6 +696,29 @@ public final class EvidenceCapsuleProjector {
     return reopened;
   }
 
+  private JavaCodeIndex reopenCodeIndex(
+      ProgramGraphsReference graphs, ReopenedAnalysisStepPublication graphStep) {
+    ArtifactReference reference = codeIndexReference(graphStep);
+    return reference == null
+        ? null
+        : new JavaCodeIndexReader(analysisSteps).reopen(graphs, graphStep);
+  }
+
+  private static ArtifactReference codeIndexReference(ReopenedAnalysisStepPublication graphStep) {
+    List<VerifiedCanonicalPayload> indexes =
+        graphStep.semanticPayloads().stream()
+            .filter(value -> "java-code-index.jsonl".equals(value.descriptor().fileName()))
+            .toList();
+    if (indexes.isEmpty()) return null;
+    if (indexes.size() != 1
+        || !"PROGRAM_GRAPHS_JAVA_CODE_INDEX".equals(indexes.get(0).descriptor().artifactType())
+        || !"java-code-index-v2".equals(indexes.get(0).descriptor().schemaVersion())
+        || indexes.get(0).descriptor().mediaType() != CanonicalMediaType.APPLICATION_X_NDJSON) {
+      throw failure("FLOW_CONTEXT_REFERENCE_BROKEN");
+    }
+    return reference(indexes.get(0));
+  }
+
   private static void requireSharedRunAndControls(
       ReopenedAnalysisStepPublication source,
       ReopenedAnalysisStepPublication graphs,
@@ -725,10 +767,12 @@ public final class EvidenceCapsuleProjector {
     return Map.copyOf(values);
   }
 
-  private List<PersistedFlow> parseFlows(JsonNode envelope) {
+  private List<PersistedFlow> parseFlows(
+      JsonNode envelope, JavaCodeIndex codeIndex, ArtifactReference codeIndexReference) {
     requireHeader(envelope, M1_TYPE, M1_SCHEMA);
     JsonNode payload = object(envelope, "payload");
-    Map<String, FlowCompilation.EntryContext> contexts = parseEntryContexts(payload);
+    Map<String, FlowCompilation.EntryContext> contexts =
+        parseEntryContexts(payload, codeIndex, codeIndexReference);
     List<PersistedFlow> flows = new ArrayList<>();
     for (JsonNode value : array(payload, "flowSlices")) {
       List<PersistedOutcome> outcomes = new ArrayList<>();
@@ -761,12 +805,13 @@ public final class EvidenceCapsuleProjector {
     return ordered;
   }
 
-  private static Map<String, FlowCompilation.EntryContext> parseEntryContexts(JsonNode payload) {
+  private static Map<String, FlowCompilation.EntryContext> parseEntryContexts(
+      JsonNode payload, JavaCodeIndex codeIndex, ArtifactReference codeIndexReference) {
     Map<String, FlowCompilation.EntryContext> values = new HashMap<>();
     for (JsonNode value : array(payload, "entryContexts")) {
       FlowCompilation.EntryContext context;
       try {
-        context = MAPPER.treeToValue(value, FlowCompilation.EntryContext.class);
+        context = hydrateEntryContext(value, codeIndex, codeIndexReference);
       } catch (com.fasterxml.jackson.core.JsonProcessingException malformed) {
         throw failure("FLOW_CONTEXT_REFERENCE_BROKEN");
       }
@@ -775,6 +820,51 @@ public final class EvidenceCapsuleProjector {
       }
     }
     return Map.copyOf(values);
+  }
+
+  /** Resolves the sole persisted Step05 indirection without rerunning a Java code engine. */
+  private static FlowCompilation.EntryContext hydrateEntryContext(
+      JsonNode value, JavaCodeIndex codeIndex, ArtifactReference codeIndexReference)
+      throws com.fasterxml.jackson.core.JsonProcessingException {
+    if (!(value instanceof com.fasterxml.jackson.databind.node.ObjectNode stored)
+        || stored.has("codeContext")) {
+      throw failure("FLOW_CONTEXT_REFERENCE_BROKEN");
+    }
+    String entryId = id(stored, "entryId");
+    String collectionStatus = text(stored, "collectionStatus");
+    JsonNode reference = stored.get("codeContextRef");
+    EntryCodeContext codeContext = null;
+    if ("COLLECTED".equals(collectionStatus)) {
+      if (codeIndex == null
+          || codeIndexReference == null
+          || reference == null
+          || !reference.isObject()
+          || !entryId.equals(id(reference, "entryId"))
+          || !codeIndexReference.equals(readReference(reference, "indexArtifact"))) {
+        throw failure("FLOW_CONTEXT_REFERENCE_BROKEN");
+      }
+      codeContext =
+          codeIndex.entries().stream()
+              .filter(entry -> entryId.equals(entry.seed().entryId()))
+              .map(JavaCodeIndex.EntryCollection::context)
+              .filter(Objects::nonNull)
+              .findFirst()
+              .orElseThrow(() -> failure("FLOW_CONTEXT_REFERENCE_BROKEN"));
+    } else if ("NOT_COLLECTED".equals(collectionStatus)) {
+      if (reference == null || !reference.isNull()) {
+        throw failure("FLOW_CONTEXT_REFERENCE_BROKEN");
+      }
+    } else {
+      throw failure("FLOW_CONTEXT_REFERENCE_BROKEN");
+    }
+    com.fasterxml.jackson.databind.node.ObjectNode hydrated = stored.deepCopy();
+    hydrated.remove("codeContextRef");
+    hydrated.set(
+        "codeContext",
+        codeContext == null
+            ? com.fasterxml.jackson.databind.node.NullNode.instance
+            : MAPPER.valueToTree(codeContext));
+    return MAPPER.treeToValue(hydrated, FlowCompilation.EntryContext.class);
   }
 
   private static PersistedOutcome parseOutcome(JsonNode value) {
@@ -1137,6 +1227,17 @@ public final class EvidenceCapsuleProjector {
 
   private static ArtifactReference reference(VerifiedCanonicalPayload payload) {
     return new ArtifactReference(payload.descriptor().artifactId(), payload.descriptor().sha256());
+  }
+
+  private static ArtifactReference readReference(JsonNode source, String field) {
+    JsonNode value = source.get(field);
+    if (value == null || !value.isObject()) throw failure("FLOW_CONTEXT_REFERENCE_BROKEN");
+    try {
+      return new ArtifactReference(
+          ArtifactId.parse(text(value, "artifactId")), new Sha256Digest(text(value, "sha256")));
+    } catch (RuntimeException invalid) {
+      throw failure("FLOW_CONTEXT_REFERENCE_BROKEN");
+    }
   }
 
   private static void requireHeader(JsonNode value, String type, String schema) {

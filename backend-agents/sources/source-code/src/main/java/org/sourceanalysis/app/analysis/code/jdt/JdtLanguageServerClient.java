@@ -4,9 +4,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.JsonElement;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -16,6 +20,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams;
@@ -56,6 +61,13 @@ final class JdtLanguageServerClient implements AutoCloseable, JdtNavigationResol
   private JdtServer languageServer;
   private Future<Void> listening;
   private final Set<String> openedDocuments = new java.util.LinkedHashSet<>();
+  private final Map<NavigationQueryKey, CachedNavigationQuery<?>> navigationCache =
+      new LinkedHashMap<>();
+  private Path navigationJournal;
+  private Path retainedNavigationJournal;
+  private int physicalQueryCount;
+  private int cacheHitCount;
+  private int uniqueQueryKeyCount;
 
   JdtLanguageServerClient(EffectiveEngineConfiguration.JdtConfiguration configuration) {
     this(configuration, JdtProcessIsolation.system());
@@ -74,6 +86,7 @@ final class JdtLanguageServerClient implements AutoCloseable, JdtNavigationResol
     }
     try {
       Files.createDirectories(languageServerDataDirectory);
+      initializeNavigationState(languageServerDataDirectory);
       Process started = isolation.start(command(languageServerDataDirectory), projectRoot);
       process = started;
       if (started.waitFor(EARLY_EXIT_CHECK.toMillis(), TimeUnit.MILLISECONDS)) {
@@ -162,35 +175,33 @@ final class JdtLanguageServerClient implements AutoCloseable, JdtNavigationResol
   public synchronized List<JdtNavigationResolver.OutgoingCall> outgoingCalls(
       String uri, JdtNavigationResolver.Position position) {
     ensureStarted();
-    var prepared =
-        awaitQuery(
-            languageServer.prepareCallHierarchy(
-                new CallHierarchyPrepareParams(
-                    new TextDocumentIdentifier(uri), lspPosition(position))),
-            "prepare call hierarchy");
-    if (prepared == null || prepared.isEmpty()) {
+    NavigationQueryKey prepareKey =
+        NavigationQueryKey.atPosition("PREPARE_CALL_HIERARCHY", uri, position);
+    CallHierarchyPrepareParams prepareRequest =
+        new CallHierarchyPrepareParams(new TextDocumentIdentifier(uri), lspPosition(position));
+    List<CallHierarchyItem> prepared =
+        cachedNavigationQuery(
+            prepareKey,
+            prepareRequest,
+            () -> languageServer.prepareCallHierarchy(prepareRequest),
+            "prepare call hierarchy",
+            JdtLanguageServerClient::preparedHierarchyItems);
+    if (prepared.isEmpty()) {
       return List.of();
     }
     List<JdtNavigationResolver.OutgoingCall> result = new java.util.ArrayList<>();
     for (CallHierarchyItem item : prepared) {
-      List<CallHierarchyOutgoingCall> outgoing =
-          awaitQuery(
-              languageServer.callHierarchyOutgoingCalls(new CallHierarchyOutgoingCallsParams(item)),
-              "read outgoing calls");
-      if (outgoing == null) {
-        continue;
-      }
-      for (CallHierarchyOutgoingCall edge : outgoing) {
-        if (edge == null || edge.getTo() == null) {
-          throw queryFailed("JDT returned an outgoing call without a target", null);
-        }
-        JdtNavigationResolver.Location target = location(edge.getTo());
-        List<JdtNavigationResolver.TextRange> fromRanges =
-            edge.getFromRanges() == null
-                ? List.of()
-                : edge.getFromRanges().stream().map(JdtLanguageServerClient::range).toList();
-        result.add(new JdtNavigationResolver.OutgoingCall(target, fromRanges));
-      }
+      NavigationQueryKey outgoingKey =
+          NavigationQueryKey.forIdentity("OUTGOING_CALLS", callHierarchyIdentity(item));
+      CallHierarchyOutgoingCallsParams outgoingRequest = new CallHierarchyOutgoingCallsParams(item);
+      List<JdtNavigationResolver.OutgoingCall> outgoing =
+          cachedNavigationQuery(
+              outgoingKey,
+              outgoingRequest,
+              () -> languageServer.callHierarchyOutgoingCalls(outgoingRequest),
+              "read outgoing calls",
+              JdtLanguageServerClient::outgoingCallResults);
+      result.addAll(outgoing);
     }
     return List.copyOf(result);
   }
@@ -199,19 +210,34 @@ final class JdtLanguageServerClient implements AutoCloseable, JdtNavigationResol
   public synchronized List<JdtNavigationResolver.Location> definitions(
       String uri, JdtNavigationResolver.Position position) {
     ensureStarted();
-    return rawLocations(
-        awaitQuery(
-            languageServer.definition(navigationParams(uri, position)), "resolve definition"));
+    Map<String, Object> request = navigationParams(uri, position);
+    return cachedNavigationQuery(
+        NavigationQueryKey.atPosition("DEFINITION", uri, position),
+        request,
+        () -> languageServer.definition(request),
+        "resolve definition",
+        JdtLanguageServerClient::rawLocations);
   }
 
   @Override
   public synchronized List<JdtNavigationResolver.Location> implementations(
       String uri, JdtNavigationResolver.Position position) {
     ensureStarted();
-    return rawLocations(
-        awaitQuery(
-            languageServer.implementation(navigationParams(uri, position)),
-            "resolve implementation"));
+    Map<String, Object> request = navigationParams(uri, position);
+    return cachedNavigationQuery(
+        NavigationQueryKey.atPosition("IMPLEMENTATION", uri, position),
+        request,
+        () -> languageServer.implementation(request),
+        "resolve implementation",
+        JdtLanguageServerClient::rawLocations);
+  }
+
+  synchronized NavigationQueryStatistics queryStatistics() {
+    return new NavigationQueryStatistics(physicalQueryCount, cacheHitCount, uniqueQueryKeyCount);
+  }
+
+  synchronized Path retainedNavigationJournal() {
+    return retainedNavigationJournal;
   }
 
   @Override
@@ -236,10 +262,20 @@ final class JdtLanguageServerClient implements AutoCloseable, JdtNavigationResol
     if (listening != null) {
       listening.cancel(true);
     }
+    try {
+      retainNavigationDiagnostics();
+    } catch (CodeEngineException diagnosticFailure) {
+      if (failure == null) {
+        failure = diagnosticFailure;
+      } else {
+        failure.addSuppressed(diagnosticFailure);
+      }
+    }
     process = null;
     languageServer = null;
     listening = null;
     openedDocuments.clear();
+    releaseNavigationCache();
     if (failure != null) {
       throw failure;
     }
@@ -275,6 +311,7 @@ final class JdtLanguageServerClient implements AutoCloseable, JdtNavigationResol
     }
     languageServer = null;
     listening = null;
+    resetNavigationState();
   }
 
   private void awaitIndexReady(Future<?> initialization)
@@ -431,6 +468,184 @@ final class JdtLanguageServerClient implements AutoCloseable, JdtNavigationResol
     }
   }
 
+  @SuppressWarnings("unchecked")
+  private <S, T> T cachedNavigationQuery(
+      NavigationQueryKey key,
+      Object request,
+      java.util.function.Supplier<CompletableFuture<S>> query,
+      String operationDescription,
+      Function<S, T> responseNormalizer) {
+    CachedNavigationQuery<T> cached = (CachedNavigationQuery<T>) navigationCache.get(key);
+    if (cached != null) {
+      cacheHitCount++;
+      appendCacheHit(key);
+      return cached.replay();
+    }
+
+    physicalQueryCount++;
+    uniqueQueryKeyCount++;
+    try {
+      S rawResponse = awaitQuery(query.get(), operationDescription);
+      T response = responseNormalizer.apply(rawResponse);
+      CachedNavigationQuery<T> completed = CachedNavigationQuery.success(response);
+      appendExchange(key, request, rawResponse, null);
+      navigationCache.put(key, completed);
+      return response;
+    } catch (CodeEngineException failure) {
+      appendExchange(key, request, null, failure);
+      navigationCache.put(key, CachedNavigationQuery.failure(failure));
+      throw failure;
+    }
+  }
+
+  private void initializeNavigationState(Path languageServerDataDirectory) throws IOException {
+    navigationCache.clear();
+    physicalQueryCount = 0;
+    cacheHitCount = 0;
+    uniqueQueryKeyCount = 0;
+    retainedNavigationJournal = null;
+    navigationJournal =
+        languageServerDataDirectory.resolve("source-analysis-navigation-query-journal.jsonl");
+    Files.deleteIfExists(navigationJournal);
+  }
+
+  private void resetNavigationState() {
+    navigationCache.clear();
+    physicalQueryCount = 0;
+    cacheHitCount = 0;
+    uniqueQueryKeyCount = 0;
+    navigationJournal = null;
+    retainedNavigationJournal = null;
+  }
+
+  private void releaseNavigationCache() {
+    navigationCache.clear();
+    navigationJournal = null;
+  }
+
+  private void retainNavigationDiagnostics() {
+    if (navigationJournal == null) {
+      return;
+    }
+    var summary = JSON.createObjectNode();
+    summary.put("kind", "SESSION_SUMMARY");
+    summary.put("physicalQueryCount", physicalQueryCount);
+    summary.put("cacheHitCount", cacheHitCount);
+    summary.put("uniqueQueryKeyCount", uniqueQueryKeyCount);
+    appendJournalRecord(summary, null);
+    try {
+      Path retained = Files.createTempFile("source-analysis-jdt-navigation-", ".jsonl");
+      Files.copy(navigationJournal, retained, StandardCopyOption.REPLACE_EXISTING);
+      retainedNavigationJournal = retained;
+    } catch (IOException failure) {
+      throw queryFailed("JDT navigation journal could not be retained", failure);
+    }
+  }
+
+  private void appendExchange(
+      NavigationQueryKey key, Object request, Object response, CodeEngineException failure) {
+    var record = JSON.createObjectNode();
+    record.put("kind", "QUERY_EXCHANGE");
+    record.put("queryKey", key.display());
+    record.put("operation", key.operation());
+    record.put("outcome", failure == null ? "SUCCESS" : "FAILURE");
+    record.set("request", journalValue(request));
+    if (failure == null) {
+      record.set("response", journalValue(response));
+    } else {
+      record.put("failureCode", failure.code());
+      record.put("failureMessage", failure.getMessage());
+    }
+    appendJournalRecord(record, failure);
+  }
+
+  private void appendCacheHit(NavigationQueryKey key) {
+    var record = JSON.createObjectNode();
+    record.put("kind", "CACHE_HIT");
+    record.put("queryKey", key.display());
+    record.put("operation", key.operation());
+    appendJournalRecord(record, null);
+  }
+
+  private void appendJournalRecord(JsonNode record, CodeEngineException queryFailure) {
+    if (navigationJournal == null) {
+      throw queryFailed("JDT navigation journal is not initialized", null);
+    }
+    try {
+      Files.writeString(
+          navigationJournal,
+          JSON.writeValueAsString(record) + '\n',
+          StandardCharsets.UTF_8,
+          StandardOpenOption.CREATE,
+          StandardOpenOption.WRITE,
+          StandardOpenOption.APPEND);
+    } catch (IOException journalFailure) {
+      if (queryFailure != null) {
+        queryFailure.addSuppressed(journalFailure);
+        return;
+      }
+      throw queryFailed("JDT navigation journal could not be written", journalFailure);
+    }
+  }
+
+  private static JsonNode journalValue(Object value) {
+    if (value == null) {
+      return JSON.nullNode();
+    }
+    if (value instanceof JsonElement jsonElement) {
+      try {
+        return JSON.readTree(jsonElement.toString());
+      } catch (IOException invalidJson) {
+        throw queryFailed("JDT navigation result could not be journaled", invalidJson);
+      }
+    }
+    return JSON.valueToTree(value);
+  }
+
+  private static String callHierarchyIdentity(CallHierarchyItem item) {
+    if (item == null) {
+      throw queryFailed("JDT returned a null call-hierarchy item", null);
+    }
+    try {
+      return JSON.writeValueAsString(item);
+    } catch (IOException failure) {
+      throw queryFailed("JDT call-hierarchy item could not be identified", failure);
+    }
+  }
+
+  private static List<CallHierarchyItem> preparedHierarchyItems(List<CallHierarchyItem> items) {
+    if (items == null) {
+      return List.of();
+    }
+    for (CallHierarchyItem item : items) {
+      if (item == null) {
+        throw queryFailed("JDT returned a null call-hierarchy item", null);
+      }
+      callHierarchyIdentity(item);
+    }
+    return List.copyOf(items);
+  }
+
+  private static List<JdtNavigationResolver.OutgoingCall> outgoingCallResults(
+      List<CallHierarchyOutgoingCall> outgoing) {
+    if (outgoing == null) {
+      return List.of();
+    }
+    List<JdtNavigationResolver.OutgoingCall> results = new java.util.ArrayList<>();
+    for (CallHierarchyOutgoingCall edge : outgoing) {
+      if (edge == null || edge.getTo() == null) {
+        throw queryFailed("JDT returned an outgoing call without a target", null);
+      }
+      JdtNavigationResolver.Location target = location(edge.getTo());
+      List<JdtNavigationResolver.TextRange> fromRanges =
+          edge.getFromRanges() == null
+              ? List.of()
+              : edge.getFromRanges().stream().map(JdtLanguageServerClient::range).toList();
+      results.add(new JdtNavigationResolver.OutgoingCall(target, fromRanges));
+    }
+    return List.copyOf(results);
+  }
+
   private static List<JdtNavigationResolver.Location> rawLocations(JsonElement result) {
     JsonNode root;
     try {
@@ -537,6 +752,50 @@ final class JdtLanguageServerClient implements AutoCloseable, JdtNavigationResol
 
   private static CodeEngineException queryFailed(String detail, Throwable cause) {
     return new CodeEngineException(CodeEngineException.JDT_QUERY_FAILED, detail, cause);
+  }
+
+  record NavigationQueryStatistics(
+      int physicalQueryCount, int cacheHitCount, int uniqueQueryKeyCount) {}
+
+  private record NavigationQueryKey(String operation, String identity) {
+
+    private NavigationQueryKey {
+      Objects.requireNonNull(operation, "navigation operation");
+      Objects.requireNonNull(identity, "navigation identity");
+    }
+
+    static NavigationQueryKey atPosition(
+        String operation, String uri, JdtNavigationResolver.Position position) {
+      Objects.requireNonNull(uri, "navigation URI");
+      Objects.requireNonNull(position, "navigation position");
+      return forIdentity(operation, uri + '#' + position.line() + ':' + position.character());
+    }
+
+    static NavigationQueryKey forIdentity(String operation, String identity) {
+      return new NavigationQueryKey(operation, identity);
+    }
+
+    String display() {
+      return operation + '|' + identity;
+    }
+  }
+
+  private record CachedNavigationQuery<T>(T value, CodeEngineException failure) {
+
+    static <T> CachedNavigationQuery<T> success(T value) {
+      return new CachedNavigationQuery<>(value, null);
+    }
+
+    static <T> CachedNavigationQuery<T> failure(CodeEngineException failure) {
+      return new CachedNavigationQuery<>(null, Objects.requireNonNull(failure));
+    }
+
+    T replay() {
+      if (failure != null) {
+        throw failure;
+      }
+      return value;
+    }
   }
 
   /** Minimal JDT protocol used by this session, with ambiguous location arrays kept as raw JSON. */

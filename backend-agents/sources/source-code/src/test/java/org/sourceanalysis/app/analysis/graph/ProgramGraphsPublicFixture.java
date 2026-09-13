@@ -2003,7 +2003,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_FLOW_COMPILATION",
-        "business-flows-flow-compilation-v5",
+        "business-flows-flow-compilation-v6",
         "business-flows-flow-compilation",
         "application/json",
         "MODULE_ARTIFACT_JSON",
@@ -2011,7 +2011,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_CAPSULE_PROJECTION",
-        "business-flows-capsule-projection-v10",
+        "business-flows-capsule-projection-v11",
         "business-flows-capsule-projection",
         "application/json",
         "MODULE_ARTIFACT_JSON",
@@ -2019,7 +2019,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_FLOW_SLICES",
-        "business-flows-flow-slices-v5",
+        "business-flows-flow-slices-v6",
         "business-flows-flow-slices",
         "application/json",
         "STANDALONE_JSON",
@@ -2043,7 +2043,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_FLOWS_EVIDENCE_CAPSULE",
-        "business-flows-evidence-capsule-v8",
+        "business-flows-evidence-capsule-v9",
         "business-flows-evidence-capsule",
         "application/x-ndjson",
         "CANONICAL_JSONL",
@@ -2115,7 +2115,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "BUSINESS_DOCUMENT_MARKDOWN",
-        "business-document-markdown-v1",
+        "business-document-markdown-v2",
         "business-document-markdown",
         "text/markdown",
         "RAW_UTF8",

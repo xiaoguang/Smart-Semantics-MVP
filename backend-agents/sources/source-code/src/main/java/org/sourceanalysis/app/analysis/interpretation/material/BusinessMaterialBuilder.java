@@ -23,7 +23,10 @@ import java.util.Objects;
 import java.util.Set;
 import org.sourceanalysis.app.analysis.code.EntryCodeContext;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
+import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndex;
+import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndexReader;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
+import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
@@ -44,6 +47,7 @@ import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.ModuleInstallRequest;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
+import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 import org.sourceanalysis.app.evidence.SourceLocatorV1;
 
@@ -118,6 +122,45 @@ public final class BusinessMaterialBuilder {
     return sourceReader.reopen(new VerifiedSourceInventoryReference(sourcePublication));
   }
 
+  private ReopenedAnalysisStepPublication reopenGraphs(ReopenedAnalysisStepPublication flows) {
+    AnalysisStepPublicationReference graphPublication =
+        flows.receipt().upstreamAnalysisStepReferences().stream()
+            .filter(value -> value.address().analysisStepKey() == AnalysisStepKey.PROGRAM_GRAPHS)
+            .findFirst()
+            .orElseThrow(() -> failure("BUSINESS_MATERIAL_SOURCE_BINDING_INVALID"));
+    ReopenedAnalysisStepPublication graphs = analysisSteps.reopen(graphPublication);
+    if (!graphPublication.equals(graphs.reference())) {
+      throw failure("BUSINESS_MATERIAL_SOURCE_BINDING_INVALID");
+    }
+    return graphs;
+  }
+
+  private static ArtifactReference codeIndexReference(ReopenedAnalysisStepPublication graphs) {
+    List<VerifiedCanonicalPayload> indexes =
+        graphs.semanticPayloads().stream()
+            .filter(value -> "java-code-index.jsonl".equals(value.descriptor().fileName()))
+            .toList();
+    if (indexes.isEmpty()) return null;
+    if (indexes.size() != 1
+        || !"PROGRAM_GRAPHS_JAVA_CODE_INDEX".equals(indexes.get(0).descriptor().artifactType())
+        || !"java-code-index-v2".equals(indexes.get(0).descriptor().schemaVersion())
+        || indexes.get(0).descriptor().mediaType() != CanonicalMediaType.APPLICATION_X_NDJSON) {
+      throw failure("BUSINESS_MATERIAL_SOURCE_BINDING_INVALID");
+    }
+    return new ArtifactReference(
+        indexes.get(0).descriptor().artifactId(), indexes.get(0).descriptor().sha256());
+  }
+
+  private static ArtifactReference readReference(JsonNode source, String field) {
+    JsonNode value = object(source, field);
+    try {
+      return new ArtifactReference(
+          ArtifactId.parse(text(value, "artifactId")), new Sha256Digest(text(value, "sha256")));
+    } catch (RuntimeException invalid) {
+      throw failure("BUSINESS_MATERIAL_INPUT_INVALID", invalid);
+    }
+  }
+
   private MaterialInput materialInput(
       ReopenedAnalysisStepPublication flows, VerifiedSourceTextSet source) {
     Map<String, VerifiedCanonicalPayload> payloads = byFileName(flows.semanticPayloads());
@@ -128,9 +171,21 @@ public final class BusinessMaterialBuilder {
       throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
     }
     List<EntryDisposition> entries = entryDispositions(dispositions);
-    Map<String, Capsule> capsuleByEntry = capsules(capsules, source);
+    JsonNode flowSlicesDocument = canonicalJson.parseCanonical(flowSlices.canonicalUtf8());
+    ReopenedAnalysisStepPublication graphs = reopenGraphs(flows);
+    ArtifactReference codeIndexReference = codeIndexReference(graphs);
+    JavaCodeIndex codeIndex =
+        codeIndexReference == null
+            ? null
+            : new JavaCodeIndexReader(analysisSteps)
+                .reopen(new ProgramGraphsReference(graphs.reference()), graphs);
+    ArtifactReference compilationReference =
+        readReference(flowSlicesDocument, "flowCompilationRef");
+    Map<String, EntryContext> entryContexts =
+        entryContexts(flowSlicesDocument, codeIndex, codeIndexReference);
+    Map<String, Capsule> capsuleByEntry =
+        capsules(capsules, source, entryContexts, compilationReference);
     Map<String, EntryMetadata> metadata = entryMetadataFromFlows(flows);
-    Map<String, EntryContext> entryContexts = entryContexts(flowSlices);
     if (!entryContexts
         .keySet()
         .equals(
@@ -1087,7 +1142,10 @@ public final class BusinessMaterialBuilder {
   }
 
   private Map<String, Capsule> capsules(
-      VerifiedCanonicalPayload payload, VerifiedSourceTextSet source) {
+      VerifiedCanonicalPayload payload,
+      VerifiedSourceTextSet source,
+      Map<String, EntryContext> contextsByEntry,
+      ArtifactReference compilationReference) {
     Map<String, VerifiedSourceTextDocument> documents = new HashMap<>();
     source.documents().forEach(document -> documents.put(document.fileId().value(), document));
     Map<String, Capsule> values = new LinkedHashMap<>();
@@ -1119,7 +1177,18 @@ public final class BusinessMaterialBuilder {
               .map(value -> text(value, "reasonCode"))
               .distinct()
               .toList();
-      EntryContext context = entryContext(object(node, "entryContext"));
+      if (node.has("entryContext")) {
+        throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
+      }
+      JsonNode contextReference = object(node, "entryContextRef");
+      if (!compilationReference.equals(readReference(contextReference, "compilationArtifact"))) {
+        throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
+      }
+      EntryContext context = contextsByEntry.get(entryId);
+      if (context == null
+          || !context.entryContextId().equals(text(contextReference, "entryContextId"))) {
+        throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
+      }
       String flowSliceId = nullableText(node, "flowSliceId");
       if (!entryId.equals(context.entryId())
           || !Objects.equals(flowSliceId, context.flowSliceId())) {
@@ -1144,11 +1213,11 @@ public final class BusinessMaterialBuilder {
     return Map.copyOf(values);
   }
 
-  private Map<String, EntryContext> entryContexts(VerifiedCanonicalPayload flowSlices) {
-    JsonNode document = canonicalJson.parseCanonical(flowSlices.canonicalUtf8());
+  private Map<String, EntryContext> entryContexts(
+      JsonNode document, JavaCodeIndex codeIndex, ArtifactReference codeIndexReference) {
     Map<String, EntryContext> values = new HashMap<>();
     for (JsonNode contextNode : array(document, "entryContexts")) {
-      EntryContext context = entryContext(contextNode);
+      EntryContext context = entryContext(contextNode, codeIndex, codeIndexReference);
       if (values.put(context.entryId(), context) != null) {
         throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
       }
@@ -1156,19 +1225,10 @@ public final class BusinessMaterialBuilder {
     return Map.copyOf(values);
   }
 
-  private static EntryContext entryContext(JsonNode node) {
+  private static EntryContext entryContext(
+      JsonNode node, JavaCodeIndex codeIndex, ArtifactReference codeIndexReference) {
     EntryCodeContext codeContext = null;
-    JsonNode codeContextNode = node.path("codeContext");
-    if (!codeContextNode.isMissingNode() && !codeContextNode.isNull()) {
-      if (!codeContextNode.isObject()) {
-        throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
-      }
-      try {
-        codeContext = MAPPER.treeToValue(codeContextNode, EntryCodeContext.class);
-      } catch (com.fasterxml.jackson.core.JsonProcessingException invalid) {
-        throw failure("BUSINESS_MATERIAL_INPUT_INVALID", new IllegalArgumentException(invalid));
-      }
-    }
+    if (node.has("codeContext")) throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
     JsonNode strict = node.path("strictTechnicalContext");
     List<CallContext> calls = new ArrayList<>();
     List<ControlContext> controls = new ArrayList<>();
@@ -1202,13 +1262,29 @@ public final class BusinessMaterialBuilder {
     String collectionStatus = text(node, "collectionStatus");
     String collectionReason = nullableText(node, "collectionReason");
     if ("COLLECTED".equals(collectionStatus)) {
+      JsonNode reference = object(node, "codeContextRef");
+      if (codeIndex == null
+          || codeIndexReference == null
+          || !entryId.equals(text(reference, "entryId"))
+          || !codeIndexReference.equals(readReference(reference, "indexArtifact"))) {
+        throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
+      }
+      codeContext =
+          codeIndex.entries().stream()
+              .filter(value -> entryId.equals(value.seed().entryId()))
+              .map(JavaCodeIndex.EntryCollection::context)
+              .filter(Objects::nonNull)
+              .findFirst()
+              .orElseThrow(() -> failure("BUSINESS_MATERIAL_INPUT_INVALID"));
       if (collectionReason != null
           || codeContext == null
           || !entryId.equals(codeContext.entryId())) {
         throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
       }
     } else if ("NOT_COLLECTED".equals(collectionStatus)) {
-      if (collectionReason == null || codeContext != null) {
+      if (collectionReason == null
+          || codeContext != null
+          || !node.path("codeContextRef").isNull()) {
         throw failure("BUSINESS_MATERIAL_INPUT_INVALID");
       }
     } else {

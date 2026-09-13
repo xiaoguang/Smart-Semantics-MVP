@@ -159,7 +159,7 @@ Builder 通过上节 reader 获得完整视图，仍选择完整入口/Service �
 
 目标完整本地 CI 在格式化完成后，用**一次根工程 verify 生命周期**完成 unit→IT→quality。helper 的独立构建先做一次，不使宿主 unit 再执行。真实 JDT 用 `*IT` 命名及明确 Failsafe include/exclude；同类中若既有纯测试又有 live 方法，按性质拆到对应测试类，不仅给名字加后缀。
 
-目标主命令为 `mvn -t .mvn/toolchains.xml -Pquality,real-jdt-it verify`；其中 `real-jdt-it` 是**待实现的显式 profile**，不是当前可直接运行的命令。工具与固定源码未配置时，必须报告 IT 未验证，不把跳过当成功。
+目标主命令为 `mvn -t .mvn/toolchains.xml -Pquality,real-jdt-it verify`；`real-jdt-it` 已实现为显式 profile。工具与固定源码未配置时，必须报告 IT 未验证，不把跳过当成功。
 
 默认不使用 `mvn test` 后再 `mvn -Pquality verify` 这种重复组合。当前POM的Surefire读取`skipUTs`，workflow却传`skipTests`，不能据此证明跳过。目标保留已有`skipUTs`作为unit开关，Failsafe改用独立的`skipITs`；默认都为false。仅对同一代码/配置/编译产物补跑静态质量时，用`-Pquality -DskipUTs -DskipITs verify`并核对已有测试证据。只跑IT时用`-DskipUTs`和显式IT profile/selector，不能同时把IT跳过。代码或测试变更后重新运行受影响测试是必要验证，不属于需要取消的重复工作。
 
@@ -177,6 +177,16 @@ Builder 通过上节 reader 获得完整视图，仍选择完整入口/Service �
 - 报告：同一已审 JSON 的第二至九章业务文本、顺序、refs完全相同；恰好九章，短ref都可从 sidecar查到，正文无源码块。历史 DRAFT-only 不得因重渲染改称 REVIEW完成。
 
 已有长跑耗时包含导航、序列化、调用等待与失败后的重跑，尚无RPC命中统计，不能预先承诺整体加速几倍。模型调用耗时不因磁盘方法去重自动消失，本轮也不调整模型调用次数。
+
+### 10.1 当前实现实测
+
+2026-09-13 使用固定 jshERP commit、相同四入口、JDT LS 1.61.0 和相同 classpath 完成一次新格式复跑。四入口分别得到与保留基线相同的 method/call 数：`242/576`、`8/11`、`443/1468`、`140/317`；四份 `BUSINESS_MATERIAL` 的 material ID、来源记录、观察数量和业务内容相同。JDT 临时投影根会进入少数未展开候选的诊断字符串，消除该会话临时根后，模型 packet 和 technical observations 与基线逐字段相同。
+
+本次会话处理了 6232 个逻辑导航请求，其中 4466 个执行真实 RPC，1766 个命中会话缓存，避免了约 28.3% 的重复 RPC。保留基线没有 RPC 统计，因此不能拿新计数虚构旧计数；四个入口的导航耗时合计从保留基线约 343.0 秒降到约 245.9 秒，但该差值同时包含 JDT 和机器运行波动，只作为本次观测，不承诺固定提速比例。首次对照会话在 `RedisService.java` 一个 definition 请求上返回 `JDT_QUERY_FAILED`，系统没有自动重试并明确留下未收集处置；全新会话的唯一人工复测四入口全部成功。这个事实保留为工具波动证据，不改成静默重试。
+
+持久化体积实测：`flow-slices.json` 从 3,792,840 bytes 降到 169,652 bytes（约 95.53%），`evidence-capsules.jsonl` 从 3,630,318 bytes 降到 4,515 bytes（约 99.88%）；权威 `java-code-index.jsonl` 和实际业务材料仍保存完整内容。以同一份历史 DRAFT-only 九章 JSON 重渲染，Markdown 从 249,102 bytes 降到 12,033 bytes（约 95.17%），仍为九章、包含 61 个正文短引用，全部可在保留的 457 条来源记录中查询；它仍标为未完成最终审阅，没有因重渲染升级状态。
+
+完整本地生命周期一次执行 454 个 Surefire tests（0 failure、0 error、2 skipped）和 2 个真实 JDT Failsafe tests（0 failure/error），两类测试类交集为 0；随后 SpotBugs 为 0 bug/error，PMD check 通过。该证据说明测试分类和单次执行合同已经落地。
 
 ## 11. 实施边界与后续讨论
 

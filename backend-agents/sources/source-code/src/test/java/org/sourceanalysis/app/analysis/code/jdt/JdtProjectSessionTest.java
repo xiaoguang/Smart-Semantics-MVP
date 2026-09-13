@@ -3,6 +3,8 @@ package org.sourceanalysis.app.analysis.code.jdt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.io.ByteArrayInputStream;
@@ -17,6 +19,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,6 +41,7 @@ import org.sourceanalysis.app.runtime.EffectiveEngineConfiguration;
 class JdtProjectSessionTest {
 
   private static final String SOURCE = "class Example {}\n";
+  private static final ObjectMapper JSON = new ObjectMapper();
 
   @TempDir Path temporaryDirectory;
 
@@ -321,6 +325,238 @@ class JdtProjectSessionTest {
     assertThat(Files.readString(fixture.sourceFile())).isEqualTo(SOURCE);
   }
 
+  @Test
+  void cachesNavigationByOperationAndExactPositionWithinOneSession() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness harness = fakeSessionHarness();
+
+    try (JdtProjectSession ignored = harness.open(fixture.verifiedProject())) {
+      String uri = "file:///Example.java";
+      JdtNavigationResolver.Position first = new JdtNavigationResolver.Position(2, 7);
+      JdtNavigationResolver.Position second = new JdtNavigationResolver.Position(2, 8);
+
+      assertThat(harness.client().definitions(uri, first)).hasSize(1);
+      assertThat(harness.client().definitions(uri, first)).hasSize(1);
+      assertThat(harness.client().definitions(uri, second)).hasSize(1);
+      assertThat(harness.client().implementations(uri, first)).hasSize(1);
+      assertThat(harness.client().implementations(uri, first)).hasSize(1);
+
+      assertThat(harness.starter().lastProcess().requestCount("textDocument/definition"))
+          .as("the exact definition query is sent once, while another position stays independent")
+          .isEqualTo(2);
+      assertThat(harness.starter().lastProcess().requestCount("textDocument/implementation"))
+          .as("definition and implementation use distinct cache keys")
+          .isEqualTo(1);
+    }
+  }
+
+  @Test
+  void cachesLegalEmptyAndFailedNavigationWithoutImplicitRetry() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness emptyHarness = fakeSessionHarness(StartupBehavior.EMPTY_NAVIGATION);
+
+    try (JdtProjectSession ignored = emptyHarness.open(fixture.verifiedProject())) {
+      JdtNavigationResolver.Position position = new JdtNavigationResolver.Position(3, 4);
+      assertThat(emptyHarness.client().definitions("file:///Example.java", position)).isEmpty();
+      assertThat(emptyHarness.client().definitions("file:///Example.java", position)).isEmpty();
+      assertThat(emptyHarness.starter().lastProcess().requestCount("textDocument/definition"))
+          .as("a legal empty response is a cacheable result")
+          .isEqualTo(1);
+    }
+
+    FakeSessionHarness failureHarness = fakeSessionHarness(StartupBehavior.FAILED_NAVIGATION);
+    try (JdtProjectSession ignored = failureHarness.open(fixture.verifiedProject())) {
+      JdtNavigationResolver.Position position = new JdtNavigationResolver.Position(4, 5);
+      assertThatThrownBy(
+              () -> failureHarness.client().definitions("file:///Example.java", position))
+          .isInstanceOf(CodeEngineException.class);
+      assertThatThrownBy(
+              () -> failureHarness.client().definitions("file:///Example.java", position))
+          .isInstanceOf(CodeEngineException.class);
+      assertThat(failureHarness.starter().lastProcess().requestCount("textDocument/definition"))
+          .as("a failed physical query remains observable and is not retried implicitly")
+          .isEqualTo(1);
+    }
+  }
+
+  @Test
+  void validatesNavigationResponsesBeforeCachingOrJournalingSuccess() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness harness = fakeSessionHarness(StartupBehavior.MALFORMED_NAVIGATION);
+
+    try (JdtProjectSession session = harness.open(fixture.verifiedProject())) {
+      JdtNavigationResolver.Position position = new JdtNavigationResolver.Position(4, 6);
+      assertThatThrownBy(() -> harness.client().definitions("file:///Example.java", position))
+          .isInstanceOf(CodeEngineException.class)
+          .hasMessageContaining("unsupported navigation result");
+      assertThatThrownBy(() -> harness.client().definitions("file:///Example.java", position))
+          .isInstanceOf(CodeEngineException.class)
+          .hasMessageContaining("unsupported navigation result");
+
+      assertThat(harness.starter().lastProcess().requestCount("textDocument/definition"))
+          .as("a malformed physical response is retained as one failed query without a retry")
+          .isEqualTo(1);
+      Path journal =
+          session
+              .languageServerDataDirectory()
+              .resolve("source-analysis-navigation-query-journal.jsonl");
+      List<JsonNode> exchanges =
+          Files.readAllLines(journal, StandardCharsets.UTF_8).stream()
+              .map(JdtProjectSessionTest::json)
+              .filter(record -> "QUERY_EXCHANGE".equals(record.path("kind").textValue()))
+              .toList();
+      assertThat(exchanges).hasSize(1);
+      assertThat(exchanges.get(0).path("outcome").textValue()).isEqualTo("FAILURE");
+      assertThat(exchanges.get(0).has("response")).isFalse();
+    }
+  }
+
+  @Test
+  void cachesPrepareAndEveryOutgoingHierarchyItemSeparately() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness harness = fakeSessionHarness();
+
+    try (JdtProjectSession ignored = harness.open(fixture.verifiedProject())) {
+      JdtNavigationResolver.Position position = new JdtNavigationResolver.Position(5, 6);
+      assertThat(harness.client().outgoingCalls("file:///Example.java", position)).hasSize(2);
+      assertThat(harness.client().outgoingCalls("file:///Example.java", position)).hasSize(2);
+
+      assertThat(harness.starter().lastProcess().requestCount("textDocument/prepareCallHierarchy"))
+          .isEqualTo(1);
+      assertThat(harness.starter().lastProcess().requestCount("callHierarchy/outgoingCalls"))
+          .as("both prepared hierarchy items are retained, and each physical query runs once")
+          .isEqualTo(2);
+    }
+  }
+
+  @Test
+  void aNewProjectSessionStartsWithAnEmptyNavigationCache() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    JdtNavigationResolver.Position position = new JdtNavigationResolver.Position(6, 7);
+
+    FakeSessionHarness first = fakeSessionHarness();
+    try (JdtProjectSession ignored = first.open(fixture.verifiedProject())) {
+      first.client().definitions("file:///Example.java", position);
+      first.client().definitions("file:///Example.java", position);
+      assertThat(first.starter().lastProcess().requestCount("textDocument/definition"))
+          .isEqualTo(1);
+    }
+
+    FakeSessionHarness second = fakeSessionHarness();
+    try (JdtProjectSession ignored = second.open(fixture.verifiedProject())) {
+      second.client().definitions("file:///Example.java", position);
+      assertThat(second.starter().lastProcess().requestCount("textDocument/definition"))
+          .as("cache lifetime is exactly one JDT project session")
+          .isEqualTo(1);
+    }
+  }
+
+  @Test
+  void recordsOneRawExchangeAndAKeyOnlyHitForRepeatedNavigation() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness harness = fakeSessionHarness();
+
+    try (JdtProjectSession session = harness.open(fixture.verifiedProject())) {
+      JdtNavigationResolver.Position position = new JdtNavigationResolver.Position(7, 8);
+      harness.client().definitions("file:///Example.java", position);
+      harness.client().definitions("file:///Example.java", position);
+
+      Path journal =
+          session
+              .languageServerDataDirectory()
+              .resolve("source-analysis-navigation-query-journal.jsonl");
+      assertThat(journal).isRegularFile();
+      List<JsonNode> records =
+          Files.readAllLines(journal, StandardCharsets.UTF_8).stream()
+              .map(JdtProjectSessionTest::json)
+              .toList();
+      assertThat(records).hasSize(2);
+      assertThat(records.get(0).path("kind").textValue()).isEqualTo("QUERY_EXCHANGE");
+      assertThat(records.get(0).path("operation").textValue()).isEqualTo("DEFINITION");
+      assertThat(records.get(0).path("request").isObject()).isTrue();
+      assertThat(records.get(0).path("response").toString()).contains("Target.java");
+      assertThat(records.get(1).path("kind").textValue()).isEqualTo("CACHE_HIT");
+      assertThat(records.get(1).path("queryKey").textValue())
+          .isEqualTo(records.get(0).path("queryKey").textValue());
+      assertThat(records.get(1).has("request")).isFalse();
+      assertThat(records.get(1).has("response")).isFalse();
+
+      JsonNode statistics = queryStatistics(harness.client());
+      assertThat(statistics.path("physicalQueryCount").intValue()).isEqualTo(1);
+      assertThat(statistics.path("cacheHitCount").intValue()).isEqualTo(1);
+      assertThat(statistics.path("uniqueQueryKeyCount").intValue()).isEqualTo(1);
+    }
+  }
+
+  @Test
+  void retainsNavigationJournalAndStatisticsAfterSessionClose() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness harness = fakeSessionHarness();
+    JdtProjectSession session = harness.open(fixture.verifiedProject());
+    JdtNavigationResolver.Position position = new JdtNavigationResolver.Position(8, 9);
+    harness.client().definitions("file:///Example.java", position);
+    harness.client().definitions("file:///Example.java", position);
+
+    session.close();
+
+    Path retained = retainedNavigationJournal(harness.client());
+    assertThat(retained).isRegularFile();
+    assertThat(Files.readString(retained, StandardCharsets.UTF_8))
+        .contains("QUERY_EXCHANGE", "CACHE_HIT", "SESSION_SUMMARY");
+    JsonNode statistics = queryStatistics(harness.client());
+    assertThat(statistics.path("physicalQueryCount").intValue()).isEqualTo(1);
+    assertThat(statistics.path("cacheHitCount").intValue()).isEqualTo(1);
+    assertThat(statistics.path("uniqueQueryKeyCount").intValue()).isEqualTo(1);
+  }
+
+  private static JsonNode queryStatistics(JdtLanguageServerClient client) {
+    java.lang.reflect.Method method =
+        java.util.Arrays.stream(client.getClass().getDeclaredMethods())
+            .filter(candidate -> candidate.getName().equals("queryStatistics"))
+            .findFirst()
+            .orElse(null);
+    assertThat(method)
+        .as("the JDT client exposes a package-private immutable statistics snapshot")
+        .isNotNull();
+    if (method == null) {
+      return JSON.createObjectNode();
+    }
+    try {
+      method.setAccessible(true);
+      return JSON.valueToTree(method.invoke(client));
+    } catch (ReflectiveOperationException failure) {
+      throw new AssertionError("could not read JDT navigation query statistics", failure);
+    }
+  }
+
+  private static Path retainedNavigationJournal(JdtLanguageServerClient client) {
+    java.lang.reflect.Method method =
+        java.util.Arrays.stream(client.getClass().getDeclaredMethods())
+            .filter(candidate -> candidate.getName().equals("retainedNavigationJournal"))
+            .findFirst()
+            .orElse(null);
+    assertThat(method)
+        .as("the session exposes its retained private navigation journal inside the JDT package")
+        .isNotNull();
+    if (method == null) {
+      return Path.of("missing-navigation-journal");
+    }
+    try {
+      method.setAccessible(true);
+      return (Path) method.invoke(client);
+    } catch (ReflectiveOperationException failure) {
+      throw new AssertionError("could not read retained JDT navigation journal", failure);
+    }
+  }
+
+  private static JsonNode json(String value) {
+    try {
+      return JSON.readTree(value);
+    } catch (IOException failure) {
+      throw new AssertionError("invalid navigation journal JSON", failure);
+    }
+  }
+
   private ProjectFixture projectFixture() throws IOException {
     Path snapshotRoot = Files.createDirectories(temporaryDirectory.resolve("snapshot"));
     Path sourceFile = Files.writeString(snapshotRoot.resolve("source-sentinel.java"), SOURCE);
@@ -512,7 +748,10 @@ class JdtProjectSessionTest {
     EMPTY_DECLARATION,
     UNREADY,
     DECLARATION_TIMEOUT,
-    STICKY_DECLARATION_TIMEOUT
+    STICKY_DECLARATION_TIMEOUT,
+    EMPTY_NAVIGATION,
+    FAILED_NAVIGATION,
+    MALFORMED_NAVIGATION
   }
 
   private static final class FakeProcessStarter implements JdtProcessIsolation.ProcessStarter {
@@ -557,6 +796,8 @@ class JdtProjectSessionTest {
     private volatile int declarationCharacter = -1;
     private volatile int declarationLine = -1;
     private volatile boolean sawDocumentSymbols;
+    private final Map<String, AtomicInteger> requestCounts =
+        new java.util.concurrent.ConcurrentHashMap<>();
 
     FakeJdtProcess(StartupBehavior behavior) throws IOException {
       this.behavior = behavior;
@@ -634,6 +875,7 @@ class JdtProjectSessionTest {
           JsonObject request =
               JsonParser.parseString(new String(bytes, StandardCharsets.UTF_8)).getAsJsonObject();
           String method = request.has("method") ? request.get("method").getAsString() : "";
+          requestCounts.computeIfAbsent(method, ignored -> new AtomicInteger()).incrementAndGet();
           if ("exit".equals(method)) {
             return;
           }
@@ -662,6 +904,11 @@ class JdtProjectSessionTest {
           return;
         }
       }
+      if ("textDocument/definition".equals(method)
+          && behavior == StartupBehavior.FAILED_NAVIGATION) {
+        respondWithError(request, -32603, "navigation failed");
+        return;
+      }
       String result =
           switch (method) {
             case "initialize" -> "{\"capabilities\":{}}";
@@ -675,6 +922,9 @@ class JdtProjectSessionTest {
             }
             case "textDocument/declaration" ->
                 behavior == StartupBehavior.NORMAL
+                        || behavior == StartupBehavior.EMPTY_NAVIGATION
+                        || behavior == StartupBehavior.FAILED_NAVIGATION
+                        || behavior == StartupBehavior.MALFORMED_NAVIGATION
                         || (behavior == StartupBehavior.RELIABLE_DECLARATION
                             && declarationCharacter == 6)
                         || (behavior == StartupBehavior.DOCUMENT_SYMBOL_READINESS
@@ -682,6 +932,20 @@ class JdtProjectSessionTest {
                             && declarationCharacter == 6)
                     ? "[{\"uri\":\"file:///Example.java\",\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":1}}}]"
                     : "[]";
+            case "textDocument/definition", "textDocument/implementation" ->
+                behavior == StartupBehavior.EMPTY_NAVIGATION
+                    ? "[]"
+                    : behavior == StartupBehavior.MALFORMED_NAVIGATION
+                        ? "true"
+                        : "[{\"uri\":\"file:///Target.java\",\"range\":{\"start\":{\"line\":1,\"character\":2},\"end\":{\"line\":1,\"character\":8}}}]";
+            case "textDocument/prepareCallHierarchy" ->
+                "[{\"name\":\"first\",\"kind\":6,\"uri\":\"file:///Example.java\","
+                    + "\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":9,\"character\":0}},"
+                    + "\"selectionRange\":{\"start\":{\"line\":0,\"character\":1},\"end\":{\"line\":0,\"character\":6}}},"
+                    + "{\"name\":\"second\",\"kind\":6,\"uri\":\"file:///Example.java\","
+                    + "\"range\":{\"start\":{\"line\":10,\"character\":0},\"end\":{\"line\":19,\"character\":0}},"
+                    + "\"selectionRange\":{\"start\":{\"line\":10,\"character\":1},\"end\":{\"line\":10,\"character\":7}}}]";
+            case "callHierarchy/outgoingCalls" -> outgoingResponse(request);
             case "shutdown" -> "null";
             default -> "null";
           };
@@ -694,6 +958,49 @@ class JdtProjectSessionTest {
         serverOutput.write(bytes);
         serverOutput.flush();
       }
+    }
+
+    private static String outgoingResponse(JsonObject request) {
+      String name =
+          request.getAsJsonObject("params").getAsJsonObject("item").get("name").getAsString();
+      int line = "first".equals(name) ? 20 : 30;
+      return "[{\"to\":{\"name\":\"target-"
+          + name
+          + "\",\"kind\":6,\"uri\":\"file:///Target.java\","
+          + "\"range\":{\"start\":{\"line\":"
+          + line
+          + ",\"character\":0},\"end\":{\"line\":"
+          + line
+          + ",\"character\":9}},"
+          + "\"selectionRange\":{\"start\":{\"line\":"
+          + line
+          + ",\"character\":1},\"end\":{\"line\":"
+          + line
+          + ",\"character\":8}}},"
+          + "\"fromRanges\":[{\"start\":{\"line\":5,\"character\":6},\"end\":{\"line\":5,\"character\":12}}]}]";
+    }
+
+    private void respondWithError(JsonObject request, int code, String message) throws IOException {
+      String response =
+          "{\"jsonrpc\":\"2.0\",\"id\":"
+              + request.get("id")
+              + ",\"error\":{\"code\":"
+              + code
+              + ",\"message\":\""
+              + message
+              + "\"}}";
+      byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+      synchronized (serverOutput) {
+        serverOutput.write(
+            ("Content-Length: " + bytes.length + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+        serverOutput.write(bytes);
+        serverOutput.flush();
+      }
+    }
+
+    int requestCount(String method) {
+      AtomicInteger count = requestCounts.get(method);
+      return count == null ? 0 : count.get();
     }
 
     int declarationCharacter() {

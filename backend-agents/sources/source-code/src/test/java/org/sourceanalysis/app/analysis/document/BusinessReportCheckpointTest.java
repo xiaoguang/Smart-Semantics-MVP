@@ -98,6 +98,23 @@ class BusinessReportCheckpointTest {
               "BUSINESS_DOCUMENT_MARKDOWN",
               "BUSINESS_DOCUMENT_VALIDATION",
               "BUSINESS_DOCUMENT_SOURCE_REFERENCES");
+      assertThat(
+              reopened.payloads().stream()
+                  .filter(value -> value.descriptor().fileName().equals("document.md"))
+                  .findFirst()
+                  .orElseThrow()
+                  .descriptor()
+                  .schemaVersion())
+          .isEqualTo("business-document-markdown-v2");
+      assertThat(publication.documentMarkdown())
+          .contains("完整源码依据保存在 source-refs.jsonl")
+          .doesNotContain("<details>", "<pre><code>", "source-ref-");
+      assertThat(publication.sourceReferences()).isNotEmpty();
+      publication
+          .sourceReferences()
+          .forEach(
+              source ->
+                  assertThat(publication.documentMarkdown()).doesNotContain(source.snippet()));
 
       BusinessReportPublication restored =
           reopenReport(fixture.moduleArtifacts(), publication.checkpoint());

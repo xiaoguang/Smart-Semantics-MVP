@@ -18,18 +18,32 @@ import org.sourceanalysis.app.analysis.code.JavaCodeSession;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.fact.ProvenCodeFactsExecutor;
 import org.sourceanalysis.app.analysis.fact.publish.ProvenCodeFactsReference;
+import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjection;
+import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionModulePublisher;
 import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionProfile;
+import org.sourceanalysis.app.analysis.flow.capsule.EvidenceCapsuleProjector;
+import org.sourceanalysis.app.analysis.flow.compiler.EntryContextAssembler;
+import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilation;
+import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilationModulePublisher;
 import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilationProfile;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
+import org.sourceanalysis.app.analysis.flow.publish.FlowPublicationSpecifier;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsExecution;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
+import org.sourceanalysis.app.artifact.AnalysisStepInstallRequest;
+import org.sourceanalysis.app.artifact.AnalysisStepKey;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
+import org.sourceanalysis.app.artifact.InstalledAnalysisStepPublication;
+import org.sourceanalysis.app.artifact.ModulePublicationReference;
+import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.Sha256Digest;
+import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 
 /** Public-seam RED for executing the persisted Flow/Capsule/publication chain. */
 class BusinessFlowsExecutionTest {
@@ -103,17 +117,68 @@ class BusinessFlowsExecutionTest {
                   fixture.sourceReader(), fixture.moduleArtifacts(), fixture.stepArtifacts())
               .execute(fixture.sourceInventory(), fixture.applicationDiscovery(), graphs);
 
+      FlowCompilation compilation =
+          new EntryContextAssembler(fixture.stepArtifacts())
+              .assemble(fixture.applicationDiscovery(), graphs, facts, flowProfile());
+      ModulePublicationReference compilationPublication =
+          new FlowCompilationModulePublisher(fixture.moduleArtifacts(), fixture.stepArtifacts())
+              .publish(fixture.applicationDiscovery(), graphs, facts, compilation);
+      CountingAnalysisStepArtifactStore counting =
+          new CountingAnalysisStepArtifactStore(fixture.stepArtifacts());
+      CapsuleProjection projection =
+          new EvidenceCapsuleProjector(fixture.moduleArtifacts(), counting, fixture.sourceReader())
+              .project(
+                  compilationPublication,
+                  fixture.sourceInventory(),
+                  graphs,
+                  facts,
+                  capsuleProfile());
+      assertThat(counting.programGraphReopenCount()).isEqualTo(1);
+      ModulePublicationReference capsulePublication =
+          new CapsuleProjectionModulePublisher(
+                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
+              .publish(
+                  compilationPublication, fixture.sourceInventory(), graphs, facts, projection);
       BusinessFlowsReference result =
-          new BusinessFlowsExecutor(
-                  fixture.sourceReader(), fixture.moduleArtifacts(), fixture.stepArtifacts())
-              .execute(
-                  new BusinessFlowsExecutionRequest(
-                      fixture.sourceInventory(),
-                      fixture.applicationDiscovery(),
-                      graphs,
-                      facts,
-                      flowProfile(),
-                      capsuleProfile()));
+          new FlowPublicationSpecifier(
+                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
+              .specify(
+                  fixture.sourceInventory(),
+                  fixture.applicationDiscovery(),
+                  graphs,
+                  facts,
+                  compilationPublication,
+                  capsulePublication);
+
+      JsonNode persistedCompilation =
+          new CanonicalJsonCodec()
+              .parseCanonical(
+                  fixture
+                      .moduleArtifacts()
+                      .reopen(compilationPublication)
+                      .payloads()
+                      .get(0)
+                      .canonicalUtf8());
+      assertThat(persistedCompilation.path("schemaVersion").asText())
+          .isEqualTo("business-flows-flow-compilation-v6");
+      assertReferenceOnlyEntryContexts(
+          persistedCompilation.path("payload").path("entryContexts"),
+          fixture.stepArtifacts().reopen(graphs.publication()).semanticPayloads().get(0));
+
+      JsonNode persistedCapsules =
+          new CanonicalJsonCodec()
+              .parseCanonical(
+                  fixture
+                      .moduleArtifacts()
+                      .reopen(capsulePublication)
+                      .payloads()
+                      .get(0)
+                      .canonicalUtf8());
+      assertThat(persistedCapsules.path("schemaVersion").asText())
+          .isEqualTo("business-flows-capsule-projection-v11");
+      assertReferenceOnlyCapsules(
+          persistedCapsules.path("payload").path("capsules"),
+          fixture.moduleArtifacts().reopen(compilationPublication).payloads().get(0));
 
       var reopened = fixture.stepArtifacts().reopen(result.publication());
       var payloads =
@@ -131,16 +196,16 @@ class BusinessFlowsExecutionTest {
       JsonNode flows =
           new CanonicalJsonCodec().parseCanonical(payloads.get("flow-slices.json").canonicalUtf8());
       assertThat(flows.path("schemaVersion").textValue())
-          .isEqualTo("business-flows-flow-slices-v5");
+          .isEqualTo("business-flows-flow-slices-v6");
       assertThat(flows.path("flowSlices")).isEmpty();
       assertThat(flows.path("entryContexts")).hasSize(2);
+      assertReferenceOnlyEntryContexts(
+          flows.path("entryContexts"),
+          fixture.stepArtifacts().reopen(graphs.publication()).semanticPayloads().get(0));
       assertThat(flows.path("entryContexts"))
           .allSatisfy(
               context -> {
-                assertThat(context.path("collectionStatus").textValue()).isEqualTo("COLLECTED");
                 assertThat(context.path("flowSliceId").isNull()).isTrue();
-                assertThat(context.path("codeContext").path("schemaVersion").textValue())
-                    .isEqualTo(EntryCodeContext.SCHEMA_VERSION);
                 assertThat(context.path("limitations"))
                     .as("repeated unresolved calls must not invalidate the persisted entry context")
                     .hasSize(1);
@@ -165,18 +230,43 @@ class BusinessFlowsExecutionTest {
 
       List<JsonNode> capsules = jsonLines(payloads.get("evidence-capsules.jsonl").canonicalUtf8());
       assertThat(capsules).hasSize(2);
+      assertReferenceOnlyCapsules(
+          capsules, fixture.moduleArtifacts().reopen(compilationPublication).payloads().get(0));
       assertThat(capsules)
           .allSatisfy(
               capsule -> {
                 assertThat(capsule.path("schemaVersion").textValue())
-                    .isEqualTo("business-flows-evidence-capsule-v8");
+                    .isEqualTo("business-flows-evidence-capsule-v9");
                 assertThat(capsule.path("flowSliceId").isNull()).isTrue();
                 assertThat(capsule.path("proofPackId").isNull()).isTrue();
-                assertThat(capsule.path("entryContext").path("collectionStatus").textValue())
-                    .isEqualTo("COLLECTED");
-                assertThat(capsule.path("entryContext").path("codeContext").path("methods"))
-                    .hasSize(1);
               });
+    }
+  }
+
+  private static final class CountingAnalysisStepArtifactStore
+      implements CanonicalAnalysisStepArtifactStore {
+    private final CanonicalAnalysisStepArtifactStore delegate;
+    private int programGraphReopenCount;
+
+    private CountingAnalysisStepArtifactStore(CanonicalAnalysisStepArtifactStore delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public InstalledAnalysisStepPublication install(AnalysisStepInstallRequest request) {
+      return delegate.install(request);
+    }
+
+    @Override
+    public ReopenedAnalysisStepPublication reopen(AnalysisStepPublicationReference reference) {
+      if (reference.address().analysisStepKey() == AnalysisStepKey.PROGRAM_GRAPHS) {
+        programGraphReopenCount++;
+      }
+      return delegate.reopen(reference);
+    }
+
+    private int programGraphReopenCount() {
+      return programGraphReopenCount;
     }
   }
 
@@ -260,6 +350,24 @@ class BusinessFlowsExecutionTest {
           .extracting(value -> value.path("disposition").textValue())
           .containsExactly("CONTEXT_ONLY", "GAP");
       assertThat(jsonLines(payloads.get("evidence-capsules.jsonl").canonicalUtf8())).hasSize(1);
+      JsonNode flowSlices =
+          new CanonicalJsonCodec().parseCanonical(payloads.get("flow-slices.json").canonicalUtf8());
+      assertThat(flowSlices.path("schemaVersion").asText())
+          .isEqualTo("business-flows-flow-slices-v6");
+      assertThat(flowSlices.path("entryContexts"))
+          .anySatisfy(
+              context -> {
+                assertThat(context.path("collectionStatus").asText()).isEqualTo("COLLECTED");
+                assertThat(context.has("codeContext")).isFalse();
+                assertThat(context.path("codeContextRef").isObject()).isTrue();
+              })
+          .anySatisfy(
+              context -> {
+                assertThat(context.path("collectionStatus").asText()).isEqualTo("NOT_COLLECTED");
+                assertThat(context.has("codeContext")).isFalse();
+                assertThat(context.path("codeContextRef").isNull()).isTrue();
+                assertThat(context.path("collectionReason").asText()).isNotBlank();
+              });
       assertThat(jsonLines(payloads.get("flow-gaps.jsonl").canonicalUtf8()))
           .singleElement()
           .satisfies(
@@ -321,6 +429,49 @@ class BusinessFlowsExecutionTest {
   private static FlowCompilationProfile flowProfile() {
     return new FlowCompilationProfile(
         reference("flow-profile", 'a', 'b'), 16, 8, 64, 96, 32, 64, 256);
+  }
+
+  private static void assertReferenceOnlyEntryContexts(
+      JsonNode contexts, VerifiedCanonicalPayload indexPayload) {
+    assertThat(contexts).hasSize(2);
+    assertThat(contexts)
+        .allSatisfy(
+            context -> {
+              assertThat(context.path("collectionStatus").textValue()).isEqualTo("COLLECTED");
+              assertThat(context.has("codeContext")).isFalse();
+              JsonNode reference = context.path("codeContextRef");
+              assertThat(reference.isObject()).isTrue();
+              assertThat(reference.path("entryId").textValue())
+                  .isEqualTo(context.path("entryId").textValue());
+              assertThat(reference.path("indexArtifact").path("artifactId").textValue())
+                  .isEqualTo(indexPayload.descriptor().artifactId().value());
+              assertThat(reference.path("indexArtifact").path("sha256").textValue())
+                  .isEqualTo(indexPayload.descriptor().sha256().value());
+            });
+  }
+
+  private static void assertReferenceOnlyCapsules(
+      JsonNode capsules, VerifiedCanonicalPayload compilationPayload) {
+    assertThat(capsules).hasSize(2);
+    capsules.forEach(capsule -> assertReferenceOnlyCapsule(capsule, compilationPayload));
+  }
+
+  private static void assertReferenceOnlyCapsules(
+      List<JsonNode> capsules, VerifiedCanonicalPayload compilationPayload) {
+    assertThat(capsules).hasSize(2);
+    capsules.forEach(capsule -> assertReferenceOnlyCapsule(capsule, compilationPayload));
+  }
+
+  private static void assertReferenceOnlyCapsule(
+      JsonNode capsule, VerifiedCanonicalPayload compilationPayload) {
+    assertThat(capsule.has("entryContext")).isFalse();
+    JsonNode reference = capsule.path("entryContextRef");
+    assertThat(reference.isObject()).isTrue();
+    assertThat(reference.path("entryContextId").asText()).isNotBlank();
+    assertThat(reference.path("compilationArtifact").path("artifactId").asText())
+        .isEqualTo(compilationPayload.descriptor().artifactId().value());
+    assertThat(reference.path("compilationArtifact").path("sha256").asText())
+        .isEqualTo(compilationPayload.descriptor().sha256().value());
   }
 
   private static CapsuleProjectionProfile capsuleProfile() {

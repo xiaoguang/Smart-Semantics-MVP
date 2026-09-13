@@ -186,7 +186,7 @@ class EvidenceCapsuleProjectorTest {
       JsonNode compilationEnvelope =
           canonicalJson.parseCanonical(reopenedCompilation.payloads().get(0).canonicalUtf8());
       assertThat(requiredText(compilationEnvelope, "schemaVersion"))
-          .isEqualTo("business-flows-flow-compilation-v5");
+          .isEqualTo("business-flows-flow-compilation-v6");
       JsonNode persistedFlows =
           requiredArray(requiredObject(compilationEnvelope, "payload"), "flowSlices");
       assertThat(persistedFlows.size()).isEqualTo(2);
@@ -411,7 +411,7 @@ class EvidenceCapsuleProjectorTest {
       JsonNode envelope =
           new CanonicalJsonCodec().parseCanonical(reopened.payloads().get(0).canonicalUtf8());
       assertThat(envelope.path("schemaVersion").asText())
-          .isEqualTo("business-flows-flow-compilation-v5");
+          .isEqualTo("business-flows-flow-compilation-v6");
       JsonNode persistedFlows = envelope.path("payload").path("flowSlices");
       assertThat(persistedFlows.isArray()).isTrue();
       assertThat(persistedFlows.size()).isEqualTo(2);
@@ -584,7 +584,7 @@ class EvidenceCapsuleProjectorTest {
       JsonNode envelope =
           new CanonicalJsonCodec().parseCanonical(reopenedBefore.payloads().get(0).canonicalUtf8());
       assertThat(envelope.path("schemaVersion").asText())
-          .isEqualTo("business-flows-flow-compilation-v5");
+          .isEqualTo("business-flows-flow-compilation-v6");
       JsonNode payload = envelope.path("payload");
       assertThat(payload.path("flowCompilationProfile").path("maxFlowNodes").asInt()).isEqualTo(1);
 
