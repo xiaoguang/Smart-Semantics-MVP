@@ -12,6 +12,8 @@ Step03建立可复用的代码导航：方法在哪里，调用有哪些声明/�
 
 输入为同一已验证源码、ApplicationDiscovery全入口/catalog/profile和选定引擎会话。JDT的LS负责绑定，Core负责语法；不执行客户构建或应用。主出口为`java-code-index.jsonl`，字段与数量见[共同合同](../modules/java-code-engines/contracts-and-configuration.md)。
 
+已批准的导航优化：同一会话内，每个不同JDT操作/位置只执行一次，后续入口复用原始定位结果；METHOD全仓保存一份，CALL仍按入口owner保存展开状态。不能把“共享查询”改成“共享整条入口投影”，也不能省略必要implementation。索引v2与module 7不因RPC缓存而变更。Step05引用该索引，模型取材前解开到完整源码。[模块算法、例子与验收](../plans/navigation-reuse-and-readable-report-design.md#4-jdtnavigationresolver查询一次保存原始结果)；当前跨入口query缓存尚待实现。
+
 以下五图分工及第8节精确合同仅适用于**实际启用的既有严格图增强**；不要求JDT为了产出源码材料实现等价图。未产生的增强记录NOT_PRODUCED，不产生假的空图成功结果，也不影响已定位的Service正文。
 
 | 图/拥有者 | 一次建立的关系 | Step05 怎样使用 |
@@ -89,8 +91,8 @@ DepotHead#batchSetStatus 用于复杂条件和 Java-local status/ids 的局部�
 
 JDT 第一阶段不执行上述 module 1–6 增强子链；module 7 的 semantic payload 精确为 `java-code-index.jsonl`，Step03 公开集合精确为该文件加 `program-graphs-receipt.json`。第二阶段 JavaParser 真正运行增强时，module 7 登记 index 加 M6 现有七个 semantic payload。两种 actual set 都须在 publisher、step store exact-set allowlist、artifact policy、reader 与 fixture 中显式列出，不能靠缺文件猜引擎，也不能制造空图。
 
-在 M1 前、并在每一个 graph builder 需要上游输入时，内部的
-`PersistedProgramGraphInputReader`执行一次**输入重新打开**。它不是第六种图、不是
+在从磁盘进入本次图增强执行的边界，内部的
+`PersistedProgramGraphInputReader`执行一次**输入重新打开**；同次执行的builders复用已验证不可变输入，不为每个builder再打开/扫描全仓。它不是第六种图、不是
 module、不会产生新文件，也不会改变五图的模块顺序。它只接收
 `VerifiedSourceInventoryReference + ApplicationDiscoveryReference`，重新打开并校验以下已经
 发布的 JSON/JSONL 与 receipt：源码清单的`source-input.json`、`verified-snapshot.json`、

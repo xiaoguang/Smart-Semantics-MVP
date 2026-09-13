@@ -135,6 +135,17 @@
 - Preserve full method code and its conditions/returns in the material path.
   Verify that Service bodies reach actual model input, not only an index.
   Evidence exists to locate code, not to repeatedly re-prove ordinary reads.
+- Follow docs/plans/navigation-reuse-and-readable-report-design.md for the
+  approved optimization (design complete, implementation pending): cache each
+  distinct JDT operation/location once per frozen, ready session; share method
+  bodies, not entry-specific expansion state. Keep index v2 METHOD sharing and
+  entry-owned CALL. Persist Step05/Capsule references and hydrate full immutable
+  contexts before creating model packets; never send unresolved internal keys
+  instead of the source a model needs. No cache service or recovery subsystem.
+- All subsequent edits belong in the formal source-code checkout, not the
+  /private/tmp research worktree. Preserve prior comparison artifacts. The
+  uncommitted blanket Java 25 changes on the older appmod branch are not the
+  verified JDT baseline; main application Java 17 and tool JVM remain separate.
 
 ## Eight analysis steps and the four deep Modules
 
@@ -324,10 +335,12 @@
   it explicitly says no definable metric was identified. Natural-language
   truthfulness is checked by whole-report Luna REVIEW and authorized human
   sample review, not a Java business-language parser.
-- By default the renderer inserts a collapsible technical-basis area inside
-  Chapter 1, with valid same-document anchors and raw file/lines/snippet from
-  source-refs.jsonl. It creates no tenth H2 and does not depend on a future
-  HTTP/frontend source viewer.
+- The approved renderer target uses business prose and plain short refs only.
+  Store raw file/lines/snippet in the existing separate source-refs.jsonl;
+  do not append source blocks to Chapter 1, another chapter, or a tenth H2.
+  Remove links to deleted same-document source anchors. Keep model inputs and
+  reviewed chapter text unchanged; pure rerender calls no Provider and never
+  overwrites historical comparison artifacts. This target is not yet code.
 
 ## Persistence, reuse and recovery
 
@@ -410,6 +423,14 @@
   subsystem. Preserve Git history, JavaParser algorithms and progress files.
 
 ## Testing and stop rules
+
+- One full local CI delivery executes each test once: Surefire for ordinary
+  fixture tests, explicit Failsafe real-jdt-it profile for installed-JDT tests,
+  then SpotBugs/PMD without rerunning tests. Retain all useful assertions.
+  Keep skipUTs and skipITs independent and make commands match POM properties;
+  passing skipTests when POM reads skipUTs does not prove tests were skipped.
+  Daily RED/GREEN remains targeted; this is not permission for a full suite on
+  every edit. No customer build or live product model in these tests.
 
 - Use TDD for implementation: one behavior RED at the applicable deep Module
   Interface, then the smallest GREEN. Run only tests added by or directly

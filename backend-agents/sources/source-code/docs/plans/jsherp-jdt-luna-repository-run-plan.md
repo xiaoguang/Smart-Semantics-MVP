@@ -74,4 +74,4 @@ JDT 的受控项目必须接收本次配置明确列出的已有依赖 JAR，而
 
 运行时间分为源码扫描、模型调用、等待和检查；材料规划完成、首两包有实测值后再估算全仓剩余时间。
 
-当前执行位置、权限与产物见 [运行进度](../../progress/jsherp-jdt-luna-repository-run.md)。
+当前执行位置、权限与产物见 [运行进度](https://github.com/xiaoguang/Smart-Semantics-MVP/blob/080a86db04c4917b27c5a48c88ca136d11bd0f2b/backend-agents/sources/source-code/progress/jsherp-jdt-luna-repository-run.md)。

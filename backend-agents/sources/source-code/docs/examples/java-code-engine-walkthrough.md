@@ -2,6 +2,8 @@
 
 > [插件总设计](../modules/java-code-engines/README.md)。这里分清三件事：旧材料实际缺什么、JDT调研实际取到什么、正式插件未来怎样传给模型。本次没有重新执行JDT或Luna，没有修改历史packet。
 
+本文已同步到正式目录。下文少量/private/tmp链接指向尚在原位置的历史调研产物，仅供只读核对，不代表后续继续在那里编辑。新的四入口比较基线已独立保存在正式目录；本轮不复制或改写历史运行结果。
+
 ## 1. 注册：以前只有入口，现在能读到实现
 
 固定jshERP commit为`8c30ce7861570458920175e200bb2a6442713580`。输入只有`POST /user/registerUser`的Controller位置，程序没有收到预期Service路径或方法名单。源码中通配import由JDT处理，不用“当前包名+UserService”猜路径。
@@ -48,11 +50,11 @@ UserController.registerUser
 
 URI宿主根隐去，零基行列来自实际记录。该位置只指方法名；随后prepareCallHierarchy的整声明range为606行4列至660行5列，对应含注解的607–661行。正式设计用整range或JDT Core声明范围读全文，不再需要JavaParser。
 
-[保存的交换记录](../../.workspace/jdtls-source-navigation-feasibility/goal-driven/run-20260912T115800-0230/registration/raw-exchanges.jsonl)包含客户端请求和解析后结果。`left/right`是LSP4J的Either包装，不是LS必须返回的在线JSON；文件不是逐字节网络报文。
+[保存的交换记录](/private/tmp/linguan-source-analysis-process-design/backend-agents/sources/source-code/.workspace/jdtls-source-navigation-feasibility/goal-driven/run-20260912T115800-0230/registration/raw-exchanges.jsonl)包含客户端请求和解析后结果。`left/right`是LSP4J的Either包装，不是LS必须返回的在线JSON；文件不是逐字节网络报文。
 
 ### 1.2 自动取到的完整源码
 
-以下四段直接取自[注册packet.json](../../.workspace/jdtls-source-navigation-feasibility/goal-driven/run-20260912T115800-0230/registration/packet.json)，未省略body。M编号属于调研产物，不是未来公共ID。
+以下四段直接取自[注册packet.json](/private/tmp/linguan-source-analysis-process-design/backend-agents/sources/source-code/.workspace/jdtls-source-navigation-feasibility/goal-driven/run-20260912T115800-0230/registration/packet.json)，未省略body。M编号属于调研产物，不是未来公共ID。
 
 <details>
 <summary>M01 registerUser：jshERP-boot/src/main/java/com/jsh/erp/controller/UserController.java:357–367</summary>
@@ -232,7 +234,7 @@ public void checkLoginName(UserEx userEx)throws Exception{
 
 ## 2. 财务查询：一个小型完整跨层例子
 
-[财务packet.json](../../.workspace/jdtls-source-navigation-feasibility/goal-driven/run-20260912T115800-0230/financial/packet.json)保存3条方法记录：2条body与1个Mapper声明。以下是全部三段：
+[财务packet.json](/private/tmp/linguan-source-analysis-process-design/backend-agents/sources/source-code/.workspace/jdtls-source-navigation-feasibility/goal-driven/run-20260912T115800-0230/financial/packet.json)保存3条方法记录：2条body与1个Mapper声明。以下是全部三段：
 
 <details>
 <summary>M01 getFinancialBillNoByBillId：jshERP-boot/src/main/java/com/jsh/erp/controller/AccountHeadController.java:181–196</summary>

@@ -8,6 +8,8 @@
 
 组合根加载 engine 配置并打开一次 snapshot-bound session；`PersistedTechnicalRunExecutor` 将同一会话交给 application discovery、navigation publication 与 Step05，再由业务运行链消费已保存结果。JDT 路径不 hardcode 或调用 JavaParser；JavaParser 路径也不启动 JDT。未知配置值明确失败。
 
+已批准的后续优化将相同操作/位置的JDT查询和完整方法表提升为该会话的共享数据，不改变组合根或新建运行路径。复用范围、失败缓存及索引就绪条件见[优化设计](../../plans/navigation-reuse-and-readable-report-design.md)。宿主仍Java17；正式目录旧分支的整体Java25升级不是该优化前提。
+
 ApplicationProfileDetector继续静态读POM/配置以形成VerifiedJavaProject；涉及Java声明的部分改为消费`session.catalog()`。SpringHttpEntryDiscoverer消费统一AnnotationView/MethodDeclarationView，route组合规则只有一份，继续支持省略method及method={}，不制造默认GET。Mapper catalog的Java声明来自选定引擎；XML安全读取继续复用。
 
 注解identity解析归JDT Adapter（Core名称范围+LS声明定位），不留给共享发现器重写类型规则。未确认的mapping方法保留可定位候选与具体限制；不能按simple name冒充Spring，也不能从site分母吞掉。显式框架注解/源码组合注解/缺依赖分支必须有直接测试。
@@ -47,7 +49,7 @@ JDT 路径 Step04 的实际公开集合精确为 `fact-accounting.json + proven-
 
 处理：按ENTRY_MEMBERSHIP重新组装完整MethodCode/CallSite，不重新定位方法。导航索引v2的METHOD仍全仓共享，CALL必须按入口owner及物理callKey读取；不能把另一入口已经展开的目标替换本入口的NOT_EXPANDED。附有效技术refs，不用refs筛掉原文。一个safe entry没有strict Flow时`flowRef=null`。现有严格Flow仍可单独保留，但不得要求新context伪造OutcomePath/obligation才能过publisher。
 
-唯一依据模型为[EntryCodeContext](contracts-and-configuration.md)，替换当前`FlowCompilation.CallContext`单target、actual-only和`EXACT/UNRESOLVED`窄形状；不会长期并存两套互相补字段的context。Capsule引用context或原样投影，不另判一次调用是不是可信；读取器只检查来源/引用/版本。
+唯一依据模型为[EntryCodeContext](contracts-and-configuration.md)，业务消费者不使用旧strict CallContext代替完整导航。优化后的磁盘Step05只写codeContextRef，Capsule只写entryContextRef；reader在既有边界恢复完整对象，不另判一次调用是不是可信、不重启JDT。compiler/projector/publisher、artifact policy、reader和两引擎直接fixture必须在同一次交付中完成对应v6/v11/v6/v9升级，不能只改写出端。
 
 失败：entry ID不属于同快照、method/source引用断裂、原文范围错误或安装碰撞为fatal；未解析call是局部limitation。无安全入口位置为具体NOT_COLLECTED处置；无strict Flow但有body可正常形成阅读材料。0入口仍有空索引/覆盖与诚实步骤结果。
 
@@ -128,9 +130,13 @@ ActivityExplainer、ProcessExplainer、BusinessReportPublisher的现有职责不
 
 第一阶段先位置/响应小fixture，再真实注册、同索引财务，再不同领域与多入口scripted全链。先观察JSON真实内容，确认Service正文已进入实际模型请求，才讨论扩大真实模型运行。产品调用仍需授权，设计/自动测试不调用Luna。
 
+### 4.1 本地CI的唯一执行归属
+
+普通录制LSP、纯Java和scripted Provider测试由Surefire执行；启动真实LS/Core、依赖固定客户源码的测试移到显式`real-jdt-it` Failsafe profile与`*IT`类，不能两边重复运行。一次完整交付用一个verify生命周期连接unit、IT、SpotBugs/PMD；quality不得硬写skipTests=false或自己再触发test。日常RED/GREEN仍只跑直接selector。[目标命令与验收](../../plans/navigation-reuse-and-readable-report-design.md#9-本地-ci一个测试只由一个阶段执行)尚待POM/测试实现，本轮不改构建文件。
+
 ## 5. 实施收口与禁止扩大项
 
-第一阶段已经交付可运行 JDT 取材及既有业务链：真实位置、完整代码和候选可观察，保存重开后进入 BusinessMaterialBuilder，并在自包含 Spring/MyBatis 验收中到达 scripted 九章。固定 jshERP 注册/财务入口也通过真实工具检查。JavaParser 仍保持未适配状态，不影响该结论。
+第一阶段已经交付可运行 JDT 取材及既有业务链：真实位置、完整代码和候选可观察，保存重开后进入 BusinessMaterialBuilder，并在自包含 Spring/MyBatis 验收中到达 scripted 九章。固定 jshERP 注册/财务入口也通过真实工具检查。当时JavaParser未适配不影响第一阶段结论；第二阶段随后已经完成，不再列为当前待开发。
 
 第二阶段已经从第一阶段冻结合同出发，恢复可选 JavaParser 及其迁移前能力。后续不要开展两引擎自动投票、混合结果、失败 fallback、runtime 插件安装、跨引擎缓存复用、完整编译器/外部效果证明、复杂恢复，也不要求重新设计报告模块。
 

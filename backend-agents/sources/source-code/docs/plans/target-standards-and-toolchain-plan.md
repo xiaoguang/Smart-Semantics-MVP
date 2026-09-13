@@ -132,7 +132,7 @@ Toolchain foundation必须提交project-tracked `.mvn/toolchains.xml`，不得�
 | Maven Toolchains | 3.3.0 | 从显式`-t .mvn/toolchains.xml`选择`jdk` version 17；禁止读写用户级toolchains；缺file/home/match明确失败，不回退shell JDK | `validate`/编译前 check | 每次 PR 必跑 | 无网络；轻；本机JDK 17已存在 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | Maven Compiler | 3.15.0 | `release=17`、UTF-8、`-parameters`；先不启用会因第三方/generated code 产生噪声的全量 `-Werror` | compile/testCompile | 每次 PR 必跑 | 无额外网络；中 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | Surefire | 3.5.5 | `*Test` unit/contract selector；固定 locale/timezone/encoding；Provider/network disabled；POM 明确把默认 false 的 `skipUTs` property 映射到 Surefire `skipTests` | direct selector | PR targeted suite | 无网络；按 selector 轻/中 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
-| Failsafe | 3.5.5 | 仅 `*IT` filesystem/process/adapter integration；`integration-test` + `verify` | 显式 `-Dit.test=` | 分析步骤 gate/最终验收 | 无网络；中/重，必须串行 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
+| Failsafe | 3.5.5 | 仅 `*IT` integration；显式profile绑定`integration-test` + `verify`，独立`skipITs`，不复用`skipUTs`；真实JDT归此类 | 显式profile与`-Dit.test=` | 分析步骤 gate/最终验收 | 不运行客户构建/产品模型；串行 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | Spotless Maven | 3.10.1 | Java 使用 google-java-format 1.36.1；POM/Markdown 不自动重排领域 golden | `spotless:check`；apply 必须显式 | PR 只 check | 首次解析后离线；轻/中 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | google-java-format | 1.36.1 | Spotless 唯一 Java formatter engine | 仅由 Spotless 调用 | 锁定版本 check | 无运行时网络；轻 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
 | SpotBugs Maven | 4.10.4.0 | bytecode correctness：null/dropped result/resource/threading/equals/hash/serialization 风险；只配置经证实排除 | `-Pquality` | PR/分析步骤 gate | 中/重，串行 | APPROVED CORE — IN-SCOPE EXECUTION DEFAULT AUTHORIZED |
@@ -206,16 +206,17 @@ Taplo 与 markdownlint-cli2 不在本计划中伪造版本。它们的确定门�
 
 ## 5. Maven profiles 与精确命令合同
 
-以下命令是已批准的默认执行合同。后续范围内任务可按平台权限直接解析依赖并执行；当前 Round-3 明确为 docs-only，因此本 work unit 不运行它们。
+以下是目标命令合同。2026-09-13[单次本地CI优化](navigation-reuse-and-readable-report-design.md#9-本地-ci一个测试只由一个阶段执行)已批准，但POM/Failsafe分类尚未修改，本轮不执行构建。当前Surefire读取skipUTs，不能误用skipTests以为unit被跳过；目标Failsafe独立使用skipITs。一般依赖版本与Java17工具链不因优化改变。
 
 | 场景 | 精确默认命令 | 约束 |
 | --- | --- | --- |
 | 单个 RED/GREEN selector | `mvn -t .mvn/toolchains.xml -o -Dtest=FrozenRequestAdmissionTest test` | 命令示例使用真实类；其他任务只能替换为第 6 节同一 work unit 的一个精确类名，不得用 wildcard 或空 selector 回退全套 |
 | 多个同任务 selector | `mvn -t .mvn/toolchains.xml -o -Dtest=CanonicalModuleArtifactStoreTest,CanonicalAnalysisStepArtifactStoreTest test` | 只允许同一 work unit 直接覆盖者 |
-| 单个 integration selector | `mvn -t .mvn/toolchains.xml -o -DskipUTs -Dit.test=CanonicalAnalysisStepArtifactStoreAtomicInstallIT verify` | Failsafe `*IT`；文件系统/process 测试串行 |
+| 真实JDT integration selector | `mvn -t .mvn/toolchains.xml -o -Preal-jdt-it -DskipUTs -Dit.test=JdtRealSourceCollectionIT verify` | 待实现profile与改名后的类；Failsafe绑定后才可用，不跳过IT；工具/固定源码缺失须报告未验证 |
 | 格式 check | `mvn -t .mvn/toolchains.xml -o spotless:check` | CI 与提交前；不改文件 |
 | 格式 apply | `mvn -t .mvn/toolchains.xml -o spotless:apply` | 仅实现代理在自己拥有的 Java 文件上显式运行；之后重跑 direct tests |
-| 静态质量 | `mvn -t .mvn/toolchains.xml -o -Pquality -DskipTests verify` | Enforcer + compile + SpotBugs + PMD + dependency analyze；重型串行 |
+| 补跑静态质量 | `mvn -t .mvn/toolchains.xml -o -Pquality -DskipUTs -DskipITs verify` | 同一代码/配置已有测试证据时复用编译输出；不重新test；dependency分析仍用对应显式goal |
+| 完整本地CI | `mvn -t .mvn/toolchains.xml -o -Pquality,real-jdt-it verify` | 目标一次生命周期完成unit、真实IT和quality；默认skipUTs/skipITs=false，格式check绑定到该交付或先单独执行 |
 | Jackson 收敛 | `mvn -t .mvn/toolchains.xml -o dependency:tree -Dincludes=com.fasterxml.jackson.*` | 输出必须只有 Jackson 2.21.4 版本线；再跑 JSON/schema selector |
 | SBOM | `mvn -t .mvn/toolchains.xml -o -Psupply-chain -Ddependency-check.skip=true cyclonedx:makeBom` | 不访问漏洞库；输出纳入 release review，不提交临时 target |
 | 漏洞审计 | `mvn -t .mvn/toolchains.xml -Psecurity org.owasp:dependency-check-maven:13.0.0:check` | 仅在NVD/API feed、所需credentials与持久cache位置已配置时；不得与其他Maven命令并行 |
@@ -227,7 +228,7 @@ Taplo 与 markdownlint-cli2 不在本计划中伪造版本。它们的确定门�
 默认生命周期政策：
 
 - `test` 不绑定 SpotBugs、PMD、CycloneDX、OWASP、Javadoc、Shade，保证 direct selector 快速且可离线。
-- `quality` 是独立、串行 gate；只在 direct selectors GREEN 后运行。
+- `quality`只拥有SpotBugs/PMD，不强制开启或再跑测试。日常直接selectors保持快速；完整交付只走一次verify的unit→IT→quality。Surefire/Failsafe测试集合不交叉，检查XML执行记录，不以“skip命令看起来正确”代替核实。
 - `security` 和 `supply-chain` 分离：SBOM 可离线，漏洞 DB 需要明确网络审批，二者不得混写成一个模糊“安全通过”。
 - `release` 才运行 Javadoc、Shade 与本地 smoke；不触发 source capture 或 Provider。
 - 首次范围内解析保存`mvn -t .mvn/toolchains.xml dependency:go-offline`的实际输出、selected JDK 17和本地cache事实；未来命令加`-o`。cache miss只可按默认授权解析已列精确坐标，并仍服从平台网络控制。
@@ -275,7 +276,7 @@ Taplo 与 markdownlint-cli2 不在本计划中伪造版本。它们的确定门�
 - [ ] Luna/xhigh 再创建 `CanonicalModuleArtifactStoreTest`, `CanonicalAnalysisStepArtifactStoreTest`, `CanonicalRunManifestStoreTest`, `RunExecutionStateTest` 的 atomic/collision/reopen/partial-install 与四状态 RED。
 - [ ] Terra/xhigh 实现三个 public deep seams、最小 single-process execution state 与共享 private atomic filesystem machinery；无 caller path/prefix。
 - [ ] Sol/ultra 只处理 unexpected RED、合同歧义、identity/DAG 偏差；需要架构变化即停止并请求用户批准。
-- [ ] 串行运行本任务列出的direct selectors、`spotless:check`、`-Pquality -DskipTests verify`、dependency convergence；双轴 review 后由父任务提交/推送。
+- [ ] 串行运行本任务列出的direct selectors、`spotless:check`、`-Pquality -DskipUTs -DskipITs verify`、dependency convergence；双轴 review 后由父任务提交/推送。
 
 ### Task 2：已验证源码清单
 

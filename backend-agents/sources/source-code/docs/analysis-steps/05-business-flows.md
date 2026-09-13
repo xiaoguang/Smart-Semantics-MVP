@@ -42,9 +42,9 @@ JDT或JavaParser已经找出方法、调用和源码。Step05负责让这些结�
 
 输出是一个EntryCodeContext。它可以有局部限制；是否足以解释业务留给材料检查与模型，不用Java行业字典评分。
 
-### 3.2 EvidenceCapsuleProjector：原样投影，不再做“最小Proof”竞赛
+### 3.2 EvidenceCapsuleProjector：引用完整上下文，不再复制正文
 
-输入EntryCodeContext，输出与该context唯一绑定的Capsule。保留完整选中方法、调用目录、候选、来源和限制；引用或原样投影，不独立创造calls/controls。
+输入EntryCodeContext的完整不可变视图，输出与该context唯一绑定的Capsule引用。保留完整选中方法、调用目录、候选、来源和限制的可读取性，不独立创造calls/controls。磁盘只写entryContextRef，正文由既有reader沿compilation的codeContextRef到索引读取；业务消费者不自己调用JDT。
 
 有完整body时不能只保留方法名和几行入口。Mapper只有声明时保留声明；没有SQL正文不删Java调用。没有strict Fact、OutcomePath或Proof obligation不阻断已定位源码。
 
@@ -84,14 +84,14 @@ JDT或JavaParser已经找出方法、调用和源码。Step05负责让这些结�
 
 | 文件 | 内容 |
 | --- | --- |
-| flow-slices.json | 完整entryContexts与实际已有strict Flows；没有strict Flow时flows可空 |
+| flow-slices.json | 入口归属/状态、codeContextRef及实际已有strict Flows；解引用可读完整上下文，没有strict Flow时flows可空 |
 | flow-coverage.json | 全入口分母、上下文形成情况、技术增强是否可用与具体限制 |
 | entry-dispositions.jsonl | 每入口已有技术处置及context收集处置；二者不混同 |
 | evidence-capsules.jsonl | 每个安全context的唯一投影；flowRef可空 |
 | flow-gaps.jsonl | 入口取材/导航/技术增强的已知限制及来源，不发明业务制度Gap |
 | business-flows-receipt.json | 实际输入、产物、引擎basis与状态 |
 
-本次 wire reset 固定版本为：`entry-code-context-v1`、flow compilation v5、capsule projection v10、flow slices v5、evidence capsule v8、flow coverage v2、entry disposition v2。五个语义文件加 receipt 的实际集合不因严格增强 NOT_PRODUCED 而缩小；writer、reader、exact-set allowlist、artifact policy 与 fixture 同步升版，旧 context/version 稳定拒绝，不提供双读或字段缺失别名。
+已交付版本为entry-code-context-v1、flow compilation v5、capsule projection v10、flow slices v5、evidence capsule v8、flow coverage v2、entry disposition v2。本次引用优化目标仅把compilation/slices改为v6、projection改为v11、capsule改为v9；其余保持。codeContextRef精确为`{indexArtifact: ArtifactReference, entryId: string}`，Capsule的entryContextRef为`{compilationArtifact: ArtifactReference, entryContextId: string}`；COLLECTED须引用正确入口，NOT_COLLECTED的codeContextRef为空且有reason。五个语义文件加receipt的实际集合不变。writer、reader、identity输入、policy与fixture一起修改；旧历史产物不覆盖，不静默双读。详见[字段与版本表](../modules/java-code-engines/contracts-and-configuration.md#5-保存格式位置与复用)。这些是已批准目标，尚未实施。
 
 保留技术处置`COMPILED/GAP/EXCLUDED`的原义。context处置单独使用`COLLECTED/NOT_COLLECTED`和reason，不把“没有strict Flow”误判成没有材料，也不把SOURCE_CONFIRMED之类业务状态塞进technical ledger。
 
@@ -102,6 +102,8 @@ strict Flow数量可以少于context数量
 ```
 
 Builder只读这些context和Capsule，选完整方法、分包、分配S短ref；没有引擎分支、不调用解析器。模型输入能看见调用/参数/候选/正文，而程序侧path/行号/hash用于来源展示，不强塞给模型。
+
+引用去重只改变保存方式：reader一次打开所需索引并还原各入口完整视图，跨入口共享方法对象；不同入口的CALL/NOT_EXPANDED不互相覆盖。只复制Capsule而缺失上游索引不是完整导出，必须明确报缺引用，不能重跑JDT补救。一个请求里同一方法只展开一次，但发送给模型前不能只留下程序内部key。
 
 没有安全context时仍保留入口处置；0入口保存空集合和真实范围说明。多入口共享方法不能让入口覆盖分母缩水。
 

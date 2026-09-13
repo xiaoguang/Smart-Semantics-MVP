@@ -310,7 +310,7 @@
 Accepted evidence: the Tasks 1–7 selector passed 73 tests; the public-seam selector passed 8 tests;
 the installed-JDT jshERP selector and the production-selected JDT-to-scripted-report selector each
 passed. Exact commands and boundaries are recorded in
-[`progress/jdt-independent-release-acceptance.md`](../../progress/jdt-independent-release-acceptance.md).
+[`progress/jdt-independent-release-acceptance.md`](https://github.com/xiaoguang/Smart-Semantics-MVP/blob/080a86db04c4917b27c5a48c88ca136d11bd0f2b/backend-agents/sources/source-code/progress/jdt-independent-release-acceptance.md).
 
 ## Task 9: Adapt baseline JavaParser behavior to the frozen interface (approved 2.1)
 

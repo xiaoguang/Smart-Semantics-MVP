@@ -42,7 +42,7 @@
 
 | 序号 | H2 标题 | 应保留的内容 |
 | --- | --- | --- |
-| 1 | 文档说明 | 固定来源、分析范围、覆盖与局限、源码行为/运行事实区别；折叠来源区 |
+| 1 | 文档说明 | 固定来源、分析范围、覆盖与局限、源码行为/运行事实区别；指明独立来源文件，不附源码 |
 | 2 | 业务目标 | 已审活动和过程体现的目的，不发明组织战略 |
 | 3 | 业务对象 | 对象、用途及有依据的业务含义 |
 | 4 | 业务活动 | 连贯过程与局部活动段落，保留条件、分支、结果 |
@@ -77,20 +77,26 @@
 
 正文例子来自固定财务查询源码的目标解释。真实 Controller 正常路径先接收 Service 结果，再设置 code=200/data=list；catch 设置 code=500/data=“获取数据失败”，最后返回 res。它没有计费、过账、角色或唯一单号的结论。
 
-来源显示采用 [S1] 等短标记，在第一章折叠区域对应冻结文件、精确行段与原始代码；不要求读者看 Proof ID 才理解业务，也不依赖未来 HTTP 源码查看器。
+来源显示采用 `[S1]` 等纯短标记，独立source-refs.jsonl保存冻结文件、精确行段与原始代码。第一章不附源码折叠区，其他章节也不接收迁走的代码块；不保留指向已删除同文档锚点的链接。读者按编号查看同目录来源文件，不依赖未来HTTP源码查看器，也不新增第十章。
 
 ## 6. 保存文件与纯渲染
 
 | 文件 | 作用 |
 | --- | --- |
 | business-report.json | 完整 REVIEW 后的九章业务 JSON |
-| source-refs.jsonl | 被引用短 ref 到冻结文件/行段/原文的程序侧映射 |
-| document.md | 确定性排版结果 |
+| source-refs.jsonl | 完整短ref到冻结文件/行段/原文的独立映射；不因正文未引用而丢弃已保存来源 |
+| document.md | 九章业务正文和纯短ref；无源码块、来源折叠区或宿主路径 |
 | report-validation.json | 类型/章节/ref/budget/coverage 检查结果与内容审阅状态 |
 
 publisher 保存时只做必要结构检查、序列化与原子安装，不能调用 Flow compiler、Fact 枚举器或 Capsule projector。磁盘重新打开或显式导入验证 hash/schema/ref/basis；按已验证 JSON 纯 render 是 0 Provider 操作。inspect/artifact 只读；编辑业务正文是另行授权的模型内容动作。
 
 已开始但结果未知的请求不自动恢复，已完成报告不被覆写。使用现有 checkpoint/inputFingerprint 规则即可，不新建十几层 receipts、reader replay 或恢复状态机。
+
+### 6.1 来源外置的最小修改与验收
+
+当前Renderer在报告DRAFT/REVIEW之后追加全部来源片段；优化只删除此展示步骤，保留BusinessReport JSON及source-refs读写。报告模型原本不读取这个追加区，因此不重新调用模型，不改变Activity/Process输入。正文短ref不再输出`#source-ref-*`链接。renderer/producer版本更新以区分新Markdown bytes，业务JSON无字段变化不强制升版；历史草稿/已审报告均不覆盖。
+
+Luna/xhigh直接测试：同一已审JSON重渲染后恰好九章，第二至九章业务文本、顺序与ref集合不变，正文无源码块，每个编号在独立来源文件可查；缺失/伪造ref仍拒绝，纯render零Provider。Terra只改renderer与相关checkpoint identity/直接测试，不重写提示词或业务解释。refs存在不保证语义相关，相关性仍由完整REVIEW与人工样本核对，不新增Java语义证明器。详见[优化设计](../plans/navigation-reuse-and-readable-report-design.md#8-businessreportpublisher九章只讲业务源码单独保存)。
 
 ## 7. 失败与完成标准
 
@@ -101,6 +107,8 @@ publisher 保存时只做必要结构检查、序列化与原子安装，不能�
 静态代码清楚构造并 save 对象时，可以描述“生成并保存对象”的程序行为；没有运行证据不得断言本次保存成功、库存已经增加或支付已经完成。合理业务推断在相应段落集中限定，避免每句话重复警告。
 
 ## 8. 当前实现与后续测试
+
+截至080a86d，独立source-refs已存在，但renderer仍把全部来源附在第一章；本轮完成的是上述外置设计，代码尚未修改。新的四入口JDT样本报告仅完成DRAFT，REVIEW启动后失败，不能因格式检查或纯重渲染而称为已审报告。该历史结果只用于优化前后比较。
 
 BusinessReportPublisher 已有 DRAFT+完整 REVIEW、九章 Markdown 和四个报告文件，BusinessAnalysisWorkflow 已接通它。`PersistedBusinessRunExecutorTest` 以一个真实的已保存 Step05 fixture 和 scripted Provider 直接验证：活动 REVIEW 的目的、条件、规则、问题先进入过程/报告模型输入，报告 DRAFT 再完整进入报告 REVIEW，最终 Markdown 保留该业务段落。另有一次明确授权的 Luna/high 小包验收：它只重用已完成的 jshERP 用户登录、用户注册活动及其保守的两个独立过程，生成一份九章报告；没有把注册和登录伪造成有源码顺序的单一过程。该结果证明小包的业务语言与报告链路可用，不证明自动 Builder→整仓业务九章已经通过真实质量验收。
 

@@ -51,7 +51,7 @@ interface JavaCodeSession extends AutoCloseable {
 
 这里的 `methodLocation` 精确展开为 `methodKey + methodRange`。`methodKey` 是公共 catalog 中的跨引擎稳定声明键；`methodRange` 是完整方法/构造器声明的 `SourceRange(startOffsetUtf16,lengthUtf16,startLine,endLine)`。Step02 必须将两者写入每一条入口记录并把它们纳入 `entryId` framed identity，Step03/05 必须用两者校验并选择入口；handler FQN、方法名或路由不能替代它们。M2 `http-entry` moduleVersion、`application-discovery-http-entry-discovery-v2` draft，以及 M4 `publish` moduleVersion 都升级到 v3；公开 descriptor `application-discovery-entry-points-v2` 与每行 `application-discovery-entry-point-v2` 同步升级到 v3。profile、capability、mapper schema 保持 v2。所有直接 reader 同步拒绝旧 entry wire，不靠缺字段推断。
 
-`collect` 隐藏工具的查询、递归、去重与候选处理。相同会话同一入口重复读取使用缓存；不同入口可共享方法记录和解析缓存，但入口成员范围独立。只支持当前单worker顺序调用，不要求并发会话或分布式索引。
+`collect` 隐藏工具的查询、递归、去重与候选处理。相同会话同一入口重复读取复用结果；不同入口必须复用已查询的方法/调用位置及完整方法记录，入口成员范围和展开状态独立。精确规则见[优化设计第3–5节](../../plans/navigation-reuse-and-readable-report-design.md#3-jdtprojectsession一次会话拥有复用范围)：按操作/位置去重，不省略必要implementation，不把不同入口的最终CallSite当成一个缓存对象。只支持当前单worker顺序调用，不要求并发会话或分布式索引。
 
 `descriptor` 保存engineId、adapterVersion、toolVersions、languageLevel和能力说明。descriptor在程序侧，不让模型为不同工具选择不同业务答案。工具不具备的能力必须真实披露，不能写成“整个仓库不可分析”。
 
@@ -179,20 +179,20 @@ Step03保存`java-code-index.jsonl`，记录类型仍为`ENGINE / TYPE / METHOD 
 
 最小回归使用两个不同入口共享同一调用位置：A保留正文、形参关联，B保留未展开原因，保存重开后二者逐字段不变；再把B的实参源码改成不一致值，必须拒绝。先完成这项公开发布/读取接口验证，再重新执行整仓导航，不以整仓长跑代替此检查。
 
-Step05仍在`flow-slices.json`的`entryContexts`保存可自包含阅读的上下文，在`evidence-capsules.jsonl`保存同一context投影；不新增第二套业务包。完整text只保留一种权威值；Capsule按引用复用或原样投影，不再次分析。
+Step05在`flow-slices.json`的`entryContexts`保存入口归属、收集状态与`codeContextRef`，不再复制索引的完整方法正文。该ref精确为`{indexArtifact: ArtifactReference, entryId: string}`，COLLECTED必填且entryId与外层相同；NOT_COLLECTED为null并有reason。Capsule原内嵌`entryContext`改为`entryContextRef={compilationArtifact: ArtifactReference, entryContextId: string}`。既有reader一次打开引用的索引/compilation并恢复完整不可变视图，不重新导航，不把裸引用交给模型。METHOD正文仍以索引为权威；技术增强不改变。[完整读写与失败例子](../../plans/navigation-reuse-and-readable-report-design.md#6-step05capsule用已保存索引引用代替正文副本)。
 
-JDT 第一阶段已经按下列版本落地。后续局部修正必须同步 owner、reader、policy 与本页；不能先为 JavaParser 保留旧 wire。
+以下版本表同时区分已交付与本次批准的引用优化目标；**目标版本尚未实现**。仅改变实际持久化形状的owner/readers/policy同步升版，JavaParser同步产出该保存格式，不改它的解析算法。
 
-| 内容 | 当前 JDT schema |
-| --- | --- |
-| 导航索引 | java-code-index-v2；CALL按入口保存，file记录envelope见上文 |
-| 内嵌上下文 | entry-code-context-v1；完整字段按本页 |
-| module compilation | business-flows-flow-compilation-v5 |
-| module projection | business-flows-capsule-projection-v10 |
-| 公开flow-slices | business-flows-flow-slices-v5 |
-| 公开Capsule | business-flows-evidence-capsule-v8 |
-| flow覆盖 / 入口处置 | business-flows-flow-coverage-v2 / business-flows-entry-disposition-v2 |
-| Fact accounting | proven-code-facts-fact-accounting-v4；NOT_PRODUCED时 reason 必填、保留输入导航ref、counts为null（未评估而非0），不含伪造Fact/Proof refs |
+| 内容 | 已交付 schema | 优化目标 |
+| --- | --- | --- |
+| 导航索引 | java-code-index-v2；CALL按入口保存 | 不变；不把RPC缓存写成入口投影 |
+| 解引用后的完整上下文 | entry-code-context-v1 | 不变；内存消费者仍得到完整内容 |
+| module compilation | business-flows-flow-compilation-v5 | v6：codeContextRef |
+| module projection | business-flows-capsule-projection-v10 | v11：entryContextRef |
+| 公开flow-slices | business-flows-flow-slices-v5 | v6：codeContextRef |
+| 公开Capsule | business-flows-evidence-capsule-v8 | v9：entryContextRef |
+| flow覆盖 / 入口处置 | business-flows-flow-coverage-v2 / business-flows-entry-disposition-v2 | 不变 |
+| Fact accounting | proven-code-facts-fact-accounting-v4；NOT_PRODUCED时reason必填，counts为null | 不变；不含伪造Fact/Proof refs |
 
 可用性保存在索引ENGINE记录及对应Fact accounting中；现有generic step receipt仍通过实际artifact descriptors引用它们，不给每层receipt新增一套状态。只有实际产物集合变化的拥有者和readers调整，不全工程schema重置。
 
@@ -212,7 +212,7 @@ JDT 第一阶段已经按下列版本落地。后续局部修正必须同步 own
 
 module publisher、step publisher、exact-set allowlist、`CanonicalArtifactPolicyRegistry`、直接 reader 与测试 fixture 必须把同一实际集合视为一个原子合同。`NOT_PRODUCED` 是 accounting/index 内容中的能力状态，不是给 receipt 新增通用状态机；已声明 AVAILABLE 的损坏产物仍是失败。
 
-Step06 SourceRef编号仍由Builder分配，模型只看短ref和正文；methods/calls全局key、路径、行号、engine信息留在程序侧。一个context可含多个方法，不强制每方法单独生成一个业务活动。
+Step06 SourceRef编号仍由Builder分配，模型只看短ref和正文；methods/calls全局key、路径、行号、engine信息留在程序侧。一个context可含多个方法，不强制每方法单独生成一个业务活动。Builder在一个请求内复用同一完整方法，但不同请求必须各自含必要正文；请求快照和最终source-refs是有意保留的自包含投影，不因为技术存储去重而只发送模型无法解开的key。
 
 普通同进程传immutable view，保存时检查来源/引用/结构及原子写入。跨进程重开检查bytes/schema/identity；不再索引一遍。复用基础包含snapshot、有效源码根/语言级别/本地classpath内容、引擎与版本、context合同及取材选项；排除绝对工作根。改引擎/工具版本后不得复用旧解析结果或旧业务候选。旧语义Prompt/模型授权规则仍生效。
 
