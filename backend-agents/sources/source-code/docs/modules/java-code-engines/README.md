@@ -1,6 +1,6 @@
 # 可切换的 Java 代码引擎：完整设计
 
-> 目标设计，尚未实施。2026-09-12 按用户确认的方向编写。首先独立打通 JDT；随后适配保留的 JavaParser，只恢复它已有能力。本次没有修改 Java、测试、Schema 或运行产物。
+> JDT 第一阶段已于 2026-09-12 完成正式接入与验收；JavaParser 第二阶段尚未开始，只恢复它已有能力。本页同时记录稳定合同、已验证事实和剩余边界。
 
 ## 1. 先用一句话讲清楚
 
@@ -20,7 +20,7 @@
 | 怎样接入现有步骤，怎样保留并迁回 JavaParser，如何测试 | [接入与第二阶段适配](integration-and-javaparser.md) |
 | 一个真实例子从请求到完整材料，再到业务解释 | [注册与财务贯穿例子](../../examples/java-code-engine-walkthrough.md) |
 
-这组文档是代码引擎的唯一详细合同；[八步总体设计](../../DESIGN.md)和各步骤文档引用它，不另复制一套字段定义。Interface 和 JSON 片段是待实现合同，不能称为当前生产输出。
+这组文档是代码引擎的唯一详细合同；[八步总体设计](../../DESIGN.md)和各步骤文档引用它，不另复制一套字段定义。JDT 的 Interface 与 JSON 已成为当前生产合同；JavaParser 相关段落仍是第二阶段目标。
 
 ## 3. 明确做什么、不做什么
 
@@ -134,24 +134,24 @@ JDT LS 已提供定位声明、实现和调用层次；JDT Core 能读取方法�
 4. 模型确实收到这些内容，REVIEW也收到完整草稿；不是只把内容留在技术文件里。
 5. 已审活动、关系、条件和未知项继续进入仓库知识与九章。
 
-已有试验说明 JDT 可以补回注册 Service；它没有证明完整候选处理、构造器和生产接线已完成。设计必须补齐这些接线职责，但无需发明类型解析算法。完整方法提供业务动作和条件；实参/形参及调用位置说明方法如何联系；模型负责解释这些联系的业务意义。这条接力可验证，也能换仓库复用。
+当前验收说明 JDT 可以补回注册 Service，并已覆盖完整候选保留、构造器、循环、边界及生产接线。完整方法提供业务动作和条件；实参/形参及调用位置说明方法如何联系；模型负责解释这些联系的业务意义。这条接力已经在固定 jshERP 两入口和自包含跨领域运行中验证，但不等于所有 Java 框架形状或整仓业务语义均已验收。
 
 不能保证的内容包括缺依赖的绑定、动态代理选择、反射目标、配置实际值和外部执行结果。保留真实调用和限制后，模型仍可解释已看见的行为；不能把这些边界转化为“整个入口不准阅读”。
 
 ## 9. 当前实现审计
 
-| 项目 | 实际状态 | 本设计要补的内容 |
+| 项目 | 实际状态 | 剩余边界 |
 | --- | --- | --- |
-| JDT调研 | 两入口已获得真实导航与源码；研究程序仍用 JavaParser切正文/枚举语法 | JDT Core替换这部分；不是重做 LS类型系统 |
-| 注册结果 | 76 个方法记录，67 个有正文、9 个仅声明；228 个语法调用 | 不能把76说成76个已展开实现；每个未展开点保留 |
-| 原始结果处理 | 部分 hierarchy 成功路径提前返回；可能没询问 implementation；构造位置未完整处理 | 统一归一化、实现候选查询、构造器支持 |
+| JDT Core | 独立 helper 已读取完整声明、正文、参数、调用、control/exits；生产 JDT 包不引用 JavaParser | 缺依赖时 recovered binding 只作未解析线索，不能冒充确定限定名 |
+| JDT导航 | hierarchy、definition、implementation 的候选归一、构造器、循环、重复及边界已有直接测试 | 动态代理实际选择、反射目标和没有源码的外部实现仍未知 |
+| 真实结果 | 固定 jshERP 注册入口自动取得三段关键 Service 正文；财务入口取得 Service 与 Mapper 声明 | 这两例不是完整仓库、多模块 classpath 或产品语义验收 |
 | JavaParser现状 | 现有 CallGraphBuilder 对 import/type 采用有限规则；POM有 Symbol Solver 不等于生产已接线 | 第二阶段保持真实能力；不宣称 JavaParser库做不到 |
-| Builder | 消费已有上下文，但仍有 JavaParser语法读取与观察提取 | parser相关工作移入对应引擎，公共Builder禁止重新解析 |
-| 正式编排 | YAML engine factory、JDT发现、module 7导航索引发布和Step04 `NOT_PRODUCED` accounting已经接通；Step05仍只读取旧图/Fact/Flow | 下一交付使Step05从持久化导航索引组装入口上下文，保留公共Agent |
-| JDT导航索引 | `java-code-index-v1`已保存ENGINE/TYPE/METHOD/CALL/ENTRY_MEMBERSHIP/DIAGNOSTIC，读取器可从磁盘重建完整入口上下文 | Step05直接消费该读取器，不得重新启动JDT或JavaParser |
-| 业务模块 | Activity/Process/Report已经存在 | 接收内容变丰富；不另建业务路线 |
+| Builder | 只消费已保存 EntryCodeContext，输出声明类型、完整方法、调用、参数、控制和限制 | 第二阶段仍必须保持同一无解析器 Builder |
+| 正式编排 | YAML加载、factory、同会话发现、索引、Step04 NOT_PRODUCED、Step05、材料及 scripted 九章已接通 | JavaParser 当前仍明确 `ENGINE_NOT_INTEGRATED`；产品 Luna 与整仓业务质量另验 |
+| JDT导航索引 | `java-code-index-v1`保存ENGINE/TYPE/METHOD/CALL/ENTRY_MEMBERSHIP/DIAGNOSTIC，读取器可从磁盘重建完整入口上下文 | 不把未生成的严格图/Fact伪造成空成功 |
+| 业务模块 | Activity/Process/Report 使用同一正式材料；真实选择 JDT 的自包含运行已生成九章 | 该九章使用 scripted Provider，只证明接线与内容保留 |
 
-调研细节和准确限制见[贯穿例子](../../examples/java-code-engine-walkthrough.md)。本设计不改写历史运行结果，不把目标 JSON 当作已生成产物。
+调研细节和准确限制见[贯穿例子](../../examples/java-code-engine-walkthrough.md)。历史调研产物仍保留；当前状态以正式 JDT 验收为准。
 
 ## 10. 开发原则
 

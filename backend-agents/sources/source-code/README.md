@@ -4,7 +4,7 @@
 
 先读 [总体设计](docs/DESIGN.md)，再看 [真实财务查询与合成业务 walkthrough](docs/examples/semantic-framework-walkthrough.md)。全部文档以目标设计与当前实现分开表述；单个真实 Luna/high 活动样本只证明局部语义链可用，不代表整仓报告已生成。
 
-新的取材方向已形成[完整JDT/JavaParser插件设计](docs/modules/java-code-engines/README.md)，包括配置/统一JSON、JDT各子模块、现有接线及开发测试指南；先看[真实注册与财务代码如何进入业务解释](docs/examples/java-code-engine-walkthrough.md)更容易理解。**先独立打通JDT，再适配保留的JavaParser到现有能力；不同时开发两套，也不要求JavaParser追平JDT。** 本次仅完成设计，尚未实现YAML插件或切换生产引擎。
+新的取材方向已形成并完成第一阶段的[完整JDT/JavaParser插件设计](docs/modules/java-code-engines/README.md)，包括配置/统一JSON、JDT各子模块、现有接线及开发测试指南；先看[真实注册与财务代码如何进入业务解释](docs/examples/java-code-engine-walkthrough.md)更容易理解。**JDT 已经独立接入正式分析链；下一阶段只适配保留的 JavaParser 到其原有能力，不要求它追平 JDT。** 配置加载、引擎工厂和运行时显式配置已经存在；第一阶段选择 `javaparser` 仍明确返回 `ENGINE_NOT_INTEGRATED`，不会暗中回退。
 
 ## 分析路线
 
@@ -31,9 +31,11 @@ JDT目标不以重做全部五图为取材前置，也不自动调用JavaParser�
 
 当前已打通五图/Step05 关系到材料的消费，停止普通 Flow/Capsule publish 的重复 compile/project，并保留无严格 Fact 的可读条件；合法无 method 的 RequestMapping 已通过 `methodCondition` 被发现为未限制入口。固定 jshERP commit 的一次零模型全仓验证生成 107 个材料包，覆盖 339 个入口：21 个单入口包、10 个双入口包、6 个三入口包、70 个四入口包；12 包为 `FLOW_PREFERRED`，95 包为 `ENTRY_SOURCE_FALLBACK`。每个入口都有材料或明确限制，材料分组数不等于入口数，也不是固定生产常量。
 
+JDT 第一阶段已经通过两层验收：安装的 JDT LS 1.61.0 与独立 JDT Core helper 在固定 jshERP 源码上自动找到了注册入口的 `validateCaptcha`、`checkLoginName`、`registerUser` Service 正文，并在财务入口到达 Service 与 Mapper 声明；另一个自包含 Spring/MyBatis 仓库从真实 JDT 配置经过发现、导航索引、Step05、业务材料和 scripted 业务链生成了恰好九章的 Markdown。两项验收均未运行客户 Maven、客户应用或产品模型，也不等于完整 jshERP 业务语义已经验收。
+
 自动 `POST /user/registerUser` 与 `POST /user/login` 小包均已完成一次真实 Luna/high DRAFT+REVIEW；现有业务语言 Prompt 已在登录样本中保留完整路径并避免不必要的 Java 标识泄漏。两份完成活动的一次真实过程审阅没有把它们仅因同一 Controller/验证码硬拼成顺序过程，而是保守地保留为两个独立局部过程。它们证明局部语义和“拒绝无依据连接”的过程边界可用，不证明跨入口过程或整仓九章报告已经验收。四个业务 Module 已实现不等于自动语义和整仓九章已验收。
 
-已完成[旧解释链清理与任意 N 活动覆盖设计](docs/plans/code-cleanup-and-scalable-activity-coverage-design.md)的代码收口：结构/范围合法但漏入口的 Activity DRAFT 会进入唯一 REVIEW，REVIEW 必须用活动或显式 `unexplainedEntries` 闭合；程序把具体未解释入口按材料投影给过程与报告，第 9 章必须说明对应 HTTP 入口及原因。当前资源、coverage 和 knowledge/report checkpoint 都使用 v2；历史 v1 调用不会被重放或冒充为修复后的结果。下一项是 scripted 全链验收，而不是再次改写业务模块。
+已完成[旧解释链清理与任意 N 活动覆盖设计](docs/plans/code-cleanup-and-scalable-activity-coverage-design.md)的代码收口：结构/范围合法但漏入口的 Activity DRAFT 会进入唯一 REVIEW，REVIEW 必须用活动或显式 `unexplainedEntries` 闭合；程序把具体未解释入口按材料投影给过程与报告，第 9 章必须说明对应 HTTP 入口及原因。当前资源、coverage 和 knowledge/report checkpoint 都使用 v2；历史 v1 调用不会被重放或冒充为修复后的结果。scripted 全链已纳入 JDT 发布验收；下一项引擎工作是 JavaParser 第二阶段适配。
 
 ## 九章与阅读依据
 
@@ -48,7 +50,7 @@ SourceRef 定位冻结文件、行段和原文。Fact/Proof 只证明支持的�
 - [JDT子模块算法与失败行为](docs/modules/java-code-engines/jdt-engine.md)
 - [先JDT、后JavaParser的接入与测试指南](docs/modules/java-code-engines/integration-and-javaparser.md)
 
-- [JDT LS 最小可行性验证](docs/plans/jdtls-source-navigation-feasibility-plan.md)：独立调研，先验证能否自动取齐业务实现；尚未替换生产分析路线。
+- [JDT LS 最小可行性验证](docs/plans/jdtls-source-navigation-feasibility-plan.md)：保留的独立调研记录；其结论已经进入正式 JDT 分析路线。
 - [源目录约束](AGENTS.md)
 - [来源、发布和失败边界](docs/references/foundation-and-publication-contracts.md)
 - [Canonical 身份公式](docs/references/canonical-persistence-identity-contracts.md)

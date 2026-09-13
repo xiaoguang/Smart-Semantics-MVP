@@ -98,6 +98,8 @@ class BusinessMaterialBuilderTest {
               "M1",
               "M2",
               "C1",
+              "com.example.OrderController",
+              "com.example.OrderService",
               "void approve(String status)",
               "if (status == null)",
               "approvalClient.record(status)",

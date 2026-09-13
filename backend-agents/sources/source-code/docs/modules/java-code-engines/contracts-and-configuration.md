@@ -1,6 +1,6 @@
 # Java代码引擎：配置与共同材料合同
 
-> [总设计](README.md)。本页的字段是目标合同，第一阶段按 JDT 需要实现；第二阶段 JavaParser 适配它。不是要求当前 Java records原样兼容。
+> [总设计](README.md)。本页字段是已发布的 JDT 合同；第二阶段 JavaParser 必须适配它，而不是要求旧 Java records 原样兼容。
 
 ## 1. EngineConfigurationLoader：只选择工具，不决定业务
 
@@ -69,7 +69,7 @@ interface JavaCodeSession extends AutoCloseable {
 | AnnotationView | nameText、qualifiedName（工具确认才填）、成员原文、可静态读取的literal/enum/array值、sourceLocation、nameSelection；nameSelection是注解名称本身的UTF-16半开范围，不能用含参数的整注解范围代替 |
 | FieldDeclarationView | name、typeText、annotations、initializerText（可空）、sourceLocation |
 
-catalog不强制全仓方法正文都塞入同一个大对象。方法详细记录按需取，发布时以JSONL记录保存。注解identity由JDT Adapter中的catalog解析职责拥有，精确算法见[JDT模块](jdt-engine.md#2-jdtsyntaxreader由core取完整方法和每个调用位置)：Core取import/package和nameSelection，LS定位声明，自定义组合注解按源码递归并防环。无法确认时qualifiedName=null并保留诊断；不按simple name默认为Spring。未解析mapping对应的方法保留可定位候选与discovery限制，不能被当作“没有入口”从分母消失。
+catalog不强制全仓方法正文都塞入同一个大对象。方法详细记录按需取，发布时以JSONL记录保存。注解identity由JDT Adapter中的catalog解析职责拥有，精确算法见[JDT模块](jdt-engine.md#2-jdtsyntaxreader由core取完整方法和每个调用位置)：Core取import/package和nameSelection，LS定位声明，自定义组合注解按源码递归并防环。只有非 recovered 的 JDT binding 才能直接填 qualifiedName；recovered binding 留空后再使用显式 import 或 LS 结果，防止把缺 classpath 的 `RequestMapping` 错认成当前 package 类型。仍无法确认时qualifiedName=null并保留诊断；不按simple name默认为Spring。未解析mapping对应的方法保留可定位候选与discovery限制，不能被当作“没有入口”从分母消失。
 
 ## 3. EntryCodeContext：下游真正需要的内容
 
@@ -171,18 +171,18 @@ Step03增加`java-code-index.jsonl`，保存记录类型`ENGINE / TYPE / METHOD 
 
 Step05仍在`flow-slices.json`的`entryContexts`保存可自包含阅读的上下文，在`evidence-capsules.jsonl`保存同一context投影；不新增第二套业务包。完整text只保留一种权威值；Capsule按引用复用或原样投影，不再次分析。
 
-本设计冻结下列目标版本；本次不创建Schema文件。第一阶段以此落地，若JDT实际接线必须局部修正，由设计者同步这里，不先为JavaParser保留旧wire。
+JDT 第一阶段已经按下列版本落地。后续局部修正必须同步 owner、reader、policy 与本页；不能先为 JavaParser 保留旧 wire。
 
-| 内容 | 当前 → 目标schema |
+| 内容 | 当前 JDT schema |
 | --- | --- |
-| 导航索引 | 新增java-code-index-v1；file记录envelope见上文 |
-| 内嵌上下文 | 新增entry-code-context-v1；完整字段按本页 |
-| module compilation | business-flows-flow-compilation-v4 → v5 |
-| module projection | business-flows-capsule-projection-v9 → v10 |
-| 公开flow-slices | business-flows-flow-slices-v4 → v5 |
-| 公开Capsule | business-flows-evidence-capsule-v7 → v8 |
-| flow覆盖 / 入口处置 | business-flows-flow-coverage-v1 / business-flows-entry-disposition-v1 → 各v2 |
-| Fact accounting | proven-code-facts-fact-accounting-v3 → v4，增加必填availability与reason；NOT_PRODUCED时保留输入导航ref、counts为null（未评估而非0），不含伪造Fact/Proof refs |
+| 导航索引 | java-code-index-v1；file记录envelope见上文 |
+| 内嵌上下文 | entry-code-context-v1；完整字段按本页 |
+| module compilation | business-flows-flow-compilation-v5 |
+| module projection | business-flows-capsule-projection-v10 |
+| 公开flow-slices | business-flows-flow-slices-v5 |
+| 公开Capsule | business-flows-evidence-capsule-v8 |
+| flow覆盖 / 入口处置 | business-flows-flow-coverage-v2 / business-flows-entry-disposition-v2 |
+| Fact accounting | proven-code-facts-fact-accounting-v4；NOT_PRODUCED时 reason 必填、保留输入导航ref、counts为null（未评估而非0），不含伪造Fact/Proof refs |
 
 可用性保存在索引ENGINE记录及对应Fact accounting中；现有generic step receipt仍通过实际artifact descriptors引用它们，不给每层receipt新增一套状态。只有实际产物集合变化的拥有者和readers调整，不全工程schema重置。
 

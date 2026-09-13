@@ -6,7 +6,7 @@
 
 ### 1.1 组合根与应用发现
 
-`TechnicalAnalysisWorkflow`当前直接构造发现和五图/Fact执行器。目标由组合根加载engine配置、打开会话后，注入已有运行流程。不能仅在某个构造器增加`engine`字符串，却仍在下游hardcode JavaParser。
+组合根已经可以加载 engine 配置并打开一次 snapshot-bound JDT session；`PersistedTechnicalRunExecutor` 将同一会话交给 application discovery、navigation publication 与 Step05，再由业务运行链消费已保存结果。JDT 路径不 hardcode 或调用 JavaParser；尚未适配的 JavaParser 选择明确失败。
 
 ApplicationProfileDetector继续静态读POM/配置以形成VerifiedJavaProject；涉及Java声明的部分改为消费`session.catalog()`。SpringHttpEntryDiscoverer消费统一AnnotationView/MethodDeclarationView，route组合规则只有一份，继续支持省略method及method={}，不制造默认GET。Mapper catalog的Java声明来自选定引擎；XML安全读取继续复用。
 
@@ -53,7 +53,7 @@ JDT 路径 Step04 的实际公开集合精确为 `fact-accounting.json + proven-
 
 ### 1.4 BusinessMaterialBuilder：不再藏解析器
 
-当前Builder仍有JavaParser语法读取，不能在JDT模式保留。相关工作分别迁入工具Adapter；Builder只做完整方法选择、调用/候选展示、短ref分配、来源映射与保存。
+Builder 已不含 JavaParser 语法读取或引擎分支。它只做完整方法选择、调用/候选展示、短 ref 分配、来源映射与保存；声明类型也进入可读观察，避免模型只看见同名方法却不知道所属 Controller 或 Service。
 
 模型侧用包内E/M/C/S短编号连接入口、方法、调用和来源。每个选中方法有完整正文；调用携带原文、有序actual与目标formals，候选分支明确标注。完整代码中已有的条件、对象构造、保存调用和return不能被`maxObservations`等摘要限制一起删除。
 
@@ -130,12 +130,12 @@ ActivityExplainer、ProcessExplainer、BusinessReportPublisher的现有职责不
 
 ## 5. 实施收口与禁止扩大项
 
-第一阶段交付可运行JDT取材及既有业务链，真实位置与代码可观察；保留JavaParser未适配状态，不因此拖延。协议随着实际JDT交付修正，但需同步这里和所有直接读写器，不能只改一处字段。
+第一阶段已经交付可运行 JDT 取材及既有业务链：真实位置、完整代码和候选可观察，保存重开后进入 BusinessMaterialBuilder，并在自包含 Spring/MyBatis 验收中到达 scripted 九章。固定 jshERP 注册/财务入口也通过真实工具检查。JavaParser 仍保持未适配状态，不影响该结论。
 
 第二阶段从第一阶段冻结合同出发，恢复可选JavaParser及当前能力。不要开展两引擎自动投票、混合结果、失败fallback、runtime插件安装、跨引擎缓存复用、完整编译器/外部效果证明、复杂恢复，也不要求重新设计报告模块。
 
 最终一次YAML选择决定取材引擎；业务模块始终一套。源码能力可以不同，来源正确、内容保存、入口处置和业务职责边界必须相同。
 
-现有 `CanonicalModuleArtifactStore`、`CanonicalAnalysisStepArtifactStore`、CLI 操作面、`RepositoryAnalysisAgent`、`SourceAnalysisApplication`、`BusinessAnalysisWorkflow`、`PersistedBusinessRunExecutor`、`ActivityExplainer`、`ProcessExplainer` 和 `BusinessReportPublisher` 都复用；实施任务只扩展组合接线、actual-set 校验与材料输入，不把这些组件列为重写对象。
+现有 `CanonicalModuleArtifactStore`、`CanonicalAnalysisStepArtifactStore`、CLI 操作面、`RepositoryAnalysisAgent`、`SourceAnalysisApplication`、`BusinessAnalysisWorkflow`、`PersistedBusinessRunExecutor`、`ActivityExplainer`、`ProcessExplainer` 和 `BusinessReportPublisher` 均已在 JDT 路径复用。第二阶段只增加 JavaParser Adapter 与双引擎选择回归，不重写这些组件。
 
 JavaParser 迁移 oracle 固定在 git `cec1997`。迁移前先记录 `SpringHttpEntryDiscovererTest`、`MapperCapabilityCatalogerTest`、四个 graph builder 测试、`EvidenceGraphBuilderTest`、`ProvenCodeFactsExecutionTest`、`BusinessFlowsExecutionTest`、`BusinessMaterialBuilderTest`、`TechnicalAnalysisWorkflowTest` 与 `FourEntryBusinessSemanticChainTest` 的行为；第二阶段保留可观察能力和诚实 gap，不比较两引擎数量、解析率或 JSON SHA。可执行清单见[实施计划](../../plans/jdt-first-java-engine-implementation-plan.md#javaparser-pre-migration-capability-baseline-at-cec1997)。

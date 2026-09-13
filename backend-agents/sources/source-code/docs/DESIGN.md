@@ -6,7 +6,7 @@
 
 这条路线保留八个步骤和唯一公开 `RepositoryAnalysisAgent`。现有五张程序图、严格技术 Fact/Proof继续保留为技术增强；它们不是每种工具把完整源码交给模型的前置门槛。Java负责来源、工具导航、代码材料、检查和保存；Luna/high负责业务含义、跨活动过程与业务语言。Java不维护行业词表，也不自己补全编译器的类型解析规则。
 
-新的取材目标是[JDT/JavaParser可切换引擎](modules/java-code-engines/README.md)：YAML选择一个引擎，统一交付声明、完整方法、调用位置、实参/形参、实现候选和边界。**先独立打通JDT，协议不迁就JavaParser；第二阶段才把保留的JavaParser恢复到当前能力。** 当前尚未实现插件化，两个研究入口的成功不能写成生产已切换。
+新的取材方式是[JDT/JavaParser可切换引擎](modules/java-code-engines/README.md)：YAML选择一个引擎，统一交付声明、完整方法、调用位置、实参/形参、实现候选和边界。**JDT 第一阶段已独立接入正式分析链；第二阶段才把保留的 JavaParser 恢复到原有能力。** 当前选择 `jdt` 会经过正式配置、发现、索引、Step05、业务材料及既有业务链；选择尚未适配的 `javaparser` 会明确失败，不存在隐式回退。
 
 本文是目标设计。当前代码中已经存在四个业务 Module 和工作流，Step05 EntryContext 已连续传到材料，普通 Flow/Capsule 发布已停止重复 compile/project，Spring unrestricted method condition 也已落地。旧解释链及其 Capsule registry basis 字段已退出；Activity 的 v2 Prompt/schema、coverage-after-REVIEW 和程序侧未解释入口记录已落地。Process/Report 也已把具体未解释入口按材料投影到仓库知识和第九章。实现按当前实施计划分步开展；本文不把目标合同写成代码或实测结果。
 
@@ -164,27 +164,29 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 
 业务质量观察顺序是一个真实小包、第二领域小包、再整仓。本次已批准的 live 范围仅为[实施计划 Task 7](plans/coherent-code-context-implementation-plan.md#task-7脚本验收后执行已批准的单材料-live-验证)固定的四入口材料：直接 scripted 测试通过后，新候选最多一次 Activity DRAFT + 一次 REVIEW，Luna/high，总调用数不超过 2；精确 material/entry/ref 身份和 `ActivityExplanationProfile(20000, 12000, 4, 24, 1000)` 不得替换。PARTIAL 或失败保留产物并停止；不重试，不运行真实 Process/Report，也不重扫整仓。更大范围不在本次批准内，本文不虚构耗时改善。
 
-## 10. 当前实现与已批准但尚未实施的改动
+## 10. 当前实现与剩余边界
 
-本表先记录当前旧路径，不代表下一个任务仍执行旧清理计划。新增目标为[两阶段引擎接入](modules/java-code-engines/integration-and-javaparser.md)：先JDT-only，再JavaParser现有能力适配。研究仍混用JDT导航和JavaParser语法；尚无生产YAML插件。当前Builder仍有JavaParser语法读取，现有“已消费上下文”不等于已经做到引擎无关。
+JDT-only 第一阶段已经完成；本表只区分已验证能力与下一阶段边界，不把调研程序、目标合同或 JavaParser 的未来适配混写成当前 JDT 实现。
 
-| 当前可确认事实 | 已批准、尚未实施的最小改动或保持项 |
+| 当前可确认事实 | 剩余边界或保持项 |
 | --- | --- |
 | Step03/04 稳定算法、FactRegistry 三类技术模式与 AtomicProofBuilder 全 atoms 规则保留；普通 persisted candidate 读取与 Flow/Capsule 发布已不再重放 owner 算法 | 本次不修改 Step03/04 算法或恢复重复 replay；清理只删除旧解释链的专属消费者/注册 |
 | EntryRootedFlowCompiler 已在 flow-slices/Capsule 保存 EntryContext，传递 argument/return/data/control 与可选 Proof；BusinessMaterialBuilder 已直接消费它 | 保持 Step05 owner 与 Builder 单一包装 seam，不新增源码扫描、EntryDescriptor 或 regex context parser |
-| EvidenceCapsuleProjector 已按连贯上下文保留必要 guard、变量、调用/返回及 facts/gaps/signals；Capsule 已移除两个旧 registry proposal basis 字段，并以 capsule-projection v9 / evidence-capsule v7 持久化 | 新读取路径拒绝 v8/v6；Flow/Capsule 正常发布重开会核对已保存的 M1/M2 upstream 列表、Fact atom tuple，以及 signal 的本地 Fact/Proof/Evidence/locator/可从 atom 推导的 anchor 闭包，但不会重跑 compiler 来臆造一份完整 signal 分母 |
+| EvidenceCapsuleProjector 已按连贯上下文保留完整方法、调用、候选、实参/形参、控制、退出和限制；当前版本为 flow compilation v5、flow slices v5、capsule projection v10、evidence capsule v8 | 新读取路径拒绝旧版；Flow/Capsule 正常发布重开检查来源和引用，但不会重启 JDT、重跑 compiler 或重新判断导航结果 |
 | ActivityExplainer、ProcessExplainer、BusinessReportPublisher、BusinessAnalysisWorkflow 已存在，完整活动字段与具体 `UnexplainedActivityEntry` 已能沿过程/报告传递；四入口和任意 N 的 scripted 全链已验收 | 不建平行业务流水线；普通沙箱候选失败后，独立宿主会话候选以同一材料完成四项局部 Activity。它不是过程、报告或整仓验收 |
 | 旧 `analysis.interpretation.{model,proposal,registry,process}` 的 78 个生产类、14 个专属测试、旧 Step06 1–9 地址、旧 artifact/schema 分支及测试 fixture policy 已删除；当前测试使用中性的 `BusinessFlowTestSupport` | 当前运行链只保留 Step06 10/11、`ModelRuntimeIdentityV1` 与 `analysis.knowledge.ProcessExplainer`；`AnalysisStepAddressTest` 拒绝 1–9、接受 10/11。四入口与任意 N 的全链验收已通过 |
 | Activity v2 对任意 N 入口先做容量预检，合法但遗漏 E3/E4 的 DRAFT 会进入唯一 REVIEW；完整实际 DRAFT、`missingEntryKeys` 与 required `unexplainedEntries` 均在程序侧校验 | `activity-coverage.json` v2、`ActivityExplanationResult` 和仓库知识 v2 已保存全量 `UnexplainedActivityEntry` |
 | Process/report 模型输入按 material 只投影一次 `{materialContext, unexplainedEntryKeys, reasonCode}`；全局/material ID 保留在程序侧，`MODEL_NOT_EXPLAINED` 不进入技术 receipt Gap | Prompt 要求第9章显示 context 的 HTTP 方法/路径与原因，禁止第4章为未解释入口编造活动；即时逐包 checkpoint 仍是独立未解决缺口 |
 | 完整冻结 jshERP 719 文件及图/Fact 运行已有保存证据；零 Provider 全仓材料 run 为 107 包覆盖 339 个入口 | 这些是历史实测，不写成固定 K/包数，不把它们当整仓语义验收 |
 | `methodCondition` 已区分 UNRESTRICTED 与 EXPLICIT 集合 | 保持该实现；未来完整仓库重跑只确认真实端点分母，不再写成代码待修正 |
-| Step02 入口当前仍以 handler 展示身份为主，不能稳定区分同名重载 | 新 v3 entry wire 同时保存中立 `methodKey` 与完整声明 `SourceRange`，所有直接 reader/policy/fixture 同步且拒绝旧版 |
-| Step03 当前最终 publisher 固定为 module 6 七个图文件；Step04 固定四个严格 Fact 文件 | 增加 PROGRAM_GRAPHS module 7 `java-code-index`；JDT 路径按实际 1+receipt / 1+receipt 集合发布，exact-set allowlist、policy、step contract 和 fixture 同步，不写空图/Fact |
+| Step02 v3 入口 wire 已保存中立 `methodKey` 与完整声明 `SourceRange`，可稳定定位重载；Spring unrestricted method condition 继续合法 | JavaParser 第二阶段必须写同一最终格式，不能退回 handler 名匹配 |
+| Step03 module 7 已发布 `java-code-index`；JDT 路径实际集合为 index+receipt。Step04 已发布 v4 `NOT_PRODUCED` accounting+receipt，不运行旧 Fact 枚举器，也不写空图/Fact | JavaParser 第二阶段恢复已有七图增强和严格 Fact 实际集合；不能削弱 JDT 合同或混合两个引擎 |
+| JDT LS 1.61.0 与独立 JDT Core helper 已在固定 jshERP 注册/财务入口验证；正式选择 JDT 的自包含 Spring/MyBatis 运行已从 capture 一直进入 scripted 九章 | 尚未进行产品 Luna 或完整 jshERP 仓库的业务语义验收；缺依赖、多模块 classpath、反射和运行时代理仍须如实报告限制 |
+| BusinessMaterialBuilder 只消费已保存的 EntryCodeContext，并把声明类型、完整方法、调用、参数、控制和限制送入模型材料；生产类不再引用 JavaParser AST | JavaParser Adapter 尚未开始；在完成第二阶段前 `javaparser` 仍为 `ENGINE_NOT_INTEGRATED` |
 
 Spring 细则：`@RequestMapping` 省略 method 或 `method={}` 都合法。类和方法均无限制时保持 unrestricted；一方有限制时保留该限制；双方非空按 Spring method-condition combine 取并集。不要猜 GET，也不要把 HEAD/OPTIONS 框架处理拆成多个业务活动。现有 `methodCondition` 已实现该区分，UserController#getOrganizationUserTree 和 MaterialCategoryController#getMaterialCategoryTree 是直接回归样例；未来完整仓库重跑只核对新的真实分母。
 
-旧[实施衔接](plans/coherent-code-context-implementation-plan.md)与[清理/覆盖设计](plans/code-cleanup-and-scalable-activity-coverage-design.md)用于已完成能力的历史核对，不限制当前获准的引擎接入。后续先按JDT目标合同更新必要接线，再适配JavaParser；不重做其五图/Fact算法，不复活旧语义路线。所有产品实测范围与结果仍按其原记录说明。
+旧[实施衔接](plans/coherent-code-context-implementation-plan.md)与[清理/覆盖设计](plans/code-cleanup-and-scalable-activity-coverage-design.md)用于已完成能力的历史核对，不限制当前引擎接入。JDT 合同与必要接线已经完成；后续只按第二阶段适配 JavaParser，不重做其五图/Fact算法，不复活旧语义路线。所有产品实测范围与结果仍按其原记录说明。
 
 ## 11. 阅读导航
 

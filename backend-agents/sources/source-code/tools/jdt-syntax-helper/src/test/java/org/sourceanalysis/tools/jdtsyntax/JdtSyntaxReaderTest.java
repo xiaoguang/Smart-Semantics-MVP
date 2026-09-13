@@ -207,6 +207,27 @@ class JdtSyntaxReaderTest {
   }
 
   @Test
+  void doesNotPresentARecoveredLocalAnnotationBindingAsResolvedIdentity() {
+    String source =
+        "package example;\n"
+            + "import org.springframework.web.bind.annotation.RequestMapping;\n"
+            + "@RequestMapping(\"/orders\") class OrderController {}\n";
+
+    JdtSyntaxProtocol.Response response =
+        new JdtSyntaxReader()
+            .describe(request("req-recovered-binding", "source:orders", "17", source));
+
+    assertThat(response.annotations())
+        .filteredOn(value -> "RequestMapping".equals(value.nameText()))
+        .singleElement()
+        .satisfies(
+            value ->
+                assertThat(value.qualifiedName())
+                    .as("an unresolved import must remain available for catalog-level recovery")
+                    .isNull());
+  }
+
+  @Test
   void exposesElseAndFinallyBranchesWithoutInventingControlFlow() {
     String source =
         "class Example {\n"

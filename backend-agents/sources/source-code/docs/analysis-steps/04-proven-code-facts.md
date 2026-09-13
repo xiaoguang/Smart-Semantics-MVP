@@ -98,6 +98,8 @@ externalEffectGapCount = count(boundaryKeys)
 
 上表的四个语义文件是技术图增强 AVAILABLE 时的严格路线。JDT 第一阶段未生产五图时，合法 actual set 精确为 `fact-accounting.json + proven-code-facts-receipt.json`：accounting 使用 `proven-code-facts-fact-accounting-v4`，`availability=NOT_PRODUCED`、`reason` 非空，保留 Step03 navigation/index basis，所有数值 count 为 `null`，且没有 Candidate/Fact/Proof 引用。publisher、step exact-set allowlist、artifact policy、直接 reader 与 fixture 必须同步该实际集合；不得写其余三个空文件，也不得调用候选枚举器。
 
+该 JDT actual set 已在生产发布与读取路径实现并通过验收：Step04 只保存 v4 accounting 与 receipt，不调用旧 FactCandidateEnumerator。它表示“本次没有运行严格图增强”，不是“扫描后发现零事实”；Step05 仍可直接使用已保存的 JDT 源码上下文。
+
 以下是**目标阅读投影**：
 
 ~~~json
@@ -125,4 +127,4 @@ Step05 用五图组织执行上下文，Facts 有则附着，无则保留 graph/
 
 FactRegistry、候选枚举、AtomicProofBuilder、模块保存及三类 v3 技术 Fact 已有实现。固定完整 jshERP 719 文件及图/Fact 运行已有离线保存证据；不能继续写“当前只有 package 骨架”或“完整捕获尚未实现”。财务小例的 2 exact call + 1 boundary 是已核对事实，其图/Fact run 没有 Step05 正式 publication，也没有证明整仓业务报告质量。
 
-后续 Luna/xhigh 先写 directly covering RED：普通 reader 不重新枚举、缺 condition Fact 的安全 graph/source context 仍可供 05/06 阅读、删除任一严格 atom 不会得到 admitted Fact、保存 basis/hash/ref 损坏仍失败。Terra/xhigh 只改相关 reader/传递与必要版本字段，保留现有 exact Fact 规则。独立 Proof mutation tests 可继续重放；正常 publisher 不应靠它才可信。本轮没有运行这些测试或修改 Java。
+JDT `NOT_PRODUCED` 路线已经在 publisher、reader、artifact policy、Step05 和正式运行链中验收：普通运行不会调用旧 Fact 枚举器，安全源码上下文仍可进入 05/06。严格图增强路线继续保留原有 exact Fact 与 Proof mutation tests；JavaParser 第二阶段只恢复既有能力，不改变这些 Fact 的含义。

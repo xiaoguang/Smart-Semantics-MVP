@@ -25,6 +25,8 @@ import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionProfile;
 import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilationProfile;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationProfile;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialMode;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.inventory.CaptureReceiptView;
 import org.sourceanalysis.app.analysis.inventory.PersistedVerifiedSourceTextReader;
@@ -393,6 +395,136 @@ class TechnicalAnalysisWorkflowTest {
     }
   }
 
+  @Test
+  void productionSelectedRealJdtReachesPersistedMaterialAndTheScriptedNineSectionReport()
+      throws Exception {
+    Path jdt = Path.of(".workspace", "jdtls-source-navigation-feasibility", "tools", "selected");
+    Path toolJava = Path.of("/Library/Java/JavaVirtualMachines/jdk-26.jdk/Contents/Home");
+    Path syntaxHelper =
+        Path.of(
+            "tools", "jdt-syntax-helper", "target", "source-code-analysis-jdt-syntax-helper.jar");
+    org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isDirectory(jdt));
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        java.nio.file.Files.isExecutable(toolJava.resolve("bin/java")));
+    org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isRegularFile(syntaxHelper));
+
+    CapturedSource captured = capturedSpringRepository();
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = allTechnicalPolicies(canonicalJson);
+    ArtifactReference resourceBudget = reference("resource-budget", 'a', 'b');
+    ArtifactReference profileBundle = reference("profile-bundle", 'c', 'd');
+    ArtifactReference frozenRequest =
+        frozenRequest(canonicalJson, captured.capture(), resourceBudget);
+    AnalysisRunRequest request =
+        queuedRequest(captured.capture(), frozenRequest, policies, resourceBudget, profileBundle);
+    Path storeRoot = temporaryDirectory.resolve("real-jdt-public-runtime-store");
+    java.nio.file.Files.createDirectory(storeRoot);
+
+    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(storeRoot)) {
+      ArtifactStoreLimits limits = new ArtifactStoreLimits(16, 4_000_000, 16_000_000, 24);
+      CanonicalModuleArtifactStore modules =
+          new FileSystemCanonicalModuleArtifactStore(handle, canonicalJson, policies, limits);
+      CanonicalAnalysisStepArtifactStore steps =
+          new FileSystemCanonicalAnalysisStepArtifactStore(handle, canonicalJson, policies, limits);
+      EffectiveEngineConfiguration engine =
+          new EffectiveEngineConfiguration(
+              EffectiveEngineConfiguration.JDT,
+              new EffectiveEngineConfiguration.JdtConfiguration(
+                  jdt.toAbsolutePath(),
+                  toolJava,
+                  java.time.Duration.ofSeconds(90),
+                  java.time.Duration.ofSeconds(30),
+                  java.time.Duration.ofSeconds(10)));
+      PersistedTechnicalRunExecutor technical =
+          new PersistedTechnicalRunExecutor(
+              handle,
+              canonicalJson,
+              policies,
+              captured.registry(),
+              technicalConfiguration(captured, profileBundle, resourceBudget, limits, engine));
+      PersistedBusinessRunExecutorTest.ScriptedBusinessProvider provider =
+          new PersistedBusinessRunExecutorTest.ScriptedBusinessProvider();
+      PersistedBusinessRunExecutor business =
+          new PersistedBusinessRunExecutor(
+              modules,
+              steps,
+              new PersistedVerifiedSourceTextReader(steps, captured.registry()),
+              provider,
+              new PersistedBusinessRunConfiguration(
+                  new BusinessMaterialProfile(16, 48, 64_000),
+                  new ActivityExplanationProfile(128_000, 32_000, 4, 64, 8_000),
+                  new ProcessExplanationProfile(8, 16, 32_000, 24_000, 4, 32, 8_000, 0),
+                  new BusinessReportProfile(128_000, 32_000, 64, 8_000)));
+      LocalRepositoryAnalysisAgent agent =
+          new LocalRepositoryAnalysisAgent(
+              handle,
+              new RepositoryAnalysisRunCoordinator(technical, business),
+              new BusinessReportCheckpointRenderer(modules),
+              new BusinessCheckpointArtifactReader(modules));
+
+      AnalysisRunReference queued = agent.start(request);
+      TechnicalAnalysisWorkflowResult technicalResult = technical.execute(queued.runId());
+      String discoveryPayloads =
+          steps
+              .reopen(technicalResult.applicationDiscovery().publication())
+              .semanticPayloads()
+              .stream()
+              .map(
+                  payload ->
+                      payload.descriptor().fileName()
+                          + "="
+                          + new String(
+                              payload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8))
+              .collect(java.util.stream.Collectors.joining("\n"));
+      String graphPayloads =
+          steps.reopen(technicalResult.programGraphs().publication()).semanticPayloads().stream()
+              .map(
+                  payload ->
+                      payload.descriptor().fileName()
+                          + "="
+                          + new String(
+                              payload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8))
+              .collect(java.util.stream.Collectors.joining("\n"));
+      BusinessMaterialBuildResult planned =
+          business.buildMaterials(technicalResult.businessFlows());
+      assertThat(planned.materialSet().materials())
+          .as(
+              "JDT material coverage: %s%nDiscovery:%n%s%nProgram graphs:%n%s",
+              planned.materialSet().entryCoverage(), discoveryPayloads, graphPayloads)
+          .isNotEmpty();
+      assertThat(planned.materialSet().materials())
+          .allSatisfy(
+              material ->
+                  assertThat(material.materialMode())
+                      .isEqualTo(BusinessMaterialMode.NAVIGATED_SOURCE));
+      AnalysisRunReference finished =
+          agent.executeStep(
+              new AnalysisStepExecutionRequest(
+                  queued.runId(),
+                  org.sourceanalysis.app.artifact.AnalysisStepKey.NINE_SECTION_DOCUMENT));
+
+      assertThat(finished.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.FINISHED);
+      ArtifactView materials =
+          agent.artifact(
+              new ArtifactQuery(
+                  queued.runId().value(), BusinessOutputArtifactKey.BUSINESS_MATERIALS, 256_000));
+      assertThat(materials.contentUtf8())
+          .contains("\"materialMode\":\"NAVIGATED_SOURCE\"")
+          .contains("OrderController", "OrderService", "mapper.updateStatus(status)")
+          .doesNotContain("javaparser", "JavaParser");
+      assertThat(provider.reportDraftInput().path("activities"))
+          .as("JDT-derived materials must survive activity and process synthesis")
+          .isNotEmpty();
+      String document =
+          agent
+              .artifact(
+                  new ArtifactQuery(
+                      queued.runId().value(), BusinessOutputArtifactKey.DOCUMENT_MARKDOWN, 256_000))
+              .contentUtf8();
+      assertThat(document.lines().filter(line -> line.startsWith("## "))).hasSize(9);
+    }
+  }
+
   private static PersistedTechnicalRunConfiguration technicalConfiguration(
       CapturedSource captured,
       ArtifactReference profileBundle,
@@ -409,6 +541,26 @@ class TechnicalAnalysisWorkflowTest {
         new FlowCompilationProfile(reference("flow-profile", 'c', 'd'), 16, 8, 64, 96, 32, 64, 256),
         new CapsuleProjectionProfile(
             reference("capsule-profile", 'e', 'f'), 16, 32, 4_096, 24_576));
+  }
+
+  private static PersistedTechnicalRunConfiguration technicalConfiguration(
+      CapturedSource captured,
+      ArtifactReference profileBundle,
+      ArtifactReference resourceBudget,
+      ArtifactStoreLimits limits,
+      EffectiveEngineConfiguration engineConfiguration) {
+    return new PersistedTechnicalRunConfiguration(
+        captured.frozenRequestBytes(),
+        reference("verification-policy", 'e', 'f'),
+        reference("capability-profile", '1', '2'),
+        new ProfileView(profileBundle, resourceBudget, 32, 1_000_000),
+        limits,
+        new DiscoveryProfile("application-discovery-v3"),
+        reference("graph-profile", 'a', 'b'),
+        new FlowCompilationProfile(reference("flow-profile", 'c', 'd'), 16, 8, 64, 96, 32, 64, 256),
+        new CapsuleProjectionProfile(
+            reference("capsule-profile", 'e', 'f'), 16, 32, 4_096, 256_000),
+        engineConfiguration);
   }
 
   private static JavaCodeSession minimalJdtSession(String snapshotId, String source) {

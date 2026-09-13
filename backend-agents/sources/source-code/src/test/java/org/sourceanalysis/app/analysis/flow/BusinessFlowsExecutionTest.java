@@ -141,6 +141,9 @@ class BusinessFlowsExecutionTest {
                 assertThat(context.path("flowSliceId").isNull()).isTrue();
                 assertThat(context.path("codeContext").path("schemaVersion").textValue())
                     .isEqualTo(EntryCodeContext.SCHEMA_VERSION);
+                assertThat(context.path("limitations"))
+                    .as("repeated unresolved calls must not invalidate the persisted entry context")
+                    .hasSize(1);
               });
       List<JsonNode> dispositions =
           jsonLines(payloads.get("entry-dispositions.jsonl").canonicalUtf8());
@@ -378,7 +381,11 @@ class BusinessFlowsExecutionTest {
             List.of(method),
             List.of(),
             List.of(),
-            List.of(),
+            List.of(
+                new EntryCodeContext.Limitation(
+                    "UNRESOLVED_CALL", "external boundary", List.of(entry.methodKey()), List.of()),
+                new EntryCodeContext.Limitation(
+                    "UNRESOLVED_CALL", "external boundary", List.of(entry.methodKey()), List.of())),
             enhancements);
       }
 

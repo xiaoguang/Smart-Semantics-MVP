@@ -1075,8 +1075,10 @@ fatal不返回draft、不安装M4 module；integrity错误不得改写成Gap。
 
 CodeStructureGraphBuilder、CallGraphBuilder、ControlFlowGraphBuilder、DataFlowGraphBuilder、EvidenceGraphBuilder、ProgramGraphSetPublicationSpecifier 和 ProgramGraphsExecution 已有实现；bounded selectors 的历史结果见各自既有 progress，不是本轮新跑测试。
 
+JDT 路线的 module 7 `java-code-index` 已实现并可从磁盘重开。该路线实际只发布 `java-code-index.jsonl + program-graphs-receipt.json`，不会调用 JavaParser 图 builders，也不会用空图冒充已完成的严格增强。索引保存 ENGINE、TYPE、METHOD、CALL、ENTRY_MEMBERSHIP 与 DIAGNOSTIC；固定 jshERP 注册/财务入口已验证完整方法和边界可见。
+
 固定完整 jshERP 719 文件已有五图及 Fact 运行保存证据，上述财务入口可读到真实 call/data/control 元素。不能继续写成“尚无 standalone 五图”或“public Agent/CLI 未实现”。RepositoryAnalysisAgent、LocalRepositoryAnalysisAgent、运行 coordinator 和业务工作流存在并已接线；authenticated HTTP、所有 Java/框架形状与整仓业务质量不能从这些事实推成完成。
 
 当前图能力仍有明确范围限制：通用 CFG 的嵌套/exception/loop、多态 dispatch/alias、完整数据返回形状和 XML 外部执行语义并未因一次离线运行而全部支持。财务例正说明：局部 CFG 较粗但源码可读，应让 Step05 保留 SOURCE_CONTEXT，而不是停下等待整套静态证明补齐。
 
-本轮后续工作集中在消费者接力和重复计算减法，具体见 [程序图待办](../supplements/program-graphs-implementation-backlog.md) 与 [最小实施次序](../plans/coherent-code-context-implementation-plan.md)。不把它扩展为图系统重建，也不重新捕获或运行客户源码。
+JDT 的消费者接力已经贯通到 Step05 与业务材料；剩余图能力边界见 [程序图待办](../supplements/program-graphs-implementation-backlog.md)。JavaParser 第二阶段复用既有五图增强，不把 JDT 验收扩展为图系统重建。

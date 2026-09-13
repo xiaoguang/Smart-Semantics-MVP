@@ -432,7 +432,8 @@ public final class JdtSyntaxReader {
     private void addAnnotation(
         Annotation node, Map<String, JdtSyntaxProtocol.StaticValue> staticValues) {
       ITypeBinding binding = node.resolveTypeBinding();
-      String qualifiedName = binding == null ? null : binding.getErasure().getQualifiedName();
+      String qualifiedName =
+          binding == null || binding.isRecovered() ? null : binding.getErasure().getQualifiedName();
       if (qualifiedName != null && qualifiedName.isBlank()) {
         qualifiedName = null;
       }

@@ -95,7 +95,7 @@ JDT DOM的offset是UTF-16 code unit，LSP协商也固定UTF-16，行/character�
 
 这项职责在JDT Adapter内，使用同一SyntaxReader和LS会话，不新增扫描器。Core返回package、imports（含onDemand/static标记）、AnnotationView的完整范围及nameSelection。对已写全限定名可保留该源码名；需要确认声明身份的注解，在nameSelection上询问LS definition并归一化位置。
 
-Core优先使用相同受控sourcepath/classpath解析注解binding；确定解析成功才填qualifiedName。仍未解析时可询问LS definition，并只接受可以归一为确定声明身份的返回；不得从本机缓存路径、simple name或“annotation包”惯例猜包。对源码内自定义组合注解，递归读取其元注解，按声明位置去重防环；只应用既有支持的Spring组合规则，未知AliasFor/动态表达式保留限制。
+Core优先使用相同受控sourcepath/classpath解析注解binding；只有 binding 非空且不是 recovered binding 时才填qualifiedName。recovered binding在缺依赖时可能伪装成当前 package 下的类型，必须视为未解析，再由显式 import 或LS definition恢复身份。仍未解析时只接受可以归一为确定声明身份的LS返回；不得从本机缓存路径、simple name或“annotation包”惯例猜包。对源码内自定义组合注解，递归读取其元注解，按声明位置去重防环；只应用既有支持的Spring组合规则，未知AliasFor/动态表达式保留限制。
 
 在通配import或缺依赖下LS仍不能确认时，qualifiedName=null并记录`ANNOTATION_IDENTITY_UNRESOLVED`。Spring消费者保留该已定位mapping候选方法、原注解及具体限制，允许后续读取其源码；不能把未确认候选宣布为准确HTTP路由，也不能从发现site/材料范围中静默过滤。合法省略method仍是UNRESTRICTED，和注解identity无法确认不是同一种问题。
 
@@ -176,8 +176,10 @@ Step05不再重跑JDT或解析器，只归属/保存已经取得的关系。Buil
 
 测试重复方法、重复调用位置、循环、多入口共享、interface多候选、构造器、无body边界、部分取消与源码定位；再以真实注册/财务和一个不同结构的fixture验证。禁止为达到expected count人工加入Service路径，禁止把非空body全部压成label后宣称完成。
 
-## 5. 目前尚未实测的部分
+## 5. 已验证范围与剩余边界
 
-研究已证明两入口的LS定位价值，但独立Core helper、构造器覆盖、虚调用实现候选、全仓多module隔离、YAML生产接线尚未完成。它们是第一阶段的实现及测试任务，不写成“JDT试验已全部通过”。
+JDT 第一阶段已经完成：独立 Core helper、构造器/方法引用/循环与多候选的直接测试、LS 导航归一、YAML 配置、生产发现、module 7 索引、Step04 `NOT_PRODUCED`、Step05 context/Capsule、Builder 和 scripted 九章均已接通。固定 jshERP 注册入口自动取得 `validateCaptcha`、`checkLoginName`、`registerUser` Service 正文，财务入口取得 Service 与 Mapper 声明；自包含 Spring/MyBatis 运行证明正式选择的 JDT 会话可以一直进入九章。
 
-两种工具采用同一source level与来源规则，但不要求返回同一数量/精度。JDT第一阶段稳定后，才按照[第二阶段设计](integration-and-javaparser.md)适配JavaParser现有能力。
+这些验收没有运行客户 Maven、客户应用或产品模型，也没有证明所有多模块依赖、动态代理、反射、生成代码和外部系统效果。工具缺依赖时保留具体 limitation；已保存的正文与调用仍可用于业务解释。
+
+两种工具采用同一source level与来源规则，但不要求返回同一数量/精度。下一阶段按照[第二阶段设计](integration-and-javaparser.md)适配JavaParser现有能力；在此之前选择 JavaParser 明确失败，不影响 JDT 已完成状态。

@@ -709,7 +709,9 @@ public final class BusinessMaterialBuilder {
               .collect(java.util.stream.Collectors.joining("，"));
       values.add(
           methodId
-              + " 完整方法："
+              + " 完整方法（"
+              + method.declaringType()
+              + "）："
               + method.signature()
               + (parameters.isBlank() ? "。" : "；" + parameters + "。"));
       for (EntryCodeContext.Control control : method.controls()) {

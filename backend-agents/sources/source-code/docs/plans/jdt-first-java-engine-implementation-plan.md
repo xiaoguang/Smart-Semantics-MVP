@@ -276,7 +276,7 @@
 - Run `mvn -Dtest=BusinessMaterialBuilderTest,TechnicalAnalysisWorkflowTest,PersistedBusinessRunExecutorTest,FourEntryBusinessSemanticChainTest test`.
 - Pass means the scripted chain still reaches the existing nine-chapter report and JDT-derived code is visible in business material without parser/model/provider work.
 
-## Task 8: Accept and release the independent JDT stage (approved 1.9)
+## Task 8: Accept and release the independent JDT stage (COMPLETE 2026-09-12)
 
 **Files**
 
@@ -306,6 +306,11 @@
 - Run the targeted tests from Tasks 1–7, then `mvn -Dtest=FourEntryBusinessSemanticChainTest,SourceAnalysisCliContractTest,RepositoryAnalysisAgentStartTest test`.
 - Run the repository's documented read-only documentation-link check and `git diff --check`.
 - Stage one is releasable only when JDT has no JavaParser runtime/reference edge and all receipts/actual artifact sets match Tasks 4–6.
+
+Accepted evidence: the Tasks 1–7 selector passed 73 tests; the public-seam selector passed 8 tests;
+the installed-JDT jshERP selector and the production-selected JDT-to-scripted-report selector each
+passed. Exact commands and boundaries are recorded in
+[`progress/jdt-independent-release-acceptance.md`](../../progress/jdt-independent-release-acceptance.md).
 
 ## Task 9: Adapt baseline JavaParser behavior to the frozen interface (approved 2.1)
 

@@ -81,6 +81,7 @@ public final class EntryContextAssembler {
                 List.of(),
                 entry.context().limitations().stream()
                     .map(value -> value.code() + ":" + value.detail())
+                    .distinct()
                     .sorted(UTF8_ORDER)
                     .toList()));
       } else {

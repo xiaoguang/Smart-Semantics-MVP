@@ -94,6 +94,12 @@
 
 ## Selectable Java code engines
 
+- The independent JDT path was implemented and accepted on 2026-09-12:
+  configuration/session, JDT Core syntax, JDT LS navigation, discovery,
+  navigation publication, truthful NOT_PRODUCED strict facts, Step05
+  contexts, persisted business material and the scripted report chain are
+  connected. Do not reopen these as unimplemented design. JavaParser remains
+  ENGINE_NOT_INTEGRATED until the explicit second-phase adapter is complete.
 - First implement the JDT route independently. Protocols and direct
   producers/readers may change for a sound JDT design without accommodating
   JavaParser. Preserve JavaParser code. Only in the second phase adapt it to

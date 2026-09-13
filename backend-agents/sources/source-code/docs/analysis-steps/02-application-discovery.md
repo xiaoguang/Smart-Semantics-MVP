@@ -107,7 +107,9 @@ allSiteIds = exactDisjointUnion(shardSiteIds)
 
 ## 7. 当前实现与最小测试
 
-插件化尚未实施：下述是现有JavaParser路径的状态。第一阶段要把Java读取搬到JDT catalog；不能通过仅改YAML声明就称“全用JDT”。新增定向验收包括JDT模式不调用JavaParser、同一索引支持多入口、通配import及缺依赖的明确诊断，规则详见[JDT详细设计](../modules/java-code-engines/jdt-engine.md)。
+JDT catalog 路线已经实施：配置选择 JDT 后，ApplicationProfileDetector 与 SpringHttpEntryDiscoverer 消费同一 JDT session 的中立 catalog，入口 v3 保存 `methodKey + SourceRange`，JDT 路径不调用 JavaParser。固定 jshERP 注册与财务入口以及自包含 Spring/MyBatis 运行均已直接验收。JavaParser Adapter 仍是第二阶段工作，当前选择它会明确返回 `ENGINE_NOT_INTEGRATED`。
+
+JDT Core 的 recovered binding 不能当成已解析的限定名。例如缺少外部 Spring classpath 时，JDT 可能恢复出当前 package 下的 `RequestMapping`；helper 只接受非 recovered 的 binding，随后由 catalog 使用显式 import 或 JDT LS 导航恢复真实身份。仍无法确认时保留候选和 `ANNOTATION_IDENTITY_UNRESOLVED`，不能按 simple name 猜测。
 
 ApplicationProfileDetector、SpringHttpEntryDiscoverer、MapperCapabilityCataloger、步骤 publisher/executor 已有实现，固定完整 jshERP 入口发现已有保存证据；不是仅 package 骨架。现有材料规划处理 337 个发现入口，但这只证明当前发现分母的处理，不证明所有合法 Spring 变体已正确发现。省略 method、`method={}`、显式方法集合及类/方法条件组合现在由直接回归覆盖；两个真实端点要在后续完整仓库重跑中确认进入新分母。
 

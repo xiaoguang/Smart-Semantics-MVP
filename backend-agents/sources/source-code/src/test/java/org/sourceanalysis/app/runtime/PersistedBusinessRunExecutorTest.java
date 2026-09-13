@@ -293,13 +293,13 @@ class PersistedBusinessRunExecutorTest {
             "text",
             index == 3
                 ? "审阅后的业务目的："
-                    + input.path("activities").get(0).path("businessPurpose").asText()
+                    + input.path("activities").path(0).path("businessPurpose").asText()
                     + " 条件："
-                    + input.path("activities").get(0).path("conditions").get(0).asText()
+                    + input.path("activities").path(0).path("conditions").path(0).asText()
                     + "。规则："
-                    + input.path("activities").get(0).path("businessRules").get(0).asText()
+                    + input.path("activities").path(0).path("businessRules").path(0).asText()
                     + "。问题："
-                    + input.path("activities").get(0).path("questions").get(0).asText()
+                    + input.path("activities").path(0).path("questions").path(0).asText()
                 : "本章根据已审阅的业务活动说明冻结源码定义的系统行为。");
         ArrayNode refs = paragraph.putArray("refs");
         if (ref != null) {
@@ -326,7 +326,7 @@ class PersistedBusinessRunExecutorTest {
       return reportDraft;
     }
 
-    private JsonNode reportDraftInput() {
+    JsonNode reportDraftInput() {
       return reportDraftInput;
     }
 

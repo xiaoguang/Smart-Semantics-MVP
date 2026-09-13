@@ -113,13 +113,13 @@ Builder只读这些context和Capsule，选完整方法、分包、分配S短ref�
 
 引擎取材默认不以费用限制只展开几层。宿主资源/取消触发时记录未展开点。Builder面对真实模型上下文上限，可以在入口/完整方法单元组包，但不得静默裁去关键Service实现后标完整。是否达到“模型实际看见足够实现”必须直接检查请求内容。
 
-## 7. 当前代码与目标的差距
+## 7. 当前代码与剩余边界
 
-当前EntryRootedFlowCompiler已经从图中组织EntryContext，并由Capsule、flow-slices传至Builder。普通发布已停止重复compile/project；旧registry proposal basis字段已移除。实际当前格式为flow-compilation v4、flow-slices v4、capsule-projection v9、evidence-capsule v7。
+JDT 第一阶段已经完成 context 生产、投影、保存、读取和 Builder 接力。当前格式为 flow compilation v5、flow slices v5、capsule projection v10、evidence capsule v8。`EntryCodeContext` 保存完整方法、调用点、所有候选、实参/形参、control/exits、supporting sources 与 limitations；没有 strict Flow 的安全入口也可用 `flowRef=null` 发布上下文和 Capsule。
 
-但当前CallContext只含单一target signature、实参和有限解析状态，不能直接表达本设计的多个实现候选/每个完整方法/不同边界处置；Builder仍有JavaParser语法处理。旧“已经接通context”不能解释为JDT统一材料已实现。
+`EvidenceCapsuleProjector` 原样投影 context；`BusinessMaterialBuilder` 只选择已保存方法、分配短引用并格式化模型输入，生产代码不再调用 JavaParser 或 JDT。相同导航限制在进入严格 EntryContext 前去重，避免工具重复报告同一外部调用时破坏集合约束，但不吞掉不同调用点或不同原因。
 
-第一阶段同时升级context生产、投影、保存、读取和Builder，允许协议变化，不兼容旧wire。已有JavaParser/五图/Fact算法保留不重写；第二阶段才接到第一阶段最终合同并恢复当前能力。不以第二阶段未做完阻塞JDT链的独立验收。
+剩余工作是第二阶段 JavaParser Adapter：把迁移前已有能力映射到同一最终合同，不新增通配 import、继承或重载解析，也不要求追平 JDT。它没有完成不影响 JDT 独立发布。
 
 ## 8. Luna与Terra的直接指南
 
