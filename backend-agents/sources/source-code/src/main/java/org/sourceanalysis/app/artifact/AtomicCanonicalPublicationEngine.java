@@ -1611,7 +1611,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     if ("BUSINESS_FLOWS_FLOW_COMPILATION".equals(payload.artifactType())
-        && "business-flows-flow-compilation-v5".equals(payload.schemaVersion())) {
+        && "business-flows-flow-compilation-v6".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.BUSINESS_FLOWS,
           1,
@@ -1620,7 +1620,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("BUSINESS_FLOWS_CAPSULE_PROJECTION".equals(payload.artifactType())
-        && "business-flows-capsule-projection-v10".equals(payload.schemaVersion())) {
+        && "business-flows-capsule-projection-v11".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.BUSINESS_FLOWS,
           2,
@@ -1629,7 +1629,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("BUSINESS_FLOWS_FLOW_SLICES".equals(payload.artifactType())
-        && "business-flows-flow-slices-v5".equals(payload.schemaVersion())) {
+        && "business-flows-flow-slices-v6".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.BUSINESS_FLOWS,
           3,
@@ -1656,7 +1656,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     if ("BUSINESS_FLOWS_EVIDENCE_CAPSULE".equals(payload.artifactType())
-        && "business-flows-evidence-capsule-v8".equals(payload.schemaVersion())) {
+        && "business-flows-evidence-capsule-v9".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.BUSINESS_FLOWS,
           3,
@@ -1737,7 +1737,7 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("BUSINESS_DOCUMENT_MARKDOWN".equals(payload.artifactType())
-        && "business-document-markdown-v1".equals(payload.schemaVersion())) {
+        && "business-document-markdown-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.NINE_SECTION_DOCUMENT,
           1,

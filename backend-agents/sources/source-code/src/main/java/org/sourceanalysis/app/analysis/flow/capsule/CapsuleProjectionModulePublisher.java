@@ -48,7 +48,7 @@ public final class CapsuleProjectionModulePublisher {
 
   private static final String FILE_NAME = "capsule-projection.json";
   private static final String ARTIFACT_TYPE = "BUSINESS_FLOWS_CAPSULE_PROJECTION";
-  private static final String SCHEMA_VERSION = "business-flows-capsule-projection-v10";
+  private static final String SCHEMA_VERSION = "business-flows-capsule-projection-v11";
   private static final String ARTIFACT_PREFIX = "business-flows-capsule-projection";
   private static final String PROJECTION_ID_DOMAIN = "business-flows-capsule-projection-id-v2";
   private static final String MODULE_VERSION = "v7";
@@ -268,7 +268,9 @@ public final class CapsuleProjectionModulePublisher {
     else body.set("proofPackRef", reference(projection.proofPackRef()));
     profile(body.putObject("capsuleProjectionProfile"), projection.profile());
     ArrayNode capsules = body.putArray("capsules");
-    projection.capsules().forEach(value -> capsule(capsules.addObject(), value));
+    projection
+        .capsules()
+        .forEach(value -> capsule(capsules.addObject(), value, projection.flowCompilationRef()));
     ArrayNode spans = body.putArray("modelEvidenceSpans");
     projection.modelEvidenceSpans().forEach(value -> span(spans.addObject(), value));
     ArrayNode obligations = body.putArray("projectionObligations");
@@ -300,7 +302,10 @@ public final class CapsuleProjectionModulePublisher {
     node.put("maxCapsuleUtf8Bytes", profile.maxCapsuleUtf8Bytes());
   }
 
-  private static void capsule(ObjectNode node, CapsuleProjection.EvidenceCapsule capsule) {
+  private static void capsule(
+      ObjectNode node,
+      CapsuleProjection.EvidenceCapsule capsule,
+      ArtifactReference flowCompilationReference) {
     node.put("evidenceCapsuleId", capsule.evidenceCapsuleId());
     if (capsule.flowSliceId() == null) node.putNull("flowSliceId");
     else node.put("flowSliceId", capsule.flowSliceId());
@@ -313,7 +318,12 @@ public final class CapsuleProjectionModulePublisher {
     entry.put("trigger", capsule.entryView().trigger());
     entry.put("rootNodeId", capsule.entryView().rootNodeId());
     strings(entry.putArray("routeEvidenceNodeIds"), capsule.entryView().routeEvidenceNodeIds());
-    entryContext(node.putObject("entryContext"), capsule.entryContext());
+    ObjectNode entryContextRef = node.putObject("entryContextRef");
+    entryContextRef
+        .putObject("compilationArtifact")
+        .put("artifactId", flowCompilationReference.artifactId().value())
+        .put("sha256", flowCompilationReference.sha256().value());
+    entryContextRef.put("entryContextId", capsule.entryContext().entryContextId());
     ArrayNode facts = node.putArray("factViews");
     capsule.factViews().forEach(value -> fact(facts.addObject(), value));
     ArrayNode gaps = node.putArray("gapViews");

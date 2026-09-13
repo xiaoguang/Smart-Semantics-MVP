@@ -181,16 +181,16 @@ Step03保存`java-code-index.jsonl`，记录类型仍为`ENGINE / TYPE / METHOD 
 
 Step05在`flow-slices.json`的`entryContexts`保存入口归属、收集状态与`codeContextRef`，不再复制索引的完整方法正文。该ref精确为`{indexArtifact: ArtifactReference, entryId: string}`，COLLECTED必填且entryId与外层相同；NOT_COLLECTED为null并有reason。Capsule原内嵌`entryContext`改为`entryContextRef={compilationArtifact: ArtifactReference, entryContextId: string}`。既有reader一次打开引用的索引/compilation并恢复完整不可变视图，不重新导航，不把裸引用交给模型。METHOD正文仍以索引为权威；技术增强不改变。[完整读写与失败例子](../../plans/navigation-reuse-and-readable-report-design.md#6-step05capsule用已保存索引引用代替正文副本)。
 
-以下版本表同时区分已交付与本次批准的引用优化目标；**目标版本尚未实现**。仅改变实际持久化形状的owner/readers/policy同步升版，JavaParser同步产出该保存格式，不改它的解析算法。
+以下版本表记录已交付的引用持久化合同。仅改变实际持久化形状的owner/readers/policy同步升版，JavaParser同步产出该保存格式，不改它的解析算法。
 
 | 内容 | 已交付 schema | 优化目标 |
 | --- | --- | --- |
 | 导航索引 | java-code-index-v2；CALL按入口保存 | 不变；不把RPC缓存写成入口投影 |
 | 解引用后的完整上下文 | entry-code-context-v1 | 不变；内存消费者仍得到完整内容 |
-| module compilation | business-flows-flow-compilation-v5 | v6：codeContextRef |
-| module projection | business-flows-capsule-projection-v10 | v11：entryContextRef |
-| 公开flow-slices | business-flows-flow-slices-v5 | v6：codeContextRef |
-| 公开Capsule | business-flows-evidence-capsule-v8 | v9：entryContextRef |
+| module compilation | business-flows-flow-compilation-v6 | codeContextRef |
+| module projection | business-flows-capsule-projection-v11 | entryContextRef |
+| 公开flow-slices | business-flows-flow-slices-v6 | codeContextRef |
+| 公开Capsule | business-flows-evidence-capsule-v9 | entryContextRef |
 | flow覆盖 / 入口处置 | business-flows-flow-coverage-v2 / business-flows-entry-disposition-v2 | 不变 |
 | Fact accounting | proven-code-facts-fact-accounting-v4；NOT_PRODUCED时reason必填，counts为null | 不变；不含伪造Fact/Proof refs |
 

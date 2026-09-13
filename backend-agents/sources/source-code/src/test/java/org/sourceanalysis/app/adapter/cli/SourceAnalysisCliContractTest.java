@@ -279,7 +279,7 @@ class SourceAnalysisCliContractTest {
           runId,
           query.businessOutputArtifactKey(),
           SourceAnalysisCliContractTest.reference("business-document-markdown", 'b'),
-          "business-document-markdown-v1",
+          "business-document-markdown-v2",
           "text/markdown",
           "# 已验证业务报告\n");
     }

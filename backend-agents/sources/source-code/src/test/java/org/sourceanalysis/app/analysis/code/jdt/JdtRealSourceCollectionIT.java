@@ -3,6 +3,7 @@ package org.sourceanalysis.app.analysis.code.jdt;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -12,7 +13,6 @@ import java.time.Duration;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.analysis.code.EntryCodeContext;
 import org.sourceanalysis.app.analysis.code.EntrySeed;
@@ -30,41 +30,24 @@ import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.runtime.EffectiveEngineConfiguration;
 
 /** Read-only local acceptance against the user-approved frozen jshERP source projection. */
-class JdtRealSourceCollectionTest {
+class JdtRealSourceCollectionIT {
 
-  private static final Path FIXTURE =
-      Path.of(".workspace", "jdtls-source-navigation-feasibility", "projection", "src");
-  private static final Path JDT =
-      Path.of(".workspace", "jdtls-source-navigation-feasibility", "tools", "selected");
-  private static final Path TOOL_JAVA =
-      Path.of("/Library/Java/JavaVirtualMachines/jdk-26.jdk/Contents/Home");
-  private static final Path SPRING_WEB =
-      Path.of(
-          "/Users/yexiaoguang/.m2/repository/org/springframework/spring-web/5.0.4.RELEASE/spring-web-5.0.4.RELEASE.jar");
-  private static final Path SPRING_CORE =
-      Path.of(
-          "/Users/yexiaoguang/.m2/repository/org/springframework/spring-core/5.0.4.RELEASE/spring-core-5.0.4.RELEASE.jar");
-  private static final Path SPRING_JCL =
-      Path.of(
-          "/Users/yexiaoguang/.m2/repository/org/springframework/spring-jcl/5.0.4.RELEASE/spring-jcl-5.0.4.RELEASE.jar");
-  private static final Path ACTUAL_OUTPUT = Path.of(".workspace", "jdt-production-navigation");
+  private static final String TEST_JAVA_HOME = "sourceanalysis.jdt.testJavaHome";
+  private static final String TEST_PROJECT = "sourceanalysis.jdt.testProject";
+  private static final String TEST_DISTRIBUTION = "sourceanalysis.jdt.testDistribution";
+  private static final String TEST_DEPENDENCIES = "sourceanalysis.jdt.testDependencies";
+  private static final Path ACTUAL_OUTPUT = Path.of("target", "jdt-production-navigation");
 
   @Test
   void jdtCollectsRegistrationAndFinancialImplementationsInOneProjectIndex() throws Exception {
-    Assumptions.assumeTrue(Files.isDirectory(FIXTURE));
-    Assumptions.assumeTrue(Files.isDirectory(JDT));
-    Assumptions.assumeTrue(Files.isExecutable(TOOL_JAVA.resolve("bin/java")));
-    Assumptions.assumeTrue(Files.isRegularFile(SPRING_WEB));
-    Assumptions.assumeTrue(Files.isRegularFile(SPRING_CORE));
-    Assumptions.assumeTrue(Files.isRegularFile(SPRING_JCL));
-    Assumptions.assumeTrue(Files.isRegularFile(JdtSyntaxHelperArtifact.locate()));
-    VerifiedJavaProject project = frozenProject();
+    RealJdtPrerequisites prerequisites = prerequisites();
+    VerifiedJavaProject project = frozenProject(prerequisites);
     EffectiveEngineConfiguration configuration =
         new EffectiveEngineConfiguration(
             EffectiveEngineConfiguration.JDT,
             new EffectiveEngineConfiguration.JdtConfiguration(
-                JDT.toAbsolutePath(),
-                TOOL_JAVA,
+                prerequisites.distribution(),
+                prerequisites.toolJavaHome(),
                 Duration.ofSeconds(90),
                 Duration.ofSeconds(30),
                 Duration.ofSeconds(10)));
@@ -190,15 +173,85 @@ class JdtRealSourceCollectionTest {
     }
   }
 
-  private static VerifiedJavaProject frozenProject() throws IOException {
+  private static RealJdtPrerequisites prerequisites() {
+    Path project = requiredDirectory(TEST_PROJECT, "frozen project");
+    Path distribution = requiredDirectory(TEST_DISTRIBUTION, "JDT distribution");
+    Path toolJavaHome = requiredDirectory(TEST_JAVA_HOME, "tool Java home");
+    if (!Files.isExecutable(toolJavaHome.resolve("bin").resolve("java"))) {
+      throw missing(TEST_JAVA_HOME, "bin/java is not executable");
+    }
+    if (!Files.isExecutable(distribution.resolve("bin").resolve("jdtls"))) {
+      throw missing(TEST_DISTRIBUTION, "bin/jdtls is not executable");
+    }
+    List<Path> dependencies = requiredDependencies();
+    if (!Files.isRegularFile(JdtSyntaxHelperArtifact.locate())) {
+      throw missing("tools/jdt-syntax-helper", "syntax helper artifact is absent");
+    }
+    return new RealJdtPrerequisites(
+        project.toAbsolutePath(),
+        distribution.toAbsolutePath(),
+        toolJavaHome.toAbsolutePath(),
+        dependencies);
+  }
+
+  private static Path requiredDirectory(String property, String description) {
+    Path value = requiredPath(property, description);
+    if (!Files.isDirectory(value)) {
+      throw missing(property, description + " is not a directory");
+    }
+    return value;
+  }
+
+  private static Path requiredPath(String property, String description) {
+    String configured = System.getProperty(property);
+    if (configured == null || configured.isBlank()) {
+      throw missing(property, description + " property is blank");
+    }
+    try {
+      return Path.of(configured);
+    } catch (RuntimeException malformed) {
+      throw new IllegalStateException(
+          "Missing required real-jdt-it prerequisite: " + property + " is not a valid path",
+          malformed);
+    }
+  }
+
+  private static List<Path> requiredDependencies() {
+    String configured = System.getProperty(TEST_DEPENDENCIES);
+    if (configured == null || configured.isBlank()) {
+      throw missing(TEST_DEPENDENCIES, "dependency list property is blank");
+    }
+    List<Path> dependencies =
+        List.of(configured.split(java.util.regex.Pattern.quote(File.pathSeparator))).stream()
+            .filter(value -> !value.isBlank())
+            .map(Path::of)
+            .toList();
+    if (dependencies.isEmpty()) {
+      throw missing(TEST_DEPENDENCIES, "dependency list is empty");
+    }
+    for (Path dependency : dependencies) {
+      if (!Files.isRegularFile(dependency)) {
+        throw missing(TEST_DEPENDENCIES, "dependency is not a file: " + dependency);
+      }
+    }
+    return dependencies;
+  }
+
+  private static IllegalStateException missing(String property, String detail) {
+    throw new IllegalStateException(
+        "Missing required real-jdt-it prerequisite: " + property + " (" + detail + ")");
+  }
+
+  private static VerifiedJavaProject frozenProject(RealJdtPrerequisites prerequisites)
+      throws IOException {
     List<VerifiedSourceTextDocument> documents;
-    try (var paths = Files.walk(FIXTURE)) {
+    try (var paths = Files.walk(prerequisites.project())) {
       documents =
           paths
               .filter(Files::isRegularFile)
               .filter(path -> path.toString().endsWith(".java"))
               .sorted(Comparator.comparing(Path::toString))
-              .map(JdtRealSourceCollectionTest::document)
+              .map(path -> document(prerequisites.project(), path))
               .toList();
     }
     String seed =
@@ -215,13 +268,13 @@ class JdtRealSourceCollectionTest {
             controls(seed),
             documents);
     return VerifiedJavaProject.fromVerifiedSourceTextSet(
-        sourceTexts, List.of("src/main/java"), List.of(SPRING_WEB, SPRING_CORE, SPRING_JCL), "17");
+        sourceTexts, List.of("src/main/java"), prerequisites.dependencies(), "17");
   }
 
-  private static VerifiedSourceTextDocument document(Path source) {
+  private static VerifiedSourceTextDocument document(Path project, Path source) {
     try {
       byte[] bytes = Files.readAllBytes(source);
-      String relative = FIXTURE.relativize(source).toString().replace('\\', '/');
+      String relative = project.relativize(source).toString().replace('\\', '/');
       String path = "src/main/java/" + relative;
       return new VerifiedSourceTextDocument(
           new ArtifactId("file:" + digest(path)),
@@ -288,5 +341,12 @@ class JdtRealSourceCollectionTest {
                         + call.targets())
             .reduce("", (left, right) -> left + "\ncall=" + right);
     return methods + calls + "\nlimitations=" + context.limitations();
+  }
+
+  private record RealJdtPrerequisites(
+      Path project, Path distribution, Path toolJavaHome, List<Path> dependencies) {
+    private RealJdtPrerequisites {
+      dependencies = List.copyOf(dependencies);
+    }
   }
 }

@@ -91,7 +91,7 @@ class CapsuleWireReductionTest {
       softly
           .assertThat(text(projectionEnvelope, "schemaVersion"))
           .as("capsule projection schema")
-          .isEqualTo("business-flows-capsule-projection-v10");
+          .isEqualTo("business-flows-capsule-projection-v11");
       JsonNode projectionBody = projectionEnvelope.path("payload");
       JsonNode projectionCapsules = projectionBody.path("capsules");
       softly.assertThat(projectionCapsules.isArray()).isTrue();
@@ -118,7 +118,7 @@ class CapsuleWireReductionTest {
       softly
           .assertThat(text(publicCapsule, "schemaVersion"))
           .as("public evidence capsule schema")
-          .isEqualTo("business-flows-evidence-capsule-v8");
+          .isEqualTo("business-flows-evidence-capsule-v9");
       assertReducedCapsule(softly, publicCapsule, "public capsule");
 
       softly
@@ -154,7 +154,8 @@ class CapsuleWireReductionTest {
     softly.assertThat(capsule.path("flowSliceId").isTextual()).as(description).isTrue();
     softly.assertThat(capsule.path("proofPackId").isTextual()).as(description).isTrue();
     softly.assertThat(capsule.path("entryView").isObject()).as(description).isTrue();
-    softly.assertThat(capsule.path("entryContext").isObject()).as(description).isTrue();
+    softly.assertThat(capsule.has("entryContext")).as(description).isFalse();
+    softly.assertThat(capsule.path("entryContextRef").isObject()).as(description).isTrue();
     softly.assertThat(capsule.path("factViews").isArray()).as(description).isTrue();
     softly.assertThat(capsule.path("gapViews").isArray()).as(description).isTrue();
     softly.assertThat(capsule.path("outcomePathViews").isArray()).as(description).isTrue();

@@ -91,7 +91,7 @@ JDT或JavaParser已经找出方法、调用和源码。Step05负责让这些结�
 | flow-gaps.jsonl | 入口取材/导航/技术增强的已知限制及来源，不发明业务制度Gap |
 | business-flows-receipt.json | 实际输入、产物、引擎basis与状态 |
 
-已交付版本为entry-code-context-v1、flow compilation v5、capsule projection v10、flow slices v5、evidence capsule v8、flow coverage v2、entry disposition v2。本次引用优化目标仅把compilation/slices改为v6、projection改为v11、capsule改为v9；其余保持。codeContextRef精确为`{indexArtifact: ArtifactReference, entryId: string}`，Capsule的entryContextRef为`{compilationArtifact: ArtifactReference, entryContextId: string}`；COLLECTED须引用正确入口，NOT_COLLECTED的codeContextRef为空且有reason。五个语义文件加receipt的实际集合不变。writer、reader、identity输入、policy与fixture一起修改；旧历史产物不覆盖，不静默双读。详见[字段与版本表](../modules/java-code-engines/contracts-and-configuration.md#5-保存格式位置与复用)。这些是已批准目标，尚未实施。
+已交付版本为entry-code-context-v1、flow compilation v6、capsule projection v11、flow slices v6、evidence capsule v9、flow coverage v2、entry disposition v2。`codeContextRef`精确为`{indexArtifact: ArtifactReference, entryId: string}`，Capsule的`entryContextRef`为`{compilationArtifact: ArtifactReference, entryContextId: string}`；COLLECTED须引用正确入口，NOT_COLLECTED的codeContextRef为空且有reason。读取端从既有索引/compilation恢复完整不可变上下文，不重启引擎；五个语义文件加receipt的实际集合不变。旧历史产物不覆盖，不静默双读。详见[字段与版本表](../modules/java-code-engines/contracts-and-configuration.md#5-保存格式位置与复用)。
 
 保留技术处置`COMPILED/GAP/EXCLUDED`的原义。context处置单独使用`COLLECTED/NOT_COLLECTED`和reason，不把“没有strict Flow”误判成没有材料，也不把SOURCE_CONFIRMED之类业务状态塞进technical ledger。
 

@@ -120,7 +120,8 @@ class BusinessFlowsPublicationSpecifierTest {
                 assertThat(context.path("collectionStatus").asText()).isEqualTo("NOT_COLLECTED");
                 assertThat(context.path("collectionReason").asText())
                     .isEqualTo("JAVA_CODE_CONTEXT_NOT_AVAILABLE_ON_STRICT_GRAPH_PATH");
-                assertThat(context.path("codeContext").isNull()).isTrue();
+                assertThat(context.has("codeContext")).isFalse();
+                assertThat(context.path("codeContextRef").isNull()).isTrue();
                 JsonNode technicalContext = context.path("strictTechnicalContext");
                 assertThat(technicalContext.path("entrySignature").asText()).isNotBlank();
                 assertThat(technicalContext.path("sourceLocators")).isNotEmpty();
@@ -270,7 +271,7 @@ class BusinessFlowsPublicationSpecifierTest {
       lines.forEach(
           capsule -> {
             assertThat(capsule.path("schemaVersion").asText())
-                .isEqualTo("business-flows-evidence-capsule-v8");
+                .isEqualTo("business-flows-evidence-capsule-v9");
             List<String> referencedSpanIds = strings(capsule.path("modelEvidenceSpanIds"));
             List<String> embeddedSpanIds = strings(capsule.path("modelEvidenceSpans"), "spanId");
             List<String> referencedObligationIds = strings(capsule.path("projectionObligationIds"));
@@ -333,7 +334,7 @@ class BusinessFlowsPublicationSpecifierTest {
           canonicalJson.parseCanonical(
               fixture.moduleArtifacts().reopen(flowCompilation).payloads().get(0).canonicalUtf8());
       assertThat(m1Envelope.path("schemaVersion").asText())
-          .isEqualTo("business-flows-flow-compilation-v5");
+          .isEqualTo("business-flows-flow-compilation-v6");
       JsonNode m1Payload = m1Envelope.path("payload");
       assertThat(m1Payload.isObject()).isTrue();
       Map<String, JsonNode> m1Flows = jsonNodesById(m1Payload.path("flowSlices"), "flowSliceId");
@@ -391,7 +392,7 @@ class BusinessFlowsPublicationSpecifierTest {
       JsonNode m2Envelope =
           canonicalJson.parseCanonical(m2Reopened.payloads().get(0).canonicalUtf8());
       assertThat(m2Envelope.path("schemaVersion").asText())
-          .isEqualTo("business-flows-capsule-projection-v10");
+          .isEqualTo("business-flows-capsule-projection-v11");
       JsonNode m2Payload = m2Envelope.path("payload");
       Map<String, JsonNode> m2Capsules = jsonNodesById(m2Payload.path("capsules"), "flowSliceId");
       assertThat(m2Capsules).hasSize(2);
@@ -425,11 +426,11 @@ class BusinessFlowsPublicationSpecifierTest {
       assertThat(reopened.semanticPayloads())
           .filteredOn(payload -> payload.descriptor().fileName().equals("flow-slices.json"))
           .extracting(payload -> payload.descriptor().schemaVersion())
-          .containsExactly("business-flows-flow-slices-v5");
+          .containsExactly("business-flows-flow-slices-v6");
       assertThat(reopened.semanticPayloads())
           .filteredOn(payload -> payload.descriptor().fileName().equals("evidence-capsules.jsonl"))
           .extracting(payload -> payload.descriptor().schemaVersion())
-          .containsExactly("business-flows-evidence-capsule-v8");
+          .containsExactly("business-flows-evidence-capsule-v9");
       assertThat(reopened.receipt().controls())
           .isEqualTo(
               fixture
@@ -452,7 +453,7 @@ class BusinessFlowsPublicationSpecifierTest {
                   .orElseThrow()
                   .canonicalUtf8());
       assertThat(publicFlowDocument.path("schemaVersion").asText())
-          .isEqualTo("business-flows-flow-slices-v5");
+          .isEqualTo("business-flows-flow-slices-v6");
       Map<String, JsonNode> publicFlows =
           jsonNodesById(publicFlowDocument.path("flowSlices"), "flowSliceId");
       assertThat(publicFlows).hasSize(2);
@@ -489,7 +490,7 @@ class BusinessFlowsPublicationSpecifierTest {
         JsonNode m2Capsule = m2Capsules.get(flowSliceId);
         assertThat(m2Capsule).isNotNull();
         assertThat(publicCapsule.path("schemaVersion").asText())
-            .isEqualTo("business-flows-evidence-capsule-v8");
+            .isEqualTo("business-flows-evidence-capsule-v9");
         assertThat(publicCapsule.path("modelEligibility").asText())
             .isEqualTo(m2Capsule.path("modelEligibility").asText());
         if ("ELIGIBLE".equals(publicCapsule.path("modelEligibility").asText())) {

@@ -1,6 +1,5 @@
 package org.sourceanalysis.app.analysis.document;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import org.sourceanalysis.app.analysis.interpretation.material.SourceReference;
@@ -31,7 +30,7 @@ final class BusinessReportMarkdownRenderer {
         markdown.append('\n');
       }
       if (section.number() == 1) {
-        renderSourceDetails(markdown, sources);
+        markdown.append("完整源码依据保存在 source-refs.jsonl；正文中的短引用可用于查询。\n\n");
       }
     }
     return markdown.toString();
@@ -43,40 +42,9 @@ final class BusinessReportMarkdownRenderer {
     }
     String citations =
         content.refs().stream()
-            .map(ref -> "[" + ref + "](#source-ref-" + anchor(ref) + ")")
+            .map(ref -> "[" + ref + "]")
             .reduce((left, right) -> left + "、" + right)
             .orElseThrow();
     return content.text() + "（" + citations + "）";
-  }
-
-  private static void renderSourceDetails(StringBuilder markdown, List<SourceReference> sources) {
-    markdown.append("<details>\n<summary>技术依据（可选）</summary>\n\n");
-    sources.stream()
-        .sorted(Comparator.comparing(SourceReference::ref))
-        .forEach(
-            source ->
-                markdown
-                    .append("<a id=\"source-ref-")
-                    .append(anchor(source.ref()))
-                    .append("\"></a>\n- ")
-                    .append(source.ref())
-                    .append(" — ")
-                    .append(source.file())
-                    .append(":")
-                    .append(source.startLine())
-                    .append("–")
-                    .append(source.endLine())
-                    .append("\n  <pre><code>")
-                    .append(escapeHtml(source.snippet()))
-                    .append("</code></pre>\n\n"));
-    markdown.append("</details>\n\n");
-  }
-
-  private static String anchor(String ref) {
-    return ref.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9_-]", "-");
-  }
-
-  private static String escapeHtml(String value) {
-    return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
   }
 }

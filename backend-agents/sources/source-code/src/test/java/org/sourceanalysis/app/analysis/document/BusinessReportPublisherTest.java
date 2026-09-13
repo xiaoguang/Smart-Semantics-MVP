@@ -82,9 +82,13 @@ class BusinessReportPublisherTest {
     assertThat(provider.reviewActualDraft()).isEqualTo(provider.draft());
     assertThat(markdown)
         .contains("# 合成补货仓库业务说明", "## 4. 业务活动", "补货到应付账单形成")
-        .contains(
-            "<summary>技术依据（可选）</summary>",
-            "S1 — src/main/java/example/ReplenishmentService.java:21–23");
+        .contains("完整源码依据保存在 source-refs.jsonl", "[S1]")
+        .doesNotContain(
+            "<details>",
+            "<pre><code>",
+            "source-ref-",
+            "src/main/java/example/ReplenishmentService.java",
+            "save(order);");
     assertThat(markdown.lines().filter(line -> line.startsWith("## ")).count()).isEqualTo(9);
   }
 

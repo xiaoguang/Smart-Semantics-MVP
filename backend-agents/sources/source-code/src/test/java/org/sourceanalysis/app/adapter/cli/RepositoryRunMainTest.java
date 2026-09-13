@@ -177,7 +177,7 @@ class RepositoryRunMainTest {
                 false),
             policy(
                 "BUSINESS_DOCUMENT_MARKDOWN",
-                "business-document-markdown-v1",
+                "business-document-markdown-v2",
                 "business-document-markdown",
                 "text/markdown",
                 "RAW_UTF8",

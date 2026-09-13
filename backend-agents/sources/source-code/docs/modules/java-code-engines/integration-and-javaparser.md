@@ -132,7 +132,21 @@ ActivityExplainer、ProcessExplainer、BusinessReportPublisher的现有职责不
 
 ### 4.1 本地CI的唯一执行归属
 
-普通录制LSP、纯Java和scripted Provider测试由Surefire执行；启动真实LS/Core、依赖固定客户源码的测试移到显式`real-jdt-it` Failsafe profile与`*IT`类，不能两边重复运行。一次完整交付用一个verify生命周期连接unit、IT、SpotBugs/PMD；quality不得硬写skipTests=false或自己再触发test。日常RED/GREEN仍只跑直接selector。[目标命令与验收](../../plans/navigation-reuse-and-readable-report-design.md#9-本地-ci一个测试只由一个阶段执行)尚待POM/测试实现，本轮不改构建文件。
+普通录制LSP、纯Java和scripted Provider测试由Surefire执行；启动真实LS/Core、依赖固定客户源码的测试由显式`real-jdt-it` Failsafe profile运行，并只选择`JdtRealSourceCollectionIT`和`JdtSyntaxHelperRealIT`，不能两边重复执行。POM默认将Surefire绑定到`skipUTs=false`、Failsafe绑定到独立的`skipITs=false`；一次完整交付用一个`-Pquality,real-jdt-it verify`生命周期连接unit、IT、SpotBugs/PMD，quality不得硬写skipTests=false或自己再触发test。仅对已有测试证据的质量补跑使用`-Pquality -DskipUTs -DskipITs verify`。工作流先以工具JVM独立打包helper，再以Java 17宿主运行同一根verify；固定源码或JDT工具缺失时，真实源码IT仍须报告为未验证，不能把跳过说成成功。日常RED/GREEN仍只跑直接selector；详见[目标命令与验收](../../plans/navigation-reuse-and-readable-report-design.md#9-本地-ci一个测试只由一个阶段执行)。
+
+`real-jdt-it` 的导航类不使用默认路径或假设跳过。调用者必须显式传入
+`sourceanalysis.jdt.testJavaHome`、`sourceanalysis.jdt.testProject`、
+`sourceanalysis.jdt.testDistribution` 和 `sourceanalysis.jdt.testDependencies`：分别为工具
+JDK、冻结源码根、已验证 JDT LS 发行目录和以当前平台 path separator 分隔的已验证依赖 JAR
+列表。任一属性为空、目录/可执行文件缺失或依赖不存在都会以
+`Missing required real-jdt-it prerequisite` 失败；这表示真实 IT 未验证，不会产生 skipped
+success。普通 Surefire selector 不激活该 profile，因而不会启动真实 JDT。
+
+远端 workflow 只执行 Java 17 的 Surefire 与 quality 检查，不激活 `real-jdt-it`，因为
+GitHub runner 没有固定客户源码、已验证 JDT LS 发行目录和依赖 JAR。远端检查不得用缺少
+三个先决属性的命令伪装成真实工具验收。完整交付必须在已经准备这些只读先决条件的本地
+环境中先独立构建 helper，再执行上述 `-Pquality,real-jdt-it verify`；本地结果才是本项目的
+真实 JDT 集成验收证据。
 
 ## 5. 实施收口与禁止扩大项
 
