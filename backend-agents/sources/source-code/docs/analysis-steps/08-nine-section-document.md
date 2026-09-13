@@ -6,7 +6,7 @@
 
 ## 1. 为什么存在
 
-前面已经得到已审活动和业务过程，最后需要让业务读者连续读懂。Step08 让 Luna/high 用这些完整内容写自然段，并审阅整篇文档；Java 负责章节、短来源引用与确定性 Markdown 排版。
+前面已经得到已审活动和业务过程，最后需要让业务读者连续读懂。Step08 让配置的模型（默认 Pro Luna/high）用这些完整内容写自然段，并审阅整篇文档；Java 负责章节、短来源引用与确定性 Markdown 排版。
 
 报告不能退化为方法名清单，也不能只保留先前 DRAFT 的标题和短摘要。条件、业务步骤、结果、规则、公式与限制应在九章中得到适当位置。程序不重新从源码推断业务，不做行业语言判定，不再运行技术 compiler/projector。
 
@@ -33,6 +33,8 @@
 2. REVIEW 输入包含原有业务知识与**整篇实际 DRAFT**，最多一次；输出完整修订 JSON。不能只回“通过”、章节标题或局部 patch。
 3. Java 检查 exact section IDs/titles、文本类型、scope-local ID/ref、coverage 和预算，保存完整已审 JSON。
 4. renderer 只按结构排 H1/H2、段落、列表与 ref，不截断、不重新摘要、不改业务正文。原子安装报告文件。
+
+报告始终是唯一的整篇九章 job，等待全部过程组及仓库总结完成（或既有总结准入规则产生明确跳过记录）并发布 knowledge 后才开始。DRAFT/REVIEW 固定同一 Provider/model/effort，使用其有效 profile 校验 schema、容量和 runtime identity；不逐章分派、不并行两轮、不以缩短材料换并发。该 singleton 也受同一全局/Provider 两级 YAML 上限约束；任何上游 fatal 都不能启动它。[执行设计](../modules/model-job-execution.md)拥有调度、认证与私有保存，renderer 不创建 Provider。
 
 报告传输 Schema 对段落的 `refs` 使用有长度限制的字符串数组；**完整合法 ref 集合在模型输入中提供，并由 Java 在接收时逐项校验**，不在九章的 18 个 paragraph/item 位置重复展开同一份大枚举。九章编号、标题和结构仍使用固定槽位及单值枚举，未知来源仍以 `BUSINESS_REPORT_SOURCE_SCOPE_INVALID` 拒绝。这样来源数量增大不会因为重复枚举而触发 Provider 的 Schema 容量限制，也不减少可引用来源或改变保存格式。直接测试必须同时证明大来源集合能形成传输 Schema，以及集合外 ref 仍被拒绝。这是传输表示的缩减，不把引用合法性交给模型自行保证。
 
@@ -94,7 +96,7 @@ publisher 保存时只做必要结构检查、序列化与原子安装，不能�
 
 ### 6.1 来源外置的最小修改与验收
 
-当前Renderer在报告DRAFT/REVIEW之后追加全部来源片段；优化只删除此展示步骤，保留BusinessReport JSON及source-refs读写。报告模型原本不读取这个追加区，因此不重新调用模型，不改变Activity/Process输入。正文短ref不再输出`#source-ref-*`链接。renderer/producer版本更新以区分新Markdown bytes，业务JSON无字段变化不强制升版；历史草稿/已审报告均不覆盖。
+来源外置已交付：Renderer 在报告 DRAFT/REVIEW 后不再追加全部来源片段，保留 BusinessReport JSON 及 source-refs 读写。报告模型原本不读取这个追加区，因此无需重新调用模型，不改变 Activity/Process 输入。正文短ref不再输出`#source-ref-*`链接。renderer/producer版本区分新Markdown bytes，业务JSON无字段变化不强制升版；历史草稿/已审报告均不覆盖。
 
 Luna/xhigh直接测试：同一已审JSON重渲染后恰好九章，第二至九章业务文本、顺序与ref集合不变，正文无源码块，每个编号在独立来源文件可查；缺失/伪造ref仍拒绝，纯render零Provider。Terra只改renderer与相关checkpoint identity/直接测试，不重写提示词或业务解释。refs存在不保证语义相关，相关性仍由完整REVIEW与人工样本核对，不新增Java语义证明器。详见[优化设计](../plans/navigation-reuse-and-readable-report-design.md#8-businessreportpublisher九章只讲业务源码单独保存)。
 
@@ -108,7 +110,9 @@ Luna/xhigh直接测试：同一已审JSON重渲染后恰好九章，第二至九
 
 ## 8. 当前实现与后续测试
 
-截至080a86d，独立source-refs已存在，但renderer仍把全部来源附在第一章；本轮完成的是上述外置设计，代码尚未修改。新的四入口JDT样本报告仅完成DRAFT，REVIEW启动后失败，不能因格式检查或纯重渲染而称为已审报告。该历史结果只用于优化前后比较。
+080a86d 的历史 renderer 曾把全部来源附在第一章；来源外置已在后续 2f5af19/5008f91 交付。四入口 JDT 比较基线报告仅完成 DRAFT，REVIEW 启动后失败，仍不能因格式检查或纯重渲染而称为已审报告；历史结果只用于比较。
+
+新模型 job 并行尚未实施。报告只需接入已绑定 Provider 的有效 profile 与阶段屏障，保留当前完整九章协议。直接 scripted 测试验证只存在一个报告 DRAFT/REVIEW、实际完整 DRAFT 与原知识到达 REVIEW、所有上游完成/显式处置后才启动，以及独立纯 render 的 generate 调用数为 0；不新增语义 output wire 或逐章协议。
 
 BusinessReportPublisher 已有 DRAFT+完整 REVIEW、九章 Markdown 和四个报告文件，BusinessAnalysisWorkflow 已接通它。`PersistedBusinessRunExecutorTest` 以一个真实的已保存 Step05 fixture 和 scripted Provider 直接验证：活动 REVIEW 的目的、条件、规则、问题先进入过程/报告模型输入，报告 DRAFT 再完整进入报告 REVIEW，最终 Markdown 保留该业务段落。另有一次明确授权的 Luna/high 小包验收：它只重用已完成的 jshERP 用户登录、用户注册活动及其保守的两个独立过程，生成一份九章报告；没有把注册和登录伪造成有源码顺序的单一过程。该结果证明小包的业务语言与报告链路可用，不证明自动 Builder→整仓业务九章已经通过真实质量验收。
 

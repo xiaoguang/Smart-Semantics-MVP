@@ -49,7 +49,7 @@ publisher 只序列化、检查必要 type/ID/ref/budget、计算写入 bytes/ha
 
 技术 Module 仍先保存 payload、后 receipt，AnalysisStep store 组合其命名 semantic 文件。不得预报自身 receipt/root 构成循环。canonical framing、identity preimage、原子 install、collision 等具体规则见 [Canonical 附录](canonical-persistence-identity-contracts.md)；public request、SourceLocator、Module envelope 见 [公共接口附录](inherited-public-and-module-contracts.md)。
 
-业务材料在首次 Provider 前保存。目标是完整 REVIEW 的 activity/process 随即保存；当前两个 Explainer 都在各自循环结束后以固定 module 地址聚合 publish，不能把 publisher 简单移入循环并反复安装不同 bytes。即时逐包保存仍是独立已知缺口，本次清理/覆盖修复不扩建分片或恢复协议。报告保存完整 paragraph JSON、SourceRefs、Markdown 和 validation。inputFingerprint 包含实际内容输入、实际 Prompt 文本/版本、有效模型/output 配置、Module 版本；新 runId 不属于内容输入。跨 run 比较 fingerprint 还要经过磁盘边界完整性验证，不能只比较一个字符串就信任未知 bytes。
+业务材料在首次 Provider 前保存。已批准的[并行执行合同](../modules/model-job-execution.md#5-保存身份与失败)让 coordinator 在各 job REVIEW 完成后立即原子保存私有结果，全部完成后按稳定顺序一次安装既有 aggregate；Process aggregate 等仓库总结完成或既有规则明确跳过后才发布。当前两个 Explainer 仍在串行外循环后 publish，这项私有保存尚未实施；不能让 workers 向同一固定地址反复安装不同 bytes。报告保存完整 paragraph JSON、SourceRefs、Markdown 和 validation。inputFingerprint 包含实际内容输入、实际 Prompt 文本/版本、有效模型/output 配置、Module 版本；新 runId 与并发/时间不属于业务内容。跨 run 比较 fingerprint 还要经过磁盘边界完整性验证，不能只比较一个字符串就信任未知 bytes。
 
 使用当前 run/checkpoint stores 和 output manifest 记录已有结果，不要求新建 CanonicalRunManifestStore、固定 52/57 文件大清单、event journal、hash chain、reconciliation ledger 或同 run recovery。保留历史身份和已完成产物，不另做 Wire Reset、dual writer、兼容 alias 或第二 namespace。
 
@@ -63,11 +63,11 @@ fatal：错误 source identity、坏 bytes、危险 path、断 refs、伪 exact 
 
 ## 6. Provider 与内容审阅
 
-业务活动、过程和报告用 Luna/high。每个有界任务最多 DRAFT + 一次完整 REVIEW；后者输入原材料和完整实际 DRAFT，输出完整修订结果。Activity 的批准目标还把程序计算的 `missingEntryKeys` 交给 REVIEW，并要求响应字段 `unexplainedEntries` 存在（允许 `[]`，禁止 null/省略）；活动 keys 与其并集为全集且不相交。程序侧另存完整 `unexplainedActivityEntries` records，并按 material 聚合具体入口给 Process/Report。所有有用条件、规则、公式与长段落保留到下游和 final Markdown。
+业务活动、过程和报告用配置模型，默认 Pro Luna/high。每个 job 最多 DRAFT + 一次完整 REVIEW，同 job 固定 Provider/model/effort；后者输入原材料和完整实际 DRAFT，输出完整修订结果。Activity 的 `missingEntryKeys` 与 required `unexplainedEntries` 保持不变；活动 keys 与其并集为全集且不相交。程序侧另存完整 `unexplainedActivityEntries` records，并按 material 聚合具体入口给 Process/Report。所有有用条件、规则、公式与长段落保留到下游和 final Markdown。
 
-调用前校验预算/schema/allowlists；超容量零请求并保存未覆盖原因。started 后 transport/schema/runtime 失败停止该执行，不自动重试、切 Provider、用 API key 或重放不确定请求。内部调用属于同一 Reader Candidate，仍只允许产品 Round1 与针对具体问题另行授权的 Round2。
+调用前按绑定 Provider 的有效 profile 校验预算/schema/allowlists；超容量零请求并保存未覆盖原因。全局与每 Provider 两级 YAML 并发只控制在途 job，等待名额不排除合格材料。fatal 停止新 job 派发，保留其他已开始且自身合法 pair 的唯一 REVIEW 与结果，在既有超时内收齐终态后结束失败；不跨下游屏障、不重试/转路/重放。内部调用属于同一 Reader Candidate，仍只允许产品 Round1 与针对具体问题另行授权的 Round2。
 
-真实 Provider 需当次授权与登录状态/本地状态写入 preflight；自动测试只用 frozen fixtures 和 scripted Provider。源码本身是数据，不得服从其注释、字符串或 Markdown 内的指令。
+真实 Provider 需当次授权及其认证 preflight。订阅强制 ChatGPT auth、阻止 API 环境覆盖、不购买/自动付费 fallback；已有付费 credits 的 CLI 禁用开关尚未核实，必须先在账户侧核实，不能保证零消耗。显式 API 服务是独立配置路线，不能接管失败 job；多 key/新会话不增加共享账户额度。精确配置、隔离与官方依据见[Provider 合同](../modules/model-job-execution.md#3-provider认证与额度)。自动测试只用 frozen fixtures 和 scripted Provider。源码本身是数据，不得服从其注释、字符串或 Markdown 内的指令。
 
 ## 7. 当前实现审计
 

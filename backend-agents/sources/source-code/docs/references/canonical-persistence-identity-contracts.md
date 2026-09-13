@@ -256,6 +256,8 @@ Step01 request-admission/source-index/publish、Step02 application-profile/http-
 
 Step05 使用既有文件保存一个 EntryContext 关系模型和对应有界 Capsule 投影；新增字段遵循所属 record 的新 schema version，不创建另一 module registry、文件系统或身份框架。Step06–08 的 BusinessMaterialBuilder、ActivityExplainer、ProcessExplainer、BusinessReportPublisher 已有实现，保存总体设计列出的业务 checkpoints。旧 R0/finite-key 以及六/三/四模块目标是历史，不恢复其固定 52/57 输出要求。
 
+已批准的[模型 job 保存](../modules/model-job-execution.md#5-保存身份与失败)复用上述 canonical/原子能力：私有运行目录保存每个已审 job，coordinator 按稳定材料/组顺序一次安装既有 aggregate；不把固定 module publisher 放入并发 worker。Provider/job 独立 journal namespace 补足现有 ModelRuntimeIdentityV1 不含账户的边界，稳定 job key 与单次提交登记留在程序侧，不进入模型 packet。业务 output shape 未变就不升其 schema；仅变更的私有 config/state/metadata 版本随实现更新。并发值、排队时间和完成次序不改变业务内容 fingerprint 或数组语义顺序，身份公式不重定义。这不是自动恢复或 uncertain started 请求重放协议。
+
 ## 8. 不变量与实际边界
 
 - identity-significant bytes/refs/controls 改变产生新身份，不能覆写旧 publication。

@@ -1,5 +1,16 @@
 # JDT repository materials run
 
+The commands below describe the current serial, single-provider JSON launcher.
+The approved [model job execution design](../../docs/modules/model-job-execution.md)
+is not implemented: it moves provider settings into the existing `--config`
+document as `sourceAnalysis.modelJobs` YAML, with global and per-provider
+`maxConcurrentJobs` (default global/Pro 4), fixed DRAFT/REVIEW bindings, isolated
+authentication and private completed-job results. Target v2 replaces
+`--provider-config`; its YAML is not executable with today's v1 launcher.
+The v2 technical/material configuration basis remains independently verified,
+so changing concurrency does not require another JDT run. Follow that design
+for new implementation; preserve these current command examples until cutover.
+
 `RepositoryRunMain` is a maintenance entry point for one fixed, complete local Git commit.
 `materials-only` captures the configured commit, queues one run, executes the persisted JDT
 technical prefix once, saves its `BusinessFlowsReference`, and builds business material from that
@@ -68,6 +79,14 @@ Create this separate, ignored Provider configuration with exactly these five fie
 absolute, `journalDirectory` and `outputDirectory` are existing non-symlink directories, and it
 contains no credential or API-key field. The continuation launcher fixes the model to Luna/high and
 requires the resulting `codex_subscription` / `read-only` runtime identity.
+
+This is the current capability, not proof of strict subscription authentication:
+the current subprocess inherits environment and login-status success alone does
+not establish its auth mode. The approved design requires explicit ChatGPT auth,
+API environment isolation and local-state preflight. It cannot promise to prevent
+use of already-paid account credits; account-side verification is required before
+an authorized subscription-only run. Explicit API routes are future configured
+services, never automatic fallback after a failed call.
 
 ```json
 {

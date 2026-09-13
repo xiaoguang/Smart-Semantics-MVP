@@ -170,7 +170,7 @@ BusinessMaterialBuilder 只检查预算、映射 refs 并保存这份包。Activ
 
 ## 9. Step08：同一小样本可形成的九章业务内容
 
-以下是**单个样本范围的目标正文**，不是全仓报告或运行生成结果。简单来源标记指向上方S567/S568；优化目标在独立source-refs.jsonl保存对应片段，正文不再附源码。当前renderer仍会追加第一章折叠区，删除这一展示步骤不改变下列业务内容。
+以下是**单个样本范围的目标正文**，不是全仓报告或运行生成结果。简单来源标记指向上方S567/S568；已交付 renderer 在独立 source-refs.jsonl 保存对应片段，正文不再附源码，业务内容保持不变。
 
 1. 文档说明：本说明依据固定源码中的一个查询入口及其服务方法，描述代码定义行为；不证明实际运行成功，也不代表全仓覆盖。
 2. 业务目标：按业务单据标识查找关联财务单号，供调用方获取单据关联信息。
@@ -227,14 +227,35 @@ PARTIAL 分支的 REVIEW 返回 `unexplainedEntries=["E3","E4"]`。程序生成�
 
 任意 N 的可扩展验收另含跨包 N=9、单包 N≥12 的 E10–E12、零入口和超预算，详见[已批准清理与覆盖设计](../plans/code-cleanup-and-scalable-activity-coverage-design.md#8-可扩展性与边界推演)。
 
-## 12. 财务 dry-run 与当前清理的实施验收
+## 12. 多个任务怎样排队并汇成一份报告
 
-财务历史样本说明应怎样阅读真实来源；当前关系接力已实现，不需再研究一种证据架构。后续批准实施应：
+以下是 **SYNTHETIC_ACCEPTANCE_SCENARIO，非 jshERP 行为或实测运行**。五份冻结材料 A…E 均含完整来源，分别说明补货申请、独立查询、采购单形成、收货登记和应付账单形成。为看清排队，使用[同一 YAML 合同](../modules/model-job-execution.md#2-唯一配置入口与精确-yaml)的全局并发 3、Pro 2、API 1，activity/processGroup route 为 `[pro, api]`；默认 Pro 4 和 6/4/2 只是其他配置，不改变总 job 数。`maxMaterialsToStart≥5`。
+
+按稳定顺序分配 A→Pro、B→API、C→Pro、D→API、E→Pro；每对 DRAFT/REVIEW 均固定该 Provider/model/effort。下表每次“完成”均指完整 REVIEW 校验并保存完成，而非仅 DRAFT 返回。
+
+| 时点 | 在途 job | 等待项 | coordinator 动作 |
+| --- | --- | --- | --- |
+| 开始 | A(Pro)、B(API)、C(Pro) | D、E | 满足全局 3 / Pro 2 / API 1，各 job 独立读完整材料 |
+| B 先完成 | A(Pro)、C(Pro)、D(API) | E | 立即保存 B，释放 API 名额并派发 D，不等较慢 A |
+| C 完成 | A(Pro)、D(API)、E(Pro) | 无 | 立即保存 C，再派发 E；没有因最初只有三空位而跳过 D/E |
+| E、D、A 依次完成 | 无 | 无 | 各自立即保存，最终按 A…E 稳定聚合活动与覆盖；完成先后不表示业务顺序 |
+| 活动屏障后 | G1(Pro)、G2(API) | 无 | G1 读 A/C/D，G2 读 C/D/E；C/D 为只读共享成员。B 的单活动组按既有规则记 unmatched、零 Provider，B 仍作为独立已审活动保留 |
+| 两个有效组全部完成 | summary(Pro) | report | 完整已审组、独立活动 B 与 coverage 进入唯一总结 DRAFT/REVIEW，不能用先完成 G1 宣告全仓完成 |
+| 总结完成并发布知识 | report(Pro) | 无 | 完整知识/活动/过程进入唯一整篇九章 DRAFT，然后同绑定完整 REVIEW |
+| 报告完成 | renderer（零模型） | 无 | 根据已审 JSON 排版九章与短 refs，源码保持独立保存 |
+
+G1/G2 的联系仅在合成材料提供采购单/收货引用等实际依据时成立；一个活动属于多个组不表示两次执行，也不强制归给先完成组。所有 job 的 REVIEW 显式包含原完整材料和实际 DRAFT；A 若 DRAFT 漏 key，仍按原合同携带 missingEntryKeys，REVIEW 通过活动/显式 unexplainedEntries 闭合。不能为了让三个请求同时运行而缩短源码或活动长字段。
+
+正常且总结准入时，这个例子是 5 个活动 job、2 个有效过程组 job、1 个总结 job、1 个报告 job，共最多 18 次调用；B 的单活动组不产生过程模型调用，独立活动与 unmatched 处置继续保留，不能据此声称全仓过程覆盖完整。这不是全仓固定调用数，也不是耗时预测。若既有总结配置关闭或输入容量不满足，保存明确 notConsolidated/范围记录后才发布知识，报告不能把缺失总结说成已完成。如果 A 的 DRAFT fatal，尚未开始的 D/E 不再派发；已开始且自身合法的 B/C 完成各自唯一 REVIEW 并保留，整个执行失败，G1/G2、总结和报告均不启动，不把 A 改派 API 重试。
+
+## 13. 财务 dry-run 与后续实施验收
+
+财务历史样本说明应怎样阅读真实来源；当前关系接力、旧链清理、任意 N/v2 覆盖与具体未解释入口下传均已实现。后续并行实施应：
 
 - 保留真实 source identity、图边、Fact/Proof 与已有步骤产物。
 - 保持已完成的 Step05 带代码 EntryContext、noFlow 供材及 ordinary publish 去重，不回头修改 Step03/04 稳定算法。
-- 先安全退役旧 interpretation 链及其专属 Capsule 字段，再在现有 ActivityExplainer 实现任意 N、唯一 REVIEW 和 v2 闭合。
+- 保持已完成的旧 interpretation 链退役、任意 N、唯一 REVIEW 和 v2 闭合；只提取现有单 job 处理并接入有界池。
 - 把具体未解释入口经 Step07 送到第9章；集合 PARTIAL 不冒充语义完成。
-- 用四入口 scripted 链与第二领域定向测试验收；一个小包通过不宣布整仓完成。
+- 用 frozen/scripted 测试核验两级上限、超过 12 个 job/并发 1 不漏任务、重叠组、稳定聚合、完整审阅、认证隔离、失败保存和 renderer 零 Provider；一个小包通过不宣布整仓完成。
 
 以上是设计验收目标。本文没有运行新 Maven、客户程序、capture、Provider 或最终报告生成。

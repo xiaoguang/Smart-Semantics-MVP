@@ -28,6 +28,8 @@ sourceAnalysis:
 
 不从客户仓库读取会改变分析宿主的 YAML。客户 POM/配置只当被分析文本。没有 CLI命令级或环境变量的隐式覆盖优先级：组合根加载一次，Java调用和CLI用同一有效配置。需要更换工具时新建执行，不在旧运行中改值。
 
+已批准的[模型 job YAML](../model-job-execution.md#2-唯一配置入口与精确-yaml)在同一宿主运行文档新增 `sourceAnalysis.modelJobs`，由现有 RepositoryRunMain 组合根统一解析；本 loader 的 engine 字段仍只为 javaEngine/jdt。实现时组合根只把这两个字段投影给当前严格 `SourceAnalysisDocument`，不能假称旧 loader 接受新增 modelJobs，也不建第二配置入口。全局/每 Provider 模型并发不改变 JDT collect 的单 worker 顺序边界；模型池在技术取材与材料保存后才启动。技术/材料基础与模型执行配置分别严格保存核对，改并发值不使已存技术材料失效。
+
 ## 2. JavaCodeEngineFactory 与会话 Interface
 
 下面是**内部工具 Interface**，不替换公开 `RepositoryAnalysisAgent`，也不暴露 Eclipse/JavaParser AST：

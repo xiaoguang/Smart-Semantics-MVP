@@ -91,6 +91,10 @@
 - docs/modules/java-code-engines/ owns the approved engine Interface,
   JDT/Core internals, common material contract and two-phase migration.
   These are internal Modules, not extra production analysis steps.
+- docs/modules/model-job-execution.md owns the approved, not-yet-implemented
+  Java 17 model job pool, single YAML configuration, Provider/auth binding,
+  private per-job saving, failure handling and direct verification. Synchronize
+  its affected active consumers; preserve historical runs and completed plans.
 
 ## Selectable Java code engines
 
@@ -181,13 +185,31 @@
 - Critical architecture/design uses gpt-5.6-sol / ultra or gpt-6-astra /
   ultra. Production implementation uses gpt-5.6-terra / xhigh after design and
   RED. TDD test writing, bounded source reading and review use gpt-5.6-luna /
-  xhigh. Product activity/process/report DRAFT and REVIEW use gpt-5.6-luna /
-  high.
+  xhigh. Product activity/process/report DRAFT and REVIEW default to configured
+  Codex Pro gpt-5.6-luna / high; explicit other Provider/model services follow
+  the approved model-job design. One job keeps one binding for both rounds.
 - Automated tests use frozen fixtures and a deterministic scripted Provider.
   They never invoke a live model, network source, API key or customer build.
-- A live Luna task needs current explicit authorization, logged-in Codex
-  session preflight, one frozen input package and declared limits. There is no
-  API-key fallback.
+- Live product tasks need current explicit authorization, one frozen input
+  package, declared limits and preflight of the bound authentication context.
+  A subscription Provider enforces ChatGPT auth, blocks API environment
+  overrides and never buys credits or falls back to a metered route. No CLI
+  switch preventing use of already-paid credits has been verified; require
+  account-side checks instead of promising zero paid-credit use. Explicit API
+  Providers are approved as a design option only and need authorization for
+  each actual run; they never receive a failed subscription job as fallback.
+- A job is one material's DRAFT then complete REVIEW and saving. Activity jobs
+  run in parallel, then all finish; process-group jobs run in parallel, then
+  all finish; at most one repository-summary job follows under existing
+  eligibility/explicit-skip rules; one whole-nine-chapter report job follows
+  published knowledge; rendering remains zero-Provider. Shared activities are
+  immutable and process membership remains many-to-many.
+- Configure only global and each Provider/account service maxConcurrentJobs
+  in the single YAML owner; defaults are global 4 and Pro Luna/high 4. These
+  are in-flight job limits, not maxMaterialsToStart, Builder K or actual N.
+  Eligible queued jobs are not skipped when a concurrency slot is unavailable.
+  Multiple keys or fresh sessions sharing an account/project do not create
+  independent quotas; declared/observable shared scopes use one Provider cap.
 - Step 05 is the sole owner of entry-context relationships and related source
   excerpts, including safe entries without a strict Flow. Its existing files
   hold the context; Capsule is its budgeted projection, not another chain model.
@@ -240,8 +262,11 @@
 - Each activity package, process group, repository summary and report uses at
   most one DRAFT plus one REVIEW. Capacity failure means zero requests plus a
   concrete uncovered reason. Once a request starts, transport/schema/runtime
-  failure is fatal for that execution: never retry, switch Provider, fall back
-  to an API key, replay or synthesize success.
+  failure is fatal for that execution: stop new job dispatch; already-started
+  pairs whose own DRAFT is valid finish their one REVIEW under existing
+  timeouts and preserve outputs. Collect terminal outcomes, then fail without
+  downstream success. Never retry, switch Provider, fall back to an API key,
+  replay or synthesize success.
 - `maxMaterialsToStart` is the explicit per-execution ActivityExplainer launch
   cap. Use the dedicated `FLOW_INTERPRETATION` materials-only target for
   zero-Provider planning; a final-document run requires a positive cap. A cap
@@ -359,14 +384,17 @@
   - Step 08: business-report.json, source-refs.jsonl, document.md,
     report-validation.json
 - Save business-materials after compilation and before the first model call.
-  The target is to save each completed reviewed activity/process package
-  immediately so later failures preserve completed checkpoints. Current
-  ActivityExplainer/ProcessExplainer aggregate and publish after their loops;
-  fixed module addresses cannot be repeatedly installed with differing bytes.
-  Immediate per-package persistence remains an independent known gap and must
-  not be claimed complete or expanded into a recovery subsystem. In-process
-  callers may pass typed immutable objects and need not fresh-reopen between
-  internal operations.
+  The approved job design has the coordinator save each complete reviewed job
+  to a private run result immediately, then aggregate in stable material/group
+  order and publish once at the existing fixed address. Process publication
+  waits for summary completion or an explicit existing skip. Current
+  ActivityExplainer/ProcessExplainer still publish after their serial loops;
+  per-job saving and concurrency must not be claimed implemented. Workers do
+  not mutate shared collections or repeatedly install differing bytes at one
+  address. Keep Provider/job journal namespaces isolated, execution metadata
+  outside model input, and each job submitted once. No recovery subsystem or
+  new public artifacts/Module addresses/state enums. In-process callers pass
+  immutable objects without per-internal-operation fresh reopen.
 - A simple inputFingerprint covers actual content inputs excluding a new
   runId, actual Prompt content/version, effective model/output configuration
   and Module version. Reuse requires equality; Prompt text or effective input
@@ -384,7 +412,9 @@
   executeStep creates a new execution identity; it is not same-run resume.
 - Java and CLI may arrive before authenticated loopback HTTP. Completing all
   three adapters is not a business-quality gate; HTTP and a second product
-  Provider are deferred integrations.
+  Provider are not current implemented capabilities. Explicit API service
+  configuration is now part of the approved model-job design; HTTP remains
+  deferred. The design alone authorizes neither live API calls nor billing.
 - No public request/response accepts or exposes filesystem Path. Raw source,
   prompts and model responses remain protected according to existing artifact
   policy.
