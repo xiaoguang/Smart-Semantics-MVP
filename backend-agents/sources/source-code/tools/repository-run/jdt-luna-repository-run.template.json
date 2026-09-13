@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "repository-run-config-v1",
+  "schemaVersion": "repository-run-config-v2",
   "policyRegistry": "jdt-artifact-policy-set-v1.json",
   "source": {
     "repositoryPath": "/absolute/path/to/read-only/jshERP-checkout",
@@ -17,6 +17,32 @@
     "jdt": {
       "installation": "/absolute/path/to/jdtls-distribution",
       "javaHome": "/absolute/path/to/java-17-home"
+    },
+    "modelJobs": {
+      "maxConcurrentJobs": 4,
+      "journalDirectory": "/absolute/path/to/ignored/run-journal",
+      "outputDirectory": "/absolute/path/to/ignored/model-output",
+      "providers": {
+        "pro": {
+          "kind": "codexSubscription",
+          "quotaScope": "declared-pro-account",
+          "maxConcurrentJobs": 4,
+          "model": "gpt-5.6-luna",
+          "reasoningEffort": "high",
+          "executable": "/absolute/path/to/codex",
+          "timeoutSeconds": 600,
+          "auth": {
+            "mode": "chatgpt",
+            "codexHomeEnv": "SOURCE_ANALYSIS_PRO_HOME"
+          }
+        }
+      },
+      "routing": {
+        "activity": ["pro"],
+        "processGroup": ["pro"],
+        "repositorySummary": ["pro"],
+        "report": ["pro"]
+      }
     }
   },
   "inputs": {

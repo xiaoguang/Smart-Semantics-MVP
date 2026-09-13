@@ -39,7 +39,7 @@ JDT 第一阶段已经通过两层验收：安装的 JDT LS 1.61.0 与独立 JDT
 
 ## 九章与阅读依据
 
-[导航复用、共享正文、单次本地CI与来源外置](docs/plans/navigation-reuse-and-readable-report-design.md)已交付，测量结果保留在该设计的验收节。新的[模型任务并行设计](docs/modules/model-job-execution.md)已批准但尚未实施：活动包并行 → 全部完成 → 过程组并行 → 全部完成 → 仓库总结（最多一个，保留既有显式跳过规则）→ 唯一整篇九章 → 零模型排版。每个 job 固定 Provider/model 做一次 DRAFT 与完整 REVIEW；YAML 配置全局和每 Provider 两级并发，默认 Pro Luna/high 各 4。显式 API 服务独立配置，共享账户额度不因多 key/新会话增加；失败不重试或转路。当前 CLI 仍是串行单 Provider，目标 YAML 不能直接用于当前版本。
+[导航复用、共享正文、单次本地CI与来源外置](docs/plans/navigation-reuse-and-readable-report-design.md)已交付，测量结果保留在该设计的验收节。[模型任务并行设计](docs/modules/model-job-execution.md)也已接入正式运行链，其[本地验证记录](docs/supplements/model-job-parallel-execution-verification.md)保存 12 个 Activity job、两个 Process-group job 和两级并发峰值。同一 `repository-run-config-v2` YAML/JSON 配置全局及每 Provider 上限、稳定路由和非秘密认证引用；Activity 与 Process-group 各以完整 DRAFT→REVIEW 为一个并行 job，完成结果立即保存后稳定聚合。Codex Subscription 强制 ChatGPT 登录上下文并清除 API 认证环境；显式 OpenAI API 使用 Responses SDK、关闭自动重试。过程组全部完成后才执行至多一次仓库总结，随后只生成并审阅一份九章。共享账户额度不因多 key/新会话增加；失败不重试或转路。
 
 固定章节为：文档说明、业务目标、业务对象、业务活动、字段与维度、对象关系、指标口径、示例问题、待确认事项。模型写自然段 JSON 并完整审阅；程序排 Markdown 和短 ref。完整已审条件、规则与长段落保留到报告，不只传递摘要标题。
 
@@ -51,7 +51,7 @@ SourceRef 定位冻结文件、行段和原文。Fact/Proof 只证明支持的�
 
 - [引擎完整设计和各子模块](docs/modules/java-code-engines/README.md)：本轮设计主入口。
 - [配置与共同材料合同](docs/modules/java-code-engines/contracts-and-configuration.md)
-- [模型任务、两级并发 YAML、认证与保存](docs/modules/model-job-execution.md)：后续并行实现依据。
+- [模型任务、两级并发 YAML、认证与保存](docs/modules/model-job-execution.md)：已实现的并行执行合同。
 - [JDT子模块算法与失败行为](docs/modules/java-code-engines/jdt-engine.md)
 - [先JDT、后JavaParser的接入与测试指南](docs/modules/java-code-engines/integration-and-javaparser.md)
 

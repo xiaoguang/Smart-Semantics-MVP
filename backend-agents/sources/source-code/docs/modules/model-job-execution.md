@@ -1,6 +1,6 @@
 # 模型任务并行执行
 
-> 已批准的目标设计，尚未实施。本轮只同步 Markdown；不运行模型、扫描、测试或构建。保留 Java 17、八步、四个业务 Module 和唯一 `RepositoryAnalysisAgent`。本页拥有任务调度、Provider 绑定、YAML、即时保存与验收合同；业务内容仍由 [Step06](../analysis-steps/06-flow-interpretation.md)、[Step07](../analysis-steps/07-repository-knowledge.md)、[Step08](../analysis-steps/08-nine-section-document.md) 拥有。
+> 已实现的目标设计。严格 v2 单配置、基础/执行身份分离、两级有界并发、稳定路由、逐 Activity/Process-group 保存、Codex Subscription 认证隔离及 OpenAI Responses adapter 已接入正式运行链。Activity 与 Process-group 均把完整 DRAFT→REVIEW 作为不可拆 job；仓库总结和整篇报告仍各至多一个串行 job。本页拥有任务调度、Provider 绑定、YAML、即时保存与验收合同；业务内容仍由 [Step06](../analysis-steps/06-flow-interpretation.md)、[Step07](../analysis-steps/07-repository-knowledge.md)、[Step08](../analysis-steps/08-nine-section-document.md) 拥有。
 
 ## 1. 并行单位与阶段顺序
 
@@ -24,7 +24,7 @@
 
 在既有 `RepositoryRunMain --config` 文档的 `sourceAnalysis.modelJobs` 中配置模型执行。目标根版本为 `repository-run-config-v2`；`.yaml` / `.yml` 由既有 Jackson YAML 能力加载，同形 JSON 也归一到同一个配置对象。这是现有启动器的版本升级，不新增 CLI、另一配置文件或公开 Agent 方法。`source`、`paths`、`inputs`、`technical`、`business`、`policyRegistry` 仍由原拥有者处理。
 
-下面是需合入完整运行配置的 **目标 YAML 节选**，不是当前可运行模板。它说明全局 6、Pro 4、API 2；数字限制同时在途任务，不限制总材料数。
+下面是归一化后的 v2 YAML 形状。启动器严格加载 JSON/YAML、补齐默认值、校验路由并保存非秘密执行配置；任务池、API adapter 和混合路由均使用这一配置。它说明全局 6、Pro 4、API 2；数字限制同时在途任务，不限制总材料数。
 
 ```yaml
 schemaVersion: repository-run-config-v2
@@ -79,7 +79,7 @@ business:
 | provider.kind | 必填闭集 `codexSubscription` / `openaiApi`；仅支持已实现并验证的 adapter，缺 adapter 启动前拒绝 |
 | provider.quotaScope | 必填非秘密字符串，声明本 Provider 实际共享额度范围；已知相同账户/组织项目/共享模型额度必须合并到一个 Provider 定义，重复 scope 拒绝 |
 | provider.maxConcurrentJobs | Codex 省略为 4；API 必须显式提供；同全局正整数校验，可大于全局值，有效同时任务数仍取二者约束 |
-| provider.model / reasoningEffort | Codex 省略分别为 `gpt-5.6-luna` / `high`；API 均必填；非空且受该 adapter/模型支持，未知或不支持的组合提前失败，不降档或替换 |
+| provider.model / reasoningEffort | Codex 省略分别为 `gpt-5.6-luna` / `high`；API 均必填；本地先校验安全名称和 adapter 支持的 effort 闭集。账户侧实际不可用的 model/effort 由首次请求单次失败，不重试、不降档或替换 |
 | provider.timeoutSeconds | 省略为 600；正整数且可安全转换为现有超时类型；每次 DRAFT/REVIEW 沿用已有进程/请求超时，不新增 job 总时限开关 |
 | Codex executable / auth | executable 必填本机绝对可执行路径；auth 必填且 exact keys 为 `mode: chatgpt, codexHomeEnv`；后者是已有登录上下文目录的环境变量名，不能放 token 或内联凭据 |
 | API endpoint / auth | endpoint 省略为 `https://api.openai.com/v1`，必须为适配器明确支持的 HTTPS endpoint，无 userinfo；auth exact keys 为 `mode: apiKey, apiKeyEnvs`，非空且无重复环境变量名，值不写 YAML |
@@ -90,9 +90,9 @@ business:
 
 组合根解析整个配置一次，输出不可变有效 engine 与 model-job 配置。当前 `EngineConfigurationLoader.SourceAnalysisDocument` 只接受 javaEngine/jdt；实现时由组合根向它投影 **仅含这两个字段的 sourceAnalysis 子树**，不能把 modelJobs 原样传入并假称旧 loader 已支持。JDT `collect` 的单 worker 范围仍限技术取材；模型池在材料保存后才工作。
 
-当前 CLI 实际是 `repository-run-config-v1` JSON 加独立 `repository-run-provider-v1` / `--provider-config`，且硬编码单个 Luna/high Provider。目标 v2 将后者 executable/timeout/journal/output 吸收到上述同一配置，并移除模型模式的第二配置入口；同时提供旧 provider-config 或旧根版本显式失败，不静默合并或双读。此轮不改 JSON/YAML 模板、loader 或命令。有效非秘密路由、Provider/model/effort 配置归入已有 profile/toolchain/prompt 配置引用及运行诊断，不往 public request 塞路径/密钥，也不把技术阶段 `provider: NONE` 误当业务身份。
+当前 CLI 使用 `repository-run-config-v2` 的单一 JSON/YAML 配置，并在模型模式拒绝旧根版本、独立 `repository-run-provider-v1` 和 `--provider-config`。executable、timeout、journal/output 已归入 `sourceAnalysis.modelJobs`；材料模式只验证其结构，模型模式在读取 continuation state 前预检认证环境并构造全部已路由 Provider。有效非秘密路由、Provider/model/effort 配置归入已有运行诊断，不往 public request 塞路径/密钥，也不把技术阶段 `provider: NONE` 误当业务身份。
 
-当前 continuation state 用整个 canonical `--config` 文档 SHA 校验，因此不能只往它加 modelJobs 就宣布可改变并发而复用材料。v2 精确采用 `baseConfigurationSha256 = SHA256(canonicalJson(normalizedV2Document 删除且只删除 sourceAnalysis.modelJobs))`，其余 source/technical/business/inputs 等检查全部保留。私有材料状态 exact keys 为 `schemaVersion: repository-run-state-v2, baseConfigurationSha256, runId, businessFlowsPublication`，后两项及 publication 子字段原样保留；它不保存调度 SHA。每次模型执行前另在现有私有运行区原子保存 `{schemaVersion: model-job-execution-config-v1, runId, modelJobsSha256, modelJobs}`，后两者为补齐默认值后的非秘密 modelJobs 对象及其 canonical SHA，保留引用名称但绝不写解析后的 key/token 值。无 modelJobs 的 materials-only 不产生该记录。
+v2 continuation state 已采用 `baseConfigurationSha256 = SHA256(canonicalJson(normalizedV2Document 删除且只删除 sourceAnalysis.modelJobs))`，其余 source/technical/business/inputs 等检查全部保留。私有材料状态 exact keys 为 `schemaVersion: repository-run-state-v2, baseConfigurationSha256, runId, businessFlowsPublication`，后两项及 publication 子字段原样保留；它不保存调度 SHA。每次模型执行前另在现有私有运行区原子保存 `{schemaVersion: model-job-execution-config-v1, runId, modelJobsSha256, modelJobs}`，后两者为补齐默认值后的非秘密 modelJobs 对象及其 canonical SHA，保留引用名称但绝不写解析后的 key/token 值。无 modelJobs 的 materials-only 不产生该记录。
 
 只改并发 4→8 不改变 base SHA，不重跑 JDT；模型/Prompt/输出等真实内容配置变化仍使相应业务 fingerprint 失效。每次核验 base SHA、保存的执行配置 SHA 及实际技术 publication，不能将未知 bytes 当成可信。此变更只升级上述本地 config/state，不改变 public run-request-v2。旧 v1 状态不就地转换或覆盖；旧完成产物通过既有显式新执行/checkpoint 复用边界使用，不引入同 run 自动恢复。
 
@@ -102,7 +102,7 @@ business:
 
 Codex Provider 可以只引用一个已登录的上下文。每个 job 使用新的对话/调用会话；每次 `codex exec --ephemeral` 保持独立请求临时目录、schema、输出与诊断。DRAFT 和 REVIEW 显式传完整输入，不依赖 resume。Codex 自己管理登录上下文的状态；应用不在并发运行中 login/logout、改共享配置、切全局账号、复制凭据或新建 cap 数量的登录目录。不同账户可在不同 Provider 引用不同上下文。API adapter 每个 job 固定一份 key 引用与独立请求对象，不修改进程全局环境。
 
-`codexSubscription` 必须强制使用 ChatGPT 认证（官方 `forced_login_method="chatgpt"`），并针对实际选定的上下文确认登录方式及本地状态可初始化。仅 `codex login status` exit 0 不足。子进程环境清理/屏蔽 API-key 认证覆盖；显式固定 auth、model、effort、read-only sandbox，不能从继承环境或其他配置启用计量 API。所选 CLI 版本无法可靠执行这些限制就提前失败。[官方认证说明](https://learn.chatgpt.com/docs/auth)区分 ChatGPT 订阅认证与 API-key 计量认证。
+`codexSubscription` 必须强制使用 ChatGPT 认证（官方 `forced_login_method="chatgpt"`），并针对实际选定的上下文确认登录方式及本地状态可初始化。Provider 构造时只做一次 `codex login status`，要求退出成功且受限诊断明确为 ChatGPT、不是 API key；job 请求不重复预检。子进程环境清理/屏蔽 API-key 认证覆盖；显式固定 auth、model、effort、read-only sandbox，不能从继承环境或其他配置启用计量 API。所选 CLI 版本无法可靠执行这些限制就提前失败。[官方认证说明](https://learn.chatgpt.com/docs/auth)区分 ChatGPT 订阅认证与 API-key 计量认证。
 
 订阅模式不购买额度，不接入 API fallback，额度耗尽即失败并保留结果。**当前没有核实到 CLI 可以禁止消耗账户已有付费 credits 的开关，不能保证零额外 credits 消耗。** [官方定价](https://learn.chatgpt.com/docs/pricing)说明已有 credits 可在套餐额度用尽后继续支持使用。启动前须由账户侧核实额度、已有 credits/计费状态及是否满足本次仅套餐使用的要求；无法确认时不启动。不得发明 `no-paid-credits` 等保证开关。增加新会话不会增加订阅额度。
 
@@ -124,9 +124,9 @@ Codex Provider 可以只引用一个已登录的上下文。每个 job 使用新
 
 ## 5. 保存、身份与失败
 
-当前两个 Explainer 在全部外循环之后向固定 module 地址聚合 publish；直接把 publisher 移进 worker 会 collision。目标是在既有运行私有区域保存每个完成 REVIEW 的独立结果：coordinator 收到结果就以稳定 job key 原子保存，然后回收名额；一个较慢的前序 job 不能阻塞后序结果保存。全部结束后，coordinator 按原材料/组顺序一次合并全局 coverage/ID 映射；activity aggregate 在活动屏障后安装，process/knowledge aggregate 必须再等总结完成或既有规则明确跳过后才一次安装。worker 不共享可变 `ArrayList/Map`，不发布同一固定 aggregate 地址。
+ActivityExplainer 已把一份材料提取为一个不可变完整 DRAFT→REVIEW job；ProcessExplainer 对每个有资格的过程组执行同样的不可拆 job。两者的有界 completion queue 都执行全局及 Provider 两级上限，在完成 REVIEW 后先私有保存再释放名额，最终按稳定材料/组顺序聚合。过程 aggregate 仍须等全部组及至多一次仓库总结完成，或按既有规则明确跳过总结后才安装。worker 不共享可变业务集合，也不发布同一固定 aggregate 地址。
 
-复用已有私有 journalDirectory 和安全原子写入能力；每个运行下增加有限的 `model-jobs/<phase>/<job-key>/reviewed-result.json` 私有结果，不新增公开 artifact key、step/module 地址或枚举。phase 为 activity/process-group/repository-summary/report；job key 用当前 canonical framing 对 phase、原材料/组稳定身份（singleton 用固定 scope）、内容输入 fingerprint 求 SHA-256。它是调度元数据，不进入模型输入。私有记录保存完整已审结果、Provider key/非秘密 quotaScope、ModelRuntimeIdentityV1、输入 fingerprint 与诊断，不保存 token/key 值。重复相同 bytes 可认已保存，冲突拒绝；不覆盖历史产物。
+Activity 使用 `model-jobs/<run-hex>/activity/<job-key>/reviewed-result.json`，Process-group 使用并列的 `process-group` 目录；二者均为安全原子 no-replace 写入。job key/input fingerprint覆盖实际内容、Prompt、schema、预算和有效 runtime identity，这些调度元数据不进入模型输入。记录包含完整已审结果、Provider key、非秘密 quotaScope 与实际 runtime identity，不保存 token/key 值；同 bytes 幂等，异 bytes 冲突。singleton summary/report 的每次请求与响应由 Provider journal 保存，最终知识/报告仍由既有 canonical module publication 安装。
 
 `RunJournalStructuredProvider` 目前按一个 `ModelRuntimeIdentityV1(provider,model,reasoningEffort,sandbox)` 校验，身份里没有账户；最小修改是每个已绑定 Provider/job 使用独立私有 journal namespace，保持 request/response 身份验证。不同账户上相同模型/输入不能串读；同一 job 只提交一次，同一进程维护单一 job-key 登记，重复排队不能发第二次 DRAFT。不同材料即使模型输入 bytes 相同也不会互相抢写。DRAFT/REVIEW 仍分别记录实际请求及输出；不改业务 packet 增加调度 ID。
 
@@ -136,14 +136,14 @@ inputFingerprint 继续覆盖实际完整内容、实际 Prompt 文本/版本、
 
 协调器等待/收集所有已开始 job 的终态或既有 timeout，保留已经成功的私有结果与上游产物，最终以现有 FAILED 路径结束；没有所有必需结果就不安装成功 aggregate，不跨过阶段屏障开始总结或报告。保存失败同为 fatal。没有 retry、自动 reroute、failed-call replay、同 run takeover 或终态修复。后续人可观察/显式复用可验证的完成产物；本文不增加自动恢复协议。
 
-## 6. 最小实施顺序与定向验证
+## 6. 已完成实现与定向验证
 
-这是后续实现工作单的依据，不是本轮已完成代码：
+本节列出当前实现的验收面。scripted 并发、Provider 隔离和屏障的实测数字见[并行执行验证记录](../supplements/model-job-parallel-execution-verification.md)。
 
-1. Luna/xhigh 在既有配置/Provider/explainer/workflow seams 写 frozen/scripted 行为 RED；Terra/xhigh 增加 v2 单配置解析及严格认证绑定。
-2. 提取每材料/过程组不可变结果，接入一个池和两级名额；复用 BusinessAnalysisWorkflow 现有阶段边界。
-3. 接通逐 job 私有保存、Provider/job journal namespace、单次提交与最终稳定 aggregate。接线既有 CLI / PersistedBusinessRunExecutor；移除硬编码单 Provider 和旧第二配置入口。
-4. 完成下面的直接测试与文档同步，再由用户当前授权范围决定是否做真实小样本；不重做旧清理、JDT 优化或失败产品调用。
+1. v2 单配置解析、严格认证绑定及旧第二配置入口拒绝已经接入组合根。
+2. Activity 与 Process-group 都已提取不可变的完整 DRAFT→REVIEW job，并执行全局和 Provider 两级限制。
+3. 逐 job 私有保存、Provider/job journal namespace、稳定 aggregate 与 `PersistedBusinessRunExecutor` 阶段屏障已经接通。
+4. 下列直接测试均使用 frozen/scripted 或替身 Provider；真实模型性能仍须在另行授权的运行中测量。
 
 | 直接测试 | 需要观察的行为 |
 | --- | --- |

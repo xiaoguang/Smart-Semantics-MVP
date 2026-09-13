@@ -10,6 +10,7 @@ import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
@@ -31,11 +32,12 @@ class CodexSubscriptionStructuredProviderTest {
             .getConstructor(Path.class, String.class, String.class, Duration.class)
             .newInstance(Path.of("/trusted/codex"), "gpt-5.6-luna", "high", Duration.ofSeconds(30));
     AtomicReference<Object[]> invocation = new AtomicReference<>();
+    AtomicInteger preflightCalls = new AtomicInteger();
     Object command =
         Proxy.newProxyInstance(
             commandType.getClassLoader(),
             new Class<?>[] {commandType},
-            recordingCommand(invocation));
+            recordingCommand(invocation, preflightCalls));
     Object provider =
         providerType.getConstructor(profileType, commandType).newInstance(profile, command);
     StructuredModelRequest request =
@@ -56,6 +58,7 @@ class CodexSubscriptionStructuredProviderTest {
                 request);
 
     assertThat(invocation.get()).isNotNull();
+    assertThat(preflightCalls).hasValue(1);
     assertThat((String) invocation.get()[1])
         .contains("只用中文返回 JSON。", "allowlistedRefs", "S1")
         .doesNotContain("OPENAI_API_KEY", "api key");
@@ -85,9 +88,11 @@ class CodexSubscriptionStructuredProviderTest {
             commandType.getClassLoader(),
             new Class<?>[] {commandType},
             (proxy, method, arguments) ->
-                ImmutableBytes.copyOf(
-                    "{\n  \"items\" : [ \"x\" ],\n  \"answer\" : \"ok\"\n}"
-                        .getBytes(StandardCharsets.UTF_8)));
+                "preflight".equals(method.getName())
+                    ? null
+                    : ImmutableBytes.copyOf(
+                        "{\n  \"items\" : [ \"x\" ],\n  \"answer\" : \"ok\"\n}"
+                            .getBytes(StandardCharsets.UTF_8)));
     Object provider =
         providerType.getConstructor(profileType, commandType).newInstance(profile, command);
 
@@ -108,8 +113,13 @@ class CodexSubscriptionStructuredProviderTest {
         .isEqualTo("{\"answer\":\"ok\",\"items\":[\"x\"]}");
   }
 
-  private static InvocationHandler recordingCommand(AtomicReference<Object[]> invocation) {
+  private static InvocationHandler recordingCommand(
+      AtomicReference<Object[]> invocation, AtomicInteger preflightCalls) {
     return (proxy, method, arguments) -> {
+      if ("preflight".equals(method.getName())) {
+        preflightCalls.incrementAndGet();
+        return null;
+      }
       if (!"execute".equals(method.getName()) || arguments.length != 3) {
         throw new AssertionError("unexpected Codex command interaction");
       }

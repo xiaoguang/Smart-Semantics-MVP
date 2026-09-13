@@ -13,18 +13,50 @@ import org.sourceanalysis.app.artifact.ImmutableBytes;
 final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand {
 
   @Override
+  public void preflight(CodexSubscriptionProfile profile) {
+    Path temporaryDirectory = null;
+    try {
+      temporaryDirectory = Files.createTempDirectory("source-analysis-codex-preflight-");
+      Path diagnosticFile = temporaryDirectory.resolve("login-status.txt");
+      ProcessBuilder statusBuilder =
+          new ProcessBuilder(profile.executable().toString(), "login", "status")
+              .redirectErrorStream(true)
+              .redirectOutput(diagnosticFile.toFile());
+      isolateSubscriptionAuthentication(statusBuilder, profile);
+      Process status = statusBuilder.start();
+      if (!status.waitFor(
+          profile.timeout().toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)) {
+        status.destroyForcibly();
+        throw failure("CODEX_SUBSCRIPTION_PREFLIGHT_FAILED", null);
+      }
+      String diagnostic = readAtMost(diagnosticFile).toLowerCase(Locale.ROOT);
+      if (status.exitValue() != 0
+          || !diagnostic.contains("chatgpt")
+          || diagnostic.contains("api key")) {
+        throw failure("CODEX_SUBSCRIPTION_PREFLIGHT_FAILED", null);
+      }
+    } catch (IOException | InterruptedException failure) {
+      if (failure instanceof InterruptedException) {
+        Thread.currentThread().interrupt();
+      }
+      throw failure("CODEX_SUBSCRIPTION_PREFLIGHT_FAILED", failure);
+    } finally {
+      deletePreflight(temporaryDirectory);
+    }
+  }
+
+  @Override
   public ImmutableBytes execute(
       CodexSubscriptionProfile profile, String prompt, ImmutableBytes outputJsonSchema) {
     Path temporaryDirectory = null;
     try {
-      preflight(profile);
       temporaryDirectory = Files.createTempDirectory("source-analysis-codex-");
       Path schema = temporaryDirectory.resolve("response-schema.json");
       Path output = temporaryDirectory.resolve("response.json");
       Path standardOutput = temporaryDirectory.resolve("stdout.txt");
       Path standardError = temporaryDirectory.resolve("stderr.txt");
       Files.write(schema, outputJsonSchema.copyToByteArray());
-      Process process =
+      ProcessBuilder processBuilder =
           new ProcessBuilder(
                   List.of(
                       profile.executable().toString(),
@@ -36,6 +68,8 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
                       "--model",
                       profile.model(),
                       "--config",
+                      "forced_login_method=\"chatgpt\"",
+                      "--config",
                       "model_reasoning_effort=\"" + profile.reasoningEffort() + "\"",
                       "--output-schema",
                       schema.toString(),
@@ -44,8 +78,9 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
                       "-"))
               .directory(temporaryDirectory.toFile())
               .redirectOutput(standardOutput.toFile())
-              .redirectError(standardError.toFile())
-              .start();
+              .redirectError(standardError.toFile());
+      isolateSubscriptionAuthentication(processBuilder, profile);
+      Process process = processBuilder.start();
       try (OutputStream stdin = process.getOutputStream()) {
         stdin.write(prompt.getBytes(StandardCharsets.UTF_8));
       }
@@ -75,18 +110,16 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
     }
   }
 
-  private static void preflight(CodexSubscriptionProfile profile)
-      throws IOException, InterruptedException {
-    Process status =
-        new ProcessBuilder(profile.executable().toString(), "login", "status")
-            .redirectError(ProcessBuilder.Redirect.DISCARD)
-            .start();
-    if (!status.waitFor(profile.timeout().toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)) {
-      status.destroyForcibly();
-      throw failure("CODEX_SUBSCRIPTION_PREFLIGHT_FAILED", null);
-    }
-    if (status.exitValue() != 0) {
-      throw failure("CODEX_SUBSCRIPTION_PREFLIGHT_FAILED", null);
+  private static void isolateSubscriptionAuthentication(
+      ProcessBuilder processBuilder, CodexSubscriptionProfile profile) {
+    var environment = processBuilder.environment();
+    environment.remove("OPENAI_API_KEY");
+    environment.remove("OPENAI_ADMIN_KEY");
+    environment.remove("OPENAI_BASE_URL");
+    environment.remove("OPENAI_ORG_ID");
+    environment.remove("OPENAI_PROJECT_ID");
+    if (profile.codexHome() != null) {
+      environment.put("CODEX_HOME", profile.codexHome().toString());
     }
   }
 
@@ -102,6 +135,18 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
       Files.deleteIfExists(directory);
     } catch (IOException ignored) {
       // A private temporary diagnostic may remain; it is never a source or public artifact.
+    }
+  }
+
+  private static void deletePreflight(Path directory) {
+    if (directory == null) {
+      return;
+    }
+    try {
+      Files.deleteIfExists(directory.resolve("login-status.txt"));
+      Files.deleteIfExists(directory);
+    } catch (IOException ignored) {
+      // The bounded preflight diagnostic contains no source material and is never published.
     }
   }
 

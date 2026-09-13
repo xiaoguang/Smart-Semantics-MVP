@@ -49,7 +49,7 @@ publisher 只序列化、检查必要 type/ID/ref/budget、计算写入 bytes/ha
 
 技术 Module 仍先保存 payload、后 receipt，AnalysisStep store 组合其命名 semantic 文件。不得预报自身 receipt/root 构成循环。canonical framing、identity preimage、原子 install、collision 等具体规则见 [Canonical 附录](canonical-persistence-identity-contracts.md)；public request、SourceLocator、Module envelope 见 [公共接口附录](inherited-public-and-module-contracts.md)。
 
-业务材料在首次 Provider 前保存。已批准的[并行执行合同](../modules/model-job-execution.md#5-保存身份与失败)让 coordinator 在各 job REVIEW 完成后立即原子保存私有结果，全部完成后按稳定顺序一次安装既有 aggregate；Process aggregate 等仓库总结完成或既有规则明确跳过后才发布。当前两个 Explainer 仍在串行外循环后 publish，这项私有保存尚未实施；不能让 workers 向同一固定地址反复安装不同 bytes。报告保存完整 paragraph JSON、SourceRefs、Markdown 和 validation。inputFingerprint 包含实际内容输入、实际 Prompt 文本/版本、有效模型/output 配置、Module 版本；新 runId 与并发/时间不属于业务内容。跨 run 比较 fingerprint 还要经过磁盘边界完整性验证，不能只比较一个字符串就信任未知 bytes。
+业务材料在首次 Provider 前保存。已实现的[并行执行合同](../modules/model-job-execution.md#5-保存身份与失败)让 Activity 与 Process-group coordinator 在各 job REVIEW 完成后立即原子保存私有结果，全部完成后按稳定顺序一次安装既有 aggregate；Process aggregate 等仓库总结完成或既有规则明确跳过后才发布。workers 不能向同一固定地址反复安装不同 bytes。报告保存完整 paragraph JSON、SourceRefs、Markdown 和 validation。inputFingerprint 包含实际内容输入、实际 Prompt 文本/版本、有效模型/output 配置、Module 版本；新 runId 与并发/时间不属于业务内容。跨 run 比较 fingerprint 还要经过磁盘边界完整性验证，不能只比较一个字符串就信任未知 bytes。
 
 使用当前 run/checkpoint stores 和 output manifest 记录已有结果，不要求新建 CanonicalRunManifestStore、固定 52/57 文件大清单、event journal、hash chain、reconciliation ledger 或同 run recovery。保留历史身份和已完成产物，不另做 Wire Reset、dual writer、兼容 alias 或第二 namespace。
 

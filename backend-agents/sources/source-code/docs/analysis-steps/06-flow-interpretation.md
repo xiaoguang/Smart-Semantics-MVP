@@ -124,7 +124,7 @@ Java 只校验结构、scope-local IDs/refs、集合闭合、预算与保存约�
 | activity-explanations.jsonl | v1，每份完成 REVIEW 的完整活动，不压缩为标题 | ProcessExplainer、报告章节材料 |
 | activity-coverage.json | v2：全入口与材料的分析处置、未启动原因、容量限制，以及顶层 `unexplainedActivityEntries` 程序侧完整 records | Step07、Step08 与 inspect |
 
-并行目标是完成一个包 REVIEW 后由 coordinator 随即在运行私有目录原子保存完整 job 结果，不等前序慢包；全部完成后再按原材料顺序一次聚合并安装上述固定地址 publication。当前 ActivityExplainer 仍在串行循环结束后才聚合 publish，逐 job 保存尚未实施。不能把固定 publisher 移进 worker 反复安装不同 bytes。私有结果、Provider/job journal namespace 与重复提交防护归[执行设计](../modules/model-job-execution.md#5-保存身份与失败)，原始 DRAFT/REVIEW 按既有私有策略保存，不成为额外产品候选或新恢复系统。
+ActivityExplainer 已在一个包 REVIEW 完成后由 coordinator 随即以 run/job 私有原子 no-replace 文件保存完整结果，不等前序慢包；全部终态后才按原材料顺序一次聚合并安装上述固定地址 publication。fatal 停止新派发，但已开始且自身 DRAFT 合法的 job 仍完成其唯一 REVIEW 和私有保存；没有所有必需结果就不安装 aggregate。不能把固定 publisher 移进 worker 反复安装不同 bytes。私有结果、Provider/job journal namespace 与重复提交防护归[执行设计](../modules/model-job-execution.md#5-保存身份与失败)，原始 DRAFT/REVIEW 按既有私有策略保存，不成为额外产品候选或新恢复系统。
 
 Step07 可以按已保存 material/activity ID 读取必要内容，不回到扫描仓库或重构调用链。`RepositoryBusinessKnowledge.unexplainedActivityEntries` 已持有并保存完整记录。程序送给 Process 仓库总整理/Report 模型前按 `materialId` 把完整 sidecar records 聚合成一项 `{materialContext, unexplainedEntryKeys, reasonCode}`：同一 context 只发送一次，删除 material/global entry IDs，保持 E1…EN 的材料映射顺序。活动之间是否属于同一过程由模型阅读多个活动决定，不由 Step06 强设唯一 owner；process-group Prompt 不因这一仓库输入变化升版。
 
@@ -140,7 +140,7 @@ maxMaterialsToStart 限制本执行实际启动的材料总数；超限材料写
 
 ## 7. 当前实现与最小修改
 
-本节历史实测只证明各自当时的材料链；JDT 与 JavaParser 现在均已接通完整 context 和 Builder，不能把历史取材缺口写成当前能力。新的 job 并行尚未实施：后续只提取 ActivityExplainer 外循环中的单包函数，接入有效 Provider profile、不可变结果和 coordinator 保存；保留现有内容、v2 coverage 与校验。
+本节历史实测只证明各自当时的材料链；JDT 与 JavaParser 现在均已接通完整 context 和 Builder，不能把历史取材缺口写成当前能力。Activity 已提取单包函数，并接入多 Provider 稳定路由、两级有界并发、不可变结果、completion queue 与逐 job 保存；保留现有内容、v2 coverage 与校验。Process-group 也使用相同的完整 DRAFT→REVIEW 并行边界，全部组完成后才允许一次仓库总结。本文仍不增加同运行自动恢复。
 
 直接 fixture 测试须新增：两级在途上限、超过 12 包与并发 1 时全部合格 job 不漏、完成次序改变但聚合相同、同 job 绑定不变、不同账户 journal 隔离、重复提交只有一次，以及 fatal 后已开始合法 pair 完成/保存且未开始项不调用。完整材料/actualDraft/missingEntryKeys/unexplainedEntries 的既有测试继续直接覆盖；不跑真实模型来证明线程调度。
 

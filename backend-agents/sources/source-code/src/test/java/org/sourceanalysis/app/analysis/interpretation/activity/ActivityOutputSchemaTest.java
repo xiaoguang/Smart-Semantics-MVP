@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
@@ -49,11 +50,23 @@ class ActivityOutputSchemaTest {
                   materials, new ActivityExplanationProfile(64_000, 16_000, 2, 32, 2_000)));
 
       assertThat(provider.schemas()).isNotEmpty();
-      assertThat(provider.schemas().size()).isEven();
-      for (int index = 0; index < provider.schemas().size(); index += 2) {
-        assertCompleteActivityResponseSchema(provider.schemas().get(index), false);
-        assertCompleteActivityResponseSchema(provider.schemas().get(index + 1), true);
-      }
+      assertThat(provider.schemas())
+          .extracting(CapturedSchema::taskKind)
+          .containsOnly("ACTIVITY_DRAFT", "ACTIVITY_REVIEW");
+      assertThat(
+              provider.schemas().stream()
+                  .filter(schema -> "ACTIVITY_DRAFT".equals(schema.taskKind()))
+                  .count())
+          .isEqualTo(
+              provider.schemas().stream()
+                  .filter(schema -> "ACTIVITY_REVIEW".equals(schema.taskKind()))
+                  .count());
+      provider
+          .schemas()
+          .forEach(
+              schema ->
+                  assertCompleteActivityResponseSchema(
+                      schema.schema(), "ACTIVITY_REVIEW".equals(schema.taskKind())));
     }
   }
 
@@ -101,18 +114,22 @@ class ActivityOutputSchemaTest {
 
   private static final class SchemaCapturingProvider implements StructuredModelProvider {
     private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
-    private final List<JsonNode> schemas = new ArrayList<>();
+    private final List<CapturedSchema> schemas = new CopyOnWriteArrayList<>();
 
     @Override
     public StructuredModelResponse generate(StructuredModelRequest request) {
-      schemas.add(canonicalJson.parseCanonical(request.outputJsonSchema()));
+      schemas.add(
+          new CapturedSchema(
+              request.taskId(),
+              request.taskKind(),
+              canonicalJson.parseCanonical(request.outputJsonSchema())));
       JsonNode input = canonicalJson.parseCanonical(request.untrustedInputJson());
       return new StructuredModelResponse(
           canonicalJson.encodeCanonical(activityResponse(input, request.taskKind())),
           new ModelRuntimeIdentityV1("scripted", "fixture", "none", "none"));
     }
 
-    List<JsonNode> schemas() {
+    List<CapturedSchema> schemas() {
       return List.copyOf(schemas);
     }
 
@@ -143,4 +160,6 @@ class ActivityOutputSchemaTest {
       return root;
     }
   }
+
+  private record CapturedSchema(String taskId, String taskKind, JsonNode schema) {}
 }
