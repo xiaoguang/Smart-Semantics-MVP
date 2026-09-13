@@ -27,6 +27,7 @@ public final class JdtProjectSession implements JavaCodeSession {
   private final Path languageServerDataDirectory;
   private final EngineDescriptor descriptor;
   private final JdtLanguageServerClient languageServer;
+  private final Object lifecycleLock = new Object();
   private EntryCodeCollector collector;
   private JdtSyntaxHelperClient syntaxHelper;
   private boolean closed;
@@ -118,16 +119,20 @@ public final class JdtProjectSession implements JavaCodeSession {
   }
 
   @Override
-  public synchronized JavaDeclarationCatalog catalog() {
-    ensureOpen();
-    return collector().catalog();
+  public JavaDeclarationCatalog catalog() {
+    synchronized (lifecycleLock) {
+      ensureOpen();
+      return collector().catalog();
+    }
   }
 
   @Override
-  public synchronized EntryCodeContext collect(EntrySeed entry) {
-    Objects.requireNonNull(entry, "entry seed");
-    ensureOpen();
-    return collector().collect(entry);
+  public EntryCodeContext collect(EntrySeed entry) {
+    synchronized (lifecycleLock) {
+      Objects.requireNonNull(entry, "entry seed");
+      ensureOpen();
+      return collector().collect(entry);
+    }
   }
 
   @Override
@@ -136,44 +141,46 @@ public final class JdtProjectSession implements JavaCodeSession {
   }
 
   @Override
-  public synchronized void close() {
-    if (closed) {
-      return;
-    }
-    closed = true;
-    RuntimeException failure = null;
-    if (syntaxHelper != null) {
+  public void close() {
+    synchronized (lifecycleLock) {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      RuntimeException failure = null;
+      if (syntaxHelper != null) {
+        try {
+          syntaxHelper.close();
+        } catch (RuntimeException closeFailure) {
+          failure = closeFailure;
+        }
+      }
       try {
-        syntaxHelper.close();
+        languageServer.close();
       } catch (RuntimeException closeFailure) {
-        failure = closeFailure;
+        if (failure == null) {
+          failure = closeFailure;
+        } else {
+          failure.addSuppressed(closeFailure);
+        }
       }
-    }
-    try {
-      languageServer.close();
-    } catch (RuntimeException closeFailure) {
-      if (failure == null) {
-        failure = closeFailure;
-      } else {
-        failure.addSuppressed(closeFailure);
+      try {
+        deleteWorkspace(workspace);
+      } catch (IOException cleanupFailure) {
+        CodeEngineException observableCleanupFailure =
+            new CodeEngineException(
+                CodeEngineException.JDT_INDEX_FAILED,
+                "JDT session-owned workspace cleanup failed",
+                cleanupFailure);
+        if (failure == null) {
+          failure = observableCleanupFailure;
+        } else {
+          failure.addSuppressed(observableCleanupFailure);
+        }
       }
-    }
-    try {
-      deleteWorkspace(workspace);
-    } catch (IOException cleanupFailure) {
-      CodeEngineException observableCleanupFailure =
-          new CodeEngineException(
-              CodeEngineException.JDT_INDEX_FAILED,
-              "JDT session-owned workspace cleanup failed",
-              cleanupFailure);
-      if (failure == null) {
-        failure = observableCleanupFailure;
-      } else {
-        failure.addSuppressed(observableCleanupFailure);
+      if (failure != null) {
+        throw failure;
       }
-    }
-    if (failure != null) {
-      throw failure;
     }
   }
 
@@ -275,7 +282,7 @@ public final class JdtProjectSession implements JavaCodeSession {
         """
         <?xml version="1.0" encoding="UTF-8"?>
         <projectDescription>
-          <name>%s</name>
+          <name>${PROJECT_NAME}</name>
           <comment></comment>
           <projects></projects>
           <buildSpec>
@@ -287,7 +294,7 @@ public final class JdtProjectSession implements JavaCodeSession {
           <natures><nature>org.eclipse.jdt.core.javanature</nature></natures>
         </projectDescription>
         """
-            .formatted(xml(projectName)),
+            .replace("${PROJECT_NAME}", xml(projectName)),
         StandardCharsets.UTF_8);
 
     StringBuilder classpath =
@@ -321,11 +328,11 @@ public final class JdtProjectSession implements JavaCodeSession {
         settings.resolve("org.eclipse.jdt.core.prefs"),
         """
         eclipse.preferences.version=1
-        org.eclipse.jdt.core.compiler.codegen.targetPlatform=%s
-        org.eclipse.jdt.core.compiler.compliance=%s
-        org.eclipse.jdt.core.compiler.source=%s
+        org.eclipse.jdt.core.compiler.codegen.targetPlatform=${SOURCE_LEVEL}
+        org.eclipse.jdt.core.compiler.compliance=${SOURCE_LEVEL}
+        org.eclipse.jdt.core.compiler.source=${SOURCE_LEVEL}
         """
-            .formatted(project.sourceLevel(), project.sourceLevel(), project.sourceLevel()),
+            .replace("${SOURCE_LEVEL}", project.sourceLevel()),
         StandardCharsets.UTF_8);
   }
 

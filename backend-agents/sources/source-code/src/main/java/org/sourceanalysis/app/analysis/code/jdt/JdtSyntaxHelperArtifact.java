@@ -18,15 +18,20 @@ final class JdtSyntaxHelperArtifact {
     List<Path> candidates = new ArrayList<>();
     candidates.add(Path.of("tools", "jdt-syntax-helper", "target", FILE_NAME));
     try {
-      URI codeSource =
-          JdtSyntaxHelperArtifact.class.getProtectionDomain().getCodeSource().getLocation().toURI();
-      Path host = Path.of(codeSource).toAbsolutePath().normalize();
-      Path base = Files.isDirectory(host) ? host : host.getParent();
-      if (base != null) {
-        candidates.add(base.resolve(FILE_NAME));
-        if (base.getParent() != null) {
-          candidates.add(
-              base.getParent().resolve("tools/jdt-syntax-helper/target").resolve(FILE_NAME));
+      java.security.ProtectionDomain protectionDomain =
+          JdtSyntaxHelperArtifact.class.getProtectionDomain();
+      java.security.CodeSource codeSource =
+          protectionDomain == null ? null : protectionDomain.getCodeSource();
+      if (codeSource != null && codeSource.getLocation() != null) {
+        URI location = codeSource.getLocation().toURI();
+        Path host = Path.of(location).toAbsolutePath().normalize();
+        Path base = Files.isDirectory(host) ? host : host.getParent();
+        if (base != null) {
+          candidates.add(base.resolve(FILE_NAME));
+          Path parent = base.getParent();
+          if (parent != null) {
+            candidates.add(parent.resolve("tools/jdt-syntax-helper/target").resolve(FILE_NAME));
+          }
         }
       }
     } catch (Exception ignored) {

@@ -44,14 +44,14 @@ import org.sourceanalysis.app.artifact.Sha256Digest;
 class CapsuleWireReductionTest {
 
   private static final String RETIRED_PROJECTION_TYPE = "BUSINESS_FLOWS_CAPSULE_PROJECTION";
-  private static final String RETIRED_PROJECTION_SCHEMA = "business-flows-capsule-projection-v8";
+  private static final String RETIRED_PROJECTION_SCHEMA = "business-flows-capsule-projection-v9";
   private static final String RETIRED_CAPSULE_TYPE = "BUSINESS_FLOWS_EVIDENCE_CAPSULE";
-  private static final String RETIRED_CAPSULE_SCHEMA = "business-flows-evidence-capsule-v6";
+  private static final String RETIRED_CAPSULE_SCHEMA = "business-flows-evidence-capsule-v7";
 
   @TempDir Path temporaryDirectory;
 
   @Test
-  void publishesReducedV9AndV7CapsulesAndRejectsRetiredWireVersions() {
+  void publishesReducedV10AndV8CapsulesAndRejectsRetiredWireVersions() {
     SoftAssertions softly = new SoftAssertions();
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithGuardedApprove(
@@ -91,7 +91,7 @@ class CapsuleWireReductionTest {
       softly
           .assertThat(text(projectionEnvelope, "schemaVersion"))
           .as("capsule projection schema")
-          .isEqualTo("business-flows-capsule-projection-v9");
+          .isEqualTo("business-flows-capsule-projection-v10");
       JsonNode projectionBody = projectionEnvelope.path("payload");
       JsonNode projectionCapsules = projectionBody.path("capsules");
       softly.assertThat(projectionCapsules.isArray()).isTrue();
@@ -118,7 +118,7 @@ class CapsuleWireReductionTest {
       softly
           .assertThat(text(publicCapsule, "schemaVersion"))
           .as("public evidence capsule schema")
-          .isEqualTo("business-flows-evidence-capsule-v7");
+          .isEqualTo("business-flows-evidence-capsule-v8");
       assertReducedCapsule(softly, publicCapsule, "public capsule");
 
       softly
@@ -129,7 +129,7 @@ class CapsuleWireReductionTest {
                       .resolveArtifactPolicy(
                           new ArtifactPolicyKey(
                               RETIRED_PROJECTION_TYPE, RETIRED_PROJECTION_SCHEMA)))
-          .as("retired capsule projection v8 policy")
+          .as("retired capsule projection v9 policy")
           .isInstanceOf(ArtifactStoreException.class)
           .hasMessage("ARTIFACT_POLICY_NOT_FOUND");
       softly
@@ -139,7 +139,7 @@ class CapsuleWireReductionTest {
                       .moduleArtifacts()
                       .resolveArtifactPolicy(
                           new ArtifactPolicyKey(RETIRED_CAPSULE_TYPE, RETIRED_CAPSULE_SCHEMA)))
-          .as("retired evidence capsule v6 policy")
+          .as("retired evidence capsule v7 policy")
           .isInstanceOf(ArtifactStoreException.class)
           .hasMessage("ARTIFACT_POLICY_NOT_FOUND");
     } finally {

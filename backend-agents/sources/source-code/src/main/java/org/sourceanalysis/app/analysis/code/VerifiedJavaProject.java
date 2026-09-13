@@ -102,7 +102,8 @@ public final class VerifiedJavaProject {
       if (!destination.startsWith(normalizedRoot)) {
         throw sourceInvalid("source projection escaped its workspace");
       }
-      Files.createDirectories(destination.getParent());
+      Files.createDirectories(
+          Objects.requireNonNull(destination.getParent(), "projected source parent"));
       Files.write(destination, document.rawUtf8().copyToByteArray());
     }
   }

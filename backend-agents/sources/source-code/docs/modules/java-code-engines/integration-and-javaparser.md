@@ -136,6 +136,11 @@ ActivityExplainer、ProcessExplainer、BusinessReportPublisher的现有职责不
 
 最终一次YAML选择决定取材引擎；业务模块始终一套。源码能力可以不同，来源正确、内容保存、入口处置和业务职责边界必须相同。
 
+选定引擎也是运行身份的一部分。同一运行已经安装某个引擎的
+`java-code-index.jsonl`后，以另一个引擎再次发布会触发
+`MODULE_PUBLICATION_COLLISION`，原索引保持不变；切换YAML配置必须创建新运行。该门禁禁止
+JDT与JavaParser跨引擎覆盖或复用同一份索引，不实现自动fallback或混合结果。
+
 现有 `CanonicalModuleArtifactStore`、`CanonicalAnalysisStepArtifactStore`、CLI 操作面、`RepositoryAnalysisAgent`、`SourceAnalysisApplication`、`BusinessAnalysisWorkflow`、`PersistedBusinessRunExecutor`、`ActivityExplainer`、`ProcessExplainer` 和 `BusinessReportPublisher` 已由两个引擎共用。JavaParser Adapter 与双引擎选择回归没有重写这些组件。
 
 JavaParser 迁移 oracle 固定在 git `cec1997`。迁移前先记录 `SpringHttpEntryDiscovererTest`、`MapperCapabilityCatalogerTest`、四个 graph builder 测试、`EvidenceGraphBuilderTest`、`ProvenCodeFactsExecutionTest`、`BusinessFlowsExecutionTest`、`BusinessMaterialBuilderTest`、`TechnicalAnalysisWorkflowTest` 与 `FourEntryBusinessSemanticChainTest` 的行为；第二阶段保留可观察能力和诚实 gap，不比较两引擎数量、解析率或 JSON SHA。可执行清单见[实施计划](../../plans/jdt-first-java-engine-implementation-plan.md#javaparser-pre-migration-capability-baseline-at-cec1997)。

@@ -23,6 +23,7 @@ public final class JavaParserProjectSession implements JavaCodeSession {
   private final Path workspace;
   private final JavaParserCatalogAdapter.ProjectModel project;
   private final EngineDescriptor descriptor;
+  private final Object lifecycleLock = new Object();
   private boolean closed;
 
   private JavaParserProjectSession(
@@ -75,15 +76,19 @@ public final class JavaParserProjectSession implements JavaCodeSession {
   }
 
   @Override
-  public synchronized JavaDeclarationCatalog catalog() {
-    ensureOpen();
-    return project.catalog();
+  public JavaDeclarationCatalog catalog() {
+    synchronized (lifecycleLock) {
+      ensureOpen();
+      return project.catalog();
+    }
   }
 
   @Override
-  public synchronized EntryCodeContext collect(EntrySeed entry) {
-    ensureOpen();
-    return new JavaParserContextAdapter(project).collect(entry);
+  public EntryCodeContext collect(EntrySeed entry) {
+    synchronized (lifecycleLock) {
+      ensureOpen();
+      return new JavaParserContextAdapter(project).collect(entry);
+    }
   }
 
   @Override
@@ -92,18 +97,20 @@ public final class JavaParserProjectSession implements JavaCodeSession {
   }
 
   @Override
-  public synchronized void close() {
-    if (closed) {
-      return;
-    }
-    closed = true;
-    try {
-      deleteWorkspace(workspace);
-    } catch (IOException failure) {
-      throw new CodeEngineException(
-          CodeEngineException.SOURCE_INVALID,
-          "JavaParser session workspace cleanup failed",
-          failure);
+  public void close() {
+    synchronized (lifecycleLock) {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      try {
+        deleteWorkspace(workspace);
+      } catch (IOException failure) {
+        throw new CodeEngineException(
+            CodeEngineException.SOURCE_INVALID,
+            "JavaParser session workspace cleanup failed",
+            failure);
+      }
     }
   }
 

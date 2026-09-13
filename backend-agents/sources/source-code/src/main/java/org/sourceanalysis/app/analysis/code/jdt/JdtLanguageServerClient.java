@@ -233,6 +233,9 @@ final class JdtLanguageServerClient implements AutoCloseable, JdtNavigationResol
     if (process != null && !isolation.stop(process, configuration.shutdownTimeout())) {
       failure = indexFailed("JDT language-server process remained alive after shutdown", null);
     }
+    if (listening != null) {
+      listening.cancel(true);
+    }
     process = null;
     languageServer = null;
     listening = null;

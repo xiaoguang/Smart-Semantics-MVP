@@ -37,7 +37,7 @@
 - Task 9 / approved phase 2.1 is complete.
 - Task 10 / approved phase 2.2 is complete locally. Both configured engines use the same persisted
   navigation reader and business consumers; neither engine starts or falls back to the other.
-- The branch is ready for its release commit, remote push and main integration.
+- The adapter was released and integrated into `main` at `126e94d`.
 
 ## Changed files
 
@@ -81,12 +81,9 @@ to physically removed POC paths are likewise excluded from the active documentat
 
 ## Exact next action
 
-Create the release commit, push the implementation branch, integrate it into `main`, and confirm
-local and remote `main` identify the same commit.
+None. Continue only through a new, explicitly scoped capability or maintenance task.
 
 ## Resume checks
 
-- If release was interrupted, confirm branch is `codex/javaparser-engine-adapter` and HEAD descends
-  from `a572f0f`.
-- Verify the recorded selectors remain green, commit the complete diff, push the branch, integrate
-  it into `main`, and confirm local and remote `main` identify the same commit.
+- Confirm any future adapter change preserves exact YAML selection, engine isolation, and the
+  persisted neutral contract.

@@ -155,8 +155,8 @@ public record EffectiveEngineConfiguration(String javaEngine, JdtConfiguration j
       try (var paths = Files.list(plugins)) {
         bundles =
             paths
-                .filter(path -> path.getFileName().toString().startsWith(prefix))
-                .filter(path -> path.getFileName().toString().endsWith(".jar"))
+                .filter(path -> fileName(path).startsWith(prefix))
+                .filter(path -> fileName(path).endsWith(".jar"))
                 .sorted()
                 .toList();
       }
@@ -174,9 +174,8 @@ public record EffectiveEngineConfiguration(String javaEngine, JdtConfiguration j
       }
       try (var paths = Files.list(plugins)) {
         return paths
-            .filter(
-                path -> path.getFileName().toString().startsWith("org.eclipse.equinox.launcher_"))
-            .filter(path -> path.getFileName().toString().endsWith(".jar"))
+            .filter(path -> fileName(path).startsWith("org.eclipse.equinox.launcher_"))
+            .filter(path -> fileName(path).endsWith(".jar"))
             .sorted()
             .toList();
       }
@@ -242,7 +241,7 @@ public record EffectiveEngineConfiguration(String javaEngine, JdtConfiguration j
                 distribution.launcher(),
                 distribution.languageServerCore(),
                 distribution.jdtCore())) {
-          digest.update(component.getFileName().toString().getBytes(StandardCharsets.UTF_8));
+          digest.update(fileName(component).getBytes(StandardCharsets.UTF_8));
           digest.update((byte) 0);
           try (var input = Files.newInputStream(component)) {
             byte[] buffer = new byte[16 * 1024];
@@ -254,9 +253,9 @@ public record EffectiveEngineConfiguration(String javaEngine, JdtConfiguration j
           digest.update((byte) 0);
         }
         return "jdtls-distribution["
-            + distribution.languageServerCore().getFileName()
+            + fileName(distribution.languageServerCore())
             + ","
-            + distribution.jdtCore().getFileName()
+            + fileName(distribution.jdtCore())
             + "]@"
             + java.util.HexFormat.of().formatHex(digest.digest());
       } catch (IOException failure) {
@@ -267,6 +266,10 @@ public record EffectiveEngineConfiguration(String javaEngine, JdtConfiguration j
     }
 
     private record DistributionComponents(Path launcher, Path languageServerCore, Path jdtCore) {}
+
+    private static String fileName(Path path) {
+      return Objects.requireNonNull(path.getFileName(), "JDT component file name").toString();
+    }
 
     private static String platformConfigurationName() {
       String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);

@@ -363,11 +363,11 @@ class BusinessFlowProvenanceTest {
       assertThat(reopenedPublic.semanticPayloads()).hasSize(5);
       Map<String, String> expectedSchemas =
           Map.of(
-              "entry-dispositions.jsonl", "business-flows-entry-disposition-v1",
-              "evidence-capsules.jsonl", "business-flows-evidence-capsule-v7",
-              "flow-coverage.json", "business-flows-flow-coverage-v1",
+              "entry-dispositions.jsonl", "business-flows-entry-disposition-v2",
+              "evidence-capsules.jsonl", "business-flows-evidence-capsule-v8",
+              "flow-coverage.json", "business-flows-flow-coverage-v2",
               "flow-gaps.jsonl", "business-flows-flow-gap-v2",
-              "flow-slices.json", "business-flows-flow-slices-v4");
+              "flow-slices.json", "business-flows-flow-slices-v5");
       reopenedPublic
           .semanticPayloads()
           .forEach(
@@ -410,7 +410,7 @@ class BusinessFlowProvenanceTest {
             assertThat(publicFactsById).isNotEmpty();
             assertThat(publicFactsById.keySet()).containsExactlyInAnyOrderElementsOf(m1FactIds);
             assertThat(requiredText(capsule, "schemaVersion"))
-                .isEqualTo("business-flows-evidence-capsule-v7");
+                .isEqualTo("business-flows-evidence-capsule-v8");
           });
       assertThat(publicCapsulesByFlow.keySet())
           .containsExactlyInAnyOrderElementsOf(flowSlicesById.keySet());

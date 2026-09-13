@@ -6,6 +6,20 @@
   same immutable-value contract.
 -->
 <FindBugsFilter>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.code.EntryCodeContext"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.code.EntryCodeContext$ArgumentAssociation"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.code.EntryCodeContext$CallSite"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.code.EntryCodeContext$CallTarget"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.code.EntryCodeContext$Limitation"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.code.EntryCodeContext$MethodCode"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.code.EntryCodeContext$SupportingSource"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.code.EntryCodeContext$TechnicalEnhancements"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog$FieldDeclarationView"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog$MethodDeclarationView"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog$ParameterView"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog$TypeDeclaration"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.code.VerifiedJavaProject"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs$BoundaryArgument"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs$PublicEvidenceGraph"/></Match>

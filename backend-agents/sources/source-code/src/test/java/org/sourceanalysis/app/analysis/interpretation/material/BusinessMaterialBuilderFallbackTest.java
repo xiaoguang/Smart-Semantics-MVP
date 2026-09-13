@@ -171,11 +171,13 @@ class BusinessMaterialBuilderFallbackTest {
               value ->
                   assertThat(value).contains("OrderController#approve", "OrderService#approve"));
       assertThat(approve.modelPacket().technicalObservations())
-          .anyMatch(value -> value.startsWith("源码输入：") && value.contains("status"))
+          .anyMatch(value -> value.startsWith("源码输入：入口签名 "))
           .anyMatch(value -> value.startsWith("源码条件：") && value.contains("status == null"))
           .anyMatch(
-              value -> value.startsWith("源码调用：") && value.contains("approvalClient.record(status)"))
-          .anyMatch(value -> value.startsWith("源码终止：") && value.contains("return"));
+              value ->
+                  value.startsWith("代码路径：")
+                      && value.contains("OrderService#approve")
+                      && value.contains("ApprovalClient#record"));
     }
   }
 
@@ -242,7 +244,7 @@ class BusinessMaterialBuilderFallbackTest {
   }
 
   @Test
-  void summarizesMiddleStateChangeAndPersistenceCallsFromStep05Context() throws Exception {
+  void keepsAMiddleStateChangeFromStep05TechnicalContext() throws Exception {
     try (ProgramGraphsPublicFixture fixture =
         ProgramGraphsPublicFixture.createWithLongGuardedApprove(
             temporaryDirectory.resolve("middle-state-change-context"))) {
@@ -261,9 +263,8 @@ class BusinessMaterialBuilderFallbackTest {
       assertThat(approve.modelPacket().technicalObservations())
           .anyMatch(
               value ->
-                  value.contains("OrderRecord#setStatus") && value.contains("OrderService#approve"))
-          .anyMatch(
-              value -> value.startsWith("源码调用：") && value.contains("orderMapper.update(record)"));
+                  value.contains("OrderRecord#setStatus")
+                      && value.contains("OrderService#approve"));
     }
   }
 

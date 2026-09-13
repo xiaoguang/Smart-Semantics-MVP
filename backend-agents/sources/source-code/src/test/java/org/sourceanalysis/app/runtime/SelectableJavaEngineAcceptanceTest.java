@@ -1,6 +1,7 @@
 package org.sourceanalysis.app.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -18,6 +19,8 @@ import org.sourceanalysis.app.analysis.code.javaparser.JavaParserCodeEngine;
 import org.sourceanalysis.app.analysis.code.jdt.JdtCodeEngine;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsExecution;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
+import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
+import org.sourceanalysis.app.artifact.ArtifactStoreException;
 
 /** Final selection and identity checks shared by the two configured Java engines. */
 class SelectableJavaEngineAcceptanceTest {
@@ -56,26 +59,52 @@ class SelectableJavaEngineAcceptanceTest {
     assertThat(javaParserId).isNotEqualTo(jdtId);
   }
 
+  @Test
+  void changingTheSelectedEngineRequiresANewRunAndCannotOverwriteThePersistedIndex() {
+    try (ProgramGraphsPublicFixture fixture =
+        ProgramGraphsPublicFixture.createForJavaCodeIndex(
+            temporaryDirectory.resolve("same-run-engine-change"))) {
+      ProgramGraphsReference original = publishGraphs(fixture, "jdt");
+      String originalId = indexId(fixture, original);
+
+      assertThatThrownBy(() -> publishGraphs(fixture, "javaparser"))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("JAVA_CODE_INDEX_INVALID")
+          .rootCause()
+          .isInstanceOf(ArtifactStoreException.class)
+          .hasMessage("MODULE_PUBLICATION_COLLISION");
+
+      assertThat(indexId(fixture, original)).isEqualTo(originalId);
+    }
+  }
+
   private static String publishIndex(ProgramGraphsPublicFixture fixture, String engineId) {
+    return indexId(fixture, publishGraphs(fixture, engineId));
+  }
+
+  private static ProgramGraphsReference publishGraphs(
+      ProgramGraphsPublicFixture fixture, String engineId) {
     String snapshotId = fixture.sourceReader().reopen(fixture.sourceInventory()).snapshotId();
     try (JavaCodeSession session = sourceOnlySession(snapshotId, engineId)) {
-      var graphs =
-          new ProgramGraphsExecution(
-                  fixture.sourceReader(), fixture.moduleArtifacts(), fixture.stepArtifacts())
-              .execute(
-                  fixture.sourceInventory(),
-                  fixture.applicationDiscovery(),
-                  session,
-                  fixture.artifactControls());
-      return fixture
-          .stepArtifacts()
-          .reopen(graphs.publication())
-          .semanticPayloads()
-          .get(0)
-          .descriptor()
-          .artifactId()
-          .value();
+      return new ProgramGraphsExecution(
+              fixture.sourceReader(), fixture.moduleArtifacts(), fixture.stepArtifacts())
+          .execute(
+              fixture.sourceInventory(),
+              fixture.applicationDiscovery(),
+              session,
+              fixture.artifactControls());
     }
+  }
+
+  private static String indexId(ProgramGraphsPublicFixture fixture, ProgramGraphsReference graphs) {
+    return fixture
+        .stepArtifacts()
+        .reopen(graphs.publication())
+        .semanticPayloads()
+        .get(0)
+        .descriptor()
+        .artifactId()
+        .value();
   }
 
   private static JavaCodeSession sourceOnlySession(String snapshotId, String engineId) {

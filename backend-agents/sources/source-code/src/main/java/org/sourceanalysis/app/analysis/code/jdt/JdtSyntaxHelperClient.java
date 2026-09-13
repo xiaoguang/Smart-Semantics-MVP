@@ -43,6 +43,7 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
   private final ExecutorService stdoutReader;
   private final Thread stderrReader;
   private final ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+  private final Object lifecycleLock = new Object();
   private long nextRequestId;
   private boolean unusable;
   private boolean closed;
@@ -121,7 +122,13 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
     return new JdtSyntaxHelperClient(command, queryTimeout, shutdownTimeout, List.of(), List.of());
   }
 
-  synchronized JdtSyntaxProtocol.Response describe(
+  JdtSyntaxProtocol.Response describe(String sourceKey, String languageLevel, String source) {
+    synchronized (lifecycleLock) {
+      return describeUnderLock(sourceKey, languageLevel, source);
+    }
+  }
+
+  private JdtSyntaxProtocol.Response describeUnderLock(
       String sourceKey, String languageLevel, String source) {
     ensureUsable();
     String requestId = "syntax-" + ++nextRequestId;
@@ -199,43 +206,45 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
   }
 
   @Override
-  public synchronized void close() {
-    if (closed) {
-      return;
-    }
-    closed = true;
-    try {
-      stdin.close();
-    } catch (IOException failure) {
-      forceStop();
-      closeReaders();
-      throw new CodeEngineException(
-          CodeEngineException.JDT_SYNTAX_PROCESS_FAILED,
-          "JDT syntax helper input could not be closed",
-          failure);
-    }
-    try {
-      if (!process.waitFor(shutdownTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
+  public void close() {
+    synchronized (lifecycleLock) {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      try {
+        stdin.close();
+      } catch (IOException failure) {
+        forceStop();
+        closeReaders();
+        throw new CodeEngineException(
+            CodeEngineException.JDT_SYNTAX_PROCESS_FAILED,
+            "JDT syntax helper input could not be closed",
+            failure);
+      }
+      try {
+        if (!process.waitFor(shutdownTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
+          forceStop();
+          closeReaders();
+          throw new CodeEngineException(
+              CodeEngineException.JDT_SYNTAX_SHUTDOWN_TIMEOUT,
+              "JDT syntax helper did not stop after end of input");
+        }
+        closeReaders();
+        if (process.exitValue() != 0 && !unusable) {
+          throw new CodeEngineException(
+              CodeEngineException.JDT_SYNTAX_PROCESS_FAILED,
+              "JDT syntax helper exited with code " + process.exitValue() + diagnosticSuffix());
+        }
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
         forceStop();
         closeReaders();
         throw new CodeEngineException(
             CodeEngineException.JDT_SYNTAX_SHUTDOWN_TIMEOUT,
-            "JDT syntax helper did not stop after end of input");
+            "JDT syntax helper shutdown was interrupted",
+            interrupted);
       }
-      closeReaders();
-      if (process.exitValue() != 0 && !unusable) {
-        throw new CodeEngineException(
-            CodeEngineException.JDT_SYNTAX_PROCESS_FAILED,
-            "JDT syntax helper exited with code " + process.exitValue() + diagnosticSuffix());
-      }
-    } catch (InterruptedException interrupted) {
-      Thread.currentThread().interrupt();
-      forceStop();
-      closeReaders();
-      throw new CodeEngineException(
-          CodeEngineException.JDT_SYNTAX_SHUTDOWN_TIMEOUT,
-          "JDT syntax helper shutdown was interrupted",
-          interrupted);
     }
   }
 

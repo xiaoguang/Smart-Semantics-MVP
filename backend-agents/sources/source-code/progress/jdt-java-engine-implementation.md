@@ -1,13 +1,13 @@
 # Progress: JDT-first Java code engine implementation
 
-- Status: IN_PROGRESS
+- Status: COMPLETE
 - Agent role: Root coordinator
 - Model: GPT-5
 - Started: 2026-09-12T16:23:18Z
-- Last updated: 2026-09-12T19:07:00Z
+- Last updated: 2026-09-13
 - Scope: Implement the approved JDT-first engine, then adapt the preserved JavaParser engine to the frozen neutral contract.
 - Approved inputs: Java engine module designs, fixed jshERP snapshot, installed JDT LS 1.61.0/tool JDK, existing source-analysis code and tests.
-- Current branch/worktree: codex/jdtls-source-navigation-feasibility at /private/tmp/linguan-source-analysis-process-design
+- Final release commits: JDT `a572f0f`; JavaParser and dual-engine integration `126e94d`
 
 ## Completed
 
@@ -16,16 +16,19 @@
 - Confirmed the current runtime still hard-requires program graphs, Facts and strict Flow before business material generation.
 - Collected the complete task-scoped research and design diff for the recoverable baseline; staged diff validation passed.
 
-## Current state
+## Final state
 
-- Feasibility research and detailed design exist; production engine configuration, JDT Core helper, neutral engine contracts and pipeline integration do not yet exist.
-- Existing research and design changes are staged for the recoverable baseline commit. This checkpoint does not claim Java or research tests pass.
-- Recoverable baseline commit `cec1997` now exists.
-- Fresh pre-implementation module baseline passed: 358 tests, 0 failures, 0 errors, 0 skipped.
-- Step 1.1 design synchronization is complete: the approved plan is now a ten-task executable document, and the entry, helper, index, availability and Step05 ownership contracts are frozen.
-- Task 1 RED is accepted: three targeted test classes compile and report 17 intentional assertion failures for the missing engine configuration, factory and snapshot-bound JDT session production seams.
-- Task 1 GREEN now passes all 17 direct tests. Strict YAML, the stage-one JDT-only factory, the neutral project/session contracts and owned-session cleanup are implemented; frozen-contract review is in progress before Task 2 starts.
-- Task 1 final remediation is implemented. A bounded second RED exposed five assertions across the three remaining review groups; after correction the five-class selector passes 49 tests. Readiness now starts from JDT document symbols rather than source regexes, neutral parameter/body/control/argument references close, and distribution identity binds the Equinox launcher plus JDT LS/Core component bytes.
+- The recoverable pre-implementation baseline is `cec1997`.
+- Tasks 1–8 are complete and released at `a572f0f`: strict engine configuration, the
+  snapshot-bound JDT LS session, standalone JDT Core syntax helper, call navigation, overload-safe
+  discovery, persisted Java-code index, context-first Flow/Capsule publication, and the unchanged
+  business-material/report chain all use the neutral engine contract.
+- Tasks 9–10 are complete and released at `126e94d`: the preserved JavaParser capability is adapted
+  to the same contract and selected only by exact YAML configuration. There is no engine fallback,
+  mixing, or cross-engine artifact reuse.
+- The release audit adds the direct same-run engine-collision check and aligns stale tests with the
+  approved Step05 wire. The full module suite passes 430 tests; the quality profile reports zero
+  SpotBugs findings and passes PMD.
 
 ## Changed files
 
@@ -64,11 +67,12 @@
 
 ## Exact next action
 
-- Commit the closed Task 1.2 slice, then start Task 2 RED for the standalone JDT Core syntax helper.
+- None. The approved two-phase implementation is complete; future work is ordinary maintenance or
+  explicitly approved capability expansion.
 
 ## Resume checks
 
-- Read this progress file and the four documents under `docs/modules/java-code-engines/`.
-- Confirm branch and worktree path before any edit.
-- Inspect Git status; do not overwrite historical research output or other agents' progress files.
-- Resume at the first incomplete numbered implementation step.
+- Read this file, `progress/java-engine-release-audit.md`, and the four documents under
+  `docs/modules/java-code-engines/` before changing engine contracts.
+- Treat JDT and JavaParser as two isolated implementations of the same persisted neutral contract.
+- Do not reopen the completed implementation plan for unrelated business-language work.
