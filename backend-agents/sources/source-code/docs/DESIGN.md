@@ -40,7 +40,7 @@ Step02 入口以 `methodKey + SourceRange` 定位完整声明，不能只凭 han
 | BusinessMaterialBuilder | 同源 Step05 EntryContext/Capsule、全入口 coverage、材料 profile | `BusinessMaterialSet`、SourceRefs、global entry→material 处置 | 选择完整上下文、按配置 K 和真实 bytes 在入口边界分包、为每包生成 E1…EN | source/ref/identity 损坏 fatal；单入口无法安全成包时具体 NOT_ANALYZED；Provider 调用为 0 | ActivityExplainer；Step07 必要回查 | RED 覆盖任意 K、noFlow、零入口、映射与预算；GREEN 只改现有 Builder，不重建图/调用链 |
 | ActivityExplainer | 一个完整 material、scope-local key/ref allowlist、相容 Activity profile | 完整 ReviewedActivity、global entry coverage、程序侧未解释入口记录 | 一次 DRAFT + 一次完整 REVIEW；完整实际 DRAFT 与 `missingEntryKeys` 进入 REVIEW，最终以活动或 `unexplainedEntries` 闭合 | 调用前表达/输入/输出/REVIEW 容量不相容则零请求；非法 JSON/key/ref 与 started 失败 fatal；REVIEW 仍漏项 fatal，无第三次调用 | ProcessExplainer、Step08 coverage | RED 覆盖 N=4 漏项、N≥12、跨包 E1、真实 REVIEW bytes；GREEN 落地 v2 Prompt/schema 与最小 sidecar |
 | ProcessExplainer | 全部完整已审活动、recall cues、必要材料、按 material 聚合的未解释入口 | 完整已审过程、RepositoryBusinessKnowledge、process coverage | 高召回分组后由 Luna 判断有依据的多对多过程，保留独立活动和 partial 范围 | 非法成员/ref/JSON、遗漏范围却报完整、started 失败 fatal；0 活动时过程 Provider 为 0 | BusinessReportPublisher | RED 覆盖完整字段、多对多、保守独立过程和 specific partial；GREEN 只扩现有 knowledge input/save/read seam |
-| BusinessReportPublisher | 完整知识、活动/过程、coverage、按 material 聚合的未解释入口、SourceRefs | 固定九章 JSON、source-refs、Markdown、validation | 一次报告 DRAFT + 完整 REVIEW；Java 只校验并确定性排版 | 缺章/非法 ref/虚假全量 fatal；显式空仓报告仍走既有 DRAFT+REVIEW；PARTIAL/INCOMPLETE 不新增 runtime enum | 业务读者与 public render/inspect/artifact | RED 覆盖第4章内容、第9章具体入口、九章/ref/纯 render；GREEN 只补 knowledge→report 与第9章，不建语义 parser |
+| BusinessReportPublisher | 完整知识、活动/过程、coverage、按 material 聚合的未解释入口、SourceRefs | 固定九章 JSON、source-refs、Markdown、validation | DRAFT 读取完整知识；完整 REVIEW 读取实际草稿和已汇总的过程/仓库知识，不重复发送全部活动；Java 只校验并确定性排版 | 缺章/非法 ref/虚假全量 fatal；显式空仓报告仍走既有 DRAFT+REVIEW；PARTIAL/INCOMPLETE 不新增 runtime enum | 业务读者与 public render/inspect/artifact | RED 覆盖第4章内容、第9章具体入口、九章/ref、review 输入不重复活动及纯 render；GREEN 不建语义 parser |
 
 这张表是后续实现的 Interface 与测试面。模块间传 typed immutable 结果；内部测试 seam 不扩成新的公开 Interface。Activity REVIEW 的 `unexplainedEntries`、程序侧完整记录、v2 Prompt/schema 和 coverage v2 已写入当前实现。Process/Report 的按材料聚合投影也已接通：repository-summary 与 report DRAFT/REVIEW Prompt、ProcessExplainer 与 BusinessReportPublisher 已升到 Module v2；process-group DRAFT/REVIEW Prompt 保持 v1。四入口 complete/partial、跨包 N=9、单包 N≥12、零入口和预算/非法响应边界的 scripted 全链已通过；独立宿主会话候选也已对固定四入口材料完成一次真实 Activity DRAFT+REVIEW，结果只作为局部语义质量样本。
 
@@ -115,7 +115,7 @@ ProcessExplainer 接收全部已审活动、必要来源包和程序侧完整未
 
 ## 7. 九章报告与可读来源
 
-BusinessReportPublisher 用完整已审仓库知识和必要活动/过程材料做一次 DRAFT、一次完整 REVIEW，输出段落 JSON。Java 校验类型、章节、ID/ref 范围和预算，然后确定性排 Markdown。最终 H2 严格为：
+BusinessReportPublisher 用完整已审仓库知识和必要活动/过程材料做一次 DRAFT。完整 REVIEW 接收整篇实际草稿、全部过程、仓库总结、coverage、待确认范围和来源 allowlist，但不再次重复已经汇总进过程与草稿的完整活动记录。这样审阅仍覆盖整篇报告及其仓库级依据，同时避免大仓库因重复输入越过 Provider 的物理字符上限。Java 校验类型、章节、ID/ref 范围和预算，然后确定性排 Markdown。最终 H2 严格为：
 
 1. 文档说明
 2. 业务目标

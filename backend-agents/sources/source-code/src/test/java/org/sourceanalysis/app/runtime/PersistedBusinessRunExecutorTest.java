@@ -188,7 +188,7 @@ class PersistedBusinessRunExecutorTest {
             }
             case "BUSINESS_REPORT_REVIEW" -> {
               reportReviewActualDraft = input.path("actualDraft");
-              yield report(input);
+              yield input.path("actualDraft");
             }
             default ->
                 throw new IllegalArgumentException(

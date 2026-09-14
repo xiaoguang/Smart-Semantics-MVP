@@ -80,6 +80,13 @@ class BusinessReportPublisherTest {
     assertThat(provider.draftInput().path("repositorySummary").path("text").asText())
         .isEqualTo("仓库围绕补货、收货和应付账单形成定义了可讨论的业务活动。");
     assertThat(provider.reviewActualDraft()).isEqualTo(provider.draft());
+    assertThat(provider.reviewInput().has("activities")).isFalse();
+    assertThat(provider.reviewInput().path("processes"))
+        .isEqualTo(provider.draftInput().path("processes"));
+    assertThat(provider.reviewInput().path("repositorySummary"))
+        .isEqualTo(provider.draftInput().path("repositorySummary"));
+    assertThat(provider.reviewInput().path("allowlistedRefs"))
+        .isEqualTo(provider.draftInput().path("allowlistedRefs"));
     assertThat(markdown)
         .contains("# 合成补货仓库业务说明", "## 4. 业务活动", "补货到应付账单形成")
         .contains("完整源码依据保存在 source-refs.jsonl", "[S1]")
@@ -394,6 +401,7 @@ class BusinessReportPublisherTest {
     private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
     private final List<String> taskKinds = new ArrayList<>();
     private JsonNode draftInput;
+    private JsonNode reviewInput;
     private JsonNode reviewActualDraft;
     private JsonNode draft;
     private final List<JsonNode> outputSchemas = new ArrayList<>();
@@ -415,6 +423,7 @@ class BusinessReportPublisherTest {
       if ("BUSINESS_REPORT_DRAFT".equals(request.taskKind())) {
         draftInput = input;
       } else {
+        reviewInput = input;
         reviewActualDraft = input.path("actualDraft");
       }
       JsonNode response = report();
@@ -514,6 +523,10 @@ class BusinessReportPublisherTest {
 
     private JsonNode reviewActualDraft() {
       return reviewActualDraft;
+    }
+
+    private JsonNode reviewInput() {
+      return reviewInput;
     }
 
     private JsonNode draft() {

@@ -125,6 +125,7 @@ public final class BusinessReportPublisher {
           callAndParse(
               binding, DRAFT_KIND, draftInput, sources.keySet(), request.profile(), identity);
       ObjectNode reviewInput = input.deepCopy();
+      reviewInput.remove("activities");
       reviewInput.set("actualDraft", draft.value());
       ValidatedReportResponse reviewed =
           callAndParse(
@@ -167,7 +168,7 @@ public final class BusinessReportPublisher {
       ModelJobProviderBinding binding) {
     ObjectNode fingerprint = JsonNodeFactory.instance.objectNode();
     fingerprint.put("schemaVersion", "business-report-input-fingerprint-v1");
-    fingerprint.put("moduleVersion", "nine-section-document-business-report-v2");
+    fingerprint.put("moduleVersion", "nine-section-document-business-report-v3");
     fingerprint.put("providerBindingKey", binding.key());
     fingerprint.put("quotaScope", binding.quotaScope());
     fingerprint.put("inputSha256", sha256(draftInput));

@@ -4,7 +4,7 @@
 
 ## 1. 并行单位与阶段顺序
 
-一个 job 是一份材料的 **DRAFT → 校验 → 完整 REVIEW → 校验并保存**。同一 job 的两次请求使用启动前绑定的同一 Provider、账户服务、模型和 reasoning effort。REVIEW 必须携带完整原材料和完整实际 DRAFT，不能只传摘要、标题或 patch，也不能假设新会话记得 DRAFT。Activity 的 `missingEntryKeys` 与 required `unexplainedEntries` 合同原样保留。
+一个 job 是一份材料的 **DRAFT → 校验 → 完整 REVIEW → 校验并保存**。同一 job 的两次请求使用启动前绑定的同一 Provider、账户服务、模型和 reasoning effort。Activity 和 Process job 的 REVIEW 必须携带完整原材料和完整实际 DRAFT，不能只传摘要、标题或 patch，也不能假设新会话记得 DRAFT；唯一整仓报告 job 使用本节下述去重后的仓库级 REVIEW 输入。Activity 的 `missingEntryKeys` 与 required `unexplainedEntries` 合同原样保留。
 
 ```text
 01–05 技术步骤 → BusinessMaterialBuilder 保存完整材料（零模型）
@@ -14,11 +14,11 @@
   → 等全部过程组完成并稳定聚合
   → repository-summary 最多一个 job：DRAFT → 完整 REVIEW → 保存（或按既有规则明确跳过）
   → 一次发布完整 knowledge/process aggregate
-  → 唯一 whole-report job：整篇九章 DRAFT → 整篇完整 REVIEW → 保存
+  → 唯一 whole-report job：完整仓库知识生成整篇九章 DRAFT → 实际草稿与汇总知识做整篇 REVIEW → 保存
   → 确定性 renderer（零模型）
 ```
 
-两个过程组可以读取同一已审活动。输入是不可变共享视图，成员保持多对多；worker 不修改活动、全局 ID 映射或别组结果。仓库总结与报告各最多一个 job，不拆章并发、不额外增加总结/审阅轮次。保留 ProcessExplainer 既有总结准入：`maxRepositorySummaryItems=0`、没有过程或条目/输入容量不容纳时，零总结请求并保存具体 notConsolidated/范围说明。过程 aggregate 等总结完成或该显式跳过后才发布，不能在组屏障处提前发布。0 活动保留现有 Process 零请求行为；显式空仓九章仍按既有报告 DRAFT/REVIEW 执行，并诚实标明范围不完整。
+两个过程组可以读取同一已审活动。输入是不可变共享视图，成员保持多对多；worker 不修改活动、全局 ID 映射或别组结果。仓库总结与报告各最多一个 job，不拆章并发、不额外增加总结/审阅轮次。报告 DRAFT 读取完整 Activity、Process 与仓库知识；报告 REVIEW 读取整篇实际 DRAFT、Process、仓库总结、coverage、具体未解释范围、确认主题和来源 allowlist，不再次传输全部 Activity。该去重只解决同一整仓知识在 REVIEW 中的重复运输，不减少 DRAFT 的业务材料，也不把 REVIEW 降为局部审阅。保留 ProcessExplainer 既有总结准入：`maxRepositorySummaryItems=0`、没有过程或条目/输入容量不容纳时，零总结请求并保存具体 notConsolidated/范围说明。过程 aggregate 等总结完成或该显式跳过后才发布，不能在组屏障处提前发布。0 活动保留现有 Process 零请求行为；显式空仓九章仍按既有报告 DRAFT/REVIEW 执行，并诚实标明范围不完整。
 
 ## 2. 唯一配置入口与精确 YAML
 

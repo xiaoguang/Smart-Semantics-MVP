@@ -408,7 +408,7 @@ class FourEntryBusinessSemanticChainTest {
               reportDraftInput = input;
               yield report(input);
             }
-            case "BUSINESS_REPORT_REVIEW" -> report(input);
+            case "BUSINESS_REPORT_REVIEW" -> input.path("actualDraft");
             default -> throw new AssertionError("unexpected task kind: " + request.taskKind());
           };
       return new StructuredModelResponse(
