@@ -1,6 +1,6 @@
 # 仓库知识
 
-> 上游取材已按[JDT/JavaParser插件设计](../modules/java-code-engines/README.md)统一完整代码材料；本步消费同一已审活动/来源合同，不按工具品牌另设业务路线。新的[模型 job 并行](../modules/model-job-execution.md)尚未实施。
+> 上游取材已按[JDT/JavaParser插件设计](../modules/java-code-engines/README.md)统一完整代码材料；本步消费同一已审活动/来源合同，不按工具品牌另设业务路线。[模型 job 并行](../modules/model-job-execution.md)已实施；固定材料上的独立 model batch 与跨 batch 已审 job 复用是[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)已批准但尚未实现的目标。
 
 > [总体设计](../DESIGN.md)；固定 key：repository-knowledge，目录：steps/07-repository-knowledge/。唯一业务 Module：ProcessExplainer。
 
@@ -15,6 +15,8 @@ Step07 用完整已审活动及必要代码上下文解释跨活动过程，形�
 输入是完整 activity-explanations、activity-coverage（含 v2 的程序侧 `unexplainedActivityEntries`）和必要 business-materials。材料中已经携带 Step05 组织的 actual/formal、控制与返回关系；不丢掉这些信息后另行扫描仓库。
 
 coverage/checkpoint 内每个 `UnexplainedActivityEntry` 保存 global `entryId`、`materialId`、包内 `entryKey`、原 `materialContext` 与程序固定 `MODEL_NOT_EXPLAINED`。Process 模型输入不逐入口重复整包 context，而按 materialId 聚合为 `{materialContext, unexplainedEntryKeys, reasonCode}`，同一 context 只出现一次，并移除 material/global entry IDs。聚合使用程序持有的 local-key 映射，不从中文 context 正则提取路径，也不假设 BusinessMaterial 已有 EntryDescriptor。
+
+`sourceRunId`、`modelBatchId`、复用来源、checkpoint/publication 地址与调度数据都留在程序侧，不进入 Process DRAFT/REVIEW 或仓库总结模型包。因此不同 batch 在完整业务输入与 Prompt/profile 不变时可拥有相同的 job fingerprint，但不把 batch 身份暗示给模型或混入业务知识。
 
 Java 可以根据直接调用、显式标识传递、数据联系、已审对象/术语、processJoinSignals 做宽松召回。cue 表示“值得放在一起读”，不表示已批准顺序、对象同一性、因果、相同业务过程或唯一归属。共享 tenantId、日志、工具类、同名都不能单独得出这些结论。
 
@@ -101,13 +103,13 @@ Java 可以根据直接调用、显式标识传递、数据联系、已审对象
 
 模型越界 ref、缺活动成员、重复冲突 ID、source/basis 不一致、损坏 JSON、覆盖表遗漏后假称 COMPLETE 都是 fatal。业务顺序、岗位、对象同一性待确认是知识内容限制；不需要把整个组排除。
 
-目标由 coordinator 在每组 REVIEW 完成时立即原子保存私有 job 结果，等全部组及总结完成/显式跳过后一次安装既有固定 module publication。当前 ProcessExplainer 仍在串行循环结束后聚合 publish；私有保存、独立 Provider/job journal 与单次提交按[执行合同](../modules/model-job-execution.md#5-保存身份与失败)实现，不循环安装不同 bytes，也不新建恢复/桥接账本。跨磁盘/新进程复用核验实际输入 fingerprint、hash/schema/ref/basis；同进程直接复用 immutable view，不重构图和 Proof。0 活动只保存明确范围和已有 unexplained records，不调用过程模型，不能宣称理解仓库业务。
+当前 coordinator 已在每组 REVIEW 完成时立即原子保存私有 job 结果，等全部组及总结完成/显式跳过后一次安装既有固定 module publication；Process 组已使用两级有界并行、独立 Provider/job journal 和单次聚合提交。当前保存器不等于跨 batch reader，不能声称已可从旧 run 复用。[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)目标中，新 batch 必须先绑定与复用来源相同的完整 `materialsCheckpoint` reference，再基于已验证活动重新计算 Process 候选组；只有完整已审、原子保存且 job fingerprint 精确相同的组 job 才可跳过两次调用，仓库总结另有自己的 fingerprint。DRAFT 完成但 REVIEW 失败/未知时只保留诊断，显式新 batch 重做完整 pair，旧 batch 不覆写。0 活动只保存明确范围和已有 unexplained records，不调用过程模型，不能宣称理解仓库业务。
 
 ## 7. 当前实现与后续测试
 
 ProcessExplainer 以及 BusinessAnalysisWorkflow 的 material→activity→process→report 调用顺序已经存在。过程模型输入现在保留完整已审活动字段：参与者、对象、输入、条件、步骤、代码定义结果、规则、公式、术语、可信度、问题、范围限制和短 ref；它不能只看到活动标题、对象或摘要。`ProcessMaterialRecallTest` 已以 scripted Provider 直接验证这些字段和完整 DRAFT→REVIEW 输入。
 
-并行实现尚未开始。后续在现有 ProcessExplainer 提取单组不可变结果函数，保留 repository-summary 在全部组后的最多一个 job。直接 scripted 测试增加 G1/G2 重叠成员并发、两级上限、完成顺序无关聚合、所有组完成前总结调用为 0、总结准入时只有一次 DRAFT/REVIEW、跳过时具体范围保存，以及组失败保留已完成结果/不启动报告；不创建新的公开 Module 或状态 enum。
+并行执行已落地：ProcessExplainer 的单组函数返回不可变结果，repository-summary 仍只能在全部组后启动最多一个 job。现有 scripted 测试覆盖 G1/G2 重叠成员并发、两级上限、完成顺序无关聚合、所有组完成前总结调用为 0、总结准入时只有一次 DRAFT/REVIEW、跳过时具体范围保存，以及组失败保留已完结果/不启动报告。后续 model-batch 测试只扩展旧批完整已审 job 读取、fingerprint 匹配/不匹配、孤立 DRAFT 不复用及新 batch 聚合归属；不创建新的公开 Module 或状态 enum。
 
 Activity v2 的具体未解释入口接力已实施：`repositoryInput` 按 material 投影 `{materialContext, unexplainedEntryKeys, reasonCode}`，不发送 global/material identity。owning knowledge/coverage schema 与 reader 已升至 v2，Process DRAFT/REVIEW 的其他成员、ref、JSON 或 fatal 校验未改变，PARTIAL 仍不是新的 runtime 状态。`MODEL_NOT_EXPLAINED` 保持模型本次未形成活动解释的范围说明，不能变成技术 Gap、活动或过程。
 
@@ -117,6 +119,6 @@ Activity v2 的具体未解释入口接力已实施：`repositoryInput` 按 mate
 `PROCESS_GROUP_DRAFT_INVALID` 的结构校验；因此该候选在 30.33 秒后终止，REVIEW 没有启动，也没有
 重试。这个结果不说明账户活动之间没有业务关系，只说明该次模型返回不能作为正式过程记录。下一份
 **不同**小包的 opt-in 测试会在传输前保存干净请求、在校验前保存返回，以便区分“材料不足、提示词
-不清、返回结构错误”三类问题；它不会重放已经启动的账户候选。
+不清、返回结构错误”三类问题；它不会在原 run 重放已经启动的账户候选。未来如以显式新 model batch 重做，那是一个新 job 的完整 DRAFT+REVIEW，不是继续这份孤立 DRAFT。
 
 后续 Luna/xhigh RED 直接覆盖：共享标识只触发召回、同名/异名不强制合并、多对多成员、完整条件/规则/公式从活动保留到知识、同 material context 只传一次及具体 keys/reason、仓库总整理遗漏显式 PARTIAL、超预算零请求及非法 ref 拒绝。Terra/xhigh 在现有 ProcessExplainer 的 input/result/checkpoint seam 做最小 GREEN，不写 Java 业务分类器、不放宽既有 validator。本轮未运行测试或真实 Provider。

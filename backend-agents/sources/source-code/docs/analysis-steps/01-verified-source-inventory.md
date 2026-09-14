@@ -1,5 +1,7 @@
 # 已验证源码清单
 
+> 模型批次解耦（已批准、待实施）：本步骤的已保存源码不因模型批次失败而失效。模型新批次读取既有材料时不执行本步骤或 Capture；来源变化/损坏才需明确回到来源处理，不自动重扫。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)。本次不修改本步骤算法或产物。
+
 > [总体设计](../DESIGN.md)；固定 key：verified-source-inventory，目录：steps/01-verified-source-inventory/。本步骤运行时模型调用为 0。
 
 ## 1. 为什么存在

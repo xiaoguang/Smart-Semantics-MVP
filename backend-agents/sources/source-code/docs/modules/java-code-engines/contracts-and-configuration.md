@@ -4,6 +4,8 @@
 
 ## 1. EngineConfigurationLoader：只选择工具，不决定业务
 
+模型批次只消费已保存材料，不调用本 loader/open/collect。取材时的 engine、源码、classpath及入口选择保留在原 publication basis；模型、Prompt、并发和输出目录不是引擎失效条件。要改变取材内容才显式生成新材料，不能将旧材料就地标成新配置产物。私有材料 state/batch 配置以[模型执行 §7](../model-job-execution.md#7-固定材料与独立模型批次已批准待实施)为唯一合同（待实施），不升级此处导航索引/共同源码 Schema。
+
 输入是用户本机的工具配置。输出是启动时固定的 `EffectiveEngineConfiguration`。解析器使用 Jackson YAML数据绑定，不手写 YAML；新增依赖须按项目既定固定版本/安全审阅流程落地，本次不下载。
 
 目标配置：

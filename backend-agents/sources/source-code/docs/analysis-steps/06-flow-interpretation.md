@@ -63,7 +63,7 @@ BusinessMaterialBuilder 不再构造第二套调用链。它不丢弃 Step05 上
 
 读取 Step05 时必须保留合法的 `NOT_COLLECTED` 记录：它要求非空 `collectionReason`、空 `codeContextRef`，而 `strictTechnicalContext` 可选；两个上下文同时为空不是文件损坏。没有可读上下文时不生成模型包，实际材料覆盖记录为 `NOT_MATERIALIZED` 并保留该具体原因（例如用户选样后的 `NOT_SELECTED_FOR_SAMPLE`），不删入口、不重新扫描或伪报导航失败。`COLLECTED` 必须以同入口的 `codeContextRef` 从既有 Step03 索引恢复完整 `codeContext`，并保持空 reason；状态未知或互相矛盾继续拒绝。
 
-模型可见内容只有短 refs、代码、必要技术观察和限制；不可见本机路径、行号、hash、完整五图/Proof、run/artifact/publication identities、Provider 控制或预算配置。Java 不给材料贴采购、销售、财务等行业类型标签来决定模型答案。
+模型可见内容只有短 refs、代码、必要技术观察和限制；不可见本机路径、行号、hash、完整五图/Proof、run/artifact/publication identities、`sourceRunId`、`modelBatchId`、复用来源、Provider 控制或预算配置。这些运行与调度数据只在 Java 侧验证、保存和审计，不改变同一业务 job 的模型输入。Java 不给材料贴采购、销售、财务等行业类型标签来决定模型答案。
 
 ## 4. ActivityExplainer：DRAFT 与完整 REVIEW
 
@@ -126,6 +126,8 @@ Java 只校验结构、scope-local IDs/refs、集合闭合、预算与保存约�
 
 ActivityExplainer 已在一个包 REVIEW 完成后由 coordinator 随即以 run/job 私有原子 no-replace 文件保存完整结果，不等前序慢包；全部终态后才按原材料顺序一次聚合并安装上述固定地址 publication。fatal 停止新派发，但已开始且自身 DRAFT 合法的 job 仍完成其唯一 REVIEW 和私有保存；没有所有必需结果就不安装 aggregate。不能把固定 publisher 移进 worker 反复安装不同 bytes。私有结果、Provider/job journal namespace 与重复提交防护归[执行设计](../modules/model-job-execution.md#5-保存身份与失败)，原始 DRAFT/REVIEW 按既有私有策略保存，不成为额外产品候选或新恢复系统。
 
+[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)的已批准目标会把固定材料与模型输出分开归属：`sourceRunId` 仍指向生产 `materialsCheckpointId` 的原 run，新 `modelBatchId` 是另一次 `start` 分配的 `AnalysisRunId`，Activity 及其后输出归新 batch。上游 publication 必须保留原地址，不得为满足同 run 校验伪造“搬家”。这项 mixed-ownership reader/publisher 和 `analysis-run-output-v3` 尚未实现，不能由当前 run/job 私有保存推导为已可跨批复用。
+
 Step07 可以按已保存 material/activity ID 读取必要内容，不回到扫描仓库或重构调用链。`RepositoryBusinessKnowledge.unexplainedActivityEntries` 已持有并保存完整记录。程序送给 Process 仓库总整理/Report 模型前按 `materialId` 把完整 sidecar records 聚合成一项 `{materialContext, unexplainedEntryKeys, reasonCode}`：同一 context 只发送一次，删除 material/global entry IDs，保持 E1…EN 的材料映射顺序。活动之间是否属于同一过程由模型阅读多个活动决定，不由 Step06 强设唯一 owner；process-group Prompt 不因这一仓库输入变化升版。
 
 ## 6. 覆盖、预算、失败与复用
@@ -136,19 +138,19 @@ maxMaterialsToStart 限制本执行实际启动的材料总数；超限材料写
 
 只有结构与 scope 合法、但 coverage 不足的 DRAFT 能进入唯一 REVIEW。started 后 transport/schema/runtime 失败关闭新 job 派发，不重试或切 Provider；其他已开始且自身合法的 job 在既有超时内完成其唯一 REVIEW 并保留，协调器收齐终态后报告失败，不启动 Step07。未开始队列项明确未启动，不冒称容量排除。source/hash/ref 错误、模型使用 allowlist 外 key/ref、损坏 JSON、重复冲突 local ID 或超安全预算 fatal；REVIEW 两边仍漏 key 也 fatal且不发第三次调用。未知业务含义、局部 graph 缺口和无 strict Flow 限制对应结论；`MODEL_NOT_EXPLAINED` 只表示本次模型未形成活动解释，不自动升级成这些技术缺口。
 
-同进程复用不可变对象；跨进程/磁盘/导入复用检查 identity/hash/schema/ref/basis 和 inputFingerprint。fingerprint 覆盖内容输入、实际 Prompt、模型/output 配置和 Module 版本，变动就不复用旧内容。已开始但结果不确定的 Provider 调用不得恢复或重放。
+当前同一执行内可复用不可变对象；已开始但结果不确定的 Provider 调用不得在原 run 恢复或重放。已批准但尚未实现的跨 batch 复用只接受“DRAFT 和 REVIEW 都已完成、已校验并原子保存”的整个 job，且新旧 batch 绑定同一完整 `materialsCheckpoint` reference，`jobKey`/`inputFingerprint`、identity/hash/schema/ref/basis 全部匹配。不能凭同名 S/E 短键跨材料集合复用。未开始、DRAFT 失败/未知、或 DRAFT 完成但 REVIEW 失败/未知的 job 都不做半轮恢复；用户显式启动新 batch 时重做完整 pair，旧 batch 不覆写。fingerprint 覆盖完整业务输入、实际 Prompt、模型/output 配置和 Module 版本；排除 batch ID、时间、并发数、存储路径和 secret。
 
 ## 7. 当前实现与最小修改
 
 本节历史实测只证明各自当时的材料链；JDT 与 JavaParser 现在均已接通完整 context 和 Builder，不能把历史取材缺口写成当前能力。Activity 已提取单包函数，并接入多 Provider 稳定路由、两级有界并发、不可变结果、completion queue 与逐 job 保存；保留现有内容、v2 coverage 与校验。Process-group 也使用相同的完整 DRAFT→REVIEW 并行边界，全部组完成后才允许一次仓库总结。本文仍不增加同运行自动恢复。
 
-直接 fixture 测试须新增：两级在途上限、超过 12 包与并发 1 时全部合格 job 不漏、完成次序改变但聚合相同、同 job 绑定不变、不同账户 journal 隔离、重复提交只有一次，以及 fatal 后已开始合法 pair 完成/保存且未开始项不调用。完整材料/actualDraft/missingEntryKeys/unexplainedEntries 的既有测试继续直接覆盖；不跑真实模型来证明线程调度。
+现有直接 fixture 已覆盖两级在途上限、超过 12 包与并发 1 时全部合格 job 不漏、完成次序改变但聚合相同、同 job 绑定不变、不同账户 journal 隔离、重复提交只有一次，以及 fatal 后已开始合法 pair 完成/保存且未开始项不调用。后续只为 model-batch 目标增加材料零重建、完整已审 job 复用、孤立 DRAFT 重做整对和 mixed-ownership 验证；完整材料/actualDraft/missingEntryKeys/unexplainedEntries 的既有测试继续直接覆盖，不跑真实模型来证明线程调度。
 
 当前 BusinessMaterialBuilder 已读取 flow-slices 的 EntryContext，并将已保存的调用、实参/形参、边界、条件、返回和固定 locator 组织成短引用材料。无 strict Flow 时仍消费同一 EntryContext；不再存在从源码盘点直接重扫 Java、按 field type/name/arity 猜测 callee 的业务材料路径。Capsule 的 span 仍保留技术增强；EntryContext 是连贯关系的唯一 owner。已实现按同一 handler 类和材料模式的有界分组：每个成员的完整已选上下文都保留，模型 context 以 `E1…En` 标明成员，模型的活动响应也必须用这些短键声明覆盖范围；程序再将短键映射回实际入口。该分组不改变 Step05、不命名业务过程，也不替代后续业务解释。
 
 固定 jshERP commit `8c30ce7861570458920175e200bb2a6442713580` 已完成一次新的生产路径、零 Provider 全仓材料验证。该 run 盘点 719 个 tracked 文件、发现 339 个 HTTP 入口，并持久化 446 条 JSONL 记录：107 条 `BUSINESS_MATERIAL` 与 339 条入口覆盖记录。107 个材料包的入口数分布为 21 个单入口、10 个双入口、6 个三入口和 70 个四入口，恰好覆盖全部 339 个入口；12 个包是 `FLOW_PREFERRED`，95 个是 `ENTRY_SOURCE_FALLBACK`。两种包都来自 Step05 已保存入口上下文，后者明确携带技术限制而不伪装为完整 Flow。所有 339 个入口都有材料，Provider 调用数为零。这个实测 107 包计划才是后续 Luna 调用预算的分母，而不是旧的 339 个单入口包。
 
-这项验证只回答“自动材料是否覆盖整仓、是否可在模型调用前观察”。它本身没有生成业务过程或九章报告。已有 ActivityExplainer DRAFT+完整 REVIEW、ProcessExplainer、BusinessReportPublisher 和 BusinessAnalysisWorkflow，不能写成尚未实现；这些存在与有界 scripted 测试也不能替代真实小包的语义质量验收。
+这项验证只回答“自动材料是否覆盖整仓、是否可在模型调用前观察”。上述 107 包是该次历史运行的模型调用分母，不是后续 JDT 材料批次的常量。它本身没有生成业务过程或九章报告。已有 ActivityExplainer DRAFT+完整 REVIEW、ProcessExplainer、BusinessReportPublisher 和 BusinessAnalysisWorkflow，不能写成尚未实现；这些存在与有界 scripted 测试也不能替代真实小包的语义质量验收。
 
 已对自动生成的 `POST /user/registerUser` `FLOW_PREFERRED` 材料完成一次授权的 Luna/high DRAFT+完整 REVIEW。9 个短片段使模型识别出“接收注册请求 → 将登录名写为用户名 → 校验验证码 → 检查登录名 → 调用注册服务 → 返回标准结果”的局部活动，并明确没有把调用服务写成一次已成功持久化。它同时暴露两项文字质量问题：HTTP 路径被截短、Java 类型/变量名泄漏进业务对象。因此 DRAFT/REVIEW Prompt 已增加完整 HTTP 方法与路径原样保留、业务语言优先的规则；这不重放已结束的产品候选。
 

@@ -4,6 +4,8 @@
 
 ## 1. 第一阶段接线：先使JDT独立成立
 
+JDT和JavaParser接入均已完成。当前新的最小接线是[模型批次解耦](../model-job-execution.md#7-固定材料与独立模型批次已批准待实施)，不是再做本页引擎迁移：模型模式从已保存M10直接开始，零技术executor、零引擎session、零Builder。原材料仍归原sourceRun，新业务结果归新batch run；正常技术运行入口仍用于明确的新取材。仅修改下游组合根/读写归属，不改引擎算法。
+
 ### 1.1 组合根与应用发现
 
 组合根加载 engine 配置并打开一次 snapshot-bound session；`PersistedTechnicalRunExecutor` 将同一会话交给 application discovery、navigation publication 与 Step05，再由业务运行链消费已保存结果。JDT 路径不 hardcode 或调用 JavaParser；JavaParser 路径也不启动 JDT。未知配置值明确失败。

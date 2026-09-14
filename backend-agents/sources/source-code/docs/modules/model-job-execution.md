@@ -1,6 +1,6 @@
 # 模型任务并行执行
 
-> 已实现的目标设计。严格 v2 单配置、基础/执行身份分离、两级有界并发、稳定路由、逐 Activity/Process-group 保存、Codex Subscription 认证隔离及 OpenAI Responses adapter 已接入正式运行链。Activity 与 Process-group 均把完整 DRAFT→REVIEW 作为不可拆 job；仓库总结和整篇报告仍各至多一个串行 job。本页拥有任务调度、Provider 绑定、YAML、即时保存与验收合同；业务内容仍由 [Step06](../analysis-steps/06-flow-interpretation.md)、[Step07](../analysis-steps/07-repository-knowledge.md)、[Step08](../analysis-steps/08-nine-section-document.md) 拥有。
+> 并行池、严格 v2 单配置、Provider 隔离和逐 job 保存已实现；§7 的“固定材料＋独立模型批次”是本次已批准、尚待编码的最小改法，不能当成当前 CLI 已具备的能力。本页统一拥有调度、配置、批次身份、复用和失败合同；业务内容仍由 [Step06](../analysis-steps/06-flow-interpretation.md)、[Step07](../analysis-steps/07-repository-knowledge.md)、[Step08](../analysis-steps/08-nine-section-document.md) 拥有。
 
 ## 1. 并行单位与阶段顺序
 
@@ -92,9 +92,9 @@ business:
 
 当前 CLI 使用 `repository-run-config-v2` 的单一 JSON/YAML 配置，并在模型模式拒绝旧根版本、独立 `repository-run-provider-v1` 和 `--provider-config`。executable、timeout、journal/output 已归入 `sourceAnalysis.modelJobs`；材料模式只验证其结构，模型模式在读取 continuation state 前预检认证环境并构造全部已路由 Provider。有效非秘密路由、Provider/model/effort 配置归入已有运行诊断，不往 public request 塞路径/密钥，也不把技术阶段 `provider: NONE` 误当业务身份。
 
-v2 continuation state 已采用 `baseConfigurationSha256 = SHA256(canonicalJson(normalizedV2Document 删除且只删除 sourceAnalysis.modelJobs))`，其余 source/technical/business/inputs 等检查全部保留。私有材料状态 exact keys 为 `schemaVersion: repository-run-state-v2, baseConfigurationSha256, runId, businessFlowsPublication`，后两项及 publication 子字段原样保留；它不保存调度 SHA。每次模型执行前另在现有私有运行区原子保存 `{schemaVersion: model-job-execution-config-v1, runId, modelJobsSha256, modelJobs}`，后两者为补齐默认值后的非秘密 modelJobs 对象及其 canonical SHA，保留引用名称但绝不写解析后的 key/token 值。无 modelJobs 的 materials-only 不产生该记录。
+当前 v2 continuation state 使用 `baseConfigurationSha256 = SHA256(canonicalJson(normalizedV2Document 删除且只删除 sourceAnalysis.modelJobs))`。私有材料状态 exact keys 为 `schemaVersion: repository-run-state-v2, baseConfigurationSha256, runId, businessFlowsPublication`；**没有直接保存材料 checkpoint**。当前模型执行另存 `{schemaVersion: model-job-execution-config-v1, runId, modelJobsSha256, modelJobs}`，只保存非秘密配置。这是实施现状，不再是批次解耦的目标状态；目标私有 v3/v2 合同见 §7.2，根 YAML 继续 v2。
 
-只改并发 4→8 不改变 base SHA，不重跑 JDT；模型/Prompt/输出等真实内容配置变化仍使相应业务 fingerprint 失效。每次核验 base SHA、保存的执行配置 SHA 及实际技术 publication，不能将未知 bytes 当成可信。此变更只升级上述本地 config/state，不改变 public run-request-v2。旧 v1 状态不就地转换或覆盖；旧完成产物通过既有显式新执行/checkpoint 复用边界使用，不引入同 run 自动恢复。
+当前只改并发不改变 base SHA，但模型失败会把同一个 run 标为 FAILED，后续被 RUNNING 检查挡住；且业务 profile 仍被旧 base SHA 连带绑定。这不是材料或 JDT 失效。目标只核验所选固定材料及其真实输入依据，模型配置独立绑定到新批次；不通过删日志、改失败状态或重扫 JDT 获得新模型请求。材料格式与公开 run-request-v2 不因此升版。
 
 ## 3. Provider、认证与额度
 
@@ -126,15 +126,15 @@ Codex Provider 可以只引用一个已登录的上下文。每个 job 使用新
 
 ActivityExplainer 已把一份材料提取为一个不可变完整 DRAFT→REVIEW job；ProcessExplainer 对每个有资格的过程组执行同样的不可拆 job。两者的有界 completion queue 都执行全局及 Provider 两级上限，在完成 REVIEW 后先私有保存再释放名额，最终按稳定材料/组顺序聚合。过程 aggregate 仍须等全部组及至多一次仓库总结完成，或按既有规则明确跳过总结后才安装。worker 不共享可变业务集合，也不发布同一固定 aggregate 地址。
 
-Activity 使用 `model-jobs/<run-hex>/activity/<job-key>/reviewed-result.json`，Process-group 使用并列的 `process-group` 目录；二者均为安全原子 no-replace 写入。job key/input fingerprint覆盖实际内容、Prompt、schema、预算和有效 runtime identity，这些调度元数据不进入模型输入。记录包含完整已审结果、Provider key、非秘密 quotaScope 与实际 runtime identity，不保存 token/key 值；同 bytes 幂等，异 bytes 冲突。singleton summary/report 的每次请求与响应由 Provider journal 保存，最终知识/报告仍由既有 canonical module publication 安装。
+当前 Activity 使用 `model-jobs/<run-hex>/activity/<job-key>/reviewed-result.json`，Process-group 使用并列目录，均为原子 no-replace 写入；目前这些私有结果只有写入路径，尚无跨批次验证读取与选择。singleton summary/report 的原始轮次由 journal 保存。§7 将这里的 run 改为新模型批次的输出 run，补最小已审结果 reader，并将同样的完整 pair 保存规则用于 singleton，不另建 Store 框架。模型输入仍不包含调度身份或凭据。
 
 `RunJournalStructuredProvider` 目前按一个 `ModelRuntimeIdentityV1(provider,model,reasoningEffort,sandbox)` 校验，身份里没有账户；最小修改是每个已绑定 Provider/job 使用独立私有 journal namespace，保持 request/response 身份验证。不同账户上相同模型/输入不能串读；同一 job 只提交一次，同一进程维护单一 job-key 登记，重复排队不能发第二次 DRAFT。不同材料即使模型输入 bytes 相同也不会互相抢写。DRAFT/REVIEW 仍分别记录实际请求及输出；不改业务 packet 增加调度 ID。
 
-inputFingerprint 继续覆盖实际完整内容、实际 Prompt 文本/版本、有效模型/effort/output 与 Module 版本。Provider 绑定/非秘密 quotaScope 在私有执行命名空间和运行配置中可核对；路径、密钥值、新 runId、队列时间和并发数不是业务内容，不混入模型 packet。变更路由须重新固定各 job 绑定并检查配置身份；不能在同一执行中热改。改变并发且输入/绑定相同时不能制造不同业务排序。跨 run 显式复用仍核验现有 fingerprint、schema/hash/ref/basis，不自动续跑 uncertain started 请求。
+inputFingerprint 的目标比较规则见 §7.3：内容与实际有效服务绑定必须一致，新的批次身份、队列时间和并发不影响业务内容。变更路由须重新固定各 job 绑定，不能同批热改。现有 run-bound 请求/结果身份不能直接拿来作跨批内容比较；复用 reader 必须区分来源批次与新输出归属，不跳过 runtime 校验。
 
 任一 fatal 被观察到后立刻关闭新 job 派发。未开始 DRAFT 的队列项不再发模型请求，逐项在既有失败诊断中说明“本执行已停止、未启动”，不冒称预算不足或分析完成。已经开始的 job 若自身 DRAFT 合法，就在原绑定上继续它唯一的 REVIEW，并在既有各次超时内保存结果；兄弟 job 失败不让它丢掉已完成 DRAFT，也不构成重试。自身 DRAFT 非法/失败的 job 不进入 REVIEW；自身 REVIEW 失败则保留诊断，不造已审结果。尚未真正开始 DRAFT 的已派发 worker 在调用门检查停止标记。
 
-协调器等待/收集所有已开始 job 的终态或既有 timeout，保留已经成功的私有结果与上游产物，最终以现有 FAILED 路径结束；没有所有必需结果就不安装成功 aggregate，不跨过阶段屏障开始总结或报告。保存失败同为 fatal。没有 retry、自动 reroute、failed-call replay、同 run takeover 或终态修复。后续人可观察/显式复用可验证的完成产物；本文不增加自动恢复协议。
+协调器收齐已开始 job 的终态或既有 timeout，保留结果并以 FAILED 结束；没有所有必需结果不发布成功 aggregate，也不进入下游。保存失败同为 fatal。同一批次没有 retry/reroute、failed-call replay、takeover 或终态修复。用户显式发起的新批次可以按 §7 重新执行未完成 job；它保留旧失败并产生新请求，不能称为旧请求恢复成功。
 
 ## 6. 已完成实现与定向验证
 
@@ -144,6 +144,8 @@ inputFingerprint 继续覆盖实际完整内容、实际 Prompt 文本/版本、
 2. Activity 与 Process-group 都已提取不可变的完整 DRAFT→REVIEW job，并执行全局和 Provider 两级限制。
 3. 逐 job 私有保存、Provider/job journal namespace、稳定 aggregate 与 `PersistedBusinessRunExecutor` 阶段屏障已经接通。
 4. 下列直接测试均使用 frozen/scripted 或替身 Provider；真实模型性能仍须在另行授权的运行中测量。
+
+这里的“已完成”不包括 §7 的材料直接读取、独立批次、完整结果复用与跨 run 输出接线。
 
 | 直接测试 | 需要观察的行为 |
 | --- | --- |
@@ -158,3 +160,99 @@ inputFingerprint 继续覆盖实际完整内容、实际 Prompt 文本/版本、
 | YAML | 默认 4/Pro Luna high、显式 API、非法值/缺项/未知项、错误环境引用、旧第二配置与 root 版本拒绝；materials-only 零 Provider |
 
 只运行新增或直接覆盖改动的测试，重型检查串行；不运行客户构建或真实模型验证上述调度规则。观测使用单调时钟记录 queue wait、DRAFT、REVIEW、save、各 phase elapsed，以及全局/每 Provider 实际在途 job 和实际活跃模型请求峰值。统计请求数、完成/未启动/失败数和真实保存 bytes，不记录凭据或完整源码到日志。全局 6 不代表快 6 倍；在测量模型耗时、额度和保存成本之前不承诺加速比。
+
+## 7. 固定材料与独立模型批次（已批准，待实施）
+
+### 7.1 给人看的规则
+
+JDT 和 Builder 的工作是准备一本可重复阅读的“代码资料”。模型某次没有读完，不意味着资料失效。先保存完整材料，再用它执行模型批次；失败留在那个批次里，下一次只重做必要模型工作。
+
+- `materialsCheckpointId` 是既有 BusinessMaterialBuilder module receipt ID 的便于阅读名称，实际读写必须使用带地址、root、receipt SHA 的**完整既有 checkpoint reference**，不能仅凭 ID 猜路径。
+- `sourceRunId` 是材料原生产 run，不因模型失败被改写或复制成另一套来源。
+- `modelBatchId` 直接采用现有 `start` 为本次新执行分配的 `AnalysisRunId`；它也是业务输出的 `runId`。不再生成一套并行的随机批次 ID、不新增 public Agent 方法或生命周期枚举。
+- 一批次的执行范围和服务绑定启动前冻结；sample 与整仓是不同批次。失败批次永不重新打开来派发请求。新批次不能因为旧 sourceRun 为 FAILED 就拒绝有效材料，也不能把旧 run 改回 RUNNING。
+
+源码、导航、材料和来源引用保持不变时，新批次的 Capture/JDT/graph/Fact/Flow/Builder **调用数均为 0**。只有材料缺失、损坏或用户明确要改变取材内容时，才回到相应上游；读取失败不得自动扫描。模型返回质量问题也不能成为重建五张图的理由。
+
+### 7.2 最小接线与私有记录
+
+沿现有 RepositoryRunMain / PersistedBusinessRunExecutor / BusinessAnalysisWorkflow 接线，不增加第二工作流。保留现有从 Step05 构建材料的入口；另外让同一业务执行逻辑接受**已验证的完整 BusinessMaterialBuildResult 与显式输出 run**。重新读取材料只解码文件和核验引用，不调用 Builder.build。
+
+材料创建模式在 M10 安装成功后写私有 `repository-run-state-v3`，exact keys 为：
+
+```text
+schemaVersion = repository-run-state-v3
+sourceRunId
+businessFlowsPublication  // 完整既有 Step05 reference，保留原地址
+materialsCheckpoint      // 完整既有 M10 reference，保留原地址
+materialProfile          // 保存时实际完整 BusinessMaterialProfile
+materialModuleVersion    // 实际材料 producer 版本
+materialBasisSha256      // 下述三项的 canonical 摘要
+```
+
+`materialBasisSha256 = SHA256(canonicalJson({businessFlowsPublication, materialProfile, materialModuleVersion}))`。这里 publication 是完整引用；源码、工具和入口选择由该引用及上游 basis 闭合，不另建证据链。当前 M10 receipt 未单独保存 material profile，不能假称 receipt 已包含它；新 state 必须保存实际值，离线导出从该次原配置取出，先通过旧 state 的 baseConfigurationSha256 核验原配置，再核验现存材料身份与 producer。不能从今天的默认值补造，也不能为了核对 profile 重新运行 Builder。
+
+不再用“整份配置减 modelJobs”的 SHA 代表材料有效性。核验 `sourceRunId == materialsCheckpoint.address.runId == businessFlowsPublication.address.runId`，重开 M10/key/payload/schema、上游引用和实际材料 basis。模型模式验证配置声明的来源 commit/仓库与保存依据一致，材料及短 ref 分母完整；取材参数以 state 中实际采用的值为准，CLI 显示它们，模型模式不应用新取材参数。要改变入口选择、引擎/classpath、源码、分包或代码内容，明确生成新的材料 checkpoint；不能在 generate 中悄悄生效。Activity/Process/Report profile、模型、Prompt、并发、日志路径变化都不让既有材料失效。
+
+`generate` / `activities-sample` 每次显式调用都创建新输出 run，模型执行前原子写私有 `model-job-execution-config-v2`：
+
+```text
+schemaVersion = model-job-execution-config-v2
+modelBatchId              // 值等于本次输出 runId
+sourceRunId
+materialsCheckpoint      // 完整引用；不内嵌源码
+reuseFromModelBatchId     // required nullable；只选一个已停止的旧批次
+executionScope           // {mode, materialIds, maxMaterialsToStart}
+modelJobsSha256
+modelJobs                // 有效非秘密服务/路由/两层并发配置
+```
+
+复用来源由同一维护 CLI 的可选 `--reuse-from-model-batch <analysis-run-id>` 明确给出；缺省不跨批自动搜索结果。根 YAML 保持 v2、两个并发字段不变。该参数不是热重试、不是新的公开 Agent API。技术创建模式拒绝它，批次不得引用自身或仍在运行的批次；新旧批次必须绑定同一完整 materialsCheckpoint reference，不能跨材料集合仅凭同名 S/E 编号复用。完整复用记录可经旧批次保存引用继续定位真实原生产者，不另建通用图搜索器。
+
+executionScope.mode沿现有 `activities-sample | generate`；sample的materialIds为该次精确选中ID，generate为空数组表示整个所选checkpoint，maxMaterialsToStart记录本次实际启动范围上限。它们不是新的并发限制，不进入单job的内容fingerprint；扩大批次范围不否定同一材料job的完整已审结果。sample保存完整已审job及私有样本说明后，将**本批**由RUNNING置FINISHED，不安装虚构的四项全链run output、不宣称整仓报告完成。这样后续generate可明确选这个已结束批次作为复用来源；失败sample则仍为FAILED。生命周期完成只指已声明执行范围，必须与业务交付完整度分别显示。
+
+私有路径继续使用 `model-jobs/<batch-run-hex>/<stage>/<job-key>/`；服务/request journals 也必须包含该 batch namespace。execution config、request ID、request/output 路径和重复提交登记都按新批次隔离；sample inspection也写在outputDirectory的batch子目录，不再只按materialId覆盖。原请求原样保留。旧 v1 私有执行配置、v2 state 不被正常新 reader 静默双读；实施时提供一次显式、离线的旧 state 导出：核验原 Step05 与实际已完成 M10，写到**新 v3 文件**，保留旧文件。导出只读现存 artifacts，绝不扫描或发模型请求；找不到有效 M10 就报告无法导出，不编造 reference。本次已保存材料因此不需要为了升级元数据重新生成。
+
+**输出归属必须贯通而非只换目录。** 当前 Activity/Process/Report publisher 从上游推导 runId，AnalysisRunOutput/registry 又要求四个 checkpoint 同 run，这些消费者需一起改为接收新输出 run。材料保持原 sourceRun 地址；新 Activity/Knowledge/Report publication 属于 batch run。私有run-output从 `analysis-run-output-v2` 升至 `analysis-run-output-v3`，保留既有四个 checkpoint reference 并显式增加 `sourceRunId`：材料按 sourceRun 校验，后三项按输出 owner/batch 校验，写入和重开完全同义。只能验证后引用旧产物，不能篡改上游 receipt/runId 或关闭所有跨 run 检查。公开 reference 字段形状不变；新结果的普通 inspect/artifact/render 沿真实引用读。最终私有执行清单把 document/report checkpoint 链接到 materialsCheckpoint 和 modelBatchId，业务 JSON/九章正文不增加这些控制字段。
+
+新批次的根 request 继承 source run 的冻结来源与材料相关 controls、candidateSeriesRef、readerCandidateRound、parentCandidateRef 和 approvedFindingRefs；模型业务 profile/Prompt 可按实际配置形成新请求引用并进入结果 fingerprint，不以技术来源改变处理。包含技术与业务子项的复合配置引用，应核对真正影响所选材料的子项相同；新业务 controls 要绑定新实际Prompt/profile，不能沿用旧引用冒充已采用新配置，也不能要求无关模型项相等才让材料通过。写入前逐项核验这份明确继承关系，拒绝不同来源/不同候选 lineage。该改动只接入现有维护 CLI 的 model-only composition；现有 public executeStep 仍可能进入技术 coordinator，不能仅凭新增内部入口就宣称任意 executeStep 都已支持材料批次复用。
+
+### 7.3 哪些结果可以复用
+
+最小复用单位是**完整、校验通过并已保存的 DRAFT＋REVIEW job 结果**，不是任意成功的一次网络响应。只给现有私有 job store 增加验证读取和“复用或执行”的选择，不建设半轮恢复或请求修补系统。
+
+| 旧 job 情况 | 新批次行为 |
+| --- | --- |
+| 未启动，或 DRAFT 失败/STARTED 后结果未知 | 新 job 做一次 DRAFT＋一次完整 REVIEW；旧记录不动 |
+| DRAFT 完成但 REVIEW 失败/未知 | 保留旧草稿作诊断；新 job 重新做完整 pair，不拿孤立草稿跳过 DRAFT |
+| 完整已审结果已原子保存，内容和绑定全部匹配 | 两次模型调用都跳过；保存指向原结果的复用记录 |
+| REVIEW 似乎返回但结果保存不完整/损坏 | 不承认为可复用结果；保留故障，先报告损坏，不自动重新调用 |
+| 已审结果合法但输入、Prompt、schema/profile 或绑定不匹配 | 标记不匹配，不复用；新批次按当前明确配置执行 |
+
+稳定 jobKey 包含阶段及材料/过程组/总结/报告的真实输入成员身份，不含 batchId；不同材料上的 E1 不能相撞。`inputFingerprint` 比较完整 clean input、来源/入口短 ref 映射、实际 Prompt 文本与版本、response schema、有效内容 profile、Module/producer 版本、实际 Provider/账户 scope/model/effort/sandbox。使用现有 canonical codec；不得用中文摘要相等替代内容比较。新的 run/batch、排队时间、并发数、日志/输出目录及秘密值不属于内容 fingerprint；不同账户或模型不能只因输出字节恰巧相同就串用。Provider 绑定仍需独立验证非秘密账户 scope 与实际 runtime identity。
+
+现有材料、活动或结果 record 可能含来源 runId，不能直接改字段后冒充原结果。读取复用记录时验证原结果、完整 REVIEW、对应输入映射与服务绑定；把已审语义内容经现有确定性 local/global 映射装入新批次的聚合，保留 `reusedFrom {modelBatchId, jobKey, resultReference, resultSha256}`。不重新总结中文，不丢条件/规则/字段。新旧 execution bytes 可以因归属不同而不同，验收比较语义投影、coverage 和 refs，不虚称所有 archive 字节相同。
+
+Activity 先逐材料选择复用/执行，全部完成后稳定聚合；Process 在新活动集合上重新计算**既有分组**，按实际完整组输入匹配结果。只复用输入未变的组；受变更影响的组、仓库总结和报告各按自己的 fingerprint 判定，不因为“活动大部分相同”直接复用旧整仓报告。孤立单活动组仍按既有规则零过程调用。完整结果包含 required unexplainedEntries 但为语义 PARTIAL 时可如实复用；不能把 PARTIAL 升格为完整业务验收。
+
+### 7.4 失败、授权和不做什么
+
+自动重试始终关闭；显式新批次是用户决定的新执行，不是 worker 观察失败后自行另起批次。一次授权可覆盖已明确的多个批次/范围，不重复询问同一授权；若用户要求先讨论、暂停或收口，不启动新批次。批次 ID 不是调用许可。运行故障后的新批次继承原 candidateSeries/readerCandidateRound/parent/findings，不递增轮次、不因分配了新 runId 就创建新业务候选；仅有 DRAFT 或失败 REVIEW 不是可选最终 Candidate。复用完整最终报告只是复用同一候选内容，不另算一份新候选；已有完整且验证通过的最终候选若需内容修正，仍走原有具名 finding 的 ROUND_2，不能换 batchId 无限生成同轮替代报告。
+
+本次不做同 run 恢复、自动重试/切服务、孤立 DRAFT 跨批续审、分布式锁、消息队列、事件重建或复杂状态修复。必要条件只有：旧材料可验证、批次隔离、已审 job 可验证复用、输出来源正确。无法确认某个 STARTED 请求是否在服务端完成时，报告“旧结果未知，新批次可能再次产生该任务的模型工作”，不承诺 exactly-once 或零额外耗时。
+
+### 7.5 用已保存整仓样例推演
+
+2026-09-13 固定 jshERP 的第一份保存材料有 **326 份材料、326 个入口处置**；其后 4 个 Activity DRAFT 留有 STARTED、没有完整已审结果。材料 checkpoint 为 `module-receipt:7228b9f5048bc3dc9dfba94712e3e839fd211d8a1c2c9baebccea6825a89e67b`。完整位置和第二轮记录见 [实际运行记录](../../progress/jsherp-full-parallel-business-report.md)。这不是模型已经理解了 326 个入口。
+
+采用本设计时，显式导出并选定第一份材料，创建新 batch：已审可复用数为 0；4 个失败 job 与其余未启动 job 都按当前范围排队，不重跑 JDT，也不把旧 STARTED 改成 COMPLETED。若另一批次有 100 个完全匹配的已审 job，则先验证复用这 100 个，只为其余必要 job调用模型；这个 100 是规则示例，不是本次实测。
+
+后一次 host 扫描实际保存 **325 份材料、326 个入口处置**，缺失点为 `MaterialExtendController#getList` 的导航超时。它是不同 checkpoint，不能按“最新目录”自动替换第一份，不能手工把另一份的 S 编号混进来。用户提出的单入口复核仍单列待执行；本次文档修改不执行它。首次模型故障的具体进程根因尚未由完整日志证明，不写成已确认的 JDT 缺陷。
+
+### 7.6 最小实施与验收指南
+
+Luna/xhigh 先针对既有公开/内部组合入口写 RED，Terra/xhigh 实现相同 seam；Sol/xhigh 定位真实故障，设计偏差交 Sol/ultra 或 Astra/ultra。按材料 reader＋v3导出、batch绑定＋输出归属、已审结果读取＋复用、下游传播与 CLI 四个局部交付推进，不重建技术阶段。实施者不能只改 journal 目录后声称完成。
+
+直接验收：同一材料先失败四 job，再显式新 batch；前五步、JDT及Builder计数均为0，旧失败/run状态/bytes不变，新请求与旧请求隔离；完整已审 job零调用复用，孤立DRAFT新pair；缺失/损坏/跨来源/错账户拒绝；并发1/4/6不改变内容；变更Prompt只使相应模型结果失效；过程/总结/报告按依赖内容失效；sample不占整仓固定输出；新报告来源可回查原材料；旧v2state导出零扫描；已暂停时不自动另开batch。保留当前多入口、覆盖、来源、完整REVIEW和单次保存测试。
+
+全部自动化使用 scripted/替身 Provider，不运行客户构建或真实模型。文档同步不表示上述测试或代码已经完成。

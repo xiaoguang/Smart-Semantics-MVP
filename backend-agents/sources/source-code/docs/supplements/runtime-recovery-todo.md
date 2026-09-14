@@ -59,7 +59,7 @@ active v0 的规则是：
 - Provider 调用一旦开始，不自动重试、不切换 Provider；当前 run 失败并保留已写诊断；
 - capability manifest 只可声明 `RUNTIME_RESUME=CAPABILITY_NOT_ENABLED`，不得暴露假 resume seam。
 
-上述“新执行复用上游产物”不是同一 run 恢复，也不属于本文 TODO。
+上述“新执行复用上游产物”不是同一 run 恢复，也不属于本文 TODO。用户本次已批准[材料检查点与独立模型批次最小设计](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)：材料原sourceRun不动，新batch使用新run，显式复用完整已审job，失败job按新批次范围重新做完整pair；它尚待实施，但不受本页DEFERRED阻挡。旧STARTED不恢复、不改写，不增加自动重试/接管/终态修补。本页历史估算不应用到这项最小接线。
 
 ## 6. 粗略开发量（仅用于延期决策）
 

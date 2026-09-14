@@ -95,6 +95,8 @@
   pool, single YAML configuration, Provider/auth binding,
   private per-job saving, failure handling and direct verification. Synchronize
   its affected active consumers; preserve historical runs and completed plans.
+  Section 7 owns the approved, NOT YET IMPLEMENTED material-checkpoint/model-batch
+  separation. Do not describe it as current CLI behavior or reopen old plans.
 
 ## Selectable Java code engines
 
@@ -265,8 +267,10 @@
   failure is fatal for that execution: stop new job dispatch; already-started
   pairs whose own DRAFT is valid finish their one REVIEW under existing
   timeouts and preserve outputs. Collect terminal outcomes, then fail without
-  downstream success. Never retry, switch Provider, fall back to an API key,
-  replay or synthesize success.
+  downstream success. Never automatically retry, switch Provider, fall back to
+  an API key, replay an old request or synthesize success. An explicitly started
+  new model batch may execute incomplete jobs under section 7; old STARTED and
+  FAILED records remain immutable. A new batch is not an automatic retry loop.
 - `maxMaterialsToStart` is the explicit per-execution ActivityExplainer launch
   cap. Use the dedicated `FLOW_INTERPRETATION` materials-only target for
   zero-Provider planning; a final-document run requires a positive cap. A cap
@@ -404,6 +408,33 @@
   bridge/reconciliation ledgers or complex same-run recovery.
 - Active v0 never resumes or replays an uncertain started Provider call.
   Same-run crash/worker takeover and terminal repair remain deferred.
+- Preserve validated business materials independently of model outcomes.
+  materialsCheckpointId names the existing receipt; reads require the full
+  typed reference, saved material profile/producer and basis. sourceRunId stays
+  the producer; a newly allocated AnalysisRunId is the modelBatchId/output owner.
+  Direct model-batch execution must not call Capture, JDT, graph/Fact/Flow or
+  BusinessMaterialBuilder again. Failed source-run state alone does not
+  invalidate a completed material artifact. Do not delete journals, reset
+  failure states or rescan merely to obtain new model request identities.
+- Cross-batch reuse is explicit and limited to complete, validated, privately
+  saved reviewed jobs with matching content, source mapping, Prompt/schema/profile
+  and effective service/account/model/effort. Reuse neither isolated DRAFT nor
+  unvalidated REVIEW responses. A failed pair starts a new full pair in the new
+  batch; prior completed results and provenance are immutable. A changed group
+  or knowledge input invalidates only dependent process/summary/report results.
+- Batch/output integration must preserve dual ownership: material belongs to
+  sourceRunId; Activity/Knowledge/Report outputs belong to the new batch run.
+  Synchronize writers, analysis-run-output-v3 and readers, never broadly disable cross-run
+  checks. Root request candidate lineage stays fixed; operational batches do not
+  mint extra Reader Candidates or bypass ROUND_2 findings. Only the maintenance
+  composition is in scope; do not claim public executeStep supports this until
+  its actual behavior is implemented and verified. No new public Agent methods,
+  recovery system or parallel evidence framework is authorized by this design.
+- Explicit material-state export reads existing artifacts and writes a new
+  private versioned state; it never silently converts/overwrites old state or
+  invokes a scanner. Keep runtime config, batch IDs, hashes and retry diagnostics
+  out of model packets. Honor an existing scoped authorization without repeatedly
+  asking, but never start another batch while the user has paused for discussion.
 
 ## Public seam and output rules
 
@@ -411,10 +442,10 @@
   with start, executeStep, inspect, artifact, render, validate and trace.
   executeStep creates a new execution identity; it is not same-run resume.
 - Java and CLI may arrive before authenticated loopback HTTP. Completing all
-  three adapters is not a business-quality gate; HTTP and a second product
-  Provider are not current implemented capabilities. Explicit API service
-  configuration is now part of the approved model-job design; HTTP remains
-  deferred. The design alone authorizes neither live API calls nor billing.
+  three adapters is not a business-quality gate; HTTP remains deferred.
+  Explicit API service configuration and adapter are implemented as part of
+  the model-job execution design; independent model batches are still pending.
+  The design alone authorizes neither live API calls nor billing.
 - No public request/response accepts or exposes filesystem Path. Raw source,
   prompts and model responses remain protected according to existing artifact
   policy.

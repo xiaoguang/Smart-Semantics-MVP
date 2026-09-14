@@ -16,7 +16,7 @@
 
 送给报告模型的未解释入口也按 materialId 聚合为 `{materialContext, unexplainedEntryKeys, reasonCode}`，同一 material context 只发送一次，global IDs 留在程序侧。这是模型输入，不是读者语言：第 9 章只在存在未解释入口时，用其中已有的完整 HTTP 方法/路径说明“尚未形成业务解释”及自然语言原因；不能只写数量，也不能泄露 `unexplainedActivityEntries`、`materialContext`、`reasonCode`、`MODEL_NOT_EXPLAINED` 或 E3/E4。集合为空时，第 9 章只保留已有的业务待确认项。程序不反解析中文 context，不凭空创建 EntryDescriptor。
 
-模型包只给短 ref 和内容，文件路径、行号、hash、run identity 留在程序侧。程序在调用前计算完整输入/输出预算；容量不足应明确未覆盖材料并给出 PARTIAL 状态，不能截断后把剩余文字标为全仓报告。
+模型包只给短 ref 和内容，文件路径、行号、hash、run identity、`sourceRunId`、`modelBatchId`、复用来源和调度数据留在程序侧。跨 batch 复用不向 DRAFT/REVIEW 注入运行控制，也不假定模型记得上一批。程序在调用前计算完整输入/输出预算；容量不足应明确未覆盖材料并给出 PARTIAL 状态，不能截断后把剩余文字标为全仓报告。
 
 ## 3. DRAFT、完整 REVIEW、确定性排版
 
@@ -92,7 +92,9 @@
 
 publisher 保存时只做必要结构检查、序列化与原子安装，不能调用 Flow compiler、Fact 枚举器或 Capsule projector。磁盘重新打开或显式导入验证 hash/schema/ref/basis；按已验证 JSON 纯 render 是 0 Provider 操作。inspect/artifact 只读；编辑业务正文是另行授权的模型内容动作。
 
-已开始但结果未知的请求不自动恢复，已完成报告不被覆写。使用现有 checkpoint/inputFingerprint 规则即可，不新建十几层 receipts、reader replay 或恢复状态机。
+[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)已批准的 `analysis-run-output-v3` 目标会保留 material publication 的原 `sourceRunId`，而 business-report、knowledge 和 activity 的输出 owner 是新 `modelBatchId`；publisher/reader 必须分别用输入 checkpoint 与输出归属验证，不伪造同 run 地址。公开 publication reference 形状与报告业务 JSON/Markdown 不增加 batch 字段。该 mixed-ownership 读写尚未实现。
+
+当前已开始但结果未知的请求不自动恢复，已完成报告不被覆写。目标中，显式新 batch 也不继续孤立报告 DRAFT：REVIEW 失败/未知则新 job 重做完整 pair；只有新旧 batch 绑定同一完整 `materialsCheckpoint` reference，且整个 DRAFT+REVIEW 已验证、原子保存、fingerprint 精确相同时才可复用。这不新建通用 receipts、reader replay 或半轮恢复状态机。
 
 ### 6.1 来源外置的最小修改与验收
 
@@ -112,7 +114,7 @@ Luna/xhigh直接测试：同一已审JSON重渲染后恰好九章，第二至九
 
 080a86d 的历史 renderer 曾把全部来源附在第一章；来源外置已在后续 2f5af19/5008f91 交付。四入口 JDT 比较基线报告仅完成 DRAFT，REVIEW 启动后失败，仍不能因格式检查或纯重渲染而称为已审报告；历史结果只用于比较。
 
-新模型 job 并行尚未实施。报告只需接入已绑定 Provider 的有效 profile 与阶段屏障，保留当前完整九章协议。直接 scripted 测试验证只存在一个报告 DRAFT/REVIEW、实际完整 DRAFT 与原知识到达 REVIEW、所有上游完成/显式处置后才启动，以及独立纯 render 的 generate 调用数为 0；不新增语义 output wire 或逐章协议。
+模型 job 并行与阶段屏障已实施；报告本身仍是唯一 singleton DRAFT/REVIEW pair，使用已绑定 Provider 的有效 profile。现有 scripted 测试验证只存在一个报告 pair、实际完整 DRAFT 与原知识到达 REVIEW、所有上游完成/显式处置后才启动，以及独立纯 render 的 generate 调用数为 0。后续只为 model-batch 目标增加报告 fingerprint/整 job 复用、孤立 DRAFT 重做整对和新 batch 输出归属测试；不新增语义 output wire 或逐章协议。
 
 BusinessReportPublisher 已有 DRAFT+完整 REVIEW、九章 Markdown 和四个报告文件，BusinessAnalysisWorkflow 已接通它。`PersistedBusinessRunExecutorTest` 以一个真实的已保存 Step05 fixture 和 scripted Provider 直接验证：活动 REVIEW 的目的、条件、规则、问题先进入过程/报告模型输入，报告 DRAFT 再完整进入报告 REVIEW，最终 Markdown 保留该业务段落。另有一次明确授权的 Luna/high 小包验收：它只重用已完成的 jshERP 用户登录、用户注册活动及其保守的两个独立过程，生成一份九章报告；没有把注册和登录伪造成有源码顺序的单一过程。该结果证明小包的业务语言与报告链路可用，不证明自动 Builder→整仓业务九章已经通过真实质量验收。
 

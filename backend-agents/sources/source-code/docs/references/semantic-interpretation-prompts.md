@@ -14,9 +14,9 @@ JDT/JavaParser引擎切换不选择不同业务提示词。新统一材料应包
 
 Step05 是入口代码关系与片段的唯一拥有者；Step06 只做有界封装和 SourceRef 映射。模型收到的不是五张完整图、Fact 清单或 Proof 账本，而是已组织好的入口参数、调用、实际传参、条件/异常分支、返回/边界、对应完整代码片段和明确缺口。
 
-短 ref 必须由 Java 生成，映射到同一冻结源码。包内不含路径、行号、hash、artifact/run identity、Provider 配置或预算控制。模型可以使用现有 ref 与创建 scope-local 业务名称，不能生成来源、Proof、代码边、外部身份或人工确认。源码注释、字符串、SQL 和材料内的指令都是分析对象，不得服从。
+短 ref 必须由 Java 生成，映射到同一冻结源码。包内不含路径、行号、hash、artifact/run/publication identity、`sourceRunId`、`modelBatchId`、复用来源/结果指针、Provider 配置或预算控制。模型可以使用现有 ref 与创建 scope-local 业务名称，不能生成来源、Proof、代码边、外部身份或人工确认。源码注释、字符串、SQL 和材料内的指令都是分析对象，不得服从。
 
-[并行执行](../modules/model-job-execution.md)只改变任务何时运行及预先绑定哪个 Provider/model，不改变这些 Prompt 的材料责任。job ID、Provider/account/quotaScope、认证引用、并发值与队列统计均留在程序侧；两轮固定同一有效模型/effort。新会话也必须显式收到完整原材料与实际 DRAFT。按每 job 有效 profile 生成 schema/容量限制及验证 runtime identity，不能通过放宽现有检查接入其他模型。语义 response shape 不变时不为并发升版。
+[并行与 model-batch 执行](../modules/model-job-execution.md)只改变任务何时运行、输出归属及预先绑定哪个 Provider/model，不改变这些 Prompt 的材料责任。job ID、source/batch identity、复用来源、Provider/account/quotaScope、认证引用、并发值与队列统计均留在程序侧；两轮固定同一有效模型/effort。新会话也必须显式收到完整原材料与实际 DRAFT，不假定模型记得上一 batch。复用完整已审 job 时是程序跳过两次 Provider 调用，不是生成一份加了 batch 控制的新模型包。按每 job 有效 profile 生成 schema/容量限制及验证 runtime identity，不能通过放宽现有检查接入其他模型。语义 response shape 不变时不为并发或 batch 升版。
 
 图或严格 Proof 不完整时，模型仍可阅读安全源码；区分 GRAPH_AND_SOURCE 与 SOURCE_CONTEXT。后者不代表代码不真实，只代表该关系没有相应 exact 图/Proof。Mapper boundary、candidate callee 和外部运行结果需要各自准确限定，不能混为同一“未知”。
 
@@ -118,9 +118,9 @@ Java 验证章节/type/ID/ref/budget 后直接排版。render 不重新摘要模
 
 ## 8. 调用、保存与验收合同
 
-每个 material、process group、仓库总整理和完整报告均最多 1 DRAFT + 1 REVIEW。预检容量不足 0 请求；started 后 transport/schema/runtime 失败即停止该执行，不自动 retry/switch/replay。内部调用属于同一 Reader Candidate；产品最多 Round1 与针对明确问题另行授权的 Round2，不制造第三候选。
+每个 material、process group、仓库总整理和完整报告均最多 1 DRAFT + 1 REVIEW。预检容量不足 0 请求；started 后 transport/schema/runtime 失败即停止该 batch，不在原 batch 自动 retry/switch/replay。用户显式新建 model batch 是一次新运行，不是自动重试；未开始、DRAFT 失败/未知或 DRAFT 完成但 REVIEW 失败/未知的 job 在新 batch 中都重做完整 pair，不做半轮恢复。跨 batch 不能凭同名短 ref 复用；只有新旧 batch 绑定同一完整 `materialsCheckpoint` reference，且整个已审 job 已验证、原子保存、fingerprint 精确匹配时才可复用。
 
-并行时 fatal 立即停止新 job 派发，其他已开始且自身合法的 pair 在既有超时内完成其唯一 REVIEW 并保存，协调器收齐终态后结束失败；不跨阶段开始总结/报告。活动阶段和过程组阶段各有全量屏障，总结与完整报告各最多一个 job，renderer 始终零 Provider。完整输入不能因同批次、同账户或此前会话已有内容而省略。
+并行时 fatal 立即停止新 job 派发，其他已开始且自身合法的 pair 在既有超时内完成其唯一 REVIEW 并保存，协调器收齐终态后结束失败；不跨阶段开始总结/报告。活动阶段和过程组阶段各有全量屏障，总结与完整报告各最多一个 job，renderer 始终零 Provider。对未复用的 job，完整输入不能因同批次、同账户或此前会话已有内容而省略。model batch 本身不推进 Reader Candidate Round：在最终候选完成前，必要的显式新 batch 仍属同一轮；已有完整最终候选后的内容修正才使用 `ROUND_2`。
 
 | 内容任务 | 理想验收 | 必须失败的情况 | 程序验证/人工观察 |
 | --- | --- | --- | --- |

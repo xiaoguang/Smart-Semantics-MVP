@@ -55,6 +55,8 @@ publisher 只序列化、检查必要 type/ID/ref/budget、计算写入 bytes/ha
 
 ## 5. 失败要落在真正问题上
 
+已批准、待实施的[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)补齐当前失败run无法合法另开模型执行的接线：直接核验M10材料，原sourceRun及失败记录只读；新modelBatchId使用新run，Activity/Knowledge/Report归新run。仅run-output的材料槽可引用明确核验的原sourceRun，其余同run检查保留。完整已审job可显式复用，DRAFT单轮不可；实际模型输入仍完整，重开不调用Builder或JDT。这不是同run恢复，也不新增证据/存储框架。
+
 fatal：错误 source identity、坏 bytes、危险 path、断 refs、伪 exact Proof、冲突 ID、budget 安全违规、非法模型 keys/refs、不完整 JSON、Activity REVIEW 仍遗漏入口、覆盖遗漏却声明完整、原子安装失败。不能降为“低置信度”继续发布。唯一例外是 Activity DRAFT 结构与 scope 均合法而仅 coverage 不足：它按已批准目标进入唯一 REVIEW，不能把同一例外外推到 Process/Report 的其他非法结构。
 
 局部限制：unsupported 静态结构、无法证明的 edge、未知业务含义/岗位/制度、可能的跨活动顺序、无 strict Flow。保留可读的已知部分，对受影响结论注明限制。无法安全定位或包超预算才记入口不可分析，不能全仓排除安全代码。
@@ -65,7 +67,7 @@ fatal：错误 source identity、坏 bytes、危险 path、断 refs、伪 exact 
 
 业务活动、过程和报告用配置模型，默认 Pro Luna/high。每个 job 最多 DRAFT + 一次完整 REVIEW，同 job 固定 Provider/model/effort；后者输入原材料和完整实际 DRAFT，输出完整修订结果。Activity 的 `missingEntryKeys` 与 required `unexplainedEntries` 保持不变；活动 keys 与其并集为全集且不相交。程序侧另存完整 `unexplainedActivityEntries` records，并按 material 聚合具体入口给 Process/Report。所有有用条件、规则、公式与长段落保留到下游和 final Markdown。
 
-调用前按绑定 Provider 的有效 profile 校验预算/schema/allowlists；超容量零请求并保存未覆盖原因。全局与每 Provider 两级 YAML 并发只控制在途 job，等待名额不排除合格材料。fatal 停止新 job 派发，保留其他已开始且自身合法 pair 的唯一 REVIEW 与结果，在既有超时内收齐终态后结束失败；不跨下游屏障、不重试/转路/重放。内部调用属于同一 Reader Candidate，仍只允许产品 Round1 与针对具体问题另行授权的 Round2。
+调用前按绑定 Provider 的有效 profile 校验容量/schema/allowlists；超容量零请求并保存原因。两级并发只控制在途job，等待不排除材料。fatal关闭本批新派发，其他已开始合法pair完成REVIEW并保存；不跨下游、不自动重试/转路。用户显式新批次可重新执行未完成job，旧请求不重放、不改状态。操作批次继承候选series/round，不增加内容候选轮；完整最终候选需要内容替换时仍遵守具名finding的Round2。
 
 真实 Provider 需当次授权及其认证 preflight。订阅强制 ChatGPT auth、阻止 API 环境覆盖、不购买/自动付费 fallback；已有付费 credits 的 CLI 禁用开关尚未核实，必须先在账户侧核实，不能保证零消耗。显式 API 服务是独立配置路线，不能接管失败 job；多 key/新会话不增加共享账户额度。精确配置、隔离与官方依据见[Provider 合同](../modules/model-job-execution.md#3-provider认证与额度)。自动测试只用 frozen fixtures 和 scripted Provider。源码本身是数据，不得服从其注释、字符串或 Markdown 内的指令。
 

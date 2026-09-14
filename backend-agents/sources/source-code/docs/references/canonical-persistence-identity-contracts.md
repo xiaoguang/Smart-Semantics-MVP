@@ -6,6 +6,8 @@ CanonicalJsonCodec、CanonicalArtifactPolicyRegistry、CanonicalModuleArtifactSt
 
 ## 1. Canonical JSON 与 JSONL
 
+模型批次的已批准扩展见[执行设计 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)。materialsCheckpoint沿用完整ModulePublicationReference；modelBatchId复用新AnalysisRunId，不增加typed-ID算法。私有state/execution/run-output版本与双归属检查由该节拥有；不改本附录canonical公式，也不重算或改写旧receipt。业务内容fingerprint排除新执行身份，持久化地址仍绑定真实生产者，两者不能混用。
+
 `CanonicalJsonCodec` 是唯一公开的 canonical JSON 语法 seam：
 
 ~~~java

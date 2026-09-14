@@ -39,6 +39,8 @@ JDT 第一阶段已经通过两层验收：安装的 JDT LS 1.61.0 与独立 JDT
 
 ## 九章与阅读依据
 
+已批准的[材料检查点与模型批次最小解耦](docs/modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)**尚待实施**：JDT/Builder 材料保存一次；后续显式模型批次直接读取它，失败不重扫。旧失败日志不动，只有完整已审且输入/模型/来源匹配的 job 才复用；其余必要 job 在新批次完成 DRAFT＋完整 REVIEW。现有 generate 能从 Step05 重建材料但仍受同 run失败状态约束，不能把目标写成当前命令已支持。操作现状和目标分开见[运行指南](tools/repository-run/README.md)。
+
 [导航复用、共享正文、单次本地CI与来源外置](docs/plans/navigation-reuse-and-readable-report-design.md)已交付，测量结果保留在该设计的验收节。[模型任务并行设计](docs/modules/model-job-execution.md)也已接入正式运行链，其[本地验证记录](docs/supplements/model-job-parallel-execution-verification.md)保存 12 个 Activity job、两个 Process-group job 和两级并发峰值。同一 `repository-run-config-v2` YAML/JSON 配置全局及每 Provider 上限、稳定路由和非秘密认证引用；Activity 与 Process-group 各以完整 DRAFT→REVIEW 为一个并行 job，完成结果立即保存后稳定聚合。Codex Subscription 强制 ChatGPT 登录上下文并清除 API 认证环境；显式 OpenAI API 使用 Responses SDK、关闭自动重试。过程组全部完成后才执行至多一次仓库总结，随后只生成并审阅一份九章。共享账户额度不因多 key/新会话增加；失败不重试或转路。
 
 固定章节为：文档说明、业务目标、业务对象、业务活动、字段与维度、对象关系、指标口径、示例问题、待确认事项。模型写自然段 JSON 并完整审阅；程序排 Markdown 和短 ref。完整已审条件、规则与长段落保留到报告，不只传递摘要标题。
@@ -67,6 +69,6 @@ SourceRef 定位冻结文件、行段和原文。Fact/Proof 只证明支持的�
 - [程序图能力与待办](docs/supplements/program-graphs-implementation-backlog.md)
 - [延后恢复工作](docs/supplements/runtime-recovery-todo.md)
 
-历史文件与已完成 progress 保留原样，不作为新实现契约。后续实现遵循 Luna/xhigh RED、Terra/xhigh GREEN，只跑直接覆盖改动的测试；真实 Provider、捕获、生成和发布仍须当次明确授权。
+历史文件与已完成 progress 保留原样，不作为新实现契约。后续实现遵循 Luna/xhigh RED、Terra/xhigh GREEN，只跑直接覆盖改动的测试；真实 Provider、捕获、生成和发布仍须明确授权。同一已给出的运行授权不重复询问，但用户当前暂停/讨论指令优先；本次文档刷新不启动运行。
 
 已完成的真实小包质量检查只覆盖 jshERP 的用户登录和用户注册：两个活动、两个保守独立过程和一份九章报告。它证明报告链路能保留业务语言与不确定性，不能替代完整仓库验收。

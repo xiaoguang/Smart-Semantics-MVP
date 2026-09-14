@@ -151,6 +151,18 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 
 材料在首次 Provider 前保存。Activity 与 Process-group coordinator 收到完整已审 job 结果后立即原子保存到运行私有目录，全部完成后按稳定材料/组顺序一次聚合并安装既有 module publication；固定地址 publisher 不在 worker 内反复安装不同 bytes。私有逐 job 结果、Provider/job journal namespace 与单次提交合同见[执行设计](modules/model-job-execution.md#5-保存身份与失败)，不新增公开产物、恢复系统或逐记录状态机。inputFingerprint 包含实际内容输入（不含新的 runId）、实际 Prompt 文本/版本、有效模型与输出配置、Module 版本；显式复用要求相等，并通过磁盘边界完整性检查。
 
+### 8.1 材料不动，模型批次可以重新开始
+
+本次已批准的最小改法由[模型执行设计 §7](modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)统一规定，**尚未实施**。先把代码资料保存好，后续模型失败只结束该模型批次，不让资料失效。
+
+`materialsCheckpointId` 指既有材料 module receipt，实际读取使用完整 checkpoint reference；`sourceRunId` 保留原生产者。每次显式模型执行由既有 start 创建新 run，其 ID 同时作为 `modelBatchId` 和业务输出归属。不新增公开方法、生命周期或恢复服务。材料可以来自失败的旧 run，只要它本身已经完整保存且验证有效；旧 run、旧 STARTED 和旧输出一律不改。
+
+新批次直接重开 M10 材料，Capture/JDT/图/Fact/Flow/Builder 均零调用。完整已审 job 内容、Prompt、schema/profile、服务账户/model/effort及来源映射一致时，显式复用并跳过两轮；失败或未启动 job 按本次范围做一次新的 DRAFT＋完整 REVIEW。只有草稿成功、审阅失败时不做半轮恢复，新批重做完整 pair。过程分组、总结和报告按实际依赖内容判断复用，最后仍只有一份九章。
+
+当前代码能从持久化 Step05 重新组装材料而不运行 JDT，但没有直接材料 reader、独立批次和已审 job 复用选择；失败状态与四个输出同 run 的检查挡住了合法新执行。修复必须同时贯通私有 state/execution/output、publisher归属与正式读取器，不能只改日志目录。目标 state v3保存完整材料引用、实际 material profile/producer/basis；业务输出归新 batch，材料仍引用原地址。版本/字段、旧材料离线导出及 Luna/Terra验收按 §7，不在各步骤重复定义。
+
+这次实际第一份整仓材料有326份材料、326个入口处置，模型的4个DRAFT未形成已审结果。按目标设计，下一批可直接使用这份材料，而不是为获得新的调用身份再次扫描。后一次325份材料的checkpoint不能按“最新目录”替代它；单入口导航超时复核与模型失败是不同问题。完整例子及限制见[模型执行推演](modules/model-job-execution.md#75-用已保存整仓样例推演)。
+
 ## 9. 覆盖、预算与失败
 
 全部发现入口必须分到 ANALYZED、ANALYZED_WITH_GAPS 或有具体原因的 NOT_ANALYZED；全部过程组必须已整理或有未整理原因。覆盖表闭合只代表没有漏记，不代表业务内容完成。一个好样本、零入口范围报告、全部入口未分析或预算未完成的九章都不能称整仓业务交付。
@@ -161,7 +173,7 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 
 不同 job 可显式配置不同模型/API 服务或独立 Codex 会话，开始前固定绑定；同账户/项目 key 或会话共享 Provider 额度，不能当独立配额。订阅 Provider 强制 ChatGPT 认证、阻止继承 API env 覆盖、不购买额度或自动付费 fallback；当前未核实能禁止消耗已有付费 credits 的 CLI 开关，必须在账户侧核实要求后才运行。显式 API 是已批准的设计路线，不是失败后的替代服务；本轮不做真实调用。
 
-只有结构与 scope 合法、但 coverage 不足的 Activity DRAFT 可以继续唯一 REVIEW。非法 JSON、未知/越界 key 或 ref、重复冲突 local ID、输出超预算及 started transport/schema/runtime 失败均为 fatal，不进入修补通道。协调器立即停止新 job 派发；已开始且自身 DRAFT 合法的其他 job 在既有超时内完成其唯一 REVIEW 并保存，未开始项不调用模型。保留终态与已完成结果后结束失败，不跨屏障执行总结/报告，不 retry/reroute。REVIEW 用活动和 required `unexplainedEntries` 闭合集合；仍漏 key fatal，无第三次调用。materials-only 目标仍为零 Provider；最终报告运行要求正启动上限。内部 DRAFT/REVIEW 属于同一 Reader Candidate；仍只允许产品 Round 1 和针对明确问题另行授权的 Round 2，不重放已失败的产品调用。
+只有结构与 scope 合法、但 coverage 不足的 Activity DRAFT 可以继续唯一 REVIEW。非法 JSON、未知/越界 key/ref、冲突 ID、超容量及 started transport/schema/runtime 失败均结束相应批次，不进入自动修补。停止新派发；其他已开始且自身 DRAFT 合法的 job 完成唯一 REVIEW并保存；收齐终态后失败，不启动下游、不 retry/reroute、无第三轮。用户显式新批次可以按 §8.1 重做未完成 job，不能重写旧请求。批次不增加 Reader Candidate 轮次：继承同 series/round，完整最终候选的内容修正仍按具名 finding 走原 ROUND_2；换 batchId 不是无限改稿许可。materials-only 零 Provider，最终报告运行仍须有明确执行范围。
 
 当前已完成一次明确授权的小包质量验收：jshERP 的用户登录、用户注册两个已审活动及两个保守独立过程经报告 DRAFT+REVIEW 生成九章。它不把共享用户控制器或业务名称当成注册后必然登录的顺序证据；该小包证明当前业务语言链路可产出可读报告，不代表完整仓库已经验收。
 

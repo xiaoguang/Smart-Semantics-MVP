@@ -6,6 +6,8 @@
 
 ## 1. 注册：以前只有入口，现在能读到实现
 
+本文的Service正文一旦形成已保存材料，后续模型失败不会让它消失。新批次直接复用这些完整片段与来源，既不重新定位注册实现，也不手工补答案。已批准但待实施的具体规则与整仓326份材料例子见[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)；这是下游运行接线，不改变本例JDT/JavaParser能力比较。
+
 固定jshERP commit为`8c30ce7861570458920175e200bb2a6442713580`。输入只有`POST /user/registerUser`的Controller位置，程序没有收到预期Service路径或方法名单。源码中通配import由JDT处理，不用“当前包名+UserService”猜路径。
 
 ```text
