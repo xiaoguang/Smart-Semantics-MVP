@@ -10,7 +10,7 @@
 | Program graph | 支持范围内的准确结构、调用、控制/数据关系及定位 | 所有路径均已分析、行业业务目的 |
 | Step04 Fact/Proof | 选定模式全部原子通过相应确定性规则 | 所有可读信息都在 Fact 内、任一外部实际效果 |
 | Step05 EntryContext | 入口的已知关系、代码结构、完整片段和具体限制 | 无 Proof 的内容自动变成 exact Fact |
-| Reviewed business interpretation | 模型根据材料整理的活动、过程与业务语言 | 已人工确认的制度、实际执行结果 |
+| Reviewed Activity / Business Process | 模型根据完整材料整理的活动、过程与业务语言，并带 certainty 与来源 | 已人工确认的制度、实际执行结果 |
 | Human confirmation | 授权者对指定解释的确认 | 修改源码或补造不存在的 Proof |
 
 SOURCE_CONTEXT 可支持安全源码阅读，但不能赋 CLOSED、SOURCE_CONFIRMED 等严格技术标签。unknown graph edge、没有 Fact 或缺 strict Flow 不等于没有可读源码。业务解释按相应段落给依据和限定，不要求每词一条 Proof。
@@ -25,7 +25,12 @@ SOURCE_CONTEXT 可支持安全源码阅读，但不能赋 CLOSED、SOURCE_CONFIR
 | 选定技术证明 | Step04 | Facts 可选附着，不重复 enumerate/prove |
 | 连贯入口关系及源码 | Step05 | EntryContext 是唯一模型；Capsule 是有界原样投影 |
 | 模型材料短 refs/预算封装 | BusinessMaterialBuilder | 不重新构造调用链 |
-| 活动/过程/九章解释 | 三个现有 Explainer/Publisher 内容任务 | DRAFT + 完整 REVIEW，完整正文继续传递 |
+| 局部 Activity | ActivityExplainer | DRAFT + 完整 REVIEW；保存完整条件、规则和来源 |
+| 业务目录和候选 | RepositoryBusinessCataloger | 以紧凑卡发现语义分组；不从卡片写详细过程 |
+| 候选过程材料 | ProcessMaterialAssembler | 重开完整 Activity 和选定保存源码；不重扫或解释 |
+| 详细过程 | CandidateProcessReconstructor | DRAFT + 完整 REVIEW；结构化阶段、谓词、规则和 certainty |
+| 仓库过程归并 | RepositoryProcessConsolidator | 比较重叠候选、保留替代与冲突、闭合分母 |
+| 过程/九章发布 | BusinessProcessPublisher / BusinessReportPublisher | 前者确定性发布过程主读物；后者只编排已归并目录 |
 
 Step05 在现有 flow-slices/Capsule 文件中保存有代码的上下文。无 strict Flow 的安全入口也由同一 owner 整理，flowRef=null；不要求另一个 noFlow chain Module 或 Builder fallback 分析器。
 
@@ -49,7 +54,7 @@ publisher 只序列化、检查必要 type/ID/ref/budget、计算写入 bytes/ha
 
 技术 Module 仍先保存 payload、后 receipt，AnalysisStep store 组合其命名 semantic 文件。不得预报自身 receipt/root 构成循环。canonical framing、identity preimage、原子 install、collision 等具体规则见 [Canonical 附录](canonical-persistence-identity-contracts.md)；public request、SourceLocator、Module envelope 见 [公共接口附录](inherited-public-and-module-contracts.md)。
 
-业务材料在首次 Provider 前保存。已实现的[并行执行合同](../modules/model-job-execution.md#5-保存身份与失败)让 Activity 与 Process-group coordinator 在各 job REVIEW 完成后立即原子保存私有结果，全部完成后按稳定顺序一次安装既有 aggregate；Process aggregate 等仓库总结完成或既有规则明确跳过后才发布。workers 不能向同一固定地址反复安装不同 bytes。报告保存完整 paragraph JSON、SourceRefs、Markdown 和 validation。inputFingerprint 包含实际内容输入、实际 Prompt 文本/版本、有效模型/output 配置、Module 版本；新 runId 与并发/时间不属于业务内容。跨 run 比较 fingerprint 还要经过磁盘边界完整性验证，不能只比较一个字符串就信任未知 bytes。
+业务材料在首次 Provider 前保存。已实现的[并行执行合同](../modules/model-job-execution.md#5-保存身份与失败)让 Activity 与当前 process-group coordinator 在各 job REVIEW 完成后立即原子保存私有结果。目标 Step07 复用同一机制保存 catalog/candidate 任务与每个详细过程 REVIEW；等全部候选处置和一次仓库归并完成后，再按稳定顺序发布 process catalog 和 Markdown。workers 不能向同一固定地址反复安装不同 bytes。报告保存完整 paragraph JSON、SourceRefs、Markdown 和 validation。inputFingerprint 包含实际内容输入、实际 Prompt 文本/版本、有效模型/output 配置、Module 版本；新 runId 与并发/时间不属于业务内容。跨 run 比较 fingerprint 还要经过磁盘边界完整性验证，不能只比较一个字符串就信任未知 bytes。
 
 使用当前 run/checkpoint stores 和 output manifest 记录已有结果，不要求新建 CanonicalRunManifestStore、固定 52/57 文件大清单、event journal、hash chain、reconciliation ledger 或同 run recovery。保留历史身份和已完成产物，不另做 Wire Reset、dual writer、兼容 alias 或第二 namespace。
 
@@ -61,11 +66,11 @@ fatal：错误 source identity、坏 bytes、危险 path、断 refs、伪 exact 
 
 局部限制：unsupported 静态结构、无法证明的 edge、未知业务含义/岗位/制度、可能的跨活动顺序、无 strict Flow。保留可读的已知部分，对受影响结论注明限制。无法安全定位或包超预算才记入口不可分析，不能全仓排除安全代码。
 
-全入口与过程组都要有明确处置。账面闭合并不意味着业务完成；只有范围与内容达到目标才能宣布整仓九章已完成。
+全入口、Activity 卡片、候选过程和归并过程都要有明确处置。账面闭合并不意味着业务完成；只有范围与内容达到目标才能宣布整仓过程目录或九章已完成。
 
 ## 6. Provider 与内容审阅
 
-业务活动、过程和报告用配置模型，默认 Pro Luna/high。每个 job 最多 DRAFT + 一次完整 REVIEW，同 job 固定 Provider/model/effort；后者输入原材料和完整实际 DRAFT，输出完整修订结果。Activity 的 `missingEntryKeys` 与 required `unexplainedEntries` 保持不变；活动 keys 与其并集为全集且不相交。程序侧另存完整 `unexplainedActivityEntries` records，并按 material 聚合具体入口给 Process/Report。所有有用条件、规则、公式与长段落保留到下游和 final Markdown。
+业务活动、目录发现、候选过程重建、仓库归并和报告使用配置模型，默认 Pro Luna/high。每个需要审阅的 job 最多 DRAFT + 一次完整 REVIEW，同 job 固定 Provider/model/effort；后者输入原材料和完整实际 DRAFT，输出完整修订结果。Activity 的 `missingEntryKeys` 与 required `unexplainedEntries` 保持不变；活动 keys 与其并集为全集且不相交。程序侧另存完整 `unexplainedActivityEntries` records。所有有用条件、规则、公式与长段落保留到完整 Activity、过程目录和 final Markdown。紧凑卡仅用于发现，不能代替上述完整内容。
 
 调用前按绑定 Provider 的有效 profile 校验容量/schema/allowlists；超容量零请求并保存原因。两级并发只控制在途job，等待不排除材料。fatal关闭本批新派发，其他已开始合法pair完成REVIEW并保存；不跨下游、不自动重试/转路。用户显式新批次可重新执行未完成job，旧请求不重放、不改状态。操作批次继承候选series/round，不增加内容候选轮；完整最终候选需要内容替换时仍遵守具名finding的Round2。
 
@@ -73,6 +78,6 @@ fatal：错误 source identity、坏 bytes、危险 path、断 refs、伪 exact 
 
 ## 7. 当前实现审计
 
-Canonical stores、源码/图/Fact 纵切、四个业务 Module、BusinessAnalysisWorkflow、RepositoryAnalysisAgent 和持久化运行基础均已存在。Step05 EntryContext→Builder 接力、普通 Flow/Capsule 发布去重与 Spring unrestricted `methodCondition` 已实现；旧 interpretation 链清理、Activity 任意 N/v2 REVIEW 闭合，以及具体未解释入口到 knowledge/第9章也已实现。四个业务 Module 不能写为 NOT IMPLEMENTED；下一项是 scripted 四入口与任意 N 的全链验收，不能把它提前写成真实整仓业务验收。
+Canonical stores、源码/图/Fact 纵切、BusinessMaterialBuilder、ActivityExplainer、当前 ProcessExplainer、BusinessReportPublisher、BusinessAnalysisWorkflow、RepositoryAnalysisAgent 和持久化运行基础均已存在。Step05 EntryContext→Builder 接力、普通 Flow/Capsule 发布去重、Spring unrestricted `methodCondition`、Activity 任意 N/v2 REVIEW、两级并行及独立模型批次均已实现。
 
-固定完整 jshERP 捕获和图/Fact 产物已有证据；相关财务图/Fact 历史 run 没有 Step05 正式 publication，另一历史 material run 只提供受限 fallback，不能跨 run 拼接。较新的全仓材料 run 为 107 包覆盖 339 个入口。存在实现或人工小包结果均不证明自动整仓九章已验收。本轮只改文档，不改变现有 artifact、Schema、resource Prompt 或代码。
+固定完整运行已经保存 326 个 reviewed Activities，入口总数同为 326，且没有 unexplained entry；它们是本次批准复用的语义索引。当前旧 ProcessExplainer 产生 340 个过程，全部只有一个 Activity 和一个 stage；仅覆盖 325 个不同 Activity，另有一个 Activity 被遗漏，而 knowledge 仍写 `unmatchedActivityIds=[]`。现有九章结构正确且来源短 ref 可解析，只能证明传输、保存和排版，不证明跨 Activity 业务过程质量。紧凑卡目录、语义候选、选择性源码补料、详细过程 wire、仓库归并、确定性 `business-processes.md` 尚未实现。本轮只改文档，不改变现有 artifact、Schema、resource Prompt 或代码。

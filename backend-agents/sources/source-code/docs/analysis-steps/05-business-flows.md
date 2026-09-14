@@ -103,7 +103,7 @@ JDT或JavaParser已经找出方法、调用和源码。Step05负责让这些结�
 strict Flow数量可以少于context数量
 ```
 
-Builder只读这些context和Capsule，选完整方法、分包、分配S短ref；没有引擎分支、不调用解析器。模型输入能看见调用/参数/候选/正文，而程序侧path/行号/hash用于来源展示，不强塞给模型。
+Builder只读这些context和Capsule，选完整方法、分包、分配S短ref；没有引擎分支、不调用解析器。模型输入能看见调用/参数/候选/正文，而程序侧path/行号/hash用于来源展示，不强塞给模型。Step07 的 `ProcessMaterialAssembler` 是另一个合法读取者：它只为已经选出的候选过程，按引用重新打开本步保存的完整 Activity 所属上下文和少量 SourceRef；它不得重新导航、解析或编译源码，也不得改变本步产物。
 
 引用去重只改变保存方式：reader一次打开所需索引并还原各入口完整视图，跨入口共享方法对象；不同入口的CALL/NOT_EXPANDED不互相覆盖。只复制Capsule而缺失上游索引不是完整导出，必须明确报缺引用，不能重跑JDT补救。一个请求里同一方法只展开一次，但发送给模型前不能只留下程序内部key。
 
@@ -117,13 +117,13 @@ Builder只读这些context和Capsule，选完整方法、分包、分配S短ref�
 
 引擎取材默认不以费用限制只展开几层。宿主资源/取消触发时记录未展开点。Builder面对真实模型上下文上限，可以在入口/完整方法单元组包，但不得静默裁去关键Service实现后标完整。是否达到“模型实际看见足够实现”必须直接检查请求内容。
 
-## 7. 当前代码与剩余边界
+## 7. 当前代码与目标边界（2026-09-14）
 
-JDT 第一阶段已经完成 context 生产、投影、保存、读取和 Builder 接力。当前格式为 flow compilation v5、flow slices v5、capsule projection v10、evidence capsule v8。`EntryCodeContext` 保存完整方法、调用点、所有候选、实参/形参、control/exits、supporting sources 与 limitations；没有 strict Flow 的安全入口也可用 `flowRef=null` 发布上下文和 Capsule。
+JDT 与 JavaParser 两条引擎路线都已经接入共同合同。JDT 路线已经完成 context 生产、投影、保存、读取和 Builder 接力；JavaParser Adapter 已恢复迁移前的既有能力，但不承诺追平 JDT 的绑定覆盖。当前已交付格式为 flow compilation / flow slices v6、capsule projection v11、evidence capsule v9；不能再把 v5/v10 写成当前版本。
 
-`EvidenceCapsuleProjector` 原样投影 context；`BusinessMaterialBuilder` 只选择已保存方法、分配短引用并格式化模型输入，生产代码不再调用 JavaParser 或 JDT。相同导航限制在进入严格 EntryContext 前去重，避免工具重复报告同一外部调用时破坏集合约束，但不吞掉不同调用点或不同原因。
+`EntryCodeContext` 保存完整方法、调用点、所有候选、实参/形参、control/exits、supporting sources 与 limitations；没有 strict Flow 的安全入口也可用 `flowRef=null` 发布上下文和 Capsule。`EvidenceCapsuleProjector` 原样投影 context；`BusinessMaterialBuilder` 只选择已保存方法、分配短引用并格式化模型输入，生产代码不再调用 JavaParser 或 JDT。相同导航限制在进入严格 EntryContext 前去重，但不同调用点、入口或停止原因不能互相覆盖。
 
-剩余工作是第二阶段 JavaParser Adapter：把迁移前已有能力映射到同一最终合同，不新增通配 import、继承或重载解析，也不要求追平 JDT。它没有完成不影响 JDT 独立发布。
+本次业务过程重建设计不修改 Step05 wire，也不重新生成已经保存的 326 份 Activity。未来实现只需让 Step07 的 assembler 沿现有 Activity/SourceRef 引用选择性取回过程所需原文；如果为此发现缺少合法读取 seam，应补薄 reader，而不是改写 Step05 算法、复制完整正文或新增另一套源码解析。
 
 ## 8. Luna与Terra的直接指南
 

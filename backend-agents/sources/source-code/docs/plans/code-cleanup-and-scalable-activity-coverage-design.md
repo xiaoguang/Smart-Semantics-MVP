@@ -1,5 +1,7 @@
 # 代码清理与可扩展活动覆盖设计（APPROVED DESIGN）
 
+> **IMPLEMENTED HISTORICAL CONTRACT / 不作为下一实施计划：** 本文的旧链清理和任意 N Activity coverage 已完成。其当前 `ProcessExplainer` 分组与九章接力已被 2026-09-14 批准的[业务过程发现与重建设计](business-process-discovery-and-reconstruction-change-design.md)取代。保留本页用于解释 Activity v2 和清理历史；不得继续扩展机械 process-group 路线。
+
 > 状态：**APPROVED DESIGN / implementation in progress**。用户已批准本文的清理范围，以及“合法但漏项的 DRAFT 进入唯一 REVIEW”和“REVIEW 以 required `unexplainedEntries` 闭合并把具体入口送到第 9 章”两项行为变化。`fc6d67b` 是实施基线；旧链清理、Capsule 字段减法、Activity v2 和具体入口向知识与第 9 章的下游投影均已实施。后续工作按当前[实施衔接](coherent-code-context-implementation-plan.md)执行完整 scripted 全链与本地 CI，再决定受限真实验收。本文定义目标合同，不把尚未执行的真实验证写成现状。
 
 ## 1. 结论

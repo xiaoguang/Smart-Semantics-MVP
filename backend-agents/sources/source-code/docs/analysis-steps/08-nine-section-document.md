@@ -1,125 +1,104 @@
-# 九章文档
+# 九章仓库概览
 
-> JDT/JavaParser接入不新增报告路线。按[插件设计](../modules/java-code-engines/README.md)，两种引擎统一提供代码材料，经相同活动/过程模块进入本步。报告不能再只收到方法名摘要；[真实注册/财务推演](../examples/java-code-engine-walkthrough.md)说明完整实现怎样贡献九章。本次仅改设计，未重新生成报告。
-
-> [总体设计](../DESIGN.md)；固定 key：nine-section-document，目录：steps/08-nine-section-document/。唯一业务 Module：BusinessReportPublisher。
+> [总体设计](../DESIGN.md)；固定 key：`nine-section-document`，目录：`steps/08-nine-section-document/`。现有 Module `BusinessReportPublisher` 保留，但目标输入改为 Step07 已归并的 `RepositoryBusinessProcessCatalog`。本页是目标设计；输入改造尚未实现。
 
 ## 1. 为什么存在
 
-前面已经得到已审活动和业务过程，最后需要让业务读者连续读懂。Step08 让配置的模型（默认 Pro Luna/high）用这些完整内容写自然段，并审阅整篇文档；Java 负责章节、短来源引用与确定性 Markdown 排版。
+`business-processes.md` 逐过程回答“系统支持哪些业务、每种业务怎样进行”。Step08 再把这份已审目录编排为一份固定九章的仓库概览，便于统一阅读和与其他 Source Agent 对齐。
 
-报告不能退化为方法名清单，也不能只保留先前 DRAFT 的标题和短摘要。条件、业务步骤、结果、规则、公式与限制应在九章中得到适当位置。程序不重新从源码推断业务，不做行业语言判定，不再运行技术 compiler/projector。
+Step08 不是第二个过程发现器。它不能从 326 个 Activity 重新分组、合并、拆分或排序；不能用流畅文字弥补 Step07 缺少过程。若 catalog 缺少某项关系，只能在第九章说明限制。
 
-## 2. 输入：完整已审知识与简单 refs
+## 2. 输入
 
-输入是同源 repository-business-knowledge、已审 activity/process 内容、coverage、程序侧具体 unexplained records 和 SourceRef allowlist。必要时按已知 IDs 装入相应章节需要的完整活动/过程材料；摘要可以用于导航，不能代替关键条件和原有解释。
+- `RepositoryBusinessProcessCatalog`：已归并业务领域、过程、ActivityUse、阶段、规则、关系、CatalogKnowledgeItem 正文和 certainty；
+- `process-coverage.json`：Activity、候选、过程及未处理范围；
+- SourceRef allowlist；
+- 固定 NineSectionProfile。
 
-送给报告模型的未解释入口也按 materialId 聚合为 `{materialContext, unexplainedEntryKeys, reasonCode}`，同一 material context 只发送一次，global IDs 留在程序侧。这是模型输入，不是读者语言：第 9 章只在存在未解释入口时，用其中已有的完整 HTTP 方法/路径说明“尚未形成业务解释”及自然语言原因；不能只写数量，也不能泄露 `unexplainedActivityEntries`、`materialContext`、`reasonCode`、`MODEL_NOT_EXPLAINED` 或 E3/E4。集合为空时，第 9 章只保留已有的业务待确认项。程序不反解析中文 context，不凭空创建 EntryDescriptor。
+报告模型不再接收全部 ReviewedActivity 作为重新发现过程的原料。必要的活动细节已经在 Step07 过程目录中以 ActivityUse、statement ref 和 source ref 保存。运行、批次、hash、路径、Provider 配置和调度数据留在程序侧。
 
-模型包只给短 ref 和内容，文件路径、行号、hash、run identity、`sourceRunId`、`modelBatchId`、复用来源和调度数据留在程序侧。跨 batch 复用不向 DRAFT/REVIEW 注入运行控制，也不假定模型记得上一批。程序在调用前计算完整输入/输出预算；容量不足应明确未覆盖材料并给出 PARTIAL 状态，不能截断后把剩余文字标为全仓报告。
-
-## 3. DRAFT、完整 REVIEW、确定性排版
+## 3. BusinessReportPublisher
 
 | Interface 项 | 合同 |
 | --- | --- |
-| 输入 | 完整 RepositoryBusinessKnowledge、ReviewedActivity/BusinessProcess、coverage、具体未解释入口、SourceRef allowlist |
-| 输出 | 完整九章 BusinessReport JSON、source-refs.jsonl、document.md、report-validation.json |
-| 职责 | 一次 DRAFT + 完整 REVIEW；模型写正文，Java 只校验固定章节/ref/budget 并排版 |
-| 失败 | 缺章/错标题/非法 ID/ref/bytes、遗漏范围却报完整、started 失败 fatal；显式空仓报告保持既有模型调用 |
-| 下游 | public render/inspect/artifact 与业务读者 |
-| Luna RED / Terra GREEN | RED 覆盖完整第4章、第9章具体 partial、九章/ref、纯 render；GREEN 只补 knowledge→report 输入和正文保留，不新增语义 parser |
+| 输入 | 已发布 process catalog、coverage、SourceRef allowlist、report profile |
+| 输出 | 完整九章 BusinessReport JSON、`source-refs.jsonl`、`document.md`、validation |
+| 模型职责 | 将既有过程目录概括并编排为九章；不改变过程语义 |
+| 程序职责 | 校验固定章节、catalog ID/ref、coverage；确定性排版 |
+| 失败 | 缺章、非法 ref、虚假完整、改写 certainty、遗漏关键过程范围或 started 失败 |
 
-1. Luna/high 对完整九章输入做一次 DRAFT，输出 paragraph/list item JSON，不输出 Markdown 样式或来源身份。
-2. REVIEW 输入包含**整篇实际 DRAFT**、全部过程、仓库总结、coverage、具体未解释入口、确认主题和 SourceRef allowlist，最多一次；不再次重复发送已经供 DRAFT 使用的全部完整 Activity。输出必须是完整修订 JSON，不能只回“通过”、章节标题或局部 patch。
-3. Java 检查 exact section IDs/titles、文本类型、scope-local ID/ref、coverage 和预算，保存完整已审 JSON。
-4. renderer 只按结构排 H1/H2、段落、列表与 ref，不截断、不重新摘要、不改业务正文。原子安装报告文件。
+一个报告 job 仍是一次 DRAFT 和一次完整 REVIEW：
 
-报告始终是唯一的整篇九章 job，等待全部过程组及仓库总结完成（或既有总结准入规则产生明确跳过记录）并发布 knowledge 后才开始。DRAFT/REVIEW 固定同一 Provider/model/effort，使用其有效 profile 校验 schema、容量和 runtime identity；不逐章分派、不并行两轮。REVIEW 删除重复 Activity 只是去掉已由同一 DRAFT 和过程知识承接的重复传输，不截断 DRAFT、过程、总结、范围或来源。该 singleton 也受同一全局/Provider 两级 YAML 上限约束；任何上游 fatal 都不能启动它。[执行设计](../modules/model-job-execution.md)拥有调度、认证与私有保存，renderer 不创建 Provider。
+```text
+已归并 process catalog + coverage
+→ 九章 DRAFT JSON
+→ 完整实际 DRAFT + 与 DRAFT 相同的完整 catalog 投影/coverage
+→ 九章 REVIEW JSON
+→ Java deterministic Markdown
+```
 
-报告传输 Schema 对段落的 `refs` 使用有长度限制的字符串数组；**完整合法 ref 集合在模型输入中提供，并由 Java 在接收时逐项校验**，不在九章的 18 个 paragraph/item 位置重复展开同一份大枚举。九章编号、标题和结构仍使用固定槽位及单值枚举，未知来源仍以 `BUSINESS_REPORT_SOURCE_SCOPE_INVALID` 拒绝。这样来源数量增大不会因为重复枚举而触发 Provider 的 Schema 容量限制，也不减少可引用来源或改变保存格式。直接测试必须同时证明大来源集合能形成传输 Schema，以及集合外 ref 仍被拒绝。这是传输表示的缩减，不把引用合法性交给模型自行保证。
+REVIEW 不需要重复接收 326 个 Activity，但必须接收 DRAFT 使用的完整 catalog 投影，不能换成会丢状态、规则、knowledge item 或 certainty 的短摘要。这不是重复过程发现，因为过程和详细规则已在 Step07 闭合。调用前对完整 catalog + DRAFT 做容量预检；不相容时零请求并明确失败，不能静默裁剪。DRAFT/REVIEW 固定同一 Provider/model/effort，不逐章并行，不增加第三轮。
 
-业务 review 检查的是源码定义行为和实际运行事实是否混淆、是否捏造岗位/制度/唯一性、推断是否有依据且有适当限定、原有条件和公式是否保留。Java 不用术语匹配或字符串 blacklist 假装已经判断业务正确。
+## 4. 固定九章职责
 
-## 4. 九章固定职责
-
-| 序号 | H2 标题 | 应保留的内容 |
+| 序号 | H2 标题 | 只允许写什么 |
 | --- | --- | --- |
-| 1 | 文档说明 | 固定来源、分析范围、覆盖与局限、源码行为/运行事实区别；指明独立来源文件，不附源码 |
-| 2 | 业务目标 | 已审活动和过程体现的目的，不发明组织战略 |
-| 3 | 业务对象 | 对象、用途及有依据的业务含义 |
-| 4 | 业务活动 | 连贯过程与局部活动段落，保留条件、分支、结果 |
-| 5 | 字段与维度 | 源码/已审知识支持的输入、状态、日期、标识等 |
-| 6 | 对象关系 | 有依据的引用与过程联系；合理推断标注待确认 |
-| 7 | 指标口径 | 仅已审材料存在的公式和定义；没有则明确未识别 |
-| 8 | 示例问题 | 与已识别活动、对象、字段有关的读者问题 |
-| 9 | 待确认事项 | 未知角色/制度/顺序/效果，以及按完整 HTTP 方法/路径列出的具体未解释/未分析入口与原因类别 |
+| 1 | 文档说明 | 冻结来源、分析范围、coverage 与代码行为/运行事实区别 |
+| 2 | 业务目标 | catalog 中已审 Business Process 的目的，不发明组织战略 |
+| 3 | 业务对象 | catalog 已保存的 OBJECT 知识项、别名和用途 |
+| 4 | 业务活动 | 按 Business Process 讲阶段、条件、分支、状态变化和结果 |
+| 5 | 字段与维度 | catalog 已保存的 FIELD_OR_DIMENSION 知识项 |
+| 6 | 对象关系 | catalog 已保存的 OBJECT_RELATION 及其 certainty |
+| 7 | 指标口径 | catalog 已保存的 FORMULA_OR_METRIC；没有则明确未识别 |
+| 8 | 示例问题 | catalog 已保存的 QUESTION，可围绕过程编排但不补造事实 |
+| 9 | 待确认事项 | UNRESOLVED、未分类、未处理、外部效果和冲突替代 |
 
-不能生成第十个 H2，不用固定业务分类、强行每章等长或固定输出条数代替内容质量。0 入口/全部未分析可以产生九章范围说明，但文档语义与验收结论是 INCOMPLETE；PARTIAL/INCOMPLETE 不是新 report/runtime enum。0 入口时 Activity/Process Provider 调用为 0；调用方若显式生成空仓九章，BusinessReportPublisher 仍执行现有 DRAFT+REVIEW，本设计不增加零模型空报告分支。
+不能生成第十个 H2，也不能把一个 Process 的阶段拆散到不同章节后失去主线。第四章的每个过程至少保留过程名称、目的、主要阶段和关键分支；具体完整版本可引导读者查看 `business-processes.md`。
 
-## 5. 目标输出示例
+## 5. 内容保持规则
 
-下列为**目标 paragraph JSON 投影，不是完整 wire、已生成产品或可运行 fixture**；正式输出必须同时包含九个 section。
+- Step07 已知具体谓词时，报告不得改成“状态允许”“符合规则”。
+- `CONFIRMED` 不能被报告降成无意义的模糊话；`INFERRED/UNRESOLVED` 也不能升级为确定事实。
+- 查询、统计和配置支撑不能被重排为主过程时序。
+- 同一 Activity 的不同 ActivityUse 必须保持所属业务变体。
+- 没有公式不造指标；没有岗位依据不造角色。
+- ActivityStatementRef/SourceRef 只是出处；报告需要的对象、字段、关系、公式和问题正文必须已经存在于 catalog，不能在 Step08 解引用 raw Activity 后重新提炼。
+- 源码清楚构造并调用保存时可说“系统生成并保存”，但不说某次运行成功提交。
 
-~~~json
-{
-  "sectionId": 4,
-  "title": "业务活动",
-  "paragraphs": [
-    {
-      "text": "系统根据业务单据标识查询关联财务单号。查询服务把标识传入 Mapper；正常返回时将结果放入响应，捕获异常时返回失败信息。",
-      "sourceRefs": ["S1", "S2"]
-    },
-    {
-      "text": "上述说明反映源码定义的处理方式。实际是否存在关联记录，以及查询是否成功，需要运行时数据才能确认。",
-      "sourceRefs": ["S1", "S2"]
-    }
-  ]
-}
-~~~
+## 6. 来源与渲染
 
-正文例子来自固定财务查询源码的目标解释。真实 Controller 正常路径先接收 Service 结果，再设置 code=200/data=list；catch 设置 code=500/data=“获取数据失败”，最后返回 res。它没有计费、过账、角色或唯一单号的结论。
+模型只使用 allowlisted 短 ref。Java 接收时逐项检查 ref 属于 process catalog，并确认可在 `source-refs.jsonl` 查询。
 
-来源显示采用 `[S1]` 等纯短标记，独立source-refs.jsonl保存冻结文件、精确行段与原始代码。第一章不附源码折叠区，其他章节也不接收迁走的代码块；不保留指向已删除同文档锚点的链接。读者按编号查看同目录来源文件，不依赖未来HTTP源码查看器，也不新增第十章。
+`document.md` 只保留业务正文和 `[S123]` 短标记，不附完整源码块、不生成同文档源码锚点。`source-refs.jsonl` 保存文件、行号和原文。Renderer 只读取已验证 BusinessReport JSON，零 Provider，逐字节确定。
 
-## 6. 保存文件与纯渲染
+## 7. 输出
 
 | 文件 | 作用 |
 | --- | --- |
-| business-report.json | 完整 REVIEW 后的九章业务 JSON |
-| source-refs.jsonl | 完整短ref到冻结文件/行段/原文的独立映射；不因正文未引用而丢弃已保存来源 |
-| document.md | 九章业务正文和纯短ref；无源码块、来源折叠区或宿主路径 |
-| report-validation.json | 类型/章节/ref/budget/coverage 检查结果与内容审阅状态 |
+| `business-report.json` | 完整 REVIEW 后的九章结构化正文 |
+| `source-refs.jsonl` | 短 ref 到冻结文件、行段和片段 |
+| `document.md` | 固定九章概览 |
+| `report-validation.json` | 章节、ref、coverage 和审阅状态 |
 
-publisher 保存时只做必要结构检查、序列化与原子安装，不能调用 Flow compiler、Fact 枚举器或 Capsule projector。磁盘重新打开或显式导入验证 hash/schema/ref/basis；按已验证 JSON 纯 render 是 0 Provider 操作。inspect/artifact 只读；编辑业务正文是另行授权的模型内容动作。
+这些输出不替代 Step07 的 `repository-business-process-catalog.json` 和 `business-processes.md`。前者是结构化事实源，后者是业务过程主读物，九章是跨来源一致的展示。
 
-[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)规定的 `analysis-run-output-v3` 已实现：material publication 保留原 `sourceRunId`，business-report、knowledge 和 activity 的输出 owner 是新 `modelBatchId`；publisher/reader 分别用输入 checkpoint 与输出归属验证，不伪造同 run 地址。公开 publication reference 形状与报告业务 JSON/Markdown 没有增加 batch 字段。
+## 8. 失败与空范围
 
-当前已开始但结果未知的请求不自动恢复，已完成报告不被覆写。目标中，显式新 batch 也不继续孤立报告 DRAFT：REVIEW 失败/未知则新 job 重做完整 pair；只有新旧 batch 绑定同一完整 `materialsCheckpoint` reference，且整个 DRAFT+REVIEW 已验证、原子保存、fingerprint 精确相同时才可复用。这不新建通用 receipts、reader replay 或半轮恢复状态机。
+缺章节、错标题、非法 catalog/ref、把未处理范围写成完成、遗漏一个完整业务领域或违反 certainty 都停止发布。零 Activity/零 Process 可以产生范围说明，但语义验收为 INCOMPLETE。
 
-### 6.1 来源外置的最小修改与验收
+报告模型不能为 UNCLASSIFIED Activity 补写过程，也不能把 Activity coverage 闭合解释为业务理解完整。Step07 只有在所有分母已经通过合法语义处置闭合时，才可以发布 PARTIAL catalog，例如容量预检产生的明确未处理范围、`UNCLASSIFIED` 或 `INSUFFICIENT_MATERIAL`。Provider transport、runtime、schema、坏响应或已启动请求状态不确定属于 fatal：该模型批次不安装正式 catalog，Step08 也不得在同一批次继续运行。
 
-来源外置已交付：Renderer 在报告 DRAFT/REVIEW 后不再追加全部来源片段，保留 BusinessReport JSON 及 source-refs 读写。报告模型原本不读取这个追加区，因此无需重新调用模型，不改变 Activity/Process 输入。正文短ref不再输出`#source-ref-*`链接。renderer/producer版本区分新Markdown bytes，业务JSON无字段变化不强制升版；历史草稿/已审报告均不覆盖。
+## 9. 当前实现状态（2026-09-14）
 
-Luna/xhigh直接测试：同一已审JSON重渲染后恰好九章，第二至九章业务文本、顺序与ref集合不变，正文无源码块，每个编号在独立来源文件可查；缺失/伪造ref仍拒绝，纯render零Provider。Terra只改renderer与相关checkpoint identity/直接测试，不重写提示词或业务解释。refs存在不保证语义相关，相关性仍由完整REVIEW与人工样本核对，不新增Java语义证明器。详见[优化设计](../plans/navigation-reuse-and-readable-report-design.md#8-businessreportpublisher九章只讲业务源码单独保存)。
+已有 BusinessReportPublisher、固定九章 Schema、完整 DRAFT/REVIEW、SourceRef 外置和确定性渲染。保存的整仓报告结构上有九章，77 个正文 ref 均可在 2,102 条 SourceRef 中解析；这证明传输、保存和排版可以运行。
 
-## 7. 失败与完成标准
+当前报告仍从旧 RepositoryBusinessKnowledge 和完整 Activity 输入生成，所以上游 340 个单阶段 Process 的缺陷被带入正文；它不能证明跨 Activity 业务过程已经识别。待实现的修改是：输入改为新的 consolidated process catalog，Prompt 禁止重新发现过程，并保留新过程的具体 stage/rule/certainty。
 
-缺章节、错标题、越界 ref、来源 bytes/basis 错误、非法 ID、损坏 JSON、预算安全失败、漏记范围却报全仓完成必须停止交付。未识别指标、未知角色或未证明外部效果是诚实说明，不需要发明内容补齐章节。
+## 10. 直接验收
 
-交付完整还要求入口与过程覆盖真实：每个发现入口有活动解释或具体未分析原因，每个过程组有整理状态，已审内容进入相应章节且没有无声缩水。`unexplainedEntries` 可以让集合账闭合，却不能把未形成活动解释的真实入口算作业务验收成功。只跑一个好活动不代表整仓完成；所有入口 NOT_ANALYZED 时覆盖账虽闭合，语义交付仍 INCOMPLETE。
-
-静态代码清楚构造并 save 对象时，可以描述“生成并保存对象”的程序行为；没有运行证据不得断言本次保存成功、库存已经增加或支付已经完成。合理业务推断在相应段落集中限定，避免每句话重复警告。
-
-## 8. 当前实现与后续测试
-
-080a86d 的历史 renderer 曾把全部来源附在第一章；来源外置已在后续 2f5af19/5008f91 交付。四入口 JDT 比较基线报告仅完成 DRAFT，REVIEW 启动后失败，仍不能因格式检查或纯重渲染而称为已审报告；历史结果只用于比较。
-
-模型 job 并行与阶段屏障已实施；报告本身仍是唯一 singleton DRAFT/REVIEW pair，使用已绑定 Provider 的有效 profile。现有 scripted 测试验证只存在一个报告 pair、DRAFT 收到完整 Activity/Process 知识、REVIEW 收到实际完整 DRAFT 与汇总后的过程/仓库知识且不重复 Activity、所有上游完成/显式处置后才启动，以及独立纯 render 的 generate 调用数为 0。报告 fingerprint 已随该输入合同升至 `nine-section-document-business-report-v3`；不新增语义 output wire 或逐章协议。
-
-BusinessReportPublisher 已有 DRAFT+完整 REVIEW、九章 Markdown 和四个报告文件，BusinessAnalysisWorkflow 已接通它。`PersistedBusinessRunExecutorTest` 以一个真实的已保存 Step05 fixture 和 scripted Provider 直接验证：活动 REVIEW 的目的、条件、规则、问题先进入过程/报告模型输入，报告 DRAFT 再完整进入报告 REVIEW，最终 Markdown 保留该业务段落。另有一次明确授权的 Luna/high 小包验收：它只重用已完成的 jshERP 用户登录、用户注册活动及其保守的两个独立过程，生成一份九章报告；没有把注册和登录伪造成有源码顺序的单一过程。该结果证明小包的业务语言与报告链路可用，不证明自动 Builder→整仓业务九章已经通过真实质量验收。
-
-报告任务的结构化输出 Schema 还必须固定九个命名槽位：`section1` 只能是“文档说明”、`section6` 只能是“对象关系”，依此直到 `section9`。这只是模型临时返回形状；Java 立即把它转换为既有的顺序九章 `BusinessReport`，持久化 JSON 和 Markdown 不变。仅把标题限制为九个可选值不足以保证章节对应关系；一次真实报告 DRAFT 曾把第 6 章错误写成第二个“指标口径”，Java 在 REVIEW 前拒绝了它。数组 tuple 的 `prefixItems` 编码随后被本机 Codex 在生成前以 `MODEL_CONFIGURATION` 拒绝，因此改用这个 Provider 路径已经使用过的闭合对象属性、`required` 和单值 `enum`。Provider Schema 与 Java 返回校验都按固定槽位约束，避免把本可在输出边界阻止的错误留到一次已启动候选之后。
-
-当前报告输入已获得 Activity v2 的具体 `unexplainedActivityEntries` 的按 material 聚合投影；E1–E4 这样的 PARTIAL 输入会把完整 HTTP context 和 `MODEL_NOT_EXPLAINED` 原因交给报告模型。报告 prompt 要求第9章说明这些具体范围，而第4章不得为它们编造活动。`cleanKnowledge`/Prompt/input 与真正承载字段的 owning schema/readers 已升级；报告九章 output shape 不因内部新增输入而强制升版。
-
-Luna/xhigh RED 已直接验证按 material 一次投影具体未解释入口到第9章，Terra/xhigh 已在 publisher/input/render 接力处做最小 GREEN；不新增业务语义 parser或空报告捷径。四入口与任意 N scripted 全链现已复核：完整 REVIEW 可补齐 E3/E4，partial 时第2–8章只消费已审 E1/E2，第9章保留 E3/E4 的实际 HTTP entry 和 `MODEL_NOT_EXPLAINED`，并输出恰好九章。条件/规则字段仍通过 Report 模型 input 保留；最终自然语言质量不由 scripted Provider 假称已验收。本轮没有调用真实模型。
+- 同一 process catalog 重渲染字节一致且零 Provider。
+- 恰好九章，所有短 ref 可查询，正文没有源码块。
+- 第四章的过程、阶段、具体条件和结果与 `business-processes.md` 一致。
+- 报告不能新增、合并、拆分或重新排序 catalog 中的过程关系。
+- `INFERRED/UNRESOLVED` 不被升级，未分类和未处理范围进入第九章。
+- 删除全部 Activity 原始输入后，报告仍可仅凭完整 catalog 生成；若不能，说明 Step07 输出不完整而不是让 Step08回读旧材料。

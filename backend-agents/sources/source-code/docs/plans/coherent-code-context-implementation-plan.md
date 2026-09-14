@@ -1,5 +1,7 @@
 # 已批准清理与可扩展活动覆盖实施衔接
 
+> **COMPLETED / SUPERSEDED FOR FUTURE WORK（2026-09-14）：** 本页保留已经实施的上下文、Activity coverage、并发和批次接线记录。下一份实施计划只能从[业务过程发现与重建设计变更清单](business-process-discovery-and-reconstruction-change-design.md)生成；不得把下文未勾选的旧 `ProcessExplainer` 工作重新启动。
+
 > 并行池、私有job保存及[模型执行设计 §7 的固定材料＋独立批次](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)均已实施。材料直接读取、batch/request/output隔离和完整已审job复用没有重开下面清理/覆盖计划，也没有重做JDT。下文checkbox、授权与实测为历史记录。
 
 > **用途：保留原清理/覆盖工作单及其验证记录，不再作为下一项取材改造的唯一计划。** 原规格为[代码清理与可扩展活动覆盖设计](code-cleanup-and-scalable-activity-coverage-design.md)，基线`fc6d67b`及以下checkbox保持原工作事实。新的[JDT/JavaParser完整设计](../modules/java-code-engines/README.md)规定先JDT独立贯通、再恢复JavaParser现有能力；实现前按该设计另列工作单，不重新执行这里的已完成清理或真实模型调用。

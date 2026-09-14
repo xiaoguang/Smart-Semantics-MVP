@@ -1,0 +1,57 @@
+# Source Code Analysis 业务术语
+
+本文件只定义业务语义，不规定 Java 类、文件格式或模型调用方式。
+
+## Activity（局部业务活动）
+
+由一个或多个源码入口体现的一项局部业务行为。它说明目的、输入、条件、动作、结果、规则和未知项，但不自动等于一条端到端业务流程。
+
+## Business Process（业务过程）
+
+一个能够说明“为什么存在、如何开始、经历哪些阶段和分支、最终产生什么结果”的端到端业务叙事。一个过程可以使用多个 Activity；一个 Activity 也可以被多个过程以不同业务变体使用。
+
+## Activity Use（活动用法）
+
+某个 Activity 在一个特定 Business Process 中的具体用途。它选择该 Activity 与本过程有关的业务变体、条件、规则和结果，避免把通用的“新增单据”活动整体等同于销售订单、采购入库或退货中的任意一个。
+
+## Business Area（业务领域）
+
+仓库中一组相关业务对象、活动和过程的导航分类，例如模型从材料中发现的订单履约、库存管理或资金往来。Business Area 是发现结果，不是预置行业词典。
+
+## Repository Business Catalog（仓库业务目录）
+
+对整个仓库已识别 Business Area、候选 Business Process、Activity 归属和未分类范围的统一目录。它帮助后续取回相关完整材料，但不宣布候选顺序已经成立。
+
+## Candidate Process（候选过程）
+
+模型根据全仓 Activity 索引提出、值得放在一起深入阅读的一组 Activity 及其可能用途。候选关系可以重叠，也可以在详细审阅后被拆分、合并、降为支撑活动或拒绝。
+
+## Process Stage（过程阶段）
+
+Business Process 中一个有业务含义的阶段。阶段必须说明进入条件、动作、状态变化、拒绝条件、结果和下一步；“满足条件后处理”不是完整阶段描述。
+
+## Business Rule（业务规则）
+
+能完整回答“对什么对象，在什么条件下，允许、拒绝或执行什么，产生什么结果”的规则。规则必须保留具体谓词；不能把 `status=0`、`purchaseStatus in {2,3}` 之类的已知条件缩写成“状态允许”。
+
+## Catalog Knowledge Item（目录知识项）
+
+从完整已审 Activity 或过程结果中选择、原文保存到最终过程目录的业务对象说明、字段/维度定义、对象关系、公式/指标定义或示例问题。它携带 `ActivityStatementRef`、SourceRef 和 certainty，使九章可以只读过程目录而不会丢掉第 3、5、6、7、8 章所需内容。它是已审内容的投影，不是 Java 新推导的业务事实。
+
+知识项带明确 owner：某个 Business Process，或一个被处置为 SUPPORT/STANDALONE/UNCLASSIFIED 的 Activity。没有进入候选过程的 Activity 不能因此丢失已有字段或公式，也不能被包装成虚假过程。
+
+## Support Activity（支撑活动）
+
+为主过程提供查询、校验、配置、统计或维护能力，但本身通常不构成主流程的时序阶段。它可以同时支持多个 Business Process。
+
+## Source Reference（来源引用）
+
+指向冻结源码文件、行段和原文片段的短编号。其用途是让读者和模型按需核对代码位置，不要求每个自然语言句子建立多层证明链。
+
+## Certainty（结论状态）
+
+- `CONFIRMED`：Activity 或保存的源码直接支持该条件、动作、状态变化或结果。
+- `INFERRED`：多个入口之间存在合理业务联系，但源码没有直接声明完整业务顺序。
+- `UNRESOLVED`：材料缺失、相互冲突、依赖运行时配置或涉及外部系统，当前不能确定。
+
+“覆盖完整”只表示所有冻结输入都有处置，不表示已经知道现实业务中的一切。

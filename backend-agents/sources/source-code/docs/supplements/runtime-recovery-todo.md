@@ -40,9 +40,9 @@ active v0 只需要把核心八个分析步骤做正确，并允许新执行显�
 
 未来能力若重新立项，可能覆盖“同一 run 的跨进程自动续跑与终态修复”。它仍不应改变：
 
-- 八个分析步骤业务目标、技术/语义双分母、有界局部/过程 DRAFT+REVIEW 与九章结构；
-- 52 个 reader-visible 正式输出；
-- canonical JSON/JSONL、Evidence、Proof、Trace 与完整仓库覆盖；
+- 八个分析步骤业务目标、技术/语义双分母、局部 Activity、业务过程发现/重建与九章结构；
+- 当时 active design 定义的过程目录、coverage 和九章输出；固定 52/57 文件数已经退出完成标准；
+- canonical JSON/JSONL、来源定位、可选 Evidence/Proof 与完整仓库覆盖；
 - AnalysisStep/module artifacts 作为业务分析产物和上下游对话格式的地位；
 - 开发 Agent 使用 Git + 独立 `progress/*.md` 的续接规则。
 
@@ -55,7 +55,7 @@ active v0 的规则是：
 - 异步运行只有 `QUEUED | RUNNING | FINISHED | FAILED`；worker 是单进程语义；
 - 进程中断时，未完成 run 失败；调用者启动新的 run 或新的 analysis step execution；
 - 已完整安装的 analysis step/module JSON/JSONL/receipt 保留，可 inspect、诊断并作为新执行的显式输入；
-- RepositoryKnowledge 可以在新执行中直接读取并验证 FlowInterpretation publication references，不重扫源码、不重做有效 前六个分析步骤；
+- 新业务过程批次可以在新执行中直接读取并验证完整 Activity/JDT/source corpus，不重扫源码、不重做有效前六个分析步骤；
 - Provider 调用一旦开始，不自动重试、不切换 Provider；当前 run 失败并保留已写诊断；
 - capability manifest 只可声明 `RUNTIME_RESUME=CAPABILITY_NOT_ENABLED`，不得暴露假 resume seam。
 

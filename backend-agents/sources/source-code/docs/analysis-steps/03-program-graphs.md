@@ -10,6 +10,8 @@ Step03建立可复用的代码导航：方法在哪里，调用有哪些声明/�
 
 图不是业务流程，也不是已证明业务事实。缺一条严格 edge 时保持 Gap，但安全代码片段仍可被 Step05 定位阅读，不能要求所有关系都转成 Step04 Fact 后才展示。Java 不在图层按行业字典判断采购、财务或销售。
 
+新的 Step07 不重建这些图。`FrozenAnalysisCorpus` 将已保存的 JDT/JavaParser 方法、调用、控制、参数和 SourceRef 作为随取随用的技术原文；紧凑 Activity 卡片只负责全仓导航，候选过程选出后才加载相关完整 Activity 和少量已保存源码。过程阶段与业务先后由模型解释并标注 certainty，不能反向写成新的图 edge。
+
 ## 2. 输入与五图分工
 
 输入为同一已验证源码、ApplicationDiscovery全入口/catalog/profile和选定引擎会话。JDT的LS负责绑定，Core负责语法；不执行客户构建或应用。主出口为`java-code-index.jsonl`，字段与数量见[共同合同](../modules/java-code-engines/contracts-and-configuration.md)。

@@ -2,9 +2,9 @@
 
 ## Scope and target identity
 
-- This directory owns only the Java/Maven frozen-source-to-nine-section Agent,
-  its tests, fixtures, design, CLI, Java Interface, and future authenticated
-  loopback HTTP adapter.
+- This directory owns only the Java/Maven frozen-source-to-business-process-
+  catalog-and-nine-section Agent, its tests, fixtures, design, CLI, Java
+  Interface, and future authenticated loopback HTTP adapter.
 - The target directory is backend-agents/sources/source-code/, the Maven
   coordinate is org.sourceanalysis:source-code-analysis-agent, the display
   name is Source Code Analysis Agent, and the Java root is
@@ -81,8 +81,10 @@
 - docs/history/ is history only. It is not target navigation or a production
   contract.
 - docs/plans/semantic-framework-ten-batch-implementation-plan.md is superseded
-  history and must not be executed as the current plan. A future implementation
-  plan must be derived from the four deep Modules in the active design.
+  history and must not be executed as the current plan. The next implementation
+  plan must be derived from the active business-process discovery Modules and
+  the explicit delta recorded in
+  docs/plans/business-process-discovery-and-reconstruction-change-design.md.
 - Update and review the applicable target design before implementation. This
   instruction does not authorize a Git commit, push, model call, source scan,
   capture, freeze, package or deployment; follow the user's explicit scope.
@@ -97,6 +99,10 @@
   its affected active consumers; preserve historical runs and completed plans.
   Section 7 owns the implemented material-checkpoint/model-batch separation,
   explicit v2-to-v3 state export and reviewed-job reuse. Do not reopen old plans.
+- docs/modules/business-process-discovery/ owns the target Step07 deep-module
+  split, ActivityUse/process contracts and deterministic process publication.
+  Its target/current labels are mandatory: none of its unimplemented target
+  outputs may be described as already delivered.
 
 ## Selectable Java code engines
 
@@ -153,7 +159,7 @@
   uncommitted blanket Java 25 changes on the older appmod branch are not the
   verified JDT baseline; main application Java 17 and tool JVM remain separate.
 
-## Eight analysis steps and the four deep Modules
+## Eight analysis steps and the business deep Modules
 
 - The closed semantic keys and runtime directories remain:
   - verified-source-inventory -> steps/01-verified-source-inventory/
@@ -174,10 +180,20 @@
   Keep exact Proof truthfulness. Incomplete strict Proof is not the sole gate
   for reading safely located code. Remove repeated ordinary-path enumeration,
   compilation and projection; do not introduce another evidence hierarchy.
-- Step 06 uses exactly two target business Modules:
-  BusinessMaterialBuilder and ActivityExplainer.
-- Step 07 uses exactly one target business Module: ProcessExplainer.
-- Step 08 uses exactly one target business Module: BusinessReportPublisher.
+- Step 06 uses exactly two implemented business Modules:
+  BusinessMaterialBuilder and ActivityExplainer. The saved 326 reviewed
+  Activities are the reusable semantic index for the approved Step07 work;
+  Step07 must not rerun either Module.
+- Step 07 exposes exactly two deep internal Interfaces:
+  BusinessProcessDiscovery and BusinessProcessPublisher. Discovery owns the
+  FrozenAnalysisCorpus, RepositoryBusinessCataloger,
+  ProcessMaterialAssembler, CandidateProcessReconstructor and
+  RepositoryProcessConsolidator internals. Publication owns the deterministic
+  repository process catalog, coverage and business-processes.md. Do not expose
+  those internals as new public Agent methods.
+- Step 08 uses exactly one business Module: BusinessReportPublisher. Its target
+  input is the consolidated process catalog, not raw Activities or the legacy
+  singleton ProcessExplainer output.
 - These are internal Modules behind the sole RepositoryAnalysisAgent public
   Interface. Do not create a second POC namespace, parallel runtime, public
   Interface, compatibility alias or dual writer.
@@ -200,12 +216,14 @@
   account-side checks instead of promising zero paid-credit use. Explicit API
   Providers are approved as a design option only and need authorization for
   each actual run; they never receive a failed subscription job as fallback.
-- A job is one material's DRAFT then complete REVIEW and saving. Activity jobs
-  run in parallel, then all finish; process-group jobs run in parallel, then
-  all finish; at most one repository-summary job follows under existing
-  eligibility/explicit-skip rules; one whole-nine-chapter report job follows
-  published knowledge; rendering remains zero-Provider. Shared activities are
-  immutable and process membership remains many-to-many.
+- A job is one bounded task's DRAFT then complete REVIEW and saving. Existing
+  Activity jobs remain complete and reusable. Target Step07 first runs bounded
+  repository-catalog discovery over compact Activity cards, then reconstructs
+  overlapping candidate processes in parallel from complete selected
+  Activities and requested saved source excerpts, then runs one bounded
+  repository consolidation. One whole-nine-chapter report job follows the
+  published catalog; deterministic process/report rendering remains
+  zero-Provider. Shared Activities are immutable and membership is many-to-many.
 - Configure only global and each Provider/account service maxConcurrentJobs
   in the single YAML owner; defaults are global 4 and Pro Luna/high 4. These
   are in-flight job limits, not maxMaterialsToStart, Builder K or actual N.
@@ -256,11 +274,25 @@
 - `PARTIAL` and `INCOMPLETE` in this semantic design are document-quality and
   acceptance conclusions, not new runtime/report enums. Closing a coverage
   set with unexplained entries cannot pass complete business acceptance.
-- ProcessExplainer
-  performs programmatic loose recall, then model-backed whole-process and
-  bounded repository synthesis. BusinessReportPublisher lets the model author
-  natural paragraph JSON and review the complete nine chapters; Java supplies
-  Markdown styling.
+- RepositoryBusinessCataloger uses compact, deterministic cards only to find
+  business areas, aliases and overlapping candidate membership. Java must not
+  seed sales, purchasing or another domain vocabulary and must not infer
+  business order from names, shared tables or file proximity.
+- ProcessMaterialAssembler validates candidate Activity IDs, reloads their
+  complete reviewed records, exposes statement handles and fetches only
+  explicitly requested excerpts from the saved JDT/source corpus. It never
+  reruns JDT, JavaParser, BusinessMaterialBuilder or ActivityExplainer.
+- CandidateProcessReconstructor lets the model select the relevant Activity
+  branch or variant and author process stages, exact predicates, transitions,
+  business rules, outcomes and uncertainty. REVIEW receives the complete
+  actual DRAFT and resolved source excerpts; Java validates structure and refs,
+  not Chinese business entailment.
+- RepositoryProcessConsolidator reconciles overlapping candidates without
+  forcing a single partition. BusinessProcessPublisher deterministically emits
+  one structured catalog, coverage and business-processes.md.
+- BusinessReportPublisher consumes only that consolidated catalog, lets the
+  model author and review the fixed nine-chapter presentation, and cannot
+  discover, merge, split or reorder processes. Java supplies Markdown styling.
 - Each activity package, process group, repository summary and report uses at
   most one DRAFT plus one REVIEW. Capacity failure means zero requests plus a
   concrete uncovered reason. Once a request starts, transport/schema/runtime
@@ -309,6 +341,20 @@
 - A model may reuse allowlisted refs and create scope-local business labels.
   It cannot create source refs, paths, lines, hashes, Facts, Proofs, Flows,
   human confirmations or external identities.
+- Compact Activity cards are discovery/navigation material only. A card may
+  suggest a candidate membership, but it cannot authorize a detailed stage,
+  rule or transition. Those require the complete selected Activity and, where
+  needed, an excerpt fetched from the already saved source corpus.
+- Preserve concrete predicates. If reviewed material says `status=0` permits
+  update, `status=1` is required for unaudit, or purchase status 2/3 rejects an
+  operation, no later model or renderer may replace that with only “状态允许”
+  or “满足条件”. When the source does not establish the predicate, say exactly
+  what is unresolved rather than inventing a generic rule.
+- Process claims use exactly `CONFIRMED`, `INFERRED` or `UNRESOLVED`.
+  `CONFIRMED` needs direct saved Activity/source support; `INFERRED` is a model
+  business connection consistent with that support; `UNRESOLVED` records
+  conflicting or missing information. Java validates the enum and references,
+  but does not score or hard-code domain meaning.
 - Clear source context that constructs an object and calls a persistence
   operation may be described as “the system generates and saves the object.”
   This is code-defined behavior, not proof that a particular run succeeded.
@@ -333,10 +379,11 @@
   one explicit level retains that set; two explicit levels combine by union
   as Spring RequestMethodsRequestCondition does, not intersection.
 - Do not invent GET or separate business activities for framework HEAD/OPTIONS.
-  The target methodCondition is explicit and versioned; do not silently place
-  it in the current EntryPointV2 schema. Correct the current misclassification
-  of UserController#getOrganizationUserTree and
-  MaterialCategoryController#getMaterialCategoryTree with targeted future tests.
+  The explicit versioned methodCondition and discovery v3 reader are
+  implemented. UserController#getOrganizationUserTree and
+  MaterialCategoryController#getMaterialCategoryTree are now accepted as
+  unrestricted routes. A future full-repository rerun may reconfirm the total
+  denominator, but this rule is not pending implementation.
 
 ## Coverage, grouping and the nine chapters
 
@@ -346,20 +393,44 @@
   material; preserve the technical Flow Gap.
 - Every discovered entry must be ANALYZED, ANALYZED_WITH_GAPS or NOT_ANALYZED
   with a concrete reason. One packet/group PASS never completes a repository.
-- Process recall may use calls, explicit identifiers, data relations, reviewed
-  objects/terms and processJoinSignals. Cues do not prove order, causality,
+- A deterministic Activity index card contains stable identity and a compact
+  projection of reviewed objects/actions/states/inputs/results. It never
+  truncates or replaces the full reviewed Activity. Catalog discovery uses all
+  cards, possibly through bounded shards plus one consolidation, and must close
+  every card as candidate member, support/standalone activity, unclassified or
+  failed with a concrete reason.
+- Candidate groups are semantic, bounded, overlapping and model-proposed; they
+  are not consecutive chunks of 24 records and not Java joins on a domain word.
+  Calls, identifiers, data relations, reviewed objects and source statements
+  are context after a candidate exists. Cues do not prove order, causality,
   identity or merge. Same-name and different-name activities are not
-  automatically merged; one activity may belong to several processes.
-- A large repository is handled as complete reviewed activities, bounded
-  overlapping groups, reviewed group summaries and one bounded repository
-  synthesis. If summarization would omit groups/conditions/rules/formulas,
-  mark the omitted items and repository coverage PARTIAL; never silently
-  compress and claim completion.
+  automatically merged; one Activity may have several process-specific
+  ActivityUse records.
+- Detailed process output must structurally retain purpose/scope, ActivityUse,
+  ordered and optional stages, entry and rejection conditions, actions,
+  state changes, outcomes, transitions, exact business rules, certainty,
+  statement refs and source refs. Query/statistics/configuration Activities may
+  support a process without being forced into its main chronological stages.
+- The final catalog must carry the actual selected OBJECT,
+  FIELD_OR_DIMENSION, OBJECT_RELATION, FORMULA_OR_METRIC and QUESTION text with
+  owner, certainty and refs. For SUPPORT/STANDALONE/UNCLASSIFIED Activities,
+  BusinessProcessDiscovery deterministically projects this content from the
+  complete reviewed Activity into ProcessDiscoveryResult. The publisher only
+  validates and publishes that closed result; neither component may drop it or
+  manufacture a fake Process.
+- Repository consolidation compares overlapping reviewed candidates, preserves
+  alternatives and conflicts, and closes every candidate/Activity disposition.
+  It may not silently compress away conditions, rules, formulas or unresolved
+  scope and then claim completion.
 - Zero entries or all entries not analyzed may yield a nine-chapter scope
   report, but semantic delivery remains INCOMPLETE.
 - The final Markdown has exactly the shared NineSectionProfile H2 sections:
   文档说明、业务目标、业务对象、业务活动、字段与维度、对象关系、指标口径、
   示例问题、待确认事项.
+- `business-processes.md` is the primary readable artifact answering which
+  business processes exist and how each proceeds. The nine-section document is
+  a downstream repository view; it cannot repair a missing process by reading
+  raw Activities or rediscovering relationships.
 - Chapter 7 uses only formulas/definitions present in reviewed input. With none,
   it explicitly says no definable metric was identified. Natural-language
   truthfulness is checked by whole-report Luna REVIEW and authorized human
@@ -380,24 +451,31 @@
 - Disk/new-process/import reuse verifies stored identity/hash/schema/ref/basis
   and read source bytes at the boundary. Explicit independent audits and
   mutation tests may replay algorithms; ordinary internal consumers must not.
-- New business checkpoints are:
+- Implemented business checkpoints are:
   - Step 06: business-materials.jsonl, activity-explanations.jsonl,
     activity-coverage.json
-  - Step 07: business-processes.jsonl, repository-business-knowledge.json,
-    process-coverage.json
   - Step 08: business-report.json, source-refs.jsonl, document.md,
     report-validation.json
+- The current Step07 `business-processes.jsonl` and
+  `repository-business-knowledge.json` are legacy implementation outputs to be
+  replaced, not accepted target semantics. Target Step07 private/reviewed
+  checkpoints include activity-index-cards, business-process-candidates and
+  reviewed-business-processes; formal publication is one
+  repository-business-process-catalog.json, process-coverage.json and
+  business-processes.md plus existing step receipt/manifest conventions.
 - Save business-materials after compilation and before the first model call.
   The approved job design has the coordinator save each complete reviewed job
   to a private run result immediately, then aggregate in stable material/group
-  order and publish once at the existing fixed address. Process publication
-  waits for summary completion or an explicit existing skip. Activity and
-  process-group jobs now execute with bounded two-level concurrency and
-  private per-job saving before stable aggregate publication. Workers do
+  order and publish once at the existing fixed address. Target process
+  publication waits for catalog discovery, every candidate disposition and
+  repository consolidation. Activity jobs and target candidate-reconstruction
+  jobs execute with bounded two-level concurrency and private per-job saving
+  before stable aggregate publication. Workers do
   not mutate shared collections or repeatedly install differing bytes at one
   address. Keep Provider/job journal namespaces isolated, execution metadata
-  outside model input, and each job submitted once. No recovery subsystem or
-  new public artifacts/Module addresses/state enums. In-process callers pass
+  outside model input, and each job submitted once. The approved Step07
+  publication may replace its legacy payload set, but it adds no public Agent
+  method, recovery subsystem or runtime state enum. In-process callers pass
   immutable objects without per-internal-operation fresh reopen.
 - A simple inputFingerprint covers actual content inputs excluding a new
   runId, actual Prompt content/version, effective model/output configuration
@@ -444,7 +522,9 @@
 - Java and CLI may arrive before authenticated loopback HTTP. Completing all
   three adapters is not a business-quality gate; HTTP remains deferred.
   Explicit API service configuration and adapter are implemented as part of
-  the model-job execution design; independent model batches are still pending.
+  the model-job execution design. Independent model batches, sourceRun/output
+  ownership and explicit reviewed-job reuse are implemented; do not describe
+  them as pending or use a model failure to trigger JDT again.
   The design alone authorizes neither live API calls nor billing.
 - No public request/response accepts or exposes filesystem Path. Raw source,
   prompts and model responses remain protected according to existing artifact
@@ -453,8 +533,9 @@
   evidence or replace a publication.
 - Fixed 52 reader-visible outputs and the prior 57-output implementation are
   not target completion criteria. Existing Step 01–05 technical publications
-  remain; new business completion is defined by the checkpoints, coverage and
-  one validated nine-section report above.
+  remain; new business completion is defined by the reviewed Activity
+  checkpoint, consolidated process catalog/coverage, business-processes.md and
+  one validated nine-section report.
 - Machine artifacts are UTF-8 JSON/JSONL. Exceptions remain document.md,
   durable design/progress Markdown and immutable source inputs retained
   verbatim.
@@ -475,9 +556,11 @@
   testsupport. Retire old Step06 addresses 1-9 and their artifact branches,
   then remove only the two registry-proposal Capsule fields with the owning
   schema versions. Preserve current addresses 10/11,
-  `analysis.knowledge.ProcessExplainer`, `ModelRuntimeIdentityV1`, EntryContext,
-  facts, gaps, signals and SourceRefs. Current work must not restore or extend
-  that retired route; it only verifies the active business chain.
+  `ModelRuntimeIdentityV1`, EntryContext, facts, gaps, signals and SourceRefs.
+  The current `analysis.knowledge.ProcessExplainer` and its singleton-process
+  wire are now the implementation being replaced by the approved Step07
+  design; do not confuse them with the older already-deleted R0/P1 route, and
+  do not extend either old grouping architecture.
 - Adjust existing semantic packages and four business Modules. The approved
   analysis.code engine seam replaces hardwired Java parsing only; it does not
   authorize another business runtime, broad Wire Reset or storage/recovery
@@ -498,9 +581,11 @@
   covering the current change; never start a full suite without explicit user
   request.
 - Tests assert observable outcomes through BusinessMaterialBuilder,
-  ActivityExplainer, ProcessExplainer, BusinessReportPublisher or the existing
-  Step 01–05 public seams. Do not test past the Interface merely to preserve
-  retired shallow Modules.
+  ActivityExplainer, BusinessProcessDiscovery, BusinessProcessPublisher,
+  BusinessReportPublisher or the existing Step 01–05 public seams. Test target
+  internals only where needed to prove card completeness, source hydration or
+  coverage conservation; do not test past an Interface merely to preserve the
+  current singleton ProcessExplainer or other retired shallow Modules.
 - Stop when the expected RED cannot be established, required upstream data is
   absent, input/ref/coverage cannot close, a started model request fails, or
   implementation needs a contract change. Update durable design and obtain
@@ -519,8 +604,11 @@
   failures in every step. Remove contradictory retired gates in place; do not
   prepend a disclaimer while leaving must-replay or closed-Proof-only reading
   requirements active. Preserve current implementation facts separately.
-- Use the explicit synthetic replenishment-to-receipt-to-payable-bill story
-  for cross-process design. Never present it as jshERP behavior.
+- Use the fixed-source sales lifecycle walkthrough for the primary closed-loop
+  design acceptance, with actual saved conditions clearly separated from
+  target process reconstruction. A synthetic replenishment-to-receipt-to-
+  payable-bill story may test portability, but never present it as jshERP
+  behavior.
 - Reader chapters use Chinese business language first; technical fields may
   appear as supporting detail. Keep target design and current maturity
   separate.

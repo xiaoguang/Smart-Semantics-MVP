@@ -10,6 +10,8 @@
 
 它回答技术触发点在哪里，不替方法起业务名称，也不把 Controller 当参与者。语义意义留给模型，已定位入口先交 Step03 建图和 Step05 组织代码上下文。
 
+在新的业务过程发现路线中，入口分母继续作为 Activity coverage 和最终 process coverage 的基准。Step07 可以把同一入口的 Activity 用于多个候选过程，但不能创造未发现入口，也不能因为某个入口没有进入主流程就让它从分母消失。`@RequestMapping` 未指定 HTTP method 是合法 unrestricted 映射，不再作为业务过程缺口。
+
 ## 2. 输入与处理
 
 输入为Step01 verified source view、静态工程画像和选定Java引擎的catalog。配置/POM/XML仍共用现有读取器；Java类型、方法、参数与注解来自[JDT/JavaParser统一Interface](../modules/java-code-engines/contracts-and-configuration.md)。先完成JDT接线，第二阶段再适配JavaParser现有能力。只读清单内文本，不执行客户构建或应用。

@@ -14,6 +14,8 @@
 
 保留 Step04 的价值在于有选择地提高技术判断可靠性，并避免下游重复证明同一模式。其复杂度应与实际使用的模式相称，不扩展成行业分类器或自然语言逐原子证明系统。
 
+新的业务过程发现只把这些 Fact/Proof 当作可选的 `CONFIRMED` 技术依据。没有 Fact 时，模型仍可阅读已保存的完整 Activity 与源码，并把关系标为 `INFERRED` 或 `UNRESOLVED`；程序不得为了填满过程阶段而新增 Fact 模式，也不得要求每条业务句子都先转换成原子 Proof。
+
 ## 2. 输入：已建立的五图与明确规则
 
 输入为同源的 VerifiedSourceInventory、ApplicationDiscovery、完整 ProgramGraphs typed views，以及版本化 FactRegistry、ProofRuleRegistry 和预算。五图继续是关系的拥有者；Step04 不重新解析客户仓库补边，不猜调用，不运行客户代码。

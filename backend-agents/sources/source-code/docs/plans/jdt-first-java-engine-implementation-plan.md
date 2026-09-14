@@ -1,5 +1,7 @@
 # JDT-first Java Engine Implementation Plan
 
+> **COMPLETED HISTORICAL PLAN（2026-09-12）：** JDT 路线和后续 JavaParser 既有能力适配均已交付。本页只保留实施记录；当前业务过程工作不得从 Task 1 重新执行，目标见[业务过程发现与重建设计](business-process-discovery-and-reconstruction-change-design.md)。
+
 > **For the implementing agents:** execute these tasks in order. Luna writes the RED contract tests, Terra implements the smallest GREEN change, and Sol diagnoses only when the contract or environment is genuinely unclear. Do not start Task 9 until Tasks 1–8 have passed the first-stage gate.
 
 **Goal:** Make JDT the first complete Java source engine from Step02 entry discovery through Step05 business material, then adapt JavaParser to the frozen contract without expanding its capability.

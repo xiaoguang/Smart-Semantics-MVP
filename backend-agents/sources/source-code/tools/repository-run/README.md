@@ -1,5 +1,7 @@
 # JDT repository materials run
 
+> **Current implementation guide:** the commands below describe the existing launcher and remain valid for material/Activity checkpoint handling. Its `generate` mode still uses the legacy singleton `ProcessExplainer`; it is not the approved cross-Activity process-discovery workflow. The next implementation will keep the saved materials, 326 reviewed Activities, YAML pool and batch reuse, but replace the process phase according to [the approved change design](../../docs/plans/business-process-discovery-and-reconstruction-change-design.md). Do not rerun JDT or extend the launcher’s old process grouping to simulate that target.
+
 The launcher now accepts one `repository-run-config-v2` YAML or JSON document.
 In model modes, `sourceAnalysis.modelJobs` replaces the old second
 `--provider-config` file. It validates the global and per-Provider job limits,

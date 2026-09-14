@@ -95,9 +95,11 @@ analysisStepExecutionRequestId = "analysis-step-execution-request:" + lowercaseH
 
 新参数首选放入现有 versioned profile/prompt 内容；若改变 public request 字段则升级其 schema，不修改 v2 allowlist。人工确认不属于本轮新增机制，模型 review 不能伪造人工批准。
 
-## 3. 实际输出与简单来源查阅
+## 3. 实际输出、过程主读物与简单来源查阅
 
 当前 RenderedDocumentReference 的字段为 runId、reportCheckpoint、documentSha256、sizeBytes；没有 nineSectionPlanId。artifact 的实际 ArtifactView 包含 runId、businessOutputArtifactKey、immutableReference、schemaVersion、mediaType、contentUtf8。查询按闭集业务输出名及 maxBytes 读取，拒绝任意 Path/glob/目录浏览，超预算整体拒绝，不截断。`analysis-run-output-v3` 在不改公开 publication reference 形状的前提下增加 `sourceRunId`：material checkpoint 继续按 source run 验证，Activity/Knowledge/Report 按输出 owner（即 `modelBatchId`）验证。读写器接受这两种精确身份，不得将上游 publication 伪造为新 run 地址。
+
+目标 Step07 在同一 run-centric artifact 查询机制内增加语义过程输出，不增加公开方法：`repository-business-process-catalog.json` 是结构化权威结果，`process-coverage.json` 闭合 Activity/candidate/process 分母，`business-processes.md` 是回答“有哪些业务、每种业务怎样进行”的确定性主读物。当前同名旧 process/knowledge 输出尚未满足这一合同，不能用 340 个 singleton records 冒充目标 catalog。
 
 现有程序侧 SourceReference 是：
 
@@ -188,7 +190,7 @@ ModuleReceipt
   gapRefs[]
 ~~~
 
-对已保留的 Step 01–05 技术 Module 和当前既有 artifact，每个模块至少一个 payload + receipt；payload 先固定，receipt 最后计算且排除自身。该规则不施加给新的 BusinessMaterialBuilder、ActivityExplainer、ProcessExplainer、BusinessReportPublisher 内部动作。它们按总体设计保存少量有意义检查点，最终 document.md 由已验证 paragraph JSON 与 source refs 确定性组装，不把 Markdown 先包进内部 Module JSON。
+对已保留的 Step 01–05 技术 Module 和当前既有 artifact，每个模块至少一个 payload + receipt；payload 先固定，receipt 最后计算且排除自身。该规则不要求 Step06–08 的每个内部动作伪装成独立 ModuleArtifact。BusinessMaterialBuilder、ActivityExplainer、BusinessProcessDiscovery 内部阶段、BusinessProcessPublisher 与 BusinessReportPublisher 按总体设计保存少量有意义检查点；`business-processes.md` 由已归并 process catalog 确定性生成，最终 `document.md` 由已验证 paragraph JSON 与 source refs 确定性组装。
 
 引擎接线沿用这一机制并允许经合同登记的实际 payload 集：Step03 的 `java-code-index` 是 `PROGRAM_GRAPHS` module 7，不是新 step；JDT Step03 为 index 一项、JDT Step04 为 v4 NOT_PRODUCED accounting 一项，分别再由现有 step store 生成 receipt。Receipt 的 `payloadArtifacts[]` 只列实际 semantic payload。所有 exact-set allowlist、artifact policy、reader 与 fixture 必须和[引擎实际集合表](../modules/java-code-engines/contracts-and-configuration.md#51-实际产物集合与现有存储复用)一致；未执行增强不写空文件，已声明 AVAILABLE 的损坏产物仍失败。
 
@@ -210,8 +212,8 @@ ModuleFailure
 ## 6. 不变量
 
 1. Step 01–05 继续遵守既有 canonical framing、identity、store、source locator 与 Module publication；业务简化不削弱这些技术产物。
-2. Step 06–08 的四个深 Module 使用总体设计规定的简单检查点：材料在首次模型调用前保存，coordinator 立即保存每个已审 job 的私有不可变结果，再按稳定顺序一次安装原 aggregate；过程知识等待总结完成/显式跳过。Activity/Process 的有界并行、私有逐 job 保存与屏障，以及跨 batch 验证读取、复用记录和 mixed-ownership aggregate 均已实施。不能循环安装不同 bytes，不增加公开 artifact key、Module 地址或状态 enum，进程内无需逐内部 Module fresh-reopen。
+2. Step 06–08 使用总体设计规定的简单检查点：材料在首次模型调用前保存，coordinator 立即保存每个已审 job 的私有不可变结果，再按稳定顺序安装 aggregate。Activity 有界并行、当前 Process 并行、跨 batch 验证读取、复用记录和 mixed-ownership aggregate 已实施；目标 Step07 复用该执行机制承载 catalog/candidate/reconstruction/consolidation，而不新增运行框架。不能循环安装不同 bytes，不增加公开 Agent 方法或状态 enum，进程内无需逐内部动作 fresh-reopen。
 3. 跨进程/model batch 复用 Step 06–08 整个已审 job 时，新旧 batch 必须绑定同一完整 `materialsCheckpoint` reference，再比较覆盖完整实际内容、实际 Prompt、有效模型/输出配置与 Module 版本的 inputFingerprint，并核验磁盘身份/hash/schema/ref/basis。同名短 ref 不能代替这一检查。DRAFT 完成但 REVIEW 失败/未知只保留诊断；显式新 batch 重做完整 pair，旧结果不覆写。不恢复旧六/三/四模块 DAG、固定五/九 payload 或 52-output 顺序。
 4. 公开 artifact 查询不接受 Path，也不返回截断内容。
 5. Source excerpt/SourceRef 验证来源；Proof 证明受支持的 exact technical fact；两者都不自动证明模型自由业务文本，也不要求每个业务原子拥有 Proof。
-6. 四个业务 Module、runtime、Step05 EntryContext 与 Builder 消费均已存在。Activity v2 `missingEntryKeys`/required `unexplainedEntries`、程序侧 `unexplainedActivityEntries` 及其 knowledge/report 按材料投影均已写入当前 Schema/Java/resource；字段变化已显式升版，不存在兼容 alias、dual reader 或“缺字段按旧语义”。下一项仅验证完整链路，而不再扩展该 wire。
+6. runtime、Step05 EntryContext、Builder、ActivityExplainer、旧 ProcessExplainer 与 BusinessReportPublisher 均已存在。Activity v2 `missingEntryKeys`/required `unexplainedEntries` 及独立批次复用保持不变。目标 Step07 的 ActivityUse、详细 stage/rule/certainty、catalog/coverage 和 `business-processes.md` 尚未进入 Schema/Java/resource；实现时必须以新版本一次贯通 producer、reader、validator 和直接测试，不兼容双读，也不能让 Step08 回退到 raw Activity 重做过程发现。

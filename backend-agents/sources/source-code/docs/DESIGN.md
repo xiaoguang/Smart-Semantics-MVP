@@ -1,233 +1,244 @@
-# Source Code Analysis Agent：从源码到业务过程
+# Source Code Analysis Agent：从源码到仓库业务过程
 
-## 1. 交付目的
+## 1. 交付目标
 
-读者需要知道系统做什么、围绕哪些业务对象、一次活动经过什么条件、多个活动怎样组成业务过程。证据的首要用途是可靠地找到代码；图把相关代码的结构和执行关系连起来；模型在连贯代码上下文上解释业务。最终交付是一份可回到冻结源码的九章业务报告。
+本 Agent 面向不同的 Java/Spring 应用，不针对管伊佳写业务规则。它从一个冻结仓库中回答：
 
-这条路线保留八个步骤和唯一公开 `RepositoryAnalysisAgent`。现有五张程序图、严格技术 Fact/Proof继续保留为技术增强；它们不是每种工具把完整源码交给模型的前置门槛。Java负责来源、工具导航、代码材料、检查和保存；配置的模型负责业务含义、跨活动过程与业务语言，默认 Pro Luna/high。Java不维护行业词表，也不自己补全编译器的类型解析规则。
+1. 系统支持哪些业务领域和业务过程？
+2. 每个过程为什么存在，由哪些活动组成？
+3. 每个阶段在什么条件下开始，执行什么，改变什么状态，何时拒绝，最后得到什么？
+4. 哪些关系是源码直接支持，哪些是合理推断，哪些仍需确认？
+5. 读者在哪里可以查看相应代码行或片段？
 
-新的取材方式是[JDT/JavaParser可切换引擎](modules/java-code-engines/README.md)：YAML选择一个引擎，统一交付声明、完整方法、调用位置、实参/形参、实现候选和边界。**JDT 与 JavaParser 已按先 JDT、后 JavaParser 的顺序接入同一正式分析链。** 选择 `jdt` 会使用 JDT LS/Core 的导航材料并诚实省略未生成的严格增强；选择 `javaparser` 会保留原有七图、Fact/Proof 和 Flow 能力，同时增加统一导航索引。两者都经过 Step05、业务材料和既有业务链，不存在隐式回退或混合运行。
+主要可读交付是仓库级 `business-processes.md`。固定九章 `document.md` 继续作为下游概览，但不承担业务过程发现，也不再作为判断语义成功的唯一标准。
 
-本文是目标设计。当前代码中已经存在四个业务 Module 和工作流，Step05 EntryContext 已连续传到材料，普通 Flow/Capsule 发布已停止重复 compile/project，Spring unrestricted method condition 也已落地。旧解释链及其 Capsule registry basis 字段已退出；Activity 的 v2 Prompt/schema、coverage-after-REVIEW 和程序侧未解释入口记录已落地。Process/Report 也已把具体未解释入口按材料投影到仓库知识和第九章。实现按当前实施计划分步开展；本文不把目标合同写成代码或实测结果。
+术语以 [CONTEXT.md](../CONTEXT.md) 为准。本轮批准的设计差异、当前实测基线和未来实施范围见[业务过程发现与重建设计变更清单](plans/business-process-discovery-and-reconstruction-change-design.md)。
 
-2026-09-13 批准的[导航复用、单次本地 CI 与正文减负](plans/navigation-reuse-and-readable-report-design.md)已经交付：同一冻结会话的相同 JDT 导航操作只执行一次，方法正文全仓共享，入口保持独立成员/展开状态；Step05/Capsule用索引引用保存，模型请求仍包含完整代码；九章只显示业务正文与来源编号。测量记录保留在原验收节。
+## 2. 设计原则
 
-已批准的[模型任务并行执行](modules/model-job-execution.md)已接入正式组合根。严格 v2 单 YAML/JSON 配置将每个 Activity 或 Process-group 的完整 DRAFT→REVIEW 固定到一个 Provider/model/effort；Java 17 有界池同时执行全局与每 Provider 两级上限，结果先私有保存再稳定聚合。Codex Subscription 与 OpenAI Responses API 都通过同一 Provider seam，前者强制 ChatGPT 登录隔离，后者关闭 SDK 自动重试。全部活动完成后才组织过程，全部过程组完成后才做至多一次仓库总结，其后才生成唯一九章；混合路由不再是只解析不执行的占位合同。
+- **成熟工具找代码。** JDT LS/Core 负责 Java 定义、实现、调用位置和完整方法；JavaParser 保留为能力较弱的可配置 Adapter。
+- **程序组织，模型理解。** Java 负责来源、ID、材料、覆盖、调度、保存和格式；LLM 负责业务领域、别名、过程成员、顺序、分支、目的和业务语言。
+- **全仓发现与深入阅读分开。** 模型先看全部 Activity 的精简卡建立目录，再按候选打开完整 Activity 和选定源码。
+- **摘要只导航，原文才定规则。** ActivityIndexCard 不能替代 ReviewedActivity；ReviewedActivity 仍不足时，REVIEW 从已保存 JDT/源码核对关键片段。
+- **语义优先，来源够用。** 读者只需短 SourceRef 回到文件、行号和代码片段；不为自然语言句子重建多层 Proof。
+- **具体条件不可缩水。** 已知 `status=0`、`0→1`、`purchaseStatus in {2,3}` 时，最终过程必须保留具体值和动作，不能写“状态满足条件”。
+- **不硬编码行业。** Java 和 Prompt 都不预置销售、采购等期望答案；这些词只能来自被分析仓库或模型输出。
+- **不因模型失败重扫。** JDT、Activity 和模型批次分别保存；候选重建失败只影响相应模型 job。
+- **诚实而有用。** 静态代码可以支持“系统构造并保存对象”，但不能证明某次运行提交成功或外部系统已经完成动作。
 
-## 2. 一条端到端接力
+## 3. 八步接力
 
-| 步骤与固定 key | 输入 | 本步工作 | 可观察输出与下一消费者 |
+| 步骤 | 稳定职责 | 主要输出 | 下游用途 |
 | --- | --- | --- | --- |
-| 01 已验证源码清单 / verified-source-inventory | 已注册固定 commit 的离线快照 | 一次核对完整清单、字节、路径和行索引 | source inventory、snapshot；02 与受限源码读取器使用 |
-| 02 应用发现 / application-discovery | 已验证文本、框架配置、选定引擎catalog | 共享Spring规则识别入口，Java语法只由选定引擎读取 | entry inventory、profile、catalog；03、05使用 |
-| 03 程序图 / program-graphs | 同一源码和入口、选定引擎 | 建可复用Java导航索引；保留实际可提供的五图增强 | java-code-index、实际图增强及可用性；05直接取完整方法/调用 |
-| 04 已证明代码事实 / proven-code-facts | 实际存在的图增强和规则 | 有图时按原义生成严格Fact；无增强则明确NOT_PRODUCED | 实际Facts/Proof或未生成说明；不阻断源码阅读 |
-| 05 业务流程 / business-flows | 全入口、引擎代码上下文、可选技术增强 | 归属并保存完整方法/候选/参数/条件/返回；一次投影Capsule | entryContexts、实际strict Flow、Capsule、处置与覆盖；06复用 |
-| 06 流程解释 / flow-interpretation | 入口上下文、图关系、同快照源码 | BusinessMaterialBuilder 封装已有上下文；ActivityExplainer DRAFT + 完整 REVIEW | 材料、已审活动、活动或显式未解释处置闭合的入口覆盖；07 使用 |
-| 07 仓库知识 / repository-knowledge | 已审活动、具体未解释入口、连接线索与必要原始材料 | ProcessExplainer 宽松分组、解释跨活动过程、整理仓库知识 | 已审过程、知识、具体 partial 范围与过程覆盖；08 使用 |
-| 08 九章文档 / nine-section-document | 完整已审知识、活动/过程、具体未解释入口与来源短 ref | BusinessReportPublisher 写并审阅九章 paragraph JSON，Java 排版 | JSON、SourceRef、Markdown、验证结果；第 9 章保留未解释入口 |
+| 01 `verified-source-inventory` | 固定并核验仓库文件、字节和源码位置 | source inventory、snapshot | 所有后续读取的共同来源 |
+| 02 `application-discovery` | 识别应用能力和全部 Spring 入口 | profile、entry inventory、mapper catalog | 建立入口分母和精确方法位置 |
+| 03 `program-graphs` | 选定代码引擎；JDT 路径生成导航索引，JavaParser 路径可附五图 | java-code-index、可选图增强 | 找到完整实现、参数、分支和边界 |
+| 04 `proven-code-facts` | 有图时保留严格技术 Fact/Proof；无图时明确 NOT_PRODUCED | facts/proofs 或未生成说明 | 可选技术增强，不阻断业务阅读 |
+| 05 `business-flows` | 每入口保存连贯代码上下文、调用、参数、条件、返回和 Capsule | EntryCodeContext、technical Flow/Capsule、coverage | 为 Activity 提供自包含代码材料 |
+| 06 `flow-interpretation` | 组包并逐包生成、审阅局部 Activity | business materials、ReviewedActivity、coverage | 为全仓目录提供完整活动分母 |
+| 07 `repository-knowledge` | 全仓业务发现、候选深入重建、归并和发布 | process catalog、coverage、`business-processes.md` | 直接供读者审阅，也供九章使用 |
+| 08 `nine-section-document` | 根据已归并过程目录写一份固定九章概览 | report JSON、SourceRefs、`document.md` | 仓库级展示与公共 render |
 
-01–05 不调用模型。06–08 内部正好四个业务 Module：BusinessMaterialBuilder、ActivityExplainer、ProcessExplainer、BusinessReportPublisher。它们隐藏在同一个 Agent 后，不新增业务分类器、证明层、POC runtime 或恢复系统。数值前缀只用于文档与 steps 目录排序，语义 package/key 不变。
+01–05 不调用业务模型。Step03/04 的五图和严格 Proof 是增强能力，不是 JDT 完整源码进入 Step05/06 的门禁。Step06 已经完成的 Activity 不因 Step07 设计调整而重跑。
 
-执行顺序固定为：材料保存 → 并行 Activity jobs → 等全部完成 → 并行 Process-group jobs → 等全部完成 → 最多一个 repository-summary DRAFT/REVIEW（或既有准入规则明确跳过）→ 发布完整知识 → 唯一完整九章 DRAFT/REVIEW → 确定性 renderer。一个 job 包含同份输入的一次 DRAFT 和完整 REVIEW；两轮不并行，不跨 Provider。过程组可重叠读取完整已审活动，但 worker 不改共享对象；各屏障由现有 BusinessAnalysisWorkflow 保持。
+## 4. 三层语义模型
 
-Step02 入口以 `methodKey + SourceRange` 定位完整声明，不能只凭 handler 名区分重载。`java-code-index` 是 Step03 既有 `PROGRAM_GRAPHS` 下的新 module 7，不是第九步。JDT 第一阶段的实际集合固定为 Step03 `java-code-index.jsonl + program-graphs-receipt.json`，Step04 `fact-accounting.json + proven-code-facts-receipt.json`；后者 v4 为 `NOT_PRODUCED`、reason 非空且 counts 为 null。Step05 context-first，继续发布既有五个语义文件与 receipt，具体 schema 版本见[代码引擎合同](modules/java-code-engines/contracts-and-configuration.md#5-保存格式位置与复用)。
+### 4.1 Activity：局部解释
 
-### 2.1 四个业务 Module 的深接口
+`ReviewedActivity` 说明一个局部活动的目的、参与者、对象、输入、条件、步骤、代码定义结果、业务规则、公式、问题、限制和来源。它可以覆盖一个或多个入口，也可以被多个 Business Process 使用。
 
-| Module | 输入 | 输出 | 隐藏的职责 | 失败/停止 | 下一消费者 | Luna/xhigh RED → Terra/xhigh GREEN |
-| --- | --- | --- | --- | --- | --- | --- |
-| BusinessMaterialBuilder | 同源 Step05 EntryContext/Capsule、全入口 coverage、材料 profile | `BusinessMaterialSet`、SourceRefs、global entry→material 处置 | 选择完整上下文、按配置 K 和真实 bytes 在入口边界分包、为每包生成 E1…EN | source/ref/identity 损坏 fatal；单入口无法安全成包时具体 NOT_ANALYZED；Provider 调用为 0 | ActivityExplainer；Step07 必要回查 | RED 覆盖任意 K、noFlow、零入口、映射与预算；GREEN 只改现有 Builder，不重建图/调用链 |
-| ActivityExplainer | 一个完整 material、scope-local key/ref allowlist、相容 Activity profile | 完整 ReviewedActivity、global entry coverage、程序侧未解释入口记录 | 一次 DRAFT + 一次完整 REVIEW；完整实际 DRAFT 与 `missingEntryKeys` 进入 REVIEW，最终以活动或 `unexplainedEntries` 闭合 | 调用前表达/输入/输出/REVIEW 容量不相容则零请求；非法 JSON/key/ref 与 started 失败 fatal；REVIEW 仍漏项 fatal，无第三次调用 | ProcessExplainer、Step08 coverage | RED 覆盖 N=4 漏项、N≥12、跨包 E1、真实 REVIEW bytes；GREEN 落地 v2 Prompt/schema 与最小 sidecar |
-| ProcessExplainer | 全部完整已审活动、recall cues、必要材料、按 material 聚合的未解释入口 | 完整已审过程、RepositoryBusinessKnowledge、process coverage | 高召回分组后由 Luna 判断有依据的多对多过程，保留独立活动和 partial 范围 | 非法成员/ref/JSON、遗漏范围却报完整、started 失败 fatal；0 活动时过程 Provider 为 0 | BusinessReportPublisher | RED 覆盖完整字段、多对多、保守独立过程和 specific partial；GREEN 只扩现有 knowledge input/save/read seam |
-| BusinessReportPublisher | 完整知识、活动/过程、coverage、按 material 聚合的未解释入口、SourceRefs | 固定九章 JSON、source-refs、Markdown、validation | DRAFT 读取完整知识；完整 REVIEW 读取实际草稿和已汇总的过程/仓库知识，不重复发送全部活动；Java 只校验并确定性排版 | 缺章/非法 ref/虚假全量 fatal；显式空仓报告仍走既有 DRAFT+REVIEW；PARTIAL/INCOMPLETE 不新增 runtime enum | 业务读者与 public render/inspect/artifact | RED 覆盖第4章内容、第9章具体入口、九章/ref、review 输入不重复活动及纯 render；GREEN 不建语义 parser |
+Activity 不负责回答整个销售或采购过程。当前 jshERP 实测已有 326 个完整已审 Activity，这是一份可复用的语义索引和详细材料，而不是最终过程目录。
 
-这张表是后续实现的 Interface 与测试面。模块间传 typed immutable 结果；内部测试 seam 不扩成新的公开 Interface。Activity REVIEW 的 `unexplainedEntries`、程序侧完整记录、v2 Prompt/schema 和 coverage v2 已写入当前实现。Process/Report 的按材料聚合投影也已接通：repository-summary 与 report DRAFT/REVIEW Prompt、ProcessExplainer 与 BusinessReportPublisher 已升到 Module v2；process-group DRAFT/REVIEW Prompt 保持 v1。四入口 complete/partial、跨包 N=9、单包 N≥12、零入口和预算/非法响应边界的 scripted 全链已通过；独立宿主会话候选也已对固定四入口材料完成一次真实 Activity DRAFT+REVIEW，结果只作为局部语义质量样本。
+### 4.2 Repository Business Catalog：全仓发现
 
-## 3. 为什么同时保留 03、04、05
+程序把每个 Activity 确定性投影成精简 `ActivityIndexCard`。Luna/high 阅读全仓卡片，发现 Business Area、对象别名、候选过程和重叠成员关系。它只回答“哪些活动值得一起深入阅读”，不写最终步骤。
 
-03 是代码索引。它回答“这个调用可导航到谁、有哪些候选、实参与形参是什么、条件和返回写在哪里”。JDT LS/Core负责完整导航与语法读取；JavaParser Adapter 提供迁移前已有的有限名称解析和七图增强。调用位置与参数对照不冒充完整数据流证明，其输出是源码材料，不是业务判断。
+每个 Activity 必须有处置：进入一个或多个候选、独立活动或未分类。成员用途为 CORE、OPTIONAL、ROLLBACK、SUPPORT、QUERY 或 ANALYTICS。一个 Activity 可以同时属于销售履约和库存管理；查询和统计可支撑过程而不是伪装成时序阶段。
 
-04 是严格技术增强。当前 `FactRegistry` 只登记 `JAVA_EXACT_CALL`、`JAVA_BOUNDARY_INVOCATION`、`JAVA_GUARD_CONDITION`。每个声称成立的 Fact 必须满足该模式全部 required atoms，缺一个就拒绝该 Fact。它既不是全代码摘要，也不是所有有用信息的白名单。没有 SQL 效果 Proof，仍可以把安全定位的 SQL 原文交给模型；但不能把原文、模型推断或 hash 改名为该 Proof。
+### 4.3 Business Process：详细重建
 
-05 是入口上下文保存与组织。它复用03选定引擎已经取得的方法和关系，附可选04增强，再投影Capsule；不重新找Service或解析一遍Java。未知候选、外部边界及原文保留，完整body不因缺CLOSED atom而消失。
+程序为每个 Candidate Process 取回完整 Activity，并提供稳定 Activity statement handle 与 SourceRef 目录。DRAFT 选择与候选有关的业务变体、阶段和规则，并请求少量需要核对的源码；程序从已保存 JDT/源码返回片段；完整 REVIEW 收窄或修正结果。
 
-Step04本身保留。JDT 没有提供原严格五图增强时，步骤明确保存“未生成技术增强”，不制造空图/假Fact满足旧接口；JavaParser 路径已经接回现有五图/Fact能力。已有产物若被提交，损坏或伪造仍拒绝。具体产物可用性、读写器变化见[接入设计](modules/java-code-engines/integration-and-javaparser.md)。
+同一通用 Activity 通过不同 `ActivityUse` 进入不同过程。例如“新增库存单据及明细”可以分别以销售订单、销售出库和销售退货用法出现，不能把所有分支复制到同一个阶段。
 
-## 4. 真实小例：按业务单据查财务单号
+每个过程至少表达：
 
-固定 jshERP commit 为 `8c30ce7861570458920175e200bb2a6442713580`。真实入口 `GET /accountHead/getFinancialBillNoByBillId` 的 Controller 接收 `Long billId`，传给 Service；Service 原样传给 Mapper，随后把查询返回值向上返回。Controller 在 try 中先将 Service 结果赋给局部 list，再设置 res.code=200、res.data=list；catch 记录异常并设置 res.code=500、res.data=“获取数据失败”，最后返回 res。
+```text
+名称
+目的与适用范围
+参与者与业务对象
+活动用法
+阶段
+  进入条件
+  动作
+  状态变化
+  拒绝条件
+  结果
+  下一步/分支
+重要业务规则
+选中的业务对象说明、字段/维度、对象关系、公式/指标和示例问题
+结束结果
+支撑活动与相关过程
+待确认联系
+来源引用
+```
 
-源码位置是 AccountHeadController.java:181–196、AccountHeadService.java:442–444、AccountHeadMapperEx.java:44–45 与 AccountHeadMapperEx.xml:150–155。XML 静态 select 关联 account_head/account_item 并按 bill_id 过滤；当前严格证明到 Java Mapper 边界，不据此宣称数据库查询已经执行成功。
+Certainty 只使用 `CONFIRMED`、`INFERRED`、`UNRESOLVED`，并附在具体阶段、规则或连接上，不用一个总分掩盖差异。
 
-以下是**目标阅读投影，短 ID 仅为说明，不是当前保存文件，也不是 Schema**：
+为避免 Step08 回读 raw Activity，详细过程还保存 `CatalogKnowledgeItem`。它只从候选的完整已审 Activity/源码或过程 REVIEW 中选择已有内容，类型限定为 `OBJECT`、`FIELD_OR_DIMENSION`、`OBJECT_RELATION`、`FORMULA_OR_METRIC`、`QUESTION`，并保留正文、owner、certainty、ActivityStatementRef 和 SourceRef。引用本身不能替代正文。被目录直接处置为 SUPPORT/STANDALONE/UNCLASSIFIED、没有经过候选重建的 Activity，由 `BusinessProcessDiscovery` 在同一个只读 corpus 内从原 ReviewedActivity 确定性投影同类知识项，并作为 `directActivityKnowledgeItems` 放入 `ProcessDiscoveryResult`；owner 保留 ActivityId 与 grouping disposition。这不会把它伪装成 Business Process，也不要求 Publisher 回读外部状态。
 
-~~~json
-{
-  "entry": "E1",
-  "calls": [
-    {"from": "Controller", "to": "Service", "arguments": [{"actual": "billId", "formal": "billId", "ordinal": 0}]},
-    {"from": "Service", "to": "Mapper", "arguments": [{"actual": "billId", "formal": null, "ordinal": 0, "binding": "ARGUMENT_TO_BOUNDARY"}]}
-  ],
-  "control": [
-    {"context": "try", "basis": "SOURCE_CONTEXT", "steps": ["list=Service(billId)", "res.code=200", "res.data=list"]},
-    {"context": "catch", "basis": "SOURCE_CONTEXT", "steps": ["log exception", "res.code=500", "res.data=获取数据失败"]},
-    {"after": "try/catch", "step": "return res"}
-  ],
-  "returns": ["Mapper result → Service return", "Service result → Controller local list → res.data"],
-  "boundary": {"target": "Mapper", "staticSqlContext": "join account_head/account_item; filter bill_id", "externalExecution": "UNKNOWN"}
+## 5. Step07 的两个深 Module
+
+外部 Interface 保持小而稳定：
+
+```java
+public interface BusinessProcessDiscovery {
+    ProcessDiscoveryResult discover(ProcessDiscoveryRequest request);
 }
-~~~
 
-这份投影说明 05/06 应从已存在图关系中组织什么，不能假称已有一个完整的人类调用链文件。已核对的图/Fact run 为 `analysis-run--c10be6c086fec92ca85081bf9856e7ed1cd7f3ad617e1e90d7fc9ffaec89286d`，相关图保存了 Controller→Service 的实参/形参绑定及 Service→Mapper 的边界实参；当前 CFG 没有独立 TRY/CATCH 节点，结构从源码读取，该入口有 2 条 exact call 与 1 条 boundary Fact；这个 run 没有 Step05 正式 publication。另一材料规划 run `analysis-run--54d866fa27f7b4fef1e272a404b09e9b03ba104945caafe717c69ff9cdd79530` 的第 314 条材料为 ENTRY_SOURCE_FALLBACK，flowRefs 为空，只有 S567 的完整 Controller 和 S568 的完整 Service 片段。两次运行不能拼成一条已实测的完整流水线。
+public interface BusinessProcessPublisher {
+    BusinessProcessPublication publish(ProcessDiscoveryResult result);
+}
+```
 
-目标业务段落可以写为：
+`BusinessProcessDiscovery` 隐藏五个内部模块：
 
-> 系统根据业务单据标识查询关联的财务单号，并把查询结果返回给调用方。代码分别处理正常返回和异常情况；异常时返回错误信息。这里描述的是源码定义的查询处理，实际是否查到记录取决于运行时数据。
+1. `FrozenAnalysisCorpus`：验证并查询已保存 Activity/JDT/source/ref。
+2. `RepositoryBusinessCataloger`：全仓卡片 DRAFT/REVIEW，得到业务目录和重叠候选。
+3. `ProcessMaterialAssembler`：重开完整 Activity，解析 DRAFT 的源码核对请求。
+4. `CandidateProcessReconstructor`：候选 DRAFT/REVIEW，形成详细过程。
+5. `RepositoryProcessConsolidator`：一次仓库级 DRAFT/REVIEW，处理重复、父子、相关和替代过程。
 
-这段不需要把代码 ID、Proof 链或岗位猜测放到正文。完整示例见 [walkthrough](examples/semantic-framework-walkthrough.md)。
+`ProcessDiscoveryResult` 已经封闭携带归并目录、全部 Activity/Candidate 处置以及 `directActivityKnowledgeItems`。`BusinessProcessPublisher` 只校验引用与 coverage，并确定性发布结构化目录和 Markdown；它不调用模型，也不自行重新打开 Activity。完整子模块设计见[模块总览](modules/business-process-discovery/README.md)。
 
-## 5. 连贯业务材料怎样形成
+## 6. 模型执行顺序与复用
 
-Step05拥有下游读取的入口上下文：消费选定引擎一次取得的完整方法、调用、参数和候选。目标保存方式为 flow-slices.json 的 entryContexts 引用 Step03 索引及各自入口，Capsule引用该上下文，不再次复制方法正文或重新判定。reader解开引用，业务消费者仍取得完整不可变视图；模型请求不能只有内部key。统一字段与局部版本变化见[代码引擎合同](modules/java-code-engines/contracts-and-configuration.md)。BusinessMaterialBuilder只选择完整方法、分配短ref并组包，禁止隐藏JavaParser/JDT调用。源码缺失必须在context中说明，不能让模型只读Controller却称连贯取材完成。
+```text
+已保存 326 ReviewedActivity
+  → ActivityIndexCard 全仓目录 job（必要时分片 + 一次全局合并）
+  → 候选 Process jobs 并行：每个 DRAFT → 按需源码 → REVIEW → 保存
+  → 一次 Repository consolidation DRAFT → REVIEW
+  → 程序发布 business-processes.md
+  → 唯一九章 DRAFT → REVIEW → 确定性 render
+```
 
-一个材料包至少能看清入口、直接实现、条件归属、结果及未知位置。引擎先保存完整方法，不以模型费用裁源码；Builder按完整方法组包，不能仅为“最小证据”删除Service主体。物理上下文装不下时，具体列出未交给模型的方法/入口，而不是静默截短后宣称完整。
+沿用现有 YAML 的全局并发和每 Provider 并发。候选 job 的 DRAFT/REVIEW 保持同一绑定；不同候选并行。目录全局合并、仓库归并和九章是各自的屏障任务。
 
-无strict Flow时仍由Step05保存flowRef=null的引擎上下文。JDT不需要先生成五图/Proof才可提供Service；未知目标/候选以原文和限制保留。Step06仍只读Step05结果，不扫描Java或猜callee。无法安全定位的入口单独处置，不删入口分母。
+现有模型批次设计继续有效：材料属于 `sourceRunId`，新模型输出属于 `modelBatchId`；完整已审且 fingerprint 匹配的 job 才能显式复用。旧 DRAFT 或失败 REVIEW 不续接半轮。任何 Step07 模型失败都不得调用 Capture、JDT、图、Fact、Flow、Builder 或 ActivityExplainer。
 
-程序保存 SourceRef→冻结文件/精确行段/原文映射。模型包只携带 S1 等短 ref、必要代码、连贯技术观察与限制；不含本机路径、行号、hash、完整 Proof、控制预算或 Provider 配置。模型不能创造 refs、来源身份或技术 Fact。
+PARTIAL 是闭合的语义处置，不是掩盖运行失败的状态。容量预检、`UNCLASSIFIED` 或 `INSUFFICIENT_MATERIAL` 可以在覆盖账完整时形成 PARTIAL catalog；Provider transport/runtime/schema、坏响应或 uncertain started request 属于 fatal，该批次不得发布正式 Step07 catalog，也不得继续 Step08。后续只能显式开启新模型批次，并复用仍然有效的材料或完整已审 job。
 
-## 6. 从活动到跨活动过程
+## 7. 来源和真实性
 
-BusinessMaterialBuilder 按每份材料稳定有序的 global entry IDs 建立本包映射 `E1…EN → global entry ID`；`N` 是该材料的实际入口数，不固定为 4，也不等于仓库入口总数。配置容量 `K` 只约束 Builder 怎样在入口边界分包。每包都可从 E1 重新编号，后续只能通过 `(materialId, local key)` 回到 global ID，不能用裸 E1、前缀、substring 或词典序跨包连接。活动与入口是多对多：一项活动可覆盖多个 key，一个 key 也可有多个有依据的活动；容量必须允许每入口单独表达，但不强制一入口一活动。
+### 7.1 模型可见
 
-ActivityExplainer 用已绑定模型（默认 Luna/high）对完整 material 做一次 DRAFT，再对原材料及**完整实际草稿**做一次 REVIEW，返回完整修订后的活动。各 material job 可并行，但同 job 两轮固定 Provider/model/effort，全部原材料均显式传入 REVIEW。purpose、participants、objects、inputs、conditions、steps、results、rules、formulas、questions 和必要长段落都保留。review 不是只查 schema、标题或摘要；后续保存和传递也不能截断成一个短 label。
+- 精简 Activity 卡或候选所需完整 Activity；
+- scope-local Activity/Process ID；
+- Activity statement handle；
+- allowlisted 短 SourceRef 与按需代码片段；
+- 已知限制和未解释范围。
 
-Activity v2 把验证分为两层：DRAFT 的 JSON、字段、local ID、key/ref allowlist 与 bytes 必须合法；只有 coverage 不足时不再提前 fatal，程序计算 `missingEntryKeys` 并把它和完整实际 DRAFT 送入唯一 REVIEW。REVIEW 必须满足 `reviewed activity keys ∪ unexplainedEntries = expected keys` 且二者不相交；仍漏项或任何结构/范围错误 fatal，不发第三次请求。程序把未解释 key 映射为 global entry coverage 的 `MODEL_NOT_EXPLAINED`，它不是源码/Proof Gap。当前 Java、v2 resources 与 coverage v2 已实现此合同，完整记录也已传入 Process/Report。
+### 7.2 模型不可见
 
-`UnexplainedActivityEntry(entryId, materialId, entryKey, materialContext, reasonCode)` 是程序侧完整值类型，reasonCode 固定 `MODEL_NOT_EXPLAINED`。`ActivityExplanationResult` 和 `RepositoryBusinessKnowledge` 均持有完整 `unexplainedActivityEntries` 列表；便利构造器可默认 `List.of()`，canonical v2 磁盘 reader 必须读取 required 数组，拒绝字段缺失/null 和旧版 fallback。局部 key 数组的顺序服从材料入口映射，E10 保持第十入口含义，不能词典序重排为第二入口。
+- 本机路径、hash、run/artifact/publication identity；
+- Provider 凭据、配额、并发或重试数据；
+- 整套五图/Proof 链；
+- 与当前候选无关的源码。
 
-ProcessExplainer 接收全部已审活动、必要来源包和程序侧完整未解释入口记录；仓库总整理模型与报告模型只接收按 `materialId` 聚合的 `{materialContext, unexplainedEntryKeys, reasonCode}`。同一 context 只传一次，global IDs 留在程序 coverage/knowledge；不新增 EntryDescriptor，也不从中文 context 正则反解入口。Java 用调用、参数/标识传递、数据关系、对象/术语候选及 processJoinSignals 做宽松召回；Luna 根据多入口材料判断它们可能组成怎样的过程。线索不能自动证明先后、因果、对象同一性或唯一归属。一个活动可以属于多个过程，同名不自动合并，异名也不自动排除。未解释入口随知识进入报告范围，但不能被模型升级为来源缺失或技术 Gap。
+程序校验 ref 确实回到同一冻结来源。LLM 可用业务语言合理推断跨入口关系，但必须区分：源码直接行为、业务推断、当前无法确认。没有外部证据时，不声称支付完成、库存物理变化、消息已消费或某次事务已经提交。
 
-大仓库按有界、可重叠的活动组并行工作，每组有一次 DRAFT 和完整 REVIEW。等全部组结束并稳定聚合后，对全部组摘要与跨组线索最多做一个有界仓库总整理 DRAFT/REVIEW；保留 `maxRepositorySummaryItems=0`、无过程或条目/输入容量不足时的现有显式跳过与 notConsolidated 记录。总结完成或明确跳过后才发布完整知识。摘要可以帮助检索，但完整已审活动与过程保留到报告输入；条件、规则、公式不能在分组后消失。无法在预算内送入的必要内容明确列入未覆盖范围，不能为并发静默压缩、删材料或拆九章后宣称完成。
+## 8. 保存与主要输出
 
-合成“补货申请 → 审批形成采购单 → 登记收货 → 形成应付账单”只演示跨活动业务叙事，并非 jshERP 事实。若输入只支持对象引用关系，模型可提出有依据的可能过程并集中标“顺序待确认”；没有岗位资料则不用“采购员/仓库员”等常识角色。
+Step07 可复用检查点：
 
-## 7. 九章报告与可读来源
+- `activity-index-cards.jsonl`
+- `business-process-candidates.jsonl`
+- `reviewed-business-processes.jsonl`
 
-BusinessReportPublisher 用完整已审仓库知识和必要活动/过程材料做一次 DRAFT。完整 REVIEW 接收整篇实际草稿、全部过程、仓库总结、coverage、待确认范围和来源 allowlist，但不再次重复已经汇总进过程与草稿的完整活动记录。这样审阅仍覆盖整篇报告及其仓库级依据，同时避免大仓库因重复输入越过 Provider 的物理字符上限。Java 校验类型、章节、ID/ref 范围和预算，然后确定性排 Markdown。最终 H2 严格为：
+Step07 正式业务输出：
 
-1. 文档说明
-2. 业务目标
-3. 业务对象
-4. 业务活动
-5. 字段与维度
-6. 对象关系
-7. 指标口径
-8. 示例问题
-9. 待确认事项
+- `repository-business-process-catalog.json`
+- `process-coverage.json`
+- `business-processes.md`
+- 复用 Step08/运行级 `source-refs.jsonl`
 
-正文使用自然业务段落；已审草稿中的有用解释、条件、规则和公式应进入对应章节，不能在 renderer 中重新摘要或只留下标题。第 7 章没有源码支持的公式/定义时明确“本次未从源码识别到可定义指标”。第 8 章的问题应可由已识别活动/对象理解，不能用问题形式夹带未证实制度。
+Step08 保留：
 
-来源标记采用 `[S123]` 这样的短编号。document.md不再附源码折叠区、路径或行号；完整文件/行段/原始片段单独保存在已有source-refs.jsonl。第一章只说明来源、范围、局限和在哪里查依据，不增加第十章。移除的是最后的排版附加物，不改变模型输入、已审九章JSON或后八章业务内容，纯重渲染零模型调用。业务推断可按活动或段落标注依据和不确定性，不要求每个自然语言原子配一个Proof。
+- `business-report.json`
+- `source-refs.jsonl`
+- `document.md`
+- `report-validation.json`
 
-清楚的源码构造对象并调用明确 save/insert 时，可以说“系统生成并保存该对象”；这是代码定义的行为。没有运行证据不能写本次已成功保存、库存实际增加、付款完成、唯一单据或成功数量。只看到模糊调用边界时，应缩窄结论或列待确认。业务真伪由模型完整 REVIEW 与授权后的人工样本审查判断，不建立 Java 行业语言解析器。
+固定 52/57 文件数量不是完成标准。检查点只服务可复用执行，不发展成重复证据层。正常进程内传 immutable view；磁盘重开验证来源和 Schema，不重新执行生产算法。
 
-## 8. 一次计算，可靠保存，边界核验
+## 9. 九章的职责
 
-正常可信进程建立一次源码验证视图及选定引擎会话；LS语义索引、Core每文件语法读取分别缓存，不按步骤重复。实际启用的图/Fact增强、上下文和Capsule由各自拥有者计算一次，publisher不重跑。内部可传不可变view；持久化仍用于观察和显式复用。
+九章固定为文档说明、业务目标、业务对象、业务活动、字段与维度、对象关系、指标口径、示例问题、待确认事项。
 
-publisher 负责序列化、最小必要的 type/ID/ref/budget 检查、canonical bytes/hash 和原子安装；写入完整性不等于再次运行图编译、Fact 枚举或 Capsule projector。磁盘重新打开、新进程、导入或跨 run 复用才校验保存身份/hash/schema/ref/basis 以及需要读取的源码 bytes。已验证的同进程 immutable bytes 可重复利用，不重复扫描全仓。显式独立审计或 mutation tests 可以重放算法，不能变成普通消费的必经层。
+Step08 只消费已发布 `RepositoryBusinessProcessCatalog`、过程 coverage 和 SourceRef：
 
-Step01–05 保留既有命名技术产物；调整的是重复计算和过强准入门。业务检查点仍为：
+- 第四章按已归并 Business Process 组织，不再从 Activity 列表发现过程。
+- 第七章只写过程目录中已有公式/指标口径。
+- 第三、五、六、七、八章分别只使用 catalog 已保存的对象、字段/维度、关系、公式/指标和问题知识项；不能沿 statement ref 回读 326 个 Activity 后再解释一次。
+- 第九章汇总 UNRESOLVED、未分类和未处理范围。
+- 其余章节可以概括，但不能丢掉、改写或升级 Step07 的具体规则和 certainty。
+- 正文只显示短 ref，完整源码在 `source-refs.jsonl`；纯重渲染零 Provider。
 
-| Step | 保存文件 |
-| --- | --- |
-| 06 | business-materials.jsonl、activity-explanations.jsonl、activity-coverage.json |
-| 07 | business-processes.jsonl、repository-business-knowledge.json、process-coverage.json |
-| 08 | business-report.json、source-refs.jsonl、document.md、report-validation.json |
+过程发现质量应先通过 `business-processes.md` 验收。九章写得流畅不能弥补过程目录仍是 340 个单阶段活动。
 
-本次 owning wire 升版固定为：`flow-interpretation-activity-coverage-v2` required `unexplainedActivityEntries`；`repository-knowledge-business-knowledge-v2` required 同名完整记录数组；`repository-knowledge-process-coverage-v2` 修正现有 `semanticDeliveryStatus` 判定。任一 activity coverage 为 `NOT_ANALYZED`，或 unmatchedActivityIds/notConsolidatedProcessIds 任一非空时，process coverage 必须为 `PARTIAL`，不能只看过程归组。`activity-explanations.jsonl`、`business-processes.jsonl` 和报告九章 JSON 的输出 shape/版本保持 v1。publisher、engine、policy fixture、canonical readers 和直接版本测试须同步，不保留旧 reader fallback。
+## 10. 销售示例推演
 
-材料在首次 Provider 前保存。Activity 与 Process-group coordinator 收到完整已审 job 结果后立即原子保存到运行私有目录，全部完成后按稳定材料/组顺序一次聚合并安装既有 module publication；固定地址 publisher 不在 worker 内反复安装不同 bytes。私有逐 job 结果、Provider/job journal namespace 与单次提交合同见[执行设计](modules/model-job-execution.md#5-保存身份与失败)，不新增公开产物、恢复系统或逐记录状态机。inputFingerprint 包含实际内容输入（不含新的 runId）、实际 Prompt 文本/版本、有效模型与输出配置、Module 版本；显式复用要求相等，并通过磁盘边界完整性检查。
+当前 Activity 已经包含“新增库存单据及明细”“更新已有单据”“批量审核/反审核”“强制结单”“销售出库/退货统计”“客户对账”等内容。新设计先由全仓目录把它们放入重叠候选，再取回完整内容。
 
-### 8.1 材料不动，模型批次可以重新开始
+目标过程不会写成：
 
-固定材料与独立批次的合同由[模型执行设计 §7](modules/model-job-execution.md#7-固定材料与独立模型批次已实现)统一规定，现已实现。代码资料先独立保存；后续模型失败只结束该模型批次，不让资料失效。
+> 状态允许时可以修改，满足条件后审核，再处理出库。
 
-`materialsCheckpointId` 指既有材料 module receipt，实际读取使用完整 checkpoint reference；`sourceRunId` 保留原生产者。每次显式模型执行由既有 start 创建新 run，其 ID 同时作为 `modelBatchId` 和业务输出归属。不新增公开方法、生命周期或恢复服务。材料可以来自失败的旧 run，只要它本身已经完整保存且验证有效；旧 run、旧 STARTED 和旧输出一律不改。
+它应按当前材料写成：
 
-新批次直接重开 M10 材料，Capture/JDT/图/Fact/Flow/Builder 均零调用。完整已审 job 内容、Prompt、schema/profile、服务账户/model/effort及来源映射一致时，显式复用并跳过两轮；失败或未启动 job 按本次范围做一次新的 DRAFT＋完整 REVIEW。只有草稿成功、审阅失败时不做半轮恢复，新批重做完整 pair。过程分组、总结和报告按实际依赖内容判断复用，最后仍只有一份九章。
+1. 创建销售订单；订单号在未删除单据中不得重复，明细不能为空，关联订单号与关联申请号不能同时填写。销售订单本身不要求结算账户。
+2. 当前数据库单据状态为 `0` 时允许修改；不是 `0` 时拒绝编辑。未审核单据还可以进入删除/撤销支路。
+3. 调用方可以在新增/修改时携带状态 `1` 完成“保存并审核”，也可以以后执行批量审核；因此不能声称独立审核入口是唯一方式。
+4. 独立审核要求当前状态 `0` 并更新为 `1`。反审核要求当前状态 `1` 且采购状态 `0`；采购状态 `2` 或 `3` 时拒绝反审核。
+5. 销售出库可以引用销售订单，也可以独立创建。有关联时，出库数量会参与原订单完成进度，订单可能保持已审核、进入部分完成 `3` 或完成 `2`。
+6. 销售退货可以关联销售出库，也可以独立创建；当前材料不足以证明退货一定回写销售订单状态。
+7. 客户收款和欠款是相关过程；现有财务明细可以用单据号关联业务单据，但不能普遍确认它关联订单还是出库单。
+8. 销售统计和对账属于支撑/分析过程，不伪装成履约时序阶段。
 
-当前代码使用 typed checkpoint reader 直接重开已保存材料，显式创建独立模型批次，并按完整输入指纹选择复用已审 job。`repository-run-state-v3` 保存完整材料引用、实际 material profile/producer/basis；`analysis-run-output-v3` 允许材料保留原 source run 地址，同时要求活动、知识和报告属于新 batch。旧 v2 state 只能通过显式离线导出生成新的 v3 文件，导出不调用 JDT、Builder 或 Provider。
+“后端是否强制审核后才能出库”“多级审批状态 9 的完整状态机”“退货怎样影响欠款”等保留为 UNRESOLVED。这个推演说明现有 Activity/JDT 信息足以支持有用过程，但当前分组和浅 Schema 没有把它组织出来。
 
-这次实际第一份整仓材料有326份材料、326个入口处置，模型的4个DRAFT未形成已审结果。按目标设计，下一批可直接使用这份材料，而不是为获得新的调用身份再次扫描。后一次325份材料的checkpoint不能按“最新目录”替代它；单入口导航超时复核与模型失败是不同问题。完整例子及限制见[模型执行推演](modules/model-job-execution.md#75-用已保存整仓样例推演)。
+## 11. 当前实现状态（2026-09-14）
 
-## 9. 覆盖、预算与失败
+已实现并保留：
 
-全部发现入口必须分到 ANALYZED、ANALYZED_WITH_GAPS 或有具体原因的 NOT_ANALYZED；全部过程组必须已整理或有未整理原因。覆盖表闭合只代表没有漏记，不代表业务内容完成。一个好样本、零入口范围报告、全部入口未分析或预算未完成的九章都不能称整仓业务交付。
+- JDT/JavaParser 可选引擎和保存的 JDT 导航/源码材料；
+- Spring 入口、Step05 EntryCodeContext、BusinessMaterialBuilder；
+- ActivityExplainer、任意 N 入口覆盖、DRAFT+完整 REVIEW；
+- Provider 两级并发、逐 job 保存、固定材料与独立模型批次；
+- BusinessReportPublisher 和九章确定性渲染；
+- 固定 jshERP 的 326 个已审 Activity。
 
-模型内容任务统一最多一 DRAFT 加一完整 REVIEW。`maxMaterialsToStart` 明确限制本次启动材料数；超限材料零请求并记录具体原因。对每个其余 Activity material，调用前以实际 `N` 检查：活动输出槽位至少允许 N 个独立活动、每项 key 数容量至少为 N、N 项最小合法 REVIEW 输出能装入 output budget、实际 `cleanPacket` 能装入 input budget，并为“完整材料 + 最大 DRAFT + `missingEntryKeys` REVIEW envelope”预留 input budget。DRAFT 返回后仍须用真实实际 DRAFT 重新序列化 REVIEW packet 核对 bytes。任一前置容量不相容时该材料零 Provider 请求；ActivityExplainer 不临时拆 Builder 已成形的材料、不截断源码。
+尚未实现：
 
-并发只由同一运行 YAML 中 `sourceAnalysis.modelJobs.maxConcurrentJobs` 与 `providers.<id>.maxConcurrentJobs` 控制，默认全局/Pro 各 4。它们不等于 `maxMaterialsToStart`、K 或 N；107 个合格材料在并发 4 时仍全部排队执行，不能仅启动前 4/6/12 个。配置由现有 CLI 组合根统一加载，具体默认、闭集校验、路由、技术/材料复用基础与当前 JSON 接口差距见[唯一 YAML 合同](modules/model-job-execution.md#2-唯一配置入口与精确-yaml)。
+- FrozenAnalysisCorpus 统一查询面和 Activity statement handle；
+- 全仓 ActivityIndexCard 目录发现；
+- 语义重叠 Candidate Process；
+- ActivityUse 和详细 stage/rule 数据模型；
+- DRAFT 请求并在 REVIEW 核对保存源码；
+- 仓库过程归并；
+- `business-processes.md` 及新过程 coverage；
+- Step08 只消费归并过程目录的接线。
 
-不同 job 可显式配置不同模型/API 服务或独立 Codex 会话，开始前固定绑定；同账户/项目 key 或会话共享 Provider 额度，不能当独立配额。订阅 Provider 强制 ChatGPT 认证、阻止继承 API env 覆盖、不购买额度或自动付费 fallback；当前未核实能禁止消耗已有付费 credits 的 CLI 开关，必须在账户侧核实要求后才运行。显式 API 是已批准的设计路线，不是失败后的替代服务；本轮不做真实调用。
+当前 `ProcessExplainer` 已实现且实际运行，但不符合目标：它以精确 token/file 召回和容量切片生成 340 个 Process，全部为单 Activity/单 Stage；326 个 Activity 中有一个没有进入任何 Process，而保存的 `unmatchedActivityIds` 仍为空。因此当前九章是可运行的历史产物，不是业务过程验收通过。
 
-只有结构与 scope 合法、但 coverage 不足的 Activity DRAFT 可以继续唯一 REVIEW。非法 JSON、未知/越界 key/ref、冲突 ID、超容量及 started transport/schema/runtime 失败均结束相应批次，不进入自动修补。停止新派发；其他已开始且自身 DRAFT 合法的 job 完成唯一 REVIEW并保存；收齐终态后失败，不启动下游、不 retry/reroute、无第三轮。用户显式新批次可以按 §8.1 重做未完成 job，不能重写旧请求。批次不增加 Reader Candidate 轮次：继承同 series/round，完整最终候选的内容修正仍按具名 finding 走原 ROUND_2；换 batchId 不是无限改稿许可。materials-only 零 Provider，最终报告运行仍须有明确执行范围。
+## 12. 完成标准
 
-当前已完成一次明确授权的小包质量验收：jshERP 的用户登录、用户注册两个已审活动及两个保守独立过程经报告 DRAFT+REVIEW 生成九章。它不把共享用户控制器或业务名称当成注册后必然登录的顺序证据；该小包证明当前业务语言链路可产出可读报告，不代表完整仓库已经验收。
-
-错误分两类：
-
-- 来源错误、损坏 bytes、路径不安全、断引用、伪造 exact Proof、违反安全预算、非法 JSON/key/ref，以及 REVIEW 既未解释也未显式处置入口：fatal，停止相应交付。DRAFT 只有 coverage 不足且其余结构/范围合法时是唯一例外，必须进入已批准 REVIEW。
-- 未证明静态边、unsupported 语法、未知业务含义/岗位/制度、局部 Flow 缺口，以及 REVIEW 明确列出的 `MODEL_NOT_EXPLAINED`：如实限制受影响结论；安全可读部分仍可分析。不可读取或调用前包超预算的入口单独说明原因。
-
-0 入口时 Activity 与 Process Provider 调用均为 0；若调用方仍显式要求空仓九章范围报告，BusinessReportPublisher 保持现有 DRAFT+REVIEW，不承诺全链零调用。本文的 PARTIAL/INCOMPLETE 是文档语义完整度与业务验收结论，不新增 runtime/report 状态 enum；覆盖账闭合但含 `MODEL_NOT_EXPLAINED` 仍不能通过完整业务验收。
-
-业务质量观察顺序是一个真实小包、第二领域小包、再整仓。[原实施计划 Task 7](plans/coherent-code-context-implementation-plan.md#task-7脚本验收后执行已批准的单材料-live-验证)的四入口材料、精确 identity、`ActivityExplanationProfile(20000, 12000, 4, 24, 1000)` 与最多两次 Luna/high 调用是保留的历史授权/执行记录，不授权本轮重放。当前仅更新并行设计，没有新模型、扫描或生成；本文不虚构耗时改善。
-
-## 10. 当前实现与剩余边界
-
-JDT与JavaParser接入，以及跨入口 query 复用、Step05/Capsule 引用去重、源码外置排版、unit/IT/quality 单次执行均已交付，后者记录见[优化设计](plans/navigation-reuse-and-readable-report-design.md)。模型 job 并行、两级限流、Provider认证隔离、OpenAI Responses adapter、逐 Activity/Process-group 保存及阶段屏障也已实现；下表保留此前能力记录，不是重新进行整套代码审计。真实多服务加速比仍须在具体账户、模型和材料上测量，不能由 scripted 并发测试推算。
-
-| 当前可确认事实 | 剩余边界或保持项 |
-| --- | --- |
-| Step03/04 稳定算法、FactRegistry 三类技术模式与 AtomicProofBuilder 全 atoms 规则保留；普通 persisted candidate 读取与 Flow/Capsule 发布已不再重放 owner 算法 | 本次不修改 Step03/04 算法或恢复重复 replay；清理只删除旧解释链的专属消费者/注册 |
-| EntryRootedFlowCompiler 已在 flow-slices/Capsule 保存 EntryContext，传递 argument/return/data/control 与可选 Proof；BusinessMaterialBuilder 已直接消费它 | 保持 Step05 owner 与 Builder 单一包装 seam，不新增源码扫描、EntryDescriptor 或 regex context parser |
-| EvidenceCapsuleProjector 已按连贯上下文保留完整方法、调用、候选、实参/形参、控制、退出和限制；当前版本为 flow compilation v6、flow slices v6、capsule projection v11、evidence capsule v9 | 新读取路径拒绝旧版；Flow/Capsule 正常发布重开检查来源和引用，但不会重启 JDT、重跑 compiler 或重新判断导航结果 |
-| ActivityExplainer、ProcessExplainer、BusinessReportPublisher、BusinessAnalysisWorkflow 已存在，完整活动字段与具体 `UnexplainedActivityEntry` 已能沿过程/报告传递；四入口和任意 N 的 scripted 全链已验收 | 不建平行业务流水线；普通沙箱候选失败后，独立宿主会话候选以同一材料完成四项局部 Activity。它不是过程、报告或整仓验收 |
-| 旧 `analysis.interpretation.{model,proposal,registry,process}` 的 78 个生产类、14 个专属测试、旧 Step06 1–9 地址、旧 artifact/schema 分支及测试 fixture policy 已删除；当前测试使用中性的 `BusinessFlowTestSupport` | 当前运行链只保留 Step06 10/11、`ModelRuntimeIdentityV1` 与 `analysis.knowledge.ProcessExplainer`；`AnalysisStepAddressTest` 拒绝 1–9、接受 10/11。四入口与任意 N 的全链验收已通过 |
-| Activity v2 对任意 N 入口先做容量预检，合法但遗漏 E3/E4 的 DRAFT 会进入唯一 REVIEW；完整实际 DRAFT、`missingEntryKeys` 与 required `unexplainedEntries` 均在程序侧校验 | `activity-coverage.json` v2、`ActivityExplanationResult` 和仓库知识 v2 已保存全量 `UnexplainedActivityEntry` |
-| Process/report 模型输入按 material 只投影一次 `{materialContext, unexplainedEntryKeys, reasonCode}`；全局/material ID 保留在程序侧，`MODEL_NOT_EXPLAINED` 不进入技术 receipt Gap | Prompt 要求第9章显示 context 的 HTTP 方法/路径与原因，禁止第4章为未解释入口编造活动；即时逐包 checkpoint 仍是独立未解决缺口 |
-| 完整冻结 jshERP 719 文件及图/Fact 运行已有保存证据；零 Provider 全仓材料 run 为 107 包覆盖 339 个入口 | 这些是历史实测，不写成固定 K/包数，不把它们当整仓语义验收 |
-| `methodCondition` 已区分 UNRESTRICTED 与 EXPLICIT 集合 | 保持该实现；未来完整仓库重跑只确认真实端点分母，不再写成代码待修正 |
-| Step02 v3 入口 wire 已保存中立 `methodKey` 与完整声明 `SourceRange`，可稳定定位重载；Spring unrestricted method condition 继续合法 | 两个引擎都写同一最终入口格式；JavaParser 的有限解析不能退回只按 handler 名匹配 |
-| Step03 module 7 已发布 `java-code-index`；JDT 路径实际集合为 index+receipt。Step04 发布 v4 `NOT_PRODUCED` accounting+receipt，不运行旧 Fact 枚举器，也不写空图/Fact | JavaParser 路径发布 index 加既有七个图语义 payload，并恢复既有四项严格 Fact/Proof 集合；两个引擎不混合 |
-| JDT LS 1.61.0 与独立 JDT Core helper 已在固定 jshERP 注册/财务入口验证；正式选择 JDT 的自包含 Spring/MyBatis 运行已从 capture 一直进入 scripted 九章 | 尚未进行产品 Luna 或完整 jshERP 仓库的业务语义验收；缺依赖、多模块 classpath、反射和运行时代理仍须如实报告限制 |
-| BusinessMaterialBuilder 只消费已保存的 EntryCodeContext，并把声明类型、完整方法、调用、参数、控制和限制送入模型材料；生产类不引用任何引擎 AST | JDT 与 JavaParser 都经同一 Builder、Activity、Process 和 Report 消费；产品 Luna 与整仓业务质量另验 |
-
-Spring 细则：`@RequestMapping` 省略 method 或 `method={}` 都合法。类和方法均无限制时保持 unrestricted；一方有限制时保留该限制；双方非空按 Spring method-condition combine 取并集。不要猜 GET，也不要把 HEAD/OPTIONS 框架处理拆成多个业务活动。现有 `methodCondition` 已实现该区分，UserController#getOrganizationUserTree 和 MaterialCategoryController#getMaterialCategoryTree 是直接回归样例；未来完整仓库重跑只核对新的真实分母。
-
-旧[实施衔接](plans/coherent-code-context-implementation-plan.md)与[清理/覆盖设计](plans/code-cleanup-and-scalable-activity-coverage-design.md)用于已完成能力的历史核对，不限制当前引擎接入。JDT 合同和 JavaParser Adapter 均已完成；后续不得重做 JavaParser 五图/Fact算法、补写编译器规则或复活旧语义路线。所有产品实测范围与结果仍按其原记录说明。
-
-## 11. 阅读导航
-
-每步文档按“为何需要 → 输入 → 处理 → 输出 → 下一消费者 → 失败与验证”展开，精确持久化规则放在附录。
-
-- [01 已验证源码清单](analysis-steps/01-verified-source-inventory.md)
-- [02 应用发现](analysis-steps/02-application-discovery.md)
-- [03 程序图](analysis-steps/03-program-graphs.md)
-- [04 已证明代码事实](analysis-steps/04-proven-code-facts.md)
-- [05 业务流程](analysis-steps/05-business-flows.md)
-- [06 流程解释](analysis-steps/06-flow-interpretation.md)
-- [07 仓库知识](analysis-steps/07-repository-knowledge.md)
-- [08 九章文档](analysis-steps/08-nine-section-document.md)
-- [真实与合成 walkthrough](examples/semantic-framework-walkthrough.md)
-- [Java代码引擎完整设计与各子模块](modules/java-code-engines/README.md)
-- [模型 job 并行、YAML 与 Provider/保存合同](modules/model-job-execution.md)
-- [JDT真实注册/财务材料到业务解释](examples/java-code-engine-walkthrough.md)
-- [Prompt 与完整审阅](references/semantic-interpretation-prompts.md)
-- [来源与发布边界](references/foundation-and-publication-contracts.md)
-- [持久化身份](references/canonical-persistence-identity-contracts.md)
-- [公共接口与源码位置](references/inherited-public-and-module-contracts.md)
-- [导航复用、单次本地 CI 与正文减负](plans/navigation-reuse-and-readable-report-design.md)
+- 同一实现处理不同 Java/Spring 业务仓库，不增加行业词典。
+- 所有 Activity 有明确处置；候选和过程支持多对多。
+- 真实仓库至少形成有意义的多 Activity、多 Stage 过程，查询/统计与主流程职责分明。
+- 每阶段写清具体条件、拒绝、动作、状态变化和结果。
+- Activity 摘要、详细 Activity、源码核对和最终规则之间没有无声丢失。
+- `business-processes.md` 能直接回答仓库有哪些业务、每种业务怎样进行。
+- 每条重要结论可用短 ref 查看代码位置；无需重跑 JDT。
+- 未能识别的 Activity、候选、外部效果和冲突关系有具体记录。
+- 九章只汇总已归并过程，不重新猜流程，也不因格式完整冒充业务理解完整。

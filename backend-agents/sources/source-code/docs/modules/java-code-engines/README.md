@@ -4,7 +4,7 @@
 
 ## 1. 先用一句话讲清楚
 
-模型执行的失败不属于引擎重扫条件。已实现的[固定材料＋独立模型批次](../model-job-execution.md#7-固定材料与独立模型批次已实现)在 M10 之后复用材料，JDT/JavaParser 均不打开会话；此处已有会话内 query 缓存、方法共享、索引格式不变。本次没有增加新的引擎能力或插件接口。
+模型执行的失败不属于引擎重扫条件。已实现的[固定材料＋独立模型批次](../model-job-execution.md#7-固定材料与独立模型批次已实现)在 M10 之后复用材料，JDT/JavaParser 均不打开会话；此处已有会话内 query 缓存、方法共享和引用式持久化。当前保存的 JDT/源码语料已经支撑 326 个 Activity 完成 DRAFT＋REVIEW。新的业务过程发现只重用这些结果，不增加代码引擎能力，也不重新扫描源码。
 
 系统给工具一个 Controller 入口；工具找到沿途仓库内的方法实现；程序把这些方法的完整代码、调用位置、实参与形参放在一起；模型据此解释业务。
 
@@ -49,7 +49,9 @@ JDT：LS 导航 + Core 语法读取
         ↓
 BusinessMaterialBuilder → ActivityExplainer
         ↓
-ProcessExplainer → BusinessReportPublisher → 一份九章
+全仓业务目录发现 → 候选过程详细重建 → 仓库过程归并
+        ↓
+确定性 business-processes.md → 下游一份九章概览
 ```
 
 这里只画可替换位置，不新增一条产品业务流水线。引擎不输出中文业务判断，不直接调用模型，不渲染 Markdown。`RepositoryAnalysisAgent` 的 `start / executeStep / inspect / artifact / render / validate / trace` 不变。
@@ -68,7 +70,7 @@ ProcessExplainer → BusinessReportPublisher → 一份九章
 | EntryCodeCollector | 一个入口、共享语法/导航结果 | 计算入口成员与展开状态，复用方法正文，保留循环和调用发生点 | EntryCodeContext → Step03 publication/Step05 |
 | JavaParserCodeEngine | 同样的冻结来源与入口 | 第二阶段封装现有解析/图算法，映射已有信息 | 同一种 EntryCodeContext，缺项如实记录 |
 | EntryContextAssembler | 引擎上下文、可选现有技术增强 | 归属到入口、持久化索引/context引用；读取时恢复完整视图，不复制方法正文 | Step05 上下文及 Capsule → Builder |
-| BusinessMaterialBuilder（已有） | 保存的上下文 | 完整单元组包、短引用、模型可见投影 | BusinessMaterialSet → 既有业务模型链 |
+| BusinessMaterialBuilder（已有） | 保存的上下文 | 完整单元组包、短引用、模型可见投影 | BusinessMaterialSet → ActivityExplainer |
 
 这些是代码内部职责，不意味着九个独立部署服务、九层 receipt 或九个公共 Interface。配置与 factory 可以很小；只有两种工具实现真正可替换。JDT 内部 LS/Core 类型不得泄漏到公共 records。
 
@@ -81,9 +83,9 @@ ProcessExplainer → BusinessReportPublisher → 一份九章
 | 03 代码关系 | 用选定引擎建立可复用 Java 导航索引，保存完整方法、调用、候选及局限 | JDT 返回位置不是动态执行轨迹，也不是完整数据流 Proof |
 | 04 严格事实 | 对已有且实际提供的技术图继续计算严格 Fact；无对应增强时明确未生成 | 不为 JDT 补假图/假 Fact，不阻止有来源的方法正文向下传 |
 | 05 入口材料 | 组织选定引擎已经找到的代码关系，保存完整上下文；附可选严格 Flow/Fact | 不再依赖 strict Flow 数量决定可读入口数量 |
-| 06 局部解释 | Builder 只消费统一材料，ActivityExplainer 保留完整 DRAFT/REVIEW | 不解析 Java，不按引擎选另一套业务提示词 |
-| 07 过程与知识 | 现有 ProcessExplainer 读取完整活动和必要代码材料 | 不把同名、共享表或同一个 Java 调用当作业务先后证明 |
-| 08 九章 | 现有报告模块组织一份仓库级报告及来源 | 不把两个真实导航例子当成整仓业务验收 |
+| 06 局部解释 | Builder 只消费统一材料，ActivityExplainer 保留完整 DRAFT/REVIEW；当前 326 个已审 Activity 可直接重用 | 不解析 Java，不按引擎选另一套业务提示词 |
+| 07 过程与知识 | 目标 `BusinessProcessDiscovery` 从全仓 Activity 卡片发现候选，再按 ID 取回完整 Activity 和所选源码重建多阶段过程 | 不把同名、共享表或同一个 Java 调用当作业务先后证明；不重新打开引擎会话 |
+| 08 九章 | 报告只消费已归并 `RepositoryBusinessProcessCatalog`，组织一份仓库级概览及来源 | 不从原始 Activity 二次发现流程，不把两个真实导航例子当成整仓业务验收 |
 
 **这里有一项有意的协议变化：03/04 的完整五图及严格 Fact 不再是每种引擎都必须先产生的业务取材前置。** JavaParser 的现有五图能力保留为技术增强；JDT 首先交付导航与源码材料，不为了兼容旧 publisher 先重做五张图。
 
@@ -113,19 +115,19 @@ JDT LS 已提供定位声明、实现和调用层次；JDT Core 能读取方法�
 
 ## 7. 先 JDT、后 JavaParser：不能颠倒
 
-### 第一阶段：只把 JDT 正式链走通
+### 第一阶段：JDT 正式链（已完成）
 
-按业务目标冻结最小合理 Interface 和材料字段，然后实现 JDT 从入口发现到完整代码上下文，再交给已有四个业务模块。允许修改当前 compiler、Capsule、读取器和 material 协议；**不因 JavaParser 暂时不能满足而削弱合同，不同时修两套引擎。**
+实施时先按业务目标冻结最小合理 Interface 和材料字段，再独立完成 JDT 从入口发现到完整代码上下文，并交给材料和 Activity 模块。该阶段没有因 JavaParser 当时尚未适配而削弱合同，也没有同时修改两套引擎。
 
-旧 JavaParser 源码和有效测试保留。过渡版本若尚未接入 factory，选择 `javaparser` 返回明确 `ENGINE_NOT_INTEGRATED`，不能偷偷调用不符合新合同的旧流水线。第一阶段不以 JavaParser Adapter、双引擎一致性或旧专属测试全部迁移完成作为退出条件。
+旧 JavaParser 源码和有效测试在过渡期保留；当时未接入 factory 的版本选择 `javaparser` 会明确返回 `ENGINE_NOT_INTEGRATED`。这是历史实施顺序，不是当前仍存在的运行限制。
 
 第一阶段验收：JDT 独立发现入口、注册/财务及跨领域源码自动展开、构造器/多实现/循环和缺失可见、统一材料持久化后正式 Builder可读、scripted 业务全链正常；JDT 路径对 JavaParser 零调用。真实 Luna 验收另外按当次授权，不隐式执行。
 
-### 第二阶段：恢复 JavaParser 既有能力
+### 第二阶段：恢复 JavaParser 既有能力（已完成）
 
-依据第一阶段已经走通的合同，只做 Adapter、字段映射、入口接线、保存读取和必要回归。现有图、Fact和 Flow 的能力及未解析边界保持；不强迫它追平 JDT，不在此阶段补全 wildcard/import/继承/重载解析或启用一套新的 Symbol Solver 配置。
+第二阶段依据已经走通的合同，只完成 Adapter、字段映射、入口接线、保存读取和必要回归。现有图、Fact 和 Flow 能力及未解析边界保持；没有强迫它追平 JDT，也没有补写 wildcard/import/继承/重载解析或新建 Symbol Solver 工程接线。
 
-第二阶段验收：YAML可切换两种引擎；同一个 Builder、Activity/Process/Report 消费二者输出；JavaParser 现有能识别的内容不退化，不能识别的内容诚实保留。不比较两边方法数、解析率或 JSON SHA 是否相同。
+第二阶段验收已经证明 YAML 可切换两种引擎，同一个 Builder 和 Activity 模块消费二者输出；JavaParser 原有可识别内容不退化，不能识别的内容诚实保留。后续过程发现和报告只依赖同一种已审 Activity/SourceRef 合同，不比较两边方法数、解析率或 JSON SHA 是否相同。
 
 ## 8. 质量目标与可行性推演
 
@@ -135,9 +137,9 @@ JDT LS 已提供定位声明、实现和调用层次；JDT Core 能读取方法�
 2. 每个可见调用点都能在材料中找到目标、候选或停止原因；没有结果不能被过滤掉。
 3. 完整方法的条件、构造、保存调用和返回没有在组包时丢掉。
 4. 模型确实收到这些内容，REVIEW也收到完整草稿；不是只把内容留在技术文件里。
-5. 已审活动、关系、条件和未知项继续进入仓库知识与九章。
+5. 已审活动的完整条件和未知项能被过程发现按需取回，进入多阶段过程、`business-processes.md` 和九章；索引卡不能替代完整 Activity。
 
-当前验收说明 JDT 可以补回注册 Service，并已覆盖完整候选保留、构造器、循环、边界及生产接线。完整方法提供业务动作和条件；实参/形参及调用位置说明方法如何联系；模型负责解释这些联系的业务意义。这条接力已经在固定 jshERP 两入口和自包含跨领域运行中验证，但不等于所有 Java 框架形状或整仓业务语义均已验收。
+当前验收说明 JDT 可以补回注册 Service，并已覆盖完整候选保留、构造器、循环、边界及生产接线。完整方法提供业务动作和条件；实参/形参及调用位置说明方法如何联系；模型负责解释这些联系的业务意义。这条取材接力已经在固定 jshERP 两入口、整仓材料和自包含跨领域运行中验证；它不等于当前单阶段 `ProcessExplainer` 已经完成整仓业务过程识别。
 
 不能保证的内容包括缺依赖的绑定、动态代理选择、反射目标、配置实际值和外部执行结果。保留真实调用和限制后，模型仍可解释已看见的行为；不能把这些边界转化为“整个入口不准阅读”。
 
@@ -147,13 +149,14 @@ JDT LS 已提供定位声明、实现和调用层次；JDT Core 能读取方法�
 | --- | --- | --- |
 | JDT Core | 独立 helper 已读取完整声明、正文、参数、调用、control/exits；生产 JDT 包不引用 JavaParser | 缺依赖时 recovered binding 只作未解析线索，不能冒充确定限定名 |
 | JDT导航 | hierarchy、definition、implementation 的候选归一、构造器、循环、重复及边界已有直接测试 | 动态代理实际选择、反射目标和没有源码的外部实现仍未知 |
-| 真实结果 | 固定 jshERP 注册入口自动取得三段关键 Service 正文；财务入口取得 Service 与 Mapper 声明 | 这两例不是完整仓库、多模块 classpath 或产品语义验收 |
+| 真实结果 | 固定 jshERP 注册入口自动取得三段关键 Service 正文；财务入口取得 Service 与 Mapper 声明；完整材料检查点已保存并支撑 326 个 Activity | 动态代理、反射、缺依赖和外部效果仍不能因整仓运行而视为已解析 |
 | JavaParser现状 | Adapter 已封装迁移前的有限名称解析、方法正文、调用/参数、七图、Fact/Proof 和 Flow；POM有 Symbol Solver 不等于生产已接线 | wildcard/import、继承和重载增强不在本阶段；不宣称 JavaParser 库做不到 |
 | Builder | 只消费已保存 EntryCodeContext，输出声明类型、完整方法、调用、参数、控制和限制 | 两个引擎共用同一无解析器 Builder，Builder 不按 engine 分支 |
 | 正式编排 | YAML、factory、同会话发现、索引、Step05、材料及 scripted 九章已接通；JDT 写 NOT_PRODUCED strict facts，JavaParser 写实际七图和 strict facts | 产品 Luna 与整仓业务质量另验；两个引擎不自动回退或混合 |
-| JDT导航索引 | 080a86d已实现v2：METHOD共享、CALL按入口保存；四入口结果已保存。原v1入口投影冲突不再列为待实施 | 全仓运行尚非已验收；不能把方法去重误称跨入口RPC缓存已完成 |
-| 已批准复用优化 | 本轮设计明确会话query复用、Step05/Capsule引用保存、正文来源外置与CI单次测试 | 尚待代码实现；不新增缓存服务，不重新适配JavaParser解析算法 |
-| 业务模块 | Activity/Process/Report 使用同一正式材料；真实选择 JDT 的自包含运行已生成九章 | 该九章使用 scripted Provider，只证明接线与内容保留 |
+| JDT导航索引 | v2 的 METHOD 全仓共享、CALL 按入口保存；会话 query 缓存和原始响应复用已接入，保存材料可跨模型批次重用 | 动态分派与无源码外部调用仍按实际边界记录 |
+| 引用与CI优化 | Step05/Capsule 引用保存、正文来源外置和 unit/real-JDT/quality 分类已交付 | 不新增缓存服务，不修改 JavaParser 解析算法 |
+| Activity层 | 保存的 JDT 材料已经完成 326/326 Activity DRAFT＋REVIEW | 新过程发现直接复用，不全量重跑 Activity |
+| 当前过程/报告 | 当前保存 340 个 Process，均为单 Activity、单 Stage；只覆盖 325 个不同 Activity，但 unmatched 为空；九章结构可渲染 | 这是 Step07 覆盖和业务串联缺口，不是引擎缺口；目标改为全仓目录、详细重建、归并和确定性 `business-processes.md` |
 
 调研细节和准确限制见[贯穿例子](../../examples/java-code-engine-walkthrough.md)。历史调研产物仍保留；当前状态以正式 JDT 验收为准。
 

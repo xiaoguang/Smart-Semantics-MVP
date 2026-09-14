@@ -1,6 +1,6 @@
 # Semantic Framework Ten-Batch Implementation Plan
 
-> **SUPERSEDED / 不可继续执行（2026-09-10）：** 本计划已被 [业务优先总体设计](../DESIGN.md) 取代。旧六模块 Step 06、三模块 Step 07、四模块 Step 08、固定 52 项、逐模块 fresh-reopen、bridge/reconciliation ledger 和三 adapter 同时完成都不再是目标核心路径。后续实现必须围绕 BusinessMaterialBuilder、ActivityExplainer、ProcessExplainer、BusinessReportPublisher 重新编写精简计划；不得逐批继续本文件、从 Batch 1 恢复或把旧 exit criteria 当当前验收。
+> **SUPERSEDED / 不可继续执行（2026-09-10，2026-09-14再次确认）：** 本计划已被 [业务优先总体设计](../DESIGN.md) 取代。旧六模块 Step 06、三模块 Step 07、四模块 Step 08、固定 52 项、逐模块 fresh-reopen、bridge/reconciliation ledger 和三 adapter 同时完成都不再是目标核心路径。下一份实施计划须从[业务过程发现与重建设计变更清单](business-process-discovery-and-reconstruction-change-design.md)生成；不得继续本文件，也不得恢复后来同样被取代的 singleton `ProcessExplainer` 路线。
 >
 > 下文仅保留为历史设计与估算依据。任何时间/批次描述都不是新的工期承诺；实际工期必须在一个真实核心材料包、第二领域材料包和整仓样本依次测量后再估算。
 

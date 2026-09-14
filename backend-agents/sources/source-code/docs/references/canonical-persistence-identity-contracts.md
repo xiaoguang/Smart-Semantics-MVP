@@ -256,9 +256,9 @@ Module 文件集是 receipt 声明 payloads 加 module-receipt.json。Analysis-s
 
 Step01 request-admission/source-index/publish、Step02 application-profile/http-entry/mapper-catalog/publish、Step03 五图/publish、Step04 candidates/proofs/publish、Step05 flow-compiler/capsule-projector/publish 的可观察产物保留。
 
-Step05 使用既有文件保存一个 EntryContext 关系模型和对应有界 Capsule 投影；新增字段遵循所属 record 的新 schema version，不创建另一 module registry、文件系统或身份框架。Step06–08 的 BusinessMaterialBuilder、ActivityExplainer、ProcessExplainer、BusinessReportPublisher 已有实现，保存总体设计列出的业务 checkpoints。旧 R0/finite-key 以及六/三/四模块目标是历史，不恢复其固定 52/57 输出要求。
+Step05 使用既有文件保存一个 EntryContext 关系模型和对应有界 Capsule 投影；新增字段遵循所属 record 的新 schema version，不创建另一 module registry、文件系统或身份框架。Step06 的 BusinessMaterialBuilder/ActivityExplainer、当前旧 ProcessExplainer 和 Step08 BusinessReportPublisher 已有实现。目标 Step07 在现有 store/checkpoint 机制内保存 Activity cards、candidate dispositions、reviewed processes 和唯一 consolidated catalog；它替换旧 process payload，而不是新建第三套文件系统或恢复固定 52/57 输出要求。
 
-已批准的[模型 job 保存](../modules/model-job-execution.md#5-保存身份与失败)复用上述 canonical/原子能力：私有运行目录保存每个已审 job，coordinator 按稳定材料/组顺序一次安装既有 aggregate；不把固定 module publisher 放入并发 worker。Provider/job 独立 journal namespace 补足现有 ModelRuntimeIdentityV1 不含账户的边界，稳定 job key 与单次提交登记留在程序侧，不进入模型 packet。业务 output shape 未变就不升其 schema；仅变更的私有 config/state/metadata 版本随实现更新。并发值、排队时间和完成次序不改变业务内容 fingerprint 或数组语义顺序，身份公式不重定义。这不是自动恢复或 uncertain started 请求重放协议。
+已批准的[模型 job 保存](../modules/model-job-execution.md#5-保存身份与失败)复用上述 canonical/原子能力：私有运行目录保存每个已审 job，coordinator 按稳定材料/候选顺序一次安装 aggregate；不把固定 publisher 放入并发 worker。Provider/job 独立 journal namespace 补足现有 ModelRuntimeIdentityV1 不含账户的边界，稳定 job key 与单次提交登记留在程序侧，不进入模型 packet。ActivityUse、详细 stage/rule/certainty 和 process catalog 是真实 output shape 变化，实施时必须显式升版并一次同步 producer/reader/validator；并发值、排队时间和完成次序不改变业务内容 fingerprint 或数组语义顺序，identity framing 不重定义。这不是自动恢复或 uncertain started 请求重放协议。
 
 ## 8. 不变量与实际边界
 

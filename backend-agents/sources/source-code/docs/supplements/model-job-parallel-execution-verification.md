@@ -1,5 +1,7 @@
 # 模型任务并行执行验证记录
 
+> 本页是现有线程池和旧 Process-group 路线的历史验收记录。并发、Provider 隔离和逐 job 保存结论继续有效；“两个过程组→RepositoryBusinessKnowledge”不是新的业务过程发现目标。目标调度改为目录任务、候选过程重建任务、一次仓库归并和一次九章任务，见[模型执行设计](../modules/model-job-execution.md)与[业务过程模块](../modules/business-process-discovery/README.md)。
+
 本文记录 `sourceAnalysis.modelJobs` 并行实现的本地、零真实模型调用验收。它证明调度、隔离、保存和阶段屏障正确，不把 scripted Provider 的耗时冒充 Luna 或 API 的实际加速比例。
 
 ## Activity 对照
@@ -47,6 +49,6 @@
 
 ## 结论与未声称事项
 
-本地 scripted 验收说明线程池确实重叠执行完整 job，且全局 6 / Pro 4 / API 2 两级限制没有被突破。并行度 1、4、6 改变派发与等待，不改变需要处理的材料总数、业务内容排序或最终聚合规则。
+本地 scripted 验收说明线程池确实重叠执行完整 job，且全局 6 / Pro 4 / API 2 两级限制没有被突破。并行度 1、4、6 改变派发与等待，不改变需要处理的材料总数、业务内容排序或最终聚合规则。新的候选过程 job 应复用这些调度能力，但必须用新输入/Schema 重新建立直接验收；旧 process-group 并发通过不能证明跨 Activity 发现正确。
 
 本轮没有调用真实 Pro 或 API，因此不声称真实运行快 4 倍或 6 倍。真实耗时仍取决于各 Provider 的响应时间、额度和限流；后续实测可以直接复用已保存材料，不需要重新运行 JDT。

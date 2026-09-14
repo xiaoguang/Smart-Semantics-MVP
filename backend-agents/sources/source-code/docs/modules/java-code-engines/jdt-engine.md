@@ -172,7 +172,7 @@ Luna须测试显式全名、通配import、同名自定义注解、源码组合�
 
 Step05不再重跑JDT或解析器，只归属/保存指向索引的引用；重开后恢复完整视图。Builder无需再查“缺少的Service”——它应在本模块交付物中，或者有准确原因；若有body却没传到模型，是组包错误，不是导航缺口。技术文件去重不意味着给模型发送它无法读取的文件key，实际请求仍含必要完整方法。
 
-已实现的[模型批次解耦](../model-job-execution.md#7-固定材料与独立模型批次已实现)在已保存M10之后开始，完全不打开本引擎。模型失败不清空JDT缓存或索引、不触发再扫；本页语法/导航失败合同保持不变。针对某个JDT超时的具名单入口复核是独立操作，其新结果不得就地覆盖旧材料或混入旧来源编号。
+已实现的[模型批次解耦](../model-job-execution.md#7-固定材料与独立模型批次已实现)在已保存 M10 之后开始，完全不打开本引擎。模型失败不清空 JDT 缓存或索引、不触发再扫；本页语法/导航失败合同保持不变。新的业务过程发现同样只通过 `FrozenAnalysisCorpus` 读取保存的 Activity、SourceRef 和方法片段；过程 DRAFT 请求关键来源时是打开已有内容，不是重新导航。针对某个 JDT 超时的具名单入口复核是独立操作，其新结果不得就地覆盖旧材料或混入旧来源编号。
 
 验收同时读取保存的context和实际模型请求：注册三段Service不能只存在技术索引中。直接业务callee优先完整进入核心包；若所有相关方法不能放进一次请求，按完整方法组合并如实记录未进入该包的方法，不切掉关键条件或假称完整。如何选择可读单元归Builder，不能由Collector按行业词猜哪些方法重要。
 
@@ -184,8 +184,8 @@ Step05不再重跑JDT或解析器，只归属/保存指向索引的引用；重�
 
 ## 5. 已验证范围与剩余边界
 
-JDT 第一阶段已经完成：独立 Core helper、构造器/方法引用/循环与多候选的直接测试、LS 导航归一、YAML 配置、生产发现、module 7 索引、Step04 `NOT_PRODUCED`、Step05 context/Capsule、Builder 和 scripted 九章均已接通。固定 jshERP 注册入口自动取得 `validateCaptcha`、`checkLoginName`、`registerUser` Service 正文，财务入口取得 Service 与 Mapper 声明；自包含 Spring/MyBatis 运行证明正式选择的 JDT 会话可以一直进入九章。
+JDT 第一阶段已经完成：独立 Core helper、构造器/方法引用/循环与多候选的直接测试、LS 导航归一、YAML 配置、生产发现、module 7 索引、Step04 `NOT_PRODUCED`、Step05 context/Capsule、Builder 和 scripted 九章均已接通。固定 jshERP 注册入口自动取得 `validateCaptcha`、`checkLoginName`、`registerUser` Service 正文，财务入口取得 Service 与 Mapper 声明；整仓保存材料随后支撑 326 个 Activity 完成 DRAFT＋REVIEW。自包含 Spring/MyBatis 运行证明正式选择的 JDT 会话可以进入语义链，但当前 340 个单阶段 Process 不能作为业务过程识别验收。
 
 这些验收没有运行客户 Maven、客户应用或产品模型，也没有证明所有多模块依赖、动态代理、反射、生成代码和外部系统效果。工具缺依赖时保留具体 limitation；已保存的正文与调用仍可用于业务解释。
 
-两种工具采用同一source level与来源规则，但不要求返回同一数量/精度。下一阶段按照[第二阶段设计](integration-and-javaparser.md)适配JavaParser现有能力；在此之前选择 JavaParser 明确失败，不影响 JDT 已完成状态。
+两种工具采用同一 source level 与来源规则，但不要求返回同一数量或精度。JavaParser 第二阶段适配也已经完成，具体能力边界见[接入设计](integration-and-javaparser.md)。后续业务过程发现消费统一的已审 Activity/SourceRef 合同，不能因为更换语义算法而重新打开或修改 JDT 会话。

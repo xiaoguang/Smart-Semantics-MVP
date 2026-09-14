@@ -1,6 +1,6 @@
 # Source Code Analysis Naming and Delivery Implementation Plan
 
-> **SUPERSEDED / 历史计划，不再执行。** 当前实施次序见[实施衔接](coherent-code-context-implementation-plan.md)，当前规格见[已批准清理与可扩展覆盖设计](code-cleanup-and-scalable-activity-coverage-design.md)。下文保留制定时的 Wire Reset、模块数量、授权、工具版本、验收和估时记录，不作为当前合同或当前授权；不重新执行已完成迁移，不恢复旧 R0/52/57 项或逐层 replay 路线。当前工具链以本仓库 pom.xml/.mvn 为准，本轮不变更依赖。
+> **SUPERSEDED / 历史计划，不再执行。** 当前目标与下一计划输入见[业务过程发现与重建设计](business-process-discovery-and-reconstruction-change-design.md)。下文保留制定时的 Wire Reset、模块数量、授权、工具版本、验收和估时记录，不作为当前合同或当前授权；不重新执行已完成迁移，不恢复旧 R0/52/57 项、singleton Process 或逐层 replay 路线。当前工具链以本仓库 pom.xml/.mvn 为准，本轮不变更依赖。
 
 
 > The following delivery sequence is preserved only as historical context. It does not compete with or authorize work outside the current implementation handoff and approved cleanup design linked above.

@@ -10,6 +10,8 @@
 
 它只保证来源身份和可读范围，不解释业务。来源错误会污染所有结果，因此路径、字节和身份错误必须停止；某段代码的业务含义未知则不属于这里的来源失败。
 
+在新的业务过程发现路线中，本步骤仍是唯一源码根。后续 `FrozenAnalysisCorpus` 只沿已保存引用打开这里的冻结 bytes 和 SourceRef；业务目录、候选过程、过程审阅或九章生成失败，都不得触发新的 Capture 或重新执行本步骤。它提供“代码确实在哪里”，不负责证明自然语言业务关系。
+
 ## 2. 输入与显式 capture 边界
 
 分析 core 接收 exact analysis-run-request-v2 的 sourceRegistrationId 和 frozenRepositoryRequestRef 等内容寻址控制引用。被引用的 frozen-repository-request-v2 固定 expected origin、完整 40 位 revision、capture/snapshot manifest、inventory scope 和验证 profile/policy/budget refs。public request/response 不携本机 Path；private registry 将 registration 解析为 opaque read-only source handle。

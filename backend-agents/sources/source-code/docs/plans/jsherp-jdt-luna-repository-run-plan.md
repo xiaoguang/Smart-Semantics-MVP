@@ -1,5 +1,7 @@
 # 管伊佳 JDT 与 Luna 业务文档运行计划
 
+> **HISTORICAL RUN RECORD / 不再定义目标过程架构：** 本页记录旧 ProcessExplainer 的实际运行与暂停点。340 个 singleton process 和现有九章是诊断基线，不是业务过程验收。新的语义实施范围由[业务过程发现与重建设计](business-process-discovery-and-reconstruction-change-design.md)定义；不得从本页恢复剩余旧过程调用。
+
 > 本页下文保留四入口运行的原授权范围与执行记录，不能拿其“只四包”覆盖用户后来明确批准的整仓范围。并行池已实施；最新两份整仓材料和暂停位置见[运行记录](../../progress/jsherp-full-parallel-business-report.md)。用户当前只要求更新设计，产品运行保持暂停。
 
 > 后续模型批次接线以[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)为准（已实现）：选定并验证现有完整材料，显式新modelBatchId，不扫描；原失败日志只读，完整已审job才可复用。后续运行前应报告选定checkpoint、材料/入口数、复用/新执行job和来源限制；不能删除STARTED、改run状态、混用两个checkpoint或自动挑最新目录。下面四入口实测与授权仍原样保留，不被重算为新批次成果。

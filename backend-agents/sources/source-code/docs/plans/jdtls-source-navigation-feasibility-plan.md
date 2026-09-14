@@ -1,5 +1,7 @@
 # JDT LS 入口驱动源码上下文可行性实施计划
 
+> **COMPLETED RESEARCH HISTORY：** 本调研已经完成并被正式 Java engine 实现吸收。不得从本页重跑实验或把调研 packet 当当前生产输出；当前目标见[业务过程发现与重建设计](business-process-discovery-and-reconstruction-change-design.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` task by task. Track the checkbox state; do not run customer builds, a model, or a second source tool.
 
 **Goal:** 仅给 Controller 入口，自动展开仓库内可导航调用并组织完整方法正文，保留实参、形参、条件和返回，在外部、无源码、歧义及动态边界明确停下。

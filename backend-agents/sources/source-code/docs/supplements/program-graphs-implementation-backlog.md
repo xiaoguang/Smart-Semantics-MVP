@@ -1,6 +1,6 @@
 # 程序图：稳定能力与当前待办
 
-权威设计是[Step03](../analysis-steps/03-program-graphs.md)与[JDT/JavaParser插件设计](../modules/java-code-engines/README.md)。先打通JDT导航及完整源码材料，第二阶段只恢复JavaParser已有能力。五图算法和证据保留为技术增强，不为JDT取材补齐全部图能力；以下未完成算法仍是backlog，不自动进入本次两阶段。本页不把历史测试当本轮实测。
+权威设计是[Step03](../analysis-steps/03-program-graphs.md)与[JDT/JavaParser插件设计](../modules/java-code-engines/README.md)。JDT完整源码材料与JavaParser既有能力适配都已完成；五图算法和证据继续作为技术增强。以下未完成算法仍是backlog，不是新的[业务过程发现](../modules/business-process-discovery/README.md)前置，也不能因过程模型需要更多语义而自动扩成编译器项目。本页不把历史测试当本轮实测。
 
 ## 1. 已有能力
 
@@ -43,6 +43,6 @@ CodeStructureGraphBuilder、CallGraphBuilder、ControlFlowGraphBuilder、DataFlo
 
 ## 5. 下一动作与测试限度
 
-当前实施计划不再修改 Step03/04 稳定算法、Step05 consumer 或 ordinary replay 路径。后续只在安全清理旧 interpretation 消费者时保持这些直接测试：参数边与 boundary 准确传递、源码上下文不冒充图、wrong owner/ref/source 拒绝、全部入口 coverage。
+当前业务过程设计不修改 Step03/04 稳定算法、Step05 consumer 或 ordinary replay 路径。Step07 只沿保存引用读取必要原文；若一个过程谓词需要进一步核对，从已有 `FrozenAnalysisCorpus` 取得片段并标 certainty，而不是在这里新增 Fact kind 或重跑整仓图。后续只保持这些直接测试：参数边与 boundary 准确传递、源码上下文不冒充图、wrong owner/ref/source 拒绝、全部入口 coverage。
 
 未来实施只跑新增或直接覆盖变更的 selector，不执行全套 Maven，不运行客户代码、网络、capture 或真实 Provider，除非获得新的明确授权。本轮为文档同步，未运行任何这些命令。历史 DepotHead Gap/0 Flow 与有界正例保留原有含义，不改写为新的全仓验收。

@@ -1,124 +1,163 @@
-# 仓库知识
+# 仓库业务过程发现与知识发布
 
-> 上游取材已按[JDT/JavaParser插件设计](../modules/java-code-engines/README.md)统一完整代码材料；本步消费同一已审活动/来源合同，不按工具品牌另设业务路线。[模型 job 并行](../modules/model-job-execution.md)及固定材料上的独立 model batch 与跨 batch 已审 job 复用均已实现。
-
-> [总体设计](../DESIGN.md)；固定 key：repository-knowledge，目录：steps/07-repository-knowledge/。唯一业务 Module：ProcessExplainer。
+> [总体设计](../DESIGN.md)；固定 key：`repository-knowledge`，目录：`steps/07-repository-knowledge/`。本步目标设计由 [Business Process Discovery 模块簇](../modules/business-process-discovery/README.md)拥有。当前代码仍是旧 `ProcessExplainer`，尚未实现本页的新接力。
 
 ## 1. 为什么存在
 
-一个入口常常只能说明一个局部活动。业务读者关心的是这些活动怎样围绕同一对象协作：例如申请形成采购单、采购单对应收货、收货进入应付账单。这样的跨入口过程不能从一个函数切片得出，也不能仅靠共享表名确定。
+Step06 的 Activity 解释一个入口附近的局部业务行为。它不能独自回答仓库支持多少种业务、销售或采购经历哪些阶段。Step07 必须先获得全仓视野，再为每个候选重新打开完整材料，最终形成可直接阅读的业务过程目录。
 
-Step07 用完整已审活动及必要代码上下文解释跨活动过程，形成仓库级业务知识。Java 做有界召回与组织，Luna/high 判断业务关系。它还必须保留 Step06 已显式处置但没有形成活动解释的具体入口，使下游知道“哪些入口未解释”，而不只得到一个数量。它不重新建五图、证明代码或按行业字典给活动归类。
+当前实现把业务对象、术语、入口文本和同源码文件做精确相等连接，再将连通分量按容量切片。固定 jshERP 的实际结果是 326 个已审 Activity 被输出为 340 个 Process，全部只有一个 Activity 和一个 Stage；还有一个 Activity 没进入任何 Process，而 unmatched 仍为空。这证明现有分组和浅 Process Schema 不满足本步目的。
 
-## 2. 输入与宽松分组
+## 2. 上游真实交付
 
-输入是完整 activity-explanations、activity-coverage（含 v2 的程序侧 `unexplainedActivityEntries`）和必要 business-materials。材料中已经携带 Step05 组织的 actual/formal、控制与返回关系；不丢掉这些信息后另行扫描仓库。
+| 输入 | 状态 | 本步用途 |
+| --- | --- | --- |
+| ReviewedActivity checkpoint | 已实现；jshERP 已有 326 条 | 全仓业务索引和候选详细材料 |
+| Activity coverage/unexplained entries | 已实现 | 过程覆盖的完整分母 |
+| BusinessMaterial/Step05 context | 已实现 | 必要时查看 Activity 对应入口关系 |
+| 保存的 JDT index、冻结源码与 SourceRef | 已实现 | 候选 REVIEW 按需核对具体实现，不重新扫描 |
+| 模型 job 两级并发、保存和 batch 复用 | 已实现 | 并行执行候选，失败保留检查点 |
 
-coverage/checkpoint 内每个 `UnexplainedActivityEntry` 保存 global `entryId`、`materialId`、包内 `entryKey`、原 `materialContext` 与程序固定 `MODEL_NOT_EXPLAINED`。Process 模型输入不逐入口重复整包 context，而按 materialId 聚合为 `{materialContext, unexplainedEntryKeys, reasonCode}`，同一 context 只出现一次，并移除 material/global entry IDs。聚合使用程序持有的 local-key 映射，不从中文 context 正则提取路径，也不假设 BusinessMaterial 已有 EntryDescriptor。
+选择一个完整 Activity checkpoint 后，本步不得调用 ActivityExplainer。目录、候选和过程结果都必须指向同一冻结 corpus。
 
-`sourceRunId`、`modelBatchId`、复用来源、checkpoint/publication 地址与调度数据都留在程序侧，不进入 Process DRAFT/REVIEW 或仓库总结模型包。因此不同 batch 在完整业务输入与 Prompt/profile 不变时可拥有相同的 job fingerprint，但不把 batch 身份暗示给模型或混入业务知识。
+## 3. M1：FrozenAnalysisCorpus
 
-Java 可以根据直接调用、显式标识传递、数据联系、已审对象/术语、processJoinSignals 做宽松召回。cue 表示“值得放在一起读”，不表示已批准顺序、对象同一性、因果、相同业务过程或唯一归属。共享 tenantId、日志、工具类、同名都不能单独得出这些结论。
+程序首先验证 Activity、材料、JDT/source/ref 的来源一致，提供按 ActivityId、SourceRef 和 MethodKey 查询的只读 Interface。它为 Activity 数组字段分配稳定 statement handle，例如：
 
-下例为**SYNTHETIC_ACCEPTANCE_SCENARIO，非 jshERP 行为，也非当前 wire**：
+```text
+activity:42fb…/conditions/0
+activity:42fb…/businessRules/1
+activity:42fb…/codeDefinedResults/0
+```
 
-~~~json
+这个 handle 只定位已审语句，不引入新的 Fact/Proof。读取失败明确终止，不调用 JDT、JavaParser、Builder 或上游分析补齐。
+
+## 4. M2：全仓业务目录
+
+程序把每个 Activity 确定性压缩为 ActivityIndexCard，保留：名称、目的、对象、动作、状态观察、标识、结果摘要和限制。目录模型读取**全部卡片**，发现：
+
+- Business Area 和业务对象别名；
+- 可重叠 Candidate Process；
+- Activity 在候选中的 CORE、OPTIONAL、ROLLBACK、SUPPORT、QUERY、ANALYTICS 用途；
+- STANDALONE 和 UNCLASSIFIED Activity。
+
+Prompt 不给销售、采购等期望词。目录只是高召回导航，不宣布活动顺序或对象一定相同。
+
+若全部卡片超过一次模型输入容量，程序按稳定顺序分片，每个 Activity 恰进入一个目录分片；分片 DRAFT/REVIEW 后再做一次全局目录合并。所有 Activity 必须在合并结果中有处置，不能静默遗漏。
+
+目标卡片示意：
+
+```json
 {
-  "groupId": "G1",
-  "activityIds": ["A1", "A2", "A3"],
-  "recallCues": [
-    {"from": "A1", "to": "A2", "cue": "reviewed order identifier reference"},
-    {"from": "A2", "to": "A3", "cue": "reviewed receipt identifier reference"}
-  ],
-  "activities": [
-    {"id": "A1", "name": "形成采购单", "completeReviewedContentAvailable": true},
-    {"id": "A2", "name": "登记收货", "completeReviewedContentAvailable": true},
-    {"id": "A3", "name": "形成应付账单", "completeReviewedContentAvailable": true}
-  ]
+  "activityId": "activity:42fb…",
+  "name": "批量审核或反审核库存单据",
+  "purpose": "检查并提交一组单据的审核状态变化",
+  "businessObjects": ["库存单据", "单据状态", "库存"],
+  "actions": ["审核", "反审核", "更新状态"],
+  "stateObservations": ["0→1", "1→0"],
+  "identifiers": ["单据ID集合"],
+  "resultSummaries": ["提交批量状态更新"],
+  "limitations": ["实际事务提交结果未知"]
 }
-~~~
+```
 
-正式模型包应包含这些活动的实际完整内容及解释关系所需的来源短片段；不能发送上例的 boolean 来假装内容已经提供。只有名称/摘要不足以判断条件、顺序或结果。
+## 5. M3：候选完整材料
 
-## 3. ProcessExplainer 怎样工作
+对每个候选，`ProcessMaterialAssembler` 按 activityId 重新打开完整 ReviewedActivity，而不是继续使用卡片。输入保留 purpose、participants、objects、inputs、conditions、steps、results、rules、formulas、questions、limitations、statement handles 和 refs。
 
-| Interface 项 | 合同 |
+候选 DRAFT 还收到短 SourceRef 目录，但不先发送全部源码。它可以返回 `requestedSourceRefs`；程序只从已保存 JDT/source corpus 取回这些真实片段，作为 REVIEW 材料。未知 ref 或来源漂移失败，不重新导航。
+
+一个候选过大时应由目录模型拆成有业务含义的子候选，或明确 `NOT_PROCESSED_CAPACITY`。不能机械截断数组中间内容后称为完整过程。
+
+## 6. M4：详细过程 DRAFT 与 REVIEW
+
+每个候选是一个可并行 job：
+
+```text
+完整 Activity 材料
+→ DRAFT：选择 ActivityUse、阶段、分支、规则、结果和待核对源码
+→ 程序加载请求的保存源码
+→ REVIEW：完整材料 + 实际 DRAFT + 源码片段
+→ 已审过程、拆分结果、支撑集合或材料不足处置
+```
+
+同一 Activity 可以有多个 ActivityUse。例如通用“新增库存单据”在销售订单、销售出库、销售退货过程中的 variant 和选用规则不同。过程阶段不再只保存 `order/activityId/description`，而要保存：
+
+```text
+stageId / name / activityUseIds
+entryConditions / actions / stateChanges
+rejectionConditions / outcomes / transitions
+certainty
+activityStatementRefs / sourceRefs
+```
+
+重要 BusinessRule 保存 `subject + when + action/decision + otherwise + result + certainty + refs`。已知条件不得缩水：
+
+- 正确：当前单据状态为 `0` 时允许编辑；不是 `0` 时拒绝。
+- 错误：状态允许时可以修改。
+
+每个已审过程还要携带被选择的 `CatalogKnowledgeItem`：业务对象说明、字段/维度定义、对象关系、公式/指标定义和示例问题正文，以及各自的 owner、certainty、statement refs 和 source refs。只保存指针不能满足 Step08，因为九章不再读取 raw Activity；这些正文必须由候选 REVIEW 从完整 Activity/源码中选择并原样保留。直接处置为 SUPPORT/STANDALONE/UNCLASSIFIED 的 Activity 由 `BusinessProcessDiscovery` 从同一 FrozenAnalysisCorpus 的 ReviewedActivity 确定性投影知识项，写入 `ProcessDiscoveryResult.directActivityKnowledgeItems` 并标明 disposition；不能因没有过程而丢内容，也不能被包装成假过程。Publisher 不回读原 Activity。
+
+REVIEW 可保留、收窄、拆分、转为可选/回退、降级 certainty 或删除关系；不能创建未知 Activity/ref，也不能只返回 patch。
+
+## 7. M5：仓库过程归并
+
+全部候选完成后，模型只读取已审过程摘要、ActivityUse 和开始/结束状态，做一次仓库级 DRAFT/REVIEW：
+
+- KEEP_DISTINCT；
+- MERGE_DUPLICATES；
+- PARENT_CHILD；
+- RELATED；
+- ALTERNATIVE；
+- REJECT_DUPLICATE_OR_UNSUPPORTED。
+
+它只能决定过程之间的关系和选择哪些已审内容组合，不能重新写或压缩具体条件、规则、知识项和来源。Java 校验决定后确定性形成唯一 `RepositoryBusinessProcessCatalog`，并按类型聚合过程级 knowledge items 供九章使用。
+
+每个 Activity 最终必须至少有一个过程 membership，或明确成为 SUPPORT/STANDALONE/UNCLASSIFIED。一个 Activity 可属于多个过程。相同名字不自动合并，不同名字不妨碍有证据的关联。
+
+## 8. M6：确定性发布
+
+正式业务输出：
+
+| 文件 | 作用 |
 | --- | --- |
-| 输入 | 全部完整 ReviewedActivity、activity coverage、recall cues、必要 materials、按 material 聚合的未解释入口 |
-| 输出 | 完整 BusinessProcess、RepositoryBusinessKnowledge、process coverage；程序侧继续保留完整 unexplained records |
-| 职责 | 有界高召回分组后，以 DRAFT+完整 REVIEW 解释有依据的多对多过程和仓库知识；不强造连接 |
-| 失败 | 非法成员/ID/ref/JSON、遗漏范围却报完整、started 失败 fatal；超容量组零请求；0 活动时 Process Provider 为 0 |
-| 下游 | BusinessReportPublisher 读取完整活动/过程/coverage 与具体未解释入口 |
-| Luna RED / Terra GREEN | RED 覆盖完整活动字段、同名/异名、多对多、保守独立过程、按 material partial；GREEN 只扩现有 input/save/read seam，不放宽其他 validator |
+| `repository-business-process-catalog.json` | 唯一仓库业务领域、过程、关系、ActivityUse 和待确认项 |
+| `process-coverage.json` | 全 Activity、候选、过程和未处理范围的处置 |
+| `business-processes.md` | 按过程展示目的、步骤、规则、结果、待确认和短来源引用 |
+| `source-refs.jsonl` | 复用的短 ref 到冻结文件、行号和片段映射 |
 
-等待 Step06 全部活动 job 完成并稳定聚合后，为全部已审活动建立有界且可重叠的候选组，记录单独活动与未分组范围。每组是一个可并行的 job：同一绑定 Provider/model/effort（默认 Pro Luna/high）做一次 DRAFT，再用同组完整输入和完整实际 DRAFT 做一次 REVIEW，返回完整修订结果。原材料、长字段和来源不为并发缩短。每 job 的 schema、容量与 runtime identity 检查均使用其绑定的有效 profile。
+可复用但不作为读者主交付的检查点：`activity-index-cards.jsonl`、`business-process-candidates.jsonl`、`reviewed-business-processes.jsonl`。
 
-候选组输入只读共享已审活动，一个活动可同时属于 G1/G2；worker 不改共享活动或全局成员表。coordinator 独占全局 ID/coverage 合并，按原组顺序聚合，不以完成顺序推导业务先后或唯一归属。所有组完成之后才可开始仓库总整理；与 Activity 使用同一两级并发池，不另设 process concurrency 配置。
+`business-processes.md` 由 Java 从 catalog 确定性渲染，零 Provider。它不是固定九章，而是每个过程使用相同的读者结构。Step08 只能消费发布后的 catalog，不能再发现或改变过程。
 
-模型可以提出源码未由 Java 预计算、但材料两端有根据的业务联系，使用合理限定。例如“收货信息可能用于形成应付账单；具体汇总时点待确认”。没有标识/控制/业务上下文支撑时，不能仅凭常识把多个查询和更新拼成必然流程。明确条件、分支、回退、并行与结果应保留；不存在的角色、制度、唯一性及运行事实不能发明。
+## 9. 失败、覆盖和复用
 
-一个活动允许属于多个过程，同名活动不自动合并，不同名活动也可以在同一过程中承担不同职责。成员关系显式保存多对多，不强制每个活动唯一 owner。孤立查询活动本身也可形成合理独立过程，不为了满足大流程叙事强行接到写入过程。
+- 目录遗漏 Activity、候选遗漏成员处置、未知 statement/ref、REVIEW 引入新成员、归并丢规则或父子关系循环均失败。
+- LLM 任务 started 后失败，停止派发新 job；已开始且合法的 job 完成唯一 REVIEW并保存。不自动重试或换 Provider。
+- 候选无法判断可以返回 INSUFFICIENT_MATERIAL；coverage 记录缺什么，不能输出一个空洞单阶段过程冒充成功。
+- `CONFIRMED` 只用于 Activity/source 直接支持的局部 claim；跨入口合理联系用 `INFERRED`；缺失、冲突和外部效果用 `UNRESOLVED`。
+- 新 model batch 复用同一 Activity/JDT corpus。完整已审且 fingerprint 相同的目录/候选/归并 job 才可复用；任何模型失败都不重跑 JDT 或 326 个 Activity。
+- Coverage complete 只表示所有输入有去向；业务质量还要求过程具体、连贯且不丢条件。
 
-`MODEL_NOT_EXPLAINED` 入口不成为虚构活动或过程成员。模型可以在仓库范围说明中承认它们未形成活动解释，但不能把这个程序归因升级为 SOURCE 缺失、Flow Gap 或源码业务结论。四个用户入口同包也不能仅因同一 Controller 或“用户”词汇强串为删除→会话→注册→退出；两个独立过程、四个局部过程或有实际材料依据的多对多归属都可能正确。
+## 10. 销售闭环验收
 
-## 4. 大仓库与完整内容
+使用现有真实 Activity 和保存源码，目标至少重建：销售订单管理与履约、销售退货、客户收款与欠款、销售分析与对账。核心过程必须能说明：
 
-等全部组完成并稳定聚合后，对全部已审过程摘要、跨组 cue 和覆盖表最多进行一个仓库总整理 job（DRAFT + 完整 REVIEW），固定其 Provider/model/effort，不与过程组或报告重叠。保留现有准入：`maxRepositorySummaryItems=0`、无过程或条目/输入容量不足时不发总结请求，记录既有具体 notConsolidated/范围说明。总结完成或上述显式跳过后才一次发布完整 knowledge/process aggregate 并向 Step08 放行，不能在组屏障处提前发布缺少总结处置的知识。摘要只用于汇总导航；完整已审活动、过程段落、条件、规则、公式和来源继续保存在输出中，报告装入必要完整内容，不按章另开模型任务。
+1. 创建订单时的单号、明细和关联号约束。
+2. 数据库当前状态为 `0` 才允许修改；否则拒绝。
+3. 保存时可携带状态 `1`，因此批量审核不是唯一审核入口。
+4. 独立审核 `0→1`；反审核要求当前 `1` 且采购状态 `0`，采购状态 `2/3` 时拒绝。
+5. 销售出库可关联订单或独立创建；有关联时数量驱动订单保持已审核、部分完成 `3` 或完成 `2`。
+6. 销售退货可关联出库或独立创建；材料不足以证明一定回写订单状态。
+7. 收款/欠款是相关过程；单据号关联的具体业务身份若不唯一则保留待确认。
+8. 查询、统计和对账是支撑/分析过程，不作为主履约时序。
 
-不能把每个活动压缩成一句标题就丢掉原文，再让报告模型凭摘要补写。若某组或报告章节无法在预算内包含必要完整内容，明确列未覆盖 IDs/原因，文档语义与验收结论为 PARTIAL；不得静默截断后声称已整理全仓。PARTIAL 不是新增 Process/runtime enum。也不通过重复 REVIEW、无限分组或不透明自动续跑增加候选轮次。
+这一验收使用业务词作为 fixture 数据，不允许 Java 或通用 Prompt 写死销售答案。再用不同领域 fixture 验证相同 Interface。
 
-## 5. 输出与下一消费者
+## 11. 当前实现状态
 
-| 文件 | 内容 |
-| --- | --- |
-| business-processes.jsonl | 完整已审过程、活动成员、关系、条件/结果、依据与待确认项 |
-| repository-business-knowledge.json | v2：全部活动/过程引用、必要完整内容、对象术语、仓库说明、待确认主题、覆盖及程序侧具体 unexplained records |
-| process-coverage.json | v2：已整理组、未整理组、活动归属/未归组原因、仓库总整理覆盖及具体 partial 范围 |
+已实现：完整 Activity 输入、旧过程组并行 DRAFT/REVIEW、逐 job 保存、model batch 复用、仓库短摘要和九章下游。
 
-**目标业务知识投影，非保存 wire：**
+未实现：M1 统一 corpus、M2 全仓目录、M3 完整材料/源码按需核对、M4 ActivityUse 与详细过程、M5 真正归并、M6 新 catalog/Markdown。
 
-~~~json
-{
-  "process": {
-    "name": "采购收货与应付衔接",
-    "activityIds": ["A1", "A2", "A3"],
-    "narrative": "系统先形成采购单，再依据采购单登记收货；已登记的收货信息供应付账单处理使用。",
-    "conditions": ["只有已审活动材料实际记载的条件才在此保留"],
-    "confirmationTopics": ["跨活动顺序若仅由对象引用推断，应在此说明待确认"],
-    "sourceRefs": ["S1", "S2", "S3"]
-  },
-  "coverage": {
-    "reviewedGroupIds": ["G1"],
-    "notConsolidatedGroups": [],
-    "scope": "SYNTHETIC_SCENARIO_ONLY"
-  }
-}
-~~~
-
-示例中的叙述只在合成输入确实定义这些关系时成立。正式输出不保留说明性占位字符串。最终 Step08 读取知识中的完整已审业务内容与短 refs，Java renderer 不再重新总结这些段落。
-
-## 6. 失败与复用
-
-每个候选组和总整理都是预先有界内容任务。超容量在启动前记 NOT_CONSOLIDATED_BUDGET，Provider 为 0；等待并发空位不是超容量，合格排队组不能被跳过。started 后请求失败关闭新 job 派发；其他已开始且自身合法的 pair 在既有超时内完成 REVIEW 并保存，之后以现有失败路径终止，不启动仓库总结或报告。无自动重试、Provider switch 或 API-key fallback；显式 API 只能处理启动前已绑定给它的 jobs。
-
-模型越界 ref、缺活动成员、重复冲突 ID、source/basis 不一致、损坏 JSON、覆盖表遗漏后假称 COMPLETE 都是 fatal。业务顺序、岗位、对象同一性待确认是知识内容限制；不需要把整个组排除。
-
-当前 coordinator 在每组 REVIEW 完成时立即原子保存私有 job 结果，等全部组及总结完成/显式跳过后一次安装既有固定 module publication；Process 组使用两级有界并行、独立 Provider/job journal 和单次聚合提交。跨 batch reader 已按[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)接入：新 batch 先绑定与复用来源相同的完整 `materialsCheckpoint` reference，再基于已验证活动重新计算 Process 候选组；只有完整已审、原子保存且 job fingerprint 精确相同的组 job 才跳过两次调用，仓库总结另有自己的 fingerprint。DRAFT 完成但 REVIEW 失败/未知时只保留诊断，显式新 batch 重做完整 pair，旧 batch 不覆写。0 活动只保存明确范围和已有 unexplained records，不调用过程模型，不能宣称理解仓库业务。
-
-## 7. 当前实现与后续测试
-
-ProcessExplainer 以及 BusinessAnalysisWorkflow 的 material→activity→process→report 调用顺序已经存在。过程模型输入现在保留完整已审活动字段：参与者、对象、输入、条件、步骤、代码定义结果、规则、公式、术语、可信度、问题、范围限制和短 ref；它不能只看到活动标题、对象或摘要。`ProcessMaterialRecallTest` 已以 scripted Provider 直接验证这些字段和完整 DRAFT→REVIEW 输入。
-
-并行执行已落地：ProcessExplainer 的单组函数返回不可变结果，repository-summary 仍只能在全部组后启动最多一个 job。现有 scripted 测试覆盖 G1/G2 重叠成员并发、两级上限、完成顺序无关聚合、所有组完成前总结调用为 0、总结准入时只有一次 DRAFT/REVIEW、跳过时具体范围保存，以及组失败保留已完结果/不启动报告。后续 model-batch 测试只扩展旧批完整已审 job 读取、fingerprint 匹配/不匹配、孤立 DRAFT 不复用及新 batch 聚合归属；不创建新的公开 Module 或状态 enum。
-
-Activity v2 的具体未解释入口接力已实施：`repositoryInput` 按 material 投影 `{materialContext, unexplainedEntryKeys, reasonCode}`，不发送 global/material identity。owning knowledge/coverage schema 与 reader 已升至 v2，Process DRAFT/REVIEW 的其他成员、ref、JSON 或 fatal 校验未改变，PARTIAL 仍不是新的 runtime 状态。`MODEL_NOT_EXPLAINED` 保持模型本次未形成活动解释的范围说明，不能变成技术 Gap、活动或过程。
-
-固定 jshERP 的一次受控真实小包把已经完成的“用户注册”和“用户登录”活动放进同一过程候选组。Luna/high 保守地保留为两个独立的局部过程，没有因为它们来自同一 Controller、都涉及验证码而写成“注册后登录”的必然顺序。这是期望的边界行为：召回线索只决定哪些活动一起阅读，模型仍可拒绝不存在充分业务交接依据的跨入口关系。该小包不代表固定 jshERP 的自动跨活动过程或九章已经验收。
-
-随后对一个自动形成的账户查询分组做了一次受控过程 DRAFT。传输成功但返回未通过
-`PROCESS_GROUP_DRAFT_INVALID` 的结构校验；因此该候选在 30.33 秒后终止，REVIEW 没有启动，也没有
-重试。这个结果不说明账户活动之间没有业务关系，只说明该次模型返回不能作为正式过程记录。下一份
-**不同**小包的 opt-in 测试会在传输前保存干净请求、在校验前保存返回，以便区分“材料不足、提示词
-不清、返回结构错误”三类问题；它不会在原 run 重放已经启动的账户候选。未来如以显式新 model batch 重做，那是一个新 job 的完整 DRAFT+REVIEW，不是继续这份孤立 DRAFT。
-
-后续 Luna/xhigh RED 直接覆盖：共享标识只触发召回、同名/异名不强制合并、多对多成员、完整条件/规则/公式从活动保留到知识、同 material context 只传一次及具体 keys/reason、仓库总整理遗漏显式 PARTIAL、超预算零请求及非法 ref 拒绝。Terra/xhigh 在现有 ProcessExplainer 的 input/result/checkpoint seam 做最小 GREEN，不写 Java 业务分类器、不放宽既有 validator。本轮未运行测试或真实 Provider。
+现有 `ProcessExplainer`、`BusinessProcess`、`BusinessProcessStage` 和三个旧 Step07 输出是迁移输入，不是目标验收。实现计划必须先以 326 Activity/340 singleton 基线写 RED，再替换此路径；不能在旧精确 token 分组上继续补业务特例。

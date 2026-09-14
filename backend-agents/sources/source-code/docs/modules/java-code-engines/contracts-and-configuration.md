@@ -1,6 +1,6 @@
 # Java代码引擎：配置与共同材料合同
 
-> [总设计](README.md)。本页字段是已发布的 JDT 合同；第二阶段 JavaParser 必须适配它，而不是要求旧 Java records 原样兼容。
+> [总设计](README.md)。本页字段是 JDT 与已完成 JavaParser Adapter 共用的已发布合同；两种引擎能力可以不同，但都不能要求下游理解工具专属 records。
 
 ## 1. EngineConfigurationLoader：只选择工具，不决定业务
 
@@ -18,7 +18,7 @@ sourceAnalysis:
     javaHome: /opt/source-analysis/tools/jdk
 ```
 
-第二阶段只需将 `javaEngine` 改成 `javaparser`。工具路径是本地启动配置，不能进入公共分析请求、模型材料或候选正文。上面路径是部署示例，不代表机器上已安装在该位置。
+选择 JavaParser 时只需将 `javaEngine` 改成 `javaparser`。工具路径是本地启动配置，不能进入公共分析请求、模型材料或候选正文。上面路径是部署示例，不代表机器上已安装在该位置。
 
 | 字段 | 精确含义 |
 | --- | --- |
@@ -187,7 +187,7 @@ Step05在`flow-slices.json`的`entryContexts`保存入口归属、收集状态�
 
 以下版本表记录已交付的引用持久化合同。仅改变实际持久化形状的owner/readers/policy同步升版，JavaParser同步产出该保存格式，不改它的解析算法。
 
-| 内容 | 已交付 schema | 优化目标 |
+| 内容 | 已交付 schema | 当前持久化方式 |
 | --- | --- | --- |
 | 导航索引 | java-code-index-v2；CALL按入口保存 | 不变；不把RPC缓存写成入口投影 |
 | 解引用后的完整上下文 | entry-code-context-v1 | 不变；内存消费者仍得到完整内容 |
@@ -200,7 +200,7 @@ Step05在`flow-slices.json`的`entryContexts`保存入口归属、收集状态�
 
 可用性保存在索引ENGINE记录及对应Fact accounting中；现有generic step receipt仍通过实际artifact descriptors引用它们，不给每层receipt新增一套状态。只有实际产物集合变化的拥有者和readers调整，不全工程schema重置。
 
-历史产物不覆盖，旧context版本用稳定`UNSUPPORTED_CODE_CONTEXT_VERSION`拒绝，不能缺新字段就当空列表。新语义下游不提供旧wire双读/别名；第二阶段JavaParser生产新格式，而非读取旧格式冒充。
+历史产物不覆盖，旧 context 版本用稳定 `UNSUPPORTED_CODE_CONTEXT_VERSION` 拒绝，不能缺新字段就当空列表。新语义下游不提供旧 wire 双读或别名；JavaParser Adapter 生产当前格式，而非读取旧格式冒充。
 
 ### 5.1 实际产物集合与现有存储复用
 
@@ -218,6 +218,8 @@ module publisher、step publisher、exact-set allowlist、`CanonicalArtifactPoli
 
 Step06 SourceRef编号仍由Builder分配，模型只看短ref和正文；methods/calls全局key、路径、行号、engine信息留在程序侧。一个context可含多个方法，不强制每方法单独生成一个业务活动。Builder在一个请求内复用同一完整方法，但不同请求必须各自含必要正文；请求快照和最终source-refs是有意保留的自包含投影，不因为技术存储去重而只发送模型无法解开的key。
 
+Step07 的目标过程发现不改变这项合同。`FrozenAnalysisCorpus` 通过完整 typed reference 打开保存的 ReviewedActivity、SourceRef 和必要方法片段；目录阶段只消费 Activity 卡片，候选详细重建才按 Activity statement handle 和 SourceRef 取回完整内容。该路径不得调用 `collect`、重新生成 index 或把 engine-specific key 发送给模型。
+
 普通同进程传immutable view，保存时检查来源/引用/结构及原子写入。跨进程重开检查bytes/schema/identity；不再索引一遍。复用基础包含snapshot、有效源码根/语言级别/本地classpath内容、引擎与版本、context合同及取材选项；排除绝对工作根。改引擎/工具版本后不得复用旧解析结果或旧业务候选。旧语义Prompt/模型授权规则仍生效。
 
 ## 6. 测试与实现指南
@@ -226,4 +228,4 @@ Luna先写配置闭集、全方法持久化、重复调用位置、候选保留�
 
 Terra按本页字段实现，不在DTO里塞Eclipse对象、同义字段、双版本fallback或业务解释结果。配置加载仅在组合根；Builder没有`if(jdt)`/`if(javaparser)`分支。schema/producer/reader/fixture一次更新；不要让测试固定住旧窄CallContext阻止合理升级。
 
-协议无法表示实际候选或构造器时交设计者调整，不删除工具返回以使测试通过。第一阶段不以JavaParser适配完成作门禁；第二阶段不要求JavaParser产生当前未有的图边或方法正文。
+协议无法表示实际候选或构造器时交设计者调整，不删除工具返回以使测试通过。历史 JDT 第一阶段不以 JavaParser 适配完成作门禁；已经完成的 JavaParser Adapter 也不要求产生当前未有的图边或方法正文。新的过程发现测试从已保存 Activity/SourceRef 开始，不重跑引擎来验证语义层。
