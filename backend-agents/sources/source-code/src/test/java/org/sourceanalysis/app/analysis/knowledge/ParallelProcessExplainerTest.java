@@ -91,7 +91,7 @@ class ParallelProcessExplainerTest {
             paths
                 .filter(path -> path.getFileName().toString().equals("reviewed-result.json"))
                 .toList();
-        assertThat(results).hasSize(2);
+        assertThat(results).hasSize(3);
         for (Path saved : results) {
           JsonNode record =
               new CanonicalJsonCodec()
@@ -99,8 +99,41 @@ class ParallelProcessExplainerTest {
           assertThat(record.path("inputFingerprint").asText()).matches("[0-9a-f]{64}");
           assertThat(record.path("jobKey").asText())
               .endsWith(record.path("inputFingerprint").asText());
+          assertThat(record.path("schemaVersion").asText())
+              .isEqualTo("model-job-reviewed-result-v2");
+          assertThat(record.path("draft").isObject()).isTrue();
+          assertThat(record.path("review").isObject()).isTrue();
         }
       }
+
+      AnalysisRunId reuseBatch = new AnalysisRunId("analysis-run:" + "e".repeat(64));
+      ModelJobExecutionConfiguration reuseConfiguration =
+          new ModelJobExecutionConfiguration(
+              2,
+              Map.of(
+                  "pro", new ModelJobProviderBinding("pro", "pro-account", 1, pro, proIdentity),
+                  "api", new ModelJobProviderBinding("api", "api-project", 1, api, apiIdentity)),
+              Map.of(
+                  "activity", List.of("pro", "api"),
+                  "processGroup", List.of("pro", "api"),
+                  "repositorySummary", List.of("pro"),
+                  "report", List.of("pro")),
+              journal,
+              reuseBatch,
+              configuration.runId());
+      RepositoryBusinessKnowledge reused =
+          ProcessExplainer.forExecution(reuseConfiguration)
+              .explain(
+                  new ExplainRepositoryProcessesRequest(
+                      activities(),
+                      new ProcessExplanationProfile(4, 4, 32_000, 16_000, 4, 32, 2_000, 10)));
+
+      assertThat(reused.processes()).isEqualTo(knowledge.processes());
+      assertThat(reused.repositorySummary()).isEqualTo(knowledge.repositorySummary());
+      assertThat(pro.taskKinds())
+          .as("matching process groups and repository summary must be reused without calls")
+          .hasSize(4);
+      assertThat(api.taskKinds()).hasSize(2);
     } finally {
       barrier.release.countDown();
       caller.shutdownNow();

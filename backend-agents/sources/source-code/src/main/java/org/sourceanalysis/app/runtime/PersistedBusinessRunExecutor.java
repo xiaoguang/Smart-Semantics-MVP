@@ -109,6 +109,18 @@ public final class PersistedBusinessRunExecutor {
             configuration.reportProfile());
   }
 
+  /** Executes only model work from a freshly reopened immutable material checkpoint. */
+  public BusinessAnalysisWorkflowResult execute(BusinessMaterialBuildResult materials) {
+    Objects.requireNonNull(materials, "business materials");
+    return workflow()
+        .run(
+            materials,
+            configuration.activityProfile(),
+            configuration.maxMaterialsToStart(),
+            configuration.processProfile(),
+            configuration.reportProfile());
+  }
+
   /** Builds saved model-reading material from the completed Step05 publication only. */
   public BusinessMaterialBuildResult buildMaterials(BusinessFlowsReference businessFlows) {
     Objects.requireNonNull(businessFlows, "business flows");
@@ -143,10 +155,10 @@ public final class PersistedBusinessRunExecutor {
   }
 
   private BusinessReportPublisher reportPublisher() {
-    StructuredModelProvider reportProvider =
-        modelJobExecutionConfiguration == null
-            ? provider
-            : modelJobExecutionConfiguration.binding("report", 0).provider();
+    if (modelJobExecutionConfiguration != null) {
+      return BusinessReportPublisher.forExecution(moduleArtifacts, modelJobExecutionConfiguration);
+    }
+    StructuredModelProvider reportProvider = provider;
     return new BusinessReportPublisher(reportProvider, moduleArtifacts);
   }
 }

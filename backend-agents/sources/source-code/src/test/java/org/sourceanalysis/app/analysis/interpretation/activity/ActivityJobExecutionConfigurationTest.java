@@ -109,7 +109,10 @@ class ActivityJobExecutionConfigurationTest {
                   org.sourceanalysis.app.artifact.ImmutableBytes.copyOf(
                       Files.readAllBytes(privateResult)));
           assertThat(saved.path("schemaVersion").asText())
-              .isEqualTo("activity-reviewed-job-result-v1");
+              .isEqualTo("model-job-reviewed-result-v2");
+          assertThat(saved.path("status").asText()).isEqualTo("COMPLETED");
+          assertThat(saved.path("draft").isObject()).isTrue();
+          assertThat(saved.path("review").isObject()).isTrue();
           assertThat(saved.path("runId").asText()).isEqualTo(RUN_ID);
           assertThat(saved.path("phase").asText()).isEqualTo("activity");
           assertThat(saved.path("providerBindingKey").asText()).isEqualTo("pro");

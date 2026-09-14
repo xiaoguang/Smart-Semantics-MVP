@@ -1,6 +1,6 @@
 # 模型任务并行执行
 
-> 并行池、严格 v2 单配置、Provider 隔离和逐 job 保存已实现；§7 的“固定材料＋独立模型批次”是本次已批准、尚待编码的最小改法，不能当成当前 CLI 已具备的能力。本页统一拥有调度、配置、批次身份、复用和失败合同；业务内容仍由 [Step06](../analysis-steps/06-flow-interpretation.md)、[Step07](../analysis-steps/07-repository-knowledge.md)、[Step08](../analysis-steps/08-nine-section-document.md) 拥有。
+> 并行池、严格 v2 单配置、Provider 隔离、逐 job 保存，以及 §7 的“固定材料＋独立模型批次”均已实现。本页统一拥有调度、配置、批次身份、复用和失败合同；业务内容仍由 [Step06](../analysis-steps/06-flow-interpretation.md)、[Step07](../analysis-steps/07-repository-knowledge.md)、[Step08](../analysis-steps/08-nine-section-document.md) 拥有。
 
 ## 1. 并行单位与阶段顺序
 
@@ -92,7 +92,7 @@ business:
 
 当前 CLI 使用 `repository-run-config-v2` 的单一 JSON/YAML 配置，并在模型模式拒绝旧根版本、独立 `repository-run-provider-v1` 和 `--provider-config`。executable、timeout、journal/output 已归入 `sourceAnalysis.modelJobs`；材料模式只验证其结构，模型模式在读取 continuation state 前预检认证环境并构造全部已路由 Provider。有效非秘密路由、Provider/model/effort 配置归入已有运行诊断，不往 public request 塞路径/密钥，也不把技术阶段 `provider: NONE` 误当业务身份。
 
-当前 v2 continuation state 使用 `baseConfigurationSha256 = SHA256(canonicalJson(normalizedV2Document 删除且只删除 sourceAnalysis.modelJobs))`。私有材料状态 exact keys 为 `schemaVersion: repository-run-state-v2, baseConfigurationSha256, runId, businessFlowsPublication`；**没有直接保存材料 checkpoint**。当前模型执行另存 `{schemaVersion: model-job-execution-config-v1, runId, modelJobsSha256, modelJobs}`，只保存非秘密配置。这是实施现状，不再是批次解耦的目标状态；目标私有 v3/v2 合同见 §7.2，根 YAML 继续 v2。
+旧 continuation state 使用 `baseConfigurationSha256 = SHA256(canonicalJson(normalizedV2Document 删除且只删除 sourceAnalysis.modelJobs))`，且没有直接保存材料 checkpoint。该格式现在只能通过显式离线导出转换为 §7.2 的私有 state v3；正常模型模式不再读取它。根 YAML 继续 v2。
 
 当前只改并发不改变 base SHA，但模型失败会把同一个 run 标为 FAILED，后续被 RUNNING 检查挡住；且业务 profile 仍被旧 base SHA 连带绑定。这不是材料或 JDT 失效。目标只核验所选固定材料及其真实输入依据，模型配置独立绑定到新批次；不通过删日志、改失败状态或重扫 JDT 获得新模型请求。材料格式与公开 run-request-v2 不因此升版。
 
@@ -126,7 +126,7 @@ Codex Provider 可以只引用一个已登录的上下文。每个 job 使用新
 
 ActivityExplainer 已把一份材料提取为一个不可变完整 DRAFT→REVIEW job；ProcessExplainer 对每个有资格的过程组执行同样的不可拆 job。两者的有界 completion queue 都执行全局及 Provider 两级上限，在完成 REVIEW 后先私有保存再释放名额，最终按稳定材料/组顺序聚合。过程 aggregate 仍须等全部组及至多一次仓库总结完成，或按既有规则明确跳过总结后才安装。worker 不共享可变业务集合，也不发布同一固定 aggregate 地址。
 
-当前 Activity 使用 `model-jobs/<run-hex>/activity/<job-key>/reviewed-result.json`，Process-group 使用并列目录，均为原子 no-replace 写入；目前这些私有结果只有写入路径，尚无跨批次验证读取与选择。singleton summary/report 的原始轮次由 journal 保存。§7 将这里的 run 改为新模型批次的输出 run，补最小已审结果 reader，并将同样的完整 pair 保存规则用于 singleton，不另建 Store 框架。模型输入仍不包含调度身份或凭据。
+Activity 使用 `model-jobs/<run-hex>/activity/<job-key>/reviewed-result.json`，Process-group、repository-summary 和 report 使用并列目录，均为原子 no-replace 写入。最小已审结果 reader 只接受完整、匹配的 DRAFT＋REVIEW；新模型批次会在自己的目录中写复用记录并保留原生产批次。模型输入不包含调度身份或凭据。
 
 `RunJournalStructuredProvider` 目前按一个 `ModelRuntimeIdentityV1(provider,model,reasoningEffort,sandbox)` 校验，身份里没有账户；最小修改是每个已绑定 Provider/job 使用独立私有 journal namespace，保持 request/response 身份验证。不同账户上相同模型/输入不能串读；同一 job 只提交一次，同一进程维护单一 job-key 登记，重复排队不能发第二次 DRAFT。不同材料即使模型输入 bytes 相同也不会互相抢写。DRAFT/REVIEW 仍分别记录实际请求及输出；不改业务 packet 增加调度 ID。
 
@@ -161,7 +161,7 @@ inputFingerprint 的目标比较规则见 §7.3：内容与实际有效服务绑
 
 只运行新增或直接覆盖改动的测试，重型检查串行；不运行客户构建或真实模型验证上述调度规则。观测使用单调时钟记录 queue wait、DRAFT、REVIEW、save、各 phase elapsed，以及全局/每 Provider 实际在途 job 和实际活跃模型请求峰值。统计请求数、完成/未启动/失败数和真实保存 bytes，不记录凭据或完整源码到日志。全局 6 不代表快 6 倍；在测量模型耗时、额度和保存成本之前不承诺加速比。
 
-## 7. 固定材料与独立模型批次（已批准，待实施）
+## 7. 固定材料与独立模型批次（已实现）
 
 ### 7.1 给人看的规则
 
@@ -213,7 +213,7 @@ executionScope.mode沿现有 `activities-sample | generate`；sample的materialI
 
 私有路径继续使用 `model-jobs/<batch-run-hex>/<stage>/<job-key>/`；服务/request journals 也必须包含该 batch namespace。execution config、request ID、request/output 路径和重复提交登记都按新批次隔离；sample inspection也写在outputDirectory的batch子目录，不再只按materialId覆盖。原请求原样保留。旧 v1 私有执行配置、v2 state 不被正常新 reader 静默双读；实施时提供一次显式、离线的旧 state 导出：核验原 Step05 与实际已完成 M10，写到**新 v3 文件**，保留旧文件。导出只读现存 artifacts，绝不扫描或发模型请求；找不到有效 M10 就报告无法导出，不编造 reference。本次已保存材料因此不需要为了升级元数据重新生成。
 
-**输出归属必须贯通而非只换目录。** 当前 Activity/Process/Report publisher 从上游推导 runId，AnalysisRunOutput/registry 又要求四个 checkpoint 同 run，这些消费者需一起改为接收新输出 run。材料保持原 sourceRun 地址；新 Activity/Knowledge/Report publication 属于 batch run。私有run-output从 `analysis-run-output-v2` 升至 `analysis-run-output-v3`，保留既有四个 checkpoint reference 并显式增加 `sourceRunId`：材料按 sourceRun 校验，后三项按输出 owner/batch 校验，写入和重开完全同义。只能验证后引用旧产物，不能篡改上游 receipt/runId 或关闭所有跨 run 检查。公开 reference 字段形状不变；新结果的普通 inspect/artifact/render 沿真实引用读。最终私有执行清单把 document/report checkpoint 链接到 materialsCheckpoint 和 modelBatchId，业务 JSON/九章正文不增加这些控制字段。
+**输出归属已贯通而非只换目录。** Activity/Process/Report publisher 接受显式新输出 run；材料保持原 sourceRun 地址，新 Activity/Knowledge/Report publication 属于 batch run。私有run-output已升至 `analysis-run-output-v3`，保留既有四个 checkpoint reference并显式增加 `sourceRunId`：材料按 sourceRun 校验，后三项按输出 owner/batch 校验，写入和重开完全同义。只能验证后引用旧产物，不能篡改上游 receipt/runId 或关闭所有跨 run 检查。公开 reference 字段形状不变；新结果的普通 inspect/artifact/render 沿真实引用读。最终私有执行清单把 document/report checkpoint 链接到 materialsCheckpoint 和 modelBatchId，业务 JSON/九章正文不增加这些控制字段。
 
 新批次的根 request 继承 source run 的冻结来源与材料相关 controls、candidateSeriesRef、readerCandidateRound、parentCandidateRef 和 approvedFindingRefs；模型业务 profile/Prompt 可按实际配置形成新请求引用并进入结果 fingerprint，不以技术来源改变处理。包含技术与业务子项的复合配置引用，应核对真正影响所选材料的子项相同；新业务 controls 要绑定新实际Prompt/profile，不能沿用旧引用冒充已采用新配置，也不能要求无关模型项相等才让材料通过。写入前逐项核验这份明确继承关系，拒绝不同来源/不同候选 lineage。该改动只接入现有维护 CLI 的 model-only composition；现有 public executeStep 仍可能进入技术 coordinator，不能仅凭新增内部入口就宣称任意 executeStep 都已支持材料批次复用。
 

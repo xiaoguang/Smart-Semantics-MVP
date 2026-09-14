@@ -26,7 +26,7 @@ start 创建 path-free QUEUED run；executeStep 按明确目标经已配置内�
 
 Java、CLI、未来 authenticated loopback HTTP 都复用同一 Agent。当前 CLI composition root 从预登记来源及固定配置创建请求，不允许任意 Provider/path 参数进入 analysis core。capture-local-git 是分析前独立维护适配器，路径只用于显式 capture，不是第二分析入口。HTTP、validate/trace 适配不是本轮业务质量验收前置。
 
-已批准的[模型 job 执行配置](../modules/model-job-execution.md#2-唯一配置入口与精确-yaml)归现有 CLI 组合根：当前 v2 loader/CLI 已从同一 `--config` YAML 的 `sourceAnalysis.modelJobs` 读取全局/Provider 并发、路由、模型与认证引用，并已落地有界并行。它不增加公开请求字段或 Path，调整并发不强制重跑 JDT。[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)的固定材料/独立 model batch、state v3、`analysis-run-output-v3`、跨 batch reader 与 `--reuse-from-model-batch` 仍是已批准但未实现的 CLI 目标。
+已批准的[模型 job 执行配置](../modules/model-job-execution.md#2-唯一配置入口与精确-yaml)归现有 CLI 组合根：v2 loader/CLI 从同一 `--config` YAML 的 `sourceAnalysis.modelJobs` 读取全局/Provider 并发、路由、模型与认证引用，并已落地有界并行。它不增加公开请求字段或 Path，调整并发不强制重跑 JDT。[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)的固定材料/独立 model batch、state v3、`analysis-run-output-v3`、跨 batch reader 与 `--reuse-from-model-batch` 已实现；模型模式直接重开 M10，不调用 Builder 或 JDT。
 
 ## 2. 启动、单步执行与运行引用
 
@@ -97,7 +97,7 @@ analysisStepExecutionRequestId = "analysis-step-execution-request:" + lowercaseH
 
 ## 3. 实际输出与简单来源查阅
 
-当前 RenderedDocumentReference 的字段为 runId、reportCheckpoint、documentSha256、sizeBytes；没有 nineSectionPlanId。artifact 的实际 ArtifactView 包含 runId、businessOutputArtifactKey、immutableReference、schemaVersion、mediaType、contentUtf8。查询按闭集业务输出名及 maxBytes 读取，拒绝任意 Path/glob/目录浏览，超预算整体拒绝，不截断。目标 `analysis-run-output-v3` 在不改公开 publication reference 形状的前提下增加 `sourceRunId`：material checkpoint 继续按 source run 验证，Activity/Knowledge/Report 按输出 owner（即 `modelBatchId`）验证。读写器必须接受这两种精确身份，不得将上游 publication 伪造为新 run 地址；该版本尚未实现。
+当前 RenderedDocumentReference 的字段为 runId、reportCheckpoint、documentSha256、sizeBytes；没有 nineSectionPlanId。artifact 的实际 ArtifactView 包含 runId、businessOutputArtifactKey、immutableReference、schemaVersion、mediaType、contentUtf8。查询按闭集业务输出名及 maxBytes 读取，拒绝任意 Path/glob/目录浏览，超预算整体拒绝，不截断。`analysis-run-output-v3` 在不改公开 publication reference 形状的前提下增加 `sourceRunId`：material checkpoint 继续按 source run 验证，Activity/Knowledge/Report 按输出 owner（即 `modelBatchId`）验证。读写器接受这两种精确身份，不得将上游 publication 伪造为新 run 地址。
 
 现有程序侧 SourceReference 是：
 
@@ -210,7 +210,7 @@ ModuleFailure
 ## 6. 不变量
 
 1. Step 01–05 继续遵守既有 canonical framing、identity、store、source locator 与 Module publication；业务简化不削弱这些技术产物。
-2. Step 06–08 的四个深 Module 使用总体设计规定的简单检查点：材料在首次模型调用前保存，coordinator 立即保存每个已审 job 的私有不可变结果，再按稳定顺序一次安装原 aggregate；过程知识等待总结完成/显式跳过。Activity/Process 的有界并行、私有逐 job 保存与屏障已实施；跨 batch 验证读取、复用记录和 mixed-ownership aggregate 尚未实现。不能循环安装不同 bytes，不增加公开 artifact key、Module 地址或状态 enum，进程内无需逐内部 Module fresh-reopen。
+2. Step 06–08 的四个深 Module 使用总体设计规定的简单检查点：材料在首次模型调用前保存，coordinator 立即保存每个已审 job 的私有不可变结果，再按稳定顺序一次安装原 aggregate；过程知识等待总结完成/显式跳过。Activity/Process 的有界并行、私有逐 job 保存与屏障，以及跨 batch 验证读取、复用记录和 mixed-ownership aggregate 均已实施。不能循环安装不同 bytes，不增加公开 artifact key、Module 地址或状态 enum，进程内无需逐内部 Module fresh-reopen。
 3. 跨进程/model batch 复用 Step 06–08 整个已审 job 时，新旧 batch 必须绑定同一完整 `materialsCheckpoint` reference，再比较覆盖完整实际内容、实际 Prompt、有效模型/输出配置与 Module 版本的 inputFingerprint，并核验磁盘身份/hash/schema/ref/basis。同名短 ref 不能代替这一检查。DRAFT 完成但 REVIEW 失败/未知只保留诊断；显式新 batch 重做完整 pair，旧结果不覆写。不恢复旧六/三/四模块 DAG、固定五/九 payload 或 52-output 顺序。
 4. 公开 artifact 查询不接受 Path，也不返回截断内容。
 5. Source excerpt/SourceRef 验证来源；Proof 证明受支持的 exact technical fact；两者都不自动证明模型自由业务文本，也不要求每个业务原子拥有 Proof。

@@ -15,7 +15,8 @@ public record ModelJobExecutionConfiguration(
     Map<String, ModelJobProviderBinding> providers,
     Map<String, List<String>> routing,
     Path journalDirectory,
-    AnalysisRunId runId) {
+    AnalysisRunId runId,
+    AnalysisRunId reuseFromModelBatchId) {
 
   private static final Set<String> PHASES =
       Set.of("activity", "processGroup", "repositorySummary", "report");
@@ -28,6 +29,19 @@ public record ModelJobExecutionConfiguration(
     routing = immutableRoutes(routing, providers.keySet());
     journalDirectory = Objects.requireNonNull(journalDirectory, "model job journal directory");
     runId = Objects.requireNonNull(runId, "analysis run ID");
+    if (runId.equals(reuseFromModelBatchId)) {
+      throw new IllegalArgumentException("model job reuse source must be a different run");
+    }
+  }
+
+  /** Creates a fresh execution with no explicit cross-batch reuse source. */
+  public ModelJobExecutionConfiguration(
+      int maxConcurrentJobs,
+      Map<String, ModelJobProviderBinding> providers,
+      Map<String, List<String>> routing,
+      Path journalDirectory,
+      AnalysisRunId runId) {
+    this(maxConcurrentJobs, providers, routing, journalDirectory, runId, null);
   }
 
   @Override

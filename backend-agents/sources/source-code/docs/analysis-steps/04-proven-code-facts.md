@@ -1,6 +1,6 @@
 # 已证明代码事实
 
-> 模型批次解耦（已批准、待实施）：已保存技术增强继续按原义保留。新模型批次不重新枚举 Fact 或补 Proof；模型调用失败、换并发/Prompt 不使技术事实失效。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)。本次不修改本步骤算法或产物。
+> 模型批次解耦（已实现）：已保存技术增强继续按原义保留。新模型批次不重新枚举 Fact 或补 Proof；模型调用失败、换并发/Prompt 不使技术事实失效。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)。本次未修改本步骤算法或产物。
 
 > 新目标的引擎接入见[各子模块设计](../modules/java-code-engines/README.md)。本步保留严格Fact能力，但不是读取完整Service的门禁：JDT未提供原五图增强时，按[接入合同](../modules/java-code-engines/integration-and-javaparser.md)明确保存NOT_PRODUCED与原因，不运行旧Fact枚举，不伪称0候选均通过。以下Proof规则只适用于实际提供并请求分析的图输入。
 

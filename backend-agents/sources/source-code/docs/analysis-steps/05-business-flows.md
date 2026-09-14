@@ -1,6 +1,6 @@
 # 业务流程：保存连贯入口代码上下文
 
-> 模型批次解耦（已批准、待实施）：Step05 上下文/Capsule 保持原 sourceRunId、原引用和字节；新模型批次直接读 M10 材料，不再次 compiler/projector，也不修改 Step05 格式。材料缺失时明确报错，不自动回到本步骤。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)。本次不修改本步骤算法或产物。
+> 模型批次解耦（已实现）：Step05 上下文/Capsule 保持原 sourceRunId、原引用和字节；新模型批次直接读 M10 材料，不再次 compiler/projector，也不修改 Step05 格式。材料缺失时明确报错，不自动回到本步骤。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)。本次未修改本步骤算法或产物。
 
 > [总体设计](../DESIGN.md)；固定key：business-flows，目录steps/05-business-flows/不变。本步材料是入口的技术上下文，不是最终跨入口业务过程。[引擎及子模块合同](../modules/java-code-engines/README.md)定义新的取材来源。
 

@@ -12,6 +12,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
+import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.ArtifactId;
@@ -62,6 +63,21 @@ final class ActivityExplanationCheckpointPublisher {
       List<ReviewedActivity> activities,
       List<ActivityEntryCoverage> coverage,
       List<UnexplainedActivityEntry> unexplainedActivityEntries) {
+    return publish(
+        materials.checkpoint().address().runId(),
+        materials,
+        activities,
+        coverage,
+        unexplainedActivityEntries);
+  }
+
+  ModulePublicationReference publish(
+      AnalysisRunId outputRunId,
+      BusinessMaterialBuildResult materials,
+      List<ReviewedActivity> activities,
+      List<ActivityEntryCoverage> coverage,
+      List<UnexplainedActivityEntry> unexplainedActivityEntries) {
+    Objects.requireNonNull(outputRunId, "activity output run ID");
     ReopenedModulePublication materialCheckpoint = artifacts.reopen(materials.checkpoint());
     List<ArtifactReference> upstream =
         materialCheckpoint.receipt().payloadArtifacts().stream()
@@ -79,10 +95,7 @@ final class ActivityExplanationCheckpointPublisher {
         artifacts.install(
             new ModuleInstallRequest(
                 new AnalysisStepModuleAddress(
-                    materials.checkpoint().address().runId(),
-                    AnalysisStepKey.FLOW_INTERPRETATION,
-                    11,
-                    "activity-explainer"),
+                    outputRunId, AnalysisStepKey.FLOW_INTERPRETATION, 11, "activity-explainer"),
                 "v2",
                 upstream,
                 materialCheckpoint.receipt().controls(),

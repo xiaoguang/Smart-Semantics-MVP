@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -25,6 +27,9 @@ import org.sourceanalysis.app.analysis.knowledge.RepositoryBusinessKnowledge;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
+import org.sourceanalysis.app.runtime.modeljob.ModelJobExecutionConfiguration;
+import org.sourceanalysis.app.runtime.modeljob.ModelJobProviderBinding;
+import org.sourceanalysis.app.runtime.modeljob.PrivateModelJobResultStore;
 
 /**
  * Publishes one business-language report through exactly one DRAFT and one whole-report REVIEW.
@@ -58,6 +63,7 @@ public final class BusinessReportPublisher {
 
   private final StructuredModelProvider provider;
   private final CanonicalModuleArtifactStore checkpointStore;
+  private final ModelJobExecutionConfiguration modelJobExecutionConfiguration;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
 
   public BusinessReportPublisher(StructuredModelProvider provider) {
@@ -71,6 +77,23 @@ public final class BusinessReportPublisher {
       StructuredModelProvider provider, CanonicalModuleArtifactStore checkpointStore) {
     this.provider = Objects.requireNonNull(provider, "structured model provider");
     this.checkpointStore = checkpointStore;
+    this.modelJobExecutionConfiguration = null;
+  }
+
+  /** Creates a report publisher using the run's configured report Provider and reuse source. */
+  public static BusinessReportPublisher forExecution(
+      CanonicalModuleArtifactStore checkpointStore,
+      ModelJobExecutionConfiguration modelJobExecutionConfiguration) {
+    Objects.requireNonNull(modelJobExecutionConfiguration, "model job execution configuration");
+    return new BusinessReportPublisher(checkpointStore, modelJobExecutionConfiguration);
+  }
+
+  private BusinessReportPublisher(
+      CanonicalModuleArtifactStore checkpointStore,
+      ModelJobExecutionConfiguration modelJobExecutionConfiguration) {
+    this.provider = modelJobExecutionConfiguration.binding("report", 0).provider();
+    this.checkpointStore = checkpointStore;
+    this.modelJobExecutionConfiguration = modelJobExecutionConfiguration;
   }
 
   /** Shared fixed report chapters for internal checkpoint readers and deterministic rendering. */
@@ -89,15 +112,34 @@ public final class BusinessReportPublisher {
     if (draftInput.size() > request.profile().maxModelInputBytes()) {
       throw failure("BUSINESS_REPORT_INPUT_OVER_BUDGET", null);
     }
-    JsonNode draft = callAndParse(DRAFT_KIND, draftInput, sources.keySet(), request.profile());
-    ObjectNode reviewInput = input.deepCopy();
-    reviewInput.set("actualDraft", draft);
-    JsonNode review =
-        callAndParse(
-            REVIEW_KIND,
-            canonicalJson.encodeCanonical(reviewInput),
-            sources.keySet(),
-            request.profile());
+    ModelJobProviderBinding binding =
+        modelJobExecutionConfiguration == null
+            ? new ModelJobProviderBinding(
+                "single-provider", "direct-single-provider", 1, provider, null)
+            : modelJobExecutionConfiguration.binding("report", 0).forJobOrdinal(0);
+    ReportJobIdentity identity =
+        reportJobIdentity(draftInput, sources.keySet(), request.profile(), binding);
+    JsonNode review = reopenReport(identity, binding, sources.keySet(), request.profile());
+    if (review == null) {
+      ValidatedReportResponse draft =
+          callAndParse(
+              binding, DRAFT_KIND, draftInput, sources.keySet(), request.profile(), identity);
+      ObjectNode reviewInput = input.deepCopy();
+      reviewInput.set("actualDraft", draft.value());
+      ValidatedReportResponse reviewed =
+          callAndParse(
+              binding,
+              REVIEW_KIND,
+              canonicalJson.encodeCanonical(reviewInput),
+              sources.keySet(),
+              request.profile(),
+              identity);
+      if (!draft.runtimeIdentity().equals(reviewed.runtimeIdentity())) {
+        throw failure("BUSINESS_REPORT_JOB_RUNTIME_IDENTITY_MISMATCH", null);
+      }
+      saveReport(identity, binding, draft, reviewed);
+      review = reviewed.value();
+    }
     BusinessReport report = toReport(review, sources.keySet(), request.profile());
     String markdown = BusinessReportMarkdownRenderer.render(report, request.sourceReferences());
     BusinessReportPublication result =
@@ -116,6 +158,105 @@ public final class BusinessReportPublisher {
         result.validation(),
         new BusinessReportCheckpointPublisher(checkpointStore)
             .publish(request.knowledge(), result));
+  }
+
+  private ReportJobIdentity reportJobIdentity(
+      ImmutableBytes draftInput,
+      Set<String> refs,
+      BusinessReportProfile profile,
+      ModelJobProviderBinding binding) {
+    ObjectNode fingerprint = JsonNodeFactory.instance.objectNode();
+    fingerprint.put("schemaVersion", "business-report-input-fingerprint-v1");
+    fingerprint.put("moduleVersion", "nine-section-document-business-report-v2");
+    fingerprint.put("providerBindingKey", binding.key());
+    fingerprint.put("quotaScope", binding.quotaScope());
+    fingerprint.put("inputSha256", sha256(draftInput));
+    fingerprint.put("draftInstructions", BusinessReportPromptCatalog.instructionsFor(DRAFT_KIND));
+    fingerprint.put("reviewInstructions", BusinessReportPromptCatalog.instructionsFor(REVIEW_KIND));
+    fingerprint.put("outputSchemaSha256", sha256(outputSchema(refs, profile)));
+    fingerprint.put("maxModelInputBytes", profile.maxModelInputBytes());
+    fingerprint.put("maxModelOutputBytes", profile.maxModelOutputBytes());
+    if (binding.expectedRuntimeIdentity() != null) {
+      ObjectNode runtime = fingerprint.putObject("expectedRuntimeIdentity");
+      runtime.put("upstreamProvider", binding.expectedRuntimeIdentity().upstreamProvider());
+      runtime.put("model", binding.expectedRuntimeIdentity().model());
+      runtime.put("reasoningEffort", binding.expectedRuntimeIdentity().reasoningEffort());
+      runtime.put("sandbox", binding.expectedRuntimeIdentity().sandbox());
+    }
+    String inputFingerprint = sha256(canonicalJson.encodeCanonical(fingerprint));
+    return new ReportJobIdentity(inputFingerprint, inputFingerprint);
+  }
+
+  private JsonNode reopenReport(
+      ReportJobIdentity identity,
+      ModelJobProviderBinding binding,
+      Set<String> refs,
+      BusinessReportProfile profile) {
+    if (modelJobExecutionConfiguration == null
+        || modelJobExecutionConfiguration.reuseFromModelBatchId() == null) {
+      return null;
+    }
+    PrivateModelJobResultStore source =
+        new PrivateModelJobResultStore(
+            modelJobExecutionConfiguration.journalDirectory(),
+            modelJobExecutionConfiguration.reuseFromModelBatchId(),
+            "report");
+    ObjectNode saved =
+        source
+            .readCompleted(
+                identity.jobKey(),
+                identity.inputFingerprint(),
+                binding.quotaScope(),
+                binding.expectedRuntimeIdentity())
+            .orElse(null);
+    if (saved == null) {
+      return null;
+    }
+    JsonNode review = saved.path("review");
+    toReport(review, refs, profile);
+    PrivateModelJobResultStore current =
+        new PrivateModelJobResultStore(
+            modelJobExecutionConfiguration.journalDirectory(),
+            modelJobExecutionConfiguration.runId(),
+            "report");
+    ObjectNode copied = saved.deepCopy();
+    copied.put("runId", modelJobExecutionConfiguration.runId().value());
+    copied.put(
+        "reusedFromModelBatchId", modelJobExecutionConfiguration.reuseFromModelBatchId().value());
+    current.write(identity.jobKey(), copied);
+    return review.deepCopy();
+  }
+
+  private void saveReport(
+      ReportJobIdentity identity,
+      ModelJobProviderBinding binding,
+      ValidatedReportResponse draft,
+      ValidatedReportResponse review) {
+    if (modelJobExecutionConfiguration == null) {
+      return;
+    }
+    ObjectNode record = JsonNodeFactory.instance.objectNode();
+    record.put("schemaVersion", "model-job-reviewed-result-v2");
+    record.put("status", "COMPLETED");
+    record.put("runId", modelJobExecutionConfiguration.runId().value());
+    record.put("phase", "report");
+    record.put("jobKey", identity.jobKey());
+    record.put("inputFingerprint", identity.inputFingerprint());
+    record.put("providerBindingKey", binding.key());
+    record.put("quotaScope", binding.quotaScope());
+    ObjectNode runtime = record.putObject("runtimeIdentity");
+    runtime.put("upstreamProvider", review.runtimeIdentity().upstreamProvider());
+    runtime.put("model", review.runtimeIdentity().model());
+    runtime.put("reasoningEffort", review.runtimeIdentity().reasoningEffort());
+    runtime.put("sandbox", review.runtimeIdentity().sandbox());
+    record.set("draft", draft.value());
+    record.set("review", review.value());
+    record.putNull("reusedFromModelBatchId");
+    new PrivateModelJobResultStore(
+            modelJobExecutionConfiguration.journalDirectory(),
+            modelJobExecutionConfiguration.runId(),
+            "report")
+        .write(identity.jobKey(), record);
   }
 
   private ObjectNode cleanKnowledge(
@@ -252,22 +393,29 @@ public final class BusinessReportPublisher {
     value.put("description", stage.description());
   }
 
-  private JsonNode callAndParse(
+  private ValidatedReportResponse callAndParse(
+      ModelJobProviderBinding binding,
       String taskKind,
       ImmutableBytes input,
       Set<String> allowedRefs,
-      BusinessReportProfile profile) {
+      BusinessReportProfile profile,
+      ReportJobIdentity identity) {
     StructuredModelResponse response;
     try {
       response =
-          provider.generate(
-              new StructuredModelRequest(
-                  taskKind.toLowerCase(),
-                  taskKind,
-                  BusinessReportPromptCatalog.instructionsFor(taskKind),
-                  input,
-                  outputSchema(allowedRefs, profile),
-                  profile.maxModelOutputBytes()));
+          binding
+              .provider()
+              .generate(
+                  new StructuredModelRequest(
+                      "report:"
+                          + identity.jobKey()
+                          + ":"
+                          + taskKind.toLowerCase(java.util.Locale.ROOT),
+                      taskKind,
+                      BusinessReportPromptCatalog.instructionsFor(taskKind),
+                      input,
+                      outputSchema(allowedRefs, profile),
+                      profile.maxModelOutputBytes()));
     } catch (RuntimeException failure) {
       throw failure("BUSINESS_REPORT_PROVIDER_FAILED_AFTER_START", failure);
     }
@@ -281,7 +429,11 @@ public final class BusinessReportPublisher {
       throw failure(taskKind + "_INVALID", invalid);
     }
     toReport(parsed, allowedRefs, profile);
-    return parsed;
+    if (binding.expectedRuntimeIdentity() != null
+        && !binding.expectedRuntimeIdentity().equals(response.runtimeIdentity())) {
+      throw failure("BUSINESS_REPORT_JOB_RUNTIME_IDENTITY_MISMATCH", null);
+    }
+    return new ValidatedReportResponse(parsed, response.runtimeIdentity());
   }
 
   private BusinessReport toReport(
@@ -448,6 +600,26 @@ public final class BusinessReportPublisher {
 
   private static void strings(ArrayNode node, List<String> values) {
     values.forEach(node::add);
+  }
+
+  private static String sha256(ImmutableBytes bytes) {
+    try {
+      return java.util.HexFormat.of()
+          .formatHex(MessageDigest.getInstance("SHA-256").digest(bytes.copyToByteArray()));
+    } catch (NoSuchAlgorithmException unavailable) {
+      throw new IllegalStateException("SHA-256 is unavailable", unavailable);
+    }
+  }
+
+  private record ReportJobIdentity(String jobKey, String inputFingerprint) {}
+
+  private record ValidatedReportResponse(
+      JsonNode value,
+      org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1 runtimeIdentity) {
+    private ValidatedReportResponse {
+      value = Objects.requireNonNull(value, "validated report response").deepCopy();
+      runtimeIdentity = Objects.requireNonNull(runtimeIdentity, "report runtime identity");
+    }
   }
 
   private record ModelUnexplainedActivityEntries(

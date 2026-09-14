@@ -153,13 +153,13 @@ Step01–05 保留既有命名技术产物；调整的是重复计算和过强�
 
 ### 8.1 材料不动，模型批次可以重新开始
 
-本次已批准的最小改法由[模型执行设计 §7](modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)统一规定，**尚未实施**。先把代码资料保存好，后续模型失败只结束该模型批次，不让资料失效。
+固定材料与独立批次的合同由[模型执行设计 §7](modules/model-job-execution.md#7-固定材料与独立模型批次已实现)统一规定，现已实现。代码资料先独立保存；后续模型失败只结束该模型批次，不让资料失效。
 
 `materialsCheckpointId` 指既有材料 module receipt，实际读取使用完整 checkpoint reference；`sourceRunId` 保留原生产者。每次显式模型执行由既有 start 创建新 run，其 ID 同时作为 `modelBatchId` 和业务输出归属。不新增公开方法、生命周期或恢复服务。材料可以来自失败的旧 run，只要它本身已经完整保存且验证有效；旧 run、旧 STARTED 和旧输出一律不改。
 
 新批次直接重开 M10 材料，Capture/JDT/图/Fact/Flow/Builder 均零调用。完整已审 job 内容、Prompt、schema/profile、服务账户/model/effort及来源映射一致时，显式复用并跳过两轮；失败或未启动 job 按本次范围做一次新的 DRAFT＋完整 REVIEW。只有草稿成功、审阅失败时不做半轮恢复，新批重做完整 pair。过程分组、总结和报告按实际依赖内容判断复用，最后仍只有一份九章。
 
-当前代码能从持久化 Step05 重新组装材料而不运行 JDT，但没有直接材料 reader、独立批次和已审 job 复用选择；失败状态与四个输出同 run 的检查挡住了合法新执行。修复必须同时贯通私有 state/execution/output、publisher归属与正式读取器，不能只改日志目录。目标 state v3保存完整材料引用、实际 material profile/producer/basis；业务输出归新 batch，材料仍引用原地址。版本/字段、旧材料离线导出及 Luna/Terra验收按 §7，不在各步骤重复定义。
+当前代码使用 typed checkpoint reader 直接重开已保存材料，显式创建独立模型批次，并按完整输入指纹选择复用已审 job。`repository-run-state-v3` 保存完整材料引用、实际 material profile/producer/basis；`analysis-run-output-v3` 允许材料保留原 source run 地址，同时要求活动、知识和报告属于新 batch。旧 v2 state 只能通过显式离线导出生成新的 v3 文件，导出不调用 JDT、Builder 或 Provider。
 
 这次实际第一份整仓材料有326份材料、326个入口处置，模型的4个DRAFT未形成已审结果。按目标设计，下一批可直接使用这份材料，而不是为获得新的调用身份再次扫描。后一次325份材料的checkpoint不能按“最新目录”替代它；单入口导航超时复核与模型失败是不同问题。完整例子及限制见[模型执行推演](modules/model-job-execution.md#75-用已保存整仓样例推演)。
 

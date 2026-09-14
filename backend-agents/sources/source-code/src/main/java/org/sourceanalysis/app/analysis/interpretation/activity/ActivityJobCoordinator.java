@@ -1,5 +1,6 @@
 package org.sourceanalysis.app.analysis.interpretation.activity;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -257,7 +258,9 @@ record ActivityJobResult(
     List<ReviewedActivity> reviewedActivities,
     List<ActivityEntryCoverage> coverage,
     List<UnexplainedActivityEntry> unexplainedEntries,
-    ModelRuntimeIdentityV1 runtimeIdentity) {
+    ModelRuntimeIdentityV1 runtimeIdentity,
+    JsonNode draftResponse,
+    JsonNode reviewResponse) {
   ActivityJobResult {
     if (materialId == null || materialId.isBlank()) {
       throw new IllegalArgumentException("activity job result material id is required");
@@ -266,6 +269,9 @@ record ActivityJobResult(
     coverage = List.copyOf(coverage);
     unexplainedEntries = List.copyOf(unexplainedEntries);
     runtimeIdentity = Objects.requireNonNull(runtimeIdentity, "activity job runtime identity");
+    draftResponse = Objects.requireNonNull(draftResponse, "activity job draft response").deepCopy();
+    reviewResponse =
+        Objects.requireNonNull(reviewResponse, "activity job review response").deepCopy();
   }
 }
 

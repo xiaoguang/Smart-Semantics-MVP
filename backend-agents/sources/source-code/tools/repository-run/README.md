@@ -22,39 +22,42 @@ a single job after their upstream barrier closes.
 technical prefix once, saves its `BusinessFlowsReference`, and builds business material from that
 saved Step 05 publication. It does not construct a Codex provider or call a model.
 
-`activities-sample` and `generate` are currently narrow continuation modes for that same saved
-`RUNNING` run. They revalidate the v2 state document's canonical configuration SHA-256 and exact
-Step 05 publication, then rebuild the `BusinessMaterialSet` from that saved publication in memory;
-they do not reopen a durable material checkpoint. They also do not capture, create a technical
-executor, or run JDT. The successful sample leaves that run `RUNNING` and writes only an unpersisted
-inspection result. Generation writes the durable activity, knowledge, and report checkpoints,
-verifies the actual persisted Markdown location, then transitions the same run to `FINISHED`. A
-started model failure transitions it to `FAILED`, after which neither continuation mode can reopen
-it. The current command therefore cannot create a replacement model batch over the first saved
-materials.
+`materials-only` now writes a `repository-run-state-v3` document containing the complete material
+checkpoint, the original Step 05 publication, the actual material profile and the canonical
+material-basis SHA-256. `activities-sample` and `generate` require this v3 state and directly reopen
+the saved M10 material artifact. They do not capture, run JDT, rebuild graphs or call the material
+builder.
 
-## Approved model-batch target (not implemented)
+Each explicit model command creates a new `AnalysisRunId`. That value is the `modelBatchId` and owns
+the Activity, Knowledge and Report outputs; `sourceRunId` and the material checkpoint keep their
+original address. A sample writes its complete reviewed result under an output subdirectory named
+for the new batch and finishes that batch without fabricating a repository report. A full generation
+records `analysis-run-output-v3`, whose mixed-ownership checks require the material to belong to the
+source run and the remaining checkpoints to belong to the model batch.
 
-The approved target in [model job execution section 7](../../docs/modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施) changes
-these operational semantics. State v3 will save the complete material checkpoint and original
-business-flow publication, plus the saved material profile, material module version, and canonical
-material-basis SHA-256. Each explicit sample or generation request will use a new `start`-allocated
-`AnalysisRunId` as its `modelBatchId`, keep the material producer as `sourceRunId`, and perform zero
-capture, JDT, graph, flow, or material-builder work. `analysis-run-output-v3` will validate the
-material checkpoint against `sourceRunId` while activity, knowledge, and report outputs belong to
-the new batch. It will not rewrite the original publication addresses.
+Use `--reuse-from-model-batch <analysis-run-id>` to select one stopped prior batch explicitly. Only
+an atomically saved, validated DRAFT+REVIEW pair whose full input fingerprint and runtime binding
+match can skip both calls. Draft-only, failed, unknown, mismatched or damaged results are never
+continued as half a job and never trigger an automatic retry. Activity jobs, process groups, the
+repository summary and the report each make this decision from their own actual input. The old
+batch and its logs remain unchanged.
 
-An optional `--reuse-from-model-batch <analysis-run-id>` is also an approved target, but the current
-launcher does not accept it. Do not add it to commands below. Reuse will require the same verified
-materials checkpoint and an exact job fingerprint; only a complete, validated, atomically saved
-DRAFT+REVIEW result may skip both Provider calls. A failed or unknown DRAFT, or a completed DRAFT
-whose REVIEW failed or is unknown, causes a fresh whole pair in the explicit new batch and leaves
-the old batch untouched. These batch identities and reuse records remain program-side and are not
-added to model input. The target execution config also records the declared sample or generate
-scope. After a sample saves its complete reviewed private job and sample inspection, that sample
-batch transitions to `FINISHED` without fabricating the four-checkpoint full-run output; a failed
-sample is `FAILED`. This makes a completed sample an eligible explicit reuse source while keeping
-its lifecycle completion distinct from whole-repository report completion.
+## Exporting an existing v2 material run
+
+Existing material runs are not silently dual-read. Export a verified old state once to a new,
+previously absent v3 file:
+
+```bash
+java -cp "target/classes:$(cat target/repository-run-classpath.txt)" \
+  org.sourceanalysis.app.adapter.cli.RepositoryRunMain \
+  --config /absolute/path/to/ignored/repository-run.json \
+  --mode export-materials-state \
+  --output-state /absolute/path/to/ignored/materials-state-v3.json
+```
+
+The exporter verifies the old configuration digest, Step 05 reference and completed M10 artifact,
+then writes the new v3 state without running JDT, Builder or a Provider. It never overwrites the old
+state. Point the configuration's `stateFile` at the new v3 file before running model modes.
 
 The tracked [template](jdt-luna-repository-run.template.json) contains no machine paths. Copy it
 to an ignored run workspace, replace every absolute-path placeholder, and leave the final state
@@ -132,17 +135,19 @@ placeholders with absolute paths and the selected material ID:
 ```
 
 The sample writes a canonical full `ActivityExplanationResult` to
-`outputDirectory/<sha256(materialId)>-activity.json`; it creates no activity checkpoint. Once the
-sample is accepted, generate the durable report from the same state and same run-local journal:
+`outputDirectory/<sha256(modelBatchId)>/<sha256(materialId)>-activity.json`; it creates no aggregate
+activity checkpoint. Once the sample is accepted, it can be selected as an explicit reuse source
+for a later batch:
 
 ```bash
 /usr/local/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home/bin/java -Xmx8g \
   -cp "target/classes:$(cat target/repository-run-classpath.txt)" \
   org.sourceanalysis.app.adapter.cli.RepositoryRunMain \
   --config /absolute/path/to/ignored/repository-run.json \
-  --mode generate
+  --mode generate \
+  --reuse-from-model-batch "analysis-run:<completed-sample-batch-id>"
 ```
 
-Generation prints the run ID, `FINISHED` lifecycle, and the verified on-disk `document.md` path.
-The same exact DRAFT or REVIEW request used by the sample is reopened from the completed journal
-record rather than sent to Codex a second time.
+Generation prints `sourceRunId`, the new `modelBatchId`, `FINISHED` lifecycle and the verified
+on-disk `document.md` path. Matching complete reviewed jobs are copied as validated reuse records;
+the journal is diagnostic and is not by itself considered a reusable business result.
