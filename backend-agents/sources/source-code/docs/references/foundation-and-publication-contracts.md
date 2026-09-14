@@ -55,7 +55,7 @@ publisher 只序列化、检查必要 type/ID/ref/budget、计算写入 bytes/ha
 
 ## 5. 失败要落在真正问题上
 
-已批准、待实施的[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)补齐当前失败run无法合法另开模型执行的接线：直接核验M10材料，原sourceRun及失败记录只读；新modelBatchId使用新run，Activity/Knowledge/Report归新run。仅run-output的材料槽可引用明确核验的原sourceRun，其余同run检查保留。完整已审job可显式复用，DRAFT单轮不可；实际模型输入仍完整，重开不调用Builder或JDT。这不是同run恢复，也不新增证据/存储框架。
+已实现的[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)补齐失败run合法另开模型执行的接线：直接核验M10材料，原sourceRun及失败记录只读；新modelBatchId使用新run，Activity/Knowledge/Report归新run。仅run-output的材料槽可引用明确核验的原sourceRun，其余同run检查保留。完整已审job可显式复用，DRAFT单轮不可；实际模型输入仍完整，重开不调用Builder或JDT。这不是同run恢复，也不新增证据/存储框架。
 
 fatal：错误 source identity、坏 bytes、危险 path、断 refs、伪 exact Proof、冲突 ID、budget 安全违规、非法模型 keys/refs、不完整 JSON、Activity REVIEW 仍遗漏入口、覆盖遗漏却声明完整、原子安装失败。不能降为“低置信度”继续发布。唯一例外是 Activity DRAFT 结构与 scope 均合法而仅 coverage 不足：它按已批准目标进入唯一 REVIEW，不能把同一例外外推到 Process/Report 的其他非法结构。
 

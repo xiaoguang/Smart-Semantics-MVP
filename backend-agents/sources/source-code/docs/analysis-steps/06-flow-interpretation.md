@@ -126,7 +126,7 @@ Java 只校验结构、scope-local IDs/refs、集合闭合、预算与保存约�
 
 ActivityExplainer 已在一个包 REVIEW 完成后由 coordinator 随即以 run/job 私有原子 no-replace 文件保存完整结果，不等前序慢包；全部终态后才按原材料顺序一次聚合并安装上述固定地址 publication。fatal 停止新派发，但已开始且自身 DRAFT 合法的 job 仍完成其唯一 REVIEW 和私有保存；没有所有必需结果就不安装 aggregate。不能把固定 publisher 移进 worker 反复安装不同 bytes。私有结果、Provider/job journal namespace 与重复提交防护归[执行设计](../modules/model-job-execution.md#5-保存身份与失败)，原始 DRAFT/REVIEW 按既有私有策略保存，不成为额外产品候选或新恢复系统。
 
-[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)的已批准目标会把固定材料与模型输出分开归属：`sourceRunId` 仍指向生产 `materialsCheckpointId` 的原 run，新 `modelBatchId` 是另一次 `start` 分配的 `AnalysisRunId`，Activity 及其后输出归新 batch。上游 publication 必须保留原地址，不得为满足同 run 校验伪造“搬家”。这项 mixed-ownership reader/publisher 和 `analysis-run-output-v3` 尚未实现，不能由当前 run/job 私有保存推导为已可跨批复用。
+[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)已经把固定材料与模型输出分开归属：`sourceRunId` 仍指向生产 `materialsCheckpointId` 的原 run，新 `modelBatchId` 是另一次 `start` 分配的 `AnalysisRunId`，Activity 及其后输出归新 batch。上游 publication 保留原地址，不为满足同 run 校验伪造“搬家”。M10 typed checkpoint reader 从完整 `ModulePublicationReference` 单次 fresh reopen，严格核验 canonical JSONL 并恢复材料/coverage；模型模式不访问上游、不运行 Builder 或 JDT。`analysis-run-output-v3` 按 mixed ownership 分别核验材料与后三项输出。
 
 Step07 可以按已保存 material/activity ID 读取必要内容，不回到扫描仓库或重构调用链。`RepositoryBusinessKnowledge.unexplainedActivityEntries` 已持有并保存完整记录。程序送给 Process 仓库总整理/Report 模型前按 `materialId` 把完整 sidecar records 聚合成一项 `{materialContext, unexplainedEntryKeys, reasonCode}`：同一 context 只发送一次，删除 material/global entry IDs，保持 E1…EN 的材料映射顺序。活动之间是否属于同一过程由模型阅读多个活动决定，不由 Step06 强设唯一 owner；process-group Prompt 不因这一仓库输入变化升版。
 
@@ -138,7 +138,7 @@ maxMaterialsToStart 限制本执行实际启动的材料总数；超限材料写
 
 只有结构与 scope 合法、但 coverage 不足的 DRAFT 能进入唯一 REVIEW。started 后 transport/schema/runtime 失败关闭新 job 派发，不重试或切 Provider；其他已开始且自身合法的 job 在既有超时内完成其唯一 REVIEW 并保留，协调器收齐终态后报告失败，不启动 Step07。未开始队列项明确未启动，不冒称容量排除。source/hash/ref 错误、模型使用 allowlist 外 key/ref、损坏 JSON、重复冲突 local ID 或超安全预算 fatal；REVIEW 两边仍漏 key 也 fatal且不发第三次调用。未知业务含义、局部 graph 缺口和无 strict Flow 限制对应结论；`MODEL_NOT_EXPLAINED` 只表示本次模型未形成活动解释，不自动升级成这些技术缺口。
 
-当前同一执行内可复用不可变对象；已开始但结果不确定的 Provider 调用不得在原 run 恢复或重放。已批准但尚未实现的跨 batch 复用只接受“DRAFT 和 REVIEW 都已完成、已校验并原子保存”的整个 job，且新旧 batch 绑定同一完整 `materialsCheckpoint` reference，`jobKey`/`inputFingerprint`、identity/hash/schema/ref/basis 全部匹配。不能凭同名 S/E 短键跨材料集合复用。未开始、DRAFT 失败/未知、或 DRAFT 完成但 REVIEW 失败/未知的 job 都不做半轮恢复；用户显式启动新 batch 时重做完整 pair，旧 batch 不覆写。fingerprint 覆盖完整业务输入、实际 Prompt、模型/output 配置和 Module 版本；排除 batch ID、时间、并发数、存储路径和 secret。
+同一执行内复用不可变对象；已开始但结果不确定的 Provider 调用不得在原 run 恢复或重放。已实现的跨 batch 复用只接受“DRAFT 和 REVIEW 都已完成、已校验并原子保存”的整个 job，且新旧 batch 绑定同一完整 `materialsCheckpoint` reference，`jobKey`/`inputFingerprint`、identity/hash/schema/ref/basis 全部匹配。不能凭同名 S/E 短键跨材料集合复用。未开始、DRAFT 失败/未知、或 DRAFT 完成但 REVIEW 失败/未知的 job 都不做半轮恢复；用户显式启动新 batch 时重做完整 pair，旧 batch 不覆写。fingerprint 覆盖完整业务输入、实际 Prompt、模型/output 配置和 Module 版本；排除 batch ID、时间、并发数、存储路径和 secret。
 
 ## 7. 当前实现与最小修改
 

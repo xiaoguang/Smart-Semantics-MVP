@@ -95,8 +95,8 @@
   pool, single YAML configuration, Provider/auth binding,
   private per-job saving, failure handling and direct verification. Synchronize
   its affected active consumers; preserve historical runs and completed plans.
-  Section 7 owns the approved, NOT YET IMPLEMENTED material-checkpoint/model-batch
-  separation. Do not describe it as current CLI behavior or reopen old plans.
+  Section 7 owns the implemented material-checkpoint/model-batch separation,
+  explicit v2-to-v3 state export and reviewed-job reuse. Do not reopen old plans.
 
 ## Selectable Java code engines
 

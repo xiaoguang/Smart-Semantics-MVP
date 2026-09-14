@@ -92,7 +92,7 @@
 
 publisher 保存时只做必要结构检查、序列化与原子安装，不能调用 Flow compiler、Fact 枚举器或 Capsule projector。磁盘重新打开或显式导入验证 hash/schema/ref/basis；按已验证 JSON 纯 render 是 0 Provider 操作。inspect/artifact 只读；编辑业务正文是另行授权的模型内容动作。
 
-[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)已批准的 `analysis-run-output-v3` 目标会保留 material publication 的原 `sourceRunId`，而 business-report、knowledge 和 activity 的输出 owner 是新 `modelBatchId`；publisher/reader 必须分别用输入 checkpoint 与输出归属验证，不伪造同 run 地址。公开 publication reference 形状与报告业务 JSON/Markdown 不增加 batch 字段。该 mixed-ownership 读写尚未实现。
+[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)规定的 `analysis-run-output-v3` 已实现：material publication 保留原 `sourceRunId`，business-report、knowledge 和 activity 的输出 owner 是新 `modelBatchId`；publisher/reader 分别用输入 checkpoint 与输出归属验证，不伪造同 run 地址。公开 publication reference 形状与报告业务 JSON/Markdown 没有增加 batch 字段。
 
 当前已开始但结果未知的请求不自动恢复，已完成报告不被覆写。目标中，显式新 batch 也不继续孤立报告 DRAFT：REVIEW 失败/未知则新 job 重做完整 pair；只有新旧 batch 绑定同一完整 `materialsCheckpoint` reference，且整个 DRAFT+REVIEW 已验证、原子保存、fingerprint 精确相同时才可复用。这不新建通用 receipts、reader replay 或半轮恢复状态机。
 

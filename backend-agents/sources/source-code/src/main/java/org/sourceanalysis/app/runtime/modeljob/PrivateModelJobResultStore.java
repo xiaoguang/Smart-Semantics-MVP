@@ -1,5 +1,6 @@
 package org.sourceanalysis.app.runtime.modeljob;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.nio.file.FileAlreadyExistsException;
@@ -8,6 +9,9 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
@@ -32,9 +36,7 @@ public final class PrivateModelJobResultStore {
 
   /** Writes or idempotently reopens the exact same canonical reviewed result. */
   public void write(String jobKey, ObjectNode result) {
-    if (jobKey == null || !jobKey.matches("[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}")) {
-      throw new IllegalArgumentException("model job key is invalid");
-    }
+    requireJobKey(jobKey);
     ImmutableBytes bytes =
         canonicalJson.encodeCanonical(Objects.requireNonNull(result, "model job result"));
     Path modelJobs = childDirectory(journalDirectory, "model-jobs");
@@ -42,6 +44,108 @@ public final class PrivateModelJobResultStore {
     Path phaseDirectory = childDirectory(run, phase);
     Path job = childDirectory(phaseDirectory, jobKey);
     writeIdempotently(job.resolve("reviewed-result.json"), bytes);
+  }
+
+  /** Reads one complete reviewed pair when its immutable input and runtime still match. */
+  public Optional<ObjectNode> readCompleted(
+      String jobKey,
+      String inputFingerprint,
+      String expectedQuotaScope,
+      ModelRuntimeIdentityV1 expectedRuntimeIdentity) {
+    requireJobKey(jobKey);
+    if (inputFingerprint == null || !inputFingerprint.matches("[0-9a-f]{64}")) {
+      throw new IllegalArgumentException("model job input fingerprint is invalid");
+    }
+    if (expectedQuotaScope == null || expectedQuotaScope.isBlank()) {
+      throw new IllegalArgumentException("expected quota scope is invalid");
+    }
+    Objects.requireNonNull(expectedRuntimeIdentity, "expected model runtime identity");
+    Path result =
+        journalDirectory
+            .resolve("model-jobs")
+            .resolve(runDirectoryName)
+            .resolve(phase)
+            .resolve(jobKey)
+            .resolve("reviewed-result.json");
+    try {
+      if (!Files.exists(result, LinkOption.NOFOLLOW_LINKS)) {
+        return Optional.empty();
+      }
+      if (Files.isSymbolicLink(result)
+          || !Files.isRegularFile(result, LinkOption.NOFOLLOW_LINKS)
+          || Files.size(result) > 32L * 1_048_576L) {
+        throw failure("MODEL_JOB_RESULT_INVALID", null);
+      }
+      JsonNode parsed =
+          canonicalJson.parseCanonical(ImmutableBytes.copyOf(Files.readAllBytes(result)));
+      if (!(parsed instanceof ObjectNode value)) {
+        throw failure("MODEL_JOB_RESULT_INVALID", null);
+      }
+      JsonNode status = value.path("status");
+      if (!status.isTextual()) {
+        throw failure("MODEL_JOB_RESULT_INVALID", null);
+      }
+      if (!"COMPLETED".equals(status.textValue())) {
+        return Optional.empty();
+      }
+      if (!"model-job-reviewed-result-v2".equals(text(value, "schemaVersion"))
+          || !inputFingerprint.equals(text(value, "inputFingerprint"))
+          || !expectedQuotaScope.equals(text(value, "quotaScope"))) {
+        return Optional.empty();
+      }
+      if (!runtimeIdentity(value.path("runtimeIdentity")).equals(expectedRuntimeIdentity)) {
+        return Optional.empty();
+      }
+      requireCompletePair(value);
+      return Optional.of(value.deepCopy());
+    } catch (IllegalStateException failure) {
+      throw failure;
+    } catch (IOException | RuntimeException invalid) {
+      throw failure("MODEL_JOB_RESULT_INVALID", invalid);
+    }
+  }
+
+  private static void requireCompletePair(ObjectNode value) {
+    Set<String> fields = new java.util.HashSet<>();
+    value.fieldNames().forEachRemaining(fields::add);
+    if (!fields.containsAll(
+            Set.of(
+                "schemaVersion",
+                "status",
+                "inputFingerprint",
+                "providerBindingKey",
+                "runtimeIdentity",
+                "draft",
+                "review"))
+        || !value.path("draft").isObject()
+        || !value.path("review").isObject()) {
+      throw failure("MODEL_JOB_RESULT_INVALID", null);
+    }
+  }
+
+  private static String text(ObjectNode value, String field) {
+    JsonNode node = value.path(field);
+    if (!node.isTextual() || node.textValue().isBlank()) {
+      throw failure("MODEL_JOB_RESULT_INVALID", null);
+    }
+    return node.textValue();
+  }
+
+  private static ModelRuntimeIdentityV1 runtimeIdentity(JsonNode value) {
+    if (!(value instanceof ObjectNode identity)) {
+      throw failure("MODEL_JOB_RESULT_INVALID", null);
+    }
+    return new ModelRuntimeIdentityV1(
+        text(identity, "upstreamProvider"),
+        text(identity, "model"),
+        text(identity, "reasoningEffort"),
+        text(identity, "sandbox"));
+  }
+
+  private static void requireJobKey(String jobKey) {
+    if (jobKey == null || !jobKey.matches("[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}")) {
+      throw new IllegalArgumentException("model job key is invalid");
+    }
   }
 
   private static Path inspectRoot(Path directory) {

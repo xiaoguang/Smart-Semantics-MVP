@@ -1,6 +1,7 @@
 package org.sourceanalysis.app.analysis.interpretation.activity;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -22,11 +23,13 @@ import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.material.ModelActivityPacket;
+import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.runtime.modeljob.ModelJobExecutionConfiguration;
 import org.sourceanalysis.app.runtime.modeljob.ModelJobProviderBinding;
+import org.sourceanalysis.app.runtime.modeljob.PrivateModelJobResultStore;
 
 /**
  * Explains one or more persisted material packets through exactly one DRAFT and one REVIEW each.
@@ -80,11 +83,16 @@ public final class ActivityExplainer {
   private static final List<String> CERTAINTY_ORDER =
       List.of("DIRECT_CODE_BEHAVIOR", "REASONABLE_INFERENCE", "NEEDS_CONFIRMATION");
   private static final Set<String> CERTAINTIES = Set.copyOf(CERTAINTY_ORDER);
+  private static final ObjectMapper JSON = new ObjectMapper();
 
   private final CanonicalModuleArtifactStore checkpointStore;
+  private final AnalysisRunId outputRunId;
   private final ActivityJobCoordinator jobCoordinator;
   private final ActivityJobCompletionSink completionSink;
   private final List<ModelJobProviderBinding> providerRoute;
+  private final ActivityJobPrivateResultStore durableResultStore;
+  private final PrivateModelJobResultStore reuseResultStore;
+  private final AnalysisRunId reuseFromModelBatchId;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
 
   public ActivityExplainer(StructuredModelProvider provider) {
@@ -96,6 +104,7 @@ public final class ActivityExplainer {
       StructuredModelProvider provider, CanonicalModuleArtifactStore checkpointStore) {
     this(
         checkpointStore,
+        null,
         new BoundedActivityJobCoordinator(DEFAULT_MAX_CONCURRENT_JOBS),
         completedJob -> {},
         List.of(
@@ -104,7 +113,10 @@ public final class ActivityExplainer {
                 "direct-single-provider",
                 DEFAULT_MAX_CONCURRENT_JOBS,
                 provider,
-                null)));
+                null)),
+        null,
+        null,
+        null);
   }
 
   /** Internal constructor for replacing only the Activity job-coordination seam in direct tests. */
@@ -114,6 +126,7 @@ public final class ActivityExplainer {
       ActivityJobCoordinator jobCoordinator) {
     this(
         checkpointStore,
+        null,
         jobCoordinator,
         completedJob -> {},
         List.of(
@@ -122,7 +135,10 @@ public final class ActivityExplainer {
                 "direct-single-provider",
                 DEFAULT_MAX_CONCURRENT_JOBS,
                 provider,
-                null)));
+                null)),
+        null,
+        null,
+        null);
   }
 
   /** Creates an Activity explainer with composition-root-provided bounded job execution values. */
@@ -144,13 +160,19 @@ public final class ActivityExplainer {
             configuration.maxConcurrentJobs(),
             provider,
             configuration.expectedRuntimeIdentity());
+    ActivityJobPrivateResultStore durableResultStore =
+        new ActivityJobPrivateResultStore(configuration);
     return new ActivityExplainer(
         checkpointStore,
+        configuration.runId(),
         new BoundedActivityJobCoordinator(
             configuration.maxConcurrentJobs(),
             Map.of(providerBinding.key(), providerBinding.maxConcurrentJobs())),
-        new ActivityJobPrivateResultStore(configuration),
-        List.of(providerBinding));
+        durableResultStore,
+        List.of(providerBinding),
+        durableResultStore,
+        null,
+        null);
   }
 
   /** Creates the multi-Provider Activity seam from one validated run execution configuration. */
@@ -168,22 +190,43 @@ public final class ActivityExplainer {
             .collect(
                 Collectors.toUnmodifiableMap(
                     ModelJobProviderBinding::key, ModelJobProviderBinding::maxConcurrentJobs));
+    ActivityJobPrivateResultStore durableResultStore =
+        new ActivityJobPrivateResultStore(configuration);
+    PrivateModelJobResultStore reuseResultStore =
+        configuration.reuseFromModelBatchId() == null
+            ? null
+            : new PrivateModelJobResultStore(
+                configuration.journalDirectory(),
+                configuration.reuseFromModelBatchId(),
+                "activity");
     return new ActivityExplainer(
         checkpointStore,
+        configuration.runId(),
         new BoundedActivityJobCoordinator(configuration.maxConcurrentJobs(), providerCaps),
-        new ActivityJobPrivateResultStore(configuration),
-        route);
+        durableResultStore,
+        route,
+        durableResultStore,
+        reuseResultStore,
+        configuration.reuseFromModelBatchId());
   }
 
   private ActivityExplainer(
       CanonicalModuleArtifactStore checkpointStore,
+      AnalysisRunId outputRunId,
       ActivityJobCoordinator jobCoordinator,
       ActivityJobCompletionSink completionSink,
-      List<ModelJobProviderBinding> providerRoute) {
+      List<ModelJobProviderBinding> providerRoute,
+      ActivityJobPrivateResultStore durableResultStore,
+      PrivateModelJobResultStore reuseResultStore,
+      AnalysisRunId reuseFromModelBatchId) {
     this.checkpointStore = checkpointStore;
+    this.outputRunId = outputRunId;
     this.jobCoordinator = Objects.requireNonNull(jobCoordinator, "activity job coordinator");
     this.completionSink = Objects.requireNonNull(completionSink, "activity job completion sink");
     this.providerRoute = List.copyOf(providerRoute);
+    this.durableResultStore = durableResultStore;
+    this.reuseResultStore = reuseResultStore;
+    this.reuseFromModelBatchId = reuseFromModelBatchId;
     if (this.providerRoute.isEmpty()) {
       throw new IllegalArgumentException("activity job provider route is required");
     }
@@ -218,6 +261,7 @@ public final class ActivityExplainer {
             .sorted(Comparator.comparing(BusinessMaterial::materialId))
             .toList();
     List<ActivityJob> jobs = new ArrayList<>();
+    List<CompletedActivityJob> reusedJobs = new ArrayList<>();
     for (BusinessMaterial material : orderedMaterials) {
       JsonNode cleanPacket = cleanPacket(material);
       ImmutableBytes cleanBytes = canonicalJson.encodeCanonical(cleanPacket);
@@ -246,8 +290,9 @@ public final class ActivityExplainer {
               cleanBytes,
               request.profile(),
               providerBinding.key(),
+              providerBinding.quotaScope(),
               providerBinding.expectedRuntimeIdentity());
-      jobs.add(
+      ActivityJob job =
           new ActivityJob(
               material.materialId(),
               providerBinding,
@@ -258,14 +303,25 @@ public final class ActivityExplainer {
                       canonicalJson.encodeCanonical(cleanPacket(material)),
                       request.profile(),
                       identity,
-                      providerBinding)));
+                      providerBinding));
+      CompletedActivityJob reused = reopenReusable(job, material, request.profile());
+      if (reused == null) {
+        jobs.add(job);
+      } else {
+        reusedJobs.add(reused);
+        if (durableResultStore != null) {
+          durableResultStore.completeReused(reused, reuseFromModelBatchId);
+        }
+      }
     }
 
-    List<CompletedActivityJob> completedJobs =
-        jobCoordinator.execute(jobs, completionSink).stream()
+    List<CompletedActivityJob> completedJobs = new ArrayList<>(reusedJobs);
+    completedJobs.addAll(jobCoordinator.execute(jobs, completionSink));
+    completedJobs =
+        completedJobs.stream()
             .sorted(Comparator.comparing(completedJob -> completedJob.job().materialId()))
             .toList();
-    if (completedJobs.size() != jobs.size()) {
+    if (completedJobs.size() != jobs.size() + reusedJobs.size()) {
       throw new ActivityExplanationException("ACTIVITY_JOB_COORDINATION_INCOMPLETE");
     }
     for (CompletedActivityJob completedJob : completedJobs) {
@@ -289,6 +345,9 @@ public final class ActivityExplainer {
         result.unexplainedActivityEntries(),
         new ActivityExplanationCheckpointPublisher(checkpointStore)
             .publish(
+                outputRunId == null
+                    ? request.materials().checkpoint().address().runId()
+                    : outputRunId,
                 request.materials(),
                 result.reviewedActivities(),
                 result.coverage(),
@@ -334,7 +393,58 @@ public final class ActivityExplainer {
         activities,
         analyzedCoverage(material, activities, review.unexplainedEntryKeys()),
         unexplainedEntries(material, review.unexplainedEntryKeys()),
-        review.runtimeIdentity());
+        review.runtimeIdentity(),
+        draft.response(),
+        review.response());
+  }
+
+  private CompletedActivityJob reopenReusable(
+      ActivityJob job, BusinessMaterial material, ActivityExplanationProfile profile) {
+    if (reuseResultStore == null) {
+      return null;
+    }
+    ObjectNode saved =
+        reuseResultStore
+            .readCompleted(
+                job.identity().jobKey(),
+                job.identity().inputFingerprint(),
+                job.providerBinding().quotaScope(),
+                job.providerBinding().expectedRuntimeIdentity())
+            .orElse(null);
+    if (saved == null) {
+      return null;
+    }
+    try {
+      ModelRuntimeIdentityV1 runtimeIdentity = job.providerBinding().expectedRuntimeIdentity();
+      validateResponse(saved.path("draft"), material, profile, DRAFT_KIND, runtimeIdentity);
+      ValidatedActivityResponse review =
+          validateResponse(saved.path("review"), material, profile, REVIEW_KIND, runtimeIdentity);
+      List<ReviewedActivity> activities =
+          toReviewedActivities(review.response(), material, profile);
+      ActivityJobResult result =
+          new ActivityJobResult(
+              requiredText(saved, "materialId"),
+              activities,
+              analyzedCoverage(material, activities, review.unexplainedEntryKeys()),
+              unexplainedEntries(material, review.unexplainedEntryKeys()),
+              runtimeIdentity,
+              saved.path("draft"),
+              saved.path("review"));
+      if (!job.materialId().equals(result.materialId())) {
+        throw new ActivityExplanationException("ACTIVITY_REUSED_RESULT_MATERIAL_MISMATCH");
+      }
+      return new CompletedActivityJob(job, result);
+    } catch (IllegalArgumentException invalid) {
+      throw new ActivityExplanationException("ACTIVITY_REUSED_RESULT_INVALID", invalid);
+    }
+  }
+
+  private static String requiredText(ObjectNode value, String field) {
+    JsonNode node = value.path(field);
+    if (!node.isTextual() || node.textValue().isBlank()) {
+      throw new ActivityExplanationException("ACTIVITY_REUSED_RESULT_INVALID");
+    }
+    return node.textValue();
   }
 
   private String preflightFailure(
@@ -479,6 +589,7 @@ public final class ActivityExplainer {
       ImmutableBytes cleanBytes,
       ActivityExplanationProfile profile,
       String providerBindingKey,
+      String quotaScope,
       ModelRuntimeIdentityV1 expectedRuntimeIdentity) {
     ImmutableBytes draftSchema = outputJsonSchema(material, profile, DRAFT_KIND);
     ImmutableBytes reviewSchema = outputJsonSchema(material, profile, REVIEW_KIND);
@@ -486,6 +597,7 @@ public final class ActivityExplainer {
     fingerprint.put("schemaVersion", "activity-job-input-fingerprint-v1");
     fingerprint.put("moduleVersion", "flow-interpretation-activity-explanations-v1");
     fingerprint.put("providerBindingKey", providerBindingKey);
+    fingerprint.put("quotaScope", quotaScope);
     fingerprint.put("cleanPacketSha256", sha256(cleanBytes));
     fingerprint.put("draftInstructions", ActivityPromptCatalog.instructionsFor(DRAFT_KIND));
     fingerprint.put("draftSchemaSha256", sha256(draftSchema));

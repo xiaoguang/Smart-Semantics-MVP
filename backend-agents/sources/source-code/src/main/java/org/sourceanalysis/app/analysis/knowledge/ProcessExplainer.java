@@ -203,10 +203,36 @@ public final class ProcessExplainer {
         new BoundedModelJobExecutor(
             modelJobExecutionConfiguration.maxConcurrentJobs(), providerCaps);
     List<BoundedModelJobExecutor.ModelJob<ProcessGroupResult>> jobs = new ArrayList<>();
+    List<ProcessGroupResult> reused = new ArrayList<>();
+    PrivateModelJobResultStore currentResults =
+        new PrivateModelJobResultStore(
+            modelJobExecutionConfiguration.journalDirectory(),
+            modelJobExecutionConfiguration.runId(),
+            "process-group");
+    PrivateModelJobResultStore reuseResults =
+        modelJobExecutionConfiguration.reuseFromModelBatchId() == null
+            ? null
+            : new PrivateModelJobResultStore(
+                modelJobExecutionConfiguration.journalDirectory(),
+                modelJobExecutionConfiguration.reuseFromModelBatchId(),
+                "process-group");
     for (ProcessGroupWork value : work) {
       ModelJobProviderBinding binding =
           route.get(value.ordinal() % route.size()).forJobOrdinal(value.ordinal() / route.size());
       ProcessGroupJobIdentity identity = processGroupJobIdentity(value, profile, binding);
+      ProcessGroupResult reusedResult =
+          reopenProcessGroup(reuseResults, value, profile, binding, identity);
+      if (reusedResult != null) {
+        reused.add(reusedResult);
+        currentResults.write(
+            identity.jobKey(),
+            processGroupResultRecord(
+                identity,
+                binding,
+                reusedResult,
+                modelJobExecutionConfiguration.reuseFromModelBatchId()));
+        continue;
+      }
       jobs.add(
           new BoundedModelJobExecutor.ModelJob<>(
               identity.jobKey(),
@@ -214,38 +240,55 @@ public final class ProcessExplainer {
               binding,
               () -> explainProcessGroup(value, profile, binding, identity)));
     }
-    PrivateModelJobResultStore resultStore =
-        new PrivateModelJobResultStore(
-            modelJobExecutionConfiguration.journalDirectory(),
-            modelJobExecutionConfiguration.runId(),
-            "process-group");
-    return executor
-        .execute(
-            jobs,
-            completed ->
-                resultStore.write(completed.job().jobKey(), processGroupResultRecord(completed)))
-        .stream()
-        .map(BoundedModelJobExecutor.CompletedJob::result)
-        .sorted(Comparator.comparingInt(ProcessGroupResult::ordinal))
-        .toList();
+    List<ProcessGroupResult> completed = new ArrayList<>(reused);
+    completed.addAll(
+        executor
+            .execute(
+                jobs,
+                completedJob ->
+                    currentResults.write(
+                        completedJob.job().jobKey(), processGroupResultRecord(completedJob)))
+            .stream()
+            .map(BoundedModelJobExecutor.CompletedJob::result)
+            .toList());
+    return completed.stream().sorted(Comparator.comparingInt(ProcessGroupResult::ordinal)).toList();
   }
 
   private ObjectNode processGroupResultRecord(
       BoundedModelJobExecutor.CompletedJob<ProcessGroupResult> completed) {
-    ProcessGroupResult result = completed.result();
+    return processGroupResultRecord(
+        new ProcessGroupJobIdentity(completed.job().jobKey(), completed.job().inputFingerprint()),
+        completed.job().providerBinding(),
+        completed.result(),
+        null);
+  }
+
+  private ObjectNode processGroupResultRecord(
+      ProcessGroupJobIdentity identity,
+      ModelJobProviderBinding binding,
+      ProcessGroupResult result,
+      org.sourceanalysis.app.artifact.AnalysisRunId reusedFromModelBatchId) {
     ObjectNode record = JsonNodeFactory.instance.objectNode();
-    record.put("schemaVersion", "process-group-reviewed-job-result-v2");
+    record.put("schemaVersion", "model-job-reviewed-result-v2");
+    record.put("status", "COMPLETED");
     record.put("runId", modelJobExecutionConfiguration.runId().value());
     record.put("phase", "processGroup");
-    record.put("jobKey", completed.job().jobKey());
-    record.put("inputFingerprint", completed.job().inputFingerprint());
-    record.put("providerBindingKey", completed.job().providerBinding().key());
-    record.put("quotaScope", completed.job().providerBinding().quotaScope());
+    record.put("jobKey", identity.jobKey());
+    record.put("inputFingerprint", identity.inputFingerprint());
+    record.put("providerBindingKey", binding.key());
+    record.put("quotaScope", binding.quotaScope());
     ObjectNode runtimeIdentity = record.putObject("runtimeIdentity");
     runtimeIdentity.put("upstreamProvider", result.runtimeIdentity().upstreamProvider());
     runtimeIdentity.put("model", result.runtimeIdentity().model());
     runtimeIdentity.put("reasoningEffort", result.runtimeIdentity().reasoningEffort());
     runtimeIdentity.put("sandbox", result.runtimeIdentity().sandbox());
+    record.set("draft", result.draftResponse());
+    record.set("review", result.reviewResponse());
+    if (reusedFromModelBatchId == null) {
+      record.putNull("reusedFromModelBatchId");
+    } else {
+      record.put("reusedFromModelBatchId", reusedFromModelBatchId.value());
+    }
     record.set("processes", JSON.valueToTree(result.processes()));
     record.set("unmatchedActivityIds", JSON.valueToTree(result.unmatchedActivityIds()));
     return record;
@@ -284,7 +327,44 @@ public final class ProcessExplainer {
         work.ordinal(),
         processes(review.value(), work.group(), profile),
         strings(review.value(), "unmatchedActivityIds", profile, REVIEW_KIND),
-        review.runtimeIdentity());
+        review.runtimeIdentity(),
+        draft.value(),
+        review.value());
+  }
+
+  private ProcessGroupResult reopenProcessGroup(
+      PrivateModelJobResultStore reuseResults,
+      ProcessGroupWork work,
+      ProcessExplanationProfile profile,
+      ModelJobProviderBinding binding,
+      ProcessGroupJobIdentity identity) {
+    if (reuseResults == null) {
+      return null;
+    }
+    ObjectNode saved =
+        reuseResults
+            .readCompleted(
+                identity.jobKey(),
+                identity.inputFingerprint(),
+                binding.quotaScope(),
+                binding.expectedRuntimeIdentity())
+            .orElse(null);
+    if (saved == null) {
+      return null;
+    }
+    try {
+      validateResponse(saved.path("draft"), work.group(), profile, DRAFT_KIND);
+      validateResponse(saved.path("review"), work.group(), profile, REVIEW_KIND);
+      return new ProcessGroupResult(
+          work.ordinal(),
+          processes(saved.path("review"), work.group(), profile),
+          strings(saved.path("review"), "unmatchedActivityIds", profile, REVIEW_KIND),
+          binding.expectedRuntimeIdentity(),
+          saved.path("draft"),
+          saved.path("review"));
+    } catch (IllegalArgumentException invalid) {
+      throw failure("PROCESS_REUSED_RESULT_INVALID", invalid);
+    }
   }
 
   private ProcessGroupJobIdentity processGroupJobIdentity(
@@ -294,6 +374,7 @@ public final class ProcessExplainer {
     fingerprint.put("schemaVersion", "process-group-input-fingerprint-v1");
     fingerprint.put("moduleVersion", "repository-knowledge-business-knowledge-v2");
     fingerprint.put("providerBindingKey", binding.key());
+    fingerprint.put("quotaScope", binding.quotaScope());
     fingerprint.put("groupInputSha256", sha256(draftInput));
     fingerprint.put("draftInstructions", ProcessPromptCatalog.instructionsFor(DRAFT_KIND));
     fingerprint.put("reviewInstructions", ProcessPromptCatalog.instructionsFor(REVIEW_KIND));
@@ -335,13 +416,140 @@ public final class ProcessExplainer {
       return Consolidation.notConsolidated(ordered);
     }
     Set<String> refs = sourceRefs(activities);
-    JsonNode draft = callRepositoryAndValidate(REPOSITORY_DRAFT_KIND, draftInput, refs, profile);
-    ObjectNode reviewInput = input.deepCopy();
-    reviewInput.set("actualDraft", draft);
-    JsonNode review =
+    ModelJobProviderBinding binding =
+        modelJobExecutionConfiguration == null
+            ? new ModelJobProviderBinding(
+                "single-provider", "direct-single-provider", 1, provider, null)
+            : modelJobExecutionConfiguration.binding("repositorySummary", 0).forJobOrdinal(0);
+    RepositorySummaryJobIdentity identity =
+        repositorySummaryJobIdentity(draftInput, refs, profile, binding);
+    Consolidation reused = reopenRepositorySummary(identity, binding, refs, profile);
+    if (reused != null) {
+      return reused;
+    }
+    ValidatedRepositoryResponse draft =
         callRepositoryAndValidate(
-            REPOSITORY_REVIEW_KIND, canonicalJson.encodeCanonical(reviewInput), refs, profile);
-    return new Consolidation(repositorySummary(review, refs, profile), List.of());
+            binding, REPOSITORY_DRAFT_KIND, draftInput, refs, profile, identity);
+    ObjectNode reviewInput = input.deepCopy();
+    reviewInput.set("actualDraft", draft.value());
+    ValidatedRepositoryResponse review =
+        callRepositoryAndValidate(
+            binding,
+            REPOSITORY_REVIEW_KIND,
+            canonicalJson.encodeCanonical(reviewInput),
+            refs,
+            profile,
+            identity);
+    if (!draft.runtimeIdentity().equals(review.runtimeIdentity())) {
+      throw failure("REPOSITORY_SUMMARY_JOB_RUNTIME_IDENTITY_MISMATCH", null);
+    }
+    Consolidation result =
+        new Consolidation(repositorySummary(review.value(), refs, profile), List.of());
+    saveRepositorySummary(identity, binding, draft, review, result);
+    return result;
+  }
+
+  private RepositorySummaryJobIdentity repositorySummaryJobIdentity(
+      ImmutableBytes draftInput,
+      Set<String> refs,
+      ProcessExplanationProfile profile,
+      ModelJobProviderBinding binding) {
+    ObjectNode fingerprint = JsonNodeFactory.instance.objectNode();
+    fingerprint.put("schemaVersion", "repository-summary-input-fingerprint-v1");
+    fingerprint.put("moduleVersion", "repository-knowledge-business-knowledge-v2");
+    fingerprint.put("providerBindingKey", binding.key());
+    fingerprint.put("quotaScope", binding.quotaScope());
+    fingerprint.put("inputSha256", sha256(draftInput));
+    fingerprint.put(
+        "draftInstructions", ProcessPromptCatalog.instructionsFor(REPOSITORY_DRAFT_KIND));
+    fingerprint.put(
+        "reviewInstructions", ProcessPromptCatalog.instructionsFor(REPOSITORY_REVIEW_KIND));
+    fingerprint.put("outputSchemaSha256", sha256(repositorySummaryOutputSchema(refs, profile)));
+    fingerprint.put("maxModelInputBytes", profile.maxModelInputBytes());
+    fingerprint.put("maxModelOutputBytes", profile.maxModelOutputBytes());
+    if (binding.expectedRuntimeIdentity() != null) {
+      ObjectNode runtime = fingerprint.putObject("expectedRuntimeIdentity");
+      runtime.put("upstreamProvider", binding.expectedRuntimeIdentity().upstreamProvider());
+      runtime.put("model", binding.expectedRuntimeIdentity().model());
+      runtime.put("reasoningEffort", binding.expectedRuntimeIdentity().reasoningEffort());
+      runtime.put("sandbox", binding.expectedRuntimeIdentity().sandbox());
+    }
+    String inputFingerprint = sha256(canonicalJson.encodeCanonical(fingerprint));
+    return new RepositorySummaryJobIdentity(inputFingerprint, inputFingerprint);
+  }
+
+  private Consolidation reopenRepositorySummary(
+      RepositorySummaryJobIdentity identity,
+      ModelJobProviderBinding binding,
+      Set<String> refs,
+      ProcessExplanationProfile profile) {
+    if (modelJobExecutionConfiguration == null
+        || modelJobExecutionConfiguration.reuseFromModelBatchId() == null) {
+      return null;
+    }
+    PrivateModelJobResultStore source =
+        new PrivateModelJobResultStore(
+            modelJobExecutionConfiguration.journalDirectory(),
+            modelJobExecutionConfiguration.reuseFromModelBatchId(),
+            "repository-summary");
+    ObjectNode saved =
+        source
+            .readCompleted(
+                identity.jobKey(),
+                identity.inputFingerprint(),
+                binding.quotaScope(),
+                binding.expectedRuntimeIdentity())
+            .orElse(null);
+    if (saved == null) {
+      return null;
+    }
+    Consolidation result =
+        new Consolidation(repositorySummary(saved.path("review"), refs, profile), List.of());
+    PrivateModelJobResultStore current =
+        new PrivateModelJobResultStore(
+            modelJobExecutionConfiguration.journalDirectory(),
+            modelJobExecutionConfiguration.runId(),
+            "repository-summary");
+    ObjectNode copied = saved.deepCopy();
+    copied.put("runId", modelJobExecutionConfiguration.runId().value());
+    copied.put(
+        "reusedFromModelBatchId", modelJobExecutionConfiguration.reuseFromModelBatchId().value());
+    current.write(identity.jobKey(), copied);
+    return result;
+  }
+
+  private void saveRepositorySummary(
+      RepositorySummaryJobIdentity identity,
+      ModelJobProviderBinding binding,
+      ValidatedRepositoryResponse draft,
+      ValidatedRepositoryResponse review,
+      Consolidation result) {
+    if (modelJobExecutionConfiguration == null) {
+      return;
+    }
+    ObjectNode record = JsonNodeFactory.instance.objectNode();
+    record.put("schemaVersion", "model-job-reviewed-result-v2");
+    record.put("status", "COMPLETED");
+    record.put("runId", modelJobExecutionConfiguration.runId().value());
+    record.put("phase", "repositorySummary");
+    record.put("jobKey", identity.jobKey());
+    record.put("inputFingerprint", identity.inputFingerprint());
+    record.put("providerBindingKey", binding.key());
+    record.put("quotaScope", binding.quotaScope());
+    ObjectNode runtime = record.putObject("runtimeIdentity");
+    runtime.put("upstreamProvider", review.runtimeIdentity().upstreamProvider());
+    runtime.put("model", review.runtimeIdentity().model());
+    runtime.put("reasoningEffort", review.runtimeIdentity().reasoningEffort());
+    runtime.put("sandbox", review.runtimeIdentity().sandbox());
+    record.set("draft", draft.value());
+    record.set("review", review.value());
+    record.putNull("reusedFromModelBatchId");
+    record.set("repositorySummary", JSON.valueToTree(result.summary()));
+    new PrivateModelJobResultStore(
+            modelJobExecutionConfiguration.journalDirectory(),
+            modelJobExecutionConfiguration.runId(),
+            "repository-summary")
+        .write(identity.jobKey(), record);
   }
 
   private ObjectNode repositoryInput(
@@ -670,25 +878,32 @@ public final class ProcessExplainer {
     return new ValidatedProcessResponse(parsed, response.runtimeIdentity());
   }
 
-  private JsonNode callRepositoryAndValidate(
+  private ValidatedRepositoryResponse callRepositoryAndValidate(
+      ModelJobProviderBinding binding,
       String taskKind,
       ImmutableBytes input,
       Set<String> allowedRefs,
-      ProcessExplanationProfile profile) {
+      ProcessExplanationProfile profile,
+      RepositorySummaryJobIdentity identity) {
     if (input.size() > profile.maxModelInputBytes()) {
       throw failure("REPOSITORY_SUMMARY_INPUT_OVER_BUDGET", null);
     }
     StructuredModelResponse response;
     try {
       response =
-          provider.generate(
-              new StructuredModelRequest(
-                  taskKind.toLowerCase(),
-                  taskKind,
-                  ProcessPromptCatalog.instructionsFor(taskKind),
-                  input,
-                  repositorySummaryOutputSchema(allowedRefs, profile),
-                  profile.maxModelOutputBytes()));
+          binding
+              .provider()
+              .generate(
+                  new StructuredModelRequest(
+                      "repository-summary:"
+                          + identity.jobKey()
+                          + ":"
+                          + taskKind.toLowerCase(java.util.Locale.ROOT),
+                      taskKind,
+                      ProcessPromptCatalog.instructionsFor(taskKind),
+                      input,
+                      repositorySummaryOutputSchema(allowedRefs, profile),
+                      profile.maxModelOutputBytes()));
     } catch (RuntimeException failure) {
       throw failure("REPOSITORY_SUMMARY_PROVIDER_FAILED_AFTER_START", failure);
     }
@@ -702,7 +917,11 @@ public final class ProcessExplainer {
       throw failure(taskKind + "_INVALID", invalid);
     }
     validateRepositorySummaryResponse(parsed, allowedRefs, profile, taskKind);
-    return parsed;
+    if (binding.expectedRuntimeIdentity() != null
+        && !binding.expectedRuntimeIdentity().equals(response.runtimeIdentity())) {
+      throw failure("REPOSITORY_SUMMARY_JOB_RUNTIME_IDENTITY_MISMATCH", null);
+    }
+    return new ValidatedRepositoryResponse(parsed, response.runtimeIdentity());
   }
 
   private void validateRepositorySummaryResponse(
@@ -1051,15 +1270,23 @@ public final class ProcessExplainer {
 
   private record ProcessGroupJobIdentity(String jobKey, String inputFingerprint) {}
 
+  private record RepositorySummaryJobIdentity(String jobKey, String inputFingerprint) {}
+
   private record ProcessGroupResult(
       int ordinal,
       List<BusinessProcess> processes,
       List<String> unmatchedActivityIds,
-      org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1 runtimeIdentity) {
+      org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1 runtimeIdentity,
+      JsonNode draftResponse,
+      JsonNode reviewResponse) {
     private ProcessGroupResult {
       processes = List.copyOf(processes);
       unmatchedActivityIds = List.copyOf(unmatchedActivityIds);
       runtimeIdentity = Objects.requireNonNull(runtimeIdentity, "process job runtime identity");
+      draftResponse =
+          Objects.requireNonNull(draftResponse, "process job draft response").deepCopy();
+      reviewResponse =
+          Objects.requireNonNull(reviewResponse, "process job review response").deepCopy();
     }
   }
 
@@ -1069,6 +1296,15 @@ public final class ProcessExplainer {
     private ValidatedProcessResponse {
       value = Objects.requireNonNull(value, "validated process response");
       runtimeIdentity = Objects.requireNonNull(runtimeIdentity, "process runtime identity");
+    }
+  }
+
+  private record ValidatedRepositoryResponse(
+      JsonNode value,
+      org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1 runtimeIdentity) {
+    private ValidatedRepositoryResponse {
+      value = Objects.requireNonNull(value, "validated repository response").deepCopy();
+      runtimeIdentity = Objects.requireNonNull(runtimeIdentity, "repository runtime identity");
     }
   }
 

@@ -9,12 +9,14 @@ import org.sourceanalysis.app.artifact.ModulePublicationReference;
 
 /** Saved business checkpoints produced by either a material preflight or a complete report run. */
 public record AnalysisRunOutput(
+    AnalysisRunId sourceRunId,
     ModulePublicationReference businessMaterialCheckpoint,
     ModulePublicationReference activityCheckpoint,
     ModulePublicationReference knowledgeCheckpoint,
     ModulePublicationReference reportCheckpoint) {
 
   public AnalysisRunOutput {
+    Objects.requireNonNull(sourceRunId, "source run ID");
     require(
         businessMaterialCheckpoint,
         AnalysisStepKey.FLOW_INTERPRETATION,
@@ -28,7 +30,10 @@ public record AnalysisRunOutput(
       require(
           reportCheckpoint, AnalysisStepKey.NINE_SECTION_DOCUMENT, 1, "business-report-publisher");
     }
-    AnalysisRunId owner = runId(businessMaterialCheckpoint);
+    if (!sourceRunId.equals(runId(businessMaterialCheckpoint))) {
+      throw new IllegalArgumentException("business material checkpoint must belong to source run");
+    }
+    AnalysisRunId owner = materialsOnly ? sourceRunId : runId(activityCheckpoint);
     if (!materialsOnly
         && !List.of(activityCheckpoint, knowledgeCheckpoint, reportCheckpoint).stream()
             .map(AnalysisRunOutput::runId)
@@ -37,11 +42,26 @@ public record AnalysisRunOutput(
     }
   }
 
+  /** Creates the ordinary same-run form used when material and business results share one owner. */
+  public AnalysisRunOutput(
+      ModulePublicationReference businessMaterialCheckpoint,
+      ModulePublicationReference activityCheckpoint,
+      ModulePublicationReference knowledgeCheckpoint,
+      ModulePublicationReference reportCheckpoint) {
+    this(
+        runId(Objects.requireNonNull(businessMaterialCheckpoint, "business material checkpoint")),
+        businessMaterialCheckpoint,
+        activityCheckpoint,
+        knowledgeCheckpoint,
+        reportCheckpoint);
+  }
+
   /** Projects the four application-internal business results to durable run output pointers. */
   public static AnalysisRunOutput from(RepositoryAnalysisRunResult result) {
     Objects.requireNonNull(result, "repository analysis run result");
     BusinessAnalysisWorkflowResult business = result.business();
     return new AnalysisRunOutput(
+        runId(business.materials().checkpoint()),
         business.materials().checkpoint(),
         business.activities().checkpoint(),
         business.knowledge().checkpoint(),
@@ -51,7 +71,8 @@ public record AnalysisRunOutput(
   /** Projects a zero-Provider material-planning result without inventing later checkpoints. */
   public static AnalysisRunOutput from(RepositoryMaterialPlanningResult result) {
     Objects.requireNonNull(result, "repository material planning result");
-    return new AnalysisRunOutput(result.materials().checkpoint(), null, null, null);
+    return new AnalysisRunOutput(
+        runId(result.materials().checkpoint()), result.materials().checkpoint(), null, null, null);
   }
 
   /** Returns whether this finished run contains a review-approved business report. */

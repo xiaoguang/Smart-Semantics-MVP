@@ -40,7 +40,7 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   private static final String REQUEST_FILE = "run-request.json";
   private static final String STATE_FILE = "run-state.json";
   private static final String OUTPUT_FILE = "run-output.json";
-  private static final String OUTPUT_SCHEMA = "analysis-run-output-v2";
+  private static final String OUTPUT_SCHEMA = "analysis-run-output-v3";
   private static final String MATERIALS_ONLY_OUTPUT = "MATERIALS_ONLY";
   private static final String COMPLETE_REPORT_OUTPUT = "COMPLETE_REPORT";
   private static final Set<String> REQUEST_FIELDS =
@@ -69,7 +69,8 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
           "outputKind",
           "reportCheckpoint",
           "runId",
-          "schemaVersion");
+          "schemaVersion",
+          "sourceRunId");
   private static final Set<String> CHECKPOINT_FIELDS =
       Set.of(
           "analysisStepKey",
@@ -202,7 +203,8 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     try {
       PersistedAnalysisRunRequest persisted = reopenRequest(runId);
       if (persisted.analysisRun().lifecycleState() != AnalysisRunLifecycleState.RUNNING
-          || !runId.equals(runId(output.businessMaterialCheckpoint()))) {
+          || !output.sourceRunId().equals(runId(output.businessMaterialCheckpoint()))
+          || (output.hasCompletedReport() && !runId.equals(runId(output.activityCheckpoint())))) {
         throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
       }
       Path destination = runDirectory().resolve(runId.value()).resolve(OUTPUT_FILE);
@@ -330,6 +332,7 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     ObjectNode value = JsonNodeFactory.instance.objectNode();
     value.put("schemaVersion", OUTPUT_SCHEMA);
     value.put("runId", runId.value());
+    value.put("sourceRunId", output.sourceRunId().value());
     value.put(
         "outputKind", output.hasCompletedReport() ? COMPLETE_REPORT_OUTPUT : MATERIALS_ONLY_OUTPUT);
     checkpoint(value.putObject("businessMaterialCheckpoint"), output.businessMaterialCheckpoint());
@@ -346,7 +349,10 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     }
     AnalysisRunOutput output =
         new AnalysisRunOutput(
-            checkpoint(runId, value.path("businessMaterialCheckpoint")),
+            AnalysisRunId.parse(requiredText(value, "sourceRunId")),
+            checkpoint(
+                AnalysisRunId.parse(requiredText(value, "sourceRunId")),
+                value.path("businessMaterialCheckpoint")),
             nullableCheckpoint(runId, value.path("activityCheckpoint")),
             nullableCheckpoint(runId, value.path("knowledgeCheckpoint")),
             nullableCheckpoint(runId, value.path("reportCheckpoint")));

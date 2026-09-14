@@ -4,7 +4,7 @@
 
 ## 1. 第一阶段接线：先使JDT独立成立
 
-JDT和JavaParser接入均已完成。当前新的最小接线是[模型批次解耦](../model-job-execution.md#7-固定材料与独立模型批次已批准待实施)，不是再做本页引擎迁移：模型模式从已保存M10直接开始，零技术executor、零引擎session、零Builder。原材料仍归原sourceRun，新业务结果归新batch run；正常技术运行入口仍用于明确的新取材。仅修改下游组合根/读写归属，不改引擎算法。
+JDT和JavaParser接入均已完成。[模型批次解耦](../model-job-execution.md#7-固定材料与独立模型批次已实现)也已接通：模型模式从已保存M10直接开始，零技术executor、零引擎session、零Builder。原材料仍归原sourceRun，新业务结果归新batch run；正常技术运行入口仍用于明确的新取材。本次只修改下游组合根/读写归属，没有改引擎算法。
 
 ### 1.1 组合根与应用发现
 

@@ -1,6 +1,6 @@
 # 仓库知识
 
-> 上游取材已按[JDT/JavaParser插件设计](../modules/java-code-engines/README.md)统一完整代码材料；本步消费同一已审活动/来源合同，不按工具品牌另设业务路线。[模型 job 并行](../modules/model-job-execution.md)已实施；固定材料上的独立 model batch 与跨 batch 已审 job 复用是[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)已批准但尚未实现的目标。
+> 上游取材已按[JDT/JavaParser插件设计](../modules/java-code-engines/README.md)统一完整代码材料；本步消费同一已审活动/来源合同，不按工具品牌另设业务路线。[模型 job 并行](../modules/model-job-execution.md)及固定材料上的独立 model batch 与跨 batch 已审 job 复用均已实现。
 
 > [总体设计](../DESIGN.md)；固定 key：repository-knowledge，目录：steps/07-repository-knowledge/。唯一业务 Module：ProcessExplainer。
 
@@ -103,7 +103,7 @@ Java 可以根据直接调用、显式标识传递、数据联系、已审对象
 
 模型越界 ref、缺活动成员、重复冲突 ID、source/basis 不一致、损坏 JSON、覆盖表遗漏后假称 COMPLETE 都是 fatal。业务顺序、岗位、对象同一性待确认是知识内容限制；不需要把整个组排除。
 
-当前 coordinator 已在每组 REVIEW 完成时立即原子保存私有 job 结果，等全部组及总结完成/显式跳过后一次安装既有固定 module publication；Process 组已使用两级有界并行、独立 Provider/job journal 和单次聚合提交。当前保存器不等于跨 batch reader，不能声称已可从旧 run 复用。[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已批准待实施)目标中，新 batch 必须先绑定与复用来源相同的完整 `materialsCheckpoint` reference，再基于已验证活动重新计算 Process 候选组；只有完整已审、原子保存且 job fingerprint 精确相同的组 job 才可跳过两次调用，仓库总结另有自己的 fingerprint。DRAFT 完成但 REVIEW 失败/未知时只保留诊断，显式新 batch 重做完整 pair，旧 batch 不覆写。0 活动只保存明确范围和已有 unexplained records，不调用过程模型，不能宣称理解仓库业务。
+当前 coordinator 在每组 REVIEW 完成时立即原子保存私有 job 结果，等全部组及总结完成/显式跳过后一次安装既有固定 module publication；Process 组使用两级有界并行、独立 Provider/job journal 和单次聚合提交。跨 batch reader 已按[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)接入：新 batch 先绑定与复用来源相同的完整 `materialsCheckpoint` reference，再基于已验证活动重新计算 Process 候选组；只有完整已审、原子保存且 job fingerprint 精确相同的组 job 才跳过两次调用，仓库总结另有自己的 fingerprint。DRAFT 完成但 REVIEW 失败/未知时只保留诊断，显式新 batch 重做完整 pair，旧 batch 不覆写。0 活动只保存明确范围和已有 unexplained records，不调用过程模型，不能宣称理解仓库业务。
 
 ## 7. 当前实现与后续测试
 

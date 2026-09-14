@@ -90,7 +90,7 @@ Schema 不是逻辑上绝对矛盾：一个活动允许覆盖多个 key；但配
 
 ### 2.5 当前持久化与下游缺口
 
-`ActivityExplainer` 和 `ProcessExplainer` 都在循环全部结束后才 publish。设计要求的“每包 REVIEW 完成立即保存”尚未实现；把 publisher 直接移进循环会反复安装同一 module 地址并因不同内容发生 collision，所以它是独立持久化缺口，不是本次覆盖修复中的一行移动。
+该计划形成时，`ActivityExplainer` 和 `ProcessExplainer` 都在循环全部结束后才 publish。现已采用正确的两层保存方式：每包 REVIEW 完成立即写入批次私有不可变结果，全部完成后才按稳定顺序一次安装 aggregate publication；没有把固定 publisher 移进循环反复安装不同 bytes。
 
 `ProcessExplainer.repositoryInput` 与 `BusinessReportPublisher.cleanKnowledge` 已按 material 投影具体入口的 context、local keys 和原因，不传 global/material ID。process coverage 与 repository knowledge v2 持久化完整程序侧记录；第九章输入不再在 activity coverage 之后静默丢失这些范围。
 

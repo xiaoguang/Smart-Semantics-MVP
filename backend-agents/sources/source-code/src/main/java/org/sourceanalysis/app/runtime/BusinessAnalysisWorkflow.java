@@ -57,6 +57,17 @@ public final class BusinessAnalysisWorkflow {
       ProcessExplanationProfile processProfile,
       BusinessReportProfile reportProfile) {
     BusinessMaterialBuildResult materials = materialBuilder.build(materialRequest);
+    return run(materials, activityProfile, maxMaterialsToStart, processProfile, reportProfile);
+  }
+
+  /** Runs model work directly from one already-verified immutable material checkpoint. */
+  public BusinessAnalysisWorkflowResult run(
+      BusinessMaterialBuildResult materials,
+      ActivityExplanationProfile activityProfile,
+      int maxMaterialsToStart,
+      ProcessExplanationProfile processProfile,
+      BusinessReportProfile reportProfile) {
+    Objects.requireNonNull(materials, "business materials");
     ActivityExplanationResult activities =
         activityExplainer.explain(
             new ExplainActivitiesRequest(materials, activityProfile, maxMaterialsToStart));
