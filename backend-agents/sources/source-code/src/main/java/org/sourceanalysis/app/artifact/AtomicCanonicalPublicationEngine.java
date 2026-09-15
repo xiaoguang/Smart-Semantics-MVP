@@ -1225,7 +1225,33 @@ final class AtomicCanonicalPublicationEngine {
                                   .equals(descriptor.schemaVersion());
                           default -> false;
                         });
-    return exactLegacy ? legacy : current;
+    boolean exactCurrent =
+        names.equals(current)
+            && descriptors.stream()
+                .allMatch(
+                    descriptor ->
+                        switch (descriptor.fileName()) {
+                          case "business-processes.md" ->
+                              "repository-business-process-markdown-v2"
+                                  .equals(descriptor.schemaVersion());
+                          case "process-coverage.json" ->
+                              "repository-business-process-coverage-v2"
+                                  .equals(descriptor.schemaVersion());
+                          case "repository-business-process-catalog.json" ->
+                              "repository-business-process-catalog-v2"
+                                  .equals(descriptor.schemaVersion());
+                          case "source-refs.jsonl" ->
+                              "repository-business-process-source-references-v1"
+                                  .equals(descriptor.schemaVersion());
+                          case "sources.md" ->
+                              "repository-business-process-sources-markdown-v1"
+                                  .equals(descriptor.schemaVersion());
+                          default -> false;
+                        });
+    if (exactLegacy) {
+      return legacy;
+    }
+    return exactCurrent ? current : null;
   }
 
   private static List<String> javaCodeIndexPublicationFiles(List<ArtifactDescriptor> descriptors) {

@@ -69,8 +69,8 @@ public final class CanonicalBusinessProcessPublisher implements BusinessProcessP
   public BusinessProcessPublication publish(ProcessDiscoveryResult result) {
     Objects.requireNonNull(result, "process discovery result");
     ProcessCoverage coverage = canonicalCoverage(result.coverage());
-    String markdown = BusinessProcessMarkdownRenderer.render(result.catalog(), coverage);
     List<SourceReference> sources = referencedSources(result);
+    String markdown = BusinessProcessMarkdownRenderer.render(result.catalog(), coverage, sources);
     String sourcesMarkdown = SourcesMarkdownRenderer.render(sources);
     ReopenedModulePublication activities = inputArtifacts.reopen(result.activityCheckpoint());
     ReopenedModulePublication materials = inputArtifacts.reopen(result.materialCheckpoint());
@@ -123,17 +123,14 @@ public final class CanonicalBusinessProcessPublisher implements BusinessProcessP
     Map<String, SourceReference> all = new LinkedHashMap<>();
     result.sourceReferences().stream()
         .sorted(Comparator.comparing(SourceReference::ref))
-        .forEach(source -> all.put(source.ref(), source));
-    List<String> required = new ArrayList<>();
-    result.catalog().processes().forEach(process -> collectProcessRefs(required, process));
-    result.catalog().processRelations().forEach(value -> required.addAll(value.sourceRefs()));
-    result
-        .catalog()
-        .directActivityKnowledgeItems()
-        .forEach(value -> required.addAll(value.sourceRefs()));
-    return required.stream()
-        .distinct()
-        .sorted()
+        .forEach(
+            source -> {
+              SourcesMarkdownRenderer.requireSafeReference(source.ref());
+              if (all.put(source.ref(), source) != null) {
+                throw new IllegalArgumentException("BUSINESS_PROCESS_SOURCE_REFERENCE_DUPLICATE");
+              }
+            });
+    return referencedSourceRefs(result.catalog()).stream()
         .map(
             ref -> {
               SourceReference source = all.get(ref);
@@ -143,6 +140,14 @@ public final class CanonicalBusinessProcessPublisher implements BusinessProcessP
               return source;
             })
         .toList();
+  }
+
+  static List<String> referencedSourceRefs(RepositoryBusinessProcessCatalog catalog) {
+    List<String> required = new ArrayList<>();
+    catalog.processes().forEach(process -> collectProcessRefs(required, process));
+    catalog.processRelations().forEach(value -> required.addAll(value.sourceRefs()));
+    catalog.directActivityKnowledgeItems().forEach(value -> required.addAll(value.sourceRefs()));
+    return required.stream().distinct().sorted().toList();
   }
 
   private static ProcessCoverage canonicalCoverage(ProcessCoverage coverage) {

@@ -27,3 +27,26 @@ Tests run: 9, Failures: 0, Errors: 0, Skipped: 0
 ```
 
 `git diff --check` also completed with no whitespace errors.
+
+## Review remediation
+
+- Replaced the main-document source-reference wall with one local `查看依据`
+  link for each process, stage, and rule.  Each link opens a process-local
+  source index that gives the file and line range, then links to the preserved
+  snippet in `sources.md`.
+- Reader reopening now requires the catalog's complete source-reference set to
+  match `source-refs.jsonl` exactly once.  Illegal, duplicate, missing, or
+  surplus references fail before Markdown comparison.
+- The canonical store now recognizes only the exact legacy four-file v1
+  contract or the exact current five-file v2 contract; a mixed set is not a
+  valid publication.
+- Rule grammar now uses labels rather than trying to wrap free-form Chinese
+  conditions, and source paths/references are rendered safely.
+
+```text
+mvn -t .mvn/toolchains.xml -o spotless:apply -DspotlessFiles=<task4-files>
+mvn -t .mvn/toolchains.xml -o -Dtest=BusinessProcessPublicationTest test
+Tests run: 13, Failures: 0, Errors: 0, Skipped: 0
+mvn -t .mvn/toolchains.xml -o spotless:check -DspotlessFiles=<task4-files>
+git diff --check
+```

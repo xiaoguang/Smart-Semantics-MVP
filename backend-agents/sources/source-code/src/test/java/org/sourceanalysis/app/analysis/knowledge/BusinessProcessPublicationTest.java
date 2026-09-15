@@ -61,7 +61,7 @@ class BusinessProcessPublicationTest {
             "sources.md");
     assertThat(reopened).isEqualTo(published);
     assertThat(reopened.businessProcessesMarkdown())
-        .contains("当当前状态为0时，允许修改订单；否则，拒绝修改")
+        .contains("条件：当前状态为0；处理：允许修改订单；否则：拒绝修改")
         .doesNotContain("// create concrete source");
     assertThat(reopened.sourceReferences())
         .extracting(SourceReference::ref)
@@ -145,18 +145,19 @@ class BusinessProcessPublicationTest {
   void rendersNarrativeAndScopedRuleSentencesWithAnchoredSources() {
     ProcessDiscoveryResult discovered = discoveryResult();
     String markdown =
-        BusinessProcessMarkdownRenderer.render(discovered.catalog(), discovered.coverage());
+        BusinessProcessMarkdownRenderer.render(
+            discovered.catalog(), discovered.coverage(), discovered.sourceReferences());
     String rules = markdown.substring(markdown.indexOf("### 重要业务规则"), markdown.indexOf("### 结束结果"));
 
     assertThat(markdown)
         .contains("创建订单：接收订单明细，生成状态为0的订单。")
-        .contains("sources.md#s1")
-        .contains("sources.md#s2")
+        .contains("[查看依据](#process-1-stage-1)")
+        .contains("[查看依据](#process-1-rule-1)")
         .doesNotContain("1. **创建订单**（")
         .doesNotContain("2. **修改订单**（")
         .doesNotMatch("(?m)^- \\[S\\d+\\]$");
     assertThat(rules)
-        .contains("当当前状态为0时，允许修改订单；否则，拒绝修改")
+        .contains("条件：当前状态为0；处理：允许修改订单；否则：拒绝修改")
         .containsPattern("适用[^\\n]*销售订单")
         .doesNotContain("activity-use:");
   }
@@ -206,7 +207,8 @@ class BusinessProcessPublicationTest {
     RepositoryBusinessProcessCatalog.BusinessProcess process =
         discovered.catalog().processes().get(0);
     String markdown =
-        BusinessProcessMarkdownRenderer.render(discovered.catalog(), discovered.coverage());
+        BusinessProcessMarkdownRenderer.render(
+            discovered.catalog(), discovered.coverage(), discovered.sourceReferences());
     int processStart = markdown.indexOf("## " + process.name());
     int processEnd = markdown.indexOf("\n## ", processStart + 1);
     String processMarkdown =
@@ -269,7 +271,10 @@ class BusinessProcessPublicationTest {
         "business-processes.md",
         ImmutableBytes.copyOf(
             BusinessProcessMarkdownRenderer
-                .render(catalogWithMissingSource, missingSourcePublication.coverage())
+                .render(
+                    catalogWithMissingSource,
+                    missingSourcePublication.coverage(),
+                    missingSourcePublication.sourceReferences())
                 .getBytes(StandardCharsets.UTF_8)));
 
     assertThatThrownBy(
@@ -367,9 +372,11 @@ class BusinessProcessPublicationTest {
             discovered.catalog().pendingConfirmations());
 
     String rulesMarkdown =
-        BusinessProcessMarkdownRenderer.render(catalog, discovered.coverage())
+        BusinessProcessMarkdownRenderer.render(
+                catalog, discovered.coverage(), discovered.sourceReferences())
             .substring(
-                BusinessProcessMarkdownRenderer.render(catalog, discovered.coverage())
+                BusinessProcessMarkdownRenderer.render(
+                        catalog, discovered.coverage(), discovered.sourceReferences())
                     .indexOf("### 重要业务规则"));
     assertThat(rulesMarkdown)
         .contains("条件：收到订单请求时；处理：" + originalRule.actionOrDecision())

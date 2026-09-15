@@ -8,6 +8,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,9 +51,10 @@ public final class BusinessProcessCheckpointReader {
       RepositoryBusinessProcessCatalog catalog = catalog(payloads.get(CATALOG_FILE));
       ProcessCoverage coverage = coverage(payloads.get(COVERAGE_FILE));
       List<SourceReference> sourceReferences = sourceReferences(payloads.get(SOURCE_REFS_FILE));
+      requireSourceReferenceClosure(catalog, sourceReferences);
       String markdown = strictUtf8(payloads.get(MARKDOWN_FILE).canonicalUtf8());
       String sourcesMarkdown = strictUtf8(payloads.get(SOURCES_MARKDOWN_FILE).canonicalUtf8());
-      String rendered = BusinessProcessMarkdownRenderer.render(catalog, coverage);
+      String rendered = BusinessProcessMarkdownRenderer.render(catalog, coverage, sourceReferences);
       if (!rendered.equals(markdown)) {
         throw failure("BUSINESS_PROCESS_MARKDOWN_NONDETERMINISTIC", null);
       }
@@ -71,7 +73,8 @@ public final class BusinessProcessCheckpointReader {
 
   public String rerender(BusinessProcessPublication publication) {
     Objects.requireNonNull(publication, "business process publication");
-    return BusinessProcessMarkdownRenderer.render(publication.catalog(), publication.coverage());
+    return BusinessProcessMarkdownRenderer.render(
+        publication.catalog(), publication.coverage(), publication.sourceReferences());
   }
 
   /** Re-renders the portable sources view without rereading source files or calling a Provider. */
@@ -87,6 +90,7 @@ public final class BusinessProcessCheckpointReader {
         || address.analysisStepKey() != AnalysisStepKey.REPOSITORY_KNOWLEDGE
         || address.moduleNumber() != 1
         || !"business-process-publisher".equals(address.moduleKey())
+        || !"v2".equals(reopened.receipt().moduleVersion())
         || (reopened.receipt().status() != ModuleCompletionStatus.SUCCEEDED
             && reopened.receipt().status() != ModuleCompletionStatus.SUCCEEDED_WITH_GAPS)
         || reopened.payloads().size() != 5) {
@@ -189,8 +193,28 @@ public final class BusinessProcessCheckpointReader {
                   integer(value, "startLine"),
                   integer(value, "endLine"),
                   text(value, "snippet"));
-            })
+        })
         .toList();
+  }
+
+  private static void requireSourceReferenceClosure(
+      RepositoryBusinessProcessCatalog catalog, List<SourceReference> sourceReferences) {
+    Set<String> actual = new HashSet<>();
+    for (SourceReference source : sourceReferences) {
+      try {
+        SourcesMarkdownRenderer.requireSafeReference(source.ref());
+      } catch (IllegalArgumentException invalid) {
+        throw failure("BUSINESS_PROCESS_SOURCE_REFERENCE_CLOSURE_INVALID", invalid);
+      }
+      if (!actual.add(source.ref())) {
+        throw failure("BUSINESS_PROCESS_SOURCE_REFERENCE_CLOSURE_INVALID", null);
+      }
+    }
+    Set<String> required =
+        new HashSet<>(CanonicalBusinessProcessPublisher.referencedSourceRefs(catalog));
+    if (!actual.equals(required)) {
+      throw failure("BUSINESS_PROCESS_SOURCE_REFERENCE_CLOSURE_INVALID", null);
+    }
   }
 
   private static void descriptor(

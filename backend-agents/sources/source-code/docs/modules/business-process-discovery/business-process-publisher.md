@@ -33,13 +33,13 @@ BusinessProcessPublication publish(ProcessDiscoveryResult result);
 
 结构字段可在“条件与结果明细”折叠区全部保留，确保未被narrative重复的正文也不丢；核心允许/拒绝条件应在narrative可读，这是模型验收职责。规则显示适用用法及subject/when/otherwise/result，不能由Renderer拼出新的行业意义。
 
-有直接sourceRefs的阶段，“查看依据”跳到本过程来源索引。索引按阶段/规则列所有依据，以“文件名：起止行”链接到sources.md中对应短ref锚点；不任意只保留前N条。原Activity名称可用于范围表，但不伪装为业务阶段。
+有直接sourceRefs的过程、阶段或规则只显示一个本地“查看依据”链接；该链接跳到本过程的来源索引。索引按过程、阶段和规则列出全部依据，以“文件名：起止行”链接到sources.md中对应短ref锚点；不任意只保留前N条，也不在业务正文堆放S编号墙。原Activity名称可用于范围表，但不伪装为业务阶段。
 
 来源项允许留空；不强制增加缺链接说明、补齐逻辑、反查或专项验收，不阻塞主业务交付。只复用现有来源，优先确保业务叙述、分支、规则和结果可读。
 
 ### 独立来源视图
 
-sources.md只从result已有SourceReference生成，每项含S编号锚点、仓库内文件路径、原行范围、完整snippet。使用稳定顺序、安全Markdown围栏和转义，正文含反引号或特殊字符也不能破坏页面。它不包含运行凭据或宿主绝对路径，不访问客户文件。
+sources.md只从result已有SourceReference生成，每项含S编号锚点、仓库内文件路径、原行范围、完整snippet。短ref只接受S加数字的闭合形式；使用稳定顺序、安全Markdown围栏和路径文本转义，正文、路径含反引号、换行或特殊字符也不能破坏页面。它不包含运行凭据或宿主绝对路径，不访问客户文件。
 
 与business-processes.md一起复制即可保持相对链接。source-refs.jsonl继续供程序查询，来源页只是其确定性可读视图，不是新证据层。
 
@@ -59,7 +59,7 @@ canonical地址仍为REPOSITORY_KNOWLEDGE/1/business-process-publisher，produce
 
 ## 保存与读取
 
-五项在同一canonical交付安装；存储策略、schema registry、exact-file数量、reader、artifact闭集和fixture同批更新。Reader从catalog/coverage/refs可重渲染出两个逐字节一致的Markdown，无Provider和上游调用。
+五项在同一canonical交付安装；存储策略、schema registry、exact-file数量、reader、artifact闭集和fixture同批更新。canonical store只接受完整四文件v1历史合同，或完整五文件v2当前合同，不能混用。当前Reader只重开五文件v2，并在渲染前核对catalog使用的全部短ref与source-refs.jsonl恰好一一对应；重复、缺失或非法短ref均失败。Reader从catalog/coverage/refs可重渲染出两个逐字节一致的Markdown，无Provider和上游调用。
 
 历史四文件v1产物原样保留；不能静默补narrative或把旧输出说成v2。上游读取策略不因此重置。PROCESS_CATALOG和三个owner不改，render()仍属Step08，来源页走artifact查询。
 
