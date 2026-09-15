@@ -414,6 +414,18 @@ class BusinessProcessDiscoveryTest {
   }
 
   @Test
+  void ignoresExactDuplicateAreaMembershipWithoutLosingTheActivity() {
+    ProcessDiscoveryResult result =
+        new DefaultBusinessProcessDiscovery(
+                new ScriptedProvider("duplicate-area-activity-membership"))
+            .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
+
+    assertThat(result.coverage().activityDispositions())
+        .extracting(ProcessCoverage.ActivityDisposition::activityId)
+        .containsExactlyInAnyOrder("activity:create", "activity:update", "activity:approve");
+  }
+
+  @Test
   void keepsOnlyActivityOwnedReferencesWhenTheModelUsesAnotherCandidateActivityReference() {
     ProcessDiscoveryResult result =
         new DefaultBusinessProcessDiscovery(new ScriptedProvider("cross-activity-use-reference"))
@@ -890,6 +902,11 @@ class BusinessProcessDiscoveryTest {
           variant.put("activityId", "activity:update");
           variant.put("role", "CORE");
           variant.put("variant", "按导入订单");
+        } else if ("duplicate-area-activity-membership".equals(
+            conflictingCatalogDisposition)) {
+          ArrayNode activityIds =
+              (ArrayNode) response.path("businessAreas").get(0).path("activityIds");
+          activityIds.add(activityIds.get(0));
         }
       } else if (request.taskKind().startsWith("BUSINESS_PROCESS_CONSOLIDATION")) {
         consolidationInput = input;

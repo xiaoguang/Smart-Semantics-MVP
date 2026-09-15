@@ -626,7 +626,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       if (!areaLocalIds.add(localId)) {
         throw failure("PROCESS_CATALOG_DUPLICATE_AREA");
       }
-      List<String> activityIds = strings(area, "activityIds");
+      List<String> activityIds = strings(area, "activityIds").stream().distinct().toList();
       requireSubset(activityIds, expectedIds, "PROCESS_CATALOG_UNKNOWN_ACTIVITY");
       areas.add(new AreaSeed(localId, text(area, "name"), text(area, "purpose"), activityIds));
     }
