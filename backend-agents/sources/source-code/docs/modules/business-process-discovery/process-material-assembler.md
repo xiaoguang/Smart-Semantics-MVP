@@ -2,49 +2,41 @@
 
 ## 为什么存在
 
-索引卡足以发现候选，但不足以写具体规则。若过程模型只看到卡片或短摘要，它会产生“状态允许时修改”这类空话。本模块按候选成员重新打开完整 Activity，并让模型可以选择性核对已保存源码。
+目录只负责找到一起阅读的活动。写精确业务流程需要完整Activity及可辨识的原文入口；一串无法区分的S编号不能帮助模型选择要核查的实现。
 
-## Interface
+## 内部操作
 
 ```java
-ProcessMaterial assemble(
-    CandidateProcess candidate,
-    FrozenAnalysisCorpus corpus,
-    ProcessMaterialProfile profile);
-
-ProcessReviewMaterial resolveSourceRequests(
-    ProcessMaterial material,
-    CandidateProcessDraft draft,
-    FrozenAnalysisCorpus corpus);
+ProcessMaterial assemble(CandidateProcess candidate, FrozenAnalysisCorpus corpus,
+                         ProcessMaterialProfile profile);
+ProcessReviewMaterial resolveSourceRequests(ProcessMaterial material,
+                                           CandidateProcessDraft draft,
+                                           FrozenAnalysisCorpus corpus);
 ```
+这是内部职责，不新增公共Agent或检索接口。两项操作零Provider、零导航。
 
-第一步在 DRAFT 前执行；第二步只解析 DRAFT 中已允许的 ref 请求，为 REVIEW 增加源码片段。两者均为零 Provider、零导航操作。
+## DRAFT前组装
 
-## 程序工作
+1. 保留候选purpose及全部ActivityUse：同一Activity可有不同variant。
+2. 每个不同Activity只放一份完整正文，按ActivityId引用，不能按用法重复大段内容。
+3. 保留purpose、participants、objects、inputs、conditions、steps、results、rules、formulas、questions、limitations和原ref；分配稳定statement handle。
+4. 来源目录包含ref、scope-local所属ActivityIds、保存snippet的前8个物理原始行openingLines。不要生成另一份用途摘要，不再统一写“用于按需核对已保存源码”。实际已有符号信息可带；不调用解析器补名字。
+5. 全文件路径、全局身份、hash留在程序侧。来源仍限制为当前候选Activity的允许集合。
 
-- 按候选 ActivityId 读取完整 ReviewedActivity，不使用卡片替代。
-- 保留 purpose、participants、objects、inputs、conditions、activitySteps、results、rules、formulas、questions、limitations 和 refs。
-- 给可引用数组项生成 ActivityStatementRef。
-- 提供短 SourceRef 目录：ref、所属 Activity/方法、片段用途摘要；完整文件/行号留在程序侧。
-- 根据候选用途提示通用 Activity 可能包含多个 variant，但不替模型选择销售/采购等分支。
-- DRAFT 请求 ref 后，从保存的源码/JDT正文返回选中的真实片段；未知 ref 失败。
+原文预览是选片线索，不是完整规则。完整Activity也不能因候选名称而由Java删掉“看似无关”的分支。
 
-## 输出
+## REVIEW前组装
 
-`ProcessMaterial` 是候选 DRAFT 的自包含输入；`ProcessReviewMaterial` 额外包含实际 DRAFT 和其请求的源码片段。共享 Activity 可以进入多个候选材料，保持不可变。
+DRAFT输出requestedSourceRefs。程序验证allowlist，取得对应完整SourceReference.snippet，与原完整Activity、完整实际DRAFT一同交给REVIEW。零请求合法，不添加第三轮。未知ref立即失败；合法片段不足时模型明确UNRESOLVED，不自动查其他文件。
 
-## 预算
+条件、拒绝分支和公式不能在容量控制时截断。去重以后仍超容量则使用现有明确未处理/拆分机制；不增自动补料循环。
 
-先保留完整 Activity 的条件、规则和结果，再去除重复技术元数据。若单候选仍过大，退回 Cataloger 的候选拆分决策或记 NOT_PROCESSED_CAPACITY；不能按数组中间截断后声称完整。
+## 输出保证
 
-## 失败
+DRAFT知道有哪些可核查原文，REVIEW能读到所选完整实现。用法多对多不复制源对象，不丢引用归属，不把索引卡当详细材料。
 
-候选引用未知 Activity、Activity 与 corpus 来源不一致、statement handle 越界、SourceRef 不在 Activity allowlist、保存源码缺失均明确失败。失败不重跑 JDT，也不向模型发送半包。
+## 测试和当前差距
 
-## 下游保证
+当前完整Activity、statement handle及DRAFT请求→REVIEW源码已经接通；当前源码目录仍是无信息的ref+通用purpose。同Activity多用法需要同时贯通候选校验与正文去重。
 
-Reconstructor 可以逐字访问具体规则，并在 REVIEW 中核对真正重要的源码，而无需读取五图、hash 或完整证据链。
-
-## 测试与当前成熟度
-
-Assembler 已实现：目录卡只负责召回，候选请求重新装入完整 Activity、稳定 statement handle 与允许的 SourceRef；DRAFT 请求的源码在 REVIEW 前由程序从固定 corpus 解析。直接测试覆盖重叠 ActivityUse、非法引用和保存结果复用；真实仓库材料质量仍在最终验收中检查。
+Luna RED：两种variant共享正文但分别存在、预览逐行等于保存原文、完整REVIEW不被预览替代、非法/缺失引用、零隐式扫描。Terra GREEN限于确定性投影和接线。真实样例确认模型能够选中关联及条件源码，不把“每次必须请求源码”写成硬门槛。

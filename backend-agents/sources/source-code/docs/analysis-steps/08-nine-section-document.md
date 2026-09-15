@@ -1,6 +1,6 @@
 # 九章仓库概览
 
-> [总体设计](../DESIGN.md)；固定 key：`nine-section-document`，目录：`steps/08-nine-section-document/`。现有 Module `BusinessReportPublisher` 保留，但目标输入改为 Step07 已归并的 `RepositoryBusinessProcessCatalog`。本页是目标设计；输入改造尚未实现。
+> [总体设计](../DESIGN.md)；固定 key：`nine-section-document`，目录：`steps/08-nine-section-document/`。现有 Module `BusinessReportPublisher` 保留，但目标输入改为 Step07 已归并的 `RepositoryBusinessProcessCatalog`。本页是目标设计；输入改造尚未实现。2026-09-15本次仅修正Step07，不实施或运行九章。未来接入须读取Step07 v2的narrative和规则适用用法，不能回退旧catalog来补字段。
 
 ## 1. 为什么存在
 
@@ -60,7 +60,7 @@ REVIEW 不需要重复接收 326 个 Activity，但必须接收 DRAFT 使用的�
 - Step07 已知具体谓词时，报告不得改成“状态允许”“符合规则”。
 - `CONFIRMED` 不能被报告降成无意义的模糊话；`INFERRED/UNRESOLVED` 也不能升级为确定事实。
 - 查询、统计和配置支撑不能被重排为主过程时序。
-- 同一 Activity 的不同 ActivityUse 必须保持所属业务变体。
+- 同一Activity不同ActivityUse保持业务变体；rule.activityUseIds不能丢失。阶段narrative已是已审业务正文，概览不能将它缩成接收/校验/返回模板。
 - 没有公式不造指标；没有岗位依据不造角色。
 - ActivityStatementRef/SourceRef 只是出处；报告需要的对象、字段、关系、公式和问题正文必须已经存在于 catalog，不能在 Step08 解引用 raw Activity 后重新提炼。
 - 源码清楚构造并调用保存时可说“系统生成并保存”，但不说某次运行成功提交。
@@ -68,6 +68,8 @@ REVIEW 不需要重复接收 326 个 Activity，但必须接收 DRAFT 使用的�
 ## 6. 来源与渲染
 
 模型只使用 allowlisted 短 ref。Java 接收时逐项检查 ref 属于 process catalog，并确认可在 `source-refs.jsonl` 查询。
+
+本次Step07新增的sources.md是既有SourceReference的确定性视图，详情页可点击；不要求为此重跑九章。未来九章接入可引用该来源视图，但不得产生指向未随交付携带文件的链接，具体接线随Step08计划实现。现有九章渲染保持不变。
 
 `document.md` 只保留业务正文和 `[S123]` 短标记，不附完整源码块、不生成同文档源码锚点。`source-refs.jsonl` 保存文件、行号和原文。Renderer 只读取已验证 BusinessReport JSON，零 Provider，逐字节确定。
 

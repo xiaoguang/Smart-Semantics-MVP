@@ -1,6 +1,6 @@
 # 业务过程发现与重建：模块总览
 
-> 当前 Java 实现和固定 326 Activity 的真实 Luna/high 运行均已完成。真实结果形成 14 个候选和 46 个已发布过程；覆盖 CLOSED，但因 50 个 Activity 仍为 UNCLASSIFIED，语义交付如实标为 PARTIAL。替换范围见[变更清单](../../plans/business-process-discovery-and-reconstruction-change-design.md)。
+> 当前模块已实现并真实发布46个过程，但订单生命周期、业务语言和来源导航未达用户目标。本次是局部修正设计，尚未实施；详见[变更清单](../../plans/business-process-discovery-and-reconstruction-change-design.md)。
 
 ## 1. 模块目的
 
@@ -29,12 +29,12 @@ public interface BusinessProcessPublisher {
 
 | 内部模块 | 输入 | 输出 | 是否调用模型 |
 | --- | --- | --- | --- |
-| [FrozenAnalysisCorpus](frozen-analysis-corpus.md) | Activity/JDT/source/ref checkpoints | 可按 ID 查询的只读 corpus；未进候选 Activity 的确定性知识投影 | 否 |
+| [FrozenAnalysisCorpus](frozen-analysis-corpus.md) | Activity/M10 SourceRef checkpoints | 可按 ID 查询的只读 corpus；未进候选 Activity 的确定性知识投影 | 否 |
 | [RepositoryBusinessCataloger](repository-business-cataloger.md) | 全仓 ActivityIndexCard | 业务领域、重叠候选、Activity 处置草案 | 是，DRAFT+REVIEW |
 | [ProcessMaterialAssembler](process-material-assembler.md) | 某候选及 corpus | 完整 Activity、语句 handle、源码目录 | 否 |
 | [CandidateProcessReconstructor](candidate-process-reconstructor.md) | 候选完整材料 | 已审详细过程或明确拒绝/拆分 | 是，每候选 DRAFT+REVIEW |
 | [RepositoryProcessConsolidator](repository-process-consolidator.md) | 全部已审候选过程 | 唯一仓库过程目录及关系 | 是，一次 DRAFT+REVIEW |
-| [BusinessProcessPublisher](business-process-publisher.md) | 封闭的 ProcessDiscoveryResult | JSON、coverage、主业务 Markdown | 否 |
+| [BusinessProcessPublisher](business-process-publisher.md) | 封闭的 ProcessDiscoveryResult | catalog、coverage、业务正文、来源JSONL及sources.md | 否 |
 
 模型任务继续复用现有两级并发和逐 job 保存。目录合并和仓库归并是屏障任务；候选重建 job 可以并行。一次候选 job 内 DRAFT 在前、REVIEW 在后。
 
@@ -46,7 +46,8 @@ public interface BusinessProcessPublisher {
 - 每条重要规则保留具体条件与结果，不能缩成“状态允许”或“满足条件”。
 - 过程目录保存选中的对象、字段/维度、关系、公式/指标和问题正文及 refs；只保留指针会让九章丢内容。
 - 未进入候选重建的 SUPPORT/STANDALONE/UNCLASSIFIED Activity 仍由 Discovery 确定性投影原有知识项；Publisher 不回读 Activity，也不为其制造过程。
-- 一个 Activity 可产生多个 ActivityUse，并参与多个过程。
+- 一个Activity可有多个variant并参加同一或不同候选；正文去重，用法不去重。规则activityUseIds限定适用分支，阶段narrative提供完整业务叙述。
+- 来源预览帮助选择已保存片段；正文通过来源索引跳到独立sources.md，不新增证据链。
 - 查询、统计、配置等活动可作为支撑，不强行排进主时序。
 - 所有 Activity 和候选都有最终处置；覆盖完整不等于业务事实全知。
 - `business-processes.md` 是本模块簇的主要人工验收面；九章是下游展示。
@@ -55,4 +56,4 @@ public interface BusinessProcessPublisher {
 
 `DefaultBusinessProcessDiscovery` 已实现统一 corpus、目录分片/合并、重叠候选、完整材料重建、源码按需核对和仓库归并；`CanonicalBusinessProcessPublisher` 已实现四项正式产物与 fresh reopen。过程专用运行入口从既有 Activity/M10 checkpoint 启动新批次，不运行 JDT、Builder、ActivityExplainer 或 Step08。旧 `ProcessExplainer` 不在这条新路径中。
 
-固定 326 Activity 的真实运行已发布 46 个多阶段过程，其中 21 个包含多个 Activity；102 个 Activity 成为过程成员，157 个作为支撑，17 个独立保留，50 个未归类。最终正式批次从完整已审 job 零调用复用，未运行 JDT、Builder、ActivityExplainer 或 Step08。该结果通过最低业务结构门，但 PARTIAL 和未归类清单必须继续对读者可见，不能因文件发布成功改称完整业务理解。
+固定 326 Activity 的真实运行已发布 46 个多阶段过程，其中 21 个包含多个 Activity；102 个 Activity 成为过程成员，157 个作为支撑，17 个独立保留，50 个未归类。最终正式批次从完整已审 job 零调用复用，未运行 JDT、Builder、ActivityExplainer 或 Step08。结构门已通过，但真实过程仍偏技术模板、目录仍偏维护分类；没有通过用户所需生命周期语义验收。新增narrative、规则用法、来源预览/链接和v2五文件合同尚待实施。PARTIAL及未归类范围保留，不能用重新排版把旧结果称为质量通过。

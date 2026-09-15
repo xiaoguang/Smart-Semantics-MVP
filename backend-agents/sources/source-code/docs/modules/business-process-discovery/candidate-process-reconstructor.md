@@ -2,64 +2,60 @@
 
 ## 为什么存在
 
-Candidate Process 只说明“这些活动可能相关”。本模块让模型从完整材料中回答：该过程为什么存在、怎样开始、经历哪些阶段和分支、什么条件允许或拒绝动作、最终得到什么，以及哪些连接仍需确认。
+模型要回答某种业务怎样完成，不是重新复述Controller如何接收参数。完整材料已在；本模块负责把它解释为对象生命周期、业务活动、具体规则和待确认联系。
 
-## 一个 job
+## 一次候选job
 
-每个候选最多一个 DRAFT 和一个完整 REVIEW：
+完整材料 → PROCESS_DRAFT → 程序解析requestedSourceRefs → PROCESS_REVIEW → 保存完整已审结果。两轮保持同一Provider/model/effort，不自动重试；候选之间使用现有任务池并行。无新模型轮次。
 
-```text
-完整 ProcessMaterial
-  → DRAFT：选择 ActivityUse、阶段、规则、分支；列出 requestedSourceRefs
-  → 程序解析已保存源码
-  → REVIEW：实际 DRAFT + 完整 Activity + 所选源码片段
-  → ReviewedCandidateDisposition
-```
+DRAFT可以重建一个过程、拆成几个过程、处置为支撑或材料不足。它必须处置候选成员；不能以多写几个技术阶段替代业务重建。
 
-不同候选可以复用现有线程池并行。同一候选两轮固定同一 Provider/model/effort；失败不自动重试或换服务。
+## 目标数据
 
-## DRAFT 必须产生什么
+保留现有name、purpose、scope、participants、businessObjects、activityUses、stages、branches、businessRules、endResults、knowledgeItems、supportActivityUses、pendingConnections及refs。
 
-模型可返回一个详细过程、将候选拆为多个过程、降为支撑集合或判定当前材料不足。过程至少包含：
+本次仅新增两个语义字段：
 
-- name、purpose、scope、participants、businessObjects；
-- ActivityUse，含 activityId、variant、role、statementRefs 和 sourceRefs；
-- stages，含进入条件、动作、状态变化、拒绝条件、结果、转移和 certainty；
-- branches、businessRules、endResults；
-- knowledgeItems，含 OBJECT、FIELD_OR_DIMENSION、OBJECT_RELATION、FORMULA_OR_METRIC、QUESTION 的实际正文、certainty 和 refs；
-- supportActivityUses、pendingConnections；
-- requestedSourceRefs。
+- ProcessStage.narrative：必填非空业务段落，与原进入条件、动作、状态变化、拒绝、结果、转移和certainty同时保留。
+- BusinessRule.activityUseIds：必填非空适用用法集合；模型wire为activityUseLocalIds，程序转换ID。
 
-同一 Activity 在不同变体中使用时必须创建不同 ActivityUse。ActivityUse 是过程内引用，不复制或篡改原 Activity。
+一项通用Activity可产生多个variant用法；阶段和规则必须说明本次用的是哪一分支，不把完整Activity里所有分支条件加到每个对象上。knowledgeItems继续保留选中的完整对象、字段、关系、公式和问题，不只留ref。
 
-`knowledgeItems` 从本候选完整 Activity 或已解析源码中选择，服务后续九章第 3、5、6、7、8 章。它必须保存实际正文；statement/source ref 只证明出处，不能代替内容。没有公式或指标时保持空数组，不根据字段名发明口径。
+## 业务叙述要求
 
-## 精确语言规则
+阶段围绕业务对象的可辨认动作或里程碑命名；不默认按“接收→校验→调用→返回”展开。“接收两个参数”不能被写成业务动作长句。若本身研究的是接口协议或日志管理，技术活动仍可能就是业务，不能用Java关键词黑名单删除。
 
-每个重要规则必须包含对象、具体 `when`、动作/决定、`otherwise`（适用时）和结果。例如：
+narrative应说明：
+- 对什么对象做什么，为什么或在何种范围；
+- 已知的允许/拒绝条件及具体状态值；
+- 产生的结果、变化和下一步；
+- 哪个联系只是推断，哪里缺材料。
 
-> 当前单据状态为 0 时允许编辑；不是 0 时拒绝编辑。
+未知岗位可不写；状态业务名称未核实则保留数值并注明未知。静态实现可以说明“保存对象”，不能声称某次运行已成功提交。
 
-不能写：
+规则仍为subject、when、actionOrDecision、otherwise、result、certainty、refs。反例是“状态允许时可以修改”；目标是“原单状态为0时允许修改，否则拒绝”，并限定到真实适用用法。
 
-> 状态允许时可以修改。
+## 完整REVIEW职责
 
-已知 `status=0→1`、`status=1 且 purchaseStatus=0 才能反审核`、`purchaseStatus=2/3 拒绝` 时必须保留这些值。源码中的值没有正式业务名称时，可以同时写代码值和“正式含义待确认”。
+REVIEW看到完整实际DRAFT、完整Activity及所请求原始源码，返回完整替代记录：
+1. 逐项对照候选的不同variant，保留、细化或在现有reason/pendingConnections说明删除/缺失。当前结构分母仍按ActivityId，不能用其通过代替用法语义完整；本次不新增逐variant处置账。
+2. 检查阶段是否业务步骤，是否仅将技术处理包装成生命周期。
+3. 对每个用法核对条件分支；有引用不等于该规则适用所有variant。
+4. 检查跨入口关联字段、对象与数量/状态更新；可推断关系标INFERRED，不能编成强制调用顺序。
+5. 删除无材料的岗位、默认值、必经审批、外部成功；缺信息具体记录UNRESOLVED。
+6. 保留全部具体规则、公式和拒绝路径，保证narrative与结构字段一致。
+7. 同步修订rule.activityUseIds及引用，不能新增不在候选范围的Activity/source。
 
-## REVIEW
+CONFIRMED至少有statement或source，但Java只验证来源存在；不验证中文蕴含。合法UNRESOLVED不导致整个运行自动失败。
 
-REVIEW 核对成员、variant、顺序、条件、状态变化、规则和来源。它可以保留、收窄、拆分、转为可选/回退、降为 INFERRED/UNRESOLVED 或删除；不能新增未在候选/源码请求中的 Activity 和 ref。输出是完整替代记录，不是 patch。
+## 结构错误和语义质量分开
 
-Certainty 只有：CONFIRMED、INFERRED、UNRESOLVED。应按 stage/rule/connection 分配，不能用一个过程级分数掩盖不同结论。
+未知ID/ref、缺必填字段、错误用法归属、遗漏处置、坏响应及Provider失败是fatal。Java校验规则refs属于所选用法对应Activity的允许集合，不由Java判定中文分支是否真正适用。
 
-## 失败与处置
+“只有空泛状态描述”“把价格规则用到错误子类型”“没有生命周期”是语义质量不通过，由REVIEW与样例审阅发现；不能伪称已经存在能自动识别这些问题的校验器。也不因此无限重跑候选。
 
-非法 Activity/ref/statement handle、遗漏候选成员处置、空洞规则丢失已知谓词、REVIEW 引入新成员或 started 请求失败均为 fatal job 结果。材料不足可以合法返回 `INSUFFICIENT_MATERIAL`，并列出缺少什么；不能制造单阶段 Process 来假装成功。
+## 测试与当前差距
 
-## 下游保证
+当前模型两轮、详细结构、source请求均已实现；真实库存结果仍为四个技术处理阶段，证明多阶段结构门不足。narrative和rule-use尚未实现。
 
-Consolidator 得到可直接阅读的完整过程候选，而不是 Activity 外包一层的标题。过程细节已经有来源，不允许仓库归并再次改写。
-
-## 测试与当前成熟度
-
-Candidate Reconstructor 已实现独立并行 job、DRAFT 源码请求、完整 REVIEW、详细阶段/规则/结果及 CONFIRMED/INFERRED/UNRESOLVED。直接测试证明输入使用完整 Activity、非法 statement/source ref 被拒绝、完成顺序不改变聚合结果。固定 326 Activity 的真实运行完成 14 个候选；1 个直接重建、13 个拆分，最终提供 46 个可归并的详细过程。
+Luna RED：新增字段完整传入REVIEW、保存重开和渲染；不同variant规则引用边界；不误拒合法不确定性。Terra GREEN只实现合同。真实语义验收见[贯穿例子](../../examples/semantic-framework-walkthrough.md)，自动fixture不能替代真实模型质量。

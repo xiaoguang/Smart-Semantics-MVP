@@ -2,48 +2,36 @@
 
 ## 为什么存在
 
-候选允许重叠，因此同一过程可能由多个候选各自识别；一个大候选也可能被拆成主过程、退货过程和分析支撑。简单拼接会产生重复或互相矛盾的仓库目录。本模块只裁决过程之间的关系，不重新写详细业务规则。
+候选可以重叠，仓库目录需要处理重复、父子、相关和替代过程。但归并不是再次发现生命周期，更不能把两个技术过程数组拼接成一条实际顺序。
 
-## 输入
+## 输入与模型任务
 
-- 全部 ReviewedCandidateDisposition；
-- 每个过程的紧凑摘要、ActivityUse、对象、开始/结束状态、CatalogKnowledgeItem 和 pending connections；
-- 全 Activity 与候选 coverage；
-- 不发送全部源码和完整 Activity 正文。
+沿用当前consolidationInput发送全部完整已审Process JSON，含narrative、ActivityUse、全部阶段/规则/条件、知识项、来源和待确认项，另有业务领域/覆盖信息。模型不再读原Activity/源码，但不能仅给它标题摘要却要求判断细节是否重复。本次不开发新的摘要投影。
 
-## 模型工作
+沿用一次仓库DRAFT+完整REVIEW。每个已审过程有唯一主处置KEEP、MERGE_INTO或REJECT；关系为PARENT_CHILD、RELATED或ALTERNATIVE。不另创枚举。
 
-一次仓库级 DRAFT 和一次 REVIEW，输出明确 decision：
+模型只决定归属/去重和关系，不能生成新的阶段正文、规则、条件或来源，也不能提升certainty。
 
-- KEEP_DISTINCT；
-- MERGE_DUPLICATES；
-- PARENT_CHILD；
-- RELATED；
-- ALTERNATIVE；
-- REJECT_DUPLICATE_OR_UNSUPPORTED。
+## 无损归并
 
-模型可以提出仓库业务领域层级和过程间关系，不能重写候选中的具体条件、状态值、规则、阶段正文、CatalogKnowledgeItem 或 SourceRef。若合并，只选择保留哪些已审字段以及如何排列，不生成缩水摘要替代原内容。
+程序执行裁决时保留完整stage.narrative、结构字段、rule.activityUseIds、variant、knowledgeItems和refs；局部ID映射必须同步所有引用。只有完全相同内容可去重。
 
-## 程序工作
+MERGE_INTO的确定性前提：先按(activityId, variant, role)映射用法；忽略各自局部ID后，完整阶段序列的业务字段（含narrative、结构条件、certainty和refs）逐项相等。满足时可并入其余已审记录，只去除完全相同重复；不同阶段序列则拒绝该合并裁决，模型应KEEP+关系，不自动追加一次调用。不使用中文相似度或重新编排算法。
 
-- 校验 decision 只引用已审过程。
-- 根据 decision 确定性合并成员与关系，保留原过程细节和来源。
-- 按 kind 和明确归属聚合 knowledge items；重复可以去重，正文、certainty 和 refs 不得丢失。
-- 计算每个 Activity 的最终多对多 membership 或 STANDALONE/UNCLASSIFIED。
-- 保留互相冲突的替代过程，不任意选择一个为事实。
+共享Activity但对象/variant不同不等于重复过程。阶段顺序、分支或规则无法无损合并时，模型应KEEP并记录RELATED/ALTERNATIVE，不强制MERGE_INTO。程序不得将两个阶段数组简单连接后宣称发生了业务流转；既有合并路径必须满足上述规则，否则拒绝该裁决。
 
-## 输出
+未入候选Activity的知识仍由Discovery在原corpus中确定性投影，不为它制造假过程。
 
-`RepositoryBusinessProcessCatalog`：businessAreas、processes、processRelations、standaloneActivities、unclassifiedActivities、process knowledgeItems、pendingConfirmations 和 coverage summary。Discovery 随后把同一 corpus 确定性投影的 `directActivityKnowledgeItems` 与这份目录一同封装进 `ProcessDiscoveryResult`；Consolidator 不为未进入候选的 Activity 编造过程，Publisher 也不另行回读 Activity。
+## 覆盖与失败
 
-## 失败
+Activity、候选和已审过程三个分母保持现有闭合合同。未知过程、遗漏主处置、非法关系、循环父子、丢阶段/规则/来源是fatal；合法未分类、材料不足和容量未处理按既有PARTIAL说明，不掩盖Provider失败。
 
-遗漏 reviewed process、循环 parent、合并后丢 stage/rule/ref、给 unclassified Activity 伪造过程、把 INFERRED 升为 CONFIRMED 均失败。输入过大时必须保存未归并范围并标 PARTIAL，不能静默只整理前若干项。
+## 输出与下游
 
-## 下游保证
+唯一RepositoryBusinessProcessCatalog连同coverage和完整来源组成封闭ProcessDiscoveryResult。Publisher只渲染；未来Step08也只能概览，不能重排业务顺序。
 
-Publisher 得到一份唯一、没有无声丢失的仓库过程目录；Step08 不必再次判断哪些过程相同或属于哪个领域。
+## 测试与当前状态
 
-## 测试与当前成熟度
+当前归并和主处置已实现，真实发布46个过程。新增字段的无损合并、用法映射和非同义过程保留尚待实现。
 
-Consolidator 已实现唯一 DRAFT/REVIEW、KEEP/MERGE_INTO/REJECT 主处置、过程关系和三层 denominator 闭合；程序对已审阶段、规则和来源做确定性保留。旧 `RepositoryProcessSummary` 不在新过程运行路径中。真实仓库归并保留并发布 46 个过程和 21 条过程关系；覆盖 CLOSED，semantic delivery 因 50 个未归类 Activity 为 PARTIAL。
+Luna RED重点覆盖“同Activity不同variant不丢”“规则条件不同不去重”“正文保存重开一致”“无法无损合并则不制造顺序”。Terra不得通过中文相似度或行业规则代替模型裁决。真实验收比较候选REVIEW与最终正文，确认归并没把具体业务改回抽象标题。

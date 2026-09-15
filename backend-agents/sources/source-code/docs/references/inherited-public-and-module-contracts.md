@@ -26,7 +26,7 @@ start 创建 path-free QUEUED run；executeStep 按明确目标经已配置内�
 
 Java、CLI、未来 authenticated loopback HTTP 都复用同一 Agent。当前 CLI composition root 从预登记来源及固定配置创建请求，不允许任意 Provider/path 参数进入 analysis core。capture-local-git 是分析前独立维护适配器，路径只用于显式 capture，不是第二分析入口。HTTP、validate/trace 适配不是本轮业务质量验收前置。
 
-已批准的[模型 job 执行配置](../modules/model-job-execution.md#2-唯一配置入口与精确-yaml)归现有 CLI 组合根：v2 loader/CLI 从同一 `--config` YAML 的 `sourceAnalysis.modelJobs` 读取全局/Provider 并发、路由、模型与认证引用，并已落地有界并行。它不增加公开请求字段或 Path，调整并发不强制重跑 JDT。[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)的固定材料/独立 model batch、state v3、`analysis-run-output-v3`、跨 batch reader 与 `--reuse-from-model-batch` 已实现；模型模式直接重开 M10，不调用 Builder 或 JDT。
+已批准的[模型 job 执行配置](../modules/model-job-execution.md#4-单一-yaml-与两级并发)归现有 CLI 组合根：v2 loader/CLI 从同一 `--config` YAML 的 `sourceAnalysis.modelJobs` 读取全局/Provider 并发、路由、模型与认证引用，并已落地有界并行。它不增加公开请求字段或 Path，调整并发不强制重跑 JDT。[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现基础扩展到新-job)的固定材料/独立 model batch、state v3、`analysis-run-output-v3`、跨 batch reader 与 `--reuse-from-model-batch` 已实现；模型模式直接重开 M10，不调用 Builder 或 JDT。
 
 ## 2. 启动、单步执行与运行引用
 
@@ -99,7 +99,7 @@ analysisStepExecutionRequestId = "analysis-step-execution-request:" + lowercaseH
 
 当前 RenderedDocumentReference 的字段为 runId、reportCheckpoint、documentSha256、sizeBytes；没有 nineSectionPlanId。artifact 的实际 ArtifactView 包含 runId、businessOutputArtifactKey、immutableReference、schemaVersion、mediaType、contentUtf8。查询按闭集业务输出名及 maxBytes 读取，拒绝任意 Path/glob/目录浏览，超预算整体拒绝，不截断。`analysis-run-output-v3` 在不改公开 publication reference 形状的前提下增加 `sourceRunId`：material checkpoint 继续按 source run 验证，Activity/Knowledge/Report 按输出 owner（即 `modelBatchId`）验证。读写器接受这两种精确身份，不得将上游 publication 伪造为新 run 地址。
 
-目标 Step07 在同一 run-centric artifact 查询机制内增加语义过程输出，不增加公开方法：`repository-business-process-catalog.json` 是结构化权威结果，`process-coverage.json` 闭合 Activity/candidate/process 分母，`business-processes.md` 是回答“有哪些业务、每种业务怎样进行”的确定性主读物。当前同名旧 process/knowledge 输出尚未满足这一合同，不能用 340 个 singleton records 冒充目标 catalog。
+目标 Step07 在同一 run-centric artifact 查询机制内增加语义过程输出，不增加公开方法：`repository-business-process-catalog.json` 是结构化权威结果，`process-coverage.json` 闭合 Activity/candidate/process 分母，`business-processes.md` 是回答“有哪些业务、每种业务怎样进行”的确定性主读物。当前新Step07已经发布46过程，旧340 singleton仅为历史对照；新过程的结构闭合仍不能代表生命周期语义通过。
 
 现有程序侧 SourceReference 是：
 
@@ -108,7 +108,7 @@ record SourceReference(
     String ref, String file, int startLine, int endLine, String snippet) {}
 ~~~
 
-ref 在 BusinessMaterialSet 内全局唯一，同 ref 只能定位一处；file 为冻结 repository-relative path，行号从 1 开始，snippet 为真实原文。该映射保存在独立source-refs.jsonl；九章正文仅显示短编号，不再附源码折叠区，不新增第十章或完整技术Trace系统。SourceReference本身的基本构造检查不能替代磁盘边界对来源/basis/bytes的验证。来源外置不改变模型已读材料或已审业务JSON。
+ref 在 BusinessMaterialSet 内全局唯一，同 ref 只能定位一处；file 为冻结 repository-relative path，行号从 1 开始，snippet 为真实原文。该映射保存在独立source-refs.jsonl；九章正文仅显示短编号，不再附源码折叠区，不新增第十章或完整技术Trace系统。SourceReference本身的基本构造检查不能替代磁盘边界对来源/basis/bytes的验证。来源外置不改变模型已读材料或已审业务JSON。本次Step07在现有映射上新增确定性sources.md，主文档用相对链接/锚点导航；来源链接允许留空，不要求为此补齐、解释或增加专项验收。SourceReference结构不变，不要求回读Activity或重新导航。
 
 同进程可复用已验证 immutable source/context/checkpoint views。磁盘、新进程或导入验证保存 hash/schema/ID/ref/basis，实际读取源码时验证对应 bytes；publisher 不运行 compiler/projector 重证业务关系。跨 batch 复用只接受完整已审、已验证并原子保存的整个 model job；孤立 DRAFT 不是可复用产品。纯 render 不改正文、不调用 Provider、不重扫源码。
 
@@ -212,8 +212,8 @@ ModuleFailure
 ## 6. 不变量
 
 1. Step 01–05 继续遵守既有 canonical framing、identity、store、source locator 与 Module publication；业务简化不削弱这些技术产物。
-2. Step 06–08 使用总体设计规定的简单检查点：材料在首次模型调用前保存，coordinator 立即保存每个已审 job 的私有不可变结果，再按稳定顺序安装 aggregate。Activity 有界并行、当前 Process 并行、跨 batch 验证读取、复用记录和 mixed-ownership aggregate 已实施；目标 Step07 复用该执行机制承载 catalog/candidate/reconstruction/consolidation，而不新增运行框架。不能循环安装不同 bytes，不增加公开 Agent 方法或状态 enum，进程内无需逐内部动作 fresh-reopen。
+2. Step 06–08 使用总体设计规定的简单检查点：材料在首次模型调用前保存，coordinator 立即保存每个已审 job 的私有不可变结果，再按稳定顺序安装 aggregate。Activity 有界并行、当前 Process 并行、跨 batch 验证读取、复用记录和 mixed-ownership aggregate 已实施；当前Step07已复用该执行机制承载catalog/candidate/reconstruction/consolidation，而不新增运行框架。不能循环安装不同 bytes，不增加公开 Agent 方法或状态 enum，进程内无需逐内部动作 fresh-reopen。
 3. 跨进程/model batch 复用 Step 06–08 整个已审 job 时，新旧 batch 必须绑定同一完整 `materialsCheckpoint` reference，再比较覆盖完整实际内容、实际 Prompt、有效模型/输出配置与 Module 版本的 inputFingerprint，并核验磁盘身份/hash/schema/ref/basis。同名短 ref 不能代替这一检查。DRAFT 完成但 REVIEW 失败/未知只保留诊断；显式新 batch 重做完整 pair，旧结果不覆写。不恢复旧六/三/四模块 DAG、固定五/九 payload 或 52-output 顺序。
 4. 公开 artifact 查询不接受 Path，也不返回截断内容。
 5. Source excerpt/SourceRef 验证来源；Proof 证明受支持的 exact technical fact；两者都不自动证明模型自由业务文本，也不要求每个业务原子拥有 Proof。
-6. runtime、Step05 EntryContext、Builder、ActivityExplainer、旧 ProcessExplainer 与 BusinessReportPublisher 均已存在。Activity v2 `missingEntryKeys`/required `unexplainedEntries` 及独立批次复用保持不变。目标 Step07 的 ActivityUse、详细 stage/rule/certainty、catalog/coverage 和 `business-processes.md` 尚未进入 Schema/Java/resource；实现时必须以新版本一次贯通 producer、reader、validator 和直接测试，不兼容双读，也不能让 Step08 回退到 raw Activity 重做过程发现。
+6. runtime、Step05、Builder、ActivityExplainer、新BusinessProcessDiscovery/Publisher和旧九章均已存在。上游任意N覆盖、Activity v2和批次复用保持。本次只升级Step07：catalog/coverage/主Markdown v2、来源JSONL v1、新sources Markdown v1；narrative、规则用法和coverage原name同步到producer/reader/validator/registry/直接fixture。PROCESS_CATALOG和三个owner不变；来源附件走现有artifact闭集，无新公共Agent方法。不能让Step08回退原Activity重新发现过程。

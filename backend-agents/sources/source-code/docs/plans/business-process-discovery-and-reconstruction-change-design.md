@@ -1,263 +1,203 @@
-# 业务过程发现与重建设计变更清单（APPROVED TARGET DESIGN）
+# 业务生命周期与可读过程：本次设计修正清单
 
-> 本文记录 2026-09-14 已批准、尚待实现的语义层修改。它是后续实施计划的差异输入，不是已经完成的代码声明。总体目标见 [总体设计](../DESIGN.md)，术语见 [CONTEXT](../../CONTEXT.md)。
+> 2026-09-15，用户批准的设计目标；本文中的新增合同尚未实施。本轮仅更新设计，不改 Java、测试、资源 Prompt、历史产物，不扫描、不调用产品模型。它替代本文件此前“从旧 ProcessExplainer 新建 Step07”的待办表。总体见[DESIGN](../DESIGN.md)，逐步推演见[完整例子](../examples/semantic-framework-walkthrough.md)。
 
-## 1. 为什么需要这次修改
+## 1. 目标和真实起点
 
-现有技术取材和局部解释已经取得大量有效结果，但整仓过程输出没有回答“系统支持哪些业务，每种业务经历哪些阶段”。实际保存结果显示：
+读者要看见：系统支持哪些业务；每种业务的对象怎样创建、变化、流转和结束；允许与拒绝条件是什么；哪里是合理推断；如何直接打开依据。
 
-- 固定 jshERP 材料已经完成 **326/326** 个 Activity 的 DRAFT 与 REVIEW；当前每个 Activity 对应一个入口。
-- 当前 `ProcessExplainer` 先用业务对象、术语、入口文本、Flow/Proof 引用和同源码文件的**精确相等**建立邻接，再按容量切分。
-- 当前过程 Schema 的阶段只有 `order + activityId + description`。
-- 当前保存了 **340** 个 Process；**340/340 都只有一个 Activity 和一个 Stage**。
-- 340 个 Process 实际只引用 **325** 个不同 Activity；`activity:f557933b36ff5eb47a60b6c300ceb86e99d271431bc499dfd636c879ab05207c`（“租户限制下新增用户及其角色、部门关系”）既未进入 Process，也未进入 unmatched 列表。
-- **275/326** 个已审 Activity 的 `formulasOrMetrics` 非空。若 Step08 改为只读过程目录，却只保存过程名称和引用，这些已经取得的公式/指标正文会被无声丢失。
+**不能再把“接收参数 → 校验 → 执行主动作 → 返回”当成业务生命周期。** 也不能仅靠“多 Activity、多 Stage、coverage CLOSED”宣布语义目标完成。
 
-因此，当前结果证明了局部活动解释和模型调用链能运行，但没有完成跨 Activity 的业务发现与串联。继续修改九章措辞、增加证据校验或扩大同一机械分组，不会解决这个问题。
+当前实现已具备 corpus、卡片、目录分片/合并、候选完整阅读、源码请求、详细过程、归并、发布及过程专用运行入口。固定输入为326条已审 Activity及原M10材料；不重建它们。
 
-## 2. 保留、替换和不重做
+当前真实结果：
+- 14个目录候选，发布46个过程，其中21个含多个Activity。
+- 326条均有处置：102 PROCESS_MEMBER、157 SUPPORT_ONLY、17 STANDALONE、50 UNCLASSIFIED；coverage CLOSED，semantic PARTIAL。
+- 库存单据候选主要按新增/修改/审核/复制/删除分组；阶段仍是“按独立入口接收请求”等技术外壳，没有形成所需的订单生命周期。
+- 该候选的DRAFT及REVIEW源码请求均为空；源码目录只有短编号和相同的通用用途说明，难以选中要核对的实现。
+- 正文大量打印结构字段和裸来源编号；来源JSONL确实存在，但读者不能直接跳到片段。
+- 旧340个单Activity、单Stage结果是历史前身，不是当前实现。不能再把替换旧分组算作本次工作。
 
-### 2.1 原样复用
+这些是语义组织和展示缺口，不是“再多收集证据”即可解决。卡片已有步骤包含业务变体线索，不能把失败全部归咎于一个缺失字段。
 
-- 冻结源码、719 文件清单、JDT 导航索引、方法正文、调用与 SourceRef。
-- 326 个完整已审 Activity 及其目的、对象、输入、条件、步骤、结果、规则、公式、问题和限制。
-- 现有 Provider seam、YAML 两级并发、DRAFT→完整 REVIEW job、逐 job 保存、模型批次和 checkpoint 复用。
-- Canonical JSON、运行归属、覆盖记录和确定性 Markdown 渲染能力。
-- JavaParser 作为可选代码引擎；它不需要追平 JDT。
+## 2. 最小修改范围
 
-### 2.2 替换
-
-- 用“全仓业务目录发现 → 候选过程材料组装 → 详细过程重建 → 仓库过程归并”替换当前精确 token/file 连通分量分组。
-- 用能表达条件、拒绝、状态变化、结果和多业务变体的过程模型替换浅的 `BusinessProcessStage(order, activityId, description)`。
-- 用 `ActivityUse` 表示同一通用 Activity 在不同过程、不同业务变体中的用法。
-- 用 `business-processes.md` 作为过程发现的首要可读产物；固定九章继续存在，但只消费已归并过程目录，不承担第二次过程发现。
-
-### 2.3 不重做
-
-- 不重新运行 JDT，也不重新扫描冻结仓库。
-- 不重跑全部 326 个 Activity 的 DRAFT/REVIEW。
-- 不重建五张图、Fact/Proof 或 Step05 上下文。
-- 不在 Java 中加入“销售、采购、库存、财务”等业务词典。
-- 不增加数值置信分、知识图数据库、向量数据库、消息队列或新恢复系统。
-
-只有当候选过程深入核对时发现某个 Activity 与已保存源码存在实质矛盾，才允许为该 Activity 创建具名、定向的 delta review；这不是全量重跑入口。
-
-## 3. 新的完整接力
-
-```text
-已保存 JDT/冻结源码
-        │
-        ├──────────────┐
-        │              │按需取回真实片段
-326 个 ReviewedActivity│
-        ↓              │
-ActivityIndexCard 全仓目录
-        ↓
-LLM 发现 Business Area 与重叠 Candidate Process
-        ↓
-程序按 activityId 取回完整 Activity，并提供 SourceRef 目录
-        ↓
-LLM DRAFT 选择过程相关分支并请求需要核对的源码
-        ↓
-程序从已保存 JDT/源码解析请求，不重新导航
-        ↓
-LLM REVIEW 形成详细阶段、分支、规则、结果和未知项
-        ↓
-LLM 对跨候选重复、父子和相关关系做一次仓库归并
-        ↓
-程序确定性发布仓库过程目录、coverage 与 business-processes.md
-        ↓
-现有九章模块只基于已归并目录写一份下游报告
-```
-
-目录阶段只看精简卡，避免一次发送 326 份完整源码；详细重建阶段必须重新打开完整 Activity，不能只靠卡片摘要。关键规则由保存的 JDT/源码片段核对，既不重新扫描，也不相信目录摘要能替代原文。
-
-## 4. 新增和调整的模块
-
-外部只保留两个深 Module Interface：
-
+保持两个深接口：
 ```java
 ProcessDiscoveryResult BusinessProcessDiscovery.discover(ProcessDiscoveryRequest request);
 BusinessProcessPublication BusinessProcessPublisher.publish(ProcessDiscoveryResult result);
 ```
 
-第一项隐藏目录、组装、候选重建和归并；第二项只做验证、覆盖与确定性发布。它们都是 `RepositoryAnalysisAgent` 内部模块，不新增公开 Agent Interface。
+保留：JDT、前五步、326条已审Activity、固定来源、线程池、DRAFT→完整REVIEW、任务保存/显式复用、覆盖枚举、公共Agent和CLI。
 
-内部职责及详细设计：
+只修改Step07：
+1. 卡片和目录Prompt能发现通用Activity的不同业务用法，不把它仅归为CRUD。
+2. 候选允许同一Activity的不同variant；完整正文按Activity去重，不丢不同用法。
+3. 来源目录给出已有源码的可辨识预览，沿用DRAFT请求、REVIEW读取完整片段。
+4. 阶段增加业务叙述，规则明确适用的ActivityUse；审阅具体条件和生命周期联系。
+5. 归并保留这些细节；正文以业务叙述呈现，来源独立可点击。
 
-| 内部模块 | 只负责什么 | 详细设计 |
+不增加模型轮次、行业词表、自然语言规则引擎、证明层、检索数据库或恢复系统。不重跑Activity，不启用Step08；这轮不做九章。
+
+## 3. 数据接力和模块责任
+
+| 模块 | 输入 → 输出 | 本次变化 |
 | --- | --- | --- |
-| FrozenAnalysisCorpus | 读取并验证现有 Activity、JDT、源码和 SourceRef；提供按 ID 查询；确定性投影未进候选 Activity 的已有知识项 | [设计](../modules/business-process-discovery/frozen-analysis-corpus.md) |
-| RepositoryBusinessCataloger | 从全仓精简卡发现领域、候选过程和重叠成员关系 | [设计](../modules/business-process-discovery/repository-business-cataloger.md) |
-| ProcessMaterialAssembler | 取回候选所需完整 Activity、语句 handle 和可按需查询的源码目录 | [设计](../modules/business-process-discovery/process-material-assembler.md) |
-| CandidateProcessReconstructor | DRAFT+REVIEW 重建详细阶段、分支、规则和结果 | [设计](../modules/business-process-discovery/candidate-process-reconstructor.md) |
-| RepositoryProcessConsolidator | 归并重复候选，保留父子、相关、替代和未决关系 | [设计](../modules/business-process-discovery/repository-process-consolidator.md) |
-| BusinessProcessPublisher | 校验分母和引用，发布 JSON、coverage 与主业务 Markdown | [设计](../modules/business-process-discovery/business-process-publisher.md) |
+| FrozenAnalysisCorpus | 已审Activity + M10 SourceReference → 只读查询和statement handle | 保持当前来源范围，不新增JavaCodeIndex读取 |
+| RepositoryBusinessCataloger | 全仓字面索引卡 → 业务领域、重叠候选、处置 | 补已有businessRules；候选按对象生命周期/业务目的发现 |
+| ProcessMaterialAssembler | 候选 → 完整Activity、用法、来源目录 | 同Activity多用法、正文去重、原文预览 |
+| CandidateProcessReconstructor | 完整材料 → DRAFT → 所请求完整源码 → REVIEW | 阶段narrative、规则activityUseIds、具体业务条件 |
+| RepositoryProcessConsolidator | 全部已审过程 → 唯一catalog | 保留用法、正文和规则；不将无关阶段拼成假生命周期 |
+| BusinessProcessPublisher | 封闭result → 正文、来源、catalog、coverage | 五项输出；无模型、无外部回读 |
 
-## 5. 数据合同修改
+所有业务判断由模型完成。Java只处理ID、引用、结构、归属、保存和确定性渲染。
 
-### 5.1 精简索引卡
+## 4. 全仓目录：发现业务用法，不制造行业规则
 
-`ActivityIndexCard` 是现有 ReviewedActivity 的确定性投影，至少包含：
+### 4.1 卡片
 
+沿用当前字段的原文投影：name、businessPurpose、participants、businessObjects、triggerOrInput、conditions、activitySteps、codeDefinedResults、terms、scopeLimitations；增加已有businessRules。
+
+不让Java从中文抽取状态、行业词、隐含顺序或生成摘要。卡片去掉哈希等技术元数据，但不能截去数组尾部、规则条件或变体；变大时采用已有稳定分片及唯一合并。分片合起来恰好覆盖全部Activity。
+
+### 4.2 候选
+
+模型回答：有哪些业务对象/目的？哪些活动描述创建、修改、状态变化、关联对象、履约或结束？哪些只是支撑查询？关系有什么线索、缺什么？
+
+复用candidate的purpose记录候选联系理由，variant记录该Activity在此候选中的具体对象/分支用途。不新增一套关系证明字段。
+
+同一候选允许同一Activity多次出现，只要variant不同；唯一性按 `(activityId, variant)` 校验，不能继续按ActivityId去重用法。模型给出的variant是待审业务解释，不是Java选择器。本次不增加逐variant处置账：候选用法可在深入阅读后收窄或删除，REVIEW必须逐项对照原用法并在现有reason/pendingConnections说明丢弃或缺失。结构分母仍是Activity、候选、已审过程；同Activity丢了一个业务variant属于语义验收问题，不能谎称当前ActivityId集合校验能捕获。相同方法、同表、同名均不能单独确立先后。
+
+全仓merge必须能连接跨分片的成员，保留不同变体及原Activity标识。查询可以提供关联线索，但不能因此被当成创建或履约动作。不强求所有对象都有完整生命周期。
+
+每个Activity必须有现有处置。声明PROCESS_MEMBER却没有任何真实候选成员关系是错误；不得由程序悄悄改成UNCLASSIFIED掩盖遗漏。
+
+## 5. 深入阅读：完整Activity和可用源码目录
+
+### 5.1 来源范围不扩张
+
+第一版仍只使用当前corpus中Activity引用且经M10验证的SourceRef；不重新读取客户checkout、不导航、不查JavaCodeIndex。若真正需要的片段不在此集合，记录具体缺失，另行讨论定向补料。
+
+完整Activity保留条件、步骤、规则、结果、公式、问题和限制；稳定statement handle保持不变。一个Activity以多个variant参与时，正文只发送一次，用法列表分别引用它。
+
+### 5.2 源码目录
+
+替换无区分度的“用于按需核对已保存源码”为：
 ```json
 {
-  "activityId": "activity:…",
-  "name": "批量审核或反审核库存单据",
-  "purpose": "检查并提交一组单据的审核状态变化",
-  "businessObjects": ["库存单据", "单据状态", "库存"],
-  "actions": ["审核", "反审核", "更新状态"],
-  "stateObservations": ["0→1", "1→0"],
-  "identifiers": ["单据ID集合"],
-  "resultSummaries": ["提交批量状态更新"],
-  "limitations": ["外部事务提交结果未知"]
+  "ref": "S688",
+  "activityIds": ["A1"],
+  "openingLines": ["…该SourceReference原文的前8个物理行…"]
 }
 ```
+示例内容是字段示意，不是假造源码。预览只能从已保存snippet确定性截取；已有可用符号信息可保留，不为生成方法名再建解析器。模型不需要本机路径或身份链。
 
-程序不能添加卡片中不存在的领域标签；模型从全部卡片中发现业务领域和同义词。
+DRAFT据此请求完整SourceRef。REVIEW看到原完整Activity、实际完整DRAFT、程序解析出的完整原始片段；预览不能充当完整规则依据。空请求仍合法：材料已经充分时不强迫多查。不可因空请求自动判失败，也不可把空请求自动视为充分。
 
-### 5.2 活动语句引用
+不得加入第三轮、自动重试或模型自由浏览文件系统。合法来源不足时写UNRESOLVED及缺少的内容。
 
-完整 Activity 的可引用内容由程序赋予稳定 handle，例如：
+## 6. 详细业务输出：两个语义字段
 
+### 6.1 阶段正文
+
+`ProcessStage` 增加必填非空 `narrative`：
+- 写谁/什么对象，在什么条件下做什么，形成什么变化或结果。
+- 阶段以业务里程碑/活动命名，不默认生成技术调用模板。
+- 已知具体值和拒绝分支必须说清；正式业务含义未知时保留代码值并注明待确认。
+- 无根据不指定岗位；不把静态代码行为写成某次运行成功。
+
+保留entryConditions、actions、stateChanges、rejectionConditions、outcomes、transitions等结构字段；narrative不取代它们。完整REVIEW同时检查叙述与结构字段，不能保存时只留标题。
+
+### 6.2 规则适用范围
+
+`BusinessRule` 增加必填非空 `activityUseIds`；模型wire使用 `activityUseLocalIds`，解析为正式ID。
+
+规则继续保存：
 ```text
-activity:42fb…/businessRules/0
-activity:42fb…/conditions/1
-activity:42fb…/codeDefinedResults/0
+subject / when / actionOrDecision / otherwise / result
+certainty / statementRefs / sourceRefs
+activityUseIds
 ```
 
-它让过程模型明确指出自己使用了哪条已审条件或规则，不为这些内容再造一套 Proof。
+Java检查用法属于本过程，规则引用属于这些用法对应Activity允许的引用集合；这只是来源范围检查，**不证明某段条件适用于每个业务变体**。具体分支适用性由REVIEW核对。
 
-### 5.3 ActivityUse
+例如同一个新增方法中某价格校验只适用于特定单据子类型，就不能写成所有订单均受该规则限制。不能因为整方法SourceRef存在就把整个方法里的规则复制给所有ActivityUse。
 
-```json
-{
-  "activityUseId": "use:sales-order-create",
-  "activityId": "activity:c7f1…",
-  "variant": "销售订单",
-  "role": "CORE",
-  "statementRefs": ["activity:c7f1…/businessRules/2"],
-  "sourceRefs": ["S…"]
-}
-```
+### 6.3 确认与推断
 
-同一个“新增库存单据及明细” Activity 可以分别产生销售订单、销售出库、销售退货等 ActivityUse；不能把整项 Activity 的所有分支同时写入每个过程阶段。
+保留CONFIRMED / INFERRED / UNRESOLVED，不增加分数。
+- 有ref是CONFIRMED的必要来源条件，不是充分语义证明。
+- 跨入口存在关联字段可支持INFERRED的业务联系，不等同Controller直接调用或强制时序。
+- “可关联”说明关联到什么、依据哪个条件、关联后做什么；找不到允许/禁止条件就明确缺失，不用空话填补。
+- Java不写中文关键词黑名单、不验证中文蕴含；结构错误是fatal，语义质量由完整REVIEW和真实样例验收判断。
 
-### 5.4 详细过程
+## 7. 归并：不丢细节，也不拼假流程
 
-每个过程必须能直接支持下列读者问题：过程名称、目的和适用范围、步骤及分支、重要业务规则、结束结果、待确认联系和来源引用。核心结构为：
+保持主处置KEEP / MERGE_INTO / REJECT，附加关系PARENT_CHILD / RELATED / ALTERNATIVE。
 
-```text
-BusinessProcess
-  name / purpose / scope
-  participants / businessObjects
-  activityUses[]
-  stages[]
-    entryConditions[]
-    actions[]
-    stateChanges[]
-    rejectionConditions[]
-    outcomes[]
-    transitions[]
-    certainty
-    activityStatementRefs[] / sourceRefs[]
-  branches[] / businessRules[] / endResults[]
-  knowledgeItems[]
-    kind: OBJECT | FIELD_OR_DIMENSION | OBJECT_RELATION | FORMULA_OR_METRIC | QUESTION
-    text / owner / certainty / activityStatementRefs[] / sourceRefs[]
-  supportActivityUses[] / pendingConnections[]
-```
+合并必须保留各ActivityUse、阶段narrative、规则适用用法、具体条件、certainty和来源。只能删除完全相同的重复记录，不能用一句总结替代不同分支。
 
-每条重要规则使用 `subject + when + action/decision + otherwise + result + certainty + refs`。禁止输出“状态允许时可修改”“满足条件后审核”之类丢掉已知谓词的句子。
+归并DRAFT/REVIEW沿用当前完整已审Process JSON输入，包含正文、规则、用法和来源，不新增摘要投影。模型只有裁决权，没有改写权。程序允许MERGE_INTO的前提是：按(activityId, variant, role)映射用法后，两份完整阶段序列的业务字段（含narrative、结构条件、certainty和refs）逐项相等；只忽略各自局部ID，不以中文相似度匹配。相同序列可无损并入其余记录并只去除完全相同记录；不满足该条件的合并裁决拒绝，不隐式降级或追加模型轮次。
 
-`knowledgeItems` 保存九章第 3、5、6、7、8 章所需的已审正文。只保存 statement/source ref 不够，因为 Step08 不再读取 raw Activity；候选 REVIEW 必须选择并携带实际对象说明、字段定义、关系、公式/指标或问题文本，仓库归并只能去重和归属，不能重新总结。被目录直接处置为 SUPPORT/STANDALONE/UNCLASSIFIED 的 Activity 不经过候选 REVIEW；`BusinessProcessDiscovery` 必须在同一 corpus 内从原 ReviewedActivity 确定性投影其知识项，写入 `ProcessDiscoveryResult.directActivityKnowledgeItems`，owner 明确为该 Activity 及其 grouping disposition。Publisher 只校验和发布这个封闭结果，不能另行回读 Activity、丢内容或创造假过程。没有公式时保持空集合，后续明确“未识别到可定义指标”。
+不同过程仅共享通用Activity，或不同variant顺序无法无损合并时，保留独立过程并记录关系。**数组拼接并不代表这些阶段按顺序执行。** 仓库归并不重建新生命周期，不改写已审业务内容。
 
-## 6. 模型与程序的固定职责
+## 8. 可读发布与最小Wire变化
 
-### 程序固化
+### 8.1 正文
 
-- 打开已保存 Activity/JDT/source/ref；生成卡片和语句 handle。
-- 校验 ID、引用、分母、结构、Provider 输出范围和保存身份。
-- 按模型返回的成员 ID 取回完整 Activity 和源码片段。
-- 调度并行候选 job，稳定聚合，确定性渲染 JSON/Markdown。
-- 对每个 Activity 和 Candidate 保存最终处置。
+阶段呈现：业务名称 → narrative → 必要分支/转移 → 一个“查看依据”链接。不用括号列所有技术Activity名，也不在句末铺满SourceRef。
 
-### Prompt + LLM 完成
+完整结构字段仍在catalog；Markdown可用“条件与结果明细”折叠区确定性保留全部字段，避免渲染丢失，但主要允许/拒绝条件必须在narrative中可读，不能只藏在折叠区。规则显示适用用法的业务名称，不输出机器ID墙。
 
-- 从全仓卡片发现业务领域、同义词和候选过程。
-- 判断 Activity 在过程中的 CORE、OPTIONAL、ROLLBACK、SUPPORT、QUERY 或 ANALYTICS 用途。
-- 选择通用 Activity 中与当前过程相关的分支。
-- 推断阶段、先后、并行、替代和回退，并将非直接关系标为 `INFERRED` 或 `UNRESOLVED`。
-- 用业务语言写出精确条件、动作、状态变化和结果。
-- 归并重复候选，识别父子、相关和替代过程。
+有直接sourceRefs的阶段，“查看依据”跳到本过程来源索引，再列文件名、行范围，逐条跳到 `sources.md#s688`。全部引用保留，不任意截成前N条。
 
-PARTIAL 只表示合法且分母闭合的内容处置，例如容量预检后的明确未处理项、`UNCLASSIFIED` 或 `INSUFFICIENT_MATERIAL`。Provider transport/runtime/schema、坏响应或 uncertain started request 仍是 fatal：当前批次不发布正式过程目录，也不继续九章；后续新批次可以复用未受影响的完整已审结果，但不续接半轮。
+来源链接是非核心展示项：没有可用链接时允许留空，不强制增加说明、补齐、反查或专项验收，也不阻塞发布。复用现有来源即可，不新增证据模块或模型调用；主要验收始终是业务步骤、分支、具体规则和结果是否可读。
 
-模型不能创建 Activity、SourceRef、源码位置或确认现实中某次运行成功；Java 不能判断自由中文的业务同义词或硬编码领域顺序。
+新增 `sources.md`，从已有SourceReference确定性生成：短编号锚点、文件相对路径、原行范围和完整snippet。源码围栏长度按内容处理，避免snippet破坏Markdown。它不是新证据，不访问源码磁盘。连同JSONL一起交付后，两个Markdown相对链接可移植。
 
-## 7. 保存与输出
+### 8.2 输出和版本
 
-有意义的可复用检查点：
+canonical module仍为 `REPOSITORY_KNOWLEDGE/1/business-process-publisher`，producer v1→v2。
 
-- `activity-index-cards.jsonl`
-- `business-process-candidates.jsonl`
-- `reviewed-business-processes.jsonl`
-
-正式业务交付：
-
-- `repository-business-process-catalog.json`
-- `process-coverage.json`
-- `business-processes.md`
-- 复用现有 `source-refs.jsonl`
-
-检查点是为了失败后复用，不是新的证据层。`business-processes.md` 是判断过程发现是否有用的首要读物。现有 `business-processes.jsonl`、`repository-business-knowledge.json` 和九章文件在新实现完成前仍是历史结果，不可重写或冒充新合同输出。
-
-## 8. 以销售业务闭环推演
-
-以下推演使用当前 326 Activity 中已经存在的真实字段与已保存源码事实；它是新算法的目标演示，不是假称新模块已经运行。
-
-1. 目录模型从卡片中发现“新增库存单据”“更新已有单据”“批量审核/反审核”“查询关联退货”“销售统计”“新增收款单”等活动可能围绕销售订单、销售出库、销售退货和客户收款形成重叠候选。
-2. 程序按 activityId 取回完整 Activity。它看到通用新增活动同时含“销售订单/销售/销售退货”分支，因此为不同候选建立不同 ActivityUse，而不是复制一个模糊阶段。
-3. 过程 DRAFT 选择并保留具体规则：原单状态必须为 `0` 才允许编辑；审核是 `0→1`；反审核要求当前 `1` 且采购状态 `0`，采购状态 `2/3` 时拒绝；销售出库可以关联销售订单，也可以独立创建。
-4. DRAFT 请求核对关联数量和状态写回的 SourceRef。程序从已保存 JDT/源码返回片段；REVIEW 据此写明关联出库后订单可能保持已审核、进入部分完成或完成，而不是写“满足条件后更新状态”。
-5. REVIEW 将查询详情和销售统计放入支撑/分析活动，不伪装成履约阶段；将销售退货和客户收款保留为相关过程。未被源码证明的“审核是出库的强制后端前置条件”“收款一定关联销售订单而非出库单”进入待确认。
-6. 仓库归并得到至少“销售订单管理与履约”“销售退货处理”“客户收款与欠款”“销售分析与对账”等过程及关系。程序检查所有相关 Activity 已进入过程、支撑、独立或未分类处置。
-7. `business-processes.md` 展示每个过程的完整阶段、规则和来源；九章模块以后只将这些已归并结论编排成仓库级概览，不再自行猜销售流程。
-
-该推演可以走通，因为目录拥有全仓视野，详细重建重新打开完整 Activity，关键规则还能回到已保存 JDT/源码。仍无法从静态材料确定的外部审批、岗位制度、运行时配置和真实交易结果会以 `UNRESOLVED` 保存，不会被覆盖账隐藏。
-
-## 9. 后续实施必须修改的代码面
-
-本表是下一份实施计划的代码差异清单。它不授权本轮修改 Java，也不要求按文件机械拆任务；若实现中发现名字已移动，以同一职责的真实 owner 为准。
-
-| 当前代码面 | 保留什么 | 必须修改或替换什么 |
+| 文件 | Schema | 变化 |
 | --- | --- | --- |
-| `analysis.interpretation.activity` | `ReviewedActivity`、完整 DRAFT/REVIEW、326 条 checkpoint、coverage | 不全量重跑；只增加 corpus 可查询投影/statement handle 所需的只读适配 |
-| `analysis.knowledge.ProcessExplainer` | Provider seam、两级并发、逐 job 保存、失败屏障的通用执行方式 | 移除精确 token/file 连通分量和容量切片作为过程发现入口；由 `BusinessProcessDiscovery` 取代 |
-| `BusinessProcess` / `BusinessProcessStage` | 可复用的业务名称、目的、来源概念 | 升级为 ActivityUse、详细 stage、rule、transition、certainty、CatalogKnowledgeItem 和 candidate disposition；不能保留只含 `order/activityId/description` 的目标 wire |
-| `ProcessKnowledgeCheckpointPublisher/Reader` | 原子保存、modelBatch/sourceRun 归属和重开校验 | 改为卡片、候选、逐候选 REVIEW、consolidated catalog 与 coverage 的新版本；旧输出不双读、不覆盖 |
-| `process-group-*.txt`、`repository-summary-*.txt` | 无业务词硬编码、DRAFT/REVIEW 基本纪律 | 由目录、候选过程和仓库归并的中文 Prompt/Schema 取代；旧 Prompt 只作历史测试输入 |
-| `BusinessAnalysisWorkflow` / `PersistedBusinessRunExecutor` | Activity checkpoint 复用、线程池、批次归属、失败保留 | Step06 后调用新的两个深 Interface；过程失败不得回退旧 `ProcessExplainer` 或触发 JDT/Activity |
-| `BusinessReportPublisher` 与报告 Prompt | 单份九章 DRAFT/REVIEW、SourceRef、确定性 Markdown | 输入改为 consolidated catalog/coverage；删除 raw Activity 重新发现、重排过程的能力 |
-| `BusinessCheckpointArtifactReader` / `BusinessOutputArtifactKey` / CLI artifact 查询 | 闭集查询、大小限制、无 Path | 登记新过程 catalog、coverage、`business-processes.md`；公共 `RepositoryAnalysisAgent` 方法不变 |
-| 现有 Step07/08 测试 | Provider 身份、并发上限、失败保存、九章结构等仍有效断言 | 用 326/340 singleton 建 RED；新增跨分片语义候选、ActivityUse、精确谓词、归并、零遗漏和 report-only-catalog 验收；删除只保护旧精确分组的测试 |
+| repository-business-process-catalog.json | repository-business-process-catalog-v2 | stage.narrative、rule.activityUseIds |
+| process-coverage.json | repository-business-process-coverage-v2 | ActivityDisposition增加原Activity的name，供读者辨认范围 |
+| business-processes.md | repository-business-process-markdown-v2 | 业务正文和来源链接 |
+| source-refs.jsonl | repository-business-process-source-references-v1 | 原结构不变 |
+| sources.md | repository-business-process-sources-markdown-v1 | 新的确定性来源视图 |
 
-明确不修改：JDT/Core/JavaParser 导航算法、Step01–05 wire、Activity Prompt v2、公共 Agent 方法、HTTP、第二存储系统和客户源码。若新过程实现为了方便要求其中任一项变化，必须先证明业务结果确实依赖它，不能顺手扩大范围。
+新增artifact type `REPOSITORY_KNOWLEDGE_BUSINESS_PROCESS_SOURCES_MARKDOWN`，其他type不改。coverage.name由程序投影，不让模型重写。
 
-## 10. 文档与未来实施范围
+受影响的类型、schema registry、producer、publisher、reader、exact-file checks、artifact查询和fixture同批修改；不能只让内存对象支持。Step07八份目录/merge/过程/归并Prompt资源及响应合同同步v2；源码目录/输入投影改变也进入任务fingerprint。旧v1结果保留，不伪装成新结果，不复用旧语义job冒充修正质量。
 
-本轮设计刷新必须同步：README、`AGENTS.md`、总体设计、Step05–08、Java 引擎下游说明、模型任务执行、中文 Prompt、两个 walkthrough、来源/发布附录。Step01–04 只补充它们在新接力中的稳定职责，不改其算法。
+上游Activity、M10、JDT版本不变；PROCESS_CATALOG output kind、三个owner和公共Agent方法不变。Step08仍不在本次生产路径，旧报告产物不覆盖。来源附件可通过现有artifact查询扩展闭集取得，不新增公共接口。
 
-下列历史/已完成计划保持历史原文，并在导航中明确不再是新语义实现依据：旧清理计划、JDT 可行性/接入计划、并发计划、旧整仓运行计划和十批计划。后续只基于本文和更新后的目标设计编写一份新的实施计划。
+## 9. 后续实现的准确修改面
 
-## 11. 实施验收闭环
+| 现有位置 | 修改 |
+| --- | --- |
+| DefaultBusinessProcessDiscovery | 卡片补原规则；候选多用法校验；完整Activity去重；源码预览；narrative和rule-use解析；禁止静默修正成员处置 |
+| BusinessProcessPromptCatalog及8份业务发现Prompt | v2中文指令/响应Schema；不预置行业答案 |
+| ProcessStage / BusinessRule / coverage disposition | 两个语义字段及一个确定性展示name；直接构造者同步 |
+| 现有归并代码 | 保留新字段与use映射；禁止机械拼接冒充生命周期 |
+| BusinessProcessMarkdownRenderer / CanonicalBusinessProcessPublisher | 业务正文、索引链接、sources.md、五文件发布 |
+| BusinessProcessCheckpointReader / artifact registry和查询 | v2重开、引用闭合、来源视图重渲染一致 |
+| 直接测试与saved-job匹配 | 多用法/分支范围/无损保存/链接/零上游调用/版本不误复用 |
 
-- 同一程序处理完全不同业务领域，不修改 Java 业务词典。
-- 全仓卡片全部进入候选成员、支撑、独立或未分类处置；候选可重叠。
-- 至少一个真实候选形成多 Activity、多 Stage 过程；不能再以 340 个单阶段过程作为成功。
-- 销售示例保留上述具体状态、允许/拒绝和关联数量规则；不得退化为空话。
-- 同一通用 Activity 可在不同过程以不同 ActivityUse 出现。
-- 关键规则能通过 Activity statement handle 和 SourceRef 回到已保存内容；不重新运行 JDT。
-- 目录摘要不能替代详细 Activity；九章不能重新发现或改写业务过程。
-- 未分类、冲突、外部效果和不确定顺序完整进入 coverage 与待确认项。
-- 过程 JSON 已表达的条件、分支、规则和结果在 `business-processes.md` 中不得丢失。
+这是下一份实施计划的输入，不是本轮代码改动。详细模块设计同目录同步；已完成的并发/JDT/旧实现计划保留历史原文。
+
+## 10. 用已保存材料推演与验收
+
+[完整例子](../examples/semantic-framework-walkthrough.md)逐项区分现有真实片段、程序投影、未来模型解释和未知项。
+
+- 采购例：linkApply关联申请，采购订单另以linkNumber支持特定订单关联；采购入库借关联单号更新原单进度。不能说所有采购必须来自申请。
+- 销售例：默认未审核与传入状态不同；修改/审核/反审核有具体状态限制；关联出库按数量更新订单进度；退货查询只能支持它实际表达的关联，不证明完整退货财务链。
+- 已知最低售价检查不能泛化到销售订单；请购→采购→入库、销售订单→出库是需按材料重建的业务联系，不是单个入口的直接调用链。
+- 别的领域使用同一代码和Prompt；领域词仅出现在fixture及模型输入/输出。
+
+先通过离线直接测试，再做小范围真实目录+过程验收：先检查目录是否自己发现业务用法，随后查看一份订单生命周期和一份不同关联路径。不能手工塞正确候选后声称目录通过，不能再先全仓跑完才发现是技术说明书。
+
+结构门检查引用、分母、版本和内容保留；语义门检查读者能否说清具体业务及步骤、分支、限制。二者分别报告。合法UNRESOLVED不自动失败，但“材料明明有谓词却写空话”“把子类型规则用错”“只有参数模板”不能被多Stage指标掩盖。
+
+本轮没有新的模型结果。已有来源足以支持上述受限路径的设计推演，不等于保证自动发现所有业务；未发现/无法串联的部分必须明确记录。
