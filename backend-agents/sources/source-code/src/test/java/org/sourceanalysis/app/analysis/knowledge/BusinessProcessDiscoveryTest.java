@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -163,6 +164,124 @@ class BusinessProcessDiscoveryTest {
             "// create physical line 7",
             "// create physical line 8");
     assertThat(sourceDirectory.has("purpose")).isFalse();
+  }
+
+  @Test
+  void requiresNonBlankNarrativeAndRuleUseIdsInProcessResponseSchemas() {
+    ScriptedProvider provider = new ScriptedProvider();
+
+    new DefaultBusinessProcessDiscovery(provider)
+        .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
+
+    for (String taskKind : List.of("BUSINESS_PROCESS_DRAFT", "BUSINESS_PROCESS_REVIEW")) {
+      JsonNode processSchema = provider.outputSchema(taskKind);
+      JsonNode stageSchema =
+          processSchema
+              .path("properties")
+              .path("processes")
+              .path("items")
+              .path("properties")
+              .path("stages")
+              .path("items");
+      assertThat(texts(stageSchema, "required")).contains("narrative");
+      assertThat(stageSchema.path("properties").path("narrative").path("type").asText())
+          .isEqualTo("string");
+      assertThat(stageSchema.path("properties").path("narrative").path("minLength").asInt())
+          .isEqualTo(1);
+
+      JsonNode ruleSchema =
+          processSchema
+              .path("properties")
+              .path("processes")
+              .path("items")
+              .path("properties")
+              .path("businessRules")
+              .path("items");
+      assertThat(texts(ruleSchema, "required")).contains("activityUseLocalIds");
+      assertThat(
+              ruleSchema
+                  .path("properties")
+                  .path("activityUseLocalIds")
+                  .path("type")
+                  .asText())
+          .isEqualTo("array");
+      assertThat(
+              ruleSchema
+                  .path("properties")
+                  .path("activityUseLocalIds")
+                  .path("items")
+                  .path("minLength")
+                  .asInt())
+          .isEqualTo(1);
+    }
+  }
+
+  @Test
+  void parsesWireRuleUseIdsToStoredGlobalActivityUseIds() throws Exception {
+    ScriptedProvider provider = new ScriptedProvider("rule-activity-use");
+    ProcessDiscoveryResult result =
+        new DefaultBusinessProcessDiscovery(provider)
+            .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
+
+    RepositoryBusinessProcessCatalog.BusinessProcess process =
+        result.catalog().processes().get(0);
+    RepositoryBusinessProcessCatalog.BusinessRule rule = process.businessRules().get(0);
+    Method activityUseIdsAccessor = null;
+    try {
+      activityUseIdsAccessor = rule.getClass().getMethod("activityUseIds");
+    } catch (NoSuchMethodException ignored) {
+      // Isolate the current v1 record's missing accessor as a behavioral RED.
+    }
+    assertThat(activityUseIdsAccessor)
+        .as("BusinessRule must expose stored/global activityUseIds")
+        .isNotNull();
+    if (activityUseIdsAccessor == null) {
+      return;
+    }
+    @SuppressWarnings("unchecked")
+    List<String> storedUseIds = (List<String>) activityUseIdsAccessor.invoke(rule);
+    assertThat(storedUseIds).containsExactly(process.activityUses().get(0).activityUseId());
+    assertThat(storedUseIds).doesNotContain("U1");
+  }
+
+  @Test
+  void rejectsRuleNamingAUseOutsideTheCurrentCandidateProcess() {
+    assertThatThrownBy(
+            () ->
+                new DefaultBusinessProcessDiscovery(new ScriptedProvider("rule-foreign-use"))
+                    .discover(new ProcessDiscoveryRequest(activities(), materials(), profile())))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void rejectsRuleRefsOutsideAllSpecifiedActivityUses() {
+    assertThatThrownBy(
+            () ->
+                new DefaultBusinessProcessDiscovery(
+                        new ScriptedProvider("rule-ref-outside-activity-use"))
+                    .discover(new ProcessDiscoveryRequest(activities(), materials(), profile())))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void sendsCompleteActualDraftAndCompleteRequestedSourceSnippetsToReview() {
+    ScriptedProvider provider = new ScriptedProvider();
+
+    new DefaultBusinessProcessDiscovery(provider)
+        .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
+
+    JsonNode reviewInput = provider.processReviewInput();
+    JsonNode actualDraft = reviewInput.path("actualDraft");
+    assertThat(actualDraft).isEqualTo(provider.processDraftResponse());
+    assertThat(actualDraft.path("processes")).hasSize(1);
+    assertThat(actualDraft.path("processes").get(0).path("activityUses")).hasSize(3);
+    assertThat(actualDraft.path("processes").get(0).path("stages")).hasSize(3);
+    assertThat(actualDraft.path("processes").get(0).path("businessRules")).hasSize(1);
+
+    JsonNode createExcerpt =
+        findById(reviewInput.path("resolvedSourceExcerpts"), "ref", "S1");
+    assertThat(createExcerpt.path("snippet").asText()).isEqualTo(sourceSnippet("create"));
+    assertThat(createExcerpt.path("snippet").asText()).contains("// create physical line 10");
   }
 
   @Test
@@ -547,6 +666,7 @@ class BusinessProcessDiscoveryTest {
     private JsonNode processInput;
     private JsonNode processActivities;
     private JsonNode processReviewInput;
+    private JsonNode processDraftResponse;
 
     private ScriptedProvider() {
       this.catalogShardBarrier = null;
@@ -612,6 +732,21 @@ class BusinessProcessDiscoveryTest {
                       ((ArrayNode) use.path("sourceRefs")).add("S3");
                     }
                   });
+        } else if ("rule-activity-use".equals(conflictingCatalogDisposition)) {
+          ObjectNode rule =
+              (ObjectNode) response.path("processes").get(0).path("businessRules").get(0);
+          rule.putArray("activityUseLocalIds").add("U1");
+          rule.putArray("sourceRefs").removeAll().add("S3");
+        } else if ("rule-foreign-use".equals(conflictingCatalogDisposition)) {
+          ObjectNode rule =
+              (ObjectNode) response.path("processes").get(0).path("businessRules").get(0);
+          rule.putArray("activityUseLocalIds").add("U999");
+          rule.putArray("sourceRefs").removeAll().add("S3");
+        } else if ("rule-ref-outside-activity-use".equals(conflictingCatalogDisposition)) {
+          ObjectNode rule =
+              (ObjectNode) response.path("processes").get(0).path("businessRules").get(0);
+          rule.putArray("activityUseLocalIds").add("U1");
+          rule.putArray("sourceRefs").removeAll().add("S2");
         } else if ("repeated-activity-use-reference".equals(conflictingCatalogDisposition)) {
           JsonNode firstUse = response.path("processes").get(0).path("activityUses").get(0);
           ((ArrayNode) firstUse.path("statementRefs"))
@@ -636,6 +771,9 @@ class BusinessProcessDiscoveryTest {
           firstStage.put("certainty", "INFERRED");
           firstStage.putArray("statementRefs");
           firstStage.putArray("sourceRefs");
+        }
+        if (request.taskKind().endsWith("DRAFT")) {
+          processDraftResponse = response.deepCopy();
         }
       }
       return new StructuredModelResponse(
@@ -838,6 +976,19 @@ class BusinessProcessDiscoveryTest {
 
     private JsonNode processReviewInput() {
       return processReviewInput;
+    }
+
+    private JsonNode processDraftResponse() {
+      return processDraftResponse;
+    }
+
+    private JsonNode outputSchema(String taskKind) {
+      for (int index = 0; index < taskKinds.size(); index++) {
+        if (taskKind.equals(taskKinds.get(index))) {
+          return outputSchemas.get(index);
+        }
+      }
+      throw new AssertionError("missing schema for " + taskKind);
     }
 
     private int maximumConcurrentCatalogShards() {
