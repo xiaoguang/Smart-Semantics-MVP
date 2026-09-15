@@ -58,6 +58,20 @@ class BusinessProcessPromptV2ContractTest {
   }
 
   @Test
+  void catalogMergePromptsRequireLifecycleCandidatesAndConsistentMembership() {
+    String mergePrompts =
+        List.of("BUSINESS_CATALOG_MERGE_DRAFT", "BUSINESS_CATALOG_MERGE_REVIEW").stream()
+            .map(BusinessProcessPromptCatalog::instructionsFor)
+            .collect(Collectors.joining("\n"));
+
+    assertThat(mergePrompts)
+        .contains("业务对象或业务变体的生命周期")
+        .contains("不能仅按新增、修改、删除")
+        .contains("PROCESS_MEMBER")
+        .contains("至少一个候选");
+  }
+
+  @Test
   void promptsDoNotSeedFixtureDomainAnswers() {
     String prompts =
         STEP07_RESOURCES.stream()

@@ -22,11 +22,12 @@
 - Catalog merge REVIEW returned empty catalog arrays. The existing program denominator check rejected publication with `PROCESS_CATALOG_ACTIVITY_DENOMINATOR_OPEN`; no formal Step07 output was published and no upstream analysis was rerun.
 - Added a direct RED/GREEN contract test and a merge-only response-schema constraint requiring exactly one disposition for every repository Activity. Updated the merge prompts so uncertainty becomes an explicit `UNCLASSIFIED` disposition rather than an empty catalog. Shard task contracts are unchanged and remain eligible for reuse.
 - Reuse run `analysis-run:f9861990c7813ed4bf613e7881fec1e272cdaca39f3d0c9e40d725592c4ada19` proved that all twelve shard calls were reused and only merge DRAFT/REVIEW ran. DRAFT returned 9 candidates and 326 dispositions. REVIEW also returned 326 dispositions, but repeated two legal Activity IDs inside one business-area membership list. The parser's combined unknown-or-duplicate error rejected the catalog. Exact duplicate area membership is now deterministically removed while genuinely unknown IDs remain fatal; no semantic content, candidate use, disposition, or source reference is dropped.
+- Zero-call parse run `analysis-run:2bc623110bacb9dfd6844f2580508d3202d8bdc2177d8b25e36149c196ca7907` then exposed a second contradiction in that same reviewed response: 32 Activities were labelled `PROCESS_MEMBER` but occurred in no candidate. The existing fatal check is retained because silently assigning them would invent candidate membership and silently downgrading them would lose intended process members. Merge prompts now require lifecycle/object-handoff candidates instead of broad CRUD maintenance groups and require every `PROCESS_MEMBER` to occur in at least one candidate; otherwise the model must choose an explicit nonmember disposition.
 
 ## Current state and next action
 
-- Failed catalog batches retained read-only: `analysis-run:128575e8423a95090000c4b9941910f1b8af3203c749770ec40b88b40f0e9860` and `analysis-run:f9861990c7813ed4bf613e7881fec1e272cdaca39f3d0c9e40d725592c4ada19`.
-- Rebuild the narrow parser fix, then start a new catalog batch with explicit reuse from `analysis-run:f9861990c7813ed4bf613e7881fec1e272cdaca39f3d0c9e40d725592c4ada19`. The completed catalog DRAFT/REVIEW should both be reused with zero Provider calls; verify the parsed catalog still contains all 326 dispositions.
+- Failed catalog batches retained read-only: `analysis-run:128575e8423a95090000c4b9941910f1b8af3203c749770ec40b88b40f0e9860`, `analysis-run:f9861990c7813ed4bf613e7881fec1e272cdaca39f3d0c9e40d725592c4ada19`, and the zero-call parser check `analysis-run:2bc623110bacb9dfd6844f2580508d3202d8bdc2177d8b25e36149c196ca7907`.
+- Rebuild the prompt resources, then start a new catalog batch with explicit reuse from `analysis-run:f9861990c7813ed4bf613e7881fec1e272cdaca39f3d0c9e40d725592c4ada19`. Shard jobs remain reusable; merge DRAFT/REVIEW must rerun because their prompt identity changed. Verify all 326 dispositions, no orphan `PROCESS_MEMBER`, and lifecycle-oriented rather than broad CRUD candidates.
 - After catalog closure, run two real candidate DRAFT/REVIEW pairs, inspect business conditions and narratives, then reuse them in the remaining candidate run, consolidation, and five-artifact publication.
 
 ## Verification
@@ -36,4 +37,5 @@
 | Merge schema RED | PASS as a failing test: min/max item count absent |
 | Merge schema GREEN | PASS, exact count required for DRAFT and REVIEW |
 | Exact duplicate area membership RED/GREEN | PASS; duplicate normalized, unknown ID still rejected |
-| `BusinessProcessDiscoveryTest,BusinessProcessPromptV2ContractTest` | 30 tests, 0 failures/errors |
+| Merge lifecycle/membership Prompt RED/GREEN | PASS; no fixture domain terms introduced |
+| `BusinessProcessDiscoveryTest,BusinessProcessPromptV2ContractTest` | 31 tests, 0 failures/errors |
