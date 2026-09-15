@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -282,6 +283,21 @@ class BusinessProcessDiscoveryTest {
         findById(reviewInput.path("resolvedSourceExcerpts"), "ref", "S1");
     assertThat(createExcerpt.path("snippet").asText()).isEqualTo(sourceSnippet("create"));
     assertThat(createExcerpt.path("snippet").asText()).contains("// create physical line 10");
+  }
+
+  @Test
+  void preservesOriginalActivityNameInCoverageJsonProjection() {
+    ProcessDiscoveryResult result =
+        new DefaultBusinessProcessDiscovery(new ScriptedProvider())
+            .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
+
+    ProcessCoverage.ActivityDisposition disposition =
+        result.coverage().activityDispositions().stream()
+            .filter(value -> value.activityId().equals("activity:create"))
+            .findFirst()
+            .orElseThrow();
+    JsonNode json = new ObjectMapper().valueToTree(disposition);
+    assertThat(json.path("name").asText()).isEqualTo("创建销售订单");
   }
 
   @Test
@@ -894,6 +910,7 @@ class BusinessProcessDiscoveryTest {
       rule.put("otherwise", "拒绝修改");
       rule.put("result", "只有未审核订单进入更新");
       rule.put("certainty", "CONFIRMED");
+      rule.putArray("activityUseLocalIds").add("U1").add("U2").add("U3");
       rule.putArray("statementRefs");
       rule.putArray("sourceRefs").add("S2");
       process.putArray("endResults").add("订单状态可以由0变为1");
@@ -924,6 +941,7 @@ class BusinessProcessDiscoveryTest {
       stage.put("order", order);
       stage.put("name", name);
       stage.putArray("activityUseLocalIds").add(use);
+      stage.put("narrative", name + "：" + entry + "，" + action + "。");
       stage.putArray("entryConditions").add(entry);
       stage.putArray("actions").add(action);
       stage.putArray("stateChanges");

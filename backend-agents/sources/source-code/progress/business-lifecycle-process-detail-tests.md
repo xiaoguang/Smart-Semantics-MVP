@@ -27,13 +27,14 @@
 - Added a wire fixture containing `activityUseLocalIds` and a reflection-based assertion for the future stored/global `BusinessRule.activityUseIds` accessor, keeping the current v1 record compileable while isolating its missing accessor as RED.
 - Added rejection tests for a foreign/unknown activity-use local ID and for a source reference outside the rule's specified activity use.
 - Added a review-input assertion that compares `actualDraft` exactly with the complete draft response and checks a requested saved snippet includes content beyond the eight-line preview.
-- Deliberately skipped `ProcessCoverage.ActivityDisposition.name`; the current record has no accessor and this task was narrowed to the four executable RED areas.
+- Updated the scripted process fixture so all stages carry nonblank `narrative` and the baseline rule carries nonempty `activityUseLocalIds`, preventing stale v1 fixture shape from masking future GREEN behavior.
+- Added an isolated JSON projection assertion that the original Activity name survives in `ProcessCoverage.ActivityDisposition`.
 
 ## Verification
 
 | Command | Result | Key output |
 | --- | --- | --- |
-| `mvn -t .mvn/toolchains.xml -o -Dtest=BusinessProcessDiscoveryTest test` | RED | Test compilation passed; 20 tests ran with 4 failures, 0 errors, 0 skips. Failures are the missing `narrative` schema requirement, missing `BusinessRule.activityUseIds` accessor, and both rule-scope violations being accepted. The complete-review-input test passes against current production. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=BusinessProcessDiscoveryTest test` | RED | Test compilation passed; 21 tests ran with 5 failures, 0 errors, 0 skips. Failures are the missing `narrative` schema requirement, missing `BusinessRule.activityUseIds` accessor, both rule-scope violations being accepted, and missing original Activity `name` in coverage JSON. The complete-review-input test passes against current production. |
 | `mvn -t .mvn/toolchains.xml -o spotless:apply -DspotlessFiles=src/test/java/org/sourceanalysis/app/analysis/knowledge/BusinessProcessDiscoveryTest.java` | PASS | Focused test source formatted. |
 | `git diff --check -- src/test/java/org/sourceanalysis/app/analysis/knowledge/BusinessProcessDiscoveryTest.java progress/business-lifecycle-process-detail-tests.md` | PASS | No whitespace errors reported. |
 
@@ -44,7 +45,7 @@
 
 ## Blockers
 
-- None. Four intended RED failures are behavioral assertions; the review-input test is a passing regression guard.
+- None. Five intended RED failures are behavioral assertions; the review-input test is a passing regression guard.
 
 ## Exact next action
 
