@@ -228,7 +228,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
             CATALOG_MERGE_REVIEW,
             "business-catalog-merge",
             mergeInput,
-            catalogSchema(cards),
+            mergedCatalogSchema(cards),
             profile,
             binding("repositorySummary", 0),
             "process-catalog");
@@ -1312,6 +1312,15 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         "activityDispositions",
         "unresolvedQuestions");
     return root;
+  }
+
+  private ObjectNode mergedCatalogSchema(List<ActivityIndexCard> cards) {
+    ObjectNode schema = catalogSchema(cards);
+    ObjectNode dispositions =
+        (ObjectNode) schema.path("properties").path("activityDispositions");
+    dispositions.put("minItems", cards.size());
+    dispositions.put("maxItems", cards.size());
+    return schema;
   }
 
   private ObjectNode processSchema(Candidate candidate, FrozenCorpus corpus) {

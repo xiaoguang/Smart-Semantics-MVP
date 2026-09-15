@@ -353,6 +353,44 @@ class BusinessProcessDiscoveryTest {
   }
 
   @Test
+  void requiresTheMergedCatalogToDisposeEveryRepositoryActivity() {
+    ScriptedProvider provider = new ScriptedProvider(3);
+    ModelRuntimeIdentityV1 identity =
+        new ModelRuntimeIdentityV1("scripted", "fixture", "none", "none");
+    ModelJobExecutionConfiguration execution =
+        new ModelJobExecutionConfiguration(
+            3,
+            Map.of("pro", new ModelJobProviderBinding("pro", "account", 3, provider, identity)),
+            Map.of(
+                "activity", List.of("pro"),
+                "processGroup", List.of("pro"),
+                "repositorySummary", List.of("pro"),
+                "report", List.of("pro")),
+            temporaryDirectory,
+            AnalysisRunId.parse("analysis-run:" + "4".repeat(64)));
+    ProcessDiscoveryProfile profile =
+        new ProcessDiscoveryProfile(1, 8, 16, 64_000, 128_000, 64_000, 4, 64, 4_000);
+
+    DefaultBusinessProcessDiscovery.forExecution(execution)
+        .discover(new ProcessDiscoveryRequest(activities(), materials(), profile));
+
+    JsonNode draftDispositions =
+        provider
+            .outputSchema("BUSINESS_CATALOG_MERGE_DRAFT")
+            .path("properties")
+            .path("activityDispositions");
+    JsonNode reviewDispositions =
+        provider
+            .outputSchema("BUSINESS_CATALOG_MERGE_REVIEW")
+            .path("properties")
+            .path("activityDispositions");
+    assertThat(draftDispositions.path("minItems").asInt()).isEqualTo(3);
+    assertThat(draftDispositions.path("maxItems").asInt()).isEqualTo(3);
+    assertThat(reviewDispositions.path("minItems").asInt()).isEqualTo(3);
+    assertThat(reviewDispositions.path("maxItems").asInt()).isEqualTo(3);
+  }
+
+  @Test
   void derivesProcessMemberDispositionFromTheMoreSpecificCandidateMembership() {
     ProcessDiscoveryResult result =
         new DefaultBusinessProcessDiscovery(
