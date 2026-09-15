@@ -112,6 +112,37 @@ class SourceAnalysisCliContractTest {
   }
 
   @Test
+  void mapsRepositoryKnowledgeExecutionToTheSamePublicAgent() throws Exception {
+    Class<?> cliType = requiredClass("org.sourceanalysis.app.adapter.cli.SourceAnalysisCli");
+    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    PrintWriter output = new PrintWriter(bytes, true, StandardCharsets.UTF_8);
+    RecordingAgent agent = new RecordingAgent();
+    Object cli =
+        cliType
+            .getConstructor(RepositoryAnalysisAgent.class, PrintWriter.class, PrintWriter.class)
+            .newInstance(agent, output, output);
+    Method execute = cliType.getMethod("execute", String[].class);
+
+    assertThat(
+            (Integer)
+                execute.invoke(
+                    cli,
+                    (Object)
+                        new String[] {
+                          "execute-step",
+                          "--run",
+                          agent.runId.value(),
+                          "--target",
+                          "repository-knowledge"
+                        }))
+        .isZero();
+
+    assertThat(agent.executeRequest)
+        .isEqualTo(
+            new AnalysisStepExecutionRequest(agent.runId, AnalysisStepKey.REPOSITORY_KNOWLEDGE));
+  }
+
+  @Test
   void mapsMaterialPlanningToTheSamePublicAgentWithoutSelectingTheFinalDocument() throws Exception {
     Class<?> cliType = requiredClass("org.sourceanalysis.app.adapter.cli.SourceAnalysisCli");
     ByteArrayOutputStream bytes = new ByteArrayOutputStream();

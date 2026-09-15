@@ -9,7 +9,10 @@ public enum BusinessOutputArtifactKey {
   BUSINESS_MATERIALS(AnalysisStepKey.FLOW_INTERPRETATION, 10, "business-materials.jsonl"),
   ACTIVITY_EXPLANATIONS(AnalysisStepKey.FLOW_INTERPRETATION, 11, "activity-explanations.jsonl"),
   ACTIVITY_COVERAGE(AnalysisStepKey.FLOW_INTERPRETATION, 11, "activity-coverage.json"),
-  BUSINESS_PROCESSES(AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, "business-processes.jsonl"),
+  BUSINESS_PROCESSES_MARKDOWN(AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, "business-processes.md"),
+  REPOSITORY_BUSINESS_PROCESS_CATALOG(
+      AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, "repository-business-process-catalog.json"),
+  PROCESS_SOURCE_REFERENCES(AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, "source-refs.jsonl"),
   REPOSITORY_BUSINESS_KNOWLEDGE(
       AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, "repository-business-knowledge.json"),
   PROCESS_COVERAGE(AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, "process-coverage.json"),

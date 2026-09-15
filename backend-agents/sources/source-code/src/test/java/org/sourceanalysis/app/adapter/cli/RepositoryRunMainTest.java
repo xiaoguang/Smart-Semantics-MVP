@@ -16,15 +16,34 @@ import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactPolicyKey;
+import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalArtifactPolicy;
 import org.sourceanalysis.app.artifact.CanonicalArtifactPolicyRegistry;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
+import org.sourceanalysis.app.artifact.Sha256Digest;
+import org.sourceanalysis.app.runtime.AnalysisRunRequest;
+import org.sourceanalysis.app.runtime.ReaderCandidateRound;
 
 /**
  * Defines the strict, offline whole-repository launcher boundary before its implementation exists.
  */
 class RepositoryRunMainTest {
+
+  @Test
+  void modelBatchUsesTheCurrentOutputPolicyWithoutChangingItsSourceInputs() {
+    AnalysisRunRequest source = request(reference("artifact-policy-registry", '8'));
+    ArtifactReference currentPolicy = reference("artifact-policy-registry", '9');
+
+    AnalysisRunRequest batch = RepositoryRunMain.modelBatchRequest(source, currentPolicy);
+
+    assertThat(batch)
+        .usingRecursiveComparison()
+        .ignoringFields("artifactPolicyRegistryRef")
+        .isEqualTo(source);
+    assertThat(batch.artifactPolicyRegistryRef()).isEqualTo(currentPolicy);
+  }
 
   @Test
   void rejectsInvalidEngineAndUnknownConfigurationBeforeCreatingRunOrLaunchingTools(
@@ -97,7 +116,14 @@ class RepositoryRunMainTest {
                 "--mode",
                 "generate",
                 "--provider-config",
-                config.toString()));
+                config.toString()),
+            List.of(
+                "--config",
+                config.toString(),
+                "--mode",
+                "business-processes",
+                "--activity-model-batch",
+                "analysis-run:" + "a".repeat(64)));
     Class<?> mainType = requiredClass("org.sourceanalysis.app.adapter.cli.RepositoryRunMain");
     Method execute =
         mainType.getMethod("execute", String[].class, PrintWriter.class, PrintWriter.class);
@@ -128,7 +154,7 @@ class RepositoryRunMainTest {
   }
 
   @Test
-  void shippedPolicyTemplateRegistersExactNineBusinessCheckpointPolicies() throws Exception {
+  void shippedPolicyTemplateRegistersLegacyAndBusinessProcessCheckpointPolicies() throws Exception {
     Path policyPath =
         Path.of("tools/repository-run/jdt-artifact-policy-set-v1.json").toAbsolutePath();
     Map<ArtifactPolicyKey, PolicyShape> expected =
@@ -168,6 +194,34 @@ class RepositoryRunMainTest {
                 "application/json",
                 "STANDALONE_JSON",
                 false),
+            policy(
+                "REPOSITORY_KNOWLEDGE_BUSINESS_PROCESS_CATALOG",
+                "repository-business-process-catalog-v1",
+                "repository-business-process-catalog",
+                "application/json",
+                "STANDALONE_JSON",
+                false),
+            policy(
+                "REPOSITORY_KNOWLEDGE_PROCESS_COVERAGE",
+                "repository-business-process-coverage-v1",
+                "process-coverage",
+                "application/json",
+                "STANDALONE_JSON",
+                false),
+            policy(
+                "REPOSITORY_KNOWLEDGE_BUSINESS_PROCESSES_MARKDOWN",
+                "repository-business-process-markdown-v1",
+                "business-processes-markdown",
+                "text/markdown",
+                "RAW_UTF8",
+                false),
+            policy(
+                "REPOSITORY_KNOWLEDGE_SOURCE_REFERENCES",
+                "repository-business-process-source-references-v1",
+                "business-process-source-refs",
+                "application/x-ndjson",
+                "CANONICAL_JSONL",
+                true),
             policy(
                 "BUSINESS_DOCUMENT_REPORT",
                 "business-document-report-v1",
@@ -241,5 +295,28 @@ class RepositoryRunMainTest {
     try (Stream<Path> paths = Files.list(directory)) {
       return paths.map(Path::toAbsolutePath).sorted().toList();
     }
+  }
+
+  private static AnalysisRunRequest request(ArtifactReference policy) {
+    return new AnalysisRunRequest(
+        ArtifactId.parse("source-registration:" + "1".repeat(64)),
+        reference("frozen-repository-request", '2'),
+        reference("profile-bundle", '3'),
+        reference("resource-budget", '4'),
+        reference("toolchain", '5'),
+        reference("schema-bundle", '6'),
+        reference("prompt-bundle", '7'),
+        null,
+        policy,
+        reference("candidate-series", 'a'),
+        ReaderCandidateRound.ROUND_1,
+        null,
+        List.of());
+  }
+
+  private static ArtifactReference reference(String prefix, char fill) {
+    String digest = String.valueOf(fill).repeat(64);
+    return new ArtifactReference(
+        ArtifactId.parse(prefix + ":" + digest), Sha256Digest.parse(digest));
   }
 }

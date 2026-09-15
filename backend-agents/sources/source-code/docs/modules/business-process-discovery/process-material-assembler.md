@@ -47,4 +47,4 @@ Reconstructor 可以逐字访问具体规则，并在 REVIEW 中核对真正重�
 
 ## 测试与当前成熟度
 
-测试验证卡片缺失的 Activity 条件在 assemble 后恢复、一个通用 Activity 被两个候选以不同只读用法使用、源码请求只读已保存 corpus、缺 ref 不触发扫描。当前完整 Activity 和 SourceRef reader 已存在，本模块尚未实现。
+Assembler 已实现：目录卡只负责召回，候选请求重新装入完整 Activity、稳定 statement handle 与允许的 SourceRef；DRAFT 请求的源码在 REVIEW 前由程序从固定 corpus 解析。直接测试覆盖重叠 ActivityUse、非法引用和保存结果复用；真实仓库材料质量仍在最终验收中检查。

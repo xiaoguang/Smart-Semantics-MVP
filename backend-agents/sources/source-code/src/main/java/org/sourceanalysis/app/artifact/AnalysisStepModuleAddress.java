@@ -32,7 +32,7 @@ public record AnalysisStepModuleAddress(
           AnalysisStepKey.FLOW_INTERPRETATION,
           Map.of(10, "business-material-builder", 11, "activity-explainer"),
           AnalysisStepKey.REPOSITORY_KNOWLEDGE,
-          Map.of(1, "process-explainer"),
+          Map.of(1, "business-process-publisher"),
           AnalysisStepKey.NINE_SECTION_DOCUMENT,
           Map.of(1, "business-report-publisher"));
 
@@ -51,7 +51,11 @@ public record AnalysisStepModuleAddress(
     }
 
     String registeredModuleKey = REGISTERED_MODULES.get(analysisStepKey).get(moduleNumber);
-    if (!moduleKey.equals(registeredModuleKey)) {
+    boolean readableLegacyProcessCheckpoint =
+        analysisStepKey == AnalysisStepKey.REPOSITORY_KNOWLEDGE
+            && moduleNumber == 1
+            && "process-explainer".equals(moduleKey);
+    if (!moduleKey.equals(registeredModuleKey) && !readableLegacyProcessCheckpoint) {
       throw new IllegalArgumentException(
           "module number and key must match the registered analysis module");
     }

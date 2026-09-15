@@ -1151,13 +1151,22 @@ final class AtomicCanonicalPublicationEngine {
                 default -> null;
               };
           case REPOSITORY_KNOWLEDGE ->
-              "process-explainer".equals(analysisStepAddress.moduleKey())
-                      && analysisStepAddress.moduleNumber() == 1
-                  ? List.of(
-                      "business-processes.jsonl",
-                      "process-coverage.json",
-                      "repository-business-knowledge.json")
-                  : null;
+              analysisStepAddress.moduleNumber() != 1
+                  ? null
+                  : switch (analysisStepAddress.moduleKey()) {
+                    case "business-process-publisher" ->
+                        List.of(
+                            "business-processes.md",
+                            "process-coverage.json",
+                            "repository-business-process-catalog.json",
+                            "source-refs.jsonl");
+                    case "process-explainer" ->
+                        List.of(
+                            "business-processes.jsonl",
+                            "process-coverage.json",
+                            "repository-business-knowledge.json");
+                    default -> null;
+                  };
           case NINE_SECTION_DOCUMENT ->
               "business-report-publisher".equals(analysisStepAddress.moduleKey())
                       && analysisStepAddress.moduleNumber() == 1
@@ -1385,6 +1394,10 @@ final class AtomicCanonicalPublicationEngine {
   }
 
   private static ModuleArtifactContract moduleArtifactContract(CanonicalModulePayload payload) {
+    ModuleArtifactContract businessProcessContract = businessProcessArtifactContract(payload);
+    if (businessProcessContract != null) {
+      return businessProcessContract;
+    }
     if ("VERIFIED_SOURCE_INVENTORY_ADMITTED_SOURCE_REQUEST".equals(payload.artifactType())
         && "verified-source-inventory-admitted-source-request-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
@@ -1700,33 +1713,6 @@ final class AtomicCanonicalPublicationEngine {
           "activity-explanations.jsonl",
           CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
-    if ("REPOSITORY_KNOWLEDGE_BUSINESS_PROCESSES".equals(payload.artifactType())
-        && "repository-knowledge-business-processes-v1".equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
-          1,
-          "process-explainer",
-          "business-processes.jsonl",
-          CanonicalEnvelopeKind.CANONICAL_JSONL);
-    }
-    if ("REPOSITORY_KNOWLEDGE_PROCESS_COVERAGE".equals(payload.artifactType())
-        && "repository-knowledge-process-coverage-v2".equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
-          1,
-          "process-explainer",
-          "process-coverage.json",
-          CanonicalEnvelopeKind.STANDALONE_JSON);
-    }
-    if ("REPOSITORY_KNOWLEDGE_BUSINESS_KNOWLEDGE".equals(payload.artifactType())
-        && "repository-knowledge-business-knowledge-v2".equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
-          1,
-          "process-explainer",
-          "repository-business-knowledge.json",
-          CanonicalEnvelopeKind.STANDALONE_JSON);
-    }
     if ("BUSINESS_DOCUMENT_REPORT".equals(payload.artifactType())
         && "business-document-report-v1".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
@@ -1819,6 +1805,74 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     throw invalidInstall();
+  }
+
+  private static ModuleArtifactContract businessProcessArtifactContract(
+      CanonicalModulePayload payload) {
+    if ("REPOSITORY_KNOWLEDGE_BUSINESS_PROCESSES".equals(payload.artifactType())
+        && "repository-knowledge-business-processes-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+          1,
+          "process-explainer",
+          "business-processes.jsonl",
+          CanonicalEnvelopeKind.CANONICAL_JSONL);
+    }
+    if ("REPOSITORY_KNOWLEDGE_PROCESS_COVERAGE".equals(payload.artifactType())
+        && "repository-knowledge-process-coverage-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+          1,
+          "process-explainer",
+          "process-coverage.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("REPOSITORY_KNOWLEDGE_BUSINESS_KNOWLEDGE".equals(payload.artifactType())
+        && "repository-knowledge-business-knowledge-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+          1,
+          "process-explainer",
+          "repository-business-knowledge.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("REPOSITORY_KNOWLEDGE_BUSINESS_PROCESS_CATALOG".equals(payload.artifactType())
+        && "repository-business-process-catalog-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+          1,
+          "business-process-publisher",
+          "repository-business-process-catalog.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("REPOSITORY_KNOWLEDGE_PROCESS_COVERAGE".equals(payload.artifactType())
+        && "repository-business-process-coverage-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+          1,
+          "business-process-publisher",
+          "process-coverage.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("REPOSITORY_KNOWLEDGE_BUSINESS_PROCESSES_MARKDOWN".equals(payload.artifactType())
+        && "repository-business-process-markdown-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+          1,
+          "business-process-publisher",
+          "business-processes.md",
+          CanonicalEnvelopeKind.RAW_UTF8);
+    }
+    if ("REPOSITORY_KNOWLEDGE_SOURCE_REFERENCES".equals(payload.artifactType())
+        && "repository-business-process-source-references-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+          1,
+          "business-process-publisher",
+          "source-refs.jsonl",
+          CanonicalEnvelopeKind.CANONICAL_JSONL);
+    }
+    return null;
   }
 
   private record ValidatedModuleInstall(

@@ -67,4 +67,4 @@ Step08 只从已发布 catalog 和 coverage 生成仓库级九章；catalog 已�
 
 ## 测试与当前成熟度
 
-通过同一 catalog 重渲染应逐字节一致；每个 JSON 规则在 Markdown 可见；所有短 ref 可查询；九章输入只含已归并过程。当前已有 BusinessReport 的 renderer 和 SourceRef 保存可借鉴，但本发布器尚未实现。
+`CanonicalBusinessProcessPublisher` 与 `BusinessProcessCheckpointReader` 已通过确定性重渲染、四项 canonical 安装、来源查询及 fresh reopen 直接测试。发布器使用历史输入 Store 验证 Activity/M10 checkpoint，并使用当前输出 Store 和策略安装 Step07，避免策略身份混用。真实 326 Activity 运行已生成 46 个过程的 Markdown；其中使用的 680 个短引用全部能在 `source-refs.jsonl` 查询。

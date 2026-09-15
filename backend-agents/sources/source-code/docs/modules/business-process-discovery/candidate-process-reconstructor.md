@@ -62,4 +62,4 @@ Consolidator 得到可直接阅读的完整过程候选，而不是 Activity 外
 
 ## 测试与当前成熟度
 
-销售 fixture 必须保留编辑、审核/反审核、关联出库和未决后端门禁；采购/不同领域 fixture 验证 Prompt 无预置术语。当前 `ProcessExplainer` 的 job 调度可复用，但输入、Prompt、Schema 和结果模型均未达到本合同。
+Candidate Reconstructor 已实现独立并行 job、DRAFT 源码请求、完整 REVIEW、详细阶段/规则/结果及 CONFIRMED/INFERRED/UNRESOLVED。直接测试证明输入使用完整 Activity、非法 statement/source ref 被拒绝、完成顺序不改变聚合结果。固定 326 Activity 的真实运行完成 14 个候选；1 个直接重建、13 个拆分，最终提供 46 个可归并的详细过程。

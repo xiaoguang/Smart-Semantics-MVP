@@ -42,6 +42,7 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   private static final String OUTPUT_FILE = "run-output.json";
   private static final String OUTPUT_SCHEMA = "analysis-run-output-v3";
   private static final String MATERIALS_ONLY_OUTPUT = "MATERIALS_ONLY";
+  private static final String PROCESS_CATALOG_OUTPUT = "PROCESS_CATALOG";
   private static final String COMPLETE_REPORT_OUTPUT = "COMPLETE_REPORT";
   private static final Set<String> REQUEST_FIELDS =
       Set.of(
@@ -204,7 +205,10 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
       PersistedAnalysisRunRequest persisted = reopenRequest(runId);
       if (persisted.analysisRun().lifecycleState() != AnalysisRunLifecycleState.RUNNING
           || !output.sourceRunId().equals(runId(output.businessMaterialCheckpoint()))
-          || (output.hasCompletedReport() && !runId.equals(runId(output.activityCheckpoint())))) {
+          || (output.hasCompletedReport() && !runId.equals(runId(output.activityCheckpoint())))
+          || (output.hasCompletedProcesses()
+              && !output.hasCompletedReport()
+              && !runId.equals(runId(output.knowledgeCheckpoint())))) {
         throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
       }
       Path destination = runDirectory().resolve(runId.value()).resolve(OUTPUT_FILE);
@@ -333,8 +337,7 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     value.put("schemaVersion", OUTPUT_SCHEMA);
     value.put("runId", runId.value());
     value.put("sourceRunId", output.sourceRunId().value());
-    value.put(
-        "outputKind", output.hasCompletedReport() ? COMPLETE_REPORT_OUTPUT : MATERIALS_ONLY_OUTPUT);
+    value.put("outputKind", outputKind(output));
     checkpoint(value.putObject("businessMaterialCheckpoint"), output.businessMaterialCheckpoint());
     nullableCheckpoint(value, "activityCheckpoint", output.activityCheckpoint());
     nullableCheckpoint(value, "knowledgeCheckpoint", output.knowledgeCheckpoint());
@@ -347,21 +350,38 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
         || !runId.value().equals(requiredText(value, "runId"))) {
       throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
     }
+    AnalysisRunId sourceRunId = AnalysisRunId.parse(requiredText(value, "sourceRunId"));
+    String outputKind = requiredText(value, "outputKind");
+    ModulePublicationReference activity =
+        nullableCheckpointFromWire(value.path("activityCheckpoint"));
+    ModulePublicationReference knowledge =
+        nullableCheckpointFromWire(value.path("knowledgeCheckpoint"));
+    ModulePublicationReference report = nullableCheckpointFromWire(value.path("reportCheckpoint"));
     AnalysisRunOutput output =
         new AnalysisRunOutput(
-            AnalysisRunId.parse(requiredText(value, "sourceRunId")),
-            checkpoint(
-                AnalysisRunId.parse(requiredText(value, "sourceRunId")),
-                value.path("businessMaterialCheckpoint")),
-            nullableCheckpoint(runId, value.path("activityCheckpoint")),
-            nullableCheckpoint(runId, value.path("knowledgeCheckpoint")),
-            nullableCheckpoint(runId, value.path("reportCheckpoint")));
-    String outputKind = requiredText(value, "outputKind");
-    if (!((MATERIALS_ONLY_OUTPUT.equals(outputKind) && !output.hasCompletedReport())
+            sourceRunId,
+            checkpoint(sourceRunId, value.path("businessMaterialCheckpoint")),
+            activity,
+            knowledge,
+            report);
+    if (!((MATERIALS_ONLY_OUTPUT.equals(outputKind) && !output.hasCompletedProcesses())
+        || (PROCESS_CATALOG_OUTPUT.equals(outputKind)
+            && output.hasCompletedProcesses()
+            && !output.hasCompletedReport())
         || (COMPLETE_REPORT_OUTPUT.equals(outputKind) && output.hasCompletedReport()))) {
       throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
     }
     return output;
+  }
+
+  private static String outputKind(AnalysisRunOutput output) {
+    if (output.hasCompletedReport()) {
+      return COMPLETE_REPORT_OUTPUT;
+    }
+    if (output.hasCompletedProcesses()) {
+      return PROCESS_CATALOG_OUTPUT;
+    }
+    return MATERIALS_ONLY_OUTPUT;
   }
 
   private static void checkpoint(ObjectNode value, ModulePublicationReference reference) {
@@ -412,9 +432,14 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
         Sha256Digest.parse(requiredText(object, "moduleReceiptSha256")));
   }
 
-  private static ModulePublicationReference nullableCheckpoint(
-      AnalysisRunId expectedRunId, JsonNode value) {
-    return value.isNull() ? null : checkpoint(expectedRunId, value);
+  private static ModulePublicationReference nullableCheckpointFromWire(JsonNode value) {
+    if (value.isNull()) {
+      return null;
+    }
+    if (!(value instanceof ObjectNode object)) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    return checkpoint(AnalysisRunId.parse(requiredText(object, "runId")), object);
   }
 
   private ObjectNode stateJson(

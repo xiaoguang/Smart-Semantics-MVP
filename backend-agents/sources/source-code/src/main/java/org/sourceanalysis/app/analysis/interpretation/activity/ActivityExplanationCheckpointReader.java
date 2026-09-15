@@ -25,7 +25,7 @@ import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 
 /** Fresh-reopens the reviewed local activities saved before process reconstruction. */
-final class ActivityExplanationCheckpointReader {
+public final class ActivityExplanationCheckpointReader {
 
   private static final String COVERAGE_FILE = "activity-coverage.json";
   private static final String COVERAGE_TYPE = "FLOW_INTERPRETATION_ACTIVITY_COVERAGE";
@@ -71,11 +71,11 @@ final class ActivityExplanationCheckpointReader {
   private final CanonicalModuleArtifactStore artifacts;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
 
-  ActivityExplanationCheckpointReader(CanonicalModuleArtifactStore artifacts) {
+  public ActivityExplanationCheckpointReader(CanonicalModuleArtifactStore artifacts) {
     this.artifacts = Objects.requireNonNull(artifacts, "module artifact store");
   }
 
-  ActivityExplanationResult reopen(ModulePublicationReference checkpoint) {
+  public ActivityExplanationResult reopen(ModulePublicationReference checkpoint) {
     try {
       ReopenedModulePublication reopened = artifacts.reopen(checkpoint);
       verifyCheckpoint(checkpoint, reopened);
