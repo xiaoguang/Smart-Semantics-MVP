@@ -130,7 +130,11 @@ class BusinessProcessPublicationTest {
             process.path("activityUses").get(2).path("activityUseId").asText());
 
     JsonNode coverage = json(payloads.get("process-coverage.json"));
-    assertThat(coverage.path("activityDispositions").get(0).path("name").asText())
+    assertThat(
+            findByTextField(
+                    coverage.path("activityDispositions"), "activityId", "activity:create")
+                .path("name")
+                .asText())
         .isEqualTo("创建销售订单");
   }
 
@@ -258,6 +262,15 @@ class BusinessProcessPublicationTest {
     List<String> result = new ArrayList<>();
     values.forEach(value -> result.add(value.asText()));
     return result;
+  }
+
+  private static JsonNode findByTextField(JsonNode values, String field, String expected) {
+    for (JsonNode value : values) {
+      if (expected.equals(value.path(field).asText())) {
+        return value;
+      }
+    }
+    throw new AssertionError("missing JSON value where " + field + "=" + expected);
   }
 
   private static String sourceMarkdown(BusinessProcessPublication publication) throws Exception {

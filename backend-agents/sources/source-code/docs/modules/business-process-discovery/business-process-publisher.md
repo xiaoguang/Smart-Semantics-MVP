@@ -67,6 +67,6 @@ canonical地址仍为REPOSITORY_KNOWLEDGE/1/business-process-publisher，produce
 
 所有短ref有真实来源，所有链接锚点存在，重要结构字段和narrative完整保存，PARTIAL可见。未知ref、错误owner、缺处置、坏schema或渲染丢字段明确失败。Publisher不把结构通过当语义优秀。
 
-当前实现是四文件v1，真实680短ref能在JSONL找到，但正文没有直接导航；新业务排版及sources.md尚待实现。
+当前实现发布五文件v2：正文以已审narrative为主，阶段、规则与过程来源可链接到独立sources.md；source-refs.jsonl继续保持原v1结构。真实全仓的新版语义验收仍属于后续工作，发布器本身不改写业务内容。
 
 Luna RED：五文件发布重开、正文不含源码块、来源页完整且围栏安全、复制后相对链接有效、规则用法名字正确、未处理名称可读、零模型渲染。Terra只实现格式与契约，不润色或猜测业务。

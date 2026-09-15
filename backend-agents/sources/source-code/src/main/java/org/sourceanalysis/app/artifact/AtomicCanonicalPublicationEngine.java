@@ -1154,12 +1154,7 @@ final class AtomicCanonicalPublicationEngine {
               analysisStepAddress.moduleNumber() != 1
                   ? null
                   : switch (analysisStepAddress.moduleKey()) {
-                    case "business-process-publisher" ->
-                        List.of(
-                            "business-processes.md",
-                            "process-coverage.json",
-                            "repository-business-process-catalog.json",
-                            "source-refs.jsonl");
+                    case "business-process-publisher" -> businessProcessPublisherFiles(descriptors);
                     case "process-explainer" ->
                         List.of(
                             "business-processes.jsonl",
@@ -1193,6 +1188,44 @@ final class AtomicCanonicalPublicationEngine {
         ? List.of("fact-accounting.json")
         : List.of(
             "fact-accounting.json", "gap-ledger.json", "proof-pack.json", "proven-facts.json");
+  }
+
+  private static List<String> businessProcessPublisherFiles(List<ArtifactDescriptor> descriptors) {
+    List<String> legacy =
+        List.of(
+            "business-processes.md",
+            "process-coverage.json",
+            "repository-business-process-catalog.json",
+            "source-refs.jsonl");
+    List<String> current =
+        List.of(
+            "business-processes.md",
+            "process-coverage.json",
+            "repository-business-process-catalog.json",
+            "source-refs.jsonl",
+            "sources.md");
+    List<String> names = descriptors.stream().map(ArtifactDescriptor::fileName).toList();
+    boolean exactLegacy =
+        names.equals(legacy)
+            && descriptors.stream()
+                .allMatch(
+                    descriptor ->
+                        switch (descriptor.fileName()) {
+                          case "business-processes.md" ->
+                              "repository-business-process-markdown-v1"
+                                  .equals(descriptor.schemaVersion());
+                          case "process-coverage.json" ->
+                              "repository-business-process-coverage-v1"
+                                  .equals(descriptor.schemaVersion());
+                          case "repository-business-process-catalog.json" ->
+                              "repository-business-process-catalog-v1"
+                                  .equals(descriptor.schemaVersion());
+                          case "source-refs.jsonl" ->
+                              "repository-business-process-source-references-v1"
+                                  .equals(descriptor.schemaVersion());
+                          default -> false;
+                        });
+    return exactLegacy ? legacy : current;
   }
 
   private static List<String> javaCodeIndexPublicationFiles(List<ArtifactDescriptor> descriptors) {
@@ -1835,6 +1868,42 @@ final class AtomicCanonicalPublicationEngine {
           "process-explainer",
           "repository-business-knowledge.json",
           CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("REPOSITORY_KNOWLEDGE_BUSINESS_PROCESS_CATALOG".equals(payload.artifactType())
+        && "repository-business-process-catalog-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+          1,
+          "business-process-publisher",
+          "repository-business-process-catalog.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("REPOSITORY_KNOWLEDGE_PROCESS_COVERAGE".equals(payload.artifactType())
+        && "repository-business-process-coverage-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+          1,
+          "business-process-publisher",
+          "process-coverage.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("REPOSITORY_KNOWLEDGE_BUSINESS_PROCESSES_MARKDOWN".equals(payload.artifactType())
+        && "repository-business-process-markdown-v2".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+          1,
+          "business-process-publisher",
+          "business-processes.md",
+          CanonicalEnvelopeKind.RAW_UTF8);
+    }
+    if ("REPOSITORY_KNOWLEDGE_BUSINESS_PROCESS_SOURCES_MARKDOWN".equals(payload.artifactType())
+        && "repository-business-process-sources-markdown-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+          1,
+          "business-process-publisher",
+          "sources.md",
+          CanonicalEnvelopeKind.RAW_UTF8);
     }
     if ("REPOSITORY_KNOWLEDGE_BUSINESS_PROCESS_CATALOG".equals(payload.artifactType())
         && "repository-business-process-catalog-v1".equals(payload.schemaVersion())) {

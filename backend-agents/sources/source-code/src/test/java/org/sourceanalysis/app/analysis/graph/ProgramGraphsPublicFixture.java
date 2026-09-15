@@ -2091,6 +2091,14 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "REPOSITORY_KNOWLEDGE_BUSINESS_PROCESS_CATALOG",
+        "repository-business-process-catalog-v2",
+        "repository-business-process-catalog",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "REPOSITORY_KNOWLEDGE_BUSINESS_PROCESS_CATALOG",
         "repository-business-process-catalog-v1",
         "repository-business-process-catalog",
         "application/json",
@@ -2099,10 +2107,26 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
     policy(
         entries,
         "REPOSITORY_KNOWLEDGE_BUSINESS_PROCESSES_MARKDOWN",
+        "repository-business-process-markdown-v2",
+        "business-processes-markdown",
+        "text/markdown",
+        "RAW_UTF8",
+        false);
+    policy(
+        entries,
+        "REPOSITORY_KNOWLEDGE_BUSINESS_PROCESSES_MARKDOWN",
         "repository-business-process-markdown-v1",
         "business-processes-markdown",
         "text/markdown",
         "RAW_UTF8",
+        false);
+    policy(
+        entries,
+        "REPOSITORY_KNOWLEDGE_PROCESS_COVERAGE",
+        "repository-business-process-coverage-v2",
+        "process-coverage",
+        "application/json",
+        "STANDALONE_JSON",
         false);
     policy(
         entries,
@@ -2128,6 +2152,14 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         "application/x-ndjson",
         "CANONICAL_JSONL",
         true);
+    policy(
+        entries,
+        "REPOSITORY_KNOWLEDGE_BUSINESS_PROCESS_SOURCES_MARKDOWN",
+        "repository-business-process-sources-markdown-v1",
+        "business-process-sources-markdown",
+        "text/markdown",
+        "RAW_UTF8",
+        false);
     policy(
         entries,
         "REPOSITORY_KNOWLEDGE_BUSINESS_KNOWLEDGE",

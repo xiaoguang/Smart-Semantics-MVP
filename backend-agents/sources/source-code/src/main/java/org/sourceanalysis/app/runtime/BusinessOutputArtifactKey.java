@@ -13,6 +13,7 @@ public enum BusinessOutputArtifactKey {
   REPOSITORY_BUSINESS_PROCESS_CATALOG(
       AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, "repository-business-process-catalog.json"),
   PROCESS_SOURCE_REFERENCES(AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, "source-refs.jsonl"),
+  PROCESS_SOURCES_MARKDOWN(AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, "sources.md"),
   REPOSITORY_BUSINESS_KNOWLEDGE(
       AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, "repository-business-knowledge.json"),
   PROCESS_COVERAGE(AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, "process-coverage.json"),

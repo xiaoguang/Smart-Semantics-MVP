@@ -178,8 +178,9 @@ from an exact, stopped Activity batch:
 
 The command creates a new `AnalysisRunId`, reopens the fixed Activity and material publications,
 runs catalog discovery, detailed candidates and repository consolidation, then installs exactly
-`repository-business-process-catalog.json`, `process-coverage.json`, `business-processes.md` and
-`source-refs.jsonl`. It prints the final process count, semantic delivery status and Markdown path.
+`repository-business-process-catalog.json`, `process-coverage.json`, `business-processes.md`,
+`source-refs.jsonl` and `sources.md`. It prints the final process count, semantic delivery status and
+Markdown path.
 Use `--reuse-from-model-batch` only with a stopped process-only batch whose material and Activity
 checkpoints match; reusable DRAFT+REVIEW pairs make zero new model calls. `render()` remains not
 ready because this mode intentionally has no Step08 report checkpoint.
