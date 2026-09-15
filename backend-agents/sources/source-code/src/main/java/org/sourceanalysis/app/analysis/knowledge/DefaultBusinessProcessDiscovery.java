@@ -615,7 +615,13 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       } else if ("PROCESS_MEMBER".equals(kind)) {
         throw failure("PROCESS_CATALOG_PROCESS_MEMBER_WITHOUT_CANDIDATE");
       }
-      dispositions.add(new ProcessCoverage.ActivityDisposition(activityId, kind, reason));
+      String activityName =
+          expectedCards.stream()
+              .filter(card -> activityId.equals(card.activityId()))
+              .map(ActivityIndexCard::name)
+              .findFirst()
+              .orElseThrow(() -> failure("PROCESS_CATALOG_ACTIVITY_NAME_MISSING"));
+      dispositions.add(new ProcessCoverage.ActivityDisposition(activityId, activityName, kind, reason));
     }
     if (!dispositionIds.equals(expectedIds)) {
       throw failure("PROCESS_CATALOG_ACTIVITY_DENOMINATOR_OPEN");
@@ -642,9 +648,28 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       throw failure("PROCESS_CANDIDATE_DISPOSITION_INVALID");
     }
     List<String> requested = parseCandidateSourceRequests(value, candidate, corpus, profile);
+    ArrayNode processValues = array(value, "processes");
+    boolean expectsProcesses = Set.of("RECONSTRUCTED", "SPLIT").contains(disposition);
+    if (expectsProcesses != !processValues.isEmpty()) {
+      throw failure("PROCESS_CANDIDATE_OUTPUT_DISPOSITION_MISMATCH");
+    }
+    if (expectsProcesses) {
+      Set<String> expectedActivityIds =
+          candidate.uses().stream().map(CandidateUse::activityId).collect(Collectors.toSet());
+      Set<String> responseActivityIds = new HashSet<>();
+      for (JsonNode processValue : processValues) {
+        for (JsonNode useValue : array(object(processValue), "activityUses")) {
+          responseActivityIds.add(text(object(useValue), "activityId"));
+        }
+      }
+      if (expectedActivityIds.containsAll(responseActivityIds)
+          && !responseActivityIds.equals(expectedActivityIds)) {
+        throw failure("PROCESS_CANDIDATE_ACTIVITY_COVERAGE_OPEN");
+      }
+    }
     List<RepositoryBusinessProcessCatalog.BusinessProcess> processes = new ArrayList<>();
     Set<String> processLocalIds = new HashSet<>();
-    for (JsonNode processValue : array(value, "processes")) {
+    for (JsonNode processValue : processValues) {
       ObjectNode process = object(processValue);
       if (!processLocalIds.add(text(process, "processLocalId"))) {
         throw failure("PROCESS_CANDIDATE_DUPLICATE_PROCESS");
@@ -653,10 +678,6 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     }
     if (processes.size() > profile.maxProcessesPerCandidate()) {
       throw failure("PROCESS_CANDIDATE_OUTPUT_CAPACITY_EXCEEDED");
-    }
-    boolean expectsProcesses = Set.of("RECONSTRUCTED", "SPLIT").contains(disposition);
-    if (expectsProcesses != !processes.isEmpty()) {
-      throw failure("PROCESS_CANDIDATE_OUTPUT_DISPOSITION_MISMATCH");
     }
     if (expectsProcesses) {
       Set<String> expectedActivityIds =
@@ -759,6 +780,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
           new RepositoryBusinessProcessCatalog.ProcessStage(
               order,
               text(stage, "name"),
+              text(stage, "narrative"),
               localUseIds.stream()
                   .map(useByLocalId::get)
                   .map(RepositoryBusinessProcessCatalog.ActivityUse::activityUseId)
@@ -782,10 +804,26 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     List<RepositoryBusinessProcessCatalog.BusinessRule> rules = new ArrayList<>();
     for (JsonNode item : array(value, "businessRules")) {
       ObjectNode rule = object(item);
+      List<String> localUseIds = strings(rule, "activityUseLocalIds");
+      if (localUseIds.isEmpty()
+          || localUseIds.stream().distinct().count() != localUseIds.size()
+          || !useByLocalId.keySet().containsAll(localUseIds)) {
+        throw failure("PROCESS_RULE_ACTIVITY_USE_INVALID");
+      }
+      List<RepositoryBusinessProcessCatalog.ActivityUse> ruleUses =
+          localUseIds.stream().map(useByLocalId::get).toList();
+      Set<String> allowedRuleStatements =
+          ruleUses.stream()
+              .flatMap(use -> corpus.statementHandles(use.activityId()).stream())
+              .collect(Collectors.toSet());
+      Set<String> allowedRuleSources =
+          ruleUses.stream()
+              .flatMap(use -> corpus.activitySourceRefs(use.activityId()).stream())
+              .collect(Collectors.toSet());
       List<String> statementRefs = strings(rule, "statementRefs").stream().distinct().toList();
       List<String> sourceRefs = strings(rule, "sourceRefs").stream().distinct().toList();
-      requireSubset(statementRefs, allowedStatements, "PROCESS_RULE_STATEMENT_REFERENCE_INVALID");
-      requireSubset(sourceRefs, allowedSources, "PROCESS_RULE_SOURCE_REFERENCE_INVALID");
+      requireSubset(statementRefs, allowedRuleStatements, "PROCESS_RULE_STATEMENT_REFERENCE_INVALID");
+      requireSubset(sourceRefs, allowedRuleSources, "PROCESS_RULE_SOURCE_REFERENCE_INVALID");
       String certainty = certainty(rule);
       requireConfirmedBasis(certainty, statementRefs, sourceRefs);
       rules.add(
@@ -796,6 +834,9 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
               nullableText(rule.path("otherwise")),
               text(rule, "result"),
               certainty,
+              ruleUses.stream()
+                  .map(RepositoryBusinessProcessCatalog.ActivityUse::activityUseId)
+                  .toList(),
               statementRefs,
               sourceRefs));
     }
@@ -1326,6 +1367,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     ObjectNode properties = schema.putObject("properties");
     properties.set("order", integerSchema());
     properties.set("name", textSchema());
+    properties.set("narrative", textSchema());
     properties.set("activityUseLocalIds", stringsSchema());
     properties.set("entryConditions", stringsSchema());
     properties.set("actions", stringsSchema());
@@ -1340,6 +1382,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         schema,
         "order",
         "name",
+        "narrative",
         "activityUseLocalIds",
         "entryConditions",
         "actions",
@@ -1366,6 +1409,9 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     properties.set("otherwise", otherwise);
     properties.set("result", textSchema());
     properties.set("certainty", enumSchema(CERTAINTIES.stream().sorted().toList()));
+    ObjectNode activityUseLocalIds = stringsSchema();
+    activityUseLocalIds.put("minItems", 1);
+    properties.set("activityUseLocalIds", activityUseLocalIds);
     properties.set("statementRefs", enumArraySchema(candidateStatementRefs(candidate, corpus)));
     properties.set("sourceRefs", enumArraySchema(candidateSourceRefs(candidate, corpus)));
     required(
@@ -1376,6 +1422,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         "otherwise",
         "result",
         "certainty",
+        "activityUseLocalIds",
         "statementRefs",
         "sourceRefs");
     return schema;
@@ -1614,6 +1661,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
           new RepositoryBusinessProcessCatalog.ProcessStage(
               index + 1,
               stage.name(),
+              stage.narrative(),
               stage.activityUseIds(),
               stage.entryConditions(),
               stage.actions(),

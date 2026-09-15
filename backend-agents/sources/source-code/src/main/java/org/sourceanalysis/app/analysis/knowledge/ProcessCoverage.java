@@ -32,9 +32,11 @@ public record ProcessCoverage(
     }
   }
 
-  public record ActivityDisposition(String activityId, String disposition, String reason) {
+  public record ActivityDisposition(
+      String activityId, String name, String disposition, String reason) {
     public ActivityDisposition {
       require(activityId, "activity ID");
+      require(name, "activity name");
       if (!List.of(
               "PROCESS_MEMBER",
               "SUPPORT_ONLY",
