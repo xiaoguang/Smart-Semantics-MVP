@@ -1,6 +1,7 @@
 package org.sourceanalysis.app.analysis.knowledge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -14,6 +15,7 @@ import java.util.Map;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
@@ -85,6 +87,85 @@ class BusinessProcessDiscoveryTest {
   }
 
   @Test
+  void sendsExistingReviewedBusinessRulesUnchangedInActivityIndexCards() {
+    ScriptedProvider provider = new ScriptedProvider();
+
+    new DefaultBusinessProcessDiscovery(provider)
+        .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
+
+    assertThat(texts(findById(provider.catalogCards(), "activityId", "activity:create"), "businessRules"))
+        .containsExactly("新订单的状态初始化为0");
+    assertThat(texts(findById(provider.catalogCards(), "activityId", "activity:update"), "businessRules"))
+        .containsExactly("当前状态为0时允许修改；否则拒绝修改");
+    assertThat(texts(findById(provider.catalogCards(), "activityId", "activity:approve"), "businessRules"))
+        .containsExactly("当前状态为0时允许审核为1");
+  }
+
+  @Test
+  void preservesDistinctActivityVariantsButSendsOneCompleteActivityBody() {
+    ScriptedProvider provider = new ScriptedProvider("duplicate-activity-variant");
+    AtomicReference<ProcessDiscoveryResult> discovered = new AtomicReference<>();
+
+    assertThatCode(
+            () ->
+                discovered.set(
+                    new DefaultBusinessProcessDiscovery(provider)
+                        .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()))))
+        .doesNotThrowAnyException();
+
+    List<JsonNode> updateUses =
+        matching(provider.processInput().path("candidate").path("activityUses"), "activityId", "activity:update");
+    assertThat(updateUses).hasSize(2);
+    assertThat(updateUses).extracting(use -> use.path("variant").asText())
+        .containsExactlyInAnyOrder("销售订单", "按导入订单");
+
+    List<JsonNode> updateBodies =
+        matching(provider.processInput().path("activities"), "activityId", "activity:update");
+    assertThat(updateBodies).hasSize(1);
+    JsonNode updateBody = updateBodies.get(0);
+    assertThat(updateBody.path("businessPurpose").asText())
+        .isEqualTo("管理销售订单从创建到审核的生命周期。");
+    assertThat(texts(updateBody, "conditions")).containsExactly("当前状态必须为0");
+    assertThat(texts(updateBody, "activitySteps")).containsExactly("修改销售订单");
+    assertThat(texts(updateBody, "codeDefinedResults")).containsExactly("更新订单及其明细");
+    assertThat(texts(updateBody, "businessRules"))
+        .containsExactly("当前状态为0时允许修改；否则拒绝修改");
+
+    RepositoryBusinessProcessCatalog.BusinessProcess process =
+        discovered.get().catalog().processes().get(0);
+    assertThat(process.activityUses()).extracting("activityId")
+        .contains("activity:update", "activity:update");
+    assertThat(process.activityUses().stream()
+        .filter(use -> use.activityId().equals("activity:update")))
+        .extracting(RepositoryBusinessProcessCatalog.ActivityUse::variant)
+        .containsExactlyInAnyOrder("销售订单", "按导入订单");
+  }
+
+  @Test
+  void sendsSourceDirectoryWithScopeActivityIdsAndFirstEightPhysicalSnippetLines() {
+    ScriptedProvider provider = new ScriptedProvider();
+
+    new DefaultBusinessProcessDiscovery(provider)
+        .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
+
+    JsonNode sourceDirectory =
+        findById(provider.processInput().path("allowlistedSourceRefs"), "ref", "S1");
+    assertThat(sourceDirectory.path("ref").asText()).isEqualTo("S1");
+    assertThat(texts(sourceDirectory, "activityIds")).containsExactly("activity:create");
+    assertThat(texts(sourceDirectory, "openingLines"))
+        .containsExactly(
+            "// create concrete source",
+            "// create physical line 2",
+            "// create physical line 3",
+            "// create physical line 4",
+            "// create physical line 5",
+            "// create physical line 6",
+            "// create physical line 7",
+            "// create physical line 8");
+    assertThat(sourceDirectory.has("purpose")).isFalse();
+  }
+
+  @Test
   void rendersAReadableProcessDocumentWithoutEmbeddingSourceCode() {
     ProcessDiscoveryResult result =
         new DefaultBusinessProcessDiscovery(new ScriptedProvider())
@@ -141,20 +222,14 @@ class BusinessProcessDiscoveryTest {
   }
 
   @Test
-  void keepsAnOrphanProcessMemberAsExplicitlyUnclassifiedInsteadOfFailingTheRepository() {
-    ProcessDiscoveryResult result =
-        new DefaultBusinessProcessDiscovery(
-                new ScriptedProvider("process-member-without-candidate"))
-            .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
-
-    assertThat(result.coverage().activityDispositions())
-        .anySatisfy(
-            disposition -> {
-              assertThat(disposition.disposition()).isEqualTo("UNCLASSIFIED");
-              assertThat(disposition.reason()).contains("未提供候选成员关系");
-            });
-    assertThat(result.coverage().coverageStatus()).isEqualTo("CLOSED");
-    assertThat(result.coverage().semanticDeliveryStatus()).isEqualTo("PARTIAL");
+  void rejectsAnOrphanProcessMemberInsteadOfSilentlyDowngradingIt() {
+    assertThatThrownBy(
+            () ->
+                new DefaultBusinessProcessDiscovery(
+                        new ScriptedProvider("process-member-without-candidate"))
+                    .discover(new ProcessDiscoveryRequest(activities(), materials(), profile())))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("PROCESS_CATALOG_PROCESS_MEMBER_WITHOUT_CANDIDATE");
   }
 
   @Test
@@ -262,6 +337,27 @@ class BusinessProcessDiscoveryTest {
       assertThat(actual).containsExactlyElementsOf(actual.stream().sorted().toList());
     }
     value.elements().forEachRemaining(BusinessProcessDiscoveryTest::assertEnumsAreSorted);
+  }
+
+  private static JsonNode findById(JsonNode values, String field, String expected) {
+    return matching(values, field, expected).stream().findFirst().orElseThrow();
+  }
+
+  private static List<JsonNode> matching(JsonNode values, String field, String expected) {
+    List<JsonNode> matches = new ArrayList<>();
+    values.forEach(
+        value -> {
+          if (expected.equals(value.path(field).asText())) {
+            matches.add(value);
+          }
+        });
+    return matches;
+  }
+
+  private static List<String> texts(JsonNode value, String field) {
+    List<String> result = new ArrayList<>();
+    value.path(field).forEach(item -> result.add(item.asText()));
+    return result;
   }
 
   private ModelJobExecutionConfiguration execution(
@@ -404,7 +500,7 @@ class BusinessProcessDiscoveryTest {
             "src/main/java/example/OrderService.java",
             10,
             12,
-            "// " + key + " concrete source");
+            sourceSnippet(key));
     ModelActivityPacket packet =
         new ModelActivityPacket(
             "订单处理上下文",
@@ -424,6 +520,21 @@ class BusinessProcessDiscoveryTest {
         packet);
   }
 
+  private static String sourceSnippet(String key) {
+    return String.join(
+        "\n",
+        "// " + key + " concrete source",
+        "// " + key + " physical line 2",
+        "// " + key + " physical line 3",
+        "// " + key + " physical line 4",
+        "// " + key + " physical line 5",
+        "// " + key + " physical line 6",
+        "// " + key + " physical line 7",
+        "// " + key + " physical line 8",
+        "// " + key + " physical line 9",
+        "// " + key + " physical line 10");
+  }
+
   private static final class ScriptedProvider implements StructuredModelProvider {
     private final CanonicalJsonCodec json = new CanonicalJsonCodec();
     private final List<String> taskKinds = Collections.synchronizedList(new ArrayList<>());
@@ -433,6 +544,7 @@ class BusinessProcessDiscoveryTest {
     private final AtomicInteger maximumConcurrentCatalogShards = new AtomicInteger();
     private final String conflictingCatalogDisposition;
     private JsonNode catalogCards;
+    private JsonNode processInput;
     private JsonNode processActivities;
     private JsonNode processReviewInput;
 
@@ -466,10 +578,18 @@ class BusinessProcessDiscoveryTest {
               .put("disposition", "SUPPORT_ONLY");
         } else if ("process-member-without-candidate".equals(conflictingCatalogDisposition)) {
           ((ArrayNode) response.path("candidateProcesses").get(0).path("activityUses")).remove(0);
+        } else if ("duplicate-activity-variant".equals(conflictingCatalogDisposition)) {
+          ObjectNode variant =
+              ((ArrayNode) response.path("candidateProcesses").get(0).path("activityUses"))
+                  .addObject();
+          variant.put("activityId", "activity:update");
+          variant.put("role", "CORE");
+          variant.put("variant", "按导入订单");
         }
       } else if (request.taskKind().startsWith("BUSINESS_PROCESS_CONSOLIDATION")) {
         response = consolidation(input);
       } else {
+        processInput = input;
         processActivities = input.path("activities");
         if (request.taskKind().endsWith("REVIEW")) {
           processReviewInput = input;
@@ -608,12 +728,13 @@ class BusinessProcessDiscoveryTest {
       process.putArray("businessObjects").add("销售订单").add("订单明细");
       ArrayNode uses = process.putArray("activityUses");
       int index = 1;
-      for (JsonNode activity : input.path("activities")) {
+      for (JsonNode candidateUse : input.path("candidate").path("activityUses")) {
+        JsonNode activity = activityBody(input, candidateUse.path("activityId").asText());
         ObjectNode use = uses.addObject();
         use.put("useLocalId", "U" + index++);
         use.put("activityId", activity.path("activityId").asText());
-        use.put("role", "CORE");
-        use.put("variant", "销售订单");
+        use.put("role", candidateUse.path("role").asText());
+        use.put("variant", candidateUse.path("variant").asText());
         ArrayNode statements = use.putArray("statementRefs");
         statements.add(activity.path("statementHandles").get(0).asText());
         ArrayNode refs = use.putArray("sourceRefs");
@@ -642,6 +763,15 @@ class BusinessProcessDiscoveryTest {
       process.putArray("knowledgeItems");
       process.putArray("pendingConnections");
       return root;
+    }
+
+    private static JsonNode activityBody(JsonNode input, String activityId) {
+      for (JsonNode activity : input.path("activities")) {
+        if (activityId.equals(activity.path("activityId").asText())) {
+          return activity;
+        }
+      }
+      throw new IllegalArgumentException("fixture activity body missing: " + activityId);
     }
 
     private static void stage(
@@ -700,6 +830,10 @@ class BusinessProcessDiscoveryTest {
 
     private JsonNode processActivities() {
       return processActivities;
+    }
+
+    private JsonNode processInput() {
+      return processInput;
     }
 
     private JsonNode processReviewInput() {
