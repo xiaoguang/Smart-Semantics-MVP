@@ -35,21 +35,18 @@
 
 当前 main 已有完整取材链、326 个 jshERP ReviewedActivity、并行模型任务、模型批次复用和九章渲染。JDT 材料与 Activity 都应复用，不需要重扫或全量重跑。
 
-当前过程层尚未达到目标：实际 340 个 Process 全部只有一个 Activity 和一个 Stage，且有一个 Activity 没有进入 Process 或 unmatched 记录。原因是现有 `ProcessExplainer` 依赖精确 token/同文件召回和容量切片，并且 stage 只能保存 `order + activityId + description`。
+当前Step07新路线已经实现：全仓目录、候选完整阅读、按需来源、详细过程、归并与发布。真实输入为326条已审Activity；14候选生成46个过程，21个含多Activity。覆盖CLOSED，50条未分类，语义PARTIAL。旧340个singleton结果是历史前身，不是当前代码状态。
 
-下一次实施只替换 Step07 的业务发现和串联，并调整 Step08 输入：
+但本轮复核发现：目录偏向“某对象维护”，阶段仍偏“接收/校验/执行/返回”，没有达到所需采购/销售等生命周期叙述。多阶段和覆盖指标不代表业务质量通过。
 
-```text
-326 个 Activity 精简卡建立全仓目录
-→ 模型提出可重叠候选过程
-→ 程序取回完整 Activity 和保存的 JDT/源码
-→ 模型生成并审阅具体阶段、条件、规则和结果
-→ 仓库归并
-→ business-processes.md
-→ 九章概览
-```
+本次设计仅修正Step07：
+- 全仓卡片保留原规则，发现通用Activity不同业务用法。
+- 同一Activity的不同variant分别使用；完整内容去重但不混用条件。
+- 模型生成并完整审阅阶段业务正文和规则适用范围。
+- 来源目录提供原文预览；发布business-processes.md及可点击的sources.md，继续保存JSONL。
+- 不重扫、不重跑Activity，不改九章。新增合同尚未实施。
 
-这项设计尚未实现；不要把现有 340 个单阶段结果或现有九章称为仓库业务过程验收通过。
+下一份实施计划以[本次差异清单](docs/plans/business-process-discovery-and-reconstruction-change-design.md)为准，不重开旧Step07建设计划。
 
 ## 其他文档
 

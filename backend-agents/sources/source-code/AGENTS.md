@@ -278,18 +278,23 @@
   business areas, aliases and overlapping candidate membership. Java must not
   seed sales, purchasing or another domain vocabulary and must not infer
   business order from names, shared tables or file proximity.
-- ProcessMaterialAssembler validates candidate Activity IDs, reloads their
-  complete reviewed records, exposes statement handles and fetches only
-  explicitly requested excerpts from the saved JDT/source corpus. It never
+- ProcessMaterialAssembler validates candidate Activity IDs, reloads complete
+  reviewed records once per distinct Activity, preserves each variant use,
+  exposes statement handles and a saved-snippet preview directory, and fetches
+  only requested SourceRefs already admitted by Activity/M10. Do not add
+  JavaCodeIndex/MethodKey navigation or reparse merely to name a source preview. It never
   reruns JDT, JavaParser, BusinessMaterialBuilder or ActivityExplainer.
 - CandidateProcessReconstructor lets the model select the relevant Activity
   branch or variant and author process stages, exact predicates, transitions,
   business rules, outcomes and uncertainty. REVIEW receives the complete
   actual DRAFT and resolved source excerpts; Java validates structure and refs,
   not Chinese business entailment.
-- RepositoryProcessConsolidator reconciles overlapping candidates without
-  forcing a single partition. BusinessProcessPublisher deterministically emits
-  one structured catalog, coverage and business-processes.md.
+- RepositoryProcessConsolidator reads the existing complete reviewed Process
+  JSON, not a new lossy summary. It decides KEEP/MERGE_INTO/REJECT and relations,
+  but cannot rewrite prose. Only structurally identical full stage sequences
+  after use-ID normalization may MERGE_INTO; differing sequences stay separate
+  with relationships rather than being concatenated into a false lifecycle.
+  BusinessProcessPublisher deterministically renders the closed result.
 - BusinessReportPublisher consumes only that consolidated catalog, lets the
   model author and review the fixed nine-chapter presentation, and cannot
   discover, merge, split or reorder processes. Java supplies Markdown styling.
@@ -393,8 +398,8 @@
   material; preserve the technical Flow Gap.
 - Every discovered entry must be ANALYZED, ANALYZED_WITH_GAPS or NOT_ANALYZED
   with a concrete reason. One packet/group PASS never completes a repository.
-- A deterministic Activity index card contains stable identity and a compact
-  projection of reviewed objects/actions/states/inputs/results. It never
+- A deterministic Activity index card uses literal existing reviewed fields,
+  including businessRules, conditions, steps, objects, inputs and results. It never
   truncates or replaces the full reviewed Activity. Catalog discovery uses all
   cards, possibly through bounded shards plus one consolidation, and must close
   every card as candidate member, support/standalone activity, unclassified or
@@ -405,11 +410,20 @@
   are context after a candidate exists. Cues do not prove order, causality,
   identity or merge. Same-name and different-name activities are not
   automatically merged; one Activity may have several process-specific
-  ActivityUse records.
+  ActivityUse records, including multiple distinct variants within one candidate.
+  Deduplicate complete Activity bodies, not distinct (ActivityId, variant) uses.
+  Do not silently downgrade PROCESS_MEMBER when its candidate membership is
+  absent. Existing denominators remain Activity/candidate/reviewed process;
+  variant omission is checked by REVIEW and sample semantic acceptance, not
+  falsely advertised as caught by an ActivityId set comparison.
 - Detailed process output must structurally retain purpose/scope, ActivityUse,
-  ordered and optional stages, entry and rejection conditions, actions,
+  ordered and optional stages with required business narrative, entry and
+  rejection conditions, actions,
   state changes, outcomes, transitions, exact business rules, certainty,
-  statement refs and source refs. Query/statistics/configuration Activities may
+  statement refs and source refs. Rules have explicit activityUseIds; a valid
+  whole-method ref does not establish that every subtype obeys every branch.
+  Models own that semantic review; Java must not implement Chinese entailment
+  checks or an industry keyword blacklist. Query/statistics/configuration Activities may
   support a process without being forced into its main chronological stages.
 - The final catalog must carry the actual selected OBJECT,
   FIELD_OR_DIMENSION, OBJECT_RELATION, FORMULA_OR_METRIC and QUESTION text with
@@ -435,12 +449,25 @@
   it explicitly says no definable metric was identified. Natural-language
   truthfulness is checked by whole-report Luna REVIEW and authorized human
   sample review, not a Java business-language parser.
-- The approved renderer target uses business prose and plain short refs only.
+- The implemented Step08 renderer uses business prose and plain short refs only.
   Store raw file/lines/snippet in the existing separate source-refs.jsonl;
   do not append source blocks to Chapter 1, another chapter, or a tenth H2.
   Remove links to deleted same-document source anchors. Keep model inputs and
   reviewed chapter text unchanged; pure rerender calls no Provider and never
-  overwrites historical comparison artifacts. This target is implemented.
+  overwrites historical comparison artifacts. This Step08 behavior is implemented.
+- The current Step07 correction instead requires business stage narrative and
+  clickable relative source navigation. With direct sourceRefs, a stage links
+  to its process source index, then to sources.md file/line/snippet anchors.
+  sources.md is a deterministic view of existing SourceReference, not new
+  evidence or a frontend. Source blocks stay out of business-processes.md.
+  Source links are optional and may be empty. Do not require a missing-link
+  explanation, enrichment, special acceptance work or extra model call. Reuse
+  existing source fields and do not block delivery over this non-core detail;
+  focus on readable business steps, branches, concrete rules and outcomes.
+- A technical receive/validate/execute/return template does not pass lifecycle
+  acceptance merely by containing multiple stages. Actual business uses,
+  branch-scoped rules and readable object transitions must pass model REVIEW
+  and real sample review before scaling. No hardcoded business names in prompts.
 
 ## Persistence, reuse and recovery
 
@@ -456,13 +483,16 @@
     activity-coverage.json
   - Step 08: business-report.json, source-refs.jsonl, document.md,
     report-validation.json
-- The current Step07 `business-processes.jsonl` and
-  `repository-business-knowledge.json` are legacy implementation outputs to be
-  replaced, not accepted target semantics. Target Step07 private/reviewed
-  checkpoints include activity-index-cards, business-process-candidates and
-  reviewed-business-processes; formal publication is one
-  repository-business-process-catalog.json, process-coverage.json and
-  business-processes.md plus existing step receipt/manifest conventions.
+- Legacy business-processes.jsonl/repository-business-knowledge.json are not
+  consumed by the current process-specific route. Step07 v1 catalog/candidate/
+  reconstruction/consolidation and four-file publication are implemented.
+  The 46-process result is structurally closed but does not satisfy the user's
+  lifecycle/readability target. The current design correction is v2 publication:
+  catalog v2, coverage v2, business-process Markdown v2, unchanged source refs
+  JSONL v1, and new sources Markdown v1. Synchronize exact-set checks, producer,
+  reader, registry and artifact query; keep upstream versions and old results.
+  No changes to public Agent methods, PROCESS_CATALOG or the three owners.
+  Future Step08 input migration remains outside this correction.
 - Save business-materials after compilation and before the first model call.
   The approved job design has the coordinator save each complete reviewed job
   to a private run result immediately, then aggregate in stable material/group
@@ -557,10 +587,10 @@
   then remove only the two registry-proposal Capsule fields with the owning
   schema versions. Preserve current addresses 10/11,
   `ModelRuntimeIdentityV1`, EntryContext, facts, gaps, signals and SourceRefs.
-  The current `analysis.knowledge.ProcessExplainer` and its singleton-process
-  wire are now the implementation being replaced by the approved Step07
-  design; do not confuse them with the older already-deleted R0/P1 route, and
-  do not extend either old grouping architecture.
+  The legacy analysis.knowledge.ProcessExplainer singleton-process route is
+  already bypassed by the process-specific Step07 route. Do not reopen its
+  replacement as new work or confuse it with the older deleted R0/P1 route.
+  Refine the existing BusinessProcessDiscovery/Publisher only.
 - Adjust existing semantic packages and four business Modules. The approved
   analysis.code engine seam replaces hardwired Java parsing only; it does not
   authorize another business runtime, broad Wire Reset or storage/recovery
@@ -585,7 +615,7 @@
   BusinessReportPublisher or the existing Step 01–05 public seams. Test target
   internals only where needed to prove card completeness, source hydration or
   coverage conservation; do not test past an Interface merely to preserve the
-  current singleton ProcessExplainer or other retired shallow Modules.
+  legacy singleton ProcessExplainer or other retired shallow Modules.
 - Stop when the expected RED cannot be established, required upstream data is
   absent, input/ref/coverage cannot close, a started model request fails, or
   implementation needs a contract change. Update durable design and obtain

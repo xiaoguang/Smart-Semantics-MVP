@@ -14,22 +14,15 @@
 - `repository-run-state-v3`、`model-job-execution-config-v2`、`analysis-run-output-v3`、固定材料直接重开、显式新 model batch 和完整已审 job 复用。
 - 固定 jshERP 检查点已经保存 **326/326** 个 ReviewedActivity。新过程发现直接从该检查点开始，Activity Provider 调用数为零。
 
-### 1.2 已实现但不再作为目标的路径
+### 1.2 当前Step07和本次增量
 
-当前 `ProcessExplainer` 的 Process-group 并发和可选 repository summary 可以运行，但其分组由精确字段相等、同文件和容量切片驱动。实际结果是 340 个单 Activity、单 Stage Process，且一个 Activity 未进入 Process 也未出现在 unmatched 集合中。
+新BusinessProcessDiscovery已经复用现有job机制执行卡片目录、唯一merge、候选完整Activity/来源核对、详细过程和唯一归并。固定326 Activity真实发布46过程，coverage CLOSED、semantic PARTIAL；旧340 singleton不在当前过程入口中。
 
-这套旧 Process 输入、Prompt、浅结果和 summary 不是新业务过程设计的继续扩展点。保留其历史结果用于对照；实施时复用它的 job pool、Provider、保存和批次能力，替换其业务分组与结果模型。
+本次是Step07语义质量修正：卡片原规则、不同variant、阶段narrative、规则适用用法、来源目录与可读发布。调度、两级并发、Provider及两轮机制不变。目录/merge/过程/归并的八份Prompt及结果协议改动随业务模块v2进入fingerprint；旧结果不能误复用，上游326条Activity保持有效。
 
-### 1.3 本次目标尚未实现
+### 1.3 仍未实施的边界
 
-- 全仓 ActivityIndexCard 目录任务；
-- Candidate Process 的完整 Activity 材料和按需保存源码核对；
-- ActivityUse、详细阶段、精确规则和三档 certainty；
-- 仓库过程归并；
-- 确定性 `business-processes.md`；
-- 只消费已归并 process catalog 的九章任务。
-
-文档描述目标调度并不表示这些新 job 或 Schema 已经存在。
+本次新增字段和五文件v2发布尚未实施。Step08只消费新catalog的接线也仍未实施，且本轮不做九章。设计不能将现有46个多阶段过程数当成用户业务目标已通过。
 
 ## 2. 目标阶段图
 
@@ -261,12 +254,14 @@ model batch 是运行身份，不是调用许可，也不推进 Reader Candidate
 
 - 所有 ActivityIndexCard 恰进入一个目录分片，并最终进入 candidate、standalone 或 unclassified 处置。
 - 分片完成顺序变化不改变合并目录；Prompt 没有预置领域答案。
-- 两个 Candidate 并行读取同一 Activity 时，各自 ActivityUse、requested refs 和结果不串扰。
+- 两个Candidate并行读取同Activity时各自用法/ref/结果不串扰；同候选不同variant保留，完整正文只传一次。
 - Candidate REVIEW 得到完整 Activity、实际 DRAFT 和程序解析的已保存片段；不启动 JDT。
 - 具体谓词、拒绝条件和状态变化从 Activity/source 保留到已审过程，不能退化为空泛表述。
 - repository consolidation 不丢 stage、rule、certainty 或 ref，不制造父子循环。
 - 新 catalog 确定性生成 `business-processes.md`；九章只消费 catalog，删除原始 Activity 输入仍能生成同一九章内容。
-- 至少一个真实 fixture 形成多 Activity、多 Stage 过程；当前 340 个 singleton 结果必须作为 RED，而不是成功基线。
+- 真实样例必须说明对象怎样流转及具体规则适用哪个variant；当前46过程中的技术阶段模板不能作为语义成功。多Activity/多Stage只是结构计数。
+- 归并使用现有完整Process JSON，保留narrative/规则用法；无需新增摘要模型或请求轮次。
+- SourceRef目录预览及所请求完整片段保持，零请求合法；发布来源链接可以留空，不为补链接增加任务或专项验收。
 
 测试使用 frozen fixture 与 scripted/替身 Provider，不运行客户构建或真实模型。观测记录 queue wait、DRAFT、source-resolution、REVIEW、save、phase elapsed、实际请求数、复用数、未启动数、失败数，以及全局/每 Provider 峰值；不记录凭据或完整源码到普通日志。真实模型加速比只能在授权运行后测量，不能用 scripted 并发数字冒充。
 

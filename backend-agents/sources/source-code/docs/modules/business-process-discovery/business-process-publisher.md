@@ -1,70 +1,72 @@
 # BusinessProcessPublisher
 
-## 为什么存在
-
-过程模型的直接输出需要经过引用和覆盖检查，并形成可供人审阅、可供九章继续使用的稳定结果。发布器不做语义判断，也不让 Markdown 格式成为新的模型任务。
-
-## Interface
+## 为什么存在与Interface
 
 ```java
 BusinessProcessPublication publish(ProcessDiscoveryResult result);
 ```
 
-输入必须是一个封闭的 `ProcessDiscoveryResult`，其中包含已归并目录、Activity/候选 coverage、过程 knowledge items、`directActivityKnowledgeItems`、SourceRef 集和输出运行身份。一次调用只发布一份仓库结果；发布器不重新打开 ReviewedActivity 或 JDT/source corpus。
+零模型调用，输入是封闭的已审过程、所有处置、知识项、SourceReference和运行身份。不读Activity/JDT，不补业务正文；渲染问题不能成为新模型任务。
 
-## 程序工作
+## 发布规则
 
-- 校验所有 Activity、ActivityUse、stage、rule、CatalogKnowledgeItem、process relation、statement ref 和 SourceRef 闭合。
-- 校验每个 Activity 至少有过程 membership、支撑/独立或未分类处置。
-- 校验 Discovery 已为 SUPPORT/STANDALONE/UNCLASSIFIED Activity 提供确定性 `directActivityKnowledgeItems`，且 owner 同时保留 ActivityId 与 disposition；不重新投影，不生成虚假 Process。
-- 区分 semantic completeness 与 coverage completeness。
-- Canonical 保存结构化结果，确定性渲染 `business-processes.md`。
-- Markdown 使用业务语言和短 ref；完整代码仍在 `source-refs.jsonl`，不附几千行源码。
+校验现有ID/引用/三个分母、新增stage.narrative与rule.activityUseIds、直接Activity知识投影。覆盖完整与语义交付仍分别记录。新coverage的ActivityDisposition.name由原Activity确定性携带，避免未处理范围只有机器ID。
 
-## 主 Markdown 结构
+### 主Markdown
 
 ```text
 # 仓库业务过程
 ## 业务目录
 ## <过程名称>
 ### 目的与适用范围
-### 参与者与业务对象
-### 过程步骤与分支
+### 参与者与对象
+### 步骤与分支
 ### 重要业务规则
 ### 结束结果
 ### 支撑活动与相关过程
 ### 待确认联系
 ### 来源引用
-## 未归类与未处理范围
+## 支撑、独立、未归类与未处理范围
 ```
 
-章节数不固定为九；每个过程按同一模板输出。它是业务过程验收产物，不是另一个 Activity 列表。
+每阶段主要显示业务标题、完整narrative、必要分支/转移和一个“查看依据”链接；不默认把技术Activity名称全列在括号里，不铺满裸S编号。
 
-## 文件
+结构字段可在“条件与结果明细”折叠区全部保留，确保未被narrative重复的正文也不丢；核心允许/拒绝条件应在narrative可读，这是模型验收职责。规则显示适用用法及subject/when/otherwise/result，不能由Renderer拼出新的行业意义。
 
-正式交付：
+有直接sourceRefs的阶段，“查看依据”跳到本过程来源索引。索引按阶段/规则列所有依据，以“文件名：起止行”链接到sources.md中对应短ref锚点；不任意只保留前N条。原Activity名称可用于范围表，但不伪装为业务阶段。
 
-- `repository-business-process-catalog.json`
-- `process-coverage.json`
-- `business-processes.md`
-- 已有 `source-refs.jsonl`
+来源项允许留空；不强制增加缺链接说明、补齐逻辑、反查或专项验收，不阻塞主业务交付。只复用现有来源，优先确保业务叙述、分支、规则和结果可读。
 
-可复用内部检查点：
+### 独立来源视图
 
-- `activity-index-cards.jsonl`
-- `business-process-candidates.jsonl`
-- `reviewed-business-processes.jsonl`
+sources.md只从result已有SourceReference生成，每项含S编号锚点、仓库内文件路径、原行范围、完整snippet。使用稳定顺序、安全Markdown围栏和转义，正文含反引号或特殊字符也不能破坏页面。它不包含运行凭据或宿主绝对路径，不访问客户文件。
 
-内部检查点不是读者证据链，不要求九章模型读取它们。
+与business-processes.md一起复制即可保持相对链接。source-refs.jsonl继续供程序查询，来源页只是其确定性可读视图，不是新证据层。
 
-## 失败
+## 正式合同
 
-未知 ref、缺 Activity 处置、Process 无阶段也无明确 insufficient disposition、Markdown 丢失 JSON 中的条件/规则/知识项/结果、把 PARTIAL 写成完整均停止发布。无候选过程可以发布诚实的空目录和全部未分类原因，但不能宣称识别完成。PARTIAL 只接受已经闭合的容量或语义处置；Provider transport/runtime/schema、坏响应或 uncertain started request 是 fatal，不产生可供本发布器安装的正式结果。
+canonical地址仍为REPOSITORY_KNOWLEDGE/1/business-process-publisher，producer v2：
 
-## 下游保证
+| 文件 | schema |
+| --- | --- |
+| repository-business-process-catalog.json | repository-business-process-catalog-v2 |
+| process-coverage.json | repository-business-process-coverage-v2 |
+| business-processes.md | repository-business-process-markdown-v2 |
+| source-refs.jsonl | repository-business-process-source-references-v1 |
+| sources.md | repository-business-process-sources-markdown-v1 |
 
-Step08 只从已发布 catalog 和 coverage 生成仓库级九章；catalog 已同时携带过程知识项和未入过程 Activity 的确定性知识投影，因此它不再读 326 个 Activity 重新发现过程或补章节。纯重渲染和来源查询零 Provider 调用。
+新artifact type为REPOSITORY_KNOWLEDGE_BUSINESS_PROCESS_SOURCES_MARKDOWN，其他type保留。详细版本和修改面见[变更清单](../../plans/business-process-discovery-and-reconstruction-change-design.md)。
 
-## 测试与当前成熟度
+## 保存与读取
 
-`CanonicalBusinessProcessPublisher` 与 `BusinessProcessCheckpointReader` 已通过确定性重渲染、四项 canonical 安装、来源查询及 fresh reopen 直接测试。发布器使用历史输入 Store 验证 Activity/M10 checkpoint，并使用当前输出 Store 和策略安装 Step07，避免策略身份混用。真实 326 Activity 运行已生成 46 个过程的 Markdown；其中使用的 680 个短引用全部能在 `source-refs.jsonl` 查询。
+五项在同一canonical交付安装；存储策略、schema registry、exact-file数量、reader、artifact闭集和fixture同批更新。Reader从catalog/coverage/refs可重渲染出两个逐字节一致的Markdown，无Provider和上游调用。
+
+历史四文件v1产物原样保留；不能静默补narrative或把旧输出说成v2。上游读取策略不因此重置。PROCESS_CATALOG和三个owner不改，render()仍属Step08，来源页走artifact查询。
+
+## 成功、失败和测试
+
+所有短ref有真实来源，所有链接锚点存在，重要结构字段和narrative完整保存，PARTIAL可见。未知ref、错误owner、缺处置、坏schema或渲染丢字段明确失败。Publisher不把结构通过当语义优秀。
+
+当前实现是四文件v1，真实680短ref能在JSONL找到，但正文没有直接导航；新业务排版及sources.md尚待实现。
+
+Luna RED：五文件发布重开、正文不含源码块、来源页完整且围栏安全、复制后相对链接有效、规则用法名字正确、未处理名称可读、零模型渲染。Terra只实现格式与契约，不润色或猜测业务。

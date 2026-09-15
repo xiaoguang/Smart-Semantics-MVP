@@ -2,45 +2,33 @@
 
 ## 为什么存在
 
-业务发现需要同时复用三类已完成成果：全仓 ReviewedActivity、JDT 导航/完整源码、SourceRef。它们来自不同 checkpoint，但必须属于同一冻结源码。该模块把身份和读取复杂度藏在一个只读查询面后，防止下游重新扫描或直接拼宿主路径。
+Activity与M10来源材料来自不同checkpoint。corpus统一其只读查询和归属检查，让后续模型工作不触发重新扫描。它是Discovery内部能力，不要求再拆出公共框架。
 
-## Interface
+## 当前范围与输入
 
-目标内部 Interface：
+固定输入是全部已审Activity、Activity coverage、对应M10材料的SourceReference及其checkpoint引用。当前实现只开放Activity已引用且在M10验证存在的SourceRef，不承诺任意M10源码搜索。
 
-```java
-interface FrozenAnalysisCorpus extends AutoCloseable {
-    CorpusOverview overview();
-    List<ReviewedActivity> activities(List<ActivityId> ids);
-    List<SourceExcerpt> sources(List<SourceRefId> refs);
-    List<CodeMethod> methods(List<MethodKey> keys);
-}
-```
+内部操作：overview、按ActivityId读取完整Activity、按statement handle查原字段、按SourceRef读文件/原行范围/完整snippet。返回不可变数据，不接收任意本地Path。
 
-调用约束：先打开并完成一次整体身份核验；查询仅接受 typed ID；返回不可变值；`close` 后查询失败。它不暴露任意 `Path`，不提供搜索中文业务词的方法。
+**本次不增加methods(MethodKey)、JavaCodeIndex或客户checkout读取。** 保存JDT材料是原始来源，但不能将“可复用它”误写为当前corpus已经提供整个索引检索。现有片段真正不足时先记录缺口，再讨论定向补料。
 
 ## 程序工作
 
-- 验证 Activity、材料、JDT index、冻结 snapshot 和 SourceRef 的来源一致。
-- 允许用输入 checkpoint 当时的精确 ArtifactPolicyRegistry 重开旧产物，同时用当前 registry 发布新 Step07；两个 registry 角色分离，不能为了读取旧产物放宽新产物策略，也不能因策略身份不同重跑 JDT。
-- 建立 ActivityId、SourceRefId、MethodKey 的只读索引。
-- 为 Activity 数组字段生成确定性语句 handle，例如 `activity:<id>/conditions/2`。
-- 为 SUPPORT/STANDALONE/UNCLASSIFIED Activity 确定性投影对象、字段/维度、对象关系、公式/指标和问题正文，连同 Activity owner、grouping disposition、statement refs 和 source refs 交给 Discovery result；不通过模型重写，也不创建假过程。
-- 对请求的 ref 返回文件、行段和原文；共享方法正文只存一份。
-- 保留 JDT 未解析边界和既有覆盖，不把缺失伪装为空结果。
+- 用输入checkpoint对应策略重开Activity/M10，用当前输出策略发布新Step07；输入与输出registry身份分离。
+- 验证Activity、覆盖和来源归属，建立只读Activity/SourceRef索引。
+- 为现有可引用字段分配稳定statement handle，不新建Proof。
+- 为未进入候选的支撑、独立、未分类Activity确定性保留已有知识正文及原owner/disposition，放入封闭Discovery result。
+- 来源预览由Assembler从已保存snippet取原始行；发布来源页也只消费同一值，不再读代码文件。
+- 保留已知技术缺口。缺数据不冒充空结果，不隐式修复。
 
-## 模型工作
+## 成功、Gap与fatal
 
-无。身份、路径、hash 和检索控制都不发送给模型。上层只把选中的业务内容、短 ref 和片段放入任务。
+来源完整则返回原内容。合法片段不足以说明某条业务关系由上层记录UNRESOLVED；未知ref、损坏checkpoint、错误owner、越界statement为fatal。均不能触发JDT、JavaParser、Builder或ActivityExplainer。
 
-## 失败
+## 模型边界与下游保证
 
-缺 checkpoint、来源不一致、损坏 JSON、未知 Activity/ref/method、源码行段漂移均为明确失败。失败不能触发 JDT、JavaParser、Builder 或 ActivityExplainer。
+本模块零模型。路径、hash和checkpoint链不进入模型输入；完整业务字段和选定原文由上层按需提供。Publisher收到封闭结果，不回读corpus。
 
-## 下游保证
+## 测试与当前状态
 
-Cataloger 能一次看到完整 Activity 分母；Assembler 可以按候选 ID 取回完整内容；Reconstructor 请求的源码一定来自同一冻结 corpus；Discovery 可以把未进候选的 Activity 已有知识完整带到封闭结果，Publisher 无需再次打开 corpus。
-
-## 测试与当前成熟度
-
-统一 corpus 已在 `DefaultBusinessProcessDiscovery` 内实现并通过 Activity/材料精确分母、statement handle、SourceRef allowlist、输入/输出 policy registry 分离和显式复用测试。运行入口通过既有 checkpoint reader 重开材料；本路径没有 JDT、Builder 或 ActivityExplainer 调用点。
+现有corpus和固定326 Activity可复用；本次仅收紧文档承诺，不重建存储。Luna RED保持原引用映射、跨owner拒绝、缺片段不重扫；Terra不得借阅读辅助增加导航器或语义检索器。上游协议不升版。
