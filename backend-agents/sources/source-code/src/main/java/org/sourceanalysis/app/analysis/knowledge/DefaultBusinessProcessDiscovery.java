@@ -571,18 +571,20 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         throw failure("PROCESS_CATALOG_DUPLICATE_CANDIDATE");
       }
       List<CandidateUse> uses = new ArrayList<>();
-      Set<String> usedActivities = new HashSet<>();
+      Set<CandidateActivityVariant> usedActivityVariants = new HashSet<>();
       for (JsonNode useValue : array(candidate, "activityUses")) {
         ObjectNode use = object(useValue);
         String activityId = text(use, "activityId");
-        if (!expectedIds.contains(activityId) || !usedActivities.add(activityId)) {
+        String variant = text(use, "variant");
+        if (!expectedIds.contains(activityId)
+            || !usedActivityVariants.add(new CandidateActivityVariant(activityId, variant))) {
           throw failure("PROCESS_CATALOG_INVALID_CANDIDATE_MEMBERSHIP");
         }
         String role = text(use, "role");
         if (!CANDIDATE_ROLES.contains(role)) {
           throw failure("PROCESS_CATALOG_INVALID_ACTIVITY_ROLE");
         }
-        uses.add(new CandidateUse(activityId, role, text(use, "variant")));
+        uses.add(new CandidateUse(activityId, role, variant));
       }
       if (uses.isEmpty()) {
         throw failure("PROCESS_CATALOG_EMPTY_CANDIDATE");
@@ -611,8 +613,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       if (member) {
         kind = "PROCESS_MEMBER";
       } else if ("PROCESS_MEMBER".equals(kind)) {
-        kind = "UNCLASSIFIED";
-        reason = "目录未提供候选成员关系；" + reason;
+        throw failure("PROCESS_CATALOG_PROCESS_MEMBER_WITHOUT_CANDIDATE");
       }
       dispositions.add(new ProcessCoverage.ActivityDisposition(activityId, kind, reason));
     }
@@ -1117,14 +1118,19 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     input.set("candidate", candidate.toJson());
     ArrayNode activities = input.putArray("activities");
     candidate.uses().stream()
-        .sorted(Comparator.comparing(CandidateUse::activityId))
-        .map(use -> corpus.activityJson(use.activityId()))
+        .map(CandidateUse::activityId)
+        .distinct()
+        .sorted(UTF8_ORDER)
+        .map(corpus::activityJson)
         .forEach(activities::add);
     ArrayNode refs = input.putArray("allowlistedSourceRefs");
     candidateSourceRefs(candidate, corpus).stream()
         .sorted(UTF8_ORDER)
         .map(corpus::source)
-        .forEach(source -> sourceDirectoryJson(refs.addObject(), source));
+        .forEach(
+            source ->
+                sourceDirectoryJson(
+                    refs.addObject(), source, candidateActivityIds(candidate, corpus, source.ref())));
     input.put("instruction", "索引卡只用于选择成员；请从完整活动保留具体条件、状态值、拒绝路径、结果与不确定关系。");
     return input;
   }
@@ -1515,6 +1521,16 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         .collect(Collectors.toCollection(LinkedHashSet::new));
   }
 
+  private static List<String> candidateActivityIds(
+      Candidate candidate, FrozenCorpus corpus, String sourceRef) {
+    return candidate.uses().stream()
+        .map(CandidateUse::activityId)
+        .filter(activityId -> corpus.activitySourceRefs(activityId).contains(sourceRef))
+        .distinct()
+        .sorted(UTF8_ORDER)
+        .toList();
+  }
+
   private static void requireInputCapacity(
       ObjectNode input, ProcessDiscoveryProfile profile, String code) {
     if (new CanonicalJsonCodec().encodeCanonical(input).size() > profile.maxModelInputBytes()) {
@@ -1742,6 +1758,8 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     }
   }
 
+  private record CandidateActivityVariant(String activityId, String variant) {}
+
   private record Candidate(
       String candidateId, String localId, String name, String purpose, List<CandidateUse> uses) {
     ObjectNode toJson() {
@@ -1800,6 +1818,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       List<String> conditions,
       List<String> activitySteps,
       List<String> codeDefinedResults,
+      List<String> businessRules,
       List<String> terms,
       List<String> scopeLimitations) {
     static ActivityIndexCard from(ReviewedActivity activity) {
@@ -1813,6 +1832,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
           activity.conditions(),
           activity.activitySteps(),
           activity.codeDefinedResults(),
+          activity.businessRules(),
           activity.terms(),
           activity.scopeLimitations());
     }
@@ -1828,6 +1848,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       strings(value.putArray("conditions"), conditions);
       strings(value.putArray("activitySteps"), activitySteps);
       strings(value.putArray("codeDefinedResults"), codeDefinedResults);
+      strings(value.putArray("businessRules"), businessRules);
       strings(value.putArray("terms"), terms);
       strings(value.putArray("scopeLimitations"), scopeLimitations);
       return value;
@@ -2081,9 +2102,32 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     values.forEach(target::add);
   }
 
-  private static void sourceDirectoryJson(ObjectNode value, SourceReference source) {
+  private static void sourceDirectoryJson(
+      ObjectNode value, SourceReference source, List<String> activityIds) {
     value.put("ref", source.ref());
-    value.put("purpose", "用于按需核对已保存源码");
+    strings(value.putArray("activityIds"), activityIds);
+    strings(value.putArray("openingLines"), openingLines(source.snippet()));
+  }
+
+  private static List<String> openingLines(String snippet) {
+    List<String> lines = new ArrayList<>();
+    int lineStart = 0;
+    for (int index = 0; index < snippet.length() && lines.size() < 8; index++) {
+      char character = snippet.charAt(index);
+      if (character == '\n' || character == '\r') {
+        lines.add(snippet.substring(lineStart, index));
+        if (character == '\r'
+            && index + 1 < snippet.length()
+            && snippet.charAt(index + 1) == '\n') {
+          index++;
+        }
+        lineStart = index + 1;
+      }
+    }
+    if (lines.size() < 8 && lineStart < snippet.length()) {
+      lines.add(snippet.substring(lineStart));
+    }
+    return List.copyOf(lines);
   }
 
   private static void sourceJson(ObjectNode value, SourceReference source) {
