@@ -35,6 +35,8 @@ The RED and GREEN cycle is complete. Task 4 publisher behavior remains separate;
 | `mvn -t .mvn/toolchains.xml -Dtest=BusinessProcessPromptV2ContractTest,BusinessProcessSemanticFingerprintV2Test,BusinessProcessAcceptanceSampleTest test` | RED (expected) | 5 tests run; 5 failures, no compilation errors. The v2 prompt resources and semantic identity are absent, and the package-internal real discovery seam is not implemented. |
 | `mvn -t .mvn/toolchains.xml -Dtest=BusinessProcessPromptV2ContractTest,BusinessProcessSemanticFingerprintV2Test,BusinessProcessAcceptanceSampleTest test` | GREEN | 5 tests run; 0 failures/errors. |
 | `mvn -t .mvn/toolchains.xml -Dtest=BusinessProcessDiscoveryTest,BusinessProcessPublicationTest,BusinessProcessPromptV2ContractTest,BusinessProcessSemanticFingerprintV2Test,BusinessProcessAcceptanceSampleTest test` | GREEN | 43 tests run; 0 failures/errors. |
+| `mvn -t .mvn/toolchains.xml -Pquality spotless:check verify` followed by the documented same-code quality-only command after the one local finding was fixed | GREEN | 550 tests run; 0 failures/errors; 2 skipped. SpotBugs reports 0 bugs and PMD passes. |
+| `mvn -t .mvn/toolchains.xml -Dtest=BusinessProcessPublicationTest test` | GREEN | 13 tests run; 0 failures/errors after the defensive-copy correction. |
 
 ## Decisions
 
@@ -45,11 +47,11 @@ The RED and GREEN cycle is complete. Task 4 publisher behavior remains separate;
 
 ## Blockers
 
-- No blocking verification remains for this RED task. Full local CI remains the parent/GREEN task's responsibility.
+- No blocking verification remains. Full local module correctness and quality verification is complete.
 
 ## Exact next action
 
-Run full local module CI, then execute the fixed 326-Activity real catalog and representative-candidate acceptance before the full publication run.
+Execute the fixed 326-Activity real catalog and representative-candidate acceptance before the full publication run.
 
 ## Resume checks
 

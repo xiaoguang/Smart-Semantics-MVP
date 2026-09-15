@@ -145,7 +145,12 @@ public record RepositoryBusinessProcessCatalog(
       require(actionOrDecision, "business rule action");
       require(result, "business rule result");
       certainty = validateCertainty(certainty);
-      activityUseIds = requiredIds(activityUseIds, "business rule activity use IDs");
+      if (activityUseIds == null || activityUseIds.isEmpty()) {
+        throw new IllegalArgumentException("business rule activity use IDs are required");
+      }
+      activityUseIds.forEach(
+          activityUseId -> require(activityUseId, "business rule activity use IDs"));
+      activityUseIds = List.copyOf(activityUseIds);
       statementRefs = List.copyOf(statementRefs);
       sourceRefs = List.copyOf(sourceRefs);
     }
@@ -202,13 +207,5 @@ public record RepositoryBusinessProcessCatalog(
     if (value == null || value.isBlank()) {
       throw new IllegalArgumentException(label + " is required");
     }
-  }
-
-  private static List<String> requiredIds(List<String> values, String label) {
-    if (values == null || values.isEmpty()) {
-      throw new IllegalArgumentException(label + " are required");
-    }
-    values.forEach(value -> require(value, label));
-    return List.copyOf(values);
   }
 }
