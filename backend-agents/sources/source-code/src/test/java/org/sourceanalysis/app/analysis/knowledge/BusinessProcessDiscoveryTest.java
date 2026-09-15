@@ -264,13 +264,16 @@ class BusinessProcessDiscoveryTest {
   }
 
   @Test
-  void rejectsRuleRefsOutsideAllSpecifiedActivityUses() {
-    assertThatThrownBy(
-            () ->
-                new DefaultBusinessProcessDiscovery(
-                        new ScriptedProvider("rule-ref-outside-activity-use"))
-                    .discover(new ProcessDiscoveryRequest(activities(), materials(), profile())))
-        .isInstanceOf(IllegalArgumentException.class);
+  void acceptsCandidateScopedRuleRefsAcrossSpecifiedActivityUses() {
+    ProcessDiscoveryResult result =
+        new DefaultBusinessProcessDiscovery(new ScriptedProvider("rule-ref-outside-activity-use"))
+            .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
+
+    RepositoryBusinessProcessCatalog.BusinessProcess process = result.catalog().processes().get(0);
+    assertThat(process.businessRules().get(0).sourceRefs())
+        .containsExactly(
+            process.activityUses().get(0).sourceRefs().get(0),
+            process.activityUses().get(1).sourceRefs().get(0));
   }
 
   @Test
@@ -391,6 +394,34 @@ class BusinessProcessDiscoveryTest {
   }
 
   @Test
+  void keepsTheCompleteDraftDenominatorWhenCatalogReviewRepeatsOneDisposition() {
+    ScriptedProvider provider = new ScriptedProvider("catalog-review-repeats-disposition");
+    ModelRuntimeIdentityV1 identity =
+        new ModelRuntimeIdentityV1("scripted", "fixture", "none", "none");
+    ModelJobExecutionConfiguration execution =
+        new ModelJobExecutionConfiguration(
+            3,
+            Map.of("pro", new ModelJobProviderBinding("pro", "account", 3, provider, identity)),
+            Map.of(
+                "activity", List.of("pro"),
+                "processGroup", List.of("pro"),
+                "repositorySummary", List.of("pro"),
+                "report", List.of("pro")),
+            temporaryDirectory,
+            AnalysisRunId.parse("analysis-run:" + "4".repeat(64)));
+    ProcessDiscoveryProfile profile =
+        new ProcessDiscoveryProfile(1, 8, 16, 64_000, 128_000, 64_000, 4, 64, 4_000);
+
+    ProcessDiscoveryResult result =
+        DefaultBusinessProcessDiscovery.forExecution(execution)
+            .discover(new ProcessDiscoveryRequest(activities(), materials(), profile));
+
+    assertThat(result.coverage().activityDispositions())
+        .extracting(ProcessCoverage.ActivityDisposition::activityId)
+        .containsExactlyInAnyOrder("activity:create", "activity:update", "activity:approve");
+  }
+
+  @Test
   void derivesProcessMemberDispositionFromTheMoreSpecificCandidateMembership() {
     ProcessDiscoveryResult result =
         new DefaultBusinessProcessDiscovery(
@@ -479,6 +510,46 @@ class BusinessProcessDiscoveryTest {
             .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
 
     assertThat(result.catalog().processes().get(0).activityUses()).hasSize(3);
+  }
+
+  @Test
+  void sendsACompactBusinessCompleteViewToRepositoryConsolidation() {
+    ScriptedProvider provider = new ScriptedProvider(null);
+
+    new DefaultBusinessProcessDiscovery(provider)
+        .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
+
+    JsonNode process = provider.consolidationInput().path("processes").get(0);
+    assertThat(process.path("name").asText()).isEqualTo("销售订单创建与审核");
+    assertThat(process.path("stages").get(1).path("narrative").asText())
+        .isEqualTo("修改订单：当前状态为0，更新订单和明细。");
+    assertThat(process.path("businessRules").get(0).path("when").asText()).isEqualTo("当前状态为0");
+    assertThat(process.path("activityUses").get(0).has("statementRefs")).isFalse();
+    assertThat(process.path("activityUses").get(0).has("sourceRefs")).isFalse();
+    assertThat(process.path("stages").get(0).has("statementRefs")).isFalse();
+    assertThat(process.path("stages").get(0).has("sourceRefs")).isFalse();
+    assertThat(process.path("businessRules").get(0).has("statementRefs")).isFalse();
+    assertThat(process.path("businessRules").get(0).has("sourceRefs")).isFalse();
+    process
+        .path("knowledgeItems")
+        .forEach(
+            item -> {
+              assertThat(item.has("statementRefs")).isFalse();
+              assertThat(item.has("sourceRefs")).isFalse();
+            });
+    assertThat(process.path("sourceRefs")).isNotEmpty();
+  }
+
+  @Test
+  void keepsAnOriginalReviewedProcessWhenTheConsolidationReviewOmitsItsDecision() {
+    ScriptedProvider provider = new ScriptedProvider("consolidation-review-misses-process");
+
+    ProcessDiscoveryResult result =
+        new DefaultBusinessProcessDiscovery(provider)
+            .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
+
+    assertThat(provider.consolidationInput().path("processes")).hasSize(2);
+    assertThat(result.catalog().processes()).hasSize(2);
   }
 
   @Test
@@ -886,7 +957,8 @@ class BusinessProcessDiscoveryTest {
         if (conflictingCatalogDisposition != null
             && Set.of(
                     "consolidation-identical-candidate-merge",
-                    "consolidation-additive-candidate-merge")
+                    "consolidation-additive-candidate-merge",
+                    "consolidation-review-misses-process")
                 .contains(conflictingCatalogDisposition)) {
           addEquivalentCandidate(response);
         }
@@ -902,15 +974,24 @@ class BusinessProcessDiscoveryTest {
           variant.put("activityId", "activity:update");
           variant.put("role", "CORE");
           variant.put("variant", "按导入订单");
-        } else if ("duplicate-area-activity-membership".equals(
-            conflictingCatalogDisposition)) {
+        } else if ("duplicate-area-activity-membership".equals(conflictingCatalogDisposition)) {
           ArrayNode activityIds =
               (ArrayNode) response.path("businessAreas").get(0).path("activityIds");
           activityIds.add(activityIds.get(0));
+        } else if ("catalog-review-repeats-disposition".equals(conflictingCatalogDisposition)
+            && "BUSINESS_CATALOG_MERGE_REVIEW".equals(request.taskKind())) {
+          ArrayNode dispositions = (ArrayNode) response.path("activityDispositions");
+          dispositions.remove(dispositions.size() - 1);
+          dispositions.add(dispositions.get(0).deepCopy());
         }
       } else if (request.taskKind().startsWith("BUSINESS_PROCESS_CONSOLIDATION")) {
         consolidationInput = input;
         response = consolidation(input, conflictingCatalogDisposition);
+        if ("consolidation-review-misses-process".equals(conflictingCatalogDisposition)
+            && request.taskKind().endsWith("REVIEW")) {
+          ArrayNode decisions = (ArrayNode) response.path("processDecisions");
+          decisions.remove(decisions.size() - 1);
+        }
       } else {
         processInput = input;
         processActivities = input.path("activities");
@@ -921,7 +1002,8 @@ class BusinessProcessDiscoveryTest {
         if (conflictingCatalogDisposition != null
             && Set.of(
                     "consolidation-identical-candidate-merge",
-                    "consolidation-additive-candidate-merge")
+                    "consolidation-additive-candidate-merge",
+                    "consolidation-review-misses-process")
                 .contains(conflictingCatalogDisposition)) {
           adjustCandidateProcess(response, input, conflictingCatalogDisposition);
         }
@@ -953,10 +1035,14 @@ class BusinessProcessDiscoveryTest {
           rule.putArray("activityUseLocalIds").add("U999");
           rule.putArray("sourceRefs").removeAll().add("S3");
         } else if ("rule-ref-outside-activity-use".equals(conflictingCatalogDisposition)) {
-          ObjectNode rule =
-              (ObjectNode) response.path("processes").get(0).path("businessRules").get(0);
-          rule.putArray("activityUseLocalIds").add("U1");
-          rule.putArray("sourceRefs").removeAll().add("S2");
+          JsonNode process = response.path("processes").get(0);
+          JsonNode firstUse = process.path("activityUses").get(0);
+          JsonNode secondUse = process.path("activityUses").get(1);
+          ObjectNode rule = (ObjectNode) process.path("businessRules").get(0);
+          rule.putArray("activityUseLocalIds").add(firstUse.path("useLocalId").asText());
+          rule.putArray("sourceRefs")
+              .add(firstUse.path("sourceRefs").get(0).asText())
+              .add(secondUse.path("sourceRefs").get(0).asText());
         } else if ("repeated-activity-use-reference".equals(conflictingCatalogDisposition)) {
           JsonNode firstUse = response.path("processes").get(0).path("activityUses").get(0);
           ((ArrayNode) firstUse.path("statementRefs"))

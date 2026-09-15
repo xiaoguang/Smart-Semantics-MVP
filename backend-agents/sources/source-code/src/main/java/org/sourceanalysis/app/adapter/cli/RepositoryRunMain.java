@@ -600,7 +600,8 @@ public final class RepositoryRunMain {
         .forEach(
             entry ->
                 providers.put(
-                    entry.getKey(), providerBinding(modelJobs, entry.getKey(), entry.getValue())));
+                    entry.getKey(),
+                    providerBinding(modelJobs, entry.getKey(), entry.getValue(), runId)));
     return new ModelJobExecutionConfiguration(
         modelJobs.maxConcurrentJobs(),
         providers,
@@ -613,7 +614,8 @@ public final class RepositoryRunMain {
   private static ModelJobProviderBinding providerBinding(
       ModelJobsConfiguration modelJobs,
       String providerKey,
-      ModelJobProviderConfiguration configuration) {
+      ModelJobProviderConfiguration configuration,
+      AnalysisRunId modelBatchId) {
     String upstream =
         configuration.kind() == ModelProviderKind.CODEX_SUBSCRIPTION
             ? "codex_subscription"
@@ -621,7 +623,8 @@ public final class RepositoryRunMain {
     ModelRuntimeIdentityV1 expected =
         new ModelRuntimeIdentityV1(
             upstream, configuration.model(), configuration.reasoningEffort(), "read-only");
-    Path providerJournal = providerJournalDirectory(modelJobs.journalDirectory(), providerKey);
+    Path providerJournal =
+        providerJournalDirectory(modelJobs.journalDirectory(), providerKey, modelBatchId);
     List<StructuredModelProvider> clients =
         configuration.authentication().environmentNames().stream()
             .map(
@@ -668,9 +671,12 @@ public final class RepositoryRunMain {
     return new RunJournalStructuredProvider(providerJournal, expected, delegate);
   }
 
-  private static Path providerJournalDirectory(Path journalRoot, String providerKey) {
+  private static Path providerJournalDirectory(
+      Path journalRoot, String providerKey, AnalysisRunId modelBatchId) {
     Path providers = checkedDirectory(journalRoot, "providers");
-    return checkedDirectory(providers, providerKey);
+    Path provider = checkedDirectory(providers, providerKey);
+    return checkedDirectory(
+        provider, sha256(modelBatchId.value().getBytes(StandardCharsets.UTF_8)));
   }
 
   private static Path checkedDirectory(Path parent, String name) {

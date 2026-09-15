@@ -222,8 +222,8 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     List<ObjectNode> shardCatalogs = discoverCatalogShards(shards, profile);
     ObjectNode mergeInput = catalogInput(cards, shardCatalogs);
     requireInputCapacity(mergeInput, profile, "PROCESS_CATALOG_MERGE_INPUT_CAPACITY_EXCEEDED");
-    ObjectNode reviewed =
-        draftAndReview(
+    ReviewedPair reviewed =
+        draftAndReviewPair(
             CATALOG_MERGE_DRAFT,
             CATALOG_MERGE_REVIEW,
             "business-catalog-merge",
@@ -232,7 +232,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
             profile,
             binding("repositorySummary", 0),
             "process-catalog");
-    return parseCatalog(reviewed, cards);
+    return parseMergedCatalogReview(reviewed.draft().value(), reviewed.review().value(), cards);
   }
 
   private List<ObjectNode> discoverCatalogShards(
@@ -439,8 +439,8 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     } else {
       ObjectNode input = consolidationInput(catalog, reviewedProcesses);
       requireInputCapacity(input, profile, "PROCESS_CONSOLIDATION_INPUT_CAPACITY_EXCEEDED");
-      ObjectNode reviewed =
-          draftAndReview(
+      ReviewedPair reviewed =
+          draftAndReviewPair(
               CONSOLIDATION_DRAFT,
               CONSOLIDATION_REVIEW,
               "business-process-consolidation",
@@ -449,7 +449,10 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
               profile,
               binding("repositorySummary", 0),
               "process-consolidation");
-      decision = parseConsolidation(reviewed, reviewedProcesses);
+      decision =
+          parseConsolidation(
+              completeConsolidationDecisions(reviewed.review().value(), reviewedProcesses),
+              reviewedProcesses);
     }
     RepositoryBusinessProcessCatalog finalCatalog =
         applyConsolidation(catalog, reviewedProcesses, decision, corpus);
@@ -466,11 +469,26 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       ProcessDiscoveryProfile profile,
       ModelJobProviderBinding binding,
       String phase) {
+    return draftAndReviewPair(
+            draftKind, reviewKind, taskBase, input, schema, profile, binding, phase)
+        .review()
+        .value();
+  }
+
+  private ReviewedPair draftAndReviewPair(
+      String draftKind,
+      String reviewKind,
+      String taskBase,
+      ObjectNode input,
+      ObjectNode schema,
+      ProcessDiscoveryProfile profile,
+      ModelJobProviderBinding binding,
+      String phase) {
     requireInputCapacity(input, profile, "PROCESS_MODEL_INPUT_CAPACITY_EXCEEDED");
     String fingerprint = inputFingerprint(draftKind, reviewKind, input, schema, profile, binding);
     ReviewedPair reused = reopenPair(phase, taskBase, fingerprint, binding);
     if (reused != null) {
-      return reused.review().value();
+      return reused;
     }
     ModelCall draft = call(draftKind, taskBase + "-draft", input, schema, profile, binding);
     ObjectNode reviewInput = input.deepCopy();
@@ -482,7 +500,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       throw failure("PROCESS_JOB_RUNTIME_IDENTITY_MISMATCH");
     }
     savePair(phase, taskBase, fingerprint, binding, draft, review);
-    return review.value();
+    return new ReviewedPair(draft, review);
   }
 
   private ModelCall call(
@@ -724,6 +742,80 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         strings(value, "unresolvedQuestions"));
   }
 
+  private CatalogResult parseMergedCatalogReview(
+      ObjectNode draft, ObjectNode review, List<ActivityIndexCard> expectedCards) {
+    Set<String> expectedIds =
+        expectedCards.stream().map(ActivityIndexCard::activityId).collect(Collectors.toSet());
+    List<String> reviewedDispositionIds = new ArrayList<>();
+    for (JsonNode value : array(review, "activityDispositions")) {
+      reviewedDispositionIds.add(text(object(value), "activityId"));
+    }
+    if (reviewedDispositionIds.size() == expectedIds.size()
+        && reviewedDispositionIds.stream().distinct().count() == expectedIds.size()
+        && expectedIds.containsAll(reviewedDispositionIds)) {
+      return parseCatalog(review, expectedCards);
+    }
+
+    Map<String, ProcessCoverage.ActivityDisposition> draftDispositions =
+        catalogDispositionLedger(draft, expectedCards);
+    Set<String> reviewedMembers = new HashSet<>();
+    for (JsonNode candidateValue : array(review, "candidateProcesses")) {
+      for (JsonNode useValue : array(object(candidateValue), "activityUses")) {
+        reviewedMembers.add(text(object(useValue), "activityId"));
+      }
+    }
+
+    ObjectNode reconciled = review.deepCopy();
+    ArrayNode dispositions = reconciled.putArray("activityDispositions");
+    expectedCards.stream()
+        .sorted(Comparator.comparing(ActivityIndexCard::activityId, UTF8_ORDER))
+        .forEach(
+            card -> {
+              ProcessCoverage.ActivityDisposition baseline =
+                  draftDispositions.get(card.activityId());
+              ObjectNode disposition = dispositions.addObject();
+              disposition.put("activityId", card.activityId());
+              if (reviewedMembers.contains(card.activityId())) {
+                disposition.put("disposition", "PROCESS_MEMBER");
+                disposition.put("reason", baseline.reason());
+              } else if ("PROCESS_MEMBER".equals(baseline.disposition())) {
+                disposition.put("disposition", "UNCLASSIFIED");
+                disposition.put("reason", "目录审阅将该活动移出全部候选，未提供新的过程归属。");
+              } else {
+                disposition.put("disposition", baseline.disposition());
+                disposition.put("reason", baseline.reason());
+              }
+            });
+    return parseCatalog(reconciled, expectedCards);
+  }
+
+  private Map<String, ProcessCoverage.ActivityDisposition> catalogDispositionLedger(
+      ObjectNode value, List<ActivityIndexCard> expectedCards) {
+    Map<String, ActivityIndexCard> cardsById =
+        expectedCards.stream()
+            .collect(Collectors.toMap(ActivityIndexCard::activityId, Function.identity()));
+    Map<String, ProcessCoverage.ActivityDisposition> dispositions = new LinkedHashMap<>();
+    for (JsonNode item : array(value, "activityDispositions")) {
+      ObjectNode disposition = object(item);
+      String activityId = text(disposition, "activityId");
+      String kind = text(disposition, "disposition");
+      ActivityIndexCard card = cardsById.get(activityId);
+      if (card == null
+          || dispositions.containsKey(activityId)
+          || !ACTIVITY_DISPOSITIONS.contains(kind)) {
+        throw failure("PROCESS_CATALOG_ACTIVITY_DISPOSITION_INVALID");
+      }
+      dispositions.put(
+          activityId,
+          new ProcessCoverage.ActivityDisposition(
+              activityId, card.name(), kind, text(disposition, "reason")));
+    }
+    if (!dispositions.keySet().equals(cardsById.keySet())) {
+      throw failure("PROCESS_CATALOG_ACTIVITY_DENOMINATOR_OPEN");
+    }
+    return Map.copyOf(dispositions);
+  }
+
   private ParsedCandidateDraft parseCandidate(
       ObjectNode value, Candidate candidate, FrozenCorpus corpus, ProcessDiscoveryProfile profile) {
     String disposition = text(value, "disposition");
@@ -896,19 +988,10 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       }
       List<RepositoryBusinessProcessCatalog.ActivityUse> ruleUses =
           localUseIds.stream().map(useByLocalId::get).toList();
-      Set<String> allowedRuleStatements =
-          ruleUses.stream()
-              .flatMap(use -> corpus.statementHandles(use.activityId()).stream())
-              .collect(Collectors.toSet());
-      Set<String> allowedRuleSources =
-          ruleUses.stream()
-              .flatMap(use -> corpus.activitySourceRefs(use.activityId()).stream())
-              .collect(Collectors.toSet());
       List<String> statementRefs = strings(rule, "statementRefs").stream().distinct().toList();
       List<String> sourceRefs = strings(rule, "sourceRefs").stream().distinct().toList();
-      requireSubset(
-          statementRefs, allowedRuleStatements, "PROCESS_RULE_STATEMENT_REFERENCE_INVALID");
-      requireSubset(sourceRefs, allowedRuleSources, "PROCESS_RULE_SOURCE_REFERENCE_INVALID");
+      requireSubset(statementRefs, allowedStatements, "PROCESS_RULE_STATEMENT_REFERENCE_INVALID");
+      requireSubset(sourceRefs, allowedSources, "PROCESS_RULE_SOURCE_REFERENCE_INVALID");
       String certainty = certainty(rule);
       requireConfirmedBasis(certainty, statementRefs, sourceRefs);
       rules.add(
@@ -1270,7 +1353,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     ArrayNode processValues = input.putArray("processes");
     processes.stream()
         .sorted(Comparator.comparing(RepositoryBusinessProcessCatalog.BusinessProcess::processId))
-        .map(this::processJson)
+        .map(this::consolidationProcessJson)
         .forEach(processValues::add);
     ArrayNode areas = input.putArray("businessAreas");
     for (AreaSeed seed : catalog.areas()) {
@@ -1290,6 +1373,45 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     }
     input.put("instruction", "只裁决重复、父子、相关、替代和拒绝关系；不得重写或压缩已审阶段、规则和来源。");
     return input;
+  }
+
+  private ObjectNode consolidationProcessJson(
+      RepositoryBusinessProcessCatalog.BusinessProcess process) {
+    ObjectNode value = processJson(process);
+    removeEvidenceFields(value.path("activityUses"));
+    removeEvidenceFields(value.path("stages"));
+    removeEvidenceFields(value.path("businessRules"));
+    removeEvidenceFields(value.path("knowledgeItems"));
+    return value;
+  }
+
+  private static ObjectNode completeConsolidationDecisions(
+      ObjectNode review, List<RepositoryBusinessProcessCatalog.BusinessProcess> reviewedProcesses) {
+    ObjectNode completed = review.deepCopy();
+    ArrayNode decisions = (ArrayNode) completed.path("processDecisions");
+    Set<String> decided = new HashSet<>();
+    decisions.forEach(item -> decided.add(item.path("processId").asText()));
+    reviewedProcesses.stream()
+        .map(RepositoryBusinessProcessCatalog.BusinessProcess::processId)
+        .filter(processId -> !decided.contains(processId))
+        .sorted(UTF8_ORDER)
+        .forEach(
+            processId -> {
+              ObjectNode decision = decisions.addObject();
+              decision.put("processId", processId);
+              decision.put("disposition", "KEEP");
+              decision.putNull("targetProcessId");
+              decision.put("reason", "归并审阅未返回该过程的处置；保留原完整已审过程。");
+            });
+    return completed;
+  }
+
+  private static void removeEvidenceFields(JsonNode values) {
+    for (JsonNode item : values) {
+      if (item instanceof ObjectNode object) {
+        object.remove(List.of("statementRefs", "sourceRefs"));
+      }
+    }
   }
 
   private ObjectNode processJson(RepositoryBusinessProcessCatalog.BusinessProcess process) {
@@ -1316,8 +1438,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
 
   private ObjectNode mergedCatalogSchema(List<ActivityIndexCard> cards) {
     ObjectNode schema = catalogSchema(cards);
-    ObjectNode dispositions =
-        (ObjectNode) schema.path("properties").path("activityDispositions");
+    ObjectNode dispositions = (ObjectNode) schema.path("properties").path("activityDispositions");
     dispositions.put("minItems", cards.size());
     dispositions.put("maxItems", cards.size());
     return schema;
