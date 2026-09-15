@@ -56,6 +56,8 @@ Activity 不负责回答整个销售或采购过程。当前 jshERP 实测已有
 
 每个 Activity 必须有处置：进入一个或多个候选、独立活动或未分类。成员用途为 CORE、OPTIONAL、ROLLBACK、SUPPORT、QUERY 或 ANALYTICS。一个 Activity 可以同时属于销售履约和库存管理；查询和统计可支撑过程而不是伪装成时序阶段。
 
+全仓分片合并以完整DRAFT保存的Activity处置作为覆盖分母。REVIEW裁决候选及业务边界；若它在重复输出整份处置长数组时仅产生重复或遗漏ID，程序保留DRAFT非成员处置，并按REVIEW后的实际候选关系重算PROCESS_MEMBER。该恢复不创建候选、不推断业务；未知Activity、非法处置以及完整唯一清单中的孤立PROCESS_MEMBER仍然失败。
+
 ### 4.3 Business Process：详细重建
 
 程序为每个 Candidate Process 取回完整 Activity，并提供稳定 Activity statement handle 与 SourceRef 目录。DRAFT 选择与候选有关的业务变体、阶段和规则，并请求少量需要核对的源码；程序从已保存 JDT/源码返回片段；完整 REVIEW 收窄或修正结果。
@@ -77,7 +79,7 @@ Activity 不负责回答整个销售或采购过程。当前 jshERP 实测已有
   拒绝条件
   结果
   下一步/分支
-重要业务规则（activityUseIds限定适用用法）
+重要业务规则（activityUseIds限定业务适用用法，不限定证据归属）
 选中的业务对象说明、字段/维度、对象关系、公式/指标和示例问题
 结束结果
 支撑活动与相关过程
@@ -86,6 +88,8 @@ Activity 不负责回答整个销售或采购过程。当前 jshERP 实测已有
 ```
 
 Certainty 只使用 `CONFIRMED`、`INFERRED`、`UNRESOLVED`，并附在具体阶段、规则或连接上，不用一个总分掩盖差异。
+
+来源约束保持轻量：规则可引用当前候选内任何已存在的 statement 或 SourceRef；Java 只拒绝未知或候选外引用。`activityUseIds` 由模型表达规则适用于哪些业务用法，不能再被程序解释为证据所有权。来源用于定位代码，不得因跨 Activity 引用而阻断业务发现，也不新增补证据循环。
 
 为避免 Step08 回读 raw Activity，详细过程还保存 `CatalogKnowledgeItem`。它只从候选的完整已审 Activity/源码或过程 REVIEW 中选择已有内容，类型限定为 `OBJECT`、`FIELD_OR_DIMENSION`、`OBJECT_RELATION`、`FORMULA_OR_METRIC`、`QUESTION`，并保留正文、owner、certainty、ActivityStatementRef 和 SourceRef。引用本身不能替代正文。被目录直接处置为 SUPPORT/STANDALONE/UNCLASSIFIED、没有经过候选重建的 Activity，由 `BusinessProcessDiscovery` 在同一个只读 corpus 内从原 ReviewedActivity 确定性投影同类知识项，并作为 `directActivityKnowledgeItems` 放入 `ProcessDiscoveryResult`；owner 保留 ActivityId 与 grouping disposition。这不会把它伪装成 Business Process，也不要求 Publisher 回读外部状态。
 
@@ -123,6 +127,10 @@ public interface BusinessProcessPublisher {
   → 程序发布 business-processes.md
   → 唯一九章 DRAFT → REVIEW → 确定性 render
 ```
+
+仓库归并只接收确定性生成的“业务完整、证据精简”过程视图：保留过程目的、范围、对象、用法、阶段正文、具体条件/动作/拒绝/结果、规则和待确认联系；重复的 statement/source 证据字段留在程序侧完整过程内。归并模型只给出去重和关系裁决，程序将裁决应用到原始完整过程，因此不会因控制上下文体积而缩写最终业务正文。
+
+归并的真实分母来自程序侧完整已审过程集合。REVIEW若在长处置数组中遗漏某个过程，程序对该过程采用安全的`KEEP`并保留原文；未知ID、重复处置和非法合并仍拒绝。遗漏不能成为删除一个已审过程或追加第三轮模型调用的理由。
 
 沿用现有 YAML 的全局并发和每 Provider 并发。候选 job 的 DRAFT/REVIEW 保持同一绑定；不同候选并行。目录全局合并、仓库归并和九章是各自的屏障任务。
 
@@ -224,11 +232,11 @@ Step08 只消费已发布 `RepositoryBusinessProcessCatalog`、过程 coverage �
 
 旧 `ProcessExplainer` 的 340 个单 Activity/单 Stage 结果只作为历史对照；新过程专用入口不会消费它，也不会启动 Step08。
 
-### 本次复核：语义目标仍未通过
+### 本次复核：修正代码已完成，真实语义验收待运行
 
 上述发布和覆盖指标属实，但当前14候选偏维护分类，库存阶段仍是“接收/校验/执行/返回”，所核查候选没有请求源码。46个过程并不证明已经识别所需订单生命周期。当前源码目录也未提供可辨识预览，正文来源不可直接点击。
 
-本次设计修正不重建已完成模块；待实施项是业务用法、阶段正文、规则适用范围、来源预览与链接，以及直接读写v2接线。历史340结果仅为前身。结构CLOSED、语义PARTIAL和真实样例不达目标必须同时如实报告。
+本次设计修正没有重建已完成模块。业务用法、阶段正文、规则适用范围、来源预览与链接、v2五文件读写和v2中文Prompt均已进入生产代码；正式发现也复用同一套可暂停的目录/候选入口。旧v1模型任务因语义指纹变化不能冒充新结果。历史340结果仅为前身。固定326条Activity的新版真实目录、两个代表候选和全仓过程仍须重新运行后，才能判断语义目标是否通过。
 
 ## 12. 完成标准
 

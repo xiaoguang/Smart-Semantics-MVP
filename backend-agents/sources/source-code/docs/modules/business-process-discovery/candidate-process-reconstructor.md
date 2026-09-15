@@ -46,16 +46,18 @@ REVIEW看到完整实际DRAFT、完整Activity及所请求原始源码，返回�
 6. 保留全部具体规则、公式和拒绝路径，保证narrative与结构字段一致。
 7. 同步修订rule.activityUseIds及引用，不能新增不在候选范围的Activity/source。
 
+规则的statement/source引用采用候选级allowlist：当前候选内能够定位的来源即可使用，不要求来源归属于规则列出的每个ActivityUse。activityUseLocalIds只表达业务适用用法；这避免把证据归属校验变成业务发现门禁，同时继续拒绝未知或候选外引用。
+
 CONFIRMED至少有statement或source，但Java只验证来源存在；不验证中文蕴含。合法UNRESOLVED不导致整个运行自动失败。
 
 ## 结构错误和语义质量分开
 
-未知ID/ref、缺必填字段、错误用法归属、遗漏处置、坏响应及Provider失败是fatal。Java校验规则refs属于所选用法对应Activity的允许集合，不由Java判定中文分支是否真正适用。
+未知ID/ref、候选外ref、缺必填字段、错误用法归属、遗漏处置、坏响应及Provider失败是fatal。Java校验规则refs属于当前候选允许集合，不按ActivityUse追究证据所有权，也不由Java判定中文分支是否真正适用。
 
 “只有空泛状态描述”“把价格规则用到错误子类型”“没有生命周期”是语义质量不通过，由REVIEW与样例审阅发现；不能伪称已经存在能自动识别这些问题的校验器。也不因此无限重跑候选。
 
 ## 测试与当前差距
 
-当前模型两轮、详细结构、source请求均已实现；真实库存结果仍为四个技术处理阶段，证明多阶段结构门不足。narrative和rule-use尚未实现。
+模型两轮、详细结构、source请求、必填narrative和rule-use均已实现。v2 Prompt明确要求具体条件、拒绝路径和结果，并禁止用空泛状态说明掩盖缺失。旧版真实结果仍为技术处理阶段，只能作为失败对照；新版真实语义质量须由固定326条Activity的目录和代表候选重新验收。
 
 Luna RED：新增字段完整传入REVIEW、保存重开和渲染；不同variant规则引用边界；不误拒合法不确定性。Terra GREEN只实现合同。真实语义验收见[贯穿例子](../../examples/semantic-framework-walkthrough.md)，自动fixture不能替代真实模型质量。

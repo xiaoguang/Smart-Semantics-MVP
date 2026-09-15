@@ -99,6 +99,7 @@ public record RepositoryBusinessProcessCatalog(
   public record ProcessStage(
       int order,
       String name,
+      String narrative,
       List<String> activityUseIds,
       List<String> entryConditions,
       List<String> actions,
@@ -114,6 +115,7 @@ public record RepositoryBusinessProcessCatalog(
         throw new IllegalArgumentException("process stage order must be positive");
       }
       require(name, "process stage name");
+      require(narrative, "process stage narrative");
       activityUseIds = List.copyOf(activityUseIds);
       entryConditions = List.copyOf(entryConditions);
       actions = List.copyOf(actions);
@@ -134,6 +136,7 @@ public record RepositoryBusinessProcessCatalog(
       String otherwise,
       String result,
       String certainty,
+      List<String> activityUseIds,
       List<String> statementRefs,
       List<String> sourceRefs) {
     public BusinessRule {
@@ -142,6 +145,12 @@ public record RepositoryBusinessProcessCatalog(
       require(actionOrDecision, "business rule action");
       require(result, "business rule result");
       certainty = validateCertainty(certainty);
+      if (activityUseIds == null || activityUseIds.isEmpty()) {
+        throw new IllegalArgumentException("business rule activity use IDs are required");
+      }
+      activityUseIds.forEach(
+          activityUseId -> require(activityUseId, "business rule activity use IDs"));
+      activityUseIds = List.copyOf(activityUseIds);
       statementRefs = List.copyOf(statementRefs);
       sourceRefs = List.copyOf(sourceRefs);
     }

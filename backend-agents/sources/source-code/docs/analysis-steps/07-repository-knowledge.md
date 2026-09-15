@@ -35,7 +35,7 @@ BusinessProcessPublication BusinessProcessPublisher.publish(ProcessDiscoveryResu
 
 - 同一候选允许同Activity的不同variant；唯一性是(ActivityId, variant)，不是ActivityId。Java不解释variant中文。
 - stage增加narrative；原条件、动作、状态变化、拒绝、结果和转移不删除。
-- rule增加activityUseIds（模型使用activityUseLocalIds），明确规则适用分支。来源存在不代表适用所有子类型。
+- rule增加activityUseIds（模型使用activityUseLocalIds），明确规则适用分支；它不表示证据归属。规则可使用当前候选内已有来源，程序只拒绝未知或候选外引用。来源存在不代表适用所有子类型，具体适用性仍由模型审阅。
 - coverage的ActivityDisposition增加原name用于可读范围表，程序投影，不增加模型判断。
 - SOURCE目录不再只有盲编号；DRAFT选择已保存ref，REVIEW读其完整snippet。零请求可合法，不新建补料循环。
 - 正文按业务阶段写，不以API参数处理模板冒充流程。
@@ -65,7 +65,7 @@ Activity、候选、已审过程三个分母保持：
 - 候选：RECONSTRUCTED / SPLIT / SUPPORT_ONLY / INSUFFICIENT_MATERIAL / NOT_PROCESSED_CAPACITY。
 - 已审过程：PUBLISHED / MERGED_INTO / REJECTED。
 
-PROCESS_MEMBER必须有实际候选关系，不能默默降级；所有分母均闭合才coverage CLOSED。既有未分类、材料不足、容量未处理、上游遗漏导致semantic PARTIAL；过程内诚实UNRESOLVED不单独导致fatal。
+PROCESS_MEMBER必须有实际候选关系，不能默默降级；所有分母均闭合才coverage CLOSED。全仓merge以完整DRAFT处置作为Activity分母基线：REVIEW长数组仅有重复/遗漏ID时，恢复DRAFT非成员处置并按最终候选重算成员；完整唯一REVIEW清单中的孤立PROCESS_MEMBER仍fatal。既有未分类、材料不足、容量未处理、上游遗漏导致semantic PARTIAL；过程内诚实UNRESOLVED不单独导致fatal。
 
 坏响应、非法引用/owner、缺字段/处置或Provider失败仍fatal，停止新派发，保留合法完成job，不安装正式产物。不自动重试、不重扫、不换模型。新v2输入/Prompt/结果版本改变后不能复用旧Step07 job冒充修正成果；326条上游Activity原样复用。
 

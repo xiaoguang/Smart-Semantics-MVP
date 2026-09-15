@@ -1,6 +1,6 @@
 # 业务过程发现与重建：模块总览
 
-> 当前模块已实现并真实发布46个过程，但订单生命周期、业务语言和来源导航未达用户目标。本次是局部修正设计，尚未实施；详见[变更清单](../../plans/business-process-discovery-and-reconstruction-change-design.md)。
+> 当前模块的业务生命周期修正代码已经实现；旧版真实发布的46个过程仍只作为对照。新版固定326条Activity真实验收尚待运行；详见[变更清单](../../plans/business-process-discovery-and-reconstruction-change-design.md)。
 
 ## 1. 模块目的
 
@@ -54,6 +54,6 @@ public interface BusinessProcessPublisher {
 
 ## 5. 当前实现状态
 
-`DefaultBusinessProcessDiscovery` 已实现统一 corpus、目录分片/合并、重叠候选、完整材料重建、源码按需核对和仓库归并；`CanonicalBusinessProcessPublisher` 已实现四项正式产物与 fresh reopen。过程专用运行入口从既有 Activity/M10 checkpoint 启动新批次，不运行 JDT、Builder、ActivityExplainer 或 Step08。旧 `ProcessExplainer` 不在这条新路径中。
+`DefaultBusinessProcessDiscovery` 已实现统一 corpus、目录分片/合并、重叠候选、完整材料重建、源码按需核对和仓库归并；`CanonicalBusinessProcessPublisher` 已实现五项正式产物与 fresh reopen。过程专用运行入口从既有 Activity/M10 checkpoint 启动新批次，不运行 JDT、Builder、ActivityExplainer 或 Step08。旧 `ProcessExplainer` 不在这条新路径中。
 
-固定 326 Activity 的真实运行已发布 46 个多阶段过程，其中 21 个包含多个 Activity；102 个 Activity 成为过程成员，157 个作为支撑，17 个独立保留，50 个未归类。最终正式批次从完整已审 job 零调用复用，未运行 JDT、Builder、ActivityExplainer 或 Step08。结构门已通过，但真实过程仍偏技术模板、目录仍偏维护分类；没有通过用户所需生命周期语义验收。新增narrative、规则用法、来源预览/链接和v2五文件合同尚待实施。PARTIAL及未归类范围保留，不能用重新排版把旧结果称为质量通过。
+固定 326 Activity 的真实运行已发布 46 个多阶段过程，其中 21 个包含多个 Activity；102 个 Activity 成为过程成员，157 个作为支撑，17 个独立保留，50 个未归类。最终正式批次从完整已审 job 零调用复用，未运行 JDT、Builder、ActivityExplainer 或 Step08。结构门已通过，但真实过程仍偏技术模板、目录仍偏维护分类；没有通过用户所需生命周期语义验收。新增narrative、规则用法、来源预览/链接和v2五文件合同已由当前生产路径保存；真实全仓重新运行尚待后续验收。PARTIAL及未归类范围保留，不能用重新排版把旧结果称为质量通过。

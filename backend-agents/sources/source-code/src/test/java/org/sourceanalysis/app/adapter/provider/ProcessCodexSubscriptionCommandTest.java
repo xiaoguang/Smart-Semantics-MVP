@@ -199,6 +199,38 @@ class ProcessCodexSubscriptionCommandTest {
   }
 
   @Test
+  void classifiesModelAtCapacityBeforeTheGenericModelConfigurationCategory() throws Exception {
+    Path executable = temporaryDirectory.resolve("fake-codex-capacity");
+    Files.writeString(
+        executable,
+        """
+        #!/bin/sh
+        if [ "$1" = "login" ]; then
+          echo 'Logged in using ChatGPT'
+          exit 0
+        fi
+        echo 'Selected model is at capacity. Please try a different model.' >&2
+        exit 1
+        """,
+        StandardCharsets.UTF_8);
+    if (!executable.toFile().setExecutable(true, true)) {
+      throw new IllegalStateException("TEST_EXECUTABLE_PERMISSION_NOT_SET");
+    }
+
+    assertThatThrownBy(
+            () ->
+                new ProcessCodexSubscriptionCommand()
+                    .execute(
+                        new CodexSubscriptionProfile(
+                            executable, "gpt-5.6-luna", "high", Duration.ofSeconds(2)),
+                        "untrusted prompt",
+                        ImmutableBytes.copyOf(
+                            "{\"type\":\"object\"}".getBytes(StandardCharsets.UTF_8))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("CODEX_SUBSCRIPTION_EXECUTION_FAILED:CAPACITY");
+  }
+
+  @Test
   void rejectsAStatusThatReportsApiKeyAuthenticationDespiteExitZero() throws Exception {
     Path executable = temporaryDirectory.resolve("fake-codex-api-login");
     Files.writeString(

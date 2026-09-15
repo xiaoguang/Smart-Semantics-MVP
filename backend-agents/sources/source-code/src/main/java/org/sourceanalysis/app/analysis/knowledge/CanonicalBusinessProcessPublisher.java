@@ -30,17 +30,20 @@ import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.ModuleInstallRequest;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 
-/** Canonical, receipt-last publisher for the four Step07 process-discovery outputs. */
+/** Canonical, receipt-last publisher for the five Step07 process-discovery outputs. */
 public final class CanonicalBusinessProcessPublisher implements BusinessProcessPublisher {
 
   static final String CATALOG_TYPE = "REPOSITORY_KNOWLEDGE_BUSINESS_PROCESS_CATALOG";
-  static final String CATALOG_SCHEMA = "repository-business-process-catalog-v1";
+  static final String CATALOG_SCHEMA = "repository-business-process-catalog-v2";
   static final String COVERAGE_TYPE = "REPOSITORY_KNOWLEDGE_PROCESS_COVERAGE";
-  static final String COVERAGE_SCHEMA = "repository-business-process-coverage-v1";
+  static final String COVERAGE_SCHEMA = "repository-business-process-coverage-v2";
   static final String MARKDOWN_TYPE = "REPOSITORY_KNOWLEDGE_BUSINESS_PROCESSES_MARKDOWN";
-  static final String MARKDOWN_SCHEMA = "repository-business-process-markdown-v1";
+  static final String MARKDOWN_SCHEMA = "repository-business-process-markdown-v2";
   static final String SOURCE_REFS_TYPE = "REPOSITORY_KNOWLEDGE_SOURCE_REFERENCES";
   static final String SOURCE_REFS_SCHEMA = "repository-business-process-source-references-v1";
+  static final String SOURCES_MARKDOWN_TYPE =
+      "REPOSITORY_KNOWLEDGE_BUSINESS_PROCESS_SOURCES_MARKDOWN";
+  static final String SOURCES_MARKDOWN_SCHEMA = "repository-business-process-sources-markdown-v1";
 
   private final CanonicalModuleArtifactStore inputArtifacts;
   private final CanonicalModuleArtifactStore outputArtifacts;
@@ -65,8 +68,10 @@ public final class CanonicalBusinessProcessPublisher implements BusinessProcessP
   @Override
   public BusinessProcessPublication publish(ProcessDiscoveryResult result) {
     Objects.requireNonNull(result, "process discovery result");
-    String markdown = BusinessProcessMarkdownRenderer.render(result.catalog(), result.coverage());
+    ProcessCoverage coverage = canonicalCoverage(result.coverage());
     List<SourceReference> sources = referencedSources(result);
+    String markdown = BusinessProcessMarkdownRenderer.render(result.catalog(), coverage, sources);
+    String sourcesMarkdown = SourcesMarkdownRenderer.render(sources);
     ReopenedModulePublication activities = inputArtifacts.reopen(result.activityCheckpoint());
     ReopenedModulePublication materials = inputArtifacts.reopen(result.materialCheckpoint());
     if (!activities.receipt().controls().equals(materials.receipt().controls())) {
@@ -79,7 +84,7 @@ public final class CanonicalBusinessProcessPublisher implements BusinessProcessP
         .sorted(Comparator.comparing(value -> value.artifactId().value()))
         .forEach(value -> upstream.putIfAbsent(value.artifactId().value(), value));
     ModuleCompletionStatus status =
-        "COMPLETE".equals(result.coverage().semanticDeliveryStatus())
+        "COMPLETE".equals(coverage.semanticDeliveryStatus())
             ? ModuleCompletionStatus.SUCCEEDED
             : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS;
     List<String> gaps =
@@ -94,35 +99,33 @@ public final class CanonicalBusinessProcessPublisher implements BusinessProcessP
                     AnalysisStepKey.REPOSITORY_KNOWLEDGE,
                     1,
                     "business-process-publisher"),
-                "v1",
+                "v2",
                 List.copyOf(upstream.values()),
                 outputControls == null ? activities.receipt().controls() : outputControls,
                 status,
                 gaps,
                 List.of(
                     markdownPayload(markdown),
-                    coveragePayload(result.coverage()),
+                    coveragePayload(coverage),
                     catalogPayload(result.catalog()),
-                    sourceReferencesPayload(sources))));
+                    sourceReferencesPayload(sources),
+                    sourcesMarkdownPayload(sourcesMarkdown))));
     return new BusinessProcessPublication(
-        result.catalog(), result.coverage(), markdown, sources, installed.reference());
+        result.catalog(), coverage, markdown, sources, sourcesMarkdown, installed.reference());
   }
 
   private List<SourceReference> referencedSources(ProcessDiscoveryResult result) {
     Map<String, SourceReference> all = new LinkedHashMap<>();
     result.sourceReferences().stream()
         .sorted(Comparator.comparing(SourceReference::ref))
-        .forEach(source -> all.put(source.ref(), source));
-    List<String> required = new ArrayList<>();
-    result.catalog().processes().forEach(process -> collectProcessRefs(required, process));
-    result.catalog().processRelations().forEach(value -> required.addAll(value.sourceRefs()));
-    result
-        .catalog()
-        .directActivityKnowledgeItems()
-        .forEach(value -> required.addAll(value.sourceRefs()));
-    return required.stream()
-        .distinct()
-        .sorted()
+        .forEach(
+            source -> {
+              SourcesMarkdownRenderer.requireSafeReference(source.ref());
+              if (all.put(source.ref(), source) != null) {
+                throw new IllegalArgumentException("BUSINESS_PROCESS_SOURCE_REFERENCE_DUPLICATE");
+              }
+            });
+    return referencedSourceRefs(result.catalog()).stream()
         .map(
             ref -> {
               SourceReference source = all.get(ref);
@@ -132,6 +135,29 @@ public final class CanonicalBusinessProcessPublisher implements BusinessProcessP
               return source;
             })
         .toList();
+  }
+
+  static List<String> referencedSourceRefs(RepositoryBusinessProcessCatalog catalog) {
+    List<String> required = new ArrayList<>();
+    catalog.processes().forEach(process -> collectProcessRefs(required, process));
+    catalog.processRelations().forEach(value -> required.addAll(value.sourceRefs()));
+    catalog.directActivityKnowledgeItems().forEach(value -> required.addAll(value.sourceRefs()));
+    return required.stream().distinct().sorted().toList();
+  }
+
+  private static ProcessCoverage canonicalCoverage(ProcessCoverage coverage) {
+    return new ProcessCoverage(
+        coverage.activityDispositions().stream()
+            .sorted(Comparator.comparing(ProcessCoverage.ActivityDisposition::activityId))
+            .toList(),
+        coverage.candidateDispositions().stream()
+            .sorted(Comparator.comparing(ProcessCoverage.CandidateDisposition::candidateId))
+            .toList(),
+        coverage.reviewedProcessDispositions().stream()
+            .sorted(Comparator.comparing(ProcessCoverage.ReviewedProcessDisposition::processId))
+            .toList(),
+        coverage.coverageStatus(),
+        coverage.semanticDeliveryStatus());
   }
 
   private static void collectProcessRefs(
@@ -192,11 +218,11 @@ public final class CanonicalBusinessProcessPublisher implements BusinessProcessP
     value.put("artifactType", COVERAGE_TYPE);
     ArrayNode activities = value.putArray("activityDispositions");
     coverage.activityDispositions().stream()
-        .sorted(Comparator.comparing(ProcessCoverage.ActivityDisposition::activityId))
         .forEach(
             item -> {
               ObjectNode target = activities.addObject();
               target.put("activityId", item.activityId());
+              target.put("name", item.name());
               target.put("disposition", item.disposition());
               target.put("reason", item.reason());
             });
@@ -273,6 +299,22 @@ public final class CanonicalBusinessProcessPublisher implements BusinessProcessP
         ImmutableBytes.copyOf(bytes));
   }
 
+  private CanonicalModulePayload sourcesMarkdownPayload(String sourcesMarkdown) {
+    byte[] bytes = sourcesMarkdown.getBytes(StandardCharsets.UTF_8);
+    return new CanonicalModulePayload(
+        "sources.md",
+        SOURCES_MARKDOWN_TYPE,
+        SOURCES_MARKDOWN_SCHEMA,
+        ArtifactId.parse(
+            rawId(
+                "business-process-sources-markdown",
+                SOURCES_MARKDOWN_SCHEMA,
+                SOURCES_MARKDOWN_TYPE,
+                bytes)),
+        CanonicalMediaType.TEXT_MARKDOWN,
+        ImmutableBytes.copyOf(bytes));
+  }
+
   private static void areaJson(
       ObjectNode target, RepositoryBusinessProcessCatalog.BusinessArea area) {
     target.put("areaId", area.areaId());
@@ -319,6 +361,7 @@ public final class CanonicalBusinessProcessPublisher implements BusinessProcessP
       ObjectNode target, RepositoryBusinessProcessCatalog.ProcessStage stage) {
     target.put("order", stage.order());
     target.put("name", stage.name());
+    target.put("narrative", stage.narrative());
     strings(target.putArray("activityUseIds"), stage.activityUseIds());
     strings(target.putArray("entryConditions"), stage.entryConditions());
     strings(target.putArray("actions"), stage.actions());
@@ -343,6 +386,7 @@ public final class CanonicalBusinessProcessPublisher implements BusinessProcessP
     }
     target.put("result", rule.result());
     target.put("certainty", rule.certainty());
+    strings(target.putArray("activityUseIds"), rule.activityUseIds());
     strings(target.putArray("statementRefs"), rule.statementRefs());
     strings(target.putArray("sourceRefs"), rule.sourceRefs());
   }

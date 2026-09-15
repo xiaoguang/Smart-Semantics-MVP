@@ -195,6 +195,7 @@ model-jobs/<model-batch-id>/<job-kind>/<job-key>/reviewed-result.json
 - `sourceRunId` 属于材料原生产 run；失败的模型执行不修改它。
 - `materialsCheckpoint` 是带地址、root 和 receipt SHA 的完整 M10 reference，不是仅凭可读 ID 猜路径。
 - `modelBatchId` 使用新 `AnalysisRunId`，拥有该批 Activity/Process/Report 输出。
+- Provider请求日志按`providerKey/modelBatchId`隔离。同一批次内的STARTED仍禁止重放；用户显式启动新批次时，旧STARTED日志原样保留，但不能阻断新批次完整执行未完成job。
 - `repository-run-state-v3` 保存实际材料 profile、producer version 和 basis；`model-job-execution-config-v2` 保存本批范围、服务与可选 reuse 来源；`analysis-run-output-v3` 保持材料 source owner 与模型 output owner 的双归属。
 
 源码、入口、取材规则和材料未变时，改变模型、并发或日志目录不使材料失效。改变源码、引擎、入口选择、分包或代码内容时必须显式生成新材料。读取缺失、损坏或来源不一致的材料时失败，不能偷偷调用 Builder 或 JDT 补齐。
@@ -235,7 +236,7 @@ model-jobs/<model-batch-id>/<job-kind>/<job-key>/reviewed-result.json
 
 以下属于 fatal：非法 JSON/Schema、未知或越界 Activity/ref、目录或候选分母无声遗漏、来源漂移、保存碰撞/损坏、REVIEW 引入新成员、started 请求失败。以下可以是合法内容结果：`STANDALONE`、`UNCLASSIFIED`、`INSUFFICIENT_MATERIAL`、`INFERRED`、`UNRESOLVED`，前提是处置和 coverage 闭合。
 
-同一批次没有自动 retry、reroute、模型降档、第三轮修复、failed-call replay 或终态修复。用户显式启动的新 model batch 可以按 §7 复用完整结果并重新执行未完成 job；它保留旧 STARTED/FAILED 记录，不能称为同一请求恢复成功。无法确认旧 started 请求的服务端状态时，必须承认新批次可能再次产生该任务的模型工作。
+同一批次没有自动 retry、reroute、模型降档、第三轮修复、failed-call replay 或终态修复。用户显式启动的新 model batch 可以按 §7 复用完整结果并重新执行未完成 job；其Provider请求日志使用新的batch目录，保留旧 STARTED/FAILED 记录，不能称为同一请求恢复成功。无法确认旧 started 请求的服务端状态时，必须承认新批次可能再次产生该任务的模型工作。
 
 model batch 是运行身份，不是调用许可，也不推进 Reader Candidate Round。已有完整最终候选后的内容修正仍遵守具名 finding 和允许的 Round 2；不能靠换 batchId 无限生成替代报告。
 

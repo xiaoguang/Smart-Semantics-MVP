@@ -10,20 +10,20 @@ final class BusinessProcessPromptCatalog {
 
   private static final Map<String, String> RESOURCES =
       Map.ofEntries(
-          Map.entry("BUSINESS_CATALOG_DRAFT", "business-catalog-draft-v1.txt"),
-          Map.entry("BUSINESS_CATALOG_REVIEW", "business-catalog-review-v1.txt"),
-          Map.entry("BUSINESS_CATALOG_SHARD_DRAFT", "business-catalog-draft-v1.txt"),
-          Map.entry("BUSINESS_CATALOG_SHARD_REVIEW", "business-catalog-review-v1.txt"),
-          Map.entry("BUSINESS_CATALOG_MERGE_DRAFT", "business-catalog-merge-draft-v1.txt"),
-          Map.entry("BUSINESS_CATALOG_MERGE_REVIEW", "business-catalog-merge-review-v1.txt"),
-          Map.entry("BUSINESS_PROCESS_DRAFT", "business-process-draft-v1.txt"),
-          Map.entry("BUSINESS_PROCESS_REVIEW", "business-process-review-v1.txt"),
+          Map.entry("BUSINESS_CATALOG_DRAFT", "business-catalog-draft-v2.txt"),
+          Map.entry("BUSINESS_CATALOG_REVIEW", "business-catalog-review-v2.txt"),
+          Map.entry("BUSINESS_CATALOG_SHARD_DRAFT", "business-catalog-draft-v2.txt"),
+          Map.entry("BUSINESS_CATALOG_SHARD_REVIEW", "business-catalog-review-v2.txt"),
+          Map.entry("BUSINESS_CATALOG_MERGE_DRAFT", "business-catalog-merge-draft-v2.txt"),
+          Map.entry("BUSINESS_CATALOG_MERGE_REVIEW", "business-catalog-merge-review-v2.txt"),
+          Map.entry("BUSINESS_PROCESS_DRAFT", "business-process-draft-v2.txt"),
+          Map.entry("BUSINESS_PROCESS_REVIEW", "business-process-review-v2.txt"),
           Map.entry(
               "BUSINESS_PROCESS_CONSOLIDATION_DRAFT",
-              "business-process-consolidation-draft-v1.txt"),
+              "business-process-consolidation-draft-v2.txt"),
           Map.entry(
               "BUSINESS_PROCESS_CONSOLIDATION_REVIEW",
-              "business-process-consolidation-review-v1.txt"));
+              "business-process-consolidation-review-v2.txt"));
 
   private BusinessProcessPromptCatalog() {}
 

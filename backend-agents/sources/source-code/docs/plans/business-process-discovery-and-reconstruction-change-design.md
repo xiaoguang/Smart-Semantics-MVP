@@ -10,6 +10,8 @@
 
 当前实现已具备 corpus、卡片、目录分片/合并、候选完整阅读、源码请求、详细过程、归并、发布及过程专用运行入口。固定输入为326条已审 Activity及原M10材料；不重建它们。
 
+实施状态（2026-09-15）：业务用法、阶段narrative、规则适用用法、来源预览/导航、v2五文件读写、v2 Prompt和代表候选的保存/正式复用接缝已经完成直接测试。尚未完成的是使用固定326条Activity执行新版真实目录、两个候选语义检查及全仓发布；旧v1真实结果不视为本次验收。
+
 当前真实结果：
 - 14个目录候选，发布46个过程，其中21个含多个Activity。
 - 326条均有处置：102 PROCESS_MEMBER、157 SUPPORT_ONLY、17 STANDALONE、50 UNCLASSIFIED；coverage CLOSED，semantic PARTIAL。
@@ -70,7 +72,7 @@ BusinessProcessPublication BusinessProcessPublisher.publish(ProcessDiscoveryResu
 
 全仓merge必须能连接跨分片的成员，保留不同变体及原Activity标识。查询可以提供关联线索，但不能因此被当成创建或履约动作。不强求所有对象都有完整生命周期。
 
-每个Activity必须有现有处置。声明PROCESS_MEMBER却没有任何真实候选成员关系是错误；不得由程序悄悄改成UNCLASSIFIED掩盖遗漏。
+每个Activity必须有现有处置。声明PROCESS_MEMBER却没有任何真实候选成员关系是错误；不得由程序悄悄改成UNCLASSIFIED掩盖遗漏。全仓merge的完整DRAFT固定覆盖分母；若REVIEW只在重复抄写处置长数组时产生重复或遗漏ID，程序保留DRAFT非成员处置并按REVIEW最终候选重算成员关系，不据此发明候选。完整唯一REVIEW清单中的孤立PROCESS_MEMBER仍然失败。
 
 ## 5. 深入阅读：完整Activity和可用源码目录
 
@@ -119,7 +121,7 @@ certainty / statementRefs / sourceRefs
 activityUseIds
 ```
 
-Java检查用法属于本过程，规则引用属于这些用法对应Activity允许的引用集合；这只是来源范围检查，**不证明某段条件适用于每个业务变体**。具体分支适用性由REVIEW核对。
+Java检查用法属于本过程；规则引用只需属于当前候选的允许集合，不再要求归属于规则声明的每个ActivityUse。`activityUseIds`表达业务适用范围，不是证据所有权。程序只拒绝未知或候选外引用，**不证明某段条件适用于每个业务变体**；具体分支适用性由REVIEW核对。
 
 例如同一个新增方法中某价格校验只适用于特定单据子类型，就不能写成所有订单均受该规则限制。不能因为整方法SourceRef存在就把整个方法里的规则复制给所有ActivityUse。
 
@@ -137,9 +139,11 @@ Java检查用法属于本过程，规则引用属于这些用法对应Activity�
 
 合并必须保留各ActivityUse、阶段narrative、规则适用用法、具体条件、certainty和来源。只能删除完全相同的重复记录，不能用一句总结替代不同分支。
 
-归并DRAFT/REVIEW沿用当前完整已审Process JSON输入，包含正文、规则、用法和来源，不新增摘要投影。模型只有裁决权，没有改写权。程序允许MERGE_INTO的前提是：按(activityId, variant, role)映射用法后，两份完整阶段序列的业务字段（含narrative、结构条件、certainty和refs）逐项相等；只忽略各自局部ID，不以中文相似度匹配。相同序列可无损并入其余记录并只去除完全相同记录；不满足该条件的合并裁决拒绝，不隐式降级或追加模型轮次。
+归并DRAFT/REVIEW使用完整已审Process的确定性业务投影：保留正文、规则、用法、阶段条件、结果和待确认联系，省略各层重复的statement/source证据字段，只保留过程级来源allowlist。模型只有裁决权，没有改写权；程序把裁决应用到原始完整Process。程序允许MERGE_INTO的前提是：按(activityId, variant, role)映射用法后，两份完整阶段序列的业务字段（含narrative、结构条件、certainty和refs）逐项相等；只忽略各自局部ID，不以中文相似度匹配。相同序列可无损并入其余记录并只去除完全相同记录；不满足该条件的合并裁决拒绝，不隐式降级或追加模型轮次。
 
 不同过程仅共享通用Activity，或不同variant顺序无法无损合并时，保留独立过程并记录关系。**数组拼接并不代表这些阶段按顺序执行。** 仓库归并不重建新生命周期，不改写已审业务内容。
+
+程序侧全部已审Process构成归并分母。唯一REVIEW遗漏某个Process处置时，该Process按KEEP保留原文，不能因长数组转录遗漏而消失，也不为此增加第三轮调用；未知ID、重复处置、非法合并或非法关系仍然拒绝。
 
 ## 8. 可读发布与最小Wire变化
 

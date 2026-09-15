@@ -164,14 +164,14 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
     }
     String diagnostic =
         (readAtMost(standardOutput) + "\n" + readAtMost(standardError)).toLowerCase(Locale.ROOT);
+    if (containsAny(diagnostic, "rate limit", "capacity", "quota")) {
+      return "CAPACITY";
+    }
     if (containsAny(diagnostic, "model", "reasoning", "output-schema", "schema")) {
       return "MODEL_CONFIGURATION";
     }
     if (containsAny(diagnostic, "authentication", "login", "credential", "unauthorized")) {
       return "AUTHENTICATION";
-    }
-    if (containsAny(diagnostic, "rate limit", "capacity", "quota")) {
-      return "CAPACITY";
     }
     if (diagnostic.contains("sandbox")) {
       return "SANDBOX_CONFIGURATION";

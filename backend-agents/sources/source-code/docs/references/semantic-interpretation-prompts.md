@@ -24,7 +24,7 @@ Step06材料和Activity任务已实现，326条已审结果保留；第3节不�
 | 全仓业务目录 | 全部ActivityIndexCard，含原conditions/steps/businessRules等字段；必要时稳定分片 | 完整源码、运行元数据、预置业务领域词 |
 | 候选过程 DRAFT | 候选成员的完整 ReviewedActivity、ActivityStatementRef、含原文前8行/所属Activity的SourceRef目录和候选理由 | 全仓其他 Activity、完整源码文件、hash/路径 |
 | 候选过程 REVIEW | 同一完整候选材料、完整实际 DRAFT、DRAFT 请求且程序成功取得的保存源码片段 | 未请求源码、重新导航结果、第三轮修复材料 |
-| 仓库过程归并 | 全部完整已审Process JSON（含规则、正文和用法）及覆盖/领域信息 | 原始源码、完整Activity；没有重写已审正文权限 |
+| 仓库过程归并 | 完整已审Process的确定性业务视图（规则、正文、用法和结果完整，重复证据字段省略）及领域信息 | 原始源码、完整Activity、哈希和重复statement/source refs；没有重写已审正文权限 |
 | 九章 DRAFT/REVIEW | 已发布的唯一 RepositoryBusinessProcessCatalog、process coverage、短 ref allowlist 和完整实际九章草稿 | 326 个原始 Activity、旧 Process、JDT 正文、重新发现过程所需线索 |
 
 目录卡只用于“去哪里深入读”，不能替代完整 Activity；Activity 摘要也不能替代按需取得的保存源码。一次模型任务的输入不足时，返回具体未处理原因，不能靠模型臆测补齐。
@@ -98,6 +98,8 @@ Step06材料和Activity任务已实现，326条已审结果保留；第3节不�
 
 分片输入合起来恰好覆盖全部Activity；同候选的唯一用法键为(ActivityId, variant)。声明PROCESS_MEMBER却没有成员关系必须报错，不静默改处置。
 
+完整merge DRAFT是Activity覆盖分母的权威基线。REVIEW仍返回完整修订目录，但其重复输出的Activity处置清单若仅发生重复ID或遗漏ID，不得覆盖已经闭合的DRAFT分母；程序保留DRAFT的非成员处置，并按REVIEW后的候选成员关系重算PROCESS_MEMBER。若REVIEW处置清单本身完整且唯一，却仍把无候选归属的Activity声明为PROCESS_MEMBER，则继续明确失败。该规则只避免长数组抄写错误，不替模型发明候选或业务含义。
+
 ## 5. 详细业务过程DRAFT与完整REVIEW（v2目标）
 
 ### 5.1 PROCESS_DRAFT
@@ -117,6 +119,8 @@ Step06材料和Activity任务已实现，326条已审结果保留；第3节不�
 > 保留有依据的knowledgeItems正文、公式、问题和来源。完整处置候选，必要时拆分或明确INSUFFICIENT_MATERIAL。只返回完整JSON。
 
 完整Activity按ID去重，用法分别保留；输入不包含hash和身份链。stage.narrative为必填非空；rule.activityUseLocalIds为必填非空集合。源码目录只来自原corpus允许的SourceRef，不开放自由检索。
+
+引用只用于让读者和审阅者找到当前候选中的代码。规则可以引用候选内任何已提供的statement/source；activityUseLocalIds表达业务适用范围，不表达来源所有权。不要因为证据来自另一个相关Activity就删除合理的业务联系，也不能引用候选外材料。
 
 ### 5.2 PROCESS_REVIEW
 
@@ -138,7 +142,7 @@ Java只检查结构、用法归属和引用allowlist。空泛或错误的中文�
 
 ### 6.1 DRAFT
 
-> 依据全部完整已审Process JSON、用法、阶段、分支及覆盖情况，给每个过程一个主处置KEEP、MERGE_INTO或REJECT，可另外记录PARENT_CHILD、RELATED或ALTERNATIVE关系。
+> 依据全部已审Process的业务完整投影视图、用法、阶段、分支及领域情况，给每个过程一个主处置KEEP、MERGE_INTO或REJECT，可另外记录PARENT_CHILD、RELATED或ALTERNATIVE关系。投影省略的是重复证据字段，不是业务正文、条件、规则或结果。
 >
 > MERGE_INTO只用于映射用法后完整阶段序列业务字段逐项相同的记录；不同阶段序列保持KEEP及适当关系，不要求程序推断怎样拼接。共用一个Activity不等于相同过程，尤其是对象variant不同。只有能无损保留业务顺序、不同条件和分支时才合并；无法做到则KEEP并说明相关/替代关系，不将阶段数组拼接成不存在的生命周期。
 >
@@ -146,9 +150,11 @@ Java只检查结构、用法归属和引用allowlist。空泛或错误的中文�
 
 ### 6.2 REVIEW
 
-> 对照全部已审过程和完整实际归并草稿，检查遗漏、错误去重、父子循环、不同用法混合、伪造顺序、certainty升级或规则丢失。所有过程必须有一个主处置。
+> 对照全部过程的业务完整投影视图和完整实际归并草稿，检查遗漏、错误去重、父子循环、不同用法混合、伪造顺序或certainty升级。所有过程必须有一个主处置；程序会把裁决应用到未缩写的原始已审过程。
 >
 > 无法确认相同过程时保留独立/相关，不任意合并。返回完整修订决定，不生成替代业务正文。
+
+程序以全部已审Process作为分母；REVIEW遗漏的处置安全地视为KEEP。这个容错只防止长数组转录遗漏删除业务过程，不接受未知/重复ID，也不把DRAFT中的未审合并升级为正式裁决。
 
 ## 7. 九章 DRAFT 与完整 REVIEW（目标）
 
@@ -174,7 +180,7 @@ Java 验证九章顺序、类型、ref 和 coverage 后确定性渲染 `document
 
 每种目录、merge、候选、归并任务仍最多一次DRAFT和一次完整REVIEW。源码解析零Provider；允许失败后显式新批次复用匹配的完整结果，不自动重试、切服务或重扫。
 
-本次Step07八份资源Prompt及响应合同同步v2，完整Prompt、卡片投影、来源目录、schema/producer均参与相应任务匹配。改变这些语义输入后，不能复用旧v1过程结果冒充新设计验收；原326条Activity不受影响。当前文档更改尚未修改生产资源。
+Step07八份生产Prompt资源及响应合同已经同步到v2，完整Prompt、卡片投影、来源目录、schema/producer均参与相应任务匹配。改变这些语义输入后，不能复用旧v1过程结果冒充新设计验收；原326条Activity不受影响。v2资源不预置任何样例领域答案，并明确要求阶段narrative、规则activityUseLocalIds、具体条件、拒绝和结果。
 
 先检查全仓目录是否自己识别出对象和不同用法，再对照[真实材料推演](../examples/semantic-framework-walkthrough.md)审阅少量过程的具体条件、联系和业务语言。多Activity/多Stage只是结构门，不能代替语义验收。产物不得把未知条件写成空泛确定句。
 

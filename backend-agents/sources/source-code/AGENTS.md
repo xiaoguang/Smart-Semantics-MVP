@@ -307,7 +307,10 @@
   downstream success. Never automatically retry, switch Provider, fall back to
   an API key, replay an old request or synthesize success. An explicitly started
   new model batch may execute incomplete jobs under section 7; old STARTED and
-  FAILED records remain immutable. A new batch is not an automatic retry loop.
+  FAILED records remain immutable. Provider request journals are scoped by
+  modelBatchId so a new explicit batch cannot be blocked by an older batch's
+  uncertain STARTED request; completed job reuse still uses the validated job
+  result and fingerprint. A new batch is not an automatic retry loop.
 - `maxMaterialsToStart` is the explicit per-execution ActivityExplainer launch
   cap. Use the dedicated `FLOW_INTERPRETATION` materials-only target for
   zero-Provider planning; a final-document run requires a positive cap. A cap
@@ -413,15 +416,23 @@
   ActivityUse records, including multiple distinct variants within one candidate.
   Deduplicate complete Activity bodies, not distinct (ActivityId, variant) uses.
   Do not silently downgrade PROCESS_MEMBER when its candidate membership is
-  absent. Existing denominators remain Activity/candidate/reviewed process;
+  absent. For a sharded full-repository catalog, the complete DRAFT owns the
+  Activity denominator. If REVIEW corrupts only its redundant 326-entry echo
+  through duplicate or missing IDs, Java retains the complete DRAFT ledger and
+  recomputes PROCESS_MEMBER from the reviewed candidate membership; a complete,
+  unique REVIEW ledger that still declares an orphan PROCESS_MEMBER remains an
+  error. Existing denominators remain Activity/candidate/reviewed process;
   variant omission is checked by REVIEW and sample semantic acceptance, not
   falsely advertised as caught by an ActivityId set comparison.
 - Detailed process output must structurally retain purpose/scope, ActivityUse,
   ordered and optional stages with required business narrative, entry and
   rejection conditions, actions,
   state changes, outcomes, transitions, exact business rules, certainty,
-  statement refs and source refs. Rules have explicit activityUseIds; a valid
-  whole-method ref does not establish that every subtype obeys every branch.
+  statement refs and source refs. Rules have explicit activityUseIds; those IDs
+  describe business applicability, not evidence ownership. Any existing ref in
+  the current candidate may support a rule; only unknown or out-of-candidate
+  refs are rejected. A valid whole-method ref does not establish that every
+  subtype obeys every branch.
   Models own that semantic review; Java must not implement Chinese entailment
   checks or an industry keyword blacklist. Query/statistics/configuration Activities may
   support a process without being forced into its main chronological stages.
@@ -434,6 +445,15 @@
   manufacture a fake Process.
 - Repository consolidation compares overlapping reviewed candidates, preserves
   alternatives and conflicts, and closes every candidate/Activity disposition.
+  Its model input is a deterministic business-complete projection: process
+  identity, purpose, scope, participants, objects, Activity uses, stage
+  narratives and predicates, rules, results and unresolved connections. Repeated
+  statement/source evidence fields stay in the stored full processes; only the
+  small process-level source-ref allowlist is sent for relation citations.
+  If the single consolidation REVIEW omits a process from its long decision
+  ledger, the program preserves that original reviewed process with KEEP. An
+  unknown or duplicate process decision remains fatal; omission never deletes
+  or synthesizes business content.
   It may not silently compress away conditions, rules, formulas or unresolved
   scope and then claim completion.
 - Zero entries or all entries not analyzed may yield a nine-chapter scope

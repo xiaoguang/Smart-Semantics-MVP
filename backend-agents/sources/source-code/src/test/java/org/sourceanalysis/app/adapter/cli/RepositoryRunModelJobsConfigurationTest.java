@@ -604,6 +604,34 @@ class RepositoryRunModelJobsConfigurationTest {
   }
 
   @Test
+  void eachModelBatchUsesAnIndependentProviderRequestJournal() throws Exception {
+    ToolFixture tools = toolFixture();
+    Files.writeString(
+        tools.executable(),
+        "#!/bin/sh\n"
+            + "if [ \"$1\" = \"login\" ]; then\n"
+            + "  echo 'Logged in using ChatGPT'\n"
+            + "  exit 0\n"
+            + "fi\n"
+            + "exit 71\n",
+        StandardCharsets.UTF_8);
+    executable(tools.executable());
+    Object loaded = loadConfiguration(writeConfig(configYaml(tools, defaultModelJobs(tools))));
+    Object modelJobsConfiguration = propertyAny(loaded, "modelJobs", "modelJobConfiguration");
+    AnalysisRunId first = AnalysisRunId.parse("analysis-run:" + "a".repeat(64));
+    AnalysisRunId second = AnalysisRunId.parse("analysis-run:" + "b".repeat(64));
+
+    modelExecutionConfiguration(modelJobsConfiguration, first);
+    modelExecutionConfiguration(modelJobsConfiguration, second);
+
+    Path providerRoot = temporaryDirectory.resolve("journal/providers/pro");
+    assertThat(providerRoot.resolve(sha256(first.value().getBytes(StandardCharsets.UTF_8))))
+        .isDirectory();
+    assertThat(providerRoot.resolve(sha256(second.value().getBytes(StandardCharsets.UTF_8))))
+        .isDirectory();
+  }
+
+  @Test
   void privateModelConfigurationInstallKeepsSameBytesAndRejectsAConcurrentDifferentWrite()
       throws Exception {
     Path directory = Files.createDirectories(temporaryDirectory.resolve("concurrent-install"));
@@ -717,6 +745,23 @@ class RepositoryRunModelJobsConfigurationTest {
           "Activity execution configuration mapping must accept selected Codex values",
           failure.getCause());
       throw new AssertionError("unreachable", failure.getCause());
+    }
+  }
+
+  private static Object modelExecutionConfiguration(
+      Object modelJobsConfiguration, AnalysisRunId runId) throws Exception {
+    Method mapper =
+        java.util.Arrays.stream(RepositoryRunMain.class.getDeclaredMethods())
+            .filter(method -> method.getName().equals("modelJobExecutionConfiguration"))
+            .filter(method -> Modifier.isStatic(method.getModifiers()))
+            .filter(method -> method.getParameterCount() == 3)
+            .findFirst()
+            .orElseThrow();
+    mapper.setAccessible(true);
+    try {
+      return mapper.invoke(null, modelJobsConfiguration, runId, null);
+    } catch (InvocationTargetException failure) {
+      throw new AssertionError(failure.getCause());
     }
   }
 

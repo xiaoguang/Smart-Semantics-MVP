@@ -34,12 +34,14 @@ businessRules为本次补入字段。其余来自现有字段；不由Java提取
 
 每个Activity必须有现有处置：PROCESS_MEMBER、SUPPORT_ONLY、STANDALONE、UNCLASSIFIED或NOT_PROCESSED_CAPACITY。PROCESS_MEMBER必须有至少一个真实候选成员关系，不能由Java静默降成UNCLASSIFIED。重复分片输入、未知Activity、遗漏处置、相同用法重复及非法枚举是结构错误；候选可能重叠不是错误。
 
+在全仓分片合并中，完整DRAFT固定Activity覆盖分母。REVIEW对候选和业务边界有最终裁决权，但它对完整处置清单的重复抄写不是新的业务判断：若该清单出现重复或遗漏ID，程序从DRAFT恢复完整非成员处置，再按REVIEW后的实际候选成员关系确定PROCESS_MEMBER。未知Activity、非法枚举和完整唯一清单中的孤立PROCESS_MEMBER仍然失败；这不是自动归组，也不增加候选。
+
 本次不新增逐variant处置Schema。深入阅读可收窄用法；REVIEW须对照所有原候选用法并在现有reason/pendingConnections说明差异。结构覆盖仍针对Activity/候选/已审过程，不能声称它自动发现同Activity某variant在语义上被漏掉。
 
 目录不写最终详细阶段，不证明先后和因果。下游仍可拆分、收窄或拒绝候选。
 
 ## 测试、分工与当前差距
 
-已实现稳定分片、并行两轮、唯一merge和326条覆盖。当前真实14候选偏技术维护分类；“有候选且覆盖闭合”没有验证业务发现质量。卡片尚未包含businessRules；解析器按ActivityId禁止同候选重复用法，并存在成员处置自动降级路径，均需修正。
+已实现稳定分片、并行两轮、唯一merge和完整覆盖。卡片已携带businessRules；同候选按`(activityId, variant)`保留多个业务用法；完整唯一处置中的PROCESS_MEMBER没有候选关系时会明确失败，不再自动降级。merge REVIEW长数组若发生重复/遗漏，则只恢复DRAFT覆盖账并按最终候选重算成员关系。旧版真实14候选偏技术维护分类；新版v2目录仍必须由模型自行发现领域和用法，只有真实运行才能判断业务发现质量。
 
 Luna RED：同Activity多variant、跨分片成员保留、未知/遗漏不自动修正、卡片原规则保留。Terra GREEN只处理结构/投影；不写行业分类器。真实验收须由目录自己召回有关联的业务用法，不能将测试答案作为生产分组输入。
