@@ -1,6 +1,6 @@
 # Progress: Task 5 prompt/runtime acceptance RED
 
-- Status: IN_PROGRESS
+- Status: COMPLETE
 - Agent role: Task 5 RED test author
 - Model: gpt-5.6-luna/xhigh
 - Started: 2026-09-15
@@ -22,28 +22,28 @@ RED tests are complete in files owned by this task. Production classes/resources
 
 - `src/test/java/org/sourceanalysis/app/analysis/knowledge/BusinessProcessPromptV2ContractTest.java`
 - `src/test/java/org/sourceanalysis/app/analysis/knowledge/BusinessProcessSemanticFingerprintV2Test.java`
-- `src/test/java/org/sourceanalysis/app/runtime/BusinessProcessAcceptanceSampleContractTest.java`
+- `src/test/java/org/sourceanalysis/app/analysis/knowledge/BusinessProcessAcceptanceSampleTest.java`
 
 ## Verification
 
 | Command | Result | Key output |
 | --- | --- | --- |
-| `mvn -t .mvn/toolchains.xml -Dtest=BusinessProcessPromptV2ContractTest,BusinessProcessSemanticFingerprintV2Test,BusinessProcessAcceptanceSampleContractTest test` | RED (expected) | 8 tests run; 8 failures, no compilation errors. v2 prompt resources/identity and `BusinessProcessAcceptanceRunner` are not implemented; legacy Step07 fingerprint still matches. |
+| `mvn -t .mvn/toolchains.xml -Dtest=BusinessProcessPromptV2ContractTest,BusinessProcessSemanticFingerprintV2Test,BusinessProcessAcceptanceSampleTest test` | RED (expected) | 5 tests run; 5 failures, no compilation errors. The v2 prompt resources and semantic identity are absent, and the package-internal real discovery seam is not implemented. |
 
 ## Decisions
 
-- Assert the eight canonical Step07 resources (`catalog`, `catalog merge`, `process`, `consolidation`, each draft/review) by semantic v2 resource identity, while preserving task-kind aliases as an implementation detail.
-- Use reflection for not-yet-existing runtime seams so RED compiles without production changes and fails with an explicit contract message.
-- Selector contract derives ordinal from the complete candidate array and Provider from the supplied `ModelJobExecutionConfiguration`; fixture JSON has no ordinal or binding fields.
-- Acceptance result contract requires selected IDs, complete reviewed-pair job keys, and zero upstream JDT/Builder/Activity/Step08 calls; pair reuse is then validated by the formal store contract rather than by a second sample algorithm.
+- Assert the eight canonical Step07 resources (`catalog`, `catalog merge`, `process`, `consolidation`, each draft/review) and all ten task-kind aliases (including catalog-shard draft/review) by semantic v2 resource identity.
+- Use reflection for the not-yet-existing package-internal discovery seams so RED compiles without production changes and fails with an explicit contract message.
+- Selector derives candidate ordinal from the complete catalog result and Provider from the supplied `ModelJobExecutionConfiguration`; fixture catalog JSON contains neither ordinal nor binding fields.
+- The acceptance test requires actual saved DRAFT+REVIEW pairs, verifies their original-ordinal Provider binding, and then proves the formal full run reuses those pairs while executing only the remaining candidate and consolidation.
 
 ## Blockers
 
-- No blocking verification remains for this RED task. Full local CI remains the parent/green task's responsibility.
+- No blocking verification remains for this RED task. Full local CI remains the parent/GREEN task's responsibility.
 
 ## Exact next action
 
-Commit only the owned tests and this progress file after parent confirmation; do not touch Task 4 files.
+Implement the semantic-v2 resources/fingerprint and package-internal catalog/sample seams; do not touch Task 4 publication files.
 
 ## Resume checks
 

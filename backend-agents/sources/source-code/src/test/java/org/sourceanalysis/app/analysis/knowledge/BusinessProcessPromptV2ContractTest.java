@@ -19,6 +19,8 @@ class BusinessProcessPromptV2ContractTest {
       List.of(
           new PromptResource("BUSINESS_CATALOG_DRAFT", "business-catalog-draft-v2.txt"),
           new PromptResource("BUSINESS_CATALOG_REVIEW", "business-catalog-review-v2.txt"),
+          new PromptResource("BUSINESS_CATALOG_SHARD_DRAFT", "business-catalog-draft-v2.txt"),
+          new PromptResource("BUSINESS_CATALOG_SHARD_REVIEW", "business-catalog-review-v2.txt"),
           new PromptResource("BUSINESS_CATALOG_MERGE_DRAFT", "business-catalog-merge-draft-v2.txt"),
           new PromptResource(
               "BUSINESS_CATALOG_MERGE_REVIEW", "business-catalog-merge-review-v2.txt"),
