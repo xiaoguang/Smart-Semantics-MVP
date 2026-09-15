@@ -7,7 +7,7 @@ import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 
-/** Saved business checkpoints produced by either a material preflight or a complete report run. */
+/** Saved business checkpoints produced by material, process-catalog, or complete-report runs. */
 public record AnalysisRunOutput(
     AnalysisRunId sourceRunId,
     ModulePublicationReference businessMaterialCheckpoint,
@@ -24,8 +24,24 @@ public record AnalysisRunOutput(
         "business-material-builder");
     boolean materialsOnly =
         activityCheckpoint == null && knowledgeCheckpoint == null && reportCheckpoint == null;
-    if (!materialsOnly) {
+    boolean processCatalog =
+        activityCheckpoint != null && knowledgeCheckpoint != null && reportCheckpoint == null;
+    boolean completeReport =
+        activityCheckpoint != null && knowledgeCheckpoint != null && reportCheckpoint != null;
+    if (!(materialsOnly || processCatalog || completeReport)) {
+      throw new IllegalArgumentException("analysis run output checkpoint set is invalid");
+    }
+    if (processCatalog || completeReport) {
       require(activityCheckpoint, AnalysisStepKey.FLOW_INTERPRETATION, 11, "activity-explainer");
+    }
+    if (processCatalog) {
+      require(
+          knowledgeCheckpoint,
+          AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+          1,
+          "business-process-publisher");
+    }
+    if (completeReport) {
       require(knowledgeCheckpoint, AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, "process-explainer");
       require(
           reportCheckpoint, AnalysisStepKey.NINE_SECTION_DOCUMENT, 1, "business-report-publisher");
@@ -33,8 +49,8 @@ public record AnalysisRunOutput(
     if (!sourceRunId.equals(runId(businessMaterialCheckpoint))) {
       throw new IllegalArgumentException("business material checkpoint must belong to source run");
     }
-    AnalysisRunId owner = materialsOnly ? sourceRunId : runId(activityCheckpoint);
-    if (!materialsOnly
+    AnalysisRunId owner = completeReport ? runId(activityCheckpoint) : null;
+    if (completeReport
         && !List.of(activityCheckpoint, knowledgeCheckpoint, reportCheckpoint).stream()
             .map(AnalysisRunOutput::runId)
             .allMatch(owner::equals)) {
@@ -78,6 +94,11 @@ public record AnalysisRunOutput(
   /** Returns whether this finished run contains a review-approved business report. */
   public boolean hasCompletedReport() {
     return reportCheckpoint != null;
+  }
+
+  /** Returns whether this run contains a closed, reader-visible Step07 process catalog. */
+  public boolean hasCompletedProcesses() {
+    return knowledgeCheckpoint != null;
   }
 
   private static void require(

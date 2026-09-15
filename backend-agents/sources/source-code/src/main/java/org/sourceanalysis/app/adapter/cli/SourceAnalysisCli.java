@@ -123,6 +123,9 @@ public final class SourceAnalysisCli {
     @Option(names = "--max-bytes", paramLabel = "BYTES")
     private Integer maxBytes;
 
+    @Option(names = "--target", paramLabel = "ANALYSIS_STEP")
+    private String targetStep;
+
     private final RepositoryAnalysisAgent agent;
     private final Function<ArtifactId, AnalysisRunRequest> requestFactory;
     private final LocalSourceCapture localSourceCapture;
@@ -148,7 +151,7 @@ public final class SourceAnalysisCli {
         case "capture-local-git" -> captureLocalGit();
         case "start" -> start();
         case "plan-materials" -> planMaterials();
-        case "execute-step" -> executeFinalDocument();
+        case "execute-step" -> executeSelectedStep();
         case "inspect" -> inspect();
         case "render" -> render();
         case "artifact" -> artifact();
@@ -192,14 +195,26 @@ public final class SourceAnalysisCli {
       return 0;
     }
 
-    private int executeFinalDocument() {
+    private int executeSelectedStep() {
       AnalysisRunReference executed =
           agent.executeStep(
               new AnalysisStepExecutionRequest(
-                  AnalysisRunId.parse(requireRunId()), AnalysisStepKey.NINE_SECTION_DOCUMENT));
+                  AnalysisRunId.parse(requireRunId()), selectedTargetStep()));
       output.printf("runId=%s%n", executed.runId().value());
       output.printf("lifecycleState=%s%n", executed.lifecycleState());
       return 0;
+    }
+
+    private AnalysisStepKey selectedTargetStep() {
+      if (targetStep == null || "nine-section-document".equals(targetStep)) {
+        return AnalysisStepKey.NINE_SECTION_DOCUMENT;
+      }
+      if ("repository-knowledge".equals(targetStep)) {
+        return AnalysisStepKey.REPOSITORY_KNOWLEDGE;
+      }
+      throw new CommandLine.ParameterException(
+          new CommandLine(this),
+          "execute-step --target must be repository-knowledge or nine-section-document");
     }
 
     private int planMaterials() {

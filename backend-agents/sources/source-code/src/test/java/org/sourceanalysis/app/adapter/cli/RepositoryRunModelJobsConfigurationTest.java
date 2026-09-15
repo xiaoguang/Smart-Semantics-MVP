@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
+import org.sourceanalysis.app.artifact.CanonicalArtifactPolicyRegistry;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 
 /** RED contracts for the unified repository-run-config-v2 modelJobs configuration. */
@@ -74,6 +75,41 @@ class RepositoryRunModelJobsConfigurationTest {
     assertThat(result.diagnostics())
         .contains("CONFIGURATION_INVALID")
         .doesNotContain("MATERIALS_STATE_INVALID", "MODEL_PROVIDER");
+  }
+
+  @Test
+  void historicalInputPolicyRegistryIsSeparateFromNewOutputPolicyWithoutChangingMaterialBasis()
+      throws Exception {
+    ToolFixture tools = toolFixture();
+    Path currentPolicy =
+        Path.of("tools/repository-run/jdt-artifact-policy-set-v1.json").toAbsolutePath();
+    ObjectNode historicalDocument =
+        (ObjectNode) new ObjectMapper().readTree(Files.readString(currentPolicy));
+    historicalDocument
+        .withArray("policies")
+        .remove(historicalDocument.withArray("policies").size() - 1);
+    Path historicalPolicy = temporaryDirectory.resolve("historical-policy.json").toAbsolutePath();
+    Files.writeString(historicalPolicy, historicalDocument.toString(), StandardCharsets.UTF_8);
+
+    String baseYaml = configYaml(tools, defaultModelJobs(tools));
+    String withHistoricalInput =
+        baseYaml.replace(
+            "policyRegistry: '" + quote(currentPolicy) + "'",
+            "policyRegistry: '"
+                + quote(currentPolicy)
+                + "'\ninputPolicyRegistry: '"
+                + quote(historicalPolicy)
+                + "'");
+    Object baseline = loadConfiguration(writeConfig(baseYaml));
+    Object configured = loadConfiguration(writeConfig(withHistoricalInput));
+
+    CanonicalArtifactPolicyRegistry output =
+        (CanonicalArtifactPolicyRegistry) property(configured, "policyRegistry");
+    CanonicalArtifactPolicyRegistry input =
+        (CanonicalArtifactPolicyRegistry) property(configured, "inputPolicyRegistry");
+    assertThat(input.reference()).isNotEqualTo(output.reference());
+    assertThat(property(configured, "baseConfigurationSha256"))
+        .isEqualTo(property(baseline, "baseConfigurationSha256"));
   }
 
   @Test
@@ -503,6 +539,19 @@ class RepositoryRunModelJobsConfigurationTest {
   }
 
   @Test
+  void processDiscoveryConfigurationDoesNotInvalidateSavedTechnicalMaterials() throws Exception {
+    ToolFixture tools = toolFixture();
+    Path defaultDiscovery = writeConfig(configYaml(tools, defaultModelJobs(tools)));
+    Path changedDiscovery =
+        writeConfig(
+            configYaml(tools, defaultModelJobs(tools))
+                .replace("maxCardsPerCatalogShard: 96", "maxCardsPerCatalogShard: 128"));
+
+    assertThat(stringProperty(loadConfiguration(defaultDiscovery), "baseConfigurationSha256"))
+        .isEqualTo(stringProperty(loadConfiguration(changedDiscovery), "baseConfigurationSha256"));
+  }
+
+  @Test
   void activityExecutionConfigurationUsesTheSelectedProviderEffectiveCapAndRuntimeIdentity()
       throws Exception {
     ToolFixture tools = toolFixture();
@@ -853,6 +902,7 @@ class RepositoryRunModelJobsConfigurationTest {
   private static String expectedBaseHash(com.fasterxml.jackson.databind.JsonNode document) {
     ObjectNode normalized = ((ObjectNode) document).deepCopy();
     ((ObjectNode) normalized.get("sourceAnalysis")).remove("modelJobs");
+    ((ObjectNode) normalized.get("business")).remove("processDiscovery");
     byte[] canonical = new CanonicalJsonCodec().encodeCanonical(normalized).copyToByteArray();
     return sha256(canonical);
   }
@@ -992,6 +1042,7 @@ class RepositoryRunModelJobsConfigurationTest {
           material: {maxSourceRefsPerMaterial: 24, maxLinesPerRef: 80, maxMaterialChars: 48000, maxEntriesPerMaterial: 8}
           activity: {maxModelInputBytes: 128000, maxModelOutputBytes: 32000, maxActivitiesPerMaterial: 16, maxValuesPerField: 64, maxTextCharsPerValue: 8000}
           process: {maxActivitiesPerGroup: 48, maxProcessGroups: 512, maxModelInputBytes: 128000, maxModelOutputBytes: 32000, maxProcessesPerGroup: 16, maxValuesPerField: 64, maxTextCharsPerValue: 8000, maxRepositorySummaryItems: 2048}
+          processDiscovery: {maxCardsPerCatalogShard: 96, maxActivitiesPerCandidate: 48, maxRequestedSourceRefs: 64, maxRequestedSourceChars: 192000, maxModelInputBytes: 256000, maxModelOutputBytes: 64000, maxProcessesPerCandidate: 16, maxValuesPerField: 128, maxTextCharsPerValue: 12000}
           report: {maxModelInputBytes: 128000, maxModelOutputBytes: 32000, maxValuesPerField: 64, maxTextCharsPerValue: 8000}
           maxMaterialsToStart: 100000
         """

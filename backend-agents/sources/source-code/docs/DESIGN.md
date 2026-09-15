@@ -207,7 +207,7 @@ Step08 只消费已发布 `RepositoryBusinessProcessCatalog`、过程 coverage �
 
 “后端是否强制审核后才能出库”“多级审批状态 9 的完整状态机”“退货怎样影响欠款”等保留为 UNRESOLVED。这个推演说明现有 Activity/JDT 信息足以支持有用过程，但当前分组和浅 Schema 没有把它组织出来。
 
-## 11. 当前实现状态（2026-09-14）
+## 11. 当前实现状态（2026-09-15）
 
 已实现并保留：
 
@@ -218,18 +218,19 @@ Step08 只消费已发布 `RepositoryBusinessProcessCatalog`、过程 coverage �
 - BusinessReportPublisher 和九章确定性渲染；
 - 固定 jshERP 的 326 个已审 Activity。
 
-尚未实现：
+当前实现分支已经完成并通过直接测试：
 
-- FrozenAnalysisCorpus 统一查询面和 Activity statement handle；
-- 全仓 ActivityIndexCard 目录发现；
-- 语义重叠 Candidate Process；
-- ActivityUse 和详细 stage/rule 数据模型；
-- DRAFT 请求并在 REVIEW 核对保存源码；
-- 仓库过程归并；
-- `business-processes.md` 及新过程 coverage；
-- Step08 只消费归并过程目录的接线。
+- FrozenAnalysisCorpus、Activity statement handle 和全仓 ActivityIndexCard；
+- 分片目录 DRAFT/REVIEW、唯一目录合并及可重叠 Candidate Process；
+- 完整 ActivityUse、详细 stage/rule、按需源码请求与 REVIEW；
+- 仓库过程归并、三类分母 coverage、四项 canonical Step07 产物；
+- 确定性 `business-processes.md`、独立来源文件和过程专用运行入口。
 
-当前 `ProcessExplainer` 已实现且实际运行，但不符合目标：它以精确 token/file 召回和容量切片生成 340 个 Process，全部为单 Activity/单 Stage；326 个 Activity 中有一个没有进入任何 Process，而保存的 `unmatchedActivityIds` 仍为空。因此当前九章是可运行的历史产物，不是业务过程验收通过。
+固定 326 Activity 的真实 Luna/high 运行已经完成：6 个目录分片及唯一合并形成 14 个候选，候选 DRAFT/REVIEW 和唯一仓库归并均已保存；正式复用批次发布 46 个过程，其中 21 个过程包含多个 Activity，全部 46 个过程包含多个阶段。326 个 Activity 的覆盖账为 CLOSED：102 个 PROCESS_MEMBER、157 个 SUPPORT_ONLY、17 个 STANDALONE、50 个 UNCLASSIFIED，因此 semantic delivery 如实标为 PARTIAL。Markdown 使用的 680 个短引用均能在独立来源文件中查询。
+
+跨批次复用的 JSON Schema enum 现按 UTF-8 稳定排序；历史输入 checkpoint 通过输入策略 Store 重开，新 Step07 通过当前策略 Store 发布。最终正式批次复用 22/22 个完整已审 job，模型调用为 0，也没有运行 JDT、Builder 或 ActivityExplainer。Step08 只消费归并过程目录的接线仍不在本轮范围。
+
+旧 `ProcessExplainer` 的 340 个单 Activity/单 Stage 结果只作为历史对照；新过程专用入口不会消费它，也不会启动 Step08。
 
 ## 12. 完成标准
 

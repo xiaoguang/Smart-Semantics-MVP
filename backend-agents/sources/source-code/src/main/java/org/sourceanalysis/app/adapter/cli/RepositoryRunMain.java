@@ -42,6 +42,7 @@ import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilationProfile;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplainer;
+import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationCheckpointReader;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationProfile;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationResult;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityJobExecutionConfiguration;
@@ -53,10 +54,12 @@ import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialP
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
 import org.sourceanalysis.app.analysis.inventory.PersistedVerifiedSourceTextReader;
 import org.sourceanalysis.app.analysis.inventory.ProfileView;
+import org.sourceanalysis.app.analysis.knowledge.ProcessDiscoveryProfile;
 import org.sourceanalysis.app.analysis.knowledge.ProcessExplanationProfile;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
+import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactPolicyRegistryReference;
 import org.sourceanalysis.app.artifact.ArtifactReference;
@@ -80,10 +83,13 @@ import org.sourceanalysis.app.capture.localgit.SourceRegistrationReference;
 import org.sourceanalysis.app.runtime.AnalysisRunLifecycleState;
 import org.sourceanalysis.app.runtime.AnalysisRunOutput;
 import org.sourceanalysis.app.runtime.AnalysisRunReference;
+import org.sourceanalysis.app.runtime.AnalysisRunRequest;
 import org.sourceanalysis.app.runtime.AnalysisRunRequestTemplate;
 import org.sourceanalysis.app.runtime.BusinessAnalysisWorkflowResult;
+import org.sourceanalysis.app.runtime.BusinessProcessWorkflowResult;
 import org.sourceanalysis.app.runtime.EffectiveEngineConfiguration;
 import org.sourceanalysis.app.runtime.EngineConfigurationLoader;
+import org.sourceanalysis.app.runtime.PersistedBusinessProcessRunExecutor;
 import org.sourceanalysis.app.runtime.PersistedBusinessRunConfiguration;
 import org.sourceanalysis.app.runtime.PersistedBusinessRunExecutor;
 import org.sourceanalysis.app.runtime.PersistedTechnicalRunConfiguration;
@@ -108,6 +114,7 @@ public final class RepositoryRunMain {
   private static final String MODE_EXPORT_MATERIALS_STATE = "export-materials-state";
   private static final String MODE_ACTIVITIES_SAMPLE = "activities-sample";
   private static final String MODE_GENERATE = "generate";
+  private static final String MODE_BUSINESS_PROCESSES = "business-processes";
   private static final String CONFIG_SCHEMA = "repository-run-config-v2";
   private static final String POLICY_SCHEMA = "artifact-policy-registry-policy-set-v1";
   private static final String MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA =
@@ -137,6 +144,12 @@ public final class RepositoryRunMain {
                 configuration, parsed.materialId(), parsed.reuseFromModelBatchId(), output);
         case MODE_GENERATE ->
             executeGenerate(configuration, parsed.reuseFromModelBatchId(), output);
+        case MODE_BUSINESS_PROCESSES ->
+            executeBusinessProcesses(
+                configuration,
+                parsed.activityModelBatchId(),
+                parsed.reuseFromModelBatchId(),
+                output);
         default -> throw failure("MODE_UNSUPPORTED");
       }
       output.flush();
@@ -310,14 +323,18 @@ public final class RepositoryRunMain {
     ModelJobsConfiguration modelJobs = configuration.requireModelJobsForExecution();
     RepositoryRunStateV3.SavedState state = loadV3State(configuration);
     try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
-      CanonicalModuleArtifactStore modules = moduleArtifacts(configuration, store);
+      CanonicalModuleArtifactStore modules = inputModuleArtifacts(configuration, store);
       verifyConfiguredMaterialSource(configuration, store, state);
       BusinessMaterialBuildResult materials =
           new org.sourceanalysis.app.analysis.interpretation.material
                   .BusinessMaterialCheckpointReader(modules)
               .reopen(state.materialsCheckpoint());
       BusinessMaterialBuildResult sample = exactSample(materials, materialId);
-      AnalysisRunReference running = startModelBatch(store, state.sourceRunId());
+      AnalysisRunReference running =
+          startModelBatch(
+              store,
+              state.sourceRunId(),
+              artifactReference(configuration.policyRegistry().reference()));
       try {
         validateReuseBatch(store, modelJobs, state, running.runId(), reuseFromModelBatchId);
         writeModelJobExecutionConfiguration(
@@ -359,13 +376,17 @@ public final class RepositoryRunMain {
     ModelJobsConfiguration modelJobs = configuration.requireModelJobsForExecution();
     RepositoryRunStateV3.SavedState state = loadV3State(configuration);
     try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
-      CanonicalModuleArtifactStore modules = moduleArtifacts(configuration, store);
+      CanonicalModuleArtifactStore modules = inputModuleArtifacts(configuration, store);
       verifyConfiguredMaterialSource(configuration, store, state);
       BusinessMaterialBuildResult materials =
           new org.sourceanalysis.app.analysis.interpretation.material
                   .BusinessMaterialCheckpointReader(modules)
               .reopen(state.materialsCheckpoint());
-      AnalysisRunReference running = startModelBatch(store, state.sourceRunId());
+      AnalysisRunReference running =
+          startModelBatch(
+              store,
+              state.sourceRunId(),
+              artifactReference(configuration.policyRegistry().reference()));
       try {
         validateReuseBatch(store, modelJobs, state, running.runId(), reuseFromModelBatchId);
         writeModelJobExecutionConfiguration(
@@ -407,6 +428,109 @@ public final class RepositoryRunMain {
     }
   }
 
+  private static void executeBusinessProcesses(
+      RepositoryRunConfiguration configuration,
+      AnalysisRunId activityModelBatchId,
+      AnalysisRunId reuseFromModelBatchId,
+      PrintWriter output) {
+    ModelJobsConfiguration modelJobs = configuration.requireModelJobsForExecution();
+    ProcessDiscoveryProfile processProfile = configuration.requireProcessDiscoveryProfile();
+    RepositoryRunStateV3.SavedState materialState = loadV3State(configuration);
+    try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
+      CanonicalModuleArtifactStore inputModules = inputModuleArtifacts(configuration, store);
+      CanonicalModuleArtifactStore outputModules = moduleArtifacts(configuration, store);
+      verifyConfiguredMaterialSource(configuration, store, materialState);
+      AnalysisRunOutput activityOutput =
+          RunStoreBootstrap.reopenAnalysisRunOutput(store, activityModelBatchId)
+              .orElseThrow(() -> failure("ACTIVITY_MODEL_BATCH_OUTPUT_MISSING"));
+      if (activityOutput.activityCheckpoint() == null
+          || !activityOutput
+              .businessMaterialCheckpoint()
+              .equals(materialState.materialsCheckpoint())) {
+        throw failure("ACTIVITY_MODEL_BATCH_INPUT_MISMATCH");
+      }
+      ActivityExplanationResult activities =
+          new ActivityExplanationCheckpointReader(inputModules)
+              .reopen(activityOutput.activityCheckpoint());
+      BusinessMaterialBuildResult materials =
+          new org.sourceanalysis.app.analysis.interpretation.material
+                  .BusinessMaterialCheckpointReader(inputModules)
+              .reopen(materialState.materialsCheckpoint());
+      AnalysisRunReference running =
+          startModelBatch(
+              store,
+              materialState.sourceRunId(),
+              artifactReference(configuration.policyRegistry().reference()));
+      try {
+        validateReuseBatch(store, modelJobs, materialState, running.runId(), reuseFromModelBatchId);
+        validateProcessReuseActivity(
+            modelJobs, activityOutput.activityCheckpoint(), reuseFromModelBatchId);
+        writeProcessModelJobExecutionConfiguration(
+            configuration,
+            modelJobs,
+            materialState,
+            activityOutput.activityCheckpoint(),
+            running.runId(),
+            reuseFromModelBatchId);
+        ModelJobExecutionConfiguration execution =
+            modelJobExecutionConfiguration(modelJobs, running.runId(), reuseFromModelBatchId);
+        AnalysisRunRequest outputRequest =
+            RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, running.runId()).request();
+        BusinessProcessWorkflowResult result =
+            new PersistedBusinessProcessRunExecutor(
+                    inputModules,
+                    outputModules,
+                    artifactControls(outputRequest),
+                    execution,
+                    processProfile)
+                .execute(running.runId(), activities, materials);
+        AnalysisRunOutput runOutput =
+            new AnalysisRunOutput(
+                materialState.sourceRunId(),
+                materialState.materialsCheckpoint(),
+                activityOutput.activityCheckpoint(),
+                result.publication().checkpoint(),
+                null);
+        RunStoreBootstrap.recordAnalysisRunOutput(store, running.runId(), runOutput);
+        Path document = businessProcessesPath(configuration, running.runId());
+        AnalysisRunReference finished =
+            RunStoreBootstrap.transitionAnalysisRun(
+                store,
+                running.runId(),
+                AnalysisRunLifecycleState.RUNNING,
+                AnalysisRunLifecycleState.FINISHED);
+        output.printf("sourceRunId=%s%n", materialState.sourceRunId().value());
+        output.printf("activityModelBatchId=%s%n", activityModelBatchId.value());
+        output.printf("modelBatchId=%s%n", finished.runId().value());
+        output.printf("lifecycleState=%s%n", finished.lifecycleState());
+        output.printf(
+            "businessProcessCount=%d%n", result.publication().catalog().processes().size());
+        output.printf(
+            "semanticDeliveryStatus=%s%n",
+            result.publication().coverage().semanticDeliveryStatus());
+        output.printf("businessProcessesFile=%s%n", document);
+      } catch (RuntimeException failure) {
+        markFailed(store, running.runId(), failure);
+        throw failure;
+      }
+    }
+  }
+
+  private static void validateProcessReuseActivity(
+      ModelJobsConfiguration modelJobs,
+      org.sourceanalysis.app.artifact.ModulePublicationReference activityCheckpoint,
+      AnalysisRunId reuseFromModelBatchId) {
+    if (reuseFromModelBatchId == null) {
+      return;
+    }
+    ObjectNode execution = readModelJobExecutionConfiguration(modelJobs, reuseFromModelBatchId);
+    JsonNode saved = execution.path("activityCheckpoint");
+    if (!saved.isObject()
+        || !activityCheckpoint.equals(RepositoryRunStateV3.loadCheckpoint((ObjectNode) saved))) {
+      throw failure("MODEL_REUSE_ACTIVITY_MISMATCH");
+    }
+  }
+
   private static PersistedBusinessRunExecutor businessExecutor(
       RepositoryRunConfiguration configuration,
       RunStoreHandle store,
@@ -429,6 +553,15 @@ public final class RepositoryRunMain {
         store,
         configuration.canonicalJson(),
         configuration.policyRegistry(),
+        configuration.storeLimits());
+  }
+
+  private static CanonicalModuleArtifactStore inputModuleArtifacts(
+      RepositoryRunConfiguration configuration, RunStoreHandle store) {
+    return new FileSystemCanonicalModuleArtifactStore(
+        store,
+        configuration.canonicalJson(),
+        configuration.inputPolicyRegistry(),
         configuration.storeLimits());
   }
 
@@ -575,12 +708,45 @@ public final class RepositoryRunMain {
   }
 
   private static AnalysisRunReference startModelBatch(
-      RunStoreHandle store, AnalysisRunId sourceRunId) {
+      RunStoreHandle store, AnalysisRunId sourceRunId, ArtifactReference outputPolicy) {
     org.sourceanalysis.app.runtime.PersistedAnalysisRunRequest source =
         RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, sourceRunId);
-    AnalysisRunReference queued = RunStoreBootstrap.queueAnalysisRun(store, source.request());
+    AnalysisRunReference queued =
+        RunStoreBootstrap.queueAnalysisRun(
+            store, modelBatchRequest(source.request(), outputPolicy));
     return RunStoreBootstrap.transitionAnalysisRun(
         store, queued.runId(), AnalysisRunLifecycleState.QUEUED, AnalysisRunLifecycleState.RUNNING);
+  }
+
+  static AnalysisRunRequest modelBatchRequest(
+      AnalysisRunRequest source, ArtifactReference outputPolicy) {
+    Objects.requireNonNull(source, "source analysis run request");
+    Objects.requireNonNull(outputPolicy, "output artifact policy registry");
+    return new AnalysisRunRequest(
+        source.sourceRegistrationId(),
+        source.frozenRepositoryRequestRef(),
+        source.profileBundleRef(),
+        source.resourceBudgetRef(),
+        source.toolchainRef(),
+        source.schemaBundleRef(),
+        source.promptBundleRef(),
+        source.organizationRegistrySeedRef(),
+        outputPolicy,
+        source.candidateSeriesRef(),
+        source.readerCandidateRound(),
+        source.parentCandidateRef(),
+        source.approvedFindingRefs());
+  }
+
+  private static ArtifactControls artifactControls(AnalysisRunRequest request) {
+    return new ArtifactControls(
+        request.toolchainRef().sha256(),
+        request.profileBundleRef().sha256(),
+        request.schemaBundleRef().sha256(),
+        request.promptBundleRef().sha256(),
+        new ArtifactPolicyRegistryReference(
+            request.artifactPolicyRegistryRef().artifactId(),
+            request.artifactPolicyRegistryRef().sha256()));
   }
 
   private static void verifyConfiguredMaterialSource(
@@ -713,6 +879,29 @@ public final class RepositoryRunMain {
     }
   }
 
+  private static Path businessProcessesPath(
+      RepositoryRunConfiguration configuration, AnalysisRunId runId) {
+    Path document =
+        configuration
+            .runStore()
+            .resolve("runs")
+            .resolve(runId.value().replace(":", "--"))
+            .resolve("steps")
+            .resolve(AnalysisStepKey.REPOSITORY_KNOWLEDGE.directoryName())
+            .resolve("modules")
+            .resolve("01-business-process-publisher")
+            .resolve("business-processes.md");
+    try {
+      if (!Files.isRegularFile(document, LinkOption.NOFOLLOW_LINKS)
+          || Files.isSymbolicLink(document)) {
+        throw failure("BUSINESS_PROCESSES_LOCATION_INVALID");
+      }
+      return document;
+    } catch (SecurityException failure) {
+      throw failure("BUSINESS_PROCESSES_LOCATION_INVALID", failure);
+    }
+  }
+
   private static void markFailed(
       RunStoreHandle store, AnalysisRunId runId, RuntimeException failure) {
     try {
@@ -788,6 +977,47 @@ public final class RepositoryRunMain {
     ArrayNode selected = scope.putArray("materialIds");
     materialIds.stream().sorted().forEach(selected::add);
     scope.put("maxMaterialsToStart", maxMaterialsToStart);
+    record.put("modelJobsSha256", modelJobs.canonicalSha256());
+    record.set("modelJobs", modelJobs.normalizedNonSecretDocument());
+    Path destination =
+        modelJobs
+            .journalDirectory()
+            .resolve(
+                "model-job-execution-"
+                    + sha256(modelBatchId.value().getBytes(StandardCharsets.UTF_8))
+                    + ".json");
+    writeIdempotentlyAtomically(
+        destination,
+        configuration.canonicalJson().encodeCanonical(record).copyToByteArray(),
+        "MODEL_EXECUTION_CONFIGURATION_DESTINATION_INVALID",
+        "MODEL_EXECUTION_CONFIGURATION_CONFLICT",
+        "MODEL_EXECUTION_CONFIGURATION_WRITE_FAILED");
+  }
+
+  private static void writeProcessModelJobExecutionConfiguration(
+      RepositoryRunConfiguration configuration,
+      ModelJobsConfiguration modelJobs,
+      RepositoryRunStateV3.SavedState materials,
+      org.sourceanalysis.app.artifact.ModulePublicationReference activityCheckpoint,
+      AnalysisRunId modelBatchId,
+      AnalysisRunId reuseFromModelBatchId) {
+    ObjectNode record = JsonNodeFactory.instance.objectNode();
+    record.put("schemaVersion", MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA);
+    record.put("modelBatchId", modelBatchId.value());
+    record.put("sourceRunId", materials.sourceRunId().value());
+    record.set(
+        "materialsCheckpoint",
+        RepositoryRunStateV3.checkpointJson(materials.materialsCheckpoint()));
+    record.set("activityCheckpoint", RepositoryRunStateV3.checkpointJson(activityCheckpoint));
+    if (reuseFromModelBatchId == null) {
+      record.putNull("reuseFromModelBatchId");
+    } else {
+      record.put("reuseFromModelBatchId", reuseFromModelBatchId.value());
+    }
+    ObjectNode scope = record.putObject("executionScope");
+    scope.put("mode", "BUSINESS_PROCESSES");
+    scope.putArray("materialIds");
+    scope.put("maxMaterialsToStart", Integer.MAX_VALUE);
     record.put("modelJobsSha256", modelJobs.canonicalSha256());
     record.set("modelJobs", modelJobs.normalizedNonSecretDocument());
     Path destination =
@@ -945,6 +1175,7 @@ public final class RepositoryRunMain {
       Path legacyProviderConfig,
       String materialId,
       Path outputState,
+      AnalysisRunId activityModelBatchId,
       AnalysisRunId reuseFromModelBatchId) {
 
     private static Arguments parse(String[] arguments) {
@@ -958,6 +1189,7 @@ public final class RepositoryRunMain {
       Path legacyProviderConfig = null;
       String materialId = null;
       Path outputState = null;
+      AnalysisRunId activityModelBatchId = null;
       AnalysisRunId reuseFromModelBatchId = null;
       if ((arguments.length - 4) % 2 != 0) {
         throw failure("ARGUMENTS_INVALID");
@@ -972,6 +1204,13 @@ public final class RepositoryRunMain {
           case "--provider-config" -> legacyProviderConfig = argumentPath(value);
           case "--material-id" -> materialId = value;
           case "--output-state" -> outputState = argumentPath(value);
+          case "--activity-model-batch" -> {
+            try {
+              activityModelBatchId = AnalysisRunId.parse(value);
+            } catch (IllegalArgumentException invalid) {
+              throw failure("ARGUMENTS_INVALID", invalid);
+            }
+          }
           case "--reuse-from-model-batch" -> {
             try {
               reuseFromModelBatchId = AnalysisRunId.parse(value);
@@ -986,24 +1225,38 @@ public final class RepositoryRunMain {
           && (arguments.length != 4
               || materialId != null
               || outputState != null
+              || activityModelBatchId != null
               || reuseFromModelBatchId != null)) {
         throw failure("ARGUMENTS_INVALID");
       }
       if (MODE_EXPORT_MATERIALS_STATE.equals(mode)
           && (outputState == null
               || materialId != null
+              || activityModelBatchId != null
               || reuseFromModelBatchId != null
               || arguments.length != 6)) {
         throw failure("ARGUMENTS_INVALID");
       }
-      if (MODE_GENERATE.equals(mode) && (materialId != null || outputState != null)) {
+      if (MODE_GENERATE.equals(mode)
+          && (materialId != null || outputState != null || activityModelBatchId != null)) {
         throw failure("ARGUMENTS_INVALID");
       }
-      if (MODE_ACTIVITIES_SAMPLE.equals(mode) && (materialId == null || outputState != null)) {
+      if (MODE_ACTIVITIES_SAMPLE.equals(mode)
+          && (materialId == null || outputState != null || activityModelBatchId != null)) {
+        throw failure("ARGUMENTS_INVALID");
+      }
+      if (MODE_BUSINESS_PROCESSES.equals(mode)
+          && (activityModelBatchId == null || materialId != null || outputState != null)) {
         throw failure("ARGUMENTS_INVALID");
       }
       return new Arguments(
-          config, mode, legacyProviderConfig, materialId, outputState, reuseFromModelBatchId);
+          config,
+          mode,
+          legacyProviderConfig,
+          materialId,
+          outputState,
+          activityModelBatchId,
+          reuseFromModelBatchId);
     }
 
     private void rejectLegacyProviderConfiguration() {
@@ -1429,6 +1682,7 @@ public final class RepositoryRunMain {
       Sha256Digest baseConfigurationSha256,
       ModelJobsConfiguration modelJobs,
       CanonicalArtifactPolicyRegistry policyRegistry,
+      CanonicalArtifactPolicyRegistry inputPolicyRegistry,
       Path repositoryPath,
       String repositoryIdentity,
       String commitId,
@@ -1458,13 +1712,14 @@ public final class RepositoryRunMain {
       BusinessMaterialProfile materialProfile,
       ActivityExplanationProfile activityProfile,
       ProcessExplanationProfile processProfile,
+      ProcessDiscoveryProfile processDiscoveryProfile,
       BusinessReportProfile reportProfile,
       int maxMaterialsToStart) {
 
     static RepositoryRunConfiguration load(Path configPath) {
       CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
       ObjectNode document = readConfiguration(configPath, canonicalJson);
-      requireFields(
+      requireFieldsAllowingOptional(
           document,
           Set.of(
               "business",
@@ -1474,7 +1729,8 @@ public final class RepositoryRunMain {
               "schemaVersion",
               "source",
               "sourceAnalysis",
-              "technical"));
+              "technical"),
+          Set.of("inputPolicyRegistry"));
       requireText(document, "schemaVersion", CONFIG_SCHEMA);
 
       ObjectNode source = object(document, "source");
@@ -1517,6 +1773,12 @@ public final class RepositoryRunMain {
 
       Path policyPath = resolvePolicyPath(configPath, requiredText(document, "policyRegistry"));
       CanonicalArtifactPolicyRegistry policies = loadPolicies(policyPath, canonicalJson);
+      CanonicalArtifactPolicyRegistry inputPolicies =
+          document.has("inputPolicyRegistry")
+              ? loadPolicies(
+                  resolvePolicyPath(configPath, requiredText(document, "inputPolicyRegistry")),
+                  canonicalJson)
+              : policies;
       InputReferences inputs = InputReferences.load(object(document, "inputs"), canonicalJson);
 
       ObjectNode technical = object(document, "technical");
@@ -1594,14 +1856,20 @@ public final class RepositoryRunMain {
               positiveInt(capsule, "maxCapsuleUtf8Bytes"));
 
       ObjectNode business = object(document, "business");
-      requireFields(
-          business, Set.of("activity", "material", "maxMaterialsToStart", "process", "report"));
+      requireFieldsAllowingOptional(
+          business,
+          Set.of("activity", "material", "maxMaterialsToStart", "process", "report"),
+          Set.of("processDiscovery"));
       BusinessMaterialProfile materialProfile =
           RepositoryRunMain.materialProfile(object(business, "material"));
       ActivityExplanationProfile activityProfile =
           RepositoryRunMain.activityProfile(object(business, "activity"));
       ProcessExplanationProfile processProfile =
           RepositoryRunMain.processProfile(object(business, "process"));
+      ProcessDiscoveryProfile processDiscoveryProfile =
+          business.has("processDiscovery")
+              ? RepositoryRunMain.processDiscoveryProfile(object(business, "processDiscovery"))
+              : null;
       BusinessReportProfile reportProfile =
           RepositoryRunMain.reportProfile(object(business, "report"));
       int maxMaterialsToStart = positiveInt(business, "maxMaterialsToStart");
@@ -1611,6 +1879,7 @@ public final class RepositoryRunMain {
           RepositoryRunMain.baseConfigurationSha256(document, canonicalJson),
           modelJobs,
           policies,
+          inputPolicies,
           repositoryPath,
           repositoryIdentity,
           commitId,
@@ -1640,6 +1909,7 @@ public final class RepositoryRunMain {
           materialProfile,
           activityProfile,
           processProfile,
+          processDiscoveryProfile,
           reportProfile,
           maxMaterialsToStart);
     }
@@ -1650,6 +1920,13 @@ public final class RepositoryRunMain {
       }
       modelJobs.validateExecutionEnvironment();
       return modelJobs;
+    }
+
+    private ProcessDiscoveryProfile requireProcessDiscoveryProfile() {
+      if (processDiscoveryProfile == null) {
+        throw failure("PROCESS_DISCOVERY_PROFILE_REQUIRED");
+      }
+      return processDiscoveryProfile;
     }
 
     private PersistedTechnicalRunConfiguration technicalConfiguration(ImmutableBytes frozenBytes) {
@@ -1789,7 +2066,9 @@ public final class RepositoryRunMain {
   private static Sha256Digest baseConfigurationSha256(
       ObjectNode document, CanonicalJsonCodec canonicalJson) {
     ObjectNode baseDocument = document.deepCopy();
+    baseDocument.remove("inputPolicyRegistry");
     object(baseDocument, "sourceAnalysis").remove("modelJobs");
+    object(baseDocument, "business").remove("processDiscovery");
     return Sha256Digest.parse(
         sha256(canonicalJson.encodeCanonical(baseDocument).copyToByteArray()));
   }
@@ -1970,6 +2249,31 @@ public final class RepositoryRunMain {
         positiveInt(value, "maxValuesPerField"),
         positiveInt(value, "maxTextCharsPerValue"),
         nonnegativeInt(value, "maxRepositorySummaryItems"));
+  }
+
+  private static ProcessDiscoveryProfile processDiscoveryProfile(ObjectNode value) {
+    requireFields(
+        value,
+        Set.of(
+            "maxActivitiesPerCandidate",
+            "maxCardsPerCatalogShard",
+            "maxModelInputBytes",
+            "maxModelOutputBytes",
+            "maxProcessesPerCandidate",
+            "maxRequestedSourceChars",
+            "maxRequestedSourceRefs",
+            "maxTextCharsPerValue",
+            "maxValuesPerField"));
+    return new ProcessDiscoveryProfile(
+        positiveInt(value, "maxCardsPerCatalogShard"),
+        positiveInt(value, "maxActivitiesPerCandidate"),
+        positiveInt(value, "maxRequestedSourceRefs"),
+        positiveInt(value, "maxRequestedSourceChars"),
+        positiveInt(value, "maxModelInputBytes"),
+        positiveInt(value, "maxModelOutputBytes"),
+        positiveInt(value, "maxProcessesPerCandidate"),
+        positiveInt(value, "maxValuesPerField"),
+        positiveInt(value, "maxTextCharsPerValue"));
   }
 
   private static BusinessReportProfile reportProfile(ObjectNode value) {

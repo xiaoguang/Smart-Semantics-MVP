@@ -46,4 +46,4 @@ Publisher 得到一份唯一、没有无声丢失的仓库过程目录；Step08 
 
 ## 测试与当前成熟度
 
-测试覆盖重叠销售候选去重、销售退货保持独立但 RELATED、查询/统计作为 support、冲突替代保留、全 Activity 分母闭合。当前可选 `RepositoryProcessSummary` 只写短导航，不执行这些归并，因此本模块尚未实现。
+Consolidator 已实现唯一 DRAFT/REVIEW、KEEP/MERGE_INTO/REJECT 主处置、过程关系和三层 denominator 闭合；程序对已审阶段、规则和来源做确定性保留。旧 `RepositoryProcessSummary` 不在新过程运行路径中。真实仓库归并保留并发布 46 个过程和 21 条过程关系；覆盖 CLOSED，semantic delivery 因 50 个未归类 Activity 为 PARTIAL。

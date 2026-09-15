@@ -1,6 +1,6 @@
 # 业务过程发现与重建：模块总览
 
-> 目标设计，尚未由当前 Java 实现。当前实现状态和替换范围见[变更清单](../../plans/business-process-discovery-and-reconstruction-change-design.md)。
+> 当前 Java 实现和固定 326 Activity 的真实 Luna/high 运行均已完成。真实结果形成 14 个候选和 46 个已发布过程；覆盖 CLOSED，但因 50 个 Activity 仍为 UNCLASSIFIED，语义交付如实标为 PARTIAL。替换范围见[变更清单](../../plans/business-process-discovery-and-reconstruction-change-design.md)。
 
 ## 1. 模块目的
 
@@ -51,6 +51,8 @@ public interface BusinessProcessPublisher {
 - 所有 Activity 和候选都有最终处置；覆盖完整不等于业务事实全知。
 - `business-processes.md` 是本模块簇的主要人工验收面；九章是下游展示。
 
-## 5. 当前实现差距
+## 5. 当前实现状态
 
-当前代码只有 `ProcessExplainer`：精确 token/file 连边、连通分量切片、每组 DRAFT/REVIEW、可选仓库摘要。它没有全仓业务目录、ActivityUse、语句 handle、源码按需 REVIEW、详细阶段或过程归并。目前 326 个 Activity 的实际输出形成 340 个单 Activity/单 Stage Process，且一个 Activity 没有出现在过程或 unmatched 列表中。这一模块簇尚未实现。
+`DefaultBusinessProcessDiscovery` 已实现统一 corpus、目录分片/合并、重叠候选、完整材料重建、源码按需核对和仓库归并；`CanonicalBusinessProcessPublisher` 已实现四项正式产物与 fresh reopen。过程专用运行入口从既有 Activity/M10 checkpoint 启动新批次，不运行 JDT、Builder、ActivityExplainer 或 Step08。旧 `ProcessExplainer` 不在这条新路径中。
+
+固定 326 Activity 的真实运行已发布 46 个多阶段过程，其中 21 个包含多个 Activity；102 个 Activity 成为过程成员，157 个作为支撑，17 个独立保留，50 个未归类。最终正式批次从完整已审 job 零调用复用，未运行 JDT、Builder、ActivityExplainer 或 Step08。该结果通过最低业务结构门，但 PARTIAL 和未归类清单必须继续对读者可见，不能因文件发布成功改称完整业务理解。

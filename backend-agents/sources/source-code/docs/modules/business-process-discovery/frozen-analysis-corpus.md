@@ -22,6 +22,7 @@ interface FrozenAnalysisCorpus extends AutoCloseable {
 ## 程序工作
 
 - 验证 Activity、材料、JDT index、冻结 snapshot 和 SourceRef 的来源一致。
+- 允许用输入 checkpoint 当时的精确 ArtifactPolicyRegistry 重开旧产物，同时用当前 registry 发布新 Step07；两个 registry 角色分离，不能为了读取旧产物放宽新产物策略，也不能因策略身份不同重跑 JDT。
 - 建立 ActivityId、SourceRefId、MethodKey 的只读索引。
 - 为 Activity 数组字段生成确定性语句 handle，例如 `activity:<id>/conditions/2`。
 - 为 SUPPORT/STANDALONE/UNCLASSIFIED Activity 确定性投影对象、字段/维度、对象关系、公式/指标和问题正文，连同 Activity owner、grouping disposition、statement refs 和 source refs 交给 Discovery result；不通过模型重写，也不创建假过程。
@@ -42,4 +43,4 @@ Cataloger 能一次看到完整 Activity 分母；Assembler 可以按候选 ID �
 
 ## 测试与当前成熟度
 
-接口测试覆盖同源重开、未知 ID、错 snapshot、重复 ref、跨 batch 材料归属和零扫描计数。现有各 checkpoint reader 可复用，但统一 corpus Interface 尚未实现。
+统一 corpus 已在 `DefaultBusinessProcessDiscovery` 内实现并通过 Activity/材料精确分母、statement handle、SourceRef allowlist、输入/输出 policy registry 分离和显式复用测试。运行入口通过既有 checkpoint reader 重开材料；本路径没有 JDT、Builder 或 ActivityExplainer 调用点。

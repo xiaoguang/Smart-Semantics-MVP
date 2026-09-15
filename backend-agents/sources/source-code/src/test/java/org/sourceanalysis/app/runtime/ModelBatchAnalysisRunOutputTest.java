@@ -128,6 +128,61 @@ class ModelBatchAnalysisRunOutputTest {
     }
   }
 
+  @Test
+  void roundTripsAProcessCatalogWithoutInventingAReportCheckpoint() throws Exception {
+    Path storeDirectory = temporaryDirectory.resolve("process-catalog-output-store");
+    Files.createDirectory(storeDirectory);
+
+    AnalysisRunReference sourceRun;
+    AnalysisRunReference activityRun;
+    AnalysisRunReference processRun;
+    AnalysisRunOutput output;
+    try (RunStoreHandle store = RunStoreBootstrap.openForTest(storeDirectory)) {
+      sourceRun = stoppedRun(store);
+      activityRun = stoppedRun(store);
+      processRun = runningRun(store);
+      output =
+          new AnalysisRunOutput(
+              sourceRun.runId(),
+              modulePublication(sourceRun.runId(), AnalysisStepKey.FLOW_INTERPRETATION, 10, 'a'),
+              modulePublication(activityRun.runId(), AnalysisStepKey.FLOW_INTERPRETATION, 11, 'b'),
+              processPublication(processRun.runId(), 'c'),
+              null);
+
+      RunStoreBootstrap.recordAnalysisRunOutput(store, processRun.runId(), output);
+      RunStoreBootstrap.transitionAnalysisRun(
+          store,
+          processRun.runId(),
+          AnalysisRunLifecycleState.RUNNING,
+          AnalysisRunLifecycleState.FINISHED);
+    }
+
+    try (RunStoreHandle store = RunStoreBootstrap.open(storeDirectory)) {
+      AnalysisRunOutput reopened =
+          RunStoreBootstrap.reopenAnalysisRunOutput(store, processRun.runId()).orElseThrow();
+      assertThat(reopened).isEqualTo(output);
+      assertThat(reopened.hasCompletedProcesses()).isTrue();
+      assertThat(reopened.hasCompletedReport()).isFalse();
+      assertThat(reopened.activityCheckpoint().address().runId()).isEqualTo(activityRun.runId());
+      assertThat(reopened.knowledgeCheckpoint().address().runId()).isEqualTo(processRun.runId());
+    }
+  }
+
+  private AnalysisRunReference stoppedRun(RunStoreHandle store) {
+    AnalysisRunReference running = runningRun(store);
+    return RunStoreBootstrap.transitionAnalysisRun(
+        store,
+        running.runId(),
+        AnalysisRunLifecycleState.RUNNING,
+        AnalysisRunLifecycleState.FAILED);
+  }
+
+  private AnalysisRunReference runningRun(RunStoreHandle store) {
+    AnalysisRunReference queued = RunStoreBootstrap.queueAnalysisRun(store, request());
+    return RunStoreBootstrap.transitionAnalysisRun(
+        store, queued.runId(), AnalysisRunLifecycleState.QUEUED, AnalysisRunLifecycleState.RUNNING);
+  }
+
   private static AnalysisRunId sourceRunId(AnalysisRunOutput output) throws Exception {
     try {
       return (AnalysisRunId) output.getClass().getMethod("sourceRunId").invoke(output);
@@ -176,6 +231,15 @@ class ModelBatchAnalysisRunOutputTest {
         };
     return new ModulePublicationReference(
         new AnalysisStepModuleAddress(runId, step, number, moduleKey),
+        ModuleArtifactRoot.parse("module-root:" + String.valueOf(fill).repeat(64)),
+        ModuleReceiptId.parse("module-receipt:" + String.valueOf(fill).repeat(64)),
+        new Sha256Digest(String.valueOf(fill).repeat(64)));
+  }
+
+  private static ModulePublicationReference processPublication(AnalysisRunId runId, char fill) {
+    return new ModulePublicationReference(
+        new AnalysisStepModuleAddress(
+            runId, AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, "business-process-publisher"),
         ModuleArtifactRoot.parse("module-root:" + String.valueOf(fill).repeat(64)),
         ModuleReceiptId.parse("module-receipt:" + String.valueOf(fill).repeat(64)),
         new Sha256Digest(String.valueOf(fill).repeat(64)));

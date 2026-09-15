@@ -1,6 +1,6 @@
 # JDT repository materials run
 
-> **Current implementation guide:** the commands below describe the existing launcher and remain valid for material/Activity checkpoint handling. Its `generate` mode still uses the legacy singleton `ProcessExplainer`; it is not the approved cross-Activity process-discovery workflow. The next implementation will keep the saved materials, 326 reviewed Activities, YAML pool and batch reuse, but replace the process phase according to [the approved change design](../../docs/plans/business-process-discovery-and-reconstruction-change-design.md). Do not rerun JDT or extend the launcher’s old process grouping to simulate that target.
+> **Current implementation guide:** the commands below describe the existing material/Activity/report launcher. `generate` remains the historical complete-report path. The new `business-processes` mode reopens fixed M10 and reviewed Activity checkpoints, performs the approved cross-Activity discovery, and publishes Step07 without running JDT, rebuilding materials, re-explaining Activities or invoking Step08.
 
 The launcher now accepts one `repository-run-config-v2` YAML or JSON document.
 In model modes, `sourceAnalysis.modelJobs` replaces the old second
@@ -68,6 +68,13 @@ resource bytes; the launcher derives the canonical registry identity and every c
 reference from canonical content rather than accepting supplied hashes. It registers the persisted
 technical prefix plus the current Activity, Process, and nine-section report checkpoint outputs
 needed by `generate`; the launcher never synthesizes an absent policy at runtime.
+
+When a stopped historical material or Activity checkpoint was written with an older exact policy
+registry, set the optional root `inputPolicyRegistry` to that tracked registry file. The launcher
+uses it only to reopen and verify those immutable inputs; new Step07 output is always installed with
+`policyRegistry`. Omitting the field makes both roles use `policyRegistry`. The input registry path
+does not participate in the technical-material basis, and a missing or mismatched historical policy
+fails explicitly instead of causing JDT, Builder, or Activity execution.
 
 The whole-repository defaults are intentionally above the approved jshERP source size, rather than
 fixture-scale limits. `technical.approvedClasspath` is the explicit list of locally approved JARs
@@ -153,3 +160,26 @@ for a later batch:
 Generation prints `sourceRunId`, the new `modelBatchId`, `FINISHED` lifecycle and the verified
 on-disk `document.md` path. Matching complete reviewed jobs are copied as validated reuse records;
 the journal is diagnostic and is not by itself considered a reusable business result.
+
+## Business-process discovery from an Activity checkpoint
+
+Add `business.processDiscovery` using the fields in the tracked template. These downstream limits
+do not participate in the saved technical-material identity. Start a new process-only model batch
+from an exact, stopped Activity batch:
+
+```bash
+/usr/local/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home/bin/java -Xmx8g \
+  -cp "target/classes:$(cat target/repository-run-classpath.txt)" \
+  org.sourceanalysis.app.adapter.cli.RepositoryRunMain \
+  --config /absolute/path/to/ignored/repository-run.json \
+  --mode business-processes \
+  --activity-model-batch "analysis-run:<reviewed-activity-batch-id>"
+```
+
+The command creates a new `AnalysisRunId`, reopens the fixed Activity and material publications,
+runs catalog discovery, detailed candidates and repository consolidation, then installs exactly
+`repository-business-process-catalog.json`, `process-coverage.json`, `business-processes.md` and
+`source-refs.jsonl`. It prints the final process count, semantic delivery status and Markdown path.
+Use `--reuse-from-model-batch` only with a stopped process-only batch whose material and Activity
+checkpoints match; reusable DRAFT+REVIEW pairs make zero new model calls. `render()` remains not
+ready because this mode intentionally has no Step08 report checkpoint.

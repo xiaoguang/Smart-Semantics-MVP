@@ -2090,12 +2090,44 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         true);
     policy(
         entries,
+        "REPOSITORY_KNOWLEDGE_BUSINESS_PROCESS_CATALOG",
+        "repository-business-process-catalog-v1",
+        "repository-business-process-catalog",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "REPOSITORY_KNOWLEDGE_BUSINESS_PROCESSES_MARKDOWN",
+        "repository-business-process-markdown-v1",
+        "business-processes-markdown",
+        "text/markdown",
+        "RAW_UTF8",
+        false);
+    policy(
+        entries,
         "REPOSITORY_KNOWLEDGE_PROCESS_COVERAGE",
         "repository-knowledge-process-coverage-v2",
         "process-coverage",
         "application/json",
         "STANDALONE_JSON",
         false);
+    policy(
+        entries,
+        "REPOSITORY_KNOWLEDGE_PROCESS_COVERAGE",
+        "repository-business-process-coverage-v1",
+        "process-coverage",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "REPOSITORY_KNOWLEDGE_SOURCE_REFERENCES",
+        "repository-business-process-source-references-v1",
+        "business-process-source-refs",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        true);
     policy(
         entries,
         "REPOSITORY_KNOWLEDGE_BUSINESS_KNOWLEDGE",
@@ -2162,7 +2194,9 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         false);
     List<ObjectNode> ordered = new ArrayList<>();
     entries.forEach(value -> ordered.add((ObjectNode) value));
-    ordered.sort(Comparator.comparing(value -> value.get("artifactType").textValue()));
+    ordered.sort(
+        Comparator.comparing((ObjectNode value) -> value.get("artifactType").textValue())
+            .thenComparing(value -> value.get("schemaVersion").textValue()));
     entries.removeAll();
     ordered.forEach(entries::add);
     document.put(
