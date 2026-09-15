@@ -1,12 +1,12 @@
 # Progress: business lifecycle consolidation tests
 
 - Status: COMPLETE (RED handoff)
-- Agent role: Task 3 RED tests for lossless repository consolidation
+- Agent role: Task 3 follow-up RED/regression tests for lossless repository consolidation
 - Model: gpt-5
 - Started: 2026-09-15
 - Last updated: 2026-09-15
-- Scope: Add focused BusinessProcessDiscovery consolidation RED tests and this progress record only.
-- Approved inputs: `docs/plans/business-process-discovery-and-reconstruction-change-design.md`, current `BusinessProcessDiscoveryTest`, current `DefaultBusinessProcessDiscovery`, baseline through `97a1c81`.
+- Scope: Add focused BusinessProcessDiscovery consolidation RED/regression tests and this progress record only.
+- Approved inputs: `docs/plans/business-process-discovery-and-reconstruction-change-design.md`, current `BusinessProcessDiscoveryTest`, current `DefaultBusinessProcessDiscovery`, baseline through `c572c16`.
 - Current branch/worktree: current `linguan-prototype-v2` branch; preserve unrelated untracked `docs/research/`.
 
 ## Completed
@@ -14,11 +14,12 @@
 - Read repository, backend, and source-code scoped instructions.
 - Read the approved consolidation design section.
 - Inspected the current discovery implementation and scripted fixture.
+- Added candidate-based normalization and additive-detail consolidation coverage.
 
 ## Current state
 
-- Consolidation currently applies model `MERGE_INTO` decisions without comparing complete ordered stage business fields.
-- Existing fixture emits one reviewed process and defaults consolidation to `KEEP`; new variants must make two reviewed processes visible to consolidation.
+- Existing production rejects the additive source-only `MERGE_INTO` with `PROCESS_CONSOLIDATION_MERGE_NOT_LOSSLESS`; follow-up production must union those details without dropping them.
+- The fixture's candidate-based identical merge emits two equivalent candidate processes with distinct global ActivityUse IDs before consolidation; the normalization guard passes, while the additive union guard is the intended RED.
 
 ## Changed files
 
@@ -29,12 +30,12 @@
 
 | Command | Result | Key output |
 | --- | --- | --- |
-| `mvn -t .mvn/toolchains.xml -o -Dtest=BusinessProcessDiscoveryTest test` | RED | 24 tests, exactly 1 intended failure, 0 errors/skips: a model-requested merge whose stage narratives differ is currently accepted. The identical-sequence normalization and separate-related-process regression guards pass. |
 | `mvn -t .mvn/toolchains.xml -o -DspotlessFiles=src/test/java/org/sourceanalysis/app/analysis/knowledge/BusinessProcessDiscoveryTest.java spotless:apply` | PASS | Focused test source formatted. |
+| `mvn -t .mvn/toolchains.xml -o -Dtest=BusinessProcessDiscoveryTest test` | RED | 25 tests ran; 0 failures, 1 error, 0 skipped. The sole intended error is `mergesCandidateProcessesWithSourceOnlyDetailsAndPreservesTheirStableUnion`, rejected by current production as `PROCESS_CONSOLIDATION_MERGE_NOT_LOSSLESS`; candidate global-use-ID normalization and KEEP+RELATED guards pass. |
 
 ## Decisions
 
-- Extend `ScriptedProvider` with small named scenarios for two reviewed processes and local-use-ID normalization.
+- Extend `ScriptedProvider` with small named scenarios for two processes from distinct catalog candidates, global-use-ID normalization, and additive source-only details (participant/object/use refs/rule/knowledge/pending/source refs).
 - Keep assertions at the `BusinessProcessDiscovery` seam; do not modify production, prompts, publisher, or unrelated fixtures.
 
 ## Blockers
@@ -43,7 +44,7 @@
 
 ## Exact next action
 
-- Terra/xhigh should reject `MERGE_INTO` unless the two normalized ordered stage sequences are byte-for-byte equal across all business fields; then rerun the focused selector.
+- Commit only `BusinessProcessDiscoveryTest.java` and this progress file; hand the RED to Terra/xhigh for the additive-union implementation.
 
 ## Resume checks
 

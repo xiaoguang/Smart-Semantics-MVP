@@ -96,11 +96,20 @@ class BusinessProcessDiscoveryTest {
     new DefaultBusinessProcessDiscovery(provider)
         .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
 
-    assertThat(texts(findById(provider.catalogCards(), "activityId", "activity:create"), "businessRules"))
+    assertThat(
+            texts(
+                findById(provider.catalogCards(), "activityId", "activity:create"),
+                "businessRules"))
         .containsExactly("新订单的状态初始化为0");
-    assertThat(texts(findById(provider.catalogCards(), "activityId", "activity:update"), "businessRules"))
+    assertThat(
+            texts(
+                findById(provider.catalogCards(), "activityId", "activity:update"),
+                "businessRules"))
         .containsExactly("当前状态为0时允许修改；否则拒绝修改");
-    assertThat(texts(findById(provider.catalogCards(), "activityId", "activity:approve"), "businessRules"))
+    assertThat(
+            texts(
+                findById(provider.catalogCards(), "activityId", "activity:approve"),
+                "businessRules"))
         .containsExactly("当前状态为0时允许审核为1");
   }
 
@@ -113,33 +122,38 @@ class BusinessProcessDiscoveryTest {
             () ->
                 discovered.set(
                     new DefaultBusinessProcessDiscovery(provider)
-                        .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()))))
+                        .discover(
+                            new ProcessDiscoveryRequest(activities(), materials(), profile()))))
         .doesNotThrowAnyException();
 
     List<JsonNode> updateUses =
-        matching(provider.processInput().path("candidate").path("activityUses"), "activityId", "activity:update");
+        matching(
+            provider.processInput().path("candidate").path("activityUses"),
+            "activityId",
+            "activity:update");
     assertThat(updateUses).hasSize(2);
-    assertThat(updateUses).extracting(use -> use.path("variant").asText())
+    assertThat(updateUses)
+        .extracting(use -> use.path("variant").asText())
         .containsExactlyInAnyOrder("销售订单", "按导入订单");
 
     List<JsonNode> updateBodies =
         matching(provider.processInput().path("activities"), "activityId", "activity:update");
     assertThat(updateBodies).hasSize(1);
     JsonNode updateBody = updateBodies.get(0);
-    assertThat(updateBody.path("businessPurpose").asText())
-        .isEqualTo("管理销售订单从创建到审核的生命周期。");
+    assertThat(updateBody.path("businessPurpose").asText()).isEqualTo("管理销售订单从创建到审核的生命周期。");
     assertThat(texts(updateBody, "conditions")).containsExactly("当前状态必须为0");
     assertThat(texts(updateBody, "activitySteps")).containsExactly("修改销售订单");
     assertThat(texts(updateBody, "codeDefinedResults")).containsExactly("更新订单及其明细");
-    assertThat(texts(updateBody, "businessRules"))
-        .containsExactly("当前状态为0时允许修改；否则拒绝修改");
+    assertThat(texts(updateBody, "businessRules")).containsExactly("当前状态为0时允许修改；否则拒绝修改");
 
     RepositoryBusinessProcessCatalog.BusinessProcess process =
         discovered.get().catalog().processes().get(0);
-    assertThat(process.activityUses()).extracting("activityId")
+    assertThat(process.activityUses())
+        .extracting("activityId")
         .contains("activity:update", "activity:update");
-    assertThat(process.activityUses().stream()
-        .filter(use -> use.activityId().equals("activity:update")))
+    assertThat(
+            process.activityUses().stream()
+                .filter(use -> use.activityId().equals("activity:update")))
         .extracting(RepositoryBusinessProcessCatalog.ActivityUse::variant)
         .containsExactlyInAnyOrder("销售订单", "按导入订单");
   }
@@ -200,12 +214,7 @@ class BusinessProcessDiscoveryTest {
               .path("businessRules")
               .path("items");
       assertThat(texts(ruleSchema, "required")).contains("activityUseLocalIds");
-      assertThat(
-              ruleSchema
-                  .path("properties")
-                  .path("activityUseLocalIds")
-                  .path("type")
-                  .asText())
+      assertThat(ruleSchema.path("properties").path("activityUseLocalIds").path("type").asText())
           .isEqualTo("array");
       assertThat(
               ruleSchema
@@ -225,8 +234,7 @@ class BusinessProcessDiscoveryTest {
         new DefaultBusinessProcessDiscovery(provider)
             .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
 
-    RepositoryBusinessProcessCatalog.BusinessProcess process =
-        result.catalog().processes().get(0);
+    RepositoryBusinessProcessCatalog.BusinessProcess process = result.catalog().processes().get(0);
     RepositoryBusinessProcessCatalog.BusinessRule rule = process.businessRules().get(0);
     Method activityUseIdsAccessor = null;
     try {
@@ -280,8 +288,7 @@ class BusinessProcessDiscoveryTest {
     assertThat(actualDraft.path("processes").get(0).path("stages")).hasSize(3);
     assertThat(actualDraft.path("processes").get(0).path("businessRules")).hasSize(1);
 
-    JsonNode createExcerpt =
-        findById(reviewInput.path("resolvedSourceExcerpts"), "ref", "S1");
+    JsonNode createExcerpt = findById(reviewInput.path("resolvedSourceExcerpts"), "ref", "S1");
     assertThat(createExcerpt.path("snippet").asText()).isEqualTo(sourceSnippet("create"));
     assertThat(createExcerpt.path("snippet").asText()).contains("// create physical line 10");
   }
@@ -437,7 +444,58 @@ class BusinessProcessDiscoveryTest {
 
   @Test
   void mergesIdenticalReviewedProcessesAfterNormalizingLocalActivityUseIds() {
-    ScriptedProvider provider = new ScriptedProvider("consolidation-identical-merge");
+    ScriptedProvider provider = new ScriptedProvider("consolidation-identical-candidate-merge");
+
+    ProcessDiscoveryResult result =
+        new DefaultBusinessProcessDiscovery(provider)
+            .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
+
+    assertThat(provider.consolidationInput().path("processes")).hasSize(2);
+    assertThat(
+            provider
+                .consolidationInput()
+                .path("processes")
+                .get(0)
+                .path("activityUses")
+                .get(0)
+                .path("activityUseId")
+                .asText())
+        .isNotEqualTo(
+            provider
+                .consolidationInput()
+                .path("processes")
+                .get(1)
+                .path("activityUses")
+                .get(0)
+                .path("activityUseId")
+                .asText());
+    assertThat(result.catalog().processes()).hasSize(1);
+    RepositoryBusinessProcessCatalog.BusinessProcess process = result.catalog().processes().get(0);
+    assertThat(process.activityUses()).hasSize(3);
+    assertThat(process.activityUses())
+        .extracting(use -> use.activityId() + "|" + use.variant() + "|" + use.role())
+        .containsExactlyInAnyOrder(
+            "activity:create|销售订单|CORE", "activity:update|销售订单|CORE", "activity:approve|销售订单|CORE");
+    assertThat(process.activityUses())
+        .extracting(RepositoryBusinessProcessCatalog.ActivityUse::activityUseId)
+        .doesNotHaveDuplicates();
+    assertThat(process.stages()).hasSize(3);
+    assertThat(process.stages())
+        .extracting(RepositoryBusinessProcessCatalog.ProcessStage::narrative)
+        .containsExactly(
+            "创建订单：接收订单明细，生成状态为0的订单。", "修改订单：当前状态为0，更新订单和明细。", "审核订单：当前状态为0，把状态由0更新为1。");
+    assertThat(process.stages().get(1).entryConditions()).containsExactly("当前状态为0");
+    assertThat(process.stages().get(1).sourceRefs()).containsExactly("S2");
+    assertThat(process.businessRules()).hasSize(1);
+    RepositoryBusinessProcessCatalog.BusinessRule rule = process.businessRules().get(0);
+    assertThat(rule.activityUseIds()).hasSize(3).doesNotHaveDuplicates();
+    assertThat(rule.sourceRefs()).containsExactly("S2");
+    assertThat(process.sourceRefs()).containsExactly("S1", "S2", "S3");
+  }
+
+  @Test
+  void mergesCandidateProcessesWithSourceOnlyDetailsAndPreservesTheirStableUnion() {
+    ScriptedProvider provider = new ScriptedProvider("consolidation-additive-candidate-merge");
 
     ProcessDiscoveryResult result =
         new DefaultBusinessProcessDiscovery(provider)
@@ -446,30 +504,24 @@ class BusinessProcessDiscoveryTest {
     assertThat(provider.consolidationInput().path("processes")).hasSize(2);
     assertThat(result.catalog().processes()).hasSize(1);
     RepositoryBusinessProcessCatalog.BusinessProcess process = result.catalog().processes().get(0);
+    assertThat(process.participants()).containsExactlyInAnyOrder("业务操作者", "订单协作方");
+    assertThat(process.businessObjects())
+        .containsExactlyInAnyOrder("销售订单", "订单明细", "订单附件");
     assertThat(process.activityUses()).hasSize(3);
-    assertThat(process.activityUses())
-        .extracting(
-            use -> use.activityId() + "|" + use.variant() + "|" + use.role())
-        .containsExactlyInAnyOrder(
-            "activity:create|销售订单|CORE",
-            "activity:update|销售订单|CORE",
-            "activity:approve|销售订单|CORE");
-    assertThat(process.activityUses())
-        .extracting(RepositoryBusinessProcessCatalog.ActivityUse::activityUseId)
-        .doesNotHaveDuplicates();
-    assertThat(process.stages()).hasSize(3);
-    assertThat(process.stages())
-        .extracting(RepositoryBusinessProcessCatalog.ProcessStage::narrative)
-        .containsExactly(
-            "创建订单：接收订单明细，生成状态为0的订单。",
-            "修改订单：当前状态为0，更新订单和明细。",
-            "审核订单：当前状态为0，把状态由0更新为1。");
-    assertThat(process.stages().get(1).entryConditions()).containsExactly("当前状态为0");
-    assertThat(process.stages().get(1).sourceRefs()).containsExactly("S2");
-    assertThat(process.businessRules()).hasSize(1);
-    RepositoryBusinessProcessCatalog.BusinessRule rule = process.businessRules().get(0);
-    assertThat(rule.activityUseIds()).hasSize(3).doesNotHaveDuplicates();
-    assertThat(rule.sourceRefs()).containsExactly("S2");
+    assertThat(
+            process.activityUses().stream()
+                .filter(use -> use.activityId().equals("activity:create"))
+                .findFirst()
+                .orElseThrow()
+                .sourceRefs())
+        .containsExactly("S1");
+    assertThat(process.businessRules())
+        .extracting(RepositoryBusinessProcessCatalog.BusinessRule::subject)
+        .containsExactlyInAnyOrder("销售订单", "订单附件");
+    assertThat(process.knowledgeItems())
+        .extracting(RepositoryBusinessProcessCatalog.KnowledgeItem::text)
+        .contains("订单附件");
+    assertThat(process.pendingConnections()).contains("附件业务关系待确认");
     assertThat(process.sourceRefs()).containsExactly("S1", "S2", "S3");
   }
 
@@ -496,9 +548,7 @@ class BusinessProcessDiscoveryTest {
             });
     assertThat(result.catalog().processes())
         .extracting(process -> process.stages().get(1).narrative())
-        .containsExactlyInAnyOrder(
-            "修改订单：当前状态为0，更新订单和明细。",
-            "修改订单：根据导入来源更新订单和明细。");
+        .containsExactlyInAnyOrder("修改订单：当前状态为0，更新订单和明细。", "修改订单：根据导入来源更新订单和明细。");
   }
 
   @Test
@@ -709,11 +759,7 @@ class BusinessProcessDiscoveryTest {
   private static BusinessMaterial material(String key, String ref) {
     SourceReference source =
         new SourceReference(
-            ref,
-            "src/main/java/example/OrderService.java",
-            10,
-            12,
-            sourceSnippet(key));
+            ref, "src/main/java/example/OrderService.java", 10, 12, sourceSnippet(key));
     ModelActivityPacket packet =
         new ModelActivityPacket(
             "订单处理上下文",
@@ -788,6 +834,13 @@ class BusinessProcessDiscoveryTest {
       if (request.taskKind().startsWith("BUSINESS_CATALOG")) {
         catalogCards = input.path("activityIndexCards");
         response = catalog(input);
+        if (conflictingCatalogDisposition != null
+            && Set.of(
+                    "consolidation-identical-candidate-merge",
+                    "consolidation-additive-candidate-merge")
+                .contains(conflictingCatalogDisposition)) {
+          addEquivalentCandidate(response);
+        }
         if ("candidate-with-nonmember-disposition".equals(conflictingCatalogDisposition)) {
           ((ObjectNode) response.path("activityDispositions").get(0))
               .put("disposition", "SUPPORT_ONLY");
@@ -811,6 +864,13 @@ class BusinessProcessDiscoveryTest {
           processReviewInput = input;
         }
         response = process(input);
+        if (conflictingCatalogDisposition != null
+            && Set.of(
+                    "consolidation-identical-candidate-merge",
+                    "consolidation-additive-candidate-merge")
+                .contains(conflictingCatalogDisposition)) {
+          adjustCandidateProcess(response, input, conflictingCatalogDisposition);
+        }
         if (("incomplete-process-draft".equals(conflictingCatalogDisposition)
                 && request.taskKind().endsWith("DRAFT"))
             || ("incomplete-process-review".equals(conflictingCatalogDisposition)
@@ -914,12 +974,10 @@ class BusinessProcessDiscoveryTest {
               });
       duplicate
           .path("stages")
-          .forEach(
-              stage -> replaceUsePrefixes((ArrayNode) stage.path("activityUseLocalIds")));
+          .forEach(stage -> replaceUsePrefixes((ArrayNode) stage.path("activityUseLocalIds")));
       duplicate
           .path("businessRules")
-          .forEach(
-              rule -> replaceUsePrefixes((ArrayNode) rule.path("activityUseLocalIds")));
+          .forEach(rule -> replaceUsePrefixes((ArrayNode) rule.path("activityUseLocalIds")));
       if (changeNarrative) {
         ((ObjectNode) duplicate.path("stages").get(1))
             .put(
@@ -931,11 +989,58 @@ class BusinessProcessDiscoveryTest {
       ((ArrayNode) response.path("processes")).add(duplicate);
     }
 
+    private static void addEquivalentCandidate(ObjectNode response) {
+      ObjectNode first = (ObjectNode) response.path("candidateProcesses").get(0);
+      ObjectNode second = first.deepCopy();
+      second.put("candidateLocalId", "candidate-2");
+      second.put("name", "销售订单创建与审核（候选二）");
+      second.put("purpose", "创建、修改并审核销售订单（候选二）");
+      ((ArrayNode) response.path("candidateProcesses")).add(second);
+    }
+
+    private static void adjustCandidateProcess(
+        ObjectNode response, JsonNode input, String scenario) {
+      ObjectNode process = (ObjectNode) response.path("processes").get(0);
+      boolean secondary = input.path("candidate").path("purpose").asText().contains("候选二");
+      process.put("processLocalId", secondary ? "process-2" : "process-1");
+      if (!"consolidation-additive-candidate-merge".equals(scenario) || !secondary) {
+        if ("consolidation-additive-candidate-merge".equals(scenario)) {
+          process
+              .path("activityUses")
+              .forEach(
+                  use -> {
+                    if ("activity:create".equals(use.path("activityId").asText())) {
+                      ((ObjectNode) use).putArray("sourceRefs");
+                    }
+                  });
+        }
+        return;
+      }
+      ((ArrayNode) process.path("participants")).add("订单协作方");
+      ((ArrayNode) process.path("businessObjects")).add("订单附件");
+      ObjectNode extraRule = ((ArrayNode) process.path("businessRules")).addObject();
+      extraRule.put("subject", "订单附件");
+      extraRule.put("when", "创建订单时");
+      extraRule.put("actionOrDecision", "记录附件");
+      extraRule.putNull("otherwise");
+      extraRule.put("result", "附件记录可供后续查询");
+      extraRule.put("certainty", "CONFIRMED");
+      extraRule.putArray("activityUseLocalIds").add("U2");
+      extraRule.putArray("statementRefs");
+      extraRule.putArray("sourceRefs").add("S1");
+      ObjectNode knowledge = ((ArrayNode) process.path("knowledgeItems")).addObject();
+      knowledge.put("kind", "OBJECT");
+      knowledge.put("text", "订单附件");
+      knowledge.put("certainty", "CONFIRMED");
+      knowledge.putArray("statementRefs");
+      knowledge.putArray("sourceRefs").add("S1");
+      ((ArrayNode) process.path("pendingConnections")).add("附件业务关系待确认");
+    }
+
     private static void replaceUsePrefixes(ArrayNode useIds) {
       for (int index = 0; index < useIds.size(); index++) {
         useIds.set(
-            index,
-            JsonNodeFactory.instance.textNode(useIds.get(index).asText().replace('U', 'V')));
+            index, JsonNodeFactory.instance.textNode(useIds.get(index).asText().replace('U', 'V')));
       }
     }
 
@@ -1096,9 +1201,12 @@ class BusinessProcessDiscoveryTest {
                 decision.put("processId", process.path("processId").asText());
                 boolean merge =
                     processIndex.getAndIncrement() > 0
+                        && scenario != null
                         && Set.of(
                                 "consolidation-narrative-merge",
-                                "consolidation-identical-merge")
+                                "consolidation-identical-merge",
+                                "consolidation-identical-candidate-merge",
+                                "consolidation-additive-candidate-merge")
                             .contains(scenario);
                 decision.put("disposition", merge ? "MERGE_INTO" : "KEEP");
                 if (merge) {
