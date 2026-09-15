@@ -63,10 +63,12 @@ final class BusinessProcessMarkdownRenderer {
     Map<String, String> activityNames = activityNames(coverage);
     List<RepositoryBusinessProcessCatalog.BusinessProcess> processes =
         catalog.processes().stream()
-            .sorted(Comparator.comparing(RepositoryBusinessProcessCatalog.BusinessProcess::processId))
+            .sorted(
+                Comparator.comparing(RepositoryBusinessProcessCatalog.BusinessProcess::processId))
             .toList();
     for (int index = 0; index < processes.size(); index++) {
-      renderProcess(markdown, processes.get(index), uses, catalog, sources, "process-" + (index + 1));
+      renderProcess(
+          markdown, processes.get(index), uses, catalog, sources, "process-" + (index + 1));
     }
 
     markdown.append("## 支撑、独立、未归类与未处理范围\n\n");
@@ -161,7 +163,8 @@ final class BusinessProcessMarkdownRenderer {
       markdown.append("- 未从现有材料识别出可发布的具体业务规则。\n");
     } else {
       for (int index = 0; index < rules.size(); index++) {
-        renderRule(markdown, rules.get(index), uses, sources, processAnchor + "-rule-" + (index + 1));
+        renderRule(
+            markdown, rules.get(index), uses, sources, processAnchor + "-rule-" + (index + 1));
       }
     }
     markdown.append('\n');
@@ -189,7 +192,8 @@ final class BusinessProcessMarkdownRenderer {
                     process.processId().equals(relation.fromProcessId())
                         || process.processId().equals(relation.toProcessId()))
             .sorted(
-                Comparator.comparing(RepositoryBusinessProcessCatalog.ProcessRelation::fromProcessId)
+                Comparator.comparing(
+                        RepositoryBusinessProcessCatalog.ProcessRelation::fromProcessId)
                     .thenComparing(RepositoryBusinessProcessCatalog.ProcessRelation::toProcessId)
                     .thenComparing(RepositoryBusinessProcessCatalog.ProcessRelation::relationType))
             .toList();
@@ -357,12 +361,7 @@ final class BusinessProcessMarkdownRenderer {
       List<String> refs,
       Map<String, SourceReference> sources) {
     List<SourceReference> values =
-        refs.stream()
-            .distinct()
-            .sorted()
-            .map(sources::get)
-            .filter(Objects::nonNull)
-            .toList();
+        refs.stream().distinct().sorted().map(sources::get).filter(Objects::nonNull).toList();
     if (!values.isEmpty()) {
       entries.add(new SourceIndexEntry(anchor, label, values));
     }

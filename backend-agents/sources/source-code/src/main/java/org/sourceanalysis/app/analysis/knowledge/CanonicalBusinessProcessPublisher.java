@@ -111,12 +111,7 @@ public final class CanonicalBusinessProcessPublisher implements BusinessProcessP
                     sourceReferencesPayload(sources),
                     sourcesMarkdownPayload(sourcesMarkdown))));
     return new BusinessProcessPublication(
-        result.catalog(),
-        coverage,
-        markdown,
-        sources,
-        sourcesMarkdown,
-        installed.reference());
+        result.catalog(), coverage, markdown, sources, sourcesMarkdown, installed.reference());
   }
 
   private List<SourceReference> referencedSources(ProcessDiscoveryResult result) {

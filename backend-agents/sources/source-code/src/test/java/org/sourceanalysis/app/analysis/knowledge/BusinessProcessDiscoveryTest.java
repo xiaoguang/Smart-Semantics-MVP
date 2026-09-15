@@ -505,8 +505,7 @@ class BusinessProcessDiscoveryTest {
     assertThat(result.catalog().processes()).hasSize(1);
     RepositoryBusinessProcessCatalog.BusinessProcess process = result.catalog().processes().get(0);
     assertThat(process.participants()).containsExactlyInAnyOrder("业务操作者", "订单协作方");
-    assertThat(process.businessObjects())
-        .containsExactlyInAnyOrder("销售订单", "订单明细", "订单附件");
+    assertThat(process.businessObjects()).containsExactlyInAnyOrder("销售订单", "订单明细", "订单附件");
     assertThat(process.activityUses()).hasSize(3);
     assertThat(
             process.activityUses().stream()

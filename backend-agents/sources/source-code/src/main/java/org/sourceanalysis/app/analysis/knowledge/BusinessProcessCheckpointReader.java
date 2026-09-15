@@ -8,8 +8,8 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -193,7 +193,7 @@ public final class BusinessProcessCheckpointReader {
                   integer(value, "startLine"),
                   integer(value, "endLine"),
                   text(value, "snippet"));
-        })
+            })
         .toList();
   }
 

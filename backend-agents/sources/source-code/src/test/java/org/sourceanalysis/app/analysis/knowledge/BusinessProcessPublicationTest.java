@@ -134,8 +134,7 @@ class BusinessProcessPublicationTest {
 
     JsonNode coverage = json(payloads.get("process-coverage.json"));
     assertThat(
-            findByTextField(
-                    coverage.path("activityDispositions"), "activityId", "activity:create")
+            findByTextField(coverage.path("activityDispositions"), "activityId", "activity:create")
                 .path("name")
                 .asText())
         .isEqualTo("创建销售订单");
@@ -257,10 +256,11 @@ class BusinessProcessPublicationTest {
         new CanonicalBusinessProcessPublisher(missingSourceStore).publish(discovered);
     ObjectNode catalogJson =
         (ObjectNode)
-            json(missingSourceStore.installedPayloadsByFile().get("repository-business-process-catalog.json"));
-    ((ObjectNode) catalogJson.withArray("processes").get(0))
-        .withArray("sourceRefs")
-        .add("S999");
+            json(
+                missingSourceStore
+                    .installedPayloadsByFile()
+                    .get("repository-business-process-catalog.json"));
+    ((ObjectNode) catalogJson.withArray("processes").get(0)).withArray("sourceRefs").add("S999");
     ObjectNode catalogBody = catalogJson.deepCopy();
     catalogBody.remove(List.of("artifactId", "artifactType", "schemaVersion"));
     RepositoryBusinessProcessCatalog catalogWithMissingSource =
@@ -270,8 +270,7 @@ class BusinessProcessPublicationTest {
     missingSourceStore.replaceInstalledPayload(
         "business-processes.md",
         ImmutableBytes.copyOf(
-            BusinessProcessMarkdownRenderer
-                .render(
+            BusinessProcessMarkdownRenderer.render(
                     catalogWithMissingSource,
                     missingSourcePublication.coverage(),
                     missingSourcePublication.sourceReferences())
@@ -297,12 +296,14 @@ class BusinessProcessPublicationTest {
     int firstLineEnd = sourceRefs.indexOf('\n') + 1;
     duplicateSourceStore.replaceInstalledPayload(
         "source-refs.jsonl",
-        ImmutableBytes.copyOf((sourceRefs.substring(0, firstLineEnd) + sourceRefs).getBytes(StandardCharsets.UTF_8)));
+        ImmutableBytes.copyOf(
+            (sourceRefs.substring(0, firstLineEnd) + sourceRefs).getBytes(StandardCharsets.UTF_8)));
     List<SourceReference> duplicateSources = new ArrayList<>(discovered.sourceReferences());
     duplicateSources.add(0, duplicateSources.get(0));
     duplicateSourceStore.replaceInstalledPayload(
         "sources.md",
-        ImmutableBytes.copyOf(SourcesMarkdownRenderer.render(duplicateSources).getBytes(StandardCharsets.UTF_8)));
+        ImmutableBytes.copyOf(
+            SourcesMarkdownRenderer.render(duplicateSources).getBytes(StandardCharsets.UTF_8)));
 
     assertThatThrownBy(
             () ->
@@ -417,8 +418,7 @@ class BusinessProcessPublicationTest {
                 "repository-business-process-catalog.json",
                 "repository-business-process-catalog-v1"),
             testDescriptor("source-refs.jsonl", "repository-business-process-source-references-v1"),
-            testDescriptor(
-                "sources.md", "repository-business-process-sources-markdown-v1"));
+            testDescriptor("sources.md", "repository-business-process-sources-markdown-v1"));
 
     assertThat(fileSet.invoke(null, mixed)).isNull();
   }
