@@ -1,6 +1,6 @@
 # Progress: business lifecycle publication tests
 
-- Status: COMPLETE (RED tests recorded)
+- Status: COMPLETE (review RED tests recorded)
 - Agent role: Step07 publication RED-test owner
 - Model: gpt-5.6-luna / xhigh; no product-model or source-capture call
 - Started: 2026-09-15
@@ -56,3 +56,30 @@ Activity name, stage narrative, and rule `activityUseIds` in JSON.
 The focused publication/query assertions are complete and intentionally RED. The
 parent implementation task may now make the production publisher/reader/renderer
 and artifact policy GREEN without changing this test contract.
+
+## Task 4 independent-review RED additions
+
+Added focused assertions for the review findings:
+
+- Main Markdown must keep one local `查看依据` link per process/stage/rule,
+  move all referenced file/line labels into a process-local source index, and
+  reserve `sources.md#sN` links for that index rather than rendering an inline
+  source-reference wall beside business prose.
+- Fresh reader reopen must reject a catalog reference missing from
+  `source-refs.jsonl`, and must reject duplicate source-reference records even
+  when both Markdown payloads are made to match the duplicate list.
+- The Atomic publisher file-set seam must reject a five-file publication that
+  mixes the legacy v1 catalog/coverage/Markdown schemas with the current
+  `sources.md` output.
+- Rule rendering must preserve free-form condition particles and use labelled
+  clauses, avoiding synthesized `当`/`时` duplication for conditions already
+  ending in `时` or `后`.
+- `sources.md` must reject malformed source refs and keep a path containing
+  Markdown backticks from breaking its location code span.
+
+These tests remain intentionally RED against the reviewed production snapshot.
+The focused selector ran after the parent opened a Maven slot: 13 tests, 7
+expected behavioral failures, and 0 test errors. A normal test compilation also
+encountered two pre-existing compile errors in unowned Task5 files
+(`BusinessProcessAcceptanceSampleTest.java`); those files were preserved and
+not changed. `git diff --check` and targeted Spotless completed cleanly.

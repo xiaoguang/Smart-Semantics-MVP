@@ -1,10 +1,12 @@
 package org.sourceanalysis.app.analysis.knowledge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -21,6 +23,7 @@ import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactPolicyKey;
 import org.sourceanalysis.app.artifact.ArtifactPolicyRegistryReference;
 import org.sourceanalysis.app.artifact.CanonicalArtifactPolicy;
+import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalModulePayload;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
@@ -198,6 +201,222 @@ class BusinessProcessPublicationTest {
   }
 
   @Test
+  void mainMarkdownUsesOneLocalEvidenceLinkAndACompleteProcessSourceIndex() {
+    ProcessDiscoveryResult discovered = discoveryResult();
+    RepositoryBusinessProcessCatalog.BusinessProcess process =
+        discovered.catalog().processes().get(0);
+    String markdown =
+        BusinessProcessMarkdownRenderer.render(discovered.catalog(), discovered.coverage());
+    int processStart = markdown.indexOf("## " + process.name());
+    int processEnd = markdown.indexOf("\n## ", processStart + 1);
+    String processMarkdown =
+        markdown.substring(processStart, processEnd < 0 ? markdown.length() : processEnd);
+
+    assertThat(processMarkdown).contains("过程来源索引");
+    int sourceIndexStart = processMarkdown.indexOf("过程来源索引");
+    String mainProcessMarkdown = processMarkdown.substring(0, sourceIndexStart);
+    List<String> evidenceLines =
+        mainProcessMarkdown.lines().filter(line -> line.contains("查看依据")).toList();
+    int expectedEvidenceLinks =
+        (process.sourceRefs().isEmpty() ? 0 : 1)
+            + (int) process.stages().stream().filter(stage -> !stage.sourceRefs().isEmpty()).count()
+            + (int)
+                process.businessRules().stream()
+                    .filter(rule -> !rule.sourceRefs().isEmpty())
+                    .count();
+    assertThat(evidenceLines).hasSize(expectedEvidenceLinks);
+    assertThat(evidenceLines)
+        .allSatisfy(
+            line ->
+                assertThat(line)
+                    .containsPattern("\\[查看依据\\]\\(#[^)]+\\)")
+                    .doesNotContain("sources.md#"));
+    assertThat(mainProcessMarkdown).doesNotContain("sources.md#");
+
+    String sourceIndex = processMarkdown.substring(sourceIndexStart);
+    discovered
+        .sourceReferences()
+        .forEach(
+            source ->
+                assertThat(sourceIndex)
+                    .contains(source.ref())
+                    .contains(source.file())
+                    .contains(String.valueOf(source.startLine()))
+                    .contains(String.valueOf(source.endLine()))
+                    .contains("sources.md#" + source.ref().toLowerCase()));
+  }
+
+  @Test
+  void readerRequiresAnExactUniqueClosedSourceReferenceSetBeforeMarkdownChecks() throws Exception {
+    ProcessDiscoveryResult discovered = discoveryResult();
+    CapturingModuleStore missingSourceStore =
+        new CapturingModuleStore(discovered.activityCheckpoint(), discovered.materialCheckpoint());
+    BusinessProcessPublication missingSourcePublication =
+        new CanonicalBusinessProcessPublisher(missingSourceStore).publish(discovered);
+    ObjectNode catalogJson =
+        (ObjectNode)
+            json(missingSourceStore.installedPayloadsByFile().get("repository-business-process-catalog.json"));
+    ((ObjectNode) catalogJson.withArray("processes").get(0))
+        .withArray("sourceRefs")
+        .add("S999");
+    ObjectNode catalogBody = catalogJson.deepCopy();
+    catalogBody.remove(List.of("artifactId", "artifactType", "schemaVersion"));
+    RepositoryBusinessProcessCatalog catalogWithMissingSource =
+        new ObjectMapper().treeToValue(catalogBody, RepositoryBusinessProcessCatalog.class);
+    missingSourceStore.replaceInstalledPayload(
+        "repository-business-process-catalog.json", canonical(catalogJson));
+    missingSourceStore.replaceInstalledPayload(
+        "business-processes.md",
+        ImmutableBytes.copyOf(
+            BusinessProcessMarkdownRenderer
+                .render(catalogWithMissingSource, missingSourcePublication.coverage())
+                .getBytes(StandardCharsets.UTF_8)));
+
+    assertThatThrownBy(
+            () ->
+                new BusinessProcessCheckpointReader(missingSourceStore)
+                    .reopen(missingSourcePublication.checkpoint()))
+        .isInstanceOf(BusinessProcessCheckpointException.class)
+        .hasMessage("BUSINESS_PROCESS_SOURCE_REFERENCE_CLOSURE_INVALID");
+  }
+
+  @Test
+  void readerRejectsDuplicateSourceReferenceRecordsEvenWhenMarkdownMatches() {
+    ProcessDiscoveryResult discovered = discoveryResult();
+    CapturingModuleStore duplicateSourceStore =
+        new CapturingModuleStore(discovered.activityCheckpoint(), discovered.materialCheckpoint());
+    BusinessProcessPublication duplicateSourcePublication =
+        new CanonicalBusinessProcessPublisher(duplicateSourceStore).publish(discovered);
+    String sourceRefs =
+        utf8(duplicateSourceStore.installedPayloadsByFile().get("source-refs.jsonl"));
+    int firstLineEnd = sourceRefs.indexOf('\n') + 1;
+    duplicateSourceStore.replaceInstalledPayload(
+        "source-refs.jsonl",
+        ImmutableBytes.copyOf((sourceRefs.substring(0, firstLineEnd) + sourceRefs).getBytes(StandardCharsets.UTF_8)));
+    List<SourceReference> duplicateSources = new ArrayList<>(discovered.sourceReferences());
+    duplicateSources.add(0, duplicateSources.get(0));
+    duplicateSourceStore.replaceInstalledPayload(
+        "sources.md",
+        ImmutableBytes.copyOf(SourcesMarkdownRenderer.render(duplicateSources).getBytes(StandardCharsets.UTF_8)));
+
+    assertThatThrownBy(
+            () ->
+                new BusinessProcessCheckpointReader(duplicateSourceStore)
+                    .reopen(duplicateSourcePublication.checkpoint()))
+        .isInstanceOf(BusinessProcessCheckpointException.class)
+        .hasMessage("BUSINESS_PROCESS_SOURCE_REFERENCE_CLOSURE_INVALID");
+  }
+
+  @Test
+  void ruleRenderingDoesNotDuplicateFreeFormChineseConditionParticles() {
+    ProcessDiscoveryResult discovered = discoveryResult();
+    RepositoryBusinessProcessCatalog.BusinessProcess original =
+        discovered.catalog().processes().get(0);
+    RepositoryBusinessProcessCatalog.BusinessRule originalRule = original.businessRules().get(0);
+    List<RepositoryBusinessProcessCatalog.BusinessRule> rules =
+        List.of(
+            new RepositoryBusinessProcessCatalog.BusinessRule(
+                originalRule.subject(),
+                "收到订单请求时",
+                originalRule.actionOrDecision(),
+                originalRule.otherwise(),
+                originalRule.result(),
+                originalRule.certainty(),
+                originalRule.activityUseIds(),
+                originalRule.statementRefs(),
+                originalRule.sourceRefs()),
+            new RepositoryBusinessProcessCatalog.BusinessRule(
+                originalRule.subject(),
+                "完成重复检查后",
+                originalRule.actionOrDecision(),
+                originalRule.otherwise(),
+                originalRule.result(),
+                originalRule.certainty(),
+                originalRule.activityUseIds(),
+                originalRule.statementRefs(),
+                originalRule.sourceRefs()));
+    RepositoryBusinessProcessCatalog.BusinessProcess withFreeFormConditions =
+        new RepositoryBusinessProcessCatalog.BusinessProcess(
+            original.processId(),
+            original.name(),
+            original.purpose(),
+            original.scope(),
+            original.participants(),
+            original.businessObjects(),
+            original.activityUses(),
+            original.stages(),
+            original.branches(),
+            rules,
+            original.endResults(),
+            original.supportActivityUseIds(),
+            original.knowledgeItems(),
+            original.pendingConnections(),
+            original.sourceRefs());
+    List<RepositoryBusinessProcessCatalog.BusinessProcess> processes =
+        new ArrayList<>(discovered.catalog().processes());
+    processes.set(0, withFreeFormConditions);
+    RepositoryBusinessProcessCatalog catalog =
+        new RepositoryBusinessProcessCatalog(
+            discovered.catalog().businessAreas(),
+            discovered.catalog().aliases(),
+            processes,
+            discovered.catalog().processRelations(),
+            discovered.catalog().standaloneActivityIds(),
+            discovered.catalog().unclassifiedActivityIds(),
+            discovered.catalog().directActivityKnowledgeItems(),
+            discovered.catalog().pendingConfirmations());
+
+    String rulesMarkdown =
+        BusinessProcessMarkdownRenderer.render(catalog, discovered.coverage())
+            .substring(
+                BusinessProcessMarkdownRenderer.render(catalog, discovered.coverage())
+                    .indexOf("### 重要业务规则"));
+    assertThat(rulesMarkdown)
+        .contains("条件：收到订单请求时；处理：" + originalRule.actionOrDecision())
+        .contains("条件：完成重复检查后；处理：" + originalRule.actionOrDecision())
+        .doesNotContain("当收到订单请求时时")
+        .doesNotContain("当完成重复检查后时");
+  }
+
+  @Test
+  void sourcesMarkdownRejectsUnsafeRefsAndDoesNotBreakBacktickPaths() {
+    SourceReference unsafeRef =
+        new SourceReference("S<1>", "src/<orders>&\"quotes\".java", 1, 2, "snippet");
+    assertThatThrownBy(() -> SourcesMarkdownRenderer.render(List.of(unsafeRef)))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void sourcesMarkdownDoesNotBreakBacktickPaths() {
+    SourceReference backtickPath =
+        new SourceReference("S1", "src/`orders`.java", 10, 12, "snippet");
+    String markdown = SourcesMarkdownRenderer.render(List.of(backtickPath));
+    assertThat(markdown)
+        .contains("src/`orders`.java:10–12")
+        .doesNotContain("`src/`orders`.java:10–12`");
+  }
+
+  @Test
+  void atomicPublisherContractRejectsMixedV1AndV2FiveFilePublication() throws Exception {
+    Method fileSet =
+        Class.forName("org.sourceanalysis.app.artifact.AtomicCanonicalPublicationEngine")
+            .getDeclaredMethod("businessProcessPublisherFiles", List.class);
+    fileSet.setAccessible(true);
+    List<ArtifactDescriptor> mixed =
+        List.of(
+            testDescriptor("business-processes.md", "repository-business-process-markdown-v1"),
+            testDescriptor("process-coverage.json", "repository-business-process-coverage-v1"),
+            testDescriptor(
+                "repository-business-process-catalog.json",
+                "repository-business-process-catalog-v1"),
+            testDescriptor("source-refs.jsonl", "repository-business-process-source-references-v1"),
+            testDescriptor(
+                "sources.md", "repository-business-process-sources-markdown-v1"));
+
+    assertThat(fileSet.invoke(null, mixed)).isNull();
+  }
+
+  @Test
   void reopensHistoricalInputsSeparatelyFromTheCurrentOutputPolicy() {
     ProcessDiscoveryResult discovered = discoveryResult();
     ArtifactControls historicalControls = CapturingModuleStore.controls('3');
@@ -254,6 +473,10 @@ class BusinessProcessPublicationTest {
     return new ObjectMapper().readTree(payload.canonicalUtf8().copyToByteArray());
   }
 
+  private static ImmutableBytes canonical(JsonNode value) {
+    return new CanonicalJsonCodec().encodeCanonical(value);
+  }
+
   private static String utf8(VerifiedCanonicalPayload payload) {
     return new String(payload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8);
   }
@@ -296,11 +519,25 @@ class BusinessProcessPublicationTest {
     }
   }
 
+  private static ArtifactDescriptor testDescriptor(String fileName, String schemaVersion) {
+    return new ArtifactDescriptor(
+        fileName,
+        "TEST_ARTIFACT",
+        schemaVersion,
+        ArtifactId.parse("test-artifact:" + "1".repeat(64)),
+        fileName.endsWith(".md")
+            ? org.sourceanalysis.app.artifact.CanonicalMediaType.TEXT_MARKDOWN
+            : org.sourceanalysis.app.artifact.CanonicalMediaType.APPLICATION_JSON,
+        0,
+        Sha256Digest.parse("2".repeat(64)));
+  }
+
   private static final class CapturingModuleStore implements CanonicalModuleArtifactStore {
     private final Map<ModulePublicationReference, ReopenedModulePublication> publications =
         new HashMap<>();
     private List<String> installedFileNames = List.of();
     private List<VerifiedCanonicalPayload> installedPayloads = List.of();
+    private ModulePublicationReference installedReference;
     private String installedModuleVersion;
     private ArtifactControls installedControls;
     private int reopenCount;
@@ -337,6 +574,7 @@ class BusinessProcessPublicationTest {
               ModuleArtifactRoot.parse("module-root:" + digest),
               ModuleReceiptId.parse("module-receipt:" + digest),
               Sha256Digest.parse(digest));
+      installedReference = reference;
       ModuleReceipt receipt =
           new ModuleReceipt(
               "module-receipt-v2",
@@ -352,6 +590,38 @@ class BusinessProcessPublicationTest {
       publications.put(reference, new ReopenedModulePublication(reference, receipt, payloads));
       return new InstalledModulePublication(
           reference, ModuleInstallDisposition.INSTALLED, descriptors);
+    }
+
+    private void replaceInstalledPayload(String fileName, ImmutableBytes bytes) {
+      List<VerifiedCanonicalPayload> replacement =
+          installedPayloads.stream()
+              .map(
+                  payload -> {
+                    if (!fileName.equals(payload.descriptor().fileName())) {
+                      return payload;
+                    }
+                    CanonicalModulePayload rewritten =
+                        new CanonicalModulePayload(
+                            fileName,
+                            payload.descriptor().artifactType(),
+                            payload.descriptor().schemaVersion(),
+                            payload.descriptor().artifactId(),
+                            payload.descriptor().mediaType(),
+                            bytes);
+                    return verified(rewritten);
+                  })
+              .toList();
+      if (replacement.stream()
+          .map(payload -> payload.descriptor().fileName())
+          .noneMatch(fileName::equals)) {
+        throw new AssertionError("missing installed payload " + fileName);
+      }
+      installedPayloads = replacement;
+      ReopenedModulePublication publication = publications.get(installedReference);
+      publications.put(
+          installedReference,
+          new ReopenedModulePublication(
+              publication.reference(), publication.receipt(), installedPayloads));
     }
 
     @Override
