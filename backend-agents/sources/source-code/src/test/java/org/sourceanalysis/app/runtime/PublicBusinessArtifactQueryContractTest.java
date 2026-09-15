@@ -10,6 +10,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -29,6 +30,23 @@ import org.sourceanalysis.app.artifact.Sha256Digest;
 class PublicBusinessArtifactQueryContractTest {
 
   @TempDir Path temporaryDirectory;
+
+  @Test
+  void exposesPublishedBusinessProcessSourcesMarkdownThroughTheBoundedArtifactQuery() {
+    BusinessOutputArtifactKey sourcesMarkdown =
+        Arrays.stream(BusinessOutputArtifactKey.values())
+            .filter(key -> "sources.md".equals(key.fileName()))
+            .findFirst()
+            .orElse(null);
+
+    assertThat(sourcesMarkdown)
+        .as("the public business-artifact policy must expose the Step07 sources view")
+        .isNotNull();
+    assertThat(
+            new ArtifactQuery("analysis-run:" + "a".repeat(64), sourcesMarkdown, 64)
+                .businessOutputArtifactKey())
+        .isSameAs(sourcesMarkdown);
+  }
 
   @Test
   void finishedRunReadsOnlyTheRequestedBoundedBusinessArtifact() throws Exception {
