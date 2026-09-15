@@ -1,4 +1,4 @@
-# Progress: Task 5 prompt/runtime acceptance RED
+# Progress: Task 5 prompt/runtime acceptance
 
 - Status: COMPLETE
 - Agent role: Task 5 RED test author
@@ -13,10 +13,14 @@
 
 - Read scoped repository/source instructions, the approved Step07 correction design, the Step07 module documents, and model-job execution contract.
 - Confirmed current prompt catalog still points at v1 resources and the current process fingerprint uses the v1 catalog module version.
+- Added eight semantic-v2 Chinese Prompt resources without fixture-domain answers and switched all ten Step07 task kinds to them.
+- Advanced the model-job semantic fingerprint to v2 so old Prompt/Schema pairs cannot be reused as corrected results.
+- Added package-internal catalog/sample seams that share the formal discovery algorithm, preserve each candidate's full-catalog ordinal and Provider binding, save complete DRAFT+REVIEW pairs, and let the formal run reuse them.
+- Refactored formal discovery to begin at the same catalog seam used by acceptance sampling.
 
 ## Current state
 
-RED tests are complete in files owned by this task. Production classes/resources remain untouched. Task 4 publisher files and shared runtime tests remain out of scope.
+The RED and GREEN cycle is complete. Task 4 publisher behavior remains separate; no JDT, Builder, Activity or Step08 path was added.
 
 ## Changed files
 
@@ -29,6 +33,8 @@ RED tests are complete in files owned by this task. Production classes/resources
 | Command | Result | Key output |
 | --- | --- | --- |
 | `mvn -t .mvn/toolchains.xml -Dtest=BusinessProcessPromptV2ContractTest,BusinessProcessSemanticFingerprintV2Test,BusinessProcessAcceptanceSampleTest test` | RED (expected) | 5 tests run; 5 failures, no compilation errors. The v2 prompt resources and semantic identity are absent, and the package-internal real discovery seam is not implemented. |
+| `mvn -t .mvn/toolchains.xml -Dtest=BusinessProcessPromptV2ContractTest,BusinessProcessSemanticFingerprintV2Test,BusinessProcessAcceptanceSampleTest test` | GREEN | 5 tests run; 0 failures/errors. |
+| `mvn -t .mvn/toolchains.xml -Dtest=BusinessProcessDiscoveryTest,BusinessProcessPublicationTest,BusinessProcessPromptV2ContractTest,BusinessProcessSemanticFingerprintV2Test,BusinessProcessAcceptanceSampleTest test` | GREEN | 43 tests run; 0 failures/errors. |
 
 ## Decisions
 
@@ -43,7 +49,7 @@ RED tests are complete in files owned by this task. Production classes/resources
 
 ## Exact next action
 
-Implement the semantic-v2 resources/fingerprint and package-internal catalog/sample seams; do not touch Task 4 publication files.
+Run full local module CI, then execute the fixed 326-Activity real catalog and representative-candidate acceptance before the full publication run.
 
 ## Resume checks
 

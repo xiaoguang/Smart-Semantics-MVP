@@ -56,6 +56,6 @@ CONFIRMED至少有statement或source，但Java只验证来源存在；不验证�
 
 ## 测试与当前差距
 
-当前模型两轮、详细结构、source请求均已实现；真实库存结果仍为四个技术处理阶段，证明多阶段结构门不足。narrative和rule-use尚未实现。
+模型两轮、详细结构、source请求、必填narrative和rule-use均已实现。v2 Prompt明确要求具体条件、拒绝路径和结果，并禁止用空泛状态说明掩盖缺失。旧版真实结果仍为技术处理阶段，只能作为失败对照；新版真实语义质量须由固定326条Activity的目录和代表候选重新验收。
 
 Luna RED：新增字段完整传入REVIEW、保存重开和渲染；不同variant规则引用边界；不误拒合法不确定性。Terra GREEN只实现合同。真实语义验收见[贯穿例子](../../examples/semantic-framework-walkthrough.md)，自动fixture不能替代真实模型质量。

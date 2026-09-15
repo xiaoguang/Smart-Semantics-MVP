@@ -10,6 +10,8 @@
 
 当前实现已具备 corpus、卡片、目录分片/合并、候选完整阅读、源码请求、详细过程、归并、发布及过程专用运行入口。固定输入为326条已审 Activity及原M10材料；不重建它们。
 
+实施状态（2026-09-15）：业务用法、阶段narrative、规则适用用法、来源预览/导航、v2五文件读写、v2 Prompt和代表候选的保存/正式复用接缝已经完成直接测试。尚未完成的是使用固定326条Activity执行新版真实目录、两个候选语义检查及全仓发布；旧v1真实结果不视为本次验收。
+
 当前真实结果：
 - 14个目录候选，发布46个过程，其中21个含多个Activity。
 - 326条均有处置：102 PROCESS_MEMBER、157 SUPPORT_ONLY、17 STANDALONE、50 UNCLASSIFIED；coverage CLOSED，semantic PARTIAL。

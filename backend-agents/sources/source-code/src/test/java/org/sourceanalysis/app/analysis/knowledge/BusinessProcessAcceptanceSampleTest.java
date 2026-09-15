@@ -70,15 +70,13 @@ class BusinessProcessAcceptanceSampleTest {
         List.of(catalogCandidateIds.get(1), catalogCandidateIds.get(2));
 
     invoke(
-        discovery,
-        requiredMethod("reconstructSelected", 2),
-        catalogSample,
-        selectedCandidateIds);
+        discovery, requiredMethod("reconstructSelected", 2), catalogSample, selectedCandidateIds);
 
     List<ObjectNode> savedPairs = reviewedPairs(temporaryDirectory.resolve("journal"));
     assertThat(savedPairs).hasSize(2);
     Map<String, ObjectNode> pairByJob =
-        savedPairs.stream().collect(java.util.stream.Collectors.toMap(v -> text(v, "jobKey"), v -> v));
+        savedPairs.stream()
+            .collect(java.util.stream.Collectors.toMap(v -> text(v, "jobKey"), v -> v));
     for (int index = 0; index < selectedCandidateIds.size(); index++) {
       String candidateId = selectedCandidateIds.get(index);
       String jobKey = "business-process-" + suffix(candidateId);
@@ -95,17 +93,15 @@ class BusinessProcessAcceptanceSampleTest {
 
     int callsAfterSample = provider.calls();
     AnalysisRunId formalRun = runId('b');
-    ModelJobExecutionConfiguration formalExecution =
-        execution(provider, formalRun, sampleRun);
+    ModelJobExecutionConfiguration formalExecution = execution(provider, formalRun, sampleRun);
     ProcessDiscoveryResult formalResult =
         DefaultBusinessProcessDiscovery.forExecution(formalExecution)
-            .discover(
-                new ProcessDiscoveryRequest(
-                    activities(), materials(), profile(), formalRun));
+            .discover(new ProcessDiscoveryRequest(activities(), materials(), profile(), formalRun));
 
     assertThat(formalResult.coverage().coverageStatus()).isEqualTo("CLOSED");
     assertThat(provider.calls() - callsAfterSample)
-        .as("formal run reuses two candidate pairs and executes only the remaining candidate plus consolidation")
+        .as(
+            "formal run reuses two candidate pairs and executes only the remaining candidate plus consolidation")
         .isEqualTo(4);
     assertThat(provider.taskKindsSince(callsAfterSample))
         .containsExactly(
@@ -146,10 +142,6 @@ class BusinessProcessAcceptanceSampleTest {
   }
 
   private static List<String> candidateIds(Object catalogSample) {
-    Object candidates = property(catalogSample, "candidates");
-    if (candidates instanceof List<?> values) {
-      return values.stream().map(value -> textProperty(value, "candidateId")).toList();
-    }
     Object ids = property(catalogSample, "candidateIds");
     if (ids instanceof List<?> values) {
       return values.stream().map(Object::toString).toList();
@@ -167,10 +159,6 @@ class BusinessProcessAcceptanceSampleTest {
       fail("PROCESS_ACCEPTANCE_SAMPLE_PROPERTY_MISSING:" + name, failure);
       throw new AssertionError("unreachable", failure);
     }
-  }
-
-  private static String textProperty(Object value, String name) {
-    return String.valueOf(property(value, name));
   }
 
   private static String text(ObjectNode value, String field) {
@@ -201,7 +189,8 @@ class BusinessProcessAcceptanceSampleTest {
   }
 
   private ModelJobExecutionConfiguration execution(
-      AcceptanceProvider provider, AnalysisRunId runId, AnalysisRunId reuseFrom) throws IOException {
+      AcceptanceProvider provider, AnalysisRunId runId, AnalysisRunId reuseFrom)
+      throws IOException {
     ModelJobProviderBinding pro =
         new ModelJobProviderBinding("pro", "pro-account", 2, provider, IDENTITY);
     ModelJobProviderBinding api =
@@ -240,7 +229,8 @@ class BusinessProcessAcceptanceSampleTest {
                 value ->
                     new ActivityEntryCoverage(
                         value.entryIds().get(0), "ANALYZED", List.of(value.activityId()), null))
-            .toList());
+            .toList(),
+        activityCheckpoint());
   }
 
   private static ReviewedActivity activity(String key, String name, String sourceRef) {
@@ -311,6 +301,16 @@ class BusinessProcessAcceptanceSampleTest {
         Sha256Digest.parse(zeros));
   }
 
+  private static ModulePublicationReference activityCheckpoint() {
+    String zeros = "0".repeat(64);
+    return new ModulePublicationReference(
+        new AnalysisStepModuleAddress(
+            runId('0'), AnalysisStepKey.FLOW_INTERPRETATION, 11, "activity-explainer"),
+        ModuleArtifactRoot.parse("module-root:" + zeros),
+        ModuleReceiptId.parse("module-receipt:" + zeros),
+        Sha256Digest.parse(zeros));
+  }
+
   private static String suffix(String id) {
     int separator = id.indexOf(':');
     return separator < 0 ? id : id.substring(separator + 1);
@@ -329,12 +329,11 @@ class BusinessProcessAcceptanceSampleTest {
           switch (request.taskKind()) {
             case "BUSINESS_CATALOG_DRAFT", "BUSINESS_CATALOG_REVIEW" -> catalog(input);
             case "BUSINESS_PROCESS_DRAFT", "BUSINESS_PROCESS_REVIEW" -> process(input);
-            case "BUSINESS_PROCESS_CONSOLIDATION_DRAFT",
-                "BUSINESS_PROCESS_CONSOLIDATION_REVIEW" -> consolidation(input);
+            case "BUSINESS_PROCESS_CONSOLIDATION_DRAFT", "BUSINESS_PROCESS_CONSOLIDATION_REVIEW" ->
+                consolidation(input);
             default -> throw new AssertionError("unexpected Step07 task: " + request.taskKind());
           };
-      return new StructuredModelResponse(
-          request.taskId(), IDENTITY, json.encodeCanonical(response).asUtf8String());
+      return new StructuredModelResponse(json.encodeCanonical(response), IDENTITY);
     }
 
     int calls() {
@@ -352,7 +351,9 @@ class BusinessProcessAcceptanceSampleTest {
       area.put("name", "area");
       area.put("purpose", "purpose");
       ArrayNode areaIds = area.putArray("activityIds");
-      input.path("activityIndexCards").forEach(card -> areaIds.add(card.path("activityId").asText()));
+      input
+          .path("activityIndexCards")
+          .forEach(card -> areaIds.add(card.path("activityId").asText()));
       root.putArray("aliases");
       ArrayNode candidates = root.putArray("candidateProcesses");
       for (int index = 0; index < 3; index++) {
@@ -366,13 +367,15 @@ class BusinessProcessAcceptanceSampleTest {
         use.put("variant", "variant " + index);
       }
       ArrayNode dispositions = root.putArray("activityDispositions");
-      input.path("activityIndexCards").forEach(
-          card -> {
-            ObjectNode disposition = dispositions.addObject();
-            disposition.put("activityId", card.path("activityId").asText());
-            disposition.put("disposition", "PROCESS_MEMBER");
-            disposition.put("reason", "member");
-          });
+      input
+          .path("activityIndexCards")
+          .forEach(
+              card -> {
+                ObjectNode disposition = dispositions.addObject();
+                disposition.put("activityId", card.path("activityId").asText());
+                disposition.put("disposition", "PROCESS_MEMBER");
+                disposition.put("reason", "member");
+              });
       root.putArray("unresolvedQuestions");
       return root;
     }
@@ -419,10 +422,10 @@ class BusinessProcessAcceptanceSampleTest {
       return root;
     }
 
-    private static JsonNode activity(JsonNode input, String id) {
+    private static ObjectNode activity(JsonNode input, String id) {
       for (JsonNode value : input.path("activities")) {
         if (id.equals(value.path("activityId").asText())) {
-          return value;
+          return (ObjectNode) value;
         }
       }
       throw new AssertionError("missing activity " + id);
@@ -449,14 +452,16 @@ class BusinessProcessAcceptanceSampleTest {
       ObjectNode root = JsonNodeFactory.instance.objectNode();
       root.set("businessAreas", input.path("businessAreas"));
       ArrayNode decisions = root.putArray("processDecisions");
-      input.path("processes").forEach(
-          process -> {
-            ObjectNode decision = decisions.addObject();
-            decision.put("processId", process.path("processId").asText());
-            decision.put("disposition", "KEEP");
-            decision.putNull("targetProcessId");
-            decision.put("reason", "distinct");
-          });
+      input
+          .path("processes")
+          .forEach(
+              process -> {
+                ObjectNode decision = decisions.addObject();
+                decision.put("processId", process.path("processId").asText());
+                decision.put("disposition", "KEEP");
+                decision.putNull("targetProcessId");
+                decision.put("reason", "distinct");
+              });
       root.putArray("processRelations");
       root.putArray("pendingConfirmations");
       return root;

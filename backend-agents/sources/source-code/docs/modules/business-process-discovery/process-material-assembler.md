@@ -37,6 +37,6 @@ DRAFT知道有哪些可核查原文，REVIEW能读到所选完整实现。用法
 
 ## 测试和当前差距
 
-当前完整Activity、statement handle及DRAFT请求→REVIEW源码已经接通；当前源码目录仍是无信息的ref+通用purpose。同Activity多用法需要同时贯通候选校验与正文去重。
+完整Activity、statement handle、DRAFT请求→REVIEW源码、前8行原文预览及同Activity多用法均已接通。完整Activity正文只发送一次，用法按`(activityId, variant)`保留；候选仍只能请求本候选Activity允许的已保存来源。
 
 Luna RED：两种variant共享正文但分别存在、预览逐行等于保存原文、完整REVIEW不被预览替代、非法/缺失引用、零隐式扫描。Terra GREEN限于确定性投影和接线。真实样例确认模型能够选中关联及条件源码，不把“每次必须请求源码”写成硬门槛。

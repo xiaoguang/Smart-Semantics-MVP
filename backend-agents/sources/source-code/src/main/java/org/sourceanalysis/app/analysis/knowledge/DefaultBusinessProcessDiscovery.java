@@ -102,21 +102,104 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
 
   @Override
   public ProcessDiscoveryResult discover(ProcessDiscoveryRequest request) {
+    CatalogSample sample = discoverCatalogSample(request);
+    List<CandidateResult> candidateResults =
+        reconstructCandidates(sample.catalog.candidates(), sample.corpus, sample.request.profile());
+    Consolidated consolidated =
+        consolidate(sample.catalog, candidateResults, sample.corpus, sample.request.profile());
+    return new ProcessDiscoveryResult(
+        consolidated.catalog(),
+        consolidated.coverage(),
+        sample.corpus.sourceReferences(),
+        sample.request.outputRunId(),
+        sample.request.activities().checkpoint(),
+        sample.request.materials().checkpoint());
+  }
+
+  /**
+   * Opens the fixed corpus and completes the real catalog stage without reconstructing candidates.
+   */
+  CatalogSample discoverCatalogSample(ProcessDiscoveryRequest request) {
     Objects.requireNonNull(request, "process discovery request");
     FrozenCorpus corpus = FrozenCorpus.open(request.activities(), request.materials());
     List<ActivityIndexCard> cards =
         corpus.activities().stream().map(ActivityIndexCard::from).toList();
     CatalogResult catalog = discoverCatalog(cards, request.profile());
-    List<CandidateResult> candidateResults =
-        reconstructCandidates(catalog.candidates(), corpus, request.profile());
-    Consolidated consolidated = consolidate(catalog, candidateResults, corpus, request.profile());
-    return new ProcessDiscoveryResult(
-        consolidated.catalog(),
-        consolidated.coverage(),
-        corpus.sourceReferences(),
-        request.outputRunId(),
-        request.activities().checkpoint(),
-        request.materials().checkpoint());
+    return new CatalogSample(request, corpus, catalog);
+  }
+
+  /**
+   * Reconstructs a chosen catalog subset while preserving each candidate's full-catalog ordinal.
+   */
+  List<String> reconstructSelected(CatalogSample sample, List<String> selectedCandidateIds) {
+    Objects.requireNonNull(sample, "catalog sample");
+    Objects.requireNonNull(selectedCandidateIds, "selected candidate IDs");
+    if (selectedCandidateIds.isEmpty()
+        || new LinkedHashSet<>(selectedCandidateIds).size() != selectedCandidateIds.size()) {
+      throw failure("PROCESS_ACCEPTANCE_SAMPLE_SELECTION_INVALID");
+    }
+    Set<String> selected = Set.copyOf(selectedCandidateIds);
+    Set<String> known =
+        sample.catalog.candidates().stream()
+            .map(Candidate::candidateId)
+            .collect(Collectors.toSet());
+    if (!known.containsAll(selected)) {
+      throw failure("PROCESS_ACCEPTANCE_SAMPLE_UNKNOWN_CANDIDATE");
+    }
+
+    List<IndexedCandidateSelection> selections = new ArrayList<>();
+    for (int ordinal = 0; ordinal < sample.catalog.candidates().size(); ordinal++) {
+      Candidate candidate = sample.catalog.candidates().get(ordinal);
+      if (!selected.contains(candidate.candidateId())) {
+        continue;
+      }
+      ObjectNode input = processInput(candidate, sample.corpus);
+      if (candidate.uses().size() > sample.request.profile().maxActivitiesPerCandidate()
+          || canonicalJson.encodeCanonical(input).size()
+              > sample.request.profile().maxModelInputBytes()) {
+        throw failure("PROCESS_ACCEPTANCE_SAMPLE_CANDIDATE_CAPACITY_EXCEEDED");
+      }
+      selections.add(new IndexedCandidateSelection(ordinal, candidate));
+    }
+
+    if (modelJobs == null) {
+      for (IndexedCandidateSelection selection : selections) {
+        reconstruct(
+            selection.candidate(),
+            sample.corpus,
+            sample.request.profile(),
+            binding("processGroup", selection.ordinal()));
+      }
+    } else {
+      List<BoundedModelJobExecutor.ModelJob<IndexedCandidate>> jobs = new ArrayList<>();
+      for (IndexedCandidateSelection selection : selections) {
+        Candidate candidate = selection.candidate();
+        int ordinal = selection.ordinal();
+        ObjectNode input = processInput(candidate, sample.corpus);
+        ObjectNode schema = processSchema(candidate, sample.corpus);
+        ModelJobProviderBinding binding = binding("processGroup", ordinal);
+        jobs.add(
+            new BoundedModelJobExecutor.ModelJob<>(
+                "candidate-" + idSuffix(candidate.candidateId()),
+                inputFingerprint(
+                    PROCESS_DRAFT,
+                    PROCESS_REVIEW,
+                    input,
+                    schema,
+                    sample.request.profile(),
+                    binding),
+                binding,
+                () ->
+                    new IndexedCandidate(
+                        ordinal,
+                        reconstruct(candidate, sample.corpus, sample.request.profile(), binding))));
+      }
+      executor().execute(jobs, ignored -> {});
+    }
+    return selections.stream()
+        .map(IndexedCandidateSelection::candidate)
+        .map(Candidate::candidateId)
+        .toList();
   }
 
   private CatalogResult discoverCatalog(
@@ -456,8 +539,8 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       ProcessDiscoveryProfile profile,
       ModelJobProviderBinding binding) {
     ObjectNode value = JsonNodeFactory.instance.objectNode();
-    value.put("schemaVersion", "business-process-job-input-fingerprint-v1");
-    value.put("moduleVersion", "repository-business-process-catalog-v1");
+    value.put("schemaVersion", "business-process-job-input-fingerprint-v2");
+    value.put("moduleVersion", "repository-business-process-catalog-v2");
     value.put("providerBindingKey", binding.key());
     value.put("quotaScope", binding.quotaScope());
     value.put("inputSha256", sha256(canonicalJson.encodeCanonical(input)));
@@ -1936,6 +2019,25 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
   private record IndexedJson(int ordinal, ObjectNode value) {}
 
   private record IndexedCandidate(int ordinal, CandidateResult value) {}
+
+  private record IndexedCandidateSelection(int ordinal, Candidate candidate) {}
+
+  static final class CatalogSample {
+    private final ProcessDiscoveryRequest request;
+    private final FrozenCorpus corpus;
+    private final CatalogResult catalog;
+
+    private CatalogSample(
+        ProcessDiscoveryRequest request, FrozenCorpus corpus, CatalogResult catalog) {
+      this.request = request;
+      this.corpus = corpus;
+      this.catalog = catalog;
+    }
+
+    List<String> candidateIds() {
+      return catalog.candidates().stream().map(Candidate::candidateId).toList();
+    }
+  }
 
   private record AreaSeed(String localId, String name, String purpose, List<String> activityIds) {}
 

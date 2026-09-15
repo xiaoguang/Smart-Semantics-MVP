@@ -174,7 +174,7 @@ Java 验证九章顺序、类型、ref 和 coverage 后确定性渲染 `document
 
 每种目录、merge、候选、归并任务仍最多一次DRAFT和一次完整REVIEW。源码解析零Provider；允许失败后显式新批次复用匹配的完整结果，不自动重试、切服务或重扫。
 
-本次Step07八份资源Prompt及响应合同同步v2，完整Prompt、卡片投影、来源目录、schema/producer均参与相应任务匹配。改变这些语义输入后，不能复用旧v1过程结果冒充新设计验收；原326条Activity不受影响。当前文档更改尚未修改生产资源。
+Step07八份生产Prompt资源及响应合同已经同步到v2，完整Prompt、卡片投影、来源目录、schema/producer均参与相应任务匹配。改变这些语义输入后，不能复用旧v1过程结果冒充新设计验收；原326条Activity不受影响。v2资源不预置任何样例领域答案，并明确要求阶段narrative、规则activityUseLocalIds、具体条件、拒绝和结果。
 
 先检查全仓目录是否自己识别出对象和不同用法，再对照[真实材料推演](../examples/semantic-framework-walkthrough.md)审阅少量过程的具体条件、联系和业务语言。多Activity/多Stage只是结构门，不能代替语义验收。产物不得把未知条件写成空泛确定句。
 

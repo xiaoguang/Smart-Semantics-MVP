@@ -15,7 +15,6 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
-import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -49,12 +48,7 @@ class BusinessProcessSemanticFingerprintV2Test {
 
     String actualFingerprint =
         invokeFingerprint(
-            "BUSINESS_CATALOG_DRAFT",
-            "BUSINESS_CATALOG_REVIEW",
-            input,
-            schema,
-            profile,
-            binding);
+            "BUSINESS_CATALOG_DRAFT", "BUSINESS_CATALOG_REVIEW", input, schema, profile, binding);
     String legacyFingerprint =
         legacyFingerprint(
             "BUSINESS_CATALOG_DRAFT",
@@ -70,8 +64,7 @@ class BusinessProcessSemanticFingerprintV2Test {
         .isNotEqualTo(legacyFingerprint);
 
     Path journal = Files.createDirectory(temporaryDirectory.resolve("legacy-job"));
-    AnalysisRunId sourceBatch =
-        AnalysisRunId.parse("analysis-run:" + "a".repeat(64));
+    AnalysisRunId sourceBatch = AnalysisRunId.parse("analysis-run:" + "a".repeat(64));
     String jobKey = "business-catalog";
     new PrivateModelJobResultStore(journal, sourceBatch, "process-catalog")
         .write(jobKey, completePair(legacyFingerprint));
@@ -79,9 +72,7 @@ class BusinessProcessSemanticFingerprintV2Test {
     Optional<ObjectNode> reused =
         new PrivateModelJobResultStore(journal, sourceBatch, "process-catalog")
             .readCompleted(jobKey, actualFingerprint, QUOTA_SCOPE, IDENTITY);
-    assertThat(reused)
-        .as("a v1 Step07 pair must be rejected instead of reused as v2")
-        .isEmpty();
+    assertThat(reused).as("a v1 Step07 pair must be rejected instead of reused as v2").isEmpty();
   }
 
   private static String invokeFingerprint(
@@ -171,15 +162,15 @@ class BusinessProcessSemanticFingerprintV2Test {
 
   private static String sha256(ImmutableBytes bytes) {
     try {
-      return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes.copyToByteArray()));
+      return HexFormat.of()
+          .formatHex(MessageDigest.getInstance("SHA-256").digest(bytes.copyToByteArray()));
     } catch (NoSuchAlgorithmException impossible) {
       throw new AssertionError(impossible);
     }
   }
 
   private static ModelJobProviderBinding binding() {
-    return new ModelJobProviderBinding(
-        "scripted", QUOTA_SCOPE, 1, zeroProvider(), IDENTITY);
+    return new ModelJobProviderBinding("scripted", QUOTA_SCOPE, 1, zeroProvider(), IDENTITY);
   }
 
   private static StructuredModelProvider zeroProvider() {

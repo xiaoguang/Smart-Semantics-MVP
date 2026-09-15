@@ -1,6 +1,6 @@
 # 业务过程发现与重建：模块总览
 
-> 当前模块已实现并真实发布46个过程，但订单生命周期、业务语言和来源导航未达用户目标。本次是局部修正设计，尚未实施；详见[变更清单](../../plans/business-process-discovery-and-reconstruction-change-design.md)。
+> 当前模块的业务生命周期修正代码已经实现；旧版真实发布的46个过程仍只作为对照。新版固定326条Activity真实验收尚待运行；详见[变更清单](../../plans/business-process-discovery-and-reconstruction-change-design.md)。
 
 ## 1. 模块目的
 

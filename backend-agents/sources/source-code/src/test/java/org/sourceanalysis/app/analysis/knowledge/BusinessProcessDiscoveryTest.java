@@ -319,9 +319,9 @@ class BusinessProcessDiscoveryTest {
     assertThat(markdown)
         .startsWith("# 仓库业务过程")
         .contains("## 销售订单创建与审核")
-        .contains("当当前状态为0时，允许修改订单；否则，拒绝修改")
+        .contains("条件：当前状态为0；处理：允许修改订单；否则：拒绝修改")
         .contains("1. **创建订单**")
-        .contains("[S1]")
+        .doesNotContain("[S1]")
         .doesNotContain("// create concrete source");
   }
 
