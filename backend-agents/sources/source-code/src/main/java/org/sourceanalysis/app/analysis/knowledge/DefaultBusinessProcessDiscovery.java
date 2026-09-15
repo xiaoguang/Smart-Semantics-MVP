@@ -982,20 +982,18 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
                 Collectors.toMap(
                     RepositoryBusinessProcessCatalog.BusinessProcess::processId,
                     Function.identity()));
-    Map<String, List<RepositoryBusinessProcessCatalog.BusinessProcess>> merges = new HashMap<>();
     Set<String> kept = new HashSet<>();
     for (ProcessDecision decision : consolidation.decisions()) {
       if ("KEEP".equals(decision.disposition())) {
         kept.add(decision.processId());
       } else if ("MERGE_INTO".equals(decision.disposition())) {
-        merges
-            .computeIfAbsent(decision.targetProcessId(), ignored -> new ArrayList<>())
-            .add(byId.get(decision.processId()));
+        requireLosslessMerge(
+            byId.get(decision.targetProcessId()), byId.get(decision.processId()));
       }
     }
     List<RepositoryBusinessProcessCatalog.BusinessProcess> published = new ArrayList<>();
     for (String processId : kept.stream().sorted(UTF8_ORDER).toList()) {
-      published.add(merge(byId.get(processId), merges.getOrDefault(processId, List.of())));
+      published.add(byId.get(processId));
     }
     Map<String, String> finalId = new HashMap<>();
     for (ProcessDecision decision : consolidation.decisions()) {
@@ -1641,64 +1639,111 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     return "process-candidate:" + sha256(new CanonicalJsonCodec().encodeCanonical(value));
   }
 
-  private static RepositoryBusinessProcessCatalog.BusinessProcess merge(
-      RepositoryBusinessProcessCatalog.BusinessProcess primary,
-      List<RepositoryBusinessProcessCatalog.BusinessProcess> duplicates) {
-    if (duplicates.isEmpty()) {
-      return primary;
+  private static void requireLosslessMerge(
+      RepositoryBusinessProcessCatalog.BusinessProcess target,
+      RepositoryBusinessProcessCatalog.BusinessProcess source) {
+    Map<String, ActivityUseTuple> targetUses = activityUseTuples(target);
+    Map<String, ActivityUseTuple> sourceUses = activityUseTuples(source);
+    if (!normalizedStages(target, targetUses).equals(normalizedStages(source, sourceUses))
+        || !normalizedProcessDetails(target, targetUses)
+            .equals(normalizedProcessDetails(source, sourceUses))) {
+      throw failure("PROCESS_CONSOLIDATION_MERGE_NOT_LOSSLESS");
     }
-    List<RepositoryBusinessProcessCatalog.BusinessProcess> all = new ArrayList<>();
-    all.add(primary);
-    all.addAll(duplicates);
-    List<RepositoryBusinessProcessCatalog.ActivityUse> uses =
-        distinct(all.stream().flatMap(value -> value.activityUses().stream()).toList());
-    List<RepositoryBusinessProcessCatalog.ProcessStage> originalStages =
-        distinct(all.stream().flatMap(value -> value.stages().stream()).toList());
-    List<RepositoryBusinessProcessCatalog.ProcessStage> stages = new ArrayList<>();
-    for (int index = 0; index < originalStages.size(); index++) {
-      RepositoryBusinessProcessCatalog.ProcessStage stage = originalStages.get(index);
-      stages.add(
-          new RepositoryBusinessProcessCatalog.ProcessStage(
-              index + 1,
-              stage.name(),
-              stage.narrative(),
-              stage.activityUseIds(),
-              stage.entryConditions(),
-              stage.actions(),
-              stage.stateChanges(),
-              stage.rejectionConditions(),
-              stage.outcomes(),
-              stage.transitions(),
-              stage.certainty(),
-              stage.statementRefs(),
-              stage.sourceRefs()));
-    }
-    return new RepositoryBusinessProcessCatalog.BusinessProcess(
-        primary.processId(),
-        primary.name(),
-        primary.purpose(),
-        primary.scope(),
-        distinctStrings(all.stream().flatMap(value -> value.participants().stream()).toList()),
-        distinctStrings(all.stream().flatMap(value -> value.businessObjects().stream()).toList()),
-        uses,
-        stages,
-        distinctStrings(all.stream().flatMap(value -> value.branches().stream()).toList()),
-        distinct(all.stream().flatMap(value -> value.businessRules().stream()).toList()),
-        distinctStrings(all.stream().flatMap(value -> value.endResults().stream()).toList()),
-        distinctStrings(
-            all.stream().flatMap(value -> value.supportActivityUseIds().stream()).toList()),
-        distinct(all.stream().flatMap(value -> value.knowledgeItems().stream()).toList()),
-        distinctStrings(
-            all.stream().flatMap(value -> value.pendingConnections().stream()).toList()),
-        distinctStrings(all.stream().flatMap(value -> value.sourceRefs().stream()).toList()));
   }
 
-  private static <T> List<T> distinct(List<T> values) {
-    return List.copyOf(new LinkedHashSet<>(values));
+  private static Map<String, ActivityUseTuple> activityUseTuples(
+      RepositoryBusinessProcessCatalog.BusinessProcess process) {
+    Map<String, ActivityUseTuple> tuples = new LinkedHashMap<>();
+    for (RepositoryBusinessProcessCatalog.ActivityUse use : process.activityUses()) {
+      tuples.put(
+          use.activityUseId(), new ActivityUseTuple(use.activityId(), use.variant(), use.role()));
+    }
+    return Map.copyOf(tuples);
   }
 
-  private static List<String> distinctStrings(List<String> values) {
-    return values.stream().distinct().toList();
+  private static List<NormalizedStage> normalizedStages(
+      RepositoryBusinessProcessCatalog.BusinessProcess process,
+      Map<String, ActivityUseTuple> activityUses) {
+    return process.stages().stream()
+        .map(
+            stage ->
+                new NormalizedStage(
+                    stage.order(),
+                    stage.name(),
+                    stage.narrative(),
+                    normalizedUseIds(stage.activityUseIds(), activityUses),
+                    stage.entryConditions(),
+                    stage.actions(),
+                    stage.stateChanges(),
+                    stage.rejectionConditions(),
+                    stage.outcomes(),
+                    stage.transitions(),
+                    stage.certainty(),
+                    stage.statementRefs(),
+                    stage.sourceRefs()))
+        .toList();
+  }
+
+  private static NormalizedProcessDetails normalizedProcessDetails(
+      RepositoryBusinessProcessCatalog.BusinessProcess process,
+      Map<String, ActivityUseTuple> activityUses) {
+    return new NormalizedProcessDetails(
+        process.name(),
+        process.purpose(),
+        process.scope(),
+        process.participants(),
+        process.businessObjects(),
+        process.activityUses().stream()
+            .map(
+                use ->
+                    new NormalizedActivityUse(
+                        activityUses.get(use.activityUseId()),
+                        use.statementRefs(),
+                        use.sourceRefs()))
+            .toList(),
+        process.branches(),
+        process.businessRules().stream()
+            .map(
+                rule ->
+                    new NormalizedBusinessRule(
+                        rule.subject(),
+                        rule.when(),
+                        rule.actionOrDecision(),
+                        rule.otherwise(),
+                        rule.result(),
+                        rule.certainty(),
+                        normalizedUseIds(rule.activityUseIds(), activityUses),
+                        rule.statementRefs(),
+                        rule.sourceRefs()))
+            .toList(),
+        process.endResults(),
+        normalizedUseIds(process.supportActivityUseIds(), activityUses),
+        process.knowledgeItems().stream()
+            .map(
+                item ->
+                    new NormalizedKnowledgeItem(
+                        item.kind(),
+                        item.text(),
+                        item.certainty(),
+                        item.statementRefs(),
+                        item.sourceRefs()))
+            .toList(),
+        process.pendingConnections(),
+        process.sourceRefs());
+  }
+
+  private static List<ActivityUseTuple> normalizedUseIds(
+      List<String> activityUseIds, Map<String, ActivityUseTuple> activityUses) {
+    return activityUseIds.stream()
+        .map(
+            activityUseId -> {
+              ActivityUseTuple activityUse = activityUses.get(activityUseId);
+              if (activityUse == null) {
+                throw failure("PROCESS_CONSOLIDATION_MERGE_NOT_LOSSLESS");
+              }
+              return activityUse;
+            })
+        .toList();
   }
 
   private static ArrayNode array(ObjectNode value, String field) {
@@ -1855,6 +1900,59 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       List<String> pendingConfirmations) {}
 
   private record Consolidated(RepositoryBusinessProcessCatalog catalog, ProcessCoverage coverage) {}
+
+  private record ActivityUseTuple(String activityId, String variant, String role) {}
+
+  private record NormalizedActivityUse(
+      ActivityUseTuple activityUse, List<String> statementRefs, List<String> sourceRefs) {}
+
+  private record NormalizedStage(
+      int order,
+      String name,
+      String narrative,
+      List<ActivityUseTuple> activityUses,
+      List<String> entryConditions,
+      List<String> actions,
+      List<String> stateChanges,
+      List<String> rejectionConditions,
+      List<String> outcomes,
+      List<String> transitions,
+      String certainty,
+      List<String> statementRefs,
+      List<String> sourceRefs) {}
+
+  private record NormalizedBusinessRule(
+      String subject,
+      String when,
+      String actionOrDecision,
+      String otherwise,
+      String result,
+      String certainty,
+      List<ActivityUseTuple> activityUses,
+      List<String> statementRefs,
+      List<String> sourceRefs) {}
+
+  private record NormalizedKnowledgeItem(
+      String kind,
+      String text,
+      String certainty,
+      List<String> statementRefs,
+      List<String> sourceRefs) {}
+
+  private record NormalizedProcessDetails(
+      String name,
+      String purpose,
+      String scope,
+      List<String> participants,
+      List<String> businessObjects,
+      List<NormalizedActivityUse> activityUses,
+      List<String> branches,
+      List<NormalizedBusinessRule> businessRules,
+      List<String> endResults,
+      List<ActivityUseTuple> supportActivityUses,
+      List<NormalizedKnowledgeItem> knowledgeItems,
+      List<String> pendingConnections,
+      List<String> sourceRefs) {}
 
   private record ActivityIndexCard(
       String activityId,
