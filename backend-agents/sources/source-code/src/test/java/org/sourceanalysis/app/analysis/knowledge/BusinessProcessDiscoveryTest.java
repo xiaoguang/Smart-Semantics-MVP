@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -424,6 +425,83 @@ class BusinessProcessDiscoveryTest {
   }
 
   @Test
+  void rejectsMergingReviewedProcessesWhenTheirStageNarrativesDiffer() {
+    assertThatThrownBy(
+            () ->
+                new DefaultBusinessProcessDiscovery(
+                        new ScriptedProvider("consolidation-narrative-merge"))
+                    .discover(new ProcessDiscoveryRequest(activities(), materials(), profile())))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("PROCESS_CONSOLIDATION_MERGE_NOT_LOSSLESS");
+  }
+
+  @Test
+  void mergesIdenticalReviewedProcessesAfterNormalizingLocalActivityUseIds() {
+    ScriptedProvider provider = new ScriptedProvider("consolidation-identical-merge");
+
+    ProcessDiscoveryResult result =
+        new DefaultBusinessProcessDiscovery(provider)
+            .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
+
+    assertThat(provider.consolidationInput().path("processes")).hasSize(2);
+    assertThat(result.catalog().processes()).hasSize(1);
+    RepositoryBusinessProcessCatalog.BusinessProcess process = result.catalog().processes().get(0);
+    assertThat(process.activityUses()).hasSize(3);
+    assertThat(process.activityUses())
+        .extracting(
+            use -> use.activityId() + "|" + use.variant() + "|" + use.role())
+        .containsExactlyInAnyOrder(
+            "activity:create|销售订单|CORE",
+            "activity:update|销售订单|CORE",
+            "activity:approve|销售订单|CORE");
+    assertThat(process.activityUses())
+        .extracting(RepositoryBusinessProcessCatalog.ActivityUse::activityUseId)
+        .doesNotHaveDuplicates();
+    assertThat(process.stages()).hasSize(3);
+    assertThat(process.stages())
+        .extracting(RepositoryBusinessProcessCatalog.ProcessStage::narrative)
+        .containsExactly(
+            "创建订单：接收订单明细，生成状态为0的订单。",
+            "修改订单：当前状态为0，更新订单和明细。",
+            "审核订单：当前状态为0，把状态由0更新为1。");
+    assertThat(process.stages().get(1).entryConditions()).containsExactly("当前状态为0");
+    assertThat(process.stages().get(1).sourceRefs()).containsExactly("S2");
+    assertThat(process.businessRules()).hasSize(1);
+    RepositoryBusinessProcessCatalog.BusinessRule rule = process.businessRules().get(0);
+    assertThat(rule.activityUseIds()).hasSize(3).doesNotHaveDuplicates();
+    assertThat(rule.sourceRefs()).containsExactly("S2");
+    assertThat(process.sourceRefs()).containsExactly("S1", "S2", "S3");
+  }
+
+  @Test
+  void keepsDifferingReviewedProcessesSeparateWhenTheyAreRelated() {
+    ScriptedProvider provider = new ScriptedProvider("consolidation-related");
+
+    ProcessDiscoveryResult result =
+        new DefaultBusinessProcessDiscovery(provider)
+            .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
+
+    assertThat(result.catalog().processes()).hasSize(2);
+    assertThat(result.catalog().processRelations())
+        .singleElement()
+        .satisfies(
+            relation -> {
+              assertThat(relation.relationType()).isEqualTo("RELATED");
+              assertThat(relation.description()).isEqualTo("两个过程共享订单活动但阶段叙述不同");
+              assertThat(
+                      result.catalog().processes().stream()
+                          .map(RepositoryBusinessProcessCatalog.BusinessProcess::processId)
+                          .toList())
+                  .contains(relation.fromProcessId(), relation.toProcessId());
+            });
+    assertThat(result.catalog().processes())
+        .extracting(process -> process.stages().get(1).narrative())
+        .containsExactlyInAnyOrder(
+            "修改订单：当前状态为0，更新订单和明细。",
+            "修改订单：根据导入来源更新订单和明细。");
+  }
+
+  @Test
   void rejectsAReviewedCandidateThatStillDropsCandidateActivities() {
     assertThatThrownBy(
             () ->
@@ -683,6 +761,7 @@ class BusinessProcessDiscoveryTest {
     private JsonNode processActivities;
     private JsonNode processReviewInput;
     private JsonNode processDraftResponse;
+    private JsonNode consolidationInput;
 
     private ScriptedProvider() {
       this.catalogShardBarrier = null;
@@ -723,7 +802,8 @@ class BusinessProcessDiscoveryTest {
           variant.put("variant", "按导入订单");
         }
       } else if (request.taskKind().startsWith("BUSINESS_PROCESS_CONSOLIDATION")) {
-        response = consolidation(input);
+        consolidationInput = input;
+        response = consolidation(input, conflictingCatalogDisposition);
       } else {
         processInput = input;
         processActivities = input.path("activities");
@@ -788,6 +868,17 @@ class BusinessProcessDiscoveryTest {
           firstStage.putArray("statementRefs");
           firstStage.putArray("sourceRefs");
         }
+        if (conflictingCatalogDisposition != null
+            && Set.of(
+                    "consolidation-narrative-merge",
+                    "consolidation-identical-merge",
+                    "consolidation-related")
+                .contains(conflictingCatalogDisposition)) {
+          duplicateProcess(
+              response,
+              !"consolidation-identical-merge".equals(conflictingCatalogDisposition),
+              conflictingCatalogDisposition);
+        }
         if (request.taskKind().endsWith("DRAFT")) {
           processDraftResponse = response.deepCopy();
         }
@@ -808,6 +899,44 @@ class BusinessProcessDiscoveryTest {
         stages.remove(stages.size() - 1);
       }
       process.putArray("supportActivityUseLocalIds");
+    }
+
+    private static void duplicateProcess(
+        ObjectNode response, boolean changeNarrative, String scenario) {
+      ObjectNode duplicate = ((ObjectNode) response.path("processes").get(0)).deepCopy();
+      duplicate.put("processLocalId", "process-2");
+      duplicate
+          .path("activityUses")
+          .forEach(
+              use -> {
+                ObjectNode object = (ObjectNode) use;
+                object.put("useLocalId", object.path("useLocalId").asText().replace('U', 'V'));
+              });
+      duplicate
+          .path("stages")
+          .forEach(
+              stage -> replaceUsePrefixes((ArrayNode) stage.path("activityUseLocalIds")));
+      duplicate
+          .path("businessRules")
+          .forEach(
+              rule -> replaceUsePrefixes((ArrayNode) rule.path("activityUseLocalIds")));
+      if (changeNarrative) {
+        ((ObjectNode) duplicate.path("stages").get(1))
+            .put(
+                "narrative",
+                "consolidation-related".equals(scenario)
+                    ? "修改订单：根据导入来源更新订单和明细。"
+                    : "修改订单：材料表明这是另一条不能拼接的阶段。");
+      }
+      ((ArrayNode) response.path("processes")).add(duplicate);
+    }
+
+    private static void replaceUsePrefixes(ArrayNode useIds) {
+      for (int index = 0; index < useIds.size(); index++) {
+        useIds.set(
+            index,
+            JsonNodeFactory.instance.textNode(useIds.get(index).asText().replace('U', 'V')));
+      }
     }
 
     private void awaitCatalogPeers(String taskKind) {
@@ -953,21 +1082,43 @@ class BusinessProcessDiscoveryTest {
       stage.putArray("sourceRefs").add(ref);
     }
 
-    private static ObjectNode consolidation(JsonNode input) {
+    private static ObjectNode consolidation(JsonNode input, String scenario) {
       ObjectNode root = JsonNodeFactory.instance.objectNode();
       root.set("businessAreas", input.path("businessAreas"));
       ArrayNode decisions = root.putArray("processDecisions");
+      String firstProcessId = input.path("processes").get(0).path("processId").asText();
+      AtomicInteger processIndex = new AtomicInteger();
       input
           .path("processes")
           .forEach(
               process -> {
                 ObjectNode decision = decisions.addObject();
                 decision.put("processId", process.path("processId").asText());
-                decision.put("disposition", "KEEP");
-                decision.putNull("targetProcessId");
-                decision.put("reason", "保留详细过程");
+                boolean merge =
+                    processIndex.getAndIncrement() > 0
+                        && Set.of(
+                                "consolidation-narrative-merge",
+                                "consolidation-identical-merge")
+                            .contains(scenario);
+                decision.put("disposition", merge ? "MERGE_INTO" : "KEEP");
+                if (merge) {
+                  decision.put("targetProcessId", firstProcessId);
+                  decision.put("reason", "模型建议合并重复过程");
+                } else {
+                  decision.putNull("targetProcessId");
+                  decision.put("reason", "保留详细过程");
+                }
               });
-      root.putArray("processRelations");
+      ArrayNode relations = root.putArray("processRelations");
+      if ("consolidation-related".equals(scenario)) {
+        ObjectNode relation = relations.addObject();
+        relation.put("fromProcessId", firstProcessId);
+        relation.put("toProcessId", input.path("processes").get(1).path("processId").asText());
+        relation.put("relationType", "RELATED");
+        relation.put("description", "两个过程共享订单活动但阶段叙述不同");
+        relation.put("certainty", "INFERRED");
+        relation.putArray("sourceRefs");
+      }
       root.putArray("pendingConfirmations");
       return root;
     }
@@ -998,6 +1149,10 @@ class BusinessProcessDiscoveryTest {
 
     private JsonNode processDraftResponse() {
       return processDraftResponse;
+    }
+
+    private JsonNode consolidationInput() {
+      return consolidationInput;
     }
 
     private JsonNode outputSchema(String taskKind) {
