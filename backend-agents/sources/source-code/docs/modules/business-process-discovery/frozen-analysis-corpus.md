@@ -8,7 +8,7 @@ Activity与M10来源材料来自不同checkpoint。corpus统一其只读查询�
 
 ## 当前范围与输入
 
-固定输入是全部已审Activity、coverage、M10和同源verified inventory引用。目标读取范围为全部这些已存材料及冻结文本；当前实现仍只开放Activity已引用的M10 SourceRef，这是待修改处，不再是目标门禁。
+固定输入是全部已审Activity、coverage、M10和同源verified inventory引用。当前已经可以读取这些保存材料和冻结文本，不再只开放Activity已引用的M10 SourceRef。本次系统认识与三阶段成稿复用这条接线，不把已完成reader再次列为待开发。
 
 内部操作：overview、按ActivityId/statement/SourceRef查询；冻结文件目录、明确文件/行范围/全文读取、指定文件集合的字面量搜索。返回原文及实际范围、未命中/省略说明。模型选择fileKey或已列相对路径，不接收任意宿主Path。
 
@@ -33,4 +33,4 @@ Activity与M10来源材料来自不同checkpoint。corpus统一其只读查询�
 
 ## 测试与当前状态
 
-现有corpus和326 Activity复用；新增的是冻结文本reader接线和查询。RED覆盖跨旧候选、XML/Vue读取、未命中、同源检查及零扫描；GREEN仅查询/映射，不增业务解析器或存储框架。上游格式不升版。
+现有corpus、冻结文本reader和326 Activity复用；跨旧候选、XML/Vue读取、未命中、同源检查及零扫描已有直接验证。本次在任务输入层接通项目说明/调查背景、读取用途与选择结果，不增业务解析器或存储框架，上游格式不升版。详细改动见[实施状态](../../supplements/cross-object-process-reconstruction/implementation-status.md)。

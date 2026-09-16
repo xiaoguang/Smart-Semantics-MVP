@@ -103,8 +103,14 @@
   split, ActivityUse/process contracts and deterministic process publication.
   Its target/current labels are mandatory: none of its unimplemented target
   outputs may be described as already delivered.
-- docs/supplements/cross-object-process-reconstruction/ owns the approved,
-  not-yet-implemented reading delta. It replaces candidate-member-only M10
+- docs/supplements/cross-object-process-reconstruction/ owns the implemented
+  reading delta and the approved system-assessment/focused-selection target.
+  business-reasoning-and-writing.md now owns candidate-only factual DRAFT ->
+  WRITE -> final RULE_REVIEW. This three-stage target is not yet production
+  implementation; implementation-status.md separates existing code and remaining
+  changes. Current acceptance is limited to three explicitly selected examples;
+  do not resume whole-repository generation after samples without discussion.
+  It replaces candidate-member-only M10
   access and DRAFT-before-full-source with old-catalog input reuse, global
   material selection, one model reading check per candidate, optional actual
   supplemental reads, and a complete packet before process DRAFT. Preserve
@@ -224,7 +230,12 @@
   account-side checks instead of promising zero paid-credit use. Explicit API
   Providers are approved as a design option only and need authorization for
   each actual run; they never receive a failed subscription job as fallback.
-- A content job is one bounded task's DRAFT then complete REVIEW and saving. Existing
+- An Activity, initial catalog or repository-consolidation job remains DRAFT
+  then complete REVIEW and saving. Candidate-process jobs alone target fixed
+  factual DRAFT -> WRITE -> final RULE_REVIEW, with the final reviewer seeing
+  the original complete packet, actual DRAFT and actual WRITE. WRITE receives
+  the complete factual draft. Preserve complete structured process fields;
+  after final review, no model may rewrite the published prose. Existing
   Activity jobs remain complete and reusable. Target Step07 first runs bounded
   repository-catalog discovery over compact Activity cards, then reconstructs
   overlapping candidate processes in parallel from complete selected
@@ -232,6 +243,12 @@
   repository consolidation. A future whole-nine-chapter report job may follow
   the published catalog; deterministic process rendering and historical report rendering remain
   zero-Provider. Shared Activities are immutable and membership is many-to-many.
+- System type/business hypotheses belong in the existing global selection
+  model call, after reading saved repository descriptions and all navigation.
+  No fixed ERP/CRM/WMS classifier or industry routing is allowed. Business
+  knowledge proposes falsifiable reading questions, never guaranteed features.
+  Selection and one candidate reading check may retain, remove or supplement
+  material according to those questions; Java only performs actual reads.
 - For the cross-object target, saved catalog input skips its original model
   jobs. Global selection and each candidate reading check are separately saved
   single-decision jobs, not reviewed pairs. Every eligible candidate gets one
@@ -300,12 +317,14 @@
   VerifiedSourceTextReader, not a live checkout reader. Do not add
   JavaCodeIndex/MethodKey navigation or reparse for reading. It never
   reruns JDT, JavaParser, BusinessMaterialBuilder or ActivityExplainer.
-- CandidateProcessReconstructor lets the model select the relevant Activity
-  branch or variant and author process stages, exact predicates, transitions,
-  business rules, outcomes and uncertainty. DRAFT and REVIEW receive the same
-  full selected Activity/source packet; REVIEW also receives the complete
-  actual DRAFT. Java validates structure and actual packet refs,
-  not Chinese business entailment.
+- CandidateProcessReconstructor explains the selected Activity variants and
+  exact rules in factual DRAFT, writes readable business content in WRITE,
+  then checks the actual written content in final RULE_REVIEW. Original source,
+  complete facts and actual writing must reach that final check; it returns
+  the complete corrected process plus concise correction notes. Current code
+  still uses the older pair until this target is implemented. Java validates
+  structure and refs, not Chinese business entailment. Keep the original
+  Activities immutable when a new source reading corrects their interpretation.
 - RepositoryProcessConsolidator reads the existing complete reviewed Process
   JSON, not a new lossy summary. It decides KEEP/MERGE_INTO/REJECT and relations,
   but cannot rewrite prose. Only structurally identical full stage sequences
@@ -315,11 +334,14 @@
 - Any future Step08 publisher consumes only that consolidated catalog, lets the
   model author and review the fixed nine-chapter presentation, and cannot
   discover, merge, split or reorder processes. Java supplies Markdown styling.
-- Each activity package, process group, repository summary and report uses at
-  most one DRAFT plus one REVIEW. Capacity failure means zero requests plus a
+- Each Activity, initial catalog and repository summary uses at most its
+  existing DRAFT/REVIEW pair; the approved candidate-process target uses exactly
+  the three named stages, not an automatic repair loop. A new candidate private
+  record must save all three; an old pair is not a completed three-stage job.
+  Check actual context at each stage. Initial capacity failure means zero requests plus a
   concrete uncovered reason. Once a request starts, transport/schema/runtime
   failure is fatal for that execution: stop new job dispatch; already-started
-  pairs whose own DRAFT is valid finish their one REVIEW under existing
+  jobs whose own preceding stages are valid finish their remaining authorized stages under existing
   timeouts and preserve outputs. Collect terminal outcomes, then fail without
   downstream success. Never automatically retry, switch Provider, fall back to
   an API key, replay an old request or synthesize success. An explicitly started
@@ -579,9 +601,11 @@
   invalidate a completed material artifact. Do not delete journals, reset
   failure states or rescan merely to obtain new model request identities.
 - Cross-batch reuse is explicit and limited to complete, validated, privately
-  saved reviewed jobs with matching content, source mapping, Prompt/schema/profile
-  and effective service/account/model/effort. Reuse neither isolated DRAFT nor
-  unvalidated REVIEW responses. A failed pair starts a new full pair in the new
+  saved reviewed jobs with matching content, source mapping, task sequence,
+  Prompt/schema/profile and service/account/model/effort. Candidate three-stage
+  reuse requires DRAFT, WRITE and final RULE_REVIEW; other tasks keep pair reuse.
+  Reuse neither isolated intermediate responses nor unvalidated final responses.
+  A failed job starts its full authorized sequence only in an explicitly requested new
   batch; prior completed results and provenance are immutable. A changed group
   or knowledge input invalidates only dependent process/summary/report results.
 - Single reading decisions have their own complete-record validation/reuse;
@@ -595,8 +619,9 @@
   Synchronize writers, current analysis-run-output-v4 and historical v3 readers; never broadly disable cross-run
   checks. Root request candidate lineage stays fixed; operational batches do not
   mint extra Reader Candidates or bypass ROUND_2 findings. Use the implemented
-  source-analysis/Agent composition; new catalog/reading options remain target
-  design until implemented and verified. No new public Agent methods,
+  source-analysis/Agent composition; new catalog/reading options are connected
+  and directly verified. Real full-corpus quality is recorded separately in the
+  supplement delivery record. No new public Agent methods,
   recovery system or parallel evidence framework is authorized by this design.
 - Explicit material-state export reads existing artifacts and writes a new
   private versioned state; it never silently converts/overwrites old state or

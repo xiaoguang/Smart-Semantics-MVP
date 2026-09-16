@@ -6,9 +6,11 @@
 
 ## 一次候选job
 
-前置阅读包 → PROCESS_DRAFT → PROCESS_REVIEW → 保存完整已审结果。两轮保持同一Provider/model/effort；两次输入都含同一完整包，REVIEW再含实际完整草稿。新选材/阅读检查在pair之前，不是第三轮修稿；过程DRAFT不再输出源码请求。详见[补充设计](../../supplements/cross-object-process-reconstruction/module-design.md#4-candidateprocessreconstructor完整阅读包生成过程)。
+目标为前置完整阅读包 → PROCESS_DRAFT事实推理 → PROCESS_WRITE业务全文 → PROCESS_RULE_REVIEW最终规则核对 → 保存完整已审结果。三阶段保持同一Provider/账户/model/effort和一个job名额。WRITE只接收完整实际DRAFT及其中业务名称、用途和规则；RULE_REVIEW必须同时接收完整原文包、实际DRAFT和实际WRITE，直接局部修正实际正文及对应结构字段。最终核对后不再模型润色。详细输入、响应和容量由[补充设计](../../supplements/cross-object-process-reconstruction/business-reasoning-and-writing.md)维护。
 
 DRAFT可以重建一个过程、拆成几个过程、处置为支撑或材料不足。它必须处置候选成员；不能以多写几个技术阶段替代业务重建。
+
+DRAFT实际外层输入为readingPacket v1、investigationContext及readingSelections；后两项携带关注问题、系统判断/假设、候选问题和读取用途/选择说明，作为调查背景而非已确认事实。它们必须随决策保存、重开并参与指纹；最终RULE_REVIEW复用同一外层输入，不能只拿包而丢掉调查背景。WRITE仍仅接收完整实际事实草稿。
 
 ## 目标数据
 
@@ -35,11 +37,11 @@ narrative应说明：
 
 规则仍为subject、when、actionOrDecision、otherwise、result、certainty、refs。反例是“状态允许时可以修改”；目标是“原单状态为0时允许修改，否则拒绝”，并限定到真实适用用法。
 
-## 完整REVIEW职责
+## 最终RULE_REVIEW职责
 
-REVIEW看到完整实际DRAFT、完整Activity及所请求原始源码，返回完整替代记录：
+最终RULE_REVIEW看到完整包、完整实际DRAFT和WRITE，返回完整最终过程及私有corrections，而非只列错误。正确且可读的段落保留，能确定的错误局部修正：
 1. 逐项对照候选的不同variant，保留、细化或在现有reason/pendingConnections说明删除/缺失。当前结构分母仍按ActivityId，不能用其通过代替用法语义完整；本次不新增逐variant处置账。
-2. 检查阶段是否业务步骤，是否仅将技术处理包装成生命周期。
+2. 检查实际WRITE是否讲清业务步骤，是否仍为技术模板；不为了审阅而重写整篇。
 3. 对每个用法核对条件分支；有引用不等于该规则适用所有variant。
 4. 检查跨入口关联字段、对象与数量/状态更新；可推断关系标INFERRED，不能编成强制调用顺序。
 5. 删除无材料的岗位、默认值、必经审批、外部成功；缺信息具体记录UNRESOLVED。
@@ -58,6 +60,6 @@ CONFIRMED至少有statement或source，但Java只验证来源存在；不验证�
 
 ## 测试与当前差距
 
-两轮、详细结构、narrative/rule-use已实现。当前完整Activity已进DRAFT，原文后进REVIEW。目标改变输入/Prompt而非重做类型；过程Prompt/响应升v3，新包显式匹配，原326Activity不重跑。新真实实验未执行。
+当前已实现同一完整Activity/原文包上的DRAFT/REVIEW双轮、详细结构和narrative/rule-use。目标三阶段尚未生产接线，沿用现有详细Process形状及五文件；仅新过程私有结果保存draft/writing/review的v3完整记录，历史v2 pair不能当三阶段结果复用。版本与实现差异见[实施状态](../../supplements/cross-object-process-reconstruction/implementation-status.md)。原326Activity不重跑。
 
-Luna RED：新增字段完整传入REVIEW、保存重开和渲染；不同variant规则引用边界；不误拒合法不确定性。Terra GREEN只实现合同。真实语义验收见[贯穿例子](../../examples/semantic-framework-walkthrough.md)，自动fixture不能替代真实模型质量。
+直接RED覆盖三阶段顺序、WRITE完整事实输入、最终RULE_REVIEW实际包+DRAFT+WRITE、最终正文/规则保存渲染、完整三阶段重开及旧pair不误复用。真实语义只做[三个样本](../../supplements/cross-object-process-reconstruction/acceptance.md)，之后停止等待全仓讨论；自动fixture不能替代实际正文审阅。

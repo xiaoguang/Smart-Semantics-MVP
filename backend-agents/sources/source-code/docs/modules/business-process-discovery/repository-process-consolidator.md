@@ -1,5 +1,7 @@
 # RepositoryProcessConsolidator
 
+本次[系统认识与三阶段成稿设计](../../supplements/cross-object-process-reconstruction/business-reasoning-and-writing.md)只进行三个样本预览，不调用本模块。后续全仓获准时，输入必须是最终RULE_REVIEW后的完整过程；归并不改写已核对正文，也不追加写作调用。本模块自己的DRAFT/REVIEW两轮及无损归并算法保持。
+
 ## 为什么存在
 
 候选可以重叠，仓库目录需要处理重复、父子、相关和替代过程。但归并不是再次发现生命周期，更不能把两个技术过程数组拼接成一条实际顺序。

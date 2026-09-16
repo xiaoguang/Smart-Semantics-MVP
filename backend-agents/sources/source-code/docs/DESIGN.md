@@ -12,14 +12,14 @@
 
 主要可读交付是仓库级 `business-processes.md`。固定九章 `document.md` 继续作为下游概览，但不承担业务过程发现，也不再作为判断语义成功的唯一标准。
 
-术语以 [CONTEXT.md](../CONTEXT.md) 为准。本轮批准的目标为[跨对象业务过程补充设计](supplements/cross-object-process-reconstruction/README.md)，修改面见[设计变更清单](plans/business-process-discovery-and-reconstruction-change-design.md)。新增取材路径已接线，定向测试通过；完整本地 CI、固定输入及真实业务效果以[验收记录](supplements/cross-object-process-reconstruction/delivery.md)为准。
+术语以 [CONTEXT.md](../CONTEXT.md) 为准。本轮批准的目标为[系统认识、聚焦选材与三阶段成稿](supplements/cross-object-process-reconstruction/business-reasoning-and-writing.md)，修改面见[设计变更清单](plans/business-process-discovery-and-reconstruction-change-design.md)。跨候选取材和DRAFT前封包已实现，当前候选生产仍为DRAFT/REVIEW双轮；新三阶段尚未接线。当前事实见[实施状态](supplements/cross-object-process-reconstruction/implementation-status.md)，历史验证见[交付记录](supplements/cross-object-process-reconstruction/delivery.md)。本轮只做三个样本的最小验收，之后讨论全仓。
 
 ## 2. 设计原则
 
 - **成熟工具找代码。** JDT LS/Core 负责 Java 定义、实现、调用位置和完整方法；JavaParser 保留为能力较弱的可配置 Adapter。
 - **程序组织，模型理解。** Java 负责来源、ID、材料、覆盖、调度、保存和格式；LLM 负责业务领域、别名、过程成员、顺序、分支、目的和业务语言。
 - **全仓发现与深入阅读分开。** 新仓库保留首次目录发现；已有目录直接重开，结合全部 Activity 导航和冻结文件目录增量选材，允许跨旧候选合读。
-- **摘要只导航，原文才定规则。** 完整 ReviewedActivity 继续复用；所选关键原文在过程 DRAFT 前到位，DRAFT/REVIEW 使用同一自包含阅读包。
+- **摘要只导航，原文才定规则。** 完整 ReviewedActivity 继续复用；所选关键原文在事实 DRAFT 前到位。WRITE只读完整实际事实草稿，最终RULE_REVIEW对照完整原文包、实际DRAFT和实际WRITE，直接修正交付正文。
 - **语义优先，来源够用。** 读者只需短 SourceRef 回到文件、行号和代码片段；不为自然语言句子重建多层 Proof。
 - **业务生命周期，不是技术模板。** 阶段由模型解释对象如何产生、流转和结束；不能用“接收参数→校验→执行→返回”冒充业务过程。同一Activity可有不同业务用法，规则必须限定适用用法。
 - **具体条件不可缩水。** 已知 `status=0`、`0→1`、`purchaseStatus in {2,3}` 时，最终过程必须保留具体值和动作，不能写“状态满足条件”。
@@ -58,11 +58,11 @@ Activity 不负责回答整个销售或采购过程。当前 jshERP 实测已有
 
 全仓分片合并以完整DRAFT保存的Activity处置作为覆盖分母。REVIEW裁决候选及业务边界；若它在重复输出整份处置长数组时仅产生重复或遗漏ID，程序保留DRAFT非成员处置，并按REVIEW后的实际候选关系重算PROCESS_MEMBER。该恢复不创建候选、不推断业务；未知Activity、非法处置以及完整唯一清单中的孤立PROCESS_MEMBER仍然失败。
 
-已有目录是资料，不是成员白名单。新增全局选材只提出候选修正和阅读清单，不重跑原目录分片/合并。未涉及 Activity 承接原处置；新增或移出成员按最终候选更新，只为理解而读的 context Activity 不强迫成为阶段。被移出全部候选的原成员须由模型明确非成员去向，Java 不猜其业务用途。沿用现有覆盖记录，不新增台账。
+已有目录是资料，不是成员白名单。目标在同一次全局选材中结合冻结项目说明、全体导航和文件目录判断系统特征，提出可证伪业务假设、具体调查问题、候选修正与阅读清单；不另开分类调用，不重跑原目录分片/合并。常识只提出待核实问题，不成为已确认能力。未涉及 Activity 承接原处置；新增或移出成员按最终候选更新，只为理解而读的 context Activity 不强迫成为阶段。被移出全部候选的原成员须由模型明确非成员去向，Java 不猜其业务用途。沿用现有覆盖记录，不新增台账。
 
 ### 4.3 Business Process：详细重建
 
-程序依据全局选材取回完整 Activity 和同源冻结原文。每候选一次模型阅读检查返回可空的补读清单；非空时程序执行一次补读，随后冻结 ProcessReadingPacket。模型决定缺什么，Java 只取材；读完仍缺信息就记录具体未知。DRAFT 和完整 REVIEW 使用同一包，REVIEW 另外看到完整实际草稿，不再靠 DRAFT 请求源码后临时补救。
+程序依据问题选材取回完整 Activity 和同源冻结原文。目标每候选一次阅读检查明确首批保留/移出集合及可空补读清单，程序执行一次补读后冻结 ProcessReadingPacket。模型决定取舍，Java只取材；读完仍缺信息就记录具体未知。候选依次执行事实DRAFT、业务WRITE、最终RULE_REVIEW：WRITE只接收完整实际事实草稿，最终核对同时接收完整原文包、实际DRAFT和实际WRITE，局部修正正文及对应结构字段，返回完整最终结果。之后没有模型润色。详细输入与保存由[补充设计](supplements/cross-object-process-reconstruction/business-reasoning-and-writing.md)唯一维护。
 
 同一通用 Activity 通过不同 `ActivityUse` 进入不同过程，也可在同一候选中有多个不同variant；候选按(ActivityId, variant)保留用法，完整Activity正文按ActivityId去重。例如“新增库存单据及明细”可以分别以销售订单、销售出库和销售退货用法出现，不能把所有分支复制到同一个阶段。
 
@@ -114,7 +114,7 @@ public interface BusinessProcessPublisher {
 1. `FrozenAnalysisCorpus`：重开已有 Activity/M10 和同源冻结文本，按 ID、文件、行段与字面量读取；不导航、不查 JavaCodeIndex。
 2. `RepositoryBusinessCataloger`：保留首次目录；已有目录直接重开，承载全局增量选材与候选修正。
 3. `ProcessMaterialAssembler`：执行阅读请求；配合一次候选模型阅读检查，封装 DRAFT 前的完整阅读包。
-4. `CandidateProcessReconstructor`：候选 DRAFT/REVIEW，形成详细过程。
+4. `CandidateProcessReconstructor`：候选事实DRAFT → 业务WRITE → 最终RULE_REVIEW，形成详细已审过程。
 5. `RepositoryProcessConsolidator`：一次仓库级 DRAFT/REVIEW，处理重复、父子、相关和替代过程。
 
 `ProcessDiscoveryResult` 已经封闭携带归并目录、全部 Activity/Candidate 处置以及 `directActivityKnowledgeItems`。`BusinessProcessPublisher` 只校验引用与 coverage，并确定性发布结构化目录和 Markdown；它不调用模型，也不自行重新打开 Activity。完整子模块设计见[模块总览](modules/business-process-discovery/README.md)。
@@ -123,12 +123,12 @@ public interface BusinessProcessPublisher {
 
 ```text
 旧目录 + 已保存 ReviewedActivity + 冻结文本
-  → 一次全局选材（新仓库先完成首次目录）
+  → 一次系统认识与问题选材（新仓库先完成首次目录）
   → 首批取材
-  → 每候选一次阅读检查 → 执行可空补读 → 封包
-  → 候选 Process jobs 并行：每个 DRAFT → 完整 REVIEW → 保存
-  → 一次 Repository consolidation DRAFT → REVIEW
-  → 程序发布 business-processes.md
+  → 每候选一次阅读检查 → 明确保留/移出 → 执行可空补读 → 封包
+  → 候选 Process jobs 并行：每个 DRAFT → WRITE → RULE_REVIEW → 保存
+  → 本轮三例确定性预览并停止
+  → 全仓另行获准后：Repository consolidation DRAFT → REVIEW → 五文件发布
   → 未来可供九章概览；本轮不生成九章
 ```
 
@@ -136,7 +136,7 @@ public interface BusinessProcessPublisher {
 
 归并的真实分母来自程序侧完整已审过程集合。REVIEW遗漏过程时安全 KEEP；模型建议合并但不满足无损条件时，沿用当前已实现行为，保留双方原过程及原因。未知 ID、重复处置或非法引用仍拒绝。不能拼接阶段或追加修稿来强行合并。
 
-沿用现有 YAML 的全局并发和每 Provider 并发。候选 job 的 DRAFT/REVIEW 保持同一绑定；不同候选并行。目录全局合并、仓库归并和九章是各自的屏障任务。
+沿用现有 YAML 的全局并发和每 Provider 并发。候选 job 的三阶段及保存保持同一绑定和一个并发名额；不同候选并行。Activity、首次目录和仓库归并仍为原双轮；三例不执行仓库归并。
 
 现有模型批次设计继续有效：材料属于 `sourceRunId`，新模型输出属于 `modelBatchId`；完整已审且 fingerprint 匹配的 job 才能显式复用。旧 DRAFT 或失败 REVIEW 不续接半轮。任何 Step07 模型失败都不得调用 Capture、JDT、图、Fact、Flow、Builder 或 ActivityExplainer。
 
@@ -149,7 +149,7 @@ PARTIAL 是闭合的语义处置，不是掩盖运行失败的状态。容量预
 - 精简 Activity 卡或候选所需完整 Activity；
 - scope-local Activity/Process ID；
 - Activity statement handle；
-- 阅读决策可见冻结文件相对路径/fileKey及实际选中原文；过程 DRAFT/REVIEW 可见完整 Activity、所选原文和阅读包内短 refs，不把文件目录当作已读正文；
+- 阅读决策可见冻结文件相对路径/fileKey及实际选中原文；过程DRAFT和最终RULE_REVIEW可见完整Activity、所选原文和包内短refs，WRITE只见完整实际事实草稿，不把文件目录当作已读正文；
 - 已知限制和未解释范围。
 
 ### 7.2 模型不可见
@@ -177,7 +177,7 @@ Step07 正式业务输出：
 - 本步独立保存的 `source-refs.jsonl`
 - 从同一SourceReference确定性生成的 `sources.md`（完整源码与文件/原行范围，不新增取证）
 
-当前五文件v2合同已实现：catalog/coverage/process Markdown为v2，来源JSONL/Markdown为v1。本轮公共字段不变，发现/发布producer目标v3；新增私有阅读决策/包v1和过程Prompt/响应v3。[版本范围](supplements/cross-object-process-reconstruction/module-design.md#7-运行接线私有保存和版本)限定直接修改面，不整体重置上游格式。新来源在封闭result前统一编号，旧结果不覆盖。
+当前五文件合同已实现：catalog/coverage/process Markdown为v2，来源JSONL/Markdown为v1，producer为v3。本轮目标producer v4，公共五文件字段不变；仅新候选过程采用私有三阶段reviewed-result-v3，旧pair严格保留而不冒充三阶段结果。阅读决策、Prompt及精确复用版本由[详细合同](supplements/cross-object-process-reconstruction/business-reasoning-and-writing.md)维护，不整体重置上游格式。新来源在封闭result前统一编号，旧结果不覆盖。
 
 Step08 保留：
 
@@ -201,7 +201,7 @@ Step08 只消费已发布 `RepositoryBusinessProcessCatalog`、过程 coverage �
 - 其余章节可以概括，但不能丢掉、改写或升级 Step07 的具体规则和 certainty。
 - 正文只显示短 ref，完整源码在 `source-refs.jsonl`；纯重渲染零 Provider。
 
-过程发现质量先通过 `business-processes.md` 验收。正文以阶段narrative为主，结构字段可在明细折叠区无损保留。有直接源码引用时，用“查看依据”链接跳到过程来源索引，再按文件名/行范围打开sources.md片段，不铺满裸编号。来源链接允许留空，不强制说明或补齐、不增加取证/模型任务/专项验收，不阻塞主业务交付。九章不在本次修改范围，不能用格式正确掩盖生命周期缺失。
+过程发现质量先通过业务正文验收。正文以最终RULE_REVIEW的阶段narrative为主，完整结构字段仍保存；关键规则不能只藏在明细中，本轮三例预览不输出HTML折叠。有直接源码引用时，用“查看依据”链接跳到过程来源索引，再按文件名/行范围打开sources.md片段，不铺满裸编号。来源链接允许留空，不强制说明或补齐、不增加取证/模型任务/专项验收，不阻塞主业务交付。九章不在本次修改范围，不能用格式正确掩盖生命周期缺失。
 
 ## 10. 实际材料与生命周期推演
 
@@ -238,7 +238,7 @@ Step08 只消费已发布 `RepositoryBusinessProcessCatalog`、过程 coverage �
 
 ### 本次仍缺什么
 
-阶段正文、规则用法、来源链接、v2五文件读写和统一CLI已实现。修改前仅能选当前候选来源，完整选中片段到REVIEW才到位；本轮已接通跨候选选材、冻结文件读取、一次阅读检查及DRAFT前封包。直接行为测试通过，真实自主发现与业务质量尚待独立验收。旧过程不能靠重新排版冒充长链语义通过。
+阶段正文、规则用法、来源链接、五文件读写、统一CLI、跨候选选材、冻结文件读取、一次阅读检查及DRAFT前封包已实现。当前仍为过程双轮。新增系统认识、按问题收敛材料、DRAFT→WRITE→最终RULE_REVIEW、私有三阶段保存和三例预览尚待实现；研究正文的可读性已获认可，但写作引入的已知事实错误仍需最终核对纠正。三例结束先交付审阅，不自动扩到全仓，详见[实施状态](supplements/cross-object-process-reconstruction/implementation-status.md)。
 
 ## 12. 完成标准
 

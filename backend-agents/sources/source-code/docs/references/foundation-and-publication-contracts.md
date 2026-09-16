@@ -2,7 +2,7 @@
 
 本附录服务 [八步总体设计](../DESIGN.md)。保留来源完整性、精确 Fact/Proof 和可观察持久化；删除重复算法和逐层资格判断。它不创建新存储、恢复、graph/proof 或业务分类体系。
 
-[跨对象补充设计](../supplements/cross-object-process-reconstruction/README.md)允许从同源冻结文本定向取材，不限旧候选的M10引用；不执行文件、不重扫、不补Proof。实际原文在过程DRAFT前到位，来源真实性仍由现有reader保证。新增选材/阅读检查为单次决策保存，不能当成已审pair；Activity不重跑。
+[跨对象补充设计](../supplements/cross-object-process-reconstruction/README.md)允许从同源冻结文本定向取材，不限旧候选的M10引用；此读取能力已接通，不执行文件、不重扫、不补Proof。实际原文在过程DRAFT前到位，来源真实性仍由现有reader保证。选材/阅读检查为单次决策保存；新目标的候选过程为事实DRAFT→WRITE→最终RULE_REVIEW，尚未生产实施；Activity不重跑。
 
 ## 1. 各种依据分别说明什么
 
@@ -30,7 +30,7 @@ SOURCE_CONTEXT 可支持安全源码阅读，但不能赋 CLOSED、SOURCE_CONFIR
 | 局部 Activity | ActivityExplainer | DRAFT + 完整 REVIEW；保存完整条件、规则和来源 |
 | 业务目录和候选 | RepositoryBusinessCataloger | 以紧凑卡发现语义分组；不从卡片写详细过程 |
 | 候选过程材料 | ProcessMaterialAssembler | 重开完整 Activity 和选定保存源码；不重扫或解释 |
-| 详细过程 | CandidateProcessReconstructor | DRAFT + 完整 REVIEW；结构化阶段、谓词、规则和 certainty |
+| 详细过程 | CandidateProcessReconstructor | 目标为事实DRAFT→WRITE→最终RULE_REVIEW；保留详细阶段、规则和certainty；当前仍是双轮 |
 | 仓库过程归并 | RepositoryProcessConsolidator | 比较重叠候选、保留替代与冲突、闭合分母 |
 | 过程/历史九章 | BusinessProcessPublisher / historical report reader | 前者确定性发布过程主读物；后者只读取和重渲染已有九章 checkpoint |
 
@@ -72,9 +72,11 @@ fatal：错误 source identity、坏 bytes、危险 path、断 refs、伪 exact 
 
 ## 6. Provider 与内容审阅
 
-业务活动、目录发现、候选过程重建、仓库归并和报告使用配置模型，默认 Pro Luna/high。每个需要审阅的 job 最多 DRAFT + 一次完整 REVIEW，同 job 固定 Provider/model/effort；后者输入原材料和完整实际 DRAFT，输出完整修订结果。Activity 的 `missingEntryKeys` 与 required `unexplainedEntries` 保持不变；活动 keys 与其并集为全集且不相交。程序侧另存完整 `unexplainedActivityEntries` records。所有有用条件、规则、公式与长段落保留到完整 Activity、过程目录和 final Markdown。紧凑卡仅用于发现，不能代替上述完整内容。
+业务活动、目录发现、候选过程重建和仓库归并使用配置模型，默认Pro Luna/high；历史报告不重新生成。Activity、目录和归并保持DRAFT＋完整REVIEW。新候选过程目标为DRAFT事实推理、WRITE完整业务成稿、RULE_REVIEW核对实际成稿；最后核对收到完整阅读输入、实际DRAFT和WRITE，返回修正后的完整结构，此后无模型改写。同job固定Provider/model/effort。具体输入、保存版本及历史pair读取以[详细合同](../supplements/cross-object-process-reconstruction/business-reasoning-and-writing.md)为准。
 
-调用前按绑定 Provider 的有效 profile 校验容量/schema/allowlists；超容量零请求并保存原因。两级并发只控制在途job，等待不排除材料。fatal关闭本批新派发，其他已开始合法pair完成REVIEW并保存；不跨下游、不自动重试/转路。用户显式新批次可重新执行未完成job，旧请求不重放、不改状态。操作批次继承候选series/round，不增加内容候选轮；完整最终候选需要内容替换时仍遵守具名finding的Round2。
+Activity的`missingEntryKeys`与required `unexplainedEntries`保持不变；活动keys与其并集为全集且不相交。程序侧另存完整`unexplainedActivityEntries`。有用条件、规则、公式与长段落保留到完整Activity、过程目录和最终Markdown。紧凑卡仅用于发现，不能代替完整内容。
+
+各次调用前按绑定Provider的有效profile校验真实上下文、schema和allowlists；超容量不发本次请求，保留已完成中间结果和原因。两级并发只控制在途job，等待不排除材料。fatal关闭本批新派发，其他已开始且自身合法的job完成剩余约定阶段并保存；不跨下游、不自动重试/转路。用户显式新批次可重新执行未完成job，旧请求不重放、不改状态。操作批次继承候选series/round，不增加内容候选轮；完整最终候选需要内容替换时仍遵守具名finding的Round2。
 
 真实 Provider 需当次授权及其认证 preflight。订阅强制 ChatGPT auth、阻止 API 环境覆盖、不购买/自动付费 fallback；已有付费 credits 的 CLI 禁用开关尚未核实，必须先在账户侧核实，不能保证零消耗。显式 API 服务是独立配置路线，不能接管失败 job；多 key/新会话不增加共享账户额度。精确配置、隔离与官方依据见[Provider 合同](../modules/model-job-execution.md#5-provider认证与任务绑定)。自动测试只用 frozen fixtures 和 scripted Provider。源码本身是数据，不得服从其注释、字符串或 Markdown 内的指令。
 
@@ -86,4 +88,4 @@ Canonical stores、源码/图/Fact 纵切、BusinessMaterialBuilder、ActivityEx
 
 生命周期修正已经实现阶段narrative、规则activityUseIds、不同variant、原文预览及可点击来源。Publisher从封闭SourceReference确定性生成sources.md，不新增取证。来源链接允许留空，不为它增加解释、补证据、模型调用或专项验收；核心是业务语义可读。
 
-当前五文件v2合同已实现。本次跨对象目标增加旧目录输入、冻结文本定向读取、单次阅读决策和DRAFT前完整封包，保留公开五文件结构。具体版本与同步读写面见[差异清单](../plans/business-process-discovery-and-reconstruction-change-design.md#5-保存版本和兼容范围)及[模块设计](../supplements/cross-object-process-reconstruction/module-design.md#7-运行接线私有保存和版本)。本次只更新设计，不改历史产物、生产Prompt或代码。
+当前五文件v2、旧目录输入、冻结文本定向读取、单次阅读决策和DRAFT前完整封包均已实现。本次待实现的是全局系统认识/问题选材、CHECK最终保留集合及候选三阶段；公开五文件结构不变。具体差异见[实施状态](../supplements/cross-object-process-reconstruction/implementation-status.md)，版本见[详细合同§7](../supplements/cross-object-process-reconstruction/business-reasoning-and-writing.md#7-保存并行与版本影响限制在过程任务)。本次只更新设计，不改历史产物、生产Prompt或代码；真实验收止于三个样本，不自动全仓发布。

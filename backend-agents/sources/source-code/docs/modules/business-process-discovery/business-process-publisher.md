@@ -6,7 +6,7 @@
 BusinessProcessPublication publish(ProcessDiscoveryResult result);
 ```
 
-零模型调用，输入是封闭的已审过程、所有处置、知识项、SourceReference和运行身份。不读Activity/JDT，不补业务正文；渲染问题不能成为新模型任务。
+零模型调用，输入是封闭的已审过程、所有处置、知识项、SourceReference和运行身份。新目标正文必须来自最后RULE_REVIEW，不能把中间WRITE当成已审结果。不读Activity/JDT，不补业务正文；渲染问题不能成为新模型任务。
 
 ## 发布规则
 
@@ -31,7 +31,7 @@ BusinessProcessPublication publish(ProcessDiscoveryResult result);
 
 每阶段主要显示业务标题、完整narrative、必要分支/转移和一个“查看依据”链接；不默认把技术Activity名称全列在括号里，不铺满裸S编号。
 
-结构字段可在“条件与结果明细”折叠区全部保留，确保未被narrative重复的正文也不丢；核心允许/拒绝条件应在narrative可读，这是模型验收职责。规则显示适用用法及subject/when/otherwise/result，不能由Renderer拼出新的行业意义。
+完整结构字段仍保存，核心允许/拒绝条件必须在最终narrative可读，这是模型验收职责。当前renderer使用“条件与结果明细”折叠区；本轮三例预览目标不输出`<details>`，需要直接调整实际渲染接点而非仅改Prompt，不得因此删除结构化规则。规则显示适用用法及subject/when/otherwise/result，不能由Renderer拼出新的行业意义。
 
 有直接sourceRefs的过程、阶段或规则只显示一个本地“查看依据”链接；该链接跳到本过程的来源索引。索引按过程、阶段和规则列出全部依据，以“文件名：起止行”链接到sources.md中对应短ref锚点；不任意只保留前N条，也不在业务正文堆放S编号墙。原Activity名称可用于范围表，但不伪装为业务阶段。
 
@@ -45,7 +45,7 @@ sources.md只从result已有SourceReference生成，每项含S编号锚点、仓
 
 ## 正式合同
 
-canonical地址仍为REPOSITORY_KNOWLEDGE/1/business-process-publisher，当前producer v2，本轮取材路径目标producer v3；公共五文件Schema不变：
+canonical地址仍为REPOSITORY_KNOWLEDGE/1/business-process-publisher，当前producer v3，最终三阶段过程目标producer v4；公共五文件Schema不变：
 
 | 文件 | schema |
 | --- | --- |
@@ -55,7 +55,7 @@ canonical地址仍为REPOSITORY_KNOWLEDGE/1/business-process-publisher，当前p
 | source-refs.jsonl | repository-business-process-source-references-v1 |
 | sources.md | repository-business-process-sources-markdown-v1 |
 
-来源页artifact type已存在，不新增第六项正式文件。新增读取完整性/未命中信息留在私有ReadingRecord，SourceReference五字段不变。版本见[补充合同](../../supplements/cross-object-process-reconstruction/module-design.md#7-运行接线私有保存和版本)。
+来源页artifact type已存在，不新增第六项正式文件。读取完整性、选材及最终corrections留在私有任务记录，SourceReference五字段不变。版本见[补充合同](../../supplements/cross-object-process-reconstruction/business-reasoning-and-writing.md)。
 
 ## 保存与读取
 
@@ -64,6 +64,8 @@ Discovery封闭result前，把补读的同源新片段按文件、范围和原�
 五项在同一canonical交付安装；存储策略、schema registry、exact-file数量、reader、artifact闭集和fixture同批更新。canonical store只接受完整四文件v1历史合同，或完整五文件v2当前合同，不能混用。当前Reader只重开五文件v2，并在渲染前核对catalog使用的全部短ref与source-refs.jsonl恰好一一对应；重复、缺失或非法短ref均失败。Reader从catalog/coverage/refs可重渲染出两个逐字节一致的Markdown，无Provider和上游调用。
 
 历史四文件v1产物原样保留；不能静默补narrative或把旧输出说成v2。上游读取策略不因此重置。PROCESS_CATALOG和三个owner不改，render()仍属Step08，来源页走artifact查询。
+
+本轮只做三个样本的独立确定性预览与来源、验收记录，不调用全仓归并、不关闭326条全仓覆盖、不安装伪造的正式publication。复用renderer不等于正式发布；完整全仓发布需待样本讨论后另行确定范围。
 
 ## 成功、失败和测试
 
