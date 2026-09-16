@@ -195,11 +195,11 @@ mvn -t .mvn/toolchains.local.xml -Pquality clean verify
 
 2026-09-16 的最终本地结果：
 
-- Spotless 检查 572 个 Java 文件，无格式差异；
+- Spotless 检查 574 个 Java 文件，无格式差异；
 - 编译及测试通过：541 个测试，0 failures，0 errors，2 skipped；
 - SpotBugs：0 bugs，0 errors；
 - PMD 检查通过；
-- `-Pquality clean verify` 总耗时 7 分 57 秒；
+- `-Pquality clean verify` 总耗时 7 分 55 秒；
 - 未启用 `real-jdt-it`，未运行外层工程测试，未调用真实模型；
 - 首次受限沙箱运行只有 3 个 loopback HTTP 测试因禁止绑定端口而报错；允许本地
   回环端口后同一构建通过，确认不是产品代码失败。
