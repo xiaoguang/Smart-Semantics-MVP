@@ -108,7 +108,7 @@ RED：任意 N、跨旧组召回、多用法、未涉及继承、移出最后成
 
 ### 每候选一次 `PROCESS_READING_CHECK`
 
-检查模型收到：候选、全仓轻量导航/文件目录、第一批实际完整 Activity 和原文、未命中/省略说明。允许提出候选范围和成员的修正，以及 `supplementaryRequests`。
+检查模型收到：候选、覆盖全仓 Activity 的材料/导航、完整冻结文件目录、第一批实际完整 Activity 和原文、未命中/省略说明。已经完整提供的 Activity 不再重复导航卡；未读 Activity 的导航卡保留 ID、name、businessPurpose、businessObjects、statementCount、入口/来源导航，仅不发送 terms。完整 Activity 与未读导航卡的 ID 并集仍是全部 Activity，CHECK 仍可召回任一 Activity 和冻结文件。允许提出候选范围和成员的修正，以及 `supplementaryRequests`。
 
 检查输出中的 `name`、`purpose`、`scope` 都是 required 且可为 null 的字段；null 明确表示沿用进入检查前的候选值，不能用缺字段表达该回退。
 
@@ -116,7 +116,7 @@ RED：任意 N、跨旧组召回、多用法、未涉及继承、移出最后成
 
 `changedActivityDispositions` 继续只返回必要的增量处置，未涉及记录沿用既有处置；不得因成员集合要求完整而改为重写全仓台账。移出最后成员关系时仍须提供现有合法非成员处置和原因。三项文本字段的 null 继承与两个完整集合的语义分开。
 
-上述成员合同明确化已确定，生产修改和直接验证待完成：只将私有 CHECK Prompt 从 v1 改为 v2，并给 CHECK `activityUses` 增加 `minItems: 1`。实际 Prompt/Schema 进入既有指纹，使旧 CHECK 不能误复用；全局选择的输入、Schema、Prompt 和指纹保持不变，公共产物、producer、私有 decision 容器及过程输出版本不升版。已保存的空成员 raw response 保持原样，不能由程序补成员后继续，也不能自动重试；新的真实 CHECK 必须取得明确授权。
+上述成员合同明确化已实现并通过直接及本地 CI 验证：只将私有 CHECK Prompt 从 v1 改为 v2，并给 CHECK `activityUses` 增加 `minItems: 1`。实际 Prompt/Schema 进入既有指纹，使旧 CHECK 不能误复用；全局选择的输入、Schema、Prompt 和指纹保持不变，公共产物、producer、私有 decision 容器及过程输出版本不升版。已保存的空成员 raw response 保持原样，不能由程序补成员后继续，也不能自动重试；新的真实 CHECK 必须取得明确授权。
 
 - `supplementaryRequests=[]`：无实际补读，直接封包。
 - 非空：程序执行清单，补入新选 Activity 全文和原文，然后封包。
@@ -147,7 +147,11 @@ readingLimitations[]（未命中、实际省略范围、未回答问题）
 1. 每个已读 Activity 保留现有原始字段及其原文、顺序和全部数组元素，取消额外生成的 `statementHandles`、`statements` 两个字段。完整 canonical handle 仍在唯一的 `readingPacket.statementDirectory` 中；`activityId/字段名/零基序号` 精确定位相应原字段，`businessPurpose` 直接定位文本。不得删除、缩写或重述条件、规则、公式、问题、限制、certainty、来源或任何原始业务字段。
 2. 仅对候选 CHECK 和过程 DRAFT/REVIEW 的私有响应 Schema 使用具名 `$defs` / `$ref` 共享完全相同的 allowlist。CHECK 的全仓 Activity 枚举和冻结 fileKey 枚举各保存一份；过程的 packet statement/source 枚举各保存一份，ActivityUse、stage、rule、knowledge 的原字段引用同一定义。枚举值、required、类型、业务结构及 Java 对未知 ID/ref 的拒绝均保持原合同。不是放宽成任意字符串，也不创建通用 Schema 压缩框架。
 
-仍发送全部 Activity 导航卡、其全部原导航字段和完整冻结文件目录；选中的完整 Activity、首批及补读源码原文不减少。CHECK 和过程继续使用原 canonical Activity ID/statement handle，无需另加短键转换、来源账本或新存储协议。DRAFT/REVIEW 使用完全相同的修正后完整包，REVIEW 额外携带完整实际 DRAFT。已有 SourceRef 的局部到最终编号映射不受影响。
+上述去重保留选中的完整 Activity、首批及补读源码原文。CHECK 和过程继续使用原 canonical Activity ID/statement handle，无需另加短键转换、来源账本或新存储协议。DRAFT/REVIEW 使用完全相同的完整包，REVIEW 额外携带完整实际 DRAFT。已有 SourceRef 的局部到最终编号映射不受影响。
+
+用户另已批准一个仅限 `readingCheckInput` 的导航投影：从本次 CHECK 输入的副本移除该任务不用的 `readingPacket.statementDirectory`；按已实际完整提供的 `reviewedActivities` ID 去掉重复导航卡；仅对其余未读导航卡省略 `terms`。不得修改共享卡/packet 节点或以候选成员名单代替实际完整提供集合来过滤。候选及其选项、全部原 Activity 字段（包括其 terms）、全部来源原文/SourceRef、完整文件目录及响应 allowlist 不变。全局选材仍收到全部原导航卡和字段；最终 DRAFT/REVIEW 仍含完整 statementDirectory，实际输入不受此投影影响。
+
+这项省略未读导航 terms 是已明确批准的导航信息取舍，不宣称它与原导航逐字段等价；未读 Activity 仍能依名称、目的、对象和来源召回，完整 terms 随实际选中 Activity 一并读取。它不删任何已读业务正文，不新增 parser、语义规则、补读轮次或自动重试。CHECK Prompt 保持现有 v2，Schema、全局选材及各 producer/输出版本不变，仅 CHECK 的实际输入经已有 fingerprint 自然区分。实施/真实验证状态见交付记录。
 
 全局 `PROCESS_MATERIAL_SELECTION` 的输入、Schema、Prompt、producer 及指纹计算保持不变；共享 Schema 的调用点不能意外改变全局选材。CHECK 与过程的实际输入/Schema 变化由既有内容指纹自然区分，不升级公共产物或已保存 decision/pair 的容器版本，不重写历史记录，不使成功的旧全局选择失效。
 
@@ -229,6 +233,14 @@ CLI创建/选择QUEUED run后，在任何Provider初始化或模型请求前，�
 保存目录输入、首批/补充请求、实际读取记录、最终阅读包、DRAFT/完整 REVIEW、增量处置和复用来源。过程 pair 继续现有 `reviewed-result.json`。同源旧输入只读，新输出属新 run。新执行只在明确授权后启动；无自动重试、换模型或 API 回退。
 
 在候选 jobs 启动前稳定生成全仓 source 映射；每个候选的 DRAFT/REVIEW 完整完成后据此独立归一化并立刻保存其 packet、映射与 pair。随后其他候选的 fatal 不能丢弃已完成的合法保存结果；只有最终归并/发布等待全量完成，不新增恢复框架。
+
+### 已批准的一次性租户引用修正
+
+用户只批准对已完成但解析失败的租户 REVIEW 内存副本做一个确定映射：`/processes/0/businessRules/5/activityUseLocalIds/1` 中的 `activity:f557933b36ff5eb47a60b6c300ceb86e99d271431bc499dfd636c879ab05207c/activitySteps/9` 改为本过程唯一已存在的 `useLocalId`：`activity:f557933b36ff5eb47a60b6c300ceb86e99d271431bc499dfd636c879ab05207c`。其余 REVIEW 值及原 DRAFT 不变；这不是再次模型审阅，也不产生新的业务内容。旧 FAILED run 与 Provider raw 文件字节保持原样，零新增模型调用。使用 ignored 验收工具在新私有 batch 中，复用现有 canonical codec、inputFingerprint、source normalization、parseCandidate 与 PrivateModelJobResultStore 完成验证和保存；遇到第二个错误即停止，不扩大修正。
+
+新 pair 的 `review` 明确是这一用户授权派生副本；顶层仅增加可选 `reviewCorrection={manifestPath,manifestSha256}`。manifestPath 是同一 journal 内独立、不可覆盖的修正清单相对路径。清单记录授权范围、原 FAILED run、DRAFT/REVIEW 原始 artifact 路径与文件/解码响应 SHA-256、jobKey、精确 pointer/before/after 和派生 REVIEW canonical SHA-256。原模型 runtimeIdentity 表示原始生成来源，不把这次映射归给模型。清单先以 canonical、create-new 方式保存，完整 pair 含标记后只写一次；不先存未标记 pair 再覆写。首次导入的 `reusedFromModelBatchId` 为空，原失败来源由清单说明；以后正常显式复用仍按既有字段记录来源 batch。
+
+后续显式复用只沿用现有不可变来源链：`saveProcessPair(reused=true)` 已写入实际 `reusedFromModelBatchId`，同一 jobKey 可逐批回到首次导入中带 reviewCorrection 的记录及清单。后续 canonical 记录不必重复该额外字段；必须保留链上的来源批次、该 job 记录和 manifest，不能把链中派生 REVIEW 宣称为未经修正的 Provider 原文。来源映射照常重新计算。不新增生产字段传递、测试协议或清单加载器，不改公共 Interface、parser、Provider、Prompt、fingerprint 或容器版本，不从错误引用自动生成标记或执行修复。
 
 ### 精确复用与版本
 

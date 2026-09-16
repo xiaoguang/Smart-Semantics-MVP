@@ -259,6 +259,61 @@ class BusinessProcessReadingPipelineTest {
   }
 
   @Test
+  void readingCheckOmitsCompleteActivityNavigationAndRetainsFullProcessPacket() {
+    PipelineProvider provider = new PipelineProvider(true);
+
+    new DefaultBusinessProcessDiscovery(provider).discover(request(oldCatalogInput(), "核对订单状态回写"));
+
+    JsonNode readingCheckPacket = provider.readingCheckInput().path("readingPacket");
+    assertThat(readingCheckPacket.path("statementDirectory").isMissingNode()).isTrue();
+    JsonNode checkedActivities = readingCheckPacket.path("reviewedActivities");
+    assertThat(checkedActivities).hasSize(2);
+    JsonNode checkedMember = activityById(checkedActivities, "activity:member");
+    assertThat(checkedMember.path("terms")).extracting(JsonNode::asText).containsExactly("订单");
+    assertThat(checkedMember.path("conditions"))
+        .extracting(JsonNode::asText)
+        .containsExactly("status == 0");
+    assertThat(checkedMember.path("businessRules"))
+        .extracting(JsonNode::asText)
+        .containsExactly("状态规则");
+    assertThat(checkedMember.path("formulasOrMetrics"))
+        .extracting(JsonNode::asText)
+        .containsExactly("数量口径");
+    assertThat(checkedMember.path("sourceRefs")).extracting(JsonNode::asText).containsExactly("M1");
+
+    JsonNode unreadCards = provider.readingCheckInput().path("activityIndexCards");
+    assertThat(unreadCards).hasSize(1);
+    JsonNode unread = activityById(unreadCards, "activity:untouched");
+    assertThat(unread.fieldNames())
+        .toIterable()
+        .containsExactlyInAnyOrder(
+            "activityId",
+            "name",
+            "businessPurpose",
+            "businessObjects",
+            "statementCount",
+            "sourceRefs");
+    assertThat(unread.has("terms")).isFalse();
+    assertThat(unread.path("businessObjects")).extracting(JsonNode::asText).containsExactly("订单");
+    assertThat(unread.path("statementCount").asInt()).isEqualTo(10);
+    assertThat(unread.path("sourceRefs")).extracting(JsonNode::asText).containsExactly("M3");
+
+    JsonNode globalCards = provider.selectionInput().path("activityIndexCards");
+    assertThat(globalCards).hasSize(3);
+    assertThat(activityById(globalCards, "activity:untouched").path("terms"))
+        .extracting(JsonNode::asText)
+        .containsExactly("订单");
+
+    JsonNode processPacket = provider.processDraftInput().path("readingPacket");
+    assertThat(processPacket.path("statementDirectory")).hasSize(20);
+    assertThat(processPacket.path("reviewedActivities")).isEqualTo(checkedActivities);
+    assertThat(
+            activityById(processPacket.path("reviewedActivities"), "activity:member").path("terms"))
+        .extracting(JsonNode::asText)
+        .containsExactly("订单");
+  }
+
+  @Test
   void sharesPrivateLongAllowlistsWhileKeepingSelectionWireUnchanged() {
     PipelineProvider provider = new PipelineProvider(true);
 

@@ -849,9 +849,17 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       List<ActivityIndexCard> cards,
       FrozenProcessSourceCorpus sourceText) {
     ObjectNode input = packetInput(packet, corpus);
+    ((ObjectNode) input.path("readingPacket")).remove("statementDirectory");
     input.put("task", READING_CHECK);
     ArrayNode navigation = input.putArray("activityIndexCards");
-    cards.forEach(card -> navigation.add(card.toNavigationJson(corpus)));
+    cards.stream()
+        .filter(card -> !packet.activityIds().contains(card.activityId()))
+        .forEach(
+            card -> {
+              ObjectNode value = card.toNavigationJson(corpus);
+              value.remove("terms");
+              navigation.add(value);
+            });
     ArrayNode files = input.putArray("files");
     if (sourceText != null) {
       sourceText

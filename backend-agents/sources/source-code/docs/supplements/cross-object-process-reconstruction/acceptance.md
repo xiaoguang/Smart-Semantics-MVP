@@ -22,7 +22,7 @@
 Luna/xhigh 写明确 RED，Terra/xhigh 最小 GREEN，Sol/xhigh 调试；设计偏差由 Sol/ultra 或 Astra/ultra 裁决。每个编辑 Agent 先建自己的临时 progress；不运行无关全仓测试。
 
 1. 真实保存目录可重开，旧目录模型、JDT、Builder、ActivityExplainer 调用均为 0；旧产物字节不变。
-2. 任意 N 的导航包含全部已审 Activity；候选能选择旧组外/原支撑 Activity，不硬编码 326 或业务词。
+2. 任意 N 的全局选材导航包含全部已审 Activity；CHECK 的完整已读 Activity 与未读导航 ID 并集仍包含全部 Activity，候选能选择旧组外/原支撑 Activity，不硬编码 326 或业务词。
 3. 未涉及的候选与 Activity 处置承接；新增/移出的成员按最终候选更新；读取 context 不强行加为成员。
 4. 首批取回完整 Activity/源码，每候选恰一次阅读检查；空补读无需取额外源码，非空最多执行一轮，不递归第三次。
 5. DRAFT 的实际请求已含所选 Java/XML/Vue 原文；REVIEW 含同一完整包和完整实际草稿。未知引用拒绝，合法新源码不因无旧 Activity owner 而被拒。
@@ -33,9 +33,10 @@ Luna/xhigh 写明确 RED，Terra/xhigh 最小 GREEN，Sol/xhigh 调试；设计�
 10. 静态冻结文本内含命令/提示语只作数据，不执行客户代码或外部读取。纯查看/重渲染零 Provider。
 11. 旧批次下游失败但目录pair有效时可读；未知或损坏目录拒绝。QUEUED run在Provider前绑定所选检查点与问题，输入变化不能复用该绑定。
 12. context可以提供实际statement/source引用，但过程不得静默把它变成成员；ActivityUse和stage/rule引用统一遵循已封包成员及实际阅读allowlist。
-13. 私有容量修正必须逐字段保留全部已读 Activity 原业务数据及源码原文，完整 canonical handle 在唯一 statementDirectory 中可定位其原字段；只移除重复生成的 statementHandles/statements。全仓导航及文件目录不裁剪，DRAFT/REVIEW 的完整包相同，REVIEW 的实际草稿完整。
+13. 私有容量修正必须逐字段保留全部已读 Activity 原业务数据及源码原文；只移除重复生成的 statementHandles/statements，最终包的唯一 statementDirectory 中完整 canonical handle 可定位原字段。已批准的 CHECK-only 投影另只省略其不用的 statementDirectory、已实际完整提供 Activity 的重复导航卡、其余未读导航卡的 terms；不修改原卡/包共享节点，不把尚未完整提供的 Activity 隐藏。测试须同时断言完整 Activity（含原 terms）、源码、候选和 file/source 召回信息不变，完整 Activity 与未读导航覆盖全部 Activity。全局选择逐字段不变；DRAFT/REVIEW 仍有相同完整包和 statementDirectory，REVIEW 实际草稿完整。该导航取舍不声称未读导航字段完全等价。
 14. CHECK 与过程 Schema 的具名共享定义展开后，允许值和原结构约束完全相同；非法、未读及非成员引用仍拒绝。全局选材的实际输入、Schema、Prompt 与指纹不因候选容量修正而变化，已成功全局选择仍可精确复用；变更过的 CHECK/过程请求不误复用旧结果。离线容量观察同时计输入和 Schema，并区分首批材料与补读后的实际完整包，不启动真实 Provider。
 15. CHECK 成员合同明确化只在该任务的 `activityUses` Schema 增加 `minItems: 1`，Prompt v2 明确两个集合均返回完整最终值、不调整也原样完整返回。测试覆盖完整非空成员传至最终候选、真正空 context 合法、空成员仍拒绝且不执行补读或过程调用、`name/purpose/scope=null` 沿用原值、未涉及的增量处置承接。实际 Prompt/Schema 变化使旧 CHECK 指纹不匹配，全局选材保持不变；不修改保存的旧 raw response、不自动重试，不升公共、producer 或输出容器版本。该项是具名合同修正，不改变第 14 项容量去重的等价要求。
+16. 已批准租户一次性修正只允许模块设计 §7 所列 pointer/before/after，唯一目标 useLocalId 必须实际存在；除该值外 DRAFT/REVIEW 不变，复用现有 parser/ref allowlist 与 source normalization 验证后才保存新 batch。原 FAILED run、原 Provider raw 字节和正常未知引用拒绝行为不变，Provider 调用为 0。不可覆盖清单与首次导入 pair 的 reviewCorrection 标记能定位原文件及派生结果；以后正常显式复用经既有 reusedFromModelBatchId 链及同一 jobKey 回到该标记，不要求复制额外字段，但不得删除来源链/清单或声称原样模型输出。实际来源映射仍重新计算。该项由一次性工具核验，不增加生产字段传递或新测试协议；无修正记录、正常 parser、重试纪律及公开入口保持不变。
 
 测试不要求补每一个来源链接，也不新建证明或中文含义校验。运行构建前声明范围，真实产品调用不进入自动测试。
 
@@ -95,6 +96,8 @@ Luna/xhigh 写明确 RED，Terra/xhigh 最小 GREEN，Sol/xhigh 调试；设计�
 - 过程合法 UNRESOLVED 沿用原语义状态合同，不因单个未知联系使所有结果 fatal；coverage CLOSED 也不意味着已识别全部业务。
 
 产品内容改进轮次沿用现有具名问题/显式授权纪律。阅读选择不是第三轮修稿，显式新批次也不是无限替换已定候选的许可。
+
+本轮唯一例外是用户已明确批准的租户错误类型引用映射：只执行 §2 第 16 项，不改旧失败事实，也不授权任何第二处修正或新模型调用。原 REVIEW 在正常 parser 中仍应失败；只有独立保存且带清单标记的派生副本可作为该次新导入的结果。
 
 ## 7. 设计闭环结论与未验证项
 

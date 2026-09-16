@@ -60,6 +60,8 @@
 
 候选及用法、首批**实际取得**的完整 Activity 和原文、搜索/读取限制、全仓轻量导航和文件目录。不是只有阅读清单，也不是只有摘要。
 
+已批准的 CHECK-only 输入投影不发送该任务不用的 statementDirectory，也不重复发送已完整提供 Activity 的导航卡；其余未读导航卡只省略 terms。完整 Activity 与未读卡仍覆盖全部 Activity，全部文件/来源召回信息及候选选项不变，已读 Activity（包括原 terms）和源码全文不减。全局选材仍发送原完整导航，最终 DRAFT/REVIEW 仍发送相同完整包及 statementDirectory。此处仅解释输入投影，现有 CHECK v2 指令及响应 Schema 不变，不增加阅读轮次。
+
 ### 指令
 
 ```text
@@ -203,6 +205,8 @@ context 活动可以支持理解，不必强行成为步骤。
 全局选材的 Prompt v1、实际输入和响应 Schema 保持不变。成员合同修正仅将私有阅读检查 Prompt 从 v1 改为 v2，并在该任务的 `activityUses` Schema 增加 `minItems: 1`；单次决策保存容器仍为 `process-reading-decision-v1`，公共产物、producer 和过程输出版本不变。过程 Prompt/响应合同仍为 v3，现有 Activity、首次目录和归并 Prompt 不变。完整 Prompt 内容、实际包和响应 Schema 都进入既有任务复用指纹：旧 CHECK 因内容变化不能误复用，成功的全局选择继续满足原精确复用条件。
 
 已保存的失败 CHECK raw response 不补写成员、不自动重试，不把该次补读清单当成已执行的读取。新的真实 CHECK 需明确授权；文档及离线验证不授权模型调用。
+
+上述 CHECK-only 导航投影只改变实际 CHECK 输入及其既有内容指纹，不再次变更 Prompt 版本，不影响已成功全局选择或最终过程 pair 的输入/Prompt/Schema 指纹。用户另批准的单次租户 REVIEW 引用类型映射属于私有派生结果导入，不是 Prompt 修订或新增模型审阅：按模块设计 §7 保留原 raw 与失败状态，以独立不可覆盖清单及 reviewCorrection 标记说明来源；不得扩成自动输出修复。
 
 ## 7. 实验问题与通用 Prompt 分离
 
