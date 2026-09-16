@@ -30,7 +30,7 @@ SOURCE_CONTEXT 可支持安全源码阅读，但不能赋 CLOSED、SOURCE_CONFIR
 | 候选过程材料 | ProcessMaterialAssembler | 重开完整 Activity 和选定保存源码；不重扫或解释 |
 | 详细过程 | CandidateProcessReconstructor | DRAFT + 完整 REVIEW；结构化阶段、谓词、规则和 certainty |
 | 仓库过程归并 | RepositoryProcessConsolidator | 比较重叠候选、保留替代与冲突、闭合分母 |
-| 过程/九章发布 | BusinessProcessPublisher / BusinessReportPublisher | 前者确定性发布过程主读物；后者只编排已归并目录 |
+| 过程/历史九章 | BusinessProcessPublisher / historical report reader | 前者确定性发布过程主读物；后者只读取和重渲染已有九章 checkpoint |
 
 Step05 在现有 flow-slices/Capsule 文件中保存有代码的上下文。无 strict Flow 的安全入口也由同一 owner 整理，flowRef=null；不要求另一个 noFlow chain Module 或 Builder fallback 分析器。
 
@@ -78,7 +78,7 @@ fatal：错误 source identity、坏 bytes、危险 path、断 refs、伪 exact 
 
 ## 7. 当前实现审计
 
-Canonical stores、源码/图/Fact 纵切、BusinessMaterialBuilder、ActivityExplainer、新BusinessProcessDiscovery/Publisher、BusinessReportPublisher、BusinessAnalysisWorkflow、RepositoryAnalysisAgent 和持久化运行基础均已存在。Step05 EntryContext→Builder 接力、普通 Flow/Capsule 发布去重、Spring unrestricted `methodCondition`、Activity 任意 N/v2 REVIEW、两级并行及独立模型批次均已实现。
+Canonical stores、源码/图/Fact 纵切、BusinessMaterialBuilder、ActivityExplainer、新 BusinessProcessDiscovery/Publisher、RepositoryAnalysisAgent 和持久化运行基础均已存在。旧 BusinessAnalysisWorkflow、singleton ProcessExplainer、九章生产器及 generate 路线已经退役；历史报告 reader/renderer 保留。Step05 EntryContext→Builder 接力、普通 Flow/Capsule 发布去重、Spring unrestricted `methodCondition`、Activity 任意 N/v2 REVIEW、两级并行及独立模型批次均已实现。
 
 固定完整运行已保存326条已审Activity，入口覆盖无遗漏。现有Step07已生成14候选、46过程，coverage CLOSED、semantic PARTIAL；旧340 singleton结果只作历史对照。当前过程仍偏接收/校验/主动作/返回模板，不能据结构通过宣布生命周期语义通过。
 

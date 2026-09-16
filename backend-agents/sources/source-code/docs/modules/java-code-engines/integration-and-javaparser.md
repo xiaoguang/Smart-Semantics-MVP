@@ -65,7 +65,7 @@ Builder 已不含 JavaParser 语法读取或引擎分支。它只做完整方法
 
 当内容过大：先在入口边界分包，共享方法去重；对单入口保留整体调用目录与明确选入的完整方法，未进入材料的body有具体记录。若入口和直接业务实现都塞不进有效请求，不把Controller-only降级叫作完整业务材料；需扩展有效上下文或报告材料不完整。成本预算不是静默截断的理由，真实模型有上下文上限则如实处理，不声称用户可用授权消除物理限制。
 
-ActivityExplainer 的既有合同继续生效：模型解释对象、条件与业务目的，Java 不能用行业词典替代；`missingEntryKeys`、完整 REVIEW 和具体未解释入口规则保持。当前 `ProcessExplainer` 的精确相等分组和单阶段输出不再是目标下游：新的 Step07 直接重用已审 Activity 与保存的 SourceRef，执行全仓目录发现、候选详细重建和仓库归并。这个替换不改变任何引擎 Interface，也不要求重新导航源码。
+ActivityExplainer 的既有合同继续生效：模型解释对象、条件与业务目的，Java 不能用行业词典替代；`missingEntryKeys`、完整 REVIEW 和具体未解释入口规则保持。退役 `ProcessExplainer` 的精确相等分组和单阶段输出不是当前下游：Step07 直接重用已审 Activity 与保存的 SourceRef，执行全仓目录发现、候选详细重建和仓库归并。这个替换不改变任何引擎 Interface，也不要求重新导航源码。
 
 ## 2. JavaParserCodeEngine：已完成的第二阶段适配
 
@@ -105,7 +105,7 @@ ActivityExplainer 的既有合同继续生效：模型解释对象、条件与�
 | analysis/flow/compiler/EntryRootedFlowCompiler.java | 入口context消费engine结果；严格Flow算法留在原技术增强路径 | 恢复旧技术能力输出 |
 | analysis/flow的projector/publisher/readers | 移除无body读取却要求strictProof的耦合；同步新版本 | 共用 |
 | analysis/interpretation/material/BusinessMaterialBuilder.java | 删除公共路径JavaParser调用，直接消费统一材料 | 共用，禁止engine条件分支 |
-| runtime/PersistedBusinessRunExecutor.java | 注入同一材料结果；当前链可运行，目标 Step07 改接过程发现与发布两个深 Module | 共用，不按 engine 分叉语义链 |
+| runtime/RepositoryAnalysisRunCoordinator.java | 执行明确的材料、Activity 或过程意图；过程运行复用既有 Activity checkpoint | 共用，不按 engine 分叉语义链 |
 | adapter/cli/SourceAnalysisCli.java | 宿主启动加载配置，现有命令语义不变 | YAML选择第二个Adapter |
 | artifact中的policy/store/readers | 接受实际能力声明，拒绝旧context版本或损坏ref | 共用；不建设双版本reader |
 
@@ -163,6 +163,6 @@ GitHub runner 没有固定客户源码、已验证 JDT LS 发行目录和依赖 
 `MODULE_PUBLICATION_COLLISION`，原索引保持不变；切换YAML配置必须创建新运行。该门禁禁止
 JDT与JavaParser跨引擎覆盖或复用同一份索引，不实现自动fallback或混合结果。
 
-现有 `CanonicalModuleArtifactStore`、`CanonicalAnalysisStepArtifactStore`、CLI 操作面、`RepositoryAnalysisAgent`、`SourceAnalysisApplication`、`BusinessAnalysisWorkflow`、`PersistedBusinessRunExecutor` 和 `ActivityExplainer` 已由两个引擎共用。JavaParser Adapter 与双引擎选择回归没有重写这些模块。当前 `ProcessExplainer` 和 `BusinessReportPublisher` 仍存在，但它们的单阶段过程及“报告再次读 Activity”行为将在已批准的业务过程发现实现中被替换；该语义修改不得倒灌到引擎 Adapter。
+现有 `CanonicalModuleArtifactStore`、`CanonicalAnalysisStepArtifactStore`、唯一 `source-analysis` CLI、`RepositoryAnalysisAgent`、`SourceAnalysisApplication`、运行 coordinator 和 `ActivityExplainer` 由两个引擎共用。JavaParser Adapter 与双引擎选择回归没有重写这些模块。旧 `ProcessExplainer`、旧九章生产器及其 `generate` 编排已经删除；历史九章 reader/renderer 保留。该语义清理不得倒灌到引擎 Adapter。
 
 JavaParser 迁移 oracle 固定在 git `cec1997`。迁移前先记录 `SpringHttpEntryDiscovererTest`、`MapperCapabilityCatalogerTest`、四个 graph builder 测试、`EvidenceGraphBuilderTest`、`ProvenCodeFactsExecutionTest`、`BusinessFlowsExecutionTest`、`BusinessMaterialBuilderTest`、`TechnicalAnalysisWorkflowTest` 与 `FourEntryBusinessSemanticChainTest` 的行为；第二阶段保留可观察能力和诚实 gap，不比较两引擎数量、解析率或 JSON SHA。可执行清单见[实施计划](../../plans/jdt-first-java-engine-implementation-plan.md#javaparser-pre-migration-capability-baseline-at-cec1997)。

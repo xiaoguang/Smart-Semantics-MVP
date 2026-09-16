@@ -36,7 +36,6 @@ import org.sourceanalysis.app.adapter.provider.OpenAiResponsesProfile;
 import org.sourceanalysis.app.adapter.provider.OpenAiResponsesStructuredProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.analysis.discovery.DiscoveryProfile;
-import org.sourceanalysis.app.analysis.document.BusinessReportProfile;
 import org.sourceanalysis.app.analysis.document.BusinessReportCheckpointRenderer;
 import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionProfile;
 import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilationProfile;
@@ -48,17 +47,16 @@ import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanati
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationResult;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityJobExecutionConfiguration;
 import org.sourceanalysis.app.analysis.interpretation.activity.ExplainActivitiesRequest;
+import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
-import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
 import org.sourceanalysis.app.analysis.inventory.PersistedVerifiedSourceTextReader;
 import org.sourceanalysis.app.analysis.inventory.ProfileView;
 import org.sourceanalysis.app.analysis.knowledge.ProcessDiscoveryProfile;
-import org.sourceanalysis.app.analysis.knowledge.ProcessExplanationProfile;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
@@ -83,12 +81,12 @@ import org.sourceanalysis.app.capture.localgit.LocalGitCommitCaptureAdapter;
 import org.sourceanalysis.app.capture.localgit.LocalGitSourceRegistry;
 import org.sourceanalysis.app.capture.localgit.RegisteredSourceCapture;
 import org.sourceanalysis.app.capture.localgit.SourceRegistrationReference;
+import org.sourceanalysis.app.runtime.AnalysisExecutionIntent;
 import org.sourceanalysis.app.runtime.AnalysisRunLifecycleState;
 import org.sourceanalysis.app.runtime.AnalysisRunOutput;
 import org.sourceanalysis.app.runtime.AnalysisRunReference;
 import org.sourceanalysis.app.runtime.AnalysisRunRequest;
 import org.sourceanalysis.app.runtime.AnalysisRunRequestTemplate;
-import org.sourceanalysis.app.runtime.AnalysisExecutionIntent;
 import org.sourceanalysis.app.runtime.AnalysisStepExecutionRequest;
 import org.sourceanalysis.app.runtime.ArtifactQuery;
 import org.sourceanalysis.app.runtime.ArtifactView;
@@ -97,29 +95,23 @@ import org.sourceanalysis.app.runtime.BusinessOutputArtifactKey;
 import org.sourceanalysis.app.runtime.BusinessProcessWorkflowResult;
 import org.sourceanalysis.app.runtime.EffectiveEngineConfiguration;
 import org.sourceanalysis.app.runtime.EngineConfigurationLoader;
+import org.sourceanalysis.app.runtime.LocalRepositoryAnalysisAgent;
 import org.sourceanalysis.app.runtime.PersistedBusinessProcessRunExecutor;
-import org.sourceanalysis.app.runtime.PersistedBusinessRunConfiguration;
 import org.sourceanalysis.app.runtime.PersistedTechnicalRunConfiguration;
 import org.sourceanalysis.app.runtime.PersistedTechnicalRunExecutor;
+import org.sourceanalysis.app.runtime.RenderedDocumentReference;
 import org.sourceanalysis.app.runtime.RepositoryAnalysisRunCoordinator;
-import org.sourceanalysis.app.runtime.LocalRepositoryAnalysisAgent;
+import org.sourceanalysis.app.runtime.RunInspection;
 import org.sourceanalysis.app.runtime.SourceAnalysisApplication;
 import org.sourceanalysis.app.runtime.TechnicalAnalysisWorkflowResult;
-import org.sourceanalysis.app.runtime.RenderedDocumentReference;
-import org.sourceanalysis.app.runtime.RunInspection;
 import org.sourceanalysis.app.runtime.modeljob.ModelJobExecutionConfiguration;
 import org.sourceanalysis.app.runtime.modeljob.ModelJobProviderBinding;
 
-/**
- * Explicit maintenance launcher for one complete, frozen JDT repository material-planning run.
- *
- * <p>It is intentionally not another public analysis adapter. The configuration is resolved here,
- * then the existing application, capture, canonical-store, technical, and material-building seams
- * execute once. The materials-only mode never constructs a model Provider; continuation modes use
- * the validated model-job routes and bounded execution configuration.
- */
+/** Internal configuration and execution support behind the unique {@link SourceAnalysisCli}. */
 final class ConfiguredSourceAnalysisRuntime {
 
+  private static final String MODE_CAPTURE_LOCAL_GIT = "capture-local-git";
+  private static final String MODE_START = "start";
   private static final String MODE_MATERIALS_ONLY = "materials-only";
   private static final String MODE_EXPORT_MATERIALS_STATE = "export-materials-state";
   private static final String MODE_ACTIVITIES_SAMPLE = "activities-sample";
@@ -147,21 +139,28 @@ final class ConfiguredSourceAnalysisRuntime {
     try {
       Arguments parsed = Arguments.parse(arguments);
       RepositoryRunConfiguration configuration = RepositoryRunConfiguration.load(parsed.config());
-      parsed.rejectLegacyProviderConfiguration();
       switch (parsed.mode()) {
+        case MODE_CAPTURE_LOCAL_GIT -> executeCaptureLocalGit(configuration, output);
+        case MODE_START -> executeStart(configuration, parsed.sourceRegistrationId(), output);
         case MODE_MATERIALS_ONLY -> executeMaterialsOnly(configuration, output, errors);
         case MODE_EXPORT_MATERIALS_STATE ->
             executeExportMaterialsState(configuration, parsed.outputState(), output);
         case MODE_ACTIVITIES_SAMPLE ->
             executeActivitiesSample(
-                configuration, parsed.materialId(), parsed.reuseFromModelBatchId(), output);
+                configuration,
+                parsed.materialId(),
+                parsed.reuseFromModelBatchId(),
+                parsed.runId(),
+                output);
         case MODE_ACTIVITIES ->
-            executeActivities(configuration, parsed.reuseFromModelBatchId(), output);
+            executeActivities(
+                configuration, parsed.reuseFromModelBatchId(), parsed.runId(), output);
         case MODE_BUSINESS_PROCESSES ->
             executeBusinessProcesses(
                 configuration,
                 parsed.activityModelBatchId(),
                 parsed.reuseFromModelBatchId(),
+                parsed.runId(),
                 output);
         case MODE_INSPECT -> executeInspect(configuration, parsed.runId(), output);
         case MODE_ARTIFACT ->
@@ -188,40 +187,44 @@ final class ConfiguredSourceAnalysisRuntime {
     }
   }
 
+  private static void executeCaptureLocalGit(
+      RepositoryRunConfiguration configuration, PrintWriter output) {
+    SourceRegistrationReference registration = captureConfiguredSource(configuration);
+    output.printf("sourceRegistrationId=%s%n", registration.sourceRegistrationId().value());
+  }
+
+  private static void executeStart(
+      RepositoryRunConfiguration configuration,
+      ArtifactId sourceRegistrationId,
+      PrintWriter output) {
+    if (sourceRegistrationId == null) {
+      throw failure("ARGUMENTS_INVALID");
+    }
+    LocalGitSourceRegistry sourceRegistry =
+        new LocalGitSourceRegistry(configuration.captureWorkspace());
+    RegisteredSourceCapture capture = sourceRegistry.reopen(sourceRegistrationId);
+    verifyConfiguredCapture(configuration, capture);
+    FrozenInput frozen = FrozenInput.create(configuration, capture);
+    AnalysisRunRequest request =
+        requestTemplate(configuration, frozen).create(sourceRegistrationId);
+    try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
+      AnalysisRunReference queued = RunStoreBootstrap.queueAnalysisRun(store, request);
+      output.printf("runId=%s%n", queued.runId().value());
+      output.printf("lifecycleState=%s%n", queued.lifecycleState());
+    }
+  }
+
   private static void executeMaterialsOnly(
       RepositoryRunConfiguration configuration, PrintWriter output, PrintWriter errors) {
     requireFreshStateDestination(configuration.stateFile());
-    LocalGitCommitCaptureAdapter captureAdapter =
-        new LocalGitCommitCaptureAdapter(
-            configuration.captureWorkspace(), configuration.gitExecutable());
-    SourceRegistrationReference registration =
-        captureAdapter.capture(
-            new LocalGitCaptureRequestTemplate(
-                    configuration.repositoryIdentity(),
-                    configuration.capturePolicyRef(),
-                    configuration.resourceBudgetRef())
-                .create(configuration.repositoryPath(), configuration.commitId()));
+    SourceRegistrationReference registration = captureConfiguredSource(configuration);
     LocalGitSourceRegistry sourceRegistry =
         new LocalGitSourceRegistry(configuration.captureWorkspace());
     RegisteredSourceCapture capture = sourceRegistry.reopen(registration.sourceRegistrationId());
-    if (!registration.sourceRegistrationId().equals(capture.sourceRegistrationRef().artifactId())
-        || !configuration.repositoryIdentity().equals(capture.declaredRepositoryIdentity())
-        || !configuration.commitId().equals(capture.commitId())) {
-      throw failure("CAPTURE_IDENTITY_INVALID");
-    }
+    verifyConfiguredCapture(configuration, capture);
 
     FrozenInput frozen = FrozenInput.create(configuration, capture);
-    AnalysisRunRequestTemplate requestTemplate =
-        new AnalysisRunRequestTemplate(
-            frozen.reference(),
-            configuration.profileBundleRef(),
-            configuration.resourceBudgetRef(),
-            configuration.toolchainRef(),
-            configuration.schemaBundleRef(),
-            configuration.promptBundleRef(),
-            null,
-            artifactReference(configuration.policyRegistry().reference()),
-            configuration.candidateSeriesRef());
+    AnalysisRunRequestTemplate requestTemplate = requestTemplate(configuration, frozen);
 
     try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
       CanonicalModuleArtifactStore modules =
@@ -245,9 +248,7 @@ final class ConfiguredSourceAnalysisRuntime {
               configuration.technicalConfiguration(frozen.bytes()));
       BusinessMaterialBuilder materialBuilder =
           new BusinessMaterialBuilder(
-              modules,
-              steps,
-              new PersistedVerifiedSourceTextReader(steps, sourceRegistry));
+              modules, steps, new PersistedVerifiedSourceTextReader(steps, sourceRegistry));
       java.util.concurrent.atomic.AtomicReference<BusinessMaterialBuildResult> completedMaterials =
           new java.util.concurrent.atomic.AtomicReference<>();
       SourceAnalysisApplication application =
@@ -265,8 +266,7 @@ final class ConfiguredSourceAnalysisRuntime {
                         materialBuilder.build(
                             new BuildBusinessMaterialsRequest(
                                 flows, configuration.materialProfile()));
-                    writeState(
-                        configuration, request.runId(), flows, materials, modules);
+                    writeState(configuration, request.runId(), flows, materials, modules);
                     completedMaterials.set(materials);
                     return new AnalysisRunOutput(materials.checkpoint(), null, null, null);
                   }),
@@ -291,6 +291,40 @@ final class ConfiguredSourceAnalysisRuntime {
           "businessMaterialCheckpoint=%s%n", materials.checkpoint().moduleReceiptId().value());
       output.printf("materialsStateFile=%s%n", configuration.stateFile());
     }
+  }
+
+  private static SourceRegistrationReference captureConfiguredSource(
+      RepositoryRunConfiguration configuration) {
+    return new LocalGitCommitCaptureAdapter(
+            configuration.captureWorkspace(), configuration.gitExecutable())
+        .capture(
+            new LocalGitCaptureRequestTemplate(
+                    configuration.repositoryIdentity(),
+                    configuration.capturePolicyRef(),
+                    configuration.resourceBudgetRef())
+                .create(configuration.repositoryPath(), configuration.commitId()));
+  }
+
+  private static void verifyConfiguredCapture(
+      RepositoryRunConfiguration configuration, RegisteredSourceCapture capture) {
+    if (!configuration.repositoryIdentity().equals(capture.declaredRepositoryIdentity())
+        || !configuration.commitId().equals(capture.commitId())) {
+      throw failure("CAPTURE_IDENTITY_INVALID");
+    }
+  }
+
+  private static AnalysisRunRequestTemplate requestTemplate(
+      RepositoryRunConfiguration configuration, FrozenInput frozen) {
+    return new AnalysisRunRequestTemplate(
+        frozen.reference(),
+        configuration.profileBundleRef(),
+        configuration.resourceBudgetRef(),
+        configuration.toolchainRef(),
+        configuration.schemaBundleRef(),
+        configuration.promptBundleRef(),
+        null,
+        artifactReference(configuration.policyRegistry().reference()),
+        configuration.candidateSeriesRef());
   }
 
   private static void executeExportMaterialsState(
@@ -329,6 +363,7 @@ final class ConfiguredSourceAnalysisRuntime {
       RepositoryRunConfiguration configuration,
       String materialId,
       AnalysisRunId reuseFromModelBatchId,
+      AnalysisRunId requestedRunId,
       PrintWriter output) {
     ModelJobsConfiguration modelJobs = configuration.requireModelJobsForExecution();
     RepositoryRunStateV3.SavedState state = loadV3State(configuration);
@@ -344,7 +379,8 @@ final class ConfiguredSourceAnalysisRuntime {
           startModelBatch(
               store,
               state.sourceRunId(),
-              artifactReference(configuration.policyRegistry().reference()));
+              artifactReference(configuration.policyRegistry().reference()),
+              requestedRunId);
       try {
         validateReuseBatch(store, modelJobs, state, running.runId(), reuseFromModelBatchId);
         writeModelJobExecutionConfiguration(
@@ -382,6 +418,7 @@ final class ConfiguredSourceAnalysisRuntime {
   private static void executeActivities(
       RepositoryRunConfiguration configuration,
       AnalysisRunId reuseFromModelBatchId,
+      AnalysisRunId requestedRunId,
       PrintWriter output) {
     ModelJobsConfiguration modelJobs = configuration.requireModelJobsForExecution();
     RepositoryRunStateV3.SavedState state = loadV3State(configuration);
@@ -402,8 +439,7 @@ final class ConfiguredSourceAnalysisRuntime {
                     || request.exactMaterialId() != null) {
                   throw failure("ANALYSIS_EXECUTION_INTENT_INVALID");
                 }
-                validateReuseBatch(
-                    store, modelJobs, state, request.runId(), reuseFromModelBatchId);
+                validateReuseBatch(store, modelJobs, state, request.runId(), reuseFromModelBatchId);
                 writeModelJobExecutionConfiguration(
                     configuration,
                     modelJobs,
@@ -432,12 +468,12 @@ final class ConfiguredSourceAnalysisRuntime {
                     null);
               });
       LocalRepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store, coordinator);
-      AnalysisRunReference queued =
-          agent.start(
-              modelBatchRequest(
-                  RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, state.sourceRunId())
-                      .request(),
-                  artifactReference(configuration.policyRegistry().reference())));
+      AnalysisRunRequest batchRequest =
+          modelBatchRequest(
+              RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, state.sourceRunId())
+                  .request(),
+              artifactReference(configuration.policyRegistry().reference()));
+      AnalysisRunReference queued = queuedRun(store, agent, requestedRunId, batchRequest);
       AnalysisRunReference finished =
           agent.executeStep(
               new AnalysisStepExecutionRequest(
@@ -449,8 +485,7 @@ final class ConfiguredSourceAnalysisRuntime {
       output.printf("sourceRunId=%s%n", state.sourceRunId().value());
       output.printf("modelBatchId=%s%n", finished.runId().value());
       output.printf("lifecycleState=%s%n", finished.lifecycleState());
-      output.printf(
-          "activityCheckpoint=%s%n", activities.checkpoint().moduleReceiptId().value());
+      output.printf("activityCheckpoint=%s%n", activities.checkpoint().moduleReceiptId().value());
     }
   }
 
@@ -458,6 +493,7 @@ final class ConfiguredSourceAnalysisRuntime {
       RepositoryRunConfiguration configuration,
       AnalysisRunId activityModelBatchId,
       AnalysisRunId reuseFromModelBatchId,
+      AnalysisRunId requestedRunId,
       PrintWriter output) {
     ModelJobsConfiguration modelJobs = configuration.requireModelJobsForExecution();
     ProcessDiscoveryProfile processProfile = configuration.requireProcessDiscoveryProfile();
@@ -482,8 +518,8 @@ final class ConfiguredSourceAnalysisRuntime {
           new org.sourceanalysis.app.analysis.interpretation.material
                   .BusinessMaterialCheckpointReader(inputModules)
               .reopen(materialState.materialsCheckpoint());
-      java.util.concurrent.atomic.AtomicReference<BusinessProcessWorkflowResult> completedProcesses =
-          new java.util.concurrent.atomic.AtomicReference<>();
+      java.util.concurrent.atomic.AtomicReference<BusinessProcessWorkflowResult>
+          completedProcesses = new java.util.concurrent.atomic.AtomicReference<>();
       RepositoryAnalysisRunCoordinator coordinator =
           RepositoryAnalysisRunCoordinator.configured(
               request -> {
@@ -525,13 +561,13 @@ final class ConfiguredSourceAnalysisRuntime {
                     null);
               });
       LocalRepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store, coordinator);
-      AnalysisRunReference queued =
-          agent.start(
-              modelBatchRequest(
-                  RunStoreBootstrap
-                      .reopenPersistedAnalysisRunRequest(store, materialState.sourceRunId())
-                      .request(),
-                  artifactReference(configuration.policyRegistry().reference())));
+      AnalysisRunRequest batchRequest =
+          modelBatchRequest(
+              RunStoreBootstrap.reopenPersistedAnalysisRunRequest(
+                      store, materialState.sourceRunId())
+                  .request(),
+              artifactReference(configuration.policyRegistry().reference()));
+      AnalysisRunReference queued = queuedRun(store, agent, requestedRunId, batchRequest);
       AnalysisRunReference finished =
           agent.executeStep(
               new AnalysisStepExecutionRequest(
@@ -548,11 +584,9 @@ final class ConfiguredSourceAnalysisRuntime {
       output.printf("activityModelBatchId=%s%n", activityModelBatchId.value());
       output.printf("modelBatchId=%s%n", finished.runId().value());
       output.printf("lifecycleState=%s%n", finished.lifecycleState());
+      output.printf("businessProcessCount=%d%n", result.publication().catalog().processes().size());
       output.printf(
-          "businessProcessCount=%d%n", result.publication().catalog().processes().size());
-      output.printf(
-          "semanticDeliveryStatus=%s%n",
-          result.publication().coverage().semanticDeliveryStatus());
+          "semanticDeliveryStatus=%s%n", result.publication().coverage().semanticDeliveryStatus());
       output.printf("businessProcessesFile=%s%n", document);
     }
   }
@@ -579,8 +613,7 @@ final class ConfiguredSourceAnalysisRuntime {
       output.printf("runId=%s%n", inspection.analysisRun().runId().value());
       output.printf("lifecycleState=%s%n", inspection.analysisRun().lifecycleState());
       if (inspection.output() != null) {
-        output.printf(
-            "completedActivities=%s%n", inspection.output().hasCompletedActivities());
+        output.printf("completedActivities=%s%n", inspection.output().hasCompletedActivities());
         output.printf("completedProcesses=%s%n", inspection.output().hasCompletedProcesses());
         output.printf("completedReport=%s%n", inspection.output().hasCompletedReport());
       }
@@ -598,8 +631,7 @@ final class ConfiguredSourceAnalysisRuntime {
       LocalRepositoryAnalysisAgent agent =
           new LocalRepositoryAnalysisAgent(
               store, null, null, new BusinessCheckpointArtifactReader(modules));
-      ArtifactView artifact =
-          agent.artifact(new ArtifactQuery(runId.value(), key, maxBytes));
+      ArtifactView artifact = agent.artifact(new ArtifactQuery(runId.value(), key, maxBytes));
       output.print(artifact.contentUtf8());
     }
   }
@@ -785,14 +817,36 @@ final class ConfiguredSourceAnalysisRuntime {
   }
 
   private static AnalysisRunReference startModelBatch(
-      RunStoreHandle store, AnalysisRunId sourceRunId, ArtifactReference outputPolicy) {
+      RunStoreHandle store,
+      AnalysisRunId sourceRunId,
+      ArtifactReference outputPolicy,
+      AnalysisRunId requestedRunId) {
     org.sourceanalysis.app.runtime.PersistedAnalysisRunRequest source =
         RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, sourceRunId);
-    AnalysisRunReference queued =
-        RunStoreBootstrap.queueAnalysisRun(
-            store, modelBatchRequest(source.request(), outputPolicy));
+    AnalysisRunRequest expected = modelBatchRequest(source.request(), outputPolicy);
+    AnalysisRunReference queued = queuedRun(store, null, requestedRunId, expected);
     return RunStoreBootstrap.transitionAnalysisRun(
         store, queued.runId(), AnalysisRunLifecycleState.QUEUED, AnalysisRunLifecycleState.RUNNING);
+  }
+
+  private static AnalysisRunReference queuedRun(
+      RunStoreHandle store,
+      LocalRepositoryAnalysisAgent agent,
+      AnalysisRunId requestedRunId,
+      AnalysisRunRequest expectedRequest) {
+    if (requestedRunId == null) {
+      return agent == null
+          ? RunStoreBootstrap.queueAnalysisRun(store, expectedRequest)
+          : agent.start(expectedRequest);
+    }
+    AnalysisRunReference queued = RunStoreBootstrap.reopenAnalysisRun(store, requestedRunId);
+    AnalysisRunRequest actual =
+        RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, requestedRunId).request();
+    if (queued.lifecycleState() != AnalysisRunLifecycleState.QUEUED
+        || !actual.equals(expectedRequest)) {
+      throw failure("QUEUED_RUN_INPUT_MISMATCH");
+    }
+    return queued;
   }
 
   static AnalysisRunRequest modelBatchRequest(
@@ -1227,12 +1281,12 @@ final class ConfiguredSourceAnalysisRuntime {
   private record Arguments(
       Path config,
       String mode,
-      Path legacyProviderConfig,
       String materialId,
       Path outputState,
       AnalysisRunId activityModelBatchId,
       AnalysisRunId reuseFromModelBatchId,
       AnalysisRunId runId,
+      ArtifactId sourceRegistrationId,
       BusinessOutputArtifactKey businessOutputArtifactKey,
       Integer maxBytes) {
 
@@ -1244,12 +1298,12 @@ final class ConfiguredSourceAnalysisRuntime {
       }
       Path config = argumentPath(arguments[1]);
       String mode = arguments[3];
-      Path legacyProviderConfig = null;
       String materialId = null;
       Path outputState = null;
       AnalysisRunId activityModelBatchId = null;
       AnalysisRunId reuseFromModelBatchId = null;
       AnalysisRunId runId = null;
+      ArtifactId sourceRegistrationId = null;
       BusinessOutputArtifactKey businessOutputArtifactKey = null;
       Integer maxBytes = null;
       if ((arguments.length - 4) % 2 != 0) {
@@ -1262,7 +1316,6 @@ final class ConfiguredSourceAnalysisRuntime {
           throw failure("ARGUMENTS_INVALID");
         }
         switch (option) {
-          case "--provider-config" -> legacyProviderConfig = argumentPath(value);
           case "--material-id" -> materialId = value;
           case "--output-state" -> outputState = argumentPath(value);
           case "--activity-model-batch" -> {
@@ -1284,6 +1337,16 @@ final class ConfiguredSourceAnalysisRuntime {
               runId = AnalysisRunId.parse(value);
             } catch (IllegalArgumentException invalid) {
               throw failure("ARGUMENTS_INVALID", invalid);
+            }
+          }
+          case "--source-registration" -> {
+            try {
+              sourceRegistrationId = ArtifactId.parse(value);
+            } catch (IllegalArgumentException invalid) {
+              throw failure("ARGUMENTS_INVALID", invalid);
+            }
+            if (!sourceRegistrationId.value().startsWith("source-registration:")) {
+              throw failure("ARGUMENTS_INVALID");
             }
           }
           case "--key" -> {
@@ -1312,6 +1375,12 @@ final class ConfiguredSourceAnalysisRuntime {
               || outputState != null
               || activityModelBatchId != null
               || reuseFromModelBatchId != null)) {
+        throw failure("ARGUMENTS_INVALID");
+      }
+      if (MODE_CAPTURE_LOCAL_GIT.equals(mode) && arguments.length != 4) {
+        throw failure("ARGUMENTS_INVALID");
+      }
+      if (MODE_START.equals(mode) && (sourceRegistrationId == null || arguments.length != 6)) {
         throw failure("ARGUMENTS_INVALID");
       }
       if (MODE_EXPORT_MATERIALS_STATE.equals(mode)
@@ -1355,27 +1424,31 @@ final class ConfiguredSourceAnalysisRuntime {
               || arguments.length != 10)) {
         throw failure("ARGUMENTS_INVALID");
       }
-      if (!Set.of(MODE_INSPECT, MODE_ARTIFACT, MODE_RENDER).contains(mode)
+      if (!Set.of(
+                  MODE_INSPECT,
+                  MODE_ARTIFACT,
+                  MODE_RENDER,
+                  MODE_ACTIVITIES,
+                  MODE_ACTIVITIES_SAMPLE,
+                  MODE_BUSINESS_PROCESSES)
+              .contains(mode)
           && (runId != null || businessOutputArtifactKey != null || maxBytes != null)) {
+        throw failure("ARGUMENTS_INVALID");
+      }
+      if (!MODE_START.equals(mode) && sourceRegistrationId != null) {
         throw failure("ARGUMENTS_INVALID");
       }
       return new Arguments(
           config,
           mode,
-          legacyProviderConfig,
           materialId,
           outputState,
           activityModelBatchId,
           reuseFromModelBatchId,
           runId,
+          sourceRegistrationId,
           businessOutputArtifactKey,
           maxBytes);
-    }
-
-    private void rejectLegacyProviderConfiguration() {
-      if (legacyProviderConfig != null) {
-        throw failure("ARGUMENTS_INVALID");
-      }
     }
   }
 
@@ -1824,9 +1897,7 @@ final class ConfiguredSourceAnalysisRuntime {
       CapsuleProjectionProfile capsuleProfile,
       BusinessMaterialProfile materialProfile,
       ActivityExplanationProfile activityProfile,
-      ProcessExplanationProfile processProfile,
       ProcessDiscoveryProfile processDiscoveryProfile,
-      BusinessReportProfile reportProfile,
       int maxMaterialsToStart) {
 
     static RepositoryRunConfiguration load(Path configPath) {
@@ -1876,9 +1947,6 @@ final class ConfiguredSourceAnalysisRuntime {
       EffectiveEngineConfiguration engine =
           new EngineConfigurationLoader()
               .load(canonicalJson.encodeCanonical(engineDocument).copyToByteArray());
-      if (!EffectiveEngineConfiguration.JDT.equals(engine.javaEngine())) {
-        throw failure("JDT_ENGINE_REQUIRED");
-      }
       ModelJobsConfiguration modelJobs =
           sourceAnalysis.has("modelJobs")
               ? ModelJobsConfiguration.load(object(sourceAnalysis, "modelJobs"), canonicalJson)
@@ -1971,21 +2039,15 @@ final class ConfiguredSourceAnalysisRuntime {
       ObjectNode business = object(document, "business");
       requireFieldsAllowingOptional(
           business,
-          Set.of("activity", "material", "maxMaterialsToStart", "process", "report"),
-          Set.of("processDiscovery"));
+          Set.of("activity", "material", "maxMaterialsToStart", "processDiscovery"),
+          Set.of());
       BusinessMaterialProfile materialProfile =
           ConfiguredSourceAnalysisRuntime.materialProfile(object(business, "material"));
       ActivityExplanationProfile activityProfile =
           ConfiguredSourceAnalysisRuntime.activityProfile(object(business, "activity"));
-      ProcessExplanationProfile processProfile =
-          ConfiguredSourceAnalysisRuntime.processProfile(object(business, "process"));
       ProcessDiscoveryProfile processDiscoveryProfile =
-          business.has("processDiscovery")
-              ? ConfiguredSourceAnalysisRuntime.processDiscoveryProfile(
-                  object(business, "processDiscovery"))
-              : null;
-      BusinessReportProfile reportProfile =
-          ConfiguredSourceAnalysisRuntime.reportProfile(object(business, "report"));
+          ConfiguredSourceAnalysisRuntime.processDiscoveryProfile(
+              object(business, "processDiscovery"));
       int maxMaterialsToStart = positiveInt(business, "maxMaterialsToStart");
 
       return new RepositoryRunConfiguration(
@@ -2022,9 +2084,7 @@ final class ConfiguredSourceAnalysisRuntime {
           capsuleProfile,
           materialProfile,
           activityProfile,
-          processProfile,
           processDiscoveryProfile,
-          reportProfile,
           maxMaterialsToStart);
     }
 
@@ -2057,11 +2117,6 @@ final class ConfiguredSourceAnalysisRuntime {
           engineConfiguration,
           approvedClasspath,
           selectedEntryIds);
-    }
-
-    private PersistedBusinessRunConfiguration businessConfiguration() {
-      return new PersistedBusinessRunConfiguration(
-          materialProfile, activityProfile, processProfile, reportProfile, maxMaterialsToStart);
     }
   }
 
@@ -2342,29 +2397,6 @@ final class ConfiguredSourceAnalysisRuntime {
         positiveInt(value, "maxTextCharsPerValue"));
   }
 
-  private static ProcessExplanationProfile processProfile(ObjectNode value) {
-    requireFields(
-        value,
-        Set.of(
-            "maxActivitiesPerGroup",
-            "maxModelInputBytes",
-            "maxModelOutputBytes",
-            "maxProcessGroups",
-            "maxProcessesPerGroup",
-            "maxRepositorySummaryItems",
-            "maxTextCharsPerValue",
-            "maxValuesPerField"));
-    return new ProcessExplanationProfile(
-        positiveInt(value, "maxActivitiesPerGroup"),
-        positiveInt(value, "maxProcessGroups"),
-        positiveInt(value, "maxModelInputBytes"),
-        positiveInt(value, "maxModelOutputBytes"),
-        positiveInt(value, "maxProcessesPerGroup"),
-        positiveInt(value, "maxValuesPerField"),
-        positiveInt(value, "maxTextCharsPerValue"),
-        nonnegativeInt(value, "maxRepositorySummaryItems"));
-  }
-
   private static ProcessDiscoveryProfile processDiscoveryProfile(ObjectNode value) {
     requireFields(
         value,
@@ -2386,21 +2418,6 @@ final class ConfiguredSourceAnalysisRuntime {
         positiveInt(value, "maxModelInputBytes"),
         positiveInt(value, "maxModelOutputBytes"),
         positiveInt(value, "maxProcessesPerCandidate"),
-        positiveInt(value, "maxValuesPerField"),
-        positiveInt(value, "maxTextCharsPerValue"));
-  }
-
-  private static BusinessReportProfile reportProfile(ObjectNode value) {
-    requireFields(
-        value,
-        Set.of(
-            "maxModelInputBytes",
-            "maxModelOutputBytes",
-            "maxTextCharsPerValue",
-            "maxValuesPerField"));
-    return new BusinessReportProfile(
-        positiveInt(value, "maxModelInputBytes"),
-        positiveInt(value, "maxModelOutputBytes"),
         positiveInt(value, "maxValuesPerField"),
         positiveInt(value, "maxTextCharsPerValue"));
   }

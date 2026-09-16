@@ -380,8 +380,7 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
                 || (PROCESS_CATALOG_OUTPUT.equals(outputKind)
                     && output.hasCompletedProcesses()
                     && !output.hasCompletedReport())
-                || (COMPLETE_REPORT_OUTPUT.equals(outputKind)
-                    && output.hasCompletedReport()));
+                || (COMPLETE_REPORT_OUTPUT.equals(outputKind) && output.hasCompletedReport()));
     boolean validV4 =
         OUTPUT_SCHEMA_V4.equals(schemaVersion)
             && ACTIVITIES_ONLY_OUTPUT.equals(outputKind)

@@ -553,14 +553,21 @@ class BusinessProcessDiscoveryTest {
   }
 
   @Test
-  void rejectsMergingReviewedProcessesWhenTheirStageNarrativesDiffer() {
-    assertThatThrownBy(
-            () ->
-                new DefaultBusinessProcessDiscovery(
-                        new ScriptedProvider("consolidation-narrative-merge"))
-                    .discover(new ProcessDiscoveryRequest(activities(), materials(), profile())))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("PROCESS_CONSOLIDATION_MERGE_NOT_LOSSLESS");
+  void preservesReviewedProcessesWhenTheirStageNarrativesCannotBeMergedLosslessly() {
+    ProcessDiscoveryResult result =
+        new DefaultBusinessProcessDiscovery(new ScriptedProvider("consolidation-narrative-merge"))
+            .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
+
+    assertThat(result.catalog().processes()).hasSize(2);
+    assertThat(result.coverage().reviewedProcessDispositions())
+        .allSatisfy(
+            disposition -> {
+              assertThat(disposition.disposition()).isEqualTo("PUBLISHED");
+              assertThat(disposition.targetProcessId()).isNull();
+            });
+    assertThat(result.coverage().reviewedProcessDispositions())
+        .extracting(ProcessCoverage.ReviewedProcessDisposition::reason)
+        .anyMatch(reason -> reason.contains("保留原完整过程"));
   }
 
   @Test

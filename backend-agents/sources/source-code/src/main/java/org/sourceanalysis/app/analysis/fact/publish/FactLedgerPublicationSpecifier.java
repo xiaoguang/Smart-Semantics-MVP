@@ -116,14 +116,15 @@ public final class FactLedgerPublicationSpecifier {
       requireSharedPredecessors(sourceStep, discoveryStep, graphStep, inputs.controls());
       requireSourcePayloadLineage(sourceStep, inputs);
 
-      FactCandidateSet candidates =
-          new PersistedFactCandidateSetReader(moduleArtifacts).reopen(candidatePublication, inputs);
+      PersistedFactCandidateSetReader.ReopenedCandidateSet candidateView =
+          new PersistedFactCandidateSetReader(moduleArtifacts)
+              .reopenView(candidatePublication, inputs);
+      FactCandidateSet candidates = candidateView.candidateSet();
       ProofDecisionSet decisions =
           new PersistedProofDecisionSetReader(moduleArtifacts)
-              .reopen(proofPublication, inputs, candidatePublication, candidates);
-      ReopenedModulePublication candidateModule = moduleArtifacts.reopen(candidatePublication);
+              .reopen(proofPublication, inputs, candidatePublication, candidateView);
       ReopenedModulePublication proofModule = moduleArtifacts.reopen(proofPublication);
-      ArtifactReference candidatePayload = onlyPayload(candidateModule);
+      ArtifactReference candidatePayload = candidateView.payloadReference();
       ArtifactReference proofPayload = onlyPayload(proofModule);
       List<LedgerGap> gaps = gaps(candidates, decisions);
       List<String> gapRefs = gaps.stream().map(LedgerGap::gapId).sorted(UTF8_ORDER).toList();

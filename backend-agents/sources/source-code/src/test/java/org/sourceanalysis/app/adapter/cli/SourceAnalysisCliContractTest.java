@@ -24,11 +24,11 @@ import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.capture.localgit.LocalGitCaptureRequest;
 import org.sourceanalysis.app.capture.localgit.LocalSourceCapture;
 import org.sourceanalysis.app.capture.localgit.SourceRegistrationReference;
+import org.sourceanalysis.app.runtime.AnalysisExecutionIntent;
 import org.sourceanalysis.app.runtime.AnalysisRunLifecycleState;
 import org.sourceanalysis.app.runtime.AnalysisRunReference;
 import org.sourceanalysis.app.runtime.AnalysisRunRequest;
 import org.sourceanalysis.app.runtime.AnalysisRunRequestReference;
-import org.sourceanalysis.app.runtime.AnalysisExecutionIntent;
 import org.sourceanalysis.app.runtime.AnalysisStepExecutionRequest;
 import org.sourceanalysis.app.runtime.ArtifactQuery;
 import org.sourceanalysis.app.runtime.ArtifactView;
@@ -129,8 +129,7 @@ class SourceAnalysisCliContractTest {
     ByteArrayOutputStream bytes = new ByteArrayOutputStream();
     PrintWriter output = new PrintWriter(bytes, true, StandardCharsets.UTF_8);
     RecordingAgent agent = new RecordingAgent();
-    AnalysisRunId activityBatch =
-        AnalysisRunId.parse("analysis-run:" + "f".repeat(64));
+    AnalysisRunId activityBatch = AnalysisRunId.parse("analysis-run:" + "f".repeat(64));
     Object cli =
         cliType
             .getConstructor(RepositoryAnalysisAgent.class, PrintWriter.class, PrintWriter.class)

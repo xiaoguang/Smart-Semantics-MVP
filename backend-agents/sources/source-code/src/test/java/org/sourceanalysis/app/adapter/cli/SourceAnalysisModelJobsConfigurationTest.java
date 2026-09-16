@@ -64,6 +64,24 @@ class SourceAnalysisModelJobsConfigurationTest {
   }
 
   @Test
+  void unifiedYamlAcceptsTheJavaParserEngineWithoutStartingJdt() throws Exception {
+    ToolFixture tools = toolFixture();
+    Path jdtMarker = temporaryDirectory.resolve("jdt-started");
+    Files.writeString(tools.executable(), "#!/bin/sh\n/usr/bin/touch '" + jdtMarker + "'\n");
+    executable(tools.executable());
+    Path config =
+        writeConfig(
+            configYaml(tools, defaultModelJobs(tools))
+                .replace("javaEngine: jdt", "javaEngine: javaparser"));
+
+    Object loaded = loadConfiguration(config);
+    Object engine = property(loaded, "engineConfiguration");
+
+    assertThat(stringProperty(engine, "javaEngine")).isEqualTo("javaparser");
+    assertThat(jdtMarker).doesNotExist();
+  }
+
+  @Test
   void modelExecutionModeRejectsAnAbsentModelJobsBlockBeforeStateOrProviderAccess()
       throws Exception {
     ToolFixture tools = toolFixture();
@@ -1087,9 +1105,7 @@ class SourceAnalysisModelJobsConfigurationTest {
         business:
           material: {maxSourceRefsPerMaterial: 24, maxLinesPerRef: 80, maxMaterialChars: 48000, maxEntriesPerMaterial: 8}
           activity: {maxModelInputBytes: 128000, maxModelOutputBytes: 32000, maxActivitiesPerMaterial: 16, maxValuesPerField: 64, maxTextCharsPerValue: 8000}
-          process: {maxActivitiesPerGroup: 48, maxProcessGroups: 512, maxModelInputBytes: 128000, maxModelOutputBytes: 32000, maxProcessesPerGroup: 16, maxValuesPerField: 64, maxTextCharsPerValue: 8000, maxRepositorySummaryItems: 2048}
           processDiscovery: {maxCardsPerCatalogShard: 96, maxActivitiesPerCandidate: 48, maxRequestedSourceRefs: 64, maxRequestedSourceChars: 192000, maxModelInputBytes: 256000, maxModelOutputBytes: 64000, maxProcessesPerCandidate: 16, maxValuesPerField: 128, maxTextCharsPerValue: 12000}
-          report: {maxModelInputBytes: 128000, maxModelOutputBytes: 32000, maxValuesPerField: 64, maxTextCharsPerValue: 8000}
           maxMaterialsToStart: 100000
         """
         .formatted(

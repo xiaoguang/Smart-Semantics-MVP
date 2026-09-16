@@ -4,7 +4,5 @@ package org.sourceanalysis.app.runtime;
 public enum AnalysisExecutionIntent {
   PREPARE_MATERIALS,
   EXPLAIN_ACTIVITIES,
-  DISCOVER_PROCESSES,
-  /** Transitional only while the retired report-generation route is being removed. */
-  LEGACY_COMPLETE_REPORT
+  DISCOVER_PROCESSES
 }

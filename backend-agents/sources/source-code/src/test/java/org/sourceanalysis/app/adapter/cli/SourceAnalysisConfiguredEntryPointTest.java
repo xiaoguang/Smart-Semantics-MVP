@@ -33,6 +33,28 @@ class SourceAnalysisConfiguredEntryPointTest {
   }
 
   @Test
+  void configuredEntryPointRecognizesCaptureStartAndAnExplicitQueuedRun() {
+    String config = temporaryDirectory.resolve("missing.yaml").toAbsolutePath().toString();
+    assertConfigurationReached(execute("--config", config, "capture-local-git"));
+    assertConfigurationReached(
+        execute(
+            "--config",
+            config,
+            "start",
+            "--source-registration",
+            "source-registration:" + "a".repeat(64)));
+    assertConfigurationReached(
+        execute(
+            "--config",
+            config,
+            "execute-step",
+            "--target",
+            "flow-interpretation",
+            "--run",
+            "analysis-run:" + "b".repeat(64)));
+  }
+
+  @Test
   void legacyModeSyntaxIsNotAcceptedByTheUnifiedEntryPoint() {
     ExecutionResult result =
         execute(
@@ -55,8 +77,14 @@ class SourceAnalysisConfiguredEntryPointTest {
             new PrintWriter(errorBytes, true, StandardCharsets.UTF_8));
     return new ExecutionResult(
         exitCode,
-        outputBytes.toString(StandardCharsets.UTF_8)
-            + errorBytes.toString(StandardCharsets.UTF_8));
+        outputBytes.toString(StandardCharsets.UTF_8) + errorBytes.toString(StandardCharsets.UTF_8));
+  }
+
+  private static void assertConfigurationReached(ExecutionResult result) {
+    assertThat(result.exitCode()).isNotZero();
+    assertThat(result.diagnostics())
+        .contains("CONFIGURATION")
+        .doesNotContain("ARGUMENTS_INVALID", "MODE_UNSUPPORTED");
   }
 
   private record ExecutionResult(int exitCode, String diagnostics) {}

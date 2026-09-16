@@ -215,7 +215,7 @@ Step08 只消费已发布 `RepositoryBusinessProcessCatalog`、过程 coverage �
 - Spring 入口、Step05 EntryCodeContext、BusinessMaterialBuilder；
 - ActivityExplainer、任意 N 入口覆盖、DRAFT+完整 REVIEW；
 - Provider 两级并发、逐 job 保存、固定材料与独立模型批次；
-- BusinessReportPublisher 和九章确定性渲染；
+- 历史九章 checkpoint 的严格读取和确定性重渲染；当前生产路径不再生成九章；
 - 固定 jshERP 的 326 个已审 Activity。
 
 当前实现分支已经完成并通过直接测试：

@@ -1,8 +1,8 @@
 package org.sourceanalysis.app.adapter.cli;
 
 import java.io.PrintWriter;
-import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -14,9 +14,9 @@ import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.capture.localgit.LocalGitCaptureRequestTemplate;
 import org.sourceanalysis.app.capture.localgit.LocalSourceCapture;
 import org.sourceanalysis.app.capture.localgit.SourceRegistrationReference;
+import org.sourceanalysis.app.runtime.AnalysisExecutionIntent;
 import org.sourceanalysis.app.runtime.AnalysisRunReference;
 import org.sourceanalysis.app.runtime.AnalysisRunRequest;
-import org.sourceanalysis.app.runtime.AnalysisExecutionIntent;
 import org.sourceanalysis.app.runtime.AnalysisStepExecutionRequest;
 import org.sourceanalysis.app.runtime.ArtifactQuery;
 import org.sourceanalysis.app.runtime.ArtifactView;
@@ -95,9 +95,10 @@ public final class SourceAnalysisCli {
     return exitCode;
   }
 
-  /** Executes the one configured process entry point used by the packaged {@code source-analysis}. */
-  public static int executeConfigured(
-      String[] arguments, PrintWriter output, PrintWriter errors) {
+  /**
+   * Executes the one configured process entry point used by the packaged {@code source-analysis}.
+   */
+  public static int executeConfigured(String[] arguments, PrintWriter output, PrintWriter errors) {
     Objects.requireNonNull(arguments, "arguments");
     Objects.requireNonNull(output, "output");
     Objects.requireNonNull(errors, "errors");
@@ -145,6 +146,16 @@ public final class SourceAnalysisCli {
       List<String> translated =
           new ArrayList<>(List.of("--config", parsed.config().toString(), "--mode"));
       switch (parsed.operation()) {
+        case "capture-local-git" -> {
+          parsed.requireNoOptions();
+          translated.add("capture-local-git");
+        }
+        case "start" -> {
+          parsed.requireOnly("--source-registration");
+          translated.add("start");
+          addOption(
+              translated, "--source-registration", parsed.option("--source-registration", true));
+        }
         case "plan-materials" -> {
           parsed.requireNoOptions();
           translated.add("materials-only");
@@ -168,8 +179,13 @@ public final class SourceAnalysisCli {
       String materialId = option("--material-id", false);
       String activityBatch = option("--activity-model-batch", false);
       String reuseBatch = option("--reuse-from-model-batch", false);
+      String runId = option("--run", false);
       requireOnly(
-          "--target", "--material-id", "--activity-model-batch", "--reuse-from-model-batch");
+          "--target",
+          "--material-id",
+          "--activity-model-batch",
+          "--reuse-from-model-batch",
+          "--run");
       if ("flow-interpretation".equals(target)) {
         if (activityBatch != null) {
           throw new IllegalArgumentException("Activity execution cannot use an Activity batch");
@@ -186,6 +202,7 @@ public final class SourceAnalysisCli {
         throw new IllegalArgumentException("execute-step target is unsupported");
       }
       addOption(translated, "--reuse-from-model-batch", reuseBatch);
+      addOption(translated, "--run", runId);
     }
 
     private String option(String name, boolean required) {
@@ -342,9 +359,7 @@ public final class SourceAnalysisCli {
               new AnalysisStepExecutionRequest(
                   AnalysisRunId.parse(requireRunId()),
                   selectedIntent(),
-                  activityModelBatchId == null
-                      ? null
-                      : AnalysisRunId.parse(activityModelBatchId),
+                  activityModelBatchId == null ? null : AnalysisRunId.parse(activityModelBatchId),
                   materialId));
       output.printf("runId=%s%n", executed.runId().value());
       output.printf("lifecycleState=%s%n", executed.lifecycleState());

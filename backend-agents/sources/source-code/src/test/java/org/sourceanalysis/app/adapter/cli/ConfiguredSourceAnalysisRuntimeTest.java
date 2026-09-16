@@ -36,7 +36,8 @@ class ConfiguredSourceAnalysisRuntimeTest {
     AnalysisRunRequest source = request(reference("artifact-policy-registry", '8'));
     ArtifactReference currentPolicy = reference("artifact-policy-registry", '9');
 
-    AnalysisRunRequest batch = ConfiguredSourceAnalysisRuntime.modelBatchRequest(source, currentPolicy);
+    AnalysisRunRequest batch =
+        ConfiguredSourceAnalysisRuntime.modelBatchRequest(source, currentPolicy);
 
     assertThat(batch)
         .usingRecursiveComparison()
@@ -107,17 +108,9 @@ class ConfiguredSourceAnalysisRuntimeTest {
                 config.toString(),
                 "--mode",
                 "activities-sample",
-                "--provider-config",
-                config.toString(),
                 "--material-id",
                 "material:sample"),
-            List.of(
-                "--config",
-                config.toString(),
-                "--mode",
-                "activities",
-                "--provider-config",
-                config.toString()),
+            List.of("--config", config.toString(), "--mode", "activities"),
             List.of(
                 "--config",
                 config.toString(),

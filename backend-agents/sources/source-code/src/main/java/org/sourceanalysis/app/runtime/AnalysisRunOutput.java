@@ -74,25 +74,6 @@ public record AnalysisRunOutput(
         reportCheckpoint);
   }
 
-  /** Projects the four application-internal business results to durable run output pointers. */
-  public static AnalysisRunOutput from(RepositoryAnalysisRunResult result) {
-    Objects.requireNonNull(result, "repository analysis run result");
-    BusinessAnalysisWorkflowResult business = result.business();
-    return new AnalysisRunOutput(
-        runId(business.materials().checkpoint()),
-        business.materials().checkpoint(),
-        business.activities().checkpoint(),
-        business.knowledge().checkpoint(),
-        business.report().checkpoint());
-  }
-
-  /** Projects a zero-Provider material-planning result without inventing later checkpoints. */
-  public static AnalysisRunOutput from(RepositoryMaterialPlanningResult result) {
-    Objects.requireNonNull(result, "repository material planning result");
-    return new AnalysisRunOutput(
-        runId(result.materials().checkpoint()), result.materials().checkpoint(), null, null, null);
-  }
-
   /** Returns whether this finished run contains a review-approved business report. */
   public boolean hasCompletedReport() {
     return reportCheckpoint != null;
