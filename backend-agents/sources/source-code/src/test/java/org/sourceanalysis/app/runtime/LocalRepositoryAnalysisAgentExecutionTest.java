@@ -41,6 +41,91 @@ class LocalRepositoryAnalysisAgentExecutionTest {
   @TempDir Path temporaryDirectory;
 
   @Test
+  void executesActivityAndProcessIntentsThroughTheConfiguredCoordinator() throws Exception {
+    try (RunStoreHandle store = openStore(temporaryDirectory.resolve("explicit-intent-store"))) {
+      AnalysisRunReference materialRun = stoppedRun(store);
+      AnalysisRunReference activityRun = RunStoreBootstrap.queueAnalysisRun(store, request());
+      RepositoryAnalysisRunCoordinator activityCoordinator =
+          new RepositoryAnalysisRunCoordinator(
+              execution -> {
+                assertThat(execution.intent()).isEqualTo(AnalysisExecutionIntent.EXPLAIN_ACTIVITIES);
+                assertThat(execution.exactMaterialId()).isNull();
+                return new AnalysisRunOutput(
+                    materialRun.runId(),
+                    modulePublication(
+                        materialRun.runId(), AnalysisStepKey.FLOW_INTERPRETATION, 10, 'a'),
+                    modulePublication(
+                        execution.runId(), AnalysisStepKey.FLOW_INTERPRETATION, 11, 'd'),
+                    null,
+                    null);
+              });
+      LocalRepositoryAnalysisAgent activityAgent =
+          new LocalRepositoryAnalysisAgent(store, activityCoordinator);
+
+      AnalysisRunReference activityFinished =
+          activityAgent.executeStep(
+              new AnalysisStepExecutionRequest(
+                  activityRun.runId(), AnalysisExecutionIntent.EXPLAIN_ACTIVITIES, null, null));
+      assertThat(activityFinished.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.FINISHED);
+      assertThat(activityAgent.inspect(activityRun.runId().value()).output().hasCompletedActivities())
+          .isTrue();
+
+      AnalysisRunReference processRun = RunStoreBootstrap.queueAnalysisRun(store, request());
+      RepositoryAnalysisRunCoordinator processCoordinator =
+          new RepositoryAnalysisRunCoordinator(
+              execution -> {
+                assertThat(execution.intent()).isEqualTo(AnalysisExecutionIntent.DISCOVER_PROCESSES);
+                assertThat(execution.upstreamRunId()).isEqualTo(activityRun.runId());
+                return new AnalysisRunOutput(
+                    materialRun.runId(),
+                    modulePublication(
+                        materialRun.runId(), AnalysisStepKey.FLOW_INTERPRETATION, 10, 'a'),
+                    modulePublication(
+                        activityRun.runId(), AnalysisStepKey.FLOW_INTERPRETATION, 11, 'd'),
+                    processPublication(execution.runId(), '7'),
+                    null);
+              });
+      LocalRepositoryAnalysisAgent processAgent =
+          new LocalRepositoryAnalysisAgent(store, processCoordinator);
+
+      AnalysisRunReference processFinished =
+          processAgent.executeStep(
+              new AnalysisStepExecutionRequest(
+                  processRun.runId(),
+                  AnalysisExecutionIntent.DISCOVER_PROCESSES,
+                  activityRun.runId(),
+                  null));
+      assertThat(processFinished.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.FINISHED);
+      assertThat(processAgent.inspect(processRun.runId().value()).output().hasCompletedProcesses())
+          .isTrue();
+    }
+  }
+
+  @Test
+  void inspectsAFinishedPreviewWithoutInventingAFormalOutput() throws Exception {
+    try (RunStoreHandle store = openStore(temporaryDirectory.resolve("preview-inspection-store"))) {
+      AnalysisRunReference queued = RunStoreBootstrap.queueAnalysisRun(store, request());
+      RunStoreBootstrap.transitionAnalysisRun(
+          store,
+          queued.runId(),
+          AnalysisRunLifecycleState.QUEUED,
+          AnalysisRunLifecycleState.RUNNING);
+      RunStoreBootstrap.transitionAnalysisRun(
+          store,
+          queued.runId(),
+          AnalysisRunLifecycleState.RUNNING,
+          AnalysisRunLifecycleState.FINISHED);
+      LocalRepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store);
+
+      RunInspection inspection = agent.inspect(queued.runId().value());
+
+      assertThat(inspection.analysisRun().lifecycleState())
+          .isEqualTo(AnalysisRunLifecycleState.FINISHED);
+      assertThat(inspection.output()).isNull();
+    }
+  }
+
+  @Test
   void executesTheFinalDocumentTargetAndPersistsFinishedForAQueuedRun() throws Exception {
     try (RunStoreHandle store = openStore(temporaryDirectory.resolve("agent-run-store"))) {
       RepositoryAnalysisRunCoordinator coordinator =
@@ -129,6 +214,20 @@ class LocalRepositoryAnalysisAgentExecutionTest {
     return RunStoreBootstrap.openForTest(path);
   }
 
+  private static AnalysisRunReference stoppedRun(RunStoreHandle store) {
+    AnalysisRunReference queued = RunStoreBootstrap.queueAnalysisRun(store, request());
+    RunStoreBootstrap.transitionAnalysisRun(
+        store,
+        queued.runId(),
+        AnalysisRunLifecycleState.QUEUED,
+        AnalysisRunLifecycleState.RUNNING);
+    return RunStoreBootstrap.transitionAnalysisRun(
+        store,
+        queued.runId(),
+        AnalysisRunLifecycleState.RUNNING,
+        AnalysisRunLifecycleState.FAILED);
+  }
+
   private static RepositoryAnalysisRunCoordinator materialPlanningCoordinator() throws Exception {
     try {
       @SuppressWarnings("unchecked")
@@ -215,6 +314,16 @@ class LocalRepositoryAnalysisAgentExecutionTest {
       char fill) {
     return new ModulePublicationReference(
         new AnalysisStepModuleAddress(runId, step, moduleNumber, moduleKey(step, moduleNumber)),
+        ModuleArtifactRoot.parse("module-root:" + String.valueOf(fill).repeat(64)),
+        ModuleReceiptId.parse("module-receipt:" + String.valueOf(fill).repeat(64)),
+        new Sha256Digest(String.valueOf(fill).repeat(64)));
+  }
+
+  private static ModulePublicationReference processPublication(
+      org.sourceanalysis.app.artifact.AnalysisRunId runId, char fill) {
+    return new ModulePublicationReference(
+        new AnalysisStepModuleAddress(
+            runId, AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, "business-process-publisher"),
         ModuleArtifactRoot.parse("module-root:" + String.valueOf(fill).repeat(64)),
         ModuleReceiptId.parse("module-receipt:" + String.valueOf(fill).repeat(64)),
         new Sha256Digest(String.valueOf(fill).repeat(64)));

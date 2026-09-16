@@ -28,6 +28,7 @@ import org.sourceanalysis.app.runtime.AnalysisRunLifecycleState;
 import org.sourceanalysis.app.runtime.AnalysisRunReference;
 import org.sourceanalysis.app.runtime.AnalysisRunRequest;
 import org.sourceanalysis.app.runtime.AnalysisRunRequestReference;
+import org.sourceanalysis.app.runtime.AnalysisExecutionIntent;
 import org.sourceanalysis.app.runtime.AnalysisStepExecutionRequest;
 import org.sourceanalysis.app.runtime.ArtifactQuery;
 import org.sourceanalysis.app.runtime.ArtifactView;
@@ -87,7 +88,7 @@ class SourceAnalysisCliContractTest {
   }
 
   @Test
-  void mapsExplicitFinalDocumentExecutionToTheSamePublicAgent() throws Exception {
+  void mapsExplicitActivityExecutionToTheSamePublicAgent() throws Exception {
     Class<?> cliType = requiredClass("org.sourceanalysis.app.adapter.cli.SourceAnalysisCli");
     ByteArrayOutputStream bytes = new ByteArrayOutputStream();
     PrintWriter output = new PrintWriter(bytes, true, StandardCharsets.UTF_8);
@@ -100,12 +101,23 @@ class SourceAnalysisCliContractTest {
     assertThat(
             (Integer)
                 execute.invoke(
-                    cli, (Object) new String[] {"execute-step", "--run", agent.runId.value()}))
+                    cli,
+                    (Object)
+                        new String[] {
+                          "execute-step",
+                          "--run",
+                          agent.runId.value(),
+                          "--target",
+                          "flow-interpretation",
+                          "--material-id",
+                          "material-17"
+                        }))
         .isZero();
 
     assertThat(agent.executeRequest)
         .isEqualTo(
-            new AnalysisStepExecutionRequest(agent.runId, AnalysisStepKey.NINE_SECTION_DOCUMENT));
+            new AnalysisStepExecutionRequest(
+                agent.runId, AnalysisExecutionIntent.EXPLAIN_ACTIVITIES, null, "material-17"));
     assertThat(bytes.toString(StandardCharsets.UTF_8))
         .contains(agent.runId.value(), "FINISHED")
         .doesNotContain("/private/", "prompt", "model response");
@@ -117,6 +129,8 @@ class SourceAnalysisCliContractTest {
     ByteArrayOutputStream bytes = new ByteArrayOutputStream();
     PrintWriter output = new PrintWriter(bytes, true, StandardCharsets.UTF_8);
     RecordingAgent agent = new RecordingAgent();
+    AnalysisRunId activityBatch =
+        AnalysisRunId.parse("analysis-run:" + "f".repeat(64));
     Object cli =
         cliType
             .getConstructor(RepositoryAnalysisAgent.class, PrintWriter.class, PrintWriter.class)
@@ -133,13 +147,16 @@ class SourceAnalysisCliContractTest {
                           "--run",
                           agent.runId.value(),
                           "--target",
-                          "repository-knowledge"
+                          "repository-knowledge",
+                          "--activity-model-batch",
+                          activityBatch.value()
                         }))
         .isZero();
 
     assertThat(agent.executeRequest)
         .isEqualTo(
-            new AnalysisStepExecutionRequest(agent.runId, AnalysisStepKey.REPOSITORY_KNOWLEDGE));
+            new AnalysisStepExecutionRequest(
+                agent.runId, AnalysisExecutionIntent.DISCOVER_PROCESSES, activityBatch, null));
   }
 
   @Test
@@ -161,7 +178,8 @@ class SourceAnalysisCliContractTest {
 
     assertThat(agent.executeRequest)
         .isEqualTo(
-            new AnalysisStepExecutionRequest(agent.runId, AnalysisStepKey.FLOW_INTERPRETATION));
+            new AnalysisStepExecutionRequest(
+                agent.runId, AnalysisExecutionIntent.PREPARE_MATERIALS, null, null));
     assertThat(bytes.toString(StandardCharsets.UTF_8))
         .contains(agent.runId.value(), "FINISHED")
         .doesNotContain("/private/", "prompt", "model response");

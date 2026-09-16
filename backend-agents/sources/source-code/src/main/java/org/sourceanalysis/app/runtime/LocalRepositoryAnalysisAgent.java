@@ -3,7 +3,6 @@ package org.sourceanalysis.app.runtime;
 import java.util.Objects;
 import org.sourceanalysis.app.RepositoryAnalysisAgent;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
-import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.RunStoreBootstrap;
 import org.sourceanalysis.app.artifact.RunStoreHandle;
 
@@ -54,10 +53,6 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
   @Override
   public AnalysisRunReference executeStep(AnalysisStepExecutionRequest request) {
     Objects.requireNonNull(request, "analysis step execution request");
-    if (request.targetStep() != AnalysisStepKey.NINE_SECTION_DOCUMENT
-        && request.targetStep() != AnalysisStepKey.FLOW_INTERPRETATION) {
-      throw new IllegalArgumentException("ANALYSIS_STEP_EXECUTION_NOT_SUPPORTED");
-    }
     if (coordinator == null) {
       throw new IllegalStateException("ANALYSIS_RUN_EXECUTION_NOT_CONFIGURED");
     }
@@ -68,10 +63,7 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
             AnalysisRunLifecycleState.QUEUED,
             AnalysisRunLifecycleState.RUNNING);
     try {
-      AnalysisRunOutput output =
-          request.targetStep() == AnalysisStepKey.FLOW_INTERPRETATION
-              ? AnalysisRunOutput.from(coordinator.planMaterials(running.runId()))
-              : AnalysisRunOutput.from(coordinator.execute(running.runId()));
+      AnalysisRunOutput output = coordinator.executeIntent(request);
       RunStoreBootstrap.recordAnalysisRunOutput(store, running.runId(), output);
       return RunStoreBootstrap.transitionAnalysisRun(
           store,
@@ -98,8 +90,7 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
         RunStoreBootstrap.reopenAnalysisRun(store, AnalysisRunId.parse(runId));
     AnalysisRunOutput output =
         run.lifecycleState() == AnalysisRunLifecycleState.FINISHED
-            ? RunStoreBootstrap.reopenAnalysisRunOutput(store, run.runId())
-                .orElseThrow(() -> new IllegalStateException("ANALYSIS_RUN_OUTPUT_MISSING"))
+            ? RunStoreBootstrap.reopenAnalysisRunOutput(store, run.runId()).orElse(null)
             : null;
     return new RunInspection(run, output);
   }

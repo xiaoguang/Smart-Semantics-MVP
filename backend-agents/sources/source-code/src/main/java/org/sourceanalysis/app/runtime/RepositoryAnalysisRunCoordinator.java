@@ -18,6 +18,7 @@ import org.sourceanalysis.app.artifact.AnalysisRunId;
  */
 public final class RepositoryAnalysisRunCoordinator {
 
+  private final Function<AnalysisStepExecutionRequest, AnalysisRunOutput> explicitExecution;
   private final Function<AnalysisRunId, TechnicalDiscoveryWorkflowResult> discoveryExecution;
   private final Function<AnalysisRunId, TechnicalAnalysisWorkflowResult> completeTechnicalExecution;
   private final BiFunction<
@@ -44,6 +45,18 @@ public final class RepositoryAnalysisRunCoordinator {
         null,
         businessExecutor::buildMaterials,
         businessExecutor::execute);
+  }
+
+  /** Package-private execution seam used by the configured material, Activity, and process runtime. */
+  RepositoryAnalysisRunCoordinator(
+      Function<AnalysisStepExecutionRequest, AnalysisRunOutput> explicitExecution) {
+    this.explicitExecution = Objects.requireNonNull(explicitExecution, "explicit execution");
+    this.discoveryExecution = null;
+    this.completeTechnicalExecution = null;
+    this.materialPlanning = null;
+    this.fallbackBusinessExecution = null;
+    this.flowMaterialPlanning = null;
+    this.flowBusinessExecution = null;
   }
 
   /** Package-private test seam; production uses the persisted-executor constructor. */
@@ -96,6 +109,7 @@ public final class RepositoryAnalysisRunCoordinator {
           fallbackBusinessExecution,
       Function<BusinessFlowsReference, BusinessMaterialBuildResult> flowMaterialPlanning,
       Function<BusinessFlowsReference, BusinessAnalysisWorkflowResult> flowBusinessExecution) {
+    this.explicitExecution = null;
     this.discoveryExecution = Objects.requireNonNull(discoveryExecution, "discovery execution");
     this.completeTechnicalExecution = completeTechnicalExecution;
     if (materialPlanning == null && flowMaterialPlanning == null) {
@@ -135,6 +149,24 @@ public final class RepositoryAnalysisRunCoordinator {
       throw new IllegalStateException("REPOSITORY_ANALYSIS_MATERIAL_RESULT_INVALID");
     }
     return new RepositoryMaterialPlanningResult(technical, materials);
+  }
+
+  /** Executes the requested persisted boundary while legacy report generation is being retired. */
+  public AnalysisRunOutput executeIntent(AnalysisStepExecutionRequest request) {
+    Objects.requireNonNull(request, "analysis step execution request");
+    if (explicitExecution != null) {
+      AnalysisRunOutput output = explicitExecution.apply(request);
+      if (output == null) {
+        throw new IllegalStateException("ANALYSIS_EXECUTION_RESULT_INVALID");
+      }
+      return output;
+    }
+    return switch (request.intent()) {
+      case PREPARE_MATERIALS -> AnalysisRunOutput.from(planMaterials(request.runId()));
+      case LEGACY_COMPLETE_REPORT -> AnalysisRunOutput.from(execute(request.runId()));
+      case EXPLAIN_ACTIVITIES, DISCOVER_PROCESSES ->
+          throw new IllegalStateException("ANALYSIS_EXECUTION_INTENT_NOT_CONFIGURED");
+    };
   }
 
   /** Executes one newly queued run in the only permitted source-to-report order. */

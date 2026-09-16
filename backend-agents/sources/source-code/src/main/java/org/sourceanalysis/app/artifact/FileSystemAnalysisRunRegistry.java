@@ -40,8 +40,10 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   private static final String REQUEST_FILE = "run-request.json";
   private static final String STATE_FILE = "run-state.json";
   private static final String OUTPUT_FILE = "run-output.json";
-  private static final String OUTPUT_SCHEMA = "analysis-run-output-v3";
+  private static final String OUTPUT_SCHEMA_V3 = "analysis-run-output-v3";
+  private static final String OUTPUT_SCHEMA_V4 = "analysis-run-output-v4";
   private static final String MATERIALS_ONLY_OUTPUT = "MATERIALS_ONLY";
+  private static final String ACTIVITIES_ONLY_OUTPUT = "ACTIVITIES_ONLY";
   private static final String PROCESS_CATALOG_OUTPUT = "PROCESS_CATALOG";
   private static final String COMPLETE_REPORT_OUTPUT = "COMPLETE_REPORT";
   private static final Set<String> REQUEST_FIELDS =
@@ -205,6 +207,9 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
       PersistedAnalysisRunRequest persisted = reopenRequest(runId);
       if (persisted.analysisRun().lifecycleState() != AnalysisRunLifecycleState.RUNNING
           || !output.sourceRunId().equals(runId(output.businessMaterialCheckpoint()))
+          || (output.hasCompletedActivities()
+              && !output.hasCompletedProcesses()
+              && !runId.equals(runId(output.activityCheckpoint())))
           || (output.hasCompletedReport() && !runId.equals(runId(output.activityCheckpoint())))
           || (output.hasCompletedProcesses()
               && !output.hasCompletedReport()
@@ -334,7 +339,11 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
 
   private ObjectNode outputJson(AnalysisRunId runId, AnalysisRunOutput output) {
     ObjectNode value = JsonNodeFactory.instance.objectNode();
-    value.put("schemaVersion", OUTPUT_SCHEMA);
+    value.put(
+        "schemaVersion",
+        output.hasCompletedActivities() && !output.hasCompletedProcesses()
+            ? OUTPUT_SCHEMA_V4
+            : OUTPUT_SCHEMA_V3);
     value.put("runId", runId.value());
     value.put("sourceRunId", output.sourceRunId().value());
     value.put("outputKind", outputKind(output));
@@ -346,7 +355,8 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   }
 
   private AnalysisRunOutput outputFromJson(AnalysisRunId runId, ObjectNode value) {
-    if (!OUTPUT_SCHEMA.equals(requiredText(value, "schemaVersion"))
+    String schemaVersion = requiredText(value, "schemaVersion");
+    if (!(OUTPUT_SCHEMA_V3.equals(schemaVersion) || OUTPUT_SCHEMA_V4.equals(schemaVersion))
         || !runId.value().equals(requiredText(value, "runId"))) {
       throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
     }
@@ -364,11 +374,20 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
             activity,
             knowledge,
             report);
-    if (!((MATERIALS_ONLY_OUTPUT.equals(outputKind) && !output.hasCompletedProcesses())
-        || (PROCESS_CATALOG_OUTPUT.equals(outputKind)
-            && output.hasCompletedProcesses()
-            && !output.hasCompletedReport())
-        || (COMPLETE_REPORT_OUTPUT.equals(outputKind) && output.hasCompletedReport()))) {
+    boolean validV3 =
+        OUTPUT_SCHEMA_V3.equals(schemaVersion)
+            && ((MATERIALS_ONLY_OUTPUT.equals(outputKind) && !output.hasCompletedActivities())
+                || (PROCESS_CATALOG_OUTPUT.equals(outputKind)
+                    && output.hasCompletedProcesses()
+                    && !output.hasCompletedReport())
+                || (COMPLETE_REPORT_OUTPUT.equals(outputKind)
+                    && output.hasCompletedReport()));
+    boolean validV4 =
+        OUTPUT_SCHEMA_V4.equals(schemaVersion)
+            && ACTIVITIES_ONLY_OUTPUT.equals(outputKind)
+            && output.hasCompletedActivities()
+            && !output.hasCompletedProcesses();
+    if (!(validV3 || validV4)) {
       throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
     }
     return output;
@@ -380,6 +399,9 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     }
     if (output.hasCompletedProcesses()) {
       return PROCESS_CATALOG_OUTPUT;
+    }
+    if (output.hasCompletedActivities()) {
+      return ACTIVITIES_ONLY_OUTPUT;
     }
     return MATERIALS_ONLY_OUTPUT;
   }

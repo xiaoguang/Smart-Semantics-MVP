@@ -7,13 +7,13 @@ import java.util.concurrent.Callable;
 import java.util.function.Function;
 import org.sourceanalysis.app.RepositoryAnalysisAgent;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
-import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.capture.localgit.LocalGitCaptureRequestTemplate;
 import org.sourceanalysis.app.capture.localgit.LocalSourceCapture;
 import org.sourceanalysis.app.capture.localgit.SourceRegistrationReference;
 import org.sourceanalysis.app.runtime.AnalysisRunReference;
 import org.sourceanalysis.app.runtime.AnalysisRunRequest;
+import org.sourceanalysis.app.runtime.AnalysisExecutionIntent;
 import org.sourceanalysis.app.runtime.AnalysisStepExecutionRequest;
 import org.sourceanalysis.app.runtime.ArtifactQuery;
 import org.sourceanalysis.app.runtime.ArtifactView;
@@ -126,6 +126,12 @@ public final class SourceAnalysisCli {
     @Option(names = "--target", paramLabel = "ANALYSIS_STEP")
     private String targetStep;
 
+    @Option(names = "--material-id", paramLabel = "MATERIAL_ID")
+    private String materialId;
+
+    @Option(names = "--activity-model-batch", paramLabel = "RUN_ID")
+    private String activityModelBatchId;
+
     private final RepositoryAnalysisAgent agent;
     private final Function<ArtifactId, AnalysisRunRequest> requestFactory;
     private final LocalSourceCapture localSourceCapture;
@@ -199,29 +205,37 @@ public final class SourceAnalysisCli {
       AnalysisRunReference executed =
           agent.executeStep(
               new AnalysisStepExecutionRequest(
-                  AnalysisRunId.parse(requireRunId()), selectedTargetStep()));
+                  AnalysisRunId.parse(requireRunId()),
+                  selectedIntent(),
+                  activityModelBatchId == null
+                      ? null
+                      : AnalysisRunId.parse(activityModelBatchId),
+                  materialId));
       output.printf("runId=%s%n", executed.runId().value());
       output.printf("lifecycleState=%s%n", executed.lifecycleState());
       return 0;
     }
 
-    private AnalysisStepKey selectedTargetStep() {
-      if (targetStep == null || "nine-section-document".equals(targetStep)) {
-        return AnalysisStepKey.NINE_SECTION_DOCUMENT;
+    private AnalysisExecutionIntent selectedIntent() {
+      if ("flow-interpretation".equals(targetStep)) {
+        return AnalysisExecutionIntent.EXPLAIN_ACTIVITIES;
       }
       if ("repository-knowledge".equals(targetStep)) {
-        return AnalysisStepKey.REPOSITORY_KNOWLEDGE;
+        return AnalysisExecutionIntent.DISCOVER_PROCESSES;
       }
       throw new CommandLine.ParameterException(
           new CommandLine(this),
-          "execute-step --target must be repository-knowledge or nine-section-document");
+          "execute-step --target must be flow-interpretation or repository-knowledge");
     }
 
     private int planMaterials() {
       AnalysisRunReference executed =
           agent.executeStep(
               new AnalysisStepExecutionRequest(
-                  AnalysisRunId.parse(requireRunId()), AnalysisStepKey.FLOW_INTERPRETATION));
+                  AnalysisRunId.parse(requireRunId()),
+                  AnalysisExecutionIntent.PREPARE_MATERIALS,
+                  null,
+                  null));
       output.printf("runId=%s%n", executed.runId().value());
       output.printf("lifecycleState=%s%n", executed.lifecycleState());
       return 0;

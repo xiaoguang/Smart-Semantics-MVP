@@ -15,10 +15,13 @@
 - Confirmed formal checkout HEAD and origin/main match.
 - Created the dedicated implementation branch without discarding the existing approved audit changes.
 - Locked the execution boundary to zero real model calls and no regeneration of Activity or business-process results.
+- Added the Activity-only run-output contract: new writes use `analysis-run-output-v4` and `ACTIVITIES_ONLY`; historical v3 remains strict and readable.
+- Replaced the public request's ambiguous step selection with explicit material, Activity, and process execution intents; a transitional legacy intent remains only until the old generator is deleted.
+- Configured Agent dispatch now accepts an explicit execution function, preserves run ownership, and can inspect a finished preview without inventing a formal output.
 
 ## Current state
 
-The existing audit and production-resource cleanup are preserved in the worktree. Their direct Prompt/resource contract tests pass. Runtime and CLI implementation have not yet been changed.
+The existing audit and production-resource cleanup are preserved. The first runtime TDD slice is green; execution-intent routing and configured CLI migration remain.
 
 ## Changed files
 
@@ -31,6 +34,9 @@ The existing audit and production-resource cleanup are preserved in the worktree
 | `git status --short` | PASS | Existing audit changes identified; unrelated root `docs/research/` remains excluded |
 | `git rev-parse HEAD origin/main` | PASS | Both resolve to `e8c40ea2f250da55d6b8797c32c380461061c3c9` |
 | `mvn -t .mvn/toolchains.xml -Dtest=BusinessProcessPromptV2ContractTest,BusinessProcessSemanticFingerprintV2Test test` | PASS | 5 tests, 0 failures/errors/skips |
+| `mvn -t .mvn/toolchains.xml -Dtest=ModelBatchAnalysisRunOutputTest test` | PASS | 4 tests, including v4 Activity-only round trip |
+| `mvn -t .mvn/toolchains.xml -Dtest=SourceAnalysisCliContractTest test` | PASS | 6 CLI intent-routing tests |
+| `mvn -t .mvn/toolchains.local.xml -Dtest=LocalRepositoryAnalysisAgentExecutionTest test` | PASS | 5 real Agent lifecycle/intent tests |
 
 ## Decisions
 
@@ -44,7 +50,7 @@ None.
 
 ## Exact next action
 
-Save the approved audit/design baseline, then write the first failing CLI/runtime contract tests.
+Extract the configured material state and Provider/runtime factories from the legacy main, then connect them to the explicit coordinator intents.
 
 ## Resume checks
 
