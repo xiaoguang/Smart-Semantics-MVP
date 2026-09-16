@@ -176,11 +176,28 @@ Activity 重跑或业务过程重跑。
 - `more-findings.md` SHA-256 仍为
   `59b8381e7e81e3105ed6c6a8d93ce1dbea0247735bf1e6227d8f842b0d1d7f8e`。
 
-最终交付前仍须执行本模块完整本地 CI：
+本模块完整本地 CI 使用两个串行 Maven 进程：
 
 ```bash
-mvn -t .mvn/toolchains.local.xml -Pquality clean spotless:check verify
+mvn -t .mvn/toolchains.local.xml spotless:check
+mvn -t .mvn/toolchains.local.xml -Pquality clean verify
 ```
 
-默认不启用 `real-jdt-it`，不运行外层工程测试，不调用真实模型。最终通过数量、
-质量检查结果、提交和 PR 状态在验证完成后更新到本节。
+这里不是重复执行测试：第一条只检查格式，第二条编译并执行一次测试和质量检查。
+实测将 `spotless:check` 与使用 Java 17 toolchain 的 `clean verify` 放进同一 Maven
+进程，会使后续 forked test compilation 在宿主 Java 26 进程中出现虚假的生产类
+`cannot find symbol`；拆成两个进程后，单独 `clean test-compile` 与完整质量构建均正常。
+
+2026-09-16 的最终本地结果：
+
+- Spotless 检查 572 个 Java 文件，无格式差异；
+- 编译及测试通过：541 个测试，0 failures，0 errors，2 skipped；
+- SpotBugs：0 bugs，0 errors；
+- PMD 检查通过；
+- `-Pquality clean verify` 总耗时 7 分 57 秒；
+- 未启用 `real-jdt-it`，未运行外层工程测试，未调用真实模型；
+- 首次受限沙箱运行只有 3 个 loopback HTTP 测试因禁止绑定端口而报错；允许本地
+  回环端口后同一构建通过，确认不是产品代码失败。
+
+提交与 PR 状态将在最终合入后补充到交付说明；本审计不记录易过时的分支号或
+远端流水线状态。
