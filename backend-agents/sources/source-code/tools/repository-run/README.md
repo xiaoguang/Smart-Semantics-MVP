@@ -92,11 +92,27 @@ into the effective graph profile and an effective profile bundle used by both th
 and verified-source inventory, so its run identity cannot be confused with an all-entry run. Do not
 repeat the selection under `inputs.graphProfile`.
 
-With a Java 17 Maven toolchain configured, build the direct runtime classpath after the launcher
-test passes:
+## Local Java 17 Maven toolchain
+
+The Maven host and compiled application use Java 17. Set the local Java 17 home once, then generate
+the ignored local toolchain from the tracked template. This host toolchain is separate from
+`sourceAnalysis.jdt.javaHome`: the repository-run configuration remains the sole owner of the JDT
+tool JVM and must name a JDK compatible with its JDT installation.
 
 ```bash
-mvn -q -t .workspace/jsherp-jdt-luna-run.5Oqj9Y/toolchains.xml \
+export SOURCE_ANALYSIS_JAVA17_HOME="/absolute/path/to/java-17-home"
+export SOURCE_ANALYSIS_MAVEN_TOOLCHAINS="$PWD/.mvn/toolchains.local.xml"
+test -x "$SOURCE_ANALYSIS_JAVA17_HOME/bin/java"
+sed "s|/absolute/path/to/java-17-home|$SOURCE_ANALYSIS_JAVA17_HOME|" \
+  .mvn/toolchains.example.xml > "$SOURCE_ANALYSIS_MAVEN_TOOLCHAINS"
+```
+
+Do not commit `.mvn/toolchains.local.xml`. It contains only the local Java 17 installation path;
+the tracked example must remain free of machine-specific paths. With that local toolchain configured, build the direct
+runtime classpath after the launcher test passes:
+
+```bash
+mvn -q -t "$SOURCE_ANALYSIS_MAVEN_TOOLCHAINS" \
   -DincludeScope=runtime \
   -Dmdep.outputFile=target/repository-run-classpath.txt \
   dependency:build-classpath
@@ -105,7 +121,7 @@ mvn -q -t .workspace/jsherp-jdt-luna-run.5Oqj9Y/toolchains.xml \
 The run coordinator can then start the approved materials-only run with Java 17:
 
 ```bash
-/usr/local/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home/bin/java -Xmx8g \
+"$SOURCE_ANALYSIS_JAVA17_HOME/bin/java" -Xmx8g \
   -cp "target/classes:$(cat target/repository-run-classpath.txt)" \
   org.sourceanalysis.app.adapter.cli.RepositoryRunMain \
   --config "$(pwd)/.workspace/jsherp-jdt-luna-run.5Oqj9Y/repository-run.json" \
@@ -135,7 +151,7 @@ After inspecting the material IDs from the saved state, run one exact activity s
 placeholders with absolute paths and the selected material ID:
 
 ```bash
-/usr/local/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home/bin/java -Xmx8g \
+"$SOURCE_ANALYSIS_JAVA17_HOME/bin/java" -Xmx8g \
   -cp "target/classes:$(cat target/repository-run-classpath.txt)" \
   org.sourceanalysis.app.adapter.cli.RepositoryRunMain \
   --config /absolute/path/to/ignored/repository-run.json \
@@ -149,7 +165,7 @@ activity checkpoint. Once the sample is accepted, it can be selected as an expli
 for a later batch:
 
 ```bash
-/usr/local/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home/bin/java -Xmx8g \
+"$SOURCE_ANALYSIS_JAVA17_HOME/bin/java" -Xmx8g \
   -cp "target/classes:$(cat target/repository-run-classpath.txt)" \
   org.sourceanalysis.app.adapter.cli.RepositoryRunMain \
   --config /absolute/path/to/ignored/repository-run.json \
@@ -168,7 +184,7 @@ do not participate in the saved technical-material identity. Start a new process
 from an exact, stopped Activity batch:
 
 ```bash
-/usr/local/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home/bin/java -Xmx8g \
+"$SOURCE_ANALYSIS_JAVA17_HOME/bin/java" -Xmx8g \
   -cp "target/classes:$(cat target/repository-run-classpath.txt)" \
   org.sourceanalysis.app.adapter.cli.RepositoryRunMain \
   --config /absolute/path/to/ignored/repository-run.json \

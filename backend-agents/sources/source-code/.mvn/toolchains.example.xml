@@ -6,7 +6,7 @@
             <version>17</version>
         </provides>
         <configuration>
-            <jdkHome>/usr/local/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home</jdkHome>
+            <jdkHome>/absolute/path/to/java-17-home</jdkHome>
         </configuration>
     </toolchain>
 </toolchains>
