@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
-/** RED contract for the v2 Step07 prompt bundle and its semantic boundaries. */
+/** RED contract for the Step07 prompt bundle and its semantic boundaries. */
 class BusinessProcessPromptV2ContractTest {
 
   private static final String RESOURCE_ROOT = "/org/sourceanalysis/app/analysis/knowledge/";
@@ -24,8 +24,10 @@ class BusinessProcessPromptV2ContractTest {
           new PromptResource("BUSINESS_CATALOG_MERGE_DRAFT", "business-catalog-merge-draft-v2.txt"),
           new PromptResource(
               "BUSINESS_CATALOG_MERGE_REVIEW", "business-catalog-merge-review-v2.txt"),
-          new PromptResource("BUSINESS_PROCESS_DRAFT", "business-process-draft-v2.txt"),
-          new PromptResource("BUSINESS_PROCESS_REVIEW", "business-process-review-v2.txt"),
+          new PromptResource("PROCESS_MATERIAL_SELECTION", "process-material-selection-v1.txt"),
+          new PromptResource("PROCESS_READING_CHECK", "process-reading-check-v2.txt"),
+          new PromptResource("BUSINESS_PROCESS_DRAFT", "business-process-draft-v3.txt"),
+          new PromptResource("BUSINESS_PROCESS_REVIEW", "business-process-review-v3.txt"),
           new PromptResource(
               "BUSINESS_PROCESS_CONSOLIDATION_DRAFT",
               "business-process-consolidation-draft-v2.txt"),
@@ -34,13 +36,13 @@ class BusinessProcessPromptV2ContractTest {
               "business-process-consolidation-review-v2.txt"));
 
   @Test
-  void everyStep07TaskUsesItsSemanticV2Resource() {
+  void everyStep07TaskUsesItsConfiguredResource() {
     for (PromptResource expected : STEP07_RESOURCES) {
       String expectedText = readResource(expected.resourceName());
       String actual = BusinessProcessPromptCatalog.instructionsFor(expected.taskKind());
 
       assertThat(actual)
-          .as("%s must resolve the v2 resource", expected.taskKind())
+          .as("%s must resolve its configured resource", expected.taskKind())
           .isEqualTo(expectedText);
     }
   }
@@ -55,6 +57,18 @@ class BusinessProcessPromptV2ContractTest {
     assertThat(processPrompts)
         .contains("narrative", "activityUseLocalIds", "UNRESOLVED")
         .contains("具体条件", "拒绝", "结果");
+  }
+
+  @Test
+  void readingPromptsDescribeTheSingleCheckAndActualReadBoundary() {
+    String readingPrompts =
+        List.of("PROCESS_MATERIAL_SELECTION", "PROCESS_READING_CHECK").stream()
+            .map(BusinessProcessPromptCatalog::instructionsFor)
+            .collect(Collectors.joining("\n"));
+
+    assertThat(readingPrompts)
+        .contains("supplementaryRequests", "SOURCE_REF", "WHOLE_FILE", "context")
+        .contains("最后一次阅读选择", "完整最终", "activityUses", "contextActivityIds");
   }
 
   @Test

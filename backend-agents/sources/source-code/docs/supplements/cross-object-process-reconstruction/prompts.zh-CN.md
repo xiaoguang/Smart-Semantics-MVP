@@ -1,6 +1,6 @@
 # 跨对象过程：中文提示词与响应合同
 
-状态：设计文本，未写入生产 Prompt 资源。Activity、首次目录和仓库归并原任务继续复用；本文件拥有新增选材/阅读检查与修正后的过程 DRAFT/REVIEW 指令。结构化字段见[模块设计](module-design.md)。
+状态：CHECK 完整最终成员合同与私有 Prompt v2 已实现，49 项直接回归及最终 561 项干净本地 CI 通过。全局选材、Activity、首次目录、过程 DRAFT/REVIEW 和仓库归并原任务继续复用。结构化字段见[模块设计](module-design.md)。
 
 ## 1. 共同规则
 
@@ -74,7 +74,16 @@
 
 可以从全部已有 Activity 增加材料，也可以细化本候选的名称、
 范围和用法。分别标明业务成员和仅供参考的 context 活动。
-更新被移出全部候选的活动处置；不要求另写全仓台账。
+
+activityUses 和 contextActivityIds 都必须返回检查后的完整最终集合，
+不是只返回新增或变更项。不调整时，原样完整返回输入候选的对应集合。
+activityUses 至少包含一个用法，每项完整填写 activityId、variant、role。
+contextActivityIds 可以为空，但空数组表示最终确实没有 context，
+不能用空数组表示不调整或让程序自动沿用。
+
+name、purpose、scope 必须返回；不调整的字段填 null，程序沿用原值。
+changedActivityDispositions 仍只返回必要的增量处置，未涉及记录由程序承接。
+被移出全部候选的活动须给出现有合法非成员处置及原因，不重写全仓台账。
 
 页面选择条件、后台校验和查询统计过滤分别理解；
 不能把页面筛选写成所有调用者都必须遵守的后台限制。
@@ -86,15 +95,15 @@
 
 ### 响应要点
 
-候选修订、完整最终用法/context 集合、必要的增量处置、必填 `supplementaryRequests`（可空）和 `unresolvedQuestions`。返回空数组只是“不申请更多材料”，不等于 CONFIRMED。单次决策记录不命名为已审 REVIEW。
+候选修订、完整最终用法/context 集合、必要的增量处置、必填 `supplementaryRequests`（可空）和 `unresolvedQuestions`。CHECK 的 `activityUses` Schema 必须有 `minItems: 1`，与现有非空解析一致；`contextActivityIds=[]` 是合法的最终无 context 集合，不能被解释成继承。`name/purpose/scope` 均 required，只有其 null 值表达沿用。`supplementaryRequests=[]` 只是“不申请更多材料”，不等于 CONFIRMED。单次决策记录不命名为已审 REVIEW。
 
 以下为**结构示意，不是真实模型结果或默认业务答案**。实际ID和文件只能来自当次提供的目录；字段由对应响应Schema冻结：
 
 ```json
 {
-  "candidateKey": "C7",
-  "name": "材料中识别出的过程名称",
-  "scope": "这次能够解释的办理范围",
+  "name": null,
+  "purpose": null,
+  "scope": null,
   "activityUses": [
     {"activityId": "A12", "variant": "本过程中的具体用途", "role": "CORE"}
   ],
@@ -130,7 +139,7 @@
 
 每个阶段写完整、可复述的业务段落。接收几个参数是输入格式，
 不要用“接收参数—校验—执行主动作—返回结果”冒充业务过程。
-同时保留结构化条件、动作、状态变化、拒绝条件、结果和转移。
+同时保留结构化具体条件、动作、状态变化、拒绝条件、结果和转移。
 已有具体状态值、配置、比较条件和默认条件时必须写清。
 不要用“满足条件”“状态允许”掩盖材料中已有的具体规则。
 
@@ -151,9 +160,14 @@ context 活动可以支持理解，不必强行成为步骤。
 
 保留重要规则、公式、分支、结果和未知项。资料只支持过程片段时，
 输出该片段及具体缺口，不补造完整生命周期。只使用阅读包中已提供的引用。
+
+逐项填写当前 Schema：每个阶段的 `narrative` 必须是完整业务段落；
+阶段和规则的 `activityUseLocalIds` 只列出本过程实际适用的用法；
+无法由实际材料确认的关系用确切的 `UNRESOLVED` 标记并写入具体缺口。
+不要用省略字段、空泛叙述或未定义枚举代替这些内容。
 ```
 
-响应保留现有 Process、ActivityUse、stage.narrative、rule.activityUseLocalIds 等详细结构，`CONFIRMED / INFERRED / UNRESOLVED` 不变；删除新的 DRAFT 响应中的选材职责。未知角色可为空，直接链接也可为空。
+响应保留现有 Process、ActivityUse、stage.`narrative`、rule.`activityUseLocalIds` 等详细结构，`CONFIRMED / INFERRED / UNRESOLVED` 不变；删除新的 DRAFT 响应中的选材职责。未知角色可为空，直接链接也可为空。
 
 ## 5. PROCESS_REVIEW：审阅同一包和完整草稿
 
@@ -166,7 +180,7 @@ context 活动可以支持理解，不必强行成为步骤。
 3. 是否把可选、分批、回退关系写成必经顺序；
 4. 规则是否只适用于对应 Activity 用法和条件分支；
 5. 状态取值、默认条件、拒绝路径、数量和金额口径是否保留；
-6. 是否把进度、库存、结算和外部实际成功混为一谈；
+6. 是否把对象进度、状态变更、持久化动作和外部实际成功混为一谈；
 7. 是否把查询/统计强行塞进办理主线；
 8. 是否遗漏足以收窄结论的反向材料与未解决问题。
 
@@ -178,13 +192,17 @@ context 活动可以支持理解，不必强行成为步骤。
 不得引入包外 Activity、未读源码或未知引用。
 仍需要其他材料时写明缺什么、影响哪条关系；本次不再追加阅读或修稿。
 返回完整过程，保留条件、规则、公式、结果、适用用法及不确定性。
+保留或修订每个阶段的 `narrative`，核对阶段和规则的 `activityUseLocalIds`
+只指向实际适用用法；缺少实际材料支持时保留确切 `UNRESOLVED` 标记和具体缺口。
 ```
 
 ## 6. 归并与 Prompt 管理
 
 复用现有归并指令：局部和跨对象过程可以并存，共享 Activity 不等于重复，不拼接不同阶段；无法无损合并时保留原过程及原因。它不是补写长生命周期的地方。
 
-新选材/阅读检查各有独立单次响应 Schema v1；过程 Prompt/响应合同目标 v3。现有 Activity Prompt 不变，首次目录/归并不为本次强制重写；不要为了文档一致给所有生产资源无差别升版。完整 Prompt 内容、实际包和响应 Schema 都进入任务复用指纹。
+全局选材的 Prompt v1、实际输入和响应 Schema 保持不变。成员合同修正仅将私有阅读检查 Prompt 从 v1 改为 v2，并在该任务的 `activityUses` Schema 增加 `minItems: 1`；单次决策保存容器仍为 `process-reading-decision-v1`，公共产物、producer 和过程输出版本不变。过程 Prompt/响应合同仍为 v3，现有 Activity、首次目录和归并 Prompt 不变。完整 Prompt 内容、实际包和响应 Schema 都进入既有任务复用指纹：旧 CHECK 因内容变化不能误复用，成功的全局选择继续满足原精确复用条件。
+
+已保存的失败 CHECK raw response 不补写成员、不自动重试，不把该次补读清单当成已执行的读取。新的真实 CHECK 需明确授权；文档及离线验证不授权模型调用。
 
 ## 7. 实验问题与通用 Prompt 分离
 

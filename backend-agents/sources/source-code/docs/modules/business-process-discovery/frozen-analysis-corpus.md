@@ -1,6 +1,6 @@
 # FrozenAnalysisCorpus
 
-> 目标增量见[补充模块设计 §1](../../supplements/cross-object-process-reconstruction/module-design.md#1-frozenanalysiscorpus一次打开已有资料)。现有M10/Activity读取已实现；下述冻结文件查询尚未接入Step07。
+> 增量见[补充模块设计 §1](../../supplements/cross-object-process-reconstruction/module-design.md#1-frozenanalysiscorpus一次打开已有资料)。M10/Activity读取继续复用；冻结文件查询已接入Step07，读取与范围测试通过，完整验收见[交付记录](../../supplements/cross-object-process-reconstruction/delivery.md)。
 
 ## 为什么存在
 

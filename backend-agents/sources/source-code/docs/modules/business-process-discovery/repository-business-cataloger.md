@@ -1,6 +1,6 @@
 # RepositoryBusinessCataloger
 
-> 首次目录能力保留。已有目录的增量入口由[补充设计 §2](../../supplements/cross-object-process-reconstruction/module-design.md#2-repositorybusinesscataloger重开目录与全局选材)定义，尚未实施。
+> 首次目录能力保留。已有目录的增量入口由[补充设计 §2](../../supplements/cross-object-process-reconstruction/module-design.md#2-repositorybusinesscataloger重开目录与全局选材)定义，现已接线；验收状态见[交付记录](../../supplements/cross-object-process-reconstruction/delivery.md)。
 
 ## 为什么存在
 

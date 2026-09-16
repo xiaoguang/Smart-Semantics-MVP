@@ -20,9 +20,9 @@ BusinessProcessDiscovery已有目录、完整Activity、详细过程两轮、唯
 
 本轮按[跨对象补充设计](../supplements/cross-object-process-reconstruction/README.md)增加旧目录输入、单次全局选材和每候选一次阅读检查；源码在过程DRAFT前到位。复用调度、两级并发、Provider和已审pair保存。单次阅读决策须单独保存，不伪装成pair；326Activity不重跑。
 
-### 1.3 仍未实施的边界
+### 1.3 当前验收边界
 
-新增阅读决策、冻结文件取材接线和DRAFT前封包尚未实施。v2正文/五文件已经实现。当前无Step08生产器，历史reader/renderer保留；本轮不生成九章。
+新增单次阅读决策、冻结文件取材接线和DRAFT前封包已实现，直接行为测试通过；完整本地 CI 和两次独立真实实验以[交付记录](../supplements/cross-object-process-reconstruction/delivery.md)为准。v2正文/五文件继续复用。当前无Step08生产器，历史reader/renderer保留；本轮不生成九章。
 
 ## 2. 目标阶段图
 

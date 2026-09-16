@@ -5,7 +5,7 @@
 先读：
 
 - [总体设计](docs/DESIGN.md)
-- [跨对象业务过程补充设计（目标，尚未实施）](docs/supplements/cross-object-process-reconstruction/README.md)
+- [跨对象业务过程补充设计与验收状态](docs/supplements/cross-object-process-reconstruction/README.md)
 - [本轮业务过程发现与重建设计变更](docs/plans/business-process-discovery-and-reconstruction-change-design.md)
 - [业务过程模块总览](docs/modules/business-process-discovery/README.md)
 - [从代码到业务过程的完整示例](docs/examples/semantic-framework-walkthrough.md)
@@ -47,7 +47,7 @@ plan-materials
 
 旧的 singleton ProcessExplainer、旧九章模型生成器和 `RepositoryRunMain` 已退出生产代码。历史九章检查点仍可严格读取并确定性重渲染；这不表示当前入口会调用模型生成新九章。
 
-Step07 已实现多用法、业务正文、规则范围、来源预览和独立sources.md。新[跨对象设计](docs/supplements/cross-object-process-reconstruction/README.md)复用旧目录和326条Activity，新增跨旧候选选材、冻结文件读取、每候选一次阅读检查及DRAFT前完整原文；这些接线尚未实现，不重跑Activity。[更多发现](docs/supplements/more-findings.md)保留原文，未纳入增强仍待讨论。覆盖/多阶段数量不能替代语义质量。
+Step07 已实现多用法、业务正文、规则范围和独立sources.md。新[跨对象设计](docs/supplements/cross-object-process-reconstruction/README.md)复用旧目录和326条Activity，已接通跨旧候选选材、冻结文件读取、每候选一次阅读检查及DRAFT前完整原文；直接测试通过，不重跑Activity。完整验收以[交付记录](docs/supplements/cross-object-process-reconstruction/delivery.md)为准。[更多发现](docs/supplements/more-findings.md)保留原文，未纳入增强仍待讨论。覆盖/多阶段数量不能替代语义质量。
 
 ## 其他文档
 

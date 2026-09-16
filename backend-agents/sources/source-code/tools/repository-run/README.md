@@ -50,6 +50,18 @@ mvn -q -t .mvn/toolchains.local.xml \
 `.mvn/toolchains.local.xml` is ignored and must not be committed. The tracked example
 contains no developer-machine path.
 
+Application compilation and tests remain on that Java 17 toolchain. The configured
+google-java-format 1.36.1 requires a JDK 21+ Maven host for Spotless and the complete
+quality build; this is a build-tool requirement, not an application Java upgrade:
+
+```bash
+SOURCE_ANALYSIS_QUALITY_JAVA_HOME=/absolute/path/to/jdk-21-or-newer
+JAVA_HOME="$SOURCE_ANALYSIS_QUALITY_JAVA_HOME" \
+  mvn -t .mvn/toolchains.local.xml -Pquality clean spotless:check verify
+```
+
+Select the tool JDK explicitly; do not rely on whichever Java happens to be in PATH.
+
 For the examples below:
 
 ```bash
@@ -151,19 +163,28 @@ The current Step07 publisher installs:
 This command does not invoke the retired singleton process route or Step08. `render()` is
 therefore intentionally not ready for a process-only run.
 
-### Planned: reuse a catalog for cross-object reading (not implemented)
+### Reuse a catalog for cross-object reading
 
 The [supplementary design](../../docs/supplements/cross-object-process-reconstruction/README.md)
-adds `--catalog-from-model-batch <id>` and optional `--focus-question <text>` to the
-same process command. Do not use these flags against the current binary yet.
+defines `--catalog-from-model-batch <id>` and optional `--focus-question <text>` on the
+same process command:
+
+```bash
+"${SOURCE_ANALYSIS[@]}" execute-step \
+  --target repository-knowledge \
+  --activity-model-batch 'analysis-run:<reviewed-activity-batch-sha256>' \
+  --catalog-from-model-batch 'analysis-run:<original-catalog-batch-sha256>' \
+  --focus-question 'Which objects connect the stages, and under which conditions?'
+```
+
 The catalog is input material, distinct from `--reuse-from-model-batch`, which reuses
 matching completed tasks. All existing Activities are read without regeneration;
 frozen text is read without JDT. New calls perform global material selection, one
 reading check per candidate, process DRAFT/REVIEW and consolidation.
 
 Before a provider starts, the selected Activity/catalog/source references and question
-are bound once to the queued run's private execution configuration. A conflicting
-selection cannot silently reuse that run. This design does not authorize real calls.
+are bound once to the queued run's private execution configuration v3. A conflicting
+selection cannot silently reuse that run. Real calls still require user authorization.
 
 ### Observe saved results
 

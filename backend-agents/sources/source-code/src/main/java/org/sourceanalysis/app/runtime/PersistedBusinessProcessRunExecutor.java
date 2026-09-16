@@ -55,15 +55,23 @@ public final class PersistedBusinessProcessRunExecutor {
     if (!outputRunId.equals(modelJobs.runId())) {
       throw new IllegalArgumentException("BUSINESS_PROCESS_MODEL_BATCH_MISMATCH");
     }
+    return execute(new ProcessDiscoveryRequest(activities, materials, profile, outputRunId));
+  }
+
+  /** Executes the already frozen process-reading request for this exact model batch. */
+  public BusinessProcessWorkflowResult execute(ProcessDiscoveryRequest request) {
+    Objects.requireNonNull(request, "process discovery request");
+    if (!request.outputRunId().equals(modelJobs.runId())) {
+      throw new IllegalArgumentException("BUSINESS_PROCESS_MODEL_BATCH_MISMATCH");
+    }
     ProcessDiscoveryResult discovery =
-        DefaultBusinessProcessDiscovery.forExecution(modelJobs)
-            .discover(new ProcessDiscoveryRequest(activities, materials, profile, outputRunId));
+        DefaultBusinessProcessDiscovery.forExecution(modelJobs).discover(request);
     CanonicalBusinessProcessPublisher publisher =
         outputControls == null
             ? new CanonicalBusinessProcessPublisher(inputArtifacts)
             : new CanonicalBusinessProcessPublisher(
                 inputArtifacts, outputArtifacts, outputControls);
     return new BusinessProcessWorkflowResult(
-        materials, activities, discovery, publisher.publish(discovery));
+        request.materials(), request.activities(), discovery, publisher.publish(discovery));
   }
 }

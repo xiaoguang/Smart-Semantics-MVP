@@ -16,8 +16,10 @@ final class BusinessProcessPromptCatalog {
           Map.entry("BUSINESS_CATALOG_SHARD_REVIEW", "business-catalog-review-v2.txt"),
           Map.entry("BUSINESS_CATALOG_MERGE_DRAFT", "business-catalog-merge-draft-v2.txt"),
           Map.entry("BUSINESS_CATALOG_MERGE_REVIEW", "business-catalog-merge-review-v2.txt"),
-          Map.entry("BUSINESS_PROCESS_DRAFT", "business-process-draft-v2.txt"),
-          Map.entry("BUSINESS_PROCESS_REVIEW", "business-process-review-v2.txt"),
+          Map.entry("PROCESS_MATERIAL_SELECTION", "process-material-selection-v1.txt"),
+          Map.entry("PROCESS_READING_CHECK", "process-reading-check-v2.txt"),
+          Map.entry("BUSINESS_PROCESS_DRAFT", "business-process-draft-v3.txt"),
+          Map.entry("BUSINESS_PROCESS_REVIEW", "business-process-review-v3.txt"),
           Map.entry(
               "BUSINESS_PROCESS_CONSOLIDATION_DRAFT",
               "business-process-consolidation-draft-v2.txt"),

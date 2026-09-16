@@ -50,7 +50,9 @@ import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialE
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
 import org.sourceanalysis.app.analysis.inventory.PersistedVerifiedSourceTextReader;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.knowledge.ProcessDiscoveryProfile;
+import org.sourceanalysis.app.analysis.knowledge.ProcessDiscoveryRequest;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
@@ -65,6 +67,7 @@ import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.FileSystemCanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.FileSystemCanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
+import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 import org.sourceanalysis.app.artifact.RunStoreBootstrap;
 import org.sourceanalysis.app.artifact.RunStoreHandle;
@@ -96,6 +99,7 @@ import org.sourceanalysis.app.runtime.SourceAnalysisApplication;
 import org.sourceanalysis.app.runtime.TechnicalAnalysisWorkflowResult;
 import org.sourceanalysis.app.runtime.modeljob.ModelJobExecutionConfiguration;
 import org.sourceanalysis.app.runtime.modeljob.ModelJobProviderBinding;
+import org.sourceanalysis.app.runtime.modeljob.PrivateModelJobResultStore;
 
 /** Application-service orchestration behind the unique {@link SourceAnalysisCli}. */
 final class SourceAnalysisExecution {
@@ -114,6 +118,8 @@ final class SourceAnalysisExecution {
   private static final String POLICY_SCHEMA = "artifact-policy-registry-policy-set-v1";
   private static final String MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA =
       "model-job-execution-config-v2";
+  private static final String PROCESS_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA =
+      "model-job-execution-config-v3";
   private static final String POLICY_ID_DOMAIN = "canonical-artifact-policy-registry-id-v2";
   private static final int CONFIG_MAX_BYTES = 1_048_576;
   private static final ObjectMapper JSON = new ObjectMapper();
@@ -150,6 +156,8 @@ final class SourceAnalysisExecution {
                 configuration,
                 parsed.activityModelBatchId(),
                 parsed.reuseFromModelBatchId(),
+                parsed.catalogFromModelBatchId(),
+                parsed.focusQuestion(),
                 parsed.runId(),
                 output);
         case MODE_INSPECT -> executeInspect(configuration, parsed.runId(), output);
@@ -482,31 +490,18 @@ final class SourceAnalysisExecution {
       RepositoryRunConfiguration configuration,
       AnalysisRunId activityModelBatchId,
       AnalysisRunId reuseFromModelBatchId,
+      AnalysisRunId catalogFromModelBatchId,
+      String focusQuestion,
       AnalysisRunId requestedRunId,
       PrintWriter output) {
     ModelJobsConfiguration modelJobs = configuration.requireModelJobsForExecution();
-    ProcessDiscoveryProfile processProfile = configuration.requireProcessDiscoveryProfile();
     RepositoryRunStateV3.SavedState materialState = loadV3State(configuration);
     try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
       CanonicalModuleArtifactStore inputModules = inputModuleArtifacts(configuration, store);
       CanonicalModuleArtifactStore outputModules = moduleArtifacts(configuration, store);
+      CanonicalAnalysisStepArtifactStore inputAnalysisSteps =
+          inputStepArtifacts(configuration, store);
       verifyConfiguredMaterialSource(configuration, store, materialState);
-      AnalysisRunOutput activityOutput =
-          RunStoreBootstrap.reopenAnalysisRunOutput(store, activityModelBatchId)
-              .orElseThrow(() -> failure("ACTIVITY_MODEL_BATCH_OUTPUT_MISSING"));
-      if (activityOutput.activityCheckpoint() == null
-          || !activityOutput
-              .businessMaterialCheckpoint()
-              .equals(materialState.materialsCheckpoint())) {
-        throw failure("ACTIVITY_MODEL_BATCH_INPUT_MISMATCH");
-      }
-      ActivityExplanationResult activities =
-          new ActivityExplanationCheckpointReader(inputModules)
-              .reopen(activityOutput.activityCheckpoint());
-      BusinessMaterialBuildResult materials =
-          new org.sourceanalysis.app.analysis.interpretation.material
-                  .BusinessMaterialCheckpointReader(inputModules)
-              .reopen(materialState.materialsCheckpoint());
       java.util.concurrent.atomic.AtomicReference<BusinessProcessWorkflowResult>
           completedProcesses = new java.util.concurrent.atomic.AtomicReference<>();
       RepositoryAnalysisRunCoordinator coordinator =
@@ -518,15 +513,30 @@ final class SourceAnalysisExecution {
                 }
                 validateReuseBatch(
                     store, modelJobs, materialState, request.runId(), reuseFromModelBatchId);
+                ProcessDiscoveryRequest readingRequest =
+                    assembleProcessDiscoveryRequest(
+                        configuration,
+                        store,
+                        inputModules,
+                        inputAnalysisSteps,
+                        modelJobs,
+                        materialState,
+                        activityModelBatchId,
+                        request.runId(),
+                        catalogFromModelBatchId,
+                        focusQuestion);
                 validateProcessReuseActivity(
-                    modelJobs, activityOutput.activityCheckpoint(), reuseFromModelBatchId);
+                    modelJobs, readingRequest.activities().checkpoint(), reuseFromModelBatchId);
+                validateProcessReuseReadingInputs(
+                    configuration, modelJobs, reuseFromModelBatchId, readingRequest);
                 writeProcessModelJobExecutionConfiguration(
                     configuration,
                     modelJobs,
                     materialState,
-                    activityOutput.activityCheckpoint(),
+                    readingRequest.activities().checkpoint(),
                     request.runId(),
-                    reuseFromModelBatchId);
+                    reuseFromModelBatchId,
+                    readingRequest);
                 ModelJobExecutionConfiguration execution =
                     modelJobExecutionConfiguration(
                         modelJobs, request.runId(), reuseFromModelBatchId);
@@ -539,13 +549,13 @@ final class SourceAnalysisExecution {
                             outputModules,
                             artifactControls(outputRequest),
                             execution,
-                            processProfile)
-                        .execute(request.runId(), activities, materials);
+                            readingRequest.profile())
+                        .execute(readingRequest);
                 completedProcesses.set(result);
                 return new AnalysisRunOutput(
                     materialState.sourceRunId(),
-                    materialState.materialsCheckpoint(),
-                    activityOutput.activityCheckpoint(),
+                    readingRequest.materials().checkpoint(),
+                    readingRequest.activities().checkpoint(),
                     result.publication().checkpoint(),
                     null);
               });
@@ -580,6 +590,72 @@ final class SourceAnalysisExecution {
     }
   }
 
+  /**
+   * Opens the fixed Activity/M10/frozen-source inputs for one already-queued process model batch.
+   *
+   * <p>This is package-visible so the fixed acceptance driver uses the exact same durable input
+   * validation as the configured CLI; it is not a second command or public Agent request.
+   */
+  static ProcessDiscoveryRequest assembleProcessDiscoveryRequest(
+      RepositoryRunConfiguration configuration,
+      RunStoreHandle store,
+      CanonicalModuleArtifactStore inputModules,
+      CanonicalAnalysisStepArtifactStore analysisSteps,
+      ModelJobsConfiguration modelJobs,
+      RepositoryRunStateV3.SavedState materialState,
+      AnalysisRunId activityModelBatchId,
+      AnalysisRunId outputRunId,
+      AnalysisRunId catalogFromModelBatchId,
+      String focusQuestion) {
+    Objects.requireNonNull(configuration, "repository configuration");
+    Objects.requireNonNull(store, "run store");
+    Objects.requireNonNull(inputModules, "input module artifacts");
+    Objects.requireNonNull(analysisSteps, "analysis step artifacts");
+    Objects.requireNonNull(modelJobs, "model jobs configuration");
+    Objects.requireNonNull(materialState, "saved material state");
+    Objects.requireNonNull(activityModelBatchId, "activity model batch ID");
+    Objects.requireNonNull(outputRunId, "process output run ID");
+
+    AnalysisRunOutput activityOutput =
+        RunStoreBootstrap.reopenAnalysisRunOutput(store, activityModelBatchId)
+            .orElseThrow(() -> failure("ACTIVITY_MODEL_BATCH_OUTPUT_MISSING"));
+    if (activityOutput.activityCheckpoint() == null
+        || !activityOutput
+            .businessMaterialCheckpoint()
+            .equals(materialState.materialsCheckpoint())) {
+      throw failure("ACTIVITY_MODEL_BATCH_INPUT_MISMATCH");
+    }
+    ActivityExplanationResult activities =
+        new ActivityExplanationCheckpointReader(inputModules)
+            .reopen(activityOutput.activityCheckpoint());
+    BusinessMaterialBuildResult materials =
+        new org.sourceanalysis.app.analysis.interpretation.material
+                .BusinessMaterialCheckpointReader(inputModules)
+            .reopen(materialState.materialsCheckpoint());
+    VerifiedSourceInventoryReference sourceInventory =
+        processSourceInventory(analysisSteps, materialState);
+    PersistedVerifiedSourceTextReader sourceTextReader =
+        new PersistedVerifiedSourceTextReader(
+            analysisSteps, new LocalGitSourceRegistry(configuration.captureWorkspace()));
+    ImmutableBytes savedCatalogInput =
+        reopenCatalogInput(
+            store,
+            configuration,
+            modelJobs,
+            materialState,
+            activities.checkpoint(),
+            catalogFromModelBatchId);
+    return new ProcessDiscoveryRequest(
+        activities,
+        materials,
+        configuration.requireProcessDiscoveryProfile(),
+        outputRunId,
+        sourceInventory,
+        sourceTextReader,
+        savedCatalogInput,
+        focusQuestion);
+  }
+
   static void validateProcessReuseActivity(
       ModelJobsConfiguration modelJobs,
       org.sourceanalysis.app.artifact.ModulePublicationReference activityCheckpoint,
@@ -593,6 +669,111 @@ final class SourceAnalysisExecution {
         || !activityCheckpoint.equals(RepositoryRunStateV3.loadCheckpoint((ObjectNode) saved))) {
       throw failure("MODEL_REUSE_ACTIVITY_MISMATCH");
     }
+  }
+
+  static VerifiedSourceInventoryReference processSourceInventory(
+      CanonicalAnalysisStepArtifactStore analysisSteps, RepositoryRunStateV3.SavedState materials) {
+    ReopenedAnalysisStepPublication flows =
+        analysisSteps.reopen(materials.businessFlows().publication());
+    if (!materials.businessFlows().publication().equals(flows.reference())
+        || flows.reference().address().analysisStepKey() != AnalysisStepKey.BUSINESS_FLOWS
+        || !materials.sourceRunId().equals(flows.reference().address().runId())) {
+      throw failure("PROCESS_SOURCE_INVENTORY_MISMATCH");
+    }
+    List<AnalysisStepPublicationReference> inventories =
+        flows.receipt().upstreamAnalysisStepReferences().stream()
+            .filter(
+                value ->
+                    value.address().analysisStepKey() == AnalysisStepKey.VERIFIED_SOURCE_INVENTORY)
+            .toList();
+    if (inventories.size() != 1
+        || !materials.sourceRunId().equals(inventories.get(0).address().runId())) {
+      throw failure("PROCESS_SOURCE_INVENTORY_MISMATCH");
+    }
+    return new VerifiedSourceInventoryReference(inventories.get(0));
+  }
+
+  static ImmutableBytes reopenCatalogInput(
+      RunStoreHandle store,
+      RepositoryRunConfiguration configuration,
+      ModelJobsConfiguration modelJobs,
+      RepositoryRunStateV3.SavedState materials,
+      org.sourceanalysis.app.artifact.ModulePublicationReference activityCheckpoint,
+      AnalysisRunId catalogFromModelBatchId) {
+    if (catalogFromModelBatchId == null) {
+      return null;
+    }
+    if (catalogFromModelBatchId.equals(materials.sourceRunId())) {
+      throw failure("PROCESS_CATALOG_INPUT_SOURCE_INVALID");
+    }
+    AnalysisRunReference catalog =
+        RunStoreBootstrap.reopenAnalysisRun(store, catalogFromModelBatchId);
+    if (catalog.lifecycleState() == AnalysisRunLifecycleState.QUEUED
+        || catalog.lifecycleState() == AnalysisRunLifecycleState.RUNNING) {
+      throw failure("PROCESS_CATALOG_INPUT_NOT_STOPPED");
+    }
+    ObjectNode execution = readModelJobExecutionConfiguration(modelJobs, catalogFromModelBatchId);
+    try {
+      if (!MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA.equals(stateText(execution, "schemaVersion"))
+          || !materials.sourceRunId().value().equals(stateText(execution, "sourceRunId"))
+          || !materials
+              .materialsCheckpoint()
+              .equals(
+                  RepositoryRunStateV3.loadCheckpoint(
+                      stateObject(execution, "materialsCheckpoint")))
+          || !activityCheckpoint.equals(
+              RepositoryRunStateV3.loadCheckpoint(stateObject(execution, "activityCheckpoint")))) {
+        throw failure("PROCESS_CATALOG_INPUT_MISMATCH");
+      }
+    } catch (LauncherException invalid) {
+      if ("PROCESS_CATALOG_INPUT_MISMATCH".equals(invalid.getMessage())) {
+        throw invalid;
+      }
+      throw failure("PROCESS_CATALOG_INPUT_MISMATCH", invalid);
+    }
+    PrivateModelJobResultStore results =
+        new PrivateModelJobResultStore(
+            modelJobs.journalDirectory(), catalogFromModelBatchId, "process-catalog");
+    ObjectNode pair =
+        results
+            .readCatalogInput("business-catalog-merge")
+            .or(() -> results.readCatalogInput("business-catalog"))
+            .orElseThrow(() -> failure("PROCESS_CATALOG_INPUT_INVALID"));
+    return configuration.canonicalJson().encodeCanonical(pair);
+  }
+
+  static void validateProcessReuseReadingInputs(
+      RepositoryRunConfiguration configuration,
+      ModelJobsConfiguration modelJobs,
+      AnalysisRunId reuseFromModelBatchId,
+      ProcessDiscoveryRequest readingRequest) {
+    if (reuseFromModelBatchId == null) {
+      return;
+    }
+    ObjectNode execution = readModelJobExecutionConfiguration(modelJobs, reuseFromModelBatchId);
+    if (!PROCESS_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA.equals(
+            stateText(execution, "schemaVersion"))
+        || !sourceInventoryReferenceJson(readingRequest.sourceInventoryReference())
+            .equals(execution.path("sourceInventoryReference"))
+        || !savedCatalogInputLineageOrNull(configuration, readingRequest.savedCatalogInput())
+            .equals(execution.path("savedCatalogInput"))
+        || !focusQuestionNode(readingRequest.focusQuestion())
+            .equals(execution.path("focusQuestion"))) {
+      throw failure("MODEL_REUSE_READING_INPUT_MISMATCH");
+    }
+  }
+
+  private static JsonNode savedCatalogInputLineageOrNull(
+      RepositoryRunConfiguration configuration, ImmutableBytes savedCatalogInput) {
+    return savedCatalogInput == null
+        ? JsonNodeFactory.instance.nullNode()
+        : savedCatalogInputLineage(configuration.canonicalJson(), savedCatalogInput);
+  }
+
+  private static JsonNode focusQuestionNode(String focusQuestion) {
+    return focusQuestion == null
+        ? JsonNodeFactory.instance.nullNode()
+        : JsonNodeFactory.instance.textNode(focusQuestion);
   }
 
   static void executeInspect(
@@ -663,6 +844,16 @@ final class SourceAnalysisExecution {
         store,
         configuration.canonicalJson(),
         configuration.policyRegistry(),
+        configuration.storeLimits());
+  }
+
+  /** Reopens frozen upstream step artifacts under their configured input-policy registry. */
+  static CanonicalAnalysisStepArtifactStore inputStepArtifacts(
+      RepositoryRunConfiguration configuration, RunStoreHandle store) {
+    return new FileSystemCanonicalAnalysisStepArtifactStore(
+        store,
+        configuration.canonicalJson(),
+        configuration.inputPolicyRegistry(),
         configuration.storeLimits());
   }
 
@@ -904,7 +1095,11 @@ final class SourceAnalysisExecution {
       throw failure("MODEL_REUSE_SOURCE_NOT_STOPPED");
     }
     ObjectNode execution = readModelJobExecutionConfiguration(modelJobs, reuseFromModelBatchId);
-    if (!MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA.equals(stateText(execution, "schemaVersion"))
+    String schemaVersion = stateText(execution, "schemaVersion");
+    if (!Set.of(
+                MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA,
+                PROCESS_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA)
+            .contains(schemaVersion)
         || !materials.sourceRunId().value().equals(stateText(execution, "sourceRunId"))
         || !materials
             .materialsCheckpoint()
@@ -1130,6 +1325,141 @@ final class SourceAnalysisExecution {
         "MODEL_EXECUTION_CONFIGURATION_WRITE_FAILED");
   }
 
+  /**
+   * Persists the complete, immutable process-reading inputs for the v3 process execution path.
+   *
+   * <p>The reader itself is deliberately not serialized: its complete verified-inventory
+   * publication is the reproducible address, while the caller reopens the reader from that address.
+   */
+  static void writeProcessModelJobExecutionConfiguration(
+      RepositoryRunConfiguration configuration,
+      ModelJobsConfiguration modelJobs,
+      RepositoryRunStateV3.SavedState materials,
+      org.sourceanalysis.app.artifact.ModulePublicationReference activityCheckpoint,
+      AnalysisRunId modelBatchId,
+      AnalysisRunId reuseFromModelBatchId,
+      ProcessDiscoveryRequest readingRequest) {
+    Objects.requireNonNull(configuration, "repository configuration");
+    Objects.requireNonNull(modelJobs, "model jobs configuration");
+    Objects.requireNonNull(materials, "saved material state");
+    Objects.requireNonNull(activityCheckpoint, "activity checkpoint");
+    Objects.requireNonNull(modelBatchId, "model batch ID");
+    Objects.requireNonNull(readingRequest, "process reading request");
+    if (!modelBatchId.equals(readingRequest.outputRunId())
+        || !activityCheckpoint.equals(readingRequest.activities().checkpoint())
+        || !materials.materialsCheckpoint().equals(readingRequest.materials().checkpoint())
+        || readingRequest.sourceInventoryReference() == null
+        || readingRequest.sourceTextReader() == null) {
+      throw failure("MODEL_EXECUTION_CONFIGURATION_READING_INPUT_INVALID");
+    }
+
+    ObjectNode record = JsonNodeFactory.instance.objectNode();
+    record.put("schemaVersion", PROCESS_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA);
+    record.put("modelBatchId", modelBatchId.value());
+    record.put("sourceRunId", materials.sourceRunId().value());
+    record.set(
+        "materialsCheckpoint",
+        RepositoryRunStateV3.checkpointJson(materials.materialsCheckpoint()));
+    record.set("activityCheckpoint", RepositoryRunStateV3.checkpointJson(activityCheckpoint));
+    if (reuseFromModelBatchId == null) {
+      record.putNull("reuseFromModelBatchId");
+    } else {
+      record.put("reuseFromModelBatchId", reuseFromModelBatchId.value());
+    }
+    ObjectNode scope = record.putObject("executionScope");
+    scope.put("mode", "BUSINESS_PROCESSES");
+    scope.putArray("materialIds");
+    scope.put("maxMaterialsToStart", Integer.MAX_VALUE);
+    record.set(
+        "sourceInventoryReference",
+        sourceInventoryReferenceJson(readingRequest.sourceInventoryReference()));
+    if (readingRequest.savedCatalogInput() == null) {
+      record.putNull("savedCatalogInput");
+    } else {
+      record.set(
+          "savedCatalogInput",
+          savedCatalogInputLineage(
+              configuration.canonicalJson(), readingRequest.savedCatalogInput()));
+    }
+    if (readingRequest.focusQuestion() == null) {
+      record.putNull("focusQuestion");
+    } else {
+      record.put("focusQuestion", readingRequest.focusQuestion());
+    }
+    record.put("modelJobsSha256", modelJobs.canonicalSha256());
+    record.set("modelJobs", modelJobs.normalizedNonSecretDocument());
+    Path destination =
+        modelJobs
+            .journalDirectory()
+            .resolve(
+                "model-job-execution-"
+                    + sha256(modelBatchId.value().getBytes(StandardCharsets.UTF_8))
+                    + ".json");
+    writeIdempotentlyAtomically(
+        destination,
+        configuration.canonicalJson().encodeCanonical(record).copyToByteArray(),
+        "MODEL_EXECUTION_CONFIGURATION_DESTINATION_INVALID",
+        "MODEL_EXECUTION_CONFIGURATION_CONFLICT",
+        "MODEL_EXECUTION_CONFIGURATION_WRITE_FAILED");
+  }
+
+  private static ObjectNode sourceInventoryReferenceJson(
+      VerifiedSourceInventoryReference sourceInventoryReference) {
+    org.sourceanalysis.app.artifact.AnalysisStepPublicationReference publication =
+        sourceInventoryReference.publication();
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    ObjectNode publicationValue = value.putObject("publication");
+    ObjectNode address = publicationValue.putObject("address");
+    address.put("runId", publication.address().runId().value());
+    address.put("analysisStepKey", publication.address().analysisStepKey().name());
+    publicationValue.put(
+        "analysisStepArtifactRoot", publication.analysisStepArtifactRoot().value());
+    publicationValue.put("analysisStepReceiptId", publication.analysisStepReceiptId().value());
+    publicationValue.put(
+        "analysisStepReceiptSha256", publication.analysisStepReceiptSha256().value());
+    return value;
+  }
+
+  private static ObjectNode savedCatalogInputLineage(
+      CanonicalJsonCodec canonicalJson, ImmutableBytes savedCatalogInput) {
+    JsonNode parsed;
+    try {
+      parsed = canonicalJson.parseCanonical(savedCatalogInput);
+    } catch (IllegalArgumentException invalid) {
+      throw failure("MODEL_EXECUTION_CONFIGURATION_READING_INPUT_INVALID", invalid);
+    }
+    if (!(parsed instanceof ObjectNode pair)
+        || !"model-job-reviewed-result-v2".equals(catalogPairText(pair, "schemaVersion"))
+        || !"COMPLETED".equals(catalogPairText(pair, "status"))) {
+      throw failure("MODEL_EXECUTION_CONFIGURATION_READING_INPUT_INVALID");
+    }
+    String runId = catalogPairText(pair, "runId");
+    String phase = catalogPairText(pair, "phase");
+    String jobKey = catalogPairText(pair, "jobKey");
+    String fingerprint = catalogPairText(pair, "inputFingerprint");
+    if (!(pair.path("draft") instanceof ObjectNode)
+        || !(pair.path("review") instanceof ObjectNode)) {
+      throw failure("MODEL_EXECUTION_CONFIGURATION_READING_INPUT_INVALID");
+    }
+    ObjectNode lineage = JsonNodeFactory.instance.objectNode();
+    lineage.put("runId", runId);
+    lineage.put("phase", phase);
+    lineage.put("jobKey", jobKey);
+    lineage.put("inputFingerprint", fingerprint);
+    byte[] bytes = savedCatalogInput.copyToByteArray();
+    lineage.put("bytesSha256", sha256(bytes));
+    lineage.put("bytesSize", bytes.length);
+    return lineage;
+  }
+
+  private static String catalogPairText(ObjectNode pair, String field) {
+    JsonNode value = pair.get(field);
+    if (value == null || !value.isTextual() || value.textValue().isBlank()) {
+      throw failure("MODEL_EXECUTION_CONFIGURATION_READING_INPUT_INVALID");
+    }
+    return value.textValue();
+  }
+
   static ObjectNode readModelJobExecutionConfiguration(
       ModelJobsConfiguration modelJobs, AnalysisRunId modelBatchId) {
     Path source =
@@ -1271,6 +1601,8 @@ final class SourceAnalysisExecution {
       Path outputState,
       AnalysisRunId activityModelBatchId,
       AnalysisRunId reuseFromModelBatchId,
+      AnalysisRunId catalogFromModelBatchId,
+      String focusQuestion,
       AnalysisRunId runId,
       ArtifactId sourceRegistrationId,
       BusinessOutputArtifactKey businessOutputArtifactKey,
@@ -1288,6 +1620,8 @@ final class SourceAnalysisExecution {
       Path outputState = null;
       AnalysisRunId activityModelBatchId = null;
       AnalysisRunId reuseFromModelBatchId = null;
+      AnalysisRunId catalogFromModelBatchId = null;
+      String focusQuestion = null;
       AnalysisRunId runId = null;
       ArtifactId sourceRegistrationId = null;
       BusinessOutputArtifactKey businessOutputArtifactKey = null;
@@ -1304,27 +1638,11 @@ final class SourceAnalysisExecution {
         switch (option) {
           case "--material-id" -> materialId = value;
           case "--output-state" -> outputState = argumentPath(value);
-          case "--activity-model-batch" -> {
-            try {
-              activityModelBatchId = AnalysisRunId.parse(value);
-            } catch (IllegalArgumentException invalid) {
-              throw failure("ARGUMENTS_INVALID", invalid);
-            }
-          }
-          case "--reuse-from-model-batch" -> {
-            try {
-              reuseFromModelBatchId = AnalysisRunId.parse(value);
-            } catch (IllegalArgumentException invalid) {
-              throw failure("ARGUMENTS_INVALID", invalid);
-            }
-          }
-          case "--run" -> {
-            try {
-              runId = AnalysisRunId.parse(value);
-            } catch (IllegalArgumentException invalid) {
-              throw failure("ARGUMENTS_INVALID", invalid);
-            }
-          }
+          case "--activity-model-batch" -> activityModelBatchId = argumentRunId(value);
+          case "--reuse-from-model-batch" -> reuseFromModelBatchId = argumentRunId(value);
+          case "--catalog-from-model-batch" -> catalogFromModelBatchId = argumentRunId(value);
+          case "--focus-question" -> focusQuestion = value;
+          case "--run" -> runId = argumentRunId(value);
           case "--source-registration" -> {
             try {
               sourceRegistrationId = ArtifactId.parse(value);
@@ -1385,6 +1703,10 @@ final class SourceAnalysisExecution {
           && (activityModelBatchId == null || materialId != null || outputState != null)) {
         throw failure("ARGUMENTS_INVALID");
       }
+      if (!MODE_BUSINESS_PROCESSES.equals(mode)
+          && (catalogFromModelBatchId != null || focusQuestion != null)) {
+        throw failure("ARGUMENTS_INVALID");
+      }
       if (MODE_ACTIVITIES.equals(mode)
           && (materialId != null || outputState != null || activityModelBatchId != null)) {
         throw failure("ARGUMENTS_INVALID");
@@ -1431,10 +1753,20 @@ final class SourceAnalysisExecution {
           outputState,
           activityModelBatchId,
           reuseFromModelBatchId,
+          catalogFromModelBatchId,
+          focusQuestion,
           runId,
           sourceRegistrationId,
           businessOutputArtifactKey,
           maxBytes);
+    }
+
+    private static AnalysisRunId argumentRunId(String value) {
+      try {
+        return AnalysisRunId.parse(value);
+      } catch (IllegalArgumentException invalid) {
+        throw failure("ARGUMENTS_INVALID", invalid);
+      }
     }
   }
 

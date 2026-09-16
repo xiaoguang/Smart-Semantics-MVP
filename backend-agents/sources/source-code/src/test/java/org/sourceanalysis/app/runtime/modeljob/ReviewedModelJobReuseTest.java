@@ -19,11 +19,10 @@ import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 
 /**
- * RED contract for explicit cross-batch reuse of complete model jobs.
+ * Contract for explicit cross-batch reuse of complete model jobs.
  *
- * <p>The current private store is write-only, so these tests intentionally fail until the existing
- * store gains a strict, read-only completed-pair seam. They do not authorize replaying a Provider
- * call or treating an isolated DRAFT as a completed job.
+ * <p>The store's strict, read-only completed-pair seam must not replay a Provider call or treat an
+ * isolated DRAFT as a completed job.
  */
 class ReviewedModelJobReuseTest {
 
@@ -41,6 +40,14 @@ class ReviewedModelJobReuseTest {
     String jobKey = "activity-job-001";
     String fingerprint = "1".repeat(64);
     write(journal, sourceBatch, "activity", jobKey, completePair(fingerprint, "activity-1"));
+    Path resultPath =
+        journal
+            .resolve("model-jobs")
+            .resolve(sourceBatch.value().substring("analysis-run:".length()))
+            .resolve("activity")
+            .resolve(jobKey)
+            .resolve("reviewed-result.json");
+    byte[] originalBytes = Files.readAllBytes(resultPath);
 
     Optional<ObjectNode> reused =
         readCompleted(journal, sourceBatch, "activity", jobKey, fingerprint);
@@ -50,6 +57,9 @@ class ReviewedModelJobReuseTest {
     assertThat(reused.orElseThrow().path("reviewedActivities")).isNotEmpty();
     assertThat(reused.orElseThrow().path("draft").isObject()).isTrue();
     assertThat(reused.orElseThrow().path("review").isObject()).isTrue();
+    assertThat(Files.readAllBytes(resultPath))
+        .as("reading a reusable pair must preserve the saved raw response bytes")
+        .containsExactly(originalBytes);
   }
 
   @Test

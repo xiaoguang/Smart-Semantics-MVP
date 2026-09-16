@@ -179,15 +179,19 @@ public final class SourceAnalysisCli {
       String materialId = option("--material-id", false);
       String activityBatch = option("--activity-model-batch", false);
       String reuseBatch = option("--reuse-from-model-batch", false);
+      String catalogBatch = option("--catalog-from-model-batch", false);
+      String focusQuestion = option("--focus-question", false);
       String runId = option("--run", false);
       requireOnly(
           "--target",
           "--material-id",
           "--activity-model-batch",
           "--reuse-from-model-batch",
+          "--catalog-from-model-batch",
+          "--focus-question",
           "--run");
       if ("flow-interpretation".equals(target)) {
-        if (activityBatch != null) {
+        if (activityBatch != null || catalogBatch != null || focusQuestion != null) {
           throw new IllegalArgumentException("Activity execution cannot use an Activity batch");
         }
         translated.add(materialId == null ? "activities" : "activities-sample");
@@ -198,6 +202,8 @@ public final class SourceAnalysisCli {
         }
         translated.add("business-processes");
         addOption(translated, "--activity-model-batch", activityBatch);
+        addOption(translated, "--catalog-from-model-batch", catalogBatch);
+        addOption(translated, "--focus-question", focusQuestion);
       } else {
         throw new IllegalArgumentException("execute-step target is unsupported");
       }

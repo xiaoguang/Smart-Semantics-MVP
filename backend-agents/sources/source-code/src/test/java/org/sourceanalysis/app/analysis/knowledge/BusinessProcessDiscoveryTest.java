@@ -62,13 +62,16 @@ class BusinessProcessDiscoveryTest {
         .containsExactly(
             "BUSINESS_CATALOG_DRAFT",
             "BUSINESS_CATALOG_REVIEW",
+            "PROCESS_MATERIAL_SELECTION",
+            "PROCESS_READING_CHECK",
             "BUSINESS_PROCESS_DRAFT",
             "BUSINESS_PROCESS_REVIEW",
             "BUSINESS_PROCESS_CONSOLIDATION_DRAFT",
             "BUSINESS_PROCESS_CONSOLIDATION_REVIEW");
     assertThat(provider.catalogCards()).hasSize(3);
     assertThat(provider.processActivities()).hasSize(3);
-    assertThat(provider.processReviewInput().path("resolvedSourceExcerpts")).hasSize(3);
+    assertThat(provider.processReviewInput().path("readingPacket").path("sourceExcerpts"))
+        .hasSize(3);
 
     assertThat(result.catalog().processes()).hasSize(1);
     RepositoryBusinessProcessCatalog.BusinessProcess process = result.catalog().processes().get(0);
@@ -137,7 +140,10 @@ class BusinessProcessDiscoveryTest {
         .containsExactlyInAnyOrder("销售订单", "按导入订单");
 
     List<JsonNode> updateBodies =
-        matching(provider.processInput().path("activities"), "activityId", "activity:update");
+        matching(
+            provider.processInput().path("readingPacket").path("reviewedActivities"),
+            "activityId",
+            "activity:update");
     assertThat(updateBodies).hasSize(1);
     JsonNode updateBody = updateBodies.get(0);
     assertThat(updateBody.path("businessPurpose").asText()).isEqualTo("管理销售订单从创建到审核的生命周期。");
@@ -159,26 +165,20 @@ class BusinessProcessDiscoveryTest {
   }
 
   @Test
-  void sendsSourceDirectoryWithScopeActivityIdsAndFirstEightPhysicalSnippetLines() {
+  void sendsCompletePacketSourceExcerptsWithFirstEightPhysicalSnippetLines() {
     ScriptedProvider provider = new ScriptedProvider();
 
     new DefaultBusinessProcessDiscovery(provider)
         .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
 
     JsonNode sourceDirectory =
-        findById(provider.processInput().path("allowlistedSourceRefs"), "ref", "S1");
+        findById(provider.processInput().path("readingPacket").path("sourceExcerpts"), "ref", "S1");
     assertThat(sourceDirectory.path("ref").asText()).isEqualTo("S1");
-    assertThat(texts(sourceDirectory, "activityIds")).containsExactly("activity:create");
-    assertThat(texts(sourceDirectory, "openingLines"))
-        .containsExactly(
-            "// create concrete source",
-            "// create physical line 2",
-            "// create physical line 3",
-            "// create physical line 4",
-            "// create physical line 5",
-            "// create physical line 6",
-            "// create physical line 7",
-            "// create physical line 8");
+    assertThat(sourceDirectory.path("snippet").asText())
+        .isEqualTo(sourceSnippet("create"))
+        .contains("// create physical line 10");
+    assertThat(sourceDirectory.has("openingLines")).isFalse();
+    assertThat(sourceDirectory.has("activityIds")).isFalse();
     assertThat(sourceDirectory.has("purpose")).isFalse();
   }
 
@@ -277,7 +277,7 @@ class BusinessProcessDiscoveryTest {
   }
 
   @Test
-  void sendsCompleteActualDraftAndCompleteRequestedSourceSnippetsToReview() {
+  void sendsTheCompleteReadingPacketAndActualDraftToReview() {
     ScriptedProvider provider = new ScriptedProvider();
 
     new DefaultBusinessProcessDiscovery(provider)
@@ -291,7 +291,9 @@ class BusinessProcessDiscoveryTest {
     assertThat(actualDraft.path("processes").get(0).path("stages")).hasSize(3);
     assertThat(actualDraft.path("processes").get(0).path("businessRules")).hasSize(1);
 
-    JsonNode createExcerpt = findById(reviewInput.path("resolvedSourceExcerpts"), "ref", "S1");
+    JsonNode readingPacket = reviewInput.path("readingPacket");
+    assertThat(readingPacket).isEqualTo(provider.processInput().path("readingPacket"));
+    JsonNode createExcerpt = findById(readingPacket.path("sourceExcerpts"), "ref", "S1");
     assertThat(createExcerpt.path("snippet").asText()).isEqualTo(sourceSnippet("create"));
     assertThat(createExcerpt.path("snippet").asText()).contains("// create physical line 10");
   }
@@ -457,7 +459,7 @@ class BusinessProcessDiscoveryTest {
   }
 
   @Test
-  void keepsOnlyActivityOwnedReferencesWhenTheModelUsesAnotherCandidateActivityReference() {
+  void preservesAllowlistedReferencesWhenTheModelUsesAnotherCandidateActivityReference() {
     ProcessDiscoveryResult result =
         new DefaultBusinessProcessDiscovery(new ScriptedProvider("cross-activity-use-reference"))
             .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
@@ -467,7 +469,7 @@ class BusinessProcessDiscoveryTest {
             .filter(use -> use.activityId().equals("activity:create"))
             .findFirst()
             .orElseThrow();
-    assertThat(createUse.sourceRefs()).containsExactly("S1");
+    assertThat(createUse.sourceRefs()).containsExactly("S1", "S3");
   }
 
   @Test
@@ -991,6 +993,10 @@ class BusinessProcessDiscoveryTest {
           dispositions.remove(dispositions.size() - 1);
           dispositions.add(dispositions.get(0).deepCopy());
         }
+      } else if (DefaultBusinessProcessDiscovery.MATERIAL_SELECTION.equals(request.taskKind())) {
+        response = materialSelection(input);
+      } else if (DefaultBusinessProcessDiscovery.READING_CHECK.equals(request.taskKind())) {
+        response = readingCheck(input);
       } else if (request.taskKind().startsWith("BUSINESS_PROCESS_CONSOLIDATION")) {
         consolidationInput = input;
         response = consolidation(input, conflictingCatalogDisposition);
@@ -1001,7 +1007,7 @@ class BusinessProcessDiscoveryTest {
         }
       } else {
         processInput = input;
-        processActivities = input.path("activities");
+        processActivities = input.path("readingPacket").path("reviewedActivities");
         if (request.taskKind().endsWith("REVIEW")) {
           processReviewInput = input;
         }
@@ -1093,6 +1099,75 @@ class BusinessProcessDiscoveryTest {
       return new StructuredModelResponse(
           json.encodeCanonical(response),
           new ModelRuntimeIdentityV1("scripted", "fixture", "none", "none"));
+    }
+
+    private static ObjectNode materialSelection(JsonNode input) {
+      ObjectNode response = JsonNodeFactory.instance.objectNode();
+      ArrayNode changes = response.putArray("candidateChanges");
+      ArrayNode decisions = response.putArray("oldCandidateDecisions");
+      input
+          .path("savedCatalogCandidates")
+          .forEach(
+              candidate -> {
+                String oldLocalId = candidate.path("candidateLocalId").asText();
+                ObjectNode change = changes.addObject();
+                change.put("candidateLocalId", oldLocalId + "-reading");
+                change.put("name", candidate.path("name").asText());
+                change.put("purpose", candidate.path("purpose").asText());
+                change.put("scope", candidate.path("scope").asText());
+                change.set("activityUses", candidate.path("activityUses").deepCopy());
+                change.set("contextActivityIds", candidate.path("contextActivityIds").deepCopy());
+                ArrayNode initialRequests = change.putArray("initialReadingRequests");
+                candidate
+                    .path("activityUses")
+                    .forEach(
+                        use -> {
+                          String sourceRef =
+                              firstActivitySourceRef(
+                                  input.path("activityIndexCards"),
+                                  use.path("activityId").asText());
+                          if (sourceRef != null) {
+                            initialRequests
+                                .addObject()
+                                .put("requestId", "activity-source-" + initialRequests.size())
+                                .put("kind", "SOURCE_REF")
+                                .put("sourceRef", sourceRef)
+                                .put("purpose", "核对候选活动的实际原文");
+                          }
+                        });
+                ObjectNode decision = decisions.addObject();
+                decision.put("candidateLocalId", oldLocalId);
+                decision.put("disposition", "REPLACE");
+                decision.putArray("replacementCandidateLocalIds");
+                ((ArrayNode) decision.path("replacementCandidateLocalIds"))
+                    .add(oldLocalId + "-reading");
+                decision.put("reason", "沿用候选关系并显式读取其活动原文");
+              });
+      response.putArray("changedActivityDispositions");
+      return response;
+    }
+
+    private static String firstActivitySourceRef(JsonNode cards, String activityId) {
+      for (JsonNode card : cards) {
+        if (activityId.equals(card.path("activityId").asText())
+            && card.path("sourceRefs").isArray()
+            && card.path("sourceRefs").size() > 0) {
+          return card.path("sourceRefs").get(0).asText();
+        }
+      }
+      return null;
+    }
+
+    private static ObjectNode readingCheck(JsonNode input) {
+      ObjectNode response = JsonNodeFactory.instance.objectNode();
+      JsonNode candidate = input.path("candidate");
+      ArrayNode uses = response.putArray("activityUses");
+      candidate.path("activityUses").forEach(use -> uses.add(use.deepCopy()));
+      response.putArray("contextActivityIds");
+      response.putArray("supplementaryRequests");
+      response.putArray("unresolvedQuestions");
+      response.putArray("changedActivityDispositions");
+      return response;
     }
 
     private static void keepOnlyFirstProcessActivity(ObjectNode response) {
@@ -1252,8 +1327,6 @@ class BusinessProcessDiscoveryTest {
       ObjectNode root = JsonNodeFactory.instance.objectNode();
       root.put("disposition", "RECONSTRUCTED");
       root.put("reason", "三个活动构成可读的订单生命周期");
-      ArrayNode requested = root.putArray("requestedSourceRefs");
-      input.path("allowlistedSourceRefs").forEach(ref -> requested.add(ref.path("ref").asText()));
       ObjectNode process = root.putArray("processes").addObject();
       process.put("processLocalId", "process-1");
       process.put("name", "销售订单创建与审核");
@@ -1271,16 +1344,17 @@ class BusinessProcessDiscoveryTest {
         use.put("role", candidateUse.path("role").asText());
         use.put("variant", candidateUse.path("variant").asText());
         ArrayNode statements = use.putArray("statementRefs");
-        statements.add(activity.path("statementHandles").get(0).asText());
+        statements.add(firstStatementRef(input, activity.path("activityId").asText()));
         ArrayNode refs = use.putArray("sourceRefs");
         activity.path("sourceRefs").forEach(refs::add);
       }
       ArrayNode stages = process.putArray("stages");
       stage(stages, 1, "创建订单", "U1", "接收订单明细", "生成状态为0的订单", "S1");
-      if (input.path("activities").size() > 1) {
+      JsonNode reviewedActivities = input.path("readingPacket").path("reviewedActivities");
+      if (reviewedActivities.size() > 1) {
         stage(stages, 2, "修改订单", "U2", "当前状态为0", "更新订单和明细", "S2");
       }
-      if (input.path("activities").size() > 2) {
+      if (reviewedActivities.size() > 2) {
         stage(stages, 3, "审核订单", "U3", "当前状态为0", "把状态由0更新为1", "S3");
       }
       process.putArray("branches");
@@ -1302,12 +1376,23 @@ class BusinessProcessDiscoveryTest {
     }
 
     private static JsonNode activityBody(JsonNode input, String activityId) {
-      for (JsonNode activity : input.path("activities")) {
+      JsonNode reviewedActivities = input.path("readingPacket").path("reviewedActivities");
+      for (JsonNode activity : reviewedActivities) {
         if (activityId.equals(activity.path("activityId").asText())) {
           return activity;
         }
       }
       throw new IllegalArgumentException("fixture activity body missing: " + activityId);
+    }
+
+    private static String firstStatementRef(JsonNode input, String activityId) {
+      String prefix = activityId + "/";
+      for (JsonNode value : input.path("readingPacket").path("statementDirectory")) {
+        if (value.isTextual() && value.textValue().startsWith(prefix)) {
+          return value.textValue();
+        }
+      }
+      throw new AssertionError("missing canonical statement reference for " + activityId);
     }
 
     private static void stage(

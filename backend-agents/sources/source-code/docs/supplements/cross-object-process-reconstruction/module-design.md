@@ -1,6 +1,6 @@
 # 模块详细设计：复用已有材料，先阅读再重建
 
-状态：目标合同，未实施。总体与固定输入见[入口](README.md)，Prompt 见[中文指令](prompts.zh-CN.md)。模块数不扩成新的公共流水线：两项深 Interface 保持不变，选材和阅读检查放在 Discovery 内。
+状态：实施中；冻结读取基础已有直接测试，选材、阅读与运行接线仍待验收，实际结果见[交付记录](delivery.md)。总体与固定输入见[入口](README.md)，Prompt 见[中文指令](prompts.zh-CN.md)。模块数不扩成新的公共流水线：两项深 Interface 保持不变，选材和阅读检查放在 Discovery 内。
 
 ```java
 ProcessDiscoveryResult BusinessProcessDiscovery.discover(ProcessDiscoveryRequest request);
@@ -36,6 +36,18 @@ search(fileKeys, literal, context)    → 字面量命中、上下文和未返�
 
 下游拿到完整 Activity 和真实选中原文。Java 不决定这段原文证明了什么。RED：跨旧候选 Activity、M10 之外冻结 XML/Vue、未命中、范围越界、同源检查、零扫描；GREEN 只接既有 reader 和直接查询。
 
+### 当前实现（读取基础）
+
+`FrozenProcessSourceCorpus` 现为 `analysis.knowledge` 内包可见的只读基础：它只接收已验证的 `VerifiedSourceTextSet`，以稳定 UTF-8 路径顺序给出带 `F#` 键的文件目录，并按键或路径执行一基、闭区间的精确读取和字面量上下文搜索。返回文本直接来自已冻结 UTF-8 字节，保留 LF、CRLF 和末尾未换行文本；整文件或实际覆盖整文件的读取才标记为完整。未知文件、越界范围和逃出仓库相对路径的请求均显式失败。内部 `ProcessDiscoveryRequest` 也已能携带可空的已核验 inventory 引用、与其成对的 `VerifiedSourceTextReader`、旧目录字节和关注问题，旧三/四参数构造仍明确传入四个空可选值。该基础不读取 checkout、网络或活动文件，不解析或执行源码，也尚未替代本节目标中的已保存 reader 重开、M10/Activity 查询或运行接线。
+
+### 当前实现（读取流水线）
+
+冻结的 Step01/Step05 输入已通过 `inputPolicyRegistry` 专属的 analysis-step reader 重开；正常 `stepArtifacts` reader 仍绑定当前 output registry，仅供本次运行的发布端使用。二者不得全局互换。
+
+在 DRAFT/REVIEW jobs 提交前，已建立全仓 source normalization。现有 completion sink 会按每个成功候选完成时立即验证、归一化并保存该 pair；某个候选或其保存 fatal 后仍 drain 已开始的 jobs 并保存其余合法 pair，但不进行归并或发布。最终结果仍按原 catalog ordinal 聚合。
+
+`DefaultBusinessProcessDiscovery` 已接入一条单一路径：完整旧目录 pair 仅作输入重开；新仓库先保留既有首次目录发现，二者都进入一次 `PROCESS_MATERIAL_SELECTION`。选材与每候选一次 `PROCESS_READING_CHECK` 使用独立 v1 单次决策、轻量全仓 Activity/文件导航、稳定全目录 ordinal provider binding 和现有有界 job pool。所有已保存 M10 ref 都可被 `SOURCE_REF` 显式选择，但不会因与 Activity 有关联而自动发送正文；M10 或冻结文本只有在 `SOURCE_REF`、整文件、范围或字面量请求实际成功后才进入 `sourceExcerpts`，失败/无 reader 记录为限制而不回退到旧 DRAFT 后选源码路线。成员及 context 的完整已审 Activity 进入包；补读只执行一次，随后 DRAFT/REVIEW v3 共用一个不重复正文的 `readingPacket`，REVIEW 再含实际 DRAFT；新过程响应不再有 `requestedSourceRefs`。所有阅读检查完成后，Java 以 `文件、实际范围、原文` 稳定合并各包的局部 `S`，将 DRAFT/REVIEW 的内存副本改写为最终 ref 后才解析、生成过程 ID 并归并；原始响应不改。包内 context 可作 statement/source 依据但不是成员，最终成员才决定 ActivityUse 与处置。单次决策可写读 `process-reading-decision-v1`；过程 pair 保存局部 `readingPacket`、原始 DRAFT/REVIEW 与该包实际 local→final source-ref 映射。运行端在新批次已排队后、Provider 初始化前，通过同一个 CLI 包内装配函数重开 Activity、M10、同源 inventory、冻结 reader 与可选旧目录；它先将这些内容写为私有执行配置再运行 Discovery。新发布 receipt producer 为 v3，但五个读者可见 payload schema 保持 v2/v1；checkpoint reader 严格接受历史 v2 或该 v3 receipt，仍要求同一五文件及原有描述符。这些实现仍待本轮直接行为验收。
+
 ## 2. RepositoryBusinessCataloger：重开目录与全局选材
 
 ### 两条入口
@@ -54,6 +66,8 @@ search(fileKeys, literal, context)    → 字面量命中、上下文和未返�
 - 可选关注问题。
 
 导航卡重新投影仅是 Java 读已有字段，零模型，不重建 Activity 或原目录卡结果。完整条件、规则、公式等不在此丢弃，候选阅读时全部取回。文件目录可展示仓库相对路径和 fileKey；绝不展示宿主绝对路径、run/hash 或凭据。
+
+导航只携带 `statementCount`，不枚举长 `statementHandles[]`；这只压缩全仓导航的重复定位数据。候选的完整 Activity 正文和最终 `readingPacket.statementDirectory` 仍保留所有实际可用 handle，不能以导航裁剪替代原文或证据目录。
 
 ### 全局选择输出（单次 `PROCESS_MATERIAL_SELECTION`）
 
@@ -96,6 +110,14 @@ RED：任意 N、跨旧组召回、多用法、未涉及继承、移出最后成
 
 检查模型收到：候选、全仓轻量导航/文件目录、第一批实际完整 Activity 和原文、未命中/省略说明。允许提出候选范围和成员的修正，以及 `supplementaryRequests`。
 
+检查输出中的 `name`、`purpose`、`scope` 都是 required 且可为 null 的字段；null 明确表示沿用进入检查前的候选值，不能用缺字段表达该回退。
+
+`activityUses` 和 `contextActivityIds` 返回本候选检查后的**完整最终集合**，不是增量修改；即使不调整，也必须完整原样返回输入候选的相应集合。`activityUses` 必须非空，CHECK Schema 以 `minItems: 1` 与现有候选解析器对齐；每个用法仍完整保留 `activityId`、`variant`、`role`。`contextActivityIds` 可以为空，但 `[]` 只表示最终确实没有 context，不能表示“不调整”或“自动沿用”。新增、移出成员和 context 仍由模型明确选择，程序不把空集合猜成继承。
+
+`changedActivityDispositions` 继续只返回必要的增量处置，未涉及记录沿用既有处置；不得因成员集合要求完整而改为重写全仓台账。移出最后成员关系时仍须提供现有合法非成员处置和原因。三项文本字段的 null 继承与两个完整集合的语义分开。
+
+上述成员合同明确化已确定，生产修改和直接验证待完成：只将私有 CHECK Prompt 从 v1 改为 v2，并给 CHECK `activityUses` 增加 `minItems: 1`。实际 Prompt/Schema 进入既有指纹，使旧 CHECK 不能误复用；全局选择的输入、Schema、Prompt 和指纹保持不变，公共产物、producer、私有 decision 容器及过程输出版本不升版。已保存的空成员 raw response 保持原样，不能由程序补成员后继续，也不能自动重试；新的真实 CHECK 必须取得明确授权。
+
 - `supplementaryRequests=[]`：无实际补读，直接封包。
 - 非空：程序执行清单，补入新选 Activity 全文和原文，然后封包。
 - 两者都可有 `unresolvedQuestions`。空清单不保证语义完整。
@@ -115,6 +137,21 @@ readingLimitations[]（未命中、实际省略范围、未回答问题）
 ```
 
 包必须自包含，DRAFT 和 REVIEW 都收到同一个包；REVIEW 另加完整实际 DRAFT。首次材料充足也仍走一次检查，但不强制实际读更多源文件。完整包与 REVIEW 预检实际容量，不按预算偷偷删条件或数组尾部；确实无法容纳按现有 NOT_PROCESSED_CAPACITY 显示。
+
+### 私有请求的无损容量修正（已实现并通过直接验证，真实容量预检待完成）
+
+实际候选检查暴露的容量问题包含重复包装：`reviewedActivities` 已有原始完整业务字段，却额外附加 `statementHandles[]` 和 `statements[{handle,text}]`；后者再次复制所有字段正文，包级 `statementDirectory` 又列出相同 handle。响应 Schema 还在多个位置重复完整 Activity、文件或 statement 枚举。这些是程序生成的重复表示，不是新增业务资料。
+
+此次最小修正只做两项：
+
+1. 每个已读 Activity 保留现有原始字段及其原文、顺序和全部数组元素，取消额外生成的 `statementHandles`、`statements` 两个字段。完整 canonical handle 仍在唯一的 `readingPacket.statementDirectory` 中；`activityId/字段名/零基序号` 精确定位相应原字段，`businessPurpose` 直接定位文本。不得删除、缩写或重述条件、规则、公式、问题、限制、certainty、来源或任何原始业务字段。
+2. 仅对候选 CHECK 和过程 DRAFT/REVIEW 的私有响应 Schema 使用具名 `$defs` / `$ref` 共享完全相同的 allowlist。CHECK 的全仓 Activity 枚举和冻结 fileKey 枚举各保存一份；过程的 packet statement/source 枚举各保存一份，ActivityUse、stage、rule、knowledge 的原字段引用同一定义。枚举值、required、类型、业务结构及 Java 对未知 ID/ref 的拒绝均保持原合同。不是放宽成任意字符串，也不创建通用 Schema 压缩框架。
+
+仍发送全部 Activity 导航卡、其全部原导航字段和完整冻结文件目录；选中的完整 Activity、首批及补读源码原文不减少。CHECK 和过程继续使用原 canonical Activity ID/statement handle，无需另加短键转换、来源账本或新存储协议。DRAFT/REVIEW 使用完全相同的修正后完整包，REVIEW 额外携带完整实际 DRAFT。已有 SourceRef 的局部到最终编号映射不受影响。
+
+全局 `PROCESS_MATERIAL_SELECTION` 的输入、Schema、Prompt、producer 及指纹计算保持不变；共享 Schema 的调用点不能意外改变全局选材。CHECK 与过程的实际输入/Schema 变化由既有内容指纹自然区分，不升级公共产物或已保存 decision/pair 的容器版本，不重写历史记录，不使成功的旧全局选择失效。
+
+实施前后的离线比较必须检查实际序列化的输入、完整响应 Schema 和 Prompt/envelope；REVIEW 再计入实际完整草稿及实际配置的生成空间。编码 token 估计只用于本次容量观察，不声称等同 Provider 精确计账，不新增固定字符/token/费用门槛。首批材料容纳不保证补读后的包容纳；最终包仍按真实有效上下文预检，不能因此缩材料、追加阅读轮次或自动重试。
 
 ### 引用不再依赖旧成员所有权
 
@@ -172,7 +209,7 @@ Activity/候选/已审过程仍是原来的三个分母。阅读 context 不引�
 
 这里的`ProcessDiscoveryRequest`是Step07深模块的内部输入，Java声明为public不等于公共`RepositoryAnalysisAgent`请求协议。本次改它的字段，不新增公共Agent方法或另一套公开执行请求，也不为避开内部字段调整再创建一层通用上下文框架。
 
-目标新增参数（**当前代码尚不支持**）：
+现行入口支持以下仅过程读取使用的参数：
 
 ```text
 --catalog-from-model-batch <analysis-run-id>
@@ -181,7 +218,7 @@ Activity/候选/已审过程仍是原来的三个分母。阅读 context 不引�
 
 现有 `--activity-model-batch` 和 `--reuse-from-model-batch` 保留；后者只表示完整任务复用，不兼任旧目录输入选择。没有旧目录参数时可先生成首次目录，之后使用同一阅读路径。不得恢复 RepositoryRunMain。
 
-CLI创建/选择QUEUED run后，在任何Provider初始化或模型请求前，将Activity、M10、verified inventory、目录输入和原样focusQuestion写入该run的私有执行配置。已有记录必须完全匹配，改变选择须另起新run；仍沿用现有queued source/config校验，不只比较source request就放行。使用现有原子幂等保存，不新增公共Agent方法或通用身份框架。没有事先过程选择的通用start允许第一次execute绑定一次。
+CLI创建/选择QUEUED run后，在任何Provider初始化或模型请求前，从材料所绑定的业务流 publication 取回同源 verified inventory 的完整引用，打开冻结 reader，并将Activity、M10、inventory、目录输入和原样focusQuestion写入该run的私有 v3 执行配置。旧目录批次只须停止且其 v2 配置的材料/Activity 与完整 catalog pair 一致；之后失败不抹去已完成目录。已有记录必须完全匹配，改变选择须另起新run；仍沿用现有queued source/config校验，不只比较source request就放行。使用现有原子幂等保存，不新增公共Agent方法或通用身份框架。没有事先过程选择的通用start允许第一次execute绑定一次。
 
 ### 保存
 
@@ -191,11 +228,14 @@ CLI创建/选择QUEUED run后，在任何Provider初始化或模型请求前，�
 
 保存目录输入、首批/补充请求、实际读取记录、最终阅读包、DRAFT/完整 REVIEW、增量处置和复用来源。过程 pair 继续现有 `reviewed-result.json`。同源旧输入只读，新输出属新 run。新执行只在明确授权后启动；无自动重试、换模型或 API 回退。
 
+在候选 jobs 启动前稳定生成全仓 source 映射；每个候选的 DRAFT/REVIEW 完整完成后据此独立归一化并立刻保存其 packet、映射与 pair。随后其他候选的 fatal 不能丢弃已完成的合法保存结果；只有最终归并/发布等待全量完成，不新增恢复框架。
+
 ### 精确复用与版本
 
 - 旧目录作资料读取：不要求新提示词等于旧提示词。
 - 单次决策结果复用：显式来源、完整成功记录及输入/Prompt/Schema/producer匹配；验证providerBindingKey、quotaScope和ModelRuntimeIdentity的provider/model/effort/sandbox。输入包含实际focusQuestion、首批阅读结果和对应ref映射，不保存密钥值；不是复用半轮pair。
 - 过程 pair 复用：最终完整 packet、ref 映射、Prompt、响应结构、业务配置及服务/账户/模型均匹配。
+- 这里的匹配映射是包内短 ref 对应的实际文件、范围和原文，不是发布时的全仓编号。pair 保留原始局部响应；新批次合并全部实际来源后，才复制并归一化响应、构造最终过程身份。这样后续加入其他候选不会使同一阅读包的已审样本误失效，受其影响的仓库归并则按新的最终输入重新匹配。
 - 无关的并发、日志目录、新 batch ID 不使内容失效；新关注问题、实际补读文本或新 Prompt 进入指纹。
 - 旧过程没看过新包，不能冒充新版过程。不得因此重跑任何 Activity。
 

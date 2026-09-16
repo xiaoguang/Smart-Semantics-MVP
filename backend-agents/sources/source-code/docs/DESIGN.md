@@ -12,7 +12,7 @@
 
 主要可读交付是仓库级 `business-processes.md`。固定九章 `document.md` 继续作为下游概览，但不承担业务过程发现，也不再作为判断语义成功的唯一标准。
 
-术语以 [CONTEXT.md](../CONTEXT.md) 为准。本轮批准的目标为[跨对象业务过程补充设计](supplements/cross-object-process-reconstruction/README.md)，修改面见[设计变更清单](plans/business-process-discovery-and-reconstruction-change-design.md)。本轮仅更新文档，新增取材路径尚未实施。
+术语以 [CONTEXT.md](../CONTEXT.md) 为准。本轮批准的目标为[跨对象业务过程补充设计](supplements/cross-object-process-reconstruction/README.md)，修改面见[设计变更清单](plans/business-process-discovery-and-reconstruction-change-design.md)。新增取材路径已接线，定向测试通过；完整本地 CI、固定输入及真实业务效果以[验收记录](supplements/cross-object-process-reconstruction/delivery.md)为准。
 
 ## 2. 设计原则
 
@@ -238,7 +238,7 @@ Step08 只消费已发布 `RepositoryBusinessProcessCatalog`、过程 coverage �
 
 ### 本次仍缺什么
 
-阶段正文、规则用法、来源预览/链接、v2五文件读写和统一CLI已实现。本轮核对的限制是：只能选当前候选来源，DRAFT已有完整Activity但只见源码预览，完整片段到REVIEW才到位。跨候选选材、冻结文件读取接线、一次阅读检查及DRAFT前封包尚未实施。旧过程不能靠重新排版冒充长链语义通过；新真实实验也尚未运行。
+阶段正文、规则用法、来源链接、v2五文件读写和统一CLI已实现。修改前仅能选当前候选来源，完整选中片段到REVIEW才到位；本轮已接通跨候选选材、冻结文件读取、一次阅读检查及DRAFT前封包。直接行为测试通过，真实自主发现与业务质量尚待独立验收。旧过程不能靠重新排版冒充长链语义通过。
 
 ## 12. 完成标准
 

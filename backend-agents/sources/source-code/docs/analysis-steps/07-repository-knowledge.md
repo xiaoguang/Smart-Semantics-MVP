@@ -1,6 +1,6 @@
 # 仓库业务过程发现与知识发布
 
-> 固定key为repository-knowledge；目录steps/07-repository-knowledge/。两个接口由[模块总览](../modules/business-process-discovery/README.md)拥有；本次按[跨对象补充设计](../supplements/cross-object-process-reconstruction/README.md)实施，旧“候选内M10、DRAFT后补源码”规则已替代。新增能力尚未实现。
+> 固定key为repository-knowledge；目录steps/07-repository-knowledge/。两个接口由[模块总览](../modules/business-process-discovery/README.md)拥有；本次按[跨对象补充设计](../supplements/cross-object-process-reconstruction/README.md)实施，旧“候选内M10、DRAFT后补源码”规则已替代。新增接线及直接测试已完成，完整验收见[交付记录](../supplements/cross-object-process-reconstruction/delivery.md)。
 
 ## 1. 目标和当前状态
 

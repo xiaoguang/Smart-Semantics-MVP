@@ -79,7 +79,7 @@ class BusinessProcessPublicationTest {
     new CanonicalBusinessProcessPublisher(store).publish(discovered);
 
     Map<String, VerifiedCanonicalPayload> payloads = store.installedPayloadsByFile();
-    assertThat(store.installedModuleVersion()).isEqualTo("v2");
+    assertThat(store.installedModuleVersion()).isEqualTo("v3");
     assertThat(payloads)
         .containsOnlyKeys(
             "repository-business-process-catalog.json",

@@ -26,7 +26,7 @@ import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.runtime.modeljob.ModelJobProviderBinding;
 import org.sourceanalysis.app.runtime.modeljob.PrivateModelJobResultStore;
 
-/** RED contract for invalidating old Step07 semantic jobs after a prompt/schema change. */
+/** Contract for invalidating old Step07 catalog jobs after a prompt/schema change. */
 class BusinessProcessSemanticFingerprintV2Test {
 
   private static final ModelRuntimeIdentityV1 IDENTITY =
@@ -36,7 +36,7 @@ class BusinessProcessSemanticFingerprintV2Test {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void semanticV2InputFingerprintCannotMatchAStoredV1Step07Pair() throws Exception {
+  void semanticV2CatalogFingerprintCannotMatchAStoredV1Step07Pair() throws Exception {
     CanonicalJsonCodec json = new CanonicalJsonCodec();
     ProcessDiscoveryProfile profile =
         new ProcessDiscoveryProfile(8, 4, 8, 8_000, 64_000, 16_000, 4, 32, 2_000);

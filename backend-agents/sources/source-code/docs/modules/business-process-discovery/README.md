@@ -1,6 +1,6 @@
 # 业务过程发现与重建：模块总览
 
-> 当前完整Activity、narrative、规则用法、五文件v2发布已实现。新增跨旧候选阅读与DRAFT前原文取材尚未实现，以[补充设计](../../supplements/cross-object-process-reconstruction/README.md)和[变更清单](../../plans/business-process-discovery-and-reconstruction-change-design.md)为准。
+> 当前完整Activity、narrative、规则用法、五文件v2发布继续复用。新增跨旧候选阅读与DRAFT前原文取材已接线，直接测试通过；完整及真实验收以[补充设计交付记录](../../supplements/cross-object-process-reconstruction/delivery.md)为准。
 
 ## 1. 模块目的
 
@@ -57,4 +57,4 @@ public interface BusinessProcessPublisher {
 
 `DefaultBusinessProcessDiscovery` 已实现统一 corpus、目录分片/合并、重叠候选、完整材料重建、源码按需核对和仓库归并；`CanonicalBusinessProcessPublisher` 已实现五项正式产物与 fresh reopen。过程专用运行入口从既有 Activity/M10 checkpoint 启动新批次，不运行 JDT、Builder、ActivityExplainer 或 Step08。旧 `ProcessExplainer` 不在这条新路径中。
 
-46过程是历史v1对照。本轮选用已保存的后续目录：24候选、138个不同成员Activity，全部326Activity可用。当前DRAFT已有完整Activity+源码前8行预览，完整选中snippet随后进REVIEW；尚无跨旧候选读取和冻结文件搜索接线。补充设计修正这些位置，不要求重跑Activity或原目录模型。具体真实输入和未验证能力见补充入口及验收文档。
+46过程是历史v1对照。本轮选用已保存的后续目录：24候选、138个不同成员Activity，全部326Activity可用。新的同一完整阅读包在DRAFT前封闭，DRAFT/REVIEW复用完整Activity和选中原文；跨旧候选读取和冻结文件搜索已接线，不重跑Activity或原目录模型。真实效果仍须独立验收，不能以程序通过替代。

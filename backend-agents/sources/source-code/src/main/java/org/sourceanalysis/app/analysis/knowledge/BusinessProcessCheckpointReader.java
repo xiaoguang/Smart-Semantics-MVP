@@ -29,6 +29,7 @@ import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 /** Fresh-reopens one complete Step07 business-process publication without model or source work. */
 public final class BusinessProcessCheckpointReader {
 
+  private static final Set<String> SUPPORTED_MODULE_VERSIONS = Set.of("v2", "v3");
   private static final String MARKDOWN_FILE = "business-processes.md";
   private static final String COVERAGE_FILE = "process-coverage.json";
   private static final String CATALOG_FILE = "repository-business-process-catalog.json";
@@ -90,7 +91,7 @@ public final class BusinessProcessCheckpointReader {
         || address.analysisStepKey() != AnalysisStepKey.REPOSITORY_KNOWLEDGE
         || address.moduleNumber() != 1
         || !"business-process-publisher".equals(address.moduleKey())
-        || !"v2".equals(reopened.receipt().moduleVersion())
+        || !SUPPORTED_MODULE_VERSIONS.contains(reopened.receipt().moduleVersion())
         || (reopened.receipt().status() != ModuleCompletionStatus.SUCCEEDED
             && reopened.receipt().status() != ModuleCompletionStatus.SUCCEEDED_WITH_GAPS)
         || reopened.payloads().size() != 5) {

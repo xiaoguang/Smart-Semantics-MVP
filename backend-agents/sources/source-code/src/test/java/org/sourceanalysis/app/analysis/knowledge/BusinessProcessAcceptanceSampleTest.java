@@ -72,6 +72,10 @@ class BusinessProcessAcceptanceSampleTest {
     invoke(
         discovery, requiredMethod("reconstructSelected", 2), catalogSample, selectedCandidateIds);
 
+    assertThat(provider.readingCheckCandidateIds())
+        .as("sample reading checks are limited to explicitly selected candidates")
+        .containsExactlyInAnyOrderElementsOf(selectedCandidateIds);
+
     List<ObjectNode> savedPairs = reviewedPairs(temporaryDirectory.resolve("journal"));
     assertThat(savedPairs).hasSize(2);
     Map<String, ObjectNode> pairByJob =
@@ -92,6 +96,7 @@ class BusinessProcessAcceptanceSampleTest {
     }
 
     int callsAfterSample = provider.calls();
+    int readingChecksAfterSample = provider.readingChecks();
     AnalysisRunId formalRun = runId('b');
     ModelJobExecutionConfiguration formalExecution = execution(provider, formalRun, sampleRun);
     ProcessDiscoveryResult formalResult =
@@ -101,10 +106,13 @@ class BusinessProcessAcceptanceSampleTest {
     assertThat(formalResult.coverage().coverageStatus()).isEqualTo("CLOSED");
     assertThat(provider.calls() - callsAfterSample)
         .as(
-            "formal run reuses two candidate pairs and executes only the remaining candidate plus consolidation")
-        .isEqualTo(4);
+            "formal run reuses two candidate pairs and reading decisions, then executes the remaining candidate plus consolidation")
+        .isEqualTo(5);
+    assertThat(provider.readingCheckCandidateIdsSince(readingChecksAfterSample))
+        .containsExactly(catalogCandidateIds.get(0));
     assertThat(provider.taskKindsSince(callsAfterSample))
         .containsExactly(
+            "PROCESS_READING_CHECK",
             "BUSINESS_PROCESS_DRAFT",
             "BUSINESS_PROCESS_REVIEW",
             "BUSINESS_PROCESS_CONSOLIDATION_DRAFT",
@@ -319,15 +327,20 @@ class BusinessProcessAcceptanceSampleTest {
   private static final class AcceptanceProvider implements StructuredModelProvider {
     private final CanonicalJsonCodec json = new CanonicalJsonCodec();
     private final List<String> taskKinds = new ArrayList<>();
+    private final List<String> readingCheckCandidateIds = new ArrayList<>();
 
     @Override
     public synchronized StructuredModelResponse generate(StructuredModelRequest request) {
-      int callIndex = taskKinds.size();
       taskKinds.add(request.taskKind());
       JsonNode input = json.parseCanonical(request.untrustedInputJson());
       ObjectNode response =
           switch (request.taskKind()) {
             case "BUSINESS_CATALOG_DRAFT", "BUSINESS_CATALOG_REVIEW" -> catalog(input);
+            case "PROCESS_MATERIAL_SELECTION" -> materialSelection(input);
+            case "PROCESS_READING_CHECK" -> {
+              readingCheckCandidateIds.add(input.path("candidate").path("candidateId").asText());
+              yield readingCheck(input);
+            }
             case "BUSINESS_PROCESS_DRAFT", "BUSINESS_PROCESS_REVIEW" -> process(input);
             case "BUSINESS_PROCESS_CONSOLIDATION_DRAFT", "BUSINESS_PROCESS_CONSOLIDATION_REVIEW" ->
                 consolidation(input);
@@ -342,6 +355,18 @@ class BusinessProcessAcceptanceSampleTest {
 
     List<String> taskKindsSince(int index) {
       return List.copyOf(taskKinds.subList(index, taskKinds.size()));
+    }
+
+    int readingChecks() {
+      return readingCheckCandidateIds.size();
+    }
+
+    List<String> readingCheckCandidateIds() {
+      return List.copyOf(readingCheckCandidateIds);
+    }
+
+    List<String> readingCheckCandidateIdsSince(int index) {
+      return List.copyOf(readingCheckCandidateIds.subList(index, readingCheckCandidateIds.size()));
     }
 
     private static ObjectNode catalog(JsonNode input) {
@@ -380,12 +405,77 @@ class BusinessProcessAcceptanceSampleTest {
       return root;
     }
 
+    private static ObjectNode materialSelection(JsonNode input) {
+      ObjectNode root = JsonNodeFactory.instance.objectNode();
+      ArrayNode changes = root.putArray("candidateChanges");
+      ArrayNode decisions = root.putArray("oldCandidateDecisions");
+      input
+          .path("savedCatalogCandidates")
+          .forEach(
+              candidate -> {
+                String oldLocalId = candidate.path("candidateLocalId").asText();
+                ObjectNode change = changes.addObject();
+                change.put("candidateLocalId", oldLocalId + "-reading");
+                change.put("name", candidate.path("name").asText());
+                change.put("purpose", candidate.path("purpose").asText());
+                change.put("scope", candidate.path("purpose").asText());
+                change.set("activityUses", candidate.path("activityUses").deepCopy());
+                change.putArray("contextActivityIds");
+                ArrayNode requests = change.putArray("initialReadingRequests");
+                candidate
+                    .path("activityUses")
+                    .forEach(
+                        use -> {
+                          String sourceRef =
+                              firstActivitySourceRef(
+                                  input.path("activityIndexCards"),
+                                  use.path("activityId").asText());
+                          if (sourceRef != null) {
+                            requests
+                                .addObject()
+                                .put("requestId", "source-" + requests.size())
+                                .put("kind", "SOURCE_REF")
+                                .put("sourceRef", sourceRef)
+                                .put("purpose", "核对候选活动原文");
+                          }
+                        });
+                ObjectNode decision = decisions.addObject();
+                decision.put("candidateLocalId", oldLocalId);
+                decision.put("disposition", "REPLACE");
+                decision.putArray("replacementCandidateLocalIds").add(oldLocalId + "-reading");
+                decision.put("reason", "显式读取候选活动原文");
+              });
+      root.putArray("changedActivityDispositions");
+      return root;
+    }
+
+    private static String firstActivitySourceRef(JsonNode cards, String activityId) {
+      for (JsonNode card : cards) {
+        if (activityId.equals(card.path("activityId").asText())
+            && card.path("sourceRefs").isArray()
+            && card.path("sourceRefs").size() > 0) {
+          return card.path("sourceRefs").get(0).asText();
+        }
+      }
+      return null;
+    }
+
+    private static ObjectNode readingCheck(JsonNode input) {
+      ObjectNode root = JsonNodeFactory.instance.objectNode();
+      JsonNode candidate = input.path("candidate");
+      ArrayNode uses = root.putArray("activityUses");
+      candidate.path("activityUses").forEach(use -> uses.add(use.deepCopy()));
+      root.putArray("contextActivityIds");
+      root.putArray("supplementaryRequests");
+      root.putArray("unresolvedQuestions");
+      root.putArray("changedActivityDispositions");
+      return root;
+    }
+
     private static ObjectNode process(JsonNode input) {
       ObjectNode root = JsonNodeFactory.instance.objectNode();
       root.put("disposition", "RECONSTRUCTED");
       root.put("reason", "complete fixture process");
-      ArrayNode requested = root.putArray("requestedSourceRefs");
-      input.path("allowlistedSourceRefs").forEach(ref -> requested.add(ref.path("ref").asText()));
       ObjectNode process = root.putArray("processes").addObject();
       process.put("processLocalId", "process-1");
       process.put("name", "process");
@@ -403,7 +493,7 @@ class BusinessProcessAcceptanceSampleTest {
         use.put("activityId", activityId);
         use.put("role", "CORE");
         use.put("variant", candidateUse.path("variant").asText());
-        use.putArray("statementRefs").add(activity.path("statementHandles").get(0).asText());
+        use.putArray("statementRefs").add(firstStatementRef(input, activityId));
         use.putArray("sourceRefs").add(activity.path("sourceRefs").get(0).asText());
       }
       ArrayNode stages = process.putArray("stages");
@@ -423,12 +513,22 @@ class BusinessProcessAcceptanceSampleTest {
     }
 
     private static ObjectNode activity(JsonNode input, String id) {
-      for (JsonNode value : input.path("activities")) {
+      for (JsonNode value : input.path("readingPacket").path("reviewedActivities")) {
         if (id.equals(value.path("activityId").asText())) {
           return (ObjectNode) value;
         }
       }
       throw new AssertionError("missing activity " + id);
+    }
+
+    private static String firstStatementRef(JsonNode input, String activityId) {
+      String prefix = activityId + "/";
+      for (JsonNode value : input.path("readingPacket").path("statementDirectory")) {
+        if (value.isTextual() && value.textValue().startsWith(prefix)) {
+          return value.textValue();
+        }
+      }
+      throw new AssertionError("missing canonical statement reference for " + activityId);
     }
 
     private static void stage(ArrayNode stages, int order, String name, String use, String ref) {

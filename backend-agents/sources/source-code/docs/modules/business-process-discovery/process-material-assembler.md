@@ -37,6 +37,6 @@ DRAFT已经看到选中的完整Activity和原文，REVIEW看到相同材料和�
 
 ## 测试和当前差距
 
-当前完整Activity、多用法、statement及前8行预览已实现；完整源码当前仍到REVIEW才到位。新全局读取、一次检查、补读和DRAFT前封包尚未实施；已有完整Activity传递继续复用。
+完整Activity、多用法、statement继续复用。新全局读取、一次检查、补读和DRAFT前封包已接线，Pipeline直接测试通过；真实选材和材料充分性见[交付记录](../../supplements/cross-object-process-reconstruction/delivery.md)，不把离线替身结果当作业务质量通过。
 
 Luna RED：两种variant共享正文但分别存在、预览逐行等于保存原文、完整REVIEW不被预览替代、非法/缺失引用、零隐式扫描。Terra GREEN限于确定性投影和接线。真实样例确认模型能够选中关联及条件源码，不把“每次必须请求源码”写成硬门槛。

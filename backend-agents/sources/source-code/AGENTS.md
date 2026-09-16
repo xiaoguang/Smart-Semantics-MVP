@@ -743,5 +743,9 @@
   or setup instruction when needed.
 - The shared Maven toolchain is `.mvn/toolchains.example.xml`; each developer
   generates ignored `.mvn/toolchains.local.xml` from an explicit Java 17 home.
-  Keep Maven host and application at Java 17 while JDT uses its separate tool
-  JVM. Never commit the generated local file or silently fall back to the shell JDK.
+  Keep application compilation and tests on the explicit Java 17 toolchain;
+  ordinary Maven development commands may use Java 17. The configured
+  google-java-format 1.36.1 needs a JDK 21+ Maven host for Spotless/full quality
+  verification; select that tool JVM explicitly without upgrading the application.
+  JDT uses its separate tool JVM. Never commit the generated local file or
+  silently fall back to the shell JDK.

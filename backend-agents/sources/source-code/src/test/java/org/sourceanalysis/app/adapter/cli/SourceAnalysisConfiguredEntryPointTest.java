@@ -55,6 +55,111 @@ class SourceAnalysisConfiguredEntryPointTest {
   }
 
   @Test
+  void repositoryKnowledgeAcceptsCatalogSourceWithAnOptionalExactFocusQuestion() {
+    String config = temporaryDirectory.resolve("missing.yaml").toAbsolutePath().toString();
+    String activityBatch = "analysis-run:" + "c".repeat(64);
+    String catalogBatch = "analysis-run:" + "d".repeat(64);
+
+    assertConfigurationReached(
+        execute(
+            "--config",
+            config,
+            "execute-step",
+            "--target",
+            "repository-knowledge",
+            "--activity-model-batch",
+            activityBatch,
+            "--catalog-from-model-batch",
+            catalogBatch,
+            "--focus-question",
+            "原样问题：核对采购入库后的库存回写"));
+    assertConfigurationReached(
+        execute(
+            "--config",
+            config,
+            "execute-step",
+            "--target",
+            "repository-knowledge",
+            "--activity-model-batch",
+            activityBatch,
+            "--catalog-from-model-batch",
+            catalogBatch));
+  }
+
+  @Test
+  void repositoryKnowledgeKeepsCatalogAndReuseInputsSeparateAndRejectsDuplicateProcessOptions() {
+    String config = temporaryDirectory.resolve("missing.yaml").toAbsolutePath().toString();
+    String activityBatch = "analysis-run:" + "e".repeat(64);
+    String reuseBatch = "analysis-run:" + "f".repeat(64);
+    String catalogBatch = "analysis-run:" + "0".repeat(64);
+
+    assertConfigurationReached(
+        execute(
+            "--config",
+            config,
+            "execute-step",
+            "--target",
+            "repository-knowledge",
+            "--activity-model-batch",
+            activityBatch,
+            "--reuse-from-model-batch",
+            reuseBatch));
+
+    assertConfigurationReached(
+        execute(
+            "--config",
+            config,
+            "execute-step",
+            "--target",
+            "repository-knowledge",
+            "--activity-model-batch",
+            activityBatch,
+            "--catalog-from-model-batch",
+            catalogBatch,
+            "--reuse-from-model-batch",
+            reuseBatch));
+
+    assertThat(
+            execute(
+                    "--config",
+                    config,
+                    "execute-step",
+                    "--target",
+                    "repository-knowledge",
+                    "--activity-model-batch",
+                    activityBatch,
+                    "--catalog-from-model-batch",
+                    catalogBatch,
+                    "--catalog-from-model-batch",
+                    catalogBatch)
+                .diagnostics())
+        .contains("ARGUMENTS_INVALID");
+
+    assertThat(
+            execute(
+                    "--config",
+                    config,
+                    "execute-step",
+                    "--target",
+                    "flow-interpretation",
+                    "--catalog-from-model-batch",
+                    catalogBatch)
+                .diagnostics())
+        .contains("ARGUMENTS_INVALID");
+    assertThat(
+            execute(
+                    "--config",
+                    config,
+                    "execute-step",
+                    "--target",
+                    "flow-interpretation",
+                    "--focus-question",
+                    "process-only")
+                .diagnostics())
+        .contains("ARGUMENTS_INVALID");
+  }
+
+  @Test
   void legacyModeSyntaxIsNotAcceptedByTheUnifiedEntryPoint() {
     ExecutionResult result =
         execute(
