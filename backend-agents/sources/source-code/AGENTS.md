@@ -701,7 +701,7 @@
   configuration. Keep local path values in ignored local configuration or
   generate them from explicit environment inputs, with a committed template
   or setup instruction when needed.
-- The current .mvn/toolchains.xml still contains a local Homebrew JDK path.
-  Its portable replacement must be wired together with the POM/workflow and
-  run instructions; this policy does not claim that migration is implemented.
-  Do not remove the working configuration without a verified replacement.
+- The shared Maven toolchain is `.mvn/toolchains.example.xml`; each developer
+  generates ignored `.mvn/toolchains.local.xml` from an explicit Java 17 home.
+  Keep Maven host and application at Java 17 while JDT uses its separate tool
+  JVM. Never commit the generated local file or silently fall back to the shell JDK.
