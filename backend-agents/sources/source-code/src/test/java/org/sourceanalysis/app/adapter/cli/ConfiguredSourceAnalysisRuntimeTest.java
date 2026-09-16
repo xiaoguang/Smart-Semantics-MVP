@@ -37,7 +37,7 @@ class ConfiguredSourceAnalysisRuntimeTest {
     ArtifactReference currentPolicy = reference("artifact-policy-registry", '9');
 
     AnalysisRunRequest batch =
-        ConfiguredSourceAnalysisRuntime.modelBatchRequest(source, currentPolicy);
+        SourceAnalysisExecution.modelBatchRequest(source, currentPolicy);
 
     assertThat(batch)
         .usingRecursiveComparison()
@@ -275,7 +275,7 @@ class ConfiguredSourceAnalysisRuntimeTest {
                 true));
 
     Method loader =
-        ConfiguredSourceAnalysisRuntime.class.getDeclaredMethod(
+        SourceAnalysisExecution.class.getDeclaredMethod(
             "loadPolicies", Path.class, CanonicalJsonCodec.class);
     loader.setAccessible(true);
     CanonicalArtifactPolicyRegistry registry =

@@ -724,7 +724,7 @@ class SourceAnalysisModelJobsConfigurationTest {
   private static Throwable invokeIdempotentWriter(Path destination, byte[] bytes) {
     try {
       Method writer =
-          ConfiguredSourceAnalysisRuntime.class.getDeclaredMethod(
+          SourceAnalysisExecution.class.getDeclaredMethod(
               "writeIdempotentlyAtomically",
               Path.class,
               byte[].class,
@@ -744,7 +744,7 @@ class SourceAnalysisModelJobsConfigurationTest {
   private static Object activityExecutionConfiguration(
       Object modelJobsConfiguration, AnalysisRunId runId) throws Exception {
     Method mapper =
-        java.util.Arrays.stream(ConfiguredSourceAnalysisRuntime.class.getDeclaredMethods())
+        java.util.Arrays.stream(SourceAnalysisExecution.class.getDeclaredMethods())
             .filter(method -> method.getName().equals("activityJobExecutionConfiguration"))
             .filter(method -> Modifier.isStatic(method.getModifiers()))
             .filter(method -> method.getParameterCount() == 3)
@@ -769,7 +769,7 @@ class SourceAnalysisModelJobsConfigurationTest {
   private static Object modelExecutionConfiguration(
       Object modelJobsConfiguration, AnalysisRunId runId) throws Exception {
     Method mapper =
-        java.util.Arrays.stream(ConfiguredSourceAnalysisRuntime.class.getDeclaredMethods())
+        java.util.Arrays.stream(SourceAnalysisExecution.class.getDeclaredMethods())
             .filter(method -> method.getName().equals("modelJobExecutionConfiguration"))
             .filter(method -> Modifier.isStatic(method.getModifiers()))
             .filter(method -> method.getParameterCount() == 3)

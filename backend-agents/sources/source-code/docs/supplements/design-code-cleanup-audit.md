@@ -35,6 +35,11 @@ source-analysis --config /absolute/path/config.yaml <command>
 配置路径必须是绝对路径。模型服务、并发、路由和认证环境变量引用只来自同一
 `sourceAnalysis.modelJobs`；旧 `--provider-config` 直接作为非法参数拒绝。
 
+`SourceAnalysisCli` 是唯一进程入口。内部 `ConfiguredSourceAnalysisRuntime` 只做
+薄委派；运行编排在 `SourceAnalysisExecution`，YAML、模型服务和技术/
+业务 profile 合同在 `RepositoryRunConfiguration`。旧的 2542 行主类没有整体换名
+后继续充当第二个入口。
+
 `start` 只创建 path-free `QUEUED` run。`execute-step` 可以接收显式 `--run`；该
 run 必须仍为 `QUEUED`，且持久化请求必须与当前来源和配置完全一致。停止的 run
 不会被重新激活；未传 `--run` 时只创建一次新 run。
