@@ -151,6 +151,20 @@ The current Step07 publisher installs:
 This command does not invoke the retired singleton process route or Step08. `render()` is
 therefore intentionally not ready for a process-only run.
 
+### Planned: reuse a catalog for cross-object reading (not implemented)
+
+The [supplementary design](../../docs/supplements/cross-object-process-reconstruction/README.md)
+adds `--catalog-from-model-batch <id>` and optional `--focus-question <text>` to the
+same process command. Do not use these flags against the current binary yet.
+The catalog is input material, distinct from `--reuse-from-model-batch`, which reuses
+matching completed tasks. All existing Activities are read without regeneration;
+frozen text is read without JDT. New calls perform global material selection, one
+reading check per candidate, process DRAFT/REVIEW and consolidation.
+
+Before a provider starts, the selected Activity/catalog/source references and question
+are bound once to the queued run's private execution configuration. A conflicting
+selection cannot silently reuse that run. This design does not authorize real calls.
+
 ### Observe saved results
 
 Observation never initializes a model provider:

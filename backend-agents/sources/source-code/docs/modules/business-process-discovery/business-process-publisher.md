@@ -45,7 +45,7 @@ sources.md只从result已有SourceReference生成，每项含S编号锚点、仓
 
 ## 正式合同
 
-canonical地址仍为REPOSITORY_KNOWLEDGE/1/business-process-publisher，producer v2：
+canonical地址仍为REPOSITORY_KNOWLEDGE/1/business-process-publisher，当前producer v2，本轮取材路径目标producer v3；公共五文件Schema不变：
 
 | 文件 | schema |
 | --- | --- |
@@ -55,9 +55,11 @@ canonical地址仍为REPOSITORY_KNOWLEDGE/1/business-process-publisher，produce
 | source-refs.jsonl | repository-business-process-source-references-v1 |
 | sources.md | repository-business-process-sources-markdown-v1 |
 
-新artifact type为REPOSITORY_KNOWLEDGE_BUSINESS_PROCESS_SOURCES_MARKDOWN，其他type保留。详细版本和修改面见[变更清单](../../plans/business-process-discovery-and-reconstruction-change-design.md)。
+来源页artifact type已存在，不新增第六项正式文件。新增读取完整性/未命中信息留在私有ReadingRecord，SourceReference五字段不变。版本见[补充合同](../../supplements/cross-object-process-reconstruction/module-design.md#7-运行接线私有保存和版本)。
 
 ## 保存与读取
+
+Discovery封闭result前，把补读的同源新片段按文件、范围和原文去重，统一分配不冲突的最终S编号，同步所有来源字段。不同包局部相同编号不可直接合并。原M10来源复用；Publisher仍只消费result，不打开文件、不补证据。
 
 五项在同一canonical交付安装；存储策略、schema registry、exact-file数量、reader、artifact闭集和fixture同批更新。canonical store只接受完整四文件v1历史合同，或完整五文件v2当前合同，不能混用。当前Reader只重开五文件v2，并在渲染前核对catalog使用的全部短ref与source-refs.jsonl恰好一一对应；重复、缺失或非法短ref均失败。Reader从catalog/coverage/refs可重渲染出两个逐字节一致的Markdown，无Provider和上游调用。
 
@@ -67,6 +69,6 @@ canonical地址仍为REPOSITORY_KNOWLEDGE/1/business-process-publisher，produce
 
 所有短ref有真实来源，所有链接锚点存在，重要结构字段和narrative完整保存，PARTIAL可见。未知ref、错误owner、缺处置、坏schema或渲染丢字段明确失败。Publisher不把结构通过当语义优秀。
 
-当前实现发布五文件v2：正文以已审narrative为主，阶段、规则与过程来源可链接到独立sources.md；source-refs.jsonl继续保持原v1结构。真实全仓的新版语义验收仍属于后续工作，发布器本身不改写业务内容。
+当前五文件v2读写与确定性渲染已实现；新补读来源的汇总接线尚未实施。发布器不改业务正文，不因取材变化整体升级公共Schema，不把历史结果称为新语义验收。
 
 Luna RED：五文件发布重开、正文不含源码块、来源页完整且围栏安全、复制后相对链接有效、规则用法名字正确、未处理名称可读、零模型渲染。Terra只实现格式与契约，不润色或猜测业务。

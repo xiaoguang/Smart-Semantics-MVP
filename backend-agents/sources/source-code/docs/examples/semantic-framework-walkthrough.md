@@ -1,16 +1,16 @@
 # 从现有材料到可读业务过程：采购与销售贯穿推演
 
-> 2026-09-15设计推演，不是新模型运行结果。本轮只读现有Activity、SourceReference和已发布过程，未改源码、未跑JDT或产品模型。以下分开标注“已核实材料”“未来程序/模型操作”“人工示范正文”。架构见[总体设计](../DESIGN.md)，改动见[本次差异清单](../plans/business-process-discovery-and-reconstruction-change-design.md)。
+> 2026-09-16同步目标接力，不是新模型结果。保留下列已核实Activity/M10与历史输出作为对照；新增页面/SQL定向阅读的三个完整推演见[跨对象样例](../supplements/cross-object-process-reconstruction/walkthrough.md)。不重跑JDT、Activity或产品模型。
 
 ## 1. 先说明当前到底有什么
 
-固定326条Activity已经完成DRAFT和REVIEW。新Step07真实发布了46个过程，但其中“库存单据”过程仍按接收请求、校验、执行主动作和返回组织；没有说明订单怎样履约。14个目录候选偏维护分类。不能把这些结构指标称为已实现所需生命周期。
+固定326条Activity已经完成DRAFT和REVIEW。历史v1的14候选/46过程偏技术维护；本轮复用后续已存24候选目录（138个不同成员）。下方46过程链接是历史对照，不是本次最新生成；不能用结构数量称生命周期已通过。
 
 本例使用以下已保存来源，不人工重新扫描或补一份“旧材料”：
-- [当前完整过程Markdown](../../.workspace/jsherp-full-parallel-20260913/stores/runs/analysis-run--8be6f8273cc76837256d51a922593b525a6cf2eafa502e2484512d6755a034e6/steps/07-repository-knowledge/modules/01-business-process-publisher/business-processes.md)
-- [当前来源JSONL](../../.workspace/jsherp-full-parallel-20260913/stores/runs/analysis-run--8be6f8273cc76837256d51a922593b525a6cf2eafa502e2484512d6755a034e6/steps/07-repository-knowledge/modules/01-business-process-publisher/source-refs.jsonl)
+- [历史v1过程Markdown](../../.workspace/jsherp-full-parallel-20260913/stores/runs/analysis-run--8be6f8273cc76837256d51a922593b525a6cf2eafa502e2484512d6755a034e6/steps/07-repository-knowledge/modules/01-business-process-publisher/business-processes.md)
+- [该历史运行的来源JSONL](../../.workspace/jsherp-full-parallel-20260913/stores/runs/analysis-run--8be6f8273cc76837256d51a922593b525a6cf2eafa502e2484512d6755a034e6/steps/07-repository-knowledge/modules/01-business-process-publisher/source-refs.jsonl)
 
-这些链接只在保留该本地工作区时可用，不是仓库提交附带的产物。未来发布的sources.md会解决读者从正文直接导航源码的问题；本页不能假装它已经生成。
+链接依赖保留的本地工作区，不是提交附带产物。当前v2发布器已支持独立sources.md；不能把旧v1链接改称新版结果。
 
 三个真实Activity：
 | 本例称呼 | 原名称/内容 | 实际ID |
@@ -87,11 +87,11 @@ S1477的1232–1235行对“采购、采购退货、销售、销售退货”检�
 
 程序一次打开326条ReviewedActivity及已映射的M10 SourceRef。新增、修改、审核的完整条件、规则、结果和来源仍在。此步不调用JDT或Activity模型。
 
-当前corpus范围只包含Activity允许引用的已保存片段；不存在的源码不能假装取得。关键材料不足就明确列出需要哪项信息。
+当前corpus仍限Activity引用片段；目标接现有冻结文本reader，跨旧候选取材，不要求新片段绑定旧Activity。找不到的文本保留缺口，不能假装取得。
 
-### M2：全仓目录发现不同业务用法
+### M2：从保存目录增量选择不同业务用法
 
-Java生成原字段卡片，补入已有businessRules，不编业务标签。模型看到通用新增活动中不同单据分支、审核限制和关联进度等线索后，应提出值得合读的业务候选。
+Java重开旧目录并投影全部Activity轻量导航；模型据已有线索提出跨旧组候选和首批读取请求。旧目录是起点，不重跑原分片/merge，未涉及处置继承；新仓库首次目录仍保留。
 
 **目标示意，不是本次模型输出：**
 ```text
@@ -119,9 +119,9 @@ Java生成原字段卡片，补入已有businessRules，不编业务标签。模
 
 程序每个不同Activity只发送一份全文，用法分别引用。模型同时读到完整条件、步骤、规则、结果、公式和问题，而不是继续用卡片写过程。
 
-来源目录包含S编号、所属局部Activity、原snippet前8行预览。DRAFT可请求S688/S689等完整片段；REVIEW前程序从保存内容取回它们。预览不代替完整源码，空请求不自动失败，已充分材料无需强制再查。
+先执行首批请求，再由每候选一次模型阅读检查决定可空的补读清单；可以读同源页面、共享处理和Mapper XML。补读一次后封包，DRAFT和REVIEW都见完整原文，REVIEW再见完整草稿。Java不判断语义充分。
 
-若关联逻辑确实不在当前允许片段中，输出“缺少关联字段写入或数量更新依据”等具体不足，不扩大检索或重扫。
+实际找不到或第二轮后仍不足时，写明缺少字段赋值/数量计算等具体问题。不第三次选材，不重新扫描或重建Activity。引用范围按实际包，context读过不必变成过程步骤。
 
 ### M4：生成并审阅阶段叙述和规则
 
@@ -192,7 +192,7 @@ REVIEW核对：仅status为空才默认未审核；修改0；审核0→1；反�
 
 ## 6. 推演结论及下一次验收
 
-现有材料不是完全没有业务联系：关联申请、关联订单、数量与状态写回确实在原片段中。失败主要是目录没有按业务用法组织、过程解释停留在技术模板，以及来源目录和正文不便核对。本次修正集中于这些位置。
+现有材料有申请/订单关联及数量/状态写回。本轮集中解决旧候选阻隔共同阅读、关键原文进入太晚；多用法、完整Activity传递和来源页已实现，继续复用。
 
 这也不是“推演通了，所以自动实现保证成功”。后续必须分开验收：
 1. 目录模型自己发现这些用法和跨活动候选，而非人工注入。

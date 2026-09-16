@@ -4,9 +4,9 @@
 
 ## 1. 当前实现与本次目标
 
-Step06材料和Activity任务已实现，326条已审结果保留；第3节不变。Step07目录、详细候选、源码请求和归并也已实现，真实发布46过程，但生命周期与业务语言未达到目标。旧340 singleton是历史结果。
+Step06材料和Activity任务已实现，326条已审结果保留；不重新调用。Step07 v2的完整Activity、正文、规则用法和来源页已实现。历史46过程不代表本轮验收，旧340 singleton已退役。
 
-本次更新第4—6节的v2中文指令设计：业务用法、阶段narrative、规则适用范围和无损归并。对应8份目录/merge/过程/归并资源及Schema需未来实施同步v2；本轮不改生产资源。第7节九章仍是未来目标，不在本轮执行。
+本轮新增全局选材、每候选一次阅读检查，并改为DRAFT前完整原文。其完整中文指令和响应约定由[跨对象Prompt](../supplements/cross-object-process-reconstruction/prompts.zh-CN.md)拥有。本文件第4节保留首次目录，第5节指向新过程指令，第6节复用归并，第7节仍是未来九章。生产资源未在这次文档修改中更改。
 
 ## 2. 所有模型任务共同遵守的材料边界
 
@@ -22,8 +22,10 @@ Step06材料和Activity任务已实现，326条已审结果保留；第3节不�
 | --- | --- | --- |
 | Activity DRAFT/REVIEW | 一个 BusinessMaterial 的完整入口、方法正文、调用、参数、条件、返回、限制和短 ref | JDT/LSP 对象、hash、路径、运行/批次身份、完整证据链 |
 | 全仓业务目录 | 全部ActivityIndexCard，含原conditions/steps/businessRules等字段；必要时稳定分片 | 完整源码、运行元数据、预置业务领域词 |
-| 候选过程 DRAFT | 候选成员的完整 ReviewedActivity、ActivityStatementRef、含原文前8行/所属Activity的SourceRef目录和候选理由 | 全仓其他 Activity、完整源码文件、hash/路径 |
-| 候选过程 REVIEW | 同一完整候选材料、完整实际 DRAFT、DRAFT 请求且程序成功取得的保存源码片段 | 未请求源码、重新导航结果、第三轮修复材料 |
+| 全局选材 | 旧目录、全仓Activity导航、冻结文件相对路径目录、可选问题 | 人工正确答案、宿主路径/hash/运行配置 |
+| 每候选阅读检查 | 首批实际完整Activity/原文、限制、全仓导航 | 未读正文冒充材料、业务硬编码 |
+| 候选过程 DRAFT | 最终阅读包：成员/context完整Activity、statement、实际选中源码、限制 | hash/运行身份、未选全文、旧候选来源门禁 |
+| 候选过程 REVIEW | 同一完整包及完整实际DRAFT | 包外未读材料、第三轮修复 |
 | 仓库过程归并 | 完整已审Process的确定性业务视图（规则、正文、用法和结果完整，重复证据字段省略）及领域信息 | 原始源码、完整Activity、哈希和重复statement/source refs；没有重写已审正文权限 |
 | 九章 DRAFT/REVIEW | 已发布的唯一 RepositoryBusinessProcessCatalog、process coverage、短 ref allowlist 和完整实际九章草稿 | 326 个原始 Activity、旧 Process、JDT 正文、重新发现过程所需线索 |
 
@@ -31,7 +33,7 @@ Step06材料和Activity任务已实现，326条已审结果保留；第3节不�
 
 ### 2.3 来源、精确谓词和不确定性
 
-- SourceRef 只用于定位冻结文件、行段和片段。模型使用程序允许的短 ref；路径、行号和原文映射留在程序侧。
+- SourceRef用于定位。选材/阅读检查可选择冻结目录中的相对路径/行段，程序读到原文后创建ref；模型不能创建来源记录。宿主路径与身份链不进入请求。
 - ActivityStatementRef 定位已审 Activity 中的条件、规则、步骤或结果，例如 `activity:…/businessRules/1`。它不是新的 Proof 层。
 - 已知条件必须保留具体谓词和值。不能把“当前状态为 `0` 时允许编辑，否则拒绝”压缩成“状态允许时可以修改”，也不能把一个集合条件改成模糊的“满足条件”。源码中的数值尚无可靠业务名称时，保留数值并把正式含义记为待确认。
 - 结论状态只有 `CONFIRMED`、`INFERRED`、`UNRESOLVED`。Activity 或保存源码直接支持局部行为时才可 `CONFIRMED`；跨入口合理联系通常是 `INFERRED`；材料缺失、冲突、运行时配置或外部效果是 `UNRESOLVED`。
@@ -66,9 +68,11 @@ Step06材料和Activity任务已实现，326条已审结果保留；第3节不�
 
 ### 3.3 复用规则
 
-已保存 326 个 ReviewedActivity 是新过程发现的正式输入。只有候选深入核对发现某个 Activity 与保存源码实质矛盾，才可另建具名、定向的 delta review；不能因此重跑整仓 Activity DRAFT/REVIEW。
+已保存326个ReviewedActivity是正式输入，不重跑。若完整源码纠正其局部解释，在本次过程说明差异并保留原Activity；确实需要重做Activity时先讨论并另获明确同意，不自动追加delta模型任务。
 
-## 4. 全仓目录与全局合并（v2目标）
+## 4. 新仓库首次目录与全局合并（v2已实现）
+
+已有目录本轮直接重开，不重复以下任务；改用[全局选材和阅读检查](../supplements/cross-object-process-reconstruction/prompts.zh-CN.md)。旧目录作为输入与完整任务精确复用不同。
 
 ### 4.1 CATALOG_DRAFT / CATALOG_SHARD DRAFT
 
@@ -100,7 +104,9 @@ Step06材料和Activity任务已实现，326条已审结果保留；第3节不�
 
 完整merge DRAFT是Activity覆盖分母的权威基线。REVIEW仍返回完整修订目录，但其重复输出的Activity处置清单若仅发生重复ID或遗漏ID，不得覆盖已经闭合的DRAFT分母；程序保留DRAFT的非成员处置，并按REVIEW后的候选成员关系重算PROCESS_MEMBER。若REVIEW处置清单本身完整且唯一，却仍把无候选归属的Activity声明为PROCESS_MEMBER，则继续明确失败。该规则只避免长数组抄写错误，不替模型发明候选或业务含义。
 
-## 5. 详细业务过程DRAFT与完整REVIEW（v2目标）
+## 5. 详细业务过程（目标v3，尚未写入生产资源）
+
+权威中文正文见[PROCESS_DRAFT与PROCESS_REVIEW](../supplements/cross-object-process-reconstruction/prompts.zh-CN.md#4-process_draft先完整阅读再写过程)。以下保留业务表达要求；旧DRAFT选择来源、REVIEW才读完整片段的时序已退出目标。
 
 ### 5.1 PROCESS_DRAFT
 
@@ -114,13 +120,13 @@ Step06材料和Activity任务已实现，326条已审结果保留；第3节不�
 >
 > 跨活动关联有依据但不等于直接调用时使用INFERRED，并解释依据。材料不能确认的前置、顺序或效果写UNRESOLVED及缺失点。源码支持构造并保存对象时可按业务行为表达，不声称某次运行已经成功。
 >
-> 来源目录的openingLines只是原文预览。需要核对条件、关联或结果时，在requestedSourceRefs选择允许的编号，程序将在REVIEW前返回完整片段；此时不能假装已读其余源码。Activity已经充分时可不请求；材料不足不硬凑阶段。
+> 本次阅读包已包含所选完整Activity和原文；据此生成过程，不再输出requestedSourceRefs请求。资料仍不足时说明具体未知，不能假装已读目录中的其他文件。
 >
 > 保留有依据的knowledgeItems正文、公式、问题和来源。完整处置候选，必要时拆分或明确INSUFFICIENT_MATERIAL。只返回完整JSON。
 
-完整Activity按ID去重，用法分别保留；输入不包含hash和身份链。stage.narrative为必填非空；rule.activityUseLocalIds为必填非空集合。源码目录只来自原corpus允许的SourceRef，不开放自由检索。
+完整Activity按ID去重，用法与context分别保留；不含hash/身份链。stage.narrative与rule.activityUseLocalIds保留。选材阶段可以在同源冻结范围检索；DRAFT后不自由浏览或再补读。
 
-引用只用于让读者和审阅者找到当前候选中的代码。规则可以引用候选内任何已提供的statement/source；activityUseLocalIds表达业务适用范围，不表达来源所有权。不要因为证据来自另一个相关Activity就删除合理的业务联系，也不能引用候选外材料。
+引用只用于定位实际阅读包里的材料，包括context Activity与新冻结片段。activityUseLocalIds表达适用范围，不是来源所有权。拒绝的是未读/未知来源，不是旧候选外来源。
 
 ### 5.2 PROCESS_REVIEW
 
@@ -134,11 +140,11 @@ Step06材料和Activity任务已实现，326条已审结果保留；第3节不�
 >
 > 对跨入口联系，区分关联字段支持的合理路径与代码强制顺序；支撑查询不能冒充履约动作。保留有根据的联系，收窄过强结论；材料缺失、岗位制度或外部结果写明待确认，不能补造。
 >
-> 返回完整替代记录，保留准确详细的条件、分支、规则、公式、结果和来源。可以拆分、收窄、调整可选/回退或删除不成立内容，但不能新增候选之外的Activity或未提供的SourceRef；没有第三轮源码请求。
+> 返回完整替代记录，保留条件、分支、规则、公式、结果和来源。可以拆分、收窄或删除，但不能引入实际阅读包之外的Activity或原文；仍缺材料就保留具体缺口，不自动发起第三次选材或修稿。
 
 Java只检查结构、用法归属和引用allowlist。空泛或错误的中文业务表达由REVIEW及真实样例验收判断，不建设Java语义蕴含检查器，也不自动重试。
 
-## 6. 仓库归并DRAFT与REVIEW（v2目标）
+## 6. 仓库归并DRAFT与REVIEW（已有能力，继续复用）
 
 ### 6.1 DRAFT
 
@@ -155,6 +161,8 @@ Java只检查结构、用法归属和引用allowlist。空泛或错误的中文�
 > 无法确认相同过程时保留独立/相关，不任意合并。返回完整修订决定，不生成替代业务正文。
 
 程序以全部已审Process作为分母；REVIEW遗漏的处置安全地视为KEEP。这个容错只防止长数组转录遗漏删除业务过程，不接受未知/重复ID，也不把DRAFT中的未审合并升级为正式裁决。
+
+当前实现对无法无损执行的合并建议保留原过程及未合并原因；不让此类建议抹去已审正文，也不拼阶段或追加一轮修稿。
 
 ## 7. 九章 DRAFT 与完整 REVIEW（目标）
 
@@ -178,10 +186,10 @@ Java 验证九章顺序、类型、ref 和 coverage 后确定性渲染 `document
 
 ## 8. 调用、版本与验收
 
-每种目录、merge、候选、归并任务仍最多一次DRAFT和一次完整REVIEW。源码解析零Provider；允许失败后显式新批次复用匹配的完整结果，不自动重试、切服务或重扫。
+首次目录、merge、候选过程、归并任务仍最多一次DRAFT+完整REVIEW。新增全局选材和每候选阅读检查是分别保存的单次决策，不伪装成pair。实际补读清单可空；Java不能决定语义充分。读取零Provider，无自动重试、切服务或重扫。
 
-Step07八份生产Prompt资源及响应合同已经同步到v2，完整Prompt、卡片投影、来源目录、schema/producer均参与相应任务匹配。改变这些语义输入后，不能复用旧v1过程结果冒充新设计验收；原326条Activity不受影响。v2资源不预置任何样例领域答案，并明确要求阶段narrative、规则activityUseLocalIds、具体条件、拒绝和结果。
+当前八份生产资源为v2；目标新增两份单次决策Prompt/Schema v1，过程Prompt/响应升v3。上游Activity、首次目录及归并正文不为此整体升版。实际输入/Prompt/Schema/producer进fingerprint；旧目录能作资料，旧过程不得误复用为新包结果。
 
 先检查全仓目录是否自己识别出对象和不同用法，再对照[真实材料推演](../examples/semantic-framework-walkthrough.md)审阅少量过程的具体条件、联系和业务语言。多Activity/多Stage只是结构门，不能代替语义验收。产物不得把未知条件写成空泛确定句。
 
-Step07主文档和sources.md零模型渲染；来源可点击，原始引用完整保留。后续真实运行须在实施与直接验证完成后执行，本次没有产品模型调用。
+Step07正文和sources.md零模型渲染。有提示与无提示实验从同一原始目录独立开始，禁止互用定向结果。调用数按[验收设计](../supplements/cross-object-process-reconstruction/acceptance.md#5-调用数与时间)计每候选固定一次阅读检查。本轮无产品模型调用。

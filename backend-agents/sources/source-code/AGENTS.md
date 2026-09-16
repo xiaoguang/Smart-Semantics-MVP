@@ -103,6 +103,13 @@
   split, ActivityUse/process contracts and deterministic process publication.
   Its target/current labels are mandatory: none of its unimplemented target
   outputs may be described as already delivered.
+- docs/supplements/cross-object-process-reconstruction/ owns the approved,
+  not-yet-implemented reading delta. It replaces candidate-member-only M10
+  access and DRAFT-before-full-source with old-catalog input reuse, global
+  material selection, one model reading check per candidate, optional actual
+  supplemental reads, and a complete packet before process DRAFT. Preserve
+  more-findings.md. Documentation edits do not authorize implementation or
+  product calls, and never authorize regenerating saved Activities.
 
 ## Selectable Java code engines
 
@@ -217,7 +224,7 @@
   account-side checks instead of promising zero paid-credit use. Explicit API
   Providers are approved as a design option only and need authorization for
   each actual run; they never receive a failed subscription job as fallback.
-- A job is one bounded task's DRAFT then complete REVIEW and saving. Existing
+- A content job is one bounded task's DRAFT then complete REVIEW and saving. Existing
   Activity jobs remain complete and reusable. Target Step07 first runs bounded
   repository-catalog discovery over compact Activity cards, then reconstructs
   overlapping candidate processes in parallel from complete selected
@@ -225,6 +232,12 @@
   repository consolidation. A future whole-nine-chapter report job may follow
   the published catalog; deterministic process rendering and historical report rendering remain
   zero-Provider. Shared Activities are immutable and membership is many-to-many.
+- For the cross-object target, saved catalog input skips its original model
+  jobs. Global selection and each candidate reading check are separately saved
+  single-decision jobs, not reviewed pairs. Every eligible candidate gets one
+  reading check; the model returns a possibly empty supplemental request list.
+  Java retrieves, never decides semantic sufficiency. Remaining gaps stay
+  explicit; no third selection, automatic repair or Activity regeneration.
 - Configure only global and each Provider/account service maxConcurrentJobs
   in the single YAML owner; defaults are global 4 and Pro Luna/high 4. These
   are in-flight job limits, not maxMaterialsToStart, Builder K or actual N.
@@ -281,14 +294,17 @@
   business order from names, shared tables or file proximity.
 - ProcessMaterialAssembler validates candidate Activity IDs, reloads complete
   reviewed records once per distinct Activity, preserves each variant use,
-  exposes statement handles and a saved-snippet preview directory, and fetches
-  only requested SourceRefs already admitted by Activity/M10. Do not add
-  JavaCodeIndex/MethodKey navigation or reparse merely to name a source preview. It never
+  exposes statement handles and executes requests within the same frozen corpus.
+  Target reading may include any saved Activity, M10 excerpt and verified text;
+  new excerpts need no old Activity owner or new Proof. Inject the existing
+  VerifiedSourceTextReader, not a live checkout reader. Do not add
+  JavaCodeIndex/MethodKey navigation or reparse for reading. It never
   reruns JDT, JavaParser, BusinessMaterialBuilder or ActivityExplainer.
 - CandidateProcessReconstructor lets the model select the relevant Activity
   branch or variant and author process stages, exact predicates, transitions,
-  business rules, outcomes and uncertainty. REVIEW receives the complete
-  actual DRAFT and resolved source excerpts; Java validates structure and refs,
+  business rules, outcomes and uncertainty. DRAFT and REVIEW receive the same
+  full selected Activity/source packet; REVIEW also receives the complete
+  actual DRAFT. Java validates structure and actual packet refs,
   not Chinese business entailment.
 - RepositoryProcessConsolidator reads the existing complete reviewed Process
   JSON, not a new lossy summary. It decides KEEP/MERGE_INTO/REJECT and relations,
@@ -342,6 +358,11 @@
   technical observations and limitations. They do not contain source paths,
   line numbers, hashes, full Proof/Evidence chains, run/artifact/publication
   identity, Provider controls, credentials, budgets or host paths.
+- The material-selection/reading-check tasks are a narrow navigation exception:
+  they may see frozen repository-relative file keys, paths and line ranges and
+  request literal searches or reads. They never see host absolute paths or
+  execute source commands. Only program-resolved saved text becomes a ref;
+  seeing a filename is not reading its content.
 - Every Provider request supplies a closed JSON Schema generated from the
   current task profile and its scope-local allowlists (for example activity
   IDs and short refs). It must name the complete output shape, enums and
@@ -431,12 +452,21 @@
   state changes, outcomes, transitions, exact business rules, certainty,
   statement refs and source refs. Rules have explicit activityUseIds; those IDs
   describe business applicability, not evidence ownership. Any existing ref in
-  the current candidate may support a rule; only unknown or out-of-candidate
-  refs are rejected. A valid whole-method ref does not establish that every
+  the actual reading packet may support a rule, including context Activities
+  and text not owned by a member. Only unknown or unprovided refs are rejected.
+  A valid whole-method ref does not establish that every
   subtype obeys every branch.
   Models own that semantic review; Java must not implement Chinese entailment
   checks or an industry keyword blacklist. Query/statistics/configuration Activities may
   support a process without being forced into its main chronological stages.
+- Incremental selection inherits untouched candidate/Activity dispositions,
+  updates membership from final candidates and requires a remaining disposition
+  when the last membership is removed. Reading only as context does not make an
+  Activity a process step. Reuse existing coverage; no fourth business ledger.
+- Guided and unguided acceptance independently start from the same original
+  saved catalog, Activities and source. Unguided runs must not inherit guided
+  candidates, read requests, packets or results. Report semantic findings and
+  actual calls separately; guided success does not prove autonomous discovery.
 - The final catalog must carry the actual selected OBJECT,
   FIELD_OR_DIMENSION, OBJECT_RELATION, FORMULA_OR_METRIC and QUESTION text with
   owner, certainty and refs. For SUPPORT/STANDALONE/UNCLASSIFIED Activities,
@@ -507,12 +537,15 @@
 - Legacy business-processes.jsonl/repository-business-knowledge.json are not
   consumed by the current process-specific route. Step07 v1 catalog/candidate/
   reconstruction/consolidation and four-file publication are implemented.
-  The 46-process result is structurally closed but does not satisfy the user's
-  lifecycle/readability target. The current design correction is v2 publication:
+  The historical 46-process result does not prove lifecycle quality. Five-file
+  v2 publication is already implemented:
   catalog v2, coverage v2, business-process Markdown v2, unchanged source refs
   JSONL v1, and new sources Markdown v1. Synchronize exact-set checks, producer,
   reader, registry and artifact query; keep upstream versions and old results.
   No changes to public Agent methods, PROCESS_CATALOG or the three owners.
+  The cross-object target keeps those public schemas, adds private reading
+  decision/packet v1 and process Prompt/response v3, and updates producers.
+  Map new refs before closing the result, not by fetching in Publisher.
   Future Step08 input migration remains outside this correction.
 - Save business-materials after compilation and before the first model call.
   The approved job design has the coordinator save each complete reviewed job
@@ -551,13 +584,19 @@
   unvalidated REVIEW responses. A failed pair starts a new full pair in the new
   batch; prior completed results and provenance are immutable. A changed group
   or knowledge input invalidates only dependent process/summary/report results.
+- Single reading decisions have their own complete-record validation/reuse;
+  they cannot masquerade as DRAFT/REVIEW. Catalog-as-input reuse differs from
+  exact job reuse. Target model-job-execution-config-v3 binds Activity,
+  material, verified inventory, optional catalog and focus question before
+  Provider startup; changed inputs cannot silently reuse the queued run.
+  Keep strict historical v2 reads; do not change source/material formats.
 - Batch/output integration must preserve dual ownership: material belongs to
   sourceRunId; Activity/Knowledge/Report outputs belong to the new batch run.
-  Synchronize writers, analysis-run-output-v3 and readers, never broadly disable cross-run
+  Synchronize writers, current analysis-run-output-v4 and historical v3 readers; never broadly disable cross-run
   checks. Root request candidate lineage stays fixed; operational batches do not
-  mint extra Reader Candidates or bypass ROUND_2 findings. Only the maintenance
-  composition is in scope; do not claim public executeStep supports this until
-  its actual behavior is implemented and verified. No new public Agent methods,
+  mint extra Reader Candidates or bypass ROUND_2 findings. Use the implemented
+  source-analysis/Agent composition; new catalog/reading options remain target
+  design until implemented and verified. No new public Agent methods,
   recovery system or parallel evidence framework is authorized by this design.
 - Explicit material-state export reads existing artifacts and writes a new
   private versioned state; it never silently converts/overwrites old state or
@@ -569,7 +608,8 @@
 
 - The sole public target seam remains one run-centric RepositoryAnalysisAgent
   with start, executeStep, inspect, artifact, render, validate and trace.
-  executeStep creates a new execution identity; it is not same-run resume.
+  start allocates the execution identity; executeStep runs its matching QUEUED
+  run and never reactivates an ended run. It is not same-run resume.
 - Java and CLI may arrive before authenticated loopback HTTP. Completing all
   three adapters is not a business-quality gate; HTTP remains deferred.
   Explicit API service configuration and adapter are implemented as part of

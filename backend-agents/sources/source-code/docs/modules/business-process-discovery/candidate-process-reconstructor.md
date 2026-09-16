@@ -6,7 +6,7 @@
 
 ## 一次候选job
 
-完整材料 → PROCESS_DRAFT → 程序解析requestedSourceRefs → PROCESS_REVIEW → 保存完整已审结果。两轮保持同一Provider/model/effort，不自动重试；候选之间使用现有任务池并行。无新模型轮次。
+前置阅读包 → PROCESS_DRAFT → PROCESS_REVIEW → 保存完整已审结果。两轮保持同一Provider/model/effort；两次输入都含同一完整包，REVIEW再含实际完整草稿。新选材/阅读检查在pair之前，不是第三轮修稿；过程DRAFT不再输出源码请求。详见[补充设计](../../supplements/cross-object-process-reconstruction/module-design.md#4-candidateprocessreconstructor完整阅读包生成过程)。
 
 DRAFT可以重建一个过程、拆成几个过程、处置为支撑或材料不足。它必须处置候选成员；不能以多写几个技术阶段替代业务重建。
 
@@ -14,7 +14,7 @@ DRAFT可以重建一个过程、拆成几个过程、处置为支撑或材料不
 
 保留现有name、purpose、scope、participants、businessObjects、activityUses、stages、branches、businessRules、endResults、knowledgeItems、supportActivityUses、pendingConnections及refs。
 
-本次仅新增两个语义字段：
+以下两个语义字段已实现，继续复用，不重建：
 
 - ProcessStage.narrative：必填非空业务段落，与原进入条件、动作、状态变化、拒绝、结果、转移和certainty同时保留。
 - BusinessRule.activityUseIds：必填非空适用用法集合；模型wire为activityUseLocalIds，程序转换ID。
@@ -44,20 +44,20 @@ REVIEW看到完整实际DRAFT、完整Activity及所请求原始源码，返回�
 4. 检查跨入口关联字段、对象与数量/状态更新；可推断关系标INFERRED，不能编成强制调用顺序。
 5. 删除无材料的岗位、默认值、必经审批、外部成功；缺信息具体记录UNRESOLVED。
 6. 保留全部具体规则、公式和拒绝路径，保证narrative与结构字段一致。
-7. 同步修订rule.activityUseIds及引用，不能新增不在候选范围的Activity/source。
+7. 同步rule.activityUseIds及引用；不能引入实际阅读包外的Activity/source。context可支持理解，不必成为成员。若原Activity与完整源码有差异，过程可依据原文纠正并保存原因，原Activity不变。
 
-规则的statement/source引用采用候选级allowlist：当前候选内能够定位的来源即可使用，不要求来源归属于规则列出的每个ActivityUse。activityUseLocalIds只表达业务适用用法；这避免把证据归属校验变成业务发现门禁，同时继续拒绝未知或候选外引用。
+规则引用采用实际阅读包allowlist：包括读过的context Activity及未绑定旧Activity的同源源码。activityUseLocalIds只表达业务适用，不是来源所有权。未知/未提供引用仍拒绝；不因来源原来在别的候选而拒绝。
 
 CONFIRMED至少有statement或source，但Java只验证来源存在；不验证中文蕴含。合法UNRESOLVED不导致整个运行自动失败。
 
 ## 结构错误和语义质量分开
 
-未知ID/ref、候选外ref、缺必填字段、错误用法归属、遗漏处置、坏响应及Provider失败是fatal。Java校验规则refs属于当前候选允许集合，不按ActivityUse追究证据所有权，也不由Java判定中文分支是否真正适用。
+未知ID/ref、未提供ref、缺字段、错误用法归属、遗漏处置、坏响应及Provider失败是fatal。Java只校验实际包和结构，不按ActivityUse追究证据所有权，不判定中文分支是否适用。合法读取不足保留UNRESOLVED。
 
 “只有空泛状态描述”“把价格规则用到错误子类型”“没有生命周期”是语义质量不通过，由REVIEW与样例审阅发现；不能伪称已经存在能自动识别这些问题的校验器。也不因此无限重跑候选。
 
 ## 测试与当前差距
 
-模型两轮、详细结构、source请求、必填narrative和rule-use均已实现。v2 Prompt明确要求具体条件、拒绝路径和结果，并禁止用空泛状态说明掩盖缺失。旧版真实结果仍为技术处理阶段，只能作为失败对照；新版真实语义质量须由固定326条Activity的目录和代表候选重新验收。
+两轮、详细结构、narrative/rule-use已实现。当前完整Activity已进DRAFT，原文后进REVIEW。目标改变输入/Prompt而非重做类型；过程Prompt/响应升v3，新包显式匹配，原326Activity不重跑。新真实实验未执行。
 
 Luna RED：新增字段完整传入REVIEW、保存重开和渲染；不同variant规则引用边界；不误拒合法不确定性。Terra GREEN只实现合同。真实语义验收见[贯穿例子](../../examples/semantic-framework-walkthrough.md)，自动fixture不能替代真实模型质量。

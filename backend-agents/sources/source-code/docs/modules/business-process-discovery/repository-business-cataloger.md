@@ -1,10 +1,12 @@
 # RepositoryBusinessCataloger
 
+> 首次目录能力保留。已有目录的增量入口由[补充设计 §2](../../supplements/cross-object-process-reconstruction/module-design.md#2-repositorybusinesscataloger重开目录与全局选材)定义，尚未实施。
+
 ## 为什么存在
 
-完整Activity分散在不同入口。目录要发现“哪些业务对象和目的需要把这些活动一起读”，而不只是归为某类数据的增删改查。它不决定最终顺序。当前已有目录算法与模型接线，本次修正的是卡片、用法和语义要求，不新建模块。
+完整Activity分散在不同入口。目录要发现“哪些业务对象和目的需要把这些活动一起读”，而不只是归为某类数据的增删改查。它不决定最终顺序。当前已有目录算法、卡片、用法与模型接线，本次增加旧目录重开及全局选材，不重做首次目录模块。
 
-## 输入：确定性卡片
+## 新仓库首次目录：确定性卡片（已实现）
 
 每个ReviewedActivity投影一张ActivityIndexCard，保留原文：
 ```text
@@ -12,7 +14,7 @@ activityId / name / businessPurpose / participants / businessObjects
 triggerOrInput / conditions / activitySteps / codeDefinedResults
 businessRules / terms / scopeLimitations
 ```
-businessRules为本次补入字段。其余来自现有字段；不由Java提取行业词、推导状态语义或凭名字补关系。摘要卡不替代下游完整Activity，完整公式/问题仍由下游取回。
+businessRules已经补入，继续复用。其余来自现有字段；不由Java提取行业词、推导状态语义或凭名字补关系。摘要卡不替代下游完整Activity，完整公式/问题仍由下游取回。
 
 超出单任务上下文时，使用已有稳定分片、每片DRAFT+REVIEW及唯一全仓merge DRAFT+REVIEW。全部Activity恰好进入一个原始分片；不能截去卡片尾部。规则增加导致任务变大时显式规划，不静默删减。
 
@@ -40,8 +42,18 @@ businessRules为本次补入字段。其余来自现有字段；不由Java提取
 
 目录不写最终详细阶段，不证明先后和因果。下游仍可拆分、收窄或拒绝候选。
 
+## 已有目录：直接重开后增量选材（目标）
+
+从显式旧批次读取完整目录任务，沿用现有DRAFT/REVIEW规范化，不重新运行上述目录分片/merge。旧目录可以作为新Prompt资料，不等于旧过程可直接当新版已审结果。
+
+一次PROCESS_MATERIAL_SELECTION读取旧候选、全部Activity轻量导航、冻结文件目录和可选问题，输出候选修正、首批阅读请求及受影响处置。导航只从已有字段投影，完整规则/公式不在此重写。候选可跨旧组，查询/统计活动也可召回；上下文不足不静默漏卡或自动重跑旧目录。
+
+未提到旧候选按KEEP继承。未涉及Activity承接旧处置；最终候选成员关系更新PROCESS_MEMBER。被移出全部候选须由模型给出已有合法非成员去向；只为理解而读过的context Activity不必成为过程步骤。阅读检查可继续细化成员，冻结包时统一应用增量；不重建台账。
+
+旧目录为24候选/138个不同成员的事实只用于本次输入，不写死框架。全部326条均可选，不把原未入组188条静默排除。
+
 ## 测试、分工与当前差距
 
-已实现稳定分片、并行两轮、唯一merge和完整覆盖。卡片已携带businessRules；同候选按`(activityId, variant)`保留多个业务用法；完整唯一处置中的PROCESS_MEMBER没有候选关系时会明确失败，不再自动降级。merge REVIEW长数组若发生重复/遗漏，则只恢复DRAFT覆盖账并按最终候选重算成员关系。旧版真实14候选偏技术维护分类；新版v2目录仍必须由模型自行发现领域和用法，只有真实运行才能判断业务发现质量。
+已实现首次目录、businessRules卡片、多用法及覆盖规范化。尚缺显式旧目录输入、全局阅读选择及增量更新；不把历史14候选与本次复用的24候选混成同一结果。真实新选材未执行。
 
 Luna RED：同Activity多variant、跨分片成员保留、未知/遗漏不自动修正、卡片原规则保留。Terra GREEN只处理结构/投影；不写行业分类器。真实验收须由目录自己召回有关联的业务用法，不能将测试答案作为生产分组输入。

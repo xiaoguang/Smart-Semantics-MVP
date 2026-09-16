@@ -2,6 +2,8 @@
 
 本附录服务 [八步总体设计](../DESIGN.md)。保留来源完整性、精确 Fact/Proof 和可观察持久化；删除重复算法和逐层资格判断。它不创建新存储、恢复、graph/proof 或业务分类体系。
 
+[跨对象补充设计](../supplements/cross-object-process-reconstruction/README.md)允许从同源冻结文本定向取材，不限旧候选的M10引用；不执行文件、不重扫、不补Proof。实际原文在过程DRAFT前到位，来源真实性仍由现有reader保证。新增选材/阅读检查为单次决策保存，不能当成已审pair；Activity不重跑。
+
 ## 1. 各种依据分别说明什么
 
 | 依据 | 可以说明 | 不自动说明 |
@@ -80,8 +82,8 @@ fatal：错误 source identity、坏 bytes、危险 path、断 refs、伪 exact 
 
 Canonical stores、源码/图/Fact 纵切、BusinessMaterialBuilder、ActivityExplainer、新 BusinessProcessDiscovery/Publisher、RepositoryAnalysisAgent 和持久化运行基础均已存在。旧 BusinessAnalysisWorkflow、singleton ProcessExplainer、九章生产器及 generate 路线已经退役；历史报告 reader/renderer 保留。Step05 EntryContext→Builder 接力、普通 Flow/Capsule 发布去重、Spring unrestricted `methodCondition`、Activity 任意 N/v2 REVIEW、两级并行及独立模型批次均已实现。
 
-固定完整运行已保存326条已审Activity，入口覆盖无遗漏。现有Step07已生成14候选、46过程，coverage CLOSED、semantic PARTIAL；旧340 singleton结果只作历史对照。当前过程仍偏接收/校验/主动作/返回模板，不能据结构通过宣布生命周期语义通过。
+固定完整运行已保存326条已审Activity，入口覆盖无遗漏。历史v1运行生成14候选、46过程，coverage CLOSED、semantic PARTIAL；旧340 singleton结果也只作历史对照。本次选择的后续已审目录有24候选、138个不同成员Activity，不能把这些数量当成业务完整性证明。
 
-2026-09-15本次修正限于Step07：阶段narrative、规则activityUseIds、不同variant、原文预览及可点击来源。Publisher从封闭SourceReference确定性生成sources.md，不新增取证。来源链接允许留空，不为它增加解释、补证据、模型调用或专项验收；核心是业务语义可读。
+生命周期修正已经实现阶段narrative、规则activityUseIds、不同variant、原文预览及可点击来源。Publisher从封闭SourceReference确定性生成sources.md，不新增取证。来源链接允许留空，不为它增加解释、补证据、模型调用或专项验收；核心是业务语义可读。
 
-五文件v2合同和同步读写面见[差异清单](../plans/business-process-discovery-and-reconstruction-change-design.md#82-输出和版本)。当前代码仍为v1四文件；本次只更新设计，不改历史产物、生产Prompt或代码。
+当前五文件v2合同已实现。本次跨对象目标增加旧目录输入、冻结文本定向读取、单次阅读决策和DRAFT前完整封包，保留公开五文件结构。具体版本与同步读写面见[差异清单](../plans/business-process-discovery-and-reconstruction-change-design.md#5-保存版本和兼容范围)及[模块设计](../supplements/cross-object-process-reconstruction/module-design.md#7-运行接线私有保存和版本)。本次只更新设计，不改历史产物、生产Prompt或代码。
