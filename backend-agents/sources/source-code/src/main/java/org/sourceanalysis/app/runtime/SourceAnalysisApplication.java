@@ -42,6 +42,27 @@ public final class SourceAnalysisApplication {
       RunStoreHandle store,
       RepositoryAnalysisRunCoordinator coordinator,
       AnalysisRunRequestTemplate requestTemplate,
+      CompletedReportRenderer reportRenderer,
+      CompletedBusinessArtifactReader artifactReader,
+      LocalSourceCapture localSourceCapture,
+      LocalGitCaptureRequestTemplate localCaptureTemplate) {
+    this.agent =
+        new LocalRepositoryAnalysisAgent(
+            Objects.requireNonNull(store, "run store"),
+            Objects.requireNonNull(coordinator, "analysis run coordinator"),
+            Objects.requireNonNull(reportRenderer, "completed report renderer"),
+            Objects.requireNonNull(artifactReader, "completed business artifact reader"));
+    this.requestTemplate = Objects.requireNonNull(requestTemplate, "analysis run request template");
+    this.localSourceCapture = Objects.requireNonNull(localSourceCapture, "local source capture");
+    this.localCaptureTemplate =
+        Objects.requireNonNull(localCaptureTemplate, "local Git capture request template");
+  }
+
+  /** Creates one configured application with execution, observation, and local capture. */
+  public SourceAnalysisApplication(
+      RunStoreHandle store,
+      RepositoryAnalysisRunCoordinator coordinator,
+      AnalysisRunRequestTemplate requestTemplate,
       LocalSourceCapture localSourceCapture,
       LocalGitCaptureRequestTemplate localCaptureTemplate) {
     this.agent =

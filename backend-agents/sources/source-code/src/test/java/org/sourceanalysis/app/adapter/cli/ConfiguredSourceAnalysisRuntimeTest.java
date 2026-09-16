@@ -29,14 +29,14 @@ import org.sourceanalysis.app.runtime.ReaderCandidateRound;
 /**
  * Defines the strict, offline whole-repository launcher boundary before its implementation exists.
  */
-class RepositoryRunMainTest {
+class ConfiguredSourceAnalysisRuntimeTest {
 
   @Test
   void modelBatchUsesTheCurrentOutputPolicyWithoutChangingItsSourceInputs() {
     AnalysisRunRequest source = request(reference("artifact-policy-registry", '8'));
     ArtifactReference currentPolicy = reference("artifact-policy-registry", '9');
 
-    AnalysisRunRequest batch = RepositoryRunMain.modelBatchRequest(source, currentPolicy);
+    AnalysisRunRequest batch = ConfiguredSourceAnalysisRuntime.modelBatchRequest(source, currentPolicy);
 
     assertThat(batch)
         .usingRecursiveComparison()
@@ -64,7 +64,8 @@ class RepositoryRunMainTest {
     PrintWriter output = new PrintWriter(outputBytes, true, StandardCharsets.UTF_8);
     PrintWriter errors = new PrintWriter(errorBytes, true, StandardCharsets.UTF_8);
 
-    Class<?> mainType = requiredClass("org.sourceanalysis.app.adapter.cli.RepositoryRunMain");
+    Class<?> mainType =
+        requiredClass("org.sourceanalysis.app.adapter.cli.ConfiguredSourceAnalysisRuntime");
     Method execute =
         mainType.getMethod("execute", String[].class, PrintWriter.class, PrintWriter.class);
     assertThat(Modifier.isStatic(execute.getModifiers())).isTrue();
@@ -114,7 +115,7 @@ class RepositoryRunMainTest {
                 "--config",
                 config.toString(),
                 "--mode",
-                "generate",
+                "activities",
                 "--provider-config",
                 config.toString()),
             List.of(
@@ -124,7 +125,8 @@ class RepositoryRunMainTest {
                 "business-processes",
                 "--activity-model-batch",
                 "analysis-run:" + "a".repeat(64)));
-    Class<?> mainType = requiredClass("org.sourceanalysis.app.adapter.cli.RepositoryRunMain");
+    Class<?> mainType =
+        requiredClass("org.sourceanalysis.app.adapter.cli.ConfiguredSourceAnalysisRuntime");
     Method execute =
         mainType.getMethod("execute", String[].class, PrintWriter.class, PrintWriter.class);
     for (List<String> invocation : invocations) {
@@ -280,7 +282,7 @@ class RepositoryRunMainTest {
                 true));
 
     Method loader =
-        RepositoryRunMain.class.getDeclaredMethod(
+        ConfiguredSourceAnalysisRuntime.class.getDeclaredMethod(
             "loadPolicies", Path.class, CanonicalJsonCodec.class);
     loader.setAccessible(true);
     CanonicalArtifactPolicyRegistry registry =

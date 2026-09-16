@@ -4,7 +4,7 @@
 - Agent role: primary implementation and integration
 - Model: Codex GPT-5
 - Started: 2026-09-15
-- Last updated: 2026-09-15
+- Last updated: 2026-09-16
 - Scope: unify the public CLI, retire legacy generation paths, preserve historical outputs, and complete the approved deterministic cleanup
 - Owning plan: 代码清理与统一 `source-analysis` 入口实施计划
 - Approved inputs: current main at e8c40ea2f250da55d6b8797c32c380461061c3c9 plus the existing uncommitted cleanup audit/resource changes
@@ -18,10 +18,15 @@
 - Added the Activity-only run-output contract: new writes use `analysis-run-output-v4` and `ACTIVITIES_ONLY`; historical v3 remains strict and readable.
 - Replaced the public request's ambiguous step selection with explicit material, Activity, and process execution intents; a transitional legacy intent remains only until the old generator is deleted.
 - Configured Agent dispatch now accepts an explicit execution function, preserves run ownership, and can inspect a finished preview without inventing a formal output.
+- Added the configured `source-analysis --config ...` process entry point and removed the public `RepositoryRunMain` class/Java main; legacy mode syntax is rejected by the public entry point.
+- Connected zero-model material planning, full Activity execution, current Step07 process discovery, inspect, artifact and historical report rerendering to the unified entry point.
+- Full Activity and Step07 runs now execute lifecycle/output registration through the same `RepositoryAnalysisAgent`; the retired `generate` mode is no longer reachable from the configured runtime.
+- Replaced the material-planning dependency on the legacy full business executor with the existing `BusinessMaterialBuilder` directly.
+- Completed and committed the portable Java 17 toolchain migration; the tracked file is now a host-neutral example and CI creates an ignored local toolchain.
 
 ## Current state
 
-The existing audit and production-resource cleanup are preserved. The first runtime TDD slice is green; execution-intent routing and configured CLI migration remain.
+The existing audit and production-resource cleanup are preserved. The unique CLI now reaches all current generation stages and read-only observation. Remaining work is removal of the retired business/report implementation and tests, deterministic fixes, documentation/progress cleanup, and full offline verification.
 
 ## Changed files
 
@@ -37,6 +42,7 @@ The existing audit and production-resource cleanup are preserved. The first runt
 | `mvn -t .mvn/toolchains.xml -Dtest=ModelBatchAnalysisRunOutputTest test` | PASS | 4 tests, including v4 Activity-only round trip |
 | `mvn -t .mvn/toolchains.xml -Dtest=SourceAnalysisCliContractTest test` | PASS | 6 CLI intent-routing tests |
 | `mvn -t .mvn/toolchains.local.xml -Dtest=LocalRepositoryAnalysisAgentExecutionTest test` | PASS | 5 real Agent lifecycle/intent tests |
+| `mvn -t .mvn/toolchains.local.xml -Dtest=SourceAnalysisConfiguredEntryPointTest,SourceAnalysisCliContractTest,ConfiguredSourceAnalysisRuntimeTest,SourceAnalysisModelJobsConfigurationTest,LocalRepositoryAnalysisAgentExecutionTest test` | PASS | unified entry, configuration, lifecycle and observation seams |
 
 ## Decisions
 
@@ -50,7 +56,7 @@ None.
 
 ## Exact next action
 
-Extract the configured material state and Provider/runtime factories from the legacy main, then connect them to the explicit coordinator intents.
+Delete the retired full-report generator classes/resources and migrate only still-valid historical-reader and configuration assertions.
 
 ## Resume checks
 

@@ -34,7 +34,7 @@ import org.sourceanalysis.app.artifact.CanonicalArtifactPolicyRegistry;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 
 /** RED contracts for the unified repository-run-config-v2 modelJobs configuration. */
-class RepositoryRunModelJobsConfigurationTest {
+class SourceAnalysisModelJobsConfigurationTest {
 
   private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
 
@@ -45,7 +45,7 @@ class RepositoryRunModelJobsConfigurationTest {
     ToolFixture tools = toolFixture();
     Path config = writeConfig(configYaml(tools, defaultModelJobs(tools)));
 
-    ExecutionResult result = execute(config, "generate");
+    ExecutionResult result = execute(config, "activities");
 
     assertThat(result.exitCode()).isNotZero();
     assertThat(result.diagnostics())
@@ -69,7 +69,7 @@ class RepositoryRunModelJobsConfigurationTest {
     ToolFixture tools = toolFixture();
     Path config = writeConfig(configYaml(tools, ""));
 
-    ExecutionResult result = execute(config, "generate");
+    ExecutionResult result = execute(config, "activities");
 
     assertThat(result.exitCode()).isNotZero();
     assertThat(result.diagnostics())
@@ -156,7 +156,7 @@ class RepositoryRunModelJobsConfigurationTest {
             + "      report: [pro]\n";
     Path config = writeConfig(configYaml(tools, modelJobs));
 
-    ExecutionResult result = execute(config, "generate");
+    ExecutionResult result = execute(config, "activities");
 
     assertThat(result.exitCode()).isNotZero();
     assertThat(result.diagnostics())
@@ -169,7 +169,7 @@ class RepositoryRunModelJobsConfigurationTest {
     Map<?, ?> providers = mapProperty(modelJobsConfiguration, "providers");
     assertThat(
             providers.keySet().stream()
-                .map(RepositoryRunModelJobsConfigurationTest::display)
+                .map(SourceAnalysisModelJobsConfigurationTest::display)
                 .toList())
         .containsExactlyInAnyOrder("pro", "api");
     assertThat(integerProperty(mapValue(providers, "pro"), "maxConcurrentJobs")).isEqualTo(4);
@@ -177,7 +177,7 @@ class RepositoryRunModelJobsConfigurationTest {
     Map<?, ?> routing = mapProperty(modelJobsConfiguration, "routing");
     assertThat(
             routing.keySet().stream()
-                .map(RepositoryRunModelJobsConfigurationTest::display)
+                .map(SourceAnalysisModelJobsConfigurationTest::display)
                 .toList())
         .containsExactlyInAnyOrder("activity", "processGroup", "repositorySummary", "report");
     assertThat(values(routing.get("activity"))).containsExactly("pro", "api");
@@ -269,7 +269,7 @@ class RepositoryRunModelJobsConfigurationTest {
             + "      repositorySummary: [first]\n"
             + "      report: [first]\n";
 
-    ExecutionResult result = execute(writeConfig(configYaml(tools, providers)), "generate");
+    ExecutionResult result = execute(writeConfig(configYaml(tools, providers)), "activities");
 
     assertThat(result.exitCode()).isNotZero();
     assertThat(result.diagnostics())
@@ -327,7 +327,7 @@ class RepositoryRunModelJobsConfigurationTest {
     Path providerConfig = temporaryDirectory.resolve("old-provider-config.json");
     Files.writeString(providerConfig, "{}", StandardCharsets.UTF_8);
     ExecutionResult secondConfig =
-        execute(v2, "generate", "--provider-config", providerConfig.toString());
+        execute(v2, "activities", "--provider-config", providerConfig.toString());
     assertThat(secondConfig.exitCode()).isNotZero();
     assertThat(secondConfig.diagnostics())
         .contains("ARGUMENTS_INVALID")
@@ -407,7 +407,7 @@ class RepositoryRunModelJobsConfigurationTest {
             + "      report: [pro]\n";
     Path config = writeConfig(configYaml(tools, modelJobs));
 
-    ExecutionResult result = execute(config, "generate");
+    ExecutionResult result = execute(config, "activities");
 
     assertThat(result.exitCode()).isNotZero();
     assertThat(result.diagnostics())
@@ -706,7 +706,7 @@ class RepositoryRunModelJobsConfigurationTest {
   private static Throwable invokeIdempotentWriter(Path destination, byte[] bytes) {
     try {
       Method writer =
-          RepositoryRunMain.class.getDeclaredMethod(
+          ConfiguredSourceAnalysisRuntime.class.getDeclaredMethod(
               "writeIdempotentlyAtomically",
               Path.class,
               byte[].class,
@@ -726,7 +726,7 @@ class RepositoryRunModelJobsConfigurationTest {
   private static Object activityExecutionConfiguration(
       Object modelJobsConfiguration, AnalysisRunId runId) throws Exception {
     Method mapper =
-        java.util.Arrays.stream(RepositoryRunMain.class.getDeclaredMethods())
+        java.util.Arrays.stream(ConfiguredSourceAnalysisRuntime.class.getDeclaredMethods())
             .filter(method -> method.getName().equals("activityJobExecutionConfiguration"))
             .filter(method -> Modifier.isStatic(method.getModifiers()))
             .filter(method -> method.getParameterCount() == 3)
@@ -735,7 +735,7 @@ class RepositoryRunModelJobsConfigurationTest {
             .findFirst()
             .orElse(null);
     assertThat(mapper)
-        .as("RepositoryRunMain must map selected modelJobs values into Activity execution")
+        .as("configured runtime must map selected modelJobs values into Activity execution")
         .isNotNull();
     mapper.setAccessible(true);
     try {
@@ -751,7 +751,7 @@ class RepositoryRunModelJobsConfigurationTest {
   private static Object modelExecutionConfiguration(
       Object modelJobsConfiguration, AnalysisRunId runId) throws Exception {
     Method mapper =
-        java.util.Arrays.stream(RepositoryRunMain.class.getDeclaredMethods())
+        java.util.Arrays.stream(ConfiguredSourceAnalysisRuntime.class.getDeclaredMethods())
             .filter(method -> method.getName().equals("modelJobExecutionConfiguration"))
             .filter(method -> Modifier.isStatic(method.getModifiers()))
             .filter(method -> method.getParameterCount() == 3)
@@ -793,7 +793,8 @@ class RepositoryRunModelJobsConfigurationTest {
     ByteArrayOutputStream errorBytes = new ByteArrayOutputStream();
     PrintWriter output = new PrintWriter(outputBytes, true, StandardCharsets.UTF_8);
     PrintWriter errors = new PrintWriter(errorBytes, true, StandardCharsets.UTF_8);
-    int exitCode = RepositoryRunMain.execute(arguments.toArray(String[]::new), output, errors);
+    int exitCode =
+        ConfiguredSourceAnalysisRuntime.execute(arguments.toArray(String[]::new), output, errors);
     return new ExecutionResult(
         exitCode,
         outputBytes.toString(StandardCharsets.UTF_8) + errorBytes.toString(StandardCharsets.UTF_8));
@@ -802,7 +803,7 @@ class RepositoryRunModelJobsConfigurationTest {
   private Object loadConfiguration(Path config) throws Exception {
     List<String> candidates =
         List.of(
-            "org.sourceanalysis.app.adapter.cli.RepositoryRunMain$RepositoryRunConfiguration",
+            "org.sourceanalysis.app.adapter.cli.ConfiguredSourceAnalysisRuntime$RepositoryRunConfiguration",
             "org.sourceanalysis.app.adapter.cli.RepositoryRunConfiguration",
             "org.sourceanalysis.app.runtime.RepositoryRunConfiguration");
     Class<?> type = null;
@@ -906,7 +907,7 @@ class RepositoryRunModelJobsConfigurationTest {
   private static List<String> values(Object value) {
     assertThat(value).isInstanceOf(List.class);
     return ((List<?>) value)
-        .stream().map(RepositoryRunModelJobsConfigurationTest::display).toList();
+        .stream().map(SourceAnalysisModelJobsConfigurationTest::display).toList();
   }
 
   private static String display(Object value) {

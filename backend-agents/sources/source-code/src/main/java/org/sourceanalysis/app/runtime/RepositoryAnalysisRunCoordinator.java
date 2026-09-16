@@ -59,6 +59,12 @@ public final class RepositoryAnalysisRunCoordinator {
     this.flowBusinessExecution = null;
   }
 
+  /** Creates the configured intent executor used by the sole production composition root. */
+  public static RepositoryAnalysisRunCoordinator configured(
+      Function<AnalysisStepExecutionRequest, AnalysisRunOutput> explicitExecution) {
+    return new RepositoryAnalysisRunCoordinator(explicitExecution);
+  }
+
   /** Package-private test seam; production uses the persisted-executor constructor. */
   RepositoryAnalysisRunCoordinator(
       Function<AnalysisRunId, TechnicalDiscoveryWorkflowResult> technicalExecution,

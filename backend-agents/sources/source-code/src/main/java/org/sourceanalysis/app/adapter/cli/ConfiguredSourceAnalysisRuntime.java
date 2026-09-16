@@ -37,6 +37,7 @@ import org.sourceanalysis.app.adapter.provider.OpenAiResponsesStructuredProvider
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.analysis.discovery.DiscoveryProfile;
 import org.sourceanalysis.app.analysis.document.BusinessReportProfile;
+import org.sourceanalysis.app.analysis.document.BusinessReportCheckpointRenderer;
 import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionProfile;
 import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilationProfile;
 import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
@@ -49,9 +50,11 @@ import org.sourceanalysis.app.analysis.interpretation.activity.ActivityJobExecut
 import org.sourceanalysis.app.analysis.interpretation.activity.ExplainActivitiesRequest;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
+import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
 import org.sourceanalysis.app.analysis.inventory.PersistedVerifiedSourceTextReader;
 import org.sourceanalysis.app.analysis.inventory.ProfileView;
 import org.sourceanalysis.app.analysis.knowledge.ProcessDiscoveryProfile;
@@ -85,18 +88,25 @@ import org.sourceanalysis.app.runtime.AnalysisRunOutput;
 import org.sourceanalysis.app.runtime.AnalysisRunReference;
 import org.sourceanalysis.app.runtime.AnalysisRunRequest;
 import org.sourceanalysis.app.runtime.AnalysisRunRequestTemplate;
-import org.sourceanalysis.app.runtime.BusinessAnalysisWorkflowResult;
+import org.sourceanalysis.app.runtime.AnalysisExecutionIntent;
+import org.sourceanalysis.app.runtime.AnalysisStepExecutionRequest;
+import org.sourceanalysis.app.runtime.ArtifactQuery;
+import org.sourceanalysis.app.runtime.ArtifactView;
+import org.sourceanalysis.app.runtime.BusinessCheckpointArtifactReader;
+import org.sourceanalysis.app.runtime.BusinessOutputArtifactKey;
 import org.sourceanalysis.app.runtime.BusinessProcessWorkflowResult;
 import org.sourceanalysis.app.runtime.EffectiveEngineConfiguration;
 import org.sourceanalysis.app.runtime.EngineConfigurationLoader;
 import org.sourceanalysis.app.runtime.PersistedBusinessProcessRunExecutor;
 import org.sourceanalysis.app.runtime.PersistedBusinessRunConfiguration;
-import org.sourceanalysis.app.runtime.PersistedBusinessRunExecutor;
 import org.sourceanalysis.app.runtime.PersistedTechnicalRunConfiguration;
 import org.sourceanalysis.app.runtime.PersistedTechnicalRunExecutor;
 import org.sourceanalysis.app.runtime.RepositoryAnalysisRunCoordinator;
+import org.sourceanalysis.app.runtime.LocalRepositoryAnalysisAgent;
 import org.sourceanalysis.app.runtime.SourceAnalysisApplication;
 import org.sourceanalysis.app.runtime.TechnicalAnalysisWorkflowResult;
+import org.sourceanalysis.app.runtime.RenderedDocumentReference;
+import org.sourceanalysis.app.runtime.RunInspection;
 import org.sourceanalysis.app.runtime.modeljob.ModelJobExecutionConfiguration;
 import org.sourceanalysis.app.runtime.modeljob.ModelJobProviderBinding;
 
@@ -108,13 +118,16 @@ import org.sourceanalysis.app.runtime.modeljob.ModelJobProviderBinding;
  * execute once. The materials-only mode never constructs a model Provider; continuation modes use
  * the validated model-job routes and bounded execution configuration.
  */
-public final class RepositoryRunMain {
+final class ConfiguredSourceAnalysisRuntime {
 
   private static final String MODE_MATERIALS_ONLY = "materials-only";
   private static final String MODE_EXPORT_MATERIALS_STATE = "export-materials-state";
   private static final String MODE_ACTIVITIES_SAMPLE = "activities-sample";
-  private static final String MODE_GENERATE = "generate";
+  private static final String MODE_ACTIVITIES = "activities";
   private static final String MODE_BUSINESS_PROCESSES = "business-processes";
+  private static final String MODE_INSPECT = "inspect";
+  private static final String MODE_ARTIFACT = "artifact";
+  private static final String MODE_RENDER = "render";
   private static final String CONFIG_SCHEMA = "repository-run-config-v2";
   private static final String POLICY_SCHEMA = "artifact-policy-registry-policy-set-v1";
   private static final String MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA =
@@ -124,7 +137,7 @@ public final class RepositoryRunMain {
   private static final ObjectMapper JSON = new ObjectMapper();
   private static final ObjectMapper YAML = yaml();
 
-  private RepositoryRunMain() {}
+  private ConfiguredSourceAnalysisRuntime() {}
 
   /** Runs the exact configured maintenance mode and returns a process-style exit code. */
   public static int execute(String[] arguments, PrintWriter output, PrintWriter errors) {
@@ -142,14 +155,23 @@ public final class RepositoryRunMain {
         case MODE_ACTIVITIES_SAMPLE ->
             executeActivitiesSample(
                 configuration, parsed.materialId(), parsed.reuseFromModelBatchId(), output);
-        case MODE_GENERATE ->
-            executeGenerate(configuration, parsed.reuseFromModelBatchId(), output);
+        case MODE_ACTIVITIES ->
+            executeActivities(configuration, parsed.reuseFromModelBatchId(), output);
         case MODE_BUSINESS_PROCESSES ->
             executeBusinessProcesses(
                 configuration,
                 parsed.activityModelBatchId(),
                 parsed.reuseFromModelBatchId(),
                 output);
+        case MODE_INSPECT -> executeInspect(configuration, parsed.runId(), output);
+        case MODE_ARTIFACT ->
+            executeArtifact(
+                configuration,
+                parsed.runId(),
+                parsed.businessOutputArtifactKey(),
+                parsed.maxBytes(),
+                output);
+        case MODE_RENDER -> executeRender(configuration, parsed.runId(), output);
         default -> throw failure("MODE_UNSUPPORTED");
       }
       output.flush();
@@ -163,18 +185,6 @@ public final class RepositoryRunMain {
       output.flush();
       errors.flush();
       return 2;
-    }
-  }
-
-  /** Standard Java entry point for the direct classpath launcher. */
-  public static void main(String[] arguments) {
-    int exitCode =
-        execute(
-            arguments,
-            new PrintWriter(System.out, true, StandardCharsets.UTF_8),
-            new PrintWriter(System.err, true, StandardCharsets.UTF_8));
-    if (exitCode != 0) {
-      System.exit(exitCode);
     }
   }
 
@@ -233,54 +243,54 @@ public final class RepositoryRunMain {
               configuration.policyRegistry(),
               sourceRegistry,
               configuration.technicalConfiguration(frozen.bytes()));
-      PersistedBusinessRunExecutor business =
-          new PersistedBusinessRunExecutor(
+      BusinessMaterialBuilder materialBuilder =
+          new BusinessMaterialBuilder(
               modules,
               steps,
-              new PersistedVerifiedSourceTextReader(steps, sourceRegistry),
-              zeroModelProvider(),
-              configuration.businessConfiguration());
+              new PersistedVerifiedSourceTextReader(steps, sourceRegistry));
+      java.util.concurrent.atomic.AtomicReference<BusinessMaterialBuildResult> completedMaterials =
+          new java.util.concurrent.atomic.AtomicReference<>();
       SourceAnalysisApplication application =
           new SourceAnalysisApplication(
-              store, new RepositoryAnalysisRunCoordinator(technical, business), requestTemplate);
+              store,
+              RepositoryAnalysisRunCoordinator.configured(
+                  request -> {
+                    if (request.intent() != AnalysisExecutionIntent.PREPARE_MATERIALS) {
+                      throw failure("ANALYSIS_EXECUTION_INTENT_INVALID");
+                    }
+                    TechnicalAnalysisWorkflowResult technicalResult =
+                        technical.execute(request.runId());
+                    BusinessFlowsReference flows = technicalResult.businessFlows();
+                    BusinessMaterialBuildResult materials =
+                        materialBuilder.build(
+                            new BuildBusinessMaterialsRequest(
+                                flows, configuration.materialProfile()));
+                    writeState(
+                        configuration, request.runId(), flows, materials, modules);
+                    completedMaterials.set(materials);
+                    return new AnalysisRunOutput(materials.checkpoint(), null, null, null);
+                  }),
+              requestTemplate);
       AnalysisRunReference queued =
           application.agent().start(requestTemplate.create(registration.sourceRegistrationId()));
       output.printf("runId=%s%n", queued.runId().value());
       output.printf("lifecycleState=%s%n", queued.lifecycleState());
-      AnalysisRunReference running =
-          RunStoreBootstrap.transitionAnalysisRun(
-              store,
-              queued.runId(),
-              AnalysisRunLifecycleState.QUEUED,
-              AnalysisRunLifecycleState.RUNNING);
-      try {
-        TechnicalAnalysisWorkflowResult technicalResult = technical.execute(running.runId());
-        BusinessFlowsReference flows = technicalResult.businessFlows();
-        BusinessMaterialBuildResult materials = business.buildMaterials(flows);
-        writeState(configuration, running, flows, materials, modules);
-        output.printf("businessMaterialCount=%d%n", materials.materialSet().materials().size());
-        output.printf(
-            "businessMaterialCheckpoint=%s%n", materials.checkpoint().moduleReceiptId().value());
-        output.printf("materialsStateFile=%s%n", configuration.stateFile());
-      } catch (RuntimeException failure) {
-        try {
-          RunStoreBootstrap.transitionAnalysisRun(
-              store,
-              running.runId(),
-              AnalysisRunLifecycleState.RUNNING,
-              AnalysisRunLifecycleState.FAILED);
-        } catch (RuntimeException transitionFailure) {
-          failure.addSuppressed(transitionFailure);
-        }
-        throw failure;
+      AnalysisRunReference finished =
+          application
+              .agent()
+              .executeStep(
+                  new AnalysisStepExecutionRequest(
+                      queued.runId(), AnalysisExecutionIntent.PREPARE_MATERIALS, null, null));
+      BusinessMaterialBuildResult materials = completedMaterials.get();
+      if (materials == null) {
+        throw failure("BUSINESS_MATERIAL_RESULT_INVALID");
       }
+      output.printf("lifecycleState=%s%n", finished.lifecycleState());
+      output.printf("businessMaterialCount=%d%n", materials.materialSet().materials().size());
+      output.printf(
+          "businessMaterialCheckpoint=%s%n", materials.checkpoint().moduleReceiptId().value());
+      output.printf("materialsStateFile=%s%n", configuration.stateFile());
     }
-  }
-
-  private static StructuredModelProvider zeroModelProvider() {
-    return request -> {
-      throw failure("MODEL_PROVIDER_FORBIDDEN_IN_MATERIALS_ONLY");
-    };
   }
 
   private static void executeExportMaterialsState(
@@ -369,62 +379,78 @@ public final class RepositoryRunMain {
     }
   }
 
-  private static void executeGenerate(
+  private static void executeActivities(
       RepositoryRunConfiguration configuration,
       AnalysisRunId reuseFromModelBatchId,
       PrintWriter output) {
     ModelJobsConfiguration modelJobs = configuration.requireModelJobsForExecution();
     RepositoryRunStateV3.SavedState state = loadV3State(configuration);
     try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
-      CanonicalModuleArtifactStore modules = inputModuleArtifacts(configuration, store);
+      CanonicalModuleArtifactStore inputModules = inputModuleArtifacts(configuration, store);
+      CanonicalModuleArtifactStore outputModules = moduleArtifacts(configuration, store);
       verifyConfiguredMaterialSource(configuration, store, state);
       BusinessMaterialBuildResult materials =
           new org.sourceanalysis.app.analysis.interpretation.material
-                  .BusinessMaterialCheckpointReader(modules)
+                  .BusinessMaterialCheckpointReader(inputModules)
               .reopen(state.materialsCheckpoint());
-      AnalysisRunReference running =
-          startModelBatch(
-              store,
-              state.sourceRunId(),
-              artifactReference(configuration.policyRegistry().reference()));
-      try {
-        validateReuseBatch(store, modelJobs, state, running.runId(), reuseFromModelBatchId);
-        writeModelJobExecutionConfiguration(
-            configuration,
-            modelJobs,
-            state,
-            running.runId(),
-            reuseFromModelBatchId,
-            "ALL_MATERIALS",
-            List.of(),
-            configuration.maxMaterialsToStart());
-        ModelJobExecutionConfiguration execution =
-            modelJobExecutionConfiguration(modelJobs, running.runId(), reuseFromModelBatchId);
-        PersistedBusinessRunExecutor business = businessExecutor(configuration, store, execution);
-        BusinessAnalysisWorkflowResult result = business.execute(materials);
-        AnalysisRunOutput runOutput =
-            new AnalysisRunOutput(
-                state.sourceRunId(),
-                result.materials().checkpoint(),
-                result.activities().checkpoint(),
-                result.knowledge().checkpoint(),
-                result.report().checkpoint());
-        RunStoreBootstrap.recordAnalysisRunOutput(store, running.runId(), runOutput);
-        Path document = documentPath(configuration, running.runId());
-        AnalysisRunReference finished =
-            RunStoreBootstrap.transitionAnalysisRun(
-                store,
-                running.runId(),
-                AnalysisRunLifecycleState.RUNNING,
-                AnalysisRunLifecycleState.FINISHED);
-        output.printf("sourceRunId=%s%n", state.sourceRunId().value());
-        output.printf("modelBatchId=%s%n", finished.runId().value());
-        output.printf("lifecycleState=%s%n", finished.lifecycleState());
-        output.printf("documentFile=%s%n", document);
-      } catch (RuntimeException failure) {
-        markFailed(store, running.runId(), failure);
-        throw failure;
+      java.util.concurrent.atomic.AtomicReference<ActivityExplanationResult> completedActivities =
+          new java.util.concurrent.atomic.AtomicReference<>();
+      RepositoryAnalysisRunCoordinator coordinator =
+          RepositoryAnalysisRunCoordinator.configured(
+              request -> {
+                if (request.intent() != AnalysisExecutionIntent.EXPLAIN_ACTIVITIES
+                    || request.exactMaterialId() != null) {
+                  throw failure("ANALYSIS_EXECUTION_INTENT_INVALID");
+                }
+                validateReuseBatch(
+                    store, modelJobs, state, request.runId(), reuseFromModelBatchId);
+                writeModelJobExecutionConfiguration(
+                    configuration,
+                    modelJobs,
+                    state,
+                    request.runId(),
+                    reuseFromModelBatchId,
+                    "ALL_MATERIALS",
+                    List.of(),
+                    configuration.maxMaterialsToStart());
+                ModelJobExecutionConfiguration execution =
+                    modelJobExecutionConfiguration(
+                        modelJobs, request.runId(), reuseFromModelBatchId);
+                ActivityExplanationResult activities =
+                    ActivityExplainer.forExecution(outputModules, execution)
+                        .explain(
+                            new ExplainActivitiesRequest(
+                                materials,
+                                configuration.activityProfile(),
+                                configuration.maxMaterialsToStart()));
+                completedActivities.set(activities);
+                return new AnalysisRunOutput(
+                    state.sourceRunId(),
+                    state.materialsCheckpoint(),
+                    activities.checkpoint(),
+                    null,
+                    null);
+              });
+      LocalRepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store, coordinator);
+      AnalysisRunReference queued =
+          agent.start(
+              modelBatchRequest(
+                  RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, state.sourceRunId())
+                      .request(),
+                  artifactReference(configuration.policyRegistry().reference())));
+      AnalysisRunReference finished =
+          agent.executeStep(
+              new AnalysisStepExecutionRequest(
+                  queued.runId(), AnalysisExecutionIntent.EXPLAIN_ACTIVITIES, null, null));
+      ActivityExplanationResult activities = completedActivities.get();
+      if (activities == null) {
+        throw failure("ACTIVITY_EXPLANATION_RESULT_INVALID");
       }
+      output.printf("sourceRunId=%s%n", state.sourceRunId().value());
+      output.printf("modelBatchId=%s%n", finished.runId().value());
+      output.printf("lifecycleState=%s%n", finished.lifecycleState());
+      output.printf(
+          "activityCheckpoint=%s%n", activities.checkpoint().moduleReceiptId().value());
     }
   }
 
@@ -456,63 +482,78 @@ public final class RepositoryRunMain {
           new org.sourceanalysis.app.analysis.interpretation.material
                   .BusinessMaterialCheckpointReader(inputModules)
               .reopen(materialState.materialsCheckpoint());
-      AnalysisRunReference running =
-          startModelBatch(
-              store,
-              materialState.sourceRunId(),
-              artifactReference(configuration.policyRegistry().reference()));
-      try {
-        validateReuseBatch(store, modelJobs, materialState, running.runId(), reuseFromModelBatchId);
-        validateProcessReuseActivity(
-            modelJobs, activityOutput.activityCheckpoint(), reuseFromModelBatchId);
-        writeProcessModelJobExecutionConfiguration(
-            configuration,
-            modelJobs,
-            materialState,
-            activityOutput.activityCheckpoint(),
-            running.runId(),
-            reuseFromModelBatchId);
-        ModelJobExecutionConfiguration execution =
-            modelJobExecutionConfiguration(modelJobs, running.runId(), reuseFromModelBatchId);
-        AnalysisRunRequest outputRequest =
-            RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, running.runId()).request();
-        BusinessProcessWorkflowResult result =
-            new PersistedBusinessProcessRunExecutor(
-                    inputModules,
-                    outputModules,
-                    artifactControls(outputRequest),
-                    execution,
-                    processProfile)
-                .execute(running.runId(), activities, materials);
-        AnalysisRunOutput runOutput =
-            new AnalysisRunOutput(
-                materialState.sourceRunId(),
-                materialState.materialsCheckpoint(),
-                activityOutput.activityCheckpoint(),
-                result.publication().checkpoint(),
-                null);
-        RunStoreBootstrap.recordAnalysisRunOutput(store, running.runId(), runOutput);
-        Path document = businessProcessesPath(configuration, running.runId());
-        AnalysisRunReference finished =
-            RunStoreBootstrap.transitionAnalysisRun(
-                store,
-                running.runId(),
-                AnalysisRunLifecycleState.RUNNING,
-                AnalysisRunLifecycleState.FINISHED);
-        output.printf("sourceRunId=%s%n", materialState.sourceRunId().value());
-        output.printf("activityModelBatchId=%s%n", activityModelBatchId.value());
-        output.printf("modelBatchId=%s%n", finished.runId().value());
-        output.printf("lifecycleState=%s%n", finished.lifecycleState());
-        output.printf(
-            "businessProcessCount=%d%n", result.publication().catalog().processes().size());
-        output.printf(
-            "semanticDeliveryStatus=%s%n",
-            result.publication().coverage().semanticDeliveryStatus());
-        output.printf("businessProcessesFile=%s%n", document);
-      } catch (RuntimeException failure) {
-        markFailed(store, running.runId(), failure);
-        throw failure;
+      java.util.concurrent.atomic.AtomicReference<BusinessProcessWorkflowResult> completedProcesses =
+          new java.util.concurrent.atomic.AtomicReference<>();
+      RepositoryAnalysisRunCoordinator coordinator =
+          RepositoryAnalysisRunCoordinator.configured(
+              request -> {
+                if (request.intent() != AnalysisExecutionIntent.DISCOVER_PROCESSES
+                    || !activityModelBatchId.equals(request.upstreamRunId())) {
+                  throw failure("ANALYSIS_EXECUTION_INTENT_INVALID");
+                }
+                validateReuseBatch(
+                    store, modelJobs, materialState, request.runId(), reuseFromModelBatchId);
+                validateProcessReuseActivity(
+                    modelJobs, activityOutput.activityCheckpoint(), reuseFromModelBatchId);
+                writeProcessModelJobExecutionConfiguration(
+                    configuration,
+                    modelJobs,
+                    materialState,
+                    activityOutput.activityCheckpoint(),
+                    request.runId(),
+                    reuseFromModelBatchId);
+                ModelJobExecutionConfiguration execution =
+                    modelJobExecutionConfiguration(
+                        modelJobs, request.runId(), reuseFromModelBatchId);
+                AnalysisRunRequest outputRequest =
+                    RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, request.runId())
+                        .request();
+                BusinessProcessWorkflowResult result =
+                    new PersistedBusinessProcessRunExecutor(
+                            inputModules,
+                            outputModules,
+                            artifactControls(outputRequest),
+                            execution,
+                            processProfile)
+                        .execute(request.runId(), activities, materials);
+                completedProcesses.set(result);
+                return new AnalysisRunOutput(
+                    materialState.sourceRunId(),
+                    materialState.materialsCheckpoint(),
+                    activityOutput.activityCheckpoint(),
+                    result.publication().checkpoint(),
+                    null);
+              });
+      LocalRepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store, coordinator);
+      AnalysisRunReference queued =
+          agent.start(
+              modelBatchRequest(
+                  RunStoreBootstrap
+                      .reopenPersistedAnalysisRunRequest(store, materialState.sourceRunId())
+                      .request(),
+                  artifactReference(configuration.policyRegistry().reference())));
+      AnalysisRunReference finished =
+          agent.executeStep(
+              new AnalysisStepExecutionRequest(
+                  queued.runId(),
+                  AnalysisExecutionIntent.DISCOVER_PROCESSES,
+                  activityModelBatchId,
+                  null));
+      BusinessProcessWorkflowResult result = completedProcesses.get();
+      if (result == null) {
+        throw failure("BUSINESS_PROCESS_RESULT_INVALID");
       }
+      Path document = businessProcessesPath(configuration, finished.runId());
+      output.printf("sourceRunId=%s%n", materialState.sourceRunId().value());
+      output.printf("activityModelBatchId=%s%n", activityModelBatchId.value());
+      output.printf("modelBatchId=%s%n", finished.runId().value());
+      output.printf("lifecycleState=%s%n", finished.lifecycleState());
+      output.printf(
+          "businessProcessCount=%d%n", result.publication().catalog().processes().size());
+      output.printf(
+          "semanticDeliveryStatus=%s%n",
+          result.publication().coverage().semanticDeliveryStatus());
+      output.printf("businessProcessesFile=%s%n", document);
     }
   }
 
@@ -531,20 +572,50 @@ public final class RepositoryRunMain {
     }
   }
 
-  private static PersistedBusinessRunExecutor businessExecutor(
+  private static void executeInspect(
+      RepositoryRunConfiguration configuration, AnalysisRunId runId, PrintWriter output) {
+    try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
+      RunInspection inspection = new LocalRepositoryAnalysisAgent(store).inspect(runId.value());
+      output.printf("runId=%s%n", inspection.analysisRun().runId().value());
+      output.printf("lifecycleState=%s%n", inspection.analysisRun().lifecycleState());
+      if (inspection.output() != null) {
+        output.printf(
+            "completedActivities=%s%n", inspection.output().hasCompletedActivities());
+        output.printf("completedProcesses=%s%n", inspection.output().hasCompletedProcesses());
+        output.printf("completedReport=%s%n", inspection.output().hasCompletedReport());
+      }
+    }
+  }
+
+  private static void executeArtifact(
       RepositoryRunConfiguration configuration,
-      RunStoreHandle store,
-      ModelJobExecutionConfiguration modelJobs) {
-    CanonicalModuleArtifactStore modules = moduleArtifacts(configuration, store);
-    CanonicalAnalysisStepArtifactStore steps = stepArtifacts(configuration, store);
-    LocalGitSourceRegistry sourceRegistry =
-        new LocalGitSourceRegistry(configuration.captureWorkspace());
-    return new PersistedBusinessRunExecutor(
-        modules,
-        steps,
-        new PersistedVerifiedSourceTextReader(steps, sourceRegistry),
-        configuration.businessConfiguration(),
-        modelJobs);
+      AnalysisRunId runId,
+      BusinessOutputArtifactKey key,
+      int maxBytes,
+      PrintWriter output) {
+    try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
+      CanonicalModuleArtifactStore modules = inputModuleArtifacts(configuration, store);
+      LocalRepositoryAnalysisAgent agent =
+          new LocalRepositoryAnalysisAgent(
+              store, null, null, new BusinessCheckpointArtifactReader(modules));
+      ArtifactView artifact =
+          agent.artifact(new ArtifactQuery(runId.value(), key, maxBytes));
+      output.print(artifact.contentUtf8());
+    }
+  }
+
+  private static void executeRender(
+      RepositoryRunConfiguration configuration, AnalysisRunId runId, PrintWriter output) {
+    try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
+      CanonicalModuleArtifactStore modules = inputModuleArtifacts(configuration, store);
+      LocalRepositoryAnalysisAgent agent =
+          new LocalRepositoryAnalysisAgent(
+              store, null, new BusinessReportCheckpointRenderer(modules), null);
+      RenderedDocumentReference rendered = agent.render(runId.value());
+      output.printf("runId=%s%n", rendered.runId().value());
+      output.printf("documentSha256=%s%n", rendered.documentSha256().value());
+      output.printf("sizeBytes=%d%n", rendered.sizeBytes());
+    }
   }
 
   private static CanonicalModuleArtifactStore moduleArtifacts(
@@ -863,28 +934,6 @@ public final class RepositoryRunMain {
     }
   }
 
-  private static Path documentPath(RepositoryRunConfiguration configuration, AnalysisRunId runId) {
-    Path document =
-        configuration
-            .runStore()
-            .resolve("runs")
-            .resolve(runId.value().replace(":", "--"))
-            .resolve("steps")
-            .resolve(AnalysisStepKey.NINE_SECTION_DOCUMENT.directoryName())
-            .resolve("modules")
-            .resolve("01-business-report-publisher")
-            .resolve("document.md");
-    try {
-      if (!Files.isRegularFile(document, LinkOption.NOFOLLOW_LINKS)
-          || Files.isSymbolicLink(document)) {
-        throw failure("DOCUMENT_LOCATION_INVALID");
-      }
-      return document;
-    } catch (SecurityException failure) {
-      throw failure("DOCUMENT_LOCATION_INVALID", failure);
-    }
-  }
-
   private static Path businessProcessesPath(
       RepositoryRunConfiguration configuration, AnalysisRunId runId) {
     Path document =
@@ -920,18 +969,18 @@ public final class RepositoryRunMain {
 
   private static void writeState(
       RepositoryRunConfiguration configuration,
-      AnalysisRunReference running,
+      AnalysisRunId runId,
       BusinessFlowsReference flows,
       BusinessMaterialBuildResult materials,
       CanonicalModuleArtifactStore modules) {
     AnalysisStepPublicationReference reference = flows.publication();
-    if (!running.runId().equals(reference.address().runId())
+    if (!runId.equals(reference.address().runId())
         || reference.address().analysisStepKey() != AnalysisStepKey.BUSINESS_FLOWS) {
       throw failure("SAVED_FLOW_REFERENCE_INVALID");
     }
     ObjectNode state = JsonNodeFactory.instance.objectNode();
     state.put("schemaVersion", RepositoryRunStateV3.SCHEMA_VERSION);
-    state.put("sourceRunId", running.runId().value());
+    state.put("sourceRunId", runId.value());
     ObjectNode flow = state.putObject("businessFlowsPublication");
     flow.put("analysisStepArtifactRoot", reference.analysisStepArtifactRoot().value());
     flow.put("analysisStepKey", reference.address().analysisStepKey().wireValue());
@@ -1182,7 +1231,10 @@ public final class RepositoryRunMain {
       String materialId,
       Path outputState,
       AnalysisRunId activityModelBatchId,
-      AnalysisRunId reuseFromModelBatchId) {
+      AnalysisRunId reuseFromModelBatchId,
+      AnalysisRunId runId,
+      BusinessOutputArtifactKey businessOutputArtifactKey,
+      Integer maxBytes) {
 
     private static Arguments parse(String[] arguments) {
       if (arguments.length < 4
@@ -1197,6 +1249,9 @@ public final class RepositoryRunMain {
       Path outputState = null;
       AnalysisRunId activityModelBatchId = null;
       AnalysisRunId reuseFromModelBatchId = null;
+      AnalysisRunId runId = null;
+      BusinessOutputArtifactKey businessOutputArtifactKey = null;
+      Integer maxBytes = null;
       if ((arguments.length - 4) % 2 != 0) {
         throw failure("ARGUMENTS_INVALID");
       }
@@ -1224,6 +1279,30 @@ public final class RepositoryRunMain {
               throw failure("ARGUMENTS_INVALID", invalid);
             }
           }
+          case "--run" -> {
+            try {
+              runId = AnalysisRunId.parse(value);
+            } catch (IllegalArgumentException invalid) {
+              throw failure("ARGUMENTS_INVALID", invalid);
+            }
+          }
+          case "--key" -> {
+            try {
+              businessOutputArtifactKey = BusinessOutputArtifactKey.valueOf(value);
+            } catch (IllegalArgumentException invalid) {
+              throw failure("ARGUMENTS_INVALID", invalid);
+            }
+          }
+          case "--max-bytes" -> {
+            try {
+              maxBytes = Integer.valueOf(value);
+            } catch (NumberFormatException invalid) {
+              throw failure("ARGUMENTS_INVALID", invalid);
+            }
+            if (maxBytes <= 0) {
+              throw failure("ARGUMENTS_INVALID");
+            }
+          }
           default -> throw failure("ARGUMENTS_INVALID");
         }
       }
@@ -1243,16 +1322,41 @@ public final class RepositoryRunMain {
               || arguments.length != 6)) {
         throw failure("ARGUMENTS_INVALID");
       }
-      if (MODE_GENERATE.equals(mode)
-          && (materialId != null || outputState != null || activityModelBatchId != null)) {
-        throw failure("ARGUMENTS_INVALID");
-      }
       if (MODE_ACTIVITIES_SAMPLE.equals(mode)
           && (materialId == null || outputState != null || activityModelBatchId != null)) {
         throw failure("ARGUMENTS_INVALID");
       }
       if (MODE_BUSINESS_PROCESSES.equals(mode)
           && (activityModelBatchId == null || materialId != null || outputState != null)) {
+        throw failure("ARGUMENTS_INVALID");
+      }
+      if (MODE_ACTIVITIES.equals(mode)
+          && (materialId != null || outputState != null || activityModelBatchId != null)) {
+        throw failure("ARGUMENTS_INVALID");
+      }
+      if (MODE_INSPECT.equals(mode)
+          && (runId == null
+              || businessOutputArtifactKey != null
+              || maxBytes != null
+              || arguments.length != 6)) {
+        throw failure("ARGUMENTS_INVALID");
+      }
+      if (MODE_RENDER.equals(mode)
+          && (runId == null
+              || businessOutputArtifactKey != null
+              || maxBytes != null
+              || arguments.length != 6)) {
+        throw failure("ARGUMENTS_INVALID");
+      }
+      if (MODE_ARTIFACT.equals(mode)
+          && (runId == null
+              || businessOutputArtifactKey == null
+              || maxBytes == null
+              || arguments.length != 10)) {
+        throw failure("ARGUMENTS_INVALID");
+      }
+      if (!Set.of(MODE_INSPECT, MODE_ARTIFACT, MODE_RENDER).contains(mode)
+          && (runId != null || businessOutputArtifactKey != null || maxBytes != null)) {
         throw failure("ARGUMENTS_INVALID");
       }
       return new Arguments(
@@ -1262,7 +1366,10 @@ public final class RepositoryRunMain {
           materialId,
           outputState,
           activityModelBatchId,
-          reuseFromModelBatchId);
+          reuseFromModelBatchId,
+          runId,
+          businessOutputArtifactKey,
+          maxBytes);
     }
 
     private void rejectLegacyProviderConfiguration() {
@@ -1793,13 +1900,13 @@ public final class RepositoryRunMain {
           Set.of("approvedClasspath", "capsule", "flow", "inventory", "store"),
           Set.of("selectedEntryIds"));
       List<String> selectedEntryIds =
-          RepositoryRunMain.selectedEntryIds(technical.get("selectedEntryIds"));
+          ConfiguredSourceAnalysisRuntime.selectedEntryIds(technical.get("selectedEntryIds"));
       ArtifactReference effectiveProfileBundleRef =
           inputs.effectiveProfileBundleRef(selectedEntryIds, canonicalJson);
       ArtifactReference effectiveGraphProfileRef =
           inputs.effectiveGraphProfileRef(selectedEntryIds, canonicalJson);
       List<ApprovedClasspathEntry> approvedClasspath =
-          RepositoryRunMain.approvedClasspath(technical.get("approvedClasspath"));
+          ConfiguredSourceAnalysisRuntime.approvedClasspath(technical.get("approvedClasspath"));
       ArtifactReference toolchainRef =
           inputs.effectiveToolchainRef(approvedClasspath, canonicalJson);
       ObjectNode inventory = object(technical, "inventory");
@@ -1867,22 +1974,23 @@ public final class RepositoryRunMain {
           Set.of("activity", "material", "maxMaterialsToStart", "process", "report"),
           Set.of("processDiscovery"));
       BusinessMaterialProfile materialProfile =
-          RepositoryRunMain.materialProfile(object(business, "material"));
+          ConfiguredSourceAnalysisRuntime.materialProfile(object(business, "material"));
       ActivityExplanationProfile activityProfile =
-          RepositoryRunMain.activityProfile(object(business, "activity"));
+          ConfiguredSourceAnalysisRuntime.activityProfile(object(business, "activity"));
       ProcessExplanationProfile processProfile =
-          RepositoryRunMain.processProfile(object(business, "process"));
+          ConfiguredSourceAnalysisRuntime.processProfile(object(business, "process"));
       ProcessDiscoveryProfile processDiscoveryProfile =
           business.has("processDiscovery")
-              ? RepositoryRunMain.processDiscoveryProfile(object(business, "processDiscovery"))
+              ? ConfiguredSourceAnalysisRuntime.processDiscoveryProfile(
+                  object(business, "processDiscovery"))
               : null;
       BusinessReportProfile reportProfile =
-          RepositoryRunMain.reportProfile(object(business, "report"));
+          ConfiguredSourceAnalysisRuntime.reportProfile(object(business, "report"));
       int maxMaterialsToStart = positiveInt(business, "maxMaterialsToStart");
 
       return new RepositoryRunConfiguration(
           canonicalJson,
-          RepositoryRunMain.baseConfigurationSha256(document, canonicalJson),
+          ConfiguredSourceAnalysisRuntime.baseConfigurationSha256(document, canonicalJson),
           modelJobs,
           policies,
           inputPolicies,
