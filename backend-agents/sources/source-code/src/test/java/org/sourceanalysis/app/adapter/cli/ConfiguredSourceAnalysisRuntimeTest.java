@@ -36,8 +36,7 @@ class ConfiguredSourceAnalysisRuntimeTest {
     AnalysisRunRequest source = request(reference("artifact-policy-registry", '8'));
     ArtifactReference currentPolicy = reference("artifact-policy-registry", '9');
 
-    AnalysisRunRequest batch =
-        SourceAnalysisExecution.modelBatchRequest(source, currentPolicy);
+    AnalysisRunRequest batch = SourceAnalysisExecution.modelBatchRequest(source, currentPolicy);
 
     assertThat(batch)
         .usingRecursiveComparison()
