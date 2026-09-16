@@ -21,9 +21,6 @@ import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialM
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
 import org.sourceanalysis.app.analysis.interpretation.material.ModelActivityPacket;
 import org.sourceanalysis.app.analysis.interpretation.material.SourceReference;
-import org.sourceanalysis.app.analysis.knowledge.ExplainRepositoryProcessesRequest;
-import org.sourceanalysis.app.analysis.knowledge.ProcessExplainer;
-import org.sourceanalysis.app.analysis.knowledge.ProcessExplanationProfile;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
@@ -63,7 +60,7 @@ class ActivityPackageBoundaryCoverageTest {
   }
 
   @Test
-  void leavesAnEmptyMaterialSetEmptyWithoutCallingActivityOrProcessProviders() {
+  void leavesAnEmptyMaterialSetEmptyWithoutCallingTheActivityProvider() {
     BusinessMaterialBuildResult materials =
         new BusinessMaterialBuildResult(
             new BusinessMaterialSet("business-material-set:zero", List.of(), List.of()),
@@ -75,18 +72,8 @@ class ActivityPackageBoundaryCoverageTest {
             .explain(
                 new ExplainActivitiesRequest(
                     materials, new ActivityExplanationProfile(20_000, 12_000, 1, 12, 1_000), 1));
-    var knowledge =
-        new ProcessExplainer(provider)
-            .explain(
-                new ExplainRepositoryProcessesRequest(
-                    activities,
-                    materials.materialSet(),
-                    new ProcessExplanationProfile(3, 1, 20_000, 12_000, 3, 12, 1_000, 0)));
-
     assertThat(activities.reviewedActivities()).isEmpty();
     assertThat(activities.coverage()).isEmpty();
-    assertThat(knowledge.activities()).isEmpty();
-    assertThat(knowledge.processes()).isEmpty();
     assertThat(provider.calls()).isZero();
   }
 

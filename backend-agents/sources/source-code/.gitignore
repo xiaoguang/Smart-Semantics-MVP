@@ -1,3 +1,4 @@
 .workspace/
 /target/
 .jqwik-database
+.mvn/toolchains.local.xml

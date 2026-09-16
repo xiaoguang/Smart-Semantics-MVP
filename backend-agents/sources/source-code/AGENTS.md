@@ -191,9 +191,10 @@
   RepositoryProcessConsolidator internals. Publication owns the deterministic
   repository process catalog, coverage and business-processes.md. Do not expose
   those internals as new public Agent methods.
-- Step 08 uses exactly one business Module: BusinessReportPublisher. Its target
-  input is the consolidated process catalog, not raw Activities or the legacy
-  singleton ProcessExplainer output.
+- Step 08 has no current production generator. Its future design allows exactly
+  one business Module consuming the consolidated process catalog, never raw
+  Activities or the retired singleton-process output. Preserve the historical
+  report reader and deterministic renderer without reviving the old producer.
 - These are internal Modules behind the sole RepositoryAnalysisAgent public
   Interface. Do not create a second POC namespace, parallel runtime, public
   Interface, compatibility alias or dual writer.
@@ -221,8 +222,8 @@
   repository-catalog discovery over compact Activity cards, then reconstructs
   overlapping candidate processes in parallel from complete selected
   Activities and requested saved source excerpts, then runs one bounded
-  repository consolidation. One whole-nine-chapter report job follows the
-  published catalog; deterministic process/report rendering remains
+  repository consolidation. A future whole-nine-chapter report job may follow
+  the published catalog; deterministic process rendering and historical report rendering remain
   zero-Provider. Shared Activities are immutable and membership is many-to-many.
 - Configure only global and each Provider/account service maxConcurrentJobs
   in the single YAML owner; defaults are global 4 and Pro Luna/high 4. These
@@ -295,7 +296,7 @@
   after use-ID normalization may MERGE_INTO; differing sequences stay separate
   with relationships rather than being concatenated into a false lifecycle.
   BusinessProcessPublisher deterministically renders the closed result.
-- BusinessReportPublisher consumes only that consolidated catalog, lets the
+- Any future Step08 publisher consumes only that consolidated catalog, lets the
   model author and review the fixed nine-chapter presentation, and cannot
   discover, merge, split or reorder processes. Java supplies Markdown styling.
 - Each activity package, process group, repository summary and report uses at
@@ -587,8 +588,9 @@
   checkpoint, consolidated process catalog/coverage, business-processes.md and
   one validated nine-section report.
 - Machine artifacts are UTF-8 JSON/JSONL. Exceptions remain document.md,
-  durable design/progress Markdown and immutable source inputs retained
-  verbatim.
+  durable design Markdown, in-plan progress Markdown and immutable source
+  inputs. Immutable source inputs remain verbatim; progress lifecycle follows
+  the plan-closeout rule below.
 
 ## Full Wire Reset and migration
 
@@ -607,14 +609,16 @@
   then remove only the two registry-proposal Capsule fields with the owning
   schema versions. Preserve current addresses 10/11,
   `ModelRuntimeIdentityV1`, EntryContext, facts, gaps, signals and SourceRefs.
-  The legacy analysis.knowledge.ProcessExplainer singleton-process route is
-  already bypassed by the process-specific Step07 route. Do not reopen its
-  replacement as new work or confuse it with the older deleted R0/P1 route.
+  The legacy analysis.knowledge.ProcessExplainer singleton-process route and
+  its producer have been removed after the process-specific Step07 route became
+  authoritative. Do not restore it or confuse it with the older deleted R0/P1 route.
   Refine the existing BusinessProcessDiscovery/Publisher only.
 - Adjust existing semantic packages and four business Modules. The approved
   analysis.code engine seam replaces hardwired Java parsing only; it does not
   authorize another business runtime, broad Wire Reset or storage/recovery
-  subsystem. Preserve Git history, JavaParser algorithms and progress files.
+  subsystem. Preserve Git history and JavaParser algorithms. Retain active-plan
+  progress for handoff; remove completed-plan temporary progress only through
+  the plan-closeout rule below.
 
 ## Testing and stop rules
 
@@ -632,7 +636,7 @@
   request.
 - Tests assert observable outcomes through BusinessMaterialBuilder,
   ActivityExplainer, BusinessProcessDiscovery, BusinessProcessPublisher,
-  BusinessReportPublisher or the existing Step 01–05 public seams. Test target
+  the historical report reader/renderer, or the existing Step 01–05 public seams. Test target
   internals only where needed to prove card completeness, source hydration or
   coverage conservation; do not test past an Interface merely to preserve the
   legacy singleton ProcessExplainer or other retired shallow Modules.
@@ -667,11 +671,37 @@
 
 - Before modifying code, tests, configuration or durable documentation, every
   Agent creates one tracked progress/<task-slug>.md from progress/TEMPLATE.md.
-  Each Agent owns only its file.
+  Record the owning plan. Each Agent updates only its file during execution.
 - Update current state in place before a long command, after every verifiable
   step/test, on a blocker and at task end. Do not append a chronological log.
 - Record scope, approvals, changed paths, checks, decisions, blockers and the
   exact next action. Do not include secrets, full prompts, large source
   excerpts or logs.
 - Continuing work reads its progress, checks Git status and verifies referenced
-  artifacts/tests. Completed progress files remain tracked and unchanged.
+  artifacts/tests. Keep a completed subtask's progress while its owning plan
+  still needs that handoff; one Agent finishing does not finish the whole plan.
+- At whole-plan closeout, put durable decisions into the owning design,
+  remaining issues into the backlog, and final verification/output references
+  into the delivery record. Then remove that plan's explicitly identified
+  temporary per-Agent progress files. Do not create a second progress archive;
+  committed historical versions remain available in Git. Keep progress/TEMPLATE.md.
+- Do not classify all historical files by a COMPLETE label alone. Resolve the
+  owning plan and preserve any unresolved handoff before removing its files;
+  never use a broad progress-directory deletion or rewrite Git history.
+- Progress cleanup does not delete source snapshots, JDT materials, reviewed
+  Activities, model DRAFT/REVIEW results, journals, publications or retained
+  comparison artifacts. Those are product/run data, not development handoffs.
+
+## Shared rules and local configuration
+
+- Commit concise, stable AGENTS.md rules shared by the team; link to detailed
+  designs instead of copying their changing implementation state or run logs.
+- Commit portable Maven/build configuration and required toolchain versions.
+  Do not commit credentials or machine-specific installation paths as shared
+  configuration. Keep local path values in ignored local configuration or
+  generate them from explicit environment inputs, with a committed template
+  or setup instruction when needed.
+- The shared Maven toolchain is `.mvn/toolchains.example.xml`; each developer
+  generates ignored `.mvn/toolchains.local.xml` from an explicit Java 17 home.
+  Keep Maven host and application at Java 17 while JDT uses its separate tool
+  JVM. Never commit the generated local file or silently fall back to the shell JDK.

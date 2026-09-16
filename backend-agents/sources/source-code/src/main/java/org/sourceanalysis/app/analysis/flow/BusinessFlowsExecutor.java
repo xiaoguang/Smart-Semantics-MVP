@@ -41,8 +41,14 @@ public final class BusinessFlowsExecutor {
   /** Compiles every discovered entry, projects each compiled Flow, and publishes the five files. */
   public BusinessFlowsReference execute(BusinessFlowsExecutionRequest request) {
     Objects.requireNonNull(request, "business flows execution request");
+    var reopenedProgramGraphs = stepArtifacts.reopen(request.programGraphs().publication());
+    boolean hasNavigationIndex =
+        reopenedProgramGraphs.semanticPayloads().stream()
+            .anyMatch(value -> "java-code-index.jsonl".equals(value.descriptor().fileName()));
+    boolean navigationOnly =
+        reopenedProgramGraphs.semanticPayloads().size() == 1 && hasNavigationIndex;
     FlowCompilation compilation;
-    if (navigationOnly(request)) {
+    if (navigationOnly) {
       compilation =
           new EntryContextAssembler(stepArtifacts)
               .assemble(
@@ -58,7 +64,7 @@ public final class BusinessFlowsExecutor {
                   request.programGraphs(),
                   request.provenCodeFacts(),
                   request.flowProfile());
-      if (hasNavigationIndex(request)) {
+      if (hasNavigationIndex) {
         compilation =
             new EntryContextAssembler(stepArtifacts)
                 .attachNavigationContexts(compilation, request.programGraphs());
@@ -97,17 +103,5 @@ public final class BusinessFlowsExecutor {
             request.provenCodeFacts(),
             flowCompilation,
             capsuleProjection);
-  }
-
-  private boolean navigationOnly(BusinessFlowsExecutionRequest request) {
-    var reopened = stepArtifacts.reopen(request.programGraphs().publication());
-    return reopened.semanticPayloads().size() == 1
-        && "java-code-index.jsonl"
-            .equals(reopened.semanticPayloads().get(0).descriptor().fileName());
-  }
-
-  private boolean hasNavigationIndex(BusinessFlowsExecutionRequest request) {
-    return stepArtifacts.reopen(request.programGraphs().publication()).semanticPayloads().stream()
-        .anyMatch(value -> "java-code-index.jsonl".equals(value.descriptor().fileName()));
   }
 }

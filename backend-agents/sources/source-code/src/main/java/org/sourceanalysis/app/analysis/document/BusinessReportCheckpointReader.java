@@ -154,7 +154,7 @@ final class BusinessReportCheckpointReader {
     requireStandaloneIdentity(value, payload, REPORT_TYPE, REPORT_SCHEMA);
     String title = requiredText(value, "title");
     JsonNode sections = value.path("sections");
-    if (!sections.isArray() || sections.size() != BusinessReportPublisher.sectionTitles().size()) {
+    if (!sections.isArray() || sections.size() != NineSectionContract.titles().size()) {
       throw failure("BUSINESS_REPORT_CHECKPOINT_INVALID", null);
     }
     List<BusinessReportSection> restored = new ArrayList<>();
@@ -164,15 +164,13 @@ final class BusinessReportCheckpointReader {
           || !fields(object).equals(SECTION_FIELDS)
           || !object.path("number").canConvertToInt()
           || object.path("number").intValue() != index + 1
-          || !BusinessReportPublisher.sectionTitles()
-              .get(index)
-              .equals(requiredText(object, "title"))) {
+          || !NineSectionContract.titles().get(index).equals(requiredText(object, "title"))) {
         throw failure("BUSINESS_REPORT_CHECKPOINT_INVALID", null);
       }
       restored.add(
           new BusinessReportSection(
               index + 1,
-              BusinessReportPublisher.sectionTitles().get(index),
+              NineSectionContract.titles().get(index),
               contents(object.path("paragraphs"), allowedReferences),
               contents(object.path("items"), allowedReferences)));
     }

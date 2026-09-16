@@ -128,19 +128,36 @@ public final class PersistedFactCandidateSetReader {
   /** Reopens a normal M1 candidate artifact without rerunning its expensive enumeration. */
   public FactCandidateSet reopen(
       ModulePublicationReference publicationReference, FactCandidateInputs inputs) {
+    return reopenView(publicationReference, inputs).candidateSet();
+  }
+
+  /** Reopens one candidate publication once and retains its validated module view for consumers. */
+  public ReopenedCandidateSet reopenView(
+      ModulePublicationReference publicationReference, FactCandidateInputs inputs) {
     try {
       if (publicationReference == null || inputs == null) {
         throw failure();
       }
       ReopenedModulePublication publication = moduleArtifacts.reopen(publicationReference);
       requirePublication(publication, publicationReference, inputs);
-      return parse(requiredPayload(publication), publication, inputs);
+      VerifiedCanonicalPayload payload = requiredPayload(publication);
+      FactCandidateSet candidateSet = parse(payload, publication, inputs);
+      return new ReopenedCandidateSet(
+          candidateSet,
+          publication,
+          new ArtifactReference(payload.descriptor().artifactId(), payload.descriptor().sha256()));
     } catch (FactCandidateReferenceException failure) {
       throw failure;
     } catch (RuntimeException invalid) {
       throw failure();
     }
   }
+
+  /** Validated candidate data and its already-open persisted representation. */
+  public record ReopenedCandidateSet(
+      FactCandidateSet candidateSet,
+      ReopenedModulePublication publication,
+      ArtifactReference payloadReference) {}
 
   /**
    * Reopens and independently audits one M1 candidate artifact against a supplied frozen registry.

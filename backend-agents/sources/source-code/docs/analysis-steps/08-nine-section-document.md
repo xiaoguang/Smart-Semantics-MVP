@@ -1,6 +1,6 @@
 # 九章仓库概览
 
-> [总体设计](../DESIGN.md)；固定 key：`nine-section-document`，目录：`steps/08-nine-section-document/`。现有 Module `BusinessReportPublisher` 保留，但目标输入改为 Step07 已归并的 `RepositoryBusinessProcessCatalog`。本页是目标设计；输入改造尚未实现。2026-09-15本次仅修正Step07，不实施或运行九章。未来接入须读取Step07 v2的narrative和规则适用用法，不能回退旧catalog来补字段。
+> [总体设计](../DESIGN.md)；固定 key：`nine-section-document`，目录：`steps/08-nine-section-document/`。旧 `BusinessReportPublisher` 生产路线已经退役；历史 checkpoint 的 reader/renderer 保留。本页描述未来 Step08 的目标合同，不代表当前生产实现。未来接入须读取 Step07 v2 的 narrative 和规则适用用法，不能回退旧 catalog 来补字段。
 
 ## 1. 为什么存在
 
@@ -17,7 +17,7 @@ Step08 不是第二个过程发现器。它不能从 326 个 Activity 重新分�
 
 报告模型不再接收全部 ReviewedActivity 作为重新发现过程的原料。必要的活动细节已经在 Step07 过程目录中以 ActivityUse、statement ref 和 source ref 保存。运行、批次、hash、路径、Provider 配置和调度数据留在程序侧。
 
-## 3. BusinessReportPublisher
+## 3. 未来的 Step08 Publisher
 
 | Interface 项 | 合同 |
 | --- | --- |
@@ -92,7 +92,7 @@ REVIEW 不需要重复接收 326 个 Activity，但必须接收 DRAFT 使用的�
 
 ## 9. 当前实现状态（2026-09-14）
 
-已有 BusinessReportPublisher、固定九章 Schema、完整 DRAFT/REVIEW、SourceRef 外置和确定性渲染。保存的整仓报告结构上有九章，77 个正文 ref 均可在 2,102 条 SourceRef 中解析；这证明传输、保存和排版可以运行。
+历史实现曾生成固定九章 Schema、完整 DRAFT/REVIEW、外置 SourceRef 和确定性 Markdown。已有历史 checkpoint 仍可严格读取和重渲染；生产生成器已删除，因为它消费的是退役 singleton-process 路线，不能冒充以当前 Step07 v2 catalog 为输入的新实现。
 
 当前报告仍从旧 RepositoryBusinessKnowledge 和完整 Activity 输入生成，所以上游 340 个单阶段 Process 的缺陷被带入正文；它不能证明跨 Activity 业务过程已经识别。待实现的修改是：输入改为新的 consolidated process catalog，Prompt 禁止重新发现过程，并保留新过程的具体 stage/rule/certainty。
 

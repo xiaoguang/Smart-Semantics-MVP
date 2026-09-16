@@ -453,6 +453,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
           parseConsolidation(
               completeConsolidationDecisions(reviewed.review().value(), reviewedProcesses),
               reviewedProcesses);
+      decision = preserveNonLosslessMerges(decision, reviewedProcesses);
     }
     RepositoryBusinessProcessCatalog finalCatalog =
         applyConsolidation(catalog, reviewedProcesses, decision, corpus);
@@ -1156,7 +1157,6 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       if ("KEEP".equals(decision.disposition())) {
         kept.add(decision.processId());
       } else if ("MERGE_INTO".equals(decision.disposition())) {
-        requireLosslessMerge(byId.get(decision.targetProcessId()), byId.get(decision.processId()));
         merges
             .computeIfAbsent(decision.targetProcessId(), ignored -> new ArrayList<>())
             .add(byId.get(decision.processId()));
@@ -1238,6 +1238,43 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         unclassified,
         directKnowledge,
         pending);
+  }
+
+  private static ConsolidationDecision preserveNonLosslessMerges(
+      ConsolidationDecision consolidation,
+      List<RepositoryBusinessProcessCatalog.BusinessProcess> processes) {
+    Map<String, RepositoryBusinessProcessCatalog.BusinessProcess> byId =
+        processes.stream()
+            .collect(
+                Collectors.toMap(
+                    RepositoryBusinessProcessCatalog.BusinessProcess::processId,
+                    Function.identity()));
+    List<ProcessDecision> decisions =
+        consolidation.decisions().stream()
+            .map(
+                decision -> {
+                  if (!"MERGE_INTO".equals(decision.disposition())) {
+                    return decision;
+                  }
+                  RepositoryBusinessProcessCatalog.BusinessProcess target =
+                      byId.get(decision.targetProcessId());
+                  RepositoryBusinessProcessCatalog.BusinessProcess source =
+                      byId.get(decision.processId());
+                  if (isLosslessMerge(target, source)) {
+                    return decision;
+                  }
+                  return new ProcessDecision(
+                      decision.processId(),
+                      "KEEP",
+                      null,
+                      decision.reason() + "；机械合并会改变阶段或过程含义，因此保留原完整过程。");
+                })
+            .toList();
+    return new ConsolidationDecision(
+        consolidation.areas(),
+        decisions,
+        consolidation.relations(),
+        consolidation.pendingConfirmations());
   }
 
   private ProcessCoverage coverage(
@@ -1859,15 +1896,13 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     return "process-candidate:" + sha256(new CanonicalJsonCodec().encodeCanonical(value));
   }
 
-  private static void requireLosslessMerge(
+  private static boolean isLosslessMerge(
       RepositoryBusinessProcessCatalog.BusinessProcess target,
       RepositoryBusinessProcessCatalog.BusinessProcess source) {
     Map<String, ActivityUseTuple> targetUses = activityUseTuples(target);
     Map<String, ActivityUseTuple> sourceUses = activityUseTuples(source);
-    if (!normalizedStages(target, targetUses).equals(normalizedStages(source, sourceUses))
-        || !processIdentity(target).equals(processIdentity(source))) {
-      throw failure("PROCESS_CONSOLIDATION_MERGE_NOT_LOSSLESS");
-    }
+    return normalizedStages(target, targetUses).equals(normalizedStages(source, sourceUses))
+        && processIdentity(target).equals(processIdentity(source));
   }
 
   private static ProcessIdentity processIdentity(

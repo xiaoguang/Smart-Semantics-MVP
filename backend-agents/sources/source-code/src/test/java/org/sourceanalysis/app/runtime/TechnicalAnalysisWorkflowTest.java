@@ -21,13 +21,12 @@ import org.sourceanalysis.app.analysis.code.JavaCodeSession;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.analysis.discovery.DiscoveryProfile;
-import org.sourceanalysis.app.analysis.document.BusinessReportCheckpointRenderer;
-import org.sourceanalysis.app.analysis.document.BusinessReportProfile;
 import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionProfile;
 import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilationProfile;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
-import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationProfile;
+import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialMode;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.inventory.CaptureReceiptView;
@@ -37,7 +36,6 @@ import org.sourceanalysis.app.analysis.inventory.RegisteredCaptureReceiptProject
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryExecutionRequest;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryExecutor;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
-import org.sourceanalysis.app.analysis.knowledge.ProcessExplanationProfile;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactPolicyKey;
 import org.sourceanalysis.app.artifact.ArtifactPolicyRegistryReference;
@@ -407,73 +405,6 @@ class TechnicalAnalysisWorkflowTest {
   }
 
   @Test
-  void publicFinalDocumentExecutionUsesPersistedFlowsRatherThanTheDiscoveryFallback()
-      throws Exception {
-    CapturedSource captured = capturedSpringRepository();
-    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
-    CanonicalArtifactPolicyRegistry policies = allTechnicalPolicies(canonicalJson);
-    ArtifactReference resourceBudget = reference("resource-budget", 'a', 'b');
-    ArtifactReference profileBundle = reference("profile-bundle", 'c', 'd');
-    ArtifactReference frozenRequest =
-        frozenRequest(canonicalJson, captured.capture(), resourceBudget);
-    AnalysisRunRequest request =
-        queuedRequest(captured.capture(), frozenRequest, policies, resourceBudget, profileBundle);
-    Path storeRoot = temporaryDirectory.resolve("public-agent-flow-runtime-store");
-    java.nio.file.Files.createDirectory(storeRoot);
-
-    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(storeRoot)) {
-      ArtifactStoreLimits limits = new ArtifactStoreLimits(16, 2_000_000, 8_000_000, 24);
-      CanonicalModuleArtifactStore modules =
-          new FileSystemCanonicalModuleArtifactStore(handle, canonicalJson, policies, limits);
-      CanonicalAnalysisStepArtifactStore steps =
-          new FileSystemCanonicalAnalysisStepArtifactStore(handle, canonicalJson, policies, limits);
-      PersistedTechnicalRunExecutor technical =
-          new PersistedTechnicalRunExecutor(
-              handle,
-              canonicalJson,
-              policies,
-              captured.registry(),
-              technicalConfiguration(captured, profileBundle, resourceBudget, limits));
-      PersistedBusinessRunExecutorTest.ScriptedBusinessProvider provider =
-          new PersistedBusinessRunExecutorTest.ScriptedBusinessProvider();
-      PersistedBusinessRunExecutor business =
-          new PersistedBusinessRunExecutor(
-              modules,
-              steps,
-              new PersistedVerifiedSourceTextReader(steps, captured.registry()),
-              provider,
-              new PersistedBusinessRunConfiguration(
-                  new BusinessMaterialProfile(8, 24, 12_000),
-                  new ActivityExplanationProfile(64_000, 16_000, 2, 32, 2_000),
-                  new ProcessExplanationProfile(4, 8, 16_000, 12_000, 2, 16, 2_000, 0),
-                  new BusinessReportProfile(64_000, 16_000, 32, 2_000)));
-      LocalRepositoryAnalysisAgent agent =
-          new LocalRepositoryAnalysisAgent(
-              handle,
-              new RepositoryAnalysisRunCoordinator(technical, business),
-              new BusinessReportCheckpointRenderer(modules),
-              new BusinessCheckpointArtifactReader(modules));
-
-      AnalysisRunReference queued = agent.start(request);
-      AnalysisRunReference finished =
-          agent.executeStep(
-              new AnalysisStepExecutionRequest(
-                  queued.runId(),
-                  org.sourceanalysis.app.artifact.AnalysisStepKey.NINE_SECTION_DOCUMENT));
-
-      assertThat(finished.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.FINISHED);
-      ArtifactView materials =
-          agent.artifact(
-              new ArtifactQuery(
-                  queued.runId().value(), BusinessOutputArtifactKey.BUSINESS_MATERIALS, 64_000));
-      assertThat(materials.contentUtf8())
-          .contains("\"materialMode\":\"FLOW_PREFERRED\"")
-          .doesNotContain("\"materialMode\":\"ENTRY_SOURCE_FALLBACK\"");
-      assertThat(agent.render(queued.runId().value()).sizeBytes()).isPositive();
-    }
-  }
-
-  @Test
   void productionSelectedJavaParserKeepsStrictGraphsAndAddsNavigatedSourceMaterials()
       throws Exception {
     CapturedSource captured = capturedSpringRepository();
@@ -527,21 +458,13 @@ class TechnicalAnalysisWorkflowTest {
           .containsExactly(
               "fact-accounting.json", "gap-ledger.json", "proof-pack.json", "proven-facts.json");
 
-      PersistedBusinessRunExecutorTest.ScriptedBusinessProvider provider =
-          new PersistedBusinessRunExecutorTest.ScriptedBusinessProvider();
-      PersistedBusinessRunExecutor business =
-          new PersistedBusinessRunExecutor(
-              modules,
-              steps,
-              new PersistedVerifiedSourceTextReader(steps, captured.registry()),
-              provider,
-              new PersistedBusinessRunConfiguration(
-                  new BusinessMaterialProfile(16, 48, 64_000),
-                  new ActivityExplanationProfile(128_000, 32_000, 4, 64, 8_000),
-                  new ProcessExplanationProfile(8, 16, 32_000, 24_000, 4, 32, 8_000, 0),
-                  new BusinessReportProfile(128_000, 32_000, 64, 8_000)));
       BusinessMaterialBuildResult planned =
-          business.buildMaterials(technicalResult.businessFlows());
+          new BusinessMaterialBuilder(
+                  modules, steps, new PersistedVerifiedSourceTextReader(steps, captured.registry()))
+              .build(
+                  new BuildBusinessMaterialsRequest(
+                      technicalResult.businessFlows(),
+                      new BusinessMaterialProfile(16, 48, 64_000)));
 
       assertThat(planned.materialSet().materials()).isNotEmpty();
       assertThat(planned.materialSet().materials())
@@ -556,25 +479,11 @@ class TechnicalAnalysisWorkflowTest {
                     .contains("OrderController", "OrderService", "service.approve(status)");
                 assertThat(material.sourceRefs()).isNotEmpty();
               });
-      BusinessAnalysisWorkflowResult businessResult =
-          business.execute(technicalResult.businessFlows());
-      assertThat(businessResult.report().businessReport().sections()).hasSize(9);
-      assertThat(
-              businessResult
-                  .report()
-                  .documentMarkdown()
-                  .lines()
-                  .filter(line -> line.startsWith("## ")))
-          .hasSize(9);
-      assertThat(provider.reportDraftInput().path("activities"))
-          .as("JavaParser-derived material reaches the unchanged report consumer")
-          .isNotEmpty();
     }
   }
 
   @Test
-  void productionSelectedRealJdtReachesPersistedMaterialAndTheScriptedNineSectionReport()
-      throws Exception {
+  void productionSelectedRealJdtReachesPersistedMaterial() throws Exception {
     Path jdt = Path.of(".workspace", "jdtls-source-navigation-feasibility", "tools", "selected");
     Path toolJava = Path.of("/Library/Java/JavaVirtualMachines/jdk-26.jdk/Contents/Home");
     Path syntaxHelper =
@@ -619,27 +528,7 @@ class TechnicalAnalysisWorkflowTest {
               policies,
               captured.registry(),
               technicalConfiguration(captured, profileBundle, resourceBudget, limits, engine));
-      PersistedBusinessRunExecutorTest.ScriptedBusinessProvider provider =
-          new PersistedBusinessRunExecutorTest.ScriptedBusinessProvider();
-      PersistedBusinessRunExecutor business =
-          new PersistedBusinessRunExecutor(
-              modules,
-              steps,
-              new PersistedVerifiedSourceTextReader(steps, captured.registry()),
-              provider,
-              new PersistedBusinessRunConfiguration(
-                  new BusinessMaterialProfile(16, 48, 64_000),
-                  new ActivityExplanationProfile(128_000, 32_000, 4, 64, 8_000),
-                  new ProcessExplanationProfile(8, 16, 32_000, 24_000, 4, 32, 8_000, 0),
-                  new BusinessReportProfile(128_000, 32_000, 64, 8_000)));
-      LocalRepositoryAnalysisAgent agent =
-          new LocalRepositoryAnalysisAgent(
-              handle,
-              new RepositoryAnalysisRunCoordinator(technical, business),
-              new BusinessReportCheckpointRenderer(modules),
-              new BusinessCheckpointArtifactReader(modules));
-
-      AnalysisRunReference queued = agent.start(request);
+      AnalysisRunReference queued = RunStoreBootstrap.queueAnalysisRun(handle, request);
       TechnicalAnalysisWorkflowResult technicalResult = technical.execute(queued.runId());
       String discoveryPayloads =
           steps
@@ -663,7 +552,12 @@ class TechnicalAnalysisWorkflowTest {
                               payload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8))
               .collect(java.util.stream.Collectors.joining("\n"));
       BusinessMaterialBuildResult planned =
-          business.buildMaterials(technicalResult.businessFlows());
+          new BusinessMaterialBuilder(
+                  modules, steps, new PersistedVerifiedSourceTextReader(steps, captured.registry()))
+              .build(
+                  new BuildBusinessMaterialsRequest(
+                      technicalResult.businessFlows(),
+                      new BusinessMaterialProfile(16, 48, 64_000)));
       assertThat(planned.materialSet().materials())
           .as(
               "JDT material coverage: %s%nDiscovery:%n%s%nProgram graphs:%n%s",
@@ -674,31 +568,6 @@ class TechnicalAnalysisWorkflowTest {
               material ->
                   assertThat(material.materialMode())
                       .isEqualTo(BusinessMaterialMode.NAVIGATED_SOURCE));
-      AnalysisRunReference finished =
-          agent.executeStep(
-              new AnalysisStepExecutionRequest(
-                  queued.runId(),
-                  org.sourceanalysis.app.artifact.AnalysisStepKey.NINE_SECTION_DOCUMENT));
-
-      assertThat(finished.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.FINISHED);
-      ArtifactView materials =
-          agent.artifact(
-              new ArtifactQuery(
-                  queued.runId().value(), BusinessOutputArtifactKey.BUSINESS_MATERIALS, 256_000));
-      assertThat(materials.contentUtf8())
-          .contains("\"materialMode\":\"NAVIGATED_SOURCE\"")
-          .contains("OrderController", "OrderService", "mapper.updateStatus(status)")
-          .doesNotContain("javaparser", "JavaParser");
-      assertThat(provider.reportDraftInput().path("activities"))
-          .as("JDT-derived materials must survive activity and process synthesis")
-          .isNotEmpty();
-      String document =
-          agent
-              .artifact(
-                  new ArtifactQuery(
-                      queued.runId().value(), BusinessOutputArtifactKey.DOCUMENT_MARKDOWN, 256_000))
-              .contentUtf8();
-      assertThat(document.lines().filter(line -> line.startsWith("## "))).hasSize(9);
     }
   }
 

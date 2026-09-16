@@ -24,14 +24,16 @@ public record AnalysisRunOutput(
         "business-material-builder");
     boolean materialsOnly =
         activityCheckpoint == null && knowledgeCheckpoint == null && reportCheckpoint == null;
+    boolean activitiesOnly =
+        activityCheckpoint != null && knowledgeCheckpoint == null && reportCheckpoint == null;
     boolean processCatalog =
         activityCheckpoint != null && knowledgeCheckpoint != null && reportCheckpoint == null;
     boolean completeReport =
         activityCheckpoint != null && knowledgeCheckpoint != null && reportCheckpoint != null;
-    if (!(materialsOnly || processCatalog || completeReport)) {
+    if (!(materialsOnly || activitiesOnly || processCatalog || completeReport)) {
       throw new IllegalArgumentException("analysis run output checkpoint set is invalid");
     }
-    if (processCatalog || completeReport) {
+    if (activitiesOnly || processCatalog || completeReport) {
       require(activityCheckpoint, AnalysisStepKey.FLOW_INTERPRETATION, 11, "activity-explainer");
     }
     if (processCatalog) {
@@ -72,28 +74,14 @@ public record AnalysisRunOutput(
         reportCheckpoint);
   }
 
-  /** Projects the four application-internal business results to durable run output pointers. */
-  public static AnalysisRunOutput from(RepositoryAnalysisRunResult result) {
-    Objects.requireNonNull(result, "repository analysis run result");
-    BusinessAnalysisWorkflowResult business = result.business();
-    return new AnalysisRunOutput(
-        runId(business.materials().checkpoint()),
-        business.materials().checkpoint(),
-        business.activities().checkpoint(),
-        business.knowledge().checkpoint(),
-        business.report().checkpoint());
-  }
-
-  /** Projects a zero-Provider material-planning result without inventing later checkpoints. */
-  public static AnalysisRunOutput from(RepositoryMaterialPlanningResult result) {
-    Objects.requireNonNull(result, "repository material planning result");
-    return new AnalysisRunOutput(
-        runId(result.materials().checkpoint()), result.materials().checkpoint(), null, null, null);
-  }
-
   /** Returns whether this finished run contains a review-approved business report. */
   public boolean hasCompletedReport() {
     return reportCheckpoint != null;
+  }
+
+  /** Returns whether this run contains a complete reviewed Activity checkpoint. */
+  public boolean hasCompletedActivities() {
+    return activityCheckpoint != null;
   }
 
   /** Returns whether this run contains a closed, reader-visible Step07 process catalog. */

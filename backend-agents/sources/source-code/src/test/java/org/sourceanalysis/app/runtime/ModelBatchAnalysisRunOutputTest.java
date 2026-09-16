@@ -29,6 +29,52 @@ class ModelBatchAnalysisRunOutputTest {
   @TempDir Path temporaryDirectory;
 
   @Test
+  void roundTripsAnActivitiesOnlyBatchWithAV4Manifest() throws Exception {
+    Path storeDirectory = temporaryDirectory.resolve("activities-only-output-store");
+    Files.createDirectory(storeDirectory);
+
+    AnalysisRunReference sourceRun;
+    AnalysisRunReference activityRun;
+    AnalysisRunOutput output;
+    try (RunStoreHandle store = RunStoreBootstrap.openForTest(storeDirectory)) {
+      sourceRun = stoppedRun(store);
+      activityRun = runningRun(store);
+      output =
+          new AnalysisRunOutput(
+              sourceRun.runId(),
+              modulePublication(sourceRun.runId(), AnalysisStepKey.FLOW_INTERPRETATION, 10, 'a'),
+              modulePublication(activityRun.runId(), AnalysisStepKey.FLOW_INTERPRETATION, 11, 'b'),
+              null,
+              null);
+
+      RunStoreBootstrap.recordAnalysisRunOutput(store, activityRun.runId(), output);
+      RunStoreBootstrap.transitionAnalysisRun(
+          store,
+          activityRun.runId(),
+          AnalysisRunLifecycleState.RUNNING,
+          AnalysisRunLifecycleState.FINISHED);
+    }
+
+    String manifest =
+        Files.readString(
+            storeDirectory
+                .resolve("analysis-runs")
+                .resolve(activityRun.runId().value())
+                .resolve("run-output.json"));
+    assertThat(manifest).contains("\"schemaVersion\":\"analysis-run-output-v4\"");
+    assertThat(manifest).contains("\"outputKind\":\"ACTIVITIES_ONLY\"");
+
+    try (RunStoreHandle store = RunStoreBootstrap.open(storeDirectory)) {
+      AnalysisRunOutput reopened =
+          RunStoreBootstrap.reopenAnalysisRunOutput(store, activityRun.runId()).orElseThrow();
+      assertThat(reopened).isEqualTo(output);
+      assertThat(reopened.hasCompletedActivities()).isTrue();
+      assertThat(reopened.hasCompletedProcesses()).isFalse();
+      assertThat(reopened.hasCompletedReport()).isFalse();
+    }
+  }
+
+  @Test
   void roundTripsMaterialsFromStoppedSourceRunAndBusinessOutputsFromNewBatchRun() throws Exception {
     Path storeDirectory = temporaryDirectory.resolve("mixed-owner-output-store");
     Files.createDirectory(storeDirectory);

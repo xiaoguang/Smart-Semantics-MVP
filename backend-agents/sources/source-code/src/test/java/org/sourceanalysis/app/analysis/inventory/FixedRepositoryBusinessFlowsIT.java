@@ -27,14 +27,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryExecutor;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryRequest;
 import org.sourceanalysis.app.analysis.discovery.DiscoveryProfile;
-import org.sourceanalysis.app.analysis.document.BusinessReportProfile;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateEnumerator;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateSet;
@@ -59,10 +57,10 @@ import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.analysis.flow.publish.FlowPublicationSpecifier;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsExecution;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
-import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationProfile;
+import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
-import org.sourceanalysis.app.analysis.knowledge.ProcessExplanationProfile;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
@@ -92,8 +90,6 @@ import org.sourceanalysis.app.capture.localgit.LocalGitSourceRegistry;
 import org.sourceanalysis.app.capture.localgit.RegisteredSourceCapture;
 import org.sourceanalysis.app.capture.localgit.RegisteredSourceFile;
 import org.sourceanalysis.app.capture.localgit.SourceRegistrationReference;
-import org.sourceanalysis.app.runtime.PersistedBusinessRunConfiguration;
-import org.sourceanalysis.app.runtime.PersistedBusinessRunExecutor;
 
 /** Opt-in, real-filesystem Step01→05 acceptance over the one approved jshERP commit. */
 class FixedRepositoryBusinessFlowsIT {
@@ -412,27 +408,13 @@ class FixedRepositoryBusinessFlowsIT {
 
         currentStage = "interpretation-M1-business-materials";
         markAttempt(evidence, currentStage);
-        AtomicInteger providerCalls = new AtomicInteger();
         BusinessMaterialBuildResult materials =
-            new PersistedBusinessRunExecutor(
-                    modules,
-                    steps,
-                    sourceReader,
-                    request -> {
-                      providerCalls.incrementAndGet();
-                      throw new AssertionError(
-                          "materials-only planning must not call the model Provider");
-                    },
-                    new PersistedBusinessRunConfiguration(
-                        new BusinessMaterialProfile(24, 80, 48_000),
-                        new ActivityExplanationProfile(64_000, 16_000, 2, 32, 2_000),
-                        new ProcessExplanationProfile(4, 8, 16_000, 12_000, 2, 16, 2_000, 0),
-                        new BusinessReportProfile(64_000, 16_000, 32, 2_000),
-                        1))
-                .buildMaterials(businessFlows);
+            new BusinessMaterialBuilder(modules, steps, sourceReader)
+                .build(
+                    new BuildBusinessMaterialsRequest(
+                        businessFlows, new BusinessMaterialProfile(24, 80, 48_000)));
         recordModule(
             modules, "interpretation-M1-business-materials", materials.checkpoint(), evidence);
-        assertThat(providerCalls).hasValue(0);
         assertThat(materials.materialSet().entryCoverage())
             .hasSize(discoveryEntryIds.size())
             .allSatisfy(

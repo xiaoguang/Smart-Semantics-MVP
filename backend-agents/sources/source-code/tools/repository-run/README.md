@@ -1,186 +1,191 @@
-# JDT repository materials run
+# `source-analysis` local repository run
 
-> **Current implementation guide:** the commands below describe the existing material/Activity/report launcher. `generate` remains the historical complete-report path. The new `business-processes` mode reopens fixed M10 and reviewed Activity checkpoints, performs the approved cross-Activity discovery, and publishes Step07 without running JDT, rebuilding materials, re-explaining Activities or invoking Step08.
+`source-analysis` is the only supported process entry point. It reads one absolute
+`repository-run-config-v2` YAML or JSON file and delegates work to the same
+`RepositoryAnalysisAgent` and persisted run coordinator used by the Java API.
 
-The launcher now accepts one `repository-run-config-v2` YAML or JSON document.
-In model modes, `sourceAnalysis.modelJobs` replaces the old second
-`--provider-config` file. It validates the global and per-Provider job limits,
-fixed routes, model/effort, non-secret authentication environment references and
-the v2 state identity before it opens a saved materials run. The technical/material
-base identity excludes only `sourceAnalysis.modelJobs`, so a concurrency change
-does not require another JDT run. `materials-only` may omit `modelJobs` and never
-resolves an authentication environment or constructs a Provider.
+The removed `RepositoryRunMain` and `generate` route are not compatibility entry
+points. Existing material, Activity, process, and historical nine-section checkpoints
+remain readable; this launcher does not regenerate them merely because their original
+producer has retired.
 
-The launcher executes the approved
-[model job execution design](../../docs/modules/model-job-execution.md).
-Activity and process-group work use bounded global and per-Provider concurrency,
-stable routes, whole DRAFT-to-REVIEW jobs, and private reviewed-result records.
-Codex Subscription and explicit OpenAI Responses API providers can share one
-run without fallback; repository summary and whole-report generation each remain
-a single job after their upstream barrier closes.
+## Configuration
 
-`RepositoryRunMain` is a maintenance entry point for one fixed, complete local Git commit.
-`materials-only` captures the configured commit, queues one run, executes the persisted JDT
-technical prefix once, saves its `BusinessFlowsReference`, and builds business material from that
-saved Step 05 publication. It does not construct a Codex provider or call a model.
+Copy [the tracked template](jdt-luna-repository-run.template.json) to an ignored
+workspace and replace every absolute-path placeholder. Never put a credential in the
+file. Model authentication is named by environment variable, for example
+`SOURCE_ANALYSIS_PRO_HOME` for an existing ChatGPT login context.
 
-`materials-only` now writes a `repository-run-state-v3` document containing the complete material
-checkpoint, the original Step 05 publication, the actual material profile and the canonical
-material-basis SHA-256. `activities-sample` and `generate` require this v3 state and directly reopen
-the saved M10 material artifact. They do not capture, run JDT, rebuild graphs or call the material
-builder.
+`sourceAnalysis.javaEngine` selects exactly one engine:
 
-Each explicit model command creates a new `AnalysisRunId`. That value is the `modelBatchId` and owns
-the Activity, Knowledge and Report outputs; `sourceRunId` and the material checkpoint keep their
-original address. A sample writes its complete reviewed result under an output subdirectory named
-for the new batch and finishes that batch without fabricating a repository report. A full generation
-records `analysis-run-output-v3`, whose mixed-ownership checks require the material to belong to the
-source run and the remaining checkpoints to belong to the model batch.
+- `jdt`: starts the configured JDT LS/tool JVM and provides repository navigation.
+- `javaparser`: uses the retained JavaParser adapter and does not start JDT. It keeps
+  its existing, more limited resolution capability; selecting it does not promise JDT
+  parity.
 
-Use `--reuse-from-model-batch <analysis-run-id>` to select one stopped prior batch explicitly. Only
-an atomically saved, validated DRAFT+REVIEW pair whose full input fingerprint and runtime binding
-match can skip both calls. Draft-only, failed, unknown, mismatched or damaged results are never
-continued as half a job and never trigger an automatic retry. Activity jobs, process groups, the
-repository summary and the report each make this decision from their own actual input. The old
-batch and its logs remain unchanged.
+`sourceAnalysis.modelJobs` is the only model configuration. Global and per-provider
+concurrency, routes, model identity, timeout, and authentication references are all in
+this block. A second `--provider-config` argument is rejected.
 
-## Exporting an existing v2 material run
+Material identity excludes model concurrency and output-directory settings, so changing
+those settings does not require another source scan. Changing the source commit or
+material-building rules requires a new material checkpoint.
 
-Existing material runs are not silently dual-read. Export a verified old state once to a new,
-previously absent v3 file:
+## Local Java 17 toolchain
+
+The application uses Java 17. JDT's tool JVM is configured separately under
+`sourceAnalysis.jdt.javaHome`.
 
 ```bash
-java -cp "target/classes:$(cat target/repository-run-classpath.txt)" \
-  org.sourceanalysis.app.adapter.cli.RepositoryRunMain \
-  --config /absolute/path/to/ignored/repository-run.json \
-  --mode export-materials-state \
-  --output-state /absolute/path/to/ignored/materials-state-v3.json
-```
+export SOURCE_ANALYSIS_JAVA17_HOME=/absolute/path/to/java-17-home
+sed "s|/absolute/path/to/java-17-home|$SOURCE_ANALYSIS_JAVA17_HOME|" \
+  .mvn/toolchains.example.xml > .mvn/toolchains.local.xml
 
-The exporter verifies the old configuration digest, Step 05 reference and completed M10 artifact,
-then writes the new v3 state without running JDT, Builder or a Provider. It never overwrites the old
-state. Point the configuration's `stateFile` at the new v3 file before running model modes.
-
-The tracked [template](jdt-luna-repository-run.template.json) contains no machine paths. Copy it
-to an ignored run workspace, replace every absolute-path placeholder, and leave the final state
-file absent. The maintained [JDT policy set](jdt-artifact-policy-set-v1.json) is loaded as explicit
-resource bytes; the launcher derives the canonical registry identity and every configuration input
-reference from canonical content rather than accepting supplied hashes. It registers the persisted
-technical prefix plus the current Activity, Process, and nine-section report checkpoint outputs
-needed by `generate`; the launcher never synthesizes an absent policy at runtime.
-
-When a stopped historical material or Activity checkpoint was written with an older exact policy
-registry, set the optional root `inputPolicyRegistry` to that tracked registry file. The launcher
-uses it only to reopen and verify those immutable inputs; new Step07 output is always installed with
-`policyRegistry`. Omitting the field makes both roles use `policyRegistry`. The input registry path
-does not participate in the technical-material basis, and a missing or mismatched historical policy
-fails explicitly instead of causing JDT, Builder, or Activity execution.
-
-The whole-repository defaults are intentionally above the approved jshERP source size, rather than
-fixture-scale limits. `technical.approvedClasspath` is the explicit list of locally approved JARs
-needed by JDT to bind framework annotations. The launcher requires regular, non-symlink files,
-hashes their bytes before queuing the run, and puts the ordered `{path,sha256}` entries in the
-effective toolchain reference. They remain bounded by the configuration and must be reviewed before
-using a different source or commit.
-
-`technical.selectedEntryIds` is an optional JSON string array. Omit it or use `[]` to collect every
-discovered entry. For a bounded sample, provide each exact discovery entry ID once; the launcher
-sorts the IDs, rejects blanks and duplicates, and rejects IDs not present in the persisted discovery
-before it calls JDT collection. The source catalog and discovery denominator remain complete;
-unselected entries are published as `NOT_SELECTED_FOR_SAMPLE`. A nonempty selection is injected
-into the effective graph profile and an effective profile bundle used by both the queued run request
-and verified-source inventory, so its run identity cannot be confused with an all-entry run. Do not
-repeat the selection under `inputs.graphProfile`.
-
-With a Java 17 Maven toolchain configured, build the direct runtime classpath after the launcher
-test passes:
-
-```bash
-mvn -q -t .workspace/jsherp-jdt-luna-run.5Oqj9Y/toolchains.xml \
+mvn -q -t .mvn/toolchains.local.xml \
   -DincludeScope=runtime \
   -Dmdep.outputFile=target/repository-run-classpath.txt \
   dependency:build-classpath
 ```
 
-The run coordinator can then start the approved materials-only run with Java 17:
+`.mvn/toolchains.local.xml` is ignored and must not be committed. The tracked example
+contains no developer-machine path.
+
+For the examples below:
 
 ```bash
-/usr/local/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home/bin/java -Xmx8g \
-  -cp "target/classes:$(cat target/repository-run-classpath.txt)" \
-  org.sourceanalysis.app.adapter.cli.RepositoryRunMain \
-  --config "$(pwd)/.workspace/jsherp-jdt-luna-run.5Oqj9Y/repository-run.json" \
-  --mode materials-only
+CONFIG=/absolute/path/to/ignored/repository-run.yaml
+CLASSPATH="target/classes:$(cat target/repository-run-classpath.txt)"
+SOURCE_ANALYSIS=(java -Xmx8g -cp "$CLASSPATH" \
+  org.sourceanalysis.app.adapter.cli.SourceAnalysisCli --config "$CONFIG")
 ```
 
-On success the launcher writes an exact state document containing the base configuration digest, run ID,
-and complete persisted Step 05 publication reference. It also prints the material count and
-checkpoint. An unexpected execution error retains its stack and causal chain on stderr; a rejected
-configuration exits before creating a capture, run, or tool process.
+The configuration path must be absolute. Relative configuration paths are rejected so
+that a saved run never changes meaning with the caller's working directory.
 
-## Provider continuation
+## Commands
 
-Add a `sourceAnalysis.modelJobs` block to that same ignored run configuration.
-Codex uses `auth.mode: chatgpt` and a named existing login-context environment
-variable; API keys are environment-variable names, never YAML values. The
-OpenAI API provider uses the official Responses Java SDK with automatic retries
-disabled. Codex Subscription forces ChatGPT authentication in the selected
-`CODEX_HOME` context and removes inherited API-key settings. Routes are fixed
-before dispatch; no Provider failure retries or falls back to another service.
+### Capture and queue
 
-The journal records every complete request field and the expected runtime identity before a Codex
-call. Only an exact completed canonical response is reusable. A `STARTED`, malformed, or
-identity-mismatched record fails closed and never starts another Provider call.
-
-After inspecting the material IDs from the saved state, run one exact activity sample. Replace the
-placeholders with absolute paths and the selected material ID:
+The configured source block can be captured independently:
 
 ```bash
-/usr/local/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home/bin/java -Xmx8g \
-  -cp "target/classes:$(cat target/repository-run-classpath.txt)" \
-  org.sourceanalysis.app.adapter.cli.RepositoryRunMain \
-  --config /absolute/path/to/ignored/repository-run.json \
-  --mode activities-sample \
-  --material-id "exact-material-id"
+"${SOURCE_ANALYSIS[@]}" capture-local-git
 ```
 
-The sample writes a canonical full `ActivityExplanationResult` to
-`outputDirectory/<sha256(modelBatchId)>/<sha256(materialId)>-activity.json`; it creates no aggregate
-activity checkpoint. Once the sample is accepted, it can be selected as an explicit reuse source
-for a later batch:
+It prints a `sourceRegistrationId`. Queue a path-free run request with that immutable
+registration:
 
 ```bash
-/usr/local/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home/bin/java -Xmx8g \
-  -cp "target/classes:$(cat target/repository-run-classpath.txt)" \
-  org.sourceanalysis.app.adapter.cli.RepositoryRunMain \
-  --config /absolute/path/to/ignored/repository-run.json \
-  --mode generate \
-  --reuse-from-model-batch "analysis-run:<completed-sample-batch-id>"
+"${SOURCE_ANALYSIS[@]}" start \
+  --source-registration 'source-registration:<sha256>'
 ```
 
-Generation prints `sourceRunId`, the new `modelBatchId`, `FINISHED` lifecycle and the verified
-on-disk `document.md` path. Matching complete reviewed jobs are copied as validated reuse records;
-the journal is diagnostic and is not by itself considered a reusable business result.
+It prints a `runId` in `QUEUED` state. Supplying this ID to a later `execute-step`
+requires an exact queued request match; stopped runs are never reactivated.
 
-## Business-process discovery from an Activity checkpoint
-
-Add `business.processDiscovery` using the fields in the tracked template. These downstream limits
-do not participate in the saved technical-material identity. Start a new process-only model batch
-from an exact, stopped Activity batch:
+### Build materials without a model
 
 ```bash
-/usr/local/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home/bin/java -Xmx8g \
-  -cp "target/classes:$(cat target/repository-run-classpath.txt)" \
-  org.sourceanalysis.app.adapter.cli.RepositoryRunMain \
-  --config /absolute/path/to/ignored/repository-run.json \
-  --mode business-processes \
-  --activity-model-batch "analysis-run:<reviewed-activity-batch-id>"
+"${SOURCE_ANALYSIS[@]}" plan-materials
 ```
 
-The command creates a new `AnalysisRunId`, reopens the fixed Activity and material publications,
-runs catalog discovery, detailed candidates and repository consolidation, then installs exactly
-`repository-business-process-catalog.json`, `process-coverage.json`, `business-processes.md`,
-`source-refs.jsonl` and `sources.md`. It prints the final process count, semantic delivery status and
-Markdown path.
-Use `--reuse-from-model-batch` only with a stopped process-only batch whose material and Activity
-checkpoints match; reusable DRAFT+REVIEW pairs make zero new model calls. `render()` remains not
-ready because this mode intentionally has no Step08 report checkpoint.
+This captures the configured immutable commit, executes the selected Java engine and
+the retained Step01-05 analysis, then publishes the business-material checkpoint. It
+does not construct a model provider.
+
+Export a verified older material-state file without rescanning:
+
+```bash
+"${SOURCE_ANALYSIS[@]}" export-materials-state \
+  --output-state /absolute/path/to/new/materials-state-v3.json
+```
+
+The destination must not already contain different bytes. Export verifies the original
+configuration and checkpoint and never runs JDT, JavaParser, the material builder, or a
+model.
+
+### Explain Activities
+
+Execute every saved material package:
+
+```bash
+"${SOURCE_ANALYSIS[@]}" execute-step \
+  --target flow-interpretation \
+  --run 'analysis-run:<queued-run-sha256>'
+```
+
+For one exact diagnostic sample, add `--material-id <material-id>`. A sample stores its
+reviewed result but does not pretend to be a complete repository Activity checkpoint.
+
+An optional explicit reuse source may be supplied:
+
+```bash
+  --reuse-from-model-batch 'analysis-run:<stopped-batch-sha256>'
+```
+
+Only a complete, validated DRAFT+REVIEW result with matching material, prompt, schema,
+producer, model, and account identity is reused. Draft-only, failed, damaged, or
+mismatched results execute as a new complete job; there is no half-round continuation,
+automatic retry, or provider fallback.
+
+### Discover and publish business processes
+
+Start from a stopped Activity batch; source navigation and Activity explanation are not
+rerun:
+
+```bash
+"${SOURCE_ANALYSIS[@]}" execute-step \
+  --target repository-knowledge \
+  --activity-model-batch 'analysis-run:<reviewed-activity-batch-sha256>' \
+  --run 'analysis-run:<queued-process-run-sha256>'
+```
+
+The current Step07 publisher installs:
+
+- `repository-business-process-catalog.json`
+- `process-coverage.json`
+- `business-processes.md`
+- `source-refs.jsonl`
+- `sources.md`
+
+This command does not invoke the retired singleton process route or Step08. `render()` is
+therefore intentionally not ready for a process-only run.
+
+### Observe saved results
+
+Observation never initializes a model provider:
+
+```bash
+"${SOURCE_ANALYSIS[@]}" inspect --run 'analysis-run:<sha256>'
+
+"${SOURCE_ANALYSIS[@]}" artifact \
+  --run 'analysis-run:<sha256>' \
+  --key BUSINESS_PROCESSES_MARKDOWN \
+  --max-bytes 1000000
+```
+
+`artifact` accepts the closed names in `BusinessOutputArtifactKey`, including business
+materials, Activities, current process outputs, and historical report outputs.
+
+For a historical run that already owns a valid Step08 checkpoint:
+
+```bash
+"${SOURCE_ANALYSIS[@]}" render --run 'analysis-run:<sha256>'
+```
+
+Rendering reopens the stored reviewed report JSON and source references and deterministically
+checks its Markdown. It performs zero model calls. New Step08 generation is not part of the
+current production route.
+
+## Failure and preservation rules
+
+- Every model job is DRAFT then full REVIEW on one fixed provider binding.
+- Completed jobs are saved immediately. A fatal failure stops new dispatch but preserves
+  already saved results.
+- A failed model batch never invalidates its source material checkpoint.
+- Inspecting, exporting, artifact reading, and historical rendering do not scan source or
+  contact a provider.
+- No command silently falls back from JDT to JavaParser, from ChatGPT login to an API key,
+  or from one provider to another.
+- Runtime outputs, credentials, journals, local toolchains, and machine-specific config
+  files stay outside version control.

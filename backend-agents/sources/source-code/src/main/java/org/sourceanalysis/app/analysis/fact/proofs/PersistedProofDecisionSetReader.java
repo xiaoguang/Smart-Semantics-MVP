@@ -14,6 +14,7 @@ import java.util.Set;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateInputs;
 import org.sourceanalysis.app.analysis.fact.candidates.FactCandidateSet;
 import org.sourceanalysis.app.analysis.fact.candidates.PersistedFactCandidateSetReader;
+import org.sourceanalysis.app.analysis.fact.candidates.PersistedFactCandidateSetReader.ReopenedCandidateSet;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.ArtifactId;
@@ -123,17 +124,29 @@ public final class PersistedProofDecisionSetReader {
       FactCandidateInputs inputs,
       ModulePublicationReference candidatePublication,
       FactCandidateSet candidateSet) {
+    ReopenedCandidateSet candidateView =
+        new PersistedFactCandidateSetReader(moduleArtifacts)
+            .reopenView(candidatePublication, inputs);
+    if (!candidateView.candidateSet().equals(candidateSet)) throw broken();
+    return reopen(proofPublication, inputs, candidatePublication, candidateView);
+  }
+
+  /** Reuses a candidate publication that was already validated within the same read chain. */
+  public ProofDecisionSet reopen(
+      ModulePublicationReference proofPublication,
+      FactCandidateInputs inputs,
+      ModulePublicationReference candidatePublication,
+      ReopenedCandidateSet candidateView) {
     try {
       if (proofPublication == null
           || inputs == null
           || candidatePublication == null
-          || candidateSet == null) {
+          || candidateView == null) {
         throw broken();
       }
-      FactCandidateSet persistedCandidates =
-          new PersistedFactCandidateSetReader(moduleArtifacts).reopen(candidatePublication, inputs);
-      if (!persistedCandidates.equals(candidateSet)) throw broken();
-      ArtifactReference candidatePayload = candidatePayload(candidatePublication);
+      if (!candidatePublication.equals(candidateView.publication().reference())) throw broken();
+      FactCandidateSet candidateSet = candidateView.candidateSet();
+      ArtifactReference candidatePayload = candidateView.payloadReference();
       ReopenedModulePublication publication = moduleArtifacts.reopen(proofPublication);
       requirePublication(publication, proofPublication, inputs, candidatePayload);
       VerifiedCanonicalPayload payload = requiredPayload(publication);
@@ -147,30 +160,6 @@ public final class PersistedProofDecisionSetReader {
     } catch (RuntimeException broken) {
       throw broken();
     }
-  }
-
-  private ArtifactReference candidatePayload(ModulePublicationReference candidatePublication) {
-    if (!(candidatePublication.address() instanceof AnalysisStepModuleAddress address)
-        || address.analysisStepKey() != AnalysisStepKey.PROVEN_CODE_FACTS
-        || address.moduleNumber() != 1
-        || !"candidates".equals(address.moduleKey())) {
-      throw broken();
-    }
-    ReopenedModulePublication publication = moduleArtifacts.reopen(candidatePublication);
-    if (!candidatePublication.equals(publication.reference())
-        || publication.payloads().size() != 1
-        || publication.receipt().status() != ModuleCompletionStatus.SUCCEEDED
-        || !publication.receipt().gapRefs().isEmpty()) {
-      throw broken();
-    }
-    VerifiedCanonicalPayload payload = publication.payloads().get(0);
-    if (!"fact-candidate-set.json".equals(payload.descriptor().fileName())
-        || !"PROVEN_CODE_FACTS_FACT_CANDIDATE_SET".equals(payload.descriptor().artifactType())
-        || !"proven-code-facts-fact-candidate-set-v3"
-            .equals(payload.descriptor().schemaVersion())) {
-      throw broken();
-    }
-    return new ArtifactReference(payload.descriptor().artifactId(), payload.descriptor().sha256());
   }
 
   private void requirePublication(

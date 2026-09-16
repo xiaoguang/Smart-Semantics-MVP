@@ -1,17 +1,20 @@
 package org.sourceanalysis.app.adapter.cli;
 
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.function.Function;
 import org.sourceanalysis.app.RepositoryAnalysisAgent;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
-import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.capture.localgit.LocalGitCaptureRequestTemplate;
 import org.sourceanalysis.app.capture.localgit.LocalSourceCapture;
 import org.sourceanalysis.app.capture.localgit.SourceRegistrationReference;
+import org.sourceanalysis.app.runtime.AnalysisExecutionIntent;
 import org.sourceanalysis.app.runtime.AnalysisRunReference;
 import org.sourceanalysis.app.runtime.AnalysisRunRequest;
 import org.sourceanalysis.app.runtime.AnalysisStepExecutionRequest;
@@ -92,6 +95,155 @@ public final class SourceAnalysisCli {
     return exitCode;
   }
 
+  /**
+   * Executes the one configured process entry point used by the packaged {@code source-analysis}.
+   */
+  public static int executeConfigured(String[] arguments, PrintWriter output, PrintWriter errors) {
+    Objects.requireNonNull(arguments, "arguments");
+    Objects.requireNonNull(output, "output");
+    Objects.requireNonNull(errors, "errors");
+    try {
+      return ConfiguredSourceAnalysisRuntime.execute(
+          ConfiguredArguments.translate(arguments), output, errors);
+    } catch (IllegalArgumentException invalid) {
+      errors.println("SOURCE_ANALYSIS_FAILED:ARGUMENTS_INVALID");
+      errors.flush();
+      return 2;
+    }
+  }
+
+  /** Standard Java entry point for the unique local CLI. */
+  public static void main(String[] arguments) {
+    int exitCode =
+        executeConfigured(
+            arguments,
+            new PrintWriter(System.out, true, StandardCharsets.UTF_8),
+            new PrintWriter(System.err, true, StandardCharsets.UTF_8));
+    if (exitCode != 0) {
+      System.exit(exitCode);
+    }
+  }
+
+  private record ConfiguredArguments(Path config, String operation, List<String> options) {
+
+    private static ConfiguredArguments parse(String[] arguments) {
+      if (arguments.length < 3 || !"--config".equals(arguments[0])) {
+        throw new IllegalArgumentException("configured command requires --config and operation");
+      }
+      Path config = Path.of(arguments[1]);
+      if (!config.isAbsolute() || arguments[2].startsWith("--")) {
+        throw new IllegalArgumentException("configuration path and operation are invalid");
+      }
+      if ((arguments.length - 3) % 2 != 0) {
+        throw new IllegalArgumentException("configured command options must be name/value pairs");
+      }
+      return new ConfiguredArguments(
+          config, arguments[2], List.of(arguments).subList(3, arguments.length));
+    }
+
+    private static String[] translate(String[] arguments) {
+      ConfiguredArguments parsed = parse(arguments);
+      List<String> translated =
+          new ArrayList<>(List.of("--config", parsed.config().toString(), "--mode"));
+      switch (parsed.operation()) {
+        case "capture-local-git" -> {
+          parsed.requireNoOptions();
+          translated.add("capture-local-git");
+        }
+        case "start" -> {
+          parsed.requireOnly("--source-registration");
+          translated.add("start");
+          addOption(
+              translated, "--source-registration", parsed.option("--source-registration", true));
+        }
+        case "plan-materials" -> {
+          parsed.requireNoOptions();
+          translated.add("materials-only");
+        }
+        case "export-materials-state" -> {
+          translated.add("export-materials-state");
+          translated.addAll(parsed.options());
+        }
+        case "execute-step" -> parsed.translateExecuteStep(translated);
+        case "inspect", "render", "artifact" -> {
+          translated.add(parsed.operation());
+          translated.addAll(parsed.options());
+        }
+        default -> throw new IllegalArgumentException("configured operation is unsupported");
+      }
+      return translated.toArray(String[]::new);
+    }
+
+    private void translateExecuteStep(List<String> translated) {
+      String target = option("--target", true);
+      String materialId = option("--material-id", false);
+      String activityBatch = option("--activity-model-batch", false);
+      String reuseBatch = option("--reuse-from-model-batch", false);
+      String runId = option("--run", false);
+      requireOnly(
+          "--target",
+          "--material-id",
+          "--activity-model-batch",
+          "--reuse-from-model-batch",
+          "--run");
+      if ("flow-interpretation".equals(target)) {
+        if (activityBatch != null) {
+          throw new IllegalArgumentException("Activity execution cannot use an Activity batch");
+        }
+        translated.add(materialId == null ? "activities" : "activities-sample");
+        addOption(translated, "--material-id", materialId);
+      } else if ("repository-knowledge".equals(target)) {
+        if (materialId != null || activityBatch == null) {
+          throw new IllegalArgumentException("process execution requires an Activity batch");
+        }
+        translated.add("business-processes");
+        addOption(translated, "--activity-model-batch", activityBatch);
+      } else {
+        throw new IllegalArgumentException("execute-step target is unsupported");
+      }
+      addOption(translated, "--reuse-from-model-batch", reuseBatch);
+      addOption(translated, "--run", runId);
+    }
+
+    private String option(String name, boolean required) {
+      String value = null;
+      for (int index = 0; index < options.size(); index += 2) {
+        if (name.equals(options.get(index))) {
+          if (value != null) {
+            throw new IllegalArgumentException("duplicate configured command option");
+          }
+          value = options.get(index + 1);
+        }
+      }
+      if (required && value == null) {
+        throw new IllegalArgumentException("required configured command option is missing");
+      }
+      return value;
+    }
+
+    private void requireOnly(String... allowed) {
+      List<String> names = List.of(allowed);
+      for (int index = 0; index < options.size(); index += 2) {
+        if (!names.contains(options.get(index)) || options.get(index + 1).isBlank()) {
+          throw new IllegalArgumentException("configured command option is invalid");
+        }
+      }
+    }
+
+    private void requireNoOptions() {
+      if (!options.isEmpty()) {
+        throw new IllegalArgumentException("configured command has unexpected options");
+      }
+    }
+
+    private static void addOption(List<String> translated, String name, String value) {
+      if (value != null) {
+        translated.add(name);
+        translated.add(value);
+      }
+    }
+  }
+
   @Command(
       name = "source-analysis",
       mixinStandardHelpOptions = true,
@@ -125,6 +277,12 @@ public final class SourceAnalysisCli {
 
     @Option(names = "--target", paramLabel = "ANALYSIS_STEP")
     private String targetStep;
+
+    @Option(names = "--material-id", paramLabel = "MATERIAL_ID")
+    private String materialId;
+
+    @Option(names = "--activity-model-batch", paramLabel = "RUN_ID")
+    private String activityModelBatchId;
 
     private final RepositoryAnalysisAgent agent;
     private final Function<ArtifactId, AnalysisRunRequest> requestFactory;
@@ -199,29 +357,35 @@ public final class SourceAnalysisCli {
       AnalysisRunReference executed =
           agent.executeStep(
               new AnalysisStepExecutionRequest(
-                  AnalysisRunId.parse(requireRunId()), selectedTargetStep()));
+                  AnalysisRunId.parse(requireRunId()),
+                  selectedIntent(),
+                  activityModelBatchId == null ? null : AnalysisRunId.parse(activityModelBatchId),
+                  materialId));
       output.printf("runId=%s%n", executed.runId().value());
       output.printf("lifecycleState=%s%n", executed.lifecycleState());
       return 0;
     }
 
-    private AnalysisStepKey selectedTargetStep() {
-      if (targetStep == null || "nine-section-document".equals(targetStep)) {
-        return AnalysisStepKey.NINE_SECTION_DOCUMENT;
+    private AnalysisExecutionIntent selectedIntent() {
+      if ("flow-interpretation".equals(targetStep)) {
+        return AnalysisExecutionIntent.EXPLAIN_ACTIVITIES;
       }
       if ("repository-knowledge".equals(targetStep)) {
-        return AnalysisStepKey.REPOSITORY_KNOWLEDGE;
+        return AnalysisExecutionIntent.DISCOVER_PROCESSES;
       }
       throw new CommandLine.ParameterException(
           new CommandLine(this),
-          "execute-step --target must be repository-knowledge or nine-section-document");
+          "execute-step --target must be flow-interpretation or repository-knowledge");
     }
 
     private int planMaterials() {
       AnalysisRunReference executed =
           agent.executeStep(
               new AnalysisStepExecutionRequest(
-                  AnalysisRunId.parse(requireRunId()), AnalysisStepKey.FLOW_INTERPRETATION));
+                  AnalysisRunId.parse(requireRunId()),
+                  AnalysisExecutionIntent.PREPARE_MATERIALS,
+                  null,
+                  null));
       output.printf("runId=%s%n", executed.runId().value());
       output.printf("lifecycleState=%s%n", executed.lifecycleState());
       return 0;

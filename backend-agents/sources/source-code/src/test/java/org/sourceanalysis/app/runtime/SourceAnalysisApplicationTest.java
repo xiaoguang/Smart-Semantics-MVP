@@ -69,12 +69,9 @@ class SourceAnalysisApplicationTest {
             AnalysisRunRequestTemplate.class);
     return constructor.newInstance(
         store,
-        new RepositoryAnalysisRunCoordinator(
+        RepositoryAnalysisRunCoordinator.configured(
             ignored -> {
-              throw new AssertionError("start must not execute technical analysis");
-            },
-            (inventory, discovery) -> {
-              throw new AssertionError("start must not execute business analysis");
+              throw new AssertionError("start must not execute analysis");
             }),
         template());
   }

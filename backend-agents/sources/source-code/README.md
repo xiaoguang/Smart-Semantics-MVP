@@ -1,6 +1,6 @@
 # Source Code Analysis Agent
 
-本 Agent 把冻结的 Java/Spring 源码整理为仓库业务过程：先由 JDT/JavaParser 找到代码，再由模型理解局部活动、发现全仓业务并重建过程，最后输出 `business-processes.md` 和一份下游九章概览。
+本 Agent 把冻结的 Java/Spring 源码整理为仓库业务过程：先由 JDT/JavaParser 找到代码，再由模型理解局部活动、发现全仓业务并重建过程，当前正式出口为仓库级 `business-processes.md`。Step08 九章仍是后续能力，不在当前生产入口中生成。
 
 先读：
 
@@ -21,7 +21,7 @@
 | 05 | 围绕每个入口保存连贯代码上下文 | [业务流程材料](docs/analysis-steps/05-business-flows.md) |
 | 06 | 生成并审阅局部 Activity | [局部活动解释](docs/analysis-steps/06-flow-interpretation.md) |
 | 07 | 发现、重建并发布仓库 Business Process | [仓库业务过程](docs/analysis-steps/07-repository-knowledge.md) |
-| 08 | 从已归并过程目录生成固定九章概览 | [九章文档](docs/analysis-steps/08-nine-section-document.md) |
+| 08 | 未来从已归并过程目录生成固定九章概览；当前仅保留历史结果读取与确定性重渲染 | [九章文档](docs/analysis-steps/08-nine-section-document.md) |
 
 ## 关键职责
 
@@ -31,22 +31,22 @@
 - 精确证据只用于定位和核对；五图与 Fact 是技术增强，不是业务阅读门禁。
 - Activity 是局部活动，Business Process 是多活动端到端过程，两者不是同一个概念。
 
-## 当前实现与目标差距
+## 当前实现
 
-当前 main 已有完整取材链、326 个 jshERP ReviewedActivity、并行模型任务、模型批次复用和九章渲染。JDT 材料与 Activity 都应复用，不需要重扫或全量重跑。
+当前生产链已经具备完整取材、并行 Activity 解释、模型批次复用，以及 Step07 的全仓目录、候选完整阅读、详细过程重建、归并和五文件发布。已经保存的 326 条 jshERP ReviewedActivity 和对应 JDT 材料属于可复用运行检查点，不需要因入口清理而重新扫描或重新调用模型。
 
-当前Step07新路线已经实现：全仓目录、候选完整阅读、按需来源、详细过程、归并与发布。真实输入为326条已审Activity；14候选生成46个过程，21个含多Activity。覆盖CLOSED，50条未分类，语义PARTIAL。旧340个singleton结果是历史前身，不是当前代码状态。
+生产命令统一由 `source-analysis` 提供，详见[运行说明](tools/repository-run/README.md)。当前业务生成路线是：
 
-但本轮复核发现：目录偏向“某对象维护”，阶段仍偏“接收/校验/执行/返回”，没有达到所需采购/销售等生命周期叙述。多阶段和覆盖指标不代表业务质量通过。
+```text
+plan-materials
+→ execute-step --target flow-interpretation
+→ execute-step --target repository-knowledge
+→ business-processes.md
+```
 
-本次设计仅修正Step07：
-- 全仓卡片保留原规则，发现通用Activity不同业务用法。
-- 同一Activity的不同variant分别使用；完整内容去重但不混用条件。
-- 模型生成并完整审阅阶段业务正文和规则适用范围。
-- 来源目录提供原文预览；发布business-processes.md及可点击的sources.md，继续保存JSONL。
-- 不重扫、不重跑Activity，不改九章。新增合同尚未实施。
+旧的 singleton ProcessExplainer、旧九章模型生成器和 `RepositoryRunMain` 已退出生产代码。历史九章检查点仍可严格读取并确定性重渲染；这不表示当前入口会调用模型生成新九章。
 
-下一份实施计划以[本次差异清单](docs/plans/business-process-discovery-and-reconstruction-change-design.md)为准，不重开旧Step07建设计划。
+Step07 已实现同一 Activity 的多业务用法、阶段业务正文、规则适用范围、来源预览和独立 `sources.md`。覆盖闭合、多阶段数量等结构指标不能替代语义质量判断；采购、销售等更长的跨对象业务串联仍按[更多发现](docs/supplements/more-findings.md)保留为后续讨论项。
 
 ## 其他文档
 
@@ -56,4 +56,4 @@
 - [公共 Interface 与 SourceRef](docs/references/inherited-public-and-module-contracts.md)
 - [程序图稳定能力与 backlog](docs/supplements/program-graphs-implementation-backlog.md)
 
-历史计划和已完成 progress 保留原样用于审计，不是新的 Step07 实施依据。后续计划只从总体设计与本轮变更清单生成。
+历史计划不是新的 Step07 实施依据。各 Agent 的 progress 在所属计划执行期间保留以便交接；整个计划结束时，将重要决定、遗留事项和验收结果收纳到正式文档，再删除该计划的临时 progress，不另建归档目录。已经提交的记录仍可从 Git 历史查阅。后续计划只从总体设计与本轮变更清单生成。
