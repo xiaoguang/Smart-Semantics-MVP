@@ -587,8 +587,9 @@
   checkpoint, consolidated process catalog/coverage, business-processes.md and
   one validated nine-section report.
 - Machine artifacts are UTF-8 JSON/JSONL. Exceptions remain document.md,
-  durable design/progress Markdown and immutable source inputs retained
-  verbatim.
+  durable design Markdown, in-plan progress Markdown and immutable source
+  inputs. Immutable source inputs remain verbatim; progress lifecycle follows
+  the plan-closeout rule below.
 
 ## Full Wire Reset and migration
 
@@ -614,7 +615,9 @@
 - Adjust existing semantic packages and four business Modules. The approved
   analysis.code engine seam replaces hardwired Java parsing only; it does not
   authorize another business runtime, broad Wire Reset or storage/recovery
-  subsystem. Preserve Git history, JavaParser algorithms and progress files.
+  subsystem. Preserve Git history and JavaParser algorithms. Retain active-plan
+  progress for handoff; remove completed-plan temporary progress only through
+  the plan-closeout rule below.
 
 ## Testing and stop rules
 
@@ -667,11 +670,37 @@
 
 - Before modifying code, tests, configuration or durable documentation, every
   Agent creates one tracked progress/<task-slug>.md from progress/TEMPLATE.md.
-  Each Agent owns only its file.
+  Record the owning plan. Each Agent updates only its file during execution.
 - Update current state in place before a long command, after every verifiable
   step/test, on a blocker and at task end. Do not append a chronological log.
 - Record scope, approvals, changed paths, checks, decisions, blockers and the
   exact next action. Do not include secrets, full prompts, large source
   excerpts or logs.
 - Continuing work reads its progress, checks Git status and verifies referenced
-  artifacts/tests. Completed progress files remain tracked and unchanged.
+  artifacts/tests. Keep a completed subtask's progress while its owning plan
+  still needs that handoff; one Agent finishing does not finish the whole plan.
+- At whole-plan closeout, put durable decisions into the owning design,
+  remaining issues into the backlog, and final verification/output references
+  into the delivery record. Then remove that plan's explicitly identified
+  temporary per-Agent progress files. Do not create a second progress archive;
+  committed historical versions remain available in Git. Keep progress/TEMPLATE.md.
+- Do not classify all historical files by a COMPLETE label alone. Resolve the
+  owning plan and preserve any unresolved handoff before removing its files;
+  never use a broad progress-directory deletion or rewrite Git history.
+- Progress cleanup does not delete source snapshots, JDT materials, reviewed
+  Activities, model DRAFT/REVIEW results, journals, publications or retained
+  comparison artifacts. Those are product/run data, not development handoffs.
+
+## Shared rules and local configuration
+
+- Commit concise, stable AGENTS.md rules shared by the team; link to detailed
+  designs instead of copying their changing implementation state or run logs.
+- Commit portable Maven/build configuration and required toolchain versions.
+  Do not commit credentials or machine-specific installation paths as shared
+  configuration. Keep local path values in ignored local configuration or
+  generate them from explicit environment inputs, with a committed template
+  or setup instruction when needed.
+- The current .mvn/toolchains.xml still contains a local Homebrew JDK path.
+  Its portable replacement must be wired together with the POM/workflow and
+  run instructions; this policy does not claim that migration is implemented.
+  Do not remove the working configuration without a verified replacement.

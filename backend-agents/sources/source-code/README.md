@@ -56,4 +56,4 @@
 - [公共 Interface 与 SourceRef](docs/references/inherited-public-and-module-contracts.md)
 - [程序图稳定能力与 backlog](docs/supplements/program-graphs-implementation-backlog.md)
 
-历史计划和已完成 progress 保留原样用于审计，不是新的 Step07 实施依据。后续计划只从总体设计与本轮变更清单生成。
+历史计划不是新的 Step07 实施依据。各 Agent 的 progress 在所属计划执行期间保留以便交接；整个计划结束时，将重要决定、遗留事项和验收结果收纳到正式文档，再删除该计划的临时 progress，不另建归档目录。已经提交的记录仍可从 Git 历史查阅。后续计划只从总体设计与本轮变更清单生成。

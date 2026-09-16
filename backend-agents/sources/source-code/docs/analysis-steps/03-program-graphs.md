@@ -1079,7 +1079,7 @@ fatal不返回draft、不安装M4 module；integrity错误不得改写成Gap。
 
 ## 9. 当前实现成熟度审计
 
-CodeStructureGraphBuilder、CallGraphBuilder、ControlFlowGraphBuilder、DataFlowGraphBuilder、EvidenceGraphBuilder、ProgramGraphSetPublicationSpecifier 和 ProgramGraphsExecution 已有实现；bounded selectors 的历史结果见各自既有 progress，不是本轮新跑测试。
+CodeStructureGraphBuilder、CallGraphBuilder、ControlFlowGraphBuilder、DataFlowGraphBuilder、EvidenceGraphBuilder、ProgramGraphSetPublicationSpecifier 和 ProgramGraphsExecution 已有实现；bounded selectors 已有历史验收，当前有效性以对应直接测试及正式验收记录为准。本段不宣称本轮新跑测试，更早的执行细节可由 Git 历史追溯。
 
 JDT 路线的 module 7 `java-code-index` 已实现并可从磁盘重开。该路线实际只发布 `java-code-index.jsonl + program-graphs-receipt.json`，不会调用 JavaParser 图 builders，也不会用空图冒充已完成的严格增强。索引保存 ENGINE、TYPE、METHOD、CALL、ENTRY_MEMBERSHIP 与 DIAGNOSTIC；固定 jshERP 注册/财务入口已验证完整方法和边界可见。
 
