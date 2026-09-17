@@ -1,6 +1,6 @@
 # JDT 导航、可选持久化补全与统一阅读材料：详细设计
 
-状态：2026-09-17，按用户接受的方向编写的目标详细设计；**尚未完成工具实验或生产迁移**。本文件属于原补充设计，不是另建一套业务流水线。工具事实见[持久化调研](../persistence-analysis-plugin-research.md)；此前实施问题见[待讨论清单](../implementation-lessons-and-followups.md)。
+状态：2026-09-17，目标详细设计已批准实施；**A工具实验通过，B生产迁移与C验收尚未完成**。实际工具结果与限制见[实验报告](../persistence-tool-feasibility-result.md)。本文件属于原补充设计，不是另建一套业务流水线。工具资料见[持久化调研](../persistence-analysis-plugin-research.md)；此前实施问题见[待讨论清单](../implementation-lessons-and-followups.md)。
 
 ## 1. 目标、范围与验收边界
 
@@ -77,7 +77,8 @@ final class CodeReadingMaterialBuilder {
 }
 ```
 
-- `PersistenceAnalysisRequest`：同源 JavaCodeIndex、已验证冻结文本读取能力、Mapper资源线索、有效插件配置。MyBatis 是第一种 Adapter；未启用由协调器跳过，不建一个伪 parser。
+- `PersistenceAnalysisRequest`：同源 JavaCodeIndex、已验证冻结文本读取能力、Mapper资源线索、有效插件配置。MyBatis 是第一种 Adapter；未启用时跳过解析和关联，仅保存DISABLED头记录，不建一个伪 parser。
+- B的直接输入接线使用既有`JavaCodeIndex`、`ProgramGraphsReference navigationPublication`、已读的`VerifiedSourceTextSet frozenSource`、`List<MapperCatalogEntry>`和`PersistenceConfiguration`。传入已读不可变视图避免再开同一批文本；不引入客户路径或新取证接口。禁用配置返回明确DISABLED头记录且不遍历XML，完整资源/语句等子记录均为空。
 - `CodeReadingMaterialRequest`：完整入口清单、索引的不可变已读视图、可空持久化结果、材料大小配置。不接受 Provider、JDT client 或任意当前工作目录。
 - 发布与重开复用当前 canonical store；builder 内部保存前组装一次，reader 只还原视图，不重复 `build/analyze/collect`。
 - 可读预览和以后请求的自包含材料使用同一个文本投影函数。只导出文本不是执行第6步；本轮不改变 Activity Prompt、响应结构或业务调度。
@@ -120,7 +121,7 @@ index v2现有 `technicalEnhancements` 字段保持原义的未生成描述，�
 
 MyBatis `SqlNode` 并非完整 SQL AST，部分节点未提供公开遍历字段；如果直接导出要复制其运行时实现或大规模反射，则采用原 DOM 条件结构，不开展自研等价运行器。是否使用完整 Builder、限定子部件，必须在 A 的报告中列出实测 API 与限制。
 
-工具依赖固定到通过 A 的非快照版本；当前研究核对过 JSqlParser 5.3 的POM/API，但不把它冒充已选定依赖。A 必须记录实际 artifact 版本、校验值、许可证和 Java17 运行兼容性。只下载/构建分析工具自己的依赖，不运行客户 Maven/Gradle。
+工具依赖固定到A实际通过的MyBatis 3.5.19与JSqlParser 5.3；版本、校验值、许可证及Java17实测见实验报告。生产代码独立接入，不依赖研究工程。只下载/构建分析工具自己的依赖，不运行客户Maven/Gradle。
 
 ### 5.2 Java Mapper → XML 关联
 
@@ -347,7 +348,7 @@ sourceAnalysis:
 
 ### 9.3 调研交付
 
-独立报告包含：实际工具版本、实际调用/API返回、三个例子的原文及解析结果、自动Mapper关联、未解析清单、读者得到什么新增信息、下一步采用建议。产物留在忽略的研究工作区，正式文档保存链接和结论；不覆盖旧材料。**本次设计尚没有这些实测结果。**
+独立报告包含：实际工具版本、实际调用/API返回、三个例子的原文及解析结果、自动Mapper关联、未解析清单、读者得到什么新增信息、下一步采用建议。产物留在忽略的研究工作区，正式文档保存链接和结论；不覆盖旧材料。**A实测已完成，详见[实验报告](../persistence-tool-feasibility-result.md)；不可将研究产物当作生产检查点。**
 
 ## 10. 验收B/C：全面接线后，只验证1—5步
 
@@ -400,9 +401,9 @@ sourceAnalysis:
 | 项目 | 当前状态 |
 | --- | --- |
 | JDT现有路径与历史材料 | 已实现，当前代码/保存结果可查 |
-| MyBatis/JSqlParser能力资料 | 已查官方文档/源码，未完成本仓工具实验 |
+| MyBatis/JSqlParser能力资料 | A通过：MyBatis3.5.19/JSqlParser5.3，14项直接测试，真实冻结XML自动关联及三个样本已核验 |
 | 新Step04插件与Step05统一生产 | 本文详细设计，未实施 |
-| A工具验收/B全面实施/C全1—5验证 | 均待后续实施计划，不记为完成 |
+| A工具验收/B全面实施/C全1—5验证 | A完成；B开始接线，C未开始；不把A结果视为生产接线完成 |
 | 第6步模型消费新材料 | 尚未讨论，不在本轮范围 |
 
 本次文档核对包含：当前类/合同引用、模块输入输出、原文例子、三道验收门、历史读取边界、零Step06约束、相对链接与空白检查。没有运行构建/JDT/SQL parser/产品模型。`more-findings.md`基线SHA256为`59b8381e7e81e3105ed6c6a8d93ce1dbea0247735bf1e6227d8f842b0d1d7f8e`，不得更改。

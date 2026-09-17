@@ -74,7 +74,8 @@
   Keep JDT navigation/Core/caching and strict historical reads; never rewrite
   the saved 326 Activities or model outputs. The target introduces internal
   analysis.persistence and analysis.material modules, not new analysis steps.
-- This work is design-only until an implementation plan is authorized. Its
+- Implementation is authorized by
+  docs/plans/jdt-persistence-reading-materials-implementation-plan.md. Its
   acceptance sequence is A: official MyBatis/JSqlParser tool experiment;
   B: full integration only after A passes; C: verify steps 01–05 and stop.
   Do not execute Step06 or later, initialize a Provider or regenerate Activity.
