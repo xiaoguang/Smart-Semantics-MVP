@@ -1,6 +1,6 @@
 # 系统认识、聚焦选材与业务成稿：详细设计
 
-状态：2026-09-16 用户接受最新采购正文的可读性，并批准本设计方向。本文是**目标合同**；当前生产实现仍是完整阅读包后的两轮过程 DRAFT/REVIEW。系统类型推理已有一次研究实测，推理与写作分离已有采购实测；本文的 DRAFT → WRITE → 最终 RULE_REVIEW 顺序尚未接入生产。准确差异见[实施状态](implementation-status.md)。本轮只以三个例子作最小验收，全仓构建待样本审阅后讨论。
+状态：2026-09-16 用户接受最新采购正文的可读性，并批准本设计方向。全局系统认识、聚焦阅读、候选 DRAFT → WRITE → 最终 RULE_REVIEW、三阶段保存/精确复用、producer v4正文和内部选定候选预览已接入生产；历史producer2/3保持原渲染字节。首批明确预览与已有来源定位补项已完成，独立集成审查Approved，修正后干净本地CI通过596项/零失败错误/2跳过，SpotBugs及PMD通过。步骤0–6完成；[步骤7真实验收](three-case-acceptance-result-20260916.md)未通过：调拨已保存导出但有配置条件错误，销售最后返回有未定义支撑用法，采购最终请求超窗未发送。批次已排空，原始请求/返回保留；不自动增加候选或调用。准确差异见[实施状态](implementation-status.md)。本轮只以三个例子作最小验收，不继续全仓。
 
 ## 1. 要保留的成果与要纠正的问题
 
@@ -83,7 +83,7 @@ FrozenAnalysisCorpus 的接口和可信来源保持现状：重开 ReviewedActiv
 
 候选增加 `investigationQuestions`，每项是可由材料回答的具体问题；读取请求的现有 purpose 写明对应问题，可附局部 questionKey。它是阅读说明，不是新证据账本，不要求每句正文登记。
 
-当前实现只校验读取purpose后未贯穿保存，这里须把它保留到实际读取结果。程序按首批请求顺序及实际返回片段顺序分配包内`R1…Rn`作为ReadingRecord ID；CHECK同时看ID、请求目的、实际范围、完整/预览标记和文本。一次搜索返回多个片段时，每个实际片段各有一个R，允许分别保留，不以整次请求作为不可分割单位。未命中只有原因，没有假造可读片段。先执行保留/補读选择，再按现有来源规则去重；相同片段来自两次请求时，保留任一记录就保留原文，合并其阅读目的。R只用于私有取材选择，不进入业务正文或变成新的Proof身份。
+当前实现已将读取purpose保留到实际读取结果、决策和任务metadata。程序按首批请求顺序及实际返回片段顺序分配包内`R1…Rn`作为ReadingRecord ID；CHECK同时看ID、请求目的、实际范围、完整/预览标记和文本。一次搜索返回多个片段时，每个实际片段各有一个R，允许分别保留，不以整次请求作为不可分割单位。未命中只有原因，没有假造可读片段。先执行保留/補读选择，再按现有来源规则去重；相同片段来自两次请求时，保留任一记录就保留原文，合并其阅读目的。R只用于私有取材选择，不进入业务正文或变成新的Proof身份。
 
 通用问题类别包括：业务起点、前后对象选择和关联、可选或必经、分批数量、金额用途、状态条件、拒绝/回退、配置例外和结束结果。没有数量金额的业务无需硬填。不要把“全面阅读所有有关文件”当作目标。
 
@@ -102,6 +102,10 @@ selectionNotes                          保留/移出/补读的简短理由
 Java 只执行选择，不猜哪些业务重要。最终包由保留的首批记录＋实际补读结果＋最终成员/context 的完整 Activity 构成。首次读取内容仍保存，即使从模型最终包移出也不删除历史。不得把“最终选材”误解释为抛弃全部首批原文；CHECK 必须明确列保留集合。
 
 大文件首批请求可以先得到**明确标注**的目录/预览和实际搜索结果，由阅读检查选择完整相关范围。预览不标作完整实现，不作为最终业务结论的唯一代码依据。优先复用已保存定位信息；没有定位时让模型按真实行段选择，不加入研究脚本中的自研 Java 语法扫描作为生产依赖。
+
+这部分的最小接线已实现：仅在`INITIAL`的`WHOLE_FILE`请求中，将超过120行的文件作为前120行的明确预览交给CHECK；较小文件照常完整提供。私有ReadingRecord记录实际行段、原文件`totalLineCount`、`complete=false`及`preview=true`，其它记录明确`preview=false`。120行只是首读导航预览长度，不是最终业务范围、文件数量上限或源码删除门槛。同文件已有M10来源引用以`ref/文件/完整行段/前8行原文`放入CHECK外层`savedSourceLocators`定位目录，不混入`readingPacket.sourceExcerpts`；未发送完整正文的来源不能被描述为已经阅读。冻结文件原文和已保存来源不变，CHECK可使用现有SOURCE_REF或FILE_RANGE请求补读完整相关实现；补读的WHOLE_FILE仍读取整文件，不自动再次预览。
+
+一个R代表模型实际看见的片段。保留首读预览R只能保留该预览，不能在封包时悄悄恢复成原整文件。完整关键范围由模型的补读选择决定；仍缺材料则记录具体未知。不增加Java/XML/Vue语义解析、JavaCodeIndex读取、阅读轮次或隐式模型调用。CHECK v4提示词明确区分预览与完整材料，既有内容指纹包含实际预览、定位导航及新Prompt；SELECT输入/Prompt保持不变。启动前容量失败未消耗内容轮；保留诊断、修复并验证后，在已有三例范围授权和明确继续指令内显式启动新批次，不重复询问同一授权。遵循根AGENTS规定的最多两次修复后重启；真正已启动请求失败、业务质量问题、额外轮次或范围变化不适用这个例外。
 
 包内源码去重、完整 Activity 一份、多业务用法分别保留。上下文 Activity 不因被读或引用就自动成为业务步骤。补读仍只有一轮，读完还缺什么就具体记录。大包不因为文件数量高就判失败；实际上下文容不下时明确停在取材结果，不静默截断或将费用预算作为业务范围限制。
 
@@ -153,11 +157,12 @@ DRAFT 可判断只支持片段、拆成多个过程或材料不足；不强填�
 
 `BoundedModelJobExecutor` 仍调度一个完整候选 Callable；同一候选的三次顺序调用和保存占用一个已有并发名额，保持同一 Provider/账户/model/effort。其他候选可并行。Activity、首次目录和仓库归并仍用原有两轮协议。
 
-过程私有记录改成完整三阶段记录，不能在旧 pair 里把 WRITE 塞进 draft 后声称 RULE_REVIEW 已看过原始推理。目标字段：
+过程私有记录已改成完整三阶段记录，不能在旧 pair 里把 WRITE 塞进 draft 后声称 RULE_REVIEW 已看过原始推理。实际字段：
 
 ```text
 schema = model-job-reviewed-result-v3（仅新过程记录）
 pipeline = business-reasoning-writing-rule-review-v1
+input（完整实际DRAFT外层输入，含调查背景及选择metadata）
 readingPacket / source mapping / inputFingerprint / runtime binding
 draft（完整事实响应）
 writing（完整业务写作响应）
@@ -167,19 +172,21 @@ reusedFromModelBatchId（可空）
 
 三次原请求/原返回、时间和失败均沿用 journal 保存。完整成功记录才可作为新协议结果复用；历史 v2 pair 严格只读，仍可作为研究输入或历史产物读取，但不当成完成三阶段。完整原始请求可独立落盘用于观察，单独成功 DRAFT/WRITE 不自动续接成新 reviewed job；保留显式新批次和无自动重试政策。
 
+实际DRAFT/WRITE在fresh后及匹配复用接受前均按本候选实际响应Schema做结构校验（已有networknt2.0.1，本地$ref），类型/必填/enum等损坏不能被最后合法结果掩盖成完成。fresh报PROCESS_MODEL_SCHEMA_INVALID，损坏复用报MODEL_JOB_RESULT_INVALID；raw响应不改，不隐式重跑。这里不提前执行最终parseCandidate的覆盖/CONFIRMED依据或中文语义判断，合法INFERRED/UNRESOLVED仍允许，金额/状态等业务错误和最终收窄仍由RULE_REVIEW修正。
+
 每次调用前检查真实序列化的input、Prompt、Schema及输出空间，沿用现有profile和容量函数。DRAFT前能容纳不代表最终核对也能容纳。如果WRITE完成后才发现`原文包+DRAFT+WRITE`超过上下文，保存两次实际结果和未完成原因，不删其中一份来强行调用，也不标为已审或自动重试。下一次显式执行如何收窄输入另行决定；不是重新扫描源码。该情况与费用预算无关。
 
 某候选 fatal 时停止新派发，已启动且自身合法的候选可完成剩余阶段并保存。语义不足且合法返回保留不足处置；缺来源链接不等于 fatal。不得通过开新批次自动绕过失败或不断试写。
 
 | 合同 | 当前实现 | 本设计目标 |
 | --- | --- | --- |
-| 全局选材 Prompt | v1 | v2：系统判断、可撤销假设、问题选材 |
-| 阅读检查 Prompt | v2 | v3：最终保留集和一次补读 |
-| 私有阅读决策容器 | v1 | v2：新增 assessment/选择字段；历史 v1 严格读取 |
+| 全局选材 Prompt | v2，已有直接scripted验证 | v2：系统判断、可撤销假设、问题选材 |
+| 阅读检查 Prompt | v4：既有最终保留集和一次补读，新增实际首读预览与定位导航说明 | 同左；旧v3资源保留但新任务不路由 |
+| 私有阅读决策容器 | v2/producer v4，历史v1/producer v3严格读取 | v2：新增 assessment/选择字段；历史 v1 严格读取 |
 | 最终阅读包 | v1 | v1：已有内容字段足够；问题与选择记录在任务输入/决策内，重开时一起取回，参与指纹并实际发送给DRAFT |
-| 过程 DRAFT/REVIEW | v3 双轮 | DRAFT v4；WRITE v1；RULE_REVIEW v1；最后解析现有 Process 详细结构 |
-| 过程私有 reviewed-result | v2 pair | v3 三阶段；旧 pair 仅历史读取 |
-| Discovery / Publisher producer | v3 | v4，区分最终核对后的正文语义来源 |
+| 过程三阶段 | DRAFT v4；WRITE v1；RULE_REVIEW v1，直接scripted验证 | 同左；最后解析现有 Process 详细结构 |
+| 过程私有 reviewed-result | v3 三阶段/pipeline v1；历史v2 pair不复用成三阶段 | 同左；完整actual input及三轮结果匹配后复用 |
+| Discovery / Publisher producer | 三阶段私有记录/指纹及发布receipt v4；reader按receipt支持2/3旧bytes和4新正文 | 同左，区分最终核对后的正文语义来源 |
 | 公共五文件 | catalog/coverage/业务 Markdown v2，来源两文件 v1 | 保持；不增加五文件中的技术执行字段 |
 | YAML、执行配置v3、run-output v4、M10、Activity、JDT | 现有格式 | 保持 |
 
@@ -189,9 +196,13 @@ reusedFromModelBatchId（可空）
 
 全仓归并继续接收业务完整的已审结构，决定重复、父子、相关、替代关系；不得改写已最终核对的正文。不能无损合并时保留原过程，不拼接 stage 数组制造长链。需要真正新增衔接文本属于新的业务重建工作，本轮三例不执行。
 
-Publisher 从最终 review 结构确定性生成业务标题、阶段正文、分支、规则和结果。现有结构明细可以保留技术用途，但关键条件不得只藏于 HTML；本次可读样本不输出 `<details>` 标签，不向业务正文倾倒技术 Activity 名称和裸引用长串。来源放 sources.md，链接文字为“查看依据”，缺链接可空，不补证据。
+Publisher 从最终 review 结构确定性生成业务标题、阶段正文、分支、规则、知识正文/公式和结果。producer v4及preview不输出 `<details>`/`<summary>`，阶段全部条件/动作/状态变化/拒绝/结果/转移仍完整可见，不向业务正文倾倒技术 Activity 名称和裸引用长串。来源放 sources.md，链接文字为“查看依据”，缺链接可空，不补证据。历史producer2/3按receipt选择旧renderer，重开及rerender保持逐字节一致。
+
+新知识条目同一正文行原样展示最终certainty（CONFIRMED/INFERRED/UNRESOLVED），保留完整公式/文字和来源链接；不让推断或待确认条目看成无状态的确认结论。该展示仅读取既有字段，不重新判断确定性、不补证据、不修改条目text或历史2/3渲染。
 
 三例预览不调用全仓归并，不关闭326条全仓覆盖，不安装伪造的正式全仓 publication。可复用现有确定性 renderer，在独立预览目录保存3份业务正文、来源和验收记录；若一个问题对应多个过程片段，则在该例中分开呈现。样本通过后仍停在样本，何时全仓、分组数量和正式 CLI 范围另行讨论。
+
+内部`reconstructSelectedPreview(CatalogSample, List<String>)`已返回不可变选定候选结果：candidateId、原ordinal、disposition、reason及全部最终typed processes，并提供对应归一化sourceReferences。旧`reconstructSelected`只委托一次；`renderPreview(processes, sources)`输出全部片段而无全仓coverage结论。该接缝不是新公共Agent/API或正式publication入口；三例ignored driver的实际文件和manifest由验收任务产出。
 
 ## 9. 交互与停止位置
 

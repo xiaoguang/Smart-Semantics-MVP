@@ -1,4 +1,6 @@
-# 业务流程：保存连贯入口代码上下文
+# 入口阅读材料：目标入口与历史Flow/Capsule合同
+
+2026-09-17的新生产目标唯一见[补充详细设计§6](../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md#6-第5步唯一阅读材料-owner)：一个owner消费Java索引和可选持久化材料，一次组装/保存、按需导出完整正文。**下文为迁移前Flow/Capsule实现及历史读取合同，不是新生产仍需三层包装或Step06/M10 Builder的要求。** 新运行材料完成于第5步；第6步的新消费方式尚未讨论，不执行模型。迁移尚未实施。
 
 > 模型批次解耦（已实现）：Step05 上下文/Capsule 保持原 sourceRunId、原引用和字节；新模型批次直接读 M10 材料，不再次 compiler/projector，也不修改 Step05 格式。材料缺失时明确报错，不自动回到本步骤。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)。本次未修改本步骤算法或产物。
 

@@ -24,6 +24,21 @@ final class BusinessProcessMarkdownRenderer {
       RepositoryBusinessProcessCatalog catalog,
       ProcessCoverage coverage,
       List<SourceReference> sourceReferences) {
+    return render(catalog, coverage, sourceReferences, "v4");
+  }
+
+  static String render(
+      RepositoryBusinessProcessCatalog catalog,
+      ProcessCoverage coverage,
+      List<SourceReference> sourceReferences,
+      String producerVersion) {
+    boolean readable =
+        switch (producerVersion) {
+          case "v2", "v3" -> false;
+          case "v4" -> true;
+          default ->
+              throw new IllegalArgumentException("BUSINESS_PROCESS_RENDER_VERSION_UNSUPPORTED");
+        };
     Objects.requireNonNull(catalog, "catalog");
     Objects.requireNonNull(coverage, "coverage");
     Map<String, SourceReference> sources = sourcesByRef(sourceReferences);
@@ -68,7 +83,13 @@ final class BusinessProcessMarkdownRenderer {
             .toList();
     for (int index = 0; index < processes.size(); index++) {
       renderProcess(
-          markdown, processes.get(index), uses, catalog, sources, "process-" + (index + 1));
+          markdown,
+          processes.get(index),
+          uses,
+          catalog,
+          sources,
+          "process-" + (index + 1),
+          readable);
     }
 
     markdown.append("## 支撑、独立、未归类与未处理范围\n\n");
@@ -94,6 +115,31 @@ final class BusinessProcessMarkdownRenderer {
         .append("；语义交付状态：")
         .append(coverage.semanticDeliveryStatus())
         .append("。\n");
+    return markdown.toString();
+  }
+
+  /** Renders actual selected fragments only, without repository-wide coverage assertions. */
+  static String renderPreview(
+      List<RepositoryBusinessProcessCatalog.BusinessProcess> processes,
+      List<SourceReference> sourceReferences) {
+    RepositoryBusinessProcessCatalog catalog =
+        new RepositoryBusinessProcessCatalog(
+            List.of(), List.of(), processes, List.of(), List.of(), List.of(), List.of(), List.of());
+    Map<String, SourceReference> sources = sourcesByRef(sourceReferences);
+    Map<String, RepositoryBusinessProcessCatalog.ActivityUse> uses = activityUses(catalog);
+    StringBuilder markdown = new StringBuilder("# 选定候选业务过程预览\n\n");
+    List<RepositoryBusinessProcessCatalog.BusinessProcess> ordered =
+        catalog.processes().stream()
+            .sorted(
+                Comparator.comparing(RepositoryBusinessProcessCatalog.BusinessProcess::processId))
+            .toList();
+    if (ordered.isEmpty()) {
+      markdown.append("本次选定候选未形成可预览的业务过程。\n");
+    }
+    for (int index = 0; index < ordered.size(); index++) {
+      renderProcess(
+          markdown, ordered.get(index), uses, catalog, sources, "process-" + (index + 1), true);
+    }
     return markdown.toString();
   }
 
@@ -133,7 +179,8 @@ final class BusinessProcessMarkdownRenderer {
       Map<String, RepositoryBusinessProcessCatalog.ActivityUse> uses,
       RepositoryBusinessProcessCatalog catalog,
       Map<String, SourceReference> sources,
-      String processAnchor) {
+      String processAnchor,
+      boolean readable) {
     markdown.append("## ").append(process.name()).append("\n\n");
     section(markdown, "目的与适用范围");
     markdown.append(process.purpose()).append(" 适用范围：").append(process.scope()).append("\n\n");
@@ -149,7 +196,8 @@ final class BusinessProcessMarkdownRenderer {
             .toList();
     section(markdown, "步骤与分支");
     for (int index = 0; index < stages.size(); index++) {
-      renderStage(markdown, stages.get(index), sources, processAnchor + "-stage-" + (index + 1));
+      renderStage(
+          markdown, stages.get(index), sources, processAnchor + "-stage-" + (index + 1), readable);
     }
     if (!process.branches().isEmpty()) {
       markdown.append("\n分支与回退：\n\n");
@@ -168,6 +216,18 @@ final class BusinessProcessMarkdownRenderer {
       }
     }
     markdown.append('\n');
+
+    if (readable && !process.knowledgeItems().isEmpty()) {
+      section(markdown, "业务知识与公式");
+      for (int index = 0; index < process.knowledgeItems().size(); index++) {
+        RepositoryBusinessProcessCatalog.KnowledgeItem item = process.knowledgeItems().get(index);
+        markdown.append("- ").append(item.text()).append("（").append(item.certainty()).append("）");
+        appendLocalEvidenceLink(
+            markdown, processAnchor + "-knowledge-" + (index + 1), item.sourceRefs(), sources);
+        markdown.append('\n');
+      }
+      markdown.append('\n');
+    }
 
     section(markdown, "结束结果");
     bullets(markdown, process.endResults());
@@ -235,12 +295,13 @@ final class BusinessProcessMarkdownRenderer {
       StringBuilder markdown,
       RepositoryBusinessProcessCatalog.ProcessStage stage,
       Map<String, SourceReference> sources,
-      String anchor) {
+      String anchor,
+      boolean readable) {
     markdown.append(stage.order()).append(". **").append(stage.name()).append("**\n\n");
     markdown.append(stage.narrative()).append('\n');
     appendLocalEvidenceLink(markdown, anchor, stage.sourceRefs(), sources);
     markdown.append('\n');
-    appendStageDetails(markdown, stage);
+    appendStageDetails(markdown, stage, readable);
   }
 
   private static void renderRule(
@@ -391,7 +452,9 @@ final class BusinessProcessMarkdownRenderer {
   }
 
   private static void appendStageDetails(
-      StringBuilder markdown, RepositoryBusinessProcessCatalog.ProcessStage stage) {
+      StringBuilder markdown,
+      RepositoryBusinessProcessCatalog.ProcessStage stage,
+      boolean readable) {
     if (stage.entryConditions().isEmpty()
         && stage.actions().isEmpty()
         && stage.stateChanges().isEmpty()
@@ -400,14 +463,17 @@ final class BusinessProcessMarkdownRenderer {
         && stage.transitions().isEmpty()) {
       return;
     }
-    markdown.append("\n<details>\n<summary>条件与结果明细</summary>\n\n");
+    markdown.append(readable ? "\n" : "\n<details>\n<summary>条件与结果明细</summary>\n\n");
     appendStageField(markdown, "进入条件", stage.entryConditions());
     appendStageField(markdown, "动作", stage.actions());
     appendStageField(markdown, "状态变化", stage.stateChanges());
     appendStageField(markdown, "拒绝条件", stage.rejectionConditions());
     appendStageField(markdown, "结果", stage.outcomes());
     appendStageField(markdown, "后续转移", stage.transitions());
-    markdown.append("- 结论性质：").append(stage.certainty()).append("\n\n</details>\n");
+    markdown
+        .append("- 结论性质：")
+        .append(stage.certainty())
+        .append(readable ? "\n\n" : "\n\n</details>\n");
   }
 
   private static void appendStageField(StringBuilder markdown, String label, List<String> values) {

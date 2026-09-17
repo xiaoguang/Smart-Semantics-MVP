@@ -29,7 +29,7 @@ import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 /** Fresh-reopens one complete Step07 business-process publication without model or source work. */
 public final class BusinessProcessCheckpointReader {
 
-  private static final Set<String> SUPPORTED_MODULE_VERSIONS = Set.of("v2", "v3");
+  private static final Set<String> SUPPORTED_MODULE_VERSIONS = Set.of("v2", "v3", "v4");
   private static final String MARKDOWN_FILE = "business-processes.md";
   private static final String COVERAGE_FILE = "process-coverage.json";
   private static final String CATALOG_FILE = "repository-business-process-catalog.json";
@@ -55,7 +55,9 @@ public final class BusinessProcessCheckpointReader {
       requireSourceReferenceClosure(catalog, sourceReferences);
       String markdown = strictUtf8(payloads.get(MARKDOWN_FILE).canonicalUtf8());
       String sourcesMarkdown = strictUtf8(payloads.get(SOURCES_MARKDOWN_FILE).canonicalUtf8());
-      String rendered = BusinessProcessMarkdownRenderer.render(catalog, coverage, sourceReferences);
+      String rendered =
+          BusinessProcessMarkdownRenderer.render(
+              catalog, coverage, sourceReferences, reopened.receipt().moduleVersion());
       if (!rendered.equals(markdown)) {
         throw failure("BUSINESS_PROCESS_MARKDOWN_NONDETERMINISTIC", null);
       }
@@ -74,8 +76,13 @@ public final class BusinessProcessCheckpointReader {
 
   public String rerender(BusinessProcessPublication publication) {
     Objects.requireNonNull(publication, "business process publication");
+    ReopenedModulePublication reopened = artifacts.reopen(publication.checkpoint());
+    verifyCheckpoint(publication.checkpoint(), reopened);
     return BusinessProcessMarkdownRenderer.render(
-        publication.catalog(), publication.coverage(), publication.sourceReferences());
+        publication.catalog(),
+        publication.coverage(),
+        publication.sourceReferences(),
+        reopened.receipt().moduleVersion());
   }
 
   /** Re-renders the portable sources view without rereading source files or calling a Provider. */

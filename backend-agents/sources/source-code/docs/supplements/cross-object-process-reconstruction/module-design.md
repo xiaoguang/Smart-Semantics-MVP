@@ -1,6 +1,6 @@
 # 模块详细设计：复用已有材料，先阅读再重建
 
-状态：本文记录已实现取材模块和复用基础；最新目标由[系统认识与三阶段设计](business-reasoning-and-writing.md)拥有。当前生产是完整阅读包后的双轮过程；目标仅候选过程改为事实DRAFT→WRITE→最终RULE_REVIEW。冻结读取、选材、阅读和正式接线已经实现，待改项见[实施状态](implementation-status.md)。两项深Interface保持不变。
+状态：本文记录已实现取材模块和复用基础；最新合同由[系统认识与三阶段设计](business-reasoning-and-writing.md)拥有。候选三阶段、完整私有保存/复用、producer4可读五文件/历史重开和内部选定预览已接线；其它双轮任务不变。首读预览补项的直接回归、独立集成审查和干净本地CI已通过（596项/零失败错误/2跳过、SpotBugs及PMD通过）。实际三份CHECK的零模型调用容量预检通过，真实三阶段业务核验尚未完成，见[实施状态](implementation-status.md)。两项深Interface保持不变。
 
 ```java
 ProcessDiscoveryResult BusinessProcessDiscovery.discover(ProcessDiscoveryRequest request);
@@ -44,9 +44,15 @@ search(fileKeys, literal, context)    → 字面量命中、上下文和未返�
 
 冻结的 Step01/Step05 输入已通过 `inputPolicyRegistry` 专属的 analysis-step reader 重开；正常 `stepArtifacts` reader 仍绑定当前 output registry，仅供本次运行的发布端使用。二者不得全局互换。
 
-在 DRAFT/REVIEW jobs 提交前，已建立全仓 source normalization。现有 completion sink 会按每个成功候选完成时立即验证、归一化并保存该 pair；某个候选或其保存 fatal 后仍 drain 已开始的 jobs 并保存其余合法 pair，但不进行归并或发布。最终结果仍按原 catalog ordinal 聚合。
+在候选三阶段 jobs 提交前，已建立全仓 source normalization。现有 completion sink 会按每个成功候选完成时立即验证最后processResult、归一化并保存完整三阶段记录；某个候选或其保存 fatal 后仍 drain 已开始的 jobs 并保存其余合法结果，但不进行归并或发布。最终结果仍按原 catalog ordinal 聚合。
 
-`DefaultBusinessProcessDiscovery` 已接入一条单一路径：完整旧目录 pair 仅作输入重开；新仓库先保留既有首次目录发现，二者都进入一次 `PROCESS_MATERIAL_SELECTION`。选材与每候选一次 `PROCESS_READING_CHECK` 使用独立 v1 单次决策、轻量全仓 Activity/文件导航、稳定全目录 ordinal provider binding 和现有有界 job pool。所有已保存 M10 ref 都可被 `SOURCE_REF` 显式选择，但不会因与 Activity 有关联而自动发送正文；M10 或冻结文本只有在 `SOURCE_REF`、整文件、范围或字面量请求实际成功后才进入 `sourceExcerpts`，失败/无 reader 记录为限制而不回退到旧 DRAFT 后选源码路线。成员及 context 的完整已审 Activity 进入包；补读只执行一次，随后 DRAFT/REVIEW v3 共用一个不重复正文的 `readingPacket`，REVIEW 再含实际 DRAFT；新过程响应不再有 `requestedSourceRefs`。所有阅读检查完成后，Java 以 `文件、实际范围、原文` 稳定合并各包的局部 `S`，将 DRAFT/REVIEW 的内存副本改写为最终 ref 后才解析、生成过程 ID 并归并；原始响应不改。包内 context 可作 statement/source 依据但不是成员，最终成员才决定 ActivityUse 与处置。单次决策可写读 `process-reading-decision-v1`；过程 pair 保存局部 `readingPacket`、原始 DRAFT/REVIEW 与该包实际 local→final source-ref 映射。运行端在新批次已排队后、Provider 初始化前，通过同一个 CLI 包内装配函数重开 Activity、M10、同源 inventory、冻结 reader 与可选旧目录；它先将这些内容写为私有执行配置再运行 Discovery。新发布 receipt producer 为 v3，但五个读者可见 payload schema 保持 v2/v1；checkpoint reader 严格接受历史 v2 或该 v3 receipt，仍要求同一五文件及原有描述符。这些实现已有直接和本地CI记录；新三阶段仍未实施，两者不得混称。
+`DefaultBusinessProcessDiscovery` 已接入一条单一路径：完整旧目录 pair 仅作输入重开；新仓库保留既有首次目录发现，二者进入一次 `PROCESS_MATERIAL_SELECTION`。选材v2实际读取冻结README与全部Activity/文件导航，在同次响应保存自由systemAssessment及私有候选investigationQuestions。首批按请求/片段顺序分配R编号，每个实际搜索命中可独立选择；purpose与完整/片段标记进入CHECK。CHECK v4给出完整首批保留集、最终成员/context、一次补读、未知和说明；首批原文不重新读取，空保留集确实移出全部首批原文。保留后按实际来源去重新片段并合并已保留目的，既有M引用不因同址而被删除。完整Activity正文只保留一份，不删除不同分支的ActivityUse。
+
+INITIAL WHOLE_FILE超过120行时，按冻结目录总行数读取真实前120行，ReadingRecord记录preview=true/complete=false/totalLineCount；小文件和SUPPLEMENTARY WHOLE_FILE保持完整。CHECK外层savedSourceLocators仅列预览文件已有M10的原ref/file/完整startLine/endLine及实际前8行原文，是定位导航而非已读sourceExcerpts。保留R只保留可见预览；完整SOURCE_REF/FILE_RANGE补读沿用原分支，后段不隐式恢复。冻结原文、公共来源五字段及包v1不变，原S去重/metadata归一化仍适用；实际CHECK输入和v4Prompt参与既有指纹，不新增解析器、读轮次或容量系统。
+
+选材与检查保存为私有 `process-reading-decision-v2`/producer v4；历史v1/producer v3仍严格读取，交叉组合拒绝。响应先经实际决策parser验证，再保存COMPLETED或复制复用，未知R不能变成可重开的成功记录。实际DRAFT v4外层输入包含investigationContext及readingSelections并参与指纹，最终RULE_REVIEW保留同一完整输入并附actualDraft/actualWriting；WRITE只收完整actualDraft。选择metadata不复制snippet或偷偷重新发送移出的原文，CHECK以R→sourceRef关联已读片段且nested选择ref同步实际去重来源。所有阅读检查完成后，Java稳定归一化局部S，只将最终processResult内存副本改为最终ref再解析、生成过程身份和归并；三份原始响应不改。候选v3三阶段记录保存完整实际input、readingPacket、原始DRAFT/WRITE/包装RULE_REVIEW及local→final映射。
+
+读取只来自已保存M10和同源冻结文本，不扫描或重建Activity；没有reader/未命中记录限制。运行接线、稳定全目录ordinal、既有job pool及CLI保持原样。新发布receipt为v4，公共五文件版本不变；reader按receipt在2/3旧渲染和4新可读正文间选择，历史字节不变。直接scripted验证不等于真实三例业务验收完成。
 
 ## 2. RepositoryBusinessCataloger：重开目录与全局选材
 
@@ -140,9 +146,11 @@ sourceExcerpts[]（已取得的完整片段/文件，含程序分配局部 ref�
 readingLimitations[]（未命中、实际省略范围、未回答问题）
 ```
 
-包必须自包含。当前双轮都收到同一包；目标DRAFT和最终RULE_REVIEW收到该包，WRITE收到完整事实草稿，最终核对另收实际DRAFT和WRITE。首次材料充足仍有一次检查，不强制补读。检查实际最终核对请求容量，不能静默删正文或规则。
+包必须自包含。当前DRAFT和最终RULE_REVIEW收到同一包，WRITE收到完整事实草稿，最终核对另收实际DRAFT和WRITE。首次材料充足仍有一次检查，不强制补读。每阶段检查实际输入容量；最终核对溢出时不调用、不安装完成记录，保留先前journal，不静默删正文或规则。
 
-### 私有请求容量去重（已实现双轮阅读路径的合同）
+### 私有请求容量去重（既有双轮阅读路径的历史合同）
+
+本小节保留当时v2 CHECK/双轮过程的容量修正边界；其中版本不代表当前版本。相同完整Activity与allowlist去重继续用于新三阶段，最终包装将共享$defs留在实际Schema根；当前输入顺序与版本以上文和新设计§7为准。
 
 实际候选检查暴露的容量问题包含重复包装：`reviewedActivities` 已有原始完整业务字段，却额外附加 `statementHandles[]` 和 `statements[{handle,text}]`；后者再次复制所有字段正文，包级 `statementDirectory` 又列出相同 handle。响应 Schema 还在多个位置重复完整 Activity、文件或 statement 枚举。这些是程序生成的重复表示，不是新增业务资料。
 
@@ -171,7 +179,9 @@ RED：DRAFT 前含实际选中 Java/XML/Vue；空补读仍有一次检查；补�
 
 ## 4. CandidateProcessReconstructor：完整阅读包生成过程
 
-当前已实现每候选PROCESS_DRAFT→PROCESS_REVIEW。目标为PROCESS_DRAFT（事实）→PROCESS_WRITE（正文）→PROCESS_RULE_REVIEW（核对实际正文并修正）。三次绑定同一服务/账户/模型/effort，仍是一个job；输出保留现有Process字段。详见[新设计§6](business-reasoning-and-writing.md#6-事实推理写作和最终核对)。DRAFT不选材。
+当前已实现每候选PROCESS_DRAFT（事实）→PROCESS_WRITE（正文）→PROCESS_RULE_REVIEW（核对实际正文并修正）。三次绑定同一服务/账户/模型/effort，仍是一个job；输出保留现有Process字段，最后包装的processResult交既有parser，corrections私有保存。详见[新设计§6](business-reasoning-and-writing.md#6-事实推理写作和最终核对)。DRAFT不选材。
+
+fresh事实DRAFT和WRITE接受后、下一阶段前，使用已有networknt2.0.1按本候选的实际响应Schema确定性检查类型/必填/enum/本地$ref；matching reuse两稿同样接受前检查，损坏稿不成为完整或复制的COMPLETED。fresh失败code为PROCESS_MODEL_SCHEMA_INVALID，reuse为MODEL_JOB_RESULT_INVALID；已完成raw journal及历史字节保留。门禁不调用最终parseCandidate，不提前限制最终可修正的覆盖、CONFIRMED依据或业务金额/状态；合法INFERRED/UNRESOLVED和最终RULE_REVIEW纠错职责不变。generic v2 pair不走该候选专用门禁。
 
 复用 ActivityUse、stage.narrative、进入条件、动作、状态变化、拒绝、结果、转移、rule.activityUseIds、knowledgeItems 及三个 certainty。跨对象交接写入现有字段，不新增交接证明模型：
 
@@ -203,7 +213,11 @@ Activity/候选/已审过程仍是原来的三个分母。阅读 context 不引�
 4. `source-refs.jsonl`
 5. `sources.md`
 
-SourceReference五字段保持，完整性留在私有ReadingRecord。目标正文来自最终RULE_REVIEW，主要条件不只藏在结构明细；小样不输出HTML折叠标签。现有来源页/链接复用，缺链接可空。
+SourceReference五字段保持，完整性留在私有ReadingRecord。当前新producer4和内部preview正文来自最终RULE_REVIEW的typed Process，完整stage条件/动作/状态变化/拒绝/结果/转移、分支、规则和knowledgeItems.text（含已给公式）直接可见，不输出HTML折叠标签；不会把知识来源索引标签当成业务正文。现有来源页/链接复用，缺链接可空。历史producer2/3继续原折叠渲染，checkpoint reader的重开与rerender都依实际receipt选版本，五文件字节比较不放宽。
+
+readable知识分支同一条目正文行显示原certainty枚举CONFIRMED/INFERRED/UNRESOLVED及原完整text/链接，保持已审结论的确认/推断/待确认限定；不是由渲染器重新推断certainty，也不以其它待确认区代替该条目状态。旧2/3分支不进入此新知识渲染，历史字节不变。
+
+内部`reconstructSelectedPreview`返回不可变SelectedPreview：所有实际选定CandidatePreview的candidateId、全目录ordinal、disposition、reason及全部最终typed processes，以及这些过程引用的归一化sourceReferences。未选中不重建，不调用全仓归并/覆盖关闭/Publisher；旧reconstructSelected只委托一次并提取IDs。`renderPreview(List<BusinessProcess>, List<SourceReference>)`用同一新正文逻辑输出所有片段，无全仓coverage声明。接缝package-private，供ignored三例薄驱动，不新增公共Agent/API或正式命令。
 
 补读来源先在各阅读包中分配局部编号。发布前按冻结文件、行范围、原文去重，并为新片段分配不与原有 S 编号冲突的最终编号；不同包的局部同名 ref 必须通过包身份映射，不能直接 join。原 M10 ref 可原样复用。同一来源出现在多个包时最终只保存一份；统一映射所有 stage/rule/knowledge/relationship 等来源字段，再形成闭合 result。Publisher 不再次读 corpus。
 
@@ -232,11 +246,11 @@ CLI创建/选择QUEUED run后，在任何Provider初始化或模型请求前，�
 
 复用现有 job pool、Provider 和 journal。全局选择和每候选检查是**单次决策任务**，私有 `decision-result.json` 保存完整请求/响应、身份、指纹、终态；不能伪装成 reviewed pair。不复用中途/损坏结果。保持简单直接写读，不新增通用恢复框架。
 
-全局选材沿用repositorySummary路由；候选检查和后续job按稳定ordinal绑定processGroup，不能因完成顺序或名称换账户。目标三阶段共用binding和两层并发，无新池；现有pair继续用于历史读取和其它两轮任务。
+全局选材沿用repositorySummary路由；候选检查和后续job按稳定ordinal绑定processGroup，不能因完成顺序或名称换账户。三阶段已共用binding和两层并发，无新池；现有pair继续用于历史读取和其它两轮任务。
 
-保存目录输入、系统认识/问题、首批保留/补充请求、读取记录、完整包、事实DRAFT、WRITE、最终RULE_REVIEW、处置和复用来源。目标过程reviewed-result.json使用私有v3三阶段，当前v2 pair严格历史读取；精确版本见新设计§7。同源旧输入只读，新输出属新run。无自动重试或服务切换。
+保存目录输入、系统认识/问题、首批保留/补充请求、读取记录、完整包、事实DRAFT、WRITE、最终RULE_REVIEW、处置和复用来源。候选reviewed-result.json已使用私有v3三阶段/pipeline v1，`input`保存完整实际DRAFT外层输入并在重开时精确匹配；历史v2 pair不能当三阶段复用。缺writing/最终包装/背景的声明完成记录报错，不隐式重跑。精确版本见新设计§7。同源旧输入只读，新输出属新run。无自动重试或服务切换。
 
-当前双轮实现是在候选jobs启动前稳定生成全仓source映射；每候选完整完成后独立归一化并保存packet、映射及pair。目标三阶段沿用同一来源归一化，保存完整三阶段记录。随后其他候选的 fatal 不能丢弃已完成的合法保存结果；只有最终归并/发布等待全量完成，不新增恢复框架。
+当前三阶段沿用候选jobs启动前稳定生成的全仓source映射；每候选完整完成后独立归一化最终processResult并保存完整input、packet、映射及三阶段原始响应。随后其他候选的 fatal 不能丢弃已完成的合法保存结果；只有最终归并/发布等待全量完成，不新增恢复框架。
 
 ### 已批准的一次性租户引用修正
 
@@ -255,10 +269,10 @@ CLI创建/选择QUEUED run后，在任何Provider初始化或模型请求前，�
 - 无关的并发、日志目录、新 batch ID 不使内容失效；新关注问题、实际补读文本或新 Prompt 进入指纹。
 - 旧过程没看过新包，不能冒充新版过程。不得因此重跑任何 Activity。
 
-新增私有 `process-reading-decision-v1`（phase 区分全局/检查）和 `process-reading-packet-v1`；过程 DRAFT/REVIEW Prompt 与响应合同升 v3，移除旧请求源码语义。发现/发布 producer 升 v3 以区分新路径；公共 catalog/coverage/业务 Markdown 仍 v2、来源 JSONL/Markdown 仍 v1，字段未变不做全工程 wire reset。原目录、归并 Prompt 不因本次取材而强制改正文；其实际输入变化自然改变 fingerprint。
+私有阅读决策当前写 `process-reading-decision-v2`/producer v4，保留历史v1/producer v3严格读取；phase继续区分全局/检查。`process-reading-packet-v1`不变，调查背景及选择metadata放在外层实际任务输入中。候选DRAFT v4/WRITE v1/RULE_REVIEW v1与私有v3完整保存已实现；三阶段指纹包含完整实际输入、三Prompt、Schema、顺序、pipeline和配置/模型绑定。发现/发布producer为v4，公共catalog/coverage/业务Markdown仍v2、来源JSONL/Markdown仍v1；reader支持receipt2/3/4并保持历史旧渲染逐字节验证。原目录、归并Prompt不因此强制改正文，实际输入变化自然改变fingerprint。
 
 私有模型执行记录升 `model-job-execution-config-v3`，保存可空旧目录输入、完整verified inventory引用及可空focusQuestion。保留v2严格只读以重开本次旧目录和旧任务；不能把v2缺少新字段当成已经执行新阅读路径，也不覆盖旧记录。YAML repository-run-config-v2、run-output-v4、M10、Activity、JDT和材料state-v3均不因此升版，公共Agent方法不变。
 
 ## 8. 本轮实现差距
 
-冻结读取、旧目录输入、全局选材、一次检查、DRAFT前完整包、引用范围、CLI和五文件均已实现。待改是系统认识/问题保存、CHECK最终保留集、三阶段成稿及完整保存复用、最终正文核对。具体类/函数见[实施状态](implementation-status.md)。上方原版本及一次性修正属于已实现/历史合同；新任务采用[目标版本表](business-reasoning-and-writing.md#7-保存并行与版本影响限制在过程任务)，旧pair不得冒充新三阶段。
+冻结读取、旧目录输入、同次系统认识/问题保存、CHECK最终R保留集与一次补读、DRAFT前完整包、三阶段成稿与最终正文核对、完整私有保存/精确复用、引用范围、CLI、producer4五文件/历史读取及内部preview均已实现，直接scripted验证、局部独立复核和完整本地CI已通过。真实三例的全局选材完成，首批整文件导致CHECK容量预检止步；尚无新三阶段正文。具体类/函数及阻塞见[实施状态](implementation-status.md)。版本以[版本表](business-reasoning-and-writing.md#7-保存并行与版本影响限制在过程任务)为准，旧pair不得冒充新三阶段。

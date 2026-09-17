@@ -66,6 +66,22 @@
 
 ## Authoritative target design
 
+- The 2026-09-17 approved Step01–05 redesign is documented in
+  docs/supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md.
+  It supersedes the older production requirements to retain JavaParser,
+  graph/Fact/Proof producers and Flow/Capsule/M10 material packaging. Those
+  algorithms remain current code pending migration, not future requirements.
+  Keep JDT navigation/Core/caching and strict historical reads; never rewrite
+  the saved 326 Activities or model outputs. The target introduces internal
+  analysis.persistence and analysis.material modules, not new analysis steps.
+- This work is design-only until an implementation plan is authorized. Its
+  acceptance sequence is A: official MyBatis/JSqlParser tool experiment;
+  B: full integration only after A passes; C: verify steps 01–05 and stop.
+  Do not execute Step06 or later, initialize a Provider or regenerate Activity.
+  New material consumption by Step06 is explicitly not designed yet.
+  Record earlier unresolved implementation issues in
+  docs/supplements/implementation-lessons-and-followups.md; do not fix them
+  or rerun business models under this upstream scope. Preserve more-findings.md.
 - docs/DESIGN.md is the target architecture. Current code, schemas, tests and
   historical artifacts may validate or falsify it but never silently weaken
   it.
@@ -117,7 +133,13 @@
   more-findings.md. Documentation edits do not authorize implementation or
   product calls, and never authorize regenerating saved Activities.
 
-## Selectable Java code engines
+## Migration baseline: previously selectable Java code engines
+
+This section records the existing two-engine implementation and its original
+migration sequence. Future production follows the supplement above: JDT only,
+optional persistence enrichment and one Step05 material owner. Preserve
+useful JDT behavior below, not the retired requirement to keep JavaParser
+or strict graph/Fact/Flow producers.
 
 - The independent JDT path and the follow-up JavaParser adapter were implemented
   and accepted on 2026-09-12:
@@ -193,10 +215,10 @@
   Keep exact Proof truthfulness. Incomplete strict Proof is not the sole gate
   for reading safely located code. Remove repeated ordinary-path enumeration,
   compilation and projection; do not introduce another evidence hierarchy.
-- Step 06 uses exactly two implemented business Modules:
+- The pre-migration Step06 material path uses two implemented business Modules:
   BusinessMaterialBuilder and ActivityExplainer. The saved 326 reviewed
-  Activities are the reusable semantic index for the approved Step07 work;
-  Step07 must not rerun either Module.
+  Activities remain reusable. The new material owner moves to Step05;
+  the existing Activity consumer is not migrated or executed in this scope.
 - Step 07 exposes exactly two deep internal Interfaces:
   BusinessProcessDiscovery and BusinessProcessPublisher. Discovery owns the
   FrozenAnalysisCorpus, RepositoryBusinessCataloger,
@@ -321,8 +343,9 @@
   exact rules in factual DRAFT, writes readable business content in WRITE,
   then checks the actual written content in final RULE_REVIEW. Original source,
   complete facts and actual writing must reach that final check; it returns
-  the complete corrected process plus concise correction notes. Current code
-  still uses the older pair until this target is implemented. Java validates
+  the complete corrected process plus concise correction notes. The implemented
+  three-stage path is undergoing the approved three-case real acceptance; it is
+  not a completed whole-repository quality validation. Java validates
   structure and refs, not Chinese business entailment. Keep the original
   Activities immutable when a new source reading corrects their interpretation.
 - RepositoryProcessConsolidator reads the existing complete reviewed Process
@@ -369,7 +392,8 @@
 
 ## Business source, technical Proof and truthful language
 
-- Strict Step 04 Proof remains authoritative for exact technical claims.
+- Historical Step04 Proof retains its exact technical meaning; the new
+  Step04 produces persistence materials, not new Proofs.
   Business semantics do not require one Proof/owner/accounting record per
   natural-language atom.
 - The minimum business source is a program-created short SourceRef that maps
@@ -681,7 +705,8 @@
 - Adjust existing semantic packages and four business Modules. The approved
   analysis.code engine seam replaces hardwired Java parsing only; it does not
   authorize another business runtime, broad Wire Reset or storage/recovery
-  subsystem. Preserve Git history and JavaParser algorithms. Retain active-plan
+  subsystem. Preserve Git history; JavaParser algorithms now retire under the
+  2026-09-17 supplement rather than being maintained. Retain active-plan
   progress for handoff; remove completed-plan temporary progress only through
   the plan-closeout rule below.
 

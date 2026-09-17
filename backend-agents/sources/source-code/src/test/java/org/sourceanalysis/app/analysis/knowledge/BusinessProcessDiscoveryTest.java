@@ -65,7 +65,8 @@ class BusinessProcessDiscoveryTest {
             "PROCESS_MATERIAL_SELECTION",
             "PROCESS_READING_CHECK",
             "BUSINESS_PROCESS_DRAFT",
-            "BUSINESS_PROCESS_REVIEW",
+            "BUSINESS_PROCESS_WRITE",
+            "BUSINESS_PROCESS_RULE_REVIEW",
             "BUSINESS_PROCESS_CONSOLIDATION_DRAFT",
             "BUSINESS_PROCESS_CONSOLIDATION_REVIEW");
     assertThat(provider.catalogCards()).hasSize(3);
@@ -189,8 +190,13 @@ class BusinessProcessDiscoveryTest {
     new DefaultBusinessProcessDiscovery(provider)
         .discover(new ProcessDiscoveryRequest(activities(), materials(), profile()));
 
-    for (String taskKind : List.of("BUSINESS_PROCESS_DRAFT", "BUSINESS_PROCESS_REVIEW")) {
+    for (String taskKind :
+        List.of(
+            "BUSINESS_PROCESS_DRAFT", "BUSINESS_PROCESS_WRITE", "BUSINESS_PROCESS_RULE_REVIEW")) {
       JsonNode processSchema = provider.outputSchema(taskKind);
+      if ("BUSINESS_PROCESS_RULE_REVIEW".equals(taskKind)) {
+        processSchema = processSchema.path("properties").path("processResult");
+      }
       JsonNode stageSchema =
           processSchema
               .path("properties")
@@ -1005,6 +1011,8 @@ class BusinessProcessDiscoveryTest {
           ArrayNode decisions = (ArrayNode) response.path("processDecisions");
           decisions.remove(decisions.size() - 1);
         }
+      } else if ("BUSINESS_PROCESS_WRITE".equals(request.taskKind())) {
+        response = ((ObjectNode) input.path("actualDraft")).deepCopy();
       } else {
         processInput = input;
         processActivities = input.path("readingPacket").path("reviewedActivities");
@@ -1095,6 +1103,12 @@ class BusinessProcessDiscoveryTest {
         if (request.taskKind().endsWith("DRAFT")) {
           processDraftResponse = response.deepCopy();
         }
+        if ("BUSINESS_PROCESS_RULE_REVIEW".equals(request.taskKind())) {
+          ObjectNode wrapper = JsonNodeFactory.instance.objectNode();
+          wrapper.set("processResult", response);
+          wrapper.putArray("corrections");
+          response = wrapper;
+        }
       }
       return new StructuredModelResponse(
           json.encodeCanonical(response),
@@ -1103,6 +1117,10 @@ class BusinessProcessDiscoveryTest {
 
     private static ObjectNode materialSelection(JsonNode input) {
       ObjectNode response = JsonNodeFactory.instance.objectNode();
+      ObjectNode assessment = response.putObject("systemAssessment");
+      assessment.put("description", "测试资料尚未判断系统类型");
+      assessment.putArray("typeHypotheses");
+      assessment.putArray("businessHypotheses");
       ArrayNode changes = response.putArray("candidateChanges");
       ArrayNode decisions = response.putArray("oldCandidateDecisions");
       input
@@ -1117,6 +1135,7 @@ class BusinessProcessDiscoveryTest {
                 change.put("scope", candidate.path("scope").asText());
                 change.set("activityUses", candidate.path("activityUses").deepCopy());
                 change.set("contextActivityIds", candidate.path("contextActivityIds").deepCopy());
+                change.putArray("investigationQuestions");
                 ArrayNode initialRequests = change.putArray("initialReadingRequests");
                 candidate
                     .path("activityUses")
@@ -1160,6 +1179,11 @@ class BusinessProcessDiscoveryTest {
 
     private static ObjectNode readingCheck(JsonNode input) {
       ObjectNode response = JsonNodeFactory.instance.objectNode();
+      ArrayNode retained = response.putArray("retainedReadingRecordIds");
+      input
+          .path("readingRecords")
+          .forEach(record -> retained.add(record.path("readingRecordId").asText()));
+      response.putArray("selectionNotes");
       JsonNode candidate = input.path("candidate");
       ArrayNode uses = response.putArray("activityUses");
       candidate.path("activityUses").forEach(use -> uses.add(use.deepCopy()));

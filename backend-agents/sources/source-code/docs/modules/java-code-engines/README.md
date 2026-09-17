@@ -1,4 +1,6 @@
-# 可切换的 Java 代码引擎：完整设计
+# Java代码引擎：当前实现记录与新目标入口
+
+2026-09-17用户已决定新生产只保留JDT，移除JavaParser和严格Fact/Proof，增加可选持久化材料并重划第3—5步。目标唯一见[补充详细设计](../../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md)。**下文两引擎合同记录2026-09-12实现与旧格式，不再是未来必须保留JavaParser的要求。** JDT LS/Core完整导航、语法与缓存细节仍复用；历史reader保留。新迁移尚未实施，本轮验收到第5步结束。
 
 > JDT 第一阶段与 JavaParser 第二阶段均已于 2026-09-12 完成正式接入与验收。JavaParser 只恢复迁移前已有能力，不追平 JDT。本页同时记录稳定合同、已验证事实和剩余边界。
 

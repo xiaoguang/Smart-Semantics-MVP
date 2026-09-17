@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.networknt.schema.Schema;
+import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.SpecificationVersion;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -47,7 +50,9 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
   static final String MATERIAL_SELECTION = "PROCESS_MATERIAL_SELECTION";
   static final String READING_CHECK = "PROCESS_READING_CHECK";
   static final String PROCESS_DRAFT = "BUSINESS_PROCESS_DRAFT";
-  static final String PROCESS_REVIEW = "BUSINESS_PROCESS_REVIEW";
+  static final String PROCESS_WRITE = "BUSINESS_PROCESS_WRITE";
+  static final String PROCESS_RULE_REVIEW = "BUSINESS_PROCESS_RULE_REVIEW";
+  private static final String PROCESS_PIPELINE = "business-reasoning-writing-rule-review-v1";
   static final String CONSOLIDATION_DRAFT = "BUSINESS_PROCESS_CONSOLIDATION_DRAFT";
   static final String CONSOLIDATION_REVIEW = "BUSINESS_PROCESS_CONSOLIDATION_REVIEW";
 
@@ -64,6 +69,8 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
           "INSUFFICIENT_MATERIAL",
           "NOT_PROCESSED_CAPACITY");
   private static final Set<String> CERTAINTIES = Set.of("CONFIRMED", "INFERRED", "UNRESOLVED");
+  private static final int INITIAL_PREVIEW_LINES = 120;
+  private static final int SAVED_SOURCE_LOCATOR_LINES = 8;
   private static final Comparator<String> UTF8_ORDER =
       (left, right) -> {
         byte[] leftBytes = left.getBytes(StandardCharsets.UTF_8);
@@ -155,6 +162,14 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
    * Reconstructs a chosen catalog subset while preserving each candidate's full-catalog ordinal.
    */
   List<String> reconstructSelected(CatalogSample sample, List<String> selectedCandidateIds) {
+    return reconstructSelectedPreview(sample, selectedCandidateIds).candidates().stream()
+        .map(CandidatePreview::candidateId)
+        .toList();
+  }
+
+  /** Exports every final typed fragment without consolidation, coverage closing or publication. */
+  SelectedPreview reconstructSelectedPreview(
+      CatalogSample sample, List<String> selectedCandidateIds) {
     Objects.requireNonNull(sample, "catalog sample");
     Objects.requireNonNull(selectedCandidateIds, "selected candidate IDs");
     if (selectedCandidateIds.isEmpty()
@@ -175,9 +190,35 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
             .filter(candidate -> selected.contains(candidate.candidateId()))
             .toList();
     List<ReadingPacket> packets = prepareReadingPackets(sample, candidates);
-    reconstructReadingPackets(
-        packets, normalizeSources(sample.corpus, packets), sample.corpus, sample.request.profile());
-    return packets.stream().map(packet -> packet.candidate().candidateId()).toList();
+    SourceNormalization normalization = normalizeSources(sample.corpus, packets);
+    Map<String, CandidateResult> results =
+        reconstructReadingPackets(packets, normalization, sample.corpus, sample.request.profile())
+            .stream()
+            .collect(
+                Collectors.toMap(result -> result.candidate().candidateId(), Function.identity()));
+    List<CandidatePreview> previews =
+        packets.stream()
+            .map(
+                packet -> {
+                  CandidateResult result = results.get(packet.candidate().candidateId());
+                  return new CandidatePreview(
+                      packet.candidate().candidateId(),
+                      packet.ordinal(),
+                      result.disposition(),
+                      result.reason(),
+                      result.processes());
+                })
+            .toList();
+    Set<String> referenced =
+        previews.stream()
+            .flatMap(preview -> preview.processes().stream())
+            .flatMap(process -> process.sourceRefs().stream())
+            .collect(Collectors.toSet());
+    List<SourceReference> sources =
+        packetSources(sample.corpus, normalization.finalPacketList()).stream()
+            .filter(source -> referenced.contains(source.ref()))
+            .toList();
+    return new SelectedPreview(previews, sources);
   }
 
   private CatalogResult reopenCatalogInput(
@@ -203,16 +244,15 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         materialSelectionInput(catalog, cards, corpus, sourceText, request.focusQuestion());
     requireInputCapacity(
         input, request.profile(), "PROCESS_MATERIAL_SELECTION_INPUT_CAPACITY_EXCEEDED");
-    ModelCall response =
-        singleDecision(
-            MATERIAL_SELECTION,
-            "process-material-selection",
-            input,
-            materialSelectionSchema(cards, corpus, sourceText),
-            request.profile(),
-            binding("repositorySummary", 0),
-            "process-reading-selection");
-    return parseMaterialSelection(response.value(), catalog, cards);
+    return singleDecision(
+        MATERIAL_SELECTION,
+        "process-material-selection",
+        input,
+        materialSelectionSchema(cards, corpus, sourceText),
+        request.profile(),
+        binding("repositorySummary", 0),
+        "process-reading-selection",
+        value -> parseMaterialSelection(value, catalog, cards));
   }
 
   private ObjectNode materialSelectionInput(
@@ -238,6 +278,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     ArrayNode activities = input.putArray("activityIndexCards");
     cards.forEach(card -> activities.add(card.toNavigationJson(corpus)));
     ArrayNode files = input.putArray("files");
+    ArrayNode descriptions = input.putArray("projectDescriptions");
     if (sourceText != null) {
       sourceText
           .files()
@@ -249,6 +290,18 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
                 item.put("mediaType", file.mediaType());
                 item.put("sizeBytes", file.sizeBytes());
                 item.put("lineCount", file.lineCount());
+                String name = file.path().substring(file.path().lastIndexOf('/') + 1);
+                if (name.equalsIgnoreCase("README")
+                    || name.toUpperCase(java.util.Locale.ROOT).startsWith("README.")) {
+                  FrozenProcessSourceCorpus.SourceText description =
+                      sourceText.read(
+                          file.fileKey(), FrozenProcessSourceCorpus.ReadRange.wholeFile());
+                  ObjectNode saved = descriptions.addObject();
+                  saved.put("fileKey", file.fileKey());
+                  saved.put("path", description.path());
+                  saved.put("complete", description.complete());
+                  saved.put("text", description.text());
+                }
               });
     }
     if (focusQuestion == null) {
@@ -256,7 +309,8 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     } else {
       input.put("focusQuestion", focusQuestion);
     }
-    input.put("instruction", "只提出跨活动候选和实际阅读请求；旧目录是输入，不重新执行目录发现，也不编写详细过程。");
+    input.put(
+        "instruction", "先从已保存项目说明与全部导航提出可修正的系统/业务假设，再提出调查问题、跨活动候选和实际阅读请求；旧目录是输入，不新增分类调用，也不编写详细过程。");
     return input;
   }
 
@@ -266,6 +320,8 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         cards.stream().map(ActivityIndexCard::activityId).collect(Collectors.toSet());
     Map<String, Candidate> changes = new LinkedHashMap<>();
     Map<String, List<SourceReadRequest>> initialRequests = new LinkedHashMap<>();
+    Map<String, List<String>> questions = new LinkedHashMap<>();
+    ObjectNode assessment = parseSystemAssessment(object(value.path("systemAssessment")));
     for (JsonNode item : array(value, "candidateChanges")) {
       ObjectNode change = object(item);
       String localId = text(change, "candidateLocalId");
@@ -274,6 +330,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         throw failure("PROCESS_MATERIAL_SELECTION_DUPLICATE_CANDIDATE");
       }
       initialRequests.put(localId, sourceReadRequests(array(change, "initialReadingRequests")));
+      questions.put(localId, strings(change, "investigationQuestions"));
     }
     Map<String, Candidate> original =
         baseline.candidates().stream()
@@ -315,13 +372,53 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         baseline,
         List.copyOf(candidates),
         Map.copyOf(initialRequests),
-        activityDispositions(array(value, "changedActivityDispositions"), cards));
+        activityDispositions(array(value, "changedActivityDispositions"), cards),
+        assessment,
+        Map.copyOf(questions));
+  }
+
+  private ObjectNode parseSystemAssessment(ObjectNode assessment) {
+    text(assessment, "description");
+    for (JsonNode item : array(assessment, "typeHypotheses")) {
+      ObjectNode type = object(item);
+      text(type, "label");
+      strings(type, "basis");
+      strings(type, "uncertainties");
+    }
+    Set<String> keys = new HashSet<>();
+    for (JsonNode item : array(assessment, "businessHypotheses")) {
+      ObjectNode hypothesis = object(item);
+      if (!keys.add(text(hypothesis, "key"))) {
+        throw failure("PROCESS_SYSTEM_ASSESSMENT_DUPLICATE_HYPOTHESIS");
+      }
+      text(hypothesis, "name");
+      text(hypothesis, "hypothesis");
+      text(hypothesis, "whyInvestigate");
+      text(hypothesis, "refutingObservation");
+      strings(hypothesis, "questions");
+    }
+    return assessment.deepCopy();
+  }
+
+  private ObjectNode investigationContext(CatalogSample sample, Candidate candidate) {
+    ObjectNode context = JsonNodeFactory.instance.objectNode();
+    if (sample.request.focusQuestion() == null) {
+      context.putNull("focusQuestion");
+    } else {
+      context.put("focusQuestion", sample.request.focusQuestion());
+    }
+    context.set("systemAssessment", sample.selection.systemAssessment().deepCopy());
+    strings(
+        context.putArray("investigationQuestions"),
+        sample.selection.investigationQuestions().getOrDefault(candidate.localId(), List.of()));
+    return context;
   }
 
   private ReadingPacket prepareReadingPacket(
       int ordinal,
       Candidate candidate,
       List<SourceReadRequest> initialRequests,
+      ObjectNode investigationContext,
       List<ProcessCoverage.ActivityDisposition> selectionChanges,
       List<ActivityIndexCard> cards,
       FrozenCorpus corpus,
@@ -334,7 +431,9 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
             initialRequests,
             corpus,
             sourceText,
-            List.of());
+            List.of(),
+            1,
+            "INITIAL");
     ReadingPacket initialPacket =
         new ReadingPacket(
             ordinal,
@@ -343,10 +442,18 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
             initial.sources(),
             initial.limitations(),
             selectionChanges,
-            List.of());
-    ObjectNode input = readingCheckInput(initialPacket, corpus, cards, sourceText);
+            List.of(),
+            investigationContext,
+            readingSelections(
+                initial.readingRecords(),
+                List.of(),
+                initial.readingRecords().stream().map(ReadingRecord::recordId).toList(),
+                List.of(),
+                initial.sources()));
+    ObjectNode input =
+        readingCheckInput(initialPacket, corpus, cards, sourceText, initial.readingRecords());
     requireInputCapacity(input, request.profile(), "PROCESS_READING_CHECK_INPUT_CAPACITY_EXCEEDED");
-    ModelCall response =
+    ReadingCheck check =
         singleDecision(
             READING_CHECK,
             "process-reading-check-" + idSuffix(candidate.candidateId()),
@@ -354,16 +461,22 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
             readingCheckSchema(initialPacket, corpus, cards, sourceText),
             request.profile(),
             binding("processGroup", ordinal),
-            "process-reading-check");
-    ReadingCheck check = parseReadingCheck(response.value(), candidate, cards);
+            "process-reading-check",
+            value -> parseReadingCheck(value, candidate, cards, initial.readingRecords()));
+    List<ReadingRecord> retained =
+        initial.readingRecords().stream()
+            .filter(record -> check.retainedReadingRecordIds().contains(record.recordId()))
+            .toList();
     PacketMaterials supplemented =
         packetMaterials(
             check.candidate(),
             check.contextActivityIds(),
-            initialRequests,
+            check.supplementaryRequests(),
             corpus,
             sourceText,
-            check.supplementaryRequests());
+            retained,
+            initial.readingRecords().size() + 1,
+            "SUPPLEMENTARY");
     List<ProcessCoverage.ActivityDisposition> changes = new ArrayList<>(selectionChanges);
     changes.addAll(check.changedDispositions());
     return new ReadingPacket(
@@ -371,9 +484,21 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         check.candidate(),
         supplemented.activityIds(),
         supplemented.sources(),
-        supplemented.limitations(),
+        java.util.stream.Stream.concat(
+                initial.limitations().stream(), supplemented.limitations().stream())
+            .distinct()
+            .toList(),
         List.copyOf(changes),
-        check.unresolvedQuestions());
+        check.unresolvedQuestions(),
+        investigationContext,
+        readingSelections(
+            initial.readingRecords(),
+            supplemented.readingRecords().stream()
+                .filter(record -> "SUPPLEMENTARY".equals(record.stage()))
+                .toList(),
+            check.retainedReadingRecordIds(),
+            check.selectionNotes(),
+            supplemented.sources()));
   }
 
   private List<ReadingPacket> prepareReadingPackets(
@@ -396,6 +521,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
                           .selection
                           .initialRequests()
                           .getOrDefault(selection.candidate().localId(), List.of()),
+                      investigationContext(sample, selection.candidate()),
                       sample.selection.changedDispositions(),
                       sample.cards,
                       sample.corpus,
@@ -424,6 +550,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
                           .selection
                           .initialRequests()
                           .getOrDefault(candidate.localId(), List.of()),
+                      investigationContext(sample, candidate),
                       sample.selection.changedDispositions(),
                       sample.cards,
                       sample.corpus,
@@ -447,11 +574,48 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       List<ActivityIndexCard> cards, FrozenCorpus corpus, FrozenProcessSourceCorpus sourceText) {
     ObjectNode root = objectSchema();
     ObjectNode properties = root.putObject("properties");
+    properties.set("systemAssessment", systemAssessmentSchema());
     properties.set(
         "candidateChanges", arraySchema(selectionCandidateSchema(cards, corpus, sourceText)));
     properties.set("oldCandidateDecisions", arraySchema(oldCandidateDecisionSchema(cards)));
     properties.set("changedActivityDispositions", arraySchema(activityDispositionSchema(cards)));
-    required(root, "candidateChanges", "oldCandidateDecisions", "changedActivityDispositions");
+    required(
+        root,
+        "systemAssessment",
+        "candidateChanges",
+        "oldCandidateDecisions",
+        "changedActivityDispositions");
+    return root;
+  }
+
+  private ObjectNode systemAssessmentSchema() {
+    ObjectNode root = objectSchema();
+    ObjectNode properties = root.putObject("properties");
+    properties.set("description", textSchema());
+    ObjectNode type = objectSchema();
+    ObjectNode typeProperties = type.putObject("properties");
+    typeProperties.set("label", textSchema());
+    typeProperties.set("basis", stringsSchema());
+    typeProperties.set("uncertainties", stringsSchema());
+    required(type, "label", "basis", "uncertainties");
+    properties.set("typeHypotheses", arraySchema(type));
+    ObjectNode hypothesis = objectSchema();
+    ObjectNode hypothesisProperties = hypothesis.putObject("properties");
+    for (String field :
+        List.of("key", "name", "hypothesis", "whyInvestigate", "refutingObservation")) {
+      hypothesisProperties.set(field, textSchema());
+    }
+    hypothesisProperties.set("questions", stringsSchema());
+    required(
+        hypothesis,
+        "key",
+        "name",
+        "hypothesis",
+        "whyInvestigate",
+        "refutingObservation",
+        "questions");
+    properties.set("businessHypotheses", arraySchema(hypothesis));
+    required(root, "description", "typeHypotheses", "businessHypotheses");
     return root;
   }
 
@@ -483,6 +647,13 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     properties.set(
         "supplementaryRequests", arraySchema(readingCheckSourceReadRequestSchema(corpus)));
     properties.set("unresolvedQuestions", stringsSchema());
+    List<String> readingRecordIds = new ArrayList<>();
+    packet
+        .readingSelections()
+        .path("initialReadingRecords")
+        .forEach(record -> readingRecordIds.add(record.path("readingRecordId").asText()));
+    properties.set("retainedReadingRecordIds", enumArraySchema(readingRecordIds));
+    properties.set("selectionNotes", stringsSchema());
     properties.set(
         "changedActivityDispositions", arraySchema(readingCheckActivityDispositionSchema()));
     required(
@@ -494,6 +665,8 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         "contextActivityIds",
         "supplementaryRequests",
         "unresolvedQuestions",
+        "retainedReadingRecordIds",
+        "selectionNotes",
         "changedActivityDispositions");
     return root;
   }
@@ -546,6 +719,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     properties.set("scope", textSchema());
     properties.set("activityUses", arraySchema(candidateUseSchema(cards)));
     properties.set("contextActivityIds", enumArraySchema(cardIds(cards)));
+    properties.set("investigationQuestions", stringsSchema());
     properties.set(
         "initialReadingRequests", arraySchema(sourceReadRequestSchema(corpus, sourceText)));
     required(
@@ -556,6 +730,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         "scope",
         "activityUses",
         "contextActivityIds",
+        "investigationQuestions",
         "initialReadingRequests");
     return schema;
   }
@@ -726,24 +901,30 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
           || ("LITERAL_SEARCH".equals(kind) && (literal == null || contextLines < 0))) {
         throw failure("PROCESS_READING_REQUEST_INVALID");
       }
-      text(value, "purpose");
       requests.add(
           new SourceReadRequest(
-              requestId, kind, sourceRef, fileKey, startLine, endLine, literal, contextLines));
+              requestId,
+              kind,
+              sourceRef,
+              fileKey,
+              startLine,
+              endLine,
+              literal,
+              contextLines,
+              text(value, "purpose")));
     }
-    requests.sort(Comparator.comparing(SourceReadRequest::requestId, UTF8_ORDER));
     return List.copyOf(requests);
   }
 
   private PacketMaterials packetMaterials(
       Candidate candidate,
       List<String> contextActivityIds,
-      List<SourceReadRequest> initialRequests,
+      List<SourceReadRequest> requests,
       FrozenCorpus corpus,
       FrozenProcessSourceCorpus sourceText,
-      List<SourceReadRequest> supplementaryRequests) {
-    List<SourceReadRequest> requests = new ArrayList<>(initialRequests);
-    requests.addAll(supplementaryRequests);
+      List<ReadingRecord> retained,
+      int nextRecordId,
+      String stage) {
     Set<String> memberIds =
         candidate.uses().stream().map(CandidateUse::activityId).collect(Collectors.toSet());
     Set<String> activityIds = new LinkedHashSet<>(memberIds);
@@ -753,44 +934,71 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       }
       activityIds.add(activityId);
     }
-    Map<String, SourceReference> sources = new LinkedHashMap<>();
-    Set<String> reservedSourceReferences =
-        corpus.sourceReferences().stream()
-            .map(SourceReference::ref)
-            .collect(Collectors.toUnmodifiableSet());
+    Set<String> corpusSourceReferences =
+        corpus.sourceReferences().stream().map(SourceReference::ref).collect(Collectors.toSet());
+    Set<String> reservedSourceReferences = new HashSet<>(corpusSourceReferences);
+    retained.forEach(record -> reservedSourceReferences.add(record.source().ref()));
+    List<ReadingRecord> records = new ArrayList<>(retained);
     List<String> limitations = new ArrayList<>();
     int nextLocalSource = 1;
     for (SourceReadRequest request : requests) {
       if ("SOURCE_REF".equals(request.kind())) {
-        sources.put(request.sourceRef(), corpus.source(request.sourceRef()));
+        records.add(
+            new ReadingRecord(
+                "R" + nextRecordId++, request, corpus.source(request.sourceRef()), false, stage));
       } else if (sourceText == null) {
         limitations.add(request.requestId() + ": no frozen text reader was supplied");
       } else if ("WHOLE_FILE".equals(request.kind())) {
+        int totalLineCount =
+            sourceText.files().stream()
+                .filter(
+                    file ->
+                        file.fileKey().equals(request.fileKey())
+                            || file.path().equals(request.fileKey()))
+                .findFirst()
+                .orElseThrow(() -> failure("PROCESS_SOURCE_TEXT_UNKNOWN_FILE"))
+                .lineCount();
+        boolean preview = "INITIAL".equals(stage) && totalLineCount > INITIAL_PREVIEW_LINES;
         FrozenProcessSourceCorpus.SourceText read =
-            sourceText.read(request.fileKey(), FrozenProcessSourceCorpus.ReadRange.wholeFile());
-        nextLocalSource =
-            addReadSource(
-                sources,
-                reservedSourceReferences,
-                nextLocalSource,
+            sourceText.read(
+                request.fileKey(),
+                preview
+                    ? FrozenProcessSourceCorpus.ReadRange.of(1, INITIAL_PREVIEW_LINES)
+                    : FrozenProcessSourceCorpus.ReadRange.wholeFile());
+        while (reservedSourceReferences.contains("S" + nextLocalSource)) nextLocalSource++;
+        SourceReference source =
+            new SourceReference(
+                "S" + nextLocalSource++,
                 read.path(),
                 read.startLine(),
                 read.endLine(),
                 read.text());
+        reservedSourceReferences.add(source.ref());
+        records.add(
+            new ReadingRecord(
+                "R" + nextRecordId++,
+                request,
+                source,
+                read.complete(),
+                stage,
+                preview,
+                totalLineCount));
       } else if ("FILE_RANGE".equals(request.kind())) {
         FrozenProcessSourceCorpus.SourceText read =
             sourceText.read(
                 request.fileKey(),
                 FrozenProcessSourceCorpus.ReadRange.of(request.startLine(), request.endLine()));
-        nextLocalSource =
-            addReadSource(
-                sources,
-                reservedSourceReferences,
-                nextLocalSource,
+        while (reservedSourceReferences.contains("S" + nextLocalSource)) nextLocalSource++;
+        SourceReference source =
+            new SourceReference(
+                "S" + nextLocalSource++,
                 read.path(),
                 read.startLine(),
                 read.endLine(),
                 read.text());
+        reservedSourceReferences.add(source.ref());
+        records.add(
+            new ReadingRecord("R" + nextRecordId++, request, source, read.complete(), stage));
       } else {
         List<FrozenProcessSourceCorpus.SearchHit> hits =
             sourceText.search(
@@ -799,57 +1007,175 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
           limitations.add(request.requestId() + ": literal not found");
         }
         for (FrozenProcessSourceCorpus.SearchHit hit : hits) {
-          nextLocalSource =
-              addReadSource(
-                  sources,
-                  reservedSourceReferences,
-                  nextLocalSource,
-                  hit.path(),
-                  hit.startLine(),
-                  hit.endLine(),
-                  hit.text());
+          while (reservedSourceReferences.contains("S" + nextLocalSource)) nextLocalSource++;
+          SourceReference source =
+              new SourceReference(
+                  "S" + nextLocalSource++, hit.path(), hit.startLine(), hit.endLine(), hit.text());
+          reservedSourceReferences.add(source.ref());
+          records.add(new ReadingRecord("R" + nextRecordId++, request, source, false, stage));
         }
       }
     }
+    List<SourceReference> sources;
+    if ("INITIAL".equals(stage)) {
+      sources = records.stream().map(ReadingRecord::source).distinct().toList();
+    } else {
+      Map<String, SourceReference> saved = new LinkedHashMap<>();
+      Map<SourceIdentity, SourceReference> unique = new LinkedHashMap<>();
+      records.forEach(
+          record -> {
+            if (corpusSourceReferences.contains(record.source().ref())) {
+              saved.putIfAbsent(record.source().ref(), record.source());
+            } else {
+              unique.putIfAbsent(SourceIdentity.from(record.source()), record.source());
+            }
+          });
+      saved.values().forEach(source -> unique.remove(SourceIdentity.from(source)));
+      sources =
+          java.util.stream.Stream.concat(saved.values().stream(), unique.values().stream())
+              .toList();
+    }
     return new PacketMaterials(
         activityIds.stream().sorted(UTF8_ORDER).toList(),
-        sources.values().stream()
-            .sorted(Comparator.comparing(SourceReference::ref, UTF8_ORDER))
-            .toList(),
-        List.copyOf(limitations));
+        sources.stream().sorted(Comparator.comparing(SourceReference::ref, UTF8_ORDER)).toList(),
+        List.copyOf(limitations),
+        List.copyOf(records));
   }
 
-  private int addReadSource(
-      Map<String, SourceReference> sources,
-      Set<String> reservedSourceReferences,
-      int nextLocalSource,
-      String file,
-      int startLine,
-      int endLine,
-      String snippet) {
-    for (SourceReference source : sources.values()) {
-      if (source.file().equals(file)
-          && source.startLine() == startLine
-          && source.endLine() == endLine
-          && source.snippet().equals(snippet)) {
-        return nextLocalSource;
-      }
+  private ObjectNode readingSelections(
+      List<ReadingRecord> initial,
+      List<ReadingRecord> supplementary,
+      List<String> retainedIds,
+      List<String> notes,
+      List<SourceReference> selectedSources) {
+    ObjectNode selections = JsonNodeFactory.instance.objectNode();
+    ArrayNode initialValues = selections.putArray("initialReadingRecords");
+    initial.forEach(record -> initialValues.add(readingRecordMetadata(record)));
+    ArrayNode supplementaryValues = selections.putArray("supplementaryReadingRecords");
+    supplementary.forEach(record -> supplementaryValues.add(readingRecordMetadata(record)));
+    strings(selections.putArray("retainedReadingRecordIds"), retainedIds);
+    strings(selections.putArray("selectionNotes"), notes);
+    Map<SourceIdentity, List<ReadingRecord>> selectedBySource = new LinkedHashMap<>();
+    java.util.stream.Stream.concat(
+            initial.stream().filter(record -> retainedIds.contains(record.recordId())),
+            supplementary.stream())
+        .forEach(
+            record ->
+                selectedBySource
+                    .computeIfAbsent(
+                        SourceIdentity.from(record.source()), ignored -> new ArrayList<>())
+                    .add(record));
+    ArrayNode selected = selections.putArray("selectedReadingRecords");
+    Set<String> selectedRefs =
+        selectedSources.stream().map(SourceReference::ref).collect(Collectors.toSet());
+    selectedBySource
+        .values()
+        .forEach(
+            records -> {
+              ObjectNode value = selected.addObject();
+              strings(
+                  value.putArray("sourceRefs"),
+                  records.stream()
+                      .map(record -> record.source().ref())
+                      .filter(selectedRefs::contains)
+                      .distinct()
+                      .toList());
+              strings(
+                  value.putArray("readingRecordIds"),
+                  records.stream().map(ReadingRecord::recordId).toList());
+              strings(
+                  value.putArray("purposes"),
+                  records.stream().map(record -> record.request().purpose()).distinct().toList());
+            });
+    return selections;
+  }
+
+  private ObjectNode readingRecordMetadata(ReadingRecord record) {
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    value.put("readingRecordId", record.recordId());
+    value.put("requestId", record.request().requestId());
+    value.put("kind", record.request().kind());
+    value.put("purpose", record.request().purpose());
+    value.put("complete", record.complete());
+    value.put("preview", record.preview());
+    if ("WHOLE_FILE".equals(record.request().kind())) {
+      value.put("totalLineCount", record.totalLineCount());
     }
-    String ref = "S" + nextLocalSource;
-    while (sources.containsKey(ref) || reservedSourceReferences.contains(ref)) {
-      ref = "S" + ++nextLocalSource;
-    }
-    sources.put(ref, new SourceReference(ref, file, startLine, endLine, snippet));
-    return nextLocalSource + 1;
+    value.put("startLine", record.source().startLine());
+    value.put("endLine", record.source().endLine());
+    value.put("stage", record.stage());
+    return value;
   }
 
   private ObjectNode readingCheckInput(
       ReadingPacket packet,
       FrozenCorpus corpus,
       List<ActivityIndexCard> cards,
-      FrozenProcessSourceCorpus sourceText) {
+      FrozenProcessSourceCorpus sourceText,
+      List<ReadingRecord> records) {
     ObjectNode input = packetInput(packet, corpus);
+    Map<String, SourceReference> checkSources = new LinkedHashMap<>();
+    Map<SourceIdentity, SourceReference> sourcesByIdentity = new LinkedHashMap<>();
+    records.stream()
+        .filter(record -> "SOURCE_REF".equals(record.request().kind()))
+        .forEach(
+            record -> {
+              checkSources.putIfAbsent(record.source().ref(), record.source());
+              sourcesByIdentity.putIfAbsent(SourceIdentity.from(record.source()), record.source());
+            });
+    records.stream()
+        .filter(record -> !"SOURCE_REF".equals(record.request().kind()))
+        .forEach(
+            record -> {
+              SourceReference source =
+                  sourcesByIdentity.computeIfAbsent(
+                      SourceIdentity.from(record.source()), ignored -> record.source());
+              checkSources.putIfAbsent(source.ref(), source);
+            });
+    ArrayNode excerpts = ((ObjectNode) input.path("readingPacket")).putArray("sourceExcerpts");
+    checkSources.values().forEach(source -> sourceJson(excerpts.addObject(), source));
+    ArrayNode readingRecords = input.putArray("readingRecords");
+    Map<String, String> checkReferenceMapping = new LinkedHashMap<>();
+    records.forEach(
+        record -> {
+          ObjectNode value = readingRecordMetadata(record);
+          String actualRef =
+              "SOURCE_REF".equals(record.request().kind())
+                  ? record.source().ref()
+                  : sourcesByIdentity.get(SourceIdentity.from(record.source())).ref();
+          value.put("sourceRef", actualRef);
+          checkReferenceMapping.put(record.source().ref(), actualRef);
+          readingRecords.add(value);
+        });
+    remapSourceReferences(input.path("readingSelections"), checkReferenceMapping);
     ((ObjectNode) input.path("readingPacket")).remove("statementDirectory");
+    Set<String> previewedFiles =
+        records.stream()
+            .filter(ReadingRecord::preview)
+            .map(record -> record.source().file())
+            .collect(Collectors.toSet());
+    ArrayNode locators = input.putArray("savedSourceLocators");
+    corpus.sourceReferences().stream()
+        .filter(source -> previewedFiles.contains(source.file()))
+        .forEach(
+            source -> {
+              ObjectNode locator = locators.addObject();
+              locator.put("ref", source.ref());
+              locator.put("file", source.file());
+              locator.put("startLine", source.startLine());
+              locator.put("endLine", source.endLine());
+              locator.put(
+                  "snippet",
+                  sourceText
+                      .read(
+                          source.file(),
+                          FrozenProcessSourceCorpus.ReadRange.of(
+                              source.startLine(),
+                              Math.min(
+                                  source.endLine(),
+                                  source.startLine() + SAVED_SOURCE_LOCATOR_LINES - 1)))
+                      .text());
+            });
     input.put("task", READING_CHECK);
     ArrayNode navigation = input.putArray("activityIndexCards");
     cards.stream()
@@ -877,7 +1203,17 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
   }
 
   private ReadingCheck parseReadingCheck(
-      ObjectNode value, Candidate previous, List<ActivityIndexCard> cards) {
+      ObjectNode value,
+      Candidate previous,
+      List<ActivityIndexCard> cards,
+      List<ReadingRecord> records) {
+    List<String> retainedIds = strings(value, "retainedReadingRecordIds");
+    Set<String> knownIds =
+        records.stream().map(ReadingRecord::recordId).collect(Collectors.toSet());
+    if (new HashSet<>(retainedIds).size() != retainedIds.size()
+        || !knownIds.containsAll(retainedIds)) {
+      throw failure("PROCESS_READING_RETAINED_RECORD_INVALID");
+    }
     Set<String> activityIds =
         cards.stream().map(ActivityIndexCard::activityId).collect(Collectors.toSet());
     List<CandidateUse> uses = candidateUses(array(value, "activityUses"), activityIds);
@@ -900,7 +1236,9 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         contexts,
         sourceReadRequests(array(value, "supplementaryRequests")),
         activityDispositions(array(value, "changedActivityDispositions"), cards),
-        strings(value, "unresolvedQuestions"));
+        strings(value, "unresolvedQuestions"),
+        retainedIds,
+        strings(value, "selectionNotes"));
   }
 
   private static int optionalPositiveInt(JsonNode value) {
@@ -1064,24 +1402,84 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       return RawCandidateResult.notProcessed(packet, "NOT_PROCESSED_CAPACITY");
     }
     ObjectNode schema = processSchema(packet, corpus);
+    Schema intermediateSchema =
+        SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12).getSchema(schema);
+    ObjectNode reviewSchema = processRuleReviewSchema(schema);
     String taskBase = "business-process-" + idSuffix(candidate.candidateId());
-    String fingerprint =
-        inputFingerprint(PROCESS_DRAFT, PROCESS_REVIEW, input, schema, profile, binding);
-    ReviewedPair reused = reopenProcessPair(taskBase, fingerprint, binding);
+    String fingerprint = processFingerprint(input, schema, reviewSchema, profile, binding);
+    ReviewedProcess reused =
+        reopenProcess(taskBase, fingerprint, input, intermediateSchema, binding);
     if (reused != null) {
       return new RawCandidateResult(
-          packet, reused.draft(), reused.review(), fingerprint, binding, true);
+          packet,
+          input,
+          reused.draft(),
+          reused.writing(),
+          reused.review(),
+          fingerprint,
+          binding,
+          true);
     }
     ModelCall draft = call(PROCESS_DRAFT, taskBase + "-draft", input, schema, profile, binding);
+    requireIntermediateSchema(draft.value(), intermediateSchema, "PROCESS_MODEL_SCHEMA_INVALID");
+    ObjectNode writingInput = JsonNodeFactory.instance.objectNode();
+    writingInput.set("actualDraft", draft.value());
+    requireInputCapacity(writingInput, profile, "PROCESS_WRITE_INPUT_CAPACITY_EXCEEDED");
+    ModelCall writing =
+        call(PROCESS_WRITE, taskBase + "-write", writingInput, schema, profile, binding);
+    requireIntermediateSchema(writing.value(), intermediateSchema, "PROCESS_MODEL_SCHEMA_INVALID");
+    if (!draft.runtimeIdentity().equals(writing.runtimeIdentity())) {
+      throw failure("PROCESS_JOB_RUNTIME_IDENTITY_MISMATCH");
+    }
     ObjectNode reviewInput = input.deepCopy();
     reviewInput.set("actualDraft", draft.value());
-    requireInputCapacity(reviewInput, profile, "PROCESS_REVIEW_INPUT_CAPACITY_EXCEEDED");
+    reviewInput.set("actualWriting", writing.value());
+    requireInputCapacity(reviewInput, profile, "PROCESS_RULE_REVIEW_INPUT_CAPACITY_EXCEEDED");
     ModelCall review =
-        call(PROCESS_REVIEW, taskBase + "-review", reviewInput, schema, profile, binding);
+        call(
+            PROCESS_RULE_REVIEW,
+            taskBase + "-rule-review",
+            reviewInput,
+            reviewSchema,
+            profile,
+            binding);
     if (!draft.runtimeIdentity().equals(review.runtimeIdentity())) {
       throw failure("PROCESS_JOB_RUNTIME_IDENTITY_MISMATCH");
     }
-    return new RawCandidateResult(packet, draft, review, fingerprint, binding, false);
+    return new RawCandidateResult(
+        packet, input, draft, writing, review, fingerprint, binding, false);
+  }
+
+  private static void requireIntermediateSchema(ObjectNode response, Schema schema, String code) {
+    if (!schema.validate(response).isEmpty()) {
+      throw failure(code);
+    }
+  }
+
+  private ObjectNode processRuleReviewSchema(ObjectNode processSchema) {
+    ObjectNode root = objectSchema();
+    root.set("$defs", processSchema.path("$defs").deepCopy());
+    ObjectNode result = processSchema.deepCopy();
+    result.remove("$defs");
+    ObjectNode properties = root.putObject("properties");
+    properties.set("processResult", result);
+    ObjectNode correction = objectSchema();
+    ObjectNode fields = correction.putObject("properties");
+    for (String field : List.of("location", "before", "after", "reason")) {
+      fields.set(field, textSchema());
+    }
+    required(correction, "location", "before", "after", "reason");
+    properties.set("corrections", arraySchema(correction));
+    required(root, "processResult", "corrections");
+    return root;
+  }
+
+  private ObjectNode finalProcessResult(ObjectNode wrapper) {
+    for (JsonNode item : array(wrapper, "corrections")) {
+      ObjectNode correction = object(item);
+      for (String field : List.of("location", "before", "after", "reason")) text(correction, field);
+    }
+    return object(wrapper.path("processResult"));
   }
 
   private CandidateResult finalizeCandidate(
@@ -1095,16 +1493,17 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     ReadingPacket finalPacket = sourceNormalization.finalPacket(raw.packet().ordinal());
     List<SourceReferenceMapping> sourceMapping =
         sourceNormalization.mappingFor(raw.packet().ordinal());
-    ObjectNode remappedReview = remapSourceReferences(raw.review().value(), sourceMapping);
+    ObjectNode remappedReview =
+        remapSourceReferences(finalProcessResult(raw.review().value()), sourceMapping);
     ParsedCandidateDraft reviewed = parseCandidate(remappedReview, finalPacket, corpus, profile);
-    saveProcessPair(
+    saveProcessTriple(
         "business-process-" + idSuffix(raw.packet().candidate().candidateId()),
         raw.inputFingerprint(),
         raw.binding(),
         raw.draft(),
+        raw.writing(),
         raw.review(),
-        raw.packet(),
-        corpus,
+        raw.input(),
         sourceMapping,
         raw.reused());
     return new CandidateResult(
@@ -1255,14 +1654,15 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
   }
 
   /** Executes one saved reading decision; unlike a process pair it has no DRAFT/REVIEW wrapper. */
-  private ModelCall singleDecision(
+  private <T> T singleDecision(
       String taskKind,
       String jobKey,
       ObjectNode input,
       ObjectNode schema,
       ProcessDiscoveryProfile profile,
       ModelJobProviderBinding binding,
-      String phase) {
+      String phase,
+      Function<ObjectNode, T> parseDecision) {
     String fingerprint = decisionFingerprint(taskKind, input, schema, profile, binding);
     if (modelJobs != null && modelJobs.reuseFromModelBatchId() != null) {
       PrivateModelJobResultStore source =
@@ -1274,18 +1674,20 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
                   jobKey, fingerprint, binding.quotaScope(), binding.expectedRuntimeIdentity())
               .orElse(null);
       if (saved != null) {
+        T decision = parseDecision.apply(object(saved.path("response")));
         ObjectNode copied = saved.deepCopy();
         copied.put("runId", modelJobs.runId().value());
         copied.put("reusedFromModelBatchId", modelJobs.reuseFromModelBatchId().value());
         new PrivateModelJobResultStore(modelJobs.journalDirectory(), modelJobs.runId(), phase)
             .writeDecision(jobKey, copied);
-        return new ModelCall(object(saved.path("response")), binding.expectedRuntimeIdentity());
+        return decision;
       }
     }
     ModelCall response = call(taskKind, jobKey, input, schema, profile, binding);
+    T decision = parseDecision.apply(response.value());
     if (modelJobs != null) {
       ObjectNode record = JsonNodeFactory.instance.objectNode();
-      record.put("schemaVersion", "process-reading-decision-v1");
+      record.put("schemaVersion", "process-reading-decision-v2");
       record.put("status", "COMPLETED");
       record.put("runId", modelJobs.runId().value());
       record.put("phase", phase);
@@ -1294,7 +1696,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       record.put("inputFingerprint", fingerprint);
       record.put("providerBindingKey", binding.key());
       record.put("quotaScope", binding.quotaScope());
-      record.put("producerVersion", "v3");
+      record.put("producerVersion", "v4");
       ObjectNode identity = record.putObject("runtimeIdentity");
       identity.put("upstreamProvider", response.runtimeIdentity().upstreamProvider());
       identity.put("model", response.runtimeIdentity().model());
@@ -1305,7 +1707,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       new PrivateModelJobResultStore(modelJobs.journalDirectory(), modelJobs.runId(), phase)
           .writeDecision(jobKey, record);
     }
-    return response;
+    return decision;
   }
 
   private ModelJobProviderBinding binding(String phase, int ordinal) {
@@ -1360,8 +1762,8 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       ProcessDiscoveryProfile profile,
       ModelJobProviderBinding binding) {
     ObjectNode value = JsonNodeFactory.instance.objectNode();
-    value.put("schemaVersion", "process-reading-decision-input-v1");
-    value.put("producerVersion", "v3");
+    value.put("schemaVersion", "process-reading-decision-input-v2");
+    value.put("producerVersion", "v4");
     value.put("taskKind", taskKind);
     value.put("providerBindingKey", binding.key());
     value.put("quotaScope", binding.quotaScope());
@@ -1377,6 +1779,33 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       identity.put("reasoningEffort", binding.expectedRuntimeIdentity().reasoningEffort());
       identity.put("sandbox", binding.expectedRuntimeIdentity().sandbox());
     }
+    return sha256(canonicalJson.encodeCanonical(value));
+  }
+
+  private String processFingerprint(
+      ObjectNode input,
+      ObjectNode processSchema,
+      ObjectNode finalSchema,
+      ProcessDiscoveryProfile profile,
+      ModelJobProviderBinding binding) {
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    value.put("schemaVersion", "business-process-three-stage-input-fingerprint-v1");
+    value.put("pipeline", PROCESS_PIPELINE);
+    value.put("producerVersion", "v4");
+    strings(
+        value.putArray("taskSequence"), List.of(PROCESS_DRAFT, PROCESS_WRITE, PROCESS_RULE_REVIEW));
+    value.put(
+        "readingAndReviewFingerprint",
+        inputFingerprint(PROCESS_DRAFT, PROCESS_RULE_REVIEW, input, finalSchema, profile, binding));
+    value.put("writingInstructions", BusinessProcessPromptCatalog.instructionsFor(PROCESS_WRITE));
+    value.put("draftWritingSchemaSha256", sha256(canonicalJson.encodeCanonical(processSchema)));
+    value.put("maxCardsPerCatalogShard", profile.maxCardsPerCatalogShard());
+    value.put("maxActivitiesPerCandidate", profile.maxActivitiesPerCandidate());
+    value.put("maxRequestedSourceRefs", profile.maxRequestedSourceRefs());
+    value.put("maxRequestedSourceChars", profile.maxRequestedSourceChars());
+    value.put("maxProcessesPerCandidate", profile.maxProcessesPerCandidate());
+    value.put("maxValuesPerField", profile.maxValuesPerField());
+    value.put("maxTextCharsPerValue", profile.maxTextCharsPerValue());
     return sha256(canonicalJson.encodeCanonical(value));
   }
 
@@ -1405,28 +1834,40 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     return new ReviewedPair(draft, review);
   }
 
-  private ReviewedPair reopenProcessPair(
-      String jobKey, String inputFingerprint, ModelJobProviderBinding binding) {
+  private ReviewedProcess reopenProcess(
+      String jobKey,
+      String inputFingerprint,
+      ObjectNode input,
+      Schema intermediateSchema,
+      ModelJobProviderBinding binding) {
     if (modelJobs == null || modelJobs.reuseFromModelBatchId() == null) {
       return null;
     }
     ObjectNode saved =
         new PrivateModelJobResultStore(
                 modelJobs.journalDirectory(), modelJobs.reuseFromModelBatchId(), "business-process")
-            .readCompleted(
+            .readCompletedProcess(
                 jobKey, inputFingerprint, binding.quotaScope(), binding.expectedRuntimeIdentity())
             .orElse(null);
     if (saved == null) {
       return null;
     }
-    requireReusableProcessPair(saved, jobKey, binding);
-    return new ReviewedPair(
+    requireReusableProcess(saved, jobKey, binding);
+    if (!input.equals(saved.path("input"))) {
+      throw failure("MODEL_JOB_RESULT_INPUT_MISMATCH");
+    }
+    requireIntermediateSchema(
+        object(saved.path("draft")), intermediateSchema, "MODEL_JOB_RESULT_INVALID");
+    requireIntermediateSchema(
+        object(saved.path("writing")), intermediateSchema, "MODEL_JOB_RESULT_INVALID");
+    return new ReviewedProcess(
         new ModelCall(object(saved.path("draft")), binding.expectedRuntimeIdentity()),
+        new ModelCall(object(saved.path("writing")), binding.expectedRuntimeIdentity()),
         new ModelCall(object(saved.path("review")), binding.expectedRuntimeIdentity()));
   }
 
   /** Validates the extra immutable packet contract owned only by cross-object process reuse. */
-  private void requireReusableProcessPair(
+  private void requireReusableProcess(
       ObjectNode saved, String jobKey, ModelJobProviderBinding binding) {
     if (!modelJobs.reuseFromModelBatchId().value().equals(nullableText(saved.path("runId")))
         || !"business-process".equals(nullableText(saved.path("phase")))
@@ -1470,21 +1911,23 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         .write(jobKey, record);
   }
 
-  private void saveProcessPair(
+  private void saveProcessTriple(
       String jobKey,
       String inputFingerprint,
       ModelJobProviderBinding binding,
       ModelCall draft,
+      ModelCall writing,
       ModelCall review,
-      ReadingPacket packet,
-      FrozenCorpus corpus,
+      ObjectNode input,
       List<SourceReferenceMapping> sourceReferenceMapping,
       boolean reused) {
     if (modelJobs == null) {
       return;
     }
     ObjectNode record = JsonNodeFactory.instance.objectNode();
-    record.put("schemaVersion", "model-job-reviewed-result-v2");
+    record.put("schemaVersion", "model-job-reviewed-result-v3");
+    record.put("pipeline", PROCESS_PIPELINE);
+    record.put("producerVersion", "v4");
     record.put("status", "COMPLETED");
     record.put("runId", modelJobs.runId().value());
     record.put("phase", "business-process");
@@ -1498,8 +1941,10 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     identity.put("reasoningEffort", review.runtimeIdentity().reasoningEffort());
     identity.put("sandbox", review.runtimeIdentity().sandbox());
     record.set("draft", draft.value());
+    record.set("writing", writing.value());
     record.set("review", review.value());
-    record.set("readingPacket", packetInput(packet, corpus).path("readingPacket"));
+    record.set("input", input);
+    record.set("readingPacket", input.path("readingPacket"));
     ArrayNode mapping = record.putArray("sourceReferenceMapping");
     sourceReferenceMapping.forEach(
         source -> {
@@ -2311,7 +2756,9 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
                       List.copyOf(sources),
                       packet.limitations(),
                       packet.changedDispositions(),
-                      packet.unresolvedQuestions()))
+                      packet.unresolvedQuestions(),
+                      packet.investigationContext(),
+                      remapSourceReferences(packet.readingSelections(), mapping)))
               != null
           || mappings.put(packet.ordinal(), List.copyOf(mapping)) != null) {
         throw failure("PROCESS_READING_PACKET_ORDINAL_DUPLICATE");
@@ -2376,6 +2823,8 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
   private ObjectNode packetInput(ReadingPacket packet, FrozenCorpus corpus) {
     ObjectNode input = JsonNodeFactory.instance.objectNode();
     input.set("candidate", packet.candidate().toJson());
+    input.set("investigationContext", packet.investigationContext().deepCopy());
+    input.set("readingSelections", packet.readingSelections().deepCopy());
     ObjectNode readingPacket = input.putObject("readingPacket");
     readingPacket.put("schemaVersion", "process-reading-packet-v1");
     readingPacket.set("candidate", packet.candidate().toJson());
@@ -3245,6 +3694,8 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
 
   private record ReviewedPair(ModelCall draft, ModelCall review) {}
 
+  private record ReviewedProcess(ModelCall draft, ModelCall writing, ModelCall review) {}
+
   private record IndexedJson(int ordinal, ObjectNode value) {}
 
   private record IndexedCandidate(int ordinal, CandidateResult value) {}
@@ -3278,6 +3729,25 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
 
     List<String> candidateIds() {
       return catalog.candidates().stream().map(Candidate::candidateId).toList();
+    }
+  }
+
+  record SelectedPreview(
+      List<CandidatePreview> candidates, List<SourceReference> sourceReferences) {
+    SelectedPreview {
+      candidates = List.copyOf(candidates);
+      sourceReferences = List.copyOf(sourceReferences);
+    }
+  }
+
+  record CandidatePreview(
+      String candidateId,
+      int ordinal,
+      String disposition,
+      String reason,
+      List<RepositoryBusinessProcessCatalog.BusinessProcess> processes) {
+    CandidatePreview {
+      processes = List.copyOf(processes);
     }
   }
 
@@ -3324,7 +3794,9 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       CatalogResult baseline,
       List<Candidate> candidates,
       Map<String, List<SourceReadRequest>> initialRequests,
-      List<ProcessCoverage.ActivityDisposition> changedDispositions) {
+      List<ProcessCoverage.ActivityDisposition> changedDispositions,
+      ObjectNode systemAssessment,
+      Map<String, List<String>> investigationQuestions) {
     CatalogResult catalogWith(
         List<Candidate> finalCandidates,
         List<ProcessCoverage.ActivityDisposition> additionalChanges,
@@ -3391,17 +3863,41 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       int startLine,
       int endLine,
       String literal,
-      int contextLines) {}
+      int contextLines,
+      String purpose) {}
+
+  private record ReadingRecord(
+      String recordId,
+      SourceReadRequest request,
+      SourceReference source,
+      boolean complete,
+      String stage,
+      boolean preview,
+      int totalLineCount) {
+    private ReadingRecord(
+        String recordId,
+        SourceReadRequest request,
+        SourceReference source,
+        boolean complete,
+        String stage) {
+      this(recordId, request, source, complete, stage, false, 0);
+    }
+  }
 
   private record PacketMaterials(
-      List<String> activityIds, List<SourceReference> sources, List<String> limitations) {}
+      List<String> activityIds,
+      List<SourceReference> sources,
+      List<String> limitations,
+      List<ReadingRecord> readingRecords) {}
 
   private record ReadingCheck(
       Candidate candidate,
       List<String> contextActivityIds,
       List<SourceReadRequest> supplementaryRequests,
       List<ProcessCoverage.ActivityDisposition> changedDispositions,
-      List<String> unresolvedQuestions) {}
+      List<String> unresolvedQuestions,
+      List<String> retainedReadingRecordIds,
+      List<String> selectionNotes) {}
 
   private record ReadingPacket(
       int ordinal,
@@ -3410,7 +3906,9 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       List<SourceReference> sources,
       List<String> limitations,
       List<ProcessCoverage.ActivityDisposition> changedDispositions,
-      List<String> unresolvedQuestions) {}
+      List<String> unresolvedQuestions,
+      ObjectNode investigationContext,
+      ObjectNode readingSelections) {}
 
   private record SourceIdentity(String file, int startLine, int endLine, String snippet) {
     static SourceIdentity from(SourceReference source) {
@@ -3472,7 +3970,9 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
 
   private record RawCandidateResult(
       ReadingPacket packet,
+      ObjectNode input,
       ModelCall draft,
+      ModelCall writing,
       ModelCall review,
       String inputFingerprint,
       ModelJobProviderBinding binding,
@@ -3480,16 +3980,18 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       String capacityDisposition) {
     RawCandidateResult(
         ReadingPacket packet,
+        ObjectNode input,
         ModelCall draft,
+        ModelCall writing,
         ModelCall review,
         String inputFingerprint,
         ModelJobProviderBinding binding,
         boolean reused) {
-      this(packet, draft, review, inputFingerprint, binding, reused, null);
+      this(packet, input, draft, writing, review, inputFingerprint, binding, reused, null);
     }
 
     static RawCandidateResult notProcessed(ReadingPacket packet, String disposition) {
-      return new RawCandidateResult(packet, null, null, null, null, false, disposition);
+      return new RawCandidateResult(packet, null, null, null, null, null, null, false, disposition);
     }
   }
 

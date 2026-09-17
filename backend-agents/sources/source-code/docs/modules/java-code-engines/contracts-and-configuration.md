@@ -1,5 +1,7 @@
 # Java代码引擎：配置与共同材料合同
 
+迁移说明（2026-09-17）：本页是已发布的两引擎/index/context历史合同。新执行的JDT-only配置、可选持久化插件与第5步材料合同见[补充详细设计](../../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md)。不在旧schema中改字段含义，不因保留历史读取而继续维护JavaParser生产路线。尚未实施的新行为不能作为当前命令使用说明。
+
 > [总设计](README.md)。本页字段是 JDT 与已完成 JavaParser Adapter 共用的已发布合同；两种引擎能力可以不同，但都不能要求下游理解工具专属 records。
 
 ## 1. EngineConfigurationLoader：只选择工具，不决定业务

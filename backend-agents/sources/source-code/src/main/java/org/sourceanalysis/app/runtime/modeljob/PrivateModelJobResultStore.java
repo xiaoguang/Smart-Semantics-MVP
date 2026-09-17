@@ -63,7 +63,7 @@ public final class PrivateModelJobResultStore {
   }
 
   /**
-   * Reads one complete v1 reading decision when its actual input and provider identity still match.
+   * Reads one complete v1/v2 reading decision when its actual input and provider identity match.
    */
   public Optional<ObjectNode> readCompletedDecision(
       String jobKey,
@@ -177,6 +177,53 @@ public final class PrivateModelJobResultStore {
     }
   }
 
+  /** Reopens only complete candidate three-stage results; historical pairs are not triples. */
+  public Optional<ObjectNode> readCompletedProcess(
+      String jobKey,
+      String inputFingerprint,
+      String expectedQuotaScope,
+      ModelRuntimeIdentityV1 expectedRuntimeIdentity) {
+    requireJobKey(jobKey);
+    requireFingerprint(inputFingerprint);
+    requireQuotaScope(expectedQuotaScope);
+    Objects.requireNonNull(expectedRuntimeIdentity, "expected model runtime identity");
+    ObjectNode value = readResult(jobKey, "reviewed-result.json").orElse(null);
+    if (value == null || !terminalStatus(value)) return Optional.empty();
+    if ("model-job-reviewed-result-v2".equals(text(value, "schemaVersion"))) {
+      requireCompletePair(value);
+      return Optional.empty();
+    }
+    if (!"model-job-reviewed-result-v3".equals(text(value, "schemaVersion"))
+        || !"business-reasoning-writing-rule-review-v1".equals(text(value, "pipeline"))
+        || !runId.equals(text(value, "runId"))
+        || !phase.equals(text(value, "phase"))
+        || !"business-process".equals(phase)
+        || !jobKey.equals(text(value, "jobKey"))
+        || !(value.path("draft") instanceof ObjectNode)
+        || !(value.path("writing") instanceof ObjectNode)
+        || !(value.path("review") instanceof ObjectNode review)
+        || !(review.path("processResult") instanceof ObjectNode)
+        || !(review.path("corrections") instanceof com.fasterxml.jackson.databind.node.ArrayNode)
+        || !(value.path("input") instanceof ObjectNode input)
+        || !(input.path("candidate") instanceof ObjectNode)
+        || !(input.path("readingPacket") instanceof ObjectNode packet)
+        || !"process-reading-packet-v1".equals(text(packet, "schemaVersion"))
+        || !(input.path("investigationContext") instanceof ObjectNode)
+        || !(input.path("readingSelections") instanceof ObjectNode)
+        || !packet.equals(value.path("readingPacket"))
+        || !value.path("sourceReferenceMapping").isArray()) {
+      throw failure("MODEL_JOB_RESULT_INVALID", null);
+    }
+    requireFingerprint(text(value, "inputFingerprint"));
+    text(value, "providerBindingKey");
+    requireQuotaScope(text(value, "quotaScope"));
+    ModelRuntimeIdentityV1 identity = runtimeIdentity(value.path("runtimeIdentity"));
+    if (!inputFingerprint.equals(text(value, "inputFingerprint"))
+        || !expectedQuotaScope.equals(text(value, "quotaScope"))
+        || !expectedRuntimeIdentity.equals(identity)) return Optional.empty();
+    return Optional.of(value.deepCopy());
+  }
+
   private Optional<ObjectNode> readResult(String jobKey, String fileName) {
     Path result =
         journalDirectory
@@ -216,13 +263,17 @@ public final class PrivateModelJobResultStore {
   }
 
   private void requireDecision(ObjectNode value, String jobKey) {
-    if (!"process-reading-decision-v1".equals(text(value, "schemaVersion"))
+    String version = text(value, "schemaVersion");
+    String producer = text(value, "producerVersion");
+    boolean supportedVersion =
+        ("process-reading-decision-v1".equals(version) && "v3".equals(producer))
+            || ("process-reading-decision-v2".equals(version) && "v4".equals(producer));
+    if (!supportedVersion
         || !runId.equals(text(value, "runId"))
         || !phase.equals(text(value, "phase"))
         || !jobKey.equals(text(value, "jobKey"))
         || !Set.of("PROCESS_MATERIAL_SELECTION", "PROCESS_READING_CHECK")
             .contains(text(value, "taskKind"))
-        || !"v3".equals(text(value, "producerVersion"))
         || !(value.path("input") instanceof ObjectNode)
         || !(value.path("response") instanceof ObjectNode)) {
       throw failure("MODEL_JOB_RESULT_INVALID", null);

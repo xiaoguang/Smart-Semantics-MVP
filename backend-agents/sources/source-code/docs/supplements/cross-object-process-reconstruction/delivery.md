@@ -1,17 +1,27 @@
 # 当前详细设计交付与三例验收状态
 
-2026-09-16当前范围：把已认可的业务可读性、系统类型假设、问题选材和“事实DRAFT→WRITE→最后RULE_REVIEW”写成详细设计。本轮没有修改生产Java/资源Prompt/Schema，没有重新扫描或重建326条Activity；已有未提交改动保留。
+2026-09-16当前范围：用户已批准[实施计划](../../plans/system-assessment-focused-reading-three-stage-implementation.md)，正在把系统类型假设、聚焦选材和“事实DRAFT→WRITE→最后RULE_REVIEW”接入现有Step07。验收限定采购、销售、调拨三个自动选材小样；不重新扫描或重建326条Activity，不继续全仓。
 
 - [完整详细设计](business-reasoning-and-writing.md)：何时判断系统类型、逐步输入输出、模块职责、复用、失败、保存和版本。
-- [实现差异](implementation-status.md)：代码逐项核对，原读取接线已实现，新三阶段仍待实施。
+- [实现差异](implementation-status.md)：选材、聚焦阅读、三阶段保存、正文渲染与小样出口已实现，直接回归与完整本地CI通过；真实三例验收尚未完成。
 - [中文Prompt](prompts.zh-CN.md)：模型判断、选材、事实推理、写作与最终核对。
 - [三例材料推演](walkthrough.md)和[实际验收合同](acceptance.md)：以材料决定阶段，只做小范围。
 - 采购研究正文的可读性已获用户接受；两个已知事实漂移继续保留，不能据此推翻用户的阅读质量判断。
-- 新顺序的三例模型验收尚未执行；具体三例集合及本轮是否立即生成已发确认框。不会自动继续下面历史B的27个候选。
+- 三例集合及真实执行已获授权；[本次真实验收](three-case-acceptance-result-20260916.md)未通过：调拨已保存并离线导出但正文遗漏配置条件，销售返回有7个未定义查询用法，采购最后核对超窗未发送。批次已排空，不会自动继续下面历史B的27个候选。
 
-本次文档核查：23份已修改或新增设计/指导文档的127个本地链接与标题锚点通过；`git diff --check`通过。实现位置对照及三例材料推演经过独立只读审阅；修正了调查背景实际发送位置和退回样本验收口径，同时清除来源附录及corpus设计中把已实现读取能力写为待开发的旧描述。仅修改Markdown，未运行Maven或产品模型，未改写研究/历史原始输出。
+设计基线核查：23份已修改或新增设计/指导文档的127个本地链接与标题锚点通过；`git diff --check`通过。实现位置对照及三例材料推演经过独立只读审阅；修正了调查背景实际发送位置和验收范围，同时清除来源附录及corpus设计中把已实现读取能力写为待开发的旧描述。
 
-`more-findings.md`复核SHA256仍为`59b8381e7e81e3105ed6c6a8d93ce1dbea0247735bf1e6227d8f842b0d1d7f8e`。设计尚未提交；文档完成不是生产实现或新真实验收完成。
+本轮直接验证：阅读、三阶段保存、正文、真实canonical发布及小样出口6类85项，加通用历史双轮读取6项，共91项，零失败、零错误、零跳过；CHECK嵌套来源编号、中间DRAFT/WRITE结构拒绝、知识certainty展示的局部独立复核均Accepted。最新P1修正后完整干净本地CI已通过：596项、零失败/错误、2跳过，SpotBugs零bug/error、PMD通过，9分25秒。之前593项及首个CI的共享target编译失败日志保留，同代码隔离IDE后台builder后成功并已恢复builder；未改业务代码或断言。历史v2/v3精确重开和字节稳定保护仍通过。本轮真实全局选材完成1次，JDT、Builder及Activity重建调用为0；历史原始输出未改写。
+
+当前真实验收：新选材批次`analysis-run:6844166e1aeeab62ecb3a454c12a816779a1aa41ba366deb2296f571b5b50084`已FINISHED，实际选材耗时210927毫秒，提出采购、销售、调拨三个调查候选。仅选择这三个候选的新批次`analysis-run:b80321b0bbec9165023d6ca6b84e83d88f3a816b50723ffe5bbd690ef307721d`在CHECK发送前被私有验收容量检查拒绝，零新增模型调用；没有开始三阶段成稿，也未导出新三例正文。完整实际输入及两种编码估算保存在本轮工作区。阻塞来自首读选择五个共用Java/XML整文件及业务页面，非Activity重建或来源校验；定位与采用方案的状态见实现差异。没有截断原文、降低检查阈值、自动重试或重跑上游。
+
+原设计已有的首读预览P1已完成独立RED→GREEN，26项直接回归、集成审查以及修正后干净本地CI通过：596项/零失败错误/2跳过，SpotBugs零问题、PMD通过，9分25秒。临时IDE builder已恢复S。新固定JAR SHA256 `d2712935abba3946c44f35acda558eb551bfe7e7c52d1cbbe20e47fa07b7337a`独立保存，旧构建不覆盖。
+
+新预检批次`analysis-run:5ea2a8009da970539842d9407a533e3932b75073d7ca8c6c6d631f75eb8043ac`复用同一成功SELECT，实际采购/销售/调拨CHECK估算168077/180516、170799/183757、166610/178890（o200k/cl100k）；包含实际Prompt/Schema/已有M10行段导航，各自加原实验余量后通过本次窗口观察。完整Activity、全仓召回及文件导航、调查背景与旧请求保持一致，预览是准确原文而非隐藏整文件。驱动明确在Provider前停止，零新增模型调用；不把预检停止的FAILED当作模型失败或业务完成。根AGENTS启动前失败条款及模块已有授权条款已由主agent和原审阅者复核，此前额外具名确认过严，不是新增授权要求。随后真实批次`analysis-run:82d416f4a16ce8b2bec7d47af8d5fa5b9a9ec00e50d3c33697b98834e40532ca`复用SELECT，实际完成3CHECK、3DRAFT、3WRITE、2RULE_REVIEW；采购最后核对未发送。该批次已FAILED并排空，没有仍在运行的请求。连同SELECT共12次真实模型请求全部返回；调拨仅程序完成，销售原始最终返回存在内部用法和业务条件错误，三例质量未通过。
+
+本次调拨由既有typed preview和renderer在离线批次`analysis-run:5499c1b161c05aa010f45e5d31fbde5f9136e96ebbabdd7b389191c574894f13`显式复用导出，[新Markdown](../../../.workspace/system-assessment-three-stage-20260916/output/5499c1b161c05aa010f45e5d31fbde5f9136e96ebbabdd7b389191c574894f13/transfer/business-processes.md)未改写原稿、新模型调用0，不伪造三例或全仓通过。剩余修正及新候选执行尚待具体决定，详见[实际验收记录](three-case-acceptance-result-20260916.md)；不自动增加第四次修稿。
+
+`more-findings.md`复核SHA256仍为`59b8381e7e81e3105ed6c6a8d93ce1dbea0247735bf1e6227d8f842b0d1d7f8e`。设计基线已提交为`0784a33`并推送专用分支`codex/system-assessment-three-stage-20260916`；提前创建PR被审批器拒绝，未绕过。实施及本地CI/三例完成后再处理正式交付；文档保存不是功能验收。
 
 ## 原跨候选阅读的实施与运行记录（历史）
 

@@ -1,6 +1,6 @@
 # 系统认识、问题选材、推理、写作与最终核对：中文指令
 
-状态：本文件是2026-09-16最新**目标Prompt**，未修改生产资源。当前选择v1、检查v2、过程v3双轮仍为已实现合同；最新版本及待改项见[详细设计](business-reasoning-and-writing.md)和[实施状态](implementation-status.md)。用户已接受业务正文可读性，最小验收只检查三例实际输出。
+状态：全局选材v2、阅读检查v4及事实DRAFT v4、WRITE v1、最终RULE_REVIEW v1已接入生产资源并通过直接scripted测试。CHECK v4新增明确首读预览/已有来源定位说明，SELECT不变。最终包装保留根$defs，最后完整processResult交既有parser；三轮原始返回和完整实际input私有保存。producer4与内部preview确定性输出完整最终正文/明细/知识文字，不增加模型调用；reader保留producer2/3旧渲染字节。本P1修正后的独立集成审查和fresh CI已通过（596项/零失败错误/2跳过、SpotBugs及PMD通过）。[真实三例验收](three-case-acceptance-result-20260916.md)未通过，批次已排空：调拨保存成功但有条件错误，销售最后返回有未定义查询用法，采购最终请求超窗未发送。不能用资源接线或模型返回代替验收，也未自动追加修稿。最新版本及待改项见[详细设计](business-reasoning-and-writing.md)和[实施状态](implementation-status.md)。
 
 ## 1. 共同说明
 
@@ -48,9 +48,11 @@
 
 Java检查实际ID和读取范围，不用行业字典为假设评分。一次输入装不下不能仅取前N张卡却称已了解全仓。
 
-## 3. PROCESS_READING_CHECK v3
+## 3. PROCESS_READING_CHECK v4
 
 输入：候选与调查问题、首批实际完整Activity和源码/明确标注预览、未命中、全仓召回导航。保留现有导航去重，已读Activity原字段完整。
+
+当前路由`process-reading-check-v4.txt`。INITIAL WHOLE_FILE超过120行时实际只见前120行，私有记录`preview=true/complete=false/totalLineCount`说明原文件范围；小文件和SUPPLEMENTARY WHOLE_FILE保持完整。同预览文件已有M10以`savedSourceLocators`提供原ref/file/完整行段/前8行原文，仅供定位，不是已读正文。保留预览R不会恢复未读全文；关键范围由唯一一次SOURCE_REF或FILE_RANGE补读决定，仍不足留具体未知。SELECT v2资源与输入不变，私有版本和三阶段协议不变，actual input及v4Prompt自然更新CHECK指纹。
 
 ```text
 按本候选的问题检查实际材料，返回最终保留的首批读取记录、
@@ -154,5 +156,9 @@ Activity与原文不一致时以原文纠正本过程解释，不改原Activity�
 系统判断与选材一次，阅读检查每候选一次，事实/写作/最后核对每候选三次。Activity、首次目录和仓库归并保持原双轮，本轮三例不调用全仓归并。
 
 新Prompt、Schema、实际输入和阶段序列进入既有指纹；三阶段私有记录须全部完整，旧pair不能冒充已最终核对。最终发布使用RULE_REVIEW中的文字/规则，不使用WRITE中间稿。
+
+实际DRAFT/WRITE由已有Schema校验库在fresh及匹配复用接受前检查本次局部响应形状，坏稿不被最后合法结果掩盖。该检查不提前执行最终覆盖/CONFIRMED依据或中文事实判断，不替模型修正文句；合法推断/待确认及规则核对职责保持。
+
+最终knowledgeItems在producer4及preview同一正文行显示已有certainty及完整文字/公式/链接；程序不把推断或待确认升级为确认，不新判断或补证据，历史producer2/3字节不变。
 
 行业名称只来自真实输入或样例关注问题，不写进通用指令或Java规则。复用已有人选包可以检验三阶段正文，但不能据此声称自动选材也通过。详细范围见[三例验收](acceptance.md)。

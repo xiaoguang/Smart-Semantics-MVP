@@ -33,7 +33,7 @@ import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 /** Canonical, receipt-last publisher for the five Step07 process-discovery outputs. */
 public final class CanonicalBusinessProcessPublisher implements BusinessProcessPublisher {
 
-  static final String MODULE_VERSION = "v3";
+  static final String MODULE_VERSION = "v4";
   static final String CATALOG_TYPE = "REPOSITORY_KNOWLEDGE_BUSINESS_PROCESS_CATALOG";
   static final String CATALOG_SCHEMA = "repository-business-process-catalog-v2";
   static final String COVERAGE_TYPE = "REPOSITORY_KNOWLEDGE_PROCESS_COVERAGE";

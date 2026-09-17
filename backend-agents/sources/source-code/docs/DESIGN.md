@@ -12,11 +12,13 @@
 
 主要可读交付是仓库级 `business-processes.md`。固定九章 `document.md` 继续作为下游概览，但不承担业务过程发现，也不再作为判断语义成功的唯一标准。
 
-术语以 [CONTEXT.md](../CONTEXT.md) 为准。本轮批准的目标为[系统认识、聚焦选材与三阶段成稿](supplements/cross-object-process-reconstruction/business-reasoning-and-writing.md)，修改面见[设计变更清单](plans/business-process-discovery-and-reconstruction-change-design.md)。跨候选取材和DRAFT前封包已实现，当前候选生产仍为DRAFT/REVIEW双轮；新三阶段尚未接线。当前事实见[实施状态](supplements/cross-object-process-reconstruction/implementation-status.md)，历史验证见[交付记录](supplements/cross-object-process-reconstruction/delivery.md)。本轮只做三个样本的最小验收，之后讨论全仓。
+术语以 [CONTEXT.md](../CONTEXT.md) 为准。2026-09-17的当前设计工作是[JDT、可选持久化补全与第1—5步阅读材料](supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md)：先工具调研验证，通过后全面实施，再只验收1—5步。新方案尚未实施；第6步的新材料消费尚待讨论，不启动Activity、过程或九章。
+
+原[系统认识、聚焦选材与三阶段成稿](supplements/cross-object-process-reconstruction/business-reasoning-and-writing.md)已完成三阶段程序接线，真实三例仍有具体问题；用户认可目前可读性和业务联系，优化留待讨论。以[三例实测](supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)及[问题记录](supplements/implementation-lessons-and-followups.md)区分程序完成、样本质量和未执行范围。已有326条Activity及所有历史输入/输出保留。
 
 ## 2. 设计原则
 
-- **成熟工具找代码。** JDT LS/Core 负责 Java 定义、实现、调用位置和完整方法；JavaParser 保留为能力较弱的可配置 Adapter。
+- **成熟工具找代码。** 新目标只用JDT LS/Core定位Java实现与完整源码；可选MyBatis官方解析部件/JSqlParser补持久化材料。JavaParser与严格Fact/Proof生产路径退出，历史读取保留，当前迁移尚未实施。
 - **程序组织，模型理解。** Java 负责来源、ID、材料、覆盖、调度、保存和格式；LLM 负责业务领域、别名、过程成员、顺序、分支、目的和业务语言。
 - **全仓发现与深入阅读分开。** 新仓库保留首次目录发现；已有目录直接重开，结合全部 Activity 导航和冻结文件目录增量选材，允许跨旧候选合读。
 - **摘要只导航，原文才定规则。** 完整 ReviewedActivity 继续复用；所选关键原文在事实 DRAFT 前到位。WRITE只读完整实际事实草稿，最终RULE_REVIEW对照完整原文包、实际DRAFT和实际WRITE，直接修正交付正文。
@@ -33,14 +35,14 @@
 | --- | --- | --- | --- |
 | 01 `verified-source-inventory` | 固定并核验仓库文件、字节和源码位置 | source inventory、snapshot | 所有后续读取的共同来源 |
 | 02 `application-discovery` | 识别应用能力和全部 Spring 入口 | profile、entry inventory、mapper catalog | 建立入口分母和精确方法位置 |
-| 03 `program-graphs` | 选定代码引擎；JDT 路径生成导航索引，JavaParser 路径可附五图 | java-code-index、可选图增强 | 找到完整实现、参数、分支和边界 |
-| 04 `proven-code-facts` | 有图时保留严格技术 Fact/Proof；无图时明确 NOT_PRODUCED | facts/proofs 或未生成说明 | 可选技术增强，不阻断业务阅读 |
-| 05 `business-flows` | 每入口保存连贯代码上下文、调用、参数、条件、返回和 Capsule | EntryCodeContext、technical Flow/Capsule、coverage | 为 Activity 提供自包含代码材料 |
-| 06 `flow-interpretation` | 组包并逐包生成、审阅局部 Activity | business materials、ReviewedActivity、coverage | 为全仓目录提供完整活动分母 |
+| 03 `program-graphs`（既有存储槽位） | JDT导航与完整Java源码收集 | java-code-index | 找到实现、声明、参数、分支、返回和候选边界 |
+| 04 `proven-code-facts`（既有存储槽位） | 可选持久化补全，不再生成Fact/Proof | persistence-material-index | Mapper调用关联XML原文与可用SQL结构 |
+| 05 `business-flows`（既有存储槽位） | 唯一入口阅读材料owner，一次组装与保存 | code-reading-materials、coverage、按需完整预览 | 本轮验收到此；以后供模型阅读 |
+| 06 `flow-interpretation` | 既有Activity生成/审阅能力保留；新Step05消费另议 | 既有ReviewedActivity、coverage | 当前326条可直接读取，不重做 |
 | 07 `repository-knowledge` | 全仓业务发现、候选深入重建、归并和发布 | process catalog、coverage、`business-processes.md` | 直接供读者审阅，也供九章使用 |
 | 08 `nine-section-document` | 根据已归并过程目录写一份固定九章概览 | report JSON、SourceRefs、`document.md` | 仓库级展示与公共 render |
 
-01–05 不调用业务模型。Step03/04 的五图和严格 Proof 是增强能力，不是 JDT 完整源码进入 Step05/06 的门禁。Step06 已经完成的 Activity 不因 Step07 设计调整而重跑。
+上表03–05为新目标，不是已经完成的迁移。旧step key仅保留存储定位，不代表还调用旧算法。新模块地址、版本、保存/读取与删除清单由[详细设计§7](supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md#7-运行版本与历史迁移)维护。01–05无模型调用；本轮不执行第6步及以后。后文第6—8步语义设计作为已有/后续设计保留，不构成本次执行范围。
 
 ## 4. 三层语义模型
 

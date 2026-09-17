@@ -1,5 +1,7 @@
 # 接入现有流水线与JavaParser第二阶段适配
 
+本页是迁移前接入/保留JavaParser的历史合同。2026-09-17用户已选择退出JavaParser，新的生产修改面与历史reader保留规则由[补充详细设计§7](../../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md#7-运行版本与历史迁移)替代；不再执行本页JavaParser维护任务，也不以其旧接线阻挡JDT材料。新方案尚未实施。
+
 > [总设计](README.md)。本页固定改哪里、保留什么、怎么证明没丢内容。不是再次重写八步。
 
 ## 1. 第一阶段接线：先使JDT独立成立

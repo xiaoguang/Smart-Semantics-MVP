@@ -24,10 +24,11 @@ class BusinessProcessPromptV2ContractTest {
           new PromptResource("BUSINESS_CATALOG_MERGE_DRAFT", "business-catalog-merge-draft-v2.txt"),
           new PromptResource(
               "BUSINESS_CATALOG_MERGE_REVIEW", "business-catalog-merge-review-v2.txt"),
-          new PromptResource("PROCESS_MATERIAL_SELECTION", "process-material-selection-v1.txt"),
-          new PromptResource("PROCESS_READING_CHECK", "process-reading-check-v2.txt"),
-          new PromptResource("BUSINESS_PROCESS_DRAFT", "business-process-draft-v3.txt"),
-          new PromptResource("BUSINESS_PROCESS_REVIEW", "business-process-review-v3.txt"),
+          new PromptResource("PROCESS_MATERIAL_SELECTION", "process-material-selection-v2.txt"),
+          new PromptResource("PROCESS_READING_CHECK", "process-reading-check-v4.txt"),
+          new PromptResource("BUSINESS_PROCESS_DRAFT", "business-process-draft-v4.txt"),
+          new PromptResource("BUSINESS_PROCESS_WRITE", "business-process-write-v1.txt"),
+          new PromptResource("BUSINESS_PROCESS_RULE_REVIEW", "business-process-rule-review-v1.txt"),
           new PromptResource(
               "BUSINESS_PROCESS_CONSOLIDATION_DRAFT",
               "business-process-consolidation-draft-v2.txt"),
@@ -50,7 +51,8 @@ class BusinessProcessPromptV2ContractTest {
   @Test
   void processPromptsRequireNarrativeScopedRulesAndConcreteUncertainty() {
     String processPrompts =
-        List.of("BUSINESS_PROCESS_DRAFT", "BUSINESS_PROCESS_REVIEW").stream()
+        List.of("BUSINESS_PROCESS_DRAFT", "BUSINESS_PROCESS_WRITE", "BUSINESS_PROCESS_RULE_REVIEW")
+            .stream()
             .map(BusinessProcessPromptCatalog::instructionsFor)
             .collect(Collectors.joining("\n"));
 
@@ -69,6 +71,9 @@ class BusinessProcessPromptV2ContractTest {
     assertThat(readingPrompts)
         .contains("supplementaryRequests", "SOURCE_REF", "WHOLE_FILE", "context")
         .contains("最后一次阅读选择", "完整最终", "activityUses", "contextActivityIds");
+    assertThat(BusinessProcessPromptCatalog.instructionsFor("PROCESS_READING_CHECK"))
+        .contains("preview=true", "complete=false", "totalLineCount", "savedSourceLocators")
+        .contains("前120行", "前8行原文", "不会恢复", "FILE_RANGE");
   }
 
   @Test

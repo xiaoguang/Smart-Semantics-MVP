@@ -1,4 +1,6 @@
-# 已证明代码事实
+# 可选持久化补全：目标入口与历史Fact合同
+
+2026-09-17的新生产目标唯一见[补充详细设计§5](../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md#5-第4步mybatis-官方解析部件与-sql-增强)：可配置MyBatis XML/SQL材料补全，未配置保持Java材料。**下文严格Fact/Proof仅为迁移前实现与历史读取合同；新路径不执行候选枚举、Proof构建或NOT_PRODUCED accounting发布。** 新模块使用既有第4步存储槽位，不继承旧算法前置。先通过工具调研再实施。
 
 > 模型批次解耦（已实现）：已保存技术增强继续按原义保留。新模型批次不重新枚举 Fact 或补 Proof；模型调用失败、换并发/Prompt 不使技术事实失效。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)。本次未修改本步骤算法或产物。
 

@@ -1,6 +1,7 @@
 package org.sourceanalysis.app.analysis.knowledge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -53,7 +54,95 @@ class BusinessProcessAcceptanceSampleTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void selectedCandidatesPersistCompletePairsAndFormalRunReusesThem() throws Exception {
+  void selectedPreviewExportsEveryFinalFragmentWithoutUnselectedOrConsolidationCalls()
+      throws Exception {
+    AcceptanceProvider provider = new AcceptanceProvider();
+    provider.splitPreview = true;
+    AnalysisRunId sampleRun = runId('a');
+    DefaultBusinessProcessDiscovery discovery =
+        DefaultBusinessProcessDiscovery.forExecution(execution(provider, sampleRun, null));
+    Object sample =
+        invoke(
+            discovery,
+            requiredMethod("discoverCatalogSample", 1),
+            new ProcessDiscoveryRequest(activities(), materials(), profile(), sampleRun));
+    List<String> allCandidateIds = candidateIds(sample);
+    List<String> selected = List.of(allCandidateIds.get(1), allCandidateIds.get(2));
+    int callsBeforePreview = provider.calls();
+
+    Object preview =
+        invoke(discovery, requiredMethod("reconstructSelectedPreview", 2), sample, selected);
+
+    List<?> candidates = (List<?>) property(preview, "candidates");
+    assertThat(candidates).hasSize(2);
+    List<RepositoryBusinessProcessCatalog.BusinessProcess> processes = new ArrayList<>();
+    for (int index = 0; index < candidates.size(); index++) {
+      Object candidate = candidates.get(index);
+      assertThat(property(candidate, "candidateId")).isEqualTo(selected.get(index));
+      assertThat(property(candidate, "ordinal")).isEqualTo(index + 1);
+      assertThat(property(candidate, "disposition")).isEqualTo("SPLIT");
+      assertThat(property(candidate, "reason")).isEqualTo("final reviewed independent fragments");
+      @SuppressWarnings("unchecked")
+      List<RepositoryBusinessProcessCatalog.BusinessProcess> fragments =
+          (List<RepositoryBusinessProcessCatalog.BusinessProcess>) property(candidate, "processes");
+      assertThat(fragments).hasSize(2);
+      assertThat(fragments)
+          .extracting(RepositoryBusinessProcessCatalog.BusinessProcess::name)
+          .containsExactly("最终核对片段A", "最终核对片段B");
+      assertThatThrownBy(() -> fragments.add(fragments.get(0)))
+          .isInstanceOf(UnsupportedOperationException.class);
+      processes.addAll(fragments);
+    }
+    assertThat(processes).hasSize(4);
+    @SuppressWarnings("unchecked")
+    List<SourceReference> sources = (List<SourceReference>) property(preview, "sourceReferences");
+    assertThat(sources).hasSize(2);
+    assertThat(sources)
+        .extracting(SourceReference::ref)
+        .isSubsetOf("S0", "S1", "S2")
+        .containsAll(processes.stream().flatMap(process -> process.sourceRefs().stream()).toList());
+    assertThatThrownBy(() -> candidates.clear()).isInstanceOf(UnsupportedOperationException.class);
+    assertThatThrownBy(() -> sources.clear()).isInstanceOf(UnsupportedOperationException.class);
+    assertThat(provider.readingCheckCandidateIds()).containsExactlyInAnyOrderElementsOf(selected);
+    assertThat(provider.taskKindsSince(callsBeforePreview))
+        .hasSize(8)
+        .containsOnly(
+            "PROCESS_READING_CHECK",
+            "BUSINESS_PROCESS_DRAFT",
+            "BUSINESS_PROCESS_WRITE",
+            "BUSINESS_PROCESS_RULE_REVIEW");
+    List<ObjectNode> saved = reviewedPairs(temporaryDirectory.resolve("journal"));
+    assertThat(saved).hasSize(2);
+    assertThat(saved)
+        .extracting(record -> text(record, "providerBindingKey"))
+        .containsExactlyInAnyOrder("api", "pro");
+
+    Method renderer =
+        Arrays.stream(BusinessProcessMarkdownRenderer.class.getDeclaredMethods())
+            .filter(method -> method.getName().equals("renderPreview"))
+            .findFirst()
+            .orElseGet(
+                () -> {
+                  fail("PROCESS_ACCEPTANCE_PREVIEW_RENDER_NOT_IMPLEMENTED");
+                  return null;
+                });
+    renderer.setAccessible(true);
+    String markdown = (String) renderer.invoke(null, processes, sources);
+    assertThat(markdown)
+        .contains(
+            "最终核对片段A",
+            "最终核对片段B",
+            "最终核对正确条件A",
+            "最终核对正确条件B",
+            "片段A余额＝本次数量－已办数量",
+            "片段B余额＝本次数量－已办数量",
+            "sources.md#")
+        .doesNotContain("WRITE_WRONG_STATE", "覆盖状态", "语义交付状态", "<details", "<summary");
+    assertThat(provider.calls() - callsBeforePreview).isEqualTo(8);
+  }
+
+  @Test
+  void selectedCandidatesPersistCompleteTriplesAndFormalRunReusesThem() throws Exception {
     AcceptanceProvider provider = new AcceptanceProvider();
     AnalysisRunId sampleRun = runId('a');
     ModelJobExecutionConfiguration sampleExecution = execution(provider, sampleRun, null);
@@ -86,10 +175,15 @@ class BusinessProcessAcceptanceSampleTest {
       String jobKey = "business-process-" + suffix(candidateId);
       ObjectNode pair = pairByJob.get(jobKey);
       assertThat(pair).as("sample must save selected candidate %s", candidateId).isNotNull();
-      assertThat(text(pair, "schemaVersion")).isEqualTo("model-job-reviewed-result-v2");
+      assertThat(text(pair, "schemaVersion")).isEqualTo("model-job-reviewed-result-v3");
+      assertThat(text(pair, "pipeline")).isEqualTo("business-reasoning-writing-rule-review-v1");
       assertThat(text(pair, "status")).isEqualTo("COMPLETED");
       assertThat(pair.path("draft").isObject()).isTrue();
+      assertThat(pair.path("writing").isObject()).isTrue();
       assertThat(pair.path("review").isObject()).isTrue();
+      assertThat(pair.path("review").path("processResult").isObject()).isTrue();
+      assertThat(pair.path("review").path("corrections").isArray()).isTrue();
+      assertThat(pair.path("input").path("readingPacket")).isEqualTo(pair.path("readingPacket"));
       assertThat(text(pair, "providerBindingKey"))
           .as("binding follows original catalog ordinal, not filtered index")
           .isEqualTo(index == 0 ? "api" : "pro");
@@ -106,15 +200,16 @@ class BusinessProcessAcceptanceSampleTest {
     assertThat(formalResult.coverage().coverageStatus()).isEqualTo("CLOSED");
     assertThat(provider.calls() - callsAfterSample)
         .as(
-            "formal run reuses two candidate pairs and reading decisions, then executes the remaining candidate plus consolidation")
-        .isEqualTo(5);
+            "formal run reuses two candidate triples and reading decisions, then executes the remaining candidate plus consolidation")
+        .isEqualTo(6);
     assertThat(provider.readingCheckCandidateIdsSince(readingChecksAfterSample))
         .containsExactly(catalogCandidateIds.get(0));
     assertThat(provider.taskKindsSince(callsAfterSample))
         .containsExactly(
             "PROCESS_READING_CHECK",
             "BUSINESS_PROCESS_DRAFT",
-            "BUSINESS_PROCESS_REVIEW",
+            "BUSINESS_PROCESS_WRITE",
+            "BUSINESS_PROCESS_RULE_REVIEW",
             "BUSINESS_PROCESS_CONSOLIDATION_DRAFT",
             "BUSINESS_PROCESS_CONSOLIDATION_REVIEW");
   }
@@ -328,6 +423,7 @@ class BusinessProcessAcceptanceSampleTest {
     private final CanonicalJsonCodec json = new CanonicalJsonCodec();
     private final List<String> taskKinds = new ArrayList<>();
     private final List<String> readingCheckCandidateIds = new ArrayList<>();
+    private boolean splitPreview;
 
     @Override
     public synchronized StructuredModelResponse generate(StructuredModelRequest request) {
@@ -341,7 +437,44 @@ class BusinessProcessAcceptanceSampleTest {
               readingCheckCandidateIds.add(input.path("candidate").path("candidateId").asText());
               yield readingCheck(input);
             }
-            case "BUSINESS_PROCESS_DRAFT", "BUSINESS_PROCESS_REVIEW" -> process(input);
+            case "BUSINESS_PROCESS_DRAFT" -> process(input);
+            case "BUSINESS_PROCESS_WRITE" -> {
+              ObjectNode writing = ((ObjectNode) input.path("actualDraft")).deepCopy();
+              if (splitPreview) {
+                ((ObjectNode) writing.path("processes").get(0).path("stages").get(0))
+                    .put("narrative", "WRITE_WRONG_STATE");
+              }
+              yield writing;
+            }
+            case "BUSINESS_PROCESS_RULE_REVIEW" -> {
+              ObjectNode wrapper = JsonNodeFactory.instance.objectNode();
+              ObjectNode reviewed = process(input);
+              if (splitPreview) {
+                reviewed.put("disposition", "SPLIT");
+                reviewed.put("reason", "final reviewed independent fragments");
+                ObjectNode original = ((ObjectNode) reviewed.path("processes").get(0)).deepCopy();
+                ArrayNode fragments = reviewed.putArray("processes");
+                for (String suffix : List.of("A", "B")) {
+                  ObjectNode fragment = original.deepCopy();
+                  fragment.put("processLocalId", "fragment-" + suffix);
+                  fragment.put("name", "最终核对片段" + suffix);
+                  ((ObjectNode) fragment.path("stages").get(0))
+                      .put("narrative", "最终核对正确条件" + suffix);
+                  ObjectNode knowledge = fragment.withArray("knowledgeItems").addObject();
+                  knowledge.put("kind", "FORMULA_OR_METRIC");
+                  knowledge.put("text", "片段" + suffix + "余额＝本次数量－已办数量");
+                  knowledge.put("certainty", "CONFIRMED");
+                  knowledge.putArray("statementRefs");
+                  knowledge
+                      .putArray("sourceRefs")
+                      .add(fragment.path("stages").get(0).path("sourceRefs").get(0).asText());
+                  fragments.add(fragment);
+                }
+              }
+              wrapper.set("processResult", reviewed);
+              wrapper.putArray("corrections");
+              yield wrapper;
+            }
             case "BUSINESS_PROCESS_CONSOLIDATION_DRAFT", "BUSINESS_PROCESS_CONSOLIDATION_REVIEW" ->
                 consolidation(input);
             default -> throw new AssertionError("unexpected Step07 task: " + request.taskKind());
@@ -407,6 +540,10 @@ class BusinessProcessAcceptanceSampleTest {
 
     private static ObjectNode materialSelection(JsonNode input) {
       ObjectNode root = JsonNodeFactory.instance.objectNode();
+      ObjectNode assessment = root.putObject("systemAssessment");
+      assessment.put("description", "测试资料尚未判断系统类型");
+      assessment.putArray("typeHypotheses");
+      assessment.putArray("businessHypotheses");
       ArrayNode changes = root.putArray("candidateChanges");
       ArrayNode decisions = root.putArray("oldCandidateDecisions");
       input
@@ -421,6 +558,7 @@ class BusinessProcessAcceptanceSampleTest {
                 change.put("scope", candidate.path("purpose").asText());
                 change.set("activityUses", candidate.path("activityUses").deepCopy());
                 change.putArray("contextActivityIds");
+                change.putArray("investigationQuestions");
                 ArrayNode requests = change.putArray("initialReadingRequests");
                 candidate
                     .path("activityUses")
@@ -462,6 +600,11 @@ class BusinessProcessAcceptanceSampleTest {
 
     private static ObjectNode readingCheck(JsonNode input) {
       ObjectNode root = JsonNodeFactory.instance.objectNode();
+      ArrayNode retained = root.putArray("retainedReadingRecordIds");
+      input
+          .path("readingRecords")
+          .forEach(record -> retained.add(record.path("readingRecordId").asText()));
+      root.putArray("selectionNotes");
       JsonNode candidate = input.path("candidate");
       ArrayNode uses = root.putArray("activityUses");
       candidate.path("activityUses").forEach(use -> uses.add(use.deepCopy()));

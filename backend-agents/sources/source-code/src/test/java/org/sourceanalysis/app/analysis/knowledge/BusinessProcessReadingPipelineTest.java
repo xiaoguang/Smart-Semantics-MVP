@@ -2,22 +2,27 @@ package org.sourceanalysis.app.analysis.knowledge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
@@ -67,6 +72,723 @@ class BusinessProcessReadingPipelineTest {
   @TempDir java.nio.file.Path temporaryDirectory;
 
   @Test
+  void initialWholeFilePreviewRetainedRecordNeverPromotesUnreadRemainder() {
+    PreviewReadingProvider provider = runPreviewReading(null);
+    JsonNode record = readingRecord(provider.checkInput, "R1");
+    JsonNode visible = sourceExcerpt(provider.checkInput, record.path("sourceRef").asText());
+    JsonNode small = sourceExcerpt(provider.checkInput, "S2");
+
+    assertAll(
+        () -> assertThat(record.path("startLine").asInt()).isEqualTo(1),
+        () -> assertThat(record.path("endLine").asInt()).isEqualTo(120),
+        () -> assertThat(record.path("totalLineCount").asInt(-1)).isEqualTo(150),
+        () -> assertThat(record.path("complete").asBoolean()).isFalse(),
+        () -> assertThat(record.path("preview").asBoolean()).isTrue(),
+        () -> assertThat(visible.path("snippet").asText()).isEqualTo(firstPreviewLines()),
+        () -> assertThat(small.path("snippet").asText()).isEqualTo(smallPreviewFile()),
+        () ->
+            assertThat(provider.checkInput.toString())
+                .as("first reading and locator must not pretend the late condition was read")
+                .doesNotContain("requested > available"),
+        () ->
+            assertThat(provider.draftInput.path("readingPacket").path("sourceExcerpts"))
+                .extracting(value -> value.path("snippet").asText())
+                .as("retaining R1 retains exactly the visible preview, never the hidden remainder")
+                .containsExactlyInAnyOrder(firstPreviewLines(), smallPreviewFile()),
+        () ->
+            assertThat(provider.draftInput.path("readingSelections").toString())
+                .contains("保留首读导航，规则仍待补读", "核对借用数量条件"),
+        () -> assertPreviewActivitiesAndFinalPacket(provider));
+  }
+
+  @Test
+  void initialPreviewLocatorEnablesOneExplicitFullSavedSourceSupplement() {
+    PreviewReadingProvider provider = runPreviewReading("SOURCE_REF");
+    List<JsonNode> locators = new ArrayList<>();
+    collectSavedSourceLocators(provider.checkInput, locators);
+
+    assertAll(
+        () ->
+            assertThat(locators)
+                .as("CHECK needs the existing M10's real file/range and first eight raw lines")
+                .singleElement()
+                .satisfies(
+                    locator -> {
+                      assertThat(locator.path("file").asText()).isEqualTo("reading/LoanRules.java");
+                      assertThat(locator.path("startLine").asInt()).isEqualTo(130);
+                      assertThat(locator.path("endLine").asInt()).isEqualTo(145);
+                      assertThat(locator.path("snippet").asText()).isEqualTo(savedMethodLocator());
+                    }),
+        () ->
+            assertThat(provider.checkInput.path("readingPacket").path("sourceExcerpts"))
+                .extracting(value -> value.path("ref").asText())
+                .as("M10 directory navigation is not an already-read source excerpt")
+                .doesNotContain("M10"),
+        () ->
+            assertThat(provider.checkInput.toString())
+                .as("the condition beyond the eight-line locator is not yet read")
+                .doesNotContain("requested > available"),
+        () ->
+            assertThat(sourceExcerpt(provider.draftInput, "M10").path("snippet").asText())
+                .as("the explicit SOURCE_REF request delivers all original method lines")
+                .isEqualTo(savedLateMethod()),
+        () ->
+            assertThat(provider.draftInput.path("readingPacket").path("sourceExcerpts"))
+                .extracting(value -> value.path("snippet").asText())
+                .containsExactlyInAnyOrder(
+                    firstPreviewLines(), smallPreviewFile(), savedLateMethod()),
+        () ->
+            assertThat(provider.draftInput.path("readingPacket").toString())
+                .doesNotContain("not selected outside method"),
+        () -> assertPreviewActivitiesAndFinalPacket(provider));
+  }
+
+  @Test
+  void supplementaryWholeFileAndExactly120LineInitialFileRemainComplete() {
+    PreviewReadingProvider provider = runPreviewReading("WHOLE_FILE");
+    JsonNode smallRecord = readingRecord(provider.checkInput, "R2");
+    JsonNode supplementary =
+        provider.draftInput.path("readingSelections").path("supplementaryReadingRecords").get(0);
+
+    assertAll(
+        () -> assertThat(smallRecord.path("complete").asBoolean()).isTrue(),
+        () -> assertThat(smallRecord.path("preview").asBoolean()).isFalse(),
+        () -> assertThat(smallRecord.path("endLine").asInt()).isEqualTo(120),
+        () ->
+            assertThat(sourceExcerpt(provider.checkInput, "S2").path("snippet").asText())
+                .isEqualTo(smallPreviewFile()),
+        () -> assertThat(supplementary.path("stage").asText()).isEqualTo("SUPPLEMENTARY"),
+        () -> assertThat(supplementary.path("complete").asBoolean()).isTrue(),
+        () -> assertThat(supplementary.path("preview").asBoolean()).isFalse(),
+        () -> assertThat(supplementary.path("endLine").asInt()).isEqualTo(150),
+        () ->
+            assertThat(provider.draftInput.path("readingPacket").path("sourceExcerpts"))
+                .extracting(value -> value.path("snippet").asText())
+                .as("explicit whole-file supplementation still includes every original byte")
+                .contains(largePreviewFile(), smallPreviewFile()),
+        () -> assertPreviewActivitiesAndFinalPacket(provider));
+  }
+
+  private static PreviewReadingProvider runPreviewReading(String supplementKind) {
+    VerifiedSourceTextDocument document =
+        text("reading/LoanRules.java", largePreviewFile(), "text/x-java-source");
+    PreviewReadingProvider provider = new PreviewReadingProvider(supplementKind);
+    DefaultBusinessProcessDiscovery discovery = new DefaultBusinessProcessDiscovery(provider);
+    var sample = discovery.discoverCatalogSample(previewReadingRequest(document));
+    discovery.reconstructSelected(sample, sample.candidateIds());
+    assertThat(document.rawUtf8().copyToByteArray())
+        .as("first-read navigation never rewrites the frozen original document")
+        .isEqualTo(largePreviewFile().getBytes(StandardCharsets.UTF_8));
+    assertThat(provider.taskKinds)
+        .containsExactly(
+            "PROCESS_MATERIAL_SELECTION",
+            "PROCESS_READING_CHECK",
+            "BUSINESS_PROCESS_DRAFT",
+            "BUSINESS_PROCESS_WRITE",
+            "BUSINESS_PROCESS_RULE_REVIEW");
+    return provider;
+  }
+
+  private static void assertPreviewActivitiesAndFinalPacket(PreviewReadingProvider provider) {
+    assertThat(provider.draftInput.path("readingPacket").path("reviewedActivities"))
+        .hasSize(2)
+        .allSatisfy(
+            activity ->
+                assertThat(activity.path("businessRules"))
+                    .extracting(JsonNode::asText)
+                    .containsExactly("状态规则"));
+    assertThat(provider.draftInput.path("investigationContext").toString())
+        .contains("核对预约怎样转成借用", "H-LOAN", "何时从预约转为借用？");
+    assertThat(provider.finalReviewInput.path("readingPacket"))
+        .isEqualTo(provider.draftInput.path("readingPacket"));
+    Set<String> actualRefs = new java.util.HashSet<>();
+    provider
+        .checkInput
+        .path("readingPacket")
+        .path("sourceExcerpts")
+        .forEach(source -> actualRefs.add(source.path("ref").asText()));
+    assertReadingMetadataRefs(provider.checkInput.path("readingRecords"), actualRefs);
+    assertReadingMetadataRefs(provider.checkInput.path("readingSelections"), actualRefs);
+  }
+
+  private static JsonNode readingRecord(JsonNode input, String id) {
+    for (JsonNode record : input.path("readingRecords")) {
+      if (id.equals(record.path("readingRecordId").asText())) return record;
+    }
+    throw new AssertionError("Missing actual reading record " + id);
+  }
+
+  private static JsonNode sourceExcerpt(JsonNode input, String ref) {
+    for (JsonNode source : input.path("readingPacket").path("sourceExcerpts")) {
+      if (ref.equals(source.path("ref").asText())) return source;
+    }
+    throw new AssertionError("Missing actual source excerpt " + ref);
+  }
+
+  private static void collectSavedSourceLocators(JsonNode node, List<JsonNode> locators) {
+    if (node.isObject() && "M10".equals(node.path("ref").asText()) && node.has("file")) {
+      locators.add(node);
+    }
+    if (node.isContainerNode()) node.forEach(child -> collectSavedSourceLocators(child, locators));
+  }
+
+  private static String firstPreviewLines() {
+    return "class LoanRules {\r\n" + "  // navigation only\r\n".repeat(119);
+  }
+
+  private static String savedMethodLocator() {
+    return "  boolean canBorrow(int requested) {\r\n"
+        + "    int available = capacity();\r\n"
+        + "    // local branch navigation\r\n".repeat(6);
+  }
+
+  private static String savedLateMethod() {
+    return savedMethodLocator()
+        + "    // condition follows the locator\r\n"
+        + "    // use the requested quantity\r\n"
+        + "    // preserve the rejection branch\r\n"
+        + "    // frozen line before condition\r\n"
+        + "    if (requested > available) return false;\r\n"
+        + "    recordLoan(requested);\r\n"
+        + "    return true;\r\n"
+        + "  }\r\n";
+  }
+
+  private static String largePreviewFile() {
+    return firstPreviewLines()
+        + "  // not selected outside method\r\n".repeat(9)
+        + savedLateMethod()
+        + "  // trailing original source\r\n".repeat(4)
+        + "}\r\n";
+  }
+
+  private static String smallPreviewFile() {
+    return "small-file navigation\r\n".repeat(119) + "last small-file line remains visible\r\n";
+  }
+
+  private static ProcessDiscoveryRequest previewReadingRequest(
+      VerifiedSourceTextDocument document) {
+    VerifiedSourceTextSet base = sourceTextSet();
+    List<VerifiedSourceTextDocument> documents = new ArrayList<>(base.documents());
+    documents.add(document);
+    documents.add(text("reading/Small.txt", smallPreviewFile(), "text/plain"));
+    VerifiedSourceTextSet source =
+        new VerifiedSourceTextSet(
+            base.snapshotId(),
+            base.inventoryScopeKind(),
+            base.repositoryCompletionEligible(),
+            base.capabilityProfileRef(),
+            base.sourceInventoryRef(),
+            base.verifiedSnapshotRef(),
+            base.controls(),
+            documents);
+    BusinessMaterialBuildResult original = materials();
+    List<BusinessMaterial> updated =
+        original.materialSet().materials().stream()
+            .map(
+                material ->
+                    new BusinessMaterial(
+                        material.materialId(),
+                        material.entryIds(),
+                        material.materialMode(),
+                        material.context(),
+                        material.technicalObservations(),
+                        material.sourceRefs().stream()
+                            .map(
+                                ref ->
+                                    "M10".equals(ref.ref())
+                                        ? new SourceReference(
+                                            "M10",
+                                            "reading/LoanRules.java",
+                                            130,
+                                            145,
+                                            savedLateMethod())
+                                        : ref)
+                            .toList(),
+                        material.flowRefs(),
+                        material.technicalProofRefs(),
+                        material.limitations(),
+                        material.modelPacket()))
+            .toList();
+    BusinessMaterialBuildResult materialInput =
+        new BusinessMaterialBuildResult(
+            new BusinessMaterialSet(
+                original.materialSet().materialSetId(),
+                updated,
+                original.materialSet().entryCoverage()),
+            original.checkpoint());
+    return new ProcessDiscoveryRequest(
+        activities(),
+        materialInput,
+        profile(),
+        AnalysisRunId.parse("analysis-run:" + "b".repeat(64)),
+        new VerifiedSourceInventoryReference(sourcePublication()),
+        ignored -> source,
+        oldCatalogInput(),
+        "核对预约怎样转成借用");
+  }
+
+  private static final class PreviewReadingProvider implements StructuredModelProvider {
+    private final CanonicalJsonCodec json = new CanonicalJsonCodec();
+    private final String supplementKind;
+    private final List<String> taskKinds = new ArrayList<>();
+    private ObjectNode selectionResponse;
+    private JsonNode checkInput;
+    private JsonNode draftInput;
+    private JsonNode finalReviewInput;
+
+    private PreviewReadingProvider(String supplementKind) {
+      this.supplementKind = supplementKind;
+    }
+
+    @Override
+    public StructuredModelResponse generate(StructuredModelRequest request) {
+      taskKinds.add(request.taskKind());
+      JsonNode input = json.parseCanonical(request.untrustedInputJson());
+      ObjectNode response;
+      switch (request.taskKind()) {
+        case "PROCESS_MATERIAL_SELECTION" -> {
+          response = new FocusedReadingProvider(List.of(), false).selection();
+          ObjectNode candidate = (ObjectNode) response.path("candidateChanges").get(0);
+          candidate.put("name", "预约与借用调查");
+          candidate.put("purpose", "核对借用数量条件");
+          ArrayNode reads = candidate.putArray("initialReadingRequests");
+          reads
+              .addObject()
+              .put("requestId", "large-source")
+              .put("kind", "WHOLE_FILE")
+              .put("fileKey", "reading/LoanRules.java")
+              .put("purpose", "核对借用数量条件");
+          reads
+              .addObject()
+              .put("requestId", "small-source")
+              .put("kind", "WHOLE_FILE")
+              .put("fileKey", "reading/Small.txt")
+              .put("purpose", "核对短文件说明");
+          selectionResponse = response.deepCopy();
+        }
+        case "PROCESS_READING_CHECK" -> {
+          checkInput = input;
+          response = new PipelineProvider(false).readingCheckResponse();
+          response.set(
+              "activityUses",
+              selectionResponse.path("candidateChanges").get(0).path("activityUses").deepCopy());
+          response.putArray("retainedReadingRecordIds").add("R1").add("R2");
+          response.putArray("selectionNotes").add("保留首读导航，规则仍待补读");
+          if (supplementKind != null) {
+            ObjectNode read =
+                response
+                    .withArray("supplementaryRequests")
+                    .addObject()
+                    .put("requestId", "late-rule")
+                    .put("kind", supplementKind)
+                    .put("purpose", "核对后段的完整允许与拒绝规则");
+            if ("SOURCE_REF".equals(supplementKind)) read.put("sourceRef", "M10");
+            else read.put("fileKey", "reading/LoanRules.java");
+          }
+        }
+        case "BUSINESS_PROCESS_DRAFT", "BUSINESS_PROCESS_WRITE", "BUSINESS_PROCESS_RULE_REVIEW" -> {
+          if ("BUSINESS_PROCESS_DRAFT".equals(request.taskKind())) draftInput = input;
+          response = JsonNodeFactory.instance.objectNode();
+          response.put("disposition", "INSUFFICIENT_MATERIAL");
+          response.put("reason", "离线验证原文接力，不生成业务结论");
+          response.putArray("processes");
+          if ("BUSINESS_PROCESS_RULE_REVIEW".equals(request.taskKind())) {
+            finalReviewInput = input;
+            ObjectNode wrapper = JsonNodeFactory.instance.objectNode();
+            wrapper.set("processResult", response);
+            wrapper.putArray("corrections");
+            response = wrapper;
+          }
+        }
+        default ->
+            throw new AssertionError(
+                "Unexpected task beyond selected preview: " + request.taskKind());
+      }
+      return new StructuredModelResponse(json.encodeCanonical(response), IDENTITY);
+    }
+  }
+
+  @Test
+  void globalSelectionReadsSavedProjectDescriptionBeforeProposingQuestions() {
+    FocusedReadingProvider provider = new FocusedReadingProvider(List.of("R2", "R4"), true);
+    DefaultBusinessProcessDiscovery discovery = new DefaultBusinessProcessDiscovery(provider);
+
+    discovery.discoverCatalogSample(focusedReadingRequest());
+
+    assertThat(provider.selectionInput.toString())
+        .as("selection must receive saved description text, not only the README filename")
+        .contains("Frozen workshop manages reservations and equipment loans.")
+        .contains("activity:member", "activity:context", "activity:untouched", "legacy-candidate");
+    assertThat(provider.taskKinds).containsExactly("PROCESS_MATERIAL_SELECTION");
+  }
+
+  @Test
+  void selectedProcessReceivesAssessmentQuestionsAndReadingPurposes() {
+    FocusedReadingProvider provider = new FocusedReadingProvider(List.of("R2", "R4"), true);
+    runFocusedReading(provider);
+
+    assertThat(provider.draftInput.path("investigationContext").toString())
+        .as("global hypotheses and the user's question must reach the actual factual task")
+        .contains("核对预约怎样转成借用", "H-LOAN", "组合型工作台，类型尚待核实", "何时从预约转为借用？");
+    assertThat(provider.draftInput.path("readingSelections").toString())
+        .as("actual reading purposes and the CHECK decision must survive packaging")
+        .contains("查明允许办理的状态", "同一条件用于回退核对", "只保留适用分支并补页面");
+    assertThat(provider.draftInput.path("readingPacket").path("reviewedActivities")).hasSize(2);
+    assertThat(provider.draftInput.path("candidate").path("activityUses")).hasSize(2);
+    assertThat(provider.draftInput.path("readingPacket").path("reviewedActivities"))
+        .filteredOn(value -> "activity:member".equals(value.path("activityId").asText()))
+        .singleElement()
+        .satisfies(
+            value ->
+                assertThat(value.path("businessRules"))
+                    .extracting(JsonNode::asText)
+                    .containsExactly("状态规则"));
+  }
+
+  @Test
+  void readingCheckRetainsIndividualSearchHitsAndMergesRetainedDuplicatePurposes() {
+    FocusedReadingProvider provider = new FocusedReadingProvider(List.of("R2", "R4"), true);
+    runFocusedReading(provider);
+
+    JsonNode sources = provider.draftInput.path("readingPacket").path("sourceExcerpts");
+    assertThat(sources)
+        .extracting(value -> value.path("snippet").asText())
+        .as("keep only the second search hit once plus the requested supplement")
+        .containsExactlyInAnyOrder("MATCH current == 1\n", "<button>confirm loan</button>\n");
+    assertThat(provider.checkInput.toString())
+        .contains(
+            "\"R1\"",
+            "\"R2\"",
+            "\"R3\"",
+            "\"R4\"",
+            "MATCH current == 0",
+            "MATCH current == 1",
+            "UNRELATED AUDIT TRAIL",
+            "查明允许办理的状态",
+            "同一条件用于回退核对");
+    assertThat(provider.draftInput.path("readingSelections").toString())
+        .contains("查明允许办理的状态", "同一条件用于回退核对");
+    assertThat(provider.taskKinds).filteredOn("PROCESS_READING_CHECK"::equals).hasSize(1);
+  }
+
+  @Test
+  void duplicateReadingMetadataReferencesOnlyActualCheckExcerpts() {
+    FocusedReadingProvider provider = new FocusedReadingProvider(List.of("R2", "R4"), true);
+    runFocusedReading(provider);
+
+    Set<String> actualRefs = new java.util.HashSet<>();
+    provider
+        .checkInput
+        .path("readingPacket")
+        .path("sourceExcerpts")
+        .forEach(source -> actualRefs.add(source.path("ref").asText()));
+    assertReadingMetadataRefs(provider.checkInput.path("readingSelections"), actualRefs);
+    assertReadingMetadataRefs(provider.checkInput.path("readingRecords"), actualRefs);
+    assertThat(provider.checkInput.path("readingSelections").toString())
+        .contains("R2", "R4", "查明允许办理的状态", "同一条件用于回退核对");
+  }
+
+  private static void assertReadingMetadataRefs(JsonNode value, Set<String> actualRefs) {
+    if (value.isObject()) {
+      value
+          .fields()
+          .forEachRemaining(
+              field -> {
+                if ("sourceRef".equals(field.getKey())) {
+                  assertThat(field.getValue().asText()).isIn(actualRefs);
+                } else if ("sourceRefs".equals(field.getKey())) {
+                  field.getValue().forEach(ref -> assertThat(ref.asText()).isIn(actualRefs));
+                } else {
+                  assertReadingMetadataRefs(field.getValue(), actualRefs);
+                }
+              });
+    } else if (value.isArray()) {
+      value.forEach(child -> assertReadingMetadataRefs(child, actualRefs));
+    }
+  }
+
+  @Test
+  void emptyRetainedReadingRecordsRemoveAllInitialSourcesWithoutRemovingActivities() {
+    FocusedReadingProvider provider = new FocusedReadingProvider(List.of(), false);
+    runFocusedReading(provider);
+
+    assertThat(provider.draftInput.path("readingPacket").path("sourceExcerpts"))
+        .as("an explicit empty keep-set is not implicit retention of all initial text")
+        .isEmpty();
+    assertThat(provider.draftInput.path("readingPacket").path("reviewedActivities"))
+        .extracting(value -> value.path("activityId").asText())
+        .containsExactlyInAnyOrder("activity:member", "activity:context");
+    assertThat(provider.draftInput.path("candidate").path("activityUses")).hasSize(2);
+  }
+
+  @Test
+  void unknownRetainedReadingRecordStopsBeforeProcessDraft() {
+    FocusedReadingProvider provider = new FocusedReadingProvider(List.of("R999"), false);
+
+    assertThatThrownBy(() -> runFocusedReading(provider))
+        .as("CHECK may select only records actually presented in its first reading input")
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(provider.taskKinds).doesNotContain("BUSINESS_PROCESS_DRAFT");
+  }
+
+  @Test
+  void invalidReadingSelectionCannotBeReopenedAsCompletedDecision() throws IOException {
+    FocusedReadingProvider provider = new FocusedReadingProvider(List.of("R999"), false);
+    Path journal = Files.createDirectory(temporaryDirectory.resolve("invalid-reading-decision"));
+    AnalysisRunId run = AnalysisRunId.parse("analysis-run:" + "b".repeat(64));
+    DefaultBusinessProcessDiscovery discovery =
+        DefaultBusinessProcessDiscovery.forExecution(modelJobs(provider, journal, run, null));
+    var sample = discovery.discoverCatalogSample(focusedReadingRequest());
+
+    Throwable failure =
+        catchThrowable(() -> discovery.reconstructSelected(sample, sample.candidateIds()));
+
+    String jobKey =
+        "process-reading-check-"
+            + sample.candidateIds().get(0).substring("process-candidate:".length());
+    Path decisionPath =
+        journal
+            .resolve("model-jobs")
+            .resolve(run.value().substring("analysis-run:".length()))
+            .resolve("process-reading-check")
+            .resolve(jobKey)
+            .resolve("decision-result.json");
+    if (Files.exists(decisionPath)) {
+      ObjectNode saved = readJson(decisionPath);
+      assertThat(
+              new PrivateModelJobResultStore(journal, run, "process-reading-check")
+                  .readCompletedDecision(
+                      jobKey, saved.path("inputFingerprint").asText(), "fixture-account", IDENTITY))
+          .as("a CHECK selecting nonexistent R999 must never be reusable as semantic success")
+          .isEmpty();
+    }
+    assertThat(failure)
+        .as("invalid retained record must terminate the selected investigation")
+        .isNotNull();
+    assertThat(provider.taskKinds).doesNotContain("BUSINESS_PROCESS_DRAFT");
+  }
+
+  @Test
+  void supplementedPacketReusesFirstReadFragmentsWithoutExecutingTheirReadsAgain()
+      throws ReflectiveOperationException {
+    FocusedReadingProvider provider = new FocusedReadingProvider(List.of("R2", "R4"), true);
+    DefaultBusinessProcessDiscovery discovery = new DefaultBusinessProcessDiscovery(provider);
+    var sample = discovery.discoverCatalogSample(focusedReadingRequest());
+    CountingSourceLookups lookups = observeFrozenSourceLookups(sample);
+
+    discovery.reconstructSelected(sample, sample.candidateIds());
+
+    assertThat(lookups.count("reading/Rules.txt"))
+        .as("one literal search and one explicit range read, neither repeated after CHECK")
+        .isEqualTo(2);
+    assertThat(lookups.count("reading/Unrelated.txt"))
+        .as("discarded initial material is not fetched again")
+        .isEqualTo(1);
+    assertThat(lookups.count("reading/Loan.vue"))
+        .as("the one requested supplement is fetched once")
+        .isEqualTo(1);
+  }
+
+  private static void runFocusedReading(FocusedReadingProvider provider) {
+    DefaultBusinessProcessDiscovery discovery = new DefaultBusinessProcessDiscovery(provider);
+    var sample = discovery.discoverCatalogSample(focusedReadingRequest());
+    discovery.reconstructSelected(sample, sample.candidateIds());
+  }
+
+  private static ProcessDiscoveryRequest focusedReadingRequest() {
+    VerifiedSourceTextSet base = sourceTextSet();
+    List<VerifiedSourceTextDocument> documents = new ArrayList<>(base.documents());
+    documents.add(
+        text(
+            "README.md",
+            "# Frozen workshop\nFrozen workshop manages reservations and equipment loans.\n",
+            "text/markdown"));
+    documents.add(
+        text(
+            "reading/Rules.txt",
+            "MATCH current == 0\nbetween branches\nMATCH current == 1\n",
+            "text/plain"));
+    documents.add(text("reading/Unrelated.txt", "UNRELATED AUDIT TRAIL\n", "text/plain"));
+    documents.add(text("reading/Loan.vue", "<button>confirm loan</button>\n", "text/html"));
+    VerifiedSourceTextSet source =
+        new VerifiedSourceTextSet(
+            base.snapshotId(),
+            base.inventoryScopeKind(),
+            base.repositoryCompletionEligible(),
+            base.capabilityProfileRef(),
+            base.sourceInventoryRef(),
+            base.verifiedSnapshotRef(),
+            base.controls(),
+            documents);
+    return new ProcessDiscoveryRequest(
+        activities(),
+        materials(),
+        profile(),
+        AnalysisRunId.parse("analysis-run:" + "b".repeat(64)),
+        new VerifiedSourceInventoryReference(sourcePublication()),
+        ignored -> source,
+        oldCatalogInput(),
+        "核对预约怎样转成借用");
+  }
+
+  private static CountingSourceLookups observeFrozenSourceLookups(
+      DefaultBusinessProcessDiscovery.CatalogSample sample) throws ReflectiveOperationException {
+    // The corpus is already in memory: counting reader.reopen would miss repeated actual reads.
+    // Observe its real lookup boundary without replacing any parsing, text or selection behavior.
+    Field corpusField = sample.getClass().getDeclaredField("sourceText");
+    corpusField.setAccessible(true);
+    Object corpus = corpusField.get(sample);
+    Field lookupField = FrozenProcessSourceCorpus.class.getDeclaredField("filesBySelector");
+    lookupField.setAccessible(true);
+    @SuppressWarnings("unchecked")
+    Map<String, Object> original = (Map<String, Object>) lookupField.get(corpus);
+    CountingSourceLookups lookups = new CountingSourceLookups(original);
+    lookupField.set(corpus, lookups);
+    return lookups;
+  }
+
+  private static final class CountingSourceLookups extends AbstractMap<String, Object> {
+    private final Map<String, Object> delegate;
+    private final Map<String, Integer> counts = new LinkedHashMap<>();
+
+    private CountingSourceLookups(Map<String, Object> delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public Object get(Object key) {
+      counts.merge((String) key, 1, Integer::sum);
+      return delegate.get(key);
+    }
+
+    @Override
+    public Set<Entry<String, Object>> entrySet() {
+      return delegate.entrySet();
+    }
+
+    int count(String path) {
+      return counts.getOrDefault(path, 0);
+    }
+  }
+
+  private static final class FocusedReadingProvider implements StructuredModelProvider {
+    private final CanonicalJsonCodec json = new CanonicalJsonCodec();
+    private final List<String> retainedIds;
+    private final boolean supplement;
+    private final List<String> taskKinds = new ArrayList<>();
+    private JsonNode selectionInput;
+    private JsonNode checkInput;
+    private JsonNode draftInput;
+    private ObjectNode selectionResponse;
+
+    private FocusedReadingProvider(List<String> retainedIds, boolean supplement) {
+      this.retainedIds = retainedIds;
+      this.supplement = supplement;
+    }
+
+    @Override
+    public StructuredModelResponse generate(StructuredModelRequest request) {
+      taskKinds.add(request.taskKind());
+      JsonNode input = json.parseCanonical(request.untrustedInputJson());
+      ObjectNode response;
+      switch (request.taskKind()) {
+        case "PROCESS_MATERIAL_SELECTION" -> {
+          selectionInput = input;
+          response = selection();
+          selectionResponse = response.deepCopy();
+        }
+        case "PROCESS_READING_CHECK" -> {
+          checkInput = input;
+          response = new PipelineProvider(false).readingCheckResponse();
+          response.set(
+              "activityUses",
+              selectionResponse.path("candidateChanges").get(0).path("activityUses").deepCopy());
+          ArrayNode retained = response.putArray("retainedReadingRecordIds");
+          retainedIds.forEach(retained::add);
+          response.putArray("selectionNotes").add("只保留适用分支并补页面");
+          if (supplement) {
+            response
+                .withArray("supplementaryRequests")
+                .addObject()
+                .put("requestId", "supp-page")
+                .put("kind", "WHOLE_FILE")
+                .put("fileKey", "reading/Loan.vue")
+                .put("purpose", "核对办理页面");
+          }
+        }
+        case "BUSINESS_PROCESS_DRAFT", "BUSINESS_PROCESS_WRITE", "BUSINESS_PROCESS_RULE_REVIEW" -> {
+          if ("BUSINESS_PROCESS_DRAFT".equals(request.taskKind())) draftInput = input;
+          response = JsonNodeFactory.instance.objectNode();
+          response.put("disposition", "INSUFFICIENT_MATERIAL");
+          response.put("reason", "本测试只验证实际选材与事实任务输入，不合成业务结论");
+          response.putArray("processes");
+          if ("BUSINESS_PROCESS_RULE_REVIEW".equals(request.taskKind())) {
+            ObjectNode wrapper = JsonNodeFactory.instance.objectNode();
+            wrapper.set("processResult", response);
+            wrapper.putArray("corrections");
+            response = wrapper;
+          }
+        }
+        default ->
+            throw new AssertionError(
+                "Unexpected task beyond bounded sample: " + request.taskKind());
+      }
+      return new StructuredModelResponse(json.encodeCanonical(response), IDENTITY);
+    }
+
+    private ObjectNode selection() {
+      ObjectNode response = new PipelineProvider(false).buildSelectionResponse();
+      ObjectNode assessment = response.putObject("systemAssessment");
+      assessment.put("description", "组合型工作台，类型尚待核实");
+      ObjectNode type = assessment.putArray("typeHypotheses").addObject();
+      type.put("label", "开放组合类型");
+      type.putArray("basis").add("项目说明同时出现预约和借用");
+      type.putArray("uncertainties").add("借用是否可直接办理尚未确认");
+      ObjectNode hypothesis = assessment.putArray("businessHypotheses").addObject();
+      hypothesis.put("key", "H-LOAN");
+      hypothesis.put("name", "预约与借用衔接");
+      hypothesis.put("hypothesis", "预约可能成为借用来源");
+      hypothesis.put("whyInvestigate", "导航同时出现两种对象");
+      hypothesis.put("refutingObservation", "保存代码从不读取预约标识");
+      hypothesis.putArray("questions").add("何时从预约转为借用？");
+      ObjectNode candidate = (ObjectNode) response.path("candidateChanges").get(0);
+      candidate.putArray("investigationQuestions").add("何时从预约转为借用？");
+      candidate
+          .withArray("activityUses")
+          .addObject()
+          .put("activityId", "activity:member")
+          .put("role", "OPTIONAL")
+          .put("variant", "回退");
+      ArrayNode reads = candidate.putArray("initialReadingRequests");
+      // Deliberately not alphabetical: R identities follow supplied request order, then hit order.
+      reads
+          .addObject()
+          .put("requestId", "z-search")
+          .put("kind", "LITERAL_SEARCH")
+          .put("fileKey", "reading/Rules.txt")
+          .put("literal", "MATCH")
+          .put("contextLines", 0)
+          .put("purpose", "查明允许办理的状态");
+      reads
+          .addObject()
+          .put("requestId", "a-unrelated")
+          .put("kind", "WHOLE_FILE")
+          .put("fileKey", "reading/Unrelated.txt")
+          .put("purpose", "确认日志是否影响办理");
+      reads
+          .addObject()
+          .put("requestId", "m-duplicate")
+          .put("kind", "FILE_RANGE")
+          .put("fileKey", "reading/Rules.txt")
+          .put("startLine", 3)
+          .put("endLine", 3)
+          .put("purpose", "同一条件用于回退核对");
+      return response;
+    }
+  }
+
+  @Test
   void savedCatalogIsInputOnlyAndGlobalSelectionSeesContextAndUntouchedLedger() {
     PipelineProvider provider = new PipelineProvider(false);
 
@@ -79,7 +801,8 @@ class BusinessProcessReadingPipelineTest {
             "PROCESS_MATERIAL_SELECTION",
             "PROCESS_READING_CHECK",
             "BUSINESS_PROCESS_DRAFT",
-            "BUSINESS_PROCESS_REVIEW",
+            "BUSINESS_PROCESS_WRITE",
+            "BUSINESS_PROCESS_RULE_REVIEW",
             "BUSINESS_PROCESS_CONSOLIDATION_DRAFT",
             "BUSINESS_PROCESS_CONSOLIDATION_REVIEW");
     assertThat(provider.taskKinds()).noneMatch(value -> value.startsWith("BUSINESS_CATALOG"));
@@ -360,7 +1083,13 @@ class BusinessProcessReadingPipelineTest {
     assertThat(enumOccurrences(readingCheck, List.of("F1", "F2", "F3", "F4"))).isEqualTo(1);
 
     JsonNode draftSchema = provider.processSchema("BUSINESS_PROCESS_DRAFT");
-    JsonNode reviewSchema = provider.processSchema("BUSINESS_PROCESS_REVIEW");
+    JsonNode finalSchema = provider.processSchema("BUSINESS_PROCESS_RULE_REVIEW");
+    assertThat(finalSchema.path("required"))
+        .extracting(JsonNode::asText)
+        .contains("processResult", "corrections");
+    ObjectNode reviewSchema =
+        ((ObjectNode) finalSchema.path("properties").path("processResult")).deepCopy();
+    reviewSchema.set("$defs", finalSchema.path("$defs"));
     assertThat(reviewSchema).isEqualTo(draftSchema);
     JsonNode processSchema = draftSchema.path("properties").path("processes").path("items");
     JsonNode activityUseSchema =
@@ -476,7 +1205,7 @@ class BusinessProcessReadingPipelineTest {
     assertThat(saved.path("sourceReferenceMapping").isArray()).isTrue();
     assertThat(
             new PrivateModelJobResultStore(journal, run, "business-process")
-                .readCompleted(
+                .readCompletedProcess(
                     saved.path("jobKey").asText(),
                     saved.path("inputFingerprint").asText(),
                     "fixture-account",
@@ -585,7 +1314,7 @@ class BusinessProcessReadingPipelineTest {
   }
 
   private static ModelJobExecutionConfiguration modelJobs(
-      PipelineProvider provider,
+      StructuredModelProvider provider,
       Path journal,
       AnalysisRunId runId,
       AnalysisRunId reuseFromModelBatchId) {
@@ -1062,6 +1791,10 @@ class BusinessProcessReadingPipelineTest {
           readingCheckInput = input;
           readingCheckSchema = json.parseCanonical(request.outputJsonSchema());
           response = readingCheckResponse();
+          ArrayNode retained = response.putArray("retainedReadingRecordIds");
+          input
+              .path("readingRecords")
+              .forEach(record -> retained.add(record.path("readingRecordId").asText()));
         }
         case "BUSINESS_PROCESS_DRAFT" -> {
           processDraftInput = input;
@@ -1069,7 +1802,9 @@ class BusinessProcessReadingPipelineTest {
           response = process(input);
           draftResponse = response;
         }
-        case "BUSINESS_PROCESS_REVIEW" -> {
+        case "BUSINESS_PROCESS_WRITE" ->
+            response = ((ObjectNode) input.path("actualDraft")).deepCopy();
+        case "BUSINESS_PROCESS_RULE_REVIEW" -> {
           processReviewInput = input;
           processSchemas.put(request.taskKind(), json.parseCanonical(request.outputJsonSchema()));
           if (fatalCandidateName != null
@@ -1079,6 +1814,10 @@ class BusinessProcessReadingPipelineTest {
           }
           response = process(input);
           successfulReviewReady.countDown();
+          ObjectNode wrapper = JsonNodeFactory.instance.objectNode();
+          wrapper.set("processResult", response);
+          wrapper.putArray("corrections");
+          response = wrapper;
         }
         case "BUSINESS_PROCESS_CONSOLIDATION_DRAFT", "BUSINESS_PROCESS_CONSOLIDATION_REVIEW" ->
             response = consolidation(input);
@@ -1103,6 +1842,7 @@ class BusinessProcessReadingPipelineTest {
         return buildTwoCandidateSelectionResponse();
       }
       ObjectNode root = JsonNodeFactory.instance.objectNode();
+      addAssessment(root);
       ObjectNode change = root.putArray("candidateChanges").addObject();
       change.put("candidateLocalId", "new-cross-object");
       change.put("name", "订单跨对象办理");
@@ -1115,6 +1855,7 @@ class BusinessProcessReadingPipelineTest {
           .put("role", "CORE")
           .put("variant", "订单");
       change.putArray("contextActivityIds").add("activity:context");
+      change.putArray("investigationQuestions");
       ArrayNode initialRequests = change.putArray("initialReadingRequests");
       initialRequests
           .addObject()
@@ -1154,6 +1895,7 @@ class BusinessProcessReadingPipelineTest {
 
     private static ObjectNode buildTwoCandidateSelectionResponse() {
       ObjectNode root = JsonNodeFactory.instance.objectNode();
+      addAssessment(root);
       ArrayNode changes = root.putArray("candidateChanges");
       addLocalCandidate(
           changes,
@@ -1174,6 +1916,13 @@ class BusinessProcessReadingPipelineTest {
       return root;
     }
 
+    private static void addAssessment(ObjectNode root) {
+      ObjectNode assessment = root.putObject("systemAssessment");
+      assessment.put("description", "测试资料尚未判断系统类型");
+      assessment.putArray("typeHypotheses");
+      assessment.putArray("businessHypotheses");
+    }
+
     private static void addLocalCandidate(
         ArrayNode changes, String localId, String name, String purpose, String fileKey) {
       ObjectNode change = changes.addObject();
@@ -1188,6 +1937,7 @@ class BusinessProcessReadingPipelineTest {
           .put("role", "CORE")
           .put("variant", "订单");
       change.putArray("contextActivityIds").add("activity:context");
+      change.putArray("investigationQuestions");
       change
           .putArray("initialReadingRequests")
           .addObject()
@@ -1224,6 +1974,8 @@ class BusinessProcessReadingPipelineTest {
 
     private ObjectNode readingCheckResponse() {
       ObjectNode root = JsonNodeFactory.instance.objectNode();
+      root.putArray("retainedReadingRecordIds");
+      root.putArray("selectionNotes");
       root.putNull("name");
       root.putNull("purpose");
       root.putNull("scope");
