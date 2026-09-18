@@ -55,6 +55,75 @@ class SourceAnalysisConfiguredEntryPointTest {
   }
 
   @Test
+  void planMaterialsAcceptsAnExplicitFrozenSourceRegistrationBeforeConfiguration() {
+    String config = temporaryDirectory.resolve("missing.yaml").toAbsolutePath().toString();
+
+    ExecutionResult result =
+        execute(
+            "--config",
+            config,
+            "plan-materials",
+            "--source-registration",
+            "source-registration:" + "a".repeat(64));
+
+    assertConfigurationReached(result);
+  }
+
+  @Test
+  void configuredReadingMaterialsArtifactKeepsJsonlDefaultAndValidatesMarkdownProjection() {
+    String config = temporaryDirectory.resolve("missing.yaml").toAbsolutePath().toString();
+    String run = "analysis-run:" + "a".repeat(64);
+    String output = temporaryDirectory.resolve("reading-materials.md").toAbsolutePath().toString();
+
+    assertConfigurationReached(
+        execute(
+            "--config",
+            config,
+            "artifact",
+            "--run",
+            run,
+            "--key",
+            "CODE_READING_MATERIALS",
+            "--max-bytes",
+            "4096",
+            "--format",
+            "markdown",
+            "--output",
+            output));
+    assertConfigurationReached(
+        execute(
+            "--config",
+            config,
+            "artifact",
+            "--run",
+            run,
+            "--key",
+            "CODE_READING_MATERIALS",
+            "--max-bytes",
+            "4096"));
+
+    ExecutionResult invalidFormat =
+        execute(
+            "--config",
+            config,
+            "artifact",
+            "--run",
+            run,
+            "--key",
+            "CODE_READING_MATERIALS",
+            "--max-bytes",
+            "4096",
+            "--format",
+            "yaml",
+            "--output",
+            output);
+    assertThat(invalidFormat.exitCode()).isNotZero();
+    assertThat(invalidFormat.diagnostics())
+        .contains("ARGUMENTS_INVALID")
+        .doesNotContain("CONFIGURATION");
+  }
+
+  @Test
   void repositoryKnowledgeAcceptsCatalogSourceWithAnOptionalExactFocusQuestion() {
     String config = temporaryDirectory.resolve("missing.yaml").toAbsolutePath().toString();
     String activityBatch = "analysis-run:" + "c".repeat(64);

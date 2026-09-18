@@ -5,25 +5,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
-import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
-import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
-import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
-import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialCheckpointReader;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
+import org.sourceanalysis.app.analysis.interpretation.material.LegacyM10CheckpointFixture;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 
 /**
@@ -31,53 +25,43 @@ import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
  */
 class ActivityPromptContractTest {
 
-  @TempDir Path temporaryDirectory;
-
   @Test
   void sendsDistinctChineseBusinessInstructionsForDraftAndReview() throws Exception {
-    try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.createWithGuardedApprove(
-            temporaryDirectory.resolve("activity-prompts"))) {
-      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
-      BusinessMaterialBuildResult allMaterials =
-          new BusinessMaterialBuilder(
-                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
-              .build(
-                  new BuildBusinessMaterialsRequest(
-                      flows, new BusinessMaterialProfile(8, 24, 12_000, 1)));
-      BusinessMaterial material = allMaterials.materialSet().materials().get(0);
-      BusinessMaterialEntryCoverage entry =
-          allMaterials.materialSet().entryCoverage().stream()
-              .filter(value -> material.materialId().equals(value.materialId()))
-              .findFirst()
-              .orElseThrow();
-      BusinessMaterialBuildResult oneMaterial =
-          new BusinessMaterialBuildResult(
-              new BusinessMaterialSet(
-                  allMaterials.materialSet().materialSetId(), List.of(material), List.of(entry)),
-              allMaterials.checkpoint());
-      RecordingProvider provider = new RecordingProvider();
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = LegacyM10CheckpointFixture.open();
+    BusinessMaterialBuildResult allMaterials =
+        new BusinessMaterialCheckpointReader(fixture.artifacts()).reopen(fixture.checkpoint());
+    BusinessMaterial material = allMaterials.materialSet().materials().get(1);
+    BusinessMaterialEntryCoverage entry =
+        allMaterials.materialSet().entryCoverage().stream()
+            .filter(value -> material.materialId().equals(value.materialId()))
+            .findFirst()
+            .orElseThrow();
+    BusinessMaterialBuildResult oneMaterial =
+        new BusinessMaterialBuildResult(
+            new BusinessMaterialSet(
+                allMaterials.materialSet().materialSetId(), List.of(material), List.of(entry)),
+            allMaterials.checkpoint());
+    RecordingProvider provider = new RecordingProvider();
 
-      new ActivityExplainer(provider)
-          .explain(
-              new ExplainActivitiesRequest(
-                  oneMaterial, new ActivityExplanationProfile(64_000, 16_000, 2, 32, 2_000)));
+    new ActivityExplainer(provider)
+        .explain(
+            new ExplainActivitiesRequest(
+                oneMaterial, new ActivityExplanationProfile(64_000, 16_000, 2, 32, 2_000)));
 
-      assertThat(provider.instructions())
-          .hasSize(2)
-          .allSatisfy(
-              instruction ->
-                  assertThat(instruction)
-                      .contains("你正在阅读一个冻结源码分析程序准备的业务材料包")
-                      .contains("不得创建、修改或猜测 ref"));
-      assertThat(provider.instructions().get(0)).contains("请把整个材料包解释为零个或多个完整局部业务活动");
-      assertThat(provider.instructions().get(1)).contains("请审阅这些完整活动是否真正回答业务问题");
-      assertThat(provider.instructions())
-          .allSatisfy(
-              instruction ->
-                  assertThat(instruction).contains("完整 HTTP 方法与路径").contains("Java 类型、变量名或技术层名"));
-      assertThat(provider.instructions().get(0)).isNotEqualTo(provider.instructions().get(1));
-    }
+    assertThat(provider.instructions())
+        .hasSize(2)
+        .allSatisfy(
+            instruction ->
+                assertThat(instruction)
+                    .contains("你正在阅读一个冻结源码分析程序准备的业务材料包")
+                    .contains("不得创建、修改或猜测 ref"));
+    assertThat(provider.instructions().get(0)).contains("请把整个材料包解释为零个或多个完整局部业务活动");
+    assertThat(provider.instructions().get(1)).contains("请审阅这些完整活动是否真正回答业务问题");
+    assertThat(provider.instructions())
+        .allSatisfy(
+            instruction ->
+                assertThat(instruction).contains("完整 HTTP 方法与路径").contains("Java 类型、变量名或技术层名"));
+    assertThat(provider.instructions().get(0)).isNotEqualTo(provider.instructions().get(1));
   }
 
   private static final class RecordingProvider implements StructuredModelProvider {

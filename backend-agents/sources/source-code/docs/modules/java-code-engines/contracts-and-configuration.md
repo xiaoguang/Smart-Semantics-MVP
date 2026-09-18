@@ -1,8 +1,8 @@
 # Java代码引擎：配置与共同材料合同
 
-迁移说明（2026-09-17）：本页是已发布的两引擎/index/context历史合同。新执行的JDT-only配置、可选持久化插件与第5步材料合同见[补充详细设计](../../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md)。不在旧schema中改字段含义，不因保留历史读取而继续维护JavaParser生产路线。尚未实施的新行为不能作为当前命令使用说明。
+迁移说明（2026-09-18）：本页是已发布的两引擎/index/context历史合同。新执行的JDT-only配置、可选持久化插件与第5步材料合同见[补充详细设计](../../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md)。不在旧schema中改字段含义，不因保留历史读取而继续维护JavaParser生产路线；旧producer退役、直接回归和clean CI已完成，C的真实固定仓库验收已记录（325包/326条覆盖、1个明确导航失败），历史描述始终不是当前命令说明。
 
-> [总设计](README.md)。本页字段是 JDT 与已完成 JavaParser Adapter 共用的已发布合同；两种引擎能力可以不同，但都不能要求下游理解工具专属 records。
+> [总设计](README.md)。本页字段是 JDT 与已完成 JavaParser Adapter 曾共用的已发布合同；历史两种引擎能力可以不同，但当前下游只接受 JDT 新运行，不理解工具专属 records。
 
 ## 1. EngineConfigurationLoader：只选择工具，不决定业务
 
@@ -20,12 +20,12 @@ sourceAnalysis:
     javaHome: /opt/source-analysis/tools/jdk
 ```
 
-选择 JavaParser 时只需将 `javaEngine` 改成 `javaparser`。工具路径是本地启动配置，不能进入公共分析请求、模型材料或候选正文。上面路径是部署示例，不代表机器上已安装在该位置。
+新启动只接受 `javaEngine: jdt`。历史配置中的 `javaparser` 仅可被只读解码以检查既有state/hash，不能创建会话或被新 `technical.readingMaterials` 路线接受。工具路径是本地启动配置，不能进入公共分析请求、模型材料或候选正文。上面路径是部署示例，不代表机器上已安装在该位置。
 
 | 字段 | 精确含义 |
 | --- | --- |
-| sourceAnalysis.javaEngine | 必填，闭集 `jdt` / `javaparser`，大小写敏感；不允许 `auto` 或 fallback列表 |
-| jdt.installation / javaHome | 选择JDT时必填；先检查真实安装与Java版本，不能通过shell插值执行任意命令 |
+| sourceAnalysis.javaEngine | 新启动必填且只能为 `jdt`，大小写敏感；历史 `javaparser` 仅限只读解码；不允许 `auto` 或 fallback列表 |
+| jdt.installation / javaHome | 新启动必填；先检查真实安装与Java版本，不能通过shell插值执行任意命令 |
 | 缺失/重复/未知配置key | 启动前 `ENGINE_CONFIGURATION_INVALID`，不执行索引和模型 |
 | 未选引擎配置 | 允许保留，但不打开路径、不启动进程；结构和未知key仍检查 |
 | 宿主资源保护 | 继承现有运行配置与取消/超时；不增加按“预计token费用”停止的开关 |
@@ -202,7 +202,7 @@ Step05在`flow-slices.json`的`entryContexts`保存入口归属、收集状态�
 
 可用性保存在索引ENGINE记录及对应Fact accounting中；现有generic step receipt仍通过实际artifact descriptors引用它们，不给每层receipt新增一套状态。只有实际产物集合变化的拥有者和readers调整，不全工程schema重置。
 
-历史产物不覆盖，旧 context 版本用稳定 `UNSUPPORTED_CODE_CONTEXT_VERSION` 拒绝，不能缺新字段就当空列表。新语义下游不提供旧 wire 双读或别名；JavaParser Adapter 生产当前格式，而非读取旧格式冒充。
+历史产物不覆盖，旧 context 版本用稳定 `UNSUPPORTED_CODE_CONTEXT_VERSION` 拒绝，不能缺新字段就当空列表。新语义下游不提供旧 wire 双读或别名；历史 JavaParser Adapter 不会被新启动恢复或用于把旧格式冒充成当前格式。
 
 ### 5.1 实际产物集合与现有存储复用
 

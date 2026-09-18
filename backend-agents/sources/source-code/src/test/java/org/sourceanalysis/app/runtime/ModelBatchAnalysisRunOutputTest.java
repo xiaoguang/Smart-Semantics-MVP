@@ -6,14 +6,19 @@ import static org.assertj.core.api.Assertions.fail;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
+import org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationAddress;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
+import org.sourceanalysis.app.artifact.AnalysisStepReceiptId;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.ModuleArtifactRoot;
@@ -71,6 +76,82 @@ class ModelBatchAnalysisRunOutputTest {
       assertThat(reopened.hasCompletedActivities()).isTrue();
       assertThat(reopened.hasCompletedProcesses()).isFalse();
       assertThat(reopened.hasCompletedReport()).isFalse();
+    }
+  }
+
+  @Test
+  void roundTripsReadingMaterialsOnlyOutputWithV5ManifestAndNoLegacyCompletion() throws Exception {
+    Path storeDirectory = temporaryDirectory.resolve("reading-materials-only-output-store");
+    Files.createDirectory(storeDirectory);
+
+    AnalysisRunReference outputRun;
+    AnalysisRunOutput output;
+    AnalysisStepPublicationReference materialPublication;
+    try (RunStoreHandle store = RunStoreBootstrap.openForTest(storeDirectory)) {
+      outputRun = runningRun(store);
+      materialPublication =
+          materialPublication(outputRun.runId(), AnalysisStepKey.BUSINESS_FLOWS, 'a');
+      output = readingMaterialsOnlyOutput(outputRun.runId(), materialPublication);
+
+      RunStoreBootstrap.recordAnalysisRunOutput(store, outputRun.runId(), output);
+      RunStoreBootstrap.transitionAnalysisRun(
+          store,
+          outputRun.runId(),
+          AnalysisRunLifecycleState.RUNNING,
+          AnalysisRunLifecycleState.FINISHED);
+    }
+
+    String manifest =
+        Files.readString(
+            storeDirectory
+                .resolve("analysis-runs")
+                .resolve(outputRun.runId().value())
+                .resolve("run-output.json"));
+    assertThat(manifest).contains("\"schemaVersion\":\"analysis-run-output-v5\"");
+    assertThat(manifest).contains("\"outputKind\":\"READING_MATERIALS_ONLY\"");
+
+    try (RunStoreHandle store = RunStoreBootstrap.open(storeDirectory)) {
+      AnalysisRunOutput reopened =
+          RunStoreBootstrap.reopenAnalysisRunOutput(store, outputRun.runId()).orElseThrow();
+      assertThat(reopened).isEqualTo(output);
+      assertThat(sourceRunId(reopened)).isEqualTo(outputRun.runId());
+      assertThat(readingMaterialCheckpoint(reopened)).isEqualTo(materialPublication);
+      assertThat(reopened.businessMaterialCheckpoint()).isNull();
+      assertThat(reopened.activityCheckpoint()).isNull();
+      assertThat(reopened.knowledgeCheckpoint()).isNull();
+      assertThat(reopened.reportCheckpoint()).isNull();
+      assertThat(reopened.hasCompletedActivities()).isFalse();
+      assertThat(reopened.hasCompletedProcesses()).isFalse();
+      assertThat(reopened.hasCompletedReport()).isFalse();
+    }
+  }
+
+  @Test
+  void rejectsReadingMaterialsOnlyOutputWithWrongStepOrOutputRunOwner() throws Exception {
+    Path storeDirectory = temporaryDirectory.resolve("invalid-reading-materials-output-store");
+    Files.createDirectory(storeDirectory);
+
+    try (RunStoreHandle store = RunStoreBootstrap.openForTest(storeDirectory)) {
+      AnalysisRunReference sourceRun = stoppedRun(store);
+      AnalysisRunReference outputRun = runningRun(store);
+
+      AnalysisStepPublicationReference wrongStep =
+          materialPublication(sourceRun.runId(), AnalysisStepKey.PROVEN_CODE_FACTS, 'b');
+      assertThatThrownBy(() -> readingMaterialsOnlyOutput(sourceRun.runId(), wrongStep))
+          .isInstanceOf(IllegalArgumentException.class);
+
+      AnalysisStepPublicationReference stepFive =
+          materialPublication(sourceRun.runId(), AnalysisStepKey.BUSINESS_FLOWS, 'c');
+      AnalysisRunOutput sourceOwnedOutput = readingMaterialsOnlyOutput(sourceRun.runId(), stepFive);
+      assertThatThrownBy(
+              () ->
+                  RunStoreBootstrap.recordAnalysisRunOutput(
+                      store, outputRun.runId(), sourceOwnedOutput))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("ANALYSIS_RUN_OUTPUT_INVALID");
+      assertThat(RunStoreBootstrap.reopenAnalysisRunOutput(store, outputRun.runId())).isEmpty();
+      assertThat(RunStoreBootstrap.reopenAnalysisRun(store, outputRun.runId()).lifecycleState())
+          .isEqualTo(AnalysisRunLifecycleState.RUNNING);
     }
   }
 
@@ -240,6 +321,44 @@ class ModelBatchAnalysisRunOutputTest {
     }
   }
 
+  private static AnalysisStepPublicationReference readingMaterialCheckpoint(
+      AnalysisRunOutput output) throws Exception {
+    try {
+      return (AnalysisStepPublicationReference)
+          output.getClass().getMethod("readingMaterialCheckpoint").invoke(output);
+    } catch (NoSuchMethodException missing) {
+      fail("analysis-run-output-v5 must expose readingMaterialCheckpoint", missing);
+      throw new AssertionError("unreachable");
+    } catch (InvocationTargetException failure) {
+      throw new AssertionError(failure.getCause());
+    }
+  }
+
+  private static AnalysisRunOutput readingMaterialsOnlyOutput(
+      AnalysisRunId sourceRunId, AnalysisStepPublicationReference materialPublication)
+      throws Exception {
+    try {
+      Method factory =
+          AnalysisRunOutput.class.getMethod(
+              "readingMaterials", AnalysisRunId.class, AnalysisStepPublicationReference.class);
+      return (AnalysisRunOutput) factory.invoke(null, sourceRunId, materialPublication);
+    } catch (NoSuchMethodException missing) {
+      fail(
+          "analysis-run-output-v5 must expose readingMaterials(sourceRunId, stepReference)",
+          missing);
+      throw new AssertionError("unreachable");
+    } catch (InvocationTargetException failure) {
+      Throwable cause = failure.getCause();
+      if (cause instanceof RuntimeException runtime) {
+        throw runtime;
+      }
+      if (cause instanceof Error error) {
+        throw error;
+      }
+      throw new AssertionError(cause);
+    }
+  }
+
   private static AnalysisRunOutput mixedOwnerOutput(
       AnalysisRunId sourceRunId, AnalysisRunId outputRunId) throws Exception {
     Constructor<AnalysisRunOutput> constructor;
@@ -288,6 +407,15 @@ class ModelBatchAnalysisRunOutputTest {
             runId, AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, "business-process-publisher"),
         ModuleArtifactRoot.parse("module-root:" + String.valueOf(fill).repeat(64)),
         ModuleReceiptId.parse("module-receipt:" + String.valueOf(fill).repeat(64)),
+        new Sha256Digest(String.valueOf(fill).repeat(64)));
+  }
+
+  private static AnalysisStepPublicationReference materialPublication(
+      AnalysisRunId runId, AnalysisStepKey step, char fill) {
+    return new AnalysisStepPublicationReference(
+        new AnalysisStepPublicationAddress(runId, step),
+        AnalysisStepArtifactRoot.parse("analysis-step-root:" + String.valueOf(fill).repeat(64)),
+        AnalysisStepReceiptId.parse("analysis-step-receipt:" + String.valueOf(fill).repeat(64)),
         new Sha256Digest(String.valueOf(fill).repeat(64)));
   }
 

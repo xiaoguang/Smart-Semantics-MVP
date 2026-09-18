@@ -71,7 +71,7 @@ public final class PersistedCodeStructureGraphReader {
           || !publication
               .receipt()
               .gapRefs()
-              .equals(CodeStructureGraphModulePublisher.gapReferences(draft))) {
+              .equals(HistoricalProgramGraphPayloads.gapReferences(draft))) {
         throw broken();
       }
       CodeStructureGraphDraft.requireIdentity(draft);

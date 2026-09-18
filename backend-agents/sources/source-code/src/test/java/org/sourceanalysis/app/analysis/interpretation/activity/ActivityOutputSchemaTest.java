@@ -6,68 +6,66 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
-import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
-import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
-import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
-import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialCheckpointReader;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
+import org.sourceanalysis.app.analysis.interpretation.material.LegacyM10CheckpointFixture;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 
 /** Guards the real model boundary against an arbitrary-object output schema. */
 class ActivityOutputSchemaTest {
 
-  @TempDir Path temporaryDirectory;
-
   @Test
   void givesEachDraftAndReviewTheCompleteBusinessActivityOutputShape() throws Exception {
-    try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.createWithGuardedApprove(
-            temporaryDirectory.resolve("activity-output-schema"))) {
-      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
-      BusinessMaterialBuildResult materials =
-          new BusinessMaterialBuilder(
-                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
-              .build(
-                  new BuildBusinessMaterialsRequest(
-                      flows, new BusinessMaterialProfile(8, 24, 12_000, 1)));
-      SchemaCapturingProvider provider = new SchemaCapturingProvider();
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = LegacyM10CheckpointFixture.open();
+    BusinessMaterialBuildResult allMaterials =
+        new BusinessMaterialCheckpointReader(fixture.artifacts()).reopen(fixture.checkpoint());
+    BusinessMaterial material = allMaterials.materialSet().materials().get(1);
+    BusinessMaterialEntryCoverage coverage =
+        allMaterials.materialSet().entryCoverage().stream()
+            .filter(value -> material.materialId().equals(value.materialId()))
+            .findFirst()
+            .orElseThrow();
+    BusinessMaterialBuildResult materials =
+        new BusinessMaterialBuildResult(
+            new BusinessMaterialSet(
+                allMaterials.materialSet().materialSetId(), List.of(material), List.of(coverage)),
+            allMaterials.checkpoint());
+    SchemaCapturingProvider provider = new SchemaCapturingProvider();
 
-      new ActivityExplainer(provider)
-          .explain(
-              new ExplainActivitiesRequest(
-                  materials, new ActivityExplanationProfile(64_000, 16_000, 2, 32, 2_000)));
+    new ActivityExplainer(provider)
+        .explain(
+            new ExplainActivitiesRequest(
+                materials, new ActivityExplanationProfile(64_000, 16_000, 2, 32, 2_000)));
 
-      assertThat(provider.schemas()).isNotEmpty();
-      assertThat(provider.schemas())
-          .extracting(CapturedSchema::taskKind)
-          .containsOnly("ACTIVITY_DRAFT", "ACTIVITY_REVIEW");
-      assertThat(
-              provider.schemas().stream()
-                  .filter(schema -> "ACTIVITY_DRAFT".equals(schema.taskKind()))
-                  .count())
-          .isEqualTo(
-              provider.schemas().stream()
-                  .filter(schema -> "ACTIVITY_REVIEW".equals(schema.taskKind()))
-                  .count());
-      provider
-          .schemas()
-          .forEach(
-              schema ->
-                  assertCompleteActivityResponseSchema(
-                      schema.schema(), "ACTIVITY_REVIEW".equals(schema.taskKind())));
-    }
+    assertThat(provider.schemas()).isNotEmpty();
+    assertThat(provider.schemas())
+        .extracting(CapturedSchema::taskKind)
+        .containsOnly("ACTIVITY_DRAFT", "ACTIVITY_REVIEW");
+    assertThat(
+            provider.schemas().stream()
+                .filter(schema -> "ACTIVITY_DRAFT".equals(schema.taskKind()))
+                .count())
+        .isEqualTo(
+            provider.schemas().stream()
+                .filter(schema -> "ACTIVITY_REVIEW".equals(schema.taskKind()))
+                .count());
+    provider
+        .schemas()
+        .forEach(
+            schema ->
+                assertCompleteActivityResponseSchema(
+                    schema.schema(), "ACTIVITY_REVIEW".equals(schema.taskKind())));
   }
 
   private static void assertCompleteActivityResponseSchema(JsonNode schema, boolean review) {

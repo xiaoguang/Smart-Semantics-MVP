@@ -14,149 +14,149 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.sourceanalysis.app.analysis.code.EngineDescriptor;
+import org.sourceanalysis.app.analysis.code.EntryCodeContext;
+import org.sourceanalysis.app.analysis.code.EntrySeed;
+import org.sourceanalysis.app.analysis.code.JavaCodeSession;
+import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
+import org.sourceanalysis.app.analysis.graph.ProgramGraphsExecution;
+import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
+import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
 
-/** Public-store contract for the complete Program Graphs analysis-step publication. */
+/** Public-store contract for the current JDT navigation analysis-step publication. */
 class ProgramGraphsAnalysisStepArtifactStoreTest {
 
   @TempDir Path temporaryDirectory;
 
   @Test
-  void acceptsSevenProgramGraphPayloadsWithTwoPersistedOrderedUpstreamsAndRejectsMutations() {
-    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
-    CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
-    ArtifactControls controls = controls(policies);
-    ArtifactStoreLimits moduleLimits = new ArtifactStoreLimits(8, 100_000, 300_000, 12);
-    ArtifactStoreLimits stepLimits = new ArtifactStoreLimits(8, 100_000, 300_000, 12);
-    AnalysisRunId runId = runId();
+  void acceptsCurrentJdtNavigationPayloadWithOrderedUpstreamsAndRejectsMutations() {
+    try (ProgramGraphsPublicFixture fixture =
+        ProgramGraphsPublicFixture.createForJavaCodeIndex(
+            temporaryDirectory.resolve("navigation-fixture"))) {
+      String snapshotId = fixture.sourceReader().reopen(fixture.sourceInventory()).snapshotId();
+      ProgramGraphsReference navigation;
+      try (JavaCodeSession session = currentNavigationSession(snapshotId)) {
+        navigation =
+            new ProgramGraphsExecution(
+                    fixture.sourceReader(), fixture.moduleArtifacts(), fixture.stepArtifacts())
+                .execute(
+                    fixture.sourceInventory(),
+                    fixture.applicationDiscovery(),
+                    session,
+                    fixture.artifactControls());
+      }
 
-    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(temporaryDirectory)) {
-      CanonicalModuleArtifactStore moduleStore =
-          new FileSystemCanonicalModuleArtifactStore(handle, canonicalJson, policies, moduleLimits);
-      CanonicalAnalysisStepArtifactStore stepStore =
-          new FileSystemCanonicalAnalysisStepArtifactStore(
-              handle, canonicalJson, policies, stepLimits);
-
-      List<CanonicalModulePayload> sourcePayloads = sourcePayloads(canonicalJson);
-      InstalledModulePublication sourcePublisher =
-          moduleStore.install(
-              new ModuleInstallRequest(
-                  new AnalysisStepModuleAddress(
-                      runId, AnalysisStepKey.VERIFIED_SOURCE_INVENTORY, 3, "publish"),
-                  "v1",
-                  List.of(),
-                  controls,
-                  ModuleCompletionStatus.SUCCEEDED,
-                  List.of(),
-                  sourcePayloads));
-      AnalysisStepPublicationReference installedSourceStep =
-          stepStore
-              .install(
-                  stepRequest(
-                      runId,
-                      AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
-                      sourcePublisher,
-                      sourcePayloads,
-                      List.of(),
-                      controls))
-              .reference();
-      AnalysisStepPublicationReference sourceStep =
-          stepStore.reopen(installedSourceStep).reference();
-
-      List<CanonicalModulePayload> discoveryPayloads = discoveryPayloads(canonicalJson);
-      InstalledModulePublication discoveryPublisher =
-          moduleStore.install(
-              new ModuleInstallRequest(
-                  new AnalysisStepModuleAddress(
-                      runId, AnalysisStepKey.APPLICATION_DISCOVERY, 4, "publish"),
-                  "v1",
-                  List.of(),
-                  controls,
-                  ModuleCompletionStatus.SUCCEEDED,
-                  List.of(),
-                  discoveryPayloads));
-      AnalysisStepPublicationReference installedDiscoveryStep =
-          stepStore
-              .install(
-                  stepRequest(
-                      runId,
-                      AnalysisStepKey.APPLICATION_DISCOVERY,
-                      discoveryPublisher,
-                      discoveryPayloads,
-                      List.of(sourceStep),
-                      controls))
-              .reference();
-      AnalysisStepPublicationReference discoveryStep =
-          stepStore.reopen(installedDiscoveryStep).reference();
-
-      List<CanonicalModulePayload> graphPayloads = graphPayloads(canonicalJson);
-      InstalledModulePublication graphPublisher =
-          moduleStore.install(
-              new ModuleInstallRequest(
-                  new AnalysisStepModuleAddress(
-                      runId, AnalysisStepKey.PROGRAM_GRAPHS, 6, "publish"),
-                  "v1",
-                  List.of(),
-                  controls,
-                  ModuleCompletionStatus.SUCCEEDED,
-                  List.of(),
-                  graphPayloads));
-
-      AnalysisStepInstallRequest validRequest =
-          stepRequest(
-              runId,
-              AnalysisStepKey.PROGRAM_GRAPHS,
-              graphPublisher,
-              graphPayloads,
-              List.of(sourceStep, discoveryStep),
-              controls);
-      assertThatCode(() -> stepStore.install(validRequest)).doesNotThrowAnyException();
-      AnalysisStepPublicationReference installed = stepStore.install(validRequest).reference();
-      ReopenedAnalysisStepPublication reopened = stepStore.reopen(installed);
-
+      ReopenedAnalysisStepPublication reopened =
+          fixture.stepArtifacts().reopen(navigation.publication());
       assertThat(reopened.receipt().upstreamAnalysisStepReferences())
-          .containsExactly(sourceStep, discoveryStep);
+          .hasSize(2)
+          .containsExactly(
+              fixture.sourceInventory().publication(),
+              fixture.applicationDiscovery().publication());
       assertThat(reopened.semanticPayloads())
           .extracting(payload -> payload.descriptor().fileName())
-          .containsExactly(
-              "call-graph.json",
-              "code-structure-graph.json",
-              "control-flow-graph.json",
-              "data-flow-graph.json",
-              "evidence-graph.json",
-              "graph-gaps.jsonl",
-              "graph-index.json");
+          .containsExactly("java-code-index.jsonl");
 
-      assertThatThrownBy(
-              () ->
-                  stepStore.install(
-                      stepRequest(
-                          runId,
-                          AnalysisStepKey.PROGRAM_GRAPHS,
-                          graphPublisher,
-                          graphPayloads,
-                          List.of(discoveryStep, sourceStep),
-                          controls)))
-          .isInstanceOfSatisfying(
-              ArtifactStoreException.class,
-              failure ->
-                  assertThat(failure.code()).isEqualTo("ANALYSIS_STEP_INSTALL_REQUEST_INVALID"));
-      assertThatThrownBy(
-              () ->
-                  stepStore.install(
-                      stepRequest(
-                          runId,
-                          AnalysisStepKey.PROGRAM_GRAPHS,
-                          graphPublisher,
-                          graphPayloads,
-                          List.of(sourceStep),
-                          controls)))
+      List<CanonicalAnalysisStepPayload> payloads =
+          reopened.semanticPayloads().stream()
+              .map(
+                  payload ->
+                      new CanonicalAnalysisStepPayload(
+                          payload.descriptor().fileName(),
+                          payload.descriptor().artifactType(),
+                          payload.descriptor().schemaVersion(),
+                          payload.descriptor().artifactId(),
+                          payload.descriptor().mediaType(),
+                          payload.canonicalUtf8()))
+              .toList();
+      AnalysisStepInstallRequest validRequest =
+          new AnalysisStepInstallRequest(
+              reopened.reference().address(),
+              reopened.receipt().publicationProvenance(),
+              reopened.receipt().upstreamAnalysisStepReferences(),
+              reopened.receipt().controls(),
+              reopened.receipt().status(),
+              reopened.receipt().gapRefs(),
+              payloads,
+              null);
+      assertThatCode(() -> fixture.stepArtifacts().install(validRequest))
+          .doesNotThrowAnyException();
+
+      List<AnalysisStepPublicationReference> reversedUpstreams =
+          List.of(
+              reopened.receipt().upstreamAnalysisStepReferences().get(1),
+              reopened.receipt().upstreamAnalysisStepReferences().get(0));
+      AnalysisStepInstallRequest reorderedRequest =
+          new AnalysisStepInstallRequest(
+              reopened.reference().address(),
+              reopened.receipt().publicationProvenance(),
+              reversedUpstreams,
+              reopened.receipt().controls(),
+              reopened.receipt().status(),
+              reopened.receipt().gapRefs(),
+              payloads,
+              null);
+      assertThatThrownBy(() -> fixture.stepArtifacts().install(reorderedRequest))
           .isInstanceOfSatisfying(
               ArtifactStoreException.class,
               failure ->
                   assertThat(failure.code()).isEqualTo("ANALYSIS_STEP_INSTALL_REQUEST_INVALID"));
     }
+  }
+
+  private static JavaCodeSession currentNavigationSession(String snapshotId) {
+    EntryCodeContext.TechnicalEnhancements enhancements =
+        new EntryCodeContext.TechnicalEnhancements(
+            EntryCodeContext.Availability.NOT_PRODUCED,
+            "CURRENT_NAVIGATION_STORE_TEST",
+            List.of(),
+            List.of(),
+            null);
+    return new JavaCodeSession() {
+      @Override
+      public JavaDeclarationCatalog catalog() {
+        return new JavaDeclarationCatalog(
+            snapshotId, List.of(), List.of(), List.of(), List.of(), List.of(), Map.of());
+      }
+
+      @Override
+      public EntryCodeContext collect(EntrySeed entry) {
+        EntryCodeContext.MethodCode method =
+            new EntryCodeContext.MethodCode(
+                entry.methodKey(),
+                "METHOD",
+                "com.example.OrderController",
+                "entry",
+                List.of(),
+                "Object",
+                new EntryCodeContext.SourceSource(
+                    "src/main/java/com/example/OrderController.java",
+                    entry.methodRange(),
+                    "public Object entry() { return null; }"),
+                true);
+        return new EntryCodeContext(
+            EntryCodeContext.SCHEMA_VERSION,
+            entry.entryId(),
+            entry.methodKey(),
+            List.of(method),
+            List.of(),
+            List.of(),
+            List.of(),
+            enhancements);
+      }
+
+      @Override
+      public EngineDescriptor descriptor() {
+        return new EngineDescriptor(
+            "jdt", "store-test-jdt", Map.of("jdtls", "fixture"), "17", List.of("METHODS"));
+      }
+
+      @Override
+      public void close() {}
+    };
   }
 
   private static AnalysisStepInstallRequest stepRequest(

@@ -12,8 +12,11 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
+import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
@@ -86,7 +89,8 @@ class HttpEntryDiscoveryModulePublisherTest {
     ApplicationProfile profile = profile(controller, controls);
     VerifiedSourceTextReader sourceHandle = reference -> sourceTextSet(controller, controls);
     HttpEntryDiscovery discovery =
-        new SpringHttpEntryDiscoverer(sourceHandle).discoverEntries(profile, frozenSource());
+        new SpringHttpEntryDiscoverer(sourceHandle)
+            .discoverEntries(profile, frozenSource(), declarationCatalog(controller));
     AnalysisStepModuleAddress profileAddress = address(1, "application-profile");
     AnalysisStepModuleAddress entryAddress = address(2, "http-entry");
 
@@ -198,6 +202,91 @@ class HttpEntryDiscoveryModulePublisherTest {
         rawUtf8.length,
         Sha256Digest.parse(sha256),
         ImmutableBytes.copyOf(rawUtf8));
+  }
+
+  private static JavaDeclarationCatalog declarationCatalog(VerifiedSourceTextDocument document) {
+    String source = new String(document.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8);
+    int typeStart = source.indexOf("public class DepotHeadController");
+    int methodStart = source.indexOf("public String batchSetStatus");
+    int methodEnd = source.indexOf("}", methodStart) + 1;
+    int classEnd = source.lastIndexOf("}") + 1;
+    int classAnnotationStart = source.indexOf("@RequestMapping");
+    int classAnnotationEnd = source.indexOf("\n", classAnnotationStart);
+    int methodAnnotationStart = source.indexOf("@PostMapping");
+    int methodAnnotationEnd = source.indexOf("\n", methodAnnotationStart);
+    String classAnnotationKey = "annotation:controller-route";
+    String methodAnnotationKey = "annotation:method-route";
+    String methodKey = "method:controller-batch-set-status";
+    return new JavaDeclarationCatalog(
+        "snapshot:" + "3".repeat(64),
+        List.of(document.path()),
+        List.of(
+            new JavaDeclarationCatalog.TypeDeclaration(
+                document.path(),
+                range(source, typeStart, classEnd),
+                "com.example.DepotHeadController",
+                "CLASS",
+                List.of(classAnnotationKey),
+                List.of(),
+                List.of(methodKey),
+                List.of())),
+        List.of(
+            new JavaDeclarationCatalog.MethodDeclarationView(
+                methodKey,
+                "com.example.DepotHeadController",
+                "batchSetStatus",
+                "METHOD",
+                List.of("public"),
+                List.of(
+                    new JavaDeclarationCatalog.ParameterView(
+                        0, "status", "String", false, List.of()),
+                    new JavaDeclarationCatalog.ParameterView(1, "ids", "String", false, List.of())),
+                "String",
+                List.of(methodAnnotationKey),
+                document.path(),
+                range(source, methodStart, methodEnd),
+                true)),
+        List.of(
+            annotation(
+                classAnnotationKey,
+                "RequestMapping",
+                "/depotHead",
+                source,
+                classAnnotationStart,
+                classAnnotationEnd,
+                document.path()),
+            annotation(
+                methodAnnotationKey,
+                "PostMapping",
+                "/batchSetStatus",
+                source,
+                methodAnnotationStart,
+                methodAnnotationEnd,
+                document.path())),
+        List.of(),
+        Map.of());
+  }
+
+  private static JavaDeclarationCatalog.AnnotationView annotation(
+      String key, String name, String route, String source, int start, int end, String path) {
+    return new JavaDeclarationCatalog.AnnotationView(
+        key,
+        name,
+        "org.springframework.web.bind.annotation." + name,
+        source.substring(start, end),
+        range(source, start, end),
+        new SourceRange(start + 1, name.length(), line(source, start), line(source, start)),
+        Map.of("value", Map.of("kind", "STRING", "source", "\"" + route + "\"", "value", route)),
+        path);
+  }
+
+  private static SourceRange range(String source, int start, int end) {
+    return new SourceRange(
+        start, end - start, line(source, start), line(source, Math.max(start, end - 1)));
+  }
+
+  private static int line(String source, int offset) {
+    return 1 + (int) source.substring(0, offset).chars().filter(value -> value == '\n').count();
   }
 
   private static ArtifactControls controls(CanonicalArtifactPolicyRegistry policies) {

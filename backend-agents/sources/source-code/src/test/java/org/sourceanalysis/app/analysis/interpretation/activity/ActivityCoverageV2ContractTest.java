@@ -9,181 +9,160 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.lang.reflect.Method;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
-import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
-import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
-import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
-import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialCheckpointReader;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
+import org.sourceanalysis.app.analysis.interpretation.material.LegacyM10CheckpointFixture;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
+import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 
 /** Public ActivityExplainer RED for arbitrary entry coverage and the v2 sidecar contract. */
 class ActivityCoverageV2ContractTest {
 
-  @TempDir Path temporaryDirectory;
-
   @Test
   void sendsCompleteDraftAndMissingKeysToOneReviewAndPersistsUnexplainedEntries() throws Exception {
-    try (ProgramGraphsPublicFixture fixture = fixture("review-missing-entries")) {
-      BusinessMaterialBuildResult materials = materialWithEntries(fixture, 4);
-      JsonNode actualDraft = response(materials, List.of("E1", "E2"), false);
-      RecordingProvider provider =
-          new RecordingProvider(
-              List.of(actualDraft, response(materials, List.of("E1", "E2"), true)));
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture =
+        LegacyM10CheckpointFixture.openWritable();
+    BusinessMaterialBuildResult materials = materialWithEntries(fixture, 4);
+    JsonNode actualDraft = response(materials, List.of("E1", "E2"), false);
+    RecordingProvider provider =
+        new RecordingProvider(List.of(actualDraft, response(materials, List.of("E1", "E2"), true)));
 
-      ActivityExplanationResult result =
-          explainExpectingSuccess(
-              new ActivityExplainer(provider, fixture.moduleArtifacts()),
-              new ExplainActivitiesRequest(materials, profileFor(4), 1));
+    ActivityExplanationResult result =
+        explainExpectingSuccess(
+            new ActivityExplainer(provider, fixture.artifacts()),
+            new ExplainActivitiesRequest(materials, profileFor(4), 1));
 
-      assertThat(provider.calls()).isEqualTo(2);
-      assertThat(provider.requests()).hasSize(2);
-      JsonNode reviewInput = provider.input(1);
-      assertThat(textValues(reviewInput.path("entryKeys"))).containsExactly("E1", "E2", "E3", "E4");
-      assertThat(reviewInput.path("actualDraft").isObject()).isTrue();
-      assertThat(reviewInput.path("actualDraft")).isEqualTo(actualDraft);
-      assertThat(textValues(reviewInput.path("missingEntryKeys"))).containsExactly("E3", "E4");
+    assertThat(provider.calls()).isEqualTo(2);
+    assertThat(provider.requests()).hasSize(2);
+    JsonNode reviewInput = provider.input(1);
+    assertThat(textValues(reviewInput.path("entryKeys"))).containsExactly("E1", "E2", "E3", "E4");
+    assertThat(reviewInput.path("actualDraft").isObject()).isTrue();
+    assertThat(reviewInput.path("actualDraft")).isEqualTo(actualDraft);
+    assertThat(textValues(reviewInput.path("missingEntryKeys"))).containsExactly("E3", "E4");
 
-      List<?> unexplained = listProperty(result, "unexplainedActivityEntries");
-      assertThat(unexplained).hasSize(2);
-      assertThat(unexplained).allSatisfy(ActivityCoverageV2ContractTest::assertUnexplainedEntry);
-      assertThat(result.coverage()).hasSize(4);
-      assertThat(result.coverage())
-          .filteredOn(value -> "NOT_ANALYZED".equals(value.disposition()))
-          .extracting(ActivityEntryCoverage::entryId)
-          .containsExactly("entry-3", "entry-4");
-      assertThat(result.coverage())
-          .filteredOn(value -> "NOT_ANALYZED".equals(value.disposition()))
-          .extracting(ActivityEntryCoverage::reasonCode)
-          .containsOnly("MODEL_NOT_EXPLAINED");
+    List<?> unexplained = listProperty(result, "unexplainedActivityEntries");
+    assertThat(unexplained).hasSize(2);
+    assertThat(unexplained).allSatisfy(ActivityCoverageV2ContractTest::assertUnexplainedEntry);
+    assertThat(result.coverage()).hasSize(4);
+    assertThat(result.coverage())
+        .filteredOn(value -> "NOT_ANALYZED".equals(value.disposition()))
+        .extracting(ActivityEntryCoverage::entryId)
+        .containsExactly("entry-3", "entry-4");
+    assertThat(result.coverage())
+        .filteredOn(value -> "NOT_ANALYZED".equals(value.disposition()))
+        .extracting(ActivityEntryCoverage::reasonCode)
+        .containsOnly("MODEL_NOT_EXPLAINED");
 
-      ModulePublicationReference checkpoint = result.checkpoint();
-      assertThat(checkpoint).isNotNull();
-      JsonNode coverage = checkpointJson(fixture, checkpoint, "activity-coverage.json");
-      assertThat(coverage.path("schemaVersion").asText())
-          .isEqualTo("flow-interpretation-activity-coverage-v2");
-      assertThat(coverage.path("unexplainedActivityEntries").isArray()).isTrue();
-      assertThat(coverage.path("unexplainedActivityEntries")).hasSize(2);
-    }
+    ModulePublicationReference checkpoint = result.checkpoint();
+    assertThat(checkpoint).isNotNull();
+    JsonNode coverage = checkpointJson(fixture.artifacts(), checkpoint, "activity-coverage.json");
+    assertThat(coverage.path("schemaVersion").asText())
+        .isEqualTo("flow-interpretation-activity-coverage-v2");
+    assertThat(coverage.path("unexplainedActivityEntries").isArray()).isTrue();
+    assertThat(coverage.path("unexplainedActivityEntries")).hasSize(2);
   }
 
   @Test
   void mapsAllTwelveLocalKeysWithoutPrefixOrSubstringConfusion() throws Exception {
-    try (ProgramGraphsPublicFixture fixture = fixture("twelve-entry-keys")) {
-      BusinessMaterialBuildResult materials = materialWithEntries(fixture, 12);
-      List<String> expectedKeys = localKeys(12);
-      RecordingProvider provider =
-          new RecordingProvider(
-              List.of(
-                  response(materials, expectedKeys, false),
-                  responseWithEmptyUnexplainedEntries(materials, expectedKeys)));
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = LegacyM10CheckpointFixture.open();
+    BusinessMaterialBuildResult materials = materialWithEntries(fixture, 12);
+    List<String> expectedKeys = localKeys(12);
+    RecordingProvider provider =
+        new RecordingProvider(
+            List.of(
+                response(materials, expectedKeys, false),
+                responseWithEmptyUnexplainedEntries(materials, expectedKeys)));
 
-      ActivityExplanationResult result =
-          explainExpectingSuccess(
-              new ActivityExplainer(provider),
-              new ExplainActivitiesRequest(materials, profileFor(12), 1));
+    ActivityExplanationResult result =
+        explainExpectingSuccess(
+            new ActivityExplainer(provider),
+            new ExplainActivitiesRequest(materials, profileFor(12), 1));
 
-      assertThat(provider.calls()).isEqualTo(2);
-      assertThat(textValues(provider.input(0).path("entryKeys")))
-          .containsExactlyElementsOf(expectedKeys);
-      assertThat(textValues(provider.input(0).path("entryKeys"))).contains("E10", "E11", "E12");
-      assertThat(result.reviewedActivities()).hasSize(1);
-      assertThat(result.reviewedActivities().get(0).entryIds())
-          .containsExactlyElementsOf(materials.materialSet().materials().get(0).entryIds());
-      assertThat(result.coverage()).hasSize(12);
-    }
+    assertThat(provider.calls()).isEqualTo(2);
+    assertThat(textValues(provider.input(0).path("entryKeys")))
+        .containsExactlyElementsOf(expectedKeys);
+    assertThat(textValues(provider.input(0).path("entryKeys"))).contains("E10", "E11", "E12");
+    assertThat(result.reviewedActivities()).hasSize(1);
+    assertThat(result.reviewedActivities().get(0).entryIds())
+        .containsExactlyElementsOf(materials.materialSet().materials().get(0).entryIds());
+    assertThat(result.coverage()).hasSize(12);
   }
 
   @Test
   void rejectsIncompatibleCapacityBeforeTheFirstProviderCall() throws Exception {
-    try (ProgramGraphsPublicFixture fixture = fixture("capacity-preflight")) {
-      BusinessMaterialBuildResult materials = materialWithEntries(fixture, 4);
-      CountingFailProvider provider = new CountingFailProvider();
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = LegacyM10CheckpointFixture.open();
+    BusinessMaterialBuildResult materials = materialWithEntries(fixture, 4);
+    CountingFailProvider provider = new CountingFailProvider();
 
-      ActivityExplanationResult result =
-          explainExpectingSuccess(
-              new ActivityExplainer(provider),
-              new ExplainActivitiesRequest(materials, profileFor(2), 1));
+    ActivityExplanationResult result =
+        explainExpectingSuccess(
+            new ActivityExplainer(provider),
+            new ExplainActivitiesRequest(materials, profileFor(2), 1));
 
-      assertThat(provider.calls()).isZero();
-      assertThat(result.coverage()).hasSize(4);
-      assertThat(result.coverage())
-          .allSatisfy(
-              value -> {
-                assertThat(value.disposition()).isEqualTo("NOT_ANALYZED");
-                assertThat(value.reasonCode()).containsIgnoringCase("capacity");
-              });
-    }
+    assertThat(provider.calls()).isZero();
+    assertThat(result.coverage()).hasSize(4);
+    assertThat(result.coverage())
+        .allSatisfy(
+            value -> {
+              assertThat(value.disposition()).isEqualTo("NOT_ANALYZED");
+              assertThat(value.reasonCode()).containsIgnoringCase("capacity");
+            });
   }
 
   @Test
   void requiresReviewUnexplainedEntriesAndRejectsAStillIncompleteReviewWithoutThirdCall() {
-    try (ProgramGraphsPublicFixture fixture = fixture("review-closure")) {
-      BusinessMaterialBuildResult materials = materialWithEntries(fixture, 4);
-      RecordingProvider provider =
-          new RecordingProvider(
-              List.of(
-                  response(materials, List.of("E1", "E2"), false),
-                  responseWithoutUnexplainedEntries(materials, List.of("E1", "E2"))));
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = LegacyM10CheckpointFixture.open();
+    BusinessMaterialBuildResult materials = materialWithEntries(fixture, 4);
+    RecordingProvider provider =
+        new RecordingProvider(
+            List.of(
+                response(materials, List.of("E1", "E2"), false),
+                responseWithoutUnexplainedEntries(materials, List.of("E1", "E2"))));
 
-      assertThatThrownBy(
-              () ->
-                  new ActivityExplainer(provider)
-                      .explain(new ExplainActivitiesRequest(materials, profileFor(4), 1)))
-          .hasMessageContaining("ACTIVITY_REVIEW");
-      assertThat(provider.calls()).isEqualTo(2);
-      assertThat(provider.requests()).hasSize(2);
-    }
+    assertThatThrownBy(
+            () ->
+                new ActivityExplainer(provider)
+                    .explain(new ExplainActivitiesRequest(materials, profileFor(4), 1)))
+        .hasMessageContaining("ACTIVITY_REVIEW");
+    assertThat(provider.calls()).isEqualTo(2);
+    assertThat(provider.requests()).hasSize(2);
   }
 
   @Test
   void rejectsNullReviewUnexplainedEntriesAndNeverPerformsAThirdCall() {
-    try (ProgramGraphsPublicFixture fixture = fixture("review-null-closure")) {
-      BusinessMaterialBuildResult materials = materialWithEntries(fixture, 4);
-      RecordingProvider provider =
-          new RecordingProvider(
-              List.of(
-                  response(materials, List.of("E1", "E2"), false),
-                  responseWithNullUnexplainedEntries(materials, List.of("E1", "E2"))));
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = LegacyM10CheckpointFixture.open();
+    BusinessMaterialBuildResult materials = materialWithEntries(fixture, 4);
+    RecordingProvider provider =
+        new RecordingProvider(
+            List.of(
+                response(materials, List.of("E1", "E2"), false),
+                responseWithNullUnexplainedEntries(materials, List.of("E1", "E2"))));
 
-      assertThatThrownBy(
-              () ->
-                  new ActivityExplainer(provider)
-                      .explain(new ExplainActivitiesRequest(materials, profileFor(4), 1)))
-          .hasMessageContaining("ACTIVITY_REVIEW");
-      assertThat(provider.calls()).isEqualTo(2);
-      assertThat(provider.requests()).hasSize(2);
-    }
-  }
-
-  private ProgramGraphsPublicFixture fixture(String name) {
-    return ProgramGraphsPublicFixture.createWithGuardedApprove(temporaryDirectory.resolve(name));
+    assertThatThrownBy(
+            () ->
+                new ActivityExplainer(provider)
+                    .explain(new ExplainActivitiesRequest(materials, profileFor(4), 1)))
+        .hasMessageContaining("ACTIVITY_REVIEW");
+    assertThat(provider.calls()).isEqualTo(2);
+    assertThat(provider.requests()).hasSize(2);
   }
 
   private static BusinessMaterialBuildResult materialWithEntries(
-      ProgramGraphsPublicFixture fixture, int entryCount) {
-    BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
+      LegacyM10CheckpointFixture.HistoricalCheckpoint fixture, int entryCount) {
     BusinessMaterialBuildResult built =
-        new BusinessMaterialBuilder(
-                fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
-            .build(
-                new BuildBusinessMaterialsRequest(
-                    flows, new BusinessMaterialProfile(8, 24, 12_000, 1)));
+        new BusinessMaterialCheckpointReader(fixture.artifacts()).reopen(fixture.checkpoint());
     BusinessMaterial seed = built.materialSet().materials().get(0);
     List<String> entryIds =
         IntStream.rangeClosed(1, entryCount).mapToObj(index -> "entry-" + index).toList();
@@ -276,8 +255,10 @@ class ActivityCoverageV2ContractTest {
   }
 
   private static JsonNode checkpointJson(
-      ProgramGraphsPublicFixture fixture, ModulePublicationReference checkpoint, String fileName) {
-    return fixture.moduleArtifacts().reopen(checkpoint).payloads().stream()
+      CanonicalModuleArtifactStore artifacts,
+      ModulePublicationReference checkpoint,
+      String fileName) {
+    return artifacts.reopen(checkpoint).payloads().stream()
         .filter(value -> fileName.equals(value.descriptor().fileName()))
         .findFirst()
         .map(

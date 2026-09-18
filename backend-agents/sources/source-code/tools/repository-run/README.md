@@ -11,17 +11,41 @@ producer has retired.
 
 ## Configuration
 
-Copy [the tracked template](jdt-luna-repository-run.template.json) to an ignored
+The new Step 01–05 reading-material route is implemented and locally verified. Its policy file is
+[reading-materials-artifact-policy-set-v1.json](reading-materials-artifact-policy-set-v1.json):
+it contains the existing source/discovery/navigation contracts and the new persistence
+and reading-material contracts, with no Fact/Flow/Capsule or model-output contracts.
+Do not replace the older policy file in saved configurations; those bytes remain part
+of historical runs. The new route requires JDT, optional
+`sourceAnalysis.persistence.plugins`, and `technical.readingMaterials` with
+`maxPacketUtf8Bytes` and `maxEntriesPerPacket`. Its configuration and internal
+03→04→05 chain, shared XML view, configured command arguments and state codec are
+covered by direct tests and the 469-test clean quality build. Fixed-repository CLI
+acceptance finished with 325 packets and 326 coverage records, including one explicit
+navigation failure; retirement cleanup is complete. See the
+[delivery verification](../../docs/supplements/jdt-persistence-reading-materials-delivery.md)
+for measured results and limitations. This route does not run Activity or business models.
+
+For this technical-only route, copy
+[reading-materials.template.json](reading-materials.template.json) into an ignored
+workspace. Replace its paths, repository identity and fixed commit, and supply any
+already-approved local dependency JARs in `technical.approvedClasspath`. The template
+contains no model configuration or credentials. Set persistence `plugins` to `[]`
+or omit `persistence` to keep Java-only material. The packet byte limit admits whole
+source units; excluded units are recorded, not silently truncated. The example limits
+are configurable, not a promise that every repository fits them.
+
+The [earlier model-run template](jdt-luna-repository-run.template.json) describes saved
+legacy-material/model configurations, not the new Step05 material contract. Copy it to an ignored
 workspace and replace every absolute-path placeholder. Never put a credential in the
 file. Model authentication is named by environment variable, for example
 `SOURCE_ANALYSIS_PRO_HOME` for an existing ChatGPT login context.
 
-`sourceAnalysis.javaEngine` selects exactly one engine:
-
-- `jdt`: starts the configured JDT LS/tool JVM and provides repository navigation.
-- `javaparser`: uses the retained JavaParser adapter and does not start JDT. It keeps
-  its existing, more limited resolution capability; selecting it does not promise JDT
-  parity.
+New reading-material execution requires `sourceAnalysis.javaEngine: jdt`: it starts
+the configured JDT LS/tool JVM and provides repository navigation. JavaParser is
+being retired from production in this delivery, not retained as an alternative for
+this route. Historical configuration decoding is separate from permission to start
+a new analysis; an old `javaparser` value does not trigger a fallback to JDT.
 
 `sourceAnalysis.modelJobs` is the only model configuration. Global and per-provider
 concurrency, routes, model identity, timeout, and authentication references are all in
@@ -101,9 +125,23 @@ requires an exact queued request match; stopped runs are never reactivated.
 "${SOURCE_ANALYSIS[@]}" plan-materials
 ```
 
-This captures the configured immutable commit, executes the selected Java engine and
-the retained Step01-05 analysis, then publishes the business-material checkpoint. It
-does not construct a model provider.
+With the reading-material configuration, this captures the configured immutable
+commit, discovers entries, collects JDT navigation, applies the configured persistence
+plugin, and publishes Step05 `code-reading-materials.jsonl`. It writes state v4 and
+a `READING_MATERIALS_ONLY` run output, then stops. It neither builds old M10 material
+nor constructs a model provider.
+
+To use an already registered frozen capture instead of capturing the source again:
+
+```bash
+"${SOURCE_ANALYSIS[@]}" plan-materials \
+  --source-registration 'source-registration:<sha256>'
+```
+
+The registration must be in the configured capture workspace and match the configured
+repository identity and commit. This reuses the capture, not an old navigation result:
+the new run still executes JDT and Steps01–05. Use a new state destination and retain
+the old run.
 
 Export a verified older material-state file without rescanning:
 
@@ -113,12 +151,14 @@ Export a verified older material-state file without rescanning:
 ```
 
 The destination must not already contain different bytes. Export verifies the original
-configuration and checkpoint and never runs JDT, JavaParser, the material builder, or a
-model.
+configuration and checkpoint and never runs JDT, the material builder, or a model.
+This command is the historical M10/state-v3 export; it does not convert new Step05
+materials into Activity input. Connecting the new material contract to Activity is
+outside the current implementation scope.
 
 ### Explain Activities
 
-Execute every saved material package:
+With a historical M10/model configuration, execute every saved material package:
 
 ```bash
 "${SOURCE_ANALYSIS[@]}" execute-step \
@@ -202,6 +242,24 @@ Observation never initializes a model provider:
 `artifact` accepts the closed names in `BusinessOutputArtifactKey`, including business
 materials, Activities, current process outputs, and historical report outputs.
 
+For the new technical-only run, query `CODE_READING_MATERIALS` for its canonical JSONL,
+or export a complete Markdown projection using the same typed material reader:
+
+```bash
+"${SOURCE_ANALYSIS[@]}" artifact \
+  --run 'analysis-run:<sha256>' \
+  --key CODE_READING_MATERIALS \
+  --max-bytes 100000000 \
+  --format markdown \
+  --output /absolute/path/to/new/reading-materials.md
+```
+
+The output path must be absolute and new. `--max-bytes` applies to the requested
+representation's UTF-8 bytes; it is configurable. Export hydrates already saved
+references, does not rescan or call a model, and does not install another canonical
+artifact. `inspect` exposes `completedReadingMaterials` separately from business
+outputs. No Step08 report exists for a technical-only run.
+
 For a historical run that already owns a valid Step08 checkpoint:
 
 ```bash
@@ -214,7 +272,9 @@ current production route.
 
 ## Failure and preservation rules
 
-- Every model job is DRAFT then full REVIEW on one fixed provider binding.
+- Technical material preparation initializes no model provider. Existing business
+  jobs retain their own versioned stage contract and fixed provider binding; this
+  upstream change does not rerun or rewrite those jobs.
 - Completed jobs are saved immediately. A fatal failure stops new dispatch but preserves
   already saved results.
 - A failed model batch never invalidates its source material checkpoint.

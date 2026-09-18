@@ -12,13 +12,13 @@
 
 主要可读交付是仓库级 `business-processes.md`。固定九章 `document.md` 继续作为下游概览，但不承担业务过程发现，也不再作为判断语义成功的唯一标准。
 
-术语以 [CONTEXT.md](../CONTEXT.md) 为准。2026-09-17的当前设计工作是[JDT、可选持久化补全与第1—5步阅读材料](supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md)：先工具调研验证，通过后全面实施，再只验收1—5步。新方案尚未实施；第6步的新材料消费尚待讨论，不启动Activity、过程或九章。
+术语以 [CONTEXT.md](../CONTEXT.md) 为准。当前实施工作是[JDT、可选持久化补全与第1—5步阅读材料](supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md)：A工具实验和B的实施计划0--6均已完成，Step01--05生产接线、保存/重开、JDT运行/CLI、同次XML读取复用、旧producer退出新安装及469项clean CI均已验证。C的固定仓库验收已结束：325份材料、326条覆盖、1个明确导航失败；[实测结论](supplements/jdt-persistence-reading-materials-delivery.md)记录范围与局限。新生产止于第5步，不启动Activity、过程或九章；历史M10/Activity读取合同另行保留。
 
 原[系统认识、聚焦选材与三阶段成稿](supplements/cross-object-process-reconstruction/business-reasoning-and-writing.md)已完成三阶段程序接线，真实三例仍有具体问题；用户认可目前可读性和业务联系，优化留待讨论。以[三例实测](supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)及[问题记录](supplements/implementation-lessons-and-followups.md)区分程序完成、样本质量和未执行范围。已有326条Activity及所有历史输入/输出保留。
 
 ## 2. 设计原则
 
-- **成熟工具找代码。** 新目标只用JDT LS/Core定位Java实现与完整源码；可选MyBatis官方解析部件/JSqlParser补持久化材料。JavaParser与严格Fact/Proof生产路径退出，历史读取保留，当前迁移尚未实施。
+- **成熟工具找代码。** 新目标只用JDT LS/Core定位Java实现与完整源码；可选MyBatis官方解析部件/JSqlParser补持久化材料。JavaParser与严格Fact/Proof生产路径退出，历史读取保留；实施计划0--6的直接验证与clean CI已完成，C的真实固定仓库验收仍以实际结果为准。
 - **程序组织，模型理解。** Java 负责来源、ID、材料、覆盖、调度、保存和格式；LLM 负责业务领域、别名、过程成员、顺序、分支、目的和业务语言。
 - **全仓发现与深入阅读分开。** 新仓库保留首次目录发现；已有目录直接重开，结合全部 Activity 导航和冻结文件目录增量选材，允许跨旧候选合读。
 - **摘要只导航，原文才定规则。** 完整 ReviewedActivity 继续复用；所选关键原文在事实 DRAFT 前到位。WRITE只读完整实际事实草稿，最终RULE_REVIEW对照完整原文包、实际DRAFT和实际WRITE，直接修正交付正文。
@@ -42,7 +42,7 @@
 | 07 `repository-knowledge` | 全仓业务发现、候选深入重建、归并和发布 | process catalog、coverage、`business-processes.md` | 直接供读者审阅，也供九章使用 |
 | 08 `nine-section-document` | 根据已归并过程目录写一份固定九章概览 | report JSON、SourceRefs、`document.md` | 仓库级展示与公共 render |
 
-上表03–05为新目标，不是已经完成的迁移。旧step key仅保留存储定位，不代表还调用旧算法。新模块地址、版本、保存/读取与删除清单由[详细设计§7](supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md#7-运行版本与历史迁移)维护。01–05无模型调用；本轮不执行第6步及以后。后文第6—8步语义设计作为已有/后续设计保留，不构成本次执行范围。
+上表03–05已完成直接行为验证、旧producer退出新安装和469项clean CI；C的真实固定仓库验收已完成，导航失败与SQL部分解析均如实披露；未开展业务质量验收。旧step key仅保留存储定位，不代表还调用旧算法。新模块地址、版本、保存/读取与删除清单由[详细设计§7](supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md#7-运行版本与历史迁移)维护。01–05无模型调用；本轮不执行第6步及以后。后文第6—8步语义设计作为已有/后续设计保留，不构成本次执行范围。
 
 ## 4. 三层语义模型
 
@@ -213,12 +213,14 @@ Step08 只消费已发布 `RepositoryBusinessProcessCatalog`、过程 coverage �
 
 不在Prompt或Java中预置这些业务名称。它们只作为真实样例验收：模型应当自己发现用法并解释联系，不是开发者给出正确候选答案。
 
-## 11. 当前实现状态（2026-09-16）
+## 11. 历史业务实现状态（2026-09-16）
+
+本节记录迁移前的业务链与可重开成果。它不覆盖本设计开头所述的JDT-only Step01--05当前生产状态，也不授权恢复JavaParser、严格图/Fact/Flow/Capsule或M10 producer。
 
 已实现并保留：
 
-- JDT/JavaParser 可选引擎和保存的 JDT 导航/源码材料；
-- Spring 入口、Step05 EntryCodeContext、BusinessMaterialBuilder；
+- 已保存的JDT/JavaParser历史引擎结果和JDT导航/源码材料；
+- Spring入口、旧Step05 EntryCodeContext、历史M10 BusinessMaterialBuilder结果；
 - ActivityExplainer、任意 N 入口覆盖、DRAFT+完整 REVIEW；
 - Provider 两级并发、逐 job 保存、固定材料与独立模型批次；
 - 历史九章 checkpoint 的严格读取和确定性重渲染；当前生产路径不再生成九章；

@@ -65,7 +65,10 @@ public final class PersistedCallGraphReader {
           || !draft.applicationProfileId().equals(basis.applicationProfileId())
           || !draft.entryIds().equals(basis.entryIds())
           || !draft.graphProfileRef().equals(basis.graphProfileRef())
-          || !publication.receipt().gapRefs().equals(CallGraphModulePublisher.gapReferences(draft))
+          || !publication
+              .receipt()
+              .gapRefs()
+              .equals(HistoricalProgramGraphPayloads.gapReferences(draft))
           || publication.receipt().status()
               != (publication.receipt().gapRefs().isEmpty()
                   ? ModuleCompletionStatus.SUCCEEDED

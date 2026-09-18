@@ -26,9 +26,9 @@ import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
-import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
+import org.sourceanalysis.app.analysis.interpretation.material.LegacyM10CheckpointFixture;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 
@@ -39,89 +39,84 @@ class MultiProviderActivityExecutionTest {
 
   @Test
   void routesAllMaterialsStablyWhileEnforcingGlobalSixProFourAndApiTwo() throws Exception {
-    try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.createWithGuardedApprove(
-            temporaryDirectory.resolve("multi-provider-activity"))) {
-      BusinessMaterialBuildResult materials =
-          ActivityJobExecutionConfigurationTest.expandedMaterials(fixture, 12);
-      Path journal = Files.createDirectory(temporaryDirectory.resolve("journal"));
-      SharedActivityConcurrency shared = new SharedActivityConcurrency(6);
-      RoutingProvider pro = new RoutingProvider("pro", 4, shared);
-      RoutingProvider api = new RoutingProvider("api", 2, shared);
-      ActivityExplainer explainer = configuredExplainer(pro, api, journal);
-      ExecutorService caller = Executors.newSingleThreadExecutor();
-      try {
-        Future<ActivityExplanationResult> result =
-            caller.submit(
-                () ->
-                    explainer.explain(
-                        new ExplainActivitiesRequest(
-                            materials,
-                            new ActivityExplanationProfile(64_000, 16_000, 1, 32, 2_000),
-                            12)));
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = LegacyM10CheckpointFixture.open();
+    BusinessMaterialBuildResult materials =
+        ActivityJobExecutionConfigurationTest.expandedMaterials(fixture, 12);
+    Path journal = Files.createDirectory(temporaryDirectory.resolve("journal"));
+    SharedActivityConcurrency shared = new SharedActivityConcurrency(6);
+    RoutingProvider pro = new RoutingProvider("pro", 4, shared);
+    RoutingProvider api = new RoutingProvider("api", 2, shared);
+    ActivityExplainer explainer = configuredExplainer(pro, api, journal);
+    ExecutorService caller = Executors.newSingleThreadExecutor();
+    try {
+      Future<ActivityExplanationResult> result =
+          caller.submit(
+              () ->
+                  explainer.explain(
+                      new ExplainActivitiesRequest(
+                          materials,
+                          new ActivityExplanationProfile(64_000, 16_000, 1, 32, 2_000),
+                          12)));
 
-        assertThat(shared.firstWave.await(3, TimeUnit.SECONDS)).isTrue();
-        assertThat(shared.active).hasValue(6);
-        assertThat(pro.active).hasValue(4);
-        assertThat(api.active).hasValue(2);
-        shared.release.countDown();
+      assertThat(shared.firstWave.await(3, TimeUnit.SECONDS)).isTrue();
+      assertThat(shared.active).hasValue(6);
+      assertThat(pro.active).hasValue(4);
+      assertThat(api.active).hasValue(2);
+      shared.release.countDown();
 
-        ActivityExplanationResult completed = result.get(10, TimeUnit.SECONDS);
-        assertThat(completed.reviewedActivities()).hasSize(12);
-        assertThat(shared.peak).hasValue(6);
-        assertThat(pro.peak).hasValue(4);
-        assertThat(api.peak).hasValue(2);
-        assertThat(pro.contexts())
-            .containsExactly(
-                "configured-activity-001",
-                "configured-activity-003",
-                "configured-activity-005",
-                "configured-activity-007",
-                "configured-activity-009",
-                "configured-activity-011");
-        assertThat(api.contexts())
-            .containsExactly(
-                "configured-activity-002",
-                "configured-activity-004",
-                "configured-activity-006",
-                "configured-activity-008",
-                "configured-activity-010",
-                "configured-activity-012");
-        assertThat(pro.totalCalls()).isEqualTo(12);
-        assertThat(api.totalCalls()).isEqualTo(12);
+      ActivityExplanationResult completed = result.get(10, TimeUnit.SECONDS);
+      assertThat(completed.reviewedActivities()).hasSize(12);
+      assertThat(shared.peak).hasValue(6);
+      assertThat(pro.peak).hasValue(4);
+      assertThat(api.peak).hasValue(2);
+      assertThat(pro.contexts())
+          .containsExactly(
+              "configured-activity-001",
+              "configured-activity-003",
+              "configured-activity-005",
+              "configured-activity-007",
+              "configured-activity-009",
+              "configured-activity-011");
+      assertThat(api.contexts())
+          .containsExactly(
+              "configured-activity-002",
+              "configured-activity-004",
+              "configured-activity-006",
+              "configured-activity-008",
+              "configured-activity-010",
+              "configured-activity-012");
+      assertThat(pro.totalCalls()).isEqualTo(12);
+      assertThat(api.totalCalls()).isEqualTo(12);
 
-        List<JsonNode> saved;
-        try (var paths = Files.walk(journal)) {
-          CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
-          saved =
-              paths
-                  .filter(path -> path.getFileName().toString().equals("reviewed-result.json"))
-                  .sorted()
-                  .map(
-                      path -> {
-                        try {
-                          return canonicalJson.parseCanonical(
-                              org.sourceanalysis.app.artifact.ImmutableBytes.copyOf(
-                                  Files.readAllBytes(path)));
-                        } catch (java.io.IOException failure) {
-                          throw new AssertionError(failure);
-                        }
-                      })
-                  .toList();
-        }
-        assertThat(saved).hasSize(12);
-        assertThat(
-                saved.stream()
-                    .filter(node -> node.path("providerBindingKey").asText().equals("pro")))
-            .hasSize(6);
-        assertThat(
-                saved.stream()
-                    .filter(node -> node.path("providerBindingKey").asText().equals("api")))
-            .hasSize(6);
-      } finally {
-        shared.release.countDown();
-        caller.shutdownNow();
+      List<JsonNode> saved;
+      try (var paths = Files.walk(journal)) {
+        CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+        saved =
+            paths
+                .filter(path -> path.getFileName().toString().equals("reviewed-result.json"))
+                .sorted()
+                .map(
+                    path -> {
+                      try {
+                        return canonicalJson.parseCanonical(
+                            org.sourceanalysis.app.artifact.ImmutableBytes.copyOf(
+                                Files.readAllBytes(path)));
+                      } catch (java.io.IOException failure) {
+                        throw new AssertionError(failure);
+                      }
+                    })
+                .toList();
       }
+      assertThat(saved).hasSize(12);
+      assertThat(
+              saved.stream().filter(node -> node.path("providerBindingKey").asText().equals("pro")))
+          .hasSize(6);
+      assertThat(
+              saved.stream().filter(node -> node.path("providerBindingKey").asText().equals("api")))
+          .hasSize(6);
+    } finally {
+      shared.release.countDown();
+      caller.shutdownNow();
     }
   }
 

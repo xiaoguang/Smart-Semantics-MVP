@@ -57,7 +57,7 @@ public final class PersistedDataFlowGraphReader {
       requireAddress(publication, reference);
       VerifiedCanonicalPayload payload = requirePayload(publication);
       List<ArtifactReference> upstream =
-          DataFlowGraphModulePublisher.expectedUpstream(
+          HistoricalProgramGraphPayloads.dataFlowUpstream(
               basis, structure.payloadRef(), calls.payloadRef(), controlFlow.payloadRef());
       if (!publication.receipt().controls().equals(basis.controls())
           || !publication.receipt().upstreamArtifacts().equals(upstream)) throw broken();
@@ -69,8 +69,6 @@ public final class PersistedDataFlowGraphReader {
           || !basis.entryIds().equals(draft.entryIds())
           || !basis.graphProfileRef().equals(draft.graphProfileRef())) throw broken();
       requireExternalEndpointClosure(draft, structure);
-      requireIndependentRebuild(
-          draft, structure, calls, controlFlow, inputs, expectedGraphProfileRef);
       return new VerifiedReopenedDataFlowGraph(
           reference,
           new ArtifactReference(payload.descriptor().artifactId(), payload.descriptor().sha256()),
@@ -104,8 +102,9 @@ public final class PersistedDataFlowGraphReader {
   private static VerifiedCanonicalPayload requirePayload(ReopenedModulePublication publication) {
     if (publication.payloads().size() != 1) throw broken();
     VerifiedCanonicalPayload payload = publication.payloads().get(0);
-    if (!DataFlowGraphModulePublisher.FILE_NAME.equals(payload.descriptor().fileName())
-        || !DataFlowGraphModulePublisher.ARTIFACT_TYPE.equals(payload.descriptor().artifactType())
+    if (!HistoricalProgramGraphPayloads.DATA_FLOW_FILE.equals(payload.descriptor().fileName())
+        || !HistoricalProgramGraphPayloads.DATA_FLOW_TYPE.equals(
+            payload.descriptor().artifactType())
         || !DataFlowGraphDraft.SCHEMA_VERSION.equals(payload.descriptor().schemaVersion())
         || payload.descriptor().mediaType() != CanonicalMediaType.APPLICATION_JSON
         || !publication.receipt().payloadArtifacts().equals(List.of(payload.descriptor()))) {
@@ -132,12 +131,12 @@ public final class PersistedDataFlowGraphReader {
             "completion",
             "payload"));
     if (!DataFlowGraphDraft.SCHEMA_VERSION.equals(text(envelope, "schemaVersion"))
-        || !DataFlowGraphModulePublisher.ARTIFACT_TYPE.equals(text(envelope, "artifactType"))
+        || !HistoricalProgramGraphPayloads.DATA_FLOW_TYPE.equals(text(envelope, "artifactType"))
         || !payload.descriptor().artifactId().value().equals(text(envelope, "artifactId"))
         || !references(envelope.get("upstreamArtifacts")).equals(upstream)
         || !envelope
             .get("controls")
-            .equals(DataFlowGraphModulePublisher.controls(basis.controls()))) {
+            .equals(HistoricalProgramGraphPayloads.controls(basis.controls()))) {
       throw broken();
     }
     fields(envelope.get("producer"), Set.of("address", "moduleVersion"));
@@ -189,30 +188,6 @@ public final class PersistedDataFlowGraphReader {
       if (toOwned
           && edge.kind() == DataFlowEdgeKind.DEF_USE
           && structureKinds.get(edge.fromNodeId()) == ProgramNodeKind.PARAMETER) continue;
-      throw broken();
-    }
-  }
-
-  /**
-   * Rebuilds the closed M4 work domain from freshly reopened predecessors.
-   *
-   * <p>The wire contains an explicit worklist so a reviewer can see its denominator, but that list
-   * is not self-authenticating. Rebuilding from M1/M2/M3 makes a forged extra or missing activated
-   * call-argument work item fail closed before any downstream module reads it.
-   */
-  private static void requireIndependentRebuild(
-      DataFlowGraphDraft persisted,
-      ReopenedCodeStructureGraph structure,
-      ReopenedCallGraph calls,
-      ReopenedControlFlowGraph controlFlow,
-      ReopenedProgramGraphInputs reopened,
-      ArtifactReference expectedGraphProfileRef) {
-    DataFlowGraphDraft rebuilt =
-        new DataFlowGraphBuilder()
-            .buildDataFlow(
-                new DataFlowInputs(structure, calls, controlFlow, reopened),
-                new DataFlowGraphProfile(expectedGraphProfileRef));
-    if (!persisted.equals(rebuilt)) {
       throw broken();
     }
   }

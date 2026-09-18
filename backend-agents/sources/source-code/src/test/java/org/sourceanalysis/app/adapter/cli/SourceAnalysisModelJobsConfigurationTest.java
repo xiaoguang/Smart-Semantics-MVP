@@ -32,6 +32,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.CanonicalArtifactPolicyRegistry;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
+import org.sourceanalysis.app.artifact.ImmutableBytes;
 
 /** RED contracts for the unified repository-run-config-v2 modelJobs configuration. */
 class SourceAnalysisModelJobsConfigurationTest {
@@ -39,6 +40,156 @@ class SourceAnalysisModelJobsConfigurationTest {
   private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
 
   @TempDir Path temporaryDirectory;
+
+  @Test
+  void persistencePluginsDefaultToDisabledAndEmptyPluginsStayDisabledWithoutModelJobs()
+      throws Exception {
+    ToolFixture tools = toolFixture();
+
+    Object omitted = loadConfiguration(writeConfig(configYaml(tools, "")));
+    Object omittedPersistence = property(omitted, "persistenceConfiguration");
+    assertThat((List<?>) property(omittedPersistence, "plugins")).isEmpty();
+    assertThat(property(omitted, "modelJobs")).isNull();
+
+    Object empty =
+        loadConfiguration(writeConfig(withPersistence(configYaml(tools, ""), "    plugins: []")));
+    Object emptyPersistence = property(empty, "persistenceConfiguration");
+    assertThat((List<?>) property(emptyPersistence, "plugins")).isEmpty();
+    assertThat(property(empty, "modelJobs")).isNull();
+  }
+
+  @Test
+  void persistenceMybatisJsqlparserIsAcceptedWithoutModelJobsAndExposesTypedConfiguration()
+      throws Exception {
+    ToolFixture tools = toolFixture();
+    Object loaded =
+        loadConfiguration(
+            writeConfig(
+                withPersistence(
+                    configYaml(tools, ""),
+                    "    plugins:\n"
+                        + "      - type: mybatis\n"
+                        + "        sqlParser: jsqlparser")));
+
+    Object persistence = property(loaded, "persistenceConfiguration");
+    List<?> plugins = (List<?>) property(persistence, "plugins");
+    assertThat(plugins).hasSize(1);
+    assertThat(stringProperty(plugins.get(0), "type")).isEqualTo("mybatis");
+    assertThat(stringProperty(plugins.get(0), "sqlParser")).isEqualTo("jsqlparser");
+    assertThat(property(loaded, "modelJobs")).isNull();
+  }
+
+  @Test
+  void persistenceYamlRejectsUnknownPluginTypeAndUnknownPluginFields() throws Exception {
+    ToolFixture tools = toolFixture();
+    assertConfigurationInvalid(
+        withPersistence(
+            configYaml(tools, ""),
+            "    plugins:\n" + "      - type: unsupported\n" + "        sqlParser: jsqlparser"));
+    assertConfigurationInvalid(
+        withPersistence(
+            configYaml(tools, ""),
+            "    plugins:\n"
+                + "      - type: mybatis\n"
+                + "        sqlParser: jsqlparser\n"
+                + "        unexpected: true"));
+  }
+
+  @Test
+  void readingMaterialsProfileLoadsTypedWithoutLegacyFlowCapsuleOrBusinessBlocks()
+      throws Exception {
+    ToolFixture tools = toolFixture();
+    Object loaded =
+        loadConfiguration(
+            writeConfig(
+                readingMaterialsConfigYaml(
+                    tools, "", "{maxPacketUtf8Bytes: 32768, maxEntriesPerPacket: 3}")));
+
+    Object profile = property(loaded, "readingMaterialProfile");
+    assertThat(((Number) property(profile, "maxPacketUtf8Bytes")).longValue()).isEqualTo(32768L);
+    assertThat(integerProperty(profile, "maxEntriesPerPacket")).isEqualTo(3);
+    assertThat(property(loaded, "modelJobs")).isNull();
+
+    Object changedProfile =
+        loadConfiguration(
+            writeConfig(
+                readingMaterialsConfigYaml(
+                    tools, "", "{maxPacketUtf8Bytes: 65536, maxEntriesPerPacket: 3}")));
+    assertThat(property(loaded, "profileBundleRef"))
+        .as("reading-material profile must participate in the effective profile identity")
+        .isNotEqualTo(property(changedProfile, "profileBundleRef"));
+  }
+
+  @Test
+  void readingMaterialsProfileRejectsInvalidLimitsAndUnknownFields() throws Exception {
+    ToolFixture tools = toolFixture();
+    assertConfigurationInvalid(
+        readingMaterialsConfigYaml(tools, "", "{maxPacketUtf8Bytes: 0, maxEntriesPerPacket: 3}"));
+    assertConfigurationInvalid(
+        readingMaterialsConfigYaml(
+            tools, "", "{maxPacketUtf8Bytes: 32768, maxEntriesPerPacket: 0}"));
+    assertConfigurationInvalid(
+        readingMaterialsConfigYaml(
+            tools, "", "{maxPacketUtf8Bytes: 32768, maxEntriesPerPacket: 3, unexpected: true}"));
+  }
+
+  @Test
+  void newReadingMaterialsConfigurationRejectsJavaParserEngine() throws Exception {
+    ToolFixture tools = toolFixture();
+    ObjectNode document =
+        (ObjectNode)
+            YAML.readTree(
+                readingMaterialsConfigYaml(
+                    tools, "", "{maxPacketUtf8Bytes: 32768, maxEntriesPerPacket: 3}"));
+    ((ObjectNode) document.get("sourceAnalysis")).put("javaEngine", "javaparser");
+
+    assertConfigurationInvalid(YAML.writeValueAsString(document));
+  }
+
+  @Test
+  void technicalOnlyConfigurationConvertsToPersistedRunInputsWithoutLegacyFlowCapsule()
+      throws Exception {
+    ToolFixture tools = toolFixture();
+    ObjectNode document =
+        (ObjectNode)
+            YAML.readTree(
+                withPersistence(
+                    readingMaterialsConfigYaml(
+                        tools, "", "{maxPacketUtf8Bytes: 32768, maxEntriesPerPacket: 3}"),
+                    "    plugins:\n"
+                        + "      - type: mybatis\n"
+                        + "        sqlParser: jsqlparser"));
+    ((ObjectNode) document.get("technical"))
+        .set("selectedEntryIds", YAML.createArrayNode().add("entry:alpha").add("entry:zeta"));
+
+    Object loaded = loadConfiguration(writeConfig(YAML.writeValueAsString(document)));
+    Object persisted;
+    try {
+      Method converter =
+          loaded.getClass().getDeclaredMethod("technicalConfiguration", ImmutableBytes.class);
+      converter.setAccessible(true);
+      persisted =
+          converter.invoke(
+              loaded, ImmutableBytes.copyOf("frozen".getBytes(StandardCharsets.UTF_8)));
+    } catch (InvocationTargetException failure) {
+      fail(
+          "technical-only configuration must convert without requiring legacy Flow/Capsule profiles",
+          failure.getCause());
+      return;
+    } catch (ReflectiveOperationException failure) {
+      fail("technical-only configuration conversion seam is missing", failure);
+      return;
+    }
+
+    assertThat(property(persisted, "persistenceConfiguration"))
+        .isEqualTo(property(loaded, "persistenceConfiguration"));
+    assertThat(property(persisted, "readingMaterialProfile"))
+        .isEqualTo(property(loaded, "readingMaterialProfile"));
+    assertThat(values(property(persisted, "selectedEntryIds")))
+        .containsExactly("entry:alpha", "entry:zeta");
+    assertThat(optionalProperty(persisted, "flowProfile")).isNull();
+    assertThat(optionalProperty(persisted, "capsuleProfile")).isNull();
+  }
 
   @Test
   void unifiedYamlUsesGlobalAndCodexDefaultsWhenDefaultableFieldsAreOmitted() throws Exception {
@@ -888,6 +1039,18 @@ class SourceAnalysisModelJobsConfigurationTest {
     return null;
   }
 
+  private static Object optionalProperty(Object target, String name) throws Exception {
+    String capitalized = Character.toUpperCase(name.charAt(0)) + name.substring(1);
+    for (String candidate : List.of(name, "get" + capitalized, "is" + capitalized)) {
+      try {
+        return target.getClass().getMethod(candidate).invoke(target);
+      } catch (NoSuchMethodException ignored) {
+        // Legacy Flow/Capsule accessors may be absent from the technical-only contract.
+      }
+    }
+    return null;
+  }
+
   private static int integerProperty(Object target, String name) throws Exception {
     Object value = property(target, name);
     assertThat(value).as(name + " must be populated").isInstanceOf(Number.class);
@@ -1016,6 +1179,29 @@ class SourceAnalysisModelJobsConfigurationTest {
   private String configYaml(ToolFixture tools, String modelJobs) {
     return configYaml(
         tools, modelJobs, temporaryDirectory.resolve("source"), "repository-run-config-v2");
+  }
+
+  private static String withPersistence(String yaml, String persistenceBody) {
+    String marker = "\ninputs:";
+    assertThat(yaml).contains(marker);
+    return yaml.replace(marker, "\n  persistence:\n" + persistenceBody + marker);
+  }
+
+  private String readingMaterialsConfigYaml(
+      ToolFixture tools, String modelJobs, String readingMaterialsBody) throws IOException {
+    ObjectNode document = (ObjectNode) YAML.readTree(configYaml(tools, modelJobs));
+    ObjectNode inputs = (ObjectNode) document.get("inputs");
+    assertThat(inputs).as("configuration fixture must contain inputs").isNotNull();
+    inputs.remove("flowProfile");
+    inputs.remove("capsuleProfile");
+
+    ObjectNode technical = (ObjectNode) document.get("technical");
+    assertThat(technical).as("configuration fixture must contain technical").isNotNull();
+    technical.remove("flow");
+    technical.remove("capsule");
+    technical.set("readingMaterials", YAML.readTree(readingMaterialsBody));
+    document.remove("business");
+    return YAML.writeValueAsString(document);
   }
 
   private String defaultModelJobs(ToolFixture tools) {

@@ -157,18 +157,21 @@ public final class SourceAnalysisCli {
               translated, "--source-registration", parsed.option("--source-registration", true));
         }
         case "plan-materials" -> {
-          parsed.requireNoOptions();
+          parsed.requireOnly("--source-registration");
           translated.add("materials-only");
+          addOption(
+              translated, "--source-registration", parsed.option("--source-registration", false));
         }
         case "export-materials-state" -> {
           translated.add("export-materials-state");
           translated.addAll(parsed.options());
         }
         case "execute-step" -> parsed.translateExecuteStep(translated);
-        case "inspect", "render", "artifact" -> {
+        case "inspect", "render" -> {
           translated.add(parsed.operation());
           translated.addAll(parsed.options());
         }
+        case "artifact" -> parsed.translateArtifact(translated);
         default -> throw new IllegalArgumentException("configured operation is unsupported");
       }
       return translated.toArray(String[]::new);
@@ -209,6 +212,26 @@ public final class SourceAnalysisCli {
       }
       addOption(translated, "--reuse-from-model-batch", reuseBatch);
       addOption(translated, "--run", runId);
+    }
+
+    private void translateArtifact(List<String> translated) {
+      String runId = option("--run", true);
+      String key = option("--key", true);
+      String maxBytes = option("--max-bytes", true);
+      String format = option("--format", false);
+      String output = option("--output", false);
+      requireOnly("--run", "--key", "--max-bytes", "--format", "--output");
+      if ((format == null) != (output == null)
+          || (format != null
+              && (!"markdown".equals(format) || !"CODE_READING_MATERIALS".equals(key)))) {
+        throw new IllegalArgumentException("artifact format is invalid");
+      }
+      translated.add("artifact");
+      addOption(translated, "--run", runId);
+      addOption(translated, "--key", key);
+      addOption(translated, "--max-bytes", maxBytes);
+      addOption(translated, "--format", format);
+      addOption(translated, "--output", output);
     }
 
     private String option(String name, boolean required) {

@@ -42,7 +42,9 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   private static final String OUTPUT_FILE = "run-output.json";
   private static final String OUTPUT_SCHEMA_V3 = "analysis-run-output-v3";
   private static final String OUTPUT_SCHEMA_V4 = "analysis-run-output-v4";
+  private static final String OUTPUT_SCHEMA_V5 = "analysis-run-output-v5";
   private static final String MATERIALS_ONLY_OUTPUT = "MATERIALS_ONLY";
+  private static final String READING_MATERIALS_ONLY_OUTPUT = "READING_MATERIALS_ONLY";
   private static final String ACTIVITIES_ONLY_OUTPUT = "ACTIVITIES_ONLY";
   private static final String PROCESS_CATALOG_OUTPUT = "PROCESS_CATALOG";
   private static final String COMPLETE_REPORT_OUTPUT = "COMPLETE_REPORT";
@@ -64,7 +66,7 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
           "toolchainRef");
   private static final Set<String> STATE_FIELDS =
       Set.of("analysisRunRequestRef", "lifecycleState", "runId", "schemaVersion");
-  private static final Set<String> OUTPUT_FIELDS =
+  private static final Set<String> LEGACY_OUTPUT_FIELDS =
       Set.of(
           "activityCheckpoint",
           "businessMaterialCheckpoint",
@@ -74,6 +76,8 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
           "runId",
           "schemaVersion",
           "sourceRunId");
+  private static final Set<String> READING_MATERIALS_OUTPUT_FIELDS =
+      Set.of("outputKind", "readingMaterialCheckpoint", "runId", "schemaVersion", "sourceRunId");
   private static final Set<String> CHECKPOINT_FIELDS =
       Set.of(
           "analysisStepKey",
@@ -83,6 +87,14 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
           "moduleReceiptId",
           "moduleReceiptSha256",
           "runId");
+  private static final Set<String> ANALYSIS_STEP_CHECKPOINT_FIELDS =
+      Set.of(
+          "address",
+          "analysisStepArtifactRoot",
+          "analysisStepReceiptId",
+          "analysisStepReceiptSha256");
+  private static final Set<String> ANALYSIS_STEP_ADDRESS_FIELDS =
+      Set.of("analysisStepKey", "runId");
 
   private final FileSystemRunStoreHandle handle;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
@@ -205,15 +217,14 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     Objects.requireNonNull(output, "analysis run output");
     try {
       PersistedAnalysisRunRequest persisted = reopenRequest(runId);
+      boolean readingMaterialsOnly = output.hasReadingMaterials();
+      boolean validOwner =
+          readingMaterialsOnly
+              ? runId.equals(output.sourceRunId())
+                  && runId.equals(output.readingMaterialCheckpoint().address().runId())
+              : validLegacyOutputOwner(runId, output);
       if (persisted.analysisRun().lifecycleState() != AnalysisRunLifecycleState.RUNNING
-          || !output.sourceRunId().equals(runId(output.businessMaterialCheckpoint()))
-          || (output.hasCompletedActivities()
-              && !output.hasCompletedProcesses()
-              && !runId.equals(runId(output.activityCheckpoint())))
-          || (output.hasCompletedReport() && !runId.equals(runId(output.activityCheckpoint())))
-          || (output.hasCompletedProcesses()
-              && !output.hasCompletedReport()
-              && !runId.equals(runId(output.knowledgeCheckpoint())))) {
+          || !validOwner) {
         throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
       }
       Path destination = runDirectory().resolve(runId.value()).resolve(OUTPUT_FILE);
@@ -235,8 +246,7 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
         return Optional.empty();
       }
       return Optional.of(
-          outputFromJson(
-              runId, parseObject(ImmutableBytes.copyOf(readRegular(output)), OUTPUT_FIELDS)));
+          outputFromJson(runId, parseObject(ImmutableBytes.copyOf(readRegular(output)))));
     } catch (RunRegistryException failure) {
       throw failure;
     } catch (IOException | RuntimeException failure) {
@@ -339,6 +349,15 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
 
   private ObjectNode outputJson(AnalysisRunId runId, AnalysisRunOutput output) {
     ObjectNode value = JsonNodeFactory.instance.objectNode();
+    if (output.hasReadingMaterials()) {
+      value.put("schemaVersion", OUTPUT_SCHEMA_V5);
+      value.put("runId", runId.value());
+      value.put("sourceRunId", output.sourceRunId().value());
+      value.put("outputKind", READING_MATERIALS_ONLY_OUTPUT);
+      analysisStepCheckpoint(
+          value.putObject("readingMaterialCheckpoint"), output.readingMaterialCheckpoint());
+      return value;
+    }
     value.put(
         "schemaVersion",
         output.hasCompletedActivities() && !output.hasCompletedProcesses()
@@ -356,6 +375,10 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
 
   private AnalysisRunOutput outputFromJson(AnalysisRunId runId, ObjectNode value) {
     String schemaVersion = requiredText(value, "schemaVersion");
+    if (OUTPUT_SCHEMA_V5.equals(schemaVersion)) {
+      return readingMaterialsOutputFromJson(runId, value);
+    }
+    requireFields(value, LEGACY_OUTPUT_FIELDS);
     if (!(OUTPUT_SCHEMA_V3.equals(schemaVersion) || OUTPUT_SCHEMA_V4.equals(schemaVersion))
         || !runId.value().equals(requiredText(value, "runId"))) {
       throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
@@ -392,7 +415,26 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     return output;
   }
 
+  private AnalysisRunOutput readingMaterialsOutputFromJson(AnalysisRunId runId, ObjectNode value) {
+    requireFields(value, READING_MATERIALS_OUTPUT_FIELDS);
+    if (!runId.value().equals(requiredText(value, "runId"))
+        || !READING_MATERIALS_ONLY_OUTPUT.equals(requiredText(value, "outputKind"))) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    AnalysisRunId sourceRunId = AnalysisRunId.parse(requiredText(value, "sourceRunId"));
+    AnalysisRunOutput output =
+        AnalysisRunOutput.readingMaterials(
+            sourceRunId, analysisStepCheckpointFromWire(value.path("readingMaterialCheckpoint")));
+    if (!runId.equals(sourceRunId)) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    return output;
+  }
+
   private static String outputKind(AnalysisRunOutput output) {
+    if (output.hasReadingMaterials()) {
+      return READING_MATERIALS_ONLY_OUTPUT;
+    }
     if (output.hasCompletedReport()) {
       return COMPLETE_REPORT_OUTPUT;
     }
@@ -403,6 +445,17 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
       return ACTIVITIES_ONLY_OUTPUT;
     }
     return MATERIALS_ONLY_OUTPUT;
+  }
+
+  private static boolean validLegacyOutputOwner(AnalysisRunId runId, AnalysisRunOutput output) {
+    return output.sourceRunId().equals(runId(output.businessMaterialCheckpoint()))
+        && !(output.hasCompletedActivities()
+            && !output.hasCompletedProcesses()
+            && !runId.equals(runId(output.activityCheckpoint())))
+        && !(output.hasCompletedReport() && !runId.equals(runId(output.activityCheckpoint())))
+        && !(output.hasCompletedProcesses()
+            && !output.hasCompletedReport()
+            && !runId.equals(runId(output.knowledgeCheckpoint())));
   }
 
   private static void checkpoint(ObjectNode value, ModulePublicationReference reference) {
@@ -463,6 +516,37 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     return checkpoint(AnalysisRunId.parse(requiredText(object, "runId")), object);
   }
 
+  private static void analysisStepCheckpoint(
+      ObjectNode value, AnalysisStepPublicationReference reference) {
+    AnalysisStepPublicationAddress address = reference.address();
+    value
+        .putObject("address")
+        .put("runId", address.runId().value())
+        .put("analysisStepKey", address.analysisStepKey().wireValue());
+    value.put("analysisStepArtifactRoot", reference.analysisStepArtifactRoot().value());
+    value.put("analysisStepReceiptId", reference.analysisStepReceiptId().value());
+    value.put("analysisStepReceiptSha256", reference.analysisStepReceiptSha256().value());
+  }
+
+  private static AnalysisStepPublicationReference analysisStepCheckpointFromWire(JsonNode value) {
+    if (!(value instanceof ObjectNode object)) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    requireFields(object, ANALYSIS_STEP_CHECKPOINT_FIELDS);
+    JsonNode addressValue = object.path("address");
+    if (!(addressValue instanceof ObjectNode address)) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    requireFields(address, ANALYSIS_STEP_ADDRESS_FIELDS);
+    return new AnalysisStepPublicationReference(
+        new AnalysisStepPublicationAddress(
+            AnalysisRunId.parse(requiredText(address, "runId")),
+            AnalysisStepKey.parse(requiredText(address, "analysisStepKey"))),
+        AnalysisStepArtifactRoot.parse(requiredText(object, "analysisStepArtifactRoot")),
+        AnalysisStepReceiptId.parse(requiredText(object, "analysisStepReceiptId")),
+        Sha256Digest.parse(requiredText(object, "analysisStepReceiptSha256")));
+  }
+
   private ObjectNode stateJson(
       AnalysisRunId runId,
       AnalysisRunRequestReference requestReference,
@@ -512,16 +596,23 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   }
 
   private ObjectNode parseObject(ImmutableBytes bytes, Set<String> fields) {
+    ObjectNode value = parseObject(bytes);
+    requireFields(value, fields);
+    return value;
+  }
+
+  private ObjectNode parseObject(ImmutableBytes bytes) {
     JsonNode parsed = canonicalJson.parseCanonical(bytes);
-    if (!(parsed instanceof ObjectNode value) || value.size() != fields.size()) {
-      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
-    }
-    Set<String> actual = new java.util.HashSet<>();
-    value.fieldNames().forEachRemaining(actual::add);
-    if (!actual.equals(fields)) {
+    if (!(parsed instanceof ObjectNode value)) {
       throw failure("ANALYSIS_RUN_STORE_INVALID", null);
     }
     return value;
+  }
+
+  private static void requireFields(ObjectNode value, Set<String> expected) {
+    if (!fields(value).equals(expected)) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
   }
 
   private static void reference(ObjectNode value, ArtifactReference reference) {

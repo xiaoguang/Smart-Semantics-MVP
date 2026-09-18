@@ -7,12 +7,7 @@ import static org.assertj.core.api.Assertions.fail;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
-import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
-import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
@@ -26,77 +21,65 @@ import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 /** RED contract for direct, source-run-independent reopening of the M10 material checkpoint. */
 class BusinessMaterialCheckpointReaderTest {
 
-  @TempDir Path temporaryDirectory;
-
   @Test
   void reopensCompleteM10MaterialAndCoverageFromItsFullReferenceAfterSourceRunFailure()
       throws Exception {
-    try (ProgramGraphsPublicFixture fixture = fixture("material-reader")) {
-      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
-      BusinessMaterialBuildResult built = buildMaterials(fixture, flows);
-      assertThat(built.checkpoint().address())
-          .satisfies(AnalysisStepModuleAddress.class::isInstance);
-      AnalysisStepModuleAddress address = (AnalysisStepModuleAddress) built.checkpoint().address();
-      assertThat(address.analysisStepKey()).isEqualTo(AnalysisStepKey.FLOW_INTERPRETATION);
-      assertThat(address.moduleNumber()).isEqualTo(10);
-      assertThat(address.moduleKey()).isEqualTo("business-material-builder");
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = LegacyM10CheckpointFixture.open();
+    BusinessMaterialBuildResult built =
+        new BusinessMaterialCheckpointReader(fixture.artifacts()).reopen(fixture.checkpoint());
+    assertThat(built.checkpoint().address()).satisfies(AnalysisStepModuleAddress.class::isInstance);
+    AnalysisStepModuleAddress address = (AnalysisStepModuleAddress) built.checkpoint().address();
+    assertThat(address.analysisStepKey()).isEqualTo(AnalysisStepKey.FLOW_INTERPRETATION);
+    assertThat(address.moduleNumber()).isEqualTo(10);
+    assertThat(address.moduleKey()).isEqualTo("business-material-builder");
+    assertThat(built.materialSet().materials()).hasSize(2);
+    assertThat(built.materialSet().materials().get(0).entryIds())
+        .containsExactly("entry-001", "entry-002");
+    assertThat(built.materialSet().materials())
+        .allSatisfy(material -> assertThat(material.sourceRefs()).hasSize(2));
 
-      ReopenOnlyModuleStore reopenOnly =
-          new ReopenOnlyModuleStore(fixture.moduleArtifacts(), built.checkpoint());
-      BusinessMaterialBuildResult reopened = reopenMaterials(reopenOnly, built.checkpoint());
+    ReopenOnlyModuleStore reopenOnly =
+        new ReopenOnlyModuleStore(fixture.artifacts(), built.checkpoint());
+    BusinessMaterialBuildResult reopened = reopenMaterials(reopenOnly, built.checkpoint());
 
-      assertThat(reopened).isEqualTo(built);
-      assertThat(reopened.materialSet().materials()).isEqualTo(built.materialSet().materials());
-      assertThat(reopened.materialSet().entryCoverage())
-          .isEqualTo(built.materialSet().entryCoverage());
-      assertThat(reopenOnly.reopenCount).isEqualTo(1);
-    }
+    assertThat(reopened).isEqualTo(built);
+    assertThat(reopened.materialSet().materials()).isEqualTo(built.materialSet().materials());
+    assertThat(reopened.materialSet().entryCoverage())
+        .isEqualTo(built.materialSet().entryCoverage());
+    assertThat(reopenOnly.reopenCount).isEqualTo(1);
   }
 
   @Test
   void rejectsMissingOrNonM10MaterialReferenceWithExplicitCheckpointFailure() throws Exception {
-    try (ProgramGraphsPublicFixture fixture = fixture("material-reader-invalid")) {
-      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
-      BusinessMaterialBuildResult built = buildMaterials(fixture, flows);
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = LegacyM10CheckpointFixture.open();
+    BusinessMaterialBuildResult built =
+        new BusinessMaterialCheckpointReader(fixture.artifacts()).reopen(fixture.checkpoint());
 
-      ModulePublicationReference wrongModule =
-          new ModulePublicationReference(
-              new AnalysisStepModuleAddress(
-                  built.checkpoint().address().runId(),
-                  AnalysisStepKey.FLOW_INTERPRETATION,
-                  11,
-                  "activity-explainer"),
-              built.checkpoint().moduleArtifactRoot(),
-              built.checkpoint().moduleReceiptId(),
-              built.checkpoint().moduleReceiptSha256());
-      assertThatThrownBy(() -> reopenMaterials(fixture.moduleArtifacts(), wrongModule))
-          .hasMessageContaining("BUSINESS_MATERIAL_CHECKPOINT_INVALID");
+    ModulePublicationReference wrongModule =
+        new ModulePublicationReference(
+            new AnalysisStepModuleAddress(
+                built.checkpoint().address().runId(),
+                AnalysisStepKey.FLOW_INTERPRETATION,
+                11,
+                "activity-explainer"),
+            built.checkpoint().moduleArtifactRoot(),
+            built.checkpoint().moduleReceiptId(),
+            built.checkpoint().moduleReceiptSha256());
+    assertThatThrownBy(() -> reopenMaterials(fixture.artifacts(), wrongModule))
+        .hasMessageContaining("BUSINESS_MATERIAL_CHECKPOINT_INVALID");
 
-      ModulePublicationReference missing =
-          new ModulePublicationReference(
-              new AnalysisStepModuleAddress(
-                  AnalysisRunId.parse("analysis-run:" + "f".repeat(64)),
-                  AnalysisStepKey.FLOW_INTERPRETATION,
-                  10,
-                  "business-material-builder"),
-              built.checkpoint().moduleArtifactRoot(),
-              built.checkpoint().moduleReceiptId(),
-              built.checkpoint().moduleReceiptSha256());
-      assertThatThrownBy(() -> reopenMaterials(fixture.moduleArtifacts(), missing))
-          .hasMessageContaining("BUSINESS_MATERIAL_CHECKPOINT_INVALID");
-    }
-  }
-
-  private ProgramGraphsPublicFixture fixture(String name) {
-    return ProgramGraphsPublicFixture.createWithGuardedApprove(temporaryDirectory.resolve(name));
-  }
-
-  private static BusinessMaterialBuildResult buildMaterials(
-      ProgramGraphsPublicFixture fixture, BusinessFlowsReference flows) {
-    return new BusinessMaterialBuilder(
-            fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
-        .build(
-            new BuildBusinessMaterialsRequest(flows, new BusinessMaterialProfile(8, 24, 12_000)));
+    ModulePublicationReference missing =
+        new ModulePublicationReference(
+            new AnalysisStepModuleAddress(
+                AnalysisRunId.parse("analysis-run:" + "f".repeat(64)),
+                AnalysisStepKey.FLOW_INTERPRETATION,
+                10,
+                "business-material-builder"),
+            built.checkpoint().moduleArtifactRoot(),
+            built.checkpoint().moduleReceiptId(),
+            built.checkpoint().moduleReceiptSha256());
+    assertThatThrownBy(() -> reopenMaterials(fixture.artifacts(), missing))
+        .hasMessageContaining("BUSINESS_MATERIAL_CHECKPOINT_INVALID");
   }
 
   private static BusinessMaterialBuildResult reopenMaterials(

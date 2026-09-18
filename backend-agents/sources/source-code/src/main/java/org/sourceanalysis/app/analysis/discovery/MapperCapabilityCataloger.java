@@ -3,13 +3,6 @@ package org.sourceanalysis.app.analysis.discovery;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.github.javaparser.JavaParser;
-import com.github.javaparser.ParseResult;
-import com.github.javaparser.ast.CompilationUnit;
-import com.github.javaparser.ast.Node;
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.github.javaparser.ast.body.MethodDeclaration;
-import java.io.StringReader;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -18,14 +11,11 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import javax.xml.XMLConstants;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
+import java.util.Set;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
@@ -38,10 +28,8 @@ import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.evidence.SourceExcerptV1;
 import org.sourceanalysis.app.evidence.SourceLocatorV1;
-import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
-import org.xml.sax.InputSource;
 
 /** Catalogs static MyBatis Java/XML candidates from verified source bytes without call binding. */
 public final class MapperCapabilityCataloger {
@@ -59,23 +47,6 @@ public final class MapperCapabilityCataloger {
     this.sourceReader = sourceReader;
   }
 
-  /** Reads only fresh-reopened verified text and reports Mapper candidates rather than bindings. */
-  public MapperCatalogDiscovery catalogMappers(
-      ApplicationProfile profile, VerifiedSourceInventoryReference frozenSource) {
-    try {
-      requireMyBatisProfile(profile);
-      VerifiedSourceTextSet source = sourceReader.reopen(frozenSource);
-      requireSameVerifiedBasis(profile, source);
-      Map<String, JavaMapperInterface> interfaces = javaInterfaces(source, profile.snapshotId());
-      List<XmlMapperResource> resources = xmlMapperResources(source, profile.snapshotId());
-      return catalog(profile.snapshotId(), interfaces, resources);
-    } catch (ApplicationDiscoveryException failure) {
-      throw failure;
-    } catch (RuntimeException failure) {
-      throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN");
-    }
-  }
-
   /**
    * Uses the selected Java engine's catalog for Java declarations and the verified bytes for XML.
    */
@@ -84,16 +55,43 @@ public final class MapperCapabilityCataloger {
       VerifiedSourceInventoryReference frozenSource,
       JavaDeclarationCatalog javaCatalog) {
     try {
-      requireMyBatisProfile(profile);
       VerifiedSourceTextSet source = sourceReader.reopen(frozenSource);
+      return catalogMappers(profile, source, javaCatalog, MapperXmlResourceView.open(source));
+    } catch (ApplicationDiscoveryException failure) {
+      throw failure;
+    } catch (IllegalStateException failure) {
+      if ("XML_SECURITY_POLICY_UNENFORCEABLE".equals(failure.getMessage())) {
+        throw new ApplicationDiscoveryException("XML_SECURITY_POLICY_UNENFORCEABLE", failure);
+      }
+      throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN");
+    } catch (RuntimeException failure) {
+      throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN");
+    }
+  }
+
+  /**
+   * Same-run internal seam: discovery consumes a caller-owned secure mapper view instead of
+   * reopening or reparsing the frozen XML.
+   */
+  MapperCatalogDiscovery catalogMappers(
+      ApplicationProfile profile,
+      VerifiedSourceTextSet source,
+      JavaDeclarationCatalog javaCatalog,
+      MapperXmlResourceView mapperResources) {
+    try {
+      requireCatalogInputs(profile, source, javaCatalog, mapperResources);
       requireSameVerifiedBasis(profile, source);
-      if (javaCatalog == null || !profile.snapshotId().equals(javaCatalog.snapshotId())) {
+      mapperResources.requireSameFrozenSource(source);
+      if (!profile.snapshotId().equals(javaCatalog.snapshotId())) {
         throw new ApplicationDiscoveryException("SNAPSHOT_REOPEN_MISMATCH");
       }
       Map<String, JavaMapperInterface> interfaces =
           javaInterfaces(source, profile.snapshotId(), javaCatalog);
-      List<XmlMapperResource> resources = xmlMapperResources(source, profile.snapshotId());
-      return catalog(profile.snapshotId(), interfaces, resources);
+      return catalog(
+          profile.snapshotId(),
+          interfaces,
+          xmlMapperResources(mapperResources, profile.snapshotId()),
+          mapperResources.rejectedResources());
     } catch (ApplicationDiscoveryException failure) {
       throw failure;
     } catch (RuntimeException failure) {
@@ -104,14 +102,13 @@ public final class MapperCapabilityCataloger {
   private static MapperCatalogDiscovery catalog(
       String snapshotId,
       Map<String, JavaMapperInterface> interfaces,
-      List<XmlMapperResource> resources) {
+      List<XmlMapperResource> resources,
+      List<MapperXmlResourceView.RejectedXmlResource> rejectedResources) {
     List<MapperCatalogEntry> entries = new ArrayList<>();
     List<MapperCatalogSite> sites = new ArrayList<>();
-    Map<String, XmlMapperResource> resourceByNamespace = new HashMap<>();
+    Set<String> resourceNamespaces = new HashSet<>();
     for (XmlMapperResource resource : resources) {
-      if (resourceByNamespace.put(resource.namespace(), resource) != null) {
-        throw new ApplicationDiscoveryException("MAPPER_CATALOG_AMBIGUOUS");
-      }
+      resourceNamespaces.add(resource.namespace());
       JavaMapperInterface mapperInterface = interfaces.get(resource.namespace());
       if (mapperInterface == null) {
         sites.add(
@@ -122,8 +119,13 @@ public final class MapperCapabilityCataloger {
       entries.add(entry(snapshotId, mapperInterface, resource));
       sites.add(supportedSite(snapshotId, resource.namespaceExcerpt()));
     }
+    for (MapperXmlResourceView.RejectedXmlResource rejectedResource : rejectedResources) {
+      if (!rejectedResource.rawSource().isEmpty()) {
+        sites.add(rejectedSite(snapshotId, rejectedResource));
+      }
+    }
     for (JavaMapperInterface mapperInterface : interfaces.values()) {
-      if (!resourceByNamespace.containsKey(mapperInterface.fqn())) {
+      if (!resourceNamespaces.contains(mapperInterface.fqn())) {
         sites.add(
             unsupportedSite(
                 snapshotId,
@@ -132,49 +134,6 @@ public final class MapperCapabilityCataloger {
       }
     }
     return MapperCatalogDiscovery.ordered(entries, sites);
-  }
-
-  private static Map<String, JavaMapperInterface> javaInterfaces(
-      VerifiedSourceTextSet source, String snapshotId) {
-    Map<String, JavaMapperInterface> interfaces = new HashMap<>();
-    for (VerifiedSourceTextDocument document : source.documents()) {
-      if (!document.path().endsWith(".java")) {
-        continue;
-      }
-      String text = new String(document.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8);
-      ParseResult<CompilationUnit> parsed = new JavaParser().parse(text);
-      CompilationUnit unit =
-          parsed
-              .getResult()
-              .orElseThrow(
-                  () -> new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN"));
-      String packageName =
-          unit.getPackageDeclaration().map(value -> value.getNameAsString()).orElse("");
-      for (ClassOrInterfaceDeclaration declaration :
-          unit.findAll(ClassOrInterfaceDeclaration.class)) {
-        if (!declaration.isInterface()
-            || declaration.getParentNode().filter(CompilationUnit.class::isInstance).isEmpty()) {
-          continue;
-        }
-        String fqn =
-            packageName.isEmpty()
-                ? declaration.getNameAsString()
-                : packageName + "." + declaration.getNameAsString();
-        JavaMapperInterface mapperInterface =
-            new JavaMapperInterface(
-                fqn,
-                excerpt(document, text, declaration),
-                declaration.getMethods().stream()
-                    .map(method -> methodCandidate(snapshotId, fqn, document, text, method))
-                    .sorted(
-                        Comparator.comparing(candidate -> candidate.methodCandidateId().value()))
-                    .toList());
-        if (interfaces.put(fqn, mapperInterface) != null) {
-          throw new ApplicationDiscoveryException("MAPPER_CATALOG_AMBIGUOUS");
-        }
-      }
-    }
-    return interfaces;
   }
 
   private static Map<String, JavaMapperInterface> javaInterfaces(
@@ -223,37 +182,22 @@ public final class MapperCapabilityCataloger {
   }
 
   private static List<XmlMapperResource> xmlMapperResources(
-      VerifiedSourceTextSet source, String snapshotId) {
-    List<XmlMapperResource> resources = new ArrayList<>();
-    for (VerifiedSourceTextDocument document : source.documents()) {
-      if (!document.path().endsWith(".xml")) {
-        continue;
-      }
-      String text = new String(document.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8);
-      Optional<XmlMapperResource> resource = xmlMapperResource(snapshotId, document, text);
-      resource.ifPresent(resources::add);
-    }
-    resources.sort(Comparator.comparing(XmlMapperResource::path));
-    return List.copyOf(resources);
+      MapperXmlResourceView mapperResources, String snapshotId) {
+    return mapperResources.mapperResources().stream()
+        .map(resource -> xmlMapperResource(snapshotId, resource))
+        .sorted(Comparator.comparing(XmlMapperResource::path))
+        .toList();
   }
 
-  private static Optional<XmlMapperResource> xmlMapperResource(
-      String snapshotId, VerifiedSourceTextDocument document, String text) {
-    if (text.toUpperCase(java.util.Locale.ROOT).contains("<!ENTITY")) {
-      throw new ApplicationDiscoveryException("XML_EXTERNAL_RESOLUTION_ATTEMPT");
-    }
-    Document parsed = parseMapperXml(text);
-    Element root = parsed.getDocumentElement();
-    if (root == null || !"mapper".equals(root.getTagName()) || !root.hasAttribute("namespace")) {
-      return Optional.empty();
-    }
-    String namespace = root.getAttribute("namespace");
-    if (namespace.isBlank()) {
-      throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN");
-    }
-    SourceExcerptV1 namespaceExcerpt =
-        literalExcerpt(document, text, "namespace", namespace, "MAPPER_CATALOG_REFERENCE_BROKEN");
+  private static XmlMapperResource xmlMapperResource(
+      String snapshotId, MapperXmlResourceView.MapperXmlResource resource) {
+    VerifiedSourceTextDocument document = resource.document();
+    String text = resource.rawSource();
+    Element root = resource.parsedDocument().getDocumentElement();
+    String namespace = resource.namespace();
+    SourceExcerptV1 wholeResource = wholeResourceExcerpt(document, text);
     List<MapperStatementCandidate> statements = new ArrayList<>();
+    Set<StatementClue> clues = new HashSet<>();
     for (String kind : STATEMENT_KINDS) {
       NodeList nodes = root.getElementsByTagName(kind);
       for (int index = 0; index < nodes.getLength(); index++) {
@@ -264,61 +208,15 @@ public final class MapperCapabilityCataloger {
         if (statementId.isBlank()) {
           throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN");
         }
-        SourceExcerptV1 declaration =
-            literalExcerpt(document, text, "id", statementId, "MAPPER_CATALOG_REFERENCE_BROKEN");
-        statements.add(statementCandidate(snapshotId, namespace, statementId, kind, declaration));
+        if (clues.add(new StatementClue(namespace, statementId, kind))) {
+          statements.add(
+              statementCandidate(snapshotId, namespace, statementId, kind, wholeResource));
+        }
       }
     }
     statements.sort(Comparator.comparing(candidate -> candidate.statementCandidateId().value()));
-    return Optional.of(
-        new XmlMapperResource(
-            document.path(), namespace, namespaceExcerpt, List.copyOf(statements)));
-  }
-
-  private static Document parseMapperXml(String text) {
-    try {
-      DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-      factory.setNamespaceAware(false);
-      factory.setXIncludeAware(false);
-      factory.setExpandEntityReferences(false);
-      factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-      factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-      factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
-      factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
-      factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
-      DocumentBuilder builder = factory.newDocumentBuilder();
-      builder.setEntityResolver((publicId, systemId) -> new InputSource(new StringReader("")));
-      return builder.parse(new InputSource(new StringReader(text)));
-    } catch (ParserConfigurationException failure) {
-      throw new ApplicationDiscoveryException("XML_SECURITY_POLICY_UNENFORCEABLE");
-    } catch (Exception failure) {
-      throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN");
-    }
-  }
-
-  private static MapperMethodCandidate methodCandidate(
-      String snapshotId,
-      String interfaceFqn,
-      VerifiedSourceTextDocument document,
-      String text,
-      MethodDeclaration method) {
-    SourceExcerptV1 declaration = excerpt(document, text, method);
-    String signature =
-        interfaceFqn
-            + "#"
-            + method.getNameAsString()
-            + "("
-            + method.getParameters().stream()
-                .map(parameter -> parameter.getType().asString())
-                .reduce("", (left, right) -> left.isEmpty() ? right : left + "," + right)
-            + ")";
-    return new MapperMethodCandidate(
-        artifactId(
-            "mapper-method-candidate",
-            "application-discovery-mapper-method-candidate-id-v2",
-            material(snapshotId, "signature", signature, declaration)),
-        signature,
-        declaration);
+    return new XmlMapperResource(
+        document.path(), namespace, wholeResource, List.copyOf(statements));
   }
 
   private static MapperMethodCandidate methodCandidate(
@@ -411,6 +309,24 @@ public final class MapperCapabilityCataloger {
             material(snapshotId, "reasonCode", reasonCode, excerpt)));
   }
 
+  private static MapperCatalogSite rejectedSite(
+      String snapshotId, MapperXmlResourceView.RejectedXmlResource rejectedResource) {
+    String source = rejectedResource.rawSource();
+    int[] end = lineColumn(source, source.length());
+    SourceExcerptV1 excerpt =
+        excerpt(rejectedResource.document(), source, 0, source.length(), 1, 1, end[0], end[1]);
+    return unsupportedSite(
+        snapshotId, excerpt, rejectedReasonCode(rejectedResource.rejectionKind()));
+  }
+
+  private static String rejectedReasonCode(MapperXmlResourceView.RejectionKind rejectionKind) {
+    return switch (rejectionKind) {
+      case XML_SECURITY_REJECTED -> "XML_EXTERNAL_RESOLUTION_ATTEMPT";
+      case XML_PARSE_REJECTED -> "XML_PARSE_REJECTED";
+      case MAPPER_NAMESPACE_MISSING -> "MAPPER_NAMESPACE_MISSING";
+    };
+  }
+
   private static ArtifactId siteId(
       String snapshotId,
       SourceExcerptV1 excerpt,
@@ -445,23 +361,6 @@ public final class MapperCapabilityCataloger {
   }
 
   private static SourceExcerptV1 excerpt(
-      VerifiedSourceTextDocument document, String source, Node node) {
-    var range =
-        node.getRange()
-            .orElseThrow(
-                () -> new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN"));
-    return excerpt(
-        document,
-        source,
-        characterOffset(source, range.begin.line, range.begin.column),
-        characterOffset(source, range.end.line, range.end.column + 1),
-        range.begin.line,
-        range.begin.column,
-        range.end.line,
-        range.end.column + 1);
-  }
-
-  private static SourceExcerptV1 excerpt(
       VerifiedSourceTextDocument document, String source, SourceRange range) {
     int start = range.startOffsetUtf16();
     int end = start + range.lengthUtf16();
@@ -477,28 +376,10 @@ public final class MapperCapabilityCataloger {
     return excerpt(document, source, start, end, begin[0], begin[1], finish[0], finish[1]);
   }
 
-  private static SourceExcerptV1 literalExcerpt(
-      VerifiedSourceTextDocument document,
-      String source,
-      String attribute,
-      String value,
-      String failureCode) {
-    String doubleQuoted = attribute + "=\"" + value + "\"";
-    String singleQuoted = attribute + "='" + value + "'";
-    int start = source.indexOf(doubleQuoted);
-    int length = doubleQuoted.length();
-    if (start < 0) {
-      start = source.indexOf(singleQuoted);
-      length = singleQuoted.length();
-    }
-    if (start < 0
-        || source.indexOf(doubleQuoted, start + 1) >= 0
-        || source.indexOf(singleQuoted, start + 1) >= 0) {
-      throw new ApplicationDiscoveryException(failureCode);
-    }
-    int[] begin = lineColumn(source, start);
-    int[] end = lineColumn(source, start + length);
-    return excerpt(document, source, start, start + length, begin[0], begin[1], end[0], end[1]);
+  private static SourceExcerptV1 wholeResourceExcerpt(
+      VerifiedSourceTextDocument document, String source) {
+    int[] end = lineColumn(source, source.length());
+    return excerpt(document, source, 0, source.length(), 1, 1, end[0], end[1]);
   }
 
   private static SourceExcerptV1 excerpt(
@@ -530,25 +411,6 @@ public final class MapperCapabilityCataloger {
         Sha256Digest.parse(sha256(bytes.copyToByteArray())));
   }
 
-  private static int characterOffset(String source, int line, int column) {
-    if (line < 1 || column < 1) {
-      throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN");
-    }
-    int offset = 0;
-    for (int current = 1; current < line; current++) {
-      int newline = source.indexOf('\n', offset);
-      if (newline < 0) {
-        throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN");
-      }
-      offset = newline + 1;
-    }
-    int result = offset + column - 1;
-    if (result < offset || result > source.length()) {
-      throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN");
-    }
-    return result;
-  }
-
   private static int[] lineColumn(String source, int offset) {
     int line = 1;
     int lineStart = 0;
@@ -576,13 +438,12 @@ public final class MapperCapabilityCataloger {
     return result;
   }
 
-  private static void requireMyBatisProfile(ApplicationProfile profile) {
-    if (profile == null
-        || profile.frameworkSignals().stream()
-            .noneMatch(
-                signal ->
-                    signal.kind() == FrameworkSignalKind.MYBATIS
-                        && signal.disposition() == SignalDisposition.SUPPORTED)) {
+  private static void requireCatalogInputs(
+      ApplicationProfile profile,
+      VerifiedSourceTextSet source,
+      JavaDeclarationCatalog javaCatalog,
+      MapperXmlResourceView mapperResources) {
+    if (profile == null || source == null || javaCatalog == null || mapperResources == null) {
       throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_REQUEST_INVALID");
     }
   }
@@ -633,4 +494,7 @@ public final class MapperCapabilityCataloger {
       String namespace,
       SourceExcerptV1 namespaceExcerpt,
       List<MapperStatementCandidate> statements) {}
+
+  /** One Step02 mapper statement hint; database variants remain a Step04 DOM concern. */
+  private record StatementClue(String namespace, String statementId, String statementKind) {}
 }

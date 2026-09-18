@@ -15,7 +15,6 @@ import org.sourceanalysis.app.analysis.code.EntryCodeContext;
 import org.sourceanalysis.app.analysis.code.EntrySeed;
 import org.sourceanalysis.app.analysis.code.JavaCodeSession;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
-import org.sourceanalysis.app.analysis.code.javaparser.JavaParserCodeEngine;
 import org.sourceanalysis.app.analysis.code.jdt.JdtCodeEngine;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsExecution;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
@@ -28,35 +27,33 @@ class SelectableJavaEngineAcceptanceTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void yamlSelectsExactlyOneAdapterAndJavaParserDoesNotRequireJdtConfiguration() throws Exception {
+  void yamlSelectsExactlyOneExecutableAdapterAndJavaParserIsReadOnly() throws Exception {
     ToolFixture tools = executableJdtFixture();
     EffectiveEngineConfiguration jdt =
         new EngineConfigurationLoader().load(yaml("jdt", tools.installation(), tools.javaHome()));
-    EffectiveEngineConfiguration javaParser =
-        new EngineConfigurationLoader()
-            .load("sourceAnalysis:\n  javaEngine: javaparser\n".getBytes(StandardCharsets.UTF_8));
 
     assertThat(new JavaCodeEngineFactory().create(jdt)).isExactlyInstanceOf(JdtCodeEngine.class);
-    assertThat(new JavaCodeEngineFactory().create(javaParser))
-        .isExactlyInstanceOf(JavaParserCodeEngine.class);
+    EffectiveEngineConfiguration javaParser = EffectiveEngineConfiguration.historicalJavaParser();
+    assertThatThrownBy(() -> new JavaCodeEngineFactory().create(javaParser))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("JDT is the only executable Java engine");
     assertThat(javaParser.jdt()).isNull();
   }
 
   @Test
   void persistedJavaIndexIdentityIncludesTheSelectedEngineDescriptor() {
-    String jdtId;
+    String firstJdtId;
     try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.createForJavaCodeIndex(temporaryDirectory.resolve("jdt"))) {
-      jdtId = publishIndex(fixture, "jdt");
+        ProgramGraphsPublicFixture.createForJavaCodeIndex(temporaryDirectory.resolve("jdt-v1"))) {
+      firstJdtId = publishIndex(fixture, "jdt-v1");
     }
-    String javaParserId;
+    String secondJdtId;
     try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.createForJavaCodeIndex(
-            temporaryDirectory.resolve("javaparser"))) {
-      javaParserId = publishIndex(fixture, "javaparser");
+        ProgramGraphsPublicFixture.createForJavaCodeIndex(temporaryDirectory.resolve("jdt-v2"))) {
+      secondJdtId = publishIndex(fixture, "jdt-v2");
     }
-
-    assertThat(javaParserId).isNotEqualTo(jdtId);
+    assertThat(firstJdtId).isNotBlank().isNotEqualTo(secondJdtId);
+    assertThat(secondJdtId).isNotBlank();
   }
 
   @Test
@@ -67,7 +64,7 @@ class SelectableJavaEngineAcceptanceTest {
       ProgramGraphsReference original = publishGraphs(fixture, "jdt");
       String originalId = indexId(fixture, original);
 
-      assertThatThrownBy(() -> publishGraphs(fixture, "javaparser"))
+      assertThatThrownBy(() -> publishGraphs(fixture, "jdt-v2"))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessage("JAVA_CODE_INDEX_INVALID")
           .rootCause()
@@ -107,7 +104,7 @@ class SelectableJavaEngineAcceptanceTest {
         .value();
   }
 
-  private static JavaCodeSession sourceOnlySession(String snapshotId, String engineId) {
+  private static JavaCodeSession sourceOnlySession(String snapshotId, String toolVersion) {
     return new JavaCodeSession() {
       @Override
       public JavaDeclarationCatalog catalog() {
@@ -155,9 +152,9 @@ class SelectableJavaEngineAcceptanceTest {
       @Override
       public EngineDescriptor descriptor() {
         return new EngineDescriptor(
-            engineId,
-            engineId + "-acceptance-v1",
-            Map.of(engineId, "test-version"),
+            "jdt",
+            "jdt-acceptance-" + toolVersion,
+            Map.of("jdt", toolVersion),
             "17",
             List.of("METHOD_SOURCE"));
       }

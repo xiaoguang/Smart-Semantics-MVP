@@ -19,15 +19,12 @@ import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndex;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndexReader;
-import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionProfile;
-import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilationProfile;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
-import org.sourceanalysis.app.artifact.ArtifactId;
-import org.sourceanalysis.app.artifact.ArtifactReference;
+import org.sourceanalysis.app.analysis.material.CodeReadingMaterialProfile;
+import org.sourceanalysis.app.analysis.persistence.PersistenceConfiguration;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
-import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 
 /** RED for forwarding bounded entry selection through the public runtime workflow. */
@@ -59,17 +56,15 @@ class TechnicalAnalysisWorkflowSelectedEntryExecutionTest {
                   new TechnicalDiscoveryWorkflowResult(
                       fixture.sourceInventory(), fixture.applicationDiscovery()),
                   selectedSession,
-                  reference("graph-profile", 'a', 'b'),
                   fixture.artifactControls(),
-                  new FlowCompilationProfile(
-                      reference("flow-profile", 'c', 'd'), 16, 8, 64, 96, 32, 64, 256),
-                  new CapsuleProjectionProfile(
-                      reference("capsule-profile", 'e', 'f'), 16, 32, 4_096, 100_000),
+                  PersistenceConfiguration.disabled(),
+                  new CodeReadingMaterialProfile(64_000L, 16),
                   List.of(selectedEntryId));
 
       assertThat(selectedSession.collectedEntryIds).containsExactly(selectedEntryId);
+      assertThat(result.navigation()).isNotNull();
       JavaCodeIndex selectedIndex =
-          new JavaCodeIndexReader(fixture.stepArtifacts()).reopen(result.programGraphs());
+          new JavaCodeIndexReader(fixture.stepArtifacts()).reopen(result.navigation());
       assertThat(selectedIndex.entries()).hasSize(2);
       assertThat(selectedIndex.entries())
           .filteredOn(entry -> entry.seed().entryId().equals(selectedEntryId))
@@ -111,22 +106,13 @@ class TechnicalAnalysisWorkflowSelectedEntryExecutionTest {
                           new TechnicalDiscoveryWorkflowResult(
                               fixture.sourceInventory(), fixture.applicationDiscovery()),
                           unknownSession,
-                          reference("graph-profile", 'a', 'b'),
                           fixture.artifactControls(),
-                          new FlowCompilationProfile(
-                              reference("flow-profile", 'c', 'd'), 16, 8, 64, 96, 32, 64, 256),
-                          new CapsuleProjectionProfile(
-                              reference("capsule-profile", 'e', 'f'), 16, 32, 4_096, 100_000),
+                          PersistenceConfiguration.disabled(),
+                          new CodeReadingMaterialProfile(64_000L, 16),
                           List.of(unknownEntryId)))
           .isInstanceOf(IllegalArgumentException.class);
       assertThat(unknownSession.collectedEntryIds).isEmpty();
     }
-  }
-
-  private static ArtifactReference reference(String prefix, char first, char second) {
-    String digest = ("" + first + second).repeat(32);
-    return new ArtifactReference(
-        ArtifactId.parse(prefix + ":" + digest), Sha256Digest.parse(digest));
   }
 
   private static List<String> entryIds(ProgramGraphsPublicFixture fixture) {

@@ -1,10 +1,10 @@
 # 可选持久化补全：目标入口与历史Fact合同
 
-2026-09-17的新生产目标唯一见[补充详细设计§5](../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md#5-第4步mybatis-官方解析部件与-sql-增强)：可配置MyBatis XML/SQL材料补全，未配置保持Java材料。**下文严格Fact/Proof仅为迁移前实现与历史读取合同；新路径不执行候选枚举、Proof构建或NOT_PRODUCED accounting发布。** 新模块使用既有第4步存储槽位，不继承旧算法前置。先通过工具调研再实施。
+2026-09-18的新生产目标唯一见[补充详细设计§5](../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md#5-第4步mybatis-官方解析部件与-sql-增强)：可配置MyBatis XML/SQL材料补全，未配置保持Java材料。**下文严格Fact/Proof仅为迁移前实现与历史读取合同；新路径不执行候选枚举、Proof构建或NOT_PRODUCED accounting发布，M1--M3不再允许新安装。** 新模块使用既有第4步存储槽位，不继承旧算法前置。
 
 > 模型批次解耦（已实现）：已保存技术增强继续按原义保留。新模型批次不重新枚举 Fact 或补 Proof；模型调用失败、换并发/Prompt 不使技术事实失效。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)。本次未修改本步骤算法或产物。
 
-> 新目标的引擎接入见[各子模块设计](../modules/java-code-engines/README.md)。本步保留严格Fact能力，但不是读取完整Service的门禁：JDT未提供原五图增强时，按[接入合同](../modules/java-code-engines/integration-and-javaparser.md)明确保存NOT_PRODUCED与原因，不运行旧Fact枚举，不伪称0候选均通过。以下Proof规则只适用于实际提供并请求分析的图输入。
+> 新目标的引擎接入见[各子模块设计](../modules/java-code-engines/README.md)。当前第4步是可选持久化补全；本页严格Fact能力只用于解释既有历史产物，不是新阅读材料的门禁，也不再要求 `NOT_PRODUCED` accounting、旧 Fact 枚举或 Proof 构建。以下Proof规则只适用于已保存的历史图输入。
 
 > [总体设计](../DESIGN.md)；固定 key：proven-code-facts，目录：steps/04-proven-code-facts/。本步骤保留，运行时模型调用为 0。
 
@@ -36,7 +36,7 @@
 
 固定 jshERP 的财务单号查询已有图/Fact 运行证据：Controller→Service 与 Service→Mapper 对应两条 JAVA_EXACT_CALL，Mapper 调用另有一条 JAVA_BOUNDARY_INVOCATION。这个计数只针对该入口，不代表全链业务语义已证明，也不证明 SQL 实际执行。
 
-## 3. 处理：枚举一次，证明一次，保存结果
+## 3. 历史处理：枚举一次，证明一次，保存结果
 
 | 模块 | 输入 → 处理 → 输出 |
 | --- | --- |
@@ -50,7 +50,7 @@
 
 ## 4. 严格技术合同
 
-三个模块仍位于 analysis.fact.candidates、analysis.fact.proofs、analysis.fact.publish。FactCandidateEnumerator.enumerate、AtomicProofBuilder.prove 和既有 publisher/reader 是后续测试的相关 seam，不建立第二套事实入口。
+迁移前这三个模块位于 analysis.fact.candidates、analysis.fact.proofs、analysis.fact.publish。相应 producer 已从新运行移除，历史 reader 仍按原 wire 读取；不能为新持久化材料重建 `FactCandidateEnumerator`、`AtomicProofBuilder` 或旧 publisher seam。
 
 ### 4.1 当前三种模式
 
@@ -104,7 +104,7 @@ externalEffectGapCount = count(boundaryKeys)
 
 上表的四个语义文件是技术图增强 AVAILABLE 时的严格路线。JDT 第一阶段未生产五图时，合法 actual set 精确为 `fact-accounting.json + proven-code-facts-receipt.json`：accounting 使用 `proven-code-facts-fact-accounting-v4`，`availability=NOT_PRODUCED`、`reason` 非空，保留 Step03 navigation/index basis，所有数值 count 为 `null`，且没有 Candidate/Fact/Proof 引用。publisher、step exact-set allowlist、artifact policy、直接 reader 与 fixture 必须同步该实际集合；不得写其余三个空文件，也不得调用候选枚举器。
 
-该 JDT actual set 已在生产发布与读取路径实现并通过验收：Step04 只保存 v4 accounting 与 receipt，不调用旧 FactCandidateEnumerator。它表示“本次没有运行严格图增强”，不是“扫描后发现零事实”；Step05 仍可直接使用已保存的 JDT 源码上下文。
+上述 JDT actual set 是迁移前 JDT-only 路线的历史发布合同。当前第4步改为持久化材料索引；历史 v4 accounting/receipt 仍可读取，但不再为新运行安装，也不调用旧 `FactCandidateEnumerator`。
 
 以下是**目标阅读投影**：
 

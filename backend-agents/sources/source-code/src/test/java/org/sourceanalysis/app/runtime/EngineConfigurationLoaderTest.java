@@ -35,7 +35,7 @@ class EngineConfigurationLoaderTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void acceptsOnlyTheCaseSensitiveJdtAndJavaParserValues() throws Exception {
+  void acceptsOnlyTheCaseSensitiveJdtValue() throws Exception {
     ToolFixture tools = executableJdtFixture();
 
     Object jdt =
@@ -44,11 +44,13 @@ class EngineConfigurationLoaderTest {
 
     Path unselectedInstallation = temporaryDirectory.resolve("missing-jdt-installation");
     Path unselectedJavaHome = temporaryDirectory.resolve("missing-jdk");
-    Object javaParser =
-        EngineTestReflection.loadYaml(
+    Throwable failure =
+        EngineTestReflection.loadFailure(
             jdtYaml("javaparser", unselectedInstallation, unselectedJavaHome));
-    assertThat(EngineTestReflection.stringProperty(javaParser, "javaEngine", "engine"))
-        .isEqualTo("javaparser");
+    assertThat(failure).isNotNull();
+    assertThat(EngineTestReflection.codeOf(failure)).isEqualTo("ENGINE_CONFIGURATION_INVALID");
+    assertThat(Files.exists(unselectedInstallation)).isFalse();
+    assertThat(Files.exists(unselectedJavaHome)).isFalse();
   }
 
   @Test
@@ -217,11 +219,12 @@ class EngineConfigurationLoaderTest {
     Path missingInstallation = temporaryDirectory.resolve("never-opened-installation");
     Path missingJavaHome = temporaryDirectory.resolve("never-opened-jdk");
 
-    Object configuration =
-        EngineTestReflection.loadYaml(jdtYaml("javaparser", missingInstallation, missingJavaHome));
+    Throwable failure =
+        EngineTestReflection.loadFailure(
+            jdtYaml("javaparser", missingInstallation, missingJavaHome));
 
-    assertThat(EngineTestReflection.stringProperty(configuration, "javaEngine", "engine"))
-        .isEqualTo("javaparser");
+    assertThat(failure).isNotNull();
+    assertThat(EngineTestReflection.codeOf(failure)).isEqualTo("ENGINE_CONFIGURATION_INVALID");
     assertThat(Files.exists(missingInstallation)).isFalse();
     assertThat(Files.exists(missingJavaHome)).isFalse();
   }

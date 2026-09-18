@@ -481,13 +481,10 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
                       profileDraft,
                       entryDraft,
                       mapperDraft));
+      // The fixture's public construction path is now the JDT-only source/discovery prefix.
+      // Retired graph-producer callers are intentionally not recreated here; historical graph
+      // readers receive stored payloads through their dedicated fixtures.
       ProgramGraphsReference graphReference = null;
-      if (publishLegacyGraphs) {
-        ArtifactReference graphProfile = reference("graph-profile", fixtureKey + "-profile");
-        graphReference =
-            new ProgramGraphsExecution(source.reader(), modules, steps)
-                .execute(sourceReference, discoveryReference, graphProfile, controls);
-      }
       return new ProgramGraphsPublicFixture(
           handle,
           modules,
@@ -1831,7 +1828,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         "mapper-catalog",
         "application/x-ndjson",
         "CANONICAL_JSONL",
-        false);
+        true);
     policy(
         entries,
         "APPLICATION_DISCOVERY_MAPPER_CATALOG_DRAFT",
@@ -1941,6 +1938,22 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         "PROGRAM_GRAPHS_JAVA_CODE_INDEX",
         "java-code-index-v2",
         "java-code-index",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        false);
+    policy(
+        entries,
+        "PERSISTENCE_MATERIAL_INDEX",
+        "persistence-material-index-v1",
+        "persistence-material-index",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        false);
+    policy(
+        entries,
+        "CODE_READING_MATERIAL_SET",
+        "code-reading-material-set-v1",
+        "code-reading-materials",
         "application/x-ndjson",
         "CANONICAL_JSONL",
         false);

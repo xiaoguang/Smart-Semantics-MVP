@@ -1,6 +1,6 @@
 # Java代码导航：目标入口与迁移前程序图合同
 
-2026-09-17的新生产目标唯一见[补充详细设计§4](../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md#4-第3步完整保留-jdt-能力)：只使用JDT，保留完整导航索引与缓存，退出JavaParser/专属图producer。迁移尚未实施。**下文为迁移前实现及历史产物合同，不再要求新生产保留JavaParser或五图计算。** 旧数据读取按原义保留；本轮在第5步结束，不运行Activity。
+2026-09-18的新生产目标唯一见[补充详细设计§4](../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md#4-第3步完整保留-jdt-能力)：只使用JDT，保留完整导航索引与缓存，退出JavaParser/专属图producer。**下文为迁移前实现及历史产物合同；M1--M6 producer不再允许新安装，不能作为新生产的实现要求。** 旧数据读取按原义保留；新运行止于第5步，不运行Activity。
 
 > 模型批次解耦（已实现）：同会话查询缓存和跨模型批次材料复用是两件事。材料有效时，新模型批次不创建 JDT 会话、不重建导航索引或五图；单入口导航超时可另行具名复核，不能被模型失败隐式触发。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)。本次未修改本步骤算法或产物。
 

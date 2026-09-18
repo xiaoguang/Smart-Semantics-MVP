@@ -1,6 +1,6 @@
 # 局部活动解释
 
-> [总体设计](../DESIGN.md)；固定 key：`flow-interpretation`，目录：`steps/06-flow-interpretation/`。两个既有 Module：`BusinessMaterialBuilder`、`ActivityExplainer`。本步已经实现，是新 Step07 的可复用上游，不因过程设计调整而重跑。
+> [总体设计](../DESIGN.md)；固定 key：`flow-interpretation`，目录：`steps/06-flow-interpretation/`。本页记录历史M10材料与仍可读的M11 Activity合同。2026-09-18后的新生产止于第5步：M10不再允许新安装，`BusinessMaterialBuilder`不再在新运行中存在；M11 `ActivityExplainer`保留其既有独立发布/历史读取能力，但不由新取材路径启动。
 
 ## 1. 为什么存在
 

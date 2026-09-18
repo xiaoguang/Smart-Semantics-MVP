@@ -24,6 +24,8 @@ import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanati
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.inventory.ProfileView;
 import org.sourceanalysis.app.analysis.knowledge.ProcessDiscoveryProfile;
+import org.sourceanalysis.app.analysis.material.CodeReadingMaterialProfile;
+import org.sourceanalysis.app.analysis.persistence.PersistenceConfiguration;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.ArtifactStoreLimits;
 import org.sourceanalysis.app.artifact.CanonicalArtifactPolicyRegistry;
@@ -430,6 +432,7 @@ record RepositoryRunConfiguration(
     Path captureWorkspace,
     Path stateFile,
     Path gitExecutable,
+    PersistenceConfiguration persistenceConfiguration,
     EffectiveEngineConfiguration engineConfiguration,
     List<Path> approvedClasspath,
     ArtifactReference capturePolicyRef,
@@ -452,7 +455,85 @@ record RepositoryRunConfiguration(
     BusinessMaterialProfile materialProfile,
     ActivityExplanationProfile activityProfile,
     ProcessDiscoveryProfile processDiscoveryProfile,
-    int maxMaterialsToStart) {
+    int maxMaterialsToStart,
+    CodeReadingMaterialProfile readingMaterialProfile) {
+
+  RepositoryRunConfiguration(
+      CanonicalJsonCodec canonicalJson,
+      Sha256Digest baseConfigurationSha256,
+      ModelJobsConfiguration modelJobs,
+      CanonicalArtifactPolicyRegistry policyRegistry,
+      CanonicalArtifactPolicyRegistry inputPolicyRegistry,
+      Path repositoryPath,
+      String repositoryIdentity,
+      String commitId,
+      Path runStore,
+      Path captureWorkspace,
+      Path stateFile,
+      Path gitExecutable,
+      PersistenceConfiguration persistenceConfiguration,
+      EffectiveEngineConfiguration engineConfiguration,
+      List<Path> approvedClasspath,
+      ArtifactReference capturePolicyRef,
+      ArtifactReference candidateSeriesRef,
+      ArtifactReference capabilityProfileRef,
+      ArtifactReference verificationPolicyRef,
+      ArtifactReference profileBundleRef,
+      ArtifactReference resourceBudgetRef,
+      ArtifactReference toolchainRef,
+      ArtifactReference schemaBundleRef,
+      ArtifactReference promptBundleRef,
+      ArtifactReference graphProfileRef,
+      List<String> selectedEntryIds,
+      ArtifactReference flowProfileRef,
+      ArtifactReference capsuleProfileRef,
+      ProfileView inventoryProfile,
+      ArtifactStoreLimits storeLimits,
+      FlowCompilationProfile flowProfile,
+      CapsuleProjectionProfile capsuleProfile,
+      BusinessMaterialProfile materialProfile,
+      ActivityExplanationProfile activityProfile,
+      ProcessDiscoveryProfile processDiscoveryProfile,
+      int maxMaterialsToStart) {
+    this(
+        canonicalJson,
+        baseConfigurationSha256,
+        modelJobs,
+        policyRegistry,
+        inputPolicyRegistry,
+        repositoryPath,
+        repositoryIdentity,
+        commitId,
+        runStore,
+        captureWorkspace,
+        stateFile,
+        gitExecutable,
+        persistenceConfiguration,
+        engineConfiguration,
+        approvedClasspath,
+        capturePolicyRef,
+        candidateSeriesRef,
+        capabilityProfileRef,
+        verificationPolicyRef,
+        profileBundleRef,
+        resourceBudgetRef,
+        toolchainRef,
+        schemaBundleRef,
+        promptBundleRef,
+        graphProfileRef,
+        selectedEntryIds,
+        flowProfileRef,
+        capsuleProfileRef,
+        inventoryProfile,
+        storeLimits,
+        flowProfile,
+        capsuleProfile,
+        materialProfile,
+        activityProfile,
+        processDiscoveryProfile,
+        maxMaterialsToStart,
+        null);
+  }
 
   static RepositoryRunConfiguration load(Path configPath) {
     CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
@@ -460,7 +541,6 @@ record RepositoryRunConfiguration(
     requireFieldsAllowingOptional(
         document,
         Set.of(
-            "business",
             "inputs",
             "paths",
             "policyRegistry",
@@ -468,7 +548,7 @@ record RepositoryRunConfiguration(
             "source",
             "sourceAnalysis",
             "technical"),
-        Set.of("inputPolicyRegistry"));
+        Set.of("business", "inputPolicyRegistry"));
     requireText(document, "schemaVersion", CONFIG_SCHEMA);
 
     ObjectNode source = object(document, "source");
@@ -489,21 +569,33 @@ record RepositoryRunConfiguration(
     Path gitExecutable = absolutePath(requiredText(paths, "gitExecutable"), "Git executable");
 
     ObjectNode sourceAnalysis = object(document, "sourceAnalysis");
-    requireFieldsAllowingOptional(sourceAnalysis, Set.of("javaEngine"), Set.of("jdt", "modelJobs"));
-    ObjectNode engineSourceAnalysis = JsonNodeFactory.instance.objectNode();
-    engineSourceAnalysis.set("javaEngine", sourceAnalysis.get("javaEngine"));
-    if (sourceAnalysis.has("jdt")) {
-      engineSourceAnalysis.set("jdt", sourceAnalysis.get("jdt"));
+    requireFieldsAllowingOptional(
+        sourceAnalysis, Set.of("javaEngine"), Set.of("jdt", "modelJobs", "persistence"));
+    String configuredJavaEngine = requiredText(sourceAnalysis, "javaEngine");
+    EffectiveEngineConfiguration engine;
+    if (EffectiveEngineConfiguration.JAVAPARSER_READ_ONLY.equals(configuredJavaEngine)) {
+      // Old configuration remains readable for historic state inspection only; no factory exists.
+      engine = EffectiveEngineConfiguration.historicalJavaParser();
+    } else {
+      ObjectNode engineSourceAnalysis = JsonNodeFactory.instance.objectNode();
+      engineSourceAnalysis.put("javaEngine", configuredJavaEngine);
+      if (sourceAnalysis.has("jdt")) {
+        engineSourceAnalysis.set("jdt", sourceAnalysis.get("jdt"));
+      }
+      ObjectNode engineDocument = JsonNodeFactory.instance.objectNode();
+      engineDocument.set("sourceAnalysis", engineSourceAnalysis);
+      engine =
+          new EngineConfigurationLoader()
+              .load(canonicalJson.encodeCanonical(engineDocument).copyToByteArray());
     }
-    ObjectNode engineDocument = JsonNodeFactory.instance.objectNode();
-    engineDocument.set("sourceAnalysis", engineSourceAnalysis);
-    EffectiveEngineConfiguration engine =
-        new EngineConfigurationLoader()
-            .load(canonicalJson.encodeCanonical(engineDocument).copyToByteArray());
     ModelJobsConfiguration modelJobs =
         sourceAnalysis.has("modelJobs")
             ? ModelJobsConfiguration.load(object(sourceAnalysis, "modelJobs"), canonicalJson)
             : null;
+    PersistenceConfiguration persistenceConfiguration =
+        sourceAnalysis.has("persistence")
+            ? persistenceConfiguration(object(sourceAnalysis, "persistence"))
+            : PersistenceConfiguration.disabled();
 
     Path policyPath = resolvePolicyPath(configPath, requiredText(document, "policyRegistry"));
     CanonicalArtifactPolicyRegistry policies = loadPolicies(policyPath, canonicalJson);
@@ -518,12 +610,29 @@ record RepositoryRunConfiguration(
     ObjectNode technical = object(document, "technical");
     requireFieldsAllowingOptional(
         technical,
-        Set.of("approvedClasspath", "capsule", "flow", "inventory", "store"),
-        Set.of("selectedEntryIds"));
+        Set.of("approvedClasspath", "inventory", "store"),
+        Set.of("capsule", "flow", "readingMaterials", "selectedEntryIds"));
+    boolean hasLegacyFlow = technical.has("flow") || technical.has("capsule");
+    boolean hasReadingMaterials = technical.has("readingMaterials");
+    if ((technical.has("flow") != technical.has("capsule"))
+        || (hasLegacyFlow == hasReadingMaterials)) {
+      throw failure("CONFIGURATION_INVALID");
+    }
+    if (hasReadingMaterials && !EffectiveEngineConfiguration.JDT.equals(engine.javaEngine())) {
+      throw failure("CONFIGURATION_INVALID");
+    }
     List<String> selectedEntryIds =
         SourceAnalysisExecution.selectedEntryIds(technical.get("selectedEntryIds"));
+    CodeReadingMaterialProfile configuredReadingMaterials =
+        hasReadingMaterials ? readingMaterialProfile(object(technical, "readingMaterials")) : null;
     ArtifactReference effectiveProfileBundleRef =
-        inputs.effectiveProfileBundleRef(selectedEntryIds, canonicalJson);
+        hasReadingMaterials
+            ? inputs.effectiveProfileBundleRef(
+                selectedEntryIds,
+                canonicalJson,
+                persistenceConfiguration,
+                configuredReadingMaterials)
+            : inputs.effectiveProfileBundleRef(selectedEntryIds, canonicalJson);
     ArtifactReference effectiveGraphProfileRef =
         inputs.effectiveGraphProfileRef(selectedEntryIds, canonicalJson);
     List<ApprovedClasspathEntry> approvedClasspath =
@@ -552,54 +661,65 @@ record RepositoryRunConfiguration(
             positiveLong(store, "maxPublicationBytes"),
             positiveInt(store, "maxDirectoryEntries"));
 
-    ObjectNode flow = object(technical, "flow");
-    requireFields(
-        flow,
-        Set.of(
-            "maxFlowEdges",
-            "maxFlowNodes",
-            "maxFlows",
-            "maxOutcomesPerFlow",
-            "maxProcessJoinSignalBasisRefs",
-            "maxProcessJoinSignalsPerFlow",
-            "maxTraversalDepth"));
-    requireProfileFields(flow, inputs.flowProfile());
-    FlowCompilationProfile flowProfile =
-        new FlowCompilationProfile(
-            inputs.flowProfileRef(),
-            positiveInt(flow, "maxFlows"),
-            positiveInt(flow, "maxOutcomesPerFlow"),
-            positiveInt(flow, "maxFlowNodes"),
-            positiveInt(flow, "maxFlowEdges"),
-            positiveInt(flow, "maxTraversalDepth"),
-            positiveInt(flow, "maxProcessJoinSignalsPerFlow"),
-            positiveInt(flow, "maxProcessJoinSignalBasisRefs"));
+    FlowCompilationProfile flowProfile = null;
+    CapsuleProjectionProfile capsuleProfile = null;
+    BusinessMaterialProfile materialProfile = null;
+    ActivityExplanationProfile activityProfile = null;
+    ProcessDiscoveryProfile processDiscoveryProfile = null;
+    int maxMaterialsToStart = 0;
+    if (hasLegacyFlow) {
+      if (inputs.flowProfile() == null
+          || inputs.capsuleProfile() == null
+          || !document.has("business")) {
+        throw failure("CONFIGURATION_INVALID");
+      }
+      ObjectNode flow = object(technical, "flow");
+      requireFields(
+          flow,
+          Set.of(
+              "maxFlowEdges",
+              "maxFlowNodes",
+              "maxFlows",
+              "maxOutcomesPerFlow",
+              "maxProcessJoinSignalBasisRefs",
+              "maxProcessJoinSignalsPerFlow",
+              "maxTraversalDepth"));
+      requireProfileFields(flow, inputs.flowProfile());
+      flowProfile =
+          new FlowCompilationProfile(
+              inputs.flowProfileRef(),
+              positiveInt(flow, "maxFlows"),
+              positiveInt(flow, "maxOutcomesPerFlow"),
+              positiveInt(flow, "maxFlowNodes"),
+              positiveInt(flow, "maxFlowEdges"),
+              positiveInt(flow, "maxTraversalDepth"),
+              positiveInt(flow, "maxProcessJoinSignalsPerFlow"),
+              positiveInt(flow, "maxProcessJoinSignalBasisRefs"));
 
-    ObjectNode capsule = object(technical, "capsule");
-    requireFields(
-        capsule,
-        Set.of("maxCapsuleUtf8Bytes", "maxCapsules", "maxSpanBytes", "maxSpansPerCapsule"));
-    requireProfileFields(capsule, inputs.capsuleProfile());
-    CapsuleProjectionProfile capsuleProfile =
-        new CapsuleProjectionProfile(
-            inputs.capsuleProfileRef(),
-            positiveInt(capsule, "maxCapsules"),
-            positiveInt(capsule, "maxSpansPerCapsule"),
-            positiveInt(capsule, "maxSpanBytes"),
-            positiveInt(capsule, "maxCapsuleUtf8Bytes"));
+      ObjectNode capsule = object(technical, "capsule");
+      requireFields(
+          capsule,
+          Set.of("maxCapsuleUtf8Bytes", "maxCapsules", "maxSpanBytes", "maxSpansPerCapsule"));
+      requireProfileFields(capsule, inputs.capsuleProfile());
+      capsuleProfile =
+          new CapsuleProjectionProfile(
+              inputs.capsuleProfileRef(),
+              positiveInt(capsule, "maxCapsules"),
+              positiveInt(capsule, "maxSpansPerCapsule"),
+              positiveInt(capsule, "maxSpanBytes"),
+              positiveInt(capsule, "maxCapsuleUtf8Bytes"));
 
-    ObjectNode business = object(document, "business");
-    requireFieldsAllowingOptional(
-        business,
-        Set.of("activity", "material", "maxMaterialsToStart", "processDiscovery"),
-        Set.of());
-    BusinessMaterialProfile materialProfile =
-        SourceAnalysisExecution.materialProfile(object(business, "material"));
-    ActivityExplanationProfile activityProfile =
-        SourceAnalysisExecution.activityProfile(object(business, "activity"));
-    ProcessDiscoveryProfile processDiscoveryProfile =
-        SourceAnalysisExecution.processDiscoveryProfile(object(business, "processDiscovery"));
-    int maxMaterialsToStart = positiveInt(business, "maxMaterialsToStart");
+      ObjectNode business = object(document, "business");
+      requireFieldsAllowingOptional(
+          business,
+          Set.of("activity", "material", "maxMaterialsToStart", "processDiscovery"),
+          Set.of());
+      materialProfile = SourceAnalysisExecution.materialProfile(object(business, "material"));
+      activityProfile = SourceAnalysisExecution.activityProfile(object(business, "activity"));
+      processDiscoveryProfile =
+          SourceAnalysisExecution.processDiscoveryProfile(object(business, "processDiscovery"));
+      maxMaterialsToStart = positiveInt(business, "maxMaterialsToStart");
+    }
 
     return new RepositoryRunConfiguration(
         canonicalJson,
@@ -614,6 +734,7 @@ record RepositoryRunConfiguration(
         captureWorkspace,
         stateFile,
         gitExecutable,
+        persistenceConfiguration,
         engine,
         approvedClasspath.stream().map(ApprovedClasspathEntry::path).toList(),
         inputs.capturePolicyRef(),
@@ -636,7 +757,36 @@ record RepositoryRunConfiguration(
         materialProfile,
         activityProfile,
         processDiscoveryProfile,
-        maxMaterialsToStart);
+        maxMaterialsToStart,
+        configuredReadingMaterials);
+  }
+
+  private static CodeReadingMaterialProfile readingMaterialProfile(ObjectNode document) {
+    requireFields(document, Set.of("maxEntriesPerPacket", "maxPacketUtf8Bytes"));
+    return new CodeReadingMaterialProfile(
+        positiveLong(document, "maxPacketUtf8Bytes"), positiveInt(document, "maxEntriesPerPacket"));
+  }
+
+  private static PersistenceConfiguration persistenceConfiguration(ObjectNode document) {
+    requireFields(document, Set.of("plugins"));
+    JsonNode configured = document.get("plugins");
+    if (!(configured instanceof ArrayNode pluginsNode)) {
+      throw failure("CONFIGURATION_INVALID");
+    }
+    List<PersistenceConfiguration.Plugin> plugins = new java.util.ArrayList<>(pluginsNode.size());
+    for (JsonNode configuredPlugin : pluginsNode) {
+      if (!(configuredPlugin instanceof ObjectNode plugin)) {
+        throw failure("CONFIGURATION_INVALID");
+      }
+      requireFields(plugin, Set.of("sqlParser", "type"));
+      String type = requiredText(plugin, "type");
+      String sqlParser = requiredText(plugin, "sqlParser");
+      if (!"mybatis".equals(type) || !"jsqlparser".equals(sqlParser)) {
+        throw failure("CONFIGURATION_INVALID");
+      }
+      plugins.add(new PersistenceConfiguration.Plugin(type, sqlParser));
+    }
+    return new PersistenceConfiguration(plugins);
   }
 
   ModelJobsConfiguration requireModelJobsForExecution() {
@@ -655,6 +805,9 @@ record RepositoryRunConfiguration(
   }
 
   PersistedTechnicalRunConfiguration technicalConfiguration(ImmutableBytes frozenBytes) {
+    if (readingMaterialProfile == null) {
+      throw failure("CONFIGURATION_INVALID");
+    }
     return new PersistedTechnicalRunConfiguration(
         frozenBytes,
         verificationPolicyRef,
@@ -662,9 +815,8 @@ record RepositoryRunConfiguration(
         inventoryProfile,
         storeLimits,
         DiscoveryProfile.standard(),
-        graphProfileRef,
-        flowProfile,
-        capsuleProfile,
+        persistenceConfiguration,
+        readingMaterialProfile,
         engineConfiguration,
         approvedClasspath,
         selectedEntryIds);
@@ -691,24 +843,24 @@ record InputReferences(
     ObjectNode capsuleProfile) {
 
   static InputReferences load(ObjectNode inputs, CanonicalJsonCodec canonicalJson) {
-    requireFields(
+    requireFieldsAllowingOptional(
         inputs,
         Set.of(
             "candidateSeries",
             "capabilityProfile",
-            "capsuleProfile",
             "capturePolicy",
-            "flowProfile",
             "graphProfile",
             "profileBundle",
             "promptBundle",
             "resourceBudget",
             "schemaBundle",
             "toolchain",
-            "verificationPolicy"));
+            "verificationPolicy"),
+        Set.of("capsuleProfile", "flowProfile"));
     ObjectNode resourceBudget = object(inputs, "resourceBudget");
-    ObjectNode flowProfile = object(inputs, "flowProfile");
-    ObjectNode capsuleProfile = object(inputs, "capsuleProfile");
+    ObjectNode flowProfile = inputs.has("flowProfile") ? object(inputs, "flowProfile") : null;
+    ObjectNode capsuleProfile =
+        inputs.has("capsuleProfile") ? object(inputs, "capsuleProfile") : null;
     ObjectNode profileBundle = object(inputs, "profileBundle");
     ObjectNode graphProfile = object(inputs, "graphProfile");
     return new InputReferences(
@@ -724,8 +876,8 @@ record InputReferences(
         reference("prompt-bundle", object(inputs, "promptBundle"), canonicalJson),
         graphProfile,
         reference("graph-profile", graphProfile, canonicalJson),
-        reference("flow-profile", flowProfile, canonicalJson),
-        reference("capsule-profile", capsuleProfile, canonicalJson),
+        flowProfile == null ? null : reference("flow-profile", flowProfile, canonicalJson),
+        capsuleProfile == null ? null : reference("capsule-profile", capsuleProfile, canonicalJson),
         resourceBudget,
         flowProfile,
         capsuleProfile);
@@ -741,6 +893,27 @@ record InputReferences(
     effective.set("declaredProfileBundle", profileBundle);
     ArrayNode entries = effective.putArray("selectedEntryIds");
     selectedEntryIds.forEach(entries::add);
+    return reference("profile-bundle", effective, canonicalJson);
+  }
+
+  ArtifactReference effectiveProfileBundleRef(
+      List<String> selectedEntryIds,
+      CanonicalJsonCodec canonicalJson,
+      PersistenceConfiguration persistence,
+      CodeReadingMaterialProfile readingMaterials) {
+    ObjectNode effective = JsonNodeFactory.instance.objectNode();
+    effective.put("schemaVersion", "repository-run-effective-profile-bundle-v2");
+    effective.set("declaredProfileBundle", profileBundle);
+    ArrayNode entries = effective.putArray("selectedEntryIds");
+    selectedEntryIds.forEach(entries::add);
+    ObjectNode persistenceNode = effective.putObject("persistence");
+    ArrayNode plugins = persistenceNode.putArray("plugins");
+    for (PersistenceConfiguration.Plugin plugin : persistence.plugins()) {
+      plugins.addObject().put("type", plugin.type()).put("sqlParser", plugin.sqlParser());
+    }
+    ObjectNode materials = effective.putObject("readingMaterials");
+    materials.put("maxPacketUtf8Bytes", readingMaterials.maxPacketUtf8Bytes());
+    materials.put("maxEntriesPerPacket", readingMaterials.maxEntriesPerPacket());
     return reference("profile-bundle", effective, canonicalJson);
   }
 

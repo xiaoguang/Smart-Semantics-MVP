@@ -1,6 +1,6 @@
 # JDT 导航、可选持久化补全与统一阅读材料：详细设计
 
-状态：2026-09-17，目标详细设计已批准实施；**A工具实验通过，B生产迁移与C验收尚未完成**。实际工具结果与限制见[实验报告](../persistence-tool-feasibility-result.md)。本文件属于原补充设计，不是另建一套业务流水线。工具资料见[持久化调研](../persistence-analysis-plugin-research.md)；此前实施问题见[待讨论清单](../implementation-lessons-and-followups.md)。
+状态：2026-09-18，实施计划的0--6/A--B工作已完成：Step01--05生产接线、旧producer退出新安装、直接回归和469项clean CI均通过。C的固定仓库验收已完成：325包、326条覆盖，1个导航失败；实测耗时、SQL解析限制与保存结果见[交付核验](../jdt-persistence-reading-materials-delivery.md)。新生产只启动JDT、Step01--05和可选持久化补全；JavaParser、严格图/Fact/Flow/Capsule与M10只保留历史重开。实际工具结果与限制见[实验报告](../persistence-tool-feasibility-result.md)。本文件属于原补充设计，不是另建一套业务流水线。工具资料见[持久化调研](../persistence-analysis-plugin-research.md)；此前实施问题见[待讨论清单](../implementation-lessons-and-followups.md)。
 
 ## 1. 目标、范围与验收边界
 
@@ -32,9 +32,9 @@
 
 “保留现有能力”指保留 JDT 已取得的实际代码内容和查询能力，不再要求维护用户已明确放弃的 JavaParser/Fact/Proof 计算。历史 reader 可以保留格式校验，但不得为了读取旧数据再次调用这些算法。
 
-## 2. 当前代码起点与实际修改面
+## 2. 批准时的代码起点与实际修改面
 
-本次对照正式 checkout，Git HEAD 为 `0784a33`；工作区另有前次三阶段业务解释改动，不能重置、覆盖或纳入本轮未授权的修复。
+本次对照正式 checkout，Git HEAD 为 `0784a33`；工作区另有前次三阶段业务解释改动，不能重置、覆盖或纳入本轮未授权的修复。下表记录批准时的迁移面；当前实现状态以本页开头和[实施计划](../../plans/jdt-persistence-reading-materials-implementation-plan.md)为准，不能把表内已退役 producer 当作现行生产能力。
 
 | 当前实际实现 | 本设计处理 |
 | --- | --- |
@@ -65,7 +65,7 @@
 
 保留既有 `JavaCodeEngine.open`、`JavaCodeSession.catalog/collect/descriptor/close` 的小 Interface，生产只构造 JDT 实现。删除 JavaParser 不要求把 LS/Core 内部类型泄漏到下游。
 
-新增的持久化 seam 与材料 owner 位于现有 source-code 模块内，概念签名如下；名字与字段语义为目标合同，非声称当前已有类：
+已实现的持久化 seam 与材料 owner 位于现有 source-code 模块内；下面仅以概念签名概括其稳定职责，精确字段以现有类型和本节记录为准：
 
 ```java
 interface PersistenceAnalyzer {
@@ -79,7 +79,7 @@ final class CodeReadingMaterialBuilder {
 
 - `PersistenceAnalysisRequest`：同源 JavaCodeIndex、已验证冻结文本读取能力、Mapper资源线索、有效插件配置。MyBatis 是第一种 Adapter；未启用时跳过解析和关联，仅保存DISABLED头记录，不建一个伪 parser。
 - B的直接输入接线使用既有`JavaCodeIndex`、`ProgramGraphsReference navigationPublication`、已读的`VerifiedSourceTextSet frozenSource`、`List<MapperCatalogEntry>`和`PersistenceConfiguration`。传入已读不可变视图避免再开同一批文本；不引入客户路径或新取证接口。禁用配置返回明确DISABLED头记录且不遍历XML，完整资源/语句等子记录均为空。
-- `CodeReadingMaterialRequest`：完整入口清单、索引的不可变已读视图、可空持久化结果、材料大小配置。不接受 Provider、JDT client 或任意当前工作目录。
+- `CodeReadingMaterialRequest`：完整入口清单、索引的不可变已读视图、持久化结果及材料大小配置。插件关闭传明确的DISABLED索引，不传null。不接受 Provider、JDT client 或任意当前工作目录。
 - 发布与重开复用当前 canonical store；builder 内部保存前组装一次，reader 只还原视图，不重复 `build/analyze/collect`。
 - 可读预览和以后请求的自包含材料使用同一个文本投影函数。只导出文本不是执行第6步；本轮不改变 Activity Prompt、响应结构或业务调度。
 
@@ -141,6 +141,8 @@ MyBatis `SqlNode` 并非完整 SQL AST，部分节点未提供公开遍历字段
 
 每个命中语句保存：原 statement 块、其 `namespace/id/databaseId`、使用的 `<sql>` 片段、相关 resultMap 与 selectKey、原引用关系、对应文件范围。依赖递归按已访问键去重；循环/缺失引用保留诊断，不无限展开。
 
+生产接线使用一个运行内的 `MapperXmlResourceView` 复用安全DOM读取：第2步用它发现候选，第4步沿静态依赖取得相关资源。namespace索引保留资源列表，而非覆盖同名资源；没有Java接口的公共片段仍可作为XML依赖被读到，不因此制造Java绑定。`DefaultPersistenceAnalyzer`通过构造器接收同一视图，仍只有`analyze(request)`分析接口；独立调用可以从请求的冻结文本创建临时视图。注入视图必须匹配请求的冻结来源。DOM只读，include转换只操作副本；不创建全局缓存或额外持久化产物。
+
 原始内容包含 `if/choose/when/otherwise/foreach/where/set/trim/bind` 的标签、属性、文本/CDATA及顺序。条件作为表达式字符串保留，不执行 OGNL，不构造虚假参数，不实例化客户类型或自定义 LanguageDriver。
 
 DOM序列化会改变空白/实体表示，不能冒充原始片段。优先复用现有位置能力；工具不给精确块范围时，允许引用冻结XML整文件，并将从DOM导出的statement明确标为结构化投影。不得为行号另造XML tokenizer，也不因只能定位到文件而阻断工具验证；A报告必须展示采用哪一种定位方式及其材料大小影响。
@@ -194,12 +196,14 @@ sourceAnalysis:
 | 记录 | 必需内容 |
 | --- | --- |
 | HEADER | snapshot与Java索引引用、producer、实际插件/工具版本、状态 ENABLED/DISABLED |
-| RESOURCE | 冻结文件位置、namespace、资源变体、相关原文单元；同一原文单元保存一次 |
+| RESOURCE | 冻结文件位置、namespace、资源变体、相关原文单元、已解析的静态依赖候选资源路径 `dependencyResourcePaths`；同一原文单元保存一次 |
 | STATEMENT | statementKey、id、XML kind、databaseId、原文单元引用、include/resultMap/selectKey依赖、条件结构 |
 | JAVA_BINDING | methodKey、候选性质、statementKey列表、形参与占位符对照及限制；不冒称执行绑定 |
 | SQL_ANALYSIS | 原statement/片段引用、分析副本的转换说明、AST投影、状态 PARSED/PARTIAL/UNSUPPORTED及原因 |
 
 禁用插件时仅 HEADER，明确DISABLED；没有命中时 HEADER＋实际资源诊断。不是伪造“零Fact全部证明”，也不为每个未命中点创建外部效果证明。多调用共享相同 statement记录；调用位置仍留在Java索引。
+
+`dependencyResourcePaths`沿用第4步已取得的安全资源视图与依赖闭包，按路径稳定排序、去重；包括静态include、resultMap和resultMap继承所需的候选资源。不执行类型加载或运行时映射。第5步只沿这些已保存引用取回依赖，不重新解析XML，也不把全仓所有XML加入每个入口。未知或动态引用保留原文和限制，不生成虚构的目标路径。
 
 ## 6. 第5步：唯一阅读材料 owner
 
@@ -226,9 +230,19 @@ sourceAnalysis:
 
 读取后的 `CodeReadingMaterialSet` 是完整只读视图，包含实际正文而非未解析文件键；来源JSON/文本预览只是该视图的确定性导出，不能成为下一层再加工的生产输入。同一次读取复用已验证索引，不逐入口重新打开全仓。
 
+第4、5步发布器返回既有 `AnalysisStepPublicationReference`，读取器接收同一类型；不新增另一套checkpoint身份。第5步PACKET持久化入口ID、方法key、`entryId＋callKey`调用对，以及所选持久化记录的key。读取器按这些选择引用从已保存索引恢复原对象，不重新执行Builder的选择算法。原文只存在于上游记录；来源位置、未选范围和实际文本字节数仍随PACKET保存。
+
+内部组包请求只接收已读的Java索引、持久化索引、完整上游publication引用及材料profile，不接收读取器、解析器、JDT或Provider。`JavaCodeIndex.entries()`包含未收集入口，因此直接作为完整入口分母；不重新发现入口。包内复用已有`EntrySeed`和`MethodCode`视图，调用记录保留所属`entryId`，同一物理方法只保留一份正文。源码定位保存单元引用、路径与起止行，未选单元同时保存所属入口和具体原因。插件关闭使用显式DISABLED索引，不以null或伪造XML填充。
+
+同一确定性Markdown格式器负责整个材料集合和单包投影。`selfContainedUtf8Bytes`是实际单包投影的UTF-8字节数，计数自身不进入被计量文本；容量选择和最终导出使用相同格式，避免另写近似计数公式。此完整内存视图不改变磁盘仅持久化选择引用的约定。
+
 可读 `reading-materials.md` 按入口给出短编号调用树、参数对照、完整代码块、XML及未展开清单。正文可包含源码，因为它是技术阅读材料，**不是业务过程文档**。文件/行号可直接查看，不要求人手工拼接几十个ID。同数据重开导出逐字节一致。
 
 材料容量只表示内存/输出大小与完整单元选择，不是费用预算或本轮模型上下文承诺。本轮不绑定模型；第6步以后是否要按模型上下文重新分包，留给后续设计。不能通过截掉半个方法/动态块使材料“通过”。
+
+正式配置将该profile放在 `technical.readingMaterials`，包含必填正整数 `maxPacketUtf8Bytes` 和 `maxEntriesPerPacket`。新材料准备不能从旧 `business.material` 的片段/行数限制近似换算，也不要求配置已退役的 `technical.flow/capsule` 才能启动。旧业务批次读取继续使用自己的历史配置和profile；新profile参与材料身份，不改变已保存Activity的输入身份。
+
+新材料运行的有效profile bundle须同时包含已解析的持久化插件配置、readingMaterials及入口选择，使同一源码下切换插件或材料容量得到不同的运行请求身份，不能只在末尾state中记录差异而覆盖同一运行的04/05。Java导航自身的输入合同和index版本不因此改变；历史模型配置的身份计算按原合同保留。
 
 ### 6.3 当前材料与未来第6步的关系
 
@@ -254,7 +268,13 @@ sourceAnalysis:
 
 结构材料artifact类型为 `CODE_READING_MATERIAL_SET`，媒体类型为JSONL。`reading-materials.md`由同一reader按需导出到用户指定或本次私有检查目录，不是第二个canonical payload，不成为下游输入；导出有独立的格式版本标记，不改变材料身份。现有store的精确文件集合、Step最终publisher地址、前驱要求、artifact策略与查询分支必须一并更新。第4步新模块不需要旧图，第5步新模块不需要Fact publication。
 
+新运行的策略允许合法的空入口目录和空Mapper目录；没有HTTP入口或没有Mapper不等于保存损坏。其余结构仍由对应模块合同检查。只调整新阅读材料策略，历史策略文件不改写。
+
 版本化state/output reader仅按明确schema分派，未知版本报错。对于v5本轮新kind：sourceRunId必须拥有readingMaterialCheckpoint；旧businessMaterialCheckpoint和三个模型输出均为空。历史kind通过原严格reader保留原归属，不能因为增加一种材料就允许任意跨运行引用。
+
+v5运行输出的磁盘字段集仅为 `schemaVersion/runId/sourceRunId/outputKind/readingMaterialCheckpoint`；旧四个checkpoint不写入该格式，重开后的既有内存访问器返回null。v3/v4的原字段集不变，不能把v5字段混入历史格式。
+
+新 `readingMaterialCheckpoint` 使用第5步的 `AnalysisStepPublicationReference`；旧M10及模型checkpoint继续使用原 `ModulePublicationReference`，不改写历史字段含义。查询新材料时沿第5步receipt定位其最终发布模块，不把Step引用伪装成Module引用。新材料在本轮不接入Activity执行；已有旧材料的显式业务执行能力不由此自动触发。
 
 新state-v4字段明确为 `schemaVersion/sourceRunId/checkpointKind/readingMaterialCheckpoint/inventoryPublication/navigationPublication/persistencePublication/materialProducerVersion/materialSchemaVersion/materialProfile/materialBasisSha256`。basis覆盖真实上游内容引用、有效插件/材料配置和producer，不包含模型/并发/输出目录。不再用旧 `businessFlowsPublication` 表示新材料，也不以旧flows生成basis。`COMPLETE_CAPTURE / BOUNDED_PATH_SET`与`repositoryCompletionEligible`随来源保留，局部fixture不能写为整仓完成。
 
@@ -268,15 +288,20 @@ sourceAnalysis:
 
 `start / executeStep / inspect / artifact / render`公共方法不增加第二套。内部PREPARE_MATERIALS target归到第5步槽位；`inspect`显示材料已完成、业务解释未执行；`artifact`读取JSONL，CLI的材料artifact导出支持 `--format markdown --output <path>`，使用同一reader生成完整预览而不安装新publication。路径只属于CLI配置层。`render()`没有历史报告时仍未就绪，不启动模型补报告。
 
+新材料沿用现有artifact查询接口，增加 `CODE_READING_MATERIALS` 查询键，对应第5步M4的 `code-reading-materials.jsonl`。该键先重开完整Step05 publication reference，再沿receipt的最终publisher module取得语义payload，不将Step引用伪装为旧M10 module checkpoint；旧查询键及历史module checkpoint读取行为保持不变。Markdown是此材料的导出格式，不注册第二份canonical产物。
+
+当前实现已验证配置入口的可选冻结来源登记、01—05新链、v4状态精确字段、v5输出、入口选择、JSONL/Markdown格式参数和受控直接回归/clean CI。JDT的同次02→04路径复用一个与冻结inventory绑定的安全`MapperXmlResourceView`：02目录与04分析读取同一只读DOM，来源不一致时另建临时view，不引入全局缓存。C的真实配置端到端命令正在验收；该结果以及跨运行自动续跑（不在本轮合同内）不能从直接测试推断。
+
 第4步的Interface直接接受已重开的兼容Java索引，重做SQL增强不必重扫；第5步reader也不调用parser。为了保持本轮范围，不新增导航复用CLI参数、旧运行自动搜索或恢复命令。C中的插件开关对照由验收驱动经这两个正式Interface复用同一索引；另以正式plan-materials验证一次完整1—5链。不能把此Interface能力误报为CLI已经支持跨运行自动续跑。
 
-### 7.3 删除清单的判定方法
+### 7.3 已执行的生产退出边界
 
-全面实施先接通新的1—5路径，再按实际引用删除：
+新的1—5路径、保存/重开与CLI先完成，再按实际引用退出了以下生产行为：
 
 - JavaParser引擎实现、discovery旧解析重载、专属AST/五图builder、`javaparser-symbol-solver-core`及无其他消费者的依赖/测试。
 - Fact候选枚举、Proof构建、严格Flow编译与Capsule生产、旧M10材料生成路径及仅为这些生产行为存在的测试。
 - 旧程序模块注册从**新安装**路径退出，历史地址reader仍有效；禁止历史reader借机调用旧producer校验。
+- `repository-run-state-v3`与M10 checkpoint只负责既有保存结果的重开/历史导出；新1—5运行不再写入该状态或安装M10，不能为了测试夹具恢复旧生产写入器。
 - 历史DTO、SourceRange/SourceReference、canonical存储、必要旧schema与纯读取/渲染保留。涉及已有Step06/07引用的通用类型不可整包删除。
 - 原来测试里来源正确、非法引用、候选保留、内容完整、重开和零重扫等有效断言迁入新深模块；不机械保留每个旧包装的独占测试。
 
@@ -402,10 +427,10 @@ sourceAnalysis:
 | --- | --- |
 | JDT现有路径与历史材料 | 已实现，当前代码/保存结果可查 |
 | MyBatis/JSqlParser能力资料 | A通过：MyBatis3.5.19/JSqlParser5.3，14项直接测试，真实冻结XML自动关联及三个样本已核验 |
-| 新Step04插件与Step05统一生产 | 本文详细设计，未实施 |
-| A工具验收/B全面实施/C全1—5验证 | A完成；B开始接线，C未开始；不把A结果视为生产接线完成 |
+| 新Step04插件与Step05统一生产 | Step04内部插件、可选YAML、跨文件SQL/resultMap继承、静态依赖路径、动态条件Expression投影的26项直接测试已通过；正式存储保存/重开、Step05完整单元组包/短编号调用树、引用式保存/重开、artifact读取、新配置与03→04→05协调链、v4/v5和同次XML视图共享均已通过直接测试。旧生产路径已退出新安装，历史读取仍受原合同保护；469项clean CI通过。C真实固定仓库运行的结果尚未落盘，故不宣称固定仓库验收完成。 |
+| A工具验收/B全面实施/C全1—5验证 | A完成；B（含实施计划0--6的清理与直接/clean CI）完成；C正在执行，须以真实冻结仓库输出为准。 |
 | 第6步模型消费新材料 | 尚未讨论，不在本轮范围 |
 
-本次文档核对包含：当前类/合同引用、模块输入输出、原文例子、三道验收门、历史读取边界、零Step06约束、相对链接与空白检查。没有运行构建/JDT/SQL parser/产品模型。`more-findings.md`基线SHA256为`59b8381e7e81e3105ed6c6a8d93ce1dbea0247735bf1e6227d8f842b0d1d7f8e`，不得更改。
+设计初稿的文档核对包含：当前类/合同引用、模块输入输出、原文例子、三道验收门、历史读取边界、零Step06约束、相对链接与空白检查。当时没有运行构建/JDT/SQL parser/产品模型；后续实施验证状态以上表及A验收报告为准。`more-findings.md`基线SHA256为`59b8381e7e81e3105ed6c6a8d93ce1dbea0247735bf1e6227d8f842b0d1d7f8e`，不得更改。
 
 本次已完成只读设计复核，并据此明确XML安全失败分层、预览不重复进入canonical checkpoint、index-v2字段保留及新state精确字段。两份新文档58处本地链接检查通过；导航/设计差异通过`git diff --check`，受保护文档哈希未变。这些是文档检查结果，不是A/B/C已经通过。

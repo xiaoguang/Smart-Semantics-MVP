@@ -36,8 +36,8 @@ import org.sourceanalysis.app.artifact.ModuleReceiptId;
 import org.sourceanalysis.app.artifact.Sha256Digest;
 
 /**
- * Explicit, one-packet live quality check for a named material produced by {@code
- * BusinessMaterialBuilder}.
+ * Explicit, one-packet live quality check for a named material read from a historical JSONL
+ * publication.
  *
  * <p>Surefire does not select {@code *IT}; callers must explicitly opt in and name the persisted
  * material JSONL file. The model receives only {@link ModelActivityPacket}, never its source

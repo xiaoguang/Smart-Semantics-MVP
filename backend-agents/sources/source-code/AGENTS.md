@@ -24,7 +24,7 @@
 ## Target package registry
 
 - The public application seam lives at org.sourceanalysis.app.
-- The eight analysis packages are exactly:
+- The historical step-aligned analysis packages retained during migration are:
   - org.sourceanalysis.app.analysis.inventory
   - org.sourceanalysis.app.analysis.discovery
   - org.sourceanalysis.app.analysis.graph
@@ -33,6 +33,10 @@
   - org.sourceanalysis.app.analysis.interpretation
   - org.sourceanalysis.app.analysis.knowledge
   - org.sourceanalysis.app.analysis.document
+- The approved Step03–05 redesign adds internal owners
+  org.sourceanalysis.app.analysis.persistence and
+  org.sourceanalysis.app.analysis.material. They replace production Fact/Flow
+  packaging responsibilities without adding numbered steps or public Agent APIs.
 - The cross-cutting roots are exactly:
   - org.sourceanalysis.app.analysis.code (approved Java engine seam; not a ninth step)
   - org.sourceanalysis.app.capture.localgit
@@ -70,7 +74,8 @@
   docs/supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md.
   It supersedes the older production requirements to retain JavaParser,
   graph/Fact/Proof producers and Flow/Capsule/M10 material packaging. Those
-  algorithms remain current code pending migration, not future requirements.
+  algorithms are retired from new production; retain only their strict
+  historical configuration decoding, receipt reopening, and wire contracts.
   Keep JDT navigation/Core/caching and strict historical reads; never rewrite
   the saved 326 Activities or model outputs. The target introduces internal
   analysis.persistence and analysis.material modules, not new analysis steps.
@@ -136,32 +141,30 @@
 
 ## Migration baseline: previously selectable Java code engines
 
-This section records the existing two-engine implementation and its original
-migration sequence. Future production follows the supplement above: JDT only,
-optional persistence enrichment and one Step05 material owner. Preserve
-useful JDT behavior below, not the retired requirement to keep JavaParser
+This section records the historical two-engine implementation and its original
+migration sequence. Current production follows the supplement above: JDT only,
+optional persistence enrichment and one Step05 material owner. Preserve useful
+JDT behavior and historical reader contracts below, not the retired JavaParser
 or strict graph/Fact/Flow producers.
 
 - The independent JDT path and the follow-up JavaParser adapter were implemented
-  and accepted on 2026-09-12:
+  and accepted on 2026-09-12 as historical production routes:
   configuration/session, JDT Core syntax, JDT LS navigation, discovery,
   navigation publication, truthful NOT_PRODUCED strict facts, Step05
   contexts, persisted business material and the scripted report chain are
   connected. JavaParser additionally preserves its existing seven graph
   payloads, strict Fact/Proof path, Flow/Capsule path and the same persisted
-  business consumers. Do not reopen these as unimplemented design.
-- First implement the JDT route independently. Protocols and direct
-  producers/readers may change for a sound JDT design without accommodating
-  JavaParser. Preserve JavaParser code. Only in the second phase adapt it to
-  the completed contract and restore CURRENT capability; do not add symbol
-  resolution features or require JDT-equivalent coverage.
-- YAML selects exactly jdt or javaparser for a run. No automatic fallback,
-  merged engines, dual writers or compatibility readers. An unknown selection
-  is an explicit error, not silent use of another engine.
+  business consumers. Do not reopen these as current production requirements.
+- Current production starts only the JDT route. Protocols and direct producers
+  may not restore JavaParser, strict graph/Fact/Flow/Capsule/M10 production
+  behavior; historical reader contracts remain exact and read-only.
+- New YAML launch selects only `jdt`. A historical `javaparser` value may be
+  decoded for existing state/hash inspection but cannot create an engine,
+  fallback, merged run, dual writer, or compatibility producer.
 - On the JDT route, JDT LS owns navigation/resolution; a syntax-only JDT Core
   helper on the tool JVM owns Java declarations, full bodies and call syntax.
-  Neither discovery nor BusinessMaterialBuilder may secretly invoke
-  JavaParser. Do not implement Java wildcard imports, inheritance, overload
+  Neither discovery nor the Step05 material route may secretly invoke a
+  retired parser. Do not implement Java wildcard imports, inheritance, overload
   resolution or Spring runtime dispatch by guessed names.
 - A hierarchy hit is not grounds to skip implementation lookup for virtual
   or abstract/interface targets. Preserve every candidate, constructor,
@@ -172,14 +175,14 @@ or strict graph/Fact/Flow producers.
   tools/jdt-syntax-helper artifact. Launch it with the configured tool JDK and
   enforce the jdt-syntax-v1 JSONL timeout/exit/protocol contract; stdout is
   protocol-only and every fatal protocol/process condition remains explicit.
-- Engine-normalized code material is sufficient input to Step05. Existing
-  five-graph/Fact/strict-Flow capability is optional technical enrichment,
-  never a JDT reading gate. Missing enrichment is NOT_PRODUCED with a reason,
-  not fake empty graphs, fake Proof or a smaller entry denominator.
-- java-code-index is PROGRAM_GRAPHS module 7, not a new analysis step. On the
-  JDT route Step03 publishes index+receipt; Step04 publishes only v4
-  NOT_PRODUCED fact-accounting (nullable counts)+receipt. Exact artifact-set
-  allowlists, policies, readers and fixtures must describe these actual sets.
+- The JDT navigation index plus optional persistence material is sufficient
+  input to Step05. Retired five-graph/Fact/strict-Flow outputs are neither a
+  reading gate nor a new-run enhancement; do not write fake empty graphs,
+  Proof, or a smaller entry denominator.
+- java-code-index is PROGRAM_GRAPHS module 7, not a new analysis step. The
+  JDT route publishes the Step03 index, Step04 persistence material, and
+  Step05 reading materials through their exact artifact contracts. Historical
+  v4 `NOT_PRODUCED` fact-accounting remains readable but is not newly installed.
 - Preserve full method code and its conditions/returns in the material path.
   Verify that Service bodies reach actual model input, not only an index.
   Evidence exists to locate code, not to repeatedly re-prove ordinary reads.
@@ -208,18 +211,16 @@ or strict graph/Fact/Flow producers.
   - nine-section-document -> steps/08-nine-section-document/
 - Numerical prefixes order docs/directories only. Java types, fields, packages,
   schemas, artifact IDs, tests and commands use semantic names.
-- Keep all eight steps and useful persisted technical outputs. Step 01 verifies
-  source once; Step03 indexes selected-engine code relationships and reports
-  actual graph-enrichment availability; Step04 adds optional strict Facts or
-  records that enhancement was not produced; Step05 assembles per-entry context
-  with actual/formal arguments, controls, returns, boundaries and code fragments.
-  Keep exact Proof truthfulness. Incomplete strict Proof is not the sole gate
-  for reading safely located code. Remove repeated ordinary-path enumeration,
-  compilation and projection; do not introduce another evidence hierarchy.
-- The pre-migration Step06 material path uses two implemented business Modules:
-  BusinessMaterialBuilder and ActivityExplainer. The saved 326 reviewed
-  Activities remain reusable. The new material owner moves to Step05;
-  the existing Activity consumer is not migrated or executed in this scope.
+- Keep all eight steps and useful persisted technical outputs. Step01 verifies
+  source once; Step03 publishes JDT navigation and complete Java code; Step04
+  adds optional persistence material; Step05 assembles reading materials with
+  actual/formal arguments, controls, returns, boundaries and code fragments.
+  Historic Proof truthfulness is preserved on reopen but does not gate reading.
+  Do not introduce another evidence hierarchy.
+- The pre-migration Step06 material path used BusinessMaterialBuilder and
+  ActivityExplainer. The saved 326 reviewed Activities remain reusable. New
+  material ownership is Step05; M10 is not newly installed and the existing
+  Activity consumer is not executed in this scope.
 - Step 07 exposes exactly two deep internal Interfaces:
   BusinessProcessDiscovery and BusinessProcessPublisher. Discovery owns the
   FrozenAnalysisCorpus, RepositoryBusinessCataloger,
@@ -284,19 +285,14 @@ or strict graph/Fact/Flow producers.
   Eligible queued jobs are not skipped when a concurrency slot is unavailable.
   Multiple keys or fresh sessions sharing an account/project do not create
   independent quotas; declared/observable shared scopes use one Provider cap.
-- Step 05 is the sole owner of entry-context relationships and related source
-  excerpts, including safe entries without a strict Flow. Its existing files
-  hold the context; Capsule is its budgeted projection, not another chain model.
-- Step05 consumes the selected engine's normalized methods/calls/candidates
-  and optional actual graph relationships. Facts/Proofs keep their strict
-  meaning but never filter safely located code from business reading.
-- Step05 is context-first and uses the versions frozen in the Java engine
-  contract. It never reparses or re-navigates; each entry has a collected
-  context or a specific not-collected reason, and each collected context has
-  a Capsule even when strict Flow is not produced.
-- BusinessMaterialBuilder only packages Step 05 contexts, selects complete
-  in-budget units and maps SourceRefs. It must not independently reconstruct
-  a direct callee from source text. Java does not use an
+- Step05 is the sole current owner of entry reading-material relationships and
+  related source excerpts. It consumes saved JDT methods/calls/candidates and
+  optional persistence material, never reparses or re-navigates, and records a
+  collected entry or a specific not-collected reason. Historical context and
+  Capsule contracts remain readers only.
+- Historical BusinessMaterialBuilder only packages M10 contexts. New Step05
+  selects complete in-budget units and maps SourceRefs directly; neither route
+  independently reconstructs a direct callee from source text. Java does not use an
   industry dictionary to assign purpose, actor, action, outcome or process.
 - ActivityExplainer reads a complete local activity package and REVIEW sees
   the complete actual DRAFT. Preserve full reviewed conditions, rules, formulas
@@ -725,9 +721,9 @@ or strict graph/Fact/Flow producers.
   Interface, then the smallest GREEN. Run only tests added by or directly
   covering the current change; never start a full suite without explicit user
   request.
-- Tests assert observable outcomes through BusinessMaterialBuilder,
-  ActivityExplainer, BusinessProcessDiscovery, BusinessProcessPublisher,
-  the historical report reader/renderer, or the existing Step 01–05 public seams. Test target
+- Tests assert observable outcomes through the Step01–05 public seams,
+  historical Activity/reader contracts, BusinessProcessDiscovery,
+  BusinessProcessPublisher, or the historical report reader/renderer. Test target
   internals only where needed to prove card completeness, source hydration or
   coverage conservation; do not test past an Interface merely to preserve the
   legacy singleton ProcessExplainer or other retired shallow Modules.

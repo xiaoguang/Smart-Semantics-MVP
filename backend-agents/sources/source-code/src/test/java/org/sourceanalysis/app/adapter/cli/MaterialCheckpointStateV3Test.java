@@ -16,23 +16,30 @@ import java.util.HexFormat;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
-import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
-import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialCheckpointReader;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
+import org.sourceanalysis.app.analysis.interpretation.material.LegacyM10CheckpointFixture;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
+import org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot;
+import org.sourceanalysis.app.artifact.AnalysisStepInstallRequest;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
+import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationAddress;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
+import org.sourceanalysis.app.artifact.AnalysisStepReceipt;
+import org.sourceanalysis.app.artifact.AnalysisStepReceiptId;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
+import org.sourceanalysis.app.artifact.InstalledAnalysisStepPublication;
+import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.ModuleInstallRequest;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
+import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.capture.localgit.RegisteredSourceCapture;
@@ -51,255 +58,287 @@ class MaterialCheckpointStateV3Test {
 
   @Test
   void exportsExactV3StatePreservesV2AndDirectlyReopensM10WithoutUpstreamWork() throws Exception {
-    try (ProgramGraphsPublicFixture fixture = fixture("state-v3-round-trip")) {
-      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
-      BusinessMaterialBuildResult materials = buildMaterials(fixture, flows);
-      Path v2 = temporaryDirectory.resolve("repository-run-state-v2.json");
-      Path v3 = temporaryDirectory.resolve("repository-run-state-v3.json");
-      CanonicalJsonCodec json = new CanonicalJsonCodec();
-      writeV2(json, v2, flows.publication());
-      byte[] v2Bytes = Files.readAllBytes(v2);
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = fixture();
+    AnalysisStepPublicationReference flows = historicalFlowPublication(fixture.checkpoint());
+    BusinessMaterialBuildResult materials = buildMaterials(fixture);
+    Path v2 = temporaryDirectory.resolve("repository-run-state-v2.json");
+    Path v3 = temporaryDirectory.resolve("repository-run-state-v3.json");
+    CanonicalJsonCodec json = new CanonicalJsonCodec();
+    writeV2(json, v2, flows);
+    byte[] v2Bytes = Files.readAllBytes(v2);
 
-      exportV2ToV3(
-          v2,
-          v3,
-          BASE_CONFIGURATION_SHA256,
-          fixture.stepArtifacts(),
-          fixture.moduleArtifacts(),
-          materials.checkpoint(),
-          MATERIAL_PROFILE,
-          MATERIAL_MODULE_VERSION,
-          json);
+    exportV2ToV3(
+        v2,
+        v3,
+        BASE_CONFIGURATION_SHA256,
+        historicalFlowStore(flows),
+        fixture.artifacts(),
+        materials.checkpoint(),
+        MATERIAL_PROFILE,
+        MATERIAL_MODULE_VERSION,
+        json);
 
-      assertThat(Files.readAllBytes(v2)).as("offline export must preserve v2").isEqualTo(v2Bytes);
-      ObjectNode state =
-          (ObjectNode) json.parseCanonical(ImmutableBytes.copyOf(Files.readAllBytes(v3)));
-      assertThat(fieldNames(state))
-          .containsExactlyInAnyOrder(
-              "schemaVersion",
-              "sourceRunId",
-              "businessFlowsPublication",
-              "materialsCheckpoint",
-              "materialProfile",
-              "materialModuleVersion",
-              "materialBasisSha256");
-      assertThat(state.path("schemaVersion").textValue()).isEqualTo(V3_SCHEMA);
-      assertThat(state.path("sourceRunId").textValue())
-          .isEqualTo(materials.checkpoint().address().runId().value());
-      assertThat(state.path("businessFlowsPublication"))
-          .isEqualTo(
-              json.parseCanonical(ImmutableBytes.copyOf(Files.readAllBytes(v2)))
-                  .path("businessFlowsPublication"));
-      assertThat(state.path("materialsCheckpoint"))
-          .isEqualTo(checkpointJson(materials.checkpoint()));
-      assertThat(state.path("materialProfile")).isEqualTo(profileJson(MATERIAL_PROFILE));
-      assertThat(state.path("materialModuleVersion").textValue())
-          .isEqualTo(MATERIAL_MODULE_VERSION);
-      assertThat(state.path("materialBasisSha256").textValue())
-          .isEqualTo(materialBasisSha256(json, state));
+    assertThat(Files.readAllBytes(v2)).as("offline export must preserve v2").isEqualTo(v2Bytes);
+    ObjectNode state =
+        (ObjectNode) json.parseCanonical(ImmutableBytes.copyOf(Files.readAllBytes(v3)));
+    assertThat(fieldNames(state))
+        .containsExactlyInAnyOrder(
+            "schemaVersion",
+            "sourceRunId",
+            "businessFlowsPublication",
+            "materialsCheckpoint",
+            "materialProfile",
+            "materialModuleVersion",
+            "materialBasisSha256");
+    assertThat(state.path("schemaVersion").textValue()).isEqualTo(V3_SCHEMA);
+    assertThat(state.path("sourceRunId").textValue())
+        .isEqualTo(materials.checkpoint().address().runId().value());
+    assertThat(state.path("businessFlowsPublication"))
+        .isEqualTo(
+            json.parseCanonical(ImmutableBytes.copyOf(Files.readAllBytes(v2)))
+                .path("businessFlowsPublication"));
+    assertThat(state.path("materialsCheckpoint")).isEqualTo(checkpointJson(materials.checkpoint()));
+    assertThat(state.path("materialProfile")).isEqualTo(profileJson(MATERIAL_PROFILE));
+    assertThat(state.path("materialModuleVersion").textValue()).isEqualTo(MATERIAL_MODULE_VERSION);
+    assertThat(state.path("materialBasisSha256").textValue())
+        .isEqualTo(materialBasisSha256(json, state));
 
-      ReopenOnlyModuleStore reopenOnly =
-          new ReopenOnlyModuleStore(fixture.moduleArtifacts(), materials.checkpoint());
-      BusinessMaterialBuildResult reopened = reopenV3Materials(v3, reopenOnly, json);
-      assertThat(reopened).isEqualTo(materials);
-      assertThat(reopenOnly.reopenCount)
-          .as("v3 model-only read must reopen only M10; no Builder/JDT/upstream step is allowed")
-          .isEqualTo(1);
-    }
+    ReopenOnlyModuleStore reopenOnly =
+        new ReopenOnlyModuleStore(fixture.artifacts(), materials.checkpoint());
+    BusinessMaterialBuildResult reopened = reopenV3Materials(v3, reopenOnly, json);
+    assertThat(reopened).isEqualTo(materials);
+    assertThat(reopenOnly.reopenCount)
+        .as("v3 model-only read must reopen only M10; no Builder/JDT/upstream step is allowed")
+        .isEqualTo(1);
   }
 
   @Test
   void rejectsWrongBaseHashAndCrossRunOrDamagedCheckpointDuringExplicitExport() throws Exception {
-    try (ProgramGraphsPublicFixture fixture = fixture("state-v3-invalid")) {
-      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
-      BusinessMaterialBuildResult materials = buildMaterials(fixture, flows);
-      Path v2 = temporaryDirectory.resolve("invalid-v2.json");
-      Path v3 = temporaryDirectory.resolve("invalid-v3.json");
-      CanonicalJsonCodec json = new CanonicalJsonCodec();
-      writeV2(json, v2, flows.publication());
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = fixture();
+    AnalysisStepPublicationReference flows = historicalFlowPublication(fixture.checkpoint());
+    BusinessMaterialBuildResult materials = buildMaterials(fixture);
+    Path v2 = temporaryDirectory.resolve("invalid-v2.json");
+    Path v3 = temporaryDirectory.resolve("invalid-v3.json");
+    CanonicalJsonCodec json = new CanonicalJsonCodec();
+    writeV2(json, v2, flows);
 
-      assertThatThrownBy(
-              () ->
-                  exportV2ToV3(
-                      v2,
-                      v3,
-                      "b".repeat(64),
-                      fixture.stepArtifacts(),
-                      fixture.moduleArtifacts(),
-                      materials.checkpoint(),
-                      MATERIAL_PROFILE,
-                      MATERIAL_MODULE_VERSION,
-                      json))
-          .hasMessageContaining("MATERIALS_STATE_CONFIGURATION_MISMATCH");
-      assertThat(v3).doesNotExist();
+    assertThatThrownBy(
+            () ->
+                exportV2ToV3(
+                    v2,
+                    v3,
+                    "b".repeat(64),
+                    historicalFlowStore(flows),
+                    fixture.artifacts(),
+                    materials.checkpoint(),
+                    MATERIAL_PROFILE,
+                    MATERIAL_MODULE_VERSION,
+                    json))
+        .hasMessageContaining("MATERIALS_STATE_CONFIGURATION_MISMATCH");
+    assertThat(v3).doesNotExist();
 
-      ModulePublicationReference foreignCheckpoint =
-          new ModulePublicationReference(
-              new org.sourceanalysis.app.artifact.AnalysisStepModuleAddress(
-                  AnalysisRunId.parse("analysis-run:" + "f".repeat(64)),
-                  AnalysisStepKey.FLOW_INTERPRETATION,
-                  10,
-                  "business-material-builder"),
-              materials.checkpoint().moduleArtifactRoot(),
-              materials.checkpoint().moduleReceiptId(),
-              materials.checkpoint().moduleReceiptSha256());
-      assertThatThrownBy(
-              () ->
-                  exportV2ToV3(
-                      v2,
-                      v3,
-                      BASE_CONFIGURATION_SHA256,
-                      fixture.stepArtifacts(),
-                      fixture.moduleArtifacts(),
-                      foreignCheckpoint,
-                      MATERIAL_PROFILE,
-                      MATERIAL_MODULE_VERSION,
-                      json))
-          .hasMessageMatching(".*(MATERIALS_STATE|BUSINESS_MATERIAL_CHECKPOINT_INVALID).*");
-      assertThat(v3).doesNotExist();
+    ModulePublicationReference foreignCheckpoint =
+        new ModulePublicationReference(
+            new org.sourceanalysis.app.artifact.AnalysisStepModuleAddress(
+                AnalysisRunId.parse("analysis-run:" + "f".repeat(64)),
+                AnalysisStepKey.FLOW_INTERPRETATION,
+                10,
+                "business-material-builder"),
+            materials.checkpoint().moduleArtifactRoot(),
+            materials.checkpoint().moduleReceiptId(),
+            materials.checkpoint().moduleReceiptSha256());
+    assertThatThrownBy(
+            () ->
+                exportV2ToV3(
+                    v2,
+                    v3,
+                    BASE_CONFIGURATION_SHA256,
+                    historicalFlowStore(flows),
+                    fixture.artifacts(),
+                    foreignCheckpoint,
+                    MATERIAL_PROFILE,
+                    MATERIAL_MODULE_VERSION,
+                    json))
+        .hasMessageMatching(".*(MATERIALS_STATE|BUSINESS_MATERIAL_CHECKPOINT_INVALID).*");
+    assertThat(v3).doesNotExist();
 
-      ModulePublicationReference damagedCheckpoint =
-          new ModulePublicationReference(
-              materials.checkpoint().address(),
-              materials.checkpoint().moduleArtifactRoot(),
-              materials.checkpoint().moduleReceiptId(),
-              new org.sourceanalysis.app.artifact.Sha256Digest("c".repeat(64)));
-      assertThatThrownBy(
-              () ->
-                  exportV2ToV3(
-                      v2,
-                      v3,
-                      BASE_CONFIGURATION_SHA256,
-                      fixture.stepArtifacts(),
-                      fixture.moduleArtifacts(),
-                      damagedCheckpoint,
-                      MATERIAL_PROFILE,
-                      MATERIAL_MODULE_VERSION,
-                      json))
-          .hasMessageContaining("BUSINESS_MATERIAL_CHECKPOINT_INVALID");
-      assertThat(v3).doesNotExist();
+    ModulePublicationReference damagedCheckpoint =
+        new ModulePublicationReference(
+            materials.checkpoint().address(),
+            materials.checkpoint().moduleArtifactRoot(),
+            materials.checkpoint().moduleReceiptId(),
+            new org.sourceanalysis.app.artifact.Sha256Digest("c".repeat(64)));
+    assertThatThrownBy(
+            () ->
+                exportV2ToV3(
+                    v2,
+                    v3,
+                    BASE_CONFIGURATION_SHA256,
+                    historicalFlowStore(flows),
+                    fixture.artifacts(),
+                    damagedCheckpoint,
+                    MATERIAL_PROFILE,
+                    MATERIAL_MODULE_VERSION,
+                    json))
+        .hasMessageContaining("BUSINESS_MATERIAL_CHECKPOINT_INVALID");
+    assertThat(v3).doesNotExist();
 
-      assertThatThrownBy(
-              () ->
-                  exportV2ToV3(
-                      v2,
-                      v3,
-                      BASE_CONFIGURATION_SHA256,
-                      fixture.stepArtifacts(),
-                      fixture.moduleArtifacts(),
-                      materials.checkpoint(),
-                      MATERIAL_PROFILE,
-                      "v2",
-                      json))
-          .hasMessageContaining("BUSINESS_MATERIAL_CHECKPOINT_INVALID");
-      assertThat(v3).doesNotExist();
-    }
+    assertThatThrownBy(
+            () ->
+                exportV2ToV3(
+                    v2,
+                    v3,
+                    BASE_CONFIGURATION_SHA256,
+                    historicalFlowStore(flows),
+                    fixture.artifacts(),
+                    materials.checkpoint(),
+                    MATERIAL_PROFILE,
+                    "v2",
+                    json))
+        .hasMessageContaining("BUSINESS_MATERIAL_CHECKPOINT_INVALID");
+    assertThat(v3).doesNotExist();
   }
 
   @Test
   void rejectsMissingOrCorruptV3InsteadOfFallingBackToV2OrRebuildingMaterials() throws Exception {
-    try (ProgramGraphsPublicFixture fixture = fixture("state-v3-corrupt")) {
-      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
-      BusinessMaterialBuildResult materials = buildMaterials(fixture, flows);
-      Path v2 = temporaryDirectory.resolve("corrupt-v2.json");
-      Path v3 = temporaryDirectory.resolve("corrupt-v3.json");
-      CanonicalJsonCodec json = new CanonicalJsonCodec();
-      writeV2(json, v2, flows.publication());
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = fixture();
+    AnalysisStepPublicationReference flows = historicalFlowPublication(fixture.checkpoint());
+    BusinessMaterialBuildResult materials = buildMaterials(fixture);
+    Path v2 = temporaryDirectory.resolve("corrupt-v2.json");
+    Path v3 = temporaryDirectory.resolve("corrupt-v3.json");
+    CanonicalJsonCodec json = new CanonicalJsonCodec();
+    writeV2(json, v2, flows);
 
-      assertThatThrownBy(() -> reopenV3Materials(v3, fixture.moduleArtifacts(), json))
-          .hasMessageContaining("MATERIALS_STATE_V3_INVALID");
-      assertThatThrownBy(() -> reopenV3Materials(v2, fixture.moduleArtifacts(), json))
-          .hasMessageContaining("MATERIALS_STATE_V3_INVALID");
+    assertThatThrownBy(() -> reopenV3Materials(v3, fixture.artifacts(), json))
+        .hasMessageContaining("MATERIALS_STATE_V3_INVALID");
+    assertThatThrownBy(() -> reopenV3Materials(v2, fixture.artifacts(), json))
+        .hasMessageContaining("MATERIALS_STATE_V3_INVALID");
 
-      exportV2ToV3(
-          v2,
-          v3,
-          BASE_CONFIGURATION_SHA256,
-          fixture.stepArtifacts(),
-          fixture.moduleArtifacts(),
-          materials.checkpoint(),
-          MATERIAL_PROFILE,
-          MATERIAL_MODULE_VERSION,
-          json);
-      ObjectNode corrupt =
-          (ObjectNode) json.parseCanonical(ImmutableBytes.copyOf(Files.readAllBytes(v3)));
-      corrupt.remove("materialsCheckpoint");
-      Files.write(v3, json.encodeCanonical(corrupt).copyToByteArray());
-      assertThatThrownBy(() -> reopenV3Materials(v3, fixture.moduleArtifacts(), json))
-          .hasMessageContaining("MATERIALS_STATE_V3_INVALID");
-    }
+    exportV2ToV3(
+        v2,
+        v3,
+        BASE_CONFIGURATION_SHA256,
+        historicalFlowStore(flows),
+        fixture.artifacts(),
+        materials.checkpoint(),
+        MATERIAL_PROFILE,
+        MATERIAL_MODULE_VERSION,
+        json);
+    ObjectNode corrupt =
+        (ObjectNode) json.parseCanonical(ImmutableBytes.copyOf(Files.readAllBytes(v3)));
+    corrupt.remove("materialsCheckpoint");
+    Files.write(v3, json.encodeCanonical(corrupt).copyToByteArray());
+    assertThatThrownBy(() -> reopenV3Materials(v3, fixture.artifacts(), json))
+        .hasMessageContaining("MATERIALS_STATE_V3_INVALID");
   }
 
   @Test
   void bindsLoadedMaterialStateToTheConfiguredRepositoryAndCommit() throws Exception {
-    try (ProgramGraphsPublicFixture fixture = fixture("state-v3-source-identity")) {
-      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
-      BusinessMaterialBuildResult materials = buildMaterials(fixture, flows);
-      Path v2 = temporaryDirectory.resolve("source-identity-v2.json");
-      Path v3 = temporaryDirectory.resolve("source-identity-v3.json");
-      CanonicalJsonCodec json = new CanonicalJsonCodec();
-      writeV2(json, v2, flows.publication());
-      exportV2ToV3(
-          v2,
-          v3,
-          BASE_CONFIGURATION_SHA256,
-          fixture.stepArtifacts(),
-          fixture.moduleArtifacts(),
-          materials.checkpoint(),
-          MATERIAL_PROFILE,
-          MATERIAL_MODULE_VERSION,
-          json);
-      RepositoryRunStateV3.SavedState state = RepositoryRunStateV3.load(v3, json);
-      ArtifactId registrationId = ArtifactId.parse("source-registration:" + "1".repeat(64));
-      ArtifactReference registration = reference(registrationId);
-      RegisteredSourceCapture capture =
-          new RegisteredSourceCapture(
-              registration,
-              "https://example.test/repository.git",
-              "2".repeat(40),
-              "snapshot:" + "3".repeat(64),
-              reference(ArtifactId.parse("capture-receipt:" + "4".repeat(64))),
-              reference(ArtifactId.parse("snapshot-manifest:" + "5".repeat(64))),
-              java.util.List.of());
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = fixture();
+    AnalysisStepPublicationReference flows = historicalFlowPublication(fixture.checkpoint());
+    BusinessMaterialBuildResult materials = buildMaterials(fixture);
+    Path v2 = temporaryDirectory.resolve("source-identity-v2.json");
+    Path v3 = temporaryDirectory.resolve("source-identity-v3.json");
+    CanonicalJsonCodec json = new CanonicalJsonCodec();
+    writeV2(json, v2, flows);
+    exportV2ToV3(
+        v2,
+        v3,
+        BASE_CONFIGURATION_SHA256,
+        historicalFlowStore(flows),
+        fixture.artifacts(),
+        materials.checkpoint(),
+        MATERIAL_PROFILE,
+        MATERIAL_MODULE_VERSION,
+        json);
+    RepositoryRunStateV3.SavedState state = RepositoryRunStateV3.load(v3, json);
+    ArtifactId registrationId = ArtifactId.parse("source-registration:" + "1".repeat(64));
+    ArtifactReference registration = reference(registrationId);
+    RegisteredSourceCapture capture =
+        new RegisteredSourceCapture(
+            registration,
+            "https://example.test/repository.git",
+            "2".repeat(40),
+            "snapshot:" + "3".repeat(64),
+            reference(ArtifactId.parse("capture-receipt:" + "4".repeat(64))),
+            reference(ArtifactId.parse("snapshot-manifest:" + "5".repeat(64))),
+            java.util.List.of());
 
-      RepositoryRunStateV3.verifyConfiguredSource(
-          state, registrationId, capture, "https://example.test/repository.git", "2".repeat(40));
-      assertThatThrownBy(
-              () ->
-                  RepositoryRunStateV3.verifyConfiguredSource(
-                      state,
-                      registrationId,
-                      capture,
-                      "https://example.test/other.git",
-                      "2".repeat(40)))
-          .hasMessageContaining("MATERIALS_STATE_SOURCE_MISMATCH");
-      assertThatThrownBy(
-              () ->
-                  RepositoryRunStateV3.verifyConfiguredSource(
-                      state,
-                      registrationId,
-                      capture,
-                      "https://example.test/repository.git",
-                      "6".repeat(40)))
-          .hasMessageContaining("MATERIALS_STATE_SOURCE_MISMATCH");
-    }
+    RepositoryRunStateV3.verifyConfiguredSource(
+        state, registrationId, capture, "https://example.test/repository.git", "2".repeat(40));
+    assertThatThrownBy(
+            () ->
+                RepositoryRunStateV3.verifyConfiguredSource(
+                    state,
+                    registrationId,
+                    capture,
+                    "https://example.test/other.git",
+                    "2".repeat(40)))
+        .hasMessageContaining("MATERIALS_STATE_SOURCE_MISMATCH");
+    assertThatThrownBy(
+            () ->
+                RepositoryRunStateV3.verifyConfiguredSource(
+                    state,
+                    registrationId,
+                    capture,
+                    "https://example.test/repository.git",
+                    "6".repeat(40)))
+        .hasMessageContaining("MATERIALS_STATE_SOURCE_MISMATCH");
   }
 
   private static ArtifactReference reference(ArtifactId id) {
     return new ArtifactReference(id, new Sha256Digest("a".repeat(64)));
   }
 
-  private ProgramGraphsPublicFixture fixture(String name) {
-    return ProgramGraphsPublicFixture.createWithGuardedApprove(temporaryDirectory.resolve(name));
+  private LegacyM10CheckpointFixture.HistoricalCheckpoint fixture() {
+    return LegacyM10CheckpointFixture.open();
   }
 
   private static BusinessMaterialBuildResult buildMaterials(
-      ProgramGraphsPublicFixture fixture, BusinessFlowsReference flows) {
-    return new BusinessMaterialBuilder(
-            fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
-        .build(
-            new org.sourceanalysis.app.analysis.interpretation.material
-                .BuildBusinessMaterialsRequest(flows, MATERIAL_PROFILE));
+      LegacyM10CheckpointFixture.HistoricalCheckpoint fixture) {
+    return new BusinessMaterialCheckpointReader(fixture.artifacts()).reopen(fixture.checkpoint());
+  }
+
+  private static AnalysisStepPublicationReference historicalFlowPublication(
+      ModulePublicationReference materialCheckpoint) {
+    AnalysisStepModuleAddress materialAddress =
+        (AnalysisStepModuleAddress) materialCheckpoint.address();
+    return new AnalysisStepPublicationReference(
+        new AnalysisStepPublicationAddress(materialAddress.runId(), AnalysisStepKey.BUSINESS_FLOWS),
+        AnalysisStepArtifactRoot.parse("analysis-step-root:" + "1".repeat(64)),
+        AnalysisStepReceiptId.parse("analysis-step-receipt:" + "2".repeat(64)),
+        new Sha256Digest("3".repeat(64)));
+  }
+
+  private static CanonicalAnalysisStepArtifactStore historicalFlowStore(
+      AnalysisStepPublicationReference flowPublication) {
+    AnalysisStepReceipt receipt =
+        new AnalysisStepReceipt(
+            "analysis-step-receipt-v1",
+            flowPublication.analysisStepReceiptId(),
+            flowPublication.address(),
+            null,
+            java.util.List.of(),
+            null,
+            ModuleCompletionStatus.SUCCEEDED,
+            java.util.List.of(),
+            null,
+            flowPublication.analysisStepArtifactRoot(),
+            java.util.List.of());
+    ReopenedAnalysisStepPublication reopened =
+        new ReopenedAnalysisStepPublication(flowPublication, receipt, java.util.List.of(), null);
+    return new CanonicalAnalysisStepArtifactStore() {
+      @Override
+      public InstalledAnalysisStepPublication install(AnalysisStepInstallRequest request) {
+        throw new AssertionError("historical v2 state must not install a flow publication");
+      }
+
+      @Override
+      public ReopenedAnalysisStepPublication reopen(AnalysisStepPublicationReference reference) {
+        assertThat(reference).isEqualTo(flowPublication);
+        return reopened;
+      }
+    };
   }
 
   private static void writeV2(

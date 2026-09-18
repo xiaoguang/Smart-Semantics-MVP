@@ -10,20 +10,18 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
-import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
-import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
-import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
-import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialCheckpointReader;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
+import org.sourceanalysis.app.analysis.interpretation.material.LegacyM10CheckpointFixture;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
@@ -32,76 +30,78 @@ import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 /** Guards the durable local-activity checkpoint promised before process reconstruction begins. */
 class ActivityExplanationCheckpointTest {
 
-  @TempDir Path temporaryDirectory;
-
   @Test
   void freshReopensReviewedActivitiesAndCoverageAfterTheTwoModelCalls() throws Exception {
-    try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.createWithGuardedApprove(
-            temporaryDirectory.resolve("activity-checkpoint"))) {
-      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
-      BusinessMaterialBuildResult materials =
-          new BusinessMaterialBuilder(
-                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
-              .build(
-                  new BuildBusinessMaterialsRequest(
-                      flows, new BusinessMaterialProfile(8, 24, 12_000, 1)));
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture =
+        LegacyM10CheckpointFixture.openWritable();
+    BusinessMaterialBuildResult allMaterials =
+        new BusinessMaterialCheckpointReader(fixture.artifacts()).reopen(fixture.checkpoint());
+    BusinessMaterial material = allMaterials.materialSet().materials().get(1);
+    BusinessMaterialEntryCoverage coverage =
+        allMaterials.materialSet().entryCoverage().stream()
+            .filter(value -> material.materialId().equals(value.materialId()))
+            .findFirst()
+            .orElseThrow();
+    BusinessMaterialBuildResult materials =
+        new BusinessMaterialBuildResult(
+            new BusinessMaterialSet(
+                allMaterials.materialSet().materialSetId(), List.of(material), List.of(coverage)),
+            allMaterials.checkpoint());
 
-      Constructor<ActivityExplainer> constructor;
-      try {
-        constructor =
-            ActivityExplainer.class.getConstructor(
-                StructuredModelProvider.class, CanonicalModuleArtifactStore.class);
-      } catch (NoSuchMethodException missing) {
-        fail("ACTIVITY_EXPLANATION_CHECKPOINT_NOT_IMPLEMENTED", missing);
-        throw new AssertionError("unreachable");
-      }
-      ActivityExplainer explainer =
-          constructor.newInstance(new PacketEchoProvider(), fixture.moduleArtifacts());
-      ActivityExplanationResult result =
-          explainer.explain(
-              new ExplainActivitiesRequest(
-                  materials, new ActivityExplanationProfile(64_000, 16_000, 2, 32, 2_000)));
-
-      Method checkpoint;
-      try {
-        checkpoint = result.getClass().getMethod("checkpoint");
-      } catch (NoSuchMethodException missing) {
-        fail("ACTIVITY_EXPLANATION_CHECKPOINT_NOT_EXPOSED", missing);
-        throw new AssertionError("unreachable");
-      }
-      ModulePublicationReference reference;
-      try {
-        reference = (ModulePublicationReference) checkpoint.invoke(result);
-      } catch (InvocationTargetException failure) {
-        throw new AssertionError(failure.getCause());
-      }
-      assertThat(reference).isNotNull();
-
-      ReopenedModulePublication reopened = fixture.moduleArtifacts().reopen(reference);
-      assertThat(reopened.payloads())
-          .extracting(value -> value.descriptor().fileName())
-          .containsExactly("activity-coverage.json", "activity-explanations.jsonl");
-      assertThat(reopened.payloads())
-          .extracting(value -> value.descriptor().artifactType())
-          .containsExactly(
-              "FLOW_INTERPRETATION_ACTIVITY_COVERAGE", "FLOW_INTERPRETATION_ACTIVITY_EXPLANATIONS");
-      assertThat(
-              new String(
-                  reopened.payloads().get(0).canonicalUtf8().copyToByteArray(),
-                  StandardCharsets.UTF_8))
-          .contains("ANALYZED", "entryId");
-      assertThat(
-              new String(
-                  reopened.payloads().get(1).canonicalUtf8().copyToByteArray(),
-                  StandardCharsets.UTF_8))
-          .contains("REVIEWED_ACTIVITY", "businessPurpose", "把入口提交的数据整理为业务对象并保存。");
-
-      ActivityExplanationResult restored = reopenActivities(fixture.moduleArtifacts(), reference);
-      assertThat(restored.reviewedActivities()).isEqualTo(result.reviewedActivities());
-      assertThat(restored.coverage()).isEqualTo(result.coverage());
-      assertThat(restored.checkpoint()).isEqualTo(reference);
+    Constructor<ActivityExplainer> constructor;
+    try {
+      constructor =
+          ActivityExplainer.class.getConstructor(
+              StructuredModelProvider.class, CanonicalModuleArtifactStore.class);
+    } catch (NoSuchMethodException missing) {
+      fail("ACTIVITY_EXPLANATION_CHECKPOINT_NOT_IMPLEMENTED", missing);
+      throw new AssertionError("unreachable");
     }
+    ActivityExplainer explainer =
+        constructor.newInstance(new PacketEchoProvider(), fixture.artifacts());
+    ActivityExplanationResult result =
+        explainer.explain(
+            new ExplainActivitiesRequest(
+                materials, new ActivityExplanationProfile(64_000, 16_000, 2, 32, 2_000)));
+
+    Method checkpoint;
+    try {
+      checkpoint = result.getClass().getMethod("checkpoint");
+    } catch (NoSuchMethodException missing) {
+      fail("ACTIVITY_EXPLANATION_CHECKPOINT_NOT_EXPOSED", missing);
+      throw new AssertionError("unreachable");
+    }
+    ModulePublicationReference reference;
+    try {
+      reference = (ModulePublicationReference) checkpoint.invoke(result);
+    } catch (InvocationTargetException failure) {
+      throw new AssertionError(failure.getCause());
+    }
+    assertThat(reference).isNotNull();
+
+    ReopenedModulePublication reopened = fixture.artifacts().reopen(reference);
+    assertThat(reopened.payloads())
+        .extracting(value -> value.descriptor().fileName())
+        .containsExactly("activity-coverage.json", "activity-explanations.jsonl");
+    assertThat(reopened.payloads())
+        .extracting(value -> value.descriptor().artifactType())
+        .containsExactly(
+            "FLOW_INTERPRETATION_ACTIVITY_COVERAGE", "FLOW_INTERPRETATION_ACTIVITY_EXPLANATIONS");
+    assertThat(
+            new String(
+                reopened.payloads().get(0).canonicalUtf8().copyToByteArray(),
+                StandardCharsets.UTF_8))
+        .contains("ANALYZED", "entryId");
+    assertThat(
+            new String(
+                reopened.payloads().get(1).canonicalUtf8().copyToByteArray(),
+                StandardCharsets.UTF_8))
+        .contains("REVIEWED_ACTIVITY", "businessPurpose", "把入口提交的数据整理为业务对象并保存。");
+
+    ActivityExplanationResult restored = reopenActivities(fixture.artifacts(), reference);
+    assertThat(restored.reviewedActivities()).isEqualTo(result.reviewedActivities());
+    assertThat(restored.coverage()).isEqualTo(result.coverage());
+    assertThat(restored.checkpoint()).isEqualTo(reference);
   }
 
   private static ActivityExplanationResult reopenActivities(

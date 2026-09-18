@@ -1,13 +1,16 @@
 package org.sourceanalysis.app.analysis.discovery;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.code.SourceRange;
@@ -157,7 +160,7 @@ class SpringHttpEntryDiscovererTest {
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
-            .discoverEntries(profile(controller), frozenSource);
+            .discoverEntries(profile(controller), frozenSource, declarationCatalog(controller));
 
     assertThat(discovery.entries())
         .singleElement()
@@ -214,7 +217,7 @@ class SpringHttpEntryDiscovererTest {
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
-            .discoverEntries(profile(controller), frozenSource);
+            .discoverEntries(profile(controller), frozenSource, declarationCatalog(controller));
 
     assertThat(discovery.entries()).isEmpty();
     assertThat(discovery.sites())
@@ -252,7 +255,7 @@ class SpringHttpEntryDiscovererTest {
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
-            .discoverEntries(profile(controller), frozenSource);
+            .discoverEntries(profile(controller), frozenSource, declarationCatalog(controller));
 
     assertThat(discovery.entries()).isEmpty();
     assertThat(discovery.sites())
@@ -299,7 +302,7 @@ class SpringHttpEntryDiscovererTest {
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
-            .discoverEntries(profile(controller), frozenSource);
+            .discoverEntries(profile(controller), frozenSource, declarationCatalog(controller));
 
     assertThat(discovery.entries())
         .singleElement()
@@ -336,7 +339,7 @@ class SpringHttpEntryDiscovererTest {
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
-            .discoverEntries(profile(controller), frozenSource);
+            .discoverEntries(profile(controller), frozenSource, declarationCatalog(controller));
 
     assertThat(discovery.entries())
         .singleElement()
@@ -373,7 +376,7 @@ class SpringHttpEntryDiscovererTest {
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
-            .discoverEntries(profile(controller), frozenSource);
+            .discoverEntries(profile(controller), frozenSource, declarationCatalog(controller));
 
     assertThat(discovery.entries()).isEmpty();
     assertThat(discovery.sites()).isEmpty();
@@ -401,7 +404,7 @@ class SpringHttpEntryDiscovererTest {
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
-            .discoverEntries(profile(controller), frozenSource);
+            .discoverEntries(profile(controller), frozenSource, declarationCatalog(controller));
 
     assertThat(discovery.entries()).isEmpty();
     assertThat(discovery.sites())
@@ -439,7 +442,7 @@ class SpringHttpEntryDiscovererTest {
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
-            .discoverEntries(profile(controller), frozenSource);
+            .discoverEntries(profile(controller), frozenSource, declarationCatalog(controller));
 
     assertThat(discovery.entries())
         .singleElement()
@@ -486,7 +489,7 @@ class SpringHttpEntryDiscovererTest {
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
-            .discoverEntries(profile(controller), frozenSource);
+            .discoverEntries(profile(controller), frozenSource, declarationCatalog(controller));
 
     assertThat(discovery.entries())
         .singleElement()
@@ -532,7 +535,7 @@ class SpringHttpEntryDiscovererTest {
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
-            .discoverEntries(profile(controller), frozenSource);
+            .discoverEntries(profile(controller), frozenSource, declarationCatalog(controller));
 
     assertThat(discovery.entries())
         .singleElement()
@@ -574,7 +577,7 @@ class SpringHttpEntryDiscovererTest {
 
     HttpEntryDiscovery discovery =
         new SpringHttpEntryDiscoverer(sourceHandle)
-            .discoverEntries(profile(controller), frozenSource);
+            .discoverEntries(profile(controller), frozenSource, declarationCatalog(controller));
 
     assertThat(discovery.entries()).isEmpty();
     assertThat(discovery.sites())
@@ -587,43 +590,6 @@ class SpringHttpEntryDiscovererTest {
               assertThat(site.primaryExcerpt().rawUtf8().copyToByteArray())
                   .isEqualTo("@GetMapping(\"/batchSetStatus\")".getBytes(StandardCharsets.UTF_8));
             });
-  }
-
-  @Test
-  void rejectsOverlappingFileShardsBeforeTheyCanDoubleCountOneControllerSite() {
-    VerifiedSourceInventoryReference frozenSource = frozenSource();
-    VerifiedSourceTextDocument controller =
-        text(
-            "src/main/java/com/example/DepotHeadController.java",
-            """
-            package com.example;
-
-            import org.springframework.web.bind.annotation.PostMapping;
-            import org.springframework.web.bind.annotation.RequestMapping;
-
-            @RequestMapping("/depotHead")
-            public class DepotHeadController {
-              @PostMapping("/batchSetStatus")
-              public String batchSetStatus(String status, String ids) {
-                return "ok";
-              }
-            }
-            """);
-    VerifiedSourceTextReader sourceHandle = reference -> sourceTextSet(controller);
-    List<JavaSourceShard> overlappingShards =
-        List.of(
-            new JavaSourceShard(
-                ArtifactId.parse("entry-shard:" + "e".repeat(64)), List.of(controller.fileId())),
-            new JavaSourceShard(
-                ArtifactId.parse("entry-shard:" + "f".repeat(64)), List.of(controller.fileId())));
-
-    assertThatThrownBy(
-            () ->
-                new SpringHttpEntryDiscoverer(sourceHandle)
-                    .discoverEntries(profile(controller), frozenSource, overlappingShards))
-        .isInstanceOfSatisfying(
-            ApplicationDiscoveryException.class,
-            failure -> assertThat(failure.code()).isEqualTo("HTTP_ENTRY_SHARD_INVALID"));
   }
 
   private static ApplicationProfile profile(VerifiedSourceTextDocument document) {
@@ -658,6 +624,155 @@ class SpringHttpEntryDiscovererTest {
         reference("verified-source-inventory-source-inventory", '8'),
         reference("verified-snapshot", '9'),
         controls);
+  }
+
+  /** Explicit declaration-catalog fixture for the source snippets used by the tests. */
+  private static JavaDeclarationCatalog declarationCatalog(VerifiedSourceTextDocument document) {
+    String source = new String(document.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8);
+    Matcher typeMatcher =
+        Pattern.compile("(?m)(?:class|interface)\\s+([A-Za-z_$][\\w$]*)").matcher(source);
+    if (!typeMatcher.find()) throw new AssertionError("fixture type declaration missing");
+    String typeName = "com.example." + typeMatcher.group(1);
+    List<JavaDeclarationCatalog.AnnotationView> annotations = new ArrayList<>();
+    Matcher annotationMatcher =
+        Pattern.compile("@([A-Za-z_$][\\w$]*)(?:\\(([^)]*)\\))?").matcher(source);
+    while (annotationMatcher.find()) {
+      annotations.add(
+          springAnnotation(
+              "annotation:" + annotations.size(),
+              annotationMatcher.group(1),
+              annotationMatcher.group(2),
+              source,
+              annotationMatcher.start(),
+              document.path()));
+    }
+    Matcher methodMatcher =
+        Pattern.compile(
+                "(?m)(?:public\\s+|private\\s+|protected\\s+)?([A-Za-z][\\w<>\\[\\].]*)\\s+([A-Za-z_$][\\w$]*)\\s*\\(([^)]*)\\)\\s*\\{")
+            .matcher(source);
+    List<JavaDeclarationCatalog.MethodDeclarationView> methods = new ArrayList<>();
+    int previousMethodEnd = typeMatcher.end();
+    while (methodMatcher.find()) {
+      List<JavaDeclarationCatalog.ParameterView> parameters = new ArrayList<>();
+      String parameterText = methodMatcher.group(3).trim();
+      if (!parameterText.isEmpty()) {
+        String[] values = parameterText.split(",");
+        for (int ordinal = 0; ordinal < values.length; ordinal++) {
+          String[] tokens = values[ordinal].trim().split("\\s+");
+          parameters.add(
+              new JavaDeclarationCatalog.ParameterView(
+                  ordinal,
+                  tokens[tokens.length - 1],
+                  tokens.length > 1 ? tokens[tokens.length - 2] : "Object",
+                  false,
+                  List.of()));
+        }
+      }
+      List<String> methodAnnotationKeys =
+          annotationKeysBetween(annotations, previousMethodEnd, methodMatcher.start());
+      int methodEnd = source.indexOf('}', methodMatcher.end());
+      if (methodEnd < 0) methodEnd = methodMatcher.end();
+      String methodKey = "method:" + methodMatcher.group(2) + ":" + methods.size();
+      methods.add(
+          new JavaDeclarationCatalog.MethodDeclarationView(
+              methodKey,
+              typeName,
+              methodMatcher.group(2),
+              "METHOD",
+              List.of("public"),
+              parameters,
+              methodMatcher.group(1),
+              methodAnnotationKeys,
+              document.path(),
+              range(source, methodMatcher.start(), methodEnd + 1),
+              true));
+      previousMethodEnd = methodEnd + 1;
+    }
+    List<String> typeAnnotationKeys =
+        annotationKeysBetween(annotations, typeMatcher.start() - 200, typeMatcher.start());
+    return new JavaDeclarationCatalog(
+        "snapshot:" + "6".repeat(64),
+        List.of(document.path()),
+        List.of(
+            new JavaDeclarationCatalog.TypeDeclaration(
+                document.path(),
+                range(source, typeMatcher.start(), source.length()),
+                typeName,
+                "CLASS",
+                typeAnnotationKeys,
+                List.of(),
+                methods.stream()
+                    .map(JavaDeclarationCatalog.MethodDeclarationView::methodKey)
+                    .toList(),
+                List.of())),
+        methods,
+        annotations,
+        List.of(),
+        Map.of());
+  }
+
+  private static List<String> annotationKeysBetween(
+      List<JavaDeclarationCatalog.AnnotationView> annotations, int start, int end) {
+    return annotations.stream()
+        .filter(value -> value.sourceRange().startOffsetUtf16() >= Math.max(0, start))
+        .filter(value -> value.sourceRange().startOffsetUtf16() < end)
+        .map(JavaDeclarationCatalog.AnnotationView::annotationKey)
+        .toList();
+  }
+
+  private static JavaDeclarationCatalog.AnnotationView springAnnotation(
+      String key,
+      String simpleName,
+      String members,
+      String source,
+      int annotationStart,
+      String sourcePath) {
+    String args = members == null ? "" : members;
+    Map<String, Object> values = new HashMap<>();
+    Matcher route = Pattern.compile("\\\"([^\\\"]*)\\\"").matcher(args);
+    if (route.find()) {
+      values.put(
+          "value",
+          Map.of(
+              "kind", "STRING", "source", "\"" + route.group(1) + "\"", "value", route.group(1)));
+    }
+    Matcher methods =
+        Pattern.compile("RequestMethod\\.(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS|TRACE)")
+            .matcher(args);
+    List<Object> symbols = new ArrayList<>();
+    while (methods.find()) {
+      symbols.add(Map.of("kind", "SYMBOL", "value", "RequestMethod." + methods.group(1)));
+    }
+    if (!symbols.isEmpty()) {
+      values.put(
+          "method",
+          symbols.size() == 1
+              ? symbols.get(0)
+              : Map.of("kind", "ARRAY", "elements", List.copyOf(symbols)));
+    }
+    int annotationEnd = source.indexOf(')', annotationStart);
+    annotationEnd =
+        annotationEnd < 0 ? annotationStart + simpleName.length() + 1 : annotationEnd + 1;
+    Matcher importedAnnotation =
+        Pattern.compile("(?m)import\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)\\s*;")
+            .matcher(source);
+    String qualifiedName = "org.springframework.web.bind.annotation." + simpleName;
+    while (importedAnnotation.find()) {
+      String importedName = importedAnnotation.group(1);
+      if (importedName.endsWith("." + simpleName)) {
+        qualifiedName = importedName;
+        break;
+      }
+    }
+    return new JavaDeclarationCatalog.AnnotationView(
+        key,
+        simpleName,
+        qualifiedName,
+        source.substring(annotationStart, Math.min(annotationEnd, source.length())),
+        range(source, annotationStart, annotationEnd),
+        range(source, annotationStart + 1, annotationStart + 1 + simpleName.length()),
+        values,
+        sourcePath);
   }
 
   private static JavaDeclarationCatalog.AnnotationView annotation(

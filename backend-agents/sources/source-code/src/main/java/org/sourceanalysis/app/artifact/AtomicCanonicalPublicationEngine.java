@@ -145,6 +145,9 @@ final class AtomicCanonicalPublicationEngine {
           || request.payloads().size() > limits.maxPayloadFiles()) {
         throw invalidInstall();
       }
+      if (isRetiredProducerAddress(request.address())) {
+        throw invalidInstall();
+      }
       requireNonNegativeLimits();
       if (!artifactPolicies.reference().equals(request.controls().artifactPolicyRegistryRef())) {
         throw policyMismatch();
@@ -205,6 +208,20 @@ final class AtomicCanonicalPublicationEngine {
     } catch (RuntimeException failure) {
       throw invalidInstall();
     }
+  }
+
+  /** Old payload shapes remain reopenable, but their producer addresses cannot install new data. */
+  private static boolean isRetiredProducerAddress(ModulePublicationAddress address) {
+    if (!(address instanceof AnalysisStepModuleAddress module)) {
+      return false;
+    }
+    return switch (module.analysisStepKey()) {
+      case PROGRAM_GRAPHS -> module.moduleNumber() >= 1 && module.moduleNumber() <= 6;
+      case PROVEN_CODE_FACTS -> module.moduleNumber() >= 1 && module.moduleNumber() <= 3;
+      case BUSINESS_FLOWS -> module.moduleNumber() >= 1 && module.moduleNumber() <= 3;
+      case FLOW_INTERPRETATION -> module.moduleNumber() == 10;
+      default -> false;
+    };
   }
 
   private ArtifactDescriptor validatePayload(
@@ -1115,6 +1132,10 @@ final class AtomicCanonicalPublicationEngine {
                     "publish".equals(analysisStepAddress.moduleKey())
                         ? factPublicationFiles(descriptors)
                         : null;
+                case 4 ->
+                    "persistence-analysis".equals(analysisStepAddress.moduleKey())
+                        ? List.of("persistence-material-index.jsonl")
+                        : null;
                 default -> null;
               };
           case BUSINESS_FLOWS ->
@@ -1135,6 +1156,10 @@ final class AtomicCanonicalPublicationEngine {
                             "flow-coverage.json",
                             "flow-gaps.jsonl",
                             "flow-slices.json")
+                        : null;
+                case 4 ->
+                    "code-reading-materials".equals(analysisStepAddress.moduleKey())
+                        ? List.of("code-reading-materials.jsonl")
                         : null;
                 default -> null;
               };
@@ -1691,6 +1716,15 @@ final class AtomicCanonicalPublicationEngine {
           "flow-compilation.json",
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
+    if ("CODE_READING_MATERIAL_SET".equals(payload.artifactType())
+        && "code-reading-material-set-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.BUSINESS_FLOWS,
+          4,
+          "code-reading-materials",
+          "code-reading-materials.jsonl",
+          CanonicalEnvelopeKind.CANONICAL_JSONL);
+    }
     if ("BUSINESS_FLOWS_CAPSULE_PROJECTION".equals(payload.artifactType())
         && "business-flows-capsule-projection-v11".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
@@ -1816,6 +1850,15 @@ final class AtomicCanonicalPublicationEngine {
           "candidates",
           "fact-candidate-set.json",
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    }
+    if ("PERSISTENCE_MATERIAL_INDEX".equals(payload.artifactType())
+        && "persistence-material-index-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.PROVEN_CODE_FACTS,
+          4,
+          "persistence-analysis",
+          "persistence-material-index.jsonl",
+          CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     if ("PROVEN_CODE_FACTS_PROOF_DECISION_SET".equals(payload.artifactType())
         && "proven-code-facts-proof-decision-set-v3".equals(payload.schemaVersion())) {

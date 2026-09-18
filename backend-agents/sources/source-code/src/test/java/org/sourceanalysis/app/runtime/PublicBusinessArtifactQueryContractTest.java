@@ -15,8 +15,12 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.RepositoryAnalysisAgent;
+import org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationAddress;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
+import org.sourceanalysis.app.artifact.AnalysisStepReceiptId;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.ModuleArtifactRoot;
@@ -136,6 +140,47 @@ class PublicBusinessArtifactQueryContractTest {
     }
   }
 
+  @Test
+  void finishedRunReadsStepFiveMaterialsThroughDedicatedKeyWithoutUsingLegacyM10()
+      throws Exception {
+    try (RunStoreHandle store =
+        openStore(temporaryDirectory.resolve("reading-material-artifact-store"))) {
+      LocalRepositoryAnalysisAgent queuedAgent = new LocalRepositoryAnalysisAgent(store);
+      AnalysisRunReference queued = queuedAgent.start(request());
+      AnalysisStepPublicationReference materialPublication =
+          readingMaterialPublication(queued.runId(), 'e');
+      AnalysisRunOutput output =
+          AnalysisRunOutput.readingMaterials(queued.runId(), materialPublication);
+      finish(store, queued, output);
+
+      BusinessOutputArtifactKey key = requiredBusinessKey("CODE_READING_MATERIALS");
+      ArtifactView expected =
+          new ArtifactView(
+              queued.runId(),
+              key,
+              reference("code-reading-materials", 'f'),
+              "code-reading-material-set-v1",
+              "application/x-ndjson",
+              "{\"schemaVersion\":\"code-reading-material-set-v1\"}\n");
+      CompletedBusinessArtifactReader reader =
+          (runId, savedOutput, savedKey, maxBytes) -> {
+            assertThat(runId).isEqualTo(queued.runId());
+            assertThat(savedOutput).isEqualTo(output);
+            assertThat(savedKey).isSameAs(key);
+            assertThat(maxBytes).isEqualTo(4096);
+            return expected;
+          };
+      RepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store, null, null, reader);
+
+      assertThat(output.businessMaterialCheckpoint()).isNull();
+      assertThat(output.activityCheckpoint()).isNull();
+      assertThat(output.knowledgeCheckpoint()).isNull();
+      assertThat(output.reportCheckpoint()).isNull();
+      ArtifactView actual = agent.artifact(new ArtifactQuery(queued.runId().value(), key, 4096));
+      assertThat(actual).isEqualTo(expected);
+    }
+  }
+
   private static void finish(
       RunStoreHandle store, AnalysisRunReference queued, AnalysisRunOutput output) {
     RunStoreBootstrap.transitionAnalysisRun(
@@ -154,6 +199,15 @@ class PublicBusinessArtifactQueryContractTest {
         modulePublication(run, AnalysisStepKey.FLOW_INTERPRETATION, 11, 'b'),
         modulePublication(run, AnalysisStepKey.REPOSITORY_KNOWLEDGE, 1, 'c'),
         modulePublication(run, AnalysisStepKey.NINE_SECTION_DOCUMENT, 1, 'd'));
+  }
+
+  private static AnalysisStepPublicationReference readingMaterialPublication(
+      org.sourceanalysis.app.artifact.AnalysisRunId runId, char fill) {
+    return new AnalysisStepPublicationReference(
+        new AnalysisStepPublicationAddress(runId, AnalysisStepKey.BUSINESS_FLOWS),
+        AnalysisStepArtifactRoot.parse("analysis-step-root:" + String.valueOf(fill).repeat(64)),
+        AnalysisStepReceiptId.parse("analysis-step-receipt:" + String.valueOf(fill).repeat(64)),
+        new Sha256Digest(String.valueOf(fill).repeat(64)));
   }
 
   private static ModulePublicationReference modulePublication(
@@ -202,6 +256,15 @@ class PublicBusinessArtifactQueryContractTest {
   private static ArtifactReference reference(String prefix, char fill) {
     return new ArtifactReference(
         artifactId(prefix, fill), new Sha256Digest(String.valueOf(fill).repeat(64)));
+  }
+
+  private static BusinessOutputArtifactKey requiredBusinessKey(String name) {
+    try {
+      return Enum.valueOf(BusinessOutputArtifactKey.class, name);
+    } catch (IllegalArgumentException missing) {
+      fail("public business-artifact policy is missing " + name);
+      throw new AssertionError("unreachable", missing);
+    }
   }
 
   private static Class<?> requiredClass(String name) {
