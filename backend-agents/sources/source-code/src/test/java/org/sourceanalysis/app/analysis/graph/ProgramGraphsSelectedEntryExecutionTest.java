@@ -18,12 +18,9 @@ import org.sourceanalysis.app.analysis.code.JavaCodeSession;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndex;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndexReader;
-import org.sourceanalysis.app.artifact.ArtifactId;
-import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
-import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 
 /** RED tests for selecting a bounded subset of discovered entries at the public graph seam. */
@@ -46,9 +43,6 @@ class ProgramGraphsSelectedEntryExecutionTest {
                   fixture.sourceInventory(),
                   fixture.applicationDiscovery(),
                   session,
-                  new ArtifactReference(
-                      ArtifactId.parse("graph-profile:" + "0".repeat(64)),
-                      Sha256Digest.parse("0".repeat(64))),
                   fixture.artifactControls(),
                   List.of(selectedEntryId));
 
@@ -92,9 +86,6 @@ class ProgramGraphsSelectedEntryExecutionTest {
                           fixture.sourceInventory(),
                           fixture.applicationDiscovery(),
                           session,
-                          new ArtifactReference(
-                              ArtifactId.parse("graph-profile:" + "0".repeat(64)),
-                              Sha256Digest.parse("0".repeat(64))),
                           fixture.artifactControls(),
                           List.of(unknownEntryId)))
           .isInstanceOf(IllegalArgumentException.class);

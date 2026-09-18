@@ -25,8 +25,7 @@ final class ControlFlowGraphWire {
     value.put("graphId", draft.graphId().value());
     value.put("snapshotId", draft.snapshotId());
     value.put("applicationProfileId", draft.applicationProfileId().value());
-    value.set(
-        "graphProfileRef", ControlFlowGraphModulePublisher.reference(draft.graphProfileRef()));
+    value.set("graphProfileRef", HistoricalProgramGraphPayloads.reference(draft.graphProfileRef()));
     ids(value.putArray("entryIds"), draft.entryIds());
     ArrayNode nodes = value.putArray("nodes");
     draft.nodes().forEach(node -> nodes.add(node(node)));

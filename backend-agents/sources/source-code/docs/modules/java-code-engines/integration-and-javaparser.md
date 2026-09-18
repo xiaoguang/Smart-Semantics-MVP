@@ -1,8 +1,10 @@
 # 接入现有流水线与JavaParser第二阶段适配
 
-本页是迁移前接入/保留JavaParser的历史合同。2026-09-17用户已选择退出JavaParser，新的生产修改面与历史reader保留规则由[补充详细设计§7](../../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md#7-运行版本与历史迁移)替代；不再执行本页JavaParser维护任务，也不以其旧接线阻挡JDT材料。新方案尚未实施。
+本页是迁移前接入/保留JavaParser的历史合同。2026-09-18后JavaParser生产Adapter、严格图/Fact/Flow/Capsule与M10 producer均已从新运行路线退役；新的生产修改面与历史reader保留规则由[补充详细设计§7](../../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md#7-运行版本与历史迁移)替代。实施计划0--6/A--B及469项clean CI已完成，C的固定仓库验收已完成，325包/326条覆盖且1个明确导航失败；仅历史receipt/config可按原义读取，本页不定义现行实现或测试任务。
 
 > [总设计](README.md)。本页固定改哪里、保留什么、怎么证明没丢内容。不是再次重写八步。
+
+> **历史章节。** 以下接线、路径和验收名称描述 2026-09-18 前的双引擎/严格图/Fact/Flow/M10 生产路线；现行启动、保存和阅读材料合同只以[补充详细设计](../../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md)为准。
 
 ## 1. 第一阶段接线：先使JDT独立成立
 

@@ -19,6 +19,7 @@ import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialS
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.knowledge.ProcessDiscoveryProfile;
 import org.sourceanalysis.app.analysis.knowledge.ProcessDiscoveryRequest;
+import org.sourceanalysis.app.analysis.persistence.PersistenceConfiguration;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
@@ -163,9 +164,42 @@ class CrossObjectProcessExecutionConfigurationTest {
 
   private RepositoryRunConfiguration configuration(ModelJobsConfiguration modelJobs) {
     return new RepositoryRunConfiguration(
-        JSON, null, modelJobs, null, null, null, null, null, null, null, null, null, null, null,
-        null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-        null, null, null, null, null, 1);
+        JSON,
+        null,
+        modelJobs,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        PersistenceConfiguration.disabled(),
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        1);
   }
 
   private ModelJobsConfiguration modelJobs() throws IOException {

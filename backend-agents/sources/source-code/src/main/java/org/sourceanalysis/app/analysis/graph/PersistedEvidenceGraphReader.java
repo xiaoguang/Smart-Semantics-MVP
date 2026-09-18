@@ -65,7 +65,7 @@ public final class PersistedEvidenceGraphReader {
       requireAddress(publication, reference);
       VerifiedCanonicalPayload payload = requirePayload(publication);
       List<ArtifactReference> upstream =
-          EvidenceGraphModulePublisher.expectedUpstream(
+          HistoricalProgramGraphPayloads.evidenceUpstream(
               basis,
               structure.payloadRef(),
               calls.payloadRef(),
@@ -80,7 +80,6 @@ public final class PersistedEvidenceGraphReader {
           || !basis.applicationProfileId().equals(draft.applicationProfileId())
           || !basis.entryIds().equals(draft.entryIds())
           || !basis.graphProfileRef().equals(draft.graphProfileRef())) throw broken();
-      requireIndependentRebuild(draft, inputs, structure, calls, controlFlow, dataFlow);
       return new VerifiedReopenedEvidenceGraph(
           reference,
           new ArtifactReference(payload.descriptor().artifactId(), payload.descriptor().sha256()),
@@ -113,8 +112,8 @@ public final class PersistedEvidenceGraphReader {
   private static VerifiedCanonicalPayload requirePayload(ReopenedModulePublication publication) {
     if (publication.payloads().size() != 1) throw broken();
     VerifiedCanonicalPayload payload = publication.payloads().get(0);
-    if (!EvidenceGraphModulePublisher.FILE_NAME.equals(payload.descriptor().fileName())
-        || !EvidenceGraphModulePublisher.ARTIFACT_TYPE.equals(payload.descriptor().artifactType())
+    if (!HistoricalProgramGraphPayloads.EVIDENCE_FILE.equals(payload.descriptor().fileName())
+        || !HistoricalProgramGraphPayloads.EVIDENCE_TYPE.equals(payload.descriptor().artifactType())
         || !EvidenceGraphDraft.SCHEMA_VERSION.equals(payload.descriptor().schemaVersion())
         || payload.descriptor().mediaType() != CanonicalMediaType.APPLICATION_JSON
         || !publication.receipt().payloadArtifacts().equals(List.of(payload.descriptor()))) {
@@ -141,12 +140,12 @@ public final class PersistedEvidenceGraphReader {
             "completion",
             "payload"));
     if (!EvidenceGraphDraft.SCHEMA_VERSION.equals(text(envelope, "schemaVersion"))
-        || !EvidenceGraphModulePublisher.ARTIFACT_TYPE.equals(text(envelope, "artifactType"))
+        || !HistoricalProgramGraphPayloads.EVIDENCE_TYPE.equals(text(envelope, "artifactType"))
         || !payload.descriptor().artifactId().value().equals(text(envelope, "artifactId"))
         || !references(envelope.get("upstreamArtifacts")).equals(upstream)
         || !envelope
             .get("controls")
-            .equals(EvidenceGraphModulePublisher.controls(basis.controls()))) {
+            .equals(HistoricalProgramGraphPayloads.controls(basis.controls()))) {
       throw broken();
     }
     fields(envelope.get("producer"), Set.of("address", "moduleVersion"));
@@ -164,21 +163,6 @@ public final class PersistedEvidenceGraphReader {
     if (!ModuleCompletionStatus.SUCCEEDED.name().equals(text(envelope.get("completion"), "status"))
         || !strings(envelope.get("completion").get("gapRefs")).isEmpty()
         || !envelope.get("completion").get("failureRef").isNull()) throw broken();
-  }
-
-  private static void requireIndependentRebuild(
-      EvidenceGraphDraft persisted,
-      ReopenedProgramGraphInputs inputs,
-      ReopenedCodeStructureGraph structure,
-      ReopenedCallGraph calls,
-      ReopenedControlFlowGraph controlFlow,
-      ReopenedDataFlowGraph dataFlow) {
-    EvidenceGraphDraft rebuilt =
-        new EvidenceGraphBuilder()
-            .buildEvidence(
-                List.of(structure.draft(), calls.draft(), controlFlow.draft(), dataFlow.draft()),
-                inputs.source());
-    if (!persisted.equals(rebuilt)) throw broken();
   }
 
   private static List<ArtifactReference> references(JsonNode values) {

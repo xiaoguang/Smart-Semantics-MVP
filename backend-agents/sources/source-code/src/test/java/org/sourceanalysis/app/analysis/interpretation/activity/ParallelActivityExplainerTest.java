@@ -23,20 +23,16 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
-import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
-import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
-import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialCheckpointReader;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
+import org.sourceanalysis.app.analysis.interpretation.material.LegacyM10CheckpointFixture;
 import org.sourceanalysis.app.analysis.interpretation.material.ModelActivityPacket;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 
@@ -47,91 +43,83 @@ class ParallelActivityExplainerTest {
   private static final int DEFAULT_JOB_CAP = 4;
   private static final Duration TEST_TIMEOUT = Duration.ofSeconds(5);
 
-  @TempDir java.nio.file.Path temporaryDirectory;
-
   @Test
   void runsMoreThanTwelveMaterialJobsInParallelAndAggregatesInStableMaterialOrder()
       throws Exception {
-    try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.createWithGuardedApprove(
-            temporaryDirectory.resolve("parallel-activity"))) {
-      BusinessMaterialBuildResult materials = expandedMaterials(fixture, MATERIAL_COUNT);
-      BlockingActivityProvider provider = new BlockingActivityProvider(MATERIAL_COUNT, null);
-      Future<ActivityExplanationResult> future = runAsync(materials, provider);
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = LegacyM10CheckpointFixture.open();
+    BusinessMaterialBuildResult materials = expandedMaterials(fixture, MATERIAL_COUNT);
+    BlockingActivityProvider provider = new BlockingActivityProvider(MATERIAL_COUNT, null);
+    Future<ActivityExplanationResult> future = runAsync(materials, provider);
 
-      boolean barrierReached = provider.draftStartedBarrier.await(2, TimeUnit.SECONDS);
-      int peakBeforeRelease = provider.peakActiveGenerations.get();
-      provider.releaseDrafts.countDown();
+    boolean barrierReached = provider.draftStartedBarrier.await(2, TimeUnit.SECONDS);
+    int peakBeforeRelease = provider.peakActiveGenerations.get();
+    provider.releaseDrafts.countDown();
 
-      ActivityExplanationResult completed = provider.awaitResult(future);
-      assertThat(barrierReached)
-          .as("the Activity phase must dispatch multiple jobs before waiting")
-          .isTrue();
-      assertThat(peakBeforeRelease)
-          .as("default global/provider cap must be enforced")
-          .isBetween(2, DEFAULT_JOB_CAP);
-      assertThat(completed.coverage()).hasSize(MATERIAL_COUNT);
-      assertThat(completed.reviewedActivities()).hasSize(MATERIAL_COUNT);
-      assertThat(provider.totalCalls()).isEqualTo(MATERIAL_COUNT * 2);
-      assertThat(provider.maximumCallsPerMaterial()).isEqualTo(2);
-      assertThat(completed.reviewedActivities().stream().map(ReviewedActivity::materialId).toList())
-          .isSortedAccordingTo(Comparator.naturalOrder());
-      assertThat(completed.coverage().stream().map(ActivityEntryCoverage::entryId).toList())
-          .isSortedAccordingTo(Comparator.naturalOrder());
-      assertThat(provider.crossedDraftReviewBoundary.get())
-          .as("each job must give its own actual DRAFT to its own REVIEW")
-          .isFalse();
-    }
+    ActivityExplanationResult completed = provider.awaitResult(future);
+    assertThat(barrierReached)
+        .as("the Activity phase must dispatch multiple jobs before waiting")
+        .isTrue();
+    assertThat(peakBeforeRelease)
+        .as("default global/provider cap must be enforced")
+        .isBetween(2, DEFAULT_JOB_CAP);
+    assertThat(completed.coverage()).hasSize(MATERIAL_COUNT);
+    assertThat(completed.reviewedActivities()).hasSize(MATERIAL_COUNT);
+    assertThat(provider.totalCalls()).isEqualTo(MATERIAL_COUNT * 2);
+    assertThat(provider.maximumCallsPerMaterial()).isEqualTo(2);
+    assertThat(completed.reviewedActivities().stream().map(ReviewedActivity::materialId).toList())
+        .isSortedAccordingTo(Comparator.naturalOrder());
+    assertThat(completed.coverage().stream().map(ActivityEntryCoverage::entryId).toList())
+        .isSortedAccordingTo(Comparator.naturalOrder());
+    assertThat(provider.crossedDraftReviewBoundary.get())
+        .as("each job must give its own actual DRAFT to its own REVIEW")
+        .isFalse();
   }
 
   @Test
   void fatalStopsNewDispatchButStartedValidPairsFinishWithoutRetry() throws Exception {
-    try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.createWithGuardedApprove(
-            temporaryDirectory.resolve("fatal-activity"))) {
-      BusinessMaterialBuildResult materials = expandedMaterials(fixture, MATERIAL_COUNT);
-      BlockingActivityProvider provider =
-          new BlockingActivityProvider(MATERIAL_COUNT, "activity-job-004");
-      ExecutorService caller = Executors.newSingleThreadExecutor();
-      try {
-        Future<ActivityExplanationResult> future =
-            caller.submit(
-                () ->
-                    new ActivityExplainer(provider)
-                        .explain(
-                            new ExplainActivitiesRequest(
-                                materials,
-                                new ActivityExplanationProfile(64_000, 16_000, 1, 32, 2_000),
-                                MATERIAL_COUNT)));
-        assertThat(provider.firstDraftStarted.await(2, TimeUnit.SECONDS)).isTrue();
-        boolean fourJobsStarted = provider.draftStartedBarrier.await(2, TimeUnit.SECONDS);
-        boolean fatalBeforeRelease = provider.fatalObserved.await(1, TimeUnit.SECONDS);
-        provider.releaseDrafts.countDown();
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = LegacyM10CheckpointFixture.open();
+    BusinessMaterialBuildResult materials = expandedMaterials(fixture, MATERIAL_COUNT);
+    BlockingActivityProvider provider =
+        new BlockingActivityProvider(MATERIAL_COUNT, "activity-job-004");
+    ExecutorService caller = Executors.newSingleThreadExecutor();
+    try {
+      Future<ActivityExplanationResult> future =
+          caller.submit(
+              () ->
+                  new ActivityExplainer(provider)
+                      .explain(
+                          new ExplainActivitiesRequest(
+                              materials,
+                              new ActivityExplanationProfile(64_000, 16_000, 1, 32, 2_000),
+                              MATERIAL_COUNT)));
+      assertThat(provider.firstDraftStarted.await(2, TimeUnit.SECONDS)).isTrue();
+      boolean fourJobsStarted = provider.draftStartedBarrier.await(2, TimeUnit.SECONDS);
+      boolean fatalBeforeRelease = provider.fatalObserved.await(1, TimeUnit.SECONDS);
+      provider.releaseDrafts.countDown();
 
-        assertThatThrownBy(() -> future.get(TEST_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS))
-            .isInstanceOf(ExecutionException.class)
-            .hasRootCauseMessage("ACTIVITY_PROVIDER_FAILED_AFTER_START");
-        assertThat(fourJobsStarted)
-            .as("the fatal job must be observed after the bounded initial dispatch")
-            .isTrue();
-        assertThat(fatalBeforeRelease)
-            .as("fatal observation must happen before releasing already-started jobs")
-            .isTrue();
-        assertThat(provider.reviewCalls("activity-job-001"))
-            .as("a valid DRAFT that was already started must finish its REVIEW")
-            .isEqualTo(1);
-        assertThat(provider.reviewCalls("activity-job-004"))
-            .as("the failed DRAFT must not be retried or reviewed")
-            .isZero();
-        assertThat(provider.startedMaterialKeys())
-            .as("fatal observation must stop new dispatch after the initial bounded set")
-            .hasSizeLessThanOrEqualTo(DEFAULT_JOB_CAP);
-        assertThat(provider.maximumCallsPerMaterial()).isLessThanOrEqualTo(2);
-        assertThat(provider.reviewCalls("activity-job-001")).isEqualTo(1);
-      } finally {
-        provider.releaseDrafts.countDown();
-        caller.shutdownNow();
-      }
+      assertThatThrownBy(() -> future.get(TEST_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS))
+          .isInstanceOf(ExecutionException.class)
+          .hasRootCauseMessage("ACTIVITY_PROVIDER_FAILED_AFTER_START");
+      assertThat(fourJobsStarted)
+          .as("the fatal job must be observed after the bounded initial dispatch")
+          .isTrue();
+      assertThat(fatalBeforeRelease)
+          .as("fatal observation must happen before releasing already-started jobs")
+          .isTrue();
+      assertThat(provider.reviewCalls("activity-job-001"))
+          .as("a valid DRAFT that was already started must finish its REVIEW")
+          .isEqualTo(1);
+      assertThat(provider.reviewCalls("activity-job-004"))
+          .as("the failed DRAFT must not be retried or reviewed")
+          .isZero();
+      assertThat(provider.startedMaterialKeys())
+          .as("fatal observation must stop new dispatch after the initial bounded set")
+          .hasSizeLessThanOrEqualTo(DEFAULT_JOB_CAP);
+      assertThat(provider.maximumCallsPerMaterial()).isLessThanOrEqualTo(2);
+      assertThat(provider.reviewCalls("activity-job-001")).isEqualTo(1);
+    } finally {
+      provider.releaseDrafts.countDown();
+      caller.shutdownNow();
     }
   }
 
@@ -152,15 +140,9 @@ class ParallelActivityExplainerTest {
   }
 
   private static BusinessMaterialBuildResult expandedMaterials(
-      ProgramGraphsPublicFixture fixture, int count) {
-    BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
+      LegacyM10CheckpointFixture.HistoricalCheckpoint fixture, int count) {
     BusinessMaterialBuildResult base =
-        new BusinessMaterialBuilder(
-                fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
-            .build(
-                new org.sourceanalysis.app.analysis.interpretation.material
-                    .BuildBusinessMaterialsRequest(
-                    flows, new BusinessMaterialProfile(8, 24, 12_000, count)));
+        new BusinessMaterialCheckpointReader(fixture.artifacts()).reopen(fixture.checkpoint());
     BusinessMaterial template = base.materialSet().materials().get(0);
     List<BusinessMaterial> materials = new ArrayList<>();
     List<BusinessMaterialEntryCoverage> coverage = new ArrayList<>();

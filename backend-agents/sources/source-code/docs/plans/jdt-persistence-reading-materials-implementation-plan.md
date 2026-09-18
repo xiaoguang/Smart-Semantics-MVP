@@ -1,6 +1,6 @@
 # JDT、MyBatis与SQL阅读材料实施计划
 
-状态：2026-09-17用户批准实施。详细合同以[统一材料设计](../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md)为准。
+状态：2026-09-18，步骤0–7实现及验收完成。469项clean CI通过；真实01–05运行结束，325包/326条覆盖，1个导航失败明确保留。结论见[交付核验](../supplements/jdt-persistence-reading-materials-delivery.md)，不表示已执行第6步或业务质量验证。详细合同以[统一材料设计](../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md)为准。
 
 ## 目标与边界
 

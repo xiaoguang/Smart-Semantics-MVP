@@ -109,7 +109,11 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
     AnalysisRunOutput output =
         RunStoreBootstrap.reopenAnalysisRunOutput(store, runId)
             .orElseThrow(() -> new IllegalStateException("ANALYSIS_RUN_OUTPUT_MISSING"));
-    query.businessOutputArtifactKey().checkpoint(output);
+    if (query.businessOutputArtifactKey().readsReadingMaterials()) {
+      query.businessOutputArtifactKey().readingMaterialCheckpoint(output);
+    } else {
+      query.businessOutputArtifactKey().checkpoint(output);
+    }
     return artifactReader.read(runId, output, query.businessOutputArtifactKey(), query.maxBytes());
   }
 

@@ -13,21 +13,16 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
-import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
-import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialCheckpointReader;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
+import org.sourceanalysis.app.analysis.interpretation.material.LegacyM10CheckpointFixture;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
@@ -46,179 +41,154 @@ class ActivityExplainerTest {
   private static final String PROFILE_TYPE =
       "org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationProfile";
 
-  @TempDir Path temporaryDirectory;
-
   @Test
   void runsExactlyDraftThenReviewOnOnePersistedMaterialAndRejectsInjectedSource() throws Exception {
-    try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.createWithGuardedApprove(
-            temporaryDirectory.resolve("activity-explainer"))) {
-      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
-      BusinessMaterialBuildResult persisted =
-          new BusinessMaterialBuilder(
-                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
-              .build(
-                  new org.sourceanalysis.app.analysis.interpretation.material
-                      .BuildBusinessMaterialsRequest(
-                      flows, new BusinessMaterialProfile(8, 24, 12_000, 1)));
-      BusinessMaterial material = persisted.materialSet().materials().get(0);
-      BusinessMaterialEntryCoverage coverage =
-          persisted.materialSet().entryCoverage().stream()
-              .filter(value -> material.materialId().equals(value.materialId()))
-              .findFirst()
-              .orElseThrow();
-      BusinessMaterialBuildResult oneMaterial =
-          new BusinessMaterialBuildResult(
-              new BusinessMaterialSet(
-                  persisted.materialSet().materialSetId(), List.of(material), List.of(coverage)),
-              persisted.checkpoint());
-      List<String> allowedSourceRefs =
-          material.modelPacket().allowlistedRefs().stream()
-              .map(value -> value.ref())
-              .limit(2)
-              .toList();
-      assertThat(allowedSourceRefs).hasSize(2);
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = LegacyM10CheckpointFixture.open();
+    BusinessMaterialBuildResult persisted =
+        new BusinessMaterialCheckpointReader(fixture.artifacts()).reopen(fixture.checkpoint());
+    BusinessMaterial material = persisted.materialSet().materials().get(1);
+    BusinessMaterialEntryCoverage coverage =
+        persisted.materialSet().entryCoverage().stream()
+            .filter(value -> material.materialId().equals(value.materialId()))
+            .findFirst()
+            .orElseThrow();
+    BusinessMaterialBuildResult oneMaterial =
+        new BusinessMaterialBuildResult(
+            new BusinessMaterialSet(
+                persisted.materialSet().materialSetId(), List.of(material), List.of(coverage)),
+            persisted.checkpoint());
+    List<String> allowedSourceRefs =
+        material.modelPacket().allowlistedRefs().stream()
+            .map(value -> value.ref())
+            .limit(2)
+            .toList();
+    assertThat(allowedSourceRefs).hasSize(2);
 
-      Class<?> explainerType = requireType(ACTIVITY_PACKAGE + "ActivityExplainer");
-      Class<?> providerType = requireType(PROVIDER_TYPE);
-      Class<?> responseType = requireType(RESPONSE_TYPE);
-      Class<?> requestType = requireType(REQUEST_TYPE);
-      Class<?> profileType = requireType(PROFILE_TYPE);
+    Class<?> explainerType = requireType(ACTIVITY_PACKAGE + "ActivityExplainer");
+    Class<?> providerType = requireType(PROVIDER_TYPE);
+    Class<?> responseType = requireType(RESPONSE_TYPE);
+    Class<?> requestType = requireType(REQUEST_TYPE);
+    Class<?> profileType = requireType(PROFILE_TYPE);
 
-      JsonNode draft = activityResponse("草稿目的", "草稿结果", allowedSourceRefs, List.of("E1"));
-      JsonNode review =
-          reviewResponse(
-              activityResponse("审阅后的业务目的", "审阅后的代码定义结果", allowedSourceRefs, List.of("E1")));
-      ScriptedProvider validProvider =
-          new ScriptedProvider(providerType, responseType, List.of(draft, review));
-      Object request =
-          requestType
-              .getConstructor(BusinessMaterialBuildResult.class, profileType)
-              .newInstance(
-                  oneMaterial,
-                  profileType
-                      .getConstructor(int.class, int.class, int.class, int.class, int.class)
-                      .newInstance(64_000, 16_000, 1, 32, 2_000));
-      Object result = invokeExplainer(explainerType, providerType, validProvider.proxy(), request);
+    JsonNode draft = activityResponse("草稿目的", "草稿结果", allowedSourceRefs, List.of("E1"));
+    JsonNode review =
+        reviewResponse(
+            activityResponse("审阅后的业务目的", "审阅后的代码定义结果", allowedSourceRefs, List.of("E1")));
+    ScriptedProvider validProvider =
+        new ScriptedProvider(providerType, responseType, List.of(draft, review));
+    Object request =
+        requestType
+            .getConstructor(BusinessMaterialBuildResult.class, profileType)
+            .newInstance(
+                oneMaterial,
+                profileType
+                    .getConstructor(int.class, int.class, int.class, int.class, int.class)
+                    .newInstance(64_000, 16_000, 1, 32, 2_000));
+    Object result = invokeExplainer(explainerType, providerType, validProvider.proxy(), request);
 
-      assertThat(validProvider.taskKinds()).containsExactly("ACTIVITY_DRAFT", "ACTIVITY_REVIEW");
-      assertThat(validProvider.calls()).isEqualTo(2);
-      assertThat(validProvider.reviewActualDraft()).isEqualTo(draft);
-      Object activity = activityFromResult(result);
-      assertThat(property(activity, "businessPurpose")).isEqualTo("审阅后的业务目的");
-      assertThat(stringListProperty(activity, "businessObjects")).contains("补货单", "收货记录");
-      assertThat(stringListProperty(activity, "conditions")).contains("输入明细不能为空");
-      assertThat(stringListProperty(activity, "activitySteps"))
-          .contains("读取输入", "生成业务对象", "保存业务对象");
-      assertThat(stringListProperty(activity, "codeDefinedResults")).contains("审阅后的代码定义结果");
-      assertThat(stringListProperty(activity, "sourceRefs"))
-          .containsExactlyElementsOf(allowedSourceRefs);
-      assertThat(stringListProperty(activity, "questions")).contains("哪类岗位负责确认？");
+    assertThat(validProvider.taskKinds()).containsExactly("ACTIVITY_DRAFT", "ACTIVITY_REVIEW");
+    assertThat(validProvider.calls()).isEqualTo(2);
+    assertThat(validProvider.reviewActualDraft()).isEqualTo(draft);
+    Object activity = activityFromResult(result);
+    assertThat(property(activity, "businessPurpose")).isEqualTo("审阅后的业务目的");
+    assertThat(stringListProperty(activity, "businessObjects")).contains("补货单", "收货记录");
+    assertThat(stringListProperty(activity, "conditions")).contains("输入明细不能为空");
+    assertThat(stringListProperty(activity, "activitySteps")).contains("读取输入", "生成业务对象", "保存业务对象");
+    assertThat(stringListProperty(activity, "codeDefinedResults")).contains("审阅后的代码定义结果");
+    assertThat(stringListProperty(activity, "sourceRefs"))
+        .containsExactlyElementsOf(allowedSourceRefs);
+    assertThat(stringListProperty(activity, "questions")).contains("哪类岗位负责确认？");
 
-      JsonNode invalidDraft = activityResponse("无效草稿", "无效结果", allowedSourceRefs, List.of("E1"));
-      ((ObjectNode) invalidDraft.path("activities").get(0))
-          .putArray("sourceRefs")
-          .add(allowedSourceRefs.get(0))
-          .add("/tmp/injected.java:99");
-      ScriptedProvider invalidProvider =
-          new ScriptedProvider(providerType, responseType, List.of(invalidDraft));
-      Object invalidExplainerRequest =
-          requestType
-              .getConstructor(BusinessMaterialBuildResult.class, profileType)
-              .newInstance(
-                  oneMaterial,
-                  profileType
-                      .getConstructor(int.class, int.class, int.class, int.class, int.class)
-                      .newInstance(64_000, 16_000, 1, 32, 2_000));
+    JsonNode invalidDraft = activityResponse("无效草稿", "无效结果", allowedSourceRefs, List.of("E1"));
+    ((ObjectNode) invalidDraft.path("activities").get(0))
+        .putArray("sourceRefs")
+        .add(allowedSourceRefs.get(0))
+        .add("/tmp/injected.java:99");
+    ScriptedProvider invalidProvider =
+        new ScriptedProvider(providerType, responseType, List.of(invalidDraft));
+    Object invalidExplainerRequest =
+        requestType
+            .getConstructor(BusinessMaterialBuildResult.class, profileType)
+            .newInstance(
+                oneMaterial,
+                profileType
+                    .getConstructor(int.class, int.class, int.class, int.class, int.class)
+                    .newInstance(64_000, 16_000, 1, 32, 2_000));
 
-      assertThatThrownBy(
-              () ->
-                  invokeExplainer(
-                      explainerType,
-                      providerType,
-                      invalidProvider.proxy(),
-                      invalidExplainerRequest))
-          .satisfies(
-              failure ->
-                  assertThat(rootCause(failure).getMessage())
-                      .contains("ACTIVITY_SOURCE_SCOPE_INVALID"));
-      assertThat(invalidProvider.calls()).isEqualTo(1);
-      assertThat(invalidProvider.taskKinds()).containsExactly("ACTIVITY_DRAFT");
-    }
+    assertThatThrownBy(
+            () ->
+                invokeExplainer(
+                    explainerType, providerType, invalidProvider.proxy(), invalidExplainerRequest))
+        .satisfies(
+            failure ->
+                assertThat(rootCause(failure).getMessage())
+                    .contains("ACTIVITY_SOURCE_SCOPE_INVALID"));
+    assertThat(invalidProvider.calls()).isEqualTo(1);
+    assertThat(invalidProvider.taskKinds()).containsExactly("ACTIVITY_DRAFT");
   }
 
   @Test
   void mapsEachGroupedActivityOnlyToItsDeclaredLocalEntryKeys() throws Exception {
-    try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.createSyntheticReplenishmentToSettlement(
-            temporaryDirectory.resolve("grouped-activity-entry-keys"))) {
-      BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
-      BusinessMaterialBuildResult allMaterials =
-          new BusinessMaterialBuilder(
-                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
-              .build(
-                  new org.sourceanalysis.app.analysis.interpretation.material
-                      .BuildBusinessMaterialsRequest(
-                      flows, new BusinessMaterialProfile(4, 24, 12_000, 4)));
-      BusinessMaterial material =
-          allMaterials.materialSet().materials().stream()
-              .filter(candidate -> candidate.entryIds().size() > 1)
-              .findFirst()
-              .orElseThrow();
-      List<BusinessMaterialEntryCoverage> matchingCoverage =
-          material.entryIds().stream()
-              .map(
-                  entryId ->
-                      new BusinessMaterialEntryCoverage(
-                          entryId, "ANALYZED_MATERIAL", material.materialId(), null))
-              .toList();
-      BusinessMaterialBuildResult groupedMaterial =
-          new BusinessMaterialBuildResult(
-              new BusinessMaterialSet("grouped-material-set", List.of(material), matchingCoverage),
-              allMaterials.checkpoint());
-      List<String> sourceRefs =
-          material.modelPacket().allowlistedRefs().stream().map(value -> value.ref()).toList();
-      List<String> entryKeys =
-          java.util.stream.IntStream.range(0, material.entryIds().size())
-              .mapToObj(index -> "E" + (index + 1))
-              .toList();
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = LegacyM10CheckpointFixture.open();
+    BusinessMaterialBuildResult allMaterials =
+        new BusinessMaterialCheckpointReader(fixture.artifacts()).reopen(fixture.checkpoint());
+    BusinessMaterial material =
+        allMaterials.materialSet().materials().stream()
+            .filter(candidate -> candidate.entryIds().size() > 1)
+            .findFirst()
+            .orElseThrow();
+    List<BusinessMaterialEntryCoverage> matchingCoverage =
+        material.entryIds().stream()
+            .map(
+                entryId ->
+                    new BusinessMaterialEntryCoverage(
+                        entryId, "ANALYZED_MATERIAL", material.materialId(), null))
+            .toList();
+    BusinessMaterialBuildResult groupedMaterial =
+        new BusinessMaterialBuildResult(
+            new BusinessMaterialSet("grouped-material-set", List.of(material), matchingCoverage),
+            allMaterials.checkpoint());
+    List<String> sourceRefs =
+        material.modelPacket().allowlistedRefs().stream().map(value -> value.ref()).toList();
+    List<String> entryKeys =
+        java.util.stream.IntStream.range(0, material.entryIds().size())
+            .mapToObj(index -> "E" + (index + 1))
+            .toList();
 
-      Class<?> explainerType = requireType(ACTIVITY_PACKAGE + "ActivityExplainer");
-      Class<?> providerType = requireType(PROVIDER_TYPE);
-      Class<?> responseType = requireType(RESPONSE_TYPE);
-      Class<?> requestType = requireType(REQUEST_TYPE);
-      Class<?> profileType = requireType(PROFILE_TYPE);
-      JsonNode draft = activitiesResponse(sourceRefs, entryKeys);
-      JsonNode review = reviewResponse(activitiesResponse(sourceRefs, entryKeys));
-      ScriptedProvider provider =
-          new ScriptedProvider(providerType, responseType, List.of(draft, review));
-      Object request =
-          requestType
-              .getConstructor(BusinessMaterialBuildResult.class, profileType)
-              .newInstance(
-                  groupedMaterial,
-                  profileType
-                      .getConstructor(int.class, int.class, int.class, int.class, int.class)
-                      .newInstance(64_000, 16_000, entryKeys.size(), 32, 2_000));
+    Class<?> explainerType = requireType(ACTIVITY_PACKAGE + "ActivityExplainer");
+    Class<?> providerType = requireType(PROVIDER_TYPE);
+    Class<?> responseType = requireType(RESPONSE_TYPE);
+    Class<?> requestType = requireType(REQUEST_TYPE);
+    Class<?> profileType = requireType(PROFILE_TYPE);
+    JsonNode draft = activitiesResponse(sourceRefs, entryKeys);
+    JsonNode review = reviewResponse(activitiesResponse(sourceRefs, entryKeys));
+    ScriptedProvider provider =
+        new ScriptedProvider(providerType, responseType, List.of(draft, review));
+    Object request =
+        requestType
+            .getConstructor(BusinessMaterialBuildResult.class, profileType)
+            .newInstance(
+                groupedMaterial,
+                profileType
+                    .getConstructor(int.class, int.class, int.class, int.class, int.class)
+                    .newInstance(64_000, 16_000, entryKeys.size(), 32, 2_000));
 
-      Object result = invokeExplainer(explainerType, providerType, provider.proxy(), request);
+    Object result = invokeExplainer(explainerType, providerType, provider.proxy(), request);
 
-      assertThat(provider.taskKinds()).containsExactly("ACTIVITY_DRAFT", "ACTIVITY_REVIEW");
-      assertThat(provider.calls()).isEqualTo(2);
-      List<?> activities =
-          (List<?>) result.getClass().getMethod("reviewedActivities").invoke(result);
-      assertThat(activities).hasSize(entryKeys.size());
-      for (Object activity : activities) {
-        assertThat(stringListProperty(activity, "entryIds")).hasSize(1);
-      }
+    assertThat(provider.taskKinds()).containsExactly("ACTIVITY_DRAFT", "ACTIVITY_REVIEW");
+    assertThat(provider.calls()).isEqualTo(2);
+    List<?> activities = (List<?>) result.getClass().getMethod("reviewedActivities").invoke(result);
+    assertThat(activities).hasSize(entryKeys.size());
+    for (Object activity : activities) {
+      assertThat(stringListProperty(activity, "entryIds")).hasSize(1);
+    }
+    @SuppressWarnings("unchecked")
+    List<Object> coverage = (List<Object>) result.getClass().getMethod("coverage").invoke(result);
+    assertThat(coverage).hasSize(entryKeys.size());
+    for (Object value : coverage) {
       @SuppressWarnings("unchecked")
-      List<Object> coverage = (List<Object>) result.getClass().getMethod("coverage").invoke(result);
-      assertThat(coverage).hasSize(entryKeys.size());
-      for (Object value : coverage) {
-        @SuppressWarnings("unchecked")
-        List<String> activityIds = (List<String>) property(value, "activityIds");
-        assertThat(activityIds).hasSize(1);
-      }
+      List<String> activityIds = (List<String>) property(value, "activityIds");
+      assertThat(activityIds).hasSize(1);
     }
   }
 

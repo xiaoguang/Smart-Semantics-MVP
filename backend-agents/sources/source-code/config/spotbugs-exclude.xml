@@ -43,4 +43,29 @@
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.graph.EvidenceGraphCoverage"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.graph.EvidenceGraphDraft"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.graph.GraphGapDraft"/></Match>
+  <!--
+    The Step04/05 material records use List.copyOf/Map.copyOf in every compact constructor.
+    SpotBugs 4.10 does not recognize those defensive copies on generated Java 17 record accessors,
+    so the exclusions remain exact to these verified immutable value types.
+  -->
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet$EntryCoverage"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet$Packet"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet$PersistenceSelection"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex$Header"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex$JavaBinding"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex$ParameterBinding"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex$Resource"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex$SqlAnalysis"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex$SqlAstNode"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex$Statement"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex$XmlNode"/></Match>
+  <!--
+    This is the one deliberate mutable value: a secure, source-bound DOM is shared only by the
+    run-owned MapperXmlResourceView. Its consumers treat it as read-only and clone before MyBatis
+    transforms; copying it here would defeat the approved same-run reuse seam.
+  -->
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.discovery.MapperXmlResourceView$MapperXmlResource"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP2"/><Class name="org.sourceanalysis.app.analysis.discovery.MapperXmlResourceView$MapperXmlResource"/></Match>
 </FindBugsFilter>

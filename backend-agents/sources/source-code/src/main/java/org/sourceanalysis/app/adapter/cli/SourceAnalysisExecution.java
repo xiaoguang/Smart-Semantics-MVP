@@ -34,7 +34,6 @@ import org.sourceanalysis.app.adapter.provider.OpenAiResponsesProfile;
 import org.sourceanalysis.app.adapter.provider.OpenAiResponsesStructuredProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.analysis.document.BusinessReportCheckpointRenderer;
-import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplainer;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationCheckpointReader;
@@ -42,10 +41,8 @@ import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanati
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationResult;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityJobExecutionConfiguration;
 import org.sourceanalysis.app.analysis.interpretation.activity.ExplainActivitiesRequest;
-import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
@@ -53,6 +50,9 @@ import org.sourceanalysis.app.analysis.inventory.PersistedVerifiedSourceTextRead
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.knowledge.ProcessDiscoveryProfile;
 import org.sourceanalysis.app.analysis.knowledge.ProcessDiscoveryRequest;
+import org.sourceanalysis.app.analysis.material.CodeReadingMaterialMarkdown;
+import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
+import org.sourceanalysis.app.analysis.material.publish.CodeReadingMaterialReader;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
@@ -68,7 +68,6 @@ import org.sourceanalysis.app.artifact.FileSystemCanonicalAnalysisStepArtifactSt
 import org.sourceanalysis.app.artifact.FileSystemCanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
-import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 import org.sourceanalysis.app.artifact.RunStoreBootstrap;
 import org.sourceanalysis.app.artifact.RunStoreHandle;
 import org.sourceanalysis.app.artifact.Sha256Digest;
@@ -138,7 +137,8 @@ final class SourceAnalysisExecution {
       switch (parsed.mode()) {
         case MODE_CAPTURE_LOCAL_GIT -> executeCaptureLocalGit(configuration, output);
         case MODE_START -> executeStart(configuration, parsed.sourceRegistrationId(), output);
-        case MODE_MATERIALS_ONLY -> executeMaterialsOnly(configuration, output, errors);
+        case MODE_MATERIALS_ONLY ->
+            executeMaterialsOnly(configuration, parsed.sourceRegistrationId(), output, errors);
         case MODE_EXPORT_MATERIALS_STATE ->
             executeExportMaterialsState(configuration, parsed.outputState(), output);
         case MODE_ACTIVITIES_SAMPLE ->
@@ -167,6 +167,8 @@ final class SourceAnalysisExecution {
                 parsed.runId(),
                 parsed.businessOutputArtifactKey(),
                 parsed.maxBytes(),
+                parsed.artifactFormat(),
+                parsed.artifactOutput(),
                 output);
         case MODE_RENDER -> executeRender(configuration, parsed.runId(), output);
         default -> throw failure("MODE_UNSUPPORTED");
@@ -212,24 +214,27 @@ final class SourceAnalysisExecution {
   }
 
   static void executeMaterialsOnly(
-      RepositoryRunConfiguration configuration, PrintWriter output, PrintWriter errors) {
+      RepositoryRunConfiguration configuration,
+      ArtifactId configuredSourceRegistrationId,
+      PrintWriter output,
+      PrintWriter errors) {
+    if (configuration.readingMaterialProfile() == null) {
+      throw failure("CONFIGURATION_INVALID");
+    }
     requireFreshStateDestination(configuration.stateFile());
-    SourceRegistrationReference registration = captureConfiguredSource(configuration);
     LocalGitSourceRegistry sourceRegistry =
         new LocalGitSourceRegistry(configuration.captureWorkspace());
-    RegisteredSourceCapture capture = sourceRegistry.reopen(registration.sourceRegistrationId());
+    ArtifactId sourceRegistrationId =
+        configuredSourceRegistrationId == null
+            ? captureConfiguredSource(configuration).sourceRegistrationId()
+            : configuredSourceRegistrationId;
+    RegisteredSourceCapture capture = sourceRegistry.reopen(sourceRegistrationId);
     verifyConfiguredCapture(configuration, capture);
 
     FrozenInput frozen = FrozenInput.create(configuration, capture);
     AnalysisRunRequestTemplate requestTemplate = requestTemplate(configuration, frozen);
 
     try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
-      CanonicalModuleArtifactStore modules =
-          new FileSystemCanonicalModuleArtifactStore(
-              store,
-              configuration.canonicalJson(),
-              configuration.policyRegistry(),
-              configuration.storeLimits());
       CanonicalAnalysisStepArtifactStore steps =
           new FileSystemCanonicalAnalysisStepArtifactStore(
               store,
@@ -243,11 +248,10 @@ final class SourceAnalysisExecution {
               configuration.policyRegistry(),
               sourceRegistry,
               configuration.technicalConfiguration(frozen.bytes()));
-      BusinessMaterialBuilder materialBuilder =
-          new BusinessMaterialBuilder(
-              modules, steps, new PersistedVerifiedSourceTextReader(steps, sourceRegistry));
-      java.util.concurrent.atomic.AtomicReference<BusinessMaterialBuildResult> completedMaterials =
+      java.util.concurrent.atomic.AtomicReference<CodeReadingMaterialSet> completedMaterials =
           new java.util.concurrent.atomic.AtomicReference<>();
+      java.util.concurrent.atomic.AtomicReference<AnalysisStepPublicationReference>
+          completedReadingCheckpoint = new java.util.concurrent.atomic.AtomicReference<>();
       SourceAnalysisApplication application =
           new SourceAnalysisApplication(
               store,
@@ -258,18 +262,27 @@ final class SourceAnalysisExecution {
                     }
                     TechnicalAnalysisWorkflowResult technicalResult =
                         technical.execute(request.runId());
-                    BusinessFlowsReference flows = technicalResult.businessFlows();
-                    BusinessMaterialBuildResult materials =
-                        materialBuilder.build(
-                            new BuildBusinessMaterialsRequest(
-                                flows, configuration.materialProfile()));
-                    writeState(configuration, request.runId(), flows, materials, modules);
+                    AnalysisStepPublicationReference readingMaterials =
+                        technicalResult.readingMaterials();
+                    if (readingMaterials == null
+                        || readingMaterials.address().analysisStepKey()
+                            != AnalysisStepKey.BUSINESS_FLOWS) {
+                      throw failure("CODE_READING_MATERIAL_RESULT_INVALID");
+                    }
+                    CodeReadingMaterialSet materials =
+                        new CodeReadingMaterialReader(steps).reopen(readingMaterials);
+                    RepositoryRunStateV4.write(
+                        configuration.stateFile(),
+                        readingMaterials,
+                        materials,
+                        configuration.canonicalJson());
                     completedMaterials.set(materials);
-                    return new AnalysisRunOutput(materials.checkpoint(), null, null, null);
+                    completedReadingCheckpoint.set(readingMaterials);
+                    return AnalysisRunOutput.readingMaterials(request.runId(), readingMaterials);
                   }),
               requestTemplate);
       AnalysisRunReference queued =
-          application.agent().start(requestTemplate.create(registration.sourceRegistrationId()));
+          application.agent().start(requestTemplate.create(sourceRegistrationId));
       output.printf("runId=%s%n", queued.runId().value());
       output.printf("lifecycleState=%s%n", queued.lifecycleState());
       AnalysisRunReference finished =
@@ -278,14 +291,15 @@ final class SourceAnalysisExecution {
               .executeStep(
                   new AnalysisStepExecutionRequest(
                       queued.runId(), AnalysisExecutionIntent.PREPARE_MATERIALS, null, null));
-      BusinessMaterialBuildResult materials = completedMaterials.get();
-      if (materials == null) {
-        throw failure("BUSINESS_MATERIAL_RESULT_INVALID");
+      CodeReadingMaterialSet materials = completedMaterials.get();
+      AnalysisStepPublicationReference readingMaterials = completedReadingCheckpoint.get();
+      if (materials == null || readingMaterials == null) {
+        throw failure("CODE_READING_MATERIAL_RESULT_INVALID");
       }
       output.printf("lifecycleState=%s%n", finished.lifecycleState());
-      output.printf("businessMaterialCount=%d%n", materials.materialSet().materials().size());
+      output.printf("readingMaterialPacketCount=%d%n", materials.packets().size());
       output.printf(
-          "businessMaterialCheckpoint=%s%n", materials.checkpoint().moduleReceiptId().value());
+          "readingMaterialCheckpoint=%s%n", readingMaterials.analysisStepReceiptId().value());
       output.printf("materialsStateFile=%s%n", configuration.stateFile());
     }
   }
@@ -786,6 +800,7 @@ final class SourceAnalysisExecution {
         output.printf("completedActivities=%s%n", inspection.output().hasCompletedActivities());
         output.printf("completedProcesses=%s%n", inspection.output().hasCompletedProcesses());
         output.printf("completedReport=%s%n", inspection.output().hasCompletedReport());
+        output.printf("completedReadingMaterials=%s%n", inspection.output().hasReadingMaterials());
       }
     }
   }
@@ -795,14 +810,52 @@ final class SourceAnalysisExecution {
       AnalysisRunId runId,
       BusinessOutputArtifactKey key,
       int maxBytes,
+      String artifactFormat,
+      Path artifactOutput,
       PrintWriter output) {
     try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
-      CanonicalModuleArtifactStore modules = inputModuleArtifacts(configuration, store);
-      LocalRepositoryAnalysisAgent agent =
-          new LocalRepositoryAnalysisAgent(
-              store, null, null, new BusinessCheckpointArtifactReader(modules));
-      ArtifactView artifact = agent.artifact(new ArtifactQuery(runId.value(), key, maxBytes));
-      output.print(artifact.contentUtf8());
+      if (artifactFormat == null) {
+        CanonicalModuleArtifactStore modules = inputModuleArtifacts(configuration, store);
+        CanonicalAnalysisStepArtifactStore steps = inputStepArtifacts(configuration, store);
+        LocalRepositoryAnalysisAgent agent =
+            new LocalRepositoryAnalysisAgent(
+                store, null, null, new BusinessCheckpointArtifactReader(modules, steps));
+        ArtifactView artifact = agent.artifact(new ArtifactQuery(runId.value(), key, maxBytes));
+        output.print(artifact.contentUtf8());
+        return;
+      }
+      if (!"markdown".equals(artifactFormat)
+          || artifactOutput == null
+          || key != BusinessOutputArtifactKey.CODE_READING_MATERIALS
+          || maxBytes <= 0) {
+        throw failure("ARGUMENTS_INVALID");
+      }
+      CanonicalAnalysisStepArtifactStore steps = inputStepArtifacts(configuration, store);
+      if (RunStoreBootstrap.reopenAnalysisRun(store, runId).lifecycleState()
+          != AnalysisRunLifecycleState.FINISHED) {
+        throw failure("ANALYSIS_RUN_ARTIFACT_NOT_READY");
+      }
+      AnalysisRunOutput analysisOutput =
+          RunStoreBootstrap.reopenAnalysisRunOutput(store, runId)
+              .orElseThrow(() -> failure("BUSINESS_ARTIFACT_QUERY_INVALID"));
+      if (!runId.equals(analysisOutput.sourceRunId())
+          || analysisOutput.readingMaterialCheckpoint() == null) {
+        throw failure("BUSINESS_ARTIFACT_QUERY_INVALID");
+      }
+      byte[] markdown =
+          CodeReadingMaterialMarkdown.render(
+                  new CodeReadingMaterialReader(steps)
+                      .reopen(analysisOutput.readingMaterialCheckpoint()))
+              .getBytes(StandardCharsets.UTF_8);
+      if (markdown.length > maxBytes) {
+        throw failure("BUSINESS_ARTIFACT_QUERY_BUDGET_EXCEEDED");
+      }
+      writeNewAtomically(
+          artifactOutput,
+          markdown,
+          "ARTIFACT_OUTPUT_DESTINATION_INVALID",
+          "ARTIFACT_OUTPUT_WRITE_FAILED");
+      output.printf("artifactOutput=%s%n", artifactOutput);
     }
   }
 
@@ -1202,45 +1255,6 @@ final class SourceAnalysisExecution {
     }
   }
 
-  static void writeState(
-      RepositoryRunConfiguration configuration,
-      AnalysisRunId runId,
-      BusinessFlowsReference flows,
-      BusinessMaterialBuildResult materials,
-      CanonicalModuleArtifactStore modules) {
-    AnalysisStepPublicationReference reference = flows.publication();
-    if (!runId.equals(reference.address().runId())
-        || reference.address().analysisStepKey() != AnalysisStepKey.BUSINESS_FLOWS) {
-      throw failure("SAVED_FLOW_REFERENCE_INVALID");
-    }
-    ObjectNode state = JsonNodeFactory.instance.objectNode();
-    state.put("schemaVersion", RepositoryRunStateV3.SCHEMA_VERSION);
-    state.put("sourceRunId", runId.value());
-    ObjectNode flow = state.putObject("businessFlowsPublication");
-    flow.put("analysisStepArtifactRoot", reference.analysisStepArtifactRoot().value());
-    flow.put("analysisStepKey", reference.address().analysisStepKey().wireValue());
-    flow.put("analysisStepReceiptId", reference.analysisStepReceiptId().value());
-    flow.put("analysisStepReceiptSha256", reference.analysisStepReceiptSha256().value());
-    flow.put("runId", reference.address().runId().value());
-    state.set("materialsCheckpoint", RepositoryRunStateV3.checkpointJson(materials.checkpoint()));
-    state.set("materialProfile", RepositoryRunStateV3.profileJson(configuration.materialProfile()));
-    ReopenedModulePublication reopened = modules.reopen(materials.checkpoint());
-    String materialModuleVersion = reopened.receipt().moduleVersion();
-    state.put("materialModuleVersion", materialModuleVersion);
-    state.put(
-        "materialBasisSha256",
-        RepositoryRunStateV3.materialBasisSha256(
-            configuration.canonicalJson(),
-            state.path("businessFlowsPublication"),
-            state.path("materialProfile"),
-            materialModuleVersion));
-    writeNewAtomically(
-        configuration.stateFile(),
-        configuration.canonicalJson().encodeCanonical(state).copyToByteArray(),
-        "STATE_DESTINATION_INVALID",
-        "STATE_WRITE_FAILED");
-  }
-
   static void writeModelJobExecutionConfiguration(
       RepositoryRunConfiguration configuration,
       ModelJobsConfiguration modelJobs,
@@ -1606,7 +1620,9 @@ final class SourceAnalysisExecution {
       AnalysisRunId runId,
       ArtifactId sourceRegistrationId,
       BusinessOutputArtifactKey businessOutputArtifactKey,
-      Integer maxBytes) {
+      Integer maxBytes,
+      String artifactFormat,
+      Path artifactOutput) {
 
     private static Arguments parse(String[] arguments) {
       if (arguments.length < 4
@@ -1626,6 +1642,8 @@ final class SourceAnalysisExecution {
       ArtifactId sourceRegistrationId = null;
       BusinessOutputArtifactKey businessOutputArtifactKey = null;
       Integer maxBytes = null;
+      String artifactFormat = null;
+      Path artifactOutput = null;
       if ((arguments.length - 4) % 2 != 0) {
         throw failure("ARGUMENTS_INVALID");
       }
@@ -1670,66 +1688,110 @@ final class SourceAnalysisExecution {
               throw failure("ARGUMENTS_INVALID");
             }
           }
+          case "--format" -> artifactFormat = value;
+          case "--output" -> artifactOutput = argumentPath(value);
           default -> throw failure("ARGUMENTS_INVALID");
         }
       }
-      if (MODE_MATERIALS_ONLY.equals(mode)
-          && (arguments.length != 4
-              || materialId != null
-              || outputState != null
-              || activityModelBatchId != null
-              || reuseFromModelBatchId != null)) {
+      Arguments parsed =
+          new Arguments(
+              config,
+              mode,
+              materialId,
+              outputState,
+              activityModelBatchId,
+              reuseFromModelBatchId,
+              catalogFromModelBatchId,
+              focusQuestion,
+              runId,
+              sourceRegistrationId,
+              businessOutputArtifactKey,
+              maxBytes,
+              artifactFormat,
+              artifactOutput);
+      validateMode(parsed, arguments.length);
+      return parsed;
+    }
+
+    private static void validateMode(Arguments arguments, int argumentCount) {
+      if (MODE_MATERIALS_ONLY.equals(arguments.mode())
+          && ((argumentCount != 4 && argumentCount != 6)
+              || arguments.materialId() != null
+              || arguments.outputState() != null
+              || arguments.activityModelBatchId() != null
+              || arguments.reuseFromModelBatchId() != null
+              || arguments.catalogFromModelBatchId() != null
+              || arguments.focusQuestion() != null
+              || arguments.runId() != null
+              || arguments.businessOutputArtifactKey() != null
+              || arguments.maxBytes() != null
+              || arguments.artifactFormat() != null
+              || arguments.artifactOutput() != null)) {
         throw failure("ARGUMENTS_INVALID");
       }
-      if (MODE_CAPTURE_LOCAL_GIT.equals(mode) && arguments.length != 4) {
+      if (MODE_CAPTURE_LOCAL_GIT.equals(arguments.mode()) && argumentCount != 4) {
         throw failure("ARGUMENTS_INVALID");
       }
-      if (MODE_START.equals(mode) && (sourceRegistrationId == null || arguments.length != 6)) {
+      if (MODE_START.equals(arguments.mode())
+          && (arguments.sourceRegistrationId() == null || argumentCount != 6)) {
         throw failure("ARGUMENTS_INVALID");
       }
-      if (MODE_EXPORT_MATERIALS_STATE.equals(mode)
-          && (outputState == null
-              || materialId != null
-              || activityModelBatchId != null
-              || reuseFromModelBatchId != null
-              || arguments.length != 6)) {
+      if (MODE_EXPORT_MATERIALS_STATE.equals(arguments.mode())
+          && (arguments.outputState() == null
+              || arguments.materialId() != null
+              || arguments.activityModelBatchId() != null
+              || arguments.reuseFromModelBatchId() != null
+              || argumentCount != 6)) {
         throw failure("ARGUMENTS_INVALID");
       }
-      if (MODE_ACTIVITIES_SAMPLE.equals(mode)
-          && (materialId == null || outputState != null || activityModelBatchId != null)) {
+      if (MODE_ACTIVITIES_SAMPLE.equals(arguments.mode())
+          && (arguments.materialId() == null
+              || arguments.outputState() != null
+              || arguments.activityModelBatchId() != null)) {
         throw failure("ARGUMENTS_INVALID");
       }
-      if (MODE_BUSINESS_PROCESSES.equals(mode)
-          && (activityModelBatchId == null || materialId != null || outputState != null)) {
+      if (MODE_BUSINESS_PROCESSES.equals(arguments.mode())
+          && (arguments.activityModelBatchId() == null
+              || arguments.materialId() != null
+              || arguments.outputState() != null)) {
         throw failure("ARGUMENTS_INVALID");
       }
-      if (!MODE_BUSINESS_PROCESSES.equals(mode)
-          && (catalogFromModelBatchId != null || focusQuestion != null)) {
+      if (!MODE_BUSINESS_PROCESSES.equals(arguments.mode())
+          && (arguments.catalogFromModelBatchId() != null || arguments.focusQuestion() != null)) {
         throw failure("ARGUMENTS_INVALID");
       }
-      if (MODE_ACTIVITIES.equals(mode)
-          && (materialId != null || outputState != null || activityModelBatchId != null)) {
+      if (MODE_ACTIVITIES.equals(arguments.mode())
+          && (arguments.materialId() != null
+              || arguments.outputState() != null
+              || arguments.activityModelBatchId() != null)) {
         throw failure("ARGUMENTS_INVALID");
       }
-      if (MODE_INSPECT.equals(mode)
-          && (runId == null
-              || businessOutputArtifactKey != null
-              || maxBytes != null
-              || arguments.length != 6)) {
+      if (MODE_INSPECT.equals(arguments.mode())
+          && (arguments.runId() == null
+              || arguments.businessOutputArtifactKey() != null
+              || arguments.maxBytes() != null
+              || argumentCount != 6)) {
         throw failure("ARGUMENTS_INVALID");
       }
-      if (MODE_RENDER.equals(mode)
-          && (runId == null
-              || businessOutputArtifactKey != null
-              || maxBytes != null
-              || arguments.length != 6)) {
+      if (MODE_RENDER.equals(arguments.mode())
+          && (arguments.runId() == null
+              || arguments.businessOutputArtifactKey() != null
+              || arguments.maxBytes() != null
+              || argumentCount != 6)) {
         throw failure("ARGUMENTS_INVALID");
       }
-      if (MODE_ARTIFACT.equals(mode)
-          && (runId == null
-              || businessOutputArtifactKey == null
-              || maxBytes == null
-              || arguments.length != 10)) {
+      if (MODE_ARTIFACT.equals(arguments.mode())
+          && (arguments.runId() == null
+              || arguments.businessOutputArtifactKey() == null
+              || arguments.maxBytes() == null
+              || (arguments.artifactFormat() == null && arguments.artifactOutput() != null)
+              || (arguments.artifactFormat() != null
+                  && (!"markdown".equals(arguments.artifactFormat())
+                      || arguments.artifactOutput() == null
+                      || arguments.businessOutputArtifactKey()
+                          != BusinessOutputArtifactKey.CODE_READING_MATERIALS))
+              || (arguments.artifactFormat() == null && argumentCount != 10)
+              || (arguments.artifactFormat() != null && argumentCount != 14))) {
         throw failure("ARGUMENTS_INVALID");
       }
       if (!Set.of(
@@ -1739,26 +1801,18 @@ final class SourceAnalysisExecution {
                   MODE_ACTIVITIES,
                   MODE_ACTIVITIES_SAMPLE,
                   MODE_BUSINESS_PROCESSES)
-              .contains(mode)
-          && (runId != null || businessOutputArtifactKey != null || maxBytes != null)) {
+              .contains(arguments.mode())
+          && (arguments.runId() != null
+              || arguments.businessOutputArtifactKey() != null
+              || arguments.maxBytes() != null
+              || arguments.artifactFormat() != null
+              || arguments.artifactOutput() != null)) {
         throw failure("ARGUMENTS_INVALID");
       }
-      if (!MODE_START.equals(mode) && sourceRegistrationId != null) {
+      if (!Set.of(MODE_START, MODE_MATERIALS_ONLY).contains(arguments.mode())
+          && arguments.sourceRegistrationId() != null) {
         throw failure("ARGUMENTS_INVALID");
       }
-      return new Arguments(
-          config,
-          mode,
-          materialId,
-          outputState,
-          activityModelBatchId,
-          reuseFromModelBatchId,
-          catalogFromModelBatchId,
-          focusQuestion,
-          runId,
-          sourceRegistrationId,
-          businessOutputArtifactKey,
-          maxBytes);
     }
 
     private static AnalysisRunId argumentRunId(String value) {
@@ -1799,7 +1853,9 @@ final class SourceAnalysisExecution {
     ObjectNode baseDocument = document.deepCopy();
     baseDocument.remove("inputPolicyRegistry");
     object(baseDocument, "sourceAnalysis").remove("modelJobs");
-    object(baseDocument, "business").remove("processDiscovery");
+    if (baseDocument.has("business")) {
+      object(baseDocument, "business").remove("processDiscovery");
+    }
     return Sha256Digest.parse(
         sha256(canonicalJson.encodeCanonical(baseDocument).copyToByteArray()));
   }

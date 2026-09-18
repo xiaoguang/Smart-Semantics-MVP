@@ -3,17 +3,6 @@ package org.sourceanalysis.app.analysis.discovery;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.github.javaparser.JavaParser;
-import com.github.javaparser.ParseResult;
-import com.github.javaparser.ast.CompilationUnit;
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.github.javaparser.ast.body.MethodDeclaration;
-import com.github.javaparser.ast.expr.AnnotationExpr;
-import com.github.javaparser.ast.expr.ArrayInitializerExpr;
-import com.github.javaparser.ast.expr.FieldAccessExpr;
-import com.github.javaparser.ast.expr.MemberValuePair;
-import com.github.javaparser.ast.expr.StringLiteralExpr;
-import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -22,7 +11,6 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -58,20 +46,6 @@ public final class SpringHttpEntryDiscoverer {
     this.sourceReader = sourceReader;
   }
 
-  /** Reads verified Java bytes and composes explicit class and method Spring MVC routes. */
-  public HttpEntryDiscovery discoverEntries(
-      ApplicationProfile profile, VerifiedSourceInventoryReference frozenSource) {
-    try {
-      requireSpringMvcProfile(profile);
-      VerifiedSourceTextSet source = sourceReader.reopen(frozenSource);
-      return discoverEntries(profile, source, defaultShards(source));
-    } catch (ApplicationDiscoveryException failure) {
-      throw failure;
-    } catch (RuntimeException failure) {
-      throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
-    }
-  }
-
   /** Discovers routes from the selected Java engine catalog without invoking JavaParser. */
   public HttpEntryDiscovery discoverEntries(
       ApplicationProfile profile,
@@ -85,45 +59,6 @@ public final class SpringHttpEntryDiscoverer {
         throw new ApplicationDiscoveryException("SNAPSHOT_REOPEN_MISMATCH");
       }
       return discoverEntries(profile, source, catalog);
-    } catch (ApplicationDiscoveryException failure) {
-      throw failure;
-    } catch (RuntimeException failure) {
-      throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
-    }
-  }
-
-  /**
-   * Reads explicit disjoint Java source shards without allowing a shard to change the denominator.
-   */
-  public HttpEntryDiscovery discoverEntries(
-      ApplicationProfile profile,
-      VerifiedSourceInventoryReference frozenSource,
-      List<JavaSourceShard> sourceShards) {
-    try {
-      requireSpringMvcProfile(profile);
-      VerifiedSourceTextSet source = sourceReader.reopen(frozenSource);
-      return discoverEntries(profile, source, sourceShards);
-    } catch (ApplicationDiscoveryException failure) {
-      throw failure;
-    } catch (RuntimeException failure) {
-      throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
-    }
-  }
-
-  private static HttpEntryDiscovery discoverEntries(
-      ApplicationProfile profile,
-      VerifiedSourceTextSet source,
-      List<JavaSourceShard> sourceShards) {
-    try {
-      requireSameVerifiedBasis(profile, source);
-      List<HttpEntryPoint> entries = new ArrayList<>();
-      List<HttpEntrySite> sites = new ArrayList<>();
-      for (VerifiedSourceTextDocument document : selectedJavaDocuments(source, sourceShards)) {
-        ParsedHttpEntries parsed = entries(document, profile.snapshotId());
-        entries.addAll(parsed.entries());
-        sites.addAll(parsed.sites());
-      }
-      return HttpEntryDiscovery.ordered(entries, sites, shardReceipts(sourceShards, sites));
     } catch (ApplicationDiscoveryException failure) {
       throw failure;
     } catch (RuntimeException failure) {
@@ -300,193 +235,6 @@ public final class SpringHttpEntryDiscoverer {
     return List.of(
         new JavaSourceShard(
             ArtifactId.parse("entry-shard:" + sha256(frame(identity))), javaFileIds));
-  }
-
-  private static List<VerifiedSourceTextDocument> selectedJavaDocuments(
-      VerifiedSourceTextSet source, List<JavaSourceShard> sourceShards) {
-    if (sourceShards == null) {
-      throw new ApplicationDiscoveryException("HTTP_ENTRY_SHARD_INVALID");
-    }
-    Map<ArtifactId, VerifiedSourceTextDocument> javaById = new HashMap<>();
-    for (VerifiedSourceTextDocument document : source.documents()) {
-      if (document.path().endsWith(".java") && javaById.put(document.fileId(), document) != null) {
-        throw new ApplicationDiscoveryException("HTTP_ENTRY_SHARD_INVALID");
-      }
-    }
-    Set<ArtifactId> sharded = new HashSet<>();
-    List<VerifiedSourceTextDocument> selected = new ArrayList<>();
-    for (JavaSourceShard shard : sourceShards) {
-      if (shard == null) {
-        throw new ApplicationDiscoveryException("HTTP_ENTRY_SHARD_INVALID");
-      }
-      for (ArtifactId fileId : shard.sourceFileIds()) {
-        VerifiedSourceTextDocument document = javaById.get(fileId);
-        if (document == null || !sharded.add(fileId)) {
-          throw new ApplicationDiscoveryException("HTTP_ENTRY_SHARD_INVALID");
-        }
-        selected.add(document);
-      }
-    }
-    if (!sharded.equals(javaById.keySet())) {
-      throw new ApplicationDiscoveryException("HTTP_ENTRY_SHARD_INVALID");
-    }
-    selected.sort(Comparator.comparing(VerifiedSourceTextDocument::path));
-    return List.copyOf(selected);
-  }
-
-  private static ParsedHttpEntries entries(VerifiedSourceTextDocument document, String snapshotId) {
-    String source = new String(document.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8);
-    ParseResult<CompilationUnit> parsed = new JavaParser().parse(source);
-    CompilationUnit unit =
-        parsed
-            .getResult()
-            .orElseThrow(() -> new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID"));
-    String packageName =
-        unit.getPackageDeclaration().map(value -> value.getNameAsString()).orElse("");
-    List<HttpEntryPoint> entries = new ArrayList<>();
-    List<HttpEntrySite> sites = new ArrayList<>();
-    for (ClassOrInterfaceDeclaration type : unit.findAll(ClassOrInterfaceDeclaration.class)) {
-      Optional<AnnotationExpr> classMapping = annotation(unit, type, "RequestMapping");
-      if (classMapping.isEmpty()) {
-        recordMethodsWithoutClassRoute(document, source, snapshotId, unit, type, sites);
-        continue;
-      }
-      SourceExcerptV1 classExcerpt = excerpt(document, source, classMapping.get());
-      Optional<String> classRoute = staticSingleRoute(classMapping.get());
-      if (classRoute.isEmpty()) {
-        sites.add(
-            new HttpEntrySite(
-                siteId(
-                    snapshotId,
-                    classExcerpt,
-                    List.of(),
-                    SignalDisposition.UNSUPPORTED,
-                    "DYNAMIC_ROUTE"),
-                classExcerpt,
-                List.of(),
-                SignalDisposition.UNSUPPORTED,
-                "DYNAMIC_ROUTE",
-                gapId(snapshotId, classExcerpt, "DYNAMIC_ROUTE")));
-        continue;
-      }
-      HttpMethodCondition classMethodCondition = requestMappingMethodCondition(classMapping.get());
-      for (MethodDeclaration method : type.getMethods()) {
-        List<HttpMethodMapping> mappings = httpMethodMappings(unit, method);
-        if (mappings.size() > 1) {
-          SourceExcerptV1 methodExcerpt = excerpt(document, source, mappings.get(0).annotation());
-          sites.add(
-              new HttpEntrySite(
-                  siteId(
-                      snapshotId,
-                      methodExcerpt,
-                      List.of(),
-                      SignalDisposition.AMBIGUOUS,
-                      "MULTIPLE_HTTP_MAPPING_ANNOTATIONS"),
-                  methodExcerpt,
-                  List.of(),
-                  SignalDisposition.AMBIGUOUS,
-                  "MULTIPLE_HTTP_MAPPING_ANNOTATIONS",
-                  gapId(snapshotId, methodExcerpt, "MULTIPLE_HTTP_MAPPING_ANNOTATIONS")));
-          continue;
-        }
-        Optional<HttpMethodMapping> mapping = mappings.stream().findFirst();
-        if (mapping.isEmpty()) {
-          continue;
-        }
-        SourceExcerptV1 methodExcerpt = excerpt(document, source, mapping.get().annotation());
-        Optional<String> methodRoute = staticSingleRoute(mapping.get().annotation());
-        if (methodRoute.isEmpty()) {
-          sites.add(
-              new HttpEntrySite(
-                  siteId(
-                      snapshotId,
-                      methodExcerpt,
-                      List.of(),
-                      SignalDisposition.UNSUPPORTED,
-                      "DYNAMIC_ROUTE"),
-                  methodExcerpt,
-                  List.of(),
-                  SignalDisposition.UNSUPPORTED,
-                  "DYNAMIC_ROUTE",
-                  gapId(snapshotId, methodExcerpt, "DYNAMIC_ROUTE")));
-          continue;
-        }
-        String handlerFqn = qualifiedType(packageName, type) + "#" + method.getNameAsString();
-        SourceRange declarationRange = sourceRange(source, method);
-        String methodKey = methodKey(document.path(), declarationRange);
-        List<String> parameters =
-            method.getParameters().stream().map(parameter -> parameter.getNameAsString()).toList();
-        List<String> routeParts =
-            List.of(normalizeRoute(classRoute.get()), normalizeRoute(methodRoute.get()));
-        String route = composeRoute(routeParts.get(0), routeParts.get(1));
-        HttpEntryPoint entry =
-            new HttpEntryPoint(
-                entryId(
-                    snapshotId,
-                    classMethodCondition.combine(mapping.get().methodCondition()),
-                    routeParts,
-                    handlerFqn,
-                    methodKey,
-                    declarationRange,
-                    parameters,
-                    classExcerpt,
-                    methodExcerpt),
-                HttpEntryKind.SPRING_MVC_HTTP,
-                "HTTP",
-                classMethodCondition.combine(mapping.get().methodCondition()),
-                route,
-                routeParts,
-                handlerFqn,
-                methodKey,
-                declarationRange,
-                parameters,
-                List.of(classExcerpt, methodExcerpt));
-        entries.add(entry);
-        sites.add(
-            new HttpEntrySite(
-                siteId(
-                    snapshotId,
-                    methodExcerpt,
-                    List.of(entry.entryId()),
-                    SignalDisposition.SUPPORTED,
-                    null),
-                methodExcerpt,
-                List.of(entry.entryId()),
-                SignalDisposition.SUPPORTED,
-                null,
-                null));
-      }
-    }
-    return new ParsedHttpEntries(List.copyOf(entries), List.copyOf(sites));
-  }
-
-  private static void recordMethodsWithoutClassRoute(
-      VerifiedSourceTextDocument document,
-      String source,
-      String snapshotId,
-      CompilationUnit unit,
-      ClassOrInterfaceDeclaration type,
-      List<HttpEntrySite> sites) {
-    for (MethodDeclaration method : type.getMethods()) {
-      List<HttpMethodMapping> mappings = httpMethodMappings(unit, method);
-      if (mappings.isEmpty()) {
-        continue;
-      }
-      SourceExcerptV1 methodExcerpt = excerpt(document, source, mappings.get(0).annotation());
-      sites.add(
-          new HttpEntrySite(
-              siteId(
-                  snapshotId,
-                  methodExcerpt,
-                  List.of(),
-                  SignalDisposition.UNSUPPORTED,
-                  "MISSING_CLASS_ROUTE"),
-              methodExcerpt,
-              List.of(),
-              SignalDisposition.UNSUPPORTED,
-              "MISSING_CLASS_ROUTE",
-              gapId(snapshotId, methodExcerpt, "MISSING_CLASS_ROUTE")));
-    }
   }
 
   private static void recordCatalogMethodsWithoutClassRoute(
@@ -671,138 +419,6 @@ public final class SpringHttpEntryDiscoverer {
     return map;
   }
 
-  private static Optional<AnnotationExpr> annotation(
-      CompilationUnit unit, NodeWithAnnotations<?> annotated, String simpleName) {
-    return annotated.getAnnotations().stream()
-        .filter(value -> isSpringAnnotation(unit, value, simpleName))
-        .findFirst();
-  }
-
-  private static boolean isSpringAnnotation(
-      CompilationUnit unit, AnnotationExpr annotation, String simpleName) {
-    String qualifiedName = SPRING_WEB_ANNOTATION_PACKAGE + "." + simpleName;
-    if (annotation.getNameAsString().equals(qualifiedName)) {
-      return true;
-    }
-    if (!annotation.getNameAsString().equals(simpleName)) {
-      return false;
-    }
-    return unit.getImports().stream()
-        .anyMatch(
-            imported ->
-                !imported.isStatic()
-                    && ((imported.isAsterisk()
-                            && imported.getNameAsString().equals(SPRING_WEB_ANNOTATION_PACKAGE))
-                        || (!imported.isAsterisk()
-                            && imported.getNameAsString().equals(qualifiedName))));
-  }
-
-  private static List<HttpMethodMapping> httpMethodMappings(
-      CompilationUnit unit, MethodDeclaration method) {
-    List<HttpMethodMapping> mappings =
-        List.of(
-                new HttpMethodAnnotation("GetMapping", "GET"),
-                new HttpMethodAnnotation("PostMapping", "POST"),
-                new HttpMethodAnnotation("PutMapping", "PUT"),
-                new HttpMethodAnnotation("DeleteMapping", "DELETE"),
-                new HttpMethodAnnotation("PatchMapping", "PATCH"))
-            .stream()
-            .flatMap(
-                known ->
-                    annotation(unit, method, known.annotationName()).stream()
-                        .map(
-                            annotation ->
-                                new HttpMethodMapping(
-                                    annotation,
-                                    HttpMethodCondition.explicit(List.of(known.method())))))
-            .toList();
-    if (!mappings.isEmpty()) {
-      return mappings;
-    }
-    return annotation(unit, method, "RequestMapping")
-        .map(
-            annotation ->
-                new HttpMethodMapping(annotation, requestMappingMethodCondition(annotation)))
-        .stream()
-        .toList();
-  }
-
-  private static Optional<String> staticSingleRoute(AnnotationExpr annotation) {
-    if (annotation.isSingleMemberAnnotationExpr()
-        && annotation.asSingleMemberAnnotationExpr().getMemberValue()
-            instanceof StringLiteralExpr value) {
-      return Optional.of(value.getValue());
-    }
-    if (annotation.isNormalAnnotationExpr()) {
-      List<MemberValuePair> routePairs =
-          annotation.asNormalAnnotationExpr().getPairs().stream()
-              .filter(
-                  pair ->
-                      pair.getNameAsString().equals("value")
-                          || pair.getNameAsString().equals("path"))
-              .toList();
-      if (routePairs.size() == 1
-          && routePairs.get(0).getValue() instanceof StringLiteralExpr value) {
-        return Optional.of(value.getValue());
-      }
-    }
-    return Optional.empty();
-  }
-
-  private static HttpMethodCondition requestMappingMethodCondition(AnnotationExpr annotation) {
-    if (!annotation.isNormalAnnotationExpr()) {
-      return HttpMethodCondition.unrestricted();
-    }
-    List<MemberValuePair> methodPairs =
-        annotation.asNormalAnnotationExpr().getPairs().stream()
-            .filter(pair -> pair.getNameAsString().equals("method"))
-            .toList();
-    if (methodPairs.isEmpty()) {
-      return HttpMethodCondition.unrestricted();
-    }
-    if (methodPairs.size() != 1) {
-      throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
-    }
-    List<String> methods = requestMethods(methodPairs.get(0).getValue());
-    return methods.isEmpty()
-        ? HttpMethodCondition.unrestricted()
-        : HttpMethodCondition.explicit(methods);
-  }
-
-  private static List<String> requestMethods(com.github.javaparser.ast.expr.Expression value) {
-    if (value instanceof FieldAccessExpr method) {
-      return List.of(requestMethod(method));
-    }
-    if (value instanceof ArrayInitializerExpr values) {
-      List<String> methods = new ArrayList<>();
-      for (com.github.javaparser.ast.expr.Expression item : values.getValues()) {
-        if (!(item instanceof FieldAccessExpr method)) {
-          throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
-        }
-        methods.add(requestMethod(method));
-      }
-      return List.copyOf(methods);
-    }
-    throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
-  }
-
-  private static String requestMethod(FieldAccessExpr method) {
-    if (!method.getScope().toString().equals("RequestMethod")) {
-      throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
-    }
-    return switch (method.getNameAsString()) {
-      case "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE" ->
-          method.getNameAsString();
-      default -> throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
-    };
-  }
-
-  private static String qualifiedType(String packageName, ClassOrInterfaceDeclaration type) {
-    return packageName.isEmpty()
-        ? type.getNameAsString()
-        : packageName + "." + type.getNameAsString();
-  }
-
   private static String normalizeRoute(String route) {
     if (route == null || route.isBlank()) {
       throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
@@ -815,56 +431,6 @@ public final class SpringHttpEntryDiscoverer {
         classRoute.endsWith("/") ? classRoute.substring(0, classRoute.length() - 1) : classRoute;
     String suffix = methodRoute.startsWith("/") ? methodRoute : "/" + methodRoute;
     return prefix + suffix;
-  }
-
-  private static SourceRange sourceRange(String source, MethodDeclaration method) {
-    var range =
-        method
-            .getRange()
-            .orElseThrow(() -> new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID"));
-    int start = characterOffset(source, range.begin.line, range.begin.column);
-    int end = characterOffset(source, range.end.line, range.end.column + 1);
-    return new SourceRange(start, end - start, range.begin.line, range.end.line);
-  }
-
-  private static String methodKey(String sourcePath, SourceRange range) {
-    ObjectNode material = JsonNodeFactory.instance.objectNode();
-    material.put("sourcePath", sourcePath);
-    material.put("startOffsetUtf16", range.startOffsetUtf16());
-    material.put("lengthUtf16", range.lengthUtf16());
-    return "method:"
-        + sha256(
-            concatenate(
-                frame("java-declaration-method-v1"),
-                frame(CANONICAL_JSON.encodeCanonical(material).copyToByteArray())));
-  }
-
-  private static SourceExcerptV1 excerpt(
-      VerifiedSourceTextDocument document, String source, AnnotationExpr annotation) {
-    var range =
-        annotation
-            .getRange()
-            .orElseThrow(() -> new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID"));
-    int characterStart = characterOffset(source, range.begin.line, range.begin.column);
-    int characterEndExclusive = characterOffset(source, range.end.line, range.end.column + 1);
-    byte[] rawUtf8 = document.rawUtf8().copyToByteArray();
-    int startByte = source.substring(0, characterStart).getBytes(StandardCharsets.UTF_8).length;
-    int endByte =
-        source.substring(0, characterEndExclusive).getBytes(StandardCharsets.UTF_8).length;
-    ImmutableBytes bytes =
-        ImmutableBytes.copyOf(java.util.Arrays.copyOfRange(rawUtf8, startByte, endByte));
-    return new SourceExcerptV1(
-        new SourceLocatorV1(
-            document.fileId(),
-            document.path(),
-            startByte,
-            endByte,
-            range.begin.line,
-            range.begin.column,
-            range.end.line,
-            range.end.column + 1),
-        bytes,
-        Sha256Digest.parse(sha256(bytes.copyToByteArray())));
   }
 
   private static SourceExcerptV1 excerpt(
@@ -904,25 +470,6 @@ public final class SpringHttpEntryDiscoverer {
   private static int oneBasedColumn(String source, int offset) {
     int lineStart = source.lastIndexOf('\n', Math.max(0, offset - 1));
     return offset - lineStart;
-  }
-
-  private static int characterOffset(String source, int line, int column) {
-    if (line < 1 || column < 1) {
-      throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
-    }
-    int offset = 0;
-    for (int current = 1; current < line; current++) {
-      int newline = source.indexOf('\n', offset);
-      if (newline < 0) {
-        throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
-      }
-      offset = newline + 1;
-    }
-    int result = offset + column - 1;
-    if (result < offset || result > source.length()) {
-      throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
-    }
-    return result;
   }
 
   private static ArtifactId entryId(
@@ -1104,13 +651,6 @@ public final class SpringHttpEntryDiscoverer {
     }
   }
 
-  private record HttpMethodAnnotation(String annotationName, String method) {}
-
-  private record HttpMethodMapping(
-      AnnotationExpr annotation, HttpMethodCondition methodCondition) {}
-
   private record CatalogHttpMapping(
       JavaDeclarationCatalog.AnnotationView annotation, HttpMethodCondition methodCondition) {}
-
-  private record ParsedHttpEntries(List<HttpEntryPoint> entries, List<HttpEntrySite> sites) {}
 }

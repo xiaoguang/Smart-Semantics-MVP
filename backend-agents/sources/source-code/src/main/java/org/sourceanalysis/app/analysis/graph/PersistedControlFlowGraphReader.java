@@ -51,7 +51,7 @@ public final class PersistedControlFlowGraphReader {
       requireAddress(publication, reference);
       VerifiedCanonicalPayload payload = requirePayload(publication);
       List<ArtifactReference> upstream =
-          ControlFlowGraphModulePublisher.expectedUpstream(
+          HistoricalProgramGraphPayloads.controlFlowUpstream(
               basis, structure.payloadRef(), calls.payloadRef());
       if (!publication.receipt().controls().equals(basis.controls())
           || !publication.receipt().upstreamArtifacts().equals(upstream)) throw broken();
@@ -65,7 +65,7 @@ public final class PersistedControlFlowGraphReader {
           || !publication
               .receipt()
               .gapRefs()
-              .equals(ControlFlowGraphModulePublisher.gapRefs(draft))) {
+              .equals(HistoricalProgramGraphPayloads.gapReferences(draft))) {
         throw broken();
       }
       return new VerifiedReopenedControlFlowGraph(
@@ -99,8 +99,8 @@ public final class PersistedControlFlowGraphReader {
   private static VerifiedCanonicalPayload requirePayload(ReopenedModulePublication publication) {
     if (publication.payloads().size() != 1) throw broken();
     VerifiedCanonicalPayload payload = publication.payloads().get(0);
-    if (!ControlFlowGraphModulePublisher.FILE_NAME.equals(payload.descriptor().fileName())
-        || !ControlFlowGraphModulePublisher.ARTIFACT_TYPE.equals(
+    if (!HistoricalProgramGraphPayloads.CONTROL_FLOW_FILE.equals(payload.descriptor().fileName())
+        || !HistoricalProgramGraphPayloads.CONTROL_FLOW_TYPE.equals(
             payload.descriptor().artifactType())
         || !ControlFlowGraphDraft.SCHEMA_VERSION.equals(payload.descriptor().schemaVersion())
         || payload.descriptor().mediaType() != CanonicalMediaType.APPLICATION_JSON
@@ -127,12 +127,12 @@ public final class PersistedControlFlowGraphReader {
             "completion",
             "payload"));
     if (!ControlFlowGraphDraft.SCHEMA_VERSION.equals(text(envelope, "schemaVersion"))
-        || !ControlFlowGraphModulePublisher.ARTIFACT_TYPE.equals(text(envelope, "artifactType"))
+        || !HistoricalProgramGraphPayloads.CONTROL_FLOW_TYPE.equals(text(envelope, "artifactType"))
         || !payload.descriptor().artifactId().value().equals(text(envelope, "artifactId"))
         || !references(envelope.get("upstreamArtifacts")).equals(upstream)
         || !envelope
             .get("controls")
-            .equals(ControlFlowGraphModulePublisher.controls(basis.controls()))) throw broken();
+            .equals(HistoricalProgramGraphPayloads.controls(basis.controls()))) throw broken();
     fields(envelope.get("producer"), Set.of("address", "moduleVersion"));
     JsonNode address = envelope.get("producer").get("address");
     fields(address, Set.of("kind", "runId", "analysisStepKey", "moduleNumber", "moduleKey"));

@@ -12,14 +12,7 @@ import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.Sha256Digest;
 
-/**
- * RED for the M1 candidate-set identity closure.
- *
- * <p>The candidate set identity must change when a candidate's wire-visible atom, Java-local
- * origin, or evidence closure changes. It must remain stable when only input collection order
- * changes. This test uses typed records directly and deliberately does not use raw JSON, graph
- * drafts, source paths, or the legacy POC.
- */
+/** Value-contract coverage for the retained historical FactCandidateSet wire model. */
 class FactCandidateIdentityTest {
 
   @Test
@@ -36,46 +29,46 @@ class FactCandidateIdentityTest {
     FactCandidateSet reordered =
         FactCandidateSet.create(reorderedRoots, List.of(cancel, approve), List.of());
     SoftAssertions softly = new SoftAssertions();
+    softly.assertThat(reordered.candidateSetId()).isEqualTo(base.candidateSetId());
     softly
-        .assertThat(reordered.candidateSetId())
-        .as("equivalent root/candidate ordering must not change the identity")
-        .isEqualTo(base.candidateSetId());
-
-    FactCandidateSet changedRequiredAtom =
-        FactCandidateSet.create(
-            roots,
-            List.of(
-                candidate("approve", "approve", "approve", "approve", "CONTROL_CONTEXT"), cancel),
-            List.of());
-    softly
-        .assertThat(changedRequiredAtom.candidateSetId())
-        .as("required atom changes are wire-visible candidate semantics")
+        .assertThat(
+            FactCandidateSet.create(
+                    roots,
+                    List.of(
+                        candidate("approve", "approve", "approve", "approve", "CONTROL_CONTEXT"),
+                        cancel),
+                    List.of())
+                .candidateSetId())
         .isNotEqualTo(base.candidateSetId());
-
-    FactCandidateSet changedJavaOrigin =
-        FactCandidateSet.create(
-            roots,
-            List.of(
-                candidate(
-                    "approve", "approve", "different-origin", "approve", "INVOCATION_CALL_ID"),
-                cancel),
-            List.of());
     softly
-        .assertThat(changedJavaOrigin.candidateSetId())
-        .as("Java-local argument origin changes are wire-visible candidate semantics")
+        .assertThat(
+            FactCandidateSet.create(
+                    roots,
+                    List.of(
+                        candidate(
+                            "approve",
+                            "approve",
+                            "different-origin",
+                            "approve",
+                            "INVOCATION_CALL_ID"),
+                        cancel),
+                    List.of())
+                .candidateSetId())
         .isNotEqualTo(base.candidateSetId());
-
-    FactCandidateSet changedEvidence =
-        FactCandidateSet.create(
-            roots,
-            List.of(
-                candidate(
-                    "approve", "approve", "approve", "different-evidence", "INVOCATION_CALL_ID"),
-                cancel),
-            List.of());
     softly
-        .assertThat(changedEvidence.candidateSetId())
-        .as("evidence closure changes are wire-visible candidate semantics")
+        .assertThat(
+            FactCandidateSet.create(
+                    roots,
+                    List.of(
+                        candidate(
+                            "approve",
+                            "approve",
+                            "approve",
+                            "different-evidence",
+                            "INVOCATION_CALL_ID"),
+                        cancel),
+                    List.of())
+                .candidateSetId())
         .isNotEqualTo(base.candidateSetId());
     softly.assertAll();
   }

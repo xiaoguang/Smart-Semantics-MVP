@@ -5,6 +5,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Function;
 import org.sourceanalysis.app.analysis.code.JavaCodeEngine;
 import org.sourceanalysis.app.analysis.code.JavaCodeSession;
 import org.sourceanalysis.app.analysis.code.VerifiedJavaProject;
@@ -30,7 +31,7 @@ import org.sourceanalysis.app.capture.localgit.LocalGitSourceRegistry;
 import org.sourceanalysis.app.capture.localgit.RegisteredSourceCapture;
 
 /**
- * Executes the persisted, deterministic source-analysis prefix through optional Flow/Capsule
+ * Executes the persisted, deterministic JDT source-analysis prefix through reading-material
  * publication.
  *
  * <p>The executor owns the transition from one saved run request to the existing Step 01–05 seams.
@@ -44,7 +45,7 @@ public final class PersistedTechnicalRunExecutor {
   private final CanonicalArtifactPolicyRegistry policies;
   private final LocalGitSourceRegistry sourceRegistry;
   private final PersistedTechnicalRunConfiguration configuration;
-  private final JavaCodeEngineFactory engineFactory;
+  private final Function<EffectiveEngineConfiguration, JavaCodeEngine> engineFactory;
 
   /** Creates the application-internal technical executor from already-open dependencies. */
   public PersistedTechnicalRunExecutor(
@@ -54,7 +55,12 @@ public final class PersistedTechnicalRunExecutor {
       LocalGitSourceRegistry sourceRegistry,
       PersistedTechnicalRunConfiguration configuration) {
     this(
-        store, canonicalJson, policies, sourceRegistry, configuration, new JavaCodeEngineFactory());
+        store,
+        canonicalJson,
+        policies,
+        sourceRegistry,
+        configuration,
+        new JavaCodeEngineFactory()::create);
   }
 
   PersistedTechnicalRunExecutor(
@@ -63,7 +69,7 @@ public final class PersistedTechnicalRunExecutor {
       CanonicalArtifactPolicyRegistry policies,
       LocalGitSourceRegistry sourceRegistry,
       PersistedTechnicalRunConfiguration configuration,
-      JavaCodeEngineFactory engineFactory) {
+      Function<EffectiveEngineConfiguration, JavaCodeEngine> engineFactory) {
     this.store = Objects.requireNonNull(store, "run store");
     this.canonicalJson = Objects.requireNonNull(canonicalJson, "canonical JSON");
     this.policies = Objects.requireNonNull(policies, "artifact policies");
@@ -82,9 +88,6 @@ public final class PersistedTechnicalRunExecutor {
             new PersistedVerifiedSourceTextReader(prepared.steps(), sourceRegistry),
             prepared.modules(),
             prepared.steps());
-    if (configuration.engineConfiguration() == null) {
-      return workflow.discover(inventory, configuration.discoveryProfile());
-    }
     try (JavaCodeSession session = openSession(prepared, inventory)) {
       return workflow.discover(inventory, configuration.discoveryProfile(), session);
     }
@@ -102,26 +105,15 @@ public final class PersistedTechnicalRunExecutor {
             new PersistedVerifiedSourceTextReader(prepared.steps(), sourceRegistry),
             prepared.modules(),
             prepared.steps());
-    if (configuration.engineConfiguration() == null) {
-      TechnicalDiscoveryWorkflowResult discovery =
-          workflow.discover(inventory, configuration.discoveryProfile());
-      return workflow.continueAfterDiscovery(
-          discovery,
-          configuration.graphProfileRef(),
-          controls(prepared.request()),
-          configuration.flowProfile(),
-          configuration.capsuleProfile());
-    }
     try (JavaCodeSession session = openSession(prepared, inventory)) {
       TechnicalDiscoveryWorkflowResult discovery =
           workflow.discover(inventory, configuration.discoveryProfile(), session);
       return workflow.continueAfterDiscovery(
           discovery,
           session,
-          configuration.graphProfileRef(),
           controls(prepared.request()),
-          configuration.flowProfile(),
-          configuration.capsuleProfile(),
+          configuration.persistenceConfiguration(),
+          configuration.readingMaterialProfile(),
           configuration.selectedEntryIds());
     }
   }
@@ -134,7 +126,7 @@ public final class PersistedTechnicalRunExecutor {
     VerifiedJavaProject project =
         VerifiedJavaProject.fromVerifiedSourceTextSet(
             source, sourceRoots(source.documents()), configuration.approvedClasspath(), "17");
-    JavaCodeEngine engine = engineFactory.create(configuration.engineConfiguration());
+    JavaCodeEngine engine = engineFactory.apply(configuration.engineConfiguration());
     return engine.open(project);
   }
 

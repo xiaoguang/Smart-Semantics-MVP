@@ -14,6 +14,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.sourceanalysis.app.analysis.persistence.PersistenceConfiguration;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepInstallRequest;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
@@ -113,6 +114,7 @@ class SourceAnalysisExecutionFrozenSourceInputTest {
         null,
         null,
         null,
+        PersistenceConfiguration.disabled(),
         null,
         null,
         null,

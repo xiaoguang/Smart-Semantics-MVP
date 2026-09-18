@@ -1,6 +1,6 @@
 # 入口阅读材料：目标入口与历史Flow/Capsule合同
 
-2026-09-17的新生产目标唯一见[补充详细设计§6](../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md#6-第5步唯一阅读材料-owner)：一个owner消费Java索引和可选持久化材料，一次组装/保存、按需导出完整正文。**下文为迁移前Flow/Capsule实现及历史读取合同，不是新生产仍需三层包装或Step06/M10 Builder的要求。** 新运行材料完成于第5步；第6步的新消费方式尚未讨论，不执行模型。迁移尚未实施。
+2026-09-18的新生产目标唯一见[补充详细设计§6](../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md#6-第5步唯一阅读材料-owner)：一个owner消费Java索引和可选持久化材料，一次组装/保存、按需导出完整正文。**下文为迁移前Flow/Capsule实现及历史读取合同，不是新生产仍需三层包装或Step06/M10 Builder的要求；M1--M3与M10不再允许新安装。** 新运行材料完成于第5步；第6步的新消费方式尚未讨论，不执行模型。
 
 > 模型批次解耦（已实现）：Step05 上下文/Capsule 保持原 sourceRunId、原引用和字节；新模型批次直接读 M10 材料，不再次 compiler/projector，也不修改 Step05 格式。材料缺失时明确报错，不自动回到本步骤。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)。本次未修改本步骤算法或产物。
 
@@ -119,11 +119,11 @@ Builder只读这些context和Capsule，选完整方法、分包、分配S短ref�
 
 引擎取材默认不以费用限制只展开几层。宿主资源/取消触发时记录未展开点。Builder面对真实模型上下文上限，可以在入口/完整方法单元组包，但不得静默裁去关键Service实现后标完整。是否达到“模型实际看见足够实现”必须直接检查请求内容。
 
-## 7. 当前代码与目标边界（2026-09-14）
+## 7. 历史代码与目标边界（2026-09-14）
 
-JDT 与 JavaParser 两条引擎路线都已经接入共同合同。JDT 路线已经完成 context 生产、投影、保存、读取和 Builder 接力；JavaParser Adapter 已恢复迁移前的既有能力，但不承诺追平 JDT 的绑定覆盖。当前已交付格式为 flow compilation / flow slices v6、capsule projection v11、evidence capsule v9；不能再把 v5/v10 写成当前版本。
+当时 JDT 与 JavaParser 两条引擎路线都接入共同合同：JDT 生产 context、投影、保存、读取和 Builder 接力；JavaParser Adapter 恢复迁移前能力但不承诺追平 JDT。其 flow compilation / flow slices v6、capsule projection v11、evidence capsule v9 是历史格式版本，不能把 v5/v10 写成当时版本，也不能作为现行 Step05 输出。
 
-`EntryCodeContext` 保存完整方法、调用点、所有候选、实参/形参、control/exits、supporting sources 与 limitations；没有 strict Flow 的安全入口也可用 `flowRef=null` 发布上下文和 Capsule。`EvidenceCapsuleProjector` 原样投影 context；`BusinessMaterialBuilder` 只选择已保存方法、分配短引用并格式化模型输入，生产代码不再调用 JavaParser 或 JDT。相同导航限制在进入严格 EntryContext 前去重，但不同调用点、入口或停止原因不能互相覆盖。
+历史 `EntryCodeContext` 保存完整方法、调用点、所有候选、实参/形参、control/exits、supporting sources 与 limitations；没有 strict Flow 的安全入口也可用 `flowRef=null` 发布上下文和 Capsule。`EvidenceCapsuleProjector` 与 `BusinessMaterialBuilder` 仅为历史 payload 的概念和 reader 边界；新 Step05 使用 `CodeReadingMaterialSet`，不重新引擎取材、不执行旧 Flow/Capsule/M10 producer。
 
 本次业务过程重建设计不修改 Step05 wire，也不重新生成已经保存的 326 份 Activity。未来实现只需让 Step07 的 assembler 沿现有 Activity/SourceRef 引用选择性取回过程所需原文；如果为此发现缺少合法读取 seam，应补薄 reader，而不是改写 Step05 算法、复制完整正文或新增另一套源码解析。
 

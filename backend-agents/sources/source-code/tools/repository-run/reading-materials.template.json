@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "repository-run-config-v2",
+  "policyRegistry": "/absolute/path/to/reading-materials-artifact-policy-set-v1.json",
+  "inputPolicyRegistry": "/absolute/path/to/reading-materials-artifact-policy-set-v1.json",
+  "source": {
+    "repositoryPath": "/absolute/path/to/read-only/repository",
+    "declaredRepositoryIdentity": "replace-with-repository-identity",
+    "commitId": "replace-with-fixed-git-commit"
+  },
+  "paths": {
+    "runStore": "/absolute/path/to/ignored/new-run-store",
+    "captureWorkspace": "/absolute/path/to/ignored/capture-workspace",
+    "stateFile": "/absolute/path/to/ignored/new-materials-state-v4.json",
+    "gitExecutable": "/absolute/path/to/git"
+  },
+  "sourceAnalysis": {
+    "javaEngine": "jdt",
+    "jdt": {
+      "installation": "/absolute/path/to/jdtls-distribution",
+      "javaHome": "/absolute/path/to/jdt-tool-jdk"
+    },
+    "persistence": {
+      "plugins": [{"type": "mybatis", "sqlParser": "jsqlparser"}]
+    }
+  },
+  "inputs": {
+    "capturePolicy": {"schemaVersion": "capture-policy-v1", "mode": "LOCAL_GIT_COMMIT", "commitObjectFormat": "SHA1", "networkAccess": "DISABLED", "worktreeRead": "FORBIDDEN"},
+    "candidateSeries": {"schemaVersion": "candidate-series-v1", "readerCandidateRound": "ROUND_1"},
+    "capabilityProfile": {"schemaVersion": "capability-profile-v1", "languages": ["JAVA"], "frameworks": ["MYBATIS", "SPRING_MVC"]},
+    "verificationPolicy": {"schemaVersion": "verification-policy-v1", "allowUnverified": false, "sourceDisposition": "VERIFIED"},
+    "profileBundle": {"schemaVersion": "profile-bundle-v1", "discoveryRuleVersion": "application-discovery-v2"},
+    "resourceBudget": {"schemaVersion": "resource-budget-v1", "maxSourceFiles": 200000, "maxSourceBytes": 2000000000},
+    "toolchain": {"schemaVersion": "toolchain-java-local-git-v1", "provider": "NONE", "networkAccess": "DISABLED"},
+    "schemaBundle": {"schemaVersion": "schema-bundle-step05-v1", "analysisStepKeys": ["verified-source-inventory", "application-discovery", "program-graphs", "proven-code-facts", "business-flows"]},
+    "promptBundle": {"schemaVersion": "prompt-bundle-v1", "provider": "NONE", "messageCount": 0},
+    "graphProfile": {"schemaVersion": "graph-profile-v1", "graphProfileVersion": "program-graphs-v2"}
+  },
+  "technical": {
+    "approvedClasspath": [],
+    "selectedEntryIds": [],
+    "inventory": {"maxSourceFiles": 200000, "maxSourceBytes": 2000000000},
+    "store": {"maxPayloadFiles": 100000, "maxArtifactBytes": 1000000000, "maxPublicationBytes": 2000000000, "maxDirectoryEntries": 1000000},
+    "readingMaterials": {"maxPacketUtf8Bytes": 8388608, "maxEntriesPerPacket": 1}
+  }
+}

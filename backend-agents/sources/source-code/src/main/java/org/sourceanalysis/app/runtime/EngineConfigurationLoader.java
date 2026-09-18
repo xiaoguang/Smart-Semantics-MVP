@@ -40,16 +40,11 @@ public final class EngineConfigurationLoader {
       }
       SourceAnalysisDocument sourceAnalysis = document.sourceAnalysis();
       String engine = sourceAnalysis.javaEngine();
-      if (!EffectiveEngineConfiguration.JDT.equals(engine)
-          && !EffectiveEngineConfiguration.JAVAPARSER.equals(engine)) {
-        throw invalid("sourceAnalysis.javaEngine must be exactly jdt or javaparser", null);
+      if (!EffectiveEngineConfiguration.JDT.equals(engine)) {
+        throw invalid("sourceAnalysis.javaEngine must be exactly jdt", null);
       }
-
-      JdtDocument jdt = sourceAnalysis.jdt();
-      if (EffectiveEngineConfiguration.JDT.equals(engine)) {
-        return new EffectiveEngineConfiguration(engine, selectedJdtConfiguration(jdt));
-      }
-      return new EffectiveEngineConfiguration(engine, null);
+      return new EffectiveEngineConfiguration(
+          engine, selectedJdtConfiguration(sourceAnalysis.jdt()));
     } catch (CodeEngineException failure) {
       throw failure;
     } catch (IOException | IllegalArgumentException failure) {

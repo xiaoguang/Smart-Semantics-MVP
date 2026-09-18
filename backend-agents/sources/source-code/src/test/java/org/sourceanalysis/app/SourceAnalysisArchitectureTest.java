@@ -27,6 +27,8 @@ class SourceAnalysisArchitectureTest {
           "org.sourceanalysis.app.analysis.inventory",
           "org.sourceanalysis.app.analysis.discovery",
           "org.sourceanalysis.app.analysis.code",
+          "org.sourceanalysis.app.analysis.persistence",
+          "org.sourceanalysis.app.analysis.material",
           "org.sourceanalysis.app.analysis.graph",
           "org.sourceanalysis.app.analysis.fact",
           "org.sourceanalysis.app.analysis.flow",

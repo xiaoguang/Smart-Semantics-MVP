@@ -1,850 +1,490 @@
 package org.sourceanalysis.app.analysis.graph;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
-import org.sourceanalysis.app.artifact.AnalysisStepInstallRequest;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
-import org.sourceanalysis.app.artifact.AnalysisStepPublicationAddress;
-import org.sourceanalysis.app.artifact.AnalysisStepPublisherModuleProvenance;
 import org.sourceanalysis.app.artifact.ArtifactControls;
+import org.sourceanalysis.app.artifact.ArtifactDescriptor;
 import org.sourceanalysis.app.artifact.ArtifactId;
+import org.sourceanalysis.app.artifact.ArtifactPolicyRegistryReference;
 import org.sourceanalysis.app.artifact.ArtifactReference;
-import org.sourceanalysis.app.artifact.ArtifactStoreLimits;
-import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
-import org.sourceanalysis.app.artifact.CanonicalAnalysisStepPayload;
-import org.sourceanalysis.app.artifact.CanonicalArtifactPolicyRegistry;
+import org.sourceanalysis.app.artifact.CanonicalArtifactPolicy;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalMediaType;
-import org.sourceanalysis.app.artifact.CanonicalModulePayload;
-import org.sourceanalysis.app.artifact.FileSystemCanonicalAnalysisStepArtifactStore;
-import org.sourceanalysis.app.artifact.FileSystemCanonicalModuleArtifactStore;
+import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.InstalledModulePublication;
+import org.sourceanalysis.app.artifact.ModuleArtifactRoot;
 import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.ModuleInstallRequest;
+import org.sourceanalysis.app.artifact.ModulePublicationReference;
+import org.sourceanalysis.app.artifact.ModuleReceipt;
+import org.sourceanalysis.app.artifact.ModuleReceiptId;
+import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 import org.sourceanalysis.app.artifact.Sha256Digest;
+import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 
-/** Public-wire assertions for the persisted M6 graph set. */
+/** Retention guard for historical graph readers after strict graph producers were retired. */
 class ProgramGraphPublicWireTest {
 
-  @TempDir Path temporaryDirectory;
+  @Test
+  void currentFixtureKeepsSourceAndDiscoveryWireAvailableWithoutInstallingLegacyGraphs(
+      @TempDir Path temporaryDirectory) {
+    try (ProgramGraphsPublicFixture fixture =
+        ProgramGraphsPublicFixture.createForJavaCodeIndex(temporaryDirectory.resolve("fixture"))) {
+      assertThat(fixture.sourceInventory()).isNotNull();
+      assertThat(fixture.applicationDiscovery()).isNotNull();
+      assertThat(fixture.programGraphs()).isNull();
+      assertThat(
+              fixture
+                  .stepArtifacts()
+                  .reopen(fixture.applicationDiscovery().publication())
+                  .semanticPayloads())
+          .extracting(value -> value.descriptor().fileName())
+          .contains("entry-points.jsonl", "mapper-catalog.jsonl");
+    }
+  }
 
   @Test
-  void publicGraphsCloseEvidenceAndIndexWithoutDraftFields() {
-    try (ControlFlowGraphBuilderTest.Fixture fixture =
-        ControlFlowGraphBuilderTest.Fixture.createWithConsumedAuditClientReturn(
-            temporaryDirectory)) {
-      CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
-      CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
-      ArtifactControls controls = controls(policies);
-      FileSystemCanonicalModuleArtifactStore modules =
-          new FileSystemCanonicalModuleArtifactStore(
-              fixture.handle(),
-              canonicalJson,
-              policies,
-              new ArtifactStoreLimits(8, 1_000_000, 4_000_000, 12));
-      CanonicalAnalysisStepArtifactStore steps =
-          new FileSystemCanonicalAnalysisStepArtifactStore(
-              fixture.handle(),
-              canonicalJson,
-              policies,
-              new ArtifactStoreLimits(8, 1_000_000, 4_000_000, 10));
-      AnalysisRunId runId = AnalysisRunId.parse("analysis-run:" + digest("public-wire-run"));
-      InstalledModulePublication sourceModule =
-          modules.install(
-              new ModuleInstallRequest(
-                  new AnalysisStepModuleAddress(
-                      runId, AnalysisStepKey.VERIFIED_SOURCE_INVENTORY, 3, "publish"),
-                  "v1",
-                  List.of(),
-                  controls,
-                  ModuleCompletionStatus.SUCCEEDED,
-                  List.of(),
-                  sourcePayloads(canonicalJson)));
-      var sourceStep =
-          steps.install(
-              new AnalysisStepInstallRequest(
-                  new AnalysisStepPublicationAddress(
-                      runId, AnalysisStepKey.VERIFIED_SOURCE_INVENTORY),
-                  new AnalysisStepPublisherModuleProvenance(sourceModule.reference()),
-                  List.of(),
-                  controls,
-                  ModuleCompletionStatus.SUCCEEDED,
-                  List.of(),
-                  toStepPayloads(sourcePayloads(canonicalJson)),
-                  null));
-      InstalledModulePublication discoveryModule =
-          modules.install(
-              new ModuleInstallRequest(
-                  new AnalysisStepModuleAddress(
-                      runId, AnalysisStepKey.APPLICATION_DISCOVERY, 4, "publish"),
-                  "v1",
-                  List.of(),
-                  controls,
-                  ModuleCompletionStatus.SUCCEEDED,
-                  List.of(),
-                  discoveryPayloads(canonicalJson)));
-      var discoveryStep =
-          steps.install(
-              new AnalysisStepInstallRequest(
-                  new AnalysisStepPublicationAddress(runId, AnalysisStepKey.APPLICATION_DISCOVERY),
-                  new AnalysisStepPublisherModuleProvenance(discoveryModule.reference()),
-                  List.of(sourceStep.reference()),
-                  controls,
-                  ModuleCompletionStatus.SUCCEEDED,
-                  List.of(),
-                  toStepPayloads(discoveryPayloads(canonicalJson)),
-                  null));
+  void reopensAStoredCodeStructureGraphAndRejectsPayloadIdentityTampering() {
+    HistoricalGraphFixture fixture = HistoricalGraphFixture.open();
+    PersistedCodeStructureGraphReader reader =
+        new PersistedCodeStructureGraphReader(fixture.store());
 
-      CodeStructureSource fixtureSource = fixture.reopenedInputs().source();
-      CodeStructureDiscovery fixtureDiscovery =
-          fixture.reopenedInputs().discovery().codeStructureDiscovery();
+    ReopenedCodeStructureGraph reopened =
+        reader.reopen(fixture.reference(), fixture.inputs(), fixture.graphProfile());
+    assertThat(reopened.draft().graphId()).isEqualTo(fixture.draft().graphId());
+    assertThat(reopened.draft().nodes()).isEmpty();
+    assertThat(reopened.draft().coverage().closed()).isTrue();
+
+    assertThatThrownBy(
+            () ->
+                new PersistedCodeStructureGraphReader(fixture.tamperedStore())
+                    .reopen(fixture.reference(), fixture.inputs(), fixture.graphProfile()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("GRAPH_REFERENCE_BROKEN");
+  }
+
+  @Test
+  void reopensEveryStoredHistoricalGraphPayloadWithPredecessorIdentity() {
+    HistoricalGraphReaderFixture fixture = HistoricalGraphReaderFixture.open();
+    ReopenedCodeStructureGraph structure =
+        new PersistedCodeStructureGraphReader(fixture.store())
+            .reopen(fixture.codeStructureReference(), fixture.inputs(), fixture.graphProfile());
+    ReopenedCallGraph calls =
+        new PersistedCallGraphReader(fixture.store())
+            .reopen(fixture.callReference(), fixture.inputs(), structure, fixture.graphProfile());
+    ReopenedControlFlowGraph controlFlow =
+        new PersistedControlFlowGraphReader(fixture.store())
+            .reopen(
+                fixture.controlFlowReference(),
+                fixture.inputs(),
+                structure,
+                calls,
+                fixture.graphProfile());
+    ReopenedDataFlowGraph dataFlow =
+        new PersistedDataFlowGraphReader(fixture.store())
+            .reopen(
+                fixture.dataFlowReference(),
+                fixture.inputs(),
+                structure,
+                calls,
+                controlFlow,
+                fixture.graphProfile());
+    ReopenedEvidenceGraph evidence =
+        new PersistedEvidenceGraphReader(fixture.store())
+            .reopen(
+                fixture.evidenceReference(),
+                fixture.inputs(),
+                structure,
+                calls,
+                controlFlow,
+                dataFlow,
+                fixture.graphProfile());
+
+    assertThat(structure.draft().graphKind()).isEqualTo(ProgramGraphKind.CODE_STRUCTURE);
+    assertThat(structure.draft().snapshotId()).isEqualTo("snapshot:" + "1".repeat(64));
+    assertThat(structure.draft().applicationProfileId())
+        .isEqualTo(ArtifactId.parse("application-profile:" + "2".repeat(64)));
+    assertThat(structure.draft().coverage().closed()).isTrue();
+    assertThat(calls.draft().graphKind()).isEqualTo(ProgramGraphKind.CALL);
+    assertThat(calls.codeStructurePayloadRef()).isEqualTo(structure.payloadRef());
+    assertThat(controlFlow.draft().graphKind()).isEqualTo(ProgramGraphKind.CONTROL_FLOW);
+    assertThat(controlFlow.callGraphPayloadRef()).isEqualTo(calls.payloadRef());
+    assertThat(dataFlow.draft().graphKind()).isEqualTo(ProgramGraphKind.DATA_FLOW);
+    assertThat(dataFlow.controlFlowPayloadRef()).isEqualTo(controlFlow.payloadRef());
+    assertThat(dataFlow.draft().worklistAccounting().enqueuedWorkItemIds()).isEmpty();
+    assertThat(evidence.draft().graphKind()).isEqualTo(ProgramGraphKind.EVIDENCE);
+    assertThat(evidence.dataFlowPayloadRef()).isEqualTo(dataFlow.payloadRef());
+    assertThat(evidence.draft().coverage().closed()).isTrue();
+  }
+
+  @Test
+  void rejectsCorruptPayloadAndPersistedUpstreamMismatch() {
+    HistoricalGraphReaderFixture fixture = HistoricalGraphReaderFixture.open();
+    ReopenedCodeStructureGraph structure =
+        new PersistedCodeStructureGraphReader(fixture.store())
+            .reopen(fixture.codeStructureReference(), fixture.inputs(), fixture.graphProfile());
+    ReopenedCallGraph calls =
+        new PersistedCallGraphReader(fixture.store())
+            .reopen(fixture.callReference(), fixture.inputs(), structure, fixture.graphProfile());
+    ReopenedControlFlowGraph controlFlow =
+        new PersistedControlFlowGraphReader(fixture.store())
+            .reopen(
+                fixture.controlFlowReference(),
+                fixture.inputs(),
+                structure,
+                calls,
+                fixture.graphProfile());
+
+    assertThatThrownBy(
+            () ->
+                new PersistedDataFlowGraphReader(fixture.corruptPayloadStore("data-flow"))
+                    .reopen(
+                        fixture.dataFlowReference(),
+                        fixture.inputs(),
+                        structure,
+                        calls,
+                        controlFlow,
+                        fixture.graphProfile()))
+        .isInstanceOf(GraphReferenceException.class)
+        .hasMessage("GRAPH_REFERENCE_BROKEN");
+
+    assertThatThrownBy(
+            () ->
+                new PersistedCallGraphReader(fixture.upstreamMismatchStore("call-graph"))
+                    .reopen(
+                        fixture.callReference(),
+                        fixture.inputs(),
+                        structure,
+                        fixture.graphProfile()))
+        .isInstanceOf(GraphReferenceException.class)
+        .hasMessage("GRAPH_REFERENCE_BROKEN");
+  }
+
+  private static final class HistoricalGraphFixture {
+    private static final String SNAPSHOT = "snapshot:" + "1".repeat(64);
+    private static final ArtifactId APP = ArtifactId.parse("application-profile:" + "2".repeat(64));
+    private static final AnalysisRunId RUN = AnalysisRunId.parse("analysis-run:" + "3".repeat(64));
+
+    private final CodeStructureGraphDraft draft;
+    private final ReopenedProgramGraphInputs inputs;
+    private final ArtifactReference graphProfile;
+    private final CodeStructureGraphDraftReference reference;
+    private final ReopenedModulePublication saved;
+    private final ReopenedModulePublication tampered;
+
+    private HistoricalGraphFixture(
+        CodeStructureGraphDraft draft,
+        ReopenedProgramGraphInputs inputs,
+        ArtifactReference graphProfile,
+        CodeStructureGraphDraftReference reference,
+        ReopenedModulePublication saved,
+        ReopenedModulePublication tampered) {
+      this.draft = draft;
+      this.inputs = inputs;
+      this.graphProfile = graphProfile;
+      this.reference = reference;
+      this.saved = saved;
+      this.tampered = tampered;
+    }
+
+    static HistoricalGraphFixture open() {
+      ArtifactControls controls =
+          new ArtifactControls(
+              new Sha256Digest("4".repeat(64)),
+              new Sha256Digest("5".repeat(64)),
+              new Sha256Digest("6".repeat(64)),
+              null,
+              new ArtifactPolicyRegistryReference(
+                  ArtifactId.parse("artifact-policy-registry:" + "7".repeat(64)),
+                  new Sha256Digest("8".repeat(64))));
+      ArtifactReference sourceInventory = ref("source-inventory", '9');
+      ArtifactReference verifiedSnapshot = ref("verified-snapshot", 'a');
+      ArtifactReference appRef = ref("application-profile", 'b');
+      ArtifactReference capability = ref("capability-report", 'c');
+      ArtifactReference entries = ref("entry-points", 'd');
+      ArtifactReference mappers = ref("mapper-catalog", 'e');
+      ArtifactReference graphProfile = ref("graph-profile", 'f');
+      CodeStructureSourceDocument document =
+          new CodeStructureSourceDocument(
+              ArtifactId.parse("file:" + "0".repeat(64)),
+              "src/main/java/Empty.java",
+              ImmutableBytes.copyOf("class Empty {}\n".getBytes(StandardCharsets.UTF_8)),
+              new Sha256Digest(sha256("class Empty {}\n".getBytes(StandardCharsets.UTF_8))));
       CodeStructureSource source =
           new CodeStructureSource(
-              fixtureSource.snapshotId(),
-              fixtureSource.inventoryScopeKind(),
-              fixtureSource.repositoryCompletionEligible(),
-              publishedArtifact(sourceModule, "source-inventory.jsonl"),
-              publishedArtifact(sourceModule, "verified-snapshot.json"),
+              SNAPSHOT,
+              "COMPLETE_CAPTURE",
+              true,
+              sourceInventory,
+              verifiedSnapshot,
               controls,
-              fixtureSource.documents());
+              List.of(document));
       CodeStructureDiscovery discovery =
-          new CodeStructureDiscovery(
-              fixtureDiscovery.applicationProfileId(),
-              publishedArtifact(discoveryModule, "application-profile.json"),
-              publishedArtifact(discoveryModule, "capability-report.json"),
-              publishedArtifact(discoveryModule, "entry-points.jsonl"),
-              publishedArtifact(discoveryModule, "mapper-catalog.jsonl"),
-              fixtureDiscovery.entryIds());
+          new CodeStructureDiscovery(APP, appRef, capability, entries, mappers, List.of());
       ReopenedProgramGraphInputs inputs =
           new ReopenedProgramGraphInputs(
-              source,
-              new ProgramGraphDiscoveryInputs(
-                  discovery,
-                  fixture.reopenedInputs().discovery().entries(),
-                  fixture.reopenedInputs().discovery().mapperCatalog()));
-      CodeStructureGraphDraftReference structureReference =
-          new CodeStructureGraphModulePublisher(modules)
-              .publish(
-                  new AnalysisStepModuleAddress(
-                      runId, AnalysisStepKey.PROGRAM_GRAPHS, 1, "code-structure"),
-                  source,
-                  discovery,
-                  new CodeStructureGraphBuilder()
-                      .buildStructure(
-                          source,
-                          discovery,
-                          new CodeStructureGraphProfile(fixture.graphProfileRef())));
-      ReopenedCodeStructureGraph structure =
-          new PersistedCodeStructureGraphReader(modules)
-              .reopen(structureReference, inputs, fixture.graphProfileRef());
-      CallGraphDraftReference callReference =
-          new CallGraphModulePublisher(modules)
-              .publish(
-                  new AnalysisStepModuleAddress(
-                      runId, AnalysisStepKey.PROGRAM_GRAPHS, 2, "call-graph"),
-                  structure,
-                  inputs,
-                  new CallGraphBuilder()
-                      .buildCalls(
-                          new CallGraphInputs(structure, inputs),
-                          new CallGraphProfile(fixture.graphProfileRef())));
-      ReopenedCallGraph calls =
-          new PersistedCallGraphReader(modules)
-              .reopen(callReference, inputs, structure, fixture.graphProfileRef());
-      ControlFlowGraphDraft controlDraft =
-          new ControlFlowGraphBuilder()
-              .buildControlFlow(
-                  new ControlFlowInputs(structure, calls, inputs),
-                  new ControlFlowGraphProfile(fixture.graphProfileRef()));
-      ControlFlowGraphDraftReference controlReference =
-          new ControlFlowGraphModulePublisher(modules)
-              .publish(
-                  new AnalysisStepModuleAddress(
-                      runId, AnalysisStepKey.PROGRAM_GRAPHS, 3, "control-flow"),
-                  structure,
-                  calls,
-                  inputs,
-                  controlDraft);
-      ReopenedControlFlowGraph control =
-          new PersistedControlFlowGraphReader(modules)
-              .reopen(controlReference, inputs, structure, calls, fixture.graphProfileRef());
-      DataFlowGraphDraft dataDraft =
-          new DataFlowGraphBuilder()
-              .buildDataFlow(
-                  new DataFlowInputs(structure, calls, control, inputs),
-                  new DataFlowGraphProfile(fixture.graphProfileRef()));
-      DataFlowGraphDraftReference dataReference =
-          new DataFlowGraphModulePublisher(modules)
-              .publish(
-                  new AnalysisStepModuleAddress(
-                      runId, AnalysisStepKey.PROGRAM_GRAPHS, 4, "data-flow"),
-                  structure,
-                  calls,
-                  control,
-                  inputs,
-                  dataDraft);
-      ReopenedDataFlowGraph data =
-          new PersistedDataFlowGraphReader(modules)
-              .reopen(dataReference, inputs, structure, calls, control, fixture.graphProfileRef());
-      EvidenceGraphDraft evidenceDraft =
-          new EvidenceGraphBuilder()
-              .buildEvidence(
-                  List.of(structure.draft(), calls.draft(), control.draft(), data.draft()), source);
-      EvidenceGraphDraftReference evidenceReference =
-          new EvidenceGraphModulePublisher(modules)
-              .publish(
-                  new AnalysisStepModuleAddress(
-                      runId, AnalysisStepKey.PROGRAM_GRAPHS, 5, "evidence-graph"),
-                  structure,
-                  calls,
-                  control,
-                  data,
-                  inputs,
-                  evidenceDraft);
-      var evidence =
-          new PersistedEvidenceGraphReader(modules)
-              .reopen(
-                  evidenceReference,
-                  inputs,
-                  structure,
-                  calls,
-                  control,
-                  data,
-                  fixture.graphProfileRef());
-      ProgramGraphsReference publication =
-          new ProgramGraphSetPublicationSpecifier(modules, steps)
-              .specifyGraphSet(
-                  new ProgramGraphsPublicationInputs(
-                      sourceStep.reference(),
-                      discoveryStep.reference(),
-                      structure,
-                      calls,
-                      control,
-                      data,
-                      evidence),
-                  controls);
+              source, new ProgramGraphDiscoveryInputs(discovery, List.of(), List.of()));
+      GraphCoverage coverage =
+          new GraphCoverage(List.of(), List.of(), List.of(), List.of(), List.of(), true);
+      ArtifactId graphId =
+          CodeStructureGraphDraft.calculateGraphId(
+              SNAPSHOT,
+              APP,
+              graphProfile,
+              List.of(),
+              List.of(),
+              List.of(),
+              List.of(),
+              List.of(),
+              coverage);
+      CodeStructureGraphDraft draft =
+          new CodeStructureGraphDraft(
+              CodeStructureGraphDraft.SCHEMA_VERSION,
+              ProgramGraphKind.CODE_STRUCTURE,
+              graphId,
+              SNAPSHOT,
+              APP,
+              graphProfile,
+              List.of(),
+              List.of(),
+              List.of(),
+              List.of(),
+              List.of(),
+              coverage);
+      ModulePublicationReference publication =
+          new ModulePublicationReference(
+              new AnalysisStepModuleAddress(
+                  RUN, AnalysisStepKey.PROGRAM_GRAPHS, 1, "code-structure"),
+              ModuleArtifactRoot.parse("module-root:" + "1".repeat(64)),
+              ModuleReceiptId.parse("module-receipt:" + "2".repeat(64)),
+              new Sha256Digest("3".repeat(64)));
+      CodeStructureGraphDraftReference reference =
+          new CodeStructureGraphDraftReference(publication);
+      ReopenedModulePublication saved = publication(reference, controls, draft, graphProfile, null);
+      ReopenedModulePublication tampered =
+          publication(
+              reference,
+              controls,
+              draft,
+              graphProfile,
+              ArtifactId.parse("program-graphs-code-structure-graph:" + "9".repeat(64)));
+      return new HistoricalGraphFixture(draft, inputs, graphProfile, reference, saved, tampered);
+    }
 
-      var reopened = steps.reopen(publication.publication());
-      Map<String, JsonNode> documents =
-          reopened.semanticPayloads().stream()
-              .filter(payload -> payload.descriptor().fileName().endsWith(".json"))
-              .collect(
-                  java.util.stream.Collectors.toMap(
-                      payload -> payload.descriptor().fileName(),
-                      payload -> canonicalJson.parseCanonical(payload.canonicalUtf8())));
-      assertThat(
+    private static ReopenedModulePublication publication(
+        CodeStructureGraphDraftReference reference,
+        ArtifactControls controls,
+        CodeStructureGraphDraft draft,
+        ArtifactReference graphProfile,
+        ArtifactId envelopeArtifactId) {
+      CanonicalJsonCodec json = new CanonicalJsonCodec();
+      ObjectNode envelope = JsonNodeFactory.instance.objectNode();
+      envelope.put("schemaVersion", CodeStructureGraphDraft.SCHEMA_VERSION);
+      envelope.put("artifactType", "PROGRAM_GRAPHS_CODE_STRUCTURE_DRAFT");
+      ArtifactId descriptorArtifactId =
+          ArtifactId.parse("program-graphs-code-structure-graph:" + "0".repeat(64));
+      envelope.put(
+          "artifactId",
+          envelopeArtifactId == null ? descriptorArtifactId.value() : envelopeArtifactId.value());
+      ObjectNode producer = envelope.putObject("producer");
+      producer.put("moduleVersion", "v1");
+      ObjectNode address = producer.putObject("address");
+      address.put("kind", "ANALYSIS_STEP");
+      address.put("runId", RUN.value());
+      address.put("analysisStepKey", AnalysisStepKey.PROGRAM_GRAPHS.wireValue());
+      address.put("moduleNumber", 1);
+      address.put("moduleKey", "code-structure");
+      byte[] sourceBytes = "class Empty {}\n".getBytes(StandardCharsets.UTF_8);
+      CodeStructureSource source =
+          new CodeStructureSource(
+              SNAPSHOT,
+              "COMPLETE_CAPTURE",
+              true,
+              ref("source-inventory", '9'),
+              ref("verified-snapshot", 'a'),
+              controls,
               List.of(
-                  documents.get("data-flow-graph.json").path("schemaVersion").textValue(),
-                  documents.get("evidence-graph.json").path("schemaVersion").textValue(),
-                  documents.get("graph-index.json").path("schemaVersion").textValue()))
-          .containsExactly(
-              "program-graphs-data-flow-graph-v2",
-              "program-graphs-evidence-graph-v3",
-              "program-graphs-graph-index-v2");
-      assertPublicDataFlowVariants(dataDraft, documents.get("data-flow-graph.json"));
-      JsonNode evidenceGraph = documents.get("evidence-graph.json");
-      Set<String> sourceEvidenceIds = new HashSet<>();
-      Map<String, Set<String>> supportedBySubject = new HashMap<>();
-      for (JsonNode node : evidenceGraph.get("nodes")) {
-        if ("SOURCE_EXCERPT".equals(node.get("kind").textValue())) {
-          sourceEvidenceIds.add(node.get("evidenceNodeId").textValue());
+                  new CodeStructureSourceDocument(
+                      ArtifactId.parse("file:" + "0".repeat(64)),
+                      "src/main/java/Empty.java",
+                      ImmutableBytes.copyOf(sourceBytes),
+                      new Sha256Digest(sha256(sourceBytes)))));
+      CodeStructureDiscovery discovery =
+          new CodeStructureDiscovery(
+              APP,
+              ref("application-profile", 'b'),
+              ref("capability-report", 'c'),
+              ref("entry-points", 'd'),
+              ref("mapper-catalog", 'e'),
+              List.of());
+      ProgramGraphInputBasis basis = ProgramGraphInputBasis.from(source, discovery, graphProfile);
+      List<ArtifactReference> upstream =
+          new java.util.ArrayList<>(
+              List.of(
+                  basis.sourceInventoryRef(),
+                  basis.verifiedSnapshotRef(),
+                  basis.applicationProfileRef(),
+                  basis.capabilityReportRef(),
+                  basis.entryPointsRef(),
+                  basis.mapperCatalogRef(),
+                  basis.graphProfileRef()));
+      upstream.sort(Comparator.comparing(value -> value.artifactId().value()));
+      references(envelope.putArray("upstreamArtifacts"), upstream);
+      envelope.set("controls", controls(controls));
+      ObjectNode completion = envelope.putObject("completion");
+      completion.put("status", ModuleCompletionStatus.SUCCEEDED.name());
+      completion.putArray("gapRefs");
+      completion.putNull("failureRef");
+      envelope.set("payload", draft(draft));
+      ImmutableBytes bytes = json.encodeCanonical(envelope);
+      ArtifactDescriptor descriptor =
+          new ArtifactDescriptor(
+              "code-structure-draft.json",
+              "PROGRAM_GRAPHS_CODE_STRUCTURE_DRAFT",
+              CodeStructureGraphDraft.SCHEMA_VERSION,
+              descriptorArtifactId,
+              CanonicalMediaType.APPLICATION_JSON,
+              bytes.size(),
+              new Sha256Digest(sha256(bytes.copyToByteArray())));
+      ModuleReceipt receipt =
+          new ModuleReceipt(
+              "module-receipt-v1",
+              reference.publication().moduleReceiptId(),
+              reference.publication().address(),
+              "v1",
+              upstream,
+              controls,
+              ModuleCompletionStatus.SUCCEEDED,
+              List.of(descriptor),
+              reference.publication().moduleArtifactRoot(),
+              List.of());
+      return new ReopenedModulePublication(
+          reference.publication(),
+          receipt,
+          List.of(new VerifiedCanonicalPayload(descriptor, bytes)));
+    }
+
+    private static ObjectNode draft(CodeStructureGraphDraft draft) {
+      ObjectNode value = JsonNodeFactory.instance.objectNode();
+      value.put("graphKind", draft.graphKind().name());
+      value.put("graphId", draft.graphId().value());
+      value.put("snapshotId", draft.snapshotId());
+      value.put("applicationProfileId", draft.applicationProfileId().value());
+      value.set("graphProfileRef", reference(draft.graphProfileRef()));
+      value.putArray("entryIds");
+      value.putArray("nodes");
+      value.putArray("edges");
+      value.putArray("gapDrafts");
+      value.putArray("provenanceDrafts");
+      ObjectNode coverage = value.putObject("coverage");
+      coverage.putArray("candidateElementIds");
+      coverage.putArray("exactElementIds");
+      coverage.putArray("gapDispositions");
+      coverage.putArray("exclusionDispositions");
+      coverage.putArray("scopeGapIds");
+      coverage.put("closed", true);
+      return value;
+    }
+
+    private static ObjectNode controls(ArtifactControls values) {
+      ObjectNode result = JsonNodeFactory.instance.objectNode();
+      result.put("toolchainSha256", values.toolchainSha256().value());
+      result.put("profileSha256", values.profileSha256().value());
+      result.put("schemaBundleSha256", values.schemaBundleSha256().value());
+      result.putNull("promptBundleSha256");
+      result
+          .putObject("artifactPolicyRegistryRef")
+          .put("artifactId", values.artifactPolicyRegistryRef().artifactId().value())
+          .put("sha256", values.artifactPolicyRegistryRef().sha256().value());
+      return result;
+    }
+
+    private static void references(ArrayNode target, List<ArtifactReference> values) {
+      values.forEach(value -> target.add(reference(value)));
+    }
+
+    private static ObjectNode reference(ArtifactReference value) {
+      return JsonNodeFactory.instance
+          .objectNode()
+          .put("artifactId", value.artifactId().value())
+          .put("sha256", value.sha256().value());
+    }
+
+    private static ArtifactReference ref(String prefix, char value) {
+      String hex = String.valueOf(value).repeat(64);
+      return new ArtifactReference(ArtifactId.parse(prefix + ":" + hex), new Sha256Digest(hex));
+    }
+
+    private static String sha256(byte[] bytes) {
+      try {
+        return java.util.HexFormat.of()
+            .formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+      } catch (NoSuchAlgorithmException impossible) {
+        throw new AssertionError(impossible);
+      }
+    }
+
+    CanonicalModuleArtifactStore store() {
+      return storeFor(saved);
+    }
+
+    CanonicalModuleArtifactStore tamperedStore() {
+      return storeFor(tampered);
+    }
+
+    private CanonicalModuleArtifactStore storeFor(ReopenedModulePublication publication) {
+      return new CanonicalModuleArtifactStore() {
+        @Override
+        public InstalledModulePublication install(ModuleInstallRequest request) {
+          throw new AssertionError("historical graph reader fixture must not install");
         }
-      }
-      for (JsonNode edge : evidenceGraph.get("edges")) {
-        supportedBySubject
-            .computeIfAbsent(
-                edge.get("subjectProgramElementId").textValue(), ignored -> new HashSet<>())
-            .add(edge.get("evidenceNodeId").textValue());
-      }
-      for (String fileName :
-          List.of(
-              "code-structure-graph.json",
-              "call-graph.json",
-              "control-flow-graph.json",
-              "data-flow-graph.json")) {
-        JsonNode graph = documents.get(fileName);
-        assertNoDraftFields(graph);
-        if (!"data-flow-graph.json".equals(fileName)) {
-          for (JsonNode node : graph.get("nodes")) {
-            assertThat(node.has("boundaryInvocation")).isFalse();
-            assertThat(node.has("unknownBoundaryReturn")).isFalse();
+
+        @Override
+        public CanonicalArtifactPolicy resolveArtifactPolicy(
+            org.sourceanalysis.app.artifact.ArtifactPolicyKey key) {
+          throw new AssertionError("historical graph reader fixture must not resolve policy");
+        }
+
+        @Override
+        public ReopenedModulePublication reopen(ModulePublicationReference requested) {
+          if (!publication.reference().equals(requested)) {
+            throw new IllegalArgumentException("historical graph publication ownership mismatch");
           }
+          return publication;
         }
-        for (JsonNode node : graph.get("nodes")) {
-          assertEvidenceIds(node, sourceEvidenceIds, supportedBySubject);
-        }
-        for (JsonNode edge : graph.get("edges")) {
-          assertEvidenceIds(edge, sourceEvidenceIds, supportedBySubject);
-        }
-      }
-      assertNoDraftFields(evidenceGraph);
-      assertGraphIndexClosure(documents, reopened, canonicalJson);
+      };
     }
-  }
 
-  private static void assertPublicDataFlowVariants(
-      DataFlowGraphDraft expectedDraft, JsonNode dataFlowGraph) {
-    Map<String, DataFlowNode> expectedById = new HashMap<>();
-    for (DataFlowNode node : expectedDraft.nodes()) {
-      expectedById.put(node.nodeId().value(), node);
+    CodeStructureGraphDraft draft() {
+      return draft;
     }
-    assertThat(dataFlowGraph.path("nodes")).hasSize(expectedById.size());
-    boolean sawBoundary = false;
-    boolean sawUnknownReturn = false;
-    for (JsonNode actual : dataFlowGraph.path("nodes")) {
-      DataFlowNode expected = expectedById.remove(actual.path("nodeId").textValue());
-      assertThat(expected).as("public node must come from the persisted M4 draft").isNotNull();
-      assertThat(actual.has("boundaryInvocation")).isTrue();
-      assertThat(actual.has("unknownBoundaryReturn")).isTrue();
-      if (expected.boundaryInvocation() != null) {
-        sawBoundary = true;
-        assertBoundaryInvocation(actual.path("boundaryInvocation"), expected.boundaryInvocation());
-        assertThat(actual.path("unknownBoundaryReturn").isNull()).isTrue();
-      } else if (expected.unknownBoundaryReturn() != null) {
-        sawUnknownReturn = true;
-        assertThat(actual.path("boundaryInvocation").isNull()).isTrue();
-        assertUnknownBoundaryReturn(
-            actual.path("unknownBoundaryReturn"), expected.unknownBoundaryReturn());
-      } else {
-        assertThat(actual.path("boundaryInvocation").isNull()).isTrue();
-        assertThat(actual.path("unknownBoundaryReturn").isNull()).isTrue();
-      }
+
+    ReopenedProgramGraphInputs inputs() {
+      return inputs;
     }
-    assertThat(expectedById).isEmpty();
-    assertThat(sawBoundary).isTrue();
-    assertThat(sawUnknownReturn).isTrue();
-  }
 
-  private static void assertBoundaryInvocation(JsonNode actual, JavaBoundaryInvocationV1 expected) {
-    assertThat(actual.isObject()).isTrue();
-    assertThat(actual.path("invocationCallId").textValue())
-        .isEqualTo(expected.invocationCallId().value());
-    assertThat(actual.path("callTargetEdgeId").textValue())
-        .isEqualTo(expected.callTargetEdgeId().value());
-    assertThat(actual.path("staticTargetType").textValue()).isEqualTo(expected.staticTargetType());
-    assertThat(actual.path("staticTargetMethod").textValue())
-        .isEqualTo(expected.staticTargetMethod());
-    assertThat(actual.path("staticTargetSignature").textValue())
-        .isEqualTo(expected.staticTargetSignature());
-    assertThat(actual.path("orderedArguments")).hasSize(expected.orderedArguments().size());
-    for (int index = 0; index < expected.orderedArguments().size(); index++) {
-      BoundaryArgumentV1 expectedArgument = expected.orderedArguments().get(index);
-      JsonNode actualArgument = actual.path("orderedArguments").get(index);
-      assertThat(actualArgument.path("ordinal").intValue()).isEqualTo(expectedArgument.ordinal());
-      assertThat(actualArgument.path("argumentNodeId").textValue())
-          .isEqualTo(expectedArgument.argumentNodeId().value());
-      assertThat(actualArgument.path("javaLocalOriginNodeIds"))
-          .extracting(JsonNode::textValue)
-          .containsExactlyElementsOf(
-              expectedArgument.javaLocalOriginNodeIds().stream().map(ArtifactId::value).toList());
+    ArtifactReference graphProfile() {
+      return graphProfile;
     }
-    JsonNode control = actual.path("controlContext");
-    assertThat(control.path("basicBlockNodeId").textValue())
-        .isEqualTo(expected.controlContext().basicBlockNodeId().value());
-    assertNullableId(control.path("guardNodeId"), expected.controlContext().guardNodeId());
-    assertNullableText(
-        control.path("polarity"),
-        expected.controlContext().polarity() == null
-            ? null
-            : expected.controlContext().polarity().name());
-    assertLocator(actual.path("sourceLocator"), expected.sourceLocator());
-    assertThat(actual.path("ruleId").textValue()).isEqualTo(expected.ruleId());
-  }
 
-  private static void assertUnknownBoundaryReturn(
-      JsonNode actual, UnknownBoundaryReturnV1 expected) {
-    assertThat(actual.isObject()).isTrue();
-    assertThat(actual.path("boundaryInvocationNodeId").textValue())
-        .isEqualTo(expected.boundaryInvocationNodeId().value());
-    assertThat(actual.path("declaredReturnType").textValue())
-        .isEqualTo(expected.declaredReturnType());
-    assertThat(actual.path("sourceState").textValue()).isEqualTo(expected.sourceState().name());
-    assertLocator(actual.path("sourceLocator"), expected.sourceLocator());
-    assertThat(actual.path("ruleId").textValue()).isEqualTo(expected.ruleId());
-  }
-
-  private static void assertLocator(
-      JsonNode actual, org.sourceanalysis.app.evidence.SourceLocatorV1 expected) {
-    assertThat(actual.path("fileId").textValue()).isEqualTo(expected.fileId().value());
-    assertThat(actual.path("path").textValue()).isEqualTo(expected.path());
-    assertThat(actual.path("startByte").longValue()).isEqualTo(expected.startByte());
-    assertThat(actual.path("endByteExclusive").longValue()).isEqualTo(expected.endByteExclusive());
-    assertThat(actual.path("startLine").intValue()).isEqualTo(expected.startLine());
-    assertThat(actual.path("startColumn").intValue()).isEqualTo(expected.startColumn());
-    assertThat(actual.path("endLine").intValue()).isEqualTo(expected.endLine());
-    assertThat(actual.path("endColumn").intValue()).isEqualTo(expected.endColumn());
-  }
-
-  private static void assertNullableId(JsonNode actual, ArtifactId expected) {
-    if (expected == null) assertThat(actual.isNull()).isTrue();
-    else assertThat(actual.textValue()).isEqualTo(expected.value());
-  }
-
-  private static void assertNullableText(JsonNode actual, String expected) {
-    if (expected == null) assertThat(actual.isNull()).isTrue();
-    else assertThat(actual.textValue()).isEqualTo(expected);
-  }
-
-  private static void assertEvidenceIds(
-      JsonNode element,
-      Set<String> sourceEvidenceIds,
-      Map<String, Set<String>> supportedBySubject) {
-    List<String> actual = new ArrayList<>();
-    element.get("evidenceNodeIds").forEach(value -> actual.add(value.textValue()));
-    assertThat(actual).isNotEmpty().doesNotHaveDuplicates();
-    assertThat(actual).allSatisfy(id -> assertThat(sourceEvidenceIds).contains(id));
-    assertThat(actual)
-        .containsExactlyInAnyOrderElementsOf(
-            supportedBySubject.get(
-                element.get(element.has("nodeId") ? "nodeId" : "edgeId").textValue()));
-  }
-
-  private static void assertGraphIndexClosure(
-      Map<String, JsonNode> documents,
-      org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication reopened,
-      CanonicalJsonCodec canonicalJson) {
-    JsonNode index = documents.get("graph-index.json");
-    assertNoDraftFields(index);
-    Map<String, JsonNode> payloadByFile =
-        reopened.semanticPayloads().stream()
-            .filter(payload -> payload.descriptor().fileName().endsWith("-graph.json"))
-            .collect(
-                java.util.stream.Collectors.toMap(
-                    payload -> payload.descriptor().fileName(),
-                    payload -> canonicalJson.parseCanonical(payload.canonicalUtf8())));
-    assertThat(index.get("graphs")).hasSize(5);
-    Set<String> graphFiles = new HashSet<>();
-    for (JsonNode item : index.get("graphs")) {
-      String fileName = item.get("fileName").textValue();
-      graphFiles.add(fileName);
-      JsonNode payload = payloadByFile.get(fileName);
-      assertThat(payload).isNotNull();
-      assertThat(item.get("graphId").textValue()).isEqualTo(payload.get("graphId").textValue());
-      assertThat(item.get("artifactType").textValue())
-          .isEqualTo(payload.get("artifactType").textValue());
-      assertThat(item.get("schemaVersion").textValue())
-          .isEqualTo(payload.get("schemaVersion").textValue());
-      assertThat(item.get("artifactRef").get("artifactId").textValue())
-          .isEqualTo(payload.get("artifactId").textValue());
-      assertThat(item.get("artifactRef").get("sha256").textValue())
-          .isEqualTo(digest(canonicalJson.encodeCanonical(payload).copyToByteArray()));
-    }
-    assertThat(graphFiles)
-        .containsExactlyInAnyOrder(
-            "code-structure-graph.json",
-            "call-graph.json",
-            "control-flow-graph.json",
-            "data-flow-graph.json",
-            "evidence-graph.json");
-    Set<String> nodeIds = new HashSet<>();
-    Set<String> edgeIds = new HashSet<>();
-    for (JsonNode graph : payloadByFile.values()) {
-      graph
-          .get("nodes")
-          .forEach(
-              node ->
-                  nodeIds.add(
-                      node.has("nodeId")
-                          ? node.get("nodeId").textValue()
-                          : node.get("evidenceNodeId").textValue()));
-      graph.get("edges").forEach(edge -> edgeIds.add(edge.get("edgeId").textValue()));
-    }
-    Set<String> catalogNodeIds = new HashSet<>();
-    for (JsonNode node : index.get("nodeCatalog"))
-      catalogNodeIds.add(node.get("nodeId").textValue());
-    Set<String> catalogEdgeIds = new HashSet<>();
-    for (JsonNode edge : index.get("edgeCatalog"))
-      catalogEdgeIds.add(edge.get("edgeId").textValue());
-    assertThat(catalogNodeIds).isEqualTo(nodeIds);
-    assertThat(catalogEdgeIds).isEqualTo(edgeIds);
-    assertThat(catalogNodeIds).doesNotContainAnyElementsOf(catalogEdgeIds);
-  }
-
-  private static void assertNoDraftFields(JsonNode node) {
-    assertThat(node.findValues("evidenceDraftRefs")).isEmpty();
-    assertThat(node.findValues("provenanceDrafts")).isEmpty();
-    assertThat(node.findValues("gapDrafts")).isEmpty();
-  }
-
-  private static List<CanonicalModulePayload> sourcePayloads(CanonicalJsonCodec json) {
-    return List.of(
-        standalonePayload(
-            json,
-            "source-input.json",
-            "VERIFIED_SOURCE_INVENTORY_SOURCE_INPUT",
-            "verified-source-inventory-source-input-v2",
-            "verified-source-inventory-source-input"),
-        jsonlPayload(
-            json,
-            "source-inventory.jsonl",
-            "VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY",
-            "verified-source-inventory-source-inventory-v2",
-            "verified-source-inventory-source-inventory"),
-        standalonePayload(
-            json,
-            "verified-snapshot.json",
-            "VERIFIED_SNAPSHOT",
-            "verified-snapshot-v2",
-            "verified-snapshot"));
-  }
-
-  private static List<CanonicalModulePayload> discoveryPayloads(CanonicalJsonCodec json) {
-    return List.of(
-        standalonePayload(
-            json,
-            "application-profile.json",
-            "APPLICATION_DISCOVERY_APPLICATION_PROFILE",
-            "application-discovery-application-profile-v2",
-            "application-profile"),
-        standalonePayload(
-            json,
-            "capability-report.json",
-            "APPLICATION_DISCOVERY_CAPABILITY_REPORT",
-            "application-discovery-capability-report-v2",
-            "capability-report"),
-        jsonlPayload(
-            json,
-            "entry-points.jsonl",
-            "APPLICATION_DISCOVERY_ENTRY_POINTS",
-            "application-discovery-entry-points-v3",
-            "entry-points"),
-        jsonlPayload(
-            json,
-            "mapper-catalog.jsonl",
-            "APPLICATION_DISCOVERY_MAPPER_CATALOG",
-            "application-discovery-mapper-catalog-v2",
-            "mapper-catalog"));
-  }
-
-  private static CanonicalArtifactPolicyRegistry policies(CanonicalJsonCodec json) {
-    ObjectNode document = JsonNodeFactory.instance.objectNode();
-    document.put("schemaVersion", "artifact-policy-registry-v2");
-    ArrayNode entries = document.putArray("policies");
-    policy(
-        entries,
-        "APPLICATION_DISCOVERY_APPLICATION_PROFILE",
-        "application-discovery-application-profile-v2",
-        "application-profile",
-        "application/json",
-        "STANDALONE_JSON",
-        false);
-    policy(
-        entries,
-        "APPLICATION_DISCOVERY_CAPABILITY_REPORT",
-        "application-discovery-capability-report-v2",
-        "capability-report",
-        "application/json",
-        "STANDALONE_JSON",
-        false);
-    policy(
-        entries,
-        "APPLICATION_DISCOVERY_ENTRY_POINTS",
-        "application-discovery-entry-points-v3",
-        "entry-points",
-        "application/x-ndjson",
-        "CANONICAL_JSONL",
-        true);
-    policy(
-        entries,
-        "APPLICATION_DISCOVERY_MAPPER_CATALOG",
-        "application-discovery-mapper-catalog-v2",
-        "mapper-catalog",
-        "application/x-ndjson",
-        "CANONICAL_JSONL",
-        true);
-    policy(
-        entries,
-        "PROGRAM_GRAPHS_CALL_GRAPH",
-        "program-graphs-call-graph-v1",
-        "program-graphs-call-graph",
-        "application/json",
-        "STANDALONE_JSON",
-        false);
-    policy(
-        entries,
-        "PROGRAM_GRAPHS_CALL_GRAPH_DRAFT",
-        CallGraphDraft.SCHEMA_VERSION,
-        "call-graph",
-        "application/json",
-        "MODULE_ARTIFACT_JSON",
-        false);
-    policy(
-        entries,
-        "PROGRAM_GRAPHS_CODE_STRUCTURE_GRAPH",
-        "program-graphs-code-structure-graph-v1",
-        "program-graphs-code-structure-graph",
-        "application/json",
-        "STANDALONE_JSON",
-        false);
-    policy(
-        entries,
-        "PROGRAM_GRAPHS_CODE_STRUCTURE_DRAFT",
-        CodeStructureGraphDraft.SCHEMA_VERSION,
-        "code-structure-graph",
-        "application/json",
-        "MODULE_ARTIFACT_JSON",
-        false);
-    policy(
-        entries,
-        "PROGRAM_GRAPHS_CONTROL_FLOW_GRAPH",
-        "program-graphs-control-flow-graph-v2",
-        "program-graphs-control-flow-graph",
-        "application/json",
-        "STANDALONE_JSON",
-        false);
-    policy(
-        entries,
-        "PROGRAM_GRAPHS_CONTROL_FLOW_DRAFT",
-        ControlFlowGraphDraft.SCHEMA_VERSION,
-        "control-flow-graph",
-        "application/json",
-        "MODULE_ARTIFACT_JSON",
-        false);
-    policy(
-        entries,
-        "PROGRAM_GRAPHS_DATA_FLOW_GRAPH",
-        "program-graphs-data-flow-graph-v2",
-        "program-graphs-data-flow-graph",
-        "application/json",
-        "STANDALONE_JSON",
-        false);
-    policy(
-        entries,
-        "PROGRAM_GRAPHS_DATA_FLOW_DRAFT",
-        DataFlowGraphDraft.SCHEMA_VERSION,
-        "data-flow-graph",
-        "application/json",
-        "MODULE_ARTIFACT_JSON",
-        false);
-    policy(
-        entries,
-        "PROGRAM_GRAPHS_EVIDENCE_GRAPH",
-        "program-graphs-evidence-graph-v3",
-        "program-graphs-evidence-graph",
-        "application/json",
-        "STANDALONE_JSON",
-        false);
-    policy(
-        entries,
-        "PROGRAM_GRAPHS_EVIDENCE_GRAPH_DRAFT",
-        EvidenceGraphDraft.SCHEMA_VERSION,
-        "evidence-graph",
-        "application/json",
-        "MODULE_ARTIFACT_JSON",
-        false);
-    policy(
-        entries,
-        "PROGRAM_GRAPHS_GRAPH_GAP",
-        "program-graphs-graph-gap-v1",
-        "program-graphs-graph-gaps",
-        "application/x-ndjson",
-        "CANONICAL_JSONL",
-        true);
-    policy(
-        entries,
-        "PROGRAM_GRAPHS_GRAPH_INDEX",
-        "program-graphs-graph-index-v2",
-        "program-graphs-graph-index",
-        "application/json",
-        "STANDALONE_JSON",
-        false);
-    policy(
-        entries,
-        "VERIFIED_SNAPSHOT",
-        "verified-snapshot-v2",
-        "verified-snapshot",
-        "application/json",
-        "STANDALONE_JSON",
-        false);
-    policy(
-        entries,
-        "VERIFIED_SOURCE_INVENTORY_SOURCE_INPUT",
-        "verified-source-inventory-source-input-v2",
-        "verified-source-inventory-source-input",
-        "application/json",
-        "STANDALONE_JSON",
-        false);
-    policy(
-        entries,
-        "VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY",
-        "verified-source-inventory-source-inventory-v2",
-        "verified-source-inventory-source-inventory",
-        "application/x-ndjson",
-        "CANONICAL_JSONL",
-        false);
-    List<ObjectNode> ordered = new ArrayList<>();
-    entries.forEach(value -> ordered.add((ObjectNode) value));
-    ordered.sort(Comparator.comparing(value -> value.get("artifactType").textValue()));
-    entries.removeAll();
-    ordered.forEach(entries::add);
-    document.put(
-        "artifactPolicyRegistryId",
-        "artifact-policy-registry:"
-            + digest(
-                concatenate(
-                    frame("canonical-artifact-policy-registry-id-v2"),
-                    frame(json.encodeCanonical(document).copyToByteArray()))));
-    return CanonicalArtifactPolicyRegistry.load(json.encodeCanonical(document), json);
-  }
-
-  private static void policy(
-      ArrayNode entries,
-      String type,
-      String schema,
-      String prefix,
-      String media,
-      String envelope,
-      boolean emptyJsonl) {
-    entries
-        .addObject()
-        .put("artifactType", type)
-        .put("schemaVersion", schema)
-        .put("artifactIdPrefix", prefix)
-        .put("mediaType", media)
-        .put("envelopeKind", envelope)
-        .put("emptyJsonlAllowed", emptyJsonl)
-        .put("publicContentExposure", "PATH_FREE_COMPLETE_UTF8");
-  }
-
-  private static ArtifactControls controls(CanonicalArtifactPolicyRegistry policies) {
-    return new ArtifactControls(
-        new Sha256Digest(digest("toolchain")),
-        new Sha256Digest(digest("profile")),
-        new Sha256Digest(digest("schema")),
-        null,
-        policies.reference());
-  }
-
-  private static List<CanonicalAnalysisStepPayload> toStepPayloads(
-      List<CanonicalModulePayload> payloads) {
-    return payloads.stream()
-        .map(
-            payload ->
-                new CanonicalAnalysisStepPayload(
-                    payload.fileName(),
-                    payload.artifactType(),
-                    payload.schemaVersion(),
-                    payload.artifactId(),
-                    payload.mediaType(),
-                    payload.canonicalUtf8()))
-        .toList();
-  }
-
-  private static ArtifactReference publishedArtifact(
-      InstalledModulePublication publication, String fileName) {
-    return publication.artifactDescriptors().stream()
-        .filter(descriptor -> descriptor.fileName().equals(fileName))
-        .findFirst()
-        .map(descriptor -> new ArtifactReference(descriptor.artifactId(), descriptor.sha256()))
-        .orElseThrow();
-  }
-
-  private static CanonicalModulePayload standalonePayload(
-      CanonicalJsonCodec json, String fileName, String type, String schema, String prefix) {
-    ObjectNode withoutId =
-        JsonNodeFactory.instance
-            .objectNode()
-            .put("schemaVersion", schema)
-            .put("artifactType", type);
-    String id =
-        prefix
-            + ":"
-            + digest(
-                concatenate(
-                    frame("canonical-standalone-json-artifact-id-v1"),
-                    frame(schema),
-                    frame(type),
-                    frame(json.encodeCanonical(withoutId).copyToByteArray())));
-    withoutId.put("artifactId", id);
-    return new CanonicalModulePayload(
-        fileName,
-        type,
-        schema,
-        ArtifactId.parse(id),
-        CanonicalMediaType.APPLICATION_JSON,
-        json.encodeCanonical(withoutId));
-  }
-
-  private static CanonicalModulePayload jsonlPayload(
-      CanonicalJsonCodec json, String fileName, String type, String schema, String prefix) {
-    ObjectNode line =
-        JsonNodeFactory.instance
-            .objectNode()
-            .put("schemaVersion", schema)
-            .put("artifactType", type);
-    byte[] bytes =
-        concatenate(
-            json.encodeCanonical(line).copyToByteArray(), "\n".getBytes(StandardCharsets.UTF_8));
-    String id =
-        prefix
-            + ":"
-            + digest(
-                concatenate(
-                    frame("canonical-jsonl-artifact-id-v1"),
-                    frame(schema),
-                    frame(type),
-                    frame(bytes)));
-    return new CanonicalModulePayload(
-        fileName,
-        type,
-        schema,
-        ArtifactId.parse(id),
-        CanonicalMediaType.APPLICATION_X_NDJSON,
-        ImmutableBytes.copyOf(bytes));
-  }
-
-  private static byte[] frame(String value) {
-    return frame(value.getBytes(StandardCharsets.UTF_8));
-  }
-
-  private static byte[] frame(byte[] value) {
-    return ByteBuffer.allocate(Long.BYTES + value.length)
-        .order(ByteOrder.BIG_ENDIAN)
-        .putLong(value.length)
-        .put(value)
-        .array();
-  }
-
-  private static byte[] concatenate(byte[]... values) {
-    int size = 0;
-    for (byte[] value : values) size = Math.addExact(size, value.length);
-    ByteBuffer result = ByteBuffer.allocate(size);
-    for (byte[] value : values) result.put(value);
-    return result.array();
-  }
-
-  private static String digest(String value) {
-    return digest(value.getBytes(StandardCharsets.UTF_8));
-  }
-
-  private static String digest(byte[] value) {
-    try {
-      return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
-    } catch (NoSuchAlgorithmException impossible) {
-      throw new IllegalStateException(impossible);
+    CodeStructureGraphDraftReference reference() {
+      return reference;
     }
   }
 }

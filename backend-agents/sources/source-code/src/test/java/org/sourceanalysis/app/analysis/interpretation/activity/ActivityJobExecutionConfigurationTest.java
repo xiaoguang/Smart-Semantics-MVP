@@ -29,16 +29,13 @@ import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
-import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
-import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
-import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialCheckpointReader;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
+import org.sourceanalysis.app.analysis.interpretation.material.LegacyM10CheckpointFixture;
 import org.sourceanalysis.app.analysis.interpretation.material.ModelActivityPacket;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.ArtifactPolicyKey;
@@ -61,137 +58,131 @@ class ActivityJobExecutionConfigurationTest {
   @Test
   void appliesInjectedCapAndPersistsEveryReviewedMaterialUnderItsRunPrivateJobKey()
       throws Exception {
-    try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.createWithGuardedApprove(
-            temporaryDirectory.resolve("activity-job-execution"))) {
-      BusinessMaterialBuildResult materials = expandedMaterials(fixture, MATERIAL_COUNT);
-      Path journalDirectory = Files.createDirectory(temporaryDirectory.resolve("journal"));
-      BlockingProvider provider = new BlockingProvider();
-      ActivityExplainer explainer =
-          configuredExplainer(provider, journalDirectory, new AnalysisRunId(RUN_ID));
-      ExecutorService caller = Executors.newSingleThreadExecutor();
-      try {
-        Future<ActivityExplanationResult> future =
-            caller.submit(
-                () ->
-                    explainer.explain(
-                        new ExplainActivitiesRequest(
-                            materials,
-                            new ActivityExplanationProfile(64_000, 16_000, 1, 32, 2_000),
-                            MATERIAL_COUNT)));
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = LegacyM10CheckpointFixture.open();
+    BusinessMaterialBuildResult materials = expandedMaterials(fixture, MATERIAL_COUNT);
+    Path journalDirectory = Files.createDirectory(temporaryDirectory.resolve("journal"));
+    BlockingProvider provider = new BlockingProvider();
+    ActivityExplainer explainer =
+        configuredExplainer(provider, journalDirectory, new AnalysisRunId(RUN_ID));
+    ExecutorService caller = Executors.newSingleThreadExecutor();
+    try {
+      Future<ActivityExplanationResult> future =
+          caller.submit(
+              () ->
+                  explainer.explain(
+                      new ExplainActivitiesRequest(
+                          materials,
+                          new ActivityExplanationProfile(64_000, 16_000, 1, 32, 2_000),
+                          MATERIAL_COUNT)));
 
-        assertThat(provider.firstTwoDrafts.await(2, TimeUnit.SECONDS)).isTrue();
-        assertThat(provider.draftStarts)
-            .as("the injected cap of two must keep the third material queued")
-            .hasValue(2);
-        provider.releaseDrafts.countDown();
+      assertThat(provider.firstTwoDrafts.await(2, TimeUnit.SECONDS)).isTrue();
+      assertThat(provider.draftStarts)
+          .as("the injected cap of two must keep the third material queued")
+          .hasValue(2);
+      provider.releaseDrafts.countDown();
 
-        ActivityExplanationResult result = future.get(5, TimeUnit.SECONDS);
-        assertThat(result.reviewedActivities()).hasSize(MATERIAL_COUNT);
-        assertThat(provider.peakActiveGenerations)
-            .as("the injected effective cap limits complete Activity jobs")
-            .hasValue(2);
-        assertThat(provider.draftTaskIds()).hasSize(MATERIAL_COUNT).doesNotHaveDuplicates();
+      ActivityExplanationResult result = future.get(5, TimeUnit.SECONDS);
+      assertThat(result.reviewedActivities()).hasSize(MATERIAL_COUNT);
+      assertThat(provider.peakActiveGenerations)
+          .as("the injected effective cap limits complete Activity jobs")
+          .hasValue(2);
+      assertThat(provider.draftTaskIds()).hasSize(MATERIAL_COUNT).doesNotHaveDuplicates();
 
-        List<Path> privateResults;
-        try (var paths = Files.walk(journalDirectory)) {
-          privateResults =
-              paths
-                  .filter(path -> path.getFileName().toString().equals("reviewed-result.json"))
-                  .sorted()
-                  .toList();
-        }
-        assertThat(privateResults).hasSize(MATERIAL_COUNT);
-        CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
-        for (Path privateResult : privateResults) {
-          JsonNode saved =
-              canonicalJson.parseCanonical(
-                  org.sourceanalysis.app.artifact.ImmutableBytes.copyOf(
-                      Files.readAllBytes(privateResult)));
-          assertThat(saved.path("schemaVersion").asText())
-              .isEqualTo("model-job-reviewed-result-v2");
-          assertThat(saved.path("status").asText()).isEqualTo("COMPLETED");
-          assertThat(saved.path("draft").isObject()).isTrue();
-          assertThat(saved.path("review").isObject()).isTrue();
-          assertThat(saved.path("runId").asText()).isEqualTo(RUN_ID);
-          assertThat(saved.path("phase").asText()).isEqualTo("activity");
-          assertThat(saved.path("providerBindingKey").asText()).isEqualTo("pro");
-          assertThat(saved.path("quotaScope").asText()).isEqualTo("personal-pro-account");
-          assertThat(saved.path("materialId").asText()).startsWith("material-");
-          assertThat(saved.path("jobKey").asText()).matches("[0-9a-f]{64}");
-          assertThat(saved.path("inputFingerprint").asText()).matches("[0-9a-f]{64}");
-          assertThat(saved.path("runtimeIdentity").path("upstreamProvider").asText())
-              .isEqualTo("scripted");
-          assertThat(saved.path("runtimeIdentity").path("model").asText()).isEqualTo("fixture");
-          assertThat(saved.path("runtimeIdentity").path("reasoningEffort").asText())
-              .isEqualTo("high");
-          assertThat(saved.path("runtimeIdentity").path("sandbox").asText()).isEqualTo("read-only");
-          assertThat(saved.path("reviewedActivities").isArray()).isTrue();
-          assertThat(saved.path("coverage").isArray()).isTrue();
-          assertThat(saved.path("unexplainedActivityEntries").isArray()).isTrue();
-          assertThat(privateResult.toString()).doesNotContain(RUN_ID);
-        }
-      } finally {
-        provider.releaseDrafts.countDown();
-        caller.shutdownNow();
+      List<Path> privateResults;
+      try (var paths = Files.walk(journalDirectory)) {
+        privateResults =
+            paths
+                .filter(path -> path.getFileName().toString().equals("reviewed-result.json"))
+                .sorted()
+                .toList();
       }
+      assertThat(privateResults).hasSize(MATERIAL_COUNT);
+      CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+      for (Path privateResult : privateResults) {
+        JsonNode saved =
+            canonicalJson.parseCanonical(
+                org.sourceanalysis.app.artifact.ImmutableBytes.copyOf(
+                    Files.readAllBytes(privateResult)));
+        assertThat(saved.path("schemaVersion").asText()).isEqualTo("model-job-reviewed-result-v2");
+        assertThat(saved.path("status").asText()).isEqualTo("COMPLETED");
+        assertThat(saved.path("draft").isObject()).isTrue();
+        assertThat(saved.path("review").isObject()).isTrue();
+        assertThat(saved.path("runId").asText()).isEqualTo(RUN_ID);
+        assertThat(saved.path("phase").asText()).isEqualTo("activity");
+        assertThat(saved.path("providerBindingKey").asText()).isEqualTo("pro");
+        assertThat(saved.path("quotaScope").asText()).isEqualTo("personal-pro-account");
+        assertThat(saved.path("materialId").asText()).startsWith("material-");
+        assertThat(saved.path("jobKey").asText()).matches("[0-9a-f]{64}");
+        assertThat(saved.path("inputFingerprint").asText()).matches("[0-9a-f]{64}");
+        assertThat(saved.path("runtimeIdentity").path("upstreamProvider").asText())
+            .isEqualTo("scripted");
+        assertThat(saved.path("runtimeIdentity").path("model").asText()).isEqualTo("fixture");
+        assertThat(saved.path("runtimeIdentity").path("reasoningEffort").asText())
+            .isEqualTo("high");
+        assertThat(saved.path("runtimeIdentity").path("sandbox").asText()).isEqualTo("read-only");
+        assertThat(saved.path("reviewedActivities").isArray()).isTrue();
+        assertThat(saved.path("coverage").isArray()).isTrue();
+        assertThat(saved.path("unexplainedActivityEntries").isArray()).isTrue();
+        assertThat(privateResult.toString()).doesNotContain(RUN_ID);
+      }
+    } finally {
+      provider.releaseDrafts.countDown();
+      caller.shutdownNow();
     }
   }
 
   @Test
   void fatalStopsQueuedActivityJobsButSavesStartedReviewedJobsWithoutPublishingAggregate()
       throws Exception {
-    try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.createWithGuardedApprove(
-            temporaryDirectory.resolve("fatal-activity-job-execution"))) {
-      BusinessMaterialBuildResult materials = expandedMaterials(fixture, MATERIAL_COUNT);
-      Path journalDirectory = Files.createDirectory(temporaryDirectory.resolve("fatal-journal"));
-      BlockingProvider provider = new BlockingProvider("configured-activity-002");
-      TrackingModuleStore moduleStore = new TrackingModuleStore(fixture.moduleArtifacts());
-      ActivityExplainer explainer =
-          configuredExplainer(
-              provider,
-              moduleStore,
-              journalDirectory,
-              new AnalysisRunId("analysis-run:" + "b".repeat(64)));
-      ExecutorService caller = Executors.newSingleThreadExecutor();
-      try {
-        Future<ActivityExplanationResult> future =
-            caller.submit(
-                () ->
-                    explainer.explain(
-                        new ExplainActivitiesRequest(
-                            materials,
-                            new ActivityExplanationProfile(64_000, 16_000, 1, 32, 2_000),
-                            MATERIAL_COUNT)));
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture =
+        LegacyM10CheckpointFixture.openWritable();
+    BusinessMaterialBuildResult materials = expandedMaterials(fixture, MATERIAL_COUNT);
+    Path journalDirectory = Files.createDirectory(temporaryDirectory.resolve("fatal-journal"));
+    BlockingProvider provider = new BlockingProvider("configured-activity-002");
+    TrackingModuleStore moduleStore = new TrackingModuleStore(fixture.artifacts());
+    ActivityExplainer explainer =
+        configuredExplainer(
+            provider,
+            moduleStore,
+            journalDirectory,
+            new AnalysisRunId("analysis-run:" + "b".repeat(64)));
+    ExecutorService caller = Executors.newSingleThreadExecutor();
+    try {
+      Future<ActivityExplanationResult> future =
+          caller.submit(
+              () ->
+                  explainer.explain(
+                      new ExplainActivitiesRequest(
+                          materials,
+                          new ActivityExplanationProfile(64_000, 16_000, 1, 32, 2_000),
+                          MATERIAL_COUNT)));
 
-        assertThat(provider.firstTwoDrafts.await(2, TimeUnit.SECONDS)).isTrue();
-        assertThat(provider.fatalObserved.await(2, TimeUnit.SECONDS)).isTrue();
-        provider.releaseDrafts.countDown();
+      assertThat(provider.firstTwoDrafts.await(2, TimeUnit.SECONDS)).isTrue();
+      assertThat(provider.fatalObserved.await(2, TimeUnit.SECONDS)).isTrue();
+      provider.releaseDrafts.countDown();
 
-        assertThatThrownBy(() -> future.get(5, TimeUnit.SECONDS))
-            .isInstanceOf(ExecutionException.class)
-            .hasRootCauseMessage("ACTIVITY_PROVIDER_FAILED_AFTER_START");
-        assertThat(provider.draftStarts).hasValue(2);
-        assertThat(provider.reviewCalls("configured-activity-001")).isEqualTo(1);
-        assertThat(provider.reviewCalls("configured-activity-002")).isZero();
-        assertThat(provider.reviewCalls("configured-activity-003")).isZero();
-        assertThat(moduleStore.installCalls)
-            .as("a fatal Activity phase must not publish the aggregate checkpoint")
-            .hasValue(0);
+      assertThatThrownBy(() -> future.get(5, TimeUnit.SECONDS))
+          .isInstanceOf(ExecutionException.class)
+          .hasRootCauseMessage("ACTIVITY_PROVIDER_FAILED_AFTER_START");
+      assertThat(provider.draftStarts).hasValue(2);
+      assertThat(provider.reviewCalls("configured-activity-001")).isEqualTo(1);
+      assertThat(provider.reviewCalls("configured-activity-002")).isZero();
+      assertThat(provider.reviewCalls("configured-activity-003")).isZero();
+      assertThat(moduleStore.installCalls)
+          .as("a fatal Activity phase must not publish the aggregate checkpoint")
+          .hasValue(0);
 
-        List<Path> privateResults = privateResultFiles(journalDirectory);
-        assertThat(privateResults).hasSize(1);
-        JsonNode saved =
-            new CanonicalJsonCodec()
-                .parseCanonical(
-                    org.sourceanalysis.app.artifact.ImmutableBytes.copyOf(
-                        Files.readAllBytes(privateResults.get(0))));
-        assertThat(saved.path("materialId").asText()).isEqualTo("material-001");
-      } finally {
-        provider.releaseDrafts.countDown();
-        caller.shutdownNow();
-      }
+      List<Path> privateResults = privateResultFiles(journalDirectory);
+      assertThat(privateResults).hasSize(1);
+      JsonNode saved =
+          new CanonicalJsonCodec()
+              .parseCanonical(
+                  org.sourceanalysis.app.artifact.ImmutableBytes.copyOf(
+                      Files.readAllBytes(privateResults.get(0))));
+      assertThat(saved.path("materialId").asText()).isEqualTo("material-001");
+    } finally {
+      provider.releaseDrafts.countDown();
+      caller.shutdownNow();
     }
   }
 
@@ -269,15 +260,9 @@ class ActivityJobExecutionConfigurationTest {
   }
 
   static BusinessMaterialBuildResult expandedMaterials(
-      ProgramGraphsPublicFixture fixture, int count) {
-    BusinessFlowsReference flows = BusinessFlowTestSupport.publishBusinessFlows(fixture);
+      LegacyM10CheckpointFixture.HistoricalCheckpoint fixture, int count) {
     BusinessMaterialBuildResult base =
-        new BusinessMaterialBuilder(
-                fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
-            .build(
-                new org.sourceanalysis.app.analysis.interpretation.material
-                    .BuildBusinessMaterialsRequest(
-                    flows, new BusinessMaterialProfile(8, 24, 12_000, count)));
+        new BusinessMaterialCheckpointReader(fixture.artifacts()).reopen(fixture.checkpoint());
     BusinessMaterial template = base.materialSet().materials().get(0);
     List<BusinessMaterial> materials = new ArrayList<>();
     List<BusinessMaterialEntryCoverage> coverage = new ArrayList<>();

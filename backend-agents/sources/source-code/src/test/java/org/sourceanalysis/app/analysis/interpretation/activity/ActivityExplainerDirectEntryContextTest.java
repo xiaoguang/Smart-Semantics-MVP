@@ -6,145 +6,133 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
-import org.sourceanalysis.app.analysis.flow.testsupport.BusinessFlowTestSupport;
-import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
-import org.sourceanalysis.app.analysis.interpretation.material.BuildBusinessMaterialsRequest;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuilder;
+import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialCheckpointReader;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialMode;
-import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
+import org.sourceanalysis.app.analysis.interpretation.material.LegacyM10CheckpointFixture;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 
 /** Verifies that saved Step05 service context survives the material-to-activity boundary. */
 class ActivityExplainerDirectEntryContextTest {
 
-  @TempDir Path temporaryDirectory;
-
   @Test
   void sendsAHandlerAndSavedDirectTargetThenPreservesReviewedActivityFields() throws Exception {
-    try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.createWithGuardedApprove(
-            temporaryDirectory.resolve("activity-direct-context"))) {
-      BusinessMaterialBuildResult allMaterials =
-          new BusinessMaterialBuilder(
-                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
-              .build(
-                  new BuildBusinessMaterialsRequest(
-                      BusinessFlowTestSupport.publishBusinessFlows(fixture),
-                      new BusinessMaterialProfile(8, 24, 12_000, 1)));
-      BusinessMaterial material =
-          allMaterials.materialSet().materials().stream()
-              .filter(
-                  value ->
-                      value.sourceRefs().stream()
-                          .anyMatch(
-                              reference -> reference.snippet().contains("approvalClient.record")))
-              .findFirst()
-              .orElseThrow();
-      BusinessMaterialEntryCoverage materialCoverage =
-          allMaterials.materialSet().entryCoverage().stream()
-              .filter(value -> material.materialId().equals(value.materialId()))
-              .findFirst()
-              .orElseThrow();
-      BusinessMaterialBuildResult oneMaterial =
-          new BusinessMaterialBuildResult(
-              new BusinessMaterialSet(
-                  allMaterials.materialSet().materialSetId(),
-                  List.of(material),
-                  List.of(materialCoverage)),
-              allMaterials.checkpoint());
-      ContextCapturingProvider provider = new ContextCapturingProvider();
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = LegacyM10CheckpointFixture.open();
+    BusinessMaterialBuildResult allMaterials =
+        new BusinessMaterialCheckpointReader(fixture.artifacts()).reopen(fixture.checkpoint());
+    BusinessMaterial selectedMaterial =
+        allMaterials.materialSet().materials().stream()
+            .filter(
+                value ->
+                    value.sourceRefs().stream()
+                        .anyMatch(
+                            reference -> reference.snippet().contains("approvalClient.record")))
+            .findFirst()
+            .orElseThrow();
+    BusinessMaterial material =
+        new BusinessMaterial(
+            selectedMaterial.materialId(),
+            List.of(selectedMaterial.entryIds().get(0)),
+            selectedMaterial.materialMode(),
+            selectedMaterial.context(),
+            selectedMaterial.technicalObservations(),
+            selectedMaterial.sourceRefs(),
+            selectedMaterial.flowRefs(),
+            selectedMaterial.technicalProofRefs(),
+            List.of("direct target remains bounded to the historical packet"),
+            selectedMaterial.modelPacket());
+    BusinessMaterialEntryCoverage materialCoverage =
+        allMaterials.materialSet().entryCoverage().stream()
+            .filter(value -> material.materialId().equals(value.materialId()))
+            .findFirst()
+            .orElseThrow();
+    BusinessMaterialBuildResult oneMaterial =
+        new BusinessMaterialBuildResult(
+            new BusinessMaterialSet(
+                allMaterials.materialSet().materialSetId(),
+                List.of(material),
+                List.of(materialCoverage)),
+            allMaterials.checkpoint());
+    ContextCapturingProvider provider = new ContextCapturingProvider();
 
-      ActivityExplanationResult result =
-          new ActivityExplainer(provider)
-              .explain(
-                  new ExplainActivitiesRequest(
-                      oneMaterial, new ActivityExplanationProfile(64_000, 16_000, 1, 24, 2_000)));
+    ActivityExplanationResult result =
+        new ActivityExplainer(provider)
+            .explain(
+                new ExplainActivitiesRequest(
+                    oneMaterial, new ActivityExplanationProfile(64_000, 16_000, 1, 24, 2_000)));
 
-      assertThat(provider.taskKinds()).containsExactly("ACTIVITY_DRAFT", "ACTIVITY_REVIEW");
-      assertThat(provider.packets()).allSatisfy(ContextCapturingProvider::assertCleanDirectContext);
-      assertThat(result.coverage())
-          .singleElement()
-          .satisfies(value -> assertThat(value.disposition()).isEqualTo("ANALYZED_WITH_GAPS"));
-      assertThat(result.reviewedActivities())
-          .singleElement()
-          .satisfies(
-              activity -> {
-                assertThat(activity.businessPurpose()).isEqualTo("根据状态请求执行订单审批处理。");
-                assertThat(activity.businessObjects()).containsExactly("订单", "审批状态");
-                assertThat(activity.conditions()).containsExactly("状态不能为空时才记录审批处理。");
-                assertThat(activity.activitySteps())
-                    .containsExactly("接收状态请求", "调用订单审批处理", "记录审批处理");
-                assertThat(activity.codeDefinedResults()).containsExactly("代码调用审批记录处理。");
-                assertThat(activity.sourceRefs())
-                    .containsExactlyElementsOf(
-                        material.modelPacket().allowlistedRefs().stream()
-                            .map(value -> value.ref())
-                            .toList());
-              });
-    }
+    assertThat(provider.taskKinds()).containsExactly("ACTIVITY_DRAFT", "ACTIVITY_REVIEW");
+    assertThat(provider.packets()).allSatisfy(ContextCapturingProvider::assertCleanDirectContext);
+    assertThat(result.coverage())
+        .singleElement()
+        .satisfies(value -> assertThat(value.disposition()).isEqualTo("ANALYZED_WITH_GAPS"));
+    assertThat(result.reviewedActivities())
+        .singleElement()
+        .satisfies(
+            activity -> {
+              assertThat(activity.businessPurpose()).isEqualTo("根据状态请求执行订单审批处理。");
+              assertThat(activity.businessObjects()).containsExactly("订单", "审批状态");
+              assertThat(activity.conditions()).containsExactly("状态不能为空时才记录审批处理。");
+              assertThat(activity.activitySteps()).containsExactly("接收状态请求", "调用订单审批处理", "记录审批处理");
+              assertThat(activity.codeDefinedResults()).containsExactly("代码调用审批记录处理。");
+              assertThat(activity.sourceRefs())
+                  .containsExactlyElementsOf(
+                      material.modelPacket().allowlistedRefs().stream()
+                          .map(value -> value.ref())
+                          .toList());
+            });
   }
 
   @Test
   void doesNotTurnTheGenericSnippetBudgetNoticeIntoABusinessCoverageGap() throws Exception {
-    try (ProgramGraphsPublicFixture fixture =
-        ProgramGraphsPublicFixture.createWithGuardedApprove(
-            temporaryDirectory.resolve("activity-budget-notice"))) {
-      BusinessMaterialBuildResult allMaterials =
-          new BusinessMaterialBuilder(
-                  fixture.moduleArtifacts(), fixture.stepArtifacts(), fixture.sourceReader())
-              .build(
-                  new BuildBusinessMaterialsRequest(
-                      BusinessFlowTestSupport.publishBusinessFlows(fixture),
-                      new BusinessMaterialProfile(8, 24, 12_000, 1)));
-      BusinessMaterial original = allMaterials.materialSet().materials().get(0);
-      BusinessMaterial completeFlow =
-          new BusinessMaterial(
-              original.materialId(),
-              original.entryIds(),
-              BusinessMaterialMode.FLOW_PREFERRED,
-              original.context(),
-              original.technicalObservations(),
-              original.sourceRefs(),
-              original.flowRefs(),
-              original.technicalProofRefs(),
-              List.of(BusinessMaterial.SNIPPET_BUDGET_NOTICE),
-              original.modelPacket());
-      BusinessMaterialBuildResult oneMaterial =
-          new BusinessMaterialBuildResult(
-              new BusinessMaterialSet(
-                  allMaterials.materialSet().materialSetId(),
-                  List.of(completeFlow),
-                  List.of(
-                      new BusinessMaterialEntryCoverage(
-                          completeFlow.entryIds().get(0),
-                          "ANALYZED_MATERIAL",
-                          completeFlow.materialId(),
-                          null))),
-              allMaterials.checkpoint());
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = LegacyM10CheckpointFixture.open();
+    BusinessMaterialBuildResult allMaterials =
+        new BusinessMaterialCheckpointReader(fixture.artifacts()).reopen(fixture.checkpoint());
+    BusinessMaterial original = allMaterials.materialSet().materials().get(0);
+    BusinessMaterial completeFlow =
+        new BusinessMaterial(
+            original.materialId(),
+            List.of(original.entryIds().get(0)),
+            BusinessMaterialMode.FLOW_PREFERRED,
+            original.context(),
+            original.technicalObservations(),
+            original.sourceRefs(),
+            original.flowRefs(),
+            original.technicalProofRefs(),
+            List.of(BusinessMaterial.SNIPPET_BUDGET_NOTICE),
+            original.modelPacket());
+    BusinessMaterialBuildResult oneMaterial =
+        new BusinessMaterialBuildResult(
+            new BusinessMaterialSet(
+                allMaterials.materialSet().materialSetId(),
+                List.of(completeFlow),
+                List.of(
+                    new BusinessMaterialEntryCoverage(
+                        completeFlow.entryIds().get(0),
+                        "ANALYZED_MATERIAL",
+                        completeFlow.materialId(),
+                        null))),
+            allMaterials.checkpoint());
 
-      ActivityExplanationResult result =
-          new ActivityExplainer(new ContextCapturingProvider())
-              .explain(
-                  new ExplainActivitiesRequest(
-                      oneMaterial, new ActivityExplanationProfile(64_000, 16_000, 1, 24, 2_000)));
+    ActivityExplanationResult result =
+        new ActivityExplainer(new ContextCapturingProvider())
+            .explain(
+                new ExplainActivitiesRequest(
+                    oneMaterial, new ActivityExplanationProfile(64_000, 16_000, 1, 24, 2_000)));
 
-      assertThat(result.coverage())
-          .singleElement()
-          .satisfies(value -> assertThat(value.disposition()).isEqualTo("ANALYZED"));
-    }
+    assertThat(result.coverage())
+        .singleElement()
+        .satisfies(value -> assertThat(value.disposition()).isEqualTo("ANALYZED"));
   }
 
   private static final class ContextCapturingProvider implements StructuredModelProvider {

@@ -140,6 +140,11 @@ final class AtomicAnalysisStepPublicationEngine {
           || !(request.publicationProvenance() instanceof AnalysisStepPublisherModuleProvenance)) {
         throw invalidInstall();
       }
+      AnalysisStepPublisherModuleProvenance provenance =
+          (AnalysisStepPublisherModuleProvenance) request.publicationProvenance();
+      if (isRetiredProducerAddress(provenance.publisherSpecificationModuleReference().address())) {
+        throw invalidInstall();
+      }
       StepContract contract = stepContract(request);
       requireLimits(contract);
       requireReceiptState(contract, request, true);
@@ -213,6 +218,22 @@ final class AtomicAnalysisStepPublicationEngine {
     } catch (RuntimeException failure) {
       throw invalidInstall();
     }
+  }
+
+  /**
+   * Historical receipts remain readable; only new publications from retired producer modules stop.
+   */
+  private static boolean isRetiredProducerAddress(ModulePublicationAddress address) {
+    if (!(address instanceof AnalysisStepModuleAddress module)) {
+      return false;
+    }
+    return switch (module.analysisStepKey()) {
+      case PROGRAM_GRAPHS -> module.moduleNumber() >= 1 && module.moduleNumber() <= 6;
+      case PROVEN_CODE_FACTS -> module.moduleNumber() >= 1 && module.moduleNumber() <= 3;
+      case BUSINESS_FLOWS -> module.moduleNumber() >= 1 && module.moduleNumber() <= 3;
+      case FLOW_INTERPRETATION -> module.moduleNumber() == 10;
+      default -> false;
+    };
   }
 
   private ArtifactDescriptor descriptor(CanonicalAnalysisStepPayload payload) {
@@ -789,36 +810,55 @@ final class AtomicAnalysisStepPublicationEngine {
                       AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
                       AnalysisStepKey.APPLICATION_DISCOVERY));
       case PROVEN_CODE_FACTS ->
-          new StepContract(
-              3,
-              "publish",
-              List.of(
-                  List.of("fact-accounting.json"),
+          publisher.moduleNumber() == 4 && "persistence-analysis".equals(publisher.moduleKey())
+              ? new StepContract(
+                  4,
+                  "persistence-analysis",
+                  List.of(List.of("persistence-material-index.jsonl")),
                   List.of(
-                      "fact-accounting.json",
-                      "gap-ledger.json",
-                      "proof-pack.json",
-                      "proven-facts.json")),
-              List.of(
-                  AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
-                  AnalysisStepKey.APPLICATION_DISCOVERY,
-                  AnalysisStepKey.PROGRAM_GRAPHS));
+                      AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                      AnalysisStepKey.APPLICATION_DISCOVERY,
+                      AnalysisStepKey.PROGRAM_GRAPHS))
+              : new StepContract(
+                  3,
+                  "publish",
+                  List.of(
+                      List.of("fact-accounting.json"),
+                      List.of(
+                          "fact-accounting.json",
+                          "gap-ledger.json",
+                          "proof-pack.json",
+                          "proven-facts.json")),
+                  List.of(
+                      AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                      AnalysisStepKey.APPLICATION_DISCOVERY,
+                      AnalysisStepKey.PROGRAM_GRAPHS));
       case BUSINESS_FLOWS ->
-          new StepContract(
-              3,
-              "publish",
-              List.of(
+          publisher.moduleNumber() == 4 && "code-reading-materials".equals(publisher.moduleKey())
+              ? new StepContract(
+                  4,
+                  "code-reading-materials",
+                  List.of(List.of("code-reading-materials.jsonl")),
                   List.of(
-                      "entry-dispositions.jsonl",
-                      "evidence-capsules.jsonl",
-                      "flow-coverage.json",
-                      "flow-gaps.jsonl",
-                      "flow-slices.json")),
-              List.of(
-                  AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
-                  AnalysisStepKey.APPLICATION_DISCOVERY,
-                  AnalysisStepKey.PROGRAM_GRAPHS,
-                  AnalysisStepKey.PROVEN_CODE_FACTS));
+                      AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                      AnalysisStepKey.APPLICATION_DISCOVERY,
+                      AnalysisStepKey.PROGRAM_GRAPHS,
+                      AnalysisStepKey.PROVEN_CODE_FACTS))
+              : new StepContract(
+                  3,
+                  "publish",
+                  List.of(
+                      List.of(
+                          "entry-dispositions.jsonl",
+                          "evidence-capsules.jsonl",
+                          "flow-coverage.json",
+                          "flow-gaps.jsonl",
+                          "flow-slices.json")),
+                  List.of(
+                      AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                      AnalysisStepKey.APPLICATION_DISCOVERY,
+                      AnalysisStepKey.PROGRAM_GRAPHS,
+                      AnalysisStepKey.PROVEN_CODE_FACTS));
       default -> throw invalidInstall();
     };
   }

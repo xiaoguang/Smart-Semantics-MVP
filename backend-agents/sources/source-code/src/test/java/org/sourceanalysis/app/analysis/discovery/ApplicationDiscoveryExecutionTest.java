@@ -17,6 +17,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.code.EngineDescriptor;
@@ -93,7 +94,7 @@ class ApplicationDiscoveryExecutionTest {
               handle, canonicalJson, policies, new ArtifactStoreLimits(4, 100_000, 300_000, 10));
 
       ApplicationDiscoveryReference result =
-          new ApplicationDiscoveryExecutor(sourceHandle, modules, steps)
+          new ApplicationDiscoveryExecutor(sourceHandle, modules, steps, catalogSession(source))
               .execute(
                   new ApplicationDiscoveryRequest(
                       new AnalysisStepPublicationAddress(
@@ -192,6 +193,70 @@ class ApplicationDiscoveryExecutionTest {
   }
 
   @Test
+  void executesSpringOnlyDiscoveryWithAnEmptyMapperCatalog() {
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
+    ArtifactControls controls = controls(policies);
+    VerifiedSourceInventoryReference frozenSource = frozenSource();
+    VerifiedSourceTextSet source = springOnlySource(controls);
+
+    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(temporaryDirectory)) {
+      FileSystemCanonicalModuleArtifactStore modules =
+          new FileSystemCanonicalModuleArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(4, 100_000, 300_000, 10));
+      FileSystemCanonicalAnalysisStepArtifactStore steps =
+          new FileSystemCanonicalAnalysisStepArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(4, 100_000, 300_000, 10));
+
+      ApplicationDiscoveryReference result =
+          Assertions.assertDoesNotThrow(
+              () ->
+                  new ApplicationDiscoveryExecutor(
+                          reference -> source, modules, steps, catalogSession(source))
+                      .execute(
+                          new ApplicationDiscoveryRequest(
+                              new AnalysisStepPublicationAddress(
+                                  frozenSource.publication().address().runId(),
+                                  AnalysisStepKey.APPLICATION_DISCOVERY),
+                              frozenSource,
+                              DiscoveryProfile.standard())));
+
+      var reopened = steps.reopen(result.publication());
+      String entries =
+          new String(
+              reopened.semanticPayloads().stream()
+                  .filter(payload -> payload.descriptor().fileName().equals("entry-points.jsonl"))
+                  .findFirst()
+                  .orElseThrow()
+                  .canonicalUtf8()
+                  .copyToByteArray(),
+              StandardCharsets.UTF_8);
+      JsonNode capability =
+          canonicalJson.parseCanonical(
+              reopened.semanticPayloads().stream()
+                  .filter(
+                      payload -> payload.descriptor().fileName().equals("capability-report.json"))
+                  .findFirst()
+                  .orElseThrow()
+                  .canonicalUtf8());
+      String mapperCatalog =
+          new String(
+              reopened.semanticPayloads().stream()
+                  .filter(payload -> payload.descriptor().fileName().equals("mapper-catalog.jsonl"))
+                  .findFirst()
+                  .orElseThrow()
+                  .canonicalUtf8()
+                  .copyToByteArray(),
+              StandardCharsets.UTF_8);
+      JsonNode mapperCount = capability.at("/repositoryEntryCoverage/mapperCatalogEntryCount");
+      assertThat(mapperCount.isInt()).isTrue();
+      assertThat(mapperCount.intValue()).isZero();
+      assertThat(mapperCatalog.strip()).isEmpty();
+      assertThat(entries).contains("method:controller-batch-set-status");
+    }
+  }
+
+  @Test
   void closesRepositoryEntryCoverageOnlyForCompleteFullyAccountedSource() {
     assertAll(
         () ->
@@ -230,7 +295,7 @@ class ApplicationDiscoveryExecutionTest {
               handle, canonicalJson, policies, new ArtifactStoreLimits(4, 100_000, 300_000, 10));
 
       ApplicationDiscoveryReference result =
-          new ApplicationDiscoveryExecutor(sourceHandle, modules, steps)
+          new ApplicationDiscoveryExecutor(sourceHandle, modules, steps, catalogSession(source))
               .execute(
                   new ApplicationDiscoveryRequest(
                       new AnalysisStepPublicationAddress(
@@ -345,6 +410,41 @@ class ApplicationDiscoveryExecutionTest {
                 """
                 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
                 <mapper namespace="com.example.DepotHeadMapper"><update id="updateStatus">update jsh_depot_head set status = #{status}</update></mapper>
+                """)));
+  }
+
+  private static VerifiedSourceTextSet springOnlySource(ArtifactControls controls) {
+    return new VerifiedSourceTextSet(
+        "snapshot:" + "1".repeat(64),
+        "COMPLETE_CAPTURE",
+        true,
+        reference("capability-profile", '2'),
+        reference("verified-source-inventory-source-inventory", '3'),
+        reference("verified-snapshot", '4'),
+        controls,
+        List.of(
+            document(
+                "pom.xml",
+                """
+                <project><modelVersion>4.0.0</modelVersion><properties><maven.compiler.release>17</maven.compiler.release></properties><dependencies><dependency><artifactId>spring-webmvc</artifactId></dependency></dependencies></project>
+                """),
+            document(
+                "src/main/java/com/example/DepotHeadController.java",
+                """
+                package com.example;
+                import org.springframework.web.bind.annotation.PostMapping;
+                import org.springframework.web.bind.annotation.RequestMapping;
+                @RequestMapping("/depotHead")
+                public class DepotHeadController {
+                  @PostMapping("/batchSetStatus")
+                  public String batchSetStatus(String status, String ids) { return "ok"; }
+                }
+                """),
+            document(
+                "src/main/java/com/example/DepotHeadMapper.java",
+                """
+                package com.example;
+                public interface DepotHeadMapper { int updateStatus(String status); }
                 """)));
   }
 
@@ -504,6 +604,30 @@ class ApplicationDiscoveryExecutionTest {
                 controllerText.indexOf("PostMapping"))),
         List.of(),
         Map.of());
+  }
+
+  private static JavaCodeSession catalogSession(VerifiedSourceTextSet source) {
+    JavaDeclarationCatalog catalog = declarationCatalog(source);
+    return new JavaCodeSession() {
+      @Override
+      public JavaDeclarationCatalog catalog() {
+        return catalog;
+      }
+
+      @Override
+      public EntryCodeContext collect(EntrySeed entry) {
+        throw new AssertionError("application discovery must not collect an entry context");
+      }
+
+      @Override
+      public EngineDescriptor descriptor() {
+        return new EngineDescriptor(
+            "test-jdt", "v1", Map.of("jdt-core", "test"), "17", List.of("CATALOG"));
+      }
+
+      @Override
+      public void close() {}
+    };
   }
 
   private static JavaDeclarationCatalog.AnnotationView annotation(

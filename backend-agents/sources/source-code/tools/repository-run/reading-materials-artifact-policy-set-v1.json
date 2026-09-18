@@ -1,0 +1,140 @@
+{
+  "schemaVersion": "artifact-policy-registry-policy-set-v1",
+  "policies": [
+    {
+      "artifactType": "APPLICATION_DISCOVERY_APPLICATION_PROFILE",
+      "schemaVersion": "application-discovery-application-profile-v2",
+      "artifactIdPrefix": "application-discovery-application-profile",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "APPLICATION_DISCOVERY_APPLICATION_PROFILE_DRAFT",
+      "schemaVersion": "application-discovery-application-profile-draft-v2",
+      "artifactIdPrefix": "application-profile",
+      "mediaType": "application/json",
+      "envelopeKind": "MODULE_ARTIFACT_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "APPLICATION_DISCOVERY_CAPABILITY_REPORT",
+      "schemaVersion": "application-discovery-capability-report-v2",
+      "artifactIdPrefix": "application-discovery-capability-report",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "APPLICATION_DISCOVERY_ENTRY_POINTS",
+      "schemaVersion": "application-discovery-entry-points-v3",
+      "artifactIdPrefix": "application-discovery-entry-points",
+      "mediaType": "application/x-ndjson",
+      "envelopeKind": "CANONICAL_JSONL",
+      "emptyJsonlAllowed": true,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "APPLICATION_DISCOVERY_HTTP_ENTRY_DISCOVERY",
+      "schemaVersion": "application-discovery-http-entry-discovery-v3",
+      "artifactIdPrefix": "http-entry-discovery",
+      "mediaType": "application/json",
+      "envelopeKind": "MODULE_ARTIFACT_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "APPLICATION_DISCOVERY_MAPPER_CATALOG",
+      "schemaVersion": "application-discovery-mapper-catalog-v2",
+      "artifactIdPrefix": "application-discovery-mapper-catalog",
+      "mediaType": "application/x-ndjson",
+      "envelopeKind": "CANONICAL_JSONL",
+      "emptyJsonlAllowed": true,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "APPLICATION_DISCOVERY_MAPPER_CATALOG_DRAFT",
+      "schemaVersion": "application-discovery-mapper-catalog-draft-v2",
+      "artifactIdPrefix": "mapper-catalog",
+      "mediaType": "application/json",
+      "envelopeKind": "MODULE_ARTIFACT_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "CODE_READING_MATERIAL_SET",
+      "schemaVersion": "code-reading-material-set-v1",
+      "artifactIdPrefix": "code-reading-materials",
+      "mediaType": "application/x-ndjson",
+      "envelopeKind": "CANONICAL_JSONL",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "PERSISTENCE_MATERIAL_INDEX",
+      "schemaVersion": "persistence-material-index-v1",
+      "artifactIdPrefix": "persistence-material-index",
+      "mediaType": "application/x-ndjson",
+      "envelopeKind": "CANONICAL_JSONL",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "PROGRAM_GRAPHS_JAVA_CODE_INDEX",
+      "schemaVersion": "java-code-index-v2",
+      "artifactIdPrefix": "java-code-index",
+      "mediaType": "application/x-ndjson",
+      "envelopeKind": "CANONICAL_JSONL",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "VERIFIED_SNAPSHOT",
+      "schemaVersion": "verified-snapshot-v2",
+      "artifactIdPrefix": "verified-snapshot",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "VERIFIED_SOURCE_INVENTORY_ADMITTED_SOURCE_REQUEST",
+      "schemaVersion": "verified-source-inventory-admitted-source-request-v2",
+      "artifactIdPrefix": "source-request",
+      "mediaType": "application/json",
+      "envelopeKind": "MODULE_ARTIFACT_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "VERIFIED_SOURCE_INVENTORY_SOURCE_INPUT",
+      "schemaVersion": "verified-source-inventory-source-input-v2",
+      "artifactIdPrefix": "verified-source-inventory-source-input",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY",
+      "schemaVersion": "verified-source-inventory-source-inventory-v2",
+      "artifactIdPrefix": "verified-source-inventory-source-inventory",
+      "mediaType": "application/x-ndjson",
+      "envelopeKind": "CANONICAL_JSONL",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "VERIFIED_SOURCE_INVENTORY_VERIFIED_SOURCE_INDEX",
+      "schemaVersion": "verified-source-inventory-verified-source-index-v2",
+      "artifactIdPrefix": "source-index",
+      "mediaType": "application/json",
+      "envelopeKind": "MODULE_ARTIFACT_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    }
+  ]
+}

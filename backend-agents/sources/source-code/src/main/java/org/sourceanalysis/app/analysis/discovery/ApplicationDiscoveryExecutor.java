@@ -4,6 +4,7 @@ import java.util.Objects;
 import org.sourceanalysis.app.analysis.code.JavaCodeSession;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 
@@ -14,17 +15,7 @@ public final class ApplicationDiscoveryExecutor {
   private final CanonicalModuleArtifactStore moduleArtifacts;
   private final CanonicalAnalysisStepArtifactStore stepArtifacts;
   private final JavaCodeSession javaCodeSession;
-
-  /** Creates a path-free executor over verified source bytes and the canonical stores. */
-  public ApplicationDiscoveryExecutor(
-      VerifiedSourceTextReader sourceReader,
-      CanonicalModuleArtifactStore moduleArtifacts,
-      CanonicalAnalysisStepArtifactStore stepArtifacts) {
-    this.sourceReader = Objects.requireNonNull(sourceReader, "verified source reader");
-    this.moduleArtifacts = Objects.requireNonNull(moduleArtifacts, "module artifact store");
-    this.stepArtifacts = Objects.requireNonNull(stepArtifacts, "analysis step artifact store");
-    this.javaCodeSession = null;
-  }
+  private final MapperXmlResourceView mapperXmlResourceView;
 
   /** Creates an executor whose Java declarations come only from the selected engine session. */
   public ApplicationDiscoveryExecutor(
@@ -36,6 +27,25 @@ public final class ApplicationDiscoveryExecutor {
     this.moduleArtifacts = Objects.requireNonNull(moduleArtifacts, "module artifact store");
     this.stepArtifacts = Objects.requireNonNull(stepArtifacts, "analysis step artifact store");
     this.javaCodeSession = Objects.requireNonNull(javaCodeSession, "Java code session");
+    this.mapperXmlResourceView = null;
+  }
+
+  /**
+   * Creates a JDT discovery executor that consumes one workflow-owned, source-bound Mapper XML view
+   * rather than reparsing XML for the mapper catalog.
+   */
+  public ApplicationDiscoveryExecutor(
+      VerifiedSourceTextReader sourceReader,
+      CanonicalModuleArtifactStore moduleArtifacts,
+      CanonicalAnalysisStepArtifactStore stepArtifacts,
+      JavaCodeSession javaCodeSession,
+      MapperXmlResourceView mapperXmlResourceView) {
+    this.sourceReader = Objects.requireNonNull(sourceReader, "verified source reader");
+    this.moduleArtifacts = Objects.requireNonNull(moduleArtifacts, "module artifact store");
+    this.stepArtifacts = Objects.requireNonNull(stepArtifacts, "analysis step artifact store");
+    this.javaCodeSession = Objects.requireNonNull(javaCodeSession, "Java code session");
+    this.mapperXmlResourceView =
+        Objects.requireNonNull(mapperXmlResourceView, "mapper XML resource view");
   }
 
   /** Runs M1 through M4 in their sole allowed order. */
@@ -57,14 +67,10 @@ public final class ApplicationDiscoveryExecutor {
       ApplicationProfile profile =
           new PersistedApplicationProfileReader(moduleArtifacts, sourceReader)
               .reopen(profileDraft, request.verifiedSourceInventory());
-      JavaDeclarationCatalog javaCatalog =
-          javaCodeSession == null ? null : javaCodeSession.catalog();
+      JavaDeclarationCatalog javaCatalog = javaCodeSession.catalog();
       HttpEntryDiscovery entries =
-          javaCatalog == null
-              ? new SpringHttpEntryDiscoverer(sourceReader)
-                  .discoverEntries(profile, request.verifiedSourceInventory())
-              : new SpringHttpEntryDiscoverer(sourceReader)
-                  .discoverEntries(profile, request.verifiedSourceInventory(), javaCatalog);
+          new SpringHttpEntryDiscoverer(sourceReader)
+              .discoverEntries(profile, request.verifiedSourceInventory(), javaCatalog);
       HttpEntryDiscoveryDraftReference entryDraft =
           new HttpEntryDiscoveryModulePublisher(moduleArtifacts)
               .publish(
@@ -76,12 +82,7 @@ public final class ApplicationDiscoveryExecutor {
                   profileDraft,
                   profile,
                   entries);
-      MapperCatalogDiscovery catalog =
-          javaCatalog == null
-              ? new MapperCapabilityCataloger(sourceReader)
-                  .catalogMappers(profile, request.verifiedSourceInventory())
-              : new MapperCapabilityCataloger(sourceReader)
-                  .catalogMappers(profile, request.verifiedSourceInventory(), javaCatalog);
+      MapperCatalogDiscovery catalog = catalogMappers(profile, request, javaCatalog);
       MapperCatalogDraftReference catalogDraft =
           new MapperCatalogModulePublisher(moduleArtifacts)
               .publish(
@@ -118,5 +119,17 @@ public final class ApplicationDiscoveryExecutor {
             .equals(request.verifiedSourceInventory().publication().address().runId())) {
       throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_EXECUTION_INVALID");
     }
+  }
+
+  private MapperCatalogDiscovery catalogMappers(
+      ApplicationProfile profile,
+      ApplicationDiscoveryRequest request,
+      JavaDeclarationCatalog javaCatalog) {
+    MapperCapabilityCataloger cataloger = new MapperCapabilityCataloger(sourceReader);
+    if (mapperXmlResourceView == null) {
+      return cataloger.catalogMappers(profile, request.verifiedSourceInventory(), javaCatalog);
+    }
+    VerifiedSourceTextSet source = sourceReader.reopen(request.verifiedSourceInventory());
+    return cataloger.catalogMappers(profile, source, javaCatalog, mapperXmlResourceView);
   }
 }

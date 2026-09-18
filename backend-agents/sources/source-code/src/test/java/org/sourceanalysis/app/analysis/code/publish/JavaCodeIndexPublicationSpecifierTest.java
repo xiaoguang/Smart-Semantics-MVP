@@ -3,7 +3,6 @@ package org.sourceanalysis.app.analysis.code.publish;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -15,10 +14,8 @@ import org.sourceanalysis.app.analysis.code.EntrySeed;
 import org.sourceanalysis.app.analysis.code.JavaCodeSession;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.code.SourceRange;
-import org.sourceanalysis.app.analysis.fact.ProvenCodeFactsExecutor;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsExecution;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
-import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 
 class JavaCodeIndexPublicationSpecifierTest {
 
@@ -55,30 +52,6 @@ class JavaCodeIndexPublicationSpecifierTest {
                   assertThat(entry.context().methods())
                       .extracting(EntryCodeContext.MethodCode::methodKey)
                       .containsExactly(entry.seed().methodKey());
-                });
-
-        var facts =
-            new ProvenCodeFactsExecutor(
-                    fixture.sourceReader(), fixture.moduleArtifacts(), fixture.stepArtifacts())
-                .execute(fixture.sourceInventory(), fixture.applicationDiscovery(), graphs);
-        var reopenedFacts = fixture.stepArtifacts().reopen(facts.publication());
-        assertThat(reopenedFacts.semanticPayloads())
-            .singleElement()
-            .satisfies(
-                payload -> {
-                  assertThat(payload.descriptor().fileName()).isEqualTo("fact-accounting.json");
-                  JsonNode document =
-                      new CanonicalJsonCodec().parseCanonical(payload.canonicalUtf8());
-                  assertThat(document.path("schemaVersion").textValue())
-                      .isEqualTo("proven-code-facts-fact-accounting-v4");
-                  assertThat(document.path("availability").textValue()).isEqualTo("NOT_PRODUCED");
-                  assertThat(document.path("reason").textValue()).isNotBlank();
-                  assertThat(document.path("navigationInputRef").path("artifactId").textValue())
-                      .isEqualTo(
-                          reopenedStep.semanticPayloads().get(0).descriptor().artifactId().value());
-                  assertThat(document.path("candidateFactCount").isNull()).isTrue();
-                  assertThat(document.has("candidateDenominatorKeys")).isFalse();
-                  assertThat(document.has("proofPackRef")).isFalse();
                 });
       }
     }

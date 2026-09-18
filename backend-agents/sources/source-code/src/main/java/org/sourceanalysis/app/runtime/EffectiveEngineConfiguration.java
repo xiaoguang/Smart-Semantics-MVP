@@ -16,18 +16,28 @@ import java.util.regex.Pattern;
 public record EffectiveEngineConfiguration(String javaEngine, JdtConfiguration jdt) {
 
   public static final String JDT = "jdt";
-  public static final String JAVAPARSER = "javaparser";
+
+  /** Retained only to decode historical configuration and state; it is not executable. */
+  public static final String JAVAPARSER_READ_ONLY = "javaparser";
 
   public EffectiveEngineConfiguration {
-    if (!JDT.equals(javaEngine) && !JAVAPARSER.equals(javaEngine)) {
-      throw new IllegalArgumentException("Java engine must be jdt or javaparser");
-    }
     if (JDT.equals(javaEngine)) {
       jdt = Objects.requireNonNull(jdt, "JDT configuration");
-    } else if (jdt != null) {
-      throw new IllegalArgumentException(
-          "an unselected JavaParser engine must not open JDT tooling");
+    } else if (JAVAPARSER_READ_ONLY.equals(javaEngine)) {
+      if (jdt != null) {
+        throw new IllegalArgumentException(
+            "historical JavaParser configuration has no JDT settings");
+      }
+    } else {
+      throw new IllegalArgumentException("Java engine is unsupported");
     }
+  }
+
+  /**
+   * Carries an explicitly retired engine descriptor for historical read-only configuration paths.
+   */
+  public static EffectiveEngineConfiguration historicalJavaParser() {
+    return new EffectiveEngineConfiguration(JAVAPARSER_READ_ONLY, null);
   }
 
   /**

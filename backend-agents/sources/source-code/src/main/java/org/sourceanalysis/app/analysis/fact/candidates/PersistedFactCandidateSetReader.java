@@ -30,7 +30,7 @@ import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
  *
  * <p>The normal seam deliberately accepts neither paths nor untyped JSON. The module store first
  * validates the receipt-last publication; this reader then validates the M1-specific envelope and
- * its saved graph roots. Explicit audit callers can additionally re-enumerate the denominator.
+ * its saved graph roots. It does not replay retired candidate enumeration.
  */
 public final class PersistedFactCandidateSetReader {
 
@@ -158,31 +158,6 @@ public final class PersistedFactCandidateSetReader {
       FactCandidateSet candidateSet,
       ReopenedModulePublication publication,
       ArtifactReference payloadReference) {}
-
-  /**
-   * Reopens and independently audits one M1 candidate artifact against a supplied frozen registry.
-   * This costly replay is for validation and tests, not ordinary downstream consumption.
-   */
-  public FactCandidateSet reopen(
-      ModulePublicationReference publicationReference,
-      FactCandidateInputs inputs,
-      FactRegistry registry) {
-    try {
-      if (registry == null) {
-        throw failure();
-      }
-      FactCandidateSet persisted = reopen(publicationReference, inputs);
-      FactCandidateSet expected = new FactCandidateEnumerator().enumerate(inputs, registry);
-      if (!persisted.equals(expected)) {
-        throw failure();
-      }
-      return persisted;
-    } catch (FactCandidateReferenceException failure) {
-      throw failure;
-    } catch (RuntimeException invalid) {
-      throw failure();
-    }
-  }
 
   private void requirePublication(
       ReopenedModulePublication publication,

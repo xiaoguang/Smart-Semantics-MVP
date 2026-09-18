@@ -2,9 +2,10 @@ package org.sourceanalysis.app.runtime;
 
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 
-/** Closed public names for the business-language outputs saved by the four deep Modules. */
+/** Closed public names for historical business outputs and the Step05 reading-material output. */
 public enum BusinessOutputArtifactKey {
   BUSINESS_MATERIALS(AnalysisStepKey.FLOW_INTERPRETATION, 10, "business-materials.jsonl"),
   ACTIVITY_EXPLANATIONS(AnalysisStepKey.FLOW_INTERPRETATION, 11, "activity-explanations.jsonl"),
@@ -20,16 +21,24 @@ public enum BusinessOutputArtifactKey {
   BUSINESS_REPORT(AnalysisStepKey.NINE_SECTION_DOCUMENT, 1, "business-report.json"),
   DOCUMENT_MARKDOWN(AnalysisStepKey.NINE_SECTION_DOCUMENT, 1, "document.md"),
   SOURCE_REFERENCES(AnalysisStepKey.NINE_SECTION_DOCUMENT, 1, "source-refs.jsonl"),
-  REPORT_VALIDATION(AnalysisStepKey.NINE_SECTION_DOCUMENT, 1, "report-validation.json");
+  REPORT_VALIDATION(AnalysisStepKey.NINE_SECTION_DOCUMENT, 1, "report-validation.json"),
+  CODE_READING_MATERIALS(AnalysisStepKey.BUSINESS_FLOWS, 4, "code-reading-materials.jsonl", true);
 
   private final AnalysisStepKey step;
   private final int moduleNumber;
   private final String fileName;
+  private final boolean readingMaterials;
 
   BusinessOutputArtifactKey(AnalysisStepKey step, int moduleNumber, String fileName) {
+    this(step, moduleNumber, fileName, false);
+  }
+
+  BusinessOutputArtifactKey(
+      AnalysisStepKey step, int moduleNumber, String fileName, boolean readingMaterials) {
     this.step = step;
     this.moduleNumber = moduleNumber;
     this.fileName = fileName;
+    this.readingMaterials = readingMaterials;
   }
 
   String fileName() {
@@ -37,6 +46,10 @@ public enum BusinessOutputArtifactKey {
   }
 
   ModulePublicationReference checkpoint(AnalysisRunOutput output) {
+    if (readingMaterials) {
+      throw new IllegalStateException(
+          "business output artifact key does not use a module checkpoint");
+    }
     ModulePublicationReference checkpoint =
         switch (step) {
           case FLOW_INTERPRETATION ->
@@ -53,6 +66,24 @@ public enum BusinessOutputArtifactKey {
     if (!(checkpoint.address() instanceof AnalysisStepModuleAddress address)
         || address.analysisStepKey() != step
         || address.moduleNumber() != moduleNumber) {
+      throw new IllegalStateException("business output artifact checkpoint is invalid");
+    }
+    return checkpoint;
+  }
+
+  boolean readsReadingMaterials() {
+    return readingMaterials;
+  }
+
+  AnalysisStepPublicationReference readingMaterialCheckpoint(AnalysisRunOutput output) {
+    if (!readingMaterials) {
+      throw new IllegalStateException("business output artifact key is invalid");
+    }
+    AnalysisStepPublicationReference checkpoint = output.readingMaterialCheckpoint();
+    if (checkpoint == null) {
+      throw new IllegalStateException("BUSINESS_ARTIFACT_QUERY_NOT_AVAILABLE");
+    }
+    if (checkpoint.address() == null || checkpoint.address().analysisStepKey() != step) {
       throw new IllegalStateException("business output artifact checkpoint is invalid");
     }
     return checkpoint;

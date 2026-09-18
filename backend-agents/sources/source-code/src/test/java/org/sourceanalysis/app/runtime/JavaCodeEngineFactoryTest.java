@@ -28,17 +28,15 @@ class JavaCodeEngineFactoryTest {
   }
 
   @Test
-  void javaParserSelectionCreatesTheRetainedEngineWithoutJdtPrerequisites() throws Exception {
+  void javaParserYamlSelectionIsRejectedBeforeEngineCreation() throws Exception {
     Path missingInstallation = temporaryDirectory.resolve("unused-installation");
     Path missingJavaHome = temporaryDirectory.resolve("unused-jdk");
-    Object configuration =
-        EngineTestReflection.loadYaml(jdtYaml("javaparser", missingInstallation, missingJavaHome));
+    Throwable failure =
+        EngineTestReflection.loadFailure(
+            jdtYaml("javaparser", missingInstallation, missingJavaHome));
 
-    Object engine = EngineTestReflection.factoryCreate(configuration);
-
-    assertThat(engine).isNotNull();
-    assertThat(engine.getClass().getName())
-        .isEqualTo("org.sourceanalysis.app.analysis.code.javaparser.JavaParserCodeEngine");
+    assertThat(failure).isNotNull();
+    assertThat(EngineTestReflection.codeOf(failure)).isEqualTo("ENGINE_CONFIGURATION_INVALID");
   }
 
   @Test

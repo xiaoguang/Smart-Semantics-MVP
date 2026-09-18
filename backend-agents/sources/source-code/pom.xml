@@ -18,7 +18,8 @@
         <lsp4j.version>1.0.0</lsp4j.version>
         <junit.version>5.13.4</junit.version>
         <picocli.version>4.7.7</picocli.version>
-        <javaparser.version>3.28.2</javaparser.version>
+        <mybatis.version>3.5.19</mybatis.version>
+        <jsqlparser.version>5.3</jsqlparser.version>
         <maven-model.version>3.9.11</maven-model.version>
         <tomlj.version>1.1.1</tomlj.version>
         <json-schema-validator.version>2.0.1</json-schema-validator.version>
@@ -115,9 +116,24 @@
             <version>${picocli.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.github.javaparser</groupId>
-            <artifactId>javaparser-symbol-solver-core</artifactId>
-            <version>${javaparser.version}</version>
+            <groupId>org.mybatis</groupId>
+            <artifactId>mybatis</artifactId>
+            <version>${mybatis.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.jsqlparser</groupId>
+            <artifactId>jsqlparser</artifactId>
+            <version>${jsqlparser.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.openjdk.jmh</groupId>
+                    <artifactId>jmh-core</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.openjdk.jmh</groupId>
+                    <artifactId>jmh-generator-annprocess</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.maven</groupId>

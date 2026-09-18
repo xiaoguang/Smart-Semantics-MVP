@@ -1,43 +1,46 @@
 package org.sourceanalysis.app.runtime;
 
+import java.util.List;
 import java.util.Objects;
 import org.sourceanalysis.app.analysis.code.JavaCodeSession;
+import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndex;
+import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndexReader;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryExecutor;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryRequest;
 import org.sourceanalysis.app.analysis.discovery.DiscoveryProfile;
-import org.sourceanalysis.app.analysis.fact.ProvenCodeFactsExecutor;
-import org.sourceanalysis.app.analysis.fact.publish.ProvenCodeFactsReference;
-import org.sourceanalysis.app.analysis.flow.BusinessFlowsExecutionRequest;
-import org.sourceanalysis.app.analysis.flow.BusinessFlowsExecutor;
-import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionProfile;
-import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilationProfile;
-import org.sourceanalysis.app.analysis.flow.publish.BusinessFlowsReference;
+import org.sourceanalysis.app.analysis.discovery.MapperXmlResourceView;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsExecution;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
+import org.sourceanalysis.app.analysis.material.CodeReadingMaterialProfile;
+import org.sourceanalysis.app.analysis.material.CodeReadingMaterialRequest;
+import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
+import org.sourceanalysis.app.analysis.material.DefaultCodeReadingMaterialBuilder;
+import org.sourceanalysis.app.analysis.material.publish.CodeReadingMaterialPublisher;
+import org.sourceanalysis.app.analysis.persistence.DefaultPersistenceAnalyzer;
+import org.sourceanalysis.app.analysis.persistence.PersistenceAnalysisRequest;
+import org.sourceanalysis.app.analysis.persistence.PersistenceConfiguration;
+import org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex;
+import org.sourceanalysis.app.analysis.persistence.publish.PersistenceMaterialPublisher;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationAddress;
 import org.sourceanalysis.app.artifact.ArtifactControls;
-import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 
-/**
- * Coordinates persisted application discovery through technical Flow/Capsule publication.
- *
- * <p>The workflow begins only after verified source inventory has been installed. It reuses the
- * existing Step 02–05 executors, so it neither parses source itself nor accepts caller-created
- * graph, Fact, Flow, Capsule, or filesystem objects.
- */
+/** Coordinates the JDT Step02--05 technical route over one verified source inventory. */
 public final class TechnicalAnalysisWorkflow {
 
   private final VerifiedSourceTextReader sourceReader;
   private final CanonicalModuleArtifactStore moduleArtifacts;
   private final CanonicalAnalysisStepArtifactStore stepArtifacts;
+  private VerifiedSourceInventoryReference mapperXmlViewInventory;
+  private MapperXmlResourceView mapperXmlResourceView;
 
-  /** Creates the path-free runtime coordinator over verified source and canonical publications. */
+  /** Creates the path-free JDT workflow over verified source and canonical publications. */
   public TechnicalAnalysisWorkflow(
       VerifiedSourceTextReader sourceReader,
       CanonicalModuleArtifactStore moduleArtifacts,
@@ -47,24 +50,7 @@ public final class TechnicalAnalysisWorkflow {
     this.stepArtifacts = Objects.requireNonNull(stepArtifacts, "analysis step artifact store");
   }
 
-  /** Runs only application discovery from one previously published verified-source inventory. */
-  public TechnicalDiscoveryWorkflowResult discover(
-      VerifiedSourceInventoryReference verifiedSourceInventory, DiscoveryProfile discoveryProfile) {
-    Objects.requireNonNull(verifiedSourceInventory, "verified source inventory");
-    Objects.requireNonNull(discoveryProfile, "discovery profile");
-    ApplicationDiscoveryReference discovery =
-        new ApplicationDiscoveryExecutor(sourceReader, moduleArtifacts, stepArtifacts)
-            .execute(
-                new ApplicationDiscoveryRequest(
-                    new AnalysisStepPublicationAddress(
-                        verifiedSourceInventory.publication().address().runId(),
-                        AnalysisStepKey.APPLICATION_DISCOVERY),
-                    verifiedSourceInventory,
-                    discoveryProfile));
-    return new TechnicalDiscoveryWorkflowResult(verifiedSourceInventory, discovery);
-  }
-
-  /** Runs application discovery from the selected engine's snapshot-bound declaration catalog. */
+  /** Runs JDT-backed application discovery and creates the run-owned mapper XML view. */
   public TechnicalDiscoveryWorkflowResult discover(
       VerifiedSourceInventoryReference verifiedSourceInventory,
       DiscoveryProfile discoveryProfile,
@@ -72,9 +58,11 @@ public final class TechnicalAnalysisWorkflow {
     Objects.requireNonNull(verifiedSourceInventory, "verified source inventory");
     Objects.requireNonNull(discoveryProfile, "discovery profile");
     Objects.requireNonNull(javaCodeSession, "Java code session");
+    MapperXmlResourceView mapperResources =
+        initializeMapperXmlResourceView(verifiedSourceInventory);
     ApplicationDiscoveryReference discovery =
         new ApplicationDiscoveryExecutor(
-                sourceReader, moduleArtifacts, stepArtifacts, javaCodeSession)
+                sourceReader, moduleArtifacts, stepArtifacts, javaCodeSession, mapperResources)
             .execute(
                 new ApplicationDiscoveryRequest(
                     new AnalysisStepPublicationAddress(
@@ -85,168 +73,115 @@ public final class TechnicalAnalysisWorkflow {
     return new TechnicalDiscoveryWorkflowResult(verifiedSourceInventory, discovery);
   }
 
-  /** Runs optional program graphs, technical facts, and flows after a verified discovery prefix. */
-  public TechnicalAnalysisWorkflowResult continueAfterDiscovery(
-      TechnicalDiscoveryWorkflowResult discoveryResult,
-      ArtifactReference graphProfileRef,
-      ArtifactControls artifactControls,
-      FlowCompilationProfile flowProfile,
-      CapsuleProjectionProfile capsuleProfile) {
-    Objects.requireNonNull(discoveryResult, "technical discovery result");
-    VerifiedSourceInventoryReference verifiedSourceInventory =
-        discoveryResult.verifiedSourceInventory();
-    ApplicationDiscoveryReference discovery = discoveryResult.applicationDiscovery();
-    Objects.requireNonNull(graphProfileRef, "graph profile reference");
-    Objects.requireNonNull(artifactControls, "artifact controls");
-    Objects.requireNonNull(flowProfile, "Flow compilation profile");
-    Objects.requireNonNull(capsuleProfile, "capsule projection profile");
-    ProgramGraphsReference graphs =
-        new ProgramGraphsExecution(sourceReader, moduleArtifacts, stepArtifacts)
-            .execute(verifiedSourceInventory, discovery, graphProfileRef, artifactControls);
-    ProvenCodeFactsReference facts =
-        new ProvenCodeFactsExecutor(sourceReader, moduleArtifacts, stepArtifacts)
-            .execute(verifiedSourceInventory, discovery, graphs);
-    BusinessFlowsReference flows =
-        new BusinessFlowsExecutor(sourceReader, moduleArtifacts, stepArtifacts)
-            .execute(
-                new BusinessFlowsExecutionRequest(
-                    verifiedSourceInventory,
-                    discovery,
-                    graphs,
-                    facts,
-                    flowProfile,
-                    capsuleProfile));
-    return new TechnicalAnalysisWorkflowResult(
-        verifiedSourceInventory, discovery, graphs, facts, flows);
-  }
-
-  /** Runs the JDT navigation-index route after discovery without invoking legacy graph builders. */
+  /** Publishes JDT navigation, persistence, and bounded reading materials for all entries. */
   public TechnicalAnalysisWorkflowResult continueAfterDiscovery(
       TechnicalDiscoveryWorkflowResult discoveryResult,
       JavaCodeSession javaCodeSession,
       ArtifactControls artifactControls,
-      FlowCompilationProfile flowProfile,
-      CapsuleProjectionProfile capsuleProfile) {
+      PersistenceConfiguration persistenceConfiguration,
+      CodeReadingMaterialProfile readingMaterialProfile) {
     return continueAfterDiscovery(
         discoveryResult,
         javaCodeSession,
-        null,
         artifactControls,
-        flowProfile,
-        capsuleProfile,
-        java.util.List.of());
+        persistenceConfiguration,
+        readingMaterialProfile,
+        List.of());
   }
 
-  /** Runs the selected engine, with strict graph enrichment when its profile is supplied. */
+  /** Publishes the same route for an explicit, ordered selected-entry sample. */
   public TechnicalAnalysisWorkflowResult continueAfterDiscovery(
       TechnicalDiscoveryWorkflowResult discoveryResult,
       JavaCodeSession javaCodeSession,
-      ArtifactReference graphProfileRef,
       ArtifactControls artifactControls,
-      FlowCompilationProfile flowProfile,
-      CapsuleProjectionProfile capsuleProfile) {
-    return continueAfterDiscovery(
-        discoveryResult,
-        javaCodeSession,
-        graphProfileRef,
-        artifactControls,
-        flowProfile,
-        capsuleProfile,
-        java.util.List.of());
-  }
-
-  /** Runs the selected JDT entries while retaining all persisted discovery entries downstream. */
-  public TechnicalAnalysisWorkflowResult continueAfterDiscovery(
-      TechnicalDiscoveryWorkflowResult discoveryResult,
-      JavaCodeSession javaCodeSession,
-      ArtifactReference graphProfileRef,
-      ArtifactControls artifactControls,
-      FlowCompilationProfile flowProfile,
-      CapsuleProjectionProfile capsuleProfile,
-      java.util.List<String> selectedEntryIds) {
+      PersistenceConfiguration persistenceConfiguration,
+      CodeReadingMaterialProfile readingMaterialProfile,
+      List<String> selectedEntryIds) {
     Objects.requireNonNull(discoveryResult, "technical discovery result");
     Objects.requireNonNull(javaCodeSession, "Java code session");
+    Objects.requireNonNull(artifactControls, "artifact controls");
+    Objects.requireNonNull(persistenceConfiguration, "persistence configuration");
+    Objects.requireNonNull(readingMaterialProfile, "reading material profile");
     Objects.requireNonNull(selectedEntryIds, "selected entry IDs");
+    if (!"jdt".equals(javaCodeSession.descriptor().engineId())) {
+      throw new IllegalArgumentException("reading-material continuation requires the JDT engine");
+    }
+
     VerifiedSourceInventoryReference verifiedSourceInventory =
         discoveryResult.verifiedSourceInventory();
     ApplicationDiscoveryReference discovery = discoveryResult.applicationDiscovery();
     ProgramGraphsExecution programGraphs =
         new ProgramGraphsExecution(sourceReader, moduleArtifacts, stepArtifacts);
-    ProgramGraphsReference graphs;
-    if (graphProfileRef == null) {
-      if (!selectedEntryIds.isEmpty()) {
-        throw new IllegalArgumentException("selected entry IDs require a graph profile reference");
-      }
-      graphs =
-          programGraphs.execute(
-              verifiedSourceInventory, discovery, javaCodeSession, artifactControls);
-    } else if ("jdt".equals(javaCodeSession.descriptor().engineId())) {
-      graphs =
-          programGraphs.execute(
-              verifiedSourceInventory,
-              discovery,
-              javaCodeSession,
-              graphProfileRef,
-              artifactControls,
-              selectedEntryIds);
+    ProgramGraphsReference navigation =
+        selectedEntryIds.isEmpty()
+            ? programGraphs.execute(
+                verifiedSourceInventory, discovery, javaCodeSession, artifactControls)
+            : programGraphs.execute(
+                verifiedSourceInventory,
+                discovery,
+                javaCodeSession,
+                artifactControls,
+                selectedEntryIds);
+    JavaCodeIndex javaIndex = new JavaCodeIndexReader(stepArtifacts).reopen(navigation);
+    VerifiedSourceTextSet frozenSource = sourceReader.reopen(verifiedSourceInventory);
+
+    PersistenceMaterialIndex persistenceIndex;
+    if (persistenceConfiguration.enabled()) {
+      MapperXmlResourceView mapperResources =
+          mapperXmlResourceViewFor(verifiedSourceInventory, frozenSource);
+      persistenceIndex =
+          new DefaultPersistenceAnalyzer(mapperResources)
+              .analyze(
+                  new PersistenceAnalysisRequest(
+                      javaIndex,
+                      navigation,
+                      frozenSource,
+                      programGraphs.reopenMapperCatalog(
+                          verifiedSourceInventory, discovery, artifactControls),
+                      persistenceConfiguration));
     } else {
-      if (!selectedEntryIds.isEmpty()) {
-        throw new IllegalArgumentException("selected entry IDs require the JDT engine");
-      }
-      graphs =
-          programGraphs.execute(
-              verifiedSourceInventory,
-              discovery,
-              javaCodeSession,
-              graphProfileRef,
-              artifactControls);
+      persistenceIndex =
+          new DefaultPersistenceAnalyzer()
+              .analyze(
+                  new PersistenceAnalysisRequest(
+                      javaIndex, navigation, frozenSource, List.of(), persistenceConfiguration));
     }
-    ProvenCodeFactsReference facts =
-        new ProvenCodeFactsExecutor(sourceReader, moduleArtifacts, stepArtifacts)
-            .execute(verifiedSourceInventory, discovery, graphs);
-    BusinessFlowsReference flows =
-        new BusinessFlowsExecutor(sourceReader, moduleArtifacts, stepArtifacts)
-            .execute(
-                new BusinessFlowsExecutionRequest(
+    var persistence =
+        new PersistenceMaterialPublisher(moduleArtifacts, stepArtifacts)
+            .publish(verifiedSourceInventory, discovery, artifactControls, persistenceIndex);
+    CodeReadingMaterialSet materials =
+        new DefaultCodeReadingMaterialBuilder()
+            .build(
+                new CodeReadingMaterialRequest(
                     verifiedSourceInventory,
-                    discovery,
-                    graphs,
-                    facts,
-                    flowProfile,
-                    capsuleProfile));
+                    navigation,
+                    persistence,
+                    javaIndex,
+                    persistenceIndex,
+                    readingMaterialProfile));
+    var readingMaterials =
+        new CodeReadingMaterialPublisher(moduleArtifacts, stepArtifacts)
+            .publish(discovery, artifactControls, materials);
     return new TechnicalAnalysisWorkflowResult(
-        verifiedSourceInventory, discovery, graphs, facts, flows);
+        verifiedSourceInventory, discovery, navigation, persistence, readingMaterials);
   }
 
-  /** Runs Step 02–05 in fixed order from one previously published verified-source inventory. */
-  public TechnicalAnalysisWorkflowResult run(
-      VerifiedSourceInventoryReference verifiedSourceInventory,
-      DiscoveryProfile discoveryProfile,
-      ArtifactReference graphProfileRef,
-      ArtifactControls artifactControls,
-      FlowCompilationProfile flowProfile,
-      CapsuleProjectionProfile capsuleProfile) {
-    return continueAfterDiscovery(
-        discover(verifiedSourceInventory, discoveryProfile),
-        graphProfileRef,
-        artifactControls,
-        flowProfile,
-        capsuleProfile);
+  private MapperXmlResourceView initializeMapperXmlResourceView(
+      VerifiedSourceInventoryReference verifiedSourceInventory) {
+    MapperXmlResourceView mapperResources =
+        MapperXmlResourceView.open(sourceReader.reopen(verifiedSourceInventory));
+    mapperXmlViewInventory = verifiedSourceInventory;
+    mapperXmlResourceView = mapperResources;
+    return mapperResources;
   }
 
-  /** Runs discovery through Step 05 using one selected Java session and no parser fallback. */
-  public TechnicalAnalysisWorkflowResult run(
+  private MapperXmlResourceView mapperXmlResourceViewFor(
       VerifiedSourceInventoryReference verifiedSourceInventory,
-      DiscoveryProfile discoveryProfile,
-      JavaCodeSession javaCodeSession,
-      ArtifactControls artifactControls,
-      FlowCompilationProfile flowProfile,
-      CapsuleProjectionProfile capsuleProfile) {
-    return continueAfterDiscovery(
-        discover(verifiedSourceInventory, discoveryProfile, javaCodeSession),
-        javaCodeSession,
-        artifactControls,
-        flowProfile,
-        capsuleProfile);
+      VerifiedSourceTextSet frozenSource) {
+    if (mapperXmlResourceView != null && verifiedSourceInventory.equals(mapperXmlViewInventory)) {
+      mapperXmlResourceView.requireSameFrozenSource(frozenSource);
+      return mapperXmlResourceView;
+    }
+    return MapperXmlResourceView.open(frozenSource);
   }
 }
