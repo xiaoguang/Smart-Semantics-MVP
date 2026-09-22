@@ -1,6 +1,6 @@
 # 应用发现
 
-> 模型批次解耦（已实现）：全入口分母属于固定技术来源，不按模型批次重新发现。模型新批次复用材料中的入口处置；模型漏解释不改写为 Spring 或导航缺口。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)。本次未修改本步骤算法或产物。
+> 模型批次解耦（已实现）：全入口分母属于固定技术来源，不按模型批次重新发现。模型新批次复用材料中的入口处置；模型漏解释不改写为 Spring 或导航缺口。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md)。本次未修改本步骤算法或产物。
 
 > [总体设计](../DESIGN.md)；固定 key：application-discovery，目录：steps/02-application-discovery/。本步骤运行时模型调用为 0。
 
@@ -14,7 +14,7 @@
 
 ## 2. 输入与处理
 
-输入为Step01 verified source view、静态工程画像和选定Java引擎的catalog。配置/POM/XML仍共用现有读取器；Java类型、方法、参数与注解来自[JDT/JavaParser统一Interface](../modules/java-code-engines/contracts-and-configuration.md)。先完成JDT接线，第二阶段再适配JavaParser现有能力。只读清单内文本，不执行客户构建或应用。
+输入为Step01 verified source view、静态工程画像与JDT catalog。配置/POM/XML共用现有读取器，Java声明/参数/注解来自[JDT Interface](../modules/java-code-engines/contracts-and-configuration.md)。当前生产JDT-only，JavaParser仅严格历史读取，不再有待接线的第二生产引擎。只读清单文本，不执行客户构建或应用。
 
 | 模块 | 输入 → 工作 → 输出 |
 | --- | --- |
@@ -23,7 +23,7 @@
 | MapperCapabilityCataloger | 同一catalog + 安全XML/config → Mapper/statement候选与定位；Java读取不得绕回未选引擎 |
 | ApplicationDiscoveryPublicationSpecifier | 已完成不可变结果 → 合并完整分母、序列化并原子安装 → 五文件步骤 publication |
 
-M2/M3共享immutable profile/catalog，不重复解析Java。Mapper catalog只记录静态候选；现有可证明的Java→XML绑定保留为技术增强，不能因为尚无SQL绑定就不交付Java方法。发布器不重跑发现。JDT仅提供Java语法/导航，Spring route规则仍是一份公共规则，不让两个插件自行解释不同HTTP合同。
+M2/M3共享immutable profile/catalog，不重复解析Java。Mapper catalog只记录静态候选；现有可证明的Java→XML绑定保留为技术增强，不能因为尚无SQL绑定就不交付Java方法。发布器不重跑发现。JDT仅提供Java语法/导航，Spring route仍是一份公共规则，不因工具内部划分改变HTTP合同。
 
 ## 3. Spring RequestMapping 的明确合同
 
@@ -58,9 +58,9 @@ UNRESTRICTED 要求 methods=[]；EXPLICIT 要求非空、去重并按稳定枚�
 
 入口还必须保存 `methodKey` 与 `methodRange`。前者是 catalog 的跨引擎稳定声明键；后者是完整声明的 `SourceRange(startOffsetUtf16,lengthUtf16,startLine,endLine)`。两者进入 `entryId` framed identity并共同使 Step03/05 在同名重载中选择准确方法；`handler`/FQN/方法名只供展示，不能代替选择键。M2 `http-entry` moduleVersion 与 `application-discovery-http-entry-discovery-v2` 升为 v3，M4 `publish` moduleVersion 升为 v3，公开 `application-discovery-entry-points-v2` 及逐行 `application-discovery-entry-point-v2` 升为 v3；profile/capability/mapper 保持 v2。所有直接 reader、artifact policy 和 fixture 同步拒绝旧 entry wire，不以缺字段回退。
 
-### 3.2 真实待修复例子
+### 3.2 已修复的真实例子
 
-UserController#getOrganizationUserTree 和 MaterialCategoryController#getMaterialCategoryTree 使用无 method 的 RequestMapping。此前它们会被误标限制；发现器现已将省略或空 method 的映射保存为准确 route/handler/UNRESTRICTED 入口，并继续保留相同完整 discovery site 分母。完整 jshERP 重新运行仍属于后续验收，不能由 fixture 代替。
+UserController#getOrganizationUserTree 和 MaterialCategoryController#getMaterialCategoryTree 使用无 method 的 RequestMapping。此前它们会被误标限制；发现器现已将省略或空 method 的映射保存为准确 route/handler/UNRESTRICTED 入口，并继续保留相同完整 discovery site 分母。固定来源Step01–05验收已完成，实际范围见取材交付；fixture不替代业务语义验收。
 
 ## 4. 输出示例与下一消费者
 
@@ -85,7 +85,7 @@ UserController#getOrganizationUserTree 和 MaterialCategoryController#getMateria
 | capability-report.json | 每个发现 site 的处置、明确限制、全入口分母 |
 | application-discovery-receipt.json | 同源 inputs/controls、四项 semantic descriptors 与状态 |
 
-Step03 复用 entry/catalog identities 建图，不重新发现入口。Step05 接收同一分母，为每个安全入口整理代码；即使没有 strict Flow，也应有上下文或具体不可读原因。Step06 只封装 Step05 结果，不重新解析 route 或建立另一分母。
+Step03复用entry/catalog identities进行JDT导航，不重新发现入口。Step05按完整分母保存可读材料或具体未收集原因；目标Step06直接消费新材料并逐范围解释Activity，不重新解析route或建立另一入口分母。
 
 ## 5. 技术、来源与完整性
 
@@ -111,10 +111,10 @@ allSiteIds = exactDisjointUnion(shardSiteIds)
 
 ## 7. 当前实现与最小测试
 
-JDT catalog 路线已经实施：配置选择 JDT 后，ApplicationProfileDetector 与 SpringHttpEntryDiscoverer 消费同一 JDT session 的中立 catalog，入口 v3 保存 `methodKey + SourceRange`，JDT 路径不调用 JavaParser。固定 jshERP 注册与财务入口以及自包含 Spring/MyBatis 运行均已直接验收。JavaParser Adapter 仍是第二阶段工作，当前选择它会明确返回 `ENGINE_NOT_INTEGRATED`。
+JDT catalog 路线已经实施：配置选择 JDT 后，ApplicationProfileDetector 与 SpringHttpEntryDiscoverer 消费同一 JDT session 的中立 catalog，入口 v3 保存 `methodKey + SourceRange`，JDT 路径不调用 JavaParser。固定 jshERP 注册与财务入口以及自包含 Spring/MyBatis 运行均已直接验收。当前生产已退役JavaParser Adapter；历史配置/结果只作精确读取，不再恢复第二阶段生产接线。
 
 JDT Core 的 recovered binding 不能当成已解析的限定名。例如缺少外部 Spring classpath 时，JDT 可能恢复出当前 package 下的 `RequestMapping`；helper 只接受非 recovered 的 binding，随后由 catalog 使用显式 import 或 JDT LS 导航恢复真实身份。仍无法确认时保留候选和 `ANNOTATION_IDENTITY_UNRESOLVED`，不能按 simple name 猜测。
 
 ApplicationProfileDetector、SpringHttpEntryDiscoverer、MapperCapabilityCataloger、步骤 publisher/executor 已有实现，固定完整 jshERP 入口发现已有保存证据；不是仅 package 骨架。现有材料规划处理 337 个发现入口，但这只证明当前发现分母的处理，不证明所有合法 Spring 变体已正确发现。省略 method、`method={}`、显式方法集合及类/方法条件组合现在由直接回归覆盖；两个真实端点要在后续完整仓库重跑中确认进入新分母。
 
-Luna/xhigh 已为省略 method、method={}、类有限制+方法空、类方法显式并集建立直接 RED；Terra/xhigh 已以 `HttpMethodCondition`、发现器、持久化输出和直接读取器完成最小 GREEN。GET 不增 HEAD/OPTIONS 活动。保留 route 定位、全入口分母和 XML 安全测试，普通发布不重新调用发现算法；真实源端点仍待整仓验收。
+Luna/xhigh 已为省略 method、method={}、类有限制+方法空、类方法显式并集建立直接 RED；Terra/xhigh 已以 `HttpMethodCondition`、发现器、持久化输出和直接读取器完成最小 GREEN。GET 不增 HEAD/OPTIONS 活动。保留 route 定位、全入口分母和 XML 安全测试，普通发布不重新调用发现算法；当前固定来源取材验收已经结束；新Activity消费仍待实现与实际质量验证。

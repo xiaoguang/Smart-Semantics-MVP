@@ -1,6 +1,6 @@
 # 已验证源码清单
 
-> 模型批次解耦（已实现）：本步骤的已保存源码不因模型批次失败而失效。模型新批次读取既有材料时不执行本步骤或 Capture；来源变化/损坏才需明确回到来源处理，不自动重扫。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)。本次未修改本步骤算法或产物。
+> 模型批次解耦（已实现）：本步骤的已保存源码不因模型批次失败而失效。模型新批次读取既有材料时不执行本步骤或 Capture；来源变化/损坏才需明确回到来源处理，不自动重扫。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md)。本次未修改本步骤算法或产物。
 
 > [总体设计](../DESIGN.md)；固定 key：verified-source-inventory，目录：steps/01-verified-source-inventory/。本步骤运行时模型调用为 0。
 
@@ -76,7 +76,7 @@ COMPLETE_CAPTURE 的 regular-file ID 集必须精确等于 capture manifest；�
 
 ## 5. 下一消费者怎样不返工
 
-Step02 用同一 verified source view 读取必要配置和 Java 发现入口。Step03 建图，Step05 根据已有位置提取连贯方法/条件/调用/返回代码；每个片段都能回到这个 snapshot。Step06 只封装 Step05 上下文，不重新发现文件。
+Step02 用同一 verified source view 读取必要配置和 Java 发现入口。Step03收集JDT导航与完整方法，Step04补可选持久化材料，Step05组织已有方法/条件/调用/返回；每个片段回到同一snapshot。目标Step06直接投影Step05，以完整原文进行Activity解释，不重新发现文件；旧M10只读。
 
 source registry 只按明确 snapshot/file identity 读清单成员，不能 walk root、按 basename 搜索、补文件或换 commit。需要重新打开磁盘文件时验证 size/hash/编码以及切片与定位一致；不是让每个消费者再跑完整 Step01。非文本仍留在分母但不送 parser。
 
@@ -98,4 +98,4 @@ BOUNDED_PATH_SET、未解析 media 和支持范围限制是范围信息，不删
 
 本地 capture、已验证源码清单、private registered source handle、持久化执行基础已有实现，固定 719 文件来源已有保存证据；不能继续写成“仅 package 骨架”或“完整捕获未完成”。这不证明全部 Java/框架语法可解析，也不证明整仓业务解释完成。
 
-后续仅在改动读取/复用边界时由 Luna/xhigh 为“同进程只 admission 一次、外部替换 bytes 仍失败、media 不消失、路径逃逸失败”建立 RED，Terra/xhigh 最小 GREEN。已有 exact snapshot identity、完整分母、UTF-8/locator、原子安装及相关 mutation 合同仍有效；不为 docs-only 运行 Maven、客户仓库、网络或 Provider。
+后续仅在改动读取/复用边界时由Terra/xhigh为“同进程只 admission 一次、外部替换 bytes 仍失败、media 不消失、路径逃逸失败”建立RED，Sol/xhigh最小GREEN。已有 exact snapshot identity、完整分母、UTF-8/locator、原子安装及相关 mutation 合同仍有效；不为 docs-only 运行 Maven、客户仓库、网络或 Provider。

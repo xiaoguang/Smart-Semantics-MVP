@@ -1,105 +1,35 @@
-# 跨对象业务过程重建：补充设计入口
+# 跨对象过程研究与历史验收索引
 
-状态：**2026-09-17新增[JDT与持久化阅读材料详细设计](jdt-persistence-reading-materials.md)。** 当前设计范围只到Step01–05，验收顺序是工具调研实施→通过后全面实施→完整1—5步验收，第6步及以后不执行。新3—5生产迁移尚未开始。
+本目录的有效设计已经整合到[主设计](../../DESIGN.md)、[Activity Modules](../../modules/activity-explanation/README.md)和[业务过程Modules](../../modules/business-process-discovery/README.md)。此处维护研究缘由、历史输入与验收状态，不再作为另一份活跃生产合同。
 
-原系统认识/聚焦选材/三阶段成稿的程序接线已完成；用户认可可读性和业务联系，但真实三例仍有具体问题，见[三例实测](three-case-acceptance-result-20260916.md)。这些问题已收纳到[待讨论记录](../implementation-lessons-and-followups.md)，不在本次上游设计中修复。以下第1—7节继续说明原Step07设计及历史验收边界，不是本次继续运行模型的授权。
+## 当前事实
 
-## 1. 要得到什么
+Step01–05 JDT-only/可选持久化/统一阅读材料已完成；新Step05→Activity已完成详细设计但尚未实现。现有326条Activity仍来自历史M10，保持不变。Step07系统认识、聚焦阅读、DRAFT→WRITE→最终RULE_REVIEW、私有三阶段保存与producer v4已实现；旧三例未全通过。Step08仅历史读取/查询/重渲染。
 
-从已有材料说明系统支持哪些业务，每种业务怎样开始、经历什么步骤与分支、满足什么具体条件、改变什么对象、怎样结束，以及哪些联系仍不能确认。主要出口继续是 `business-processes.md`，附结构化目录、覆盖和来源。不是把接口或 CRUD 分类换成业务标题。
+新Activity模型阅读、分阶段重试与双来源接入不自动适用于旧Step07，也不授权重跑旧Activity、补写SQL、继续三例或全仓生成。more-findings.md保持原文。
 
-本补充替代活跃设计中的旧限制和成稿次序：
+## 合同现在在哪里
 
-1. 阅读范围不再限于当前候选 Activity 已引用的 M10 片段，可以在**同一冻结来源**内选取其他已审 Activity、M10 原文和冻结文本。
-2. 必要的选中原文在过程 **DRAFT 之前**到位；不再等过程已经成形后才给 REVIEW 补关键实现。
-3. 候选过程目标为 **事实 DRAFT → WRITE → 最终 RULE_REVIEW**。最后核对实际写出的全文，之后不再由模型改写；Activity、首次目录、仓库归并仍是既有两轮。
-4. 全局选材同时形成可修正的系统类型/业务假设，以实际问题找资料；阅读检查可以移出旁支材料。行业常识提供调查方向，不能直接成为业务结论。
-
-八步主线、两级并发、公共Agent和五文件保持。最新目标以[详细设计](business-reasoning-and-writing.md)为准；不得把历史双轮写成已实现三阶段。`more-findings.md` 保留原文。
-
-历史真实样本曾另获两项有限批准：CHECK 输入只省略任务不用的 statementDirectory、已完整提供 Activity 的重复导航卡及未读导航卡的 terms，保留全部完整 Activity/源码、全仓召回能力和原全局选择/最终 DRAFT/REVIEW；租户已完成 raw REVIEW 只修正一个经核对的错误类型用法引用，零新增模型调用，旧 raw/FAILED run 不变，新派生 pair 附不可覆盖清单和可复用的来源标记。精确约束保留在[模块设计 §3、§7](module-design.md)及[历史交付记录](delivery.md)，不是新的压缩、自动修复或恢复框架，也不授权本轮扩大离线修正范围。
-
-## 2. 当前已经有什么
-
-| 实际已有能力/材料 | 本次处理 |
+| 原补充主题 | 唯一详细owner |
 | --- | --- |
-| 326 条完整已审 Activity 及覆盖 | 原样读取，**不重新 DRAFT/REVIEW** |
-| 保存的目录任务，24 个候选、138 个不同成员 Activity | 作为选材起点；其余 188 个 Activity 仍可选择 |
-| M10 来源片段、冻结仓库文本 | 直接读保存内容，不跑 JDT、不读变化中的客户 checkout |
-| 完整阅读包 → 过程 DRAFT → 完整 REVIEW | 复用材料传递和详细结构，目标改为事实、写作、最后核对三阶段 |
-| 并行候选、完整已审 job 保存/显式复用、归并、五文件发布 | 复用；不建立第二套执行、恢复或证据系统 |
+| JDT/持久化/Step05材料 | [03](../../analysis-steps/03-program-graphs.md)、[04](../../analysis-steps/04-proven-code-facts.md)、[05](../../analysis-steps/05-business-flows.md) |
+| 新材料Activity接入/大包阅读 | [06](../../analysis-steps/06-flow-interpretation.md)、[Activity Modules](../../modules/activity-explanation/README.md) |
+| 系统认识/聚焦读取 | [Cataloger](../../modules/business-process-discovery/repository-business-cataloger.md)、[Assembler](../../modules/business-process-discovery/process-material-assembler.md) |
+| 事实/写作/最终核对 | [Reconstructor](../../modules/business-process-discovery/candidate-process-reconstructor.md) |
+| 来源/保存/发布 | [Corpus](../../modules/business-process-discovery/frozen-analysis-corpus.md)、[Publisher](../../modules/business-process-discovery/business-process-publisher.md) |
+| Prompt/响应 | [中文Prompt合同](../../references/semantic-interpretation-prompts.md) |
+| 执行/重试/配置版本 | [模型执行](../../modules/model-job-execution.md)、[新Activity集成](../../modules/activity-explanation/integration-contracts.md) |
 
-更早实现曾是“完整Activity与少量源码预览先进入DRAFT，选中源码随后进入REVIEW”；当前已完成DRAFT前完整阅读包接线。新的不足是选材聚焦和最终写作核对，不把已经实现的reader/CLI再列为待开发。
+## 历史输入与不可变记录
 
-固定输入（仅本次样例，不硬编码进框架）：
+历史Activity run为analysis-run:6b510bbeb4abf89635a2b8cd11cc2366b6cf056f8a7604da2af0bc1c5542305e；源码/M10 run为analysis-run:4d1b247703c9a89f40a3982fa040094fa7214fef93ebf9fbb41b159131aaab8b。旧目录run为analysis-run:4125a702ec8489a65792e93d5d77cd1630b7933c3e34f928b93c9dba85ac3224，process-catalog/business-catalog-merge COMPLETED。保存目录有24候选/138个不同成员，全部326Activity可读；更早14候选/46过程是另一历史运行。
 
-```text
-Activity run:
-analysis-run:6b510bbeb4abf89635a2b8cd11cc2366b6cf056f8a7604da2af0bc1c5542305e
+这些ID仅用于定位；执行必须重开实际完整引用，不能凭ID伪造receipt。历史目录作资料与新任务精确复用不同。
 
-源码/M10 run:
-analysis-run:4d1b247703c9a89f40a3982fa040094fa7214fef93ebf9fbb41b159131aaab8b
+- [原交付记录](delivery.md)、[研究比较](experiment-comparison.md)、[三例原始实测](three-case-acceptance-result-20260916.md)：保留历史结论。
+- [当前实施差异](implementation-status.md)：程序已实现、新接点未实现、真实质量分开。
+- [原三例材料推演](walkthrough.md)：历史人工材料核对，不是新模型结果。
+- [验收边界](acceptance.md)：已发生请求与后续验收条件。
+- [新的真实Step05→Activity→Process推演](../../examples/activity-material-end-to-end-walkthrough.md)：用于本次逻辑设计检验。
 
-旧目录 run:
-analysis-run:4125a702ec8489a65792e93d5d77cd1630b7933c3e34f928b93c9dba85ac3224
-phase: process-catalog
-job: business-catalog-merge
-status: COMPLETED
-```
-
-这些可读 ID 用于定位已有记录；实现必须从现有保存记录解析完整 checkpoint/任务引用，不手写 receipt、不凭 ID 猜文件内容。旧目录 REVIEW 的处置数组不是唯一分母：沿用现有完整 DRAFT 处置及已审成员关系的规范化，不把重复数组行数当覆盖数。
-
-## 3. 新的接力
-
-```text
-重开旧目录 + 全部已审 Activity + 同源冻结文本
-  → 一次全局选材：系统认识 + 可修正业务假设 + 候选/问题 + 首批清单
-  → Java 取回完整 Activity 和选中的原文
-  → 每候选一次模型阅读检查：保留/移出首批材料 + 可空补读
-  → Java 取回并封包；不再启动第三次选材
-  → 自包含 ProcessReadingPacket
-  → 每候选 PROCESS_DRAFT（事实）→ PROCESS_WRITE（正文）
-  → PROCESS_RULE_REVIEW（核对实际全文，完整最终结果）
-  → 本轮三例预览与审阅，到此停止
-  → 后续获准全仓时才执行既有归并和五文件发布
-```
-
-**模型决定还缺什么，Java 负责取回。** 可选的是实际补读，不是由 Java 决定是否需要模型阅读检查。每个进入重建的候选都有一次检查调用；返回空清单即直接组包，仍有未知项则随包保存。次数用完不等于材料充分、业务完整。
-
-系统判断合并在全局选材中，不增加独立分类调用。三例本轮不执行全仓归并；新仓库没有旧目录时，保留首次目录发现能力。
-
-## 4. 谁做什么
-
-| Java 的确定性工作 | 模型的业务工作 |
-| --- | --- |
-| 打开旧产物，按 ID 和冻结文本定位取材 | 选择值得共同阅读的活动和原文 |
-| 字面量搜索、行范围/文件读取、去重 | 修正候选、理解业务对象交接 |
-| 校验真实 ID、已读引用、来源范围及容量 | 解释步骤、具体条件、规则和结果 |
-| 保留原内容和处置，稳定保存及渲染 | 区分可选、回退、支撑、推断和未知 |
-
-不增加行业词典、SQL 执行器、Vue 编译器、对象交接证明图、语义向量库或中文蕴含检查。来源能定位即可；缺链接可留空，不为此追加模型或取证任务。
-
-## 5. 详细设计与阅读顺序
-
-当前上游工作先读[JDT、MyBatis/JSqlParser与统一材料的详细设计](jdt-persistence-reading-materials.md)，其3—5职责替代原“JavaParser可选＋Fact/Proof＋Flow/Capsule包装”生产目标。此前实施问题见[15项主题记录](../implementation-lessons-and-followups.md)。第6步接口未讨论，原Step07文档不赋予新材料自动接入模型的权限。
-
-1. [完整详细设计：每步、模块、数据和失败处理](business-reasoning-and-writing.md)
-2. [已实现取材模块及接线基础](module-design.md)
-3. [中文提示词和响应合同](prompts.zh-CN.md)
-4. [实际代码位置与待修改清单](implementation-status.md)
-5. [采购、销售、调拨材料推演](walkthrough.md)
-6. [三例最小验收、范围与调用数](acceptance.md)
-
-推演是基于已读材料的设计检验，不是新 Luna 运行结果。验收看对象怎样交接、具体条件是否准确、业务是否可复述；不以候选数、阶段数或 coverage CLOSED 代替。
-
-## 6. 本次同步范围和交接
-
-原三阶段工作同步了总体、Step07、业务发现模块、模型执行、中文Prompt导航和实施状态；其当时不改Step01–06的约束只适用于那次工作。2026-09-17的新设计明确重划3—5，并以新材料结束；第6步与业务模型保持讨论外。Step08仍仅保留历史读取/渲染，不恢复旧生成器。不得把尚未实现的新材料命令行为写成当前已经可用。
-
-下一份实施计划以最新目标及[实施差异](implementation-status.md)为准；旧全仓执行计划不是本轮授权。三例复用保存资料；若确需重新生成Activity，须先说明原因和替代方案并获明确同意。
-
-## 7. 本次文档核对
-
-原跨候选阅读设计基线曾以 `414a54b` 保存并推送。本次系统认识与三阶段设计是后续文档修改，尚未提交；已对照实际模块输入、CLI/运行记录及目录来源读写，三个推演中的已核实事实与未验证预期分别标明。文档检查、实现和真实模型实验分别记录在[验收记录](delivery.md)，不把原来的构建或文档核对视为本次新行为已经完成。
-
-受保护的`more-findings.md`校验基线为`59b8381e7e81e3105ed6c6a8d93ce1dbea0247735bf1e6227d8f842b0d1d7f8e`，交付时再次核对。实施期间保留临时 progress 供衔接，整个计划结束后按 scoped 指导收纳结论并清理。真实自主发现效果、阅读容量及模型耗时仍须独立验收，不能以文档或程序测试通过替代。
+受保护more-findings.md的SHA256为59b8381e7e81e3105ed6c6a8d93ce1dbea0247735bf1e6227d8f842b0d1d7f8e。本轮文档整合不执行代码、测试、构建、JDT、模型、commit或push。

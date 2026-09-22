@@ -1,289 +1,199 @@
-# 模型任务执行：并发、批次复用与过程发现调度
+# 模型任务执行：并发、阶段重试与显式批次复用
 
-本文拥有模型 job 的配置、Provider 绑定、两级并发、阶段屏障、逐 job 保存、失败处理和跨批复用合同。业务内容分别由 [Step06](../analysis-steps/06-flow-interpretation.md)、[Step07](../analysis-steps/07-repository-knowledge.md)、[Step08](../analysis-steps/08-nine-section-document.md) 及[中文 Prompt](../references/semantic-interpretation-prompts.md)拥有。
+本页拥有已有Java17 job pool、单一YAML、Provider绑定、逐阶段保存、包级失败处理和跨批复用。业务阅读分别由[Step06](../analysis-steps/06-flow-interpretation.md)、[Activity详细设计](activity-explanation/README.md)和[Step07](../analysis-steps/07-repository-knowledge.md)拥有。
 
-## 1. 当前实现与目标增量
+## 1. 已实现基础与本轮目标
 
-### 1.1 已实现并继续复用
+| 内容 | 已实现现状 | 本轮设计增量，尚未实现 |
+| --- | --- | --- |
+| 材料/模型分离 | 旧M10独立model batch；新Step05 reader/state-v4/output-v5已保存完整材料 | 让新Step05直接进入Activity，execution-config-v4/output-v6明确来源 |
+| 并发 | 全局+Provider双上限、稳定路由、Java17 executor/completion queue | Activity同包内部阅读/slice/attempt仍顺序，沿用同一个pool |
+| 保存 | Activity/目录/归并完整pair私有保存；候选过程完整三阶段保存 | Activity每个成功stage立即保存，可从成功DRAFT继续REVIEW |
+| 失败 | 当前started失败会停止新派发，不自动retry | Activity可配置阶段retry；单包穷尽继续其他包，最终非零、不自动下游 |
+| 复用 | 当前完整pair/triple/decision精确复用，孤立DRAFT不能续接 | 新Activity可显式复用已验证成功stage；旧schema不改含义 |
+| 业务模型 | 326个旧已审Activity按原历史模型与来源保存 | 新Activity默认Codex登录服务gpt-5.6-terra/xhigh，可显式配置其他服务 |
 
-- `repository-run-config-v2` 的单一 YAML/JSON 配置、全局并发和每 Provider 并发。
-- Codex Subscription 与显式 OpenAI API Provider Adapter、认证隔离、稳定路由和 runtime identity 校验。
-- Java 17 有界 job pool、completion queue、阶段屏障、不可变输入和稳定聚合。
-- 每个 Activity 或当前 Candidate-process job 内部严格执行 DRAFT → 完整 REVIEW；不同 job 可以并行。
-- 每个完整已审 job 立即保存到批次私有目录；aggregate 只在阶段全部闭合后发布一次。
-- `repository-run-state-v3`、当前`model-job-execution-config-v3`及历史v2严格读取、`analysis-run-output-v4`、固定材料直接重开、显式新 model batch 和完整已审 job 复用；历史 output-v3 保留严格读取。
-- 固定 jshERP 检查点已经保存 **326/326** 个 ReviewedActivity。新过程发现直接从该检查点开始，Activity Provider 调用数为零。
+本轮只设计Activity路径的retry，不把Step07单次选择/检查、目录pair、候选三阶段或归并自动变成retry任务。既有Step07实现和三样例验收状态见其模块文档，不以本页更新宣称全仓语义完成。没有Step08当前生产生成器。
 
-### 1.2 当前Step07和本次增量
+## 2. Job与阶段
 
-BusinessProcessDiscovery已有目录、完整Activity、详细过程两轮、唯一归并、五文件v2发布。46过程是历史v1，本轮选定的后续已存目录为24候选；旧340 singleton已退役。
+一个技术packet对应一个ACTIVITY job。小包为DRAFT→REVIEW；大包先有有限READING_PLAN，再按稳定slice顺序各自DRAFT→REVIEW。每个stage有唯一stageKey：
 
-旧目录输入、单次全局选材、每候选一次阅读检查和DRAFT前封包已实现。本轮目标为[系统认识、聚焦选材及三阶段成稿](../supplements/cross-object-process-reconstruction/business-reasoning-and-writing.md)：系统认识并入全局选择，CHECK明确首批保留/移出/补读，只有候选过程改为事实DRAFT→业务WRITE→最终RULE_REVIEW。现有调度、两级并发、Provider直接复用；新过程保存完整三阶段记录，Activity/目录/归并仍保存原pair，326Activity不重跑。
+- READING_PLAN：包含导航page或补读round。
+- DRAFT / REVIEW：包含sliceKey；DIRECT路径用固定whole-packet sliceKey。
+- retry的attempt ordinal不改变stageKey、sliceKey或业务范围。
+- 同一job所有请求固定Provider/account/model/effort；每次请求独立发送完整实际输入。
 
-### 1.3 当前验收边界
+模型REVIEW看到本slice完整实际阅读包、完整实际DRAFT和missingEntryKeys/未读范围；不得只发送摘要、patch或假设前会话记忆。多个slice聚合只由程序执行，不另加全包模型摘要/合并。
 
-单次阅读决策、冻结文件取材接线和DRAFT前封包的历史验证见[交付记录](../supplements/cross-object-process-reconstruction/delivery.md)。本次三阶段尚未生产接线，只做三个样本的最小验收与独立预览，随后讨论全仓；不执行全仓归并或关闭全仓覆盖。公共五文件格式继续复用。当前无Step08生产器，历史reader/renderer保留；本轮不生成九章。
+其他job保持现行固定序列：
 
-## 2. 目标阶段图
+| Job | 固定序列 | 屏障 |
+| --- | --- | --- |
+| CATALOG / CATALOG_SHARD / CATALOG_MERGE | DRAFT→完整REVIEW | 卡片单包或全部shard后唯一merge |
+| PROCESS_MATERIAL_SELECTION | 一次系统认识/全局选材决策 | 原目录可作为输入，不重做目录 |
+| PROCESS_READING_CHECK | 每候选一次保留/移出/可空补读决定 | 实际补读结束、完整packet封闭后重建 |
+| CANDIDATE_PROCESS | 事实DRAFT→业务WRITE→最终RULE_REVIEW | RULE_REVIEW看完整原包+实际DRAFT+实际WRITE |
+| REPOSITORY_CONSOLIDATION | DRAFT→完整REVIEW | 全部候选处置闭合后，不能改写过程正文 |
 
-一般新仓库的完整路径是：
+合法UNRESOLVED/INSUFFICIENT_MATERIAL是内容处置；未知ID/ref、来源损坏与结构失败不能伪装为这些状态。Step07不因Activity retry增加第三选择或额外过程修复轮。
 
-```text
-01–05 技术取材与材料保存（零模型）
-  → Activity jobs 并行：每份材料 DRAFT → 完整 REVIEW → 保存
-  → 全部 Activity 稳定聚合
-  → 全部卡片可容纳时：一个 Catalog job DRAFT → 完整 REVIEW → 保存
-    或，全部卡片不可容纳时：
-       Catalog-shard jobs 并行 DRAFT → 完整 REVIEW → 保存
-       → Catalog-merge job DRAFT → 完整 REVIEW → 保存
-  → 一次系统认识与问题选材（旧目录直接读取时跳过前面的目录生产）
-  → 首批取材（零模型）
-  → Reading-check jobs 并行：每候选一次保留/移出/补读决定 → 封包
-  → Candidate-process jobs 并行：DRAFT → WRITE → RULE_REVIEW → 保存
-  → Repository-consolidation job：DRAFT → 完整 REVIEW → 保存
-  → BusinessProcessPublisher 确定性发布 catalog、coverage、business-processes.md（零模型）
-  → 未来可接九章；这是完整仓库目标，不是本轮三例执行范围
-```
+Step08当前只有历史reader/确定性renderer，其操作为零Provider；本轮不新增九章job或恢复已退役的序列。
 
-固定 jshERP 本轮三例目标从保存的 326 个 ReviewedActivity 开始：
+## 3. 唯一配置与模型绑定
 
-```text
-原始已保存目录 + Activity checkpoint + 冻结文本
-  → 系统认识与问题选材（不重跑原目录模型）
-  → 样本候选一次阅读检查：明确首批保留集 + 可空补读
-  → Candidate-process jobs：DRAFT → WRITE → RULE_REVIEW
-  → 三例独立正文/来源预览与验收记录
-  → 停止，讨论全仓；不调用归并或九章，不安装全仓publication
-```
-
-它不得重新调用 Capture、JDT、JavaParser、Step03–05、BusinessMaterialBuilder 或 ActivityExplainer。模型失败也不是重扫源码或重跑 326 个 Activity 的理由。
-
-## 3. Job 单位与阶段屏障
-
-### 3.1 一个 job 的含义
-
-Activity、首次目录和仓库归并继续每job最多两次Provider请求：
-
-```text
-完整固定输入
-  → DRAFT
-  → 程序校验并准备 REVIEW 材料
-  → 完整 REVIEW
-  → 程序校验并原子保存完整结果
-```
-
-上述pair的两轮使用启动前固定的同一Provider、账户服务、模型和reasoning effort。REVIEW必须携带完整实际DRAFT和该任务合同规定的完整原材料，不能只传摘要、patch或“请修正”指令，也不能假设另一会话记得DRAFT。
-
-候选过程目标单独采用固定三阶段：DRAFT从完整ProcessReadingPacket做事实推理；WRITE只读完整实际DRAFT及其中业务名称/用途/规则；最终RULE_REVIEW同时收到同一完整包、实际DRAFT和实际WRITE，返回局部修正后的完整正文与结构及私有corrections。三阶段共享一个Callable、并发名额和同一binding；不在阶段间补源码，不在最终核对后再润色。每次调用前按真实输入、Prompt、Schema和输出空间检查容量；最终核对超限时保留已完成中间结果及未完成原因，不删稿强行调用、不标为reviewed或自动重试。
-
-DRAFT外层输入除readingPacket v1外，还实际发送investigationContext和readingSelections；最终RULE_REVIEW复用同一外层输入再加两份实际结果。调查背景、读取用途和选择说明随私有决策保存、参与指纹与重开，不能只在日志中留存却不发送给模型；字段细节仍以补充合同为准。
-
-全局选材与候选阅读检查各只有一次Provider请求，存为单次决策，不是过程三阶段的一部分。CHECK明确首批保留/移出与一次可空补读；剩余未知留存。Java不能判断语义足够而跳过检查。详细字段、局部读取记录和阶段响应由[补充合同](../supplements/cross-object-process-reconstruction/business-reasoning-and-writing.md)维护。
-
-### 3.2 新 job 类型
-
-| Job 类型 | 输入 | 输出 | 并发/屏障 |
-| --- | --- | --- | --- |
-| `ACTIVITY` | 一个 BusinessMaterial | 完整 ReviewedActivity 与 unexplained entries | 已实现；同阶段并行 |
-| `CATALOG` | 可以一次容纳的全仓 ActivityIndexCard | 唯一业务领域、别名和重叠 Candidate Process | singleton；成功后不再执行 shard/merge |
-| `CATALOG_SHARD` | 一组精简 ActivityIndexCard | 已审局部目录与该分片全卡片处置 | 仅在全仓不可一次容纳时使用；分片间并行 |
-| `CATALOG_MERGE` | 全部已审分片目录与全局卡片分母 | 唯一业务领域、别名和重叠 Candidate Process | 仅分片路径使用的 singleton；完成后才能组装候选 |
-| `PROCESS_MATERIAL_SELECTION` | 冻结项目说明、旧/首次目录、全仓导航、文件目录和可选问题 | 系统认识、可证伪假设、调查问题、候选增量与首批清单 | 一个全局单次决策 |
-| `PROCESS_READING_CHECK` | 一个候选的问题、首批实际材料、全仓导航和文件目录 | 首批保留/移出、可空补读、范围修订及未知 | 候选间并行；每候选恰一次 |
-| `CANDIDATE_PROCESS` | 封闭完整阅读包与调查背景 | 事实DRAFT→业务WRITE→最终RULE_REVIEW；完整已审结果或不足处置 | 一个候选Callable内顺序三阶段；候选间并行 |
-| `REPOSITORY_CONSOLIDATION` | 全部已审过程的完整业务投影、ActivityUse、状态和 coverage | 合并、父子、相关、替代和拒绝决定 | singleton；不能改写过程详情 |
-| `WHOLE_REPORT`（未来，当前无生产器） | 已发布catalog与coverage | 已审九章JSON | 不在本轮路径 |
-
-`BusinessProcessPublisher`、source-ref 解析和 Markdown renderer 都是确定性程序操作，不是模型 job。
-
-### 3.3 屏障和稳定性
-
-- 一个阶段所有必需 job 都有终态后才进入下一阶段。
-- Catalog 分片完成顺序不决定 Activity 处置、candidate ID 或 merge 输入顺序。
-- Candidate 完成顺序不决定过程 ID、最终排列或 aggregate bytes。
-- 同一 Activity 可被多个 Candidate job 只读共享；每个 job 创建自己的 ActivityUse，不修改原 Activity。
-- 全局选材是屏障；同候选检查结束、可空补读与封包完成后才能DRAFT。先汇总阅读修订后的成员/处置再稳定派发重建，避免并发完成顺序影响覆盖。所有重建结束后才归并。
-- singleton job 不能为提高吞吐拆成逐章、逐字段或逐规则 job，因为它们需要全仓视野。
-- `INSUFFICIENT_MATERIAL`、`STANDALONE`、`UNCLASSIFIED` 和 `UNRESOLVED` 是合法、可覆盖的内容处置；未知 ID、漏分母或伪造来源才是结构失败。
-
-## 4. 单一 YAML 与两级并发
-
-现有严格 `repository-run-config-v2` 和两个并发控制保持不变：
-
-- `sourceAnalysis.modelJobs.maxConcurrentJobs`：整个模型阶段最多同时运行多少个 job；
-- `sourceAnalysis.modelJobs.providers.<id>.maxConcurrentJobs`：一个 Provider/账户额度范围最多同时运行多少个 job。
-
-并发数是 in-flight job 上限，不是 Activity 数、Candidate 数、分片大小、Builder K 或执行总量。符合范围的 326 个任务在并发为 4 时仍应全部排队处理，不能只处理前四个。
+目标 `repository-run-config-v3` 在既有YAML增加Activity配置；历史v2严格按原义读取。以下字段示例是目标合同，不是本轮配置修改：
 
 ```yaml
-schemaVersion: repository-run-config-v2
+schemaVersion: repository-run-config-v3
 sourceAnalysis:
   javaEngine: jdt
-  jdt:
-    installation: /opt/source-analysis/tools/jdtls-1.61.0
-    javaHome: /opt/source-analysis/tools/jdk
   modelJobs:
-    maxConcurrentJobs: 6
-    journalDirectory: /absolute/path/to/ignored/run-journal
-    outputDirectory: /absolute/path/to/ignored/inspection
+    maxConcurrentJobs: 4
     providers:
       pro:
         kind: codexSubscription
         quotaScope: personal-pro-account
         maxConcurrentJobs: 4
-        model: gpt-5.6-luna
-        reasoningEffort: high
+        model: gpt-5.6-terra
+        reasoningEffort: xhigh
         executable: /absolute/path/to/codex
         timeoutSeconds: 600
         auth:
           mode: chatgpt
           codexHomeEnv: SOURCE_ANALYSIS_PRO_HOME
-      api:
-        kind: openaiApi
-        quotaScope: approved-api-project
-        maxConcurrentJobs: 2
-        model: gpt-5.6-luna
-        reasoningEffort: high
-        endpoint: https://api.openai.com/v1
-        timeoutSeconds: 600
-        auth:
-          mode: apiKey
-          apiKeyEnvs: [SOURCE_ANALYSIS_API_KEY]
     routing:
-      activity: [pro, api]
-      processGroup: [pro, api]
+      activity: [pro]
+      processGroup: [pro]
       repositorySummary: [pro]
       report: [pro]
+    activityRetry:
+      maxAttempts: 3
+      initialBackoffMillis: 1000
+      maxBackoffMillis: 30000
+      multiplier: 2
+      jitterRatio: 0.2
+      retryableReasons: [TRANSIENT_TRANSPORT, RATE_LIMITED, PROVIDER_UNAVAILABLE, REQUEST_TIMEOUT]
+      stageOverrides:
+        REVIEW:
+          maxAttempts: 3
+  activityReading:
+    maxNavigationPages: 128
+    maxReadingRounds: 4
+    maxSlicesPerPacket: 32
 ```
 
-本次过程设计不顺带重置配置 wire。目标协调器暂时按现有严格路由键映射：
+既有journalDirectory、outputDirectory、JDT安装、固定材料state、technical与业务输入输出profile仍由同一配置拥有，示例为相关字段节选。Provider的capacity声明本次使用的contextWindowTokens与providerOverheadTokens/reasoningReserveTokens保守预留，tokenAccounting使用UTF8_BYTE_ESTIMATE或记录已有离线工具的实际计量方式，详见[容量合同](activity-explanation/integration-contracts.md#8-直接实施检查)。缺必需数值/数值非法才是CAPACITY_PROFILE_REQUIRED；未知隐藏tokenizer或推理开销不否决入口，不从模型名猜窗口。READING_PLAN完整实际序列化与累计选择表同样预检，但估算不保证服务端精确fit。
 
-| 现有 YAML 路由键 | 目标 job |
-| --- | --- |
-| `activity` | `ACTIVITY` |
-| `processGroup` | `CATALOG_SHARD`、`PROCESS_READING_CHECK`、`CANDIDATE_PROCESS` |
-| `repositorySummary` | `CATALOG`、`CATALOG_MERGE`、`PROCESS_MATERIAL_SELECTION`、`REPOSITORY_CONSOLIDATION` |
-| `report` | `WHOLE_REPORT` |
+- maxAttempts包含首次请求；1关闭自动retry。全局默认3，允许READING_PLAN/DRAFT/REVIEW三个stage family单独覆盖；其它未知stage拒绝。
+- 初始/最大退避为非负，max>=initial；multiplier>=1，jitterRatio在[0,1]；maxAttempts和reading上限为正整数。未知/重复key、reason、非法Provider/并发在启动前拒绝。
+- retryableReasons可显式增加INVALID_JSON、RESPONSE_SCHEMA_INVALID、UNKNOWN_REFERENCE。它们默认不retry；每次仍是同Prompt/Schema/输入的新attempt，不能追加纠错业务答案或语言黑名单。
+- 来源损坏、输入/配置不合法、认证失败、runtime identity漂移、容量不足、取消及存储错误不可通过reason名单放行。
+- timeoutSeconds仍是Provider单attempt超时；maxAttempts不是超时秒数，退避也不占单次调用timeout。有效Retry-After至少被尊重；若服务要求等待大于maxBackoffMillis，则该stage结束为RETRY_DEFERRED并保存earliestRetryAt供显式新batch参考，绝不缩短服务端要求提前发送。
+- 本轮reading默认值只提供有界调度，未实测证明大样例可完成；它们不表达费用预算或行业分类。
 
-这只是复用现有 Provider 选择入口，不表示旧 Process-group 算法仍参与执行。若未来需要让 catalog 与 candidate 使用不同 Provider，再单独设计并升版 routing；本次不得增加别名、双读或隐式 fallback。
+订阅Provider使用指定Codex登录上下文、ChatGPT auth和read-only sandbox，屏蔽API-key覆盖。显式openaiApi Adapter仍可配置，但只有获准实际运行才启用，不作为订阅失败fallback；不能换模型/账户/effort补成功。同账户/项目的多个key或会话必须放在同一Provider配置下共享cap；两个Provider重复quotaScope仍按现有加载器在启动前拒绝，不新增跨Provider自动合并配额。
 
-严格加载继续拒绝重复 key、未知字段/kind/auth mode、非法并发、未知 Provider 引用；模型执行前检查必需的认证环境变量。`plan-materials` 可以省略 modelJobs；有配置时只校验结构，不构造 Provider、不解析秘密值、不调用模型。
+## 4. 并发如何约束所有attempt
 
-## 5. Provider、认证与任务绑定
+复用已有Java17有界executor和completion queue，不增加内层pool。全局和绑定Provider都有名额时才派发packet；一个packet从READING_PLAN到最后slice结果保存保持同一job名额。内部stage/attempt顺序执行，退避期间仍持有名额，避免实现第二个定时队列或让实际并发超过上限。
 
-一个 Provider 定义代表一个账户或服务额度范围，不等于一把 key 或一个新会话。多个 key 共享组织、项目或模型限额时必须在同一个 Provider cap 下；不同 Codex 会话若属于同一账户，也不产生新额度。
+退避使用可中断等待，不busy loop；尚有空位的其他packet照常执行。保守占位可能降低吞吐，真实授权运行再测，不能凭线程数承诺速度。成功stage即时写入而不是等整个包REVIEW后才落盘。
 
-`codexSubscription` 强制 ChatGPT 认证，使用指定登录上下文、read-only sandbox 和显式 model/effort；屏蔽 API-key 认证覆盖。`openaiApi` 只在 YAML 明确定义并获得实际运行授权时使用。Pro 失败或额度耗尽不自动切到 API，API 失败也不切账户、模型或 effort。
+同包同stage同一时刻最多一个attempt；新attempt必须等待前一个请求和本地Provider进程/句柄终止并保存终态。已超时但不能确认结束的请求记OUTCOME_UNKNOWN，保留原记录，不在同一batch并行重发；用户显式新batch才可以重新请求，且可能重复服务端工作。没有同run崩溃接管或旧STARTED重放。
 
-每个 job 在派发前按稳定顺序固定 Provider；该job全部约定阶段和保存都持有同一binding。执行时可以越过暂时无空位的 Provider，派发已绑定到其他有空位 Provider 的后续 job，但不能为填满槽位改写绑定。journal 和私有输出按 batch、job kind、job key、Provider namespace 隔离。
+固定Provider路由先分配后排队；可以调度其他已有合法绑定、恰有空位的job，不能动态换绑。Worker通过既有私有store同步保存自己唯一目录下的stage，保存成功后才继续；它返回不可变完成/失败结果，不改共享Activity集合。Coordinator拥有并发计数、包级结果保存和稳定aggregate安装，不必等整包完成才让DRAFT落盘。
 
-Provider request 只包含当前业务任务的 clean input 和闭合 JSON Schema，不包含 sourceRunId、modelBatchId、复用来源、队列统计、并发、密钥、host path 或材料 checkpoint。
+## 5. 阶段attempt算法
 
-## 6. Java 17 池与保存
+对于一个已确定stage：
 
-协调器使用一个有界 Java 17 executor、一个 completion queue、全局计数和每 Provider 计数。只有全局和绑定 Provider 都有名额时才提交 job；pair名额持有到REVIEW结果保存，新候选三阶段名额持有到RULE_REVIEW完整结果保存，单次decision名额持有到该决策保存。不能把整个 Provider 调用包在 `synchronized` 中，也不能把所有大输入预复制到无界队列。
+1. 计算实际完整input、Prompt/Schema、scope/ref映射和binding指纹，核验容量；失败则零请求，记录stage原因。
+2. 找到本batch已保存成功stage，或按显式reuse来源验证成功stage；匹配则零请求取回，不能把STARTED/FAILED响应当成功。
+3. 分配 `requestIdentity=(modelBatchId,jobKey,stageKey,attemptOrdinal)`，先保存不可变request/STARTED元数据，再调用固定Provider。
+4. 核对runtime identity、实际响应、JSON/schema/ref/预算/coverage；成功后原子保存响应、验证和SUCCESS记录，下一stage才可读取。
+5. 失败记录错误类别、是否请求已启动/已结束、实际响应和attempt序号。retry名单允许、attempt<maxAttempts且前请求已结束时退避，再以新requestIdentity重发**同一stage**。
+6. 不可retry或穷尽则返回该stage终态；同slice后续stage不执行。其他可独立slice可以继续，依赖失败阅读计划的slice不能猜测启动。
+7. 所有可独立slice处理完，packet带成功结果与未完成scope返回Coordinator。不能因一slice成功就丢掉另一个失败scope。
 
-worker 返回不可变结果，不修改共享 Activity、candidate 或 aggregate。协调器收到完成结果后立即写入：
+退避为 `min(maxBackoffMillis, initialBackoffMillis * multiplier^(attemptOrdinal-1))`，应用配置jitter后再次clamp到[0,maxBackoffMillis]；有效Retry-After不超过该上限时作为等待下界，超过则按RETRY_DEFERRED退出当前stage。退避只影响时间，不能改输入、消耗读取轮或使attempt计数重置。
+
+第一次DRAFT成功、REVIEW失败两次后成功的实际调用为1次DRAFT+3次REVIEW。REVIEW始终使用同一成功DRAFT；成功DRAFT不得由新attempt覆盖。若Prompt、来源或scope改变，它是新stage输入，只能在明确的新batch重建相应依赖。
+
+## 6. 哪些失败影响一个包，哪些影响运行
+
+| 失败类别 | retry/调度 | 最终处置 |
+| --- | --- | --- |
+| 瞬时网络、限流、Provider暂不可用、已终止的request超时 | 默认按当前stage有界retry | 穷尽保存包/slice/stage失败，继续其他包 |
+| 坏JSON、schema、未知ref | 默认不retry；可在Activity配置显式允许 | 失败响应不可成为DRAFT或REVIEW输入 |
+| 不完整业务内容但结构合法 | 按DRAFT/REVIEW既有语义协议表达或unexplained | 不通过执行retry制造额外内容改稿轮 |
+| 单包容量、必需单元未读、原技术局部缺失 | 不retry同输入 | 该范围未处理，其他包继续 |
+| Provider明确拒绝输入/context容量 | PROVIDER_INPUT_CAPACITY_EXCEEDED，不按transient retry同输入 | 保存实际attempt/原因和成功前置stage；显式新batch可调整声明容量/阅读profile |
+| 全局配置非法、固定材料整体损坏、认证预检失败 | Provider启动前fail-fast | 零请求；保存诊断 |
+| 运行中确认某Provider认证/配置不可用或identity漂移 | 停该binding新派发；同绑定未启动包记BLOCKED_BY_PROVIDER | 其他合法Provider任务可结束；不fallback |
+| 共享来源损坏、安全策略失效、无法可靠保存、用户取消 | 停本batch新派发，安全收尾/取消在途任务 | 运行错误；不安装无法验证的aggregate |
+
+不建设新的熔断器服务。Provider不可用由现有Coordinator的绑定状态/终止原因控制；普通包失败不能全局stop，真正共享运行安全故障也不能让326包重复发无效请求。
+
+默认transient分类来自结构化Provider状态/进程退出/协议错误，不靠中文或英文消息子串识别。未知错误不默认retry。私有原始错误保留，普通日志不泄露凭据或整包源码。
+
+## 7. 私有保存与复用
+
+每attempt使用新私有目录：
 
 ```text
-model-jobs/<model-batch-id>/<job-kind>/<job-key>/reviewed-result.json
+model-jobs/<batch>/activity/<packet>/<stage-key>/attempt-<n>/
+  request.json
+  started.json
+  response.json
+  validation.json
+  outcome.json
 ```
 
-以上地址继续用于内容job。原Activity/目录/归并保存v2 pair；新候选过程目标保存`model-job-reviewed-result-v3`，携带pipeline、draft、writing、最终review、完整包、来源映射、指纹与绑定。旧过程v2严格历史读取，不能冒充三阶段完成。单次选材/检查使用同级`decision-result.json`，目标阅读决策v2与历史v1严格区分；ReadingRecord和ProcessReadingPacket仍按候选私有保存。完整版本由补充合同维护。
+文件按各自发生点不可变安装；不存在的response不造空成功。同一attempt不覆盖前状态文件，失败与成功均保留。stage成功索引引用唯一已验证attempt；完整job `model-job-reviewed-result-v4` 引用plan、slice packets、成功DRAFT/REVIEW及最终完整Activity。沿用既有私有store实现，不创建事件重建/恢复数据库。
 
-同一 job key 在同一批次只能提交一次。不同 job 即使 clean input bytes 相同也独立保存；同一业务输入在不同批次通过显式 reuse record 关联，不能抢写旧结果。阶段 aggregate 按程序稳定顺序安装一次，不把 publisher 放进 worker 循环。
+阶段fingerprint覆盖实际输入字节、上游成功stage内容、projection/reading plan版本、Prompt内容、Schema、scope与SourceRef映射、有效业务profile、模块版本、Provider/account/quotaScope/model/effort/sandbox。排除batchId、attempt序号、时间、并发、日志目录、退避和秘密值；仅改maxAttempts不使已成功内容失效。
 
-新过程完整记录保存三次实际结果、最终处置及corrections；只有三阶段完整且验证通过才可复用。单次decision保存原输入/响应、指纹、身份与终态，并保存读取记录/最终包；不能造空DRAFT/REVIEW伪装pair。沿用简单私有JSON保存，不新建运行状态机。
-
-## 7. 固定材料与独立模型批次（已实现基础，扩展到新 job）
-
-### 7.1 现有运行身份
-
-- `sourceRunId` 属于材料原生产 run；失败的模型执行不修改它。
-- `materialsCheckpoint` 是带地址、root 和 receipt SHA 的完整 M10 reference，不是仅凭可读 ID 猜路径。
-- `modelBatchId` 使用新 `AnalysisRunId`，拥有该批 Activity/Process/Report 输出。
-- Provider请求日志按`providerKey/modelBatchId`隔离。同一批次内的STARTED仍禁止重放；用户显式启动新批次时，旧STARTED日志原样保留，但不能阻断新批次完整执行未完成job。
-- `repository-run-state-v3` 保存实际材料 profile、producer version 和 basis；当前`model-job-execution-config-v3`保存本批范围、服务、可选reuse来源和过程读取输入；历史执行配置v2严格读取。`analysis-run-output-v4`区分材料、Activity和过程输出归属，历史v3严格只读。
-
-执行配置v3中的旧目录输入、完整verified inventory引用及可空focusQuestion已接线；本次不再升级执行配置、YAML、材料state或output。CLI创建/选择QUEUED run后、Provider初始化前原子保存真实选择；已有绑定不匹配须使用新run。内部`ProcessDiscoveryRequest`接收验证后的依赖，不改变公共Agent请求协议。既有接线见[模块设计](../supplements/cross-object-process-reconstruction/module-design.md)。
-
-源码、入口、取材规则和材料未变时，改变模型、并发或日志目录不使材料失效。改变源码、引擎、入口选择、分包或代码内容时必须显式生成新材料。读取缺失、损坏或来源不一致的材料时失败，不能偷偷调用 Builder 或 JDT 补齐。
-
-### 7.2 复用单位
-
-内容生成的复用单位是完整约定job：Activity/目录/归并为pair，新候选过程为完整三阶段，均不能复用单次网络响应或续接半轮。单次阅读decision为独立类型，仅完整成功、已验证且精确匹配时显式复用。旧目录作输入读取也与直接任务复用不同。
-
-| 旧 job 状态 | 新批次行为 |
+| 新Activity可复用内容 | 条件 |
 | --- | --- |
-| 未启动、某阶段失败或结果未知 | 经显式授权的新job执行完整约定序列；候选过程为三阶段 |
-| 只有DRAFT/WRITE或不完整REVIEW | 保留实际中间结果诊断；不跨批续接半轮 |
-| 完整已审结果、输入与 binding 全部匹配 | 零 Provider 调用复用，保存来源记录 |
-| 声称完成但结果损坏 | 明确失败，不以隐式重调掩盖损坏 |
-| 输入、Prompt、Schema、profile、producer 或 Provider binding 改变 | 不复用，按新批次明确配置执行 |
+| 已成功READING_PLAN | 原实际展示页/正文、问题、决策结构和binding完全匹配 |
+| 已成功DRAFT | 完整阅读包、业务scope、Prompt/Schema/输出profile与binding完全匹配 |
+| 已成功REVIEW | 还必须匹配实际DRAFT和REVIEW原材料；完整结构/coverage验证通过 |
+| STARTED/失败/无响应/损坏stage | 不复用；损坏需报告，不能默默调用模型掩盖 |
+| 旧v2完整Activity pair | 按历史整job合同复用，不拆出DRAFT伪装新stage |
+| Step07 | 继续完整pair/triple/decision复用；不获得Activity的新续审规则 |
 
-稳定 `jobKey` 包含 job kind 与真实业务输入成员，不含 batchId。`inputFingerprint` 包含完整clean input、allowlist映射、实际Prompt/Schema、完整任务序列、内容profile、Module/producer version和实际Provider/account/model/effort/sandbox；新过程必须覆盖三阶段而非沿用仅draft/review指纹。不包含新batch ID、时间、并发、日志目录或秘密值。
+手动retry只通过显式新batch，按[CLI合同](activity-explanation/integration-contracts.md#6-cli显式选择与手动retry)读取失败范围与指定reuse来源。成功slice、成功DRAFT的键保持稳定；失败stage重新attempt序号从新batch的1开始，旧记录原样保留。未改变scope的成功其他包可显式零调用继承。
 
-单次decision同样验证`providerBindingKey`、`quotaScope`与`ModelRuntimeIdentity`中的provider/model/effort/sandbox；实际关注问题和读取结果是输入的一部分。旧目录作输入则要求来源批次已停止、完整目录pair有效、Activity检查点/集合及冻结basis一致，不要求旧批次下游也成功或旧Prompt与新Prompt相同。两者不能混成一个复用判定。
+材料始终属于sourceRunId；modelBatchId拥有新输出。不能删除旧journal、清空FAILED状态或重扫源码来获得新的request身份。batch不是新的ReaderCandidateRound，不能绕过最终内容修订/候选授权。
 
-新过程路线按依赖逐层复用：
+## 8. 聚合、失败清单与下游
 
-- Activity checkpoint 已经完整匹配时，不启动 Activity jobs。
-- ActivityIndexCard 投影或 Activity 内容变化时，只失效相应 catalog 输入。
-- Candidate成员/context、完整Activity、实际阅读包、statement/ref映射、关注问题、Prompt或源码变化时，失效相应任务及依赖；只改并发/路径不失效。
-- 仓库归并输入变化时不能沿用旧 catalog。
-- catalog 或 coverage 变化时不能沿用旧九章。
+所有packet终态后，按固定packet/slice/localActivity键聚合，完成顺序不影响业务身份。完整规则、条件、公式、正文和ref不截断，多个slice直接保留多Activity。
 
-复用不会把 `PARTIAL` 或 `UNRESOLVED` 升格为完整业务验收。原生产批次、结果 SHA 和引用保留在新批次的 reuse record 中。
+每个成功REVIEW已经私有保存。若还存在失败/必需未读范围，可安装一次含成功子集和完整不足coverage的M11，run仍FAILED、CLI退出非零、modelBatchComplete=false。共享结构/来源损坏时仅保留可验证私有结果，不安装不可信aggregate。成功M11 payload不等于整个batch完成。
 
-### 7.3 固定 jshERP 检查点的起点
+私有activity-batch-result-v1与CLI/inspect给出packet、entry展示、slice、stage、reason、attemptsUsed/maxAttempts、已成功可复用stage和下一步。普通错误清单不带敏感原文。用户可定向一个packet或全部失败包创建新batch，不能一处失败就默认重做所有材料。
 
-当前输入是326条已审Activity和显式选择的已保存目录，不是340 singleton。新model batch直接重开；原目录模型、前五步、JDT、Builder、Activity调用均为0。本轮只针对三个样本执行获准的选材、检查及过程三阶段；不自动运行原全仓候选和归并。
+Step07不会自动消费未完成batch，不自动模型重启、不调用JDT、Capture或Step05；即使有成功Activity，也不能悄悄缩小入口或slice分母。历史326Activities和原M10仍保留为独立可读输入。
 
-旧Process/九章留作对照；旧目录可作选材输入。Activity与更完整源码有局部差异，在本次过程说明并保留原记录，不自动启动delta review。确需重做Activity必须先与用户讨论并另获同意。
+## 9. 直接测试与验收
 
-## 8. Fatal、未决结果与显式新批次
+本轮只写设计，以下为实施验收，不是已跑结果：
 
-任一fatal被观察到后，协调器立即停止派发新job。尚未真正开始的任务记为本执行未启动；已经开始且自身阶段合法的job在原binding和既有超时内完成剩余约定阶段并保存。pair最多完成其唯一REVIEW，新过程最多完成其WRITE和RULE_REVIEW；自身某阶段失败不进入下一阶段，保留实际结果和诊断。收齐已开始job的终态后，当前批次以FAILED结束，不启动依赖它的下游。
+- scripted Provider制造DRAFT成功/REVIEW两次瞬时失败后成功，精确断言1+3调用、DRAFT逐字相同、attempt记录不覆盖。
+- maxAttempts=1不retry；退避与timeout独立；stage override、未知reason/配置与非retry错误拒绝。
+- 同包同stage单飞、全局/Provider峰值不超限；retry期间其他合法包可继续；不同完成顺序结果/ID一致。
+- 一个包retry穷尽不阻断其他包成功保存；最终失败清单完整、非零且Step07调用0。
+- 共享输入预检失败请求0；Provider运行中认证失效停止其队列，另一合法binding可完成，无换绑。
+- 成功DRAFT/完整slice跨新batch复用；改scope、Prompt、Schema、模型使相应阶段失效；只改并发/退避不失效。
+- 未结束attempt不重叠重发；旧STARTED不删除；保存故障不能返回成功或继续消费未保存DRAFT。
+- 新Step05 materialSource可重开并进入真实模型输入fixture；JDT/PersistenceAnalyzer/JSqlParser调用0；XML依赖投影安全读取允许。
+- 单entry多slice成功/失败混合不误全覆盖；大局部稿程序聚合不丢条件、不新增摘要调用。
+- 旧Activity pair、Step07完整三阶段/单决策和历史renderer继续按原规则读取；无顺带自动retry。
 
-未知/未提供Activity/ref、坏Schema、来源漂移、损坏、遗漏必须处置、started失败仍fatal。选材/阅读检查可以按合同增减成员；最终REVIEW不能引入包外材料。合法未命中/不足和UNRESOLVED不伪造失败或完整性。单次decision失败保存诊断，无隐式重发；pair沿用既有失败纪律。
+只运行新增或直接覆盖测试，重型验证串行。真实产品调用须另有明确授权；先小包，再新增单据2MB样例，记录实际请求数、各阶段耗时、重试/未读/失败范围和业务规则准确性，再决定扩大。线程数、材料字节减少或entry集合闭合都不能代替业务接受。
 
-同一批次没有自动retry、reroute、模型降档、超出约定序列的修复调用、failed-call replay或终态修复。候选固定三阶段不是失败后的补救轮。用户显式启动的新model batch可以按§7复用完整结果并重新执行未完成job；其Provider请求日志使用新的batch目录，保留旧STARTED/FAILED记录，不能称为同一请求恢复成功。无法确认旧started请求的服务端状态时，必须承认新批次可能再次产生该任务的模型工作。
+## 10. 不扩建的内容
 
-model batch 是运行身份，不是调用许可，也不推进 Reader Candidate Round。已有完整最终候选后的内容修正仍遵守具名 finding 和允许的 Round 2；不能靠换 batchId 无限生成替代报告。
-
-## 9. 验收与可观测性
-
-### 9.1 已实现基础的回归
-
-- 全局 6、Pro 4、API 2 从不越限，同 Provider 的独立 job 确实可同时执行。
-- 并发 1、4、6 处理相同任务集合时，聚合业务内容和顺序一致。
-- DRAFT、完整 REVIEW、missingEntryKeys 与 unexplained entries 不串包。
-- 中途 fatal 后不派发新 job；已开始的合法 pair 可保存；下游不启动。
-- 完整已审 job 跨 batch 零调用复用；孤立 DRAFT 不冒充完整结果。
-- 直接重开固定材料时 Capture、JDT、Step03–05 和 Builder 调用数为零。
-
-### 9.2 新过程 job 必须新增的直接验收
-
-- 所有 ActivityIndexCard 恰进入一个目录分片，并最终进入 candidate、standalone 或 unclassified 处置。
-- 分片完成顺序变化不改变合并目录；Prompt 没有预置领域答案。
-- 两个Candidate并行读取同Activity时各自用法/ref/结果不串扰；同候选不同variant保留，完整正文只传一次。
-- DRAFT前实际包已含所选完整原文；WRITE仅得完整实际事实草稿，RULE_REVIEW得同一外层输入和完整DRAFT/WRITE；不启动JDT。
-- 具体谓词、拒绝条件和状态变化从 Activity/source 保留到已审过程，不能退化为空泛表述。
-- repository consolidation 不丢 stage、rule、certainty 或 ref，不制造父子循环。
-- 新 catalog 确定性生成 `business-processes.md`；九章只消费 catalog，删除原始 Activity 输入仍能生成同一九章内容。
-- 真实样例必须说明对象怎样流转及具体规则适用哪个variant；当前46过程中的技术阶段模板不能作为语义成功。多Activity/多Stage只是结构计数。
-- 归并使用现有完整Process JSON，保留narrative/规则用法；无需新增摘要模型或请求轮次。
-- 每候选一次模型检查，补读可空；实际请求数含空清单检查。来源链接可空，不为补链接加任务。
-- 新直接测试覆盖CHECK保留集、三阶段实际顺序/完整输入、最终修正文案及规则进入保存渲染、v3完整重开及旧pair不误复用。真实验收只做[三个样本](../supplements/cross-object-process-reconstruction/acceptance.md)，不延续历史全仓实验。
-
-测试使用frozen fixture与scripted/替身Provider，不运行客户构建或真实模型。观测按实际任务记录queue wait、DRAFT、WRITE、RULE_REVIEW或原pair REVIEW、source-resolution、save、phase elapsed、实际请求数、复用/未启动/失败数及全局/Provider峰值；不把凭据或完整源码写到普通日志。真实模型加速比只能在授权运行后测量，不能用scripted并发数字冒充。
-
-## 10. 明确不建设
-
-- 不建设第二个线程池、消息队列、分布式锁、事件重建或同 run 恢复系统。
-- 不新增自动重试、Provider fallback、孤立DRAFT/WRITE跨批续审或超出固定序列的模型修复。
-- 不重新运行 JDT、重新解释 326 个 Activity、重建五图或逐自然语言句子加 Proof。
-- 不在 Java 中加入领域词典、过程顺序规则或中文蕴含判断。
-- 不让九章模型重新发现、合并或改变业务过程。
-
-目标完成时，同一现有 job 基础设施承载 Activity、目录、候选、归并和报告任务；变化集中在 Step07 的业务输入、Prompt、结果模型与确定性发布，而不是扩建另一套运行框架。
+继续使用一个RepositoryAnalysisAgent、一个CLI、现有Provider Adapter、Java17线程池与canonical/private store。不增加队列服务、向量库、自研编译器/业务词表/证据链、自动换模型/账户、同run恢复或无限模型修复。新版本精确表由[接入合同](activity-explanation/integration-contracts.md)唯一维护。

@@ -1,136 +1,92 @@
-# 入口阅读材料：目标入口与历史Flow/Capsule合同
+# 入口阅读材料
 
-2026-09-18的新生产目标唯一见[补充详细设计§6](../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md#6-第5步唯一阅读材料-owner)：一个owner消费Java索引和可选持久化材料，一次组装/保存、按需导出完整正文。**下文为迁移前Flow/Capsule实现及历史读取合同，不是新生产仍需三层包装或Step06/M10 Builder的要求；M1--M3与M10不再允许新安装。** 新运行材料完成于第5步；第6步的新消费方式尚未讨论，不执行模型。
-
-> 模型批次解耦（已实现）：Step05 上下文/Capsule 保持原 sourceRunId、原引用和字节；新模型批次直接读 M10 材料，不再次 compiler/projector，也不修改 Step05 格式。材料缺失时明确报错，不自动回到本步骤。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)。本次未修改本步骤算法或产物。
-
-> [总体设计](../DESIGN.md)；固定key：business-flows，目录steps/05-business-flows/不变。本步材料是入口的技术上下文，不是最终跨入口业务过程。[引擎及子模块合同](../modules/java-code-engines/README.md)定义新的取材来源。
+> [总体设计](../DESIGN.md)；固定 key：`business-flows`，目录：`steps/05-business-flows/`。当前唯一材料 owner 为 `analysis.material`；本页替代旧 Flow/Capsule 编译/投影生产职责。
 
 ## 1. 为什么存在
 
-JDT或JavaParser已经找出方法、调用和源码。Step05负责让这些结果变成下游可以直接读的一份入口材料，保存后不必再扫描源码寻找缺失Service。它不重新找实现、不重复证明关系、不决定业务含义。
+上游已有完整方法、调用候选和可选 XML/SQL。本步将它们组织成按入口可读、可保存并可重开的技术材料，让下一步无需重新导航。材料包不是业务过程；一个通用新增单据入口不能仅因分包被宣布为采购、销售、调拨三个独立过程。
 
-例如财务查询：上游已经有Controller、Service、Mapper声明、billId实参/形参及三段原文；本步按入口把它们放在一起。下一步只分配短引用和组包，不能再倒回五图或源码重建这条链。
+Step05保存技术原件的选择引用和来源；[Step06](06-flow-interpretation.md)拥有针对模型容量的阅读投影、选材和Activity解释。技术包能完整导出，不代表能一次放入模型。
 
-原来的strict FlowSlice继续保存已有精确切片，但不等于全部可读代码，不决定业务上下文数量。一个入口可以没有strict Flow，却有完整Service材料；多个入口也可以共用同一方法。
+## 2. 输入与 Interface
 
-## 2. 上游实际交来什么
+`CodeReadingMaterialBuilder.build(CodeReadingMaterialRequest)` 返回 `CodeReadingMaterialSet`。请求只接收已经读好的不可变 JavaCodeIndex、PersistenceMaterialIndex、完整上游publication和CodeReadingMaterialProfile；不接收Provider、JDT、parser、reader或任意源码路径。
 
-| 输入 | 必需性 | 本步怎么用 |
-| --- | --- | --- |
-| 同一冻结来源/entry inventory | 必需 | 每个入口都有上下文或具体不能收集的原因 |
-| 选定引擎java-code-index与ENTRY_MEMBERSHIP | 必需 | 按method/call keys取已有完整正文、候选和位置 |
-| 实际五图/Fact/Proof | 可选技术增强 | 附真实同源refs，不筛掉未证明的源码 |
-| 已有strict FlowSlice | 可选 | 保持精确技术意义；没有时flowRef=null |
-| 既有安全配置/XML片段 | 有定位时附 | 帮助理解调用；不宣称外部实际执行 |
-
-提交了增强引用却找不到文件/身份不符仍是错误。“可选”只允许未生成，不允许忽略已提供产物损坏。JDT第一阶段只交付导航/源码时，本步不能强迫它制造五图或Proof。
-
-## 3. 各子模块怎么做
-
-### 3.1 EntryContextAssembler：组装已有结果
-
-这是现有flow compiler内部接线职责，不新增公共Agent或独立运行服务。
-
-输入为上表不可变结果。按入口membership取出完整MethodCode及每个CallSite：
-
-- caller、调用位置、原始表达式和有序实参一起保留。
-- 目标声明与实现候选分别保存；同一调用可能有多个候选，不能选第一个。
-- 每候选的形参来自该候选正文/声明；与实参按位置对照，不证明运行时值。
-- conditions、return、throw和try/catch以语法范围及完整body保存，不要求先有CFG节点。
-- 外部/无法定位/未展开调用保留原文、原因和受影响位置。
-- 方法正文去重，调用发生点不去重。`f(id,id)`保留两个实参位置。
-- 附可用Fact/Proof/Flow引用，不改变其已证明含义。
-
-本步不调用LS、Core或JavaParser，不按包名/类型名重新找callee。无法组装已有key是输入/接线错误，不启动另一种引擎补齐。
-
-输出是一个EntryCodeContext。它可以有局部限制；是否足以解释业务留给材料检查与模型，不用Java行业字典评分。
-
-### 3.2 EvidenceCapsuleProjector：引用完整上下文，不再复制正文
-
-输入EntryCodeContext的完整不可变视图，输出与该context唯一绑定的Capsule引用。保留完整选中方法、调用目录、候选、来源和限制的可读取性，不独立创造calls/controls。磁盘只写entryContextRef，正文由既有reader沿compilation的codeContextRef到索引读取；业务消费者不自己调用JDT。
-
-有完整body时不能只保留方法名和几行入口。Mapper只有声明时保留声明；没有SQL正文不删Java调用。没有strict Fact、OutcomePath或Proof obligation不阻断已定位源码。
-
-数学最小证据、每片段必须证明一个atom、每body必须属于已证明outcome等旧阅读门禁不再适用。已有strict Flow增强的真实性检查仍保留，但不强加给普通代码材料。
-
-### 3.3 FlowPublicationSpecifier：保存已计算结果
-
-输入compiler/assembler与projector不可变结果。检查同源、entry/method/call/source引用、context/Capsule一致和版本，复用现有canonical/原子安装。
-
-不再次compile/project、枚举Fact或导航。新process/磁盘重开校验保存内容，不为验一次文件再索引仓库。修改新context合同必须同步publisher、reader、artifact policy和直接fixtures，不能只在内存里新增字段。
-
-## 4. 精确合同与可读例子
-
-唯一字段定义是[EntryCodeContext](../modules/java-code-engines/contracts-and-configuration.md#3-entrycodecontext下游真正需要的内容)，替换旧单target/EXACT的CallContext草稿。本页不再复制另一份不同字段表。
-
-```text
-入口 E1
- methods：
-   M1 Controller完整代码（参数、try/catch、响应、return）
-   M2 Service完整代码（return Mapper(billId)）
-   M3 Mapper完整声明（@Param("billId") Long billId）
- calls：
-   M1调用位置 → M2；actual billId，对照formal Long billId
-   M2调用位置 → M3声明；actual billId，对照声明formal
-   另有构造器、日志调用：逐项保留目标或未知原因
- technicalEnhancements：
-   有真实图/Fact就附引用；没有则NOT_PRODUCED，不伪造
-```
-
-形参对照不要求ARGUMENT_TO_PARAMETER Proof：它描述源码中“第几个实参对应目标声明第几个形参”，不是外部数据库效果或完整数据流结论。旧严格证明如果存在，保持独立标记。
-
-注册例必须同时保留Controller与验证码、登录名检查、注册Service完整正文；否则模型只能说“调用注册方法”。[完整真实代码及新材料投影](../examples/java-code-engine-walkthrough.md)展示两例，不把目标投影冒充当前生产格式。
-
-## 5. 可观察产物与下一消费者
-
-保留原步骤中的这些文件位置，按新合同升级受影响格式，不承诺某个固定总文件数：
-
-| 文件 | 内容 |
+| 输入 | 使用 |
 | --- | --- |
-| flow-slices.json | 入口归属/状态、codeContextRef及实际已有strict Flows；解引用可读完整上下文，没有strict Flow时flows可空 |
-| flow-coverage.json | 全入口分母、上下文形成情况、技术增强是否可用与具体限制 |
-| entry-dispositions.jsonl | 每入口已有技术处置及context收集处置；二者不混同 |
-| evidence-capsules.jsonl | 每个安全context的唯一投影；flowRef可空 |
-| flow-gaps.jsonl | 入口取材/导航/技术增强的已知限制及来源，不发明业务制度Gap |
-| business-flows-receipt.json | 实际输入、产物、引擎basis与状态 |
+| JavaCodeIndex.entries() | 完整已发现入口分母，包括未收集入口 |
+| 共享METHOD + 入口CALL | 原文、候选、参数、控制/返回、成员归属 |
+| PersistenceMaterialIndex | Mapper关联与完整XML/SQL材料；关闭时为明确DISABLED对象 |
+| source/discovery/navigation/persistence refs | 保存与重开时验证同源和前驱 |
+| technical.readingMaterials | 必填正值 maxPacketUtf8Bytes、maxEntriesPerPacket，参与材料身份 |
 
-已交付版本为entry-code-context-v1、flow compilation v6、capsule projection v11、flow slices v6、evidence capsule v9、flow coverage v2、entry disposition v2。`codeContextRef`精确为`{indexArtifact: ArtifactReference, entryId: string}`，Capsule的`entryContextRef`为`{compilationArtifact: ArtifactReference, entryContextId: string}`；COLLECTED须引用正确入口，NOT_COLLECTED的codeContextRef为空且有reason。读取端从既有索引/compilation恢复完整不可变上下文，不重启引擎；五个语义文件加receipt的实际集合不变。旧历史产物不覆盖，不静默双读。详见[字段与版本表](../modules/java-code-engines/contracts-and-configuration.md#5-保存格式位置与复用)。
+旧 business.material 片段行数限制不能近似转成新profile；旧technical.flow/capsule不是新准备命令前置要求。
 
-保留技术处置`COMPILED/GAP/EXCLUDED`的原义。context处置单独使用`COLLECTED/NOT_COLLECTED`和reason，不把“没有strict Flow”误判成没有材料，也不把SOURCE_CONFIRMED之类业务状态塞进technical ledger。
+## 3. 程序如何组包
 
-```text
-发现的每个入口 = 一个COLLECTED context 或一个NOT_COLLECTED原因
-每个COLLECTED context ↔ 一个Capsule
-strict Flow数量可以少于context数量
-```
+1. 遍历完整入口清单；上游未收集入口直接保存具体原因。
+2. 从入口完整声明/正文起，按现有调用首次遍历顺序选择完整方法。并列项用稳定key排序，循环只保留引用。
+3. 每个call保留entryId、调用位置、实参和各候选的形参/展开状态；共享方法正文一份，调用发生点不合并。
+4. 命中Mapper时同时加入完整声明和所关联statement、相关资源/依赖、绑定与可用SQL结构。插件关闭不造空XML。
+5. 为所选METHOD/XML_RESOURCE分配短SourceRef，保存其单元与精确已知位置；同一packet中同一ref只能映射一处。当前source:1等编号会在不同packet重复，跨包身份必须包含publication + packetId + sourceRef。原文不同时复制进refs与modelPacket。
+6. 使用同一个确定性Markdown格式器计量完整自包含投影UTF-8字节，包含代码、调用、参数、XML/SQL与限制；不是估计行数。
+7. 完整单元放不下时记录该入口未选单元和原因。最小完整入口单元也放不下则NOT_COLLECTED。不得切半方法、XML条件或插入的列值。
+8. 发布一次材料选择和覆盖，按需导出技术预览；结束于Step05，Provider不初始化。
 
-Builder只读这些context和Capsule，选完整方法、分包、分配S短ref；没有引擎分支、不调用解析器。模型输入能看见调用/参数/候选/正文，而程序侧path/行号/hash用于来源展示，不强塞给模型。Step07 的 `ProcessMaterialAssembler` 是另一个合法读取者：它只为已经选出的候选过程，按引用重新打开本步保存的完整 Activity 所属上下文和少量 SourceRef；它不得重新导航、解析或编译源码，也不得改变本步产物。
+当前单包选择遵守入口与材料容量，不能以“已被另一个包选中”吞掉本入口受影响调用。模型需要范围外材料时首先报告原包未选/导航限制；Step06不能偷偷扩大source selection或重新生成Step05。
 
-引用去重只改变保存方式：reader一次打开所需索引并还原各入口完整视图，跨入口共享方法对象；不同入口的CALL/NOT_EXPANDED不互相覆盖。只复制Capsule而缺失上游索引不是完整导出，必须明确报缺引用，不能重跑JDT补救。一个请求里同一方法只展开一次，但发送给模型前不能只留下程序内部key。
+## 4. 保存合同与重开
 
-没有安全context时仍保留入口处置；0入口保存空集合和真实范围说明。多入口共享方法不能让入口覆盖分母缩水。
+地址：Step05 module4 `code-reading-materials`；文件：`code-reading-materials.jsonl`；schema：`code-reading-material-set-v1`；artifact：`CODE_READING_MATERIAL_SET`。保存的是引用式canonical材料，不是Markdown。
 
-## 6. 失败与未完成范围
+| 记录 | 保存/内存职责 |
+| --- | --- |
+| HEADER | sourceInventory、navigation/persistence publication、snapshot、实际profile；保存侧同时核对discovery |
+| PACKET | packetId、入口、method/call选择引用、persistence选择引用、SourceRef位置、unselectedUnits、limitations、自包含字节数 |
+| ENTRY_COVERAGE | entryId、packetIds、COLLECTED/COLLECTED_WITH_LIMITATIONS/NOT_COLLECTED、具体限制 |
 
-来源漂移、范围越界、断引用、context/Capsule相互矛盾、版本错或原子安装失败是fatal。保留之前完成产物，不通过重扫/换工具伪装成功。
+METHOD正文唯一派生存储在Step03，XML Resource原文唯一派生存储在Step04；冻结原始快照仍保留。没有第二份M10/modelPacket canonical正文。
 
-未知静态目标、多个候选、缺依赖、Mapper无body、没有严格条件Fact是局部限制。保留可读部分；未知条件或业务含义不能变成整仓禁止阅读的理由。
+`CodeReadingMaterialReader.reopen(AnalysisStepPublicationReference)` 已实现：
 
-引擎取材默认不以费用限制只展开几层。宿主资源/取消触发时记录未展开点。Builder面对真实模型上下文上限，可以在入口/完整方法单元组包，但不得静默裁去关键Service实现后标完整。是否达到“模型实际看见足够实现”必须直接检查请求内容。
+1. 检查Step05 receipt、准确schema/producer/类型、来源与完整上游引用。
+2. 一次重开所需Java与持久化索引，按已保存选择引用恢复原对象。
+3. 验证入口/调用owner、SourceRef位置、已选/未选范围与实际投影字节。
+4. 返回完整只读Packet，包含真实MethodCode、EntryCall、PersistenceSelection；不再调用build、analyze、collect或重新选择单元。
 
-## 7. 历史代码与目标边界（2026-09-14）
+普通可信同进程直接传不可变对象；跨进程在reader seam核验，不让每个内部函数重新打开整个索引。
 
-当时 JDT 与 JavaParser 两条引擎路线都接入共同合同：JDT 生产 context、投影、保存、读取和 Builder 接力；JavaParser Adapter 恢复迁移前能力但不承诺追平 JDT。其 flow compilation / flow slices v6、capsule projection v11、evidence capsule v9 是历史格式版本，不能把 v5/v10 写成当时版本，也不能作为现行 Step05 输出。
+## 5. 技术预览与模型投影
 
-历史 `EntryCodeContext` 保存完整方法、调用点、所有候选、实参/形参、control/exits、supporting sources 与 limitations；没有 strict Flow 的安全入口也可用 `flowRef=null` 发布上下文和 Capsule。`EvidenceCapsuleProjector` 与 `BusinessMaterialBuilder` 仅为历史 payload 的概念和 reader 边界；新 Step05 使用 `CodeReadingMaterialSet`，不重新引擎取材、不执行旧 Flow/Capsule/M10 producer。
+`CodeReadingMaterialMarkdown.render/renderPacket`导出完整技术材料，文件/行号、调用树、Java正文、逐入口calls、XML/SQL与未选列表均可见。重开后逐字节一致，预览不是下一生产输入。
 
-本次业务过程重建设计不修改 Step05 wire，也不重新生成已经保存的 326 份 Activity。未来实现只需让 Step07 的 assembler 沿现有 Activity/SourceRef 引用选择性取回过程所需原文；如果为此发现缺少合法读取 seam，应补薄 reader，而不是改写 Step05 算法、复制完整正文或新增另一套源码解析。
+新模型路径直接接收Packet：移除重复导航呈现、只显示短ref、按完整statement及依赖生成XML结构投影；保留Java方法原文和所有条件。该职责见[Activity材料投影](../modules/activity-explanation/material-projection.md)，不修改本页canonical schema或既有技术Markdown。
 
-## 8. Luna与Terra的直接指南
+真实新增单据样例有443方法、1,468calls、23份XML资源、58条statement，自包含2,055,071字节；因此“已有325份包”不能推出“模型可一次阅读325份”。具体长材料策略由Step06在实际请求预算上决策。
 
-Luna先测试保存后完整Controller/Service/Mapper可读、多个候选不丢、重复调用/参数顺序、无strict Flow、零入口、来源错误和跨入口混引用，再测试Builder实际input包含Service body。不能只断言ID数或JSON非空。
+## 6. 输出怎样被使用
 
-Terra只组装已有索引、升级拥有者DTO/schema和直接读写器；不得手写类型解析、替JDT选择运行时实现、按业务名称过滤方法、造Proof或增加恢复系统。
+| 消费者 | 读取方式 |
+| --- | --- |
+| plan-materials / artifact | 材料准备止于本步；artifact按指定format导出JSONL或Markdown |
+| 新Activity目标 | 新batch绑定完整Step05 reference，reader恢复Packet再投影，不调用旧M10 Builder |
+| Step07目标新corpus | 按Activity的明确material来源重开已保存代码；旧M10分支继续只读 |
+| 历史结果 | 旧Flow/Capsule/M10/326Activity原字节、来源与schema不变，不被自动升级 |
 
-真实注册、财务与跨领域fixture共用同一算法。DepotHead复杂条件可作回归，但不成为行业规则。业务过程由Step07的Luna理解，Step05不把几个HTTP入口硬编为必经顺序。
+现有 `repository-run-state-v4`保存CODE_READING_MATERIALS checkpoint，`analysis-run-output-v5`只表示READING_MATERIALS_ONLY。模型batch接线目标需升级自己的execution/output合同；本材料状态不为了retry改写。完整版本见[接入合同](../modules/activity-explanation/integration-contracts.md)。
+
+## 7. 失败与覆盖
+
+所有发现入口都保留技术处置。COLLECTED_WITH_LIMITATIONS 表示材料取得但有具体导航/SQL/选择限制，不是业务分析通过。多个包可关联一个入口；裸E1不能跨包关联。
+
+来源漂移、断引用、字段/schema错、CALL owner混用、字节数不匹配或发布失败均失败关闭，保留已完成上游。容量排除和工具已记录限制是明确未处理范围，不自动重扫、换parser或刷新源。
+
+Activity模型失败、重试或手动新batch不改变本步材料；更改模型、Prompt、并发、日志目录也不使技术材料失效。实际取材profile、插件或来源变化必须另行显式准备新材料。
+
+## 8. 测试与当前成熟度
+
+直接测试应观察完整Controller/Service/Mapper与XML能到达重开后的Packet，多个候选、重复实参、循环、共享方法/入口CALL不串；关闭插件零parser、容量边界不截正文、未知ref/来源错拒绝、空入口合法、技术导出字节一致、模型/JDT调用为0。
+
+当前实现与固定仓库验收已完成：325包、326条覆盖，325 COLLECTED_WITH_LIMITATIONS、1 NOT_COLLECTED，容量排除0；全部完整入口正文及自包含字节计数核对通过。技术索引88,587,381字节、持久化4,508,008字节、引用式材料18,749,377字节、完整Markdown83,666,232字节。来源为[交付核验](../supplements/jdt-persistence-reading-materials-delivery.md)。
+
+新Step06消费尚未实现。本轮文档明确了目标接口，未调用模型，也未用“材料完成”代替Activity质量验收。历史Flow/Capsule算法及版本可在Git `5ceb111` 的本页查阅；新运行不恢复其producer。

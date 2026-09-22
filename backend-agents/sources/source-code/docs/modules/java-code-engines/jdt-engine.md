@@ -33,7 +33,7 @@ JDT启动JDK和客户source level不同：当前调研使用LS1.61.0与JDK26；�
 
 **例子：**UserController仍保留`import com.jsh.erp.service.*`。程序不把`UserService`拼成Controller包路径；原始import和仓库Service源码一起进入JDT工程，调用位置交由JDT定位。
 
-### Luna RED / Terra GREEN
+### Terra RED / Sol GREEN
 
 测试固定源码投影、同一索引处理两入口、客户工作区改变不影响输入、未知依赖不吞源码、不同module同名类型、禁止构建/联网。实现只做现有冻结来源→JDT项目的适配，不实现POM插件执行或完整Maven模型。
 
@@ -101,11 +101,11 @@ Core优先使用相同受控sourcepath/classpath解析注解binding；只有 bin
 
 在通配import或缺依赖下LS仍不能确认时，qualifiedName=null并记录`ANNOTATION_IDENTITY_UNRESOLVED`。Spring消费者保留该已定位mapping候选方法、原注解及具体限制，允许后续读取其源码；不能把未确认候选宣布为准确HTTP路由，也不能从发现site/材料范围中静默过滤。合法省略method仍是UNRESTRICTED，和注解identity无法确认不是同一种问题。
 
-Luna须测试显式全名、通配import、同名自定义注解、源码组合注解及循环、缺依赖时候选保留；Terra不得以正则simple-name匹配或旧JavaParser发现器补齐JDT路径。
+Terra须测试显式全名、通配import、同名自定义注解、源码组合注解及循环、缺依赖时候选保留；Sol不得以正则simple-name匹配或旧JavaParser发现器补齐JDT路径。
 
 依据：[ASTParser](https://help.eclipse.org/latest/topic/org.eclipse.jdt.doc.isv/reference/api/org/eclipse/jdt/core/dom/ASTParser.html)、[ASTNode范围](https://help.eclipse.org/latest/topic/org.eclipse.jdt.doc.isv/reference/api/org/eclipse/jdt/core/dom/ASTNode.html)、[MethodDeclaration](https://help.eclipse.org/latest/topic/org.eclipse.jdt.doc.isv/reference/api/org/eclipse/jdt/core/dom/MethodDeclaration.html)、[MethodInvocation实参](https://help.eclipse.org/latest/topic/org.eclipse.jdt.doc.isv/reference/api/org/eclipse/jdt/core/dom/MethodInvocation.html)。这里采用的是现有AST API，不开发Java解析器。
 
-### Luna RED / Terra GREEN
+### Terra RED / Sol GREEN
 
 直接测试整方法含注解/Javadoc/条件/返回、重载的准确位置、构造器、varargs、嵌套lambda归属、中文/emoji/CRLF切片、两个同名调用不同位置。JDTCore-only路径必须在无JavaParser依赖的helper中运行。不要用大仓失败后反复补案例词表来验证位置基础错误。
 
@@ -143,7 +143,7 @@ Luna须测试显式全名、通配import、同名自定义注解、源码组合�
 
 静态导航不能证明“这段Service确实在某次请求运行过”。调用树展示可能涉及的源码和条件；是否执行由原代码条件/运行时决定。调用/控制/数据图均不是动态运行结果。
 
-### Luna RED / Terra GREEN
+### Terra RED / Sol GREEN
 
 以真实录制位置验证Location与LocationLink、empty/error区分；hierarchy已有interface也会询问implementation；两实现都保留；wildcard/static import由LS解析；构造器不误取class正文。所有测试通过后用相同两入口验证真实工具，不把录制fixture通过当作JDT实测。
 
@@ -172,11 +172,11 @@ Luna须测试显式全名、通配import、同名自定义注解、源码组合�
 
 Step05不再重跑JDT或解析器，只归属/保存指向索引的引用；重开后恢复完整视图。Builder无需再查“缺少的Service”——它应在本模块交付物中，或者有准确原因；若有body却没传到模型，是组包错误，不是导航缺口。技术文件去重不意味着给模型发送它无法读取的文件key，实际请求仍含必要完整方法。
 
-已实现的[模型批次解耦](../model-job-execution.md#7-固定材料与独立模型批次已实现)在已保存 M10 之后开始，完全不打开本引擎。模型失败不清空 JDT 缓存或索引、不触发再扫；本页语法/导航失败合同保持不变。新的业务过程发现同样只通过 `FrozenAnalysisCorpus` 读取保存的 Activity、SourceRef 和方法片段；过程 DRAFT 请求关键来源时是打开已有内容，不是重新导航。针对某个 JDT 超时的具名单入口复核是独立操作，其新结果不得就地覆盖旧材料或混入旧来源编号。
+已实现的旧[模型批次解耦](../model-job-execution.md)在已保存M10之后开始；新Activity目标在Step05材料之后开始，两者均不打开本引擎。模型失败不清空 JDT 缓存或索引、不触发再扫；本页语法/导航失败合同保持不变。新的业务过程发现同样只通过 `FrozenAnalysisCorpus` 读取保存的 Activity、SourceRef 和方法片段；过程 DRAFT 请求关键来源时是打开已有内容，不是重新导航。针对某个 JDT 超时的具名单入口复核是独立操作，其新结果不得就地覆盖旧材料或混入旧来源编号。
 
 验收同时读取保存的context和实际模型请求：注册三段Service不能只存在技术索引中。直接业务callee优先完整进入核心包；若所有相关方法不能放进一次请求，按完整方法组合并如实记录未进入该包的方法，不切掉关键条件或假称完整。如何选择可读单元归Builder，不能由Collector按行业词猜哪些方法重要。
 
-### Luna RED / Terra GREEN
+### Terra RED / Sol GREEN
 
 测试重复方法、重复调用位置、循环、多入口共享、interface多候选、构造器、无body边界、部分取消与源码定位；再以真实注册/财务和一个不同结构的fixture验证。禁止为达到expected count人工加入Service路径，禁止把非空body全部压成label后宣称完成。
 
@@ -184,8 +184,8 @@ Step05不再重跑JDT或解析器，只归属/保存指向索引的引用；重�
 
 ## 5. 已验证范围与剩余边界
 
-JDT 第一阶段已经完成：独立 Core helper、构造器/方法引用/循环与多候选的直接测试、LS 导航归一、YAML 配置、生产发现、module 7 索引、Step04 `NOT_PRODUCED`、Step05 context/Capsule、Builder 和 scripted 九章均已接通。固定 jshERP 注册入口自动取得 `validateCaptcha`、`checkLoginName`、`registerUser` Service 正文，财务入口取得 Service 与 Mapper 声明；整仓保存材料随后支撑 326 个 Activity 完成 DRAFT＋REVIEW。自包含 Spring/MyBatis 运行证明正式选择的 JDT 会话可以进入语义链，但当前 340 个单阶段 Process 不能作为业务过程识别验收。
+当前JDT独立Core helper、构造器/方法引用/循环、多候选、LS归一、query缓存、YAML、生产发现和module7 index-v2已实现。旧JDT路线曾经过context/Capsule/M10并生成326个已审Activity；这些是保留的历史结果，不再是新生产接线。
 
-这些验收没有运行客户 Maven、客户应用或产品模型，也没有证明所有多模块依赖、动态代理、反射、生成代码和外部系统效果。工具缺依赖时保留具体 limitation；已保存的正文与调用仍可用于业务解释。
+当前01–05为JDT→可选持久化→CodeReadingMaterialSet。2026-09-18固定仓库取得9,189方法、51,675入口调用，325包/326覆盖，1个definition超时；Step06与Provider未执行。详细版本、耗时与限制见[交付核验](../../supplements/jdt-persistence-reading-materials-delivery.md)。本轮未重跑JDT。
 
-两种工具采用同一 source level 与来源规则，但不要求返回同一数量或精度。JavaParser 第二阶段适配也已经完成，具体能力边界见[接入设计](integration-and-javaparser.md)。后续业务过程发现消费统一的已审 Activity/SourceRef 合同，不能因为更换语义算法而重新打开或修改 JDT 会话。
+本步不证明所有多模块依赖、动态代理、反射、生成代码或外部系统效果。缺依赖保留具体limitation；已保存正文与调用仍可用于业务解释。新Activity的容量/补读/retry由[Activity目标](../activity-explanation/README.md)拥有，不能修改本步语法/导航的超时合同或自动再次collect。JavaParser生产已退役，[历史接入页](integration-and-javaparser.md)只保留严格读取说明。

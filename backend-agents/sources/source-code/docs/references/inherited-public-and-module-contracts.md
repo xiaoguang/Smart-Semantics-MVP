@@ -2,7 +2,7 @@
 
 本文保留唯一 RepositoryAnalysisAgent、现有 request identities、SourceLocator/Excerpt 和 canonical envelope；不恢复旧全链 typed-hop Trace、NineSectionPlan 或强制 validation receipt 前置。来源阅读只需要短 ref 能准确回到冻结文件、行段和片段。
 
-Java工具替换采用[内部JavaCodeEngine Interface](../modules/java-code-engines/contracts-and-configuration.md)，不新增公开Agent方法。YAML工具路径只属于宿主配置；新run保存有效engine/version以避免跨引擎错误复用。Step03/04技术增强可用性按[接入设计](../modules/java-code-engines/integration-and-javaparser.md)处理，不以旧固定图文件集合阻断JDT源码材料。
+Java生产只走JDT，内部JavaCodeEngine Interface和历史精确读取见[引擎合同](../modules/java-code-engines/contracts-and-configuration.md)。工具路径只在宿主配置；不恢复JavaParser、严格图/Fact/Flow生产，不增加公开Agent方法。
 
 ## 1. 唯一公开 Agent 与当前能力
 
@@ -26,11 +26,11 @@ start 创建 path-free QUEUED run；executeStep 按明确意图经已配置内�
 
 Java、CLI、未来 authenticated loopback HTTP 都复用同一 Agent。当前 CLI composition root 从预登记来源及固定配置创建请求，不允许任意 Provider/path 参数进入 analysis core。capture-local-git 是分析前独立维护适配器，路径只用于显式 capture，不是第二分析入口。HTTP、validate/trace 适配不是本轮业务质量验收前置。
 
-已批准的[模型 job 执行配置](../modules/model-job-execution.md#4-单一-yaml-与两级并发)归现有 CLI 组合根：v2 loader/CLI 从同一 `--config` YAML 的 `sourceAnalysis.modelJobs` 读取全局/Provider 并发、路由、模型与认证引用，并已落地有界并行。它不增加公开请求字段或 Path，调整并发不强制重跑 JDT。[模型执行设计第 7 节](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现基础扩展到新-job)的固定材料/独立 model batch、state v3、当前`analysis-run-output-v4`与历史v3读取、跨 batch reader 与 `--reuse-from-model-batch` 已实现；模型模式直接重开 M10，不调用 Builder 或 JDT。
+现有单一YAML、两级并发、固定材料/独立模型批次及显式复用已实现，见[模型执行](../modules/model-job-execution.md)。历史业务批次读取M10，现行新取材state v4/output v5仅READING_MATERIALS_ONLY。新Activity目标repository-run-config-v3、model-job-execution-config-v4与analysis-run-output-v6由[集成合同](../modules/activity-explanation/integration-contracts.md)维护，不增加公共请求字段/Path，不覆盖历史state或因失败重跑JDT。
 
 ## 2. 启动、单步执行与运行引用
 
-[跨对象补充](../supplements/cross-object-process-reconstruction/module-design.md#7-运行接线私有保存和版本)保持公共方法和下列请求合同不变。旧目录/冻结文本引用及可选关注问题属于内部ProcessDiscoveryRequest和私有执行配置；QUEUED run在Provider前绑定且核对选择，不能只通过旧source equality就允许换输入。model-job-execution-config目标v3，历史v2保留严格只读；当前run-output已为v4，历史v3也保留读取。
+旧目录、冻结文本引用和关注问题属于内部ProcessDiscoveryRequest/私有配置，现行Step07 execution-config-v3已实现。新Activity/过程来源目标使用显式materialSource discriminator与完整Step05或历史M10引用；QUEUED run在Provider前固定选择，改变输入另起run。现行run-output-v5仅reading-only，目标v6保留knowledgeCheckpoint/reportCheckpoint字段及双owner；历史v3/v4严格读。详见[集成合同](../modules/activity-explanation/integration-contracts.md)。
 
 以下是已冻结字段，不因 semantic profile 改写：
 
@@ -99,7 +99,7 @@ analysisStepExecutionRequestId = "analysis-step-execution-request:" + lowercaseH
 
 ## 3. 实际输出、过程主读物与简单来源查阅
 
-当前 RenderedDocumentReference 的字段为 runId、reportCheckpoint、documentSha256、sizeBytes；没有 nineSectionPlanId。artifact 的实际 ArtifactView 包含 runId、businessOutputArtifactKey、immutableReference、schemaVersion、mediaType、contentUtf8。查询按闭集业务输出名及 maxBytes 读取，拒绝任意 Path/glob/目录浏览，超容量整体拒绝，不截断。历史`analysis-run-output-v3`引入sourceRunId，当前v4继续区分sourceRunId、activityModelBatchId和输出run：材料、上游Activity及新过程各按自己的owner验证。读写器只接受合同规定的跨运行引用，不得将上游publication伪造为新run地址。
+当前 RenderedDocumentReference 的字段为 runId、reportCheckpoint、documentSha256、sizeBytes；没有 nineSectionPlanId。artifact 的实际 ArtifactView 包含 runId、businessOutputArtifactKey、immutableReference、schemaVersion、mediaType、contentUtf8。查询按闭集业务输出名及 maxBytes 读取，拒绝任意 Path/glob/目录浏览，超容量整体拒绝，不截断。历史analysis-run-output-v3引入sourceRunId；历史业务v4区分sourceRunId、activityModelBatchId和输出run。现行新取材v5只支持READING_MATERIALS_ONLY，目标v6连接新Step05和Activity；材料、上游Activity与新过程各按自己的owner验证。读写器只接受合同规定的跨运行引用，不得将上游publication伪造为新run地址。
 
 当前 Step07 已在同一 run-centric artifact 查询机制内提供语义过程输出：`repository-business-process-catalog.json` 是结构化权威结果，`process-coverage.json` 闭合 Activity/candidate/process 分母，`business-processes.md` 是回答“有哪些业务、每种业务怎样进行”的确定性主读物。46过程属于历史v1，本次选材起点为后续已审24候选目录；旧340 singleton也仅为历史对照。结构闭合仍不能代表生命周期语义通过。
 
@@ -110,7 +110,7 @@ record SourceReference(
     String ref, String file, int startLine, int endLine, String snippet) {}
 ~~~
 
-ref 在 BusinessMaterialSet 内全局唯一，同 ref 只能定位一处；file 为冻结 repository-relative path，行号从 1 开始，snippet 为真实原文。该映射保存在独立source-refs.jsonl；九章正文仅显示短编号，不再附源码折叠区，不新增第十章或完整技术Trace系统。SourceReference本身的基本构造检查不能替代磁盘边界对来源/basis/bytes的验证。来源外置不改变模型已读材料或已审业务JSON。本次Step07在现有映射上新增确定性sources.md，主文档用相对链接/锚点导航；来源链接允许留空，不要求为此补齐、解释或增加专项验收。SourceReference结构不变，不要求回读Activity或重新导航。
+历史ref在所属BusinessMaterialSet内唯一；新Step05 sourceRef属于packet，模型S属于请求，跨包须连同owner映射，同一scope内的ref只定位一处；file 为冻结 repository-relative path，行号从 1 开始，snippet 为真实原文。该映射保存在独立source-refs.jsonl；九章正文仅显示短编号，不再附源码折叠区，不新增第十章或完整技术Trace系统。SourceReference本身的基本构造检查不能替代磁盘边界对来源/basis/bytes的验证。来源外置不改变模型已读材料或已审业务JSON。本次Step07在现有映射上新增确定性sources.md，主文档用相对链接/锚点导航；来源链接允许留空，不要求为此补齐、解释或增加专项验收。SourceReference结构不变，不要求回读Activity或重新导航。
 
 同进程可复用已验证immutable views，磁盘边界验证来源/bytes。内容生成跨批只复用完整已审pair，孤立DRAFT不是产品；新单次选材/阅读decision按独立类型验证完整成功记录，不能伪装成pair。旧目录可作为新任务资料读取。Publisher不重放算法，纯render零Provider。补读来源在Discovery内映射为原SourceReference五字段，不新增证明层。
 
@@ -192,9 +192,9 @@ ModuleReceipt
   gapRefs[]
 ~~~
 
-对已保留的 Step 01–05 技术 Module 和当前既有 artifact，每个模块至少一个 payload + receipt；payload 先固定，receipt 最后计算且排除自身。该规则不要求 Step06–08 的每个内部动作伪装成独立 ModuleArtifact。BusinessMaterialBuilder、ActivityExplainer、BusinessProcessDiscovery 内部阶段与 BusinessProcessPublisher 按总体设计保存少量有意义检查点；`business-processes.md` 由已归并 process catalog 确定性生成。当前只保留历史 `document.md` 的严格读取和确定性重渲染，新的 Step08 生产器尚未实现。
+对已保留的 Step 01–05 技术 Module 和当前既有 artifact，每个模块至少一个 payload + receipt；payload 先固定，receipt 最后计算且排除自身。该规则不要求 Step06–08 的每个内部动作伪装成独立 ModuleArtifact。历史BusinessMaterialBuilder结果只读；新Activity直接读Step05，ActivityExplainer、Discovery与Publisher按总体设计保存有意义检查点；`business-processes.md` 由已归并 process catalog 确定性生成。当前只保留历史 `document.md` 的严格读取和确定性重渲染，本轮不设计新的Step08生产器。
 
-引擎接线沿用这一机制并允许经合同登记的实际 payload 集：Step03 的 `java-code-index` 是 `PROGRAM_GRAPHS` module 7，不是新 step；JDT Step03 为 index 一项、JDT Step04 为 v4 NOT_PRODUCED accounting 一项，分别再由现有 step store 生成 receipt。Receipt 的 `payloadArtifacts[]` 只列实际 semantic payload。所有 exact-set allowlist、artifact policy、reader 与 fixture 必须和[引擎实际集合表](../modules/java-code-engines/contracts-and-configuration.md#51-实际产物集合与现有存储复用)一致；未执行增强不写空文件，已声明 AVAILABLE 的损坏产物仍失败。
+引擎接线沿用这一机制并允许经合同登记的实际 payload 集：Step03 的 `java-code-index` 是 `PROGRAM_GRAPHS` module 7，不是新 step；当前Step03发布JDT index，Step04发布persistence-material-index-v1与其实际XML/SQL材料，Step05发布code-reading-material-set-v1；旧Step04 v4 NOT_PRODUCED accounting只保留精确历史读取。各步骤由现有step store生成receipt。Receipt 的 `payloadArtifacts[]` 只列实际 semantic payload。所有 exact-set allowlist、artifact policy、reader 与 fixture 必须和[引擎实际集合表](../modules/java-code-engines/contracts-and-configuration.md)一致；未执行增强不写空文件，已声明 AVAILABLE 的损坏产物仍失败。
 
 失败不安装 success envelope，只在既有外部 failure area 写：
 

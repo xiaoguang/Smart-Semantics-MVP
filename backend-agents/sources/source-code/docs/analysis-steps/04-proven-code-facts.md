@@ -1,136 +1,84 @@
-# 可选持久化补全：目标入口与历史Fact合同
+# 持久化材料补全
 
-2026-09-18的新生产目标唯一见[补充详细设计§5](../supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md#5-第4步mybatis-官方解析部件与-sql-增强)：可配置MyBatis XML/SQL材料补全，未配置保持Java材料。**下文严格Fact/Proof仅为迁移前实现与历史读取合同；新路径不执行候选枚举、Proof构建或NOT_PRODUCED accounting发布，M1--M3不再允许新安装。** 新模块使用既有第4步存储槽位，不继承旧算法前置。
-
-> 模型批次解耦（已实现）：已保存技术增强继续按原义保留。新模型批次不重新枚举 Fact 或补 Proof；模型调用失败、换并发/Prompt 不使技术事实失效。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)。本次未修改本步骤算法或产物。
-
-> 新目标的引擎接入见[各子模块设计](../modules/java-code-engines/README.md)。当前第4步是可选持久化补全；本页严格Fact能力只用于解释既有历史产物，不是新阅读材料的门禁，也不再要求 `NOT_PRODUCED` accounting、旧 Fact 枚举或 Proof 构建。以下Proof规则只适用于已保存的历史图输入。
-
-> [总体设计](../DESIGN.md)；固定 key：proven-code-facts，目录：steps/04-proven-code-facts/。本步骤保留，运行时模型调用为 0。
+> [总体设计](../DESIGN.md)；固定 key：`proven-code-facts`，目录：`steps/04-proven-code-facts/`。当前 owner 是 `analysis.persistence`。旧 Fact/Proof/accounting 为严格历史读取；新生产只发布可选持久化材料。
 
 ## 1. 为什么存在
 
-五图包含大量有用代码关系，但有些精确技术结论需要更严格的检查。例如“这个调用点唯一绑定到该 Java 方法”，不仅需要看到方法名，还要有准确 call edge、目标声明、源码位置和匹配规则。Step04 把这些**选定模式**构成可验证的 Fact/Proof，供下游直接复用。
+Mapper 方法通常只有 Java 声明，实际查询、条件列和值、关联字段在 XML 中。仅解释 Mapper 名称会遗漏这些业务规则。Step04 关联已导航的声明与同源 XML，保留完整脚本和依赖，并用可选 SQL AST 帮助阅读。
 
-严格 Fact 是增强，不是所有可读信息的容器。当前 FactRegistry 只支持 JAVA_EXACT_CALL、JAVA_BOUNDARY_INVOCATION、JAVA_GUARD_CONDITION。它不会自动把所有变量传递、SQL、异常处理和业务规则都转成 Fact。没有某条 Fact，意味着不能宣称对应 exact 技术证明成立；不意味着安全源码、已知图关系或可读条件必须从业务材料删除。
+例如 `getFinishNumber` 的 XML 汇总 `di.basic_number`，带商品/关联标识、删除过滤与三个动态条件。这里的目标是保存完整条件化脚本；它不是数据库执行结果，也不能独立证明采购或销售的先后。
 
-保留 Step04 的价值在于有选择地提高技术判断可靠性，并避免下游重复证明同一模式。其复杂度应与实际使用的模式相称，不扩展成行业分类器或自然语言逐原子证明系统。
+## 2. 输入与 Interface
 
-新的业务过程发现只把这些 Fact/Proof 当作可选的 `CONFIRMED` 技术依据。没有 Fact 时，模型仍可阅读已保存的完整 Activity 与源码，并把关系标为 `INFERRED` 或 `UNRESOLVED`；程序不得为了填满过程阶段而新增 Fact 模式，也不得要求每条业务句子都先转换成原子 Proof。
+`PersistenceAnalyzer.analyze(PersistenceAnalysisRequest)` 是内部深模块 Interface，返回 `PersistenceMaterialIndex`。请求接收已经读好的 JavaCodeIndex、navigation publication、VerifiedSourceTextSet、Mapper目录线索和有效 PersistenceConfiguration。它不接受当前客户工作目录、Provider 或另一个 Java parser。
 
-## 2. 输入：已建立的五图与明确规则
-
-输入为同源的 VerifiedSourceInventory、ApplicationDiscovery、完整 ProgramGraphs typed views，以及版本化 FactRegistry、ProofRuleRegistry 和预算。五图继续是关系的拥有者；Step04 不重新解析客户仓库补边，不猜调用，不运行客户代码。
-
-以下是**目标阅读投影，不是 wire Schema 或已保存 JSON**：
-
-~~~json
-{
-  "entry": "E1",
-  "subject": "C1",
-  "graphRelationship": "Controller calls Service.getFinancialBillNoByBillId",
-  "selectedPattern": "JAVA_EXACT_CALL",
-  "required": ["call site", "exact target edge", "target method", "source/rule basis"]
-}
-~~~
-
-固定 jshERP 的财务单号查询已有图/Fact 运行证据：Controller→Service 与 Service→Mapper 对应两条 JAVA_EXACT_CALL，Mapper 调用另有一条 JAVA_BOUNDARY_INVOCATION。这个计数只针对该入口，不代表全链业务语义已证明，也不证明 SQL 实际执行。
-
-## 3. 历史处理：枚举一次，证明一次，保存结果
-
-| 模块 | 输入 → 处理 → 输出 |
+| 输入 | 作用 |
 | --- | --- |
-| FactCandidateEnumerator | 从五图按 registry 匹配技术模式；固定 candidate/required atom 分母，产出 FactCandidateSet |
-| AtomicProofBuilder | 对每个 candidate 检查其精确 subject、edge、source/rule closure；产出 ProofDecisionSet |
-| FactLedgerPublicationSpecifier | 从已完成结果序列化事实、证明、Gap 和守恒账，安装步骤产物 |
+| Step03 Mapper 声明/候选 | FQN、methodKey、签名、形参和注解；不猜继承/重载 |
+| 已验证同源 XML | 唯一字节来源；跨文件依赖只能在该 inventory 内读取 |
+| Step02 Mapper 目录 | namespace/id/kind 候选；重复资源和 databaseId 不覆盖 |
+| 可选插件配置 | 缺省或 plugins=[] 返回明确 DISABLED；不加载 MyBatis/JSqlParser |
 
-每个 template-subject-entry 组合只有一条适用或不适用处置。共享 callsite 按实际 owningEntryIds 逐入口记录，不做入口×全仓调用的笛卡尔积。候选分母在证明前固定，失败项不能消失；枚举结果也不由后面的 Proof 成败反向改变。
+Step02 与本步同运行复用来源匹配的只读 `MapperXmlResourceView`；include 变换只能操作副本。不同来源不可共享 DOM；没有全局缓存服务。
 
-同进程传不可变已验证输入及结果，阶段产物仍保存。publisher 不重新 enumerate/prove；PersistedFactCandidateSetReader 跨磁盘边界只检查身份、schema、refs、basis 和保存分母。显式独立审计/mutation test 才可重新枚举并比较。当前 reader 再次枚举的实现应按此收敛。
+## 3. MyBatis Adapter 的具体步骤
 
-## 4. 严格技术合同
+1. 检查是否启用。DISABLED 只保存 HEADER，tools/resources/statements/bindings/sqlAnalyses/diagnostics均为空，Java材料仍可继续。
+2. 安全 JAXP DOM读取已冻结 XML，使用 MyBatis 3.5.19 的 XPathParser/XNode读取 namespace、statement、sql片段、resultMap等。
+3. 将 JDT 已提供声明按 namespace + statement id 关联。一个调用的多个Java候选、同namespace多个资源与databaseId变体逐项保留；不存在的唯一运行时实现不补出来。
+4. 保留有序 Java 实参/形参与 `@Param`、XML placeholder paths；别名不足或动态属性含义不明时记录限制，不执行客户反射或对象求值。
+5. 保存完整 statement XmlNode，按顺序保留 ELEMENT/TEXT/CDATA/COMMENT、属性和动态标签；建立 include/resultMap/selectKey 与跨文件依赖。
+6. 使用官方 XMLIncludeTransformer 对可确定的静态 include 工作副本作展开；动态引用、循环或缺片段保留未解析原因，不复制框架运行语义。
+7. 在分析副本上调用 JSqlParser 5.3，导出可解析结构与限制。一次发布保存结果；下游重开不再次解析。
 
-迁移前这三个模块位于 analysis.fact.candidates、analysis.fact.proofs、analysis.fact.publish。相应 producer 已从新运行移除，历史 reader 仍按原 wire 读取；不能为新持久化材料重建 `FactCandidateEnumerator`、`AtomicProofBuilder` 或旧 publisher seam。
+不调用客户 XMLMapperBuilder 全配置启动、getBoundSql、OGNL、自定义 LanguageDriver、数据库或客户应用。安全策略接受标准 Mapper DOCTYPE，同时禁用外部DTD、实体、schema、XInclude和网络读取。
 
-### 4.1 当前三种模式
+## 4. XML 与 SQL 保存什么
 
-| Fact | 必需内容 | 不证明什么 |
-| --- | --- | --- |
-| JAVA_EXACT_CALL | INVOCATION_CALL_ID、STATIC_TARGET_TYPE、STATIC_TARGET_METHOD、STATIC_TARGET_SIGNATURE；call site/EXACT CALL_TARGET/目标 METHOD 及对应 source/rule basis | callee 一定有 body、调用成功、业务顺序、外部效果 |
-| JAVA_BOUNDARY_INVOCATION | INVOCATION_CALL_ID、STATIC_TARGET_TYPE、STATIC_TARGET_METHOD、STATIC_TARGET_SIGNATURE、ORDERED_ARGUMENTS、JAVA_LOCAL_ORIGINS、CONTROL_CONTEXT、INVOCATION_EVIDENCE | SQL 成功、数据库写入、消息送达或其他实际外部效果 |
-| JAVA_GUARD_CONDITION | CONTROL_CONDITION；自身 GUARD、相关 TRUE/FALSE edge、normalizedCondition 和自身 source/rule pair | 运行时一定走哪条分支、未分析分支内容、业务制度 |
-
-JAVA_EXACT_CALL 按 `entryId + "|" + callTargetEdgeId + "|JAVA_EXACT_CALL"` 区分候选。target 必须是同一 CodeStructure publication 的 METHOD；canonical signature 的 type、method、parameter types 按精确声明读取，不能用 simple name 替代。其四个 atoms 仍需对应 call site、target edge、target METHOD 的合法 rule pair，不借 boundary 的相似字段补 Proof。
-
-boundary 的 ordered arguments 按 ordinal 对齐 ARGUMENT_TO_BOUNDARY edges 与 Java-local origins；control block/guard 的 owner 必须包含同一 entry。boundary 与 exact call 可以同时存在，它们证明的范围不同。下游按同一 callsite 对齐展示，不删除其中一类 candidate 来伪造去重。
-
-CONTROL_CONTEXT 不是 CONTROL_CONDITION。严格条件 Fact 仍必须来自 guard 自身已支持的 normalized condition 与 rule，不从附近字符串、另一个 Fact 的 Evidence 或数据边临时构造。没有这个 Fact 时，Step05 可以保存独立 graph/source condition context，但不能给它伪造 conditionAtomId 或 CLOSED Proof。
-
-### 4.2 Proof admission 保持全有或全无
-
-一个 admitted Fact 的每个 required atom 都必须有 CLOSED Proof。Proof 同时验证准确来源 bytes、图 endpoints/edge 和允许的规则链；hash 只证明完整性，locator 只定位，模型同意只是一种解释，都不能替代 Proof。
-
-任一 required atom 不闭合，整条 composite Fact 不准入。直接失败 atom 保留根因，其余 sibling 记录 COMPOSITE_FACT_REJECTED；不能留下可被误当成独立已准入事实的 partial atoms。候选、拒绝及外部效果 Gap 仍保存。
-
-每个 boundary candidate 保留独立外部效果 Gap，admitted invocation 也不关闭它。静态 Mapper XML 可被定位阅读，但不能直接成为 Java boundary 的效果证明。未知规则不能当作未来自动兼容规则。冲突的 admitted Fact、伪 CLOSED、断 reference 或来源漂移都 fatal。
-
-### 4.3 来源、身份与分母
-
-SourceExcerptV1 保留 SourceLocatorV1、原文 rawUtf8 和原文摘要；切片必须逐字节对应已验证快照，UTF-8 code-point 边界及行列坐标一致，不 trim、不 normalize、不搜索附近替代位置。完整定位合同见 [公共接口与源码位置](../references/inherited-public-and-module-contracts.md#4-唯一源码位置合同)。
-
-身份按无环依赖计算：图元素已固定；atom 绑定 snapshot、候选、entry、subject、role/name/value；fact 绑定 kind/subject/atoms；proof 绑定 fact/atom、精确 Evidence/edge closure 和 rule IDs；最终 set/accounting 身份在后。原有 canonical 公式和已发布 wire 不因本文简化而改名或重新解释。
-
-当前 v3 在 boundary/guard 基础上包含 exact call，守恒必须同时包括三类：
-
-~~~text
-candidateFactCount = admittedFactCount + rejectedFactCount
-candidateAtomCount = admittedAtomDispositionCount + rejectedAtomCount
-provenFactAtomCount = admittedAtomDispositionCount
-candidateDenominatorKeys = disjointUnion(boundaryKeys, guardKeys, exactCallKeys)
-externalEffectGapCount = count(boundaryKeys)
-~~~
-
-相同 count 不替代 ID 集守恒。Atom value 只使用 STRING、INTEGER、DECIMAL、BOOLEAN、SYMBOL_REF 或 ENUM_REF，业务 prose 不进入 atom。此处是合同解释，不修改当前 JSON Schema 文件或创建新的 wire 版本。
-
-## 5. 输出与下一消费者
-
-| 文件 | 内容与用途 |
+| 记录 | 精确职责 |
 | --- | --- |
-| proven-facts.json | codeFacts、Fact dispositions；05/06 按已有 ID 引用技术增强 |
-| proof-pack.json | atom Proof、dispositions、root causes；完整技术依据留在程序侧 |
-| gap-ledger.json | 不支持、未闭合及外部效果限制；下游保留限制范围 |
-| fact-accounting.json | 三类 candidate/atoms 的 ID 集与计数守恒 |
-| proven-code-facts-receipt.json | 保存上游身份、controls 与 artifact descriptors |
+| Resource | resourcePath、namespace、rawSource、dependencyResourcePaths；每文件原文一份 |
+| Statement | statementRef、resourceRef、namespace/id/kind/databaseId、完整 xmlSubtree、dependencyRefs |
+| JavaBinding | 已有 methodKey、签名、candidateNature、有序参数、statement变体与limitations |
+| SqlAnalysis | statementRef、analysisCopy、transformations、分层ast、PARSED/PARTIAL/UNSUPPORTED及reason |
+| Diagnostic | code、subjectRef、detail；不写业务判断 |
 
-上表的四个语义文件是技术图增强 AVAILABLE 时的严格路线。JDT 第一阶段未生产五图时，合法 actual set 精确为 `fact-accounting.json + proven-code-facts-receipt.json`：accounting 使用 `proven-code-facts-fact-accounting-v4`，`availability=NOT_PRODUCED`、`reason` 非空，保留 Step03 navigation/index basis，所有数值 count 为 `null`，且没有 Candidate/Fact/Proof 引用。publisher、step exact-set allowlist、artifact policy、直接 reader 与 fixture 必须同步该实际集合；不得写其余三个空文件，也不得调用候选枚举器。
+XmlNode 是从安全 DOM 保存的结构化投影，不是逐字 XML 引用。没有可靠块行号时，来源继续指向冻结 XML 整文件；不得通过新 tokenizer 虚构精确位置。Step06 可以从保存的 XmlNode 生成完整 statement 阅读投影并标为结构化投影，技术 Resource 原件不变。
 
-上述 JDT actual set 是迁移前 JDT-only 路线的历史发布合同。当前第4步改为持久化材料索引；历史 v4 accounting/receipt 仍可读取，但不再为新运行安装，也不调用旧 `FactCandidateEnumerator`。
+SQL增强按如下规则保真：
 
-以下是**目标阅读投影**：
+- 静态完整语句把 `#{...}` 仅在分析副本映射为参数；原 token 与变换说明保留。
+- 动态 if/choose/foreach/trim 等完整XML始终保留；可独立解析的语句/表达式分别调用官方 parser。
+- 分析骨架明确标注“无可选块”，不能当唯一实际SQL；不穷举组合或将互斥分支无条件拼接。
+- 保留 SELECT/写入、聚合、JOIN/ON、WHERE、子查询、列/值及赋值层级；不把 ON 移到 WHERE，不把结构扁平为表名清单。
+- 动态表/列、方言或不完整片段失败时保存 PARTIAL/UNSUPPORTED，仍可读完整脚本。
+- `insertSelective` 的条件列和值两处都在完整statement内；投影与分包不得只留下其中一侧。
 
-~~~json
-{
-  "entry": "E1",
-  "facts": [
-    {"id": "F1", "kind": "JAVA_EXACT_CALL", "subject": "Controller → Service"},
-    {"id": "F2", "kind": "JAVA_EXACT_CALL", "subject": "Service → Mapper"},
-    {"id": "F3", "kind": "JAVA_BOUNDARY_INVOCATION", "subject": "Mapper(billId)"}
-  ],
-  "limitation": "External execution remains unknown",
-  "nextConsumer": "Step05 keeps graph argument/return/control links and attaches these facts"
-}
-~~~
+工具复用的已测范围与局限见[实验报告](../supplements/persistence-tool-feasibility-result.md)。
 
-Step05 用五图组织执行上下文，Facts 有则附着，无则保留 graph/source 依据及缺口。不能把 Fact ledger 当成所有可读内容的过滤器，也不能在 Step05 重新发明 Fact kind。Step06 模型不接收整份 ProofPack，而读程序制作的连贯技术观察和来源片段。
+## 5. 发布和下一消费者
 
-## 6. 失败、预算与复用
+当前地址为 Step04 module4 `persistence-analysis`；语义文件 `persistence-material-index.jsonl`，schema `persistence-material-index-v1`，artifact `PERSISTENCE_MATERIAL_INDEX`。沿用既有 AnalysisStepPublicationReference、canonical store、receipt与原子发布。
 
-严格 Proof 不闭合是 candidate rejection/Gap；已知限制不自动阻断其他安全材料的阅读。候选/atom/Proof nodes/edges、rule applications、源码读取量和输出 bytes 都有预算；超限不缩小分母。
+Step05按 Java 调用关联引用选取资源、语句、绑定和SQL结构，不自行推断表用途。Step06模型才能结合 Java 条件与XML解释数量/写入口径；不能把 AST PARSED 等同业务已经确认。
 
-来源/hash/schema/ref 冲突、断 Proof、重复身份、冲突事实、accounting 不守恒与安装失败必须停止。显式复用只接受同一实际来源/图/profile/basis，边界完整性验证不能省略；普通可信进程不反复重开全图或运行枚举器。失败保留已完成上游步骤。
+旧 `proven-facts.json`、`proof-pack.json`、`gap-ledger.json`、`fact-accounting.json` 及原receipt仅按历史合同重开，既有 CLOSED Proof 含义不变。不新安装空accounting，也不把它们作为新材料准入门槛。
 
-## 7. 当前成熟度和后续验证
+## 6. 失败、复用与测试
 
-FactRegistry、候选枚举、AtomicProofBuilder、模块保存及三类 v3 技术 Fact 已有实现。固定完整 jshERP 719 文件及图/Fact 运行已有离线保存证据；不能继续写“当前只有 package 骨架”或“完整捕获尚未实现”。财务小例的 2 exact call + 1 boundary 是已核对事实，其图/Fact run 没有 Step05 正式 publication，也没有证明整仓业务报告质量。
+| 情况 | 处置 |
+| --- | --- |
+| 未启用/项目无MyBatis/无Mapper | DISABLED或合法空材料；不影响Java读取 |
+| 多资源、缺include、未知参数别名、SQL不支持 | 保存候选/原文/具体限制，不假定完整 |
+| 单XML非法或不安全 | 拒绝该资源解析并保存原因，不换不安全parser |
+| 不能落实安全配置 | XML_SECURITY_POLICY_UNENFORCEABLE，停止运行 |
+| 冻结字节损坏、越界、来源冲突 | 失败关闭；不按普通解析限制忽略 |
+| 保存重开 | 验schema/身份/引用/原文，返回完整不可变索引；零解析/模型/数据库 |
 
-JDT `NOT_PRODUCED` 路线已经在 publisher、reader、artifact policy、Step05 和正式运行链中验收：普通运行不会调用旧 Fact 枚举器，安全源码上下文仍可进入 05/06。严格图增强路线继续保留原有 exact Fact 与 Proof mutation tests；JavaParser 第二阶段只恢复既有能力，不改变这些 Fact 的含义。
+直接测试覆盖：插件关闭零工具、@Param与多参数、重复namespace/databaseId、跨文件include/resultMap继承、动态条件/列值保持、静态与部分SQL、标准DOCTYPE安全拒绝、保存重开和缺依赖保留。不同领域fixture不得要求修改Java词表。只跑直接覆盖测试。
+
+## 7. 当前成熟度
+
+实现与保存/重开已完成。固定仓库启用结果为61份XML、573条语句、572条Java绑定、573份SQL分析，其中187 PARSED、162 PARTIAL、224 UNSUPPORTED；同一索引关闭插件时所有明细为0且没有再次JDT。来源为[2026-09-18交付核验](../supplements/jdt-persistence-reading-materials-delivery.md)。
+
+本轮只整合设计，不重做工具实验。XML/SQL已能供阅读并不证明新Activity已消费它们；该接线和模型阅读效果属于[Step06目标](06-flow-interpretation.md)。

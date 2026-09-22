@@ -1,6 +1,6 @@
 # RepositoryProcessConsolidator
 
-本次[系统认识与三阶段成稿设计](../../supplements/cross-object-process-reconstruction/business-reasoning-and-writing.md)只进行三个样本预览，不调用本模块。后续全仓获准时，输入必须是最终RULE_REVIEW后的完整过程；归并不改写已核对正文，也不追加写作调用。本模块自己的DRAFT/REVIEW两轮及无损归并算法保持。
+历史三例只进行了选定样本流程，没有调用本模块；本轮新Activity接入仅做文档设计。后续全仓获准时，输入必须是最终RULE_REVIEW后的完整过程；归并不改写已核对正文，也不追加写作调用。本模块自己的DRAFT/REVIEW两轮及无损归并算法保持。
 
 ## 为什么存在
 
@@ -34,10 +34,10 @@ MERGE_INTO先按(activityId, variant, role)映射用法，满足现有完整阶�
 
 ## 输出与下游
 
-唯一RepositoryBusinessProcessCatalog连同coverage和完整来源组成封闭ProcessDiscoveryResult。Publisher只渲染；未来Step08也只能概览，不能重排业务顺序。
+唯一RepositoryBusinessProcessCatalog连同coverage和完整来源组成封闭ProcessDiscoveryResult。Publisher确定性渲染；Step08只保留历史读取/查询/重渲染，没有新生成目标。
 
 ## 测试与当前状态
 
-归并、完整内容保留、局部编号映射和不满足无损条件时KEEP均已实现。本轮只消费[新阅读重建结果](../../supplements/cross-object-process-reconstruction/README.md)，不扩建归并算法。必要新source refs在归并/最终result前统一映射，业务完整视图不丢条件。
+归并、完整内容保留、局部编号映射和不满足无损条件时KEEP均已实现。后续继续消费完整最终RULE_REVIEW结果，本次不扩建归并算法。必要新source refs在归并/最终result前统一映射，业务完整视图不丢条件。
 
-Luna RED重点覆盖“同Activity不同variant不丢”“规则条件不同不去重”“正文保存重开一致”“无法无损合并则不制造顺序”。Terra不得通过中文相似度或行业规则代替模型裁决。真实验收比较候选REVIEW与最终正文，确认归并没把具体业务改回抽象标题。
+后续Terra/xhigh测试重点覆盖“同Activity不同variant不丢”“规则条件不同不去重”“正文保存重开一致”“无法无损合并则不制造顺序”。Sol/xhigh实现不得通过中文相似度或行业规则代替模型裁决。真实验收比较候选REVIEW与最终正文，确认归并没把具体业务改回抽象标题。

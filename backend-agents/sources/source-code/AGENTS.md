@@ -2,9 +2,9 @@
 
 ## Scope and target identity
 
-- This directory owns only the Java/Maven frozen-source-to-business-process-
-  catalog-and-nine-section Agent, its tests, fixtures, design, CLI, Java
-  Interface, and future authenticated loopback HTTP adapter.
+- This directory owns the Java/Maven frozen-source-to-business-process Agent,
+  its tests, fixtures, design, CLI and Java Interface. Step08 preserves only
+  historical reading/query/rendering; new report generation is outside scope.
 - The target directory is backend-agents/sources/source-code/, the Maven
   coordinate is org.sourceanalysis:source-code-analysis-agent, the display
   name is Source Code Analysis Agent, and the Java root is
@@ -70,24 +70,17 @@
 
 ## Authoritative target design
 
-- The 2026-09-17 approved Step01–05 redesign is documented in
-  docs/supplements/cross-object-process-reconstruction/jdt-persistence-reading-materials.md.
-  It supersedes the older production requirements to retain JavaParser,
-  graph/Fact/Proof producers and Flow/Capsule/M10 material packaging. Those
-  algorithms are retired from new production; retain only their strict
-  historical configuration decoding, receipt reopening, and wire contracts.
-  Keep JDT navigation/Core/caching and strict historical reads; never rewrite
-  the saved 326 Activities or model outputs. The target introduces internal
-  analysis.persistence and analysis.material modules, not new analysis steps.
-- Implementation is authorized by
-  docs/plans/jdt-persistence-reading-materials-implementation-plan.md. Its
-  acceptance sequence is A: official MyBatis/JSqlParser tool experiment;
-  B: full integration only after A passes; C: verify steps 01–05 and stop.
-  Do not execute Step06 or later, initialize a Provider or regenerate Activity.
-  New material consumption by Step06 is explicitly not designed yet.
-  Record earlier unresolved implementation issues in
-  docs/supplements/implementation-lessons-and-followups.md; do not fix them
-  or rerun business models under this upstream scope. Preserve more-findings.md.
+- Main design and owning analysis-step/Module documents define active contracts.
+  Step01–05 JDT-only navigation, optional persistence enrichment and Step05
+  reading materials are implemented. JavaParser, strict graph/Fact/Proof and
+  Flow/Capsule/M10 producers are retired; exact historical readers remain.
+- New Step05-to-Activity consumption is detailed design, not implementation.
+  Step06 and docs/modules/activity-explanation/ own projection, complete reading,
+  model-selected semantic slices, DRAFT/complete REVIEW and source/coverage.
+  Current new material execution stops at READING_MATERIALS_ONLY.
+- This documentation task authorizes no code/test/config edit, build, JDT,
+  Provider initialization, product generation, commit or push. Preserve all
+  326 Activities, raw model results and more-findings.md.
 - docs/DESIGN.md is the target architecture. Current code, schemas, tests and
   historical artifacts may validate or falsify it but never silently weaken
   it.
@@ -125,19 +118,12 @@
   split, ActivityUse/process contracts and deterministic process publication.
   Its target/current labels are mandatory: none of its unimplemented target
   outputs may be described as already delivered.
-- docs/supplements/cross-object-process-reconstruction/ owns the implemented
-  reading delta and the approved system-assessment/focused-selection target.
-  business-reasoning-and-writing.md now owns candidate-only factual DRAFT ->
-  WRITE -> final RULE_REVIEW. This three-stage target is not yet production
-  implementation; implementation-status.md separates existing code and remaining
-  changes. Current acceptance is limited to three explicitly selected examples;
-  do not resume whole-repository generation after samples without discussion.
-  It replaces candidate-member-only M10
-  access and DRAFT-before-full-source with old-catalog input reuse, global
-  material selection, one model reading check per candidate, optional actual
-  supplemental reads, and a complete packet before process DRAFT. Preserve
-  more-findings.md. Documentation edits do not authorize implementation or
-  product calls, and never authorize regenerating saved Activities.
+- Step07 and docs/modules/business-process-discovery/ own implemented system
+  assessment, focused reading, DRAFT -> WRITE -> final RULE_REVIEW, private
+  three-stage saving and producer v4 publication. Active supplements are
+  navigation/history, not a second contract owner. Historical three-case
+  quality did not fully pass; readability is distinct from factual correctness
+  and whole-repository acceptance. Do not regenerate saved Activities.
 
 ## Migration baseline: previously selectable Java code engines
 
@@ -228,22 +214,19 @@ or strict graph/Fact/Flow producers.
   RepositoryProcessConsolidator internals. Publication owns the deterministic
   repository process catalog, coverage and business-processes.md. Do not expose
   those internals as new public Agent methods.
-- Step 08 has no current production generator. Its future design allows exactly
-  one business Module consuming the consolidated process catalog, never raw
-  Activities or the retired singleton-process output. Preserve the historical
-  report reader and deterministic renderer without reviving the old producer.
+- Step08 has no production generator or new generation objective. Preserve
+  historical reader, artifact query and deterministic renderer.
 - These are internal Modules behind the sole RepositoryAnalysisAgent public
   Interface. Do not create a second POC namespace, parallel runtime, public
   Interface, compatibility alias or dual writer.
 
 ## Program and model responsibilities
 
-- Critical architecture/design uses gpt-5.6-sol / ultra or gpt-6-astra /
-  ultra. Production implementation uses gpt-5.6-terra / xhigh after design and
-  RED. TDD test writing, bounded source reading and review use gpt-5.6-luna /
-  xhigh. Product activity/process/report DRAFT and REVIEW default to configured
-  Codex Pro gpt-5.6-luna / high; explicit other Provider/model services follow
-  the approved model-job design. One job keeps one binding for both rounds.
+- Current user-selected roles: design/debugging gpt-6-astra / ultra; test
+  writing gpt-5.6-terra / xhigh; production code gpt-5.6-sol / xhigh.
+  Product business generation defaults to gpt-5.6-terra / xhigh in the logged-in
+  ChatGPT Codex context. This does not change historical runtime identity or
+  authorize a YAML edit in a documentation-only task. One job keeps its binding.
 - Automated tests use frozen fixtures and a deterministic scripted Provider.
   They never invoke a live model, network source, API key or customer build.
 - Live product tasks need current explicit authorization, one frozen input
@@ -264,9 +247,8 @@ or strict graph/Fact/Flow producers.
   repository-catalog discovery over compact Activity cards, then reconstructs
   overlapping candidate processes in parallel from complete selected
   Activities and requested saved source excerpts, then runs one bounded
-  repository consolidation. A future whole-nine-chapter report job may follow
-  the published catalog; deterministic process rendering and historical report rendering remain
-  zero-Provider. Shared Activities are immutable and membership is many-to-many.
+  repository consolidation. Process rendering and historical report rendering
+  remain zero-Provider; no new nine-chapter job is in scope. Shared Activities are immutable and membership is many-to-many.
 - System type/business hypotheses belong in the existing global selection
   model call, after reading saved repository descriptions and all navigation.
   No fixed ERP/CRM/WMS classifier or industry routing is allowed. Business
@@ -280,7 +262,7 @@ or strict graph/Fact/Flow producers.
   Java retrieves, never decides semantic sufficiency. Remaining gaps stay
   explicit; no third selection, automatic repair or Activity regeneration.
 - Configure only global and each Provider/account service maxConcurrentJobs
-  in the single YAML owner; defaults are global 4 and Pro Luna/high 4. These
+  in the single YAML owner; the current model default is Terra/xhigh; exact limits belong to YAML. These
   are in-flight job limits, not maxMaterialsToStart, Builder K or actual N.
   Eligible queued jobs are not skipped when a concurrency slot is unavailable.
   Multiple keys or fresh sessions sharing an account/project do not create
@@ -290,10 +272,12 @@ or strict graph/Fact/Flow producers.
   optional persistence material, never reparses or re-navigates, and records a
   collected entry or a specific not-collected reason. Historical context and
   Capsule contracts remain readers only.
-- Historical BusinessMaterialBuilder only packages M10 contexts. New Step05
-  selects complete in-budget units and maps SourceRefs directly; neither route
-  independently reconstructs a direct callee from source text. Java does not use an
-  industry dictionary to assign purpose, actor, action, outcome or process.
+- Historical M10 material is strict read-only. New Activity projection directly
+  consumes saved Step05; identical full bodies may be deduplicated, with all
+  calls, candidates, arguments, control/returns and packet-local sources kept.
+  Safe XML structure projection of saved Resource.rawSource is allowed; do not
+  rerun JDT, PersistenceAnalyzer or JSqlParser. Java never uses an industry
+  dictionary to assign business purpose, actor, outcome or process.
 - ActivityExplainer reads a complete local activity package and REVIEW sees
   the complete actual DRAFT. Preserve full reviewed conditions, rules, formulas
   and narrative through process knowledge and final report, not only labels.
@@ -302,17 +286,18 @@ or strict graph/Fact/Flow producers.
   material to global entry IDs. Never hard-code four entries, compare by
   prefixes/substrings, or join bare `E1` across packages. Configuration `K`
   limits Builder packaging but is not the repository entry count.
-- Before an Activity Provider starts, the effective profile must be able to
-  express `N` independent activities, every activity must be able to reference
-  any subset of `E1...EN`, and the complete DRAFT plus REVIEW envelope must fit
-  the real serialized input/output budgets. ActivityExplainer does not split
-  or truncate an already-built material; incompatible material receives a
-  concrete zero-request coverage reason.
+- Historical M10 capacity contracts stay exact on reopen. New Step05 small
+  packages use complete DRAFT/REVIEW; large packages use complete paged navigation
+  and bounded model reading to select full semantic slices, each with its own
+  DRAFT/complete REVIEW. No fixed-line chunks, lossy summaries or oversized
+  whole-package merge/review. Keep partial slice scope explicit: one successful
+  slice must not mark its whole entry fully explained.
 - A structurally and scope-valid Activity DRAFT may omit entry keys. It still
   enters the one allowed REVIEW with the complete actual DRAFT and
   program-computed `missingEntryKeys`. Invalid JSON, unknown keys/refs, output
-  budget violations, or a failed started request remain fatal and never enter
-  a repair path.
+  budget violations follow the task's exact failure contract. Historical Activity
+  and Step07 behavior stays unchanged; new Activity bounded stage attempts
+  belong only to the model-job-execution and Activity Module contracts.
 - The Activity REVIEW output has a required, possibly empty,
   `unexplainedEntries` key array. Reviewed activity keys union unexplained keys
   must equal the material keys and be disjoint; any remaining omission is
@@ -320,7 +305,7 @@ or strict graph/Fact/Flow producers.
   `MODEL_NOT_EXPLAINED`, not a source/Proof Gap. Process/report model input
   groups them by material as `{materialContext, unexplainedEntryKeys,
   reasonCode}`, sends the context once, and keeps global IDs program-side.
-  Chapter 9 names the corresponding HTTP entries and reason category.
+  Current consumers retain the HTTP entries and reason; historical report content stays immutable.
 - `PARTIAL` and `INCOMPLETE` in this semantic design are document-quality and
   acceptance conclusions, not new runtime/report enums. Closing a coverage
   set with unexplained entries cannot pass complete business acceptance.
@@ -331,7 +316,7 @@ or strict graph/Fact/Flow producers.
 - ProcessMaterialAssembler validates candidate Activity IDs, reloads complete
   reviewed records once per distinct Activity, preserves each variant use,
   exposes statement handles and executes requests within the same frozen corpus.
-  Target reading may include any saved Activity, M10 excerpt and verified text;
+  Reading may include any saved Activity, its exact M10 or new Step05 source, and verified text; new Step05 source selection is target-only;
   new excerpts need no old Activity owner or new Proof. Inject the existing
   VerifiedSourceTextReader, not a live checkout reader. Do not add
   JavaCodeIndex/MethodKey navigation or reparse for reading. It never
@@ -351,26 +336,28 @@ or strict graph/Fact/Flow producers.
   after use-ID normalization may MERGE_INTO; differing sequences stay separate
   with relationships rather than being concatenated into a false lifecycle.
   BusinessProcessPublisher deterministically renders the closed result.
-- Any future Step08 publisher consumes only that consolidated catalog, lets the
-  model author and review the fixed nine-chapter presentation, and cannot
-  discover, merge, split or reorder processes. Java supplies Markdown styling.
-- Each Activity, initial catalog and repository summary uses at most its
-  existing DRAFT/REVIEW pair; the approved candidate-process target uses exactly
-  the three named stages, not an automatic repair loop. A new candidate private
+- Step08 remains historical read/query/render only. Future generation needs
+  its own scope/design; do not preserve a second active generation protocol.
+- Historical Activity, initial catalog and repository summary keep their exact
+  DRAFT/REVIEW protocol; current candidate processes use three named stages.
+  New Activity stage retries are the sole designed exception and do not
+  extend Step07 into an automatic repair loop. A new candidate private
   record must save all three; an old pair is not a completed three-stage job.
   Check actual context at each stage. Initial capacity failure means zero requests plus a
   concrete uncovered reason. Once a request starts, transport/schema/runtime
   failure is fatal for that execution: stop new job dispatch; already-started
   jobs whose own preceding stages are valid finish their remaining authorized stages under existing
-  timeouts and preserve outputs. Collect terminal outcomes, then fail without
-  downstream success. Never automatically retry, switch Provider, fall back to
+  timeouts and preserve outputs. This remains Step07's failure policy.
+  New Activity jobs isolate package-local failures and continue other jobs;
+  unsafe shared source/config/auth stops its affected scope. All stage attempts
+  are saved; partial Activity cannot auto-enter Step07. Never switch Provider or fall back to
   an API key, replay an old request or synthesize success. An explicitly started
   new model batch may execute incomplete jobs under section 7; old STARTED and
   FAILED records remain immutable. Provider request journals are scoped by
   modelBatchId so a new explicit batch cannot be blocked by an older batch's
   uncertain STARTED request; completed job reuse still uses the validated job
   result and fingerprint. A new batch is not an automatic retry loop.
-- `maxMaterialsToStart` is the explicit per-execution ActivityExplainer launch
+- Historical M10 `maxMaterialsToStart` is the explicit per-execution ActivityExplainer launch
   cap. Use the dedicated `FLOW_INTERPRETATION` materials-only target for
   zero-Provider planning; a final-document run requires a positive cap. A cap
   of one supports one-package quality checks before a wider run; packages
@@ -393,10 +380,10 @@ or strict graph/Fact/Flow producers.
   Step04 produces persistence materials, not new Proofs.
   Business semantics do not require one Proof/owner/accounting record per
   natural-language atom.
-- The minimum business source is a program-created short SourceRef that maps
-  to one frozen repository-relative file, exact line range and snippet.
-  Within one BusinessMaterialSet a ref is globally unique: the same ref points
-  to exactly one location and repeated use of the same snippet reuses the ref.
+- SourceRef maps frozen file, exact saved range and snippet. Historical M10
+  refs use their stored scope; Step05 source refs are packet-local and model S
+  refs request-local. Resolve material/packet/request ownership before
+  normalization; bare S1 or source:1 is never a cross-package join key.
 - Model packets contain only allowlisted short refs, necessary snippets,
   technical observations and limitations. They do not contain source paths,
   line numbers, hashes, full Proof/Evidence chains, run/artifact/publication
@@ -458,7 +445,7 @@ or strict graph/Fact/Flow producers.
   unrestricted routes. A future full-repository rerun may reconfirm the total
   denominator, but this rule is not pending implementation.
 
-## Coverage, grouping and the nine chapters
+## Coverage, grouping and historical nine chapters
 
 - FlowSlice is an entry-rooted technical slice, not a smallest business
   process. Flow, activity and BusinessProcess are many-to-many. A missing Flow
@@ -530,18 +517,17 @@ or strict graph/Fact/Flow producers.
   or synthesizes business content.
   It may not silently compress away conditions, rules, formulas or unresolved
   scope and then claim completion.
-- Zero entries or all entries not analyzed may yield a nine-chapter scope
-  report, but semantic delivery remains INCOMPLETE.
-- The final Markdown has exactly the shared NineSectionProfile H2 sections:
+- Historical zero-entry or unprocessed-entry reports remain INCOMPLETE; this
+  does not authorize new report generation.
+- Historical Markdown has exactly the shared NineSectionProfile H2 sections:
   文档说明、业务目标、业务对象、业务活动、字段与维度、对象关系、指标口径、
   示例问题、待确认事项.
 - `business-processes.md` is the primary readable artifact answering which
-  business processes exist and how each proceeds. The nine-section document is
-  a downstream repository view; it cannot repair a missing process by reading
-  raw Activities or rediscovering relationships.
-- Chapter 7 uses only formulas/definitions present in reviewed input. With none,
+  business processes exist and how each proceeds. Historical nine-section
+  documents remain readable; this task defines no new downstream generator.
+- Historical Chapter 7 uses only formulas/definitions present in reviewed input. With none,
   it explicitly says no definable metric was identified. Natural-language
-  truthfulness is checked by whole-report Luna REVIEW and authorized human
+  truthfulness is checked by configured model review and authorized human
   sample review, not a Java business-language parser.
 - The implemented Step08 renderer uses business prose and plain short refs only.
   Store raw file/lines/snippet in the existing separate source-refs.jsonl;
@@ -573,8 +559,9 @@ or strict graph/Fact/Flow producers.
   and read source bytes at the boundary. Explicit independent audits and
   mutation tests may replay algorithms; ordinary internal consumers must not.
 - Implemented business checkpoints are:
-  - Step 06: business-materials.jsonl, activity-explanations.jsonl,
-    activity-coverage.json
+  - Historical Step06: business-materials.jsonl, activity-explanations.jsonl,
+    activity-coverage.json. Target new Step06 reads Step05 instead of installing
+    M10; Activity v2/coverage v3 and private attempts follow integration-contracts.
   - Step 08: business-report.json, source-refs.jsonl, document.md,
     report-validation.json
 - Legacy business-processes.jsonl/repository-business-knowledge.json are not
@@ -586,10 +573,11 @@ or strict graph/Fact/Flow producers.
   JSONL v1, and new sources Markdown v1. Synchronize exact-set checks, producer,
   reader, registry and artifact query; keep upstream versions and old results.
   No changes to public Agent methods, PROCESS_CATALOG or the three owners.
-  The cross-object target keeps those public schemas, adds private reading
-  decision/packet v1 and process Prompt/response v3, and updates producers.
+  Current Step07 keeps those public schemas, writes private reading-decision v2,
+  reading-packet v1 and three-stage reviewed-result v3 with producer v4.
+  Exact Prompt/response versions belong to the owning process Module.
   Map new refs before closing the result, not by fetching in Publisher.
-  Future Step08 input migration remains outside this correction.
+  Step08 remains historical reading/query/rendering only.
 - Save business-materials after compilation and before the first model call.
   The approved job design has the coordinator save each complete reviewed job
   to a private run result immediately, then aggregate in stable material/group
@@ -621,7 +609,7 @@ or strict graph/Fact/Flow producers.
   BusinessMaterialBuilder again. Failed source-run state alone does not
   invalidate a completed material artifact. Do not delete journals, reset
   failure states or rescan merely to obtain new model request identities.
-- Cross-batch reuse is explicit and limited to complete, validated, privately
+- Historical Activity and current Step07 cross-batch reuse is explicit and limited to complete, validated, privately
   saved reviewed jobs with matching content, source mapping, task sequence,
   Prompt/schema/profile and service/account/model/effort. Candidate three-stage
   reuse requires DRAFT, WRITE and final RULE_REVIEW; other tasks keep pair reuse.
@@ -629,16 +617,21 @@ or strict graph/Fact/Flow producers.
   A failed job starts its full authorized sequence only in an explicitly requested new
   batch; prior completed results and provenance are immutable. A changed group
   or knowledge input invalidates only dependent process/summary/report results.
+- New Step05 Activity is the explicit stage-reuse exception: its complete saved
+  reading plan/slice/stage can be reused only with exact input/prompt/schema/
+  scope/binding checks under model-job-execution. Manual retry creates a new
+  batch, never edits old FAILED/STARTED records or extends Step07 retries.
 - Single reading decisions have their own complete-record validation/reuse;
   they cannot masquerade as DRAFT/REVIEW. Catalog-as-input reuse differs from
-  exact job reuse. Target model-job-execution-config-v3 binds Activity,
+  exact job reuse. Implemented Step07 model-job-execution-config-v3 binds Activity,
   material, verified inventory, optional catalog and focus question before
   Provider startup; changed inputs cannot silently reuse the queued run.
-  Keep strict historical v2 reads; do not change source/material formats.
+  Keep historical v2 exact reads. New Activity targets execution-config-v4 with
+  an explicit material discriminator; v3 cannot silently accept new Step05.
 - Batch/output integration must preserve dual ownership: material belongs to
   sourceRunId; Activity/Knowledge/Report outputs belong to the new batch run.
-  Synchronize writers, current analysis-run-output-v4 and historical v3 readers; never broadly disable cross-run
-  checks. Root request candidate lineage stays fixed; operational batches do not
+  Current reading-only output is analysis-run-output-v5; new Activity targets v6.
+  Preserve strict historical v3/v4 reads and cross-run checks. Root request candidate lineage stays fixed; operational batches do not
   mint extra Reader Candidates or bypass ROUND_2 findings. Use the implemented
   source-analysis/Agent composition; new catalog/reading options are connected
   and directly verified. Real full-corpus quality is recorded separately in the
@@ -672,7 +665,7 @@ or strict graph/Fact/Flow producers.
   not target completion criteria. Existing Step 01–05 technical publications
   remain; new business completion is defined by the reviewed Activity
   checkpoint, consolidated process catalog/coverage, business-processes.md and
-  one validated nine-section report.
+  a complete process catalog/coverage and business-processes.md; historical reports are not a new completion requirement.
 - Machine artifacts are UTF-8 JSON/JSONL. Exceptions remain document.md,
   durable design Markdown, in-plan progress Markdown and immutable source
   inputs. Immutable source inputs remain verbatim; progress lifecycle follows
@@ -731,7 +724,7 @@ or strict graph/Fact/Flow producers.
   absent, input/ref/coverage cannot close, a started model request fails, or
   implementation needs a contract change. Update durable design and obtain
   the required review/authorization; do not silently broaden behavior.
-- Contract uncertainty goes to Sol/ultra. User approval remains required for
+- Contract uncertainty and debugging go to Astra/ultra. User approval remains required for
   changes to the eight steps/order/keys, fixed nine chapters, source/Proof
   trust, model-visible material/responsibility, public RepositoryAnalysisAgent
   or shared candidate contract.

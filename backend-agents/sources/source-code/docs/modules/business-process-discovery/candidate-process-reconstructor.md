@@ -1,65 +1,49 @@
 # CandidateProcessReconstructor
 
-## 为什么存在
+## 目的与一次候选job
 
-模型要回答某种业务怎样完成，不是重新复述Controller如何接收参数。完整材料已在；本模块负责把它解释为对象生命周期、业务活动、具体规则和待确认联系。
+从已冻结的完整ProcessReadingPacket解释业务对象的生命周期和具体规则。当前生产已实现事实DRAFT→业务WRITE→最终RULE_REVIEW；三个阶段保持同一Provider/账户/model/effort和一个候选job名额。其他候选可并行。
 
-## 一次候选job
+| 阶段 | 完整实际输入 | 输出与用途 |
+| --- | --- | --- |
+| BUSINESS_PROCESS_DRAFT（Prompt v4） | readingPacket v1、investigationContext、readingSelections | 现有完整详细过程草稿 |
+| BUSINESS_PROCESS_WRITE（v1） | actualDraft，含名称/用途/规则/未知 | 相同结构及局部ID的业务全文，尚未已审 |
+| BUSINESS_PROCESS_RULE_REVIEW（v1） | 原DRAFT外层输入+actualDraft+actualWriting | {processResult,corrections}，完整最终过程与私有修正说明 |
 
-目标为前置完整阅读包 → PROCESS_DRAFT事实推理 → PROCESS_WRITE业务全文 → PROCESS_RULE_REVIEW最终规则核对 → 保存完整已审结果。三阶段保持同一Provider/账户/model/effort和一个job名额。WRITE只接收完整实际DRAFT及其中业务名称、用途和规则；RULE_REVIEW必须同时接收完整原文包、实际DRAFT和实际WRITE，直接局部修正实际正文及对应结构字段。最终核对后不再模型润色。详细输入、响应和容量由[补充设计](../../supplements/cross-object-process-reconstruction/business-reasoning-and-writing.md)维护。
+DRAFT可重建、拆分、处置为支撑或材料不足，不能靠多个技术阶段冒充生命周期。系统认识/假设是调查背景，不是CONFIRMED事实。所有关键原文在DRAFT前到位，最后核对后无模型润色或额外取材。
 
-DRAFT可以重建一个过程、拆成几个过程、处置为支撑或材料不足。它必须处置候选成员；不能以多写几个技术阶段替代业务重建。
+## 完整业务结构
 
-DRAFT实际外层输入为readingPacket v1、investigationContext及readingSelections；后两项携带关注问题、系统判断/假设、候选问题和读取用途/选择说明，作为调查背景而非已确认事实。它们必须随决策保存、重开并参与指纹；最终RULE_REVIEW复用同一外层输入，不能只拿包而丢掉调查背景。WRITE仍仅接收完整实际事实草稿。
+保留name、purpose、scope、participants、businessObjects、activityUses、stages、branches、businessRules、endResults、knowledgeItems、supportActivityUses、pendingConnections和refs。stage.narrative为必填非空业务正文，同时保留进入条件、动作、状态变化、拒绝、结果、转移及certainty。rule.activityUseIds（模型wire为activityUseLocalIds）是非空业务适用集合，不是证据owner。
 
-## 目标数据
+同一Activity可以有多个variant。每阶段围绕有业务意义的对象动作/里程碑，写清何时允许/拒绝、产生什么、怎样衔接。具体status条件、否定词、数量/金额用途、配置例外不能缩成“符合条件”。未知岗位不编造；业务名称无依据时保留实际值并说明未知。
 
-保留现有name、purpose、scope、participants、businessObjects、activityUses、stages、branches、businessRules、endResults、knowledgeItems、supportActivityUses、pendingConnections及refs。
+跨对象说明应回答前一步产物、后一步关联/选择、是否可不关联或分批、如何回写数量/金额/状态、回退与配置范围。常识不能补出强制办理顺序；相同金额字段的不同用途不能统一翻译。演示数字只作规则边界例子，不是客户数据。
 
-以下两个语义字段已实现，继续复用，不重建：
+knowledgeItems保留完整对象/字段/关系/公式/问题正文、owner、certainty和refs，不只留指针。查询/统计/配置可作支撑，不强行变成时序步骤。
 
-- ProcessStage.narrative：必填非空业务段落，与原进入条件、动作、状态变化、拒绝、结果、转移和certainty同时保留。
-- BusinessRule.activityUseIds：必填非空适用用法集合；模型wire为activityUseLocalIds，程序转换ID。
+## 最终规则核对
 
-一项通用Activity可产生多个variant用法；阶段和规则必须说明本次用的是哪一分支，不把完整Activity里所有分支条件加到每个对象上。knowledgeItems继续保留选中的完整对象、字段、关系、公式和问题，不只留ref。
+RULE_REVIEW看实际WRITE，保留准确可读段落，直接修正错误正文与对应结构。重点检查对象交接、允许/拒绝/否定、默认值的条件、数量/金额/单位、配置范围、分批/回退，以及narrative和结构一致。
 
-## 业务叙述要求
+返回完整processResult与可空corrections。每项修正记录过程/阶段位置、原句、改句和原因；不新建Proof。finalizeCandidate只把processResult交既有parser，不能把包装对象当旧响应。重大矛盾可收窄或判不足，未知具体保留。
 
-阶段围绕业务对象的可辨认动作或里程碑命名；不默认按“接收→校验→调用→返回”展开。“接收两个参数”不能被写成业务动作长句。若本身研究的是接口协议或日志管理，技术活动仍可能就是业务，不能用Java关键词黑名单删除。
+原文可纠正旧Activity解释并记录差异；原326条Activity不覆盖、不重新生成。规则可引用实际包内context Activity和未绑定旧Activity的冻结原文；ActivityUse必须是最终成员，引用只限实际allowlist。合法ref不证明适用全部variant，Java不判断中文蕴含。最终审阅须对照原候选所有variant，结构的Activity分母不等于variant质量门禁。
 
-narrative应说明：
-- 对什么对象做什么，为什么或在何种范围；
-- 已知的允许/拒绝条件及具体状态值；
-- 产生的结果、变化和下一步；
-- 哪个联系只是推断，哪里缺材料。
+## 保存、容量、失败与复用
 
-未知岗位可不写；状态业务名称未核实则保留数值并注明未知。静态实现可以说明“保存对象”，不能声称某次运行已成功提交。
+当前新过程私有格式是model-job-reviewed-result-v3，pipeline=business-reasoning-writing-rule-review-v1，producer v4。保存完整input、readingPacket、sourceReferenceMapping、inputFingerprint、binding/runtime identity、draft、writing、review与可空reusedFromModelBatchId。三份raw请求/响应及journal不改，最终ref归一化只改内存副本。
 
-规则仍为subject、when、actionOrDecision、otherwise、result、certainty、refs。反例是“状态允许时可以修改”；目标是“原单状态为0时允许修改，否则拒绝”，并限定到真实适用用法。
+DRAFT/WRITE在fresh接受后和精确复用前都按实际响应Schema（networknt、本地$ref）校验类型/必填/enum；fresh失败PROCESS_MODEL_SCHEMA_INVALID，损坏复用MODEL_JOB_RESULT_INVALID。此门禁不提前执行最终覆盖/CONFIRMED依据或中文语义判断；最终RULE_REVIEW仍可纠错。
 
-## 最终RULE_REVIEW职责
+每阶段校验真实序列化input、Prompt、Schema和输出空间。DRAFT能容纳不保证原文包+DRAFT+WRITE能容纳；最终超窗时保存两稿及未发送原因，不删除其中一份、不标reviewed、不自动重试。
 
-最终RULE_REVIEW看到完整包、完整实际DRAFT和WRITE，返回完整最终过程及私有corrections，而非只列错误。正确且可读的段落保留，能确定的错误局部修正：
-1. 逐项对照候选的不同variant，保留、细化或在现有reason/pendingConnections说明删除/缺失。当前结构分母仍按ActivityId，不能用其通过代替用法语义完整；本次不新增逐variant处置账。
-2. 检查实际WRITE是否讲清业务步骤，是否仍为技术模板；不为了审阅而重写整篇。
-3. 对每个用法核对条件分支；有引用不等于该规则适用所有variant。
-4. 检查跨入口关联字段、对象与数量/状态更新；可推断关系标INFERRED，不能编成强制调用顺序。
-5. 删除无材料的岗位、默认值、必经审批、外部成功；缺信息具体记录UNRESOLVED。
-6. 保留全部具体规则、公式和拒绝路径，保证narrative与结构字段一致。
-7. 同步rule.activityUseIds及引用；不能引入实际阅读包外的Activity/source。context可支持理解，不必成为成员。若原Activity与完整源码有差异，过程可依据原文纠正并保存原因，原Activity不变。
+Step07无自动重试。fatal停止新派发，已经启动且前置合法的候选排空保存，完整成功候选不因别包失败丢失；不归并/发布。显式新批次只复用完整三阶段且全部输入/Prompt/Schema/顺序/模型绑定匹配的job。历史v2 pair和孤立中间稿不能自动续接为三阶段，也不适用新Activity的stage retry。
 
-规则引用采用实际阅读包allowlist：包括读过的context Activity及未绑定旧Activity的同源源码。activityUseLocalIds只表达业务适用，不是来源所有权。未知/未提供引用仍拒绝；不因来源原来在别的候选而拒绝。
+## 当前质量与直接验证
 
-CONFIRMED至少有statement或source，但Java只验证来源存在；不验证中文蕴含。合法UNRESOLVED不导致整个运行自动失败。
+上述三阶段已在DefaultBusinessProcessDiscovery.reconstructRaw/finalizeCandidate及PrivateModelJobResultStore接线。producer v4正文以最终RULE_REVIEW为依据，历史2/3按原receipt渲染。
 
-## 结构错误和语义质量分开
+历史三例没有全部通过：采购核对超窗未发送；销售最终响应有7个未定义查询用法并有业务范围错误；调拨完整保存仍有两处配置限定问题。可读性获认可，不能说三例全通过或已完成全仓验收，见[原实测](../../supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)。
 
-未知ID/ref、未提供ref、缺字段、错误用法归属、遗漏处置、坏响应及Provider失败是fatal。Java只校验实际包和结构，不按ActivityUse追究证据所有权，不判定中文分支是否适用。合法读取不足保留UNRESOLVED。
-
-“只有空泛状态描述”“把价格规则用到错误子类型”“没有生命周期”是语义质量不通过，由REVIEW与样例审阅发现；不能伪称已经存在能自动识别这些问题的校验器。也不因此无限重跑候选。
-
-## 测试与当前差距
-
-当前已实现同一完整Activity/原文包上的DRAFT/REVIEW双轮、详细结构和narrative/rule-use。目标三阶段尚未生产接线，沿用现有详细Process形状及五文件；仅新过程私有结果保存draft/writing/review的v3完整记录，历史v2 pair不能当三阶段结果复用。版本与实现差异见[实施状态](../../supplements/cross-object-process-reconstruction/implementation-status.md)。原326Activity不重跑。
-
-直接RED覆盖三阶段顺序、WRITE完整事实输入、最终RULE_REVIEW实际包+DRAFT+WRITE、最终正文/规则保存渲染、完整三阶段重开及旧pair不误复用。真实语义只做[三个样本](../../supplements/cross-object-process-reconstruction/acceptance.md)，之后停止等待全仓讨论；自动fixture不能替代实际正文审阅。
+直接测试只证明三阶段顺序、完整输入、Schema、保存/复用与零上游调用；真实正文仍需准确性审阅。新Step05接入应保留这些行为，本轮没有代码/测试/模型执行。

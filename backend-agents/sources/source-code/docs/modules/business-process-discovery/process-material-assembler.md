@@ -1,46 +1,51 @@
 # ProcessMaterialAssembler
 
-## 为什么存在
+## 目的与内部Interface
 
-目录只负责找到一起阅读的活动。写精确业务流程需要完整Activity及可辨识的原文入口；一串无法区分的S编号不能帮助模型选择要核查的实现。
+把模型选择的Activity和同源原文变成自包含ProcessReadingPacket。内部collect/assemble执行确定性读取；一次PROCESS_READING_CHECK由Discovery使用现有Provider调度。不是公共检索接口，也不新增语义解析器。
 
-## 内部操作
+当前旧Activity/M10/冻结文本取材已实现。目标只增加由[FrozenAnalysisCorpus](frozen-analysis-corpus.md)按新Activity materialSource选择Step05来源；不会把新Step05强转M10。
 
-```java
-ReadingMaterial collect(ReadingRequests requests, FrozenAnalysisCorpus corpus);
-ProcessReadingPacket assemble(CandidateProcess candidate,
-                             ReadingMaterial initial, ReadingMaterial supplement);
-```
-这是目标内部职责示意，不新增公共Agent或检索框架。确定性读取/封包零Provider、零导航；其间一次PROCESS_READING_CHECK由Discovery使用现有Provider运行，模型决定首批保留/移出与一次补读。具体记录身份和字段由[补充设计](../../supplements/cross-object-process-reconstruction/business-reasoning-and-writing.md)维护。
+## 首批实际读取
 
-## DRAFT前组装
+完整Activity按ID取一份，保留目的、对象、参与者、输入、条件、步骤、结果、规则、公式、问题、限制和全部原字段。所有(ActivityId,variant)用法及context身份分别保存。声明为context不自动成为成员。
 
-1. 保留候选purpose、调查问题及全部ActivityUse：同一Activity可有不同variant；系统类型判断仅为调查背景，不当成事实。
-2. 每个不同Activity只放一份完整正文，按ActivityId引用，不能按用法重复大段内容。
-3. 保留purpose、participants、objects、inputs、conditions、steps、results、rules、formulas、questions、limitations和原ref；分配稳定statement handle。
-4. 执行全局首批阅读请求，取全部选中的M10或同源冻结文件原文。成员之外的context Activity也取全文，但不必成为成员。
-5. 选材阶段可用冻结相对路径/行范围，程序创建来源编号；全局身份、宿主路径和hash不进模型。原文不必绑定旧Activity。
+读取请求可选已有SourceRef、文件范围、全文或字面量搜索；purpose说明调查问题。每个实际片段按请求/返回顺序分配R1…Rn，保存requestId、purpose、真实范围/文本、complete、preview、totalLineCount、遗漏/未命中原因。一次搜索多命中可分别选择；未命中不造R正文。
 
-原文预览是选片线索，不是完整规则。完整Activity也不能因候选名称而由Java删掉“看似无关”的分支。
+当前Step07仅INITIAL WHOLE_FILE超过120行时返回真实前120行导航预览，标preview=true/complete=false；小文件完整，SUPPLEMENTARY WHOLE_FILE仍完整。CHECK外层savedSourceLocators给出同文件已有M10来源ref/真实完整范围和前8行原文，只是定位目录，不混入已读sourceExcerpts。保留预览R只保留该预览，不偷偷恢复整文件。该既有导航约束不用于新Activity的语义slice，后者见[大材料阅读](../activity-explanation/large-material-reading.md)。
 
-## 阅读检查与封包（DRAFT前）
+## 每候选一次CHECK与补读
 
-目标每个候选一次模型检查首批实际材料，明确返回retainedReadingRecordIds、最终成员/context、可空supplementaryRequests、未知及选择理由。最终包由保留首批记录、实际补读和最终成员/context完整Activity组成；移出材料仍保留历史读取记录，空保留集不表示全部沿用。Java不判断语义充分，不再发第三次选材。首批定位预览必须标明不完整，不能冒充完整方法或查询。
+每个进入重建的候选必须有一次模型CHECK；Java不判断是否充分。输入含调查背景、实际完整Activity/原文、R记录、未命中/预览说明、全仓可召回导航及完整文件目录。
 
-DRAFT与最终RULE_REVIEW都见同一完整packet，WRITE只读完整实际事实草稿；最终核对另见实际DRAFT和WRITE。关键原文在DRAFT前到位，过程中不再取材。statement/ref允许集合来自最终实际读入包，包括context及新源码，不来自旧候选边界。
+CHECK输入不重复已完整提供Activity的导航卡；未读卡仅省terms，仍可由名称/目的/对象/来源召回。CHECK副本可省不用的statementDirectory；完整原Activity及最终DRAFT包仍保留它。实际已读Activity与未读导航ID并集必须是全体，不按候选成员名单缩小召回范围。
 
-条件、拒绝分支和公式不能在容量控制时截断。去重以后仍超容量则使用现有明确未处理/拆分机制；不增自动补料循环。
+响应：
 
-## 输出保证
+~~~text
+name / purpose / scope                 required但可null；null沿用原值
+activityUses                          完整最终非空集合，含activityId/variant/role
+contextActivityIds                    完整最终集合，可空；空不表示沿用
+retainedReadingRecordIds               首批实际R的完整保留集，可空；空表示全部移出
+supplementaryRequests                  一次补读，可空
+unresolvedQuestions / selectionNotes   具体未知与保留/移出/补读说明
+changedActivityDispositions            仅必要增量，移出最后成员必须明确去向
+~~~
 
-DRAFT看到选中的完整Activity和原文，最终RULE_REVIEW看到同一包和两份完整实际模型结果。用法多对多不复制正文；读取未命中或不完整随包保存，不能伪称业务完整。
+先选择R，再按相同真实来源去重正文、合并所保留目的。首批原记录不删除、不重读；同一片段来自多请求时保留任一R即保留原文。新增完整Activity与context随补读取回。补读后不再第三次选材；仍缺则具体限制。空补读不表示材料充分。
 
-readingPacket v1不承担新执行字段。调查背景investigationContext与实际读取用途/选择说明readingSelections放在DRAFT的外层输入，随决策保存、重开并参与指纹；最终RULE_REVIEW收到相同外层输入，详细字段由补充设计维护。
+## 最终包与调用
 
-## 测试和当前差距
+process-reading-packet-v1含candidate、完整reviewedActivities、唯一statementDirectory、实际sourceExcerpts与readingLimitations。包内来源来自实际已读allowlist，不来自旧候选/M10 owner边界。ActivityUse.activityId须在最终成员内，stage/rule用法须属于本过程；statement owner不改，context/新冻结文本可作为依据。
 
-完整Activity、多用法、statement继续复用。新全局读取、一次检查、补读和DRAFT前封包已接线，Pipeline直接测试通过；真实选材和材料充分性见[交付记录](../../supplements/cross-object-process-reconstruction/delivery.md)，不把离线替身结果当作业务质量通过。
+DRAFT外层实际输入另带investigationContext和readingSelections，分别保存问题/系统假设与实际用途/选择metadata；不重复片段或重新发送移出原文。最终RULE_REVIEW复用同一完整外层输入并加actualDraft/actualWriting；WRITE仅收完整actualDraft。
 
-本次首批保留/移出合同、问题与系统背景传递尚待实现。沿用冻结读取器、来源映射和完整Activity，不新增SQL/Vue解析器或自动取材循环。直接测试补上保留/补读集合、完整内容与请求目的不丢及零上游调用；真实验收止于三个样本。
+允许只去掉重复表示：完整Activity不再附一份逐字段statements文本；handle集中在statementDirectory；响应Schema相同allowlist用根$defs/$ref复用，required/enum/未知ID拒绝不放宽。不是有损业务摘要。
 
-Luna RED：两种variant共享正文但分别存在、预览逐行等于保存原文、完整REVIEW不被预览替代、非法/缺失引用、零隐式扫描。Terra GREEN限于确定性投影和接线。真实样例确认模型能够选中关联及条件源码，不把“每次必须请求源码”写成硬门槛。
+每阶段核对实际序列化输入、Prompt、Schema和输出空间。完整包或最终核对超容量时不静默截断、不删条件/公式、不自动补料循环；保存实际完成内容与明确未处理/失败原因。
+
+## 保存、当前状态与测试
+
+选择/检查为process-reading-decision-v2/producer v4；CHECK Prompt v4，历史v1/producer v3仅严格读。实际R、预览、导航、最终保留、背景、Schema/Prompt和绑定参与指纹。新Step05 materialSource接入尚未实现，其余上述取材合同已有生产接线。
+
+定向验证应检查全文/公式/条件不丢、多variant共享正文、真实行段、空保留/空补读、context引用合法但非成员、未知R/ref拒绝、重开与零上游调用。来源/容量结构正确不表示真实语义充分。

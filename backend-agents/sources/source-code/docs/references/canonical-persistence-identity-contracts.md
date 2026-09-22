@@ -6,7 +6,7 @@ CanonicalJsonCodec、CanonicalArtifactPolicyRegistry、CanonicalModuleArtifactSt
 
 ## 1. Canonical JSON 与 JSONL
 
-模型批次扩展见[执行设计 §7](../modules/model-job-execution.md#7-固定材料与独立模型批次已实现)。materialsCheckpoint沿用完整ModulePublicationReference；modelBatchId复用新AnalysisRunId，不增加typed-ID算法。私有state/execution/run-output版本与双归属检查由该节拥有；不改本附录canonical公式，也不重算或改写旧receipt。业务内容fingerprint排除新执行身份，持久化地址仍绑定真实生产者，两者不能混用。
+模型批次扩展见[执行合同](../modules/model-job-execution.md)和[Activity集成合同](../modules/activity-explanation/integration-contracts.md)。历史materialsCheckpoint是完整ModulePublicationReference；新Step05由显式materialSource携带完整AnalysisStepPublicationReference，不能强转M10。modelBatchId仍为新AnalysisRunId，sourceRunId为材料owner；v6/coverage v3只增加明确接入，不改变本附录canonical公式或旧receipt。
 
 `CanonicalJsonCodec` 是唯一公开的 canonical JSON 语法 seam：
 
@@ -76,7 +76,7 @@ public interface CanonicalAnalysisStepArtifactStore {
     ReopenedAnalysisStepPublication reopen(AnalysisStepPublicationReference reference);
 }
 
-// 批准的目标；当前 NOT IMPLEMENTED
+// 历史提案，非本轮实施目标；当前使用既有run/checkpoint stores
 public interface CanonicalRunManifestStore {
     InstalledRunManifest install(RunManifestInstallRequest request);
     ReopenedRunManifest reopen(RunManifestReference reference);
@@ -254,11 +254,11 @@ Module 文件集是 receipt 声明 payloads 加 module-receipt.json。Analysis-s
 
 ## 7. 当前模块与目标减法
 
-Step01 request-admission/source-index/publish、Step02 application-profile/http-entry/mapper-catalog/publish、Step03 五图/publish、Step04 candidates/proofs/publish、Step05 flow-compiler/capsule-projector/publish 的可观察产物保留。
+当前Step01来源、Step02入口、Step03 JDT index、Step04 persistence material、Step05 code-reading-materials的可观察产物保留。旧图/Fact/Flow/Capsule/M10只保持历史读取，不新增安装。
 
-Step05 使用既有文件保存一个 EntryContext 关系模型和对应有界 Capsule 投影；新增字段遵循所属 record 的新 schema version，不创建另一 module registry、文件系统或身份框架。Step06 的 BusinessMaterialBuilder/ActivityExplainer 与当前 Step07 BusinessProcessDiscovery/Publisher 使用同一 store/checkpoint 机制保存 Activity cards、candidate dispositions、reviewed processes 和唯一 consolidated catalog。旧 ProcessExplainer、旧九章生产器及 generate 路线已退役；历史 checkpoint 严格读取能力保留，不新建第三套文件系统或恢复固定 52/57 输出要求。
+Step05是新阅读材料唯一owner，Step06直接投影、阅读和解释，不安装新的M10。现有store/checkpoint保存Activity、目录、候选、过程和覆盖；具体新增字段/版本见Activity集成合同，不创建新文件系统或identity框架。旧ProcessExplainer/九章生成器退役，历史reader保持精确，不恢复固定52/57输出目标。
 
-已批准的[模型 job 保存](../modules/model-job-execution.md#5-保存身份与失败)复用上述 canonical/原子能力：私有运行目录保存每个已审 job，coordinator 按稳定材料/候选顺序一次安装 aggregate；不把固定 publisher 放入并发 worker。Provider/job 独立 journal namespace 补足现有 ModelRuntimeIdentityV1 不含账户的边界，稳定 job key 与单次提交登记留在程序侧，不进入模型 packet。ActivityUse、详细 stage/rule/certainty 和 process catalog 是真实 output shape 变化，实施时必须显式升版并一次同步 producer/reader/validator；并发值、排队时间和完成次序不改变业务内容 fingerprint 或数组语义顺序，identity framing 不重定义。这不是自动恢复或 uncertain started 请求重放协议。
+已批准的[模型job保存](../modules/model-job-execution.md)复用上述 canonical/原子能力：私有运行目录保存每个已审 job，coordinator 按稳定材料/候选顺序一次安装 aggregate；不把固定 publisher 放入并发 worker。Provider/job 独立 journal namespace 补足现有 ModelRuntimeIdentityV1 不含账户的边界，稳定 job key 与单次提交登记留在程序侧，不进入模型 packet。ActivityUse、详细 stage/rule/certainty 和 process catalog 是真实 output shape 变化，实施时必须显式升版并一次同步 producer/reader/validator；并发值、排队时间和完成次序不改变业务内容 fingerprint 或数组语义顺序，identity framing 不重定义。这不是自动恢复或 uncertain started 请求重放协议。
 
 ## 8. 不变量与实际边界
 
