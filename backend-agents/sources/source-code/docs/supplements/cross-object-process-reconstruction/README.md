@@ -1,12 +1,12 @@
 # 跨对象过程研究与历史验收索引
 
-本目录的有效设计已经整合到[主设计](../../DESIGN.md)、[Activity Modules](../../modules/activity-explanation/README.md)和[业务过程Modules](../../modules/business-process-discovery/README.md)。此处维护研究缘由、历史输入与验收状态，不再作为另一份活跃生产合同。
+本目录的有效设计已经整合到[主设计](../../DESIGN.md)、[Activity Modules](../../modules/activity-explanation/README.md)和[业务过程Modules](../../modules/business-process-discovery/README.md)。此处维护研究缘由、历史输入与验收状态，不再作为另一份活跃生产合同。2026-09-23新增的[端到端收尾详细设计](../../end-to-end-business-delivery-design.md)统一说明剩余工作、模块改动和验收门槛；具体字段仍由以下Module拥有。
 
 ## 当前事实
 
-Step01–05 JDT-only/可选持久化/统一阅读材料已完成；新Step05→Activity已完成详细设计但尚未实现。现有326条Activity仍来自历史M10，保持不变。Step07系统认识、聚焦阅读、DRAFT→WRITE→最终RULE_REVIEW、私有三阶段保存与producer v4已实现；旧三例未全通过。Step08仅历史读取/查询/重渲染。
+Step01–05已保存325包/326入口处置；新Step05→Activity已接通，真实生成418条，正式Step07新来源分支也已接线。另有1个上游导航失败入口无包。新范围完成性和13个生产/测试文件中的审查修复未完成验证，不能把运行结束等同全量语义验收。旧326条Activity仍来自历史M10，保持不变。Step07系统认识、聚焦阅读、DRAFT→WRITE→最终RULE_REVIEW、私有三阶段保存与producer v4已实现；旧三例未全通过。Step08仅历史读取/查询/重渲染。
 
-新Activity模型阅读、分阶段重试与双来源接入不自动适用于旧Step07，也不授权重跑旧Activity、补写SQL、继续三例或全仓生成。more-findings.md保持原文。
+Activity阶段重试不自动适用于Step07，也不授权重跑旧Activity、补写SQL、继续三例或全仓生成。more-findings.md保持原文。
 
 ## 合同现在在哪里
 
@@ -27,9 +27,9 @@ Step01–05 JDT-only/可选持久化/统一阅读材料已完成；新Step05→A
 这些ID仅用于定位；执行必须重开实际完整引用，不能凭ID伪造receipt。历史目录作资料与新任务精确复用不同。
 
 - [原交付记录](delivery.md)、[研究比较](experiment-comparison.md)、[三例原始实测](three-case-acceptance-result-20260916.md)：保留历史结论。
-- [当前实施差异](implementation-status.md)：程序已实现、新接点未实现、真实质量分开。
+- [当前实施差异](implementation-status.md)：分支已实现、未验证修复、设计目标和真实质量分开。
 - [原三例材料推演](walkthrough.md)：历史人工材料核对，不是新模型结果。
 - [验收边界](acceptance.md)：已发生请求与后续验收条件。
-- [新的真实Step05→Activity→Process推演](../../examples/activity-material-end-to-end-walkthrough.md)：用于本次逻辑设计检验。
+- [新的真实Step05→Activity→Process推演](../../examples/activity-material-end-to-end-walkthrough.md)：记录既有原文取材推演，不是本次新模型结果。
 
 受保护more-findings.md的SHA256为59b8381e7e81e3105ed6c6a8d93ce1dbea0247735bf1e6227d8f842b0d1d7f8e。本轮文档整合不执行代码、测试、构建、JDT、模型、commit或push。

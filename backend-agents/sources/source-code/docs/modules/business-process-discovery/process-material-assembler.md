@@ -4,7 +4,7 @@
 
 把模型选择的Activity和同源原文变成自包含ProcessReadingPacket。内部collect/assemble执行确定性读取；一次PROCESS_READING_CHECK由Discovery使用现有Provider调度。不是公共检索接口，也不新增语义解析器。
 
-当前旧Activity/M10/冻结文本取材已实现。[FrozenAnalysisCorpus](frozen-analysis-corpus.md)也能从验证后的新Activity provenance、Step05 packet和同snapshot冻结文本解析实际来源，并隔离packet-local短ref。M11 v3 reader、ProcessDiscoveryRequest/Result、Publisher和持久Step07 executor已有独立Step05分支；正式CLI选择仍待运行编排层接入。任何运行接线都不得把新Step05强转M10。
+当前旧Activity/M10/冻结文本取材已实现。[FrozenAnalysisCorpus](frozen-analysis-corpus.md)也能从验证后的新Activity provenance、Step05 packet和同snapshot冻结文本解析实际来源，并隔离packet-local短ref。M11 v3 reader、ProcessDiscoveryRequest/Result、Publisher和持久Step07 executor已有独立Step05分支；正式CLI选择已接入，完整新来源端到端回归仍需补齐。任何运行接线都不得把新Step05强转M10。
 
 ## 首批实际读取
 
@@ -46,6 +46,20 @@ DRAFT外层实际输入另带investigationContext和readingSelections，分别�
 
 ## 保存、当前状态与测试
 
-选择/检查为process-reading-decision-v2/producer v4；CHECK Prompt v4，历史v1/producer v3仅严格读。实际R、预览、导航、最终保留、背景、Schema/Prompt和绑定参与指纹。新Step05来源可从M11 v3重开后经显式ProcessDiscoveryRequest进入同一Assembler；其余上述取材合同已有生产接线。当前剩余缺口是正式运行入口选择，不是另造Assembler或把Step05包装成M10。
+选择/检查为process-reading-decision-v2/producer v4；CHECK Prompt v4，历史v1/producer v3仅严格读。实际R、预览、导航、最终保留、背景、Schema/Prompt和绑定参与指纹。新Step05来源可从M11 v3重开后经显式ProcessDiscoveryRequest进入同一Assembler；其余上述取材合同已有生产接线。本次剩余缺口是同入口导航、局部编码及正式贯穿验证，不是另造Assembler或把Step05包装成M10。
 
 定向验证应检查全文/公式/条件不丢、多variant共享正文、真实行段、空保留/空补读、context引用合法但非成员、未知R/ref拒绝、重开与零上游调用。来源/容量结构正确不表示真实语义充分。
+
+## 本次目标：候选局部引用编码与完整包v2
+
+在CHECK结束、实际补读完成后，对封闭包构造process-local-reference-map-v1：按全局稳定顺序建立A→真实Activity、T→(ActivityId,field,index)原statement、S→真实SourceRef。仅模型投影使用短ID；私有映射保留真实来源身份。F/R负责选材定位，process/use键另有命名空间；阶段沿现有(processLocalId,order)，不新增stageLocalId。
+
+process-reading-packet-v2保存同入口关联和编码合同；完整Activity文本只保留一份，statement目录用T定位原字段，不再重复字段正文。该目录不是摘要，模型能从完整Activity找到对应文字。编码贯穿候选成员/context、完整Activity、statementDirectory、Schema、DRAFT/WRITE/RULE_REVIEW；只改结构化ID字段，绝不全局替换业务字符串。
+
+现有根$defs和RULE_REVIEW包装提升已经实现，应继续复用。新枚举用短A/T，$ref仍指根；无来源时allowlist为空的引用必须被最终校验拒绝，不能放任任意字符串。三阶段共用一份映射，raw响应不改；保存前按字段解码，再执行原来源归一化、身份生成和parser。
+
+未读导航继续全仓可召回，已读Activity附来源组/入口键，context与成员目录明确分开。全文按ID去重不删除variant，也不因同入口就只传一个切片。重复来源只合并完全相同字节与范围，所有读取purpose保留。
+
+容量观测记录编码前后实际input、Prompt、Schema、两稿及输出余量，不能只算字符串ID节约率；最后仍超容量即保留已生成稿和明确原因。不得为适配模型删任一稿件或增加自动摘要/层层聚合模块。
+
+直接测试：不同候选均有A1/T1不串源；A10不按前缀映射；业务正文恰好含A1/T1字符串不被改写；完整包编码/解码业务内容一致；多variant与候选拆分保留；改变映射或输入使相关复用失效；实际最终核对保留原文和两稿。

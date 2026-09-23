@@ -4,18 +4,19 @@
 
 ## 1. 已实现基础与本轮目标
 
-| 内容 | 已实现现状 | 本轮设计增量 |
+| 内容 | 当前分支实际状态 | 本次端到端增量 |
 | --- | --- | --- |
-| 材料/模型分离 | 旧M10独立model batch；新Step05 reader/state-v4/output-v5已保存完整材料 | 让新Step05直接进入Activity，execution-config-v4/output-v6明确来源 |
-| 并发 | 全局+Provider双上限、稳定路由、Java17 executor/completion queue | Activity同包内部阅读/slice/attempt仍顺序，沿用同一个pool |
-| 保存 | Activity/目录/归并完整pair私有保存；候选过程完整三阶段保存 | Activity每个成功stage立即保存，可从成功DRAFT继续REVIEW |
-| 失败 | 当前started失败会停止新派发，不自动retry | Activity可配置阶段retry；单包穷尽继续其他包，最终非零、不自动下游 |
-| 复用 | 当前完整pair/triple/decision精确复用，孤立DRAFT不能续接 | 新Activity可显式复用已验证成功stage；旧schema不改含义 |
-| 业务模型 | 326个旧已审Activity按原历史模型与来源保存 | 新Activity默认Codex登录服务gpt-5.6-terra/xhigh，可显式配置其他服务 |
+| 材料/模型分离 | 新Step05已直接进入Activity；execution-config-v4/output-v6已实现 | 输入固定，不重新取材；完善范围完成性 |
+| 并发 | 全局+Provider双上限，包内阅读/slice/attempt顺序 | 保持现有池，验证单包与绑定失败边界 |
+| 保存与复用 | 阶段即时保存、显式stage复用、大包计划及M11/CLI已接通 | 修复失败slice之前的公开成功保留和原plan接续；草稿未验证 |
+| 失败与retry | YAML v2已有activityRetry和有界退避，325包已真实执行 | 完善结构化错误分类与SUCCESS保存次序，不增加Step07 retry |
+| 范围 | 输出有activityBatchComplete；当前coverage-v3不含packet完成表 | coverage-v4补最小packetCompletion，不能只看entry出现过 |
+| 新旧业务内容 | 新418条与旧326条均保存；模型身份各自保持 | 离线核对和只复用，不默认重做Activity |
 
-本轮只设计Activity路径的retry，不把Step07单次选择/检查、目录pair、候选三阶段或归并自动变成retry任务。既有Step07实现和三样例验收状态见其模块文档，不以本页更新宣称全仓语义完成。没有Step08当前生产生成器。
+当前`51b6625`已包含生产接线，13个生产/测试文件中的审查后修复仍未验证。真实运行记录与当前dirty补丁不同，不能沿用旧CI宣称后者通过。见[端到端详细设计](../end-to-end-business-delivery-design.md)及[Activity收口](activity-explanation/post-review-handoff-20260923.md)。
 
-当前实施中：私有store已提供不可变阶段attempt记录和成功索引的读写原语；Codex子进程超时只有在确认本地进程终止后才报告可重试的`REQUEST_TIMEOUT`，否则报告`OUTCOME_UNKNOWN`。Codex适配器将已返回且不超过本次输出上限的坏JSON标记为`INVALID_JSON`，并在结构化失败对象中保留实际响应字节；Activity仅将不超过私有诊断上限的该响应写入attempt，不会把stderr或凭据当作模型响应。direct-Step05 Activity durable执行已保存并闭包核验DRAFT/REVIEW attempt，复用同批成功stage；`activityRetry`已具备YAML加载、阶段上限和有界退避，默认只重试结构化且请求已结束的瞬时失败；坏JSON、schema/ref错误、未知异常与`OUTCOME_UNKNOWN`默认不重试。显式来源批次的已验证成功阶段可逐事件导入新批次，使失败REVIEW只重新执行REVIEW。超大包现已进入完整packet级任务池，普通包失败与Provider绑定失败直接测试通过；批次失败记录、部分M11发布/查询和CLI仍未接通。
+Codex超时只有确认本地进程结束才能按REQUEST_TIMEOUT处理，否则OUTCOME_UNKNOWN不默认重试。坏JSON实际响应在私有限额内保留；普通日志不暴露凭据/原文。现有错误分类与大包失败保留仍有待验证修复，不因已具备attempt容器就宣称可靠性全部完成。本轮只改文档，不执行修复或模型。
+
 
 ## 2. Job与阶段
 
@@ -60,7 +61,7 @@ sourceAnalysis:
         model: gpt-5.6-terra
         reasoningEffort: xhigh
         executable: /absolute/path/to/codex
-        timeoutSeconds: 600
+        timeoutSeconds: 3600
         auth:
           mode: chatgpt
           codexHomeEnv: SOURCE_ANALYSIS_PRO_HOME
@@ -85,14 +86,14 @@ sourceAnalysis:
     maxSlicesPerPacket: 32
 ```
 
-既有journalDirectory、outputDirectory、JDT安装、固定材料state、technical与业务输入输出profile仍由同一配置拥有，示例为相关字段节选。Provider的capacity声明本次使用的contextWindowTokens与providerOverheadTokens/reasoningReserveTokens保守预留，tokenAccounting使用UTF8_BYTE_ESTIMATE或记录已有离线工具的实际计量方式，详见[容量合同](activity-explanation/integration-contracts.md#8-直接实施检查)。缺必需数值/数值非法才是CAPACITY_PROFILE_REQUIRED；未知隐藏tokenizer或推理开销不否决入口，不从模型名猜窗口。READING_PLAN完整实际序列化与累计选择表同样预检，但估算不保证服务端精确fit。
+既有journalDirectory、outputDirectory、JDT安装、固定材料state、technical与业务输入输出profile仍由同一配置拥有，示例为相关字段节选。Provider的capacity声明本次使用的contextWindowTokens与providerOverheadTokens/reasoningReserveTokens保守预留，tokenAccounting使用UTF8_BYTE_ESTIMATE或记录已有离线工具的实际计量方式，详见[容量合同](activity-explanation/integration-contracts.md#8-容量失败与验收)。缺必需数值/数值非法才是CAPACITY_PROFILE_REQUIRED；未知隐藏tokenizer或推理开销不否决入口，不从模型名猜窗口。READING_PLAN完整实际序列化与累计选择表同样预检，但估算不保证服务端精确fit。
 
 - maxAttempts包含首次请求；1关闭自动retry。全局默认3，允许READING_PLAN/DRAFT/REVIEW三个stage family单独覆盖；其它未知stage拒绝。
 - 初始/最大退避为非负，max>=initial；multiplier>=1，jitterRatio在[0,1]；maxAttempts和reading上限为正整数。未知/重复key、reason、非法Provider/并发在启动前拒绝。
 - retryableReasons可显式增加INVALID_JSON、RESPONSE_SCHEMA_INVALID、UNKNOWN_REFERENCE。它们默认不retry；每次仍是同Prompt/Schema/输入的新attempt，不能追加纠错业务答案或语言黑名单。
 - 来源损坏、输入/配置不合法、认证失败、runtime identity漂移、容量不足、取消及存储错误不可通过reason名单放行。
 - timeoutSeconds仍是Provider单attempt超时；maxAttempts不是超时秒数，退避也不占单次调用timeout。有效Retry-After至少被尊重；若服务要求等待大于maxBackoffMillis，则该stage结束为RETRY_DEFERRED并保存earliestRetryAt供显式新batch参考，绝不缩短服务端要求提前发送。
-- 本轮reading默认值只提供有界调度，未实测证明大样例可完成；它们不表达费用预算或行业分类。
+- reading默认值128/4/32当前写死在代码，已有大包运行；目标config-v3才将其变成可配置字段。它们不表达费用预算或行业分类，不能据运行结束推断阅读义务完整。
 
 订阅Provider使用指定Codex登录上下文、ChatGPT auth和read-only sandbox，屏蔽API-key覆盖。显式openaiApi Adapter仍可配置，但只有获准实际运行才启用，不作为订阅失败fallback；不能换模型/账户/effort补成功。同账户/项目的多个key或会话必须放在同一Provider配置下共享cap；两个Provider重复quotaScope仍按现有加载器在启动前拒绝，不新增跨Provider自动合并配额。
 
@@ -152,7 +153,7 @@ model-jobs/<batch>/activity/<packet>/<stage-key>/attempt-<n>/
   outcome.json
 ```
 
-文件按各自发生点不可变安装；不存在的response不造空成功。同一attempt不覆盖前状态文件，失败与成功均保留。stage成功索引引用唯一已验证attempt；完整job `model-job-reviewed-result-v4` 引用plan、slice packets、成功DRAFT/REVIEW及最终完整Activity。沿用既有私有store实现，不创建事件重建/恢复数据库。
+文件按各自发生点不可变安装；不存在的response不造空成功。同一attempt不覆盖前状态文件，失败与成功均保留。stage成功索引引用唯一已验证attempt；新Activity的完整解释阶段结果使用 `model-job-reviewed-result-v4`；大包聚合另用现有 `activity-packet-result-v1` 引用plan、slice packets和结果，两者不能混为同一wire。沿用既有私有store实现，不创建事件重建/恢复数据库。
 
 阶段fingerprint覆盖实际输入字节、上游成功stage内容、projection/reading plan版本、Prompt内容、Schema、scope与SourceRef映射、有效业务profile、模块版本、Provider/account/quotaScope/model/effort/sandbox。排除batchId、attempt序号、时间、并发、日志目录、退避和秘密值；仅改maxAttempts不使已成功内容失效。
 
@@ -165,7 +166,7 @@ model-jobs/<batch>/activity/<packet>/<stage-key>/attempt-<n>/
 | 旧v2完整Activity pair | 按历史整job合同复用，不拆出DRAFT伪装新stage |
 | Step07 | 继续完整pair/triple/decision复用；不获得Activity的新续审规则 |
 
-手动retry只通过显式新batch，按[CLI合同](activity-explanation/integration-contracts.md#6-cli显式选择与手动retry)读取失败范围与指定reuse来源。成功slice、成功DRAFT的键保持稳定；失败stage重新attempt序号从新batch的1开始，旧记录原样保留。未改变scope的成功其他包可显式零调用继承。
+手动retry只通过显式新batch，按[CLI合同](activity-explanation/integration-contracts.md#6-正式cli与重试)读取失败范围与指定reuse来源。成功slice、成功DRAFT的键保持稳定；失败stage重新attempt序号从新batch的1开始，旧记录原样保留。未改变scope的成功其他包可显式零调用继承。
 
 材料始终属于sourceRunId；modelBatchId拥有新输出。不能删除旧journal、清空FAILED状态或重扫源码来获得新的request身份。batch不是新的ReaderCandidateRound，不能绕过最终内容修订/候选授权。
 
@@ -173,7 +174,7 @@ model-jobs/<batch>/activity/<packet>/<stage-key>/attempt-<n>/
 
 所有packet终态后，按固定packet/slice/localActivity键聚合，完成顺序不影响业务身份。完整规则、条件、公式、正文和ref不截断，多个slice直接保留多Activity。
 
-每个成功REVIEW已经私有保存。若还存在失败/必需未读范围，可安装一次含成功子集和完整不足coverage的M11，run仍FAILED、CLI退出非零、modelBatchComplete=false。共享结构/来源损坏时仅保留可验证私有结果，不安装不可信aggregate。成功M11 payload不等于整个batch完成。
+每个成功REVIEW已经私有保存。若还存在失败/必需未读范围，可安装一次含成功子集和完整不足coverage的M11，run仍FAILED、CLI退出非零、activityBatchComplete=false。共享结构/来源损坏时仅保留可验证私有结果，不安装不可信aggregate。成功M11 payload不等于整个batch完成。
 
 私有activity-batch-result-v1与CLI/inspect给出packet、entry展示、slice、stage、reason、attemptsUsed/maxAttempts、已成功可复用stage和下一步。普通错误清单不带敏感原文。用户可定向一个packet或全部失败包创建新batch，不能一处失败就默认重做所有材料。
 
@@ -181,7 +182,7 @@ Step07不会自动消费未完成batch，不自动模型重启、不调用JDT、
 
 ## 9. 直接测试与验收
 
-本轮只写设计，以下为实施验收，不是已跑结果：
+以下为端到端收尾须重新核验的直接行为；部分已有测试，审查修复未验证。本轮文档工作不执行这些测试：
 
 - scripted Provider制造DRAFT成功/REVIEW两次瞬时失败后成功，精确断言1+3调用、DRAFT逐字相同、attempt记录不覆盖。
 - maxAttempts=1不retry；退避与timeout独立；stage override、未知reason/配置与非retry错误拒绝。
@@ -190,12 +191,26 @@ Step07不会自动消费未完成batch，不自动模型重启、不调用JDT、
 - 共享输入预检失败请求0；Provider运行中认证失效停止其队列，另一合法binding可完成，无换绑。
 - 成功DRAFT/完整slice跨新batch复用；改scope、Prompt、Schema、模型使相应阶段失效；只改并发/退避不失效。
 - 未结束attempt不重叠重发；旧STARTED不删除；保存故障不能返回成功或继续消费未保存DRAFT。
-- 新Step05 materialSource可重开并进入真实模型输入fixture；JDT/PersistenceAnalyzer/JSqlParser调用0；XML依赖投影安全读取允许。
+- 新Step05 readingMaterialCheckpoint可重开并进入真实模型输入fixture；JDT/PersistenceAnalyzer/JSqlParser调用0；XML依赖投影安全读取允许。
 - 单entry多slice成功/失败混合不误全覆盖；大局部稿程序聚合不丢条件、不新增摘要调用。
 - 旧Activity pair、Step07完整三阶段/单决策和历史renderer继续按原规则读取；无顺带自动retry。
 
-只运行新增或直接覆盖测试，重型验证串行。真实产品调用须另有明确授权；先小包，再新增单据2MB样例，记录实际请求数、各阶段耗时、重试/未读/失败范围和业务规则准确性，再决定扩大。线程数、材料字节减少或entry集合闭合都不能代替业务接受。
+只运行新增或直接覆盖测试，重型验证串行。真实产品调用须另有明确授权；先小包，再新增单据2MB样例，记录实际请求数、各阶段耗时、重试/未读/失败范围和业务规则准确性，展示结果并由用户决定扩大。线程数、材料字节减少或entry集合闭合都不能代替业务接受。
 
 ## 10. 不扩建的内容
 
 继续使用一个RepositoryAnalysisAgent、一个CLI、现有Provider Adapter、Java17线程池与canonical/private store。不增加队列服务、向量库、自研编译器/业务词表/证据链、自动换模型/账户、同run恢复或无限模型修复。新版本精确表由[接入合同](activity-explanation/integration-contracts.md)唯一维护。
+
+## 11. 端到端收尾：范围、历史只复用和新过程任务
+
+Activity未完成必须按最终有效计划计算，而不是遍历历史unknown寻找错误词；失败范围/普通业务未知/原无packet导航缺口分开。公共packetCompletion与私有当前义务按[集成合同](activity-explanation/integration-contracts.md)一致保存。先验证完整阅读响应，再原子接受选择并保存SUCCESS，非法unit不能成为成功阅读阶段。
+
+显式新batch接续大包时先重开原计划和已冻结scope。合法成功slice和成功DRAFT不因另一slice失败丢失；后续slice容量失败也要公开保留先前成功。更改scope不是“再试同一阶段”，受影响稿件失效前先告知新生成范围。
+
+新 `--reuse-only` 是待评审窄选项：新run内纯读旧结果/范围核对并发布M11，不初始化Provider、不自动补模型请求；与主动retry互斥。不完整/无法判定时非成功，成功子集仍可查看，Step07不偷偷缩小分母。历史完整已审输入采纳与新版Prompt精确stage复用分开，不能放宽后者的指纹。
+
+目标execution-config-v5冻结有效activityReading值及Step07实际输入编码/任务合同；历史v4按原字段读。YAML config-v3才开放activityReading；已有activityRetry不迁位置。run-output-v6仍用activityBatchComplete，不新增modelBatchComplete别名。
+
+Step07沿同一池保持单候选DRAFT→WRITE→RULE_REVIEW。新局部编号与WRITE约束只改变实际输入/Prompt/Schema/私有三阶段合同，见[Reconstructor](business-process-discovery/candidate-process-reconstructor.md)。目录/单次决策/归并仍各自pair或单次；没有新增业务去重模型、第四次写作或自动retry。完整候选失败仍按现有fatal停止新派发，不套用Activity单包失败继续策略。
+
+本轮真实模型调用0。后续执行先完成本次Activity范围的离线核对、正式CLI/scripted全链，再具名真实样例；用户看过样例并同意后才扩大全仓。旧批次/失败输出不改写。

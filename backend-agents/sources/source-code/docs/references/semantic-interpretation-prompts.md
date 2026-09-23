@@ -4,9 +4,9 @@
 
 ## 当前、目标与绑定
 
-新Step05→Activity为未实现目标，Activity Prompt/响应目标v3；历史M10 Activity使用其原协议，326条结果不变。Step07系统认识、CHECK最终保留集、事实DRAFT→WRITE→RULE_REVIEW已实现，不是待接线双轮。
+新Step05→Activity已接通并生成418条。当前实际资源为activity-draft-v2、activity-review-v2、activity-reading-plan-v1；pipeline版本不是Prompt资源版本。历史M10 Activity使用其原协议，326条结果不变。Step07系统认识、CHECK最终保留集、事实DRAFT→WRITE→RULE_REVIEW已实现，不是待接线双轮。
 
-业务生成默认已登录ChatGPT的Codex上下文gpt-5.6-terra/xhigh；一个job保持同一绑定。设计/调试Astra/ultra、测试Terra/xhigh、代码Sol/xhigh。历史模型身份保持原值，本轮未编辑生产资源或调用产品模型。
+业务生成默认已登录ChatGPT的Codex上下文gpt-5.6-terra/high；一个job保持同一绑定。设计/调试Astra/ultra、测试Terra/xhigh、代码Sol/xhigh。历史模型身份保持原值；默认值变化不自动启动模型或重跑已审内容。
 
 ## 共同中文约束
 
@@ -20,7 +20,7 @@
 
 程序提供精确材料、作用域和Schema，模型解释业务；Java不使用行业字典或中文蕴含检查。正文请求不带宿主路径、hash、run/批次身份、凭据或调度参数。阅读决策可见已冻结相对路径/行段，但看见导航不表示读过原文。
 
-## Activity阅读与解释（目标v3）
+## Activity阅读与解释（已接线；范围修正待实施）
 
 | 任务 | 实际输入 | 模型输出/职责 |
 | --- | --- | --- |
@@ -35,7 +35,7 @@
 >
 > 审阅原始完整材料与完整实际DRAFT，补足有依据的缺项，修正条件和适用范围。不能把完整解释缩成标题。尚未解释的范围明确返回，不能把其他成功slice当作本slice已完成。
 
-目标字段、局部键、coverage与stageKey以[集成合同](../modules/activity-explanation/integration-contracts.md)为准。大包多个slice各自DRAFT+完整REVIEW，程序稳定聚合；无全包摘要合并模型。阶段尝试/人工新批次复用由[执行合同](../modules/model-job-execution.md)拥有，不在Prompt要求模型自行重试。
+现状与目标字段、局部键、coverage与stageKey以[集成合同](../modules/activity-explanation/integration-contracts.md)为准。大包多个slice各自DRAFT+完整REVIEW，程序稳定聚合；无全包摘要合并模型。阶段尝试/人工新批次复用由[执行合同](../modules/model-job-execution.md)拥有，不在Prompt要求模型自行重试。
 
 历史M10的E1…EN和unexplainedEntries按原Schema严格读取；不得给旧326条Activity回填新来源、改模型身份或把新slice字段加进旧版本。
 
@@ -102,4 +102,27 @@ RULE_REVIEW指令：
 
 Step07仍无自动重试；Activity的新stage retry仅在其目标合同内。已读内容、实际Prompt/Schema、序列与binding进入指纹，不改历史raw。本轮无产品调用；历史12请求三例未全通过，见[实测](../supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)。可读性认可、结构通过和真实业务准确性分别报告。
 
-生产已实现Prompt资源由BusinessProcessPromptCatalog按实际任务路由；本文目标Activity v3不能冒充已经落入资源。新实现只运行新增/直接覆盖测试，真实业务质量需后续明确范围验收。
+生产已实现Prompt资源由BusinessProcessPromptCatalog按实际任务路由；下面的新目标版本仅为设计，本轮未改资源。新实现只运行新增/直接覆盖测试，真实业务质量需后续明确范围验收。
+
+## 端到端收尾的Prompt变更清单（待实施）
+
+| 任务资源 | 当前 | 目标 | 具体变更 |
+| --- | --- | --- | --- |
+| activity-draft / activity-review | v2 / v2 | 不变 | 保留完整业务解释；范围执行修复不顺带重写业务Prompt |
+| activity-reading-plan | v1 | v2 | 明确最终有效slice、替换/撤回及当前不足，不把历史告警永久累加 |
+| business-catalog-draft/review（含SHARD） | v2 | v3 | 同入口导航组与完整原Activity关联，不把切片数当步骤数 |
+| business-catalog-merge-draft/review | v2 | v3 | 跨分片保持组关联，仍逐Activity处置 |
+| process-material-selection | v2 | v3 | 保留来源组线索，系统认识不预设行业答案 |
+| process-reading-check | v4 | v5 | 聚焦问题，保留同入口关系；最终成员与仅供理解的context分开 |
+| business-process-draft | v4 | v5 | 实际A/T/S局部映射；同入口多解释可参与一个阶段，规则不可删除 |
+| business-process-write | v1 | v2 | 仅改过程name/purpose、阶段name/narrative；其它结构完全保持 |
+| business-process-rule-review | v1 | v2 | 核对实际读者文字与全部结构字段；可纠正事实并重组合法过程 |
+| business-process-consolidation-draft/review | v2 | 不变 | 既有无损归并，不新增正文写作 |
+
+WRITE响应继续使用完整详细过程Schema。程序移除四类可变展示字段后深比较，数组长度/顺序和disposition/reason也必须保持；不建立中文词黑名单。WRITE不能改的字段不等于最终RULE_REVIEW不能改。最终核对固定材料A/T/S与CHECK成员范围，但可纠正范围内事实、SPLIT或重建局部use定义；最终成员处置及逐过程引用必须闭合。
+
+最终核对需把否定、默认条件、金额用途、配置例外同时核对到叙述、规则、拒绝条件和结束结果，修正写入实际processResult，不只写corrections。采购/销售/调拨的已知错误用于真实验收与fixtures，不写进通用Prompt成为正确答案。主线可以是可选或分批链，不因不是每次必经就否认业务关联。
+
+动态Schema继续按代码中的实际结构生成，根$defs与包装引用能力复用；局部A/T映射贯穿实际输入和Schema，不只是日志显示。阶段标识为现有processLocalId+order，U以过程为作用域。DRAFT局部引用失败或WRITE越界时保留响应、停止Step07，不新增自动修复轮。
+
+新配置/producer/私有记录的精确版本由[Activity合同](../modules/activity-explanation/integration-contracts.md)与[Reconstructor](../modules/business-process-discovery/candidate-process-reconstructor.md)维护。目录/选择/CHECK输入变化使旧任务匹配失效；历史原始结果仍可读取，本轮没有执行新Prompt。

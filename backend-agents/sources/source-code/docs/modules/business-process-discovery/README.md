@@ -15,7 +15,7 @@
 | [RepositoryProcessConsolidator](repository-process-consolidator.md) | 完整业务投影→无损归并与关系裁决 | 一次DRAFT+REVIEW |
 | [BusinessProcessPublisher](business-process-publisher.md) | 封闭结果→catalog/coverage/正文/来源两文件 | 无 |
 
-三阶段、systemAssessment、问题选材、CHECK最终保留集、v4发布与私有完整结果已实现。Corpus、请求/结果、Publisher和持久executor现可显式选择旧Activity/M10或M11 v3 Activity/Step05材料；新分支保持AnalysisStepPublicationReference，不做Module引用强转，并以packet身份隔离短ref。正式CLI/运行输出选择仍由[Activity集成](../activity-explanation/integration-contracts.md)维护。
+三阶段、systemAssessment、问题选材、CHECK最终保留集、v4发布与私有完整结果已实现。Corpus、请求/结果、Publisher和持久executor现可显式选择旧Activity/M10或M11 v3 Activity/Step05材料；新分支保持AnalysisStepPublicationReference，不做Module引用强转，并以packet身份隔离短ref。正式CLI/运行输出选择已接通，由[Activity集成](../activity-explanation/integration-contracts.md)维护；新来源完整贯穿及真实418条过程结果尚未验收。
 
 ## 共同不变量
 
@@ -30,4 +30,10 @@
 - 所有Activity、候选、过程均有处置；结构闭合不能替代语义质量。
 - Step07沿用无自动重试政策；新Activity的stage retry不扩展到本模块。
 
-当前业务生成默认ChatGPT登录上下文Terra/xhigh；历史模型身份和326条Activity不改。历史三例12次请求未全通过：采购最终请求未发送、销售最终有7个未定义用法、调拨合法保存仍有条件限定错误。可读性获认可，全仓未执行。事实见[实测](../../supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)；本轮只用[真实材料推演](../../examples/activity-material-end-to-end-walkthrough.md)检查设计闭合。
+当前业务生成默认ChatGPT登录上下文Terra/high；历史模型身份、旧326条及新418条Activity不改。历史三例12次请求未全通过：采购最终请求未发送、销售最终有7个未定义用法、调拨合法保存仍有条件限定错误。可读性获认可，全仓未执行。事实见[实测](../../supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)；端到端计划先离线验证，再执行无提示小样并展示。
+
+## 本次端到端修正（设计评审稿）
+
+见[端到端业务交付](../../end-to-end-business-delivery-design.md)。新增内容限定在既有Module：同入口/切片关联导航；完整候选包的局部可逆ID；WRITE只改展示字段；最终核对针对正文和结构的条件一致性；新来源正式CLI/store贯穿。既有目录算法、全仓召回、三次请求、无损归并、五文件排版不重建。
+
+当前Activity已真实保存418条，并非尚未实现；有18条近重复统计切片和未完成范围判断风险，先离线核对再作为过程输入。历史326条的目录不可冒充新418条目录。新行为尚未实施/实测，历史三例错误也不因新增SQL而自动关闭。

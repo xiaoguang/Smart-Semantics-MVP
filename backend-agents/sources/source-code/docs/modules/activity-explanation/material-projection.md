@@ -1,10 +1,10 @@
 # ActivityMaterialProjector：完整单元的模型投影
 
-状态：2026-09-22小Packet全量投影已实现；`project(Packet, ActivityExplanationProfile)`建立不可变包内映射与安全XML依赖视图，`materialize(view)`生成确定性`ActivityReadingPacket`，新Activity入口已把它直接交给实际DRAFT/REVIEW Provider请求。该实现不改变Step05 canonical材料，不调用JDT、PersistenceAnalyzer或SQL parser。目标中的`UnitSelection`、ReadingCoordinator分页/补读、独立容量计量profile与持久化reading plan/slice尚未实现。
+状态：完整投影已实现；`project(Packet, ActivityExplanationProfile)`建立不可变包内映射与安全XML依赖视图，`materialize(view)`生成确定性`ActivityReadingPacket`。ReadingCoordinator现已使用该视图构造selected/sliced包并执行阶段保存，325包真实结果见[记录](full-step05-acceptance-20260923.md)。本次不重做投影算法；补范围可靠性和下游阅读组织，见[端到端设计](../../end-to-end-business-delivery-design.md)。不调用JDT、PersistenceAnalyzer或SQL parser。
 
 ## 1. 输入与外部 Interface
 
-当前小PacketInterface为 `project(Packet, ActivityExplanationProfile) -> ActivityMaterialView`，随后 `materialize(view) -> ActivityReadingPacket`；它始终物化该Packet的全部已选单元。目标大材料接线再把profile细分为ActivityReadingProfile并增加UnitSelection。二者都是Activity内部职责，不增加RepositoryAnalysisAgent方法。生产输入必须来自已经验证的CodeReadingMaterialReader；profile在模型batch开始前固定。
+投影Interface为 `project(Packet, ActivityExplanationProfile) -> ActivityMaterialView`，随后 `materialize(view) -> ActivityReadingPacket`。大材料选择由现有ReadingCoordinator及ActivityReadingProfile处理，不再为过去计划中的UnitSelection额外加一层。均为Activity内部职责，不增加RepositoryAnalysisAgent方法。生产输入必须来自已经验证的CodeReadingMaterialReader；profile在模型batch开始前固定。
 
 程序持有完整Step05 reference、packetId、entryId、methodKey、statementRef、SourceReference映射与原文。模型只看本包短键：
 

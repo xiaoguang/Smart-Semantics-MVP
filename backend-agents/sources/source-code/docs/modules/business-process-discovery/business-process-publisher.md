@@ -4,7 +4,7 @@
 
 `BusinessProcessPublication publish(ProcessDiscoveryResult result)`消费封闭的已审过程、知识、处置、来源与运行身份。零模型；不生成业务意义或把中间WRITE当已审。当前实现会重开上游Activity/material receipt验证controls与依赖，不回读业务内容重新解释。
 
-目标新来源接入按Activity materialSource选择精确历史M10 ModulePublication或新Step05 StepPublication，验证对应完整引用与basis；不能把Step05传入仅支持旧M10的reader。由[集成合同](../activity-explanation/integration-contracts.md)与[FrozenAnalysisCorpus](frozen-analysis-corpus.md)维护，此接点未实现。
+新来源接点已实现：按请求明确选择历史M10 ModulePublication或新Step05 StepPublication，验证完整引用与basis；不能把Step05传入仅支持旧M10的reader。由[集成合同](../activity-explanation/integration-contracts.md)与[FrozenAnalysisCorpus](frozen-analysis-corpus.md)维护。当前需补正式CLI使用真实store的全链验证，不重做Publisher。
 
 ## 正式版本
 
@@ -43,3 +43,9 @@ business-processes.md按目录、过程目的/范围、参与者/对象、步骤
 未知ref、错owner、遗漏处置、坏Schema/来源或渲染丢字段失败；不得把结构通过称为语义优秀。当前v4五文件/reader、无折叠正文和preview已有实现。历史三例仅调拨有合法完整job且仍有条件错误，见[实测](../../supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)。
 
 后续新来源接入仅定向检查Step05/历史M10 receipt和basis、来源不冲突、完整业务字段及历史重渲染字节。零模型排版不能成为再润色的理由。
+
+## 本次目标：接收修正后的最终过程，排版不变
+
+新的Discovery在发布前已经还原局部ID并关闭引用、范围与处置；Publisher不认识模型A/T键、不承担语义合并或再次核对中文。公共五文件格式和producer v4保持，source receipt按实际新Activity范围检查点引用。新版内容由现有身份算法自然产生新产物，不覆盖旧文档。
+
+正式新来源验收必须用真实canonical store安装、查询五文件并重开，核对业务正文逐字来源于最终RULE_REVIEW，既有条件、公式及修正未被漏掉。小样走原preview出口，不调用仓库归并、不冒充完整publication；用户看过同意后再扩大。

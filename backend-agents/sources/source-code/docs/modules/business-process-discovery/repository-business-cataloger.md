@@ -45,3 +45,19 @@ Activity处置为PROCESS_MEMBER、SUPPORT_ONLY、STANDALONE、UNCLASSIFIED或NOT
 selection是单次决策，process-reading-decision-v2/producer v4保存完整实际输入、响应和指纹；历史v1/producer v3精确读取。导航/项目说明/关注问题、实际Prompt/Schema及binding进入指纹。旧目录作为输入不同于复用新决策。
 
 当前systemAssessment、问题和选择已实际接线，不再列为待实现。后续新Activity来源只改变上游Corpus接入与实际输入；不重做目录算法。直接测试覆盖完整导航、多variant、跨组召回、移出最后成员、完整旧目录读取及零行业分类器。真实样本/全仓质量单列，旧14候选与后来24候选不可混称同次结果。
+
+## 端到端收尾：同入口导航（待实施）
+
+现有 `ActivityIndexCard.from/toNavigationJson`、Corpus的Activity模型投影未传递完整packet/entry/slice关联；当前418条卡片不能只靠名称让模型猜哪些来自同一次调用。新增的是来源导航，不是业务合并算法。
+
+1. 从实际Activity来源与coverage/保存计划获取原publication、packet、入口键集合及sliceKey；历史没有slice时保留未知，不人工补一个相同范围。
+2. 按来源publication＋packet＋入口集合形成稳定导航组，分配局部P/E键。每条Activity仍保留自己的完整入口关联（多入口交叠不能丢失）、业务卡及ID。
+3. 首次目录、分片/合并、SELECT和CHECK均传递来源组关联。组太大时分页并保留组键和页号；不能因同组截掉其余卡片。
+4. 模型判断同入口解释之间是不同用途、相同阶段的组成、支撑查询还是独立过程。Java不按标题/表名/相似度自动删除或合并。
+5. 目录处置仍逐Activity闭合，不新增variant台账。多个variant、多入口、多过程SPLIT继续有效；同入口不等于同业务。
+
+新418条不能借旧326条目录冒充本次发现。当前Step05正式入口拒绝 `catalogFromModelBatchId`；使用本次全集首次目录，不顺带增加目录迁移能力。任何必需包不完整/无法判定时，成功子集可查询，但不隐式减少325包分母生成正式全仓目录。
+
+目标资源：catalog/SHARD及merge v2→v3、SELECT v2→v3、CHECK v4→v5；首次目录算法和调用层次不变。单次decision容器仍v2（字段未变），新输入/Prompt/Schema及Discovery v5进入指纹；新增来源组在实际input中保存，不只写日志。旧决策按原producer严格读，不能误复用。
+
+直接验证同入口18条均在、交叠入口集合不丢、名称相同但不同包不误归组、跨分片组键稳定、多variant及全部处置保留。真实验收看重复和假步骤是否减少，不预定一定合成一个业务。

@@ -4,7 +4,9 @@
 
 从明确冻结的Java/Spring/MyBatis仓库解释：有哪些业务活动和过程，每一步为何发生、输入什么、受什么条件约束、改变什么、何时拒绝、怎样衔接，以及哪些关系仍不确定。正式业务出口是 `business-processes.md`，附结构化目录、覆盖与来源。材料完整性、业务覆盖和语义质量分别判断。
 
-当前main的Step01–05已完成JDT-only导航、可选持久化材料、统一阅读包及保存/重开；固定来源验收有325包、326入口处置和1个明确导航失败，见[取材交付](supplements/jdt-persistence-reading-materials-delivery.md)。新材料当前止于 `READING_MATERIALS_ONLY`。旧Step06仍依赖M10 BusinessMaterialBuildResult；326条已保存ReviewedActivity保持原样。**本次设计补上新Step05→Activity接入，尚未实现或运行业务模型。**
+main的Step01–05已完成JDT-only导航、可选持久化材料、统一阅读包及保存/重开；固定来源有325包、326入口处置和1个导航失败，见[取材交付](supplements/jdt-persistence-reading-materials-delivery.md)。实现分支 `codex/step05-activity-full-generation` 的 `51b6625` 已接通新Step05→Activity及正式Step07入口，真实保存418条新Activity；旧326条保持原样。当前工作树还有未验证的审查修复，不能把分支能力或运行结束等同于已合入main、范围完整或全仓业务质量通过。
+
+当前收尾详细设计见[端到端业务交付](end-to-end-business-delivery-design.md)。本次仅更新设计：修正范围完成性和历史结果接续、展示同入口切片关系、压缩重复身份信息、限定WRITE职责、验证实际最终稿，再按先样例后全仓的顺序交付。未启动新的实现或产品模型任务。
 
 Step07系统认识、聚焦选材、一次候选阅读检查、DRAFT→WRITE→最终RULE_REVIEW、私有三阶段保存与producer v4发布已经实现。历史三例只有12个实际请求：1 SELECT、3 CHECK、3 DRAFT、3 WRITE、2 RULE_REVIEW。采购最终核对因容量未发送；销售最终响应有7个未定义用法引用及业务范围错误；调拨合法保存但仍有两处条件限定错误。用户认可可读性，不表示三例或全仓质量通过，见[实测记录](supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)。
 
@@ -22,7 +24,7 @@ Step08只保留历史reader/query/renderer，本轮不设计或恢复新九章�
 | 目录、过程与发布 | [Step07](analysis-steps/07-repository-knowledge.md)、[业务过程Modules](modules/business-process-discovery/README.md) | 完整过程、归并、五文件 |
 | 并发、Provider、阶段尝试、新批次 | [model-job-execution](modules/model-job-execution.md) | 绑定、保存和明确终态 |
 | Prompt输入/输出 | [中文Prompt合同](references/semantic-interpretation-prompts.md) | 任务范围与闭合响应 |
-| 精确版本/输出归属 | [Activity integration-contracts](modules/activity-explanation/integration-contracts.md) | 配置、coverage来源manifest、私有结果 |
+| 精确版本/输出归属 | [Activity integration-contracts](modules/activity-explanation/integration-contracts.md) | 配置、来源映射、范围完成性与私有结果 |
 | 历史九章 | [Step08](analysis-steps/08-nine-section-document.md) | 零模型读取、查询、重渲染 |
 
 Step03–05的analysis.code/persistence/material、Step06投影/阅读协调与Step07内部职责均藏在既有步骤内，不按表格行数增加公共方法、分析步骤或固定产物数量目标。JavaParser、严格图/Fact/Proof/Flow/Capsule/M10 producer退出新生产；精确历史读者保留。CONTEXT只定义业务概念。
@@ -54,7 +56,7 @@ ActivityExplainer是唯一局部业务解释者；投影器/阅读协调器不�
 
 ## 5. 执行、失败与复用
 
-业务生成默认绑定已登录ChatGPT的Codex上下文gpt-5.6-terra/xhigh。设计/调试Astra/ultra，测试Terra/xhigh，代码Sol/xhigh。一个job固定同一Provider/账户/model/effort，不自动换服务或回退API；历史身份不改写。
+业务生成默认绑定已登录ChatGPT的Codex上下文gpt-5.6-terra/high。设计/调试Astra/ultra，测试Terra/xhigh，代码Sol/xhigh。一个job固定同一Provider/账户/model/effort，不自动换服务或回退API；历史身份不改写。
 
 新Activity使用单一YAML的全局和Provider/account并发上限，包间并行、同包阶段及slice顺序。失败阶段按配置重试，maxAttempts包含首次，1关闭自动重试；保存每次尝试和backoff原因。REVIEW重试原样复用成功DRAFT，不重读/重写。stageKey包含页、轮与slice身份，不能混淆不同输入。
 
@@ -66,7 +68,7 @@ ActivityExplainer是唯一局部业务解释者；投影器/阅读协调器不�
 
 Step07内部仍只有BusinessProcessDiscovery.discover与BusinessProcessPublisher.publish两个深Interface。Discovery隐藏FrozenAnalysisCorpus、RepositoryBusinessCataloger、ProcessMaterialAssembler、CandidateProcessReconstructor和RepositoryProcessConsolidator；Publisher验证封闭结果、来源receipt并确定性发布，不重新解释业务。
 
-目标FrozenAnalysisCorpus按Activity coverage的materialSource及packet映射选准确来源：旧Activity重开历史M10，新Activity重开Step05 publication。不得按文件形状猜类型、把新SQL补到旧326条Activity上。manifest是coverage字段，不新增公共manifest文件。局部S编号必须经其来源映射才可汇总。
+FrozenAnalysisCorpus按已绑定运行的准确材料引用和Activity自身来源字段选择：旧Activity重开历史M10，新Activity重开Step05 publication。现有coverage-v3没有materialSource对象；新Activity行的materialId即packetId，另存materialSource字符串、sliceKey、originalSourceRefs。不得按文件形状猜类型、把新SQL补到旧326条Activity上。局部S编号必须经其来源映射才可汇总。
 
 新仓库由全部Activity卡进行首次目录；已有完整目录可作为资料重开，跳过旧目录模型。一次全局选材读取项目说明、全部Activity导航、冻结文件目录与可选问题，形成系统认识、可证伪假设、候选和首批读请求。常识只提出问题；Java不写行业分类器。
 
@@ -74,27 +76,29 @@ Step07内部仍只有BusinessProcessDiscovery.discover与BusinessProcessPublishe
 
 DRAFT解释事实；WRITE只见完整实际DRAFT；最终RULE_REVIEW同时见完整原文包、完整实际DRAFT和WRITE，返回{processResult,corrections}。过程保留stage.narrative及全部条件、拒绝、动作、状态、结果、转移、规则适用用法与知识正文。原文可纠正旧Activity解释，但旧Activity不可覆盖。最后只确定性保存/编号/排版。
 
+本次待评审增量：导航展示同packet/entry的切片关系而不删原Activity；候选输入使用可逆局部A/T编号；WRITE只改展示文字、固定其它事实结构；最终核对同步检查正文/规则/条件/结果。这些改动尚未实现，详见对应Module与端到端设计。
+
 归并只裁决KEEP/MERGE_INTO/REJECT及PARENT_CHILD/RELATED/ALTERNATIVE。不满足已有无损条件就保留原过程和原因，不拼stage制造生命周期。三个分母闭合后形成封闭结果；支撑/独立/未分类Activity的既有知识由Discovery确定性投影，Publisher不重新提炼。
 
 ## 7. 版本与来源归属
 
-“目标”行需在后续实施同步writer/reader/registry/exact-file/basis及直接测试；本轮只设计。
+下表区分已核对的分支实现和本次待评审增量。历史版本保持原义；不把文档曾计划的字段当作已经落盘字段。
 
 | 合同 | 当前/历史 | 本次目标 |
 | --- | --- | --- |
 | JDT/持久化/Step05 | java-code-index-v2、persistence-material-index-v1、code-reading-material-set-v1 | 保持并直接读 |
 | 材料运行state | 新取材v4，历史v3严格读 | 保持v4，不覆写历史 |
-| YAML | repository-run-config-v2 | repository-run-config-v3：Activity scope/reading/retry |
-| 私有执行配置 | model-job-execution-config-v3，历史v2 | model-job-execution-config-v4：LEGACY_BUSINESS_MATERIALS/CODE_READING_MATERIALS |
-| run output | v5仅READING_MATERIALS_ONLY；历史v3/v4严格读 | analysis-run-output-v6：Step05材料与Activity双owner |
-| Activity解释 | flow-interpretation-activity-explanations-v1 | flow-interpretation-activity-explanations-v2，保留业务字段 |
-| Activity覆盖 | flow-interpretation-activity-coverage-v2 | flow-interpretation-activity-coverage-v3，materialSource/packet/slice处置 |
-| Activity私有结果 | 旧pair严格读 | model-job-reviewed-result-v4，仅新Activity含阶段尝试 |
-| Activity Prompt/响应 | 历史v2 | 目标v3，明确实际包/语义范围 |
-| Step07过程 | 已实现私有model-job-reviewed-result-v3、producer v4 | 保持 |
+| YAML | repository-run-config-v2，含activityRetry，不接受activityReading | config-v3接通activityReading |
+| 私有执行配置 | 新Step05为model-job-execution-config-v4，历史v2/v3 | v5冻结实际reading配置及新过程输入版本 |
+| run output | analysis-run-output-v6已实现，历史v3–v5严格读 | 保持v6及activityBatchComplete字段 |
+| Activity解释 | 新flow-interpretation-activity-explanations-v2，历史v1 | 保持v2正文/来源字段 |
+| Activity覆盖 | 新coverage-v3仅entry处置，无包/slice台账 | coverage-v4增加最小packetCompletion；M11 producer v4 |
+| Activity私有结果 | reviewed-result-v4阶段、activity-packet-result-v1包结果、reading-plan-v1 | plan-v2及batch-result-v2保存明确范围；未变格式保持 |
+| Activity Prompt/响应 | draft/review-v2；reading-plan-v1 | draft/review不变；reading-plan-v2明确最终scope |
+| Step07过程 | 私有reviewed-result-v3、Discovery/Publisher producer v4 | Discovery v5、私有v5与局部编码；Publisher v4保持 |
 | Step07五文件 | catalog/coverage/业务Markdown v2；来源两文件v1 | 保持 |
 
-目标materialSource={kind:CODE_READING_MATERIALS,sourceRunId,publication,materialSchemaVersion,materialProducerVersion}中publication是完整Step05引用。材料属于sourceRunId，Activity/过程属于modelBatchId/output run。指纹绑定实际内容、source映射、Prompt/Schema、任务序列与服务/账户/model/effort；并发、新batchId、日志目录不制造业务事实。精确字段以[集成合同](modules/activity-explanation/integration-contracts.md)为准。
+新来源完整引用实际保存在readingMaterialCheckpoint，材料属于sourceRunId，Activity/过程属于各自modelBatchId/output run；不再新增同义的materialSource对象。指纹绑定实际内容、source映射、Prompt/Schema、任务序列与服务/账户/model/effort；并发、新batchId、日志目录不制造业务事实。精确字段以[集成合同](modules/activity-explanation/integration-contracts.md)为准。
 
 ## 8. 来源、覆盖与真实质量
 
@@ -108,4 +112,4 @@ SourceRef由程序定位同一冻结文件、准确行段和原文；模型只�
 
 Step07正式文件为repository-business-process-catalog.json、process-coverage.json、business-processes.md、source-refs.jsonl、sources.md。producer v4正文来自最后RULE_REVIEW，无HTML折叠，规则和知识certainty直接可见；历史v2/v3按receipt恢复旧字节。样本preview不关闭全仓coverage。
 
-[真实材料推演](examples/activity-material-end-to-end-walkthrough.md)核对输入、业务谓词、来源、阅读与下游结果，不是新模型输出。逻辑闭合无需本轮重跑JDT、构建或业务模型。后续实施做新增/直接覆盖测试，再在明确授权范围检验真实Activity质量；全仓生成与旧三例修正不在本轮执行。
+[真实材料推演](examples/activity-material-end-to-end-walkthrough.md)保留当时原文核对；[端到端设计](end-to-end-business-delivery-design.md)进一步推演销售统计18切片、单据订金规则和调拨配置例外。设计闭合不等于模型必然正确。本轮不重跑JDT、构建或业务模型；后续先范围核对与离线贯穿，再展示真实样例，用户确认后才扩大到全仓。

@@ -4,20 +4,24 @@
 
 ## 已实现与尚未实现
 
-| 范围 | 当前事实 | 本次剩余目标 |
+| 范围 | 当前实际事实 | 剩余事项 |
 | --- | --- | --- |
-| Step01–05 | JDT-only/Core、可选MyBatis/JSqlParser、统一阅读材料、保存重开与固定源验收完成；325包/326处置/1导航失败 | 不重跑、不重建；现行index v2、persistence v1、material set v1保持 |
-| 新材料运行 | state v4/output v5只支持READING_MATERIALS_ONLY | repository-run-config-v3、execution-config-v4、run-output-v6的新Activity接入 |
-| 历史Activity | ActivityExplainer依赖旧M10 BusinessMaterialBuildResult；326条已审结果可严格重开 | 新Step05直接投影、无损去重、分页模型阅读/完整语义slice、完整DRAFT/REVIEW及目标来源/覆盖 |
-| 新Activity执行 | 旧执行池/Provider/独立批次基础存在；新阶段策略未接线 | 包间并行、阶段尝试/backoff、失败隔离与人工新批次精确复用；旧Step07无自动重试不变 |
-| 全局系统认识/聚焦选材 | DefaultBusinessProcessDiscovery已发送冻结README/全体导航，selection v2返回assessment/问题；CHECK v4保留/移出R和一次补读 | 原样复用；不加行业分类器 |
-| 过程三阶段 | reconstructRaw已执行DRAFT v4→WRITE v1→RULE_REVIEW v1；中间实际Schema门禁及最终processResult解析存在 | 原样复用，不把双轮当当前 |
-| 私有保存/复用 | model-job-reviewed-result-v3/pipeline v1/producer v4保存完整input、packet、映射、三稿；历史v2 pair不冒充三阶段 | 新Activity私有v4独立，不整体升级过程格式 |
-| 五文件/预览 | producer v4可读正文、无折叠、knowledge certainty、sources.md与历史2/3版本读取已实现 | 新来源receipt/basis接线尚未实现；公共五文件schema保持 |
-| Step07材料来源 | Corpus/Publisher现按旧Activity+M10与同源inventory重开 | 按新Activity coverage materialSource精确选择新Step05，保留实际已读scope与原件来源 |
+| Step01–05 | JDT-only/持久化/统一材料已保存325包、326处置、1导航失败 | 固定复用，不重跑；index/persistence/material set版本保持 |
+| 新Activity | `51b6625`中Step05投影、有限阅读、阶段保存/retry、M11和正式CLI已接通；真实418条 | 13个生产/测试文件中的审查修复未验证；范围完成性需独立表达 |
+| 切片 | 300包单条、25包多条；销售统计18条 | 保留全部结果，下游看见来源组；不按标题删并或把18条当18业务 |
+| 保存/复用 | 阶段reviewed-result-v4、大包packet-result-v1、批次result-v1；output-v6 | 原有效plan接续、公开成功部分保留、coverage-v4及离线只复用核对 |
+| 配置 | YAML-v2支持activityRetry，reading限制仍写死；execution-config-v4 | 接通设计中的activityReading写YAML-v3；execution-config-v5 |
+| 系统认识/聚焦读取 | SELECT v2、CHECK v4已发送项目说明/完整导航，并保留/移出与一次补读 | 同入口关系进入全部导航；不新增行业分类调用 |
+| 过程三阶段 | DRAFT v4→WRITE v1→RULE_REVIEW v1，完整包及两稿进入最后核对 | 候选A/T短ID、WRITE展示字段限制、最终成稿准确性 |
+| Step07私有保存 | model-job-reviewed-result-v3、pipeline v1、producer v4已实现 | 新映射/合同记录用v5（v4是Activity），历史严格读 |
+| 新Step07来源 | SourceAnalysisExecution已将Step05+M11接到Discovery/Publisher；不同owner保留 | 正式CLI→真实Agent/store的完整离线五文件接力及新样例验收 |
+| 五文件/历史 | Publisher v4确定性正文/来源、历史producer2/3严格读 | 保持公共格式及renderer，不重新开发；原三例准确性尚未全过 |
 | Step08 | 历史reader/query/renderer | 无新生成目标 |
 
-具体目标字段/版本以[Activity集成合同](../../modules/activity-explanation/integration-contracts.md)为准；文档里的目标不表示已经有可执行CLI或Schema资源。本轮没有改代码、测试、配置或生产Prompt。
+当前分支为`codex/step05-activity-full-generation`，已有实现提交但未完成本轮实现PR交付；本页没有重新运行CI。新范围目标、跨模块影响、版本、推演和停止条件见[端到端收尾设计](../../end-to-end-business-delivery-design.md)。它与本页历史事实分开，不把目标字段宣称为已落地。
+
+新批次`analysis-run:e00cf448733fc078fe460e84b2ea41f51aec85347a4240a49154087748dfa2f9`的418条都保留；`activityBatchComplete=true`是旧执行判断，不足以证明历史大包的必需scope已完整处置。325条ANALYZED_WITH_GAPS和1条上游未取材的语义PARTIAL也不等于当前CLI完全不能运行Step07。必须分别看范围、接线和真实业务质量。
+
 
 ## 历史三例：程序完成不等于质量通过
 
@@ -31,10 +35,10 @@
 
 用户接受可读性与业务联系；该意见和事实问题并存。未关闭全仓coverage，未执行全仓归并，不把三个样本或自动fixture说成全仓验收。原结果与详细位置见[不可变三例记录](three-case-acceptance-result-20260916.md)，旧研究见[实验比较](experiment-comparison.md)，既往交付见[delivery](delivery.md)。
 
-原实现记录里的596项CI/SpotBugs/PMD属于当时执行证据，不是本轮重新运行。本轮只做文档与实际保存源码核对。旧输入、raw响应、FAILED状态、326 Activity及more-findings.md不变。
+历史596项质量检查及Activity实现提交的544项测试均只对应各自当时的代码，不是当前未验证补丁的测试结果。本轮只做文档与实际保存源码核对。旧输入、raw响应、FAILED状态、326 Activity及more-findings.md不变。
 
 ## 后续验证边界
 
-当前只确认设计逻辑是否闭合：实际材料怎样进入模型、哪些原文真的读到、语义范围如何拆分、失败/未读范围怎样保留、成功阶段怎样复用、Step07怎样选准确来源。见[真实推演](../../examples/activity-material-end-to-end-walkthrough.md)。
+后续实施先验证审查修复、原418条离线范围核对和正式新来源五文件接力；不重做已经存在的投影器、线程池或Step07入口。失败/无法判定范围要展示已有材料和最小补做选择，不自动让全部325包重新调用模型。
 
-后续实施才编写新增/直接覆盖的fixture，验证新来源/投影/阅读/coverage/重试/历史读取。真实Activity质量需在明确样本范围、完整输入和当前模型绑定下审阅；自动测试不能保证中文事实。现存三例优化、扩大样本或全仓执行需另行明确任务，不能由文档整合自动启动。
+随后以核对后的输入进行具名小样，检查否定、配置例外、金额用途和对象联系。必须先给用户看，再由用户决定全仓；设计和自动化通过不授权模型执行。过程仍三次请求，不因一个失败自动补第四次。本次文档没有变更生产代码、测试、Prompt资源、配置或运行数据。

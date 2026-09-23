@@ -47,3 +47,51 @@ Step07无自动重试。fatal停止新派发，已经启动且前置合法的候
 历史三例没有全部通过：采购核对超窗未发送；销售最终响应有7个未定义查询用法并有业务范围错误；调拨完整保存仍有两处配置限定问题。可读性获认可，不能说三例全通过或已完成全仓验收，见[原实测](../../supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)。
 
 直接测试只证明三阶段顺序、完整输入、Schema、保存/复用与零上游调用；真实正文仍需准确性审阅。新Step05接入应保留这些行为，本轮没有代码/测试/模型执行。
+
+## 端到端收尾合同（待实施）
+
+### 同一份可逆局部引用输入
+
+阅读包封闭后由Assembler一次分配A（Activity）、T（statement）、S（来源），所有阶段使用同一映射；业务正文不做字符串替换。全局ID只保存在程序侧映射，实际输入、Schema allowlist、三稿、解析及复用同时切换。现有根`$defs/$ref`与最终包装的引用提升已经实现，继续复用。
+
+阶段身份为现有`(processLocalId,order)`，不增加stageLocalId。U键为过程内部useLocalId，多个过程可以各有U1但不能跨过程裸引用。任意N入口、同Activity多variant、同候选拆为多个过程均保留。
+
+### WRITE仅改变四种展示字段
+
+保留完整过程响应结构，不新增散文输出或第四次模型调用。可变路径只有：
+
+- `processes[*].name`
+- `processes[*].purpose`
+- `processes[*].stages[*].name`
+- `processes[*].stages[*].narrative`
+
+移除上述展示字段后，actualDraft与actualWriting深比较必须相等，包括数组长度和顺序、disposition/reason、所有ID、order、范围、规则、公式、条件、分支、结果、certainty与引用。限制只适用于DRAFT→WRITE；不是最终RULE_REVIEW的限制。它保留事实底稿，不能保证自由文字永远不写错。
+
+DRAFT提前检查仅做局部定义—引用闭合，不抢先执行最终依据/中文事实检查。WRITE违规或局部引用无效时保存完整实际响应并停止；沿Step07现有fatal策略，不自动第三轮修复或套用Activity retry。
+
+### 最终核对仍有纠错权
+
+RULE_REVIEW固定A/T/S映射和CHECK成员边界，但允许在这些材料内修改错误事实、收窄条件、删除阶段、SPLIT、重建过程局部use定义。不得固定错误DRAFT的所有U键而使核对无法纠错。最终逐过程定义/引用与候选成员处置必须闭合；被删除阶段涉及的成员不能无声消失。context提供T/S依据而不凭空成为成员/办理use。
+
+最终核对同时检查正文、结构化规则、拒绝条件和结束结果，尤其是否遗漏默认条件、否定、金额用途、配置例外和适用变体。必须同步修改实际最终processResult，不能只在corrections声称已处理。最后不再模型润色，程序不增加中文语义判断或证据补采。
+
+### 精确版本与保存
+
+| 合同 | 当前 | 目标 |
+| --- | --- | --- |
+| Discovery producer | v4 | v5 |
+| 候选pipeline | business-reasoning-writing-rule-review-v1 | business-reasoning-writing-rule-review-v2 |
+| 阅读包 | process-reading-packet-v1 | process-reading-packet-v2 |
+| 局部映射 | 尚无贯穿A/T映射 | 私有process-local-reference-map-v1 |
+| 三阶段指纹 | business-process-three-stage-input-fingerprint-v1 | business-process-three-stage-input-fingerprint-v2 |
+| 候选私有完整记录 | model-job-reviewed-result-v3 | model-job-reviewed-result-v5 |
+| DRAFT / WRITE / RULE_REVIEW Prompt | v4 / v1 / v1 | v5 / v2 / v2 |
+| Publisher / 五项公共文件 | v4 / 各现行schema | 不变 |
+
+私有v4已经用于Activity，不能重新赋予过程含义。过程v5在现有记录中增加完整localReferenceMap和inputEncodingVersion，保存实际编码input/三稿及现有来源归一化映射；原始模型响应不改写。解析先在局部作用域验证，再复制还原全局引用，不拿还原后的副本冒充raw。私有单决策字段不变仍v2，仅输入/producer/指纹更新。动态Schema没有独立现成版本文件，按实际Schema字节和任务合同参与指纹，不虚构资源文件。
+
+仅完整合法v5三阶段可精确复用；旧v3仍按旧三阶段严格读取，不默认升级为v5。范围/Prompt/Schema/映射/模型变化失效，批次/时间/并发/路径变化不影响语义匹配。Publisher仍接同一种完整ReviewedBusinessProcess，不另写业务文本。
+
+### 最小验证
+
+实际input中的长身份明显减少而完整正文不减；多候选T1/U1不串源；WRITE修改规则时被捕获、合法文字改写可通过；最终REVIEW能纠正原DRAFT事实并SPLIT；修正后的正文/拒绝/结果进入最终发布；旧三阶段可重开；新来源CLI全链零JDT/Activity生成。真实小样必须展示给用户后再决定全仓，不能用Schema通过替代业务准确性。

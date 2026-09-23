@@ -1,6 +1,6 @@
 # 系统认识、聚焦阅读与三阶段成稿：已整合索引
 
-此设计已经实施，其有效合同现由[Step07](../../analysis-steps/07-repository-knowledge.md)及[业务过程Modules](../../modules/business-process-discovery/README.md)维护。本页不再重复可漂移的调用/字段规则。
+原三阶段接线已经实施，不能据此认为业务质量全部通过；其有效合同现由[Step07](../../analysis-steps/07-repository-knowledge.md)及[业务过程Modules](../../modules/business-process-discovery/README.md)维护。本页不再重复可漂移的调用/字段规则。当前后续改动见[端到端收尾详细设计](../../end-to-end-business-delivery-design.md)：补同入口导航、候选局部短ID、WRITE展示字段边界及最终稿全字段核对。这些是待评审目标，不是已实施成果。
 
 ## 原决定与当前位置
 
@@ -20,4 +20,4 @@
 
 三阶段接线、私有结果v3、producer v4、系统认识和CHECK最终保留集均已完成。原三例12次请求没有全部通过：采购最后核对未发送，销售最后返回引用7个未定义用法，调拨完整保存仍有配置限定错误。历史原始结果见[三例记录](three-case-acceptance-result-20260916.md)，[实施状态](implementation-status.md)区分程序与质量。
 
-新Step05→Activity、大包模型阅读和阶段重试属于[Activity设计](../../modules/activity-explanation/README.md)，未实现；不改变本页历史Step07无自动重试或原326Activity。此次仅逻辑设计确认，不自动继续三例或全仓。
+新Step05→Activity、大包模型阅读和阶段重试已经接通，325包真实产生418条，详见[Activity设计](../../modules/activity-explanation/README.md)。范围完成性及审查补丁还需验证；Step07新来源正式分支存在但没有完成新418条的真实端到端交付。历史Step07无自动重试、原326条与三例记录不变。本次仅更新设计，不继续任何模型调用。

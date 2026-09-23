@@ -81,10 +81,12 @@
   source/coverage. The fixed 325-packet real run and local quality checks are
   recorded in docs/modules/activity-explanation/full-step05-acceptance-20260923.md;
   its one upstream JDT gap and partial semantic status remain explicit.
-- Preserve all historical 326 Activities, raw model results and
-  more-findings.md. The current user-approved implementation scope permits
-  code, direct tests and later product Activity generation from saved Step05
-  material, but not JDT/Step01–05 reruns or process/report regeneration.
+- Preserve historical 326 Activities, new 418 Activities, raw model results and
+  more-findings.md. The approved end-to-end implementation plan permits offline
+  completion/reuse fixes and Step07 improvements, followed by unguided process
+  samples. Product focusQuestion stays null. Full process expansion requires
+  user approval after sample display; JDT/Step01–05 reruns, Activity regeneration
+  and new reports are not authorized. See docs/plans/end-to-end-business-delivery-implementation-plan.md.
 - docs/DESIGN.md is the target architecture. Current code, schemas, tests and
   historical artifacts may validate or falsify it but never silently weaken
   it.
@@ -228,7 +230,7 @@ or strict graph/Fact/Flow producers.
 
 - Current user-selected roles: design/debugging gpt-6-astra / ultra; test
   writing gpt-5.6-terra / xhigh; production code gpt-5.6-sol / xhigh.
-  Product business generation defaults to gpt-5.6-terra / xhigh in the logged-in
+  Product business generation defaults to gpt-5.6-terra / high in the logged-in
   ChatGPT Codex context. This does not change historical runtime identity or
   authorize a YAML edit in a documentation-only task. One job keeps its binding.
 - Automated tests use frozen fixtures and a deterministic scripted Provider.
@@ -266,7 +268,7 @@ or strict graph/Fact/Flow producers.
   Java retrieves, never decides semantic sufficiency. Remaining gaps stay
   explicit; no third selection, automatic repair or Activity regeneration.
 - Configure only global and each Provider/account service maxConcurrentJobs
-  in the single YAML owner; the current model default is Terra/xhigh; exact limits belong to YAML. These
+  in the single YAML owner; the current model default is Terra/high; exact limits belong to YAML. These
   are in-flight job limits, not maxMaterialsToStart, Builder K or actual N.
   Eligible queued jobs are not skipped when a concurrency slot is unavailable.
   Multiple keys or fresh sessions sharing an account/project do not create

@@ -1,6 +1,6 @@
 # 局部活动解释
 
-> [总体设计](../DESIGN.md)；固定 key：`flow-interpretation`，目录：`steps/06-flow-interpretation/`。当前ActivityExplainer仍消费旧M10；本页是新Step05材料接入、长材料阅读与阶段retry的目标详细设计，尚未实施。M10生产已退役，不因接入而恢复。
+> [总体设计](../DESIGN.md)；固定 key：`flow-interpretation`，目录：`steps/06-flow-interpretation/`。分支51b6625已实现新Step05直接消费、长材料阅读及阶段retry，真实保存418条Activity。审查修复草稿尚未验证；本次待评审增量见[端到端收尾设计](../end-to-end-business-delivery-design.md)。M10生产已退役，历史读取保留。
 
 ## 1. 为什么存在
 
@@ -13,8 +13,8 @@ Step05已保存完整Java与可选XML/SQL材料。Step06解释“这个入口附
 | 模块 | 输入 | 程序步骤 | 输出/下一消费者 |
 | --- | --- | --- | --- |
 | 已有CodeReadingMaterialReader | 完整Step05 ref | 验来源/上游并恢复完整Packet | ActivityMaterialProjector |
-| ActivityMaterialProjector（目标） | 不可变Packet+reading profile | 短ref、去重复、完整方法/statement依赖、真实计量 | 模型阅读视图与导航 |
-| ActivityReadingCoordinator（目标） | 视图+实际Provider容量 | 小包直接；大包导航分页、有限补读、完整slice | 独立可解释的完整阅读包与未处理范围 |
+| ActivityMaterialProjector | 不可变Packet+reading profile | 短ref、去重复、完整方法/statement依赖、真实计量 | 模型阅读视图与导航 |
+| ActivityReadingCoordinator | 视图+实际Provider容量 | 小包直接；大包导航分页、有限补读、完整slice | 独立可解释的完整阅读包与未处理范围 |
 | ActivityExplainer | 一个包/各slice完整阅读包 | DRAFT/REVIEW、结构/scope验证、成功stage保存 | 完整ReviewedActivity |
 | 既有job pool/store/publisher的增量 | 不可变stage与结果 | 两级并发、阶段retry、稳定聚合、来源/coverage | M11；已完成范围供Step07 |
 
@@ -61,7 +61,7 @@ ReviewedActivity业务字段保持：name、businessPurpose、participants、bus
 两集合不相交；未知key/ref拒绝
 ```
 
-MODEL_NOT_EXPLAINED只表示合法REVIEW明确未解释，不是来源缺失、容量失败或retry耗尽。包级还必须关闭所有必需slice与未读范围；一个slice成功不能把同entry其他失败范围标为完整。coverage-v3保留技术限制、navigation-only/完整正文处置、必需未读和失败stage，不另建业务证明账本。
+MODEL_NOT_EXPLAINED只表示合法REVIEW明确未解释，不是来源缺失、容量失败或retry耗尽。包级还必须关闭所有必需slice；一个slice成功不能把同entry其他失败范围标为完整。当前coverage-v3只有entry级处置，完整阅读细节在私有记录。本次目标coverage-v4增加最小packetCompletion，不复制逐unit台账；普通未选辅助源码不等于必需失败，历史无法判断则明确UNDETERMINED。
 
 例如旧已审“批量强制结单”保留“逐项状态必须等于3，否则抛异常；通过后设为2；更新数量大于0才返回成功信息；状态正式含义待确认”。这比方法名翻译具体，但它仍是局部Activity，不能直接宣布完整订单生命周期。
 
@@ -75,16 +75,18 @@ DRAFT成功立即保存；REVIEW失败只retry REVIEW。每attempt有新request�
 
 ## 7. 发布与下游
 
-M11地址保持 `module11/activity-explainer`，目标module v3仍只有 `activity-explanations.jsonl` 与 `activity-coverage.json`。覆盖包含明确materialSource与packet/slice来源；新schema为explanations-v2/coverage-v3。材料属于sourceRunId，模型输出属于新modelBatchId；精确版本前缀见接入合同。
+M11地址保持 `module11/activity-explainer`，当前module v3只有 `activity-explanations.jsonl` 与 `activity-coverage.json`，schema为explanations-v2/coverage-v3。来源映射实际在Activity行和运行的readingMaterialCheckpoint，不在coverage的materialSource对象。本次覆盖升v4、producer升v4，正文v2保持。材料属于sourceRunId，模型输出属于各自modelBatchId；精确字段见接入合同。
 
-部分成功M11可读，但modelBatchComplete=false阻止自动下游；共享来源/结构损坏则不安装不可信aggregate。Step07只按显式来源读取旧M10或新Step05，卡片导航不能代替完整Activity与源码，也不能因此重新跑本步。
+部分成功M11可读，但activityBatchComplete=false及必需范围检查阻止自动下游；共享来源/结构损坏则不安装不可信aggregate。Step07只按显式来源读取旧M10或新Step05，卡片导航不能代替完整Activity与源码，也不能因此重新跑本步。
 
 保存的326个旧ReviewedActivity、326条入口处置及原M10完全保留，其原模型/限制不变。新Step05的325包、326覆盖及1个导航失败是另一份材料验收，不能据此重标旧Activity或要求全量重跑。
 
 ## 8. 当前成熟度与直接验收
 
-已实现：旧Activity DRAFT/完整REVIEW、任意N入口闭合、v2 Prompt/coverage、两级并发、完整job私有保存和整pair复用；新Step05 reader能完整恢复Packet。待实施：新材料消费/短投影/完整XML依赖、分页补读与slice、每stage retry/保存/复用、v3配置/新M11输出与Step07来源接线。
+已实现：新材料投影、XML依赖、阅读/slice、阶段保存和retry、M11 v3/output-v6、正式CLI及Step07来源接线。真实325包生成418条，1个原导航缺口仍在。旧提交544测试通过不覆盖未验证修复草稿；剩余包括阅读计划正确复用、必需范围、公开部分成功、错误分类、先校验后SUCCESS和可配置reading上限。
+
+本次目标先离线核对418条的原阅读计划和成功阶段，以显式只复用的新批次形成可靠范围记录，不改旧正文。Step07只增加同入口导航关系，模型可将相近切片作为同一阶段的多个资料；不按名称删除、不把18条统计切片当18步办理流程。不自动重跑Activity。
 
 Terra先写直接行为RED，Sol实现，Astra裁决与debug。测试覆盖完整真实请求材料、REVIEW保留长规则/公式、多entry多slice覆盖、候选/SQL条件、容量停止、DRAFT成功后REVIEW重试、失败隔离、新batch复用和零重扫。只跑直接覆盖测试，重型命令串行。
 
-真实接受先一个小包，再新增单据大包，检查模型实际看到的完整实现与业务规则适用范围，之后才讨论扩大。当前没有新的模型调用、Activity结果或实测时长；文档闭合不等于语义质量已验证。
+既有小包/大包和325包真实结果见[原验收](../modules/activity-explanation/full-step05-acceptance-20260923.md)，之后发现的问题见[收口记录](../modules/activity-explanation/post-review-handoff-20260923.md)。本轮只修改设计，没有追加模型调用；后续过程样例与全仓需重新按明确范围安排，文档闭合不等于语义质量已验证。

@@ -1,6 +1,6 @@
 # ActivityReadingCoordinator：大材料怎样有效读完
 
-状态：实施中。Step05单包的完整投影、DIRECT/SELECTED/SLICED阅读计划、有界导航、逐slice DRAFT/REVIEW、包级失败隔离和正式CLI接线已实现。每次导航决策都是独立模型请求，因此发送累计已选单元的完整正文，而不只发送短键或本轮新增正文；请求超容量时明确失败，不静默截断。固定DepotHead包包含443个方法和58条SQL语句；真实小样已完成一条包含Service实现与订金查询SQL的Activity DRAFT/REVIEW，未读的下游实现如实保留为缺口。这只证明已选范围能够解释，不代表整个大包或全仓无缺口。全量325包验收尚未完成。它复用现有Activity job内顺序调度；最小目标是让模型读完整相关实现，并能诚实报告没有读完的范围，不建立检索服务、向量库或摘要运行框架。
+状态：DIRECT/SELECTED/SLICED、分页阅读、逐slice解释、任务池与CLI已实现，325包真实保存418条Activity。后续审查发现计划复用、必需范围、部分结果及历史容量告警的处理缺口，修复草稿未验证，见[收口记录](post-review-handoff-20260923.md)。下述阅读基础继续复用；本次v2修正为设计评审稿，不是已上线能力。每次请求仍自包含，不静默截断，不建立检索服务、向量库或摘要运行框架。
 
 ## 1. 三条可结束的路径
 
@@ -52,9 +52,9 @@ READING_PLAN只能选择本Packet已有单元及其已保存依赖，不能搜�
 | maxNavigationPages | 128 | 每技术包最多展示的不同导航页；正整数，不按付费额度推算 |
 | maxReadingRounds | 4 | 全导航展示之后最多进行的正文补读/范围修订轮；每轮必须增加正文或明确终止 |
 | maxSlicesPerPacket | 32 | 一个包最大局部业务范围数；限制失控分解，不限定业务本身有几类 |
-| request/input/output容量 | 必需配置缺失则拒绝 | 现有字节限制精确检查；Provider声明的context上限与保守预留采用离线计数/字节估算，不要求隐藏tokenizer证明；详见[容量预检合同](integration-contracts.md#8-直接实施检查) |
+| request/input/output容量 | 必需配置缺失则拒绝 | 现有字节限制精确检查；Provider声明的context上限与保守预留采用离线计数/字节估算，不要求隐藏tokenizer证明；详见[容量预检合同](integration-contracts.md#8-容量失败与验收) |
 
-默认值提供有界运行，真实样例可在用户批准的后续batch显式调整；本轮未实测它们足够解释2MB样例。导航展示决策不消耗maxReadingRounds，仍计实际请求与attempt；达到页限就停止新增阅读请求并列出未展示范围。所有READING_PLAN请求总数上界为实际页展示次数 + maxReadingRounds；同页或已取单元的重复请求不能重置上界。零进展响应结束为READING_PLAN_NO_PROGRESS，而不是再开隐含修复轮。
+这些默认值当前仍硬编码在调用方，YAML接线是本次待实施项。真实大包已经运行，但不能据此证明范围无缺口。导航展示决策不消耗maxReadingRounds，仍计实际请求与attempt；达到页限就停止新增阅读请求并列出未展示范围。所有READING_PLAN请求总数上界为实际页展示次数 + maxReadingRounds；同页或已取单元的重复请求不能重置上界。零进展响应结束为READING_PLAN_NO_PROGRESS，而不是再开隐含修复轮。
 
 ## 4. 如何形成多个完整slice
 
@@ -73,13 +73,13 @@ slice是模型提出的局部业务阅读范围，不是固定行数块：
 
 ## 5. 覆盖不以一个成功Activity掩盖剩余范围
 
-程序沿用Activity coverage，在v3中增加包/slice范围，而非另建业务证据账本：
+当前coverage-v3只有入口处置，不能冒称已保存下述完整范围。本次目标分工是：私有plan-v2保存实际阅读细节，公共coverage-v4只增加packetCompletion摘要，见[集成合同](integration-contracts.md#4-本次目标最小packetcompletion)。私有阅读信息包括：
 
-- 每包记录navigationPagesShown/remaining、unit dispositions、sliceKeys、未选/必需未读范围及原技术限制。
-- 每单元明确FULL_TEXT_PROVIDED、NAVIGATION_ONLY、UPSTREAM_UNAVAILABLE，及其所属slice/读取结果；NAVIGATION_ONLY不能被称为源码已读或无需分析。
+- 复用现有页游标、已供给完整单元、slice定义及实际缺失信息，保存最终范围；不要求为每个未读单元建立业务处置记录。
+- 实际阅读结果区分已供给正文、仅有导航、上游不可取得；可由现有请求/返回和导航计算的，不再复制一份独立台账。仅有导航不能声称源码已读。
 - 每slice记录scope、必需unitKeys、REVIEWED、MODEL_NOT_EXPLAINED、READING_INCOMPLETE、FAILED/容量原因；重试耗尽还含失败stage与attempt引用。
 - 每entry汇集它所有slice的处置及已审Activity。某slice成功仅贡献该scope；仍有必需未读、未完成slice或未展示导航时，entry保持带原因的未完全分析。
-- 不需要的导航正文只能由模型明确记录“本次解释未选”的范围，保留为未读；不能因此得出这些代码不存在业务规则。完整业务验收须核对当前声明范围覆盖与剩余未读是否影响结论。
+- 模型在范围级说明未选和待确认；不必逐方法证明“无需分析”。程序只跟踪已声明必需范围是否供给并完成，不推论未读代码不存在业务规则。
 
 slice内部继续 `activity entryKeys ∪ unexplainedEntries = slice entryKeys` 且不相交。跨slice可重复entry，不同包的局部key不能直接合并。包级闭合还需全部必需slice有终态，不能只比较entry ID集合。
 
@@ -105,4 +105,27 @@ slice内部继续 `activity entryKeys ∪ unexplainedEntries = slice entryKeys` 
 
 直接测试覆盖：小包只两阶段；443方法/1468calls形状的中性fixture能分页且不丢导航分母；正文补读重复去重；跨页候选可被选择；多slice同E1一成功一失败不误全覆盖；共同方法多variant不由程序复制业务规则；SQL列值/依赖完整；不可拆闭包超限零对应DRAFT；局部稿总和过大仍程序保存完整多Activity；阶段retry不增加阅读轮；页/轮限制不循环；旧M10无新阅读任务。
 
-本次已批准的实施验收从已保存的Step05检查点开始，先单独验证 `/user/logout` 小包；经过质量屏障后，新建包含小包和 `/depotHead/addDepotHeadAndDetail` 大包的合并样本批次，显式零调用复用小包，只新执行大包。展示模型实际看到的完整实现、XML/SQL条件和遗漏范围。两例通过后，以合并样本批次为唯一显式复用来源处理其余现有材料包；若样本业务质量未通过，停止扩大调用并报告具体问题。此次授权仅覆盖已批准的325包Activity生成，不包括重新运行JDT、过程生成或九章。尚无新版Activity的真实实测时间或压缩率。
+既有小包/大包与325包运行已保存，实际调用/耗时见[实测](full-step05-acceptance-20260923.md)；本次不重复执行。新的验收先离线核对旧plan及阶段，再测试以下v2合同，不因文档设计增加产品调用。
+
+## 8. 本次v2修正：最终范围必须明确，历史告警不反复驱动
+
+销售统计真实包产生18条近重复，旧流程只按相同sliceKey修订、不同key累计，并用历史容量错误推动后续决策。目标在既有READING_PLAN响应增加以下字段，不增加一个独立“最终选材”模型阶段：
+
+~~~text
+finalSliceKeys[]                  本轮认可的有效scope集合
+supersededSlices[]                {sliceKey,replacementSliceKeys[],reason}
+finishReading                    是否请求结束阅读并冻结范围
+~~~
+
+finalSliceKeys包含本轮及此前已定义的实际scope。移出旧key必须在supersededSlices说明是由哪些key替代，或无替代且保留具体未解释范围；程序不能从相近名称推断替代。相同key改定义仍允许，同轮重复定义仍拒绝；全部引用先在临时状态验证。声明结束不代表源码已足够，实际缺必需unit/容量/未展示范围仍登记不足。
+
+1. 每轮保存原始响应和历史诊断；从本轮有效定义计算currentOpenScopeIssues，不扫描累积unknown字符串决定是否继续。
+2. 一个旧超限scope被明确替换后只留历史记录；替代scope仍缺材料或超容量才继续有界读取。不能靠新key增加就自动解除旧义务。
+3. 结束前核验finalSliceKeys、完整unit/依赖和当前不足，保存不可变plan-v2。没有新进展或轮数结束则保存有限失败，不请求额外修复轮。
+4. 每scope必须说明独立的业务问题/触发/结果。相同查询的过滤、分页、汇总可能是一个动作的组成部分；模型应优先修订既有scope，不因轮次不同重复提议。程序不审判这种语义，只展示旧定义和要求明确替换。
+5. 开始任一DRAFT后冻结该计划。显式重试先重开原plan和完整slice包，验证Prompt/Schema/profile/binding及source mapping；不重新调用阅读模型来“恢复”同一计划。损坏不能自动replan；必须改变范围时先说明失效稿件和调用范围。
+6. 一个slice失败仍保存之前的成功，继续没有依赖该失败的其余slice；容量预检失败也进入同一包结果。最后返回成功集合与全部不足，不在第一次slice异常处丢掉之前或跳过之后的独立结果。
+
+plan-v2私有记录增加最终有效范围、明确替换/撤回关系及当前未完成原因，保持历史decisions和完整readingPacket。SOURCE未选仅是本范围没有读，不是无业务证明。旧v1可以严格读取，但若义务无法还原则UNDETERMINED，不能自动推成成功/失败。
+
+直接回归：历史超限随后明确替换→不多一轮、不误标不完整；不同key未声明替换→不静默删除旧范围；5次阅读产生18相近提议的录制响应不被程序变成18个必经步骤；S1成功/S2失败/S3独立成功→公开结果含S1/S3；同scope审阅重试零阅读调用；坏引用/重复key的失败attempt不能改变选择状态或留下SUCCESS。

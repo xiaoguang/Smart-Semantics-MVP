@@ -6,9 +6,9 @@
 
 Step07从完整Activity和同源原文发现可合读的业务用法，重建开始、条件、分支、对象变化与结束结果，发布business-processes.md。共享方法、同表或相近名称不是业务时序证明。
 
-当前默认运行仍可重开旧Activity/coverage、M10和同源verified inventory；326条旧Activity原样使用。Step07内部协议、Corpus、Publisher和持久executor也已支持从M11 v3 Activity与保存的Step05 CodeReadingMaterialSet进入同一过程管线，且拒绝混合/缺失来源与partial Activity。正式CLI选择尚未接入，不能把任意新取材state直接当作过程输入。
+当前默认运行仍可重开旧Activity/coverage、M10和同源verified inventory；326条旧Activity原样使用。Step07内部协议、Corpus、Publisher和持久executor也已支持从M11 v3 Activity与保存的Step05 CodeReadingMaterialSet进入同一过程管线，且拒绝混合/缺失来源与必需范围未完成的Activity。正式CLI已按state-v4进入该分支，核对M11与Step05引用；不能把任意新取材state直接当作已有Activity。新来源完整CLI/store到Markdown的离线贯穿验收仍待补齐。
 
-目标由flow-interpretation-activity-coverage-v3的materialSource和packet映射固定新来源。FrozenAnalysisCorpus按显式类型重开历史M10或新Step05，核对同源basis和sourceRunId/modelBatchId归属；不猜形状、不补写旧Activity、不运行03–06。见[Corpus](../modules/business-process-discovery/frozen-analysis-corpus.md)及[接入合同](../modules/activity-explanation/integration-contracts.md)。
+新来源由运行的readingMaterialCheckpoint和Activity行的materialId/materialSource/sliceKey/originalSourceRefs固定；coverage-v3没有嵌套materialSource。本次coverage-v4目标仅增加范围完成摘要。FrozenAnalysisCorpus按显式类型重开历史M10或新Step05，核对同源basis和sourceRunId/modelBatchId归属；不猜形状、不补写旧Activity、不运行03–06。见[Corpus](../modules/business-process-discovery/frozen-analysis-corpus.md)及[接入合同](../modules/activity-explanation/integration-contracts.md)。
 
 ## 2. 内部接力
 
@@ -41,6 +41,14 @@ Step07没有自动重试；新Activity重试政策不扩展到本步。fatal停�
 
 合法未命中、材料不足或无法无损合并保留限制/原过程；未知ID/ref、错来源、坏Schema/Provider失败不能以PARTIAL隐藏。Activity/候选/已审过程三个分母保留，variant遗漏须语义审阅。
 
-三阶段、系统认识、CHECK保留集、v4发布、保存/复用和preview均已接线；新Step05来源已接到Step07内部协议与持久executor，正式运行编排仍待接线。历史12次请求的三例未全通过：采购最终未发送、销售用法引用非法、调拨仍有条件错误，见[实测](../supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)。可读性认可不等于准确性或全仓通过。
+三阶段、系统认识、CHECK保留集、v4发布、保存/复用和preview均已接线；新Step05来源已接到Step07内部协议与持久executor，正式运行编排已接线。历史12次请求的三例未全通过：采购最终未发送、销售用法引用非法、调拨仍有条件错误，见[实测](../supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)。可读性认可不等于准确性或全仓通过。
 
-后续只补新来源manifest、同源/来源映射、完整字段和零上游调用的直接测试。测试Terra/xhigh、代码Sol/xhigh、设计/调试Astra/ultra；本轮未运行测试/构建/JDT/业务模型。
+本次收尾设计见[端到端业务交付](../end-to-end-business-delivery-design.md)：核对Activity必需范围，新增同入口导航、候选局部编码及WRITE字段限制，再从正式CLI做离线贯穿和真实样例。测试Terra/xhigh、代码Sol/xhigh、设计/调试Astra/ultra；本轮仅文档，未运行测试/构建/JDT/业务模型。
+
+## 5. 本次待评审的端到端增量
+
+新418条必须拥有匹配自身的首次目录；当前新Step05分支拒绝旧catalogFromModelBatchId，不顺带扩建旧目录导入。全部原Activity身份保留，同packet/entry仅在导航中一起展示，模型可将多个切片放进同一业务阶段或作为支撑，不强制每条一个步骤。
+
+Assembler一次生成可逆候选局部A/T映射，保持完整原文和两稿，复用已有$defs。WRITE只改展示字段，最终RULE_REVIEW对照原文同步核对正文与结构。新的Discovery/Prompt/私有结果升版，公共五文件、Publisher v4排版和三个owner保持。
+
+原NOT_COLLECTED的技术缺口、普通语义未知、必需执行未完成分别处理；不是见PARTIAL就拒绝，也不是见activityBatchComplete=true就不核对范围。样例preview先交用户看，未经扩大同意不得全仓。三阶段失败政策不自动改为Activity的阶段retry。
