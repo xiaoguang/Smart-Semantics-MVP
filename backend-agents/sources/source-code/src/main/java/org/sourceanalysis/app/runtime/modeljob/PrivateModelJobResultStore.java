@@ -242,6 +242,46 @@ public final class PrivateModelJobResultStore {
         Set.of("model-job-reviewed-result-v4", "activity-packet-result-v1"));
   }
 
+  /**
+   * Reads an Activity packet completion claim at its exact derived job key.
+   *
+   * <p>Unlike the generic cache lookup, a present scoped claim cannot degrade to a cache miss when
+   * its own persisted identity is corrupt. This narrow path is used only when reopening the plan
+   * and stage files named by that claim.
+   */
+  public Optional<ObjectNode> readClaimedScopedActivity(
+      String jobKey,
+      String inputFingerprint,
+      String expectedQuotaScope,
+      ModelRuntimeIdentityV1 expectedRuntimeIdentity) {
+    requireJobKey(jobKey);
+    requireFingerprint(inputFingerprint);
+    requireQuotaScope(expectedQuotaScope);
+    Objects.requireNonNull(expectedRuntimeIdentity, "expected model runtime identity");
+    ObjectNode value = readResult(jobKey, "reviewed-result.json").orElse(null);
+    if (value == null || !terminalStatus(value)) {
+      return Optional.empty();
+    }
+    if (!"activity-packet-result-v1".equals(text(value, "schemaVersion"))) {
+      // This path is only used after the caller derived an oversized scoped Activity job key.
+      // There is no historical alternate scoped schema at that location; a completed record with
+      // another schema is therefore a corrupt claim, not an optional cache miss.
+      throw failure("MODEL_JOB_RESULT_INVALID", null);
+    }
+    requireCompleteScopedActivity(value);
+    if (!runId.equals(text(value, "runId"))
+        || !phase.equals(text(value, "phase"))
+        || !jobKey.equals(text(value, "jobKey"))
+        || !inputFingerprint.equals(text(value, "inputFingerprint"))
+        || !expectedQuotaScope.equals(text(value, "quotaScope"))
+        || !runtimeIdentity(value.path("runtimeIdentity")).equals(expectedRuntimeIdentity)) {
+      throw failure("MODEL_JOB_RESULT_INVALID", null);
+    }
+    text(value, "materialId");
+    text(value, "providerBindingKey");
+    return Optional.of(value.deepCopy());
+  }
+
   private Optional<ObjectNode> readCompletedActivityResult(
       String jobKey,
       String inputFingerprint,

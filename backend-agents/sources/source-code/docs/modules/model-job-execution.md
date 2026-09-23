@@ -8,14 +8,14 @@
 | --- | --- | --- |
 | 材料/模型分离 | 新Step05已直接进入Activity；execution-config-v4/output-v6已实现 | 输入固定，不重新取材；完善范围完成性 |
 | 并发 | 全局+Provider双上限，包内阅读/slice/attempt顺序 | 保持现有池，验证单包与绑定失败边界 |
-| 保存与复用 | 阶段即时保存、显式stage复用、大包计划及M11/CLI已接通 | 修复失败slice之前的公开成功保留和原plan接续；草稿未验证 |
-| 失败与retry | YAML v2已有activityRetry和有界退避，325包已真实执行 | 完善结构化错误分类与SUCCESS保存次序，不增加Step07 retry |
+| 保存与复用 | 阶段即时保存、显式stage复用、大包计划及M11/CLI已接通；Task 1原plan/成功stage接续和局部结果保留已定向验证 | Task 2补最终/替换scope；Task 3补只复用入口 |
+| 失败与retry | YAML v2已有activityRetry和有界退避；Task 1错误边界与SUCCESS保存次序已定向验证 | 不增加Step07 retry；后续任务不放宽Task 1边界 |
 | 范围 | 输出有activityBatchComplete；当前coverage-v3不含packet完成表 | coverage-v4补最小packetCompletion，不能只看entry出现过 |
 | 新旧业务内容 | 新418条与旧326条均保存；模型身份各自保持 | 离线核对和只复用，不默认重做Activity |
 
-当前`51b6625`已包含生产接线，13个生产/测试文件中的审查后修复仍未验证。真实运行记录与当前dirty补丁不同，不能沿用旧CI宣称后者通过。见[端到端详细设计](../end-to-end-business-delivery-design.md)及[Activity收口](activity-explanation/post-review-handoff-20260923.md)。
+Task 1可靠性修复在隔离Maven输出中通过12类79个direct tests及Spotless；这不是全仓CI，也没有真实模型/JDT/客户构建。Task 2的plan-v2最终/替换scope及Task 3的coverage-v4/reuse-only仍未实现。历史真实运行不能替代这些后续验收。见[端到端详细设计](../end-to-end-business-delivery-design.md)及[Activity收口](activity-explanation/post-review-handoff-20260923.md)。
 
-Codex超时只有确认本地进程结束才能按REQUEST_TIMEOUT处理，否则OUTCOME_UNKNOWN不默认重试。坏JSON实际响应在私有限额内保留；普通日志不暴露凭据/原文。现有错误分类与大包失败保留仍有待验证修复，不因已具备attempt容器就宣称可靠性全部完成。本轮只改文档，不执行修复或模型。
+Codex超时只有确认本地进程结束才能按REQUEST_TIMEOUT处理，否则OUTCOME_UNKNOWN不默认重试。坏JSON实际响应在私有限额内保留；普通日志不暴露凭据/原文。Task 1已验证的错误分类与大包失败保留不代表整个端到端计划完成；后续先继续离线任务，再按计划执行无提示小样，小样展示后的全仓扩大需要用户确认。
 
 
 ## 2. Job与阶段
@@ -59,7 +59,7 @@ sourceAnalysis:
         quotaScope: personal-pro-account
         maxConcurrentJobs: 4
         model: gpt-5.6-terra
-        reasoningEffort: xhigh
+        reasoningEffort: high
         executable: /absolute/path/to/codex
         timeoutSeconds: 3600
         auth:
@@ -138,7 +138,7 @@ sourceAnalysis:
 
 不建设新的熔断器服务。Provider不可用由现有Coordinator的绑定状态/终止原因控制；普通包失败不能全局stop，真正共享运行安全故障也不能让326包重复发无效请求。
 
-默认transient分类来自结构化Provider状态/进程退出/协议错误，不靠中文或英文消息子串识别。未知错误不默认retry。私有原始错误保留，普通日志不泄露凭据或整包源码。
+默认transient分类只来自可靠的结构化Provider状态/本地已确认超时终止，不靠中文或英文消息子串识别。当前Codex订阅进程边界没有已验证的typed error code：非零退出的stdout/stderr自由文本统一记UNKNOWN，不自动按限流、容量或配置重试；其他Provider已经提供的可靠typed reason仍按原策略处理。实际response优先、否则stdout/stderr各自在4096字节上限内按原字节保留到私有失败记录，公共异常与普通日志不携带这些原文。
 
 ## 7. 私有保存与复用
 
@@ -153,7 +153,7 @@ model-jobs/<batch>/activity/<packet>/<stage-key>/attempt-<n>/
   outcome.json
 ```
 
-文件按各自发生点不可变安装；不存在的response不造空成功。同一attempt不覆盖前状态文件，失败与成功均保留。stage成功索引引用唯一已验证attempt；新Activity的完整解释阶段结果使用 `model-job-reviewed-result-v4`；大包聚合另用现有 `activity-packet-result-v1` 引用plan、slice packets和结果，两者不能混为同一wire。沿用既有私有store实现，不创建事件重建/恢复数据库。
+文件按各自发生点不可变安装；不存在的response不造空成功。同一attempt不覆盖前状态文件，失败与成功均保留。stage成功索引引用唯一已验证attempt；新Activity的完整解释阶段结果使用 `model-job-reviewed-result-v4`；大包聚合另用现有 `activity-packet-result-v1` 引用plan、slice packets和结果，两者不能混为同一wire。一个已存在的完成聚合是对其原plan和每个slice成功stage的声明；即使包因后续slice失败而没有聚合，已存在的单slice v4完成声明也必须能找到自己的DRAFT/REVIEW成功索引。重开时先核对这些引用、source mapping与结果一致，缺失/损坏不能当cache miss或触发新Provider请求。沿用既有私有store实现，不创建事件重建/恢复数据库。
 
 阶段fingerprint覆盖实际输入字节、上游成功stage内容、projection/reading plan版本、Prompt内容、Schema、scope与SourceRef映射、有效业务profile、模块版本、Provider/account/quotaScope/model/effort/sandbox。排除batchId、attempt序号、时间、并发、日志目录、退避和秘密值；仅改maxAttempts不使已成功内容失效。
 
@@ -207,7 +207,7 @@ Activity未完成必须按最终有效计划计算，而不是遍历历史unknow
 
 显式新batch接续大包时先重开原计划和已冻结scope。合法成功slice和成功DRAFT不因另一slice失败丢失；后续slice容量失败也要公开保留先前成功。更改scope不是“再试同一阶段”，受影响稿件失效前先告知新生成范围。
 
-新 `--reuse-only` 是待评审窄选项：新run内纯读旧结果/范围核对并发布M11，不初始化Provider、不自动补模型请求；与主动retry互斥。不完整/无法判定时非成功，成功子集仍可查看，Step07不偷偷缩小分母。历史完整已审输入采纳与新版Prompt精确stage复用分开，不能放宽后者的指纹。
+新 `--reuse-only` 是已批准待实施的窄选项：新run内纯读旧结果/范围核对并发布M11，不初始化Provider、不自动补模型请求；与主动retry互斥。不完整/无法判定时非成功，成功子集仍可查看，Step07不偷偷缩小分母。历史完整已审输入采纳与新版Prompt精确stage复用分开，不能放宽后者的指纹。
 
 目标execution-config-v5冻结有效activityReading值及Step07实际输入编码/任务合同；历史v4按原字段读。YAML config-v3才开放activityReading；已有activityRetry不迁位置。run-output-v6仍用activityBatchComplete，不新增modelBatchComplete别名。
 

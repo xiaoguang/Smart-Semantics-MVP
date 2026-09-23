@@ -96,15 +96,17 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
             null);
       }
       if (process.exitValue() != 0 || !Files.isRegularFile(output)) {
-        String legacyCategory =
-            failureCategory(
-                standardOutput, standardError, process.exitValue(), Files.isRegularFile(output));
+        String category =
+            process.exitValue() == 0 && !Files.isRegularFile(output)
+                ? "MISSING_STRUCTURED_OUTPUT"
+                : "UNKNOWN";
         throw new StructuredModelProviderFailure(
-            failureReason(legacyCategory),
+            "UNKNOWN",
             true,
             true,
-            "CODEX_SUBSCRIPTION_EXECUTION_FAILED:" + legacyCategory,
-            null);
+            "CODEX_SUBSCRIPTION_EXECUTION_FAILED:" + category,
+            null,
+            privateFailureBytes(output, standardOutput, standardError));
       }
       return ImmutableBytes.copyOf(Files.readAllBytes(output));
     } catch (IOException | InterruptedException failure) {
@@ -181,75 +183,33 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
     return new IllegalStateException(code, cause);
   }
 
-  /**
-   * Returns a finite, non-secret category; raw CLI stderr never leaves the private temp directory.
-   */
-  private static String failureCategory(
-      Path standardOutput, Path standardError, int exitCode, boolean outputPresent) {
-    if (exitCode == 0 && !outputPresent) {
-      return "MISSING_STRUCTURED_OUTPUT";
+  private static ImmutableBytes privateFailureBytes(
+      Path output, Path standardOutput, Path standardError) {
+    byte[] actualResponse = readAtMostBytes(output);
+    if (actualResponse.length > 0) {
+      return ImmutableBytes.copyOf(actualResponse);
     }
-    String diagnostic =
-        (readAtMost(standardOutput) + "\n" + readAtMost(standardError)).toLowerCase(Locale.ROOT);
-    if (containsAny(
-        diagnostic,
-        "maximum context length",
-        "context window exceeded",
-        "input exceeds the context",
-        "prompt is too long")) {
-      return "INPUT_CONTEXT_CAPACITY";
-    }
-    if (containsAny(diagnostic, "quota exceeded", "quota exhausted", "insufficient quota")) {
-      return "QUOTA_EXHAUSTED";
-    }
-    if (containsAny(diagnostic, "rate limit", "too many requests")) {
-      return "RATE_LIMIT";
-    }
-    if (containsAny(diagnostic, "at capacity", "capacity", "temporarily unavailable")) {
-      return "PROVIDER_CAPACITY";
-    }
-    if (containsAny(diagnostic, "model", "reasoning", "output-schema", "schema")) {
-      return "MODEL_CONFIGURATION";
-    }
-    if (containsAny(diagnostic, "authentication", "login", "credential", "unauthorized")) {
-      return "AUTHENTICATION";
-    }
-    if (diagnostic.contains("sandbox")) {
-      return "SANDBOX_CONFIGURATION";
-    }
-    return "UNKNOWN";
-  }
-
-  private static String failureReason(String category) {
-    return switch (category) {
-      case "INPUT_CONTEXT_CAPACITY" -> "PROVIDER_INPUT_CAPACITY_EXCEEDED";
-      case "QUOTA_EXHAUSTED" -> "QUOTA_EXHAUSTED";
-      case "RATE_LIMIT" -> "RATE_LIMITED";
-      case "PROVIDER_CAPACITY" -> "PROVIDER_UNAVAILABLE";
-      case "AUTHENTICATION" -> "AUTHENTICATION_FAILED";
-      case "MODEL_CONFIGURATION", "SANDBOX_CONFIGURATION" -> "CONFIGURATION_INVALID";
-      default -> "UNKNOWN";
-    };
+    byte[] stdout = readAtMostBytes(standardOutput);
+    byte[] stderr = readAtMostBytes(standardError);
+    byte[] diagnostic = new byte[stdout.length + 1 + stderr.length];
+    System.arraycopy(stdout, 0, diagnostic, 0, stdout.length);
+    diagnostic[stdout.length] = '\n';
+    System.arraycopy(stderr, 0, diagnostic, stdout.length + 1, stderr.length);
+    return ImmutableBytes.copyOf(diagnostic);
   }
 
   private static String readAtMost(Path file) {
-    if (file == null) {
-      return "";
-    }
-    try {
-      byte[] bytes = Files.readAllBytes(file);
-      return new String(bytes, 0, Math.min(bytes.length, 4_096), StandardCharsets.UTF_8);
-    } catch (IOException ignored) {
-      return "";
-    }
+    return new String(readAtMostBytes(file), StandardCharsets.UTF_8);
   }
 
-  private static boolean containsAny(String value, String... candidates) {
-    for (String candidate : candidates) {
-      if (value.contains(candidate)) {
-        return true;
-      }
+  private static byte[] readAtMostBytes(Path file) {
+    if (file == null) {
+      return new byte[0];
     }
-    return false;
+    try (var input = Files.newInputStream(file)) {
+      return input.readNBytes(4_096);
+    } catch (IOException ignored) {
+      return new byte[0];
+    }
   }
 }

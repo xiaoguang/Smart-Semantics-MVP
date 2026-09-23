@@ -233,9 +233,22 @@ final class BoundedActivityJobCoordinator implements ActivityJobCoordinator {
     };
   }
 
-  private static boolean packetLocalFailure(Throwable failure) {
+  static boolean packetLocalFailure(Throwable failure) {
     if (failure instanceof Error) {
       return false;
+    }
+    for (Throwable current = failure; current != null; current = current.getCause()) {
+      if (current.getMessage() != null
+          && Set.of(
+                  "ACTIVITY_READING_PLAN_REUSE_INVALID",
+                  "ACTIVITY_REUSED_RESULT_INVALID",
+                  "ACTIVITY_REUSED_RESULT_MATERIAL_MISMATCH",
+                  "ACTIVITY_STAGE_SUCCESS_INVALID",
+                  "MODEL_JOB_RESULT_INVALID")
+              .contains(current.getMessage())) {
+        // A corrupt saved claim is shared durable state, not a packet-local model outcome.
+        return false;
+      }
     }
     for (Throwable current = failure; current != null; current = current.getCause()) {
       if (current
@@ -244,14 +257,15 @@ final class BoundedActivityJobCoordinator implements ActivityJobCoordinator {
       }
       if (current instanceof IllegalArgumentException
           && current.getMessage() != null
-          && current.getMessage().startsWith("ACTIVITY_")) {
+          && (current.getMessage().startsWith("ACTIVITY_")
+              || "NOT_ANALYZED_ACTIVITY_OUTPUT_CAPACITY".equals(current.getMessage()))) {
         return true;
       }
     }
     return false;
   }
 
-  private static boolean bindingFailure(Throwable failure) {
+  static boolean bindingFailure(Throwable failure) {
     for (Throwable current = failure; current != null; current = current.getCause()) {
       if (current
           instanceof

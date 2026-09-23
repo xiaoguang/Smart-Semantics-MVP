@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -195,8 +197,7 @@ class ActivityLargePacketFormalEntryTest {
   }
 
   @Test
-  void retryingAnOversizedPacketReusesItsReadingPlanAndEarlierReviewedSlice(
-      @TempDir Path journal) {
+  void retryingAnOversizedPacketReusesItsReadingPlanAndEarlierReviewedSlice(@TempDir Path journal) {
     CodeReadingMaterialSet materials = largeStep05Material();
     ActivityRetryProfile oneAttempt =
         new ActivityRetryProfile(1, 0, 0, 1.0, 0.0, Set.of("TRANSIENT_TRANSPORT"), Map.of());
@@ -204,7 +205,8 @@ class ActivityLargePacketFormalEntryTest {
     FormalLargePacketProvider firstProvider = new FormalLargePacketProvider("slice-m3");
 
     ActivityExplanationResult partial =
-        ActivityExplainer.forExecution(execution(journal, failedRun, null, firstProvider, oneAttempt))
+        ActivityExplainer.forExecution(
+                execution(journal, failedRun, null, firstProvider, oneAttempt))
             .explain(new ExplainCodeReadingMaterialsRequest(materials, PROFILE, 1));
 
     assertThat(partial.reviewedActivities())
@@ -234,9 +236,368 @@ class ActivityLargePacketFormalEntryTest {
         .containsExactlyInAnyOrder("slice-m2", "slice-m3");
   }
 
+  @Test
+  void formalPacketRetainsFirstAndThirdReviewedSlicesWhenMiddleEntryCapacityPrecheckFails(
+      @TempDir Path journal) {
+    ThreeSliceProvider provider = new ThreeSliceProvider(true);
+    ActivityExplanationResult result =
+        ActivityExplainer.forExecution(
+                execution(
+                    journal, AnalysisRunId.parse("analysis-run:" + "9".repeat(64)), null, provider))
+            .explain(
+                new ExplainCodeReadingMaterialsRequest(
+                    largeStep05MaterialWithTwoEntries(),
+                    new ActivityExplanationProfile(20_000, 8_000, 1, 32, 2_000),
+                    1));
+
+    assertThat(result.reviewedActivities())
+        .as("a packet-local S2 precheck failure keeps independent S1 and S3 results public")
+        .extracting(ReviewedActivity::sliceKey)
+        .containsExactlyInAnyOrder("slice-m2", "slice-m4");
+    assertThat(result.coverage())
+        .hasSize(2)
+        .allSatisfy(
+            entry -> {
+              assertThat(entry.disposition()).isEqualTo("ANALYZED_WITH_GAPS");
+              assertThat(entry.reasonCode()).isEqualTo("ACTIVITY_READING_INCOMPLETE");
+            });
+    assertThat(result.reviewedActivities())
+        .allSatisfy(activity -> assertThat(activity.entryIds()).hasSize(1));
+    assertThat(result.reviewedActivities())
+        .anySatisfy(
+            activity -> {
+              assertThat(activity.sliceKey()).isEqualTo("slice-m2");
+              assertThat(activity.entryIds()).containsExactly("entry:large");
+            })
+        .anySatisfy(
+            activity -> {
+              assertThat(activity.sliceKey()).isEqualTo("slice-m4");
+              assertThat(activity.entryIds()).containsExactly("entry:second");
+            });
+    assertThat(provider.activityStageSliceKeys())
+        .as("S2 must fail capacity validation before its Provider request")
+        .containsExactly("slice-m2", "slice-m2", "slice-m4", "slice-m4")
+        .doesNotContain("slice-m3");
+  }
+
+  @Test
+  void formalPacketPreservesTheFirstSliceWhenAuthenticationStopsTheRemainingBindingQueue(
+      @TempDir Path journal) throws Exception {
+    AnalysisRunId run = AnalysisRunId.parse("analysis-run:" + "c".repeat(64));
+    ThreeSliceProvider provider = new ThreeSliceProvider("slice-m3");
+
+    ActivityExplanationResult result =
+        ActivityExplainer.forExecution(execution(journal, run, null, provider))
+            .explain(new ExplainCodeReadingMaterialsRequest(largeStep05Material(), PROFILE, 1));
+
+    assertThat(result.reviewedActivities())
+        .as("S1 remains observable even though the shared binding stops at S2")
+        .extracting(ReviewedActivity::sliceKey)
+        .containsExactly("slice-m2");
+    assertThat(result.coverage())
+        .singleElement()
+        .satisfies(
+            entry -> {
+              assertThat(entry.disposition()).isEqualTo("ANALYZED_WITH_GAPS");
+              assertThat(entry.reasonCode()).isEqualTo("ACTIVITY_READING_INCOMPLETE");
+            });
+    assertThat(provider.activityStageSliceKeys())
+        .as("an authentication failure may not begin the queued S3 stage on the same binding")
+        .containsExactly("slice-m2", "slice-m2", "slice-m3")
+        .doesNotContain("slice-m4");
+
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    try (var saved = Files.walk(journal)) {
+      List<JsonNode> reviewedRecords =
+          saved
+              .filter(path -> path.getFileName().toString().equals("reviewed-result.json"))
+              .map(
+                  path -> {
+                    try {
+                      return canonicalJson.parseCanonical(
+                          ImmutableBytes.copyOf(Files.readAllBytes(path)));
+                    } catch (java.io.IOException failure) {
+                      throw new IllegalStateException("TEST_RESULT_READ_FAILED", failure);
+                    }
+                  })
+              .toList();
+      assertThat(reviewedRecords)
+          .as("the completed S1 REVIEW remains in the run-private result store")
+          .anySatisfy(
+              record ->
+                  assertThat(record.path("reviewedActivities").toString()).contains("slice-m2"));
+    }
+  }
+
+  @Test
+  void rejectsADamagedSavedReadingPacketInsteadOfSilentlyReplanning(@TempDir Path journal)
+      throws Exception {
+    CodeReadingMaterialSet materials = largeStep05Material();
+    AnalysisRunId completedRun = AnalysisRunId.parse("analysis-run:" + "c".repeat(64));
+    ActivityExplainer.forExecution(
+            execution(journal, completedRun, null, new FormalLargePacketProvider()))
+        .explain(new ExplainCodeReadingMaterialsRequest(materials, PROFILE, 1));
+
+    Path savedPlan;
+    try (var paths = Files.walk(journal)) {
+      savedPlan =
+          paths
+              .filter(path -> path.getFileName().toString().equals("decision-result.json"))
+              .findFirst()
+              .orElseThrow();
+    }
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    ObjectNode damaged =
+        (ObjectNode)
+            canonicalJson.parseCanonical(ImmutableBytes.copyOf(Files.readAllBytes(savedPlan)));
+    ((ObjectNode) damaged.path("slices").get(0))
+        .set("readingPacket", JsonNodeFactory.instance.objectNode().put("corrupted", true));
+    Files.write(savedPlan, canonicalJson.encodeCanonical(damaged).copyToByteArray());
+
+    FormalLargePacketProvider retryProvider = new FormalLargePacketProvider();
+    assertThatThrownBy(
+            () ->
+                ActivityExplainer.forExecution(
+                        execution(
+                            journal,
+                            AnalysisRunId.parse("analysis-run:" + "b".repeat(64)),
+                            completedRun,
+                            retryProvider))
+                    .explain(new ExplainCodeReadingMaterialsRequest(materials, PROFILE, 1)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("ACTIVITY_READING_PLAN_REUSE_INVALID");
+
+    assertThat(retryProvider.taskKinds())
+        .as("a claimed saved success with mismatched packet bytes is a hard error, not a replan")
+        .isEmpty();
+  }
+
+  @Test
+  void rejectsModifiedOrMissingPacketIdOnAnOtherwiseEmptySavedReadingPlan(@TempDir Path journal)
+      throws Exception {
+    for (String mutation : List.of("modified", "missing")) {
+      Path mutationJournal = Files.createDirectory(journal.resolve(mutation));
+      AnalysisRunId emptyPlanRun = AnalysisRunId.parse("analysis-run:" + "1".repeat(64));
+      StructuredModelProvider noSelection =
+          request ->
+              new StructuredModelResponse(
+                  ImmutableBytes.copyOf(
+                      "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[],\"slices\":[],\"unknowns\":[]}"
+                          .getBytes(StandardCharsets.UTF_8)),
+                  IDENTITY);
+      ActivityExplainer.forExecution(execution(mutationJournal, emptyPlanRun, null, noSelection))
+          .explain(new ExplainCodeReadingMaterialsRequest(largeStep05Material(), PROFILE, 1));
+
+      Path savedPlan = savedReadingPlan(mutationJournal);
+      CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+      ObjectNode damaged =
+          (ObjectNode)
+              canonicalJson.parseCanonical(ImmutableBytes.copyOf(Files.readAllBytes(savedPlan)));
+      assertThat(damaged.path("slices")).isEmpty();
+      assertThat(damaged.path("packetId").asText()).isNotBlank();
+      if ("modified".equals(mutation)) {
+        damaged.put("packetId", "packet:other");
+      } else {
+        damaged.remove("packetId");
+      }
+      Files.write(savedPlan, canonicalJson.encodeCanonical(damaged).copyToByteArray());
+
+      FormalLargePacketProvider retryProvider = new FormalLargePacketProvider();
+      assertThatThrownBy(
+              () ->
+                  ActivityExplainer.forExecution(
+                          execution(
+                              mutationJournal,
+                              AnalysisRunId.parse("analysis-run:" + "2".repeat(64)),
+                              emptyPlanRun,
+                              retryProvider))
+                      .explain(
+                          new ExplainCodeReadingMaterialsRequest(
+                              largeStep05Material(), PROFILE, 1)))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("ACTIVITY_READING_PLAN_REUSE_INVALID");
+      assertThat(retryProvider.taskKinds())
+          .as("a corrupted empty plan is not the same as a valid empty plan eligible to reselect")
+          .isEmpty();
+    }
+  }
+
+  @Test
+  void rejectsInconsistentRequiredOrSharedUnitsWithoutRegeneratingAClaimedPlan(
+      @TempDir Path journal) throws Exception {
+    for (String mutation : List.of("unknown-required", "unrequired-shared")) {
+      Path mutationJournal = Files.createDirectory(journal.resolve(mutation));
+      AnalysisRunId completedRun = AnalysisRunId.parse("analysis-run:" + "4".repeat(64));
+      ActivityExplainer.forExecution(
+              execution(mutationJournal, completedRun, null, new FormalLargePacketProvider()))
+          .explain(new ExplainCodeReadingMaterialsRequest(largeStep05Material(), PROFILE, 1));
+
+      Path savedPlan = savedReadingPlan(mutationJournal);
+      CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+      ObjectNode damaged =
+          (ObjectNode)
+              canonicalJson.parseCanonical(ImmutableBytes.copyOf(Files.readAllBytes(savedPlan)));
+      ObjectNode firstSlice = (ObjectNode) damaged.path("slices").get(0);
+      JsonNode originalReadingPacket = firstSlice.path("readingPacket").deepCopy();
+      if ("unknown-required".equals(mutation)) {
+        ((ArrayNode) firstSlice.path("requiredUnitKeys")).add("M999");
+      } else {
+        assertThat(firstSlice.path("requiredUnitKeys").toString()).doesNotContain("M4");
+        ((ArrayNode) firstSlice.path("sharedContextUnitKeys")).add("M4");
+      }
+      assertThat(firstSlice.path("readingPacket")).isEqualTo(originalReadingPacket);
+      Files.write(savedPlan, canonicalJson.encodeCanonical(damaged).copyToByteArray());
+
+      FormalLargePacketProvider retryProvider = new FormalLargePacketProvider();
+      assertThatThrownBy(
+              () ->
+                  ActivityExplainer.forExecution(
+                          execution(
+                              mutationJournal,
+                              AnalysisRunId.parse("analysis-run:" + "5".repeat(64)),
+                              completedRun,
+                              retryProvider))
+                      .explain(
+                          new ExplainCodeReadingMaterialsRequest(
+                              largeStep05Material(), PROFILE, 1)))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("ACTIVITY_READING_PLAN_REUSE_INVALID");
+      assertThat(retryProvider.taskKinds())
+          .as("a claimed plan with mismatched scope metadata is never repaired by a new model call")
+          .isEmpty();
+    }
+  }
+
+  @Test
+  void rejectsAClaimedOversizedPacketWhenItsSavedSliceReviewSuccessIsMissing(@TempDir Path journal)
+      throws Exception {
+    CodeReadingMaterialSet materials = largeStep05Material();
+    AnalysisRunId completedRun = AnalysisRunId.parse("analysis-run:" + "6".repeat(64));
+    ActivityExplanationResult completed =
+        ActivityExplainer.forExecution(
+                execution(journal, completedRun, null, new FormalLargePacketProvider()))
+            .explain(new ExplainCodeReadingMaterialsRequest(materials, PROFILE, 1));
+    assertThat(completed.reviewedActivities()).hasSize(2);
+
+    List<Path> savedReviewSuccesses;
+    try (var paths = Files.walk(journal)) {
+      savedReviewSuccesses =
+          paths
+              .filter(path -> path.getFileName().toString().equals("success.json"))
+              .filter(path -> path.getParent().getFileName().toString().equals("REVIEW"))
+              .sorted()
+              .toList();
+    }
+    assertThat(savedReviewSuccesses).hasSize(2);
+    Files.delete(savedReviewSuccesses.get(0));
+
+    FormalLargePacketProvider retryProvider = new FormalLargePacketProvider();
+    assertThatThrownBy(
+            () ->
+                ActivityExplainer.forExecution(
+                        execution(
+                            journal,
+                            AnalysisRunId.parse("analysis-run:" + "7".repeat(64)),
+                            completedRun,
+                            retryProvider))
+                    .explain(new ExplainCodeReadingMaterialsRequest(materials, PROFILE, 1)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("ACTIVITY_STAGE_SUCCESS_INVALID");
+    assertThat(retryProvider.taskKinds())
+        .as("a claimed complete aggregate with a missing reviewed slice never regenerates")
+        .isEmpty();
+  }
+
+  @Test
+  void rejectsMissingEarlierSliceReviewSuccessWhenAFailedPacketHasNoAggregate(@TempDir Path journal)
+      throws Exception {
+    ActivityRetryProfile oneAttempt =
+        new ActivityRetryProfile(1, 0, 0, 1.0, 0.0, Set.of("TRANSIENT_TRANSPORT"), Map.of());
+    AnalysisRunId failedRun = AnalysisRunId.parse("analysis-run:" + "8".repeat(64));
+    ActivityExplanationResult partial =
+        ActivityExplainer.forExecution(
+                execution(
+                    journal,
+                    failedRun,
+                    null,
+                    new FormalLargePacketProvider("slice-m3"),
+                    oneAttempt))
+            .explain(new ExplainCodeReadingMaterialsRequest(largeStep05Material(), PROFILE, 1));
+    assertThat(partial.reviewedActivities())
+        .extracting(ReviewedActivity::sliceKey)
+        .containsExactly("slice-m2");
+
+    List<Path> reviewedResults;
+    List<Path> savedReviewSuccesses;
+    try (var paths = Files.walk(journal)) {
+      reviewedResults =
+          paths
+              .filter(path -> path.getFileName().toString().equals("reviewed-result.json"))
+              .toList();
+    }
+    try (var paths = Files.walk(journal)) {
+      savedReviewSuccesses =
+          paths
+              .filter(path -> path.getFileName().toString().equals("success.json"))
+              .filter(path -> path.getParent().getFileName().toString().equals("REVIEW"))
+              .toList();
+    }
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    List<JsonNode> reviewedRecords =
+        reviewedResults.stream()
+            .map(
+                path -> {
+                  try {
+                    return canonicalJson.parseCanonical(
+                        ImmutableBytes.copyOf(Files.readAllBytes(path)));
+                  } catch (java.io.IOException failure) {
+                    throw new IllegalStateException("TEST_RESULT_READ_FAILED", failure);
+                  }
+                })
+            .toList();
+    assertThat(reviewedRecords)
+        .as("S1 is saved independently although the failed packet has no aggregate result")
+        .singleElement()
+        .satisfies(
+            result -> {
+              assertThat(result.path("schemaVersion").asText())
+                  .isNotEqualTo("activity-packet-result-v1");
+              assertThat(result.path("reviewedActivities").toString()).contains("slice-m2");
+            });
+    assertThat(savedReviewSuccesses).singleElement();
+    Files.delete(savedReviewSuccesses.get(0));
+
+    FormalLargePacketProvider retryProvider = new FormalLargePacketProvider();
+    assertThatThrownBy(
+            () ->
+                ActivityExplainer.forExecution(
+                        execution(
+                            journal,
+                            AnalysisRunId.parse("analysis-run:" + "9".repeat(64)),
+                            failedRun,
+                            retryProvider,
+                            oneAttempt))
+                    .explain(
+                        new ExplainCodeReadingMaterialsRequest(largeStep05Material(), PROFILE, 1)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("ACTIVITY_STAGE_SUCCESS_INVALID");
+    assertThat(retryProvider.taskKinds())
+        .as("a missing prerequisite success in a claimed partial packet must not regenerate")
+        .isEmpty();
+  }
+
   private static ModelJobExecutionConfiguration execution(
       Path journal, AnalysisRunId run, AnalysisRunId reuseFrom, StructuredModelProvider provider) {
     return execution(journal, run, reuseFrom, provider, ActivityRetryProfile.defaults());
+  }
+
+  private static Path savedReadingPlan(Path journal) throws java.io.IOException {
+    try (var paths = Files.walk(journal)) {
+      return paths
+          .filter(path -> path.getFileName().toString().equals("decision-result.json"))
+          .findFirst()
+          .orElseThrow();
+    }
   }
 
   private static ModelJobExecutionConfiguration execution(
@@ -485,6 +846,43 @@ class ActivityLargePacketFormalEntryTest {
                 List.of())));
   }
 
+  private static CodeReadingMaterialSet largeStep05MaterialWithTwoEntries() {
+    CodeReadingMaterialSet base = largeStep05Material();
+    CodeReadingMaterialSet.Packet original = base.packets().get(0);
+    EntryCodeContext.MethodCode secondEntryMethod =
+        original.methods().stream()
+            .filter(method -> method.methodKey().equals(original.entries().get(0).methodKey()))
+            .findFirst()
+            .orElseThrow();
+    EntrySeed secondEntry =
+        new EntrySeed(
+            "entry:second",
+            secondEntryMethod.methodKey(),
+            new SourceRange(0, secondEntryMethod.source().text().length(), 1, 1),
+            "/large/secondary");
+    CodeReadingMaterialSet.Packet packet =
+        new CodeReadingMaterialSet.Packet(
+            original.packetId(),
+            List.of(original.entries().get(0), secondEntry),
+            original.methods(),
+            original.calls(),
+            original.persistence(),
+            original.sourceReferences(),
+            original.unselectedUnits(),
+            original.limitations(),
+            original.selfContainedUtf8Bytes());
+    return new CodeReadingMaterialSet(
+        base.header(),
+        List.of(packet),
+        List.of(
+            base.coverage().get(0),
+            new CodeReadingMaterialSet.EntryCoverage(
+                "entry:second",
+                List.of(packet.packetId()),
+                CodeReadingMaterialSet.CoverageStatus.COLLECTED,
+                List.of())));
+  }
+
   private static AnalysisStepPublicationReference publication(
       AnalysisRunId run, AnalysisStepKey key, char fill) {
     String digest = String.valueOf(fill).repeat(64);
@@ -506,6 +904,93 @@ class ActivityLargePacketFormalEntryTest {
       values.add(value.textValue());
     }
     value.elements().forEachRemaining(child -> collectText(child, values));
+  }
+
+  private static final class ThreeSliceProvider implements StructuredModelProvider {
+    private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    private final List<String> activityStageSliceKeys = new ArrayList<>();
+    private final String authenticationFailureSlice;
+    private final boolean twoEntryScopes;
+
+    private ThreeSliceProvider() {
+      this(null, false);
+    }
+
+    private ThreeSliceProvider(String authenticationFailureSlice) {
+      this(authenticationFailureSlice, false);
+    }
+
+    private ThreeSliceProvider(boolean twoEntryScopes) {
+      this(null, twoEntryScopes);
+    }
+
+    private ThreeSliceProvider(String authenticationFailureSlice, boolean twoEntryScopes) {
+      this.authenticationFailureSlice = authenticationFailureSlice;
+      this.twoEntryScopes = twoEntryScopes;
+    }
+
+    @Override
+    public StructuredModelResponse generate(StructuredModelRequest request) {
+      return switch (request.taskKind()) {
+        case "ACTIVITY_READING_PLAN" ->
+            response(
+                planResponse(
+                    "[]",
+                    "[\"M2\",\"M3\",\"M4\"]",
+                    twoEntryScopes
+                        ? "[{\"sliceKey\":\"slice-m2\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"first independent scope\"},{\"sliceKey\":\"slice-m3\",\"entryKeys\":[\"E1\",\"E2\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"middle two-entry scope\"},{\"sliceKey\":\"slice-m4\",\"entryKeys\":[\"E2\"],\"requiredUnitKeys\":[\"M1\",\"M4\"],\"sharedContextUnitKeys\":[],\"scope\":\"third independent scope\"}]"
+                        : "[{\"sliceKey\":\"slice-m2\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"first independent scope\"},{\"sliceKey\":\"slice-m3\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"middle independent scope\"},{\"sliceKey\":\"slice-m4\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M4\"],\"sharedContextUnitKeys\":[],\"scope\":\"third independent scope\"}]"));
+        case "ACTIVITY_DRAFT", "ACTIVITY_REVIEW" -> activityResponse(request);
+        default -> throw new AssertionError("unexpected task kind " + request.taskKind());
+      };
+    }
+
+    private StructuredModelResponse activityResponse(StructuredModelRequest request) {
+      JsonNode input = canonicalJson.parseCanonical(request.untrustedInputJson());
+      String sliceKey = input.path("interpretationScope").path("sliceKey").asText();
+      activityStageSliceKeys.add(sliceKey);
+      if (sliceKey.equals(authenticationFailureSlice)) {
+        throw new StructuredModelProviderFailure("AUTHENTICATION_FAILED", true, true);
+      }
+      ObjectNode response = JsonNodeFactory.instance.objectNode();
+      ObjectNode activity = response.putArray("activities").addObject();
+      activity.put("activityLocalId", sliceKey);
+      var entryKeys = activity.putArray("entryKeys");
+      input
+          .path("readingPacket")
+          .path("entryKeys")
+          .forEach(entryKey -> entryKeys.add(entryKey.asText()));
+      activity.put("name", "complete " + sliceKey);
+      activity.put("businessPurpose", "exercise packet-local capacity isolation");
+      activity.putArray("participants");
+      activity.putArray("businessObjects").add("neutral-record");
+      activity.putArray("triggerOrInput").add("entry");
+      activity.putArray("conditions");
+      activity.putArray("activitySteps").add("complete independent scope");
+      activity.putArray("codeDefinedResults").add("independent scope result");
+      activity.putArray("businessRules");
+      activity.putArray("formulasOrMetrics");
+      activity.putArray("terms");
+      activity.put("certainty", "DIRECT_CODE_BEHAVIOR");
+      activity.putArray("sourceRefs").add("S1");
+      activity.putArray("questions");
+      activity.putArray("scopeLimitations");
+      if ("ACTIVITY_REVIEW".equals(request.taskKind())) {
+        response.putArray("unexplainedEntries");
+      }
+      return response(
+          new String(
+              canonicalJson.encodeCanonical(response).copyToByteArray(), StandardCharsets.UTF_8));
+    }
+
+    private StructuredModelResponse response(String json) {
+      return new StructuredModelResponse(
+          ImmutableBytes.copyOf(json.getBytes(StandardCharsets.UTF_8)), IDENTITY);
+    }
+
+    private List<String> activityStageSliceKeys() {
+      return List.copyOf(activityStageSliceKeys);
+    }
   }
 
   private static final class FormalLargePacketProvider implements StructuredModelProvider {
@@ -583,8 +1068,10 @@ class ActivityLargePacketFormalEntryTest {
     }
 
     private StructuredModelResponse activityResponse(JsonNode input, boolean review) {
-      boolean m2Scope = scalarText(input).contains(ActivityReadingCoordinatorTest.UNIT_TWO_BODY);
-      String sliceKey = m2Scope ? "slice-m2" : "slice-m3";
+      String sliceKey = input.path("interpretationScope").path("sliceKey").asText();
+      if (sliceKey.isBlank()) {
+        throw new AssertionError("Activity stage input must retain its stable slice key");
+      }
       if (review && sliceKey.equals(failingReviewSlice) && !failedReview) {
         failedReview = true;
         throw new StructuredModelProviderFailure("TRANSIENT_TRANSPORT", true, true);
@@ -593,7 +1080,7 @@ class ActivityLargePacketFormalEntryTest {
       ObjectNode activity = response.putArray("activities").addObject();
       activity.put("activityLocalId", sliceKey);
       activity.putArray("entryKeys").add("E1");
-      activity.put("name", m2Scope ? "validate neutral input" : "write neutral record");
+      activity.put("name", "complete " + sliceKey);
       activity.put("businessPurpose", "exercise formal bounded reading");
       activity.putArray("participants");
       activity.putArray("businessObjects").add("neutral-record");

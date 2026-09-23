@@ -96,8 +96,7 @@ public final class ActivityExplanationCheckpointPublisher {
         coverage.stream()
             .filter(
                 value ->
-                    "NOT_ANALYZED".equals(value.disposition())
-                        || value.requiredScopeIncomplete())
+                    "NOT_ANALYZED".equals(value.disposition()) || value.requiredScopeIncomplete())
             .map(ActivityEntryCoverage::reasonCode)
             .distinct()
             .sorted(UTF8_ORDER)
@@ -173,8 +172,7 @@ public final class ActivityExplanationCheckpointPublisher {
         coverage.stream()
             .filter(
                 value ->
-                    "NOT_ANALYZED".equals(value.disposition())
-                        || value.requiredScopeIncomplete())
+                    "NOT_ANALYZED".equals(value.disposition()) || value.requiredScopeIncomplete())
             .map(ActivityEntryCoverage::reasonCode)
             .distinct()
             .sorted(UTF8_ORDER)

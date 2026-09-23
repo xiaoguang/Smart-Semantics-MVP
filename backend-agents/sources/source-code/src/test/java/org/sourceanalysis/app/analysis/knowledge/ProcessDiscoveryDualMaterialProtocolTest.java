@@ -177,7 +177,8 @@ class ProcessDiscoveryDualMaterialProtocolTest {
                     ignored -> FrozenAnalysisCorpusDualMaterialSourceTest.sourceTextSet(List.of()),
                     null,
                     null))
-        .as("one reviewed slice cannot make a packet with an unfulfilled required slice Step07-ready")
+        .as(
+            "one reviewed slice cannot make a packet with an unfulfilled required slice Step07-ready")
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("PROCESS_DISCOVERY_PARTIAL_ACTIVITY_INPUT");
   }

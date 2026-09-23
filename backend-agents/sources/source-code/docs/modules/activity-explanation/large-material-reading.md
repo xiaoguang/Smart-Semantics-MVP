@@ -1,6 +1,6 @@
 # ActivityReadingCoordinator：大材料怎样有效读完
 
-状态：DIRECT/SELECTED/SLICED、分页阅读、逐slice解释、任务池与CLI已实现，325包真实保存418条Activity。后续审查发现计划复用、必需范围、部分结果及历史容量告警的处理缺口，修复草稿未验证，见[收口记录](post-review-handoff-20260923.md)。下述阅读基础继续复用；本次v2修正为设计评审稿，不是已上线能力。每次请求仍自包含，不静默截断，不建立检索服务、向量库或摘要运行框架。
+状态：DIRECT/SELECTED/SLICED、分页阅读、逐slice解释、任务池与CLI已实现，325包真实保存418条Activity。Task 1的计划/阶段损坏拒绝、局部结果保留和Provider边界已在隔离Maven输出中通过12类79个direct tests及Spotless；这不是完整CI，没有真实模型/JDT/客户构建。Task 2的最终/替换scope和Task 3的coverage-v4/reuse-only仍未实现，见[收口记录](post-review-handoff-20260923.md)。每次请求仍自包含，不静默截断，不建立检索服务、向量库或摘要运行框架。
 
 ## 1. 三条可结束的路径
 
@@ -20,7 +20,7 @@ SLICED直接输出多个ReviewedActivity，不再添加“把所有局部稿塞�
 
 选中slice的模型阅读投影保留每条调用、调用表达式、实参与形参对应、候选短键、展开状态及完整方法正文；JDT临时工作目录路径、重复的导航位置和角色标签不进入该模型投影，形参对应使用紧凑表示。原始导航索引和已存Step05材料不改动。这样减少同一大方法几十至数百条调用元数据的重复字节，但不删调用或截源码；最终仍对实际投影执行容量检查。
 
-最终选材是新的独立模型请求，不能假设它记得前面各页。该请求在容量允许时附上所有已展示页的紧凑`availableUnits`目录（短键、名称、归属和大小），超限时先降到短键与名称，仍超限则明确标记`catalogStatus=CAPACITY_EXCEEDED`。目录只供选取完整单元，不能冒充已读源码；已保存的完整方法仍在`completeUnits`。仅有阅读计划、没有形成Activity的`NOT_ANALYZED`包不作为可复用的完整结果，显式新批次可以重新选材。
+最终选材是新的独立模型请求，不能假设它记得前面各页。该请求在容量允许时附上所有已展示页的紧凑`availableUnits`目录（短键、名称、归属和大小），超限时先降到短键与名称，仍超限则明确标记`catalogStatus=CAPACITY_EXCEEDED`。目录只供选取完整单元，不能冒充已读源码；已保存的完整方法仍在`completeUnits`。仅有阅读计划、没有形成Activity的`NOT_ANALYZED`包不作为可复用的完整结果；保存计划的packet ID、导航、已选/未读单元及scope引用先与当前材料严格核对，合法空计划之后显式新批次才可以重新选材。
 
 候选slice在进入DRAFT之前按完整实际阅读包计量，而不是把方法正文长度之和当成最终请求大小。若模型选出的slice超限，程序记录实测字节数和本次上限；在尚有配置的阅读轮次时，将该反馈交给下一次阅读决策，允许模型缩小同一业务范围或拆成多个可独立解释的范围。程序不会自行删掉某个条件或调用来凑容量，也不会把超限slice当成已经审阅；读完仍超限则保留明确缺口。`sliceCapacity.maxPacketBytes`作为阅读请求的一部分说明单slice上限，实际完整包仍由程序验证。
 
@@ -99,7 +99,7 @@ slice内部继续 `activity entryKeys ∪ unexplainedEntries = slice entryKeys` 
 | Provider实际拒绝输入/context容量 | PROVIDER_INPUT_CAPACITY_EXCEEDED，保留attempt与已成功稿件；不对相同输入自动retry，不影响其他独立包 |
 | 某stage瞬时失败 | 按[执行retry](../model-job-execution.md)在原阶段有界重试；穷尽只影响该包/阶段 |
 
-所有slice按稳定计划顺序聚合。任何必需scope未完成，批次保存成功结果和失败清单后非零终态，不自动启动Step07；用户可显式新batch定向retry。没有自动修改profile、重新分包、Provider切换、同run崩溃接管或无限提示词修复。
+所有slice按稳定计划顺序聚合。一个slice的程序容量预检或packet-local Provider/schema失败不终止后续独立slice；结束时以失败终态携带此前及后续成功，公开coverage保持缺口，私有成功stage不回滚。认证/配置失败停止该binding但仍携带已验证成功，来源/存储损坏保持硬错误且不安装不可信聚合。任何必需scope未完成，批次保存成功结果和失败清单后非零终态，不自动启动Step07；用户可显式新batch定向retry。没有自动修改profile、重新分包、Provider切换、同run崩溃接管或无限提示词修复。
 
 ## 7. 直接验证与真实接受
 

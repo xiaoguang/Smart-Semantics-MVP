@@ -60,7 +60,7 @@ class ActivityReadingCoordinatorGuardrailTest {
 
   @Test
   void rejectsUnknownNavigationPageAndUnknownUnitBeforeTheyCanChangeTheReadingPlan() {
-    ActivityMaterialView view = neutralView(4, 40, 1_200);
+    ActivityMaterialView view = neutralView(4, 40, 800);
 
     ScriptedProvider unknownPage = new ScriptedProvider(response("[\"page-999\"]", "[]", "[]"));
     assertThatThrownBy(() -> coordinate(unknownPage, view, boundedProfile(6_000, 4)))
@@ -75,7 +75,7 @@ class ActivityReadingCoordinatorGuardrailTest {
 
   @Test
   void configuredRetryRejectsAnUnknownUnitBeforePersistingTheSuccessfulReadingDecision() {
-    ActivityMaterialView view = neutralView(4, 40, 1_200);
+    ActivityMaterialView view = neutralView(4, 40, 800);
     String validSlice =
         "[{\"sliceKey\":\"selected-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"read selected unit\"}]";
     ScriptedProvider provider =
@@ -85,7 +85,7 @@ class ActivityReadingCoordinatorGuardrailTest {
         new ActivityRetryProfile(2, 0, 0, 1.0, 0.0, Set.of("UNKNOWN_REFERENCE"), Map.of());
 
     ActivityReadingPlan plan =
-        new ActivityReadingCoordinator(provider, retry).coordinate(view, boundedProfile(6_000, 1));
+        new ActivityReadingCoordinator(provider, retry).coordinate(view, boundedProfile(12_000, 1));
 
     assertThat(provider.inputs()).hasSize(2);
     assertThat(plan.slices()).singleElement();
@@ -97,21 +97,19 @@ class ActivityReadingCoordinatorGuardrailTest {
 
   @Test
   void configuredRetryRejectsDuplicateSliceKeysBeforePersistingTheSuccessfulReadingDecision() {
-    ActivityMaterialView view = neutralView(4, 40, 1_200);
+    ActivityMaterialView view = neutralView(4, 40, 800);
     String duplicateSlices =
         "[{\"sliceKey\":\"selected-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"first declaration\"},{\"sliceKey\":\"selected-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"duplicate declaration\"}]";
     String validSlice =
         "[{\"sliceKey\":\"selected-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"read selected unit\"}]";
     ScriptedProvider provider =
         new ScriptedProvider(
-            response("[]", "[\"M2\"]", duplicateSlices),
-            response("[]", "[\"M2\"]", validSlice));
+            response("[]", "[\"M2\"]", duplicateSlices), response("[]", "[\"M2\"]", validSlice));
     ActivityRetryProfile retry =
-        new ActivityRetryProfile(
-            2, 0, 0, 1.0, 0.0, Set.of("RESPONSE_SCHEMA_INVALID"), Map.of());
+        new ActivityRetryProfile(2, 0, 0, 1.0, 0.0, Set.of("RESPONSE_SCHEMA_INVALID"), Map.of());
 
     ActivityReadingPlan plan =
-        new ActivityReadingCoordinator(provider, retry).coordinate(view, boundedProfile(6_000, 1));
+        new ActivityReadingCoordinator(provider, retry).coordinate(view, boundedProfile(12_000, 1));
 
     assertThat(provider.inputs()).hasSize(2);
     assertThat(plan.slices()).singleElement();

@@ -1,6 +1,6 @@
 # Activity来源、范围完成性与端到端接入合同
 
-状态：2026-09-23核对分支实现；本页“本次目标”为端到端设计评审稿，尚未实施。新Step05→Activity→正式Step07分支已接通，325包真实产生418条Activity；审查修复草稿未验证，旧coverage不能充分区分必需阅读失败和普通未知。见[收口记录](post-review-handoff-20260923.md)及[端到端设计](../../end-to-end-business-delivery-design.md)。
+状态：2026-09-23 Task 1可靠性修复已在隔离Maven输出中通过12类79个direct tests及Spotless；这不是完整CI，没有真实模型/JDT/客户构建。新Step05→Activity→正式Step07分支已接通，325包真实产生418条Activity；Task 2的最终/替换scope和Task 3的coverage-v4/reuse-only仍是本页待实施目标，旧coverage仍不能充分区分必需阅读失败和普通未知。见[收口记录](post-review-handoff-20260923.md)及[端到端设计](../../end-to-end-business-delivery-design.md)。
 
 ## 1. 现状字段与版本，不能混称目标
 
@@ -14,7 +14,7 @@
 | M11 producer | activity-explainer v3 | v4；仍module11及两个文件 |
 | Activity正文 | flow-interpretation-activity-explanations-v2 | 不变 |
 | Activity覆盖 | flow-interpretation-activity-coverage-v3 | v4，仅增加packetCompletion |
-| 私有阅读计划 | activity-reading-plan-v1；dirty保存点的v2还未验收 | 明确activity-reading-plan-v2合同 |
+| 私有阅读计划 | Task 1现有activity-reading-plan-v2复用封套已定向验证；尚无最终/替换scope | Task 2完成plan-v2最终/替换合同 |
 | 私有阶段/整包 | model-job-reviewed-result-v4 / activity-packet-result-v1 | 未变字段保持，reader核对被引用计划版本 |
 | 私有批次 | activity-batch-result-v1 | v2包含packetCompletion及离线只复用核对结果 |
 | 私有reading packet/attempt | activity-reading-packet-v1 / model-job-stage-attempt-v1 | 不变 |
@@ -114,7 +114,7 @@ inspect只读显示这些范围及原因，不自动创建新内容。无法判�
 | --reuse-from-model-batch | 选择完整结果或匹配stage的复用来源，不等于失败范围 |
 | --run | 仅匹配的QUEUED运行，不重新激活旧run |
 
-新增--reuse-only只是明确“本次不允许模型生成”的执行选项，不是重试。普通retry仍按现有入口与阶段策略：重开原有效计划、scope和source mapping；成功DRAFT对应的REVIEW单独重试；失败响应永不复用。损坏计划不自动replan。scope/Prompt/Schema/model改变使受影响stage失效，先告知哪些内容需重新生成，保留其它可复用包。
+新增--reuse-only只是明确“本次不允许模型生成”的执行选项，不是重试。普通retry仍按现有入口与阶段策略：重开原有效计划、scope和source mapping；成功DRAFT对应的REVIEW单独重试；失败响应永不复用。损坏计划不自动replan。已有`activity-packet-result-v1`完成声明还必须能重开它引用的非空plan及每个slice的DRAFT/REVIEW成功记录，并与聚合的Activity、coverage、source refs一致；没有包聚合时，匹配的单slice v4完成声明同样必须能重开它引用的两个成功stage。引用缺失或损坏为硬错误、零补生成。合法空计划且没有业务结果不形成可复用scope，但也必须先通过packet ID、导航、未读单元及保存形状校验，之后显式新执行才可重新选材。scope/Prompt/Schema/model改变使受影响stage失效，先告知哪些内容需重新生成，保留其它可复用包。
 
 新reading限制位于sourceAnalysis.activityReading，默认128页、4补读轮、32slice；由唯一配置读取到既有ActivityReadingProfile。当前代码写死这些值，不能称为已可配置。execution-config-v5记录有效值和合同版本。只改并发/退避不改变语义输入；只提高运行上限不重做已完成范围，但改变最终选材/scope必然改变依赖稿件输入。
 
@@ -132,7 +132,7 @@ Step07不获得Activity retry能力。ProcessDiscoveryRequest、Result、workflo
 
 保持现有Activity输入/输出字节检查与Provider声明capacity：contextWindowTokens、providerOverheadTokens、reasoningReserveTokens、tokenAccounting。UTF8_BYTE_ESTIMATE是保守估算，不是服务端精确token证明；可记录已有离线计数工具实际结果。计量完整Prompt、最终input、Schema、封套与输出余量，REVIEW含完整真实DRAFT。未知隐藏开销不引入额外取证或自动调用。
 
-Provider实际容量拒绝为PROVIDER_INPUT_CAPACITY_EXCEEDED；同输入不按transient重试，不提高上限/截稿/换服务。其它阶段重试、共享故障域和私有错误保留由[model-job-execution](../model-job-execution.md)统一维护。
+Provider通过可靠typed reason给出的实际容量拒绝为PROVIDER_INPUT_CAPACITY_EXCEEDED；同输入不按transient重试，不提高上限/截稿/换服务。Codex进程的非零退出自由文本不是可靠类别，统一为UNKNOWN；只有确认进程终止的本地timeout保留REQUEST_TIMEOUT类型。程序自己算出的单slice输入/输出容量reason是packet-local：保留此前成功并继续后续独立slice；认证/配置停止该binding，来源/存储损坏保持硬错误。其它阶段重试、共享故障域和私有错误保留由[model-job-execution](../model-job-execution.md)统一维护。
 
 必须直接验证：
 

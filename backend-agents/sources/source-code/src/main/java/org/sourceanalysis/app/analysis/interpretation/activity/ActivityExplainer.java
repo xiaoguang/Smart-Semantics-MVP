@@ -513,15 +513,10 @@ public final class ActivityExplainer {
                         request.profile(),
                         providerBinding,
                         identity));
-        CompletedActivityJob reused = reopenReusable(oversizedJob, material, request.profile());
-        if (reused == null) {
-          jobs.add(oversizedJob);
-        } else {
-          reusedJobs.add(reused);
-          if (durableResultStore != null) {
-            durableResultStore.completeReused(reused, reuseFromModelBatchId);
-          }
-        }
+        // A scoped packet is reopened from its plan and exact successful stages below. Do not
+        // accept the aggregate as a cache hit before checking the plan/reading-packet bytes it
+        // claims to reference.
+        jobs.add(oversizedJob);
         continue;
       }
       String capacityFailure = preflightFailure(cleanBytes, material, request.profile());
@@ -586,10 +581,7 @@ public final class ActivityExplainer {
                   ? new ActivityEntryCoverage(
                       entryId, "NOT_ANALYZED", List.of(), failure.reasonCode())
                   : new ActivityEntryCoverage(
-                      entryId,
-                      "ANALYZED_WITH_GAPS",
-                      activityIds,
-                      "ACTIVITY_READING_INCOMPLETE"));
+                      entryId, "ANALYZED_WITH_GAPS", activityIds, "ACTIVITY_READING_INCOMPLETE"));
         }
       }
     }
@@ -634,23 +626,49 @@ public final class ActivityExplainer {
         new ActivityReadingProfile(
             profile.maxModelInputBytes(), profile.maxModelOutputBytes(), 128, 4, 32);
     ActivityReadingPlan readingPlan;
+    ScopedActivityClaim claimedResult;
+    boolean reusedClaimedPlan;
     try {
+      ObjectNode claimedRecord =
+          reuseResultStore == null
+              ? null
+              : reuseResultStore
+                  .readClaimedScopedActivity(
+                      identity.jobKey(),
+                      identity.inputFingerprint(),
+                      binding.quotaScope(),
+                      binding.expectedRuntimeIdentity())
+                  .orElse(null);
+      claimedResult =
+          claimedRecord == null ? null : requireScopedActivityClaim(claimedRecord, material);
+      reusedClaimedPlan = false;
       ObjectNode saved =
           reuseResultStore == null
               ? null
               : reuseResultStore.readActivityReadingPlan(identity.jobKey()).orElse(null);
-      if (saved != null
-          && "activity-reading-plan-v2".equals(saved.path("schemaVersion").asText())
-          && identity.inputFingerprint().equals(saved.path("jobInputFingerprint").asText())
-          && binding.quotaScope().equals(saved.path("quotaScope").asText())
-          && ActivityReadingCoordinator.contractFingerprint(readingProfile)
-              .equals(saved.path("readingContractFingerprint").asText())
-          && !saved.path("requiredScopeIncomplete").asBoolean(false)
-          && saved.path("slices").isArray()
-          && !saved.path("slices").isEmpty()) {
-        readingPlan = reader.reopen(view, readingProfile, saved);
-      } else {
+      if (saved == null) {
+        if (claimedResult != null) {
+          throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+        }
         readingPlan = reader.coordinate(view, readingProfile);
+      } else {
+        requireReusableReadingPlan(saved, identity, binding, readingProfile);
+        ActivityReadingPlan reopened = reader.reopen(view, readingProfile, saved);
+        if (reopened.slices().isEmpty()) {
+          if (claimedResult != null && claimedResult.hasBusinessResult()) {
+            throw new ActivityExplanationException("ACTIVITY_REUSED_RESULT_INVALID");
+          }
+          // A valid bounded reading attempt that formed no scope is not a reusable plan. An
+          // explicit new execution may select again; this differs from a damaged claimed scope.
+          readingPlan = reader.coordinate(view, readingProfile);
+        } else {
+          readingPlan = reopened;
+          if (claimedResult != null) {
+            requireClaimedSlices(readingPlan, claimedResult);
+            requireClaimedStageSuccesses(readingPlan, profile, binding);
+            reusedClaimedPlan = true;
+          }
+        }
       }
     } catch (RuntimeException failedReading) {
       throw new ActivityStageFailure(
@@ -673,6 +691,12 @@ public final class ActivityExplainer {
       stageResultStore.writeDecision(identity.jobKey(), decision);
     }
     ActivityExplanationResult scoped = explain(readingPlan, profile, binding);
+    if (reusedClaimedPlan
+        && (!claimedResult.reviewedActivities().equals(scoped.reviewedActivities())
+            || !claimedResult.coverage().equals(scoped.coverage())
+            || !claimedResult.unexplainedEntries().equals(scoped.unexplainedActivityEntries()))) {
+      throw new ActivityExplanationException("ACTIVITY_REUSED_RESULT_INVALID");
+    }
     ModelRuntimeIdentityV1 identityForRecord = binding.expectedRuntimeIdentity();
     if (identityForRecord == null) {
       if (durableResultStore != null) {
@@ -706,40 +730,56 @@ public final class ActivityExplainer {
     Objects.requireNonNull(binding, "activity model binding");
     List<ReviewedActivity> reviewed = new ArrayList<>();
     List<UnexplainedActivityEntry> unexplained = new ArrayList<>();
+    RuntimeException firstPacketLocalFailure = null;
     for (ActivityReadingPlan.Slice slice : readingPlan.slices()) {
-      ActivityModelMaterial material =
-          projectedMaterial(slice.readingPacket(), slice.sliceKey(), slice.scope());
-      ImmutableBytes input = material.cleanInput();
-      if (input.size() > profile.maxModelInputBytes()) {
-        throw new ActivityExplanationException("ACTIVITY_SLICE_INPUT_CAPACITY_EXCEEDED");
-      }
-      String capacityFailure = preflightFailure(input, material, profile);
-      if (capacityFailure != null) {
-        throw new ActivityExplanationException(capacityFailure);
-      }
-      ActivityJobIdentity identity =
-          jobIdentity(
-              material,
-              input,
-              profile,
-              binding.key(),
-              binding.quotaScope(),
-              binding.expectedRuntimeIdentity());
-      ActivityJobResult result;
       try {
-        result = explainMaterial(material, input, profile, identity, binding);
+        ActivityModelMaterial material =
+            projectedMaterial(slice.readingPacket(), slice.sliceKey(), slice.scope());
+        ImmutableBytes input = material.cleanInput();
+        if (input.size() > profile.maxModelInputBytes()) {
+          throw new ActivityExplanationException("ACTIVITY_SLICE_INPUT_CAPACITY_EXCEEDED");
+        }
+        String capacityFailure = preflightFailure(input, material, profile);
+        if (capacityFailure != null) {
+          throw new ActivityExplanationException(capacityFailure);
+        }
+        ActivityJobIdentity identity =
+            jobIdentity(
+                material,
+                input,
+                profile,
+                binding.key(),
+                binding.quotaScope(),
+                binding.expectedRuntimeIdentity());
+        requireCompletedSliceStageSuccesses(identity, binding);
+        ActivityJobResult result = explainMaterial(material, input, profile, identity, binding);
+        ActivityJob job =
+            new ActivityJob(
+                material.materialId(), binding, identity, material.stagedExecution(), () -> result);
+        completionSink.complete(new CompletedActivityJob(job, result));
+        reviewed.addAll(result.reviewedActivities());
+        unexplained.addAll(result.unexplainedEntries());
       } catch (RuntimeException failedSlice) {
-        if (reviewed.isEmpty()) {
+        if (!BoundedActivityJobCoordinator.packetLocalFailure(failedSlice)) {
           throw failedSlice;
         }
-        throw new ActivityPacketPartialFailure(failedSlice, reviewed, unexplained);
+        if (BoundedActivityJobCoordinator.bindingFailure(failedSlice)) {
+          if (reviewed.isEmpty()) {
+            throw failedSlice;
+          }
+          // Stop this binding, but retain slices already reviewed before the binding failed.
+          throw new ActivityPacketPartialFailure(failedSlice, reviewed, unexplained);
+        }
+        if (firstPacketLocalFailure == null) {
+          firstPacketLocalFailure = failedSlice;
+        }
       }
-      ActivityJob job =
-          new ActivityJob(
-              material.materialId(), binding, identity, material.stagedExecution(), () -> result);
-      completionSink.complete(new CompletedActivityJob(job, result));
-      reviewed.addAll(result.reviewedActivities());
-      unexplained.addAll(result.unexplainedEntries());
+    }
+    if (firstPacketLocalFailure != null) {
+      if (reviewed.isEmpty()) {
+        throw firstPacketLocalFailure;
+      }
+      throw new ActivityPacketPartialFailure(firstPacketLocalFailure, reviewed, unexplained);
     }
     ObjectNode record = readingPlan.toPrivateRecord();
     boolean requiredScopeIncomplete = record.path("requiredScopeIncomplete").asBoolean(false);
@@ -777,6 +817,139 @@ public final class ActivityExplainer {
               }
             });
     return new ActivityExplanationResult(reviewed, coverage, unexplained, null);
+  }
+
+  private static void requireReusableReadingPlan(
+      ObjectNode saved,
+      ActivityJobIdentity identity,
+      ModelJobProviderBinding binding,
+      ActivityReadingProfile readingProfile) {
+    JsonNode incomplete = saved.path("requiredScopeIncomplete");
+    if (!"activity-reading-plan-v2".equals(saved.path("schemaVersion").asText())
+        || !identity.inputFingerprint().equals(saved.path("jobInputFingerprint").asText())
+        || !binding.quotaScope().equals(saved.path("quotaScope").asText())
+        || !ActivityReadingCoordinator.contractFingerprint(readingProfile)
+            .equals(saved.path("readingContractFingerprint").asText())
+        || !incomplete.isBoolean()
+        || !saved.path("slices").isArray()
+        || (saved.path("slices").isEmpty() && !incomplete.booleanValue())) {
+      throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+    }
+  }
+
+  private static ScopedActivityClaim requireScopedActivityClaim(
+      ObjectNode saved, ActivityModelMaterial material) {
+    try {
+      if (!material.materialId().equals(requiredText(saved, "materialId"))) {
+        throw new ActivityExplanationException("ACTIVITY_REUSED_RESULT_INVALID");
+      }
+      List<ReviewedActivity> activities =
+          JSON.convertValue(
+              saved.path("reviewedActivities"),
+              JSON.getTypeFactory().constructCollectionType(List.class, ReviewedActivity.class));
+      List<ActivityEntryCoverage> coverage =
+          JSON.convertValue(
+              saved.path("coverage"),
+              JSON.getTypeFactory()
+                  .constructCollectionType(List.class, ActivityEntryCoverage.class));
+      List<UnexplainedActivityEntry> unexplained =
+          JSON.convertValue(
+              saved.path("unexplainedActivityEntries"),
+              JSON.getTypeFactory()
+                  .constructCollectionType(List.class, UnexplainedActivityEntry.class));
+      Set<String> expectedEntries = Set.copyOf(material.entryIds());
+      Set<String> activityIds =
+          activities.stream().map(ReviewedActivity::activityId).collect(Collectors.toSet());
+      if (activityIds.size() != activities.size()
+          || coverage.size() != expectedEntries.size()
+          || !coverage.stream()
+              .map(ActivityEntryCoverage::entryId)
+              .collect(Collectors.toSet())
+              .equals(expectedEntries)
+          || activities.stream()
+              .anyMatch(
+                  activity ->
+                      !material.materialId().equals(activity.materialId())
+                          || !"CODE_READING_MATERIALS".equals(activity.materialSource())
+                          || activity.sliceKey() == null
+                          || activity.sliceKey().isBlank()
+                          || activity.entryIds().isEmpty()
+                          || !expectedEntries.containsAll(activity.entryIds())
+                          || activity.originalSourceRefs().entrySet().stream()
+                              .anyMatch(
+                                  source ->
+                                      !source
+                                          .getValue()
+                                          .equals(material.sourceIdsByRef().get(source.getKey()))))
+          || coverage.stream().anyMatch(entry -> !activityIds.containsAll(entry.activityIds()))
+          || unexplained.stream()
+              .anyMatch(
+                  entry ->
+                      !material.materialId().equals(entry.materialId())
+                          || !expectedEntries.contains(entry.entryId())
+                          || !entry.entryId().equals(material.entryIdsByKey().get(entry.entryKey()))
+                          || !material.materialContext().equals(entry.materialContext()))) {
+        throw new ActivityExplanationException("ACTIVITY_REUSED_RESULT_INVALID");
+      }
+      return new ScopedActivityClaim(activities, coverage, unexplained);
+    } catch (ActivityExplanationException invalid) {
+      throw invalid;
+    } catch (RuntimeException invalid) {
+      throw new ActivityExplanationException("ACTIVITY_REUSED_RESULT_INVALID", invalid);
+    }
+  }
+
+  private static void requireClaimedSlices(
+      ActivityReadingPlan readingPlan, ScopedActivityClaim claimedResult) {
+    Set<String> sliceKeys =
+        readingPlan.slices().stream()
+            .map(ActivityReadingPlan.Slice::sliceKey)
+            .collect(Collectors.toSet());
+    if (claimedResult.reviewedActivities().stream()
+        .anyMatch(activity -> !sliceKeys.contains(activity.sliceKey()))) {
+      throw new ActivityExplanationException("ACTIVITY_REUSED_RESULT_INVALID");
+    }
+  }
+
+  private void requireClaimedStageSuccesses(
+      ActivityReadingPlan readingPlan,
+      ActivityExplanationProfile profile,
+      ModelJobProviderBinding binding) {
+    for (ActivityReadingPlan.Slice slice : readingPlan.slices()) {
+      ActivityModelMaterial material =
+          projectedMaterial(slice.readingPacket(), slice.sliceKey(), slice.scope());
+      ActivityJobIdentity sliceIdentity =
+          jobIdentity(
+              material,
+              material.cleanInput(),
+              profile,
+              binding.key(),
+              binding.quotaScope(),
+              binding.expectedRuntimeIdentity());
+      requireStageSuccessIndexes(sliceIdentity);
+    }
+  }
+
+  private void requireCompletedSliceStageSuccesses(
+      ActivityJobIdentity identity, ModelJobProviderBinding binding) {
+    if (reuseResultStore == null
+        || reuseResultStore
+            .readCompletedActivity(
+                identity.jobKey(),
+                identity.inputFingerprint(),
+                binding.quotaScope(),
+                binding.expectedRuntimeIdentity())
+            .isEmpty()) {
+      return;
+    }
+    requireStageSuccessIndexes(identity);
+  }
+
+  private void requireStageSuccessIndexes(ActivityJobIdentity identity) {
+    if (reuseResultStore.readStageSuccess(identity.jobKey(), "DRAFT").isEmpty()
+        || reuseResultStore.readStageSuccess(identity.jobKey(), "REVIEW").isEmpty()) {
+      throw new ActivityExplanationException("ACTIVITY_STAGE_SUCCESS_INVALID");
+    }
   }
 
   private ActivityJobResult explainMaterial(
@@ -1410,7 +1583,7 @@ public final class ActivityExplainer {
       return null;
     }
     ObjectNode saved =
-        (job.stagedExecution() || job.scopedReading()
+        (job.stagedExecution()
                 ? reuseResultStore.readCompletedActivity(
                     job.identity().jobKey(),
                     job.identity().inputFingerprint(),
@@ -1427,58 +1600,6 @@ public final class ActivityExplainer {
     }
     try {
       ModelRuntimeIdentityV1 runtimeIdentity = job.providerBinding().expectedRuntimeIdentity();
-      if (job.scopedReading()) {
-        List<ReviewedActivity> activities =
-            JSON.convertValue(
-                saved.path("reviewedActivities"),
-                JSON.getTypeFactory().constructCollectionType(List.class, ReviewedActivity.class));
-        List<ActivityEntryCoverage> coverage =
-            JSON.convertValue(
-                saved.path("coverage"),
-                JSON.getTypeFactory()
-                    .constructCollectionType(List.class, ActivityEntryCoverage.class));
-        List<UnexplainedActivityEntry> unexplained =
-            JSON.convertValue(
-                saved.path("unexplainedActivityEntries"),
-                JSON.getTypeFactory()
-                    .constructCollectionType(List.class, UnexplainedActivityEntry.class));
-        if (coverage.stream()
-            .anyMatch(
-                entry ->
-                    "NOT_ANALYZED".equals(entry.disposition())
-                        || entry.requiredScopeIncomplete())) {
-          // A finished reading decision is not a finished business explanation. A later explicit
-          // batch must be able to revisit packets for which no complete Activity was formed.
-          return null;
-        }
-        Set<String> expectedEntries = Set.copyOf(material.entryIds());
-        if (activities.stream()
-                .anyMatch(
-                    activity ->
-                        !job.materialId().equals(activity.materialId())
-                            || !expectedEntries.containsAll(activity.entryIds()))
-            || !coverage.stream()
-                .map(ActivityEntryCoverage::entryId)
-                .collect(Collectors.toSet())
-                .equals(expectedEntries)
-            || unexplained.stream()
-                .anyMatch(
-                    entry ->
-                        !job.materialId().equals(entry.materialId())
-                            || !expectedEntries.contains(entry.entryId()))) {
-          throw new ActivityExplanationException("ACTIVITY_REUSED_RESULT_INVALID");
-        }
-        return new CompletedActivityJob(
-            job,
-            new ActivityJobResult(
-                job.materialId(),
-                activities,
-                coverage,
-                unexplained,
-                runtimeIdentity,
-                JsonNodeFactory.instance.objectNode(),
-                JsonNodeFactory.instance.objectNode()));
-      }
       validateResponse(saved.path("draft"), material, profile, DRAFT_KIND, runtimeIdentity);
       ValidatedActivityResponse review =
           validateResponse(saved.path("review"), material, profile, REVIEW_KIND, runtimeIdentity);
@@ -2140,6 +2261,28 @@ public final class ActivityExplainer {
 
     private List<String> entryIds() {
       return List.copyOf(entryIdsByKey.values());
+    }
+  }
+
+  private record ScopedActivityClaim(
+      List<ReviewedActivity> reviewedActivities,
+      List<ActivityEntryCoverage> coverage,
+      List<UnexplainedActivityEntry> unexplainedEntries) {
+
+    private ScopedActivityClaim {
+      reviewedActivities = List.copyOf(reviewedActivities);
+      coverage = List.copyOf(coverage);
+      unexplainedEntries = List.copyOf(unexplainedEntries);
+    }
+
+    private boolean hasBusinessResult() {
+      return !reviewedActivities.isEmpty()
+          || !unexplainedEntries.isEmpty()
+          || coverage.stream()
+              .anyMatch(
+                  entry ->
+                      !"NOT_ANALYZED".equals(entry.disposition())
+                          || !entry.activityIds().isEmpty());
     }
   }
 

@@ -130,8 +130,7 @@ class ProcessCodexSubscriptionCommandTest {
   }
 
   @Test
-  void exposesOnlyABoundedModelConfigurationCategoryWhenCliWritesSensitiveLookingStderr()
-      throws Exception {
+  void treatsFreeTextStderrAsUnknownWhileKeepingItsSensitiveContentPrivate() throws Exception {
     Path executable = temporaryDirectory.resolve("fake-codex");
     Files.writeString(
         executable,
@@ -158,14 +157,21 @@ class ProcessCodexSubscriptionCommandTest {
                         "untrusted prompt",
                         ImmutableBytes.copyOf(
                             "{\"type\":\"object\"}".getBytes(StandardCharsets.UTF_8))))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessage("CODEX_SUBSCRIPTION_EXECUTION_FAILED:MODEL_CONFIGURATION")
+        .isInstanceOf(StructuredModelProviderFailure.class)
         .satisfies(
-            failure -> assertThat(failure.getMessage()).doesNotContain("not-for-output", "token="));
+            failure -> {
+              StructuredModelProviderFailure classified = (StructuredModelProviderFailure) failure;
+              assertThat(classified.reasonCode()).isEqualTo("UNKNOWN");
+              assertThat(classified.requestStarted()).isTrue();
+              assertThat(classified.requestEnded()).isTrue();
+              assertThat(classified.getMessage())
+                  .isEqualTo("CODEX_SUBSCRIPTION_EXECUTION_FAILED:UNKNOWN")
+                  .doesNotContain("not-for-output", "token=");
+            });
   }
 
   @Test
-  void classifiesCliFailureReportedOnStandardOutputWithoutSurfacingItsRawText() throws Exception {
+  void treatsFreeTextStandardOutputAsUnknownWithoutSurfacingItsRawText() throws Exception {
     Path executable = temporaryDirectory.resolve("fake-codex-stdout");
     Files.writeString(
         executable,
@@ -192,14 +198,21 @@ class ProcessCodexSubscriptionCommandTest {
                         "untrusted prompt",
                         ImmutableBytes.copyOf(
                             "{\"type\":\"object\"}".getBytes(StandardCharsets.UTF_8))))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessage("CODEX_SUBSCRIPTION_EXECUTION_FAILED:MODEL_CONFIGURATION")
+        .isInstanceOf(StructuredModelProviderFailure.class)
         .satisfies(
-            failure -> assertThat(failure.getMessage()).doesNotContain("not-for-output", "token="));
+            failure -> {
+              StructuredModelProviderFailure classified = (StructuredModelProviderFailure) failure;
+              assertThat(classified.reasonCode()).isEqualTo("UNKNOWN");
+              assertThat(classified.requestStarted()).isTrue();
+              assertThat(classified.requestEnded()).isTrue();
+              assertThat(classified.getMessage())
+                  .isEqualTo("CODEX_SUBSCRIPTION_EXECUTION_FAILED:UNKNOWN")
+                  .doesNotContain("not-for-output", "token=");
+            });
   }
 
   @Test
-  void classifiesModelAtCapacityBeforeTheGenericModelConfigurationCategory() throws Exception {
+  void doesNotInferProviderCapacityFromFreeTextStderr() throws Exception {
     Path executable = temporaryDirectory.resolve("fake-codex-capacity");
     Files.writeString(
         executable,
@@ -229,37 +242,29 @@ class ProcessCodexSubscriptionCommandTest {
         .isInstanceOf(StructuredModelProviderFailure.class)
         .satisfies(
             failure -> {
-              StructuredModelProviderFailure classified =
-                  (StructuredModelProviderFailure) failure;
+              StructuredModelProviderFailure classified = (StructuredModelProviderFailure) failure;
               assertThat(classified.getMessage())
-                  .isEqualTo("CODEX_SUBSCRIPTION_EXECUTION_FAILED:PROVIDER_CAPACITY");
-              assertThat(classified.reasonCode()).isEqualTo("PROVIDER_UNAVAILABLE");
+                  .isEqualTo("CODEX_SUBSCRIPTION_EXECUTION_FAILED:UNKNOWN");
+              assertThat(classified.reasonCode()).isEqualTo("UNKNOWN");
               assertThat(classified.requestStarted()).isTrue();
               assertThat(classified.requestEnded()).isTrue();
             });
   }
 
   @Test
-  void mapsRetryAndBindingFailuresToMachineReasonsWithoutExposingCliDiagnostics()
-      throws Exception {
-    assertFailureCategory("rate limit exceeded; token=private", "RATE_LIMIT", "RATE_LIMITED");
-    assertFailureCategory(
-        "service temporarily unavailable; token=private",
-        "PROVIDER_CAPACITY",
-        "PROVIDER_UNAVAILABLE");
-    assertFailureCategory("quota exhausted; token=private", "QUOTA_EXHAUSTED", "QUOTA_EXHAUSTED");
-    assertFailureCategory(
-        "authentication credential unauthorized; token=private",
-        "AUTHENTICATION",
-        "AUTHENTICATION_FAILED");
-    assertFailureCategory(
-        "model reasoning output-schema is invalid; token=private",
-        "MODEL_CONFIGURATION",
-        "CONFIGURATION_INVALID");
+  void doesNotMapFreeTextToRetryOrBindingReasonsWithoutExposingCliDiagnostics() throws Exception {
+    assertFreeTextFailureIsUnknown("rate limit exceeded; token=private", "rate-limit");
+    assertFreeTextFailureIsUnknown(
+        "service temporarily unavailable; token=private", "provider-capacity");
+    assertFreeTextFailureIsUnknown("quota exhausted; token=private", "quota");
+    assertFreeTextFailureIsUnknown(
+        "authentication credential unauthorized; token=private", "authentication");
+    assertFreeTextFailureIsUnknown(
+        "model reasoning output-schema is invalid; token=private", "configuration");
   }
 
   @Test
-  void distinguishesAnExplicitInputContextRejectionFromServiceCapacity() throws Exception {
+  void doesNotInferAnInputContextRejectionFromFreeText() throws Exception {
     Path executable = temporaryDirectory.resolve("fake-codex-context");
     Files.writeString(
         executable,
@@ -282,8 +287,10 @@ class ProcessCodexSubscriptionCommandTest {
         .satisfies(
             failure -> {
               assertThat(((StructuredModelProviderFailure) failure).reasonCode())
-                  .isEqualTo("PROVIDER_INPUT_CAPACITY_EXCEEDED");
-              assertThat(failure.getMessage()).doesNotContain("token=private");
+                  .isEqualTo("UNKNOWN");
+              assertThat(failure.getMessage())
+                  .isEqualTo("CODEX_SUBSCRIPTION_EXECUTION_FAILED:UNKNOWN")
+                  .doesNotContain("token=private");
             });
   }
 
@@ -308,9 +315,9 @@ class ProcessCodexSubscriptionCommandTest {
         .hasMessage("CODEX_SUBSCRIPTION_PREFLIGHT_FAILED");
   }
 
-  private void assertFailureCategory(String diagnostic, String category, String reasonCode)
+  private void assertFreeTextFailureIsUnknown(String diagnostic, String fixtureName)
       throws Exception {
-    Path executable = temporaryDirectory.resolve("fake-codex-" + category.toLowerCase());
+    Path executable = temporaryDirectory.resolve("fake-codex-" + fixtureName);
     Files.writeString(
         executable,
         "#!/bin/sh\n"
@@ -339,11 +346,10 @@ class ProcessCodexSubscriptionCommandTest {
         .isInstanceOf(StructuredModelProviderFailure.class)
         .satisfies(
             failure -> {
-              StructuredModelProviderFailure classified =
-                  (StructuredModelProviderFailure) failure;
+              StructuredModelProviderFailure classified = (StructuredModelProviderFailure) failure;
               assertThat(classified.getMessage())
-                  .isEqualTo("CODEX_SUBSCRIPTION_EXECUTION_FAILED:" + category);
-              assertThat(classified.reasonCode()).isEqualTo(reasonCode);
+                  .isEqualTo("CODEX_SUBSCRIPTION_EXECUTION_FAILED:UNKNOWN");
+              assertThat(classified.reasonCode()).isEqualTo("UNKNOWN");
               assertThat(classified.requestStarted()).isTrue();
               assertThat(classified.requestEnded()).isTrue();
               assertThat(classified.getMessage()).doesNotContain("token=private");
