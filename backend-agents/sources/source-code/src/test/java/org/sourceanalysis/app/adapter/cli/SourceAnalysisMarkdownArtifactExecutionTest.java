@@ -69,8 +69,7 @@ import org.sourceanalysis.app.runtime.ReaderCandidateRound;
 class SourceAnalysisMarkdownArtifactExecutionTest {
 
   private static final CanonicalJsonCodec JSON = new CanonicalJsonCodec();
-  private static final ArtifactStoreLimits LIMITS =
-      new ArtifactStoreLimits(16, 2_000_000, 8_000_000, 24);
+  static final ArtifactStoreLimits LIMITS = new ArtifactStoreLimits(16, 2_000_000, 8_000_000, 24);
 
   @TempDir Path temporaryDirectory;
 
@@ -260,7 +259,7 @@ class SourceAnalysisMarkdownArtifactExecutionTest {
         List.of());
   }
 
-  private static CodeReadingMaterialSet materialSet(
+  static CodeReadingMaterialSet materialSet(
       JavaCodeIndex javaIndex,
       VerifiedSourceInventoryReference source,
       ProgramGraphsReference navigation,
@@ -330,7 +329,7 @@ class SourceAnalysisMarkdownArtifactExecutionTest {
         coverage);
   }
 
-  private static AnalysisStepPublicationReference cloneStep(
+  static AnalysisStepPublicationReference cloneStep(
       ReopenedAnalysisStepPublication original,
       AnalysisRunId targetRun,
       List<AnalysisStepPublicationReference> upstream,
@@ -395,7 +394,7 @@ class SourceAnalysisMarkdownArtifactExecutionTest {
         .reference();
   }
 
-  private static JavaCodeSession minimalJavaSession(ProgramGraphsPublicFixture fixture) {
+  static JavaCodeSession minimalJavaSession(ProgramGraphsPublicFixture fixture) {
     String snapshot = fixture.sourceReader().reopen(fixture.sourceInventory()).snapshotId();
     return new JavaCodeSession() {
       @Override

@@ -1,6 +1,8 @@
 # Activity来源、范围完成性与端到端接入合同
 
-状态：2026-09-23 Task 1可靠性修复已通过12类79项定向测试；Task 2最终/替换scope、历史计划重开与配置接线通过8类80项定向测试、Spotless及独立复查，均使用隔离Maven输出。这不是完整CI，没有真实模型/JDT/客户构建。新Step05→Activity→正式Step07分支已接通，325包真实产生418条Activity。Task 3的coverage-v4/reuse-only开始实施，旧coverage仍不能充分区分必需阅读失败和普通未知。见[历史收口记录](post-review-handoff-20260923.md)及[端到端设计](../../end-to-end-business-delivery-design.md)。
+状态：2026-09-23 Task 1可靠性修复已通过12类79项定向测试；Task 2最终/替换scope、历史计划重开与配置接线通过8类80项定向测试、Spotless及独立复查，均使用隔离Maven输出。这不是完整CI，没有真实模型/JDT/客户构建。新Step05→Activity→正式Step07分支已接通，历史325包真实产生418条Activity。
+
+Task 3进行中：coverage-v4发布、正式CLI零Provider采用、v1/v2阅读计划及私有批次记录已有定向测试。固定325包离线核对已发布独立新批次：311包COMPLETE、14包INCOMPLETE（24个必需切片未解释）；原1个导航缺口另列，新批次不得进入全仓Step07。旧418条Activity、旧结果及Step05材料不改写。第3步仍需完成新增历史边界测试及本地定向回归，第4步的范围核对已得出实际结论；补生成是否进行仍待用户选择。见[历史收口记录](post-review-handoff-20260923.md)及[端到端设计](../../end-to-end-business-delivery-design.md)。
 
 ## 1. 现状字段与版本，不能混称目标
 
@@ -8,15 +10,17 @@
 | --- | --- | --- |
 | Java导航、持久化、Step05 | java-code-index-v2、persistence-material-index-v1、code-reading-material-set-v1 | 不变 |
 | 材料state | repository-run-state-v4 | 不变 |
-| YAML | v3接线已写入，默认/自定义activityReading加载定向通过；历史v2按旧字段读取 | 完成实际执行限制及完整直接回归 |
+| YAML | v3接线、实际执行限制和历史重开已通过Task 2直接回归；历史v2按旧字段读取 | 本轮完整本地CI仍待执行 |
 | execution config | 历史磁盘为v4；已实现v5写入有效activityReading和v4/v5严格读取，Task 2定向回归通过 | v5还须在Step07编码步骤绑定过程新协议；无materialSource对象别名 |
 | run output | analysis-run-output-v6 | 不变 |
-| M11 producer | activity-explainer v3 | v4；仍module11及两个文件 |
+| M11 producer | 历史为v3；工作分支v4显式发布及真实存储重开已定向通过 | 贯通真实范围投影及只复用；仍module11及两个文件 |
 | Activity正文 | flow-interpretation-activity-explanations-v2 | 不变 |
-| Activity覆盖 | flow-interpretation-activity-coverage-v3 | v4，仅增加packetCompletion |
+| Activity覆盖 | 历史v3；工作分支v4读写已定向通过 | 仅增加packetCompletion；完成所有生产者与历史验证 |
 | 私有阅读计划 | plan-v2最终/替换scope、DIRECT及分页重开已实现；历史v1实际闭包及scope对应已定向验证 | Task 3据此实现公共完成记录和离线历史接续 |
 | 私有阶段/整包 | model-job-reviewed-result-v4 / activity-packet-result-v1 | 未变字段保持，reader核对被引用计划版本 |
-| 私有批次 | activity-batch-result-v1 | v2包含packetCompletion及离线只复用核对结果 |
+| 私有批次 | 历史activity-batch-result-v1；新批次写v2 | 正常和离线批次均保存与M11一致的packetCompletion；普通批次的采纳来源为显式null，离线批次保存实际来源批次及检查点 |
+
+历史M11 v3的产物策略注册表与新增coverage-v4后的当前注册表身份不同。配置可选`historicalActivityPolicyRegistry`明确指向冻结的旧策略集；读取Activity时先对照该批次已保存的`artifactPolicyRegistryRef`，只选择精确匹配的当前或历史注册表，再按原有receipt校验重开。Step05仍独立使用`inputPolicyRegistry`；未知注册表、错误receipt或缺失历史配置均失败，不重新取材也不修改旧产物。旧v1阅读计划的调用字段可能保留完整导航元数据，读取器仅在按旧格式从同一材料精确重构成功时接受；历史直接整包结果被后续批次包装为切片聚合时，必须追溯原DRAFT/REVIEW并核对未改变的业务内容。
 | 私有reading packet/attempt | activity-reading-packet-v1 / model-job-stage-attempt-v1 | 不变 |
 | Activity Prompt | DRAFT/REVIEW仍v2；工作区READING_PLAN已路由v2，旧v1资源保留 | 完成新响应合同全部直接fixture迁移与回归 |
 
@@ -82,25 +86,46 @@ incompleteScopes[{sliceKey|null, entryIds[], reasonCode}]
 5. entry级范围由slice.entryKeys准确汇总；一个entry的失败不抹掉同包其它entry的成功，整个packet仍非完整。
 6. 普通scopeLimitations、外部调用未知、未选辅助正文不自动等于必需失败。不复制每个unit的状态到公共coverage。
 7. 保存的partial结果包含所有已成功独立slice。后续slice失败、甚至其容量预检失败，都不能使先前成果从公开M11消失。
+8. 实际packet的COMPLETE至少有一个必需范围（直接整包为`whole-packet`）。零包输入使用空packetCompletion集合，不能用必需范围为空的COMPLETE记录替代；历史UNDETERMINED仍允许范围键未知并保留原因及有效Activity。
 
 packetCompletion是程序执行范围结论，不是业务正确性打分。必需未知或合法未解释影响Step07准入；仅原NOT_COLLECTED的1项或已读范围内诚实业务未知，不把其它325包当模型执行失败。
 
+校验沿已有边界分工：M11普通读取器核对版本、字节、身份及Activity与完成记录的内部一致性；发布器、离线接续和Step07请求在已经持有Step05材料时核对真实packet与完整entry集合。不为普通重开增加一套上游加载或扫描流程。历史没有完成表与新版明确的空包集合必须可区分，不能由旧构造器默认生成COMPLETE。
+
+内存使用`ActivityPacketCompletion`值对象及`ActivityExplanationResult.packetCompletion`的显式可缺省集合：历史v2/v3为缺省，新v4必须存在（零包时可以为空集合）。新生产发布必须显式提供完成记录并写v4；保留旧读取，不为历史测试再保留一条生产v3写出路径。历史fixture使用原格式构造，与当前发布测试分开。
+
 ## 5. 阅读计划v2、历史核对及只复用输出
 
-plan-v2保留完整实际阅读输入、每次decision、完整slice readingPacket和source mapping、Prompt/Schema/profile/binding，以及最终有效slice集合与当前未解决范围。历史诊断与当前义务分开，明确被替换/撤回的scope，不用累积unknown文本驱动当前成功判断。详细响应见[ReadingCoordinator](large-material-reading.md)。
+plan-v2保存每次decision、完整slice readingPacket及其来源映射、最终有效slice集合与当前未解决范围。正式保存器另写入jobInputFingerprint、quotaScope和readingContractFingerprint；实际请求及模型身份在阶段记录中，有效配置在execution config中，不要求计划文件重复内嵌完整Prompt/Schema/profile/binding。历史诊断与当前义务分开，明确被替换/撤回的scope，不用累积unknown文本驱动当前成功判断。详细响应见[ReadingCoordinator](large-material-reading.md)。
 
 旧plan-v1与coverage-v3严格读，但不能据“无新错误标记”默认为完整。显式离线核对读取旧plan、raw决策、实际包和stage/复用来源：
 
 历史计划按实际保存形状读取：含完整 `slices/readingPacket` 的 v1 分页计划可以恢复原范围及原始记录，但不补造 v2 的最终范围、结束决定或完成结论；旧 DIRECT 只有头部和 `sliceKeys` 时，先保留原记录，离线核对再结合其已审结果与固定材料。历史可读不等于能续接新版模型阶段；线上阶段复用仍须匹配原实际输入、Prompt、Schema和模型身份。
+
+现有小包直接路径还可能根本没有阅读计划：它先传入完整包，再保存DRAFT/REVIEW，Activity的`sliceKey=null`。此时按实际完整包输入及成功两稿核对，可用既有`whole-packet`键表达新完成记录中的整包义务，但不改原Activity的空sliceKey、ID或正文。这个对应只适用于确认的直接整包任务；大包明确引用的计划缺失不能借此降为DIRECT，也不补造一份历史计划。
 
 - 能还原最终必需范围、完整包和成功REVIEW：COMPLETE。
 - 明确仍有必需未读/失败：INCOMPLETE。
 - 旧记录没表达替换关系或不足以确定义务：UNDETERMINED。
 - 声称存在的成功文件/来源损坏：硬错误，不伪装UNDETERMINED或调用模型修补。
 
+离线核对不重新计算旧运行的分页大小或容量判断，也不把新配置上限套到旧记录。v1没有新版结束字段本身不等于无法判断：旧结构中的导航已经全部展示、原始请求的非空scope集合没有冲突、完整保存的scope及两稿均对应时，可以确认这些既定范围已完成。相同声明的重复不算冲突；不同修订或移除提案的最终意图无法还原时才记UNDETERMINED。v2使用其已验证的最终集合、结束及当前缺口字段。两者都只判断已记录的执行义务，不宣称业务语义完整。
+
+v1的同键修订按其原实现的最后声明核对：最后声明与实际冻结包和已审阶段一致时，先前超大提案不使该范围永久未完成。若仍保留较旧的可执行版本，不能用它代替较新的义务；不同键之间未明确的替代也不能自行猜测。这个判断来自保存的结构，不解释自由文本中的错误词或业务未知。
+
+历史v1的剩余导航页按已验证的`remainingNavigationPages`读取；非零时保留现有成功切片，同时报告导航未完成，不能标为COMPLETE。不会重新计算历史分页或把普通业务未知当作导航失败。
+
+旧失败包没有整包聚合时，单个成功slice不能按直接整包任务核对。使用该批次已有终态记录中的真实jobKey定位原阅读计划，复用同一个纯读取器核对必需范围和已审slice；已完成正文保留，缺失范围记INCOMPLETE。失败记录不表示计划一定已保存：未声称完成且计划确实不存在时记录UNDETERMINED，不补造计划；已存在但损坏的计划、声称成功却损坏的stage仍明确失败。
+
+各成功slice保存的完整Activity联合必须与该包公开保留的Activity一致；存在聚合时，聚合也必须一致。按Activity ID比较完整字段，不只检查某条Activity覆盖过入口，避免一条漏存或正文、来源不一致被误判为完成。这里只比较已有结构化记录，不重新解释模型原文。
+
 只核对已有结构和实际字节，不用Java从中文说明推测业务等价。完整记录可跨版本作为历史已审输入采纳，仍保留原模型和Prompt身份；这不同于把旧DRAFT拿来续接新Prompt的REVIEW，后者必须严格匹配实际stage指纹。
 
-建议在现有Activity execute增加 --reuse-only（待实现）：必须指定--reuse-from-model-batch，与主动retry互斥；新建运行，Provider初始化/调用0，保留所有可验证旧Activity并写新coverage。新M11不改变旧Activity ID/业务字段/来源，不改旧receipt/FAILED/STARTED。不完整或无法判定时保存成功部分和具体范围，退出非零；禁止偷偷退回模型生成。没有第二CLI或公共Agent方法。
+现有Activity execute已接通`--reuse-only`参数及离线材料读取前置分流；完整历史接续仍在实现。该选项必须指定--reuse-from-model-batch，与主动retry互斥；本轮核对整个材料检查点，不接受`--material-id`或`--packet-id`过滤，不能静默忽略选择或缩小分母。`--run`仍只接受匹配的QUEUED运行。目标是新建运行，Provider初始化/调用0，保留所有可验证旧Activity并写新coverage。新M11不改变旧Activity ID/业务字段/来源，不改旧receipt/FAILED/STARTED。不完整或无法判定时保存成功部分和具体范围，退出非零；禁止偷偷退回模型生成。没有第二CLI或公共Agent方法。
+
+配置仍复用已解析的`ModelJobsConfiguration`。离线入口通过现有配置类的`requireModelJobsForStorage()`只检查journal/output位置，不解析登录环境、密钥、可执行程序或服务容量。普通线上执行继续使用`requireModelJobsForExecution()`执行完整认证与运行环境检查；两者共享存储位置检查，不增加一份离线YAML或配置类型。历史记录只在显式指定批次及其记录的复用来源中读取，不按新Prompt推导旧任务身份，也不搜索无关journal。
+
+离线新批次也必须能作为下次显式复用来源，不能只发布一份无法接续的M11。沿用execution-config-v5，明确保存`executionScope.mode=REUSE_ONLY`及完整材料检查点；`packetIds=[]`表示未做包过滤。为满足现有正整数结构，`maxMaterialsToStart=Integer.MAX_VALUE`仅作该模式的非执行占位，不限制离线核对范围，也不授权任何模型调用。现行非敏感模型/阅读配置是新批次的配置声明，不冒充旧Activity实际使用的模型身份或核对历史时的容量。新私有activity-batch-result-v2的逐包完成记录必须与公开M11一致；离线批次另外登记实际采纳的原批次及检查点，下一次显式接续沿该已登记来源验证。明确标记为REUSE_ONLY的批次若缺失、损坏或没有采纳来源记录，必须失败，不得回退为普通历史批次；旧v1普通批次继续按其原格式核对和读取。不创建虚假的新DRAFT/REVIEW记录。线上模式继续执行原范围和模型指纹校验。
 
 inspect只读显示这些范围及原因，不自动创建新内容。无法判定的具名范围先讨论已有记录能否补足；需要模型时先获得新的明确同意，不重跑325包。
 

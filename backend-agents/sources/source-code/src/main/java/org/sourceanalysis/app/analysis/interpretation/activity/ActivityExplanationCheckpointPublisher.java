@@ -40,7 +40,7 @@ public final class ActivityExplanationCheckpointPublisher {
   private static final String COVERAGE_SCHEMA = "flow-interpretation-activity-coverage-v2";
   private static final String EXPLANATIONS_TYPE = "FLOW_INTERPRETATION_ACTIVITY_EXPLANATIONS";
   private static final String EXPLANATIONS_SCHEMA = "flow-interpretation-activity-explanations-v1";
-  private static final String STEP05_COVERAGE_SCHEMA = "flow-interpretation-activity-coverage-v3";
+  private static final String STEP05_COVERAGE_SCHEMA = "flow-interpretation-activity-coverage-v4";
   private static final String STEP05_EXPLANATIONS_SCHEMA =
       "flow-interpretation-activity-explanations-v2";
   private static final Comparator<String> UTF8_ORDER =
@@ -128,12 +128,14 @@ public final class ActivityExplanationCheckpointPublisher {
       CodeReadingMaterialSet materials,
       List<ReviewedActivity> activities,
       List<ActivityEntryCoverage> coverage,
-      List<UnexplainedActivityEntry> unexplainedActivityEntries) {
+      List<UnexplainedActivityEntry> unexplainedActivityEntries,
+      List<ActivityPacketCompletion> packetCompletion) {
     Objects.requireNonNull(outputRunId, "activity output run ID");
     Objects.requireNonNull(materialCheckpoint, "Step05 material checkpoint");
     Objects.requireNonNull(steps, "analysis step artifact store");
     Objects.requireNonNull(outputControls, "activity output controls");
     Objects.requireNonNull(materials, "Step05 materials");
+    packetCompletion = List.copyOf(Objects.requireNonNull(packetCompletion, "packet completion"));
     if (materialCheckpoint.address().analysisStepKey() != AnalysisStepKey.BUSINESS_FLOWS
         || !materialCheckpoint
             .address()
@@ -163,26 +165,21 @@ public final class ActivityExplanationCheckpointPublisher {
         throw new IllegalArgumentException("ACTIVITY_STEP05_SOURCE_MISMATCH");
       }
     }
+    ActivityPacketCompletionVerification.requireExactStep05Packets(materials, packetCompletion);
+    ActivityPacketCompletionVerification.requireInternalConsistency(
+        packetCompletion, activities, unexplainedActivityEntries);
     List<ArtifactReference> upstream =
         source.receipt().semanticArtifacts().stream()
             .map(value -> new ArtifactReference(value.artifactId(), value.sha256()))
             .sorted(Comparator.comparing(value -> value.artifactId().value(), UTF8_ORDER))
             .toList();
-    List<String> gaps =
-        coverage.stream()
-            .filter(
-                value ->
-                    "NOT_ANALYZED".equals(value.disposition()) || value.requiredScopeIncomplete())
-            .map(ActivityEntryCoverage::reasonCode)
-            .distinct()
-            .sorted(UTF8_ORDER)
-            .toList();
+    List<String> gaps = gaps(coverage, packetCompletion);
     InstalledModulePublication installed =
         artifacts.install(
             new ModuleInstallRequest(
                 new AnalysisStepModuleAddress(
                     outputRunId, AnalysisStepKey.FLOW_INTERPRETATION, 11, "activity-explainer"),
-                "v3",
+                "v4",
                 upstream,
                 outputControls,
                 gaps.isEmpty()
@@ -190,7 +187,11 @@ public final class ActivityExplanationCheckpointPublisher {
                     : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS,
                 gaps,
                 List.of(
-                    coveragePayload(coverage, unexplainedActivityEntries, STEP05_COVERAGE_SCHEMA),
+                    coveragePayload(
+                        coverage,
+                        unexplainedActivityEntries,
+                        STEP05_COVERAGE_SCHEMA,
+                        packetCompletion),
                     explanationsPayload(activities, STEP05_EXPLANATIONS_SCHEMA))));
     return installed.reference();
   }
@@ -205,6 +206,14 @@ public final class ActivityExplanationCheckpointPublisher {
       List<ActivityEntryCoverage> coverage,
       List<UnexplainedActivityEntry> unexplainedActivityEntries,
       String schema) {
+    return coveragePayload(coverage, unexplainedActivityEntries, schema, List.of());
+  }
+
+  private CanonicalModulePayload coveragePayload(
+      List<ActivityEntryCoverage> coverage,
+      List<UnexplainedActivityEntry> unexplainedActivityEntries,
+      String schema,
+      List<ActivityPacketCompletion> packetCompletion) {
     ObjectNode value = JsonNodeFactory.instance.objectNode();
     value.put("schemaVersion", schema);
     value.put("artifactType", COVERAGE_TYPE);
@@ -212,13 +221,23 @@ public final class ActivityExplanationCheckpointPublisher {
     coverage.forEach(entry -> coverageJson(entries.addObject(), entry));
     ArrayNode unexplained = value.putArray("unexplainedActivityEntries");
     unexplainedActivityEntries.forEach(entry -> unexplainedJson(unexplained.addObject(), entry));
+    if (STEP05_COVERAGE_SCHEMA.equals(schema)) {
+      ArrayNode completions = value.putArray("packetCompletion");
+      packetCompletion.stream()
+          .sorted(Comparator.comparing(ActivityPacketCompletion::packetId, UTF8_ORDER))
+          .forEach(completion -> completionJson(completions.addObject(), completion));
+    }
     value.put(
         "semanticDeliveryStatus",
         coverage.stream()
-                .anyMatch(
-                    entry ->
-                        "NOT_ANALYZED".equals(entry.disposition())
-                            || entry.requiredScopeIncomplete())
+                    .anyMatch(
+                        entry ->
+                            "NOT_ANALYZED".equals(entry.disposition())
+                                || entry.requiredScopeIncomplete())
+                || packetCompletion.stream()
+                    .anyMatch(
+                        completion ->
+                            completion.completion() != ActivityPacketCompletion.Completion.COMPLETE)
             ? "PARTIAL"
             : "READY_FOR_PROCESS_EXPLANATION");
     String id = standaloneId("activity-coverage", schema, COVERAGE_TYPE, value);
@@ -314,6 +333,45 @@ public final class ActivityExplanationCheckpointPublisher {
     value.put("entryKey", entry.entryKey());
     value.put("materialContext", entry.materialContext());
     value.put("reasonCode", entry.reasonCode());
+  }
+
+  private static void completionJson(ObjectNode value, ActivityPacketCompletion packetCompletion) {
+    value.put("packetId", packetCompletion.packetId());
+    strings(value.putArray("entryIds"), packetCompletion.entryIds());
+    value.put("completion", packetCompletion.completion().name());
+    strings(value.putArray("requiredSliceKeys"), packetCompletion.requiredSliceKeys());
+    strings(value.putArray("completedSliceKeys"), packetCompletion.completedSliceKeys());
+    ArrayNode incompleteScopes = value.putArray("incompleteScopes");
+    packetCompletion
+        .incompleteScopes()
+        .forEach(
+            scope -> {
+              ObjectNode scopeJson = incompleteScopes.addObject();
+              if (scope.sliceKey() == null) {
+                scopeJson.putNull("sliceKey");
+              } else {
+                scopeJson.put("sliceKey", scope.sliceKey());
+              }
+              strings(scopeJson.putArray("entryIds"), scope.entryIds());
+              scopeJson.put("reasonCode", scope.reasonCode());
+            });
+  }
+
+  private static List<String> gaps(
+      List<ActivityEntryCoverage> coverage, List<ActivityPacketCompletion> packetCompletion) {
+    return java.util.stream.Stream.concat(
+            coverage.stream()
+                .filter(
+                    value ->
+                        "NOT_ANALYZED".equals(value.disposition())
+                            || value.requiredScopeIncomplete())
+                .map(ActivityEntryCoverage::reasonCode),
+            packetCompletion.stream()
+                .flatMap(completion -> completion.incompleteScopes().stream())
+                .map(ActivityPacketCompletion.IncompleteScope::reasonCode))
+        .distinct()
+        .sorted(UTF8_ORDER)
+        .toList();
   }
 
   private static void strings(ArrayNode node, List<String> values) {

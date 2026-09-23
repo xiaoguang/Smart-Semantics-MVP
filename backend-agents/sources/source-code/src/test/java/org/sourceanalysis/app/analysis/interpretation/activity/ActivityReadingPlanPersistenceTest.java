@@ -288,6 +288,126 @@ class ActivityReadingPlanPersistenceTest {
     assertThat(missingPacketProviderCalls[0]).isZero();
   }
 
+  @Test
+  void reopensHistoricalV1FromItsSavedPacketWithoutCurrentProfileOrProvider() {
+    ActivityMaterialView view = historicalPagedView();
+    ActivityReadingProfile profile = new ActivityReadingProfile(10_000, 1_000, 3, 3, 4);
+    ObjectNode saved = historicalPagedV1Record(view, profile);
+
+    ActivityReadingPlan reopened = ActivityReadingCoordinator.reopenSaved(view, saved);
+
+    assertThat(reopened.toPrivateRecord()).isEqualTo(saved);
+    assertThat(reopened.sliceKeys()).containsExactly("legacy-validation");
+    assertThat(reopened.readingPackets())
+        .singleElement()
+        .satisfies(
+            packet -> {
+              assertThat(packet.packetId()).isEqualTo(view.packet().packetId());
+              assertThat(packet.entryIdsByKey()).containsEntry("E1", "entry:legacy");
+              assertThat(packet.sourceIdsByRef())
+                  .containsEntry("S1", "source:entry")
+                  .containsEntry("S2", "source:helper")
+                  .containsEntry("S3", "source:target");
+              assertThat(packet.modelInputJson())
+                  .isEqualTo(
+                      new CanonicalJsonCodec()
+                          .encodeCanonical(saved.path("slices").get(0).path("readingPacket")));
+            });
+
+    ObjectNode missingClaimedPacket = saved.deepCopy();
+    ((ObjectNode) missingClaimedPacket.path("slices").get(0)).remove("readingPacket");
+    assertThatThrownBy(() -> ActivityReadingCoordinator.reopenSaved(view, missingClaimedPacket))
+        .hasMessage("ACTIVITY_READING_PLAN_REUSE_INVALID");
+
+    ObjectNode missingShownNavigationUnit = saved.deepCopy();
+    ArrayNode shownUnitKeys =
+        (ArrayNode) missingShownNavigationUnit.path("navigationPages").get(0).path("unitKeys");
+    assertThat(stringList(shownUnitKeys)).contains("M4");
+    for (int index = 0; index < shownUnitKeys.size(); index++) {
+      if ("M4".equals(shownUnitKeys.get(index).asText())) {
+        shownUnitKeys.remove(index);
+        break;
+      }
+    }
+    assertThatThrownBy(
+            () -> ActivityReadingCoordinator.reopenSaved(view, missingShownNavigationUnit))
+        .hasMessage("ACTIVITY_READING_PLAN_REUSE_INVALID");
+  }
+
+  @Test
+  void preservesAndValidatesFullCallFieldsInHistoricalV1SavedPacket() {
+    ActivityMaterialView view = historicalPagedView();
+    ActivityReadingProfile profile = new ActivityReadingProfile(10_000, 1_000, 3, 3, 4);
+    ObjectNode saved = historicalPagedV1Record(view, profile, false);
+    JsonNode savedPacket = saved.path("slices").get(0).path("readingPacket");
+    JsonNode savedCall = savedPacket.path("calls").get(0);
+    assertThat(savedCall.path("position").isObject()).isTrue();
+    assertThat(savedCall.path("navigationPosition").isObject()).isTrue();
+    assertThat(savedCall.path("actualArguments").isArray()).isTrue();
+    assertThat(savedCall.path("targets").get(0).path("argumentAssociations").isArray()).isTrue();
+
+    ActivityReadingPlan reopened = ActivityReadingCoordinator.reopenSaved(view, saved);
+
+    assertThat(reopened.toPrivateRecord()).isEqualTo(saved);
+    assertThat(reopened.readingPackets())
+        .singleElement()
+        .satisfies(
+            packet ->
+                assertThat(packet.modelInputJson())
+                    .isEqualTo(new CanonicalJsonCodec().encodeCanonical(savedPacket)));
+
+    ObjectNode tampered = saved.deepCopy();
+    ObjectNode call =
+        (ObjectNode) tampered.path("slices").get(0).path("readingPacket").path("calls").get(0);
+    ((ObjectNode) call.path("navigationPosition"))
+        .put("offsetUtf16", call.path("navigationPosition").path("offsetUtf16").asInt() + 1);
+    assertThatThrownBy(() -> ActivityReadingCoordinator.reopenSaved(view, tampered))
+        .hasMessage("ACTIVITY_READING_PLAN_REUSE_INVALID");
+  }
+
+  @Test
+  void reopensHistoricalV2FinalScopeFromSavedRecordWithoutCurrentProfileOrProvider() {
+    ActivityMaterialView view = ActivityReadingCoordinatorTest.largeView();
+    ActivityReadingProfile savedProfile = new ActivityReadingProfile(25_000, 13_000, 3, 3, 3);
+    ActivityReadingPlan original =
+        new ActivityReadingCoordinator(new ShrinkingScopeProvider()).coordinate(view, savedProfile);
+    ObjectNode saved = original.toPrivateRecord();
+
+    assertThat(saved.path("schemaVersion").asText()).isEqualTo("activity-reading-plan-v2");
+    assertThat(stringList(saved.path("finalSliceKeys"))).containsExactly("scope-final");
+    assertThat(stringList(saved.path("currentOpenScopeIssues"))).isEmpty();
+
+    ActivityReadingPlan reopened = ActivityReadingCoordinator.reopenSaved(view, saved);
+
+    assertThat(reopened.toPrivateRecord()).isEqualTo(saved);
+    assertThat(reopened.sliceKeys()).containsExactly("scope-final");
+    assertThat(reopened.readingPackets())
+        .extracting(packet -> packet.modelInputJson())
+        .containsExactlyElementsOf(
+            original.readingPackets().stream().map(packet -> packet.modelInputJson()).toList());
+  }
+
+  @Test
+  void rejectsClearedIssuesForV2RecordWhoseSavedDecisionNeverFinished() {
+    ActivityMaterialView view = historicalPagedView();
+    ActivityReadingProfile profile = new ActivityReadingProfile(10_000, 1_000, 1, 1, 4);
+    ActivityReadingPlan incompletePlan =
+        new ActivityReadingCoordinator(new NotFinishedScopeProvider()).coordinate(view, profile);
+    ObjectNode saved = incompletePlan.toPrivateRecord();
+
+    assertThat(saved.path("schemaVersion").asText()).isEqualTo("activity-reading-plan-v2");
+    assertThat(saved.path("finishReading").asBoolean()).isFalse();
+    assertThat(stringList(saved.path("currentOpenScopeIssues"))).contains("READING_NOT_FINISHED");
+    assertThat(saved.path("requiredScopeIncomplete").asBoolean()).isTrue();
+    assertThat(saved.path("slices")).isNotEmpty();
+
+    saved.putArray("currentOpenScopeIssues");
+    saved.put("requiredScopeIncomplete", false);
+
+    assertThatThrownBy(() -> ActivityReadingCoordinator.reopenSaved(view, saved))
+        .hasMessage("ACTIVITY_READING_PLAN_REUSE_INVALID");
+  }
+
   private void assertFullSelectedPacket(Object packet) {
     try {
       Object bytes = packet.getClass().getMethod("modelInputJson").invoke(packet);
@@ -404,8 +524,8 @@ class ActivityReadingPlanPersistenceTest {
   }
 
   private static ActivityMaterialView historicalPagedView() {
-    String entryBody = "void entry() { validator.validate(value); }";
-    String helperBody = "void helper() { target(); }";
+    String entryBody = "void entry() { helper(value); }";
+    String helperBody = "void helper() { target(value); }";
     String targetBody = "void target() { require(value); }";
     String unreadBody = "void audit() {" + " audit".repeat(5_000) + ";}";
     EntrySeed entry =
@@ -424,8 +544,10 @@ class ActivityReadingPlanPersistenceTest {
                 historicalMethod("method:target", "target", targetBody),
                 historicalMethod("method:zunused", "audit", unreadBody)),
             List.of(
-                historicalCall("call:entry-helper", "method:entry", "helper()", "method:helper"),
-                historicalCall("call:helper-target", "method:helper", "target()", "method:target")),
+                historicalCall(
+                    "call:entry-helper", "method:entry", "helper(value)", "method:helper"),
+                historicalCall(
+                    "call:helper-target", "method:helper", "target(value)", "method:target")),
             new CodeReadingMaterialSet.PersistenceSelection(
                 List.of(), List.of(), List.of(), List.of(), List.of()),
             List.of(
@@ -447,6 +569,11 @@ class ActivityReadingPlanPersistenceTest {
 
   private static ObjectNode historicalPagedV1Record(
       ActivityMaterialView view, ActivityReadingProfile profile) {
+    return historicalPagedV1Record(view, profile, true);
+  }
+
+  private static ObjectNode historicalPagedV1Record(
+      ActivityMaterialView view, ActivityReadingProfile profile, boolean compactCalls) {
     CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
     ObjectNode full =
         (ObjectNode)
@@ -458,7 +585,9 @@ class ActivityReadingPlanPersistenceTest {
     ObjectNode selectedPacket = full.deepCopy();
     retainFieldValues(selectedPacket, "methods", "ref", List.of("M1", "M2", "M3"));
     retainFieldValues(selectedPacket, "allowlistedRefs", "ref", List.of("S1", "S2", "S3"));
-    compactSelectedHistoricalCalls(selectedPacket);
+    if (compactCalls) {
+      compactSelectedHistoricalCalls(selectedPacket);
+    }
     assertThat(
             profile.fitsDraftAndMaximumReview(canonicalJson.encodeCanonical(selectedPacket).size()))
         .isTrue();
@@ -524,31 +653,75 @@ class ActivityReadingPlanPersistenceTest {
   }
 
   private static void compactSelectedHistoricalCalls(ObjectNode packet) {
+    List<String> completeUnits = fieldValues(packet.path("methods"), "ref");
     for (JsonNode node : packet.path("calls")) {
       ObjectNode call = (ObjectNode) node;
       call.remove(List.of("position", "navigationPosition"));
+      boolean hasSelectedTarget = false;
       for (JsonNode targetNode : call.path("targets")) {
         ObjectNode target = (ObjectNode) targetNode;
-        target.remove(List.of("displayName", "navigationKinds", "roles", "argumentAssociations"));
-        target.putArray("parameterBindings");
+        target.remove(List.of("displayName", "navigationKinds", "roles"));
+        if (!completeUnits.contains(target.path("methodRef").asText())) {
+          target.remove("argumentAssociations");
+          continue;
+        }
+        hasSelectedTarget = true;
+        JsonNode associations = target.remove("argumentAssociations");
+        if (associations == null || !associations.isArray()) {
+          continue;
+        }
+        ArrayNode bindings = target.putArray("parameterBindings");
+        for (JsonNode association : associations) {
+          ObjectNode binding = bindings.addObject();
+          binding.set("actual", association.path("actualExpressions").deepCopy());
+          binding.set("actualOrdinals", association.path("actualOrdinals").deepCopy());
+          binding.put("formalOrdinal", association.path("formalOrdinal").asInt());
+          binding.put("kind", association.path("kind").asText());
+          JsonNode formal = association.path("formalParameter");
+          binding.put("formal", formal.path("name").asText() + ":" + formal.path("type").asText());
+          if (formal.path("varArgs").asBoolean()) {
+            binding.put("varArgs", true);
+          }
+        }
+      }
+      if (!hasSelectedTarget) {
+        call.remove(
+            List.of(
+                "actualArguments",
+                "receiverExpression",
+                "enclosingControlIndexes",
+                "resolutionDetail"));
       }
     }
   }
 
   private static CodeReadingMaterialSet.EntryCall historicalCall(
       String callKey, String callerMethodKey, String expression, String targetMethodKey) {
-    return new CodeReadingMaterialSet.EntryCall(
-        "entry:legacy",
+    EntryCodeContext.CallSite call =
         new EntryCodeContext.CallSite(
             callKey,
             callerMethodKey,
             "METHOD",
             new SourceRange(0, expression.length(), 1, 1),
-            new SourceRange(0, expression.length(), 1, 1),
+            new SourceRange(1, 7, 1, 1),
             expression,
+            "service",
+            List.of(new EntryCodeContext.ActualArgument(0, "value")),
+            List.of(),
+            false,
             List.of(
                 new EntryCodeContext.CallTarget(
-                    targetMethodKey, List.of("DECLARATION"), "BODY_INCLUDED", null))));
+                    targetMethodKey,
+                    List.of("DECLARATION"),
+                    targetMethodKey,
+                    List.of("DEFINITION"),
+                    "BODY_INCLUDED",
+                    null,
+                    List.of(
+                        new EntryCodeContext.ArgumentAssociation(List.of(0), null, "UNKNOWN")))),
+            "LOCATED",
+            null);
+    return new CodeReadingMaterialSet.EntryCall("entry:legacy", call);
   }
 
   private static EntryCodeContext.MethodCode historicalMethod(
@@ -697,6 +870,29 @@ class ActivityReadingPlanPersistenceTest {
       }
       return new StructuredModelResponse(
           ImmutableBytes.copyOf(response.getBytes(StandardCharsets.UTF_8)),
+          ActivityReadingCoordinatorTest.IDENTITY);
+    }
+  }
+
+  private static final class NotFinishedScopeProvider implements StructuredModelProvider {
+    private int calls;
+
+    @Override
+    public StructuredModelResponse generate(StructuredModelRequest request) {
+      if (!"ACTIVITY_READING_PLAN".equals(request.taskKind())) {
+        throw new AssertionError("unexpected task kind " + request.taskKind());
+      }
+      String answer =
+          calls++ == 0
+              ? response(
+                  "[]",
+                  "[\"M2\"]",
+                  "[{\"sliceKey\":\"scope-validation\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"validate request\"}]",
+                  "[\"scope-validation\"]",
+                  false)
+              : response("[]", "[]", "[]", "[\"scope-validation\"]", false);
+      return new StructuredModelResponse(
+          ImmutableBytes.copyOf(answer.getBytes(StandardCharsets.UTF_8)),
           ActivityReadingCoordinatorTest.IDENTITY);
     }
   }

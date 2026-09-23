@@ -170,8 +170,7 @@ record ModelJobsConfiguration(
   }
 
   void validateExecutionEnvironment() {
-    requireExistingDirectory(journalDirectory, "CONFIGURATION_INVALID");
-    requireExistingDirectory(outputDirectory, "CONFIGURATION_INVALID");
+    validateStorageEnvironment();
     Set<String> resolvedCredentials = new java.util.HashSet<>();
     for (ModelJobProviderConfiguration provider : providers.values()) {
       provider.validateExecutionEnvironment();
@@ -181,6 +180,11 @@ record ModelJobsConfiguration(
         }
       }
     }
+  }
+
+  void validateStorageEnvironment() {
+    requireExistingDirectory(journalDirectory, "CONFIGURATION_INVALID");
+    requireExistingDirectory(outputDirectory, "CONFIGURATION_INVALID");
   }
 
   ModelJobProviderConfiguration requireCurrentSerialCodexProvider() {
@@ -661,7 +665,8 @@ record RepositoryRunConfiguration(
     ProcessDiscoveryProfile processDiscoveryProfile,
     int maxMaterialsToStart,
     CodeReadingMaterialProfile readingMaterialProfile,
-    ActivityReadingProfile activityReadingProfile) {
+    ActivityReadingProfile activityReadingProfile,
+    CanonicalArtifactPolicyRegistry historicalActivityPolicyRegistry) {
 
   RepositoryRunConfiguration {
     if (activityReadingProfile == null && activityProfile != null) {
@@ -746,6 +751,7 @@ record RepositoryRunConfiguration(
         processDiscoveryProfile,
         maxMaterialsToStart,
         null,
+        null,
         null);
   }
 
@@ -825,6 +831,7 @@ record RepositoryRunConfiguration(
         processDiscoveryProfile,
         maxMaterialsToStart,
         readingMaterialProfile,
+        null,
         null);
   }
 
@@ -841,7 +848,7 @@ record RepositoryRunConfiguration(
             "source",
             "sourceAnalysis",
             "technical"),
-        Set.of("business", "inputPolicyRegistry"));
+        Set.of("business", "inputPolicyRegistry", "historicalActivityPolicyRegistry"));
     String schemaVersion = requiredText(document, "schemaVersion");
     if (!Set.of(HISTORICAL_CONFIG_SCHEMA, CONFIG_SCHEMA).contains(schemaVersion)) {
       throw failure("CONFIGURATION_INVALID");
@@ -909,6 +916,13 @@ record RepositoryRunConfiguration(
                 resolvePolicyPath(configPath, requiredText(document, "inputPolicyRegistry")),
                 canonicalJson)
             : policies;
+    CanonicalArtifactPolicyRegistry historicalActivityPolicies =
+        document.has("historicalActivityPolicyRegistry")
+            ? loadPolicies(
+                resolvePolicyPath(
+                    configPath, requiredText(document, "historicalActivityPolicyRegistry")),
+                canonicalJson)
+            : null;
     InputReferences inputs = InputReferences.load(object(document, "inputs"), canonicalJson);
 
     ObjectNode technical = object(document, "technical");
@@ -1077,7 +1091,8 @@ record RepositoryRunConfiguration(
         processDiscoveryProfile,
         maxMaterialsToStart,
         configuredReadingMaterials,
-        activityReadingProfile);
+        activityReadingProfile,
+        historicalActivityPolicies);
   }
 
   private static ActivityReadingLimits activityReadingLimits(ObjectNode document) {
@@ -1141,6 +1156,14 @@ record RepositoryRunConfiguration(
       throw failure("CONFIGURATION_INVALID");
     }
     modelJobs.validateExecutionEnvironment();
+    return modelJobs;
+  }
+
+  ModelJobsConfiguration requireModelJobsForStorage() {
+    if (modelJobs == null) {
+      throw failure("CONFIGURATION_INVALID");
+    }
+    modelJobs.validateStorageEnvironment();
     return modelJobs;
   }
 

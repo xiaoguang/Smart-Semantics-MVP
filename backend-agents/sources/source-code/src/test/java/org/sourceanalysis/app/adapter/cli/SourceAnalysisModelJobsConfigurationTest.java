@@ -315,6 +315,14 @@ class SourceAnalysisModelJobsConfigurationTest {
     historicalV4.remove("activityReading");
     requireStep05ExecutionConfiguration(historicalV4);
 
+    ObjectNode historicalV4ReuseOnly = historicalV4.deepCopy();
+    ObjectNode historicalV4Scope = (ObjectNode) historicalV4ReuseOnly.path("executionScope");
+    historicalV4Scope.put("mode", "REUSE_ONLY");
+    historicalV4Scope.put("maxMaterialsToStart", Integer.MAX_VALUE);
+    historicalV4ReuseOnly.put("reuseFromModelBatchId", "analysis-run:" + "c".repeat(64));
+    assertThatThrownBy(() -> requireStep05ExecutionConfiguration(historicalV4ReuseOnly))
+        .hasMessage("MATERIALS_STATE_INVALID");
+
     ObjectNode incompleteV5 = saved.deepCopy();
     ((ObjectNode) incompleteV5.path("activityReading")).remove("maxReadingRounds");
     assertThatThrownBy(() -> requireStep05ExecutionConfiguration(incompleteV5))
@@ -750,6 +758,49 @@ class SourceAnalysisModelJobsConfigurationTest {
     assertThat(result.exitCode()).isNotZero();
     assertThat(result.diagnostics())
         .doesNotContain("MODEL_AUTH_ENV_MISSING", "MODEL_PROVIDER_FORBIDDEN_IN_MATERIALS_ONLY");
+  }
+
+  @Test
+  void reuseOnlyReachesTheMaterialsStateBoundaryWithoutResolvingProviderConfiguration()
+      throws Exception {
+    ToolFixture tools = toolFixture();
+    String missingAuthEnvironment = "TASK3_REUSE_ONLY_AUTH_MUST_NOT_BE_READ_20260923";
+    assertThat(System.getenv(missingAuthEnvironment)).isNull();
+    Path nonexistentExecutable = temporaryDirectory.resolve("not-installed-codex");
+    ObjectNode configuration = activityReadingConfiguration(tools, nonexistentExecutable, null);
+    ObjectNode provider =
+        (ObjectNode)
+            configuration.path("sourceAnalysis").path("modelJobs").path("providers").path("pro");
+    ((ObjectNode) provider.path("auth")).put("codexHomeEnv", missingAuthEnvironment);
+    Path config = writeConfig(YAML.writeValueAsString(configuration));
+    ByteArrayOutputStream outputBytes = new ByteArrayOutputStream();
+    ByteArrayOutputStream errorBytes = new ByteArrayOutputStream();
+    int exitCode =
+        SourceAnalysisCli.executeConfigured(
+            new String[] {
+              "--config",
+              config.toAbsolutePath().toString(),
+              "execute-step",
+              "--target",
+              "flow-interpretation",
+              "--reuse-from-model-batch",
+              "analysis-run:" + "a".repeat(64),
+              "--reuse-only"
+            },
+            new PrintWriter(outputBytes, true, StandardCharsets.UTF_8),
+            new PrintWriter(errorBytes, true, StandardCharsets.UTF_8));
+    String diagnostics =
+        outputBytes.toString(StandardCharsets.UTF_8) + errorBytes.toString(StandardCharsets.UTF_8);
+
+    assertThat(exitCode).isNotZero();
+    assertThat(diagnostics)
+        .contains("MATERIALS_STATE_INVALID")
+        .doesNotContain(
+            "ACTIVITY_REUSE_ONLY_OFFLINE_RESOLVER_REQUIRED",
+            "MODEL_AUTH_ENV_MISSING",
+            missingAuthEnvironment,
+            nonexistentExecutable.toString(),
+            "MODEL_PROVIDER");
   }
 
   @Test

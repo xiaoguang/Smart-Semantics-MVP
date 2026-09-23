@@ -238,7 +238,7 @@ class ActivityLargePacketFormalEntryTest {
 
   @Test
   void formalPacketRetainsFirstAndThirdReviewedSlicesWhenMiddleEntryCapacityPrecheckFails(
-      @TempDir Path journal) {
+      @TempDir Path journal) throws java.io.IOException {
     ThreeSliceProvider provider = new ThreeSliceProvider(true);
     ActivityExplanationResult result =
         ActivityExplainer.forExecution(
@@ -250,6 +250,10 @@ class ActivityLargePacketFormalEntryTest {
                     new ActivityExplanationProfile(20_000, 8_000, 1, 32, 2_000),
                     1));
 
+    assertThat(savedPlanEntryIds(journal, "slice-m3"))
+        .as("the historical capacity regression is still a two-entry scope")
+        .containsExactlyInAnyOrder("E1", "E2");
+
     assertThat(result.reviewedActivities())
         .as("a packet-local S2 precheck failure keeps independent S1 and S3 results public")
         .extracting(ReviewedActivity::sliceKey)
@@ -260,6 +264,26 @@ class ActivityLargePacketFormalEntryTest {
             entry -> {
               assertThat(entry.disposition()).isEqualTo("ANALYZED_WITH_GAPS");
               assertThat(entry.reasonCode()).isEqualTo("ACTIVITY_READING_INCOMPLETE");
+            });
+    assertThat(result.packetCompletion().orElseThrow())
+        .singleElement()
+        .satisfies(
+            completion -> {
+              assertThat(completion.completion())
+                  .isEqualTo(ActivityPacketCompletion.Completion.INCOMPLETE);
+              assertThat(completion.requiredSliceKeys())
+                  .containsExactlyInAnyOrder("slice-m2", "slice-m3", "slice-m4");
+              assertThat(completion.completedSliceKeys())
+                  .containsExactlyInAnyOrder("slice-m2", "slice-m4");
+              assertThat(completion.incompleteScopes())
+                  .singleElement()
+                  .satisfies(
+                      scope -> {
+                        assertThat(scope.sliceKey()).isEqualTo("slice-m3");
+                        assertThat(scope.entryIds())
+                            .containsExactlyInAnyOrder("entry:large", "entry:second");
+                        assertThat(scope.reasonCode()).isNotBlank();
+                      });
             });
     assertThat(result.reviewedActivities())
         .allSatisfy(activity -> assertThat(activity.entryIds()).hasSize(1));
@@ -278,6 +302,65 @@ class ActivityLargePacketFormalEntryTest {
         .as("S2 must fail capacity validation before its Provider request")
         .containsExactly("slice-m2", "slice-m2", "slice-m4", "slice-m4")
         .doesNotContain("slice-m3");
+  }
+
+  @Test
+  void formalPacketOnlyMarksEntriesCoveredByTheFailedScopeIncomplete(@TempDir Path journal)
+      throws java.io.IOException {
+    ThreeSliceProvider provider = new ThreeSliceProvider(true, "slice-m3");
+    ActivityExplanationResult result =
+        ActivityExplainer.forExecution(
+                execution(
+                    journal, AnalysisRunId.parse("analysis-run:" + "8".repeat(64)), null, provider))
+            .explain(
+                new ExplainCodeReadingMaterialsRequest(
+                    largeStep05MaterialWithTwoEntries(),
+                    new ActivityExplanationProfile(20_000, 8_000, 2, 32, 2_000),
+                    1));
+
+    assertThat(savedPlanEntryIds(journal, "slice-m3"))
+        .as("the explicit failing M3 scope covers E1 only")
+        .containsExactly("E1");
+    assertThat(savedPlanEntryIds(journal, "slice-m4"))
+        .as("E2 has a separate successful M4 scope")
+        .containsExactly("E2");
+
+    assertThat(result.coverage())
+        .hasSize(2)
+        .anySatisfy(
+            entry -> {
+              assertThat(entry.entryId()).isEqualTo("entry:large");
+              assertThat(entry.reasonCode()).isEqualTo("ACTIVITY_READING_INCOMPLETE");
+            })
+        .anySatisfy(
+            entry -> {
+              assertThat(entry.entryId()).isEqualTo("entry:second");
+              assertThat(entry.reasonCode())
+                  .as("entry:second has its own successful required slice")
+                  .isNull();
+            });
+    assertThat(result.packetCompletion().orElseThrow())
+        .singleElement()
+        .satisfies(
+            completion -> {
+              assertThat(completion.completion())
+                  .isEqualTo(ActivityPacketCompletion.Completion.INCOMPLETE);
+              assertThat(completion.requiredSliceKeys())
+                  .containsExactlyInAnyOrder("slice-m2", "slice-m3", "slice-m4");
+              assertThat(completion.completedSliceKeys())
+                  .containsExactlyInAnyOrder("slice-m2", "slice-m4");
+              assertThat(completion.incompleteScopes())
+                  .singleElement()
+                  .satisfies(
+                      scope -> {
+                        assertThat(scope.sliceKey()).isEqualTo("slice-m3");
+                        assertThat(scope.entryIds()).containsExactly("entry:large");
+                        assertThat(scope.reasonCode()).isNotBlank();
+                      });
+            });
+    assertThat(provider.activityStageSliceKeys())
+        .as("the explicit M3 REVIEW failure is isolated and M4 still runs")
+        .containsExactly("slice-m2", "slice-m2", "slice-m3", "slice-m3", "slice-m4", "slice-m4");
   }
 
   @Test
@@ -600,7 +683,22 @@ class ActivityLargePacketFormalEntryTest {
     }
   }
 
-  private static ModelJobExecutionConfiguration execution(
+  private static List<String> savedPlanEntryIds(Path journal, String sliceKey)
+      throws java.io.IOException {
+    JsonNode saved =
+        new CanonicalJsonCodec()
+            .parseCanonical(ImmutableBytes.copyOf(Files.readAllBytes(savedReadingPlan(journal))));
+    for (JsonNode slice : saved.path("slices")) {
+      if (sliceKey.equals(slice.path("sliceKey").asText())) {
+        List<String> entryIds = new ArrayList<>();
+        slice.path("entryKeys").forEach(value -> entryIds.add(value.asText()));
+        return List.copyOf(entryIds);
+      }
+    }
+    throw new AssertionError("saved plan does not contain required slice " + sliceKey);
+  }
+
+  static ModelJobExecutionConfiguration execution(
       Path journal,
       AnalysisRunId run,
       AnalysisRunId reuseFrom,
@@ -629,6 +727,16 @@ class ActivityLargePacketFormalEntryTest {
         reuseFrom,
         retry,
         activityReadingProfile);
+  }
+
+  static ActivityExplainer configuredFormalExplainer(
+      Path journal, AnalysisRunId run, StructuredModelProvider provider) {
+    return ActivityExplainer.forExecution(execution(journal, run, null, provider));
+  }
+
+  static ActivityExplainer configuredFormalExplainer(
+      Path journal, AnalysisRunId run, AnalysisRunId reuseFrom, StructuredModelProvider provider) {
+    return ActivityExplainer.forExecution(execution(journal, run, reuseFrom, provider));
   }
 
   @Test
@@ -712,6 +820,18 @@ class ActivityLargePacketFormalEntryTest {
             coverage -> assertThat(coverage.reasonCode()).isEqualTo("NOT_ANALYZED_BUDGET"));
 
     CodeReadingMaterialSet material = largeStep05Material();
+    assertThat(result.packetCompletion())
+        .contains(
+            List.of(
+                new ActivityPacketCompletion(
+                    material.packets().get(0).packetId(),
+                    material.packets().get(0).entries().stream()
+                        .map(entry -> entry.entryId())
+                        .toList(),
+                    ActivityPacketCompletion.Completion.COMPLETE,
+                    List.of("slice-m2", "slice-m3"),
+                    List.of("slice-m2", "slice-m3"),
+                    List.of())));
     AnalysisStepPublicationReference source =
         publication(
             material.header().sourceInventory().publication().address().runId(),
@@ -736,7 +856,8 @@ class ActivityLargePacketFormalEntryTest {
                 material,
                 result.reviewedActivities(),
                 result.coverage(),
-                result.unexplainedActivityEntries());
+                result.unexplainedActivityEntries(),
+                result.packetCompletion().orElseThrow());
     ActivityExplanationResult reopened =
         new ActivityExplanationCheckpointReader(output.artifacts()).reopen(checkpoint);
     assertThat(reopened.reviewedActivities())
@@ -839,7 +960,7 @@ class ActivityLargePacketFormalEntryTest {
     };
   }
 
-  private static CodeReadingMaterialSet largeStep05Material() {
+  static CodeReadingMaterialSet largeStep05Material() {
     ActivityMaterialView view = ActivityReadingCoordinatorTest.largeView();
     CodeReadingMaterialSet.Packet original = view.packet();
     String entrySource = ActivityReadingCoordinatorTest.ENTRY_BODY;
@@ -891,7 +1012,7 @@ class ActivityLargePacketFormalEntryTest {
                 List.of())));
   }
 
-  private static CodeReadingMaterialSet largeStep05MaterialWithTwoEntries() {
+  static CodeReadingMaterialSet largeStep05MaterialWithTwoEntries() {
     CodeReadingMaterialSet base = largeStep05Material();
     CodeReadingMaterialSet.Packet original = base.packets().get(0);
     EntryCodeContext.MethodCode secondEntryMethod =
@@ -956,32 +1077,50 @@ class ActivityLargePacketFormalEntryTest {
     private final List<String> activityStageSliceKeys = new ArrayList<>();
     private final String authenticationFailureSlice;
     private final boolean twoEntryScopes;
+    private final String failingReviewSlice;
 
     private ThreeSliceProvider() {
-      this(null, false);
+      this(null, false, null);
     }
 
     private ThreeSliceProvider(String authenticationFailureSlice) {
-      this(authenticationFailureSlice, false);
+      this(authenticationFailureSlice, false, null);
     }
 
     private ThreeSliceProvider(boolean twoEntryScopes) {
-      this(null, twoEntryScopes);
+      this(null, twoEntryScopes, null);
     }
 
     private ThreeSliceProvider(String authenticationFailureSlice, boolean twoEntryScopes) {
+      this(authenticationFailureSlice, twoEntryScopes, null);
+    }
+
+    private ThreeSliceProvider(boolean twoEntryScopes, String failingReviewSlice) {
+      this(null, twoEntryScopes, failingReviewSlice);
+    }
+
+    private ThreeSliceProvider(
+        String authenticationFailureSlice, boolean twoEntryScopes, String failingReviewSlice) {
       this.authenticationFailureSlice = authenticationFailureSlice;
       this.twoEntryScopes = twoEntryScopes;
+      this.failingReviewSlice = failingReviewSlice;
     }
 
     @Override
     public StructuredModelResponse generate(StructuredModelRequest request) {
       return switch (request.taskKind()) {
         case "ACTIVITY_READING_PLAN" -> {
-          String slices =
-              twoEntryScopes
-                  ? "[{\"sliceKey\":\"slice-m2\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"first independent scope\"},{\"sliceKey\":\"slice-m3\",\"entryKeys\":[\"E1\",\"E2\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"middle two-entry scope\"},{\"sliceKey\":\"slice-m4\",\"entryKeys\":[\"E2\"],\"requiredUnitKeys\":[\"M1\",\"M4\"],\"sharedContextUnitKeys\":[],\"scope\":\"third independent scope\"}]"
-                  : "[{\"sliceKey\":\"slice-m2\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"first independent scope\"},{\"sliceKey\":\"slice-m3\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"middle independent scope\"},{\"sliceKey\":\"slice-m4\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M4\"],\"sharedContextUnitKeys\":[],\"scope\":\"third independent scope\"}]";
+          String slices;
+          if (twoEntryScopes && failingReviewSlice != null) {
+            slices =
+                "[{\"sliceKey\":\"slice-m2\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"first independent scope\"},{\"sliceKey\":\"slice-m3\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"middle only-entry-large scope\"},{\"sliceKey\":\"slice-m4\",\"entryKeys\":[\"E2\"],\"requiredUnitKeys\":[\"M1\",\"M4\"],\"sharedContextUnitKeys\":[],\"scope\":\"third independent scope\"}]";
+          } else if (twoEntryScopes) {
+            slices =
+                "[{\"sliceKey\":\"slice-m2\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"first independent scope\"},{\"sliceKey\":\"slice-m3\",\"entryKeys\":[\"E1\",\"E2\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"middle two-entry scope\"},{\"sliceKey\":\"slice-m4\",\"entryKeys\":[\"E2\"],\"requiredUnitKeys\":[\"M1\",\"M4\"],\"sharedContextUnitKeys\":[],\"scope\":\"third independent scope\"}]";
+          } else {
+            slices =
+                "[{\"sliceKey\":\"slice-m2\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"first independent scope\"},{\"sliceKey\":\"slice-m3\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"middle independent scope\"},{\"sliceKey\":\"slice-m4\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M4\"],\"sharedContextUnitKeys\":[],\"scope\":\"third independent scope\"}]";
+          }
           yield response(
               planResponse(
                   "[]",
@@ -1001,6 +1140,9 @@ class ActivityLargePacketFormalEntryTest {
       activityStageSliceKeys.add(sliceKey);
       if (sliceKey.equals(authenticationFailureSlice)) {
         throw new StructuredModelProviderFailure("AUTHENTICATION_FAILED", true, true);
+      }
+      if ("ACTIVITY_REVIEW".equals(request.taskKind()) && sliceKey.equals(failingReviewSlice)) {
+        throw new StructuredModelProviderFailure("INVALID_JSON", true, true);
       }
       ObjectNode response = JsonNodeFactory.instance.objectNode();
       ObjectNode activity = response.putArray("activities").addObject();
@@ -1043,7 +1185,7 @@ class ActivityLargePacketFormalEntryTest {
     }
   }
 
-  private static final class FormalLargePacketProvider implements StructuredModelProvider {
+  static final class FormalLargePacketProvider implements StructuredModelProvider {
     private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
     private final List<StructuredModelRequest> requests = new ArrayList<>();
     private final List<JsonNode> draftInputs = new ArrayList<>();
@@ -1055,11 +1197,11 @@ class ActivityLargePacketFormalEntryTest {
     private boolean proposedSlices;
     private boolean failedReview;
 
-    private FormalLargePacketProvider() {
+    FormalLargePacketProvider() {
       this(null);
     }
 
-    private FormalLargePacketProvider(String failingReviewSlice) {
+    FormalLargePacketProvider(String failingReviewSlice) {
       this.failingReviewSlice = failingReviewSlice;
     }
 
@@ -1160,7 +1302,7 @@ class ActivityLargePacketFormalEntryTest {
           ImmutableBytes.copyOf(json.getBytes(StandardCharsets.UTF_8)), IDENTITY);
     }
 
-    private List<String> taskKinds() {
+    List<String> taskKinds() {
       return requests.stream().map(StructuredModelRequest::taskKind).toList();
     }
 

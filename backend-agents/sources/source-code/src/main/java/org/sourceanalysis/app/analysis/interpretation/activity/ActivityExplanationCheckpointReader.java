@@ -31,6 +31,8 @@ public final class ActivityExplanationCheckpointReader {
   private static final String COVERAGE_TYPE = "FLOW_INTERPRETATION_ACTIVITY_COVERAGE";
   private static final String COVERAGE_SCHEMA = "flow-interpretation-activity-coverage-v2";
   private static final String STEP05_COVERAGE_SCHEMA = "flow-interpretation-activity-coverage-v3";
+  private static final String CURRENT_STEP05_COVERAGE_SCHEMA =
+      "flow-interpretation-activity-coverage-v4";
   private static final String EXPLANATIONS_FILE = "activity-explanations.jsonl";
   private static final String EXPLANATIONS_TYPE = "FLOW_INTERPRETATION_ACTIVITY_EXPLANATIONS";
   private static final String EXPLANATIONS_SCHEMA = "flow-interpretation-activity-explanations-v1";
@@ -44,10 +46,29 @@ public final class ActivityExplanationCheckpointReader {
           "schemaVersion",
           "semanticDeliveryStatus",
           "unexplainedActivityEntries");
+  private static final Set<String> CURRENT_COVERAGE_FIELDS =
+      Set.of(
+          "artifactId",
+          "artifactType",
+          "entryCoverage",
+          "packetCompletion",
+          "schemaVersion",
+          "semanticDeliveryStatus",
+          "unexplainedActivityEntries");
   private static final Set<String> ENTRY_COVERAGE_FIELDS =
       Set.of("activityIds", "disposition", "entryId", "reasonCode");
   private static final Set<String> UNEXPLAINED_ENTRY_FIELDS =
       Set.of("entryId", "entryKey", "materialContext", "materialId", "reasonCode");
+  private static final Set<String> PACKET_COMPLETION_FIELDS =
+      Set.of(
+          "completedSliceKeys",
+          "completion",
+          "entryIds",
+          "incompleteScopes",
+          "packetId",
+          "requiredSliceKeys");
+  private static final Set<String> INCOMPLETE_SCOPE_FIELDS =
+      Set.of("entryIds", "reasonCode", "sliceKey");
   private static final Set<String> ACTIVITY_FIELDS =
       Set.of(
           "activityId",
@@ -86,12 +107,22 @@ public final class ActivityExplanationCheckpointReader {
   public ActivityExplanationResult reopen(ModulePublicationReference checkpoint) {
     try {
       ReopenedModulePublication reopened = artifacts.reopen(checkpoint);
-      verifyCheckpoint(checkpoint, reopened);
-      boolean step05 = "v3".equals(reopened.receipt().moduleVersion());
-      Map<String, VerifiedCanonicalPayload> payloads = payloads(reopened.payloads(), step05);
-      CoverageCheckpoint coverage = coverage(payloads.get(COVERAGE_FILE), step05);
-      List<ReviewedActivity> activities = activities(payloads.get(EXPLANATIONS_FILE), step05);
+      CheckpointVersion version = checkpointVersion(checkpoint, reopened);
+      Map<String, VerifiedCanonicalPayload> payloads = payloads(reopened.payloads(), version);
+      CoverageCheckpoint coverage = coverage(payloads.get(COVERAGE_FILE), version);
+      List<ReviewedActivity> activities =
+          activities(payloads.get(EXPLANATIONS_FILE), version.step05());
       verifyCoverage(coverage.entries(), activities, coverage.unexplainedEntries());
+      if (version.current()) {
+        ActivityPacketCompletionVerification.requireInternalConsistency(
+            coverage.packetCompletion(), activities, coverage.unexplainedEntries());
+        return new ActivityExplanationResult(
+            activities,
+            coverage.entries(),
+            coverage.unexplainedEntries(),
+            coverage.packetCompletion(),
+            checkpoint);
+      }
       return new ActivityExplanationResult(
           activities, coverage.entries(), coverage.unexplainedEntries(), checkpoint);
     } catch (ActivityCheckpointException failure) {
@@ -101,24 +132,32 @@ public final class ActivityExplanationCheckpointReader {
     }
   }
 
-  private static void verifyCheckpoint(
+  private static CheckpointVersion checkpointVersion(
       ModulePublicationReference checkpoint, ReopenedModulePublication reopened) {
     if (!checkpoint.equals(reopened.reference())
         || !(checkpoint.address() instanceof AnalysisStepModuleAddress address)
         || address.analysisStepKey() != AnalysisStepKey.FLOW_INTERPRETATION
         || address.moduleNumber() != 11
         || !"activity-explainer".equals(address.moduleKey())
-        || (!"v2".equals(reopened.receipt().moduleVersion())
-            && !"v3".equals(reopened.receipt().moduleVersion()))
         || (reopened.receipt().status() != ModuleCompletionStatus.SUCCEEDED
             && reopened.receipt().status() != ModuleCompletionStatus.SUCCEEDED_WITH_GAPS)
         || reopened.payloads().size() != 2) {
       throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
     }
+    if ("v2".equals(reopened.receipt().moduleVersion())) {
+      return CheckpointVersion.HISTORICAL_V2;
+    }
+    if ("v3".equals(reopened.receipt().moduleVersion())) {
+      return CheckpointVersion.HISTORICAL_V3;
+    }
+    if ("v4".equals(reopened.receipt().moduleVersion())) {
+      return CheckpointVersion.CURRENT_V4;
+    }
+    throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
   }
 
   private static Map<String, VerifiedCanonicalPayload> payloads(
-      List<VerifiedCanonicalPayload> values, boolean step05) {
+      List<VerifiedCanonicalPayload> values, CheckpointVersion version) {
     Map<String, VerifiedCanonicalPayload> byName = new HashMap<>();
     for (VerifiedCanonicalPayload value : values) {
       if (byName.put(value.descriptor().fileName(), value) != null) {
@@ -131,20 +170,20 @@ public final class ActivityExplanationCheckpointReader {
     requireDescriptor(
         byName.get(COVERAGE_FILE),
         COVERAGE_TYPE,
-        step05 ? STEP05_COVERAGE_SCHEMA : COVERAGE_SCHEMA,
+        version.coverageSchema(),
         CanonicalMediaType.APPLICATION_JSON);
     requireDescriptor(
         byName.get(EXPLANATIONS_FILE),
         EXPLANATIONS_TYPE,
-        step05 ? STEP05_EXPLANATIONS_SCHEMA : EXPLANATIONS_SCHEMA,
+        version.explanationsSchema(),
         CanonicalMediaType.APPLICATION_X_NDJSON);
     return Map.copyOf(byName);
   }
 
-  private CoverageCheckpoint coverage(VerifiedCanonicalPayload payload, boolean step05) {
-    ObjectNode root = parseObject(payload, COVERAGE_FIELDS);
-    requireIdentity(
-        root, payload, COVERAGE_TYPE, step05 ? STEP05_COVERAGE_SCHEMA : COVERAGE_SCHEMA);
+  private CoverageCheckpoint coverage(VerifiedCanonicalPayload payload, CheckpointVersion version) {
+    ObjectNode root =
+        parseObject(payload, version.current() ? CURRENT_COVERAGE_FIELDS : COVERAGE_FIELDS);
+    requireIdentity(root, payload, COVERAGE_TYPE, version.coverageSchema());
     JsonNode entries = root.path("entryCoverage");
     if (!entries.isArray()) {
       throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
@@ -172,10 +211,6 @@ public final class ActivityExplanationCheckpointReader {
       }
       restored.add(restoredEntry);
     }
-    String expected = partial ? "PARTIAL" : "READY_FOR_PROCESS_EXPLANATION";
-    if (!expected.equals(requiredText(root, "semanticDeliveryStatus"))) {
-      throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
-    }
     JsonNode unexplained = root.path("unexplainedActivityEntries");
     if (!unexplained.isArray()) {
       throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
@@ -198,7 +233,18 @@ public final class ActivityExplanationCheckpointReader {
       }
       restoredUnexplained.add(restoredEntry);
     }
-    return new CoverageCheckpoint(List.copyOf(restored), List.copyOf(restoredUnexplained));
+    List<ActivityPacketCompletion> packetCompletion =
+        version.current() ? packetCompletion(root.path("packetCompletion")) : List.of();
+    if (packetCompletion.stream()
+        .anyMatch(value -> value.completion() != ActivityPacketCompletion.Completion.COMPLETE)) {
+      partial = true;
+    }
+    String expected = partial ? "PARTIAL" : "READY_FOR_PROCESS_EXPLANATION";
+    if (!expected.equals(requiredText(root, "semanticDeliveryStatus"))) {
+      throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
+    }
+    return new CoverageCheckpoint(
+        List.copyOf(restored), List.copyOf(restoredUnexplained), packetCompletion);
   }
 
   private List<ReviewedActivity> activities(VerifiedCanonicalPayload payload, boolean step05) {
@@ -293,8 +339,102 @@ public final class ActivityExplanationCheckpointReader {
     }
   }
 
+  private static List<ActivityPacketCompletion> packetCompletion(JsonNode values) {
+    if (!values.isArray()) {
+      throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
+    }
+    List<ActivityPacketCompletion> restored = new ArrayList<>();
+    Set<String> packetIds = new HashSet<>();
+    for (JsonNode entry : values) {
+      if (!(entry instanceof ObjectNode value) || !fields(value).equals(PACKET_COMPLETION_FIELDS)) {
+        throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
+      }
+      List<ActivityPacketCompletion.IncompleteScope> incompleteScopes =
+          incompleteScopes(value.path("incompleteScopes"));
+      ActivityPacketCompletion.Completion completion =
+          completion(requiredText(value, "completion"));
+      ActivityPacketCompletion restoredEntry =
+          new ActivityPacketCompletion(
+              requiredText(value, "packetId"),
+              strings(value.path("entryIds")),
+              completion,
+              strings(value.path("requiredSliceKeys")),
+              strings(value.path("completedSliceKeys")),
+              incompleteScopes);
+      if (!packetIds.add(restoredEntry.packetId())) {
+        throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
+      }
+      restored.add(restoredEntry);
+    }
+    return List.copyOf(restored);
+  }
+
+  private static List<ActivityPacketCompletion.IncompleteScope> incompleteScopes(JsonNode values) {
+    if (!values.isArray()) {
+      throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
+    }
+    List<ActivityPacketCompletion.IncompleteScope> restored = new ArrayList<>();
+    for (JsonNode entry : values) {
+      if (!(entry instanceof ObjectNode value) || !fields(value).equals(INCOMPLETE_SCOPE_FIELDS)) {
+        throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
+      }
+      JsonNode sliceKey = value.path("sliceKey");
+      restored.add(
+          new ActivityPacketCompletion.IncompleteScope(
+              sliceKey.isNull() ? null : requiredText(sliceKey, "sliceKey"),
+              strings(value.path("entryIds")),
+              requiredText(value, "reasonCode")));
+    }
+    return List.copyOf(restored);
+  }
+
+  private static ActivityPacketCompletion.Completion completion(String value) {
+    try {
+      return ActivityPacketCompletion.Completion.valueOf(value);
+    } catch (IllegalArgumentException invalid) {
+      throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", invalid);
+    }
+  }
+
   private record CoverageCheckpoint(
-      List<ActivityEntryCoverage> entries, List<UnexplainedActivityEntry> unexplainedEntries) {}
+      List<ActivityEntryCoverage> entries,
+      List<UnexplainedActivityEntry> unexplainedEntries,
+      List<ActivityPacketCompletion> packetCompletion) {}
+
+  private enum CheckpointVersion {
+    HISTORICAL_V2(COVERAGE_SCHEMA, EXPLANATIONS_SCHEMA, false, false),
+    HISTORICAL_V3(STEP05_COVERAGE_SCHEMA, STEP05_EXPLANATIONS_SCHEMA, true, false),
+    CURRENT_V4(CURRENT_STEP05_COVERAGE_SCHEMA, STEP05_EXPLANATIONS_SCHEMA, true, true);
+
+    private final String coverageSchema;
+    private final String explanationsSchema;
+    private final boolean step05;
+    private final boolean current;
+
+    CheckpointVersion(
+        String coverageSchema, String explanationsSchema, boolean step05, boolean current) {
+      this.coverageSchema = coverageSchema;
+      this.explanationsSchema = explanationsSchema;
+      this.step05 = step05;
+      this.current = current;
+    }
+
+    String coverageSchema() {
+      return coverageSchema;
+    }
+
+    String explanationsSchema() {
+      return explanationsSchema;
+    }
+
+    boolean step05() {
+      return step05;
+    }
+
+    boolean current() {
+      return current;
+    }
+  }
 
   private ObjectNode parseObject(VerifiedCanonicalPayload payload, Set<String> expectedFields) {
     JsonNode parsed = canonicalJson.parseCanonical(payload.canonicalUtf8());

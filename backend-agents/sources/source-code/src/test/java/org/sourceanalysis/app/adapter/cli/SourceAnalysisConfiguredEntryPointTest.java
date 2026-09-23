@@ -229,6 +229,41 @@ class SourceAnalysisConfiguredEntryPointTest {
   }
 
   @Test
+  void configuredActivityCommandAcceptsReuseOnlyAsAStandaloneFlag() {
+    ExecutionResult result =
+        execute(
+            "--config",
+            temporaryDirectory.resolve("missing.yaml").toAbsolutePath().toString(),
+            "execute-step",
+            "--target",
+            "flow-interpretation",
+            "--reuse-from-model-batch",
+            "analysis-run:" + "a".repeat(64),
+            "--reuse-only");
+
+    assertConfigurationReached(result);
+  }
+
+  @Test
+  void configuredActivityCommandRejectsPacketFilteringWithReuseOnly() {
+    ExecutionResult result =
+        execute(
+            "--config",
+            temporaryDirectory.resolve("missing.yaml").toAbsolutePath().toString(),
+            "execute-step",
+            "--target",
+            "flow-interpretation",
+            "--reuse-from-model-batch",
+            "analysis-run:" + "a".repeat(64),
+            "--reuse-only",
+            "--packet-id",
+            "packet:selective");
+
+    assertThat(result.exitCode()).isNotZero();
+    assertThat(result.diagnostics()).contains("ARGUMENTS_INVALID");
+  }
+
+  @Test
   void legacyModeSyntaxIsNotAcceptedByTheUnifiedEntryPoint() {
     ExecutionResult result =
         execute(

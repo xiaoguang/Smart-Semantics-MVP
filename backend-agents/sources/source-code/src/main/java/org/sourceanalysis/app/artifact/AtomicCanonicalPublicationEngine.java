@@ -1898,7 +1898,8 @@ final class AtomicCanonicalPublicationEngine {
   private static ModuleArtifactContract activityArtifactContract(CanonicalModulePayload payload) {
     if ("FLOW_INTERPRETATION_ACTIVITY_COVERAGE".equals(payload.artifactType())
         && ("flow-interpretation-activity-coverage-v2".equals(payload.schemaVersion())
-            || "flow-interpretation-activity-coverage-v3".equals(payload.schemaVersion()))) {
+            || "flow-interpretation-activity-coverage-v3".equals(payload.schemaVersion())
+            || "flow-interpretation-activity-coverage-v4".equals(payload.schemaVersion()))) {
       return new ModuleArtifactContract(
           AnalysisStepKey.FLOW_INTERPRETATION,
           11,

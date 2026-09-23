@@ -88,36 +88,46 @@ public final class PrivateModelJobResultStore {
     return readResult(jobKey, "decision-result.json");
   }
 
-  /** Reopens this batch's saved terminal failures in stable job order. */
-  public List<ObjectNode> listTerminalFailures() {
-    Path phaseDirectory =
-        journalDirectory.resolve("model-jobs").resolve(runDirectoryName).resolve(phase);
+  /** Reopens this selected batch's reviewed results in stable job order. */
+  public List<ObjectNode> listReviewedResults() {
     try {
-      Path part = phaseDirectory;
-      while (part != null && !part.equals(journalDirectory)) {
-        if (!Files.exists(part, LinkOption.NOFOLLOW_LINKS)) {
-          return List.of();
-        }
-        if (Files.isSymbolicLink(part) || !Files.isDirectory(part, LinkOption.NOFOLLOW_LINKS)) {
-          throw failure("MODEL_JOB_RESULT_INVALID", null);
-        }
-        part = part.getParent();
-      }
-      if (part == null) {
-        throw failure("MODEL_JOB_RESULT_INVALID", null);
-      }
-      List<Path> jobs;
-      try (var children = Files.list(phaseDirectory)) {
-        jobs = children.sorted(Comparator.comparing(Path::toString)).toList();
-      }
-      List<ObjectNode> failures = new ArrayList<>();
-      for (Path job : jobs) {
-        if (Files.isSymbolicLink(job) || !Files.isDirectory(job, LinkOption.NOFOLLOW_LINKS)) {
-          throw failure("MODEL_JOB_RESULT_INVALID", null);
-        }
+      List<ObjectNode> results = new ArrayList<>();
+      for (Path job : listJobDirectories()) {
         String jobKey =
             Objects.requireNonNull(job.getFileName(), "model job directory name").toString();
-        requireJobKey(jobKey);
+        readReviewedResult(jobKey).ifPresent(results::add);
+      }
+      return List.copyOf(results);
+    } catch (IllegalStateException invalid) {
+      throw invalid;
+    } catch (RuntimeException invalid) {
+      throw failure("MODEL_JOB_RESULT_INVALID", invalid);
+    }
+  }
+
+  /** Reads one selected batch's reviewed result through the guarded exact job directory. */
+  public Optional<ObjectNode> readReviewedResult(String jobKey) {
+    requireJobKey(jobKey);
+    Path jobDirectory =
+        journalDirectory
+            .resolve("model-jobs")
+            .resolve(runDirectoryName)
+            .resolve(phase)
+            .resolve(jobKey);
+    if (guardedExistingDirectory(jobDirectory).isEmpty()) {
+      return Optional.empty();
+    }
+    return readResult(jobKey, "reviewed-result.json")
+        .map(value -> requireReviewedResult(value, jobKey));
+  }
+
+  /** Reopens this batch's saved terminal failures in stable job order. */
+  public List<ObjectNode> listTerminalFailures() {
+    try {
+      List<ObjectNode> failures = new ArrayList<>();
+      for (Path job : listJobDirectories()) {
+        String jobKey =
+            Objects.requireNonNull(job.getFileName(), "model job directory name").toString();
         readTerminalFailure(jobKey)
             .ifPresent(
                 value -> {
@@ -131,9 +141,68 @@ public final class PrivateModelJobResultStore {
       return List.copyOf(failures);
     } catch (IllegalStateException invalid) {
       throw invalid;
+    } catch (RuntimeException invalid) {
+      throw failure("MODEL_JOB_RESULT_INVALID", invalid);
+    }
+  }
+
+  /** Lists this selected phase's immediate job directories through the same guarded boundary. */
+  private List<Path> listJobDirectories() {
+    Path phaseDirectory =
+        journalDirectory.resolve("model-jobs").resolve(runDirectoryName).resolve(phase);
+    try {
+      if (guardedExistingDirectory(phaseDirectory).isEmpty()) {
+        return List.of();
+      }
+      try (var children = Files.list(phaseDirectory)) {
+        List<Path> jobs = children.sorted(Comparator.comparing(Path::toString)).toList();
+        for (Path job : jobs) {
+          if (Files.isSymbolicLink(job) || !Files.isDirectory(job, LinkOption.NOFOLLOW_LINKS)) {
+            throw failure("MODEL_JOB_RESULT_INVALID", null);
+          }
+          requireJobKey(
+              Objects.requireNonNull(job.getFileName(), "model job directory name").toString());
+        }
+        return jobs;
+      }
+    } catch (IllegalStateException invalid) {
+      throw invalid;
     } catch (IOException | RuntimeException invalid) {
       throw failure("MODEL_JOB_RESULT_INVALID", invalid);
     }
+  }
+
+  /** Requires each existing directory under the inspected journal root to be a real directory. */
+  private Optional<Path> guardedExistingDirectory(Path directory) {
+    try {
+      Path part = directory;
+      while (part != null && !part.equals(journalDirectory)) {
+        if (!Files.exists(part, LinkOption.NOFOLLOW_LINKS)) {
+          return Optional.empty();
+        }
+        if (Files.isSymbolicLink(part) || !Files.isDirectory(part, LinkOption.NOFOLLOW_LINKS)) {
+          throw failure("MODEL_JOB_RESULT_INVALID", null);
+        }
+        part = part.getParent();
+      }
+      if (part == null) {
+        throw failure("MODEL_JOB_RESULT_INVALID", null);
+      }
+      return Optional.of(directory);
+    } catch (IllegalStateException invalid) {
+      throw invalid;
+    } catch (RuntimeException invalid) {
+      throw failure("MODEL_JOB_RESULT_INVALID", invalid);
+    }
+  }
+
+  private ObjectNode requireReviewedResult(ObjectNode value, String jobKey) {
+    if (!runId.equals(text(value, "runId"))
+        || !phase.equals(text(value, "phase"))
+        || !jobKey.equals(text(value, "jobKey"))) {
+      throw failure("MODEL_JOB_RESULT_INVALID", null);
+    }
+    return value.deepCopy();
   }
 
   /** Installs one immutable Activity stage-attempt event at its actual occurrence. */

@@ -134,11 +134,24 @@ public final class SourceAnalysisCli {
       if (!config.isAbsolute() || arguments[2].startsWith("--")) {
         throw new IllegalArgumentException("configuration path and operation are invalid");
       }
-      if ((arguments.length - 3) % 2 != 0) {
-        throw new IllegalArgumentException("configured command options must be name/value pairs");
+      List<String> options = new ArrayList<>();
+      for (int index = 3; index < arguments.length; ) {
+        String option = arguments[index];
+        if (!option.startsWith("--")) {
+          throw new IllegalArgumentException("configured command option is invalid");
+        }
+        options.add(option);
+        if (isFlag(option)) {
+          index++;
+          continue;
+        }
+        if (index + 1 >= arguments.length || arguments[index + 1].startsWith("--")) {
+          throw new IllegalArgumentException("configured command options must be name/value pairs");
+        }
+        options.add(arguments[index + 1]);
+        index += 2;
       }
-      return new ConfiguredArguments(
-          config, arguments[2], List.of(arguments).subList(3, arguments.length));
+      return new ConfiguredArguments(config, arguments[2], List.copyOf(options));
     }
 
     private static String[] translate(String[] arguments) {
@@ -187,6 +200,7 @@ public final class SourceAnalysisCli {
       String catalogBatch = option("--catalog-from-model-batch", false);
       String focusQuestion = option("--focus-question", false);
       String runId = option("--run", false);
+      boolean reuseOnly = flag("--reuse-only");
       requireOnly(
           "--target",
           "--material-id",
@@ -196,12 +210,16 @@ public final class SourceAnalysisCli {
           "--packet-id",
           "--catalog-from-model-batch",
           "--focus-question",
-          "--run");
+          "--run",
+          "--reuse-only");
       if ("flow-interpretation".equals(target)) {
         if (activityBatch != null || catalogBatch != null || focusQuestion != null) {
           throw new IllegalArgumentException("Activity execution cannot use an Activity batch");
         }
-        if (materialId != null && (packetId != null || retryFailedBatch != null)) {
+        if (reuseOnly && (reuseBatch == null || retryFailedBatch != null || packetId != null)) {
+          throw new IllegalArgumentException("reuse-only requires a reuse batch and cannot retry");
+        }
+        if (materialId != null && (packetId != null || retryFailedBatch != null || reuseOnly)) {
           throw new IllegalArgumentException(
               "legacy material selection cannot use Step05 packet options");
         }
@@ -213,6 +231,7 @@ public final class SourceAnalysisCli {
         if (materialId != null
             || packetId != null
             || retryFailedBatch != null
+            || reuseOnly
             || activityBatch == null) {
           throw new IllegalArgumentException("process execution requires an Activity batch");
         }
@@ -224,6 +243,9 @@ public final class SourceAnalysisCli {
         throw new IllegalArgumentException("execute-step target is unsupported");
       }
       addOption(translated, "--reuse-from-model-batch", reuseBatch);
+      if (reuseOnly) {
+        translated.add("--reuse-only");
+      }
       addOption(translated, "--run", runId);
     }
 
@@ -249,8 +271,11 @@ public final class SourceAnalysisCli {
 
     private String option(String name, boolean required) {
       String value = null;
-      for (int index = 0; index < options.size(); index += 2) {
+      for (int index = 0; index < options.size(); index = nextOptionIndex(index)) {
         if (name.equals(options.get(index))) {
+          if (isFlag(name)) {
+            throw new IllegalArgumentException("configured command option is a flag");
+          }
           if (value != null) {
             throw new IllegalArgumentException("duplicate configured command option");
           }
@@ -263,10 +288,24 @@ public final class SourceAnalysisCli {
       return value;
     }
 
+    private boolean flag(String name) {
+      boolean selected = false;
+      for (int index = 0; index < options.size(); index = nextOptionIndex(index)) {
+        if (name.equals(options.get(index))) {
+          if (!isFlag(name) || selected) {
+            throw new IllegalArgumentException("duplicate configured command option");
+          }
+          selected = true;
+        }
+      }
+      return selected;
+    }
+
     private void requireOnly(String... allowed) {
       List<String> names = List.of(allowed);
-      for (int index = 0; index < options.size(); index += 2) {
-        if (!names.contains(options.get(index)) || options.get(index + 1).isBlank()) {
+      for (int index = 0; index < options.size(); index = nextOptionIndex(index)) {
+        if (!names.contains(options.get(index))
+            || (!isFlag(options.get(index)) && options.get(index + 1).isBlank())) {
           throw new IllegalArgumentException("configured command option is invalid");
         }
       }
@@ -283,6 +322,14 @@ public final class SourceAnalysisCli {
         translated.add(name);
         translated.add(value);
       }
+    }
+
+    private int nextOptionIndex(int index) {
+      return index + (isFlag(options.get(index)) ? 1 : 2);
+    }
+
+    private static boolean isFlag(String option) {
+      return "--reuse-only".equals(option);
     }
   }
 

@@ -3,10 +3,15 @@ package org.sourceanalysis.app.analysis.knowledge;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.sourceanalysis.app.analysis.code.EntrySeed;
+import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationResult;
+import org.sourceanalysis.app.analysis.interpretation.activity.ActivityPacketCompletion;
+import org.sourceanalysis.app.analysis.interpretation.activity.ReviewedActivity;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
@@ -65,10 +70,9 @@ class ProcessDiscoveryDualMaterialProtocolTest {
     assertThat(legacy.codeReadingMaterials()).isNull();
     assertThat(legacy.codeReadingMaterialCheckpoint()).isNull();
 
+    CodeReadingMaterialSet step05Materials = completionGateMaterials(false);
     ActivityExplanationResult step05Activities =
-        withCheckpoint(FrozenAnalysisCorpusDualMaterialSourceTest.step05Activities());
-    CodeReadingMaterialSet step05Materials =
-        FrozenAnalysisCorpusDualMaterialSourceTest.step05Materials();
+        currentStep05Activities(step05Materials, completePacketCompletions(step05Materials));
     AnalysisStepPublicationReference step05Checkpoint = step05Checkpoint();
     VerifiedSourceTextReader sourceText =
         ignored -> FrozenAnalysisCorpusDualMaterialSourceTest.sourceTextSet(List.of());
@@ -114,8 +118,9 @@ class ProcessDiscoveryDualMaterialProtocolTest {
 
   @Test
   void rejectsPartialStep05ActivityBeforeProcessDiscovery() {
+    CodeReadingMaterialSet materials = completionGateMaterials(false);
     ActivityExplanationResult complete =
-        withCheckpoint(FrozenAnalysisCorpusDualMaterialSourceTest.step05Activities());
+        currentStep05Activities(materials, completePacketCompletions(materials));
     ActivityExplanationResult partial =
         new ActivityExplanationResult(
             complete.reviewedActivities(),
@@ -125,9 +130,8 @@ class ProcessDiscoveryDualMaterialProtocolTest {
                 new ActivityEntryCoverage(
                     "entry:missing", "NOT_ANALYZED", List.of(), "MODEL_NOT_EXPLAINED")),
             complete.unexplainedActivityEntries(),
+            complete.packetCompletion().orElseThrow(),
             complete.checkpoint());
-    CodeReadingMaterialSet materials = FrozenAnalysisCorpusDualMaterialSourceTest.step05Materials();
-
     assertThatThrownBy(
             () ->
                 new ProcessDiscoveryRequest(
@@ -146,8 +150,9 @@ class ProcessDiscoveryDualMaterialProtocolTest {
 
   @Test
   void rejectsReviewedActivitiesWhenAnyRequiredReadingSliceRemainsUnfulfilled() {
+    CodeReadingMaterialSet materials = completionGateMaterials(false);
     ActivityExplanationResult complete =
-        withCheckpoint(FrozenAnalysisCorpusDualMaterialSourceTest.step05Activities());
+        currentStep05Activities(materials, completePacketCompletions(materials));
     ActivityEntryCoverage first = complete.coverage().get(0);
     ActivityExplanationResult incompleteRequiredSlice =
         new ActivityExplanationResult(
@@ -162,9 +167,8 @@ class ProcessDiscoveryDualMaterialProtocolTest {
                     complete.coverage().stream().skip(1))
                 .toList(),
             complete.unexplainedActivityEntries(),
+            complete.packetCompletion().orElseThrow(),
             complete.checkpoint());
-    CodeReadingMaterialSet materials = FrozenAnalysisCorpusDualMaterialSourceTest.step05Materials();
-
     assertThatThrownBy(
             () ->
                 new ProcessDiscoveryRequest(
@@ -185,49 +189,120 @@ class ProcessDiscoveryDualMaterialProtocolTest {
 
   @Test
   void permitsExplicitUpstreamNavigationGapWithoutCallingItAnActivityFailure() {
-    ActivityExplanationResult complete =
-        withCheckpoint(FrozenAnalysisCorpusDualMaterialSourceTest.step05Activities());
-    CodeReadingMaterialSet original = FrozenAnalysisCorpusDualMaterialSourceTest.step05Materials();
-    CodeReadingMaterialSet materials =
-        new CodeReadingMaterialSet(
-            original.header(),
-            original.packets(),
-            java.util.stream.Stream.concat(
-                    original.coverage().stream(),
-                    java.util.stream.Stream.of(
-                        new CodeReadingMaterialSet.EntryCoverage(
-                            "entry:navigation-gap",
-                            List.of(),
-                            CodeReadingMaterialSet.CoverageStatus.NOT_COLLECTED,
-                            List.of("JDT_NAVIGATION_TIMEOUT"))))
-                .toList());
+    CodeReadingMaterialSet materials = completionGateMaterials(true);
     ActivityExplanationResult activities =
-        new ActivityExplanationResult(
-            complete.reviewedActivities(),
-            java.util.stream.Stream.concat(
-                    complete.coverage().stream(),
-                    java.util.stream.Stream.of(
-                        new ActivityEntryCoverage(
-                            "entry:navigation-gap",
-                            "NOT_ANALYZED",
-                            List.of(),
-                            "JDT_NAVIGATION_TIMEOUT")))
-                .toList(),
-            complete.unexplainedActivityEntries(),
-            complete.checkpoint());
+        currentStep05Activities(materials, completePacketCompletions(materials));
 
-    ProcessDiscoveryRequest request =
-        new ProcessDiscoveryRequest(
-            activities,
-            materials,
-            step05Checkpoint(),
-            profile(),
-            RUN,
-            materials.header().sourceInventory(),
-            ignored -> FrozenAnalysisCorpusDualMaterialSourceTest.sourceTextSet(List.of()),
-            null,
-            null);
+    ProcessDiscoveryRequest request = step05Request(activities, materials);
     assertThat(request.usesCodeReadingMaterials()).isTrue();
+  }
+
+  @Test
+  void requiresExplicitCompletePacketSetBeforeStep07AcceptsCurrentStep05Activities() {
+    CodeReadingMaterialSet materials = completionGateMaterials(false);
+    ActivityExplanationResult historicalWithoutCompletion =
+        withCheckpoint(FrozenAnalysisCorpusDualMaterialSourceTest.step05Activities());
+    assertStep05Rejected(
+        historicalWithoutCompletion, materials, "PROCESS_DISCOVERY_PARTIAL_ACTIVITY_INPUT");
+
+    List<ActivityPacketCompletion> incompletePacketSet =
+        new ArrayList<>(completePacketCompletions(materials));
+    ActivityPacketCompletion alpha = incompletePacketSet.get(0);
+    incompletePacketSet.set(
+        0,
+        new ActivityPacketCompletion(
+            alpha.packetId(),
+            alpha.entryIds(),
+            ActivityPacketCompletion.Completion.INCOMPLETE,
+            List.of("whole-packet"),
+            List.of(),
+            List.of(
+                new ActivityPacketCompletion.IncompleteScope(
+                    "whole-packet", alpha.entryIds(), "ACTIVITY_REVIEW_FAILED"))));
+    assertStep05Rejected(
+        currentStep05Activities(materials, incompletePacketSet),
+        materials,
+        "PROCESS_DISCOVERY_PARTIAL_ACTIVITY_INPUT");
+
+    List<ActivityPacketCompletion> unknownPacketSet =
+        new ArrayList<>(completePacketCompletions(materials));
+    ActivityPacketCompletion beta = unknownPacketSet.get(1);
+    unknownPacketSet.set(
+        1,
+        new ActivityPacketCompletion(
+            beta.packetId(),
+            beta.entryIds(),
+            ActivityPacketCompletion.Completion.UNDETERMINED,
+            List.of(),
+            List.of(),
+            List.of(
+                new ActivityPacketCompletion.IncompleteScope(
+                    null, beta.entryIds(), "HISTORICAL_REQUIRED_SCOPE_UNKNOWN"))));
+    assertStep05Rejected(
+        currentStep05Activities(materials, unknownPacketSet),
+        materials,
+        "PROCESS_DISCOVERY_PARTIAL_ACTIVITY_INPUT");
+  }
+
+  @Test
+  void rejectsPacketOrEntryMembershipThatDisagreesWithStep05Materials() {
+    CodeReadingMaterialSet materials = completionGateMaterials(false);
+
+    assertStep05Rejected(
+        currentStep05Activities(materials, List.of()),
+        materials,
+        "PROCESS_DISCOVERY_STEP05_INPUT_INVALID");
+
+    List<ActivityPacketCompletion> wrongPacketSet =
+        new ArrayList<>(completePacketCompletions(materials));
+    ActivityPacketCompletion alpha = wrongPacketSet.get(0);
+    wrongPacketSet.set(
+        0,
+        new ActivityPacketCompletion(
+            "packet:not-in-step05",
+            alpha.entryIds(),
+            ActivityPacketCompletion.Completion.COMPLETE,
+            List.of("whole-packet"),
+            List.of("whole-packet"),
+            List.of()));
+    assertStep05Rejected(
+        currentStep05Activities(materials, wrongPacketSet),
+        materials,
+        "PROCESS_DISCOVERY_STEP05_INPUT_INVALID");
+
+    List<ActivityPacketCompletion> wrongEntrySet =
+        new ArrayList<>(completePacketCompletions(materials));
+    ActivityPacketCompletion beta = wrongEntrySet.get(1);
+    wrongEntrySet.set(
+        1,
+        new ActivityPacketCompletion(
+            beta.packetId(),
+            List.of("entry:not-in-packet"),
+            ActivityPacketCompletion.Completion.COMPLETE,
+            List.of("whole-packet"),
+            List.of("whole-packet"),
+            List.of()));
+    assertStep05Rejected(
+        currentStep05Activities(materials, wrongEntrySet),
+        materials,
+        "PROCESS_DISCOVERY_STEP05_INPUT_INVALID");
+  }
+
+  @Test
+  void allowsCompletePacketSetAlongsideAnExplicitNotCollectedStep05Entry() {
+    CodeReadingMaterialSet materials = completionGateMaterials(true);
+    ProcessDiscoveryRequest request =
+        step05Request(
+            currentStep05Activities(materials, completePacketCompletions(materials)), materials);
+
+    assertThat(request.usesCodeReadingMaterials()).isTrue();
+    assertThat(request.codeReadingMaterials().coverage())
+        .anySatisfy(
+            coverage -> {
+              assertThat(coverage.entryId()).isEqualTo("entry:navigation-gap");
+              assertThat(coverage.status())
+                  .isEqualTo(CodeReadingMaterialSet.CoverageStatus.NOT_COLLECTED);
+            });
   }
 
   @Test
@@ -293,6 +368,110 @@ class ProcessDiscoveryDualMaterialProtocolTest {
         activities.coverage(),
         activities.unexplainedActivityEntries(),
         activityCheckpoint());
+  }
+
+  private static void assertStep05Rejected(
+      ActivityExplanationResult activities, CodeReadingMaterialSet materials, String errorCode) {
+    assertThatThrownBy(() -> step05Request(activities, materials))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage(errorCode);
+  }
+
+  private static ProcessDiscoveryRequest step05Request(
+      ActivityExplanationResult activities, CodeReadingMaterialSet materials) {
+    return new ProcessDiscoveryRequest(
+        activities,
+        materials,
+        step05Checkpoint(),
+        profile(),
+        RUN,
+        materials.header().sourceInventory(),
+        ignored -> FrozenAnalysisCorpusDualMaterialSourceTest.sourceTextSet(List.of()),
+        null,
+        null);
+  }
+
+  private static CodeReadingMaterialSet completionGateMaterials(boolean includeNotCollected) {
+    CodeReadingMaterialSet original = FrozenAnalysisCorpusDualMaterialSourceTest.step05Materials();
+    List<CodeReadingMaterialSet.Packet> packets =
+        original.packets().stream()
+            .map(
+                packet -> {
+                  String entryId = "entry:" + packet.packetId().substring("packet:".length());
+                  return new CodeReadingMaterialSet.Packet(
+                      packet.packetId(),
+                      List.of(
+                          new EntrySeed(
+                              entryId,
+                              "method:" + packet.packetId().substring("packet:".length()),
+                              new SourceRange(0, 1, 1, 1),
+                              "HTTP controller entry")),
+                      packet.methods(),
+                      packet.calls(),
+                      packet.persistence(),
+                      packet.sourceReferences(),
+                      packet.unselectedUnits(),
+                      packet.limitations(),
+                      packet.selfContainedUtf8Bytes());
+                })
+            .toList();
+    List<CodeReadingMaterialSet.EntryCoverage> coverage = new ArrayList<>(original.coverage());
+    if (includeNotCollected) {
+      coverage.add(
+          new CodeReadingMaterialSet.EntryCoverage(
+              "entry:navigation-gap",
+              List.of(),
+              CodeReadingMaterialSet.CoverageStatus.NOT_COLLECTED,
+              List.of("JDT_NAVIGATION_TIMEOUT")));
+    }
+    return new CodeReadingMaterialSet(original.header(), packets, coverage);
+  }
+
+  private static ActivityExplanationResult currentStep05Activities(
+      CodeReadingMaterialSet materials, List<ActivityPacketCompletion> packetCompletion) {
+    ActivityExplanationResult original =
+        FrozenAnalysisCorpusDualMaterialSourceTest.step05Activities();
+    List<ActivityEntryCoverage> coverage = new ArrayList<>(original.coverage());
+    if (materials.coverage().stream()
+        .anyMatch(value -> "entry:navigation-gap".equals(value.entryId()))) {
+      coverage.add(
+          new ActivityEntryCoverage(
+              "entry:navigation-gap", "NOT_ANALYZED", List.of(), "JDT_NAVIGATION_TIMEOUT"));
+    }
+    return new ActivityExplanationResult(
+        original.reviewedActivities(),
+        coverage,
+        original.unexplainedActivityEntries(),
+        packetCompletion,
+        activityCheckpoint());
+  }
+
+  private static List<ActivityPacketCompletion> completePacketCompletions(
+      CodeReadingMaterialSet materials) {
+    List<ReviewedActivity> activities =
+        FrozenAnalysisCorpusDualMaterialSourceTest.step05Activities().reviewedActivities();
+    return materials.packets().stream()
+        .map(
+            packet -> {
+              List<String> entryIds = packet.entries().stream().map(EntrySeed::entryId).toList();
+              List<String> sliceKeys =
+                  activities.stream()
+                      .filter(activity -> packet.packetId().equals(activity.materialId()))
+                      .map(ReviewedActivity::sliceKey)
+                      .filter(java.util.Objects::nonNull)
+                      .distinct()
+                      .toList();
+              List<String> requiredSliceKeys =
+                  sliceKeys.isEmpty() ? List.of("whole-packet") : sliceKeys;
+              return new ActivityPacketCompletion(
+                  packet.packetId(),
+                  entryIds,
+                  ActivityPacketCompletion.Completion.COMPLETE,
+                  requiredSliceKeys,
+                  requiredSliceKeys,
+                  List.of());
+            })
+        .toList();
   }
 
   private static RepositoryBusinessProcessCatalog emptyCatalog() {

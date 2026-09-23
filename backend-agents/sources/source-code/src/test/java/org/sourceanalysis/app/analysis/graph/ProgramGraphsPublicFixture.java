@@ -143,6 +143,26 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         false);
   }
 
+  /**
+   * Creates the persisted source/discovery prefix using an explicitly supplied runtime registry.
+   */
+  public static ProgramGraphsPublicFixture createForJavaCodeIndex(
+      Path emptyTemporaryDirectory, CanonicalArtifactPolicyRegistry policies) {
+    return create(
+        emptyTemporaryDirectory,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        policies);
+  }
+
   /** Creates the guarded persisted source/discovery prefix without installing Step 03. */
   public static ProgramGraphsPublicFixture createForGuardedJavaCodeIndex(
       Path emptyTemporaryDirectory) {
@@ -370,9 +390,38 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
       boolean withoutHttpEntries,
       boolean longGuardedApprove,
       boolean publishLegacyGraphs) {
+    return create(
+        emptyTemporaryDirectory,
+        guardedApprove,
+        guardedElseApprove,
+        sharedJavaCall,
+        syntheticSevenEntries,
+        boundedPathSet,
+        chainedJavaCalls,
+        guardedSharedJavaCall,
+        withoutHttpEntries,
+        longGuardedApprove,
+        publishLegacyGraphs,
+        null);
+  }
+
+  private static ProgramGraphsPublicFixture create(
+      Path emptyTemporaryDirectory,
+      boolean guardedApprove,
+      boolean guardedElseApprove,
+      boolean sharedJavaCall,
+      boolean syntheticSevenEntries,
+      boolean boundedPathSet,
+      boolean chainedJavaCalls,
+      boolean guardedSharedJavaCall,
+      boolean withoutHttpEntries,
+      boolean longGuardedApprove,
+      boolean publishLegacyGraphs,
+      CanonicalArtifactPolicyRegistry suppliedPolicies) {
     createEmptyTestStoreDirectory(emptyTemporaryDirectory);
     CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
-    CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
+    CanonicalArtifactPolicyRegistry policies =
+        suppliedPolicies == null ? policies(canonicalJson) : suppliedPolicies;
     ArtifactControls controls = controls(policies);
     String fixtureKey =
         boundedPathSet
@@ -2087,8 +2136,32 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         false);
     policy(
         entries,
+        "FLOW_INTERPRETATION_ACTIVITY_COVERAGE",
+        "flow-interpretation-activity-coverage-v3",
+        "activity-coverage",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
+        "FLOW_INTERPRETATION_ACTIVITY_COVERAGE",
+        "flow-interpretation-activity-coverage-v4",
+        "activity-coverage",
+        "application/json",
+        "STANDALONE_JSON",
+        false);
+    policy(
+        entries,
         "FLOW_INTERPRETATION_ACTIVITY_EXPLANATIONS",
         "flow-interpretation-activity-explanations-v1",
+        "activity-explanations",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        true);
+    policy(
+        entries,
+        "FLOW_INTERPRETATION_ACTIVITY_EXPLANATIONS",
+        "flow-interpretation-activity-explanations-v2",
         "activity-explanations",
         "application/x-ndjson",
         "CANONICAL_JSONL",

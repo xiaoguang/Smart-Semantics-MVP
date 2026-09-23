@@ -375,7 +375,8 @@ record ActivityJobResult(
     List<UnexplainedActivityEntry> unexplainedEntries,
     ModelRuntimeIdentityV1 runtimeIdentity,
     JsonNode draftResponse,
-    JsonNode reviewResponse) {
+    JsonNode reviewResponse,
+    ActivityPacketCompletion packetCompletion) {
   ActivityJobResult {
     if (materialId == null || materialId.isBlank()) {
       throw new IllegalArgumentException("activity job result material id is required");
@@ -387,6 +388,25 @@ record ActivityJobResult(
     draftResponse = Objects.requireNonNull(draftResponse, "activity job draft response").deepCopy();
     reviewResponse =
         Objects.requireNonNull(reviewResponse, "activity job review response").deepCopy();
+  }
+
+  ActivityJobResult(
+      String materialId,
+      List<ReviewedActivity> reviewedActivities,
+      List<ActivityEntryCoverage> coverage,
+      List<UnexplainedActivityEntry> unexplainedEntries,
+      ModelRuntimeIdentityV1 runtimeIdentity,
+      JsonNode draftResponse,
+      JsonNode reviewResponse) {
+    this(
+        materialId,
+        reviewedActivities,
+        coverage,
+        unexplainedEntries,
+        runtimeIdentity,
+        draftResponse,
+        reviewResponse,
+        null);
   }
 }
 

@@ -13,7 +13,7 @@
 | 范围 | 输出有activityBatchComplete；当前coverage-v3不含packet完成表 | coverage-v4补最小packetCompletion，不能只看entry出现过 |
 | 新旧业务内容 | 新418条与旧326条均保存；模型身份各自保持 | 离线核对和只复用，不默认重做Activity |
 
-Task 1可靠性修复在隔离Maven输出中通过12类79项定向测试；Task 2的plan-v2最终/替换scope、重开及配置传递通过8类80项定向测试、Spotless和独立复查。这不是完整CI，也没有真实模型/JDT/客户构建；Task 3的coverage-v4/reuse-only开始实施。历史真实运行不能替代这些后续验收。见[端到端详细设计](../end-to-end-business-delivery-design.md)及[历史Activity收口](activity-explanation/post-review-handoff-20260923.md)。
+Task 1可靠性修复在隔离Maven输出中通过12类79项定向测试；Task 2的plan-v2最终/替换scope、重开及配置传递通过8类80项定向测试、Spotless和独立复查。这不是完整CI，也没有真实模型/JDT/客户构建。Task 3进行中：coverage-v4真实发布重开、正式CLI零Provider采用旧直接整包结果及再次离线接续已有直接验证；当前大包局部失败范围、历史v1/v2聚合与切片读取、实际阶段复制复用、同键修订、未读导航、没有整包聚合的部分成功及Step07完成范围准入已通过定向检查。历史接续14项测试通过，完整Activity联合校验的独立复查发现已闭合。私有批次完成记录与CLI缺项展示尚待贯通；325包的真实离线核对尚未开始。历史真实运行不能替代这些后续验收。见[端到端详细设计](../end-to-end-business-delivery-design.md)及[历史Activity收口](activity-explanation/post-review-handoff-20260923.md)。
 
 Codex超时只有确认本地进程结束才能按REQUEST_TIMEOUT处理，否则OUTCOME_UNKNOWN不默认重试。坏JSON实际响应在私有限额内保留；普通日志不暴露凭据/原文。Task 1已验证的错误分类与大包失败保留不代表整个端到端计划完成；后续先继续离线任务，再按计划执行无提示小样，小样展示后的全仓扩大需要用户确认。
 
@@ -45,7 +45,7 @@ Step08当前只有历史reader/确定性renderer，其操作为零Provider；本
 
 ## 3. 唯一配置与模型绑定
 
-`repository-run-config-v3`在既有YAML增加Activity阅读配置；历史v2严格按原字段读取。工作区已接通加载和传递，默认/自定义值的定向测试通过，实际执行上限及完整回归仍待验证。以下为配置字段节选，不修改历史运行配置：
+`repository-run-config-v3`在既有YAML增加Activity阅读配置；历史v2严格按原字段读取。加载、传递、实际执行上限及历史计划重开已通过Task 2的八类80项定向测试和Spotless；这不是Task 9的完整本地CI。以下为配置字段节选，不修改历史运行配置：
 
 ```yaml
 schemaVersion: repository-run-config-v3
@@ -207,7 +207,7 @@ Activity未完成必须按最终有效计划计算，而不是遍历历史unknow
 
 显式新batch接续大包时先重开原计划和已冻结scope。合法成功slice和成功DRAFT不因另一slice失败丢失；后续slice容量失败也要公开保留先前成功。更改scope不是“再试同一阶段”，受影响稿件失效前先告知新生成范围。
 
-新 `--reuse-only` 是已批准待实施的窄选项：新run内纯读旧结果/范围核对并发布M11，不初始化Provider、不自动补模型请求；与主动retry互斥。不完整/无法判定时非成功，成功子集仍可查看，Step07不偷偷缩小分母。历史完整已审输入采纳与新版Prompt精确stage复用分开，不能放宽后者的指纹。
+新 `--reuse-only` 正在Task 3实施：新run内纯读旧结果/范围核对并发布M11，不初始化Provider、不自动补模型请求；与主动retry互斥。不完整/无法判定时非成功，成功子集仍可查看，Step07不偷偷缩小分母。历史完整已审输入采纳与新版Prompt精确stage复用分开，不能放宽后者的指纹。新离线批次沿用execution-config-v5的明确REUSE_ONLY模式及私有batch-result-v2采纳记录，保留原实际模型身份，并可作为后续显式复用来源；不伪造新模型请求。具体范围和版本检查统一见[接入合同](activity-explanation/integration-contracts.md#5-阅读计划v2历史核对及只复用输出)。
 
 execution-config-v5冻结有效activityReading值及Step07实际输入编码/任务合同。工作区已接通Activity配置保存和历史v4严格读取；Step07编码字段在后续对应步骤落地。YAML config-v3开放activityReading；已有activityRetry不迁位置。run-output-v6仍用activityBatchComplete，不新增modelBatchComplete别名。
 

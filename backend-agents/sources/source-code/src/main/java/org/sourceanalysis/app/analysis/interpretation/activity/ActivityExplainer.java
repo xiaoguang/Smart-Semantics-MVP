@@ -6,11 +6,13 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -226,6 +228,22 @@ public final class ActivityExplainer {
         configuration.activityReadingProfile());
   }
 
+  /**
+   * Reopens verified historical Activity output without constructing a current provider execution.
+   *
+   * <p>The caller owns publication of the returned result as its new checkpoint. This seam
+   * intentionally accepts the saved material set and historical checkpoint explicitly so that it
+   * cannot reconstruct a request from current prompts, provider settings, or reading limits.
+   */
+  public static ActivityExplanationResult reuseHistoricalActivities(
+      Path journalDirectory,
+      org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet verifiedMaterials,
+      ActivityExplanationResult sourceActivities,
+      AnalysisRunId sourceBatchId) {
+    return new ActivityHistoricalReuseResolver(journalDirectory)
+        .resolve(verifiedMaterials, sourceActivities, sourceBatchId);
+  }
+
   private ActivityExplainer(
       CanonicalModuleArtifactStore checkpointStore,
       AnalysisRunId outputRunId,
@@ -429,6 +447,7 @@ public final class ActivityExplainer {
     List<ReviewedActivity> reviewed = new ArrayList<>();
     List<ActivityEntryCoverage> coverage = new ArrayList<>();
     List<UnexplainedActivityEntry> unexplained = new ArrayList<>();
+    Map<String, ActivityPacketCompletion> packetCompletion = new HashMap<>();
     request.materials().coverage().stream()
         .filter(
             entry ->
@@ -450,6 +469,16 @@ public final class ActivityExplainer {
                             ? "CODE_READING_MATERIAL_NOT_COLLECTED"
                             : entry.limitations().get(0))));
     if (!request.selectedPacketIds().isEmpty()) {
+      request.materials().packets().stream()
+          .filter(packet -> !request.selectedPacketIds().contains(packet.packetId()))
+          .forEach(
+              packet ->
+                  addPacketCompletion(
+                      packetCompletion,
+                      incompletePacketCompletion(
+                          packet.packetId(),
+                          packet.entries().stream().map(value -> value.entryId()).toList(),
+                          "NOT_SELECTED_FOR_ACTIVITY_BATCH")));
       request.materials().coverage().stream()
           .filter(
               entry ->
@@ -475,6 +504,10 @@ public final class ActivityExplainer {
       ImmutableBytes cleanBytes = material.cleanInput();
       if (startedMaterials >= request.maxMaterialsToStart()) {
         coverage.addAll(notAnalyzed(material, "NOT_ANALYZED_EXECUTION_CAPACITY"));
+        addPacketCompletion(
+            packetCompletion,
+            incompletePacketCompletion(
+                material.materialId(), material.entryIds(), "NOT_ANALYZED_EXECUTION_CAPACITY"));
         continue;
       }
       startedMaterials++;
@@ -528,6 +561,10 @@ public final class ActivityExplainer {
       String capacityFailure = preflightFailure(cleanBytes, material, request.profile());
       if (capacityFailure != null) {
         coverage.addAll(notAnalyzed(material, capacityFailure));
+        addPacketCompletion(
+            packetCompletion,
+            incompletePacketCompletion(
+                material.materialId(), material.entryIds(), capacityFailure));
         continue;
       }
       ActivityJob job =
@@ -571,24 +608,15 @@ public final class ActivityExplainer {
       ActivityPacketPartialFailure partial = partialFailure(failure.cause());
       if (partial == null) {
         coverage.addAll(notAnalyzed(failedMaterial, failure.reasonCode()));
+        addPacketCompletion(
+            packetCompletion,
+            incompletePacketCompletion(
+                failedMaterial.materialId(), failedMaterial.entryIds(), failure.reasonCode()));
       } else {
         reviewed.addAll(partial.reviewedActivities());
+        coverage.addAll(partial.coverage());
         unexplained.addAll(partial.unexplainedEntries());
-        for (String entryId : failedMaterial.entryIds()) {
-          List<String> activityIds =
-              partial.reviewedActivities().stream()
-                  .filter(activity -> activity.entryIds().contains(entryId))
-                  .map(ReviewedActivity::activityId)
-                  .distinct()
-                  .sorted()
-                  .toList();
-          coverage.add(
-              activityIds.isEmpty()
-                  ? new ActivityEntryCoverage(
-                      entryId, "NOT_ANALYZED", List.of(), failure.reasonCode())
-                  : new ActivityEntryCoverage(
-                      entryId, "ANALYZED_WITH_GAPS", activityIds, "ACTIVITY_READING_INCOMPLETE"));
-        }
+        addPacketCompletion(packetCompletion, partial.packetCompletion());
       }
     }
     for (CompletedActivityJob completedJob : completedJobs) {
@@ -596,12 +624,269 @@ public final class ActivityExplainer {
       reviewed.addAll(completed.reviewedActivities());
       coverage.addAll(completed.coverage());
       unexplained.addAll(completed.unexplainedEntries());
+      addPacketCompletion(
+          packetCompletion,
+          Objects.requireNonNull(
+              completed.packetCompletion(), "Step05 Activity job packet completion"));
     }
     coverage.sort(Comparator.comparing(ActivityEntryCoverage::entryId));
     if (coverage.size() != request.materials().coverage().size()) {
       throw new ActivityExplanationException("ACTIVITY_COVERAGE_INPUT_INVALID");
     }
-    return new ActivityExplanationResult(reviewed, coverage, unexplained, null);
+    List<ActivityPacketCompletion> orderedPacketCompletion =
+        request.materials().packets().stream()
+            .map(
+                packet -> {
+                  ActivityPacketCompletion completion = packetCompletion.get(packet.packetId());
+                  if (completion == null) {
+                    throw new ActivityExplanationException("ACTIVITY_PACKET_COMPLETION_INVALID");
+                  }
+                  return completion;
+                })
+            .toList();
+    ActivityPacketCompletionVerification.requireExactStep05Packets(
+        request.materials(), orderedPacketCompletion);
+    ActivityPacketCompletionVerification.requireInternalConsistency(
+        orderedPacketCompletion, reviewed, unexplained);
+    return new ActivityExplanationResult(
+        reviewed, coverage, unexplained, orderedPacketCompletion, null);
+  }
+
+  private static void addPacketCompletion(
+      Map<String, ActivityPacketCompletion> completionByPacket,
+      ActivityPacketCompletion completion) {
+    if (completionByPacket.putIfAbsent(completion.packetId(), completion) != null) {
+      throw new ActivityExplanationException("ACTIVITY_PACKET_COMPLETION_INVALID");
+    }
+  }
+
+  private static ActivityPacketCompletion directPacketCompletion(
+      ActivityModelMaterial material,
+      List<ReviewedActivity> reviewedActivities,
+      List<UnexplainedActivityEntry> unexplainedEntries) {
+    List<String> entryIds = material.entryIds();
+    boolean semanticResult =
+        reviewedActivities.stream()
+                .anyMatch(activity -> material.materialId().equals(activity.materialId()))
+            || unexplainedEntries.stream()
+                .anyMatch(entry -> material.materialId().equals(entry.materialId()));
+    if (semanticResult) {
+      return new ActivityPacketCompletion(
+          material.materialId(),
+          entryIds,
+          ActivityPacketCompletion.Completion.COMPLETE,
+          List.of("whole-packet"),
+          List.of("whole-packet"),
+          List.of());
+    }
+    return incompletePacketCompletion(
+        material.materialId(), entryIds, "ACTIVITY_RESULT_UNEXPLAINED", "whole-packet");
+  }
+
+  private static ActivityPacketCompletion incompletePacketCompletion(
+      String packetId, List<String> entryIds, String reasonCode) {
+    return incompletePacketCompletion(packetId, entryIds, reasonCode, null);
+  }
+
+  private static ActivityPacketCompletion incompletePacketCompletion(
+      String packetId, List<String> entryIds, String reasonCode, String sliceKey) {
+    return new ActivityPacketCompletion(
+        packetId,
+        entryIds,
+        ActivityPacketCompletion.Completion.INCOMPLETE,
+        List.of(),
+        List.of(),
+        List.of(new ActivityPacketCompletion.IncompleteScope(sliceKey, entryIds, reasonCode)));
+  }
+
+  private static ActivityPacketCompletion scopedPacketCompletion(
+      ActivityReadingPlan readingPlan,
+      List<String> successfulSliceKeys,
+      List<ReviewedActivity> reviewedActivities,
+      List<UnexplainedActivityEntry> unexplainedEntries,
+      List<SliceFailureImpact> failedSlices) {
+    ObjectNode record = readingPlan.toPrivateRecord();
+    List<String> entryIds =
+        readingPlan.materialView().packet().entries().stream()
+            .map(entry -> entry.entryId())
+            .toList();
+    List<String> requiredSliceKeys = recordStrings(record.path("finalSliceKeys"));
+    List<String> knownSliceKeys = knownSliceKeys(readingPlan, record, requiredSliceKeys);
+    List<String> completedSliceKeys = new ArrayList<>();
+    List<ActivityPacketCompletion.IncompleteScope> incompleteScopes = new ArrayList<>();
+
+    for (String issue : recordStrings(record.path("currentOpenScopeIssues"))) {
+      String sliceKey = scopeKeyForIssue(issue, knownSliceKeys);
+      incompleteScopes.add(
+          new ActivityPacketCompletion.IncompleteScope(
+              sliceKey, entryIdsForScope(readingPlan, record, sliceKey, entryIds), issue));
+    }
+    Set<String> failedSliceKeys = new HashSet<>();
+    for (SliceFailureImpact failedSlice : failedSlices) {
+      if (!knownSliceKeys.contains(failedSlice.sliceKey())
+          || !failedSliceKeys.add(failedSlice.sliceKey())) {
+        throw new ActivityExplanationException("ACTIVITY_SLICE_FAILURE_INVALID");
+      }
+      incompleteScopes.add(
+          new ActivityPacketCompletion.IncompleteScope(
+              failedSlice.sliceKey(), failedSlice.entryIds(), failedSlice.reasonCode()));
+    }
+
+    Set<String> successful = Set.copyOf(successfulSliceKeys);
+    for (String sliceKey : requiredSliceKeys) {
+      List<String> scopeEntries = entryIdsForScope(readingPlan, record, sliceKey, entryIds);
+      if (successful.contains(sliceKey)
+          && hasSemanticSliceResult(
+              sliceKey, scopeEntries, reviewedActivities, unexplainedEntries)) {
+        completedSliceKeys.add(sliceKey);
+      } else if (!failedSliceKeys.contains(sliceKey)) {
+        incompleteScopes.add(
+            new ActivityPacketCompletion.IncompleteScope(
+                sliceKey, scopeEntries, "ACTIVITY_SLICE_RESULT_UNEXPLAINED"));
+      }
+    }
+    if (requiredSliceKeys.isEmpty() && incompleteScopes.isEmpty()) {
+      incompleteScopes.add(
+          new ActivityPacketCompletion.IncompleteScope(
+              null, entryIds, "READING_SCOPE_NOT_FINALIZED"));
+    }
+    ActivityPacketCompletion.Completion completion =
+        incompleteScopes.isEmpty() && completedSliceKeys.containsAll(requiredSliceKeys)
+            ? ActivityPacketCompletion.Completion.COMPLETE
+            : ActivityPacketCompletion.Completion.INCOMPLETE;
+    return new ActivityPacketCompletion(
+        readingPlan.materialView().packet().packetId(),
+        entryIds,
+        completion,
+        requiredSliceKeys,
+        completedSliceKeys,
+        incompleteScopes);
+  }
+
+  private static List<String> knownSliceKeys(
+      ActivityReadingPlan readingPlan, ObjectNode record, List<String> requiredSliceKeys) {
+    java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>(requiredSliceKeys);
+    readingPlan.slices().forEach(slice -> keys.add(slice.sliceKey()));
+    addSliceKeys(record.path("slices"), keys);
+    for (JsonNode decision : record.path("decisions")) {
+      addSliceKeys(decision.path("slices"), keys);
+    }
+    return List.copyOf(keys);
+  }
+
+  private static void addSliceKeys(JsonNode values, Set<String> keys) {
+    if (!values.isArray()) {
+      return;
+    }
+    for (JsonNode value : values) {
+      if (value.path("sliceKey").isTextual() && !value.path("sliceKey").textValue().isBlank()) {
+        keys.add(value.path("sliceKey").textValue());
+      }
+    }
+  }
+
+  private static List<String> entryIdsForScope(
+      ActivityReadingPlan readingPlan,
+      ObjectNode record,
+      String sliceKey,
+      List<String> allEntryIds) {
+    if (sliceKey == null) {
+      return allEntryIds;
+    }
+    java.util.LinkedHashSet<String> entryKeys = new java.util.LinkedHashSet<>();
+    readingPlan.slices().stream()
+        .filter(slice -> sliceKey.equals(slice.sliceKey()))
+        .forEach(slice -> entryKeys.addAll(slice.entryKeys()));
+    addScopeEntryKeys(record.path("slices"), sliceKey, entryKeys);
+    for (JsonNode decision : record.path("decisions")) {
+      addScopeEntryKeys(decision.path("slices"), sliceKey, entryKeys);
+    }
+    List<String> entries = entryIdsForEntryKeys(readingPlan, entryKeys);
+    return entries.isEmpty() ? allEntryIds : entries;
+  }
+
+  private static List<String> entryIdsForSlice(
+      ActivityReadingPlan readingPlan, ActivityReadingPlan.Slice slice) {
+    return entryIdsForEntryKeys(readingPlan, Set.copyOf(slice.entryKeys()));
+  }
+
+  private static List<String> entryIdsForEntryKeys(
+      ActivityReadingPlan readingPlan, Set<String> entryKeys) {
+    return readingPlan.materialView().packet().entries().stream()
+        .map(entry -> entry.entryId())
+        .filter(
+            entryId -> entryKeys.contains(readingPlan.materialView().entryKeysById().get(entryId)))
+        .toList();
+  }
+
+  private static void addScopeEntryKeys(JsonNode scopes, String sliceKey, Set<String> entryKeys) {
+    if (!scopes.isArray()) {
+      return;
+    }
+    for (JsonNode scope : scopes) {
+      if (!sliceKey.equals(scope.path("sliceKey").asText())) {
+        continue;
+      }
+      for (JsonNode entryKey : scope.path("entryKeys")) {
+        if (entryKey.isTextual() && !entryKey.textValue().isBlank()) {
+          entryKeys.add(entryKey.textValue());
+        }
+      }
+    }
+  }
+
+  private static boolean hasSemanticSliceResult(
+      String sliceKey,
+      List<String> entryIds,
+      List<ReviewedActivity> reviewedActivities,
+      List<UnexplainedActivityEntry> unexplainedEntries) {
+    return reviewedActivities.stream().anyMatch(activity -> sliceKey.equals(activity.sliceKey()))
+        || unexplainedEntries.stream().anyMatch(entry -> entryIds.contains(entry.entryId()));
+  }
+
+  private static String scopeKeyForIssue(String issue, List<String> knownSliceKeys) {
+    for (String prefix : List.of("READING_INCOMPLETE:", "READING_SCOPE_WITHDRAWN:")) {
+      if (issue.startsWith(prefix)) {
+        String candidate = issue.substring(prefix.length());
+        return knownSliceKeys.contains(candidate) ? candidate : null;
+      }
+    }
+    String prefix = "INPUT_CAPACITY_EXCEEDED:";
+    if (!issue.startsWith(prefix)) {
+      return null;
+    }
+    String suffix = issue.substring(prefix.length());
+    return knownSliceKeys.stream()
+        .sorted(Comparator.comparingInt(String::length).reversed())
+        .filter(
+            key ->
+                suffix.startsWith(key + ":")
+                    && suffix.substring(key.length()).matches(":[0-9]+/[0-9]+"))
+        .findFirst()
+        .orElse(null);
+  }
+
+  private static String failureReason(RuntimeException failure) {
+    for (Throwable current = failure; current != null; current = current.getCause()) {
+      if (current.getMessage() != null && !current.getMessage().isBlank()) {
+        return current.getMessage();
+      }
+    }
+    return "ACTIVITY_READING_INCOMPLETE";
+  }
+
+  private static List<String> recordStrings(JsonNode values) {
+    if (!values.isArray()) {
+      throw new ActivityExplanationException("ACTIVITY_READING_PLAN_INVALID");
+    }
+    List<String> result = new ArrayList<>();
+    for (JsonNode value : values) {
+      if (!value.isTextual() || value.textValue().isBlank() || result.contains(value.textValue())) {
+        throw new ActivityExplanationException("ACTIVITY_READING_PLAN_INVALID");
+      }
+      result.add(value.textValue());
+    }
+    return List.copyOf(result);
   }
 
   private static ActivityPacketPartialFailure partialFailure(Throwable failure) {
@@ -720,7 +1005,12 @@ public final class ActivityExplainer {
         scoped.unexplainedActivityEntries(),
         identityForRecord,
         JsonNodeFactory.instance.objectNode(),
-        JsonNodeFactory.instance.objectNode());
+        JsonNodeFactory.instance.objectNode(),
+        scoped
+            .packetCompletion()
+            .orElseThrow(
+                () -> new ActivityExplanationException("ACTIVITY_PACKET_COMPLETION_INVALID"))
+            .get(0));
   }
 
   /** Reviews each complete reading scope without treating one scope as the whole entry. */
@@ -738,6 +1028,8 @@ public final class ActivityExplainer {
     Objects.requireNonNull(binding, "activity model binding");
     List<ReviewedActivity> reviewed = new ArrayList<>();
     List<UnexplainedActivityEntry> unexplained = new ArrayList<>();
+    List<String> successfulSliceKeys = new ArrayList<>();
+    List<SliceFailureImpact> failedSlices = new ArrayList<>();
     RuntimeException firstPacketLocalFailure = null;
     for (ActivityReadingPlan.Slice slice : readingPlan.slices()) {
       try {
@@ -767,16 +1059,21 @@ public final class ActivityExplainer {
         completionSink.complete(new CompletedActivityJob(job, result));
         reviewed.addAll(result.reviewedActivities());
         unexplained.addAll(result.unexplainedEntries());
+        successfulSliceKeys.add(slice.sliceKey());
       } catch (RuntimeException failedSlice) {
         if (!BoundedActivityJobCoordinator.packetLocalFailure(failedSlice)) {
           throw failedSlice;
         }
+        failedSlices.add(sliceFailure(readingPlan, slice, failedSlice));
         if (BoundedActivityJobCoordinator.bindingFailure(failedSlice)) {
-          if (reviewed.isEmpty()) {
-            throw failedSlice;
-          }
           // Stop this binding, but retain slices already reviewed before the binding failed.
-          throw new ActivityPacketPartialFailure(failedSlice, reviewed, unexplained);
+          throw new ActivityPacketPartialFailure(
+              failedSlice,
+              reviewed,
+              scopedCoverage(readingPlan, reviewed, unexplained, failedSlices),
+              unexplained,
+              scopedPacketCompletion(
+                  readingPlan, successfulSliceKeys, reviewed, unexplained, failedSlices));
         }
         if (firstPacketLocalFailure == null) {
           firstPacketLocalFailure = failedSlice;
@@ -784,11 +1081,40 @@ public final class ActivityExplainer {
       }
     }
     if (firstPacketLocalFailure != null) {
-      if (reviewed.isEmpty()) {
-        throw firstPacketLocalFailure;
-      }
-      throw new ActivityPacketPartialFailure(firstPacketLocalFailure, reviewed, unexplained);
+      throw new ActivityPacketPartialFailure(
+          firstPacketLocalFailure,
+          reviewed,
+          scopedCoverage(readingPlan, reviewed, unexplained, failedSlices),
+          unexplained,
+          scopedPacketCompletion(
+              readingPlan, successfulSliceKeys, reviewed, unexplained, failedSlices));
     }
+    List<ActivityEntryCoverage> coverage =
+        scopedCoverage(readingPlan, reviewed, unexplained, List.of());
+    return new ActivityExplanationResult(
+        reviewed,
+        coverage,
+        unexplained,
+        List.of(
+            scopedPacketCompletion(
+                readingPlan, successfulSliceKeys, reviewed, unexplained, List.of())),
+        null);
+  }
+
+  private static SliceFailureImpact sliceFailure(
+      ActivityReadingPlan readingPlan, ActivityReadingPlan.Slice slice, RuntimeException failure) {
+    List<String> entryIds = entryIdsForSlice(readingPlan, slice);
+    if (entryIds.isEmpty()) {
+      throw new ActivityExplanationException("ACTIVITY_SLICE_FAILURE_INVALID");
+    }
+    return new SliceFailureImpact(slice.sliceKey(), entryIds, failureReason(failure));
+  }
+
+  private static List<ActivityEntryCoverage> scopedCoverage(
+      ActivityReadingPlan readingPlan,
+      List<ReviewedActivity> reviewedActivities,
+      List<UnexplainedActivityEntry> unexplainedEntries,
+      List<SliceFailureImpact> failedSlices) {
     ObjectNode record = readingPlan.toPrivateRecord();
     boolean requiredScopeIncomplete = record.path("requiredScopeIncomplete").asBoolean(false);
     boolean incompleteReading =
@@ -796,35 +1122,48 @@ public final class ActivityExplainer {
             || !readingPlan.unreadUnitKeys().isEmpty()
             || record.path("remainingNavigationPages").asInt() > 0
             || !record.path("unknowns").isEmpty()
-            || readingPlan.materialView().packet().unselectedUnits().size() > 0
+            || !readingPlan.materialView().packet().unselectedUnits().isEmpty()
             || !readingPlan.materialView().packet().limitations().isEmpty();
+    Set<String> failedEntryIds = new HashSet<>();
+    failedSlices.forEach(failure -> failedEntryIds.addAll(failure.entryIds()));
+    Set<String> unexplainedEntryIds =
+        unexplainedEntries.stream()
+            .map(UnexplainedActivityEntry::entryId)
+            .collect(Collectors.toSet());
     List<ActivityEntryCoverage> coverage = new ArrayList<>();
-    readingPlan.materialView().entryKeysById().entrySet().stream()
-        .sorted(Map.Entry.comparingByKey())
-        .forEach(
-            entry -> {
-              String entryId = entry.getKey();
-              List<String> activityIds =
-                  reviewed.stream()
-                      .filter(activity -> activity.entryIds().contains(entryId))
-                      .map(ReviewedActivity::activityId)
-                      .distinct()
-                      .sorted()
-                      .toList();
-              if (activityIds.isEmpty()) {
-                coverage.add(
-                    new ActivityEntryCoverage(
-                        entryId, "NOT_ANALYZED", List.of(), "ACTIVITY_READING_INCOMPLETE"));
-              } else {
-                coverage.add(
-                    new ActivityEntryCoverage(
-                        entryId,
-                        incompleteReading ? "ANALYZED_WITH_GAPS" : "ANALYZED",
-                        activityIds,
-                        requiredScopeIncomplete ? "ACTIVITY_READING_INCOMPLETE" : null));
-              }
-            });
-    return new ActivityExplanationResult(reviewed, coverage, unexplained, null);
+    for (var entry : readingPlan.materialView().packet().entries()) {
+      String entryId = entry.entryId();
+      List<String> activityIds =
+          reviewedActivities.stream()
+              .filter(activity -> activity.entryIds().contains(entryId))
+              .map(ReviewedActivity::activityId)
+              .distinct()
+              .sorted()
+              .toList();
+      if (failedEntryIds.contains(entryId)) {
+        coverage.add(
+            new ActivityEntryCoverage(
+                entryId,
+                activityIds.isEmpty() ? "NOT_ANALYZED" : "ANALYZED_WITH_GAPS",
+                activityIds,
+                "ACTIVITY_READING_INCOMPLETE"));
+      } else if (unexplainedEntryIds.contains(entryId)) {
+        coverage.add(
+            new ActivityEntryCoverage(entryId, "NOT_ANALYZED", List.of(), "MODEL_NOT_EXPLAINED"));
+      } else if (activityIds.isEmpty()) {
+        coverage.add(
+            new ActivityEntryCoverage(
+                entryId, "NOT_ANALYZED", List.of(), "ACTIVITY_READING_INCOMPLETE"));
+      } else {
+        coverage.add(
+            new ActivityEntryCoverage(
+                entryId,
+                incompleteReading ? "ANALYZED_WITH_GAPS" : "ANALYZED",
+                activityIds,
+                requiredScopeIncomplete ? "ACTIVITY_READING_INCOMPLETE" : null));
+      }
+    }
+    return List.copyOf(coverage);
   }
 
   private static void requireReusableReadingPlan(
@@ -991,7 +1330,9 @@ public final class ActivityExplainer {
         unexplainedEntries(material, review.unexplainedEntryKeys()),
         review.runtimeIdentity(),
         draft.response(),
-        review.response());
+        review.response(),
+        directPacketCompletion(
+            material, activities, unexplainedEntries(material, review.unexplainedEntryKeys())));
   }
 
   private ValidatedActivityResponse generateWithFailureContext(
@@ -1621,7 +1962,11 @@ public final class ActivityExplainer {
               unexplainedEntries(material, review.unexplainedEntryKeys()),
               runtimeIdentity,
               saved.path("draft"),
-              saved.path("review"));
+              saved.path("review"),
+              directPacketCompletion(
+                  material,
+                  activities,
+                  unexplainedEntries(material, review.unexplainedEntryKeys())));
       if (!job.materialId().equals(result.materialId())) {
         throw new ActivityExplanationException("ACTIVITY_REUSED_RESULT_MATERIAL_MISMATCH");
       }
@@ -2383,25 +2728,53 @@ public final class ActivityExplainer {
     }
   }
 
+  private record SliceFailureImpact(String sliceKey, List<String> entryIds, String reasonCode) {
+    private SliceFailureImpact {
+      if (sliceKey == null
+          || sliceKey.isBlank()
+          || entryIds == null
+          || entryIds.isEmpty()
+          || reasonCode == null
+          || reasonCode.isBlank()) {
+        throw new IllegalArgumentException("Activity slice failure impact is invalid");
+      }
+      entryIds = List.copyOf(entryIds);
+    }
+  }
+
   private static final class ActivityPacketPartialFailure extends IllegalArgumentException {
     private final List<ReviewedActivity> reviewedActivities;
+    private final List<ActivityEntryCoverage> coverage;
     private final List<UnexplainedActivityEntry> unexplainedEntries;
+    private final ActivityPacketCompletion packetCompletion;
 
     private ActivityPacketPartialFailure(
         RuntimeException failedSlice,
         List<ReviewedActivity> reviewedActivities,
-        List<UnexplainedActivityEntry> unexplainedEntries) {
+        List<ActivityEntryCoverage> coverage,
+        List<UnexplainedActivityEntry> unexplainedEntries,
+        ActivityPacketCompletion packetCompletion) {
       super("ACTIVITY_PACKET_PARTIAL", failedSlice);
       this.reviewedActivities = List.copyOf(reviewedActivities);
+      this.coverage = List.copyOf(coverage);
       this.unexplainedEntries = List.copyOf(unexplainedEntries);
+      this.packetCompletion = Objects.requireNonNull(packetCompletion, "partial packet completion");
     }
 
     private List<ReviewedActivity> reviewedActivities() {
       return reviewedActivities;
     }
 
+    private List<ActivityEntryCoverage> coverage() {
+      return coverage;
+    }
+
     private List<UnexplainedActivityEntry> unexplainedEntries() {
       return unexplainedEntries;
+    }
+
+    private ActivityPacketCompletion packetCompletion() {
+      return packetCompletion;
     }
   }
 }
