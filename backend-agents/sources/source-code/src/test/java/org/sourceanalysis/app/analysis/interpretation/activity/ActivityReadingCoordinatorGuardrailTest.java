@@ -74,6 +74,55 @@ class ActivityReadingCoordinatorGuardrailTest {
   }
 
   @Test
+  void configuredRetryRejectsAnUnknownUnitBeforePersistingTheSuccessfulReadingDecision() {
+    ActivityMaterialView view = neutralView(4, 40, 1_200);
+    String validSlice =
+        "[{\"sliceKey\":\"selected-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"read selected unit\"}]";
+    ScriptedProvider provider =
+        new ScriptedProvider(
+            response("[]", "[\"M999\"]", "[]"), response("[]", "[\"M2\"]", validSlice));
+    ActivityRetryProfile retry =
+        new ActivityRetryProfile(2, 0, 0, 1.0, 0.0, Set.of("UNKNOWN_REFERENCE"), Map.of());
+
+    ActivityReadingPlan plan =
+        new ActivityReadingCoordinator(provider, retry).coordinate(view, boundedProfile(6_000, 1));
+
+    assertThat(provider.inputs()).hasSize(2);
+    assertThat(plan.slices()).singleElement();
+    assertThat(plan.toPrivateRecord().path("decisions"))
+        .as("an invalid response cannot become a successful reading-plan decision")
+        .singleElement();
+    assertThat(scalarText(plan.toPrivateRecord().path("decisions"))).doesNotContain("M999");
+  }
+
+  @Test
+  void configuredRetryRejectsDuplicateSliceKeysBeforePersistingTheSuccessfulReadingDecision() {
+    ActivityMaterialView view = neutralView(4, 40, 1_200);
+    String duplicateSlices =
+        "[{\"sliceKey\":\"selected-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"first declaration\"},{\"sliceKey\":\"selected-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"duplicate declaration\"}]";
+    String validSlice =
+        "[{\"sliceKey\":\"selected-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"read selected unit\"}]";
+    ScriptedProvider provider =
+        new ScriptedProvider(
+            response("[]", "[\"M2\"]", duplicateSlices),
+            response("[]", "[\"M2\"]", validSlice));
+    ActivityRetryProfile retry =
+        new ActivityRetryProfile(
+            2, 0, 0, 1.0, 0.0, Set.of("RESPONSE_SCHEMA_INVALID"), Map.of());
+
+    ActivityReadingPlan plan =
+        new ActivityReadingCoordinator(provider, retry).coordinate(view, boundedProfile(6_000, 1));
+
+    assertThat(provider.inputs()).hasSize(2);
+    assertThat(plan.slices()).singleElement();
+    assertThat(plan.toPrivateRecord().path("decisions"))
+        .as("a duplicate declaration cannot be installed before validation succeeds")
+        .singleElement();
+    assertThat(scalarText(plan.toPrivateRecord().path("decisions")))
+        .doesNotContain("duplicate declaration");
+  }
+
+  @Test
   void acceptsNumericPageLabelFromTheNavigationInput() {
     ActivityMaterialView view = neutralView(12, 40, 1_200);
     ScriptedProvider provider =
@@ -165,7 +214,7 @@ class ActivityReadingCoordinatorGuardrailTest {
   }
 
   @Test
-  void anOversizedSliceCanBeNarrowedInTheNextReadingDecision() {
+  void rejectedOversizedSliceDoesNotForceAnotherReadingDecisionAfterItsNarrowerReplacementFits() {
     ActivityMaterialView view = neutralView(4, 40, 1_100);
     String broad =
         "[{\"sliceKey\":\"scope-one\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"read two units\"}]";
@@ -179,7 +228,9 @@ class ActivityReadingCoordinatorGuardrailTest {
         coordinate(provider, view, new ActivityReadingProfile(23_000, 7_000, 1, 4, 4));
 
     assertThat(provider.inputs())
-        .as("the broad slice must be measured and rejected before using the remaining round")
+        .as(
+            "the historic INPUT_CAPACITY_EXCEEDED unknown remains visible, but it cannot keep the"
+                + " current decision pending after the narrower replacement fits")
         .hasSize(2);
     assertThat(provider.inputs().get(1).path("unknowns").toString())
         .contains("INPUT_CAPACITY_EXCEEDED:scope-one");

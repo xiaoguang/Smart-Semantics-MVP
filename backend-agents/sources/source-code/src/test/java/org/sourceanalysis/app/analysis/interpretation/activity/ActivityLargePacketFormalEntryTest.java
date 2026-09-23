@@ -194,8 +194,57 @@ class ActivityLargePacketFormalEntryTest {
             });
   }
 
+  @Test
+  void retryingAnOversizedPacketReusesItsReadingPlanAndEarlierReviewedSlice(
+      @TempDir Path journal) {
+    CodeReadingMaterialSet materials = largeStep05Material();
+    ActivityRetryProfile oneAttempt =
+        new ActivityRetryProfile(1, 0, 0, 1.0, 0.0, Set.of("TRANSIENT_TRANSPORT"), Map.of());
+    AnalysisRunId failedRun = AnalysisRunId.parse("analysis-run:" + "e".repeat(64));
+    FormalLargePacketProvider firstProvider = new FormalLargePacketProvider("slice-m3");
+
+    ActivityExplanationResult partial =
+        ActivityExplainer.forExecution(execution(journal, failedRun, null, firstProvider, oneAttempt))
+            .explain(new ExplainCodeReadingMaterialsRequest(materials, PROFILE, 1));
+
+    assertThat(partial.reviewedActivities())
+        .as("a later failed required slice must not discard the earlier reviewed slice")
+        .extracting(ReviewedActivity::sliceKey)
+        .containsExactly("slice-m2");
+    assertThat(partial.coverage())
+        .singleElement()
+        .satisfies(
+            entry -> {
+              assertThat(entry.disposition()).isEqualTo("ANALYZED_WITH_GAPS");
+              assertThat(entry.reasonCode()).isEqualTo("ACTIVITY_READING_INCOMPLETE");
+            });
+
+    FormalLargePacketProvider resumedProvider = new FormalLargePacketProvider();
+    AnalysisRunId resumedRun = AnalysisRunId.parse("analysis-run:" + "d".repeat(64));
+    ActivityExplanationResult resumed =
+        ActivityExplainer.forExecution(
+                execution(journal, resumedRun, failedRun, resumedProvider, oneAttempt))
+            .explain(new ExplainCodeReadingMaterialsRequest(materials, PROFILE, 1));
+
+    assertThat(resumedProvider.taskKinds())
+        .as("the saved validated plan and all successful stages are reused exactly")
+        .containsExactly("ACTIVITY_REVIEW");
+    assertThat(resumed.reviewedActivities())
+        .extracting(ReviewedActivity::sliceKey)
+        .containsExactlyInAnyOrder("slice-m2", "slice-m3");
+  }
+
   private static ModelJobExecutionConfiguration execution(
       Path journal, AnalysisRunId run, AnalysisRunId reuseFrom, StructuredModelProvider provider) {
+    return execution(journal, run, reuseFrom, provider, ActivityRetryProfile.defaults());
+  }
+
+  private static ModelJobExecutionConfiguration execution(
+      Path journal,
+      AnalysisRunId run,
+      AnalysisRunId reuseFrom,
+      StructuredModelProvider provider,
+      ActivityRetryProfile retry) {
     return new ModelJobExecutionConfiguration(
         1,
         Map.of("pro", new ModelJobProviderBinding("pro", "pro-account", 1, provider, IDENTITY)),
@@ -206,7 +255,8 @@ class ActivityLargePacketFormalEntryTest {
             "report", List.of("pro")),
         journal,
         run,
-        reuseFrom);
+        reuseFrom,
+        retry);
   }
 
   @Test
@@ -464,9 +514,19 @@ class ActivityLargePacketFormalEntryTest {
     private final List<JsonNode> draftInputs = new ArrayList<>();
     private final List<JsonNode> reviewInputs = new ArrayList<>();
     private final Set<String> navigationUnitKeys = new LinkedHashSet<>();
+    private final String failingReviewSlice;
     private boolean requestedM2;
     private boolean requestedM3;
     private boolean proposedSlices;
+    private boolean failedReview;
+
+    private FormalLargePacketProvider() {
+      this(null);
+    }
+
+    private FormalLargePacketProvider(String failingReviewSlice) {
+      this.failingReviewSlice = failingReviewSlice;
+    }
 
     @Override
     public StructuredModelResponse generate(StructuredModelRequest request) {
@@ -524,9 +584,14 @@ class ActivityLargePacketFormalEntryTest {
 
     private StructuredModelResponse activityResponse(JsonNode input, boolean review) {
       boolean m2Scope = scalarText(input).contains(ActivityReadingCoordinatorTest.UNIT_TWO_BODY);
+      String sliceKey = m2Scope ? "slice-m2" : "slice-m3";
+      if (review && sliceKey.equals(failingReviewSlice) && !failedReview) {
+        failedReview = true;
+        throw new StructuredModelProviderFailure("TRANSIENT_TRANSPORT", true, true);
+      }
       ObjectNode response = JsonNodeFactory.instance.objectNode();
       ObjectNode activity = response.putArray("activities").addObject();
-      activity.put("activityLocalId", m2Scope ? "slice-m2" : "slice-m3");
+      activity.put("activityLocalId", sliceKey);
       activity.putArray("entryKeys").add("E1");
       activity.put("name", m2Scope ? "validate neutral input" : "write neutral record");
       activity.put("businessPurpose", "exercise formal bounded reading");

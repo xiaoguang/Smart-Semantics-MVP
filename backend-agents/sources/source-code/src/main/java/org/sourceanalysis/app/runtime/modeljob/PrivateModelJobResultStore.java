@@ -82,6 +82,12 @@ public final class PrivateModelJobResultStore {
     return readResult(jobKey, "failed-result.json");
   }
 
+  /** Reads one immutable Activity reading plan without treating it as a reviewed result. */
+  public Optional<ObjectNode> readActivityReadingPlan(String jobKey) {
+    requireJobKey(jobKey);
+    return readResult(jobKey, "decision-result.json");
+  }
+
   /** Reopens this batch's saved terminal failures in stable job order. */
   public List<ObjectNode> listTerminalFailures() {
     Path phaseDirectory =

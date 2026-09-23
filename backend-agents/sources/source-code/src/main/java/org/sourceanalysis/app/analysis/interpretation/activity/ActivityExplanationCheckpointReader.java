@@ -157,7 +157,8 @@ public final class ActivityExplanationCheckpointReader {
         throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
       }
       String disposition = requiredText(value, "disposition");
-      if ("NOT_ANALYZED".equals(disposition)) {
+      if ("NOT_ANALYZED".equals(disposition)
+          || "ACTIVITY_READING_INCOMPLETE".equals(nullableText(value.path("reasonCode")))) {
         partial = true;
       }
       ActivityEntryCoverage restoredEntry =

@@ -226,8 +226,36 @@ class ProcessCodexSubscriptionCommandTest {
                         "untrusted prompt",
                         ImmutableBytes.copyOf(
                             "{\"type\":\"object\"}".getBytes(StandardCharsets.UTF_8))))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessage("CODEX_SUBSCRIPTION_EXECUTION_FAILED:CAPACITY");
+        .isInstanceOf(StructuredModelProviderFailure.class)
+        .satisfies(
+            failure -> {
+              StructuredModelProviderFailure classified =
+                  (StructuredModelProviderFailure) failure;
+              assertThat(classified.getMessage())
+                  .isEqualTo("CODEX_SUBSCRIPTION_EXECUTION_FAILED:PROVIDER_CAPACITY");
+              assertThat(classified.reasonCode()).isEqualTo("PROVIDER_UNAVAILABLE");
+              assertThat(classified.requestStarted()).isTrue();
+              assertThat(classified.requestEnded()).isTrue();
+            });
+  }
+
+  @Test
+  void mapsRetryAndBindingFailuresToMachineReasonsWithoutExposingCliDiagnostics()
+      throws Exception {
+    assertFailureCategory("rate limit exceeded; token=private", "RATE_LIMIT", "RATE_LIMITED");
+    assertFailureCategory(
+        "service temporarily unavailable; token=private",
+        "PROVIDER_CAPACITY",
+        "PROVIDER_UNAVAILABLE");
+    assertFailureCategory("quota exhausted; token=private", "QUOTA_EXHAUSTED", "QUOTA_EXHAUSTED");
+    assertFailureCategory(
+        "authentication credential unauthorized; token=private",
+        "AUTHENTICATION",
+        "AUTHENTICATION_FAILED");
+    assertFailureCategory(
+        "model reasoning output-schema is invalid; token=private",
+        "MODEL_CONFIGURATION",
+        "CONFIGURATION_INVALID");
   }
 
   @Test
@@ -278,5 +306,47 @@ class ProcessCodexSubscriptionCommandTest {
                             executable, "gpt-5.6-luna", "high", Duration.ofSeconds(2))))
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("CODEX_SUBSCRIPTION_PREFLIGHT_FAILED");
+  }
+
+  private void assertFailureCategory(String diagnostic, String category, String reasonCode)
+      throws Exception {
+    Path executable = temporaryDirectory.resolve("fake-codex-" + category.toLowerCase());
+    Files.writeString(
+        executable,
+        "#!/bin/sh\n"
+            + "if [ \"$1\" = \"login\" ]; then\n"
+            + "  echo 'Logged in using ChatGPT'\n"
+            + "  exit 0\n"
+            + "fi\n"
+            + "echo '"
+            + diagnostic
+            + "' >&2\n"
+            + "exit 1\n",
+        StandardCharsets.UTF_8);
+    if (!executable.toFile().setExecutable(true, true)) {
+      throw new IllegalStateException("TEST_EXECUTABLE_PERMISSION_NOT_SET");
+    }
+
+    assertThatThrownBy(
+            () ->
+                new ProcessCodexSubscriptionCommand()
+                    .execute(
+                        new CodexSubscriptionProfile(
+                            executable, "gpt-5.6-terra", "xhigh", Duration.ofSeconds(2)),
+                        "untrusted prompt",
+                        ImmutableBytes.copyOf(
+                            "{\"type\":\"object\"}".getBytes(StandardCharsets.UTF_8))))
+        .isInstanceOf(StructuredModelProviderFailure.class)
+        .satisfies(
+            failure -> {
+              StructuredModelProviderFailure classified =
+                  (StructuredModelProviderFailure) failure;
+              assertThat(classified.getMessage())
+                  .isEqualTo("CODEX_SUBSCRIPTION_EXECUTION_FAILED:" + category);
+              assertThat(classified.reasonCode()).isEqualTo(reasonCode);
+              assertThat(classified.requestStarted()).isTrue();
+              assertThat(classified.requestEnded()).isTrue();
+              assertThat(classified.getMessage()).doesNotContain("token=private");
+            });
   }
 }

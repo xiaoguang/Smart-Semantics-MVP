@@ -567,7 +567,31 @@ public final class ActivityExplainer {
       if (failedMaterial == null) {
         throw new ActivityExplanationException("ACTIVITY_JOB_RESULT_MATERIAL_MISMATCH");
       }
-      coverage.addAll(notAnalyzed(failedMaterial, failure.reasonCode()));
+      ActivityPacketPartialFailure partial = partialFailure(failure.cause());
+      if (partial == null) {
+        coverage.addAll(notAnalyzed(failedMaterial, failure.reasonCode()));
+      } else {
+        reviewed.addAll(partial.reviewedActivities());
+        unexplained.addAll(partial.unexplainedEntries());
+        for (String entryId : failedMaterial.entryIds()) {
+          List<String> activityIds =
+              partial.reviewedActivities().stream()
+                  .filter(activity -> activity.entryIds().contains(entryId))
+                  .map(ReviewedActivity::activityId)
+                  .distinct()
+                  .sorted()
+                  .toList();
+          coverage.add(
+              activityIds.isEmpty()
+                  ? new ActivityEntryCoverage(
+                      entryId, "NOT_ANALYZED", List.of(), failure.reasonCode())
+                  : new ActivityEntryCoverage(
+                      entryId,
+                      "ANALYZED_WITH_GAPS",
+                      activityIds,
+                      "ACTIVITY_READING_INCOMPLETE"));
+        }
+      }
     }
     for (CompletedActivityJob completedJob : completedJobs) {
       ActivityJobResult completed = completedJob.result();
@@ -580,6 +604,15 @@ public final class ActivityExplainer {
       throw new ActivityExplanationException("ACTIVITY_COVERAGE_INPUT_INVALID");
     }
     return new ActivityExplanationResult(reviewed, coverage, unexplained, null);
+  }
+
+  private static ActivityPacketPartialFailure partialFailure(Throwable failure) {
+    for (Throwable current = failure; current != null; current = current.getCause()) {
+      if (current instanceof ActivityPacketPartialFailure partial) {
+        return partial;
+      }
+    }
+    return null;
   }
 
   private ActivityJobResult explainOversizedPacket(
@@ -597,13 +630,28 @@ public final class ActivityExplainer {
             stageResultStore,
             identity.jobKey(),
             binding.capacity());
+    ActivityReadingProfile readingProfile =
+        new ActivityReadingProfile(
+            profile.maxModelInputBytes(), profile.maxModelOutputBytes(), 128, 4, 32);
     ActivityReadingPlan readingPlan;
     try {
-      readingPlan =
-          reader.coordinate(
-              view,
-              new ActivityReadingProfile(
-                  profile.maxModelInputBytes(), profile.maxModelOutputBytes(), 128, 4, 32));
+      ObjectNode saved =
+          reuseResultStore == null
+              ? null
+              : reuseResultStore.readActivityReadingPlan(identity.jobKey()).orElse(null);
+      if (saved != null
+          && "activity-reading-plan-v2".equals(saved.path("schemaVersion").asText())
+          && identity.inputFingerprint().equals(saved.path("jobInputFingerprint").asText())
+          && binding.quotaScope().equals(saved.path("quotaScope").asText())
+          && ActivityReadingCoordinator.contractFingerprint(readingProfile)
+              .equals(saved.path("readingContractFingerprint").asText())
+          && !saved.path("requiredScopeIncomplete").asBoolean(false)
+          && saved.path("slices").isArray()
+          && !saved.path("slices").isEmpty()) {
+        readingPlan = reader.reopen(view, readingProfile, saved);
+      } else {
+        readingPlan = reader.coordinate(view, readingProfile);
+      }
     } catch (RuntimeException failedReading) {
       throw new ActivityStageFailure(
           failedReading.getMessage(),
@@ -615,7 +663,14 @@ public final class ActivityExplainer {
           retryProfile.maxAttempts("READING_PLAN"));
     }
     if (stageResultStore != null) {
-      stageResultStore.writeDecision(identity.jobKey(), readingPlan.toPrivateRecord());
+      ObjectNode decision = readingPlan.toPrivateRecord();
+      decision.put("schemaVersion", "activity-reading-plan-v2");
+      decision.put("jobInputFingerprint", identity.inputFingerprint());
+      decision.put("quotaScope", binding.quotaScope());
+      decision.put(
+          "readingContractFingerprint",
+          ActivityReadingCoordinator.contractFingerprint(readingProfile));
+      stageResultStore.writeDecision(identity.jobKey(), decision);
     }
     ActivityExplanationResult scoped = explain(readingPlan, profile, binding);
     ModelRuntimeIdentityV1 identityForRecord = binding.expectedRuntimeIdentity();
@@ -670,7 +725,15 @@ public final class ActivityExplainer {
               binding.key(),
               binding.quotaScope(),
               binding.expectedRuntimeIdentity());
-      ActivityJobResult result = explainMaterial(material, input, profile, identity, binding);
+      ActivityJobResult result;
+      try {
+        result = explainMaterial(material, input, profile, identity, binding);
+      } catch (RuntimeException failedSlice) {
+        if (reviewed.isEmpty()) {
+          throw failedSlice;
+        }
+        throw new ActivityPacketPartialFailure(failedSlice, reviewed, unexplained);
+      }
       ActivityJob job =
           new ActivityJob(
               material.materialId(), binding, identity, material.stagedExecution(), () -> result);
@@ -679,8 +742,10 @@ public final class ActivityExplainer {
       unexplained.addAll(result.unexplainedEntries());
     }
     ObjectNode record = readingPlan.toPrivateRecord();
+    boolean requiredScopeIncomplete = record.path("requiredScopeIncomplete").asBoolean(false);
     boolean incompleteReading =
-        !readingPlan.unreadUnitKeys().isEmpty()
+        requiredScopeIncomplete
+            || !readingPlan.unreadUnitKeys().isEmpty()
             || record.path("remainingNavigationPages").asInt() > 0
             || !record.path("unknowns").isEmpty()
             || readingPlan.materialView().packet().unselectedUnits().size() > 0
@@ -708,7 +773,7 @@ public final class ActivityExplainer {
                         entryId,
                         incompleteReading ? "ANALYZED_WITH_GAPS" : "ANALYZED",
                         activityIds,
-                        null));
+                        requiredScopeIncomplete ? "ACTIVITY_READING_INCOMPLETE" : null));
               }
             });
     return new ActivityExplanationResult(reviewed, coverage, unexplained, null);
@@ -1377,7 +1442,11 @@ public final class ActivityExplainer {
                 saved.path("unexplainedActivityEntries"),
                 JSON.getTypeFactory()
                     .constructCollectionType(List.class, UnexplainedActivityEntry.class));
-        if (coverage.stream().anyMatch(entry -> "NOT_ANALYZED".equals(entry.disposition()))) {
+        if (coverage.stream()
+            .anyMatch(
+                entry ->
+                    "NOT_ANALYZED".equals(entry.disposition())
+                        || entry.requiredScopeIncomplete())) {
           // A finished reading decision is not a finished business explanation. A later explicit
           // batch must be able to revisit packets for which no complete Activity was formed.
           return null;
@@ -2160,6 +2229,28 @@ public final class ActivityExplainer {
 
     private ActivityExplanationException(String message, Throwable cause) {
       super(message, cause);
+    }
+  }
+
+  private static final class ActivityPacketPartialFailure extends IllegalArgumentException {
+    private final List<ReviewedActivity> reviewedActivities;
+    private final List<UnexplainedActivityEntry> unexplainedEntries;
+
+    private ActivityPacketPartialFailure(
+        RuntimeException failedSlice,
+        List<ReviewedActivity> reviewedActivities,
+        List<UnexplainedActivityEntry> unexplainedEntries) {
+      super("ACTIVITY_PACKET_PARTIAL", failedSlice);
+      this.reviewedActivities = List.copyOf(reviewedActivities);
+      this.unexplainedEntries = List.copyOf(unexplainedEntries);
+    }
+
+    private List<ReviewedActivity> reviewedActivities() {
+      return reviewedActivities;
+    }
+
+    private List<UnexplainedActivityEntry> unexplainedEntries() {
+      return unexplainedEntries;
     }
   }
 }

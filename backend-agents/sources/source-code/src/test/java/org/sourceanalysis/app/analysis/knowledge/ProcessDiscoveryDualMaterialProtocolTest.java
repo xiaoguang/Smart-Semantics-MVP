@@ -145,6 +145,44 @@ class ProcessDiscoveryDualMaterialProtocolTest {
   }
 
   @Test
+  void rejectsReviewedActivitiesWhenAnyRequiredReadingSliceRemainsUnfulfilled() {
+    ActivityExplanationResult complete =
+        withCheckpoint(FrozenAnalysisCorpusDualMaterialSourceTest.step05Activities());
+    ActivityEntryCoverage first = complete.coverage().get(0);
+    ActivityExplanationResult incompleteRequiredSlice =
+        new ActivityExplanationResult(
+            complete.reviewedActivities(),
+            java.util.stream.Stream.concat(
+                    java.util.stream.Stream.of(
+                        new ActivityEntryCoverage(
+                            first.entryId(),
+                            "ANALYZED_WITH_GAPS",
+                            first.activityIds(),
+                            "ACTIVITY_READING_INCOMPLETE")),
+                    complete.coverage().stream().skip(1))
+                .toList(),
+            complete.unexplainedActivityEntries(),
+            complete.checkpoint());
+    CodeReadingMaterialSet materials = FrozenAnalysisCorpusDualMaterialSourceTest.step05Materials();
+
+    assertThatThrownBy(
+            () ->
+                new ProcessDiscoveryRequest(
+                    incompleteRequiredSlice,
+                    materials,
+                    step05Checkpoint(),
+                    profile(),
+                    RUN,
+                    materials.header().sourceInventory(),
+                    ignored -> FrozenAnalysisCorpusDualMaterialSourceTest.sourceTextSet(List.of()),
+                    null,
+                    null))
+        .as("one reviewed slice cannot make a packet with an unfulfilled required slice Step07-ready")
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("PROCESS_DISCOVERY_PARTIAL_ACTIVITY_INPUT");
+  }
+
+  @Test
   void permitsExplicitUpstreamNavigationGapWithoutCallingItAnActivityFailure() {
     ActivityExplanationResult complete =
         withCheckpoint(FrozenAnalysisCorpusDualMaterialSourceTest.step05Activities());

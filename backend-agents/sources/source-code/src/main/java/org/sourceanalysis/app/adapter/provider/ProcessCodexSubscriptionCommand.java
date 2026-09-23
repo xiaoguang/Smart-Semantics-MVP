@@ -100,9 +100,7 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
             failureCategory(
                 standardOutput, standardError, process.exitValue(), Files.isRegularFile(output));
         throw new StructuredModelProviderFailure(
-            "INPUT_CONTEXT_CAPACITY".equals(legacyCategory)
-                ? "PROVIDER_INPUT_CAPACITY_EXCEEDED"
-                : "UNKNOWN",
+            failureReason(legacyCategory),
             true,
             true,
             "CODEX_SUBSCRIPTION_EXECUTION_FAILED:" + legacyCategory,
@@ -201,8 +199,14 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
         "prompt is too long")) {
       return "INPUT_CONTEXT_CAPACITY";
     }
-    if (containsAny(diagnostic, "rate limit", "capacity", "quota")) {
-      return "CAPACITY";
+    if (containsAny(diagnostic, "quota exceeded", "quota exhausted", "insufficient quota")) {
+      return "QUOTA_EXHAUSTED";
+    }
+    if (containsAny(diagnostic, "rate limit", "too many requests")) {
+      return "RATE_LIMIT";
+    }
+    if (containsAny(diagnostic, "at capacity", "capacity", "temporarily unavailable")) {
+      return "PROVIDER_CAPACITY";
     }
     if (containsAny(diagnostic, "model", "reasoning", "output-schema", "schema")) {
       return "MODEL_CONFIGURATION";
@@ -214,6 +218,18 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
       return "SANDBOX_CONFIGURATION";
     }
     return "UNKNOWN";
+  }
+
+  private static String failureReason(String category) {
+    return switch (category) {
+      case "INPUT_CONTEXT_CAPACITY" -> "PROVIDER_INPUT_CAPACITY_EXCEEDED";
+      case "QUOTA_EXHAUSTED" -> "QUOTA_EXHAUSTED";
+      case "RATE_LIMIT" -> "RATE_LIMITED";
+      case "PROVIDER_CAPACITY" -> "PROVIDER_UNAVAILABLE";
+      case "AUTHENTICATION" -> "AUTHENTICATION_FAILED";
+      case "MODEL_CONFIGURATION", "SANDBOX_CONFIGURATION" -> "CONFIGURATION_INVALID";
+      default -> "UNKNOWN";
+    };
   }
 
   private static String readAtMost(Path file) {

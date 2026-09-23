@@ -64,7 +64,8 @@ public record ProcessDiscoveryRequest(
                   coverage ->
                       sourceCoverage.get(coverage.entryId())
                               != CodeReadingMaterialSet.CoverageStatus.NOT_COLLECTED
-                          && "NOT_ANALYZED".equals(coverage.disposition()))
+                          && ("NOT_ANALYZED".equals(coverage.disposition())
+                              || coverage.requiredScopeIncomplete()))
           || !activities.coverage().stream()
               .map(coverage -> coverage.entryId())
               .collect(java.util.stream.Collectors.toUnmodifiableSet())

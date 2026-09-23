@@ -691,7 +691,7 @@ final class SourceAnalysisExecution {
       output.printf("activityCheckpoint=%s%n", activities.checkpoint().moduleReceiptId().value());
       long failedPackets =
           activities.coverage().stream()
-              .filter(entry -> "NOT_ANALYZED".equals(entry.disposition()))
+              .filter(SourceAnalysisExecution::needsActivityRetry)
               .count();
       output.printf("notAnalyzedEntries=%d%n", failedPackets);
       output.printf("selectedPacketCount=%d%n", selectedPacketIds.size());
@@ -723,7 +723,7 @@ final class SourceAnalysisExecution {
       if (source == null) {
         throw failure("ACTIVITY_RETRY_COVERAGE_INVALID");
       }
-      if ("NOT_ANALYZED".equals(entry.disposition())
+      if (needsActivityRetry(entry)
           && !"NOT_SELECTED_FOR_ACTIVITY_BATCH".equals(entry.reasonCode())
           && !"NOT_ANALYZED_EXECUTION_CAPACITY".equals(entry.reasonCode())) {
         failed.addAll(source.packetIds());
@@ -777,7 +777,7 @@ final class SourceAnalysisExecution {
       if (source == null) {
         throw failure("ACTIVITY_BATCH_COVERAGE_INVALID");
       }
-      if ("NOT_ANALYZED".equals(entry.disposition())) {
+      if (needsActivityRetry(entry)) {
         ObjectNode failed = failures.addObject();
         failed.put("entryId", entry.entryId());
         ArrayNode packetIds = failed.putArray("packetIds");
@@ -815,7 +815,7 @@ final class SourceAnalysisExecution {
     for (CodeReadingMaterialSet.EntryCoverage entry : sourceCoverage) {
       if (entry.status() != CodeReadingMaterialSet.CoverageStatus.NOT_COLLECTED) {
         ActivityEntryCoverage activity = byEntry.get(entry.entryId());
-        if (activity == null || "NOT_ANALYZED".equals(activity.disposition())) {
+        if (activity == null || needsActivityRetry(activity)) {
           return false;
         }
       }
@@ -826,9 +826,13 @@ final class SourceAnalysisExecution {
   static List<ActivityEntryCoverage> reportableUnprocessedEntries(
       List<ActivityEntryCoverage> coverage) {
     return coverage.stream()
-        .filter(entry -> "NOT_ANALYZED".equals(entry.disposition()))
+        .filter(SourceAnalysisExecution::needsActivityRetry)
         .filter(entry -> !"NOT_SELECTED_FOR_ACTIVITY_BATCH".equals(entry.reasonCode()))
         .toList();
+  }
+
+  private static boolean needsActivityRetry(ActivityEntryCoverage entry) {
+    return "NOT_ANALYZED".equals(entry.disposition()) || entry.requiredScopeIncomplete();
   }
 
   private static Map<String, ObjectNode> savedActivityPacketFailures(
@@ -945,7 +949,7 @@ final class SourceAnalysisExecution {
         if (status == null) {
           throw failure("ACTIVITY_REUSE_COVERAGE_INVALID");
         }
-        boolean explained = !"NOT_ANALYZED".equals(status.disposition());
+        boolean explained = !needsActivityRetry(status);
         for (String sourcePacketId : source.packetIds()) {
           packetReusable.merge(sourcePacketId, explained, (left, right) -> left && right);
         }

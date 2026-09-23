@@ -14,6 +14,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Consumer;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProviderFailure;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
@@ -97,16 +100,25 @@ public final class ActivityReadingCoordinator {
       String pageId = "page-" + (pageIndex + 1);
       ObjectNode input =
           readingPlanInput(view, full, pages, pageIndex, selected, unknowns, profile);
-      ObjectNode decision = decide(view, profile, pageId, round, input);
+      ObjectNode decision =
+          decide(
+              view,
+              profile,
+              pageId,
+              round,
+              input,
+              value -> validateDecision(value, full, units, selected, requestedSlices, pages, profile));
       decisions.add(decision.deepCopy());
       shownPages.add(pageId);
       addSelected(decision.path("requestedUnitKeys"), units, selected);
       List<RequestedSlice> previousSlices = List.copyOf(requestedSlices);
       addSlices(decision.path("slices"), full, units, profile, requestedSlices);
+      int unknownsBeforeDecision = unknowns.size();
       strings(decision.path("unknowns"), "reading unknowns").forEach(unknowns::add);
       rejectOversizedSlices(
           view, full, selected, requestedSlices, previousSlices, unknowns, profile);
-      oversizedSlicePending = hasOversizedSlice(unknowns);
+      oversizedSlicePending =
+          hasOversizedSlice(unknowns.subList(unknownsBeforeDecision, unknowns.size()));
       for (String requestedPage :
           strings(decision.path("requestedNavigationPages"), "requested pages")) {
         // Page hints do not control the bounded sequential scan. A repeated page is redundant,
@@ -125,16 +137,25 @@ public final class ActivityReadingCoordinator {
         && pageIndex == pages.size()) {
       ObjectNode input = readingPlanInput(view, full, pages, -1, selected, unknowns, profile);
       addAvailableUnitsToSelection(input, pages, profile);
-      ObjectNode decision = decide(view, profile, "selection", round++, input);
+      ObjectNode decision =
+          decide(
+              view,
+              profile,
+              "selection",
+              round++,
+              input,
+              value -> validateDecision(value, full, units, selected, requestedSlices, pages, profile));
       decisions.add(decision.deepCopy());
       int before = selected.size();
       List<RequestedSlice> previousSlices = List.copyOf(requestedSlices);
       addSelected(decision.path("requestedUnitKeys"), units, selected);
       addSlices(decision.path("slices"), full, units, profile, requestedSlices);
+      int unknownsBeforeDecision = unknowns.size();
       strings(decision.path("unknowns"), "reading unknowns").forEach(unknowns::add);
       rejectOversizedSlices(
           view, full, selected, requestedSlices, previousSlices, unknowns, profile);
-      oversizedSlicePending = hasOversizedSlice(unknowns);
+      oversizedSlicePending =
+          hasOversizedSlice(unknowns.subList(unknownsBeforeDecision, unknowns.size()));
       extraRounds++;
       if (before == selected.size()
           && previousSlices.equals(requestedSlices)
@@ -145,18 +166,21 @@ public final class ActivityReadingCoordinator {
     }
 
     List<ActivityReadingPlan.Slice> slices = new ArrayList<>();
+    boolean requiredScopeIncomplete = shownPages.size() < pages.size();
     for (RequestedSlice requested : requestedSlices) {
       LinkedHashSet<String> modelRequired = new LinkedHashSet<>(requested.requiredUnitKeys());
       modelRequired.addAll(requested.sharedContextUnitKeys());
       modelRequired.addAll(entryMethodRefs);
       if (!selected.containsAll(modelRequired)) {
         unknowns.add("READING_INCOMPLETE:" + requested.sliceKey());
+        requiredScopeIncomplete = true;
         continue;
       }
       LinkedHashSet<String> required = completeUnitKeys(full, modelRequired, requested.entryKeys());
       ActivityReadingPacket packet = selectedPacket(view, full, required, requested.entryKeys());
       if (!profile.fitsDraftAndMaximumReview(packet.modelInputJson().size())) {
         unknowns.add("INPUT_CAPACITY_EXCEEDED:" + requested.sliceKey());
+        requiredScopeIncomplete = true;
         continue;
       }
       selected.addAll(required);
@@ -169,15 +193,92 @@ public final class ActivityReadingCoordinator {
               requested.scope(),
               packet));
     }
+    requiredScopeIncomplete |= slices.isEmpty() || hasOversizedSlice(unknowns);
 
     List<String> unread = units.keySet().stream().filter(key -> !selected.contains(key)).toList();
     ObjectNode privateRecord =
-        privateRecord(view, pages, shownPages, selected, unread, decisions, slices, unknowns);
+        privateRecord(
+            view,
+            pages,
+            shownPages,
+            selected,
+            unread,
+            decisions,
+            slices,
+            unknowns,
+            requiredScopeIncomplete);
     return new ActivityReadingPlan(view, shownPages, unread, slices, privateRecord);
   }
 
   int attemptsUsedAtFailure() {
     return lastAttemptOrdinal;
+  }
+
+  static String contractFingerprint(ActivityReadingProfile profile) {
+    ObjectNode contract = JsonNodeFactory.instance.objectNode();
+    contract.put("instructions", ActivityPromptCatalog.instructionsFor(TASK_KIND));
+    contract.put("responseSchema", RESPONSE_SCHEMA);
+    contract.put("maxModelInputBytes", profile.maxModelInputBytes());
+    contract.put("maxModelOutputBytes", profile.maxModelOutputBytes());
+    contract.put("maxNavigationPages", profile.maxNavigationPages());
+    contract.put("maxReadingRounds", profile.maxReadingRounds());
+    contract.put("maxSlicesPerPacket", profile.maxSlicesPerPacket());
+    try {
+      return java.util.HexFormat.of()
+          .formatHex(
+              MessageDigest.getInstance("SHA-256")
+                  .digest(new CanonicalJsonCodec().encodeCanonical(contract).copyToByteArray()));
+    } catch (NoSuchAlgorithmException unavailable) {
+      throw new IllegalStateException("SHA-256 is unavailable", unavailable);
+    }
+  }
+
+  /** Rebuilds a saved plan only from the current verified Step05 packet and matching full text. */
+  ActivityReadingPlan reopen(
+      ActivityMaterialView view, ActivityReadingProfile profile, ObjectNode saved) {
+    try {
+      if (!"activity-reading-plan-v2".equals(requiredText(saved, "schemaVersion"))
+          || !view.packet().packetId().equals(requiredText(saved, "packetId"))) {
+        throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+      }
+      ObjectNode full =
+          requireObject(
+              canonicalJson.parseCanonical(new ActivityMaterialProjector().materialize(view).modelInputJson()));
+      List<String> shown = new ArrayList<>();
+      for (JsonNode page : saved.path("navigationPages")) {
+        shown.add(requiredText(page, "pageId"));
+      }
+      List<String> unread = strings(saved.path("unreadUnitKeys"), "unread units");
+      List<ActivityReadingPlan.Slice> slices = new ArrayList<>();
+      Set<String> uniqueKeys = new HashSet<>();
+      for (JsonNode node : saved.path("slices")) {
+        String sliceKey = requiredText(node, "sliceKey");
+        if (!uniqueKeys.add(sliceKey)) {
+          throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+        }
+        List<String> entryKeys = strings(node.path("entryKeys"), "slice entries");
+        List<String> required = strings(node.path("requiredUnitKeys"), "slice units");
+        List<String> shared = strings(node.path("sharedContextUnitKeys"), "slice shared units");
+        ActivityReadingPacket packet =
+            selectedPacket(view, full, new LinkedHashSet<>(required), entryKeys);
+        if (!canonicalJson.parseCanonical(packet.modelInputJson())
+                .equals(node.path("readingPacket"))
+            || !profile.fitsDraftAndMaximumReview(packet.modelInputJson().size())) {
+          throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+        }
+        slices.add(
+            new ActivityReadingPlan.Slice(
+                sliceKey, entryKeys, required, shared, requiredText(node, "scope"), packet));
+      }
+      if (slices.isEmpty() || slices.size() > profile.maxSlicesPerPacket()) {
+        throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+      }
+      return new ActivityReadingPlan(view, shown, unread, slices, saved);
+    } catch (ActivityExplanationException invalid) {
+      throw invalid;
+    } catch (RuntimeException invalid) {
+      throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID", invalid);
+    }
   }
 
   private ActivityReadingPlan direct(ActivityMaterialView view, ActivityReadingPacket packet) {
@@ -193,6 +294,7 @@ public final class ActivityReadingCoordinator {
     record.put("mode", "DIRECT");
     record.put("totalNavigationPages", 0);
     record.put("remainingNavigationPages", 0);
+    record.put("requiredScopeIncomplete", false);
     record.putArray("navigationPages");
     record.putArray("unreadUnitKeys");
     record.putArray("unknowns");
@@ -440,7 +542,8 @@ public final class ActivityReadingCoordinator {
       ActivityReadingProfile profile,
       String pageId,
       int ordinal,
-      ObjectNode input) {
+      ObjectNode input,
+      Consumer<ObjectNode> validator) {
     ImmutableBytes bytes = canonicalJson.encodeCanonical(input);
     String instructions = ActivityPromptCatalog.instructionsFor(TASK_KIND);
     ImmutableBytes schema =
@@ -538,11 +641,41 @@ public final class ActivityReadingCoordinator {
         }
         throw new ActivityExplanationException("ACTIVITY_READING_PLAN_RESPONSE_INVALID");
       }
+      try {
+        validator.accept(decision);
+      } catch (ActivityExplanationException invalid) {
+        String reason =
+            "ACTIVITY_READING_UNIT_UNKNOWN".equals(invalid.getMessage())
+                ? "UNKNOWN_REFERENCE"
+                : "RESPONSE_SCHEMA_INVALID";
+        if (retryOrFail(decisionKey, attempt, maxAttempts, reason, true, true)) {
+          continue;
+        }
+        throw invalid;
+      }
       saveAttempt(decisionKey, attempt, "validation", attemptEvent("VALID", attempt, null));
       saveAttempt(decisionKey, attempt, "outcome", attemptEvent("SUCCESS", attempt, null));
       return decision;
     }
     throw new ActivityExplanationException("ACTIVITY_READING_PLAN_ATTEMPTS_EXHAUSTED");
+  }
+
+  private static void validateDecision(
+      ObjectNode decision,
+      ObjectNode full,
+      Map<String, JsonNode> units,
+      Set<String> selected,
+      List<RequestedSlice> requestedSlices,
+      List<List<JsonNode>> pages,
+      ActivityReadingProfile profile) {
+    Set<String> nextSelected = new LinkedHashSet<>(selected);
+    List<RequestedSlice> nextSlices = new ArrayList<>(requestedSlices);
+    addSelected(decision.path("requestedUnitKeys"), units, nextSelected);
+    addSlices(decision.path("slices"), full, units, profile, nextSlices);
+    strings(decision.path("unknowns"), "reading unknowns");
+    for (String page : strings(decision.path("requestedNavigationPages"), "requested pages")) {
+      pageIndex(page, pages.size());
+    }
   }
 
   private boolean retryOrFail(
@@ -863,13 +996,15 @@ public final class ActivityReadingCoordinator {
       List<String> unread,
       List<ObjectNode> decisions,
       List<ActivityReadingPlan.Slice> slices,
-      List<String> unknowns) {
+      List<String> unknowns,
+      boolean requiredScopeIncomplete) {
     ObjectNode record = JsonNodeFactory.instance.objectNode();
     record.put("schemaVersion", "activity-reading-plan-v1");
     record.put("packetId", view.packet().packetId());
     record.put("mode", slices.size() > 1 ? "SLICED" : "SELECTED");
     record.put("totalNavigationPages", pages.size());
     record.put("remainingNavigationPages", Math.max(0, pages.size() - shownPages.size()));
+    record.put("requiredScopeIncomplete", requiredScopeIncomplete);
     ArrayNode pageRecords = record.putArray("navigationPages");
     for (String page : shownPages) {
       ObjectNode value = pageRecords.addObject();

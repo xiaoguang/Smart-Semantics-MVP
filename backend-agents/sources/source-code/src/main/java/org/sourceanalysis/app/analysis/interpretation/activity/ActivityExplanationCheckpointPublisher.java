@@ -94,7 +94,10 @@ public final class ActivityExplanationCheckpointPublisher {
             .toList();
     List<String> gaps =
         coverage.stream()
-            .filter(value -> "NOT_ANALYZED".equals(value.disposition()))
+            .filter(
+                value ->
+                    "NOT_ANALYZED".equals(value.disposition())
+                        || value.requiredScopeIncomplete())
             .map(ActivityEntryCoverage::reasonCode)
             .distinct()
             .sorted(UTF8_ORDER)
@@ -168,7 +171,10 @@ public final class ActivityExplanationCheckpointPublisher {
             .toList();
     List<String> gaps =
         coverage.stream()
-            .filter(value -> "NOT_ANALYZED".equals(value.disposition()))
+            .filter(
+                value ->
+                    "NOT_ANALYZED".equals(value.disposition())
+                        || value.requiredScopeIncomplete())
             .map(ActivityEntryCoverage::reasonCode)
             .distinct()
             .sorted(UTF8_ORDER)
@@ -210,7 +216,11 @@ public final class ActivityExplanationCheckpointPublisher {
     unexplainedActivityEntries.forEach(entry -> unexplainedJson(unexplained.addObject(), entry));
     value.put(
         "semanticDeliveryStatus",
-        coverage.stream().anyMatch(entry -> "NOT_ANALYZED".equals(entry.disposition()))
+        coverage.stream()
+                .anyMatch(
+                    entry ->
+                        "NOT_ANALYZED".equals(entry.disposition())
+                            || entry.requiredScopeIncomplete())
             ? "PARTIAL"
             : "READY_FOR_PROCESS_EXPLANATION");
     String id = standaloneId("activity-coverage", schema, COVERAGE_TYPE, value);
