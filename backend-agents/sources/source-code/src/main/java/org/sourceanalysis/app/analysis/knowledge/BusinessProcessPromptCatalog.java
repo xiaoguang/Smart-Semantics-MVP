@@ -10,14 +10,14 @@ final class BusinessProcessPromptCatalog {
 
   private static final Map<String, String> RESOURCES =
       Map.ofEntries(
-          Map.entry("BUSINESS_CATALOG_DRAFT", "business-catalog-draft-v2.txt"),
-          Map.entry("BUSINESS_CATALOG_REVIEW", "business-catalog-review-v2.txt"),
-          Map.entry("BUSINESS_CATALOG_SHARD_DRAFT", "business-catalog-draft-v2.txt"),
-          Map.entry("BUSINESS_CATALOG_SHARD_REVIEW", "business-catalog-review-v2.txt"),
-          Map.entry("BUSINESS_CATALOG_MERGE_DRAFT", "business-catalog-merge-draft-v2.txt"),
-          Map.entry("BUSINESS_CATALOG_MERGE_REVIEW", "business-catalog-merge-review-v2.txt"),
-          Map.entry("PROCESS_MATERIAL_SELECTION", "process-material-selection-v2.txt"),
-          Map.entry("PROCESS_READING_CHECK", "process-reading-check-v4.txt"),
+          Map.entry("BUSINESS_CATALOG_DRAFT", "business-catalog-draft-v3.txt"),
+          Map.entry("BUSINESS_CATALOG_REVIEW", "business-catalog-review-v3.txt"),
+          Map.entry("BUSINESS_CATALOG_SHARD_DRAFT", "business-catalog-draft-v3.txt"),
+          Map.entry("BUSINESS_CATALOG_SHARD_REVIEW", "business-catalog-review-v3.txt"),
+          Map.entry("BUSINESS_CATALOG_MERGE_DRAFT", "business-catalog-merge-draft-v3.txt"),
+          Map.entry("BUSINESS_CATALOG_MERGE_REVIEW", "business-catalog-merge-review-v3.txt"),
+          Map.entry("PROCESS_MATERIAL_SELECTION", "process-material-selection-v3.txt"),
+          Map.entry("PROCESS_READING_CHECK", "process-reading-check-v5.txt"),
           Map.entry("BUSINESS_PROCESS_DRAFT", "business-process-draft-v4.txt"),
           Map.entry("BUSINESS_PROCESS_WRITE", "business-process-write-v1.txt"),
           Map.entry("BUSINESS_PROCESS_RULE_REVIEW", "business-process-rule-review-v1.txt"),

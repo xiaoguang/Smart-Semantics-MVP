@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
+import org.sourceanalysis.app.analysis.code.EntrySeed;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationResult;
 import org.sourceanalysis.app.analysis.interpretation.activity.ReviewedActivity;
@@ -154,7 +155,11 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       corpus = FrozenCorpus.open(request.activities(), request.materials());
     }
     List<ActivityIndexCard> cards =
-        corpus.activities().stream().map(ActivityIndexCard::from).toList();
+        corpus.activities().stream()
+            .map(
+                activity ->
+                    ActivityIndexCard.from(activity, corpus.sourceGroup(activity.activityId())))
+            .toList();
     CatalogResult savedOrNewCatalog =
         request.savedCatalogInput() == null
             ? discoverCatalog(cards, request.profile())
@@ -1306,14 +1311,14 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     if (modelJobs == null) {
       List<ObjectNode> result = new ArrayList<>();
       for (int index = 0; index < shards.size(); index++) {
-        result.add(discoverCatalogShard(shards.get(index), index, profile));
+        result.add(discoverCatalogShard(shards.get(index), index, shards.size(), profile));
       }
       return List.copyOf(result);
     }
     List<BoundedModelJobExecutor.ModelJob<IndexedJson>> jobs = new ArrayList<>();
     for (int index = 0; index < shards.size(); index++) {
       int ordinal = index;
-      ObjectNode input = catalogInput(shards.get(index), List.of());
+      ObjectNode input = catalogShardInput(shards.get(index), index, shards.size());
       ObjectNode schema = catalogSchema(shards.get(index));
       ModelJobProviderBinding binding = binding("processGroup", ordinal);
       jobs.add(
@@ -1324,7 +1329,8 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
               binding,
               () ->
                   new IndexedJson(
-                      ordinal, discoverCatalogShard(shards.get(ordinal), ordinal, profile))));
+                      ordinal,
+                      discoverCatalogShard(shards.get(ordinal), ordinal, shards.size(), profile))));
     }
     return executor().execute(jobs, ignored -> {}).stream()
         .map(BoundedModelJobExecutor.CompletedJob::result)
@@ -1334,19 +1340,26 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
   }
 
   private ObjectNode discoverCatalogShard(
-      List<ActivityIndexCard> shard, int ordinal, ProcessDiscoveryProfile profile) {
+      List<ActivityIndexCard> shard, int ordinal, int pageCount, ProcessDiscoveryProfile profile) {
     ObjectNode reviewed =
         draftAndReview(
             CATALOG_SHARD_DRAFT,
             CATALOG_SHARD_REVIEW,
             "business-catalog-shard-" + ordinal,
-            catalogInput(shard, List.of()),
+            catalogShardInput(shard, ordinal, pageCount),
             catalogSchema(shard),
             profile,
             binding("processGroup", ordinal),
             "process-catalog");
     parseCatalog(reviewed, shard);
     return reviewed;
+  }
+
+  private ObjectNode catalogShardInput(List<ActivityIndexCard> shard, int ordinal, int pageCount) {
+    ObjectNode input = catalogInput(shard, List.of());
+    input.put("catalogPageIndex", ordinal + 1);
+    input.put("catalogPageCount", pageCount);
+    return input;
   }
 
   private List<CandidateResult> reconstructReadingPackets(
@@ -4042,6 +4055,41 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       List<String> statementRefs,
       List<String> sourceRefs) {}
 
+  private record ActivitySourceGroup(
+      String packetKey,
+      String sourceSnapshotId,
+      String navigationReceiptId,
+      String packetId,
+      List<String> packetEntryIds,
+      List<String> activityEntryIds,
+      String sliceKey,
+      int groupPosition,
+      int groupSize) {
+
+    ObjectNode toJson() {
+      ObjectNode value = JsonNodeFactory.instance.objectNode();
+      value.put("packetKey", packetKey);
+      value.put("sourceSnapshotId", sourceSnapshotId);
+      value.put("navigationReceiptId", navigationReceiptId);
+      value.put("packetId", packetId);
+      ArrayNode entries = value.putArray("packetEntries");
+      for (int index = 0; index < packetEntryIds.size(); index++) {
+        ObjectNode entry = entries.addObject();
+        entry.put("entryKey", packetKey + "/E" + (index + 1));
+        entry.put("entryId", packetEntryIds.get(index));
+      }
+      strings(value.putArray("activityEntryIds"), activityEntryIds);
+      if (sliceKey == null) {
+        value.putNull("sliceKey");
+      } else {
+        value.put("sliceKey", sliceKey);
+      }
+      value.put("groupPosition", groupPosition);
+      value.put("groupSize", groupSize);
+      return value;
+    }
+  }
+
   private record ActivityIndexCard(
       String activityId,
       String name,
@@ -4054,8 +4102,9 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       List<String> codeDefinedResults,
       List<String> businessRules,
       List<String> terms,
-      List<String> scopeLimitations) {
-    static ActivityIndexCard from(ReviewedActivity activity) {
+      List<String> scopeLimitations,
+      ActivitySourceGroup sourceGroup) {
+    static ActivityIndexCard from(ReviewedActivity activity, ActivitySourceGroup sourceGroup) {
       return new ActivityIndexCard(
           activity.activityId(),
           activity.name(),
@@ -4068,7 +4117,8 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
           activity.codeDefinedResults(),
           activity.businessRules(),
           activity.terms(),
-          activity.scopeLimitations());
+          activity.scopeLimitations(),
+          sourceGroup);
     }
 
     ObjectNode toJson() {
@@ -4085,6 +4135,9 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       strings(value.putArray("businessRules"), businessRules);
       strings(value.putArray("terms"), terms);
       strings(value.putArray("scopeLimitations"), scopeLimitations);
+      if (sourceGroup != null) {
+        value.set("sourceGroup", sourceGroup.toJson());
+      }
       return value;
     }
 
@@ -4099,6 +4152,9 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       strings(
           value.putArray("sourceRefs"),
           corpus.activitySourceRefs(activityId).stream().sorted(UTF8_ORDER).toList());
+      if (sourceGroup != null) {
+        value.set("sourceGroup", sourceGroup.toJson());
+      }
       return value;
     }
   }
@@ -4123,6 +4179,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     private final Map<String, SourceReference> sourcesByRef;
     private final Map<String, Set<String>> sourceRefsByActivity;
     private final Map<String, Map<String, String>> statementsByActivity;
+    private final Map<String, ActivitySourceGroup> sourceGroupsByActivity;
     private final Set<String> unexplainedEntryIds;
 
     private FrozenCorpus(
@@ -4131,12 +4188,14 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         Map<String, SourceReference> sourcesByRef,
         Map<String, Set<String>> sourceRefsByActivity,
         Map<String, Map<String, String>> statementsByActivity,
+        Map<String, ActivitySourceGroup> sourceGroupsByActivity,
         Set<String> unexplainedEntryIds) {
       this.activities = activities;
       this.activitiesById = activitiesById;
       this.sourcesByRef = sourcesByRef;
       this.sourceRefsByActivity = sourceRefsByActivity;
       this.statementsByActivity = statementsByActivity;
+      this.sourceGroupsByActivity = sourceGroupsByActivity;
       this.unexplainedEntryIds = unexplainedEntryIds;
     }
 
@@ -4205,6 +4264,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
           Map.copyOf(sources),
           Map.copyOf(activitySources),
           Map.copyOf(statements),
+          Map.of(),
           unexplained);
     }
 
@@ -4247,6 +4307,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
                         throw failure("PROCESS_CORPUS_DUPLICATE_PACKET");
                       },
                       LinkedHashMap::new));
+      Map<String, ActivitySourceGroup> sourceGroups = sourceGroups(materialResult, activities);
       Map<PacketSourceKey, CodeReadingMaterialSet.SourceReference> packetSources =
           new LinkedHashMap<>();
       for (ReviewedActivity activity : activities) {
@@ -4329,7 +4390,58 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
           Map.copyOf(sources),
           Map.copyOf(activitySources),
           Map.copyOf(statements),
+          Map.copyOf(sourceGroups),
           unexplained);
+    }
+
+    private static Map<String, ActivitySourceGroup> sourceGroups(
+        CodeReadingMaterialSet materials, List<ReviewedActivity> activities) {
+      List<CodeReadingMaterialSet.Packet> packets =
+          materials.packets().stream()
+              .sorted(Comparator.comparing(CodeReadingMaterialSet.Packet::packetId, UTF8_ORDER))
+              .toList();
+      Map<String, List<ReviewedActivity>> byPacket =
+          activities.stream().collect(Collectors.groupingBy(ReviewedActivity::materialId));
+      Map<String, ActivitySourceGroup> groups = new LinkedHashMap<>();
+      for (int packetIndex = 0; packetIndex < packets.size(); packetIndex++) {
+        CodeReadingMaterialSet.Packet packet = packets.get(packetIndex);
+        String packetKey = "P" + (packetIndex + 1);
+        List<String> entryIds =
+            packet.entries().stream().map(EntrySeed::entryId).sorted(UTF8_ORDER).toList();
+        List<ReviewedActivity> members =
+            byPacket.getOrDefault(packet.packetId(), List.of()).stream()
+                .sorted(Comparator.comparing(ReviewedActivity::activityId, UTF8_ORDER))
+                .toList();
+        for (int position = 0; position < members.size(); position++) {
+          ReviewedActivity activity = members.get(position);
+          if (!entryIds.containsAll(activity.entryIds())) {
+            throw failure("PROCESS_CORPUS_ACTIVITY_ENTRY_OUTSIDE_PACKET");
+          }
+          ActivitySourceGroup group =
+              new ActivitySourceGroup(
+                  packetKey,
+                  materials.header().sourceSnapshotId(),
+                  materials
+                      .header()
+                      .navigationPublication()
+                      .publication()
+                      .analysisStepReceiptId()
+                      .value(),
+                  packet.packetId(),
+                  entryIds,
+                  activity.entryIds(),
+                  activity.sliceKey(),
+                  position + 1,
+                  members.size());
+          if (groups.put(activity.activityId(), group) != null) {
+            throw failure("PROCESS_CORPUS_DUPLICATE_ACTIVITY");
+          }
+        }
+      }
+      if (groups.size() != activities.size()) {
+        throw failure("PROCESS_CORPUS_ACTIVITY_PACKET_MISSING");
+      }
+      return groups;
     }
 
     private static Map<String, String> statementMap(ReviewedActivity activity) {
@@ -4362,6 +4474,13 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
 
     Set<String> activityIds() {
       return activitiesById.keySet();
+    }
+
+    ActivitySourceGroup sourceGroup(String activityId) {
+      if (!activitiesById.containsKey(activityId)) {
+        throw failure("PROCESS_CORPUS_UNKNOWN_ACTIVITY");
+      }
+      return sourceGroupsByActivity.get(activityId);
     }
 
     Set<String> unexplainedEntryIds() {
@@ -4420,6 +4539,10 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       strings(value.putArray("sourceRefs"), List.copyOf(activitySourceRefs(activityId)));
       strings(value.putArray("questions"), activity.questions());
       strings(value.putArray("scopeLimitations"), activity.scopeLimitations());
+      ActivitySourceGroup group = sourceGroupsByActivity.get(activityId);
+      if (group != null) {
+        value.set("sourceGroup", group.toJson());
+      }
       return value;
     }
 

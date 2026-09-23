@@ -9,6 +9,8 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.sourceanalysis.app.analysis.code.EntrySeed;
+import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationResult;
@@ -188,9 +190,14 @@ class FrozenAnalysisCorpusDualMaterialSourceTest {
 
   static CodeReadingMaterialSet step05Materials() {
     CodeReadingMaterialSet.Packet alpha =
-        packet("packet:alpha", "src/main/java/example/AlphaService.java", "method:alpha");
+        packet(
+            "packet:alpha",
+            "src/main/java/example/AlphaService.java",
+            "method:alpha",
+            "entry:alpha");
     CodeReadingMaterialSet.Packet beta =
-        packet("packet:beta", "src/main/java/example/BetaService.java", "method:beta");
+        packet(
+            "packet:beta", "src/main/java/example/BetaService.java", "method:beta", "entry:beta");
     return new CodeReadingMaterialSet(
         new CodeReadingMaterialSet.Header(
             new VerifiedSourceInventoryReference(
@@ -214,10 +221,10 @@ class FrozenAnalysisCorpusDualMaterialSourceTest {
   }
 
   private static CodeReadingMaterialSet.Packet packet(
-      String packetId, String path, String methodKey) {
+      String packetId, String path, String methodKey, String entryId) {
     return new CodeReadingMaterialSet.Packet(
         packetId,
-        List.of(),
+        List.of(new EntrySeed(entryId, methodKey, new SourceRange(0, 1, 1, 1), "fixture entry")),
         List.of(),
         List.of(),
         new CodeReadingMaterialSet.PersistenceSelection(
@@ -250,7 +257,7 @@ class FrozenAnalysisCorpusDualMaterialSourceTest {
         documents);
   }
 
-  private static VerifiedSourceTextDocument text(String path, String source) {
+  static VerifiedSourceTextDocument text(String path, String source) {
     byte[] bytes = source.getBytes(StandardCharsets.UTF_8);
     String sha = sha256(bytes);
     return new VerifiedSourceTextDocument(

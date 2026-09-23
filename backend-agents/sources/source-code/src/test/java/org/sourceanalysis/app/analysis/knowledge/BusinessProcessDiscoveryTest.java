@@ -24,9 +24,12 @@ import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
+import org.sourceanalysis.app.analysis.code.EntrySeed;
+import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationResult;
+import org.sourceanalysis.app.analysis.interpretation.activity.ActivityPacketCompletion;
 import org.sourceanalysis.app.analysis.interpretation.activity.ReviewedActivity;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
@@ -35,9 +38,14 @@ import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialM
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
 import org.sourceanalysis.app.analysis.interpretation.material.ModelActivityPacket;
 import org.sourceanalysis.app.analysis.interpretation.material.SourceReference;
+import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
+import org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationAddress;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
+import org.sourceanalysis.app.artifact.AnalysisStepReceiptId;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ModuleArtifactRoot;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
@@ -48,6 +56,9 @@ import org.sourceanalysis.app.runtime.modeljob.ModelJobProviderBinding;
 
 /** Target Step07 seam: full-repository catalog, detailed reconstruction, then consolidation. */
 class BusinessProcessDiscoveryTest {
+
+  private static final AnalysisRunId SOURCE_GROUP_RUN =
+      AnalysisRunId.parse("analysis-run:" + "e".repeat(64));
 
   @TempDir java.nio.file.Path temporaryDirectory;
 
@@ -115,6 +126,111 @@ class BusinessProcessDiscoveryTest {
                 findById(provider.catalogCards(), "activityId", "activity:approve"),
                 "businessRules"))
         .containsExactly("当前状态为0时允许审核为1");
+  }
+
+  @Test
+  void retainsStep05PacketEntryGroupsAcrossCatalogSelectionCheckAndReadingPacket() {
+    SourceGroupFixture fixture = sourceGroupFixture(4);
+    ScriptedProvider provider = new ScriptedProvider("stop-after-source-group-packet");
+    DefaultBusinessProcessDiscovery discovery = new DefaultBusinessProcessDiscovery(provider);
+
+    DefaultBusinessProcessDiscovery.CatalogSample sample =
+        discovery.discoverCatalogSample(fixture.request());
+    assertThat(provider.catalogCards()).hasSize(8);
+    assertThat(provider.selectionInput().path("activityIndexCards")).hasSize(8);
+
+    assertThatThrownBy(() -> discovery.reconstructSelectedPreview(sample, sample.candidateIds()))
+        .hasMessage("FIXTURE_STOP_AFTER_SOURCE_GROUP_PACKET");
+
+    JsonNode checkPacket = provider.readingCheckInput().path("readingPacket");
+    JsonNode processPacket = provider.processInput().path("readingPacket");
+    assertThat(checkPacket.path("reviewedActivities")).hasSize(8);
+    assertThat(processPacket.path("reviewedActivities")).hasSize(8);
+    assertStep05SourceGroups(provider.catalogCards(), fixture);
+    assertStep05SourceGroups(provider.selectionInput().path("activityIndexCards"), fixture);
+    assertStep05SourceGroups(checkPacket.path("reviewedActivities"), fixture);
+    assertStep05SourceGroups(processPacket.path("reviewedActivities"), fixture);
+    for (ReviewedActivity activity : fixture.activities()) {
+      JsonNode expected = sourceGroupFor(provider.catalogCards(), activity.activityId());
+      assertThat(
+              sourceGroupFor(
+                  provider.selectionInput().path("activityIndexCards"), activity.activityId()))
+          .isEqualTo(expected);
+      assertThat(sourceGroupFor(checkPacket.path("reviewedActivities"), activity.activityId()))
+          .isEqualTo(expected);
+      assertThat(sourceGroupFor(processPacket.path("reviewedActivities"), activity.activityId()))
+          .isEqualTo(expected);
+    }
+    JsonNode mainSlice =
+        findById(processPacket.path("reviewedActivities"), "activityId", "activity:main-slice-000");
+    assertThat(mainSlice.path("businessPurpose").asText())
+        .isEqualTo("Purpose activity:main-slice-000");
+    assertThat(mainSlice.path("activitySteps"))
+        .extracting(JsonNode::asText)
+        .containsExactly("Step activity:main-slice-000");
+    assertThat(mainSlice.path("businessRules"))
+        .extracting(JsonNode::asText)
+        .containsExactly("Rule activity:main-slice-000");
+  }
+
+  @Test
+  void retainsAll418SourceGroupCardsAcrossCatalogShardsAndGlobalSelection() {
+    ProcessDiscoveryProfile capacityProfile =
+        new ProcessDiscoveryProfile(32, 32, 32, 1_000_000, 1_000_000, 1_000_000, 8, 1_024, 512);
+    SourceGroupFixture fixture = sourceGroupFixture(414, capacityProfile);
+    ScriptedProvider provider = new ScriptedProvider();
+
+    new DefaultBusinessProcessDiscovery(provider).discoverCatalogSample(fixture.request());
+
+    assertThat(provider.catalogShardInputs()).hasSize(14);
+    JsonNode mergeCards = provider.catalogCards();
+    for (int index = 0; index < provider.catalogShardInputs().size(); index++) {
+      JsonNode shardInput = provider.catalogShardInputs().get(index);
+      assertThat(shardInput.path("catalogPageIndex").asInt()).isEqualTo(index + 1);
+      assertThat(shardInput.path("catalogPageCount").asInt()).isEqualTo(14);
+      assertThat(shardInput.path("activityIndexCards").size()).isBetween(1, 32);
+      assertThat(shardInput.path("activityIndexCards"))
+          .allSatisfy(
+              card -> {
+                JsonNode group = card.path("sourceGroup");
+                assertThat(group.isObject()).isTrue();
+                assertThat(group.path("packetEntries")).isNotEmpty();
+                assertThat(group)
+                    .isEqualTo(sourceGroupFor(mergeCards, card.path("activityId").asText()));
+              });
+    }
+
+    JsonNode selection = provider.selectionInput();
+    assertThat(mergeCards).hasSize(418);
+    assertThat(provider.catalogInput().path("catalogPageIndex").isMissingNode()).isTrue();
+    assertThat(provider.catalogInput().path("catalogPageCount").isMissingNode()).isTrue();
+    assertThat(selection.path("activityIndexCards")).hasSize(418);
+    assertThat(selection.path("activityIndexCards"))
+        .extracting(card -> card.path("activityId").asText())
+        .containsExactlyElementsOf(
+            fixture.activities().stream().map(ReviewedActivity::activityId).sorted().toList());
+    assertThat(selection.path("savedActivityDispositions")).hasSize(418);
+    assertThat(selection.path("savedActivityDispositions"))
+        .extracting(disposition -> disposition.path("activityId").asText())
+        .containsExactlyElementsOf(
+            fixture.activities().stream().map(ReviewedActivity::activityId).sorted().toList());
+    assertThat(selection.path("catalogPageIndex").isMissingNode()).isTrue();
+    assertThat(selection.path("catalogPageCount").isMissingNode()).isTrue();
+    assertStep05SourceGroups(mergeCards, fixture);
+    assertStep05SourceGroups(selection.path("activityIndexCards"), fixture);
+
+    List<String> shardedActivityIds =
+        provider.catalogShardInputs().stream()
+            .flatMap(
+                input ->
+                    java.util.stream.StreamSupport.stream(
+                        input.path("activityIndexCards").spliterator(), false))
+            .map(card -> card.path("activityId").asText())
+            .toList();
+    assertThat(shardedActivityIds).hasSize(418).doesNotHaveDuplicates();
+    assertThat(shardedActivityIds)
+        .containsExactlyElementsOf(
+            fixture.activities().stream().map(ReviewedActivity::activityId).sorted().toList());
   }
 
   @Test
@@ -818,6 +934,317 @@ class BusinessProcessDiscoveryTest {
         placeholderActivityCheckpoint());
   }
 
+  private static SourceGroupFixture sourceGroupFixture(int mainSliceCount) {
+    return sourceGroupFixture(
+        mainSliceCount,
+        new ProcessDiscoveryProfile(32, 32, 32, 16_000, 64_000, 16_000, 8, 128, 512));
+  }
+
+  private static SourceGroupFixture sourceGroupFixture(
+      int mainSliceCount, ProcessDiscoveryProfile profile) {
+    CodeReadingMaterialSet baseline = FrozenAnalysisCorpusDualMaterialSourceTest.step05Materials();
+    List<EntrySeed> mainEntries =
+        List.of(
+            sourceGroupEntry("entry:main-1"),
+            sourceGroupEntry("entry:main-2"),
+            sourceGroupEntry("entry:main-3"));
+    List<EntrySeed> sameAEntries = List.of(sourceGroupEntry("entry:same-title"));
+    List<EntrySeed> sameBEntries =
+        List.of(sourceGroupEntry("entry:same-title"), sourceGroupEntry("entry:same-title-extra"));
+    List<CodeReadingMaterialSet.Packet> packets =
+        List.of(
+            sourceGroupPacket("packet:main", mainEntries),
+            sourceGroupPacket("packet:same-a", sameAEntries),
+            sourceGroupPacket("packet:same-b", sameBEntries));
+
+    List<ReviewedActivity> reviewed = new ArrayList<>();
+    for (int index = 0; index < mainSliceCount; index++) {
+      String activityId = "activity:main-slice-%03d".formatted(index);
+      reviewed.add(
+          sourceGroupActivity(
+              activityId,
+              "packet:main",
+              List.of("entry:main-1"),
+              "slice:main-%03d".formatted(index)));
+    }
+    reviewed.add(
+        sourceGroupActivity(
+            "activity:overlap-12",
+            "packet:main",
+            List.of("entry:main-1", "entry:main-2"),
+            "slice:overlap-12"));
+    reviewed.add(
+        sourceGroupActivity(
+            "activity:overlap-23",
+            "packet:main",
+            List.of("entry:main-2", "entry:main-3"),
+            "slice:overlap-23"));
+    reviewed.add(
+        sourceGroupActivity(
+            "activity:same-title-a", "packet:same-a", List.of("entry:same-title"), null));
+    reviewed.add(
+        sourceGroupActivity(
+            "activity:same-title-b",
+            "packet:same-b",
+            List.of("entry:same-title", "entry:same-title-extra"),
+            null));
+
+    List<CodeReadingMaterialSet.EntryCoverage> materialCoverage =
+        List.of(
+            sourceGroupCoverage("entry:main-1", List.of("packet:main")),
+            sourceGroupCoverage("entry:main-2", List.of("packet:main")),
+            sourceGroupCoverage("entry:main-3", List.of("packet:main")),
+            sourceGroupCoverage("entry:same-title", List.of("packet:same-a", "packet:same-b")),
+            sourceGroupCoverage("entry:same-title-extra", List.of("packet:same-b")));
+    CodeReadingMaterialSet materials =
+        new CodeReadingMaterialSet(baseline.header(), packets, materialCoverage);
+    List<ActivityEntryCoverage> activityCoverage =
+        materialCoverage.stream()
+            .map(
+                entry ->
+                    new ActivityEntryCoverage(
+                        entry.entryId(),
+                        "ANALYZED",
+                        reviewed.stream()
+                            .filter(activity -> activity.entryIds().contains(entry.entryId()))
+                            .map(ReviewedActivity::activityId)
+                            .toList(),
+                        null))
+            .toList();
+    List<ActivityPacketCompletion> packetCompletion =
+        packets.stream()
+            .map(
+                packet -> {
+                  List<String> sliceKeys =
+                      reviewed.stream()
+                          .filter(activity -> packet.packetId().equals(activity.materialId()))
+                          .map(
+                              activity ->
+                                  activity.sliceKey() == null
+                                      ? "whole-packet"
+                                      : activity.sliceKey())
+                          .distinct()
+                          .sorted()
+                          .toList();
+                  List<String> entryIds =
+                      packet.entries().stream().map(EntrySeed::entryId).sorted().toList();
+                  return new ActivityPacketCompletion(
+                      packet.packetId(),
+                      entryIds,
+                      ActivityPacketCompletion.Completion.COMPLETE,
+                      sliceKeys,
+                      sliceKeys,
+                      List.of());
+                })
+            .toList();
+    ActivityExplanationResult activities =
+        new ActivityExplanationResult(
+            reviewed,
+            activityCoverage,
+            List.of(),
+            packetCompletion,
+            sourceGroupActivityCheckpoint());
+    ProcessDiscoveryRequest request =
+        new ProcessDiscoveryRequest(
+            activities,
+            materials,
+            sourceGroupStep05Checkpoint(),
+            profile,
+            SOURCE_GROUP_RUN,
+            materials.header().sourceInventory(),
+            ignored ->
+                FrozenAnalysisCorpusDualMaterialSourceTest.sourceTextSet(
+                    List.of(
+                        FrozenAnalysisCorpusDualMaterialSourceTest.text(
+                            "src/main/java/example/FrozenGroupSource.java",
+                            "class FrozenGroupSource {}\n"))),
+            null,
+            null);
+    return new SourceGroupFixture(request, materials, reviewed);
+  }
+
+  private static EntrySeed sourceGroupEntry(String entryId) {
+    return new EntrySeed(
+        entryId, "method:" + entryId, new SourceRange(0, 4, 1, 1), "fixture entry");
+  }
+
+  private static CodeReadingMaterialSet.Packet sourceGroupPacket(
+      String packetId, List<EntrySeed> entries) {
+    return new CodeReadingMaterialSet.Packet(
+        packetId,
+        entries,
+        List.of(),
+        List.of(),
+        new CodeReadingMaterialSet.PersistenceSelection(
+            List.of(), List.of(), List.of(), List.of(), List.of()),
+        List.of(),
+        List.of(),
+        List.of(),
+        0L);
+  }
+
+  private static CodeReadingMaterialSet.EntryCoverage sourceGroupCoverage(
+      String entryId, List<String> packetIds) {
+    return new CodeReadingMaterialSet.EntryCoverage(
+        entryId, packetIds, CodeReadingMaterialSet.CoverageStatus.COLLECTED, List.of());
+  }
+
+  private static ReviewedActivity sourceGroupActivity(
+      String activityId, String packetId, List<String> entryIds, String sliceKey) {
+    String name = activityId.startsWith("activity:same-title-") ? "同名业务活动" : "活动 " + activityId;
+    return new ReviewedActivity(
+        activityId,
+        packetId,
+        entryIds,
+        name,
+        "Purpose " + activityId,
+        List.of("operator"),
+        List.of("object"),
+        List.of("input"),
+        List.of("condition"),
+        List.of("Step " + activityId),
+        List.of("Result " + activityId),
+        List.of("Rule " + activityId),
+        List.of(),
+        List.of("term"),
+        "DIRECT_CODE_BEHAVIOR",
+        List.of(),
+        List.of(),
+        List.of(),
+        "CODE_READING_MATERIALS",
+        sliceKey,
+        Map.of("fixture-source", "original-fixture-source"));
+  }
+
+  private static void assertStep05SourceGroups(JsonNode values, SourceGroupFixture fixture) {
+    assertThat(values).hasSize(fixture.activities().size());
+    List<String> sortedPacketIds =
+        fixture.materials().packets().stream()
+            .map(CodeReadingMaterialSet.Packet::packetId)
+            .sorted()
+            .toList();
+    for (ReviewedActivity activity : fixture.activities()) {
+      JsonNode value = findById(values, "activityId", activity.activityId());
+      JsonNode group = value.path("sourceGroup");
+      CodeReadingMaterialSet.Packet packet =
+          fixture.materials().packets().stream()
+              .filter(candidate -> candidate.packetId().equals(activity.materialId()))
+              .findFirst()
+              .orElseThrow();
+      int packetIndex = sortedPacketIds.indexOf(packet.packetId());
+      String packetKey = "P" + (packetIndex + 1);
+      List<EntrySeed> sortedEntries =
+          packet.entries().stream()
+              .sorted(java.util.Comparator.comparing(EntrySeed::entryId))
+              .toList();
+      long groupSize =
+          fixture.activities().stream()
+              .filter(candidate -> packet.packetId().equals(candidate.materialId()))
+              .count();
+
+      assertThat(group.isObject()).as("sourceGroup for %s", activity.activityId()).isTrue();
+      assertThat(group.path("packetKey").asText()).isEqualTo(packetKey);
+      assertThat(group.path("sourceSnapshotId").asText())
+          .isEqualTo(fixture.materials().header().sourceSnapshotId());
+      assertThat(group.path("navigationReceiptId").asText())
+          .isEqualTo(
+              fixture
+                  .materials()
+                  .header()
+                  .navigationPublication()
+                  .publication()
+                  .analysisStepReceiptId()
+                  .value());
+      assertThat(group.path("packetId").asText()).isEqualTo(packet.packetId());
+      assertThat(group.path("packetEntries")).hasSize(sortedEntries.size());
+      assertThat(group.path("packetEntries"))
+          .extracting(entry -> entry.path("entryKey").asText())
+          .containsExactlyElementsOf(
+              java.util.stream.IntStream.range(0, sortedEntries.size())
+                  .mapToObj(index -> packetKey + "/E" + (index + 1))
+                  .toList());
+      assertThat(group.path("packetEntries"))
+          .extracting(entry -> entry.path("entryId").asText())
+          .containsExactlyElementsOf(sortedEntries.stream().map(EntrySeed::entryId).toList());
+      assertThat(group.path("activityEntryIds"))
+          .extracting(JsonNode::asText)
+          .containsExactlyElementsOf(activity.entryIds());
+      if (activity.sliceKey() == null) {
+        assertThat(group.path("sliceKey").isNull()).isTrue();
+      } else {
+        assertThat(group.path("sliceKey").asText()).isEqualTo(activity.sliceKey());
+      }
+      assertThat(group.path("groupPosition").isIntegralNumber()).isTrue();
+      assertThat(group.path("groupSize").asLong()).isEqualTo(groupSize);
+    }
+
+    List<Integer> mainGroupPositions =
+        fixture.activities().stream()
+            .filter(activity -> "packet:main".equals(activity.materialId()))
+            .sorted(java.util.Comparator.comparing(ReviewedActivity::activityId))
+            .map(
+                activity ->
+                    findById(values, "activityId", activity.activityId())
+                        .path("sourceGroup")
+                        .path("groupPosition")
+                        .asInt())
+            .toList();
+    assertThat(mainGroupPositions).isSorted();
+    assertThat(mainGroupPositions.stream().distinct().count()).isEqualTo(mainGroupPositions.size());
+    assertThat(mainGroupPositions.get(mainGroupPositions.size() - 1) - mainGroupPositions.get(0))
+        .isEqualTo(mainGroupPositions.size() - 1);
+
+    JsonNode overlap12 = findById(values, "activityId", "activity:overlap-12").path("sourceGroup");
+    JsonNode overlap23 = findById(values, "activityId", "activity:overlap-23").path("sourceGroup");
+    assertThat(overlap12.path("packetKey").asText())
+        .isEqualTo(overlap23.path("packetKey").asText());
+    assertThat(overlap12.path("packetEntries")).isEqualTo(overlap23.path("packetEntries"));
+    assertThat(overlap12.path("activityEntryIds"))
+        .extracting(JsonNode::asText)
+        .containsExactly("entry:main-1", "entry:main-2");
+    assertThat(overlap23.path("activityEntryIds"))
+        .extracting(JsonNode::asText)
+        .containsExactly("entry:main-2", "entry:main-3");
+
+    JsonNode sameTitleA = findById(values, "activityId", "activity:same-title-a");
+    JsonNode sameTitleB = findById(values, "activityId", "activity:same-title-b");
+    assertThat(sameTitleA.path("name").asText()).isEqualTo(sameTitleB.path("name").asText());
+    assertThat(sameTitleA.path("sourceGroup").path("packetId").asText())
+        .isNotEqualTo(sameTitleB.path("sourceGroup").path("packetId").asText());
+    assertThat(sameTitleA.path("sourceGroup").path("packetKey").asText())
+        .isNotEqualTo(sameTitleB.path("sourceGroup").path("packetKey").asText());
+  }
+
+  private static JsonNode sourceGroupFor(JsonNode values, String activityId) {
+    return findById(values, "activityId", activityId).path("sourceGroup");
+  }
+
+  private static AnalysisStepPublicationReference sourceGroupStep05Checkpoint() {
+    return new AnalysisStepPublicationReference(
+        new AnalysisStepPublicationAddress(SOURCE_GROUP_RUN, AnalysisStepKey.BUSINESS_FLOWS),
+        AnalysisStepArtifactRoot.parse("analysis-step-root:" + "5".repeat(64)),
+        AnalysisStepReceiptId.parse("analysis-step-receipt:" + "6".repeat(64)),
+        Sha256Digest.parse("7".repeat(64)));
+  }
+
+  private static ModulePublicationReference sourceGroupActivityCheckpoint() {
+    return new ModulePublicationReference(
+        new AnalysisStepModuleAddress(
+            SOURCE_GROUP_RUN, AnalysisStepKey.FLOW_INTERPRETATION, 11, "activity-explainer"),
+        ModuleArtifactRoot.parse("module-root:" + "8".repeat(64)),
+        ModuleReceiptId.parse("module-receipt:" + "9".repeat(64)),
+        Sha256Digest.parse("a".repeat(64)));
+  }
+
+  private record SourceGroupFixture(
+      ProcessDiscoveryRequest request,
+      CodeReadingMaterialSet materials,
+      List<ReviewedActivity> activities) {
+    private SourceGroupFixture {
+      activities = List.copyOf(activities);
+    }
+  }
+
   private static ReviewedActivity activity(
       String key,
       String name,
@@ -938,6 +1365,11 @@ class BusinessProcessDiscoveryTest {
     private final AtomicInteger maximumConcurrentCatalogShards = new AtomicInteger();
     private final String conflictingCatalogDisposition;
     private JsonNode catalogCards;
+    private JsonNode catalogInput;
+    private final List<JsonNode> catalogShardInputs =
+        Collections.synchronizedList(new ArrayList<>());
+    private JsonNode selectionInput;
+    private JsonNode readingCheckInput;
     private JsonNode processInput;
     private JsonNode processActivities;
     private JsonNode processReviewInput;
@@ -967,7 +1399,11 @@ class BusinessProcessDiscoveryTest {
       JsonNode input = json.parseCanonical(request.untrustedInputJson());
       ObjectNode response;
       if (request.taskKind().startsWith("BUSINESS_CATALOG")) {
+        catalogInput = input;
         catalogCards = input.path("activityIndexCards");
+        if ("BUSINESS_CATALOG_SHARD_DRAFT".equals(request.taskKind())) {
+          catalogShardInputs.add(input);
+        }
         response = catalog(input);
         if (conflictingCatalogDisposition != null
             && Set.of(
@@ -1000,8 +1436,10 @@ class BusinessProcessDiscoveryTest {
           dispositions.add(dispositions.get(0).deepCopy());
         }
       } else if (DefaultBusinessProcessDiscovery.MATERIAL_SELECTION.equals(request.taskKind())) {
+        selectionInput = input;
         response = materialSelection(input);
       } else if (DefaultBusinessProcessDiscovery.READING_CHECK.equals(request.taskKind())) {
+        readingCheckInput = input;
         response = readingCheck(input);
       } else if (request.taskKind().startsWith("BUSINESS_PROCESS_CONSOLIDATION")) {
         consolidationInput = input;
@@ -1016,6 +1454,10 @@ class BusinessProcessDiscoveryTest {
       } else {
         processInput = input;
         processActivities = input.path("readingPacket").path("reviewedActivities");
+        if ("stop-after-source-group-packet".equals(conflictingCatalogDisposition)
+            && "BUSINESS_PROCESS_DRAFT".equals(request.taskKind())) {
+          throw new IllegalStateException("FIXTURE_STOP_AFTER_SOURCE_GROUP_PACKET");
+        }
         if (request.taskKind().endsWith("REVIEW")) {
           processReviewInput = input;
         }
@@ -1497,6 +1939,22 @@ class BusinessProcessDiscoveryTest {
 
     private JsonNode catalogCards() {
       return catalogCards;
+    }
+
+    private JsonNode catalogInput() {
+      return catalogInput;
+    }
+
+    private List<JsonNode> catalogShardInputs() {
+      return List.copyOf(catalogShardInputs);
+    }
+
+    private JsonNode selectionInput() {
+      return selectionInput;
+    }
+
+    private JsonNode readingCheckInput() {
+      return readingCheckInput;
     }
 
     private JsonNode processActivities() {

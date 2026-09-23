@@ -25,7 +25,7 @@
 | 2 reading plan/config | COMPLETE | Eight classes/80 tests and Spotless PASS; three reopen findings independently re-reviewed and closed; local checkpoint caa9d56, not pushed |
 | 3 completion/reuse-only | COMPLETE locally | Typed M11 v4, first/repeated zero-Provider adoption, historical v1/current provenance, private batch-v2 metadata, CLI reporting and Step07 gate; 99 directly affected tests and Spotless pass. Task-9 canonical CI remains pending. |
 | 4 real offline audit | COMPLETE, PARTIAL result | Fixed 325 packets audited without source/model work: 311 COMPLETE, 14 INCOMPLETE with 24 missing required slices; the original navigation gap remains separately recorded. No Activity regeneration is authorized by this audit. |
-| 5 source-group navigation | PENDING | Independent after baseline; shared Discovery serialized with 6/7 |
+| 5 source-group navigation | COMPLETE locally | Step05 source-group projection reaches catalog/selection/CHECK/final reading packet; 418-card/14-shard and prompt contract checks pass. Task-9 canonical CI and real semantic acceptance remain pending. |
 | 6 local mapping/store | PENDING | Uses 5; preserves Activity private format from 3 |
 | 7 WRITE/review guard | PENDING | Uses 6; guard fresh and reopened triples |
 | 8 CLI/sample seam | PENDING | Uses 3/6/7; actual Agent/store, not parallel algorithm |
@@ -35,7 +35,7 @@
 
 ## Decisions
 
-Current state: 5 of 12 numbered tasks completed locally (0–4), with Task 4 correctly yielding a PARTIAL business-input audit rather than a usable full Step07 gate. Tasks 5–11 remain. The remaining engineering and preparation estimate is 25–40 continuous hours before model runtime, sample-review wait, and any separately approved repair of the 24 missing slices. Do not add completed upstream work back in or present direct tests as Task-9 canonical CI.
+Current state: 6 of 12 numbered tasks completed locally (0–5), with Task 4 correctly yielding a PARTIAL business-input audit rather than a usable full Step07 gate. Tasks 6–11 remain. The remaining engineering and preparation estimate is 22–35 continuous hours before model runtime, sample-review wait, and any separately approved repair of the 24 missing slices. Do not add completed upstream work back in or present direct tests as Task-9 canonical CI.
 
 - User-selected formal checkout overrides the skill's optional new worktree; do not relocate work.
 - Use this existing repository progress convention as execution ledger; do not create a second root-level SDD workspace outside assigned module.
@@ -127,6 +127,8 @@ Current state: 5 of 12 numbered tasks completed locally (0–4), with Task 4 cor
 | Fixed 325-packet zero-model audit | Completed with partial outcome in new run `analysis-run:cb1ec0d7063db8c527d10ff41ca98c2ed7ffe17b69757ce698aa8909282ed8e2` | 325/325 packetCompletion records: 311 COMPLETE, 14 INCOMPLETE, 24 required slices `ACTIVITY_SLICE_RESULT_UNEXPLAINED`. 326 entry dispositions retain the original 1 NOT_COLLECTED navigation gap. New M11 v4 and private batch-v2 were saved; lifecycle FAILED accurately blocks Step07. No JDT, Builder, Provider or Activity generation calls. |
 | Historical reopen fixes found by actual audit | Source data untouched; direct regression pending | New current registry cannot open old M11 v3, so an immutable pre-coverage-v4 policy set is explicitly configured and selected by saved request identity. Historical v1 reading packets may contain uncompressed call navigation; exact legacy reconstruction is required. Some later aggregate records wrap an originally direct whole-packet result; exact unchanged business content and original DRAFT/REVIEW are checked before adopting it. |
 | Task-3 final direct check, session 27872 | PASS: 99 tests across 10 affected classes; Spotless check PASS; 34.932 s | Covers historical policy/packet reopening and Task-3 direct regressions. This is not the full Task-9 quality build. |
+| Task-5 first source-group test, sessions 57039 / 1544 | RED then GREEN: 2 tests and Spotless PASS on 1544; 1:05 | Initial synthetic frozen-source fixture was corrected before the real RED. Catalog, selection, CHECK and process reading packet now carry identical packet/entry/slice group identity; historical FrozenCorpus direct fixture still passes. 418-card sharding and Prompt versions remain. |
+| Task-5 extended direct regression, session 71474 | PASS: 73 tests, 0 failures/errors/skips; Spotless PASS; 8.440 s | Same-packet source identity, 418 cards across 14 catalog shards, prompt versions, legacy M10 and reading-decision behavior are covered by six directly affected classes. This is not Task-9 canonical CI or a real model finding. |
 
 ## Blockers
 
@@ -135,7 +137,7 @@ Current state: 5 of 12 numbered tasks completed locally (0–4), with Task 4 cor
 
 ## Exact next action
 
-- Tasks 0–2 saved through caa9d56. Task 3 implementation and direct regression have passed; Task 4 fixed 325-packet audit produced the concrete partial result above. Save the Task-3 local checkpoint, then continue Steps 5–9 offline without silently regenerating the 24 missing slices; the user has an asynchronous question about the minimum repair. The diagnostic POM/private workspace/unrelated docs stay excluded. The Task-9 canonical CI and real-model samples are still pending.
+- Tasks 0–5 are completed locally; Task 5's direct regression is green. Save its local checkpoint, then continue Steps 6–9 offline without silently regenerating the 24 missing slices; the user has an asynchronous question about the minimum repair. The diagnostic POM/private workspace/unrelated docs stay excluded. The Task-9 canonical CI and real-model samples are still pending.
 - Current Maven is 3.9.16, quality host JDK26, javac/tests toolchain Java17. One worker launch failed before Maven with a JAVA_HOME message, then the identical root command succeeded; no established root cause or production workaround is claimed. Root owns the only heavy-build slot.
 - Task 3's brief now includes an observed historical multi-hop reuse example: copied complete results point to successful stages in their explicitly recorded origin. The zero-call continuation must follow that provenance, not treat absent local stage copies as lost content. This read-only spot check is not the 325-packet completion audit.
 - Task 3 direct-path clarification: normal small-packet execution bypasses ReadingCoordinator and preserves Activity.sliceKey=null. Verify its actual full-packet stage pair and use existing whole-packet only for new completion association, without rewriting Activities or fabricating a plan. A scoped aggregate claiming a missing plan is still corruption. UNDETERMINED may retain valid content without pretending its required-scope set is known.

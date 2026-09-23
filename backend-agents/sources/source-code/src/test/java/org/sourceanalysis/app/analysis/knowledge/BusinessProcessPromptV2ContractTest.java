@@ -10,22 +10,22 @@ import java.util.List;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
-/** RED contract for the Step07 prompt bundle and its semantic boundaries. */
+/** Contract for the versioned Step07 prompt bundle and its semantic boundaries. */
 class BusinessProcessPromptV2ContractTest {
 
   private static final String RESOURCE_ROOT = "/org/sourceanalysis/app/analysis/knowledge/";
 
   private static final List<PromptResource> STEP07_RESOURCES =
       List.of(
-          new PromptResource("BUSINESS_CATALOG_DRAFT", "business-catalog-draft-v2.txt"),
-          new PromptResource("BUSINESS_CATALOG_REVIEW", "business-catalog-review-v2.txt"),
-          new PromptResource("BUSINESS_CATALOG_SHARD_DRAFT", "business-catalog-draft-v2.txt"),
-          new PromptResource("BUSINESS_CATALOG_SHARD_REVIEW", "business-catalog-review-v2.txt"),
-          new PromptResource("BUSINESS_CATALOG_MERGE_DRAFT", "business-catalog-merge-draft-v2.txt"),
+          new PromptResource("BUSINESS_CATALOG_DRAFT", "business-catalog-draft-v3.txt"),
+          new PromptResource("BUSINESS_CATALOG_REVIEW", "business-catalog-review-v3.txt"),
+          new PromptResource("BUSINESS_CATALOG_SHARD_DRAFT", "business-catalog-draft-v3.txt"),
+          new PromptResource("BUSINESS_CATALOG_SHARD_REVIEW", "business-catalog-review-v3.txt"),
+          new PromptResource("BUSINESS_CATALOG_MERGE_DRAFT", "business-catalog-merge-draft-v3.txt"),
           new PromptResource(
-              "BUSINESS_CATALOG_MERGE_REVIEW", "business-catalog-merge-review-v2.txt"),
-          new PromptResource("PROCESS_MATERIAL_SELECTION", "process-material-selection-v2.txt"),
-          new PromptResource("PROCESS_READING_CHECK", "process-reading-check-v4.txt"),
+              "BUSINESS_CATALOG_MERGE_REVIEW", "business-catalog-merge-review-v3.txt"),
+          new PromptResource("PROCESS_MATERIAL_SELECTION", "process-material-selection-v3.txt"),
+          new PromptResource("PROCESS_READING_CHECK", "process-reading-check-v5.txt"),
           new PromptResource("BUSINESS_PROCESS_DRAFT", "business-process-draft-v4.txt"),
           new PromptResource("BUSINESS_PROCESS_WRITE", "business-process-write-v1.txt"),
           new PromptResource("BUSINESS_PROCESS_RULE_REVIEW", "business-process-rule-review-v1.txt"),
@@ -88,6 +88,33 @@ class BusinessProcessPromptV2ContractTest {
         .contains("不能仅按新增、修改、删除")
         .contains("PROCESS_MEMBER")
         .contains("至少一个候选");
+  }
+
+  @Test
+  void navigationPromptsKeepSourceGroupsLocalAndNonTemporal() {
+    List<String> navigationTasks =
+        List.of(
+            "BUSINESS_CATALOG_DRAFT",
+            "BUSINESS_CATALOG_REVIEW",
+            "BUSINESS_CATALOG_SHARD_DRAFT",
+            "BUSINESS_CATALOG_SHARD_REVIEW",
+            "BUSINESS_CATALOG_MERGE_DRAFT",
+            "BUSINESS_CATALOG_MERGE_REVIEW",
+            "PROCESS_MATERIAL_SELECTION",
+            "PROCESS_READING_CHECK");
+
+    for (String taskKind : navigationTasks) {
+      assertThat(BusinessProcessPromptCatalog.instructionsFor(taskKind))
+          .as("%s must preserve local source identity without implying business order", taskKind)
+          .contains("sourceGroup", "packetKey", "groupPosition")
+          .containsAnyOf(
+              "不是业务步骤序号",
+              "排成业务顺序",
+              "误当业务先后关系",
+              "不是执行顺序",
+              "不证明这些切片是按groupPosition执行的业务步骤",
+              "不是业务步骤顺序");
+    }
   }
 
   @Test

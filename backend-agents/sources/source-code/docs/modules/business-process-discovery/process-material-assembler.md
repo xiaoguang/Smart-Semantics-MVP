@@ -46,7 +46,7 @@ DRAFT外层实际输入另带investigationContext和readingSelections，分别�
 
 ## 保存、当前状态与测试
 
-选择/检查为process-reading-decision-v2/producer v4；CHECK Prompt v4，历史v1/producer v3仅严格读。实际R、预览、导航、最终保留、背景、Schema/Prompt和绑定参与指纹。新Step05来源可从M11 v3重开后经显式ProcessDiscoveryRequest进入同一Assembler；其余上述取材合同已有生产接线。本次剩余缺口是同入口导航、局部编码及正式贯穿验证，不是另造Assembler或把Step05包装成M10。
+选择/检查为process-reading-decision-v2/producer v4；CHECK Prompt 已升v5，历史v1/producer v3仅严格读。实际R、预览、导航、最终保留、背景、Schema/Prompt和绑定参与指纹。新Step05来源可从M11 v4重开后经显式ProcessDiscoveryRequest进入同一Assembler，历史M11 v3仍按原合同读取；同入口导航已接线并通过直接测试。本次剩余缺口是局部编码及正式贯穿验证，不是另造Assembler或把Step05包装成M10。
 
 定向验证应检查全文/公式/条件不丢、多variant共享正文、真实行段、空保留/空补读、context引用合法但非成员、未知R/ref拒绝、重开与零上游调用。来源/容量结构正确不表示真实语义充分。
 

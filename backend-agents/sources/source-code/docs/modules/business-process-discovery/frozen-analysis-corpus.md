@@ -50,4 +50,4 @@ Assembler取得真实Activity与所选源码，封闭包后交模型。Publisher
 
 按[Activity范围合同](../activity-explanation/integration-contracts.md)消费经过离线核对的coverage-v4；普通已读未知、原NOT_COLLECTED允许保留，必需未完成/无法判定不自动全仓。旧coverage-v3仍可精确查询，不默认制造COMPLETE。
 
-Corpus为导航投影提供同源publication/packet/entry/slice关系，模型只见局部键。分组仅说明共同来源，不合并业务身份或覆盖处置。每条Activity的完整条件和来源仍可独立读取，历史418/326文本不改。新发现与原Activity冲突时由过程注明纠正，不回写Activity。
+Corpus现已为导航投影提供同源snapshot/导航receipt/packet/entry/slice关系，模型同时看见局部P/E键与原始入口身份。分组仅说明共同来源，不合并业务身份或覆盖处置。每条Activity的完整条件和来源仍可独立读取，历史418/326文本不改。新发现与原Activity冲突时由过程注明纠正，不回写Activity。正式真实批次验收仍待后续步骤。
