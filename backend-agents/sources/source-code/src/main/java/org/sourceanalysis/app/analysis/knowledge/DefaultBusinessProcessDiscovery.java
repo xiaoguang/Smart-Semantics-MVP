@@ -1471,6 +1471,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         call(PROCESS_WRITE, taskBase + "-write", writingInput, schema, profile, binding);
     requireIntermediateSchema(writing.value(), intermediateSchema, "PROCESS_MODEL_SCHEMA_INVALID");
     requireLocalUseClosure(writing.value());
+    requireWritingPreservesFacts(draft.value(), writing.value());
     if (!draft.runtimeIdentity().equals(writing.runtimeIdentity())) {
       throw failure("PROCESS_JOB_RUNTIME_IDENTITY_MISMATCH");
     }
@@ -1528,6 +1529,26 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
           strings(process, "supportActivityUseLocalIds"),
           uses,
           "PROCESS_LOCAL_ACTIVITY_USE_INVALID");
+    }
+  }
+
+  private static void requireWritingPreservesFacts(ObjectNode draft, ObjectNode writing) {
+    ObjectNode protectedDraft = draft.deepCopy();
+    ObjectNode protectedWriting = writing.deepCopy();
+    removeWritingDisplayFields(protectedDraft);
+    removeWritingDisplayFields(protectedWriting);
+    if (!protectedDraft.equals(protectedWriting)) {
+      throw failure("PROCESS_WRITE_PROTECTED_FIELDS_CHANGED");
+    }
+  }
+
+  private static void removeWritingDisplayFields(ObjectNode response) {
+    for (JsonNode item : array(response, "processes")) {
+      ObjectNode process = object(item);
+      process.remove(List.of("name", "purpose"));
+      for (JsonNode stageItem : array(process, "stages")) {
+        object(stageItem).remove(List.of("name", "narrative"));
+      }
     }
   }
 
@@ -1947,6 +1968,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         object(saved.path("review")), finalResponseSchema, "MODEL_JOB_RESULT_INVALID");
     requireLocalUseClosure(object(saved.path("draft")));
     requireLocalUseClosure(object(saved.path("writing")));
+    requireWritingPreservesFacts(object(saved.path("draft")), object(saved.path("writing")));
     return new ReviewedProcess(
         new ModelCall(object(saved.path("draft")), binding.expectedRuntimeIdentity()),
         new ModelCall(object(saved.path("writing")), binding.expectedRuntimeIdentity()),

@@ -2,6 +2,7 @@ package org.sourceanalysis.app.analysis.knowledge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -17,6 +18,8 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.adapter.cli.RunJournalStructuredProvider;
@@ -79,6 +82,7 @@ class BusinessProcessThreeStagePipelineTest {
     assertThat(writingInput.path("actualDraft")).isEqualTo(provider.response(DRAFT));
     assertThat(writingInput.has("readingPacket")).isFalse();
     assertThat(writingInput.toString()).doesNotContain("SOURCE_ONLY_TOKEN");
+    assertWritingDisplayFieldsChanged(provider.response(DRAFT), provider.response(WRITE));
     assertThat(draftInput.path("investigationContext").toString())
         .contains("借用条件和保证金用途", "H-LOAN", "核准状态为何限制办理？");
     assertThat(draftInput.path("readingSelections").toString()).contains("核对核准状态和本次保证金");
@@ -116,12 +120,99 @@ class BusinessProcessThreeStagePipelineTest {
                 .path("when")
                 .asText())
         .isEqualTo("status == 1（已核准）");
+    assertThat(
+            saved
+                .path("review")
+                .path("processResult")
+                .path("processes")
+                .get(0)
+                .path("businessRules")
+                .get(0)
+                .path("actionOrDecision")
+                .asText())
+        .isEqualTo("收取本次保证金25元");
     assertThat(saved.path("review").path("corrections")).hasSize(1);
     assertThat(provider.taskKinds())
         .doesNotContain(
             "BUSINESS_PROCESS_REVIEW",
             "BUSINESS_PROCESS_CONSOLIDATION_DRAFT",
             "BUSINESS_PROCESS_CONSOLIDATION_REVIEW");
+  }
+
+  @Test
+  void writingCannotChangeProtectedStructureAndJournalsTheRejectedRawResponse() {
+    List<ProtectedWriteMutation> mutations =
+        List.of(
+            new ProtectedWriteMutation(
+                "writing-condition",
+                ignored -> {},
+                (ignored, writing) -> {
+                  ObjectNode process = firstProcess(writing);
+                  ((ObjectNode) process.path("stages").get(0))
+                      .withArray("entryConditions")
+                      .set(0, JsonNodeFactory.instance.textNode("status == 1"));
+                  ((ObjectNode) process.path("businessRules").get(0))
+                      .put("when", "status == 1（已核准）");
+                }),
+            new ProtectedWriteMutation(
+                "writing-activity-use",
+                ignored -> {},
+                (ignored, writing) ->
+                    ((ObjectNode) firstProcess(writing).path("activityUses").get(0))
+                        .put("variant", "伪造的借用变体")),
+            new ProtectedWriteMutation(
+                "writing-reference",
+                ignored -> {},
+                (provider, writing) -> replaceUseStatementReference(provider, writing)),
+            new ProtectedWriteMutation(
+                "writing-array-order",
+                response ->
+                    ((ObjectNode) firstProcess(response).path("stages").get(0))
+                        .withArray("entryConditions")
+                        .add("request.hasApprovalEvidence == true"),
+                (ignored, writing) -> {
+                  ArrayNode conditions =
+                      ((ObjectNode) firstProcess(writing).path("stages").get(0))
+                          .withArray("entryConditions");
+                  JsonNode first = conditions.get(0).deepCopy();
+                  JsonNode second = conditions.get(1).deepCopy();
+                  conditions.set(0, second);
+                  conditions.set(1, first);
+                }),
+            new ProtectedWriteMutation(
+                "writing-array-size",
+                ignored -> {},
+                (ignored, writing) -> firstProcess(writing).withArray("participants").add("复核人")));
+
+    assertAll(
+        "WRITE may not alter protected structured fields",
+        mutations.stream()
+            .<org.junit.jupiter.api.function.Executable>map(
+                mutation -> () -> assertFreshWritingMutationRejected(mutation))
+            .toList());
+  }
+
+  @Test
+  void corruptedReusedV5WritingCannotBeCopiedBeforeAnyCandidateStageCalls() throws IOException {
+    Path journal = journal("corrupted-reused-writing");
+    ScriptedProvider original = new ScriptedProvider();
+    execute(original, journal, run('a'), null, "借用条件", 1);
+
+    Path sourcePath = resultFile(journal, run('a'));
+    ObjectNode damaged = read(sourcePath);
+    assertThat(damaged.path("schemaVersion").asText()).isEqualTo("model-job-reviewed-result-v5");
+    ((ObjectNode) firstProcess((ObjectNode) damaged.path("writing")).path("businessRules").get(0))
+        .put("when", "status == 9（篡改）");
+    write(sourcePath, damaged);
+    byte[] corruptedSource = Files.readAllBytes(sourcePath);
+    ScriptedProvider next = new ScriptedProvider();
+
+    assertThatThrownBy(() -> execute(next, journal, run('b'), run('a'), "借用条件", 1))
+        .hasMessage("PROCESS_WRITE_PROTECTED_FIELDS_CHANGED");
+
+    assertThat(next.candidateTasks()).isEmpty();
+    assertThat(resultFiles(journal, run('b'))).isEmpty();
+    assertThat(Files.readAllBytes(sourcePath)).containsExactly(corruptedSource);
   }
 
   @Test
@@ -906,6 +997,121 @@ class BusinessProcessThreeStagePipelineTest {
       ((ObjectNode) stage).remove(List.of("name", "narrative"));
     }
     assertThat(actual).as("WRITE changes only the four display fields").isEqualTo(expected);
+  }
+
+  private static void assertWritingDisplayFieldsChanged(JsonNode draft, JsonNode writing) {
+    JsonNode draftProcess = draft.path("processes").get(0);
+    JsonNode writingProcess = writing.path("processes").get(0);
+    assertThat(writingProcess.path("name").asText())
+        .isNotEqualTo(draftProcess.path("name").asText());
+    assertThat(writingProcess.path("purpose").asText())
+        .isNotEqualTo(draftProcess.path("purpose").asText());
+    assertThat(writingProcess.path("stages").get(0).path("name").asText())
+        .isNotEqualTo(draftProcess.path("stages").get(0).path("name").asText());
+    assertThat(writingProcess.path("stages").get(0).path("narrative").asText())
+        .isNotEqualTo(draftProcess.path("stages").get(0).path("narrative").asText());
+  }
+
+  private void assertFreshWritingMutationRejected(ProtectedWriteMutation mutation)
+      throws IOException {
+    ScriptedProvider scripted = new ScriptedProvider();
+    WritingMutationProvider mutating =
+        new WritingMutationProvider(scripted, mutation.prepare(), mutation.mutate());
+    Path journal = journal(mutation.directory());
+    Path raw = Files.createDirectory(journal.resolve("raw-requests"));
+    StructuredModelProvider journaled = new RunJournalStructuredProvider(raw, IDENTITY, mutating);
+
+    assertThatThrownBy(() -> execute(journaled, journal, run('a'), null, "借用条件", 1))
+        .as("a schema-valid WRITE mutation of protected structure must stop before REVIEW")
+        .hasMessage("PROCESS_WRITE_PROTECTED_FIELDS_CHANGED");
+
+    assertThat(scripted.candidateTasks()).containsExactly(DRAFT, WRITE);
+    assertThat(resultFiles(journal, run('a'))).isEmpty();
+    List<ObjectNode> records;
+    try (var paths = Files.list(raw)) {
+      records =
+          paths
+              .filter(path -> path.getFileName().toString().endsWith(".json"))
+              .map(BusinessProcessThreeStagePipelineTest::readUnchecked)
+              .toList();
+    }
+    ObjectNode writeRecord =
+        records.stream()
+            .filter(record -> WRITE.equals(record.path("request").path("taskKind").asText()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(writeRecord.path("status").asText())
+        .as("the invalid but completed transport response remains in the raw journal")
+        .isEqualTo("COMPLETED");
+    assertThat(
+            JSON.parseCanonical(
+                ImmutableBytes.copyOf(
+                    Base64.getDecoder().decode(writeRecord.path("responseJsonBase64").asText()))))
+        .isEqualTo(mutating.response(WRITE));
+    assertThat(records.stream().map(record -> record.path("request").path("taskKind").asText()))
+        .doesNotContain(RULE_REVIEW);
+  }
+
+  private static void replaceUseStatementReference(ScriptedProvider provider, ObjectNode writing) {
+    ObjectNode use = (ObjectNode) firstProcess(writing).path("activityUses").get(0);
+    String activityId = use.path("activityId").asText();
+    String currentReference = use.path("statementRefs").get(0).asText();
+    for (JsonNode statement :
+        provider.input(DRAFT).path("readingPacket").path("statementDirectory")) {
+      String candidateActivityId = statement.path("activityId").asText();
+      String candidateReference = statement.path("statementRef").asText();
+      if (activityId.equals(candidateActivityId) && !currentReference.equals(candidateReference)) {
+        use.withArray("statementRefs")
+            .set(0, JsonNodeFactory.instance.textNode(candidateReference));
+        return;
+      }
+    }
+    throw new AssertionError(
+        "the reading packet must offer another valid local statement reference");
+  }
+
+  private static ObjectNode firstProcess(ObjectNode result) {
+    return (ObjectNode) result.path("processes").get(0);
+  }
+
+  private record ProtectedWriteMutation(
+      String directory,
+      Consumer<ObjectNode> prepare,
+      BiConsumer<ScriptedProvider, ObjectNode> mutate) {}
+
+  private static final class WritingMutationProvider implements StructuredModelProvider {
+    private final ScriptedProvider delegate;
+    private final Consumer<ObjectNode> prepare;
+    private final BiConsumer<ScriptedProvider, ObjectNode> mutate;
+    private final Map<String, JsonNode> responses = new LinkedHashMap<>();
+
+    private WritingMutationProvider(
+        ScriptedProvider delegate,
+        Consumer<ObjectNode> prepare,
+        BiConsumer<ScriptedProvider, ObjectNode> mutate) {
+      this.delegate = delegate;
+      this.prepare = prepare;
+      this.mutate = mutate;
+    }
+
+    @Override
+    public StructuredModelResponse generate(StructuredModelRequest request) {
+      StructuredModelResponse response = delegate.generate(request);
+      if (!DRAFT.equals(request.taskKind()) && !WRITE.equals(request.taskKind())) {
+        return response;
+      }
+      ObjectNode output = (ObjectNode) JSON.parseCanonical(response.responseJson());
+      prepare.accept(output);
+      if (WRITE.equals(request.taskKind())) {
+        mutate.accept(delegate, output);
+      }
+      responses.put(request.taskKind(), output.deepCopy());
+      return new StructuredModelResponse(JSON.encodeCanonical(output), response.runtimeIdentity());
+    }
+
+    private JsonNode response(String taskKind) {
+      return responses.getOrDefault(taskKind, MissingNode.getInstance());
+    }
   }
 
   private static ObjectNode writingProcess() {

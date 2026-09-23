@@ -1,0 +1,9 @@
+# Progress: Task 7 WRITE guard tests
+
+- Status: FROZEN_FOR_ROOT_RED
+- Scope: direct tests in `BusinessProcessThreeStagePipelineTest` plus this progress note; no production or Prompt edits, no Maven, no commits.
+- The existing three-stage test now asserts that all four permitted WRITE fields actually change (process name/purpose and stage name/narrative), while its structural equality assertion continues to ensure every other field is unchanged. Its final persisted-publication assertion also checks the corrected per-event amount, alongside the corrected approval condition.
+- Added one `assertAll` direct behavior test for fresh WRITE responses that modify: eligibility conditions/status, ActivityUse variant, a different valid local statement reference, protected condition-array order, or protected participant-array size. Each case uses the real discovery/model-job seam, expects `PROCESS_WRITE_PROTECTED_FIELDS_CHANGED`, verifies RULE_REVIEW did not run or publish, and checks the completed invalid WRITE response remains in the raw request journal.
+- Added a reused v5 result corruption case: a saved WRITE with a changed protected rule condition must fail before candidate-stage calls and must not be copied or overwritten. After root's first run showed the injected value accidentally equaled the fixture's original `status == 0` condition, the corruption now uses distinct schema-valid `status == 9（篡改）`.
+- Direct selectors: `BusinessProcessThreeStagePipelineTest#writingCannotChangeProtectedStructureAndJournalsTheRejectedRawResponse` (five schema-valid mutations in one `assertAll`) and `#corruptedReusedV5WritingCannotBeCopiedBeforeAnyCandidateStageCalls`. Existing `#actualWritingAndFinalReviewReceiveCompletePriorOutputsAndSaveCorrectedContent` covers the legal four-field WRITE and final correction/publication contract.
+- `git diff --check` passes. These are intended RED tests; this worker has not run Maven. Root owns the next direct test run.

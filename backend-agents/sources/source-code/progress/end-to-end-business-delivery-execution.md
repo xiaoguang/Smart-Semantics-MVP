@@ -27,7 +27,7 @@
 | 4 real offline audit | COMPLETE, PARTIAL result | Fixed 325 packets audited without source/model work: 311 COMPLETE, 14 INCOMPLETE with 24 missing required slices; the original navigation gap remains separately recorded. No Activity regeneration is authorized by this audit. |
 | 5 source-group navigation | COMPLETE locally | Step05 source-group projection reaches catalog/selection/CHECK/final reading packet; 418-card/14-shard and prompt contract checks pass. Task-9 canonical CI and real semantic acceptance remain pending. |
 | 6 local mapping/store | COMPLETE locally | A/T/S packet-v2, v5 private result and fingerprint-v2; 104 directly affected tests and Spotless pass. Task-9 canonical CI and real-model capacity remain pending. |
-| 7 WRITE/review guard | PENDING | Uses 6; guard fresh and reopened triples |
+| 7 WRITE/review guard | COMPLETE locally | Fresh and reopened triples enforce the four editable display paths; 106 affected Step07 tests and Spotless pass. Task-9 canonical CI and real semantic review remain pending. |
 | 8 CLI/sample seam | PENDING | Uses 3/6/7; actual Agent/store, not parallel algorithm |
 | 9 local CI | PENDING | One heavy build; no real-jdt-it |
 | 10 real samples | PENDING | Requires 4/9, focusQuestion=null; display then stop expansion |
@@ -35,7 +35,7 @@
 
 ## Decisions
 
-Current state: 7 of 12 numbered tasks completed locally (0–6), with Task 4 correctly yielding a PARTIAL business-input audit rather than a usable full Step07 gate. Tasks 7–11 remain. From this point, the remaining engineering and verification preparation is estimated at 13–21 continuous hours: Task 7 4–6, Task 8 5–8, Task 9 2–3, Tasks 10–11 1–2 each for human verification. Model runtime, sample-review wait, and any separately approved repair of the 24 missing slices are excluded. Do not add completed upstream work back in or present direct tests as Task-9 canonical CI.
+Current state: 8 of 12 numbered tasks completed locally (0–7), with Task 4 correctly yielding a PARTIAL business-input audit rather than a usable full Step07 gate. Tasks 8–11 remain. From this point, the remaining engineering and verification preparation is estimated at 9–15 continuous hours: Task 8 5–8, Task 9 2–3, Tasks 10–11 1–2 each for human verification. Model runtime, sample-review wait, and any separately approved repair of the 24 missing slices are excluded. Do not add completed upstream work back in or present direct tests as Task-9 canonical CI.
 
 - User-selected formal checkout overrides the skill's optional new worktree; do not relocate work.
 - Use this existing repository progress convention as execution ledger; do not create a second root-level SDD workspace outside assigned module.
@@ -136,6 +136,9 @@ Current state: 7 of 12 numbered tasks completed locally (0–6), with Task 4 cor
 | Task-6 migrated provider rerun, session 28897 | 104 tests, 10 failures / 4 errors; 26.739 s | Local map/triple, prompt, sample, protocol and fingerprint classes pass. Remaining Step07 fixture assumptions are global-ID assertions, M10 source lookup, v3 reader on a new v5 result, and one DRAFT fixture whose removed U definitions leave dangling stage/rule U references. The local closure failure matches the planned early structural check; fixture will retain a self-contained incomplete DRAFT for final-review repair. |
 | Task-6 packet-v2 fixture rerun, session 87363 | 104 tests, 101 pass / 3 assertion failures / 0 errors; 29.251 s | Remaining assertions confuse packet-local slice or Activity numbering with the preserved global source-group identities; test owner is correcting only those fixtures. No new production failure is established. Diagnostic isolated-output POM is still not deliverable or Task-9 CI. |
 | Task-6 final directly affected rerun, session 85385 | PASS: 104 tests, 0 failures/errors/skips; 28.888 s | Discovery, reading pipeline, dual material, three-stage, local map, fingerprint, publication, prompt and sample tests. Spotless apply/check then PASS, 4.718 s. This is the direct Step07 check, not Task-9 canonical CI. |
+| Task-7 WRITE guard RED, session 98858 | Expected RED: 18 tests, 2 failing new methods / 0 errors; 40.474 s | Five schema-valid protected-field changes and a corrupted reused v5 WRITE were accepted by previous production code. Existing legal four-field WRITE and final correction still passed. |
+| Task-7 first GREEN/debug, session 85367 | 18 tests, 17 pass / 1 fixture failure; 52.852 s | Fresh guard rejected all five protected changes. Reuse test accidentally set `when` to its original value, so no actual corruption occurred; inspected saved DRAFT/WRITE fixture before changing only that test value. |
+| Task-7 direct and broader GREEN, sessions 39389 / 42951 | PASS: 18 then 106 tests, 0 failures/errors/skips; 24.206 s / 7.985 s | Fresh and reused v5 WRITE preserve all protected fields; legal writing reaches review; final corrected facts remain in saved result. Spotless apply/check then PASS, 3.584 s. Not Task-9 canonical CI or real business acceptance. |
 
 ## Blockers
 
@@ -144,7 +147,7 @@ Current state: 7 of 12 numbered tasks completed locally (0–6), with Task 4 cor
 
 ## Exact next action
 
-- Tasks 0–6 are completed locally, including Task 5 checkpoint `e04cd75`. Start Task 7's WRITE structural guard test-first, then Step 8 formal/sample seam and Step 9 canonical CI without silently regenerating the 24 missing slices; the user has an asynchronous question about the minimum repair. The diagnostic POM/private workspace/unrelated docs stay excluded. Real-model samples are still pending.
+- Tasks 0–7 are completed locally, including Task 6 checkpoint `63087ba`. Start Task 8 formal/sample seam and Step 9 canonical CI without silently regenerating the 24 missing slices; the user has an asynchronous question about the minimum repair. The diagnostic POM/private workspace/unrelated docs stay excluded. Real-model samples are still pending.
 - Current Maven is 3.9.16, quality host JDK26, javac/tests toolchain Java17. One worker launch failed before Maven with a JAVA_HOME message, then the identical root command succeeded; no established root cause or production workaround is claimed. Root owns the only heavy-build slot.
 - Task 3's brief now includes an observed historical multi-hop reuse example: copied complete results point to successful stages in their explicitly recorded origin. The zero-call continuation must follow that provenance, not treat absent local stage copies as lost content. This read-only spot check is not the 325-packet completion audit.
 - Task 3 direct-path clarification: normal small-packet execution bypasses ReadingCoordinator and preserves Activity.sliceKey=null. Verify its actual full-packet stage pair and use existing whole-packet only for new completion association, without rewriting Activities or fabricating a plan. A scoped aggregate claiming a missing plan is still corruption. UNDETERMINED may retain valid content without pretending its required-scope set is known.
