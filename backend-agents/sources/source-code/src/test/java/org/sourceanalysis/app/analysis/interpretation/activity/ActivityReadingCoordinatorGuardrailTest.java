@@ -2,6 +2,7 @@ package org.sourceanalysis.app.analysis.interpretation.activity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -51,7 +52,8 @@ class ActivityReadingCoordinatorGuardrailTest {
         new ActivityRetryProfile(2, 0, 0, 2.0, 0.0, Set.of("TRANSIENT_TRANSPORT"), Map.of());
 
     ActivityReadingPlan plan =
-        new ActivityReadingCoordinator(provider, retry).coordinate(view, boundedProfile(6_000, 1));
+        new ActivityReadingCoordinator(provider, retry)
+            .coordinate(view, boundedProfile(7_000, 3_000, 1));
 
     assertThat(plan.navigationPages()).hasSize(1);
     assertThat(calls).hasValue(2);
@@ -63,12 +65,12 @@ class ActivityReadingCoordinatorGuardrailTest {
     ActivityMaterialView view = neutralView(4, 40, 800);
 
     ScriptedProvider unknownPage = new ScriptedProvider(response("[\"page-999\"]", "[]", "[]"));
-    assertThatThrownBy(() -> coordinate(unknownPage, view, boundedProfile(6_000, 4)))
+    assertThatThrownBy(() -> coordinate(unknownPage, view, boundedProfile(7_000, 3_000, 4)))
         .hasMessage("ACTIVITY_READING_PAGE_UNKNOWN");
     assertThat(unknownPage.taskKinds()).containsExactly("ACTIVITY_READING_PLAN");
 
     ScriptedProvider unknownUnit = new ScriptedProvider(response("[]", "[\"M999\"]", "[]"));
-    assertThatThrownBy(() -> coordinate(unknownUnit, view, boundedProfile(6_000, 4)))
+    assertThatThrownBy(() -> coordinate(unknownUnit, view, boundedProfile(7_000, 3_000, 4)))
         .hasMessage("ACTIVITY_READING_UNIT_UNKNOWN");
     assertThat(unknownUnit.taskKinds()).containsExactly("ACTIVITY_READING_PLAN");
   }
@@ -80,7 +82,8 @@ class ActivityReadingCoordinatorGuardrailTest {
         "[{\"sliceKey\":\"selected-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"read selected unit\"}]";
     ScriptedProvider provider =
         new ScriptedProvider(
-            response("[]", "[\"M999\"]", "[]"), response("[]", "[\"M2\"]", validSlice));
+            response("[]", "[\"M999\"]", "[]"),
+            responseV2("[]", "[\"M2\"]", validSlice, "[\"selected-scope\"]", "[]", true));
     ActivityRetryProfile retry =
         new ActivityRetryProfile(2, 0, 0, 1.0, 0.0, Set.of("UNKNOWN_REFERENCE"), Map.of());
 
@@ -104,7 +107,8 @@ class ActivityReadingCoordinatorGuardrailTest {
         "[{\"sliceKey\":\"selected-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"read selected unit\"}]";
     ScriptedProvider provider =
         new ScriptedProvider(
-            response("[]", "[\"M2\"]", duplicateSlices), response("[]", "[\"M2\"]", validSlice));
+            response("[]", "[\"M2\"]", duplicateSlices),
+            responseV2("[]", "[\"M2\"]", validSlice, "[\"selected-scope\"]", "[]", true));
     ActivityRetryProfile retry =
         new ActivityRetryProfile(2, 0, 0, 1.0, 0.0, Set.of("RESPONSE_SCHEMA_INVALID"), Map.of());
 
@@ -129,7 +133,7 @@ class ActivityReadingCoordinatorGuardrailTest {
             response("[]", "[]", "[]"),
             response("[]", "[]", "[]"));
 
-    ActivityReadingPlan plan = coordinate(provider, view, boundedProfile(6_000, 2));
+    ActivityReadingPlan plan = coordinate(provider, view, boundedProfile(7_000, 3_000, 2));
 
     assertThat(provider.inputs().get(0).path("navigation").path("currentPage").asInt())
         .isEqualTo(1);
@@ -145,7 +149,7 @@ class ActivityReadingCoordinatorGuardrailTest {
             response("[]", "[]", "[]"),
             response("[]", "[]", "[]"));
 
-    ActivityReadingPlan plan = coordinate(provider, view, boundedProfile(6_000, 2));
+    ActivityReadingPlan plan = coordinate(provider, view, boundedProfile(7_000, 3_000, 2));
 
     assertThat(plan.navigationPages()).hasSize(2);
     assertThat(provider.inputs()).hasSize(3);
@@ -176,7 +180,7 @@ class ActivityReadingCoordinatorGuardrailTest {
             response("[]", "[]", "[]"),
             response("[]", "[]", "[]"));
 
-    ActivityReadingPlan plan = coordinate(provider, view, boundedProfile(7_500, 3));
+    ActivityReadingPlan plan = coordinate(provider, view, boundedProfile(8_500, 3_000, 3));
 
     assertThat(plan.navigationPages()).hasSize(3);
     assertThat(scalarText(provider.inputs().get(1).path("completeUnits")))
@@ -220,17 +224,18 @@ class ActivityReadingCoordinatorGuardrailTest {
         "[{\"sliceKey\":\"scope-one\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"read one unit\"}]";
     ScriptedProvider provider =
         new ScriptedProvider(
-            response("[]", "[\"M2\",\"M3\"]", broad), response("[]", "[]", narrow));
+            responseV2("[]", "[\"M2\",\"M3\"]", broad, "[\"scope-one\"]", "[]", false),
+            responseV2("[]", "[]", narrow, "[\"scope-one\"]", "[]", true));
 
     ActivityReadingPlan plan =
-        coordinate(provider, view, new ActivityReadingProfile(23_000, 7_000, 1, 4, 4));
+        coordinate(provider, view, new ActivityReadingProfile(24_000, 8_000, 1, 4, 4));
 
     assertThat(provider.inputs())
         .as(
             "the historic INPUT_CAPACITY_EXCEEDED unknown remains visible, but it cannot keep the"
                 + " current decision pending after the narrower replacement fits")
         .hasSize(2);
-    assertThat(provider.inputs().get(1).path("unknowns").toString())
+    assertThat(provider.inputs().get(1).path("historicalDiagnostics").toString())
         .contains("INPUT_CAPACITY_EXCEEDED:scope-one");
     assertThat(provider.inputs().get(1).path("sliceCapacity").path("maxPacketBytes").asInt())
         .isGreaterThan(0);
@@ -239,11 +244,89 @@ class ActivityReadingCoordinatorGuardrailTest {
   }
 
   @Test
+  void explicitDistinctScopeReplacementClearsOnlyTheSupersededCapacityObligation() {
+    ActivityMaterialView view = neutralView(4, 40, 1_100);
+    String oversizedScope =
+        "[{\"sliceKey\":\"scope-too-broad\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"read two independent units together\"}]";
+    String replacements =
+        "[{\"sliceKey\":\"scope-method-two\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"read method two\"},{\"sliceKey\":\"scope-method-three\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"read method three\"}]";
+    ScriptedProvider provider =
+        new ScriptedProvider(
+            responseV2(
+                "[]", "[\"M2\",\"M3\"]", oversizedScope, "[\"scope-too-broad\"]", "[]", false),
+            responseV2(
+                "[]",
+                "[]",
+                replacements,
+                "[\"scope-method-two\",\"scope-method-three\"]",
+                "[{\"sliceKey\":\"scope-too-broad\",\"replacementSliceKeys\":[\"scope-method-two\",\"scope-method-three\"],\"reason\":\"split independently executable scopes\"}]",
+                true));
+
+    ActivityReadingPlan plan =
+        assertDoesNotThrow(
+            () -> coordinate(provider, view, new ActivityReadingProfile(24_000, 8_000, 1, 4, 4)),
+            "a complete v2 decision must be accepted before its final-scope behavior is applied");
+
+    assertThat(provider.inputs())
+        .as("an explicit replacement of the rejected scope needs no third repair decision")
+        .hasSize(2);
+    assertThat(plan.sliceKeys()).containsExactly("scope-method-two", "scope-method-three");
+    ObjectNode record = plan.toPrivateRecord();
+    assertThat(record.path("schemaVersion").asText()).isEqualTo("activity-reading-plan-v2");
+    assertThat(stringList(record.path("finalSliceKeys")))
+        .containsExactly("scope-method-two", "scope-method-three");
+    assertThat(record.path("currentOpenScopeIssues").isArray()).isTrue();
+    assertThat(stringList(record.path("currentOpenScopeIssues"))).isEmpty();
+    assertThat(stringList(record.path("unknowns")))
+        .anyMatch(issue -> issue.startsWith("INPUT_CAPACITY_EXCEEDED:scope-too-broad:"));
+    assertThat(stringList(record.path("decisions").get(1).path("finalSliceKeys")))
+        .containsExactly("scope-method-two", "scope-method-three");
+  }
+
+  @Test
+  void subsequentReadingInputKeepsHistoricalCapacityDiagnosticsOutOfCurrentSupersededScopeIssues() {
+    ActivityMaterialView view = neutralView(4, 40, 1_100);
+    String oversizedScope =
+        "[{\"sliceKey\":\"scope-too-broad\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"read two independent units together\"}]";
+    String replacements =
+        "[{\"sliceKey\":\"scope-method-two\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"read method two\"},{\"sliceKey\":\"scope-method-three\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"read method three\"}]";
+    String finalKeys = "[\"scope-method-two\",\"scope-method-three\"]";
+    String replacement =
+        "[{\"sliceKey\":\"scope-too-broad\",\"replacementSliceKeys\":[\"scope-method-two\",\"scope-method-three\"],\"reason\":\"split independently executable scopes\"}]";
+    ScriptedProvider provider =
+        new ScriptedProvider(
+            responseV2(
+                "[]", "[\"M2\",\"M3\"]", oversizedScope, "[\"scope-too-broad\"]", "[]", false),
+            responseV2("[]", "[]", replacements, finalKeys, replacement, false),
+            responseV2("[]", "[]", "[]", finalKeys, "[]", true));
+
+    ActivityReadingPlan plan =
+        coordinate(provider, view, new ActivityReadingProfile(24_000, 7_000, 1, 4, 4));
+
+    assertThat(provider.inputs())
+        .as("the model continues only to finish the valid replacement scopes")
+        .hasSize(3);
+    JsonNode subsequentInput = provider.inputs().get(2);
+    assertThat(subsequentInput.path("currentOpenScopeIssues").isArray()).isTrue();
+    assertThat(stringList(subsequentInput.path("currentOpenScopeIssues")))
+        .as("a replaced oversized scope cannot drive the next decision")
+        .noneMatch(issue -> issue.startsWith("INPUT_CAPACITY_EXCEEDED:scope-too-broad:"));
+    assertThat(subsequentInput.path("historicalDiagnostics").isArray()).isTrue();
+    assertThat(stringList(subsequentInput.path("historicalDiagnostics")))
+        .as("the prior capacity decision remains available to the next bounded request")
+        .anyMatch(issue -> issue.startsWith("INPUT_CAPACITY_EXCEEDED:scope-too-broad:"));
+    assertThat(stringList(plan.toPrivateRecord().path("unknowns")))
+        .as("the raw historical capacity diagnostic remains available for audit")
+        .anyMatch(issue -> issue.startsWith("INPUT_CAPACITY_EXCEEDED:scope-too-broad:"));
+    assertThat(stringList(plan.toPrivateRecord().path("currentOpenScopeIssues"))).isEmpty();
+  }
+
+  @Test
   void pageLimitRetainsRemainingPageCountAndNavigationOnlyUnreadUnits() {
     ActivityMaterialView view = neutralView(12, 40, 1_200);
     ScriptedProvider provider = new ScriptedProvider(response("[]", "[]", "[]"));
 
-    ActivityReadingPlan plan = coordinate(provider, view, boundedProfile(6_000, 1));
+    ActivityReadingPlan plan = coordinate(provider, view, boundedProfile(7_000, 3_000, 1));
     JsonNode record = plan.toPrivateRecord();
     int totalPages = record.path("totalNavigationPages").asInt();
 
@@ -262,7 +345,7 @@ class ActivityReadingCoordinatorGuardrailTest {
     ActivityMaterialView view = neutralView(2, 20, 4_000);
     ScriptedProvider provider = new ScriptedProvider(response("[]", "[\"M2\"]", "[]"));
 
-    assertThatThrownBy(() -> coordinate(provider, view, boundedProfile(6_000, 4)))
+    assertThatThrownBy(() -> coordinate(provider, view, boundedProfile(7_000, 3_000, 4)))
         .hasMessageStartingWith("ACTIVITY_READING_PLAN_INPUT_CAPACITY:selection");
     assertThat(provider.taskKinds())
         .as("a complete oversized unit is not truncated and cannot reach Activity DRAFT")
@@ -276,12 +359,15 @@ class ActivityReadingCoordinatorGuardrailTest {
     ScriptedProvider provider =
         new ScriptedProvider(
             response("[]", "[\"M2\",\"M2\"]", "[]"),
-            response(
+            responseV2(
                 "[]",
                 "[]",
-                "[{\"sliceKey\":\"slice-unit-two\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"neutral unit two\"}]"));
+                "[{\"sliceKey\":\"slice-unit-two\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"neutral unit two\"}]",
+                "[\"slice-unit-two\"]",
+                "[]",
+                true));
 
-    ActivityReadingPlan plan = coordinate(provider, view, boundedProfile(14_500, 4));
+    ActivityReadingPlan plan = coordinate(provider, view, boundedProfile(15_500, 3_000, 4));
     assertThat(provider.inputs().get(1).path("navigation").path("remainingPages").asInt())
         .as("after all navigation pages are shown, selection must not advertise them as unread")
         .isZero();
@@ -518,141 +604,62 @@ class ActivityReadingCoordinatorGuardrailTest {
   }
 
   @Test
-  void laterReadingDecisionCanReviseAnExistingSliceUsingItsStableKey() throws Exception {
-    ActivityMaterialView view = ActivityReadingCoordinatorTest.largeView();
-    CanonicalJsonCodec json = new CanonicalJsonCodec();
-    ObjectNode full =
-        (ObjectNode)
-            json.parseCanonical(new ActivityMaterialProjector().materialize(view).modelInputJson());
-    ActivityReadingCoordinator coordinator =
-        new ActivityReadingCoordinator(
-            request -> {
-              throw new AssertionError("no model request");
+  void laterReadingDecisionCanReviseAnExistingSliceUsingItsStableKey() {
+    String initial =
+        "[{\"sliceKey\":\"stable-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"initial scope\"}]";
+    String revised =
+        "[{\"sliceKey\":\"stable-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"revised scope\"}]";
+    ScriptedProvider provider =
+        new ScriptedProvider(
+            responseV2("[]", "[\"M2\"]", initial, "[\"stable-scope\"]", "[]", false),
+            responseV2("[]", "[\"M3\"]", revised, "[\"stable-scope\"]", "[]", true));
+
+    ActivityReadingPlan plan =
+        coordinate(
+            provider,
+            neutralView(4, 40, 1_100),
+            new ActivityReadingProfile(23_000, 7_000, 1, 4, 4));
+
+    assertThat(provider.inputs()).hasSize(2);
+    assertThat(plan.slices())
+        .singleElement()
+        .satisfies(
+            slice -> {
+              assertThat(slice.requiredUnitKeys()).contains("M3").doesNotContain("M2");
+              assertThat(slice.scope()).isEqualTo("revised scope");
             });
-    Method units =
-        ActivityReadingCoordinator.class.getDeclaredMethod("units", ObjectNode.class, Set.class);
-    units.setAccessible(true);
-    @SuppressWarnings("unchecked")
-    Map<String, JsonNode> available =
-        (Map<String, JsonNode>) units.invoke(coordinator, full, Set.of("M1"));
-    Method addSlices =
-        ActivityReadingCoordinator.class.getDeclaredMethod(
-            "addSlices",
-            JsonNode.class,
-            ObjectNode.class,
-            Map.class,
-            ActivityReadingProfile.class,
-            List.class);
-    addSlices.setAccessible(true);
-    List<Object> selected = new ArrayList<>();
-    ObjectNode first = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
-    ObjectNode firstSlice = first.putArray("slices").addObject();
-    firstSlice.put("sliceKey", "stable-scope");
-    firstSlice.putArray("entryKeys").add("E1");
-    firstSlice.putArray("requiredUnitKeys").add("M2");
-    firstSlice.putArray("sharedContextUnitKeys");
-    firstSlice.put("scope", "initial scope");
-    addSlices.invoke(
-        coordinator, first.path("slices"), full, available, boundedProfile(20_000, 2), selected);
-
-    ObjectNode revision = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
-    ObjectNode revisedSlice = revision.putArray("slices").addObject();
-    revisedSlice.put("sliceKey", "stable-scope");
-    revisedSlice.putArray("entryKeys").add("E1");
-    revisedSlice.putArray("requiredUnitKeys").add("M3");
-    revisedSlice.putArray("sharedContextUnitKeys");
-    revisedSlice.put("scope", "revised scope");
-    addSlices.invoke(
-        coordinator, revision.path("slices"), full, available, boundedProfile(20_000, 2), selected);
-
-    assertThat(selected).hasSize(1);
-    Method required = selected.get(0).getClass().getDeclaredMethod("requiredUnitKeys");
-    required.setAccessible(true);
-    Method scope = selected.get(0).getClass().getDeclaredMethod("scope");
-    scope.setAccessible(true);
-    assertThat(required.invoke(selected.get(0))).isEqualTo(List.of("M3"));
-    assertThat(scope.invoke(selected.get(0))).isEqualTo("revised scope");
-
-    ObjectNode duplicateResponse =
-        com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
-    duplicateResponse.putArray("slices").add(revisedSlice.deepCopy()).add(revisedSlice.deepCopy());
-    assertThatThrownBy(
-            () ->
-                addSlices.invoke(
-                    coordinator,
-                    duplicateResponse.path("slices"),
-                    full,
-                    available,
-                    boundedProfile(20_000, 2),
-                    selected))
-        .hasRootCauseMessage("ACTIVITY_READING_SLICE_DUPLICATE");
+    assertThat(stringList(plan.toPrivateRecord().path("finalSliceKeys")))
+        .containsExactly("stable-scope");
   }
 
   @Test
-  void oversizedRevisionRetainsPreviouslyUsableScope() throws Exception {
-    ActivityMaterialView view = ActivityReadingCoordinatorTest.largeView();
-    CanonicalJsonCodec json = new CanonicalJsonCodec();
-    ObjectNode full =
-        (ObjectNode)
-            json.parseCanonical(new ActivityMaterialProjector().materialize(view).modelInputJson());
-    ActivityReadingCoordinator coordinator =
-        new ActivityReadingCoordinator(
-            request -> {
-              throw new AssertionError("no model request");
+  void oversizedSameKeyRevisionRetainsPreviouslyUsableScopeAndRecordsCurrentCapacityIssue() {
+    String usable =
+        "[{\"sliceKey\":\"stable-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"usable local scope\"}]";
+    String oversized =
+        "[{\"sliceKey\":\"stable-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\",\"M3\",\"M4\"],\"sharedContextUnitKeys\":[],\"scope\":\"too large combined scope\"}]";
+    ScriptedProvider provider =
+        new ScriptedProvider(
+            responseV2("[]", "[\"M3\"]", usable, "[\"stable-scope\"]", "[]", false),
+            responseV2("[]", "[\"M2\",\"M4\"]", oversized, "[\"stable-scope\"]", "[]", true));
+
+    ActivityReadingPlan plan =
+        coordinate(
+            provider,
+            neutralView(4, 40, 1_100),
+            new ActivityReadingProfile(23_000, 7_000, 1, 4, 4));
+
+    assertThat(provider.inputs()).hasSize(2);
+    assertThat(plan.slices())
+        .singleElement()
+        .satisfies(
+            slice -> {
+              assertThat(slice.requiredUnitKeys()).contains("M3").doesNotContain("M2", "M4");
+              assertThat(slice.scope()).isEqualTo("usable local scope");
             });
-    Method units =
-        ActivityReadingCoordinator.class.getDeclaredMethod("units", ObjectNode.class, Set.class);
-    units.setAccessible(true);
-    @SuppressWarnings("unchecked")
-    Map<String, JsonNode> available =
-        (Map<String, JsonNode>) units.invoke(coordinator, full, Set.of("M1"));
-    Method addSlices =
-        ActivityReadingCoordinator.class.getDeclaredMethod(
-            "addSlices",
-            JsonNode.class,
-            ObjectNode.class,
-            Map.class,
-            ActivityReadingProfile.class,
-            List.class);
-    addSlices.setAccessible(true);
-    List<Object> slices = new ArrayList<>();
-    ObjectNode first = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
-    ObjectNode firstSlice = first.putArray("slices").addObject();
-    firstSlice.put("sliceKey", "stable-scope");
-    firstSlice.putArray("entryKeys").add("E1");
-    firstSlice.putArray("requiredUnitKeys").add("M3");
-    firstSlice.putArray("sharedContextUnitKeys");
-    firstSlice.put("scope", "usable local scope");
-    ActivityReadingProfile profile = boundedProfile(16_000, 2);
-    addSlices.invoke(coordinator, first.path("slices"), full, available, profile, slices);
-    List<Object> prior = List.copyOf(slices);
-
-    ObjectNode revision = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
-    ObjectNode proposed = revision.putArray("slices").addObject();
-    proposed.put("sliceKey", "stable-scope");
-    proposed.putArray("entryKeys").add("E1");
-    proposed.putArray("requiredUnitKeys").add("M2").add("M3").add("M4");
-    proposed.putArray("sharedContextUnitKeys");
-    proposed.put("scope", "too large combined scope");
-    addSlices.invoke(coordinator, revision.path("slices"), full, available, profile, slices);
-    Method reject =
-        ActivityReadingCoordinator.class.getDeclaredMethod(
-            "rejectOversizedSlices",
-            ActivityMaterialView.class,
-            ObjectNode.class,
-            Set.class,
-            List.class,
-            List.class,
-            List.class,
-            ActivityReadingProfile.class);
-    reject.setAccessible(true);
-    List<String> unknowns = new ArrayList<>();
-    reject.invoke(
-        coordinator, view, full, Set.of("M1", "M2", "M3", "M4"), slices, prior, unknowns, profile);
-
-    assertThat(slices).hasSize(1);
-    assertThat(slices.get(0)).isEqualTo(prior.get(0));
-    assertThat(unknowns).anyMatch(reason -> reason.startsWith("INPUT_CAPACITY_EXCEEDED:"));
+    assertThat(stringList(plan.toPrivateRecord().path("currentOpenScopeIssues")))
+        .anyMatch(issue -> issue.startsWith("INPUT_CAPACITY_EXCEEDED:stable-scope:"));
+    assertThat(plan.toPrivateRecord().path("requiredScopeIncomplete").asBoolean()).isTrue();
   }
 
   private void assertSingleM2Body(JsonNode input) {
@@ -671,7 +678,12 @@ class ActivityReadingCoordinatorGuardrailTest {
   }
 
   private static ActivityReadingProfile boundedProfile(int maxInputBytes, int maxNavigationPages) {
-    return new ActivityReadingProfile(maxInputBytes, 2_000, maxNavigationPages, 4, 4);
+    return boundedProfile(maxInputBytes, 2_000, maxNavigationPages);
+  }
+
+  private static ActivityReadingProfile boundedProfile(
+      int maxInputBytes, int maxOutputBytes, int maxNavigationPages) {
+    return new ActivityReadingProfile(maxInputBytes, maxOutputBytes, maxNavigationPages, 4, 4);
   }
 
   private static ActivityMaterialView neutralView(
@@ -756,13 +768,29 @@ class ActivityReadingCoordinatorGuardrailTest {
   }
 
   private static String response(String pages, String units, String slices) {
+    return responseV2(pages, units, slices, "[]", "[]", false);
+  }
+
+  private static String responseV2(
+      String pages,
+      String units,
+      String slices,
+      String finalSliceKeys,
+      String supersededSlices,
+      boolean finishReading) {
     return "{\"requestedNavigationPages\":"
         + pages
         + ",\"requestedUnitKeys\":"
         + units
         + ",\"slices\":"
         + slices
-        + ",\"unknowns\":[]}";
+        + ",\"unknowns\":[],\"finalSliceKeys\":"
+        + finalSliceKeys
+        + ",\"supersededSlices\":"
+        + supersededSlices
+        + ",\"finishReading\":"
+        + finishReading
+        + "}";
   }
 
   private static List<String> scalarText(JsonNode value) {

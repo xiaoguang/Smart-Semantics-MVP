@@ -56,7 +56,7 @@ ActivityExplainer是唯一局部业务解释者；投影器/阅读协调器不�
 
 ## 5. 执行、失败与复用
 
-业务生成默认绑定已登录ChatGPT的Codex上下文gpt-5.6-terra/high。设计/调试Astra/ultra，测试Terra/xhigh，代码Sol/xhigh。一个job固定同一Provider/账户/model/effort，不自动换服务或回退API；历史身份不改写。
+业务生成默认绑定已登录ChatGPT的Codex上下文Luna/high。方向判断、设计文档和调试由Astra/ultra负责，测试Luna/xhigh，代码Terra/xhigh。一个job固定同一Provider/账户/model/effort，不自动换服务或回退API；历史身份不改写。
 
 新Activity使用单一YAML的全局和Provider/account并发上限，包间并行、同包阶段及slice顺序。失败阶段按配置重试，maxAttempts包含首次，1关闭自动重试；保存每次尝试和backoff原因。REVIEW重试原样复用成功DRAFT，不重读/重写。stageKey包含页、轮与slice身份，不能混淆不同输入。
 

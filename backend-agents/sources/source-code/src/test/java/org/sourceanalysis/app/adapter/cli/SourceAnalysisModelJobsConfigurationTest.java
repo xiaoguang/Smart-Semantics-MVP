@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
@@ -30,10 +31,20 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
+import org.sourceanalysis.app.analysis.interpretation.activity.ActivityReadingProfile;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
+import org.sourceanalysis.app.analysis.material.CodeReadingMaterialProfile;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
+import org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot;
+import org.sourceanalysis.app.artifact.AnalysisStepKey;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationAddress;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
+import org.sourceanalysis.app.artifact.AnalysisStepReceiptId;
 import org.sourceanalysis.app.artifact.CanonicalArtifactPolicyRegistry;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
+import org.sourceanalysis.app.artifact.Sha256Digest;
 
 /** RED contracts for the unified repository-run-config-v2 modelJobs configuration. */
 class SourceAnalysisModelJobsConfigurationTest {
@@ -177,6 +188,137 @@ class SourceAnalysisModelJobsConfigurationTest {
             property(
                 loadConfiguration(writeConfig(YAML.writeValueAsString(document))), "modelJobs");
     configured.requireActivityCapacity();
+  }
+
+  @Test
+  void sourceAnalysisActivityReadingResolvesDefaultsAndCustomLimitsWithoutChangingStep05Basis()
+      throws Exception {
+    ToolFixture tools = toolFixture();
+    Path providerMarker = temporaryDirectory.resolve("activity-provider-started");
+    Path providerExecutable = writeProviderMarkerExecutable(providerMarker);
+    ObjectNode defaults = activityReadingConfiguration(tools, providerExecutable, null);
+    ObjectNode custom =
+        activityReadingConfiguration(
+            tools,
+            providerExecutable,
+            YAML.readTree("{maxNavigationPages: 7, maxReadingRounds: 3, maxSlicesPerPacket: 8}"));
+
+    Object defaultConfiguration = loadConfiguration(writeConfig(YAML.writeValueAsString(defaults)));
+    Object customConfiguration = loadConfiguration(writeConfig(YAML.writeValueAsString(custom)));
+    ActivityReadingProfile defaultProfile =
+        (ActivityReadingProfile) property(defaultConfiguration, "activityReadingProfile");
+    ActivityReadingProfile customProfile =
+        (ActivityReadingProfile) property(customConfiguration, "activityReadingProfile");
+
+    assertThat(defaultProfile.maxNavigationPages()).isEqualTo(128);
+    assertThat(defaultProfile.maxReadingRounds()).isEqualTo(4);
+    assertThat(defaultProfile.maxSlicesPerPacket()).isEqualTo(32);
+    assertThat(customProfile.maxNavigationPages()).isEqualTo(7);
+    assertThat(customProfile.maxReadingRounds()).isEqualTo(3);
+    assertThat(customProfile.maxSlicesPerPacket()).isEqualTo(8);
+    assertThat(property(defaultConfiguration, "baseConfigurationSha256"))
+        .as("Activity reading limits are execution configuration, not the saved Step05 basis")
+        .isEqualTo(property(customConfiguration, "baseConfigurationSha256"));
+
+    ExecutionResult result = execute(writeConfig(YAML.writeValueAsString(custom)), "activities");
+    assertThat(result.exitCode()).isNotZero();
+    assertThat(result.diagnostics())
+        .contains("MATERIALS_STATE_INVALID")
+        .doesNotContain("CONFIGURATION_INVALID");
+    assertThat(providerMarker).doesNotExist();
+  }
+
+  @Test
+  void activityReadingConfigurationIsStrictAndHistoricalV2KeepsItsDefaults() throws Exception {
+    ToolFixture tools = toolFixture();
+    Path providerExecutable = tools.executable();
+    ObjectNode historicalV2 = activityReadingConfiguration(tools, providerExecutable, null);
+    historicalV2.put("schemaVersion", "repository-run-config-v2");
+    RepositoryRunConfiguration loadedHistoricalV2 =
+        (RepositoryRunConfiguration)
+            loadConfiguration(writeConfig(YAML.writeValueAsString(historicalV2)));
+    ActivityReadingProfile historicalProfile = loadedHistoricalV2.activityReadingProfile();
+    assertThat(historicalProfile.maxNavigationPages()).isEqualTo(128);
+    assertThat(historicalProfile.maxReadingRounds()).isEqualTo(4);
+    assertThat(historicalProfile.maxSlicesPerPacket()).isEqualTo(32);
+
+    ObjectNode v2WithNewField = historicalV2.deepCopy();
+    ((ObjectNode) v2WithNewField.path("sourceAnalysis"))
+        .set(
+            "activityReading",
+            YAML.readTree("{maxNavigationPages: 7, maxReadingRounds: 3, maxSlicesPerPacket: 8}"));
+    assertConfigurationInvalid(YAML.writeValueAsString(v2WithNewField));
+
+    ObjectNode missingRequiredField = activityReadingConfiguration(tools, providerExecutable, null);
+    ((ObjectNode) missingRequiredField.path("sourceAnalysis"))
+        .set("activityReading", YAML.readTree("{maxNavigationPages: 7, maxSlicesPerPacket: 8}"));
+    assertConfigurationInvalid(YAML.writeValueAsString(missingRequiredField));
+
+    ObjectNode wrongType = activityReadingConfiguration(tools, providerExecutable, null);
+    ((ObjectNode) wrongType.path("sourceAnalysis"))
+        .set(
+            "activityReading",
+            YAML.readTree(
+                "{maxNavigationPages: 7, maxReadingRounds: three, maxSlicesPerPacket: 8}"));
+    assertConfigurationInvalid(YAML.writeValueAsString(wrongType));
+
+    ObjectNode unknownField = activityReadingConfiguration(tools, providerExecutable, null);
+    ((ObjectNode) unknownField.path("sourceAnalysis"))
+        .set(
+            "activityReading",
+            YAML.readTree(
+                "{maxNavigationPages: 7, maxReadingRounds: 3, maxSlicesPerPacket: 8, maxFutureReads: 9}"));
+    assertConfigurationInvalid(YAML.writeValueAsString(unknownField));
+  }
+
+  @Test
+  void writesV5EffectiveReadingConfigurationAndStrictlyAcceptsHistoricalV4() throws Exception {
+    ToolFixture tools = toolFixture();
+    ObjectNode yaml =
+        activityReadingConfiguration(
+            tools,
+            tools.executable(),
+            YAML.readTree("{maxNavigationPages: 7, maxReadingRounds: 3, maxSlicesPerPacket: 8}"));
+    RepositoryRunConfiguration configuration =
+        (RepositoryRunConfiguration) loadConfiguration(writeConfig(YAML.writeValueAsString(yaml)));
+    ModelJobsConfiguration modelJobs = configuration.modelJobs();
+    AnalysisRunId sourceRun = AnalysisRunId.parse("analysis-run:" + "a".repeat(64));
+    AnalysisRunId modelBatch = AnalysisRunId.parse("analysis-run:" + "b".repeat(64));
+    RepositoryRunStateV4.SavedState materials =
+        new RepositoryRunStateV4.SavedState(
+            sourceRun,
+            RepositoryRunStateV4.CheckpointKind.CODE_READING_MATERIALS,
+            publication(sourceRun, AnalysisStepKey.BUSINESS_FLOWS, '1'),
+            new VerifiedSourceInventoryReference(
+                publication(sourceRun, AnalysisStepKey.VERIFIED_SOURCE_INVENTORY, '2')),
+            new ProgramGraphsReference(publication(sourceRun, AnalysisStepKey.PROGRAM_GRAPHS, '3')),
+            publication(sourceRun, AnalysisStepKey.PROVEN_CODE_FACTS, '4'),
+            "code-reading-materials-v1",
+            "code-reading-material-set-v1",
+            new CodeReadingMaterialProfile(32_768, 3),
+            "5".repeat(64));
+
+    writeStep05ExecutionConfiguration(configuration, modelJobs, materials, modelBatch);
+    ObjectNode saved =
+        SourceAnalysisExecution.readModelJobExecutionConfiguration(modelJobs, modelBatch);
+
+    assertThat(saved.path("schemaVersion").asText()).isEqualTo("model-job-execution-config-v5");
+    assertThat(saved.path("activityReading").path("maxModelInputBytes").asInt()).isEqualTo(65_536);
+    assertThat(saved.path("activityReading").path("maxModelOutputBytes").asInt()).isEqualTo(32_768);
+    assertThat(saved.path("activityReading").path("maxNavigationPages").asInt()).isEqualTo(7);
+    assertThat(saved.path("activityReading").path("maxReadingRounds").asInt()).isEqualTo(3);
+    assertThat(saved.path("activityReading").path("maxSlicesPerPacket").asInt()).isEqualTo(8);
+    requireStep05ExecutionConfiguration(saved);
+
+    ObjectNode historicalV4 = saved.deepCopy();
+    historicalV4.put("schemaVersion", "model-job-execution-config-v4");
+    historicalV4.remove("activityReading");
+    requireStep05ExecutionConfiguration(historicalV4);
+
+    ObjectNode incompleteV5 = saved.deepCopy();
+    ((ObjectNode) incompleteV5.path("activityReading")).remove("maxReadingRounds");
+    assertThatThrownBy(() -> requireStep05ExecutionConfiguration(incompleteV5))
+        .hasMessage("MATERIALS_STATE_INVALID");
   }
 
   @Test
@@ -978,19 +1120,8 @@ class SourceAnalysisModelJobsConfigurationTest {
 
   private static Object modelExecutionConfiguration(
       Object modelJobsConfiguration, AnalysisRunId runId) throws Exception {
-    Method mapper =
-        java.util.Arrays.stream(SourceAnalysisExecution.class.getDeclaredMethods())
-            .filter(method -> method.getName().equals("modelJobExecutionConfiguration"))
-            .filter(method -> Modifier.isStatic(method.getModifiers()))
-            .filter(method -> method.getParameterCount() == 3)
-            .findFirst()
-            .orElseThrow();
-    mapper.setAccessible(true);
-    try {
-      return mapper.invoke(null, modelJobsConfiguration, runId, null);
-    } catch (InvocationTargetException failure) {
-      throw new AssertionError(failure.getCause());
-    }
+    return SourceAnalysisExecution.modelJobExecutionConfiguration(
+        (ModelJobsConfiguration) modelJobsConfiguration, runId, null, null);
   }
 
   private static byte[] waitForInstalledBytes(Path destination) throws IOException {
@@ -1261,6 +1392,92 @@ class SourceAnalysisModelJobsConfigurationTest {
     technical.set("readingMaterials", YAML.readTree(readingMaterialsBody));
     document.remove("business");
     return YAML.writeValueAsString(document);
+  }
+
+  private ObjectNode activityReadingConfiguration(
+      ToolFixture tools, Path providerExecutable, JsonNode activityReading) throws IOException {
+    ObjectNode document =
+        (ObjectNode)
+            YAML.readTree(
+                readingMaterialsConfigYaml(
+                    tools,
+                    defaultModelJobs(tools)
+                        .replace(quote(tools.executable()), quote(providerExecutable)),
+                    "{maxPacketUtf8Bytes: 32768, maxEntriesPerPacket: 3}"));
+    document.put("schemaVersion", "repository-run-config-v3");
+    document.set(
+        "business",
+        YAML.readTree(
+            """
+            activity:
+              maxModelInputBytes: 65536
+              maxModelOutputBytes: 32768
+              maxActivitiesPerMaterial: 12
+              maxValuesPerField: 64
+              maxTextCharsPerValue: 4096
+            maxMaterialsToStart: 325
+            """));
+    ObjectNode provider =
+        (ObjectNode)
+            document.path("sourceAnalysis").path("modelJobs").path("providers").path("pro");
+    provider.set(
+        "capacity",
+        YAML.readTree(
+            "{contextWindowTokens: 256000, providerOverheadTokens: 8000, reasoningReserveTokens: 24000, tokenAccounting: UTF8_BYTE_ESTIMATE}"));
+    if (activityReading != null) {
+      ((ObjectNode) document.path("sourceAnalysis")).set("activityReading", activityReading);
+    }
+    return document;
+  }
+
+  private static AnalysisStepPublicationReference publication(
+      AnalysisRunId runId, AnalysisStepKey key, char fill) {
+    String suffix = String.valueOf(fill).repeat(64);
+    return new AnalysisStepPublicationReference(
+        new AnalysisStepPublicationAddress(runId, key),
+        new AnalysisStepArtifactRoot("analysis-step-root:" + suffix),
+        new AnalysisStepReceiptId("analysis-step-receipt:" + suffix),
+        new Sha256Digest(suffix));
+  }
+
+  private static void writeStep05ExecutionConfiguration(
+      RepositoryRunConfiguration configuration,
+      ModelJobsConfiguration modelJobs,
+      RepositoryRunStateV4.SavedState materials,
+      AnalysisRunId modelBatch)
+      throws Exception {
+    Method writer =
+        SourceAnalysisExecution.class.getDeclaredMethod(
+            "writeStep05ModelJobExecutionConfiguration",
+            RepositoryRunConfiguration.class,
+            ModelJobsConfiguration.class,
+            RepositoryRunStateV4.SavedState.class,
+            AnalysisRunId.class,
+            AnalysisRunId.class,
+            AnalysisRunId.class,
+            Set.class);
+    writer.setAccessible(true);
+    try {
+      writer.invoke(null, configuration, modelJobs, materials, modelBatch, null, null, Set.of());
+    } catch (InvocationTargetException failure) {
+      throw new AssertionError("writing v5 execution configuration failed", failure.getCause());
+    }
+  }
+
+  private static void requireStep05ExecutionConfiguration(ObjectNode value) throws Exception {
+    Method reader =
+        SourceAnalysisExecution.class.getDeclaredMethod(
+            "requireStep05ModelJobExecutionConfiguration", ObjectNode.class);
+    reader.setAccessible(true);
+    try {
+      reader.invoke(null, value);
+    } catch (InvocationTargetException failure) {
+      Throwable cause = failure.getCause();
+      if (cause instanceof RuntimeException runtime) {
+        throw runtime;
+      }
+      throw new AssertionError("reading execution configuration failed", cause);
+    }
   }
 
   private String defaultModelJobs(ToolFixture tools) {

@@ -46,10 +46,10 @@ Step04拥有可选MyBatis/JSqlParser；Step05是唯一材料owner；Step06只重
 
 2026-09-18固定jshERP新01–05验收完成：326入口有处置，325有上下文，1个definition超时；9,189方法、51,675入口调用、28,033真实RPC、115,250缓存命中。插件启用取得61 XML/573 statements；关闭插件同索引读取不再次JDT。阅读材料325包/326覆盖；模型调用0。完整记录见[交付核验](../../supplements/jdt-persistence-reading-materials-delivery.md)。
 
-旧326个已审Activity及原M10是保留的历史业务结果；它们不是本次新XML材料的模型验收。新Step06投影/大包阅读/retry尚未实现，见[Activity目标](../activity-explanation/README.md)。动态分派、反射、缺依赖、生成代码和外部实际效果仍按原边界未知；目录/Activity数量不能证明过程质量。
+旧326个已审Activity及原M10是保留的历史业务结果；它们不是新XML材料的模型验收。新Step06投影/大包阅读/retry已实现，325包保存了418条Activity；范围完成性和端到端收尾以[Activity当前状态](../activity-explanation/README.md)为准，不据此宣称全仓业务验收通过。动态分派、反射、缺依赖、生成代码和外部实际效果仍按原边界未知；目录/Activity数量不能证明过程质量。
 
 ## 5. 开发与验收
 
-Astra/ultra负责方向、文档、debug；Terra/xhigh写直接行为测试；Sol/xhigh实现。普通fixture无真实工具/模型；真实JDT仅单独授权入口，重型命令串行。只跑新增或直接覆盖测试；当前文档改动不授权源码扫描、工具运行、产品调用或提交。
+Astra/ultra负责方向、文档、debug；Luna/xhigh写直接行为测试；Terra/xhigh实现。普通fixture无真实工具/模型；真实JDT仅单独授权入口，重型命令串行。只跑新增或直接覆盖测试；文档本身不授权源码扫描、工具运行、产品调用或提交。
 
 现行步骤详细职责分别由[03](../../analysis-steps/03-program-graphs.md)、[04](../../analysis-steps/04-proven-code-facts.md)、[05](../../analysis-steps/05-business-flows.md)拥有。本组不复制另一套配置、材料或业务执行owner。

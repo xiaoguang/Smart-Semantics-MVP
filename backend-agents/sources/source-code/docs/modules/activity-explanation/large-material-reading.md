@@ -1,6 +1,6 @@
 # ActivityReadingCoordinator：大材料怎样有效读完
 
-状态：DIRECT/SELECTED/SLICED、分页阅读、逐slice解释、任务池与CLI已实现，325包真实保存418条Activity。Task 1的计划/阶段损坏拒绝、局部结果保留和Provider边界已在隔离Maven输出中通过12类79个direct tests及Spotless；这不是完整CI，没有真实模型/JDT/客户构建。Task 2的最终/替换scope和Task 3的coverage-v4/reuse-only仍未实现，见[收口记录](post-review-handoff-20260923.md)。每次请求仍自包含，不静默截断，不建立检索服务、向量库或摘要运行框架。
+状态：DIRECT/SELECTED/SLICED、分页阅读、逐slice解释、任务池与CLI已实现，325包真实保存418条Activity。Task 1可靠性修复通过12类79项定向测试；Task 2最终/替换scope、计划重开和配置传递通过8类80项定向测试、Spotless及独立复查，均使用隔离Maven输出。这不是完整CI，没有真实模型/JDT/客户构建；Task 3的coverage-v4/reuse-only开始实施。历史收口见[记录](post-review-handoff-20260923.md)，当前进度见[实施计划](../../plans/end-to-end-business-delivery-implementation-plan.md)。每次请求仍自包含，不静默截断，不建立检索服务、向量库或摘要运行框架。
 
 ## 1. 三条可结束的路径
 
@@ -45,16 +45,18 @@ READING_PLAN只能选择本Packet已有单元及其已保存依赖，不能搜�
 
 例如新增单据包正文引用BusinessConstants.BILLS_STATUS_UN_AUDIT，但未包含常量定义；Step06可描述设置该具名常量，值与命名业务释义标为待确认，不能只凭旧Activity写成数字0。Step07可用现有冻结文本reader补读同源常量后确认0/1含义，保留Step06原记录；这不授权Step06新增常量解析器或扩大Packet读取范围，也不阻止其余已读行为的解释。
 
-目标profile在同一YAML中定义：
+profile在同一YAML的`sourceAnalysis.activityReading`中定义：
 
 | 字段 | 默认 | 含义 |
 | --- | --- | --- |
 | maxNavigationPages | 128 | 每技术包最多展示的不同导航页；正整数，不按付费额度推算 |
 | maxReadingRounds | 4 | 全导航展示之后最多进行的正文补读/范围修订轮；每轮必须增加正文或明确终止 |
-| maxSlicesPerPacket | 32 | 一个包最大局部业务范围数；限制失控分解，不限定业务本身有几类 |
+| maxSlicesPerPacket | 32 | 一个包当前有效局部业务范围的最大数量；已明确替代的历史定义不占当前名额，原始响应仍保留 |
 | request/input/output容量 | 必需配置缺失则拒绝 | 现有字节限制精确检查；Provider声明的context上限与保守预留采用离线计数/字节估算，不要求隐藏tokenizer证明；详见[容量预检合同](integration-contracts.md#8-容量失败与验收) |
 
-这些默认值当前仍硬编码在调用方，YAML接线是本次待实施项。真实大包已经运行，但不能据此证明范围无缺口。导航展示决策不消耗maxReadingRounds，仍计实际请求与attempt；达到页限就停止新增阅读请求并列出未展示范围。所有READING_PLAN请求总数上界为实际页展示次数 + maxReadingRounds；同页或已取单元的重复请求不能重置上界。零进展响应结束为READING_PLAN_NO_PROGRESS，而不是再开隐含修复轮。
+配置v3的加载、默认值、自定义值及向ActivityExplainer传递已接线，首条配置定向测试通过；实际执行上限与完整回归仍待验证。省略整个activityReading使用上表默认值；显式提供时三个字段均须为正整数，不接受未知字段。没有Activity执行配置的材料规划、检查或导出不因此要求新增模型配置。真实大包的历史运行不能证明本次改动后的范围无缺口。
+
+导航展示决策不消耗maxReadingRounds，仍计实际请求与attempt；达到页限就停止新增阅读请求并列出未展示范围。所有READING_PLAN请求总数上界为实际页展示次数 + maxReadingRounds；同页或已取单元的重复请求不能重置上界。零进展响应结束为READING_PLAN_NO_PROGRESS，而不是再开隐含修复轮。
 
 ## 4. 如何形成多个完整slice
 
@@ -119,7 +121,7 @@ finishReading                    是否请求结束阅读并冻结范围
 
 finalSliceKeys包含本轮及此前已定义的实际scope。移出旧key必须在supersededSlices说明是由哪些key替代，或无替代且保留具体未解释范围；程序不能从相近名称推断替代。相同key改定义仍允许，同轮重复定义仍拒绝；全部引用先在临时状态验证。声明结束不代表源码已足够，实际缺必需unit/容量/未展示范围仍登记不足。
 
-1. 每轮保存原始响应和历史诊断；从本轮有效定义计算currentOpenScopeIssues，不扫描累积unknown字符串决定是否继续。
+1. 每轮保存原始响应和历史诊断；从本轮有效定义计算currentOpenScopeIssues，不扫描累积unknown字符串决定是否继续。下一次私有阅读请求使用`historicalDiagnostics`和`currentOpenScopeIssues`两个数组，明确区分历史诊断与当前问题：旧范围已被有效替代时，其历史超限记录仍保存，但不能继续作为当前必需缺口交给模型。原始决策和保存记录的unknowns保留原字段及内容，不改写历史。
 2. 一个旧超限scope被明确替换后只留历史记录；替代scope仍缺材料或超容量才继续有界读取。不能靠新key增加就自动解除旧义务。
 3. 结束前核验finalSliceKeys、完整unit/依赖和当前不足，保存不可变plan-v2。没有新进展或轮数结束则保存有限失败，不请求额外修复轮。
 4. 每scope必须说明独立的业务问题/触发/结果。相同查询的过滤、分页、汇总可能是一个动作的组成部分；模型应优先修订既有scope，不因轮次不同重复提议。程序不审判这种语义，只展示旧定义和要求明确替换。

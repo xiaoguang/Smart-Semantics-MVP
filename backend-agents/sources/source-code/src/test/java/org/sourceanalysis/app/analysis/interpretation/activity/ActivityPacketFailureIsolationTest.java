@@ -335,12 +335,12 @@ class ActivityPacketFailureIsolationTest {
       if (round == 1) {
         return readingResponse(
             identity,
-            "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[\"M2\"],\"slices\":[],\"unknowns\":[]}");
+            "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[\"M2\"],\"slices\":[],\"unknowns\":[],\"finalSliceKeys\":[],\"supersededSlices\":[],\"finishReading\":false}");
       }
       if (round == 2) {
         return readingResponse(
             identity,
-            "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[],\"slices\":[{\"sliceKey\":\"selected-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"selected complete scope\"}],\"unknowns\":[]}");
+            "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[],\"slices\":[{\"sliceKey\":\"selected-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"selected complete scope\"}],\"unknowns\":[],\"finalSliceKeys\":[\"selected-scope\"],\"supersededSlices\":[],\"finishReading\":true}");
       }
       throw new AssertionError("unexpected extra READING_PLAN round for " + packetId);
     }

@@ -43,7 +43,7 @@ Step07没有自动重试；新Activity重试政策不扩展到本步。fatal停�
 
 三阶段、系统认识、CHECK保留集、v4发布、保存/复用和preview均已接线；新Step05来源已接到Step07内部协议与持久executor，正式运行编排已接线。历史12次请求的三例未全通过：采购最终未发送、销售用法引用非法、调拨仍有条件错误，见[实测](../supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)。可读性认可不等于准确性或全仓通过。
 
-本次收尾设计见[端到端业务交付](../end-to-end-business-delivery-design.md)：核对Activity必需范围，新增同入口导航、候选局部编码及WRITE字段限制，再从正式CLI做离线贯穿和真实样例。测试Terra/xhigh、代码Sol/xhigh、设计/调试Astra/ultra；本轮仅文档，未运行测试/构建/JDT/业务模型。
+本次收尾设计见[端到端业务交付](../end-to-end-business-delivery-design.md)：核对Activity必需范围，新增同入口导航、候选局部编码及WRITE字段限制，再从正式CLI做离线贯穿和真实样例。测试Luna/xhigh、代码Terra/xhigh、方向/设计文档/调试Astra/ultra。已批准端到端计划正在离线实施；本轮尚未运行真实业务模型或JDT，小样展示后的全仓扩大仍须确认。
 
 ## 5. 本次待评审的端到端增量
 

@@ -3,11 +3,13 @@
 > 状态：2026-09-23用户已批准实施；先执行离线修改和核对，真实小样展示后仍须确认才扩大全仓。
 > 核对日期：2026-09-23。工作目录固定为正式 source-code 模块。
 
+当前执行状态：步骤0、1、2已完成；步骤3开始实施，其余待执行。设计基线为1917798，未验证旧补丁保存为ccd5a96，步骤1修复保存为585c797并通过79项定向测试；步骤2通过8类80项定向测试、Spotless和独立复查。这些是本地验证，不是步骤9完整CI或真实业务验收，尚未推送。当前细项见[执行交接](../../progress/end-to-end-business-delivery-execution.md)。
+
 **Goal：**复用已保存的 Step05 材料和新版 Activity，补齐范围完成记录与可靠接续，修正 Step07 的导航、输入编码和写作约束，经小样核验后生成新版全仓 business-processes.md。
 
 **Architecture：**在现有 Activity、运行协调器、Step07 Discovery、私有任务保存器和 Publisher 内增量修改。不重建上游，不增加公共 Agent、模型调度层、业务规则引擎或证据框架。Java负责取材、结构、范围、引用与保存；模型负责业务发现、推理和最终内容核对。
 
-**Tech stack：**应用 Java 17、Jackson、现有 Maven/JUnit/AssertJ、本地 canonical store、已有 Codex Provider/并发池。质量检查使用 JDK21+ 宿主；按用户最新要求，真实业务模型使用 gpt-5.6-terra / high、现有 ChatGPT 登录、并发4、请求超时3600秒，不使用 API-key 回退。旧Activity模型身份不改。
+**Tech stack：**应用 Java 17、Jackson、现有 Maven/JUnit/AssertJ、本地 canonical store、已有 Codex Provider/并发池。质量检查使用 JDK21+ 宿主；按用户最新要求，真实业务模型默认 Luna / high、现有 ChatGPT 登录、并发4、请求超时3600秒，不使用 API-key 回退。旧Activity模型身份不改。
 
 **Spec：**[端到端详细设计](../end-to-end-business-delivery-design.md)，以及其中指定的主设计、Activity、Step07 和模型执行模块合同。补充文档保留历史推演，不作为另一套相反的实现要求。
 
@@ -21,7 +23,7 @@
 | --- | --- | --- |
 | JDT、持久化关联、Step05 阅读材料 | 已生成325包，保存326条入口处置 | 不重扫；保留原1个无材料的导航失败入口 |
 | 新材料生成 Activity | 已保存418条 Activity；325包都有结果 | 核实每包必需解释范围是否完成，不能只看已有结果数量 |
-| 阶段保存、重试和并发 | 已有实现；上一轮留下未验证修复 | 验证并修复局部失败、历史问题残留、错误分类和重开 |
+| 阶段保存、重试和并发 | 步骤1修复已通过定向验证 | 步骤2补最终阅读范围；步骤3补历史接续及公开完成记录 |
 | 新 Activity → Step07 | 正式入口、请求、来源读取已接通 | 补真实 Agent/存储贯穿验收与更严格的范围准入 |
 | 全仓目录、跨候选选材、阅读检查 | 已实现 | 同入口导航、输入去重和短编号，不改变业务发现为硬编码 |
 | DRAFT → WRITE → RULE_REVIEW | 已实现 | 限制 WRITE 修改范围，核对实际成稿，保存可逆编号映射 |
@@ -34,8 +36,8 @@
 | 项目 | 本轮使用的值 |
 | --- | --- |
 | 工作分支 | codex/step05-activity-full-generation |
-| 当前 HEAD | 51b6625a624b4a63b113dc743ac6e3a3c3cb911d |
-| 本地 main / 最近观测的 origin/main | 5ceb11115edd23e64d464b8a41b2e3caad27b651；本轮未 fetch，不宣称这是此刻远端最新 |
+| 实施起点 HEAD | 51b6625a624b4a63b113dc743ac6e3a3c3cb911d；后续检查点见上方执行状态 |
+| 本地 main / 最近 fetch 的 origin/main | 5ceb11115edd23e64d464b8a41b2e3caad27b651；步骤0已fetch核对，交付前仍须重新核对 |
 | Step05 状态 | .workspace/jdt-persistence-acceptance-20260917/materials-state-v4.json |
 | 状态文件 SHA-256 | 968fc339c5dbd876ce16e7ca9a26ce78e406ad37ae2c4135ca55a069c4a09bb5 |
 | 新 Activity 批次 | analysis-run:e00cf448733fc078fe460e84b2ea41f51aec85347a4240a49154087748dfa2f9 |
@@ -44,7 +46,7 @@
 | 受保护补充文档 | docs/supplements/more-findings.md |
 | 上述文档 SHA-256 | 59b8381e7e81e3105ed6c6a8d93ce1dbea0247735bf1e6227d8f842b0d1d7f8e |
 
-当前工作区还有13个生产/测试文件的未验证修改，以及已经更新但未提交的设计。51b6625 的544项测试通过记录只对应当时的提交，不能代替当前工作区验证。详见[上一轮收口记录](../modules/activity-explanation/post-review-handoff-20260923.md)；不改写该历史记录。
+实施起点的13个生产/测试文件草稿已保存到ccd5a96；本次设计也已独立保存。51b6625的544项测试只对应旧提交，不能代替本轮验证；步骤1的79项定向测试也不能代替后续改动及完整CI。详见[上一轮收口记录](../modules/activity-explanation/post-review-handoff-20260923.md)；不改写该历史记录。
 
 ## 二、全局约束
 
@@ -56,8 +58,8 @@
 6. Activity 使用已有配置化阶段重试；Step07 没有自动重试、换模型、第四轮润色。失败候选保存结果，需具名授权后才能启动替代尝试，不用新批次绕过次数约束。
 7. 本轮计划包含“离线 → 真实小样 → 展示评审 → 全仓”。**小样展示以后，得到用户扩大确认才执行全仓**；无确认不后台继续。
 8. 只在正式模块编辑。排除仓库根无关 docs/research/、运行结果、凭据、本机配置和其他工作树。
-9. 测试由 Terra/xhigh、实现由 Sol/xhigh、设计及调试由 Astra/ultra。最多两个工作 Agent，各有独立 progress；共享文件串行修改，同一时间一个重型构建。
-10. 本计划的评审不等于立即执行。获准实施后，设计先保存；所有实现通过本地验证和约定真实验收后统一 PR 交付，不等待远端 CI、不强推、不逐小修推 main。
+9. 测试由 Luna/xhigh、实现由 Terra/xhigh；方向判断、设计裁决、设计文档及调试由 Astra/ultra。最多两个工作 Agent，各有独立 progress；共享文件串行修改，同一时间一个重型构建。此前已完成工作的实际作者和模型记录不改标签。
+10. 本计划已获准实施，设计基线已保存；所有实现通过本地验证和约定真实验收后统一 PR 交付，不等待远端 CI、不强推、不逐小修推 main。该授权不取消小样后的全仓扩大确认。
 
 ## 三、步骤、依赖与连续工时
 
@@ -161,14 +163,14 @@ mvn -t .mvn/toolchains.local.xml -Dtest=ActivityLargePacketFormalEntryTest,Activ
 
 **实现内容：**
 
-- [ ] 使用明确的 activity-reading-plan-v2，不能只把旧对象的版本字符串改成v2。
-- [ ] 在现有阅读响应中加入 finalSliceKeys、supersededSlices、finishReading；保留导航请求、完整单元请求、切片建议和未知问题等已有字段。
-- [ ] 替代必须显式指出原slice、替代slice和原因；不能靠中文相似度猜测，也不能把历史所有提案累加为最终必需范围。
-- [ ] 最后必需范围与当前未解决问题单独保存；原始每次决策及超限错误仍保留。
-- [ ] 解释开始前冻结范围。开始后改变范围不得复用旧 DRAFT。
-- [ ] 历史v1严格读取：能从结构记录判断的才分类；没有明确关系时保留无法判断，不假定完成。
-- [ ] 把已有默认128导航页、4补读轮、32切片接入 sourceAnalysis.activityReading，复用 ActivityReadingProfile。不是新增费用预算或固定业务数量。
-- [ ] YAML写v3、执行配置写v5并保存有效reading配置；旧配置按合同严格读取。只增大上限不自动废弃已完成范围，实际范围变化才影响依赖稿件。
+- [x] 使用明确的 activity-reading-plan-v2，不能只把旧对象的版本字符串改成v2。
+- [x] 在现有阅读响应中加入 finalSliceKeys、supersededSlices、finishReading；保留导航请求、完整单元请求、切片建议和未知问题等已有字段。
+- [x] 替代必须显式指出原slice、替代slice和原因；不能靠中文相似度猜测，也不能把历史所有提案累加为最终必需范围。
+- [x] 最后必需范围与当前未解决问题单独保存；原始每次决策及超限错误仍保留。
+- [x] 解释开始前冻结范围。开始后改变范围不得复用旧 DRAFT。
+- [x] 历史v1严格读取并核对实际caller closure、原始scope定义；公共完成性分类留给步骤3，不假定完成。
+- [x] 把已有默认128导航页、4补读轮、32个当前有效切片接入 sourceAnalysis.activityReading，复用 ActivityReadingProfile。不是新增费用预算或固定业务数量。
+- [x] YAML写v3、执行配置写v5并保存有效reading配置；旧配置按合同严格读取。只增大上限不自动废弃已完成范围，实际范围变化才影响依赖稿件。
 
 **新增字段的表达示例（不是客户实际结果）：**
 

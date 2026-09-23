@@ -22,4 +22,4 @@
 - 配置限制内的阶段attempt、backoff、手动新batch与成功阶段精确复用；不换Provider、不重扫、不自动进Step07。
 - 只有后续明确授权的真实样本才能检验业务名称、条件、分支、金额用途、配置限定和跨对象联系；程序测试只证明结构与接线。
 
-测试Terra/xhigh、代码Sol/xhigh、设计/调试Astra/ultra；业务生成为ChatGPT登录上下文Terra/xhigh。旧实验模型身份不改。只运行新增/直接覆盖测试，扩大或全套验证需要当前明确范围。
+当前执行分工及业务模型默认值以[端到端实施计划](../../plans/end-to-end-business-delivery-implementation-plan.md)和[模型执行设计](../../modules/model-job-execution.md)为准；本页只保留原三例验收边界，旧实验模型身份不改。只运行新增/直接覆盖测试，扩大或全套验证需要当前明确范围。

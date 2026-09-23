@@ -232,26 +232,42 @@ class ActivitySliceAggregationTest {
       String response;
       if (!requestedM2 && sawM2) {
         requestedM2 = true;
-        response =
-            "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[\"M2\"],\"slices\":[],\"unknowns\":[]}";
+        response = readingPlanResponse("[]", "[\"M2\"]", "[]", "[]", false);
       } else if (!requestedM3 && sawM3) {
         requestedM3 = true;
-        response =
-            "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[\"M3\"],\"slices\":[],\"unknowns\":[]}";
+        response = readingPlanResponse("[]", "[\"M3\"]", "[]", "[]", false);
       } else if (requestedM3 && !proposedSlices) {
         proposedSlices = true;
         response =
-            "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[],\"slices\":[{\"sliceKey\":\"slice-validate\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"validate\"},{\"sliceKey\":\"slice-write\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"write\"}],\"unknowns\":[]}";
+            readingPlanResponse(
+                "[]",
+                "[]",
+                "[{\"sliceKey\":\"slice-validate\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"validate\"},{\"sliceKey\":\"slice-write\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"write\"}]",
+                "[\"slice-validate\",\"slice-write\"]",
+                true);
       } else if (currentPage > 0 && currentPage < totalPages) {
         response =
-            "{\"requestedNavigationPages\":[\"page-"
-                + (currentPage + 1)
-                + "\"],\"requestedUnitKeys\":[],\"slices\":[],\"unknowns\":[]}";
+            readingPlanResponse("[\"page-" + (currentPage + 1) + "\"]", "[]", "[]", "[]", false);
       } else {
         throw new AssertionError(
             "required M2/M3 was absent from the completed navigation denominator");
       }
       return response(response);
+    }
+
+    private static String readingPlanResponse(
+        String pages, String units, String slices, String finalSliceKeys, boolean finishReading) {
+      return "{\"requestedNavigationPages\":"
+          + pages
+          + ",\"requestedUnitKeys\":"
+          + units
+          + ",\"slices\":"
+          + slices
+          + ",\"unknowns\":[],\"finalSliceKeys\":"
+          + finalSliceKeys
+          + ",\"supersededSlices\":[],\"finishReading\":"
+          + finishReading
+          + "}";
     }
 
     private StructuredModelResponse activityResponse(

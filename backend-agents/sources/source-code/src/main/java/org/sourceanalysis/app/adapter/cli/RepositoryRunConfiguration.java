@@ -21,6 +21,7 @@ import org.sourceanalysis.app.analysis.discovery.DiscoveryProfile;
 import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionProfile;
 import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilationProfile;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationProfile;
+import org.sourceanalysis.app.analysis.interpretation.activity.ActivityReadingProfile;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityRetryProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.inventory.ProfileView;
@@ -659,7 +660,16 @@ record RepositoryRunConfiguration(
     ActivityExplanationProfile activityProfile,
     ProcessDiscoveryProfile processDiscoveryProfile,
     int maxMaterialsToStart,
-    CodeReadingMaterialProfile readingMaterialProfile) {
+    CodeReadingMaterialProfile readingMaterialProfile,
+    ActivityReadingProfile activityReadingProfile) {
+
+  RepositoryRunConfiguration {
+    if (activityReadingProfile == null && activityProfile != null) {
+      activityReadingProfile =
+          ActivityReadingProfile.defaults(
+              activityProfile.maxModelInputBytes(), activityProfile.maxModelOutputBytes());
+    }
+  }
 
   RepositoryRunConfiguration(
       CanonicalJsonCodec canonicalJson,
@@ -735,6 +745,86 @@ record RepositoryRunConfiguration(
         activityProfile,
         processDiscoveryProfile,
         maxMaterialsToStart,
+        null,
+        null);
+  }
+
+  RepositoryRunConfiguration(
+      CanonicalJsonCodec canonicalJson,
+      Sha256Digest baseConfigurationSha256,
+      ModelJobsConfiguration modelJobs,
+      CanonicalArtifactPolicyRegistry policyRegistry,
+      CanonicalArtifactPolicyRegistry inputPolicyRegistry,
+      Path repositoryPath,
+      String repositoryIdentity,
+      String commitId,
+      Path runStore,
+      Path captureWorkspace,
+      Path stateFile,
+      Path gitExecutable,
+      PersistenceConfiguration persistenceConfiguration,
+      EffectiveEngineConfiguration engineConfiguration,
+      List<Path> approvedClasspath,
+      ArtifactReference capturePolicyRef,
+      ArtifactReference candidateSeriesRef,
+      ArtifactReference capabilityProfileRef,
+      ArtifactReference verificationPolicyRef,
+      ArtifactReference profileBundleRef,
+      ArtifactReference resourceBudgetRef,
+      ArtifactReference toolchainRef,
+      ArtifactReference schemaBundleRef,
+      ArtifactReference promptBundleRef,
+      ArtifactReference graphProfileRef,
+      List<String> selectedEntryIds,
+      ArtifactReference flowProfileRef,
+      ArtifactReference capsuleProfileRef,
+      ProfileView inventoryProfile,
+      ArtifactStoreLimits storeLimits,
+      FlowCompilationProfile flowProfile,
+      CapsuleProjectionProfile capsuleProfile,
+      BusinessMaterialProfile materialProfile,
+      ActivityExplanationProfile activityProfile,
+      ProcessDiscoveryProfile processDiscoveryProfile,
+      int maxMaterialsToStart,
+      CodeReadingMaterialProfile readingMaterialProfile) {
+    this(
+        canonicalJson,
+        baseConfigurationSha256,
+        modelJobs,
+        policyRegistry,
+        inputPolicyRegistry,
+        repositoryPath,
+        repositoryIdentity,
+        commitId,
+        runStore,
+        captureWorkspace,
+        stateFile,
+        gitExecutable,
+        persistenceConfiguration,
+        engineConfiguration,
+        approvedClasspath,
+        capturePolicyRef,
+        candidateSeriesRef,
+        capabilityProfileRef,
+        verificationPolicyRef,
+        profileBundleRef,
+        resourceBudgetRef,
+        toolchainRef,
+        schemaBundleRef,
+        promptBundleRef,
+        graphProfileRef,
+        selectedEntryIds,
+        flowProfileRef,
+        capsuleProfileRef,
+        inventoryProfile,
+        storeLimits,
+        flowProfile,
+        capsuleProfile,
+        materialProfile,
+        activityProfile,
+        processDiscoveryProfile,
+        maxMaterialsToStart,
+        readingMaterialProfile,
         null);
   }
 
@@ -752,7 +842,10 @@ record RepositoryRunConfiguration(
             "sourceAnalysis",
             "technical"),
         Set.of("business", "inputPolicyRegistry"));
-    requireText(document, "schemaVersion", CONFIG_SCHEMA);
+    String schemaVersion = requiredText(document, "schemaVersion");
+    if (!Set.of(HISTORICAL_CONFIG_SCHEMA, CONFIG_SCHEMA).contains(schemaVersion)) {
+      throw failure("CONFIGURATION_INVALID");
+    }
 
     ObjectNode source = object(document, "source");
     requireFields(source, Set.of("commitId", "declaredRepositoryIdentity", "repositoryPath"));
@@ -772,8 +865,16 @@ record RepositoryRunConfiguration(
     Path gitExecutable = absolutePath(requiredText(paths, "gitExecutable"), "Git executable");
 
     ObjectNode sourceAnalysis = object(document, "sourceAnalysis");
+    Set<String> optionalSourceAnalysisFields =
+        CONFIG_SCHEMA.equals(schemaVersion)
+            ? Set.of("activityReading", "jdt", "modelJobs", "persistence")
+            : Set.of("jdt", "modelJobs", "persistence");
     requireFieldsAllowingOptional(
-        sourceAnalysis, Set.of("javaEngine"), Set.of("jdt", "modelJobs", "persistence"));
+        sourceAnalysis, Set.of("javaEngine"), optionalSourceAnalysisFields);
+    ActivityReadingLimits activityReadingLimits =
+        sourceAnalysis.has("activityReading")
+            ? activityReadingLimits(object(sourceAnalysis, "activityReading"))
+            : ActivityReadingLimits.defaults();
     String configuredJavaEngine = requiredText(sourceAnalysis, "javaEngine");
     EffectiveEngineConfiguration engine;
     if (EffectiveEngineConfiguration.JAVAPARSER_READ_ONLY.equals(configuredJavaEngine)) {
@@ -868,6 +969,7 @@ record RepositoryRunConfiguration(
     CapsuleProjectionProfile capsuleProfile = null;
     BusinessMaterialProfile materialProfile = null;
     ActivityExplanationProfile activityProfile = null;
+    ActivityReadingProfile activityReadingProfile = null;
     ProcessDiscoveryProfile processDiscoveryProfile = null;
     int maxMaterialsToStart = 0;
     if (hasLegacyFlow) {
@@ -933,6 +1035,9 @@ record RepositoryRunConfiguration(
       }
       maxMaterialsToStart = positiveInt(business, "maxMaterialsToStart");
     }
+    if (activityProfile != null) {
+      activityReadingProfile = activityReadingLimits.withCapacities(activityProfile);
+    }
 
     return new RepositoryRunConfiguration(
         canonicalJson,
@@ -971,7 +1076,36 @@ record RepositoryRunConfiguration(
         activityProfile,
         processDiscoveryProfile,
         maxMaterialsToStart,
-        configuredReadingMaterials);
+        configuredReadingMaterials,
+        activityReadingProfile);
+  }
+
+  private static ActivityReadingLimits activityReadingLimits(ObjectNode document) {
+    requireFields(document, Set.of("maxNavigationPages", "maxReadingRounds", "maxSlicesPerPacket"));
+    return new ActivityReadingLimits(
+        positiveInt(document, "maxNavigationPages"),
+        positiveInt(document, "maxReadingRounds"),
+        positiveInt(document, "maxSlicesPerPacket"));
+  }
+
+  private record ActivityReadingLimits(
+      int maxNavigationPages, int maxReadingRounds, int maxSlicesPerPacket) {
+
+    private static ActivityReadingLimits defaults() {
+      return new ActivityReadingLimits(
+          ActivityReadingProfile.DEFAULT_MAX_NAVIGATION_PAGES,
+          ActivityReadingProfile.DEFAULT_MAX_READING_ROUNDS,
+          ActivityReadingProfile.DEFAULT_MAX_SLICES_PER_PACKET);
+    }
+
+    private ActivityReadingProfile withCapacities(ActivityExplanationProfile activity) {
+      return new ActivityReadingProfile(
+          activity.maxModelInputBytes(),
+          activity.maxModelOutputBytes(),
+          maxNavigationPages,
+          maxReadingRounds,
+          maxSlicesPerPacket);
+    }
   }
 
   private static CodeReadingMaterialProfile readingMaterialProfile(ObjectNode document) {

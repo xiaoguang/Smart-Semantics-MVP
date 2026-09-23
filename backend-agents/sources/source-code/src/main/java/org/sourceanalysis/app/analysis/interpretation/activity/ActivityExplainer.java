@@ -98,6 +98,7 @@ public final class ActivityExplainer {
   private final PrivateModelJobResultStore reuseResultStore;
   private final AnalysisRunId reuseFromModelBatchId;
   private final ActivityRetryProfile retryProfile;
+  private final ActivityReadingProfile configuredReadingProfile;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
 
   public ActivityExplainer(StructuredModelProvider provider) {
@@ -182,7 +183,8 @@ public final class ActivityExplainer {
             configuration.journalDirectory(), configuration.runId(), "activity"),
         null,
         null,
-        configuration.retryProfile());
+        configuration.retryProfile(),
+        null);
   }
 
   /** Creates the multi-Provider Activity seam from one validated run execution configuration. */
@@ -220,7 +222,8 @@ public final class ActivityExplainer {
             configuration.journalDirectory(), configuration.runId(), "activity"),
         reuseResultStore,
         configuration.reuseFromModelBatchId(),
-        configuration.activityRetry());
+        configuration.activityRetry(),
+        configuration.activityReadingProfile());
   }
 
   private ActivityExplainer(
@@ -243,7 +246,8 @@ public final class ActivityExplainer {
         stageResultStore,
         reuseResultStore,
         reuseFromModelBatchId,
-        ActivityRetryProfile.defaults());
+        ActivityRetryProfile.defaults(),
+        null);
   }
 
   private ActivityExplainer(
@@ -256,7 +260,8 @@ public final class ActivityExplainer {
       PrivateModelJobResultStore stageResultStore,
       PrivateModelJobResultStore reuseResultStore,
       AnalysisRunId reuseFromModelBatchId,
-      ActivityRetryProfile retryProfile) {
+      ActivityRetryProfile retryProfile,
+      ActivityReadingProfile configuredReadingProfile) {
     this.checkpointStore = checkpointStore;
     this.outputRunId = outputRunId;
     this.jobCoordinator = Objects.requireNonNull(jobCoordinator, "activity job coordinator");
@@ -267,6 +272,7 @@ public final class ActivityExplainer {
     this.reuseResultStore = reuseResultStore;
     this.reuseFromModelBatchId = reuseFromModelBatchId;
     this.retryProfile = Objects.requireNonNull(retryProfile, "activity retry profile");
+    this.configuredReadingProfile = configuredReadingProfile;
     if (this.providerRoute.isEmpty()) {
       throw new IllegalArgumentException("activity job provider route is required");
     }
@@ -623,8 +629,10 @@ public final class ActivityExplainer {
             identity.jobKey(),
             binding.capacity());
     ActivityReadingProfile readingProfile =
-        new ActivityReadingProfile(
-            profile.maxModelInputBytes(), profile.maxModelOutputBytes(), 128, 4, 32);
+        configuredReadingProfile == null
+            ? ActivityReadingProfile.defaults(
+                profile.maxModelInputBytes(), profile.maxModelOutputBytes())
+            : configuredReadingProfile;
     ActivityReadingPlan readingPlan;
     ScopedActivityClaim claimedResult;
     boolean reusedClaimedPlan;

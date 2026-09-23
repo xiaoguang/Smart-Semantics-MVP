@@ -1,6 +1,6 @@
 # Activity来源、范围完成性与端到端接入合同
 
-状态：2026-09-23 Task 1可靠性修复已在隔离Maven输出中通过12类79个direct tests及Spotless；这不是完整CI，没有真实模型/JDT/客户构建。新Step05→Activity→正式Step07分支已接通，325包真实产生418条Activity；Task 2的最终/替换scope和Task 3的coverage-v4/reuse-only仍是本页待实施目标，旧coverage仍不能充分区分必需阅读失败和普通未知。见[收口记录](post-review-handoff-20260923.md)及[端到端设计](../../end-to-end-business-delivery-design.md)。
+状态：2026-09-23 Task 1可靠性修复已通过12类79项定向测试；Task 2最终/替换scope、历史计划重开与配置接线通过8类80项定向测试、Spotless及独立复查，均使用隔离Maven输出。这不是完整CI，没有真实模型/JDT/客户构建。新Step05→Activity→正式Step07分支已接通，325包真实产生418条Activity。Task 3的coverage-v4/reuse-only开始实施，旧coverage仍不能充分区分必需阅读失败和普通未知。见[历史收口记录](post-review-handoff-20260923.md)及[端到端设计](../../end-to-end-business-delivery-design.md)。
 
 ## 1. 现状字段与版本，不能混称目标
 
@@ -8,17 +8,17 @@
 | --- | --- | --- |
 | Java导航、持久化、Step05 | java-code-index-v2、persistence-material-index-v1、code-reading-material-set-v1 | 不变 |
 | 材料state | repository-run-state-v4 | 不变 |
-| YAML | repository-run-config-v2，modelJobs支持activityRetry；不接受activityReading | repository-run-config-v3接通activityReading |
-| execution config | model-job-execution-config-v4：readingMaterialCheckpoint、materialBasisSha256、executionScope、modelJobs等 | v5冻结activityReading及过程新协议版本；无materialSource对象别名 |
+| YAML | v3接线已写入，默认/自定义activityReading加载定向通过；历史v2按旧字段读取 | 完成实际执行限制及完整直接回归 |
+| execution config | 历史磁盘为v4；已实现v5写入有效activityReading和v4/v5严格读取，Task 2定向回归通过 | v5还须在Step07编码步骤绑定过程新协议；无materialSource对象别名 |
 | run output | analysis-run-output-v6 | 不变 |
 | M11 producer | activity-explainer v3 | v4；仍module11及两个文件 |
 | Activity正文 | flow-interpretation-activity-explanations-v2 | 不变 |
 | Activity覆盖 | flow-interpretation-activity-coverage-v3 | v4，仅增加packetCompletion |
-| 私有阅读计划 | Task 1现有activity-reading-plan-v2复用封套已定向验证；尚无最终/替换scope | Task 2完成plan-v2最终/替换合同 |
+| 私有阅读计划 | plan-v2最终/替换scope、DIRECT及分页重开已实现；历史v1实际闭包及scope对应已定向验证 | Task 3据此实现公共完成记录和离线历史接续 |
 | 私有阶段/整包 | model-job-reviewed-result-v4 / activity-packet-result-v1 | 未变字段保持，reader核对被引用计划版本 |
 | 私有批次 | activity-batch-result-v1 | v2包含packetCompletion及离线只复用核对结果 |
 | 私有reading packet/attempt | activity-reading-packet-v1 / model-job-stage-attempt-v1 | 不变 |
-| Activity Prompt | activity-draft-v2 / activity-review-v2 / activity-reading-plan-v1 | DRAFT/REVIEW未改业务职责；reading-plan升v2 |
+| Activity Prompt | DRAFT/REVIEW仍v2；工作区READING_PLAN已路由v2，旧v1资源保留 | 完成新响应合同全部直接fixture迁移与回归 |
 
 严格旧读不意味着把新字段默认补空。所有改变涉及producer、reader、exact-set/schema策略、artifact注册和直接fixture同一交付；版本拒绝测试保留。不覆盖历史产物、不恢复M10生产或JavaParser。
 
@@ -91,6 +91,8 @@ plan-v2保留完整实际阅读输入、每次decision、完整slice readingPack
 
 旧plan-v1与coverage-v3严格读，但不能据“无新错误标记”默认为完整。显式离线核对读取旧plan、raw决策、实际包和stage/复用来源：
 
+历史计划按实际保存形状读取：含完整 `slices/readingPacket` 的 v1 分页计划可以恢复原范围及原始记录，但不补造 v2 的最终范围、结束决定或完成结论；旧 DIRECT 只有头部和 `sliceKeys` 时，先保留原记录，离线核对再结合其已审结果与固定材料。历史可读不等于能续接新版模型阶段；线上阶段复用仍须匹配原实际输入、Prompt、Schema和模型身份。
+
 - 能还原最终必需范围、完整包和成功REVIEW：COMPLETE。
 - 明确仍有必需未读/失败：INCOMPLETE。
 - 旧记录没表达替换关系或不足以确定义务：UNDETERMINED。
@@ -116,7 +118,7 @@ inspect只读显示这些范围及原因，不自动创建新内容。无法判�
 
 新增--reuse-only只是明确“本次不允许模型生成”的执行选项，不是重试。普通retry仍按现有入口与阶段策略：重开原有效计划、scope和source mapping；成功DRAFT对应的REVIEW单独重试；失败响应永不复用。损坏计划不自动replan。已有`activity-packet-result-v1`完成声明还必须能重开它引用的非空plan及每个slice的DRAFT/REVIEW成功记录，并与聚合的Activity、coverage、source refs一致；没有包聚合时，匹配的单slice v4完成声明同样必须能重开它引用的两个成功stage。引用缺失或损坏为硬错误、零补生成。合法空计划且没有业务结果不形成可复用scope，但也必须先通过packet ID、导航、未读单元及保存形状校验，之后显式新执行才可重新选材。scope/Prompt/Schema/model改变使受影响stage失效，先告知哪些内容需重新生成，保留其它可复用包。
 
-新reading限制位于sourceAnalysis.activityReading，默认128页、4补读轮、32slice；由唯一配置读取到既有ActivityReadingProfile。当前代码写死这些值，不能称为已可配置。execution-config-v5记录有效值和合同版本。只改并发/退避不改变语义输入；只提高运行上限不重做已完成范围，但改变最终选材/scope必然改变依赖稿件输入。
+新reading限制位于sourceAnalysis.activityReading，默认128页、4补读轮、32个当前有效slice；由唯一配置读取到既有ActivityReadingProfile。配置加载、真实执行接线及历史重开已通过Task 2定向回归。execution-config-v5保存有效输入/输出容量和三项运行上限；三项上限不进入材料基础标识，且不单独使已冻结有效计划失效。Prompt、Schema、实际输入/输出容量、scope和模型绑定仍按原合同匹配，降低上限后也不能接纳最终有效范围已不符合当前约束的计划；不追溯拒绝已被替换的旧提案。改变最终选材/scope必然改变依赖稿件输入。
 
 ## 7. Step07已接线与目标准入
 
@@ -143,4 +145,4 @@ Provider通过可靠typed reason给出的实际容量拒绝为PROVIDER_INPUT_CAP
 - v3与v4 coverage精确区分；缺packetCompletion不能默认空；run-output-v6原字段保持。
 - 新Activity审查草稿和新增测试未通过前不宣称修复完成；544测试的旧提交记录不代表当前dirty代码。
 
-执行文档本轮不运行上述测试或模型。后续完整本地质量检查属于另行评审的实施计划，不启动外层工程或真实JDT扫描。
+当前已获批准的端到端计划正在实施，开发期间运行直接测试；完整本地质量检查在该计划第9步执行。不启动外层工程或真实JDT扫描，真实Step07小样和确认后的全仓扩大分别遵守第10、11步边界。

@@ -8,12 +8,12 @@
 | --- | --- | --- |
 | 材料/模型分离 | 新Step05已直接进入Activity；execution-config-v4/output-v6已实现 | 输入固定，不重新取材；完善范围完成性 |
 | 并发 | 全局+Provider双上限，包内阅读/slice/attempt顺序 | 保持现有池，验证单包与绑定失败边界 |
-| 保存与复用 | 阶段即时保存、显式stage复用、大包计划及M11/CLI已接通；Task 1原plan/成功stage接续和局部结果保留已定向验证 | Task 2补最终/替换scope；Task 3补只复用入口 |
+| 保存与复用 | 阶段即时保存、显式stage复用、大包计划及M11/CLI已接通；Task 1可靠性和Task 2最终/替换scope及重开已定向验证 | Task 3补完成记录及只复用入口 |
 | 失败与retry | YAML v2已有activityRetry和有界退避；Task 1错误边界与SUCCESS保存次序已定向验证 | 不增加Step07 retry；后续任务不放宽Task 1边界 |
 | 范围 | 输出有activityBatchComplete；当前coverage-v3不含packet完成表 | coverage-v4补最小packetCompletion，不能只看entry出现过 |
 | 新旧业务内容 | 新418条与旧326条均保存；模型身份各自保持 | 离线核对和只复用，不默认重做Activity |
 
-Task 1可靠性修复在隔离Maven输出中通过12类79个direct tests及Spotless；这不是全仓CI，也没有真实模型/JDT/客户构建。Task 2的plan-v2最终/替换scope及Task 3的coverage-v4/reuse-only仍未实现。历史真实运行不能替代这些后续验收。见[端到端详细设计](../end-to-end-business-delivery-design.md)及[Activity收口](activity-explanation/post-review-handoff-20260923.md)。
+Task 1可靠性修复在隔离Maven输出中通过12类79项定向测试；Task 2的plan-v2最终/替换scope、重开及配置传递通过8类80项定向测试、Spotless和独立复查。这不是完整CI，也没有真实模型/JDT/客户构建；Task 3的coverage-v4/reuse-only开始实施。历史真实运行不能替代这些后续验收。见[端到端详细设计](../end-to-end-business-delivery-design.md)及[历史Activity收口](activity-explanation/post-review-handoff-20260923.md)。
 
 Codex超时只有确认本地进程结束才能按REQUEST_TIMEOUT处理，否则OUTCOME_UNKNOWN不默认重试。坏JSON实际响应在私有限额内保留；普通日志不暴露凭据/原文。Task 1已验证的错误分类与大包失败保留不代表整个端到端计划完成；后续先继续离线任务，再按计划执行无提示小样，小样展示后的全仓扩大需要用户确认。
 
@@ -45,7 +45,7 @@ Step08当前只有历史reader/确定性renderer，其操作为零Provider；本
 
 ## 3. 唯一配置与模型绑定
 
-目标 `repository-run-config-v3` 在既有YAML增加Activity配置；历史v2严格按原义读取。以下字段示例是目标合同，不是本轮配置修改：
+`repository-run-config-v3`在既有YAML增加Activity阅读配置；历史v2严格按原字段读取。工作区已接通加载和传递，默认/自定义值的定向测试通过，实际执行上限及完整回归仍待验证。以下为配置字段节选，不修改历史运行配置：
 
 ```yaml
 schemaVersion: repository-run-config-v3
@@ -58,7 +58,7 @@ sourceAnalysis:
         kind: codexSubscription
         quotaScope: personal-pro-account
         maxConcurrentJobs: 4
-        model: gpt-5.6-terra
+        model: gpt-5.6-luna
         reasoningEffort: high
         executable: /absolute/path/to/codex
         timeoutSeconds: 3600
@@ -93,7 +93,7 @@ sourceAnalysis:
 - retryableReasons可显式增加INVALID_JSON、RESPONSE_SCHEMA_INVALID、UNKNOWN_REFERENCE。它们默认不retry；每次仍是同Prompt/Schema/输入的新attempt，不能追加纠错业务答案或语言黑名单。
 - 来源损坏、输入/配置不合法、认证失败、runtime identity漂移、容量不足、取消及存储错误不可通过reason名单放行。
 - timeoutSeconds仍是Provider单attempt超时；maxAttempts不是超时秒数，退避也不占单次调用timeout。有效Retry-After至少被尊重；若服务要求等待大于maxBackoffMillis，则该stage结束为RETRY_DEFERRED并保存earliestRetryAt供显式新batch参考，绝不缩短服务端要求提前发送。
-- reading默认值128/4/32当前写死在代码，已有大包运行；目标config-v3才将其变成可配置字段。它们不表达费用预算或行业分类，不能据运行结束推断阅读义务完整。
+- reading省略整段时默认128/4/32；显式提供时必须给出全部三个正整数字段，不接受未知字段。32指当前有效scope上限，不累计已被明确替代的历史定义。它们不表达费用预算或行业分类，不能据运行结束推断阅读义务完整。
 
 订阅Provider使用指定Codex登录上下文、ChatGPT auth和read-only sandbox，屏蔽API-key覆盖。显式openaiApi Adapter仍可配置，但只有获准实际运行才启用，不作为订阅失败fallback；不能换模型/账户/effort补成功。同账户/项目的多个key或会话必须放在同一Provider配置下共享cap；两个Provider重复quotaScope仍按现有加载器在启动前拒绝，不新增跨Provider自动合并配额。
 
@@ -182,7 +182,7 @@ Step07不会自动消费未完成batch，不自动模型重启、不调用JDT、
 
 ## 9. 直接测试与验收
 
-以下为端到端收尾须重新核验的直接行为；部分已有测试，审查修复未验证。本轮文档工作不执行这些测试：
+以下为已批准端到端计划的直接验证范围。Task 1已通过上述79项直接测试；后续新增合同仍须各自验证，不能沿用旧提交的通过记录：
 
 - scripted Provider制造DRAFT成功/REVIEW两次瞬时失败后成功，精确断言1+3调用、DRAFT逐字相同、attempt记录不覆盖。
 - maxAttempts=1不retry；退避与timeout独立；stage override、未知reason/配置与非retry错误拒绝。
@@ -209,7 +209,7 @@ Activity未完成必须按最终有效计划计算，而不是遍历历史unknow
 
 新 `--reuse-only` 是已批准待实施的窄选项：新run内纯读旧结果/范围核对并发布M11，不初始化Provider、不自动补模型请求；与主动retry互斥。不完整/无法判定时非成功，成功子集仍可查看，Step07不偷偷缩小分母。历史完整已审输入采纳与新版Prompt精确stage复用分开，不能放宽后者的指纹。
 
-目标execution-config-v5冻结有效activityReading值及Step07实际输入编码/任务合同；历史v4按原字段读。YAML config-v3才开放activityReading；已有activityRetry不迁位置。run-output-v6仍用activityBatchComplete，不新增modelBatchComplete别名。
+execution-config-v5冻结有效activityReading值及Step07实际输入编码/任务合同。工作区已接通Activity配置保存和历史v4严格读取；Step07编码字段在后续对应步骤落地。YAML config-v3开放activityReading；已有activityRetry不迁位置。run-output-v6仍用activityBatchComplete，不新增modelBatchComplete别名。
 
 Step07沿同一池保持单候选DRAFT→WRITE→RULE_REVIEW。新局部编号与WRITE约束只改变实际输入/Prompt/Schema/私有三阶段合同，见[Reconstructor](business-process-discovery/candidate-process-reconstructor.md)。目录/单次决策/归并仍各自pair或单次；没有新增业务去重模型、第四次写作或自动retry。完整候选失败仍按现有fatal停止新派发，不套用Activity单包失败继续策略。
 

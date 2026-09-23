@@ -266,19 +266,21 @@ class ActivityReadingCoordinatorTest {
       if (requestedM3 && !proposedSlice) {
         proposedSlice = true;
         response =
-            "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[],\"slices\":[{\"sliceKey\":\"slice-validation\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"validate and write\"}],\"unknowns\":[]}";
+            readingPlanResponse(
+                "[]",
+                "[]",
+                "[{\"sliceKey\":\"slice-validation\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"validate and write\"}]",
+                "[\"slice-validation\"]",
+                true);
       } else if (!visibleNavigation.contains("M3")) {
         if (currentPage >= totalPages) {
           throw new AssertionError("M3 was absent from the completed navigation denominator");
         }
         response =
-            "{\"requestedNavigationPages\":[\"page-"
-                + (currentPage + 1)
-                + "\"],\"requestedUnitKeys\":[],\"slices\":[],\"unknowns\":[]}";
+            readingPlanResponse("[\"page-" + (currentPage + 1) + "\"]", "[]", "[]", "[]", false);
       } else if (!requestedM3) {
         requestedM3 = true;
-        response =
-            "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[\"M3\"],\"slices\":[],\"unknowns\":[]}";
+        response = readingPlanResponse("[]", "[\"M3\"]", "[]", "[]", false);
       } else {
         throw new AssertionError("unbounded reading-plan loop");
       }
@@ -291,5 +293,20 @@ class ActivityReadingCoordinatorTest {
           .map(request -> canonicalJson.parseCanonical(request.untrustedInputJson()))
           .toList();
     }
+  }
+
+  private static String readingPlanResponse(
+      String pages, String units, String slices, String finalSliceKeys, boolean finishReading) {
+    return "{\"requestedNavigationPages\":"
+        + pages
+        + ",\"requestedUnitKeys\":"
+        + units
+        + ",\"slices\":"
+        + slices
+        + ",\"unknowns\":[],\"finalSliceKeys\":"
+        + finalSliceKeys
+        + ",\"supersededSlices\":[],\"finishReading\":"
+        + finishReading
+        + "}";
   }
 }

@@ -8,15 +8,15 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.Consumer;
+import java.util.function.Function;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProviderFailure;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
@@ -32,7 +32,7 @@ public final class ActivityReadingCoordinator {
   private static final String TASK_KIND = "ACTIVITY_READING_PLAN";
   private static final String RESPONSE_SCHEMA =
       """
-      {"type":"object","additionalProperties":false,"required":["requestedNavigationPages","requestedUnitKeys","slices","unknowns"],"properties":{"requestedNavigationPages":{"type":"array","items":{"type":"string"}},"requestedUnitKeys":{"type":"array","items":{"type":"string"}},"slices":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["sliceKey","entryKeys","requiredUnitKeys","sharedContextUnitKeys","scope"],"properties":{"sliceKey":{"type":"string"},"entryKeys":{"type":"array","items":{"type":"string"}},"requiredUnitKeys":{"type":"array","items":{"type":"string"}},"sharedContextUnitKeys":{"type":"array","items":{"type":"string"}},"scope":{"type":"string"}}}},"unknowns":{"type":"array","items":{"type":"string"}}}}
+      {"type":"object","additionalProperties":false,"required":["requestedNavigationPages","requestedUnitKeys","slices","unknowns","finalSliceKeys","supersededSlices","finishReading"],"properties":{"requestedNavigationPages":{"type":"array","items":{"type":"string"}},"requestedUnitKeys":{"type":"array","items":{"type":"string"}},"slices":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["sliceKey","entryKeys","requiredUnitKeys","sharedContextUnitKeys","scope"],"properties":{"sliceKey":{"type":"string"},"entryKeys":{"type":"array","items":{"type":"string"}},"requiredUnitKeys":{"type":"array","items":{"type":"string"}},"sharedContextUnitKeys":{"type":"array","items":{"type":"string"}},"scope":{"type":"string"}}}},"unknowns":{"type":"array","items":{"type":"string"}},"finalSliceKeys":{"type":"array","items":{"type":"string"}},"supersededSlices":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["sliceKey","replacementSliceKeys","reason"],"properties":{"sliceKey":{"type":"string"},"replacementSliceKeys":{"type":"array","items":{"type":"string"}},"reason":{"type":"string"}}}},"finishReading":{"type":"boolean"}}}
       """;
 
   private final StructuredModelProvider provider;
@@ -91,16 +91,18 @@ public final class ActivityReadingCoordinator {
     LinkedHashSet<String> selected = new LinkedHashSet<>(entryMethodRefs);
     List<String> shownPages = new ArrayList<>();
     List<ObjectNode> decisions = new ArrayList<>();
-    List<RequestedSlice> requestedSlices = new ArrayList<>();
+    ReadingScopeState scopeState = ReadingScopeState.empty();
     List<String> unknowns = new ArrayList<>();
     int round = 0;
     int pageIndex = 0;
-    boolean oversizedSlicePending = false;
-    while (pageIndex < pages.size() && shownPages.size() < profile.maxNavigationPages()) {
+    while (pageIndex < pages.size()
+        && shownPages.size() < profile.maxNavigationPages()
+        && !scopeState.finishReading()) {
       String pageId = "page-" + (pageIndex + 1);
       ObjectNode input =
-          readingPlanInput(view, full, pages, pageIndex, selected, unknowns, profile);
-      ObjectNode decision =
+          readingPlanInput(view, full, pages, pageIndex, selected, scopeState, unknowns, profile);
+      ReadingScopeState currentScopeState = scopeState;
+      ValidatedDecision validated =
           decide(
               view,
               profile,
@@ -108,16 +110,16 @@ public final class ActivityReadingCoordinator {
               round,
               input,
               value ->
-                  validateDecision(value, full, units, selected, requestedSlices, pages, profile));
+                  validateDecision(
+                      value, full, units, selected, currentScopeState, pages, profile));
+      ObjectNode decision = validated.response();
       decisions.add(decision.deepCopy());
       shownPages.add(pageId);
-      addSelected(decision.path("requestedUnitKeys"), units, selected);
-      List<RequestedSlice> previousSlices = List.copyOf(requestedSlices);
-      addSlices(decision.path("slices"), full, units, profile, requestedSlices);
+      selected.clear();
+      selected.addAll(validated.application().selected());
+      scopeState = validated.application().scopeState();
       strings(decision.path("unknowns"), "reading unknowns").forEach(unknowns::add);
-      rejectOversizedSlices(
-          view, full, selected, requestedSlices, previousSlices, unknowns, profile);
-      oversizedSlicePending = hasOversizedSlice(unknowns);
+      evaluateCurrentScopes(view, full, entryMethodRefs, selected, scopeState, unknowns, profile);
       for (String requestedPage :
           strings(decision.path("requestedNavigationPages"), "requested pages")) {
         // Page hints do not control the bounded sequential scan. A repeated page is redundant,
@@ -131,12 +133,14 @@ public final class ActivityReadingCoordinator {
     // After the full bounded navigation pass, one model decision may request more saved bodies.
     // The limit controls extra source-reading rounds, not the number of pages already displayed.
     int extraRounds = 0;
-    while ((requestedSlices.isEmpty() || oversizedSlicePending)
+    while (!scopeState.finishReading()
         && extraRounds < profile.maxReadingRounds()
         && pageIndex == pages.size()) {
-      ObjectNode input = readingPlanInput(view, full, pages, -1, selected, unknowns, profile);
+      ObjectNode input =
+          readingPlanInput(view, full, pages, -1, selected, scopeState, unknowns, profile);
       addAvailableUnitsToSelection(input, pages, profile);
-      ObjectNode decision =
+      ReadingScopeState currentScopeState = scopeState;
+      ValidatedDecision validated =
           decide(
               view,
               profile,
@@ -144,54 +148,39 @@ public final class ActivityReadingCoordinator {
               round++,
               input,
               value ->
-                  validateDecision(value, full, units, selected, requestedSlices, pages, profile));
+                  validateDecision(
+                      value, full, units, selected, currentScopeState, pages, profile));
+      ObjectNode decision = validated.response();
       decisions.add(decision.deepCopy());
-      int before = selected.size();
-      List<RequestedSlice> previousSlices = List.copyOf(requestedSlices);
-      addSelected(decision.path("requestedUnitKeys"), units, selected);
-      addSlices(decision.path("slices"), full, units, profile, requestedSlices);
+      Set<String> previousSelected = Set.copyOf(selected);
+      ReadingScopeState previousScopeState = scopeState;
+      selected.clear();
+      selected.addAll(validated.application().selected());
+      scopeState = validated.application().scopeState();
       strings(decision.path("unknowns"), "reading unknowns").forEach(unknowns::add);
-      rejectOversizedSlices(
-          view, full, selected, requestedSlices, previousSlices, unknowns, profile);
-      oversizedSlicePending = hasOversizedSlice(unknowns);
+      evaluateCurrentScopes(view, full, entryMethodRefs, selected, scopeState, unknowns, profile);
       extraRounds++;
-      if (before == selected.size()
-          && previousSlices.equals(requestedSlices)
-          && !oversizedSlicePending) {
+      if (previousSelected.equals(selected) && previousScopeState.equals(scopeState)) {
         unknowns.add("READING_PLAN_NO_PROGRESS");
         break;
       }
     }
 
-    List<ActivityReadingPlan.Slice> slices = new ArrayList<>();
-    boolean requiredScopeIncomplete = shownPages.size() < pages.size();
-    for (RequestedSlice requested : requestedSlices) {
-      LinkedHashSet<String> modelRequired = new LinkedHashSet<>(requested.requiredUnitKeys());
-      modelRequired.addAll(requested.sharedContextUnitKeys());
-      modelRequired.addAll(entryMethodRefs);
-      if (!selected.containsAll(modelRequired)) {
-        unknowns.add("READING_INCOMPLETE:" + requested.sliceKey());
-        requiredScopeIncomplete = true;
-        continue;
-      }
-      LinkedHashSet<String> required = completeUnitKeys(full, modelRequired, requested.entryKeys());
-      ActivityReadingPacket packet = selectedPacket(view, full, required, requested.entryKeys());
-      if (!profile.fitsDraftAndMaximumReview(packet.modelInputJson().size())) {
-        unknowns.add("INPUT_CAPACITY_EXCEEDED:" + requested.sliceKey());
-        requiredScopeIncomplete = true;
-        continue;
-      }
-      selected.addAll(required);
-      slices.add(
-          new ActivityReadingPlan.Slice(
-              requested.sliceKey(),
-              requested.entryKeys(),
-              List.copyOf(required),
-              requested.sharedContextUnitKeys(),
-              requested.scope(),
-              packet));
+    ScopeEvaluation scopeEvaluation =
+        evaluateCurrentScopes(view, full, entryMethodRefs, selected, scopeState, unknowns, profile);
+    List<ActivityReadingPlan.Slice> slices = scopeEvaluation.slices();
+    for (ActivityReadingPlan.Slice slice : slices) {
+      selected.addAll(slice.requiredUnitKeys());
     }
-    requiredScopeIncomplete |= slices.isEmpty() || hasOversizedSlice(unknowns);
+    List<String> currentOpenScopeIssues = new ArrayList<>(scopeEvaluation.issues());
+    if (shownPages.size() < pages.size()) {
+      currentOpenScopeIssues.add(
+          "READING_NAVIGATION_INCOMPLETE:" + shownPages.size() + "/" + pages.size());
+    }
+    if (!scopeState.finishReading()) {
+      currentOpenScopeIssues.add("READING_NOT_FINISHED");
+    }
+    boolean requiredScopeIncomplete = !currentOpenScopeIssues.isEmpty() || slices.isEmpty();
 
     List<String> unread = units.keySet().stream().filter(key -> !selected.contains(key)).toList();
     ObjectNode privateRecord =
@@ -204,6 +193,8 @@ public final class ActivityReadingCoordinator {
             decisions,
             slices,
             unknowns,
+            scopeState,
+            currentOpenScopeIssues,
             requiredScopeIncomplete);
     return new ActivityReadingPlan(view, shownPages, unread, slices, privateRecord);
   }
@@ -218,9 +209,6 @@ public final class ActivityReadingCoordinator {
     contract.put("responseSchema", RESPONSE_SCHEMA);
     contract.put("maxModelInputBytes", profile.maxModelInputBytes());
     contract.put("maxModelOutputBytes", profile.maxModelOutputBytes());
-    contract.put("maxNavigationPages", profile.maxNavigationPages());
-    contract.put("maxReadingRounds", profile.maxReadingRounds());
-    contract.put("maxSlicesPerPacket", profile.maxSlicesPerPacket());
     try {
       return java.util.HexFormat.of()
           .formatHex(
@@ -235,14 +223,14 @@ public final class ActivityReadingCoordinator {
   ActivityReadingPlan reopen(
       ActivityMaterialView view, ActivityReadingProfile profile, ObjectNode saved) {
     try {
-      if (!"activity-reading-plan-v2".equals(requiredText(saved, "schemaVersion"))
+      String schemaVersion = requiredText(saved, "schemaVersion");
+      boolean historicalV1 = "activity-reading-plan-v1".equals(schemaVersion);
+      if ((!historicalV1 && !"activity-reading-plan-v2".equals(schemaVersion))
           || !view.packet().packetId().equals(requiredText(saved, "packetId"))) {
         throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
       }
-      ObjectNode full =
-          requireObject(
-              canonicalJson.parseCanonical(
-                  new ActivityMaterialProjector().materialize(view).modelInputJson()));
+      ActivityReadingPacket fullPacket = new ActivityMaterialProjector().materialize(view);
+      ObjectNode full = requireObject(canonicalJson.parseCanonical(fullPacket.modelInputJson()));
       Set<String> entryMethods = entryMethodRefs(full);
       LinkedHashMap<String, JsonNode> units = units(full, entryMethods);
       List<List<JsonNode>> pages = pages(full, units, profile);
@@ -278,7 +266,7 @@ public final class ActivityReadingCoordinator {
         throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
       }
       List<RequestedSlice> validatedSlices = new ArrayList<>();
-      addSlices(saved.path("slices"), full, units, profile, validatedSlices);
+      addSlices(saved.path("slices"), full, units, validatedSlices);
       List<ActivityReadingPlan.Slice> slices = new ArrayList<>();
       Set<String> uniqueKeys = new HashSet<>();
       for (int index = 0; index < saved.path("slices").size(); index++) {
@@ -297,8 +285,23 @@ public final class ActivityReadingCoordinator {
             || !requiredSet.containsAll(shared)) {
           throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
         }
-        ActivityReadingPacket packet =
-            selectedPacket(view, full, new LinkedHashSet<>(required), entryKeys);
+        ActivityReadingPacket packet;
+        boolean direct = "DIRECT".equals(saved.path("mode").asText());
+        if (direct) {
+          List<String> expectedRequired = new ArrayList<>(view.methodRefsByKey().values());
+          expectedRequired.addAll(view.statementRefsById().values());
+          if (!"whole-packet".equals(sliceKey)
+              || !entryKeys.equals(fullPacket.entryKeys())
+              || !required.equals(expectedRequired)
+              || !selected.equals(expectedRequired)
+              || !shared.isEmpty()
+              || !"完整入口代码".equals(requiredText(node, "scope"))) {
+            throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+          }
+          packet = fullPacket;
+        } else {
+          packet = selectedPacket(view, full, new LinkedHashSet<>(required), entryKeys);
+        }
         if (!canonicalJson
                 .parseCanonical(packet.modelInputJson())
                 .equals(node.path("readingPacket"))
@@ -312,21 +315,315 @@ public final class ActivityReadingCoordinator {
       if (slices.size() > profile.maxSlicesPerPacket()) {
         throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
       }
+      if (historicalV1) {
+        requireHistoricalPagedV1(view, saved, full, units, pages, selected, shown, slices, profile);
+      } else {
+        requireV2SavedScopeState(
+            view,
+            profile,
+            saved,
+            full,
+            entryMethods,
+            units,
+            pages,
+            shown,
+            selected,
+            unread,
+            slices);
+      }
       return new ActivityReadingPlan(view, shown, unread, slices, saved);
     } catch (RuntimeException invalid) {
       throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID", invalid);
     }
   }
 
+  private static void requireHistoricalPagedV1(
+      ActivityMaterialView view,
+      ObjectNode saved,
+      ObjectNode full,
+      Map<String, JsonNode> units,
+      List<List<JsonNode>> pages,
+      List<String> savedSelected,
+      List<String> shownPages,
+      List<ActivityReadingPlan.Slice> savedSlices,
+      ActivityReadingProfile profile) {
+    String mode = requiredText(saved, "mode");
+    JsonNode totalPages = saved.path("totalNavigationPages");
+    JsonNode remainingPages = saved.path("remainingNavigationPages");
+    if (!("SELECTED".equals(mode) || "SLICED".equals(mode))
+        || !totalPages.isIntegralNumber()
+        || totalPages.intValue() != pages.size()
+        || !remainingPages.isIntegralNumber()
+        || remainingPages.intValue() != pages.size() - shownPages.size()
+        || !saved.path("decisions").isArray()
+        || !saved.path("unitDispositions").isArray()) {
+      throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+    }
+    Set<String> declaredSelected = new LinkedHashSet<>(entryMethodRefs(full));
+    List<RequestedSlice> replaySlices = new ArrayList<>();
+    List<RequestedSlice> legalDefinitions = new ArrayList<>();
+    for (JsonNode rawDecision : saved.path("decisions")) {
+      ObjectNode decision = requireObject(rawDecision);
+      if (!Set.of("requestedNavigationPages", "requestedUnitKeys", "slices", "unknowns")
+          .equals(fieldNames(decision))) {
+        throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+      }
+      addSelected(decision.path("requestedUnitKeys"), units, declaredSelected);
+      addSlices(decision.path("slices"), full, units, replaySlices);
+      List<RequestedSlice> definitionsInDecision = new ArrayList<>();
+      addSlices(decision.path("slices"), full, units, definitionsInDecision);
+      legalDefinitions.addAll(definitionsInDecision);
+      strings(decision.path("unknowns"), "reading unknowns");
+      for (String page : strings(decision.path("requestedNavigationPages"), "requested pages")) {
+        pageIndex(page, pages.size());
+      }
+    }
+    savedSlices.forEach(slice -> declaredSelected.addAll(slice.requiredUnitKeys()));
+    if (new LinkedHashSet<>(savedSelected).size() != savedSelected.size()
+        || !declaredSelected.equals(new LinkedHashSet<>(savedSelected))
+        || replaySlices.size() > profile.maxSlicesPerPacket()
+        || savedSlices.stream()
+            .anyMatch(
+                savedSlice ->
+                    legalDefinitions.stream()
+                        .noneMatch(
+                            definition ->
+                                matchesHistoricalSliceDefinition(full, savedSlice, definition)))) {
+      throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+    }
+    Set<String> dispositionUnits = new LinkedHashSet<>();
+    Map<String, String> unavailableUnits = new LinkedHashMap<>();
+    view.packet()
+        .unselectedUnits()
+        .forEach(unit -> unavailableUnits.put(unit.unitRef(), unit.reason()));
+    Set<String> dispositionUnavailable = new LinkedHashSet<>();
+    for (JsonNode disposition : saved.path("unitDispositions")) {
+      String unitKey = requiredText(disposition, "unitKey");
+      String value = requiredText(disposition, "disposition");
+      if ("UPSTREAM_UNAVAILABLE".equals(value)) {
+        if (!unavailableUnits.containsKey(unitKey)
+            || !dispositionUnavailable.add(unitKey)
+            || !unavailableUnits.get(unitKey).equals(requiredText(disposition, "reason"))) {
+          throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+        }
+      } else if (!units.containsKey(unitKey)
+          || !dispositionUnits.add(unitKey)
+          || !("FULL_TEXT_PROVIDED".equals(value) || "NAVIGATION_ONLY".equals(value))) {
+        throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+      }
+    }
+    if (!dispositionUnits.equals(units.keySet())
+        || !dispositionUnavailable.equals(unavailableUnits.keySet())) {
+      throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+    }
+  }
+
+  private void requireV2SavedScopeState(
+      ActivityMaterialView view,
+      ActivityReadingProfile profile,
+      ObjectNode saved,
+      ObjectNode full,
+      Set<String> entryMethods,
+      Map<String, JsonNode> units,
+      List<List<JsonNode>> pages,
+      List<String> shownPages,
+      List<String> savedSelected,
+      List<String> savedUnread,
+      List<ActivityReadingPlan.Slice> savedSlices) {
+    if (!saved.path("decisions").isArray()) {
+      throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+    }
+    if ("DIRECT".equals(saved.path("mode").asText())) {
+      requireDirectV2ScopeState(view, saved, shownPages, savedSelected, savedUnread, savedSlices);
+      return;
+    }
+    Set<String> selected = new LinkedHashSet<>(entryMethods);
+    ReadingScopeState scopeState = ReadingScopeState.empty();
+    for (JsonNode rawDecision : saved.path("decisions")) {
+      ObjectNode decision = requireObject(rawDecision);
+      if (!isV2Decision(decision)) {
+        throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+      }
+      DecisionApplication applied =
+          validateDecision(decision, full, units, selected, scopeState, pages, Integer.MAX_VALUE);
+      selected = applied.selected();
+      scopeState = applied.scopeState();
+    }
+
+    List<String> finalSliceKeys = strings(saved.path("finalSliceKeys"), "final slice keys");
+    JsonNode finishReading = saved.path("finishReading");
+    if (!finalSliceKeys.equals(scopeState.finalSliceKeys())
+        || !saved.path("supersededSlices").equals(supersessionsNode(scopeState.supersededSlices()))
+        || !finishReading.isBoolean()
+        || finishReading.booleanValue() != scopeState.finishReading()) {
+      throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+    }
+    if (scopeState.finalSliceKeys().size() > profile.maxSlicesPerPacket()) {
+      throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+    }
+
+    List<String> historicalUnknowns =
+        new ArrayList<>(strings(saved.path("unknowns"), "reading unknowns"));
+    ScopeEvaluation expected =
+        evaluateCurrentScopes(
+            view, full, entryMethods, selected, scopeState, historicalUnknowns, profile);
+    List<String> currentIssues = new ArrayList<>(expected.issues());
+    if (shownPages.size() < pages.size()) {
+      currentIssues.add("READING_NAVIGATION_INCOMPLETE:" + shownPages.size() + "/" + pages.size());
+    }
+    if (!scopeState.finishReading()) {
+      currentIssues.add("READING_NOT_FINISHED");
+    }
+    LinkedHashSet<String> completedSelection = new LinkedHashSet<>(selected);
+    expected.slices().forEach(slice -> completedSelection.addAll(slice.requiredUnitKeys()));
+    List<String> expectedSelected = List.copyOf(completedSelection);
+    List<String> expectedUnread =
+        units.keySet().stream().filter(key -> !completedSelection.contains(key)).toList();
+    JsonNode incomplete = saved.path("requiredScopeIncomplete");
+    if (!hasNavigationSummary(saved, pages.size(), pages.size() - shownPages.size())
+        || !savedSelected.equals(expectedSelected)
+        || !savedUnread.equals(expectedUnread)
+        || !saved.path("unitDispositions").equals(unitDispositions(view, pages, completedSelection))
+        || !currentIssues.equals(strings(saved.path("currentOpenScopeIssues"), "current issues"))
+        || !incomplete.isBoolean()
+        || incomplete.booleanValue() != (!currentIssues.isEmpty() || expected.slices().isEmpty())
+        || !sameSlices(savedSlices, expected.slices())) {
+      throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+    }
+  }
+
+  private static void requireDirectV2ScopeState(
+      ActivityMaterialView view,
+      ObjectNode saved,
+      List<String> shownPages,
+      List<String> savedSelected,
+      List<String> savedUnread,
+      List<ActivityReadingPlan.Slice> savedSlices) {
+    JsonNode finishReading = saved.path("finishReading");
+    JsonNode incomplete = saved.path("requiredScopeIncomplete");
+    LinkedHashSet<String> expectedSelection = new LinkedHashSet<>(view.methodRefsByKey().values());
+    expectedSelection.addAll(view.statementRefsById().values());
+    if (!saved.path("decisions").isEmpty()
+        || !shownPages.isEmpty()
+        || !hasNavigationSummary(saved, 0, 0)
+        || !savedSelected.equals(List.copyOf(expectedSelection))
+        || !savedUnread.isEmpty()
+        || !saved.path("unitDispositions").equals(directUnitDispositions(view, expectedSelection))
+        || !List.of("whole-packet")
+            .equals(strings(saved.path("finalSliceKeys"), "final slice keys"))
+        || !saved.path("supersededSlices").isArray()
+        || !saved.path("supersededSlices").isEmpty()
+        || !finishReading.isBoolean()
+        || !finishReading.booleanValue()
+        || !strings(saved.path("currentOpenScopeIssues"), "current issues").isEmpty()
+        || !incomplete.isBoolean()
+        || incomplete.booleanValue()
+        || savedSlices.size() != 1
+        || !"whole-packet".equals(savedSlices.get(0).sliceKey())) {
+      throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+    }
+  }
+
+  private static boolean matchesHistoricalSliceDefinition(
+      ObjectNode full, ActivityReadingPlan.Slice savedSlice, RequestedSlice definition) {
+    if (!savedSlice.sliceKey().equals(definition.sliceKey())
+        || !savedSlice.entryKeys().equals(definition.entryKeys())
+        || !savedSlice.sharedContextUnitKeys().equals(definition.sharedContextUnitKeys())
+        || !savedSlice.scope().equals(definition.scope())) {
+      return false;
+    }
+    LinkedHashSet<String> required = new LinkedHashSet<>(definition.requiredUnitKeys());
+    required.addAll(definition.sharedContextUnitKeys());
+    required.addAll(entryMethodRefs(full));
+    return new LinkedHashSet<>(savedSlice.requiredUnitKeys())
+        .equals(completeUnitKeys(full, required, definition.entryKeys()));
+  }
+
+  private static boolean hasNavigationSummary(
+      ObjectNode saved, int expectedTotalPages, int expectedRemainingPages) {
+    JsonNode totalPages = saved.path("totalNavigationPages");
+    JsonNode remainingPages = saved.path("remainingNavigationPages");
+    return totalPages.isIntegralNumber()
+        && totalPages.intValue() == expectedTotalPages
+        && remainingPages.isIntegralNumber()
+        && remainingPages.intValue() == expectedRemainingPages;
+  }
+
+  private static ArrayNode unitDispositions(
+      ActivityMaterialView view, List<List<JsonNode>> pages, Set<String> selected) {
+    ArrayNode dispositions = JsonNodeFactory.instance.arrayNode();
+    for (List<JsonNode> page : pages) {
+      for (JsonNode item : page) {
+        String unitKey = requiredText(item, "unitKey");
+        dispositions
+            .addObject()
+            .put("unitKey", unitKey)
+            .put(
+                "disposition",
+                selected.contains(unitKey) ? "FULL_TEXT_PROVIDED" : "NAVIGATION_ONLY");
+      }
+    }
+    view.packet()
+        .unselectedUnits()
+        .forEach(
+            unit ->
+                dispositions
+                    .addObject()
+                    .put("unitKey", unit.unitRef())
+                    .put("disposition", "UPSTREAM_UNAVAILABLE")
+                    .put("reason", unit.reason()));
+    return dispositions;
+  }
+
+  private static ArrayNode directUnitDispositions(ActivityMaterialView view, Set<String> selected) {
+    ArrayNode dispositions = JsonNodeFactory.instance.arrayNode();
+    selected.forEach(
+        key ->
+            dispositions.addObject().put("unitKey", key).put("disposition", "FULL_TEXT_PROVIDED"));
+    view.packet()
+        .unselectedUnits()
+        .forEach(
+            unit ->
+                dispositions
+                    .addObject()
+                    .put("unitKey", unit.unitRef())
+                    .put("disposition", "UPSTREAM_UNAVAILABLE")
+                    .put("reason", unit.reason()));
+    return dispositions;
+  }
+
+  private static boolean sameSlices(
+      List<ActivityReadingPlan.Slice> left, List<ActivityReadingPlan.Slice> right) {
+    if (left.size() != right.size()) {
+      return false;
+    }
+    for (int index = 0; index < left.size(); index++) {
+      ActivityReadingPlan.Slice first = left.get(index);
+      ActivityReadingPlan.Slice second = right.get(index);
+      if (!first.sliceKey().equals(second.sliceKey())
+          || !first.entryKeys().equals(second.entryKeys())
+          || !first.requiredUnitKeys().equals(second.requiredUnitKeys())
+          || !first.sharedContextUnitKeys().equals(second.sharedContextUnitKeys())
+          || !first.scope().equals(second.scope())
+          || !first
+              .readingPacket()
+              .modelInputJson()
+              .equals(second.readingPacket().modelInputJson())) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   private ActivityReadingPlan direct(ActivityMaterialView view, ActivityReadingPacket packet) {
     List<String> entries = packet.entryKeys();
-    List<String> required = new ArrayList<>(view.methodRefsByKey().values());
+    LinkedHashSet<String> required = new LinkedHashSet<>(view.methodRefsByKey().values());
     required.addAll(view.statementRefsById().values());
     ActivityReadingPlan.Slice slice =
         new ActivityReadingPlan.Slice(
-            "whole-packet", entries, required, List.of(), "完整入口代码", packet);
+            "whole-packet", entries, List.copyOf(required), List.of(), "完整入口代码", packet);
     ObjectNode record = JsonNodeFactory.instance.objectNode();
-    record.put("schemaVersion", "activity-reading-plan-v1");
+    record.put("schemaVersion", "activity-reading-plan-v2");
     record.put("packetId", packet.packetId());
     record.put("mode", "DIRECT");
     record.put("totalNavigationPages", 0);
@@ -335,6 +632,8 @@ public final class ActivityReadingCoordinator {
     record.putArray("navigationPages");
     record.putArray("unreadUnitKeys");
     record.putArray("unknowns");
+    ArrayNode selected = record.putArray("selectedUnitKeys");
+    required.forEach(selected::add);
     ArrayNode dispositions = record.putArray("unitDispositions");
     required.forEach(
         key ->
@@ -348,7 +647,18 @@ public final class ActivityReadingCoordinator {
                     .put("unitKey", unit.unitRef())
                     .put("disposition", "UPSTREAM_UNAVAILABLE")
                     .put("reason", unit.reason()));
-    record.putArray("sliceKeys").add(slice.sliceKey());
+    record.putArray("decisions");
+    record.putArray("finalSliceKeys").add(slice.sliceKey());
+    record.putArray("supersededSlices");
+    record.put("finishReading", true);
+    record.putArray("currentOpenScopeIssues");
+    ObjectNode savedSlice = record.putArray("slices").addObject();
+    savedSlice.put("sliceKey", slice.sliceKey());
+    savedSlice.put("scope", slice.scope());
+    savedSlice.set("entryKeys", stringsNode(slice.entryKeys()));
+    savedSlice.set("requiredUnitKeys", stringsNode(slice.requiredUnitKeys()));
+    savedSlice.set("sharedContextUnitKeys", stringsNode(slice.sharedContextUnitKeys()));
+    savedSlice.set("readingPacket", canonicalJson.parseCanonical(packet.modelInputJson()));
     return new ActivityReadingPlan(view, List.of(), List.of(), List.of(slice), record);
   }
 
@@ -454,10 +764,11 @@ public final class ActivityReadingCoordinator {
       List<List<JsonNode>> pages,
       int pageIndex,
       Set<String> selected,
+      ReadingScopeState scopeState,
       List<String> unknowns,
       ActivityReadingProfile profile) {
     ObjectNode input = JsonNodeFactory.instance.objectNode();
-    input.put("schemaVersion", "activity-reading-plan-input-v1");
+    input.put("schemaVersion", "activity-reading-plan-input-v2");
     input.put("packetId", view.packet().packetId());
     ObjectNode navigation = input.putObject("navigation");
     navigation.put("totalItems", pages.stream().mapToInt(List::size).sum());
@@ -482,58 +793,139 @@ public final class ActivityReadingCoordinator {
     }
     ArrayNode selectedKeys = input.putArray("selectedUnitKeys");
     selected.forEach(selectedKeys::add);
-    ArrayNode unresolved = input.putArray("unknowns");
-    unknowns.forEach(unresolved::add);
+    ScopeEvaluation currentScopes =
+        evaluateCurrentScopes(
+            view,
+            full,
+            entryMethodRefs(full),
+            selected,
+            scopeState,
+            new ArrayList<>(unknowns),
+            profile);
+    input.set("currentOpenScopeIssues", stringsNode(currentScopes.issues()));
+    input.set("historicalDiagnostics", stringsNode(unknowns));
+    ObjectNode priorScope = input.putObject("scopeState");
+    ArrayNode definedSlices = priorScope.putArray("definedSlices");
+    scopeState.definedSlices().forEach(slice -> definedSlices.add(sliceNode(slice)));
+    priorScope.set("finalSliceKeys", stringsNode(scopeState.finalSliceKeys()));
+    ArrayNode superseded = priorScope.putArray("supersededSlices");
+    scopeState.supersededSlices().forEach(item -> superseded.add(supersessionNode(item)));
+    priorScope.put("finishReading", scopeState.finishReading());
     input.set("limitations", full.path("limitations").deepCopy());
     input.putObject("sliceCapacity").put("maxPacketBytes", profile.maxDraftPacketBytes());
     return input;
   }
 
-  private void rejectOversizedSlices(
+  private ScopeEvaluation evaluateCurrentScopes(
       ActivityMaterialView view,
       ObjectNode full,
+      Set<String> entryMethodRefs,
       Set<String> selected,
-      List<RequestedSlice> requestedSlices,
-      List<RequestedSlice> previousSlices,
+      ReadingScopeState scopeState,
       List<String> unknowns,
       ActivityReadingProfile profile) {
-    for (Iterator<RequestedSlice> cursor = requestedSlices.iterator(); cursor.hasNext(); ) {
-      RequestedSlice requested = cursor.next();
+    Map<String, RequestedSlice> definitions = new LinkedHashMap<>();
+    scopeState.definedSlices().forEach(slice -> definitions.put(slice.sliceKey(), slice));
+    List<ActivityReadingPlan.Slice> slices = new ArrayList<>();
+    List<String> issues = new ArrayList<>();
+    for (String finalSliceKey : scopeState.finalSliceKeys()) {
+      RequestedSlice requested = definitions.get(finalSliceKey);
+      if (requested == null) {
+        throw new ActivityExplanationException("ACTIVITY_READING_FINAL_SCOPE_INVALID");
+      }
       LinkedHashSet<String> required = new LinkedHashSet<>(requested.requiredUnitKeys());
       required.addAll(requested.sharedContextUnitKeys());
-      required.addAll(entryMethodRefs(full));
+      required.addAll(entryMethodRefs);
       if (!selected.containsAll(required)) {
+        issues.add("READING_INCOMPLETE:" + requested.sliceKey());
+        addPriorExecutableSlice(
+            view,
+            full,
+            entryMethodRefs,
+            selected,
+            scopeState,
+            requested.sliceKey(),
+            profile,
+            slices);
         continue;
       }
       ActivityReadingPacket packet = selectedPacket(view, full, required, requested.entryKeys());
       String warningPrefix = "INPUT_CAPACITY_EXCEEDED:" + requested.sliceKey() + ":";
-      unknowns.removeIf(value -> value.startsWith(warningPrefix));
-      if (profile.fitsDraftAndMaximumReview(packet.modelInputJson().size())) {
+      if (!profile.fitsDraftAndMaximumReview(packet.modelInputJson().size())) {
+        String warning =
+            warningPrefix + packet.modelInputJson().size() + "/" + profile.maxDraftPacketBytes();
+        if (!unknowns.contains(warning)) {
+          unknowns.add(warning);
+        }
+        issues.add(warning);
+        addPriorExecutableSlice(
+            view,
+            full,
+            entryMethodRefs,
+            selected,
+            scopeState,
+            requested.sliceKey(),
+            profile,
+            slices);
         continue;
       }
-      unknowns.add(
-          warningPrefix + packet.modelInputJson().size() + "/" + profile.maxDraftPacketBytes());
-      cursor.remove();
+      LinkedHashSet<String> complete = completeUnitKeys(full, required, requested.entryKeys());
+      slices.add(
+          new ActivityReadingPlan.Slice(
+              requested.sliceKey(),
+              requested.entryKeys(),
+              List.copyOf(complete),
+              requested.sharedContextUnitKeys(),
+              requested.scope(),
+              packet));
     }
-    for (RequestedSlice previous : previousSlices) {
-      if (requestedSlices.stream()
-          .anyMatch(slice -> slice.sliceKey().equals(previous.sliceKey()))) {
-        continue;
-      }
-      LinkedHashSet<String> required = new LinkedHashSet<>(previous.requiredUnitKeys());
-      required.addAll(previous.sharedContextUnitKeys());
-      required.addAll(entryMethodRefs(full));
-      if (selected.containsAll(required)
-          && profile.fitsDraftAndMaximumReview(
-              selectedPacket(view, full, required, previous.entryKeys()).modelInputJson().size())) {
-        // A too-large revision must not erase the last complete, usable reading scope.
-        requestedSlices.add(previous);
+    for (ScopeSupersession supersession : scopeState.supersededSlices()) {
+      if (supersession.replacementSliceKeys().isEmpty()) {
+        issues.add("READING_SCOPE_WITHDRAWN:" + supersession.sliceKey());
       }
     }
+    if (scopeState.finalSliceKeys().isEmpty()) {
+      issues.add("READING_SCOPE_NOT_FINALIZED");
+    }
+    return new ScopeEvaluation(List.copyOf(slices), List.copyOf(issues));
   }
 
-  private static boolean hasOversizedSlice(List<String> unknowns) {
-    return unknowns.stream().anyMatch(value -> value.startsWith("INPUT_CAPACITY_EXCEEDED:"));
+  private void addPriorExecutableSlice(
+      ActivityMaterialView view,
+      ObjectNode full,
+      Set<String> entryMethodRefs,
+      Set<String> selected,
+      ReadingScopeState scopeState,
+      String sliceKey,
+      ActivityReadingProfile profile,
+      List<ActivityReadingPlan.Slice> slices) {
+    List<RequestedSlice> priorDefinitions = scopeState.priorDefinitions();
+    for (int index = priorDefinitions.size() - 1; index >= 0; index--) {
+      RequestedSlice prior = priorDefinitions.get(index);
+      if (!sliceKey.equals(prior.sliceKey())) {
+        continue;
+      }
+      LinkedHashSet<String> required = new LinkedHashSet<>(prior.requiredUnitKeys());
+      required.addAll(prior.sharedContextUnitKeys());
+      required.addAll(entryMethodRefs);
+      if (!selected.containsAll(required)) {
+        continue;
+      }
+      ActivityReadingPacket packet = selectedPacket(view, full, required, prior.entryKeys());
+      if (!profile.fitsDraftAndMaximumReview(packet.modelInputJson().size())) {
+        continue;
+      }
+      LinkedHashSet<String> complete = completeUnitKeys(full, required, prior.entryKeys());
+      slices.add(
+          new ActivityReadingPlan.Slice(
+              prior.sliceKey(),
+              prior.entryKeys(),
+              List.copyOf(complete),
+              prior.sharedContextUnitKeys(),
+              prior.scope(),
+              packet));
+      return;
+    }
   }
 
   private void addAvailableUnitsToSelection(
@@ -574,13 +966,13 @@ public final class ActivityReadingCoordinator {
         <= profile.maxModelInputBytes();
   }
 
-  private ObjectNode decide(
+  private ValidatedDecision decide(
       ActivityMaterialView view,
       ActivityReadingProfile profile,
       String pageId,
       int ordinal,
       ObjectNode input,
-      Consumer<ObjectNode> validator) {
+      Function<ObjectNode, DecisionApplication> validator) {
     ImmutableBytes bytes = canonicalJson.encodeCanonical(input);
     String instructions = ActivityPromptCatalog.instructionsFor(TASK_KIND);
     ImmutableBytes schema =
@@ -671,15 +1063,15 @@ public final class ActivityReadingCoordinator {
         }
         throw invalidShape;
       }
-      if (!Set.of("requestedNavigationPages", "requestedUnitKeys", "slices", "unknowns")
-          .equals(fieldNames(decision))) {
+      if (!isV2Decision(decision)) {
         if (retryOrFail(decisionKey, attempt, maxAttempts, "RESPONSE_SCHEMA_INVALID", true, true)) {
           continue;
         }
         throw new ActivityExplanationException("ACTIVITY_READING_PLAN_RESPONSE_INVALID");
       }
+      DecisionApplication application;
       try {
-        validator.accept(decision);
+        application = validator.apply(decision);
       } catch (ActivityExplanationException invalid) {
         String reason =
             "ACTIVITY_READING_UNIT_UNKNOWN".equals(invalid.getMessage())
@@ -692,27 +1084,161 @@ public final class ActivityReadingCoordinator {
       }
       saveAttempt(decisionKey, attempt, "validation", attemptEvent("VALID", attempt, null));
       saveAttempt(decisionKey, attempt, "outcome", attemptEvent("SUCCESS", attempt, null));
-      return decision;
+      return new ValidatedDecision(decision, application);
     }
     throw new ActivityExplanationException("ACTIVITY_READING_PLAN_ATTEMPTS_EXHAUSTED");
   }
 
-  private static void validateDecision(
+  private static DecisionApplication validateDecision(
       ObjectNode decision,
       ObjectNode full,
       Map<String, JsonNode> units,
       Set<String> selected,
-      List<RequestedSlice> requestedSlices,
+      ReadingScopeState scopeState,
       List<List<JsonNode>> pages,
       ActivityReadingProfile profile) {
+    return validateDecision(
+        decision, full, units, selected, scopeState, pages, profile.maxSlicesPerPacket());
+  }
+
+  private static DecisionApplication validateDecision(
+      ObjectNode decision,
+      ObjectNode full,
+      Map<String, JsonNode> units,
+      Set<String> selected,
+      ReadingScopeState scopeState,
+      List<List<JsonNode>> pages,
+      int maxFinalSliceKeys) {
     Set<String> nextSelected = new LinkedHashSet<>(selected);
-    List<RequestedSlice> nextSlices = new ArrayList<>(requestedSlices);
     addSelected(decision.path("requestedUnitKeys"), units, nextSelected);
-    addSlices(decision.path("slices"), full, units, profile, nextSlices);
+    ReadingScopeState nextScopeState =
+        nextScopeState(decision, full, units, scopeState, maxFinalSliceKeys);
     strings(decision.path("unknowns"), "reading unknowns");
     for (String page : strings(decision.path("requestedNavigationPages"), "requested pages")) {
       pageIndex(page, pages.size());
     }
+    return new DecisionApplication(
+        Collections.unmodifiableSet(new LinkedHashSet<>(nextSelected)), nextScopeState);
+  }
+
+  private static boolean isV2Decision(ObjectNode decision) {
+    return Set.of(
+            "requestedNavigationPages",
+            "requestedUnitKeys",
+            "slices",
+            "unknowns",
+            "finalSliceKeys",
+            "supersededSlices",
+            "finishReading")
+        .equals(fieldNames(decision));
+  }
+
+  private static ReadingScopeState nextScopeState(
+      ObjectNode decision,
+      ObjectNode full,
+      Map<String, JsonNode> units,
+      ReadingScopeState current,
+      int maxFinalSliceKeys) {
+    List<RequestedSlice> nextDefinitions = new ArrayList<>(current.definedSlices());
+    Map<String, RequestedSlice> previousDefinitionsByKey = new LinkedHashMap<>();
+    current.definedSlices().forEach(slice -> previousDefinitionsByKey.put(slice.sliceKey(), slice));
+    addSlices(decision.path("slices"), full, units, nextDefinitions);
+    Map<String, RequestedSlice> definitionsByKey = new LinkedHashMap<>();
+    nextDefinitions.forEach(slice -> definitionsByKey.put(slice.sliceKey(), slice));
+    List<RequestedSlice> priorDefinitions = new ArrayList<>(current.priorDefinitions());
+    for (JsonNode proposed : decision.path("slices")) {
+      String sliceKey = requiredText(proposed, "sliceKey");
+      RequestedSlice previous = previousDefinitionsByKey.get(sliceKey);
+      RequestedSlice currentDefinition = definitionsByKey.get(sliceKey);
+      if (previous != null && !previous.equals(currentDefinition)) {
+        priorDefinitions.add(previous);
+      }
+    }
+
+    List<String> nextFinalKeys = strings(decision.path("finalSliceKeys"), "final slice keys");
+    Set<String> uniqueFinalKeys = new LinkedHashSet<>(nextFinalKeys);
+    if (uniqueFinalKeys.size() != nextFinalKeys.size()
+        || nextFinalKeys.size() > maxFinalSliceKeys
+        || !definitionsByKey.keySet().containsAll(nextFinalKeys)) {
+      throw new ActivityExplanationException("ACTIVITY_READING_FINAL_SCOPE_INVALID");
+    }
+
+    JsonNode dispositions = decision.path("supersededSlices");
+    if (!dispositions.isArray()) {
+      throw new ActivityExplanationException("ACTIVITY_READING_SUPERSESSION_INVALID");
+    }
+    Set<String> removedFinalKeys = new LinkedHashSet<>(current.finalSliceKeys());
+    removedFinalKeys.removeAll(uniqueFinalKeys);
+    Set<String> dispositionKeys = new LinkedHashSet<>();
+    List<ScopeSupersession> nextSupersessions = new ArrayList<>(current.supersededSlices());
+    Set<String> previouslyDisposed = new HashSet<>();
+    current.supersededSlices().forEach(item -> previouslyDisposed.add(item.sliceKey()));
+    for (JsonNode disposition : dispositions) {
+      ObjectNode value = requireObject(disposition);
+      if (!Set.of("sliceKey", "replacementSliceKeys", "reason").equals(fieldNames(value))) {
+        throw new ActivityExplanationException("ACTIVITY_READING_SUPERSESSION_INVALID");
+      }
+      String sliceKey = requiredText(value, "sliceKey");
+      List<String> replacements =
+          strings(value.path("replacementSliceKeys"), "replacement slice keys");
+      Set<String> uniqueReplacements = new LinkedHashSet<>(replacements);
+      if (!definitionsByKey.containsKey(sliceKey)
+          || !removedFinalKeys.contains(sliceKey)
+          || !dispositionKeys.add(sliceKey)
+          || previouslyDisposed.contains(sliceKey)
+          || uniqueReplacements.size() != replacements.size()
+          || !definitionsByKey.keySet().containsAll(replacements)
+          || !uniqueFinalKeys.containsAll(replacements)) {
+        throw new ActivityExplanationException("ACTIVITY_READING_SUPERSESSION_INVALID");
+      }
+      nextSupersessions.add(
+          new ScopeSupersession(sliceKey, replacements, requiredText(value, "reason")));
+    }
+    if (!dispositionKeys.equals(removedFinalKeys) || hasSupersessionCycle(nextSupersessions)) {
+      throw new ActivityExplanationException("ACTIVITY_READING_SUPERSESSION_INVALID");
+    }
+    JsonNode finishReading = decision.path("finishReading");
+    if (!finishReading.isBoolean()) {
+      throw new ActivityExplanationException("ACTIVITY_READING_RESPONSE_INVALID");
+    }
+    return new ReadingScopeState(
+        List.copyOf(nextDefinitions),
+        List.copyOf(priorDefinitions),
+        List.copyOf(nextFinalKeys),
+        List.copyOf(nextSupersessions),
+        finishReading.booleanValue());
+  }
+
+  private static boolean hasSupersessionCycle(List<ScopeSupersession> supersessions) {
+    Map<String, List<String>> graph = new LinkedHashMap<>();
+    supersessions.forEach(item -> graph.put(item.sliceKey(), item.replacementSliceKeys()));
+    Set<String> visited = new HashSet<>();
+    for (String key : graph.keySet()) {
+      if (hasSupersessionCycle(key, graph, new HashSet<>(), visited)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean hasSupersessionCycle(
+      String key, Map<String, List<String>> graph, Set<String> visiting, Set<String> visited) {
+    if (!visiting.add(key)) {
+      return true;
+    }
+    if (visited.contains(key)) {
+      visiting.remove(key);
+      return false;
+    }
+    for (String replacement : graph.getOrDefault(key, List.of())) {
+      if (graph.containsKey(replacement)
+          && hasSupersessionCycle(replacement, graph, visiting, visited)) {
+        return true;
+      }
+    }
+    visiting.remove(key);
+    visited.add(key);
+    return false;
   }
 
   private boolean retryOrFail(
@@ -786,11 +1312,7 @@ public final class ActivityReadingCoordinator {
   }
 
   private static void addSlices(
-      JsonNode source,
-      ObjectNode full,
-      Map<String, JsonNode> units,
-      ActivityReadingProfile profile,
-      List<RequestedSlice> target) {
+      JsonNode source, ObjectNode full, Map<String, JsonNode> units, List<RequestedSlice> target) {
     if (!source.isArray()) {
       throw new ActivityExplanationException("ACTIVITY_READING_SLICES_INVALID");
     }
@@ -833,9 +1355,6 @@ public final class ActivityReadingCoordinator {
         target.add(proposed);
       } else {
         target.set(existingIndex, proposed);
-      }
-      if (target.size() > profile.maxSlicesPerPacket()) {
-        throw new ActivityExplanationException("ACTIVITY_READING_SLICE_LIMIT");
       }
     }
   }
@@ -1034,9 +1553,11 @@ public final class ActivityReadingCoordinator {
       List<ObjectNode> decisions,
       List<ActivityReadingPlan.Slice> slices,
       List<String> unknowns,
+      ReadingScopeState scopeState,
+      List<String> currentOpenScopeIssues,
       boolean requiredScopeIncomplete) {
     ObjectNode record = JsonNodeFactory.instance.objectNode();
-    record.put("schemaVersion", "activity-reading-plan-v1");
+    record.put("schemaVersion", "activity-reading-plan-v2");
     record.put("packetId", view.packet().packetId());
     record.put("mode", slices.size() > 1 ? "SLICED" : "SELECTED");
     record.put("totalNavigationPages", pages.size());
@@ -1077,6 +1598,11 @@ public final class ActivityReadingCoordinator {
                     .put("reason", unit.reason()));
     ArrayNode choices = record.putArray("decisions");
     decisions.forEach(choice -> choices.add(choice.deepCopy()));
+    record.set("finalSliceKeys", stringsNode(scopeState.finalSliceKeys()));
+    ArrayNode superseded = record.putArray("supersededSlices");
+    scopeState.supersededSlices().forEach(item -> superseded.add(supersessionNode(item)));
+    record.put("finishReading", scopeState.finishReading());
+    record.set("currentOpenScopeIssues", stringsNode(currentOpenScopeIssues));
     ArrayNode scopes = record.putArray("slices");
     for (ActivityReadingPlan.Slice slice : slices) {
       ObjectNode scope = scopes.addObject();
@@ -1090,6 +1616,30 @@ public final class ActivityReadingCoordinator {
     }
     record.set("unknowns", stringsNode(unknowns));
     return record;
+  }
+
+  private static ObjectNode sliceNode(RequestedSlice slice) {
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    value.put("sliceKey", slice.sliceKey());
+    value.set("entryKeys", stringsNode(slice.entryKeys()));
+    value.set("requiredUnitKeys", stringsNode(slice.requiredUnitKeys()));
+    value.set("sharedContextUnitKeys", stringsNode(slice.sharedContextUnitKeys()));
+    value.put("scope", slice.scope());
+    return value;
+  }
+
+  private static ObjectNode supersessionNode(ScopeSupersession supersession) {
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    value.put("sliceKey", supersession.sliceKey());
+    value.set("replacementSliceKeys", stringsNode(supersession.replacementSliceKeys()));
+    value.put("reason", supersession.reason());
+    return value;
+  }
+
+  private static ArrayNode supersessionsNode(List<ScopeSupersession> supersessions) {
+    ArrayNode values = JsonNodeFactory.instance.arrayNode();
+    supersessions.forEach(item -> values.add(supersessionNode(item)));
+    return values;
   }
 
   private static ArrayNode stringsNode(List<String> values) {
@@ -1159,6 +1709,32 @@ public final class ActivityReadingCoordinator {
       List<String> requiredUnitKeys,
       List<String> sharedContextUnitKeys,
       String scope) {}
+
+  private record ScopeSupersession(
+      String sliceKey, List<String> replacementSliceKeys, String reason) {}
+
+  private record ReadingScopeState(
+      List<RequestedSlice> definedSlices,
+      List<RequestedSlice> priorDefinitions,
+      List<String> finalSliceKeys,
+      List<ScopeSupersession> supersededSlices,
+      boolean finishReading) {
+
+    private static ReadingScopeState empty() {
+      return new ReadingScopeState(List.of(), List.of(), List.of(), List.of(), false);
+    }
+  }
+
+  private record DecisionApplication(Set<String> selected, ReadingScopeState scopeState) {}
+
+  private record ValidatedDecision(ObjectNode response, DecisionApplication application) {}
+
+  private record ScopeEvaluation(List<ActivityReadingPlan.Slice> slices, List<String> issues) {
+
+    private static ScopeEvaluation empty() {
+      return new ScopeEvaluation(List.of(), List.of());
+    }
+  }
 
   private static final class ActivityExplanationException extends IllegalStateException {
     private ActivityExplanationException(String code) {

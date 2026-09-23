@@ -6,7 +6,7 @@
 
 新Step05→Activity已接通并生成418条。当前实际资源为activity-draft-v2、activity-review-v2、activity-reading-plan-v1；pipeline版本不是Prompt资源版本。历史M10 Activity使用其原协议，326条结果不变。Step07系统认识、CHECK最终保留集、事实DRAFT→WRITE→RULE_REVIEW已实现，不是待接线双轮。
 
-业务生成默认已登录ChatGPT的Codex上下文gpt-5.6-terra/high；一个job保持同一绑定。设计/调试Astra/ultra、测试Terra/xhigh、代码Sol/xhigh。历史模型身份保持原值；默认值变化不自动启动模型或重跑已审内容。
+业务生成默认已登录ChatGPT的Codex上下文Luna/high；一个job保持同一绑定。方向、设计文档及调试Astra/ultra、测试Luna/xhigh、代码Terra/xhigh。历史模型身份保持原值；默认值变化不自动启动模型或重跑已审内容。
 
 ## 共同中文约束
 

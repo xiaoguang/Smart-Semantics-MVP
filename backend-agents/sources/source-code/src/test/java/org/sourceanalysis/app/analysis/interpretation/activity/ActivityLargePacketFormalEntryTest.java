@@ -149,7 +149,7 @@ class ActivityLargePacketFormalEntryTest {
         request ->
             new StructuredModelResponse(
                 ImmutableBytes.copyOf(
-                    "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[],\"slices\":[],\"unknowns\":[]}"
+                    "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[],\"slices\":[],\"unknowns\":[],\"finalSliceKeys\":[],\"supersededSlices\":[],\"finishReading\":false}"
                         .getBytes(StandardCharsets.UTF_8)),
                 IDENTITY);
     ActivityExplanationResult incomplete =
@@ -382,7 +382,7 @@ class ActivityLargePacketFormalEntryTest {
           request ->
               new StructuredModelResponse(
                   ImmutableBytes.copyOf(
-                      "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[],\"slices\":[],\"unknowns\":[]}"
+                      "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[],\"slices\":[],\"unknowns\":[],\"finalSliceKeys\":[],\"supersededSlices\":[],\"finishReading\":false}"
                           .getBytes(StandardCharsets.UTF_8)),
                   IDENTITY);
       ActivityExplainer.forExecution(execution(mutationJournal, emptyPlanRun, null, noSelection))
@@ -606,6 +606,16 @@ class ActivityLargePacketFormalEntryTest {
       AnalysisRunId reuseFrom,
       StructuredModelProvider provider,
       ActivityRetryProfile retry) {
+    return execution(journal, run, reuseFrom, provider, retry, null);
+  }
+
+  private static ModelJobExecutionConfiguration execution(
+      Path journal,
+      AnalysisRunId run,
+      AnalysisRunId reuseFrom,
+      StructuredModelProvider provider,
+      ActivityRetryProfile retry,
+      ActivityReadingProfile activityReadingProfile) {
     return new ModelJobExecutionConfiguration(
         1,
         Map.of("pro", new ModelJobProviderBinding("pro", "pro-account", 1, provider, IDENTITY)),
@@ -617,7 +627,8 @@ class ActivityLargePacketFormalEntryTest {
         journal,
         run,
         reuseFrom,
-        retry);
+        retry,
+        activityReadingProfile);
   }
 
   @Test
@@ -752,6 +763,40 @@ class ActivityLargePacketFormalEntryTest {
 
     assertThat(provider.taskKinds()).startsWith("ACTIVITY_READING_PLAN");
     assertThat(result.reviewedActivities()).hasSize(2);
+  }
+
+  @Test
+  void executionReadingRoundLimitStopsBeforeTheNextSupplementalSelectionAndPersistsTheGap(
+      @TempDir Path journal) throws Exception {
+    FormalLargePacketProvider provider = new FormalLargePacketProvider();
+    ActivityReadingProfile oneSupplementalRound =
+        new ActivityReadingProfile(
+            PROFILE.maxModelInputBytes(), PROFILE.maxModelOutputBytes(), 128, 1, 32);
+    AnalysisRunId run = AnalysisRunId.parse("analysis-run:" + "c".repeat(64));
+
+    ActivityExplanationResult result =
+        ActivityExplainer.forExecution(
+                execution(
+                    journal,
+                    run,
+                    null,
+                    provider,
+                    ActivityRetryProfile.defaults(),
+                    oneSupplementalRound))
+            .explain(new ExplainCodeReadingMaterialsRequest(largeStep05Material(), PROFILE, 1));
+
+    assertThat(provider.taskKinds())
+        .as("maxReadingRounds=1 permits M2 but not the next supplemental M3 selection")
+        .containsExactly("ACTIVITY_READING_PLAN", "ACTIVITY_READING_PLAN");
+    assertThat(result.reviewedActivities()).isEmpty();
+    ObjectNode saved =
+        (ObjectNode)
+            new CanonicalJsonCodec()
+                .parseCanonical(
+                    ImmutableBytes.copyOf(Files.readAllBytes(savedReadingPlan(journal))));
+    assertThat(saved.path("requiredScopeIncomplete").asBoolean()).isTrue();
+    assertThat(scalarText(saved.path("currentOpenScopeIssues")))
+        .contains("READING_SCOPE_NOT_FINALIZED", "READING_NOT_FINISHED");
   }
 
   private static CanonicalAnalysisStepArtifactStore stepStore(
@@ -932,14 +977,19 @@ class ActivityLargePacketFormalEntryTest {
     @Override
     public StructuredModelResponse generate(StructuredModelRequest request) {
       return switch (request.taskKind()) {
-        case "ACTIVITY_READING_PLAN" ->
-            response(
-                planResponse(
-                    "[]",
-                    "[\"M2\",\"M3\",\"M4\"]",
-                    twoEntryScopes
-                        ? "[{\"sliceKey\":\"slice-m2\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"first independent scope\"},{\"sliceKey\":\"slice-m3\",\"entryKeys\":[\"E1\",\"E2\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"middle two-entry scope\"},{\"sliceKey\":\"slice-m4\",\"entryKeys\":[\"E2\"],\"requiredUnitKeys\":[\"M1\",\"M4\"],\"sharedContextUnitKeys\":[],\"scope\":\"third independent scope\"}]"
-                        : "[{\"sliceKey\":\"slice-m2\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"first independent scope\"},{\"sliceKey\":\"slice-m3\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"middle independent scope\"},{\"sliceKey\":\"slice-m4\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M4\"],\"sharedContextUnitKeys\":[],\"scope\":\"third independent scope\"}]"));
+        case "ACTIVITY_READING_PLAN" -> {
+          String slices =
+              twoEntryScopes
+                  ? "[{\"sliceKey\":\"slice-m2\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"first independent scope\"},{\"sliceKey\":\"slice-m3\",\"entryKeys\":[\"E1\",\"E2\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"middle two-entry scope\"},{\"sliceKey\":\"slice-m4\",\"entryKeys\":[\"E2\"],\"requiredUnitKeys\":[\"M1\",\"M4\"],\"sharedContextUnitKeys\":[],\"scope\":\"third independent scope\"}]"
+                  : "[{\"sliceKey\":\"slice-m2\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"first independent scope\"},{\"sliceKey\":\"slice-m3\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"middle independent scope\"},{\"sliceKey\":\"slice-m4\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M4\"],\"sharedContextUnitKeys\":[],\"scope\":\"third independent scope\"}]";
+          yield response(
+              planResponse(
+                  "[]",
+                  "[\"M2\",\"M3\",\"M4\"]",
+                  slices,
+                  "[\"slice-m2\",\"slice-m3\",\"slice-m4\"]",
+                  true));
+        }
         case "ACTIVITY_DRAFT", "ACTIVITY_REVIEW" -> activityResponse(request);
         default -> throw new AssertionError("unexpected task kind " + request.taskKind());
       };
@@ -1060,7 +1110,9 @@ class ActivityLargePacketFormalEntryTest {
             planResponse(
                 "[]",
                 "[]",
-                "[{\"sliceKey\":\"slice-m2\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"validate scope\"},{\"sliceKey\":\"slice-m3\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"write scope\"}]");
+                "[{\"sliceKey\":\"slice-m2\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"validate scope\"},{\"sliceKey\":\"slice-m3\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"write scope\"}]",
+                "[\"slice-m2\",\"slice-m3\"]",
+                true);
       } else {
         throw new AssertionError("unbounded reading-plan loop");
       }
@@ -1122,12 +1174,21 @@ class ActivityLargePacketFormalEntryTest {
   }
 
   private static String planResponse(String pages, String units, String slices) {
+    return planResponse(pages, units, slices, "[]", false);
+  }
+
+  private static String planResponse(
+      String pages, String units, String slices, String finalSliceKeys, boolean finishReading) {
     return "{\"requestedNavigationPages\":"
         + pages
         + ",\"requestedUnitKeys\":"
         + units
         + ",\"slices\":"
         + slices
-        + ",\"unknowns\":[]}";
+        + ",\"unknowns\":[],\"finalSliceKeys\":"
+        + finalSliceKeys
+        + ",\"supersededSlices\":[],\"finishReading\":"
+        + finishReading
+        + "}";
   }
 }

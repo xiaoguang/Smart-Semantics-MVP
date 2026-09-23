@@ -42,6 +42,7 @@ import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanati
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationProfile;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationResult;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityJobExecutionConfiguration;
+import org.sourceanalysis.app.analysis.interpretation.activity.ActivityReadingProfile;
 import org.sourceanalysis.app.analysis.interpretation.activity.ExplainActivitiesRequest;
 import org.sourceanalysis.app.analysis.interpretation.activity.ExplainCodeReadingMaterialsRequest;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
@@ -116,14 +117,17 @@ final class SourceAnalysisExecution {
   private static final String MODE_INSPECT = "inspect";
   private static final String MODE_ARTIFACT = "artifact";
   private static final String MODE_RENDER = "render";
-  static final String CONFIG_SCHEMA = "repository-run-config-v2";
+  static final String HISTORICAL_CONFIG_SCHEMA = "repository-run-config-v2";
+  static final String CONFIG_SCHEMA = "repository-run-config-v3";
   private static final String POLICY_SCHEMA = "artifact-policy-registry-policy-set-v1";
   private static final String MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA =
       "model-job-execution-config-v2";
   private static final String PROCESS_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA =
       "model-job-execution-config-v3";
-  private static final String STEP05_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA =
+  private static final String HISTORICAL_STEP05_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA =
       "model-job-execution-config-v4";
+  private static final String STEP05_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA =
+      "model-job-execution-config-v5";
   private static final String POLICY_ID_DOMAIN = "canonical-artifact-policy-registry-id-v2";
   private static final int CONFIG_MAX_BYTES = 1_048_576;
   private static final ObjectMapper JSON = new ObjectMapper();
@@ -414,7 +418,11 @@ final class SourceAnalysisExecution {
             List.of(materialId),
             1);
         ModelJobExecutionConfiguration execution =
-            modelJobExecutionConfiguration(modelJobs, running.runId(), reuseFromModelBatchId);
+            modelJobExecutionConfiguration(
+                modelJobs,
+                running.runId(),
+                reuseFromModelBatchId,
+                configuration.activityReadingProfile());
         ActivityExplanationResult result =
             ActivityExplainer.forExecution(execution)
                 .explain(new ExplainActivitiesRequest(sample, configuration.activityProfile(), 1));
@@ -495,7 +503,10 @@ final class SourceAnalysisExecution {
                     configuration.maxMaterialsToStart());
                 ModelJobExecutionConfiguration execution =
                     modelJobExecutionConfiguration(
-                        modelJobs, request.runId(), reuseFromModelBatchId);
+                        modelJobs,
+                        request.runId(),
+                        reuseFromModelBatchId,
+                        configuration.activityReadingProfile());
                 ActivityExplanationResult activities =
                     ActivityExplainer.forExecution(outputModules, execution)
                         .explain(
@@ -608,7 +619,10 @@ final class SourceAnalysisExecution {
                     selectedPacketIds);
                 ModelJobExecutionConfiguration execution =
                     modelJobExecutionConfiguration(
-                        modelJobs, request.runId(), reuseFromModelBatchId);
+                        modelJobs,
+                        request.runId(),
+                        reuseFromModelBatchId,
+                        configuration.activityReadingProfile());
                 ActivityExplanationResult unpersisted =
                     ActivityExplainer.forExecution(execution)
                         .explain(
@@ -1051,7 +1065,10 @@ final class SourceAnalysisExecution {
                     readingRequest);
                 ModelJobExecutionConfiguration execution =
                     modelJobExecutionConfiguration(
-                        modelJobs, request.runId(), reuseFromModelBatchId);
+                        modelJobs,
+                        request.runId(),
+                        reuseFromModelBatchId,
+                        configuration.activityReadingProfile());
                 AnalysisRunRequest outputRequest =
                     RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, request.runId())
                         .request();
@@ -1161,7 +1178,10 @@ final class SourceAnalysisExecution {
                     reuseFromModelBatchId);
                 ModelJobExecutionConfiguration execution =
                     modelJobExecutionConfiguration(
-                        modelJobs, request.runId(), reuseFromModelBatchId);
+                        modelJobs,
+                        request.runId(),
+                        reuseFromModelBatchId,
+                        configuration.activityReadingProfile());
                 AnalysisRunRequest outputRequest =
                     RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, request.runId())
                         .request();
@@ -1431,9 +1451,8 @@ final class SourceAnalysisExecution {
       return;
     }
     ObjectNode execution = readModelJobExecutionConfiguration(modelJobs, reuseFromModelBatchId);
-    if (!STEP05_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA.equals(
-            stateText(execution, "schemaVersion"))
-        || !"BUSINESS_PROCESSES".equals(stateText(stateObject(execution, "executionScope"), "mode"))
+    requireStep05ModelJobExecutionConfiguration(execution);
+    if (!"BUSINESS_PROCESSES".equals(stateText(stateObject(execution, "executionScope"), "mode"))
         || !sourceInventoryReferenceJson(readingRequest.sourceInventoryReference())
             .equals(execution.path("sourceInventoryReference"))
         || !savedCatalogInputLineageOrNull(configuration, readingRequest.savedCatalogInput())
@@ -1596,7 +1615,10 @@ final class SourceAnalysisExecution {
   }
 
   static ModelJobExecutionConfiguration modelJobExecutionConfiguration(
-      ModelJobsConfiguration modelJobs, AnalysisRunId runId, AnalysisRunId reuseFromModelBatchId) {
+      ModelJobsConfiguration modelJobs,
+      AnalysisRunId runId,
+      AnalysisRunId reuseFromModelBatchId,
+      ActivityReadingProfile activityReadingProfile) {
     Map<String, ModelJobProviderBinding> providers = new LinkedHashMap<>();
     modelJobs.providers().entrySet().stream()
         .sorted(Map.Entry.comparingByKey())
@@ -1612,7 +1634,8 @@ final class SourceAnalysisExecution {
         modelJobs.journalDirectory(),
         runId,
         reuseFromModelBatchId,
-        modelJobs.activityRetry());
+        modelJobs.activityRetry(),
+        activityReadingProfile);
   }
 
   static ModelJobProviderBinding providerBinding(
@@ -1851,8 +1874,8 @@ final class SourceAnalysisExecution {
       throw failure("MODEL_REUSE_SOURCE_NOT_STOPPED");
     }
     ObjectNode prior = readModelJobExecutionConfiguration(modelJobs, reuseFromModelBatchId);
-    if (!STEP05_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA.equals(stateText(prior, "schemaVersion"))
-        || !materials.sourceRunId().value().equals(stateText(prior, "sourceRunId"))
+    requireStep05ModelJobExecutionConfiguration(prior);
+    if (!materials.sourceRunId().value().equals(stateText(prior, "sourceRunId"))
         || !materials
             .readingMaterialCheckpoint()
             .equals(
@@ -1897,6 +1920,8 @@ final class SourceAnalysisExecution {
     selectedPacketIds.stream().sorted().forEach(packetIds::add);
     record.put("modelJobsSha256", modelJobs.canonicalSha256());
     record.set("modelJobs", modelJobs.normalizedNonSecretDocument());
+    record.set(
+        "activityReading", activityReadingProfileJson(configuration.activityReadingProfile()));
     Path destination =
         modelJobs
             .journalDirectory()
@@ -1959,6 +1984,8 @@ final class SourceAnalysisExecution {
     }
     record.put("modelJobsSha256", modelJobs.canonicalSha256());
     record.set("modelJobs", modelJobs.normalizedNonSecretDocument());
+    record.set(
+        "activityReading", activityReadingProfileJson(configuration.activityReadingProfile()));
     Path destination =
         modelJobs
             .journalDirectory()
@@ -1972,6 +1999,102 @@ final class SourceAnalysisExecution {
         "MODEL_EXECUTION_CONFIGURATION_DESTINATION_INVALID",
         "MODEL_EXECUTION_CONFIGURATION_CONFLICT",
         "MODEL_EXECUTION_CONFIGURATION_WRITE_FAILED");
+  }
+
+  private static ObjectNode activityReadingProfileJson(ActivityReadingProfile profile) {
+    if (profile == null) {
+      throw failure("CONFIGURATION_INVALID");
+    }
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    value.put("maxModelInputBytes", profile.maxModelInputBytes());
+    value.put("maxModelOutputBytes", profile.maxModelOutputBytes());
+    value.put("maxNavigationPages", profile.maxNavigationPages());
+    value.put("maxReadingRounds", profile.maxReadingRounds());
+    value.put("maxSlicesPerPacket", profile.maxSlicesPerPacket());
+    return value;
+  }
+
+  private static void requireStep05ModelJobExecutionConfiguration(ObjectNode execution) {
+    String schemaVersion = stateText(execution, "schemaVersion");
+    boolean current = STEP05_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA.equals(schemaVersion);
+    if (!current
+        && !HISTORICAL_STEP05_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA.equals(schemaVersion)) {
+      throw failure("MATERIALS_STATE_INVALID");
+    }
+    ObjectNode scope = stateObject(execution, "executionScope");
+    requireStateFields(scope, Set.of("maxMaterialsToStart", "mode", "packetIds"));
+    statePositiveInt(scope, "maxMaterialsToStart");
+    if (!(scope.path("packetIds") instanceof ArrayNode)) {
+      throw failure("MATERIALS_STATE_INVALID");
+    }
+    String mode = stateText(scope, "mode");
+    Set<String> expectedFields;
+    if ("BUSINESS_PROCESSES".equals(mode)) {
+      expectedFields =
+          Set.of(
+              "activityCheckpoint",
+              "executionScope",
+              "focusQuestion",
+              "materialBasisSha256",
+              "modelBatchId",
+              "modelJobs",
+              "modelJobsSha256",
+              "readingMaterialCheckpoint",
+              "reuseFromModelBatchId",
+              "savedCatalogInput",
+              "schemaVersion",
+              "sourceInventoryReference",
+              "sourceRunId");
+    } else if (Set.of("ALL_CODE_READING_PACKETS", "SELECTED_CODE_READING_PACKETS").contains(mode)) {
+      expectedFields =
+          Set.of(
+              "executionScope",
+              "materialBasisSha256",
+              "modelBatchId",
+              "modelJobs",
+              "modelJobsSha256",
+              "readingMaterialCheckpoint",
+              "retryFailedFromModelBatchId",
+              "reuseFromModelBatchId",
+              "schemaVersion",
+              "sourceRunId");
+    } else {
+      throw failure("MATERIALS_STATE_INVALID");
+    }
+    java.util.HashSet<String> versionedFields = new java.util.HashSet<>(expectedFields);
+    if (current) {
+      versionedFields.add("activityReading");
+      requirePersistedActivityReadingProfile(stateObject(execution, "activityReading"));
+    }
+    requireStateFields(execution, versionedFields);
+  }
+
+  private static ActivityReadingProfile requirePersistedActivityReadingProfile(ObjectNode value) {
+    requireStateFields(
+        value,
+        Set.of(
+            "maxModelInputBytes",
+            "maxModelOutputBytes",
+            "maxNavigationPages",
+            "maxReadingRounds",
+            "maxSlicesPerPacket"));
+    return new ActivityReadingProfile(
+        statePositiveInt(value, "maxModelInputBytes"),
+        statePositiveInt(value, "maxModelOutputBytes"),
+        statePositiveInt(value, "maxNavigationPages"),
+        statePositiveInt(value, "maxReadingRounds"),
+        statePositiveInt(value, "maxSlicesPerPacket"));
+  }
+
+  private static int statePositiveInt(ObjectNode parent, String field) {
+    JsonNode value = parent.get(field);
+    if (value == null
+        || !value.canConvertToInt()
+        || !value.isIntegralNumber()
+        || value.intValue() < 1) {
+      throw failure("MATERIALS_STATE_INVALID");
+    }
+    return value.intValue();
   }
 
   static BusinessMaterialBuildResult exactSample(
@@ -2676,7 +2799,7 @@ final class SourceAnalysisExecution {
       ObjectNode document, CanonicalJsonCodec canonicalJson) {
     ObjectNode baseDocument = document.deepCopy();
     baseDocument.remove("inputPolicyRegistry");
-    object(baseDocument, "sourceAnalysis").remove("modelJobs");
+    object(baseDocument, "sourceAnalysis").remove(List.of("activityReading", "modelJobs"));
     if (baseDocument.has("business")) {
       object(baseDocument, "business").remove("processDiscovery");
     }

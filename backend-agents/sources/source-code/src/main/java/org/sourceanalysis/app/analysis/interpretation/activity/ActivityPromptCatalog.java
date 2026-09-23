@@ -7,7 +7,7 @@ import java.nio.charset.StandardCharsets;
 /** Versioned, classpath-owned Chinese instructions for Activity reading and explanation tasks. */
 final class ActivityPromptCatalog {
 
-  private static final String READING_PLAN = load("activity-reading-plan-v1.txt");
+  private static final String READING_PLAN = load("activity-reading-plan-v2.txt");
   private static final String DRAFT = load("activity-draft-v2.txt");
   private static final String REVIEW = load("activity-review-v2.txt");
 

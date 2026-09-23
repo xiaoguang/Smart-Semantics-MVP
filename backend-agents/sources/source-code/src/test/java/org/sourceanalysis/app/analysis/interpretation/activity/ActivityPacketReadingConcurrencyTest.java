@@ -221,12 +221,12 @@ class ActivityPacketReadingConcurrencyTest {
       if (round == 1) {
         return ActivityPacketFailureIsolationTest.readingResponse(
             identity,
-            "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[\"M2\"],\"slices\":[],\"unknowns\":[]}");
+            "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[\"M2\"],\"slices\":[],\"unknowns\":[],\"finalSliceKeys\":[],\"supersededSlices\":[],\"finishReading\":false}");
       }
       if (round == 2) {
         return ActivityPacketFailureIsolationTest.readingResponse(
             identity,
-            "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[],\"slices\":[{\"sliceKey\":\"selected-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"packet-local scope\"}],\"unknowns\":[]}");
+            "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[],\"slices\":[{\"sliceKey\":\"selected-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"packet-local scope\"}],\"unknowns\":[],\"finalSliceKeys\":[\"selected-scope\"],\"supersededSlices\":[],\"finishReading\":true}");
       }
       throw new AssertionError("unexpected READING_PLAN round " + round + " for " + packetId);
     }

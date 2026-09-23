@@ -21,9 +21,9 @@
 | Task | State | Dependencies / review |
 | --- | --- | --- |
 | 0 baseline | COMPLETE | Documentation 1917798; pre-existing unverified repairs ccd5a96; no remote push |
-| 1 Activity fixes | COMPLETE | 79 direct tests and Spotless passed after resolving independent review findings; local checkpoint pending |
-| 2 reading plan/config | PENDING | Same ActivityReadingCoordinator/Explainer as 1; serialize writes |
-| 3 completion/reuse-only | PENDING | Consumes plan from 2; shares private store and CLI with 6/8 |
+| 1 Activity fixes | COMPLETE | 79 direct tests and Spotless passed after independent review; local checkpoint 585c797, not pushed |
+| 2 reading plan/config | COMPLETE | Eight classes/80 tests and Spotless PASS; three reopen findings independently re-reviewed and closed; local checkpoint pending |
+| 3 completion/reuse-only | IN_PROGRESS | Begin typed completion and zero-Provider historical continuation; shares private store and CLI with 6/8 |
 | 4 real offline audit | PENDING | Uses 3; no model or source scan |
 | 5 source-group navigation | PENDING | Independent after baseline; shared Discovery serialized with 6/7 |
 | 6 local mapping/store | PENDING | Uses 5; preserves Activity private format from 3 |
@@ -35,13 +35,17 @@
 
 ## Decisions
 
+Latest user-facing state: 3 of 12 tasks complete (0/1/2), 9 remaining including active Task 3. Unstarted estimates remain: Task 3 9–14h; 4 1–2h; 5 3–5h; 6 8–12h; 7 4–6h; 8 5–8h; 9 2–3h; 10 1–2h preparation plus models; 11 1–2h preparation plus models. Remaining engineering/preparation is approximately 34–54 continuous hours, excluding model runtime and sample-review wait. Do not add completed upstream work back in or present test subsets as full CI. Recalibrate at the planned Task 3 boundary using actual progress.
+
 - User-selected formal checkout overrides the skill's optional new worktree; do not relocate work.
 - Use this existing repository progress convention as execution ledger; do not create a second root-level SDD workspace outside assigned module.
-- User-assigned Terra tests / Sol implementation / Astra debug roles and direct-test scope override generic skill defaults. Preserve pre-existing code rather than deleting it to manufacture RED.
+- Latest user-assigned Luna tests / Terra implementation / Astra design and debug roles and direct-test scope override generic skill defaults. Earlier Terra-test/Sol-code work keeps its original contributor identity. Preserve pre-existing code rather than deleting it to manufacture RED.
 - Shared CLI/private-store/Discovery files are serialized. At most two workers; no worker starts a heavy build without controller coordination.
 - No JDT, Builder, Activity content generation or API fallback. UNKNOWN completion must be discussed, never auto-regenerated or silently removed.
 - Unguided selection and full continuation both use focusQuestion=null; sample selection is scheduling metadata only.
-- Latest user role clarification: Astra/ultra direction and debugging, Sol/xhigh code, Terra/xhigh tests; product Codex sessions default Terra/high (not xhigh). Historical model identities remain unchanged.
+- Latest user role clarification: Astra/ultra direction, design documents and debugging; Terra/xhigh code; Luna/xhigh tests; product Codex sessions default Luna/high. Historical model identities and prior contributor records remain unchanged. Root currently coordinates and runs the single Maven slot; Luna owns tests, Terra owns production implementation.
+- Task 2 Ruling: `maxSlicesPerPacket` bounds the current effective scope set, not accumulated superseded definitions. This follows the explicit final-range contract; counting obsolete scopes would prevent valid replacements. Historical proposals remain bounded by reading attempts and retained in decisions. If the intended limit had instead been lifetime proposals, this would allow more retained historical proposals, not more simultaneously active explanation scopes.
+- Historical v1 paged plans with full packets can be strictly rehydrated without inventing v2 final/completion fields; old DIRECT header-only records remain readable for Task 3's offline audit. History adoption and new-stage fingerprint matching are distinct contracts.
 
 ## Changed files
 
@@ -69,6 +73,10 @@
 | Review follow-up RED, formal large-packet tests | 15 tests, 3 assertion failures, 0 errors | New saved-plan and partial-success cases did not throw; these are genuine behavior failures, not the earlier environment/fixture failures |
 | Fixed input recheck during implementation | MATCH, 418 rows | Step05 state, Activity JSONL, coverage and more-findings hashes remain identical to baseline |
 | Final Task-1 isolated 12-class `spotless:apply spotless:check test` | PASS: 79 tests, 0 failures/errors/skips; 1:33 | Review follow-ups passed; runtime exception normalization keeps saved corruption hard; valid empty-plan reselection and failed REVIEW continuation remain valid |
+| Task-2 consolidated eight-class `test`, session 18677 | RED: 80 tests, 3 failures/9 errors; 38.371s | Three persistence-review scenarios reproduced; eight Guardrail cases reached old tight input ceilings after protocol metadata growth, one configuration test helper searched the old method signature. Compilation passed; no product calls. |
+| Protected-input hash recheck after latest role handoff | MATCH | Step05 state, 418-row JSONL, coverage and more-findings remain at the four recorded baseline hashes. |
+| Task-2 consolidated eight-class `spotless:apply spotless:check test`, session 53582 | PASS: 80 tests, 0 failures/errors/skips; 1:26 | Same eight classes as observed RED; selected/unread tampering, historical scope tampering and lowered-cap replacement regression now pass; fixture input/output increased equally, keeping draft-packet bounds and content assertions. |
+| Independent Task-2 scoped re-review | All three findings CLOSED | Source-level confirmation of v2 metadata consistency, v1 actual definition/caller closure and final-only cap; no new blocking regression. Not a whole-branch or product-quality acceptance. |
 
 ## Blockers
 
@@ -76,7 +84,9 @@
 
 ## Exact next action
 
-- Save the exact Task-1 local checkpoint after workers freeze their documentation. Then grant Terra the first Task-2 explicit-replacement RED and Sol its corresponding GREEN. The Maven slot is free. Task 2–8 handoff briefs are private preparation, not implementation credit. Product calls remain zero.
+- Save the verified Task 2 local checkpoint, excluding the diagnostic POM and private workspace. No push or full CI claim. Continue Task 3 with a fresh Luna RED worker and Terra implementation worker; no product calls.
+- Current Maven is 3.9.16, quality host JDK26, javac/tests toolchain Java17. One worker launch failed before Maven with a JAVA_HOME message, then the identical root command succeeded; no established root cause or production workaround is claimed. Root owns the only heavy-build slot.
+- Task 3's brief now includes an observed historical multi-hop reuse example: copied complete results point to successful stages in their explicitly recorded origin. The zero-call continuation must follow that provenance, not treat absent local stage copies as lost content. This read-only spot check is not the 325-packet completion audit.
 
 ## Resume checks
 

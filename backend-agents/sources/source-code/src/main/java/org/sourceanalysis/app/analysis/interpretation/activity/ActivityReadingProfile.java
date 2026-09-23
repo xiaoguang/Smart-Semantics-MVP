@@ -10,6 +10,9 @@ public record ActivityReadingProfile(
 
   // actualDraft and missingEntryKeys are added to the original canonical object for REVIEW.
   private static final int REVIEW_WRAPPER_RESERVE_BYTES = 256;
+  public static final int DEFAULT_MAX_NAVIGATION_PAGES = 128;
+  public static final int DEFAULT_MAX_READING_ROUNDS = 4;
+  public static final int DEFAULT_MAX_SLICES_PER_PACKET = 32;
 
   public ActivityReadingProfile {
     if (maxModelInputBytes <= 0
@@ -19,6 +22,15 @@ public record ActivityReadingProfile(
         || maxSlicesPerPacket <= 0) {
       throw new IllegalArgumentException("activity reading limits must be positive");
     }
+  }
+
+  public static ActivityReadingProfile defaults(int maxModelInputBytes, int maxModelOutputBytes) {
+    return new ActivityReadingProfile(
+        maxModelInputBytes,
+        maxModelOutputBytes,
+        DEFAULT_MAX_NAVIGATION_PAGES,
+        DEFAULT_MAX_READING_ROUNDS,
+        DEFAULT_MAX_SLICES_PER_PACKET);
   }
 
   public boolean fitsDraftAndMaximumReview(int draftInputBytes) {

@@ -228,9 +228,9 @@ or strict graph/Fact/Flow producers.
 
 ## Program and model responsibilities
 
-- Current user-selected roles: design/debugging gpt-6-astra / ultra; test
-  writing gpt-5.6-terra / xhigh; production code gpt-5.6-sol / xhigh.
-  Product business generation defaults to gpt-5.6-terra / high in the logged-in
+- Current user-selected roles: direction, design documents and debugging
+  Astra / ultra; test writing Luna / xhigh; production code Terra / xhigh.
+  Product business generation defaults to Luna / high in the logged-in
   ChatGPT Codex context. This does not change historical runtime identity or
   authorize a YAML edit in a documentation-only task. One job keeps its binding.
 - Automated tests use frozen fixtures and a deterministic scripted Provider.
@@ -268,7 +268,7 @@ or strict graph/Fact/Flow producers.
   Java retrieves, never decides semantic sufficiency. Remaining gaps stay
   explicit; no third selection, automatic repair or Activity regeneration.
 - Configure only global and each Provider/account service maxConcurrentJobs
-  in the single YAML owner; the current model default is Terra/high; exact limits belong to YAML. These
+  in the single YAML owner; the current model default is Luna/high; exact limits belong to YAML. These
   are in-flight job limits, not maxMaterialsToStart, Builder K or actual N.
   Eligible queued jobs are not skipped when a concurrency slot is unavailable.
   Multiple keys or fresh sessions sharing an account/project do not create

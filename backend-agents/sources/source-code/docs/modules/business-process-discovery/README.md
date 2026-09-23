@@ -30,7 +30,7 @@
 - 所有Activity、候选、过程均有处置；结构闭合不能替代语义质量。
 - Step07沿用无自动重试政策；新Activity的stage retry不扩展到本模块。
 
-当前业务生成默认ChatGPT登录上下文Terra/high；历史模型身份、旧326条及新418条Activity不改。历史三例12次请求未全通过：采购最终请求未发送、销售最终有7个未定义用法、调拨合法保存仍有条件限定错误。可读性获认可，全仓未执行。事实见[实测](../../supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)；端到端计划先离线验证，再执行无提示小样并展示。
+当前业务生成默认ChatGPT登录上下文Luna/high；历史模型身份、旧326条及新418条Activity不改。历史三例12次请求未全通过：采购最终请求未发送、销售最终有7个未定义用法、调拨合法保存仍有条件限定错误。可读性获认可，全仓未执行。事实见[实测](../../supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)；端到端计划先离线验证，再执行无提示小样并展示。
 
 ## 本次端到端修正（设计评审稿）
 

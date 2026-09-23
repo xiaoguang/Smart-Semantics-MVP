@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.sourceanalysis.app.analysis.interpretation.activity.ActivityReadingProfile;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityRetryProfile;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 
@@ -18,7 +19,8 @@ public record ModelJobExecutionConfiguration(
     Path journalDirectory,
     AnalysisRunId runId,
     AnalysisRunId reuseFromModelBatchId,
-    ActivityRetryProfile activityRetry) {
+    ActivityRetryProfile activityRetry,
+    ActivityReadingProfile activityReadingProfile) {
 
   private static final Set<String> PHASES =
       Set.of("activity", "processGroup", "repositorySummary", "report");
@@ -44,6 +46,26 @@ public record ModelJobExecutionConfiguration(
       Map<String, List<String>> routing,
       Path journalDirectory,
       AnalysisRunId runId,
+      AnalysisRunId reuseFromModelBatchId,
+      ActivityRetryProfile activityRetry) {
+    this(
+        maxConcurrentJobs,
+        providers,
+        routing,
+        journalDirectory,
+        runId,
+        reuseFromModelBatchId,
+        activityRetry,
+        null);
+  }
+
+  /** Creates a fresh execution with no explicit cross-batch reuse source. */
+  public ModelJobExecutionConfiguration(
+      int maxConcurrentJobs,
+      Map<String, ModelJobProviderBinding> providers,
+      Map<String, List<String>> routing,
+      Path journalDirectory,
+      AnalysisRunId runId,
       AnalysisRunId reuseFromModelBatchId) {
     this(
         maxConcurrentJobs,
@@ -52,7 +74,8 @@ public record ModelJobExecutionConfiguration(
         journalDirectory,
         runId,
         reuseFromModelBatchId,
-        ActivityRetryProfile.defaults());
+        ActivityRetryProfile.defaults(),
+        null);
   }
 
   public ModelJobExecutionConfiguration(
@@ -68,7 +91,8 @@ public record ModelJobExecutionConfiguration(
         journalDirectory,
         runId,
         null,
-        ActivityRetryProfile.defaults());
+        ActivityRetryProfile.defaults(),
+        null);
   }
 
   @Override
