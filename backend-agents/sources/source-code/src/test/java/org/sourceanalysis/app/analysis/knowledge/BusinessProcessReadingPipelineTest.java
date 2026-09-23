@@ -129,7 +129,10 @@ class BusinessProcessReadingPipelineTest {
                 .as("the condition beyond the eight-line locator is not yet read")
                 .doesNotContain("requested > available"),
         () ->
-            assertThat(sourceExcerpt(provider.draftInput, "M10").path("snippet").asText())
+            assertThat(
+                    sourceExcerptContaining(provider.draftInput, savedLateMethod())
+                        .path("snippet")
+                        .asText())
                 .as("the explicit SOURCE_REF request delivers all original method lines")
                 .isEqualTo(savedLateMethod()),
         () ->
@@ -223,6 +226,19 @@ class BusinessProcessReadingPipelineTest {
       if (ref.equals(source.path("ref").asText())) return source;
     }
     throw new AssertionError("Missing actual source excerpt " + ref);
+  }
+
+  private static JsonNode sourceExcerptContaining(JsonNode input, String snippet) {
+    for (JsonNode source : input.path("readingPacket").path("sourceExcerpts")) {
+      if (source.path("snippet").asText().contains(snippet)) return source;
+    }
+    throw new AssertionError("Missing selected source excerpt containing expected content");
+  }
+
+  private static List<String> textValues(JsonNode values, String field) {
+    List<String> result = new ArrayList<>();
+    values.forEach(value -> result.add(value.path(field).asText()));
+    return List.copyOf(result);
   }
 
   private static void collectSavedSourceLocators(JsonNode node, List<JsonNode> locators) {
@@ -437,7 +453,10 @@ class BusinessProcessReadingPipelineTest {
     assertThat(provider.draftInput.path("readingPacket").path("reviewedActivities")).hasSize(2);
     assertThat(provider.draftInput.path("candidate").path("activityUses")).hasSize(2);
     assertThat(provider.draftInput.path("readingPacket").path("reviewedActivities"))
-        .filteredOn(value -> "activity:member".equals(value.path("activityId").asText()))
+        .filteredOn(
+            value ->
+                LocalProcessPacketTestSupport.candidateActivityId(provider.draftInput, 0)
+                    .equals(value.path("activityId").asText()))
         .singleElement()
         .satisfies(
             value ->
@@ -516,10 +535,19 @@ class BusinessProcessReadingPipelineTest {
     assertThat(provider.draftInput.path("readingPacket").path("sourceExcerpts"))
         .as("an explicit empty keep-set is not implicit retention of all initial text")
         .isEmpty();
-    assertThat(provider.draftInput.path("readingPacket").path("reviewedActivities"))
-        .extracting(value -> value.path("activityId").asText())
-        .containsExactlyInAnyOrder("activity:member", "activity:context");
-    assertThat(provider.draftInput.path("candidate").path("activityUses")).hasSize(2);
+    List<String> retainedActivityIds =
+        textValues(
+            provider.draftInput.path("readingPacket").path("reviewedActivities"), "activityId");
+    List<String> candidateActivityIds =
+        textValues(provider.draftInput.path("candidate").path("activityUses"), "activityId");
+    String selectedActivityId =
+        LocalProcessPacketTestSupport.candidateActivityId(provider.draftInput, 0);
+    String contextActivityId =
+        LocalProcessPacketTestSupport.contextActivityId(provider.draftInput, 0);
+    assertThat(retainedActivityIds)
+        .hasSize(2)
+        .containsExactlyInAnyOrder(selectedActivityId, contextActivityId);
+    assertThat(candidateActivityIds).hasSize(2).allMatch(selectedActivityId::equals);
   }
 
   @Test
@@ -834,22 +862,35 @@ class BusinessProcessReadingPipelineTest {
         provider.selectionResponse().path("candidateChanges").get(0).path("activityUses");
     assertThat(selectedUses).hasSize(1);
     assertThat(selectedUses.get(0).path("activityId").asText()).isEqualTo("activity:member");
-    assertThat(provider.processDraftInput().toString()).contains("activity:context", "M2");
+    String memberActivityId =
+        LocalProcessPacketTestSupport.candidateActivityId(provider.processDraftInput(), 0);
+    String contextActivityId =
+        LocalProcessPacketTestSupport.contextActivityId(provider.processDraftInput(), 0);
+    String contextStatementRef =
+        LocalProcessPacketTestSupport.firstStatementRef(
+            provider.processDraftInput(), contextActivityId);
+    String contextSourceRef =
+        LocalProcessPacketTestSupport.firstSourceRef(
+            provider.processDraftInput(), contextActivityId);
+    assertThat(provider.processDraftInput().toString())
+        .contains(contextActivityId, contextStatementRef);
     JsonNode processUses = provider.draftResponse().path("processes").get(0).path("activityUses");
     assertThat(processUses).hasSize(1);
-    assertThat(processUses.get(0).path("activityId").asText()).isEqualTo("activity:member");
-    assertThat(provider.draftResponse().toString())
-        .contains("activity:context/activitySteps/0", "M2");
+    assertThat(processUses.get(0).path("activityId").asText()).isEqualTo(memberActivityId);
+    assertThat(provider.draftResponse().toString()).contains(contextStatementRef);
     JsonNode sourceExcerpts =
         provider.processDraftInput().path("readingPacket").path("sourceExcerpts");
-    assertThat(sourceExcerpts.toString()).contains("\"ref\":\"M1\"", "\"ref\":\"M2\"");
-    JsonNode m1 = sourceByRef(sourceExcerpts, "M1");
-    JsonNode unownedM10 = sourceByRef(sourceExcerpts, "M10");
-    JsonNode generatedS1 = sourceByRef(sourceExcerpts, "S1");
-    assertThat(m1.path("snippet").asText()).isEqualTo("class OrderService {}");
-    assertThat(unownedM10.path("snippet").asText()).isEqualTo(unownedSourceSnippet());
-    assertThat(generatedS1.path("snippet").asText()).contains("<mapper>");
-    assertThat(provider.draftResponse().toString()).contains("M10");
+    assertThat(sourceExcerpts)
+        .extracting(value -> value.path("ref").asText())
+        .allMatch(value -> value.startsWith("S"));
+    assertThat(sourceExcerpts)
+        .extracting(value -> value.path("snippet").asText())
+        .contains("class OrderService {}", unownedSourceSnippet());
+    assertThat(sourceExcerpts)
+        .anySatisfy(value -> assertThat(value.path("snippet").asText()).contains("<mapper>"));
+    if (contextSourceRef != null) {
+      assertThat(provider.draftResponse().toString()).contains(contextSourceRef);
+    }
   }
 
   @Test
@@ -869,13 +910,17 @@ class BusinessProcessReadingPipelineTest {
 
     JsonNode packetActivities =
         provider.processDraftInput().path("readingPacket").path("reviewedActivities");
+    String memberActivityId =
+        LocalProcessPacketTestSupport.candidateActivityId(provider.processDraftInput(), 0);
+    String contextActivityId =
+        LocalProcessPacketTestSupport.contextActivityId(provider.processDraftInput(), 0);
     assertThat(packetActivities).hasSize(2);
     assertThat(packetActivities)
         .extracting(activity -> activity.path("activityId").asText())
-        .containsExactlyInAnyOrder("activity:member", "activity:context")
+        .containsExactlyInAnyOrder(memberActivityId, contextActivityId)
         .doesNotContain("activity:untouched");
 
-    JsonNode member = activityById(packetActivities, "activity:member");
+    JsonNode member = activityById(packetActivities, memberActivityId);
     assertThat(member.fieldNames())
         .toIterable()
         .containsExactlyInAnyOrder(
@@ -905,23 +950,25 @@ class BusinessProcessReadingPipelineTest {
     assertThat(member.path("formulasOrMetrics"))
         .extracting(JsonNode::asText)
         .containsExactly("数量口径");
-    assertThat(member.path("sourceRefs")).extracting(JsonNode::asText).containsExactly("M1");
+    assertThat(member.path("sourceRefs"))
+        .extracting(JsonNode::asText)
+        .containsExactlyElementsOf(
+            LocalProcessPacketTestSupport.selectedSourceRefs(provider.processDraftInput(), member));
 
     JsonNode statementDirectory =
         provider.processDraftInput().path("readingPacket").path("statementDirectory");
     assertThat(statementDirectory).hasSize(20);
-    assertThat(statementDirectory).extracting(JsonNode::asText).doesNotHaveDuplicates();
+    List<String> statementRefs = textValues(statementDirectory, "statementRef");
+    assertThat(statementRefs).doesNotHaveDuplicates().allMatch(value -> value.startsWith("T"));
     assertThat(statementDirectory)
-        .extracting(JsonNode::asText)
-        .contains(
-            "activity:member/businessPurpose",
-            "activity:member/conditions/0",
-            "activity:member/businessRules/0",
-            "activity:member/formulasOrMetrics/0",
-            "activity:context/businessPurpose",
-            "activity:context/conditions/0")
-        .allMatch(
-            value -> value.startsWith("activity:member/") || value.startsWith("activity:context/"));
+        .extracting(value -> value.path("activityId").asText())
+        .containsOnly(memberActivityId, contextActivityId);
+    assertThat(statementDirectory)
+        .extracting(value -> value.path("fieldPath").asText())
+        .containsExactlyInAnyOrderElementsOf(
+            expectedStatementHandles().stream()
+                .map(value -> value.substring(value.indexOf('/') + 1))
+                .toList());
   }
 
   @Test
@@ -1029,9 +1076,11 @@ class BusinessProcessReadingPipelineTest {
 
     JsonNode processPacket = provider.processDraftInput().path("readingPacket");
     assertThat(processPacket.path("statementDirectory")).hasSize(20);
-    assertThat(processPacket.path("reviewedActivities")).isEqualTo(checkedActivities);
+    String memberActivityId =
+        LocalProcessPacketTestSupport.candidateActivityId(provider.processDraftInput(), 0);
+    assertThat(processPacket.path("reviewedActivities")).hasSize(checkedActivities.size());
     assertThat(
-            activityById(processPacket.path("reviewedActivities"), "activity:member").path("terms"))
+            activityById(processPacket.path("reviewedActivities"), memberActivityId).path("terms"))
         .extracting(JsonNode::asText)
         .containsExactly("订单");
   }
@@ -1101,6 +1150,10 @@ class BusinessProcessReadingPipelineTest {
 
     JsonNode statementItems =
         activityUseSchema.path("properties").path("statementRefs").path("items");
+    List<String> localStatementRefs =
+        textValues(
+            provider.processDraftInput().path("readingPacket").path("statementDirectory"),
+            "statementRef");
     String statementRefsRef = requireRef(statementItems);
     assertThat(requireRef(stageSchema.path("properties").path("statementRefs").path("items")))
         .isEqualTo(statementRefsRef);
@@ -1109,8 +1162,8 @@ class BusinessProcessReadingPipelineTest {
     assertThat(requireRef(knowledgeSchema.path("properties").path("statementRefs").path("items")))
         .isEqualTo(statementRefsRef);
     assertThat(enumValues(resolve(draftSchema, statementItems)))
-        .containsExactlyInAnyOrderElementsOf(expectedStatementHandles());
-    assertThat(enumOccurrences(draftSchema, expectedStatementHandles())).isEqualTo(1);
+        .containsExactlyInAnyOrderElementsOf(localStatementRefs);
+    assertThat(enumOccurrences(draftSchema, localStatementRefs)).isEqualTo(1);
 
     JsonNode sourceItems = activityUseSchema.path("properties").path("sourceRefs").path("items");
     String sourceRefsRef = requireRef(sourceItems);
@@ -1120,9 +1173,13 @@ class BusinessProcessReadingPipelineTest {
         .isEqualTo(sourceRefsRef);
     assertThat(requireRef(knowledgeSchema.path("properties").path("sourceRefs").path("items")))
         .isEqualTo(sourceRefsRef);
+    List<String> localSourceRefs =
+        textValues(
+            provider.processDraftInput().path("readingPacket").path("sourceExcerpts"), "ref");
+    assertThat(localSourceRefs).allMatch(value -> value.startsWith("S"));
     assertThat(enumValues(resolve(draftSchema, sourceItems)))
-        .containsExactlyInAnyOrder("M1", "M10", "M2", "S1", "S2");
-    assertThat(enumOccurrences(draftSchema, List.of("M1", "M10", "M2", "S1", "S2"))).isEqualTo(1);
+        .containsExactlyInAnyOrderElementsOf(localSourceRefs);
+    assertThat(enumOccurrences(draftSchema, localSourceRefs)).isEqualTo(1);
 
     assertThat(enumValues(stageSchema.path("properties").path("certainty")))
         .containsExactlyInAnyOrder("CONFIRMED", "INFERRED", "UNRESOLVED");
@@ -1205,7 +1262,7 @@ class BusinessProcessReadingPipelineTest {
     assertThat(saved.path("sourceReferenceMapping").isArray()).isTrue();
     assertThat(
             new PrivateModelJobResultStore(journal, run, "business-process")
-                .readCompletedProcess(
+                .readCompletedProcessV5(
                     saved.path("jobKey").asText(),
                     saved.path("inputFingerprint").asText(),
                     "fixture-account",
@@ -2003,13 +2060,20 @@ class BusinessProcessReadingPipelineTest {
       ObjectNode root = JsonNodeFactory.instance.objectNode();
       root.put("disposition", "RECONSTRUCTED");
       root.put("reason", "完整阅读包足以形成验收过程");
-      JsonNode activities = input.path("readingPacket").path("reviewedActivities");
-      JsonNode member = activity(activities, "activity:member");
-      JsonNode context = activity(activities, "activity:context");
-      String statementRef = firstStatementRef(input, "activity:member");
-      String sourceRef = twoCandidates ? "S1" : firstRef(member, "sourceRefs", "M1");
-      String contextStatementRef = firstStatementRef(input, "activity:context");
-      String contextSourceRef = firstRef(context, "sourceRefs", "M2");
+      String memberActivityId = LocalProcessPacketTestSupport.candidateActivityId(input, 0);
+      String contextActivityId = LocalProcessPacketTestSupport.contextActivityId(input, 0);
+      JsonNode member = LocalProcessPacketTestSupport.reviewedActivity(input, memberActivityId);
+      JsonNode context = LocalProcessPacketTestSupport.reviewedActivity(input, contextActivityId);
+      String statementRef =
+          LocalProcessPacketTestSupport.firstStatementRef(input, memberActivityId);
+      String sourceRef =
+          twoCandidates
+              ? sourceRefForCandidateFile(input)
+              : LocalProcessPacketTestSupport.firstSourceRef(input, memberActivityId);
+      String contextStatementRef =
+          LocalProcessPacketTestSupport.firstStatementRef(input, contextActivityId);
+      String contextSourceRef =
+          LocalProcessPacketTestSupport.firstSourceRef(input, contextActivityId);
       ObjectNode process = root.putArray("processes").addObject();
       process.put("processLocalId", "process-1");
       process.put(
@@ -2021,11 +2085,11 @@ class BusinessProcessReadingPipelineTest {
       process.putArray("businessObjects").add("订单");
       ObjectNode use = process.putArray("activityUses").addObject();
       use.put("useLocalId", "U1");
-      use.put("activityId", "activity:member");
+      use.put("activityId", memberActivityId);
       use.put("role", "CORE");
       use.put("variant", "订单");
       use.putArray("statementRefs").add(statementRef);
-      use.putArray("sourceRefs").add(sourceRef);
+      addIfPresent(use.putArray("sourceRefs"), sourceRef);
       ObjectNode stage = process.putArray("stages").addObject();
       stage.put("order", 1);
       stage.put("name", "办理订单");
@@ -2039,7 +2103,7 @@ class BusinessProcessReadingPipelineTest {
       stage.putArray("transitions");
       stage.put("certainty", "CONFIRMED");
       stage.putArray("statementRefs").add(statementRef);
-      stage.putArray("sourceRefs").add(sourceRef);
+      addIfPresent(stage.putArray("sourceRefs"), sourceRef);
       process.putArray("branches");
       process.putArray("businessRules");
       process.putArray("endResults").add("订单结果");
@@ -2050,13 +2114,15 @@ class BusinessProcessReadingPipelineTest {
       contextKnowledge.put("text", "订单查询提供状态上下文，但不是办理成员。");
       contextKnowledge.put("certainty", "CONFIRMED");
       contextKnowledge.putArray("statementRefs").add(contextStatementRef);
-      contextKnowledge.putArray("sourceRefs").add(contextSourceRef);
+      addIfPresent(contextKnowledge.putArray("sourceRefs"), contextSourceRef);
       ObjectNode unownedKnowledge = knowledgeItems.addObject();
       unownedKnowledge.put("kind", "OBJECT");
       unownedKnowledge.put("text", "订单状态回写保存片段。");
       unownedKnowledge.put("certainty", "CONFIRMED");
       unownedKnowledge.putArray("statementRefs");
-      unownedKnowledge.putArray("sourceRefs").add("M10");
+      addIfPresent(
+          unownedKnowledge.putArray("sourceRefs"),
+          sourceRefForSnippet(input, unownedSourceSnippet()));
       process.putArray("pendingConnections");
       return root;
     }
@@ -2077,13 +2143,33 @@ class BusinessProcessReadingPipelineTest {
     }
 
     private static String firstStatementRef(JsonNode input, String activityId) {
-      String prefix = activityId + "/";
-      for (JsonNode value : input.path("readingPacket").path("statementDirectory")) {
-        if (value.isTextual() && value.textValue().startsWith(prefix)) {
-          return value.textValue();
+      return LocalProcessPacketTestSupport.firstStatementRef(input, activityId);
+    }
+
+    private static String sourceRefForSnippet(JsonNode input, String expectedSnippet) {
+      for (JsonNode source : input.path("readingPacket").path("sourceExcerpts")) {
+        if (expectedSnippet.equals(source.path("snippet").asText())) {
+          return source.path("ref").asText();
         }
       }
-      throw new AssertionError("missing canonical statement reference for " + activityId);
+      return null;
+    }
+
+    private static void addIfPresent(ArrayNode values, String value) {
+      if (value != null) {
+        values.add(value);
+      }
+    }
+
+    private static String sourceRefForCandidateFile(JsonNode input) {
+      String candidateName = input.path("candidate").path("name").asText();
+      String expectedFile = candidateName.endsWith("A") ? "AOrder.java" : "ZOrder.java";
+      for (JsonNode source : input.path("readingPacket").path("sourceExcerpts")) {
+        if (source.path("file").asText().endsWith(expectedFile)) {
+          return source.path("ref").asText();
+        }
+      }
+      throw new AssertionError("missing selected source for candidate file " + expectedFile);
     }
 
     private static JsonNode activityById(JsonNode values, String activityId) {

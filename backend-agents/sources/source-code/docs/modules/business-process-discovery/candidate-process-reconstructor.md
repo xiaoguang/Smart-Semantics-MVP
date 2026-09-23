@@ -6,9 +6,9 @@
 
 | 阶段 | 完整实际输入 | 输出与用途 |
 | --- | --- | --- |
-| BUSINESS_PROCESS_DRAFT（Prompt v4） | readingPacket v1、investigationContext、readingSelections | 现有完整详细过程草稿 |
-| BUSINESS_PROCESS_WRITE（v1） | actualDraft，含名称/用途/规则/未知 | 相同结构及局部ID的业务全文，尚未已审 |
-| BUSINESS_PROCESS_RULE_REVIEW（v1） | 原DRAFT外层输入+actualDraft+actualWriting | {processResult,corrections}，完整最终过程与私有修正说明 |
+| BUSINESS_PROCESS_DRAFT（本次改为Prompt v5） | readingPacket v2、investigationContext、readingSelections | 完整详细过程事实稿；A/T/S只在本候选包内有效 |
+| BUSINESS_PROCESS_WRITE（本次改为v2） | actualDraft，含名称/用途/规则/未知 | 相同结构及局部ID的业务全文，尚未已审 |
+| BUSINESS_PROCESS_RULE_REVIEW（本次改为v2） | 原DRAFT外层输入+actualDraft+actualWriting | {processResult,corrections}，完整最终过程与私有修正说明 |
 
 DRAFT可重建、拆分、处置为支撑或材料不足，不能靠多个技术阶段冒充生命周期。系统认识/假设是调查背景，不是CONFIRMED事实。所有关键原文在DRAFT前到位，最后核对后无模型润色或额外取材。
 
@@ -32,7 +32,7 @@ RULE_REVIEW看实际WRITE，保留准确可读段落，直接修正错误正文�
 
 ## 保存、容量、失败与复用
 
-当前新过程私有格式是model-job-reviewed-result-v3，pipeline=business-reasoning-writing-rule-review-v1，producer v4。保存完整input、readingPacket、sourceReferenceMapping、inputFingerprint、binding/runtime identity、draft、writing、review与可空reusedFromModelBatchId。三份raw请求/响应及journal不改，最终ref归一化只改内存副本。
+已交付的历史过程私有格式是model-job-reviewed-result-v3，pipeline=business-reasoning-writing-rule-review-v1，producer v4。本次正在实现的过程采用v5/v2/producer v5，并增加真实身份映射及编码版本；完整input、readingPacket、sourceReferenceMapping、inputFingerprint、binding/runtime identity、draft、writing、review与可空reusedFromModelBatchId仍保存。三份raw请求/响应及journal不改，最终ref归一化只改内存副本。
 
 DRAFT/WRITE在fresh接受后和精确复用前都按实际响应Schema（networknt、本地$ref）校验类型/必填/enum；fresh失败PROCESS_MODEL_SCHEMA_INVALID，损坏复用MODEL_JOB_RESULT_INVALID。此门禁不提前执行最终覆盖/CONFIRMED依据或中文语义判断；最终RULE_REVIEW仍可纠错。
 
@@ -91,6 +91,8 @@ RULE_REVIEW固定A/T/S映射和CHECK成员边界，但允许在这些材料内�
 私有v4已经用于Activity，不能重新赋予过程含义。过程v5在现有记录中增加完整localReferenceMap和inputEncodingVersion，保存实际编码input/三稿及现有来源归一化映射；原始模型响应不改写。解析先在局部作用域验证，再复制还原全局引用，不拿还原后的副本冒充raw。私有单决策字段不变仍v2，仅输入/producer/指纹更新。动态Schema没有独立现成版本文件，按实际Schema字节和任务合同参与指纹，不虚构资源文件。
 
 仅完整合法v5三阶段可精确复用；旧v3仍按旧三阶段严格读取，不默认升级为v5。范围/Prompt/Schema/映射/模型变化失效，批次/时间/并发/路径变化不影响语义匹配。Publisher仍接同一种完整ReviewedBusinessProcess，不另写业务文本。
+
+实现状态：候选三阶段已使用packet-v2、A/T/S私有映射、v5结果及指纹v2；104项直接Step07回归通过，覆盖映射往返、跨候选身份、三稿传递、保存重开、精确复用及历史路径。完整本地CI和真实模型验收仍未执行。WRITE四字段约束仍须在后续实施步骤完成程序侧比较；当前Prompt声明本身不构成校验。
 
 ### 最小验证
 

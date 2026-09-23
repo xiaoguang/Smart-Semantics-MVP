@@ -26,9 +26,9 @@ class BusinessProcessPromptV2ContractTest {
               "BUSINESS_CATALOG_MERGE_REVIEW", "business-catalog-merge-review-v3.txt"),
           new PromptResource("PROCESS_MATERIAL_SELECTION", "process-material-selection-v3.txt"),
           new PromptResource("PROCESS_READING_CHECK", "process-reading-check-v5.txt"),
-          new PromptResource("BUSINESS_PROCESS_DRAFT", "business-process-draft-v4.txt"),
-          new PromptResource("BUSINESS_PROCESS_WRITE", "business-process-write-v1.txt"),
-          new PromptResource("BUSINESS_PROCESS_RULE_REVIEW", "business-process-rule-review-v1.txt"),
+          new PromptResource("BUSINESS_PROCESS_DRAFT", "business-process-draft-v5.txt"),
+          new PromptResource("BUSINESS_PROCESS_WRITE", "business-process-write-v2.txt"),
+          new PromptResource("BUSINESS_PROCESS_RULE_REVIEW", "business-process-rule-review-v2.txt"),
           new PromptResource(
               "BUSINESS_PROCESS_CONSOLIDATION_DRAFT",
               "business-process-consolidation-draft-v2.txt"),

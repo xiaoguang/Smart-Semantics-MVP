@@ -175,8 +175,8 @@ class BusinessProcessAcceptanceSampleTest {
       String jobKey = "business-process-" + suffix(candidateId);
       ObjectNode pair = pairByJob.get(jobKey);
       assertThat(pair).as("sample must save selected candidate %s", candidateId).isNotNull();
-      assertThat(text(pair, "schemaVersion")).isEqualTo("model-job-reviewed-result-v3");
-      assertThat(text(pair, "pipeline")).isEqualTo("business-reasoning-writing-rule-review-v1");
+      assertThat(text(pair, "schemaVersion")).isEqualTo("model-job-reviewed-result-v5");
+      assertThat(text(pair, "pipeline")).isEqualTo("business-reasoning-writing-rule-review-v2");
       assertThat(text(pair, "status")).isEqualTo("COMPLETED");
       assertThat(pair.path("draft").isObject()).isTrue();
       assertThat(pair.path("writing").isObject()).isTrue();
@@ -184,6 +184,10 @@ class BusinessProcessAcceptanceSampleTest {
       assertThat(pair.path("review").path("processResult").isObject()).isTrue();
       assertThat(pair.path("review").path("corrections").isArray()).isTrue();
       assertThat(pair.path("input").path("readingPacket")).isEqualTo(pair.path("readingPacket"));
+      assertThat(text(pair, "inputEncodingVersion")).isEqualTo("process-local-reference-map-v1");
+      assertThat(pair.path("localReferenceMap").isObject()).isTrue();
+      assertThat(pair.path("readingPacket").path("schemaVersion").asText())
+          .isEqualTo("process-reading-packet-v2");
       assertThat(text(pair, "providerBindingKey"))
           .as("binding follows original catalog ordinal, not filtered index")
           .isEqualTo(index == 0 ? "api" : "pro");
@@ -665,13 +669,7 @@ class BusinessProcessAcceptanceSampleTest {
     }
 
     private static String firstStatementRef(JsonNode input, String activityId) {
-      String prefix = activityId + "/";
-      for (JsonNode value : input.path("readingPacket").path("statementDirectory")) {
-        if (value.isTextual() && value.textValue().startsWith(prefix)) {
-          return value.textValue();
-        }
-      }
-      throw new AssertionError("missing canonical statement reference for " + activityId);
+      return LocalProcessPacketTestSupport.firstStatementRef(input, activityId);
     }
 
     private static void stage(ArrayNode stages, int order, String name, String use, String ref) {

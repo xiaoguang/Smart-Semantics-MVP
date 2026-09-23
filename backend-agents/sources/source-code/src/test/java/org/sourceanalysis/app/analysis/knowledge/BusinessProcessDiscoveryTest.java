@@ -158,11 +158,12 @@ class BusinessProcessDiscoveryTest {
           .isEqualTo(expected);
       assertThat(sourceGroupFor(checkPacket.path("reviewedActivities"), activity.activityId()))
           .isEqualTo(expected);
-      assertThat(sourceGroupFor(processPacket.path("reviewedActivities"), activity.activityId()))
+      assertThat(sourceGroupFor(processPacket.path("reviewedActivities"), activity))
           .isEqualTo(expected);
     }
+    ReviewedActivity mainSliceActivity = activityById(fixture, "activity:main-slice-000");
     JsonNode mainSlice =
-        findById(processPacket.path("reviewedActivities"), "activityId", "activity:main-slice-000");
+        sourceGroupActivity(processPacket.path("reviewedActivities"), mainSliceActivity);
     assertThat(mainSlice.path("businessPurpose").asText())
         .isEqualTo("Purpose activity:main-slice-000");
     assertThat(mainSlice.path("activitySteps"))
@@ -246,11 +247,27 @@ class BusinessProcessDiscoveryTest {
                             new ProcessDiscoveryRequest(activities(), materials(), profile()))))
         .doesNotThrowAnyException();
 
+    String localUpdateActivityId =
+        provider
+            .processInput()
+            .path("candidate")
+            .path("activityUses")
+            .findValuesAsText("activityId")
+            .stream()
+            .filter(
+                activityId ->
+                    LocalProcessPacketTestSupport.reviewedActivity(
+                            provider.processInput(), activityId)
+                        .path("name")
+                        .asText()
+                        .contains("修改"))
+            .findFirst()
+            .orElseThrow();
     List<JsonNode> updateUses =
         matching(
             provider.processInput().path("candidate").path("activityUses"),
             "activityId",
-            "activity:update");
+            localUpdateActivityId);
     assertThat(updateUses).hasSize(2);
     assertThat(updateUses)
         .extracting(use -> use.path("variant").asText())
@@ -260,7 +277,7 @@ class BusinessProcessDiscoveryTest {
         matching(
             provider.processInput().path("readingPacket").path("reviewedActivities"),
             "activityId",
-            "activity:update");
+            localUpdateActivityId);
     assertThat(updateBodies).hasSize(1);
     JsonNode updateBody = updateBodies.get(0);
     assertThat(updateBody.path("businessPurpose").asText()).isEqualTo("管理销售订单从创建到审核的生命周期。");
@@ -1124,7 +1141,7 @@ class BusinessProcessDiscoveryTest {
             .sorted()
             .toList();
     for (ReviewedActivity activity : fixture.activities()) {
-      JsonNode value = findById(values, "activityId", activity.activityId());
+      JsonNode value = sourceGroupActivity(values, activity);
       JsonNode group = value.path("sourceGroup");
       CodeReadingMaterialSet.Packet packet =
           fixture.materials().packets().stream()
@@ -1184,7 +1201,7 @@ class BusinessProcessDiscoveryTest {
             .sorted(java.util.Comparator.comparing(ReviewedActivity::activityId))
             .map(
                 activity ->
-                    findById(values, "activityId", activity.activityId())
+                    sourceGroupActivity(values, activity)
                         .path("sourceGroup")
                         .path("groupPosition")
                         .asInt())
@@ -1194,8 +1211,12 @@ class BusinessProcessDiscoveryTest {
     assertThat(mainGroupPositions.get(mainGroupPositions.size() - 1) - mainGroupPositions.get(0))
         .isEqualTo(mainGroupPositions.size() - 1);
 
-    JsonNode overlap12 = findById(values, "activityId", "activity:overlap-12").path("sourceGroup");
-    JsonNode overlap23 = findById(values, "activityId", "activity:overlap-23").path("sourceGroup");
+    JsonNode overlap12 =
+        sourceGroupActivity(values, activityById(fixture, "activity:overlap-12"))
+            .path("sourceGroup");
+    JsonNode overlap23 =
+        sourceGroupActivity(values, activityById(fixture, "activity:overlap-23"))
+            .path("sourceGroup");
     assertThat(overlap12.path("packetKey").asText())
         .isEqualTo(overlap23.path("packetKey").asText());
     assertThat(overlap12.path("packetEntries")).isEqualTo(overlap23.path("packetEntries"));
@@ -1206,8 +1227,10 @@ class BusinessProcessDiscoveryTest {
         .extracting(JsonNode::asText)
         .containsExactly("entry:main-2", "entry:main-3");
 
-    JsonNode sameTitleA = findById(values, "activityId", "activity:same-title-a");
-    JsonNode sameTitleB = findById(values, "activityId", "activity:same-title-b");
+    JsonNode sameTitleA =
+        sourceGroupActivity(values, activityById(fixture, "activity:same-title-a"));
+    JsonNode sameTitleB =
+        sourceGroupActivity(values, activityById(fixture, "activity:same-title-b"));
     assertThat(sameTitleA.path("name").asText()).isEqualTo(sameTitleB.path("name").asText());
     assertThat(sameTitleA.path("sourceGroup").path("packetId").asText())
         .isNotEqualTo(sameTitleB.path("sourceGroup").path("packetId").asText());
@@ -1217,6 +1240,31 @@ class BusinessProcessDiscoveryTest {
 
   private static JsonNode sourceGroupFor(JsonNode values, String activityId) {
     return findById(values, "activityId", activityId).path("sourceGroup");
+  }
+
+  private static JsonNode sourceGroupFor(JsonNode values, ReviewedActivity activity) {
+    return sourceGroupActivity(values, activity).path("sourceGroup");
+  }
+
+  private static JsonNode sourceGroupActivity(JsonNode values, ReviewedActivity activity) {
+    for (JsonNode value : values) {
+      JsonNode group = value.path("sourceGroup");
+      if (activity.materialId().equals(group.path("packetId").asText())
+          && activity.entryIds().equals(texts(group, "activityEntryIds"))
+          && (activity.sliceKey() == null
+              ? group.path("sliceKey").isNull()
+              : activity.sliceKey().equals(group.path("sliceKey").asText()))) {
+        return value;
+      }
+    }
+    throw new AssertionError("missing source-group Activity for " + activity.activityId());
+  }
+
+  private static ReviewedActivity activityById(SourceGroupFixture fixture, String activityId) {
+    return fixture.activities().stream()
+        .filter(activity -> activityId.equals(activity.activityId()))
+        .findFirst()
+        .orElseThrow();
   }
 
   private static AnalysisStepPublicationReference sourceGroupStep05Checkpoint() {
@@ -1477,14 +1525,19 @@ class BusinessProcessDiscoveryTest {
           keepOnlyFirstProcessActivity(response);
         }
         if ("cross-activity-use-reference".equals(conflictingCatalogDisposition)) {
+          String createActivityId = candidateActivityNamed(input, "创建");
+          String approveSourceRef =
+              LocalProcessPacketTestSupport.firstSourceRef(
+                  input, candidateActivityNamed(input, "审核"));
           response
               .path("processes")
               .get(0)
               .path("activityUses")
               .forEach(
                   use -> {
-                    if ("activity:create".equals(use.path("activityId").asText())) {
-                      ((ArrayNode) use.path("sourceRefs")).add("S3");
+                    if (createActivityId.equals(use.path("activityId").asText())
+                        && approveSourceRef != null) {
+                      ((ArrayNode) use.path("sourceRefs")).add(approveSourceRef);
                     }
                   });
         } else if ("rule-activity-use".equals(conflictingCatalogDisposition)) {
@@ -1646,6 +1699,21 @@ class BusinessProcessDiscoveryTest {
       while (stages.size() > 1) {
         stages.remove(stages.size() - 1);
       }
+      JsonNode firstUse = uses.get(0);
+      if (!stages.isEmpty()) {
+        ObjectNode retainedStage = (ObjectNode) stages.get(0);
+        retainedStage.putArray("activityUseLocalIds").add("U1");
+        retainedStage.putArray("statementRefs");
+        retainedStage.set("sourceRefs", firstUse.path("sourceRefs").deepCopy());
+        retainedStage.put("name", "保留的首项活动");
+        retainedStage.put("narrative", "保留首项活动供最终复核。");
+      }
+      for (JsonNode ruleValue : process.path("businessRules")) {
+        ObjectNode rule = (ObjectNode) ruleValue;
+        rule.putArray("activityUseLocalIds").add("U1");
+        rule.set("statementRefs", firstUse.path("statementRefs").deepCopy());
+        rule.set("sourceRefs", firstUse.path("sourceRefs").deepCopy());
+      }
       process.putArray("supportActivityUseLocalIds");
     }
 
@@ -1802,6 +1870,7 @@ class BusinessProcessDiscoveryTest {
       process.putArray("businessObjects").add("销售订单").add("订单明细");
       ArrayNode uses = process.putArray("activityUses");
       int index = 1;
+      List<String> useSourceRefs = new ArrayList<>();
       for (JsonNode candidateUse : input.path("candidate").path("activityUses")) {
         JsonNode activity = activityBody(input, candidateUse.path("activityId").asText());
         ObjectNode use = uses.addObject();
@@ -1812,16 +1881,28 @@ class BusinessProcessDiscoveryTest {
         ArrayNode statements = use.putArray("statementRefs");
         statements.add(firstStatementRef(input, activity.path("activityId").asText()));
         ArrayNode refs = use.putArray("sourceRefs");
-        activity.path("sourceRefs").forEach(refs::add);
+        LocalProcessPacketTestSupport.selectedSourceRefs(input, activity).forEach(refs::add);
+        useSourceRefs.add(refs.size() == 0 ? null : refs.get(0).asText());
       }
       ArrayNode stages = process.putArray("stages");
-      stage(stages, 1, "创建订单", "U1", "接收订单明细", "生成状态为0的订单", "S1");
-      JsonNode reviewedActivities = input.path("readingPacket").path("reviewedActivities");
-      if (reviewedActivities.size() > 1) {
-        stage(stages, 2, "修改订单", "U2", "当前状态为0", "更新订单和明细", "S2");
-      }
-      if (reviewedActivities.size() > 2) {
-        stage(stages, 3, "审核订单", "U3", "当前状态为0", "把状态由0更新为1", "S3");
+      List<String[]> stageDetails =
+          List.<String[]>of(
+              new String[] {"创建订单", "接收订单明细", "生成状态为0的订单"},
+              new String[] {"修改订单", "当前状态为0", "更新订单和明细"},
+              new String[] {"审核订单", "当前状态为0", "把状态由0更新为1"});
+      for (int stageIndex = 0;
+          stageIndex < Math.min(uses.size(), stageDetails.size());
+          stageIndex++) {
+        String[] details = stageDetails.get(stageIndex);
+        int useIndex = stageActivityUseIndex(input, stageIndex, details[0]);
+        stage(
+            stages,
+            stageIndex + 1,
+            details[0],
+            "U" + (useIndex + 1),
+            details[1],
+            details[2],
+            useSourceRefs.get(useIndex));
       }
       process.putArray("branches");
       ObjectNode rule = process.putArray("businessRules").addObject();
@@ -1831,9 +1912,18 @@ class BusinessProcessDiscoveryTest {
       rule.put("otherwise", "拒绝修改");
       rule.put("result", "只有未审核订单进入更新");
       rule.put("certainty", "CONFIRMED");
-      rule.putArray("activityUseLocalIds").add("U1").add("U2").add("U3");
+      ArrayNode ruleUseIds = rule.putArray("activityUseLocalIds");
+      for (int useIndex = 0; useIndex < uses.size(); useIndex++) {
+        ruleUseIds.add("U" + (useIndex + 1));
+      }
       rule.putArray("statementRefs");
-      rule.putArray("sourceRefs").add("S2");
+      ArrayNode ruleSourceRefs = rule.putArray("sourceRefs");
+      if (!useSourceRefs.isEmpty()) {
+        int referencedUse = stageActivityUseIndex(input, 1, "修改订单");
+        if (useSourceRefs.get(referencedUse) != null) {
+          ruleSourceRefs.add(useSourceRefs.get(referencedUse));
+        }
+      }
       process.putArray("endResults").add("订单状态可以由0变为1");
       process.putArray("supportActivityUseLocalIds");
       process.putArray("knowledgeItems");
@@ -1851,10 +1941,35 @@ class BusinessProcessDiscoveryTest {
       throw new IllegalArgumentException("fixture activity body missing: " + activityId);
     }
 
+    private static String candidateActivityNamed(JsonNode input, String nameFragment) {
+      for (JsonNode use : input.path("candidate").path("activityUses")) {
+        String activityId = use.path("activityId").asText();
+        if (activityBody(input, activityId).path("name").asText().contains(nameFragment)) {
+          return activityId;
+        }
+      }
+      throw new AssertionError("missing candidate activity containing " + nameFragment);
+    }
+
+    private static int stageActivityUseIndex(JsonNode input, int fallback, String stageName) {
+      String nameFragment =
+          stageName.startsWith("创建") ? "创建" : stageName.startsWith("修改") ? "修改" : "审核";
+      JsonNode candidateUses = input.path("candidate").path("activityUses");
+      for (int index = 0; index < candidateUses.size(); index++) {
+        String activityId = candidateUses.get(index).path("activityId").asText();
+        if (activityBody(input, activityId).path("name").asText().contains(nameFragment)) {
+          return index;
+        }
+      }
+      return Math.min(fallback, Math.max(candidateUses.size() - 1, 0));
+    }
+
     private static String firstStatementRef(JsonNode input, String activityId) {
-      String prefix = activityId + "/";
       for (JsonNode value : input.path("readingPacket").path("statementDirectory")) {
-        if (value.isTextual() && value.textValue().startsWith(prefix)) {
+        if (value.isObject() && activityId.equals(value.path("activityId").asText())) {
+          return value.path("statementRef").asText();
+        }
+        if (value.isTextual() && value.textValue().startsWith(activityId + "/")) {
           return value.textValue();
         }
       }
@@ -1882,7 +1997,10 @@ class BusinessProcessDiscoveryTest {
       stage.putArray("transitions");
       stage.put("certainty", "CONFIRMED");
       stage.putArray("statementRefs");
-      stage.putArray("sourceRefs").add(ref);
+      ArrayNode sourceRefs = stage.putArray("sourceRefs");
+      if (ref != null) {
+        sourceRefs.add(ref);
+      }
     }
 
     private static ObjectNode consolidation(JsonNode input, String scenario) {

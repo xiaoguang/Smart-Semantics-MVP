@@ -55,9 +55,10 @@ class BusinessProcessThreeStagePipelineTest {
   private static final String DRAFT = "BUSINESS_PROCESS_DRAFT";
   private static final String WRITE = "BUSINESS_PROCESS_WRITE";
   private static final String RULE_REVIEW = "BUSINESS_PROCESS_RULE_REVIEW";
-  private static final String PIPELINE = "business-reasoning-writing-rule-review-v1";
+  private static final String PIPELINE = "business-reasoning-writing-rule-review-v2";
   private static final String CORRECT = "已核准的借用单才可办理，本次收取保证金25元，不是应付总额。";
   private static final String WRONG = "未核准的借用单才可办理，本次收取应付总额250元。";
+  private static final String LOCAL_ID_LITERAL = "业务原文里的A1和T1是字面内容，不是引用。";
 
   @TempDir Path temporaryDirectory;
 
@@ -75,7 +76,7 @@ class BusinessProcessThreeStagePipelineTest {
     JsonNode draftInput = provider.input(DRAFT);
     JsonNode writingInput = provider.input(WRITE);
     JsonNode reviewInput = provider.input(RULE_REVIEW);
-    assertThat(writingInput.path("actualDraft")).isEqualTo(process(false));
+    assertThat(writingInput.path("actualDraft")).isEqualTo(provider.response(DRAFT));
     assertThat(writingInput.has("readingPacket")).isFalse();
     assertThat(writingInput.toString()).doesNotContain("SOURCE_ONLY_TOKEN");
     assertThat(draftInput.path("investigationContext").toString())
@@ -87,8 +88,9 @@ class BusinessProcessThreeStagePipelineTest {
           .isEqualTo(draftInput.path(field));
     }
     assertThat(reviewInput.path("readingPacket").toString()).contains("SOURCE_ONLY_TOKEN");
-    assertThat(reviewInput.path("actualDraft")).isEqualTo(process(false));
-    assertThat(reviewInput.path("actualWriting")).isEqualTo(process(true));
+    assertThat(reviewInput.path("actualDraft")).isEqualTo(provider.response(DRAFT));
+    assertThat(reviewInput.path("actualWriting")).isEqualTo(provider.response(WRITE));
+    assertTextOnlyWriting(provider.response(DRAFT), provider.response(WRITE));
 
     ObjectNode saved = read(resultFile(journal, run('a')));
     assertCompleteTriple(saved, provider);
@@ -120,6 +122,49 @@ class BusinessProcessThreeStagePipelineTest {
             "BUSINESS_PROCESS_REVIEW",
             "BUSINESS_PROCESS_CONSOLIDATION_DRAFT",
             "BUSINESS_PROCESS_CONSOLIDATION_REVIEW");
+  }
+
+  @Test
+  void candidateStagesShareVersionedLocalReferencesWithoutRewritingBusinessText()
+      throws IOException {
+    ScriptedProvider provider = new ScriptedProvider();
+    Path journal = journal("local-reference-triple");
+
+    execute(provider, journal, run('a'), null, "借用条件", 1);
+
+    JsonNode draftInput = provider.input(DRAFT);
+    JsonNode writingInput = provider.input(WRITE);
+    JsonNode reviewInput = provider.input(RULE_REVIEW);
+    JsonNode packet = draftInput.path("readingPacket");
+    assertThat(packet.path("schemaVersion").asText())
+        .as("candidate reconstruction must receive the compact, explicitly versioned packet")
+        .isEqualTo("process-reading-packet-v2");
+    assertThat(reviewInput.path("readingPacket")).isEqualTo(packet);
+    assertThat(writingInput.path("actualDraft")).isEqualTo(provider.response(DRAFT));
+    assertThat(reviewInput.path("actualDraft")).isEqualTo(provider.response(DRAFT));
+    assertThat(reviewInput.path("actualWriting")).isEqualTo(provider.response(WRITE));
+
+    JsonNode activity = packet.path("reviewedActivities").get(0);
+    assertThat(activity.path("businessPurpose").asText())
+        .as("identifier-looking text is prose, not a token to replace")
+        .isEqualTo("核准后办理设备借用；" + LOCAL_ID_LITERAL);
+    assertThat(activity.path("activitySteps")).extracting(JsonNode::asText).containsExactly("办理借用");
+    assertThat(activity.path("businessRules"))
+        .extracting(JsonNode::asText)
+        .containsExactly(CORRECT, LOCAL_ID_LITERAL);
+
+    ObjectNode saved = read(resultFile(journal, run('a')));
+    assertThat(saved.path("schemaVersion").asText()).isEqualTo("model-job-reviewed-result-v5");
+    assertThat(saved.path("pipeline").asText())
+        .isEqualTo("business-reasoning-writing-rule-review-v2");
+    assertThat(saved.path("inputEncodingVersion").asText())
+        .isEqualTo("process-local-reference-map-v1");
+    assertThat(saved.path("localReferenceMap").isObject()).isTrue();
+    assertThat(saved.path("input").path("readingPacket")).isEqualTo(packet);
+    assertThat(saved.path("readingPacket")).isEqualTo(packet);
+    assertThat(saved.path("draft")).isEqualTo(provider.response(DRAFT));
+    assertThat(saved.path("writing")).isEqualTo(provider.response(WRITE));
+    assertThat(saved.path("review")).isEqualTo(provider.response(RULE_REVIEW));
   }
 
   @Test
@@ -172,7 +217,10 @@ class BusinessProcessThreeStagePipelineTest {
             "readingPacket",
             "sourceReferenceMapping",
             "inputFingerprint",
-            "pipeline")) {
+            "pipeline",
+            "producerVersion",
+            "inputEncodingVersion",
+            "localReferenceMap")) {
       assertThat(copied.path(field)).as("copied %s", field).isEqualTo(original.path(field));
     }
     assertThat(copied.path("reusedFromModelBatchId").asText()).isEqualTo(run('a').value());
@@ -213,6 +261,17 @@ class BusinessProcessThreeStagePipelineTest {
   void declaredCompleteTripleWithoutFinalWrapperFailsClosedBeforeCandidateCalls()
       throws IOException {
     assertDamagedTripleRejected("review", "missing-final-wrapper");
+  }
+
+  @Test
+  void v5TripleWithoutLocalReferenceMapFailsClosedBeforeCandidateCalls() throws IOException {
+    assertDamagedLocalReferenceMapRejected(true, "missing-local-reference-map");
+  }
+
+  @Test
+  void v5TripleWithChangedRealLocalReferenceIdentityFailsClosedBeforeCandidateCalls()
+      throws IOException {
+    assertDamagedLocalReferenceMapRejected(false, "damaged-local-reference-map");
   }
 
   @Test
@@ -264,7 +323,7 @@ class BusinessProcessThreeStagePipelineTest {
             JSON.parseCanonical(
                 ImmutableBytes.copyOf(
                     Base64.getDecoder().decode(draftRecord.path("responseJsonBase64").asText()))))
-        .isEqualTo(process(false));
+        .isEqualTo(provider.response(DRAFT));
     assertThat(records)
         .filteredOn(record -> WRITE.equals(record.path("request").path("taskKind").asText()))
         .singleElement()
@@ -348,7 +407,7 @@ class BusinessProcessThreeStagePipelineTest {
               JSON.parseCanonical(
                   ImmutableBytes.copyOf(
                       Base64.getDecoder().decode(priorDraft.path("responseJsonBase64").asText()))))
-          .isEqualTo(process(false));
+          .isEqualTo(scripted.response(DRAFT));
     }
   }
 
@@ -425,10 +484,10 @@ class BusinessProcessThreeStagePipelineTest {
     Path sourcePath = resultFile(journal, run('a'));
     ObjectNode damaged = read(sourcePath);
     damaged.put("schemaVersion", "model-job-reviewed-result-v3");
-    damaged.put("pipeline", PIPELINE);
+    damaged.put("pipeline", "business-reasoning-writing-rule-review-v1");
     damaged.set("input", first.input(DRAFT));
-    damaged.set("writing", process(true));
-    damaged.set("review", finalReview());
+    damaged.set("writing", first.response(WRITE));
+    damaged.set("review", first.response(RULE_REVIEW));
     if (field.equals("review")) {
       damaged.set("review", process(false));
     } else {
@@ -446,13 +505,44 @@ class BusinessProcessThreeStagePipelineTest {
     assertThat(Files.readAllBytes(sourcePath)).containsExactly(sourceBytes);
   }
 
+  private void assertDamagedLocalReferenceMapRejected(boolean removeMap, String directory)
+      throws IOException {
+    Path journal = journal(directory);
+    ScriptedProvider first = new ScriptedProvider();
+    execute(first, journal, run('a'), null, "借用条件", 1);
+    Path sourcePath = resultFile(journal, run('a'));
+    ObjectNode damaged = read(sourcePath);
+    assertThat(damaged.path("schemaVersion").asText()).isEqualTo("model-job-reviewed-result-v5");
+    if (removeMap) {
+      damaged.remove("localReferenceMap");
+    } else {
+      ((ObjectNode) damaged.path("localReferenceMap").path("activities").get(0))
+          .put("activityId", "activity:other/LoanController#borrow");
+    }
+    write(sourcePath, damaged);
+    byte[] damagedBytes = Files.readAllBytes(sourcePath);
+    ScriptedProvider next = new ScriptedProvider();
+
+    assertThatThrownBy(() -> execute(next, journal, run('b'), run('a'), "借用条件", 1))
+        .as("a v5 cache claim with %s mapping must fail closed", removeMap ? "missing" : "damaged")
+        .hasMessage("MODEL_JOB_RESULT_INVALID");
+
+    assertThat(next.candidateTasks()).isEmpty();
+    assertThat(resultFiles(journal, run('b'))).isEmpty();
+    assertThat(Files.readAllBytes(sourcePath)).containsExactly(damagedBytes);
+  }
+
   private static void assertCompleteTriple(ObjectNode saved, ScriptedProvider provider) {
-    assertThat(saved.path("schemaVersion").asText()).isEqualTo("model-job-reviewed-result-v3");
+    assertThat(saved.path("schemaVersion").asText()).isEqualTo("model-job-reviewed-result-v5");
     assertThat(saved.path("pipeline").asText()).isEqualTo(PIPELINE);
+    assertThat(saved.path("producerVersion").asText()).isEqualTo("v5");
+    assertThat(saved.path("inputEncodingVersion").asText())
+        .isEqualTo("process-local-reference-map-v1");
+    assertThat(saved.path("localReferenceMap").isObject()).isTrue();
     assertThat(saved.path("status").asText()).isEqualTo("COMPLETED");
-    assertThat(saved.path("draft")).isEqualTo(process(false));
-    assertThat(saved.path("writing")).isEqualTo(process(true));
-    assertThat(saved.path("review")).isEqualTo(finalReview());
+    assertThat(saved.path("draft")).isEqualTo(provider.response(DRAFT));
+    assertThat(saved.path("writing")).isEqualTo(provider.response(WRITE));
+    assertThat(saved.path("review")).isEqualTo(provider.response(RULE_REVIEW));
     assertThat(saved.path("input")).isEqualTo(provider.input(DRAFT));
     assertThat(saved.path("readingPacket")).isEqualTo(provider.input(DRAFT).path("readingPacket"));
     assertThat(saved.path("sourceReferenceMapping").isArray()).isTrue();
@@ -556,14 +646,14 @@ class BusinessProcessThreeStagePipelineTest {
             "material:loan",
             List.of("entry:loan"),
             "办理借用",
-            "核准后办理设备借用",
+            "核准后办理设备借用；" + LOCAL_ID_LITERAL,
             List.of("借用人"),
             List.of("借用单"),
             List.of("借用单编号"),
             List.of("status == 1"),
             List.of("办理借用"),
             List.of("保存借用记录"),
-            List.of(CORRECT),
+            List.of(CORRECT, LOCAL_ID_LITERAL),
             List.of("保证金25元"),
             List.of("借用"),
             "DIRECT_CODE_BEHAVIOR",
@@ -735,6 +825,7 @@ class BusinessProcessThreeStagePipelineTest {
     private final List<StructuredModelRequest> requests = new ArrayList<>();
     private final Map<String, JsonNode> inputs = new LinkedHashMap<>();
     private final Map<String, JsonNode> schemas = new LinkedHashMap<>();
+    private final Map<String, JsonNode> responses = new LinkedHashMap<>();
     private boolean failWriting;
     private int candidateCount = 1;
 
@@ -747,21 +838,41 @@ class BusinessProcessThreeStagePipelineTest {
           switch (request.taskKind()) {
             case "PROCESS_MATERIAL_SELECTION" -> selection(candidateCount);
             case "PROCESS_READING_CHECK" -> readingCheck();
-            case DRAFT -> process(false);
+            case DRAFT -> {
+              localReferences = LocalResponseReferences.from(inputs.get(request.taskKind()));
+              yield processForProvider(false);
+            }
             case WRITE -> {
               if (failWriting) {
                 throw new IllegalStateException("FIXTURE_WRITE_FAILED");
               }
-              yield process(true);
+              yield processForProvider(true);
             }
-            case RULE_REVIEW -> finalReview();
+            case RULE_REVIEW -> finalReviewForProvider();
             // Legacy response keeps pre-change execution valid so missing stages fail assertions.
             case "BUSINESS_PROCESS_REVIEW" -> process(false);
             default ->
                 throw new AssertionError(
                     "task outside bounded selected sample: " + request.taskKind());
           };
+      responses.put(request.taskKind(), response.deepCopy());
       return new StructuredModelResponse(JSON.encodeCanonical(response), IDENTITY);
+    }
+
+    private LocalResponseReferences localReferences;
+
+    private ObjectNode processForProvider(boolean writing) {
+      ObjectNode response = writing ? writingProcess() : process(true);
+      return localReferences == null ? response : localReferences.encode(response);
+    }
+
+    private ObjectNode finalReviewForProvider() {
+      ObjectNode response = finalReview();
+      if (localReferences != null) {
+        response.set(
+            "processResult", localReferences.encode((ObjectNode) response.path("processResult")));
+      }
+      return response;
     }
 
     private List<String> taskKinds() {
@@ -778,6 +889,96 @@ class BusinessProcessThreeStagePipelineTest {
 
     private JsonNode schema(String task) {
       return schemas.getOrDefault(task, MissingNode.getInstance());
+    }
+
+    private JsonNode response(String task) {
+      return responses.getOrDefault(task, MissingNode.getInstance());
+    }
+  }
+
+  private static void assertTextOnlyWriting(JsonNode draft, JsonNode writing) {
+    ObjectNode expected = ((ObjectNode) draft).deepCopy();
+    ObjectNode actual = ((ObjectNode) writing).deepCopy();
+    for (ObjectNode process : List.of(expected, actual)) {
+      JsonNode candidate = process.path("processes").get(0);
+      ((ObjectNode) candidate).remove(List.of("name", "purpose"));
+      JsonNode stage = candidate.path("stages").get(0);
+      ((ObjectNode) stage).remove(List.of("name", "narrative"));
+    }
+    assertThat(actual).as("WRITE changes only the four display fields").isEqualTo(expected);
+  }
+
+  private static ObjectNode writingProcess() {
+    ObjectNode writing = process(true);
+    ObjectNode candidate = (ObjectNode) writing.path("processes").get(0);
+    candidate.put("name", "重新整理后的借用办理");
+    candidate.put("purpose", "用业务文字说明核准后的借用处理");
+    ObjectNode stage = (ObjectNode) candidate.path("stages").get(0);
+    stage.put("name", "核对借用条件");
+    stage.put("narrative", "文字稿：" + WRONG);
+    return writing;
+  }
+
+  private record LocalResponseReferences(String activityId, String statementRef, String sourceRef) {
+
+    static LocalResponseReferences from(JsonNode input) {
+      JsonNode packet = input.path("readingPacket");
+      if (!"process-reading-packet-v2".equals(packet.path("schemaVersion").asText())) {
+        return null;
+      }
+      String activityId =
+          packet.path("candidate").path("activityUses").get(0).path("activityId").asText();
+      String statementRef = null;
+      for (JsonNode statement : packet.path("statementDirectory")) {
+        if (activityId.equals(statement.path("activityId").asText())
+            && "businessRules/0".equals(statement.path("fieldPath").asText())) {
+          statementRef = statement.path("statementRef").asText();
+          break;
+        }
+      }
+      String sourceRef = packet.path("sourceExcerpts").get(0).path("ref").asText();
+      if (activityId.isBlank() || statementRef == null || sourceRef.isBlank()) {
+        throw new AssertionError("the v2 scripted fixture needs one member, statement and source");
+      }
+      return new LocalResponseReferences(activityId, statementRef, sourceRef);
+    }
+
+    ObjectNode encode(ObjectNode global) {
+      ObjectNode encoded = global.deepCopy();
+      rewrite(encoded);
+      return encoded;
+    }
+
+    private void rewrite(JsonNode value) {
+      if (value instanceof ArrayNode array) {
+        array.forEach(this::rewrite);
+        return;
+      }
+      if (!(value instanceof ObjectNode object)) return;
+      object
+          .fields()
+          .forEachRemaining(
+              field -> {
+                JsonNode node = field.getValue();
+                if ("activityId".equals(field.getKey()) && "activity:loan".equals(node.asText())) {
+                  object.put(field.getKey(), activityId);
+                } else if ("statementRefs".equals(field.getKey())
+                    && node instanceof ArrayNode refs) {
+                  for (int index = 0; index < refs.size(); index++) {
+                    if ("activity:loan/businessRules/0".equals(refs.get(index).asText())) {
+                      refs.set(index, JsonNodeFactory.instance.textNode(statementRef));
+                    }
+                  }
+                } else if ("sourceRefs".equals(field.getKey()) && node instanceof ArrayNode refs) {
+                  for (int index = 0; index < refs.size(); index++) {
+                    if ("M1".equals(refs.get(index).asText())) {
+                      refs.set(index, JsonNodeFactory.instance.textNode(sourceRef));
+                    }
+                  }
+                } else {
+                  rewrite(node);
+                }
+              });
     }
   }
 }

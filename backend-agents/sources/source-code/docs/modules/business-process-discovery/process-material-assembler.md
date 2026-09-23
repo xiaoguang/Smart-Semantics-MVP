@@ -36,7 +36,7 @@ changedActivityDispositions            仅必要增量，移出最后成员必�
 
 ## 最终包与调用
 
-process-reading-packet-v1含candidate、完整reviewedActivities、唯一statementDirectory、实际sourceExcerpts与readingLimitations。包内来源来自实际已读allowlist，不来自旧候选/M10 owner边界。ActivityUse.activityId须在最终成员内，stage/rule用法须属于本过程；statement owner不改，context/新冻结文本可作为依据。
+已交付的process-reading-packet-v1含candidate、完整reviewedActivities、唯一statementDirectory、实际sourceExcerpts与readingLimitations。本次候选生成改用v2：同样保留完整Activity及实际原文，但statementDirectory按A/T局部编号记录owner与字段位置。包内来源来自实际已读allowlist，不来自旧候选/M10 owner边界。ActivityUse.activityId须在最终成员内，stage/rule用法须属于本过程；statement owner不改，context/新冻结文本可作为依据。
 
 DRAFT外层实际输入另带investigationContext和readingSelections，分别保存问题/系统假设与实际用途/选择metadata；不重复片段或重新发送移出原文。最终RULE_REVIEW复用同一完整外层输入并加actualDraft/actualWriting；WRITE仅收完整actualDraft。
 
@@ -63,3 +63,5 @@ process-reading-packet-v2保存同入口关联和编码合同；完整Activity�
 容量观测记录编码前后实际input、Prompt、Schema、两稿及输出余量，不能只算字符串ID节约率；最后仍超容量即保留已生成稿和明确原因。不得为适配模型删任一稿件或增加自动摘要/层层聚合模块。
 
 直接测试：不同候选均有A1/T1不串源；A10不按前缀映射；业务正文恰好含A1/T1字符串不被改写；完整包编码/解码业务内容一致；多variant与候选拆分保留；改变映射或输入使相关复用失效；实际最终核对保留原文和两稿。
+
+实现状态：`ProcessLocalReferenceMap`已作为候选包私有值对象接入过程输入和最终结构化引用解码；104项直接Step07回归通过，包含A1/A10、同名局部编号不同真实身份、完整包/源码传递、重开复用与来源归属。真实模型的上下文容量及完整本地CI尚未验收。完整Activity自带但本次未展开的来源保留可逆短编号，输出Schema只允许本次实际展开的`sourceExcerpts`，不能把未读原文当作已核对来源。

@@ -55,7 +55,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
   static final String PROCESS_DRAFT = "BUSINESS_PROCESS_DRAFT";
   static final String PROCESS_WRITE = "BUSINESS_PROCESS_WRITE";
   static final String PROCESS_RULE_REVIEW = "BUSINESS_PROCESS_RULE_REVIEW";
-  private static final String PROCESS_PIPELINE = "business-reasoning-writing-rule-review-v1";
+  private static final String PROCESS_PIPELINE = "business-reasoning-writing-rule-review-v2";
   static final String CONSOLIDATION_DRAFT = "BUSINESS_PROCESS_CONSOLIDATION_DRAFT";
   static final String CONSOLIDATION_REVIEW = "BUSINESS_PROCESS_CONSOLIDATION_REVIEW";
 
@@ -1423,22 +1423,37 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     if (candidate.uses().size() > profile.maxActivitiesPerCandidate()) {
       return RawCandidateResult.notProcessed(packet, "NOT_PROCESSED_CAPACITY");
     }
-    ObjectNode input = processInput(packet, corpus);
+    ObjectNode globalInput = processInput(packet, corpus);
+    ProcessLocalReferenceMap localReferences =
+        ProcessLocalReferenceMap.fromGlobalInput(globalInput);
+    ObjectNode input = localReferences.encodeInput(globalInput);
     if (canonicalJson.encodeCanonical(input).size() > profile.maxModelInputBytes()) {
       return RawCandidateResult.notProcessed(packet, "NOT_PROCESSED_CAPACITY");
     }
-    ObjectNode schema = processSchema(packet, corpus);
+    ObjectNode schema = processSchema(packet, localReferences);
     Schema intermediateSchema =
         SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12).getSchema(schema);
     ObjectNode reviewSchema = processRuleReviewSchema(schema);
+    Schema finalResponseSchema =
+        SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
+            .getSchema(reviewSchema);
     String taskBase = "business-process-" + idSuffix(candidate.candidateId());
-    String fingerprint = processFingerprint(input, schema, reviewSchema, profile, binding);
+    String fingerprint =
+        processFingerprint(input, localReferences, schema, reviewSchema, profile, binding);
     ReviewedProcess reused =
-        reopenProcess(taskBase, fingerprint, input, intermediateSchema, binding);
+        reopenProcess(
+            taskBase,
+            fingerprint,
+            input,
+            localReferences,
+            intermediateSchema,
+            finalResponseSchema,
+            binding);
     if (reused != null) {
       return new RawCandidateResult(
           packet,
           input,
+          localReferences,
           reused.draft(),
           reused.writing(),
           reused.review(),
@@ -1448,12 +1463,14 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     }
     ModelCall draft = call(PROCESS_DRAFT, taskBase + "-draft", input, schema, profile, binding);
     requireIntermediateSchema(draft.value(), intermediateSchema, "PROCESS_MODEL_SCHEMA_INVALID");
+    requireLocalUseClosure(draft.value());
     ObjectNode writingInput = JsonNodeFactory.instance.objectNode();
     writingInput.set("actualDraft", draft.value());
     requireInputCapacity(writingInput, profile, "PROCESS_WRITE_INPUT_CAPACITY_EXCEEDED");
     ModelCall writing =
         call(PROCESS_WRITE, taskBase + "-write", writingInput, schema, profile, binding);
     requireIntermediateSchema(writing.value(), intermediateSchema, "PROCESS_MODEL_SCHEMA_INVALID");
+    requireLocalUseClosure(writing.value());
     if (!draft.runtimeIdentity().equals(writing.runtimeIdentity())) {
       throw failure("PROCESS_JOB_RUNTIME_IDENTITY_MISMATCH");
     }
@@ -1469,16 +1486,48 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
             reviewSchema,
             profile,
             binding);
+    requireIntermediateSchema(review.value(), finalResponseSchema, "PROCESS_MODEL_SCHEMA_INVALID");
     if (!draft.runtimeIdentity().equals(review.runtimeIdentity())) {
       throw failure("PROCESS_JOB_RUNTIME_IDENTITY_MISMATCH");
     }
     return new RawCandidateResult(
-        packet, input, draft, writing, review, fingerprint, binding, false);
+        packet, input, localReferences, draft, writing, review, fingerprint, binding, false);
   }
 
   private static void requireIntermediateSchema(ObjectNode response, Schema schema, String code) {
     if (!schema.validate(response).isEmpty()) {
       throw failure(code);
+    }
+  }
+
+  private static void requireLocalUseClosure(ObjectNode response) {
+    for (JsonNode item : array(response, "processes")) {
+      ObjectNode process = object(item);
+      Set<String> uses = new HashSet<>();
+      for (JsonNode use : array(process, "activityUses")) {
+        if (!uses.add(text(object(use), "useLocalId"))) {
+          throw failure("PROCESS_LOCAL_ACTIVITY_USE_INVALID");
+        }
+      }
+      if (uses.isEmpty()) {
+        throw failure("PROCESS_LOCAL_ACTIVITY_USE_INVALID");
+      }
+      for (JsonNode stage : array(process, "stages")) {
+        requireSubset(
+            strings(object(stage), "activityUseLocalIds"),
+            uses,
+            "PROCESS_LOCAL_ACTIVITY_USE_INVALID");
+      }
+      for (JsonNode rule : array(process, "businessRules")) {
+        requireSubset(
+            strings(object(rule), "activityUseLocalIds"),
+            uses,
+            "PROCESS_LOCAL_ACTIVITY_USE_INVALID");
+      }
+      requireSubset(
+          strings(process, "supportActivityUseLocalIds"),
+          uses,
+          "PROCESS_LOCAL_ACTIVITY_USE_INVALID");
     }
   }
 
@@ -1520,7 +1569,9 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     List<SourceReferenceMapping> sourceMapping =
         sourceNormalization.mappingFor(raw.packet().ordinal());
     ObjectNode remappedReview =
-        remapSourceReferences(finalProcessResult(raw.review().value()), sourceMapping);
+        remapSourceReferences(
+            raw.localReferences().decodeProcess(finalProcessResult(raw.review().value())),
+            sourceMapping);
     ParsedCandidateDraft reviewed = parseCandidate(remappedReview, finalPacket, corpus, profile);
     saveProcessTriple(
         "business-process-" + idSuffix(raw.packet().candidate().candidateId()),
@@ -1530,6 +1581,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         raw.writing(),
         raw.review(),
         raw.input(),
+        raw.localReferences(),
         sourceMapping,
         raw.reused());
     return new CandidateResult(
@@ -1810,14 +1862,17 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
 
   private String processFingerprint(
       ObjectNode input,
+      ProcessLocalReferenceMap localReferences,
       ObjectNode processSchema,
       ObjectNode finalSchema,
       ProcessDiscoveryProfile profile,
       ModelJobProviderBinding binding) {
     ObjectNode value = JsonNodeFactory.instance.objectNode();
-    value.put("schemaVersion", "business-process-three-stage-input-fingerprint-v1");
+    value.put("schemaVersion", "business-process-three-stage-input-fingerprint-v2");
     value.put("pipeline", PROCESS_PIPELINE);
-    value.put("producerVersion", "v4");
+    value.put("producerVersion", "v5");
+    value.put("inputEncodingVersion", ProcessLocalReferenceMap.VERSION);
+    value.set("localReferenceMap", localReferences.toPrivateRecord());
     strings(
         value.putArray("taskSequence"), List.of(PROCESS_DRAFT, PROCESS_WRITE, PROCESS_RULE_REVIEW));
     value.put(
@@ -1864,7 +1919,9 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       String jobKey,
       String inputFingerprint,
       ObjectNode input,
+      ProcessLocalReferenceMap localReferences,
       Schema intermediateSchema,
+      Schema finalResponseSchema,
       ModelJobProviderBinding binding) {
     if (modelJobs == null || modelJobs.reuseFromModelBatchId() == null) {
       return null;
@@ -1872,13 +1929,13 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     ObjectNode saved =
         new PrivateModelJobResultStore(
                 modelJobs.journalDirectory(), modelJobs.reuseFromModelBatchId(), "business-process")
-            .readCompletedProcess(
+            .readCompletedProcessV5(
                 jobKey, inputFingerprint, binding.quotaScope(), binding.expectedRuntimeIdentity())
             .orElse(null);
     if (saved == null) {
       return null;
     }
-    requireReusableProcess(saved, jobKey, binding);
+    requireReusableProcess(saved, jobKey, binding, localReferences);
     if (!input.equals(saved.path("input"))) {
       throw failure("MODEL_JOB_RESULT_INPUT_MISMATCH");
     }
@@ -1886,6 +1943,10 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         object(saved.path("draft")), intermediateSchema, "MODEL_JOB_RESULT_INVALID");
     requireIntermediateSchema(
         object(saved.path("writing")), intermediateSchema, "MODEL_JOB_RESULT_INVALID");
+    requireIntermediateSchema(
+        object(saved.path("review")), finalResponseSchema, "MODEL_JOB_RESULT_INVALID");
+    requireLocalUseClosure(object(saved.path("draft")));
+    requireLocalUseClosure(object(saved.path("writing")));
     return new ReviewedProcess(
         new ModelCall(object(saved.path("draft")), binding.expectedRuntimeIdentity()),
         new ModelCall(object(saved.path("writing")), binding.expectedRuntimeIdentity()),
@@ -1894,13 +1955,19 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
 
   /** Validates the extra immutable packet contract owned only by cross-object process reuse. */
   private void requireReusableProcess(
-      ObjectNode saved, String jobKey, ModelJobProviderBinding binding) {
+      ObjectNode saved,
+      String jobKey,
+      ModelJobProviderBinding binding,
+      ProcessLocalReferenceMap localReferences) {
     if (!modelJobs.reuseFromModelBatchId().value().equals(nullableText(saved.path("runId")))
         || !"business-process".equals(nullableText(saved.path("phase")))
         || !jobKey.equals(nullableText(saved.path("jobKey")))
         || !binding.key().equals(nullableText(saved.path("providerBindingKey")))
         || !(saved.path("readingPacket") instanceof ObjectNode packet)
-        || !"process-reading-packet-v1".equals(nullableText(packet.path("schemaVersion")))
+        || !"process-reading-packet-v2".equals(nullableText(packet.path("schemaVersion")))
+        || !ProcessLocalReferenceMap.VERSION.equals(
+            nullableText(saved.path("inputEncodingVersion")))
+        || !localReferences.toPrivateRecord().equals(saved.path("localReferenceMap"))
         || !(saved.path("sourceReferenceMapping") instanceof ArrayNode)) {
       throw failure("MODEL_JOB_RESULT_INVALID");
     }
@@ -1945,15 +2012,18 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       ModelCall writing,
       ModelCall review,
       ObjectNode input,
+      ProcessLocalReferenceMap localReferences,
       List<SourceReferenceMapping> sourceReferenceMapping,
       boolean reused) {
     if (modelJobs == null) {
       return;
     }
     ObjectNode record = JsonNodeFactory.instance.objectNode();
-    record.put("schemaVersion", "model-job-reviewed-result-v3");
+    record.put("schemaVersion", "model-job-reviewed-result-v5");
     record.put("pipeline", PROCESS_PIPELINE);
-    record.put("producerVersion", "v4");
+    record.put("producerVersion", "v5");
+    record.put("inputEncodingVersion", ProcessLocalReferenceMap.VERSION);
+    record.set("localReferenceMap", localReferences.toPrivateRecord());
     record.put("status", "COMPLETED");
     record.put("runId", modelJobs.runId().value());
     record.put("phase", "business-process");
@@ -2969,9 +3039,9 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     return schema;
   }
 
-  private ObjectNode processSchema(ReadingPacket packet, FrozenCorpus corpus) {
-    Set<String> statementRefs = packetStatementRefs(packet, corpus);
-    Set<String> sourceRefs = packetSourceRefs(packet);
+  private ObjectNode processSchema(ReadingPacket packet, ProcessLocalReferenceMap localReferences) {
+    Set<String> statementRefs = Set.copyOf(localReferences.statementRefs().values());
+    Set<String> sourceRefs = localReferences.allowedSourceRefs();
     ObjectNode root = objectSchema();
     ObjectNode definitions = root.putObject("$defs");
     definitions.set(
@@ -2991,7 +3061,10 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         arraySchema(
             detailedProcessSchema(
                 packet.candidate(),
-                packet.candidate().uses().stream().map(CandidateUse::activityId).toList(),
+                packet.candidate().uses().stream()
+                    .map(CandidateUse::activityId)
+                    .map(localReferences.activityRefs()::get)
+                    .toList(),
                 statementRefs,
                 sourceRefs)));
     required(root, "disposition", "reason", "processes");
@@ -3335,18 +3408,6 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
 
   private static List<String> cardIds(List<ActivityIndexCard> cards) {
     return cards.stream().map(ActivityIndexCard::activityId).toList();
-  }
-
-  private static Set<String> packetStatementRefs(ReadingPacket packet, FrozenCorpus corpus) {
-    return packet.activityIds().stream()
-        .flatMap(activityId -> corpus.statementHandles(activityId).stream())
-        .collect(Collectors.toCollection(LinkedHashSet::new));
-  }
-
-  private static Set<String> packetSourceRefs(ReadingPacket packet) {
-    return packet.sources().stream()
-        .map(SourceReference::ref)
-        .collect(Collectors.toCollection(LinkedHashSet::new));
   }
 
   private static void requireInputCapacity(
@@ -3997,6 +4058,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
   private record RawCandidateResult(
       ReadingPacket packet,
       ObjectNode input,
+      ProcessLocalReferenceMap localReferences,
       ModelCall draft,
       ModelCall writing,
       ModelCall review,
@@ -4007,17 +4069,29 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     RawCandidateResult(
         ReadingPacket packet,
         ObjectNode input,
+        ProcessLocalReferenceMap localReferences,
         ModelCall draft,
         ModelCall writing,
         ModelCall review,
         String inputFingerprint,
         ModelJobProviderBinding binding,
         boolean reused) {
-      this(packet, input, draft, writing, review, inputFingerprint, binding, reused, null);
+      this(
+          packet,
+          input,
+          localReferences,
+          draft,
+          writing,
+          review,
+          inputFingerprint,
+          binding,
+          reused,
+          null);
     }
 
     static RawCandidateResult notProcessed(ReadingPacket packet, String disposition) {
-      return new RawCandidateResult(packet, null, null, null, null, null, null, false, disposition);
+      return new RawCandidateResult(
+          packet, null, null, null, null, null, null, null, false, disposition);
     }
   }
 

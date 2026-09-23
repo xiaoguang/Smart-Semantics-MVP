@@ -490,6 +490,62 @@ public final class PrivateModelJobResultStore {
     return Optional.of(value.deepCopy());
   }
 
+  /** Opens only the local-reference three-stage contract; valid historical triples do not match. */
+  public Optional<ObjectNode> readCompletedProcessV5(
+      String jobKey,
+      String inputFingerprint,
+      String expectedQuotaScope,
+      ModelRuntimeIdentityV1 expectedRuntimeIdentity) {
+    requireJobKey(jobKey);
+    requireFingerprint(inputFingerprint);
+    requireQuotaScope(expectedQuotaScope);
+    Objects.requireNonNull(expectedRuntimeIdentity, "expected model runtime identity");
+    ObjectNode value = readResult(jobKey, "reviewed-result.json").orElse(null);
+    if (value == null || !terminalStatus(value)) return Optional.empty();
+    String version = text(value, "schemaVersion");
+    if ("model-job-reviewed-result-v2".equals(version)
+        || "model-job-reviewed-result-v3".equals(version)) {
+      readCompletedProcess(jobKey, inputFingerprint, expectedQuotaScope, expectedRuntimeIdentity);
+      return Optional.empty();
+    }
+    if (!"model-job-reviewed-result-v5".equals(version)
+        || !"business-reasoning-writing-rule-review-v2".equals(text(value, "pipeline"))
+        || !"v5".equals(text(value, "producerVersion"))
+        || !"process-local-reference-map-v1".equals(text(value, "inputEncodingVersion"))
+        || !runId.equals(text(value, "runId"))
+        || !phase.equals(text(value, "phase"))
+        || !"business-process".equals(phase)
+        || !jobKey.equals(text(value, "jobKey"))
+        || !(value.path("draft") instanceof ObjectNode)
+        || !(value.path("writing") instanceof ObjectNode)
+        || !(value.path("review") instanceof ObjectNode review)
+        || !(review.path("processResult") instanceof ObjectNode)
+        || !(review.path("corrections") instanceof com.fasterxml.jackson.databind.node.ArrayNode)
+        || !(value.path("input") instanceof ObjectNode input)
+        || !(input.path("candidate") instanceof ObjectNode)
+        || !(input.path("readingPacket") instanceof ObjectNode packet)
+        || !"process-reading-packet-v2".equals(text(packet, "schemaVersion"))
+        || !(input.path("investigationContext") instanceof ObjectNode)
+        || !(input.path("readingSelections") instanceof ObjectNode)
+        || !packet.equals(value.path("readingPacket"))
+        || !(value.path("localReferenceMap") instanceof ObjectNode localMap)
+        || !"process-local-reference-map-v1".equals(text(localMap, "schemaVersion"))
+        || !(localMap.path("activities") instanceof com.fasterxml.jackson.databind.node.ArrayNode)
+        || !(localMap.path("statements") instanceof com.fasterxml.jackson.databind.node.ArrayNode)
+        || !(localMap.path("sources") instanceof com.fasterxml.jackson.databind.node.ArrayNode)
+        || !value.path("sourceReferenceMapping").isArray()) {
+      throw failure("MODEL_JOB_RESULT_INVALID", null);
+    }
+    requireFingerprint(text(value, "inputFingerprint"));
+    text(value, "providerBindingKey");
+    requireQuotaScope(text(value, "quotaScope"));
+    ModelRuntimeIdentityV1 identity = runtimeIdentity(value.path("runtimeIdentity"));
+    if (!inputFingerprint.equals(text(value, "inputFingerprint"))
+        || !expectedQuotaScope.equals(text(value, "quotaScope"))
+        || !expectedRuntimeIdentity.equals(identity)) return Optional.empty();
+    return Optional.of(value.deepCopy());
+  }
+
   private Path stageDirectory(String jobKey, String stageKey) {
     Path modelJobs = childDirectory(journalDirectory, "model-jobs");
     Path run = childDirectory(modelJobs, runDirectoryName);
