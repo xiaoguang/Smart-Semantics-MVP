@@ -1,6 +1,7 @@
 package org.sourceanalysis.app.adapter.cli;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -118,6 +119,64 @@ class SourceAnalysisModelJobsConfigurationTest {
     assertThat(property(loaded, "profileBundleRef"))
         .as("reading-material profile must participate in the effective profile identity")
         .isNotEqualTo(property(changedProfile, "profileBundleRef"));
+  }
+
+  @Test
+  void step05ReadingMaterialsCanLoadActivityExecutionLimitsWithoutLegacyM10Settings()
+      throws Exception {
+    ToolFixture tools = toolFixture();
+    ObjectNode document =
+        (ObjectNode)
+            YAML.readTree(
+                readingMaterialsConfigYaml(
+                    tools, "", "{maxPacketUtf8Bytes: 32768, maxEntriesPerPacket: 3}"));
+    document.set(
+        "business",
+        YAML.readTree(
+            """
+            activity:
+              maxModelInputBytes: 65536
+              maxModelOutputBytes: 32768
+              maxActivitiesPerMaterial: 12
+              maxValuesPerField: 64
+              maxTextCharsPerValue: 4096
+            maxMaterialsToStart: 325
+            """));
+
+    Object loaded = loadConfiguration(writeConfig(YAML.writeValueAsString(document)));
+    assertThat(integerProperty(loaded, "maxMaterialsToStart")).isEqualTo(325);
+    assertThat(integerProperty(property(loaded, "activityProfile"), "maxModelInputBytes"))
+        .isEqualTo(65536);
+  }
+
+  @Test
+  void step05ActivityExecutionRequiresAnExplicitProviderCapacity() throws Exception {
+    ToolFixture tools = toolFixture();
+    ObjectNode document =
+        (ObjectNode)
+            YAML.readTree(
+                readingMaterialsConfigYaml(
+                    tools,
+                    defaultModelJobs(tools),
+                    "{maxPacketUtf8Bytes: 32768, maxEntriesPerPacket: 3}"));
+    ModelJobsConfiguration missing =
+        (ModelJobsConfiguration)
+            property(
+                loadConfiguration(writeConfig(YAML.writeValueAsString(document))), "modelJobs");
+    assertThatThrownBy(missing::requireActivityCapacity).hasMessage("CAPACITY_PROFILE_REQUIRED");
+
+    ObjectNode provider =
+        (ObjectNode)
+            document.path("sourceAnalysis").path("modelJobs").path("providers").path("pro");
+    provider.set(
+        "capacity",
+        YAML.readTree(
+            "{contextWindowTokens: 256000, providerOverheadTokens: 8000, reasoningReserveTokens: 24000, tokenAccounting: UTF8_BYTE_ESTIMATE}"));
+    ModelJobsConfiguration configured =
+        (ModelJobsConfiguration)
+            property(
+                loadConfiguration(writeConfig(YAML.writeValueAsString(document))), "modelJobs");
+    configured.requireActivityCapacity();
   }
 
   @Test

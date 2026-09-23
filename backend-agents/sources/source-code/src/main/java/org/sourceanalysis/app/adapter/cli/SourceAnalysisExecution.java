@@ -35,12 +35,15 @@ import org.sourceanalysis.app.adapter.provider.OpenAiResponsesStructuredProvider
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.analysis.document.BusinessReportCheckpointRenderer;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
+import org.sourceanalysis.app.analysis.interpretation.activity.ActivityEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplainer;
+import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationCheckpointPublisher;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationCheckpointReader;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationProfile;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationResult;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityJobExecutionConfiguration;
 import org.sourceanalysis.app.analysis.interpretation.activity.ExplainActivitiesRequest;
+import org.sourceanalysis.app.analysis.interpretation.activity.ExplainCodeReadingMaterialsRequest;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialEntryCoverage;
@@ -119,6 +122,8 @@ final class SourceAnalysisExecution {
       "model-job-execution-config-v2";
   private static final String PROCESS_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA =
       "model-job-execution-config-v3";
+  private static final String STEP05_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA =
+      "model-job-execution-config-v4";
   private static final String POLICY_ID_DOMAIN = "canonical-artifact-policy-registry-id-v2";
   private static final int CONFIG_MAX_BYTES = 1_048_576;
   private static final ObjectMapper JSON = new ObjectMapper();
@@ -150,7 +155,12 @@ final class SourceAnalysisExecution {
                 output);
         case MODE_ACTIVITIES ->
             executeActivities(
-                configuration, parsed.reuseFromModelBatchId(), parsed.runId(), output);
+                configuration,
+                parsed.reuseFromModelBatchId(),
+                parsed.retryFailedFromModelBatchId(),
+                parsed.packetId(),
+                parsed.runId(),
+                output);
         case MODE_BUSINESS_PROCESSES ->
             executeBusinessProcesses(
                 configuration,
@@ -431,7 +441,30 @@ final class SourceAnalysisExecution {
       AnalysisRunId reuseFromModelBatchId,
       AnalysisRunId requestedRunId,
       PrintWriter output) {
+    executeActivities(configuration, reuseFromModelBatchId, null, null, requestedRunId, output);
+  }
+
+  static void executeActivities(
+      RepositoryRunConfiguration configuration,
+      AnalysisRunId reuseFromModelBatchId,
+      AnalysisRunId retryFailedFromModelBatchId,
+      String packetId,
+      AnalysisRunId requestedRunId,
+      PrintWriter output) {
     ModelJobsConfiguration modelJobs = configuration.requireModelJobsForExecution();
+    if (RepositoryRunStateV4.SCHEMA_VERSION.equals(materialStateSchema(configuration))) {
+      executeStep05Activities(
+          configuration,
+          reuseFromModelBatchId,
+          retryFailedFromModelBatchId,
+          packetId,
+          requestedRunId,
+          output);
+      return;
+    }
+    if (retryFailedFromModelBatchId != null || packetId != null) {
+      throw failure("STEP05_ACTIVITY_SCOPE_REQUIRES_STEP05_MATERIALS");
+    }
     RepositoryRunStateV3.SavedState state = loadV3State(configuration);
     try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
       CanonicalModuleArtifactStore inputModules = inputModuleArtifacts(configuration, store);
@@ -500,6 +533,455 @@ final class SourceAnalysisExecution {
     }
   }
 
+  private static String materialStateSchema(RepositoryRunConfiguration configuration) {
+    Path path = configuration.stateFile();
+    try {
+      if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+          || Files.isSymbolicLink(path)
+          || Files.size(path) > CONFIG_MAX_BYTES) {
+        throw failure("MATERIALS_STATE_INVALID");
+      }
+      JsonNode state =
+          configuration
+              .canonicalJson()
+              .parseStrictJson(ImmutableBytes.copyOf(Files.readAllBytes(path)));
+      if (!(state instanceof ObjectNode) || !state.path("schemaVersion").isTextual()) {
+        throw failure("MATERIALS_STATE_INVALID");
+      }
+      return state.path("schemaVersion").textValue();
+    } catch (IOException | SecurityException invalid) {
+      throw failure("MATERIALS_STATE_INVALID", invalid);
+    }
+  }
+
+  private static void executeStep05Activities(
+      RepositoryRunConfiguration configuration,
+      AnalysisRunId reuseFromModelBatchId,
+      AnalysisRunId retryFailedFromModelBatchId,
+      String packetId,
+      AnalysisRunId requestedRunId,
+      PrintWriter output) {
+    ModelJobsConfiguration modelJobs = configuration.requireModelJobsForExecution();
+    modelJobs.requireActivityCapacity();
+    RepositoryRunStateV4.SavedState state =
+        RepositoryRunStateV4.load(configuration.stateFile(), configuration.canonicalJson());
+    if (!state.materialProfile().equals(configuration.readingMaterialProfile())) {
+      throw failure("MATERIALS_STATE_CONFIGURATION_MISMATCH");
+    }
+    try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
+      CanonicalAnalysisStepArtifactStore sourceSteps = inputStepArtifacts(configuration, store);
+      CanonicalModuleArtifactStore outputModules = moduleArtifacts(configuration, store);
+      CodeReadingMaterialSet materials =
+          RepositoryRunStateV4.reopen(
+              configuration.stateFile(), sourceSteps, configuration.canonicalJson());
+      verifyConfiguredStep05Source(configuration, store, state);
+      Set<String> selectedPacketIds =
+          selectedStep05Packets(
+              configuration,
+              store,
+              outputModules,
+              modelJobs,
+              state,
+              materials,
+              reuseFromModelBatchId,
+              requestedRunId,
+              retryFailedFromModelBatchId,
+              packetId);
+      java.util.concurrent.atomic.AtomicReference<ActivityExplanationResult> completed =
+          new java.util.concurrent.atomic.AtomicReference<>();
+      RepositoryAnalysisRunCoordinator coordinator =
+          RepositoryAnalysisRunCoordinator.configured(
+              request -> {
+                if (request.intent() != AnalysisExecutionIntent.EXPLAIN_ACTIVITIES
+                    || request.exactMaterialId() != null) {
+                  throw failure("ANALYSIS_EXECUTION_INTENT_INVALID");
+                }
+                validateStep05ReuseBatch(
+                    store, modelJobs, state, request.runId(), reuseFromModelBatchId);
+                writeStep05ModelJobExecutionConfiguration(
+                    configuration,
+                    modelJobs,
+                    state,
+                    request.runId(),
+                    reuseFromModelBatchId,
+                    retryFailedFromModelBatchId,
+                    selectedPacketIds);
+                ModelJobExecutionConfiguration execution =
+                    modelJobExecutionConfiguration(
+                        modelJobs, request.runId(), reuseFromModelBatchId);
+                ActivityExplanationResult unpersisted =
+                    ActivityExplainer.forExecution(execution)
+                        .explain(
+                            new ExplainCodeReadingMaterialsRequest(
+                                materials,
+                                configuration.activityProfile(),
+                                configuration.maxMaterialsToStart(),
+                                selectedPacketIds));
+                org.sourceanalysis.app.artifact.ModulePublicationReference checkpoint =
+                    new ActivityExplanationCheckpointPublisher(outputModules)
+                        .publishStep05(
+                            request.runId(),
+                            state.readingMaterialCheckpoint(),
+                            sourceSteps,
+                            artifactControls(
+                                RunStoreBootstrap.reopenPersistedAnalysisRunRequest(
+                                        store, request.runId())
+                                    .request()),
+                            materials,
+                            unpersisted.reviewedActivities(),
+                            unpersisted.coverage(),
+                            unpersisted.unexplainedActivityEntries());
+                ActivityExplanationResult activities =
+                    new ActivityExplanationResult(
+                        unpersisted.reviewedActivities(),
+                        unpersisted.coverage(),
+                        unpersisted.unexplainedActivityEntries(),
+                        checkpoint);
+                ObjectNode batchResult =
+                    writeStep05ActivityBatchResult(
+                        configuration,
+                        modelJobs,
+                        state,
+                        request.runId(),
+                        materials,
+                        activities,
+                        selectedPacketIds);
+                batchResult
+                    .path("unprocessedEntries")
+                    .forEach(
+                        failed ->
+                            failed
+                                .path("packetFailures")
+                                .forEach(
+                                    packetFailure ->
+                                        output.printf(
+                                            "failedPacket=%s entry=%s slice=%s stage=%s attempts=%d/%d reason=%s nextAction=%s%n",
+                                            packetFailure.path("materialId").asText(),
+                                            failed.path("entryId").asText(),
+                                            packetFailure.path("sliceKey").asText("-"),
+                                            packetFailure.path("stageKey").asText("-"),
+                                            packetFailure.path("attemptsUsed").asInt(),
+                                            packetFailure.path("maxAttempts").asInt(),
+                                            packetFailure.path("reasonCode").asText(),
+                                            packetFailure.path("nextAction").asText())));
+                completed.set(activities);
+                boolean complete =
+                    step05ActivityBatchComplete(materials.coverage(), activities.coverage());
+                return AnalysisRunOutput.step05Activities(
+                    state.sourceRunId(), state.readingMaterialCheckpoint(), checkpoint, complete);
+              });
+      LocalRepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store, coordinator);
+      AnalysisRunRequest batchRequest =
+          modelBatchRequest(
+              RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, state.sourceRunId())
+                  .request(),
+              artifactReference(configuration.policyRegistry().reference()));
+      AnalysisRunReference queued = queuedRun(store, agent, requestedRunId, batchRequest);
+      AnalysisRunReference finished =
+          agent.executeStep(
+              new AnalysisStepExecutionRequest(
+                  queued.runId(), AnalysisExecutionIntent.EXPLAIN_ACTIVITIES, null, null));
+      ActivityExplanationResult activities = completed.get();
+      if (activities == null) {
+        throw failure("ACTIVITY_EXPLANATION_RESULT_INVALID");
+      }
+      output.printf("sourceRunId=%s%n", state.sourceRunId().value());
+      output.printf("modelBatchId=%s%n", finished.runId().value());
+      output.printf("lifecycleState=%s%n", finished.lifecycleState());
+      output.printf("activityCheckpoint=%s%n", activities.checkpoint().moduleReceiptId().value());
+      long failedPackets =
+          activities.coverage().stream()
+              .filter(entry -> "NOT_ANALYZED".equals(entry.disposition()))
+              .count();
+      output.printf("notAnalyzedEntries=%d%n", failedPackets);
+      output.printf("selectedPacketCount=%d%n", selectedPacketIds.size());
+      output.printf(
+          "activityBatchResult=%s%n", step05ActivityBatchResultPath(modelJobs, finished.runId()));
+      reportableUnprocessedEntries(activities.coverage()).stream()
+          .forEach(
+              entry ->
+                  output.printf(
+                      "unprocessedEntry=%s reason=%s%n", entry.entryId(), entry.reasonCode()));
+      if (finished.lifecycleState() == AnalysisRunLifecycleState.FAILED) {
+        throw failure("ACTIVITY_BATCH_PARTIAL");
+      }
+    }
+  }
+
+  static List<String> retryablePacketIds(
+      List<CodeReadingMaterialSet.EntryCoverage> materialCoverage,
+      List<ActivityEntryCoverage> activityCoverage) {
+    Map<String, CodeReadingMaterialSet.EntryCoverage> sourceEntries = new LinkedHashMap<>();
+    for (CodeReadingMaterialSet.EntryCoverage entry : materialCoverage) {
+      if (sourceEntries.putIfAbsent(entry.entryId(), entry) != null) {
+        throw failure("ACTIVITY_RETRY_COVERAGE_INVALID");
+      }
+    }
+    java.util.Set<String> failed = new java.util.TreeSet<>();
+    for (ActivityEntryCoverage entry : activityCoverage) {
+      CodeReadingMaterialSet.EntryCoverage source = sourceEntries.remove(entry.entryId());
+      if (source == null) {
+        throw failure("ACTIVITY_RETRY_COVERAGE_INVALID");
+      }
+      if ("NOT_ANALYZED".equals(entry.disposition())
+          && !"NOT_SELECTED_FOR_ACTIVITY_BATCH".equals(entry.reasonCode())
+          && !"NOT_ANALYZED_EXECUTION_CAPACITY".equals(entry.reasonCode())) {
+        failed.addAll(source.packetIds());
+      }
+    }
+    if (!sourceEntries.isEmpty()) {
+      throw failure("ACTIVITY_RETRY_COVERAGE_INVALID");
+    }
+    return List.copyOf(failed);
+  }
+
+  private static Path step05ActivityBatchResultPath(
+      ModelJobsConfiguration modelJobs, AnalysisRunId batchId) {
+    return modelJobs
+        .journalDirectory()
+        .resolve(
+            "activity-batch-" + sha256(batchId.value().getBytes(StandardCharsets.UTF_8)) + ".json");
+  }
+
+  private static ObjectNode writeStep05ActivityBatchResult(
+      RepositoryRunConfiguration configuration,
+      ModelJobsConfiguration modelJobs,
+      RepositoryRunStateV4.SavedState state,
+      AnalysisRunId batchId,
+      CodeReadingMaterialSet materials,
+      ActivityExplanationResult activities,
+      Set<String> selectedPacketIds) {
+    ObjectNode result = JsonNodeFactory.instance.objectNode();
+    result.put("schemaVersion", "activity-batch-result-v1");
+    result.put("modelBatchId", batchId.value());
+    result.put("sourceRunId", state.sourceRunId().value());
+    result.set(
+        "readingMaterialCheckpoint",
+        RepositoryRunStateV4.checkpointJson(state.readingMaterialCheckpoint()));
+    result.set("activityCheckpoint", RepositoryRunStateV3.checkpointJson(activities.checkpoint()));
+    result.put("totalPacketCount", materials.packets().size());
+    result.put(
+        "selectedPacketCount",
+        selectedPacketIds.isEmpty() ? materials.packets().size() : selectedPacketIds.size());
+    ArrayNode failures = result.putArray("unprocessedEntries");
+    Map<String, ObjectNode> packetFailures = savedActivityPacketFailures(modelJobs, batchId);
+    Map<String, CodeReadingMaterialSet.EntryCoverage> sourceByEntry = new LinkedHashMap<>();
+    for (CodeReadingMaterialSet.EntryCoverage source : materials.coverage()) {
+      if (sourceByEntry.putIfAbsent(source.entryId(), source) != null) {
+        throw failure("ACTIVITY_BATCH_COVERAGE_INVALID");
+      }
+    }
+    int analyzed = 0;
+    for (ActivityEntryCoverage entry : activities.coverage()) {
+      CodeReadingMaterialSet.EntryCoverage source = sourceByEntry.remove(entry.entryId());
+      if (source == null) {
+        throw failure("ACTIVITY_BATCH_COVERAGE_INVALID");
+      }
+      if ("NOT_ANALYZED".equals(entry.disposition())) {
+        ObjectNode failed = failures.addObject();
+        failed.put("entryId", entry.entryId());
+        ArrayNode packetIds = failed.putArray("packetIds");
+        source.packetIds().stream().sorted().forEach(packetIds::add);
+        failed.put("reasonCode", entry.reasonCode());
+        failed.put("sourceStatus", source.status().name());
+        appendActivityFailureDetails(failed, source.packetIds(), packetFailures);
+      } else {
+        analyzed++;
+      }
+    }
+    if (!sourceByEntry.isEmpty()) {
+      throw failure("ACTIVITY_BATCH_COVERAGE_INVALID");
+    }
+    result.put("analyzedEntryCount", analyzed);
+    result.put("unprocessedEntryCount", failures.size());
+    writeIdempotentlyAtomically(
+        step05ActivityBatchResultPath(modelJobs, batchId),
+        configuration.canonicalJson().encodeCanonical(result).copyToByteArray(),
+        "ACTIVITY_BATCH_RESULT_DESTINATION_INVALID",
+        "ACTIVITY_BATCH_RESULT_CONFLICT",
+        "ACTIVITY_BATCH_RESULT_WRITE_FAILED");
+    return result;
+  }
+
+  static boolean step05ActivityBatchComplete(
+      List<CodeReadingMaterialSet.EntryCoverage> sourceCoverage,
+      List<ActivityEntryCoverage> activityCoverage) {
+    Map<String, ActivityEntryCoverage> byEntry = new LinkedHashMap<>();
+    for (ActivityEntryCoverage entry : activityCoverage) {
+      if (byEntry.putIfAbsent(entry.entryId(), entry) != null) {
+        throw failure("ACTIVITY_BATCH_COVERAGE_INVALID");
+      }
+    }
+    for (CodeReadingMaterialSet.EntryCoverage entry : sourceCoverage) {
+      if (entry.status() != CodeReadingMaterialSet.CoverageStatus.NOT_COLLECTED) {
+        ActivityEntryCoverage activity = byEntry.get(entry.entryId());
+        if (activity == null || "NOT_ANALYZED".equals(activity.disposition())) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  static List<ActivityEntryCoverage> reportableUnprocessedEntries(
+      List<ActivityEntryCoverage> coverage) {
+    return coverage.stream()
+        .filter(entry -> "NOT_ANALYZED".equals(entry.disposition()))
+        .filter(entry -> !"NOT_SELECTED_FOR_ACTIVITY_BATCH".equals(entry.reasonCode()))
+        .toList();
+  }
+
+  private static Map<String, ObjectNode> savedActivityPacketFailures(
+      ModelJobsConfiguration modelJobs, AnalysisRunId batchId) {
+    Map<String, ObjectNode> byPacket = new LinkedHashMap<>();
+    new PrivateModelJobResultStore(modelJobs.journalDirectory(), batchId, "activity")
+        .listTerminalFailures()
+        .forEach(
+            saved -> {
+              String packetId = saved.path("materialId").asText();
+              if (packetId.isBlank()
+                  || !"activity-job-failure-v1".equals(saved.path("schemaVersion").asText())
+                  || !"FAILED".equals(saved.path("status").asText())
+                  || byPacket.putIfAbsent(packetId, saved) != null) {
+                throw failure("ACTIVITY_BATCH_FAILURE_RECORD_INVALID");
+              }
+            });
+    return Map.copyOf(byPacket);
+  }
+
+  static void appendActivityFailureDetails(
+      ObjectNode failed, List<String> packetIds, Map<String, ObjectNode> packetFailures) {
+    ArrayNode details = failed.putArray("packetFailures");
+    packetIds.stream()
+        .sorted()
+        .map(packetFailures::get)
+        .filter(Objects::nonNull)
+        .forEach(details::add);
+  }
+
+  private static Set<String> selectedStep05Packets(
+      RepositoryRunConfiguration configuration,
+      RunStoreHandle store,
+      CanonicalModuleArtifactStore outputModules,
+      ModelJobsConfiguration modelJobs,
+      RepositoryRunStateV4.SavedState state,
+      CodeReadingMaterialSet materials,
+      AnalysisRunId reuseFrom,
+      AnalysisRunId requestedRunId,
+      AnalysisRunId retryFrom,
+      String packetId) {
+    if (retryFrom == null) {
+      return selectedInitialPackets(packetId);
+    }
+    validateStep05ReuseBatch(store, modelJobs, state, requestedRunId, retryFrom);
+    AnalysisRunOutput prior =
+        RunStoreBootstrap.reopenAnalysisRunOutput(store, retryFrom)
+            .orElseThrow(() -> failure("ACTIVITY_RETRY_SOURCE_OUTPUT_MISSING"));
+    if (!prior.hasActivityCheckpoint()
+        || !state.readingMaterialCheckpoint().equals(prior.readingMaterialCheckpoint())) {
+      throw failure("ACTIVITY_RETRY_MATERIALS_MISMATCH");
+    }
+    ActivityExplanationResult previous =
+        new ActivityExplanationCheckpointReader(outputModules).reopen(prior.activityCheckpoint());
+    List<ActivityEntryCoverage> reusableCoverage = null;
+    if (reuseFrom != null) {
+      validateStep05ReuseBatch(store, modelJobs, state, requestedRunId, reuseFrom);
+      AnalysisRunOutput reuseOutput =
+          RunStoreBootstrap.reopenAnalysisRunOutput(store, reuseFrom)
+              .orElseThrow(() -> failure("MODEL_REUSE_SOURCE_OUTPUT_MISSING"));
+      if (!reuseOutput.hasActivityCheckpoint()
+          || !state.readingMaterialCheckpoint().equals(reuseOutput.readingMaterialCheckpoint())) {
+        throw failure("MODEL_REUSE_MATERIALS_MISMATCH");
+      }
+      reusableCoverage =
+          new ActivityExplanationCheckpointReader(outputModules)
+              .reopen(reuseOutput.activityCheckpoint())
+              .coverage();
+    }
+    return retryAndReusePacketIds(
+        materials.coverage(), previous.coverage(), reusableCoverage, packetId);
+  }
+
+  static Set<String> selectedInitialPackets(String packetIds) {
+    if (packetIds == null) {
+      return Set.of();
+    }
+    java.util.Set<String> selected = new java.util.TreeSet<>();
+    for (String raw : packetIds.split(",", -1)) {
+      String packetId = raw.trim();
+      if (!packetId.startsWith("packet:")
+          || packetId.length() == "packet:".length()
+          || !selected.add(packetId)) {
+        throw failure("ACTIVITY_PACKET_SELECTION_INVALID");
+      }
+    }
+    return java.util.Collections.unmodifiableSet(selected);
+  }
+
+  static Set<String> retryAndReusePacketIds(
+      List<CodeReadingMaterialSet.EntryCoverage> sourceCoverage,
+      List<ActivityEntryCoverage> retryCoverage,
+      List<ActivityEntryCoverage> reuseCoverage,
+      String packetId) {
+    List<String> failed = retryablePacketIds(sourceCoverage, retryCoverage);
+    if (failed.isEmpty()) {
+      throw failure("ACTIVITY_RETRY_HAS_NO_FAILED_PACKETS");
+    }
+    if (packetId != null && !failed.contains(packetId)) {
+      throw failure("ACTIVITY_RETRY_PACKET_NOT_FAILED");
+    }
+    Set<String> selected = new java.util.TreeSet<>();
+    selected.addAll(packetId == null ? failed : List.of(packetId));
+    if (reuseCoverage != null) {
+      Map<String, ActivityEntryCoverage> byEntry = new LinkedHashMap<>();
+      Map<String, Boolean> packetReusable = new LinkedHashMap<>();
+      for (ActivityEntryCoverage entry : reuseCoverage) {
+        if (byEntry.putIfAbsent(entry.entryId(), entry) != null) {
+          throw failure("ACTIVITY_REUSE_COVERAGE_INVALID");
+        }
+      }
+      for (CodeReadingMaterialSet.EntryCoverage source : sourceCoverage) {
+        ActivityEntryCoverage status = byEntry.remove(source.entryId());
+        if (status == null) {
+          throw failure("ACTIVITY_REUSE_COVERAGE_INVALID");
+        }
+        boolean explained = !"NOT_ANALYZED".equals(status.disposition());
+        for (String sourcePacketId : source.packetIds()) {
+          packetReusable.merge(sourcePacketId, explained, (left, right) -> left && right);
+        }
+      }
+      if (!byEntry.isEmpty()) {
+        throw failure("ACTIVITY_REUSE_COVERAGE_INVALID");
+      }
+      packetReusable.forEach(
+          (sourcePacketId, reusable) -> {
+            if (reusable) {
+              selected.add(sourcePacketId);
+            }
+          });
+    }
+    return Set.copyOf(selected);
+  }
+
+  private static void verifyConfiguredStep05Source(
+      RepositoryRunConfiguration configuration,
+      RunStoreHandle store,
+      RepositoryRunStateV4.SavedState state) {
+    org.sourceanalysis.app.runtime.PersistedAnalysisRunRequest source =
+        RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, state.sourceRunId());
+    RegisteredSourceCapture capture =
+        new LocalGitSourceRegistry(configuration.captureWorkspace())
+            .reopen(source.request().sourceRegistrationId());
+    if (!source
+            .request()
+            .sourceRegistrationId()
+            .equals(capture.sourceRegistrationRef().artifactId())
+        || !configuration.repositoryIdentity().equals(capture.declaredRepositoryIdentity())
+        || !configuration.commitId().equals(capture.commitId())) {
+      throw failure("MATERIALS_STATE_SOURCE_MISMATCH");
+    }
+  }
+
   static void executeBusinessProcesses(
       RepositoryRunConfiguration configuration,
       AnalysisRunId activityModelBatchId,
@@ -509,6 +991,18 @@ final class SourceAnalysisExecution {
       AnalysisRunId requestedRunId,
       PrintWriter output) {
     ModelJobsConfiguration modelJobs = configuration.requireModelJobsForExecution();
+    if (RepositoryRunStateV4.SCHEMA_VERSION.equals(materialStateSchema(configuration))) {
+      executeStep05BusinessProcesses(
+          configuration,
+          modelJobs,
+          activityModelBatchId,
+          reuseFromModelBatchId,
+          catalogFromModelBatchId,
+          focusQuestion,
+          requestedRunId,
+          output);
+      return;
+    }
     RepositoryRunStateV3.SavedState materialState = loadV3State(configuration);
     try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
       CanonicalModuleArtifactStore inputModules = inputModuleArtifacts(configuration, store);
@@ -602,6 +1096,153 @@ final class SourceAnalysisExecution {
           "semanticDeliveryStatus=%s%n", result.publication().coverage().semanticDeliveryStatus());
       output.printf("businessProcessesFile=%s%n", document);
     }
+  }
+
+  private static void executeStep05BusinessProcesses(
+      RepositoryRunConfiguration configuration,
+      ModelJobsConfiguration modelJobs,
+      AnalysisRunId activityModelBatchId,
+      AnalysisRunId reuseFromModelBatchId,
+      AnalysisRunId catalogFromModelBatchId,
+      String focusQuestion,
+      AnalysisRunId requestedRunId,
+      PrintWriter output) {
+    if (catalogFromModelBatchId != null) {
+      throw failure("PROCESS_CATALOG_INPUT_REQUIRES_MATCHING_ACTIVITY_SOURCE");
+    }
+    RepositoryRunStateV4.SavedState state =
+        RepositoryRunStateV4.load(configuration.stateFile(), configuration.canonicalJson());
+    if (!state.materialProfile().equals(configuration.readingMaterialProfile())) {
+      throw failure("MATERIALS_STATE_CONFIGURATION_MISMATCH");
+    }
+    try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
+      CanonicalAnalysisStepArtifactStore inputSteps = inputStepArtifacts(configuration, store);
+      CanonicalModuleArtifactStore outputModules = moduleArtifacts(configuration, store);
+      CodeReadingMaterialSet materials =
+          RepositoryRunStateV4.reopen(
+              configuration.stateFile(), inputSteps, configuration.canonicalJson());
+      verifyConfiguredStep05Source(configuration, store, state);
+      java.util.concurrent.atomic.AtomicReference<BusinessProcessWorkflowResult> completed =
+          new java.util.concurrent.atomic.AtomicReference<>();
+      RepositoryAnalysisRunCoordinator coordinator =
+          RepositoryAnalysisRunCoordinator.configured(
+              request -> {
+                if (request.intent() != AnalysisExecutionIntent.DISCOVER_PROCESSES
+                    || !activityModelBatchId.equals(request.upstreamRunId())) {
+                  throw failure("ANALYSIS_EXECUTION_INTENT_INVALID");
+                }
+                validateStep05ReuseBatch(
+                    store, modelJobs, state, request.runId(), reuseFromModelBatchId);
+                ProcessDiscoveryRequest readingRequest =
+                    assembleStep05ProcessDiscoveryRequest(
+                        configuration,
+                        store,
+                        outputModules,
+                        inputSteps,
+                        state,
+                        materials,
+                        activityModelBatchId,
+                        request.runId(),
+                        focusQuestion);
+                validateProcessReuseActivity(
+                    modelJobs, readingRequest.activities().checkpoint(), reuseFromModelBatchId);
+                validateStep05ProcessReuseReadingInputs(
+                    configuration, modelJobs, reuseFromModelBatchId, readingRequest);
+                writeStep05ProcessModelJobExecutionConfiguration(
+                    configuration,
+                    modelJobs,
+                    state,
+                    readingRequest,
+                    request.runId(),
+                    reuseFromModelBatchId);
+                ModelJobExecutionConfiguration execution =
+                    modelJobExecutionConfiguration(
+                        modelJobs, request.runId(), reuseFromModelBatchId);
+                AnalysisRunRequest outputRequest =
+                    RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, request.runId())
+                        .request();
+                BusinessProcessWorkflowResult result =
+                    new PersistedBusinessProcessRunExecutor(
+                            outputModules,
+                            inputSteps,
+                            outputModules,
+                            artifactControls(outputRequest),
+                            execution,
+                            readingRequest.profile())
+                        .execute(readingRequest);
+                completed.set(result);
+                return AnalysisRunOutput.step05Processes(
+                    state.sourceRunId(),
+                    state.readingMaterialCheckpoint(),
+                    readingRequest.activities().checkpoint(),
+                    result.publication().checkpoint());
+              });
+      LocalRepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store, coordinator);
+      AnalysisRunRequest batchRequest =
+          modelBatchRequest(
+              RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, state.sourceRunId())
+                  .request(),
+              artifactReference(configuration.policyRegistry().reference()));
+      AnalysisRunReference queued = queuedRun(store, agent, requestedRunId, batchRequest);
+      AnalysisRunReference finished =
+          agent.executeStep(
+              new AnalysisStepExecutionRequest(
+                  queued.runId(),
+                  AnalysisExecutionIntent.DISCOVER_PROCESSES,
+                  activityModelBatchId,
+                  null));
+      BusinessProcessWorkflowResult result = completed.get();
+      if (result == null) {
+        throw failure("BUSINESS_PROCESS_RESULT_INVALID");
+      }
+      output.printf("sourceRunId=%s%n", state.sourceRunId().value());
+      output.printf("activityModelBatchId=%s%n", activityModelBatchId.value());
+      output.printf("modelBatchId=%s%n", finished.runId().value());
+      output.printf("lifecycleState=%s%n", finished.lifecycleState());
+      output.printf("businessProcessCount=%d%n", result.publication().catalog().processes().size());
+      output.printf(
+          "semanticDeliveryStatus=%s%n", result.publication().coverage().semanticDeliveryStatus());
+      output.printf(
+          "businessProcessesFile=%s%n", businessProcessesPath(configuration, finished.runId()));
+    }
+  }
+
+  static ProcessDiscoveryRequest assembleStep05ProcessDiscoveryRequest(
+      RepositoryRunConfiguration configuration,
+      RunStoreHandle store,
+      CanonicalModuleArtifactStore activityModules,
+      CanonicalAnalysisStepArtifactStore inputSteps,
+      RepositoryRunStateV4.SavedState materialState,
+      CodeReadingMaterialSet materials,
+      AnalysisRunId activityModelBatchId,
+      AnalysisRunId outputRunId,
+      String focusQuestion) {
+    AnalysisRunOutput activityOutput =
+        RunStoreBootstrap.reopenAnalysisRunOutput(store, activityModelBatchId)
+            .orElseThrow(() -> failure("ACTIVITY_MODEL_BATCH_OUTPUT_MISSING"));
+    if (!activityOutput.hasCompletedActivities()
+        || !materialState
+            .readingMaterialCheckpoint()
+            .equals(activityOutput.readingMaterialCheckpoint())
+        || !materialState.sourceRunId().equals(activityOutput.sourceRunId())) {
+      throw failure("ACTIVITY_MODEL_BATCH_INPUT_MISMATCH");
+    }
+    ActivityExplanationResult activities =
+        new ActivityExplanationCheckpointReader(activityModules)
+            .reopen(activityOutput.activityCheckpoint());
+    PersistedVerifiedSourceTextReader sourceTextReader =
+        new PersistedVerifiedSourceTextReader(
+            inputSteps, new LocalGitSourceRegistry(configuration.captureWorkspace()));
+    return new ProcessDiscoveryRequest(
+        activities,
+        materials,
+        materialState.readingMaterialCheckpoint(),
+        configuration.requireProcessDiscoveryProfile(),
+        outputRunId,
+        materials.header().sourceInventory(),
+        sourceTextReader,
+        null,
+        focusQuestion);
   }
 
   /**
@@ -777,6 +1418,28 @@ final class SourceAnalysisExecution {
     }
   }
 
+  private static void validateStep05ProcessReuseReadingInputs(
+      RepositoryRunConfiguration configuration,
+      ModelJobsConfiguration modelJobs,
+      AnalysisRunId reuseFromModelBatchId,
+      ProcessDiscoveryRequest readingRequest) {
+    if (reuseFromModelBatchId == null) {
+      return;
+    }
+    ObjectNode execution = readModelJobExecutionConfiguration(modelJobs, reuseFromModelBatchId);
+    if (!STEP05_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA.equals(
+            stateText(execution, "schemaVersion"))
+        || !"BUSINESS_PROCESSES".equals(stateText(stateObject(execution, "executionScope"), "mode"))
+        || !sourceInventoryReferenceJson(readingRequest.sourceInventoryReference())
+            .equals(execution.path("sourceInventoryReference"))
+        || !savedCatalogInputLineageOrNull(configuration, readingRequest.savedCatalogInput())
+            .equals(execution.path("savedCatalogInput"))
+        || !focusQuestionNode(readingRequest.focusQuestion())
+            .equals(execution.path("focusQuestion"))) {
+      throw failure("MODEL_REUSE_READING_INPUT_MISMATCH");
+    }
+  }
+
   private static JsonNode savedCatalogInputLineageOrNull(
       RepositoryRunConfiguration configuration, ImmutableBytes savedCatalogInput) {
     return savedCatalogInput == null
@@ -815,7 +1478,7 @@ final class SourceAnalysisExecution {
       PrintWriter output) {
     try (RunStoreHandle store = RunStoreBootstrap.open(configuration.runStore())) {
       if (artifactFormat == null) {
-        CanonicalModuleArtifactStore modules = inputModuleArtifacts(configuration, store);
+        CanonicalModuleArtifactStore modules = moduleArtifacts(configuration, store);
         CanonicalAnalysisStepArtifactStore steps = inputStepArtifacts(configuration, store);
         LocalRepositoryAnalysisAgent agent =
             new LocalRepositoryAnalysisAgent(
@@ -944,7 +1607,8 @@ final class SourceAnalysisExecution {
         modelJobs.routing(),
         modelJobs.journalDirectory(),
         runId,
-        reuseFromModelBatchId);
+        reuseFromModelBatchId,
+        modelJobs.activityRetry());
   }
 
   static ModelJobProviderBinding providerBinding(
@@ -972,7 +1636,8 @@ final class SourceAnalysisExecution {
         configuration.quotaScope(),
         configuration.maxConcurrentJobs(),
         clients,
-        expected);
+        expected,
+        configuration.capacity());
   }
 
   static StructuredModelProvider journaledProvider(
@@ -1161,6 +1826,148 @@ final class SourceAnalysisExecution {
                     stateObject(execution, "materialsCheckpoint")))) {
       throw failure("MODEL_REUSE_MATERIALS_MISMATCH");
     }
+  }
+
+  private static void validateStep05ReuseBatch(
+      RunStoreHandle store,
+      ModelJobsConfiguration modelJobs,
+      RepositoryRunStateV4.SavedState materials,
+      AnalysisRunId modelBatchId,
+      AnalysisRunId reuseFromModelBatchId) {
+    if (reuseFromModelBatchId == null) {
+      return;
+    }
+    if (reuseFromModelBatchId.equals(modelBatchId)
+        || reuseFromModelBatchId.equals(materials.sourceRunId())) {
+      throw failure("MODEL_REUSE_SOURCE_INVALID");
+    }
+    AnalysisRunReference source = RunStoreBootstrap.reopenAnalysisRun(store, reuseFromModelBatchId);
+    if (source.lifecycleState() == AnalysisRunLifecycleState.QUEUED
+        || source.lifecycleState() == AnalysisRunLifecycleState.RUNNING) {
+      throw failure("MODEL_REUSE_SOURCE_NOT_STOPPED");
+    }
+    ObjectNode prior = readModelJobExecutionConfiguration(modelJobs, reuseFromModelBatchId);
+    if (!STEP05_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA.equals(stateText(prior, "schemaVersion"))
+        || !materials.sourceRunId().value().equals(stateText(prior, "sourceRunId"))
+        || !materials
+            .readingMaterialCheckpoint()
+            .equals(
+                RepositoryRunStateV4.loadCheckpoint(
+                    stateObject(prior, "readingMaterialCheckpoint")))) {
+      throw failure("MODEL_REUSE_MATERIALS_MISMATCH");
+    }
+  }
+
+  private static void writeStep05ModelJobExecutionConfiguration(
+      RepositoryRunConfiguration configuration,
+      ModelJobsConfiguration modelJobs,
+      RepositoryRunStateV4.SavedState materials,
+      AnalysisRunId modelBatchId,
+      AnalysisRunId reuseFromModelBatchId,
+      AnalysisRunId retryFailedFromModelBatchId,
+      Set<String> selectedPacketIds) {
+    ObjectNode record = JsonNodeFactory.instance.objectNode();
+    record.put("schemaVersion", STEP05_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA);
+    record.put("modelBatchId", modelBatchId.value());
+    record.put("sourceRunId", materials.sourceRunId().value());
+    record.set(
+        "readingMaterialCheckpoint",
+        RepositoryRunStateV4.checkpointJson(materials.readingMaterialCheckpoint()));
+    record.put("materialBasisSha256", materials.materialBasisSha256());
+    if (reuseFromModelBatchId == null) {
+      record.putNull("reuseFromModelBatchId");
+    } else {
+      record.put("reuseFromModelBatchId", reuseFromModelBatchId.value());
+    }
+    if (retryFailedFromModelBatchId == null) {
+      record.putNull("retryFailedFromModelBatchId");
+    } else {
+      record.put("retryFailedFromModelBatchId", retryFailedFromModelBatchId.value());
+    }
+    ObjectNode scope = record.putObject("executionScope");
+    scope.put(
+        "mode",
+        selectedPacketIds.isEmpty() ? "ALL_CODE_READING_PACKETS" : "SELECTED_CODE_READING_PACKETS");
+    scope.put("maxMaterialsToStart", configuration.maxMaterialsToStart());
+    ArrayNode packetIds = scope.putArray("packetIds");
+    selectedPacketIds.stream().sorted().forEach(packetIds::add);
+    record.put("modelJobsSha256", modelJobs.canonicalSha256());
+    record.set("modelJobs", modelJobs.normalizedNonSecretDocument());
+    Path destination =
+        modelJobs
+            .journalDirectory()
+            .resolve(
+                "model-job-execution-"
+                    + sha256(modelBatchId.value().getBytes(StandardCharsets.UTF_8))
+                    + ".json");
+    writeIdempotentlyAtomically(
+        destination,
+        configuration.canonicalJson().encodeCanonical(record).copyToByteArray(),
+        "MODEL_EXECUTION_CONFIGURATION_DESTINATION_INVALID",
+        "MODEL_EXECUTION_CONFIGURATION_CONFLICT",
+        "MODEL_EXECUTION_CONFIGURATION_WRITE_FAILED");
+  }
+
+  private static void writeStep05ProcessModelJobExecutionConfiguration(
+      RepositoryRunConfiguration configuration,
+      ModelJobsConfiguration modelJobs,
+      RepositoryRunStateV4.SavedState materials,
+      ProcessDiscoveryRequest readingRequest,
+      AnalysisRunId modelBatchId,
+      AnalysisRunId reuseFromModelBatchId) {
+    if (!readingRequest.usesCodeReadingMaterials()
+        || !modelBatchId.equals(readingRequest.outputRunId())
+        || !materials
+            .readingMaterialCheckpoint()
+            .equals(readingRequest.codeReadingMaterialCheckpoint())
+        || readingRequest.sourceInventoryReference() == null
+        || readingRequest.sourceTextReader() == null) {
+      throw failure("MODEL_EXECUTION_CONFIGURATION_READING_INPUT_INVALID");
+    }
+    ObjectNode record = JsonNodeFactory.instance.objectNode();
+    record.put("schemaVersion", STEP05_MODEL_JOB_EXECUTION_CONFIGURATION_SCHEMA);
+    record.put("modelBatchId", modelBatchId.value());
+    record.put("sourceRunId", materials.sourceRunId().value());
+    record.set(
+        "readingMaterialCheckpoint",
+        RepositoryRunStateV4.checkpointJson(materials.readingMaterialCheckpoint()));
+    record.put("materialBasisSha256", materials.materialBasisSha256());
+    record.set(
+        "activityCheckpoint",
+        RepositoryRunStateV3.checkpointJson(readingRequest.activities().checkpoint()));
+    if (reuseFromModelBatchId == null) {
+      record.putNull("reuseFromModelBatchId");
+    } else {
+      record.put("reuseFromModelBatchId", reuseFromModelBatchId.value());
+    }
+    ObjectNode scope = record.putObject("executionScope");
+    scope.put("mode", "BUSINESS_PROCESSES");
+    scope.putArray("packetIds");
+    scope.put("maxMaterialsToStart", Integer.MAX_VALUE);
+    record.set(
+        "sourceInventoryReference",
+        sourceInventoryReferenceJson(readingRequest.sourceInventoryReference()));
+    record.putNull("savedCatalogInput");
+    if (readingRequest.focusQuestion() == null) {
+      record.putNull("focusQuestion");
+    } else {
+      record.put("focusQuestion", readingRequest.focusQuestion());
+    }
+    record.put("modelJobsSha256", modelJobs.canonicalSha256());
+    record.set("modelJobs", modelJobs.normalizedNonSecretDocument());
+    Path destination =
+        modelJobs
+            .journalDirectory()
+            .resolve(
+                "model-job-execution-"
+                    + sha256(modelBatchId.value().getBytes(StandardCharsets.UTF_8))
+                    + ".json");
+    writeIdempotentlyAtomically(
+        destination,
+        configuration.canonicalJson().encodeCanonical(record).copyToByteArray(),
+        "MODEL_EXECUTION_CONFIGURATION_DESTINATION_INVALID",
+        "MODEL_EXECUTION_CONFIGURATION_CONFLICT",
+        "MODEL_EXECUTION_CONFIGURATION_WRITE_FAILED");
   }
 
   static BusinessMaterialBuildResult exactSample(
@@ -1612,9 +2419,11 @@ final class SourceAnalysisExecution {
       Path config,
       String mode,
       String materialId,
+      String packetId,
       Path outputState,
       AnalysisRunId activityModelBatchId,
       AnalysisRunId reuseFromModelBatchId,
+      AnalysisRunId retryFailedFromModelBatchId,
       AnalysisRunId catalogFromModelBatchId,
       String focusQuestion,
       AnalysisRunId runId,
@@ -1633,9 +2442,11 @@ final class SourceAnalysisExecution {
       Path config = argumentPath(arguments[1]);
       String mode = arguments[3];
       String materialId = null;
+      String packetId = null;
       Path outputState = null;
       AnalysisRunId activityModelBatchId = null;
       AnalysisRunId reuseFromModelBatchId = null;
+      AnalysisRunId retryFailedFromModelBatchId = null;
       AnalysisRunId catalogFromModelBatchId = null;
       String focusQuestion = null;
       AnalysisRunId runId = null;
@@ -1655,9 +2466,12 @@ final class SourceAnalysisExecution {
         }
         switch (option) {
           case "--material-id" -> materialId = value;
+          case "--packet-id" -> packetId = value;
           case "--output-state" -> outputState = argumentPath(value);
           case "--activity-model-batch" -> activityModelBatchId = argumentRunId(value);
           case "--reuse-from-model-batch" -> reuseFromModelBatchId = argumentRunId(value);
+          case "--retry-failed-from-model-batch" ->
+              retryFailedFromModelBatchId = argumentRunId(value);
           case "--catalog-from-model-batch" -> catalogFromModelBatchId = argumentRunId(value);
           case "--focus-question" -> focusQuestion = value;
           case "--run" -> runId = argumentRunId(value);
@@ -1698,9 +2512,11 @@ final class SourceAnalysisExecution {
               config,
               mode,
               materialId,
+              packetId,
               outputState,
               activityModelBatchId,
               reuseFromModelBatchId,
+              retryFailedFromModelBatchId,
               catalogFromModelBatchId,
               focusQuestion,
               runId,
@@ -1714,6 +2530,10 @@ final class SourceAnalysisExecution {
     }
 
     private static void validateMode(Arguments arguments, int argumentCount) {
+      if (!MODE_ACTIVITIES.equals(arguments.mode())
+          && (arguments.packetId() != null || arguments.retryFailedFromModelBatchId() != null)) {
+        throw failure("ARGUMENTS_INVALID");
+      }
       if (MODE_MATERIALS_ONLY.equals(arguments.mode())
           && ((argumentCount != 4 && argumentCount != 6)
               || arguments.materialId() != null

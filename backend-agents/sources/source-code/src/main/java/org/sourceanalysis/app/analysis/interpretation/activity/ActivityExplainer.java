@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -17,6 +18,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
+import org.sourceanalysis.app.adapter.provider.StructuredModelProviderFailure;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
@@ -41,6 +43,7 @@ public final class ActivityExplainer {
 
   private static final String DRAFT_KIND = "ACTIVITY_DRAFT";
   private static final String REVIEW_KIND = "ACTIVITY_REVIEW";
+  private static final int MAX_PRIVATE_INVALID_RESPONSE_BYTES = 8 * 1_048_576;
   private static final int DEFAULT_MAX_CONCURRENT_JOBS = 4;
   private static final String SINGLE_PROVIDER_BINDING = "single-provider";
   private static final Set<String> DRAFT_TOP_LEVEL_FIELDS = Set.of("activities");
@@ -91,8 +94,10 @@ public final class ActivityExplainer {
   private final ActivityJobCompletionSink completionSink;
   private final List<ModelJobProviderBinding> providerRoute;
   private final ActivityJobPrivateResultStore durableResultStore;
+  private final PrivateModelJobResultStore stageResultStore;
   private final PrivateModelJobResultStore reuseResultStore;
   private final AnalysisRunId reuseFromModelBatchId;
+  private final ActivityRetryProfile retryProfile;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
 
   public ActivityExplainer(StructuredModelProvider provider) {
@@ -116,6 +121,7 @@ public final class ActivityExplainer {
                 null)),
         null,
         null,
+        null,
         null);
   }
 
@@ -136,6 +142,7 @@ public final class ActivityExplainer {
                 DEFAULT_MAX_CONCURRENT_JOBS,
                 provider,
                 null)),
+        null,
         null,
         null,
         null);
@@ -171,8 +178,11 @@ public final class ActivityExplainer {
         durableResultStore,
         List.of(providerBinding),
         durableResultStore,
+        new PrivateModelJobResultStore(
+            configuration.journalDirectory(), configuration.runId(), "activity"),
         null,
-        null);
+        null,
+        configuration.retryProfile());
   }
 
   /** Creates the multi-Provider Activity seam from one validated run execution configuration. */
@@ -206,8 +216,11 @@ public final class ActivityExplainer {
         durableResultStore,
         route,
         durableResultStore,
+        new PrivateModelJobResultStore(
+            configuration.journalDirectory(), configuration.runId(), "activity"),
         reuseResultStore,
-        configuration.reuseFromModelBatchId());
+        configuration.reuseFromModelBatchId(),
+        configuration.activityRetry());
   }
 
   private ActivityExplainer(
@@ -217,16 +230,43 @@ public final class ActivityExplainer {
       ActivityJobCompletionSink completionSink,
       List<ModelJobProviderBinding> providerRoute,
       ActivityJobPrivateResultStore durableResultStore,
+      PrivateModelJobResultStore stageResultStore,
       PrivateModelJobResultStore reuseResultStore,
       AnalysisRunId reuseFromModelBatchId) {
+    this(
+        checkpointStore,
+        outputRunId,
+        jobCoordinator,
+        completionSink,
+        providerRoute,
+        durableResultStore,
+        stageResultStore,
+        reuseResultStore,
+        reuseFromModelBatchId,
+        ActivityRetryProfile.defaults());
+  }
+
+  private ActivityExplainer(
+      CanonicalModuleArtifactStore checkpointStore,
+      AnalysisRunId outputRunId,
+      ActivityJobCoordinator jobCoordinator,
+      ActivityJobCompletionSink completionSink,
+      List<ModelJobProviderBinding> providerRoute,
+      ActivityJobPrivateResultStore durableResultStore,
+      PrivateModelJobResultStore stageResultStore,
+      PrivateModelJobResultStore reuseResultStore,
+      AnalysisRunId reuseFromModelBatchId,
+      ActivityRetryProfile retryProfile) {
     this.checkpointStore = checkpointStore;
     this.outputRunId = outputRunId;
     this.jobCoordinator = Objects.requireNonNull(jobCoordinator, "activity job coordinator");
     this.completionSink = Objects.requireNonNull(completionSink, "activity job completion sink");
     this.providerRoute = List.copyOf(providerRoute);
     this.durableResultStore = durableResultStore;
+    this.stageResultStore = stageResultStore;
     this.reuseResultStore = reuseResultStore;
     this.reuseFromModelBatchId = reuseFromModelBatchId;
+    this.retryProfile = Objects.requireNonNull(retryProfile, "activity retry profile");
     if (this.providerRoute.isEmpty()) {
       throw new IllegalArgumentException("activity job provider route is required");
     }
@@ -263,19 +303,19 @@ public final class ActivityExplainer {
     List<ActivityJob> jobs = new ArrayList<>();
     List<CompletedActivityJob> reusedJobs = new ArrayList<>();
     for (BusinessMaterial material : orderedMaterials) {
-      JsonNode cleanPacket = cleanPacket(material);
-      ImmutableBytes cleanBytes = canonicalJson.encodeCanonical(cleanPacket);
+      ActivityModelMaterial modelMaterial = legacyMaterial(material);
+      ImmutableBytes cleanBytes = modelMaterial.cleanInput();
       if (cleanBytes.size() > request.profile().maxModelInputBytes()) {
-        coverage.addAll(notAnalyzed(material, "NOT_ANALYZED_BUDGET"));
+        coverage.addAll(notAnalyzed(modelMaterial, "NOT_ANALYZED_BUDGET"));
         continue;
       }
-      String capacityFailure = preflightFailure(cleanBytes, material, request.profile());
+      String capacityFailure = preflightFailure(cleanBytes, modelMaterial, request.profile());
       if (capacityFailure != null) {
-        coverage.addAll(notAnalyzed(material, capacityFailure));
+        coverage.addAll(notAnalyzed(modelMaterial, capacityFailure));
         continue;
       }
       if (startedMaterials >= request.maxMaterialsToStart()) {
-        coverage.addAll(notAnalyzed(material, "NOT_ANALYZED_EXECUTION_CAPACITY"));
+        coverage.addAll(notAnalyzed(modelMaterial, "NOT_ANALYZED_EXECUTION_CAPACITY"));
         continue;
       }
       startedMaterials++;
@@ -286,7 +326,7 @@ public final class ActivityExplainer {
               .forJobOrdinal(jobOrdinal / providerRoute.size());
       ActivityJobIdentity identity =
           jobIdentity(
-              material,
+              modelMaterial,
               cleanBytes,
               request.profile(),
               providerBinding.key(),
@@ -294,17 +334,18 @@ public final class ActivityExplainer {
               providerBinding.expectedRuntimeIdentity());
       ActivityJob job =
           new ActivityJob(
-              material.materialId(),
+              modelMaterial.materialId(),
               providerBinding,
               identity,
+              modelMaterial.stagedExecution(),
               () ->
                   explainMaterial(
-                      material,
-                      canonicalJson.encodeCanonical(cleanPacket(material)),
+                      modelMaterial,
+                      modelMaterial.cleanInput(),
                       request.profile(),
                       identity,
                       providerBinding));
-      CompletedActivityJob reused = reopenReusable(job, material, request.profile());
+      CompletedActivityJob reused = reopenReusable(job, modelMaterial, request.profile());
       if (reused == null) {
         jobs.add(job);
       } else {
@@ -354,20 +395,334 @@ public final class ActivityExplainer {
                 result.unexplainedActivityEntries()));
   }
 
+  /** Produces reviewed activities directly from verified Step05 reading materials. */
+  public ActivityExplanationResult explain(ExplainCodeReadingMaterialsRequest request) {
+    Objects.requireNonNull(request, "explain code reading materials request");
+    ActivityMaterialProjector projector = new ActivityMaterialProjector();
+    List<String> stablePacketOrder =
+        request.materials().packets().stream()
+            .map(org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet.Packet::packetId)
+            .sorted()
+            .toList();
+    List<ActivityModelMaterial> orderedMaterials =
+        request.materials().packets().stream()
+            .filter(
+                packet ->
+                    request.selectedPacketIds().isEmpty()
+                        || request.selectedPacketIds().contains(packet.packetId()))
+            .sorted(
+                Comparator.comparing(
+                    org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet.Packet
+                        ::packetId))
+            .map(
+                packet ->
+                    projectedMaterial(
+                        projector.materialize(projector.project(packet, request.profile()))))
+            .toList();
+
+    List<ReviewedActivity> reviewed = new ArrayList<>();
+    List<ActivityEntryCoverage> coverage = new ArrayList<>();
+    List<UnexplainedActivityEntry> unexplained = new ArrayList<>();
+    request.materials().coverage().stream()
+        .filter(
+            entry ->
+                entry.status()
+                    == org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet
+                        .CoverageStatus.NOT_COLLECTED)
+        .sorted(
+            Comparator.comparing(
+                org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet.EntryCoverage
+                    ::entryId))
+        .forEach(
+            entry ->
+                coverage.add(
+                    new ActivityEntryCoverage(
+                        entry.entryId(),
+                        "NOT_ANALYZED",
+                        List.of(),
+                        entry.limitations().isEmpty()
+                            ? "CODE_READING_MATERIAL_NOT_COLLECTED"
+                            : entry.limitations().get(0))));
+    if (!request.selectedPacketIds().isEmpty()) {
+      request.materials().coverage().stream()
+          .filter(
+              entry ->
+                  entry.status()
+                      != org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet
+                          .CoverageStatus.NOT_COLLECTED)
+          .filter(
+              entry -> entry.packetIds().stream().noneMatch(request.selectedPacketIds()::contains))
+          .forEach(
+              entry ->
+                  coverage.add(
+                      new ActivityEntryCoverage(
+                          entry.entryId(),
+                          "NOT_ANALYZED",
+                          List.of(),
+                          "NOT_SELECTED_FOR_ACTIVITY_BATCH")));
+    }
+
+    int startedMaterials = 0;
+    List<ActivityJob> jobs = new ArrayList<>();
+    List<CompletedActivityJob> reusedJobs = new ArrayList<>();
+    for (ActivityModelMaterial material : orderedMaterials) {
+      ImmutableBytes cleanBytes = material.cleanInput();
+      if (startedMaterials >= request.maxMaterialsToStart()) {
+        coverage.addAll(notAnalyzed(material, "NOT_ANALYZED_EXECUTION_CAPACITY"));
+        continue;
+      }
+      startedMaterials++;
+      int jobOrdinal = java.util.Collections.binarySearch(stablePacketOrder, material.materialId());
+      if (jobOrdinal < 0) {
+        throw new ActivityExplanationException("ACTIVITY_PACKET_ORDINAL_MISSING");
+      }
+      ModelJobProviderBinding providerBinding =
+          providerRoute
+              .get(jobOrdinal % providerRoute.size())
+              .forJobOrdinal(jobOrdinal / providerRoute.size());
+      ActivityJobIdentity identity =
+          jobIdentity(
+              material,
+              cleanBytes,
+              request.profile(),
+              providerBinding.key(),
+              providerBinding.quotaScope(),
+              providerBinding.expectedRuntimeIdentity());
+      if (!ActivityReadingProfile.fitsDraftAndMaximumReview(
+          cleanBytes.size(),
+          request.profile().maxModelInputBytes(),
+          request.profile().maxModelOutputBytes())) {
+        org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet.Packet sourcePacket =
+            request.materials().packets().stream()
+                .filter(packet -> packet.packetId().equals(material.materialId()))
+                .findFirst()
+                .orElseThrow(
+                    () -> new ActivityExplanationException("ACTIVITY_CODE_PACKET_MISSING"));
+        ActivityJob oversizedJob =
+            new ActivityJob(
+                material.materialId(),
+                providerBinding,
+                identity,
+                true,
+                true,
+                () ->
+                    explainOversizedPacket(
+                        projector,
+                        sourcePacket,
+                        material,
+                        request.profile(),
+                        providerBinding,
+                        identity));
+        CompletedActivityJob reused = reopenReusable(oversizedJob, material, request.profile());
+        if (reused == null) {
+          jobs.add(oversizedJob);
+        } else {
+          reusedJobs.add(reused);
+          if (durableResultStore != null) {
+            durableResultStore.completeReused(reused, reuseFromModelBatchId);
+          }
+        }
+        continue;
+      }
+      String capacityFailure = preflightFailure(cleanBytes, material, request.profile());
+      if (capacityFailure != null) {
+        coverage.addAll(notAnalyzed(material, capacityFailure));
+        continue;
+      }
+      ActivityJob job =
+          new ActivityJob(
+              material.materialId(),
+              providerBinding,
+              identity,
+              material.stagedExecution(),
+              () ->
+                  explainMaterial(
+                      material, cleanBytes, request.profile(), identity, providerBinding));
+      CompletedActivityJob reused = reopenReusable(job, material, request.profile());
+      if (reused == null) {
+        jobs.add(job);
+      } else {
+        reusedJobs.add(reused);
+        if (durableResultStore != null) {
+          durableResultStore.completeReused(reused, reuseFromModelBatchId);
+        }
+      }
+    }
+
+    ActivityJobBatchOutcome batchOutcome = jobCoordinator.executeIsolated(jobs, completionSink);
+    List<CompletedActivityJob> completedJobs = new ArrayList<>(reusedJobs);
+    completedJobs.addAll(batchOutcome.completed());
+    completedJobs =
+        completedJobs.stream()
+            .sorted(Comparator.comparing(completed -> completed.job().materialId()))
+            .toList();
+    if (completedJobs.size() + batchOutcome.failed().size() != jobs.size() + reusedJobs.size()) {
+      throw new ActivityExplanationException("ACTIVITY_JOB_COORDINATION_INCOMPLETE");
+    }
+    Map<String, ActivityModelMaterial> byPacket =
+        orderedMaterials.stream()
+            .collect(Collectors.toMap(ActivityModelMaterial::materialId, value -> value));
+    for (FailedActivityJob failure : batchOutcome.failed()) {
+      ActivityModelMaterial failedMaterial = byPacket.get(failure.job().materialId());
+      if (failedMaterial == null) {
+        throw new ActivityExplanationException("ACTIVITY_JOB_RESULT_MATERIAL_MISMATCH");
+      }
+      coverage.addAll(notAnalyzed(failedMaterial, failure.reasonCode()));
+    }
+    for (CompletedActivityJob completedJob : completedJobs) {
+      ActivityJobResult completed = completedJob.result();
+      reviewed.addAll(completed.reviewedActivities());
+      coverage.addAll(completed.coverage());
+      unexplained.addAll(completed.unexplainedEntries());
+    }
+    coverage.sort(Comparator.comparing(ActivityEntryCoverage::entryId));
+    if (coverage.size() != request.materials().coverage().size()) {
+      throw new ActivityExplanationException("ACTIVITY_COVERAGE_INPUT_INVALID");
+    }
+    return new ActivityExplanationResult(reviewed, coverage, unexplained, null);
+  }
+
+  private ActivityJobResult explainOversizedPacket(
+      ActivityMaterialProjector projector,
+      org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet.Packet sourcePacket,
+      ActivityModelMaterial material,
+      ActivityExplanationProfile profile,
+      ModelJobProviderBinding binding,
+      ActivityJobIdentity identity) {
+    ActivityMaterialView view = projector.project(sourcePacket, profile);
+    ActivityReadingCoordinator reader =
+        new ActivityReadingCoordinator(
+            binding.provider(),
+            retryProfile,
+            stageResultStore,
+            identity.jobKey(),
+            binding.capacity());
+    ActivityReadingPlan readingPlan;
+    try {
+      readingPlan =
+          reader.coordinate(
+              view,
+              new ActivityReadingProfile(
+                  profile.maxModelInputBytes(), profile.maxModelOutputBytes(), 128, 4, 32));
+    } catch (RuntimeException failedReading) {
+      throw new ActivityStageFailure(
+          failedReading.getMessage(),
+          failedReading,
+          identity.jobKey(),
+          null,
+          "READING_PLAN",
+          reader.attemptsUsedAtFailure(),
+          retryProfile.maxAttempts("READING_PLAN"));
+    }
+    if (stageResultStore != null) {
+      stageResultStore.writeDecision(identity.jobKey(), readingPlan.toPrivateRecord());
+    }
+    ActivityExplanationResult scoped = explain(readingPlan, profile, binding);
+    ModelRuntimeIdentityV1 identityForRecord = binding.expectedRuntimeIdentity();
+    if (identityForRecord == null) {
+      if (durableResultStore != null) {
+        throw new ActivityExplanationException("ACTIVITY_JOB_RUNTIME_IDENTITY_MISSING");
+      }
+      identityForRecord =
+          new ModelRuntimeIdentityV1("direct", "unbound-provider", "none", "read-only");
+    }
+    return new ActivityJobResult(
+        material.materialId(),
+        scoped.reviewedActivities(),
+        scoped.coverage(),
+        scoped.unexplainedActivityEntries(),
+        identityForRecord,
+        JsonNodeFactory.instance.objectNode(),
+        JsonNodeFactory.instance.objectNode());
+  }
+
+  /** Reviews each complete reading scope without treating one scope as the whole entry. */
+  public ActivityExplanationResult explain(
+      ActivityReadingPlan readingPlan, ActivityExplanationProfile profile) {
+    return explain(readingPlan, profile, providerRoute.get(0).forJobOrdinal(0));
+  }
+
+  private ActivityExplanationResult explain(
+      ActivityReadingPlan readingPlan,
+      ActivityExplanationProfile profile,
+      ModelJobProviderBinding binding) {
+    Objects.requireNonNull(readingPlan, "activity reading plan");
+    Objects.requireNonNull(profile, "activity explanation profile");
+    Objects.requireNonNull(binding, "activity model binding");
+    List<ReviewedActivity> reviewed = new ArrayList<>();
+    List<UnexplainedActivityEntry> unexplained = new ArrayList<>();
+    for (ActivityReadingPlan.Slice slice : readingPlan.slices()) {
+      ActivityModelMaterial material =
+          projectedMaterial(slice.readingPacket(), slice.sliceKey(), slice.scope());
+      ImmutableBytes input = material.cleanInput();
+      if (input.size() > profile.maxModelInputBytes()) {
+        throw new ActivityExplanationException("ACTIVITY_SLICE_INPUT_CAPACITY_EXCEEDED");
+      }
+      String capacityFailure = preflightFailure(input, material, profile);
+      if (capacityFailure != null) {
+        throw new ActivityExplanationException(capacityFailure);
+      }
+      ActivityJobIdentity identity =
+          jobIdentity(
+              material,
+              input,
+              profile,
+              binding.key(),
+              binding.quotaScope(),
+              binding.expectedRuntimeIdentity());
+      ActivityJobResult result = explainMaterial(material, input, profile, identity, binding);
+      ActivityJob job =
+          new ActivityJob(
+              material.materialId(), binding, identity, material.stagedExecution(), () -> result);
+      completionSink.complete(new CompletedActivityJob(job, result));
+      reviewed.addAll(result.reviewedActivities());
+      unexplained.addAll(result.unexplainedEntries());
+    }
+    ObjectNode record = readingPlan.toPrivateRecord();
+    boolean incompleteReading =
+        !readingPlan.unreadUnitKeys().isEmpty()
+            || record.path("remainingNavigationPages").asInt() > 0
+            || !record.path("unknowns").isEmpty()
+            || readingPlan.materialView().packet().unselectedUnits().size() > 0
+            || !readingPlan.materialView().packet().limitations().isEmpty();
+    List<ActivityEntryCoverage> coverage = new ArrayList<>();
+    readingPlan.materialView().entryKeysById().entrySet().stream()
+        .sorted(Map.Entry.comparingByKey())
+        .forEach(
+            entry -> {
+              String entryId = entry.getKey();
+              List<String> activityIds =
+                  reviewed.stream()
+                      .filter(activity -> activity.entryIds().contains(entryId))
+                      .map(ReviewedActivity::activityId)
+                      .distinct()
+                      .sorted()
+                      .toList();
+              if (activityIds.isEmpty()) {
+                coverage.add(
+                    new ActivityEntryCoverage(
+                        entryId, "NOT_ANALYZED", List.of(), "ACTIVITY_READING_INCOMPLETE"));
+              } else {
+                coverage.add(
+                    new ActivityEntryCoverage(
+                        entryId,
+                        incompleteReading ? "ANALYZED_WITH_GAPS" : "ANALYZED",
+                        activityIds,
+                        null));
+              }
+            });
+    return new ActivityExplanationResult(reviewed, coverage, unexplained, null);
+  }
+
   private ActivityJobResult explainMaterial(
-      BusinessMaterial material,
+      ActivityModelMaterial material,
       ImmutableBytes cleanBytes,
       ActivityExplanationProfile profile,
       ActivityJobIdentity identity,
       ModelJobProviderBinding providerBinding) {
     ValidatedActivityResponse draft =
-        generateAndValidate(
-            providerBinding,
-            DRAFT_KIND,
-            taskId(identity, DRAFT_KIND),
-            cleanBytes,
-            material,
-            profile);
+        generateWithFailureContext(
+            providerBinding, DRAFT_KIND, cleanBytes, material, profile, identity);
     ObjectNode reviewPacket = (ObjectNode) canonicalJson.parseCanonical(cleanBytes);
     reviewPacket.set("actualDraft", draft.response());
     ArrayNode missingEntryKeys = reviewPacket.putArray("missingEntryKeys");
@@ -377,13 +732,8 @@ public final class ActivityExplainer {
       throw new ActivityExplanationException("ACTIVITY_REVIEW_INPUT_BUDGET");
     }
     ValidatedActivityResponse review =
-        generateAndValidate(
-            providerBinding,
-            REVIEW_KIND,
-            taskId(identity, REVIEW_KIND),
-            reviewInput,
-            material,
-            profile);
+        generateWithFailureContext(
+            providerBinding, REVIEW_KIND, reviewInput, material, profile, identity);
     if (!draft.runtimeIdentity().equals(review.runtimeIdentity())) {
       throw new ActivityExplanationException("ACTIVITY_JOB_RUNTIME_IDENTITY_MISMATCH");
     }
@@ -398,24 +748,668 @@ public final class ActivityExplainer {
         review.response());
   }
 
+  private ValidatedActivityResponse generateWithFailureContext(
+      ModelJobProviderBinding providerBinding,
+      String taskKind,
+      ImmutableBytes input,
+      ActivityModelMaterial material,
+      ActivityExplanationProfile profile,
+      ActivityJobIdentity identity) {
+    if (!material.stagedExecution() || stageResultStore == null) {
+      return generateAndValidate(
+          providerBinding, taskKind, taskId(identity, taskKind), input, material, profile);
+    }
+    try {
+      return generateAndValidateStage(
+          providerBinding, taskKind, input, material, profile, identity);
+    } catch (RuntimeException failure) {
+      String stage = stageKey(taskKind);
+      int maxAttempts = retryProfile.maxAttempts(stage);
+      int attemptsUsed = 0;
+      for (int ordinal = 1; ordinal <= maxAttempts; ordinal++) {
+        if (stageResultStore
+            .readStageAttemptRecord(identity.jobKey(), stage, ordinal, "request")
+            .isEmpty()) {
+          break;
+        }
+        attemptsUsed++;
+      }
+      throw new ActivityStageFailure(
+          failure.getMessage(),
+          failure,
+          identity.jobKey(),
+          material.sliceKey(),
+          stage,
+          attemptsUsed,
+          maxAttempts);
+    }
+  }
+
+  private ValidatedActivityResponse generateAndValidateStage(
+      ModelJobProviderBinding providerBinding,
+      String taskKind,
+      ImmutableBytes input,
+      ActivityModelMaterial material,
+      ActivityExplanationProfile profile,
+      ActivityJobIdentity identity) {
+    String stageKey = stageKey(taskKind);
+    ImmutableBytes schema = outputJsonSchema(material, profile, taskKind);
+    String stageFingerprint =
+        stageFingerprint(identity, providerBinding, taskKind, input, schema, profile);
+    ObjectNode saved = stageResultStore.readStageSuccess(identity.jobKey(), stageKey).orElse(null);
+    if (saved != null) {
+      return reopenStageSuccess(
+          saved,
+          stageResultStore,
+          identity,
+          stageKey,
+          stageFingerprint,
+          providerBinding,
+          material,
+          profile,
+          taskKind,
+          input,
+          schema);
+    }
+    if (reuseResultStore != null) {
+      ObjectNode reusable =
+          reuseResultStore.readStageSuccess(identity.jobKey(), stageKey).orElse(null);
+      if (reusable != null) {
+        ValidatedActivityResponse validated =
+            reopenStageSuccess(
+                reusable,
+                reuseResultStore,
+                identity,
+                stageKey,
+                stageFingerprint,
+                providerBinding,
+                material,
+                profile,
+                taskKind,
+                input,
+                schema);
+        int ordinal = reusable.path("attemptOrdinal").intValue();
+        for (String event : List.of("request", "started", "response", "validation", "outcome")) {
+          ObjectNode oldEvent =
+              reuseResultStore
+                  .readStageAttemptRecord(identity.jobKey(), stageKey, ordinal, event)
+                  .orElseThrow(
+                      () -> new ActivityExplanationException("ACTIVITY_STAGE_SUCCESS_INVALID"));
+          stageResultStore.writeStageAttemptRecord(
+              identity.jobKey(), stageKey, ordinal, event, oldEvent);
+        }
+        ObjectNode imported = reusable.deepCopy();
+        imported.put("reusedFromModelBatchId", reuseFromModelBatchId.value());
+        stageResultStore.writeStageSuccess(identity.jobKey(), stageKey, imported);
+        return validated;
+      }
+    }
+    if (stageResultStore
+        .readStageAttemptRecord(identity.jobKey(), stageKey, 1, "request")
+        .isPresent()) {
+      throw new ActivityExplanationException("ACTIVITY_STAGE_PRIOR_ATTEMPT_NOT_REUSABLE");
+    }
+
+    int maxAttempts = retryProfile.maxAttempts(stageKey);
+    for (int attemptOrdinal = 1; attemptOrdinal <= maxAttempts; attemptOrdinal++) {
+      String attemptTaskId =
+          taskId(identity, taskKind) + ":attempt-" + Integer.toString(attemptOrdinal);
+      StructuredModelRequest request =
+          new StructuredModelRequest(
+              attemptTaskId,
+              taskKind,
+              ActivityPromptCatalog.instructionsFor(taskKind),
+              input,
+              schema,
+              profile.maxModelOutputBytes());
+      if (providerBinding.capacity() != null) {
+        providerBinding.capacity().requireFits(request);
+      }
+      stageResultStore.writeStageAttemptRecord(
+          identity.jobKey(),
+          stageKey,
+          attemptOrdinal,
+          "request",
+          stageRequestRecord(
+              identity, stageKey, stageFingerprint, attemptOrdinal, providerBinding, request));
+      stageResultStore.writeStageAttemptRecord(
+          identity.jobKey(),
+          stageKey,
+          attemptOrdinal,
+          "started",
+          stageStartedRecord(identity, stageKey, attemptOrdinal));
+
+      StructuredModelResponse response;
+      try {
+        response = providerBinding.provider().generate(request);
+      } catch (StructuredModelProviderFailure failure) {
+        ImmutableBytes rawResponse = failure.rawResponse().orElse(null);
+        if (rawResponse != null
+            && rawResponse.size()
+                <= Math.min(profile.maxModelOutputBytes(), MAX_PRIVATE_INVALID_RESPONSE_BYTES)) {
+          stageResultStore.writeStageAttemptRecord(
+              identity.jobKey(),
+              stageKey,
+              attemptOrdinal,
+              "response",
+              stageInvalidResponseRecord(identity, stageKey, attemptOrdinal, rawResponse));
+        }
+        boolean retryable =
+            retryProfile.isRetryable(
+                failure.reasonCode(), failure.requestStarted(), failure.requestEnded());
+        stageResultStore.writeStageAttemptRecord(
+            identity.jobKey(),
+            stageKey,
+            attemptOrdinal,
+            "outcome",
+            stageFailureOutcome(
+                identity,
+                stageKey,
+                attemptOrdinal,
+                failure.reasonCode(),
+                failure.requestStarted(),
+                failure.requestEnded(),
+                retryable));
+        if (retryable && attemptOrdinal < maxAttempts) {
+          waitBeforeRetry(attemptOrdinal);
+          continue;
+        }
+        throw new ActivityExplanationException("ACTIVITY_PROVIDER_FAILED_AFTER_START", failure);
+      } catch (RuntimeException failure) {
+        stageResultStore.writeStageAttemptRecord(
+            identity.jobKey(),
+            stageKey,
+            attemptOrdinal,
+            "outcome",
+            stageFailureOutcome(
+                identity, stageKey, attemptOrdinal, "OUTCOME_UNKNOWN", true, false, false));
+        throw new ActivityExplanationException("ACTIVITY_PROVIDER_FAILED_AFTER_START", failure);
+      }
+
+      if (response == null) {
+        stageResultStore.writeStageAttemptRecord(
+            identity.jobKey(),
+            stageKey,
+            attemptOrdinal,
+            "outcome",
+            stageFailureOutcome(
+                identity,
+                stageKey,
+                attemptOrdinal,
+                "PROVIDER_RESPONSE_MISSING",
+                true,
+                true,
+                false));
+        throw new ActivityExplanationException("ACTIVITY_PROVIDER_FAILED_AFTER_START");
+      }
+      stageResultStore.writeStageAttemptRecord(
+          identity.jobKey(),
+          stageKey,
+          attemptOrdinal,
+          "response",
+          stageResponseRecord(identity, stageKey, attemptOrdinal, response));
+
+      ValidatedActivityResponse validated;
+      try {
+        if (response.responseJson().size() > profile.maxModelOutputBytes()) {
+          throw new StageValidationFailure("RESPONSE_BUDGET_EXCEEDED", invalid(taskKind, null));
+        }
+        JsonNode parsed;
+        try {
+          parsed = canonicalJson.parseCanonical(response.responseJson());
+        } catch (IllegalArgumentException invalidJson) {
+          throw new StageValidationFailure("INVALID_JSON", invalid(taskKind, invalidJson));
+        }
+        try {
+          validated =
+              validateResponse(parsed, material, profile, taskKind, response.runtimeIdentity());
+        } catch (ActivityExplanationException invalidResponse) {
+          String reason =
+              invalidResponse.getMessage().startsWith("ACTIVITY_SOURCE_SCOPE_INVALID")
+                  ? "UNKNOWN_REFERENCE"
+                  : "RESPONSE_SCHEMA_INVALID";
+          throw new StageValidationFailure(reason, invalidResponse);
+        }
+        if (providerBinding.expectedRuntimeIdentity() != null
+            && !providerBinding.expectedRuntimeIdentity().equals(validated.runtimeIdentity())) {
+          throw new StageValidationFailure(
+              "RUNTIME_IDENTITY_MISMATCH",
+              new ActivityExplanationException("ACTIVITY_JOB_RUNTIME_IDENTITY_MISMATCH"));
+        }
+      } catch (StageValidationFailure failure) {
+        boolean retryable = retryProfile.isRetryable(failure.reasonCode(), true, true);
+        stageResultStore.writeStageAttemptRecord(
+            identity.jobKey(),
+            stageKey,
+            attemptOrdinal,
+            "validation",
+            stageValidationFailure(identity, stageKey, attemptOrdinal, failure.reasonCode()));
+        stageResultStore.writeStageAttemptRecord(
+            identity.jobKey(),
+            stageKey,
+            attemptOrdinal,
+            "outcome",
+            stageFailureOutcome(
+                identity, stageKey, attemptOrdinal, failure.reasonCode(), true, true, retryable));
+        if (retryable && attemptOrdinal < maxAttempts) {
+          waitBeforeRetry(attemptOrdinal);
+          continue;
+        }
+        throw failure.activityFailure();
+      }
+
+      stageResultStore.writeStageAttemptRecord(
+          identity.jobKey(),
+          stageKey,
+          attemptOrdinal,
+          "validation",
+          stageValidationSuccess(identity, stageKey, attemptOrdinal, validated));
+      stageResultStore.writeStageAttemptRecord(
+          identity.jobKey(),
+          stageKey,
+          attemptOrdinal,
+          "outcome",
+          stageSuccessOutcome(identity, stageKey, attemptOrdinal));
+      stageResultStore.writeStageSuccess(
+          identity.jobKey(),
+          stageKey,
+          stageSuccessRecord(identity, stageKey, stageFingerprint, attemptOrdinal, validated));
+      return validated;
+    }
+    throw new ActivityExplanationException("ACTIVITY_STAGE_ATTEMPTS_EXHAUSTED");
+  }
+
+  private ValidatedActivityResponse reopenStageSuccess(
+      ObjectNode saved,
+      PrivateModelJobResultStore recordStore,
+      ActivityJobIdentity identity,
+      String stageKey,
+      String stageFingerprint,
+      ModelJobProviderBinding providerBinding,
+      ActivityModelMaterial material,
+      ActivityExplanationProfile profile,
+      String taskKind,
+      ImmutableBytes input,
+      ImmutableBytes schema) {
+    try {
+      JsonNode attemptOrdinalNode = saved.path("attemptOrdinal");
+      if (!"model-job-stage-success-v1".equals(requiredStageText(saved, "schemaVersion"))
+          || !"SUCCESS".equals(requiredStageText(saved, "status"))
+          || !identity.jobKey().equals(requiredStageText(saved, "jobKey"))
+          || !stageKey.equals(requiredStageText(saved, "stageKey"))
+          || !stageFingerprint.equals(requiredStageText(saved, "stageFingerprint"))
+          || !attemptOrdinalNode.canConvertToInt()
+          || attemptOrdinalNode.intValue() < 1
+          || !(saved.path("response") instanceof ObjectNode response)) {
+        throw new ActivityExplanationException("ACTIVITY_STAGE_SUCCESS_INVALID");
+      }
+      int attemptOrdinal = attemptOrdinalNode.intValue();
+      ObjectNode request =
+          requiredStageAttempt(recordStore, identity, stageKey, attemptOrdinal, "request");
+      ObjectNode started =
+          requiredStageAttempt(recordStore, identity, stageKey, attemptOrdinal, "started");
+      ObjectNode responseEvent =
+          requiredStageAttempt(recordStore, identity, stageKey, attemptOrdinal, "response");
+      ObjectNode validation =
+          requiredStageAttempt(recordStore, identity, stageKey, attemptOrdinal, "validation");
+      ObjectNode outcome =
+          requiredStageAttempt(recordStore, identity, stageKey, attemptOrdinal, "outcome");
+      requireStageEventIdentity(request, identity, stageKey, attemptOrdinal);
+      requireStageEventIdentity(started, identity, stageKey, attemptOrdinal);
+      requireStageEventIdentity(responseEvent, identity, stageKey, attemptOrdinal);
+      requireStageEventIdentity(validation, identity, stageKey, attemptOrdinal);
+      requireStageEventIdentity(outcome, identity, stageKey, attemptOrdinal);
+      if (!stageFingerprint.equals(requiredStageText(request, "stageFingerprint"))
+          || !taskKind.equals(requiredStageText(request, "taskKind"))
+          || !providerBinding.key().equals(requiredStageText(request, "providerBindingKey"))
+          || !providerBinding.quotaScope().equals(requiredStageText(request, "quotaScope"))
+          || !ActivityPromptCatalog.instructionsFor(taskKind)
+              .equals(requiredStageText(request, "systemInstructions"))
+          || !request.path("input").equals(canonicalJson.parseCanonical(input))
+          || !request.path("outputSchema").equals(canonicalJson.parseCanonical(schema))
+          || !request.path("maxOutputBytes").canConvertToInt()
+          || request.path("maxOutputBytes").intValue() != profile.maxModelOutputBytes()
+          || !"STARTED".equals(requiredStageText(started, "status"))
+          || !started.path("requestStarted").asBoolean(false)
+          || !"VALIDATED".equals(requiredStageText(validation, "status"))
+          || !"SUCCESS".equals(requiredStageText(outcome, "status"))
+          || !outcome.path("requestStarted").asBoolean(false)
+          || !outcome.path("requestEnded").asBoolean(false)) {
+        throw new ActivityExplanationException("ACTIVITY_STAGE_SUCCESS_INVALID");
+      }
+      JsonNode persistedResponse =
+          canonicalJson.parseCanonical(
+              ImmutableBytes.copyOf(
+                  Base64.getDecoder().decode(requiredStageText(responseEvent, "responseBase64"))));
+      if (!persistedResponse.equals(response)) {
+        throw new ActivityExplanationException("ACTIVITY_STAGE_SUCCESS_INVALID");
+      }
+      ModelRuntimeIdentityV1 runtimeIdentity = runtimeIdentity(saved.path("runtimeIdentity"));
+      if (!runtimeIdentity.equals(runtimeIdentity(responseEvent.path("runtimeIdentity")))) {
+        throw new ActivityExplanationException("ACTIVITY_STAGE_SUCCESS_INVALID");
+      }
+      ValidatedActivityResponse validated =
+          validateResponse(response, material, profile, taskKind, runtimeIdentity);
+      if (providerBinding.expectedRuntimeIdentity() != null
+          && !providerBinding.expectedRuntimeIdentity().equals(runtimeIdentity)) {
+        throw new ActivityExplanationException("ACTIVITY_JOB_RUNTIME_IDENTITY_MISMATCH");
+      }
+      return validated;
+    } catch (ActivityExplanationException invalid) {
+      throw invalid;
+    } catch (RuntimeException invalid) {
+      throw new ActivityExplanationException("ACTIVITY_STAGE_SUCCESS_INVALID", invalid);
+    }
+  }
+
+  private ObjectNode requiredStageAttempt(
+      PrivateModelJobResultStore recordStore,
+      ActivityJobIdentity identity,
+      String stageKey,
+      int attemptOrdinal,
+      String recordName) {
+    return recordStore
+        .readStageAttemptRecord(identity.jobKey(), stageKey, attemptOrdinal, recordName)
+        .orElseThrow(() -> new ActivityExplanationException("ACTIVITY_STAGE_SUCCESS_INVALID"));
+  }
+
+  private static void requireStageEventIdentity(
+      ObjectNode record, ActivityJobIdentity identity, String stageKey, int attemptOrdinal) {
+    if (!identity.jobKey().equals(requiredStageText(record, "jobKey"))
+        || !stageKey.equals(requiredStageText(record, "stageKey"))
+        || !record.path("attemptOrdinal").canConvertToInt()
+        || record.path("attemptOrdinal").intValue() != attemptOrdinal) {
+      throw new ActivityExplanationException("ACTIVITY_STAGE_SUCCESS_INVALID");
+    }
+  }
+
+  private String stageFingerprint(
+      ActivityJobIdentity identity,
+      ModelJobProviderBinding providerBinding,
+      String taskKind,
+      ImmutableBytes input,
+      ImmutableBytes schema,
+      ActivityExplanationProfile profile) {
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    value.put("schemaVersion", "activity-stage-fingerprint-v1");
+    value.put("jobInputFingerprint", identity.inputFingerprint());
+    value.put("stageKey", stageKey(taskKind));
+    value.put("providerBindingKey", providerBinding.key());
+    value.put("quotaScope", providerBinding.quotaScope());
+    value.put("inputSha256", sha256(input));
+    value.put("instructions", ActivityPromptCatalog.instructionsFor(taskKind));
+    value.put("outputSchemaSha256", sha256(schema));
+    value.put("maxModelOutputBytes", profile.maxModelOutputBytes());
+    if (providerBinding.expectedRuntimeIdentity() != null) {
+      value.set(
+          "expectedRuntimeIdentity", runtimeIdentity(providerBinding.expectedRuntimeIdentity()));
+    }
+    return sha256(canonicalJson.encodeCanonical(value));
+  }
+
+  private ObjectNode stageRequestRecord(
+      ActivityJobIdentity identity,
+      String stageKey,
+      String stageFingerprint,
+      int attemptOrdinal,
+      ModelJobProviderBinding providerBinding,
+      StructuredModelRequest request) {
+    ObjectNode record =
+        stageRecord("model-job-stage-request-v1", identity, stageKey, attemptOrdinal);
+    record.put("stageFingerprint", stageFingerprint);
+    record.put("taskId", request.taskId());
+    record.put("taskKind", request.taskKind());
+    record.put("providerBindingKey", providerBinding.key());
+    record.put("quotaScope", providerBinding.quotaScope());
+    record.put("systemInstructions", request.systemInstructions());
+    record.set("input", canonicalJson.parseCanonical(request.untrustedInputJson()));
+    record.set("outputSchema", canonicalJson.parseCanonical(request.outputJsonSchema()));
+    record.put("maxOutputBytes", request.maxOutputBytes());
+    return record;
+  }
+
+  private static ObjectNode stageStartedRecord(
+      ActivityJobIdentity identity, String stageKey, int attemptOrdinal) {
+    ObjectNode record =
+        stageRecord("model-job-stage-started-v1", identity, stageKey, attemptOrdinal);
+    record.put("status", "STARTED");
+    record.put("requestStarted", true);
+    return record;
+  }
+
+  private static ObjectNode stageResponseRecord(
+      ActivityJobIdentity identity,
+      String stageKey,
+      int attemptOrdinal,
+      StructuredModelResponse response) {
+    ObjectNode record =
+        stageRecord("model-job-stage-response-v1", identity, stageKey, attemptOrdinal);
+    byte[] bytes = response.responseJson().copyToByteArray();
+    record.put("responseBase64", Base64.getEncoder().encodeToString(bytes));
+    record.put("responseUtf8", new String(bytes, StandardCharsets.UTF_8));
+    record.put("responseBytes", bytes.length);
+    record.set("runtimeIdentity", runtimeIdentity(response.runtimeIdentity()));
+    return record;
+  }
+
+  private static ObjectNode stageInvalidResponseRecord(
+      ActivityJobIdentity identity,
+      String stageKey,
+      int attemptOrdinal,
+      ImmutableBytes rawResponse) {
+    ObjectNode record =
+        stageRecord("model-job-stage-response-v1", identity, stageKey, attemptOrdinal);
+    byte[] bytes = rawResponse.copyToByteArray();
+    record.put("responseBase64", Base64.getEncoder().encodeToString(bytes));
+    record.put("responseUtf8", new String(bytes, StandardCharsets.UTF_8));
+    record.put("responseBytes", bytes.length);
+    record.putNull("runtimeIdentity");
+    record.put("invalidFromProvider", true);
+    return record;
+  }
+
+  private static ObjectNode stageValidationSuccess(
+      ActivityJobIdentity identity,
+      String stageKey,
+      int attemptOrdinal,
+      ValidatedActivityResponse validated) {
+    ObjectNode record =
+        stageRecord("model-job-stage-validation-v1", identity, stageKey, attemptOrdinal);
+    record.put("status", "VALIDATED");
+    ArrayNode covered = record.putArray("coveredEntryKeys");
+    validated.coveredEntryKeys().stream().sorted().forEach(covered::add);
+    ArrayNode unexplained = record.putArray("unexplainedEntryKeys");
+    validated.unexplainedEntryKeys().forEach(unexplained::add);
+    return record;
+  }
+
+  private static ObjectNode stageValidationFailure(
+      ActivityJobIdentity identity, String stageKey, int attemptOrdinal, String reasonCode) {
+    ObjectNode record =
+        stageRecord("model-job-stage-validation-v1", identity, stageKey, attemptOrdinal);
+    record.put("status", "INVALID");
+    record.put("reasonCode", reasonCode);
+    return record;
+  }
+
+  private static ObjectNode stageSuccessOutcome(
+      ActivityJobIdentity identity, String stageKey, int attemptOrdinal) {
+    ObjectNode record =
+        stageRecord("model-job-stage-outcome-v1", identity, stageKey, attemptOrdinal);
+    record.put("status", "SUCCESS");
+    record.putNull("reasonCode");
+    record.put("requestStarted", true);
+    record.put("requestEnded", true);
+    record.put("retryable", false);
+    return record;
+  }
+
+  private static ObjectNode stageFailureOutcome(
+      ActivityJobIdentity identity,
+      String stageKey,
+      int attemptOrdinal,
+      String reasonCode,
+      boolean requestStarted,
+      boolean requestEnded,
+      boolean retryable) {
+    ObjectNode record =
+        stageRecord("model-job-stage-outcome-v1", identity, stageKey, attemptOrdinal);
+    record.put("status", "FAILED");
+    record.put("reasonCode", reasonCode);
+    record.put("requestStarted", requestStarted);
+    record.put("requestEnded", requestEnded);
+    record.put("retryable", retryable);
+    return record;
+  }
+
+  private static ObjectNode stageSuccessRecord(
+      ActivityJobIdentity identity,
+      String stageKey,
+      String stageFingerprint,
+      int attemptOrdinal,
+      ValidatedActivityResponse validated) {
+    ObjectNode record = JsonNodeFactory.instance.objectNode();
+    record.put("schemaVersion", "model-job-stage-success-v1");
+    record.put("status", "SUCCESS");
+    record.put("jobKey", identity.jobKey());
+    record.put("stageKey", stageKey);
+    record.put("stageFingerprint", stageFingerprint);
+    record.put("attemptOrdinal", attemptOrdinal);
+    record.set("runtimeIdentity", runtimeIdentity(validated.runtimeIdentity()));
+    record.set("response", validated.response());
+    return record;
+  }
+
+  private static ObjectNode stageRecord(
+      String schemaVersion, ActivityJobIdentity identity, String stageKey, int attemptOrdinal) {
+    ObjectNode record = JsonNodeFactory.instance.objectNode();
+    record.put("schemaVersion", schemaVersion);
+    record.put("jobKey", identity.jobKey());
+    record.put("stageKey", stageKey);
+    record.put("attemptOrdinal", attemptOrdinal);
+    return record;
+  }
+
+  private static ObjectNode runtimeIdentity(ModelRuntimeIdentityV1 runtimeIdentity) {
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    value.put("upstreamProvider", runtimeIdentity.upstreamProvider());
+    value.put("model", runtimeIdentity.model());
+    value.put("reasoningEffort", runtimeIdentity.reasoningEffort());
+    value.put("sandbox", runtimeIdentity.sandbox());
+    return value;
+  }
+
+  private static ModelRuntimeIdentityV1 runtimeIdentity(JsonNode value) {
+    if (!(value instanceof ObjectNode identity)) {
+      throw new ActivityExplanationException("ACTIVITY_STAGE_SUCCESS_INVALID");
+    }
+    return new ModelRuntimeIdentityV1(
+        requiredStageText(identity, "upstreamProvider"),
+        requiredStageText(identity, "model"),
+        requiredStageText(identity, "reasoningEffort"),
+        requiredStageText(identity, "sandbox"));
+  }
+
+  private static String requiredStageText(ObjectNode value, String field) {
+    JsonNode node = value.path(field);
+    if (!node.isTextual() || node.textValue().isBlank()) {
+      throw new ActivityExplanationException("ACTIVITY_STAGE_SUCCESS_INVALID");
+    }
+    return node.textValue();
+  }
+
+  private static String stageKey(String taskKind) {
+    return switch (taskKind) {
+      case DRAFT_KIND -> "DRAFT";
+      case REVIEW_KIND -> "REVIEW";
+      default -> throw new IllegalArgumentException("unknown Activity stage task kind");
+    };
+  }
+
+  private void waitBeforeRetry(int failedAttempt) {
+    long backoffMillis = retryProfile.backoffMillis(failedAttempt);
+    if (backoffMillis == 0) {
+      return;
+    }
+    try {
+      Thread.sleep(backoffMillis);
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw new ActivityExplanationException("ACTIVITY_STAGE_RETRY_INTERRUPTED", interrupted);
+    }
+  }
+
   private CompletedActivityJob reopenReusable(
-      ActivityJob job, BusinessMaterial material, ActivityExplanationProfile profile) {
+      ActivityJob job, ActivityModelMaterial material, ActivityExplanationProfile profile) {
     if (reuseResultStore == null) {
       return null;
     }
     ObjectNode saved =
-        reuseResultStore
-            .readCompleted(
-                job.identity().jobKey(),
-                job.identity().inputFingerprint(),
-                job.providerBinding().quotaScope(),
-                job.providerBinding().expectedRuntimeIdentity())
+        (job.stagedExecution() || job.scopedReading()
+                ? reuseResultStore.readCompletedActivity(
+                    job.identity().jobKey(),
+                    job.identity().inputFingerprint(),
+                    job.providerBinding().quotaScope(),
+                    job.providerBinding().expectedRuntimeIdentity())
+                : reuseResultStore.readCompleted(
+                    job.identity().jobKey(),
+                    job.identity().inputFingerprint(),
+                    job.providerBinding().quotaScope(),
+                    job.providerBinding().expectedRuntimeIdentity()))
             .orElse(null);
     if (saved == null) {
       return null;
     }
     try {
       ModelRuntimeIdentityV1 runtimeIdentity = job.providerBinding().expectedRuntimeIdentity();
+      if (job.scopedReading()) {
+        List<ReviewedActivity> activities =
+            JSON.convertValue(
+                saved.path("reviewedActivities"),
+                JSON.getTypeFactory().constructCollectionType(List.class, ReviewedActivity.class));
+        List<ActivityEntryCoverage> coverage =
+            JSON.convertValue(
+                saved.path("coverage"),
+                JSON.getTypeFactory()
+                    .constructCollectionType(List.class, ActivityEntryCoverage.class));
+        List<UnexplainedActivityEntry> unexplained =
+            JSON.convertValue(
+                saved.path("unexplainedActivityEntries"),
+                JSON.getTypeFactory()
+                    .constructCollectionType(List.class, UnexplainedActivityEntry.class));
+        if (coverage.stream().anyMatch(entry -> "NOT_ANALYZED".equals(entry.disposition()))) {
+          // A finished reading decision is not a finished business explanation. A later explicit
+          // batch must be able to revisit packets for which no complete Activity was formed.
+          return null;
+        }
+        Set<String> expectedEntries = Set.copyOf(material.entryIds());
+        if (activities.stream()
+                .anyMatch(
+                    activity ->
+                        !job.materialId().equals(activity.materialId())
+                            || !expectedEntries.containsAll(activity.entryIds()))
+            || !coverage.stream()
+                .map(ActivityEntryCoverage::entryId)
+                .collect(Collectors.toSet())
+                .equals(expectedEntries)
+            || unexplained.stream()
+                .anyMatch(
+                    entry ->
+                        !job.materialId().equals(entry.materialId())
+                            || !expectedEntries.contains(entry.entryId()))) {
+          throw new ActivityExplanationException("ACTIVITY_REUSED_RESULT_INVALID");
+        }
+        return new CompletedActivityJob(
+            job,
+            new ActivityJobResult(
+                job.materialId(),
+                activities,
+                coverage,
+                unexplained,
+                runtimeIdentity,
+                JsonNodeFactory.instance.objectNode(),
+                JsonNodeFactory.instance.objectNode()));
+      }
       validateResponse(saved.path("draft"), material, profile, DRAFT_KIND, runtimeIdentity);
       ValidatedActivityResponse review =
           validateResponse(saved.path("review"), material, profile, REVIEW_KIND, runtimeIdentity);
@@ -448,26 +1442,25 @@ public final class ActivityExplainer {
   }
 
   private String preflightFailure(
-      ImmutableBytes cleanPacket, BusinessMaterial material, ActivityExplanationProfile profile) {
+      ImmutableBytes cleanPacket,
+      ActivityModelMaterial material,
+      ActivityExplanationProfile profile) {
     int entryCount = material.entryIds().size();
     if (entryCount > profile.maxActivitiesPerMaterial()
         || entryCount > profile.maxValuesPerField()
         || minimumReviewedResponseBytes(material, profile) > profile.maxModelOutputBytes()
-        || (long) cleanPacket.size() + profile.maxModelOutputBytes() + 1_024L
-            > profile.maxModelInputBytes()) {
+        || cleanPacket.size() > profile.maxModelInputBytes()) {
       return "NOT_ANALYZED_ACTIVITY_OUTPUT_CAPACITY";
     }
     return null;
   }
 
   private int minimumReviewedResponseBytes(
-      BusinessMaterial material, ActivityExplanationProfile profile) {
+      ActivityModelMaterial material, ActivityExplanationProfile profile) {
     ObjectNode response = JsonNodeFactory.instance.objectNode();
     ArrayNode activities = response.putArray("activities");
     String reference =
-        material.modelPacket().allowlistedRefs().isEmpty()
-            ? "R"
-            : material.modelPacket().allowlistedRefs().get(0).ref();
+        material.allowlistedRefs().isEmpty() ? "R" : material.allowlistedRefs().get(0);
     int requiredTextLength = Math.min(1, profile.maxTextCharsPerValue());
     String text = "x".repeat(requiredTextLength);
     for (String entryKey : entryKeys(material)) {
@@ -490,17 +1483,18 @@ public final class ActivityExplainer {
     return canonicalJson.encodeCanonical(response).size();
   }
 
-  private List<ActivityEntryCoverage> notAnalyzed(BusinessMaterial material, String reasonCode) {
+  private List<ActivityEntryCoverage> notAnalyzed(
+      ActivityModelMaterial material, String reasonCode) {
     return material.entryIds().stream()
         .map(entryId -> new ActivityEntryCoverage(entryId, "NOT_ANALYZED", List.of(), reasonCode))
         .toList();
   }
 
   private List<ActivityEntryCoverage> analyzedCoverage(
-      BusinessMaterial material,
+      ActivityModelMaterial material,
       List<ReviewedActivity> activities,
       List<String> unexplainedEntryKeys) {
-    String disposition = material.hasSubstantiveLimitation() ? "ANALYZED_WITH_GAPS" : "ANALYZED";
+    String disposition = material.hasSubstantiveLimitations() ? "ANALYZED_WITH_GAPS" : "ANALYZED";
     Set<String> unexplained = Set.copyOf(unexplainedEntryKeys);
     Map<String, String> entryIdsByKey = entryIdsByKey(material);
     return entryKeys(material).stream()
@@ -525,7 +1519,7 @@ public final class ActivityExplainer {
   }
 
   private List<UnexplainedActivityEntry> unexplainedEntries(
-      BusinessMaterial material, List<String> unexplainedEntryKeys) {
+      ActivityModelMaterial material, List<String> unexplainedEntryKeys) {
     Map<String, String> entryIdsByKey = entryIdsByKey(material);
     return unexplainedEntryKeys.stream()
         .map(
@@ -534,7 +1528,7 @@ public final class ActivityExplainer {
                     entryIdsByKey.get(entryKey),
                     material.materialId(),
                     entryKey,
-                    material.modelPacket().context(),
+                    material.materialContext(),
                     "MODEL_NOT_EXPLAINED"))
         .toList();
   }
@@ -544,21 +1538,22 @@ public final class ActivityExplainer {
       String taskKind,
       String taskId,
       ImmutableBytes input,
-      BusinessMaterial material,
+      ActivityModelMaterial material,
       ActivityExplanationProfile profile) {
+    StructuredModelRequest request =
+        new StructuredModelRequest(
+            taskId,
+            taskKind,
+            ActivityPromptCatalog.instructionsFor(taskKind),
+            input,
+            outputJsonSchema(material, profile, taskKind),
+            profile.maxModelOutputBytes());
+    if (providerBinding.capacity() != null) {
+      providerBinding.capacity().requireFits(request);
+    }
     StructuredModelResponse response;
     try {
-      response =
-          providerBinding
-              .provider()
-              .generate(
-                  new StructuredModelRequest(
-                      taskId,
-                      taskKind,
-                      ActivityPromptCatalog.instructionsFor(taskKind),
-                      input,
-                      outputJsonSchema(material, profile, taskKind),
-                      profile.maxModelOutputBytes()));
+      response = providerBinding.provider().generate(request);
     } catch (RuntimeException failure) {
       throw new ActivityExplanationException("ACTIVITY_PROVIDER_FAILED_AFTER_START", failure);
     }
@@ -585,7 +1580,7 @@ public final class ActivityExplainer {
   }
 
   private ActivityJobIdentity jobIdentity(
-      BusinessMaterial material,
+      ActivityModelMaterial material,
       ImmutableBytes cleanBytes,
       ActivityExplanationProfile profile,
       String providerBindingKey,
@@ -595,7 +1590,7 @@ public final class ActivityExplainer {
     ImmutableBytes reviewSchema = outputJsonSchema(material, profile, REVIEW_KIND);
     ObjectNode fingerprint = JsonNodeFactory.instance.objectNode();
     fingerprint.put("schemaVersion", "activity-job-input-fingerprint-v1");
-    fingerprint.put("moduleVersion", "flow-interpretation-activity-explanations-v1");
+    fingerprint.put("moduleVersion", material.moduleVersion());
     fingerprint.put("providerBindingKey", providerBindingKey);
     fingerprint.put("quotaScope", quotaScope);
     fingerprint.put("cleanPacketSha256", sha256(cleanBytes));
@@ -640,7 +1635,9 @@ public final class ActivityExplainer {
     ObjectNode root = JsonNodeFactory.instance.objectNode();
     root.put("context", packet.context());
     ArrayNode entryKeys = root.putArray("entryKeys");
-    entryKeys(material).forEach(entryKeys::add);
+    java.util.stream.IntStream.range(0, material.entryIds().size())
+        .mapToObj(index -> "E" + (index + 1))
+        .forEach(entryKeys::add);
     root.set("technicalObservations", strings(packet.technicalObservations()));
     ArrayNode refs = root.putArray("allowlistedRefs");
     for (ModelActivityPacket.AllowlistedReference ref : packet.allowlistedRefs()) {
@@ -648,6 +1645,52 @@ public final class ActivityExplainer {
     }
     root.set("limitations", strings(packet.limitations()));
     return root;
+  }
+
+  private ActivityModelMaterial legacyMaterial(BusinessMaterial material) {
+    Map<String, String> entryIdsByKey = new java.util.LinkedHashMap<>();
+    for (int index = 0; index < material.entryIds().size(); index++) {
+      entryIdsByKey.put("E" + (index + 1), material.entryIds().get(index));
+    }
+    return new ActivityModelMaterial(
+        material.materialId(),
+        entryIdsByKey,
+        material.modelPacket().allowlistedRefs().stream()
+            .map(ModelActivityPacket.AllowlistedReference::ref)
+            .toList(),
+        canonicalJson.encodeCanonical(cleanPacket(material)),
+        material.modelPacket().context(),
+        material.hasSubstantiveLimitation(),
+        false,
+        "flow-interpretation-activity-explanations-v1",
+        null,
+        Map.of());
+  }
+
+  private ActivityModelMaterial projectedMaterial(ActivityReadingPacket packet) {
+    return projectedMaterial(packet, null, null);
+  }
+
+  private ActivityModelMaterial projectedMaterial(
+      ActivityReadingPacket packet, String sliceKey, String scope) {
+    ObjectNode input = JsonNodeFactory.instance.objectNode();
+    input.set("readingPacket", canonicalJson.parseCanonical(packet.modelInputJson()));
+    if (sliceKey != null) {
+      ObjectNode interpretationScope = input.putObject("interpretationScope");
+      interpretationScope.put("sliceKey", sliceKey);
+      interpretationScope.put("scope", scope);
+    }
+    return new ActivityModelMaterial(
+        packet.packetId(),
+        packet.entryIdsByKey(),
+        packet.allowlistedSourceRefs(),
+        canonicalJson.encodeCanonical(input),
+        "verified Step05 code reading packet",
+        packet.hasSubstantiveLimitations(),
+        true,
+        "flow-interpretation-activity-reading-packet-v1",
+        sliceKey,
+        packet.sourceIdsByRef());
   }
 
   private ArrayNode strings(List<String> values) {
@@ -660,11 +1703,10 @@ public final class ActivityExplainer {
 
   /**
    * Builds the provider-facing JSON Schema from the same limits and source-ref allowlist enforced
-   * again by {@link #validateResponse(JsonNode, BusinessMaterial, ActivityExplanationProfile,
-   * String, ModelRuntimeIdentityV1)}.
+   * again by the matching response validator.
    */
   private ImmutableBytes outputJsonSchema(
-      BusinessMaterial material, ActivityExplanationProfile profile, String taskKind) {
+      ActivityModelMaterial material, ActivityExplanationProfile profile, String taskKind) {
     ObjectNode root = JsonNodeFactory.instance.objectNode();
     root.put("type", "object");
     root.put("additionalProperties", false);
@@ -682,7 +1724,8 @@ public final class ActivityExplainer {
     return canonicalJson.encodeCanonical(root);
   }
 
-  private ObjectNode activitySchema(BusinessMaterial material, ActivityExplanationProfile profile) {
+  private ObjectNode activitySchema(
+      ActivityModelMaterial material, ActivityExplanationProfile profile) {
     ObjectNode activity = JsonNodeFactory.instance.objectNode();
     activity.put("type", "object");
     activity.put("additionalProperties", false);
@@ -711,10 +1754,7 @@ public final class ActivityExplainer {
         "sourceRefs",
         profile,
         true,
-        material.modelPacket().allowlistedRefs().stream()
-            .map(ModelActivityPacket.AllowlistedReference::ref)
-            .sorted()
-            .toList());
+        material.allowlistedRefs().stream().sorted().toList());
     listProperty(properties, "questions", profile, false, null);
     listProperty(properties, "scopeLimitations", profile, false, null);
     return activity;
@@ -752,7 +1792,7 @@ public final class ActivityExplainer {
 
   private ValidatedActivityResponse validateResponse(
       JsonNode root,
-      BusinessMaterial material,
+      ActivityModelMaterial material,
       ActivityExplanationProfile profile,
       String taskKind,
       ModelRuntimeIdentityV1 runtimeIdentity) {
@@ -767,9 +1807,7 @@ public final class ActivityExplainer {
     }
     Set<String> localIds = new HashSet<>();
     Set<String> allowlistedRefs = new HashSet<>();
-    for (ModelActivityPacket.AllowlistedReference ref : material.modelPacket().allowlistedRefs()) {
-      allowlistedRefs.add(ref.ref());
-    }
+    allowlistedRefs.addAll(material.allowlistedRefs());
     Set<String> expectedEntryKeys = Set.copyOf(entryKeys(material));
     Set<String> coveredEntryKeys = new HashSet<>();
     for (JsonNode activity : activities) {
@@ -848,7 +1886,9 @@ public final class ActivityExplainer {
   }
 
   private List<ReviewedActivity> toReviewedActivities(
-      JsonNode reviewedResponse, BusinessMaterial material, ActivityExplanationProfile profile) {
+      JsonNode reviewedResponse,
+      ActivityModelMaterial material,
+      ActivityExplanationProfile profile) {
     List<ReviewedActivity> result = new ArrayList<>();
     Map<String, String> entryIdsByKey = entryIdsByKey(material);
     for (JsonNode activity : reviewedResponse.path("activities")) {
@@ -860,7 +1900,10 @@ public final class ActivityExplainer {
       result.add(
           new ReviewedActivity(
               stableActivityId(
-                  material.materialId(), localId, canonicalJson.encodeCanonical(activity)),
+                  material.materialId(),
+                  material.sliceKey(),
+                  localId,
+                  canonicalJson.encodeCanonical(activity)),
               material.materialId(),
               activityEntryIds,
               activity.path("name").textValue(),
@@ -877,28 +1920,24 @@ public final class ActivityExplainer {
               activity.path("certainty").textValue(),
               textList(activity, "sourceRefs", profile, REVIEW_KIND),
               textList(activity, "questions", profile, REVIEW_KIND),
-              textList(activity, "scopeLimitations", profile, REVIEW_KIND)));
+              textList(activity, "scopeLimitations", profile, REVIEW_KIND),
+              material.stagedExecution() ? "CODE_READING_MATERIALS" : "BUSINESS_MATERIALS",
+              material.sliceKey(),
+              material.sourceIdsByRef()));
     }
     return result;
   }
 
-  private static List<String> entryKeys(BusinessMaterial material) {
-    return java.util.stream.IntStream.range(0, material.entryIds().size())
-        .mapToObj(index -> "E" + (index + 1))
-        .toList();
+  private static List<String> entryKeys(ActivityModelMaterial material) {
+    return List.copyOf(material.entryIdsByKey().keySet());
   }
 
-  private static Map<String, String> entryIdsByKey(BusinessMaterial material) {
-    Map<String, String> result = new java.util.LinkedHashMap<>();
-    List<String> entryIds = material.entryIds();
-    for (int index = 0; index < entryIds.size(); index++) {
-      result.put("E" + (index + 1), entryIds.get(index));
-    }
-    return Map.copyOf(result);
+  private static Map<String, String> entryIdsByKey(ActivityModelMaterial material) {
+    return material.entryIdsByKey();
   }
 
   private static List<String> missingEntryKeys(
-      BusinessMaterial material, Set<String> coveredEntryKeys) {
+      ActivityModelMaterial material, Set<String> coveredEntryKeys) {
     return entryKeys(material).stream().filter(key -> !coveredEntryKeys.contains(key)).toList();
   }
 
@@ -967,11 +2006,15 @@ public final class ActivityExplainer {
   }
 
   private String stableActivityId(
-      String materialId, String localId, ImmutableBytes canonicalActivity) {
+      String materialId, String sliceKey, String localId, ImmutableBytes canonicalActivity) {
     try {
       MessageDigest digest = MessageDigest.getInstance("SHA-256");
       digest.update(materialId.getBytes(StandardCharsets.UTF_8));
       digest.update((byte) '\n');
+      if (sliceKey != null) {
+        digest.update(sliceKey.getBytes(StandardCharsets.UTF_8));
+        digest.update((byte) '\n');
+      }
       digest.update(localId.getBytes(StandardCharsets.UTF_8));
       digest.update((byte) '\n');
       digest.update(canonicalActivity.copyToByteArray());
@@ -989,6 +2032,48 @@ public final class ActivityExplainer {
     return new ActivityExplanationException("ACTIVITY_SOURCE_SCOPE_INVALID during " + taskKind);
   }
 
+  private record ActivityModelMaterial(
+      String materialId,
+      Map<String, String> entryIdsByKey,
+      List<String> allowlistedRefs,
+      ImmutableBytes cleanInput,
+      String materialContext,
+      boolean hasSubstantiveLimitations,
+      boolean stagedExecution,
+      String moduleVersion,
+      String sliceKey,
+      Map<String, String> sourceIdsByRef) {
+
+    private ActivityModelMaterial {
+      if (materialId == null || materialId.isBlank()) {
+        throw new IllegalArgumentException("activity model material ID is required");
+      }
+      Objects.requireNonNull(entryIdsByKey, "activity entry mappings");
+      Map<String, String> copiedEntries = new java.util.LinkedHashMap<>();
+      entryIdsByKey.forEach(
+          (key, value) -> {
+            if (key == null || key.isBlank() || value == null || value.isBlank()) {
+              throw new IllegalArgumentException("activity entry mapping is invalid");
+            }
+            copiedEntries.put(key, value);
+          });
+      entryIdsByKey = java.util.Collections.unmodifiableMap(copiedEntries);
+      allowlistedRefs = List.copyOf(allowlistedRefs);
+      sourceIdsByRef = Map.copyOf(sourceIdsByRef);
+      cleanInput = Objects.requireNonNull(cleanInput, "activity clean model input");
+      if (materialContext == null || materialContext.isBlank()) {
+        throw new IllegalArgumentException("activity material context is required");
+      }
+      if (moduleVersion == null || moduleVersion.isBlank()) {
+        throw new IllegalArgumentException("activity module version is required");
+      }
+    }
+
+    private List<String> entryIds() {
+      return List.copyOf(entryIdsByKey.values());
+    }
+  }
+
   private record ValidatedActivityResponse(
       JsonNode response,
       Set<String> coveredEntryKeys,
@@ -998,6 +2083,73 @@ public final class ActivityExplainer {
       coveredEntryKeys = Set.copyOf(coveredEntryKeys);
       unexplainedEntryKeys = List.copyOf(unexplainedEntryKeys);
       runtimeIdentity = Objects.requireNonNull(runtimeIdentity, "activity runtime identity");
+    }
+  }
+
+  private static final class StageValidationFailure extends RuntimeException {
+    private final String reasonCode;
+    private final ActivityExplanationException activityFailure;
+
+    private StageValidationFailure(
+        String reasonCode, ActivityExplanationException activityFailure) {
+      super(activityFailure);
+      if (reasonCode == null || reasonCode.isBlank()) {
+        throw new IllegalArgumentException("stage validation reason is required");
+      }
+      this.reasonCode = reasonCode;
+      this.activityFailure = Objects.requireNonNull(activityFailure, "stage validation failure");
+    }
+
+    private String reasonCode() {
+      return reasonCode;
+    }
+
+    private ActivityExplanationException activityFailure() {
+      return activityFailure;
+    }
+  }
+
+  static final class ActivityStageFailure extends IllegalArgumentException {
+    private final String jobKey;
+    private final String sliceKey;
+    private final String stageKey;
+    private final int attemptsUsed;
+    private final int maxAttempts;
+
+    private ActivityStageFailure(
+        String reasonCode,
+        Throwable cause,
+        String jobKey,
+        String sliceKey,
+        String stageKey,
+        int attemptsUsed,
+        int maxAttempts) {
+      super(reasonCode == null ? "ACTIVITY_STAGE_FAILED" : reasonCode, cause);
+      this.jobKey = jobKey;
+      this.sliceKey = sliceKey;
+      this.stageKey = stageKey;
+      this.attemptsUsed = attemptsUsed;
+      this.maxAttempts = maxAttempts;
+    }
+
+    String jobKey() {
+      return jobKey;
+    }
+
+    String sliceKey() {
+      return sliceKey;
+    }
+
+    String stageKey() {
+      return stageKey;
+    }
+
+    int attemptsUsed() {
+      return attemptsUsed;
+    }
+
+    int maxAttempts() {
+      return maxAttempts;
     }
   }
 

@@ -12,7 +12,8 @@ public record ActivityJobExecutionConfiguration(
     String quotaScope,
     Path journalDirectory,
     AnalysisRunId runId,
-    ModelRuntimeIdentityV1 expectedRuntimeIdentity) {
+    ModelRuntimeIdentityV1 expectedRuntimeIdentity,
+    ActivityRetryProfile retryProfile) {
 
   public ActivityJobExecutionConfiguration {
     if (maxConcurrentJobs < 1) {
@@ -28,5 +29,23 @@ public record ActivityJobExecutionConfiguration(
     runId = Objects.requireNonNull(runId, "activity job run ID");
     expectedRuntimeIdentity =
         Objects.requireNonNull(expectedRuntimeIdentity, "activity job expected runtime identity");
+    retryProfile = Objects.requireNonNull(retryProfile, "activity retry profile");
+  }
+
+  public ActivityJobExecutionConfiguration(
+      int maxConcurrentJobs,
+      String providerBindingKey,
+      String quotaScope,
+      Path journalDirectory,
+      AnalysisRunId runId,
+      ModelRuntimeIdentityV1 expectedRuntimeIdentity) {
+    this(
+        maxConcurrentJobs,
+        providerBindingKey,
+        quotaScope,
+        journalDirectory,
+        runId,
+        expectedRuntimeIdentity,
+        ActivityRetryProfile.defaults());
   }
 }

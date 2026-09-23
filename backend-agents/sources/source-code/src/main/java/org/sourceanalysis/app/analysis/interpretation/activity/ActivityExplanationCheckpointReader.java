@@ -30,9 +30,12 @@ public final class ActivityExplanationCheckpointReader {
   private static final String COVERAGE_FILE = "activity-coverage.json";
   private static final String COVERAGE_TYPE = "FLOW_INTERPRETATION_ACTIVITY_COVERAGE";
   private static final String COVERAGE_SCHEMA = "flow-interpretation-activity-coverage-v2";
+  private static final String STEP05_COVERAGE_SCHEMA = "flow-interpretation-activity-coverage-v3";
   private static final String EXPLANATIONS_FILE = "activity-explanations.jsonl";
   private static final String EXPLANATIONS_TYPE = "FLOW_INTERPRETATION_ACTIVITY_EXPLANATIONS";
   private static final String EXPLANATIONS_SCHEMA = "flow-interpretation-activity-explanations-v1";
+  private static final String STEP05_EXPLANATIONS_SCHEMA =
+      "flow-interpretation-activity-explanations-v2";
   private static final Set<String> COVERAGE_FIELDS =
       Set.of(
           "artifactId",
@@ -67,6 +70,11 @@ public final class ActivityExplanationCheckpointReader {
           "sourceRefs",
           "terms",
           "triggerOrInput");
+  private static final Set<String> STEP05_ACTIVITY_FIELDS =
+      java.util.stream.Stream.concat(
+              ACTIVITY_FIELDS.stream(),
+              java.util.stream.Stream.of("materialSource", "sliceKey", "originalSourceRefs"))
+          .collect(java.util.stream.Collectors.toUnmodifiableSet());
 
   private final CanonicalModuleArtifactStore artifacts;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
@@ -79,9 +87,10 @@ public final class ActivityExplanationCheckpointReader {
     try {
       ReopenedModulePublication reopened = artifacts.reopen(checkpoint);
       verifyCheckpoint(checkpoint, reopened);
-      Map<String, VerifiedCanonicalPayload> payloads = payloads(reopened.payloads());
-      CoverageCheckpoint coverage = coverage(payloads.get(COVERAGE_FILE));
-      List<ReviewedActivity> activities = activities(payloads.get(EXPLANATIONS_FILE));
+      boolean step05 = "v3".equals(reopened.receipt().moduleVersion());
+      Map<String, VerifiedCanonicalPayload> payloads = payloads(reopened.payloads(), step05);
+      CoverageCheckpoint coverage = coverage(payloads.get(COVERAGE_FILE), step05);
+      List<ReviewedActivity> activities = activities(payloads.get(EXPLANATIONS_FILE), step05);
       verifyCoverage(coverage.entries(), activities, coverage.unexplainedEntries());
       return new ActivityExplanationResult(
           activities, coverage.entries(), coverage.unexplainedEntries(), checkpoint);
@@ -99,6 +108,8 @@ public final class ActivityExplanationCheckpointReader {
         || address.analysisStepKey() != AnalysisStepKey.FLOW_INTERPRETATION
         || address.moduleNumber() != 11
         || !"activity-explainer".equals(address.moduleKey())
+        || (!"v2".equals(reopened.receipt().moduleVersion())
+            && !"v3".equals(reopened.receipt().moduleVersion()))
         || (reopened.receipt().status() != ModuleCompletionStatus.SUCCEEDED
             && reopened.receipt().status() != ModuleCompletionStatus.SUCCEEDED_WITH_GAPS)
         || reopened.payloads().size() != 2) {
@@ -107,7 +118,7 @@ public final class ActivityExplanationCheckpointReader {
   }
 
   private static Map<String, VerifiedCanonicalPayload> payloads(
-      List<VerifiedCanonicalPayload> values) {
+      List<VerifiedCanonicalPayload> values, boolean step05) {
     Map<String, VerifiedCanonicalPayload> byName = new HashMap<>();
     for (VerifiedCanonicalPayload value : values) {
       if (byName.put(value.descriptor().fileName(), value) != null) {
@@ -120,19 +131,20 @@ public final class ActivityExplanationCheckpointReader {
     requireDescriptor(
         byName.get(COVERAGE_FILE),
         COVERAGE_TYPE,
-        COVERAGE_SCHEMA,
+        step05 ? STEP05_COVERAGE_SCHEMA : COVERAGE_SCHEMA,
         CanonicalMediaType.APPLICATION_JSON);
     requireDescriptor(
         byName.get(EXPLANATIONS_FILE),
         EXPLANATIONS_TYPE,
-        EXPLANATIONS_SCHEMA,
+        step05 ? STEP05_EXPLANATIONS_SCHEMA : EXPLANATIONS_SCHEMA,
         CanonicalMediaType.APPLICATION_X_NDJSON);
     return Map.copyOf(byName);
   }
 
-  private CoverageCheckpoint coverage(VerifiedCanonicalPayload payload) {
+  private CoverageCheckpoint coverage(VerifiedCanonicalPayload payload, boolean step05) {
     ObjectNode root = parseObject(payload, COVERAGE_FIELDS);
-    requireIdentity(root, payload, COVERAGE_TYPE, COVERAGE_SCHEMA);
+    requireIdentity(
+        root, payload, COVERAGE_TYPE, step05 ? STEP05_COVERAGE_SCHEMA : COVERAGE_SCHEMA);
     JsonNode entries = root.path("entryCoverage");
     if (!entries.isArray()) {
       throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
@@ -188,7 +200,7 @@ public final class ActivityExplanationCheckpointReader {
     return new CoverageCheckpoint(List.copyOf(restored), List.copyOf(restoredUnexplained));
   }
 
-  private List<ReviewedActivity> activities(VerifiedCanonicalPayload payload) {
+  private List<ReviewedActivity> activities(VerifiedCanonicalPayload payload, boolean step05) {
     String jsonl = strictUtf8(payload.canonicalUtf8().copyToByteArray());
     if (jsonl.isEmpty()) {
       return List.of();
@@ -200,9 +212,10 @@ public final class ActivityExplanationCheckpointReader {
     String previous = null;
     for (String line : jsonl.substring(0, jsonl.length() - 1).split("\n", -1)) {
       ObjectNode value = parseObject(line);
-      if (!fields(value).equals(ACTIVITY_FIELDS)
+      if (!fields(value).equals(step05 ? STEP05_ACTIVITY_FIELDS : ACTIVITY_FIELDS)
           || !"REVIEWED_ACTIVITY".equals(requiredText(value, "recordType"))
-          || !EXPLANATIONS_SCHEMA.equals(requiredText(value, "schemaVersion"))) {
+          || !(step05 ? STEP05_EXPLANATIONS_SCHEMA : EXPLANATIONS_SCHEMA)
+              .equals(requiredText(value, "schemaVersion"))) {
         throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
       }
       ReviewedActivity activity =
@@ -224,7 +237,10 @@ public final class ActivityExplanationCheckpointReader {
               requiredText(value, "certainty"),
               strings(value.path("sourceRefs")),
               strings(value.path("questions")),
-              strings(value.path("scopeLimitations")));
+              strings(value.path("scopeLimitations")),
+              step05 ? requiredText(value, "materialSource") : "BUSINESS_MATERIALS",
+              step05 ? nullableText(value.path("sliceKey")) : null,
+              step05 ? sourceMapping(value.path("originalSourceRefs")) : Map.of());
       if (previous != null && previous.compareTo(activity.activityId()) >= 0) {
         throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
       }
@@ -326,6 +342,25 @@ public final class ActivityExplanationCheckpointReader {
       values.add(value.textValue());
     }
     return List.copyOf(values);
+  }
+
+  private static Map<String, String> sourceMapping(JsonNode node) {
+    if (!(node instanceof ObjectNode object)) {
+      throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
+    }
+    Map<String, String> values = new HashMap<>();
+    object
+        .fields()
+        .forEachRemaining(
+            entry -> {
+              if (entry.getKey().isBlank()
+                  || values.put(
+                          entry.getKey(), requiredText(entry.getValue(), "originalSourceRefs"))
+                      != null) {
+                throw failure("ACTIVITY_EXPLANATION_CHECKPOINT_INVALID", null);
+              }
+            });
+    return Map.copyOf(values);
   }
 
   private static String requiredText(ObjectNode value, String field) {

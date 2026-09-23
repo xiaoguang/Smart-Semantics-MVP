@@ -1,10 +1,10 @@
 # ActivityMaterialProjector：完整单元的模型投影
 
-状态：目标设计，尚未实现。它隐藏模型输入的去重、ref转换、XML读取与计量；不改变Step05 canonical材料，不调用JDT、PersistenceAnalyzer或SQL parser。
+状态：2026-09-22小Packet全量投影已实现；`project(Packet, ActivityExplanationProfile)`建立不可变包内映射与安全XML依赖视图，`materialize(view)`生成确定性`ActivityReadingPacket`，新Activity入口已把它直接交给实际DRAFT/REVIEW Provider请求。该实现不改变Step05 canonical材料，不调用JDT、PersistenceAnalyzer或SQL parser。目标中的`UnitSelection`、ReadingCoordinator分页/补读、独立容量计量profile与持久化reading plan/slice尚未实现。
 
 ## 1. 输入与外部 Interface
 
-概念Interface为 `project(Packet, ActivityReadingProfile) -> ActivityMaterialView`，随后 `materialize(view, UnitSelection) -> ActivityReadingPacket`。二者是Activity内部职责，不增加RepositoryAnalysisAgent方法。Packet必须来自已经验证的CodeReadingMaterialReader；profile在模型batch开始前固定。
+当前小PacketInterface为 `project(Packet, ActivityExplanationProfile) -> ActivityMaterialView`，随后 `materialize(view) -> ActivityReadingPacket`；它始终物化该Packet的全部已选单元。目标大材料接线再把profile细分为ActivityReadingProfile并增加UnitSelection。二者都是Activity内部职责，不增加RepositoryAnalysisAgent方法。生产输入必须来自已经验证的CodeReadingMaterialReader；profile在模型batch开始前固定。
 
 程序持有完整Step05 reference、packetId、entryId、methodKey、statementRef、SourceReference映射与原文。模型只看本包短键：
 
@@ -26,7 +26,7 @@
 - 调用树与逐call全量长ID列表用一份短调用表/导航关系替代；保留所有候选、实参/形参、条件位置与返回使用线索。
 - 方法完整源码只出现一次；正文已含控制表达式时，controls/exits只作短定位导航，不重复整段源码。
 - 默认发送完整XML statement及其依赖，不同时发送整个Resource和同一statement；源码Resource原件仍可回查。
-- SQL AST默认不随每个statement重复发送。模型可请求已保存的该statement AST；提供时连同PARSED/PARTIAL/UNSUPPORTED、变换和完整XML，不能用AST代替原条件。
+- 当前小Packet全量投影把每个已选statement对应的已保存SQL analysis/AST及其PARSED/PARTIAL/UNSUPPORTED状态、变换和完整XML各发送一次；不重新解析，也不用AST代替原条件。目标大材料ReadingCoordinator可把AST作为完整单元按选择发送，但不能重复或重算。
 - 全局ID、hash、receipt、绝对/仓库路径、行号、工具日志、Provider/并发/预算配置不进入业务请求。方法/参数/表列名称是理解代码需要的原文，不按字符长度压缩或改名。
 
 去重是无业务取舍的呈现变化；任何未发送的非重复单元都有导航处置。不能通过删除注释、异常、return、调用候选或“像工具函数”的方法来宣称无损。
@@ -67,4 +67,4 @@ Java原子单元是完整方法/构造器/initializer/lambda记录；无body声�
 
 来源漂移、未知单元、XML安全配置、闭包断引用、映射冲突为输入错误；方法或完整闭包过大为容量未处理；未解析JDT/动态SQL继续保留原限制。retry不会改变这些来源事实。
 
-Terra直接测试完整方法条件/return/异常、实参多次出现、所有candidate、XML动态列值和include依赖、AST可选与状态、DOM投影不冒充原文、同ref稳定、跨packet不串、真实计量边界、业务字段未知时不猜、零JDT/SQL parser/模型调用。真实2MB样例只可离线测投影大小；本轮未运行测量，不能预报压缩比例或业务质量。
+当前直接测试已覆盖完整方法条件/return/异常、实际参数与形式参数关联、全部candidate、XML动态条件和include/resultMap依赖、已保存AST状态、同输入字节稳定、跨packet不串，以及实际DRAFT/REVIEW都收到同一完整readingPacket；测试不调用JDT、PersistenceAnalyzer或SQL parser。真实保存的`GET /user/logout`只读诊断得到9个方法、18个调用、9个source refs、0个XML statement和22,960-byte投影；其业务路径本身没有Mapper XML。同一保存状态的`GET /material/checkIsNameExist` companion packet确认2个真实XML statement可投影。这些是结构/接线证据，不是大材料容量或业务质量验收。

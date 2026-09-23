@@ -49,6 +49,7 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
   public ImmutableBytes execute(
       CodexSubscriptionProfile profile, String prompt, ImmutableBytes outputJsonSchema) {
     Path temporaryDirectory = null;
+    Process process = null;
     try {
       temporaryDirectory = Files.createTempDirectory("source-analysis-codex-");
       Path schema = temporaryDirectory.resolve("response-schema.json");
@@ -80,23 +81,31 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
               .redirectOutput(standardOutput.toFile())
               .redirectError(standardError.toFile());
       isolateSubscriptionAuthentication(processBuilder, profile);
-      Process process = processBuilder.start();
+      process = processBuilder.start();
       try (OutputStream stdin = process.getOutputStream()) {
         stdin.write(prompt.getBytes(StandardCharsets.UTF_8));
       }
       if (!process.waitFor(
           profile.timeout().toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)) {
-        process.destroyForcibly();
-        throw failure("CODEX_SUBSCRIPTION_TIMEOUT", null);
+        boolean ended = terminateAndConfirm(process);
+        throw new StructuredModelProviderFailure(
+            ended ? "REQUEST_TIMEOUT" : "OUTCOME_UNKNOWN",
+            true,
+            ended,
+            "CODEX_SUBSCRIPTION_TIMEOUT",
+            null);
       }
       if (process.exitValue() != 0 || !Files.isRegularFile(output)) {
-        throw failure(
-            "CODEX_SUBSCRIPTION_EXECUTION_FAILED:"
-                + failureCategory(
-                    standardOutput,
-                    standardError,
-                    process.exitValue(),
-                    Files.isRegularFile(output)),
+        String legacyCategory =
+            failureCategory(
+                standardOutput, standardError, process.exitValue(), Files.isRegularFile(output));
+        throw new StructuredModelProviderFailure(
+            "INPUT_CONTEXT_CAPACITY".equals(legacyCategory)
+                ? "PROVIDER_INPUT_CAPACITY_EXCEEDED"
+                : "UNKNOWN",
+            true,
+            true,
+            "CODEX_SUBSCRIPTION_EXECUTION_FAILED:" + legacyCategory,
             null);
       }
       return ImmutableBytes.copyOf(Files.readAllBytes(output));
@@ -104,9 +113,29 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
       if (failure instanceof InterruptedException) {
         Thread.currentThread().interrupt();
       }
-      throw failure("CODEX_SUBSCRIPTION_EXECUTION_FAILED", failure);
+      boolean started = process != null;
+      boolean ended = started && terminateAndConfirm(process);
+      throw new StructuredModelProviderFailure(
+          started && !ended ? "OUTCOME_UNKNOWN" : "UNKNOWN",
+          started,
+          ended,
+          "CODEX_SUBSCRIPTION_EXECUTION_FAILED",
+          failure);
     } finally {
       delete(temporaryDirectory);
+    }
+  }
+
+  private static boolean terminateAndConfirm(Process process) {
+    if (!process.isAlive()) {
+      return true;
+    }
+    process.destroyForcibly();
+    try {
+      return process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      return !process.isAlive();
     }
   }
 
@@ -164,6 +193,14 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
     }
     String diagnostic =
         (readAtMost(standardOutput) + "\n" + readAtMost(standardError)).toLowerCase(Locale.ROOT);
+    if (containsAny(
+        diagnostic,
+        "maximum context length",
+        "context window exceeded",
+        "input exceeds the context",
+        "prompt is too long")) {
+      return "INPUT_CONTEXT_CAPACITY";
+    }
     if (containsAny(diagnostic, "rate limit", "capacity", "quota")) {
       return "CAPACITY";
     }

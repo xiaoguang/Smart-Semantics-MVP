@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -31,6 +32,7 @@ import org.sourceanalysis.app.analysis.interpretation.activity.ReviewedActivity;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
 import org.sourceanalysis.app.analysis.interpretation.material.SourceReference;
+import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.runtime.modeljob.BoundedModelJobExecutor;
@@ -131,7 +133,8 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         packetSources(sample.corpus, sourceNormalization.finalPacketList()),
         sample.request.outputRunId(),
         sample.request.activities().checkpoint(),
-        sample.request.materials().checkpoint());
+        sample.request.materials() == null ? null : sample.request.materials().checkpoint(),
+        sample.request.codeReadingMaterialCheckpoint());
   }
 
   /**
@@ -139,18 +142,28 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
    */
   CatalogSample discoverCatalogSample(ProcessDiscoveryRequest request) {
     Objects.requireNonNull(request, "process discovery request");
-    FrozenCorpus corpus = FrozenCorpus.open(request.activities(), request.materials());
+    FrozenProcessSourceCorpus sourceText;
+    FrozenCorpus corpus;
+    if (request.usesCodeReadingMaterials()) {
+      sourceText =
+          new FrozenProcessSourceCorpus(
+              request.sourceTextReader().reopen(request.sourceInventoryReference()));
+      corpus = FrozenCorpus.open(request.activities(), request.codeReadingMaterials(), sourceText);
+    } else {
+      sourceText = null;
+      corpus = FrozenCorpus.open(request.activities(), request.materials());
+    }
     List<ActivityIndexCard> cards =
         corpus.activities().stream().map(ActivityIndexCard::from).toList();
     CatalogResult savedOrNewCatalog =
         request.savedCatalogInput() == null
             ? discoverCatalog(cards, request.profile())
             : reopenCatalogInput(request.savedCatalogInput(), cards);
-    FrozenProcessSourceCorpus sourceText =
-        request.sourceTextReader() == null
-            ? null
-            : new FrozenProcessSourceCorpus(
-                request.sourceTextReader().reopen(request.sourceInventoryReference()));
+    if (!request.usesCodeReadingMaterials() && request.sourceTextReader() != null) {
+      sourceText =
+          new FrozenProcessSourceCorpus(
+              request.sourceTextReader().reopen(request.sourceInventoryReference()));
+    }
     MaterialSelection selection =
         selectMaterials(savedOrNewCatalog, cards, corpus, sourceText, request);
     CatalogResult catalog =
@@ -4090,7 +4103,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     }
   }
 
-  private static final class FrozenCorpus {
+  static final class FrozenCorpus {
     private static final List<String> LIST_FIELDS =
         List.of(
             "participants",
@@ -4161,6 +4174,9 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       Map<String, Set<String>> activitySources = new LinkedHashMap<>();
       Map<String, Map<String, String>> statements = new LinkedHashMap<>();
       for (ReviewedActivity activity : activities) {
+        if (!"BUSINESS_MATERIALS".equals(activity.materialSource())) {
+          throw failure("PROCESS_CORPUS_ACTIVITY_MATERIAL_SOURCE_MISMATCH");
+        }
         BusinessMaterial material = materialsById.get(activity.materialId());
         if (material == null) {
           throw failure("PROCESS_CORPUS_ACTIVITY_MATERIAL_MISSING");
@@ -4176,7 +4192,131 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
           }
           refs.add(ref);
         }
-        activitySources.put(activity.activityId(), Set.copyOf(refs));
+        activitySources.put(activity.activityId(), immutableOrderedSet(refs));
+        statements.put(activity.activityId(), statementMap(activity));
+      }
+      Set<String> unexplained =
+          activityResult.unexplainedActivityEntries().stream()
+              .map(value -> value.entryId())
+              .collect(Collectors.toUnmodifiableSet());
+      return new FrozenCorpus(
+          activities,
+          Map.copyOf(byId),
+          Map.copyOf(sources),
+          Map.copyOf(activitySources),
+          Map.copyOf(statements),
+          unexplained);
+    }
+
+    static FrozenCorpus open(
+        ActivityExplanationResult activityResult,
+        CodeReadingMaterialSet materialResult,
+        FrozenProcessSourceCorpus sourceText) {
+      Objects.requireNonNull(activityResult, "activity result");
+      Objects.requireNonNull(materialResult, "code reading materials");
+      Objects.requireNonNull(sourceText, "frozen process source corpus");
+      if (!materialResult.header().sourceSnapshotId().equals(sourceText.snapshotId())) {
+        throw failure("PROCESS_CORPUS_SOURCE_SNAPSHOT_MISMATCH");
+      }
+
+      List<ReviewedActivity> activities =
+          activityResult.reviewedActivities().stream()
+              .sorted(Comparator.comparing(ReviewedActivity::activityId, UTF8_ORDER))
+              .toList();
+      Map<String, ReviewedActivity> byId = new LinkedHashMap<>();
+      for (ReviewedActivity activity : activities) {
+        if (byId.put(activity.activityId(), activity) != null) {
+          throw failure("PROCESS_CORPUS_DUPLICATE_ACTIVITY");
+        }
+      }
+      Set<String> coveredActivities =
+          activityResult.coverage().stream()
+              .flatMap(value -> value.activityIds().stream())
+              .collect(Collectors.toSet());
+      if (!coveredActivities.equals(byId.keySet())) {
+        throw failure("PROCESS_CORPUS_ACTIVITY_COVERAGE_OPEN");
+      }
+
+      Map<String, CodeReadingMaterialSet.Packet> packetsById =
+          materialResult.packets().stream()
+              .collect(
+                  Collectors.toMap(
+                      CodeReadingMaterialSet.Packet::packetId,
+                      Function.identity(),
+                      (left, right) -> {
+                        throw failure("PROCESS_CORPUS_DUPLICATE_PACKET");
+                      },
+                      LinkedHashMap::new));
+      Map<PacketSourceKey, CodeReadingMaterialSet.SourceReference> packetSources =
+          new LinkedHashMap<>();
+      for (ReviewedActivity activity : activities) {
+        if (!"CODE_READING_MATERIALS".equals(activity.materialSource())) {
+          throw failure("PROCESS_CORPUS_ACTIVITY_MATERIAL_SOURCE_MISMATCH");
+        }
+        CodeReadingMaterialSet.Packet packet = packetsById.get(activity.materialId());
+        if (packet == null) {
+          throw failure("PROCESS_CORPUS_ACTIVITY_PACKET_MISSING");
+        }
+        Map<String, CodeReadingMaterialSet.SourceReference> sourcesByOriginalRef =
+            packet.sourceReferences().stream()
+                .collect(
+                    Collectors.toMap(
+                        CodeReadingMaterialSet.SourceReference::sourceRef, Function.identity()));
+        if (!activity.originalSourceRefs().keySet().containsAll(activity.sourceRefs())) {
+          throw failure("PROCESS_CORPUS_ACTIVITY_SOURCE_MAPPING_INVALID");
+        }
+        for (String localRef : activity.sourceRefs()) {
+          String originalRef = activity.originalSourceRefs().get(localRef);
+          CodeReadingMaterialSet.SourceReference source = sourcesByOriginalRef.get(originalRef);
+          if (source == null) {
+            throw failure("PROCESS_CORPUS_ACTIVITY_SOURCE_MISSING");
+          }
+          PacketSourceKey key = new PacketSourceKey(packet.packetId(), originalRef);
+          CodeReadingMaterialSet.SourceReference previous = packetSources.putIfAbsent(key, source);
+          if (previous != null && !previous.equals(source)) {
+            throw failure("PROCESS_CORPUS_SOURCE_IDENTITY_COLLISION");
+          }
+        }
+      }
+
+      List<PacketSourceKey> sourceKeys =
+          packetSources.keySet().stream()
+              .sorted(
+                  Comparator.comparing(PacketSourceKey::packetId, UTF8_ORDER)
+                      .thenComparing(PacketSourceKey::originalSourceRef, UTF8_ORDER))
+              .toList();
+      Map<PacketSourceKey, String> finalRefs = new LinkedHashMap<>();
+      Map<String, SourceReference> sources = new LinkedHashMap<>();
+      for (int index = 0; index < sourceKeys.size(); index++) {
+        PacketSourceKey key = sourceKeys.get(index);
+        CodeReadingMaterialSet.UnitLocation location = packetSources.get(key).location();
+        FrozenProcessSourceCorpus.SourceText text =
+            sourceText.read(
+                location.path(),
+                FrozenProcessSourceCorpus.ReadRange.of(location.startLine(), location.endLine()));
+        String finalRef = "S" + (index + 1);
+        finalRefs.put(key, finalRef);
+        sources.put(
+            finalRef,
+            new SourceReference(
+                finalRef, text.path(), text.startLine(), text.endLine(), text.text()));
+      }
+
+      Map<String, Set<String>> activitySources = new LinkedHashMap<>();
+      Map<String, Map<String, String>> statements = new LinkedHashMap<>();
+      for (ReviewedActivity activity : activities) {
+        Set<String> refs = new LinkedHashSet<>();
+        for (String localRef : activity.sourceRefs()) {
+          PacketSourceKey key =
+              new PacketSourceKey(
+                  activity.materialId(), activity.originalSourceRefs().get(localRef));
+          String finalRef = finalRefs.get(key);
+          if (finalRef == null) {
+            throw failure("PROCESS_CORPUS_ACTIVITY_SOURCE_MAPPING_INVALID");
+          }
+          refs.add(finalRef);
+        }
+        activitySources.put(activity.activityId(), immutableOrderedSet(refs));
         statements.put(activity.activityId(), statementMap(activity));
       }
       Set<String> unexplained =
@@ -4277,7 +4417,7 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
       strings(value.putArray("formulasOrMetrics"), activity.formulasOrMetrics());
       strings(value.putArray("terms"), activity.terms());
       value.put("certainty", activity.certainty());
-      strings(value.putArray("sourceRefs"), activity.sourceRefs());
+      strings(value.putArray("sourceRefs"), List.copyOf(activitySourceRefs(activityId)));
       strings(value.putArray("questions"), activity.questions());
       strings(value.putArray("scopeLimitations"), activity.scopeLimitations());
       return value;
@@ -4290,17 +4430,33 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         throw failure("PROCESS_CORPUS_UNKNOWN_ACTIVITY");
       }
       List<RepositoryBusinessProcessCatalog.KnowledgeItem> values = new ArrayList<>();
+      List<String> sourceRefs = List.copyOf(activitySourceRefs(activityId));
       addKnowledge(
-          values, activity, disposition, "OBJECT", "businessObjects", activity.businessObjects());
-      addKnowledge(values, activity, disposition, "FIELD_OR_DIMENSION", "terms", activity.terms());
+          values,
+          activity,
+          disposition,
+          "OBJECT",
+          "businessObjects",
+          activity.businessObjects(),
+          sourceRefs);
+      addKnowledge(
+          values,
+          activity,
+          disposition,
+          "FIELD_OR_DIMENSION",
+          "terms",
+          activity.terms(),
+          sourceRefs);
       addKnowledge(
           values,
           activity,
           disposition,
           "FORMULA_OR_METRIC",
           "formulasOrMetrics",
-          activity.formulasOrMetrics());
-      addKnowledge(values, activity, disposition, "QUESTION", "questions", activity.questions());
+          activity.formulasOrMetrics(),
+          sourceRefs);
+      addKnowledge(
+          values, activity, disposition, "QUESTION", "questions", activity.questions(), sourceRefs);
       return List.copyOf(values);
     }
 
@@ -4310,7 +4466,8 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
         String disposition,
         String kind,
         String field,
-        List<String> values) {
+        List<String> values,
+        List<String> sourceRefs) {
       for (int index = 0; index < values.size(); index++) {
         target.add(
             new RepositoryBusinessProcessCatalog.KnowledgeItem(
@@ -4319,8 +4476,14 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
                 activity.activityId() + "#" + disposition,
                 "DIRECT_CODE_BEHAVIOR".equals(activity.certainty()) ? "CONFIRMED" : "INFERRED",
                 List.of(activity.activityId() + "/" + field + "/" + index),
-                activity.sourceRefs()));
+                sourceRefs));
       }
+    }
+
+    private record PacketSourceKey(String packetId, String originalSourceRef) {}
+
+    private static <T> Set<T> immutableOrderedSet(Set<T> values) {
+      return Collections.unmodifiableSet(new LinkedHashSet<>(values));
     }
   }
 

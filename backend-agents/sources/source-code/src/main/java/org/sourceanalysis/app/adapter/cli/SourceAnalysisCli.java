@@ -182,6 +182,8 @@ public final class SourceAnalysisCli {
       String materialId = option("--material-id", false);
       String activityBatch = option("--activity-model-batch", false);
       String reuseBatch = option("--reuse-from-model-batch", false);
+      String retryFailedBatch = option("--retry-failed-from-model-batch", false);
+      String packetId = option("--packet-id", false);
       String catalogBatch = option("--catalog-from-model-batch", false);
       String focusQuestion = option("--focus-question", false);
       String runId = option("--run", false);
@@ -190,6 +192,8 @@ public final class SourceAnalysisCli {
           "--material-id",
           "--activity-model-batch",
           "--reuse-from-model-batch",
+          "--retry-failed-from-model-batch",
+          "--packet-id",
           "--catalog-from-model-batch",
           "--focus-question",
           "--run");
@@ -197,10 +201,19 @@ public final class SourceAnalysisCli {
         if (activityBatch != null || catalogBatch != null || focusQuestion != null) {
           throw new IllegalArgumentException("Activity execution cannot use an Activity batch");
         }
+        if (materialId != null && (packetId != null || retryFailedBatch != null)) {
+          throw new IllegalArgumentException(
+              "legacy material selection cannot use Step05 packet options");
+        }
         translated.add(materialId == null ? "activities" : "activities-sample");
         addOption(translated, "--material-id", materialId);
+        addOption(translated, "--packet-id", packetId);
+        addOption(translated, "--retry-failed-from-model-batch", retryFailedBatch);
       } else if ("repository-knowledge".equals(target)) {
-        if (materialId != null || activityBatch == null) {
+        if (materialId != null
+            || packetId != null
+            || retryFailedBatch != null
+            || activityBatch == null) {
           throw new IllegalArgumentException("process execution requires an Activity batch");
         }
         translated.add("business-processes");

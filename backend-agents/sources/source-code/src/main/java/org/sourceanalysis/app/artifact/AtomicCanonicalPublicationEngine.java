@@ -1482,6 +1482,10 @@ final class AtomicCanonicalPublicationEngine {
     if (businessProcessContract != null) {
       return businessProcessContract;
     }
+    ModuleArtifactContract activityContract = activityArtifactContract(payload);
+    if (activityContract != null) {
+      return activityContract;
+    }
     if ("VERIFIED_SOURCE_INVENTORY_ADMITTED_SOURCE_REQUEST".equals(payload.artifactType())
         && "verified-source-inventory-admitted-source-request-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
@@ -1788,24 +1792,6 @@ final class AtomicCanonicalPublicationEngine {
           "business-materials.jsonl",
           CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
-    if ("FLOW_INTERPRETATION_ACTIVITY_COVERAGE".equals(payload.artifactType())
-        && "flow-interpretation-activity-coverage-v2".equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.FLOW_INTERPRETATION,
-          11,
-          "activity-explainer",
-          "activity-coverage.json",
-          CanonicalEnvelopeKind.STANDALONE_JSON);
-    }
-    if ("FLOW_INTERPRETATION_ACTIVITY_EXPLANATIONS".equals(payload.artifactType())
-        && "flow-interpretation-activity-explanations-v1".equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.FLOW_INTERPRETATION,
-          11,
-          "activity-explainer",
-          "activity-explanations.jsonl",
-          CanonicalEnvelopeKind.CANONICAL_JSONL);
-    }
     if ("BUSINESS_DOCUMENT_REPORT".equals(payload.artifactType())
         && "business-document-report-v1".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
@@ -1907,6 +1893,30 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     throw invalidInstall();
+  }
+
+  private static ModuleArtifactContract activityArtifactContract(CanonicalModulePayload payload) {
+    if ("FLOW_INTERPRETATION_ACTIVITY_COVERAGE".equals(payload.artifactType())
+        && ("flow-interpretation-activity-coverage-v2".equals(payload.schemaVersion())
+            || "flow-interpretation-activity-coverage-v3".equals(payload.schemaVersion()))) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.FLOW_INTERPRETATION,
+          11,
+          "activity-explainer",
+          "activity-coverage.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("FLOW_INTERPRETATION_ACTIVITY_EXPLANATIONS".equals(payload.artifactType())
+        && ("flow-interpretation-activity-explanations-v1".equals(payload.schemaVersion())
+            || "flow-interpretation-activity-explanations-v2".equals(payload.schemaVersion()))) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.FLOW_INTERPRETATION,
+          11,
+          "activity-explainer",
+          "activity-explanations.jsonl",
+          CanonicalEnvelopeKind.CANONICAL_JSONL);
+    }
+    return null;
   }
 
   private static ModuleArtifactContract businessProcessArtifactContract(

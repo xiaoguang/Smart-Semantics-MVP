@@ -15,22 +15,39 @@ public record AnalysisRunOutput(
     ModulePublicationReference activityCheckpoint,
     ModulePublicationReference knowledgeCheckpoint,
     ModulePublicationReference reportCheckpoint,
-    AnalysisStepPublicationReference readingMaterialCheckpoint) {
+    AnalysisStepPublicationReference readingMaterialCheckpoint,
+    boolean activityBatchComplete) {
 
   public AnalysisRunOutput {
     Objects.requireNonNull(sourceRunId, "source run ID");
     if (readingMaterialCheckpoint != null) {
-      if (businessMaterialCheckpoint != null
-          || activityCheckpoint != null
-          || knowledgeCheckpoint != null
-          || reportCheckpoint != null) {
+      if (businessMaterialCheckpoint != null || reportCheckpoint != null) {
         throw new IllegalArgumentException("analysis run output checkpoint set is invalid");
       }
       requireReadingMaterials(readingMaterialCheckpoint);
       if (!sourceRunId.equals(readingMaterialCheckpoint.address().runId())) {
         throw new IllegalArgumentException("reading material checkpoint must belong to source run");
       }
+      if (activityCheckpoint != null) {
+        require(activityCheckpoint, AnalysisStepKey.FLOW_INTERPRETATION, 11, "activity-explainer");
+      } else if (activityBatchComplete) {
+        throw new IllegalArgumentException("complete Activity batch requires a checkpoint");
+      }
+      if (knowledgeCheckpoint != null) {
+        require(
+            knowledgeCheckpoint,
+            AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+            1,
+            "business-process-publisher");
+        if (activityCheckpoint == null || !activityBatchComplete) {
+          throw new IllegalArgumentException(
+              "Step05 process output requires complete reviewed Activities");
+        }
+      }
     } else {
+      if (activityBatchComplete != (activityCheckpoint != null)) {
+        throw new IllegalArgumentException("legacy Activity output completion is invalid");
+      }
       requireLegacyCheckpoints(
           sourceRunId,
           businessMaterialCheckpoint,
@@ -38,6 +55,24 @@ public record AnalysisRunOutput(
           knowledgeCheckpoint,
           reportCheckpoint);
     }
+  }
+
+  /** Preserves the previous six-field construction contract for historical output readers. */
+  public AnalysisRunOutput(
+      AnalysisRunId sourceRunId,
+      ModulePublicationReference businessMaterialCheckpoint,
+      ModulePublicationReference activityCheckpoint,
+      ModulePublicationReference knowledgeCheckpoint,
+      ModulePublicationReference reportCheckpoint,
+      AnalysisStepPublicationReference readingMaterialCheckpoint) {
+    this(
+        sourceRunId,
+        businessMaterialCheckpoint,
+        activityCheckpoint,
+        knowledgeCheckpoint,
+        reportCheckpoint,
+        readingMaterialCheckpoint,
+        activityCheckpoint != null);
   }
 
   private static void requireLegacyCheckpoints(
@@ -102,7 +137,8 @@ public record AnalysisRunOutput(
         activityCheckpoint,
         knowledgeCheckpoint,
         reportCheckpoint,
-        null);
+        null,
+        activityCheckpoint != null);
   }
 
   /** Creates the ordinary same-run form used when material and business results share one owner. */
@@ -117,13 +153,47 @@ public record AnalysisRunOutput(
         activityCheckpoint,
         knowledgeCheckpoint,
         reportCheckpoint,
-        null);
+        null,
+        activityCheckpoint != null);
   }
 
   /** Creates the v5 form for a completed Step05 reading-material publication. */
   public static AnalysisRunOutput readingMaterials(
       AnalysisRunId sourceRunId, AnalysisStepPublicationReference readingMaterialCheckpoint) {
-    return new AnalysisRunOutput(sourceRunId, null, null, null, null, readingMaterialCheckpoint);
+    return new AnalysisRunOutput(
+        sourceRunId, null, null, null, null, readingMaterialCheckpoint, false);
+  }
+
+  /** Registers a new model batch over an immutable Step05 source, including partial results. */
+  public static AnalysisRunOutput step05Activities(
+      AnalysisRunId sourceRunId,
+      AnalysisStepPublicationReference readingMaterialCheckpoint,
+      ModulePublicationReference activityCheckpoint,
+      boolean activityBatchComplete) {
+    return new AnalysisRunOutput(
+        sourceRunId,
+        null,
+        activityCheckpoint,
+        null,
+        null,
+        readingMaterialCheckpoint,
+        activityBatchComplete);
+  }
+
+  /** Registers Step07 over a separate, completed Step05 Activity model batch. */
+  public static AnalysisRunOutput step05Processes(
+      AnalysisRunId sourceRunId,
+      AnalysisStepPublicationReference readingMaterialCheckpoint,
+      ModulePublicationReference activityCheckpoint,
+      ModulePublicationReference knowledgeCheckpoint) {
+    return new AnalysisRunOutput(
+        sourceRunId,
+        null,
+        activityCheckpoint,
+        knowledgeCheckpoint,
+        null,
+        readingMaterialCheckpoint,
+        true);
   }
 
   /** Returns whether this finished run contains a review-approved business report. */
@@ -133,6 +203,12 @@ public record AnalysisRunOutput(
 
   /** Returns whether this run contains a complete reviewed Activity checkpoint. */
   public boolean hasCompletedActivities() {
+    return activityCheckpoint != null
+        && (readingMaterialCheckpoint == null || activityBatchComplete);
+  }
+
+  /** True also for a verified, partial Activity publication in a failed model batch. */
+  public boolean hasActivityCheckpoint() {
     return activityCheckpoint != null;
   }
 

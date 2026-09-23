@@ -310,6 +310,135 @@ class ModelBatchAnalysisRunOutputTest {
         store, queued.runId(), AnalysisRunLifecycleState.QUEUED, AnalysisRunLifecycleState.RUNNING);
   }
 
+  @Test
+  void roundTripsPartialStep05ActivityOutputFromAFailedModelBatch() throws Exception {
+    Path storeDirectory = temporaryDirectory.resolve("step05-partial-activity-output");
+    Files.createDirectory(storeDirectory);
+    AnalysisRunId batchId;
+    try (RunStoreHandle store = RunStoreBootstrap.openForTest(storeDirectory)) {
+      AnalysisRunReference sourceRun = stoppedRun(store);
+      AnalysisRunReference batch = runningRun(store);
+      batchId = batch.runId();
+      AnalysisRunOutput partial =
+          AnalysisRunOutput.step05Activities(
+              sourceRun.runId(),
+              materialPublication(sourceRun.runId(), AnalysisStepKey.BUSINESS_FLOWS, 'a'),
+              modulePublication(batchId, AnalysisStepKey.FLOW_INTERPRETATION, 11, 'b'),
+              false);
+      RunStoreBootstrap.recordAnalysisRunOutput(store, batchId, partial);
+      RunStoreBootstrap.transitionAnalysisRun(
+          store, batchId, AnalysisRunLifecycleState.RUNNING, AnalysisRunLifecycleState.FAILED);
+    }
+    try (RunStoreHandle reopened = RunStoreBootstrap.open(storeDirectory)) {
+      AnalysisRunOutput output =
+          RunStoreBootstrap.reopenAnalysisRunOutput(reopened, batchId).orElseThrow();
+      assertThat(output.hasActivityCheckpoint()).isTrue();
+      assertThat(output.hasCompletedActivities()).isFalse();
+      assertThat(output.hasReadingMaterials()).isTrue();
+      assertThat(output.activityCheckpoint().address().runId()).isEqualTo(batchId);
+    }
+  }
+
+  @Test
+  void roundTripsStep05ProcessOutputWithThreeDistinctOwners() throws Exception {
+    Path storeDirectory = temporaryDirectory.resolve("step05-process-output");
+    Files.createDirectory(storeDirectory);
+    AnalysisRunId processRunId;
+    AnalysisRunOutput expected;
+    try (RunStoreHandle store = RunStoreBootstrap.openForTest(storeDirectory)) {
+      AnalysisRunReference sourceRun = stoppedRun(store);
+      AnalysisRunReference activityRun = stoppedRun(store);
+      AnalysisRunReference processRun = runningRun(store);
+      processRunId = processRun.runId();
+      expected =
+          AnalysisRunOutput.step05Processes(
+              sourceRun.runId(),
+              materialPublication(sourceRun.runId(), AnalysisStepKey.BUSINESS_FLOWS, 'a'),
+              modulePublication(activityRun.runId(), AnalysisStepKey.FLOW_INTERPRETATION, 11, 'b'),
+              processPublication(processRunId, 'c'));
+      RunStoreBootstrap.recordAnalysisRunOutput(store, processRunId, expected);
+      RunStoreBootstrap.transitionAnalysisRun(
+          store,
+          processRunId,
+          AnalysisRunLifecycleState.RUNNING,
+          AnalysisRunLifecycleState.FINISHED);
+    }
+    String manifest =
+        Files.readString(
+            storeDirectory
+                .resolve("analysis-runs")
+                .resolve(processRunId.value())
+                .resolve("run-output.json"));
+    assertThat(manifest).contains("\"schemaVersion\":\"analysis-run-output-v6\"");
+    assertThat(manifest).contains("\"outputKind\":\"PROCESS_CATALOG\"");
+    try (RunStoreHandle store = RunStoreBootstrap.open(storeDirectory)) {
+      AnalysisRunOutput reopened =
+          RunStoreBootstrap.reopenAnalysisRunOutput(store, processRunId).orElseThrow();
+      assertThat(reopened).isEqualTo(expected);
+      assertThat(reopened.hasCompletedActivities()).isTrue();
+      assertThat(reopened.hasCompletedProcesses()).isTrue();
+      assertThat(reopened.hasCompletedReport()).isFalse();
+    }
+  }
+
+  @Test
+  void formalAgentRecordsPartialStep05ActivitiesBeforeFailureAndAllowsOnlyTheirInspection()
+      throws Exception {
+    Path storeDirectory = temporaryDirectory.resolve("step05-agent-partial-output");
+    Files.createDirectory(storeDirectory);
+    try (RunStoreHandle store = RunStoreBootstrap.openForTest(storeDirectory)) {
+      AnalysisRunReference sourceRun = stoppedRun(store);
+      AnalysisStepPublicationReference material =
+          materialPublication(sourceRun.runId(), AnalysisStepKey.BUSINESS_FLOWS, 'a');
+      RepositoryAnalysisRunCoordinator coordinator =
+          RepositoryAnalysisRunCoordinator.configured(
+              request ->
+                  AnalysisRunOutput.step05Activities(
+                      sourceRun.runId(),
+                      material,
+                      modulePublication(
+                          request.runId(), AnalysisStepKey.FLOW_INTERPRETATION, 11, 'b'),
+                      false));
+      LocalRepositoryAnalysisAgent agent =
+          new LocalRepositoryAnalysisAgent(
+              store,
+              coordinator,
+              null,
+              (runId, output, key, maxBytes) ->
+                  new ArtifactView(
+                      runId,
+                      key,
+                      new ArtifactReference(
+                          ArtifactId.parse("activity-coverage:" + "a".repeat(64)),
+                          new Sha256Digest("a".repeat(64))),
+                      "flow-interpretation-activity-coverage-v3",
+                      "application/json",
+                      "{}"));
+      AnalysisRunReference queued = agent.start(request());
+      AnalysisRunReference failed =
+          agent.executeStep(
+              new AnalysisStepExecutionRequest(
+                  queued.runId(), AnalysisExecutionIntent.EXPLAIN_ACTIVITIES, null, null));
+      assertThat(failed.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.FAILED);
+      assertThat(agent.inspect(queued.runId().value()).output().hasActivityCheckpoint()).isTrue();
+      assertThat(
+              agent
+                  .artifact(
+                      new ArtifactQuery(
+                          queued.runId().value(), BusinessOutputArtifactKey.ACTIVITY_COVERAGE, 32))
+                  .schemaVersion())
+          .isEqualTo("flow-interpretation-activity-coverage-v3");
+      assertThatThrownBy(
+              () ->
+                  agent.artifact(
+                      new ArtifactQuery(
+                          queued.runId().value(),
+                          BusinessOutputArtifactKey.BUSINESS_PROCESSES_MARKDOWN,
+                          32)))
+          .isInstanceOf(IllegalStateException.class);
+    }
+  }
+
   private static AnalysisRunId sourceRunId(AnalysisRunOutput output) throws Exception {
     try {
       return (AnalysisRunId) output.getClass().getMethod("sourceRunId").invoke(output);

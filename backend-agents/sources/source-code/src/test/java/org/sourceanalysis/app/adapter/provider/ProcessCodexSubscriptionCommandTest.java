@@ -231,6 +231,35 @@ class ProcessCodexSubscriptionCommandTest {
   }
 
   @Test
+  void distinguishesAnExplicitInputContextRejectionFromServiceCapacity() throws Exception {
+    Path executable = temporaryDirectory.resolve("fake-codex-context");
+    Files.writeString(
+        executable,
+        "#!/bin/sh\necho 'Input exceeds the maximum context length; token=private' >&2\nexit 1\n",
+        StandardCharsets.UTF_8);
+    if (!executable.toFile().setExecutable(true, true)) {
+      throw new IllegalStateException("TEST_EXECUTABLE_PERMISSION_NOT_SET");
+    }
+
+    assertThatThrownBy(
+            () ->
+                new ProcessCodexSubscriptionCommand()
+                    .execute(
+                        new CodexSubscriptionProfile(
+                            executable, "gpt-5.6-terra", "xhigh", Duration.ofSeconds(2)),
+                        "untrusted prompt",
+                        ImmutableBytes.copyOf(
+                            "{\"type\":\"object\"}".getBytes(StandardCharsets.UTF_8))))
+        .isInstanceOf(StructuredModelProviderFailure.class)
+        .satisfies(
+            failure -> {
+              assertThat(((StructuredModelProviderFailure) failure).reasonCode())
+                  .isEqualTo("PROVIDER_INPUT_CAPACITY_EXCEEDED");
+              assertThat(failure.getMessage()).doesNotContain("token=private");
+            });
+  }
+
+  @Test
   void rejectsAStatusThatReportsApiKeyAuthenticationDespiteExitZero() throws Exception {
     Path executable = temporaryDirectory.resolve("fake-codex-api-login");
     Files.writeString(

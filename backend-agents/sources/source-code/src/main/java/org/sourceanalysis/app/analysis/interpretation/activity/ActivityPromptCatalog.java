@@ -4,9 +4,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
-/** Versioned, classpath-owned Chinese instructions for the two local-activity model tasks. */
+/** Versioned, classpath-owned Chinese instructions for Activity reading and explanation tasks. */
 final class ActivityPromptCatalog {
 
+  private static final String READING_PLAN = load("activity-reading-plan-v1.txt");
   private static final String DRAFT = load("activity-draft-v2.txt");
   private static final String REVIEW = load("activity-review-v2.txt");
 
@@ -14,6 +15,7 @@ final class ActivityPromptCatalog {
 
   static String instructionsFor(String taskKind) {
     return switch (taskKind) {
+      case "ACTIVITY_READING_PLAN" -> READING_PLAN;
       case "ACTIVITY_DRAFT" -> DRAFT;
       case "ACTIVITY_REVIEW" -> REVIEW;
       default -> throw new IllegalArgumentException("unknown activity prompt task kind");

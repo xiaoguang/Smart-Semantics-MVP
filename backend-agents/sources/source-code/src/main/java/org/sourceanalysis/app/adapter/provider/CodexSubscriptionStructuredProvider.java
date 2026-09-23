@@ -29,9 +29,23 @@ public final class CodexSubscriptionStructuredProvider implements StructuredMode
   public StructuredModelResponse generate(StructuredModelRequest request) {
     Objects.requireNonNull(request, "structured model request");
     String prompt = prompt(request);
-    ImmutableBytes canonicalResponse =
-        canonicalJson.canonicalizeStrictJson(
-            command.execute(profile, prompt, request.outputJsonSchema()));
+    ImmutableBytes actualResponse = command.execute(profile, prompt, request.outputJsonSchema());
+    if (actualResponse.size() > request.maxOutputBytes()) {
+      throw new StructuredModelProviderFailure(
+          "RESPONSE_BUDGET_EXCEEDED", true, true, "CODEX_SUBSCRIPTION_RESPONSE_TOO_LARGE", null);
+    }
+    ImmutableBytes canonicalResponse;
+    try {
+      canonicalResponse = canonicalJson.canonicalizeStrictJson(actualResponse);
+    } catch (IllegalArgumentException invalidJson) {
+      throw new StructuredModelProviderFailure(
+          "INVALID_JSON",
+          true,
+          true,
+          "CODEX_SUBSCRIPTION_RESPONSE_INVALID_JSON",
+          invalidJson,
+          actualResponse);
+    }
     return new StructuredModelResponse(
         canonicalResponse,
         new ModelRuntimeIdentityV1(

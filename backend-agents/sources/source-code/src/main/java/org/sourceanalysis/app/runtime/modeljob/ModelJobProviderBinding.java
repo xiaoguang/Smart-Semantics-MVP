@@ -13,6 +13,7 @@ public final class ModelJobProviderBinding {
   private final int maxConcurrentJobs;
   private final List<StructuredModelProvider> providerClients;
   private final ModelRuntimeIdentityV1 expectedRuntimeIdentity;
+  private final ModelJobCapacityProfile capacity;
 
   public ModelJobProviderBinding(
       String key,
@@ -29,6 +30,16 @@ public final class ModelJobProviderBinding {
       int maxConcurrentJobs,
       List<StructuredModelProvider> providerClients,
       ModelRuntimeIdentityV1 expectedRuntimeIdentity) {
+    this(key, quotaScope, maxConcurrentJobs, providerClients, expectedRuntimeIdentity, null);
+  }
+
+  public ModelJobProviderBinding(
+      String key,
+      String quotaScope,
+      int maxConcurrentJobs,
+      List<StructuredModelProvider> providerClients,
+      ModelRuntimeIdentityV1 expectedRuntimeIdentity,
+      ModelJobCapacityProfile capacity) {
     required(key, "provider key");
     required(quotaScope, "quota scope");
     if (maxConcurrentJobs < 1) {
@@ -43,6 +54,7 @@ public final class ModelJobProviderBinding {
     this.maxConcurrentJobs = maxConcurrentJobs;
     this.providerClients = List.copyOf(providerClients);
     this.expectedRuntimeIdentity = expectedRuntimeIdentity;
+    this.capacity = capacity;
     // Direct in-memory test seams may leave identity unchecked. Formal execution validates it.
   }
 
@@ -66,6 +78,10 @@ public final class ModelJobProviderBinding {
     return expectedRuntimeIdentity;
   }
 
+  public ModelJobCapacityProfile capacity() {
+    return capacity;
+  }
+
   /** Fixes one whole DRAFT-to-REVIEW job to one configured credential client. */
   public ModelJobProviderBinding forJobOrdinal(int ordinal) {
     if (ordinal < 0) {
@@ -76,7 +92,7 @@ public final class ModelJobProviderBinding {
       return this;
     }
     return new ModelJobProviderBinding(
-        key, quotaScope, maxConcurrentJobs, selected, expectedRuntimeIdentity);
+        key, quotaScope, maxConcurrentJobs, List.of(selected), expectedRuntimeIdentity, capacity);
   }
 
   private static void required(String value, String label) {

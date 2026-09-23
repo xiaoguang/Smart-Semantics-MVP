@@ -1,6 +1,6 @@
 # 新Step05材料接入Activity：版本与来源合同
 
-状态：2026-09-22目标设计，尚未实现。当前 `CodeReadingMaterialReader.reopen` 已返回完整Packet；`ActivityExplainer`、`ActivityExplanationCheckpointPublisher`与CLI模型执行仍接受旧BusinessMaterial/BusinessMaterialBuildResult，Step07 FrozenAnalysisCorpus也仍沿旧M10读取。不能把reader已实现等同整条业务链已接通。
+状态：2026-09-23实现与固定325包真实批次验收完成，语义交付仍为`PARTIAL`；实际数据见[验收记录](full-step05-acceptance-20260923.md)。`CodeReadingMaterialReader.reopen`可返回完整Packet；`ActivityExplainer.explain(ExplainCodeReadingMaterialsRequest)`已支持小包直接DRAFT/完整REVIEW和大包阅读后按scope解释，且不构造M10。DRAFT/REVIEW attempt和成功stage不可变保存，YAML `activityRetry`已加载，显式来源批次的已成功stage可在输入与模型身份匹配时零调用复用。M11 v3生产者与读取器已保存每个Activity的Step05 packet、slice及短引用到原sourceRef的映射；`analysis-run-output-v6`和本地Agent已支持失败批次登记、查询已保存的部分Activity。正式CLI的Step05材料分派、样本和手动重试已实测；Step07双来源读取已通过离线直接测试。一个上游JDT入口无材料，本轮不把它伪称为已解释，也没有启动新版业务过程模型。
 
 ## 1. 最小接入范围
 
@@ -27,7 +27,7 @@
 | Activity私有完整job | model-job-reviewed-result-v2 pair | model-job-reviewed-result-v4：plan/packet/slice及成功stage引用；Step07过程v3不改 |
 | 新私有阅读/attempt | 无 | activity-reading-plan-v1、activity-reading-packet-v1、model-job-stage-attempt-v1、activity-batch-result-v1 |
 
-版本号定义目标wire分派，当前代码不得被描述为已经接受新字段。旧M10内容不迁移到Step05，不将历史Luna结果改标Terra或XML增强。新生产不得安装旧M10，显式旧输入解释/只读能力按既有授权和reader合同保留。
+版本表记录本轮实施前合同到新生产合同的变化，目标版本均已接线；最终真实全量验收仍单独判定。旧M10内容不迁移到Step05，不将历史Luna结果改标Terra或XML增强。新生产不得安装旧M10，显式旧输入解释/只读能力按既有授权和reader合同保留。
 
 ## 3. 材料来源与运行归属
 
@@ -41,7 +41,7 @@ sourceRunId拥有材料；新modelBatchId（既有AnalysisRunId）拥有新Activ
 
 v6顶层明确保存 `schemaVersion,runId,sourceRunId,outputKind,materialSource,activityCheckpoint,knowledgeCheckpoint,reportCheckpoint,modelBatchComplete`；未产生的模型checkpoint为null。沿用现有knowledgeCheckpoint/reportCheckpoint名称，不为业务称谓增加字段别名。v6只用于明确声明新合同的模型输出；v5材料专用格式继续原字段集。modelBatchComplete为程序保存/调度结论，不是业务完整性评分。false时不能自动进入Step07。
 
-当前AnalysisRunOutput构造器禁止readingMaterialCheckpoint与Activity共存，hasCompletedActivities()也仅判断checkpoint非null；两者都必须按v6修改并保留历史分支。目标hasCompletedActivities()同时验证检查点存在、来源/scope闭合和完整性门禁，不能让部分M11放行。后续独立Step07 run可以消费另一已完成Activity batch：Activity owner以其checkpoint地址及已绑定输入核对，不能强制等于当前process run；knowledge/report按各自输出owner核对，sourceRun始终是材料owner。
+v6的AnalysisRunOutput允许readingMaterialCheckpoint与Activity在正确来源关系下共存；hasCompletedActivities()同时验证检查点、来源/scope闭合及完整性门禁，部分M11不能自动放行。历史分支保持原合同。后续独立Step07 run可以消费另一已完成Activity batch：Activity owner以其checkpoint地址及已绑定输入核对，不能强制等于当前process run；knowledge/report按各自输出owner核对，sourceRun始终是材料owner。
 
 ## 4. M11与来源映射
 
@@ -61,6 +61,8 @@ publisher只接受验证后的不可变结果，检查来源、entry/slice、ref
 
 保存次序必须符合现有FileSystemAnalysisRunRegistry.recordOutput只接受RUNNING的约束：先完成可验证的M11安装与activity-batch-result，再在RUNNING下recordOutput保存v6，最后转FAILED或成功终态。不能先结束run再写output，也不为补结果修改旧结束run；若保存环节失败，保持已安装不可变产物与诊断并按存储错误停止，不宣称有完整可查询输出。
 
+公开 `artifact` 查询M11使用本次输出的 `policyRegistry`，而不是只登记了固定上游材料的 `inputPolicyRegistry`；固定Step05文件仍由后者的step store严格读取。这个边界必须在输入/输出registry不同的正式配置下验证，包括失败批次中已验证的部分M11。
+
 ## 5. Step07的直接使用
 
 FrozenAnalysisCorpus重开M11 coverage-v3的materialSource，使用正式Step05 reader取得相关Packet与source mapping；历史coverage按M10原合同读取。它不重新调用ActivityExplainer或JDT。ProcessMaterialAssembler可取完整已审Activity与其实际来源，不用导航卡替代原文。
@@ -69,13 +71,13 @@ FrozenAnalysisCorpus重开M11 coverage-v3的materialSource，使用正式Step05 
 
 ## 6. CLI：显式选择与手动retry
 
-以下为待实现的现有 `source-analysis` 参数扩展，不能当成当前已可运行命令。保留现有 `execute-step --target flow-interpretation`，不新增公共Agent方法或第二CLI。
+以下参数已接入现有 `source-analysis execute-step --target flow-interpretation`，不新增公共Agent方法或第二CLI。`/user/logout`小包及DepotHead大包已完成真实生成和审阅；固定325包已完成，结果仍披露唯一无材料入口和各包局部限制。
 
 | 参数 | 语义 |
 | --- | --- |
 | `--material-id ID` | 已有单材料样本选择；明确新kind时ID为该Step05 packetId，旧kind仍按旧材料ID |
 | `--retry-failed-from-model-batch RUN_ID` | 新增；读取已结束批次的activity-batch-result-v1，选择其所有失败/未完成packet；不重新执行旧run |
-| `--packet-id ID`（可重复） | 新增；仅与retry选项组合，将范围限制为上述批次失败清单中的这些packet |
+| `--packet-id ID` | 精确选择Step05样本packet；非retry批次可用逗号分隔多个ID，retry批次只接受一个失败packet ID |
 | `--reuse-from-model-batch RUN_ID` | 既有参数扩展到新Activity成功stage；仅选择复用来源，不表示“只重试失败包” |
 | `--run RUN_ID` | 只接受新QUEUED run并核对已绑定配置；不能把旧FAILED/FINISHED run重新激活 |
 
@@ -84,6 +86,8 @@ FrozenAnalysisCorpus重开M11 coverage-v3的materialSource，使用正式Step05 
 ```text
 source-analysis --config /absolute/path/activity.yaml execute-step --target flow-interpretation --retry-failed-from-model-batch <failed-batch> --reuse-from-model-batch <failed-batch>
 ```
+
+样本质量门使用两个不可变批次：先单独执行小包并检查，再用 `--packet-id <small>,<large> --reuse-from-model-batch <small-batch>` 建立合并样本批次。后者保留小包原全量序号、零调用复用其已审结果，只新执行大包；正式全量仅从合并样本批次复用。该做法不重启已结束运行，也不复制原始模型记录。
 
 定向只处理一个失败包时追加 `--packet-id <packetId>`。配置仍绑定同一个已保存材料state；未给--run时沿既有机制创建新modelBatchId。retry参数与--material-id、--activity-model-batch、--catalog-from-model-batch/focus-question互斥，只能用于flow-interpretation。来源批次必须已结束，失败报告与材料身份须匹配；未知packet或成功packet不作为失败范围接收。
 
@@ -100,6 +104,8 @@ scope与reuse是两回事：只指定retry范围、不指定reuse，意味着在
 实际输入/输出/token和错误摘要留在私有attempt记录，普通终端不打印整段源码或秘密。完整 `activity-batch-result-v1` 存批次私有目录；CLI可显示其本地路径，公共Agent不暴露Path。现有inspect --run给出同一精简失败/完成性视图；读失败清单不启动Provider。
 
 run非成功和M11含部分成功不矛盾。无论剩余原因是容量、导航未读还是retry耗尽，CLI必须指出受影响范围，并给出合适下一步：可retry瞬时故障、需改profile的新batch、或需讨论缺失技术材料；不能建议所有错误无脑重试。
+
+来源状态 `COLLECTED_WITH_LIMITATIONS` 仍表示该入口有可解释的材料。计算模型批次是否完整时，它与 `COLLECTED` 一样必须检查Activity处置；只有 `NOT_COLLECTED` 的上游缺口不计作模型失败。精确小样未选的其余入口仍使仓库批次不完整，不能因已选小包成功而标为全仓完成。
 
 ## 8. 直接实施检查
 

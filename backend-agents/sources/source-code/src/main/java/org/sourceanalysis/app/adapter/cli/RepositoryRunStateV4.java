@@ -213,6 +213,14 @@ final class RepositoryRunStateV4 {
     }
   }
 
+  static ObjectNode checkpointJson(AnalysisStepPublicationReference reference) {
+    return referenceJson(reference);
+  }
+
+  static AnalysisStepPublicationReference loadCheckpoint(ObjectNode value) {
+    return reference(value, "REPOSITORY_RUN_STATE_V4_INVALID");
+  }
+
   private static ObjectNode referenceJson(AnalysisStepPublicationReference reference) {
     ObjectNode value = JsonNodeFactory.instance.objectNode();
     ObjectNode address = value.putObject("address");

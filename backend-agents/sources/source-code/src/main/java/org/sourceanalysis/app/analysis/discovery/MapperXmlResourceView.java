@@ -104,6 +104,25 @@ public final class MapperXmlResourceView {
     return new MapperXmlResourceView(frozenSource, mapperResources, rejected);
   }
 
+  /**
+   * Securely parses one already-saved Mapper XML resource without reopening a source inventory.
+   *
+   * <p>This is the narrow reuse seam for downstream readers that already hold immutable raw XML. It
+   * applies the same external-entity, DTD and XInclude policy as {@link #open}.
+   */
+  public static Document parseSavedRawSource(String rawSource) {
+    Objects.requireNonNull(rawSource, "saved Mapper XML source");
+    try {
+      return parseSecurely(rawSource);
+    } catch (XmlSecurityPolicyException failure) {
+      throw new IllegalStateException("XML_SECURITY_POLICY_UNENFORCEABLE", failure);
+    } catch (SAXException failure) {
+      throw new IllegalArgumentException("XML_SECURITY_REJECTED", failure);
+    } catch (ParserConfigurationException | IOException | RuntimeException failure) {
+      throw new IllegalArgumentException("XML_PARSE_REJECTED", failure);
+    }
+  }
+
   /** Rejects a shared view that was made from a different frozen inventory content. */
   public void requireSameFrozenSource(VerifiedSourceTextSet source) {
     if (!frozenSource.equals(source)) {

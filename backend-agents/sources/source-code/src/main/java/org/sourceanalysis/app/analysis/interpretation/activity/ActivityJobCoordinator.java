@@ -24,6 +24,12 @@ interface ActivityJobCoordinator {
   /** Runs the supplied jobs and emits every completed review exactly once before returning. */
   List<CompletedActivityJob> execute(
       List<ActivityJob> jobs, ActivityJobCompletionSink completionSink);
+
+  /** Isolates terminal packet failures while retaining the same bounded whole-packet permits. */
+  default ActivityJobBatchOutcome executeIsolated(
+      List<ActivityJob> jobs, ActivityJobCompletionSink completionSink) {
+    return new ActivityJobBatchOutcome(execute(jobs, completionSink), List.of());
+  }
 }
 
 /** Default Java 17 bounded coordinator for one existing structured-model Provider. */
@@ -52,11 +58,22 @@ final class BoundedActivityJobCoordinator implements ActivityJobCoordinator {
   @Override
   public List<CompletedActivityJob> execute(
       List<ActivityJob> jobs, ActivityJobCompletionSink completionSink) {
+    return run(jobs, completionSink, false).completed();
+  }
+
+  @Override
+  public ActivityJobBatchOutcome executeIsolated(
+      List<ActivityJob> jobs, ActivityJobCompletionSink completionSink) {
+    return run(jobs, completionSink, true);
+  }
+
+  private ActivityJobBatchOutcome run(
+      List<ActivityJob> jobs, ActivityJobCompletionSink completionSink, boolean isolatePackets) {
     List<ActivityJob> orderedJobs = List.copyOf(jobs);
     Objects.requireNonNull(completionSink, "activity job completion sink");
     validateUniqueMaterialIds(orderedJobs);
     if (orderedJobs.isEmpty()) {
-      return List.of();
+      return new ActivityJobBatchOutcome(List.of(), List.of());
     }
 
     ThreadPoolExecutor executor =
@@ -71,12 +88,14 @@ final class BoundedActivityJobCoordinator implements ActivityJobCoordinator {
         new ExecutorCompletionService<>(executor);
     DispatchGate dispatchGate = new DispatchGate();
     List<CompletedActivityJob> completed = new ArrayList<>();
+    List<FailedActivityJob> failed = new ArrayList<>();
     List<ActivityJob> pending = new ArrayList<>(orderedJobs);
     Map<Future<CompletedActivityJob>, ActivityJob> submitted = new LinkedHashMap<>();
     Map<String, Integer> providerInFlight = new LinkedHashMap<>();
     Throwable fatal = null;
     try {
-      dispatchAvailable(pending, submitted, providerInFlight, completedJobs, dispatchGate);
+      dispatchAvailable(
+          pending, submitted, providerInFlight, completedJobs, dispatchGate, isolatePackets);
 
       while (!submitted.isEmpty()) {
         Future<CompletedActivityJob> future;
@@ -100,9 +119,29 @@ final class BoundedActivityJobCoordinator implements ActivityJobCoordinator {
           Thread.currentThread().interrupt();
           throw new IllegalStateException("ACTIVITY_JOB_COORDINATION_INTERRUPTED", interrupted);
         } catch (ExecutionException failedJob) {
-          dispatchGate.stop();
-          if (fatal == null) {
-            fatal = failedJob.getCause();
+          Throwable cause = failedJob.getCause();
+          if (isolatePackets && packetLocalFailure(cause)) {
+            FailedActivityJob failure =
+                new FailedActivityJob(submittedJob, packetReason(cause), cause);
+            completionSink.fail(failure);
+            failed.add(failure);
+            if (bindingFailure(cause)) {
+              for (int index = pending.size() - 1; index >= 0; index--) {
+                ActivityJob blocked = pending.get(index);
+                if (blocked.providerBindingKey().equals(submittedJob.providerBindingKey())) {
+                  pending.remove(index);
+                  FailedActivityJob blockedFailure =
+                      new FailedActivityJob(blocked, "BLOCKED_BY_PROVIDER", cause);
+                  completionSink.fail(blockedFailure);
+                  failed.add(blockedFailure);
+                }
+              }
+            }
+          } else {
+            dispatchGate.stop();
+            if (fatal == null) {
+              fatal = cause;
+            }
           }
         } catch (RuntimeException failedCompletion) {
           dispatchGate.stop();
@@ -114,7 +153,8 @@ final class BoundedActivityJobCoordinator implements ActivityJobCoordinator {
         }
 
         if (fatal == null && !dispatchGate.stopped()) {
-          dispatchAvailable(pending, submitted, providerInFlight, completedJobs, dispatchGate);
+          dispatchAvailable(
+              pending, submitted, providerInFlight, completedJobs, dispatchGate, isolatePackets);
         }
       }
     } finally {
@@ -124,7 +164,7 @@ final class BoundedActivityJobCoordinator implements ActivityJobCoordinator {
     if (fatal != null) {
       throw failure(fatal);
     }
-    return List.copyOf(completed);
+    return new ActivityJobBatchOutcome(completed, failed);
   }
 
   private void dispatchAvailable(
@@ -132,14 +172,16 @@ final class BoundedActivityJobCoordinator implements ActivityJobCoordinator {
       Map<Future<CompletedActivityJob>, ActivityJob> submitted,
       Map<String, Integer> providerInFlight,
       ExecutorCompletionService<CompletedActivityJob> completedJobs,
-      DispatchGate dispatchGate) {
+      DispatchGate dispatchGate,
+      boolean isolatePackets) {
     while (submitted.size() < maxConcurrentJobs && !dispatchGate.stopped()) {
       int pendingIndex = firstSchedulable(pending, providerInFlight);
       if (pendingIndex < 0) {
         return;
       }
       ActivityJob job = pending.remove(pendingIndex);
-      Future<CompletedActivityJob> future = completedJobs.submit(jobCallable(job, dispatchGate));
+      Future<CompletedActivityJob> future =
+          completedJobs.submit(jobCallable(job, dispatchGate, isolatePackets));
       submitted.put(future, job);
       providerInFlight.merge(job.providerBindingKey(), 1, Integer::sum);
     }
@@ -171,7 +213,7 @@ final class BoundedActivityJobCoordinator implements ActivityJobCoordinator {
   }
 
   private static Callable<CompletedActivityJob> jobCallable(
-      ActivityJob job, DispatchGate dispatchGate) {
+      ActivityJob job, DispatchGate dispatchGate, boolean isolatePackets) {
     return () -> {
       if (!dispatchGate.beginJob()) {
         return null;
@@ -183,10 +225,58 @@ final class BoundedActivityJobCoordinator implements ActivityJobCoordinator {
         }
         return new CompletedActivityJob(job, result);
       } catch (Exception | Error failure) {
-        dispatchGate.stop();
+        if (!isolatePackets) {
+          dispatchGate.stop();
+        }
         throw failure;
       }
     };
+  }
+
+  private static boolean packetLocalFailure(Throwable failure) {
+    if (failure instanceof Error) {
+      return false;
+    }
+    for (Throwable current = failure; current != null; current = current.getCause()) {
+      if (current
+          instanceof org.sourceanalysis.app.adapter.provider.StructuredModelProviderFailure) {
+        return true;
+      }
+      if (current instanceof IllegalArgumentException
+          && current.getMessage() != null
+          && current.getMessage().startsWith("ACTIVITY_")) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean bindingFailure(Throwable failure) {
+    for (Throwable current = failure; current != null; current = current.getCause()) {
+      if (current
+          instanceof
+          org.sourceanalysis.app.adapter.provider.StructuredModelProviderFailure provider) {
+        return Set.of("AUTHENTICATION_FAILED", "CONFIGURATION_INVALID", "QUOTA_EXHAUSTED")
+            .contains(provider.reasonCode());
+      }
+    }
+    return false;
+  }
+
+  private static String packetReason(Throwable failure) {
+    if (failure instanceof IllegalArgumentException activity
+        && activity.getMessage() != null
+        && activity.getMessage().startsWith("ACTIVITY_")) {
+      return activity.getMessage();
+    }
+    if (failure
+        instanceof
+        org.sourceanalysis.app.adapter.provider.StructuredModelProviderFailure provider) {
+      return provider.requestStarted()
+          ? "ACTIVITY_PROVIDER_FAILED_AFTER_START"
+          : provider.reasonCode();
+    }
+    return "ACTIVITY_PACKET_FAILED";
   }
 
   private static void validateUniqueMaterialIds(List<ActivityJob> jobs) {
@@ -226,6 +316,8 @@ record ActivityJob(
     String materialId,
     ModelJobProviderBinding providerBinding,
     ActivityJobIdentity identity,
+    boolean stagedExecution,
+    boolean scopedReading,
     Callable<ActivityJobResult> operation) {
   ActivityJob {
     if (materialId == null || materialId.isBlank()) {
@@ -234,6 +326,15 @@ record ActivityJob(
     providerBinding = Objects.requireNonNull(providerBinding, "activity job provider binding");
     identity = Objects.requireNonNull(identity, "activity job identity");
     operation = Objects.requireNonNull(operation, "activity job operation");
+  }
+
+  ActivityJob(
+      String materialId,
+      ModelJobProviderBinding providerBinding,
+      ActivityJobIdentity identity,
+      boolean stagedExecution,
+      Callable<ActivityJobResult> operation) {
+    this(materialId, providerBinding, identity, stagedExecution, false, operation);
   }
 
   String providerBindingKey() {
@@ -282,8 +383,28 @@ record CompletedActivityJob(ActivityJob job, ActivityJobResult result) {
   }
 }
 
+record FailedActivityJob(ActivityJob job, String reasonCode, Throwable cause) {
+  FailedActivityJob {
+    job = Objects.requireNonNull(job, "activity job");
+    if (reasonCode == null || reasonCode.isBlank()) {
+      throw new IllegalArgumentException("activity job failure reason is required");
+    }
+    cause = Objects.requireNonNull(cause, "activity job failure cause");
+  }
+}
+
+record ActivityJobBatchOutcome(
+    List<CompletedActivityJob> completed, List<FailedActivityJob> failed) {
+  ActivityJobBatchOutcome {
+    completed = List.copyOf(completed);
+    failed = List.copyOf(failed);
+  }
+}
+
 @FunctionalInterface
 interface ActivityJobCompletionSink {
 
   void complete(CompletedActivityJob completedJob);
+
+  default void fail(FailedActivityJob failedJob) {}
 }

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.sourceanalysis.app.analysis.interpretation.activity.ActivityRetryProfile;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 
 /** Validated, immutable routing and two-level concurrency values for one analysis run. */
@@ -16,7 +17,8 @@ public record ModelJobExecutionConfiguration(
     Map<String, List<String>> routing,
     Path journalDirectory,
     AnalysisRunId runId,
-    AnalysisRunId reuseFromModelBatchId) {
+    AnalysisRunId reuseFromModelBatchId,
+    ActivityRetryProfile activityRetry) {
 
   private static final Set<String> PHASES =
       Set.of("activity", "processGroup", "repositorySummary", "report");
@@ -29,6 +31,7 @@ public record ModelJobExecutionConfiguration(
     routing = immutableRoutes(routing, providers.keySet());
     journalDirectory = Objects.requireNonNull(journalDirectory, "model job journal directory");
     runId = Objects.requireNonNull(runId, "analysis run ID");
+    activityRetry = Objects.requireNonNull(activityRetry, "activity retry profile");
     if (runId.equals(reuseFromModelBatchId)) {
       throw new IllegalArgumentException("model job reuse source must be a different run");
     }
@@ -40,8 +43,32 @@ public record ModelJobExecutionConfiguration(
       Map<String, ModelJobProviderBinding> providers,
       Map<String, List<String>> routing,
       Path journalDirectory,
+      AnalysisRunId runId,
+      AnalysisRunId reuseFromModelBatchId) {
+    this(
+        maxConcurrentJobs,
+        providers,
+        routing,
+        journalDirectory,
+        runId,
+        reuseFromModelBatchId,
+        ActivityRetryProfile.defaults());
+  }
+
+  public ModelJobExecutionConfiguration(
+      int maxConcurrentJobs,
+      Map<String, ModelJobProviderBinding> providers,
+      Map<String, List<String>> routing,
+      Path journalDirectory,
       AnalysisRunId runId) {
-    this(maxConcurrentJobs, providers, routing, journalDirectory, runId, null);
+    this(
+        maxConcurrentJobs,
+        providers,
+        routing,
+        journalDirectory,
+        runId,
+        null,
+        ActivityRetryProfile.defaults());
   }
 
   @Override

@@ -12,11 +12,15 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
+import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
+import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
+import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalMediaType;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
@@ -26,15 +30,19 @@ import org.sourceanalysis.app.artifact.InstalledModulePublication;
 import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.ModuleInstallRequest;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
+import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 
 /** Installs the two durable outputs of an already-reviewed local activity explanation pass. */
-final class ActivityExplanationCheckpointPublisher {
+public final class ActivityExplanationCheckpointPublisher {
 
   private static final String COVERAGE_TYPE = "FLOW_INTERPRETATION_ACTIVITY_COVERAGE";
   private static final String COVERAGE_SCHEMA = "flow-interpretation-activity-coverage-v2";
   private static final String EXPLANATIONS_TYPE = "FLOW_INTERPRETATION_ACTIVITY_EXPLANATIONS";
   private static final String EXPLANATIONS_SCHEMA = "flow-interpretation-activity-explanations-v1";
+  private static final String STEP05_COVERAGE_SCHEMA = "flow-interpretation-activity-coverage-v3";
+  private static final String STEP05_EXPLANATIONS_SCHEMA =
+      "flow-interpretation-activity-explanations-v2";
   private static final Comparator<String> UTF8_ORDER =
       (left, right) -> {
         byte[] leftBytes = left.getBytes(StandardCharsets.UTF_8);
@@ -54,7 +62,7 @@ final class ActivityExplanationCheckpointPublisher {
   private final CanonicalModuleArtifactStore artifacts;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
 
-  ActivityExplanationCheckpointPublisher(CanonicalModuleArtifactStore artifacts) {
+  public ActivityExplanationCheckpointPublisher(CanonicalModuleArtifactStore artifacts) {
     this.artifacts = Objects.requireNonNull(artifacts, "module artifact store");
   }
 
@@ -109,11 +117,92 @@ final class ActivityExplanationCheckpointPublisher {
     return installed.reference();
   }
 
+  /** Publishes Step05-derived activities without altering or re-running the source checkpoint. */
+  public ModulePublicationReference publishStep05(
+      AnalysisRunId outputRunId,
+      AnalysisStepPublicationReference materialCheckpoint,
+      CanonicalAnalysisStepArtifactStore steps,
+      ArtifactControls outputControls,
+      CodeReadingMaterialSet materials,
+      List<ReviewedActivity> activities,
+      List<ActivityEntryCoverage> coverage,
+      List<UnexplainedActivityEntry> unexplainedActivityEntries) {
+    Objects.requireNonNull(outputRunId, "activity output run ID");
+    Objects.requireNonNull(materialCheckpoint, "Step05 material checkpoint");
+    Objects.requireNonNull(steps, "analysis step artifact store");
+    Objects.requireNonNull(outputControls, "activity output controls");
+    Objects.requireNonNull(materials, "Step05 materials");
+    if (materialCheckpoint.address().analysisStepKey() != AnalysisStepKey.BUSINESS_FLOWS
+        || !materialCheckpoint
+            .address()
+            .runId()
+            .equals(materials.header().sourceInventory().publication().address().runId())) {
+      throw new IllegalArgumentException("ACTIVITY_STEP05_SOURCE_MISMATCH");
+    }
+    ReopenedAnalysisStepPublication source = steps.reopen(materialCheckpoint);
+    if (!source.reference().equals(materialCheckpoint) || source.semanticPayloads().size() != 1) {
+      throw new IllegalArgumentException("ACTIVITY_STEP05_SOURCE_MISMATCH");
+    }
+    java.util.Map<String, java.util.Set<String>> sourceRefsByPacket =
+        materials.packets().stream()
+            .collect(
+                java.util.stream.Collectors.toMap(
+                    CodeReadingMaterialSet.Packet::packetId,
+                    packet ->
+                        packet.sourceReferences().stream()
+                            .map(CodeReadingMaterialSet.SourceReference::sourceRef)
+                            .collect(java.util.stream.Collectors.toSet())));
+    for (ReviewedActivity activity : activities) {
+      java.util.Set<String> allowed = sourceRefsByPacket.get(activity.materialId());
+      if (!"CODE_READING_MATERIALS".equals(activity.materialSource())
+          || allowed == null
+          || !allowed.containsAll(activity.originalSourceRefs().values())
+          || !activity.originalSourceRefs().keySet().containsAll(activity.sourceRefs())) {
+        throw new IllegalArgumentException("ACTIVITY_STEP05_SOURCE_MISMATCH");
+      }
+    }
+    List<ArtifactReference> upstream =
+        source.receipt().semanticArtifacts().stream()
+            .map(value -> new ArtifactReference(value.artifactId(), value.sha256()))
+            .sorted(Comparator.comparing(value -> value.artifactId().value(), UTF8_ORDER))
+            .toList();
+    List<String> gaps =
+        coverage.stream()
+            .filter(value -> "NOT_ANALYZED".equals(value.disposition()))
+            .map(ActivityEntryCoverage::reasonCode)
+            .distinct()
+            .sorted(UTF8_ORDER)
+            .toList();
+    InstalledModulePublication installed =
+        artifacts.install(
+            new ModuleInstallRequest(
+                new AnalysisStepModuleAddress(
+                    outputRunId, AnalysisStepKey.FLOW_INTERPRETATION, 11, "activity-explainer"),
+                "v3",
+                upstream,
+                outputControls,
+                gaps.isEmpty()
+                    ? ModuleCompletionStatus.SUCCEEDED
+                    : ModuleCompletionStatus.SUCCEEDED_WITH_GAPS,
+                gaps,
+                List.of(
+                    coveragePayload(coverage, unexplainedActivityEntries, STEP05_COVERAGE_SCHEMA),
+                    explanationsPayload(activities, STEP05_EXPLANATIONS_SCHEMA))));
+    return installed.reference();
+  }
+
   private CanonicalModulePayload coveragePayload(
       List<ActivityEntryCoverage> coverage,
       List<UnexplainedActivityEntry> unexplainedActivityEntries) {
+    return coveragePayload(coverage, unexplainedActivityEntries, COVERAGE_SCHEMA);
+  }
+
+  private CanonicalModulePayload coveragePayload(
+      List<ActivityEntryCoverage> coverage,
+      List<UnexplainedActivityEntry> unexplainedActivityEntries,
+      String schema) {
     ObjectNode value = JsonNodeFactory.instance.objectNode();
-    value.put("schemaVersion", COVERAGE_SCHEMA);
+    value.put("schemaVersion", schema);
     value.put("artifactType", COVERAGE_TYPE);
     ArrayNode entries = value.putArray("entryCoverage");
     coverage.forEach(entry -> coverageJson(entries.addObject(), entry));
@@ -124,18 +213,23 @@ final class ActivityExplanationCheckpointPublisher {
         coverage.stream().anyMatch(entry -> "NOT_ANALYZED".equals(entry.disposition()))
             ? "PARTIAL"
             : "READY_FOR_PROCESS_EXPLANATION");
-    String id = standaloneId("activity-coverage", COVERAGE_SCHEMA, COVERAGE_TYPE, value);
+    String id = standaloneId("activity-coverage", schema, COVERAGE_TYPE, value);
     value.put("artifactId", id);
     return new CanonicalModulePayload(
         "activity-coverage.json",
         COVERAGE_TYPE,
-        COVERAGE_SCHEMA,
+        schema,
         ArtifactId.parse(id),
         CanonicalMediaType.APPLICATION_JSON,
         canonicalJson.encodeCanonical(value));
   }
 
   private CanonicalModulePayload explanationsPayload(List<ReviewedActivity> activities) {
+    return explanationsPayload(activities, EXPLANATIONS_SCHEMA);
+  }
+
+  private CanonicalModulePayload explanationsPayload(
+      List<ReviewedActivity> activities, String schema) {
     StringBuilder values = new StringBuilder();
     activities.stream()
         .sorted(Comparator.comparing(ReviewedActivity::activityId, UTF8_ORDER))
@@ -144,24 +238,26 @@ final class ActivityExplanationCheckpointPublisher {
                 values
                     .append(
                         new String(
-                            canonicalJson.encodeCanonical(activityJson(activity)).copyToByteArray(),
+                            canonicalJson
+                                .encodeCanonical(activityJson(activity, schema))
+                                .copyToByteArray(),
                             StandardCharsets.UTF_8))
                     .append('\n'));
     byte[] bytes = values.toString().getBytes(StandardCharsets.UTF_8);
-    String id = jsonlId("activity-explanations", EXPLANATIONS_SCHEMA, EXPLANATIONS_TYPE, bytes);
+    String id = jsonlId("activity-explanations", schema, EXPLANATIONS_TYPE, bytes);
     return new CanonicalModulePayload(
         "activity-explanations.jsonl",
         EXPLANATIONS_TYPE,
-        EXPLANATIONS_SCHEMA,
+        schema,
         ArtifactId.parse(id),
         CanonicalMediaType.APPLICATION_X_NDJSON,
         ImmutableBytes.copyOf(bytes));
   }
 
-  private ObjectNode activityJson(ReviewedActivity activity) {
+  private ObjectNode activityJson(ReviewedActivity activity, String schema) {
     ObjectNode value = JsonNodeFactory.instance.objectNode();
     value.put("recordType", "REVIEWED_ACTIVITY");
-    value.put("schemaVersion", EXPLANATIONS_SCHEMA);
+    value.put("schemaVersion", schema);
     value.put("activityId", activity.activityId());
     value.put("materialId", activity.materialId());
     strings(value.putArray("entryIds"), activity.entryIds());
@@ -180,6 +276,16 @@ final class ActivityExplanationCheckpointPublisher {
     strings(value.putArray("sourceRefs"), activity.sourceRefs());
     strings(value.putArray("questions"), activity.questions());
     strings(value.putArray("scopeLimitations"), activity.scopeLimitations());
+    if (STEP05_EXPLANATIONS_SCHEMA.equals(schema)) {
+      value.put("materialSource", activity.materialSource());
+      if (activity.sliceKey() == null) {
+        value.putNull("sliceKey");
+      } else {
+        value.put("sliceKey", activity.sliceKey());
+      }
+      ObjectNode mapping = value.putObject("originalSourceRefs");
+      activity.originalSourceRefs().forEach(mapping::put);
+    }
     return value;
   }
 

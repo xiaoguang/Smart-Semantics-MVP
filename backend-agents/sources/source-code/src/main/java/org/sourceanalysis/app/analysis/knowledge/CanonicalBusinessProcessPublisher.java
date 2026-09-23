@@ -15,11 +15,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.sourceanalysis.app.analysis.interpretation.material.SourceReference;
+import org.sourceanalysis.app.analysis.material.publish.CodeReadingMaterialPublisher;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.ArtifactControls;
+import org.sourceanalysis.app.artifact.ArtifactDescriptor;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
+import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalMediaType;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
@@ -28,6 +31,7 @@ import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.InstalledModulePublication;
 import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.ModuleInstallRequest;
+import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 
 /** Canonical, receipt-last publisher for the five Step07 process-discovery outputs. */
@@ -47,12 +51,25 @@ public final class CanonicalBusinessProcessPublisher implements BusinessProcessP
   static final String SOURCES_MARKDOWN_SCHEMA = "repository-business-process-sources-markdown-v1";
 
   private final CanonicalModuleArtifactStore inputArtifacts;
+  private final CanonicalAnalysisStepArtifactStore inputStepArtifacts;
   private final CanonicalModuleArtifactStore outputArtifacts;
   private final ArtifactControls outputControls;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
 
   public CanonicalBusinessProcessPublisher(CanonicalModuleArtifactStore artifacts) {
     this.inputArtifacts = Objects.requireNonNull(artifacts, "module artifact store");
+    this.inputStepArtifacts = null;
+    this.outputArtifacts = artifacts;
+    this.outputControls = null;
+  }
+
+  /** Uses one module store plus the Step05 analysis-step store for dual-source publication. */
+  public CanonicalBusinessProcessPublisher(
+      CanonicalModuleArtifactStore artifacts,
+      CanonicalAnalysisStepArtifactStore inputStepArtifacts) {
+    this.inputArtifacts = Objects.requireNonNull(artifacts, "module artifact store");
+    this.inputStepArtifacts =
+        Objects.requireNonNull(inputStepArtifacts, "input analysis-step artifact store");
     this.outputArtifacts = artifacts;
     this.outputControls = null;
   }
@@ -62,6 +79,20 @@ public final class CanonicalBusinessProcessPublisher implements BusinessProcessP
       CanonicalModuleArtifactStore outputArtifacts,
       ArtifactControls outputControls) {
     this.inputArtifacts = Objects.requireNonNull(inputArtifacts, "input module artifact store");
+    this.inputStepArtifacts = null;
+    this.outputArtifacts = Objects.requireNonNull(outputArtifacts, "output module artifact store");
+    this.outputControls = Objects.requireNonNull(outputControls, "output artifact controls");
+  }
+
+  /** Separates historical input stores from the current Step07 output policy. */
+  public CanonicalBusinessProcessPublisher(
+      CanonicalModuleArtifactStore inputArtifacts,
+      CanonicalAnalysisStepArtifactStore inputStepArtifacts,
+      CanonicalModuleArtifactStore outputArtifacts,
+      ArtifactControls outputControls) {
+    this.inputArtifacts = Objects.requireNonNull(inputArtifacts, "input module artifact store");
+    this.inputStepArtifacts =
+        Objects.requireNonNull(inputStepArtifacts, "input analysis-step artifact store");
     this.outputArtifacts = Objects.requireNonNull(outputArtifacts, "output module artifact store");
     this.outputControls = Objects.requireNonNull(outputControls, "output artifact controls");
   }
@@ -74,13 +105,13 @@ public final class CanonicalBusinessProcessPublisher implements BusinessProcessP
     String markdown = BusinessProcessMarkdownRenderer.render(result.catalog(), coverage, sources);
     String sourcesMarkdown = SourcesMarkdownRenderer.render(sources);
     ReopenedModulePublication activities = inputArtifacts.reopen(result.activityCheckpoint());
-    ReopenedModulePublication materials = inputArtifacts.reopen(result.materialCheckpoint());
-    if (!activities.receipt().controls().equals(materials.receipt().controls())) {
+    MaterialUpstream materials = reopenMaterials(result);
+    if (!activities.receipt().controls().equals(materials.controls())) {
       throw new IllegalArgumentException("BUSINESS_PROCESS_UPSTREAM_CONTROLS_MISMATCH");
     }
     Map<String, ArtifactReference> upstream = new LinkedHashMap<>();
-    List.of(activities, materials).stream()
-        .flatMap(value -> value.receipt().payloadArtifacts().stream())
+    java.util.stream.Stream.concat(
+            activities.receipt().payloadArtifacts().stream(), materials.artifacts().stream())
         .map(value -> new ArtifactReference(value.artifactId(), value.sha256()))
         .sorted(Comparator.comparing(value -> value.artifactId().value()))
         .forEach(value -> upstream.putIfAbsent(value.artifactId().value(), value));
@@ -113,6 +144,40 @@ public final class CanonicalBusinessProcessPublisher implements BusinessProcessP
                     sourcesMarkdownPayload(sourcesMarkdown))));
     return new BusinessProcessPublication(
         result.catalog(), coverage, markdown, sources, sourcesMarkdown, installed.reference());
+  }
+
+  private MaterialUpstream reopenMaterials(ProcessDiscoveryResult result) {
+    if (!result.usesCodeReadingMaterials()) {
+      ReopenedModulePublication materials = inputArtifacts.reopen(result.materialCheckpoint());
+      return new MaterialUpstream(
+          materials.receipt().controls(), materials.receipt().payloadArtifacts());
+    }
+    if (inputStepArtifacts == null) {
+      throw new IllegalArgumentException("BUSINESS_PROCESS_STEP05_STORE_REQUIRED");
+    }
+    ReopenedAnalysisStepPublication materials =
+        inputStepArtifacts.reopen(result.codeReadingMaterialCheckpoint());
+    if (!materials.reference().equals(result.codeReadingMaterialCheckpoint())
+        || materials.reference().address().analysisStepKey() != AnalysisStepKey.BUSINESS_FLOWS
+        || materials.semanticPayloads().size() != 1) {
+      throw new IllegalArgumentException("BUSINESS_PROCESS_STEP05_PUBLICATION_INVALID");
+    }
+    ArtifactDescriptor descriptor = materials.semanticPayloads().get(0).descriptor();
+    if (!CodeReadingMaterialPublisher.FILE_NAME.equals(descriptor.fileName())
+        || !CodeReadingMaterialPublisher.ARTIFACT_TYPE.equals(descriptor.artifactType())
+        || !CodeReadingMaterialPublisher.SCHEMA_VERSION.equals(descriptor.schemaVersion())
+        || descriptor.mediaType() != CanonicalMediaType.APPLICATION_X_NDJSON
+        || !materials.receipt().semanticArtifacts().equals(List.of(descriptor))) {
+      throw new IllegalArgumentException("BUSINESS_PROCESS_STEP05_PUBLICATION_INVALID");
+    }
+    return new MaterialUpstream(materials.receipt().controls(), List.of(descriptor));
+  }
+
+  private record MaterialUpstream(ArtifactControls controls, List<ArtifactDescriptor> artifacts) {
+
+    private MaterialUpstream {
+      artifacts = List.copyOf(artifacts);
+    }
   }
 
   private List<SourceReference> referencedSources(ProcessDiscoveryResult result) {

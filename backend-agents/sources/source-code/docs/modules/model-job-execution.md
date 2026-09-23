@@ -4,7 +4,7 @@
 
 ## 1. 已实现基础与本轮目标
 
-| 内容 | 已实现现状 | 本轮设计增量，尚未实现 |
+| 内容 | 已实现现状 | 本轮设计增量 |
 | --- | --- | --- |
 | 材料/模型分离 | 旧M10独立model batch；新Step05 reader/state-v4/output-v5已保存完整材料 | 让新Step05直接进入Activity，execution-config-v4/output-v6明确来源 |
 | 并发 | 全局+Provider双上限、稳定路由、Java17 executor/completion queue | Activity同包内部阅读/slice/attempt仍顺序，沿用同一个pool |
@@ -14,6 +14,8 @@
 | 业务模型 | 326个旧已审Activity按原历史模型与来源保存 | 新Activity默认Codex登录服务gpt-5.6-terra/xhigh，可显式配置其他服务 |
 
 本轮只设计Activity路径的retry，不把Step07单次选择/检查、目录pair、候选三阶段或归并自动变成retry任务。既有Step07实现和三样例验收状态见其模块文档，不以本页更新宣称全仓语义完成。没有Step08当前生产生成器。
+
+当前实施中：私有store已提供不可变阶段attempt记录和成功索引的读写原语；Codex子进程超时只有在确认本地进程终止后才报告可重试的`REQUEST_TIMEOUT`，否则报告`OUTCOME_UNKNOWN`。Codex适配器将已返回且不超过本次输出上限的坏JSON标记为`INVALID_JSON`，并在结构化失败对象中保留实际响应字节；Activity仅将不超过私有诊断上限的该响应写入attempt，不会把stderr或凭据当作模型响应。direct-Step05 Activity durable执行已保存并闭包核验DRAFT/REVIEW attempt，复用同批成功stage；`activityRetry`已具备YAML加载、阶段上限和有界退避，默认只重试结构化且请求已结束的瞬时失败；坏JSON、schema/ref错误、未知异常与`OUTCOME_UNKNOWN`默认不重试。显式来源批次的已验证成功阶段可逐事件导入新批次，使失败REVIEW只重新执行REVIEW。超大包现已进入完整packet级任务池，普通包失败与Provider绑定失败直接测试通过；批次失败记录、部分M11发布/查询和CLI仍未接通。
 
 ## 2. Job与阶段
 

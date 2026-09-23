@@ -114,6 +114,15 @@ class ConfiguredSourceAnalysisRuntimeTest {
                 "--config",
                 config.toString(),
                 "--mode",
+                "activities",
+                "--retry-failed-from-model-batch",
+                "analysis-run:" + "b".repeat(64),
+                "--packet-id",
+                "packet:failed"),
+            List.of(
+                "--config",
+                config.toString(),
+                "--mode",
                 "business-processes",
                 "--activity-model-batch",
                 "analysis-run:" + "a".repeat(64)));

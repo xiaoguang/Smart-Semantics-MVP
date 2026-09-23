@@ -65,6 +65,15 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
     try {
       AnalysisRunOutput output = coordinator.executeIntent(request);
       RunStoreBootstrap.recordAnalysisRunOutput(store, running.runId(), output);
+      if (output.readingMaterialCheckpoint() != null
+          && output.hasActivityCheckpoint()
+          && !output.hasCompletedActivities()) {
+        return RunStoreBootstrap.transitionAnalysisRun(
+            store,
+            running.runId(),
+            AnalysisRunLifecycleState.RUNNING,
+            AnalysisRunLifecycleState.FAILED);
+      }
       return RunStoreBootstrap.transitionAnalysisRun(
           store,
           running.runId(),
@@ -89,7 +98,8 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
     AnalysisRunReference run =
         RunStoreBootstrap.reopenAnalysisRun(store, AnalysisRunId.parse(runId));
     AnalysisRunOutput output =
-        run.lifecycleState() == AnalysisRunLifecycleState.FINISHED
+        (run.lifecycleState() == AnalysisRunLifecycleState.FINISHED
+                || run.lifecycleState() == AnalysisRunLifecycleState.FAILED)
             ? RunStoreBootstrap.reopenAnalysisRunOutput(store, run.runId()).orElse(null)
             : null;
     return new RunInspection(run, output);
@@ -103,12 +113,22 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
     }
     AnalysisRunId runId = AnalysisRunId.parse(query.runId());
     AnalysisRunReference run = RunStoreBootstrap.reopenAnalysisRun(store, runId);
-    if (run.lifecycleState() != AnalysisRunLifecycleState.FINISHED) {
+    if (run.lifecycleState() != AnalysisRunLifecycleState.FINISHED
+        && run.lifecycleState() != AnalysisRunLifecycleState.FAILED) {
       throw new IllegalStateException("ANALYSIS_RUN_ARTIFACT_NOT_READY");
     }
     AnalysisRunOutput output =
         RunStoreBootstrap.reopenAnalysisRunOutput(store, runId)
             .orElseThrow(() -> new IllegalStateException("ANALYSIS_RUN_OUTPUT_MISSING"));
+    if (run.lifecycleState() == AnalysisRunLifecycleState.FAILED
+        && !(output.readingMaterialCheckpoint() != null
+            && output.hasActivityCheckpoint()
+            && !output.hasCompletedActivities()
+            && (query.businessOutputArtifactKey() == BusinessOutputArtifactKey.ACTIVITY_EXPLANATIONS
+                || query.businessOutputArtifactKey()
+                    == BusinessOutputArtifactKey.ACTIVITY_COVERAGE))) {
+      throw new IllegalStateException("ANALYSIS_RUN_ARTIFACT_NOT_READY");
+    }
     if (query.businessOutputArtifactKey().readsReadingMaterials()) {
       query.businessOutputArtifactKey().readingMaterialCheckpoint(output);
     } else {

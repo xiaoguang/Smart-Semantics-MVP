@@ -33,6 +33,7 @@ final class FrozenProcessSourceCorpus {
         return Integer.compare(leftBytes.length, rightBytes.length);
       };
 
+  private final String snapshotId;
   private final List<SourceFile> files;
   private final Map<String, StoredFile> filesBySelector;
 
@@ -41,6 +42,7 @@ final class FrozenProcessSourceCorpus {
       throw failure("PROCESS_SOURCE_TEXT_SET_INVALID");
     }
 
+    snapshotId = sourceTextSet.snapshotId();
     List<VerifiedSourceTextDocument> documents =
         sourceTextSet.documents().stream()
             .sorted(Comparator.comparing(VerifiedSourceTextDocument::path, UTF8_ORDER))
@@ -65,6 +67,10 @@ final class FrozenProcessSourceCorpus {
     }
     files = List.copyOf(directory);
     filesBySelector = Map.copyOf(bySelector);
+  }
+
+  String snapshotId() {
+    return snapshotId;
   }
 
   List<SourceFile> files() {

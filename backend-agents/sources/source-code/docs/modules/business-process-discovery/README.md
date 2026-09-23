@@ -15,7 +15,7 @@
 | [RepositoryProcessConsolidator](repository-process-consolidator.md) | 完整业务投影→无损归并与关系裁决 | 一次DRAFT+REVIEW |
 | [BusinessProcessPublisher](business-process-publisher.md) | 封闭结果→catalog/coverage/正文/来源两文件 | 无 |
 
-三阶段、systemAssessment、问题选材、CHECK最终保留集、v4发布与私有完整结果已实现。新Step05→Activity及其来源接入是未实现目标，由[Activity集成](../activity-explanation/integration-contracts.md)维护。当前Corpus/Publisher仍按旧Activity/M10引用重开。
+三阶段、systemAssessment、问题选材、CHECK最终保留集、v4发布与私有完整结果已实现。Corpus、请求/结果、Publisher和持久executor现可显式选择旧Activity/M10或M11 v3 Activity/Step05材料；新分支保持AnalysisStepPublicationReference，不做Module引用强转，并以packet身份隔离短ref。正式CLI/运行输出选择仍由[Activity集成](../activity-explanation/integration-contracts.md)维护。
 
 ## 共同不变量
 

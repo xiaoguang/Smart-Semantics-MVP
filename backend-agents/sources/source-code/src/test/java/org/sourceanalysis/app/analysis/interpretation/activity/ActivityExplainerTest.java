@@ -15,7 +15,6 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
@@ -223,12 +222,7 @@ class ActivityExplainerTest {
         fail("ACTIVITY_EXPLAINER_PUBLIC_CONSTRUCTOR_MISSING", missing);
       }
     }
-    Method explain =
-        Stream.of(explainerType.getMethods())
-            .filter(method -> method.getName().equals("explain"))
-            .filter(method -> method.getParameterCount() == 1)
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("ACTIVITY_EXPLAINER_EXPLAIN_METHOD_MISSING"));
+    Method explain = explainerType.getMethod("explain", request.getClass());
     try {
       return explain.invoke(explainer, request);
     } catch (InvocationTargetException failure) {

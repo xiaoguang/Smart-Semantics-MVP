@@ -74,13 +74,17 @@
   Step01–05 JDT-only navigation, optional persistence enrichment and Step05
   reading materials are implemented. JavaParser, strict graph/Fact/Proof and
   Flow/Capsule/M10 producers are retired; exact historical readers remain.
-- New Step05-to-Activity consumption is detailed design, not implementation.
-  Step06 and docs/modules/activity-explanation/ own projection, complete reading,
-  model-selected semantic slices, DRAFT/complete REVIEW and source/coverage.
-  Current new material execution stops at READING_MATERIALS_ONLY.
-- This documentation task authorizes no code/test/config edit, build, JDT,
-  Provider initialization, product generation, commit or push. Preserve all
-  326 Activities, raw model results and more-findings.md.
+- Step05-to-Activity consumption, its formal CLI, M11 v3 persistence and the
+  Step07 dual-source reader are implemented under the approved full-Activity
+  plan. Step06 and docs/modules/activity-explanation/ own projection, complete
+  reading, model-selected semantic slices, staged DRAFT/REVIEW retry and
+  source/coverage. The fixed 325-packet real run and local quality checks are
+  recorded in docs/modules/activity-explanation/full-step05-acceptance-20260923.md;
+  its one upstream JDT gap and partial semantic status remain explicit.
+- Preserve all historical 326 Activities, raw model results and
+  more-findings.md. The current user-approved implementation scope permits
+  code, direct tests and later product Activity generation from saved Step05
+  material, but not JDT/Step01–05 reruns or process/report regeneration.
 - docs/DESIGN.md is the target architecture. Current code, schemas, tests and
   historical artifacts may validate or falsify it but never silently weaken
   it.

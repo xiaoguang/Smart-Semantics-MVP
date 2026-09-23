@@ -7,7 +7,10 @@ import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -62,6 +65,111 @@ public final class PrivateModelJobResultStore {
     writeIdempotently(job.resolve("decision-result.json"), bytes);
   }
 
+  /** Saves one packet's terminal failure without marking any incomplete stage as reviewed. */
+  public void writeTerminalFailure(String jobKey, ObjectNode failure) {
+    requireJobKey(jobKey);
+    ImmutableBytes bytes =
+        canonicalJson.encodeCanonical(Objects.requireNonNull(failure, "model job failure"));
+    Path modelJobs = childDirectory(journalDirectory, "model-jobs");
+    Path run = childDirectory(modelJobs, runDirectoryName);
+    Path phaseDirectory = childDirectory(run, phase);
+    Path job = childDirectory(phaseDirectory, jobKey);
+    writeIdempotently(job.resolve("failed-result.json"), bytes);
+  }
+
+  public Optional<ObjectNode> readTerminalFailure(String jobKey) {
+    requireJobKey(jobKey);
+    return readResult(jobKey, "failed-result.json");
+  }
+
+  /** Reopens this batch's saved terminal failures in stable job order. */
+  public List<ObjectNode> listTerminalFailures() {
+    Path phaseDirectory =
+        journalDirectory.resolve("model-jobs").resolve(runDirectoryName).resolve(phase);
+    try {
+      Path part = phaseDirectory;
+      while (part != null && !part.equals(journalDirectory)) {
+        if (!Files.exists(part, LinkOption.NOFOLLOW_LINKS)) {
+          return List.of();
+        }
+        if (Files.isSymbolicLink(part) || !Files.isDirectory(part, LinkOption.NOFOLLOW_LINKS)) {
+          throw failure("MODEL_JOB_RESULT_INVALID", null);
+        }
+        part = part.getParent();
+      }
+      if (part == null) {
+        throw failure("MODEL_JOB_RESULT_INVALID", null);
+      }
+      List<Path> jobs;
+      try (var children = Files.list(phaseDirectory)) {
+        jobs = children.sorted(Comparator.comparing(Path::toString)).toList();
+      }
+      List<ObjectNode> failures = new ArrayList<>();
+      for (Path job : jobs) {
+        if (Files.isSymbolicLink(job) || !Files.isDirectory(job, LinkOption.NOFOLLOW_LINKS)) {
+          throw failure("MODEL_JOB_RESULT_INVALID", null);
+        }
+        String jobKey =
+            Objects.requireNonNull(job.getFileName(), "model job directory name").toString();
+        requireJobKey(jobKey);
+        readTerminalFailure(jobKey)
+            .ifPresent(
+                value -> {
+                  if (!runId.equals(text(value, "runId"))
+                      || !jobKey.equals(text(value, "jobKey"))) {
+                    throw failure("MODEL_JOB_RESULT_INVALID", null);
+                  }
+                  failures.add(value.deepCopy());
+                });
+      }
+      return List.copyOf(failures);
+    } catch (IllegalStateException invalid) {
+      throw invalid;
+    } catch (IOException | RuntimeException invalid) {
+      throw failure("MODEL_JOB_RESULT_INVALID", invalid);
+    }
+  }
+
+  /** Installs one immutable Activity stage-attempt event at its actual occurrence. */
+  public void writeStageAttemptRecord(
+      String jobKey, String stageKey, int attemptOrdinal, String recordName, ObjectNode record) {
+    requireJobKey(jobKey);
+    requireStageKey(stageKey);
+    requireAttemptOrdinal(attemptOrdinal);
+    requireAttemptRecordName(recordName);
+    ImmutableBytes bytes =
+        canonicalJson.encodeCanonical(Objects.requireNonNull(record, "stage record"));
+    Path attempt = childDirectory(stageDirectory(jobKey, stageKey), "attempt-" + attemptOrdinal);
+    writeIdempotently(attempt.resolve(recordName + ".json"), bytes);
+  }
+
+  /**
+   * Reads a previously installed attempt event without accepting symlinks or noncanonical bytes.
+   */
+  public Optional<ObjectNode> readStageAttemptRecord(
+      String jobKey, String stageKey, int attemptOrdinal, String recordName) {
+    requireJobKey(jobKey);
+    requireStageKey(stageKey);
+    requireAttemptOrdinal(attemptOrdinal);
+    requireAttemptRecordName(recordName);
+    return readStageFile(jobKey, stageKey, "attempt-" + attemptOrdinal, recordName + ".json");
+  }
+
+  /** Saves the sole verified success index for a stage; incomplete attempts never create it. */
+  public void writeStageSuccess(String jobKey, String stageKey, ObjectNode success) {
+    requireJobKey(jobKey);
+    requireStageKey(stageKey);
+    writeIdempotently(
+        stageDirectory(jobKey, stageKey).resolve("success.json"),
+        canonicalJson.encodeCanonical(Objects.requireNonNull(success, "stage success")));
+  }
+
+  public Optional<ObjectNode> readStageSuccess(String jobKey, String stageKey) {
+    requireJobKey(jobKey);
+    requireStageKey(stageKey);
+    return readStageFile(jobKey, stageKey, "success.json");
+  }
+
   /**
    * Reads one complete v1/v2 reading decision when its actual input and provider identity match.
    */
@@ -106,6 +214,34 @@ public final class PrivateModelJobResultStore {
       String inputFingerprint,
       String expectedQuotaScope,
       ModelRuntimeIdentityV1 expectedRuntimeIdentity) {
+    return readCompletedActivityResult(
+        jobKey,
+        inputFingerprint,
+        expectedQuotaScope,
+        expectedRuntimeIdentity,
+        Set.of("model-job-reviewed-result-v2"));
+  }
+
+  /** Reopens a complete modern Activity result, including a reviewed multi-slice packet. */
+  public Optional<ObjectNode> readCompletedActivity(
+      String jobKey,
+      String inputFingerprint,
+      String expectedQuotaScope,
+      ModelRuntimeIdentityV1 expectedRuntimeIdentity) {
+    return readCompletedActivityResult(
+        jobKey,
+        inputFingerprint,
+        expectedQuotaScope,
+        expectedRuntimeIdentity,
+        Set.of("model-job-reviewed-result-v4", "activity-packet-result-v1"));
+  }
+
+  private Optional<ObjectNode> readCompletedActivityResult(
+      String jobKey,
+      String inputFingerprint,
+      String expectedQuotaScope,
+      ModelRuntimeIdentityV1 expectedRuntimeIdentity,
+      Set<String> allowedSchemas) {
     requireJobKey(jobKey);
     if (inputFingerprint == null || !inputFingerprint.matches("[0-9a-f]{64}")) {
       throw new IllegalArgumentException("model job input fingerprint is invalid");
@@ -142,7 +278,8 @@ public final class PrivateModelJobResultStore {
       if (!"COMPLETED".equals(status.textValue())) {
         return Optional.empty();
       }
-      if (!"model-job-reviewed-result-v2".equals(text(value, "schemaVersion"))
+      String schema = text(value, "schemaVersion");
+      if (!allowedSchemas.contains(schema)
           || !inputFingerprint.equals(text(value, "inputFingerprint"))
           || !expectedQuotaScope.equals(text(value, "quotaScope"))) {
         return Optional.empty();
@@ -150,12 +287,26 @@ public final class PrivateModelJobResultStore {
       if (!runtimeIdentity(value.path("runtimeIdentity")).equals(expectedRuntimeIdentity)) {
         return Optional.empty();
       }
-      requireCompletePair(value);
+      if ("activity-packet-result-v1".equals(schema)) {
+        requireCompleteScopedActivity(value);
+      } else {
+        requireCompletePair(value);
+      }
       return Optional.of(value.deepCopy());
     } catch (IllegalStateException failure) {
       throw failure;
     } catch (IOException | RuntimeException invalid) {
       throw failure("MODEL_JOB_RESULT_INVALID", invalid);
+    }
+  }
+
+  private static void requireCompleteScopedActivity(ObjectNode value) {
+    if (!"activity-reading-plan-slices-v1".equals(text(value, "pipeline"))
+        || !"decision-result.json".equals(text(value, "readingPlan"))
+        || !value.path("reviewedActivities").isArray()
+        || !value.path("coverage").isArray()
+        || !value.path("unexplainedActivityEntries").isArray()) {
+      throw failure("MODEL_JOB_RESULT_INVALID", null);
     }
   }
 
@@ -222,6 +373,68 @@ public final class PrivateModelJobResultStore {
         || !expectedQuotaScope.equals(text(value, "quotaScope"))
         || !expectedRuntimeIdentity.equals(identity)) return Optional.empty();
     return Optional.of(value.deepCopy());
+  }
+
+  private Path stageDirectory(String jobKey, String stageKey) {
+    Path modelJobs = childDirectory(journalDirectory, "model-jobs");
+    Path run = childDirectory(modelJobs, runDirectoryName);
+    Path phaseDirectory = childDirectory(run, phase);
+    Path job = childDirectory(phaseDirectory, jobKey);
+    return childDirectory(job, stageKey);
+  }
+
+  private Optional<ObjectNode> readStageFile(String jobKey, String stageKey, String... suffix) {
+    Path directory =
+        journalDirectory
+            .resolve("model-jobs")
+            .resolve(runDirectoryName)
+            .resolve(phase)
+            .resolve(jobKey)
+            .resolve(stageKey);
+    try {
+      Path part = directory;
+      while (part != null && !part.equals(journalDirectory)) {
+        if (!Files.exists(part, LinkOption.NOFOLLOW_LINKS)) {
+          return Optional.empty();
+        }
+        if (Files.isSymbolicLink(part) || !Files.isDirectory(part, LinkOption.NOFOLLOW_LINKS)) {
+          throw failure("MODEL_JOB_STAGE_RECORD_INVALID", null);
+        }
+        part = part.getParent();
+      }
+      if (part == null) {
+        throw failure("MODEL_JOB_STAGE_RECORD_INVALID", null);
+      }
+      for (int index = 0; index < suffix.length - 1; index++) {
+        directory = directory.resolve(suffix[index]);
+        if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) {
+          return Optional.empty();
+        }
+        if (Files.isSymbolicLink(directory)
+            || !Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
+          throw failure("MODEL_JOB_STAGE_RECORD_INVALID", null);
+        }
+      }
+      Path file = directory.resolve(suffix[suffix.length - 1]);
+      if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
+        return Optional.empty();
+      }
+      if (Files.isSymbolicLink(file)
+          || !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)
+          || Files.size(file) > 32L * 1_048_576L) {
+        throw failure("MODEL_JOB_STAGE_RECORD_INVALID", null);
+      }
+      JsonNode parsed =
+          canonicalJson.parseCanonical(ImmutableBytes.copyOf(Files.readAllBytes(file)));
+      if (!(parsed instanceof ObjectNode value)) {
+        throw failure("MODEL_JOB_STAGE_RECORD_INVALID", null);
+      }
+      return Optional.of(value.deepCopy());
+    } catch (IllegalStateException invalid) {
+      throw invalid;
+    } catch (IOException | RuntimeException invalid) {
+      throw failure("MODEL_JOB_STAGE_RECORD_INVALID", invalid);
+    }
   }
 
   private Optional<ObjectNode> readResult(String jobKey, String fileName) {
@@ -333,6 +546,24 @@ public final class PrivateModelJobResultStore {
   private static void requireJobKey(String jobKey) {
     if (jobKey == null || !jobKey.matches("[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}")) {
       throw new IllegalArgumentException("model job key is invalid");
+    }
+  }
+
+  private static void requireStageKey(String stageKey) {
+    if (stageKey == null || !stageKey.matches("[A-Za-z][A-Za-z0-9._-]{0,127}")) {
+      throw new IllegalArgumentException("model job stage key is invalid");
+    }
+  }
+
+  private static void requireAttemptOrdinal(int attemptOrdinal) {
+    if (attemptOrdinal < 1 || attemptOrdinal > 1_000_000) {
+      throw new IllegalArgumentException("model job attempt ordinal is invalid");
+    }
+  }
+
+  private static void requireAttemptRecordName(String recordName) {
+    if (!Set.of("request", "started", "response", "validation", "outcome").contains(recordName)) {
+      throw new IllegalArgumentException("model job stage record name is invalid");
     }
   }
 

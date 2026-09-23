@@ -43,8 +43,10 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   private static final String OUTPUT_SCHEMA_V3 = "analysis-run-output-v3";
   private static final String OUTPUT_SCHEMA_V4 = "analysis-run-output-v4";
   private static final String OUTPUT_SCHEMA_V5 = "analysis-run-output-v5";
+  private static final String OUTPUT_SCHEMA_V6 = "analysis-run-output-v6";
   private static final String MATERIALS_ONLY_OUTPUT = "MATERIALS_ONLY";
   private static final String READING_MATERIALS_ONLY_OUTPUT = "READING_MATERIALS_ONLY";
+  private static final String STEP05_ACTIVITIES_OUTPUT = "STEP05_ACTIVITIES";
   private static final String ACTIVITIES_ONLY_OUTPUT = "ACTIVITIES_ONLY";
   private static final String PROCESS_CATALOG_OUTPUT = "PROCESS_CATALOG";
   private static final String COMPLETE_REPORT_OUTPUT = "COMPLETE_REPORT";
@@ -78,6 +80,25 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
           "sourceRunId");
   private static final Set<String> READING_MATERIALS_OUTPUT_FIELDS =
       Set.of("outputKind", "readingMaterialCheckpoint", "runId", "schemaVersion", "sourceRunId");
+  private static final Set<String> STEP05_ACTIVITIES_OUTPUT_FIELDS =
+      Set.of(
+          "activityBatchComplete",
+          "activityCheckpoint",
+          "outputKind",
+          "readingMaterialCheckpoint",
+          "runId",
+          "schemaVersion",
+          "sourceRunId");
+  private static final Set<String> STEP05_PROCESS_OUTPUT_FIELDS =
+      Set.of(
+          "activityBatchComplete",
+          "activityCheckpoint",
+          "knowledgeCheckpoint",
+          "outputKind",
+          "readingMaterialCheckpoint",
+          "runId",
+          "schemaVersion",
+          "sourceRunId");
   private static final Set<String> CHECKPOINT_FIELDS =
       Set.of(
           "analysisStepKey",
@@ -220,8 +241,12 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
       boolean readingMaterialsOnly = output.hasReadingMaterials();
       boolean validOwner =
           readingMaterialsOnly
-              ? runId.equals(output.sourceRunId())
-                  && runId.equals(output.readingMaterialCheckpoint().address().runId())
+              ? output.sourceRunId().equals(output.readingMaterialCheckpoint().address().runId())
+                  && (output.hasCompletedProcesses()
+                      ? runId.equals(runId(output.knowledgeCheckpoint()))
+                      : output.hasActivityCheckpoint()
+                          ? runId.equals(runId(output.activityCheckpoint()))
+                          : runId.equals(output.sourceRunId()))
               : validLegacyOutputOwner(runId, output);
       if (persisted.analysisRun().lifecycleState() != AnalysisRunLifecycleState.RUNNING
           || !validOwner) {
@@ -349,6 +374,29 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
 
   private ObjectNode outputJson(AnalysisRunId runId, AnalysisRunOutput output) {
     ObjectNode value = JsonNodeFactory.instance.objectNode();
+    if (output.hasReadingMaterials() && output.hasCompletedProcesses()) {
+      value.put("schemaVersion", OUTPUT_SCHEMA_V6);
+      value.put("runId", runId.value());
+      value.put("sourceRunId", output.sourceRunId().value());
+      value.put("outputKind", PROCESS_CATALOG_OUTPUT);
+      value.put("activityBatchComplete", true);
+      analysisStepCheckpoint(
+          value.putObject("readingMaterialCheckpoint"), output.readingMaterialCheckpoint());
+      checkpoint(value.putObject("activityCheckpoint"), output.activityCheckpoint());
+      checkpoint(value.putObject("knowledgeCheckpoint"), output.knowledgeCheckpoint());
+      return value;
+    }
+    if (output.hasReadingMaterials() && output.hasActivityCheckpoint()) {
+      value.put("schemaVersion", OUTPUT_SCHEMA_V6);
+      value.put("runId", runId.value());
+      value.put("sourceRunId", output.sourceRunId().value());
+      value.put("outputKind", STEP05_ACTIVITIES_OUTPUT);
+      value.put("activityBatchComplete", output.hasCompletedActivities());
+      analysisStepCheckpoint(
+          value.putObject("readingMaterialCheckpoint"), output.readingMaterialCheckpoint());
+      checkpoint(value.putObject("activityCheckpoint"), output.activityCheckpoint());
+      return value;
+    }
     if (output.hasReadingMaterials()) {
       value.put("schemaVersion", OUTPUT_SCHEMA_V5);
       value.put("runId", runId.value());
@@ -375,6 +423,11 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
 
   private AnalysisRunOutput outputFromJson(AnalysisRunId runId, ObjectNode value) {
     String schemaVersion = requiredText(value, "schemaVersion");
+    if (OUTPUT_SCHEMA_V6.equals(schemaVersion)) {
+      return PROCESS_CATALOG_OUTPUT.equals(requiredText(value, "outputKind"))
+          ? step05ProcessOutputFromJson(runId, value)
+          : step05ActivitiesOutputFromJson(runId, value);
+    }
     if (OUTPUT_SCHEMA_V5.equals(schemaVersion)) {
       return readingMaterialsOutputFromJson(runId, value);
     }
@@ -426,6 +479,47 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
         AnalysisRunOutput.readingMaterials(
             sourceRunId, analysisStepCheckpointFromWire(value.path("readingMaterialCheckpoint")));
     if (!runId.equals(sourceRunId)) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    return output;
+  }
+
+  private AnalysisRunOutput step05ActivitiesOutputFromJson(AnalysisRunId runId, ObjectNode value) {
+    requireFields(value, STEP05_ACTIVITIES_OUTPUT_FIELDS);
+    if (!runId.value().equals(requiredText(value, "runId"))
+        || !STEP05_ACTIVITIES_OUTPUT.equals(requiredText(value, "outputKind"))
+        || !value.path("activityBatchComplete").isBoolean()) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    AnalysisRunId sourceRunId = AnalysisRunId.parse(requiredText(value, "sourceRunId"));
+    AnalysisRunOutput output =
+        AnalysisRunOutput.step05Activities(
+            sourceRunId,
+            analysisStepCheckpointFromWire(value.path("readingMaterialCheckpoint")),
+            nullableCheckpointFromWire(value.path("activityCheckpoint")),
+            value.path("activityBatchComplete").booleanValue());
+    if (!output.hasActivityCheckpoint() || !runId.equals(runId(output.activityCheckpoint()))) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    return output;
+  }
+
+  private AnalysisRunOutput step05ProcessOutputFromJson(AnalysisRunId runId, ObjectNode value) {
+    requireFields(value, STEP05_PROCESS_OUTPUT_FIELDS);
+    if (!runId.value().equals(requiredText(value, "runId"))
+        || !PROCESS_CATALOG_OUTPUT.equals(requiredText(value, "outputKind"))
+        || !value.path("activityBatchComplete").isBoolean()
+        || !value.path("activityBatchComplete").booleanValue()) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    AnalysisRunId sourceRunId = AnalysisRunId.parse(requiredText(value, "sourceRunId"));
+    AnalysisRunOutput output =
+        AnalysisRunOutput.step05Processes(
+            sourceRunId,
+            analysisStepCheckpointFromWire(value.path("readingMaterialCheckpoint")),
+            nullableCheckpointFromWire(value.path("activityCheckpoint")),
+            nullableCheckpointFromWire(value.path("knowledgeCheckpoint")));
+    if (!runId.equals(runId(output.knowledgeCheckpoint()))) {
       throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
     }
     return output;

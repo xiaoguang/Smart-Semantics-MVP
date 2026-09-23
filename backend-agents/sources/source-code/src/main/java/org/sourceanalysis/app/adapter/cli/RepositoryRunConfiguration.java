@@ -21,6 +21,7 @@ import org.sourceanalysis.app.analysis.discovery.DiscoveryProfile;
 import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionProfile;
 import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilationProfile;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationProfile;
+import org.sourceanalysis.app.analysis.interpretation.activity.ActivityRetryProfile;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialProfile;
 import org.sourceanalysis.app.analysis.inventory.ProfileView;
 import org.sourceanalysis.app.analysis.knowledge.ProcessDiscoveryProfile;
@@ -35,6 +36,7 @@ import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.runtime.EffectiveEngineConfiguration;
 import org.sourceanalysis.app.runtime.EngineConfigurationLoader;
 import org.sourceanalysis.app.runtime.PersistedTechnicalRunConfiguration;
+import org.sourceanalysis.app.runtime.modeljob.ModelJobCapacityProfile;
 
 /** Configuration and model-service declarations consumed by the configured execution service. */
 enum ModelProviderKind {
@@ -48,7 +50,8 @@ record ModelJobsConfiguration(
     Map<String, List<String>> routing,
     Path journalDirectory,
     Path outputDirectory,
-    String canonicalSha256) {
+    String canonicalSha256,
+    ActivityRetryProfile activityRetry) {
 
   static final Set<String> ROUTES =
       Set.of("activity", "processGroup", "repositorySummary", "report");
@@ -58,11 +61,33 @@ record ModelJobsConfiguration(
     routing = Map.copyOf(routing);
   }
 
+  ModelJobsConfiguration(
+      int maxConcurrentJobs,
+      Map<String, ModelJobProviderConfiguration> providers,
+      Map<String, List<String>> routing,
+      Path journalDirectory,
+      Path outputDirectory,
+      String canonicalSha256) {
+    this(
+        maxConcurrentJobs,
+        providers,
+        routing,
+        journalDirectory,
+        outputDirectory,
+        canonicalSha256,
+        null);
+  }
+
+  @Override
+  public ActivityRetryProfile activityRetry() {
+    return activityRetry == null ? ActivityRetryProfile.defaults() : activityRetry;
+  }
+
   static ModelJobsConfiguration load(ObjectNode document, CanonicalJsonCodec canonicalJson) {
     requireFieldsAllowingOptional(
         document,
         Set.of("providers", "routing"),
-        Set.of("journalDirectory", "maxConcurrentJobs", "outputDirectory"));
+        Set.of("activityRetry", "journalDirectory", "maxConcurrentJobs", "outputDirectory"));
     int globalCap =
         document.has("maxConcurrentJobs") ? positiveInt(document, "maxConcurrentJobs") : 4;
     Path journalDirectory = optionalAbsolutePath(document, "journalDirectory");
@@ -112,16 +137,19 @@ record ModelJobsConfiguration(
       routing.put(route, List.copyOf(providerKeys));
     }
 
+    ActivityRetryProfile activityRetry =
+        document.has("activityRetry") ? loadActivityRetry(object(document, "activityRetry")) : null;
     ObjectNode normalized =
         normalizedNonSecretDocument(
-            globalCap, journalDirectory, outputDirectory, providers, routing);
+            globalCap, journalDirectory, outputDirectory, providers, routing, activityRetry);
     return new ModelJobsConfiguration(
         globalCap,
         providers,
         routing,
         journalDirectory,
         outputDirectory,
-        sha256(canonicalJson.encodeCanonical(normalized).copyToByteArray()));
+        sha256(canonicalJson.encodeCanonical(normalized).copyToByteArray()),
+        activityRetry);
   }
 
   ModelJobProviderConfiguration provider(String key) {
@@ -130,6 +158,14 @@ record ModelJobsConfiguration(
       throw failure("CONFIGURATION_INVALID");
     }
     return provider;
+  }
+
+  void requireActivityCapacity() {
+    for (String providerKey : routing.get("activity")) {
+      if (provider(providerKey).capacity() == null) {
+        throw failure("CAPACITY_PROFILE_REQUIRED");
+      }
+    }
   }
 
   void validateExecutionEnvironment() {
@@ -170,7 +206,7 @@ record ModelJobsConfiguration(
 
   ObjectNode normalizedNonSecretDocument() {
     return normalizedNonSecretDocument(
-        maxConcurrentJobs, journalDirectory, outputDirectory, providers, routing);
+        maxConcurrentJobs, journalDirectory, outputDirectory, providers, routing, activityRetry);
   }
 
   static ObjectNode normalizedNonSecretDocument(
@@ -178,7 +214,8 @@ record ModelJobsConfiguration(
       Path journalDirectory,
       Path outputDirectory,
       Map<String, ModelJobProviderConfiguration> providers,
-      Map<String, List<String>> routing) {
+      Map<String, List<String>> routing,
+      ActivityRetryProfile activityRetry) {
     ObjectNode normalized = JsonNodeFactory.instance.objectNode();
     normalized.put("maxConcurrentJobs", globalCap);
     if (journalDirectory == null) {
@@ -203,7 +240,111 @@ record ModelJobsConfiguration(
       ArrayNode values = normalizedRouting.putArray(route);
       routing.get(route).forEach(values::add);
     }
+    if (activityRetry != null) {
+      ObjectNode retry = normalized.putObject("activityRetry");
+      retry.put("maxAttempts", activityRetry.maxAttempts());
+      retry.put("initialBackoffMillis", activityRetry.initialBackoffMillis());
+      retry.put("maxBackoffMillis", activityRetry.maxBackoffMillis());
+      // CanonicalJsonCodec intentionally accepts integral JSON numbers only.
+      retry.put("multiplier", Double.toString(activityRetry.multiplier()));
+      retry.put("jitterRatio", Double.toString(activityRetry.jitterRatio()));
+      ArrayNode reasons = retry.putArray("retryableReasons");
+      activityRetry.retryableReasons().stream().sorted().forEach(reasons::add);
+      ObjectNode overrides = retry.putObject("stageOverrides");
+      activityRetry.stageOverrides().entrySet().stream()
+          .sorted(Map.Entry.comparingByKey())
+          .forEach(
+              entry -> overrides.putObject(entry.getKey()).put("maxAttempts", entry.getValue()));
+    }
     return normalized;
+  }
+
+  private static ActivityRetryProfile loadActivityRetry(ObjectNode document) {
+    requireFieldsAllowingOptional(
+        document,
+        Set.of(),
+        Set.of(
+            "maxAttempts",
+            "initialBackoffMillis",
+            "maxBackoffMillis",
+            "multiplier",
+            "jitterRatio",
+            "retryableReasons",
+            "stageOverrides"));
+    ActivityRetryProfile defaults = ActivityRetryProfile.defaults();
+    int attempts =
+        document.has("maxAttempts") ? positiveInt(document, "maxAttempts") : defaults.maxAttempts();
+    long initial =
+        document.has("initialBackoffMillis")
+            ? nonnegativeLong(document, "initialBackoffMillis")
+            : defaults.initialBackoffMillis();
+    long maximum =
+        document.has("maxBackoffMillis")
+            ? nonnegativeLong(document, "maxBackoffMillis")
+            : defaults.maxBackoffMillis();
+    double multiplier =
+        document.has("multiplier") ? finiteNumber(document, "multiplier") : defaults.multiplier();
+    double jitter =
+        document.has("jitterRatio")
+            ? finiteNumber(document, "jitterRatio")
+            : defaults.jitterRatio();
+    Set<String> reasons = defaults.retryableReasons();
+    if (document.has("retryableReasons")) {
+      if (!(document.get("retryableReasons") instanceof ArrayNode values)) {
+        throw failure("CONFIGURATION_INVALID");
+      }
+      Set<String> selected = new java.util.HashSet<>();
+      for (JsonNode value : values) {
+        if (!value.isTextual() || !selected.add(value.textValue())) {
+          throw failure("CONFIGURATION_INVALID");
+        }
+      }
+      reasons = Set.copyOf(selected);
+    }
+    Map<String, Integer> overrides = new LinkedHashMap<>();
+    if (document.has("stageOverrides")) {
+      ObjectNode stages = object(document, "stageOverrides");
+      stages
+          .fields()
+          .forEachRemaining(
+              entry -> {
+                if (!(entry.getValue() instanceof ObjectNode stage)) {
+                  throw failure("CONFIGURATION_INVALID");
+                }
+                requireFields(stage, Set.of("maxAttempts"));
+                overrides.put(entry.getKey(), positiveInt(stage, "maxAttempts"));
+              });
+    }
+    try {
+      return new ActivityRetryProfile(
+          attempts, initial, maximum, multiplier, jitter, reasons, overrides);
+    } catch (IllegalArgumentException invalid) {
+      throw failure("CONFIGURATION_INVALID", invalid);
+    }
+  }
+
+  private static long nonnegativeLong(ObjectNode document, String field) {
+    JsonNode value = document.path(field);
+    if (!value.isIntegralNumber() || !value.canConvertToLong() || value.longValue() < 0) {
+      throw failure("CONFIGURATION_INVALID");
+    }
+    return value.longValue();
+  }
+
+  private static double finiteNumber(ObjectNode document, String field) {
+    JsonNode value = document.path(field);
+    if ((!value.isNumber() && !value.isTextual())) {
+      throw failure("CONFIGURATION_INVALID");
+    }
+    try {
+      double parsed = Double.parseDouble(value.asText());
+      if (!Double.isFinite(parsed)) {
+        throw failure("CONFIGURATION_INVALID");
+      }
+      return parsed;
+    } catch (NumberFormatException invalid) {
+      throw failure("CONFIGURATION_INVALID", invalid);
+    }
   }
 }
 
@@ -216,7 +357,31 @@ record ModelJobProviderConfiguration(
     Duration timeout,
     Path executable,
     String endpoint,
-    ModelJobAuthentication authentication) {
+    ModelJobAuthentication authentication,
+    ModelJobCapacityProfile capacity) {
+
+  ModelJobProviderConfiguration(
+      ModelProviderKind kind,
+      String quotaScope,
+      int maxConcurrentJobs,
+      String model,
+      String reasoningEffort,
+      Duration timeout,
+      Path executable,
+      String endpoint,
+      ModelJobAuthentication authentication) {
+    this(
+        kind,
+        quotaScope,
+        maxConcurrentJobs,
+        model,
+        reasoningEffort,
+        timeout,
+        executable,
+        endpoint,
+        authentication,
+        null);
+  }
 
   static final Set<String> SUPPORTED_REASONING_EFFORTS =
       Set.of("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra");
@@ -235,7 +400,13 @@ record ModelJobProviderConfiguration(
     requireFieldsAllowingOptional(
         document,
         Set.of("auth", "kind", "quotaScope"),
-        Set.of("executable", "maxConcurrentJobs", "model", "reasoningEffort", "timeoutSeconds"));
+        Set.of(
+            "capacity",
+            "executable",
+            "maxConcurrentJobs",
+            "model",
+            "reasoningEffort",
+            "timeoutSeconds"));
     ModelJobAuthentication authentication =
         ModelJobAuthentication.loadCodex(object(document, "auth"));
     String model = document.has("model") ? requiredText(document, "model") : "gpt-5.6-luna";
@@ -253,14 +424,15 @@ record ModelJobProviderConfiguration(
             ? absolutePath(requiredText(document, "executable"), "Codex executable")
             : null,
         null,
-        authentication);
+        authentication,
+        capacity(document));
   }
 
   static ModelJobProviderConfiguration loadOpenAi(ObjectNode document) {
     requireFieldsAllowingOptional(
         document,
         Set.of("auth", "kind", "maxConcurrentJobs", "model", "quotaScope", "reasoningEffort"),
-        Set.of("endpoint", "timeoutSeconds"));
+        Set.of("capacity", "endpoint", "timeoutSeconds"));
     String endpoint =
         document.has("endpoint") ? requiredText(document, "endpoint") : "https://api.openai.com/v1";
     requireSupportedHttpsEndpoint(endpoint);
@@ -276,7 +448,31 @@ record ModelJobProviderConfiguration(
         timeout(document),
         null,
         endpoint,
-        ModelJobAuthentication.loadApi(object(document, "auth")));
+        ModelJobAuthentication.loadApi(object(document, "auth")),
+        capacity(document));
+  }
+
+  private static ModelJobCapacityProfile capacity(ObjectNode provider) {
+    if (!provider.has("capacity")) {
+      return null;
+    }
+    try {
+      ObjectNode value = object(provider, "capacity");
+      requireFields(
+          value,
+          Set.of(
+              "contextWindowTokens",
+              "providerOverheadTokens",
+              "reasoningReserveTokens",
+              "tokenAccounting"));
+      return new ModelJobCapacityProfile(
+          positiveLong(value, "contextWindowTokens"),
+          nonnegativeLong(value, "providerOverheadTokens"),
+          nonnegativeLong(value, "reasoningReserveTokens"),
+          requiredText(value, "tokenAccounting"));
+    } catch (RuntimeException invalid) {
+      throw failure("CAPACITY_PROFILE_REQUIRED", invalid);
+    }
   }
 
   static String quotaScope(ObjectNode document) {
@@ -333,6 +529,13 @@ record ModelJobProviderConfiguration(
       normalized.put("endpoint", endpoint);
     }
     normalized.set("auth", authentication.identityNode());
+    if (capacity != null) {
+      ObjectNode bound = normalized.putObject("capacity");
+      bound.put("contextWindowTokens", capacity.contextWindowTokens());
+      bound.put("providerOverheadTokens", capacity.providerOverheadTokens());
+      bound.put("reasoningReserveTokens", capacity.reasoningReserveTokens());
+      bound.put("tokenAccounting", capacity.tokenAccounting());
+    }
     return normalized;
   }
 }
@@ -718,6 +921,16 @@ record RepositoryRunConfiguration(
       activityProfile = SourceAnalysisExecution.activityProfile(object(business, "activity"));
       processDiscoveryProfile =
           SourceAnalysisExecution.processDiscoveryProfile(object(business, "processDiscovery"));
+      maxMaterialsToStart = positiveInt(business, "maxMaterialsToStart");
+    } else if (hasReadingMaterials && document.has("business")) {
+      ObjectNode business = object(document, "business");
+      requireFieldsAllowingOptional(
+          business, Set.of("activity", "maxMaterialsToStart"), Set.of("processDiscovery"));
+      activityProfile = SourceAnalysisExecution.activityProfile(object(business, "activity"));
+      if (business.has("processDiscovery")) {
+        processDiscoveryProfile =
+            SourceAnalysisExecution.processDiscoveryProfile(object(business, "processDiscovery"));
+      }
       maxMaterialsToStart = positiveInt(business, "maxMaterialsToStart");
     }
 

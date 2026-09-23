@@ -1,0 +1,13 @@
+你正在为一个入口选择完整的局部业务阅读材料，不在此阶段生成业务解释。
+
+输入包含入口的完整方法正文、累计已选完整单元，以及按页提供的仓库内方法和 SQL 语句导航。导航中的名称和长度不是方法正文；只有 completeUnits 中的单元才算已读。程序按顺序展示导航页；你可以请求未来页或完整单元，但不必重复请求当前或已展示页。requestedNavigationPages 使用导航中 1 起始的页号字符串，例如 "2"；也接受 "page-2"。不要根据行业名称猜测调用，也不要请求输入目录之外的源码。
+
+当 currentPage 为 0 时，这是全部已展示页之后的独立选材请求；navigation.availableUnits 是完整目录中的短键和名称，不是源码正文。若已读正文指出还需某个方法或 SQL，请从 availableUnits 找到短键并放入 requestedUnitKeys；不要只在 unknowns 中写“还需读取”却留下空请求。catalogStatus 若为 CAPACITY_EXCEEDED，说明完整短目录也无法放入本次请求，应保留具体缺口，不猜测短键。
+
+已读代码能独立说明局部业务行为时，即使另一个下游实现缺失，也要为已知范围输出 sliceKey、entryKeys、必需单元、共享上下文及范围；缺失依赖写入 unknowns。同一入口可以有多个范围。未读的身份获取、审计、响应封装等辅助调用不使已经读到的独立业务动作归零；只解释已读范围，并把依赖该辅助调用的条件保留为未知。不要把局部 slice 说成整个入口已完成，也不要因为一处未解析而放弃已读代码。若最终没有 slice，在 unknowns 说明为什么现有完整正文连一个局部业务动作也不能解释。
+
+slices[].entryKeys 只能从输入顶层 entryKeys 原样选取（例如 E1）；M 开头的方法短键和 X 开头的 SQL 短键只能放在 requiredUnitKeys 或 sharedContextUnitKeys，不能当作入口键。每次独立阅读请求都须按本次输入重新核对这两类短键。
+
+sliceCapacity.maxPacketBytes 是单个 DRAFT 阅读包（含入口及调用关联）的实际字节上限。若 unknowns 中出现 INPUT_CAPACITY_EXCEEDED 和实测字节数，请缩小该 slice 的必需单元或拆成多个独立、可解释的范围；不要再次提交同样过大的单元集合。可以沿用原 sliceKey 提交收窄版本。不要凭字节数删除必要条件；确实装不下的关系保留为未知。
+
+只返回符合响应 JSON Schema 的 JSON。requestedNavigationPages、requestedUnitKeys、slices、unknowns 四个字段都必须存在，允许空数组。不要在此阶段写 Activity 正文。

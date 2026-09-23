@@ -4,7 +4,7 @@
 
 把模型选择的Activity和同源原文变成自包含ProcessReadingPacket。内部collect/assemble执行确定性读取；一次PROCESS_READING_CHECK由Discovery使用现有Provider调度。不是公共检索接口，也不新增语义解析器。
 
-当前旧Activity/M10/冻结文本取材已实现。目标只增加由[FrozenAnalysisCorpus](frozen-analysis-corpus.md)按新Activity materialSource选择Step05来源；不会把新Step05强转M10。
+当前旧Activity/M10/冻结文本取材已实现。[FrozenAnalysisCorpus](frozen-analysis-corpus.md)也能从验证后的新Activity provenance、Step05 packet和同snapshot冻结文本解析实际来源，并隔离packet-local短ref。M11 v3 reader、ProcessDiscoveryRequest/Result、Publisher和持久Step07 executor已有独立Step05分支；正式CLI选择仍待运行编排层接入。任何运行接线都不得把新Step05强转M10。
 
 ## 首批实际读取
 
@@ -46,6 +46,6 @@ DRAFT外层实际输入另带investigationContext和readingSelections，分别�
 
 ## 保存、当前状态与测试
 
-选择/检查为process-reading-decision-v2/producer v4；CHECK Prompt v4，历史v1/producer v3仅严格读。实际R、预览、导航、最终保留、背景、Schema/Prompt和绑定参与指纹。新Step05 materialSource接入尚未实现，其余上述取材合同已有生产接线。
+选择/检查为process-reading-decision-v2/producer v4；CHECK Prompt v4，历史v1/producer v3仅严格读。实际R、预览、导航、最终保留、背景、Schema/Prompt和绑定参与指纹。新Step05来源可从M11 v3重开后经显式ProcessDiscoveryRequest进入同一Assembler；其余上述取材合同已有生产接线。当前剩余缺口是正式运行入口选择，不是另造Assembler或把Step05包装成M10。
 
 定向验证应检查全文/公式/条件不丢、多variant共享正文、真实行段、空保留/空补读、context引用合法但非成员、未知R/ref拒绝、重开与零上游调用。来源/容量结构正确不表示真实语义充分。
