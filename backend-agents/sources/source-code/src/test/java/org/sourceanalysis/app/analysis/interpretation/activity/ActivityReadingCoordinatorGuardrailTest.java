@@ -412,12 +412,16 @@ class ActivityReadingCoordinatorGuardrailTest {
         (LinkedHashMap<String, JsonNode>) units.invoke(coordinator, full, Set.of("M1"));
     Method pages =
         ActivityReadingCoordinator.class.getDeclaredMethod(
-            "pages", ObjectNode.class, LinkedHashMap.class, ActivityReadingProfile.class);
+            "pages",
+            ObjectNode.class,
+            LinkedHashMap.class,
+            ActivityReadingProfile.class,
+            CanonicalJsonCodec.class);
     pages.setAccessible(true);
     @SuppressWarnings("unchecked")
     List<List<JsonNode>> navigation =
         (List<List<JsonNode>>)
-            pages.invoke(coordinator, full, available, boundedProfile(16_000, 4));
+            pages.invoke(coordinator, full, available, boundedProfile(16_000, 4), json);
     JsonNode leafNavigation =
         navigation.stream()
             .flatMap(List::stream)
@@ -428,11 +432,16 @@ class ActivityReadingCoordinatorGuardrailTest {
 
     Method selectedPacket =
         ActivityReadingCoordinator.class.getDeclaredMethod(
-            "selectedPacket", ActivityMaterialView.class, ObjectNode.class, Set.class, List.class);
+            "selectedPacket",
+            ActivityMaterialView.class,
+            ObjectNode.class,
+            Set.class,
+            List.class,
+            CanonicalJsonCodec.class);
     selectedPacket.setAccessible(true);
     ActivityReadingPacket selected =
         (ActivityReadingPacket)
-            selectedPacket.invoke(coordinator, view, full, Set.of("M1", "M3"), List.of("E1"));
+            selectedPacket.invoke(coordinator, view, full, Set.of("M1", "M3"), List.of("E1"), json);
     JsonNode input = json.parseCanonical(selected.modelInputJson());
 
     assertThat(stringList(input.path("methods"), "ref"))
@@ -498,11 +507,16 @@ class ActivityReadingCoordinatorGuardrailTest {
             });
     Method selectedPacket =
         ActivityReadingCoordinator.class.getDeclaredMethod(
-            "selectedPacket", ActivityMaterialView.class, ObjectNode.class, Set.class, List.class);
+            "selectedPacket",
+            ActivityMaterialView.class,
+            ObjectNode.class,
+            Set.class,
+            List.class,
+            CanonicalJsonCodec.class);
     selectedPacket.setAccessible(true);
     ActivityReadingPacket selected =
         (ActivityReadingPacket)
-            selectedPacket.invoke(coordinator, view, full, Set.of("M2"), List.of("E1"));
+            selectedPacket.invoke(coordinator, view, full, Set.of("M2"), List.of("E1"), json);
     JsonNode input = json.parseCanonical(selected.modelInputJson());
 
     assertThat(selected.modelInputJson().size()).isLessThan(150_000);
@@ -583,11 +597,16 @@ class ActivityReadingCoordinatorGuardrailTest {
             });
     Method selectedPacket =
         ActivityReadingCoordinator.class.getDeclaredMethod(
-            "selectedPacket", ActivityMaterialView.class, ObjectNode.class, Set.class, List.class);
+            "selectedPacket",
+            ActivityMaterialView.class,
+            ObjectNode.class,
+            Set.class,
+            List.class,
+            CanonicalJsonCodec.class);
     selectedPacket.setAccessible(true);
     ActivityReadingPacket selected =
         (ActivityReadingPacket)
-            selectedPacket.invoke(coordinator, view, full, Set.of("M2"), List.of("E1"));
+            selectedPacket.invoke(coordinator, view, full, Set.of("M2"), List.of("E1"), json);
     JsonNode input = json.parseCanonical(selected.modelInputJson());
 
     assertThat(input.path("calls")).hasSize(180);

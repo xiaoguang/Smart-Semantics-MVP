@@ -74,11 +74,23 @@ class ActivityPacketFailureIsolationTest {
         .extracting(ActivityEntryCoverage::entryId)
         .containsExactlyInAnyOrder("entry:alpha", "entry:bravo");
     assertThat(result.coverage())
-        .anySatisfy(
+        .filteredOn(coverage -> coverage.entryId().equals("entry:alpha"))
+        .singleElement()
+        .satisfies(
             coverage -> {
-              assertThat(coverage.entryId()).isEqualTo("entry:alpha");
               assertThat(coverage.disposition()).isEqualTo("NOT_ANALYZED");
-              assertThat(coverage.reasonCode()).isEqualTo("ACTIVITY_PROVIDER_FAILED_AFTER_START");
+              assertThat(coverage.reasonCode()).isEqualTo("ACTIVITY_READING_INCOMPLETE");
+            });
+    assertThat(result.packetCompletion().orElseThrow())
+        .filteredOn(completion -> completion.packetId().equals("packet:alpha"))
+        .singleElement()
+        .satisfies(
+            completion -> {
+              assertThat(completion.completion())
+                  .isEqualTo(ActivityPacketCompletion.Completion.INCOMPLETE);
+              assertThat(completion.incompleteScopes())
+                  .extracting(ActivityPacketCompletion.IncompleteScope::reasonCode)
+                  .contains("ACTIVITY_PROVIDER_FAILED_AFTER_START");
             });
   }
 

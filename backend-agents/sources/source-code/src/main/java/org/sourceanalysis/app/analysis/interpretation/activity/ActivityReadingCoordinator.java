@@ -2020,12 +2020,7 @@ public final class ActivityReadingCoordinator {
 
   private record ValidatedDecision(ObjectNode response, DecisionApplication application) {}
 
-  private record ScopeEvaluation(List<ActivityReadingPlan.Slice> slices, List<String> issues) {
-
-    private static ScopeEvaluation empty() {
-      return new ScopeEvaluation(List.of(), List.of());
-    }
-  }
+  private record ScopeEvaluation(List<ActivityReadingPlan.Slice> slices, List<String> issues) {}
 
   private static final class ActivityExplanationException extends IllegalStateException {
     private ActivityExplanationException(String code) {

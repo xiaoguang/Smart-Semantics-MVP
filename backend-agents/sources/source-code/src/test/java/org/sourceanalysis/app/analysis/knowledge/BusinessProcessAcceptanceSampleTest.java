@@ -25,6 +25,7 @@ import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
 import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityEntryCoverage;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationResult;
+import org.sourceanalysis.app.analysis.interpretation.activity.ActivityPacketCompletion;
 import org.sourceanalysis.app.analysis.interpretation.activity.ReviewedActivity;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterial;
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialBuildResult;
@@ -33,9 +34,14 @@ import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialM
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
 import org.sourceanalysis.app.analysis.interpretation.material.ModelActivityPacket;
 import org.sourceanalysis.app.analysis.interpretation.material.SourceReference;
+import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
+import org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationAddress;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
+import org.sourceanalysis.app.artifact.AnalysisStepReceiptId;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.ModuleArtifactRoot;
@@ -218,6 +224,86 @@ class BusinessProcessAcceptanceSampleTest {
             "BUSINESS_PROCESS_CONSOLIDATION_REVIEW");
   }
 
+  @Test
+  void step05SelectedSampleKeepsOriginalCatalogOrdinalsAndFormalRunReusesSelectedTriples()
+      throws Exception {
+    AcceptanceProvider provider = new AcceptanceProvider();
+    provider.splitPreview = true;
+    AnalysisRunId sampleRun = runId('c');
+    ModelJobExecutionConfiguration sampleExecution = execution(provider, sampleRun, null);
+    ProcessDiscoveryRequest sampleRequest = step05Request(sampleRun);
+    DefaultBusinessProcessDiscovery discovery =
+        DefaultBusinessProcessDiscovery.forExecution(sampleExecution);
+    Object catalogSample =
+        invoke(discovery, requiredMethod("discoverCatalogSample", 1), sampleRequest);
+    List<String> fullCatalogCandidateIds = candidateIds(catalogSample);
+    assertThat(fullCatalogCandidateIds).hasSize(3);
+    List<String> selectedCandidateIds =
+        List.of(fullCatalogCandidateIds.get(0), fullCatalogCandidateIds.get(2));
+    int callsBeforePreview = provider.calls();
+
+    Object preview =
+        invoke(
+            discovery,
+            requiredMethod("reconstructSelectedPreview", 2),
+            catalogSample,
+            selectedCandidateIds);
+
+    List<?> previewCandidates = (List<?>) property(preview, "candidates");
+    assertThat(previewCandidates).hasSize(2);
+    assertThat(previewCandidates.stream().map(candidate -> property(candidate, "candidateId")))
+        .containsExactlyElementsOf(selectedCandidateIds);
+    assertThat(previewCandidates.stream().map(candidate -> property(candidate, "ordinal")))
+        .as("preview ordinals remain positions in the full catalog, not filtered positions")
+        .containsExactly(0, 2);
+    List<?> splitProcesses =
+        previewCandidates.stream()
+            .flatMap(candidate -> ((List<?>) property(candidate, "processes")).stream())
+            .toList();
+    assertThat(splitProcesses).hasSize(4);
+    assertThat(
+            splitProcesses.stream()
+                .map(process -> ((RepositoryBusinessProcessCatalog.BusinessProcess) process).name())
+                .toList())
+        .containsExactly("最终核对片段A", "最终核对片段B", "最终核对片段A", "最终核对片段B");
+    assertThat(provider.readingCheckCandidateIds())
+        .containsExactlyInAnyOrderElementsOf(selectedCandidateIds);
+    assertThat(provider.taskKindsSince(callsBeforePreview))
+        .hasSize(8)
+        .containsOnly(
+            "PROCESS_READING_CHECK",
+            "BUSINESS_PROCESS_DRAFT",
+            "BUSINESS_PROCESS_WRITE",
+            "BUSINESS_PROCESS_RULE_REVIEW");
+    List<ObjectNode> samplePairs = reviewedPairs(temporaryDirectory.resolve("journal"));
+    assertThat(samplePairs).hasSize(2);
+    assertThat(samplePairs)
+        .extracting(record -> text(record, "providerBindingKey"))
+        .containsOnly("pro");
+
+    int callsAfterSample = provider.calls();
+    int checksAfterSample = provider.readingChecks();
+    AnalysisRunId formalRun = runId('d');
+    ProcessDiscoveryResult formalResult =
+        DefaultBusinessProcessDiscovery.forExecution(execution(provider, formalRun, sampleRun))
+            .discover(step05Request(formalRun));
+
+    assertThat(formalResult.coverage().coverageStatus()).isEqualTo("CLOSED");
+    assertThat(provider.calls() - callsAfterSample)
+        .as("only the unselected catalog candidate and final consolidation run on continuation")
+        .isEqualTo(6);
+    assertThat(provider.readingCheckCandidateIdsSince(checksAfterSample))
+        .containsExactly(fullCatalogCandidateIds.get(1));
+    assertThat(provider.taskKindsSince(callsAfterSample))
+        .containsExactly(
+            "PROCESS_READING_CHECK",
+            "BUSINESS_PROCESS_DRAFT",
+            "BUSINESS_PROCESS_WRITE",
+            "BUSINESS_PROCESS_RULE_REVIEW",
+            "BUSINESS_PROCESS_CONSOLIDATION_DRAFT",
+            "BUSINESS_PROCESS_CONSOLIDATION_REVIEW");
+  }
+
   private Method requiredMethod(String name, int parameterCount) {
     return Arrays.stream(DefaultBusinessProcessDiscovery.class.getDeclaredMethods())
         .filter(method -> method.getName().equals(name))
@@ -338,6 +424,62 @@ class BusinessProcessAcceptanceSampleTest {
                         value.entryIds().get(0), "ANALYZED", List.of(value.activityId()), null))
             .toList(),
         activityCheckpoint());
+  }
+
+  private static ProcessDiscoveryRequest step05Request(AnalysisRunId outputRunId) {
+    ActivityExplanationResult historicalShape =
+        FrozenAnalysisCorpusDualMaterialSourceTest.step05Activities();
+    CodeReadingMaterialSet materials = FrozenAnalysisCorpusDualMaterialSourceTest.step05Materials();
+    List<ActivityPacketCompletion> packetCompletion =
+        materials.packets().stream()
+            .map(
+                packet -> {
+                  ReviewedActivity activity =
+                      historicalShape.reviewedActivities().stream()
+                          .filter(value -> packet.packetId().equals(value.materialId()))
+                          .findFirst()
+                          .orElseThrow();
+                  String requiredSliceKey =
+                      activity.sliceKey() == null ? "whole-packet" : activity.sliceKey();
+                  return new ActivityPacketCompletion(
+                      packet.packetId(),
+                      packet.entries().stream().map(entry -> entry.entryId()).toList(),
+                      ActivityPacketCompletion.Completion.COMPLETE,
+                      List.of(requiredSliceKey),
+                      List.of(requiredSliceKey),
+                      List.of());
+                })
+            .toList();
+    ActivityExplanationResult activities =
+        new ActivityExplanationResult(
+            historicalShape.reviewedActivities(),
+            historicalShape.coverage(),
+            historicalShape.unexplainedActivityEntries(),
+            packetCompletion,
+            activityCheckpoint());
+    String digest = "b".repeat(64);
+    AnalysisStepPublicationReference materialCheckpoint =
+        new AnalysisStepPublicationReference(
+            new AnalysisStepPublicationAddress(runId('0'), AnalysisStepKey.BUSINESS_FLOWS),
+            AnalysisStepArtifactRoot.parse("analysis-step-root:" + digest),
+            AnalysisStepReceiptId.parse("analysis-step-receipt:" + digest),
+            Sha256Digest.parse(digest));
+    return new ProcessDiscoveryRequest(
+        activities,
+        materials,
+        materialCheckpoint,
+        profile(),
+        outputRunId,
+        materials.header().sourceInventory(),
+        ignored ->
+            FrozenAnalysisCorpusDualMaterialSourceTest.sourceTextSet(
+                List.of(
+                    FrozenAnalysisCorpusDualMaterialSourceTest.text(
+                        "src/main/java/example/AlphaService.java", "class AlphaService {}\n"),
+                    FrozenAnalysisCorpusDualMaterialSourceTest.text(
+                        "src/main/java/example/BetaService.java", "class BetaService {}\n"))),
+        null,
+        null);
   }
 
   private static ReviewedActivity activity(String key, String name, String sourceRef) {
@@ -518,15 +660,24 @@ class BusinessProcessAcceptanceSampleTest {
           .forEach(card -> areaIds.add(card.path("activityId").asText()));
       root.putArray("aliases");
       ArrayNode candidates = root.putArray("candidateProcesses");
+      List<JsonNode> activityCards = new ArrayList<>();
+      input.path("activityIndexCards").forEach(activityCards::add);
       for (int index = 0; index < 3; index++) {
         ObjectNode candidate = candidates.addObject();
         candidate.put("candidateLocalId", "candidate-" + index);
         candidate.put("name", "process " + index);
         candidate.put("purpose", "purpose " + index);
-        ObjectNode use = candidate.putArray("activityUses").addObject();
-        use.put("activityId", "activity:" + index);
-        use.put("role", "CORE");
-        use.put("variant", "variant " + index);
+        ArrayNode uses = candidate.putArray("activityUses");
+        List<JsonNode> candidateActivities =
+            activityCards.size() == 2 && index == 2
+                ? activityCards
+                : List.of(activityCards.get(Math.min(index, activityCards.size() - 1)));
+        for (JsonNode card : candidateActivities) {
+          ObjectNode use = uses.addObject();
+          use.put("activityId", card.path("activityId").asText());
+          use.put("role", "CORE");
+          use.put("variant", "variant " + index);
+        }
       }
       ArrayNode dispositions = root.putArray("activityDispositions");
       input

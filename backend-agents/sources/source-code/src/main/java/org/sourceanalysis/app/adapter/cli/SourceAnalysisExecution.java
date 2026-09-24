@@ -1454,7 +1454,7 @@ final class SourceAnalysisExecution {
     return Set.copyOf(selected);
   }
 
-  private static void verifyConfiguredStep05Source(
+  static void verifyConfiguredStep05Source(
       RepositoryRunConfiguration configuration,
       RunStoreHandle store,
       RepositoryRunStateV4.SavedState state) {
@@ -1915,7 +1915,7 @@ final class SourceAnalysisExecution {
     }
   }
 
-  private static void validateStep05ProcessReuseReadingInputs(
+  static void validateStep05ProcessReuseReadingInputs(
       RepositoryRunConfiguration configuration,
       ModelJobsConfiguration modelJobs,
       AnalysisRunId reuseFromModelBatchId,
@@ -2361,7 +2361,7 @@ final class SourceAnalysisExecution {
     }
   }
 
-  private static void validateStep05ReuseBatch(
+  static void validateStep05ReuseBatch(
       RunStoreHandle store,
       ModelJobsConfiguration modelJobs,
       RepositoryRunStateV4.SavedState materials,
@@ -2481,7 +2481,7 @@ final class SourceAnalysisExecution {
         "MODEL_EXECUTION_CONFIGURATION_WRITE_FAILED");
   }
 
-  private static void writeStep05ProcessModelJobExecutionConfiguration(
+  static void writeStep05ProcessModelJobExecutionConfiguration(
       RepositoryRunConfiguration configuration,
       ModelJobsConfiguration modelJobs,
       RepositoryRunStateV4.SavedState materials,

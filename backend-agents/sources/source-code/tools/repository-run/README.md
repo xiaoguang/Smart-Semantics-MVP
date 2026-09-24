@@ -153,12 +153,14 @@ Export a verified older material-state file without rescanning:
 The destination must not already contain different bytes. Export verifies the original
 configuration and checkpoint and never runs JDT, the material builder, or a model.
 This command is the historical M10/state-v3 export; it does not convert new Step05
-materials into Activity input. Connecting the new material contract to Activity is
-outside the current implementation scope.
+materials into Activity input. New Step05 materials have their own direct Activity
+reader and do not require this export.
 
 ### Explain Activities
 
-With a historical M10/model configuration, execute every saved material package:
+With either a historical M10 batch or the new Step05 reading-material state, execute
+the saved packages. Step05 execution reopens the existing material checkpoint; it does
+not run JDT or the material builder again:
 
 ```bash
 "${SOURCE_ANALYSIS[@]}" execute-step \
@@ -166,8 +168,9 @@ With a historical M10/model configuration, execute every saved material package:
   --run 'analysis-run:<queued-run-sha256>'
 ```
 
-For one exact diagnostic sample, add `--material-id <material-id>`. A sample stores its
-reviewed result but does not pretend to be a complete repository Activity checkpoint.
+For a historical M10 diagnostic sample, add `--material-id <material-id>`. For a
+Step05 packet, use `--packet-id <packet-id>`. A sample retains its reviewed results
+without claiming whole-repository Activity completion.
 
 An optional explicit reuse source may be supplied:
 
@@ -175,10 +178,12 @@ An optional explicit reuse source may be supplied:
   --reuse-from-model-batch 'analysis-run:<stopped-batch-sha256>'
 ```
 
-Only a complete, validated DRAFT+REVIEW result with matching material, prompt, schema,
-producer, model, and account identity is reused. Draft-only, failed, damaged, or
-mismatched results execute as a new complete job; there is no half-round continuation,
-automatic retry, or provider fallback.
+Step05 Activity execution uses its configured per-stage retry policy and saves
+successful stages immediately. Explicit `--reuse-only --reuse-from-model-batch <id>`
+rechecks saved scope and results without initializing a model provider. A packet with
+unexplained required slices remains incomplete; partial success does not admit Step07.
+See the Activity design for retryable and non-retryable failure classes. Historical
+M10 reuse retains its original full-task matching contract.
 
 ### Discover and publish business processes
 
@@ -202,6 +207,19 @@ The current Step07 publisher installs:
 
 This command does not invoke the retired singleton process route or Step08. `render()` is
 therefore intentionally not ready for a process-only run.
+
+For the new Step05 Activity source, the process request validates the entire saved
+Activity scope before starting a provider. A stopped Activity run is not necessarily
+complete: `inspect` and the M11 coverage must show every required packet scope complete.
+The fixed 2026-09-17 corpus currently has 14 incomplete packets, so it must not be
+presented as an eligible full Step07 input until those named gaps are resolved.
+
+An internal two-phase acceptance driver can discover a catalog from the same full
+Activity input, then reconstruct up to three selected candidate IDs without publishing
+a fake full-repository result. Its output manifest preserves the candidates' original
+catalog ordinals. See [the acceptance instructions](acceptance/README.md). After review,
+the formal process command can explicitly reuse that stopped sample batch; the sample
+selection changes scheduling only, not the model input or semantic fingerprint.
 
 ### Reuse a catalog for cross-object reading
 

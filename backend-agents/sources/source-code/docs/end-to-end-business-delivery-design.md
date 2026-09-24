@@ -1,6 +1,6 @@
 # 从已保存 Activity 到可读业务过程：端到端收尾详细设计
 
-状态：**2026-09-23 已批准，正在按端到端实施计划执行离线阶段。** 第0、1、2步已完成；第2步通过8类80项定向测试、Spotless及独立复查。第3步开始实现完成记录与历史只复用；真实小样尚未启动，全仓扩大仍须小样展示后的明确确认。本文区分已有能力、当前修复和剩余目标，不以定向测试代表完整CI或业务验收完成。
+状态：**2026-09-23 已批准，正在按端到端实施计划执行。** 第0–9步已完成本地实现与验证；第8步正式输入接线及小样驱动的41项定向测试通过，第9步隔离输出目录的完整干净构建通过617项测试、Spotless、SpotBugs和PMD。正式`target`命令受到本机IDE写入字节码及沙箱回环端口限制，不能称其已通过；隔离POM只改变输出目录。真实小样尚未启动。离线核对发现325包中14包的24个必需切片未解释，新Step07完整范围门禁会拒绝直接用这批部分结果；不能用已保存418条代替完成性。全仓扩大仍须小样展示后的明确确认。本文区分代码验证和业务验收。
 
 ## 1. 要交付什么，不重新做什么
 
@@ -27,7 +27,7 @@
 
 固定新 Activity 批次：`analysis-run:e00cf448733fc078fe460e84b2ea41f51aec85347a4240a49154087748dfa2f9`；M11 receipt：`module-receipt:5360f1f47cc4c7b4f5016d85d97978f08e4e999b9b4f923c5705e4dd458a8700`。完整输入引用必须从保存记录重开，不能仅凭这两个ID构造新receipt。
 
-该批已存 `activityBatchComplete=true`、325条 `ANALYZED_WITH_GAPS` 和1条原导航失败，顶层语义状态 `PARTIAL`。**不能说它因为PARTIAL就无法进入当前Step07，也不能凭true证明每个必需slice均已读完。** 当前旧coverage缺少足够的独立范围完成记录。
+该批历史记录存有 `activityBatchComplete=true`、325条 `ANALYZED_WITH_GAPS` 和1条原导航失败，顶层语义状态 `PARTIAL`。不能仅由顶层 `PARTIAL` 判断范围，也不能凭 `true` 证明每个必需slice均已读完。新的零模型范围核对给出独立结论：311包完整、14包不完整，共缺24个必需切片。旧418条正文及其来源保持不变；新M11完成记录保留这个缺口，新Step07不得把它当成完整全仓输入。
 
 依据：[Activity实测](modules/activity-explanation/full-step05-acceptance-20260923.md)、[收口记录](modules/activity-explanation/post-review-handoff-20260923.md)、[三例实测](supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)。这些历史记录不改写成新结论。
 

@@ -34,6 +34,21 @@ public record ActivityPacketCompletion(
     }
   }
 
+  @Override
+  public List<String> entryIds() {
+    return List.copyOf(entryIds);
+  }
+
+  @Override
+  public List<String> requiredSliceKeys() {
+    return List.copyOf(requiredSliceKeys);
+  }
+
+  @Override
+  public List<String> completedSliceKeys() {
+    return List.copyOf(completedSliceKeys);
+  }
+
   /** The packet-level execution conclusion, separate from business-content quality. */
   public enum Completion {
     COMPLETE,
@@ -50,6 +65,11 @@ public record ActivityPacketCompletion(
       }
       entryIds = requiredDistinct(entryIds, "incomplete scope entry IDs");
       required(reasonCode, "incomplete scope reason code");
+    }
+
+    @Override
+    public List<String> entryIds() {
+      return List.copyOf(entryIds);
     }
   }
 

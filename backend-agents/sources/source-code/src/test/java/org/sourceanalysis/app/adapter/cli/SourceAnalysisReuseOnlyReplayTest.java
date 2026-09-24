@@ -37,6 +37,7 @@ import org.sourceanalysis.app.analysis.interpretation.activity.ActivityHistorica
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityPacketCompletion;
 import org.sourceanalysis.app.analysis.interpretation.activity.ReviewedActivity;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
+import org.sourceanalysis.app.analysis.knowledge.ProcessDiscoveryRequest;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
 import org.sourceanalysis.app.analysis.material.publish.CodeReadingMaterialPublisher;
 import org.sourceanalysis.app.analysis.material.publish.CodeReadingMaterialReader;
@@ -489,6 +490,43 @@ class SourceAnalysisReuseOnlyReplayTest {
       ActivityExplanationResult adoptedActivities =
           new ActivityExplanationCheckpointReader(modules)
               .reopen(adoptedOutput.activityCheckpoint());
+      AnalysisRunId processOutputId = AnalysisRunId.parse("analysis-run:" + "d".repeat(64));
+      ProcessDiscoveryRequest assembledProcessRequest =
+          SourceAnalysisExecution.assembleStep05ProcessDiscoveryRequest(
+              reopenedConfiguration,
+              store,
+              modules,
+              SourceAnalysisExecution.inputStepArtifacts(reopenedConfiguration, store),
+              RepositoryRunStateV4.load(
+                  reopenedConfiguration.stateFile(), reopenedConfiguration.canonicalJson()),
+              materials,
+              adoptedBatchId,
+              processOutputId,
+              null);
+      assertThat(assembledProcessRequest.usesCodeReadingMaterials()).isTrue();
+      assertThat(assembledProcessRequest.activities().checkpoint())
+          .isEqualTo(adoptedOutput.activityCheckpoint());
+      assertThat(assembledProcessRequest.activities().packetCompletion())
+          .isEqualTo(adoptedActivities.packetCompletion());
+      assertThat(assembledProcessRequest.codeReadingMaterialCheckpoint())
+          .isEqualTo(materialCheckpoint);
+      assertThat(assembledProcessRequest.codeReadingMaterials()).isEqualTo(materials);
+      assertThat(assembledProcessRequest.sourceInventoryReference())
+          .isEqualTo(materials.header().sourceInventory());
+      assertThat(assembledProcessRequest.outputRunId()).isEqualTo(processOutputId);
+      assertThat(assembledProcessRequest.focusQuestion()).isNull();
+      // This fixture clones a synthetic inventory under the real run owner. Its payload still
+      // names the fixture's separate capture, so raw-text reopening is not valid here; the
+      // configured reader itself is exercised by the fixed-source integration tests.
+      assertThat(assembledProcessRequest.sourceTextReader()).isNotNull();
+      assertThat(
+              new PrivateModelJobResultStore(
+                      reopenedConfiguration.modelJobs().journalDirectory(),
+                      adoptedBatchId,
+                      "business-process")
+                  .listReviewedResults())
+          .as("reopening the current Step05 process request performs no upstream process work")
+          .isEmpty();
       assertAdoptionBatchRecord(
           adoptedBatchRecord,
           adoptedBatchId,
@@ -837,6 +875,7 @@ class SourceAnalysisReuseOnlyReplayTest {
           readingMaterials: {maxPacketUtf8Bytes: 64000, maxEntriesPerPacket: 16}
         business:
           activity: {maxModelInputBytes: 128000, maxModelOutputBytes: 32000, maxActivitiesPerMaterial: 16, maxValuesPerField: 64, maxTextCharsPerValue: 8000}
+          processDiscovery: {maxCardsPerCatalogShard: 96, maxActivitiesPerCandidate: 48, maxRequestedSourceRefs: 64, maxRequestedSourceChars: 192000, maxModelInputBytes: 256000, maxModelOutputBytes: 64000, maxProcessesPerCandidate: 16, maxValuesPerField: 128, maxTextCharsPerValue: 12000}
           maxMaterialsToStart: 100000
         """
         .formatted(
