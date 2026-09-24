@@ -121,7 +121,7 @@ v1的同键修订按其原实现的最后声明核对：最后声明与实际冻
 
 只核对已有结构和实际字节，不用Java从中文说明推测业务等价。完整记录可跨版本作为历史已审输入采纳，仍保留原模型和Prompt身份；这不同于把旧DRAFT拿来续接新Prompt的REVIEW，后者必须严格匹配实际stage指纹。
 
-现有Activity execute已接通`--reuse-only`参数及离线材料读取前置分流；完整历史接续仍在实现。该选项必须指定--reuse-from-model-batch，与主动retry互斥；本轮核对整个材料检查点，不接受`--material-id`或`--packet-id`过滤，不能静默忽略选择或缩小分母。`--run`仍只接受匹配的QUEUED运行。目标是新建运行，Provider初始化/调用0，保留所有可验证旧Activity并写新coverage。新M11不改变旧Activity ID/业务字段/来源，不改旧receipt/FAILED/STARTED。不完整或无法判定时保存成功部分和具体范围，退出非零；禁止偷偷退回模型生成。没有第二CLI或公共Agent方法。
+现有Activity execute已接通`--reuse-only`参数、离线材料读取前置分流及已验证的历史接续。该选项必须指定--reuse-from-model-batch，与主动retry互斥；本轮核对整个材料检查点，不接受`--material-id`或`--packet-id`过滤，不能静默忽略选择或缩小分母。`--run`仍只接受匹配的QUEUED运行。目标是新建运行，Provider初始化/调用0，保留所有可验证旧Activity并写新coverage。新M11不改变旧Activity ID/业务字段/来源，不改旧receipt/FAILED/STARTED。不完整或无法判定时保存成功部分和具体范围，退出非零；禁止偷偷退回模型生成。没有第二CLI或公共Agent方法。
 
 配置仍复用已解析的`ModelJobsConfiguration`。离线入口通过现有配置类的`requireModelJobsForStorage()`只检查journal/output位置，不解析登录环境、密钥、可执行程序或服务容量。普通线上执行继续使用`requireModelJobsForExecution()`执行完整认证与运行环境检查；两者共享存储位置检查，不增加一份离线YAML或配置类型。历史记录只在显式指定批次及其记录的复用来源中读取，不按新Prompt推导旧任务身份，也不搜索无关journal。
 
