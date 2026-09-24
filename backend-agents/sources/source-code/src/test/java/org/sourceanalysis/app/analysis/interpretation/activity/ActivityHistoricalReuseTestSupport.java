@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
 import org.sourceanalysis.app.adapter.provider.StructuredModelRequest;
 import org.sourceanalysis.app.adapter.provider.StructuredModelResponse;
@@ -38,6 +39,68 @@ public final class ActivityHistoricalReuseTestSupport {
             .explain(new ExplainCodeReadingMaterialsRequest(materials, profile, 1));
     if (!provider.taskKinds.equals(List.of("ACTIVITY_DRAFT", "ACTIVITY_REVIEW"))) {
       throw new AssertionError("test fixture did not save one complete direct Activity pair");
+    }
+    return result;
+  }
+
+  public static ActivityExplanationResult seedTwoDirectPairs(
+      Path journal,
+      AnalysisRunId batchId,
+      CodeReadingMaterialSet materials,
+      String providerBindingKey,
+      String quotaScope,
+      ModelRuntimeIdentityV1 runtimeIdentity,
+      ActivityExplanationProfile profile) {
+    if (materials.packets().size() != 2) {
+      throw new IllegalArgumentException("test fixture requires exactly two Activity packets");
+    }
+    DirectPairProvider provider = new DirectPairProvider(runtimeIdentity);
+    ActivityExplanationResult result =
+        ActivityExplainer.forExecution(
+                provider,
+                new ActivityJobExecutionConfiguration(
+                    1, providerBindingKey, quotaScope, journal, batchId, runtimeIdentity))
+            .explain(new ExplainCodeReadingMaterialsRequest(materials, profile, 2));
+    if (!provider.taskKinds.equals(
+            List.of("ACTIVITY_DRAFT", "ACTIVITY_REVIEW", "ACTIVITY_DRAFT", "ACTIVITY_REVIEW"))
+        || result.reviewedActivities().size() != 2
+        || result.reviewedActivities().stream()
+                .map(activity -> activity.materialId())
+                .collect(java.util.stream.Collectors.toSet())
+                .size()
+            != 2) {
+      throw new AssertionError("test fixture did not save two complete direct Activity pairs");
+    }
+    return result;
+  }
+
+  public static ActivityExplanationResult seedOnlySelectedDirectPair(
+      Path journal,
+      AnalysisRunId batchId,
+      CodeReadingMaterialSet materials,
+      String selectedPacketId,
+      String providerBindingKey,
+      String quotaScope,
+      ModelRuntimeIdentityV1 runtimeIdentity,
+      ActivityExplanationProfile profile) {
+    if (materials.packets().size() != 2
+        || materials.packets().stream()
+            .noneMatch(packet -> packet.packetId().equals(selectedPacketId))) {
+      throw new IllegalArgumentException("test fixture requires one selected packet of two");
+    }
+    DirectPairProvider provider = new DirectPairProvider(runtimeIdentity);
+    ActivityExplanationResult result =
+        ActivityExplainer.forExecution(
+                provider,
+                new ActivityJobExecutionConfiguration(
+                    1, providerBindingKey, quotaScope, journal, batchId, runtimeIdentity))
+            .explain(
+                new ExplainCodeReadingMaterialsRequest(
+                    materials, profile, 1, Set.of(selectedPacketId)));
+    if (!provider.taskKinds.equals(List.of("ACTIVITY_DRAFT", "ACTIVITY_REVIEW"))
+        || result.reviewedActivities().size() != 1
+        || !selectedPacketId.equals(result.reviewedActivities().get(0).materialId())) {
+      throw new AssertionError("test fixture did not save only the selected direct Activity pair");
     }
     return result;
   }

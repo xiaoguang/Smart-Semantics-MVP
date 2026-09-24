@@ -18,7 +18,7 @@ Task 3进行中：coverage-v4发布、正式CLI零Provider采用、v1/v2阅读�
 | Activity覆盖 | 历史v3；工作分支v4读写已定向通过 | 仅增加packetCompletion；完成所有生产者与历史验证 |
 | 私有阅读计划 | plan-v2最终/替换scope、DIRECT及分页重开已实现；历史v1实际闭包及scope对应已定向验证 | Task 3据此实现公共完成记录和离线历史接续 |
 | 私有阶段/整包 | model-job-reviewed-result-v4 / activity-packet-result-v1 | 未变字段保持，reader核对被引用计划版本 |
-| 私有批次 | 历史activity-batch-result-v1；新批次写v2 | 正常和离线批次均保存与M11一致的packetCompletion；普通批次的采纳来源为显式null，离线批次保存实际来源批次及检查点 |
+| 私有批次 | 历史activity-batch-result-v1；普通及离线批次v2；混合重试批次v3 | 均保存与M11一致的packetCompletion；离线整批采纳保存来源批次及检查点；混合重试保存承接来源、检查点和实际重试的packet集合，供以后逐包核验 |
 
 历史M11 v3的产物策略注册表与新增coverage-v4后的当前注册表身份不同。配置可选`historicalActivityPolicyRegistry`明确指向冻结的旧策略集；读取Activity时先对照该批次已保存的`artifactPolicyRegistryRef`，只选择精确匹配的当前或历史注册表，再按原有receipt校验重开。Step05仍独立使用`inputPolicyRegistry`；未知注册表、错误receipt或缺失历史配置均失败，不重新取材也不修改旧产物。旧v1阅读计划的调用字段可能保留完整导航元数据，读取器仅在按旧格式从同一材料精确重构成功时接受；历史直接整包结果被后续批次包装为切片聚合时，必须追溯原DRAFT/REVIEW并核对未改变的业务内容。
 | 私有reading packet/attempt | activity-reading-packet-v1 / model-job-stage-attempt-v1 | 不变 |
@@ -142,6 +142,8 @@ inspect只读显示这些范围及原因，不自动创建新内容。无法判�
 | --run | 仅匹配的QUEUED运行，不重新激活旧run |
 
 新增--reuse-only只是明确“本次不允许模型生成”的执行选项，不是重试。普通retry仍按现有入口与阶段策略：重开原有效计划、scope和source mapping；成功DRAFT对应的REVIEW单独重试；失败响应永不复用。损坏计划不自动replan。已有`activity-packet-result-v1`完成声明还必须能重开它引用的非空plan及每个slice的DRAFT/REVIEW成功记录，并与聚合的Activity、coverage、source refs一致；没有包聚合时，匹配的单slice v4完成声明同样必须能重开它引用的两个成功stage。引用缺失或损坏为硬错误、零补生成。合法空计划且没有业务结果不形成可复用scope，但也必须先通过packet ID、导航、未读单元及保存形状校验，之后显式新执行才可重新选材。scope/Prompt/Schema/model改变使受影响stage失效，先告知哪些内容需重新生成，保留其它可复用包。
+
+当前Step05重试范围以已验证的`packetCompletion`为准，不能仅凭entry coverage中已有Activity就认为整包完成；一个entry跨多个packet时，重试包含该entry的全部packet。显式指定`--reuse-from-model-batch`时，新批次只执行选中的packet，并从同一材料检查点承接其他packet的原Activity ID、正文、来源、覆盖和原完成状态。定向重试一个失败包不应被另一未选失败包阻断；后者仍为`INCOMPLETE/UNDETERMINED`，不能冒充完成。混合批次的私有v3记录逐包区分本次生成与承接来源；下一批次沿来源链重新核验，而非仅凭复制后的M11完整标记。执行配置声明混合批次而v3记录缺失或不一致必须失败。普通线上复用当前只能读取所指定批次自己的私有任务；若选中一个仅从更早批次承接的完整packet，而该批次没有私有任务，则在Provider启动前拒绝，不静默重做。对整批离线采纳来源，完整已审packet也遵循此限制；定向补做未完成packet不因此受阻。零调用重开仍可沿来源链完整核验。所选packet使用本批次新结果，旧批次、旧模型记录不改写；没有显式复用来源时，未选packet保持未完成状态。旧v3没有packetCompletion，必须先显式离线核对，不能按entry coverage猜测可承接。
 
 新reading限制位于sourceAnalysis.activityReading，默认128页、4补读轮、32个当前有效slice；由唯一配置读取到既有ActivityReadingProfile。配置加载、真实执行接线及历史重开已通过Task 2定向回归。execution-config-v5保存有效输入/输出容量和三项运行上限；三项上限不进入材料基础标识，且不单独使已冻结有效计划失效。Prompt、Schema、实际输入/输出容量、scope和模型绑定仍按原合同匹配，降低上限后也不能接纳最终有效范围已不符合当前约束的计划；不追溯拒绝已被替换的旧提案。改变最终选材/scope必然改变依赖稿件输入。
 

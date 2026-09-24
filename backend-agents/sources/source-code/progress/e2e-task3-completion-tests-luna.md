@@ -1,12 +1,12 @@
-# Progress: Task 3 completion and reuse tests
+# Progress: Task 3 retry/carry-forward audit tests
 
 - Status: IN_PROGRESS
 - Agent role: TDD direct-test author
 - Model: GPT-6 Luna / xhigh
 - Started: 2026-09-23
 - Last updated: 2026-09-23
-- Scope: Task 3 tests in `src/test` plus this handoff and the private task report; no production edits.
-- Owning plan: `docs/plans/end-to-end-business-delivery-implementation-plan.md`, Task 3.
+- Scope: direct test support and `src/test` only; no production edits.
+- Owning plan: `docs/plans/end-to-end-business-delivery-implementation-plan.md`, Task 3 retry/carry-forward follow-up.
 - Approved inputs: `.workspace/end-to-end-business-delivery-20260923/task-3-brief.md`, `docs/end-to-end-business-delivery-design.md` sections 5–6, and `docs/modules/activity-explanation/integration-contracts.md` sections 3–7.
 - Current branch/worktree: formal source-code checkout at `caa9d56`.
 
@@ -26,17 +26,13 @@
 
 ## Current state
 
-Update 2026-09-23: Added direct tests in `SourceAnalysisReuseOnlyReplayTest` that canonically reopen a two-packet M11 completion, allow a private v2 completion array in the opposite packet order, reject a changed required/completed scope, and require all four summary counts to be nonnegative integral values plus `unprocessedEntries` to remain an array in v1 and v2. The count checks mutate disposable canonical records and invoke the actual adoption reader; no CLI or Maven was run for these unit-level shape checks. Added `ActivityReadingPlanPersistenceTest#preservesAndValidatesFullCallFieldsInHistoricalV1SavedPacket`, which reopens a full-field original-shape v1 packet with positions, actual arguments, and target argument associations intact, then rejects a tampered navigation offset. Its shared compact-v1 fixture now mirrors `compactCallNavigationForModel`: only selected targets gain parameter bindings, while unselected targets retain no binding field. Existing `ActivityHistoricalReuseResolverTest#recoversCompleteDirectPairAgainstHistoricalV3WithoutChangingReviewedRows` publishes/reopens original-shape M11 v3 through the exact checked-in JDT policy set. Root owns the pending verification.
-
-After root session 57099 confirmed the first group compiled and all 17 large-packet tests passed (the resolver ordering/scoped cases were the two expected production errors), added a gate-local Step07 regression group. It now uses nonempty packet entry lists while leaving the legacy empty-packet helpers untouched. The new cases require a present, exact, all-COMPLETE Step05 packet set; classify absent historical completion and INCOMPLETE/UNDETERMINED as partial input; classify empty/wrong packet or wrong entry membership as invalid Step05 input; and permit COMPLETE packets alongside an explicit `NOT_COLLECTED` source entry. Tests are frozen for root's run; no Maven was run here.
-
-Root session 55589 compiled 31 selected tests, with 29 passing and the two new Step07 gate checks producing the intended REDs. Updated the older Step05 positive request fixtures to the same nonempty-entry/explicit-completion setup, preserving the legacy historical fixture and existing assertions. Completion fixtures now reflect each Activity's actual slice association (`whole-packet` for the null-slice direct Activity, saved `slice:beta` for beta), rather than claiming a direct scope for both. Added a pure saved-v2 contradiction case from a real unfinished `ActivityReadingCoordinator` plan, and a real canonical publisher/fresh-reader case where a two-entry packet's completion array is reversed but membership is unchanged. No Maven was run by this worker; the affected classes and narrow two-entry fixture helper are frozen for root.
-
-Typed completion/canonical publication-history tests, configured CLI parser/storage-boundary tests, historical resolver direct/chain/corrupt-claim cases, and saved-v1 reopen tests have passed in root-owned Maven runs. The literal configured CLI adoption test passed (root session 35715, 1/1), and a second explicit offline reuse-source execution is now queued in that same class. Root session 44686 compiled and ran the six directly affected classes: new packet-filter, strict historical-v4 mode, saved-v2 reopen, shown-navigation integrity, and second-adoption regressions produced their intended REDs for Terra. It also caught that an earlier multi-entry edit had changed the original preflight plan so its M3 scope no longer exceeded `maxEntries=1`. Restored the original two-entry M3 preflight case and its all-entry gap assertion; added a separate multi-entry test with an explicit scripted M3 REVIEW failure, where only E1 is incomplete and E2 has a successful M4 scope. `git diff --check` is clean. The source is frozen for root's rerun.
+`ActivityRetryPacketScopeTest` already covers F1/F2 targeted retry and untouched INCOMPLETE/COMPLETE carry-forward. For the current store audit, added test-only helpers that preserve the old `seedDirectPair` API while seeding two direct pairs or only one selected packet pair. Extended `SourceAnalysisReuseOnlyReplayTest`'s real RunStore/canonical M11/private-journal fixture to construct A (two complete pairs), B (one selected pair plus one packet carried from A in batch-result-v3), and invoke the production offline audit seam without a Provider. Assertions require both Activities and both COMPLETE packet scopes to survive, the mixed checkpoint to remain the returned checkpoint, and private reviewed-result records for A/B to remain unchanged. Root owns the Maven slot; this worker did not run Maven.
 
 ## Changed files
 
-`src/test/java/org/sourceanalysis/app/adapter/cli/SourceAnalysisConfiguredEntryPointTest.java`, `src/test/java/org/sourceanalysis/app/adapter/cli/SourceAnalysisModelJobsConfigurationTest.java`, the new test-only `src/test/java/org/sourceanalysis/app/adapter/cli/SourceAnalysisTestPolicyRegistry.java`, `src/test/java/org/sourceanalysis/app/analysis/graph/ProgramGraphsPublicFixture.java`, `src/test/java/org/sourceanalysis/app/analysis/interpretation/activity/ActivityLargePacketFormalEntryTest.java`, `ActivityReadingPlanPersistenceTest.java`, `src/test/java/org/sourceanalysis/app/analysis/knowledge/ProcessDiscoveryDualMaterialProtocolTest.java`, and the new `SourceAnalysisReuseOnlyReplayTest.java`, `ActivityPacketCompletionTest.java`, `ActivityPacketCompletionCheckpointTest.java`, `ActivityExplanationHistoricalV3Fixture.java`, and `ActivityHistoricalReuseResolverTest.java`.
+- `src/test/java/org/sourceanalysis/app/adapter/cli/SourceAnalysisReuseOnlyReplayTest.java`
+- `src/test/java/org/sourceanalysis/app/analysis/interpretation/activity/ActivityHistoricalReuseTestSupport.java`
+- `progress/e2e-task3-completion-tests-luna.md`
 
 ## Verification
 
@@ -74,6 +70,7 @@ Typed completion/canonical publication-history tests, configured CLI parser/stor
 | `git diff --check` after scoped cross-batch retry coverage | PASS | No whitespace errors. |
 | Root session 44686: six directly affected classes | MIXED / EXPECTED RED | 68 tests; 5 failures/1 error, all new v2/v4-mode/filter/second-adoption regressions were behavioral REDs; additionally identified that the multi-entry edit had displaced the M3 preflight failure. Restored that original case and split out the explicit M3 REVIEW failure test. |
 | `git diff --check` before latest group | PASS | No whitespace errors after the scoped-failure fixture correction, stable-ID ordering-fixture correction, current Step07 gate tests, pure-v2 contradiction test, and completion entry-order test. Latest resolver additions await root verification. |
+| `git diff --check` after mixed carry-forward audit fixture | PASS | No whitespace errors. New direct test has not been run; no Maven was started by this worker. |
 
 ## Decisions
 
@@ -83,11 +80,11 @@ Typed completion/canonical publication-history tests, configured CLI parser/stor
 
 ## Blockers
 
-Root owns all Maven runs. The new normal v2 writer, historical v1 validation, and inspect-count assertions await a root-owned direct test run. No production changes were made by this test worker.
+Root owns all Maven runs and has production changes in the shared worktree. The added multi-packet audit is a direct reflected call to the same offline historical audit seam used by reuse-only execution; it does not construct a separate CLI C run. If root requires a full C lifecycle record rather than this audit boundary, it will need a larger fixture change.
 
 ## Exact next action
 
-Freeze `SourceAnalysisReuseOnlyReplayTest` and `ActivityReadingPlanPersistenceTest` for root's directed Maven run. No Maven was run by this worker.
+Freeze `SourceAnalysisReuseOnlyReplayTest` and `ActivityHistoricalReuseTestSupport` for root's focused Maven run (`-Dtest=SourceAnalysisReuseOnlyReplayTest`). Report any fixture setup error without editing production. No Maven was run by this worker.
 
 ## Resume checks
 

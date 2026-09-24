@@ -375,6 +375,178 @@ class SourceAnalysisReuseOnlyReplayTest {
           .as("packet identity alone cannot hide different public completion content")
           .hasMessage("ACTIVITY_BATCH_RESULT_ADOPTION_INVALID");
       writeBatchRecord(configuration, multiPacketBatchRecordPath, multiPacketBatchRecord);
+
+      Set<String> selectedCarryPacketIds =
+          Set.of(multiPacketFixture.materials().packets().get(0).packetId());
+      AnalysisRunId carriedOriginBatchId =
+          RunStoreBootstrap.queueAnalysisRun(store, failedBatchRequest).runId();
+      RunStoreBootstrap.transitionAnalysisRun(
+          store,
+          carriedOriginBatchId,
+          AnalysisRunLifecycleState.QUEUED,
+          AnalysisRunLifecycleState.RUNNING);
+      writeStep05ExecutionConfiguration(
+          configuration, configuration.modelJobs(), saved, carriedOriginBatchId);
+      ActivityExplanationResult carriedOriginDraft =
+          ActivityHistoricalReuseTestSupport.seedTwoDirectPairs(
+              configuration.modelJobs().journalDirectory(),
+              carriedOriginBatchId,
+              multiPacketFixture.materials(),
+              "pro",
+              provider.quotaScope(),
+              runtimeIdentity,
+              configuration.activityProfile());
+      ModulePublicationReference carriedOriginCheckpoint =
+          new ActivityExplanationCheckpointPublisher(outputModules)
+              .publishStep05(
+                  carriedOriginBatchId,
+                  materialCheckpoint,
+                  sourceSteps,
+                  batchControls,
+                  multiPacketFixture.materials(),
+                  carriedOriginDraft.reviewedActivities(),
+                  carriedOriginDraft.coverage(),
+                  carriedOriginDraft.unexplainedActivityEntries(),
+                  carriedOriginDraft.packetCompletion().orElseThrow());
+      ActivityExplanationResult carriedOriginActivities =
+          new ActivityExplanationResult(
+              carriedOriginDraft.reviewedActivities(),
+              carriedOriginDraft.coverage(),
+              carriedOriginDraft.unexplainedActivityEntries(),
+              carriedOriginDraft.packetCompletion().orElseThrow(),
+              carriedOriginCheckpoint);
+      writeNormalStep05BatchResult(
+          configuration,
+          configuration.modelJobs(),
+          saved,
+          carriedOriginBatchId,
+          multiPacketFixture.materials(),
+          carriedOriginActivities);
+      RunStoreBootstrap.recordAnalysisRunOutput(
+          store,
+          carriedOriginBatchId,
+          AnalysisRunOutput.step05Activities(
+              sourceRunId, materialCheckpoint, carriedOriginCheckpoint, true));
+      RunStoreBootstrap.transitionAnalysisRun(
+          store,
+          carriedOriginBatchId,
+          AnalysisRunLifecycleState.RUNNING,
+          AnalysisRunLifecycleState.FAILED);
+
+      AnalysisRunId mixedBatchId =
+          RunStoreBootstrap.queueAnalysisRun(store, failedBatchRequest).runId();
+      RunStoreBootstrap.transitionAnalysisRun(
+          store, mixedBatchId, AnalysisRunLifecycleState.QUEUED, AnalysisRunLifecycleState.RUNNING);
+      writeSelectedStep05ExecutionConfiguration(
+          configuration,
+          configuration.modelJobs(),
+          saved,
+          mixedBatchId,
+          carriedOriginBatchId,
+          carriedOriginBatchId,
+          selectedCarryPacketIds);
+      ActivityExplanationResult selectedActivityResult =
+          ActivityHistoricalReuseTestSupport.seedOnlySelectedDirectPair(
+              configuration.modelJobs().journalDirectory(),
+              mixedBatchId,
+              multiPacketFixture.materials(),
+              selectedCarryPacketIds.iterator().next(),
+              "pro",
+              provider.quotaScope(),
+              runtimeIdentity,
+              configuration.activityProfile());
+      ActivityExplanationResult mixedBatchDraft =
+          SourceAnalysisExecution.carryForwardCompletePackets(
+              multiPacketFixture.materials().coverage(),
+              selectedActivityResult,
+              carriedOriginActivities,
+              selectedCarryPacketIds);
+      ModulePublicationReference mixedBatchCheckpoint =
+          new ActivityExplanationCheckpointPublisher(outputModules)
+              .publishStep05(
+                  mixedBatchId,
+                  materialCheckpoint,
+                  sourceSteps,
+                  batchControls,
+                  multiPacketFixture.materials(),
+                  mixedBatchDraft.reviewedActivities(),
+                  mixedBatchDraft.coverage(),
+                  mixedBatchDraft.unexplainedActivityEntries(),
+                  mixedBatchDraft.packetCompletion().orElseThrow());
+      ActivityExplanationResult mixedBatchActivities =
+          new ActivityExplanationResult(
+              mixedBatchDraft.reviewedActivities(),
+              mixedBatchDraft.coverage(),
+              mixedBatchDraft.unexplainedActivityEntries(),
+              mixedBatchDraft.packetCompletion().orElseThrow(),
+              mixedBatchCheckpoint);
+      ObjectNode mixedBatchRecord =
+          writeMixedStep05BatchResult(
+              configuration,
+              configuration.modelJobs(),
+              saved,
+              mixedBatchId,
+              multiPacketFixture.materials(),
+              mixedBatchActivities,
+              selectedCarryPacketIds,
+              carriedOriginBatchId,
+              carriedOriginCheckpoint);
+      assertThat(mixedBatchRecord.path("schemaVersion").asText())
+          .isEqualTo("activity-batch-result-v3");
+      assertThat(mixedBatchRecord.path("carriedFromModelBatchId").asText())
+          .isEqualTo(carriedOriginBatchId.value());
+      assertThat(mixedBatchRecord.path("selectedPacketIds").isArray()).isTrue();
+      assertThat(mixedBatchRecord.path("selectedPacketIds").size()).isEqualTo(1);
+      assertThat(mixedBatchRecord.path("selectedPacketIds").get(0).asText())
+          .isEqualTo(selectedCarryPacketIds.iterator().next());
+      assertThat(mixedBatchActivities.packetCompletion().orElseThrow())
+          .extracting(ActivityPacketCompletion::completion)
+          .containsOnly(ActivityPacketCompletion.Completion.COMPLETE);
+      RunStoreBootstrap.recordAnalysisRunOutput(
+          store,
+          mixedBatchId,
+          AnalysisRunOutput.step05Activities(
+              sourceRunId, materialCheckpoint, mixedBatchCheckpoint, true));
+      RunStoreBootstrap.transitionAnalysisRun(
+          store,
+          mixedBatchId,
+          AnalysisRunLifecycleState.RUNNING,
+          AnalysisRunLifecycleState.FINISHED);
+
+      List<String> originPrivateResultsBeforeAudit =
+          reviewedResultRecords(configuration.modelJobs().journalDirectory(), carriedOriginBatchId);
+      List<String> mixedPrivateResultsBeforeAudit =
+          reviewedResultRecords(configuration.modelJobs().journalDirectory(), mixedBatchId);
+      assertThat(originPrivateResultsBeforeAudit).hasSize(2);
+      assertThat(mixedPrivateResultsBeforeAudit).hasSize(1);
+      ActivityExplanationResult auditedMixedBatch =
+          auditMixedStep05BatchWithoutProvider(
+              configuration,
+              store,
+              configuration.modelJobs(),
+              saved,
+              multiPacketFixture.materials(),
+              mixedBatchId,
+              AnalysisRunOutput.step05Activities(
+                  sourceRunId, materialCheckpoint, mixedBatchCheckpoint, true),
+              mixedBatchActivities);
+      assertThat(auditedMixedBatch.checkpoint()).isEqualTo(mixedBatchCheckpoint);
+      assertThat(auditedMixedBatch.reviewedActivities())
+          .containsExactlyElementsOf(mixedBatchActivities.reviewedActivities());
+      assertThat(auditedMixedBatch.packetCompletion())
+          .contains(mixedBatchActivities.packetCompletion().orElseThrow());
+      assertThat(auditedMixedBatch.packetCompletion().orElseThrow())
+          .extracting(ActivityPacketCompletion::completion)
+          .containsOnly(ActivityPacketCompletion.Completion.COMPLETE);
+      assertThat(
+              reviewedResultRecords(
+                  configuration.modelJobs().journalDirectory(), carriedOriginBatchId))
+          .as("recursive carried-packet auditing does not invoke or rewrite the origin jobs")
+          .isEqualTo(originPrivateResultsBeforeAudit);
+      assertThat(reviewedResultRecords(configuration.modelJobs().journalDirectory(), mixedBatchId))
+          .as("recursive carried-packet auditing does not create any new mixed-batch jobs")
+          .isEqualTo(mixedPrivateResultsBeforeAudit);
+
       writeStep05ExecutionConfiguration(
           configuration, configuration.modelJobs(), saved, normalBatchId);
       AnalysisRunOutput normalOutput =
@@ -944,6 +1116,42 @@ class SourceAnalysisReuseOnlyReplayTest {
     }
   }
 
+  private static void writeSelectedStep05ExecutionConfiguration(
+      RepositoryRunConfiguration configuration,
+      ModelJobsConfiguration modelJobs,
+      RepositoryRunStateV4.SavedState materials,
+      AnalysisRunId modelBatch,
+      AnalysisRunId reuseFromModelBatch,
+      AnalysisRunId retryFailedFromModelBatch,
+      Set<String> selectedPacketIds)
+      throws Exception {
+    Method writer =
+        SourceAnalysisExecution.class.getDeclaredMethod(
+            "writeStep05ModelJobExecutionConfiguration",
+            RepositoryRunConfiguration.class,
+            ModelJobsConfiguration.class,
+            RepositoryRunStateV4.SavedState.class,
+            AnalysisRunId.class,
+            AnalysisRunId.class,
+            AnalysisRunId.class,
+            Set.class);
+    writer.setAccessible(true);
+    try {
+      writer.invoke(
+          null,
+          configuration,
+          modelJobs,
+          materials,
+          modelBatch,
+          reuseFromModelBatch,
+          retryFailedFromModelBatch,
+          selectedPacketIds);
+    } catch (java.lang.reflect.InvocationTargetException failure) {
+      throw new AssertionError(
+          "writing selected Step05 execution configuration fixture failed", failure.getCause());
+    }
+  }
+
   private static MultiPacketActivityFixture multiPacketActivityFixture(
       CodeReadingMaterialSet materials, ReviewedActivity template) {
     CodeReadingMaterialSet.Packet original = materials.packets().get(0);
@@ -1168,6 +1376,103 @@ class SourceAnalysisReuseOnlyReplayTest {
       throw new AssertionError(
           "writing normal v2 activity batch fixture failed", failure.getCause());
     }
+  }
+
+  private static ObjectNode writeMixedStep05BatchResult(
+      RepositoryRunConfiguration configuration,
+      ModelJobsConfiguration modelJobs,
+      RepositoryRunStateV4.SavedState materialsState,
+      AnalysisRunId batchId,
+      CodeReadingMaterialSet materials,
+      ActivityExplanationResult activities,
+      Set<String> selectedPacketIds,
+      AnalysisRunId carriedFromModelBatchId,
+      ModulePublicationReference carriedActivityCheckpoint)
+      throws Exception {
+    Method writer =
+        SourceAnalysisExecution.class.getDeclaredMethod(
+            "writeStep05ActivityBatchResult",
+            RepositoryRunConfiguration.class,
+            ModelJobsConfiguration.class,
+            RepositoryRunStateV4.SavedState.class,
+            AnalysisRunId.class,
+            CodeReadingMaterialSet.class,
+            ActivityExplanationResult.class,
+            Set.class,
+            AnalysisRunId.class,
+            ModulePublicationReference.class,
+            AnalysisRunId.class,
+            ModulePublicationReference.class);
+    writer.setAccessible(true);
+    try {
+      return (ObjectNode)
+          writer.invoke(
+              null,
+              configuration,
+              modelJobs,
+              materialsState,
+              batchId,
+              materials,
+              activities,
+              selectedPacketIds,
+              null,
+              null,
+              carriedFromModelBatchId,
+              carriedActivityCheckpoint);
+    } catch (java.lang.reflect.InvocationTargetException failure) {
+      throw new AssertionError("writing mixed Step05 batch fixture failed", failure.getCause());
+    }
+  }
+
+  private static ActivityExplanationResult auditMixedStep05BatchWithoutProvider(
+      RepositoryRunConfiguration configuration,
+      RunStoreHandle store,
+      ModelJobsConfiguration modelJobs,
+      RepositoryRunStateV4.SavedState materialsState,
+      CodeReadingMaterialSet materials,
+      AnalysisRunId sourceBatchId,
+      AnalysisRunOutput sourceOutput,
+      ActivityExplanationResult sourceActivities)
+      throws Exception {
+    Method audit =
+        SourceAnalysisExecution.class.getDeclaredMethod(
+            "reuseOnlyHistoricalActivities",
+            RepositoryRunConfiguration.class,
+            RunStoreHandle.class,
+            ModelJobsConfiguration.class,
+            RepositoryRunStateV4.SavedState.class,
+            CodeReadingMaterialSet.class,
+            AnalysisRunId.class,
+            AnalysisRunOutput.class,
+            ActivityExplanationResult.class);
+    audit.setAccessible(true);
+    try {
+      return (ActivityExplanationResult)
+          audit.invoke(
+              null,
+              configuration,
+              store,
+              modelJobs,
+              materialsState,
+              materials,
+              sourceBatchId,
+              sourceOutput,
+              sourceActivities);
+    } catch (java.lang.reflect.InvocationTargetException failure) {
+      Throwable cause = failure.getCause();
+      if (cause instanceof RuntimeException runtimeFailure) {
+        throw runtimeFailure;
+      }
+      if (cause instanceof Error error) {
+        throw error;
+      }
+      throw new AssertionError("mixed Step05 offline audit failed", cause);
+    }
+  }
+
+  private static List<String> reviewedResultRecords(Path journal, AnalysisRunId batch) {
+    return new PrivateModelJobResultStore(journal, batch, "activity")
+        .listReviewedResults().stream().map(ObjectNode::toString).toList();
   }
 
   private static ObjectNode historicalBatchV1Record(
