@@ -1,0 +1,85 @@
+# 源码准备模块详细设计
+
+状态：2026-09-25，待实施。唯一步骤入口见[源码准备](../../analysis-steps/01-verified-source-inventory.md)；本目录维护内部职责，不增加分析步骤或第二套运行框架。
+
+## 1. 调用和模块
+
+保留 `RepositoryAnalysisAgent` 现有方法。CLI 配置层接收本机路径，注册私有不可变准备请求；公共运行请求只携带请求引用及新增 `PREPARE_SOURCE` 意图。`RepositoryAnalysisRunCoordinator` 调用内部 `SourcePreparationService`，不借用执行到 Step05 的 `PREPARE_MATERIALS`。继续使用现有运行 registry、状态和存储。
+
+| 目标内部部件 | 输入→输出 | 责任/副作用 |
+| --- | --- | --- |
+| `SourcePreparationConfigurationLoader` | 绝对配置路径→私有配置 | 解析结构，不初始化 Provider/JDT |
+| `SourcePreparationRequestResolver` | 配置/操作/基础引用→不可变请求引用 | 校验选择，绑定基础；保存私有请求，不分析源码 |
+| `SourcePreparationService` | 请求→完整检查结果 | 组合读取、核验和保存；归集已知问题 |
+| `SourceOriginReader` | origin→枚举及字节流 | 普通目录/Git两个内部实现，不跟随链接或越界 |
+| `SourcePreparationChecker` | 枚举/流/基础记录→文件记录与问题 | 校验、UTF-8分类、hash、临时blob；不建AST/行索引 |
+| `PreparedSourcePublisher/Reader` | 封闭结果↔正式四文件与receipt | 原子安装/重开；不再次扫描客户目录 |
+| `SourceBasisGuard` | 本次来源、材料实际来源→通过/具体不匹配 | 新执行前共享检查；不推断业务或依赖影响 |
+
+符号为设计目标，沿现有 `capture/localgit`、`analysis/inventory`、`runtime`、`adapter/cli` 放置。每个部件是内部接缝，不是独立服务、插件平台或新公共 Agent。
+
+## 2. 请求核对
+
+- `NEW / REFRESH / EXCLUDE` 三种操作互斥；一次不能同时刷新字节和改排除范围。
+- NEW 不接受基础引用；另两种必须提供准确 owner、receipt、hash、schema，不能凭短 ID 或目录模糊寻找。
+- 基础可含局部问题，但必须有完整保存结果；强杀留下的临时目录不能作为基础。
+- 派生操作不能换逻辑来源、类型、私有保存的规范根目录或 Git 提交。同名不同根也拒绝；切换是 NEW。
+- `declaredExclusions`是NEW时的原配置声明，`effectiveExclusions`是累计有效排除。派生时校验原声明一致，继承累计集合；CLI追加排除后无需用户把原YAML同步改写。REFRESH不能用原YAML清空已有排除；新改配置声明则要求NEW。
+- 目标为相对路径及 FILE/DIRECTORY 类型；拒绝绝对路径、点段、反斜杠别名、空段、shell glob。
+- 无目标、重复/祖先重叠目标、类型矛盾、排除根目录或越界选择均在读取前返回请求错误，不能先改一半。
+- 用户可明确排除具名目录，包括内部尚未知的目录。配置排除路径未命中时记录声明未命中，不假装存在文件；声明仍继承，防止新版本自动纳入该路径。
+
+## 3. 普通目录读取
+
+1. 检查根目录存在、可枚举；输入与输出不得相互包含，不接受链接根或设备/FIFO/socket根。
+2. 每层 `.git` 元数据文件/目录跳过并列出；其它隐藏文件、依赖和构建目录默认纳入。
+3. 先检查项类型，链接只列出，不打开目标。明确排除目录不进入子树；内部文件数未知，不能为了计数继续读取。
+4. 子目录枚举失败记录具名未知子树，继续其它安全范围；根无法列出则停止本次读取。未知原因不猜为权限问题，保留实际系统错误。
+5. 普通文件读前获取可用身份/长度/时间属性，流式读入临时存储并算 SHA-256，读后再核对属性和实际长度。可确认读取期间变化则记 `SOURCE_CHANGED_DURING_READ`，字节不升级为可用。
+6. 上述不是原子快照或监控；无法保证发现同长度/时间戳未变等所有编辑，用户“不修改”约束仍有效。
+7. 保存原始字节不改换行/BOM。按现有严格文本规则分类；二进制为 `VERIFIED_MEDIA`，不是读取失败。空普通文件合法。
+8. 沿用明确文件数/总字节资源控制，在枚举和流式读期间逐项检查，不先读全仓入内存。超限返回已完成和未处理范围，不静默截尾。第一版不增加未配置的单文件上限。
+
+## 4. Git 读取
+
+复用受限 Git executable、环境隔离、NUL tree 枚举和 blob 原文能力；不运行客户 hook/filter/构建，不联网。
+
+- `100644/100755` 为普通文件，`120000` 为列出并跳过的链接。
+- `160000` submodule 列为 `UNSUPPORTED_ENTRY`，不自动检出；用户可排除，未处置前不称完整可用。
+- 来源对象/安全范围无法确认时停止；独立 blob 缺失且来源仍安全时记录文件问题，继续其它 blob。
+- REFRESH 同路径只从同提交取内容；目标不存在返回问题，不从工作树补齐或换提交。
+- Git 管理目录不在源码 tree 清单内，不复制为源码。
+
+## 5. 刷新与排除
+
+REFRESH 只替换目标范围，其余继承保存记录。目录目标替换子树并记录新问题/未知范围；历史字节不删除。文件消失记 `SOURCE_ENTRY_MISSING`，不能静默缩小范围。类型变化要明确；被排除路径不能借 REFRESH 重新纳入。
+
+EXCLUDE 不读目标内容，更新新版本中的目标/后代处置。被覆盖的旧问题保留并标为通过排除解决；未知子树文件数仍未知。基础版本上的排除继承至后续派生版本；独立 NEW 仅使用其显式配置，不读取隐式全局排除表。
+
+每次操作新建运行及结果，不覆盖旧 manifest、blob 或模型记录。文件副本损坏时，新操作在自己的位置保存正确字节，不能原地修复旧损坏对象后改称旧结果一直有效。
+
+## 6. 异常和结束
+
+`SourceIssue` 是有类型的普通结果，保留稳定 code，不用中文消息判断控制流。已知访问/大小/hash/类型/枚举问题在最窄安全范围归集；程序缺陷或存储安全错误不能伪装为普通文件跳过。
+
+先保存检查产物及运行输出，再结束运行：READY 两类为 FINISHED；需决定/阻塞/无可分析文本为 FAILED，仍可查询已保存准备结果。CLI 显示具体含义而非只给 FAILED。
+
+共享存储或安全来源错误使读取 ABORTED；停止依赖它的操作，尽可能报告已知结果。强杀不能保证最终报告，inspect 只展示未结束或没有完整 receipt，不猜测成功，不自动接管。状态/退出码唯一合同见[数据与保存](contracts-and-storage.md)。
+
+## 7. 最小下游检查
+
+共享 `SourceBasisGuard` 必须早于真实工具/Provider创建及第一个模型任务；只在 CLI 检查不能覆盖 Java 入口。expected basis来自排队前绑定的配置来源，不能从正要消费的material反推expected后与自身比较。完整配置/请求链见[CLI §5.1](cli-and-skill.md#51-现有分析入口的来源选择最小接线)。
+
+| 边界 | 检查 |
+| --- | --- |
+| `PersistedTechnicalRunExecutor`→`VerifiedJavaProject` | 来源可消费，只投影实际纳入集合 |
+| `CodeReadingMaterialReader`/Java/Persistence reader 的新执行调用方 | 上游真实来源与本次选定版本一致；历史只读不依赖全局“最新版本” |
+| `SourceAnalysisExecution`→Activity | Step05/M10 与选定来源一致，projector 读取内嵌源码前拒绝错版本 |
+| `DefaultBusinessProcessDiscovery`→Corpus/目录 | 新Step05和历史M10均先检查，必须早于catalog模型调用 |
+| 已审job/目录/阶段复用 | 在原输入/Prompt/模型指纹检查前验证来源，不能只看commit或短编号 |
+
+旧结果可历史查询、重开、确定性渲染；版本不匹配只是不能用于新范围，不删除旧文件、不自动重算。每次返回实际/预期来源、涉及材料、可选处理。
+
+## 8. 不在本轮
+
+跨版本依赖级复用、后续步骤独立 CLI、自动重新执行、源码监控、压缩包展开、链接跟随、Git混合提交、业务Prompt或模型生成。它们不隐藏在当前实现任务中。

@@ -1,101 +1,87 @@
-# 已验证源码清单
+# 源码准备
 
-> 模型批次解耦（已实现）：本步骤的已保存源码不因模型批次失败而失效。模型新批次读取既有材料时不执行本步骤或 Capture；来源变化/损坏才需明确回到来源处理，不自动重扫。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md)。本次未修改本步骤算法或产物。
+状态：2026-09-25，**目标详细设计，待实施**。当前程序仍是 Git 捕获加原源码清单核验；不能把本文命令或结果结构当作已运行产物。
 
-> [总体设计](../DESIGN.md)；固定 key：verified-source-inventory，目录：steps/01-verified-source-inventory/。本步骤运行时模型调用为 0。
+[总体设计](../DESIGN.md) · [模块详细设计](../modules/source-preparation/README.md) · [数据与保存合同](../modules/source-preparation/contracts-and-storage.md) · [CLI 与 Skill](../modules/source-preparation/cli-and-skill.md) · [实施计划](../plans/source-preparation-implementation-plan.md) · [设计前核对](../supplements/source-preparation-design-preflight.md)
 
-## 1. 为什么存在
+## 1. 职责与范围
 
-后面的代码结构和业务解释必须来自一份确定的源码。Step01 一次核对已经选定、注册的离线快照：哪个 commit、哪些文件、每个文件的准确 bytes 和可读位置。后续通过这份不可变视图导航，不反复扫描工作树，也不在每层重新发现仓库。
+**把用户明确提供的源码范围保存为一份可核验的固定资料，返回哪些文件可用、哪些有问题、哪些被排除，以及后续能否使用这份资料。** 不解释源码内容，不识别接口，不调用 JDT、SQL 分析或 LLM。
 
-它只保证来源身份和可读范围，不解释业务。来源错误会污染所有结果，因此路径、字节和身份错误必须停止；某段代码的业务含义未知则不属于这里的来源失败。
+用户操作名为“源码准备”，拟议命令为 `source-analysis --config <绝对配置路径> prepare-source`。历史内部 key `verified-source-inventory` 和 `steps/01-verified-source-inventory/` 地址保留，不重写旧产物；它们不是新功能的显示名称。
 
-在新的业务过程发现路线中，本步骤仍是唯一源码根。后续 `FrozenAnalysisCorpus` 只沿已保存引用打开这里的冻结 bytes 和 SourceRef；业务目录、候选过程、过程审阅或九章生成失败，都不得触发新的 Capture 或重新执行本步骤。它提供“代码确实在哪里”，不负责证明自然语言业务关系。
+本轮只让这一项操作可单独通过 CLI 执行。后续步骤不拆 CLI、不改分析算法、不运行；但落实排除所必需的公共读取和派生材料进入新执行时的版本检查属于本轮。
 
-## 2. 输入与显式 capture 边界
+## 2. 输入
 
-分析 core 接收 exact analysis-run-request-v2 的 sourceRegistrationId 和 frozenRepositoryRequestRef 等内容寻址控制引用。被引用的 frozen-repository-request-v2 固定 expected origin、完整 40 位 revision、capture/snapshot manifest、inventory scope 和验证 profile/policy/budget refs。public request/response 不携本机 Path；private registry 将 registration 解析为 opaque read-only source handle。
+| 来源 | 用户提供 | 程序读取 |
+| --- | --- | --- |
+| 普通目录 `DIRECTORY` | 源码根目录、逻辑来源名称、输出目录、显式排除项 | 实际普通文件；除 `.git` 外默认纳入，不自动排除隐藏文件、依赖或构建产物 |
+| 固定提交 `GIT_COMMIT` | 本地 Git 仓库、完整40位提交号、逻辑来源名称、输出目录、显式排除项 | 指定提交的 tree/blob；不读工作树修改、不 fetch、不执行 hook/filter 或客户代码 |
 
-LocalGitCommitCaptureAdapter 是本步骤之前独立、显式授权的维护入口，不由分析 worker 自动触发：
+模式必须显式指定。符号链接不跟随，列出路径和原因；不通过链接读取目录外内容。不支持以压缩包作为根输入；目录中的压缩文件作为普通二进制保留，不解压。不自动检出 Git submodule，列为尚未处理范围，用户可明确排除。
 
-~~~text
-source-analysis capture-local-git --repository-path <absolute-local-path> --commit <exact-40-lower-hex>
-~~~
+输出必须在源码根之外。用户从准备开始到本轮建模结束不得修改输入；系统不持续监控，不能保证发现所有外部修改。若实际检查发现变化，返回具名结果，等待用户选择重新准备或排除。
 
-它只读受约束 Git CLI plumbing 的 commit/tree/blob 原始对象，不读工作树、不执行客户代码、不联网。bootstrap 固定受信 Git executable 和 git-dir；ProcessBuilder 不经 shell，清空环境后只放安全必需项，禁 system/global config、lazy fetch、prompt、pager、optional locks 和 replace objects。private 空配置目录/文件不改变实际用户 HOME。只接受完整 commit object ID，不接受 branch/tag/short SHA。
+## 3. 内部处理：六项职责，不是六条新命令
 
-通过 NUL 分隔 tree 枚举完整 tracked regular files；100644/100755 blobs 原样保存。symlink 120000、gitlink/submodule 160000、未知 mode、缺对象、promisor/partial clone、alternates、config include、replace/graft/shallow 等不在安全 capture 合同中的来源直接失败，不尝试 fetch/fallback。git-dir/object/config 逐段 NOFOLLOW，前后 identity 不漂移；不执行 hooks、filters、客户 Maven、插件或应用。capture 的 stderr 只进私有诊断。
+1. **核对请求。**检查来源种类、路径、配置、基础版本和具名操作；不初始化模型、JDT 或客户构建。
+2. **列出范围。**记录文件/目录、默认跳过、明确排除和无法列出的子目录；未知子树的文件数不是零。
+3. **保存并核验。**逐个读取普通文件、记录长度和 SHA-256、保存原始字节；严格 UTF-8 分类，二进制也保留。局部失败不阻止其它安全独立检查。
+4. **应用用户决定。**新建、具名重新准备或排除均有明确基础；更新产生新版本，不覆盖旧快照。
+5. **保存结果。**写入文件清单、问题清单、汇总及 receipt；只有完整安装的结果才声明已保存。输出失败时尽可能返回终端诊断。
+6. **返回。**分别说明检查是否结束、报告是否落盘、资料是否可用于后续、排除及未解决范围。命令到此结束。
 
-## 3. 一次验证与文件分母
+删除旧的行起点数组及 `lineIndexDigest` 计算/新写入。以后按行读取时，由实际读取全文的模块定位行；不再声称使用本阶段索引。
 
-三个内部模块维持现有职责：
+## 4. 输出与例子
 
-| 模块 | 输入 → 工作 → 输出 |
-| --- | --- |
-| FrozenRequestAdmission | 明确 request、registration、manifest/controls → exact 字段与范围检查 → 已准入输入 |
-| source-index 模块 | 已准入清单、opaque handle → 路径/类型/size/SHA/编码/行索引检查 → verified source index |
-| VerifiedSourceInventoryPublicationSpecifier | 已完成不可变输入/index → 序列化三项 semantic payload → 步骤 publication |
+以下是**人工设计例子，不是客户实际产物**：目录含 `PurchaseApplyModal.vue`、`PurchaseOrderModal.vue`、`PurchaseInModal.vue`、`Legacy.java`，第四个文件无法读取。
 
-首次 source admission 对每个 regular file 做预算预检、NOFOLLOW/size 校验、流式 hash 和读取后 identity 检查。路径必须 canonical repository-relative，拒绝绝对路径、点段、混用分隔符、重复或越界。所有 regular files 都计数、hash；二进制本身不是 fatal，也不能静默删除。
+首次返回前三个文件保存成功，第四个为 `UNAVAILABLE`；问题指向路径和读取操作。`readiness=NEEDS_DECISION`，报告已保存，但没有宣称四个文件全部可用。用户明确排除第四个文件后，依据该结果创建新版本，继承前三个文件；结果为 `READY_WITH_EXCLUSIONS`，明确只有三个可分析文件和一个排除项。
 
-strict UTF-8 且没有禁用字节的文本标 ANALYZABLE_TEXT，建立稳定 byte/line index；其余 NON_ANALYZABLE_MEDIA 保留原始 bytes、mode、size、digest，textEncoding/lineIndexDigest 为 null，不送 Java/XML parser。空 regular file 合法；空声明 inventory 不合法。
+| 文件或位置 | 内容 | 消费者 |
+| --- | --- | --- |
+| 固定字节存储 | 读取成功的原始字节，不改换行或编码 | 公共来源 reader |
+| `source-input.json` | 来源种类、Git提交（仅Git）、范围、基础版本和操作 | reader、来源核对 |
+| `source-inventory.jsonl` | 每个已发现条目的类型、处置、校验信息，包括异常/排除/未检查 | reader、Codex、人类 |
+| `source-issues.jsonl` | 具名结构化问题及可选处理 | CLI/Skill 报告 |
+| `source-preparation-result.json` | 检查状态、可用性、计数、未知范围和版本 | CLI、公共读取与运行检查 |
+| `verified-source-inventory-receipt.json` | 四份正式文件的准确描述、身份和安装状态 | canonical store、严格重开 |
 
-保存分母必须满足：
+receipt 沿用内部名称以兼容地址；完整字节不再内嵌到四份文件中。具体 wire 见[数据合同](../modules/source-preparation/contracts-and-storage.md)。
 
-~~~text
-trackedRegularFileIds = verifiedRegularFileIds ⊎ unverifiedRegularFileIds
-verifiedRegularFileIds = analyzableTextFileIds ⊎ nonAnalyzableMediaFileIds
-successful admission ⇒ unverifiedRegularFileIds = ∅
-~~~
+这一步只保存 Vue、Java、XML 等原文。例子里的文件名不会被程序解释为“请购→采购订单→入库”，也不产生业务关系。
 
-COMPLETE_CAPTURE 的 regular-file ID 集必须精确等于 capture manifest；分片应两两不交并完整覆盖，改变顺序/分片大小不能改变语义身份。BOUNDED_PATH_SET 永远不满足 repositoryCompletionEligible，不能靠补扫工作树升级为完整。
+## 5. 问题与用户选择
 
-首次验证后的 bytes/index 作为不可变视图复用；保存各 module/step 产物以便观察。publisher 只序列化、检查必要 type/ID/ref/budget 并原子安装，不能再次扫描或重做 source inventory。读取新磁盘内容时核验该实际边界；同进程重复消费已验证 immutable bytes 不重新验证全仓。
+- 文件读不到：继续其它安全检查，返回文件、可靠错误信息和实际保存范围。
+- 子目录列不出：记录未知子树；用户可修复后重新准备，或明确排除整棵子树。
+- 根目录不存在/根目录列不出/来源身份错误：返回阻塞问题，不提供“排除根目录后继续”。
+- 内容与基础记录不一致：报告可确认的 expected/observed；不使用未确认新字节。用户选择重新准备或排除，不自动整仓重扫。
+- 保存副本损坏：明确是副本校验失败，不擅自说客户改了原目录；旧损坏结果不能伪装有效。
+- 路径越界或选择参数非法：不读取该路径；用户“继续”不能改变安全边界。
+- 输出不可写/磁盘满：停止依赖该存储的操作，尽可能返回终端诊断，不声称报告一定落盘。
+- 进程强杀：无法保证最终返回；没有完整 receipt 的目录不能算成功。用户重新执行，不自动接管旧运行。
 
-## 4. 输出与真实样本
+**可处理问题必须尽可能返回结果。** 结果保存不等于自动放行后续；未解决文件/子树要先修复或明确排除。内部 FAILED 必须配合可读结果，不再只给状态词。
 
-| 文件 | 唯一用途 |
-| --- | --- |
-| source-input.json | rootless 冻结输入与实际控制 refs |
-| verified-snapshot.json | snapshot/revision、scope、regular/text/media counts 与完整性 |
-| source-inventory.jsonl | 每文件 canonical identity、path、mode、size、SHA、disposition、nullable line index |
-| verified-source-inventory-receipt.json | 上游 roots、controls、artifact descriptors、状态 |
+## 6. 更新、排除与下游
 
-以下为**真实样本的阅读投影，不是完整 wire、重新生成的产物或可重放 golden**：
+普通目录可以基于明确旧版本重新准备具名文件或子目录；其它内容沿用原保存版本，不声称已重查整个当前目录。目录重准备替换该子树，文件消失、类型变化和失败均须显示。
 
-~~~json
-{
-  "originRevision": "8c30ce7861570458920175e200bb2a6442713580",
-  "scope": "COMPLETE_CAPTURE",
-  "verifiedRegularFileCount": 719,
-  "nextUse": "Locate AccountHeadController#getFinancialBillNoByBillId and its related source"
-}
-~~~
+Git 单文件重准备只重新取得同一提交的 blob。采纳工作树修改应使用普通目录，或指定新提交重新准备；不混合不同提交却标成旧提交。
 
-现有离线捕获/运行已经保存完整 719 文件；本轮只读现有事实，没有新 capture。DepotHead 八文件子集可用于局部 walkthrough，不能代替这份完整 source denominator。文件 digest/identity 必须由真实 bytes 计算，文档短 ID 不能装成 strict golden。
+排除在显式基础版本派生链中继承。REFRESH 不会自动重新纳入排除项；若要恢复，NEW 明确选择新的完整范围。全新独立准备没有隐式全局排除表；Codex 必须讲清 NEW 与接续旧版本的区别。
 
-## 5. 下一消费者怎样不返工
+下游有两个检查点：一是源码 reader 只返回可用且纳入范围的文件；二是旧 JDT/Step05/Activity/过程材料进入**新执行**前，与本次选择的源码版本及范围完全匹配。旧内嵌片段不能绕过检查。
 
-Step02 用同一 verified source view 读取必要配置和 Java 发现入口。Step03收集JDT导航与完整方法，Step04补可选持久化材料，Step05组织已有方法/条件/调用/返回；每个片段回到同一snapshot。目标Step06直接投影Step05，以完整原文进行Activity解释，不重新发现文件；旧M10只读。
+首版不自动判断哪些旧材料不受单文件修改影响。旧结果仍可按旧版本查看；拒绝新版本复用不触发重扫或模型调用。[专项 backlog](../supplements/implementation-lessons-and-followups.md#191-持续验收项排除规则与旧材料版本检查)只能凭实际读取/入口验收关闭。
 
-source registry 只按明确 snapshot/file identity 读清单成员，不能 walk root、按 basename 搜索、补文件或换 commit。需要重新打开磁盘文件时验证 size/hash/编码以及切片与定位一致；不是让每个消费者再跑完整 Step01。非文本仍留在分母但不送 parser。
+## 7. 当前差距
 
-## 6. 技术合同、保存与复用
+已有：固定 Git 捕获、不可变 blob、原清单核验、历史 reader、canonical 保存、正式 Java CLI。未实现：普通目录、结构化部分结果、具名更新/排除、新状态、必要下游检查和 `prepare-source`。
 
-已发布的 frozen-repository-request-v2、verified-snapshot-v2、SourceLocatorV1/SourceExcerptV1 及身份公式保持真实含义；新增字段必须在所属 record 明确升级，不在旧 version 静默加字段。exact 公共输入及唯一 locator 见 [公共接口附录](../references/inherited-public-and-module-contracts.md)，canonical bytes、framing、root/receipt 与原子 install 见 [持久化附录](../references/canonical-persistence-identity-contracts.md)。
+原实现遇 symlink 或首个文件失败会退出，仍写行摘要；M3 只接受完整捕获，reader 只接受成功无 gap 且清单全集一致。这些是待改实现，不是另一套目标约定。
 
-M3 提供恰三个 semantic payload，AnalysisStep store 计算 root 并最后创建 receipt；module 目录与 module receipts 保留，不计入 public semantic root。不能预报自己的未生成 receipt 形成自引用，不覆盖旧 publication。进程内可把受信不可变结果及其 basis 交给下一 owner；磁盘/新进程/导入则经 typed reference 校验 exact file set、identity/hash/schema/ref/basis。禁止 mutable 草稿和任意 Path 输入，但不要求每内部调用 fresh reopen。
-
-显式跨 run 复用要求输入/profile/policy/tool/schema 等有效 basis 相同。纯技术步骤无 Prompt 消费时 prompt hash 为 null；无关配置不应触发重扫，实际 source/policy 改变必须重新 admission。失败保留已完成产物，不设计同 run crash takeover。
-
-## 7. Gap、fatal 与预算
-
-BOUNDED_PATH_SET、未解析 media 和支持范围限制是范围信息，不删文件。预算至少包括 maxFiles、maxTotalBytes、maxFileBytes，分配前检查；不能用预算失败伪造验证成功。
-
-身份/hash/size 漂移、危险路径、symlink/gitlink、不安全 reader、文本/media 处置错误、manifest 分母遗漏、断 refs 和安装冲突 fatal。稳定故障范围保留 SOURCE_PATH_INVALID、SOURCE_HASH_MISMATCH、SOURCE_SIZE_MISMATCH、SOURCE_REGISTRATION_NOT_FOUND、SOURCE_HANDLE_INVALID、CAPTURE_IDENTITY_INVALID 及既有 schema/resource-limit codes，不用业务 Gap 掩盖这些问题。
-
-## 8. 当前实现与后续定向验证
-
-本地 capture、已验证源码清单、private registered source handle、持久化执行基础已有实现，固定 719 文件来源已有保存证据；不能继续写成“仅 package 骨架”或“完整捕获未完成”。这不证明全部 Java/框架语法可解析，也不证明整仓业务解释完成。
-
-后续仅在改动读取/复用边界时由Terra/xhigh为“同进程只 admission 一次、外部替换 bytes 仍失败、media 不消失、路径逃逸失败”建立RED，Sol/xhigh最小GREEN。已有 exact snapshot identity、完整分母、UTF-8/locator、原子安装及相关 mutation 合同仍有效；不为 docs-only 运行 Maven、客户仓库、网络或 Provider。
+验收采用临时 fixtures、保存重开与 scripted 消费入口，不重跑客户 Activity。Skill 说明由 Codex 如何调用、核对和报告；资料是否可用由程序合同决定。
