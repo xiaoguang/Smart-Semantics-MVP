@@ -18,10 +18,10 @@
 
 当前已有：Git固定捕获、原Step01成功发布、公共文本reader、运行状态和CLI；不存在新prepare-source、目录源、部分清单、持久排除。当前HEAD及未提交范围以实际实施时重新检查为准，不套用本次文档核对的测试结论。
 
-- [ ] 读取正式设计和本计划、适用AGENTS；`git status --short`核对当前Activity改动，保护无关`docs/research/`和本机输出。
-- [ ] 为本计划每个工作Agent建立独立progress；只登记本轮文件。
-- [ ] 记录受保护文档、旧来源/Activity/过程的具名引用；不用复制或改写模型原文来备份。
-- [ ] 建立`codex/*`实现分支；有重叠未提交源码先核对归属，不reset、不强推、不擅自提交历史Activity补丁。
+- [x] 读取正式设计和本计划、适用AGENTS；`git status --short`核对当前Activity改动，保护无关`docs/research/`和本机输出。
+- [x] 为本计划每个工作Agent建立独立progress；只登记本轮文件。
+- [x] 记录受保护文档、旧来源/Activity/过程的具名引用；不用复制或改写模型原文来备份。
+- [x] 建立`codex/*`实现分支；有重叠未提交源码先核对归属，不reset、不强推、不擅自提交历史Activity补丁。
 
 ## 1. 先冻结结果、问题和版本合同
 
@@ -29,12 +29,12 @@
 
 **新增直接测试：** `analysis/inventory/SourcePreparationContractsTest.java`。
 
-- [ ] RED：100个已发现文件中99核验、1不可读，断言NEEDS_DECISION；文件集合不丢项。
-- [ ] RED：目录无法列出时总数为null、unknownSubtrees具名；不能以99/99声称全仓完成。
-- [ ] RED：显式排除解决局部问题后READY_WITH_EXCLUSIONS；全排除/全媒体为NO_ANALYZABLE_TEXT。
-- [ ] RED：请求错误/整体来源错误/存储失败不能被EXCLUDE转成READY。
-- [ ] GREEN：最少immutable records与有名构造器、状态计算和错误分类；不加入扫描或模型代码。
-- [ ] 同步字段、null、集合排序、正常目录ENUMERATED_DIRECTORY和新fileId/sourceVersionId配方；运行直接测试后进入生产者。
+- [x] RED：100个已发现文件中99核验、1不可读，断言NEEDS_DECISION；文件集合不丢项。
+- [x] RED：目录无法列出时总数为null、unknownSubtrees具名；不能以99/99声称全仓完成。
+- [x] RED：显式排除解决局部问题后READY_WITH_EXCLUSIONS；全排除/全媒体为NO_ANALYZABLE_TEXT。
+- [x] RED：请求错误/整体来源错误/存储失败不能被EXCLUDE转成READY。
+- [x] GREEN：最少immutable records与有名构造器、状态计算和错误分类；不加入扫描或模型代码。
+- [x] 同步字段、null、集合排序、正常目录ENUMERATED_DIRECTORY和新fileId/sourceVersionId配方；运行直接测试后进入生产者。32项直接测试通过，5项审查问题经两轮限定修复关闭；这里只完成纯合同，不代表实际来源或receipt已经核验。
 
 命令（实施时）：`mvn -t .mvn/toolchains.local.xml -Dtest=SourcePreparationContractsTest test`。
 
@@ -47,7 +47,7 @@
 - [ ] RED：无.git目录的Java/XML/Vue/点文件/target/node_modules均按原字节保存；.git具名跳过。
 - [ ] RED：文件/目录链接不跟随，链接外哨兵文件读取次数为0；不支持压缩根、设备/FIFO，不解压目录内普通压缩文件。
 - [ ] RED：子目录枚举/文件读取失败继续兄弟；根枚举失败不进入子树；使用可注入reader失败替身，不能只依赖chmod（管理员执行可能绕过）。
-- [ ] RED：用屏障在读前后改变文件，得到明确变化问题；不同长度/hash和未知原因分别保存。
+- [ ] RED：用屏障确定性改变读前后长度、mtime或文件身份，得到明确变化问题；实际观测与未知原因分别保存。首次单次读取没有预期内容hash，不声称可检测所有同长度变化；已有保存副本的hash不一致在重开/继承测试核对。
 - [ ] RED：资源控制在读取时生效，先前已核验记录保留，剩余标明未检查；无全仓bytes提前入内存。
 - [ ] RED：Git同提交读取不见工作树修改；链接跳过，submodule具名未支持；不fetch、不执行hooks。
 - [ ] GREEN：流式捕获与逐项问题，复用现有安全Git命令。只catch已分类问题，不用RuntimeException全部转CAPTURE_IDENTITY_INVALID。

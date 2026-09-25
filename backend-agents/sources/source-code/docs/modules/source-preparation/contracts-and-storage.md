@@ -1,6 +1,6 @@
 # 源码准备：数据、异常、版本和保存合同
 
-状态：2026-09-25，详细设计，全部新类型/版本待实施。本文是字段和状态的唯一 owner；[模块设计](README.md)定义算法，[命令设计](cli-and-skill.md)定义用户操作。
+状态：2026-09-25，详细设计实施中。准备记录、请求及身份合同的32项直接测试通过，独立审查的5项缺口已修正并复核；步骤1完成。实际读取、wire写入/重开及来源消费检查尚未完成，不能据此宣称准备功能已可用。本文是字段和状态的唯一 owner；[模块设计](README.md)定义算法，[命令设计](cli-and-skill.md)定义用户操作。
 
 ## 1. 三个不同的问题
 
@@ -21,6 +21,10 @@
 结果安装为 `SUCCEEDED` 或 `SUCCEEDED_WITH_GAPS` 只说明检查产物安装成功，不代替 readiness。继续满足现有store的“空gapRefs对应SUCCEEDED，非空对应SUCCEEDED_WITH_GAPS”，不改全局校验。新producer把每条实际范围限制/OPEN问题以及空文本结果写成SourceIssue：排除/链接等为INFORMATIONAL，空文本用SOURCE_NO_ANALYZABLE_TEXT。`gapRefs`是这些issue的 `source-issue:<issueId>` 排序唯一集合，并由新reader核对都能在issues文件找到。只有READY且没有限制/问题时集合为空。已解决且不再限制当前范围的旧问题留在历史记录，不作为当前gap。不是为了凑状态编造业务Gap；每条都对应真实文件、范围或结果事实。reader仍根据readiness决定是否提供源码。
 
 参数/配置不能解析时可以没有 runId，仍返回终端问题。JSON无法发送或进程被强杀时不能保证结构化终态；Unix信号退出保留系统行为，不伪造应用退出码0。
+
+内部 Java 合同将检查原始记录与评估结果分开：`SourcePreparationResult` 保存检查状态、明确的枚举完成标志、条目、问题、未知子目录及未命中排除声明；`SourcePreparationReadinessEvaluator` 从这些记录产生唯一的不可变 `SourcePreparationAssessment`（汇总和可用状态）。正式 result 文件仍保存汇总和 readiness，但由生产者封闭时计算，不接纳调用方另行传入的互相矛盾的值。
+
+`ABORTED` 不直接等于 `BLOCKED`：例如资源上限中止应为 `NEEDS_DECISION`。没有更强阻塞问题的中止也必须为 `NEEDS_DECISION`，不能因已处理文件均正常就返回 READY 或 NO_ANALYZABLE_TEXT。已明确排除的未知子目录以及固定政策跳过的 `.git` 目录不再阻塞有效范围，但总文件数仍为未知；已通过刷新解决、当前不再限制范围的历史问题也不将新结果降为 `READY_WITH_EXCLUSIONS`。
 
 ## 2. 输入和私有请求
 
@@ -57,7 +61,11 @@
 
 成功 DIRECTORY 条目本身不代表内部所有文件成功。无法列出或明确不进入的子目录另入 `unknownSubtrees`；可以知道该目录存在，但不能声称其中有0个文件。隐藏文件不是异常，二进制不是“未检查”。
 
-汇总计数：`discoveredRegularFiles`、`verifiedTextFiles`、`verifiedMediaFiles`、`excludedKnownFiles`、`unavailableKnownFiles`、`uncheckedKnownFiles`；已发现普通文件由这些互斥集合组成。链接/submodule/目录单独计数，排除路径未命中另列 `unmatchedExclusions`。
+汇总计数：`discoveredRegularFiles`、`verifiedTextFiles`、`verifiedMediaFiles`、`excludedKnownFiles`、`unavailableKnownFiles`、`uncheckedKnownFiles`；已发现普通文件由这些互斥集合组成。目录、链接和submodule分别用 `directoryEntries / symlinkEntries / submoduleEntries` 计数，不混入普通文件计数。
+
+排除路径未命中另列 `unmatchedExclusions`，是精确 `{relativePath, kind}` 列表，由读取方记录在原始 `SourcePreparationResult`，评估器原样保留到汇总。不存在的声明不制造 UNKNOWN 文件记录，也不增加已发现或不可读文件数；它仍是继承的有效范围限制，有可用文本且没有其它问题时为 READY_WITH_EXCLUSIONS。未命中本身不代表存在未知子目录。
+
+`excludedKnownFiles` 包含明确用户排除和固定政策跳过的已知普通文件；例如普通目录中的 `.git` 元数据可能是普通文件，仍以 `SKIPPED_GIT_METADATA` 留在清单中，不打开其内容。正文说明必须区分用户排除与政策跳过，不能把两者都说成用户选择。
 
 有未知子树或遍历提前终止时 `totalRegularFiles=null`、`enumerationComplete=false`。禁止将“本次已见文件数”冒充整个目录文件总数。明确排除解决消费范围后，readiness可以READY_WITH_EXCLUSIONS，但全物理目录总数仍可能未知。
 
