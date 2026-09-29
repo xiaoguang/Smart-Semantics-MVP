@@ -6,21 +6,36 @@ import java.util.Objects;
 import java.util.Set;
 import org.sourceanalysis.app.analysis.code.EntryCodeContext;
 import org.sourceanalysis.app.analysis.code.EntrySeed;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendEntryLinkRecord;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendHttpRequestRecord;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendSourceUnits;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
+import org.sourceanalysis.app.artifact.ModulePublicationReference;
 
 /** Immutable complete-unit reading view assembled from already-read upstream material. */
 public record CodeReadingMaterialSet(
-    Header header, List<Packet> packets, List<EntryCoverage> coverage) {
+    Header header,
+    List<Packet> packets,
+    List<EntryCoverage> coverage,
+    List<FrontendCoverage> frontendCoverage) {
+
+  /** Retains v1 material sets, which intentionally contain no frontend request disposition. */
+  public CodeReadingMaterialSet(Header header, List<Packet> packets, List<EntryCoverage> coverage) {
+    this(header, packets, coverage, List.of());
+  }
 
   public CodeReadingMaterialSet {
     header = Objects.requireNonNull(header, "reading-material header");
     packets = immutable(packets, "reading-material packets");
     coverage = immutable(coverage, "reading-material coverage");
+    frontendCoverage = immutable(frontendCoverage, "frontend request coverage");
     requireDistinct(packets, Packet::packetId, "reading-material packet IDs");
     requireDistinct(coverage, EntryCoverage::entryId, "reading-material coverage entry IDs");
+    requireDistinct(
+        frontendCoverage, FrontendCoverage::requestId, "frontend request coverage request IDs");
   }
 
   /** Complete upstream identity and actual profile for this material view. */
@@ -29,7 +44,24 @@ public record CodeReadingMaterialSet(
       ProgramGraphsReference navigationPublication,
       AnalysisStepPublicationReference persistencePublication,
       String sourceSnapshotId,
-      CodeReadingMaterialProfile profile) {
+      CodeReadingMaterialProfile profile,
+      ModulePublicationReference frontendPublication) {
+
+    /** Retains v1 headers, which intentionally do not bind a frontend module-6 publication. */
+    public Header(
+        VerifiedSourceInventoryReference sourceInventory,
+        ProgramGraphsReference navigationPublication,
+        AnalysisStepPublicationReference persistencePublication,
+        String sourceSnapshotId,
+        CodeReadingMaterialProfile profile) {
+      this(
+          sourceInventory,
+          navigationPublication,
+          persistencePublication,
+          sourceSnapshotId,
+          profile,
+          null);
+    }
 
     public Header {
       sourceInventory = Objects.requireNonNull(sourceInventory, "verified source inventory");
@@ -52,7 +84,32 @@ public record CodeReadingMaterialSet(
       List<SourceReference> sourceReferences,
       List<UnselectedUnit> unselectedUnits,
       List<String> limitations,
-      long selfContainedUtf8Bytes) {
+      long selfContainedUtf8Bytes,
+      FrontendSelection frontendSelection) {
+
+    /** Retains v1 packets, which intentionally carry an empty frontend selection. */
+    public Packet(
+        String packetId,
+        List<EntrySeed> entries,
+        List<EntryCodeContext.MethodCode> methods,
+        List<EntryCall> calls,
+        PersistenceSelection persistence,
+        List<SourceReference> sourceReferences,
+        List<UnselectedUnit> unselectedUnits,
+        List<String> limitations,
+        long selfContainedUtf8Bytes) {
+      this(
+          packetId,
+          entries,
+          methods,
+          calls,
+          persistence,
+          sourceReferences,
+          unselectedUnits,
+          limitations,
+          selfContainedUtf8Bytes,
+          FrontendSelection.empty());
+    }
 
     public Packet {
       required(packetId, "reading-material packet ID");
@@ -63,6 +120,7 @@ public record CodeReadingMaterialSet(
       sourceReferences = immutable(sourceReferences, "packet source references");
       unselectedUnits = immutable(unselectedUnits, "packet unselected units");
       limitations = immutable(limitations, "packet limitations");
+      frontendSelection = Objects.requireNonNull(frontendSelection, "packet frontend selection");
       if (selfContainedUtf8Bytes < 0L) {
         throw new IllegalArgumentException("packet UTF-8 byte count cannot be negative");
       }
@@ -76,6 +134,91 @@ public record CodeReadingMaterialSet(
         throw new IllegalArgumentException(
             "packet entry-owned material must belong to a packet entry");
       }
+    }
+  }
+
+  /** Full frontend units and their exact request-to-entry uses retained with one packet. */
+  public record FrontendSelection(
+      List<FrontendSourceUnits.Unit> sourceUnits, List<FrontendRequestUse> requestUses) {
+
+    public FrontendSelection {
+      sourceUnits = immutable(sourceUnits, "packet frontend source units");
+      requestUses = immutable(requestUses, "packet frontend request uses");
+      requireDistinct(
+          sourceUnits, FrontendSourceUnits.Unit::sourceUnitId, "frontend source unit IDs");
+      requireDistinct(
+          requestUses,
+          use -> use.entryId() + "\u0000" + use.requestId() + "\u0000" + use.instanceKey(),
+          "frontend request uses");
+      Set<String> unitIds =
+          sourceUnits.stream()
+              .map(FrontendSourceUnits.Unit::sourceUnitId)
+              .collect(java.util.stream.Collectors.toSet());
+      if (requestUses.stream().anyMatch(use -> !unitIds.contains(use.sourceUnitId()))) {
+        throw new IllegalArgumentException(
+            "frontend request use refers to an unselected source unit");
+      }
+    }
+
+    public static FrontendSelection empty() {
+      return new FrontendSelection(List.of(), List.of());
+    }
+
+    public List<FrontendSourceUnits.Unit> sourceUnits() {
+      return List.copyOf(sourceUnits);
+    }
+
+    public List<FrontendRequestUse> requestUses() {
+      return List.copyOf(requestUses);
+    }
+  }
+
+  /** One matched frontend request use, preserving its page instance and concrete backend link. */
+  public record FrontendRequestUse(
+      String entryId,
+      String requestId,
+      String instanceKey,
+      String sourceUnitId,
+      FrontendHttpRequestRecord request,
+      FrontendEntryLinkRecord entryLink) {
+
+    public FrontendRequestUse {
+      required(entryId, "frontend request use entry ID");
+      required(requestId, "frontend request use request ID");
+      required(instanceKey, "frontend request use instance key");
+      required(sourceUnitId, "frontend request use source unit ID");
+      request = Objects.requireNonNull(request, "frontend request use request");
+      entryLink = Objects.requireNonNull(entryLink, "frontend request use entry link");
+      if (!requestId.equals(request.requestId())
+          || !instanceKey.equals(request.instanceKey())
+          || !requestId.equals(entryLink.requestId())
+          || entryLink.resolution() != FrontendEntryLinkRecord.Resolution.MATCHED_UNIQUE
+          || entryLink.entryIds().size() != 1
+          || !entryId.equals(entryLink.entryIds().get(0).value())) {
+        throw new IllegalArgumentException("frontend request use does not match its request link");
+      }
+    }
+  }
+
+  /** One complete frontend-request disposition across the saved material set. */
+  public record FrontendCoverage(String requestId, Status status, String reason) {
+
+    public FrontendCoverage {
+      required(requestId, "frontend request coverage request ID");
+      status = Objects.requireNonNull(status, "frontend request coverage status");
+      if (status != Status.SELECTED && (reason == null || reason.isBlank())) {
+        throw new IllegalArgumentException(
+            "unselected or unresolved frontend request coverage requires a reason");
+      }
+      if (reason != null && reason.isBlank()) {
+        throw new IllegalArgumentException("frontend request coverage reason cannot be blank");
+      }
+    }
+
+    public enum Status {
+      SELECTED,
+      UNSELECTED,
+      UNRESOLVED
     }
   }
 

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "artifact-policy-registry-policy-set-v1",
+  "policies": [
+    {"artifactType":"SOURCE_PREPARATION_INPUT","schemaVersion":"source-preparation-input-v1","artifactIdPrefix":"source-preparation-input","mediaType":"application/json","envelopeKind":"STANDALONE_JSON","emptyJsonlAllowed":false,"publicContentExposure":"PATH_FREE_COMPLETE_UTF8"},
+    {"artifactType":"SOURCE_PREPARATION_INVENTORY","schemaVersion":"source-preparation-inventory-v1","artifactIdPrefix":"source-preparation-inventory","mediaType":"application/x-ndjson","envelopeKind":"CANONICAL_JSONL","emptyJsonlAllowed":true,"publicContentExposure":"PATH_FREE_COMPLETE_UTF8"},
+    {"artifactType":"SOURCE_PREPARATION_ISSUES","schemaVersion":"source-preparation-issues-v1","artifactIdPrefix":"source-preparation-issues","mediaType":"application/x-ndjson","envelopeKind":"CANONICAL_JSONL","emptyJsonlAllowed":true,"publicContentExposure":"PATH_FREE_COMPLETE_UTF8"},
+    {"artifactType":"SOURCE_PREPARATION_RESULT","schemaVersion":"source-preparation-result-v1","artifactIdPrefix":"source-preparation-result","mediaType":"application/json","envelopeKind":"STANDALONE_JSON","emptyJsonlAllowed":false,"publicContentExposure":"PATH_FREE_COMPLETE_UTF8"},
+    {"artifactType":"VERIFIED_SOURCE_INVENTORY_ADMITTED_SOURCE_REQUEST","schemaVersion":"verified-source-inventory-admitted-source-request-v3","artifactIdPrefix":"source-request","mediaType":"application/json","envelopeKind":"MODULE_ARTIFACT_JSON","emptyJsonlAllowed":false,"publicContentExposure":"PATH_FREE_COMPLETE_UTF8"},
+    {"artifactType":"VERIFIED_SOURCE_INVENTORY_VERIFIED_SOURCE_INDEX","schemaVersion":"verified-source-inventory-verified-source-index-v3","artifactIdPrefix":"source-index","mediaType":"application/json","envelopeKind":"MODULE_ARTIFACT_JSON","emptyJsonlAllowed":false,"publicContentExposure":"PATH_FREE_COMPLETE_UTF8"}
+  ]
+}

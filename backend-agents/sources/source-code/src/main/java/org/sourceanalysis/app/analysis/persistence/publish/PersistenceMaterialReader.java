@@ -14,10 +14,14 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
+import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex;
+import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
+import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalMediaType;
@@ -31,12 +35,21 @@ public final class PersistenceMaterialReader {
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final Set<String> RECORD_TYPES =
       Set.of("HEADER", "RESOURCE", "STATEMENT", "JAVA_BINDING", "SQL_ANALYSIS", "DIAGNOSTIC");
-  private static final String PRODUCER = "persistence-analysis-v1";
+  private static final Set<String> PRODUCERS =
+      Set.of("persistence-analysis-v1", "persistence-analysis-v2");
   private final CanonicalAnalysisStepArtifactStore steps;
+  private final CanonicalAnalysisStepArtifactStore sourceSteps;
   private final CanonicalJsonCodec json = new CanonicalJsonCodec();
 
   public PersistenceMaterialReader(CanonicalAnalysisStepArtifactStore steps) {
+    this(steps, steps);
+  }
+
+  /** Uses the source-preparation store only for exact R0 receipt validation. */
+  public PersistenceMaterialReader(
+      CanonicalAnalysisStepArtifactStore steps, CanonicalAnalysisStepArtifactStore sourceSteps) {
     this.steps = Objects.requireNonNull(steps, "analysis step artifact store");
+    this.sourceSteps = Objects.requireNonNull(sourceSteps, "source analysis-step artifact store");
   }
 
   /** Reconstructs the saved immutable index without invoking XML, SQL, or Java analysis. */
@@ -73,6 +86,76 @@ public final class PersistenceMaterialReader {
     }
   }
 
+  /**
+   * Reopens a cross-run Step04 v2 publication while proving exact R0/R1/R2 ancestry and distinct
+   * receipt controls. Historical {@link #reopen(AnalysisStepPublicationReference)} remains a
+   * tolerant reader for the retained v1 publication contract.
+   */
+  public PersistenceMaterialIndex reopenTechnical(
+      AnalysisStepPublicationReference reference,
+      AnalysisRunId expectedR2,
+      VerifiedSourceInventoryReference expectedR0,
+      ApplicationDiscoveryReference expectedR1Discovery,
+      ProgramGraphsReference expectedR1Navigation,
+      ArtifactControls r1Controls,
+      ArtifactControls r2Controls) {
+    try {
+      Objects.requireNonNull(reference, "persistence publication");
+      Objects.requireNonNull(expectedR2, "R2 run ID");
+      Objects.requireNonNull(expectedR0, "R0 source");
+      Objects.requireNonNull(expectedR1Discovery, "R1 discovery");
+      Objects.requireNonNull(expectedR1Navigation, "R1 navigation");
+      Objects.requireNonNull(r1Controls, "R1 controls");
+      Objects.requireNonNull(r2Controls, "R2 controls");
+      ReopenedAnalysisStepPublication source = sourceSteps.reopen(expectedR0.publication());
+      ReopenedAnalysisStepPublication discovery = steps.reopen(expectedR1Discovery.publication());
+      ReopenedAnalysisStepPublication navigation = steps.reopen(expectedR1Navigation.publication());
+      ReopenedAnalysisStepPublication persistence = steps.reopen(reference);
+      if (!source.reference().equals(expectedR0.publication())
+          || source.reference().address().analysisStepKey()
+              != AnalysisStepKey.VERIFIED_SOURCE_INVENTORY
+          || !discovery.reference().equals(expectedR1Discovery.publication())
+          || discovery.reference().address().analysisStepKey()
+              != AnalysisStepKey.APPLICATION_DISCOVERY
+          || !navigation.reference().equals(expectedR1Navigation.publication())
+          || navigation.reference().address().analysisStepKey() != AnalysisStepKey.PROGRAM_GRAPHS
+          || !persistence.reference().equals(reference)
+          || !reference.address().runId().equals(expectedR2)
+          || !persistence.receipt().controls().equals(r2Controls)
+          || !discovery.receipt().controls().equals(r1Controls)
+          || !navigation.receipt().controls().equals(r1Controls)
+          || source.reference().address().runId().equals(discovery.reference().address().runId())
+          || !discovery
+              .reference()
+              .address()
+              .runId()
+              .equals(navigation.reference().address().runId())
+          || expectedR2.equals(source.reference().address().runId())
+          || expectedR2.equals(discovery.reference().address().runId())
+          || !discovery
+              .receipt()
+              .upstreamAnalysisStepReferences()
+              .equals(List.of(source.reference()))
+          || !navigation
+              .receipt()
+              .upstreamAnalysisStepReferences()
+              .equals(List.of(source.reference(), discovery.reference()))
+          || !persistence
+              .receipt()
+              .upstreamAnalysisStepReferences()
+              .equals(List.of(source.reference(), discovery.reference(), navigation.reference()))) {
+        throw invalid();
+      }
+      return reopen(reference, persistence);
+    } catch (RuntimeException failure) {
+      if (failure instanceof IllegalArgumentException
+          && "PERSISTENCE_MATERIAL_INDEX_INVALID".equals(failure.getMessage())) {
+        throw failure;
+      }
+      throw invalid(failure);
+    }
+  }
+
   private PersistenceMaterialIndex parse(ImmutableBytes bytes) {
     List<Line> lines = lines(bytes);
     Line headerLine = only(lines, "HEADER");
@@ -82,7 +165,7 @@ public final class PersistenceMaterialReader {
     ObjectNode header = headerLine.payload();
     requireFields(
         header, Set.of("producer", "status", "sourceSnapshotId", "navigationPublication", "tools"));
-    if (!PRODUCER.equals(text(header, "producer"))) {
+    if (!PRODUCERS.contains(text(header, "producer"))) {
       throw invalid();
     }
     PersistenceMaterialIndex.Status status;

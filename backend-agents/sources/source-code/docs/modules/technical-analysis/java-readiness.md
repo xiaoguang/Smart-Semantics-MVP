@@ -1,120 +1,133 @@
-# Step02：Java 分析环境与依赖就绪
+# JDT 输入核对、诊断记录与导航条件
 
-状态：详细设计、待实施。Step02先按[自动依赖准备](dependency-preparation.md)解析常规Maven环境，再由本页核验两个JDT工具的实际环境与诊断；现有Step03导航算法不重写。用户已确认：仍未就绪时保存报告、不导航，由Agent询问。不能把已列3个JAR的摘要正确，解释成项目只需要3个JAR。
+状态：C2真实LS/Core双模块测试已验证Java8/17平台、catalog及跨模块collect；旧正式 `collect-code` 的v2原始Maven文件输入、READY/BLOCKED环境发布、排队复核和三命令fixture已由直接测试验证。固定源码同源 classpath 和有效 POM 已取得，旧正式运行已保存 READY 环境并进入 JDT 导航；缓存修正后七入口已有非正式定向重验，但仍见首次等待超时；全量调用准确性及 Vue→SQL 验收尚未完成，不能用环境 READY 或 fixture 代替。四独立命令的**目标**将后端`collect-code`称为R2；本页旧R1事实均指先前合并命令，不表示目标R2已运行。用户已确认：**输入核对通过、无已知阻断时，可以继续调用收集；无法证明全文件诊断完成，要明确披露，不再自建完成证明系统。**
 
-## 1. 依据及不能承诺什么
+Maven 执行、下载及其错误解释由 Maven 和 Agent/用户完成，详见[交接设计](dependency-preparation.md)。本模块只负责正确使用给定输入并调用 JDT，不负责证明整个客户项目可编译。
 
-已有定向排查中，补入本地可用依赖后，错误Mapper目标、`logger.error`误入`AjaxResult.error`等导航结果得到纠正。这支持先修编译环境，不支持“18个JAR已经覆盖所有编译依赖”或“所有调用今后绝不出错”。本轮文档没有重新运行这些试验。
+## 1. 输入和必要检查
 
-Maven的直接依赖、传递依赖、scope、版本选择和profile共同决定编译类路径；只读依赖声明或列举缓存目录不能代替实际解析结果。[官方依赖机制](https://maven.apache.org/guides/introduction/introduction-to-dependency-mechanism.html)
+输入是同一个R0的有效源码、由Java读取官方Maven输出后形成的逐模块环境、明确选择的实际JDK以及锁定JDT工具。Agent不填写源码根、编译级别或模块边；上游提取合同见[依赖交接§3](dependency-preparation.md#3-最小交接内容)。检查只包含后续使用必须依赖的事实：
 
-受信任环境可导出解析后的classpath；例如官方 `dependency:build-classpath`目标可输出依赖路径，但单独的路径字符串不含本设计要求的源码、模块、JDK及profile身份，也不自动提供生成源码。[官方目标说明](https://maven.apache.org/plugins/maven-dependency-plugin/build-classpath-mojo.html)
+| 检查 | 通过表示什么 | 不表示什么 |
+| --- | --- | --- |
+| 来源/排除/源码根一致 | 使用的是用户选定且允许读取的源码 | 业务材料完整 |
+| classpath 文件及列出项可读、内容稳定 | 可以把这些准确文件交给工具 | 未列出的依赖一定不存在或一定不需要 |
+| 模块归属及从受支持直接依赖形成的project引用合法 | 不把模块A的输入混给B | 自动解析了Maven reactor |
+| 目标 JDK 与编译设置可表达 | 不会静默换成运行工具的 JDK | 编译所有源码已经通过 |
+| JDT 项目实际绑定成功 | 工具实际载入所给项目/平台 | 每个导航答案都正确 |
 
-## 2. 输入：使用实际解析结果，不猜依赖
+已知来源损坏、列出的 JAR 缺失、目标 JDK 错误、编译设置不支持、模块归属冲突或 JDT 初始化失败，保存问题后阻断。不自动找替代 JAR，不降低语言版本，不跳过用户排除。
 
-新增 `java-compilation-environment-v1`。默认由同次Step02的声明式Maven准备器生成，也可由用户明确选择的受信任环境清单提供；两种来源共用本页核验。正式结果不含本机路径/凭据，私有定位与原始工具记录分开保存。常规依赖可在明确仓库策略下自动取得；客户Maven启动脚本、插件、扩展、hook、注解处理器仍不执行。此条替代上一版“程序不自动准备或下载”的目标限制。
+Maven 导出失败不在这里重新解析：Agent 读取其日志解决交接；没有可用导出就不进入本模块。Java 的问题记录只表达本次消费/工具操作失败，不扩成 Maven 故障分类系统。
 
-每个分析模块必须记录：
+## 2. 使用现有 JDT 接缝，不构造新编译器
 
-| 内容 | 必须表达的事实 |
-| --- | --- |
-| 源码绑定 | `sourceVersionId`、有效范围摘要；导出清单对应的源码/构建描述摘要；导出来源及时间仅作溯源 |
-| 模块 | 相对模块路径、生产/测试源码根、被分析source set；不能把多模块不同依赖的并集随意当一个模块 |
-| 编译目标 | 实际Java语言级别、`--release`或source/target、实际目标JDK/platform；与运行JDT的工具JVM分开 |
-| 构建选择 | 构建工具/版本、激活profile、影响依赖和生成源码的非秘密参数、解析完成状态 |
-| 二进制依赖 | 已解析顺序、坐标/版本/分类器/作用域、每个实际二进制的摘要和大小、私有本地定位；包含传递编译依赖 |
-| 模块依赖 | 使用同快照源码模块还是已编译模块产物；不能两者冲突遮蔽。源码根必须属于有效范围 |
-| 生成内容 | 生成源码/字节码是否参与实际编译、是否已随固定输入保存。缺失时报告，不启动生成器补齐 |
-| 导出完整性 | 每个source set的resolved/unresolved列表、覆盖范围和限制；“导出命令成功”不单独判定完整 |
+### 2.1 LS 工作区
 
-`provided`等编译所需依赖不能因不随产品打包就删除；只看打包lib目录也不能证明完整。测试目录若纳入分析，其独立类路径必须匹配；不将测试依赖无条件混入生产模块。
+保留 `JdtTargetRuntime`、`JdtProjectBinding`、`JdtWorkspaceBinding/Session` 中有效的工作：
 
-首版支持的声明式Maven模块布局必须按原工程隔离依赖，并通过单模块及普通多模块fixture；不支持的布局明确阻断。现有单`VerifiedJavaProject.classpath`、单project投影和helper环境尚不能表达该目标，须修改环境载体/投影，不改导航算法。目标JDK不仅是languageLevel：LS的JRE容器映射和Core当前`setEnvironment(..., true)`均需验证并修正，不能默认使用工具JVM平台，详见[双工具环境合同](dependency-preparation.md#5-如何交给现有-jdt)。
+- `JdtCodeEngine.open(JavaCompilationEnvironment)` 只接收 readiness 已准入的同一环境，并将其中的既有 `VerifiedJavaProject`、模块边和目标平台适配为 `JdtWorkspaceBinding`；不重新构造编译项目模型。
+- 从准备结果投影固定源码，不读当前 checkout；一个 LS 工作区内按模块各自写受控 project 的 source/lib/project/JRE entries。
+- 每个项目设置回读都核对目标 VM、投影后的源码根、显式 library classpath 和受控 workspace project 引用。JDT 的 project 引用是虚拟路径，按精确受控项目名核对而不把它当宿主文件；真实源码根和 JAR 继续 canonical real-path 核验。缺少必要设置或与输入不符时失败，不把“接口返回了”称为“已经核对”。
+- 声明目录合并全部已准入模块；入口只能由 `methodKey`、精确 range 和该合并目录中的唯一 `sourcePath` 一起归属。未知或歧义入口拒绝，而不从 `EntrySeed` 猜测路径。
+- 工具 JVM、Maven 运行 JVM、客户目标 JDK 不混为一谈。
 
-## 3. Step02 内部处理顺序
+多模块仅按已提供的映射创建项目；不在 JDT 接线里再次解读 POM 或计算依赖闭包。源码映射使用现有 `VerifiedJavaProject` 分区能力；不要增加一套通用编译项目模型。
 
-1. 重开已选择的源码准备结果，确认可消费、来源和排除范围匹配。
-2. 在实际权限内自动准备常规Maven依赖，或读取明确选择的PROVIDED环境；核对清单绑定的源码、模块和source set。逐项检查实际二进制存在、完整性、顺序及重复冲突；列出缺失/变化/未解析项目。未完成时保存报告返回，不先用部分依赖启动导航。
-3. 生成 `javaAnalysisBasis`：来源版本/有效范围、模块拓扑、源码根、目标JDK、classpath内容与顺序、JDT/Core/helper版本、有效解析配置。机器绝对路径不代替内容身份。
-4. 清单允许继续时，按模块生成受控project，打开同一个JDT LS会话；Core按文件的模块读取同一环境。禁用客户工程导入/构建脚本及注解处理；只用已准入文件和明确依赖，不让JDT自行补网络依赖。
-5. 收集本次项目/文件诊断，保存原始code、severity、path/range、message和实际检查范围。完成性单列，不把无通知当零诊断。
-6. 形成就绪结果，保存后才允许目录/Java调用收集。目录和导航共享本次会话、编译基础和缓存，不能检查一个classpath后再用另一个classpath执行。
+### 2.2 Core helper
 
-缺失二进制、版本/源码不符、未解决类型、工程配置错误、诊断范围未确认均不得标`READY`。普通未使用变量等warning只报告，不因warning数大于零机械失败。无法可靠识别的error归`UNCLASSIFIED_ERROR`，不按中文message关键词猜。
+现有 helper v3 已显式接收目标平台，关闭隐式工具 JVM 类库。工作区路由对每个源码文件开启/复用该文件所属模块的 helper，并传入该模块投影后的源码根、显式 classpath、目标 JDK 版本及从该目标 home canonicalized 的系统库条目：Java 8 及更早版本只能用 `jre/lib/rt.jar`，模块化 JDK 只能用 `lib/jrt-fs.jar`，其 JRT 映像为 `lib/modules`。私有 v2 排队身份同时散列 `release`、`bin/java`和这三个可能的平台文件；缺失写入明确 unavailable marker，执行前重开比较，绝不扫描整个 JDK。缺少、非普通文件或解析到目标 home 之外的条目在启动 helper 前阻断；不能退回工具 JVM 或仅传目标 JDK 目录。helper 的启动 JVM 仍只是锁定的工具 JVM。保留这个必要边界，使用 JDT 官方支持的目标平台方式接线；不自写 `ct.sym`、JRT、JMOD 或 Java API 模拟器。
 
-## 4. 诊断怎样取得：必须先验证协议边界
+当前仅有 `languageLevel` 同时设置 source/compliance/target，尚不能可靠表达所有 source≠target 或 release 配置。实施应先验证锁定 JDT 的现有设置接口能否传递必要值；不能支持的组合返回具体限制。优先使用实际目标 JDK；不为了支持任意较新 JDK 模拟旧 release 而扩大本轮。
 
-当前 `JdtLanguageServerClient.SessionLanguageClient.publishDiagnostics()`为空。新增collector应复用同一客户端保存通知，精确关联本次会话、投影文件URI和不可变文档版本；外部/旧会话消息不能填充当前检查范围。
+LS 与 Core 对同一源码文件使用同一模块的环境。模块路由、完整源码和参数保持。目标R2仅在现有JDT模块内修正已确认的`fromRange`嵌套错归与外部/未知/查询失败状态；不另建Java解析器、调用裁决器或多态分派系统。具体工具证据与保存合同见[JDT引擎§3](../java-code-engines/jdt-engine.md#3-jdtnavigationresolver让jdt决定调用连接谁)。
 
-检查分母先从有效来源与编译清单确定，不能从“收到了哪些回调”反推：对每个模块/source set，取其源码根内所有被选定且未排除的`.java`文件，形成`expectedSourcePaths`。重复源码根按模块归属核验，文件不得被误分配到另一个classpath；清单声明需要但未提供的生成源码另列缺项，不能靠分母里没有它就判通过。范围之外的测试目录/模块列为未纳入分析，不伪称整个仓库编译通过。
+工具自身故障不是单个源码文件的语法缺口。`EntryCodeCollector.buildIndex()` 现在原样传播 `syntax.describe` 抛出的 `CodeEngineException`，因此 helper 版本/协议不兼容、进程故障或超时不会继续发布大量看似独立的 `SYNTAX_UNAVAILABLE` 文件缺口。`ProgramGraphsExecution` 只将明确的共享工具或来源故障中止整个索引：`JDT_PROTOCOL_INVALID`、`JDT_INDEX_FAILED`、`ENGINE_CONFIGURATION_INVALID`、`SOURCE_INVALID`、`JDT_TOOL_UNAVAILABLE` 和四个 `JDT_SYNTAX_*` 代码；它不按异常消息或所有 `CodeEngineException` 一律中止。现行`JDT_QUERY_FAILED`保留为逐入口的`NOT_COLLECTED`结果，允许其他入口继续收集和发布；目标在可安全保留调用点时再精确标记受影响CALL及其入口限制，不能混成`UNRESOLVED`或`EXTERNAL`。正常返回的单文件语法诊断，以及非引擎的逐文件运行时读取失败，仍逐文件保留。旧R1保存阻断问题报告，目标R2沿用该职责；超时缓存43项直接测试通过的修正不重新开发。
 
-必须满足以下不变量：
+### 2.3 当前缺口
 
-- `expectedSourcePaths = checkedSourcePaths ⊎ uncheckedSourcePaths`，两者无交集；所有未检查项有原因。
-- `checked`只表示取得了**本次依赖加载及本次固定文档版本之后的最终诊断**，包括明确的空诊断结果。首条回调、旧回调、仅发送校验请求均不算完成。
-- 回调不带版本时，必须由锁定工具版本的已验证完成协议建立对应关系；不能自己补一个版本字段便视为可靠。外部URI或上一会话结果仅作原始诊断，不计入当前分母。
-- `diagnosticCollectionStatus=COMPLETE`要求未检查集合为空，且每模块项目级诊断已取得；`readiness=READY`还要求环境VERIFIED、没有阻断错误或生成内容缺项。零个Java文件只有明确的空分析范围才能完成，不等于未成功枚举文件。
-- 已知缺依赖/编译错误为BLOCKED；未能确认诊断终态或范围为UNDETERMINED。两者都不能按“目前看见的错误为零”放行。
+| 实际代码 | 已有部分 | 尚缺 |
+| --- | --- | --- |
+| `JdtWorkspaceSession` | 多项目及LS/Core具名测试、正式R1 production opener已有接线 | 固定源码具名导航验收 |
+| `JavaCompilationEnvironmentComposer` | 来源分区、二进制/平台检查及R1 fixture消费 | 从新v2官方输出派生环境接入；不重写composer |
+| `JavaReadinessPreparation` | BLOCKED/READY环境返回与正式module5保存已有fixture | 新输入接线及固定源码诊断观测核验 |
+| `EntryCodeCollector` | 现有声明/调用收集、双模块真实测试，以及 `CodeEngineException` 的工具故障传播 | 目标R2保存已确认外部、未知及逐调用查询失败；只展开可确认的仓库边 |
+| `ProgramGraphsExecution` | 显式中止共享工具/来源故障，保留 `JDT_QUERY_FAILED` 的逐入口收集 | 目标R2沿用阻断报告及入口分母；保存局部CALL失败时仍不得把入口写成完整 |
+| `JdtLanguageServerClient` | 客户端在内存暂存原始诊断事件，且诊断记录锁与同步请求锁分离，避免诊断先到时阻塞 JSON-RPC response | 补报告保存；不要求全文件最终诊断证明 |
 
-官方JDT LS有 `java/validateDocument` 扩展，返回的是通知式校验触发，不是同步“全仓校验完成”；`ServiceReady`或一次documentSymbol响应也不能证明所有文件诊断已经结束。[官方协议](https://github.com/eclipse-jdtls/eclipse.jdt.ls/blob/main/org.eclipse.jdt.ls.core/src/org/eclipse/jdt/ls/core/internal/lsp/JavaProtocolExtensions.java) · [官方实现](https://github.com/eclipse-jdtls/eclipse.jdt.ls/blob/main/org.eclipse.jdt.ls.core/src/org/eclipse/jdt/ls/core/internal/handlers/JDTLanguageServer.java)
+这些是代码核对，不是本轮新测试结果。环境接口采用现有值对象加必要字段即可；不要仅为隐藏所有字段再增加多层 factory/plan/outcome 框架。
 
-实施先做一个**固定工具版本的就绪采集验证**：
+## 3. 执行顺序
 
-- 在自有fixture中，明确开启待检查文档、触发该版本支持的诊断校验，保存每文件回调和结束条件；验证缺类型和合法文件都能报告，包括空诊断数组。
-- 验证最终诊断是否对应依赖加载完成后的稳定文档；禁止用“等几秒没消息”作为完成依据。协议不能给出可靠完成条件时，该次结果为`UNDETERMINED`。
-- 无法可靠取得完整诊断时，暂停本项验收，报告实测缺口，再讨论最小的受控JDT诊断适配；不能未经讨论改成运行客户build或重新开发Step03。
-- 不为了多收诊断开启任意客户Eclipse builder、Maven importer、插件或annotation processor。JDT内部语法/类型分析与执行客户构建是不同操作，但工具配置必须实际验证能隔离。
+1. 重开R0，按官方Maven输出确定性形成环境；执行上文必要检查，不接收Agent手算设置。
+2. 保存实际使用的环境及内容身份，形成 `javaAnalysisBasis`。身份绑定来源、模块/源码根、依赖内容与顺序、目标平台和工具版本；不绑定下载时间或账户。
+3. 使用该环境打开一个受控 JDT 会话；核对实际项目绑定。必要设置不一致则保存报告并结束。
+4. 保存本次会话收到的项目/文件诊断；标明来源与覆盖范围，不补造未收到的结果。
+5. 已知阻断不存在时执行原 Step02 声明/入口发现及 Step03 收集。二者使用同一会话，不重新准备依赖。
+6. 操作结束保存环境、诊断观测、实际入口/调用覆盖和限制。若执行中出现使会话不可继续的错误，保留已保存内容并停止；不发布不存在的完整索引。
 
-这项协议验证尚未完成，是本设计的已知技术风险。不能在文档里把不确定的回调完成语义写成现有保证。
+JDT 自身可以进行受控项目的语法/类型检查，不等于执行客户 Maven 构建。分析程序不得启动客户扩展、生成器、注解处理器或应用。禁用自动 Maven/Gradle 导入，优先使用完整受支持工具配置；需要出站隔离时使用已有操作系统/执行环境能力。已观察到 Buildship 可能主动联网，因此不能只凭一个“关闭导入”选项宣称网络已隔离；不通过删除随机 bundle、自制 OSGi 发行包或新建跨平台 sandbox 系统来补齐。环境不支持已承诺的隔离时报告并讨论，不擅自放开。
 
-## 5. 输出与失败行为
+## 4. 诊断：记录所见，不证明全仓
 
-Step02 module5保存实际`java-compilation-environment.json`及新增的`java-analysis-readiness.json`。前者含解析得到的模块/依赖和未完成范围，后者使用 `java-analysis-readiness-v1`：
+原始 `publishDiagnostics` 是工具通知，`ServiceReady` 不是全文件编译完成证明。没有通知，也不能填“0 个错误，全部检查完成”。相关协议见[JDT LS 官方扩展](https://github.com/eclipse-jdtls/eclipse.jdt.ls/blob/main/org.eclipse.jdt.ls.core/src/org/eclipse/jdt/ls/core/internal/lsp/JavaProtocolExtensions.java)。
+
+本轮采用以下目标规则：
+
+- 保存本次会话中收到的原始 code、severity、URI/相对路径、range、message；外部文件或旧消息不能算当前源文件观测。
+- 回调中的 `data` 是工具扩展字段；Gson `JsonElement` 按其 JSON 结构复制为独立 JSON 树，不以宿主对象映射或字符串化破坏嵌套值，也不能让该回调阻止后续诊断事件保存。
+- 可列“选中多少文件”“哪些文件收到诊断”，但收到通知不自动表示该文件已最终检查完。
+- 旧合并R1及目标后端R2 `collect-code` 的 READY readiness 报告在没有成熟完成证明时写 `diagnosticCoverage=UNCONFIRMED`，不是 `NO_READINESS_PROBLEMS`，也不表示零错误或全文件已完成。
+- 只有成熟工具明确提供且本版本已验证的完成结果，才能写 `CONFIRMED`；本轮不开发逐文件最终回调、版本推断或专用完成协议。
+- 已收到的明确缺类型、缺类库、项目配置错误或其他 error 不隐瞒。无法可靠判断是否阻断的实际 error 返回问题给 Agent 讨论；不能为继续而降成 warning。
+- 普通 warning 保留，不按数量机械失败。
+- 没有已知 error 且输入/绑定通过时，覆盖未确认不单独阻止导航；结果是“可分析，但诊断覆盖未确认”，不是“项目完全正确”。
+
+Agent 负责解释工具原始诊断、给出下一步建议。Java 仅使用工具提供的稳定 severity/状态和自身实际操作结果，不构造中文 message 关键词规则来自动修复或补包。
+
+## 5. 保存与结果含义
+
+仍使用 Step02 module 5 的两个文件：
+
+- `java-compilation-environment.json`：实际输入来源、模块、依赖内容/顺序、JDK 和限制。私有绝对路径与凭据不进入公共报告。
+- `java-analysis-readiness.json`：实际检查、是否允许导航、已知阻断、诊断观测和覆盖声明。
+
+目标报告示意（不是实际产物，也不是已经发布的完整 Schema）：
 
 ```json
 {
-  "schemaVersion": "java-analysis-readiness-v1",
-  "sourceBasis": "完整SelectedSourceBasis对象，示意",
-  "javaAnalysisBasis": "按上文实际内容计算的标识，示意",
-  "dependencyPreparationStatus": "RESOLVED",
-  "compilationEnvironmentRef": {
-    "fileName": "java-compilation-environment.json",
-    "schemaVersion": "java-compilation-environment-v1",
-    "sha256": "同module内实际环境文件的摘要，示意"
-  },
   "environmentStatus": "VERIFIED",
-  "diagnosticCollectionStatus": "COMPLETE",
-  "readiness": "READY",
-  "checkedModules": ["已核对的模块"],
-  "expectedSourcePaths": ["应完成校验的全部有效Java文件"],
-  "checkedSourcePaths": ["已完成校验的文件"],
-  "uncheckedSourcePaths": [],
-  "dependencyProblems": [],
-  "requestedActions": [],
+  "projectBindingStatus": "VERIFIED",
+  "diagnosticCoverage": "UNCONFIRMED",
+  "readiness": "READY_WITH_LIMITATIONS",
+  "navigationAllowed": true,
+  "limitations": ["未确认诊断覆盖全部源码文件"],
   "diagnostics": []
 }
 ```
 
-这是目标字段说明，非真实运行文件；正式schema中basis用类型化对象、问题用结构化记录，不能照抄示意字符串。`compilationEnvironmentRef`只指同module内具名文件及摘要；不内嵌包含本就绪文件的module receipt或publication身份，避免循环引用。外层module/step receipt在两文件定稿后统一赋予并核验。
+这里 `VERIFIED` 只指§1列出的消费检查；`diagnostics=[]` 是未记录到诊断，不代表编译无错误。完整 wire 仍需携带来源、编译环境引用和检查范围，实施时同步正式 Schema/读取器/fixture。
 
-`environmentStatus=VERIFIED|INVALID|INCOMPLETE`；`diagnosticCollectionStatus=COMPLETE|INCOMPLETE|NOT_STARTED`；`readiness=READY|BLOCKED|UNDETERMINED`。问题记录包括code、模块/路径/范围、操作、预期/实际、原始诊断和允许下一动作；沿用源码准备“保存结果不等于可继续”的原则，但不挪用源码文件readiness表示Java环境。依赖准备未完成时`javaAnalysisBasis`允许为空，不能用未完成清单生成可导航身份；环境与报告仍是有效的部分检查结果，不是部分调用索引。
+导航条件由实际检查推导，不由用户改一个布尔值放行。缺 JAR 等已知阻断时 `navigationAllowed=false`；诊断覆盖未确认这一项单独存在时允许有限继续。运行状态、报告保存与导航条件分别表达：
 
-**已确认，不提供降级导航开关。** 在已允许范围内能够补齐就继续，不逐JAR询问；仍缺依赖、输入不明或诊断未确定时，保存已完成报告及前端独立结果，阻止Java导航，不生成假空Java成功索引。CLI返回结构化问题及下一动作，Agent按Skill向用户解释；用户修正配置/提供材料后新建运行，旧报告保留。不能把运行`FAILED`理解成没有结果；`inspect/artifact`仍可查看已安装报告。单纯口头确认不能把未知环境变为READY。
+- 报告可靠保存但不能导航：FAILED 运行仍可查询报告。
+- 环境可用但带限制：可以生成技术结果；限制向 Step04/05 传递。
+- 保存失败：只返回真实可得错误，不提供虚构 receipt。
+- 依赖后来补齐：启动新运行，不修改旧报告，不自动修正旧索引。
 
-## 6. 如何验证改动有效，不开发第二个导航器
+现有module5 v1已在BLOCKED/READY fixture保存重开。本次输入v2改动复用该正式输出，原始Maven输出摘要和提取细目保存在私有v2记录；不为交接另建公开产物。历史稀疏报告仍按原合同读取，不把缺失字段默认读成已核对或READY。
 
-对同一冻结源码、相同调用位置，使用现有Step03录制补齐前后原始响应及最终索引，具名覆盖：
+## 6. 如何验收限定的 Step03 修正
 
-1. Service→Mapper：错误的其他Mapper目标不得继续出现。
-2. SLF4J `logger.error`：不得出现仓库`AjaxResult.error`错误边；外部方法仍可按外部边界保存。
-3. 重载：实际不同参数调用与对应声明一致。
-4. 嵌套调用：内外调用位置、实际参数、目标不串。
-5. 合法接口/多态：保留真实声明及实现候选，不能以“只留一个”为正确。
+验证两条链，不能只看启动成功：
 
-核对索引后还要在Step04/05检查错误Mapper/SQL没有进入材料。不得只报告诊断条数下降或某个RPC变对。3–5个代表例全部通过提高可信度，但不推出全仓所有调用无错；有残留就列出并停止宣称该质量项已完成。是否需要额外Step03一致性检查只能在残留证据基础上另行讨论。
+1. 自有fixture：官方输出路径→Java提取/绑定→实际LS/Core环境；不手填语义JSON，目标JDK、两模块隔离和源码模块引用正确。
+2. 固定客户源码：原 Step03 在补齐输入后，核对错误 Mapper、`logger.error`、重载、嵌套调用及合法多态；保留原始响应及最终边，并检查错误 SQL 没有进入 Step04/05。
 
-## 7. 它证明什么，不证明什么
+诊断数量下降不是调用准确性通过。代表例通过也不是全仓绝对正确；全量技术采集仍报告筛查和人工确认的差别。目标R2修正具名错边和外部边界时只使用现有JDT Core/LS的绑定、位置及候选输出；若仍有错误，记录原始工具结果与框架归属，不临时新增多态/候选裁决算法。
 
-完成上述检查能说明：分析使用了与选定编译环境匹配的实际依赖，并在已检查范围没有已知阻断诊断；代表性导航回归通过。它不能证明运行时Spring注入、反射、所有多态分派、全部业务规则都已确定。工具缺陷仍可能存在。
+当前调用目标合并仍有一项已确认限制：`JdtNavigationResolver.resolve` 用调用层次 `fromRange` 包含 AST 导航位置的条件归属候选，再与定义、实现结果合并。固定源码中，`pageDomain.setPageSize(Convert.toInt(...))` 的内层 `Convert.toInt` 记录既包含正确的 `Convert.toInt(Object,Integer)`，也包含只来自 `CALL_HIERARCHY` 的外层 `PageDomain.setPageSize(Integer)`。目标R2已批准对此做最小关联修正：唯一AST调用点和可靠JDT声明绑定共同约束hierarchy归属；范围跨越嵌套调用或绑定无法确认时保留未确认观察，不附确定边，不选第一个候选。同时确认真实外部调用才正常停在外部边界，空位置、未知身份及查询失败各自保存。补齐编译依赖不能代替这组准确性验收；历史R1索引不改写。
 
-就绪检查属于Step02。回归借用Step03/04/05已有能力，不意味着重写这些能力。依赖变化使Java分析基础不同，需显式产生新索引；源码不变并不使旧错边自动失效或修正，见[运行与来源合同](cli-and-runtime.md)。
+Lombok只核查官方Eclipse/ECJ集成能否在受控LS及Core helper进程中使用，再分别验证具名`getCode/getId/setInitStock/log`诊断与绑定。验证不通过或版本/隔离条件不成立即保留生成成员缺口，不实现注解解释器，也不把生成成员当原始源码。约51秒定义查询等待只做聚焦复核；原在途请求缓存修正已另行完成，文档生命周期任务的具体调度根因仍未明，不能用这次设计许诺消除长等待。
+
+本次取消的工作是“全文件诊断证明”和“自建构建环境解释”，不是放弃环境正确传递或真实导航验收。

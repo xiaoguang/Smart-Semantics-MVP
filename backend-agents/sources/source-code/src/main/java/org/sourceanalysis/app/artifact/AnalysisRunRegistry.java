@@ -33,4 +33,10 @@ interface AnalysisRunRegistry {
   /** Fresh-reopens the optional completed output manifest for one run. */
   java.util.Optional<org.sourceanalysis.app.runtime.AnalysisRunOutput> reopenOutput(
       AnalysisRunId runId);
+
+  /** Saves the private, canonical Java compilation-input record for one queued technical run. */
+  void writePrivateJavaCompilationInput(AnalysisRunId runId, ImmutableBytes canonicalJson);
+
+  /** Fresh-reopens the optional private Java compilation-input record for one run. */
+  java.util.Optional<ImmutableBytes> reopenPrivateJavaCompilationInput(AnalysisRunId runId);
 }

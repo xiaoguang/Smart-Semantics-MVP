@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.io.ByteArrayInputStream;
@@ -20,7 +22,10 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -274,6 +279,90 @@ class JdtProjectSessionTest {
   }
 
   @Test
+  void serviceReadyDoesNotCompleteDiagnosticsAndAnEmptyCallbackIsRecorded() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness harness =
+        fakeSessionHarness(StartupBehavior.SERVICE_READY_WITHOUT_DIAGNOSTICS);
+
+    try (JdtProjectSession session = harness.open(fixture.verifiedProject())) {
+      FakeJdtProcess process = harness.starter().lastProcess();
+      String uri =
+          session
+              .projectRoot()
+              .resolve("src/main/java/com/example/Example.java")
+              .toUri()
+              .toString();
+
+      assertThat(process.sentServiceReady())
+          .as("the fake peer sent ServiceReady before returning the session")
+          .isTrue();
+      assertThat(process.requestCount("textDocument/documentSymbol"))
+          .as("startup returned on ServiceReady rather than treating it as diagnostics")
+          .isZero();
+      assertThat(harness.client().diagnosticEvents())
+          .as("ServiceReady is not a diagnostics callback")
+          .isEmpty();
+
+      process.publishEmptyDiagnostics(uri, 1);
+      awaitDiagnosticEvent(harness.client(), uri, 1);
+
+      var events = harness.client().diagnosticEvents();
+      assertThat(events).hasSize(1);
+      assertThat(events.get(0).uri()).isEqualTo(uri);
+      assertThat(events.get(0).version()).isEqualTo(1);
+      assertThat(events.get(0).diagnostics()).isEmpty();
+      assertThat(events.get(0).sequence()).isPositive();
+      assertThatThrownBy(events::clear)
+          .as("diagnostic event snapshots are immutable")
+          .isInstanceOf(UnsupportedOperationException.class);
+      assertThatThrownBy(() -> events.get(0).diagnostics().clear())
+          .as("the diagnostic payload is an immutable copy")
+          .isInstanceOf(UnsupportedOperationException.class);
+    }
+  }
+
+  @Test
+  void preservesGsonDiagnosticDataAndContinuesAfterSubsequentDiagnosticsCallback()
+      throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness harness =
+        fakeSessionHarness(StartupBehavior.SERVICE_READY_WITHOUT_DIAGNOSTICS);
+
+    try (JdtProjectSession session = harness.open(fixture.verifiedProject())) {
+      FakeJdtProcess process = harness.starter().lastProcess();
+      String uri =
+          session
+              .projectRoot()
+              .resolve("src/main/java/com/example/Example.java")
+              .toUri()
+              .toString();
+
+      process.publishDiagnosticWithGsonData(uri, 1);
+      awaitDiagnosticEvent(harness.client(), uri, 1);
+
+      var firstEvents = harness.client().diagnosticEvents();
+      assertThat(firstEvents).hasSize(1);
+      assertThat(firstEvents.get(0).diagnostics()).hasSize(1);
+      Object data = firstEvents.get(0).diagnostics().get(0).getData();
+      assertThat(data).as("the diagnostic data object must survive the callback copy").isNotNull();
+      JsonObject copiedData = JsonParser.parseString(data.toString()).getAsJsonObject();
+      assertThat(copiedData.getAsJsonArray("arguments").get(0).getAsString())
+          .as("the Gson diagnostic data structure must remain readable")
+          .isEqualTo("log");
+
+      process.publishEmptyDiagnostics(uri, 2);
+      awaitDiagnosticEvent(harness.client(), uri, 2);
+
+      var events = harness.client().diagnosticEvents();
+      assertThat(events).hasSize(2);
+      assertThat(events.get(1).version()).isEqualTo(2);
+      assertThat(events.get(1).diagnostics())
+          .as("a callback after the structured-data diagnostic must still be recorded")
+          .isEmpty();
+    }
+  }
+
+  @Test
   void startupCleanupFailureRemainsObservableWhenTheProcessCannotBeStopped() throws Exception {
     ProjectFixture fixture = projectFixture();
     FakeSessionHarness harness = fakeSessionHarness(StartupBehavior.STICKY_DECLARATION_TIMEOUT);
@@ -303,6 +392,240 @@ class JdtProjectSessionTest {
       assertThat(session.descriptor().toolVersions().values())
           .noneMatch(value -> value.equals("jdk") || value.equals("jdtls"));
     }
+  }
+
+  @Test
+  void readsProjectSettingsThroughTheExactJdtCommandAndReturnsItsJsonMap() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness harness = fakeSessionHarness(StartupBehavior.SETTINGS_READBACK);
+
+    try (JdtProjectSession session = harness.open(fixture.verifiedProject())) {
+      JsonNode settings =
+          readProjectSettings(harness.client(), session.projectRoot().toUri().toString());
+
+      assertThat(settings.path("org.eclipse.jdt.ls.core.vm.location").textValue())
+          .isEqualTo("/fixture/target-jdk");
+      JsonNode entries = settings.path("org.eclipse.jdt.ls.core.classpathEntries");
+      assertThat(entries.isArray()).isTrue();
+      assertThat(entries.size()).isEqualTo(1);
+      assertThat(entries.get(0).path("path").textValue())
+          .isEqualTo(session.projectRoot().resolve("src/main/java").toString());
+
+      JsonObject params = harness.starter().lastProcess().lastSettingsParams();
+      assertThat(harness.starter().lastProcess().requestCount("workspace/executeCommand"))
+          .isEqualTo(1);
+      assertThat(params.get("command").getAsString()).isEqualTo("java.project.getSettings");
+      assertThat(params.getAsJsonArray("arguments").get(0).getAsString())
+          .isEqualTo(session.projectRoot().toUri().toString());
+      assertThat(params.getAsJsonArray("arguments").get(1).toString())
+          .isEqualTo(
+              "[\"org.eclipse.jdt.ls.core.vm.location\","
+                  + "\"org.eclipse.jdt.ls.core.classpathEntries\"]");
+    }
+  }
+
+  @Test
+  void readsProjectSettingsWhenDiagnosticsArriveBeforeItsJsonRpcResponse() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness harness =
+        fakeSessionHarness(StartupBehavior.SETTINGS_DIAGNOSTIC_BEFORE_RESPONSE);
+
+    try (JdtProjectSession session = harness.open(fixture.verifiedProject())) {
+      JsonNode settings =
+          harness.client().readProjectSettings(session.projectRoot().toUri().toString());
+
+      assertThat(settings.path("org.eclipse.jdt.ls.core.vm.location").textValue())
+          .isEqualTo("/fixture/target-jdk");
+      awaitDiagnosticEvent(harness.client(), "file:///settings-before-response.java", 1);
+    }
+  }
+
+  @Test
+  void acceptsExpectedWorkspaceProjectReferenceWithoutTreatingItAsFilesystemPath()
+      throws Exception {
+    ProjectFixture fixture = projectFixture();
+    VerifiedJavaProject project = fixture.verifiedProject();
+    Path projectRoot = Files.createDirectories(temporaryDirectory.resolve("workspace-project"));
+    project.projectSourcesInto(projectRoot);
+    String dependencyProjectName = "source-analysis-controlled-common";
+    var settings = JSON.createObjectNode();
+    var entries = settings.putArray("org.eclipse.jdt.ls.core.classpathEntries");
+    entries.addObject().put("kind", 3).put("path", projectRoot.resolve("src/main/java").toString());
+    entries.addObject().put("kind", 1).put("path", fixture.classpathEntry().toString());
+    entries.addObject().put("kind", 2).put("path", "/" + dependencyProjectName);
+
+    JdtProjectSession.requireReadBackClasspath(
+        settings, project, projectRoot, List.of(dependencyProjectName));
+
+    assertThatThrownBy(
+            () ->
+                JdtProjectSession.requireReadBackClasspath(
+                    settings, project, projectRoot, List.of("source-analysis-unexpected")))
+        .isInstanceOf(CodeEngineException.class)
+        .satisfies(
+            failure ->
+                assertThat(((CodeEngineException) failure).code())
+                    .isEqualTo(CodeEngineException.ENGINE_CONFIGURATION_INVALID));
+  }
+
+  @Test
+  void rejectsProjectSettingsJsonRpcErrorsInsteadOfReturningAnEmptyMap() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness harness = fakeSessionHarness(StartupBehavior.SETTINGS_ERROR);
+
+    try (JdtProjectSession session = harness.open(fixture.verifiedProject())) {
+      assertThatThrownBy(
+              () -> readProjectSettings(harness.client(), session.projectRoot().toUri().toString()))
+          .isInstanceOf(CodeEngineException.class);
+      assertThat(harness.starter().lastProcess().requestCount("workspace/executeCommand"))
+          .isEqualTo(1);
+    }
+  }
+
+  @Test
+  void rejectsProjectSettingsResponsesThatOmitARequestedValue() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness harness = fakeSessionHarness(StartupBehavior.SETTINGS_MISSING_CLASSPATH);
+
+    try (JdtProjectSession session = harness.open(fixture.verifiedProject())) {
+      assertThatThrownBy(
+              () -> readProjectSettings(harness.client(), session.projectRoot().toUri().toString()))
+          .isInstanceOf(CodeEngineException.class);
+      assertThat(harness.starter().lastProcess().requestCount("workspace/executeCommand"))
+          .isEqualTo(1);
+    }
+  }
+
+  @Test
+  void bindsOneDefaultTargetRuntimeAndOpensOnlyAfterExactVmReadback() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    VerifiedJavaProject project = projectAtSourceLevel(fixture, "8");
+    Path targetJavaHome = targetJavaHome("selected-target-jdk");
+    Path nonCanonicalTargetHome = targetJavaHome.resolve("..").resolve("selected-target-jdk");
+    Object runtime = jdtTargetRuntime("JavaSE-1.8", nonCanonicalTargetHome);
+    Object binding = jdtProjectBinding(project, runtime);
+    FakeSessionHarness harness =
+        fakeSessionHarness(StartupBehavior.SETTINGS_READBACK, targetJavaHome.toString());
+
+    try (JdtProjectSession session = openBoundSession(binding, harness)) {
+      JsonObject initializeParams = harness.starter().lastProcess().lastInitializeParams();
+      JsonObject settings =
+          initializeParams.getAsJsonObject("initializationOptions").getAsJsonObject("settings");
+      JsonArray runtimes =
+          settings
+              .getAsJsonObject("java")
+              .getAsJsonObject("configuration")
+              .getAsJsonArray("runtimes");
+
+      assertThat(runtimes.size()).isEqualTo(1);
+      JsonObject configuredRuntime = runtimes.get(0).getAsJsonObject();
+      assertThat(configuredRuntime.get("name").getAsString()).isEqualTo("JavaSE-1.8");
+      assertThat(configuredRuntime.get("path").getAsString())
+          .isEqualTo(targetJavaHome.toRealPath().toString());
+      assertThat(configuredRuntime.get("default").getAsBoolean()).isTrue();
+      String projectedClasspath = Files.readString(session.projectRoot().resolve(".classpath"));
+      assertThat(projectedClasspath)
+          .contains(
+              "<classpathentry kind=\"con\" path=\"org.eclipse.jdt.launching.JRE_CONTAINER/"
+                  + "org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.8\"/>")
+          .doesNotContain("JavaSE-8");
+      assertThat(harness.starter().lastProcess().requestCount("workspace/executeCommand"))
+          .as("runtime readback must complete before the session is returned")
+          .isEqualTo(1);
+    }
+  }
+
+  @Test
+  void rejectsBoundSessionWhenReadBackVmDoesNotMatchItsTargetRuntime() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    VerifiedJavaProject project = projectAtSourceLevel(fixture, "8");
+    Path targetJavaHome = targetJavaHome("selected-target-jdk");
+    Path otherJavaHome = targetJavaHome("other-target-jdk");
+    Object binding = jdtProjectBinding(project, jdtTargetRuntime("JavaSE-1.8", targetJavaHome));
+    FakeSessionHarness harness =
+        fakeSessionHarness(StartupBehavior.SETTINGS_READBACK, otherJavaHome.toString());
+
+    assertThatThrownBy(() -> openBoundSession(binding, harness))
+        .isInstanceOf(CodeEngineException.class)
+        .satisfies(
+            failure ->
+                assertThat(((CodeEngineException) failure).code())
+                    .isEqualTo(CodeEngineException.ENGINE_CONFIGURATION_INVALID));
+  }
+
+  @Test
+  void rejectsBoundSessionWhenJdtOmitsTheVmLocation() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    VerifiedJavaProject project = projectAtSourceLevel(fixture, "8");
+    Path targetJavaHome = targetJavaHome("selected-target-jdk");
+    Object binding = jdtProjectBinding(project, jdtTargetRuntime("JavaSE-1.8", targetJavaHome));
+    FakeSessionHarness harness =
+        fakeSessionHarness(StartupBehavior.SETTINGS_MISSING_VM, targetJavaHome.toString());
+
+    assertThatThrownBy(() -> openBoundSession(binding, harness))
+        .isInstanceOf(CodeEngineException.class)
+        .satisfies(
+            failure ->
+                assertThat(((CodeEngineException) failure).code())
+                    .isEqualTo(CodeEngineException.JDT_PROTOCOL_INVALID));
+  }
+
+  @Test
+  void legacyEngineOpenRejectsUnboundJavaProjects() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness harness = fakeSessionHarness();
+    JdtCodeEngine engine =
+        new JdtCodeEngine(new EffectiveEngineConfiguration("jdt", harness.configuration()));
+
+    Throwable failure = null;
+    try {
+      engine.open(fixture.verifiedProject());
+    } catch (Throwable observed) {
+      failure = observed;
+    }
+
+    org.assertj.core.api.SoftAssertions softly = new org.assertj.core.api.SoftAssertions();
+    softly.assertThat(failure).isInstanceOf(CodeEngineException.class);
+    if (failure instanceof CodeEngineException codeEngineFailure) {
+      softly
+          .assertThat(codeEngineFailure.code())
+          .isEqualTo(CodeEngineException.ENGINE_CONFIGURATION_INVALID);
+    }
+    softly
+        .assertThat(harness.toolJavaInvocationMarker())
+        .as("the unbound legacy engine must reject before starting the JDT process")
+        .doesNotExist();
+    softly.assertAll();
+  }
+
+  @Test
+  void boundCodeEngineEntryUsesTheConfiguredJdtLaunchInsteadOfTheUnboundGuard() throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness harness = fakeSessionHarness();
+    Object binding =
+        jdtProjectBinding(
+            projectAtSourceLevel(fixture, "8"),
+            jdtTargetRuntime("JavaSE-1.8", targetJavaHome("selected-target-jdk")));
+    JdtCodeEngine engine =
+        new JdtCodeEngine(new EffectiveEngineConfiguration("jdt", harness.configuration()));
+
+    Throwable failure = null;
+    try {
+      openBoundEngine(engine, binding);
+    } catch (Throwable observed) {
+      failure = observed;
+    }
+
+    org.assertj.core.api.SoftAssertions softly = new org.assertj.core.api.SoftAssertions();
+    softly.assertThat(failure).isInstanceOf(CodeEngineException.class);
+    if (failure instanceof CodeEngineException codeEngineFailure) {
+      softly.assertThat(codeEngineFailure.code()).isEqualTo(CodeEngineException.JDT_INDEX_FAILED);
+    }
+    softly
+        .assertThat(harness.toolJavaInvocationMarker())
+        .as("the bound engine entry should get past the unbound-project configuration guard")
+        .exists();
+    softly.assertAll();
   }
 
   @Test
@@ -377,6 +700,131 @@ class JdtProjectSessionTest {
           .as("a failed physical query remains observable and is not retried implicitly")
           .isEqualTo(1);
     }
+  }
+
+  @Test
+  void reusesLateSuccessfulNavigationAfterCallerWaitTimesOutWithoutSendingSecondRpc()
+      throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness harness =
+        fakeSessionHarness(StartupBehavior.LATE_EMPTY_NAVIGATION, Duration.ofSeconds(1));
+
+    try (JdtProjectSession ignored = harness.open(fixture.verifiedProject())) {
+      JdtNavigationResolver.Position position = new JdtNavigationResolver.Position(4, 5);
+      assertThatThrownBy(() -> harness.client().definitions("file:///Example.java", position))
+          .isInstanceOf(CodeEngineException.class)
+          .hasMessageContaining("JDT_QUERY_FAILED")
+          .hasRootCauseInstanceOf(TimeoutException.class);
+
+      FakeJdtProcess process = harness.starter().lastProcess();
+      process.awaitDefinitionRequest();
+      process.releaseLateNavigationResponse();
+      process.awaitDefinitionResponse();
+
+      assertThat(harness.client().definitions("file:///Example.java", position)).isEmpty();
+      assertThat(process.requestCount("textDocument/definition"))
+          .as("a late successful result must update the pending cache entry")
+          .isEqualTo(1);
+    }
+  }
+
+  @Test
+  void laterCallerAwaitsThePendingNavigationFutureInsteadOfReplayingTimeoutOrResending()
+      throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness harness =
+        fakeSessionHarness(StartupBehavior.LATE_EMPTY_NAVIGATION, Duration.ofSeconds(1));
+
+    try (JdtProjectSession ignored = harness.open(fixture.verifiedProject())) {
+      JdtNavigationResolver.Position position = new JdtNavigationResolver.Position(5, 6);
+      Throwable firstFailure;
+      try {
+        harness.client().definitions("file:///Example.java", position);
+        firstFailure = null;
+      } catch (Throwable failure) {
+        firstFailure = failure;
+      }
+      assertThat(firstFailure)
+          .isInstanceOf(CodeEngineException.class)
+          .hasRootCauseInstanceOf(TimeoutException.class);
+
+      FakeJdtProcess process = harness.starter().lastProcess();
+      process.awaitDefinitionRequest();
+      CompletableFuture<Throwable> laterCaller =
+          CompletableFuture.supplyAsync(
+              () -> {
+                try {
+                  harness.client().definitions("file:///Example.java", position);
+                  return null;
+                } catch (Throwable failure) {
+                  return failure;
+                }
+              });
+      try {
+        Throwable secondFailure = laterCaller.get(2, TimeUnit.SECONDS);
+        assertThat(secondFailure)
+            .as("a caller arriving while the request is pending gets its own wait timeout")
+            .isInstanceOf(CodeEngineException.class)
+            .hasRootCauseInstanceOf(TimeoutException.class);
+        assertThat(secondFailure).isNotSameAs(firstFailure);
+        assertThat(secondFailure.getCause()).isNotSameAs(firstFailure.getCause());
+
+        process.releaseLateNavigationResponse();
+        assertThat(harness.client().definitions("file:///Example.java", position)).isEmpty();
+        assertThat(process.requestCount("textDocument/definition")).isEqualTo(1);
+      } finally {
+        process.releaseLateNavigationResponse();
+        laterCaller.get(10, TimeUnit.SECONDS);
+      }
+    }
+  }
+
+  @Test
+  void keepsFinalRemoteFailureDistinctFromCallerTimeoutInPrivateNavigationJournal()
+      throws Exception {
+    ProjectFixture fixture = projectFixture();
+    FakeSessionHarness harness =
+        fakeSessionHarness(StartupBehavior.LATE_FAILED_NAVIGATION, Duration.ofSeconds(1));
+    Throwable finalFailure;
+    try (JdtProjectSession session = harness.open(fixture.verifiedProject())) {
+      JdtNavigationResolver.Position position = new JdtNavigationResolver.Position(6, 7);
+
+      assertThatThrownBy(() -> harness.client().definitions("file:///Example.java", position))
+          .isInstanceOf(CodeEngineException.class)
+          .hasRootCauseInstanceOf(TimeoutException.class);
+      FakeJdtProcess process = harness.starter().lastProcess();
+      process.awaitDefinitionRequest();
+      process.releaseLateNavigationResponse();
+      process.awaitDefinitionResponse();
+
+      try {
+        harness.client().definitions("file:///Example.java", position);
+        finalFailure = null;
+      } catch (Throwable failure) {
+        finalFailure = failure;
+      }
+    }
+
+    Path retained = retainedNavigationJournal(harness.client());
+    List<JsonNode> records =
+        Files.readAllLines(retained, StandardCharsets.UTF_8).stream()
+            .map(JdtProjectSessionTest::json)
+            .toList();
+    assertThat(records)
+        .anyMatch(
+            record ->
+                "WAIT_TIMEOUT".equals(record.path("kind").textValue())
+                    && record.path("elapsedNanos").isNumber());
+    assertThat(records)
+        .anyMatch(
+            record ->
+                "QUERY_EXCHANGE".equals(record.path("kind").textValue())
+                    && "FAILURE".equals(record.path("outcome").textValue())
+                    && record.path("failureCause").isTextual()
+                    && record.path("elapsedNanos").isNumber());
+    assertThat(finalFailure)
+        .isInstanceOf(CodeEngineException.class)
+        .hasRootCauseMessage("navigation failed");
   }
 
   @Test
@@ -529,6 +977,43 @@ class JdtProjectSessionTest {
     }
   }
 
+  private static JsonNode readProjectSettings(JdtLanguageServerClient client, String projectUri)
+      throws Exception {
+    java.lang.reflect.Method method =
+        java.util.Arrays.stream(client.getClass().getDeclaredMethods())
+            .filter(candidate -> candidate.getName().equals("readProjectSettings"))
+            .filter(candidate -> candidate.getParameterCount() == 1)
+            .filter(candidate -> candidate.getParameterTypes()[0] == String.class)
+            .findFirst()
+            .orElse(null);
+    assertThat(method)
+        .as("the JDT client exposes the narrow package-private project-settings readback seam")
+        .isNotNull();
+    if (method == null) {
+      return JSON.createObjectNode();
+    }
+    try {
+      method.setAccessible(true);
+      Object response = method.invoke(client, projectUri);
+      if (response instanceof JsonNode jsonNode) {
+        return jsonNode;
+      }
+      if (response instanceof JsonElement jsonElement) {
+        return JSON.readTree(jsonElement.toString());
+      }
+      return JSON.valueToTree(response);
+    } catch (java.lang.reflect.InvocationTargetException failure) {
+      Throwable cause = failure.getCause();
+      if (cause instanceof Exception exception) {
+        throw exception;
+      }
+      if (cause instanceof Error error) {
+        throw error;
+      }
+      throw new AssertionError("project-settings readback failed", cause);
+    }
+  }
+
   private static Path retainedNavigationJournal(JdtLanguageServerClient client) {
     java.lang.reflect.Method method =
         java.util.Arrays.stream(client.getClass().getDeclaredMethods())
@@ -593,9 +1078,26 @@ class JdtProjectSessionTest {
   }
 
   private FakeSessionHarness fakeSessionHarness(StartupBehavior behavior) throws IOException {
+    return fakeSessionHarness(behavior, "/fixture/target-jdk");
+  }
+
+  private FakeSessionHarness fakeSessionHarness(StartupBehavior behavior, String vmLocation)
+      throws IOException {
+    return fakeSessionHarness(behavior, vmLocation, Duration.ofSeconds(2));
+  }
+
+  private FakeSessionHarness fakeSessionHarness(StartupBehavior behavior, Duration queryTimeout)
+      throws IOException {
+    return fakeSessionHarness(behavior, "/fixture/target-jdk", queryTimeout);
+  }
+
+  private FakeSessionHarness fakeSessionHarness(
+      StartupBehavior behavior, String vmLocation, Duration queryTimeout)
+      throws IOException {
     Path installation = Files.createDirectories(temporaryDirectory.resolve("tools/jdtls"));
     Path javaHome = Files.createDirectories(temporaryDirectory.resolve("tools/jdk"));
     Path java = Files.createDirectories(javaHome.resolve("bin")).resolve("java");
+    Path toolJavaInvocationMarker = temporaryDirectory.resolve("unexpected-jdt-tool-launch");
     Files.createDirectories(installation.resolve("plugins"));
     Files.writeString(
         installation.resolve("plugins/org.eclipse.equinox.launcher_1.0.jar"), "launcher\n");
@@ -612,6 +1114,9 @@ class JdtProjectSessionTest {
             + "  echo 'openjdk version \"21.0.8\"' >&2\n"
             + "  exit 0\n"
             + "fi\n"
+            + "printf launched > '"
+            + toolJavaInvocationMarker.toString().replace("'", "'\\''")
+            + "'\n"
             + "exit 71\n",
         StandardCharsets.UTF_8);
     assertThat(java.toFile().setExecutable(true, false)).isTrue();
@@ -620,12 +1125,113 @@ class JdtProjectSessionTest {
             installation,
             javaHome,
             Duration.ofSeconds(2),
-            Duration.ofSeconds(2),
+            queryTimeout,
             Duration.ofSeconds(2));
-    FakeProcessStarter starter = new FakeProcessStarter(behavior);
+    FakeProcessStarter starter = new FakeProcessStarter(behavior, vmLocation);
     JdtProcessIsolation isolation = new JdtProcessIsolation(starter);
     JdtLanguageServerClient client = new JdtLanguageServerClient(configuration, isolation);
-    return new FakeSessionHarness(starter, isolation, client);
+    return new FakeSessionHarness(
+        starter, isolation, client, configuration, toolJavaInvocationMarker);
+  }
+
+  private static void awaitDiagnosticEvent(JdtLanguageServerClient client, String uri, int version)
+      throws InterruptedException {
+    long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+    while (System.nanoTime() < deadline) {
+      if (client.diagnosticEvents().stream()
+          .anyMatch(
+              event ->
+                  uri.equals(event.uri()) && Integer.valueOf(version).equals(event.version()))) {
+        return;
+      }
+      Thread.sleep(5L);
+    }
+    assertThat(client.diagnosticEvents())
+        .as("the explicit empty diagnostics callback must be observed within the test bound")
+        .anyMatch(
+            event -> uri.equals(event.uri()) && Integer.valueOf(version).equals(event.version()));
+  }
+
+  private VerifiedJavaProject projectAtSourceLevel(ProjectFixture fixture, String sourceLevel) {
+    return VerifiedJavaProject.fromVerifiedSourceTextSet(
+        fixture.sourceTexts(),
+        List.of("src/main/java"),
+        List.of(fixture.classpathEntry()),
+        sourceLevel);
+  }
+
+  private Path targetJavaHome(String name) throws IOException {
+    Path home =
+        Files.createDirectories(temporaryDirectory.resolve("target-runtimes").resolve(name));
+    Path java = Files.createDirectories(home.resolve("bin")).resolve("java");
+    Files.writeString(java, "#!/bin/sh\nexit 0\n", StandardCharsets.UTF_8);
+    assertThat(java.toFile().setExecutable(true, false)).isTrue();
+    return home;
+  }
+
+  private static Object jdtTargetRuntime(String executionEnvironmentName, Path targetJdkHome) {
+    try {
+      Class<?> runtimeType =
+          Class.forName("org.sourceanalysis.app.analysis.code.jdt.JdtTargetRuntime");
+      return runtimeType
+          .getConstructor(String.class, Path.class)
+          .newInstance(executionEnvironmentName, targetJdkHome);
+    } catch (ReflectiveOperationException missingOrInvalidSeam) {
+      throw new AssertionError(
+          "JDT target runtime binding must expose JdtTargetRuntime(String, Path)",
+          missingOrInvalidSeam);
+    }
+  }
+
+  private static Object jdtProjectBinding(VerifiedJavaProject project, Object targetRuntime) {
+    try {
+      Class<?> bindingType =
+          Class.forName("org.sourceanalysis.app.analysis.code.jdt.JdtProjectBinding");
+      return bindingType
+          .getConstructor(VerifiedJavaProject.class, targetRuntime.getClass())
+          .newInstance(project, targetRuntime);
+    } catch (ReflectiveOperationException missingOrInvalidSeam) {
+      throw new AssertionError(
+          "JDT project binding must expose "
+              + "JdtProjectBinding(VerifiedJavaProject, JdtTargetRuntime)",
+          missingOrInvalidSeam);
+    }
+  }
+
+  private static JdtProjectSession openBoundSession(Object binding, FakeSessionHarness harness) {
+    try {
+      java.lang.reflect.Method open =
+          JdtProjectSession.class.getDeclaredMethod(
+              "open", binding.getClass(), JdtLanguageServerClient.class, JdtProcessIsolation.class);
+      open.setAccessible(true);
+      return (JdtProjectSession) open.invoke(null, binding, harness.client(), harness.isolation());
+    } catch (java.lang.reflect.InvocationTargetException failure) {
+      Throwable cause = failure.getCause();
+      if (cause instanceof RuntimeException runtimeFailure) {
+        throw runtimeFailure;
+      }
+      throw new AssertionError("bound JDT session failed", cause);
+    } catch (ReflectiveOperationException missingOrInvalidSeam) {
+      throw new AssertionError(
+          "JdtProjectSession must open from JdtProjectBinding before session readiness",
+          missingOrInvalidSeam);
+    }
+  }
+
+  private static Object openBoundEngine(JdtCodeEngine engine, Object binding) {
+    try {
+      java.lang.reflect.Method open = JdtCodeEngine.class.getMethod("open", binding.getClass());
+      return open.invoke(engine, binding);
+    } catch (java.lang.reflect.InvocationTargetException failure) {
+      Throwable cause = failure.getCause();
+      if (cause instanceof RuntimeException runtimeFailure) {
+        throw runtimeFailure;
+      }
+      throw new AssertionError("bound JDT engine failed", cause);
+    } catch (ReflectiveOperationException missingOrInvalidSeam) {
+      throw new AssertionError(
+          "JdtCodeEngine must expose open(JdtProjectBinding)", missingOrInvalidSeam);
+    }
   }
 
   private static VerifiedSourceTextSet sourceTexts(VerifiedSourceTextDocument document) {
@@ -734,7 +1340,11 @@ class JdtProjectSessionTest {
   }
 
   private record FakeSessionHarness(
-      FakeProcessStarter starter, JdtProcessIsolation isolation, JdtLanguageServerClient client) {
+      FakeProcessStarter starter,
+      JdtProcessIsolation isolation,
+      JdtLanguageServerClient client,
+      EffectiveEngineConfiguration.JdtConfiguration configuration,
+      Path toolJavaInvocationMarker) {
 
     JdtProjectSession open(VerifiedJavaProject project) {
       return JdtProjectSession.open(project, client, isolation);
@@ -743,6 +1353,12 @@ class JdtProjectSessionTest {
 
   private enum StartupBehavior {
     NORMAL,
+    SETTINGS_READBACK,
+    SETTINGS_DIAGNOSTIC_BEFORE_RESPONSE,
+    SETTINGS_ERROR,
+    SETTINGS_MISSING_CLASSPATH,
+    SETTINGS_MISSING_VM,
+    SERVICE_READY_WITHOUT_DIAGNOSTICS,
     RELIABLE_DECLARATION,
     DOCUMENT_SYMBOL_READINESS,
     EMPTY_DECLARATION,
@@ -750,6 +1366,8 @@ class JdtProjectSessionTest {
     DECLARATION_TIMEOUT,
     STICKY_DECLARATION_TIMEOUT,
     EMPTY_NAVIGATION,
+    LATE_EMPTY_NAVIGATION,
+    LATE_FAILED_NAVIGATION,
     FAILED_NAVIGATION,
     MALFORMED_NAVIGATION
   }
@@ -757,16 +1375,18 @@ class JdtProjectSessionTest {
   private static final class FakeProcessStarter implements JdtProcessIsolation.ProcessStarter {
 
     private final StartupBehavior behavior;
+    private final String vmLocation;
     private final AtomicInteger startCount = new AtomicInteger();
     private volatile FakeJdtProcess lastProcess;
 
-    private FakeProcessStarter(StartupBehavior behavior) {
+    private FakeProcessStarter(StartupBehavior behavior, String vmLocation) {
       this.behavior = behavior;
+      this.vmLocation = vmLocation;
     }
 
     @Override
     public Process start(List<String> command, Path workingDirectory) throws IOException {
-      FakeJdtProcess process = new FakeJdtProcess(behavior);
+      FakeJdtProcess process = new FakeJdtProcess(behavior, vmLocation);
       lastProcess = process;
       startCount.incrementAndGet();
       return process;
@@ -796,11 +1416,19 @@ class JdtProjectSessionTest {
     private volatile int declarationCharacter = -1;
     private volatile int declarationLine = -1;
     private volatile boolean sawDocumentSymbols;
+    private volatile JsonObject lastInitializeParams;
+    private volatile JsonObject lastSettingsParams;
+    private volatile boolean serviceReadySent;
+    private final String vmLocation;
     private final Map<String, AtomicInteger> requestCounts =
         new java.util.concurrent.ConcurrentHashMap<>();
+    private final CountDownLatch definitionRequestReceived = new CountDownLatch(1);
+    private final CountDownLatch releaseLateNavigationResponse = new CountDownLatch(1);
+    private final CountDownLatch definitionResponseSent = new CountDownLatch(1);
 
-    FakeJdtProcess(StartupBehavior behavior) throws IOException {
+    FakeJdtProcess(StartupBehavior behavior, String vmLocation) throws IOException {
       this.behavior = behavior;
+      this.vmLocation = vmLocation;
       serverThread = new Thread(this::serve, "fake-jdt-language-server");
       serverThread.setDaemon(true);
       serverThread.start();
@@ -894,6 +1522,21 @@ class JdtProjectSessionTest {
       if ("initialize".equals(method) && behavior == StartupBehavior.UNREADY) {
         return;
       }
+      if ("initialize".equals(method)) {
+        lastInitializeParams = request.getAsJsonObject("params").deepCopy();
+      }
+      if ("workspace/executeCommand".equals(method)) {
+        lastSettingsParams = request.getAsJsonObject("params").deepCopy();
+        if (behavior == StartupBehavior.SETTINGS_ERROR) {
+          respondWithError(request, -32603, "project settings are unavailable");
+        } else {
+          if (behavior == StartupBehavior.SETTINGS_DIAGNOSTIC_BEFORE_RESPONSE) {
+            publishEmptyDiagnostics("file:///settings-before-response.java", 1);
+          }
+          respondWithResult(request, projectSettingsResult(lastSettingsParams));
+        }
+        return;
+      }
       if ("textDocument/declaration".equals(method)) {
         JsonObject params = request.getAsJsonObject("params");
         JsonObject position = params.getAsJsonObject("position");
@@ -909,6 +1552,28 @@ class JdtProjectSessionTest {
         respondWithError(request, -32603, "navigation failed");
         return;
       }
+      if ("textDocument/definition".equals(method)) {
+        definitionRequestReceived.countDown();
+        if (behavior == StartupBehavior.LATE_EMPTY_NAVIGATION
+            || behavior == StartupBehavior.LATE_FAILED_NAVIGATION) {
+          try {
+            if (!releaseLateNavigationResponse.await(10, TimeUnit.SECONDS)) {
+              return;
+            }
+          } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return;
+          }
+        }
+        if (behavior == StartupBehavior.LATE_FAILED_NAVIGATION) {
+          try {
+            respondWithError(request, -32603, "navigation failed");
+          } finally {
+            definitionResponseSent.countDown();
+          }
+          return;
+        }
+      }
       String result =
           switch (method) {
             case "initialize" -> "{\"capabilities\":{}}";
@@ -922,7 +1587,14 @@ class JdtProjectSessionTest {
             }
             case "textDocument/declaration" ->
                 behavior == StartupBehavior.NORMAL
+                        || behavior == StartupBehavior.SETTINGS_READBACK
+                        || behavior == StartupBehavior.SETTINGS_DIAGNOSTIC_BEFORE_RESPONSE
+                        || behavior == StartupBehavior.SETTINGS_ERROR
+                        || behavior == StartupBehavior.SETTINGS_MISSING_CLASSPATH
+                        || behavior == StartupBehavior.SETTINGS_MISSING_VM
                         || behavior == StartupBehavior.EMPTY_NAVIGATION
+                        || behavior == StartupBehavior.LATE_EMPTY_NAVIGATION
+                        || behavior == StartupBehavior.LATE_FAILED_NAVIGATION
                         || behavior == StartupBehavior.FAILED_NAVIGATION
                         || behavior == StartupBehavior.MALFORMED_NAVIGATION
                         || (behavior == StartupBehavior.RELIABLE_DECLARATION
@@ -934,6 +1606,7 @@ class JdtProjectSessionTest {
                     : "[]";
             case "textDocument/definition", "textDocument/implementation" ->
                 behavior == StartupBehavior.EMPTY_NAVIGATION
+                        || behavior == StartupBehavior.LATE_EMPTY_NAVIGATION
                     ? "[]"
                     : behavior == StartupBehavior.MALFORMED_NAVIGATION
                         ? "true"
@@ -951,7 +1624,68 @@ class JdtProjectSessionTest {
           };
       String response =
           "{\"jsonrpc\":\"2.0\",\"id\":" + request.get("id") + ",\"result\":" + result + "}";
-      byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+      writeMessage(response);
+      if ("textDocument/definition".equals(method)) {
+        definitionResponseSent.countDown();
+      }
+      if ("initialize".equals(method)
+          && behavior == StartupBehavior.SERVICE_READY_WITHOUT_DIAGNOSTICS) {
+        JsonObject status = new JsonObject();
+        status.addProperty("type", "ServiceReady");
+        sendNotification("language/status", status);
+        serviceReadySent = true;
+      }
+    }
+
+    private void publishEmptyDiagnostics(String uri, int version) throws IOException {
+      JsonObject params = new JsonObject();
+      params.addProperty("uri", uri);
+      params.addProperty("version", version);
+      params.add("diagnostics", new JsonArray());
+      sendNotification("textDocument/publishDiagnostics", params);
+    }
+
+    private void publishDiagnosticWithGsonData(String uri, int version) throws IOException {
+      JsonObject range = new JsonObject();
+      JsonObject start = new JsonObject();
+      start.addProperty("line", 0);
+      start.addProperty("character", 0);
+      JsonObject end = new JsonObject();
+      end.addProperty("line", 0);
+      end.addProperty("character", 1);
+      range.add("start", start);
+      range.add("end", end);
+
+      JsonObject data = new JsonObject();
+      JsonArray arguments = new JsonArray();
+      arguments.add("log");
+      data.add("arguments", arguments);
+
+      JsonObject diagnostic = new JsonObject();
+      diagnostic.add("range", range);
+      diagnostic.addProperty("severity", 1);
+      diagnostic.addProperty("message", "structured diagnostic");
+      diagnostic.add("data", data);
+
+      JsonArray diagnostics = new JsonArray();
+      diagnostics.add(diagnostic);
+      JsonObject params = new JsonObject();
+      params.addProperty("uri", uri);
+      params.addProperty("version", version);
+      params.add("diagnostics", diagnostics);
+      sendNotification("textDocument/publishDiagnostics", params);
+    }
+
+    private void sendNotification(String method, JsonElement params) throws IOException {
+      JsonObject notification = new JsonObject();
+      notification.addProperty("jsonrpc", "2.0");
+      notification.addProperty("method", method);
+      notification.add("params", params);
+      writeMessage(notification.toString());
+    }
+
+    private void writeMessage(String message) throws IOException {
+      byte[] bytes = message.getBytes(StandardCharsets.UTF_8);
       synchronized (serverOutput) {
         serverOutput.write(
             ("Content-Length: " + bytes.length + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
@@ -998,9 +1732,58 @@ class JdtProjectSessionTest {
       }
     }
 
+    private String projectSettingsResult(JsonObject params) {
+      String projectUri = params.getAsJsonArray("arguments").get(0).getAsString();
+      Path projectRoot = Path.of(java.net.URI.create(projectUri));
+      JsonObject settings = new JsonObject();
+      if (behavior != StartupBehavior.SETTINGS_MISSING_VM) {
+        settings.addProperty("org.eclipse.jdt.ls.core.vm.location", vmLocation);
+      }
+      if (behavior != StartupBehavior.SETTINGS_MISSING_CLASSPATH) {
+        JsonObject sourceEntry = new JsonObject();
+        sourceEntry.addProperty("kind", 3);
+        sourceEntry.addProperty(
+            "path", projectRoot.resolve("src/main/java").toAbsolutePath().normalize().toString());
+        sourceEntry.add("output", com.google.gson.JsonNull.INSTANCE);
+        sourceEntry.add("attributes", new JsonObject());
+        com.google.gson.JsonArray classpathEntries = new com.google.gson.JsonArray();
+        classpathEntries.add(sourceEntry);
+        settings.add("org.eclipse.jdt.ls.core.classpathEntries", classpathEntries);
+      }
+      return settings.toString();
+    }
+
+    private void respondWithResult(JsonObject request, String result) throws IOException {
+      String response =
+          "{\"jsonrpc\":\"2.0\",\"id\":" + request.get("id") + ",\"result\":" + result + "}";
+      byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+      synchronized (serverOutput) {
+        serverOutput.write(
+            ("Content-Length: " + bytes.length + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+        serverOutput.write(bytes);
+        serverOutput.flush();
+      }
+    }
+
     int requestCount(String method) {
       AtomicInteger count = requestCounts.get(method);
       return count == null ? 0 : count.get();
+    }
+
+    void awaitDefinitionRequest() throws InterruptedException {
+      assertThat(definitionRequestReceived.await(10, TimeUnit.SECONDS))
+          .as("the fake peer must observe the physical definition request")
+          .isTrue();
+    }
+
+    void releaseLateNavigationResponse() {
+      releaseLateNavigationResponse.countDown();
+    }
+
+    void awaitDefinitionResponse() throws InterruptedException {
+      assertThat(definitionResponseSent.await(10, TimeUnit.SECONDS))
+          .as("the fake peer must complete the late definition response")
+          .isTrue();
     }
 
     int declarationCharacter() {
@@ -1013,6 +1796,18 @@ class JdtProjectSessionTest {
 
     boolean sawDocumentSymbols() {
       return sawDocumentSymbols;
+    }
+
+    JsonObject lastSettingsParams() {
+      return lastSettingsParams;
+    }
+
+    JsonObject lastInitializeParams() {
+      return lastInitializeParams;
+    }
+
+    boolean sentServiceReady() {
+      return serviceReadySent;
     }
 
     private static int readContentLength(InputStream input) throws IOException {

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>fixture.source</groupId>
+  <artifactId>os-arch-app</artifactId>
+  <version>1.0</version>
+  <profiles>
+    <profile>
+      <id>host-architecture</id>
+      <activation>
+        <os>
+          <arch>{{HOST_ARCH}}</arch>
+          <version>{{HOST_VERSION}}</version>
+        </os>
+      </activation>
+      <dependencies>
+        <dependency>
+          <groupId>fixture.libs</groupId>
+          <artifactId>host-architecture-signal</artifactId>
+          <version>1.0</version>
+        </dependency>
+      </dependencies>
+    </profile>
+  </profiles>
+</project>

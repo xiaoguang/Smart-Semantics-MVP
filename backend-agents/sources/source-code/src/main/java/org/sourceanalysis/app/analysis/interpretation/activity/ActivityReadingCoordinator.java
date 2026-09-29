@@ -230,6 +230,68 @@ public final class ActivityReadingCoordinator {
     return reopenSaved(view, profile, saved, canonicalJson, this);
   }
 
+  /** Re-evaluates only derived scope capacity against a verified saved v2 decision history. */
+  ActivityReadingPlan reassessSavedCapacity(
+      ActivityMaterialView view, ActivityReadingProfile profile, ObjectNode saved) {
+    if (!"activity-reading-plan-v2".equals(saved.path("schemaVersion").asText())) {
+      throw new ActivityExplanationException("ACTIVITY_READING_PLAN_REUSE_INVALID");
+    }
+    ActivityReadingPlan verified = reopenSaved(view, saved);
+    if (!saved.path("requiredScopeIncomplete").asBoolean()) {
+      return verified;
+    }
+    ObjectNode full =
+        requireObject(
+            canonicalJson.parseCanonical(
+                new ActivityMaterialProjector().materialize(view).modelInputJson()));
+    Set<String> entryMethods = entryMethodRefs(full);
+    LinkedHashMap<String, JsonNode> units = units(full, entryMethods);
+    List<List<JsonNode>> pages = pages(full, units, profile, canonicalJson);
+    LinkedHashSet<String> selected = new LinkedHashSet<>(entryMethods);
+    ReadingScopeState scopeState = ReadingScopeState.empty();
+    List<ObjectNode> decisions = new ArrayList<>();
+    List<String> unknowns = new ArrayList<>();
+    for (JsonNode rawDecision : saved.path("decisions")) {
+      ObjectNode decision = requireObject(rawDecision);
+      DecisionApplication applied =
+          validateDecision(decision, full, units, selected, scopeState, pages, Integer.MAX_VALUE);
+      selected.clear();
+      selected.addAll(applied.selected());
+      scopeState = applied.scopeState();
+      decisions.add(decision.deepCopy());
+      strings(decision.path("unknowns"), "reading unknowns").forEach(unknowns::add);
+    }
+    ScopeEvaluation evaluated =
+        evaluateCurrentScopes(view, full, entryMethods, selected, scopeState, unknowns, profile);
+    List<ActivityReadingPlan.Slice> slices = evaluated.slices();
+    for (ActivityReadingPlan.Slice slice : slices) {
+      selected.addAll(slice.requiredUnitKeys());
+    }
+    List<String> shownPages = verified.navigationPages();
+    List<String> currentIssues = new ArrayList<>(evaluated.issues());
+    if (shownPages.size() < pages.size()) {
+      currentIssues.add("READING_NAVIGATION_INCOMPLETE:" + shownPages.size() + "/" + pages.size());
+    }
+    if (!scopeState.finishReading()) {
+      currentIssues.add("READING_NOT_FINISHED");
+    }
+    List<String> unread = units.keySet().stream().filter(key -> !selected.contains(key)).toList();
+    ObjectNode refreshed =
+        privateRecord(
+            view,
+            pages,
+            shownPages,
+            selected,
+            unread,
+            decisions,
+            slices,
+            unknowns,
+            scopeState,
+            currentIssues,
+            !currentIssues.isEmpty() || slices.isEmpty());
+    return reopen(view, profile, refreshed);
+  }
+
   private static ActivityReadingPlan reopenSaved(
       ActivityMaterialView view,
       ActivityReadingProfile profile,
@@ -313,6 +375,14 @@ public final class ActivityReadingCoordinator {
               .equals(node.path("readingPacket"))) {
             packet = legacyPacket;
             reopenedPacket = canonicalJson.parseCanonical(packet.modelInputJson());
+          }
+        }
+        if (!direct && !reopenedPacket.equals(node.path("readingPacket"))) {
+          ActivityReadingPacket packed = compactBoundaryCallRows(packet, canonicalJson);
+          JsonNode packedJson = canonicalJson.parseCanonical(packed.modelInputJson());
+          if (packedJson.equals(node.path("readingPacket"))) {
+            packet = packed;
+            reopenedPacket = packedJson;
           }
         }
         if (!reopenedPacket.equals(node.path("readingPacket"))
@@ -1081,6 +1151,29 @@ public final class ActivityReadingCoordinator {
     priorScope.put("finishReading", scopeState.finishReading());
     input.set("limitations", full.path("limitations").deepCopy());
     input.putObject("sliceCapacity").put("maxPacketBytes", profile.maxDraftPacketBytes());
+    if (!fitsReadingRequest(input, profile)) {
+      // Selection is a navigation decision, not the Activity explanation. Keep the complete
+      // selected bodies in the frozen source packet and in the eventual DRAFT, while bounding
+      // this decision request with an explicit directory for bodies that cannot fit here.
+      ArrayNode directory = input.putArray("selectedUnitDirectory");
+      List<JsonNode> completeBodies = new ArrayList<>();
+      selectedUnits.forEach(unit -> completeBodies.add(unit.deepCopy()));
+      for (JsonNode unit : completeBodies) {
+        ObjectNode item = directory.addObject();
+        item.put("ref", unit.path("ref").asText());
+        item.put("kind", unit.path("kind").asText());
+        item.put("name", unit.path("name").asText());
+        item.put("unitJsonBytes", canonicalJson.encodeCanonical(unit).size());
+      }
+      input.put("completeUnitsStatus", "PARTIAL_FOR_CAPACITY");
+      selectedUnits.removeAll();
+      for (JsonNode unit : completeBodies) {
+        selectedUnits.add(unit);
+        if (!fitsReadingRequest(input, profile)) {
+          selectedUnits.remove(selectedUnits.size() - 1);
+        }
+      }
+    }
     return input;
   }
 
@@ -1118,7 +1211,8 @@ public final class ActivityReadingCoordinator {
         continue;
       }
       ActivityReadingPacket packet =
-          selectedPacket(view, full, required, requested.entryKeys(), canonicalJson);
+          boundedSelectedPacket(
+              view, full, required, requested.entryKeys(), canonicalJson, profile);
       String warningPrefix = "INPUT_CAPACITY_EXCEEDED:" + requested.sliceKey() + ":";
       if (!profile.fitsDraftAndMaximumReview(packet.modelInputJson().size())) {
         String warning =
@@ -1181,7 +1275,7 @@ public final class ActivityReadingCoordinator {
         continue;
       }
       ActivityReadingPacket packet =
-          selectedPacket(view, full, required, prior.entryKeys(), canonicalJson);
+          boundedSelectedPacket(view, full, required, prior.entryKeys(), canonicalJson, profile);
       if (!profile.fitsDraftAndMaximumReview(packet.modelInputJson().size())) {
         continue;
       }
@@ -1380,7 +1474,7 @@ public final class ActivityReadingCoordinator {
       List<List<JsonNode>> pages,
       int maxFinalSliceKeys) {
     Set<String> nextSelected = new LinkedHashSet<>(selected);
-    addSelected(decision.path("requestedUnitKeys"), units, nextSelected);
+    addSelected(decision.path("requestedUnitKeys"), units, entryMethodRefs(full), nextSelected);
     ReadingScopeState nextScopeState =
         nextScopeState(decision, full, units, scopeState, maxFinalSliceKeys);
     strings(decision.path("unknowns"), "reading unknowns");
@@ -1573,8 +1667,16 @@ public final class ActivityReadingCoordinator {
 
   private static void addSelected(
       JsonNode requested, Map<String, JsonNode> units, Set<String> selected) {
+    addSelected(requested, units, Set.of(), selected);
+  }
+
+  private static void addSelected(
+      JsonNode requested,
+      Map<String, JsonNode> units,
+      Set<String> entryMethodRefs,
+      Set<String> selected) {
     for (String key : strings(requested, "requested units")) {
-      if (!units.containsKey(key)) {
+      if (!units.containsKey(key) && !entryMethodRefs.contains(key)) {
         throw new ActivityExplanationException("ACTIVITY_READING_UNIT_UNKNOWN");
       }
       selected.add(key);
@@ -1636,6 +1738,81 @@ public final class ActivityReadingCoordinator {
       List<String> entryKeys,
       CanonicalJsonCodec canonicalJson) {
     return selectedPacket(view, full, selectedUnits, entryKeys, canonicalJson, true);
+  }
+
+  private static ActivityReadingPacket boundedSelectedPacket(
+      ActivityMaterialView view,
+      ObjectNode full,
+      Set<String> selectedUnits,
+      List<String> entryKeys,
+      CanonicalJsonCodec canonicalJson,
+      ActivityReadingProfile profile) {
+    ActivityReadingPacket standard =
+        selectedPacket(view, full, selectedUnits, entryKeys, canonicalJson);
+    if (profile.fitsDraftAndMaximumReview(standard.modelInputJson().size())) {
+      return standard;
+    }
+    return compactBoundaryCallRows(standard, canonicalJson);
+  }
+
+  private static ActivityReadingPacket compactBoundaryCallRows(
+      ActivityReadingPacket standard, CanonicalJsonCodec canonicalJson) {
+    ObjectNode packet = (ObjectNode) canonicalJson.parseCanonical(standard.modelInputJson());
+    Set<String> includedMethods = new LinkedHashSet<>();
+    for (JsonNode method : packet.path("methods")) {
+      includedMethods.add(method.path("ref").asText());
+    }
+    ArrayNode selectedCalls = JsonNodeFactory.instance.arrayNode();
+    ArrayNode boundaryCalls = JsonNodeFactory.instance.arrayNode();
+    for (JsonNode call : packet.path("calls")) {
+      boolean hasIncludedTarget = false;
+      for (JsonNode target : call.path("targets")) {
+        hasIncludedTarget |= includedMethods.contains(target.path("methodRef").asText());
+      }
+      if (hasIncludedTarget) {
+        selectedCalls.add(call);
+        continue;
+      }
+      ArrayNode row = boundaryCalls.addArray();
+      for (String field :
+          List.of(
+              "ref",
+              "entryKey",
+              "callerMethodRef",
+              "kind",
+              "expression",
+              "resolution",
+              "deferred")) {
+        row.add(call.path(field).deepCopy());
+      }
+      ArrayNode targets = row.addArray();
+      for (JsonNode target : call.path("targets")) {
+        ArrayNode candidate = targets.addArray();
+        candidate.add(target.path("methodRef").asText());
+        candidate.add(target.path("reason").asText());
+      }
+    }
+    if (boundaryCalls.isEmpty()) {
+      return standard;
+    }
+    packet.set("calls", selectedCalls);
+    packet
+        .putArray("boundaryCallFields")
+        .add("ref")
+        .add("entryKey")
+        .add("callerMethodRef")
+        .add("kind")
+        .add("expression")
+        .add("resolution")
+        .add("deferred")
+        .add("targets");
+    packet.set("boundaryCalls", boundaryCalls);
+    return new ActivityReadingPacket(
+        standard.packetId(),
+        standard.entryIdsByKey(),
+        standard.sourceIdsByRef(),
+        canonicalJson.encodeCanonical(packet),
+        standard.hasSubstantiveLimitations());
   }
 
   private static ActivityReadingPacket selectedPacket(

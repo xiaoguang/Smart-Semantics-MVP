@@ -13,19 +13,15 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.regex.Pattern;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
@@ -44,40 +40,42 @@ public final class LocalGitCommitCaptureAdapter implements LocalSourceCapture {
   private static final String RECEIPT_SCHEMA = "local-git-capture-receipt-v1";
   private static final String REGISTRATION_SCHEMA = "source-registration-v1";
   private static final String MANIFEST_SCHEMA = "local-git-snapshot-entry-v1";
-  private static final Pattern TREE_ENTRY =
-      Pattern.compile("(100644|100755|120000|160000|[0-9]{6}) ([a-z]+) ([0-9a-f]{40})");
-  private static final Pattern CONFIG_INCLUDE_SECTION =
-      Pattern.compile("(?m)^\\s*\\[\\s*include(?:if)?(?:\\s|\\])");
   private static final Comparator<String> UTF8_ORDER =
       (left, right) ->
           compareUnsigned(
               left.getBytes(StandardCharsets.UTF_8), right.getBytes(StandardCharsets.UTF_8));
-  private static final Duration COMMAND_TIMEOUT = Duration.ofMinutes(2);
-
   private final Path captureWorkspace;
-  private final Path gitExecutable;
+  private final FixedGitObjectAccess gitObjectAccess;
   private final CanonicalJsonCodec canonicalJson;
 
   /**
    * Creates an adapter with an explicit absolute Git executable, primarily for controlled hosts.
    */
   public LocalGitCommitCaptureAdapter(Path captureWorkspace, Path gitExecutable) {
+    this(captureWorkspace, newObjectAccess(captureWorkspace, gitExecutable));
+  }
+
+  LocalGitCommitCaptureAdapter(Path captureWorkspace, FixedGitObjectAccess gitObjectAccess) {
     this.captureWorkspace = validatedPrivateDirectory(captureWorkspace);
-    this.gitExecutable = validatedGitExecutable(gitExecutable);
+    this.gitObjectAccess = Objects.requireNonNull(gitObjectAccess, "gitObjectAccess");
     this.canonicalJson = new CanonicalJsonCodec();
+  }
+
+  private static FixedGitObjectAccess newObjectAccess(Path workspace, Path executable) {
+    Path validatedWorkspace = validatedPrivateDirectory(workspace);
+    try {
+      return new ConstrainedGitObjectAccess(validatedWorkspace.resolve("git-objects"), executable);
+    } catch (IOException failure) {
+      throw gitFailure(failure);
+    }
   }
 
   @Override
   public SourceRegistrationReference capture(LocalGitCaptureRequest request) {
     Objects.requireNonNull(request, "request");
     try {
-      Path repository = request.repositoryPath().toRealPath(LinkOption.NOFOLLOW_LINKS);
-      Path gitDirectory = validatedGitDirectory(repository);
-      rejectUnsupportedObjectSources(gitDirectory);
-      verifyCommitExists(gitDirectory, request.commitId());
-      requireSha1ObjectFormat(gitDirectory);
-
-      List<CapturedEntry> entries = captureEntries(gitDirectory, request.commitId());
+      GitCapture gitCapture = readCommit(request);
+      List<CapturedEntry> entries = gitCapture.entries();
       if (entries.isEmpty()) {
         throw new LocalGitCaptureException("LOCAL_GIT_OBJECT_CORRUPT");
       }
@@ -89,7 +87,7 @@ public final class LocalGitCommitCaptureAdapter implements LocalSourceCapture {
           artifactReference("snapshot-manifest", manifest.copyToByteArray());
       String snapshotId = snapshotId(request, entries, manifestReference);
       IdentifiedDocument receipt =
-          receiptBytes(request, gitDirectory, snapshotId, manifestReference, entries);
+          receiptBytes(request, gitCapture.treeObjectId(), snapshotId, manifestReference, entries);
       ArtifactReference receiptReference =
           new ArtifactReference(
               receipt.id(), new Sha256Digest(sha256(receipt.bytes().copyToByteArray())));
@@ -107,7 +105,26 @@ public final class LocalGitCommitCaptureAdapter implements LocalSourceCapture {
     }
   }
 
-  private Path validatedPrivateDirectory(Path candidate) {
+  private GitCapture readCommit(LocalGitCaptureRequest request) {
+    try (FixedGitObjectAccess.Session session =
+        gitObjectAccess.open(request.repositoryPath(), request.commitId())) {
+      List<CapturedEntry> entries = captureEntries(session);
+      return new GitCapture(session.treeObjectId(), entries);
+    } catch (IOException failure) {
+      throw gitFailure(failure);
+    }
+  }
+
+  private static LocalGitCaptureException gitFailure(IOException failure) {
+    for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+      if (cause instanceof LocalGitCaptureException captureFailure) {
+        return captureFailure;
+      }
+    }
+    return new LocalGitCaptureException("LOCAL_GIT_OBJECT_CORRUPT");
+  }
+
+  private static Path validatedPrivateDirectory(Path candidate) {
     if (candidate == null || !candidate.isAbsolute()) {
       throw new LocalGitCaptureException("LOCAL_GIT_REQUEST_INVALID");
     }
@@ -123,120 +140,29 @@ public final class LocalGitCommitCaptureAdapter implements LocalSourceCapture {
     }
   }
 
-  private Path validatedGitExecutable(Path candidate) {
-    if (candidate == null || !candidate.isAbsolute()) {
-      throw new LocalGitCaptureException("LOCAL_GIT_REPOSITORY_INVALID");
-    }
-    try {
-      Path real = candidate.toRealPath(LinkOption.NOFOLLOW_LINKS);
-      if (!Files.isRegularFile(real, LinkOption.NOFOLLOW_LINKS) || !Files.isExecutable(real)) {
-        throw new LocalGitCaptureException("LOCAL_GIT_REPOSITORY_INVALID");
-      }
-      return real;
-    } catch (IOException exception) {
-      throw new LocalGitCaptureException("LOCAL_GIT_REPOSITORY_INVALID");
-    }
-  }
-
-  private Path validatedGitDirectory(Path repository) throws IOException {
-    if (!Files.isDirectory(repository, LinkOption.NOFOLLOW_LINKS)
-        || Files.isSymbolicLink(repository)) {
-      throw new LocalGitCaptureException("LOCAL_GIT_REPOSITORY_INVALID");
-    }
-    Path gitDirectory = repository.resolve(".git");
-    if (!Files.isDirectory(gitDirectory, LinkOption.NOFOLLOW_LINKS)
-        || Files.isSymbolicLink(gitDirectory)) {
-      throw new LocalGitCaptureException("LOCAL_GIT_REPOSITORY_INVALID");
-    }
-    Path real = gitDirectory.toRealPath(LinkOption.NOFOLLOW_LINKS);
-    requireNoSymlinkPath(real);
-    if (!Files.isDirectory(real.resolve("objects"), LinkOption.NOFOLLOW_LINKS)) {
-      throw new LocalGitCaptureException("LOCAL_GIT_REPOSITORY_INVALID");
-    }
-    return real;
-  }
-
-  private void rejectUnsupportedObjectSources(Path gitDirectory) throws IOException {
-    if (Files.exists(gitDirectory.resolve("objects/info/alternates"), LinkOption.NOFOLLOW_LINKS)) {
-      throw new LocalGitCaptureException("LOCAL_GIT_ALTERNATES_UNSUPPORTED");
-    }
-    if (Files.exists(gitDirectory.resolve("shallow"), LinkOption.NOFOLLOW_LINKS)
-        || Files.exists(gitDirectory.resolve("info/grafts"), LinkOption.NOFOLLOW_LINKS)
-        || containsAnyFile(gitDirectory.resolve("refs/replace"))) {
-      throw new LocalGitCaptureException("LOCAL_GIT_OBJECT_CORRUPT");
-    }
-    Path config = gitDirectory.resolve("config");
-    if (Files.exists(config, LinkOption.NOFOLLOW_LINKS)) {
-      requireRegularNoFollow(config);
-      String content =
-          Files.readString(config, StandardCharsets.UTF_8).toLowerCase(java.util.Locale.ROOT);
-      if (content.contains("partialclone")
-          || content.contains("promisor")
-          || CONFIG_INCLUDE_SECTION.matcher(content).find()) {
-        throw new LocalGitCaptureException("LOCAL_GIT_PROMISOR_UNSUPPORTED");
-      }
-    }
-  }
-
-  private boolean containsAnyFile(Path directory) throws IOException {
-    if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) {
-      return false;
-    }
-    requireNoSymlinkPath(directory);
-    try (var children = Files.list(directory)) {
-      return children.findAny().isPresent();
-    }
-  }
-
-  private void verifyCommitExists(Path gitDirectory, String commitId) {
-    runGit(gitDirectory, List.of("cat-file", "-e", commitId + "^{commit}"), false);
-  }
-
-  private List<CapturedEntry> captureEntries(Path gitDirectory, String commitId) {
-    byte[] treeListing =
-        runGit(gitDirectory, List.of("ls-tree", "-r", "-z", "--full-tree", commitId), true);
+  private List<CapturedEntry> captureEntries(FixedGitObjectAccess.Session session)
+      throws IOException {
     List<CapturedEntry> entries = new ArrayList<>();
-    for (byte[] rawEntry : splitNul(treeListing)) {
-      TreeEntry treeEntry = parseTreeEntry(rawEntry);
-      if (treeEntry.mode().equals("120000")
-          || treeEntry.mode().equals("160000")
-          || !treeEntry.type().equals("blob")) {
-        throw new LocalGitCaptureException("LOCAL_GIT_TREE_ENTRY_UNSUPPORTED");
+    try (var tree = session.entries()) {
+      for (FixedGitObjectAccess.TreeEntry treeEntry : tree) {
+        if (treeEntry.mode().equals("120000")
+            || treeEntry.mode().equals("160000")
+            || !treeEntry.type().equals("blob")) {
+          throw new LocalGitCaptureException("LOCAL_GIT_TREE_ENTRY_UNSUPPORTED");
+        }
+        if (!treeEntry.mode().equals("100644") && !treeEntry.mode().equals("100755")) {
+          throw new LocalGitCaptureException("LOCAL_GIT_TREE_ENTRY_UNSUPPORTED");
+        }
+        try (FixedGitObjectAccess.BlobInput blob = session.openBlob(treeEntry.objectId())) {
+          byte[] bytes = blob.stream().readAllBytes();
+          if (bytes.length != blob.sizeBytes()) {
+            throw new LocalGitCaptureException("LOCAL_GIT_OBJECT_CORRUPT");
+          }
+          entries.add(CapturedEntry.from(treeEntry, bytes));
+        }
       }
-      if (!treeEntry.mode().equals("100644") && !treeEntry.mode().equals("100755")) {
-        throw new LocalGitCaptureException("LOCAL_GIT_TREE_ENTRY_UNSUPPORTED");
-      }
-      byte[] bytes = runGit(gitDirectory, List.of("cat-file", "blob", treeEntry.objectId()), true);
-      entries.add(CapturedEntry.from(treeEntry, bytes));
     }
     return entries;
-  }
-
-  private TreeEntry parseTreeEntry(byte[] rawEntry) {
-    int tab = indexOf(rawEntry, (byte) '\t');
-    if (tab <= 0 || tab == rawEntry.length - 1) {
-      throw new LocalGitCaptureException("LOCAL_GIT_OBJECT_CORRUPT");
-    }
-    String header = strictUtf8(Arrays.copyOfRange(rawEntry, 0, tab));
-    var matcher = TREE_ENTRY.matcher(header);
-    if (!matcher.matches()) {
-      throw new LocalGitCaptureException("LOCAL_GIT_OBJECT_CORRUPT");
-    }
-    String path = strictUtf8(Arrays.copyOfRange(rawEntry, tab + 1, rawEntry.length));
-    validateRepositoryRelativePath(path);
-    return new TreeEntry(matcher.group(1), matcher.group(2), matcher.group(3), path);
-  }
-
-  private void validateRepositoryRelativePath(String path) {
-    if (path.isBlank()
-        || path.startsWith("/")
-        || path.indexOf('\\') >= 0
-        || path.indexOf('\u0000') >= 0
-        || Arrays.stream(path.split("/", -1))
-            .anyMatch(
-                segment -> segment.isEmpty() || segment.equals(".") || segment.equals(".."))) {
-      throw new LocalGitCaptureException("LOCAL_GIT_OBJECT_CORRUPT");
-    }
   }
 
   private ImmutableBytes manifestBytes(List<CapturedEntry> entries) {
@@ -297,7 +223,7 @@ public final class LocalGitCommitCaptureAdapter implements LocalSourceCapture {
 
   private IdentifiedDocument receiptBytes(
       LocalGitCaptureRequest request,
-      Path gitDirectory,
+      String treeObjectId,
       String snapshotId,
       ArtifactReference manifestReference,
       List<CapturedEntry> entries) {
@@ -308,12 +234,12 @@ public final class LocalGitCommitCaptureAdapter implements LocalSourceCapture {
     receipt.put("declaredRepositoryIdentity", request.declaredRepositoryIdentity());
     receipt.put("networkAccess", "DISABLED");
     receipt.put("nonAnalyzableMediaFileCount", count(entries, "NON_ANALYZABLE_MEDIA"));
-    receipt.put("objectFormat", objectFormat(gitDirectory));
+    receipt.put("objectFormat", "SHA1");
     receipt.put("regularFileCount", entries.size());
     receipt.put("schemaVersion", RECEIPT_SCHEMA);
     receipt.put("snapshotId", snapshotId);
     receipt.set("snapshotManifestRef", referenceNode(manifestReference));
-    receipt.put("treeObjectId", treeObjectId(gitDirectory, request.commitId()));
+    receipt.put("treeObjectId", treeObjectId);
     receipt.put("unsupportedTreeEntryCount", 0);
     receipt.put("worktreeRead", "FORBIDDEN");
     ArtifactId receiptId =
@@ -445,75 +371,6 @@ public final class LocalGitCommitCaptureAdapter implements LocalSourceCapture {
     }
   }
 
-  private byte[] runGit(Path gitDirectory, List<String> arguments, boolean captureStdout) {
-    Path privateHome = null;
-    try {
-      privateHome = Files.createTempDirectory(captureWorkspace, ".git-env-");
-      Files.createFile(privateHome.resolve("global-config"));
-      Files.createDirectory(privateHome.resolve("xdg"));
-      List<String> command = new ArrayList<>();
-      command.add(gitExecutable.toString());
-      command.add("--git-dir=" + gitDirectory);
-      command.add("--no-replace-objects");
-      command.addAll(arguments);
-      ProcessBuilder builder = new ProcessBuilder(command);
-      Map<String, String> environment = builder.environment();
-      environment.clear();
-      environment.put("LC_ALL", "C");
-      environment.put("LANG", "C");
-      environment.put("HOME", privateHome.toString());
-      environment.put("XDG_CONFIG_HOME", privateHome.resolve("xdg").toString());
-      environment.put("GIT_CONFIG_NOSYSTEM", "1");
-      environment.put("GIT_CONFIG_GLOBAL", privateHome.resolve("global-config").toString());
-      environment.put("GIT_NO_LAZY_FETCH", "1");
-      environment.put("GIT_TERMINAL_PROMPT", "0");
-      environment.put("GIT_OPTIONAL_LOCKS", "0");
-      environment.put("GIT_PAGER", "cat");
-      environment.put("PAGER", "cat");
-      builder.redirectError(ProcessBuilder.Redirect.DISCARD);
-      Process process = builder.start();
-      byte[] stdout = captureStdout ? process.getInputStream().readAllBytes() : new byte[0];
-      boolean completed =
-          process.waitFor(COMMAND_TIMEOUT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
-      if (!completed) {
-        process.destroyForcibly();
-        throw new LocalGitCaptureException("LOCAL_GIT_OBJECT_CORRUPT");
-      }
-      if (process.exitValue() != 0) {
-        throw new LocalGitCaptureException("LOCAL_GIT_COMMIT_NOT_FOUND");
-      }
-      return stdout;
-    } catch (InterruptedException exception) {
-      Thread.currentThread().interrupt();
-      throw new LocalGitCaptureException("LOCAL_GIT_OBJECT_CORRUPT");
-    } catch (IOException exception) {
-      throw new LocalGitCaptureException("LOCAL_GIT_REPOSITORY_INVALID");
-    } finally {
-      if (privateHome != null) {
-        deleteStaging(privateHome);
-      }
-    }
-  }
-
-  private String treeObjectId(Path gitDirectory, String commitId) {
-    return strictUtf8(runGit(gitDirectory, List.of("rev-parse", commitId + "^{tree}"), true))
-        .trim();
-  }
-
-  private String objectFormat(Path gitDirectory) {
-    return strictUtf8(runGit(gitDirectory, List.of("rev-parse", "--show-object-format"), true))
-            .trim()
-            .equals("sha1")
-        ? "SHA1"
-        : "SHA256";
-  }
-
-  private void requireSha1ObjectFormat(Path gitDirectory) {
-    if (!objectFormat(gitDirectory).equals("SHA1")) {
-      throw new LocalGitCaptureException("LOCAL_GIT_REPOSITORY_INVALID");
-    }
-  }
-
   private ObjectNode referenceNode(ArtifactReference reference) {
     ObjectNode node = JsonNodeFactory.instance.objectNode();
     node.put("artifactId", reference.artifactId().value());
@@ -552,30 +409,6 @@ public final class LocalGitCommitCaptureAdapter implements LocalSourceCapture {
     } catch (NoSuchAlgorithmException exception) {
       throw new IllegalStateException("SHA-256 is required by the Java runtime", exception);
     }
-  }
-
-  private static List<byte[]> splitNul(byte[] bytes) {
-    List<byte[]> result = new ArrayList<>();
-    int start = 0;
-    for (int index = 0; index < bytes.length; index++) {
-      if (bytes[index] == 0) {
-        result.add(Arrays.copyOfRange(bytes, start, index));
-        start = index + 1;
-      }
-    }
-    if (start != bytes.length) {
-      throw new LocalGitCaptureException("LOCAL_GIT_OBJECT_CORRUPT");
-    }
-    return result;
-  }
-
-  private static int indexOf(byte[] bytes, byte target) {
-    for (int index = 0; index < bytes.length; index++) {
-      if (bytes[index] == target) {
-        return index;
-      }
-    }
-    return -1;
   }
 
   private static String strictUtf8(byte[] bytes) {
@@ -617,24 +450,6 @@ public final class LocalGitCommitCaptureAdapter implements LocalSourceCapture {
     }
   }
 
-  private static void requireNoSymlinkPath(Path path) throws IOException {
-    Path current = path.getRoot();
-    for (Path segment : path) {
-      current = current.resolve(segment);
-      if (Files.isSymbolicLink(current)) {
-        throw new LocalGitCaptureException("LOCAL_GIT_REPOSITORY_INVALID");
-      }
-    }
-  }
-
-  private static void requireRegularNoFollow(Path path) throws IOException {
-    BasicFileAttributes attributes =
-        Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-    if (!attributes.isRegularFile() || attributes.isSymbolicLink()) {
-      throw new LocalGitCaptureException("LOCAL_GIT_REPOSITORY_INVALID");
-    }
-  }
-
   private static int compareUnsigned(byte[] left, byte[] right) {
     int common = Math.min(left.length, right.length);
     for (int index = 0; index < common; index++) {
@@ -647,7 +462,7 @@ public final class LocalGitCommitCaptureAdapter implements LocalSourceCapture {
     return Integer.compare(left.length, right.length);
   }
 
-  private record TreeEntry(String mode, String type, String objectId, String path) {}
+  private record GitCapture(String treeObjectId, List<CapturedEntry> entries) {}
 
   private record IdentifiedDocument(ArtifactId id, ImmutableBytes bytes) {}
 
@@ -661,7 +476,7 @@ public final class LocalGitCommitCaptureAdapter implements LocalSourceCapture {
       String analysisDisposition,
       String textEncoding) {
 
-    private static CapturedEntry from(TreeEntry treeEntry, byte[] bytes) {
+    private static CapturedEntry from(FixedGitObjectAccess.TreeEntry treeEntry, byte[] bytes) {
       boolean text = isAnalyzableText(bytes);
       return new CapturedEntry(
           treeEntry.mode(),

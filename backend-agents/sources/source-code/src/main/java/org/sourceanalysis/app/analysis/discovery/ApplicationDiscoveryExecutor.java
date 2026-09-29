@@ -5,6 +5,7 @@ import org.sourceanalysis.app.analysis.code.JavaCodeSession;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
+import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 
@@ -14,6 +15,7 @@ public final class ApplicationDiscoveryExecutor {
   private final VerifiedSourceTextReader sourceReader;
   private final CanonicalModuleArtifactStore moduleArtifacts;
   private final CanonicalAnalysisStepArtifactStore stepArtifacts;
+  private final CanonicalAnalysisStepArtifactStore sourceStepArtifacts;
   private final JavaCodeSession javaCodeSession;
   private final MapperXmlResourceView mapperXmlResourceView;
 
@@ -23,9 +25,24 @@ public final class ApplicationDiscoveryExecutor {
       CanonicalModuleArtifactStore moduleArtifacts,
       CanonicalAnalysisStepArtifactStore stepArtifacts,
       JavaCodeSession javaCodeSession) {
+    this(sourceReader, moduleArtifacts, stepArtifacts, stepArtifacts, javaCodeSession);
+  }
+
+  /**
+   * Creates the technical cross-policy seam. The source store reopens R0 only; the regular step
+   * store remains the sole owner of M1–M4 and the final R1 Step02 receipt.
+   */
+  public ApplicationDiscoveryExecutor(
+      VerifiedSourceTextReader sourceReader,
+      CanonicalModuleArtifactStore moduleArtifacts,
+      CanonicalAnalysisStepArtifactStore stepArtifacts,
+      CanonicalAnalysisStepArtifactStore sourceStepArtifacts,
+      JavaCodeSession javaCodeSession) {
     this.sourceReader = Objects.requireNonNull(sourceReader, "verified source reader");
     this.moduleArtifacts = Objects.requireNonNull(moduleArtifacts, "module artifact store");
     this.stepArtifacts = Objects.requireNonNull(stepArtifacts, "analysis step artifact store");
+    this.sourceStepArtifacts =
+        Objects.requireNonNull(sourceStepArtifacts, "source analysis-step artifact store");
     this.javaCodeSession = Objects.requireNonNull(javaCodeSession, "Java code session");
     this.mapperXmlResourceView = null;
   }
@@ -43,6 +60,7 @@ public final class ApplicationDiscoveryExecutor {
     this.sourceReader = Objects.requireNonNull(sourceReader, "verified source reader");
     this.moduleArtifacts = Objects.requireNonNull(moduleArtifacts, "module artifact store");
     this.stepArtifacts = Objects.requireNonNull(stepArtifacts, "analysis step artifact store");
+    this.sourceStepArtifacts = stepArtifacts;
     this.javaCodeSession = Objects.requireNonNull(javaCodeSession, "Java code session");
     this.mapperXmlResourceView =
         Objects.requireNonNull(mapperXmlResourceView, "mapper XML resource view");
@@ -50,11 +68,31 @@ public final class ApplicationDiscoveryExecutor {
 
   /** Runs M1 through M4 in their sole allowed order. */
   public ApplicationDiscoveryReference execute(ApplicationDiscoveryRequest request) {
+    return executeInternal(request, null).publication();
+  }
+
+  /**
+   * Executes the technical R1 producer over immutable R0 source bytes.
+   *
+   * <p>The explicit controls are the owner of every Step02 module and final receipt; the R0
+   * verified-source reference remains the only source provenance.
+   */
+  public TechnicalApplicationDiscovery executeTechnical(
+      ApplicationDiscoveryRequest request, ArtifactControls executionControls) {
+    return executeInternal(
+        request, Objects.requireNonNull(executionControls, "technical execution controls"));
+  }
+
+  private TechnicalApplicationDiscovery executeInternal(
+      ApplicationDiscoveryRequest request, ArtifactControls executionControls) {
     try {
-      requireDestination(request);
+      requireDestination(request, executionControls != null);
+      VerifiedSourceTextSet technicalSource =
+          executionControls == null ? null : sourceReader.reopen(request.verifiedSourceInventory());
       ApplicationProfile detected =
           new ApplicationProfileDetector(sourceReader)
-              .detect(request.verifiedSourceInventory(), request.discoveryProfile());
+              .detect(
+                  request.verifiedSourceInventory(), request.discoveryProfile(), executionControls);
       ApplicationProfileDraftReference profileDraft =
           new ApplicationProfileModulePublisher(moduleArtifacts)
               .publish(
@@ -65,12 +103,20 @@ public final class ApplicationDiscoveryExecutor {
                       "application-profile"),
                   detected);
       ApplicationProfile profile =
-          new PersistedApplicationProfileReader(moduleArtifacts, sourceReader)
-              .reopen(profileDraft, request.verifiedSourceInventory());
+          executionControls == null
+              ? new PersistedApplicationProfileReader(moduleArtifacts, sourceReader)
+                  .reopen(profileDraft, request.verifiedSourceInventory())
+              : new PersistedApplicationProfileReader(moduleArtifacts, sourceReader)
+                  .reopenTechnical(
+                      profileDraft, request.verifiedSourceInventory(), executionControls);
       JavaDeclarationCatalog javaCatalog = javaCodeSession.catalog();
       HttpEntryDiscovery entries =
-          new SpringHttpEntryDiscoverer(sourceReader)
-              .discoverEntries(profile, request.verifiedSourceInventory(), javaCatalog);
+          executionControls == null
+              ? new SpringHttpEntryDiscoverer(sourceReader)
+                  .discoverEntries(profile, request.verifiedSourceInventory(), javaCatalog)
+              : new SpringHttpEntryDiscoverer(sourceReader)
+                  .discoverEntries(
+                      profile, request.verifiedSourceInventory(), javaCatalog, executionControls);
       HttpEntryDiscoveryDraftReference entryDraft =
           new HttpEntryDiscoveryModulePublisher(moduleArtifacts)
               .publish(
@@ -82,7 +128,8 @@ public final class ApplicationDiscoveryExecutor {
                   profileDraft,
                   profile,
                   entries);
-      MapperCatalogDiscovery catalog = catalogMappers(profile, request, javaCatalog);
+      MapperCatalogDiscovery catalog =
+          catalogMappers(profile, request, javaCatalog, executionControls);
       MapperCatalogDraftReference catalogDraft =
           new MapperCatalogModulePublisher(moduleArtifacts)
               .publish(
@@ -94,29 +141,40 @@ public final class ApplicationDiscoveryExecutor {
                   profileDraft,
                   profile,
                   catalog);
-      return new ApplicationDiscoveryPublicationSpecifier(moduleArtifacts, stepArtifacts)
-          .publish(
-              new ApplicationDiscoveryPublicationRequest(
-                  request.destination(),
-                  request.verifiedSourceInventory(),
-                  profileDraft,
-                  entryDraft,
-                  catalogDraft));
+      ApplicationDiscoveryPublicationRequest publicationRequest =
+          new ApplicationDiscoveryPublicationRequest(
+              request.destination(),
+              request.verifiedSourceInventory(),
+              profileDraft,
+              entryDraft,
+              catalogDraft);
+      ApplicationDiscoveryReference publication =
+          executionControls == null
+              ? new ApplicationDiscoveryPublicationSpecifier(moduleArtifacts, stepArtifacts)
+                  .publish(publicationRequest)
+              : new ApplicationDiscoveryPublicationSpecifier(
+                      moduleArtifacts, stepArtifacts, sourceStepArtifacts)
+                  .publishTechnical(
+                      publicationRequest,
+                      technicalSource.sourceInventoryRef(),
+                      technicalSource.verifiedSnapshotRef());
+      return new TechnicalApplicationDiscovery(publication, entries);
     } catch (ApplicationDiscoveryException failure) {
       throw failure;
     } catch (RuntimeException failure) {
-      throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_EXECUTION_INVALID");
+      throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_EXECUTION_INVALID", failure);
     }
   }
 
-  private static void requireDestination(ApplicationDiscoveryRequest request) {
+  private static void requireDestination(ApplicationDiscoveryRequest request, boolean technical) {
     if (request == null
         || request.destination().analysisStepKey()
             != org.sourceanalysis.app.artifact.AnalysisStepKey.APPLICATION_DISCOVERY
-        || !request
-            .destination()
-            .runId()
-            .equals(request.verifiedSourceInventory().publication().address().runId())) {
+        || (!technical
+            && !request
+                .destination()
+                .runId()
+                .equals(request.verifiedSourceInventory().publication().address().runId()))) {
       throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_EXECUTION_INVALID");
     }
   }
@@ -124,12 +182,19 @@ public final class ApplicationDiscoveryExecutor {
   private MapperCatalogDiscovery catalogMappers(
       ApplicationProfile profile,
       ApplicationDiscoveryRequest request,
-      JavaDeclarationCatalog javaCatalog) {
+      JavaDeclarationCatalog javaCatalog,
+      ArtifactControls executionControls) {
     MapperCapabilityCataloger cataloger = new MapperCapabilityCataloger(sourceReader);
     if (mapperXmlResourceView == null) {
-      return cataloger.catalogMappers(profile, request.verifiedSourceInventory(), javaCatalog);
+      return executionControls == null
+          ? cataloger.catalogMappers(profile, request.verifiedSourceInventory(), javaCatalog)
+          : cataloger.catalogMappers(
+              profile, request.verifiedSourceInventory(), javaCatalog, executionControls);
     }
     VerifiedSourceTextSet source = sourceReader.reopen(request.verifiedSourceInventory());
-    return cataloger.catalogMappers(profile, source, javaCatalog, mapperXmlResourceView);
+    return executionControls == null
+        ? cataloger.catalogMappers(profile, source, javaCatalog, mapperXmlResourceView)
+        : cataloger.catalogMappers(
+            profile, source, javaCatalog, mapperXmlResourceView, executionControls);
   }
 }

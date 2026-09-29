@@ -33,6 +33,7 @@ import org.sourceanalysis.app.artifact.CanonicalArtifactPolicyRegistry;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.FileSystemCanonicalModuleArtifactStore;
+import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.RunStoreBootstrap;
 import org.sourceanalysis.app.artifact.RunStoreHandle;
@@ -41,6 +42,74 @@ import org.sourceanalysis.app.runtime.modeljob.ModelJobProviderBinding;
 import org.sourceanalysis.app.runtime.modeljob.PrivateModelJobResultStore;
 
 class ActivityHistoricalReuseResolverTest {
+
+  @Test
+  void v2HistoricalAuditKeepsCapacityBlockedFinalScopeIncomplete() {
+    assertThat(
+            ActivityHistoricalReuseResolver.requireUnavailableFinalScopesExplained(
+                List.of("slice:ready", "slice:oversize"),
+                Set.of("slice:ready"),
+                List.of("INPUT_CAPACITY_EXCEEDED:slice:oversize:171000/149744")))
+        .containsExactly("slice:oversize");
+    assertThatThrownBy(
+            () ->
+                ActivityHistoricalReuseResolver.requireUnavailableFinalScopesExplained(
+                    List.of("slice:ready", "slice:missing"),
+                    Set.of("slice:ready"),
+                    List.of("READING_NOT_FINISHED")))
+        .hasMessageContaining("ACTIVITY_HISTORICAL_REUSE_PROVENANCE_INVALID");
+  }
+
+  @Test
+  void failedReadingBeforePlanRetainsItsSavedReasonDuringHistoricalAudit(@TempDir Path temporary)
+      throws Exception {
+    CodeReadingMaterialSet materials = ActivityLargePacketFormalEntryTest.largeStep05Material();
+    Path journal = Files.createDirectory(temporary.resolve("private-journal"));
+    AnalysisRunId sourceBatch = AnalysisRunId.parse("analysis-run:" + "a".repeat(64));
+    StructuredModelProvider unknownUnit =
+        request ->
+            new StructuredModelResponse(
+                ImmutableBytes.copyOf(
+                    "{\"requestedNavigationPages\":[],\"requestedUnitKeys\":[\"M999\"],\"slices\":[],\"unknowns\":[],\"finalSliceKeys\":[],\"supersededSlices\":[],\"finishReading\":false}"
+                        .getBytes(StandardCharsets.UTF_8)),
+                new org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1(
+                    "scripted", "formal-large-packet", "high", "read-only"));
+    ActivityRetryProfile oneAttempt =
+        new ActivityRetryProfile(1, 0, 0, 1.0, 0.0, Set.of(), Map.of());
+    ActivityExplanationResult failed =
+        ActivityExplainer.forExecution(
+                ActivityLargePacketFormalEntryTest.execution(
+                    journal, sourceBatch, null, unknownUnit, oneAttempt))
+            .explain(
+                new ExplainCodeReadingMaterialsRequest(
+                    materials, new ActivityExplanationProfile(20_000, 8_000, 4, 32, 2_000), 1));
+
+    assertThat(failed.packetCompletion().orElseThrow())
+        .singleElement()
+        .satisfies(
+            completion ->
+                assertThat(completion.incompleteScopes())
+                    .singleElement()
+                    .extracting(ActivityPacketCompletion.IncompleteScope::reasonCode)
+                    .isEqualTo("ACTIVITY_READING_UNIT_UNKNOWN"));
+    ActivityExplanationResult historical =
+        publishAndReopenHistoricalV3(
+            Files.createDirectory(temporary.resolve("historical-m11")), sourceBatch, failed);
+
+    ActivityExplanationResult reopened =
+        new ActivityHistoricalReuseResolver(journal).resolve(materials, historical, sourceBatch);
+    assertThat(reopened.packetCompletion().orElseThrow())
+        .singleElement()
+        .satisfies(
+            completion -> {
+              assertThat(completion.completion())
+                  .isEqualTo(ActivityPacketCompletion.Completion.INCOMPLETE);
+              assertThat(completion.incompleteScopes())
+                  .singleElement()
+                  .extracting(ActivityPacketCompletion.IncompleteScope::reasonCode)
+                  .isEqualTo("ACTIVITY_READING_UNIT_UNKNOWN");
+            });
+  }
 
   @Test
   void recoversCompleteDirectPairAgainstHistoricalV3WithoutChangingReviewedRows(

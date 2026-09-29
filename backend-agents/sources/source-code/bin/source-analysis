@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -z "${SOURCE_ANALYSIS_JAVA_HOME:-}" || -z "${SOURCE_ANALYSIS_CLASSPATH:-}" ]]; then
+  printf '%s\n' 'SOURCE_ANALYSIS_LAUNCH_CONFIGURATION_MISSING: set SOURCE_ANALYSIS_JAVA_HOME and SOURCE_ANALYSIS_CLASSPATH' >&2
+  exit 2
+fi
+
+if [[ ! -x "${SOURCE_ANALYSIS_JAVA_HOME}/bin/java" ]]; then
+  printf '%s\n' 'SOURCE_ANALYSIS_JAVA_INVALID: configured Java executable is not runnable' >&2
+  exit 2
+fi
+
+launcher_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+framework_home="$(cd -- "${launcher_dir}/.." && pwd -P)"
+
+exec "${SOURCE_ANALYSIS_JAVA_HOME}/bin/java" \
+  "-Dsourceanalysis.framework.home=${framework_home}" \
+  -cp "${SOURCE_ANALYSIS_CLASSPATH}" \
+  org.sourceanalysis.app.adapter.cli.SourceAnalysisCli "$@"

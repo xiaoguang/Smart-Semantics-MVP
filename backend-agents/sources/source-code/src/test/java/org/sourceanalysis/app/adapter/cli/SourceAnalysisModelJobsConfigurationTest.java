@@ -683,7 +683,7 @@ class SourceAnalysisModelJobsConfigurationTest {
                 + "---\n"
                 + "unknownSecondDocumentKey: true\n");
 
-    ExecutionResult result = execute(config, "materials-only");
+    ExecutionResult result = execute(config, "activities");
 
     assertThat(result.exitCode()).isNotZero();
     assertThat(result.diagnostics())
@@ -695,7 +695,7 @@ class SourceAnalysisModelJobsConfigurationTest {
   void oldRootAndSecondProviderConfigAreRejectedInModelExecutionMode() throws Exception {
     ToolFixture tools = toolFixture();
     Path oldRoot = writeConfig(configYaml(tools, "").replaceFirst("v2", "v1"));
-    ExecutionResult oldRootResult = execute(oldRoot, "materials-only");
+    ExecutionResult oldRootResult = execute(oldRoot, "activities");
     assertThat(oldRootResult.exitCode()).isNotZero();
     assertThat(oldRootResult.diagnostics())
         .contains("CONFIGURATION_INVALID")
@@ -710,54 +710,6 @@ class SourceAnalysisModelJobsConfigurationTest {
     assertThat(secondConfig.diagnostics())
         .contains("ARGUMENTS_INVALID")
         .doesNotContain("MATERIALS_STATE_INVALID", "CONFIGURATION_INVALID");
-  }
-
-  @Test
-  void materialsOnlyDoesNotResolveModelAuthEnvironmentOrConstructAProvider() throws Exception {
-    ToolFixture tools = toolFixture();
-    Files.createDirectories(temporaryDirectory.resolve("not-a-git-checkout"));
-    String modelJobs =
-        "  modelJobs:\n"
-            + "    providers:\n"
-            + "      pro:\n"
-            + "        kind: codexSubscription\n"
-            + "        quotaScope: personal-pro-account\n"
-            + "        executable: '"
-            + quote(tools.executable())
-            + "'\n"
-            + "        auth:\n"
-            + "          mode: chatgpt\n"
-            + "          codexHomeEnv: MODEL_JOBS_MUST_NOT_BE_RESOLVED\n"
-            + "    routing:\n"
-            + "      activity: [pro]\n"
-            + "      processGroup: [pro]\n"
-            + "      repositorySummary: [pro]\n"
-            + "      report: [pro]\n";
-    Path config =
-        writeConfig(
-            configYaml(
-                tools,
-                modelJobs,
-                temporaryDirectory.resolve("not-a-git-checkout"),
-                "repository-run-config-v2"));
-
-    ExecutionResult result = execute(config, "materials-only");
-
-    assertThat(result.exitCode()).isNotZero();
-    assertThat(result.diagnostics())
-        .doesNotContain("MODEL_AUTH_ENV_MISSING", "MODEL_JOBS_MUST_NOT_BE_RESOLVED");
-  }
-
-  @Test
-  void materialsOnlyMayOmitModelJobsAndStillHasNoProviderBoundary() throws Exception {
-    ToolFixture tools = toolFixture();
-    Path config = writeConfig(configYaml(tools, ""));
-
-    ExecutionResult result = execute(config, "materials-only");
-
-    assertThat(result.exitCode()).isNotZero();
-    assertThat(result.diagnostics())
-        .doesNotContain("MODEL_AUTH_ENV_MISSING", "MODEL_PROVIDER_FORBIDDEN_IN_MATERIALS_ONLY");
   }
 
   @Test
@@ -1188,7 +1140,7 @@ class SourceAnalysisModelJobsConfigurationTest {
 
   private void assertConfigurationInvalid(String yaml) throws Exception {
     Path config = writeConfig(yaml);
-    ExecutionResult result = execute(config, "materials-only");
+    ExecutionResult result = execute(config, "activities");
     assertThat(result.exitCode()).isNotZero();
     assertThat(result.diagnostics())
         .contains("CONFIGURATION_INVALID")

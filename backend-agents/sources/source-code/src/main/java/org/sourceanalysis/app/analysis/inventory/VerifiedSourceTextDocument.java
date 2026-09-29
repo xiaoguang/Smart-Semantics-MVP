@@ -23,7 +23,7 @@ public record VerifiedSourceTextDocument(
     if (path == null || path.isBlank() || path.startsWith("/") || path.contains("..")) {
       throw new IllegalArgumentException("source path must be repository relative");
     }
-    if (!"100644".equals(gitMode) && !"100755".equals(gitMode)) {
+    if (gitMode != null && !"100644".equals(gitMode) && !"100755".equals(gitMode)) {
       throw new IllegalArgumentException("source git mode is unsupported");
     }
     if (mediaType == null || mediaType.isBlank() || sizeBytes < 0) {

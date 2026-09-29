@@ -36,6 +36,8 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
   private final Duration shutdownTimeout;
   private final List<String> sourcepathEntries;
   private final List<String> classpathEntries;
+  private final String targetJdkVersion;
+  private final List<String> targetPlatformEntries;
   private final ObjectMapper json;
   private final Process process;
   private final BufferedReader stdout;
@@ -53,11 +55,15 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
       Duration queryTimeout,
       Duration shutdownTimeout,
       List<String> sourcepathEntries,
-      List<String> classpathEntries) {
+      List<String> classpathEntries,
+      String targetJdkVersion,
+      List<String> targetPlatformEntries) {
     this.queryTimeout = positive(queryTimeout, "JDT syntax query timeout");
     this.shutdownTimeout = positive(shutdownTimeout, "JDT syntax shutdown timeout");
     this.sourcepathEntries = absolutePaths(sourcepathEntries, "JDT sourcepath entries");
     this.classpathEntries = absolutePaths(classpathEntries, "JDT classpath entries");
+    this.targetJdkVersion = requireText(targetJdkVersion, "target JDK version");
+    this.targetPlatformEntries = requiredTargetPlatformPaths(targetPlatformEntries);
     json =
         new ObjectMapper(
                 JsonFactory.builder().enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
@@ -88,7 +94,7 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
 
   static JdtSyntaxHelperClient start(
       Path javaHome, Path helperJar, Duration queryTimeout, Duration shutdownTimeout) {
-    return start(javaHome, helperJar, queryTimeout, shutdownTimeout, List.of(), List.of());
+    throw targetPlatformRequired();
   }
 
   static JdtSyntaxHelperClient start(
@@ -98,6 +104,18 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
       Duration shutdownTimeout,
       List<Path> sourcepathEntries,
       List<Path> classpathEntries) {
+    throw targetPlatformRequired();
+  }
+
+  static JdtSyntaxHelperClient start(
+      Path javaHome,
+      Path helperJar,
+      Duration queryTimeout,
+      Duration shutdownTimeout,
+      List<Path> sourcepathEntries,
+      List<Path> classpathEntries,
+      String targetJdkVersion,
+      List<Path> targetPlatformEntries) {
     Path java = Objects.requireNonNull(javaHome, "JDT Java home").resolve("bin").resolve("java");
     Path jar = Objects.requireNonNull(helperJar, "JDT syntax helper jar");
     if (!Files.isRegularFile(java) || !Files.isExecutable(java)) {
@@ -114,12 +132,30 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
         queryTimeout,
         shutdownTimeout,
         sourcepathEntries.stream().map(Path::toString).toList(),
-        classpathEntries.stream().map(Path::toString).toList());
+        classpathEntries.stream().map(Path::toString).toList(),
+        targetJdkVersion,
+        targetPlatformEntries.stream().map(Path::toString).toList());
   }
 
   static JdtSyntaxHelperClient start(
       List<String> command, Duration queryTimeout, Duration shutdownTimeout) {
-    return new JdtSyntaxHelperClient(command, queryTimeout, shutdownTimeout, List.of(), List.of());
+    throw targetPlatformRequired();
+  }
+
+  static JdtSyntaxHelperClient start(
+      List<String> command,
+      Duration queryTimeout,
+      Duration shutdownTimeout,
+      String targetJdkVersion,
+      List<Path> targetPlatformEntries) {
+    return new JdtSyntaxHelperClient(
+        command,
+        queryTimeout,
+        shutdownTimeout,
+        List.of(),
+        List.of(),
+        targetJdkVersion,
+        targetPlatformEntries.stream().map(Path::toString).toList());
   }
 
   JdtSyntaxProtocol.Response describe(String sourceKey, String languageLevel, String source) {
@@ -143,6 +179,8 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
             sourceSha256,
             sourcepathEntries,
             classpathEntries,
+            targetJdkVersion,
+            targetPlatformEntries,
             source);
     try {
       stdin.write(json.writeValueAsString(request));
@@ -266,6 +304,19 @@ final class JdtSyntaxHelperClient implements AutoCloseable {
     return copied.stream()
         .map(value -> Path.of(value).toAbsolutePath().normalize().toString())
         .toList();
+  }
+
+  private static List<String> requiredTargetPlatformPaths(List<String> values) {
+    if (values == null || values.isEmpty()) {
+      throw targetPlatformRequired();
+    }
+    return absolutePaths(values, "JDT target platform entries");
+  }
+
+  private static CodeEngineException targetPlatformRequired() {
+    return new CodeEngineException(
+        CodeEngineException.ENGINE_CONFIGURATION_INVALID,
+        "JDT syntax helper requires an explicit verified target JDK platform");
   }
 
   private void validateResponse(

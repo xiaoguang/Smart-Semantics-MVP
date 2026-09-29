@@ -1,90 +1,86 @@
-# 技术材料采集：源码准备之后、业务解释之前
+# 技术分析：前端、后端、持久化独立采集，按入口组装
 
-状态：2026-09-26 详细设计修订；三个命令、Maven自动准备、Java 就绪检查和正式前后端关联尚未实现。本次仅改文档。现有 JDT 导航、MyBatis/XML/SQL 分析、后端阅读材料继续复用。设计经过代码接线及冻结源码走读，不等于新实现或真实验收通过。
+状态：2026-09-29 用户确认范围后的详细设计；**四命令拆分及入口JSON目标尚未实施**。现有合并前后端的三命令已在固定源码生成并重开材料，但调用准确性未通过。当前事实与目标分列，不能把以下命令形状视为今天已经可执行。
 
-## 1. 要解决什么
+## 1. 本次只解决什么
 
-用户完成源码准备后，应能分别执行“发现入口并收集代码”“补全持久化材料”“组织阅读材料”。每次操作读取明确的已保存上游，保存自己的结果，然后结束。用户/Codex 可以检查问题，再决定下一操作；程序不因某项成功自动启动业务模型。
+源码准备不变。将前端解析从现有 collect-code 拆出，形成四个独立操作；最终按后端 entryId 保存完整机器可读JSON，不再按编号顺序把12个入口混成容量包。修正已确认的错误调用归属、正常外部调用误报、重要前端单元遗漏、SQL排序投影遗漏和过期文档。
 
-本轮增加两项实质能力：
+技术采集与组装零业务LLM调用，不解释“采购→入库→付款”的业务生命周期；不执行客户应用、JS、动态MyBatis/OGNL或数据库。保存静态关系和完整原文，不承诺所有运行时分支都被静态证明。
 
-1. **在 Java 导航前自动准备并核对分析环境。** 常规Maven的父POM/多模块/Profile/传递依赖由标准工具解析，使用本地缓存及配置允许仓库；特殊构建由Agent根据报告询问。得到按模块的实际环境后，核对目标JDK和JDT诊断，仍未就绪则不导航。不是LLM猜JAR，也不是直接执行客户Maven脚本。
-2. **保存前端请求与后端入口的关系。** 识别页面、共享组件、请求封装和 HTTP 路径，关联已有 Spring 入口；Step05 将相关页面和后端原文放入同一材料包。
-
-不增加第二套 Java 调用分析，不建立 Fact/Proof，不判断“这是不是采购”，不推断业务生命周期。页面关联、Java 调用、Mapper 绑定都是带限制的静态源码关系，不是运行时记录。
-
-## 2. 用户操作与内部步骤
-
-一个程序仍叫 `source-analysis`。下列是该程序的三个**拟新增子命令**，不是三个独立程序。
-
-| 操作 | 内部步骤 | 输入 | 输出 | 不做什么 |
-| --- | --- | --- | --- | --- |
-| `collect-code`：发现入口并收集代码 | Step02＋Step03 | 准备结果、明确Maven构建选择/仓库策略（或可信环境）、前端静态配置 | 实际编译环境、Java就绪报告、应用/入口/Mapper目录、前端请求关系、Java方法及调用索引 | 不解析 SQL、不组模型包、不调用模型 |
-| `analyze-persistence`：补全持久化材料 | Step04 | 指定 collect-code 输出及其中的来源 | Mapper XML、声明绑定、SQL结构和限制 | 不启动 JDT/前端 parser，不执行数据库 |
-| `assemble-materials`：组织入口阅读材料 | Step05 | 指定 Step04 输出，沿引用读取 Step02/03 | 可重开的入口材料包及全部入口处置 | 不重新解析 Java/Vue/XML/SQL，不解释 Activity |
-
-保留八个内部 step key 与历史地址；不因显示名称变化迁移历史目录。Step02、Step03 分别保存，只有进程/JDT会话共用。这样既不多启动一次 JDT，也可以明确看出“入口发现结果”和“调用收集结果”。
+## 2. 目标运行关系
 
 ```text
-源码准备 R0：固定原文＋有效范围
-  └─ collect-code R1
-       ├─ Step02：自动准备依赖 → 就绪检查／入口／前端请求关系
-       └─ Step03：复用现有 JDT 收集完整 Java 方法和调用
-            └─ analyze-persistence R2：Mapper → XML／SQL
-                 └─ assemble-materials R3：入口＋页面＋Java＋XML／SQL
-                      └─ 本轮到此结束，不启动 Step06/07
+R0：prepare-source（已有；固定原文、有效范围、排除）
+ ├── R1：collect-frontend
+ │       Vue/JS页面、实例、请求和完整源码单元
+ │       不需要后端入口、Maven、JDT
+ │
+ └── R2：collect-code（只负责后端）
+         外部Maven输出→实际JDT环境→后端入口→Java调用
+              ↓
+         R3：analyze-persistence --code-run R2
+             Mapper绑定、XML、SQL及限制
+              │
+ R1 ──────────┴──→ R4：assemble-materials
+                       --frontend-run R1 --persistence-run R3
+                       请求与后端入口匹配
+                       → 每entryId一份JSON＋总目录＋前端覆盖
 ```
 
-R0–R3 是不同运行，**不是不同源码版本**。各运行保存完整上游引用和同一个 `SelectedSourceBasis`。具体接口、版本、保存及失败合同见[命令与运行](cli-and-runtime.md)。
+R1–R4是本文运行角色，不是重排现有Step01–08、不是固定真实runId。R1与R2可独立执行；R3只依赖R2；R4同时依赖R1和R3，并沿R3取得准确R2。操作顺序不代表业务步骤。保留唯一 source-analysis 可执行程序，共五项源码/技术操作（已有prepare-source＋本次四项）。
 
-用户已确认：三个新操作接通并验收后删除旧`plan-materials`，不保留另一条一键生产路线。Skill按任务范围串联新命令，Java返回结构化结果，Agent在需要决定时询问用户；Skill本身不是通信进程。成功不逐步重复询问，失败不只留一条异常字符串。
+外部Maven仍由用户或获准Agent执行官方build-classpath、effective-pom；Java只读取输出及明确JDK选择，不负责下载、依赖求解、审批或猜配置。独立前端不被Maven缺项阻断。
 
-## 3. 模块分工与复用边界
+## 3. 现有工具与我们需要写的最小适配
 
-| 模块/现有接缝 | 责任 | 本轮变化 |
+| 现成能力 | 本轮保留/薄适配 | 明确不造的系统 |
 | --- | --- | --- |
-| `PreparedVerifiedSourceTextReader`／历史文本 reader | 只返回选定来源中有效、未排除的原文 | 复用；技术运行器必须真正接入准备版 reader |
-| `JavaDependencyPreparer`（拟新增，Step02内部） | 固定ModelBuilder/Resolver解析声明式Maven、受控下载、每模块环境及问题 | 新增；标准库负责POM与依赖语义，不运行客户扩展/构建 |
-| `JavaAnalysisReadiness`（拟新增，Step02 内部） | 核对完整编译环境、诊断覆盖和可导航状态 | 新增；不解析业务、不裁决调用目标 |
-| `JdtProjectSession`／`JavaCodeSession` | 同一冻结投影的 catalog/collect/工具生命周期 | 补按模块和目标平台的环境投影、helper v3及诊断；不修改 collect 算法 |
-| `ApplicationDiscoveryExecutor` | POM/config 技术线索、Spring入口、Mapper候选 | 复用；接入准备来源、就绪报告和前端关系 |
-| `FrontendHttpDiscoverer`（拟新增，Step02 内部） | 已支持Vue/JS静态结构、请求路径、后端入口候选；TS未验证则报告不支持 | 新增；成熟 parser 取语法，有限规则连接请求 |
-| `ProgramGraphsExecution`／`EntryCodeCollector` | 从精确入口收集 Java 调用/实现/正文 | 算法保持；仅修改来源/输出归属接线并做验证 |
-| `DefaultPersistenceAnalyzer` | 官方 MyBatis 部件、安全 XML、JSqlParser | 算法保持；独立重开输入、输出属于 R2 |
-| `DefaultCodeReadingMaterialBuilder` | 按入口组织已保存原文与关联 | 扩展前端选择及范围处置；不变成前端分析器 |
-| 现有 publisher/reader/store | 安装、重开、身份与引用校验 | 同运行假设改为准确 lineage；版本一起更新 |
-| 现有 Agent/CLI/运行登记 | 配置、工具生命周期、状态、查询 | 新增三项意图；不创建公共 Agent 或恢复框架 |
-| 模块内流程 Skill | 指导 Codex 调命令、读实际结果、向用户报告 | 只在实现并验收之后扩展执行说明；不能先教 Skill 调不存在命令 |
+| Maven官方导出 | 后端确定性读取classpath、有效POM和目标JDK | 下载器、仓库管理、父POM/BOM求值 |
+| JDT LS/Core | 原声明与导航；读取逐调用真实绑定，纠正嵌套错归并区分外部边界 | Java编译器、调用分派器、全文件诊断完成证明 |
+| vue-eslint-parser | 既有有限Vue2模式，独立运行及必要源码单元选择 | 通用JS解释器、完整Vue运行时、客户npm脚本 |
+| MyBatis安全XML/JSqlParser | 原文/结构/静态SQL；补现有ORDER BY投影 | 动态SQL穷举、OGNL执行、SQL parser |
+| 原canonical store/Agent/Skill | 多运行准确引用、每入口JSON、受限变长文件集合 | 第二套证据数据库、后台审批和恢复框架 |
 
-详细职责由 [Step02](../../analysis-steps/02-application-discovery.md)、[Step03](../../analysis-steps/03-program-graphs.md)、[Step04](../../analysis-steps/04-proven-code-facts.md)、[Step05](../../analysis-steps/05-business-flows.md)分别拥有；本模块文档只拥有跨步骤接线、Java环境和前端新增能力。
+已有工具依据见[工具复用决策](../../supplements/technical-tool-reuse-decision.md)、[前端parser研究](../../supplements/frontend-http-parser-research.md)、[SQL工具研究](../../supplements/mybatis-dynamic-sql-parser-tools-research.md)。JDT新增绑定适配与Lombok验证的具体依据见[JDT模块](../java-code-engines/jdt-engine.md)。复杂支持不足时报告或延期，不以“没找到工具”为由自行重造。
 
-## 4. 已实现的基础与真正缺口
+## 4. 设计责任唯一归属
 
-已核对的代码事实：
+| 文档 | 拥有的合同 |
+| --- | --- |
+| [运行、配置、版本与Skill](cli-and-runtime.md) | 四命令、运行关系、保存查询、历史兼容与版本 |
+| [外部Maven交接](dependency-preparation.md) | 已有编译输入，不因前端拆分重新开发 |
+| [Java就绪](java-readiness.md) | 后端来源/JDK/JAR检查、诊断未知政策 |
+| [前端采集](frontend-http-discovery.md) | 独立源码→请求/完整单元，不在此匹配后端 |
+| [JDT引擎](../java-code-engines/jdt-engine.md) | 逐调用绑定、错误归属修正、外部/未知/失败 |
+| [Step04](../../analysis-steps/04-proven-code-facts.md) | XML/SQL及ORDER BY保存 |
+| [Step05](../../analysis-steps/05-business-flows.md) | 组装步骤、前后端匹配及消费者 |
+| [入口证据合同](entry-evidence.md) | 每entry JSON内容、路径、目录、范围和存储约束 |
+| [修改/撤换清单](../../plans/technical-analysis-cli-and-vue-cleanup-design.md) | 当前代码到目标的差异、先后依赖、退出条件 |
+| [真实例子与目标走读](../../supplements/vue-to-sql-walkthrough.md) | 历史已生成数据与目标输出逐步对照 |
 
-- `PersistedTechnicalRunExecutor.execute()`目前会重新发布旧 Step01，打开一个 JDT session 后连做02–05；不是读取 prepare-source 结果的三个命令。
-- `SourceAnalysisExecution.executeMaterialsOnly()`仍依赖旧 Git 捕获。准备版公共 reader 和拒绝混用旧材料的检查已存在，但**准备版来源直接生产技术材料**仍需本轮接通。
-- Step02已有持久入口与Mapper候选；没有 Vue请求关系。Step03已有调用、所有候选、正文及局限。Step04已有完整 XML/SQL；Step05已有后端包和引用式保存。
-- `PersistenceMaterialPublisher`及`CodeReadingMaterialPublisher`目前要求上游运行ID相同，并从来源运行推导输出位置。这与三个独立操作不相容，必须一起改生产者、读取器与运行输出，不能只加 CLI 参数。
-- `VerifiedJavaProject`核对已列 JAR 的存在及摘要，不证明“该列的 JAR 一个不少”；JDT客户端当前丢弃 `publishDiagnostics` 通知。
-- 当前仅一个project/classpath，运行器把sourceLevel写为17；Core把工具VM类库加入解析。父子/多模块自动解析及两套工具目标平台一致性是本次真实修改项，不是已经支持的能力。工具方案、支持子集和失败说明见[自动依赖准备](dependency-preparation.md)。
-- 已删除的 JavaParser／五图生成算法不能列作“待删除现存实现”。剩余历史读者/DTO必须按真实消费者分别决定去留，见[清理设计](../../plans/technical-analysis-cli-and-vue-cleanup-design.md)。
+## 5. 当前实现与本轮差距
 
-## 5. 两种变化不要混为一谈
+| 能力 | 已核实当前事实 | 本轮差异 |
+| --- | --- | --- |
+| 源码准备、排除 | 已完成并有直接验证 | 不重做 |
+| Maven交接 | 内嵌下载路线已删除；官方输出v2进入固定源码JDT环境 | 保留，不新增执行Maven代码 |
+| 后端JDT | 固定源码339入口，旧正式结果332收集/7失败 | 修具名嵌套错边；外部分类；重新验收，不伪造全过 |
+| 前端 | 旧合并R1有51请求/51关联，采购请求进入旧R3 | 独立R1，去后端依赖，匹配移R4，补必要单元 |
+| 持久化 | 旧R2已有573条statement，完整XML及部分SQL | 独立操作保留；补排序投影并显式传递新Java基础 |
+| 组装 | 旧R3有47包、339入口、51前端处置；2条前端请求容量未选 | 每entry独立文件，不以相邻入口容量删材料 |
+| 超时缓存 | 等待超时不再永久缓存为失败；43项直接测试及迟到响应验证 | 保留，不重复开发 |
+| JDT长等待 | 七入口跨会话都曾返回；一次仍6成功/1超时，稳定性未通过 | 有界复验，具体调度根因未确认 |
+| Lombok | 已含依赖不等于LS/Core识别生成成员 | 仅成熟方案核对、具名验证；不自造处理器 |
+| 旧路线 | plan-materials与内嵌Maven已退出 | 核对实际剩余消费者，保留必要历史reader |
+| Activity/Step07 | 旧326/新418及历史来源保留 | 新入口材料未适配则模型启动前拒绝，不生成 |
 
-**源码刷新/排除：**R0产生新源码版本。例如排除某XML后，旧索引仍含该XML，不能用于新范围。旧版本仍可查看；首版不计算哪些旧材料恰好不受影响。
+原固定运行、数量及误关联详见[验收记录](../../supplements/technical-analysis-fixed-source-acceptance.md)；后续七入口实验见[查询失败实验](../../supplements/jdt-definition-query-failure-experiment.md)。这些旧身份绝不改名成新R1–R4输出。
 
-**仅补编译依赖：**源码字节和版本可不变，但 Java 分析基础改变。例如第一次少 SLF4J，第二次补齐；旧调用结果不会因此自行变正确。需要用户显式执行新的 collect-code，保存新的 `javaAnalysisBasis` 和索引，再选择是否执行04/05。不能自动重跑 Activity。
+## 6. 本轮验收与停止范围
 
-同来源、同依赖、同工具、同有效配置的已保存输出可被下一命令直接读取；没有自动查找“最新索引”、跨版本拼接、覆盖历史或自动补算。
+必须通过：四操作独立和准确来源、每入口材料发布重开、具名错边不进入确定调用、正常外部调用不冒充缺口、重要前端单元/排序不丢、历史结果不变、零业务模型调用。
 
-## 6. 验收不偷换目标
+Lombok与间歇长等待独立报告：通过、未通过、尚未确定原因。允许诚实的未解析/不支持；不允许已确认的错误边作为正确证据。不能以文件齐全宣布准确性全过，也不能为宣称全过而临时增加通用分析系统。
 
-1. 准备版来源能够进入02–05，排除文件未被投影、前端读取或XML读取重新带回。
-2. Step02能说明实际父POM/Profile/模块、JDK、编译依赖、准备操作和诊断；需要用户处理时返回具名问题和已保存报告。“下载完成”不是“就绪”，“报告未收到”不是“零错误”。依赖核对边界见[Java就绪设计](java-readiness.md)。
-3. 使用**现有Step03**复验错误Mapper、logger.error、重载、嵌套调用及合法多态。错误消失才通过这一改动的验收；有残留则列出，不暗中增加导航裁决器。
-4. Vue通过真实组件/封装关联到HTTP入口，再通过已保存Java及Mapper关系取得SQL。未知路径、多候选、SQL动态片段仍能定位查看，不伪造唯一链。
-5. 三个命令可以分进程执行，后两项不启动JDT，组包不重新解析；完整来源和各步骤输出归属一致。
-6. 零客户构建/插件/生成器执行、零数据库、零业务模型、零Step06/07执行；允许的POM/JAR取得是程序数据准备，不运行其中客户代码。未来模型能否正确解释流程不属于这次技术材料验收。
-
-真实例子及现有局限见[Vue到SQL走读](../../supplements/vue-to-sql-walkthrough.md)。Maven装配/模块隔离、JDT平台/诊断、前端静态关联三处先通过有限可行性夹具，再全面接线；技术假设未验证时不宣称完整链已实现。
+本轮止于第五步。业务质量、模型长材料策略、跨版本增量复用以及参数化SQL执行不纳入。此次是设计文档工作，不授权运行工具或实施代码。

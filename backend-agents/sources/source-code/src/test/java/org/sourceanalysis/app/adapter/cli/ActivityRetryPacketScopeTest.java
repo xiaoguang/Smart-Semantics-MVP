@@ -1,6 +1,7 @@
 package org.sourceanalysis.app.adapter.cli;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
@@ -76,6 +77,90 @@ class ActivityRetryPacketScopeTest {
             SourceAnalysisExecution.retryablePacketIds(
                 materialCoverage, activityCoverage, packetCompletion))
         .containsExactly("packet:incomplete");
+  }
+
+  @Test
+  void mixedBatchMayRetryUnselectedFailureOnlyWhenItHasNoCompletedSlice() {
+    ActivityPacketCompletion newlyCompleted = completion("packet:new", "entry:new", "slice:new");
+    ActivityPacketCompletion untouchedFailure =
+        undeterminedCompletion(
+            "packet:untouched", "entry:untouched", "ACTIVITY_READING_UNIT_UNKNOWN");
+    ActivityPacketCompletion partialFailure =
+        incompleteCompletion("packet:partial", "entry:partial", "slice:missing");
+    List<ActivityPacketCompletion> saved =
+        List.of(newlyCompleted, untouchedFailure, partialFailure);
+    ActivityExplanationResult source =
+        result(
+            List.of(activity("activity:partial", "packet:partial", "entry:partial", "Prior")),
+            List.of(
+                new ActivityEntryCoverage("entry:new", "ANALYZED", List.of("activity:new"), null),
+                new ActivityEntryCoverage("entry:untouched", "NOT_ANALYZED", List.of(), "READING"),
+                new ActivityEntryCoverage(
+                    "entry:partial", "ANALYZED_WITH_GAPS", List.of("activity:partial"), null)),
+            saved);
+
+    assertThatCode(
+            () ->
+                SourceAnalysisExecution.requireMixedOnlineRetryScope(
+                    java.util.Set.of("packet:untouched"), java.util.Set.of("packet:new"), source))
+        .doesNotThrowAnyException();
+    assertThatThrownBy(
+            () ->
+                SourceAnalysisExecution.requireMixedOnlineRetryScope(
+                    java.util.Set.of("packet:partial"), java.util.Set.of("packet:new"), source))
+        .hasMessageContaining("ACTIVITY_MIXED_ONLINE_REUSE_UNSUPPORTED");
+    assertThatThrownBy(
+            () ->
+                SourceAnalysisExecution.requireMixedOnlineRetryScope(
+                    java.util.Set.of("packet:new"), java.util.Set.of("packet:new"), source))
+        .hasMessageContaining("ACTIVITY_MIXED_ONLINE_REUSE_UNSUPPORTED");
+  }
+
+  @Test
+  void carriedBatchAuditComparesTopLevelRecordsByIdentityNotPublicationOrder() {
+    List<CodeReadingMaterialSet.EntryCoverage> source =
+        List.of(
+            entry("entry:changed", "packet:changed"),
+            entry("entry:kept-a", "packet:kept-a"),
+            entry("entry:kept-b", "packet:kept-b"));
+    ReviewedActivity keptA = activity("activity:kept-a", "packet:kept-a", "entry:kept-a", "A");
+    ReviewedActivity keptB = activity("activity:kept-b", "packet:kept-b", "entry:kept-b", "B");
+    ActivityEntryCoverage keptACoverage =
+        new ActivityEntryCoverage("entry:kept-a", "ANALYZED", List.of("activity:kept-a"), null);
+    ActivityEntryCoverage keptBCoverage =
+        new ActivityEntryCoverage("entry:kept-b", "ANALYZED", List.of("activity:kept-b"), null);
+    ActivityExplanationResult origin =
+        result(
+            List.of(keptB, keptA),
+            List.of(
+                keptBCoverage,
+                new ActivityEntryCoverage("entry:changed", "NOT_ANALYZED", List.of(), "OLD"),
+                keptACoverage),
+            List.of());
+    ActivityExplanationResult selected =
+        result(
+            List.of(keptA, keptB),
+            List.of(
+                keptACoverage,
+                keptBCoverage,
+                new ActivityEntryCoverage("entry:changed", "NOT_ANALYZED", List.of(), "NEW")),
+            List.of());
+
+    assertThatCode(
+            () ->
+                SourceAnalysisExecution.requireUnchangedCarriedActivities(
+                    source, selected, origin, java.util.Set.of("packet:changed")))
+        .doesNotThrowAnyException();
+    ActivityExplanationResult altered =
+        result(
+            List.of(activity("activity:kept-a", "packet:kept-a", "entry:kept-a", "ALTERED"), keptB),
+            selected.coverage(),
+            List.of());
+    assertThatThrownBy(
+            () ->
+                SourceAnalysisExecution.requireUnchangedCarriedActivities(
+                    source, altered, origin, java.util.Set.of("packet:changed")))
+        .hasMessageContaining("ACTIVITY_BATCH_RESULT_ADOPTION_INVALID");
   }
 
   @Test

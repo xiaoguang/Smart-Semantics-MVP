@@ -36,6 +36,8 @@ import org.sourceanalysis.app.analysis.interpretation.material.SourceReference;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
+import org.sourceanalysis.app.runtime.SelectedSourceBasis;
+import org.sourceanalysis.app.runtime.SourceBasisGuard;
 import org.sourceanalysis.app.runtime.modeljob.BoundedModelJobExecutor;
 import org.sourceanalysis.app.runtime.modeljob.ModelJobExecutionConfiguration;
 import org.sourceanalysis.app.runtime.modeljob.ModelJobProviderBinding;
@@ -174,6 +176,18 @@ public final class DefaultBusinessProcessDiscovery implements BusinessProcessDis
     CatalogResult catalog =
         selection.catalogWith(selection.candidates(), selection.changedDispositions(), cards);
     return new CatalogSample(request, corpus, cards, catalog, selection, sourceText);
+  }
+
+  /**
+   * Verifies the persisted execution selection against an independently reopened source basis
+   * before opening a corpus or invoking the catalog provider.
+   */
+  CatalogSample discoverCatalogSample(
+      ProcessDiscoveryRequest request,
+      SelectedSourceBasis expectedFromSavedRequest,
+      SelectedSourceBasis actualFromReopenedUpstream) {
+    SourceBasisGuard.requireMatch(expectedFromSavedRequest, actualFromReopenedUpstream);
+    return discoverCatalogSample(request);
   }
 
   /**

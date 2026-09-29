@@ -220,8 +220,16 @@ final class ActivityHistoricalReuseResolver {
         requireScopedSliceProvenance(packet.packetId(), result, results, sourceBatchId);
       }
       requireRetainedSliceActivities(packet.packetId(), sourceActivities, packetResults);
-      return unknownPacketCompletion(
-          packet.packetId(), packet.entries().stream().map(value -> value.entryId()).toList());
+      List<String> entryIds = packet.entries().stream().map(value -> value.entryId()).toList();
+      return new ActivityPacketCompletion(
+          packet.packetId(),
+          entryIds,
+          ActivityPacketCompletion.Completion.INCOMPLETE,
+          List.of(),
+          List.of(),
+          List.of(
+              new ActivityPacketCompletion.IncompleteScope(
+                  null, entryIds, requiredText(failure, "reasonCode"))));
     }
     ActivityMaterialView view =
         new ActivityMaterialProjector().project(packet, PROJECTION_ONLY_PROFILE);
@@ -259,8 +267,15 @@ final class ActivityHistoricalReuseResolver {
     requireRetainedSliceActivities(packet.packetId(), sourceActivities, packetResults);
 
     List<ActivityPacketCompletion.IncompleteScope> incompleteScopes = new ArrayList<>();
+    List<String> knownSliceKeys =
+        ActivityExplainer.knownSliceKeys(plan, planRecord, requiredSliceKeys);
     for (String issue : obligations.currentOpenScopeIssues()) {
-      incompleteScopes.add(new ActivityPacketCompletion.IncompleteScope(null, entryIds, issue));
+      String sliceKey = ActivityExplainer.scopeKeyForIssue(issue, knownSliceKeys);
+      incompleteScopes.add(
+          new ActivityPacketCompletion.IncompleteScope(
+              sliceKey,
+              ActivityExplainer.entryIdsForScope(plan, planRecord, sliceKey, entryIds),
+              issue));
     }
     List<String> completedSliceKeys = new ArrayList<>();
     for (String sliceKey : requiredSliceKeys) {
@@ -304,17 +319,17 @@ final class ActivityHistoricalReuseResolver {
     String schemaVersion = requiredText(planRecord, "schemaVersion");
     if ("activity-reading-plan-v2".equals(schemaVersion)) {
       List<String> requiredSliceKeys = requiredStrings(planRecord.path("finalSliceKeys"));
-      if (!slicesByKey.keySet().containsAll(requiredSliceKeys)) {
-        throw provenanceInvalid();
-      }
+      List<String> currentIssues = requiredStrings(planRecord.path("currentOpenScopeIssues"));
+      requireUnavailableFinalScopesExplained(
+          requiredSliceKeys, slicesByKey.keySet(), currentIssues);
       Map<String, ActivityReadingPlan.Slice> requiredSlices = new LinkedHashMap<>();
       for (String sliceKey : requiredSliceKeys) {
-        requiredSlices.put(sliceKey, slicesByKey.get(sliceKey));
+        ActivityReadingPlan.Slice slice = slicesByKey.get(sliceKey);
+        if (slice != null) {
+          requiredSlices.put(sliceKey, slice);
+        }
       }
-      return new SavedScopeObligations(
-          requiredSliceKeys,
-          requiredSlices,
-          requiredStrings(planRecord.path("currentOpenScopeIssues")));
+      return new SavedScopeObligations(requiredSliceKeys, requiredSlices, currentIssues);
     }
     if (!"activity-reading-plan-v1".equals(schemaVersion)) {
       throw provenanceInvalid();
@@ -333,6 +348,22 @@ final class ActivityHistoricalReuseResolver {
                     + totalPages);
     return new SavedScopeObligations(
         finalScopes.requiredSliceKeys(), finalScopes.matchingSlicesByKey(), currentIssues);
+  }
+
+  static List<String> requireUnavailableFinalScopesExplained(
+      List<String> finalSliceKeys, Set<String> availableSliceKeys, List<String> currentIssues) {
+    List<String> missing =
+        finalSliceKeys.stream().filter(key -> !availableSliceKeys.contains(key)).toList();
+    for (String key : missing) {
+      if (currentIssues.stream()
+          .noneMatch(
+              issue ->
+                  issue.equals("READING_INCOMPLETE:" + key)
+                      || issue.startsWith("INPUT_CAPACITY_EXCEEDED:" + key + ":"))) {
+        throw provenanceInvalid();
+      }
+    }
+    return missing;
   }
 
   private ScopedAggregateOrigin resolveScopedAggregateOrigin(

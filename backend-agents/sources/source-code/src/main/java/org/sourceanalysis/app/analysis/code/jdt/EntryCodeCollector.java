@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.sourceanalysis.app.analysis.code.CodeEngineException;
 import org.sourceanalysis.app.analysis.code.EntryCodeContext;
 import org.sourceanalysis.app.analysis.code.EntrySeed;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
@@ -215,6 +216,8 @@ final class EntryCodeCollector {
         if (!errors.isEmpty()) {
           diagnostics.put(path, errors.get(0).code() + ":" + errors.get(0).message());
         }
+      } catch (CodeEngineException failure) {
+        throw failure;
       } catch (RuntimeException failure) {
         diagnostics.put(path, "SYNTAX_UNAVAILABLE:" + failure.getMessage());
       }

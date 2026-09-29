@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import org.sourceanalysis.app.analysis.code.EntryCodeContext;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendEntryLinkRecord;
 import org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex;
 
 /** Shared output-only formatter for complete reading materials and individual packets. */
@@ -149,11 +150,66 @@ public final class CodeReadingMaterialMarkdown {
       }
     }
 
+    appendFrontendSelection(output, packet.frontendSelection());
     appendPersistence(output, packet.persistence());
     appendSourceReferences(output, packet.sourceReferences());
     appendUnselectedUnits(output, packet.unselectedUnits());
     appendLimitations(output, packet.limitations());
     return output.toString();
+  }
+
+  private static void appendFrontendSelection(
+      StringBuilder output, CodeReadingMaterialSet.FrontendSelection selection) {
+    if (selection.requestUses().isEmpty()) {
+      return;
+    }
+    output.append("\n### Frontend HTTP request uses\n");
+    for (CodeReadingMaterialSet.FrontendRequestUse use : selection.requestUses()) {
+      output
+          .append("- [")
+          .append(use.entryId())
+          .append("] ")
+          .append(use.requestId())
+          .append(" instance=")
+          .append(use.instanceKey())
+          .append(" sourceUnit=")
+          .append(use.sourceUnitId())
+          .append(" method=")
+          .append(use.request().httpMethod())
+          .append(" path=")
+          .append(use.request().resolvedPath());
+      if (use.request().baseUrlExpression() != null) {
+        output.append(" baseURL expression=").append(use.request().baseUrlExpression());
+      }
+      if (use.request().baseUrlStaticFallback() != null) {
+        output.append(" baseURL static fallback=").append(use.request().baseUrlStaticFallback());
+      }
+      output.append(" link=").append(use.entryLink().resolution());
+      if (use.entryLink().resolution() == FrontendEntryLinkRecord.Resolution.MATCHED_UNIQUE) {
+        output.append(" route/method match only; deployment address not verified");
+      }
+      output.append("\n");
+    }
+    output.append("\n### Frontend source units\n");
+    for (var unit : selection.sourceUnits()) {
+      output
+          .append("#### ")
+          .append(unit.sourceUnitId())
+          .append(" ")
+          .append(unit.path())
+          .append(":")
+          .append(unit.sourceUnitRange().startLine())
+          .append("-")
+          .append(unit.sourceUnitRange().endLine())
+          .append(" [")
+          .append(unit.sourceUnitKind())
+          .append("]\n\n");
+      fenced(output, frontendLanguage(unit.path()), unit.text());
+    }
+  }
+
+  private static String frontendLanguage(String path) {
+    return path.endsWith(".vue") ? "vue" : "javascript";
   }
 
   private static void appendCallTree(

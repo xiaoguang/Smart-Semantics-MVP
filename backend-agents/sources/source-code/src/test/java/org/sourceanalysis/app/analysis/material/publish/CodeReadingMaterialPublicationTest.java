@@ -9,8 +9,11 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -24,6 +27,12 @@ import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndex;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndexReader;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendEntryLinkRecord;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendHttpIndex;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendHttpRequestRecord;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendSourceFileDisposition;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendSourceUnits;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendWrapperCall;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsExecution;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
@@ -31,20 +40,32 @@ import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialMarkdown;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialProfile;
+import org.sourceanalysis.app.analysis.material.CodeReadingMaterialRequest;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
+import org.sourceanalysis.app.analysis.material.DefaultCodeReadingMaterialBuilder;
 import org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex;
 import org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex.SqlStatus;
 import org.sourceanalysis.app.analysis.persistence.publish.PersistenceMaterialPublisher;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot;
+import org.sourceanalysis.app.artifact.AnalysisStepInstallRequest;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
+import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationAddress;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
+import org.sourceanalysis.app.artifact.AnalysisStepPublisherModuleProvenance;
 import org.sourceanalysis.app.artifact.AnalysisStepReceiptId;
+import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
+import org.sourceanalysis.app.artifact.CanonicalAnalysisStepPayload;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
+import org.sourceanalysis.app.artifact.CanonicalModulePayload;
+import org.sourceanalysis.app.artifact.ModuleArtifactRoot;
+import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
+import org.sourceanalysis.app.artifact.ModuleInstallRequest;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
+import org.sourceanalysis.app.artifact.ModuleReceiptId;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.runtime.AnalysisRunOutput;
@@ -59,6 +80,13 @@ class CodeReadingMaterialPublicationTest {
   private static final String XML_PATH = "src/main/resources/mapper/OrderMapper.xml";
   private static final String CONTROLLER_PATH = "src/main/java/com/example/OrderController.java";
   private static final String SERVICE_KEY = "method:publication-service";
+  private static final String FRONTEND_PATH = "web/src/pages/OrderList.vue";
+  private static final String FRONTEND_SOURCE =
+      "export default {\n"
+          + "  methods: {\n"
+          + "    loadOrders() { return getAction('/orders/list', this.query); }\n"
+          + "  }\n"
+          + "};\n// FULL_FRONTEND_SOURCE_UNIT_END_MARKER\n";
 
   @Test
   void publishesAndReopensDisabledJavaMaterialUsingOnlyPersistedReferences(
@@ -147,6 +175,180 @@ class CodeReadingMaterialPublicationTest {
                     .singleElement()
                     .satisfies(sql -> assertThat(sql.status()).isEqualTo(SqlStatus.PARSED));
               });
+    }
+  }
+
+  @Test
+  void persistsAndReopensTechnicalV2FrontendSelectionAndCoverageThroughCanonicalStores(
+      @TempDir Path temporary) {
+    try (ProgramGraphsPublicFixture fixture = realFixture(temporary.resolve("fixture"))) {
+      ProgramGraphsReference navigation = navigation(fixture);
+      JavaCodeIndex javaIndex = new JavaCodeIndexReader(fixture.stepArtifacts()).reopen(navigation);
+      PersistenceMaterialIndex persistenceIndex = disabledPersistenceIndex(javaIndex, navigation);
+      AnalysisStepPublicationReference persistence =
+          persistencePublication(fixture, persistenceIndex);
+      String entryId = javaIndex.entries().get(0).seed().entryId();
+      String requestId = "request:orders-list";
+      String sourceHash = sha256(FRONTEND_SOURCE);
+      SourceRange unitRange = new SourceRange(0, FRONTEND_SOURCE.length(), 1, 6);
+      int callOffset = FRONTEND_SOURCE.indexOf("getAction(");
+      SourceRange callRange =
+          new SourceRange(callOffset, "getAction('/orders/list', this.query)".length(), 3, 3);
+      ModulePublicationReference frontendPublication =
+          frontendPublication(fixture.applicationDiscovery().publication().address().runId());
+      FrontendSourceUnits.Unit frontendUnit =
+          new FrontendSourceUnits.Unit(
+              "unit:order-list-page",
+              FRONTEND_PATH,
+              sourceHash,
+              unitRange,
+              FrontendWrapperCall.SourceUnitKind.FUNCTION,
+              FRONTEND_SOURCE);
+      FrontendSourceUnits sourceUnits =
+          new FrontendSourceUnits(
+              fixture.sourceInventory(), frontendPublication, List.of(frontendUnit));
+      FrontendHttpRequestRecord request =
+          new FrontendHttpRequestRecord(
+              requestId,
+              FRONTEND_PATH,
+              sourceHash,
+              "OrderListPage#loadOrders",
+              callRange,
+              "GET",
+              "'/orders/list'",
+              "/orders/list",
+              "orders-api",
+              List.of(
+                  new FrontendWrapperCall(
+                      FRONTEND_PATH,
+                      sourceHash,
+                      callRange,
+                      unitRange,
+                      FrontendWrapperCall.SourceUnitKind.FUNCTION,
+                      "OrderListPage.loadOrders",
+                      "getAction")),
+              List.of(),
+              "window._CONFIG['domianURL'] || \"/jshERP-boot\"",
+              "/jshERP-boot");
+      FrontendHttpIndex frontendIndex =
+          new FrontendHttpIndex(
+              List.of(
+                  new FrontendSourceFileDisposition(
+                      FRONTEND_PATH, sourceHash, FrontendSourceFileDisposition.Status.PARSED)),
+              List.of(request),
+              List.of(
+                  new FrontendEntryLinkRecord(
+                      requestId,
+                      FrontendEntryLinkRecord.Resolution.MATCHED_UNIQUE,
+                      List.of(ArtifactId.parse(entryId)))),
+              List.of(),
+              FrontendHttpIndex.Status.ENABLED,
+              List.of());
+      CodeReadingMaterialSet set =
+          new DefaultCodeReadingMaterialBuilder()
+              .build(
+                  new CodeReadingMaterialRequest(
+                      fixture.sourceInventory(),
+                      navigation,
+                      persistence,
+                      javaIndex,
+                      persistenceIndex,
+                      new CodeReadingMaterialProfile(1_000_000L, 16),
+                      frontendIndex,
+                      sourceUnits));
+
+      assertThat(set.header().frontendPublication()).isEqualTo(frontendPublication);
+      assertThat(set.packets())
+          .anySatisfy(
+              packet ->
+                  assertThat(packet.frontendSelection().requestUses())
+                      .anySatisfy(
+                          use -> {
+                            assertThat(use.entryId()).isEqualTo(entryId);
+                            assertThat(use.requestId()).isEqualTo(requestId);
+                            assertThat(use.instanceKey()).isEqualTo("OrderListPage#loadOrders");
+                            assertThat(use.sourceUnitId()).isEqualTo(frontendUnit.sourceUnitId());
+                          }));
+
+      CodeReadingMaterialPublisher publisher =
+          new CodeReadingMaterialPublisher(fixture.moduleArtifacts(), fixture.stepArtifacts());
+      // This test exercises bytes and canonical persistence only; R3 owns receipt/lineage checks.
+      CanonicalModulePayload payload =
+          publisher.technicalPayload(fixture.applicationDiscovery(), set);
+      assertThat(payload.schemaVersion()).isEqualTo("code-reading-material-set-v2");
+      String payloadText =
+          new String(payload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8);
+      assertThat(payloadText)
+          .contains("FULL_FRONTEND_SOURCE_UNIT_END_MARKER", "frontendPublication", requestId);
+
+      AnalysisStepPublicationReference source = fixture.sourceInventory().publication();
+      AnalysisStepPublicationReference discovery = fixture.applicationDiscovery().publication();
+      List<AnalysisStepPublicationReference> predecessors =
+          List.of(source, discovery, navigation.publication(), persistence);
+      List<ArtifactReference> upstreamArtifacts =
+          predecessors.stream()
+              .flatMap(
+                  reference ->
+                      fixture.stepArtifacts().reopen(reference).semanticPayloads().stream())
+              .map(
+                  canonical ->
+                      new ArtifactReference(
+                          canonical.descriptor().artifactId(), canonical.descriptor().sha256()))
+              .distinct()
+              .sorted(java.util.Comparator.comparing(reference -> reference.artifactId().value()))
+              .toList();
+      AnalysisStepModuleAddress step05ModuleAddress =
+          new AnalysisStepModuleAddress(
+              source.address().runId(),
+              AnalysisStepKey.BUSINESS_FLOWS,
+              4,
+              "code-reading-materials");
+      var module =
+          fixture
+              .moduleArtifacts()
+              .install(
+                  new ModuleInstallRequest(
+                      step05ModuleAddress,
+                      "v2",
+                      upstreamArtifacts,
+                      fixture.artifactControls(),
+                      ModuleCompletionStatus.SUCCEEDED,
+                      List.of(),
+                      List.of(payload)));
+      AnalysisStepPublicationReference publication =
+          fixture
+              .stepArtifacts()
+              .install(
+                  new AnalysisStepInstallRequest(
+                      new AnalysisStepPublicationAddress(
+                          source.address().runId(), AnalysisStepKey.BUSINESS_FLOWS),
+                      new AnalysisStepPublisherModuleProvenance(module.reference()),
+                      predecessors,
+                      fixture.artifactControls(),
+                      ModuleCompletionStatus.SUCCEEDED,
+                      List.of(),
+                      List.of(stepPayload(payload)),
+                      null))
+              .reference();
+
+      CodeReadingMaterialSet reopened =
+          new CodeReadingMaterialReader(fixture.stepArtifacts()).reopen(publication);
+
+      assertThat(reopened).isEqualTo(set);
+      assertThat(reopened.header().frontendPublication()).isEqualTo(frontendPublication);
+      assertThat(reopened.packets())
+          .anySatisfy(
+              packet ->
+                  assertThat(packet.frontendSelection().sourceUnits())
+                      .anySatisfy(
+                          unit -> {
+                            assertThat(unit.sourceUnitId()).isEqualTo("unit:order-list-page");
+                            assertThat(unit.text()).isEqualTo(FRONTEND_SOURCE);
+                            assertThat(unit.text())
+                                .contains("FULL_FRONTEND_SOURCE_UNIT_END_MARKER");
+                          }));
+      assertThat(reopened.frontendCoverage())
+          .containsExactlyInAnyOrderElementsOf(set.frontendCoverage());
     }
   }
 
@@ -638,6 +840,36 @@ class CodeReadingMaterialPublicationTest {
 
   private static String jsonString(String value) {
     return new ObjectMapper().valueToTree(value).toString();
+  }
+
+  private static ModulePublicationReference frontendPublication(AnalysisRunId owner) {
+    String digest = "f".repeat(64);
+    return new ModulePublicationReference(
+        new AnalysisStepModuleAddress(
+            owner, AnalysisStepKey.APPLICATION_DISCOVERY, 6, "frontend-http-discovery"),
+        new ModuleArtifactRoot("module-root:" + digest),
+        new ModuleReceiptId("module-receipt:" + digest),
+        new Sha256Digest(digest));
+  }
+
+  private static CanonicalAnalysisStepPayload stepPayload(CanonicalModulePayload payload) {
+    return new CanonicalAnalysisStepPayload(
+        payload.fileName(),
+        payload.artifactType(),
+        payload.schemaVersion(),
+        payload.artifactId(),
+        payload.mediaType(),
+        payload.canonicalUtf8());
+  }
+
+  private static String sha256(String value) {
+    try {
+      return HexFormat.of()
+          .formatHex(
+              MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+    } catch (NoSuchAlgorithmException impossible) {
+      throw new IllegalStateException(impossible);
+    }
   }
 
   private static VerifiedSourceTextDocument sourceDocument(

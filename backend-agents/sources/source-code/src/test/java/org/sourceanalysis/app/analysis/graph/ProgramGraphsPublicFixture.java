@@ -476,7 +476,7 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
               new ModuleInstallRequest(
                   new AnalysisStepModuleAddress(
                       runId, AnalysisStepKey.VERIFIED_SOURCE_INVENTORY, 3, "publish"),
-                  "v1",
+                  "v2",
                   List.of(),
                   controls,
                   ModuleCompletionStatus.SUCCEEDED,
@@ -2002,6 +2002,14 @@ public final class ProgramGraphsPublicFixture implements AutoCloseable {
         entries,
         "CODE_READING_MATERIAL_SET",
         "code-reading-material-set-v1",
+        "code-reading-materials",
+        "application/x-ndjson",
+        "CANONICAL_JSONL",
+        false);
+    policy(
+        entries,
+        "CODE_READING_MATERIAL_SET",
+        "code-reading-material-set-v2",
         "code-reading-materials",
         "application/x-ndjson",
         "CANONICAL_JSONL",

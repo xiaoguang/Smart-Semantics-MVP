@@ -1,10 +1,10 @@
 # Vue 页面到 Spring HTTP 入口的静态解析器调研
 
-状态：**研究结论与设计建议；未做原型验证，未实现，未运行客户代码。** 本文服务于 Step02 的 Vue 页面→HTTP 请求→Spring Controller 正式关联，以及 Step05 在既有 Java 方法、Mapper/XML、SQL 材料旁组装页面来源。它不修改现行 Step02/Step05 合同。本次目标来源是 Source Agent 已保存的 `snapshot:8712a1c127b4bbb5ab7c2cb317ef1cdab0f582a0473514b88c172e2b27888f9c`（`.workspace/jsherp-full-parallel-20260913/capture/snapshots/`，capture receipt 记录 commit `8c30ce7861570458920175e200bb2a6442713580`）。先前只读的 `modeling-evidence/.../guanyijia-demo-content-v7-20260827/sources/github/source/` 是**另一个**资料快照；下面只对已逐文件核对字节相同的文件复用其行号，不能把两个快照整体等同，也不能把人工读取写成程序输出。
+状态：**原始工具研究与人工源码走读；写作时未做原型验证，本文未实现或运行客户代码。** 后续有限 `vue-eslint-parser` 原型事实由[前端 owning 合同](../modules/technical-analysis/frontend-http-discovery.md)单独记录；本页不把它写成全仓关联已实现。当前目标只针对已验证 fixture 的页面→事件/组件→已知请求封装→HTTP 方法/路径→Spring 入口做有限静态链接，未知或多候选显式保留；不开发通用 JavaScript 解释器或整个 Vue 框架模型。Step05 复用既有 Java、Mapper/XML、JSqlParser 材料。正式范围与状态以[前端合同](../modules/technical-analysis/frontend-http-discovery.md)和[技术运行合同](../modules/technical-analysis/cli-and-runtime.md)为准。本次目标来源是 Source Agent 已保存的 `snapshot:8712a1c127b4bbb5ab7c2cb317ef1cdab0f582a0473514b88c172e2b27888f9c`（`.workspace/jsherp-full-parallel-20260913/capture/snapshots/`，capture receipt 记录 commit `8c30ce7861570458920175e200bb2a6442713580`）。先前只读的 `modeling-evidence/.../guanyijia-demo-content-v7-20260827/sources/github/source/` 是**另一个**资料快照；下面只对已逐文件核对字节相同的文件复用其行号，不能把两个快照整体等同，也不能把人工读取写成程序输出。
 
 ## 结论和最小工具组合
 
-建议先用**一个固定版本、独立安装的 Node 静态解析 helper**验证有限夹具。Java Agent 仍掌管冻结文件准入、输出合同、持久化和与现有 JDT Controller/Java/Mapper 材料的关联；Node helper 只把准入的 `.vue`、`.js`，以后必要时 `.ts`，转成带位置和诊断的语法/局部关系记录。helper 应只读源文本和配置文本，只调用解析 API，不 `require`、`import`、编译或执行客户模块、模板表达式、构建脚本，也不安装或构建客户项目。独立 Node 工具进程与现有独立 JDT 工具 JVM 是类似的进程边界，**不是**声称二者有现成的跨语言链接 API；进程调用与资源限制是拟议架构，未验证。
+当时建议用**固定版本、独立安装的 Node 静态解析 helper**验证有限夹具。当前可保留这个成熟语法 parser 选择，但 helper 只提供准入 `.vue/.js` 的语法位置和诊断；页面到请求的少量连接规则以真实 fixture 为限，不从它扩展出通用跨文件值传播框架。它只读源文本和静态配置，不 `require`、`import`、编译或执行客户模块、模板表达式、构建脚本，也不安装或构建客户项目。Node 与 JDT 没有现成的跨语言链接接口；当时的进程协议提议不是已实现合同。
 
 首个 Vue 2.7/普通 JavaScript 验证组合推荐**直接依赖一个 `vue-eslint-parser`**：`parseForESLint(source, { filePath, sourceType: 'module', ecmaVersion, vueFeatures })` 对 `.vue` 返回 `result.ast` 中的脚本 Program 与 `result.ast.templateBody`，对 `.js` 也走其内部默认的 `espree` 脚本解析路径；调用方无需另外直接调用 `espree`。该准确调用形态由 Vue 组织的实现源码确认，正式锁版后须用夹具再确认当版接口。[parseForESLint 与 `.vue`/`.js` 分流源码](https://github.com/vuejs/vue-eslint-parser/blob/master/src/index.ts)、[vue-eslint-parser README](https://github.com/vuejs/vue-eslint-parser#readme)。其模板 AST 有 `VExpressionContainer`、`VOnExpression`、`VSlotScopeExpression` 等节点，供识别事件、Vue 2 slot scope 等语法；这仍只是**语法输入能力**，HTTP 封装追踪和后端匹配需本 Agent 编写。[模板 AST 规格](https://github.com/vuejs/vue-eslint-parser/blob/master/docs/ast.md)。
 
@@ -42,29 +42,28 @@
 
 解析器只回答“源码长什么样”。它不提供仓库的 import alias 解析、Vue options/mixin 合并、`this.url` 取值传播、函数调用/参数传递、Axios wrapper 语义、运行时配置、Spring 路由条件、Java 方法导航或 Mapper/SQL 绑定。官方解析器文档分别只定义 SFC/模板或 JS/TS AST API；由此得出“不是现成端到端链接器”是**本设计推论**，不是某产品声称不能扩展。[vue-eslint-parser README](https://github.com/vuejs/vue-eslint-parser#readme)、[Vue SFC parse 源码](https://github.com/vuejs/core/blob/main/packages/compiler-sfc/src/parse.ts)、[Babel parser 文档](https://babeljs.io/docs/babel-parser)。
 
-建议按可解释的有限规则产出关系和 Gap：
+当前只保留由已核对采购页面和共享组件夹具支持的有限连接规则。下面列出的其它 Vue/JS 语法能力是研究候选，须有具名用例验证后才扩大；不能把列表当作“首版支持任意源码”的要求：
 
 1. **文件与组件。** Step01 已将固定 snapshot 中 Vue/JS 文件列为可分析文本，文本准入不是本次尚待发明的能力；前端语法解释和正式关系发布才是拟议增量。对已准入文本记录文件 SHA/相对路径/行列，解析 `.vue` 模板与脚本、独立 JS（未来实际出现 TS 时再接）的 import/export 与组件 `components`/`mixins`。仅解析静态相对路径及经冻结构建配置明确确认的 alias；动态 import、运行时注册、全局 mixin 均标未知。Vue 官方允许构建工具定义 import alias，不能仅看 `@/` 字面就宣称已解析。[Vue `<script setup>` import 说明](https://vuejs.org/api/sfc-script-setup.html#import-statements)、[Vue 2 全局 mixin 影响](https://v2.vuejs.org/v2/guide/mixins.html#global-mixin)。
 2. **页面操作与局部调用。** 从 `v-on/@`、组件 `@ok`、静态 method、`this.method()`、静态 `$refs.child.method()` 和 `$emit('literal')` 提取有位置的候选边；在确定的 mixin 合并顺序下处理覆盖；表达式只解析 AST，绝不求值或执行。`v-if`、权限、用户输入、异步结果保留为条件/未知，不把“静态可达”升级为“执行过”。[Vue 2 `v-on` API](https://v2.vuejs.org/v2/api/#v-on)、[Vue 2 mixin 合并规则](https://v2.vuejs.org/v2/guide/mixins.html)。
-3. **HTTP 调用。** 从实际 import/export 绑定到被调用函数，再把调用实参沿可核验的 wrapper 形参和局部静态赋值传播到 Axios config；`getAction`/`httpAction` 只是本样例的函数名，不是硬编码白名单或设计上限。对 string literal、静态成员、有限字面量条件分支形成 method/path 候选集合。无法静态界定的模板插值、可变对象、拦截器改写等留未定，不能执行表达式取得“答案”。Axios 允许 request interceptor 修改 config，故只看调用点 config 也不是实际请求的运行时证明。[Axios request config](https://github.com/axios/axios/blob/v1.x/docs/pages/advanced/request-config.md)、[Axios interceptors](https://github.com/axios/axios#interceptors)。
+3. **HTTP 调用。** 对本夹具中已验证的 `getAction/httpAction → axios` 封装，按实际 import、已知调用位置和有序实参保留有限 method/path 候选及中间来源；新的封装形态需单独 fixture，不承诺自动分析任意函数、对象别名或可变状态。无法静态界定的模板插值、可变对象、拦截器改写等留未定，不能执行表达式取得“答案”。Axios 允许 request interceptor 修改 config，故调用点 config 也不是实际请求的运行时证明。[Axios request config](https://github.com/axios/axios/blob/v1.x/docs/pages/advanced/request-config.md)、[Axios interceptors](https://github.com/axios/axios#interceptors)。
 4. **后端匹配与材料。** Java 侧复用 Step02 的已保存 Controller path 与 `methodCondition`（包括 unrestricted、条件集合）。先只读解析和保存本 snapshot 的 `public/index.html`、`request.js`、`vue.config.js`、`application.yml` 中的静态配置、适用环境与分支依据；可证明的 `/jshERP-boot` 前缀按该证据解释，不凭 URL 字面猜测或剥离。遇到配置冲突、覆盖或缺失，使前后端路径关系不能静态确定时，再要求用户给出明确映射。然后才匹配 method/path；不通过名称猜测。Step05 只消费前端候选边与既有已保存 JDT/Mapper/SQL 材料，给页面→请求→入口→Java/SQL 的每一环 source ref、条件和失败原因，不重新运行 JDT。一个页面操作可能对应多个请求或多个条件结果；未能闭合的链仍保留页面材料与 Gap。
 
 ## 固定 Node helper 的可验证接口建议
 
-这是待设计/验证的实现建议，不是已存在工具。Java 可用 JDK 17 的 `ProcessBuilder` 以程序和参数列表启动固定 helper（不在客户仓库运行 npm 脚本），输入限定为冻结快照的只读文件清单、每项 hash、语言/版本与静态 alias 配置；输出版本化 JSONL：文件与解析器版本、语法诊断、组件/事件/方法/import/export/调用/请求候选节点和带源位置的边。超时、标准输出/错误限额及退出清理仍需原型测试；此处不假称已实现。[JDK 17 ProcessBuilder](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/ProcessBuilder.html)、[JDK 17 Process](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Process.html)。
+这是历史接口建议，不是已存在工具或要求输出整套 Vue 程序模型。Java 可用 JDK 17 的 `ProcessBuilder` 以程序和参数列表启动固定 helper（不在客户仓库运行 npm 脚本），输入限定为冻结快照的只读文件清单、每项 hash、语言/版本与静态 alias 配置；最小输出是语法/请求相关位置、已支持封装的有限连接和具名未知。协议形状与资源上限以 owning 合同及夹具验证为准。[JDK 17 ProcessBuilder](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/ProcessBuilder.html)、[JDK 17 Process](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Process.html)。
 
 候选边建议携带 `SUPPORTED_STATIC`、`CONDITIONAL_STATIC`、`UNRESOLVED` 等**设计标签**及逐段源位置；标签名只是提议，不是现行 public schema。静态配置给出的 baseURL/context-path 分支可以有来源地表达；其他部署覆盖、router 条件、运行时权限和 Axios interceptor 造成的行为差异须保留未定。当前不建议暴露“完整页面→后端覆盖率”，因为解析上限与端到端夹具尚未证明。
 
-## 必须先验证的有限夹具与 unknown
+## 有限夹具与 unknown
 
-这些均为**后续原型验证事项**，此次没有安装解析依赖、执行客户代码或运行工具链。
+本研究写作时这些是**后续原型验证事项**；其中采购页面/共享组件的有限语法及静态链已有后续原型观察，见 owning 文档，不能据此宣布正式索引、全仓覆盖或运行时行为。本次文档同步没有安装解析依赖、执行客户代码或运行工具链。
 
 | 有限夹具 | 必须核验的输出/失败 |
 | --- | --- |
 | 固定 snapshot 的 `PurchaseOrderModal.vue` + 两个 mixin + `api/manage.js` + `utils/request.js` + 三份前后端配置 + `DepotHeadController.java` | 保存与保存并审核各保留页面事件位置；`model.id` 两分支得到 POST/PUT 两候选；保存 `window._CONFIG` 静态赋值、Axios fallback、开发代理和 Spring context-path 各自的分支依据；对应 Controller，部署覆盖则留未定。 |
 | `LinkBillList.vue` + `JeecgListMixin.js` + 父页面 | 子组件注册、`@ok`/`$emit`、`loadData`→GET `/depotHead/list` 均有分段来源；不宣称事件必然发生。 |
-| 人工最小 Vue 2.6、Vue 2.7、Vue 3 SFC 各一份，包含模板事件、Vue 2 filter、`slot-scope`/`v-slot` 与 `<script setup lang="ts">` | 分别验证 parser 选项、AST 位置、脚本语法和失败诊断；Vue 3 仅承诺验证到语法层，不承诺任意 Composition API 数据流；不跨版本冒充。 |
-| 人工最小 JS/TS 请求封装各一份，分别包含静态 alias、re-export、字面量条件与动态 URL | 静态分支集合完整；动态值明确 `UNRESOLVED`；无 `eval`、客户 import 或构建。 |
+| 以后确需 Vue 3/TS、re-export 或新的请求封装时分别补具名小夹具 | 先验证 parser 能读语法和位置，再判断是否值得扩展有限连接；不把 Vue 3 Composition API、TS 类型或任意 JavaScript 数据流列为当前验收。 |
 | 同名 mixin/component method、Axios interceptor 改写 URL/method、多个同 path Controller、Spring unrestricted method | 覆盖/冲突、请求真实值不确定、路由歧义及 methodCondition 均不被偷换为单一确定连接。 |
 
-未验证的**工具/规模事项**：helper 的实际 Node/ESLint/解析器版本和可用安装源、协议版本、资源上限；目标输入是否还有其他 Vue 主版本、TS 或非 JS 模板语言；构建 alias 与配置覆盖的全仓分布；编译期宏/全局 mixin/自定义指令的可支持上限；全仓链接覆盖率与误报率。Step01 对固定 snapshot Vue/JS 文本的准入已有 manifest 证据，不列为 unknown。**需要用户选择的仅是证据不能闭合时的前后端部署路径映射或未来扩大解析语义的取舍**；不能把尚未实验的工具版本/解析上限冒充待用户给答案的问题。上述 unknown 需要独立验证和设计审查，不能由官方 API 文档或本次人工样例推定。
+仍未知的是正式 helper 协议/上限、已支持模式以外的 Vue/JS 形态、运行时覆盖与拦截器、全仓链接覆盖率和误报率。Step01 对固定 snapshot Vue/JS 文本的准入已有 manifest 证据，不列为 unknown。需要用户选择的仅是静态依据不能闭合时的部署路径映射或以后扩展范围的取舍；不能把语法解析成功冒充端到端关联完成。

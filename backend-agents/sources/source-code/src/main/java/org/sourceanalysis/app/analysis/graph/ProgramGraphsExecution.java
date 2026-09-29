@@ -13,8 +13,10 @@ import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndex;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndexPublicationSpecifier;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.discovery.MapperCatalogEntry;
+import org.sourceanalysis.app.analysis.discovery.TechnicalApplicationDiscovery;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
@@ -32,20 +34,35 @@ public final class ProgramGraphsExecution {
   private static final System.Logger LOGGER =
       System.getLogger(ProgramGraphsExecution.class.getName());
 
-  private final ProgramGraphInputReader inputs;
+  private final PersistedProgramGraphInputReader inputs;
+  private final VerifiedSourceTextReader sourceReader;
   private final CanonicalModuleArtifactStore modules;
   private final CanonicalAnalysisStepArtifactStore analysisSteps;
+  private final CanonicalAnalysisStepArtifactStore sourceAnalysisSteps;
 
   /** Creates the execution seam with its only source and canonical storage dependencies. */
   public ProgramGraphsExecution(
       VerifiedSourceTextReader sourceReader,
       CanonicalModuleArtifactStore modules,
       CanonicalAnalysisStepArtifactStore analysisSteps) {
+    this(sourceReader, modules, analysisSteps, analysisSteps);
+  }
+
+  /**
+   * Creates the cross-policy technical seam. The source store is used only to reopen immutable R0
+   * source receipts; the analysis store remains the sole publisher and reader for Step03 outputs.
+   */
+  public ProgramGraphsExecution(
+      VerifiedSourceTextReader sourceReader,
+      CanonicalModuleArtifactStore modules,
+      CanonicalAnalysisStepArtifactStore analysisSteps,
+      CanonicalAnalysisStepArtifactStore sourceAnalysisSteps) {
     this.modules = Objects.requireNonNull(modules, "module artifact store");
     this.analysisSteps = Objects.requireNonNull(analysisSteps, "analysis-step artifact store");
-    inputs =
-        new PersistedProgramGraphInputReader(
-            this.analysisSteps, Objects.requireNonNull(sourceReader, "verified source reader"));
+    this.sourceAnalysisSteps =
+        Objects.requireNonNull(sourceAnalysisSteps, "source analysis-step artifact store");
+    this.sourceReader = Objects.requireNonNull(sourceReader, "verified source reader");
+    inputs = new PersistedProgramGraphInputReader(this.analysisSteps, this.sourceReader);
   }
 
   /** Reopens only the already-published mapper catalog through the graph input reader's checks. */
@@ -59,6 +76,23 @@ public final class ProgramGraphsExecution {
     ReopenedProgramGraphInputs reopened = inputs.reopen(verifiedSource, applicationDiscovery);
     requireControls(reopened, controls);
     return reopened.discovery().mapperCatalog();
+  }
+
+  /**
+   * Reopens only the R1 technical mapper catalog while retaining the separately published R0 source
+   * receipt. No Java engine, parser, or source scan is started by this read path.
+   */
+  public List<MapperCatalogEntry> reopenTechnicalMapperCatalog(
+      VerifiedSourceInventoryReference verifiedSource,
+      ApplicationDiscoveryReference applicationDiscovery,
+      ArtifactControls executionControls) {
+    Objects.requireNonNull(verifiedSource, "verified source inventory");
+    Objects.requireNonNull(applicationDiscovery, "application discovery");
+    Objects.requireNonNull(executionControls, "technical execution controls");
+    return inputs
+        .reopenTechnical(verifiedSource, applicationDiscovery, executionControls)
+        .discovery()
+        .mapperCatalog();
   }
 
   /**
@@ -112,21 +146,25 @@ public final class ProgramGraphsExecution {
         selectedEntryIds);
   }
 
-  private ProgramGraphsReference publishNavigationIndex(
+  /**
+   * Collects the R1 technical Step02 denominator while retaining the exact frozen R0 source.
+   *
+   * <p>Historical {@code execute} methods continue to reopen the same-run input reader. This entry
+   * point is the opt-in cross-run producer and therefore publishes through the v3 Step03 producer
+   * only.
+   */
+  public ProgramGraphsReference executeTechnical(
       VerifiedSourceInventoryReference verifiedSource,
-      ApplicationDiscoveryReference applicationDiscovery,
+      TechnicalApplicationDiscovery applicationDiscovery,
       JavaCodeSession session,
-      ArtifactControls controls,
-      EntryCodeContext.TechnicalEnhancements enhancements,
-      List<String> selectedEntryIds) {
+      ArtifactControls controls) {
     Objects.requireNonNull(verifiedSource, "verified source inventory");
-    Objects.requireNonNull(applicationDiscovery, "application discovery");
+    Objects.requireNonNull(applicationDiscovery, "technical application discovery");
     Objects.requireNonNull(session, "Java code session");
-    Objects.requireNonNull(controls, "artifact controls");
-    ReopenedProgramGraphInputs reopened = inputs.reopen(verifiedSource, applicationDiscovery);
-    requireControls(reopened, controls);
+    Objects.requireNonNull(controls, "technical execution controls");
+    VerifiedSourceTextSet source = sourceReader.reopen(verifiedSource);
     List<EntrySeed> seeds =
-        reopened.discovery().entries().stream()
+        applicationDiscovery.entries().entries().stream()
             .map(
                 entry ->
                     new EntrySeed(
@@ -135,12 +173,88 @@ public final class ProgramGraphsExecution {
                         entry.methodRange(),
                         entry.methodCondition().display() + " " + entry.route()))
             .toList();
+    return publishTechnicalNavigationIndex(
+        verifiedSource, applicationDiscovery.publication(), session, controls, source, seeds);
+  }
+
+  private ProgramGraphsReference publishNavigationIndex(
+      VerifiedSourceInventoryReference verifiedSource,
+      ApplicationDiscoveryReference applicationDiscovery,
+      JavaCodeSession session,
+      ArtifactControls controls,
+      EntryCodeContext.TechnicalEnhancements enhancements,
+      List<String> selectedEntryIds) {
+    return publishNavigationIndex(
+        verifiedSource,
+        applicationDiscovery,
+        session,
+        controls,
+        enhancements,
+        selectedEntryIds,
+        null);
+  }
+
+  private ProgramGraphsReference publishTechnicalNavigationIndex(
+      VerifiedSourceInventoryReference verifiedSource,
+      ApplicationDiscoveryReference applicationDiscovery,
+      JavaCodeSession session,
+      ArtifactControls controls,
+      VerifiedSourceTextSet source,
+      List<EntrySeed> seeds) {
+    return publishNavigationIndex(
+        verifiedSource,
+        applicationDiscovery,
+        session,
+        controls,
+        new EntryCodeContext.TechnicalEnhancements(
+            EntryCodeContext.Availability.NOT_PRODUCED,
+            "STRICT_GRAPH_ENRICHMENT_NOT_REQUESTED_BY_JDT_EXECUTION",
+            List.of(),
+            List.of(),
+            null),
+        List.of(),
+        new TechnicalInputs(source, seeds));
+  }
+
+  private ProgramGraphsReference publishNavigationIndex(
+      VerifiedSourceInventoryReference verifiedSource,
+      ApplicationDiscoveryReference applicationDiscovery,
+      JavaCodeSession session,
+      ArtifactControls controls,
+      EntryCodeContext.TechnicalEnhancements enhancements,
+      List<String> selectedEntryIds,
+      TechnicalInputs technicalInputs) {
+    Objects.requireNonNull(verifiedSource, "verified source inventory");
+    Objects.requireNonNull(applicationDiscovery, "application discovery");
+    Objects.requireNonNull(session, "Java code session");
+    Objects.requireNonNull(controls, "artifact controls");
+    ReopenedProgramGraphInputs reopened =
+        technicalInputs == null ? inputs.reopen(verifiedSource, applicationDiscovery) : null;
+    if (reopened != null) {
+      requireControls(reopened, controls);
+    }
+    List<EntrySeed> seeds =
+        technicalInputs == null
+            ? reopened.discovery().entries().stream()
+                .map(
+                    entry ->
+                        new EntrySeed(
+                            entry.entryId().value(),
+                            entry.methodKey(),
+                            entry.methodRange(),
+                            entry.methodCondition().display() + " " + entry.route()))
+                .toList()
+            : technicalInputs.seeds();
     List<String> selected = selectedEntryIds(selectedEntryIds, seeds);
     Set<String> selectedSet = Set.copyOf(selected);
     boolean selectedScope = !selectedSet.isEmpty();
     int selectedTotal = selectedScope ? selectedSet.size() : seeds.size();
     var catalog = session.catalog();
-    if (!catalog.snapshotId().equals(reopened.source().snapshotId())) {
+    String sourceSnapshotId =
+        technicalInputs == null
+            ? reopened.source().snapshotId()
+            : technicalInputs.source().snapshotId();
+    if (!catalog.snapshotId().equals(sourceSnapshotId)) {
       throw new GraphReferenceException();
     }
     List<JavaCodeIndex.EntryCollection> entries = new ArrayList<>(seeds.size());
@@ -175,6 +289,9 @@ public final class ProgramGraphsExecution {
                         elapsed));
         entries.add(JavaCodeIndex.EntryCollection.collected(seed, context));
       } catch (CodeEngineException failure) {
+        if (sharedToolFailure(failure)) {
+          throw failure;
+        }
         completedSelected++;
         long elapsed = System.nanoTime() - started;
         int completed = completedSelected;
@@ -215,19 +332,28 @@ public final class ProgramGraphsExecution {
         new JavaCodeIndex(
             session.descriptor(),
             catalog.snapshotId(),
-            reopened.source().verifiedSnapshotRef(),
+            technicalInputs == null
+                ? reopened.source().verifiedSnapshotRef()
+                : technicalInputs.source().verifiedSnapshotRef(),
             catalog,
             enrichedEntries,
             enhancements);
     JavaCodeIndexPublicationSpecifier publisher =
-        new JavaCodeIndexPublicationSpecifier(modules, analysisSteps);
+        new JavaCodeIndexPublicationSpecifier(modules, analysisSteps, sourceAnalysisSteps);
     long publicationStarted = System.nanoTime();
     LOGGER.log(
         System.Logger.Level.INFO,
         () -> "JDT_NAVIGATION_PUBLICATION_START selectedTotal=%d".formatted(selectedTotal));
     try {
       ProgramGraphsReference reference =
-          publisher.publish(verifiedSource, applicationDiscovery, controls, index);
+          technicalInputs == null
+              ? publisher.publish(verifiedSource, applicationDiscovery, controls, index)
+              : publisher.publishTechnical(
+                  verifiedSource,
+                  applicationDiscovery,
+                  controls,
+                  index,
+                  technicalInputs.source().verifiedSnapshotRef());
       long elapsed = System.nanoTime() - publicationStarted;
       LOGGER.log(
           System.Logger.Level.INFO,
@@ -244,6 +370,22 @@ public final class ProgramGraphsExecution {
                   .formatted(selectedTotal, failure.getClass().getSimpleName(), elapsed));
       throw failure;
     }
+  }
+
+  private static boolean sharedToolFailure(CodeEngineException failure) {
+    return switch (failure.code()) {
+      case CodeEngineException.JDT_PROTOCOL_INVALID,
+          CodeEngineException.JDT_INDEX_FAILED,
+          CodeEngineException.ENGINE_CONFIGURATION_INVALID,
+          CodeEngineException.SOURCE_INVALID,
+          CodeEngineException.JDT_SYNTAX_TIMEOUT,
+          CodeEngineException.JDT_SYNTAX_PROTOCOL_INVALID,
+          CodeEngineException.JDT_SYNTAX_PROCESS_FAILED,
+          CodeEngineException.JDT_SYNTAX_SHUTDOWN_TIMEOUT,
+          CodeEngineException.JDT_TOOL_UNAVAILABLE ->
+          true;
+      default -> false;
+    };
   }
 
   private static List<String> selectedEntryIds(
@@ -295,6 +437,13 @@ public final class ProgramGraphsExecution {
       ReopenedProgramGraphInputs reopened, ArtifactControls expectedControls) {
     if (!reopened.source().controls().equals(expectedControls)) {
       throw new GraphReferenceException();
+    }
+  }
+
+  private record TechnicalInputs(VerifiedSourceTextSet source, List<EntrySeed> seeds) {
+    private TechnicalInputs {
+      source = Objects.requireNonNull(source, "technical R0 source");
+      seeds = List.copyOf(seeds);
     }
   }
 }

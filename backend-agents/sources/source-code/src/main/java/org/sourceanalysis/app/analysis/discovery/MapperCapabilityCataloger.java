@@ -22,6 +22,7 @@ import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReferenc
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
+import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
@@ -69,6 +70,28 @@ public final class MapperCapabilityCataloger {
     }
   }
 
+  /** Uses R0 source bytes with explicit R1 execution controls for technical discovery. */
+  MapperCatalogDiscovery catalogMappers(
+      ApplicationProfile profile,
+      VerifiedSourceInventoryReference frozenSource,
+      JavaDeclarationCatalog javaCatalog,
+      ArtifactControls executionControls) {
+    try {
+      VerifiedSourceTextSet source = sourceReader.reopen(frozenSource);
+      return catalogMappers(
+          profile, source, javaCatalog, MapperXmlResourceView.open(source), executionControls);
+    } catch (ApplicationDiscoveryException failure) {
+      throw failure;
+    } catch (IllegalStateException failure) {
+      if ("XML_SECURITY_POLICY_UNENFORCEABLE".equals(failure.getMessage())) {
+        throw new ApplicationDiscoveryException("XML_SECURITY_POLICY_UNENFORCEABLE", failure);
+      }
+      throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN", failure);
+    } catch (RuntimeException failure) {
+      throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN", failure);
+    }
+  }
+
   /**
    * Same-run internal seam: discovery consumes a caller-owned secure mapper view instead of
    * reopening or reparsing the frozen XML.
@@ -96,6 +119,34 @@ public final class MapperCapabilityCataloger {
       throw failure;
     } catch (RuntimeException failure) {
       throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN");
+    }
+  }
+
+  /** Same-run technical seam with a caller-owned Mapper XML resource view. */
+  MapperCatalogDiscovery catalogMappers(
+      ApplicationProfile profile,
+      VerifiedSourceTextSet source,
+      JavaDeclarationCatalog javaCatalog,
+      MapperXmlResourceView mapperResources,
+      ArtifactControls executionControls) {
+    try {
+      requireCatalogInputs(profile, source, javaCatalog, mapperResources);
+      requireSameTechnicalBasis(profile, source, executionControls);
+      mapperResources.requireSameFrozenSource(source);
+      if (!profile.snapshotId().equals(javaCatalog.snapshotId())) {
+        throw new ApplicationDiscoveryException("SNAPSHOT_REOPEN_MISMATCH");
+      }
+      Map<String, JavaMapperInterface> interfaces =
+          javaInterfaces(source, profile.snapshotId(), javaCatalog);
+      return catalog(
+          profile.snapshotId(),
+          interfaces,
+          xmlMapperResources(mapperResources, profile.snapshotId()),
+          mapperResources.rejectedResources());
+    } catch (ApplicationDiscoveryException failure) {
+      throw failure;
+    } catch (RuntimeException failure) {
+      throw new ApplicationDiscoveryException("MAPPER_CATALOG_REFERENCE_BROKEN", failure);
     }
   }
 
@@ -455,6 +506,20 @@ public final class MapperCapabilityCataloger {
         || !profile.sourceInventoryRef().equals(source.sourceInventoryRef())
         || !profile.verifiedSnapshotRef().equals(source.verifiedSnapshotRef())
         || !profile.controls().equals(source.controls())) {
+      throw new ApplicationDiscoveryException("SNAPSHOT_REOPEN_MISMATCH");
+    }
+  }
+
+  private static void requireSameTechnicalBasis(
+      ApplicationProfile profile,
+      VerifiedSourceTextSet source,
+      ArtifactControls executionControls) {
+    if (executionControls == null
+        || !profile.snapshotId().equals(source.snapshotId())
+        || !profile.capabilityProfileRef().equals(source.capabilityProfileRef())
+        || !profile.sourceInventoryRef().equals(source.sourceInventoryRef())
+        || !profile.verifiedSnapshotRef().equals(source.verifiedSnapshotRef())
+        || !profile.controls().equals(executionControls)) {
       throw new ApplicationDiscoveryException("SNAPSHOT_REOPEN_MISMATCH");
     }
   }

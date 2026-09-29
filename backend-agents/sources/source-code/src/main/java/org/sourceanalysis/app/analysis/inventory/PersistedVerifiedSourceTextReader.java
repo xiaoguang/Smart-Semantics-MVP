@@ -31,6 +31,7 @@ import org.sourceanalysis.app.capture.localgit.LocalGitSourceRegistry;
 import org.sourceanalysis.app.capture.localgit.RegisteredSourceCapture;
 import org.sourceanalysis.app.capture.localgit.RegisteredSourceFile;
 import org.sourceanalysis.app.capture.localgit.RegisteredSourceSnapshot;
+import org.sourceanalysis.app.capture.localgit.SourceRegistrationReference;
 
 /**
  * Fresh-reopens verified source inventory artifacts and returns only parser-safe registered bytes.
@@ -57,46 +58,98 @@ public final class PersistedVerifiedSourceTextReader implements VerifiedSourceTe
   @Override
   public VerifiedSourceTextSet reopen(VerifiedSourceInventoryReference frozenSource) {
     try {
-      requireInventoryReference(frozenSource);
-      ReopenedAnalysisStepPublication publication =
-          stepArtifacts.reopen(frozenSource.publication());
-      if (!frozenSource.publication().equals(publication.reference())
-          || publication.receipt().status() != ModuleCompletionStatus.SUCCEEDED
-          || !publication.receipt().gapRefs().isEmpty()) {
-        throw failure("SNAPSHOT_REOPEN_MISMATCH");
-      }
-      Map<String, VerifiedCanonicalPayload> payloads = exactInventoryPayloads(publication);
-      ObjectNode sourceInput = object(payloads.get("source-input.json"));
-      ObjectNode snapshot = object(payloads.get("verified-snapshot.json"));
-      ArtifactId sourceRegistrationId = sourceRegistrationId(sourceInput);
-      SourceScope scope = sourceScope(sourceInput);
-      boolean completionEligible = requiredBoolean(sourceInput, "repositoryCompletionEligible");
-      ArtifactReference capabilityProfileRef = reference(snapshot, "capabilityProfileRef");
+      ReopenedInventoryMetadata metadata = reopenMetadata(frozenSource);
       RegisteredSourceSnapshot registeredSnapshot =
-          sourceRegistry.openSnapshot(sourceRegistrationId);
+          sourceRegistry.openSnapshot(
+              metadata.identity().sourceRegistrationRef().sourceRegistrationId());
       RegisteredSourceCapture capture = registeredSnapshot.capture();
-      String snapshotId = requiredText(snapshot, "snapshotId");
-      if (!snapshotId.equals(capture.snapshotId())
-          || completionEligible != requiredBoolean(snapshot, "repositoryCompletionEligible")) {
+      if (!metadata
+          .identity()
+          .sourceRegistrationRef()
+          .equals(sourceRegistrationReference(capture))) {
         throw failure("SNAPSHOT_REOPEN_MISMATCH");
       }
-      List<InventoryMember> inventory = inventory(payloads.get("source-inventory.jsonl"));
+      List<InventoryMember> inventory =
+          inventory(metadata.payloads().get("source-inventory.jsonl"));
       List<VerifiedSourceTextDocument> documents =
           verifiedTextDocuments(inventory, registeredSnapshot, capture);
       return new VerifiedSourceTextSet(
-          snapshotId,
-          scope.kind(),
-          completionEligible,
-          capabilityProfileRef,
-          descriptorReference(payloads.get("source-inventory.jsonl")),
-          descriptorReference(payloads.get("verified-snapshot.json")),
-          publication.receipt().controls(),
+          metadata.identity().snapshotId().value(),
+          metadata.identity().inventoryScope().kind().name(),
+          metadata.repositoryCompletionEligible(),
+          metadata.capabilityProfileRef(),
+          descriptorReference(metadata.payloads().get("source-inventory.jsonl")),
+          descriptorReference(metadata.payloads().get("verified-snapshot.json")),
+          metadata.controls(),
           documents);
     } catch (ApplicationDiscoveryException failure) {
       throw failure;
     } catch (RuntimeException failure) {
       throw failure("SNAPSHOT_REOPEN_MISMATCH");
     }
+  }
+
+  /**
+   * Fresh-reopens only the identity proof for a legacy Step01 publication.
+   *
+   * <p>It validates the publication payloads, the source-input/snapshot metadata, and the
+   * registered capture/receipt/manifest chain. It deliberately does not read any frozen source
+   * blob, so callers can establish an exact source basis before initializing a downstream tool or
+   * model consumer.
+   */
+  public VerifiedSourceInventoryIdentity reopenIdentity(
+      VerifiedSourceInventoryReference frozenSource) {
+    try {
+      return reopenMetadata(frozenSource).identity();
+    } catch (ApplicationDiscoveryException failure) {
+      throw failure;
+    } catch (RuntimeException failure) {
+      throw failure("SNAPSHOT_REOPEN_MISMATCH");
+    }
+  }
+
+  private ReopenedInventoryMetadata reopenMetadata(VerifiedSourceInventoryReference frozenSource) {
+    requireInventoryReference(frozenSource);
+    ReopenedAnalysisStepPublication publication = stepArtifacts.reopen(frozenSource.publication());
+    if (!frozenSource.publication().equals(publication.reference())
+        || publication.receipt().status() != ModuleCompletionStatus.SUCCEEDED
+        || !publication.receipt().gapRefs().isEmpty()) {
+      throw failure("SNAPSHOT_REOPEN_MISMATCH");
+    }
+    Map<String, VerifiedCanonicalPayload> payloads = exactInventoryPayloads(publication);
+    ObjectNode sourceInput = object(payloads.get("source-input.json"));
+    ObjectNode snapshot = object(payloads.get("verified-snapshot.json"));
+    ArtifactId sourceRegistrationId = sourceRegistrationId(sourceInput);
+    InventoryScope sourceScope = inventoryScope(sourceInput, true);
+    boolean completionEligible = requiredBoolean(sourceInput, "repositoryCompletionEligible");
+    ArtifactReference capabilityProfileRef = reference(snapshot, "capabilityProfileRef");
+    RegisteredSourceCapture capture = sourceRegistry.reopen(sourceRegistrationId);
+    SourceRegistrationReference captureReference = sourceRegistrationReference(capture);
+    ArtifactId snapshotId = ArtifactId.parse(requiredText(snapshot, "snapshotId"));
+    if (!snapshotId.equals(ArtifactId.parse(capture.snapshotId()))
+        || completionEligible != requiredBoolean(snapshot, "repositoryCompletionEligible")) {
+      throw failure("SNAPSHOT_REOPEN_MISMATCH");
+    }
+    requireMatchingReferenceIfPresent(
+        sourceInput, "captureReceiptRef", capture.captureReceiptRef());
+    requireMatchingReferenceIfPresent(
+        sourceInput, "snapshotManifestRef", capture.snapshotManifestRef());
+    requireMatchingReferenceIfPresent(snapshot, "captureReceiptRef", capture.captureReceiptRef());
+    requireMatchingReferenceIfPresent(
+        snapshot, "snapshotManifestRef", capture.snapshotManifestRef());
+    requireMatchingTextIfPresent(
+        snapshot, "declaredRepositoryIdentity", capture.declaredRepositoryIdentity());
+    requireMatchingTextIfPresent(snapshot, "originRevision", capture.commitId());
+    InventoryScope snapshotScope = inventoryScope(snapshot, false);
+    if (snapshotScope != null && !sourceScope.equals(snapshotScope)) {
+      throw failure("SNAPSHOT_REOPEN_MISMATCH");
+    }
+    return new ReopenedInventoryMetadata(
+        payloads,
+        new VerifiedSourceInventoryIdentity(captureReference, snapshotId, sourceScope),
+        completionEligible,
+        capabilityProfileRef,
+        publication.receipt().controls());
   }
 
   private Map<String, VerifiedCanonicalPayload> exactInventoryPayloads(
@@ -151,16 +204,53 @@ public final class PersistedVerifiedSourceTextReader implements VerifiedSourceTe
     return ArtifactId.parse(value);
   }
 
-  private SourceScope sourceScope(ObjectNode sourceInput) {
-    JsonNode node = sourceInput.get("inventoryScope");
+  private InventoryScope inventoryScope(ObjectNode source, boolean required) {
+    JsonNode node = source.get("inventoryScope");
+    if (node == null && !required) {
+      return null;
+    }
     if (!(node instanceof ObjectNode scope)) {
       throw failure("SNAPSHOT_REOPEN_MISMATCH");
     }
     String kind = requiredText(scope, "kind");
-    if (!"COMPLETE_CAPTURE".equals(kind) && !"BOUNDED_PATH_SET".equals(kind)) {
+    JsonNode scopeRoot = scope.get("scopeRoot");
+    if ("COMPLETE_CAPTURE".equals(kind) && scopeRoot != null && !scopeRoot.isNull()) {
       throw failure("SNAPSHOT_REOPEN_MISMATCH");
     }
-    return new SourceScope(kind);
+    try {
+      return switch (kind) {
+        case "COMPLETE_CAPTURE" -> InventoryScope.completeCapture();
+        case "BOUNDED_PATH_SET" -> InventoryScope.boundedPathSet(requiredText(scope, "scopeRoot"));
+        default -> throw failure("SNAPSHOT_REOPEN_MISMATCH");
+      };
+    } catch (IllegalArgumentException invalid) {
+      throw failure("SNAPSHOT_REOPEN_MISMATCH");
+    }
+  }
+
+  private static SourceRegistrationReference sourceRegistrationReference(
+      RegisteredSourceCapture capture) {
+    return new SourceRegistrationReference(
+        capture.sourceRegistrationRef().artifactId(),
+        capture.snapshotId(),
+        capture.snapshotManifestRef(),
+        capture.captureReceiptRef());
+  }
+
+  private static void requireMatchingReferenceIfPresent(
+      ObjectNode source, String field, ArtifactReference expected) {
+    JsonNode value = source.get(field);
+    if (value != null && !expected.equals(reference(source, field))) {
+      throw failure("SNAPSHOT_REOPEN_MISMATCH");
+    }
+  }
+
+  private static void requireMatchingTextIfPresent(
+      ObjectNode source, String field, String expected) {
+    JsonNode value = source.get(field);
+    if (value != null && (!value.isTextual() || !expected.equals(value.textValue()))) {
+      throw failure("SNAPSHOT_REOPEN_MISMATCH");
+    }
   }
 
   private List<InventoryMember> inventory(VerifiedCanonicalPayload payload) {
@@ -373,7 +463,12 @@ public final class PersistedVerifiedSourceTextReader implements VerifiedSourceTe
     return new ApplicationDiscoveryException(code);
   }
 
-  private record SourceScope(String kind) {}
+  private record ReopenedInventoryMetadata(
+      Map<String, VerifiedCanonicalPayload> payloads,
+      VerifiedSourceInventoryIdentity identity,
+      boolean repositoryCompletionEligible,
+      ArtifactReference capabilityProfileRef,
+      org.sourceanalysis.app.artifact.ArtifactControls controls) {}
 
   private record InventoryMember(
       ArtifactId fileId,

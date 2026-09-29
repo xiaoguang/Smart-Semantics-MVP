@@ -70,13 +70,15 @@ public final class JdtSyntaxReader {
     parser.setKind(ASTParser.K_COMPILATION_UNIT);
     parser.setSource(request.text().toCharArray());
     parser.setUnitName(request.sourceKey());
+    List<String> environmentEntries = new ArrayList<>(request.targetPlatformEntries());
+    environmentEntries.addAll(request.classpathEntries());
     parser.setEnvironment(
-        request.classpathEntries().toArray(String[]::new),
+        environmentEntries.toArray(String[]::new),
         request.sourcepathEntries().toArray(String[]::new),
         request.sourcepathEntries().stream()
             .map(ignored -> StandardCharsets.UTF_8.name())
             .toArray(String[]::new),
-        true);
+        false);
     parser.setResolveBindings(true);
     parser.setBindingsRecovery(true);
     parser.setStatementsRecovery(true);
@@ -119,9 +121,11 @@ public final class JdtSyntaxReader {
     required(request.requestId(), "request ID");
     required(request.sourceKey(), "source key");
     required(request.languageLevel(), "language level");
+    required(request.targetJdkVersion(), "target JDK version");
     required(request.text(), "source text");
     requirePaths(request.sourcepathEntries(), "sourcepath entries");
     requirePaths(request.classpathEntries(), "classpath entries");
+    requireTargetPlatformEntries(request.targetPlatformEntries());
     if (!sha256(request.text()).equals(request.sourceSha256())) {
       throw new JdtSyntaxProtocol.ProtocolException("source fingerprint mismatch");
     }
@@ -130,6 +134,15 @@ public final class JdtSyntaxReader {
   private static void requirePaths(List<String> values, String label) {
     if (values == null || values.stream().anyMatch(value -> value == null || value.isBlank())) {
       throw new JdtSyntaxProtocol.ProtocolException(label + " must be a non-null path list");
+    }
+  }
+
+  private static void requireTargetPlatformEntries(List<String> values) {
+    if (values == null
+        || values.isEmpty()
+        || values.stream().anyMatch(value -> value == null || value.isBlank())) {
+      throw new JdtSyntaxProtocol.ProtocolException(
+          "target platform entries must be a non-empty path list");
     }
   }
 

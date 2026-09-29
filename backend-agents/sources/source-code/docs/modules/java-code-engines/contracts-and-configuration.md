@@ -2,11 +2,15 @@
 
 本页拥有当前JDT Interface与java-code-index-v2字段。生产不创建JavaParser；历史合同精确读取见[接入页](integration-and-javaparser.md)。Step04/05的当前字段分别由[持久化材料](../../analysis-steps/04-proven-code-facts.md)和[阅读材料](../../analysis-steps/05-business-flows.md)维护。
 
+现有官方Maven输出交接、按模块环境及Core v3已实现。本次目标Java index v3新增调用绑定观察、准确目标归属和EXTERNAL/UNRESOLVED/QUERY_FAILED分类，Core协议升v4，技术module producer升v4。字段及规则由[JDT设计](jdt-engine.md)拥有，版本以[运行矩阵](../technical-analysis/cli-and-runtime.md#5-版本与兼容)为准。本页下面的v2字段是现行历史合同，不能把新字段默认补进旧结果。JavaDeclarationCatalog仍是会话内视图，不新增落盘全AST。
+
 ## 1. 一次加载配置
 
 唯一CLI/Java组合根从同一配置加载sourceAnalysis.javaEngine与jdt.installation/javaHome。新启动javaEngine只接受大小写精确的jdt；历史javaparser仅可解码既有state/hash，不可open或fallback。
 
 工具路径在本地组合根，不能进入公共分析请求或模型材料。通过参数数组启动配置工具，不调用shell或PATH替代。未知/重复key、工具缺失、语言级别或classpath非法在工具启动前明确失败。客户POM/配置仅为分析文本，不控制宿主。
+
+上段描述已有引擎配置。技术配置v2已经由Java读取官方classpath和有效POM，不再由Agent手填源码根/编译级别/模块边；本次目标配置v3沿用该输入子结构，只按独立操作分开配置。Java不求值父POM/Profile/BOM、不解析下载依赖；原始Maven失败由Agent解释，不建审批或修复系统。详见[外部交接](../technical-analysis/dependency-preparation.md)和[技术配置](../technical-analysis/cli-and-runtime.md)。
 
 模型/Prompt/并发/retry/输出目录不是Java索引失效条件；源码、源码根/模块、language level、classpath内容、tool/adapter版本和有效导航配置才是。插件开关不使Java索引失效。模型配置的新v3与容量字段见[模型执行](../model-job-execution.md)，不得塞进引擎profile。
 
@@ -24,7 +28,7 @@ interface JavaCodeSession extends AutoCloseable {
 }
 ```
 
-这是内部Interface，不替换RepositoryAnalysisAgent，不泄漏Eclipse AST/LS handle。VerifiedJavaProject拥有固定snapshot、文件/源码根/语言级别、显式本地依赖及诊断。
+这是内部Interface，不替换RepositoryAnalysisAgent，不泄漏Eclipse AST/LS handle。当前VerifiedJavaProject拥有固定snapshot、文件/源码根/语言级别和显式本地依赖；`JdtCodeEngine.open(JavaCompilationEnvironment)` 将 readiness 已准入的逐模块导出接到同一个 LS/Core 工作区。目标按文件→模块映射选择LS/Core相同环境，不能用一个全仓classpath代替；真实 LS 的端到端验收仍须以具名运行结果为准。
 
 catalog取声明供Step02识别入口；collect按精确入口收集方法/调用；descriptor记录实际工具/能力；close释放会话。当前同session顺序collect，不要求并发LS或分布式索引。
 
@@ -107,4 +111,4 @@ Step03 module7 `java-code-index` 使用artifact `PROGRAM_GRAPHS_JAVA_CODE_INDEX`
 
 实现已保留JDT独立helper、注解identity、准确位置、候选、query缓存、共享METHOD与入口CALL、保存重开。固定新仓325/326结果见[交付核验](../../supplements/jdt-persistence-reading-materials-delivery.md)；不声称所有动态行为已解析。
 
-测试覆盖UTF16/CRLF/emoji、精确重载、无body声明、构造/延迟调用、hierarchy后必要implementation、空/错误区分、跨入口同call与源码冲突、来源越界、保存无重扫。Terra写直接测试，Sol实现，Astra裁决；不增加业务词表、第二个parser或新的公共Agent。
+测试覆盖UTF16/CRLF/emoji、精确重载、无body声明、构造/延迟调用、hierarchy后必要implementation、空/错误区分、跨入口同call与源码冲突、来源越界、保存无重扫。Luna/xhigh写直接测试、Terra/xhigh实现、GPT-6 Sol/xhigh裁决及调试；不增加业务词表、第二个Java parser或新的公共Agent。

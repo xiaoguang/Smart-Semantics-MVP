@@ -25,6 +25,7 @@ import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
+import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
@@ -91,6 +92,30 @@ final class PersistedProgramGraphInputReader implements ProgramGraphInputReader 
   public ReopenedProgramGraphInputs reopen(
       VerifiedSourceInventoryReference verifiedSource,
       ApplicationDiscoveryReference applicationDiscovery) {
+    return reopen(verifiedSource, applicationDiscovery, null);
+  }
+
+  /**
+   * Reopens the technical R1 discovery denominator against its distinct frozen R0 source.
+   *
+   * <p>The legacy reader deliberately retains its same-controls check. This opt-in branch instead
+   * verifies the R1 receipt against the caller's explicit execution controls while keeping the
+   * exact R0 Step01 reference as its sole upstream source.
+   */
+  ReopenedProgramGraphInputs reopenTechnical(
+      VerifiedSourceInventoryReference verifiedSource,
+      ApplicationDiscoveryReference applicationDiscovery,
+      ArtifactControls executionControls) {
+    return reopen(
+        verifiedSource,
+        applicationDiscovery,
+        Objects.requireNonNull(executionControls, "technical execution controls"));
+  }
+
+  private ReopenedProgramGraphInputs reopen(
+      VerifiedSourceInventoryReference verifiedSource,
+      ApplicationDiscoveryReference applicationDiscovery,
+      ArtifactControls technicalControls) {
     try {
       requireSourceReference(verifiedSource);
       requireDiscoveryReference(applicationDiscovery);
@@ -98,11 +123,19 @@ final class PersistedProgramGraphInputReader implements ProgramGraphInputReader 
       CodeStructureSource source = source(sourceTexts);
       ReopenedAnalysisStepPublication publication =
           analysisSteps.reopen(applicationDiscovery.publication());
-      requireDiscoveryPublication(
-          publication,
-          applicationDiscovery.publication(),
-          verifiedSource.publication(),
-          sourceTexts);
+      if (technicalControls == null) {
+        requireDiscoveryPublication(
+            publication,
+            applicationDiscovery.publication(),
+            verifiedSource.publication(),
+            sourceTexts);
+      } else {
+        requireTechnicalDiscoveryPublication(
+            publication,
+            applicationDiscovery.publication(),
+            verifiedSource.publication(),
+            technicalControls);
+      }
       Map<String, VerifiedCanonicalPayload> payloads = semanticPayloads(publication);
       ObjectNode profile =
           object(
@@ -187,6 +220,25 @@ final class PersistedProgramGraphInputReader implements ProgramGraphInputReader 
             != AnalysisStepKey.APPLICATION_DISCOVERY
         || !publication.receipt().upstreamAnalysisStepReferences().equals(List.of(expectedSource))
         || !publication.receipt().controls().equals(source.controls())
+        || (publication.receipt().status() != ModuleCompletionStatus.SUCCEEDED
+            && publication.receipt().status() != ModuleCompletionStatus.SUCCEEDED_WITH_GAPS)) {
+      throw failure();
+    }
+  }
+
+  private static void requireTechnicalDiscoveryPublication(
+      ReopenedAnalysisStepPublication publication,
+      AnalysisStepPublicationReference expectedDiscovery,
+      AnalysisStepPublicationReference expectedSource,
+      ArtifactControls executionControls) {
+    if (publication == null
+        || !publication.reference().equals(expectedDiscovery)
+        || !publication.reference().address().equals(publication.receipt().address())
+        || publication.reference().address().analysisStepKey()
+            != AnalysisStepKey.APPLICATION_DISCOVERY
+        || publication.reference().address().runId().equals(expectedSource.address().runId())
+        || !publication.receipt().upstreamAnalysisStepReferences().equals(List.of(expectedSource))
+        || !publication.receipt().controls().equals(executionControls)
         || (publication.receipt().status() != ModuleCompletionStatus.SUCCEEDED
             && publication.receipt().status() != ModuleCompletionStatus.SUCCEEDED_WITH_GAPS)) {
       throw failure();

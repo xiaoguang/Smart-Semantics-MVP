@@ -23,6 +23,7 @@ import org.sourceanalysis.app.artifact.AnalysisStepPublicationAddress;
 import org.sourceanalysis.app.artifact.AnalysisStepPublisherModuleProvenance;
 import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
+import org.sourceanalysis.app.artifact.ArtifactPolicyKey;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.ArtifactStoreLimits;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
@@ -96,6 +97,21 @@ class SourceAnalysisExecutionFrozenSourceInputTest {
       assertThat(processInputSteps.reopen(installed.reference()).reference())
           .isEqualTo(installed.reference());
     }
+  }
+
+  @Test
+  void loadsTheRepositoryTechnicalPolicySetWithTheProductionLoader() {
+    CanonicalArtifactPolicyRegistry policies =
+        loadPolicies("tools/repository-run/technical-analysis-artifact-policy-set-v1.json");
+
+    assertThat(
+            policies
+                .resolve(
+                    new ArtifactPolicyKey(
+                        "CODE_READING_MATERIAL_SET", "code-reading-material-set-v2"))
+                .key())
+        .isEqualTo(
+            new ArtifactPolicyKey("CODE_READING_MATERIAL_SET", "code-reading-material-set-v2"));
   }
 
   private RepositoryRunConfiguration configuration(

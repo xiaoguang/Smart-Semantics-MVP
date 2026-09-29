@@ -112,6 +112,63 @@ class ActivityReadingCoordinatorTest {
     assertThat(stringList(plan, "sliceKeys")).containsExactly("slice-validation");
   }
 
+  @Test
+  void acceptsARepeatedRequestForTheAlreadyIncludedEntryMethod() throws Exception {
+    StructuredModelProvider provider =
+        request ->
+            new StructuredModelResponse(
+                ImmutableBytes.copyOf(
+                    readingPlanResponse(
+                            "[]",
+                            "[\"M1\",\"M3\"]",
+                            "[{\"sliceKey\":\"entry-with-write\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M1\",\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"entry and saved implementation\"}]",
+                            "[\"entry-with-write\"]",
+                            true)
+                        .getBytes(StandardCharsets.UTF_8)),
+                IDENTITY);
+
+    Object plan = coordinate(provider, largeView());
+
+    assertThat(stringList(plan, "sliceKeys")).containsExactly("entry-with-write");
+  }
+
+  @Test
+  void keepsASelectionRequestBoundedAfterSeveralCompleteUnitsHaveBeenSelected() throws Exception {
+    List<JsonNode> inputs = new ArrayList<>();
+    CanonicalJsonCodec codec = new CanonicalJsonCodec();
+    StructuredModelProvider provider =
+        request -> {
+          inputs.add(codec.parseCanonical(request.untrustedInputJson()));
+          String response =
+              inputs.size() == 1
+                  ? readingPlanResponse("[]", "[\"M2\",\"M3\",\"M4\"]", "[]", "[]", false)
+                  : readingPlanResponse(
+                      "[]",
+                      "[]",
+                      "[{\"sliceKey\":\"one-unit\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M3\"],\"sharedContextUnitKeys\":[],\"scope\":\"one independent action\"}]",
+                      "[\"one-unit\"]",
+                      true);
+          return new StructuredModelResponse(
+              ImmutableBytes.copyOf(response.getBytes(StandardCharsets.UTF_8)), IDENTITY);
+        };
+
+    Object plan = coordinate(provider, largeView());
+
+    assertThat(inputs).hasSizeGreaterThanOrEqualTo(2);
+    assertThat(stringList(plan, "sliceKeys")).containsExactly("one-unit");
+    assertThat(scalarText(inputs.get(1).path("selectedUnitKeys"))).contains("M1", "M2", "M3", "M4");
+    assertThat(scalarText(inputs.get(1).path("selectedUnitDirectory"))).contains("M2", "M3", "M4");
+    assertThat(inputs.get(1).path("completeUnitsStatus").asText())
+        .isEqualTo("PARTIAL_FOR_CAPACITY");
+    ActivityReadingPlan actual = (ActivityReadingPlan) plan;
+    assertThat(
+            new String(
+                actual.readingPackets().get(0).modelInputJson().copyToByteArray(),
+                StandardCharsets.UTF_8))
+        .contains(UNIT_THREE_BODY)
+        .doesNotContain(UNIT_TWO_BODY, UNIT_FOUR_BODY);
+  }
+
   static ActivityMaterialView largeView() {
     EntrySeed entry =
         new EntrySeed(

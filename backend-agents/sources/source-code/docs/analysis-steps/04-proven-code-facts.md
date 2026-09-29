@@ -1,5 +1,7 @@
 # 持久化材料补全
 
+> 2026-09-29：既有独立持久化命令已在固定源码保存573条statement。新四操作设计中本命令为R3，消费准确后端R2，不需要前端R1；算法主体复用，本轮仅补SQL排序投影及新Java索引接线。新合同尚未实施。[运行合同](../modules/technical-analysis/cli-and-runtime.md)。
+
 > [总体设计](../DESIGN.md)；固定 key：`proven-code-facts`，目录：`steps/04-proven-code-facts/`。当前 owner 是 `analysis.persistence`。旧 Fact/Proof/accounting 为严格历史读取；新生产只发布可选持久化材料。
 
 ## 1. 为什么存在
@@ -19,7 +21,7 @@ Mapper 方法通常只有 Java 声明，实际查询、条件列和值、关联�
 | Step02 Mapper 目录 | namespace/id/kind 候选；重复资源和 databaseId 不覆盖 |
 | 可选插件配置 | 缺省或 plugins=[] 返回明确 DISABLED；不加载 MyBatis/JSqlParser |
 
-Step02 与本步同运行复用来源匹配的只读 `MapperXmlResourceView`；include 变换只能操作副本。不同来源不可共享 DOM；没有全局缓存服务。
+独立命令在本操作首次从同源快照打开只读`MapperXmlResourceView`，不跨进程保存DOM；include变换只操作副本。不同来源不可共享DOM，不建全局缓存服务。
 
 ## 3. MyBatis Adapter 的具体步骤
 
@@ -58,7 +60,7 @@ SQL增强按如下规则保真：
 
 ## 5. 发布和下一消费者
 
-当前地址为 Step04 module4 `persistence-analysis`；语义文件 `persistence-material-index.jsonl`，schema `persistence-material-index-v1`，artifact `PERSISTENCE_MATERIAL_INDEX`。沿用既有 AnalysisStepPublicationReference、canonical store、receipt与原子发布。
+历史v1地址为 Step04 module4 `persistence-analysis`；语义文件 `persistence-material-index.jsonl`，schema `persistence-material-index-v1`，artifact `PERSISTENCE_MATERIAL_INDEX`。沿用既有 AnalysisStepPublicationReference、canonical store、receipt与原子发布。
 
 Step05按 Java 调用关联引用选取资源、语句、绑定和SQL结构，不自行推断表用途。Step06模型才能结合 Java 条件与XML解释数量/写入口径；不能把 AST PARSED 等同业务已经确认。
 
@@ -77,8 +79,25 @@ Step05按 Java 调用关联引用选取资源、语句、绑定和SQL结构，�
 
 直接测试覆盖：插件关闭零工具、@Param与多参数、重复namespace/databaseId、跨文件include/resultMap继承、动态条件/列值保持、静态与部分SQL、标准DOCTYPE安全拒绝、保存重开和缺依赖保留。不同领域fixture不得要求修改Java词表。只跑直接覆盖测试。
 
-## 7. 当前成熟度
+## 7. 本轮SQL排序投影修正（目标，待实施）
 
-实现与保存/重开已完成。固定仓库启用结果为61份XML、573条语句、572条Java绑定、573份SQL分析，其中187 PARSED、162 PARTIAL、224 UNSUPPORTED；同一索引关闭插件时所有明细为0且没有再次JDT。来源为[2026-09-18交付核验](../supplements/jdt-persistence-reading-materials-delivery.md)。
+已核实JSqlParser 5.3能返回SELECT的排序项；当前 `plainSelectNode` 未调用其排序getter，导致analysisCopy里的ORDER BY未进入保存AST。这是我们的投影遗漏，不是客户SQL缺失，也不要求更换SQL parser。[固定5.3官方Select源码](https://github.com/JSQLParser/JSqlParser/blob/jsqlparser-5.3/src/main/java/net/sf/jsqlparser/statement/select/Select.java)提供getOrderByElements；其它核查见[工具依据](../supplements/mybatis-dynamic-sql-parser-tools-research.md)。
 
-本轮只整合设计，不重做工具实验。XML/SQL已能供阅读并不证明新Activity已消费它们；该接线和模型阅读效果属于[Step06目标](06-flow-interpretation.md)。
+最小修改：
+
+1. 在既有SELECT投影的相应层读取工具返回的有序排序项，保存表达式、显式ASC/DESC或未指定、工具支持的NULLS顺序信息。内层/外层SELECT及集合查询分别挂在其实际owner，不能拉平成一个全局排序表。
+2. 不手写字符串SQL解析。字段缺失/工具不支持时保留原SQL及具体限制，不能以省略字段假装结构完整。
+3. 保存分析副本、变换和完整AST。原XML的if/foreach/choose等完整结构和原文不变；未展开动态条件仍为PARTIAL，不声称得到运行时最终SQL。
+4. 持久化schema从v1升v2、技术module producer从v2升v3，同时接受准确Java index v3及其分析基础。R3保存自己的owner与准确R2，不要求前端publication非空。
+5. 新R4只从本入口所纳入Mapper目标取得相关绑定/资源。被Java索引明确排除的错误候选不作为本入口SQL入口；R3全仓目录中存在其它Mapper本身不算污染。
+6. reader/policy/fixture同步，不改历史schema v1及producer v1/v2文件。旧SQL结构不补造新字段，不把未知排序写成“无排序”。
+
+验收：带子查询内外排序、多个排序项、ASC/DESC未显式、工具支持的NULLS、动态SQL原文、无排序及不支持表达式；先经真正JSqlParser，再发布重开并检查最终入口JSON。只测本修改及现有直接消费者，不运行数据库、MyBatis动态求值或模型。
+
+## 8. 当前成熟度
+
+算法的实现与同运行保存/重开已完成。技术命令另有一条 R2 v2 跨运行发布/严格重开路径：R0 Step01 总是通过 source-preparation policy store 重开，R1 Step02/03 和 R2 Step04 总是通过 technical policy store 重开；v1 的同运行发布/读取守卫未放宽。`TechnicalAnalysisSourceAdmissionTest#analyzePersistencePublishesR2Step04FromExactR1WithoutJdtOrNode` 用真实 Agent 生命周期验证 R2 owner、准确 R0/R1 ancestry、重新打开的 ENABLED 空索引以及零 JDT/Node。它是 fixture 级接线证据，不是固定客户源码验收。
+
+固定仓库启用结果为61份XML、573条语句、572条Java绑定、573份SQL分析，其中187 PARSED、162 PARTIAL、224 UNSUPPORTED；同一索引关闭插件时所有明细为0且没有再次JDT。来源为[2026-09-18交付核验](../supplements/jdt-persistence-reading-materials-delivery.md)。
+
+Step05→Activity的后端/XML投影已另行实现并保存418条新Activity，具体范围与限制由[Step06](06-flow-interpretation.md)维护；该历史事实不等于新增前端材料已被消费。本轮保留这些已实现能力，仅实施上节明确增量及新运行接线；不重做持久化算法、不运行Step06。当前主设计文档更新本身不授权执行。

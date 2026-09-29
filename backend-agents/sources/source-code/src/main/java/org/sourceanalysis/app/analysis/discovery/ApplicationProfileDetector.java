@@ -56,16 +56,36 @@ public final class ApplicationProfileDetector {
   /** Reads only the supplied verified-source handle and returns static capability signals. */
   public ApplicationProfile detect(
       VerifiedSourceInventoryReference frozenSource, DiscoveryProfile discoveryProfile) {
+    return detect(frozenSource, discoveryProfile, null);
+  }
+
+  /**
+   * Detects the same admitted R0 source under explicit technical execution controls.
+   *
+   * <p>The supplied controls own the resulting R1 profile and publications. They never rewrite the
+   * controls recorded on the reopened source text set.
+   */
+  ApplicationProfile detect(
+      VerifiedSourceInventoryReference frozenSource,
+      DiscoveryProfile discoveryProfile,
+      ArtifactControls executionControls) {
     if (frozenSource == null || discoveryProfile == null) {
       throw new IllegalArgumentException("application discovery request is invalid");
     }
     VerifiedSourceTextSet source = sourceReader.reopen(frozenSource);
+    ArtifactControls profileControls =
+        executionControls == null ? source.controls() : executionControls;
     List<FrameworkSignal> frameworkSignals = frameworkSignals(source.documents());
     List<ConfigSignal> configSignals = configSignals(source.documents());
     Integer languageVersion = languageVersion(source.documents());
     return new ApplicationProfile(
         applicationProfileId(
-            source, discoveryProfile, languageVersion, frameworkSignals, configSignals),
+            source,
+            discoveryProfile,
+            profileControls,
+            languageVersion,
+            frameworkSignals,
+            configSignals),
         source.snapshotId(),
         source.inventoryScopeKind(),
         source.repositoryCompletionEligible(),
@@ -76,7 +96,7 @@ public final class ApplicationProfileDetector {
         source.capabilityProfileRef(),
         source.sourceInventoryRef(),
         source.verifiedSnapshotRef(),
-        source.controls());
+        profileControls);
   }
 
   private static List<FrameworkSignal> frameworkSignals(
@@ -230,6 +250,7 @@ public final class ApplicationProfileDetector {
   private static ArtifactId applicationProfileId(
       VerifiedSourceTextSet source,
       DiscoveryProfile profile,
+      ArtifactControls controls,
       Integer languageVersion,
       List<FrameworkSignal> frameworkSignals,
       List<ConfigSignal> configSignals) {
@@ -240,7 +261,7 @@ public final class ApplicationProfileDetector {
     material.set("capabilityProfileRef", referenceIdentity(source.capabilityProfileRef()));
     material.set("sourceInventoryRef", referenceIdentity(source.sourceInventoryRef()));
     material.set("verifiedSnapshotRef", referenceIdentity(source.verifiedSnapshotRef()));
-    material.set("controls", controlsIdentity(source.controls()));
+    material.set("controls", controlsIdentity(controls));
     material.put("ruleVersion", profile.ruleVersion());
     material.put("language", ApplicationLanguage.JAVA.name());
     if (languageVersion == null) {

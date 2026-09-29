@@ -2,6 +2,8 @@
 
 本组维护当前JDT工具Interface、声明/导航合同、共享索引及03→04→05接线。固定八步骤不变；`analysis.code`是内部模块，不是第九步。当前生产只启动JDT，JavaParser、严格图/Fact/Flow/Capsule/M10生成已退役。
 
+技术采集由[技术分析模块](../technical-analysis/README.md)维护。官方Maven文件读取、逐模块LS/Core目标平台和三命令已经接通并有固定源码结果；不能把已有环境桥接重新列为待做。本次四操作目标使collect-code只负责后端，前端独立，最终按entryId输出；JDT窄修正是使用本身的binding和精确调用位置、区分外部/未知/查询失败，不另写候选解析器。已知环境错误仍阻断，诊断覆盖未确认允许披露后继续。新Java index v3与历史v2分开，真实错边与长等待未解决状态见[JDT设计](jdt-engine.md)。
+
 ## 1. 业务目标与模块分工
 
 下游模型应能看见完整Controller/Service、所有调用候选、参数、条件和返回，以及相关Mapper/XML，不必重新扫描代码。程序不从方法名推断采购、销售或流程顺序。
@@ -24,7 +26,7 @@
  → JDT LS/Core → Step03 JavaCodeIndex
  → Step04 可选PersistenceMaterialIndex
  → Step05 CodeReadingMaterialSet保存/重开
- → Step06目标：模型投影/阅读/Activity
+ → Step06现有v1材料消费：模型投影/阅读/Activity
  → Step07：保存Activity与来源的过程发现
 ```
 
@@ -38,7 +40,7 @@ Step04拥有可选MyBatis/JSqlParser；Step05是唯一材料owner；Step06只重
 - 方法全仓共享；CALL按entryId+物理callKey保存，入口展开状态不互相覆盖。
 - 缓存同一冻结就绪会话、同操作/位置原始结果，不省略不同操作，不将错误当空目标。
 - controls/exits是语法提示，不是路径Proof；完整条件/return/throw不可裁成几行。
-- 不运行客户构建、插件、应用、数据库或动态表达式；缺依赖保留未知。
+- Java引擎不运行Maven、客户构建、插件、应用、数据库或动态表达式；用户或获授权的Agent运行官方Maven命令可能加载客户扩展，不能承诺其天然零客户代码执行。当前缺依赖可能只保留未知甚至产生错候选；新目标在Step02核对导出classpath及JDK绑定，已知缺项阻断，工具诊断覆盖未确认如实披露。核对不证明编译正确或导航全对。
 - 保存/重开核对身份、bytes/schema/ref，不重新运行producer。
 - JDT index v2已有technicalEnhancements字段原义不变，但不再新装Fact accounting。
 
@@ -50,6 +52,6 @@ Step04拥有可选MyBatis/JSqlParser；Step05是唯一材料owner；Step06只重
 
 ## 5. 开发与验收
 
-Astra/ultra负责方向、文档、debug；Luna/xhigh写直接行为测试；Terra/xhigh实现。普通fixture无真实工具/模型；真实JDT仅单独授权入口，重型命令串行。只跑新增或直接覆盖测试；文档本身不授权源码扫描、工具运行、产品调用或提交。
+GPT-6 Sol/xhigh负责方向、文档、debug；Luna/xhigh写直接行为测试；Terra/xhigh实现。普通fixture无真实工具/模型；真实JDT仅单独授权入口，重型命令串行。只跑新增或直接覆盖测试；文档本身不授权源码扫描、工具运行、产品调用或提交。
 
 现行步骤详细职责分别由[03](../../analysis-steps/03-program-graphs.md)、[04](../../analysis-steps/04-proven-code-facts.md)、[05](../../analysis-steps/05-business-flows.md)拥有。本组不复制另一套配置、材料或业务执行owner。

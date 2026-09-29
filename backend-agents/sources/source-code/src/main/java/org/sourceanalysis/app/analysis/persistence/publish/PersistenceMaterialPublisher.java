@@ -46,16 +46,31 @@ public final class PersistenceMaterialPublisher {
   public static final String SCHEMA_VERSION = "persistence-material-index-v1";
   private static final String MODULE_VERSION = "v1";
   private static final String PRODUCER = "persistence-analysis-v1";
+  private static final String TECHNICAL_MODULE_VERSION = "v2";
+  private static final String TECHNICAL_PRODUCER = "persistence-analysis-v2";
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final Comparator<String> UTF8_ORDER = PersistenceMaterialPublisher::compareUtf8;
 
   private final CanonicalModuleArtifactStore modules;
   private final CanonicalAnalysisStepArtifactStore steps;
+  private final CanonicalAnalysisStepArtifactStore sourceSteps;
 
   public PersistenceMaterialPublisher(
       CanonicalModuleArtifactStore modules, CanonicalAnalysisStepArtifactStore steps) {
+    this(modules, steps, steps);
+  }
+
+  /**
+   * Creates the cross-policy technical publisher. R0 is reopened only through its
+   * source-preparation registry; R1/R2 stay under the technical registry.
+   */
+  public PersistenceMaterialPublisher(
+      CanonicalModuleArtifactStore modules,
+      CanonicalAnalysisStepArtifactStore steps,
+      CanonicalAnalysisStepArtifactStore sourceSteps) {
     this.modules = Objects.requireNonNull(modules, "module artifact store");
     this.steps = Objects.requireNonNull(steps, "analysis step artifact store");
+    this.sourceSteps = Objects.requireNonNull(sourceSteps, "source analysis-step artifact store");
   }
 
   /** Installs one canonical Step 04 index from already analyzed immutable persistence material. */
@@ -84,7 +99,7 @@ public final class PersistenceMaterialPublisher {
               AnalysisStepKey.PROVEN_CODE_FACTS,
               4,
               "persistence-analysis");
-      CanonicalModulePayload payload = indexPayload(index);
+      CanonicalModulePayload payload = indexPayload(index, PRODUCER);
       List<ArtifactReference> upstream =
           upstreamPayloadReferences(sourceStep, discoveryStep, navigationStep);
       var module =
@@ -127,6 +142,86 @@ public final class PersistenceMaterialPublisher {
     }
   }
 
+  /**
+   * Installs the technical Step04 v2 producer owned by R2 from exact R0/R1 predecessors.
+   *
+   * <p>Unlike the retained v1 same-run path, this method keeps R0, R1, and R2 controls distinct: R1
+   * receipts are verified with {@code r1Controls}; the new R2 module and Step04 receipt are written
+   * with {@code r2Controls}.
+   */
+  public AnalysisStepPublicationReference publishTechnical(
+      org.sourceanalysis.app.artifact.AnalysisRunId destinationRunId,
+      VerifiedSourceInventoryReference source,
+      ApplicationDiscoveryReference discovery,
+      ArtifactControls r1Controls,
+      ArtifactControls r2Controls,
+      PersistenceMaterialIndex index) {
+    try {
+      Objects.requireNonNull(destinationRunId, "R2 destination run ID");
+      Objects.requireNonNull(source, "verified source inventory");
+      Objects.requireNonNull(discovery, "application discovery");
+      Objects.requireNonNull(r1Controls, "R1 execution controls");
+      Objects.requireNonNull(r2Controls, "R2 execution controls");
+      Objects.requireNonNull(index, "persistence material index");
+      ReopenedAnalysisStepPublication sourceStep =
+          reopen(source.publication(), AnalysisStepKey.VERIFIED_SOURCE_INVENTORY, sourceSteps);
+      ReopenedAnalysisStepPublication discoveryStep =
+          reopen(discovery.publication(), AnalysisStepKey.APPLICATION_DISCOVERY, steps);
+      ReopenedAnalysisStepPublication navigationStep =
+          reopen(
+              index.header().navigationPublication().publication(),
+              AnalysisStepKey.PROGRAM_GRAPHS,
+              steps);
+      requireTechnicalPredecessors(
+          destinationRunId, sourceStep, discoveryStep, navigationStep, r1Controls);
+
+      AnalysisStepModuleAddress address =
+          new AnalysisStepModuleAddress(
+              destinationRunId, AnalysisStepKey.PROVEN_CODE_FACTS, 4, "persistence-analysis");
+      CanonicalModulePayload payload = indexPayload(index, TECHNICAL_PRODUCER);
+      List<ArtifactReference> upstream =
+          upstreamPayloadReferences(sourceStep, discoveryStep, navigationStep);
+      var module =
+          modules.install(
+              new ModuleInstallRequest(
+                  address,
+                  TECHNICAL_MODULE_VERSION,
+                  upstream,
+                  r2Controls,
+                  ModuleCompletionStatus.SUCCEEDED,
+                  List.of(),
+                  List.of(payload)));
+      var step =
+          steps.install(
+              new AnalysisStepInstallRequest(
+                  new AnalysisStepPublicationAddress(
+                      destinationRunId, AnalysisStepKey.PROVEN_CODE_FACTS),
+                  new AnalysisStepPublisherModuleProvenance(module.reference()),
+                  List.of(
+                      sourceStep.reference(),
+                      discoveryStep.reference(),
+                      navigationStep.reference()),
+                  r2Controls,
+                  ModuleCompletionStatus.SUCCEEDED,
+                  List.of(),
+                  List.of(stepPayload(payload)),
+                  null));
+      ReopenedAnalysisStepPublication reopened = steps.reopen(step.reference());
+      if (!reopened.reference().equals(step.reference())
+          || reopened.semanticPayloads().size() != 1
+          || !reopened.receipt().controls().equals(r2Controls)) {
+        throw invalid();
+      }
+      return step.reference();
+    } catch (RuntimeException failure) {
+      if (failure instanceof IllegalArgumentException
+          && "PERSISTENCE_MATERIAL_PUBLICATION_INVALID".equals(failure.getMessage())) {
+        throw failure;
+      }
+      throw invalid(failure);
+    }
+  }
+
   private void requireSameRunAndControls(
       ReopenedAnalysisStepPublication source,
       ReopenedAnalysisStepPublication discovery,
@@ -146,9 +241,37 @@ public final class PersistenceMaterialPublisher {
     }
   }
 
+  private void requireTechnicalPredecessors(
+      org.sourceanalysis.app.artifact.AnalysisRunId destinationRunId,
+      ReopenedAnalysisStepPublication source,
+      ReopenedAnalysisStepPublication discovery,
+      ReopenedAnalysisStepPublication navigation,
+      ArtifactControls r1Controls) {
+    if (source.reference().address().runId().equals(discovery.reference().address().runId())
+        || !discovery.reference().address().runId().equals(navigation.reference().address().runId())
+        || destinationRunId.equals(source.reference().address().runId())
+        || destinationRunId.equals(discovery.reference().address().runId())
+        || !discovery.receipt().controls().equals(r1Controls)
+        || !navigation.receipt().controls().equals(r1Controls)
+        || !discovery.receipt().upstreamAnalysisStepReferences().equals(List.of(source.reference()))
+        || !navigation
+            .receipt()
+            .upstreamAnalysisStepReferences()
+            .equals(List.of(source.reference(), discovery.reference()))) {
+      throw invalid();
+    }
+  }
+
   private ReopenedAnalysisStepPublication reopen(
       AnalysisStepPublicationReference reference, AnalysisStepKey expectedStep) {
-    ReopenedAnalysisStepPublication reopened = steps.reopen(reference);
+    return reopen(reference, expectedStep, steps);
+  }
+
+  private static ReopenedAnalysisStepPublication reopen(
+      AnalysisStepPublicationReference reference,
+      AnalysisStepKey expectedStep,
+      CanonicalAnalysisStepArtifactStore store) {
+    ReopenedAnalysisStepPublication reopened = store.reopen(reference);
     if (!reopened.reference().equals(reference)
         || reference.address().analysisStepKey() != expectedStep) {
       throw invalid();
@@ -156,9 +279,9 @@ public final class PersistenceMaterialPublisher {
     return reopened;
   }
 
-  private CanonicalModulePayload indexPayload(PersistenceMaterialIndex index) {
+  private CanonicalModulePayload indexPayload(PersistenceMaterialIndex index, String producer) {
     StringBuilder content = new StringBuilder();
-    for (IndexRecord record : records(index)) {
+    for (IndexRecord record : records(index, producer)) {
       ObjectNode line = JsonNodeFactory.instance.objectNode();
       line.put("schemaVersion", SCHEMA_VERSION);
       line.put("recordType", record.type());
@@ -195,10 +318,10 @@ public final class PersistenceMaterialPublisher {
         bytes);
   }
 
-  private static List<IndexRecord> records(PersistenceMaterialIndex index) {
+  private static List<IndexRecord> records(PersistenceMaterialIndex index, String producer) {
     List<IndexRecord> records = new ArrayList<>();
     ObjectNode header = JsonNodeFactory.instance.objectNode();
-    header.put("producer", PRODUCER);
+    header.put("producer", producer);
     header.put("status", index.header().status().name());
     header.put("sourceSnapshotId", index.header().sourceSnapshotId());
     header.set("navigationPublication", MAPPER.valueToTree(index.header().navigationPublication()));

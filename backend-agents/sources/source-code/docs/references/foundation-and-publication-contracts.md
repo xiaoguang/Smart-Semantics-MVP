@@ -17,13 +17,15 @@
 
 ## 2. 唯一计算owner
 
-Step01拥有冻结来源，Step02拥有入口分母，Step03拥有JDT导航与完整Java材料，Step04拥有可选持久化材料，Step05拥有入口阅读关系/覆盖。当前JDT-only生产已实现；旧JavaParser/图/Fact/Flow/Capsule/M10仅历史读取。
+Step01拥有冻结来源，Step02拥有入口分母，Step03拥有JDT导航与完整Java材料，Step04拥有可选持久化材料，Step05拥有入口阅读关系/覆盖。当前JDT-only生产已实现；旧JavaParser/图/Fact/Flow/Capsule/M10仅实际必要历史读取。新目标由Step02消费官方Maven `dependency:build-classpath` 的逐模块有序导出，并核对来源/模块、可读路径及目标JDK绑定；Step02还建立已验证有限Vue模式的请求关系，Step05增加页面材料。三项独立技术操作各自发布、沿准确lineage读取，不改变Step03导航或Step04算法，见[技术设计](../modules/technical-analysis/README.md)。用户运行Maven或明确授权Agent运行；Agent解释Maven原始失败，Java不解释Maven模型或下载依赖，也不以环境核对证明编译正确。有效环境可导航并披露诊断覆盖未确认；已知缺项或项目失败仍阻断。
 
 新Step06内部ActivityMaterialProjector负责无损投影及来源映射，ReadingCoordinator负责按模型决定取回实际完整单元，ActivityExplainer唯一负责业务解释。允许安全结构读取保存的XML rawSource，不运行JDT/PersistenceAnalyzer/JSqlParser或另建行业语义分析器。
 
 Step07 Cataloger发现候选，Assembler读取/封包，Reconstructor已实现DRAFT→WRITE→最后RULE_REVIEW，Consolidator做既有无损关系裁决，Publisher只校验/排版。完整原文在DRAFT前到位，最终核对看到实际写作全文。Step08只读历史report，不启动新生成。
 
 ## 3. 保存与来源作用域
+
+源码准备合同由[准备数据合同](../modules/source-preparation/contracts-and-storage.md)唯一维护：目录/Git显式来源、检查结果不等于消费许可、明确排除和单文件/子目录刷新生成新版本；公共reader和进入新执行的旧材料都校验来源范围。该准备及fail-closed能力已实现；从准备版来源生产新02–05是本次独立接线目标，不混为同一完成项。历史查看不升级为新版本成果。源码准备问题不能一概套用业务模型fatal停止后不发布结果的规则。
 
 使用现有CanonicalJsonCodec、typed引用、原子store与receipt。owner计算一次后传immutable view；publisher不重复生产算法。磁盘/新进程/import/跨run重开才核验exact file set、身份/hash/schema/ref/basis和实际读取字节；正常内部调用不反复扫描。
 
@@ -45,7 +47,7 @@ Step07 Cataloger发现候选，Assembler读取/封包，Reconstructor已实现DR
 
 ## 5. 模型与覆盖
 
-业务默认已登录ChatGPT Codex上下文Terra/xhigh，任务绑定固定；不自动改Provider或API fallback，历史身份不改。具体认证/配额见模型执行合同，本轮未调用产品模型。自动验证仅用冻结fixture/scripted Provider。
+业务模型按每次已批准配置固定；用户当前默认选择为已登录ChatGPT Codex上下文Luna/high，不据此改写旧Terra/xhigh或其它历史身份。不自动改Provider或API fallback。具体认证/配额见模型执行合同，本次技术设计不启动产品模型；未来技术自动验证用冻结fixture，不需要模型。
 
 完整材料、Prompt/Schema和输出余量用于保守预检，不声称掌握服务端精确token计账。明显超容量保存原因，不静默剪裁条件/公式或删稿。模型决定业务阅读范围，Java验证句柄/真实原文/集合/容量，不能用行业规则宣称语义充分。
 
@@ -53,6 +55,6 @@ Step07 Cataloger发现候选，Assembler读取/封包，Reconstructor已实现DR
 
 ## 6. 当前实现与验证界限
 
-Step01–05取材已完成；新Step05→Activity、阶段retry和目标双来源接入未实现。Step07系统认识、聚焦CHECK、三阶段、私有v3、producer v4/五文件及历史重开已实现。历史三例12请求没有全部准确性通过，详见[实测](../supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)。
+现有后端Step01–05、Step05 v1→Activity、阶段retry和历史M10/新Step05双来源已有实现，保存418条新Activity；必需范围是否完整以[Activity当前状态](../modules/activity-explanation/README.md)为准，不能用条数代替范围验收。原三个技术命令、READY/阻断报告、有限Vue关联和Step05 v2已有固定源码保存结果；嵌套调用准确性仍未通过。新四操作及每入口JSON是待实施目标，详见[技术合同](../modules/technical-analysis/README.md)，业务消费者不自动支持新格式。Step07三阶段及历史重开已有实现；历史三例12请求没有全部准确性通过，详见[实测](../supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)。
 
 [真实材料推演](../examples/activity-material-end-to-end-walkthrough.md)明确区分保存原文、目标投影、拟Activity与Step07补读；不冒充新模型结果。设计逻辑闭合、程序测试、可读性认可和实际语义质量分别报告。本轮不重跑代码/测试/模型或扩大全仓范围。

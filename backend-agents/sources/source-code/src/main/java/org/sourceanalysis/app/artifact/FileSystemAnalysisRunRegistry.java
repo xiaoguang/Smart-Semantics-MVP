@@ -23,6 +23,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import org.sourceanalysis.app.analysis.inventory.PreparedSourceReference;
+import org.sourceanalysis.app.analysis.inventory.SourcePreparationReadiness;
+import org.sourceanalysis.app.capture.localgit.SourceRegistrationReference;
 import org.sourceanalysis.app.runtime.AnalysisRunLifecycleState;
 import org.sourceanalysis.app.runtime.AnalysisRunOutput;
 import org.sourceanalysis.app.runtime.AnalysisRunReference;
@@ -30,27 +33,41 @@ import org.sourceanalysis.app.runtime.AnalysisRunRequest;
 import org.sourceanalysis.app.runtime.AnalysisRunRequestReference;
 import org.sourceanalysis.app.runtime.PersistedAnalysisRunRequest;
 import org.sourceanalysis.app.runtime.ReaderCandidateRound;
+import org.sourceanalysis.app.runtime.SelectedSourceBasis;
+import org.sourceanalysis.app.runtime.TechnicalContinuationStatus;
+import org.sourceanalysis.app.runtime.TechnicalInspectionStatus;
+import org.sourceanalysis.app.runtime.TechnicalOutputArtifactKey;
+import org.sourceanalysis.app.runtime.TechnicalProblemReference;
+import org.sourceanalysis.app.runtime.TechnicalRunOutput;
 
 /** Filesystem implementation hidden behind {@link AnalysisRunRegistry}. */
 final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
 
-  private static final String REQUEST_SCHEMA = "analysis-run-request-v2";
+  private static final String REQUEST_SCHEMA_V2 = "analysis-run-request-v2";
+  private static final String REQUEST_SCHEMA_V3 = "analysis-run-request-v3";
+  private static final String REQUEST_SCHEMA_V4 = "analysis-run-request-v4";
   private static final String STATE_SCHEMA = "analysis-run-state-v1";
   private static final String RUN_DIRECTORY = "analysis-runs";
   private static final String REQUEST_FILE = "run-request.json";
   private static final String STATE_FILE = "run-state.json";
   private static final String OUTPUT_FILE = "run-output.json";
+  private static final String PRIVATE_JAVA_COMPILATION_INPUT_FILE =
+      "java-compilation-input-v2.json";
   private static final String OUTPUT_SCHEMA_V3 = "analysis-run-output-v3";
   private static final String OUTPUT_SCHEMA_V4 = "analysis-run-output-v4";
   private static final String OUTPUT_SCHEMA_V5 = "analysis-run-output-v5";
   private static final String OUTPUT_SCHEMA_V6 = "analysis-run-output-v6";
+  private static final String OUTPUT_SCHEMA_V7 = "analysis-run-output-v7";
+  private static final String OUTPUT_SCHEMA_V8 = "analysis-run-output-v8";
   private static final String MATERIALS_ONLY_OUTPUT = "MATERIALS_ONLY";
   private static final String READING_MATERIALS_ONLY_OUTPUT = "READING_MATERIALS_ONLY";
   private static final String STEP05_ACTIVITIES_OUTPUT = "STEP05_ACTIVITIES";
   private static final String ACTIVITIES_ONLY_OUTPUT = "ACTIVITIES_ONLY";
   private static final String PROCESS_CATALOG_OUTPUT = "PROCESS_CATALOG";
   private static final String COMPLETE_REPORT_OUTPUT = "COMPLETE_REPORT";
-  private static final Set<String> REQUEST_FIELDS =
+  private static final String SOURCE_PREPARATION_OUTPUT = "SOURCE_PREPARATION";
+  private static final String TECHNICAL_OUTPUT = "TECHNICAL";
+  private static final Set<String> REQUEST_V2_FIELDS =
       Set.of(
           "approvedFindingRefs",
           "artifactPolicyRegistryRef",
@@ -66,6 +83,50 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
           "schemaVersion",
           "sourceRegistrationId",
           "toolchainRef");
+  private static final Set<String> REQUEST_V3_ANALYSIS_FIELDS =
+      Set.of(
+          "approvedFindingRefs",
+          "artifactPolicyRegistryRef",
+          "candidateSeriesRef",
+          "frozenRepositoryRequestRef",
+          "organizationRegistrySeedRef",
+          "parentCandidateRef",
+          "profileBundleRef",
+          "promptBundleRef",
+          "readerCandidateRound",
+          "requestKind",
+          "resourceBudgetRef",
+          "schemaBundleRef",
+          "schemaVersion",
+          "selectedSourceBasis",
+          "toolchainRef");
+  private static final Set<String> REQUEST_V3_SOURCE_PREPARATION_FIELDS =
+      Set.of(
+          "artifactPolicyRegistryRef",
+          "preparationProfileRef",
+          "preparationToolchainRef",
+          "requestKind",
+          "resourceBudgetRef",
+          "schemaBundleRef",
+          "schemaVersion",
+          "sourcePreparationRequestRef");
+  private static final Set<String> REQUEST_V4_TECHNICAL_ANALYSIS_FIELDS =
+      Set.of("requestKind", "schemaVersion", "selectedSourceBasis", "technicalAnalysisInputs");
+  private static final Set<String> TECHNICAL_ANALYSIS_INPUT_FIELDS =
+      Set.of(
+          "artifactPolicyRegistryRef",
+          "operation",
+          "resourceBudgetRef",
+          "schemaBundleRef",
+          "technicalProfileRef",
+          "toolchainRef",
+          "upstreamPublication");
+  private static final Set<String> SELECTED_SOURCE_BASIS_FIELDS =
+      Set.of("effectiveScopeDigest", "kind", "legacyCapture", "preparedSource", "snapshotId");
+  private static final Set<String> PREPARED_SOURCE_FIELDS =
+      Set.of("artifactPolicyRegistryRef", "publication", "schemaBundleRef", "sourceVersionId");
+  private static final Set<String> LEGACY_CAPTURE_FIELDS =
+      Set.of("captureReceiptRef", "snapshotId", "snapshotManifestRef", "sourceRegistrationId");
   private static final Set<String> STATE_FIELDS =
       Set.of("analysisRunRequestRef", "lifecycleState", "runId", "schemaVersion");
   private static final Set<String> LEGACY_OUTPUT_FIELDS =
@@ -99,6 +160,37 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
           "runId",
           "schemaVersion",
           "sourceRunId");
+  private static final Set<String> SOURCE_PREPARATION_OUTPUT_FIELDS =
+      Set.of(
+          "outputKind",
+          "runId",
+          "schemaVersion",
+          "selectedSourceBasis",
+          "sourcePreparationCheckpoint",
+          "sourcePreparationReadiness");
+  private static final Set<String> TECHNICAL_OUTPUT_FIELDS =
+      Set.of("outputKind", "runId", "schemaVersion", "sourceRunId", "technicalOutput");
+  private static final Set<String> TECHNICAL_RUN_OUTPUT_FIELDS =
+      Set.of(
+          "applicationDiscovery",
+          "availableOutputs",
+          "continuationStatus",
+          "frontendIndex",
+          "inspectionStatus",
+          "navigation",
+          "operation",
+          "outputRunId",
+          "persistence",
+          "problems",
+          "readinessReport",
+          "readingMaterials",
+          "selectedSourceBasis",
+          "upstreamPublication");
+  private static final Set<String> TECHNICAL_MODULE_PUBLICATION_FIELDS =
+      Set.of("address", "moduleArtifactRoot", "moduleReceiptId", "moduleReceiptSha256");
+  private static final Set<String> TECHNICAL_MODULE_ADDRESS_FIELDS =
+      Set.of("analysisStepKey", "moduleKey", "moduleNumber", "runId");
+  private static final Set<String> TECHNICAL_PROBLEM_FIELDS = Set.of("code", "reference");
   private static final Set<String> CHECKPOINT_FIELDS =
       Set.of(
           "analysisStepKey",
@@ -129,7 +221,7 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   public AnalysisRunReference queue(AnalysisRunRequest request) {
     Objects.requireNonNull(request, "analysis run request");
     ImmutableBytes requestBytes = canonicalJson.encodeCanonical(requestJson(request));
-    AnalysisRunRequestReference requestReference = requestReference(requestBytes);
+    AnalysisRunRequestReference requestReference = requestReference(requestBytes, request);
     try {
       Path runs = runDirectory();
       for (int attempt = 0; attempt < 16; attempt++) {
@@ -171,8 +263,9 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
       requireDirectory(directory);
       ImmutableBytes requestBytes =
           ImmutableBytes.copyOf(readRegular(directory.resolve(REQUEST_FILE)));
-      AnalysisRunRequest request = requestFromJson(parseObject(requestBytes, REQUEST_FIELDS));
-      AnalysisRunRequestReference expectedRequestReference = requestReference(requestBytes);
+      AnalysisRunRequest request = requestFromJson(parseObject(requestBytes));
+      AnalysisRunRequestReference expectedRequestReference =
+          requestReference(requestBytes, request);
       ObjectNode state =
           parseObject(
               ImmutableBytes.copyOf(readRegular(directory.resolve(STATE_FILE))), STATE_FIELDS);
@@ -207,7 +300,8 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
       requireDirectory(directory);
       ImmutableBytes requestBytes =
           ImmutableBytes.copyOf(readRegular(directory.resolve(REQUEST_FILE)));
-      AnalysisRunRequestReference requestReference = requestReference(requestBytes);
+      AnalysisRunRequest request = requestFromJson(parseObject(requestBytes));
+      AnalysisRunRequestReference requestReference = requestReference(requestBytes, request);
       ObjectNode state =
           parseObject(
               ImmutableBytes.copyOf(readRegular(directory.resolve(STATE_FILE))), STATE_FIELDS);
@@ -238,18 +332,8 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     Objects.requireNonNull(output, "analysis run output");
     try {
       PersistedAnalysisRunRequest persisted = reopenRequest(runId);
-      boolean readingMaterialsOnly = output.hasReadingMaterials();
-      boolean validOwner =
-          readingMaterialsOnly
-              ? output.sourceRunId().equals(output.readingMaterialCheckpoint().address().runId())
-                  && (output.hasCompletedProcesses()
-                      ? runId.equals(runId(output.knowledgeCheckpoint()))
-                      : output.hasActivityCheckpoint()
-                          ? runId.equals(runId(output.activityCheckpoint()))
-                          : runId.equals(output.sourceRunId()))
-              : validLegacyOutputOwner(runId, output);
       if (persisted.analysisRun().lifecycleState() != AnalysisRunLifecycleState.RUNNING
-          || !validOwner) {
+          || !outputMatchesRequest(runId, persisted.request(), output)) {
         throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
       }
       Path destination = runDirectory().resolve(runId.value()).resolve(OUTPUT_FILE);
@@ -270,12 +354,55 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
       if (!Files.exists(output, LinkOption.NOFOLLOW_LINKS)) {
         return Optional.empty();
       }
-      return Optional.of(
-          outputFromJson(runId, parseObject(ImmutableBytes.copyOf(readRegular(output)))));
+      AnalysisRunOutput reopened =
+          outputFromJson(runId, parseObject(ImmutableBytes.copyOf(readRegular(output))));
+      if (!outputMatchesRequest(runId, reopenRequest(runId).request(), reopened)) {
+        throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+      }
+      return Optional.of(reopened);
     } catch (RunRegistryException failure) {
       throw failure;
     } catch (IOException | RuntimeException failure) {
       throw failure("ANALYSIS_RUN_OUTPUT_INVALID", failure);
+    }
+  }
+
+  @Override
+  public void writePrivateJavaCompilationInput(AnalysisRunId runId, ImmutableBytes canonicalJson) {
+    Objects.requireNonNull(runId, "analysis run ID");
+    Objects.requireNonNull(canonicalJson, "private Java compilation input");
+    try {
+      PersistedAnalysisRunRequest persisted = reopenRequest(runId);
+      if (persisted.analysisRun().lifecycleState() != AnalysisRunLifecycleState.QUEUED
+          || persisted.request().requestKind() != AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS
+          || persisted.request().technicalAnalysisInputs().operation()
+              != AnalysisRunRequest.TechnicalOperation.COLLECT_CODE) {
+        throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+      }
+      writeAtomic(
+          runDirectory().resolve(runId.value()).resolve(PRIVATE_JAVA_COMPILATION_INPUT_FILE),
+          canonicalJson.copyToByteArray());
+    } catch (RunRegistryException failure) {
+      throw failure;
+    } catch (IOException | RuntimeException failure) {
+      throw failure("ANALYSIS_RUN_STORE_WRITE_FAILED", failure);
+    }
+  }
+
+  @Override
+  public Optional<ImmutableBytes> reopenPrivateJavaCompilationInput(AnalysisRunId runId) {
+    Objects.requireNonNull(runId, "analysis run ID");
+    try {
+      Path privateInput =
+          runDirectory().resolve(runId.value()).resolve(PRIVATE_JAVA_COMPILATION_INPUT_FILE);
+      if (!Files.exists(privateInput, LinkOption.NOFOLLOW_LINKS)) {
+        return Optional.empty();
+      }
+      return Optional.of(ImmutableBytes.copyOf(readRegular(privateInput)));
+    } catch (RunRegistryException failure) {
+      throw failure;
+    } catch (IOException | RuntimeException failure) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", failure);
     }
   }
 
@@ -351,8 +478,66 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   }
 
   private ObjectNode requestJson(AnalysisRunRequest request) {
+    if (request.usesLegacyV2Wire()) {
+      return legacyRequestJson(request);
+    }
+    if (request.requestKind() == AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS) {
+      return technicalAnalysisRequestJson(request);
+    }
     ObjectNode value = JsonNodeFactory.instance.objectNode();
-    value.put("schemaVersion", REQUEST_SCHEMA);
+    value.put("schemaVersion", REQUEST_SCHEMA_V3);
+    value.put("requestKind", request.requestKind().name());
+    if (request.requestKind() == AnalysisRunRequest.RequestKind.SOURCE_PREPARATION) {
+      AnalysisRunRequest.SourcePreparationInputs inputs = request.sourcePreparationInputs();
+      reference(
+          value.putObject("sourcePreparationRequestRef"), inputs.sourcePreparationRequestRef());
+      reference(value.putObject("artifactPolicyRegistryRef"), inputs.artifactPolicyRegistryRef());
+      reference(value.putObject("schemaBundleRef"), inputs.schemaBundleRef());
+      reference(value.putObject("resourceBudgetRef"), inputs.resourceBudgetRef());
+      reference(value.putObject("preparationProfileRef"), inputs.preparationProfileRef());
+      reference(value.putObject("preparationToolchainRef"), inputs.preparationToolchainRef());
+      return value;
+    }
+    reference(value.putObject("frozenRepositoryRequestRef"), request.frozenRepositoryRequestRef());
+    reference(value.putObject("profileBundleRef"), request.profileBundleRef());
+    reference(value.putObject("resourceBudgetRef"), request.resourceBudgetRef());
+    reference(value.putObject("toolchainRef"), request.toolchainRef());
+    reference(value.putObject("schemaBundleRef"), request.schemaBundleRef());
+    reference(value.putObject("promptBundleRef"), request.promptBundleRef());
+    nullableReference(value, "organizationRegistrySeedRef", request.organizationRegistrySeedRef());
+    reference(value.putObject("artifactPolicyRegistryRef"), request.artifactPolicyRegistryRef());
+    reference(value.putObject("candidateSeriesRef"), request.candidateSeriesRef());
+    value.put("readerCandidateRound", request.readerCandidateRound().name());
+    nullableReference(value, "parentCandidateRef", request.parentCandidateRef());
+    selectedSourceBasis(value.putObject("selectedSourceBasis"), request.selectedSourceBasis());
+    ArrayNode findings = value.putArray("approvedFindingRefs");
+    request.approvedFindingRefs().stream()
+        .sorted(Comparator.comparing(reference -> reference.artifactId().value()))
+        .forEach(reference -> reference(findings.addObject(), reference));
+    return value;
+  }
+
+  private static ObjectNode technicalAnalysisRequestJson(AnalysisRunRequest request) {
+    AnalysisRunRequest.TechnicalAnalysisInputs inputs = request.technicalAnalysisInputs();
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    value.put("schemaVersion", REQUEST_SCHEMA_V4);
+    value.put("requestKind", AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS.name());
+    selectedSourceBasis(value.putObject("selectedSourceBasis"), request.selectedSourceBasis());
+    ObjectNode technical = value.putObject("technicalAnalysisInputs");
+    technical.put("operation", inputs.operation().name());
+    reference(technical.putObject("technicalProfileRef"), inputs.technicalProfileRef());
+    reference(technical.putObject("resourceBudgetRef"), inputs.resourceBudgetRef());
+    reference(technical.putObject("schemaBundleRef"), inputs.schemaBundleRef());
+    reference(technical.putObject("toolchainRef"), inputs.toolchainRef());
+    reference(technical.putObject("artifactPolicyRegistryRef"), inputs.artifactPolicyRegistryRef());
+    analysisStepPublication(
+        technical.putObject("upstreamPublication"), inputs.upstreamPublication());
+    return value;
+  }
+
+  private ObjectNode legacyRequestJson(AnalysisRunRequest request) {
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    value.put("schemaVersion", REQUEST_SCHEMA_V2);
     value.put("sourceRegistrationId", request.sourceRegistrationId().value());
     reference(value.putObject("frozenRepositoryRequestRef"), request.frozenRepositoryRequestRef());
     reference(value.putObject("profileBundleRef"), request.profileBundleRef());
@@ -373,6 +558,54 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   }
 
   private ObjectNode outputJson(AnalysisRunId runId, AnalysisRunOutput output) {
+    if (output.technicalOutput() != null) {
+      return technicalOutputJson(runId, output);
+    }
+    if (output.sourcePreparationCheckpoint() != null) {
+      return sourcePreparationOutputJson(runId, output);
+    }
+    ObjectNode value = existingOutputJson(runId, output);
+    if (output.selectedSourceBasis() != null) {
+      value.put("schemaVersion", OUTPUT_SCHEMA_V7);
+      selectedSourceBasis(value.putObject("selectedSourceBasis"), output.selectedSourceBasis());
+    }
+    return value;
+  }
+
+  private static ObjectNode technicalOutputJson(AnalysisRunId runId, AnalysisRunOutput output) {
+    TechnicalRunOutput technical = output.technicalOutput();
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    value.put("schemaVersion", OUTPUT_SCHEMA_V8);
+    value.put("runId", runId.value());
+    value.put("sourceRunId", output.sourceRunId().value());
+    value.put("outputKind", TECHNICAL_OUTPUT);
+    ObjectNode detail = value.putObject("technicalOutput");
+    detail.put("operation", technical.operation().name());
+    detail.put("outputRunId", technical.outputRunId().value());
+    selectedSourceBasis(detail.putObject("selectedSourceBasis"), technical.selectedSourceBasis());
+    analysisStepCheckpoint(
+        detail.putObject("upstreamPublication"), technical.upstreamPublication());
+    detail.put("inspectionStatus", technical.inspectionStatus().name());
+    detail.put("continuationStatus", technical.continuationStatus().name());
+    nullableTechnicalModulePublication(detail, "readinessReport", technical.readinessReport());
+    nullableTechnicalModulePublication(detail, "frontendIndex", technical.frontendIndex());
+    nullableAnalysisStepPublication(
+        detail, "applicationDiscovery", technical.applicationDiscovery());
+    nullableAnalysisStepPublication(detail, "navigation", technical.navigation());
+    nullableAnalysisStepPublication(detail, "persistence", technical.persistence());
+    nullableAnalysisStepPublication(detail, "readingMaterials", technical.readingMaterials());
+    ArrayNode problems = detail.putArray("problems");
+    for (TechnicalProblemReference problem : technical.problems()) {
+      ObjectNode problemNode = problems.addObject();
+      problemNode.put("code", problem.code());
+      reference(problemNode.putObject("reference"), problem.reference());
+    }
+    ArrayNode available = detail.putArray("availableOutputs");
+    technical.availableOutputs().forEach(key -> available.add(key.name()));
+    return value;
+  }
+
+  private ObjectNode existingOutputJson(AnalysisRunId runId, AnalysisRunOutput output) {
     ObjectNode value = JsonNodeFactory.instance.objectNode();
     if (output.hasReadingMaterials() && output.hasCompletedProcesses()) {
       value.put("schemaVersion", OUTPUT_SCHEMA_V6);
@@ -421,8 +654,33 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     return value;
   }
 
+  private static ObjectNode sourcePreparationOutputJson(
+      AnalysisRunId runId, AnalysisRunOutput output) {
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    value.put("schemaVersion", OUTPUT_SCHEMA_V7);
+    value.put("runId", runId.value());
+    value.put("outputKind", SOURCE_PREPARATION_OUTPUT);
+    analysisStepCheckpoint(
+        value.putObject("sourcePreparationCheckpoint"), output.sourcePreparationCheckpoint());
+    value.put("sourcePreparationReadiness", output.sourcePreparationReadiness().name());
+    if (output.selectedSourceBasis() == null) {
+      value.putNull("selectedSourceBasis");
+    } else {
+      selectedSourceBasis(value.putObject("selectedSourceBasis"), output.selectedSourceBasis());
+    }
+    return value;
+  }
+
   private AnalysisRunOutput outputFromJson(AnalysisRunId runId, ObjectNode value) {
     String schemaVersion = requiredText(value, "schemaVersion");
+    if (OUTPUT_SCHEMA_V8.equals(schemaVersion)) {
+      return technicalOutputFromJson(runId, value);
+    }
+    if (OUTPUT_SCHEMA_V7.equals(schemaVersion)) {
+      return SOURCE_PREPARATION_OUTPUT.equals(requiredText(value, "outputKind"))
+          ? sourcePreparationOutputFromJson(runId, value)
+          : analysisV7OutputFromJson(runId, value);
+    }
     if (OUTPUT_SCHEMA_V6.equals(schemaVersion)) {
       return PROCESS_CATALOG_OUTPUT.equals(requiredText(value, "outputKind"))
           ? step05ProcessOutputFromJson(runId, value)
@@ -466,6 +724,95 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
       throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
     }
     return output;
+  }
+
+  private static AnalysisRunOutput technicalOutputFromJson(AnalysisRunId runId, ObjectNode value) {
+    requireFields(value, TECHNICAL_OUTPUT_FIELDS);
+    if (!runId.value().equals(requiredText(value, "runId"))
+        || !TECHNICAL_OUTPUT.equals(requiredText(value, "outputKind"))) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    JsonNode technicalValue = value.path("technicalOutput");
+    if (!(technicalValue instanceof ObjectNode technicalNode)) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    requireFields(technicalNode, TECHNICAL_RUN_OUTPUT_FIELDS);
+    try {
+      TechnicalRunOutput technical =
+          new TechnicalRunOutput(
+              AnalysisRunRequest.TechnicalOperation.valueOf(
+                  requiredText(technicalNode, "operation")),
+              AnalysisRunId.parse(requiredText(technicalNode, "outputRunId")),
+              selectedSourceBasis(technicalNode.path("selectedSourceBasis")),
+              analysisStepCheckpointFromWire(technicalNode.path("upstreamPublication")),
+              TechnicalInspectionStatus.valueOf(requiredText(technicalNode, "inspectionStatus")),
+              TechnicalContinuationStatus.valueOf(
+                  requiredText(technicalNode, "continuationStatus")),
+              nullableTechnicalModulePublication(technicalNode.path("readinessReport")),
+              nullableTechnicalModulePublication(technicalNode.path("frontendIndex")),
+              nullableAnalysisStepPublication(technicalNode.path("applicationDiscovery")),
+              nullableAnalysisStepPublication(technicalNode.path("navigation")),
+              nullableAnalysisStepPublication(technicalNode.path("persistence")),
+              nullableAnalysisStepPublication(technicalNode.path("readingMaterials")),
+              technicalProblems(technicalNode.path("problems")));
+      if (!runId.equals(technical.outputRunId())) {
+        throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+      }
+      AnalysisRunOutput output = AnalysisRunOutput.technical(technical);
+      if (!output.sourceRunId().value().equals(requiredText(value, "sourceRunId"))
+          || !technical
+              .availableOutputs()
+              .equals(technicalAvailableOutputs(technicalNode.path("availableOutputs")))) {
+        throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+      }
+      return output;
+    } catch (RunRegistryException failure) {
+      throw failure;
+    } catch (RuntimeException invalid) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", invalid);
+    }
+  }
+
+  private AnalysisRunOutput sourcePreparationOutputFromJson(AnalysisRunId runId, ObjectNode value) {
+    requireFields(value, SOURCE_PREPARATION_OUTPUT_FIELDS);
+    if (!runId.value().equals(requiredText(value, "runId"))
+        || !SOURCE_PREPARATION_OUTPUT.equals(requiredText(value, "outputKind"))) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    return AnalysisRunOutput.sourcePreparation(
+        runId,
+        analysisStepCheckpointFromWire(value.path("sourcePreparationCheckpoint")),
+        readiness(requiredText(value, "sourcePreparationReadiness")),
+        nullableSelectedSourceBasis(value.path("selectedSourceBasis")));
+  }
+
+  private AnalysisRunOutput analysisV7OutputFromJson(AnalysisRunId runId, ObjectNode value) {
+    SelectedSourceBasis basis = selectedSourceBasis(value.path("selectedSourceBasis"));
+    ObjectNode historical = value.deepCopy();
+    historical.remove("selectedSourceBasis");
+    String outputKind = requiredText(historical, "outputKind");
+    if (READING_MATERIALS_ONLY_OUTPUT.equals(outputKind)) {
+      requireFields(value, withSelectedSourceBasis(READING_MATERIALS_OUTPUT_FIELDS));
+      historical.put("schemaVersion", OUTPUT_SCHEMA_V5);
+    } else if (STEP05_ACTIVITIES_OUTPUT.equals(outputKind)) {
+      requireFields(value, withSelectedSourceBasis(STEP05_ACTIVITIES_OUTPUT_FIELDS));
+      historical.put("schemaVersion", OUTPUT_SCHEMA_V6);
+    } else if (PROCESS_CATALOG_OUTPUT.equals(outputKind)
+        && historical.has("readingMaterialCheckpoint")) {
+      requireFields(value, withSelectedSourceBasis(STEP05_PROCESS_OUTPUT_FIELDS));
+      historical.put("schemaVersion", OUTPUT_SCHEMA_V6);
+    } else if (ACTIVITIES_ONLY_OUTPUT.equals(outputKind)) {
+      requireFields(value, withSelectedSourceBasis(LEGACY_OUTPUT_FIELDS));
+      historical.put("schemaVersion", OUTPUT_SCHEMA_V4);
+    } else if (MATERIALS_ONLY_OUTPUT.equals(outputKind)
+        || PROCESS_CATALOG_OUTPUT.equals(outputKind)
+        || COMPLETE_REPORT_OUTPUT.equals(outputKind)) {
+      requireFields(value, withSelectedSourceBasis(LEGACY_OUTPUT_FIELDS));
+      historical.put("schemaVersion", OUTPUT_SCHEMA_V3);
+    } else {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    return AnalysisRunOutput.analysisV7(outputFromJson(runId, historical), basis);
   }
 
   private AnalysisRunOutput readingMaterialsOutputFromJson(AnalysisRunId runId, ObjectNode value) {
@@ -539,6 +886,42 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
       return ACTIVITIES_ONLY_OUTPUT;
     }
     return MATERIALS_ONLY_OUTPUT;
+  }
+
+  private static boolean outputMatchesRequest(
+      AnalysisRunId runId, AnalysisRunRequest request, AnalysisRunOutput output) {
+    if (output.technicalOutput() != null) {
+      TechnicalRunOutput technical = output.technicalOutput();
+      return request.requestKind() == AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS
+          && runId.equals(technical.outputRunId())
+          && output
+              .sourceRunId()
+              .equals(
+                  technical.selectedSourceBasis().preparedSource().publication().address().runId())
+          && technical.selectedSourceBasis().equals(request.selectedSourceBasis())
+          && technical.operation() == request.technicalAnalysisInputs().operation()
+          && technical
+              .upstreamPublication()
+              .equals(request.technicalAnalysisInputs().upstreamPublication());
+    }
+    if (output.sourcePreparationCheckpoint() != null) {
+      return request.requestKind() == AnalysisRunRequest.RequestKind.SOURCE_PREPARATION
+          && runId.equals(output.sourceRunId())
+          && runId.equals(output.sourcePreparationCheckpoint().address().runId());
+    }
+    if (request.requestKind() != AnalysisRunRequest.RequestKind.ANALYSIS
+        || !Objects.equals(request.selectedSourceBasis(), output.selectedSourceBasis())) {
+      return false;
+    }
+    if (output.hasReadingMaterials()) {
+      return output.sourceRunId().equals(output.readingMaterialCheckpoint().address().runId())
+          && (output.hasCompletedProcesses()
+              ? runId.equals(runId(output.knowledgeCheckpoint()))
+              : output.hasActivityCheckpoint()
+                  ? runId.equals(runId(output.activityCheckpoint()))
+                  : runId.equals(output.sourceRunId()));
+    }
+    return validLegacyOutputOwner(runId, output);
   }
 
   private static boolean validLegacyOutputOwner(AnalysisRunId runId, AnalysisRunOutput output) {
@@ -641,6 +1024,102 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
         Sha256Digest.parse(requiredText(object, "analysisStepReceiptSha256")));
   }
 
+  private static void nullableAnalysisStepPublication(
+      ObjectNode parent, String field, AnalysisStepPublicationReference reference) {
+    if (reference == null) {
+      parent.putNull(field);
+    } else {
+      analysisStepCheckpoint(parent.putObject(field), reference);
+    }
+  }
+
+  private static AnalysisStepPublicationReference nullableAnalysisStepPublication(JsonNode value) {
+    return value.isNull() ? null : analysisStepCheckpointFromWire(value);
+  }
+
+  private static void nullableTechnicalModulePublication(
+      ObjectNode parent, String field, ModulePublicationReference reference) {
+    if (reference == null) {
+      parent.putNull(field);
+      return;
+    }
+    if (!(reference.address() instanceof AnalysisStepModuleAddress address)) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    ObjectNode value = parent.putObject(field);
+    ObjectNode addressValue = value.putObject("address");
+    addressValue.put("runId", address.runId().value());
+    addressValue.put("analysisStepKey", address.analysisStepKey().wireValue());
+    addressValue.put("moduleNumber", address.moduleNumber());
+    addressValue.put("moduleKey", address.moduleKey());
+    value.put("moduleArtifactRoot", reference.moduleArtifactRoot().value());
+    value.put("moduleReceiptId", reference.moduleReceiptId().value());
+    value.put("moduleReceiptSha256", reference.moduleReceiptSha256().value());
+  }
+
+  private static ModulePublicationReference nullableTechnicalModulePublication(JsonNode value) {
+    if (value.isNull()) {
+      return null;
+    }
+    if (!(value instanceof ObjectNode object)) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    requireFields(object, TECHNICAL_MODULE_PUBLICATION_FIELDS);
+    JsonNode addressValue = object.path("address");
+    if (!(addressValue instanceof ObjectNode address)) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    requireFields(address, TECHNICAL_MODULE_ADDRESS_FIELDS);
+    JsonNode moduleNumber = address.path("moduleNumber");
+    if (!moduleNumber.isInt()) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    return new ModulePublicationReference(
+        new AnalysisStepModuleAddress(
+            AnalysisRunId.parse(requiredText(address, "runId")),
+            AnalysisStepKey.parse(requiredText(address, "analysisStepKey")),
+            moduleNumber.intValue(),
+            requiredText(address, "moduleKey")),
+        ModuleArtifactRoot.parse(requiredText(object, "moduleArtifactRoot")),
+        ModuleReceiptId.parse(requiredText(object, "moduleReceiptId")),
+        Sha256Digest.parse(requiredText(object, "moduleReceiptSha256")));
+  }
+
+  private static List<TechnicalProblemReference> technicalProblems(JsonNode value) {
+    if (!value.isArray()) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    List<TechnicalProblemReference> problems = new ArrayList<>();
+    for (JsonNode problem : value) {
+      if (!(problem instanceof ObjectNode object)) {
+        throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+      }
+      requireFields(object, TECHNICAL_PROBLEM_FIELDS);
+      problems.add(
+          new TechnicalProblemReference(
+              requiredText(object, "code"), artifactReference(object.path("reference"))));
+    }
+    return List.copyOf(problems);
+  }
+
+  private static List<TechnicalOutputArtifactKey> technicalAvailableOutputs(JsonNode value) {
+    if (!value.isArray()) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    List<TechnicalOutputArtifactKey> available = new ArrayList<>();
+    for (JsonNode item : value) {
+      if (!item.isTextual()) {
+        throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+      }
+      try {
+        available.add(TechnicalOutputArtifactKey.valueOf(item.textValue()));
+      } catch (IllegalArgumentException invalid) {
+        throw failure("ANALYSIS_RUN_OUTPUT_INVALID", invalid);
+      }
+    }
+    return List.copyOf(available);
+  }
+
   private ObjectNode stateJson(
       AnalysisRunId runId,
       AnalysisRunRequestReference requestReference,
@@ -656,23 +1135,80 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   }
 
   private AnalysisRunRequest requestFromJson(ObjectNode value) {
-    if (!REQUEST_SCHEMA.equals(requiredText(value, "schemaVersion"))) {
+    String schemaVersion = requiredText(value, "schemaVersion");
+    if (REQUEST_SCHEMA_V2.equals(schemaVersion)) {
+      requireFields(value, REQUEST_V2_FIELDS);
+      return legacyRequestFromJson(value);
+    }
+    if (REQUEST_SCHEMA_V4.equals(schemaVersion)) {
+      return technicalAnalysisRequestFromJson(value);
+    }
+    if (!REQUEST_SCHEMA_V3.equals(schemaVersion)) {
       throw failure("ANALYSIS_RUN_STORE_INVALID", null);
     }
-    List<ArtifactReference> findings = new ArrayList<>();
-    JsonNode findingValues = value.path("approvedFindingRefs");
-    if (!findingValues.isArray()) {
+    String kind = requiredText(value, "requestKind");
+    if (AnalysisRunRequest.RequestKind.SOURCE_PREPARATION.name().equals(kind)) {
+      requireFields(value, REQUEST_V3_SOURCE_PREPARATION_FIELDS);
+      return AnalysisRunRequest.sourcePreparation(
+          artifactReference(value.path("sourcePreparationRequestRef")),
+          artifactReference(value.path("artifactPolicyRegistryRef")),
+          artifactReference(value.path("schemaBundleRef")),
+          artifactReference(value.path("resourceBudgetRef")),
+          artifactReference(value.path("preparationProfileRef")),
+          artifactReference(value.path("preparationToolchainRef")));
+    }
+    if (AnalysisRunRequest.RequestKind.ANALYSIS.name().equals(kind)) {
+      requireFields(value, REQUEST_V3_ANALYSIS_FIELDS);
+      return AnalysisRunRequest.analysis(
+          selectedSourceBasis(value.path("selectedSourceBasis")),
+          artifactReference(value.path("frozenRepositoryRequestRef")),
+          artifactReference(value.path("profileBundleRef")),
+          artifactReference(value.path("resourceBudgetRef")),
+          artifactReference(value.path("toolchainRef")),
+          artifactReference(value.path("schemaBundleRef")),
+          artifactReference(value.path("promptBundleRef")),
+          nullableArtifactReference(value.path("organizationRegistrySeedRef")),
+          artifactReference(value.path("artifactPolicyRegistryRef")),
+          artifactReference(value.path("candidateSeriesRef")),
+          round(requiredText(value, "readerCandidateRound")),
+          nullableArtifactReference(value.path("parentCandidateRef")),
+          approvedFindings(value.path("approvedFindingRefs")));
+    }
+    throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+  }
+
+  private static AnalysisRunRequest technicalAnalysisRequestFromJson(ObjectNode value) {
+    requireFields(value, REQUEST_V4_TECHNICAL_ANALYSIS_FIELDS);
+    if (!AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS
+        .name()
+        .equals(requiredText(value, "requestKind"))) {
       throw failure("ANALYSIS_RUN_STORE_INVALID", null);
     }
-    String previous = null;
-    for (JsonNode finding : findingValues) {
-      ArtifactReference reference = artifactReference(finding);
-      if (previous != null && previous.compareTo(reference.artifactId().value()) >= 0) {
-        throw failure("ANALYSIS_RUN_STORE_INVALID", null);
-      }
-      previous = reference.artifactId().value();
-      findings.add(reference);
+    JsonNode inputsValue = value.path("technicalAnalysisInputs");
+    if (!(inputsValue instanceof ObjectNode inputs)) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
     }
+    requireFields(inputs, TECHNICAL_ANALYSIS_INPUT_FIELDS);
+    try {
+      return AnalysisRunRequest.technical(
+          selectedSourceBasis(value.path("selectedSourceBasis")),
+          new AnalysisRunRequest.TechnicalAnalysisInputs(
+              AnalysisRunRequest.TechnicalOperation.valueOf(requiredText(inputs, "operation")),
+              artifactReference(inputs.path("technicalProfileRef")),
+              artifactReference(inputs.path("resourceBudgetRef")),
+              artifactReference(inputs.path("schemaBundleRef")),
+              artifactReference(inputs.path("toolchainRef")),
+              artifactReference(inputs.path("artifactPolicyRegistryRef")),
+              analysisStepPublication(inputs.path("upstreamPublication"))));
+    } catch (RunRegistryException failure) {
+      throw failure;
+    } catch (RuntimeException invalid) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", invalid);
+    }
+  }
+
+  private AnalysisRunRequest legacyRequestFromJson(ObjectNode value) {
+    List<ArtifactReference> findings = approvedFindings(value.path("approvedFindingRefs"));
     return new AnalysisRunRequest(
         ArtifactId.parse(requiredText(value, "sourceRegistrationId")),
         artifactReference(value.path("frozenRepositoryRequestRef")),
@@ -687,6 +1223,157 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
         round(requiredText(value, "readerCandidateRound")),
         nullableArtifactReference(value.path("parentCandidateRef")),
         findings);
+  }
+
+  private List<ArtifactReference> approvedFindings(JsonNode findingValues) {
+    List<ArtifactReference> findings = new ArrayList<>();
+    if (!findingValues.isArray()) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    String previous = null;
+    for (JsonNode finding : findingValues) {
+      ArtifactReference reference = artifactReference(finding);
+      if (previous != null && previous.compareTo(reference.artifactId().value()) >= 0) {
+        throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+      }
+      previous = reference.artifactId().value();
+      findings.add(reference);
+    }
+    return List.copyOf(findings);
+  }
+
+  private static void selectedSourceBasis(ObjectNode value, SelectedSourceBasis basis) {
+    if (basis == null) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    value.put("kind", basis.kind().name());
+    value.put("snapshotId", basis.snapshotId().value());
+    value.put("effectiveScopeDigest", basis.effectiveScopeDigest().value());
+    if (basis.kind() == SelectedSourceBasis.Kind.PREPARED_V1) {
+      ObjectNode prepared = value.putObject("preparedSource");
+      PreparedSourceReference preparedSource = basis.preparedSource();
+      prepared.put("sourceVersionId", preparedSource.sourceVersionId().value());
+      analysisStepPublication(prepared.putObject("publication"), preparedSource.publication());
+      reference(prepared.putObject("schemaBundleRef"), preparedSource.schemaBundleRef());
+      policyReference(
+          prepared.putObject("artifactPolicyRegistryRef"),
+          preparedSource.artifactPolicyRegistryRef());
+      value.putNull("legacyCapture");
+      return;
+    }
+    SourceRegistrationReference legacy = basis.legacyCapture();
+    ObjectNode legacyNode = value.putObject("legacyCapture");
+    legacyNode.put("sourceRegistrationId", legacy.sourceRegistrationId().value());
+    legacyNode.put("snapshotId", legacy.snapshotId());
+    reference(legacyNode.putObject("snapshotManifestRef"), legacy.snapshotManifestRef());
+    reference(legacyNode.putObject("captureReceiptRef"), legacy.captureReceiptRef());
+    value.putNull("preparedSource");
+  }
+
+  private static SelectedSourceBasis selectedSourceBasis(JsonNode value) {
+    if (!(value instanceof ObjectNode object)) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    requireFields(object, SELECTED_SOURCE_BASIS_FIELDS);
+    try {
+      SelectedSourceBasis.Kind kind =
+          SelectedSourceBasis.Kind.valueOf(requiredText(object, "kind"));
+      ArtifactId snapshotId = ArtifactId.parse(requiredText(object, "snapshotId"));
+      Sha256Digest scopeDigest = new Sha256Digest(requiredText(object, "effectiveScopeDigest"));
+      if (kind == SelectedSourceBasis.Kind.PREPARED_V1) {
+        if (!object.path("legacyCapture").isNull()) {
+          throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+        }
+        return new SelectedSourceBasis(
+            kind, preparedSource(object.path("preparedSource")), null, snapshotId, scopeDigest);
+      }
+      if (!object.path("preparedSource").isNull()) {
+        throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+      }
+      return new SelectedSourceBasis(
+          kind, null, legacyCapture(object.path("legacyCapture")), snapshotId, scopeDigest);
+    } catch (RunRegistryException failure) {
+      throw failure;
+    } catch (RuntimeException invalid) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", invalid);
+    }
+  }
+
+  private static SelectedSourceBasis nullableSelectedSourceBasis(JsonNode value) {
+    return value.isNull() ? null : selectedSourceBasis(value);
+  }
+
+  private static SourcePreparationReadiness readiness(String value) {
+    try {
+      return SourcePreparationReadiness.valueOf(value);
+    } catch (IllegalArgumentException invalid) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", invalid);
+    }
+  }
+
+  private static PreparedSourceReference preparedSource(JsonNode value) {
+    if (!(value instanceof ObjectNode object)) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    requireFields(object, PREPARED_SOURCE_FIELDS);
+    return new PreparedSourceReference(
+        ArtifactId.parse(requiredText(object, "sourceVersionId")),
+        analysisStepPublication(object.path("publication")),
+        artifactReference(object.path("schemaBundleRef")),
+        policyReference(object.path("artifactPolicyRegistryRef")));
+  }
+
+  private static SourceRegistrationReference legacyCapture(JsonNode value) {
+    if (!(value instanceof ObjectNode object)) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    requireFields(object, LEGACY_CAPTURE_FIELDS);
+    return new SourceRegistrationReference(
+        ArtifactId.parse(requiredText(object, "sourceRegistrationId")),
+        requiredText(object, "snapshotId"),
+        artifactReference(object.path("snapshotManifestRef")),
+        artifactReference(object.path("captureReceiptRef")));
+  }
+
+  private static void analysisStepPublication(
+      ObjectNode value, AnalysisStepPublicationReference reference) {
+    AnalysisStepPublicationAddress address = reference.address();
+    value
+        .putObject("address")
+        .put("runId", address.runId().value())
+        .put("analysisStepKey", address.analysisStepKey().wireValue());
+    value.put("analysisStepArtifactRoot", reference.analysisStepArtifactRoot().value());
+    value.put("analysisStepReceiptId", reference.analysisStepReceiptId().value());
+    value.put("analysisStepReceiptSha256", reference.analysisStepReceiptSha256().value());
+  }
+
+  private static AnalysisStepPublicationReference analysisStepPublication(JsonNode value) {
+    if (!(value instanceof ObjectNode object)) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    requireFields(object, ANALYSIS_STEP_CHECKPOINT_FIELDS);
+    JsonNode addressValue = object.path("address");
+    if (!(addressValue instanceof ObjectNode address)) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    requireFields(address, ANALYSIS_STEP_ADDRESS_FIELDS);
+    return new AnalysisStepPublicationReference(
+        new AnalysisStepPublicationAddress(
+            AnalysisRunId.parse(requiredText(address, "runId")),
+            AnalysisStepKey.parse(requiredText(address, "analysisStepKey"))),
+        AnalysisStepArtifactRoot.parse(requiredText(object, "analysisStepArtifactRoot")),
+        AnalysisStepReceiptId.parse(requiredText(object, "analysisStepReceiptId")),
+        Sha256Digest.parse(requiredText(object, "analysisStepReceiptSha256")));
+  }
+
+  private static void policyReference(ObjectNode value, ArtifactPolicyRegistryReference reference) {
+    value.put("artifactId", reference.artifactId().value());
+    value.put("sha256", reference.sha256().value());
+  }
+
+  private static ArtifactPolicyRegistryReference policyReference(JsonNode value) {
+    ArtifactReference reference = artifactReference(value);
+    return new ArtifactPolicyRegistryReference(reference.artifactId(), reference.sha256());
   }
 
   private ObjectNode parseObject(ImmutableBytes bytes, Set<String> fields) {
@@ -745,6 +1432,12 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     return result;
   }
 
+  private static Set<String> withSelectedSourceBasis(Set<String> historicalFields) {
+    Set<String> result = new java.util.HashSet<>(historicalFields);
+    result.add("selectedSourceBasis");
+    return Set.copyOf(result);
+  }
+
   private static AnalysisRunId runId(ModulePublicationReference reference) {
     if (!(reference.address() instanceof AnalysisStepModuleAddress address)) {
       throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
@@ -752,10 +1445,19 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     return address.runId();
   }
 
-  private static AnalysisRunRequestReference requestReference(ImmutableBytes requestBytes) {
+  private static AnalysisRunRequestReference requestReference(
+      ImmutableBytes requestBytes, AnalysisRunRequest request) {
+    String framing =
+        switch (request.requestKind()) {
+          case ANALYSIS ->
+              request.usesLegacyV2Wire()
+                  ? "analysis-run-request-id-v2"
+                  : "analysis-run-request-id-v3";
+          case SOURCE_PREPARATION -> "analysis-run-request-id-v3";
+          case TECHNICAL_ANALYSIS -> "analysis-run-request-id-v4";
+        };
     return new AnalysisRunRequestReference(
-        ArtifactId.parse(
-            "run-request:" + sha256(frame("analysis-run-request-id-v2"), frame(requestBytes))),
+        ArtifactId.parse("run-request:" + sha256(frame(framing), frame(requestBytes))),
         new Sha256Digest(sha256(requestBytes.copyToByteArray())));
   }
 

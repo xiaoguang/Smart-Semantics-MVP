@@ -23,6 +23,7 @@ import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReferenc
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
+import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
@@ -55,6 +56,32 @@ public final class SpringHttpEntryDiscoverer {
       requireSpringMvcProfile(profile);
       VerifiedSourceTextSet source = sourceReader.reopen(frozenSource);
       requireSameVerifiedBasis(profile, source);
+      if (catalog == null || !profile.snapshotId().equals(catalog.snapshotId())) {
+        throw new ApplicationDiscoveryException("SNAPSHOT_REOPEN_MISMATCH");
+      }
+      return discoverEntries(profile, source, catalog);
+    } catch (ApplicationDiscoveryException failure) {
+      throw failure;
+    } catch (RuntimeException failure) {
+      throw new ApplicationDiscoveryException("HTTP_ENTRY_DISCOVERY_INVALID");
+    }
+  }
+
+  /**
+   * Discovers routes for a technical R1 profile while retaining the exact R0 source identity.
+   *
+   * <p>Historical callers keep the source-controls equality guard above. This overload requires the
+   * profile to be bound to the explicitly supplied R1 execution controls instead.
+   */
+  HttpEntryDiscovery discoverEntries(
+      ApplicationProfile profile,
+      VerifiedSourceInventoryReference frozenSource,
+      JavaDeclarationCatalog catalog,
+      ArtifactControls executionControls) {
+    try {
+      requireSpringMvcProfile(profile);
+      VerifiedSourceTextSet source = sourceReader.reopen(frozenSource);
+      requireSameTechnicalBasis(profile, source, executionControls);
       if (catalog == null || !profile.snapshotId().equals(catalog.snapshotId())) {
         throw new ApplicationDiscoveryException("SNAPSHOT_REOPEN_MISMATCH");
       }
@@ -620,6 +647,20 @@ public final class SpringHttpEntryDiscoverer {
         || !profile.sourceInventoryRef().equals(source.sourceInventoryRef())
         || !profile.verifiedSnapshotRef().equals(source.verifiedSnapshotRef())
         || !profile.controls().equals(source.controls())) {
+      throw new ApplicationDiscoveryException("SNAPSHOT_REOPEN_MISMATCH");
+    }
+  }
+
+  private static void requireSameTechnicalBasis(
+      ApplicationProfile profile,
+      VerifiedSourceTextSet source,
+      ArtifactControls executionControls) {
+    if (executionControls == null
+        || !profile.snapshotId().equals(source.snapshotId())
+        || !profile.capabilityProfileRef().equals(source.capabilityProfileRef())
+        || !profile.sourceInventoryRef().equals(source.sourceInventoryRef())
+        || !profile.verifiedSnapshotRef().equals(source.verifiedSnapshotRef())
+        || !profile.controls().equals(executionControls)) {
       throw new ApplicationDiscoveryException("SNAPSHOT_REOPEN_MISMATCH");
     }
   }

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>fixture.source</groupId>
+  <artifactId>build-parent</artifactId>
+  <version>1.0</version>
+  <packaging>pom</packaging>
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+  </properties>
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>fixture.source</groupId>
+        <artifactId>common</artifactId>
+        <version>1.0</version>
+      </dependency>
+      <dependency>
+        <groupId>fixture.libs</groupId>
+        <artifactId>fixture-bom</artifactId>
+        <version>1.0</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+  <profiles>
+    <profile>
+      <id>fixture-profile</id>
+      <properties>
+        <fixture.profile.version>7.0</fixture.profile.version>
+      </properties>
+    </profile>
+  </profiles>
+</project>

@@ -55,7 +55,7 @@ class SourceAnalysisConfiguredEntryPointTest {
   }
 
   @Test
-  void planMaterialsAcceptsAnExplicitFrozenSourceRegistrationBeforeConfiguration() {
+  void retiredPlanMaterialsIsRejectedBeforeLoadingConfiguration() {
     String config = temporaryDirectory.resolve("missing.yaml").toAbsolutePath().toString();
 
     ExecutionResult result =
@@ -66,7 +66,22 @@ class SourceAnalysisConfiguredEntryPointTest {
             "--source-registration",
             "source-registration:" + "a".repeat(64));
 
-    assertConfigurationReached(result);
+    assertThat(result.exitCode()).isNotZero();
+    assertThat(result.diagnostics())
+        .contains("ARGUMENTS_INVALID")
+        .doesNotContain("CONFIGURATION", "materials-only");
+  }
+
+  @Test
+  void configuredEntryPointKeepsTechnicalContinuationAndHistoricalInspectRouted() {
+    String config = temporaryDirectory.resolve("missing.yaml").toAbsolutePath().toString();
+    String run = "analysis-run:" + "a".repeat(64);
+
+    assertConfigurationReached(
+        execute("--config", config, "analyze-persistence", "--code-run", run));
+    assertConfigurationReached(
+        execute("--config", config, "assemble-materials", "--persistence-run", run));
+    assertConfigurationReached(execute("--config", config, "inspect", "--run", run));
   }
 
   @Test

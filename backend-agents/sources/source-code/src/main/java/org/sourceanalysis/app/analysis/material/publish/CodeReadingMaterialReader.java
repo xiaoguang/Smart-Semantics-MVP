@@ -20,6 +20,12 @@ import org.sourceanalysis.app.analysis.code.EntrySeed;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndex;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndexReader;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendEntryLinkRecord;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendHttpIndex;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendHttpIndexModulePublisher;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendHttpRequestRecord;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendSourceUnits;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendWrapperCall;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialMarkdown;
@@ -27,14 +33,22 @@ import org.sourceanalysis.app.analysis.material.CodeReadingMaterialProfile;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
 import org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex;
 import org.sourceanalysis.app.analysis.persistence.publish.PersistenceMaterialReader;
+import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
+import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
+import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalMediaType;
+import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
+import org.sourceanalysis.app.artifact.ModuleArtifactRoot;
+import org.sourceanalysis.app.artifact.ModulePublicationReference;
+import org.sourceanalysis.app.artifact.ModuleReceiptId;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
+import org.sourceanalysis.app.runtime.SelectedSourceBasis;
 
 /**
  * Fresh-reopens Step 05 reading materials without selecting, parsing, or analyzing material again.
@@ -42,14 +56,36 @@ import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 public final class CodeReadingMaterialReader {
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
-  private static final Set<String> RECORD_TYPES = Set.of("HEADER", "PACKET", "ENTRY_COVERAGE");
-  private static final String PRODUCER = "code-reading-materials-v1";
+  private static final Set<String> V1_RECORD_TYPES = Set.of("HEADER", "PACKET", "ENTRY_COVERAGE");
+  private static final Set<String> V2_RECORD_TYPES =
+      Set.of("HEADER", "PACKET", "ENTRY_COVERAGE", "FRONTEND_COVERAGE");
+  private static final String LEGACY_PRODUCER = "code-reading-materials-v1";
+  private static final Set<String> PRODUCERS =
+      Set.of(LEGACY_PRODUCER, CodeReadingMaterialPublisher.TECHNICAL_PRODUCER);
 
+  private final CanonicalModuleArtifactStore modules;
   private final CanonicalAnalysisStepArtifactStore steps;
+  private final CanonicalAnalysisStepArtifactStore sourceSteps;
   private final CanonicalJsonCodec json = new CanonicalJsonCodec();
 
   public CodeReadingMaterialReader(CanonicalAnalysisStepArtifactStore steps) {
+    this(null, steps, steps);
+  }
+
+  /** Uses the source-preparation store only for exact technical R0 receipt validation. */
+  public CodeReadingMaterialReader(
+      CanonicalAnalysisStepArtifactStore steps, CanonicalAnalysisStepArtifactStore sourceSteps) {
+    this(null, steps, sourceSteps);
+  }
+
+  /** Adds the module store required to fresh-reopen technical v2's R1 frontend index. */
+  public CodeReadingMaterialReader(
+      CanonicalModuleArtifactStore modules,
+      CanonicalAnalysisStepArtifactStore steps,
+      CanonicalAnalysisStepArtifactStore sourceSteps) {
+    this.modules = modules;
     this.steps = Objects.requireNonNull(steps, "analysis step artifact store");
+    this.sourceSteps = Objects.requireNonNull(sourceSteps, "source analysis-step artifact store");
   }
 
   /** Hydrates saved references through Step 03/04 readers without rebuilding material selection. */
@@ -63,27 +99,23 @@ public final class CodeReadingMaterialReader {
         throw invalid();
       }
       VerifiedCanonicalPayload payload = material.semanticPayloads().get(0);
-      if (!CodeReadingMaterialPublisher.FILE_NAME.equals(payload.descriptor().fileName())
-          || !CodeReadingMaterialPublisher.ARTIFACT_TYPE.equals(payload.descriptor().artifactType())
-          || !CodeReadingMaterialPublisher.SCHEMA_VERSION.equals(
-              payload.descriptor().schemaVersion())
-          || payload.descriptor().mediaType() != CanonicalMediaType.APPLICATION_X_NDJSON) {
-        throw invalid();
-      }
-
-      SavedMaterial saved = parse(payload.canonicalUtf8());
-      ReopenedAnalysisStepPublication source =
-          reopen(
-              saved.header().sourceInventory().publication(),
-              AnalysisStepKey.VERIFIED_SOURCE_INVENTORY);
-      ReopenedAnalysisStepPublication discovery =
-          reopen(saved.discovery().publication(), AnalysisStepKey.APPLICATION_DISCOVERY);
+      String schemaVersion = requirePayloadDescriptor(payload);
+      SavedMaterial saved = parse(payload.canonicalUtf8(), schemaVersion);
       ReopenedAnalysisStepPublication navigation =
           reopen(
               saved.header().navigationPublication().publication(), AnalysisStepKey.PROGRAM_GRAPHS);
       ReopenedAnalysisStepPublication persistence =
           reopen(saved.header().persistencePublication(), AnalysisStepKey.PROVEN_CODE_FACTS);
-      requireUpstreamChain(material, source, discovery, navigation, persistence);
+
+      if (LEGACY_PRODUCER.equals(saved.producer())) {
+        ReopenedAnalysisStepPublication source =
+            reopen(
+                saved.header().sourceInventory().publication(),
+                AnalysisStepKey.VERIFIED_SOURCE_INVENTORY);
+        ReopenedAnalysisStepPublication discovery =
+            reopen(saved.discovery().publication(), AnalysisStepKey.APPLICATION_DISCOVERY);
+        requireUpstreamChain(material, source, discovery, navigation, persistence);
+      }
 
       JavaCodeIndex javaIndex =
           new JavaCodeIndexReader(steps).reopen(saved.header().navigationPublication(), navigation);
@@ -108,6 +140,276 @@ public final class CodeReadingMaterialReader {
     }
   }
 
+  /**
+   * Fresh-reopens technical v2 against the complete selected R0 basis and its persisted R1
+   * module-six frontend index. Historical material remains readable through {@link
+   * #reopen(AnalysisStepPublicationReference)}; it cannot use this strict v2 path.
+   */
+  public CodeReadingMaterialSet reopenTechnical(
+      AnalysisStepPublicationReference reference,
+      AnalysisRunId expectedR3,
+      SelectedSourceBasis expectedR0Basis,
+      ApplicationDiscoveryReference expectedR1Discovery,
+      ProgramGraphsReference expectedR1Navigation,
+      AnalysisStepPublicationReference expectedR2Persistence,
+      ArtifactControls r1Controls,
+      ArtifactControls r2Controls,
+      ArtifactControls r3Controls) {
+    try {
+      Objects.requireNonNull(expectedR0Basis, "complete R0 source basis");
+      if (expectedR0Basis.kind() != SelectedSourceBasis.Kind.PREPARED_V1) {
+        throw invalid();
+      }
+      return reopenTechnical(
+          reference,
+          expectedR3,
+          new VerifiedSourceInventoryReference(expectedR0Basis.preparedSource().publication()),
+          expectedR0Basis,
+          expectedR1Discovery,
+          expectedR1Navigation,
+          expectedR2Persistence,
+          r1Controls,
+          r2Controls,
+          r3Controls);
+    } catch (RuntimeException failure) {
+      if (failure instanceof IllegalArgumentException
+          && "CODE_READING_MATERIAL_SET_INVALID".equals(failure.getMessage())) {
+        throw failure;
+      }
+      throw invalid(failure);
+    }
+  }
+
+  private CodeReadingMaterialSet reopenTechnical(
+      AnalysisStepPublicationReference reference,
+      AnalysisRunId expectedR3,
+      VerifiedSourceInventoryReference expectedR0,
+      SelectedSourceBasis expectedR0Basis,
+      ApplicationDiscoveryReference expectedR1Discovery,
+      ProgramGraphsReference expectedR1Navigation,
+      AnalysisStepPublicationReference expectedR2Persistence,
+      ArtifactControls r1Controls,
+      ArtifactControls r2Controls,
+      ArtifactControls r3Controls) {
+    try {
+      Objects.requireNonNull(reference, "code reading material publication");
+      Objects.requireNonNull(expectedR3, "R3 run ID");
+      Objects.requireNonNull(expectedR0, "R0 source");
+      Objects.requireNonNull(expectedR1Discovery, "R1 discovery");
+      Objects.requireNonNull(expectedR1Navigation, "R1 navigation");
+      Objects.requireNonNull(expectedR2Persistence, "R2 persistence");
+      Objects.requireNonNull(r1Controls, "R1 controls");
+      Objects.requireNonNull(r2Controls, "R2 controls");
+      Objects.requireNonNull(r3Controls, "R3 controls");
+      ReopenedAnalysisStepPublication source = sourceSteps.reopen(expectedR0.publication());
+      ReopenedAnalysisStepPublication discovery = steps.reopen(expectedR1Discovery.publication());
+      ReopenedAnalysisStepPublication navigation = steps.reopen(expectedR1Navigation.publication());
+      ReopenedAnalysisStepPublication persistence = steps.reopen(expectedR2Persistence);
+      ReopenedAnalysisStepPublication material = steps.reopen(reference);
+      if (!source.reference().equals(expectedR0.publication())
+          || source.reference().address().analysisStepKey()
+              != AnalysisStepKey.VERIFIED_SOURCE_INVENTORY
+          || !discovery.reference().equals(expectedR1Discovery.publication())
+          || discovery.reference().address().analysisStepKey()
+              != AnalysisStepKey.APPLICATION_DISCOVERY
+          || !navigation.reference().equals(expectedR1Navigation.publication())
+          || navigation.reference().address().analysisStepKey() != AnalysisStepKey.PROGRAM_GRAPHS
+          || !persistence.reference().equals(expectedR2Persistence)
+          || persistence.reference().address().analysisStepKey()
+              != AnalysisStepKey.PROVEN_CODE_FACTS
+          || !material.reference().equals(reference)
+          || reference.address().analysisStepKey() != AnalysisStepKey.BUSINESS_FLOWS
+          || !reference.address().runId().equals(expectedR3)
+          || !discovery.receipt().controls().equals(r1Controls)
+          || !navigation.receipt().controls().equals(r1Controls)
+          || !persistence.receipt().controls().equals(r2Controls)
+          || !material.receipt().controls().equals(r3Controls)
+          || source.reference().address().runId().equals(discovery.reference().address().runId())
+          || !discovery
+              .reference()
+              .address()
+              .runId()
+              .equals(navigation.reference().address().runId())
+          || persistence.reference().address().runId().equals(source.reference().address().runId())
+          || persistence
+              .reference()
+              .address()
+              .runId()
+              .equals(discovery.reference().address().runId())
+          || expectedR3.equals(source.reference().address().runId())
+          || expectedR3.equals(discovery.reference().address().runId())
+          || expectedR3.equals(persistence.reference().address().runId())
+          || !discovery
+              .receipt()
+              .upstreamAnalysisStepReferences()
+              .equals(List.of(source.reference()))
+          || !navigation
+              .receipt()
+              .upstreamAnalysisStepReferences()
+              .equals(List.of(source.reference(), discovery.reference()))
+          || !persistence
+              .receipt()
+              .upstreamAnalysisStepReferences()
+              .equals(List.of(source.reference(), discovery.reference(), navigation.reference()))
+          || !material
+              .receipt()
+              .upstreamAnalysisStepReferences()
+              .equals(
+                  List.of(
+                      source.reference(),
+                      discovery.reference(),
+                      navigation.reference(),
+                      persistence.reference()))) {
+        throw invalid();
+      }
+      if (material.semanticPayloads().size() != 1) {
+        throw invalid();
+      }
+      VerifiedCanonicalPayload payload = material.semanticPayloads().get(0);
+      String schemaVersion = requirePayloadDescriptor(payload);
+      if (!CodeReadingMaterialPublisher.TECHNICAL_SCHEMA_VERSION.equals(schemaVersion)) {
+        throw invalid();
+      }
+      SavedMaterial saved = parse(payload.canonicalUtf8(), schemaVersion);
+      if (!CodeReadingMaterialPublisher.TECHNICAL_PRODUCER.equals(saved.producer())
+          || !saved.header().sourceInventory().equals(expectedR0)
+          || !saved.header().navigationPublication().equals(expectedR1Navigation)
+          || !saved.header().persistencePublication().equals(expectedR2Persistence)
+          || !saved.discovery().equals(expectedR1Discovery)) {
+        throw invalid();
+      }
+      JavaCodeIndex javaIndex =
+          new JavaCodeIndexReader(steps).reopen(expectedR1Navigation, navigation);
+      PersistenceMaterialIndex persistenceIndex =
+          new PersistenceMaterialReader(steps, sourceSteps)
+              .reopenTechnical(
+                  expectedR2Persistence,
+                  persistence.reference().address().runId(),
+                  expectedR0,
+                  expectedR1Discovery,
+                  expectedR1Navigation,
+                  r1Controls,
+                  r2Controls);
+      if (!saved.header().sourceSnapshotId().equals(javaIndex.snapshotId())
+          || !saved.header().sourceSnapshotId().equals(persistenceIndex.header().sourceSnapshotId())
+          || !saved
+              .header()
+              .navigationPublication()
+              .equals(persistenceIndex.header().navigationPublication())) {
+        throw invalid();
+      }
+      CodeReadingMaterialSet materialSet = hydrate(saved, javaIndex, persistenceIndex);
+      if (expectedR0Basis != null) {
+        FrontendHttpIndex frontendIndex =
+            reopenFrontendIndex(
+                saved.header().frontendPublication(),
+                expectedR1Discovery.publication().address().runId(),
+                expectedR0Basis,
+                r1Controls);
+        requireFrontendSelection(materialSet, frontendIndex);
+      }
+      return materialSet;
+    } catch (RuntimeException failure) {
+      if (failure instanceof IllegalArgumentException
+          && "CODE_READING_MATERIAL_SET_INVALID".equals(failure.getMessage())) {
+        throw failure;
+      }
+      throw invalid(failure);
+    }
+  }
+
+  private FrontendHttpIndex reopenFrontendIndex(
+      ModulePublicationReference reference,
+      AnalysisRunId expectedR1,
+      SelectedSourceBasis expectedR0Basis,
+      ArtifactControls r1Controls) {
+    if (modules == null || reference == null) {
+      throw invalid();
+    }
+    return new FrontendHttpIndexModulePublisher(modules)
+        .reopen(reference, expectedR1, expectedR0Basis, r1Controls);
+  }
+
+  private static void requireFrontendSelection(
+      CodeReadingMaterialSet materialSet, FrontendHttpIndex frontendIndex) {
+    Map<String, FrontendHttpRequestRecord> requests = new LinkedHashMap<>();
+    for (FrontendHttpRequestRecord request : frontendIndex.requests()) {
+      putUnique(requests, request.requestId(), request);
+    }
+    Map<String, FrontendEntryLinkRecord> links = new LinkedHashMap<>();
+    for (FrontendEntryLinkRecord link : frontendIndex.entryLinks()) {
+      putUnique(links, link.requestId(), link);
+    }
+    Map<String, FrontendWrapperCall> wrappers = new LinkedHashMap<>();
+    for (FrontendHttpRequestRecord request : frontendIndex.requests()) {
+      for (FrontendWrapperCall wrapper : request.wrapperPath()) {
+        String identity = frontendUnitIdentity(wrapper);
+        FrontendWrapperCall previous = wrappers.putIfAbsent(identity, wrapper);
+        if (previous != null && !previous.equals(wrapper)) {
+          throw invalid();
+        }
+      }
+    }
+
+    Map<String, CodeReadingMaterialSet.FrontendCoverage> coverage = new LinkedHashMap<>();
+    for (CodeReadingMaterialSet.FrontendCoverage value : materialSet.frontendCoverage()) {
+      putUnique(coverage, value.requestId(), value);
+    }
+    if (!coverage.keySet().equals(requests.keySet())) {
+      throw invalid();
+    }
+
+    Set<String> selectedRequests = new HashSet<>();
+    for (CodeReadingMaterialSet.Packet packet : materialSet.packets()) {
+      Map<String, FrontendSourceUnits.Unit> units = new LinkedHashMap<>();
+      for (FrontendSourceUnits.Unit unit : packet.frontendSelection().sourceUnits()) {
+        putUnique(units, unit.sourceUnitId(), unit);
+        if (!unitMatchesWrapper(unit, wrappers.get(unit.sourceUnitId()))) {
+          throw invalid();
+        }
+      }
+      for (CodeReadingMaterialSet.FrontendRequestUse use :
+          packet.frontendSelection().requestUses()) {
+        if (!selectedRequests.add(use.requestId())
+            || !use.request().equals(requests.get(use.requestId()))
+            || !use.entryLink().equals(links.get(use.requestId()))
+            || !units.containsKey(use.sourceUnitId())
+            || coverage.get(use.requestId()).status()
+                != CodeReadingMaterialSet.FrontendCoverage.Status.SELECTED) {
+          throw invalid();
+        }
+      }
+    }
+    for (CodeReadingMaterialSet.FrontendCoverage value : coverage.values()) {
+      if ((value.status() == CodeReadingMaterialSet.FrontendCoverage.Status.SELECTED)
+          != selectedRequests.contains(value.requestId())) {
+        throw invalid();
+      }
+    }
+  }
+
+  private static String frontendUnitIdentity(FrontendWrapperCall wrapper) {
+    var range = wrapper.sourceUnitRange();
+    return wrapper.sourcePath()
+        + "@"
+        + wrapper.sourceSha256()
+        + ":"
+        + range.startOffsetUtf16()
+        + ":"
+        + range.lengthUtf16()
+        + ":"
+        + wrapper.sourceUnitKind().name();
+  }
+
+  private static boolean unitMatchesWrapper(
+      FrontendSourceUnits.Unit unit, FrontendWrapperCall wrapper) {
+    return wrapper != null
+        && unit.path().equals(wrapper.sourcePath())
+        && unit.sourceSha256().equals(wrapper.sourceSha256())
+        && unit.sourceUnitRange().equals(wrapper.sourceUnitRange())
+        && unit.sourceUnitKind() == wrapper.sourceUnitKind();
+  }
+
   private ReopenedAnalysisStepPublication reopen(
       AnalysisStepPublicationReference reference, AnalysisStepKey expectedStep) {
     ReopenedAnalysisStepPublication reopened = steps.reopen(reference);
@@ -116,6 +418,20 @@ public final class CodeReadingMaterialReader {
       throw invalid();
     }
     return reopened;
+  }
+
+  private static String requirePayloadDescriptor(VerifiedCanonicalPayload payload) {
+    if (!CodeReadingMaterialPublisher.FILE_NAME.equals(payload.descriptor().fileName())
+        || !CodeReadingMaterialPublisher.ARTIFACT_TYPE.equals(payload.descriptor().artifactType())
+        || payload.descriptor().mediaType() != CanonicalMediaType.APPLICATION_X_NDJSON) {
+      throw invalid();
+    }
+    String schemaVersion = payload.descriptor().schemaVersion();
+    if (!CodeReadingMaterialPublisher.SCHEMA_VERSION.equals(schemaVersion)
+        && !CodeReadingMaterialPublisher.TECHNICAL_SCHEMA_VERSION.equals(schemaVersion)) {
+      throw invalid();
+    }
+    return schemaVersion;
   }
 
   private static void requireUpstreamChain(
@@ -210,7 +526,8 @@ public final class CodeReadingMaterialReader {
               packet.sourceReferences(),
               packet.unselectedUnits(),
               packet.limitations(),
-              packet.selfContainedUtf8Bytes());
+              packet.selfContainedUtf8Bytes(),
+              packet.frontendSelection());
       if (CodeReadingMaterialMarkdown.renderPacket(hydrated).getBytes(StandardCharsets.UTF_8).length
           != hydrated.selfContainedUtf8Bytes()) {
         throw invalid();
@@ -243,11 +560,11 @@ public final class CodeReadingMaterialReader {
         .equals(entries.keySet())) {
       throw invalid();
     }
-    return new CodeReadingMaterialSet(saved.header(), packets, coverage);
+    return new CodeReadingMaterialSet(saved.header(), packets, coverage, saved.frontendCoverage());
   }
 
-  private SavedMaterial parse(ImmutableBytes bytes) {
-    List<Line> lines = lines(bytes);
+  private SavedMaterial parse(ImmutableBytes bytes, String schemaVersion) {
+    List<Line> lines = lines(bytes, schemaVersion);
     if (lines.isEmpty() || !"HEADER".equals(lines.get(0).type())) {
       throw invalid();
     }
@@ -255,17 +572,26 @@ public final class CodeReadingMaterialReader {
     if (!"header".equals(headerLine.key())) {
       throw invalid();
     }
-    requireFields(
-        headerLine.payload(),
-        Set.of(
-            "producer",
-            "sourceInventory",
-            "applicationDiscovery",
-            "navigationPublication",
-            "persistencePublication",
-            "sourceSnapshotId",
-            "profile"));
-    if (!PRODUCER.equals(text(headerLine.payload(), "producer"))) {
+    Set<String> headerFields =
+        new HashSet<>(
+            Set.of(
+                "producer",
+                "sourceInventory",
+                "applicationDiscovery",
+                "navigationPublication",
+                "persistencePublication",
+                "sourceSnapshotId",
+                "profile"));
+    if (CodeReadingMaterialPublisher.TECHNICAL_SCHEMA_VERSION.equals(schemaVersion)) {
+      headerFields.add("frontendPublication");
+    }
+    requireFields(headerLine.payload(), headerFields);
+    String producer = text(headerLine.payload(), "producer");
+    if (!PRODUCERS.contains(producer)) {
+      throw invalid();
+    }
+    if (CodeReadingMaterialPublisher.TECHNICAL_SCHEMA_VERSION.equals(schemaVersion)
+        != CodeReadingMaterialPublisher.TECHNICAL_PRODUCER.equals(producer)) {
       throw invalid();
     }
     CodeReadingMaterialSet.Header header =
@@ -279,22 +605,30 @@ public final class CodeReadingMaterialReader {
                 headerLine.payload().get("persistencePublication"),
                 AnalysisStepPublicationReference.class),
             text(headerLine.payload(), "sourceSnapshotId"),
-            convert(headerLine.payload().get("profile"), CodeReadingMaterialProfile.class));
+            convert(headerLine.payload().get("profile"), CodeReadingMaterialProfile.class),
+            CodeReadingMaterialPublisher.TECHNICAL_SCHEMA_VERSION.equals(schemaVersion)
+                ? frontendPublication(headerLine.payload().get("frontendPublication"))
+                : null);
     ApplicationDiscoveryReference discovery =
         convert(
             headerLine.payload().get("applicationDiscovery"), ApplicationDiscoveryReference.class);
 
     List<SavedPacket> packets = new ArrayList<>();
     List<CodeReadingMaterialSet.EntryCoverage> coverage = new ArrayList<>();
+    List<CodeReadingMaterialSet.FrontendCoverage> frontendCoverage = new ArrayList<>();
     boolean seenCoverage = false;
+    boolean seenFrontendCoverage = false;
     for (int index = 1; index < lines.size(); index++) {
       Line line = lines.get(index);
       if ("PACKET".equals(line.type())) {
-        if (seenCoverage) {
+        if (seenCoverage || seenFrontendCoverage) {
           throw invalid();
         }
-        packets.add(parsePacket(line));
+        packets.add(parsePacket(line, schemaVersion));
       } else if ("ENTRY_COVERAGE".equals(line.type())) {
+        if (seenFrontendCoverage) {
+          throw invalid();
+        }
         seenCoverage = true;
         CodeReadingMaterialSet.EntryCoverage value =
             convert(line.payload(), CodeReadingMaterialSet.EntryCoverage.class);
@@ -302,26 +636,45 @@ public final class CodeReadingMaterialReader {
           throw invalid();
         }
         coverage.add(value);
+      } else if ("FRONTEND_COVERAGE".equals(line.type())
+          && CodeReadingMaterialPublisher.TECHNICAL_SCHEMA_VERSION.equals(schemaVersion)) {
+        seenFrontendCoverage = true;
+        CodeReadingMaterialSet.FrontendCoverage value =
+            convert(line.payload(), CodeReadingMaterialSet.FrontendCoverage.class);
+        if (!line.key().equals(value.requestId())) {
+          throw invalid();
+        }
+        frontendCoverage.add(value);
       } else {
         throw invalid();
       }
     }
-    return new SavedMaterial(header, discovery, List.copyOf(packets), List.copyOf(coverage));
+    return new SavedMaterial(
+        producer,
+        header,
+        discovery,
+        List.copyOf(packets),
+        List.copyOf(coverage),
+        List.copyOf(frontendCoverage));
   }
 
-  private SavedPacket parsePacket(Line line) {
-    requireFields(
-        line.payload(),
-        Set.of(
-            "packetId",
-            "entryIds",
-            "methodKeys",
-            "callKeys",
-            "persistence",
-            "sourceReferences",
-            "unselectedUnits",
-            "limitations",
-            "selfContainedUtf8Bytes"));
+  private SavedPacket parsePacket(Line line, String schemaVersion) {
+    Set<String> packetFields =
+        new HashSet<>(
+            Set.of(
+                "packetId",
+                "entryIds",
+                "methodKeys",
+                "callKeys",
+                "persistence",
+                "sourceReferences",
+                "unselectedUnits",
+                "limitations",
+                "selfContainedUtf8Bytes"));
+    if (CodeReadingMaterialPublisher.TECHNICAL_SCHEMA_VERSION.equals(schemaVersion)) {
+      packetFields.add("frontendSelection");
+    }
+    requireFields(line.payload(), packetFields);
     String packetId = text(line.payload(), "packetId");
     if (!line.key().equals(packetId)) {
       throw invalid();
@@ -345,7 +698,12 @@ public final class CodeReadingMaterialReader {
         convertList(
             line.payload().get("unselectedUnits"), CodeReadingMaterialSet.UnselectedUnit.class),
         strings(line.payload().get("limitations")),
-        nonNegativeLong(line.payload().get("selfContainedUtf8Bytes")));
+        nonNegativeLong(line.payload().get("selfContainedUtf8Bytes")),
+        CodeReadingMaterialPublisher.TECHNICAL_SCHEMA_VERSION.equals(schemaVersion)
+            ? convert(
+                line.payload().get("frontendSelection"),
+                CodeReadingMaterialSet.FrontendSelection.class)
+            : CodeReadingMaterialSet.FrontendSelection.empty());
   }
 
   private static SavedPersistence persistence(JsonNode value) {
@@ -368,7 +726,41 @@ public final class CodeReadingMaterialReader {
         strings(node.get("diagnosticKeys")));
   }
 
-  private List<Line> lines(ImmutableBytes bytes) {
+  private static ModulePublicationReference frontendPublication(JsonNode value) {
+    if (!(value instanceof ObjectNode node)
+        || !fields(node)
+            .equals(
+                Set.of("address", "moduleArtifactRoot", "moduleReceiptId", "moduleReceiptSha256"))
+        || !(node.get("address") instanceof ObjectNode address)
+        || !fields(address)
+            .equals(Set.of("kind", "runId", "analysisStepKey", "moduleNumber", "moduleKey"))
+        || !"ANALYSIS_STEP".equals(text(address, "kind"))
+        || !address.get("moduleNumber").canConvertToInt()) {
+      throw invalid();
+    }
+    try {
+      AnalysisStepModuleAddress moduleAddress =
+          new AnalysisStepModuleAddress(
+              AnalysisRunId.parse(text(address, "runId")),
+              AnalysisStepKey.parse(text(address, "analysisStepKey")),
+              address.get("moduleNumber").intValue(),
+              text(address, "moduleKey"));
+      if (moduleAddress.analysisStepKey() != AnalysisStepKey.APPLICATION_DISCOVERY
+          || moduleAddress.moduleNumber() != 6
+          || !"frontend-http-discovery".equals(moduleAddress.moduleKey())) {
+        throw invalid();
+      }
+      return new ModulePublicationReference(
+          moduleAddress,
+          ModuleArtifactRoot.parse(text(node, "moduleArtifactRoot")),
+          ModuleReceiptId.parse(text(node, "moduleReceiptId")),
+          org.sourceanalysis.app.artifact.Sha256Digest.parse(text(node, "moduleReceiptSha256")));
+    } catch (IllegalArgumentException failure) {
+      throw invalid();
+    }
+  }
+
+  private List<Line> lines(ImmutableBytes bytes, String schemaVersion) {
     String content = new String(bytes.copyToByteArray(), StandardCharsets.UTF_8);
     if (content.isEmpty() || !content.endsWith("\n")) {
       throw invalid();
@@ -387,8 +779,8 @@ public final class CodeReadingMaterialReader {
       requireFields(line, Set.of("schemaVersion", "recordType", "key", "payload"));
       String type = text(line, "recordType");
       String key = text(line, "key");
-      if (!CodeReadingMaterialPublisher.SCHEMA_VERSION.equals(text(line, "schemaVersion"))
-          || !RECORD_TYPES.contains(type)
+      if (!schemaVersion.equals(text(line, "schemaVersion"))
+          || !recordTypes(schemaVersion).contains(type)
           || !(line.get("payload") instanceof ObjectNode payload)
           || !identities.add(type + "\u0000" + key)) {
         throw invalid();
@@ -396,6 +788,12 @@ public final class CodeReadingMaterialReader {
       result.add(new Line(type, key, payload));
     }
     return List.copyOf(result);
+  }
+
+  private static Set<String> recordTypes(String schemaVersion) {
+    return CodeReadingMaterialPublisher.SCHEMA_VERSION.equals(schemaVersion)
+        ? V1_RECORD_TYPES
+        : V2_RECORD_TYPES;
   }
 
   private static Map<String, EntrySeed> entrySeeds(JavaCodeIndex index) {
@@ -462,11 +860,15 @@ public final class CodeReadingMaterialReader {
   }
 
   private static void requireFields(ObjectNode node, Set<String> expected) {
-    Set<String> actual = new HashSet<>();
-    node.fieldNames().forEachRemaining(actual::add);
-    if (!actual.equals(expected)) {
+    if (!fields(node).equals(expected)) {
       throw invalid();
     }
+  }
+
+  private static Set<String> fields(ObjectNode node) {
+    Set<String> actual = new HashSet<>();
+    node.fieldNames().forEachRemaining(actual::add);
+    return actual;
   }
 
   private static String text(ObjectNode node, String name) {
@@ -551,13 +953,16 @@ public final class CodeReadingMaterialReader {
       List<CodeReadingMaterialSet.SourceReference> sourceReferences,
       List<CodeReadingMaterialSet.UnselectedUnit> unselectedUnits,
       List<String> limitations,
-      long selfContainedUtf8Bytes) {}
+      long selfContainedUtf8Bytes,
+      CodeReadingMaterialSet.FrontendSelection frontendSelection) {}
 
   private record SavedMaterial(
+      String producer,
       CodeReadingMaterialSet.Header header,
       ApplicationDiscoveryReference discovery,
       List<SavedPacket> packets,
-      List<CodeReadingMaterialSet.EntryCoverage> coverage) {}
+      List<CodeReadingMaterialSet.EntryCoverage> coverage,
+      List<CodeReadingMaterialSet.FrontendCoverage> frontendCoverage) {}
 
   private record PersistenceReferences(
       Map<String, PersistenceMaterialIndex.Resource> resources,

@@ -1,6 +1,6 @@
 # 源码准备
 
-状态：2026-09-25，**实施中，正式操作尚未接通**。准备结果、请求和来源版本合同已完成，32项直接测试及限定复审通过；正在实施两类来源捕获，当前可运行捕获仍是历史 Git 路径。不能把本文命令或四文件结构当作已运行产物。
+状态：2026-09-26，**源码准备本轮范围与旧材料来源门禁已完成**。普通目录与固定Git读取、四文件发布/重开、具名刷新与排除、正式 `prepare-source`、`inspect`、`artifact` 及模块内 Skill 已通过直接测试；新准备路径不再计算行索引，历史格式读取保留。准备版公共 reader 只返回有效且未排除的文本；真实发布/重开fixture证明排除的Java/XML不会进入Java项目与持久化请求/视图。Step05/M10旧材料在新执行前核对实际Step01来源，缺准备版材料证明时拒绝。最终定向168/168与质量检查通过；资源上限只允许NEW全范围恢复，3项新增测试通过；未执行真实JDT/模型，也未从准备版来源直接生产新Step05材料。
 
 [总体设计](../DESIGN.md) · [模块详细设计](../modules/source-preparation/README.md) · [数据与保存合同](../modules/source-preparation/contracts-and-storage.md) · [CLI 与 Skill](../modules/source-preparation/cli-and-skill.md) · [实施计划](../plans/source-preparation-implementation-plan.md) · [设计前核对](../supplements/source-preparation-design-preflight.md)
 
@@ -8,7 +8,7 @@
 
 **把用户明确提供的源码范围保存为一份可核验的固定资料，返回哪些文件可用、哪些有问题、哪些被排除，以及后续能否使用这份资料。** 不解释源码内容，不识别接口，不调用 JDT、SQL 分析或 LLM。
 
-用户操作名为“源码准备”，拟议命令为 `source-analysis --config <绝对配置路径> prepare-source`。历史内部 key `verified-source-inventory` 和 `steps/01-verified-source-inventory/` 地址保留，不重写旧产物；它们不是新功能的显示名称。
+用户操作名为“源码准备”，正式命令为 `source-analysis --config <绝对配置路径> prepare-source`。历史内部 key `verified-source-inventory` 和 `steps/01-verified-source-inventory/` 地址保留，不重写旧产物；它们不是新功能的显示名称。
 
 本轮只让这一项操作可单独通过 CLI 执行。后续步骤不拆 CLI、不改分析算法、不运行；但落实排除所必需的公共读取和派生材料进入新执行时的版本检查属于本轮。
 
@@ -32,7 +32,7 @@
 5. **保存结果。**写入文件清单、问题清单、汇总及 receipt；只有完整安装的结果才声明已保存。输出失败时尽可能返回终端诊断。
 6. **返回。**分别说明检查是否结束、报告是否落盘、资料是否可用于后续、排除及未解决范围。命令到此结束。
 
-删除旧的行起点数组及 `lineIndexDigest` 计算/新写入。以后按行读取时，由实际读取全文的模块定位行；不再声称使用本阶段索引。
+新准备路径不再计算或写入行起点数组及 `lineIndexDigest`。历史 reader 继续按原协议读取旧产物；以后按行读取新来源时，由实际读取全文的模块定位行，不再声称使用本阶段索引。
 
 ## 4. 输出与例子
 
@@ -80,8 +80,8 @@ Git 单文件重准备只重新取得同一提交的 blob。采纳工作树修�
 
 ## 7. 当前差距
 
-已有：固定 Git 捕获、不可变 blob、原清单核验、历史 reader、canonical 保存、正式 Java CLI。未实现：普通目录、结构化部分结果、具名更新/排除、新状态、必要下游检查和 `prepare-source`。
+已实现：普通目录/固定Git逐项读取、符号链接只列不跟随、结构化局部问题、不可变blob、四文件canonical发布与严格重开、具名刷新/排除及继承、准备运行状态、正式CLI、只暴露有效范围的prepared reader和模块内Skill。新准备路径不写行索引，历史读取不改。
 
-原实现遇 symlink 或首个文件失败会退出，仍写行摘要；M3 只接受完整捕获，reader 只接受成功无 gap 且清单全集一致。这些是待改实现，不是另一套目标约定。
+已闭合的来源门禁：`repository-run-config-v4` 明确选择 prepared 或 legacy 来源；正式 Activity、过程和复用入口在模型/JDT 初始化前重开具名上游实际 basis，并与保存的选择精确比较。旧Step05/M10缺准备版材料来源证明时拒绝，不以run级声明放行；历史结果仍按旧版本只读。NEW→问题→排除→新版本→拒绝旧材料→刷新→历史仍可读的fixture及`VerifiedJavaProject`/`PersistenceAnalysisRequest`/`MapperXmlResourceView`准备版排除消费者fixture均包含在最终168项定向套件中。消费者fixture不启动JDT或SQL解析；这不证明可以从准备版直接生产新Step05材料。
 
-验收采用临时 fixtures、保存重开与 scripted 消费入口，不重跑客户 Activity。Skill 说明由 Codex 如何调用、核对和报告；资料是否可用由程序合同决定。
+验收采用临时 fixtures、保存重开与 scripted 消费入口，不重跑客户 Activity。Skill 只负责调用、核对和报告；资料是否可用由程序合同决定。

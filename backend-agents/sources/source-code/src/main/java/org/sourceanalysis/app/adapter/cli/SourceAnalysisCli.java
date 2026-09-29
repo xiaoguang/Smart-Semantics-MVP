@@ -103,6 +103,21 @@ public final class SourceAnalysisCli {
     Objects.requireNonNull(output, "output");
     Objects.requireNonNull(errors, "errors");
     try {
+      ConfiguredArguments configured = ConfiguredArguments.parse(arguments);
+      if ("plan-materials".equals(configured.operation())) {
+        throw new IllegalArgumentException("configured operation is unsupported");
+      }
+      if (TechnicalAnalysisConfiguredRuntime.isTechnicalOperation(configured.operation())) {
+        return TechnicalAnalysisConfiguredRuntime.execute(
+            configured.config(), configured.operation(), configured.options(), output, errors);
+      }
+      if (TechnicalAnalysisConfiguredRuntime.handles(configured.config())) {
+        return TechnicalAnalysisConfiguredRuntime.execute(
+            configured.config(), configured.operation(), configured.options(), output, errors);
+      }
+      if (SourcePreparationConfiguredRuntime.handles(configured.config())) {
+        return SourcePreparationConfiguredRuntime.execute(arguments, output, errors);
+      }
       return ConfiguredSourceAnalysisRuntime.execute(
           ConfiguredArguments.translate(arguments), output, errors);
     } catch (IllegalArgumentException invalid) {
@@ -168,12 +183,6 @@ public final class SourceAnalysisCli {
           translated.add("start");
           addOption(
               translated, "--source-registration", parsed.option("--source-registration", true));
-        }
-        case "plan-materials" -> {
-          parsed.requireOnly("--source-registration");
-          translated.add("materials-only");
-          addOption(
-              translated, "--source-registration", parsed.option("--source-registration", false));
         }
         case "export-materials-state" -> {
           translated.add("export-materials-state");
@@ -337,13 +346,12 @@ public final class SourceAnalysisCli {
       name = "source-analysis",
       mixinStandardHelpOptions = true,
       description =
-          "Capture a local commit, plan materials, execute the final configured target, inspect, render, or read a safe business output.")
+          "Capture a local commit, execute the final configured target, inspect, render, or read a safe business output.")
   private static final class CommandHandler implements Callable<Integer> {
     @Parameters(
         index = "0",
         paramLabel = "operation",
-        description =
-            "capture-local-git, start, plan-materials, execute-step, inspect, render, or artifact")
+        description = "capture-local-git, start, execute-step, inspect, render, or artifact")
     private String operation;
 
     @Option(names = "--run", paramLabel = "RUN_ID")
@@ -397,7 +405,6 @@ public final class SourceAnalysisCli {
       return switch (operation) {
         case "capture-local-git" -> captureLocalGit();
         case "start" -> start();
-        case "plan-materials" -> planMaterials();
         case "execute-step" -> executeSelectedStep();
         case "inspect" -> inspect();
         case "render" -> render();
@@ -405,7 +412,7 @@ public final class SourceAnalysisCli {
         default ->
             throw new CommandLine.ParameterException(
                 new CommandLine(this),
-                "operation must be capture-local-git, start, plan-materials, execute-step, inspect, render, or artifact");
+                "operation must be capture-local-git, start, execute-step, inspect, render, or artifact");
       };
     }
 
@@ -465,19 +472,6 @@ public final class SourceAnalysisCli {
       throw new CommandLine.ParameterException(
           new CommandLine(this),
           "execute-step --target must be flow-interpretation or repository-knowledge");
-    }
-
-    private int planMaterials() {
-      AnalysisRunReference executed =
-          agent.executeStep(
-              new AnalysisStepExecutionRequest(
-                  AnalysisRunId.parse(requireRunId()),
-                  AnalysisExecutionIntent.PREPARE_MATERIALS,
-                  null,
-                  null));
-      output.printf("runId=%s%n", executed.runId().value());
-      output.printf("lifecycleState=%s%n", executed.lifecycleState());
-      return 0;
     }
 
     private int inspect() {

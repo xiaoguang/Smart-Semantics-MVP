@@ -38,6 +38,7 @@ import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialM
 import org.sourceanalysis.app.analysis.interpretation.material.BusinessMaterialSet;
 import org.sourceanalysis.app.analysis.interpretation.material.ModelActivityPacket;
 import org.sourceanalysis.app.analysis.interpretation.material.SourceReference;
+import org.sourceanalysis.app.analysis.inventory.PreparedSourceReference;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot;
@@ -46,11 +47,15 @@ import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationAddress;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
 import org.sourceanalysis.app.artifact.AnalysisStepReceiptId;
+import org.sourceanalysis.app.artifact.ArtifactId;
+import org.sourceanalysis.app.artifact.ArtifactPolicyRegistryReference;
+import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ModuleArtifactRoot;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.ModuleReceiptId;
 import org.sourceanalysis.app.artifact.Sha256Digest;
+import org.sourceanalysis.app.runtime.SelectedSourceBasis;
 import org.sourceanalysis.app.runtime.modeljob.ModelJobExecutionConfiguration;
 import org.sourceanalysis.app.runtime.modeljob.ModelJobProviderBinding;
 
@@ -61,6 +66,26 @@ class BusinessProcessDiscoveryTest {
       AnalysisRunId.parse("analysis-run:" + "e".repeat(64));
 
   @TempDir java.nio.file.Path temporaryDirectory;
+
+  @Test
+  void rejectsMismatchedSavedAndReopenedSourceBasisBeforeCatalogProviderCall() {
+    SelectedSourceBasis expectedFromSavedSelection = selectedPreparedBasis('b');
+    SelectedSourceBasis actualFromIndependentReopen = selectedPreparedBasis('a');
+    ScriptedProvider provider = new ScriptedProvider();
+    ProcessDiscoveryRequest request =
+        new ProcessDiscoveryRequest(activities(), materials(), profile());
+
+    assertThatThrownBy(
+            () ->
+                new DefaultBusinessProcessDiscovery(provider)
+                    .discoverCatalogSample(
+                        request, expectedFromSavedSelection, actualFromIndependentReopen))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("SOURCE_BASIS_MISMATCH");
+    assertThat(provider.taskKinds())
+        .as("a basis mismatch must be rejected before the Step07 catalog provider is called")
+        .isEmpty();
+  }
 
   @Test
   void discoversOneDetailedMultiActivityProcessWithoutLosingConcretePredicates() {
@@ -910,6 +935,29 @@ class BusinessProcessDiscoveryTest {
 
   private static ProcessDiscoveryProfile profile() {
     return new ProcessDiscoveryProfile(16, 8, 16, 64_000, 128_000, 64_000, 4, 64, 4_000);
+  }
+
+  private static SelectedSourceBasis selectedPreparedBasis(char fill) {
+    String suffix = String.valueOf(fill).repeat(64);
+    ArtifactId sourceVersionId = ArtifactId.parse("snapshot:" + suffix);
+    ArtifactReference schemaBundle =
+        new ArtifactReference(
+            ArtifactId.parse("schema-bundle:" + suffix), Sha256Digest.parse(suffix));
+    ArtifactReference policy =
+        new ArtifactReference(
+            ArtifactId.parse("artifact-policy-registry:" + suffix), Sha256Digest.parse(suffix));
+    PreparedSourceReference preparedSource =
+        new PreparedSourceReference(
+            sourceVersionId,
+            sourceGroupStep05Checkpoint(),
+            schemaBundle,
+            new ArtifactPolicyRegistryReference(policy.artifactId(), policy.sha256()));
+    return new SelectedSourceBasis(
+        SelectedSourceBasis.Kind.PREPARED_V1,
+        preparedSource,
+        null,
+        sourceVersionId,
+        Sha256Digest.parse(suffix));
   }
 
   private static ActivityExplanationResult activities() {

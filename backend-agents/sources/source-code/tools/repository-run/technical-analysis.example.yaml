@@ -1,0 +1,34 @@
+# Copy this file outside the source tree and replace every /absolute/... placeholder.
+# Use the exact preparation run and each module's same-source official Maven outputs.
+# This command does not invoke Maven or any business model.
+schemaVersion: technical-analysis-config-v2
+source:
+  preparationRunId: analysis-run:replace-with-the-complete-run-id
+storage:
+  root: /absolute/path/to/analysis/store
+  preparedSourceArchive: /absolute/path/to/prepared-source-archive
+  sourcePreparationPolicyRegistry: /absolute/path/to/source-code/tools/repository-run/source-preparation-artifact-policy-set-v1.json
+  artifactPolicyRegistry: /absolute/path/to/source-code/tools/repository-run/technical-analysis-artifact-policy-set-v1.json
+java:
+  compilationInput:
+    projectDirectory: /absolute/path/to/fixed-source-copy
+    modules:
+      - modulePath: jshERP-boot
+        classpathFile: /absolute/path/to/export/jshERP-boot.compile.classpath
+        classpathSeparator: ":"
+        effectivePomFile: /absolute/path/to/export/jshERP-boot.effective-pom.xml
+        targetJavaHome: /absolute/path/to/target-jdk
+  jdtInstallation: /absolute/path/to/jdt-ls
+  toolJavaHome: /absolute/path/to/tool-jdk
+frontend:
+  enabled: true
+  nodeExecutable: /absolute/path/to/node
+  sourceRoots: [web/src, web/public]
+  configurationFiles: []
+  aliases: {}
+  httpMappings: []
+persistence:
+  plugins: [mybatis]
+readingMaterials:
+  maxPacketUtf8Bytes: 5242880
+  maxEntriesPerPacket: 12

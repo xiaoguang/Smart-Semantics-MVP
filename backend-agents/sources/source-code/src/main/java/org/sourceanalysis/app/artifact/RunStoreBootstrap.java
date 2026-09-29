@@ -68,4 +68,16 @@ public final class RunStoreBootstrap {
       reopenAnalysisRunOutput(RunStoreHandle storeHandle, AnalysisRunId runId) {
     return openAnalysisRunRegistry(storeHandle).reopenOutput(runId);
   }
+
+  /** Saves one private, canonical Java compilation-input record for a newly queued R1 run. */
+  public static void writePrivateJavaCompilationInput(
+      RunStoreHandle storeHandle, AnalysisRunId runId, ImmutableBytes canonicalJson) {
+    openAnalysisRunRegistry(storeHandle).writePrivateJavaCompilationInput(runId, canonicalJson);
+  }
+
+  /** Fresh-reopens the optional private Java compilation-input record without exposing its path. */
+  public static java.util.Optional<ImmutableBytes> reopenPrivateJavaCompilationInput(
+      RunStoreHandle storeHandle, AnalysisRunId runId) {
+    return openAnalysisRunRegistry(storeHandle).reopenPrivateJavaCompilationInput(runId);
+  }
 }

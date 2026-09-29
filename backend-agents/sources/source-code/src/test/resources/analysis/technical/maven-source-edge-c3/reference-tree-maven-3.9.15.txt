@@ -1,0 +1,17 @@
+# Standard Maven dependency:tree reference for the self-owned C3 reactor fixture.
+# Maven: Apache Maven 3.9.15
+# Command:
+# /private/tmp/source-analysis-maven-XllsOS/apache-maven-3.9.15/bin/mvn -o -Dmaven.repo.local=/private/tmp/source-analysis-technical-m2 -t .mvn/toolchains.local.xml -f src/test/resources/analysis/technical/maven-source-edge-c3/pom.xml -pl modules/web -am org.apache.maven.plugins:maven-dependency-plugin:3.11.0:tree -Dverbose -DoutputType=text -DoutputFile=/private/tmp/source-analysis-c3-reference.dUKHJ6/dependency-tree.txt -DappendOutput=false
+# The multi-module invocation writes once per project to the same isolated output path;
+# the final contents are the web consumer's direct Maven tree.
+MAVEN_DEPENDENCY_TREE_BEGIN
+fixture.source:web:jar:1.0
++- fixture.source:common:jar:1.0:compile
+|  \- (fixture.libs:wire-api:jar:2.0:compile - omitted for conflict with 1.0)
+\- fixture.libs:wire-api:jar:1.0:compile
+MAVEN_DEPENDENCY_TREE_END
+
+# Map selected Maven nodes to the source-backed compile environment representation.
+NORMALIZED_CONSUMER_COMPILE_CLOSURE:
+COMPILE_NODE=SOURCE_MODULE modules/common
+COMPILE_NODE=BINARY fixture.libs:wire-api:1.0:jar:compile

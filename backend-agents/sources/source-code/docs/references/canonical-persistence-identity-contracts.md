@@ -4,6 +4,10 @@
 
 CanonicalJsonCodec、CanonicalArtifactPolicyRegistry、CanonicalModuleArtifactStore、CanonicalAnalysisStepArtifactStore 已有实现。下文 CanonicalRunManifestStore 签名/完成身份仅保留为既有技术提案的参照，不是本轮新增实现任务或业务交付前置；现有 runtime 使用其实际 run/checkpoint stores，不为此次减法再建存储系统。
 
+源码准备已实现的四文件、producer v3、真实controls、issue→gapRefs、新旧来源身份及严格历史分支见[专属合同](../modules/source-preparation/contracts-and-storage.md)。它复用本文canonical算法和原子安装，不覆盖旧policy文件；旧manifest/schema不静默改义。内部步骤key/目录仍保留，用户功能名称为“源码准备”。
+
+本次技术操作目标（尚未实现）见[跨运行发布/版本合同](../modules/technical-analysis/cli-and-runtime.md)：02/03、04、05分别输出到自己的run，不能继续以“所有run相等”代替来源校验。共享store/字节公式不变；具体producer/ref/schema/policy升级同时落地，不复制上游伪造同run，不修改历史文件。
+
 ## 1. Canonical JSON 与 JSONL
 
 模型批次扩展见[执行合同](../modules/model-job-execution.md)和[Activity集成合同](../modules/activity-explanation/integration-contracts.md)。历史materialsCheckpoint是完整ModulePublicationReference；新Step05由显式materialSource携带完整AnalysisStepPublicationReference，不能强转M10。modelBatchId仍为新AnalysisRunId，sourceRunId为材料owner；v6/coverage v3只增加明确接入，不改变本附录canonical公式或旧receipt。

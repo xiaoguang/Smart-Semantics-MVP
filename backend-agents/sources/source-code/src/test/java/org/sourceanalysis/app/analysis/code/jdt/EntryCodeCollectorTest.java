@@ -1,11 +1,13 @@
 package org.sourceanalysis.app.analysis.code.jdt;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.sourceanalysis.app.analysis.code.CodeEngineException;
 import org.sourceanalysis.app.analysis.code.EntryCodeContext;
 import org.sourceanalysis.app.analysis.code.EntrySeed;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
@@ -99,6 +101,69 @@ class EntryCodeCollectorTest {
               assertThat(call.targets()).singleElement();
               assertThat(call.targets().get(0).expansion()).isEqualTo("BODY_INCLUDED");
             });
+  }
+
+  @Test
+  void failsCatalogWhenSyntaxHelperProtocolFailsInsteadOfRecordingFileGap() {
+    Fixture fixture = Fixture.standard();
+    CodeEngineException protocolFailure =
+        new CodeEngineException(
+            CodeEngineException.JDT_SYNTAX_PROTOCOL_INVALID, "invalid syntax-helper response");
+    EntryCodeCollector collector =
+        fixture.collector(
+            CollectionBudget.standard(),
+            (path, level, source) -> {
+              if (path.equals("Controller.java")) {
+                throw protocolFailure;
+              }
+              return fixture.syntax().get(path);
+            });
+
+    assertThatThrownBy(collector::catalog)
+        .isInstanceOfSatisfying(
+            CodeEngineException.class,
+            failure ->
+                assertThat(failure.code())
+                    .isEqualTo(CodeEngineException.JDT_SYNTAX_PROTOCOL_INVALID));
+  }
+
+  @Test
+  void retainsReturnedSourceSyntaxDiagnosticAsAFileLocalCatalogLimitation() {
+    Fixture fixture = Fixture.standard();
+    String path = "Controller.java";
+    JdtSyntaxProtocol.Response original = fixture.syntax().get(path);
+    Map<String, JdtSyntaxProtocol.Response> syntax = new LinkedHashMap<>(fixture.syntax());
+    syntax.put(
+        path,
+        new JdtSyntaxProtocol.Response(
+            original.protocolVersion(),
+            original.requestId(),
+            original.sourceKey(),
+            original.sourceSha256(),
+            original.packageName(),
+            original.imports(),
+            original.declarations(),
+            original.annotations(),
+            original.callSites(),
+            original.controls(),
+            original.exits(),
+            List.of(
+                new JdtSyntaxProtocol.Diagnostic(
+                    "SOURCE_PARSE_ERROR",
+                    "ERROR",
+                    "unexpected token",
+                    new JdtSyntaxProtocol.SourceRange(0, 1, 1, 1)))));
+    Fixture diagnosticFixture =
+        new Fixture(fixture.sources(), Map.copyOf(syntax), fixture.gateway());
+
+    JavaDeclarationCatalog catalog =
+        diagnosticFixture.collector(CollectionBudget.standard()).catalog();
+
+    assertThat(catalog.fileDiagnostics())
+        .containsEntry(path, "SOURCE_PARSE_ERROR:unexpected token");
+    assertThat(catalog.methods())
+        .extracting(JavaDeclarationCatalog.MethodDeclarationView::sourcePath)
+        .contains("Controller.java", "Service.java", "ServiceImpl.java");
   }
 
   private record Fixture(
@@ -222,13 +287,18 @@ class EntryCodeCollectorTest {
     }
 
     EntryCodeCollector collector(CollectionBudget budget) {
+      return collector(budget, (path, level, source) -> syntax.get(path));
+    }
+
+    EntryCodeCollector collector(
+        CollectionBudget budget, EntryCodeCollector.SyntaxAccess syntaxAccess) {
       JdtNavigationResolver resolver = new JdtNavigationResolver(gateway, sources);
       return new EntryCodeCollector(
           "snapshot:test",
           "17",
           syntax.keySet().stream().sorted().toList(),
           sources,
-          (path, level, source) -> syntax.get(path),
+          syntaxAccess,
           resolver,
           budget);
     }

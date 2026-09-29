@@ -35,6 +35,7 @@ import org.sourceanalysis.app.artifact.InstalledAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.InstalledModulePublication;
 import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.ModuleInstallRequest;
+import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 
@@ -62,19 +63,55 @@ public final class ApplicationDiscoveryPublicationSpecifier {
 
   private final CanonicalModuleArtifactStore moduleArtifacts;
   private final CanonicalAnalysisStepArtifactStore stepArtifacts;
+  private final CanonicalAnalysisStepArtifactStore sourceStepArtifacts;
   private final CanonicalJsonCodec canonicalJson;
 
   /** Creates the path-free boundary over the trusted module and analysis-step stores. */
   public ApplicationDiscoveryPublicationSpecifier(
       CanonicalModuleArtifactStore moduleArtifacts,
       CanonicalAnalysisStepArtifactStore stepArtifacts) {
+    this(moduleArtifacts, stepArtifacts, stepArtifacts);
+  }
+
+  /**
+   * Creates the technical cross-policy boundary. The source store only reopens immutable R0
+   * receipts; completed Step02 publications remain wholly owned by the technical store.
+   */
+  public ApplicationDiscoveryPublicationSpecifier(
+      CanonicalModuleArtifactStore moduleArtifacts,
+      CanonicalAnalysisStepArtifactStore stepArtifacts,
+      CanonicalAnalysisStepArtifactStore sourceStepArtifacts) {
     this.moduleArtifacts = Objects.requireNonNull(moduleArtifacts, "module artifact store");
     this.stepArtifacts = Objects.requireNonNull(stepArtifacts, "analysis step artifact store");
+    this.sourceStepArtifacts =
+        Objects.requireNonNull(sourceStepArtifacts, "source analysis-step artifact store");
     this.canonicalJson = new CanonicalJsonCodec();
   }
 
   /** Publishes the exact semantic application-discovery files from fresh-reopened module inputs. */
   public ApplicationDiscoveryReference publish(ApplicationDiscoveryPublicationRequest request) {
+    return publish(request, false, null, null);
+  }
+
+  /**
+   * Publishes the R1-owned technical Step02 result while retaining its exact R0 upstream.
+   *
+   * <p>The legacy {@link #publish(ApplicationDiscoveryPublicationRequest)} path continues to use
+   * producer version v3 and its historical same-run consumers. This branch has a separate v4
+   * producer receipt so cross-run consumers must opt into the technical provenance contract.
+   */
+  public ApplicationDiscoveryReference publishTechnical(
+      ApplicationDiscoveryPublicationRequest request,
+      ArtifactReference r0SourceInventory,
+      ArtifactReference r0VerifiedSnapshot) {
+    return publish(request, true, r0SourceInventory, r0VerifiedSnapshot);
+  }
+
+  private ApplicationDiscoveryReference publish(
+      ApplicationDiscoveryPublicationRequest request,
+      boolean technical,
+      ArtifactReference r0SourceInventory,
+      ArtifactReference r0VerifiedSnapshot) {
     try {
       requireDestination(request.destination());
       ReopenedModulePublication profile =
@@ -106,7 +143,15 @@ public final class ApplicationDiscoveryPublicationSpecifier {
       ObjectNode mapperBody = moduleBody(mapper, MAPPER_DRAFT_TYPE, MAPPER_DRAFT_SCHEMA);
       String applicationProfileId = text(profileBody, "applicationProfileId");
       requireSameApplicationProfile(applicationProfileId, entryBody, mapperBody);
-      requireInventoryClosure(request, profile, entries, mapper);
+      requireInventoryClosure(
+          request, profile, entries, mapper, technical, r0SourceInventory, r0VerifiedSnapshot);
+      if (technical
+          && request
+              .destination()
+              .runId()
+              .equals(request.verifiedSourceInventory().publication().address().runId())) {
+        throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_UPSTREAM_INVALID");
+      }
       requireSiteAndShardClosure(entryBody, mapperBody);
 
       String noEntryGapId =
@@ -144,7 +189,7 @@ public final class ApplicationDiscoveryPublicationSpecifier {
                       AnalysisStepKey.APPLICATION_DISCOVERY,
                       4,
                       "publish"),
-                  "v3",
+                  technical ? "v4" : "v3",
                   upstream,
                   profile.receipt().controls(),
                   status,
@@ -359,11 +404,19 @@ public final class ApplicationDiscoveryPublicationSpecifier {
     }
   }
 
-  private static void requireInventoryClosure(
+  private void requireInventoryClosure(
       ApplicationDiscoveryPublicationRequest request,
       ReopenedModulePublication profile,
       ReopenedModulePublication entries,
-      ReopenedModulePublication mapper) {
+      ReopenedModulePublication mapper,
+      boolean technical,
+      ArtifactReference r0SourceInventory,
+      ArtifactReference r0VerifiedSnapshot) {
+    if (technical) {
+      requireTechnicalInventoryClosure(
+          request, profile, entries, mapper, r0SourceInventory, r0VerifiedSnapshot);
+      return;
+    }
     ArtifactReference inventory =
         profile.receipt().upstreamArtifacts().stream()
             .filter(
@@ -391,6 +444,83 @@ public final class ApplicationDiscoveryPublicationSpecifier {
         != AnalysisStepKey.VERIFIED_SOURCE_INVENTORY) {
       throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_UPSTREAM_INVALID");
     }
+  }
+
+  /**
+   * Validates the exact freshly reopened prepared-R0 artifacts without relaxing legacy prefixes.
+   */
+  private void requireTechnicalInventoryClosure(
+      ApplicationDiscoveryPublicationRequest request,
+      ReopenedModulePublication profile,
+      ReopenedModulePublication entries,
+      ReopenedModulePublication mapper,
+      ArtifactReference r0SourceInventory,
+      ArtifactReference r0VerifiedSnapshot) {
+    if (r0SourceInventory == null
+        || r0VerifiedSnapshot == null
+        || request.verifiedSourceInventory().publication().address().analysisStepKey()
+            != AnalysisStepKey.VERIFIED_SOURCE_INVENTORY) {
+      throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_UPSTREAM_INVALID");
+    }
+    ReopenedAnalysisStepPublication source =
+        reopenTechnicalSource(request.verifiedSourceInventory());
+    ArtifactReference expectedInventory =
+        exactPayloadReference(
+            source,
+            "source-inventory.jsonl",
+            "SOURCE_PREPARATION_INVENTORY",
+            "source-preparation-inventory-v1");
+    ArtifactReference expectedSnapshot =
+        exactPayloadReference(
+            source,
+            "source-preparation-result.json",
+            "SOURCE_PREPARATION_RESULT",
+            "source-preparation-result-v1");
+    if (!expectedInventory.equals(r0SourceInventory)
+        || !expectedSnapshot.equals(r0VerifiedSnapshot)) {
+      throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_UPSTREAM_INVALID");
+    }
+    for (ReopenedModulePublication publication : List.of(profile, entries, mapper)) {
+      if (!publication.receipt().upstreamArtifacts().contains(r0SourceInventory)
+          || !publication.receipt().upstreamArtifacts().contains(r0VerifiedSnapshot)) {
+        throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_UPSTREAM_INVALID");
+      }
+    }
+  }
+
+  private ReopenedAnalysisStepPublication reopenTechnicalSource(
+      org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference source) {
+    try {
+      ReopenedAnalysisStepPublication reopened = sourceStepArtifacts.reopen(source.publication());
+      if (!reopened.reference().equals(source.publication())
+          || reopened.reference().address().analysisStepKey()
+              != AnalysisStepKey.VERIFIED_SOURCE_INVENTORY) {
+        throw new IllegalArgumentException("unexpected prepared source publication");
+      }
+      return reopened;
+    } catch (RuntimeException invalid) {
+      throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_UPSTREAM_INVALID", invalid);
+    }
+  }
+
+  private static ArtifactReference exactPayloadReference(
+      ReopenedAnalysisStepPublication source,
+      String fileName,
+      String artifactType,
+      String schemaVersion) {
+    List<VerifiedCanonicalPayload> matching =
+        source.semanticPayloads().stream()
+            .filter(
+                payload ->
+                    fileName.equals(payload.descriptor().fileName())
+                        && artifactType.equals(payload.descriptor().artifactType())
+                        && schemaVersion.equals(payload.descriptor().schemaVersion()))
+            .toList();
+    if (matching.size() != 1) {
+      throw new ApplicationDiscoveryException("APPLICATION_DISCOVERY_UPSTREAM_INVALID");
+    }
+    VerifiedCanonicalPayload payload = matching.get(0);
+    return new ArtifactReference(payload.descriptor().artifactId(), payload.descriptor().sha256());
   }
 
   private static void requireSiteAndShardClosure(ObjectNode entries, ObjectNode mapper) {

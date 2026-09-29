@@ -1,4 +1,6 @@
-# 应用发现
+# 应用、HTTP入口与页面请求发现
+
+> 2026-09-29目标：后端`collect-code`（文档角色R2）仍在同一JDT会话完成Step02/03；前端拆为独立`collect-frontend`（R1），只发现请求和源码单元，不依赖后端清单。HTTP请求→entryId匹配归Step05组装（R4）。四操作尚未实施；旧合并三命令已经生成固定源码材料，但调用准确性未通过。[技术总设计](../modules/technical-analysis/README.md) · [运行合同](../modules/technical-analysis/cli-and-runtime.md) · [前端详细设计](../modules/technical-analysis/frontend-http-discovery.md)。
 
 > 模型批次解耦（已实现）：全入口分母属于固定技术来源，不按模型批次重新发现。模型新批次复用材料中的入口处置；模型漏解释不改写为 Spring 或导航缺口。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md)。本次未修改本步骤算法或产物。
 
@@ -6,13 +8,27 @@
 
 ## 1. 为什么存在
 
-业务分析必须先知道系统有哪些入口。Step02 从固定源码识别 Spring route/handler/参数及 Mapper 候选，建立全入口分母；入口后来没有 strict Flow 或 Fact，也不能从业务分析范围消失。
+后续Java导航需要准确的起始方法。Step02从固定源码识别Spring route/handler/参数及Mapper候选，建立完整入口分母。后端先核对编译环境；独立前端操作保存页面请求，Step05再关联入口。前端与后端共享源码身份，不共享运行owner；不恢复strict Flow或Fact。
 
-它回答技术触发点在哪里，不替方法起业务名称，也不把 Controller 当参与者。语义意义留给模型，已定位入口先交 Step03 建图和 Step05 组织代码上下文。
+它回答技术触发点在哪里，不替方法起业务名称，也不把Controller当业务参与者。语义意义留给后续业务解释；已定位入口交Step03收集Java方法和调用，再由Step05组织阅读材料。这里不生成旧五图。
 
 在新的业务过程发现路线中，入口分母继续作为 Activity coverage 和最终 process coverage 的基准。Step07 可以把同一入口的 Activity 用于多个候选过程，但不能创造未发现入口，也不能因为某个入口没有进入主流程就让它从分母消失。`@RequestMapping` 未指定 HTTP method 是合法 unrestricted 映射，不再作为业务过程缺口。
 
 ## 2. 输入与处理
+
+### 2.1 后端与独立前端的职责
+
+后端输入为明确R0及官方classpath/effective-POM/JDK选择，完整交接见[依赖合同](../modules/technical-analysis/dependency-preparation.md)。Java只提取已经求值的设置并核对来源、JAR、JDK和绑定，不下载或猜配置。
+
+后端顺序：重开R0 → 提取/核对环境 → 保存环境及就绪module5 → 打开JDT session/catalog → Spring入口与Mapper候选 → 发布Step02 → 同session交Step03。已知环境错误阻断；diagnosticCoverage未确认披露后允许导航，不编造“全仓无错误”。
+
+独立前端R1使用同R0，但不需要Java环境、后端入口或Step02步骤receipt。它在现有application-discovery/module6地址保存frontend-http-index-v2，包含请求、实例和源码单元，**不含ENTRY_LINK**。这是操作拆分，不新增第九个Step或公共Agent。
+
+目标后端Step02 producer v5/capability v4不再包含frontend publication，入口行v3与Spring规则保持。后端Step02的profile、entries、mapper、capability及receipt照常保存；环境/就绪有独立module5引用，不再以“完整Step02必含前端八文件”作门禁。
+
+下游：Step03消费准确entry/catalog；Step04消费后端Mapper线索和导航；Step05同时取得R1请求与R2入口做有限HTTP匹配。前端工具失败不能删除后端结果，后端依赖不足也不能阻止独立前端发现。正式R4缺少后端发现结果时不能把它当0入口成功。
+
+### 2.2 当前已实现的后端发现
 
 输入为Step01 verified source view、静态工程画像与JDT catalog。配置/POM/XML共用现有读取器，Java声明/参数/注解来自[JDT Interface](../modules/java-code-engines/contracts-and-configuration.md)。当前生产JDT-only，JavaParser仅严格历史读取，不再有待接线的第二生产引擎。只读清单文本，不执行客户构建或应用。
 
@@ -101,7 +117,7 @@ discoveredEntries = supportedEntries ⊎ gappedEntries ⊎ reasonedExclusions
 allSiteIds = exactDisjointUnion(shardSiteIds)
 ~~~
 
-一个入口成功不能关闭其他未处置入口；0 入口也保存四项 semantic 文件和 receipt，用 NO_ENTRY_DISCOVERED 说明范围，不能省文件或伪造入口。hash/reference 正确但漏掉合法 unrestricted entry 仍是功能错误。
+一个入口成功不能关闭其他未处置入口。当前已完成发现且0入口时，仍保存四项semantic文件和receipt，用NO_ENTRY_DISCOVERED说明范围；后端还须保存实际就绪报告；独立前端另有自己的运行，不计入后端完成条件。**Java准入阻断而未执行发现不是0入口结果**，只能发布独立报告，不能伪造完整Step02。hash/reference正确但漏掉合法unrestricted entry仍是功能错误。
 
 ## 6. 保存、复用、预算与失败
 
@@ -115,6 +131,6 @@ JDT catalog 路线已经实施：配置选择 JDT 后，ApplicationProfileDetect
 
 JDT Core 的 recovered binding 不能当成已解析的限定名。例如缺少外部 Spring classpath 时，JDT 可能恢复出当前 package 下的 `RequestMapping`；helper 只接受非 recovered 的 binding，随后由 catalog 使用显式 import 或 JDT LS 导航恢复真实身份。仍无法确认时保留候选和 `ANNOTATION_IDENTITY_UNRESOLVED`，不能按 simple name 猜测。
 
-ApplicationProfileDetector、SpringHttpEntryDiscoverer、MapperCapabilityCataloger、步骤 publisher/executor 已有实现，固定完整 jshERP 入口发现已有保存证据；不是仅 package 骨架。现有材料规划处理 337 个发现入口，但这只证明当前发现分母的处理，不证明所有合法 Spring 变体已正确发现。省略 method、`method={}`、显式方法集合及类/方法条件组合现在由直接回归覆盖；两个真实端点要在后续完整仓库重跑中确认进入新分母。
+ApplicationProfileDetector、SpringHttpEntryDiscoverer、MapperCapabilityCataloger及步骤publisher/executor已有实现；不是仅package骨架。固定材料的入口数量以其准确publication及[取材交付](../supplements/jdt-persistence-reading-materials-delivery.md)为准，不把不同历史运行的计数当成本次结果。省略method、`method={}`、显式方法集合及类/方法条件组合已有直接回归；它们不证明所有Spring动态变体都能静态发现。
 
-Luna/xhigh 已为省略 method、method={}、类有限制+方法空、类方法显式并集建立直接 RED；Terra/xhigh 已以 `HttpMethodCondition`、发现器、持久化输出和直接读取器完成最小 GREEN。GET 不增 HEAD/OPTIONS 活动。保留 route 定位、全入口分母和 XML 安全测试，普通发布不重新调用发现算法；当前固定来源取材验收已经结束；新Activity消费仍待实现与实际质量验证。
+省略method、method={}、类有限制+方法空及显式并集由`HttpMethodCondition`、发现器、发布/读取器及直接测试共同覆盖。GET不增HEAD/OPTIONS活动。保留route定位、全入口分母及XML安全测试，发布不重跑发现。既有Step05 v1已用于生成418条新Activity；业务完成性由Step06维护，现有合并前端路线已有51条请求/关联；本次独立前端和组装匹配仍待实施，不能沿用旧运行宣称新合同通过。

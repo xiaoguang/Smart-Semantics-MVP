@@ -6,7 +6,7 @@ import java.util.Map;
 /** Private JSONL protocol between the Java 17 host and the JDT Core helper. */
 public final class JdtSyntaxProtocol {
 
-  public static final String VERSION = "jdt-syntax-v2";
+  public static final String VERSION = "jdt-syntax-v3";
   public static final String DESCRIBE_COMPILATION_UNIT = "DESCRIBE_COMPILATION_UNIT";
 
   private JdtSyntaxProtocol() {}
@@ -20,6 +20,8 @@ public final class JdtSyntaxProtocol {
       String sourceSha256,
       List<String> sourcepathEntries,
       List<String> classpathEntries,
+      String targetJdkVersion,
+      List<String> targetPlatformEntries,
       String text) {}
 
   public record Response(

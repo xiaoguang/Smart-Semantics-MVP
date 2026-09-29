@@ -2,13 +2,14 @@ package org.sourceanalysis.app.runtime;
 
 import java.util.List;
 import java.util.Objects;
+import org.sourceanalysis.app.analysis.inventory.SourcePreparationReadiness;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 
-/** Saved legacy business checkpoints or a Step05 reading-material checkpoint for a finished run. */
+/** Saved historical checkpoints, a v7 source-preparation checkpoint, or a v8 technical result. */
 public record AnalysisRunOutput(
     AnalysisRunId sourceRunId,
     ModulePublicationReference businessMaterialCheckpoint,
@@ -16,10 +17,112 @@ public record AnalysisRunOutput(
     ModulePublicationReference knowledgeCheckpoint,
     ModulePublicationReference reportCheckpoint,
     AnalysisStepPublicationReference readingMaterialCheckpoint,
-    boolean activityBatchComplete) {
+    boolean activityBatchComplete,
+    AnalysisStepPublicationReference sourcePreparationCheckpoint,
+    SourcePreparationReadiness sourcePreparationReadiness,
+    SelectedSourceBasis selectedSourceBasis,
+    TechnicalRunOutput technicalOutput) {
 
   public AnalysisRunOutput {
-    Objects.requireNonNull(sourceRunId, "source run ID");
+    if (technicalOutput != null) {
+      requireTechnicalOutput(
+          sourceRunId,
+          businessMaterialCheckpoint,
+          activityCheckpoint,
+          knowledgeCheckpoint,
+          reportCheckpoint,
+          readingMaterialCheckpoint,
+          activityBatchComplete,
+          sourcePreparationCheckpoint,
+          sourcePreparationReadiness,
+          selectedSourceBasis,
+          technicalOutput);
+    } else if (sourcePreparationCheckpoint != null) {
+      Objects.requireNonNull(sourceRunId, "source run ID");
+      requireSourcePreparation(
+          sourceRunId,
+          businessMaterialCheckpoint,
+          activityCheckpoint,
+          knowledgeCheckpoint,
+          reportCheckpoint,
+          readingMaterialCheckpoint,
+          activityBatchComplete,
+          sourcePreparationCheckpoint,
+          sourcePreparationReadiness,
+          selectedSourceBasis);
+    } else {
+      Objects.requireNonNull(sourceRunId, "source run ID");
+      if (sourcePreparationReadiness != null) {
+        throw new IllegalArgumentException("source preparation readiness needs its checkpoint");
+      }
+      requireAnalysisCheckpoints(
+          sourceRunId,
+          businessMaterialCheckpoint,
+          activityCheckpoint,
+          knowledgeCheckpoint,
+          reportCheckpoint,
+          readingMaterialCheckpoint,
+          activityBatchComplete);
+    }
+  }
+
+  /** Preserves the pre-v8 complete constructor shape for historical callers and readers. */
+  public AnalysisRunOutput(
+      AnalysisRunId sourceRunId,
+      ModulePublicationReference businessMaterialCheckpoint,
+      ModulePublicationReference activityCheckpoint,
+      ModulePublicationReference knowledgeCheckpoint,
+      ModulePublicationReference reportCheckpoint,
+      AnalysisStepPublicationReference readingMaterialCheckpoint,
+      boolean activityBatchComplete,
+      AnalysisStepPublicationReference sourcePreparationCheckpoint,
+      SourcePreparationReadiness sourcePreparationReadiness,
+      SelectedSourceBasis selectedSourceBasis) {
+    this(
+        sourceRunId,
+        businessMaterialCheckpoint,
+        activityCheckpoint,
+        knowledgeCheckpoint,
+        reportCheckpoint,
+        readingMaterialCheckpoint,
+        activityBatchComplete,
+        sourcePreparationCheckpoint,
+        sourcePreparationReadiness,
+        selectedSourceBasis,
+        null);
+  }
+
+  /** Preserves the previous seven-field construction contract for historical output readers. */
+  public AnalysisRunOutput(
+      AnalysisRunId sourceRunId,
+      ModulePublicationReference businessMaterialCheckpoint,
+      ModulePublicationReference activityCheckpoint,
+      ModulePublicationReference knowledgeCheckpoint,
+      ModulePublicationReference reportCheckpoint,
+      AnalysisStepPublicationReference readingMaterialCheckpoint,
+      boolean activityBatchComplete) {
+    this(
+        sourceRunId,
+        businessMaterialCheckpoint,
+        activityCheckpoint,
+        knowledgeCheckpoint,
+        reportCheckpoint,
+        readingMaterialCheckpoint,
+        activityBatchComplete,
+        null,
+        null,
+        null,
+        null);
+  }
+
+  private static void requireAnalysisCheckpoints(
+      AnalysisRunId sourceRunId,
+      ModulePublicationReference businessMaterialCheckpoint,
+      ModulePublicationReference activityCheckpoint,
+      ModulePublicationReference knowledgeCheckpoint,
+      ModulePublicationReference reportCheckpoint,
+      AnalysisStepPublicationReference readingMaterialCheckpoint,
+      boolean activityBatchComplete) {
     if (readingMaterialCheckpoint != null) {
       if (businessMaterialCheckpoint != null || reportCheckpoint != null) {
         throw new IllegalArgumentException("analysis run output checkpoint set is invalid");
@@ -196,6 +299,66 @@ public record AnalysisRunOutput(
         true);
   }
 
+  /** Saves only a verified-source-inventory checkpoint and its source readiness result. */
+  public static AnalysisRunOutput sourcePreparation(
+      AnalysisRunId runId,
+      AnalysisStepPublicationReference sourcePreparationCheckpoint,
+      SourcePreparationReadiness readiness,
+      SelectedSourceBasis selectedSourceBasis) {
+    return new AnalysisRunOutput(
+        runId,
+        null,
+        null,
+        null,
+        null,
+        null,
+        false,
+        sourcePreparationCheckpoint,
+        readiness,
+        selectedSourceBasis,
+        null);
+  }
+
+  /** Attaches the persisted v3 source basis to an already-valid analysis output shape. */
+  public static AnalysisRunOutput analysisV7(
+      AnalysisRunOutput existingShape, SelectedSourceBasis selectedSourceBasis) {
+    Objects.requireNonNull(existingShape, "existing analysis output");
+    Objects.requireNonNull(selectedSourceBasis, "selected source basis");
+    if (existingShape.sourcePreparationCheckpoint() != null) {
+      throw new IllegalArgumentException(
+          "source preparation output cannot wrap analysis checkpoints");
+    }
+    return new AnalysisRunOutput(
+        existingShape.sourceRunId(),
+        existingShape.businessMaterialCheckpoint(),
+        existingShape.activityCheckpoint(),
+        existingShape.knowledgeCheckpoint(),
+        existingShape.reportCheckpoint(),
+        existingShape.readingMaterialCheckpoint(),
+        existingShape.activityBatchComplete(),
+        null,
+        null,
+        selectedSourceBasis,
+        null);
+  }
+
+  /** Wraps one v8 technical output without reusing historical output fields. */
+  public static AnalysisRunOutput technical(TechnicalRunOutput technicalOutput) {
+    Objects.requireNonNull(technicalOutput, "technical output");
+    return new AnalysisRunOutput(
+        technicalOutput.selectedSourceBasis().preparedSource().publication().address().runId(),
+        null,
+        null,
+        null,
+        null,
+        null,
+        false,
+        null,
+        null,
+        technicalOutput.selectedSourceBasis(),
+        technicalOutput);
+  }
+
   /** Returns whether this finished run contains a review-approved business report. */
   public boolean hasCompletedReport() {
     return reportCheckpoint != null;
@@ -220,6 +383,85 @@ public record AnalysisRunOutput(
   /** Returns whether this output is the v5 reading-material-only completion. */
   public boolean hasReadingMaterials() {
     return readingMaterialCheckpoint != null;
+  }
+
+  /** True when this output carries a basis that names one exact usable prepared source. */
+  public boolean hasUsablePreparedSource() {
+    return selectedSourceBasis != null
+        && selectedSourceBasis.kind() == SelectedSourceBasis.Kind.PREPARED_V1;
+  }
+
+  private static void requireTechnicalOutput(
+      AnalysisRunId sourceRunId,
+      ModulePublicationReference businessMaterialCheckpoint,
+      ModulePublicationReference activityCheckpoint,
+      ModulePublicationReference knowledgeCheckpoint,
+      ModulePublicationReference reportCheckpoint,
+      AnalysisStepPublicationReference readingMaterialCheckpoint,
+      boolean activityBatchComplete,
+      AnalysisStepPublicationReference sourcePreparationCheckpoint,
+      SourcePreparationReadiness sourcePreparationReadiness,
+      SelectedSourceBasis selectedSourceBasis,
+      TechnicalRunOutput technicalOutput) {
+    if (sourceRunId == null
+        || businessMaterialCheckpoint != null
+        || activityCheckpoint != null
+        || knowledgeCheckpoint != null
+        || reportCheckpoint != null
+        || readingMaterialCheckpoint != null
+        || activityBatchComplete
+        || sourcePreparationCheckpoint != null
+        || sourcePreparationReadiness != null
+        || selectedSourceBasis == null
+        || !selectedSourceBasis.equals(technicalOutput.selectedSourceBasis())
+        || !sourceRunId.equals(
+            technicalOutput
+                .selectedSourceBasis()
+                .preparedSource()
+                .publication()
+                .address()
+                .runId())) {
+      throw new IllegalArgumentException("TECHNICAL_RUN_OUTPUT_INVALID");
+    }
+  }
+
+  private static void requireSourcePreparation(
+      AnalysisRunId sourceRunId,
+      ModulePublicationReference businessMaterialCheckpoint,
+      ModulePublicationReference activityCheckpoint,
+      ModulePublicationReference knowledgeCheckpoint,
+      ModulePublicationReference reportCheckpoint,
+      AnalysisStepPublicationReference readingMaterialCheckpoint,
+      boolean activityBatchComplete,
+      AnalysisStepPublicationReference sourcePreparationCheckpoint,
+      SourcePreparationReadiness sourcePreparationReadiness,
+      SelectedSourceBasis selectedSourceBasis) {
+    if (businessMaterialCheckpoint != null
+        || activityCheckpoint != null
+        || knowledgeCheckpoint != null
+        || reportCheckpoint != null
+        || readingMaterialCheckpoint != null
+        || activityBatchComplete
+        || sourcePreparationReadiness == null
+        || sourcePreparationCheckpoint.address().analysisStepKey()
+            != AnalysisStepKey.VERIFIED_SOURCE_INVENTORY
+        || !sourceRunId.equals(sourcePreparationCheckpoint.address().runId())) {
+      throw new IllegalArgumentException("source preparation output checkpoint set is invalid");
+    }
+    boolean ready =
+        sourcePreparationReadiness == SourcePreparationReadiness.READY
+            || sourcePreparationReadiness == SourcePreparationReadiness.READY_WITH_EXCLUSIONS;
+    if (ready
+        && (selectedSourceBasis == null
+            || selectedSourceBasis.kind() != SelectedSourceBasis.Kind.PREPARED_V1
+            || !sourcePreparationCheckpoint.equals(
+                selectedSourceBasis.preparedSource().publication()))) {
+      throw new IllegalArgumentException("usable source preparation output needs its exact basis");
+    }
+    if (!ready && selectedSourceBasis != null) {
+      throw new IllegalArgumentException(
+          "non-ready source preparation output cannot expose a source basis");
+    }
   }
 
   private static void require(

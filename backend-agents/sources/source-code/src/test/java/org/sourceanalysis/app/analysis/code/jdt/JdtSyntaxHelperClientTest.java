@@ -51,7 +51,11 @@ class JdtSyntaxHelperClientTest {
   void closeForceKillsAHelperThatIgnoresEndOfInput() {
     JdtSyntaxHelperClient client =
         JdtSyntaxHelperClient.start(
-            fakeCommand("ignore-close"), Duration.ofSeconds(5), Duration.ofMillis(100));
+            fakeCommand("ignore-close"),
+            Duration.ofSeconds(5),
+            Duration.ofMillis(100),
+            "17",
+            targetPlatformEntries());
     client.describe("example/Example.java", "17", "class Example {}\n");
 
     assertThatThrownBy(client::close)
@@ -64,7 +68,8 @@ class JdtSyntaxHelperClientTest {
 
   private static JdtSyntaxProtocol.Response invokeFake(String mode, Duration timeout) {
     try (JdtSyntaxHelperClient client =
-        JdtSyntaxHelperClient.start(fakeCommand(mode), timeout, Duration.ofSeconds(2))) {
+        JdtSyntaxHelperClient.start(
+            fakeCommand(mode), timeout, Duration.ofSeconds(2), "17", targetPlatformEntries())) {
       return client.describe("example/Example.java", "17", "class Example {}\n");
     }
   }
@@ -76,6 +81,10 @@ class JdtSyntaxHelperClientTest {
         System.getProperty("java.class.path"),
         FakeSyntaxHelper.class.getName(),
         mode);
+  }
+
+  private static List<Path> targetPlatformEntries() {
+    return List.of(Path.of(System.getProperty("java.home")));
   }
 
   public static final class FakeSyntaxHelper {

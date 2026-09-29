@@ -8,8 +8,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import org.sourceanalysis.app.analysis.code.CodeEngineException;
 import org.sourceanalysis.app.analysis.code.EngineDescriptor;
 import org.sourceanalysis.app.analysis.code.EntryCodeContext;
@@ -68,6 +70,64 @@ public final class JdtProjectSession implements JavaCodeSession {
       project.projectSourcesInto(projectRoot);
       writeControlledProjectMetadata(project, projectRoot);
       languageServer.start(project, projectRoot, languageServerDataDirectory);
+      return new JdtProjectSession(
+          project,
+          workspace,
+          projectRoot,
+          languageServerDataDirectory,
+          new EngineDescriptor(
+              "jdt",
+              "jdt-session-v1",
+              languageServer.toolVersions(),
+              project.sourceLevel(),
+              List.of("JDT_LANGUAGE_SERVER", "DECLARATION_READINESS_PROBE")),
+          languageServer);
+    } catch (IOException | RuntimeException failure) {
+      try {
+        languageServer.close();
+      } catch (RuntimeException closeFailure) {
+        failure.addSuppressed(closeFailure);
+      }
+      try {
+        deleteWorkspace(workspace);
+      } catch (IOException cleanupFailure) {
+        failure.addSuppressed(cleanupFailure);
+      }
+      if (failure instanceof CodeEngineException codeEngineFailure) {
+        throw codeEngineFailure;
+      }
+      throw new CodeEngineException(
+          CodeEngineException.SOURCE_INVALID,
+          "JDT session workspace could not be prepared",
+          failure);
+    }
+  }
+
+  static JdtProjectSession open(
+      JdtProjectBinding binding,
+      JdtLanguageServerClient languageServer,
+      JdtProcessIsolation isolation) {
+    Objects.requireNonNull(binding, "JDT project binding");
+    Objects.requireNonNull(languageServer, "JDT language server");
+    Objects.requireNonNull(isolation, "JDT process isolation");
+    if (languageServer.isolation() != isolation) {
+      throw new IllegalArgumentException(
+          "JDT session and client must share one process isolation boundary");
+    }
+    VerifiedJavaProject project = binding.project();
+    project.validateForJdt();
+    Path workspace = null;
+    try {
+      workspace = Files.createTempDirectory("source-analysis-jdt-");
+      Path projectRoot = Files.createDirectories(workspace.resolve("project"));
+      Path languageServerDataDirectory =
+          Files.createDirectories(workspace.resolve("language-server-data"));
+      project.projectSourcesInto(projectRoot);
+      writeControlledProjectMetadata(project, binding.targetRuntime(), projectRoot);
+      languageServer.start(binding, projectRoot, languageServerDataDirectory);
+      requireReadBackTargetRuntime(
+          languageServer.readProjectSettings(projectRoot.toUri().toString()),
+          binding.targetRuntime());
       return new JdtProjectSession(
           project,
           workspace,
@@ -275,8 +335,36 @@ public final class JdtProjectSession implements JavaCodeSession {
 
   private static void writeControlledProjectMetadata(VerifiedJavaProject project, Path projectRoot)
       throws IOException {
-    String projectName =
-        "source-analysis-" + Integer.toUnsignedString(project.snapshotId().hashCode(), 36);
+    writeControlledProjectMetadata(project, null, projectRoot);
+  }
+
+  private static void writeControlledProjectMetadata(
+      VerifiedJavaProject project, JdtTargetRuntime targetRuntime, Path projectRoot)
+      throws IOException {
+    writeControlledProjectMetadata(
+        project, targetRuntime, projectRoot, defaultProjectName(project), List.of());
+  }
+
+  static void writeControlledProjectMetadata(
+      VerifiedJavaProject project,
+      JdtTargetRuntime targetRuntime,
+      Path projectRoot,
+      String projectName,
+      List<String> dependencyProjectNames)
+      throws IOException {
+    Objects.requireNonNull(project, "verified Java project");
+    Objects.requireNonNull(projectRoot, "JDT project root");
+    if (projectName == null || projectName.isBlank()) {
+      throw new IllegalArgumentException("JDT project name is required");
+    }
+    List<String> dependencies = List.copyOf(Objects.requireNonNull(dependencyProjectNames));
+    if (dependencies.stream().anyMatch(value -> value == null || value.isBlank())) {
+      throw new IllegalArgumentException("JDT project dependency names are required");
+    }
+    String projectDependencies =
+        dependencies.stream()
+            .map(name -> "<project>" + xml(name) + "</project>")
+            .collect(java.util.stream.Collectors.joining());
     Files.writeString(
         projectRoot.resolve(".project"),
         """
@@ -284,7 +372,7 @@ public final class JdtProjectSession implements JavaCodeSession {
         <projectDescription>
           <name>${PROJECT_NAME}</name>
           <comment></comment>
-          <projects></projects>
+          <projects>${PROJECT_DEPENDENCIES}</projects>
           <buildSpec>
             <buildCommand>
               <name>org.eclipse.jdt.core.javabuilder</name>
@@ -294,7 +382,8 @@ public final class JdtProjectSession implements JavaCodeSession {
           <natures><nature>org.eclipse.jdt.core.javanature</nature></natures>
         </projectDescription>
         """
-            .replace("${PROJECT_NAME}", xml(projectName)),
+            .replace("${PROJECT_NAME}", xml(projectName))
+            .replace("${PROJECT_DEPENDENCIES}", projectDependencies),
         StandardCharsets.UTF_8);
 
     StringBuilder classpath =
@@ -303,6 +392,12 @@ public final class JdtProjectSession implements JavaCodeSession {
       classpath
           .append("  <classpathentry kind=\"src\" path=\"")
           .append(xml(sourceRoot))
+          .append("\"/>\n");
+    }
+    for (String dependencyProjectName : dependencies) {
+      classpath
+          .append("  <classpathentry kind=\"src\" path=\"/")
+          .append(xml(dependencyProjectName))
           .append("\"/>\n");
     }
     for (Path classpathEntry : project.classpath()) {
@@ -316,8 +411,10 @@ public final class JdtProjectSession implements JavaCodeSession {
         .append(
             xml(
                 "org.eclipse.jdt.launching.JRE_CONTAINER/"
-                    + "org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-"
-                    + project.sourceLevel()))
+                    + "org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/"
+                    + (targetRuntime == null
+                        ? "JavaSE-" + project.sourceLevel()
+                        : targetRuntime.executionEnvironmentName())))
         .append("\"/>\n")
         .append("  <classpathentry kind=\"output\" path=\".jdt-output\"/>\n")
         .append("</classpath>\n");
@@ -336,6 +433,10 @@ public final class JdtProjectSession implements JavaCodeSession {
         StandardCharsets.UTF_8);
   }
 
+  private static String defaultProjectName(VerifiedJavaProject project) {
+    return "source-analysis-" + Integer.toUnsignedString(project.snapshotId().hashCode(), 36);
+  }
+
   private static String xml(String value) {
     return value
         .replace("&", "&amp;")
@@ -343,6 +444,142 @@ public final class JdtProjectSession implements JavaCodeSession {
         .replace("<", "&lt;")
         .replace(">", "&gt;")
         .replace("'", "&apos;");
+  }
+
+  static void requireReadBackTargetRuntime(
+      com.fasterxml.jackson.databind.JsonNode settings, JdtTargetRuntime targetRuntime) {
+    String location = settings.path("org.eclipse.jdt.ls.core.vm.location").textValue();
+    if (location == null || location.isBlank()) {
+      throw new CodeEngineException(
+          CodeEngineException.JDT_PROTOCOL_INVALID,
+          "JDT project-settings response has no target VM location");
+    }
+    try {
+      Path observed = Path.of(location).toRealPath();
+      if (!observed.equals(targetRuntime.targetJdkHome())) {
+        throw new CodeEngineException(
+            CodeEngineException.ENGINE_CONFIGURATION_INVALID,
+            "JDT project VM does not match the selected target runtime");
+      }
+    } catch (IOException | RuntimeException failure) {
+      if (failure instanceof CodeEngineException codeEngineFailure) {
+        throw codeEngineFailure;
+      }
+      throw new CodeEngineException(
+          CodeEngineException.ENGINE_CONFIGURATION_INVALID,
+          "JDT project VM location cannot be verified",
+          failure);
+    }
+  }
+
+  static void requireReadBackClasspath(
+      com.fasterxml.jackson.databind.JsonNode settings,
+      VerifiedJavaProject project,
+      Path projectRoot) {
+    requireReadBackClasspath(settings, project, projectRoot, List.of());
+  }
+
+  static void requireReadBackClasspath(
+      com.fasterxml.jackson.databind.JsonNode settings,
+      VerifiedJavaProject project,
+      Path projectRoot,
+      List<String> expectedProjectNames) {
+    Objects.requireNonNull(settings, "JDT project settings");
+    Objects.requireNonNull(project, "verified Java project");
+    Objects.requireNonNull(projectRoot, "JDT project root");
+    Set<String> expectedProjects = expectedProjectNames(expectedProjectNames);
+    com.fasterxml.jackson.databind.JsonNode entries =
+        settings.path("org.eclipse.jdt.ls.core.classpathEntries");
+    if (!entries.isArray()) {
+      throw new CodeEngineException(
+          CodeEngineException.JDT_PROTOCOL_INVALID,
+          "JDT project-settings response has no classpath entries");
+    }
+    Set<Path> sourceRoots = new LinkedHashSet<>();
+    Set<Path> libraries = new LinkedHashSet<>();
+    Set<String> referencedProjects = new LinkedHashSet<>();
+    for (com.fasterxml.jackson.databind.JsonNode entry : entries) {
+      String value = entry.path("path").textValue();
+      if (value == null || value.isBlank()) {
+        throw new CodeEngineException(
+            CodeEngineException.JDT_PROTOCOL_INVALID,
+            "JDT project-settings classpath entry has no path");
+      }
+      int kind = entry.path("kind").asInt(-1);
+      if (kind == 3) {
+        String projectName = workspaceProjectName(value);
+        if (projectName != null && expectedProjects.contains(projectName)) {
+          referencedProjects.add(projectName);
+        } else {
+          sourceRoots.add(readBackFilesystemPath(value));
+        }
+      } else if (kind == 1) {
+        libraries.add(readBackFilesystemPath(value));
+      } else if (kind == 2) {
+        referencedProjects.add(requireWorkspaceProjectName(value));
+      }
+    }
+    try {
+      Set<Path> expectedSourceRoots = new LinkedHashSet<>();
+      for (String sourceRoot : project.sourceRoots()) {
+        expectedSourceRoots.add(projectRoot.resolve(sourceRoot).toRealPath());
+      }
+      Set<Path> expectedLibraries = new LinkedHashSet<>();
+      for (Path library : project.classpath()) {
+        expectedLibraries.add(library.toRealPath());
+      }
+      if (!sourceRoots.containsAll(expectedSourceRoots)
+          || !libraries.containsAll(expectedLibraries)
+          || !referencedProjects.equals(expectedProjects)) {
+        throw new CodeEngineException(
+            CodeEngineException.ENGINE_CONFIGURATION_INVALID,
+            "JDT project classpath does not include the selected module inputs");
+      }
+    } catch (IOException invalid) {
+      throw new CodeEngineException(
+          CodeEngineException.ENGINE_CONFIGURATION_INVALID,
+          "JDT project classpath inputs cannot be verified",
+          invalid);
+    }
+  }
+
+  private static Path readBackFilesystemPath(String value) {
+    try {
+      return (value.startsWith("file:") ? Path.of(URI.create(value)) : Path.of(value)).toRealPath();
+    } catch (IOException | IllegalArgumentException invalid) {
+      throw new CodeEngineException(
+          CodeEngineException.JDT_PROTOCOL_INVALID,
+          "JDT project-settings classpath entry cannot be verified",
+          invalid);
+    }
+  }
+
+  private static Set<String> expectedProjectNames(List<String> projectNames) {
+    Set<String> result = new LinkedHashSet<>();
+    for (String projectName : List.copyOf(Objects.requireNonNull(projectNames))) {
+      if (!result.add(requireWorkspaceProjectName("/" + projectName))) {
+        throw new IllegalArgumentException("JDT project dependency names cannot repeat");
+      }
+    }
+    return Set.copyOf(result);
+  }
+
+  private static String workspaceProjectName(String value) {
+    if (value == null || !value.startsWith("/") || value.indexOf('/', 1) >= 0) {
+      return null;
+    }
+    String projectName = value.substring(1);
+    return projectName.isBlank() ? null : projectName;
+  }
+
+  private static String requireWorkspaceProjectName(String value) {
+    String projectName = workspaceProjectName(value);
+    if (projectName == null) {
+      throw new CodeEngineException(
+          CodeEngineException.JDT_PROTOCOL_INVALID,
+          "JDT project-settings project entry has an invalid workspace project path");
+    }
+    return projectName;
   }
 
   private static void deleteWorkspace(Path workspace) throws IOException {

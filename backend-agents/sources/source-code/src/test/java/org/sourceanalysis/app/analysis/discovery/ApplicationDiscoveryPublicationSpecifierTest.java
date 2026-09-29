@@ -211,6 +211,76 @@ class ApplicationDiscoveryPublicationSpecifierTest {
   }
 
   @Test
+  void rejectsTechnicalPublicationWhoseM1ToM3ReferencesBelongToAnotherR0() {
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
+    ArtifactControls controls = controls(policies);
+    AnalysisRunId destinationRunId = runId();
+    VerifiedSourceInventoryReference requestedR0 = frozenSource(runId('a'), 'a', '1', '2');
+    VerifiedSourceInventoryReference moduleR0 = frozenSource(runId('b'), 'b', '3', '4');
+    ArtifactReference moduleR0Inventory =
+        reference("verified-source-inventory-source-inventory", 'b');
+    ArtifactReference moduleR0Snapshot = reference("verified-snapshot", '3');
+    ApplicationProfile moduleR0Profile =
+        profile(controls, "snapshot:" + "b".repeat(64), moduleR0Inventory, moduleR0Snapshot);
+
+    assertThat(requestedR0.publication().address().runId())
+        .isNotEqualTo(moduleR0.publication().address().runId());
+
+    try (RunStoreHandle handle = RunStoreBootstrap.openForTest(temporaryDirectory)) {
+      FileSystemCanonicalModuleArtifactStore modules =
+          new FileSystemCanonicalModuleArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(4, 100_000, 300_000, 10));
+      FileSystemCanonicalAnalysisStepArtifactStore steps =
+          new FileSystemCanonicalAnalysisStepArtifactStore(
+              handle, canonicalJson, policies, new ArtifactStoreLimits(4, 100_000, 300_000, 10));
+      ApplicationProfileDraftReference profileDraft =
+          new ApplicationProfileModulePublisher(modules)
+              .publish(address(destinationRunId, 1, "application-profile"), moduleR0Profile);
+      HttpEntryDiscoveryDraftReference entryDraft =
+          new HttpEntryDiscoveryModulePublisher(modules)
+              .publish(
+                  address(destinationRunId, 2, "http-entry"),
+                  profileDraft,
+                  moduleR0Profile,
+                  new HttpEntryDiscovery(List.of(), List.of(), List.of()));
+      MapperCatalogDraftReference catalogDraft =
+          new MapperCatalogModulePublisher(modules)
+              .publish(
+                  address(destinationRunId, 3, "mapper-catalog"),
+                  profileDraft,
+                  moduleR0Profile,
+                  new MapperCatalogDiscovery(List.of(), List.of(), List.of()));
+
+      for (var draft :
+          List.of(
+              profileDraft.publication(), entryDraft.publication(), catalogDraft.publication())) {
+        assertThat(modules.reopen(draft).receipt().upstreamArtifacts())
+            .as("every M1–M3 draft must consistently use the other R0")
+            .contains(moduleR0Inventory, moduleR0Snapshot);
+      }
+
+      ApplicationDiscoveryPublicationRequest request =
+          new ApplicationDiscoveryPublicationRequest(
+              new AnalysisStepPublicationAddress(
+                  destinationRunId, AnalysisStepKey.APPLICATION_DISCOVERY),
+              requestedR0,
+              profileDraft,
+              entryDraft,
+              catalogDraft);
+
+      assertThatThrownBy(
+              () ->
+                  new ApplicationDiscoveryPublicationSpecifier(modules, steps)
+                      .publishTechnical(request, moduleR0Inventory, moduleR0Snapshot))
+          .isInstanceOfSatisfying(
+              ApplicationDiscoveryException.class,
+              failure ->
+                  assertThat(failure.code()).isEqualTo("APPLICATION_DISCOVERY_UPSTREAM_INVALID"));
+    }
+  }
+
+  @Test
   void preservesAnEmptyEntryDenominatorAsAnEvidenceBoundNoEntryGapInsteadOfOmittingFiles() {
     CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
     CanonicalArtifactPolicyRegistry policies = policies(canonicalJson);
@@ -294,9 +364,21 @@ class ApplicationDiscoveryPublicationSpecifierTest {
   }
 
   private static ApplicationProfile profile(ArtifactControls controls) {
+    return profile(
+        controls,
+        "snapshot:" + "2".repeat(64),
+        reference("verified-source-inventory-source-inventory", '4'),
+        reference("verified-snapshot", '5'));
+  }
+
+  private static ApplicationProfile profile(
+      ArtifactControls controls,
+      String snapshotId,
+      ArtifactReference sourceInventoryRef,
+      ArtifactReference verifiedSnapshotRef) {
     return new ApplicationProfile(
         id("application-profile", '1'),
-        "snapshot:" + "2".repeat(64),
+        snapshotId,
         "COMPLETE_CAPTURE",
         true,
         ApplicationLanguage.JAVA,
@@ -304,8 +386,8 @@ class ApplicationDiscoveryPublicationSpecifierTest {
         List.of(),
         List.of(),
         reference("capability-profile", '3'),
-        reference("verified-source-inventory-source-inventory", '4'),
-        reference("verified-snapshot", '5'),
+        sourceInventoryRef,
+        verifiedSnapshotRef,
         controls);
   }
 
@@ -352,12 +434,19 @@ class ApplicationDiscoveryPublicationSpecifierTest {
   }
 
   private static VerifiedSourceInventoryReference frozenSource(AnalysisRunId runId) {
+    return frozenSource(runId, 'b', 'c', 'd');
+  }
+
+  private static VerifiedSourceInventoryReference frozenSource(
+      AnalysisRunId runId, char rootDigest, char receiptIdDigest, char receiptDigest) {
     return new VerifiedSourceInventoryReference(
         new AnalysisStepPublicationReference(
             new AnalysisStepPublicationAddress(runId, AnalysisStepKey.VERIFIED_SOURCE_INVENTORY),
-            AnalysisStepArtifactRoot.parse("analysis-step-root:" + "b".repeat(64)),
-            AnalysisStepReceiptId.parse("analysis-step-receipt:" + "c".repeat(64)),
-            digest('d')));
+            AnalysisStepArtifactRoot.parse(
+                "analysis-step-root:" + String.valueOf(rootDigest).repeat(64)),
+            AnalysisStepReceiptId.parse(
+                "analysis-step-receipt:" + String.valueOf(receiptIdDigest).repeat(64)),
+            digest(receiptDigest)));
   }
 
   private static AnalysisStepModuleAddress address(
@@ -367,7 +456,11 @@ class ApplicationDiscoveryPublicationSpecifierTest {
   }
 
   private static AnalysisRunId runId() {
-    return AnalysisRunId.parse("analysis-run:" + "e".repeat(64));
+    return runId('e');
+  }
+
+  private static AnalysisRunId runId(char digest) {
+    return AnalysisRunId.parse("analysis-run:" + String.valueOf(digest).repeat(64));
   }
 
   private static ArtifactControls controls(CanonicalArtifactPolicyRegistry policies) {

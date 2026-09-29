@@ -29,6 +29,7 @@ import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactPolicyKey;
 import org.sourceanalysis.app.artifact.ArtifactReference;
+import org.sourceanalysis.app.artifact.ArtifactStoreException;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepPayload;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
@@ -48,18 +49,35 @@ public final class JavaCodeIndexPublicationSpecifier {
   public static final String ARTIFACT_TYPE = "PROGRAM_GRAPHS_JAVA_CODE_INDEX";
   public static final String SCHEMA_VERSION = "java-code-index-v2";
   private static final String MODULE_VERSION = "v1";
+  private static final String PREPARED_RESULT_FILE = "source-preparation-result.json";
+  private static final String PREPARED_RESULT_TYPE = "SOURCE_PREPARATION_RESULT";
+  private static final String PREPARED_RESULT_SCHEMA = "source-preparation-result-v1";
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final Comparator<String> UTF8_ORDER =
       JavaCodeIndexPublicationSpecifier::compareUtf8;
 
   private final CanonicalModuleArtifactStore modules;
   private final CanonicalAnalysisStepArtifactStore steps;
+  private final CanonicalAnalysisStepArtifactStore sourceSteps;
   private final CanonicalJsonCodec json = new CanonicalJsonCodec();
 
   public JavaCodeIndexPublicationSpecifier(
       CanonicalModuleArtifactStore modules, CanonicalAnalysisStepArtifactStore steps) {
+    this(modules, steps, steps);
+  }
+
+  /**
+   * Creates the cross-policy technical publisher. Legacy callers use one store for both arguments;
+   * technical callers reopen the immutable R0 source receipt through its source-preparation policy
+   * store while publishing the R1 receipt through its technical policy store.
+   */
+  public JavaCodeIndexPublicationSpecifier(
+      CanonicalModuleArtifactStore modules,
+      CanonicalAnalysisStepArtifactStore steps,
+      CanonicalAnalysisStepArtifactStore sourceSteps) {
     this.modules = Objects.requireNonNull(modules, "module artifact store");
     this.steps = Objects.requireNonNull(steps, "analysis step artifact store");
+    this.sourceSteps = Objects.requireNonNull(sourceSteps, "source analysis-step artifact store");
   }
 
   /** Installs and fresh-reopens the one-file JDT Step 03 publication. */
@@ -68,29 +86,50 @@ public final class JavaCodeIndexPublicationSpecifier {
       ApplicationDiscoveryReference discovery,
       ArtifactControls controls,
       JavaCodeIndex index) {
+    return publish(source, discovery, controls, index, false, null);
+  }
+
+  /**
+   * Installs the technical R1 Step03 producer with exact R0 source provenance.
+   *
+   * <p>The historical producer remains v1 and retains its same-run guard. Technical v3 is the only
+   * producer allowed to bind an R1 application-discovery receipt to a distinct R0 source.
+   */
+  public ProgramGraphsReference publishTechnical(
+      VerifiedSourceInventoryReference source,
+      ApplicationDiscoveryReference discovery,
+      ArtifactControls controls,
+      JavaCodeIndex index,
+      ArtifactReference r0VerifiedSnapshot) {
+    return publish(source, discovery, controls, index, true, r0VerifiedSnapshot);
+  }
+
+  private ProgramGraphsReference publish(
+      VerifiedSourceInventoryReference source,
+      ApplicationDiscoveryReference discovery,
+      ArtifactControls controls,
+      JavaCodeIndex index,
+      boolean technical,
+      ArtifactReference r0VerifiedSnapshot) {
     try {
       Objects.requireNonNull(source, "verified source inventory");
       Objects.requireNonNull(discovery, "application discovery");
       Objects.requireNonNull(controls, "artifact controls");
       Objects.requireNonNull(index, "Java code index");
       ReopenedAnalysisStepPublication sourceStep =
-          reopen(source.publication(), AnalysisStepKey.VERIFIED_SOURCE_INVENTORY);
+          reopen(
+              source.publication(),
+              AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+              technical ? sourceSteps : steps);
       ReopenedAnalysisStepPublication discoveryStep =
           reopen(discovery.publication(), AnalysisStepKey.APPLICATION_DISCOVERY);
-      if (!sourceStep
-              .reference()
-              .address()
-              .runId()
-              .equals(discoveryStep.reference().address().runId())
-          || !sourceStep.receipt().controls().equals(controls)
-          || !discoveryStep.receipt().controls().equals(controls)
-          || !discoveryStep
-              .receipt()
-              .upstreamAnalysisStepReferences()
-              .equals(List.of(sourceStep.reference()))) {
+      if (!validPredecessors(sourceStep, discoveryStep, controls, technical)) {
         throw invalid();
       }
-      ArtifactReference snapshotRef = payloadRef(sourceStep, "verified-snapshot.json");
+      ArtifactReference snapshotRef =
+          technical
+              ? requireTechnicalSnapshot(sourceStep, r0VerifiedSnapshot)
+              : payloadRef(sourceStep, "verified-snapshot.json");
       if (!snapshotRef.equals(index.snapshotRef())) {
         throw invalid();
       }
@@ -99,7 +138,7 @@ public final class JavaCodeIndexPublicationSpecifier {
       CanonicalModulePayload payload = indexPayload(index);
       AnalysisStepModuleAddress address =
           new AnalysisStepModuleAddress(
-              sourceStep.reference().address().runId(),
+              discoveryStep.reference().address().runId(),
               AnalysisStepKey.PROGRAM_GRAPHS,
               7,
               "java-code-index");
@@ -122,7 +161,13 @@ public final class JavaCodeIndexPublicationSpecifier {
       var module =
           modules.install(
               new ModuleInstallRequest(
-                  address, MODULE_VERSION, upstream, controls, status, gaps, modulePayloads));
+                  address,
+                  technical ? "v3" : MODULE_VERSION,
+                  upstream,
+                  controls,
+                  status,
+                  gaps,
+                  modulePayloads));
       List<CanonicalAnalysisStepPayload> stepPayloads =
           modulePayloads.stream().map(JavaCodeIndexPublicationSpecifier::stepPayload).toList();
       var step =
@@ -144,12 +189,55 @@ public final class JavaCodeIndexPublicationSpecifier {
       }
       return new ProgramGraphsReference(step.reference());
     } catch (RuntimeException failure) {
+      if (technical && failure instanceof ArtifactStoreException) {
+        throw failure;
+      }
       if (failure instanceof IllegalArgumentException
           && "JAVA_CODE_INDEX_INVALID".equals(failure.getMessage())) {
         throw failure;
       }
       throw invalid(failure);
     }
+  }
+
+  private static boolean validPredecessors(
+      ReopenedAnalysisStepPublication source,
+      ReopenedAnalysisStepPublication discovery,
+      ArtifactControls controls,
+      boolean technical) {
+    boolean exactUpstream =
+        discovery.receipt().upstreamAnalysisStepReferences().equals(List.of(source.reference()));
+    if (!technical) {
+      return source.reference().address().runId().equals(discovery.reference().address().runId())
+          && source.receipt().controls().equals(controls)
+          && discovery.receipt().controls().equals(controls)
+          && exactUpstream;
+    }
+    return !source.reference().address().runId().equals(discovery.reference().address().runId())
+        && discovery.receipt().controls().equals(controls)
+        && exactUpstream;
+  }
+
+  /** Uses the exact fresh prepared-R0 snapshot reference rather than the retired legacy payload. */
+  private static ArtifactReference requireTechnicalSnapshot(
+      ReopenedAnalysisStepPublication sourceStep, ArtifactReference r0VerifiedSnapshot) {
+    if (r0VerifiedSnapshot == null) {
+      throw invalid();
+    }
+    List<ArtifactReference> preparedResults =
+        sourceStep.semanticPayloads().stream()
+            .filter(payload -> PREPARED_RESULT_FILE.equals(payload.descriptor().fileName()))
+            .filter(payload -> PREPARED_RESULT_TYPE.equals(payload.descriptor().artifactType()))
+            .filter(payload -> PREPARED_RESULT_SCHEMA.equals(payload.descriptor().schemaVersion()))
+            .map(
+                payload ->
+                    new ArtifactReference(
+                        payload.descriptor().artifactId(), payload.descriptor().sha256()))
+            .toList();
+    if (preparedResults.size() != 1 || !preparedResults.get(0).equals(r0VerifiedSnapshot)) {
+      throw invalid();
+    }
+    return preparedResults.get(0);
   }
 
   private CanonicalModulePayload indexPayload(JavaCodeIndex index) {
@@ -340,7 +428,14 @@ public final class JavaCodeIndexPublicationSpecifier {
   private ReopenedAnalysisStepPublication reopen(
       org.sourceanalysis.app.artifact.AnalysisStepPublicationReference reference,
       AnalysisStepKey key) {
-    ReopenedAnalysisStepPublication reopened = steps.reopen(reference);
+    return reopen(reference, key, steps);
+  }
+
+  private static ReopenedAnalysisStepPublication reopen(
+      org.sourceanalysis.app.artifact.AnalysisStepPublicationReference reference,
+      AnalysisStepKey key,
+      CanonicalAnalysisStepArtifactStore store) {
+    ReopenedAnalysisStepPublication reopened = store.reopen(reference);
     if (!reopened.reference().equals(reference) || reference.address().analysisStepKey() != key) {
       throw invalid();
     }

@@ -11,6 +11,9 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.sourceanalysis.app.analysis.code.CodeEngineException;
 import org.sourceanalysis.app.analysis.code.EngineDescriptor;
 import org.sourceanalysis.app.analysis.code.EntryCodeContext;
 import org.sourceanalysis.app.analysis.code.EntrySeed;
@@ -18,9 +21,11 @@ import org.sourceanalysis.app.analysis.code.JavaCodeSession;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndex;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndexReader;
+import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
+import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 
 /** RED tests for selecting a bounded subset of discovered entries at the public graph seam. */
@@ -93,6 +98,122 @@ class ProgramGraphsSelectedEntryExecutionTest {
     }
   }
 
+  @Test
+  void legacySameRunRejectsMismatchedControlsBeforeReadingOrCollectingTheJavaCatalog(
+      @TempDir Path temporary) {
+    try (ProgramGraphsPublicFixture fixture =
+        ProgramGraphsPublicFixture.createForJavaCodeIndex(temporary.resolve("fixture"))) {
+      ArtifactControls acceptedControls = fixture.artifactControls();
+      ArtifactControls mismatchedControls =
+          new ArtifactControls(
+              Sha256Digest.parse("f".repeat(64)),
+              acceptedControls.profileSha256(),
+              acceptedControls.schemaBundleSha256(),
+              acceptedControls.promptBundleSha256(),
+              acceptedControls.artifactPolicyRegistryRef());
+      assertThat(mismatchedControls).isNotEqualTo(acceptedControls);
+      CountingSession session =
+          new CountingSession(
+              fixture.sourceReader().reopen(fixture.sourceInventory()).snapshotId());
+
+      assertThatThrownBy(
+              () ->
+                  new ProgramGraphsExecution(
+                          fixture.sourceReader(),
+                          fixture.moduleArtifacts(),
+                          fixture.stepArtifacts())
+                      .execute(
+                          fixture.sourceInventory(),
+                          fixture.applicationDiscovery(),
+                          session,
+                          mismatchedControls))
+          .isInstanceOfSatisfying(
+              GraphReferenceException.class,
+              failure -> assertThat(failure.getMessage()).isEqualTo("GRAPH_REFERENCE_BROKEN"));
+
+      assertThat(session.catalogCalls).isZero();
+      assertThat(session.collectedEntryIds).isEmpty();
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        CodeEngineException.JDT_PROTOCOL_INVALID,
+        CodeEngineException.ENGINE_CONFIGURATION_INVALID,
+        CodeEngineException.SOURCE_INVALID,
+        CodeEngineException.JDT_INDEX_FAILED,
+        CodeEngineException.JDT_SYNTAX_PROTOCOL_INVALID,
+        CodeEngineException.JDT_SYNTAX_PROCESS_FAILED
+      })
+  void abortsIndexPublicationWhenSharedToolFails(String failureCode, @TempDir Path temporary) {
+    try (ProgramGraphsPublicFixture fixture =
+        ProgramGraphsPublicFixture.createForJavaCodeIndex(
+            temporary.resolve(failureCode.toLowerCase()))) {
+      CodeEngineException codeEngineFailure =
+          new CodeEngineException(failureCode, "injected code engine failure");
+      CountingSession session =
+          new CountingSession(
+              fixture.sourceReader().reopen(fixture.sourceInventory()).snapshotId(),
+              codeEngineFailure);
+
+      assertThatThrownBy(
+              () ->
+                  new ProgramGraphsExecution(
+                          fixture.sourceReader(),
+                          fixture.moduleArtifacts(),
+                          fixture.stepArtifacts())
+                      .execute(
+                          fixture.sourceInventory(),
+                          fixture.applicationDiscovery(),
+                          session,
+                          fixture.artifactControls()))
+          .isInstanceOfSatisfying(
+              CodeEngineException.class,
+              failure -> assertThat(failure.code()).isEqualTo(failureCode));
+      assertThat(session.collectedEntryIds).hasSize(1);
+    }
+  }
+
+  @Test
+  void keepsJdtQueryFailuresEntryLocal(@TempDir Path temporary) {
+    try (ProgramGraphsPublicFixture fixture =
+        ProgramGraphsPublicFixture.createForJavaCodeIndex(temporary.resolve("fixture"))) {
+      List<String> expectedEntryIds = entryIds(fixture);
+      CodeEngineException queryFailure =
+          new CodeEngineException(CodeEngineException.JDT_QUERY_FAILED, "one entry query failed");
+      CountingSession session =
+          new CountingSession(
+              fixture.sourceReader().reopen(fixture.sourceInventory()).snapshotId(), queryFailure);
+
+      ProgramGraphsReference graphs =
+          new ProgramGraphsExecution(
+                  fixture.sourceReader(), fixture.moduleArtifacts(), fixture.stepArtifacts())
+              .execute(
+                  fixture.sourceInventory(),
+                  fixture.applicationDiscovery(),
+                  session,
+                  fixture.artifactControls());
+
+      JavaCodeIndex reopened = new JavaCodeIndexReader(fixture.stepArtifacts()).reopen(graphs);
+      assertThat(session.collectedEntryIds).containsExactlyInAnyOrderElementsOf(expectedEntryIds);
+      assertThat(reopened.entries()).hasSize(expectedEntryIds.size());
+      assertThat(reopened.entries())
+          .filteredOn(entry -> entry.collectionStatus().equals("NOT_COLLECTED"))
+          .singleElement()
+          .satisfies(
+              entry -> {
+                assertThat(entry.context()).isNull();
+                assertThat(entry.collectionStatus()).isEqualTo("NOT_COLLECTED");
+                assertThat(entry.reason()).contains(CodeEngineException.JDT_QUERY_FAILED);
+              });
+      assertThat(reopened.entries())
+          .filteredOn(entry -> entry.collectionStatus().equals("COLLECTED"))
+          .singleElement()
+          .satisfies(entry -> assertThat(entry.context()).isNotNull());
+    }
+  }
+
   private static List<String> entryIds(ProgramGraphsPublicFixture fixture) {
     ReopenedAnalysisStepPublication discovery =
         fixture.stepArtifacts().reopen(fixture.applicationDiscovery().publication());
@@ -114,14 +235,22 @@ class ProgramGraphsSelectedEntryExecutionTest {
 
   private static final class CountingSession implements JavaCodeSession {
     private final String snapshotId;
+    private final CodeEngineException collectionFailure;
     private final List<String> collectedEntryIds = new ArrayList<>();
+    private int catalogCalls;
 
     private CountingSession(String snapshotId) {
+      this(snapshotId, null);
+    }
+
+    private CountingSession(String snapshotId, CodeEngineException collectionFailure) {
       this.snapshotId = snapshotId;
+      this.collectionFailure = collectionFailure;
     }
 
     @Override
     public JavaDeclarationCatalog catalog() {
+      catalogCalls++;
       return new JavaDeclarationCatalog(
           snapshotId,
           List.of("src/main/java/com/example/OrderController.java"),
@@ -135,6 +264,9 @@ class ProgramGraphsSelectedEntryExecutionTest {
     @Override
     public EntryCodeContext collect(EntrySeed entry) {
       collectedEntryIds.add(entry.entryId());
+      if (collectionFailure != null && collectedEntryIds.size() == 1) {
+        throw collectionFailure;
+      }
       EntryCodeContext.SourceSource source =
           new EntryCodeContext.SourceSource(
               "src/main/java/com/example/OrderController.java",

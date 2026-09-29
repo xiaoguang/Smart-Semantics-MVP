@@ -12,17 +12,18 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
   private final RunStoreHandle store;
   private final RepositoryAnalysisRunCoordinator coordinator;
   private final CompletedReportRenderer reportRenderer;
-  private final CompletedBusinessArtifactReader artifactReader;
+  private final CompletedBusinessArtifactReader businessArtifactReader;
+  private final CompletedTechnicalArtifactReader technicalArtifactReader;
 
   /** Uses the already-open configured store without accepting or exposing a filesystem path. */
   public LocalRepositoryAnalysisAgent(RunStoreHandle store) {
-    this(store, null, null, null);
+    this(store, null, null, null, null);
   }
 
   /** Uses an application-owned internal coordinator to execute the final report target. */
   public LocalRepositoryAnalysisAgent(
       RunStoreHandle store, RepositoryAnalysisRunCoordinator coordinator) {
-    this(store, coordinator, null, null);
+    this(store, coordinator, null, null, null);
   }
 
   /** Uses configured internal execution and read-only report-rendering dependencies. */
@@ -30,7 +31,7 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
       RunStoreHandle store,
       RepositoryAnalysisRunCoordinator coordinator,
       CompletedReportRenderer reportRenderer) {
-    this(store, coordinator, reportRenderer, null);
+    this(store, coordinator, reportRenderer, null, null);
   }
 
   /** Uses configured internal execution and read-only report/artifact dependencies. */
@@ -38,11 +39,22 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
       RunStoreHandle store,
       RepositoryAnalysisRunCoordinator coordinator,
       CompletedReportRenderer reportRenderer,
-      CompletedBusinessArtifactReader artifactReader) {
+      CompletedBusinessArtifactReader businessArtifactReader) {
+    this(store, coordinator, reportRenderer, businessArtifactReader, null);
+  }
+
+  /** Adds a distinct technical artifact reader without changing the business-reader contract. */
+  public LocalRepositoryAnalysisAgent(
+      RunStoreHandle store,
+      RepositoryAnalysisRunCoordinator coordinator,
+      CompletedReportRenderer reportRenderer,
+      CompletedBusinessArtifactReader businessArtifactReader,
+      CompletedTechnicalArtifactReader technicalArtifactReader) {
     this.store = Objects.requireNonNull(store, "run store");
     this.coordinator = coordinator;
     this.reportRenderer = reportRenderer;
-    this.artifactReader = artifactReader;
+    this.businessArtifactReader = businessArtifactReader;
+    this.technicalArtifactReader = technicalArtifactReader;
   }
 
   @Override
@@ -65,6 +77,24 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
     try {
       AnalysisRunOutput output = coordinator.executeIntent(request);
       RunStoreBootstrap.recordAnalysisRunOutput(store, running.runId(), output);
+      if (output.technicalOutput() != null) {
+        return RunStoreBootstrap.transitionAnalysisRun(
+            store,
+            running.runId(),
+            AnalysisRunLifecycleState.RUNNING,
+            output.technicalOutput().continuationStatus() == TechnicalContinuationStatus.BLOCKED
+                ? AnalysisRunLifecycleState.FAILED
+                : AnalysisRunLifecycleState.FINISHED);
+      }
+      if (output.sourcePreparationCheckpoint() != null) {
+        return RunStoreBootstrap.transitionAnalysisRun(
+            store,
+            running.runId(),
+            AnalysisRunLifecycleState.RUNNING,
+            output.hasUsablePreparedSource()
+                ? AnalysisRunLifecycleState.FINISHED
+                : AnalysisRunLifecycleState.FAILED);
+      }
       if (output.readingMaterialCheckpoint() != null
           && output.hasActivityCheckpoint()
           && !output.hasCompletedActivities()) {
@@ -107,8 +137,14 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
 
   @Override
   public ArtifactView artifact(ArtifactQuery query) {
-    Objects.requireNonNull(query, "business artifact query");
-    if (artifactReader == null) {
+    Objects.requireNonNull(query, "artifact query");
+    return query.technicalArtifactQueryKey() == null
+        ? businessArtifact(query)
+        : technicalArtifact(query);
+  }
+
+  private ArtifactView businessArtifact(ArtifactQuery query) {
+    if (businessArtifactReader == null) {
       throw new IllegalStateException("ANALYSIS_RUN_ARTIFACT_READ_NOT_CONFIGURED");
     }
     AnalysisRunId runId = AnalysisRunId.parse(query.runId());
@@ -120,6 +156,9 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
     AnalysisRunOutput output =
         RunStoreBootstrap.reopenAnalysisRunOutput(store, runId)
             .orElseThrow(() -> new IllegalStateException("ANALYSIS_RUN_OUTPUT_MISSING"));
+    if (output.technicalOutput() != null) {
+      throw new IllegalStateException("ANALYSIS_RUN_ARTIFACT_NOT_READY");
+    }
     if (run.lifecycleState() == AnalysisRunLifecycleState.FAILED
         && !(output.readingMaterialCheckpoint() != null
             && output.hasActivityCheckpoint()
@@ -134,7 +173,28 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
     } else {
       query.businessOutputArtifactKey().checkpoint(output);
     }
-    return artifactReader.read(runId, output, query.businessOutputArtifactKey(), query.maxBytes());
+    return businessArtifactReader.read(
+        runId, output, query.businessOutputArtifactKey(), query.maxBytes());
+  }
+
+  private ArtifactView technicalArtifact(ArtifactQuery query) {
+    if (technicalArtifactReader == null) {
+      throw new IllegalStateException("ANALYSIS_RUN_ARTIFACT_READ_NOT_CONFIGURED");
+    }
+    AnalysisRunId runId = AnalysisRunId.parse(query.runId());
+    AnalysisRunReference run = RunStoreBootstrap.reopenAnalysisRun(store, runId);
+    if (run.lifecycleState() != AnalysisRunLifecycleState.FINISHED
+        && run.lifecycleState() != AnalysisRunLifecycleState.FAILED) {
+      throw new IllegalStateException("ANALYSIS_RUN_ARTIFACT_NOT_READY");
+    }
+    AnalysisRunOutput output =
+        RunStoreBootstrap.reopenAnalysisRunOutput(store, runId)
+            .orElseThrow(() -> new IllegalStateException("ANALYSIS_RUN_OUTPUT_MISSING"));
+    if (output.technicalOutput() == null) {
+      throw new IllegalStateException("ANALYSIS_RUN_ARTIFACT_NOT_READY");
+    }
+    return technicalArtifactReader.read(
+        runId, output, query.technicalArtifactQueryKey(), query.maxBytes());
   }
 
   @Override

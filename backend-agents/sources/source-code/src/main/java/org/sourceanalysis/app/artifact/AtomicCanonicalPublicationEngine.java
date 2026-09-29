@@ -168,7 +168,7 @@ final class AtomicCanonicalPublicationEngine {
       }
       descriptors.sort(Comparator.comparing(ArtifactDescriptor::fileName, UTF8_ORDER));
       requireUniqueFileNamesAndArtifactIds(descriptors);
-      requireExpectedPayloadSet(request.address(), descriptors, true);
+      requireExpectedPayloadSet(request.address(), request.moduleVersion(), descriptors, true);
       if (descriptors.size() + 1 > limits.maxDirectoryEntries()) {
         throw invalidInstall();
       }
@@ -241,6 +241,7 @@ final class AtomicCanonicalPublicationEngine {
             && !isJavaCodeIndexGraphEnhancement(request.address(), payload))) {
       throw invalidInstall();
     }
+    requireVerifiedSourceInventoryModuleVersion(request, payload);
     if (!artifactPolicies.reference().equals(request.controls().artifactPolicyRegistryRef())) {
       throw policyMismatch();
     }
@@ -451,7 +452,7 @@ final class AtomicCanonicalPublicationEngine {
       List<VerifiedCanonicalPayload> payloads = readVerifiedPayloads(directory, receipt);
       List<ArtifactDescriptor> descriptors =
           payloads.stream().map(VerifiedCanonicalPayload::descriptor).toList();
-      requireExpectedPayloadSet(receipt.address(), descriptors, false);
+      requireExpectedPayloadSet(receipt.address(), receipt.moduleVersion(), descriptors, false);
       if (!moduleArtifactRoot(descriptors).equals(receipt.moduleArtifactRoot())) {
         throw invalidPublication();
       }
@@ -1031,6 +1032,7 @@ final class AtomicCanonicalPublicationEngine {
 
   private static void requireExpectedPayloadSet(
       ModulePublicationAddress address,
+      String moduleVersion,
       List<ArtifactDescriptor> descriptors,
       boolean installRequest) {
     if (!(address instanceof AnalysisStepModuleAddress analysisStepAddress)) {
@@ -1050,8 +1052,7 @@ final class AtomicCanonicalPublicationEngine {
                         : null;
                 case 3 ->
                     "publish".equals(analysisStepAddress.moduleKey())
-                        ? List.of(
-                            "source-input.json", "source-inventory.jsonl", "verified-snapshot.json")
+                        ? verifiedSourceInventoryPublicationFiles(moduleVersion)
                         : null;
                 default -> null;
               };
@@ -1076,6 +1077,15 @@ final class AtomicCanonicalPublicationEngine {
                             "capability-report.json",
                             "entry-points.jsonl",
                             "mapper-catalog.jsonl")
+                        : null;
+                case 5 ->
+                    "java-analysis-readiness".equals(analysisStepAddress.moduleKey())
+                        ? List.of(
+                            "java-analysis-readiness.json", "java-compilation-environment.json")
+                        : null;
+                case 6 ->
+                    "frontend-http-discovery".equals(analysisStepAddress.moduleKey())
+                        ? List.of("frontend-http-index.jsonl")
                         : null;
                 default -> null;
               };
@@ -1205,6 +1215,19 @@ final class AtomicCanonicalPublicationEngine {
             .equals(expectedFileNames)) {
       throw installRequest ? invalidInstall() : invalidPublication();
     }
+  }
+
+  private static List<String> verifiedSourceInventoryPublicationFiles(String moduleVersion) {
+    return switch (moduleVersion) {
+      case "v2" -> List.of("source-input.json", "source-inventory.jsonl", "verified-snapshot.json");
+      case "v3" ->
+          List.of(
+              "source-input.json",
+              "source-inventory.jsonl",
+              "source-issues.jsonl",
+              "source-preparation-result.json");
+      default -> null;
+    };
   }
 
   private static List<String> factPublicationFiles(List<ArtifactDescriptor> descriptors) {
@@ -1477,6 +1500,125 @@ final class AtomicCanonicalPublicationEngine {
     return new ArtifactStoreException("MODULE_PUBLICATION_COLLISION");
   }
 
+  private static void requireVerifiedSourceInventoryModuleVersion(
+      ModuleInstallRequest request, CanonicalModulePayload payload) {
+    if (!(request.address() instanceof AnalysisStepModuleAddress address)
+        || address.analysisStepKey() != AnalysisStepKey.VERIFIED_SOURCE_INVENTORY) {
+      return;
+    }
+    String expectedVersion =
+        switch (payload.schemaVersion()) {
+          case "verified-source-inventory-admitted-source-request-v2",
+              "verified-source-inventory-verified-source-index-v2",
+              "verified-source-inventory-source-input-v2",
+              "verified-source-inventory-source-inventory-v2",
+              "verified-snapshot-v2" ->
+              "v2";
+          case "verified-source-inventory-admitted-source-request-v3",
+              "verified-source-inventory-verified-source-index-v3",
+              "source-preparation-input-v1",
+              "source-preparation-inventory-v1",
+              "source-preparation-issues-v1",
+              "source-preparation-result-v1" ->
+              "v3";
+          default -> null;
+        };
+    if (expectedVersion != null && !expectedVersion.equals(request.moduleVersion())) {
+      throw invalidInstall();
+    }
+  }
+
+  private static ModuleArtifactContract verifiedSourceInventoryArtifactContract(
+      CanonicalModulePayload payload) {
+    String schemaVersion = payload.schemaVersion();
+    return switch (payload.artifactType()) {
+      case "VERIFIED_SOURCE_INVENTORY_ADMITTED_SOURCE_REQUEST" ->
+          schemaVersion.equals("verified-source-inventory-admitted-source-request-v2")
+                  || schemaVersion.equals("verified-source-inventory-admitted-source-request-v3")
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                  1,
+                  "request-admission",
+                  "admitted-source-request.json",
+                  CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON)
+              : null;
+      case "VERIFIED_SOURCE_INVENTORY_VERIFIED_SOURCE_INDEX" ->
+          schemaVersion.equals("verified-source-inventory-verified-source-index-v2")
+                  || schemaVersion.equals("verified-source-inventory-verified-source-index-v3")
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                  2,
+                  "source-index",
+                  "verified-source-index.json",
+                  CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON)
+              : null;
+      case "VERIFIED_SOURCE_INVENTORY_SOURCE_INPUT" ->
+          schemaVersion.equals("verified-source-inventory-source-input-v2")
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                  3,
+                  "publish",
+                  "source-input.json",
+                  CanonicalEnvelopeKind.STANDALONE_JSON)
+              : null;
+      case "VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY" ->
+          schemaVersion.equals("verified-source-inventory-source-inventory-v2")
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                  3,
+                  "publish",
+                  "source-inventory.jsonl",
+                  CanonicalEnvelopeKind.CANONICAL_JSONL)
+              : null;
+      case "VERIFIED_SNAPSHOT" ->
+          schemaVersion.equals("verified-snapshot-v2")
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                  3,
+                  "publish",
+                  "verified-snapshot.json",
+                  CanonicalEnvelopeKind.STANDALONE_JSON)
+              : null;
+      case "SOURCE_PREPARATION_INPUT" ->
+          schemaVersion.equals("source-preparation-input-v1")
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                  3,
+                  "publish",
+                  "source-input.json",
+                  CanonicalEnvelopeKind.STANDALONE_JSON)
+              : null;
+      case "SOURCE_PREPARATION_INVENTORY" ->
+          schemaVersion.equals("source-preparation-inventory-v1")
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                  3,
+                  "publish",
+                  "source-inventory.jsonl",
+                  CanonicalEnvelopeKind.CANONICAL_JSONL)
+              : null;
+      case "SOURCE_PREPARATION_ISSUES" ->
+          schemaVersion.equals("source-preparation-issues-v1")
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                  3,
+                  "publish",
+                  "source-issues.jsonl",
+                  CanonicalEnvelopeKind.CANONICAL_JSONL)
+              : null;
+      case "SOURCE_PREPARATION_RESULT" ->
+          schemaVersion.equals("source-preparation-result-v1")
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                  3,
+                  "publish",
+                  "source-preparation-result.json",
+                  CanonicalEnvelopeKind.STANDALONE_JSON)
+              : null;
+      default -> null;
+    };
+  }
+
   private static ModuleArtifactContract moduleArtifactContract(CanonicalModulePayload payload) {
     ModuleArtifactContract businessProcessContract = businessProcessArtifactContract(payload);
     if (businessProcessContract != null) {
@@ -1486,50 +1628,37 @@ final class AtomicCanonicalPublicationEngine {
     if (activityContract != null) {
       return activityContract;
     }
-    if ("VERIFIED_SOURCE_INVENTORY_ADMITTED_SOURCE_REQUEST".equals(payload.artifactType())
-        && "verified-source-inventory-admitted-source-request-v2".equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
-          1,
-          "request-admission",
-          "admitted-source-request.json",
-          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
+    ModuleArtifactContract verifiedSourceInventoryContract =
+        verifiedSourceInventoryArtifactContract(payload);
+    if (verifiedSourceInventoryContract != null) {
+      return verifiedSourceInventoryContract;
     }
-    if ("VERIFIED_SOURCE_INVENTORY_VERIFIED_SOURCE_INDEX".equals(payload.artifactType())
-        && "verified-source-inventory-verified-source-index-v2".equals(payload.schemaVersion())) {
+    if ("APPLICATION_DISCOVERY_JAVA_COMPILATION_ENVIRONMENT".equals(payload.artifactType())
+        && "java-compilation-environment-v1".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
-          AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
-          2,
-          "source-index",
-          "verified-source-index.json",
-          CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
-    }
-    if ("VERIFIED_SOURCE_INVENTORY_SOURCE_INPUT".equals(payload.artifactType())
-        && "verified-source-inventory-source-input-v2".equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
-          3,
-          "publish",
-          "source-input.json",
+          AnalysisStepKey.APPLICATION_DISCOVERY,
+          5,
+          "java-analysis-readiness",
+          "java-compilation-environment.json",
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
-    if ("VERIFIED_SOURCE_INVENTORY_SOURCE_INVENTORY".equals(payload.artifactType())
-        && "verified-source-inventory-source-inventory-v2".equals(payload.schemaVersion())) {
+    if ("APPLICATION_DISCOVERY_JAVA_ANALYSIS_READINESS".equals(payload.artifactType())
+        && "java-analysis-readiness-v1".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
-          AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
-          3,
-          "publish",
-          "source-inventory.jsonl",
+          AnalysisStepKey.APPLICATION_DISCOVERY,
+          5,
+          "java-analysis-readiness",
+          "java-analysis-readiness.json",
+          CanonicalEnvelopeKind.STANDALONE_JSON);
+    }
+    if ("APPLICATION_DISCOVERY_FRONTEND_HTTP_INDEX".equals(payload.artifactType())
+        && "frontend-http-index-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.APPLICATION_DISCOVERY,
+          6,
+          "frontend-http-discovery",
+          "frontend-http-index.jsonl",
           CanonicalEnvelopeKind.CANONICAL_JSONL);
-    }
-    if ("VERIFIED_SNAPSHOT".equals(payload.artifactType())
-        && "verified-snapshot-v2".equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
-          3,
-          "publish",
-          "verified-snapshot.json",
-          CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("APPLICATION_DISCOVERY_APPLICATION_PROFILE_DRAFT".equals(payload.artifactType())
         && "application-discovery-application-profile-draft-v2".equals(payload.schemaVersion())) {
@@ -1722,6 +1851,15 @@ final class AtomicCanonicalPublicationEngine {
     }
     if ("CODE_READING_MATERIAL_SET".equals(payload.artifactType())
         && "code-reading-material-set-v1".equals(payload.schemaVersion())) {
+      return new ModuleArtifactContract(
+          AnalysisStepKey.BUSINESS_FLOWS,
+          4,
+          "code-reading-materials",
+          "code-reading-materials.jsonl",
+          CanonicalEnvelopeKind.CANONICAL_JSONL);
+    }
+    if ("CODE_READING_MATERIAL_SET".equals(payload.artifactType())
+        && "code-reading-material-set-v2".equals(payload.schemaVersion())) {
       return new ModuleArtifactContract(
           AnalysisStepKey.BUSINESS_FLOWS,
           4,

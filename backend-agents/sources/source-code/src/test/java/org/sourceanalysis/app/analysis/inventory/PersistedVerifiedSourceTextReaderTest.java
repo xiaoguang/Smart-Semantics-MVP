@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -44,6 +46,7 @@ import org.sourceanalysis.app.capture.localgit.LocalGitCaptureRequest;
 import org.sourceanalysis.app.capture.localgit.LocalGitCommitCaptureAdapter;
 import org.sourceanalysis.app.capture.localgit.LocalGitSourceRegistry;
 import org.sourceanalysis.app.capture.localgit.RegisteredSourceCapture;
+import org.sourceanalysis.app.capture.localgit.RegisteredSourceFile;
 import org.sourceanalysis.app.capture.localgit.SourceRegistrationReference;
 
 class PersistedVerifiedSourceTextReaderTest {
@@ -113,13 +116,84 @@ class PersistedVerifiedSourceTextReaderTest {
             failure -> assertThat(failure.code()).isEqualTo("SNAPSHOT_REOPEN_MISMATCH"));
   }
 
+  @Test
+  void reopensLegacyInventoryIdentityWithoutReadingAnySourceBlob() throws Exception {
+    CapturedFixture captured = capturedFixture();
+    PublishedInventory published = publishedInventory(captured);
+    RegisteredSourceFile manifestEntry = captured.capture().manifestEntries().get(0);
+    Path blob =
+        captured
+            .workspace()
+            .resolve("snapshots")
+            .resolve(captured.capture().snapshotId())
+            .resolve("blobs")
+            .resolve(manifestEntry.sha256().value());
+    Files.delete(blob);
+    PersistedVerifiedSourceTextReader handle =
+        new PersistedVerifiedSourceTextReader(
+            new FixedAnalysisStepStore(published.reopened()), captured.registry());
+
+    Object identity =
+        reopenIdentity(handle, new VerifiedSourceInventoryReference(published.reference()));
+
+    assertThat(identityValue(identity, "sourceRegistrationRef"))
+        .isEqualTo(sourceRegistrationReference(captured.capture()));
+    assertThat(identityValue(identity, "snapshotId"))
+        .isEqualTo(ArtifactId.parse(captured.capture().snapshotId()));
+    assertThat(identityValue(identity, "inventoryScope"))
+        .isEqualTo(InventoryScope.completeCapture());
+    assertThat(Files.exists(blob)).isFalse();
+  }
+
+  @Test
+  void rejectsLegacyInventoryIdentityWhenItsSourceRegistrationWasCrossedWithAnotherCapture()
+      throws Exception {
+    CapturedFixture inventoryCapture = capturedFixture();
+    CapturedFixture otherCapture = capturedFixture("other-repository", "<other-project/>\n");
+    PublishedInventory published =
+        publishedInventory(inventoryCapture, otherCapture, inventoryCapture);
+    PersistedVerifiedSourceTextReader handle =
+        new PersistedVerifiedSourceTextReader(
+            new FixedAnalysisStepStore(published.reopened()), inventoryCapture.registry());
+
+    assertThatThrownBy(
+            () ->
+                reopenIdentity(handle, new VerifiedSourceInventoryReference(published.reference())))
+        .isInstanceOfSatisfying(
+            ApplicationDiscoveryException.class,
+            failure -> assertThat(failure.code()).isEqualTo("SNAPSHOT_REOPEN_MISMATCH"));
+  }
+
+  @Test
+  void rejectsLegacyInventoryIdentityWhenItsSnapshotBelongsToAnotherCapture() throws Exception {
+    CapturedFixture inventoryCapture = capturedFixture();
+    CapturedFixture otherCapture = capturedFixture("other-repository", "<other-project/>\n");
+    PublishedInventory published =
+        publishedInventory(inventoryCapture, inventoryCapture, otherCapture);
+    PersistedVerifiedSourceTextReader handle =
+        new PersistedVerifiedSourceTextReader(
+            new FixedAnalysisStepStore(published.reopened()), inventoryCapture.registry());
+
+    assertThatThrownBy(
+            () ->
+                reopenIdentity(handle, new VerifiedSourceInventoryReference(published.reference())))
+        .isInstanceOfSatisfying(
+            ApplicationDiscoveryException.class,
+            failure -> assertThat(failure.code()).isEqualTo("SNAPSHOT_REOPEN_MISMATCH"));
+  }
+
   private CapturedFixture capturedFixture() throws Exception {
+    return capturedFixture("repository", "<project/>\n");
+  }
+
+  private CapturedFixture capturedFixture(String repositoryName, String sourceText)
+      throws Exception {
     Path physicalDirectory = temporaryDirectory.toRealPath();
-    Path repository = physicalDirectory.resolve("repository");
+    Path repository = physicalDirectory.resolve(repositoryName);
     runGit(physicalDirectory, "init", repository.toString());
     runGit(repository, "config", "user.name", "Test User");
     runGit(repository, "config", "user.email", "test@example.invalid");
-    Files.writeString(repository.resolve("pom.xml"), "<project/>\n", StandardCharsets.UTF_8);
+    Files.writeString(repository.resolve("pom.xml"), sourceText, StandardCharsets.UTF_8);
     runGit(repository, "add", "pom.xml");
     runGit(repository, "commit", "-m", "fixture");
     String commit = runGit(repository, "rev-parse", "HEAD").trim();
@@ -135,11 +209,19 @@ class PersistedVerifiedSourceTextReaderTest {
                     reference("capture-policy", '1'),
                     reference("resource-budget", '2')));
     LocalGitSourceRegistry registry = new LocalGitSourceRegistry(workspace);
-    return new CapturedFixture(registry.reopen(registration.sourceRegistrationId()), registry);
+    return new CapturedFixture(
+        registry.reopen(registration.sourceRegistrationId()), registry, workspace);
   }
 
   private static PublishedInventory publishedInventory(CapturedFixture captured) {
-    RegisteredSourceCapture capture = captured.capture();
+    return publishedInventory(captured, captured, captured);
+  }
+
+  private static PublishedInventory publishedInventory(
+      CapturedFixture inventoryCapture,
+      CapturedFixture sourceInputCapture,
+      CapturedFixture snapshotCapture) {
+    RegisteredSourceCapture capture = inventoryCapture.capture();
     byte[] rawUtf8 = "<project/>\n".getBytes(StandardCharsets.UTF_8);
     ArtifactId fileId = fileId("pom.xml", "100644", rawUtf8.length, sha256(rawUtf8));
     ArtifactReference sourceInputId = reference("verified-source-inventory-source-input", '3');
@@ -152,7 +234,9 @@ class PersistedVerifiedSourceTextReaderTest {
     sourceInput.put("schemaVersion", "verified-source-inventory-source-input-v2");
     sourceInput.put("artifactType", "VERIFIED_SOURCE_INVENTORY_SOURCE_INPUT");
     sourceInput.put("artifactId", sourceInputId.artifactId().value());
-    sourceInput.put("sourceRegistrationId", capture.sourceRegistrationRef().artifactId().value());
+    sourceInput.put(
+        "sourceRegistrationId",
+        sourceInputCapture.capture().sourceRegistrationRef().artifactId().value());
     ObjectNode scope = sourceInput.putObject("inventoryScope");
     scope.put("kind", "COMPLETE_CAPTURE");
     scope.putNull("scopeRoot");
@@ -177,7 +261,7 @@ class PersistedVerifiedSourceTextReaderTest {
     snapshot.put("schemaVersion", "verified-snapshot-v2");
     snapshot.put("artifactType", "VERIFIED_SNAPSHOT");
     snapshot.put("artifactId", snapshotId.artifactId().value());
-    snapshot.put("snapshotId", capture.snapshotId());
+    snapshot.put("snapshotId", snapshotCapture.capture().snapshotId());
     snapshot.put("repositoryCompletionEligible", true);
     snapshot.set("capabilityProfileRef", referenceNode(capabilityProfile));
 
@@ -335,8 +419,54 @@ class PersistedVerifiedSourceTextReaderTest {
     }
   }
 
+  private static Object reopenIdentity(
+      PersistedVerifiedSourceTextReader reader, VerifiedSourceInventoryReference reference) {
+    try {
+      Method method =
+          PersistedVerifiedSourceTextReader.class.getDeclaredMethod(
+              "reopenIdentity", VerifiedSourceInventoryReference.class);
+      method.setAccessible(true);
+      return method.invoke(reader, reference);
+    } catch (InvocationTargetException failure) {
+      if (failure.getCause() instanceof RuntimeException runtime) {
+        throw runtime;
+      }
+      throw new AssertionError(
+          "metadata-only inventory identity reopen failed", failure.getCause());
+    } catch (NoSuchMethodException missingSeam) {
+      throw new AssertionError(
+          "PersistedVerifiedSourceTextReader must expose metadata-only Step01 identity reopen",
+          missingSeam);
+    } catch (ReflectiveOperationException failure) {
+      throw new AssertionError(
+          "metadata-only inventory identity reopen could not be invoked", failure);
+    }
+  }
+
+  private static Object identityValue(Object identity, String accessor) {
+    try {
+      Method method = identity.getClass().getDeclaredMethod(accessor);
+      method.setAccessible(true);
+      return method.invoke(identity);
+    } catch (InvocationTargetException failure) {
+      throw new AssertionError(
+          "inventory identity accessor failed: " + accessor, failure.getCause());
+    } catch (ReflectiveOperationException failure) {
+      throw new AssertionError("inventory identity must expose " + accessor, failure);
+    }
+  }
+
+  private static SourceRegistrationReference sourceRegistrationReference(
+      RegisteredSourceCapture capture) {
+    return new SourceRegistrationReference(
+        capture.sourceRegistrationRef().artifactId(),
+        capture.snapshotId(),
+        capture.snapshotManifestRef(),
+        capture.captureReceiptRef());
+  }
+
   private record CapturedFixture(
-      RegisteredSourceCapture capture, LocalGitSourceRegistry registry) {}
+      RegisteredSourceCapture capture, LocalGitSourceRegistry registry, Path workspace) {}
 
   private record PublishedInventory(
       AnalysisStepPublicationReference reference, ReopenedAnalysisStepPublication reopened) {}

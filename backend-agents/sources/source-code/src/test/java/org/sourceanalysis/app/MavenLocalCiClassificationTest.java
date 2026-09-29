@@ -29,6 +29,8 @@ class MavenLocalCiClassificationTest {
       REAL_COLLECTION_TEST.resolveSibling("JdtRealSourceCollectionIT.java");
   private static final Path REAL_HELPER_IT =
       REAL_COLLECTION_TEST.resolveSibling("JdtSyntaxHelperRealIT.java");
+  private static final Path REAL_SETTINGS_IT =
+      REAL_COLLECTION_TEST.resolveSibling("JdtProjectSettingsReadbackIT.java");
 
   @Test
   void declaresIndependentSkipProperties() throws Exception {
@@ -58,7 +60,9 @@ class MavenLocalCiClassificationTest {
     assertThat(childText(first(failsafe, "configuration"), "skipITs")).isEqualTo("${skipITs}");
     assertThat(descendantTexts(failsafe, "include"))
         .containsExactlyInAnyOrder(
-            "**/JdtRealSourceCollectionIT.java", "**/JdtSyntaxHelperRealIT.java");
+            "**/JdtRealSourceCollectionIT.java",
+            "**/JdtProjectSettingsReadbackIT.java",
+            "**/JdtSyntaxHelperRealIT.java");
   }
 
   @Test
@@ -67,6 +71,7 @@ class MavenLocalCiClassificationTest {
         .as("the real frozen-source test must not be a Surefire *Test")
         .isFalse();
     assertThat(Files.isRegularFile(REAL_COLLECTION_IT)).isTrue();
+    assertThat(Files.isRegularFile(REAL_SETTINGS_IT)).isTrue();
     assertThat(Files.isRegularFile(REAL_HELPER_IT)).isTrue();
   }
 
@@ -96,6 +101,24 @@ class MavenLocalCiClassificationTest {
         .as("explicit real-jdt-it selection must fail a missing-prerequisite preflight")
         .doesNotContain("org.junit.jupiter.api.Assumptions", "Assumptions.assumeTrue")
         .contains("throw new IllegalStateException", "Missing required real-jdt-it prerequisite");
+  }
+
+  @Test
+  void projectSettingsReadbackItIsSelfOwnedAndSeparatesTargetFromToolJdk() throws Exception {
+    String source = Files.readString(REAL_SETTINGS_IT);
+
+    assertThat(source)
+        .contains(
+            "sourceanalysis.jdt.testJavaHome",
+            "sourceanalysis.jdt.testTargetJavaHome",
+            "sourceanalysis.jdt.testSecondTargetJavaHome",
+            "sourceanalysis.jdt.testDistribution",
+            "JdtProjectSession.open",
+            "JdtWorkspaceBinding",
+            "readsDistinctModuleVmAndClasspathFromOneLanguageServerWorkspace",
+            "readProjectSettings",
+            "targetJavaHome")
+        .doesNotContain("sourceanalysis.jdt.testProject", ".catalog(", ".collect(");
   }
 
   @Test

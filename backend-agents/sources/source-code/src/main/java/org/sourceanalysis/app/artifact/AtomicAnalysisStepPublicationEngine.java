@@ -106,12 +106,19 @@ final class AtomicAnalysisStepPublicationEngine {
       ReceiptBytes receiptBytes = readReceipt(directory, reference.address().analysisStepKey());
       AnalysisStepReceipt receipt = receiptBytes.receipt();
       validateReceiptIdentity(receiptBytes, reference);
-      validateReceiptStructure(receipt);
+      if (!(receipt.publicationProvenance()
+          instanceof AnalysisStepPublisherModuleProvenance provenance)) {
+        throw invalidPublication();
+      }
       ReopenedModulePublication publisher =
-          moduleEngine.reopenModule(
-              ((AnalysisStepPublisherModuleProvenance) receipt.publicationProvenance())
-                  .publisherSpecificationModuleReference());
-      verifyPublisherMatchesReceipt(receipt, publisher);
+          moduleEngine.reopenModule(provenance.publisherSpecificationModuleReference());
+      StepContract contract =
+          stepContract(
+              receipt.address().analysisStepKey(),
+              publisher.reference().address(),
+              publisher.receipt().moduleVersion());
+      validateReceiptStructure(receipt, contract);
+      verifyPublisherMatchesReceipt(receipt, publisher, contract);
       List<VerifiedCanonicalPayload> semanticPayloads = readSemanticPayloads(directory, receipt);
       List<ArtifactDescriptor> descriptors =
           semanticPayloads.stream().map(VerifiedCanonicalPayload::descriptor).toList();
@@ -145,15 +152,18 @@ final class AtomicAnalysisStepPublicationEngine {
       if (isRetiredProducerAddress(provenance.publisherSpecificationModuleReference().address())) {
         throw invalidInstall();
       }
-      StepContract contract = stepContract(request);
+      ReopenedModulePublication publisher =
+          moduleEngine.reopenModule(provenance.publisherSpecificationModuleReference());
+      StepContract contract =
+          stepContract(
+              request.address().analysisStepKey(),
+              publisher.reference().address(),
+              publisher.receipt().moduleVersion());
       requireLimits(contract);
       requireReceiptState(contract, request, true);
       requireStrictPayloadOrder(request.semanticPayloads());
-      ReopenedModulePublication publisher =
-          moduleEngine.reopenModule(
-              ((AnalysisStepPublisherModuleProvenance) request.publicationProvenance())
-                  .publisherSpecificationModuleReference());
-      verifyPublisherAddress(request.address(), publisher.reference().address());
+      verifyPublisherAddress(
+          request.address(), publisher.reference().address(), publisher.receipt().moduleVersion());
       if (!request.controls().equals(publisher.receipt().controls())
           || request.status() != publisher.receipt().status()
           || !request.gapRefs().equals(publisher.receipt().gapRefs())) {
@@ -277,8 +287,11 @@ final class AtomicAnalysisStepPublicationEngine {
   }
 
   private void verifyPublisherAddress(
-      AnalysisStepPublicationAddress stepAddress, ModulePublicationAddress publisherAddress) {
-    StepContract contract = stepContract(stepAddress.analysisStepKey(), publisherAddress);
+      AnalysisStepPublicationAddress stepAddress,
+      ModulePublicationAddress publisherAddress,
+      String publisherModuleVersion) {
+    StepContract contract =
+        stepContract(stepAddress.analysisStepKey(), publisherAddress, publisherModuleVersion);
     if (!(publisherAddress instanceof AnalysisStepModuleAddress publisher)
         || !publisher.runId().equals(stepAddress.runId())
         || publisher.analysisStepKey() != stepAddress.analysisStepKey()
@@ -289,8 +302,14 @@ final class AtomicAnalysisStepPublicationEngine {
   }
 
   private void verifyPublisherMatchesReceipt(
-      AnalysisStepReceipt receipt, ReopenedModulePublication publisher) {
-    verifyPublisherAddress(receipt.address(), publisher.reference().address());
+      AnalysisStepReceipt receipt, ReopenedModulePublication publisher, StepContract contract) {
+    if (!(publisher.reference().address() instanceof AnalysisStepModuleAddress publisherAddress)
+        || !publisherAddress.runId().equals(receipt.address().runId())
+        || publisherAddress.analysisStepKey() != receipt.address().analysisStepKey()
+        || publisherAddress.moduleNumber() != contract.publisherModuleNumber()
+        || !contract.publisherModuleKey().equals(publisherAddress.moduleKey())) {
+      throw invalidPublication();
+    }
     if (!receipt.controls().equals(publisher.receipt().controls())
         || receipt.status() != publisher.receipt().status()
         || !receipt.gapRefs().equals(publisher.receipt().gapRefs())) {
@@ -371,8 +390,7 @@ final class AtomicAnalysisStepPublicationEngine {
     }
   }
 
-  private void validateReceiptStructure(AnalysisStepReceipt receipt) {
-    StepContract contract = stepContract(receipt);
+  private void validateReceiptStructure(AnalysisStepReceipt receipt, StepContract contract) {
     if (!(receipt.publicationProvenance() instanceof AnalysisStepPublisherModuleProvenance)
         || receipt.archiveManifest() != null) {
       throw invalidPublication();
@@ -734,36 +752,42 @@ final class AtomicAnalysisStepPublicationEngine {
     }
   }
 
-  private static StepContract stepContract(AnalysisStepInstallRequest request) {
-    return stepContract(
-        request.address().analysisStepKey(),
-        ((AnalysisStepPublisherModuleProvenance) request.publicationProvenance())
-            .publisherSpecificationModuleReference()
-            .address());
-  }
-
-  private static StepContract stepContract(AnalysisStepReceipt receipt) {
-    return stepContract(
-        receipt.address().analysisStepKey(),
-        ((AnalysisStepPublisherModuleProvenance) receipt.publicationProvenance())
-            .publisherSpecificationModuleReference()
-            .address());
-  }
-
   private static StepContract stepContract(
-      AnalysisStepKey analysisStepKey, ModulePublicationAddress publisherAddress) {
+      AnalysisStepKey analysisStepKey,
+      ModulePublicationAddress publisherAddress,
+      String publisherModuleVersion) {
     if (!(publisherAddress instanceof AnalysisStepModuleAddress publisher)
-        || publisher.analysisStepKey() != analysisStepKey) {
+        || publisher.analysisStepKey() != analysisStepKey
+        || publisherModuleVersion == null
+        || publisherModuleVersion.isBlank()) {
       throw invalidInstall();
     }
     return switch (analysisStepKey) {
       case VERIFIED_SOURCE_INVENTORY ->
-          new StepContract(
-              3,
-              "publish",
-              List.of(
-                  List.of("source-input.json", "source-inventory.jsonl", "verified-snapshot.json")),
-              List.of());
+          switch (publisherModuleVersion) {
+            case "v2" ->
+                new StepContract(
+                    3,
+                    "publish",
+                    List.of(
+                        List.of(
+                            "source-input.json",
+                            "source-inventory.jsonl",
+                            "verified-snapshot.json")),
+                    List.of());
+            case "v3" ->
+                new StepContract(
+                    3,
+                    "publish",
+                    List.of(
+                        List.of(
+                            "source-input.json",
+                            "source-inventory.jsonl",
+                            "source-issues.jsonl",
+                            "source-preparation-result.json")),
+                    List.of());
+            default -> throw invalidInstall();
+          };
       case APPLICATION_DISCOVERY ->
           new StepContract(
               4,

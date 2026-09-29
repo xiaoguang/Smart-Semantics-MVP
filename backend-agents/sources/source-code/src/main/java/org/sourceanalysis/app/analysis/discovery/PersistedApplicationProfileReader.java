@@ -16,6 +16,7 @@ import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
+import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
@@ -45,11 +46,31 @@ final class PersistedApplicationProfileReader {
 
   ApplicationProfile reopen(
       ApplicationProfileDraftReference draft, VerifiedSourceInventoryReference frozenSource) {
+    return reopen(draft, frozenSource, null);
+  }
+
+  /** Reopens a technical R1 profile without relabelling the immutable R0 source controls. */
+  ApplicationProfile reopenTechnical(
+      ApplicationProfileDraftReference draft,
+      VerifiedSourceInventoryReference frozenSource,
+      ArtifactControls executionControls) {
+    return reopen(
+        draft,
+        frozenSource,
+        Objects.requireNonNull(executionControls, "technical execution controls"));
+  }
+
+  private ApplicationProfile reopen(
+      ApplicationProfileDraftReference draft,
+      VerifiedSourceInventoryReference frozenSource,
+      ArtifactControls executionControls) {
     try {
       ReopenedModulePublication publication = moduleArtifacts.reopen(draft.publication());
       requireDraft(publication);
       VerifiedSourceTextSet source = sourceReader.reopen(frozenSource);
-      if (!publication.receipt().controls().equals(source.controls())
+      ArtifactControls profileControls =
+          executionControls == null ? source.controls() : executionControls;
+      if (!publication.receipt().controls().equals(profileControls)
           || !publication.receipt().upstreamArtifacts().contains(source.sourceInventoryRef())
           || !publication.receipt().upstreamArtifacts().contains(source.verifiedSnapshotRef())) {
         throw failure();
@@ -78,7 +99,7 @@ final class PersistedApplicationProfileReader {
           reference(body, "capabilityProfileRef"),
           source.sourceInventoryRef(),
           source.verifiedSnapshotRef(),
-          source.controls());
+          profileControls);
     } catch (ApplicationDiscoveryException failure) {
       throw failure;
     } catch (RuntimeException failure) {

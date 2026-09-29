@@ -25,6 +25,7 @@ import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 public final class VerifiedJavaProject {
 
   private final VerifiedSourceTextSet sourceTexts;
+  private final List<VerifiedSourceTextDocument> admittedDocuments;
   private final List<String> sourceRoots;
   private final List<ApprovedClasspathEntry> classpath;
   private final String sourceLevel;
@@ -33,13 +34,20 @@ public final class VerifiedJavaProject {
   private VerifiedJavaProject(
       VerifiedSourceTextSet sourceTexts,
       List<?> sourceRoots,
+      List<String> admittedSourcePaths,
       List<Path> classpath,
       String sourceLevel) {
     this.sourceTexts = Objects.requireNonNull(sourceTexts, "verified source texts");
     this.sourceRoots = normalizedSourceRoots(sourceRoots, sourceTexts.documents());
+    admittedDocuments =
+        admittedSourcePaths == null
+            ? sourceTexts.documents()
+            : admittedDocuments(sourceTexts.documents(), this.sourceRoots, admittedSourcePaths);
     this.classpath = approvedClasspath(classpath);
     this.sourceLevel = requireSourceLevel(sourceLevel);
-    fingerprint = fingerprint(sourceTexts, this.sourceRoots, this.classpath, this.sourceLevel);
+    fingerprint =
+        fingerprint(
+            sourceTexts, admittedDocuments, this.sourceRoots, this.classpath, this.sourceLevel);
   }
 
   /**
@@ -51,15 +59,35 @@ public final class VerifiedJavaProject {
       List<?> sourceRoots,
       List<Path> classpath,
       String sourceLevel) {
-    return new VerifiedJavaProject(sourceTexts, sourceRoots, classpath, sourceLevel);
+    return new VerifiedJavaProject(sourceTexts, sourceRoots, null, classpath, sourceLevel);
+  }
+
+  /**
+   * Narrows one complete R0 source inventory to the explicit source paths owned by one module. The
+   * project retains the original R0 identity and never re-labels this partition as a new complete
+   * capture.
+   */
+  public static VerifiedJavaProject fromVerifiedSourceTextSetPartition(
+      VerifiedSourceTextSet sourceTexts,
+      List<?> sourceRoots,
+      List<String> admittedSourcePaths,
+      List<Path> classpath,
+      String sourceLevel) {
+    return new VerifiedJavaProject(
+        sourceTexts, sourceRoots, admittedSourcePaths, classpath, sourceLevel);
   }
 
   public String snapshotId() {
     return sourceTexts.snapshotId();
   }
 
+  /** The exact R0 inventory identity retained while this project narrows its admitted files. */
+  public org.sourceanalysis.app.artifact.ArtifactReference sourceInventoryRef() {
+    return sourceTexts.sourceInventoryRef();
+  }
+
   public List<String> sourceEntries() {
-    return sourceTexts.documents().stream().map(VerifiedSourceTextDocument::path).toList();
+    return admittedDocuments.stream().map(VerifiedSourceTextDocument::path).toList();
   }
 
   public List<String> sourceRoots() {
@@ -96,7 +124,7 @@ public final class VerifiedJavaProject {
     validateForJdt();
     Path normalizedRoot = projectionRoot.toAbsolutePath().normalize();
     Files.createDirectories(normalizedRoot);
-    for (VerifiedSourceTextDocument document : sourceTexts.documents()) {
+    for (VerifiedSourceTextDocument document : admittedDocuments) {
       Path relative = verifiedRelativePath(document.path());
       Path destination = normalizedRoot.resolve(relative).normalize();
       if (!destination.startsWith(normalizedRoot)) {
@@ -116,11 +144,11 @@ public final class VerifiedJavaProject {
     }
     List<String> roots = new ArrayList<>(copied.size());
     for (Object value : copied) {
-      String normalized = normalizedSourceRoot(value, documents);
+      String normalized = normalizedSourceRoot(value);
       boolean containsDocument =
           documents.stream()
               .map(VerifiedSourceTextDocument::path)
-              .anyMatch(path -> path.startsWith(normalized + "/"));
+              .anyMatch(path -> underRoot(path, normalized));
       if (!containsDocument) {
         throw new IllegalArgumentException("source root has no admitted verified source document");
       }
@@ -132,8 +160,43 @@ public final class VerifiedJavaProject {
     return List.copyOf(roots);
   }
 
-  private static String normalizedSourceRoot(
-      Object value, List<VerifiedSourceTextDocument> documents) {
+  /**
+   * Retains the R0 identity while admitting only documents owned by this project's source roots. A
+   * module projection must not copy its sibling modules merely because they share one complete
+   * verified source inventory.
+   */
+  private static List<VerifiedSourceTextDocument> admittedDocuments(
+      List<VerifiedSourceTextDocument> documents,
+      List<String> roots,
+      List<String> admittedSourcePaths) {
+    List<String> paths =
+        List.copyOf(Objects.requireNonNull(admittedSourcePaths, "admitted source paths"));
+    if (paths.isEmpty() || new LinkedHashSet<>(paths).size() != paths.size()) {
+      throw new IllegalArgumentException("admitted source paths must be nonempty and unique");
+    }
+    java.util.Set<String> requested = new LinkedHashSet<>();
+    for (String path : paths) {
+      String normalized = verifiedRelativePath(path).toString().replace('\\', '/');
+      if (!roots.stream().anyMatch(root -> underRoot(normalized, root))) {
+        throw new IllegalArgumentException(
+            "admitted source path is outside its module source roots");
+      }
+      requested.add(normalized);
+    }
+    List<VerifiedSourceTextDocument> admitted =
+        documents.stream().filter(document -> requested.contains(document.path())).toList();
+    if (admitted.size() != requested.size()) {
+      throw new IllegalArgumentException(
+          "admitted source path is not in the verified source inventory");
+    }
+    return List.copyOf(admitted);
+  }
+
+  private static boolean underRoot(String path, String root) {
+    return root.isEmpty() || path.startsWith(root + "/");
+  }
+
+  private static String normalizedSourceRoot(Object value) {
     String sourceRoot;
     if (value instanceof String text) {
       sourceRoot = text;
@@ -196,13 +259,14 @@ public final class VerifiedJavaProject {
 
   private static String fingerprint(
       VerifiedSourceTextSet sourceTexts,
+      List<VerifiedSourceTextDocument> admittedDocuments,
       List<String> sourceRoots,
       List<ApprovedClasspathEntry> classpath,
       String sourceLevel) {
     try {
       MessageDigest digest = MessageDigest.getInstance("SHA-256");
       update(digest, sourceTexts.snapshotId());
-      sourceTexts.documents().stream()
+      admittedDocuments.stream()
           .sorted(Comparator.comparing(VerifiedSourceTextDocument::path))
           .forEach(
               document -> {

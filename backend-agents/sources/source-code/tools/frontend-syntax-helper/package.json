@@ -1,0 +1,17 @@
+{
+  "name": "sourceanalysis-frontend-syntax-helper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "src/main.cjs",
+  "description": "Finite Vue2 syntax helper for the Source Code Analysis Agent",
+  "scripts": {
+    "test": "node --test src/test/js/*.test.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "vue-eslint-parser": "10.4.1"
+  }
+}

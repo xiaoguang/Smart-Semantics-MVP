@@ -8,11 +8,14 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -29,19 +32,23 @@ import org.sourceanalysis.app.artifact.AnalysisStepPublicationAddress;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
 import org.sourceanalysis.app.artifact.AnalysisStepReceipt;
 import org.sourceanalysis.app.artifact.AnalysisStepReceiptId;
+import org.sourceanalysis.app.artifact.ArtifactDescriptor;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
+import org.sourceanalysis.app.artifact.CanonicalMediaType;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.InstalledAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.ModuleInstallRequest;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
+import org.sourceanalysis.app.artifact.ModuleReceipt;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 import org.sourceanalysis.app.artifact.Sha256Digest;
+import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 import org.sourceanalysis.app.capture.localgit.RegisteredSourceCapture;
 
 /** RED contract for the explicit offline repository-run-state-v2 to v3 material export. */
@@ -110,6 +117,82 @@ class MaterialCheckpointStateV3Test {
     assertThat(reopenOnly.reopenCount)
         .as("v3 model-only read must reopen only M10; no Builder/JDT/upstream step is allowed")
         .isEqualTo(1);
+  }
+
+  @Test
+  void consumerReopenRejectsM10LinkedToDifferentSameRunBusinessFlowsPublication() throws Exception {
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = fixture();
+    ReopenedAnalysisStepPublication linkedFlows =
+        businessFlowsPublication(fixture.checkpoint(), 'a');
+    ReopenedAnalysisStepPublication substitutedFlows =
+        businessFlowsPublication(fixture.checkpoint(), 'b');
+    CanonicalModuleArtifactStore modules =
+        moduleStoreWithUpstream(
+            fixture, artifactReference(linkedFlows.semanticPayloads().get(0).descriptor()));
+    CanonicalAnalysisStepArtifactStore steps = businessFlowsStore(linkedFlows, substitutedFlows);
+    Path v2 = temporaryDirectory.resolve("linked-v2.json");
+    Path v3 = temporaryDirectory.resolve("mismatched-v3.json");
+    CanonicalJsonCodec json = new CanonicalJsonCodec();
+    writeV2(json, v2, linkedFlows.reference());
+    exportV2ToV3(
+        v2,
+        v3,
+        BASE_CONFIGURATION_SHA256,
+        steps,
+        modules,
+        fixture.checkpoint(),
+        MATERIAL_PROFILE,
+        MATERIAL_MODULE_VERSION,
+        json);
+
+    ObjectNode substitutedState =
+        (ObjectNode) json.parseCanonical(ImmutableBytes.copyOf(Files.readAllBytes(v3)));
+    substitutedState.set("businessFlowsPublication", flowJson(substitutedFlows.reference()));
+    substitutedState.put(
+        "materialBasisSha256",
+        RepositoryRunStateV3.materialBasisSha256(
+            json,
+            substitutedState.path("businessFlowsPublication"),
+            substitutedState.path("materialProfile"),
+            substitutedState.path("materialModuleVersion").asText()));
+    Files.write(v3, json.encodeCanonical(substitutedState).copyToByteArray());
+
+    RepositoryRunStateV3.SavedState state = RepositoryRunStateV3.load(v3, json);
+    assertThat(state.sourceRunId()).isEqualTo(fixture.checkpoint().address().runId());
+    assertThat(state.businessFlows().publication()).isEqualTo(substitutedFlows.reference());
+    assertThat(state.materialsCheckpoint()).isEqualTo(fixture.checkpoint());
+
+    assertThatThrownBy(() -> RepositoryRunStateV3.verifyMaterialLink(state, steps, modules))
+        .hasMessageContaining("BUSINESS_MATERIAL_CHECKPOINT_INVALID");
+  }
+
+  @Test
+  void consumerReopenAcceptsTheExactBusinessFlowsPublicationLinkedByM10Receipt() throws Exception {
+    LegacyM10CheckpointFixture.HistoricalCheckpoint fixture = fixture();
+    ReopenedAnalysisStepPublication linkedFlows =
+        businessFlowsPublication(fixture.checkpoint(), 'c');
+    CanonicalModuleArtifactStore modules =
+        moduleStoreWithUpstream(
+            fixture, artifactReference(linkedFlows.semanticPayloads().get(0).descriptor()));
+    CanonicalAnalysisStepArtifactStore steps = businessFlowsStore(linkedFlows);
+    Path v2 = temporaryDirectory.resolve("exact-link-v2.json");
+    Path v3 = temporaryDirectory.resolve("exact-link-v3.json");
+    CanonicalJsonCodec json = new CanonicalJsonCodec();
+    writeV2(json, v2, linkedFlows.reference());
+    exportV2ToV3(
+        v2,
+        v3,
+        BASE_CONFIGURATION_SHA256,
+        steps,
+        modules,
+        fixture.checkpoint(),
+        MATERIAL_PROFILE,
+        MATERIAL_MODULE_VERSION,
+        json);
+
+    RepositoryRunStateV3.SavedState state = RepositoryRunStateV3.load(v3, json);
+    assertThat(state.businessFlows().publication()).isEqualTo(linkedFlows.reference());
+    RepositoryRunStateV3.verifyMaterialLink(state, steps, modules);
   }
 
   @Test
@@ -308,6 +391,120 @@ class MaterialCheckpointStateV3Test {
         AnalysisStepArtifactRoot.parse("analysis-step-root:" + "1".repeat(64)),
         AnalysisStepReceiptId.parse("analysis-step-receipt:" + "2".repeat(64)),
         new Sha256Digest("3".repeat(64)));
+  }
+
+  private static ReopenedAnalysisStepPublication businessFlowsPublication(
+      ModulePublicationReference materialCheckpoint, char marker) {
+    AnalysisRunId runId = ((AnalysisStepModuleAddress) materialCheckpoint.address()).runId();
+    byte[] bytes = ("{\"businessFlows\":\"" + marker + "\"}").getBytes(StandardCharsets.UTF_8);
+    String digest = digest(bytes);
+    ArtifactDescriptor descriptor =
+        new ArtifactDescriptor(
+            "business-flows.json",
+            "BUSINESS_FLOWS",
+            "business-flows-v1",
+            ArtifactId.parse("business-flows:" + digest),
+            CanonicalMediaType.APPLICATION_JSON,
+            bytes.length,
+            new Sha256Digest(digest));
+    AnalysisStepPublicationReference reference =
+        new AnalysisStepPublicationReference(
+            new AnalysisStepPublicationAddress(runId, AnalysisStepKey.BUSINESS_FLOWS),
+            AnalysisStepArtifactRoot.parse("analysis-step-root:" + digest),
+            AnalysisStepReceiptId.parse("analysis-step-receipt:" + digest),
+            new Sha256Digest(digest));
+    AnalysisStepReceipt receipt =
+        new AnalysisStepReceipt(
+            "analysis-step-receipt-v1",
+            reference.analysisStepReceiptId(),
+            reference.address(),
+            null,
+            List.of(),
+            null,
+            ModuleCompletionStatus.SUCCEEDED,
+            List.of(descriptor),
+            null,
+            reference.analysisStepArtifactRoot(),
+            List.of());
+    return new ReopenedAnalysisStepPublication(
+        reference,
+        receipt,
+        List.of(new VerifiedCanonicalPayload(descriptor, ImmutableBytes.copyOf(bytes))),
+        null);
+  }
+
+  private static CanonicalAnalysisStepArtifactStore businessFlowsStore(
+      ReopenedAnalysisStepPublication... publications) {
+    Map<AnalysisStepPublicationReference, ReopenedAnalysisStepPublication> byReference =
+        java.util.Arrays.stream(publications)
+            .collect(
+                java.util.stream.Collectors.toUnmodifiableMap(
+                    ReopenedAnalysisStepPublication::reference, publication -> publication));
+    return new CanonicalAnalysisStepArtifactStore() {
+      @Override
+      public InstalledAnalysisStepPublication install(AnalysisStepInstallRequest request) {
+        throw new AssertionError("material-link verification must not install BusinessFlows");
+      }
+
+      @Override
+      public ReopenedAnalysisStepPublication reopen(AnalysisStepPublicationReference reference) {
+        ReopenedAnalysisStepPublication publication = byReference.get(reference);
+        if (publication == null) {
+          throw new IllegalArgumentException("unknown test BusinessFlows publication");
+        }
+        return publication;
+      }
+    };
+  }
+
+  private static CanonicalModuleArtifactStore moduleStoreWithUpstream(
+      LegacyM10CheckpointFixture.HistoricalCheckpoint fixture, ArtifactReference upstream) {
+    CanonicalModuleArtifactStore delegate = fixture.artifacts();
+    return new CanonicalModuleArtifactStore() {
+      @Override
+      public org.sourceanalysis.app.artifact.InstalledModulePublication install(
+          ModuleInstallRequest request) {
+        throw new AssertionError("material-link verification must not install M10");
+      }
+
+      @Override
+      public org.sourceanalysis.app.artifact.CanonicalArtifactPolicy resolveArtifactPolicy(
+          org.sourceanalysis.app.artifact.ArtifactPolicyKey key) {
+        throw new AssertionError("material-link verification must not resolve a producer policy");
+      }
+
+      @Override
+      public ReopenedModulePublication reopen(ModulePublicationReference reference) {
+        ReopenedModulePublication publication = delegate.reopen(reference);
+        ModuleReceipt original = publication.receipt();
+        ModuleReceipt linkedReceipt =
+            new ModuleReceipt(
+                original.schemaVersion(),
+                original.moduleReceiptId(),
+                original.address(),
+                original.moduleVersion(),
+                List.of(upstream),
+                original.controls(),
+                original.status(),
+                original.payloadArtifacts(),
+                original.moduleArtifactRoot(),
+                original.gapRefs());
+        return new ReopenedModulePublication(
+            publication.reference(), linkedReceipt, publication.payloads());
+      }
+    };
+  }
+
+  private static ArtifactReference artifactReference(ArtifactDescriptor descriptor) {
+    return new ArtifactReference(descriptor.artifactId(), descriptor.sha256());
+  }
+
+  private static String digest(byte[] bytes) {
+    try {
+      return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+    } catch (NoSuchAlgorithmException unavailable) {
+      throw new AssertionError("SHA-256 is unavailable", unavailable);
+    }
   }
 
   private static CanonicalAnalysisStepArtifactStore historicalFlowStore(

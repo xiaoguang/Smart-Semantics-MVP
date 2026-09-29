@@ -17,7 +17,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import org.sourceanalysis.app.analysis.discovery.DiscoveryProfile;
 import org.sourceanalysis.app.analysis.flow.capsule.CapsuleProjectionProfile;
 import org.sourceanalysis.app.analysis.flow.compiler.FlowCompilationProfile;
 import org.sourceanalysis.app.analysis.interpretation.activity.ActivityExplanationProfile;
@@ -28,15 +27,15 @@ import org.sourceanalysis.app.analysis.inventory.ProfileView;
 import org.sourceanalysis.app.analysis.knowledge.ProcessDiscoveryProfile;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialProfile;
 import org.sourceanalysis.app.analysis.persistence.PersistenceConfiguration;
+import org.sourceanalysis.app.artifact.AnalysisRunId;
+import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
 import org.sourceanalysis.app.artifact.ArtifactStoreLimits;
 import org.sourceanalysis.app.artifact.CanonicalArtifactPolicyRegistry;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
-import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.Sha256Digest;
 import org.sourceanalysis.app.runtime.EffectiveEngineConfiguration;
 import org.sourceanalysis.app.runtime.EngineConfigurationLoader;
-import org.sourceanalysis.app.runtime.PersistedTechnicalRunConfiguration;
 import org.sourceanalysis.app.runtime.modeljob.ModelJobCapacityProfile;
 
 /** Configuration and model-service declarations consumed by the configured execution service. */
@@ -666,7 +665,8 @@ record RepositoryRunConfiguration(
     int maxMaterialsToStart,
     CodeReadingMaterialProfile readingMaterialProfile,
     ActivityReadingProfile activityReadingProfile,
-    CanonicalArtifactPolicyRegistry historicalActivityPolicyRegistry) {
+    CanonicalArtifactPolicyRegistry historicalActivityPolicyRegistry,
+    SourceSelection sourceSelection) {
 
   RepositoryRunConfiguration {
     if (activityReadingProfile == null && activityProfile != null) {
@@ -752,6 +752,7 @@ record RepositoryRunConfiguration(
         maxMaterialsToStart,
         null,
         null,
+        null,
         null);
   }
 
@@ -832,7 +833,57 @@ record RepositoryRunConfiguration(
         maxMaterialsToStart,
         readingMaterialProfile,
         null,
+        null,
         null);
+  }
+
+  /**
+   * Parses the explicit v4 source branch without changing the historical v2/v3 configuration
+   * reader. The execution wiring binds this declaration to a {@code SelectedSourceBasis} later,
+   * after reopening the declared upstream source.
+   */
+  static SourceSelection parseSourceSelection(String schemaVersion, ObjectNode source) {
+    if (!REPOSITORY_CONFIG_V4.equals(schemaVersion) || source == null) {
+      throw failure("CONFIGURATION_INVALID");
+    }
+    String kind = requiredText(source, "kind");
+    try {
+      return switch (kind) {
+        case "PREPARED_SOURCE" -> {
+          requireFields(source, Set.of("kind", "preparationRunId"));
+          yield new SourceSelection(
+              SourceSelection.Kind.PREPARED_SOURCE,
+              AnalysisRunId.parse(requiredText(source, "preparationRunId")),
+              null);
+        }
+        case "LEGACY_REGISTRATION" -> {
+          requireFields(source, Set.of("kind", "sourceRegistrationId"));
+          ArtifactId registration = ArtifactId.parse(requiredText(source, "sourceRegistrationId"));
+          if (!registration.value().startsWith("source-registration:")) {
+            throw failure("CONFIGURATION_INVALID");
+          }
+          yield new SourceSelection(SourceSelection.Kind.LEGACY_REGISTRATION, null, registration);
+        }
+        default -> throw failure("CONFIGURATION_INVALID");
+      };
+    } catch (RuntimeException invalid) {
+      if (invalid instanceof SourceAnalysisExecution.LauncherException) {
+        throw invalid;
+      }
+      throw failure("CONFIGURATION_INVALID", invalid);
+    }
+  }
+
+  /**
+   * Loads only the v4 source branch for callers that must bind an independently reopened source
+   * before constructing an analysis batch. The full configuration reader remains unchanged until
+   * the production v4 entrypoint is wired.
+   */
+  static SourceSelection loadSourceSelection(String schemaVersion, ObjectNode source) {
+    if (!REPOSITORY_CONFIG_V4.equals(schemaVersion)) {
+      throw failure("CONFIGURATION_INVALID");
+    }
+    return parseSourceSelection(schemaVersion, source);
   }
 
   static RepositoryRunConfiguration load(Path configPath) {
@@ -850,18 +901,27 @@ record RepositoryRunConfiguration(
             "technical"),
         Set.of("business", "inputPolicyRegistry", "historicalActivityPolicyRegistry"));
     String schemaVersion = requiredText(document, "schemaVersion");
-    if (!Set.of(HISTORICAL_CONFIG_SCHEMA, CONFIG_SCHEMA).contains(schemaVersion)) {
+    if (!Set.of(HISTORICAL_CONFIG_SCHEMA, CONFIG_SCHEMA, REPOSITORY_CONFIG_V4)
+        .contains(schemaVersion)) {
       throw failure("CONFIGURATION_INVALID");
     }
 
     ObjectNode source = object(document, "source");
-    requireFields(source, Set.of("commitId", "declaredRepositoryIdentity", "repositoryPath"));
-    String commitId = requiredText(source, "commitId");
-    if (!commitId.matches("[0-9a-f]{40}")) {
-      throw failure("CONFIGURATION_INVALID");
+    SourceSelection sourceSelection = null;
+    String commitId = null;
+    String repositoryIdentity = null;
+    Path repositoryPath = null;
+    if (REPOSITORY_CONFIG_V4.equals(schemaVersion)) {
+      sourceSelection = loadSourceSelection(schemaVersion, source);
+    } else {
+      requireFields(source, Set.of("commitId", "declaredRepositoryIdentity", "repositoryPath"));
+      commitId = requiredText(source, "commitId");
+      if (!commitId.matches("[0-9a-f]{40}")) {
+        throw failure("CONFIGURATION_INVALID");
+      }
+      repositoryIdentity = requiredText(source, "declaredRepositoryIdentity");
+      repositoryPath = absolutePath(requiredText(source, "repositoryPath"), "repository path");
     }
-    String repositoryIdentity = requiredText(source, "declaredRepositoryIdentity");
-    Path repositoryPath = absolutePath(requiredText(source, "repositoryPath"), "repository path");
 
     ObjectNode paths = object(document, "paths");
     requireFields(paths, Set.of("captureWorkspace", "gitExecutable", "runStore", "stateFile"));
@@ -873,7 +933,7 @@ record RepositoryRunConfiguration(
 
     ObjectNode sourceAnalysis = object(document, "sourceAnalysis");
     Set<String> optionalSourceAnalysisFields =
-        CONFIG_SCHEMA.equals(schemaVersion)
+        Set.of(CONFIG_SCHEMA, REPOSITORY_CONFIG_V4).contains(schemaVersion)
             ? Set.of("activityReading", "jdt", "modelJobs", "persistence")
             : Set.of("jdt", "modelJobs", "persistence");
     requireFieldsAllowingOptional(
@@ -1092,7 +1152,8 @@ record RepositoryRunConfiguration(
         maxMaterialsToStart,
         configuredReadingMaterials,
         activityReadingProfile,
-        historicalActivityPolicies);
+        historicalActivityPolicies,
+        sourceSelection);
   }
 
   private static ActivityReadingLimits activityReadingLimits(ObjectNode document) {
@@ -1173,23 +1234,32 @@ record RepositoryRunConfiguration(
     }
     return processDiscoveryProfile;
   }
+}
 
-  PersistedTechnicalRunConfiguration technicalConfiguration(ImmutableBytes frozenBytes) {
-    if (readingMaterialProfile == null) {
-      throw failure("CONFIGURATION_INVALID");
+/** Exact mutually exclusive v4 source-selection declaration before upstream reopening. */
+record SourceSelection(Kind kind, AnalysisRunId preparationRunId, ArtifactId sourceRegistrationId) {
+
+  enum Kind {
+    PREPARED_SOURCE,
+    LEGACY_REGISTRATION
+  }
+
+  SourceSelection {
+    Objects.requireNonNull(kind, "source selection kind");
+    switch (kind) {
+      case PREPARED_SOURCE -> {
+        if (preparationRunId == null || sourceRegistrationId != null) {
+          throw new IllegalArgumentException(
+              "prepared source selection requires only a preparation run ID");
+        }
+      }
+      case LEGACY_REGISTRATION -> {
+        if (preparationRunId != null || sourceRegistrationId == null) {
+          throw new IllegalArgumentException(
+              "legacy source selection requires only a source registration ID");
+        }
+      }
     }
-    return new PersistedTechnicalRunConfiguration(
-        frozenBytes,
-        verificationPolicyRef,
-        capabilityProfileRef,
-        inventoryProfile,
-        storeLimits,
-        DiscoveryProfile.standard(),
-        persistenceConfiguration,
-        readingMaterialProfile,
-        engineConfiguration,
-        approvedClasspath,
-        selectedEntryIds);
   }
 }
 

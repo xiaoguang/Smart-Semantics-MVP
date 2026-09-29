@@ -341,15 +341,29 @@ class ActivityReadingCoordinatorGuardrailTest {
   }
 
   @Test
-  void refusesAnUnsplittableSelectedUnitBeforeAnyDraftRequest() {
+  void retainsAnUnsplittableSelectedUnitAsIncompleteWithoutAHiddenDraft() {
     ActivityMaterialView view = neutralView(2, 20, 4_000);
-    ScriptedProvider provider = new ScriptedProvider(response("[]", "[\"M2\"]", "[]"));
+    ScriptedProvider provider =
+        new ScriptedProvider(
+            response("[]", "[\"M2\"]", "[]"),
+            responseV2(
+                "[]",
+                "[]",
+                "[{\"sliceKey\":\"oversized\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"selected full body\"}]",
+                "[\"oversized\"]",
+                "[]",
+                true));
 
-    assertThatThrownBy(() -> coordinate(provider, view, boundedProfile(7_000, 3_000, 4)))
-        .hasMessageStartingWith("ACTIVITY_READING_PLAN_INPUT_CAPACITY:selection");
+    ActivityReadingPlan plan = coordinate(provider, view, boundedProfile(7_000, 3_000, 4));
+
+    assertThat(plan.slices()).isEmpty();
+    assertThat(stringList(plan.toPrivateRecord().path("currentOpenScopeIssues")))
+        .anyMatch(issue -> issue.startsWith("INPUT_CAPACITY_EXCEEDED:oversized:"));
+    assertThat(provider.inputs().get(1).path("completeUnitsStatus").asText())
+        .isEqualTo("PARTIAL_FOR_CAPACITY");
     assertThat(provider.taskKinds())
-        .as("a complete oversized unit is not truncated and cannot reach Activity DRAFT")
-        .containsExactly("ACTIVITY_READING_PLAN")
+        .as("an oversized complete unit is not silently accepted as an executable slice")
+        .containsExactly("ACTIVITY_READING_PLAN", "ACTIVITY_READING_PLAN")
         .doesNotContain("ACTIVITY_DRAFT");
   }
 
@@ -620,6 +634,160 @@ class ActivityReadingCoordinatorGuardrailTest {
         .isFalse();
     assertThat(stringList(input.path("methods"), "ref")).containsExactlyInAnyOrder("M1", "M2");
     assertThat(selected.modelInputJson().size()).isLessThan(45_000);
+  }
+
+  @Test
+  void oversizedCallOutlinesUseAReadableBoundaryDirectoryWithoutDroppingSource() throws Exception {
+    ActivityMaterialView view = neutralView(3, 40, 100);
+    CanonicalJsonCodec json = new CanonicalJsonCodec();
+    ObjectNode full =
+        (ObjectNode)
+            json.parseCanonical(new ActivityMaterialProjector().materialize(view).modelInputJson());
+    for (int index = 0; index < 180; index++) {
+      ObjectNode call =
+          ((com.fasterxml.jackson.databind.node.ArrayNode) full.path("calls")).addObject();
+      call.put("ref", "C" + index);
+      call.put("entryKey", "E1");
+      call.put("callerMethodRef", "M1");
+      call.put("kind", "METHOD");
+      call.put("expression", "service.inspect(customerId)");
+      call.put("resolution", "CANDIDATES");
+      call.put("deferred", true);
+      call.putArray("actualArguments").addObject().put("expression", "customerId");
+      ObjectNode target = call.putArray("targets").addObject();
+      target.put("methodRef", index == 0 ? "M2" : "M3");
+      target.put("reason", "TARGET_DECLARATION_HAS_NO_BODY");
+      target.put("displayName", "file:///tool/session/" + "x".repeat(200));
+    }
+    ActivityReadingCoordinator coordinator =
+        new ActivityReadingCoordinator(
+            request -> {
+              throw new AssertionError("no model request");
+            });
+    Method bounded =
+        ActivityReadingCoordinator.class.getDeclaredMethod(
+            "boundedSelectedPacket",
+            ActivityMaterialView.class,
+            ObjectNode.class,
+            Set.class,
+            List.class,
+            CanonicalJsonCodec.class,
+            ActivityReadingProfile.class);
+    bounded.setAccessible(true);
+    ActivityReadingProfile profile = ActivityReadingProfile.defaults(30_000, 1_000);
+    ActivityReadingPacket selected =
+        (ActivityReadingPacket)
+            bounded.invoke(coordinator, view, full, Set.of("M2"), List.of("E1"), json, profile);
+    JsonNode input = json.parseCanonical(selected.modelInputJson());
+
+    assertThat(profile.fitsDraftAndMaximumReview(selected.modelInputJson().size())).isTrue();
+    assertThat(input.path("methods").get(0).path("code").asText())
+        .isEqualTo(full.path("methods").get(0).path("code").asText());
+    assertThat(input.path("calls")).hasSize(1);
+    assertThat(input.path("calls").get(0).path("targets").get(0).path("methodRef").asText())
+        .isEqualTo("M2");
+    assertThat(stringList(input.path("boundaryCallFields")))
+        .containsExactly(
+            "ref",
+            "entryKey",
+            "callerMethodRef",
+            "kind",
+            "expression",
+            "resolution",
+            "deferred",
+            "targets");
+    assertThat(input.path("boundaryCalls")).hasSize(179);
+    assertThat(input.path("boundaryCalls").get(1).get(7).get(0).get(0).asText()).isEqualTo("M3");
+    assertThat(input.path("boundaryCalls").get(1).get(7).get(0).get(1).asText())
+        .isEqualTo("TARGET_DECLARATION_HAS_NO_BODY");
+    assertThat(full.path("calls")).hasSize(180);
+  }
+
+  @Test
+  void aPackedBoundaryDirectoryReopensFromItsUnchangedFrozenPacket() {
+    ActivityMaterialView view = withBoundaryCalls(neutralView(3, 40, 100), 180);
+    String slice =
+        "[{\"sliceKey\":\"selected-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"read selected method\"}]";
+    ScriptedProvider provider =
+        new ScriptedProvider(
+            responseV2("[]", "[\"M2\"]", slice, "[\"selected-scope\"]", "[]", true));
+    ActivityReadingProfile profile = ActivityReadingProfile.defaults(30_000, 1_000);
+
+    ActivityReadingPlan plan = coordinate(provider, view, profile);
+    assertThat(plan.slices()).singleElement();
+    assertThat(
+            new CanonicalJsonCodec()
+                .parseCanonical(plan.slices().get(0).readingPacket().modelInputJson())
+                .path("boundaryCalls"))
+        .hasSize(179);
+    ActivityReadingPlan reopened =
+        ActivityReadingCoordinator.reopenSaved(view, plan.toPrivateRecord());
+    assertThat(reopened.slices().get(0).readingPacket().modelInputJson())
+        .isEqualTo(plan.slices().get(0).readingPacket().modelInputJson());
+    assertThat(provider.inputs()).hasSize(1);
+  }
+
+  @Test
+  void aVerifiedIncompletePlanCanBeReassessedWithoutAnotherReadingModelCall() {
+    ActivityMaterialView view = withBoundaryCalls(neutralView(3, 40, 100), 180);
+    String slice =
+        "[{\"sliceKey\":\"selected-scope\",\"entryKeys\":[\"E1\"],\"requiredUnitKeys\":[\"M2\"],\"sharedContextUnitKeys\":[],\"scope\":\"read selected method\"}]";
+    ScriptedProvider provider =
+        new ScriptedProvider(
+            responseV2("[]", "[\"M2\"]", slice, "[\"selected-scope\"]", "[]", true));
+    ActivityReadingPlan prior =
+        coordinate(provider, view, ActivityReadingProfile.defaults(15_000, 1_000));
+    assertThat(prior.slices()).isEmpty();
+    assertThat(prior.toPrivateRecord().path("requiredScopeIncomplete").asBoolean()).isTrue();
+
+    ActivityReadingCoordinator reader =
+        new ActivityReadingCoordinator(
+            request -> {
+              throw new AssertionError("no model request");
+            });
+    ActivityReadingPlan reassessed =
+        reader.reassessSavedCapacity(
+            view, ActivityReadingProfile.defaults(30_000, 1_000), prior.toPrivateRecord());
+    assertThat(reassessed.slices()).singleElement();
+    assertThat(reassessed.toPrivateRecord().path("requiredScopeIncomplete").asBoolean()).isFalse();
+    assertThat(provider.inputs()).hasSize(1);
+    assertThat(ActivityReadingCoordinator.reopenSaved(view, reassessed.toPrivateRecord()).slices())
+        .hasSize(1);
+  }
+
+  private static ActivityMaterialView withBoundaryCalls(ActivityMaterialView view, int count) {
+    CodeReadingMaterialSet.Packet original = view.packet();
+    List<CodeReadingMaterialSet.EntryCall> calls = new ArrayList<>();
+    for (int index = 0; index < count; index++) {
+      EntryCodeContext.CallTarget target =
+          new EntryCodeContext.CallTarget(
+              index == 0 ? "method:unit2" : "method:unit3",
+              List.of("DECLARATION"),
+              "DECLARATION_ONLY",
+              "TARGET_DECLARATION_HAS_NO_BODY");
+      EntryCodeContext.CallSite site =
+          new EntryCodeContext.CallSite(
+              "call:boundary" + index,
+              "method:entry",
+              "METHOD",
+              new SourceRange(index, 5, 1, 1),
+              new SourceRange(index, 5, 1, 1),
+              "service.inspect(customerId)",
+              List.of(target));
+      calls.add(new CodeReadingMaterialSet.EntryCall(original.entries().get(0).entryId(), site));
+    }
+    CodeReadingMaterialSet.Packet packet =
+        new CodeReadingMaterialSet.Packet(
+            original.packetId(),
+            original.entries(),
+            original.methods(),
+            calls,
+            original.persistence(),
+            original.sourceReferences(),
+            original.unselectedUnits(),
+            original.limitations(),
+            original.selfContainedUtf8Bytes());
+    return new ActivityMaterialProjector().project(packet, view.profile());
   }
 
   @Test

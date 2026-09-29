@@ -14,8 +14,32 @@ import org.sourceanalysis.app.analysis.code.EntrySeed;
 import org.sourceanalysis.app.analysis.code.JavaCodeSession;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.code.SourceRange;
+import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryExecutor;
+import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryRequest;
+import org.sourceanalysis.app.analysis.discovery.DiscoveryProfile;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsExecution;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsPublicFixture;
+import org.sourceanalysis.app.analysis.inventory.PreparedVerifiedSourceTextReader;
+import org.sourceanalysis.app.analysis.inventory.SourcePreparationReader;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceFileActivationRangeR0Fixture;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextReader;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
+import org.sourceanalysis.app.artifact.AnalysisRunId;
+import org.sourceanalysis.app.artifact.AnalysisStepKey;
+import org.sourceanalysis.app.artifact.AnalysisStepPublicationAddress;
+import org.sourceanalysis.app.artifact.ArtifactControls;
+import org.sourceanalysis.app.artifact.ArtifactStoreException;
+import org.sourceanalysis.app.artifact.ArtifactStoreLimits;
+import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
+import org.sourceanalysis.app.artifact.CanonicalArtifactPolicyRegistry;
+import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
+import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
+import org.sourceanalysis.app.artifact.FileSystemCanonicalAnalysisStepArtifactStore;
+import org.sourceanalysis.app.artifact.FileSystemCanonicalModuleArtifactStore;
+import org.sourceanalysis.app.artifact.RunStoreBootstrap;
+import org.sourceanalysis.app.artifact.RunStoreHandle;
+import org.sourceanalysis.app.capture.preparation.PreparedSourceArchive;
 
 class JavaCodeIndexPublicationSpecifierTest {
 
@@ -198,6 +222,212 @@ class JavaCodeIndexPublicationSpecifierTest {
                             fixture.applicationDiscovery(),
                             session,
                             fixture.artifactControls()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("JAVA_CODE_INDEX_INVALID");
+      }
+    }
+  }
+
+  @Test
+  void preservesModuleArtifactSizeLimitFailureInsteadOfCollapsingItIntoJavaCodeIndexInvalid(
+      @TempDir Path temporary) throws Exception {
+    String pom =
+        """
+        <project>
+          <modelVersion>4.0.0</modelVersion>
+          <properties><maven.compiler.release>17</maven.compiler.release></properties>
+          <dependencies>
+            <dependency>
+              <groupId>org.springframework</groupId>
+              <artifactId>spring-webmvc</artifactId>
+              <version>6.1.8</version>
+            </dependency>
+          </dependencies>
+        </project>
+        """;
+    var sourceFixture =
+        VerifiedSourceFileActivationRangeR0Fixture.publish(
+            temporary.resolve("prepared-source"),
+            "technical-r0",
+            pom,
+            "technical-step03-source",
+            Map.of(
+                "src/main/java/com/example/OrderController.java",
+                "package com.example; public final class OrderController {}\n"));
+    VerifiedSourceInventoryReference sourceReference =
+        new VerifiedSourceInventoryReference(sourceFixture.reportReference());
+    VerifiedSourceTextSet source = sourceFixture.reopenTexts();
+    CanonicalJsonCodec json = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry technicalPolicies =
+        ProgramGraphsPublicFixture.policiesForRuntimeTest(json);
+    ArtifactControls controls =
+        ProgramGraphsPublicFixture.controlsForRuntimeTest(technicalPolicies);
+    ArtifactStoreLimits limits = new ArtifactStoreLimits(16, 2_000_000, 8_000_000, 24);
+    AnalysisRunId r1RunId = AnalysisRunId.parse("analysis-run:" + "9".repeat(64));
+
+    try (RunStoreHandle handle = RunStoreBootstrap.open(sourceFixture.storeRoot())) {
+      CanonicalModuleArtifactStore sourceModules =
+          new FileSystemCanonicalModuleArtifactStore(
+              handle, json, sourceFixture.policies(), limits);
+      CanonicalAnalysisStepArtifactStore sourceSteps =
+          new FileSystemCanonicalAnalysisStepArtifactStore(
+              handle, json, sourceFixture.policies(), limits);
+      CanonicalModuleArtifactStore technicalModules =
+          new FileSystemCanonicalModuleArtifactStore(handle, json, technicalPolicies, limits);
+      CanonicalAnalysisStepArtifactStore technicalSteps =
+          new FileSystemCanonicalAnalysisStepArtifactStore(handle, json, technicalPolicies, limits);
+      PreparedSourceArchive archive = new PreparedSourceArchive(sourceFixture.archiveRoot());
+      VerifiedSourceTextReader sourceReader =
+          new PreparedVerifiedSourceTextReader(
+              new SourcePreparationReader(sourceModules, sourceSteps, archive), archive);
+
+      try (JavaCodeSession session = fakeSession(source.snapshotId())) {
+        var discovery =
+            new ApplicationDiscoveryExecutor(
+                    sourceReader, technicalModules, technicalSteps, sourceSteps, session)
+                .executeTechnical(
+                    new ApplicationDiscoveryRequest(
+                        new AnalysisStepPublicationAddress(
+                            r1RunId, AnalysisStepKey.APPLICATION_DISCOVERY),
+                        sourceReference,
+                        DiscoveryProfile.standard()),
+                    controls);
+        EntryCodeContext.TechnicalEnhancements enhancements =
+            new EntryCodeContext.TechnicalEnhancements(
+                EntryCodeContext.Availability.NOT_PRODUCED,
+                "STRICT_GRAPH_ENRICHMENT_NOT_REQUESTED_BY_TEST_JDT",
+                List.of(),
+                List.of(),
+                null);
+        JavaCodeIndex index =
+            new JavaCodeIndex(
+                session.descriptor(),
+                source.snapshotId(),
+                source.verifiedSnapshotRef(),
+                session.catalog(),
+                List.of(),
+                enhancements);
+        CanonicalModuleArtifactStore sizeLimitedModules =
+            new FileSystemCanonicalModuleArtifactStore(
+                handle, json, technicalPolicies, new ArtifactStoreLimits(16, 1L, 8_000_000, 24));
+
+        assertThatThrownBy(
+                () ->
+                    new JavaCodeIndexPublicationSpecifier(
+                            sizeLimitedModules, technicalSteps, sourceSteps)
+                        .publishTechnical(
+                            sourceReference,
+                            discovery.publication(),
+                            controls,
+                            index,
+                            source.verifiedSnapshotRef()))
+            .isInstanceOf(ArtifactStoreException.class)
+            .hasMessage("ARTIFACT_POLICY_MISMATCH");
+      }
+    }
+  }
+
+  @Test
+  void rejectsTechnicalPublicationWhenSourceInventoryRefIsUsedAsSnapshotRef(@TempDir Path temporary)
+      throws Exception {
+    String pom =
+        """
+        <project>
+          <modelVersion>4.0.0</modelVersion>
+          <properties><maven.compiler.release>17</maven.compiler.release></properties>
+          <dependencies>
+            <dependency>
+              <groupId>org.springframework</groupId>
+              <artifactId>spring-webmvc</artifactId>
+              <version>6.1.8</version>
+            </dependency>
+          </dependencies>
+        </project>
+        """;
+    var sourceFixture =
+        VerifiedSourceFileActivationRangeR0Fixture.publish(
+            temporary.resolve("prepared-source"),
+            "technical-r0",
+            pom,
+            "technical-step03-source",
+            Map.of(
+                "src/main/java/com/example/OrderController.java",
+                "package com.example; public final class OrderController {}\n"));
+    VerifiedSourceInventoryReference sourceReference =
+        new VerifiedSourceInventoryReference(sourceFixture.reportReference());
+    VerifiedSourceTextSet source = sourceFixture.reopenTexts();
+    CanonicalJsonCodec json = new CanonicalJsonCodec();
+    CanonicalArtifactPolicyRegistry technicalPolicies =
+        ProgramGraphsPublicFixture.policiesForRuntimeTest(json);
+    ArtifactControls controls =
+        ProgramGraphsPublicFixture.controlsForRuntimeTest(technicalPolicies);
+    ArtifactStoreLimits limits = new ArtifactStoreLimits(16, 2_000_000, 8_000_000, 24);
+    AnalysisRunId r1RunId = AnalysisRunId.parse("analysis-run:" + "9".repeat(64));
+    assertThat(r1RunId).isNotEqualTo(sourceReference.publication().address().runId());
+
+    try (RunStoreHandle handle = RunStoreBootstrap.open(sourceFixture.storeRoot())) {
+      CanonicalModuleArtifactStore sourceModules =
+          new FileSystemCanonicalModuleArtifactStore(
+              handle, json, sourceFixture.policies(), limits);
+      CanonicalAnalysisStepArtifactStore sourceSteps =
+          new FileSystemCanonicalAnalysisStepArtifactStore(
+              handle, json, sourceFixture.policies(), limits);
+      CanonicalModuleArtifactStore technicalModules =
+          new FileSystemCanonicalModuleArtifactStore(handle, json, technicalPolicies, limits);
+      CanonicalAnalysisStepArtifactStore technicalSteps =
+          new FileSystemCanonicalAnalysisStepArtifactStore(handle, json, technicalPolicies, limits);
+      PreparedSourceArchive archive = new PreparedSourceArchive(sourceFixture.archiveRoot());
+      VerifiedSourceTextReader sourceReader =
+          new PreparedVerifiedSourceTextReader(
+              new SourcePreparationReader(sourceModules, sourceSteps, archive), archive);
+
+      assertThat(source.sourceInventoryRef()).isEqualTo(sourceFixture.sourceInventoryRef());
+      assertThat(source.verifiedSnapshotRef()).isNotEqualTo(source.sourceInventoryRef());
+
+      try (JavaCodeSession session = fakeSession(source.snapshotId())) {
+        var discovery =
+            new ApplicationDiscoveryExecutor(
+                    sourceReader, technicalModules, technicalSteps, sourceSteps, session)
+                .executeTechnical(
+                    new ApplicationDiscoveryRequest(
+                        new AnalysisStepPublicationAddress(
+                            r1RunId, AnalysisStepKey.APPLICATION_DISCOVERY),
+                        sourceReference,
+                        DiscoveryProfile.standard()),
+                    controls);
+        var reopenedDiscovery = technicalSteps.reopen(discovery.publication().publication());
+        assertThat(reopenedDiscovery.reference().address().runId()).isEqualTo(r1RunId);
+        assertThat(reopenedDiscovery.receipt().upstreamAnalysisStepReferences())
+            .containsExactly(sourceReference.publication());
+        assertThat(reopenedDiscovery.receipt().controls()).isEqualTo(controls);
+
+        EntryCodeContext.TechnicalEnhancements enhancements =
+            new EntryCodeContext.TechnicalEnhancements(
+                EntryCodeContext.Availability.NOT_PRODUCED,
+                "STRICT_GRAPH_ENRICHMENT_NOT_REQUESTED_BY_TEST_JDT",
+                List.of(),
+                List.of(),
+                null);
+        JavaCodeIndex invalidIndex =
+            new JavaCodeIndex(
+                session.descriptor(),
+                source.snapshotId(),
+                source.sourceInventoryRef(),
+                session.catalog(),
+                List.of(),
+                enhancements);
+
+        assertThat(source.sourceInventoryRef()).isNotEqualTo(source.verifiedSnapshotRef());
+        assertThatThrownBy(
+                () ->
+                    new JavaCodeIndexPublicationSpecifier(
+                            technicalModules, technicalSteps, sourceSteps)
+                        .publishTechnical(
+                            sourceReference,
+                            discovery.publication(),
+                            controls,
+                            invalidIndex,
+                            source.sourceInventoryRef()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessage("JAVA_CODE_INDEX_INVALID");
       }

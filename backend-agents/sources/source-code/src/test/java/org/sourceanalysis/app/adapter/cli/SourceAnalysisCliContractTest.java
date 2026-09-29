@@ -159,7 +159,7 @@ class SourceAnalysisCliContractTest {
   }
 
   @Test
-  void mapsMaterialPlanningToTheSamePublicAgentWithoutSelectingTheFinalDocument() throws Exception {
+  void rejectsRetiredPlanMaterialsWithoutInvokingThePublicAgent() throws Exception {
     Class<?> cliType = requiredClass("org.sourceanalysis.app.adapter.cli.SourceAnalysisCli");
     ByteArrayOutputStream bytes = new ByteArrayOutputStream();
     PrintWriter output = new PrintWriter(bytes, true, StandardCharsets.UTF_8);
@@ -173,15 +173,10 @@ class SourceAnalysisCliContractTest {
             (Integer)
                 execute.invoke(
                     cli, (Object) new String[] {"plan-materials", "--run", agent.runId.value()}))
-        .isZero();
+        .isNotZero();
 
-    assertThat(agent.executeRequest)
-        .isEqualTo(
-            new AnalysisStepExecutionRequest(
-                agent.runId, AnalysisExecutionIntent.PREPARE_MATERIALS, null, null));
-    assertThat(bytes.toString(StandardCharsets.UTF_8))
-        .contains(agent.runId.value(), "FINISHED")
-        .doesNotContain("/private/", "prompt", "model response");
+    assertThat(agent.executeRequest).isNull();
+    assertThat(bytes.toString(StandardCharsets.UTF_8)).doesNotContain(agent.runId.value());
   }
 
   @Test

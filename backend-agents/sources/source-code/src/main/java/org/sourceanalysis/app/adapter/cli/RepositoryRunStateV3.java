@@ -31,6 +31,7 @@ import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalModuleArtifactStore;
 import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.ModuleArtifactRoot;
+import org.sourceanalysis.app.artifact.ModuleCompletionStatus;
 import org.sourceanalysis.app.artifact.ModulePublicationReference;
 import org.sourceanalysis.app.artifact.ModuleReceiptId;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
@@ -118,11 +119,13 @@ final class RepositoryRunStateV3 {
     // Parse the complete payload before exporting a reference that model-only execution will trust.
     new BusinessMaterialCheckpointReader(moduleArtifacts).reopen(materialCheckpoint);
     ReopenedModulePublication reopenedMaterials = moduleArtifacts.reopen(materialCheckpoint);
-    if (!materialModuleVersion.equals(reopenedMaterials.receipt().moduleVersion())
-        || !expectedUpstream(reopenedFlows)
-            .equals(Set.copyOf(reopenedMaterials.receipt().upstreamArtifacts()))) {
-      throw failure("BUSINESS_MATERIAL_CHECKPOINT_INVALID");
-    }
+    verifyMaterialLink(
+        sourceRunId,
+        flows.publication(),
+        materialCheckpoint,
+        materialModuleVersion,
+        reopenedFlows,
+        reopenedMaterials);
     ObjectNode state = JsonNodeFactory.instance.objectNode();
     state.put("schemaVersion", SCHEMA_VERSION);
     state.put("sourceRunId", sourceRunId.value());
@@ -147,6 +150,34 @@ final class RepositoryRunStateV3 {
       CanonicalJsonCodec canonicalJson) {
     return new BusinessMaterialCheckpointReader(moduleArtifacts)
         .reopen(load(v3State, canonicalJson).materialsCheckpoint());
+  }
+
+  /**
+   * Proves that an M10 checkpoint was built from exactly the semantic payloads of its saved
+   * BusinessFlows publication.
+   *
+   * <p>Callers use this before treating the Step01 inventory reachable through the flows
+   * publication as provenance for a new consumer. The check intentionally reopens both saved
+   * references; the state file alone is not material provenance.
+   */
+  static void verifyMaterialLink(
+      SavedState state,
+      CanonicalAnalysisStepArtifactStore stepArtifacts,
+      CanonicalModuleArtifactStore moduleArtifacts) {
+    if (state == null || stepArtifacts == null || moduleArtifacts == null) {
+      throw failure("BUSINESS_MATERIAL_CHECKPOINT_INVALID");
+    }
+    ReopenedAnalysisStepPublication reopenedFlows =
+        stepArtifacts.reopen(state.businessFlows().publication());
+    ReopenedModulePublication reopenedMaterials =
+        moduleArtifacts.reopen(state.materialsCheckpoint());
+    verifyMaterialLink(
+        state.sourceRunId(),
+        state.businessFlows().publication(),
+        state.materialsCheckpoint(),
+        state.materialModuleVersion(),
+        reopenedFlows,
+        reopenedMaterials);
   }
 
   /** Locates the known M10 receipt for the one-time v2 export; normal readers remain path-free. */
@@ -312,6 +343,45 @@ final class RepositoryRunStateV3 {
                 new ArtifactReference(
                     payload.descriptor().artifactId(), payload.descriptor().sha256()))
         .collect(java.util.stream.Collectors.toUnmodifiableSet());
+  }
+
+  private static void verifyMaterialLink(
+      AnalysisRunId sourceRunId,
+      AnalysisStepPublicationReference flowsReference,
+      ModulePublicationReference materialsReference,
+      String expectedMaterialModuleVersion,
+      ReopenedAnalysisStepPublication reopenedFlows,
+      ReopenedModulePublication reopenedMaterials) {
+    if (sourceRunId == null
+        || flowsReference == null
+        || materialsReference == null
+        || expectedMaterialModuleVersion == null
+        || reopenedFlows == null
+        || reopenedMaterials == null
+        || !flowsReference.equals(reopenedFlows.reference())
+        || !flowsReference.address().equals(reopenedFlows.receipt().address())
+        || !sourceRunId.equals(flowsReference.address().runId())
+        || flowsReference.address().analysisStepKey() != AnalysisStepKey.BUSINESS_FLOWS
+        || reopenedFlows.receipt().status() != ModuleCompletionStatus.SUCCEEDED
+        || !materialsReference.equals(reopenedMaterials.reference())
+        || !materialsReference.address().equals(reopenedMaterials.receipt().address())
+        || !materialsReference
+            .moduleReceiptId()
+            .equals(reopenedMaterials.receipt().moduleReceiptId())
+        || !materialsReference
+            .moduleArtifactRoot()
+            .equals(reopenedMaterials.receipt().moduleArtifactRoot())
+        || !(materialsReference.address() instanceof AnalysisStepModuleAddress materialAddress)
+        || !sourceRunId.equals(materialAddress.runId())
+        || materialAddress.analysisStepKey() != AnalysisStepKey.FLOW_INTERPRETATION
+        || materialAddress.moduleNumber() != 10
+        || !"business-material-builder".equals(materialAddress.moduleKey())
+        || !expectedMaterialModuleVersion.equals(reopenedMaterials.receipt().moduleVersion())
+        || reopenedMaterials.receipt().status() != ModuleCompletionStatus.SUCCEEDED
+        || !expectedUpstream(reopenedFlows)
+            .equals(Set.copyOf(reopenedMaterials.receipt().upstreamArtifacts()))) {
+      throw failure("BUSINESS_MATERIAL_CHECKPOINT_INVALID");
+    }
   }
 
   private static AnalysisStepPublicationReference flowReference(ObjectNode value) {

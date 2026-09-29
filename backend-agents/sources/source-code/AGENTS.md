@@ -1,5 +1,28 @@
 # Source Code Analysis Agent Instructions
 
+## 设计与实现解释规则
+
+以下规则适用于本模块的设计与实现讨论、说明及文档：
+
+- 解释设计与实现时，以当前代码和实际产物为依据。
+- 明确区分：已实现、设计目标、推测、人工举例。
+- 说某个数据被下游使用前，必须核对实际读写链路。
+- 不把自己阅读源码得到的结论说成程序输出。
+- 没有查证就说“未核实”，不要补充听起来合理的解释。
+- 按“输入、处理、输出、实际消费者、当前问题”回答，先讲结论。
+
+## 设计先用成熟工具
+
+- 讨论和审查保持客观，不讨好，不用已经投入的代码或时间逆向证明方案合理。
+- 增加能力前，先判断它是否属于本项目的核心分析职责；非核心能力优先交给用户、Agent 和现有工具，不先创建内部子系统。
+- 遇到复杂能力时，设计的必做前置动作是搜索常用开源项目和现成产品，再查其官方文档/API/源码。先列已有方案能做什么、怎样直接使用或薄适配，再决定本项目要写什么；不得先完成自研方案，最后才补几条引用。
+- 没完成上述检索，不得仅凭记忆断言“没有现成工具”。若仍提议自研，必须列出现成方案为何不适用、该能力为何属于核心且值得承担，并先向用户讨论确认。
+- 即使需要某项能力，也优先调用成熟实现，只写最小适配。不得自行重建 Maven 下载/仓库/依赖管理、通用语言解释器、编译器或类似庞大基础系统。
+- 没找到合适工具不等于应该自己造。先提出有限支持、外部准备或延期方案；只有明确属于核心且用户另行确认的范围才实施。
+- 工具的已有输出先返回给当前 Agent 解释；不要为了让 Java 自动解释所有失败而新增分类、修复、审批或恢复框架。
+- Maven交接不依赖某个Agent临时补全：Agent仅提供官方输出文件位置及已明确的模块/JDK选择；源码根、编译设置和受支持的模块边由Java从真实输出确定性提取并绑定R0。不得让Agent手填语义JSON替代尚未实现的消费者；既有Skill若仍指示手填v1，以本规则及技术设计为准，按待实施清单撤换。
+- 本轮的具体工具选择和撤换范围见 docs/modules/technical-analysis/ 与 docs/plans/technical-analysis-cli-and-vue-cleanup-design.md；设计修改不是运行客户工具的授权。
+
 ## Scope and target identity
 
 - This directory owns the Java/Maven frozen-source-to-business-process Agent,
@@ -70,6 +93,24 @@
 
 ## Authoritative target design
 
+- Source preparation's approved target is documented in
+  docs/analysis-steps/01-verified-source-inventory.md and its source-preparation
+  module contracts. Contracts, source readers, publication, revisions, the
+  independent CLI/Skill and the Step05/M10 old-material new-execution gates are
+  implemented; the final directly related suite (168/168) and quality checks
+  have passed on the same source state. The scoped plan is complete. No
+  later-step CLI split or real analysis is authorized. Necessary shared
+  source/exclusion and saved-material basis checks are included.
+- A saved exclusion list alone is not proof that downstream exclusion works.
+  Prepared-source public reading omits excluded files. Historical Step05/M10
+  material lacks prepared provenance and effective exclusions, so new execution
+  under PREPARED_SOURCE fails closed. Its actual LEGACY basis is reopened from
+  Step01 metadata before new consumption. Keep
+  SOURCE-PREPARATION-DOWNSTREAM-EXCLUSION is closed for this fail-closed scope:
+  a published/reopened fixture verifies Java/XML exclusions through the reader,
+  Java project and persistence request/view. Preserve historical artifacts; a source-version mismatch must
+  not trigger automatic JDT, Activity, or business-process regeneration.
+
 - Main design and owning analysis-step/Module documents define active contracts.
   Step01–05 JDT-only navigation, optional persistence enrichment and Step05
   reading materials are implemented. JavaParser, strict graph/Fact/Proof and
@@ -131,64 +172,66 @@
   quality did not fully pass; readability is distinct from factual correctness
   and whole-repository acceptance. Do not regenerate saved Activities.
 
-## Migration baseline: previously selectable Java code engines
+## Current technical route and retirement boundary
 
-This section records the historical two-engine implementation and its original
-migration sequence. Current production follows the supplement above: JDT only,
-optional persistence enrichment and one Step05 material owner. Preserve useful
-JDT behavior and historical reader contracts below, not the retired JavaParser
-or strict graph/Fact/Flow producers.
-
-- The independent JDT path and the follow-up JavaParser adapter were implemented
-  and accepted on 2026-09-12 as historical production routes:
-  configuration/session, JDT Core syntax, JDT LS navigation, discovery,
-  navigation publication, truthful NOT_PRODUCED strict facts, Step05
-  contexts, persisted business material and the scripted report chain are
-  connected. JavaParser additionally preserves its existing seven graph
-  payloads, strict Fact/Proof path, Flow/Capsule path and the same persisted
-  business consumers. Do not reopen these as current production requirements.
-- Current production starts only the JDT route. Protocols and direct producers
-  may not restore JavaParser, strict graph/Fact/Flow/Capsule/M10 production
-  behavior; historical reader contracts remain exact and read-only.
-- New YAML launch selects only `jdt`. A historical `javaparser` value may be
-  decoded for existing state/hash inspection but cannot create an engine,
-  fallback, merged run, dual writer, or compatibility producer.
-- On the JDT route, JDT LS owns navigation/resolution; a syntax-only JDT Core
-  helper on the tool JVM owns Java declarations, full bodies and call syntax.
-  Neither discovery nor the Step05 material route may secretly invoke a
-  retired parser. Do not implement Java wildcard imports, inheritance, overload
-  resolution or Spring runtime dispatch by guessed names.
-- A hierarchy hit is not grounds to skip implementation lookup for virtual
-  or abstract/interface targets. Preserve every candidate, constructor,
-  deferred callback and unresolved/boundary call with its actual source.
-- Step02 entry records persist both the engine-neutral methodKey and the full
-  declaration SourceRange. A handler name/FQN alone is never an overload key.
-- The syntax-only JDT Core helper is the separately built same-repository
-  tools/jdt-syntax-helper artifact. Launch it with the configured tool JDK and
-  enforce the jdt-syntax-v1 JSONL timeout/exit/protocol contract; stdout is
-  protocol-only and every fatal protocol/process condition remains explicit.
-- The JDT navigation index plus optional persistence material is sufficient
-  input to Step05. Retired five-graph/Fact/strict-Flow outputs are neither a
-  reading gate nor a new-run enhancement; do not write fake empty graphs,
-  Proof, or a smaller entry denominator.
-- java-code-index is PROGRAM_GRAPHS module 7, not a new analysis step. The
-  JDT route publishes the Step03 index, Step04 persistence material, and
-  Step05 reading materials through their exact artifact contracts. Historical
-  v4 `NOT_PRODUCED` fact-accounting remains readable but is not newly installed.
-- Preserve full method code and its conditions/returns in the material path.
-  Verify that Service bodies reach actual model input, not only an index.
-  Evidence exists to locate code, not to repeatedly re-prove ordinary reads.
-- Follow docs/plans/navigation-reuse-and-readable-report-design.md for the
-  implemented optimization: cache each
-  distinct JDT operation/location once per frozen, ready session; share method
-  bodies, not entry-specific expansion state. Keep index v2 METHOD sharing and
-  entry-owned CALL. Persist Step05/Capsule references and hydrate full immutable
-  contexts before creating model packets; never send unresolved internal keys
-  instead of the source a model needs. No cache service or recovery subsystem.
-- All subsequent edits belong in the formal source-code checkout, not the
-  /private/tmp research worktree. Preserve prior comparison artifacts. The
-  uncommitted blanket Java 25 changes on the older appmod branch are not the
-  verified JDT baseline; main application Java 17 and tool JVM remain separate.
+- Current production is JDT LS navigation plus the JDT Core syntax helper,
+  optional MyBatis/JSqlParser material, and Step05 reading packets. JavaParser,
+  five-graph/Fact/Proof/Flow/Capsule/M10 producers are retired, not enhancements
+  to re-enable. Preserve only demonstrably needed historical readers, DTOs,
+  schemas and generic artifact observation; audit unused typed readers before
+  deleting their dedicated tests.
+- The current four-operation target is owned by
+  docs/modules/technical-analysis/ and
+  docs/plans/technical-analysis-cli-and-vue-cleanup-design.md.
+  Existing three-command production and fixed-source results are real; their
+  nested-call accuracy and intermittent query waits are not fully resolved.
+  Do not describe completed Maven handoff/READY/SQL/materials as unimplemented.
+- The target separates collect-frontend (R1) from backend collect-code (R2).
+  analyze-persistence (R3) consumes exact R2; assemble-materials (R4) consumes
+  exact R1 and R3, obtains R2 from R3, and matches HTTP requests there.
+  R0 source preparation is unchanged. R1 must not require JDT/Maven/backend.
+  Each backend entry gets one self-contained JSON, plus an index and frontend
+  coverage. This design is not yet production; preserve old Packet readers.
+- Official Maven classpath/effective-POM handoff is already implemented.
+  User or authorized Agent runs Maven; Java consumes evaluated outputs,
+  binds R0 and target JDK, and uses existing JDT. No Maven launcher,
+  downloader, parent/BOM/profile evaluator or all-file diagnostic proof system.
+  Known input/project errors block; unconfirmed diagnostic coverage is disclosed.
+- Approved narrow corrections use JDT's own reliable call/declaration binding
+  and exact physical site to prevent nested-call misassociation, distinguish
+  confirmed external calls from unknown targets/query failures, retain necessary
+  frontend source units, and project ORDER BY already returned by JSqlParser.
+  Preserve legitimate implementation candidates. Do not build another resolver,
+  JS interpreter, annotation processor, SQL parser or logging-name filter.
+  Lombok and lifecycle wait investigations remain bounded verification;
+  unproved causes and limits must remain visible.
+- New schemas, producer receipts, source/version checks, storage/query and
+  fixtures must move together according to the single runtime version matrix.
+  Entry evidence uses R0-relative source paths and bundle-relative files.
+  Capacity failures cannot truncate content then claim complete evidence.
+  Scope the variable-file canonical-store change to this artifact and verify
+  more than 64 entry files through real install/reopen.
+- One Skill will orchestrate the four real commands; it is not an approval
+  server or alternate analysis implementation. Current documentation work
+  does not authorize editing the executable Skill or running customer tools.
+  plan-materials is already retired; do not restore it as a fallback.
+- Preserve full Java bodies, physical call positions, actual/formal arguments,
+  hierarchy/definition/necessary implementation candidates and entry-owned
+  expansion state. Sharing a method or cached query is not sharing an entry's
+  final conclusion. Keep one physical RPC per session query key. The approved
+  timeout fix preserves the pending request after a caller's wait expires;
+  later callers reuse its eventual result rather than a stale timeout.
+  Final failures remain cached; no automatic RPC or entry retry is added.
+- ProgramGraphsExecution and PersistedProgramGraphInputReader currently serve
+  JDT; their historical names are not deletion evidence. Historical JavaParser
+  configuration decoding cannot instantiate a producer or fallback.
+- The new technical design ends at saved Step05 materials. Do not rerun JDT,
+  customer builds, Activity or business-process models during design work.
+  New Step05 frontend material needs explicit consumer version handling; never
+  discard its fields silently to claim old model consumers support it.
+- source-preparation's completed fail-closed scope is separate from the new
+  prepared-source-to-technical-production connection. Preserve old artifacts
+  and more-findings.md. Cross-source-version incremental reuse remains deferred.
 
 ## Eight analysis steps and the business deep Modules
 
@@ -228,8 +271,9 @@ or strict graph/Fact/Flow producers.
 
 ## Program and model responsibilities
 
-- Current user-selected roles: direction, design documents and debugging
-  Astra / ultra; test writing Luna / xhigh; production code Terra / xhigh.
+- Current user-selected roles: direction, scheduling, design documents,
+  debugging and review GPT-6 Sol / xhigh; test writing Luna / xhigh;
+  production code Terra / xhigh.
   Product business generation defaults to Luna / high in the logged-in
   ChatGPT Codex context. This does not change historical runtime identity or
   authorize a YAML edit in a documentation-only task. One job keeps its binding.
@@ -730,7 +774,7 @@ or strict graph/Fact/Flow producers.
   absent, input/ref/coverage cannot close, a started model request fails, or
   implementation needs a contract change. Update durable design and obtain
   the required review/authorization; do not silently broaden behavior.
-- Contract uncertainty and debugging go to Astra/ultra. User approval remains required for
+- Contract uncertainty and debugging go to GPT-6 Sol/xhigh. User approval remains required for
   changes to the eight steps/order/keys, fixed nine chapters, source/Proof
   trust, model-visible material/responsibility, public RepositoryAnalysisAgent
   or shared candidate contract.

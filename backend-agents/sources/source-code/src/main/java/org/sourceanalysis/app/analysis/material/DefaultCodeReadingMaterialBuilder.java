@@ -5,14 +5,21 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import org.sourceanalysis.app.analysis.code.EntryCodeContext;
 import org.sourceanalysis.app.analysis.code.EntrySeed;
+import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndex;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendEntryLinkRecord;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendHttpRequestRecord;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendSourceUnits;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendWrapperCall;
 import org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex;
 
 /** Organizes already-read complete units without navigating, parsing, or invoking a provider. */
@@ -68,15 +75,20 @@ public final class DefaultCodeReadingMaterialBuilder implements CodeReadingMater
       addPacket(current, packets, coverage);
     }
 
-    return new CodeReadingMaterialSet(
-        new CodeReadingMaterialSet.Header(
-            request.sourceInventory(),
-            request.navigationPublication(),
-            request.persistencePublication(),
-            request.javaCodeIndex().snapshotId(),
-            request.profile()),
-        packets,
-        coverage);
+    CodeReadingMaterialSet material =
+        new CodeReadingMaterialSet(
+            new CodeReadingMaterialSet.Header(
+                request.sourceInventory(),
+                request.navigationPublication(),
+                request.persistencePublication(),
+                request.javaCodeIndex().snapshotId(),
+                request.profile(),
+                request.frontendSourceUnits() == null
+                    ? null
+                    : request.frontendSourceUnits().frontendPublication()),
+            packets,
+            coverage);
+    return request.frontendIndex() == null ? material : appendFrontend(material, request);
   }
 
   private static void requireSameUpstreamSnapshot(CodeReadingMaterialRequest request) {
@@ -90,6 +102,196 @@ public final class DefaultCodeReadingMaterialBuilder implements CodeReadingMater
       throw new IllegalArgumentException("CODE_READING_MATERIALS_INPUT_SNAPSHOT_MISMATCH");
     }
   }
+
+  /**
+   * Adds only already-saved frontend units to already-formed Java packets. No Vue, Node, or URL
+   * interpretation occurs here: the saved unique entry link is the only bridge to an entry.
+   */
+  private static CodeReadingMaterialSet appendFrontend(
+      CodeReadingMaterialSet material, CodeReadingMaterialRequest request) {
+    Map<String, CodeReadingMaterialSet.Packet> packets = new LinkedHashMap<>();
+    for (CodeReadingMaterialSet.Packet packet : material.packets()) {
+      packets.put(packet.packetId(), packet);
+    }
+    List<CodeReadingMaterialSet.FrontendCoverage> coverage = new ArrayList<>();
+    for (FrontendHttpRequestRecord frontendRequest : request.frontendIndex().requests()) {
+      FrontendEntryLinkRecord link =
+          uniqueLink(request.frontendIndex().entryLinks(), frontendRequest.requestId());
+      if (link == null) {
+        coverage.add(unresolved(frontendRequest.requestId(), "FRONTEND_ENTRY_LINK_NOT_FOUND"));
+        continue;
+      }
+      if (link.resolution() != FrontendEntryLinkRecord.Resolution.MATCHED_UNIQUE) {
+        coverage.add(
+            unresolved(
+                frontendRequest.requestId(), "FRONTEND_ENTRY_LINK_" + link.resolution().name()));
+        continue;
+      }
+      String entryId = link.entryIds().get(0).value();
+      CodeReadingMaterialSet.Packet packet = uniquePacket(packets.values(), entryId);
+      if (packet == null) {
+        coverage.add(unresolved(frontendRequest.requestId(), "BACKEND_ENTRY_NOT_COLLECTED"));
+        continue;
+      }
+      ResolvedFrontendUnits units =
+          resolveFrontendUnits(frontendRequest, request.frontendSourceUnits());
+      if (units == null) {
+        coverage.add(unresolved(frontendRequest.requestId(), "FRONTEND_SOURCE_UNIT_NOT_AVAILABLE"));
+        continue;
+      }
+      CodeReadingMaterialSet.FrontendRequestUse use =
+          new CodeReadingMaterialSet.FrontendRequestUse(
+              entryId,
+              frontendRequest.requestId(),
+              frontendRequest.instanceKey(),
+              units.pageUnit().sourceUnitId(),
+              frontendRequest,
+              link);
+      CodeReadingMaterialSet.Packet trial =
+          withFrontendSelection(packet, merge(packet.frontendSelection(), units.units(), use));
+      if (withinProfile(trial, request.profile())) {
+        packets.put(trial.packetId(), trial);
+        coverage.add(
+            new CodeReadingMaterialSet.FrontendCoverage(
+                frontendRequest.requestId(),
+                CodeReadingMaterialSet.FrontendCoverage.Status.SELECTED,
+                null));
+      } else {
+        coverage.add(
+            new CodeReadingMaterialSet.FrontendCoverage(
+                frontendRequest.requestId(),
+                CodeReadingMaterialSet.FrontendCoverage.Status.UNSELECTED,
+                "FRONTEND_SOURCE_UNIT_EXCEEDS_PACKET_CAPACITY"));
+      }
+    }
+    return new CodeReadingMaterialSet(
+        material.header(), List.copyOf(packets.values()), material.coverage(), coverage);
+  }
+
+  private static CodeReadingMaterialSet.FrontendCoverage unresolved(
+      String requestId, String reason) {
+    return new CodeReadingMaterialSet.FrontendCoverage(
+        requestId, CodeReadingMaterialSet.FrontendCoverage.Status.UNRESOLVED, reason);
+  }
+
+  private static FrontendEntryLinkRecord uniqueLink(
+      List<FrontendEntryLinkRecord> links, String requestId) {
+    List<FrontendEntryLinkRecord> matches =
+        links.stream().filter(link -> requestId.equals(link.requestId())).toList();
+    return matches.size() == 1 ? matches.get(0) : null;
+  }
+
+  private static CodeReadingMaterialSet.Packet uniquePacket(
+      Iterable<CodeReadingMaterialSet.Packet> packets, String entryId) {
+    CodeReadingMaterialSet.Packet matched = null;
+    for (CodeReadingMaterialSet.Packet packet : packets) {
+      if (packet.entries().stream().noneMatch(entry -> entryId.equals(entry.entryId()))) {
+        continue;
+      }
+      if (matched != null) {
+        return null;
+      }
+      matched = packet;
+    }
+    return matched;
+  }
+
+  private static ResolvedFrontendUnits resolveFrontendUnits(
+      FrontendHttpRequestRecord request, FrontendSourceUnits available) {
+    FrontendSourceUnits.Unit pageUnit =
+        uniqueUnit(
+            available.units(),
+            request.pagePath(),
+            request.sourceSha256(),
+            request.callRange(),
+            null);
+    if (pageUnit == null) {
+      return null;
+    }
+    Map<String, FrontendSourceUnits.Unit> units = new LinkedHashMap<>();
+    units.put(pageUnit.sourceUnitId(), pageUnit);
+    for (FrontendWrapperCall wrapper : request.wrapperPath()) {
+      FrontendSourceUnits.Unit wrapperUnit =
+          uniqueUnit(
+              available.units(),
+              wrapper.sourcePath(),
+              wrapper.sourceSha256(),
+              wrapper.sourceUnitRange(),
+              wrapper.sourceUnitKind());
+      if (wrapperUnit == null) {
+        return null;
+      }
+      units.putIfAbsent(wrapperUnit.sourceUnitId(), wrapperUnit);
+    }
+    return new ResolvedFrontendUnits(pageUnit, List.copyOf(units.values()));
+  }
+
+  private static FrontendSourceUnits.Unit uniqueUnit(
+      List<FrontendSourceUnits.Unit> candidates,
+      String path,
+      String sourceSha256,
+      SourceRange requiredRange,
+      FrontendWrapperCall.SourceUnitKind requiredKind) {
+    List<FrontendSourceUnits.Unit> matches =
+        candidates.stream()
+            .filter(candidate -> path.equals(candidate.path()))
+            .filter(candidate -> sourceSha256.equals(candidate.sourceSha256()))
+            .filter(candidate -> requiredKind == null || requiredKind == candidate.sourceUnitKind())
+            .filter(candidate -> contains(candidate.sourceUnitRange(), requiredRange))
+            .toList();
+    return matches.size() == 1 ? matches.get(0) : null;
+  }
+
+  private static boolean contains(SourceRange enclosing, SourceRange nested) {
+    long enclosingEnd = (long) enclosing.startOffsetUtf16() + enclosing.lengthUtf16();
+    long nestedEnd = (long) nested.startOffsetUtf16() + nested.lengthUtf16();
+    return enclosing.startOffsetUtf16() <= nested.startOffsetUtf16() && enclosingEnd >= nestedEnd;
+  }
+
+  private static CodeReadingMaterialSet.FrontendSelection merge(
+      CodeReadingMaterialSet.FrontendSelection current,
+      List<FrontendSourceUnits.Unit> units,
+      CodeReadingMaterialSet.FrontendRequestUse use) {
+    Map<String, FrontendSourceUnits.Unit> selected = new LinkedHashMap<>();
+    current.sourceUnits().forEach(unit -> selected.put(unit.sourceUnitId(), unit));
+    units.forEach(unit -> selected.putIfAbsent(unit.sourceUnitId(), unit));
+    List<CodeReadingMaterialSet.FrontendRequestUse> uses = new ArrayList<>(current.requestUses());
+    uses.add(use);
+    return new CodeReadingMaterialSet.FrontendSelection(List.copyOf(selected.values()), uses);
+  }
+
+  private static CodeReadingMaterialSet.Packet withFrontendSelection(
+      CodeReadingMaterialSet.Packet packet,
+      CodeReadingMaterialSet.FrontendSelection frontendSelection) {
+    CodeReadingMaterialSet.Packet draft =
+        new CodeReadingMaterialSet.Packet(
+            packet.packetId(),
+            packet.entries(),
+            packet.methods(),
+            packet.calls(),
+            packet.persistence(),
+            packet.sourceReferences(),
+            packet.unselectedUnits(),
+            packet.limitations(),
+            0L,
+            frontendSelection);
+    long bytes =
+        CodeReadingMaterialMarkdown.renderPacket(draft).getBytes(StandardCharsets.UTF_8).length;
+    return new CodeReadingMaterialSet.Packet(
+        draft.packetId(),
+        draft.entries(),
+        draft.methods(),
+        draft.calls(),
+        draft.persistence(),
+        draft.sourceReferences(),
+        draft.unselectedUnits(),
+        draft.limitations(),
+        bytes,
+        draft.frontendSelection());
+  }
+
+  private record ResolvedFrontendUnits(
+      FrontendSourceUnits.Unit pageUnit, List<FrontendSourceUnits.Unit> units) {}
 
   private static EntryMaterial entryMaterial(
       EntrySeed seed,

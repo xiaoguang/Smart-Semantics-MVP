@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.artifact.ArtifactId;
@@ -32,6 +33,42 @@ class LocalGitCommitCaptureAdapterTest {
           Sha256Digest.parse("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
 
   @TempDir Path temporaryDirectory;
+
+  @Test
+  void capturesThroughTheSharedValidatedGitObjectSession() throws Exception {
+    Path root = temporaryDirectory.toRealPath();
+    Path repository = root.resolve("shared-session-repository");
+    initialiseRepository(repository);
+    Files.writeString(repository.resolve("readme.txt"), "shared session\n", StandardCharsets.UTF_8);
+    runGit(repository, "add", ".");
+    runGit(repository, "commit", "-m", "shared session fixture");
+    String commitId = runGit(repository, "rev-parse", "HEAD").trim();
+
+    FixedGitObjectAccess delegate =
+        new ConstrainedGitObjectAccess(root.resolve("object-access"), trustedGitExecutable());
+    AtomicInteger opens = new AtomicInteger();
+    FixedGitObjectAccess recordingAccess =
+        (requestedRepository, requestedCommit) -> {
+          assertThat(requestedRepository).isEqualTo(repository);
+          assertThat(requestedCommit).isEqualTo(commitId);
+          opens.incrementAndGet();
+          return delegate.open(requestedRepository, requestedCommit);
+        };
+    LocalGitCommitCaptureAdapter adapter =
+        new LocalGitCommitCaptureAdapter(root.resolve("capture-workspace"), recordingAccess);
+
+    SourceRegistrationReference registration =
+        adapter.capture(
+            new LocalGitCaptureRequest(
+                "https://example.invalid/customer/catalogue.git",
+                commitId,
+                repository,
+                CAPTURE_POLICY,
+                RESOURCE_BUDGET));
+
+    assertThat(opens).hasValue(1);
+    assertThat(registration.sourceRegistrationId().value()).startsWith("source-registration:");
+  }
 
   @Test
   void capturesOnlyAnExactCommittedTreeAndPreservesTextMediaAndExecutableInventory()

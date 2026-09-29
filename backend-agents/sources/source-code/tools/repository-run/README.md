@@ -1,7 +1,47 @@
 # `source-analysis` local repository run
 
-`source-analysis` is the only supported process entry point. It reads one absolute
-`repository-run-config-v2` YAML or JSON file and delegates work to the same
+Source preparation is an implemented independent operation with the scoped fail-closed downstream source-version gate verified.
+Its directory/Git input readers, structured result contracts, four-file publication,
+refresh/exclusion, CLI, and module-local Skill have direct coverage. `prepare-source` options, issue results, refresh/exclusion
+rules, and one-step Skill contract are in the
+[source-preparation CLI design](../../docs/modules/source-preparation/cli-and-skill.md).
+Source preparation does not start downstream technical analysis, model login, or business execution. A prepared source is not permission to mix older JDT/Activity/process materials into a new run.
+
+The implemented technical commands are documented in the
+[technical CLI design](../../docs/modules/technical-analysis/cli-and-runtime.md):
+`collect-code` (Step02/03), `analyze-persistence` (Step04), and `assemble-materials`
+(Step05). Their READY fixture path saves and reopens R1/R2/R3; fixed customer-source Maven/JDT/Vue acceptance remains outstanding. The legacy `plan-materials`/`materials-only` producer is retired and rejected before configuration loading; historical saved outputs remain readable.
+
+`technical-analysis-artifact-policy-set-v1.json` is the new complete technical-policy
+example: it retains the full controlled JDT policy set and adds the three exact module-5/6
+keys for Java compilation environment, Java readiness, and the frontend HTTP index. The
+historical `jdt-artifact-policy-set-v1.json` remains byte-for-byte unchanged so saved
+receipts retain their original registry identity.
+
+The approved handoff requires official Maven `dependency:build-classpath` and
+`help:effective-pom` outputs for the same module/build selection. The user runs
+Maven, or explicitly authorizes an Agent to do so. Maven may load customer
+extensions; its execution is not inherently free of customer code. The Agent
+explains actual failures and passes file locations plus explicit module/JDK
+choices. Java deterministically extracts concrete settings, binds R0 and the
+actual JDK, and returns the environment or specific missing/unsupported inputs.
+It does not evaluate POM inheritance/profiles/BOM, download dependencies, or
+launch Maven. Agents must not assemble a semantic compilation-input JSON.
+
+**Migration status:** `technical-analysis-config-v2` directly names the official
+Maven-output files; [technical-analysis.example.yaml](technical-analysis.example.yaml)
+shows the current contract. New `collect-code` requires that v2 input. Historical v1
+records remain readable only through their historical observation/artifact paths; do
+not manually fill a v1 JSON record to start new technical collection. The target YAML,
+historical-read boundary, and remaining fixed-source acceptance are defined in the
+[CLI design](../../docs/modules/technical-analysis/cli-and-runtime.md#2-技术配置与外部编译输入)
+and [dependency handoff](../../docs/modules/technical-analysis/dependency-preparation.md).
+These consumption checks do not prove that the customer project compiles or authorize
+a Maven run.
+
+`source-analysis` is the only supported process entry point. Source preparation reads
+`source-preparation-config-v1`; existing analysis commands read the applicable
+`repository-run-config-v2/v3`, while v4 source selection is being connected to real consumers. All paths are absolute. The launcher delegates work to the same
 `RepositoryAnalysisAgent` and persisted run coordinator used by the Java API.
 
 The removed `RepositoryRunMain` and `generate` route are not compatibility entry
@@ -41,9 +81,9 @@ workspace and replace every absolute-path placeholder. Never put a credential in
 file. Model authentication is named by environment variable, for example
 `SOURCE_ANALYSIS_PRO_HOME` for an existing ChatGPT login context.
 
-New reading-material execution requires `sourceAnalysis.javaEngine: jdt`: it starts
+Current reading-material execution requires `sourceAnalysis.javaEngine: jdt`: it starts
 the configured JDT LS/tool JVM and provides repository navigation. JavaParser is
-being retired from production in this delivery, not retained as an alternative for
+retired from production, not retained as an alternative for
 this route. Historical configuration decoding is separate from permission to start
 a new analysis; an old `javaparser` value does not trigger a fallback to JDT.
 
@@ -119,29 +159,17 @@ registration:
 It prints a `runId` in `QUEUED` state. Supplying this ID to a later `execute-step`
 requires an exact queued request match; stopped runs are never reactivated.
 
-### Build materials without a model
+### Technical materials
+
+Use a technical-analysis configuration and the three independent operations:
 
 ```bash
-"${SOURCE_ANALYSIS[@]}" plan-materials
+source-analysis --config /absolute/technical.yaml collect-code
+source-analysis --config /absolute/technical.yaml analyze-persistence --code-run 'analysis-run:<R1>'
+source-analysis --config /absolute/technical.yaml assemble-materials --persistence-run 'analysis-run:<R2>'
 ```
 
-With the reading-material configuration, this captures the configured immutable
-commit, discovers entries, collects JDT navigation, applies the configured persistence
-plugin, and publishes Step05 `code-reading-materials.jsonl`. It writes state v4 and
-a `READING_MATERIALS_ONLY` run output, then stops. It neither builds old M10 material
-nor constructs a model provider.
-
-To use an already registered frozen capture instead of capturing the source again:
-
-```bash
-"${SOURCE_ANALYSIS[@]}" plan-materials \
-  --source-registration 'source-registration:<sha256>'
-```
-
-The registration must be in the configured capture workspace and match the configured
-repository identity and commit. This reuses the capture, not an old navigation result:
-the new run still executes JDT and Steps01–05. Use a new state destination and retain
-the old run.
+They respectively save R1 Step02/03, R2 Step04, and R3 Step05. They reopen exact saved upstreams; R2/R3 do not start JDT or Node. `plan-materials` and its `materials-only` implementation are not supported commands. Historical `READING_MATERIALS_ONLY` outputs remain available to their strict readers and queries.
 
 Export a verified older material-state file without rescanning:
 
@@ -237,11 +265,11 @@ same process command:
 
 The catalog is input material, distinct from `--reuse-from-model-batch`, which reuses
 matching completed tasks. All existing Activities are read without regeneration;
-frozen text is read without JDT. New calls perform global material selection, one
-reading check per candidate, process DRAFT/REVIEW and consolidation.
+frozen text is read without JDT. Current calls perform global material selection, one
+reading check per candidate, process DRAFT → WRITE → RULE_REVIEW and consolidation.
 
 Before a provider starts, the selected Activity/catalog/source references and question
-are bound once to the queued run's private execution configuration v3. A conflicting
+are bound once to the queued run's applicable private execution configuration. A conflicting
 selection cannot silently reuse that run. Real calls still require user authorization.
 
 ### Observe saved results
@@ -260,23 +288,25 @@ Observation never initializes a model provider:
 `artifact` accepts the closed names in `BusinessOutputArtifactKey`, including business
 materials, Activities, current process outputs, and historical report outputs.
 
-For the new technical-only run, query `CODE_READING_MATERIALS` for its canonical JSONL,
-or export a complete Markdown projection using the same typed material reader:
+For a completed technical R3 run, query `CODE_READING_MATERIALS_V2` for its canonical JSONL,
+or export its complete Markdown projection using the same typed R3 material reader:
 
 ```bash
 "${SOURCE_ANALYSIS[@]}" artifact \
   --run 'analysis-run:<sha256>' \
-  --key CODE_READING_MATERIALS \
+  --key CODE_READING_MATERIALS_V2 \
   --max-bytes 100000000 \
   --format markdown \
   --output /absolute/path/to/new/reading-materials.md
 ```
 
 The output path must be absolute and new. `--max-bytes` applies to the requested
-representation's UTF-8 bytes; it is configurable. Export hydrates already saved
-references, does not rescan or call a model, and does not install another canonical
-artifact. `inspect` exposes `completedReadingMaterials` separately from business
-outputs. No Step08 report exists for a technical-only run.
+representation's UTF-8 bytes; it is configurable. This export strictly reopens the
+saved R3/R2/R1/R0 lineage, hydrates already saved references, does not rescan or call
+a model, and does not install another canonical artifact. It does not change the
+historical `CODE_READING_MATERIALS`/business artifact route. `inspect` exposes
+`completedReadingMaterials` separately from business outputs. No Step08 report exists
+for a technical-only run.
 
 For a historical run that already owns a valid Step08 checkpoint:
 

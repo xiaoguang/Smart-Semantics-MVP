@@ -20,7 +20,7 @@ public final class SourcePreparationRequestValidator {
     if (!sameOrigin(parent.origin(), derived.origin())) {
       throw new IllegalArgumentException("derived preparation must retain its exact source origin");
     }
-    if (!parent.declaredExclusions().equals(derived.declaredExclusions())) {
+    if (!sameTargets(parent.declaredExclusions(), derived.declaredExclusions())) {
       throw new IllegalArgumentException("derived preparation must retain declared exclusions");
     }
     if (!parent.limits().equals(derived.limits())
@@ -28,7 +28,7 @@ public final class SourcePreparationRequestValidator {
       throw new IllegalArgumentException("derived preparation must retain limits and policy");
     }
     if (derived.operation() == SourcePreparationOperation.REFRESH) {
-      if (!parent.effectiveExclusions().equals(derived.effectiveExclusions())) {
+      if (!sameTargets(parent.effectiveExclusions(), derived.effectiveExclusions())) {
         throw new IllegalArgumentException("refresh cannot replace or change effective exclusions");
       }
       return;
@@ -53,5 +53,11 @@ public final class SourcePreparationRequestValidator {
       return firstGit.commitId().equals(secondGit.commitId());
     }
     return !(first instanceof GitCommitSourceOrigin) && !(second instanceof GitCommitSourceOrigin);
+  }
+
+  private static boolean sameTargets(
+      java.util.List<SourcePreparationTarget> first,
+      java.util.List<SourcePreparationTarget> second) {
+    return new LinkedHashSet<>(first).equals(new LinkedHashSet<>(second));
   }
 }

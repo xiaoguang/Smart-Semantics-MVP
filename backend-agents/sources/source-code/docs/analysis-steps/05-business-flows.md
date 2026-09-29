@@ -1,92 +1,89 @@
-# 入口阅读材料
+# 按入口组装最终技术证据
 
-> [总体设计](../DESIGN.md)；固定 key：`business-flows`，目录：`steps/05-business-flows/`。当前唯一材料 owner 为 `analysis.material`；本页替代旧 Flow/Capsule 编译/投影生产职责。
+状态：2026-09-29新目标详细设计，尚未实施。既有v1/v2阅读包及读取器已实现；新设计改为每个后端entryId一份自包含JSON，不以12入口/Markdown字节数合包。当前旧R3有47包、339入口处置、51前端处置；新角色R4不能与旧R3混用。
 
-## 1. 为什么存在
+固定key仍为business-flows，目录仍为steps/05-business-flows；owner为analysis.material，不新增Flow/Fact/Proof或业务推理。完整字段、文件和容量合同唯一归属[入口证据详细设计](../modules/technical-analysis/entry-evidence.md)，命令与版本归[运行合同](../modules/technical-analysis/cli-and-runtime.md)。
 
-上游已有完整方法、调用候选和可选 XML/SQL。本步将它们组织成按入口可读、可保存并可重开的技术材料，让下一步无需重新导航。材料包不是业务过程；一个通用新增单据入口不能仅因分包被宣布为采购、销售、调拨三个独立过程。
+## 1. 输入
 
-Step05保存技术原件的选择引用和来源；[Step06](06-flow-interpretation.md)拥有针对模型容量的阅读投影、选材和Activity解释。技术包能完整导出，不代表能一次放入模型。
+目标命令：
 
-## 2. 输入与 Interface
+```text
+source-analysis --config <technical-v3.yaml> assemble-materials
+  --frontend-run <R1> --persistence-run <R3>
+```
 
-`CodeReadingMaterialBuilder.build(CodeReadingMaterialRequest)` 返回 `CodeReadingMaterialSet`。请求只接收已经读好的不可变 JavaCodeIndex、PersistenceMaterialIndex、完整上游publication和CodeReadingMaterialProfile；不接收Provider、JDT、parser、reader或任意源码路径。
+R1是独立前端索引；R3是持久化运行，其中保存准确后端R2的Step02/03引用；R0是三者相同的来源及排除版本。不能额外传一个不同R2，也不能寻找最近成功结果。
 
-| 输入 | 使用 |
+运行组合根重开并核验上述输入，按前端保存范围从R0恢复完整source units。Builder只接收已验证不可变对象：前端请求/单元、后端入口/Java索引、持久化索引及明确组装配置；不接收parser、Provider或任意客户目录。沿现有CodeReadingMaterialBuilder/publisher/reader修改，不创建平行运行系统。
+
+## 2. 内部依次做什么
+
+1. **核对上游。** R1/R2/R3同R0，R3恰好引用所消费R2，所有receipt/版本/有效范围正确。错误来源直接拒绝，不能靠人工确认绕过。
+2. **连接HTTP请求与入口。** 将现有method/path匹配逻辑从前端发现器移来，消费已保存请求和后端methodCondition/route。保存唯一、多候选、无匹配、未确定，以及地址条件。这里不再解析Vue或配置脚本。
+3. **建立入口记录。** 对后端完整分母逐entryId处理，包括未收集入口；一个Controller的不同映射不合并，一个entry可有多个页面调用者。
+4. **读取Java材料。** 依据该entry所属method/call集合取完整正文、有序实参/形参、目标/实现、条件/返回及展开限制。一个方法一份，调用边保留全部；不把调用树再复制一份。
+5. **连接Mapper/XML/SQL。** 依准确Mapper身份纳入绑定、statement完整结构、资源/依赖和保存的SQL分析。外部库正常边界不读库正文，错误或未知候选不能伪装成确定SQL路径。
+6. **加入前端原文。** 完整保存与每个匹配请求相关的页面实例、事件、组件/mixin、请求包装和必要参数构造单元。R1没取得的单元仍为缺口，R4不能自行补解析。
+7. **保存限制及覆盖。** 唯一请求进入入口，歧义请求标候选，无匹配请求留在全仓前端覆盖中。后端失败仍有一份入口结果，不删分母。
+8. **核对资源并发布。** 按实际JSON计量；不足时返回具名问题，不截正文。通过后一次原子安装索引、每入口JSON和前端覆盖，重开检查后登记运行结果。
+
+仅第2项有限的HTTP匹配由旧前端模块迁入；其它步骤均组织已保存材料，零JDT/Node/XML/SQL parser。没有任何一步调用LLM解释业务。
+
+## 3. 输出与消费者
+
+```text
+entry-evidence-index.json
+entry-<完整entryIdhex>.json   （每个后端入口一份）
+frontend-coverage.jsonl
+现有发布回执
+```
+
+每个入口文件包含HTTP入口、页面用法/完整单元、Java方法/调用、Mapper绑定、完整XML/SQL及限制。具体必填字段、自包含范围、去重和路径见[字段合同](../modules/technical-analysis/entry-evidence.md#5-每份入口-json-的字段合同)。
+
+- **技术消费者**从总索引查entryId并读该JSON，不必手工连五份上游文件，也不解析Markdown。
+- **artifact/inspect**按准确R4和版本查询，未安装结果不返回虚构路径；按需技术Markdown不再是默认主数据。
+- **Activity/Step07**尚未适配本格式；模型初始化前明确拒绝。此前418条Activity消费的是另一份历史Step05 v1，不得把“旧版可消费”说成“新版已接通”。
+- **历史reader**继续按准确v1/v2重开旧Packet、旧Markdown和上游，不重写旧选择、ID或覆盖。
+
+自包含意味着本文件保存已声明范围的完整正文；不是工具已经证明每个Vue入口都能连到SQL。不经过SQL的后端入口、未匹配页面、正常外部边界和工具未知均合法存在，但状态必须区分。
+
+## 4. 原v1/v2与本轮迁移
+
+| 当前实现 | 本轮调整 |
 | --- | --- |
-| JavaCodeIndex.entries() | 完整已发现入口分母，包括未收集入口 |
-| 共享METHOD + 入口CALL | 原文、候选、参数、控制/返回、成员归属 |
-| PersistenceMaterialIndex | Mapper关联与完整XML/SQL材料；关闭时为明确DISABLED对象 |
-| source/discovery/navigation/persistence refs | 保存与重开时验证同源和前驱 |
-| technical.readingMaterials | 必填正值 maxPacketUtf8Bytes、maxEntriesPerPacket，参与材料身份 |
+| HEADER/PACKET/ENTRY_COVERAGE/FRONTEND_COVERAGE混在code-reading-materials.jsonl | 新producer v3写入口目录＋entry文件＋前端覆盖；旧文件只读 |
+| entryId排序后按入口数/Markdown容量合并 | entryId逐一生成，排序只为存储稳定 |
+| 后端包先形成，再按余量追加前端 | 该入口全部已取得前后端单元一起组织，不能因其它入口挤掉前端 |
+| 只消费前端已存唯一ENTRY_LINK | 读取独立R1请求，在R4生成关系；歧义/无匹配不删除 |
+| 一个packet内短SourceRef，跨包可能重名 | 入口文件使用明确单元身份和sourceRefs，禁止裸短号跨入口关联 |
+| 字节数按技术Markdown计算 | 按实际canonical JSON与store预算计算 |
+| 原子store只接受固定单文件、默认64payload | 为新producer增加manifest约束的变长文件集合及预算；非任意路径通配 |
+| reader按选择引用恢复上游正文 | 新入口文件自包含；读取器验证已保存集合，不重新组装 |
 
-旧 business.material 片段行数限制不能近似转成新profile；旧technical.flow/capsule不是新准备命令前置要求。
+这不是恢复旧Flow/Capsule编译器。CodeReadingMaterialSet/Request需升级或在同模块内部以EntryEvidenceSet明确区分新格式，不能让新入口JSON与旧Packet共用无版本分支后随意丢字段。精确类型名是实现细节，行为合同和版本不可省略。
 
-## 3. 程序如何组包
+## 5. 异常与完整性
 
-1. 遍历完整入口清单；上游未收集入口直接保存具体原因。
-2. 从入口完整声明/正文起，按现有调用首次遍历顺序选择完整方法。并列项用稳定key排序，循环只保留引用。
-3. 每个call保留entryId、调用位置、实参和各候选的形参/展开状态；共享方法正文一份，调用发生点不合并。
-4. 命中Mapper时同时加入完整声明和所关联statement、相关资源/依赖、绑定与可用SQL结构。插件关闭不造空XML。
-5. 为所选METHOD/XML_RESOURCE分配短SourceRef，保存其单元与精确已知位置；同一packet中同一ref只能映射一处。当前source:1等编号会在不同packet重复，跨包身份必须包含publication + packetId + sourceRef。原文不同时复制进refs与modelPacket。
-6. 使用同一个确定性Markdown格式器计量完整自包含投影UTF-8字节，包含代码、调用、参数、XML/SQL与限制；不是估计行数。
-7. 完整单元放不下时记录该入口未选单元和原因。最小完整入口单元也放不下则NOT_COLLECTED。不得切半方法、XML条件或插入的列值。
-8. 发布一次材料选择和覆盖，按需导出技术预览；结束于Step05，Provider不初始化。
+所有已发现entryId必须对应结果。Java NOT_COLLECTED保留原原因；已确认外部调用不作为代码缺失；未知目标、查询失败、SQL部分解析及前端地址条件分别保存。一个成功入口不代表全仓完成。
 
-当前单包选择遵守入口与材料容量，不能以“已被另一个包选中”吞掉本入口受影响调用。模型需要范围外材料时首先报告原包未选/导航限制；Step06不能偷偷扩大source selection或重新生成Step05。
+来源错、断引用、call owner错、资源超限、写盘失败不能发布成功集合。已有R1/R2/R3不删除，也不为组装失败重新运行parser。报告先保存再结束运行；磁盘完全不可写时只返回实际可保存范围。
 
-## 4. 保存合同与重开
+容量不够不触发删条件、短摘要或另开混合包；调整显式配置后创建新R4。业务模型失败也不得回头改这份技术证据。
 
-地址：Step05 module4 `code-reading-materials`；文件：`code-reading-materials.jsonl`；schema：`code-reading-material-set-v1`；artifact：`CODE_READING_MATERIAL_SET`。保存的是引用式canonical材料，不是Markdown。
+## 6. 验收
 
-| 记录 | 保存/内存职责 |
-| --- | --- |
-| HEADER | sourceInventory、navigation/persistence publication、snapshot、实际profile；保存侧同时核对discovery |
-| PACKET | packetId、入口、method/call选择引用、persistence选择引用、SourceRef位置、unselectedUnits、limitations、自包含字节数 |
-| ENTRY_COVERAGE | entryId、packetIds、COLLECTED/COLLECTED_WITH_LIMITATIONS/NOT_COLLECTED、具体限制 |
+以正式CLI、真实Agent/store/reader验证：
+- 一个entry完整Controller→Service→Mapper/XML和前端材料进入同一文件；请求及参数未知不补造。
+- 不相关入口分开；共享方法去重但每入口calls不串；递归有限引用。
+- 后端无前端、前端无匹配、多匹配、关闭前端、持久化关闭和7个历史失败入口均保留真实状态。
+- 新排序字段及getQueryParams必要单元保留；具名错边不再进入确定材料；正常外部边界不误报。
+- 超过64入口、错误身份/路径/上游、容量/写盘失败、历史v1/v2重开及新业务入口拒绝。
+- 前端请求和后端入口分母各自闭合，不预设新结果必须仍为339/51。
+- JDT/Node/SQL解析/业务模型启动次数均0。
 
-METHOD正文唯一派生存储在Step03，XML Resource原文唯一派生存储在Step04；冻结原始快照仍保留。没有第二份M10/modelPacket canonical正文。
+## 7. 当前实现事实
 
-`CodeReadingMaterialReader.reopen(AnalysisStepPublicationReference)` 已实现：
-
-1. 检查Step05 receipt、准确schema/producer/类型、来源与完整上游引用。
-2. 一次重开所需Java与持久化索引，按已保存选择引用恢复原对象。
-3. 验证入口/调用owner、SourceRef位置、已选/未选范围与实际投影字节。
-4. 返回完整只读Packet，包含真实MethodCode、EntryCall、PersistenceSelection；不再调用build、analyze、collect或重新选择单元。
-
-普通可信同进程直接传不可变对象；跨进程在reader seam核验，不让每个内部函数重新打开整个索引。
-
-## 5. 技术预览与模型投影
-
-`CodeReadingMaterialMarkdown.render/renderPacket`导出完整技术材料，文件/行号、调用树、Java正文、逐入口calls、XML/SQL与未选列表均可见。重开后逐字节一致，预览不是下一生产输入。
-
-新模型路径直接接收Packet：移除重复导航呈现、只显示短ref、按完整statement及依赖生成XML结构投影；保留Java方法原文和所有条件。该职责见[Activity材料投影](../modules/activity-explanation/material-projection.md)，不修改本页canonical schema或既有技术Markdown。
-
-真实新增单据样例有443方法、1,468calls、23份XML资源、58条statement，自包含2,055,071字节；因此“已有325份包”不能推出“模型可一次阅读325份”。具体长材料策略由Step06在实际请求预算上决策。
-
-## 6. 输出怎样被使用
-
-| 消费者 | 读取方式 |
-| --- | --- |
-| plan-materials / artifact | 材料准备止于本步；artifact按指定format导出JSONL或Markdown |
-| 新Activity目标 | 新batch绑定完整Step05 reference，reader恢复Packet再投影，不调用旧M10 Builder |
-| Step07目标新corpus | 按Activity的明确material来源重开已保存代码；旧M10分支继续只读 |
-| 历史结果 | 旧Flow/Capsule/M10/326Activity原字节、来源与schema不变，不被自动升级 |
-
-现有 `repository-run-state-v4`保存CODE_READING_MATERIALS checkpoint，`analysis-run-output-v5`只表示READING_MATERIALS_ONLY。模型batch接线目标需升级自己的execution/output合同；本材料状态不为了retry改写。完整版本见[接入合同](../modules/activity-explanation/integration-contracts.md)。
-
-## 7. 失败与覆盖
-
-所有发现入口都保留技术处置。COLLECTED_WITH_LIMITATIONS 表示材料取得但有具体导航/SQL/选择限制，不是业务分析通过。多个包可关联一个入口；裸E1不能跨包关联。
-
-来源漂移、断引用、字段/schema错、CALL owner混用、字节数不匹配或发布失败均失败关闭，保留已完成上游。容量排除和工具已记录限制是明确未处理范围，不自动重扫、换parser或刷新源。
-
-Activity模型失败、重试或手动新batch不改变本步材料；更改模型、Prompt、并发、日志目录也不使技术材料失效。实际取材profile、插件或来源变化必须另行显式准备新材料。
-
-## 8. 测试与当前成熟度
-
-直接测试应观察完整Controller/Service/Mapper与XML能到达重开后的Packet，多个候选、重复实参、循环、共享方法/入口CALL不串；关闭插件零parser、容量边界不截正文、未知ref/来源错拒绝、空入口合法、技术导出字节一致、模型/JDT调用为0。
-
-当前实现与固定仓库验收已完成：325包、326条覆盖，325 COLLECTED_WITH_LIMITATIONS、1 NOT_COLLECTED，容量排除0；全部完整入口正文及自包含字节计数核对通过。技术索引88,587,381字节、持久化4,508,008字节、引用式材料18,749,377字节、完整Markdown83,666,232字节。来源为[交付核验](../supplements/jdt-persistence-reading-materials-delivery.md)。
-
-新Step06消费尚未实现。本轮文档明确了目标接口，未调用模型，也未用“材料完成”代替Activity质量验收。历史Flow/Capsule算法及版本可在Git `5ceb111` 的本页查阅；新运行不恢复其producer。
+历史2026-09-18后端材料为325包/326入口、1个导航缺口，后来用于418条Activity；保留[历史验收](../supplements/jdt-persistence-reading-materials-delivery.md)。
+2026-09-28技术v2旧R3为47包/339入口/51前端处置，采购查询材料已保存，2条前端请求容量未选，Java准确性尚未通过，见[固定源码验收](../supplements/technical-analysis-fixed-source-acceptance.md)。
+2026-09-29的新四命令/逐入口JSON是本页待实施目标。不得用前两次结果替代新格式与准确性验收。

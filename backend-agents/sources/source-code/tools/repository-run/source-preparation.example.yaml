@@ -1,0 +1,15 @@
+# Copy this file outside the source tree, then replace every /absolute/... placeholder.
+# Keep preparationWorkspace and runStore outside the source root.
+schemaVersion: source-preparation-config-v1
+source:
+  kind: DIRECTORY
+  identity: example-project
+  root: /absolute/path/to/customer/source
+exclusions: []
+limits:
+  maxFiles: 100000
+  maxTotalBytes: 10737418240
+paths:
+  preparationWorkspace: /absolute/path/to/analysis/preparations
+  runStore: /absolute/path/to/analysis/runs
+policyRegistry: /absolute/path/to/source-code/tools/repository-run/source-preparation-artifact-policy-set-v1.json

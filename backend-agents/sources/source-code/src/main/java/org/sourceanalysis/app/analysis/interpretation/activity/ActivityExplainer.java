@@ -763,7 +763,7 @@ public final class ActivityExplainer {
         incompleteScopes);
   }
 
-  private static List<String> knownSliceKeys(
+  static List<String> knownSliceKeys(
       ActivityReadingPlan readingPlan, ObjectNode record, List<String> requiredSliceKeys) {
     java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>(requiredSliceKeys);
     readingPlan.slices().forEach(slice -> keys.add(slice.sliceKey()));
@@ -785,7 +785,7 @@ public final class ActivityExplainer {
     }
   }
 
-  private static List<String> entryIdsForScope(
+  static List<String> entryIdsForScope(
       ActivityReadingPlan readingPlan,
       ObjectNode record,
       String sliceKey,
@@ -844,7 +844,7 @@ public final class ActivityExplainer {
         || unexplainedEntries.stream().anyMatch(entry -> entryIds.contains(entry.entryId()));
   }
 
-  private static String scopeKeyForIssue(String issue, List<String> knownSliceKeys) {
+  static String scopeKeyForIssue(String issue, List<String> knownSliceKeys) {
     for (String prefix : List.of("READING_INCOMPLETE:", "READING_SCOPE_WITHDRAWN:")) {
       if (issue.startsWith(prefix)) {
         String candidate = issue.substring(prefix.length());
@@ -921,6 +921,7 @@ public final class ActivityExplainer {
     ActivityReadingPlan readingPlan;
     ScopedActivityClaim claimedResult;
     boolean reusedClaimedPlan;
+    boolean reassessedIncompletePlan;
     try {
       ObjectNode claimedRecord =
           reuseResultStore == null
@@ -935,6 +936,7 @@ public final class ActivityExplainer {
       claimedResult =
           claimedRecord == null ? null : requireScopedActivityClaim(claimedRecord, material);
       reusedClaimedPlan = false;
+      reassessedIncompletePlan = false;
       ObjectNode saved =
           reuseResultStore == null
               ? null
@@ -946,7 +948,11 @@ public final class ActivityExplainer {
         readingPlan = reader.coordinate(view, readingProfile);
       } else {
         requireReusableReadingPlan(saved, identity, binding, readingProfile);
-        ActivityReadingPlan reopened = reader.reopen(view, readingProfile, saved);
+        reassessedIncompletePlan = saved.path("requiredScopeIncomplete").asBoolean(false);
+        ActivityReadingPlan reopened =
+            reassessedIncompletePlan
+                ? reader.reassessSavedCapacity(view, readingProfile, saved)
+                : reader.reopen(view, readingProfile, saved);
         if (reopened.slices().isEmpty()) {
           if (claimedResult != null && claimedResult.hasBusinessResult()) {
             throw new ActivityExplanationException("ACTIVITY_REUSED_RESULT_INVALID");
@@ -958,8 +964,14 @@ public final class ActivityExplainer {
           readingPlan = reopened;
           if (claimedResult != null) {
             requireClaimedSlices(readingPlan, claimedResult);
-            requireClaimedStageSuccesses(readingPlan, profile, binding);
-            reusedClaimedPlan = true;
+            requireClaimedStageSuccesses(
+                readingPlan,
+                profile,
+                binding,
+                claimedResult.reviewedActivities().stream()
+                    .map(ReviewedActivity::sliceKey)
+                    .collect(Collectors.toSet()));
+            reusedClaimedPlan = !reassessedIncompletePlan;
           }
         }
       }
@@ -988,6 +1000,11 @@ public final class ActivityExplainer {
         && (!claimedResult.reviewedActivities().equals(scoped.reviewedActivities())
             || !claimedResult.coverage().equals(scoped.coverage())
             || !claimedResult.unexplainedEntries().equals(scoped.unexplainedActivityEntries()))) {
+      throw new ActivityExplanationException("ACTIVITY_REUSED_RESULT_INVALID");
+    }
+    if (reassessedIncompletePlan
+        && claimedResult != null
+        && !scoped.reviewedActivities().containsAll(claimedResult.reviewedActivities())) {
       throw new ActivityExplanationException("ACTIVITY_REUSED_RESULT_INVALID");
     }
     ModelRuntimeIdentityV1 identityForRecord = binding.expectedRuntimeIdentity();
@@ -1261,8 +1278,12 @@ public final class ActivityExplainer {
   private void requireClaimedStageSuccesses(
       ActivityReadingPlan readingPlan,
       ActivityExplanationProfile profile,
-      ModelJobProviderBinding binding) {
+      ModelJobProviderBinding binding,
+      Set<String> claimedSliceKeys) {
     for (ActivityReadingPlan.Slice slice : readingPlan.slices()) {
+      if (!claimedSliceKeys.contains(slice.sliceKey())) {
+        continue;
+      }
       ActivityModelMaterial material =
           projectedMaterial(slice.readingPacket(), slice.sliceKey(), slice.scope());
       ActivityJobIdentity sliceIdentity =

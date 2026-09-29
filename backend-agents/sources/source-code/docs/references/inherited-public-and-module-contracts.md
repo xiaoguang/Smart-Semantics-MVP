@@ -18,6 +18,10 @@ RenderedDocumentReference render(String runId);
 
 start 创建 path-free QUEUED run；executeStep 按明确意图经已配置内部能力执行材料、Activity 或过程目标；inspect 读取已保存状态；artifact 读取一个命名业务 checkpoint 输出；render 只对已有历史九章 checkpoint 做确定性重排版。LocalRepositoryAnalysisAgent 及运行 coordinator 是当前实现；退役的 BusinessAnalysisWorkflow 不属于公共合同。
 
+源码准备已通过这五个方法接入PREPARE_SOURCE意图、准备请求分支和output/query key；不增加第二个Agent。字段、轻量配置以及新来源选择以[CLI合同§5](../modules/source-preparation/cli-and-skill.md#5-运行组装及公共接口)和[数据合同](../modules/source-preparation/contracts-and-storage.md)为准。准备分支不要求尚未产生的sourceRegistration或伪Prompt；下列旧v2字段继续严格历史读取，不约束新版准备请求。
+
+原三个技术操作已通过上述Agent保存固定源码结果，当前request v4/output v8。2026-09-29目标增加独立collect-frontend并将匹配放到assemble-materials，形成四操作、request v5/output v9及准确双分支上游，见[技术CLI详细合同](../modules/technical-analysis/cli-and-runtime.md)。新拆分尚未实施，不要求模型配置、不新增Agent方法；validate/trace仍不属于本次实现范围。
+
 完整目标仍保留 validate、trace 两个操作名，未来接入同一 Agent，不是第二 public seam：
 
 - validate 可作为用户显式请求的独立检查，必要时重放相关算法；普通发布/读取/render 不调用它作为重复 gate。
@@ -32,7 +36,7 @@ Java、CLI、未来 authenticated loopback HTTP 都复用同一 Agent。当前 C
 
 旧目录、冻结文本引用和关注问题属于内部ProcessDiscoveryRequest/私有配置，现行Step07 execution-config-v3已实现。新Activity/过程来源目标使用显式materialSource discriminator与完整Step05或历史M10引用；QUEUED run在Provider前固定选择，改变输入另起run。现行run-output-v5仅reading-only，目标v6保留knowledgeCheckpoint/reportCheckpoint字段及双owner；历史v3/v4严格读。详见[集成合同](../modules/activity-explanation/integration-contracts.md)。
 
-以下是已冻结字段，不因 semantic profile 改写：
+以下是保留的旧v2请求合同，不因semantic profile改写；源码准备目标v3使用上文链接的明确分支，不向旧v2文件添加字段：
 
 ~~~text
 AnalysisRunRequest
@@ -196,7 +200,9 @@ ModuleReceipt
 
 引擎接线沿用这一机制并允许经合同登记的实际 payload 集：Step03 的 `java-code-index` 是 `PROGRAM_GRAPHS` module 7，不是新 step；当前Step03发布JDT index，Step04发布persistence-material-index-v1与其实际XML/SQL材料，Step05发布code-reading-material-set-v1；旧Step04 v4 NOT_PRODUCED accounting只保留精确历史读取。各步骤由现有step store生成receipt。Receipt 的 `payloadArtifacts[]` 只列实际 semantic payload。所有 exact-set allowlist、artifact policy、reader 与 fixture 必须和[引擎实际集合表](../modules/java-code-engines/contracts-and-configuration.md)一致；未执行增强不写空文件，已声明 AVAILABLE 的损坏产物仍失败。
 
-失败不安装 success envelope，只在既有外部 failure area 写：
+发布/计算本身无法可靠完成时不安装success envelope，使用既有failure area。源码准备新增合同有所区分：完成检查并得到文件级问题是一个可安装的检查结果，安装后readiness仍可为NEEDS_DECISION/BLOCKED；它不宣称源码全部可用。具体issue与gapRefs对应见专属数据合同。安装本身失败仍不能伪造receipt。
+
+既有外部failure形状：
 
 ~~~text
 ModuleFailure

@@ -196,6 +196,8 @@ class JdtSyntaxReaderTest {
             sha256(source),
             java.util.List.of(sourceRoot.toString()),
             java.util.List.of(),
+            "17",
+            platformEntries(),
             source);
 
     JdtSyntaxProtocol.Response response = new JdtSyntaxReader().describe(request);
@@ -320,6 +322,8 @@ class JdtSyntaxReaderTest {
                         "0".repeat(64),
                         java.util.List.of(),
                         java.util.List.of(),
+                        "17",
+                        platformEntries(),
                         source)))
         .isInstanceOf(JdtSyntaxProtocol.ProtocolException.class)
         .hasMessageContaining("fingerprint");
@@ -335,6 +339,8 @@ class JdtSyntaxReaderTest {
                         sha256(source),
                         java.util.List.of(),
                         java.util.List.of(),
+                        "17",
+                        platformEntries(),
                         source)))
         .isInstanceOf(JdtSyntaxProtocol.ProtocolException.class)
         .hasMessageContaining("protocol");
@@ -351,7 +357,13 @@ class JdtSyntaxReaderTest {
         sha256(source),
         java.util.List.of(),
         java.util.List.of(),
+        "17",
+        platformEntries(),
         source);
+  }
+
+  private static java.util.List<String> platformEntries() {
+    return java.util.List.of(System.getProperty("java.home"));
   }
 
   private static String sha256(String source) {
