@@ -3,11 +3,15 @@ package org.sourceanalysis.app.analysis.code.publish;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.sourceanalysis.app.analysis.code.EngineDescriptor;
 import org.sourceanalysis.app.analysis.code.EntryCodeContext;
 import org.sourceanalysis.app.analysis.code.EntrySeed;
@@ -42,6 +46,31 @@ import org.sourceanalysis.app.artifact.RunStoreHandle;
 import org.sourceanalysis.app.capture.preparation.PreparedSourceArchive;
 
 class JavaCodeIndexPublicationSpecifierTest {
+
+  @ParameterizedTest
+  @ValueSource(strings = {"QUERY_FAILED", "NAVIGATION_CONFLICT", "EXTERNAL"})
+  void legacyV2RejectsNavigationBoundaryStatusesUntilTechnicalV3ReaderIsUsed(
+      String status, @TempDir Path temporary) {
+    try (ProgramGraphsPublicFixture fixture =
+        ProgramGraphsPublicFixture.createForJavaCodeIndex(temporary.resolve("fixture"))) {
+      String snapshotId = fixture.sourceReader().reopen(fixture.sourceInventory()).snapshotId();
+      try (JavaCodeSession session = boundaryStatusSession(snapshotId, status)) {
+        assertThatThrownBy(
+                () ->
+                    new ProgramGraphsExecution(
+                            fixture.sourceReader(),
+                            fixture.moduleArtifacts(),
+                            fixture.stepArtifacts())
+                        .execute(
+                            fixture.sourceInventory(),
+                            fixture.applicationDiscovery(),
+                            session,
+                            fixture.artifactControls()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("JAVA_CODE_INDEX_INVALID");
+      }
+    }
+  }
 
   @Test
   void publishesReopensNavigationOnlyStepAndSkipsStrictFactEnumeration(@TempDir Path temporary) {
@@ -153,6 +182,10 @@ class JavaCodeIndexPublicationSpecifierTest {
         EntryCodeContext.CallSite includedCall = includedCalls.get(0);
         EntryCodeContext.CallSite boundedCall = boundedCalls.get(0);
 
+        // The legacy v2 wire deliberately omits structured observations. A v2 reopen must
+        // reconstruct an empty observation list rather than infer v3 semantics from missing JSON.
+        assertThat(includedCall.observations()).isEmpty();
+        assertThat(boundedCall.observations()).isEmpty();
         assertThat(includedCall.callKey()).isEqualTo("call:shared-physical");
         assertThat(boundedCall.callKey()).isEqualTo("call:shared-physical");
         assertThat(boundedCall.callerMethodKey()).isEqualTo(includedCall.callerMethodKey());
@@ -226,6 +259,99 @@ class JavaCodeIndexPublicationSpecifierTest {
             .hasMessage("JAVA_CODE_INDEX_INVALID");
       }
     }
+  }
+
+  @Test
+  void technicalV3ValidationPreservesTheCallAndReasonWhenObservationIsMissing() {
+    EntryCodeContext.CallSite call =
+        new EntryCodeContext.CallSite(
+            "call:missing-observation",
+            "method:controller",
+            "METHOD",
+            new SourceRange(40, 12, 1, 1),
+            new SourceRange(40, 12, 1, 1),
+            "service.save()",
+            "service",
+            List.of(),
+            List.of(),
+            false,
+            List.of(
+                new EntryCodeContext.CallTarget(
+                    null,
+                    List.of("DECLARATION"),
+                    "fixture.Service.save",
+                    List.of("DEFINITION"),
+                    "NOT_EXPANDED",
+                    "BINDING_DECLARATION_MISMATCH",
+                    List.of())),
+            "NAVIGATION_CONFLICT",
+            "BINDING_DECLARATION_MISMATCH:fixture.Service.save",
+            List.of());
+
+    assertThatThrownBy(() -> invokeTechnicalV3CallProjection(call))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("JAVA_CODE_INDEX_INVALID")
+        .satisfies(
+            failure -> {
+              String diagnostic = allMessages(failure);
+              assertThat(diagnostic)
+                  .as("the v3 publisher must identify the rejected call and invariant")
+                  .contains("call:missing-observation", "BINDING_DECLARATION_MISMATCH");
+            });
+  }
+
+  @Test
+  void technicalV3DoesNotPublishALocatedCallAfterFilteringItsOnlyUnconfirmedTarget() {
+    SourceRange range = new SourceRange(40, 12, 1, 1);
+    EntryCodeContext.CallSite call =
+        new EntryCodeContext.CallSite(
+            "call:located-unconfirmed",
+            "method:controller",
+            "METHOD",
+            range,
+            range,
+            "service.save()",
+            "service",
+            List.of(),
+            List.of(),
+            false,
+            List.of(
+                new EntryCodeContext.CallTarget(
+                    null,
+                    List.of("DECLARATION"),
+                    "fixture.Service.save",
+                    List.of("DEFINITION"),
+                    "NOT_EXPANDED",
+                    "BINDING_DECLARATION_MISMATCH",
+                    List.of())),
+            "LOCATED",
+            null,
+            List.of(
+                new EntryCodeContext.CallObservation(
+                    "UNCONFIRMED_BINDING_LOCATION",
+                    "JDT_DEFINITION",
+                    "SOURCE",
+                    range,
+                    "UNCONFIRMED",
+                    null,
+                    null,
+                    "SOURCE",
+                    "fixture.Service.save",
+                    "BINDING_DECLARATION_MISMATCH")));
+
+    Throwable failure =
+        org.assertj.core.api.Assertions.catchThrowable(
+            () -> {
+              EntryCodeContext.CallSite projected = invokeTechnicalV3CallProjection(call);
+              assertThat(projected.targets()).isEmpty();
+              assertThat(projected.resolution()).isEqualTo("NAVIGATION_CONFLICT");
+              assertThat(projected.observations())
+                  .extracting(EntryCodeContext.CallObservation::detail)
+                  .contains("BINDING_DECLARATION_MISMATCH");
+            });
+    assertThat(failure)
+        .as("filtering the sole unconfirmed target must not create LOCATED plus zero targets")
+        .isNull();
   }
 
   @Test
@@ -438,6 +564,91 @@ class JavaCodeIndexPublicationSpecifierTest {
     return fakeSession(snapshotId, false, false);
   }
 
+  private static JavaCodeSession boundaryStatusSession(String snapshotId, String status) {
+    EntryCodeContext.TechnicalEnhancements enhancements =
+        new EntryCodeContext.TechnicalEnhancements(
+            EntryCodeContext.Availability.NOT_PRODUCED,
+            "STRICT_GRAPH_ENRICHMENT_NOT_REQUESTED_BY_JDT_EXECUTION",
+            List.of(),
+            List.of(),
+            null);
+    return new JavaCodeSession() {
+      @Override
+      public JavaDeclarationCatalog catalog() {
+        return new JavaDeclarationCatalog(
+            snapshotId,
+            List.of("src/main/java/com/example/OrderController.java"),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            Map.of());
+      }
+
+      @Override
+      public EntryCodeContext collect(EntrySeed entry) {
+        EntryCodeContext.MethodCode method =
+            method(
+                entry.methodKey(),
+                "entry",
+                entry.methodRange(),
+                "public Object entry() { return service.call(); }");
+        boolean external = "EXTERNAL".equals(status);
+        EntryCodeContext.CallTarget candidate =
+            new EntryCodeContext.CallTarget(
+                null,
+                List.of("DECLARATION"),
+                "Service.call",
+                List.of("DEFINITION"),
+                "NOT_EXPANDED",
+                "JDT boundary " + status,
+                List.of());
+        EntryCodeContext.CallSite call =
+            new EntryCodeContext.CallSite(
+                "call:boundary-" + status.toLowerCase() + ":" + entry.entryId(),
+                entry.methodKey(),
+                "METHOD",
+                new SourceRange(25, 12, 1, 1),
+                new SourceRange(33, 4, 1, 1),
+                "service.call()",
+                "service",
+                List.of(),
+                List.of(),
+                false,
+                external ? List.of() : List.of(candidate),
+                status,
+                "JDT boundary " + status);
+        List<EntryCodeContext.Limitation> limitations =
+            external
+                ? List.of()
+                : List.of(
+                    new EntryCodeContext.Limitation(
+                        status,
+                        "JDT boundary " + status,
+                        List.of(entry.methodKey()),
+                        List.of(call.callKey())));
+        return new EntryCodeContext(
+            EntryCodeContext.SCHEMA_VERSION,
+            entry.entryId(),
+            entry.methodKey(),
+            List.of(method),
+            List.of(call),
+            List.of(),
+            limitations,
+            enhancements);
+      }
+
+      @Override
+      public EngineDescriptor descriptor() {
+        return new EngineDescriptor(
+            "jdt", "test-adapter-v1", Map.of("jdtls", "1.61.0"), "17", List.of("METHODS"));
+      }
+
+      @Override
+      public void close() {}
+    };
+  }
+
   private static JavaCodeSession fakeSession(String snapshotId, boolean syntaxConflict) {
     return fakeSession(snapshotId, true, syntaxConflict);
   }
@@ -600,5 +811,36 @@ class JavaCodeIndexPublicationSpecifierTest {
         List.of(target),
         target.methodKey() == null ? "CANDIDATES" : "LOCATED",
         target.methodKey() == null ? "target collection was bounded" : null);
+  }
+
+  private static EntryCodeContext.CallSite invokeTechnicalV3CallProjection(
+      EntryCodeContext.CallSite call) throws Exception {
+    Method projection =
+        JavaCodeIndexPublicationSpecifier.class.getDeclaredMethod(
+            "v3Call", EntryCodeContext.CallSite.class);
+    projection.setAccessible(true);
+    try {
+      return (EntryCodeContext.CallSite) projection.invoke(null, call);
+    } catch (InvocationTargetException failure) {
+      Throwable cause = failure.getCause();
+      if (cause instanceof Exception exception) {
+        throw exception;
+      }
+      if (cause instanceof Error error) {
+        throw error;
+      }
+      throw failure;
+    }
+  }
+
+  private static String allMessages(Throwable failure) {
+    StringBuilder messages = new StringBuilder();
+    for (Throwable current = failure; current != null; current = current.getCause()) {
+      if (!messages.isEmpty()) {
+        messages.append(" | ");
+      }
+      messages.append(current.getClass().getSimpleName()).append(':').append(current.getMessage());
+    }
+    return messages.toString();
   }
 }

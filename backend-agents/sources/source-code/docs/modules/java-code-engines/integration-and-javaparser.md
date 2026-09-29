@@ -2,9 +2,9 @@
 
 文件名保留导航稳定性。本页当前生产只有JDT；JavaParser是已退役producer的历史读取说明，不是待恢复的第二引擎。
 
-## 1. 当前已实现接线（新四操作目标另列）
+## 1. 历史三操作与实施中的四操作
 
-| 步骤 | 实际调用与输入 | 新生产输出 |
+| 步骤 | 历史三操作的调用与输入 | 历史已保存输出 |
 | --- | --- | --- |
 | 01 verified-source-inventory | 固定来源清单与安全文本读取 | VerifiedSourceInventory |
 | 02 application-discovery | 同session catalog、精确方法位置、轻量Mapper目录 | 完整入口分母，合法UNRESTRICTED，Mapper候选 |
@@ -12,9 +12,9 @@
 | 04 proven-code-facts | PersistenceAnalyzer，索引+冻结XML+可选插件 | module4 persistence-material-index-v1 |
 | 05 business-flows | CodeReadingMaterialBuilder，已读Java/持久化/前端索引 | module4 code-reading-material-set-v2 |
 
-`source-analysis --config <path> plan-materials`、其 `materials-only` 一键01–05编排和直接CLI同名命令均已退役；它们在读取配置或调用Agent前拒绝。历史 `READING_MATERIALS_ONLY` 保存输出仍按其原有schema只读，不触发Activity/Provider，也不构成一条可运行的命令替代。技术入口由`collect-code`、`analyze-persistence`和`assemble-materials`串联，详见[技术运行合同](../technical-analysis/cli-and-runtime.md)。
+`source-analysis --config <path> plan-materials`、其 `materials-only` 一键01–05编排和直接CLI同名命令均已退役；它们在读取配置或调用Agent前拒绝。历史 `READING_MATERIALS_ONLY` 保存输出仍按其原有schema只读，不触发Activity/Provider，也不构成一条可运行的命令替代。旧技术路线把前端和后端合在`collect-code`，再串联`analyze-persistence`与`assemble-materials`；本轮四操作把前端拆为独立`collect-frontend`，详见[技术运行合同](../technical-analysis/cli-and-runtime.md)。旧结果保留读取，不是新四操作的同名产物。
 
-当前三个技术命令各自拥有其跨运行顺序并复用底层发现、分析和组包模块；Publisher只保存已经组装的不可变结果，不重复collect/analyze/build。MapperXmlResourceView使用同源XML；各次操作重新打开已保存原文而不重新导航，变换用副本。新目标前端独立R1、后端R2、持久化R3、组装R4，见技术运行合同；不是改写旧运行编号。
+新四操作的同源离线 fixture 已经通过正式 CLI、Agent、存储和重开：前端R1、后端R2、持久化R3、入口证据R4。R3不重新导航，R4不重新解析；Publisher保存已经组装的不可变结果。旧配置的新生产入口已在正式CLI前置拒绝；旧生产测试迁移和历史查询回归仍在进行。固定客户源码准确性及全量运行尚待验收。这些角色不是改写旧运行编号。
 
 ## 2. 当前模型消费与本次技术边界
 
@@ -50,6 +50,6 @@
 
 直接测试覆盖新01–05链、准确前驱/类型、新材料重开完整正文、插件关闭零工具、01–05结束Provider0、历史五图/Fact/M10/Activity原字节、损坏拒绝、禁止新安装旧producer而保留M11。
 
-历史提交5ceb111完成了当时的生产退出及469项clean CI；2026-09-18固定仓库材料验收数字见[交付核验](../../supplements/jdt-persistence-reading-materials-delivery.md)。这些不是当前未提交工作区或本次新增技术设计的测试结果。当前Activity消费后端Packet已有实现，原三个技术命令READY/受阻、前端关联和Step05 v2也已贯通；固定源码准确性仍未通过。新增四操作及entry证据尚未实施。本轮文档同步未运行构建或模型。
+历史提交5ceb111完成了当时的生产退出及469项clean CI；2026-09-18固定仓库材料验收数字见[交付核验](../../supplements/jdt-persistence-reading-materials-delivery.md)。这些不是当前未提交工作区或本次新增技术设计的测试结果。Activity消费历史后端Packet已有实现；本轮四操作与entry证据已有离线 fixture 的正式入口接力，固定客户源码准确性仍未通过、全量验收尚未运行。新entry证据不因此成为Activity的可消费来源；本轮不调用业务模型。
 
 更早两引擎接入算法与当时版本迁移正文可查Git提交5ceb111的同一文件；不再列为开发任务。

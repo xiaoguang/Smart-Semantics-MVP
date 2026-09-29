@@ -7,6 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.sourceanalysis.app.analysis.code.CodeEngineException;
 
 /** Resolves JDT LS navigation responses without guessing Java names or dropping candidates. */
 final class JdtNavigationResolver {
@@ -35,11 +36,16 @@ final class JdtNavigationResolver {
         List.copyOf(Objects.requireNonNull(calls, "call sites"));
     String callerUri = sources.uri(callerPath);
     sources.activate(callerUri);
+    List<String> hierarchyDiagnostics = new ArrayList<>();
     List<OutgoingCall> outgoing =
         owner.navigationRange() == null
             ? List.of()
             : safeOutgoing(
-                callerUri, position(callerSource, owner.navigationRange().startOffsetUtf16()));
+                callerUri,
+                position(callerSource, owner.navigationRange().startOffsetUtf16()),
+                hierarchyDiagnostics);
+    Map<String, List<SourcedLocation>> hierarchyLocations =
+        hierarchyLocations(outgoing, callerSource, orderedCalls);
 
     List<ResolvedCall> result = new ArrayList<>();
     for (JdtSyntaxProtocol.CallSiteView call : orderedCalls) {
@@ -48,28 +54,31 @@ final class JdtNavigationResolver {
             new ResolvedCall(
                 call.localId(),
                 List.of(),
+                List.of(),
                 "UNRESOLVED",
                 List.of("MISSING_AST_NAVIGATION_RANGE:" + call.localId())));
         continue;
       }
       Position query = position(callerSource, call.navigationRange().startOffsetUtf16());
-      List<SourcedLocation> locations = new ArrayList<>();
-      for (OutgoingCall edge : outgoing) {
-        if (edge.fromRanges().stream().anyMatch(range -> contains(range, query))) {
-          locations.add(new SourcedLocation(edge.target(), "DECLARATION", "CALL_HIERARCHY"));
-        }
-      }
-      gateway
-          .definitions(callerUri, query)
+      List<SourcedLocation> locations =
+          new ArrayList<>(hierarchyLocations.getOrDefault(call.localId(), List.of()));
+      List<String> queryDiagnostics = new ArrayList<>(hierarchyDiagnostics);
+      safeDefinitions(callerUri, query, queryDiagnostics)
           .forEach(
               location ->
-                  locations.add(new SourcedLocation(location, "DECLARATION", "DEFINITION")));
-      gateway
-          .implementations(callerUri, query)
+                  locations.add(
+                      new SourcedLocation(
+                          location, "DECLARATION", "DEFINITION", CandidateAssociation.CONFIRMED)));
+      safeImplementations(callerUri, query, queryDiagnostics)
           .forEach(
               location ->
-                  locations.add(new SourcedLocation(location, "IMPLEMENTATION", "IMPLEMENTATION")));
-      result.add(normalize(call.localId(), locations));
+                  locations.add(
+                      new SourcedLocation(
+                          location,
+                          "IMPLEMENTATION",
+                          "IMPLEMENTATION",
+                          CandidateAssociation.CONFIRMED)));
+      result.add(normalize(call.localId(), locations, queryDiagnostics));
     }
     return List.copyOf(result);
   }
@@ -86,14 +95,23 @@ final class JdtNavigationResolver {
     return locations == null ? List.of() : List.copyOf(locations);
   }
 
-  private ResolvedCall normalize(String callId, List<SourcedLocation> locations) {
+  private ResolvedCall normalize(
+      String callId, List<SourcedLocation> locations, List<String> queryDiagnostics) {
     Map<String, MutableCandidate> byExactLocation = new LinkedHashMap<>();
-    List<String> diagnostics = new ArrayList<>();
+    List<String> diagnostics = new ArrayList<>(queryDiagnostics);
+    boolean confirmedExternal = false;
+    boolean unresolvedOutsideSnapshot = false;
     for (SourcedLocation sourced : locations) {
       Location location = sourced.location();
       SourceDocument document = sources.open(location.uri());
       if (document == null) {
-        diagnostics.add("OUTSIDE_SNAPSHOT:" + location.uri());
+        if (isConfirmedExternalBinary(location.uri())) {
+          confirmedExternal = true;
+          diagnostics.add("CONFIRMED_EXTERNAL_BINARY:" + location.uri());
+        } else {
+          unresolvedOutsideSnapshot = true;
+          diagnostics.add("OUTSIDE_SNAPSHOT:" + location.uri());
+        }
         continue;
       }
       JdtSyntaxProtocol.SourceRange target;
@@ -125,9 +143,11 @@ final class JdtNavigationResolver {
                       selection,
                       location.displayName(),
                       new LinkedHashSet<>(),
+                      new LinkedHashSet<>(),
                       new LinkedHashSet<>()));
       candidate.roles().add(sourced.role());
       candidate.navigationKinds().add(sourced.navigationKind());
+      candidate.associations().add(sourced.association());
     }
 
     List<Candidate> exactCandidates =
@@ -139,7 +159,15 @@ final class JdtNavigationResolver {
                     .thenComparing(candidate -> candidate.targetRange().startOffsetUtf16())
                     .thenComparing(Candidate::displayName))
             .toList();
-    List<Candidate> candidates = collapseSelectionOnlyLocations(exactCandidates);
+    List<Candidate> collapsed = collapseSelectionOnlyLocations(exactCandidates);
+    List<Candidate> candidates =
+        collapsed.stream()
+            .filter(candidate -> candidate.association() == CandidateAssociation.CONFIRMED)
+            .toList();
+    List<Candidate> observations =
+        collapsed.stream()
+            .filter(candidate -> candidate.association() == CandidateAssociation.UNCONFIRMED)
+            .toList();
     Map<String, Long> targetShapesPerSelection =
         candidates.stream()
             .collect(
@@ -158,17 +186,53 @@ final class JdtNavigationResolver {
                                 + candidate.targetRange().lengthUtf16(),
                         java.util.stream.Collectors.collectingAndThen(
                             java.util.stream.Collectors.toSet(), values -> (long) values.size()))));
-    boolean conflict = targetShapesPerSelection.values().stream().anyMatch(count -> count > 1L);
+    boolean conflict =
+        !observations.isEmpty()
+            || targetShapesPerSelection.values().stream().anyMatch(count -> count > 1L);
     if (conflict) {
-      diagnostics.add("NAVIGATION_CONFLICT:" + callId);
+      diagnostics.add(
+          observations.isEmpty()
+              ? "NAVIGATION_CONFLICT:" + callId
+              : "CALL_SITE_ASSOCIATION_UNCONFIRMED:" + callId);
     }
-    String status =
-        conflict
-            ? "NAVIGATION_CONFLICT"
-            : candidates.isEmpty()
-                ? "UNRESOLVED"
-                : candidates.size() == 1 ? "LOCATED" : "CANDIDATES";
-    return new ResolvedCall(callId, candidates, status, List.copyOf(diagnostics));
+    String status;
+    if (!queryDiagnostics.isEmpty()) {
+      status = "QUERY_FAILED";
+    } else if (conflict) {
+      status = "NAVIGATION_CONFLICT";
+    } else if (candidates.isEmpty() && confirmedExternal && !unresolvedOutsideSnapshot) {
+      status = "EXTERNAL";
+    } else if (candidates.isEmpty()) {
+      status = "UNRESOLVED";
+    } else {
+      status = candidates.size() == 1 ? "LOCATED" : "CANDIDATES";
+    }
+    return new ResolvedCall(callId, candidates, observations, status, List.copyOf(diagnostics));
+  }
+
+  private static Map<String, List<SourcedLocation>> hierarchyLocations(
+      List<OutgoingCall> outgoing,
+      String callerSource,
+      List<JdtSyntaxProtocol.CallSiteView> calls) {
+    Map<String, List<SourcedLocation>> result = new LinkedHashMap<>();
+    for (OutgoingCall edge : outgoing) {
+      for (TextRange range : edge.fromRanges()) {
+        List<JdtSyntaxProtocol.CallSiteView> matched =
+            calls.stream()
+                .filter(call -> call.navigationRange() != null)
+                .filter(call -> belongsToHierarchyRange(range, callerSource, call))
+                .toList();
+        CandidateAssociation association =
+            matched.size() == 1 ? CandidateAssociation.CONFIRMED : CandidateAssociation.UNCONFIRMED;
+        for (JdtSyntaxProtocol.CallSiteView call : matched) {
+          result
+              .computeIfAbsent(call.localId(), ignored -> new ArrayList<>())
+              .add(
+                  new SourcedLocation(edge.target(), "DECLARATION", "CALL_HIERARCHY", association));
+        }
+      }
+    }
+    return result;
   }
 
   private static List<Candidate> collapseSelectionOnlyLocations(List<Candidate> candidates) {
@@ -206,7 +270,8 @@ final class JdtNavigationResolver {
                 target.selectionRange(),
                 target.displayName(),
                 ordered(roles, ROLE_ORDER),
-                ordered(navigationKinds, NAVIGATION_ORDER)));
+                ordered(navigationKinds, NAVIGATION_ORDER),
+                target.association()));
       } else {
         result.addAll(group);
       }
@@ -226,9 +291,56 @@ final class JdtNavigationResolver {
         && left.lengthUtf16() == right.lengthUtf16();
   }
 
-  private List<OutgoingCall> safeOutgoing(String uri, Position position) {
-    List<OutgoingCall> calls = gateway.outgoingCalls(uri, position);
-    return calls == null ? List.of() : List.copyOf(calls);
+  private List<OutgoingCall> safeOutgoing(
+      String uri, Position position, List<String> queryDiagnostics) {
+    try {
+      List<OutgoingCall> calls = gateway.outgoingCalls(uri, position);
+      return calls == null ? List.of() : List.copyOf(calls);
+    } catch (CodeEngineException failure) {
+      rethrowUnlessQueryFailure(failure);
+      queryDiagnostics.add("JDT_QUERY_FAILED:CALL_HIERARCHY");
+      return List.of();
+    }
+  }
+
+  private List<Location> safeDefinitions(
+      String uri, Position position, List<String> queryDiagnostics) {
+    try {
+      List<Location> locations = gateway.definitions(uri, position);
+      return locations == null ? List.of() : List.copyOf(locations);
+    } catch (CodeEngineException failure) {
+      rethrowUnlessQueryFailure(failure);
+      queryDiagnostics.add("JDT_QUERY_FAILED:DEFINITION");
+      return List.of();
+    }
+  }
+
+  private List<Location> safeImplementations(
+      String uri, Position position, List<String> queryDiagnostics) {
+    try {
+      List<Location> locations = gateway.implementations(uri, position);
+      return locations == null ? List.of() : List.copyOf(locations);
+    } catch (CodeEngineException failure) {
+      rethrowUnlessQueryFailure(failure);
+      queryDiagnostics.add("JDT_QUERY_FAILED:IMPLEMENTATION");
+      return List.of();
+    }
+  }
+
+  private static void rethrowUnlessQueryFailure(CodeEngineException failure) {
+    if (!CodeEngineException.JDT_QUERY_FAILED.equals(failure.code())) {
+      throw failure;
+    }
+  }
+
+  private static boolean belongsToHierarchyRange(
+      TextRange hierarchyFrom, String callerSource, JdtSyntaxProtocol.CallSiteView call) {
+    Position navigation = position(callerSource, call.navigationRange().startOffsetUtf16());
+    return contains(hierarchyFrom, navigation);
+  }
+
+  private static boolean isConfirmedExternalBinary(String uri) {
+    return uri.startsWith("jdt://contents/");
   }
 
   private static Position position(String source, int offset) {
@@ -365,18 +477,30 @@ final class JdtNavigationResolver {
       JdtSyntaxProtocol.SourceRange selectionRange,
       String displayName,
       List<String> roles,
-      List<String> navigationKinds) {}
+      List<String> navigationKinds,
+      CandidateAssociation association) {}
 
   record ResolvedCall(
-      String callLocalId, List<Candidate> candidates, String status, List<String> diagnostics) {
+      String callLocalId,
+      List<Candidate> candidates,
+      List<Candidate> observations,
+      String status,
+      List<String> diagnostics) {
     ResolvedCall {
       requireText(callLocalId, "call local ID");
       candidates = List.copyOf(Objects.requireNonNull(candidates, "resolved candidates"));
+      observations = List.copyOf(Objects.requireNonNull(observations, "resolved observations"));
       diagnostics = List.copyOf(Objects.requireNonNull(diagnostics, "navigation diagnostics"));
     }
   }
 
-  private record SourcedLocation(Location location, String role, String navigationKind) {}
+  enum CandidateAssociation {
+    CONFIRMED,
+    UNCONFIRMED
+  }
+
+  private record SourcedLocation(
+      Location location, String role, String navigationKind, CandidateAssociation association) {}
 
   private record MutableCandidate(
       String sourcePath,
@@ -384,16 +508,22 @@ final class JdtNavigationResolver {
       JdtSyntaxProtocol.SourceRange selectionRange,
       String displayName,
       LinkedHashSet<String> roles,
-      LinkedHashSet<String> navigationKinds) {
+      LinkedHashSet<String> navigationKinds,
+      LinkedHashSet<CandidateAssociation> associations) {
 
     private Candidate freeze() {
+      CandidateAssociation association =
+          associations.contains(CandidateAssociation.CONFIRMED)
+              ? CandidateAssociation.CONFIRMED
+              : CandidateAssociation.UNCONFIRMED;
       return new Candidate(
           sourcePath,
           targetRange,
           selectionRange,
           displayName,
           ordered(roles, ROLE_ORDER),
-          ordered(navigationKinds, NAVIGATION_ORDER));
+          ordered(navigationKinds, NAVIGATION_ORDER),
+          association);
     }
   }
 

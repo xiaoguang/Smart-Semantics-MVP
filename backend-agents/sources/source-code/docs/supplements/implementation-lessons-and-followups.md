@@ -2,7 +2,7 @@
 
 状态：2026-09-29 按当前实现、实际产物及已批准的新技术设计校正。编号是问题身份，不是剩余任务数；历史已完成项保留结论，不再次列为开发工作。本文不授权工具运行、模型生成或自动修复。
 
-本次范围是四个独立技术操作和按入口JSON，见[详细设计](../modules/technical-analysis/README.md)及[依次修改清单](../plans/technical-analysis-cli-and-vue-cleanup-design.md)。第16–19项源码准备原范围已经完成，19.2跨版本增量复用继续延期；20/22有限前端与原三命令已经实施，新拆分尚待实施；21.1/21.3、24/25及20的必要单元修正纳入新设计。21.2与七入口长等待只做受限核验，不许诺已经解决。第1–15项保存业务层经验，不纳入本次技术改造。
+本次范围是四个独立技术操作和按入口JSON，见[详细设计](../modules/technical-analysis/README.md)及[依次修改清单](../plans/technical-analysis-cli-and-vue-cleanup-design.md)。第16–19项源码准备原范围已经完成，19.2跨版本增量复用继续延期；20/22有限前端与原三命令是历史基线。新四命令、21.1/21.3、24/25及20的必要单元修正在实现分支已有直接测试，尚未完成固定源码准确性及全量验收，不能标为关闭。21.2与七入口长等待只做受限核验，不许诺已经解决。第1–15项保存业务层经验，不纳入本次技术改造。
 
 详细设计前的事实核对、冲突处理和仍需明确的选择，见[源码准备设计前核对](source-preparation-design-preflight.md)。第19.1项必要消费者排除与旧材料版本检查已按本轮fail-closed范围关闭：prepared reader、正式 Activity/过程旧材料门禁、M10逐次重开完整性核对、Java/Persistence消费者fixture和离线闭环均有直接证据。最终定向168/168和质量检查通过；资源上限停止枚举后的NEW全范围恢复边界已通过3项新增测试，实施计划步骤8按本轮范围关闭。
 
@@ -291,7 +291,7 @@ Skill 与实际执行者的职责必须无二义性：
 
 标识：`FRONTEND-HTTP-ENTRY-LINK`。**状态：原有限关联已实现并有固定源码结果；独立前端运行、R4匹配及必要源码单元补全尚待实施。** owner是[独立前端与组装关联](../modules/technical-analysis/frontend-http-discovery.md)，工具依据见[官方parser调研](frontend-http-parser-research.md)，真实例子见[Vue到SQL走读](vue-to-sql-walkthrough.md)。
 
-当前真实结果：旧R1的frontend-http-index保存307条文件处置、51条HTTP请求、51条ENTRY_LINK和68条SOURCE_UNIT；旧Step05有49条前端请求纳入、2条因容量未选。已有页面到后端入口的正式静态关系，不能再写成完全未实现。采购查询的getQueryParams原文在固定来源第115–143行，但没有进入必要单元集合，仍需修正选择。
+当前真实结果：旧R1的frontend-http-index保存307条文件处置、51条HTTP请求、51条ENTRY_LINK和68条SOURCE_UNIT；旧Step05有49条前端请求纳入、2条因容量未选。已有页面到后端入口的正式静态关系，不能再写成完全未实现。采购查询的getQueryParams原文在固定来源第130–144行，旧R1没有将其列为独立SOURCE_UNIT；新R1已修正，最终R4纳入仍待验收。
 
 本次目标：独立collect-frontend不读取后端入口、不启动JDT；新索引不含ENTRY_LINK。R4消费前端和准确后端，按HTTP method/path及已知条件匹配，并与Mapper/XML/SQL组成每入口JSON。补齐已支持路径的完整单元；原四实参和第五purchaseStatus NOT_PASSED不得改变。动态/多候选/未知地址、未支持语法仍保留，不造通用JS解释器。
 
@@ -309,9 +309,9 @@ Skill 与实际执行者的职责必须无二义性：
 
 ### 21.1 小项：直接使用 JDT 的逐调用方法绑定
 
-标识：`JDT-CALL-SITE-BINDING`。**状态：已纳入本次详细设计，未实施、未完成真实验证。** 现有Core helper已开启`setResolveBindings(true)`，但调用记录未读取或保存`resolveMethodBinding()`；LS结果按范围归属后合并，已出现`Convert.toInt`混入外层`setPageSize`候选。
+标识：`JDT-CALL-SITE-BINDING`。**状态：新Core/host绑定投影、逐边裁决及索引v3已有直接测试；固定R0/JDK8窄IT已核对嵌套调用与财务日志错边，其他具名场景和全量仍待验收。** 旧Core helper虽开启`setResolveBindings(true)`，旧索引没有利用逐调用绑定；历史LS结果按范围归属后合并，曾出现`Convert.toInt`混入外层`setPageSize`候选。旧产物不回填。
 
-具名问题：`pageDomain.setPageSize(Convert.toInt(...))` 的内层调用记录混入外层 `setPageSize` 目标。这是已保存调用关系的错误归属，不是缺少方法原文，也不能靠降低未解析警告的优先级处理。验收应确认错误外层候选不再挂入内层调用，同时保留内层真实目标及合法重载/实现候选。现有生产导航尚未修正，旧索引不改写；目标修正进入新版本。
+具名问题：`pageDomain.setPageSize(Convert.toInt(...))` 的内层调用记录混入外层 `setPageSize` 目标。这是旧保存调用关系的错误归属，不是缺少方法原文，也不能靠降低未解析警告的优先级处理。新固定R0窄IT已确认这两个调用的确定目标不再串位，并确认财务`logger.error`不误挂`AjaxResult.error`；测试只收集两个入口，尚不能宣称全仓不存在类似错边。
 
 本次修正使用JDT本身的逐调用方法binding、声明binding和准确AST位置；冲突或归属未确认的hierarchy观察不成为确定展开边。精确逐点definition及合法implementation候选保留；空/recovered binding不能伪造身份。Core协议、Java索引、reader和下游同步更新；规则由[JDT详细设计](../modules/java-code-engines/jdt-engine.md)唯一维护。直接测试必须涵盖嵌套同名/不同名、重载、合法多态及下游SQL不串入，真实验收另报告。不得扩成新的Java解析器或自研分派规则。
 
@@ -325,7 +325,7 @@ Skill 与实际执行者的职责必须无二义性：
 
 ### 21.3 区分正常外部调用、目标未确定与查询失败
 
-标识：`JDT-EXTERNAL-CALL-BOUNDARY`。**状态：已纳入本次修正，分类未实施；等待超时缓存修正已完成，稳定性另行核验。** 现有收集器在没有客户仓库目标时统一添加`UNRESOLVED_CALL`；导航适配器也会排除无法从固定源码读取的位置。这使正常外部库边界和实际识别缺口混在一起。具名`Long.parseLong(userIdObj.toString())`的保存记录显示定义/实现查询成功但返回空位置，不能把该记录说成查询报错，也不能说程序已通过该响应确认了JDK身份。
+标识：`JDT-EXTERNAL-CALL-BOUNDARY`。**状态：新索引中外部／未知／查询失败分类已有直接测试；固定源码及全量覆盖尚未验收。等待超时缓存修正已完成，稳定性另行核验。** 旧收集器在没有客户仓库目标时统一添加`UNRESOLVED_CALL`；导航适配器也会排除无法从固定源码读取的位置。这使正常外部库边界和实际识别缺口混在一起。具名`Long.parseLong(userIdObj.toString())`的历史记录显示定义/实现查询成功但返回空位置，不能把该记录说成查询报错，也不能说旧程序已通过该响应确认了JDK身份。
 
 目标处理规则：
 
@@ -341,7 +341,7 @@ Skill 与实际执行者的职责必须无二义性：
 
 ## 22. 独立前端、后端、持久化和组装操作
 
-标识：`TECHNICAL-CLI-PREPARED-SOURCE-LINEAGE`。**状态：原三个技术命令已实现并保存固定源码结果；新增独立前端及双分支组装尚待实施。**
+标识：`TECHNICAL-CLI-PREPARED-SOURCE-LINEAGE`。**状态：原三个技术命令保存过固定源码结果；新四命令及双分支组装已通过正式CLI／真实存储fixture，固定源码和全量验收未完成。**
 
 新目标为R1 collect-frontend、R2 collect-code、R3 analyze-persistence、R4 assemble-materials；R0保留。前端/后端独立，匹配放在组装。运行、配置、发布和查询必须一起调整，不能只改命令名。[唯一合同](../modules/technical-analysis/cli-and-runtime.md)
 
@@ -357,7 +357,7 @@ Skill 与实际执行者的职责必须无二义性：
 
 ## 24. 按后端入口交付完整机器证据
 
-标识：`ENTRY-OWNED-SELF-CONTAINED-EVIDENCE`。**状态：已确认并形成详细设计，未实施。**
+标识：`ENTRY-OWNED-SELF-CONTAINED-EVIDENCE`。**状态：变长存储、单入口JSON和查询已有直接测试，固定源码真实证据及容量失败的inspect仍未验收。**
 
 当前47包按entryId顺序和12入口/5MiB配置合并，没有业务分组依据；339条覆盖不是339份正文。目标一entryId一文件，完整包含已取得页面、Java、XML和SQL，源路径相对R0；一个Controller可有多个入口，多页面也可访问同一入口。
 
@@ -369,12 +369,12 @@ Skill 与实际执行者的职责必须无二义性：
 
 ## 25. 保留JSqlParser已经解析出的排序
 
-标识：`SQL-ORDER-BY-PROJECTION`。**状态：已确认投影遗漏，纳入本次修正，未实施。**
+标识：`SQL-ORDER-BY-PROJECTION`。**状态：使用已有JSqlParser AST的投影及直接测试已实现；固定源码R3→R4保存重开尚未验收。**
 
 具名查询analysisCopy中有ORDER BY，而当前plainSelectNode没有输出对应节点；这是我们没有保存工具已有结果，不是需要另写SQL解析器。目标通过现有JSqlParser AST保存表达式、方向、空值排序及所属查询层，沿持久化发布、重开和entry JSON验证。
 
 完整Mapper XML和条件/循环继续保留。未提供真实参数时不执行MyBatis动态展开，不新增多参数取证，也不把静态副本当真实执行SQL。修排序不表示所有动态SQL已完整解析。[Step04设计](../analysis-steps/04-proven-code-facts.md)
 
-## 本次文档更新边界
+## 本次实施边界
 
-本次校正状态及详细设计，没有改生产代码、测试、构建配置、Prompt、实际Skill、输入/模型响应或publication，没有运行Maven/JDT/Node/业务模型。新的四命令和entry证据属于待实施目标；原三命令全量技术结果存在但调用准确性未过，这两个事实并列保留。历史材料和more-findings.md原字节不变。
+新四命令和entry证据的实现、直接测试及文档正在同一实施分支进行；不能把它们写成尚未编码，也不能把fixture通过写成固定源码准确性通过。原三命令已有全量历史技术结果，但其调用准确性未通过。新实现不运行Activity、业务过程或九章模型任务；历史材料和`more-findings.md`不改写。待固定源码定向与全量验收完成后，再按具名结果关闭或保留上述待办。

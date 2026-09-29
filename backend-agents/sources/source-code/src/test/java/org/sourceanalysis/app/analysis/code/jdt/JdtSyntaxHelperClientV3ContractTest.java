@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.code.CodeEngineException;
 
-class JdtSyntaxHelperClientV3ContractTest {
+class JdtSyntaxHelperClientV4ContractTest {
 
   @Test
   void rejectsEveryLegacyStartOverloadWithoutExplicitTargetPlatform() {
@@ -56,7 +56,7 @@ class JdtSyntaxHelperClientV3ContractTest {
   }
 
   @Test
-  void pairsTheV3WireWithItsHelperAndKeepsModuleEnvironmentsIsolated(@TempDir Path temp)
+  void pairsTheV4WireWithItsHelperAndKeepsModuleEnvironmentsIsolated(@TempDir Path temp)
       throws Exception {
     Path helperJar = protocolPeerJar(temp.resolve("protocol-peer.jar"));
     Path javaHome = Path.of(System.getProperty("java.home"));
@@ -82,7 +82,7 @@ class JdtSyntaxHelperClientV3ContractTest {
 
     assertThat(moduleAMessage)
         .contains(
-            "protocol=jdt-syntax-v3",
+            "protocol=jdt-syntax-v4",
             "targetJdk=17",
             temp.resolve("platform-A").toAbsolutePath().normalize().toString(),
             temp.resolve("source-A").toAbsolutePath().normalize().toString(),
@@ -90,7 +90,7 @@ class JdtSyntaxHelperClientV3ContractTest {
         .doesNotContain("platform-B", "source-B", "classpath-B");
     assertThat(moduleBMessage)
         .contains(
-            "protocol=jdt-syntax-v3",
+            "protocol=jdt-syntax-v4",
             "targetJdk=8",
             temp.resolve("platform-B").toAbsolutePath().normalize().toString(),
             temp.resolve("source-B").toAbsolutePath().normalize().toString(),

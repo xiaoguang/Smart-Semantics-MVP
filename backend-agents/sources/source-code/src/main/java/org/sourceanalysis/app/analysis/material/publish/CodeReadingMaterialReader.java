@@ -59,9 +59,10 @@ public final class CodeReadingMaterialReader {
   private static final Set<String> V1_RECORD_TYPES = Set.of("HEADER", "PACKET", "ENTRY_COVERAGE");
   private static final Set<String> V2_RECORD_TYPES =
       Set.of("HEADER", "PACKET", "ENTRY_COVERAGE", "FRONTEND_COVERAGE");
-  private static final String LEGACY_PRODUCER = "code-reading-materials-v1";
   private static final Set<String> PRODUCERS =
-      Set.of(LEGACY_PRODUCER, CodeReadingMaterialPublisher.TECHNICAL_PRODUCER);
+      Set.of(
+          CodeReadingMaterialPublisher.LEGACY_PRODUCER,
+          CodeReadingMaterialPublisher.TECHNICAL_PRODUCER);
 
   private final CanonicalModuleArtifactStore modules;
   private final CanonicalAnalysisStepArtifactStore steps;
@@ -107,7 +108,7 @@ public final class CodeReadingMaterialReader {
       ReopenedAnalysisStepPublication persistence =
           reopen(saved.header().persistencePublication(), AnalysisStepKey.PROVEN_CODE_FACTS);
 
-      if (LEGACY_PRODUCER.equals(saved.producer())) {
+      if (CodeReadingMaterialPublisher.LEGACY_PRODUCER.equals(saved.producer())) {
         ReopenedAnalysisStepPublication source =
             reopen(
                 saved.header().sourceInventory().publication(),

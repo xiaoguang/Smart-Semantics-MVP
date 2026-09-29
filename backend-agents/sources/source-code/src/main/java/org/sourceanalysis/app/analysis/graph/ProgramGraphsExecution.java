@@ -12,6 +12,7 @@ import org.sourceanalysis.app.analysis.code.JavaCodeSession;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndex;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndexPublicationSpecifier;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
+import org.sourceanalysis.app.analysis.discovery.HttpEntryPoint;
 import org.sourceanalysis.app.analysis.discovery.MapperCatalogEntry;
 import org.sourceanalysis.app.analysis.discovery.TechnicalApplicationDiscovery;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
@@ -96,6 +97,25 @@ public final class ProgramGraphsExecution {
   }
 
   /**
+   * Reopens the complete saved Step02 HTTP denominator for a later technical consumer.
+   *
+   * <p>This uses the same R0/R1 receipt and control checks as the mapper-catalog reader. It does
+   * not reconstruct entries from the Java index, open a source tree, or create a JDT session.
+   */
+  public List<HttpEntryPoint> reopenTechnicalHttpEntries(
+      VerifiedSourceInventoryReference verifiedSource,
+      ApplicationDiscoveryReference applicationDiscovery,
+      ArtifactControls executionControls) {
+    Objects.requireNonNull(verifiedSource, "verified source inventory");
+    Objects.requireNonNull(applicationDiscovery, "application discovery");
+    Objects.requireNonNull(executionControls, "technical execution controls");
+    return inputs
+        .reopenTechnical(verifiedSource, applicationDiscovery, executionControls)
+        .discovery()
+        .entries();
+  }
+
+  /**
    * Collects and publishes the selected JDT session's neutral navigation index without invoking the
    * legacy JavaParser graph builders.
    */
@@ -150,14 +170,36 @@ public final class ProgramGraphsExecution {
    * Collects the R1 technical Step02 denominator while retaining the exact frozen R0 source.
    *
    * <p>Historical {@code execute} methods continue to reopen the same-run input reader. This entry
-   * point is the opt-in cross-run producer and therefore publishes through the v3 Step03 producer
-   * only.
+   * point is the established cross-run producer and retains the Java index v2 payload contract.
    */
   public ProgramGraphsReference executeTechnical(
       VerifiedSourceInventoryReference verifiedSource,
       TechnicalApplicationDiscovery applicationDiscovery,
       JavaCodeSession session,
       ArtifactControls controls) {
+    return executeTechnical(verifiedSource, applicationDiscovery, session, controls, false);
+  }
+
+  /**
+   * Collects the opt-in four-operation Java index with the v3 call-resolution vocabulary.
+   *
+   * <p>This is deliberately separate from {@link #executeTechnical} so historical technical-v2 runs
+   * cannot acquire the new schema by incidental call-site reuse.
+   */
+  public ProgramGraphsReference executeTechnicalV3(
+      VerifiedSourceInventoryReference verifiedSource,
+      TechnicalApplicationDiscovery applicationDiscovery,
+      JavaCodeSession session,
+      ArtifactControls controls) {
+    return executeTechnical(verifiedSource, applicationDiscovery, session, controls, true);
+  }
+
+  private ProgramGraphsReference executeTechnical(
+      VerifiedSourceInventoryReference verifiedSource,
+      TechnicalApplicationDiscovery applicationDiscovery,
+      JavaCodeSession session,
+      ArtifactControls controls,
+      boolean technicalIndexV3) {
     Objects.requireNonNull(verifiedSource, "verified source inventory");
     Objects.requireNonNull(applicationDiscovery, "technical application discovery");
     Objects.requireNonNull(session, "Java code session");
@@ -174,7 +216,13 @@ public final class ProgramGraphsExecution {
                         entry.methodCondition().display() + " " + entry.route()))
             .toList();
     return publishTechnicalNavigationIndex(
-        verifiedSource, applicationDiscovery.publication(), session, controls, source, seeds);
+        verifiedSource,
+        applicationDiscovery.publication(),
+        session,
+        controls,
+        source,
+        seeds,
+        technicalIndexV3);
   }
 
   private ProgramGraphsReference publishNavigationIndex(
@@ -200,7 +248,8 @@ public final class ProgramGraphsExecution {
       JavaCodeSession session,
       ArtifactControls controls,
       VerifiedSourceTextSet source,
-      List<EntrySeed> seeds) {
+      List<EntrySeed> seeds,
+      boolean technicalIndexV3) {
     return publishNavigationIndex(
         verifiedSource,
         applicationDiscovery,
@@ -213,7 +262,7 @@ public final class ProgramGraphsExecution {
             List.of(),
             null),
         List.of(),
-        new TechnicalInputs(source, seeds));
+        new TechnicalInputs(source, seeds, technicalIndexV3));
   }
 
   private ProgramGraphsReference publishNavigationIndex(
@@ -348,12 +397,19 @@ public final class ProgramGraphsExecution {
       ProgramGraphsReference reference =
           technicalInputs == null
               ? publisher.publish(verifiedSource, applicationDiscovery, controls, index)
-              : publisher.publishTechnical(
-                  verifiedSource,
-                  applicationDiscovery,
-                  controls,
-                  index,
-                  technicalInputs.source().verifiedSnapshotRef());
+              : technicalInputs.indexSchemaV3()
+                  ? publisher.publishTechnicalV3(
+                      verifiedSource,
+                      applicationDiscovery,
+                      controls,
+                      index,
+                      technicalInputs.source().verifiedSnapshotRef())
+                  : publisher.publishTechnical(
+                      verifiedSource,
+                      applicationDiscovery,
+                      controls,
+                      index,
+                      technicalInputs.source().verifiedSnapshotRef());
       long elapsed = System.nanoTime() - publicationStarted;
       LOGGER.log(
           System.Logger.Level.INFO,
@@ -366,10 +422,30 @@ public final class ProgramGraphsExecution {
       LOGGER.log(
           System.Logger.Level.INFO,
           () ->
-              "JDT_NAVIGATION_PUBLICATION_FAILED selectedTotal=%d failureType=%s elapsedNanos=%d"
-                  .formatted(selectedTotal, failure.getClass().getSimpleName(), elapsed));
+              ("JDT_NAVIGATION_PUBLICATION_FAILED selectedTotal=%d failureType=%s"
+                      + " failureMessage=%s causeType=%s causeMessage=%s elapsedNanos=%d")
+                  .formatted(
+                      selectedTotal,
+                      failure.getClass().getSimpleName(),
+                      publicationFailureMessage(failure),
+                      underlyingCause(failure).getClass().getSimpleName(),
+                      publicationFailureMessage(underlyingCause(failure)),
+                      elapsed));
       throw failure;
     }
+  }
+
+  private static Throwable underlyingCause(Throwable failure) {
+    return failure.getCause() == null ? failure : failure.getCause();
+  }
+
+  private static String publicationFailureMessage(Throwable failure) {
+    String message = failure.getMessage();
+    if (message == null || message.isBlank()) {
+      return "<none>";
+    }
+    String singleLine = message.replace('\n', ' ').replace('\r', ' ');
+    return singleLine.length() <= 256 ? singleLine : singleLine.substring(0, 256);
   }
 
   private static boolean sharedToolFailure(CodeEngineException failure) {
@@ -440,7 +516,8 @@ public final class ProgramGraphsExecution {
     }
   }
 
-  private record TechnicalInputs(VerifiedSourceTextSet source, List<EntrySeed> seeds) {
+  private record TechnicalInputs(
+      VerifiedSourceTextSet source, List<EntrySeed> seeds, boolean indexSchemaV3) {
     private TechnicalInputs {
       source = Objects.requireNonNull(source, "technical R0 source");
       seeds = List.copyOf(seeds);

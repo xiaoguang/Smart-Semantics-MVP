@@ -1,18 +1,18 @@
 # 按后端入口组织的最终技术证据
 
-状态：2026-09-29 已按用户确认范围形成详细设计，**尚未实施**。本页拥有新的最终 JSON 合同；[Step05](../../analysis-steps/05-business-flows.md)拥有组装步骤，[运行合同](cli-and-runtime.md)拥有配置、版本与保存接线。历史 `code-reading-material-set-v1/v2` 不改写。
+状态：2026-09-29 实施中。受限变长存储及超过64个入口的直接测试已通过；入口组装、发布器、读取器和正式R4路径已接线，并在固定源码上生成339份入口文件。可移植源码位置曾在真实产物中失败，最终修正和重开核验尚未完成，**不能称为正式入口证据已交付**。本页拥有新的最终 JSON 合同；[Step05](../../analysis-steps/05-business-flows.md)拥有组装步骤，[运行合同](cli-and-runtime.md)拥有配置、版本与保存接线。历史 `code-reading-material-set-v1/v2` 不改写。
 
 ## 1. 目标与当前差距
 
 目标不是生成业务文章，而是让程序取得某个后端入口的页面请求、Java 调用、Mapper/XML/SQL，以及实际缺口。证据生成没有 LLM。源码中的注释、原始文字和工具诊断仍保留；程序固定字段/原因文字不等于模型写作。
 
-当前 `DefaultCodeReadingMaterialBuilder` 按入口索引顺序尝试合并多个入口，使用 `maxEntriesPerPacket` 和 Markdown UTF-8 字节上限，再追加前端材料。固定源码旧 R3 实际有47包、339条入口处置、51条前端处置；2条前端请求因容量未选。它不是339份入口文件，也不是每个 Vue 页面都有完整链。新的输出取消该合包规则：**一条后端 entryId 对应一份 JSON；一个入口不能因为相邻入口占用了容量而丢材料。**
+历史 `DefaultCodeReadingMaterialBuilder` 按入口索引顺序尝试合并多个入口，使用 `maxEntriesPerPacket` 和 Markdown UTF-8 字节上限，再追加前端材料；它的生产代码现已退出，历史读取保留。固定源码旧 R3 实际有47包、339条入口处置、51条前端处置；2条前端请求因容量未选。它不是339份入口文件，也不是每个 Vue 页面都有完整链。新 `EntryEvidenceAssembler` 取消该合包规则：**一条后端 entryId 对应一份 JSON；一个入口不能因为相邻入口占用了容量而丢材料。**
 
 `entryId` 对应一个已发现的 HTTP 映射及处理方法，不是一个 Controller 类；一个类通常有多个入口。多个页面可以访问同一入口，一个页面也可以访问多个入口。入口排序只为确定性存储，不表达业务顺序。
 
 ## 2. 输出目录与唯一入口
 
-以下是目标目录形状，不是已生成文件：
+以下是新版生产路径预定的目录形状；目前尚无固定源码验收批次可以据此宣称完成：
 
 ```text
 R4 / steps/05-business-flows/
@@ -46,13 +46,13 @@ R4 / steps/05-business-flows/
 
 ## 4. HTTP 匹配放在组装中
 
-现有 `FrontendHttpDiscoverer.link` 比较已解析路径和 HTTP method；显式地址映射尚未接通，不能说已经实现。目标把现有匹配移到 `analysis.material` 内部，在此补入配置明确的地址映射；语法读取仍留在前端发现器。匹配器只消费已保存对象，不重新启动 Node。匹配结果只在 R4保存，不回写 R1。
+历史 `FrontendHttpDiscoverer.link` 比较已解析路径和 HTTP method；新 `EntryEvidenceAssembler` 已实现只消费已保存对象的R4匹配，包括显式配置地址映射和未知地址条件的候选处置，离线直接测试已覆盖，固定源码R4仍待验收。语法读取留在前端发现器，组装不重新启动 Node；匹配结果只在 R4保存，不回写 R1。
 
 顺序：请求方法/原URL → 已解析路径与已知地址条件 → 后端 route/methodCondition → 全候选集合。不得按尾部字符串、方法同名、页面词义或第一条结果强连。地址条件仍未知时保留条件；唯一路径候选也不能称为真实部署可达。
 
 复用现有匹配枚举 `MATCHED_UNIQUE / MATCHED_MULTIPLE / NO_MATCH / UNRESOLVED_REQUEST`。`BACKEND_DISCOVERY_NOT_RUN`仅保留在历史v1读取，不成为新R1记录；正式R4缺少可重开的R2发现结果时阻断，不能生成一个假空后端目录。
 
-Spring路由若有params、headers、consumes等条件，只有已有入口记录和请求记录足以核对时才判成立；未采集、未支持或请求值未知则保留候选和未确认条件，不标`MATCHED_UNIQUE`。多候选用`MATCHED_MULTIPLE`；仅一个候选但必需条件未知用`UNRESOLVED_REQUEST`并保留candidateEntryIds。此处不增加通用路由解释器。地址映射只按显式配置操作并记录依据，不能由文件存在、代理惯例或尾部路径相似补出baseURL/context-path。
+Spring路由若有params、headers、consumes等条件，只有已有入口记录和请求记录足以核对时才判成立；未采集、未支持或请求值未知则保留候选和未确认条件，不标`MATCHED_UNIQUE`。多候选用`MATCHED_MULTIPLE`；仅一个候选但必需条件未知用`UNRESOLVED_REQUEST`并保留candidateEntryIds。此处不增加通用路由解释器。地址映射只按显式配置操作并记录依据，不能由文件存在、代理惯例或尾部路径相似补出baseURL/context-path。即使配置列表非空，只要当前请求没有适用映射，运行时baseURL仍未知；路径和方法唯一也只能保存为候选，不能误记为`MATCHED_UNIQUE`。
 
 - 唯一匹配：在该入口记录中保存完整请求用法、成立条件和源码。
 - 多候选或仅一个候选但条件未知：在每个候选入口的 `candidateRequestUses` 保存该请求及全部候选ID、未确认条件，明确不属于确认调用者；前端覆盖只有一条，不能按候选个数重复计数。
@@ -77,12 +77,16 @@ Spring路由若有params、headers、consumes等条件，只有已有入口记�
 | `java.methods` | 本入口已收集方法的完整正文、参数、返回、控制结构、位置；按methodKey去重 |
 | `java.calls` | 本入口每个调用位置、有序实参、目标声明、合法实现候选、展开状态；外部/未知/失败明确区分 |
 | `java.observations` | 与确定调用分开保存的冲突候选/工具原因；不能沿被否定候选带入无关正文或SQL |
+| `java.supportingSources` | 保留本入口 `EntryCodeContext` 已收集的字段、配置或声明等支持源码及其关联方法；旧分包器未投影此字段，新入口证据不得再次遗漏 |
+| `java.technicalEnhancements` | 原样保存上游对可选技术增强的实际可用/未生成状态和引用；不因组装而虚构 Fact/Proof |
 | `persistence.bindings` | Mapper声明到statement的静态绑定性质及有序参数信息；非运行时执行证明 |
 | `persistence.statements` | 完整 XML 子树、动态条件、循环、include/resultMap等依赖引用 |
-| `persistence.resources` | 完整 XML 原文及依赖资源；每资源一份，不截列/值或分支 |
+| `persistence.resources` | 从已纳入 statement 出发得到的完整 XML 原文及静态依赖资源闭包；每资源一份，不截列/值或分支 |
 | `persistence.sqlAnalyses` | 原 analysisCopy、变换、解析AST、状态、排序及限制；不命名为实际执行SQL |
 | `sourceRefs` | 单元到同源相对路径、真实范围和已有摘要的映射；不重复存一遍全部正文 |
 | `limitations` | 局部未确定/未收集范围、原错误码及相应对象ID；不添加模型解释 |
+
+完整工具观察保存在`java.calls[].observations`，附着于对应的物理调用；`java.observations[]`仅按`callKey`和稳定序号建立扁平定位清单，保存观察ID、代码和简要原因，不重复完整位置与身份。未确认观察不是`java.calls[].targets`中的确定仓库边，不能被持久化组装器用于关联Mapper或SQL。
 
 Java目标身份、候选选择、Lombok来源区分的唯一规则在[JDT详细设计](../java-code-engines/jdt-engine.md)。同一入口的全部分支并列保存，不把调用数组或文件排序解释为某次请求执行时序。
 
@@ -90,11 +94,12 @@ Java目标身份、候选选择、Lombok来源区分的唯一规则在[JDT详细
 
 “完整入口 JSON”表示该入口**已经收集并在覆盖中声明的范围**没有在组装时再次丢失，不表示静态分析找到了所有运行时行为。
 
-1. 每个方法、XML资源和前端单元在单份文件中只存一次，关系用原ID引用。
+1. 每个方法、支持源码、XML资源和前端单元在单份文件中只存一次，关系使用已有ID或源码路径与范围引用，不为缺失身份造ID。
 2. 不另外保存展开调用树；环和递归通过调用边表示，不无限复制正文。
 3. 同一方法被多个入口用到，会出现在各入口独立文件中，这是自包含输出的明确取舍；底层R2仍只有共享METHOD记录，不重采集。
 4. 现有上游已登记的导航深度/数量/未解析限制全部继承，不称为组装补齐。
 5. 不按12入口、5 MiB、Markdown长度或模型token数重分组。模型如何读大入口属于后续Activity设计，本轮不启动。
+6. 持久化局部诊断按已纳入的 Mapper 方法、statement 和完整资源依赖闭包筛选；仅检查直接 statement 的 XML 路径会漏掉被 `include` 等关系带入的依赖资源问题。
 
 ## 6. 路径和编号
 
@@ -104,12 +109,13 @@ Java目标身份、候选选择、Lombok来源区分的唯一规则在[JDT详细
 - 原始 Java/XML/JS 正文逐字保留，**不对源码字符串中的绝对路径做替换**；结构化路径可移植与改写客户源码是两回事。
 - JDK/JAR工具路径只留在既有私有执行记录；最终证据记录外部类型/方法身份及环境逻辑引用，不将依赖缓存路径当客户源码。
 - 原长ID继续作为持久唯一身份。短编号只在以后明确的模型投影中建立局部可逆映射；本轮不重命名历史ID，也不因为JSON里有长ID便调用LLM。
+- 新发布的入口、目录及前端覆盖头使用同一完整`SelectedSourceBasis`：准备版身份、准确R0发布引用、`snapshotId`和`effectiveScopeDigest`均保存；仅有`VerifiedSourceInventoryReference`不足以说明排除范围。读取器核对这些重复字段及R0引用。此前本地调试R4缺少该新字段时按其明确旧形状读取，不反推为新格式身份。
 
 ## 7. 目录与覆盖
 
 `entry-evidence-index-v1` 保存：schemaVersion、完整sourceBasis、R1/R2/R3逻辑引用、assembler版本、实际配置、entries和计数。每个 `entries[]` 含 entryId、methodCondition、route、handler、file、assemblyStatus、局部限制数量。文件字节数/hash复用canonical receipt descriptor，不再设计第二层校验账本。
 
-`frontend-evidence-coverage-v1` JSONL：一条HEADER，随后按 requestId 排序的 REQUEST_COVERAGE；每条保存requestId、resolution、全部entryIds、实际纳入/未纳入情况及原因。无唯一入口的请求内嵌完整请求和所需sourceUnits；已唯一纳入者用本目录entryId/file定位，避免在总表复制全文。
+`frontend-evidence-coverage-v1` JSONL：一条HEADER，随后按 requestId 排序的 REQUEST_COVERAGE；每条保存requestId、resolution、全部entryIds、实际纳入/未纳入情况及原因。无唯一入口的请求内嵌完整请求和所需sourceUnits；已唯一纳入者只保留entryId及准确的`entryFile`定位，不在总表复制请求或源码。读取器分别校验两种明确形状。
 
 必须成立：
 
@@ -126,12 +132,12 @@ R1 请求 ID 集合 = frontend coverage 请求 ID 集合
 
 沿用现有 canonical module/step store、不可变receipt和原子安装，不增加证据数据库或新的恢复框架。Step05 module4新producer安装本索引、coverage及entry文件集合。
 
-当前store按精确固定文件名校验，单publication默认最多64个payload；**不能直接声称已经支持339份入口JSON。** 本轮要为新的入口证据artifact增加受限变长集合合同：固定2个目录/覆盖文件＋由索引完整entryId集合推导的 `entry-[0-9a-f]{64}.json`。拒绝额外文件、重复entryId、文件名与正文身份不一致、路径越界和错artifact type。其它producer白名单保持。
+默认store仍对既有producer按精确固定文件名校验、单publication最多64个payload。Step05 module4的`entry-evidence`/v3是唯一例外：它已经使用受限变长集合合同，固定索引和覆盖文件＋由索引完整entryId集合推导的 `entry-[0-9a-f]{64}.json`，并在module和step重开时核对实际文件数和字节。它拒绝额外文件、重复entryId、文件名与正文身份不一致、路径越界和错artifact type；空后端分母合法地只保存索引（`entries=[]`）和覆盖。其它producer白名单与默认限制保持。R4 producer已经接通并在固定源码上实际生成入口文件；存储成功仍不等于内容准确性验收通过。
 
 `evidence.maxEntryUtf8Bytes`、`evidence.maxPublicationUtf8Bytes`、`evidence.maxEntries`是显式正整数资源上限；按**实际canonical JSON**计量，不使用Markdown计数。组装前核对入口数量及store的文件数/字节预算能否满足；文件数预算由maxEntries＋2语义文件＋既有receipt开销推导并按现有store限制核验，不悄悄放宽其它步骤。共享后端方法跨入口复制所需容量应在实现验收实测，设计不虚报固定大小。
 
 - 上游局部未知/导航失败：保留实际入口结果文件，运行可完成但报告限制；不能声称全仓完整。
-- 单入口实际JSON超限：不删正文、不改成看似完整的小包；本次组装返回具名容量问题，保留已安装上游，不发布成功证据集合。用户调整配置后新建R4，零解析器重跑。失败报告可查，但没有receipt就不能返回正式入口文件引用。
+- 单入口实际JSON超限：不删正文、不改成看似完整的小包；本次组装返回具名容量问题，保留已安装上游，不发布成功证据集合。用户调整配置后新建R4，零解析器重跑。FAILED/BLOCKED R4 可通过inspect查询经严格R0/R1/R2/R3核验的具名问题，但不列任何`availableOutput`；没有receipt，artifact明确拒绝，不能返回正式入口文件引用或把上游publication伪装为R4输出。
 - 整体超限、来源损坏、引用非法、写盘失败：同样不安装成功集合；保留实际报告和既有上游。
 - 原子安装中断：沿用现有receipt为准的读取，临时文件不能冒充成功结果；不自动续写结束运行。
 
@@ -140,6 +146,8 @@ R1 请求 ID 集合 = frontend coverage 请求 ID 集合
 ## 9. 重开、导出与后续消费
 
 新reader先核对R4 receipt/schema/文件集合，再按entryId打开指定文件及目录关系。对已安装的自包含文件重开，不要求Maven输出、JAR、JDK或客户checkout存在，也不重跑组装器。正式执行R4时的上游准入仍必须核验R0/R1/R2/R3；自包含阅读不是允许混用来源。
+
+安装时使用的入口数量、单文件及总字节上限必须以具体值绑定并保存在 R4 request-v5 中。历史重开从该请求恢复限额，而不是读取当前配置；仅保存不可逆的预算摘要不足以在打开动态入口文件集合前恢复读取限额。缺少、损坏或与请求身份不符时拒绝读取，不以全局放宽限额代替。
 
 `artifact`增加版本明确的 ENTRY_EVIDENCE_INDEX、ENTRY_EVIDENCE（要求完整entryId）、FRONTEND_EVIDENCE_COVERAGE查询键，保留既有public Agent方法。按入口ID查文件，不增加任意磁盘路径读取。目录导出是已保存payload逐字复制及既有回执，不新跑分析；未来消费者从index定位JSON，不必解析技术Markdown或手工关联五份上游索引。
 
@@ -154,6 +162,6 @@ R1 请求 ID 集合 = frontend coverage 请求 ID 集合
 - 搬移导出目录后仍可按相对路径打开；非法路径/错owner/断引用/容量及写盘失败明确拒绝。
 - 至少超过64个入口的fixture验证真实store变长集合，不只测试内存DTO；只跑本次直接测试。
 - 已确认错边不再进入确定调用及其SQL；正常已确认外部调用不被误报项目缺失；真实未知、Lombok限制、超时仍可见。
-- 对采购“关联请购单”检查自动数据链、实际四参数、第五个purchaseStatus保持NOT_PASSED，以及当前漏选的JeecgListMixin.js第115–143行getQueryParams完整单元进入保存；不能把它验收为采购订单创建或入库付款流程。
+- 对采购“关联请购单”检查自动数据链、实际四参数、第五个purchaseStatus保持NOT_PASSED，以及新R1已保存的JeecgListMixin.js第130–144行getQueryParams完整单元进入R4；不能把它验收为采购订单创建或入库付款流程。
 
 本页规定机器材料，不增加LLM写作、SQL执行、跨版本增量复用、通用解析器或人工作证系统。

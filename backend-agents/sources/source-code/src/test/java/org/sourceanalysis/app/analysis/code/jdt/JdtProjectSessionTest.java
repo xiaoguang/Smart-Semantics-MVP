@@ -1092,8 +1092,7 @@ class JdtProjectSessionTest {
   }
 
   private FakeSessionHarness fakeSessionHarness(
-      StartupBehavior behavior, String vmLocation, Duration queryTimeout)
-      throws IOException {
+      StartupBehavior behavior, String vmLocation, Duration queryTimeout) throws IOException {
     Path installation = Files.createDirectories(temporaryDirectory.resolve("tools/jdtls"));
     Path javaHome = Files.createDirectories(temporaryDirectory.resolve("tools/jdk"));
     Path java = Files.createDirectories(javaHome.resolve("bin")).resolve("java");
@@ -1122,11 +1121,7 @@ class JdtProjectSessionTest {
     assertThat(java.toFile().setExecutable(true, false)).isTrue();
     EffectiveEngineConfiguration.JdtConfiguration configuration =
         new EffectiveEngineConfiguration.JdtConfiguration(
-            installation,
-            javaHome,
-            Duration.ofSeconds(2),
-            queryTimeout,
-            Duration.ofSeconds(2));
+            installation, javaHome, Duration.ofSeconds(2), queryTimeout, Duration.ofSeconds(2));
     FakeProcessStarter starter = new FakeProcessStarter(behavior, vmLocation);
     JdtProcessIsolation isolation = new JdtProcessIsolation(starter);
     JdtLanguageServerClient client = new JdtLanguageServerClient(configuration, isolation);

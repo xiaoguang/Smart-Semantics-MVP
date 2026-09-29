@@ -79,6 +79,74 @@ class PersistenceSqlAnalysisTest {
   }
 
   @Test
+  void projectsOrderByPerOwningQueryWithExpressionDirectionAndNullOrdering() {
+    String xml =
+        mapper(
+            "<select id=\"byScore\">"
+                + "SELECT id, score, name FROM neutral_records "
+                + "ORDER BY COALESCE(score, 0) DESC NULLS LAST, name ASC NULLS FIRST"
+                + "</select>\n"
+                + "<select id=\"byCreated\">"
+                + "SELECT id FROM neutral_records ORDER BY created_at ASC"
+                + "</select>\n");
+    PersistenceMaterialIndex result =
+        analyze(
+            xml,
+            List.of(
+                method("byScore", "method:by-score"), method("byCreated", "method:by-created")));
+
+    assertThat(result.sqlAnalyses()).hasSize(2);
+    PersistenceMaterialIndex.SqlAstNode scoreOrder =
+        firstKind(result.sqlAnalyses().get(0).ast(), "ORDER_BY");
+    String scoreEvidence = flattenAstValues(scoreOrder) + flattenAstMetadata(scoreOrder);
+    assertThat(scoreEvidence)
+        .containsIgnoringCase("COALESCE")
+        .containsIgnoringCase("score")
+        .containsIgnoringCase("DESC")
+        .containsIgnoringCase("NULLS")
+        .containsIgnoringCase("LAST")
+        .containsIgnoringCase("name")
+        .containsIgnoringCase("FIRST");
+    assertThat(flattenAstValues(scoreOrder)).doesNotContain("created_at");
+
+    PersistenceMaterialIndex.SqlAstNode createdOrder =
+        firstKind(result.sqlAnalyses().get(1).ast(), "ORDER_BY");
+    assertThat(flattenAstValues(createdOrder)).contains("created_at");
+    assertThat(flattenAstValues(createdOrder)).doesNotContain("score", "name");
+  }
+
+  @Test
+  void retainsPartialDynamicXmlAndItsStaticOrderByProjection() {
+    String xml =
+        mapper(
+            "<select id=\"dynamicOrdered\">\n"
+                + "  SELECT id, status FROM neutral_records\n"
+                + "  <where><if test=\"status != null\"><![CDATA[AND status = #{status}]]></if></where>\n"
+                + "  ORDER BY created_at DESC NULLS LAST\n"
+                + "</select>\n");
+    PersistenceMaterialIndex result =
+        analyze(
+            xml, List.of(method("dynamicOrdered", "method:dynamic-ordered", parameter("status"))));
+
+    assertThat(result.resources())
+        .singleElement()
+        .satisfies(resource -> assertThat(resource.rawSource()).isEqualTo(xml));
+    assertThat(result.sqlAnalyses())
+        .singleElement()
+        .satisfies(
+            analysis -> {
+              assertThat(analysis.status()).isEqualTo(PersistenceMaterialIndex.SqlStatus.PARTIAL);
+              assertThat(analysis.reason()).containsIgnoringCase("dynamic");
+              PersistenceMaterialIndex.SqlAstNode orderBy = firstKind(analysis.ast(), "ORDER_BY");
+              assertThat(flattenAstValues(orderBy) + flattenAstMetadata(orderBy))
+                  .containsIgnoringCase("created_at")
+                  .containsIgnoringCase("DESC")
+                  .containsIgnoringCase("NULLS")
+                  .containsIgnoringCase("LAST");
+            });
+  }
+
+  @Test
   void keepsDynamicConditionAsPartialOrderedXmlAndRetainsAliasParameterOriginals() {
     String xml =
         mapper(

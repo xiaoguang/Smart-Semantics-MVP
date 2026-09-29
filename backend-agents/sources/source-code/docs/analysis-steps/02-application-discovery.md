@@ -1,6 +1,6 @@
 # 应用、HTTP入口与页面请求发现
 
-> 2026-09-29目标：后端`collect-code`（文档角色R2）仍在同一JDT会话完成Step02/03；前端拆为独立`collect-frontend`（R1），只发现请求和源码单元，不依赖后端清单。HTTP请求→entryId匹配归Step05组装（R4）。四操作尚未实施；旧合并三命令已经生成固定源码材料，但调用准确性未通过。[技术总设计](../modules/technical-analysis/README.md) · [运行合同](../modules/technical-analysis/cli-and-runtime.md) · [前端详细设计](../modules/technical-analysis/frontend-http-discovery.md)。
+> 2026-09-29实施中：后端`collect-code`（文档角色R2）仍在同一JDT会话完成Step02/03；前端已拆为独立`collect-frontend`（R1），只发现请求和源码单元，不依赖后端清单。HTTP请求→entryId匹配归Step05组装（R4）。四操作已通过正式CLI／Agent／存储的同源离线fixture接力；固定客户源码上的准确性和全量验收尚未完成。旧合并三命令的已存材料仍可读，其调用准确性未通过。[技术总设计](../modules/technical-analysis/README.md) · [运行合同](../modules/technical-analysis/cli-and-runtime.md) · [前端详细设计](../modules/technical-analysis/frontend-http-discovery.md)。
 
 > 模型批次解耦（已实现）：全入口分母属于固定技术来源，不按模型批次重新发现。模型新批次复用材料中的入口处置；模型漏解释不改写为 Spring 或导航缺口。唯一执行合同见[模型执行 §7](../modules/model-job-execution.md)。本次未修改本步骤算法或产物。
 

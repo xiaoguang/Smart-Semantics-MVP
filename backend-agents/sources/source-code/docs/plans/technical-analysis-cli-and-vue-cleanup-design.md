@@ -1,6 +1,6 @@
 # 四个独立技术操作与按入口证据：依次修改及清理设计
 
-状态：2026-09-29 详细设计；本次只修改文档，**以下新增能力尚未实施**。本页拥有从现有代码到目标的修改顺序和验收对应关系；不是已经执行完的实施记录。总体合同见[技术分析](../modules/technical-analysis/README.md)，字段与版本分别由[入口证据](../modules/technical-analysis/entry-evidence.md)、[运行合同](../modules/technical-analysis/cli-and-runtime.md)唯一维护。
+状态：2026-09-29 已批准设计，实施中。四命令与按入口证据已有正式 CLI／存储 fixture 贯穿；旧生产测试迁移、固定源码准确性验收和全量技术运行尚未完成，不能将 fixture 通过写成整项交付完成。本页规定修改顺序和验收对应关系；实际进度以直接测试和固定源码结果为准。总体合同见[技术分析](../modules/technical-analysis/README.md)，字段与版本分别由[入口证据](../modules/technical-analysis/entry-evidence.md)、[运行合同](../modules/technical-analysis/cli-and-runtime.md)维护。
 
 ## 1. 本次已经确定的范围
 
@@ -28,7 +28,7 @@ R1/R2是独立分支，不要求先运行前端才能运行后端。R3只依赖�
 | 活跃设计与台账 | 区分已完成、仍待实现及历史事实，不把已撤换Maven路线再列待开发 |
 | Lombok、七入口和长等待 | 仅受限集成/稳定性核验；未过则具名保留，不自建处理器或调度系统 |
 
-不纳入：Activity/过程再生成或新格式业务适配、跨版本增量复用、通用JS求值、完整动态SQL展开、Maven下载管理、全文件诊断完成证明、日志优先级过滤、客户构建和自动重跑。设计批准不等于允许本次文档任务执行这些工具。
+不纳入：Activity/过程再生成或新格式业务适配、跨版本增量复用、通用JS求值、完整动态SQL展开、Maven下载管理、全文件诊断完成证明、日志优先级过滤、客户构建和自动重跑。本轮实现及技术验收止于第五步。
 
 ## 2. 当前事实，不能重复开发
 
@@ -38,8 +38,8 @@ R1/R2是独立分支，不要求先运行前端才能运行后端。R3只依赖�
 - 外部编译输入v2、LS/Core模块与目标JDK、现有导航、MyBatis/XML/JSqlParser、跨运行Agent/存储已有接线。
 - 有限Vue发现已经保存51条请求；不再写成“完全没有前端关联”。仍与后端同运行，且必要单元选择存在缺口。
 - 等待超时污染共享缓存已修正并有43项直接测试；[七入口重验](../supplements/jdt-definition-query-failure-experiment.md)仍有间歇长等待。不能把缓存修复说成长等待根因已修，不能把旧覆盖改成重验成功。
-- 当前Java索引schema为v2，技术module producer为v3；持久化schema为v1、技术producer为v2。二者不是同一版本轴。新写版本统一见运行合同。
-- 人工导出的采购JSON只是已有证据的展示，不是生产已经具备每入口输出。
+- 旧Java索引schema为v2，技术module producer为v3；旧持久化schema为v1、技术producer为v2。二者不是同一版本轴。新写版本已在实现分支接入，见运行合同；固定源码上尚未完成新版本全链验收。
+- 原先人工导出的采购JSON只是历史证据的展示。实现分支现有按入口JSON的真实存储 fixture，但固定源码采购证据仍须经过新R0→R4正式链生成和核验。
 
 ## 3. 模块职责与准确改动面
 
@@ -55,7 +55,7 @@ Java路径以下相对 `src/main/java/org/sourceanalysis/app/`；helper路径相
 | code/jdt与tools/jdt-syntax-helper | Core投影可靠调用binding；Resolver按精确调用归属；外部/未知/失败分类 | 官方导航、合法实现候选、同key一次RPC缓存、模块隔离 |
 | code/publish/JavaCodeIndexPublicationSpecifier、Reader | 新CALL字段/schema及技术producer；旧版本严格读取 | 原完整方法/调用/入口关系，不回写历史 |
 | persistence/DefaultPersistenceAnalyzer及publisher/reader | 补ORDER BY投影，接受新Java basis并保存准确R2引用 | 完整XML、include/resultMap、动态限制和JSqlParser |
-| material/DefaultCodeReadingMaterialBuilder及类型 | 新生产按entry构造；移入已保存HTTP请求的匹配；完整展开方法、前端、XML、SQL | 选择与组装职责，不重新解析，不推断业务 |
+| material/历史DefaultCodeReadingMaterialBuilder及新EntryEvidenceAssembler | 旧组包生产代码退出；新生产按entry构造、匹配已保存HTTP请求，并完整展开方法、前端、XML、SQL | 旧Packet仍可读取；新组装不重新解析、不推断业务 |
 | material/publish、artifact/AtomicCanonicalPublicationEngine与policy | 入口目录约束的变长平铺文件集合，真实安装/重开与查询 | 现有原子保存、receipt/hash、其他producer的严格文件规则 |
 | CodeReadingMaterialMarkdown、私有材料state及业务准入 | Markdown变可选视图；新state类型与明确拒绝未适配业务入口 | 历史Packet、M10、Activity、报告读取和旧renderer |
 | 同一个Skill及例子 | 四命令和准确上游；外部Maven仅获授权执行；按真实报告沟通 | 不代替Java取证，不自行补值或继续业务生成 |
@@ -88,7 +88,7 @@ Java路径以下相对 `src/main/java/org/sourceanalysis/app/`；helper路径相
 
 ### D3：补前端必要单元及SQL已有结果的投影
 
-前端针对已支持的调用路径保留完整所需方法/配置单元；本例getQueryParams第115–143行已在R0，但未成为所选SOURCE_UNIT，需要修正常规单元选择，不只硬编码该文件名。动态HTTP参数仍保留表达式/未知，不执行JS。
+前端针对已支持的调用路径保留完整所需方法/配置单元；本例getQueryParams第130–144行已在R0，旧R1遗漏，修复后的新R1已将其保存为SOURCE_UNIT，尚需在真实R4检查完整单元纳入，不只硬编码该文件名。动态HTTP参数仍保留表达式/未知，不执行JS。
 
 SQL使用JSqlParser已返回的排序节点，保存嵌套归属、表达式、方向、空值排序等工具实际信息。保留完整Mapper XML和结构；没有参数就不生成某次执行SQL。
 

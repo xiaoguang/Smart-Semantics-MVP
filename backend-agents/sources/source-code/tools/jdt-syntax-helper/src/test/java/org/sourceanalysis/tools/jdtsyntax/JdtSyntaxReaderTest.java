@@ -363,7 +363,16 @@ class JdtSyntaxReaderTest {
   }
 
   private static java.util.List<String> platformEntries() {
-    return java.util.List.of(System.getProperty("java.home"));
+    Path javaHome = Path.of(System.getProperty("java.home"));
+    Path platformArchive = javaHome.resolve("lib").resolve("jrt-fs.jar");
+    if (!Files.isRegularFile(platformArchive) && javaHome.getParent() != null) {
+      platformArchive = javaHome.getParent().resolve("lib").resolve("jrt-fs.jar");
+    }
+    try {
+      return java.util.List.of(platformArchive.toRealPath().toString());
+    } catch (java.io.IOException failure) {
+      throw new AssertionError("JDK 17 platform archive is unavailable", failure);
+    }
   }
 
   private static String sha256(String source) {

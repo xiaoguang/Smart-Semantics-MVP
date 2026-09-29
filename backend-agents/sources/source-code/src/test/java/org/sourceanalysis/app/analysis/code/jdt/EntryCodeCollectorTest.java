@@ -3,6 +3,8 @@ package org.sourceanalysis.app.analysis.code.jdt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.RecordComponent;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,8 +13,402 @@ import org.sourceanalysis.app.analysis.code.CodeEngineException;
 import org.sourceanalysis.app.analysis.code.EntryCodeContext;
 import org.sourceanalysis.app.analysis.code.EntrySeed;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
+import org.sourceanalysis.app.analysis.code.SourceRange;
 
 class EntryCodeCollectorTest {
+
+  @Test
+  void resolvedCallBindingMustMatchDirectDeclarationBeforeCollectorExpandsIt() {
+    Fixture fixture =
+        withBindings(
+            Fixture.standard(),
+            Map.of(
+                "save-1", BindingSpec.resolved("binding:Service.save"),
+                "save-2", BindingSpec.resolved("binding:Service.save")),
+            Map.of(
+                "service-save", BindingSpec.resolved("binding:Service.save"),
+                "impl-save", BindingSpec.resolved("binding:ServiceImpl.save")));
+
+    EntryCodeCollector collector = fixture.collector(CollectionBudget.standard());
+    JavaDeclarationCatalog.MethodDeclarationView entry =
+        collector.catalog().methods().stream()
+            .filter(method -> method.sourcePath().equals("Controller.java"))
+            .findFirst()
+            .orElseThrow();
+    EntryCodeContext context =
+        collector.collect(
+            new EntrySeed("entry:binding-match", entry.methodKey(), entry.sourceRange(), "HTTP"));
+
+    assertThat(context.methods())
+        .extracting(EntryCodeContext.MethodCode::name)
+        .contains("start", "save");
+    assertThat(
+            context.calls().stream()
+                .filter(call -> call.expression().startsWith("service.save"))
+                .toList())
+        .hasSize(2)
+        .allSatisfy(
+            call -> {
+              assertThat(call.targets()).hasSize(2);
+              assertThat(call.targets())
+                  .filteredOn(target -> "Service.save".equals(target.displayName()))
+                  .singleElement()
+                  .extracting(EntryCodeContext.CallTarget::expansion)
+                  .isEqualTo("DECLARATION_ONLY");
+              assertThat(call.targets())
+                  .filteredOn(target -> "ServiceImpl.save".equals(target.displayName()))
+                  .singleElement()
+                  .extracting(EntryCodeContext.CallTarget::expansion)
+                  .isEqualTo("BODY_INCLUDED");
+            });
+  }
+
+  @Test
+  void mismatchedDirectBindingRemainsObservationAndCannotExpandARepositoryTarget() {
+    Fixture fixture =
+        withBindings(
+            Fixture.standard(),
+            Map.of(
+                "save-1", BindingSpec.resolved("binding:Other.save"),
+                "save-2", BindingSpec.resolved("binding:Other.save")),
+            Map.of(
+                "service-save", BindingSpec.resolved("binding:Service.save"),
+                "impl-save", BindingSpec.resolved("binding:ServiceImpl.save")));
+
+    EntryCodeCollector collector = fixture.collector(CollectionBudget.standard());
+    JavaDeclarationCatalog.MethodDeclarationView entry =
+        collector.catalog().methods().stream()
+            .filter(method -> method.sourcePath().equals("Controller.java"))
+            .findFirst()
+            .orElseThrow();
+    EntryCodeContext context =
+        collector.collect(
+            new EntrySeed(
+                "entry:binding-mismatch", entry.methodKey(), entry.sourceRange(), "HTTP"));
+
+    assertThat(context.methods())
+        .extracting(EntryCodeContext.MethodCode::name)
+        .containsExactly("start");
+    assertThat(
+            context.calls().stream()
+                .filter(call -> call.expression().startsWith("service.save"))
+                .toList())
+        .hasSize(2)
+        .allSatisfy(
+            call ->
+                assertThat(call.targets())
+                    .hasSize(2)
+                    .allSatisfy(
+                        target -> assertThat(target.expansion()).isNotEqualTo("BODY_INCLUDED")));
+  }
+
+  @Test
+  void singleMismatchedDirectBindingIsNotReportedAsLocated() {
+    Fixture fixture =
+        withBindings(
+            Fixture.uniqueDeclaration(),
+            Map.of(
+                "save-1", BindingSpec.resolved("binding:Other.save"),
+                "save-2", BindingSpec.resolved("binding:Other.save")),
+            Map.of("service-save", BindingSpec.resolved("binding:Service.save")));
+
+    EntryCodeCollector collector = fixture.collector(CollectionBudget.standard());
+    JavaDeclarationCatalog.MethodDeclarationView entry =
+        collector.catalog().methods().stream()
+            .filter(method -> method.sourcePath().equals("Controller.java"))
+            .findFirst()
+            .orElseThrow();
+    EntryCodeContext context =
+        collector.collect(
+            new EntrySeed(
+                "entry:single-binding-mismatch", entry.methodKey(), entry.sourceRange(), "HTTP"));
+
+    assertThat(context.calls())
+        .filteredOn(call -> call.expression().startsWith("service.save"))
+        .hasSize(2)
+        .allSatisfy(
+            call -> {
+              assertThat(call.resolution()).isEqualTo("NAVIGATION_CONFLICT");
+              assertThat(call.targets())
+                  .singleElement()
+                  .satisfies(
+                      target -> {
+                        assertThat(target.expansion()).isEqualTo("NOT_EXPANDED");
+                        assertThat(target.reason()).isEqualTo("BINDING_DECLARATION_MISMATCH");
+                      });
+              assertThat(call.observations())
+                  .extracting(EntryCodeContext.CallObservation::detail)
+                  .contains("BINDING_DECLARATION_MISMATCH");
+            });
+  }
+
+  @Test
+  void absentOrRecoveredBindingMayUseOnlyOneExactDefinitionAsALimitedFallback() {
+    for (BindingSpec callBinding : List.of(BindingSpec.absent(), BindingSpec.recovered())) {
+      Fixture fixture =
+          withBindings(
+              Fixture.uniqueDeclaration(),
+              Map.of("save-1", callBinding, "save-2", callBinding),
+              Map.of("service-save", BindingSpec.resolved("binding:Service.save")));
+      EntryCodeCollector collector = fixture.collector(CollectionBudget.standard());
+      JavaDeclarationCatalog.MethodDeclarationView entry =
+          collector.catalog().methods().stream()
+              .filter(method -> method.sourcePath().equals("Controller.java"))
+              .findFirst()
+              .orElseThrow();
+      EntryCodeContext context =
+          collector.collect(
+              new EntrySeed(
+                  "entry:binding-fallback-" + callBinding.state(),
+                  entry.methodKey(),
+                  entry.sourceRange(),
+                  "HTTP"));
+
+      assertThat(context.methods()).extracting(EntryCodeContext.MethodCode::name).contains("save");
+      assertThat(
+              context.calls().stream()
+                  .filter(call -> call.expression().startsWith("service.save"))
+                  .toList())
+          .hasSize(2)
+          .allSatisfy(
+              call ->
+                  assertThat(call.targets())
+                      .singleElement()
+                      .extracting(EntryCodeContext.CallTarget::expansion)
+                      .isEqualTo("DECLARATION_ONLY"));
+    }
+  }
+
+  @Test
+  void nestedCallsUseTheirOwnBindingAndDoNotBorrowTheOuterTarget() {
+    Fixture fixture =
+        withBindings(
+            Fixture.nested(),
+            Map.of(
+                "outer", BindingSpec.resolved("binding:PageDomain.setPageSize"),
+                "inner", BindingSpec.resolved("binding:Convert.toInt")),
+            Map.of(
+                "page-size", BindingSpec.resolved("binding:PageDomain.setPageSize"),
+                "to-int", BindingSpec.resolved("binding:Convert.toInt")));
+    EntryCodeCollector collector = fixture.collector(CollectionBudget.standard());
+    JavaDeclarationCatalog.MethodDeclarationView entry =
+        collector.catalog().methods().stream()
+            .filter(method -> method.sourcePath().equals("Controller.java"))
+            .findFirst()
+            .orElseThrow();
+    EntryCodeContext context =
+        collector.collect(
+            new EntrySeed("entry:nested-binding", entry.methodKey(), entry.sourceRange(), "HTTP"));
+
+    assertThat(context.methods())
+        .extracting(EntryCodeContext.MethodCode::name)
+        .contains("run", "setPageSize", "toInt");
+    EntryCodeContext.CallSite outer =
+        context.calls().stream()
+            .filter(call -> call.expression().startsWith("page.setPageSize"))
+            .findFirst()
+            .orElseThrow();
+    EntryCodeContext.CallSite inner =
+        context.calls().stream()
+            .filter(call -> call.expression().startsWith("Convert.toInt"))
+            .findFirst()
+            .orElseThrow();
+    assertThat(outer.targets())
+        .singleElement()
+        .extracting(EntryCodeContext.CallTarget::displayName)
+        .isEqualTo("PageDomain.setPageSize");
+    assertThat(inner.targets()).hasSize(2);
+    assertThat(inner.targets())
+        .filteredOn(target -> "PageDomain.setPageSize".equals(target.displayName()))
+        .singleElement()
+        .satisfies(
+            target -> {
+              assertThat(target.expansion()).isEqualTo("NOT_EXPANDED");
+              assertThat(target.reason()).isEqualTo("NAVIGATION_CONFLICT_NOT_EXPANDED");
+            });
+    assertThat(
+            inner.targets().stream()
+                .filter(target -> "BODY_INCLUDED".equals(target.expansion()))
+                .toList())
+        .singleElement()
+        .extracting(EntryCodeContext.CallTarget::displayName)
+        .isEqualTo("Convert.toInt");
+  }
+
+  @Test
+  void resolvedBinaryBindingWithNoRepositoryLocationsIsAnExternalObservation() {
+    Fixture fixture =
+        withBindings(
+            Fixture.external(),
+            Map.of(
+                "value-of",
+                BindingSpec.binary(
+                    "java.base/java.lang.String.valueOf(java.lang.String)",
+                    "java.lang.String.valueOf")),
+            Map.of());
+
+    EntryCodeCollector collector = fixture.collector(CollectionBudget.standard());
+    JavaDeclarationCatalog.MethodDeclarationView entry =
+        collector.catalog().methods().stream()
+            .filter(method -> method.sourcePath().equals("Controller.java"))
+            .findFirst()
+            .orElseThrow();
+    EntryCodeContext context =
+        collector.collect(
+            new EntrySeed(
+                "entry:external-string-value-of", entry.methodKey(), entry.sourceRange(), "HTTP"));
+
+    assertThat(context.calls())
+        .singleElement()
+        .satisfies(
+            external -> {
+              assertThat(external.resolution()).isEqualTo("EXTERNAL");
+              assertThat(external.targets()).isEmpty();
+              Object observations = recordComponent(external, "observations");
+              assertThat(containsStringValue(observations, "java.lang.String.valueOf"))
+                  .as("v3 call observation must retain the Core binary method identity")
+                  .isTrue();
+            });
+    assertThat(context.limitations())
+        .extracting(EntryCodeContext.Limitation::code)
+        .doesNotContain("UNRESOLVED_CALL");
+  }
+
+  @Test
+  void externalObservationMustBeConfirmedBinaryIdentity() {
+    SourceRange range = new SourceRange(0, 16, 1, 1);
+
+    assertThatThrownBy(
+            () ->
+                new EntryCodeContext.CallSite(
+                    "call:malformed-external-association",
+                    "method:entry",
+                    "METHOD",
+                    range,
+                    range,
+                    "String.valueOf",
+                    "String",
+                    List.of(),
+                    List.of(),
+                    false,
+                    List.of(),
+                    "EXTERNAL",
+                    "malformed external observation",
+                    List.of(
+                        new EntryCodeContext.CallObservation(
+                            "EXTERNAL_BINARY_BINDING",
+                            "JDT_CORE_BINDING",
+                            "BINARY",
+                            range,
+                            "UNCONFIRMED",
+                            "java.base/java.lang.String.valueOf(java.lang.String)",
+                            "java.lang.String",
+                            "BINARY",
+                            "java.lang.String.valueOf",
+                            "unconfirmed"))))
+        .isInstanceOf(IllegalArgumentException.class);
+
+    assertThatThrownBy(
+            () ->
+                new EntryCodeContext.CallSite(
+                    "call:malformed-external-origin",
+                    "method:entry",
+                    "METHOD",
+                    range,
+                    range,
+                    "String.valueOf",
+                    "String",
+                    List.of(),
+                    List.of(),
+                    false,
+                    List.of(),
+                    "EXTERNAL",
+                    "malformed external observation",
+                    List.of(
+                        new EntryCodeContext.CallObservation(
+                            "EXTERNAL_BINARY_BINDING",
+                            "JDT_CORE_BINDING",
+                            "SOURCE",
+                            range,
+                            "CONFIRMED",
+                            "java.base/java.lang.String.valueOf(java.lang.String)",
+                            "java.lang.String",
+                            "SOURCE",
+                            "java.lang.String.valueOf",
+                            "source is not a Core binary identity"))))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void emptyRepositoryLocationsWithoutBindingRemainUnresolved() {
+    Fixture fixture =
+        withBindings(Fixture.external(), Map.of("value-of", BindingSpec.absent()), Map.of());
+
+    EntryCodeCollector collector = fixture.collector(CollectionBudget.standard());
+    JavaDeclarationCatalog.MethodDeclarationView entry =
+        collector.catalog().methods().stream()
+            .filter(method -> method.sourcePath().equals("Controller.java"))
+            .findFirst()
+            .orElseThrow();
+    EntryCodeContext context =
+        collector.collect(
+            new EntrySeed(
+                "entry:unresolved-string-value-of",
+                entry.methodKey(),
+                entry.sourceRange(),
+                "HTTP"));
+
+    assertThat(context.calls()).hasSize(1);
+    EntryCodeContext.CallSite unresolved = context.calls().get(0);
+    assertThat(unresolved.resolution()).isEqualTo("UNRESOLVED");
+    assertThat(unresolved.targets()).isEmpty();
+    assertThat(context.limitations())
+        .extracting(EntryCodeContext.Limitation::code)
+        .contains("UNRESOLVED_CALL");
+  }
+
+  @Test
+  void requiredNavigationFailureWinsOverBinaryExternalClassification() {
+    Fixture fixture = Fixture.external();
+    fixture.gateway().definitionFailure =
+        new CodeEngineException(
+            CodeEngineException.JDT_QUERY_FAILED, "simulated binary definition query failure");
+    fixture =
+        withBindings(
+            fixture,
+            Map.of(
+                "value-of",
+                BindingSpec.binary(
+                    "java.base/java.lang.String.valueOf(java.lang.String)",
+                    "java.lang.String.valueOf")),
+            Map.of());
+
+    EntryCodeCollector collector = fixture.collector(CollectionBudget.standard());
+    JavaDeclarationCatalog.MethodDeclarationView entry =
+        collector.catalog().methods().stream()
+            .filter(method -> method.sourcePath().equals("Controller.java"))
+            .findFirst()
+            .orElseThrow();
+    EntryCodeContext context =
+        collector.collect(
+            new EntrySeed(
+                "entry:binary-query-failure", entry.methodKey(), entry.sourceRange(), "HTTP"));
+
+    assertThat(context.calls())
+        .singleElement()
+        .satisfies(
+            call -> {
+              assertThat(call.resolution()).isEqualTo("QUERY_FAILED");
+              assertThat(call.targets()).isEmpty();
+              assertThat(
+                      containsStringValue(
+                          recordComponent(call, "observations"), "java.lang.String.valueOf"))
+                  .isTrue();
+            });
+    assertThat(context.limitations())
+        .extracting(EntryCodeContext.Limitation::code)
+        .contains("QUERY_FAILED");
+  }
 
   @Test
   void collectsCompleteBodiesDuplicateCallsCandidatesArgumentsControlsAndBoundaries() {
@@ -166,6 +562,202 @@ class EntryCodeCollectorTest {
         .contains("Controller.java", "Service.java", "ServiceImpl.java");
   }
 
+  private record BindingSpec(
+      String state,
+      String declarationKey,
+      String declaringTypeKey,
+      String typeOrigin,
+      String displayIdentity) {
+
+    static BindingSpec resolved(String key) {
+      int separator = key.lastIndexOf('.');
+      String type = separator < 0 ? key : key.substring(0, separator);
+      return new BindingSpec("RESOLVED", key, type, "SOURCE", key);
+    }
+
+    static BindingSpec binary(String key, String displayIdentity) {
+      return new BindingSpec("RESOLVED", key, "java.lang.String", "BINARY", displayIdentity);
+    }
+
+    static BindingSpec absent() {
+      return new BindingSpec("ABSENT", null, null, "UNKNOWN", null);
+    }
+
+    static BindingSpec recovered() {
+      return new BindingSpec("RECOVERED", null, null, "UNKNOWN", null);
+    }
+  }
+
+  private static Fixture withBindings(
+      Fixture fixture,
+      Map<String, BindingSpec> callBindings,
+      Map<String, BindingSpec> declarationBindings) {
+    Class<?> callBindingType = bindingType(JdtSyntaxProtocol.CallSiteView.class);
+    Class<?> declarationBindingType = bindingType(JdtSyntaxProtocol.Declaration.class);
+    assertThat(declarationBindingType).isEqualTo(callBindingType);
+    Map<String, JdtSyntaxProtocol.Response> responses = new LinkedHashMap<>();
+    for (Map.Entry<String, JdtSyntaxProtocol.Response> source : fixture.syntax().entrySet()) {
+      JdtSyntaxProtocol.Response response = source.getValue();
+      List<JdtSyntaxProtocol.Declaration> declarations =
+          response.declarations().stream()
+              .map(
+                  declaration ->
+                      copyRecord(
+                          declaration,
+                          Map.of(
+                              "binding",
+                              binding(
+                                  declarationBindingType,
+                                  declarationBindings.getOrDefault(
+                                      declaration.localId(),
+                                      BindingSpec.resolved("binding:" + declaration.localId()))))))
+              .toList();
+      List<JdtSyntaxProtocol.CallSiteView> calls =
+          response.callSites().stream()
+              .map(
+                  call ->
+                      copyRecord(
+                          call,
+                          Map.of(
+                              "binding",
+                              binding(
+                                  callBindingType,
+                                  callBindings.getOrDefault(
+                                      call.localId(),
+                                      BindingSpec.resolved("binding:" + call.localId()))))))
+              .toList();
+      responses.put(
+          source.getKey(),
+          copyRecord(response, Map.of("declarations", declarations, "callSites", calls)));
+    }
+    return new Fixture(fixture.sources(), Map.copyOf(responses), fixture.gateway());
+  }
+
+  private static Class<?> bindingType(Class<?> recordType) {
+    return java.util.Arrays.stream(recordType.getRecordComponents())
+        .filter(component -> "binding".equals(component.getName()))
+        .map(RecordComponent::getType)
+        .findFirst()
+        .orElseThrow(
+            () ->
+                new AssertionError(
+                    "jdt-syntax-v4 binding component is required on "
+                        + recordType.getSimpleName()));
+  }
+
+  private static Object binding(Class<?> bindingType, BindingSpec spec) {
+    Map<String, Object> values = new LinkedHashMap<>();
+    for (RecordComponent component : bindingType.getRecordComponents()) {
+      Object value =
+          switch (component.getName()) {
+            case "state" -> enumValue(component.getType(), spec.state());
+            case "declarationKey" -> spec.declarationKey();
+            case "declaringTypeKey" -> spec.declaringTypeKey();
+            case "typeOrigin" -> enumValue(component.getType(), spec.typeOrigin());
+            case "displayIdentity" -> spec.displayIdentity();
+            default -> null;
+          };
+      values.put(component.getName(), value);
+    }
+    return newRecord(bindingType, values);
+  }
+
+  private static Object enumValue(Class<?> type, String value) {
+    if (type.isEnum()) {
+      @SuppressWarnings({"unchecked", "rawtypes"})
+      Object constant = Enum.valueOf((Class) type, value);
+      return constant;
+    }
+    return value;
+  }
+
+  private static <T> T copyRecord(T original, Map<String, Object> replacements) {
+    Class<?> type = original.getClass();
+    Map<String, Object> values = new LinkedHashMap<>();
+    for (RecordComponent component : type.getRecordComponents()) {
+      try {
+        component.getAccessor().setAccessible(true);
+        values.put(
+            component.getName(),
+            replacements.containsKey(component.getName())
+                ? replacements.get(component.getName())
+                : component.getAccessor().invoke(original));
+      } catch (ReflectiveOperationException failure) {
+        throw new AssertionError("cannot read record component " + component.getName(), failure);
+      }
+    }
+    @SuppressWarnings("unchecked")
+    T copy = (T) newRecord(type, values);
+    return copy;
+  }
+
+  private static Object newRecord(Class<?> type, Map<String, Object> values) {
+    try {
+      RecordComponent[] components = type.getRecordComponents();
+      Class<?>[] parameterTypes =
+          java.util.Arrays.stream(components)
+              .map(RecordComponent::getType)
+              .toArray(Class<?>[]::new);
+      Object[] arguments =
+          java.util.Arrays.stream(components)
+              .map(component -> values.get(component.getName()))
+              .toArray();
+      Constructor<?> constructor = type.getDeclaredConstructor(parameterTypes);
+      constructor.setAccessible(true);
+      return constructor.newInstance(arguments);
+    } catch (ReflectiveOperationException failure) {
+      throw new AssertionError("cannot construct " + type.getName(), failure);
+    }
+  }
+
+  private static Object recordComponent(Object record, String name) {
+    RecordComponent component =
+        java.util.Arrays.stream(record.getClass().getRecordComponents())
+            .filter(value -> name.equals(value.getName()))
+            .findFirst()
+            .orElseThrow(
+                () ->
+                    new AssertionError(
+                        "v3 CallSite must expose structured " + name + " observations"));
+    try {
+      component.getAccessor().setAccessible(true);
+      return component.getAccessor().invoke(record);
+    } catch (ReflectiveOperationException failure) {
+      throw new AssertionError("cannot read CallSite component " + name, failure);
+    }
+  }
+
+  private static boolean containsStringValue(Object value, String expected) {
+    if (value == null) {
+      return false;
+    }
+    if (value instanceof String text) {
+      return text.contains(expected);
+    }
+    if (value instanceof Iterable<?> values) {
+      for (Object item : values) {
+        if (containsStringValue(item, expected)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    if (!value.getClass().isRecord()) {
+      return false;
+    }
+    for (RecordComponent component : value.getClass().getRecordComponents()) {
+      try {
+        component.getAccessor().setAccessible(true);
+        if (containsStringValue(component.getAccessor().invoke(value), expected)) {
+          return true;
+        }
+      } catch (ReflectiveOperationException failure) {
+        throw new AssertionError("cannot inspect structured observation", failure);
+      }
+    }
+    return false;
+  }
+
   private record Fixture(
       InMemorySources sources,
       Map<String, JdtSyntaxProtocol.Response> syntax,
@@ -243,6 +835,106 @@ class EntryCodeCollectorTest {
               "Service.java", serviceSyntax,
               "ServiceImpl.java", implementationSyntax),
           gateway);
+    }
+
+    static Fixture uniqueDeclaration() {
+      Fixture fixture = standard();
+      JdtSyntaxProtocol.Declaration serviceMethod =
+          fixture.syntax().get("Service.java").declarations().get(0);
+      fixture
+          .gateway()
+          .route(
+              "Controller.java",
+              "save",
+              List.of(fixture.sources().location("Service.java", serviceMethod, "Service.save")),
+              List.of());
+      return fixture;
+    }
+
+    static Fixture nested() {
+      String controller =
+          "class Controller { void run(String id) { page.setPageSize(Convert.toInt(id)); } }\n";
+      String page = "class PageDomain { void setPageSize(String id) { } }\n";
+      String convert = "class Convert { void toInt(String id) { } }\n";
+      InMemorySources sources =
+          new InMemorySources(
+              Map.of(
+                  "Controller.java", controller,
+                  "PageDomain.java", page,
+                  "Convert.java", convert));
+      JdtSyntaxProtocol.Declaration run =
+          method(controller, "controller-run", "Controller", "run", "void run", true);
+      JdtSyntaxProtocol.Declaration pageMethod =
+          method(page, "page-size", "PageDomain", "setPageSize", "void setPageSize", true);
+      JdtSyntaxProtocol.Declaration convertMethod =
+          method(convert, "to-int", "Convert", "toInt", "void toInt", true);
+      JdtSyntaxProtocol.Response controllerSyntax =
+          unit(
+              "Controller.java",
+              controller,
+              run,
+              List.of(
+                  call(
+                      controller,
+                      "controller-run",
+                      "outer",
+                      "page.setPageSize(Convert.toInt(id))",
+                      0),
+                  call(controller, "controller-run", "inner", "Convert.toInt(id)", 0)),
+              List.of(),
+              List.of());
+      JdtSyntaxProtocol.Response pageSyntax =
+          unit("PageDomain.java", page, pageMethod, List.of(), List.of(), List.of());
+      JdtSyntaxProtocol.Response convertSyntax =
+          unit("Convert.java", convert, convertMethod, List.of(), List.of(), List.of());
+      RoutingGateway gateway = new RoutingGateway(sources);
+      gateway.route(
+          "Controller.java",
+          "setPageSize",
+          List.of(sources.location("PageDomain.java", pageMethod, "PageDomain.setPageSize")),
+          List.of());
+      gateway.route(
+          "Controller.java",
+          "toInt",
+          List.of(sources.location("Convert.java", convertMethod, "Convert.toInt")),
+          List.of());
+      int outerStart = controller.indexOf("page.setPageSize");
+      int innerStart = controller.indexOf("Convert.toInt");
+      int innerEnd = controller.indexOf("))", innerStart) + 2;
+      gateway.hierarchy(
+          "Controller.java",
+          run.navigationRange().startOffsetUtf16(),
+          new JdtNavigationResolver.OutgoingCall(
+              sources.location("PageDomain.java", pageMethod, "PageDomain.setPageSize"),
+              List.of(
+                  sources.textRange(
+                      "Controller.java",
+                      new JdtSyntaxProtocol.SourceRange(
+                          outerStart, innerEnd - outerStart, 1, 1)))));
+      return new Fixture(
+          sources,
+          Map.of(
+              "Controller.java", controllerSyntax,
+              "PageDomain.java", pageSyntax,
+              "Convert.java", convertSyntax),
+          gateway);
+    }
+
+    static Fixture external() {
+      String controller = "class Controller { void run(String id) { String.valueOf(id); } }\n";
+      InMemorySources sources = new InMemorySources(Map.of("Controller.java", controller));
+      JdtSyntaxProtocol.Declaration run =
+          method(controller, "controller-run", "Controller", "run", "void run", true);
+      JdtSyntaxProtocol.Response controllerSyntax =
+          unit(
+              "Controller.java",
+              controller,
+              run,
+              List.of(call(controller, "controller-run", "value-of", "String.valueOf(id)", 0)),
+              List.of(),
+              List.of());
+      return new Fixture(
+          sources, Map.of("Controller.java", controllerSyntax), new RoutingGateway(sources));
     }
 
     static Fixture cycle() {
@@ -437,6 +1129,9 @@ class EntryCodeCollectorTest {
         new LinkedHashMap<>();
     private final Map<String, List<JdtNavigationResolver.Location>> implementations =
         new LinkedHashMap<>();
+    private final Map<String, List<JdtNavigationResolver.OutgoingCall>> outgoing =
+        new LinkedHashMap<>();
+    private CodeEngineException definitionFailure;
 
     private RoutingGateway(InMemorySources sources) {
       this.sources = sources;
@@ -457,15 +1152,23 @@ class EntryCodeCollectorTest {
       }
     }
 
+    void hierarchy(
+        String path, int ownerNavigationOffset, JdtNavigationResolver.OutgoingCall call) {
+      outgoing.put(sources.uri(path) + ':' + ownerNavigationOffset, List.of(call));
+    }
+
     @Override
     public List<JdtNavigationResolver.OutgoingCall> outgoingCalls(
         String uri, JdtNavigationResolver.Position position) {
-      return List.of();
+      return outgoing.getOrDefault(uri + ':' + position.character(), List.of());
     }
 
     @Override
     public List<JdtNavigationResolver.Location> definitions(
         String uri, JdtNavigationResolver.Position position) {
+      if (definitionFailure != null) {
+        throw definitionFailure;
+      }
       return definitions.getOrDefault(uri + ':' + position.character(), List.of());
     }
 

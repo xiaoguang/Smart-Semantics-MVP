@@ -76,12 +76,11 @@ public final class JavaCodeIndexReader {
       if (!JavaCodeIndexPublicationSpecifier.FILE_NAME.equals(payload.descriptor().fileName())
           || !JavaCodeIndexPublicationSpecifier.ARTIFACT_TYPE.equals(
               payload.descriptor().artifactType())
-          || !JavaCodeIndexPublicationSpecifier.SCHEMA_VERSION.equals(
-              payload.descriptor().schemaVersion())
+          || !supportedSchemaVersion(payload.descriptor().schemaVersion())
           || payload.descriptor().mediaType() != CanonicalMediaType.APPLICATION_X_NDJSON) {
         throw invalid();
       }
-      return parse(payload.canonicalUtf8());
+      return parse(payload.canonicalUtf8(), payload.descriptor().schemaVersion());
     } catch (RuntimeException failure) {
       if (failure instanceof IllegalArgumentException
           && "JAVA_CODE_INDEX_INVALID".equals(failure.getMessage())) {
@@ -91,8 +90,8 @@ public final class JavaCodeIndexReader {
     }
   }
 
-  private JavaCodeIndex parse(ImmutableBytes bytes) {
-    List<Line> lines = lines(bytes);
+  private JavaCodeIndex parse(ImmutableBytes bytes, String schemaVersion) {
+    List<Line> lines = lines(bytes, schemaVersion);
     Line engineLine = only(lines, "ENGINE");
     ObjectNode engine = engineLine.payload();
     requireFields(
@@ -150,11 +149,16 @@ public final class JavaCodeIndexReader {
       if (!"CALL".equals(line.type())) continue;
       requireFields(line.payload(), Set.of("entryId", "call"));
       String entryId = text(line.payload(), "entryId");
-      EntryCodeContext.CallSite call =
-          convert(line.payload().get("call"), EntryCodeContext.CallSite.class);
+      JsonNode callNode = line.payload().get("call");
+      if (!(callNode instanceof ObjectNode callWire)
+          || !validCallWireForSchema(callWire, schemaVersion)) {
+        throw invalid();
+      }
+      EntryCodeContext.CallSite call = convert(callWire, EntryCodeContext.CallSite.class);
       EntryCallKey owner = new EntryCallKey(entryId, call.callKey());
       CallSourceSyntax syntax = CallSourceSyntax.from(call);
       if (!line.key().equals(entryCallKey(entryId, call.callKey()))
+          || !validCallForSchema(call, schemaVersion)
           || calls.put(owner, call) != null
           || !samePhysicalCall(syntaxByPhysicalCallKey, call.callKey(), syntax)) {
         throw invalid();
@@ -232,7 +236,7 @@ public final class JavaCodeIndexReader {
     return new JavaCodeIndex(descriptor, snapshotId, snapshotRef, catalog, entries, enhancements);
   }
 
-  private List<Line> lines(ImmutableBytes bytes) {
+  private List<Line> lines(ImmutableBytes bytes, String schemaVersion) {
     String content = new String(bytes.copyToByteArray(), StandardCharsets.UTF_8);
     if (content.isEmpty() || !content.endsWith("\n")) throw invalid();
     List<Line> result = new ArrayList<>();
@@ -245,7 +249,7 @@ public final class JavaCodeIndexReader {
       requireFields(line, Set.of("schemaVersion", "recordType", "key", "payload"));
       String type = text(line, "recordType");
       String key = text(line, "key");
-      if (!JavaCodeIndexPublicationSpecifier.SCHEMA_VERSION.equals(text(line, "schemaVersion"))
+      if (!schemaVersion.equals(text(line, "schemaVersion"))
           || !RECORD_TYPES.contains(type)
           || !(line.get("payload") instanceof ObjectNode payload)
           || !identities.add(type + "\u0000" + key)) {
@@ -261,6 +265,47 @@ public final class JavaCodeIndexReader {
     MethodRecord method = methods.get(key);
     if (method == null || method.code() == null) throw invalid();
     return method.code();
+  }
+
+  private static boolean supportedSchemaVersion(String schemaVersion) {
+    return JavaCodeIndexPublicationSpecifier.SCHEMA_VERSION.equals(schemaVersion)
+        || JavaCodeIndexPublicationSpecifier.TECHNICAL_SCHEMA_VERSION.equals(schemaVersion);
+  }
+
+  private static boolean validCallForSchema(EntryCodeContext.CallSite call, String schemaVersion) {
+    if (JavaCodeIndexPublicationSpecifier.SCHEMA_VERSION.equals(schemaVersion)) {
+      return Set.of("LOCATED", "CANDIDATES", "UNRESOLVED").contains(call.resolution())
+          && call.observations().isEmpty();
+    }
+    if ("EXTERNAL".equals(call.resolution())) {
+      return call.targets().isEmpty()
+          && call.observations().stream()
+              .anyMatch(EntryCodeContext.CallObservation::trustedExternalIdentity);
+    }
+    if (Set.of("QUERY_FAILED", "NAVIGATION_CONFLICT").contains(call.resolution())) {
+      return !call.observations().isEmpty()
+          && call.targets().stream().noneMatch(JavaCodeIndexReader::unconfirmedTarget);
+    }
+    return call.targets().stream().noneMatch(JavaCodeIndexReader::unconfirmedTarget);
+  }
+
+  private static boolean validCallWireForSchema(ObjectNode call, String schemaVersion) {
+    if (JavaCodeIndexPublicationSpecifier.SCHEMA_VERSION.equals(schemaVersion)) {
+      return !call.has("observations");
+    }
+    return call.get("observations") instanceof ArrayNode;
+  }
+
+  private static boolean unconfirmedTarget(EntryCodeContext.CallTarget target) {
+    return target.reason() != null
+        && Set.of(
+                "NAVIGATION_CONFLICT_NOT_EXPANDED",
+                "QUERY_FAILED_NOT_EXPANDED",
+                "TARGET_LOCATION_IS_NOT_A_CALLABLE_DECLARATION",
+                "BINDING_DECLARATION_MISMATCH",
+                "BINDING_UNAVAILABLE_NOT_EXPANDED",
+                "BINDING_UNSUPPORTED_CALL_KIND_NOT_EXPANDED")
+            .contains(target.reason());
   }
 
   private static EntryCodeContext.CallSite requiredCall(

@@ -29,7 +29,7 @@ class JdtSyntaxHelperExecutableIT {
                     java.util.List.of(),
                     java.util.List.of(),
                     "17",
-                    java.util.List.of(System.getProperty("java.home")),
+                    java.util.List.of(platformArchive().toString()),
                     source))
             + "\n";
     Path jar = Path.of("target", "source-code-analysis-jdt-syntax-helper.jar").toAbsolutePath();
@@ -55,5 +55,14 @@ class JdtSyntaxHelperExecutableIT {
     return HexFormat.of()
         .formatHex(
             MessageDigest.getInstance("SHA-256").digest(source.getBytes(StandardCharsets.UTF_8)));
+  }
+
+  private static Path platformArchive() throws Exception {
+    Path javaHome = Path.of(System.getProperty("java.home"));
+    Path archive = javaHome.resolve("lib").resolve("jrt-fs.jar");
+    if (!java.nio.file.Files.isRegularFile(archive) && javaHome.getParent() != null) {
+      archive = javaHome.getParent().resolve("lib").resolve("jrt-fs.jar");
+    }
+    return archive.toRealPath();
   }
 }

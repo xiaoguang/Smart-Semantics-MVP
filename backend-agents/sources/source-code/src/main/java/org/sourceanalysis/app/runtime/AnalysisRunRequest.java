@@ -2,10 +2,13 @@ package org.sourceanalysis.app.runtime;
 
 import java.util.List;
 import java.util.Objects;
+import org.sourceanalysis.app.analysis.material.EntryEvidenceProfile;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
+import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactReference;
+import org.sourceanalysis.app.artifact.ModulePublicationReference;
 
 /**
  * Closed, path-free request for one analysis execution.
@@ -28,11 +31,20 @@ public record AnalysisRunRequest(
     TECHNICAL_ANALYSIS
   }
 
-  /** The three and only three separately persisted technical operations. */
+  /** The four and only four separately persisted technical operations. */
   public enum TechnicalOperation {
+    COLLECT_FRONTEND,
     COLLECT_CODE,
     ANALYZE_PERSISTENCE,
     ASSEMBLE_MATERIALS
+  }
+
+  /**
+   * Preserves strict historical technical request decoding while admitting the four-operation wire.
+   */
+  public enum TechnicalWireVersion {
+    V4,
+    V5
   }
 
   /** The analysis-only immutable inputs, retaining the historical v2 construction shape. */
@@ -108,26 +120,115 @@ public record AnalysisRunRequest(
    * selects a prepared source.
    */
   public record TechnicalAnalysisInputs(
+      TechnicalWireVersion wireVersion,
       TechnicalOperation operation,
       ArtifactReference technicalProfileRef,
       ArtifactReference resourceBudgetRef,
       ArtifactReference schemaBundleRef,
       ArtifactReference toolchainRef,
       ArtifactReference artifactPolicyRegistryRef,
-      AnalysisStepPublicationReference upstreamPublication) {
+      AnalysisStepPublicationReference upstreamPublication,
+      ModulePublicationReference frontendPublication,
+      EntryEvidenceProfile entryEvidenceProfile) {
 
     public TechnicalAnalysisInputs {
+      Objects.requireNonNull(wireVersion, "technical request wire version");
       Objects.requireNonNull(operation, "technical analysis operation");
       require(technicalProfileRef, "technical profile");
       require(resourceBudgetRef, "technical resource budget");
       require(schemaBundleRef, "technical schema bundle");
       require(toolchainRef, "technical toolchain");
       require(artifactPolicyRegistryRef, "technical artifact policy registry");
-      Objects.requireNonNull(upstreamPublication, "technical upstream publication");
-      if (upstreamPublication.address() == null
-          || upstreamPublication.address().analysisStepKey() != expectedUpstreamStep(operation)) {
-        throw new IllegalArgumentException("TECHNICAL_ANALYSIS_UPSTREAM_PUBLICATION_INVALID");
-      }
+      if (wireVersion == TechnicalWireVersion.V4) {
+        if (operation == TechnicalOperation.COLLECT_FRONTEND
+            || entryEvidenceProfile != null
+            || frontendPublication != null
+            || upstreamPublication == null
+            || upstreamPublication.address() == null
+            || upstreamPublication.address().analysisStepKey() != expectedUpstreamStep(operation)) {
+          throw new IllegalArgumentException("TECHNICAL_ANALYSIS_UPSTREAM_PUBLICATION_INVALID");
+        }
+      } else
+        switch (operation) {
+          case COLLECT_FRONTEND -> {
+            if (entryEvidenceProfile != null
+                || upstreamPublication != null
+                || frontendPublication != null) {
+              throw new IllegalArgumentException("TECHNICAL_ANALYSIS_UPSTREAM_PUBLICATION_INVALID");
+            }
+          }
+          case COLLECT_CODE, ANALYZE_PERSISTENCE -> {
+            if (entryEvidenceProfile != null
+                || upstreamPublication == null
+                || frontendPublication != null
+                || upstreamPublication.address() == null
+                || upstreamPublication.address().analysisStepKey()
+                    != expectedUpstreamStep(operation)) {
+              throw new IllegalArgumentException("TECHNICAL_ANALYSIS_UPSTREAM_PUBLICATION_INVALID");
+            }
+          }
+          case ASSEMBLE_MATERIALS -> {
+            if (entryEvidenceProfile == null
+                || upstreamPublication == null
+                || frontendPublication == null
+                || !isFrontendHttpDiscovery(frontendPublication)
+                || upstreamPublication.address() == null
+                || upstreamPublication.address().analysisStepKey()
+                    != expectedUpstreamStep(operation)) {
+              throw new IllegalArgumentException("TECHNICAL_ANALYSIS_UPSTREAM_PUBLICATION_INVALID");
+            }
+          }
+        }
+    }
+
+    /**
+     * Source-compatible construction for V4 and non-R4 V5 callers. New V5 R4 requests must use the
+     * explicit entry-evidence profile overload so retained evidence can be reopened without
+     * consulting a later configuration file.
+     */
+    public TechnicalAnalysisInputs(
+        TechnicalWireVersion wireVersion,
+        TechnicalOperation operation,
+        ArtifactReference technicalProfileRef,
+        ArtifactReference resourceBudgetRef,
+        ArtifactReference schemaBundleRef,
+        ArtifactReference toolchainRef,
+        ArtifactReference artifactPolicyRegistryRef,
+        AnalysisStepPublicationReference upstreamPublication,
+        ModulePublicationReference frontendPublication) {
+      this(
+          wireVersion,
+          operation,
+          technicalProfileRef,
+          resourceBudgetRef,
+          schemaBundleRef,
+          toolchainRef,
+          artifactPolicyRegistryRef,
+          upstreamPublication,
+          frontendPublication,
+          null);
+    }
+
+    /** Preserves the v4 one-upstream construction surface for historical inputs and tests. */
+    public TechnicalAnalysisInputs(
+        TechnicalOperation operation,
+        ArtifactReference technicalProfileRef,
+        ArtifactReference resourceBudgetRef,
+        ArtifactReference schemaBundleRef,
+        ArtifactReference toolchainRef,
+        ArtifactReference artifactPolicyRegistryRef,
+        AnalysisStepPublicationReference upstreamPublication) {
+      this(
+          TechnicalWireVersion.V4,
+          operation,
+          technicalProfileRef,
+          resourceBudgetRef,
+          schemaBundleRef,
+          toolchainRef,
+          artifactPolicyRegistryRef,
+          upstreamPublication,
+          null,
+          null);
     }
   }
 
@@ -166,7 +267,9 @@ public record AnalysisRunRequest(
             || (technicalAnalysisInputs.operation() == TechnicalOperation.COLLECT_CODE
                 && !technicalAnalysisInputs
                     .upstreamPublication()
-                    .equals(selectedSourceBasis.preparedSource().publication()))) {
+                    .equals(selectedSourceBasis.preparedSource().publication()))
+            || (technicalAnalysisInputs.wireVersion() == TechnicalWireVersion.V4
+                && technicalAnalysisInputs.operation() == TechnicalOperation.COLLECT_FRONTEND)) {
           throw new IllegalArgumentException("TECHNICAL_ANALYSIS_UPSTREAM_PUBLICATION_INVALID");
         }
       }
@@ -275,6 +378,60 @@ public record AnalysisRunRequest(
         RequestKind.TECHNICAL_ANALYSIS, null, null, technicalAnalysisInputs, selectedSourceBasis);
   }
 
+  /** Creates one v5 request for the split frontend/backend technical operation family. */
+  public static AnalysisRunRequest technicalFourOperations(
+      SelectedSourceBasis selectedSourceBasis,
+      TechnicalOperation operation,
+      ArtifactReference technicalProfileRef,
+      ArtifactReference resourceBudgetRef,
+      ArtifactReference schemaBundleRef,
+      ArtifactReference toolchainRef,
+      ArtifactReference artifactPolicyRegistryRef,
+      AnalysisStepPublicationReference upstreamPublication,
+      ModulePublicationReference frontendPublication) {
+    return technicalFourOperations(
+        selectedSourceBasis,
+        operation,
+        technicalProfileRef,
+        resourceBudgetRef,
+        schemaBundleRef,
+        toolchainRef,
+        artifactPolicyRegistryRef,
+        upstreamPublication,
+        frontendPublication,
+        null);
+  }
+
+  /**
+   * Creates a V5 request with the exact R4 evidence limits retained in the request wire. The
+   * profile is required only for {@link TechnicalOperation#ASSEMBLE_MATERIALS}.
+   */
+  public static AnalysisRunRequest technicalFourOperations(
+      SelectedSourceBasis selectedSourceBasis,
+      TechnicalOperation operation,
+      ArtifactReference technicalProfileRef,
+      ArtifactReference resourceBudgetRef,
+      ArtifactReference schemaBundleRef,
+      ArtifactReference toolchainRef,
+      ArtifactReference artifactPolicyRegistryRef,
+      AnalysisStepPublicationReference upstreamPublication,
+      ModulePublicationReference frontendPublication,
+      EntryEvidenceProfile entryEvidenceProfile) {
+    return technical(
+        selectedSourceBasis,
+        new TechnicalAnalysisInputs(
+            TechnicalWireVersion.V5,
+            operation,
+            technicalProfileRef,
+            resourceBudgetRef,
+            schemaBundleRef,
+            toolchainRef,
+            artifactPolicyRegistryRef,
+            upstreamPublication,
+            frontendPublication,
+            entryEvidenceProfile));
+  }
+
   /** True only for the original v2-compatible analysis construction. */
   public boolean usesLegacyV2Wire() {
     return requestKind == RequestKind.ANALYSIS && selectedSourceBasis == null;
@@ -379,7 +536,16 @@ public record AnalysisRunRequest(
       case COLLECT_CODE -> AnalysisStepKey.VERIFIED_SOURCE_INVENTORY;
       case ANALYZE_PERSISTENCE -> AnalysisStepKey.PROGRAM_GRAPHS;
       case ASSEMBLE_MATERIALS -> AnalysisStepKey.PROVEN_CODE_FACTS;
+      case COLLECT_FRONTEND ->
+          throw new IllegalArgumentException("TECHNICAL_ANALYSIS_UPSTREAM_PUBLICATION_INVALID");
     };
+  }
+
+  private static boolean isFrontendHttpDiscovery(ModulePublicationReference publication) {
+    return publication.address() instanceof AnalysisStepModuleAddress address
+        && address.analysisStepKey() == AnalysisStepKey.APPLICATION_DISCOVERY
+        && address.moduleNumber() == 6
+        && "frontend-http-discovery".equals(address.moduleKey());
   }
 
   private static void require(ArtifactReference reference, String label) {

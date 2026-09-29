@@ -84,7 +84,16 @@ class JdtSyntaxHelperClientTest {
   }
 
   private static List<Path> targetPlatformEntries() {
-    return List.of(Path.of(System.getProperty("java.home")));
+    Path javaHome = Path.of(System.getProperty("java.home"));
+    Path archive = javaHome.resolve("lib").resolve("jrt-fs.jar");
+    if (!java.nio.file.Files.isRegularFile(archive) && javaHome.getParent() != null) {
+      archive = javaHome.getParent().resolve("lib").resolve("jrt-fs.jar");
+    }
+    try {
+      return List.of(archive.toRealPath());
+    } catch (java.io.IOException failure) {
+      throw new AssertionError("JDK 17 platform archive is unavailable", failure);
+    }
   }
 
   public static final class FakeSyntaxHelper {

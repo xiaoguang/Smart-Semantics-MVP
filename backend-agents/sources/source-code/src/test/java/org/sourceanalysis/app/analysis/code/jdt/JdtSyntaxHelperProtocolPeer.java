@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 /** Tiny JDK-only child-process peer used to inspect the host's JSONL request. */
 public final class JdtSyntaxHelperProtocolPeer {
 
-  private static final String SUPPORTED_VERSION = "jdt-syntax-v3";
+  private static final String SUPPORTED_VERSION = "jdt-syntax-v4";
 
   private JdtSyntaxHelperProtocolPeer() {}
 

@@ -34,8 +34,8 @@ import org.sourceanalysis.app.analysis.interpretation.ModelRuntimeIdentityV1;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialMarkdown;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialProfile;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
-import org.sourceanalysis.app.analysis.material.publish.CodeReadingMaterialPublisher;
 import org.sourceanalysis.app.analysis.material.publish.CodeReadingMaterialReader;
+import org.sourceanalysis.app.analysis.material.publish.HistoricalCodeReadingMaterialFixture;
 import org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex;
 import org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex.DependencyRef;
 import org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex.XmlNode;
@@ -307,8 +307,12 @@ class ActivityMaterialProjectorTest {
       CodeReadingMaterialSet expected =
           materialSet(fixture, index, navigation, persistencePublication, persistence);
       AnalysisStepPublicationReference publication =
-          new CodeReadingMaterialPublisher(fixture.moduleArtifacts(), fixture.stepArtifacts())
-              .publish(fixture.applicationDiscovery(), fixture.artifactControls(), expected);
+          HistoricalCodeReadingMaterialFixture.installV1(
+              fixture.moduleArtifacts(),
+              fixture.stepArtifacts(),
+              fixture.applicationDiscovery(),
+              fixture.artifactControls(),
+              expected);
 
       CodeReadingMaterialSet reopened =
           new CodeReadingMaterialReader(fixture.stepArtifacts()).reopen(publication);

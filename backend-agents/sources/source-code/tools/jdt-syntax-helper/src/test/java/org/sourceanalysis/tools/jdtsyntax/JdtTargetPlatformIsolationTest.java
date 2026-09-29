@@ -26,7 +26,7 @@ class JdtTargetPlatformIsolationTest {
   @Test
   void explicitJava8PlatformControlsApiVisibilityWithoutTheHostBootclasspath(@TempDir Path temp)
       throws Exception {
-    assertThat(JdtSyntaxProtocol.VERSION).isEqualTo("jdt-syntax-v3");
+    assertThat(JdtSyntaxProtocol.VERSION).isEqualTo("jdt-syntax-v4");
     assertThat(Arrays.stream(JdtSyntaxProtocol.Request.class.getRecordComponents())
             .map(java.lang.reflect.RecordComponent::getName))
         .contains("targetJdkVersion", "targetPlatformEntries");
@@ -55,7 +55,7 @@ class JdtTargetPlatformIsolationTest {
 
   private static JdtSyntaxProtocol.Request request(List<String> platformEntries) {
     return new JdtSyntaxProtocol.Request(
-        "jdt-syntax-v3",
+        "jdt-syntax-v4",
         JdtSyntaxProtocol.DESCRIBE_COMPILATION_UNIT,
         "target-jdk-8",
         "example/OptionalProbe.java",

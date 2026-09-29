@@ -1,8 +1,8 @@
 # 独立前端 HTTP 发现与按入口组装
 
-状态：**独立前端四运行拆分为待实施设计**。保留 `prepare-source` 的 R0；`collect-frontend` 单独产出 R1；仅后端 `collect-code` 产出 R2；`analyze-persistence --code-run R2` 产出 R3；`assemble-materials --frontend-run R1 --persistence-run R3` 产出 R4。四次技术运行绑定同一准确 R0。配置/request/output 目标版本为 v3/v5/v9。前端不需要后端入口、JDT 或 Maven；HTTP 请求与后端 `entryId` 的匹配只在 R4 组装。
+状态：**独立前端四运行拆分实施中**。保留 `prepare-source` 的 R0；`collect-frontend` 单独产出 R1、仅后端 `collect-code` 产出 R2，两者及 R3/R4 已通过正式 CLI／Agent／存储的同源 fixture 测试。固定源码的真实 R1 已发布并重开前端索引 v2；真实 R2 完成339入口的导航循环后在Step03发布前失败，尚无可用Java索引；R3/R4尚未完成固定源码验收。四次技术运行必须绑定同一准确 R0。配置/request/output 新写版本为 v3/v5/v9。前端不需要后端入口、JDT 或 Maven；HTTP 请求与后端 `entryId` 的匹配只在 R4 组装。
 
-**当前事实**：`FrontendHttpDiscoverer` 和锁定 `vue-eslint-parser@10.4.1` 的自有 Node helper 已完成有限语法/来源验证；现有 `FrontendHttpDiscoveryRequest` 仍要求 `HttpEntryPoint` 清单，旧 `collect-code` R1 module 6 发布 `frontend-http-index-v1` 的 `ENTRY_LINK`，旧 Step05 v2 依赖此链接。固定源码的旧 R1/R2/R3 技术产物已经生成，见[实例走读](../../supplements/vue-to-sql-walkthrough.md)。这些成品保持历史身份；它们不是新独立 R1/R2/R3/R4 的完成证明。
+**当前事实**：`FrontendHttpDiscoverer` 和锁定 `vue-eslint-parser@10.4.1` 的自有 Node helper 已完成有限语法/来源验证。新独立 R1 不读取 `HttpEntryPoint`，也不发布旧 v1 的 `ENTRY_LINK`；旧 `collect-code` module 6／旧 Step05 v2 的链接仅属历史产物。固定源码的旧 R1/R2/R3 技术产物见[实例走读](../../supplements/vue-to-sql-walkthrough.md)，新 R1 的实测与尚缺 R2/R3/R4 的范围见[本轮验收](../../supplements/technical-entry-evidence-acceptance-20260929.md)。
 
 ## 1. 目标、输入和模块接口
 
@@ -43,7 +43,7 @@ parser 返回的 AST 只在 helper/模块内部使用。Java 获得带源码位�
 - 输入仅来自 R0 公共 reader 的有效文件，另带明确排除清单、语言/别名配置；源码中的文字是数据。
 - 用 Node 参数数组启动框架自有的 `tools/frontend-syntax-helper/main.cjs` 一次性 helper；`src/main.cjs` 仅是转发到它的包装文件，不承载实际解析逻辑。stdin 为一条 `frontend-syntax-request-v1` JSONL，请求含 requestId、选定根/别名，以及每个已准入文件的 path/sourceHash/sourceText。helper 不自行打开当前 checkout 或客户 node_modules。stdout 为私有 `frontend-syntax-v1` JSONL，stderr 为工具错误；输出含每个选定文件的处置、来源绑定的请求链观察及诊断，供 Java 做准确入口匹配。解析器启用 JSX 语法识别但不执行源码；一个文件的语法失败记为 FAILED/诊断，已解析父文件若引用该文件不得解引用缺失 AST，更不能阻断其它文件的请求链发现。
 - `NodeFrontendSyntaxTool` 只向 helper 发送本次配置根内、有效范围中的 `.vue/.js` 文件及其 R0 原文、路径和摘要；不把工作目录设为客户树，不加载客户 `node_modules`。它关闭一条 UTF-8 JSONL stdin 后等待一次性退出；超时会强制终止并在有界时间内确认退出。必须核对全部选定文件都有且仅有一个处置；截断、超限、重复、未知类型或缺 FILE 的 stdout 不能冒充完整结果。响应的 UTF-16 位置、sourceHash 与本次输入核对，错误不降格为普通未解析请求。Java `String` 与 parser offset 都按 UTF-16 单位核对，行号由同一冻结文本中的换行计算，不把字符 offset 当 UTF-8 字节位置。不是 RPC 平台、常驻服务或恢复系统。
-- 新 R1 前端工具身份沿用 Node 可执行文件、框架自有 `main.cjs` 和锁文件字节摘要；静态设置及配置文件来源进入独立 profile 身份。旧 queued request 的内容变化在工具启动前拒绝。launcher 固定解析自有 helper/lockfile，不从客户 YAML 或调用方 CWD 取得工具；旧实现已具备这套固定工具身份，新四运行接线仍待实施。
+- 新 R1 前端工具身份沿用 Node 可执行文件、框架自有 `main.cjs` 和锁文件字节摘要；静态设置及配置文件来源进入独立 profile 身份。已排队请求的内容变化在工具启动前拒绝。launcher 固定解析自有 helper/lockfile，不从客户 YAML 或调用方 CWD 取得工具；新 R1 接线已有直接测试和固定源码发布，身份变更回归仍在本轮测试迁移中复核。
 - 进程无法启动/非零退出或无法确认超时终止为 `FRONTEND_SYNTAX_TOOL_FAILED`；已确认终止的超时为 `FRONTEND_SYNTAX_TOOL_TIMEOUT`；截断、超限、JSON/记录/FILE 闭合错误为 `FRONTEND_SYNTAX_PROTOCOL_INVALID`；输出 path/hash 不属于本次 R0 为 `SOURCE_OBSERVATION_SOURCE_MISMATCH`。局部语法不支持记录该文件，独立文件可继续。
 - 使用现有工具调用上限；支持清单未命中则停，不通过不断增大深度/候选数发展通用解释器。
 
@@ -51,7 +51,7 @@ parser 返回的 AST 只在 helper/模块内部使用。Java 获得带源码位�
 
 目标模块入口保持一个类型化 discover 接口，入参从当前 `FrontendHttpDiscoveryRequest` 移除 `httpEntries/backendDiscoveryExecuted`；产物是只含前端事实的 `FrontendHttpIndex` v2。现有构造和旧 v1 reader 保留历史读取用途，不能把旧 `link()` 当作新 R1 的处理步骤。
 
-请求含同源 `VerifiedSourceTextSet`、选定根/alias/配置和容量。构造注入返回中立、带来源位置请求链观察的 `FrontendSyntaxTool`；Java 负责核对来源、范围、覆盖和稳定顺序，不重复 JS 连接。parser AST 和 Node 私有协议不进入索引。固定 helper 与 `NodeFrontendSyntaxTool` 的直接测试已通过，但生产运行从后端拆出尚未实现。
+请求含同源 `VerifiedSourceTextSet`、选定根/alias/配置和容量。构造注入返回中立、带来源位置请求链观察的 `FrontendSyntaxTool`；Java 负责核对来源、范围、覆盖和稳定顺序，不重复 JS 连接。parser AST 和 Node 私有协议不进入索引。固定 helper 与 `NodeFrontendSyntaxTool` 的直接测试、正式独立 R1 的固定源码发布和重开均已通过；这仍不等于 R4 前后端匹配已经验收。
 
 1. **枚举选定文件。** 记录明确前端根中的文件、配置与排除；每个选中文件有 PARSED/PARTIAL/UNSUPPORTED/FAILED/NOT_INSPECTED 处置。
 2. **调用成熟 parser。** 得到模板/脚本节点和位置，不执行客户内容。
@@ -59,7 +59,7 @@ parser 返回的 AST 只在 helper/模块内部使用。Java 获得带源码位�
 4. **保留页面实例和参数对应。** 同一组件被两个页面使用时保留两个上下文。原文可去重，参数用法不可合并；四实参调用的第五形参记录 `NOT_PASSED`。
 5. **找到受支持 HTTP 封装。** 记录 method/URL 的字面量或原表达式、query/body 参数来源和未传参数。不能把 status 数值翻译为业务含义。
 6. **保存客户端地址依据。** 原 URL、baseURL 表达式及静态后备值分开保存；R1 不读后端 context-path。具名地址映射与后端 path 的核对留给 R4，未知不自动去前缀。
-7. **保留必要源码单元。** 不只保存发出 HTTP 的函数，还选择触发、组件方法、`loadData`、`getQueryParams`、`getAction`、axios 配置中实际参与链路的完整函数、template 或静态声明。旧固定 R1 仅选入 mixin `loadData` 90–114 行，未把 `getQueryParams` 115–143 行单独选入；补齐是新目标，不能说历史产物已具备。
+7. **保留必要源码单元。** 不只保存发出 HTTP 的函数，还选择触发、组件方法、`loadData`、`getQueryParams`、`getAction`、axios 配置中实际参与链路的完整函数、template 或静态声明。对对象字面量中的方法，阅读单元取包含方法名的完整属性声明范围；调用遍历仍使用函数值范围。旧固定 R1 仅选入 mixin `loadData` 90–114 行，未把 `getQueryParams` 130–144 行单独选入；本轮新 R1 已把该函数保存为独立 SOURCE_UNIT，最终 R4 已核对页面、组件、mixin 方法名及正文均在入口 JSON 中。不能说历史产物已具备。
 8. **稳定保存前端事实。** 按路径、位置、页面用法排序；原文引用、完整链片段、请求与局限一起发布。R1 不调用匹配器。
 
 解析 import 的文件必须在同源有效范围，未找到不能自动说“已排除”；只有实际命中 R0 排除记录才能写 SOURCE_EXCLUDED。外部包或 alias 不明保留问题，不扫描客户依赖目录尝试全部补齐。
@@ -85,9 +85,9 @@ R4 对每个 R1 请求给出：
 - UNRESOLVED_REQUEST：无法确定请求，或虽有路径候选但必需路由/地址条件仍未知；保存候选ID及具体条件，不当确定调用者。
 - BACKEND_DISCOVERY_NOT_RUN 只供旧 v1 历史读取。新 R1 可早于 R2 完成；R4 缺准确 R2 时拒绝组装，不发布假“零匹配”。
 
-`FrontendHttpIndex` v2 的读取界面只保留文件处置、配置文件来源、完整源码单元、组件使用、请求和诊断；不含入口关联。每个请求保留页面实例、原始位置及有序参数。配置文件以单独 `CONFIGURATION_FILE` 行保存 R0 相对路径/SHA，不计入 parser 的 `FILE` 分母；不执行 Vue/构建配置，也不因选中 `public/index.html` 就推断部署值。动态 `baseURL` 表达式和静态 fallback 分别保存；后备值不是唯一运行时地址。未传形参记录 `NOT_PASSED`。`DISABLED` 是正式 R1 结果：不启动 Node，仍有准确 publication 并可供 R4 使用；R4 将入口前端状态标为“未分析”，不能把它等同 `ENABLED` 零请求或省略 `--frontend-run`。
+`FrontendHttpIndex` v2 的读取界面只保留文件处置、配置文件来源、完整源码单元、组件使用、请求和诊断；不含入口关联。每个请求保留页面实例、原始位置及有序参数。由 wrapper 反推的单元之外，已解析的本地调用可投影其被调完整声明为显式 supporting `SOURCE_UNIT`：例如 `loadData` 的真实 `this.getQueryParams()` 调用保持其自身 call range，而 `getQueryParams` 的完整函数范围作为独立单元保存，不能互相冒充。配置文件以单独 `CONFIGURATION_FILE` 行保存 R0 相对路径/SHA，不计入 parser 的 `FILE` 分母；不执行 Vue/构建配置，也不因选中 `public/index.html` 就推断部署值。动态 `baseURL` 表达式和静态 fallback 分别保存；后备值不是唯一运行时地址。未传形参记录 `NOT_PASSED`。`DISABLED` 是正式 R1 结果：不启动 Node，仍有准确 publication 并可供 R4 使用；R4 将入口前端状态标为“未分析”，不能把它等同 `ENABLED` 零请求或省略 `--frontend-run`。
 
-R1 v2 沿用具体 `FrontendHttpIndexModulePublisher` 的 receipt-last canonical store，改为独立 R1 owner 和 v2 schema；严格发布/重开核对 R0 basis、R1 controls、descriptor、行间引用、path/hash/range。`CONFIGURATION_FILE` 不可被 wrapper 当作 `FILE`；`SOURCE_UNIT`、`COMPONENT_USE` 从已保存关系稳定派生。旧 v1 publisher、旧 R1/R3 fixture 通过直接测试，不能代替新 v2 的运行及重开验收。
+R1 v2 沿用具体 `FrontendHttpIndexModulePublisher` 的 receipt-last canonical store，改为独立 R1 owner 和 v2 schema；严格发布/重开核对 R0 basis、R1 controls、descriptor、行间引用、path/hash/range。v2 的 `SOURCE_UNIT` 由 wrapper 与显式 supporting declaration 的并集稳定派生；supporting 单元必须是已保存 `FILE` 的同 hash 完整范围，且不得重复 wrapper 单元。v1 严格拒绝这类新增单元，旧 v1 publisher、旧 R1/R3 fixture 通过直接测试，不能代替新 v2 的运行及重开验收。
 
 ## 5. 最小正式索引
 
@@ -132,4 +132,4 @@ R4 严格重开 R1 前端索引、R3 持久化及其准确 R2 后端索引，并
 - 动态 URL、未知 alias、mixin 歧义、局部坏文件、排除、正式 `DISABLED` R1、`ENABLED` 零请求、无页面入口、无匹配请求及多候选均在正确运行的覆盖中如实保存；容量超限不发布成功入口文件。
 - R4 为每个 entry 生成一个可单独重开的完整 JSON，全仓未匹配请求仍可查询；技术 reader 不重新分析，JDT/Node/业务模型新增调用为零。
 
-如果需要超过§2范围的代码求值才能连上真实例子，先说明具体断点和成熟工具替代方案，不继续堆通用解释规则。固定旧 R1 已发现 51 条请求/链接，但新独立四运行、`getQueryParams` 完整单元、地址映射匹配及每入口 JSON 都未验收；不能把旧路径的 `MATCHED_UNIQUE` 称为新结果。
+如果需要超过§2范围的代码求值才能连上真实例子，先说明具体断点和成熟工具替代方案，不继续堆通用解释规则。固定旧 R1 已发现 51 条请求/链接；新独立 R1 已保存51条请求及包括`getQueryParams`在内的69条完整源码单元，并已通过正式查询重开。地址映射匹配及每入口 JSON 仍待真实R4验收；不能把旧路径的 `MATCHED_UNIQUE` 称为新结果。

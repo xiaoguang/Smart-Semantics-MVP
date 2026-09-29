@@ -122,6 +122,7 @@ final class AtomicAnalysisStepPublicationEngine {
       List<VerifiedCanonicalPayload> semanticPayloads = readSemanticPayloads(directory, receipt);
       List<ArtifactDescriptor> descriptors =
           semanticPayloads.stream().map(VerifiedCanonicalPayload::descriptor).toList();
+      requireLimits(contract, descriptors, false);
       if (!analysisStepRoot(descriptors).equals(receipt.analysisStepArtifactRoot())) {
         throw invalidPublication();
       }
@@ -159,7 +160,6 @@ final class AtomicAnalysisStepPublicationEngine {
               request.address().analysisStepKey(),
               publisher.reference().address(),
               publisher.receipt().moduleVersion());
-      requireLimits(contract);
       requireReceiptState(contract, request, true);
       requireStrictPayloadOrder(request.semanticPayloads());
       verifyPublisherAddress(
@@ -171,6 +171,7 @@ final class AtomicAnalysisStepPublicationEngine {
       }
       List<ArtifactDescriptor> descriptors =
           request.semanticPayloads().stream().map(this::descriptor).toList();
+      requireLimits(contract, descriptors, true);
       requireExpectedSemanticSet(contract, descriptors);
       if (!descriptors.equals(
               publisher.payloads().stream().map(VerifiedCanonicalPayload::descriptor).toList())
@@ -640,6 +641,10 @@ final class AtomicAnalysisStepPublicationEngine {
 
   private void requireExpectedSemanticSet(
       StepContract contract, List<ArtifactDescriptor> descriptors) {
+    if (isEntryEvidenceContract(contract)) {
+      requireEntryEvidenceSemanticSet(descriptors);
+      return;
+    }
     List<String> names = descriptors.stream().map(ArtifactDescriptor::fileName).toList();
     if (!contract.semanticFileSets().contains(names)) {
       throw invalidPublication();
@@ -742,14 +747,47 @@ final class AtomicAnalysisStepPublicationEngine {
     }
   }
 
-  private void requireLimits(StepContract contract) {
-    int largestSet = contract.semanticFileSets().stream().mapToInt(List::size).max().orElseThrow();
-    if (limits.maxPayloadFiles() < largestSet
+  private void requireLimits(
+      StepContract contract, List<ArtifactDescriptor> descriptors, boolean installation) {
+    int requiredPayloadFiles =
+        isEntryEvidenceContract(contract)
+            ? descriptors.size()
+            : contract.semanticFileSets().stream().mapToInt(List::size).max().orElseThrow();
+    long publicationBytes = 0L;
+    for (ArtifactDescriptor descriptor : descriptors) {
+      publicationBytes = Math.addExact(publicationBytes, descriptor.sizeBytes());
+    }
+    if (limits.maxPayloadFiles() < requiredPayloadFiles
         || limits.maxArtifactBytes() < 0
         || limits.maxPublicationBytes() < 0
-        || limits.maxDirectoryEntries() < largestSet + 2) {
-      throw invalidInstall();
+        || publicationBytes > limits.maxPublicationBytes()
+        || limits.maxDirectoryEntries() < requiredPayloadFiles + 2) {
+      throw installation ? invalidInstall() : invalidPublication();
     }
+  }
+
+  private static boolean isEntryEvidenceContract(StepContract contract) {
+    return contract.publisherModuleNumber() == 4
+        && "entry-evidence".equals(contract.publisherModuleKey());
+  }
+
+  private static void requireEntryEvidenceSemanticSet(List<ArtifactDescriptor> descriptors) {
+    List<String> names = descriptors.stream().map(ArtifactDescriptor::fileName).toList();
+    List<String> entryFiles =
+        names.stream()
+            .filter(AtomicAnalysisStepPublicationEngine::isEntryEvidenceFileName)
+            .toList();
+    List<String> expected = new ArrayList<>(entryFiles);
+    expected.add("entry-evidence-index.json");
+    expected.add("frontend-coverage.jsonl");
+    expected.sort(UTF8_ORDER);
+    if (!names.equals(expected)) {
+      throw invalidPublication();
+    }
+  }
+
+  private static boolean isEntryEvidenceFileName(String fileName) {
+    return fileName != null && fileName.matches("entry-[0-9a-f]{64}\\.json");
   }
 
   private static StepContract stepContract(
@@ -858,31 +896,44 @@ final class AtomicAnalysisStepPublicationEngine {
                       AnalysisStepKey.APPLICATION_DISCOVERY,
                       AnalysisStepKey.PROGRAM_GRAPHS));
       case BUSINESS_FLOWS ->
-          publisher.moduleNumber() == 4 && "code-reading-materials".equals(publisher.moduleKey())
+          publisher.moduleNumber() == 4
+                  && "entry-evidence".equals(publisher.moduleKey())
+                  && "v3".equals(publisherModuleVersion)
               ? new StepContract(
                   4,
-                  "code-reading-materials",
-                  List.of(List.of("code-reading-materials.jsonl")),
+                  "entry-evidence",
+                  List.of(),
                   List.of(
                       AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
                       AnalysisStepKey.APPLICATION_DISCOVERY,
                       AnalysisStepKey.PROGRAM_GRAPHS,
                       AnalysisStepKey.PROVEN_CODE_FACTS))
-              : new StepContract(
-                  3,
-                  "publish",
-                  List.of(
+              : publisher.moduleNumber() == 4
+                      && "code-reading-materials".equals(publisher.moduleKey())
+                  ? new StepContract(
+                      4,
+                      "code-reading-materials",
+                      List.of(List.of("code-reading-materials.jsonl")),
                       List.of(
-                          "entry-dispositions.jsonl",
-                          "evidence-capsules.jsonl",
-                          "flow-coverage.json",
-                          "flow-gaps.jsonl",
-                          "flow-slices.json")),
-                  List.of(
-                      AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
-                      AnalysisStepKey.APPLICATION_DISCOVERY,
-                      AnalysisStepKey.PROGRAM_GRAPHS,
-                      AnalysisStepKey.PROVEN_CODE_FACTS));
+                          AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                          AnalysisStepKey.APPLICATION_DISCOVERY,
+                          AnalysisStepKey.PROGRAM_GRAPHS,
+                          AnalysisStepKey.PROVEN_CODE_FACTS))
+                  : new StepContract(
+                      3,
+                      "publish",
+                      List.of(
+                          List.of(
+                              "entry-dispositions.jsonl",
+                              "evidence-capsules.jsonl",
+                              "flow-coverage.json",
+                              "flow-gaps.jsonl",
+                              "flow-slices.json")),
+                      List.of(
+                          AnalysisStepKey.VERIFIED_SOURCE_INVENTORY,
+                          AnalysisStepKey.APPLICATION_DISCOVERY,
+                          AnalysisStepKey.PROGRAM_GRAPHS,
+                          AnalysisStepKey.PROVEN_CODE_FACTS));
       default -> throw invalidInstall();
     };
   }

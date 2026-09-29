@@ -65,12 +65,15 @@ import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReferenc
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialMarkdown;
-import org.sourceanalysis.app.analysis.material.CodeReadingMaterialProfile;
-import org.sourceanalysis.app.analysis.material.CodeReadingMaterialRequest;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
-import org.sourceanalysis.app.analysis.material.DefaultCodeReadingMaterialBuilder;
-import org.sourceanalysis.app.analysis.material.publish.CodeReadingMaterialPublisher;
+import org.sourceanalysis.app.analysis.material.EntryEvidenceAssembler;
+import org.sourceanalysis.app.analysis.material.EntryEvidenceHttpMapping;
+import org.sourceanalysis.app.analysis.material.EntryEvidenceProfile;
+import org.sourceanalysis.app.analysis.material.EntryEvidenceRequest;
+import org.sourceanalysis.app.analysis.material.EntryEvidenceSet;
 import org.sourceanalysis.app.analysis.material.publish.CodeReadingMaterialReader;
+import org.sourceanalysis.app.analysis.material.publish.EntryEvidencePublisher;
+import org.sourceanalysis.app.analysis.material.publish.EntryEvidenceReader;
 import org.sourceanalysis.app.analysis.persistence.DefaultPersistenceAnalyzer;
 import org.sourceanalysis.app.analysis.persistence.PersistenceAnalysisRequest;
 import org.sourceanalysis.app.analysis.persistence.PersistenceConfiguration;
@@ -136,8 +139,9 @@ import org.sourceanalysis.app.runtime.TechnicalRunOutput;
 final class TechnicalAnalysisConfiguredRuntime {
 
   private static final String CONFIG_SCHEMA = "technical-analysis-config-v2";
+  private static final String FOUR_OPERATION_CONFIG_SCHEMA = "technical-analysis-config-v3";
   private static final Set<String> SUPPORTED_CONFIGURATION_SCHEMAS =
-      Set.of("technical-analysis-config-v1", CONFIG_SCHEMA);
+      Set.of("technical-analysis-config-v1", CONFIG_SCHEMA, FOUR_OPERATION_CONFIG_SCHEMA);
   private static final ArtifactStoreLimits R0_REOPEN_LIMITS =
       new ArtifactStoreLimits(64, 64L * 1024L * 1024L, 256L * 1024L * 1024L, 4_096);
   private static final ArtifactStoreLimits TECHNICAL_STORE_LIMITS =
@@ -145,7 +149,7 @@ final class TechnicalAnalysisConfiguredRuntime {
   private static final Duration FRONTEND_SYNTAX_TIMEOUT = Duration.ofSeconds(10);
   private static final int FRONTEND_SYNTAX_MAX_STDOUT_BYTES = 2 * 1024 * 1024;
   private static final List<String> TECHNICAL_OPERATIONS =
-      List.of("collect-code", "analyze-persistence", "assemble-materials");
+      List.of("collect-frontend", "collect-code", "analyze-persistence", "assemble-materials");
 
   private TechnicalAnalysisConfiguredRuntime() {}
 
@@ -234,18 +238,19 @@ final class TechnicalAnalysisConfiguredRuntime {
       Invocation invocation = Invocation.parse(operation, options);
       Configuration configuration = Configuration.load(configurationPath, invocation.operation());
       if ("inspect".equals(invocation.operation())) {
+        invocation.requireRequiredOptions();
         configuration.inspect(invocation, output);
         output.flush();
         return 0;
       }
       if ("artifact".equals(invocation.operation())) {
+        invocation.requireRequiredOptions();
         configuration.artifact(invocation, output);
         output.flush();
         return 0;
       }
-      if (invocation.operation().equals("collect-code")) {
-        configuration.requireV2CompilationInputForCollect();
-      }
+      configuration.requireFourOperationConfigurationForProduction();
+      invocation.requireRequiredOptions();
       List<String> missingSections = configuration.missingSections();
       if (!missingSections.isEmpty()) {
         errors.println(
@@ -255,11 +260,14 @@ final class TechnicalAnalysisConfiguredRuntime {
         ReadySourcePreparation readySource = configuration.reopenSavedSourcePreparationReady();
         configuration.requireRequestedRunBinding(invocation, readySource.selectedSourceBasis());
         configuration.requireSelectedUpstreamReady(invocation, readySource.selectedSourceBasis());
+        if (invocation.operation().equals("collect-frontend")) {
+          return configuration.executeCollectFrontend(
+              invocation, readySource, output, injectedFrontendSyntaxToolSupplier);
+        }
         if (invocation.operation().equals("collect-code")) {
           Function<JavaCompilationEnvironment, JavaCodeSession> sessionOpener =
               injectedSessionOpener == null ? configuration::openJdtSession : injectedSessionOpener;
-          return configuration.executeCollectCode(
-              invocation, readySource, output, sessionOpener, injectedFrontendSyntaxToolSupplier);
+          return configuration.executeCollectCode(invocation, readySource, output, sessionOpener);
         }
         if (invocation.operation().equals("analyze-persistence")) {
           return configuration.executeAnalyzePersistence(invocation, readySource, output);
@@ -271,10 +279,8 @@ final class TechnicalAnalysisConfiguredRuntime {
       }
     } catch (TechnicalArgumentsException invalid) {
       errors.println("SOURCE_ANALYSIS_FAILED:TECHNICAL_ARGUMENTS_INVALID");
-    } catch (TechnicalV2CompilationInputRequiredException migration) {
-      errors.println(
-          "SOURCE_ANALYSIS_FAILED:TECHNICAL_V2_COMPILATION_INPUT_REQUIRED: "
-              + "collect-code requires java.compilationInput in technical-analysis-config-v2");
+    } catch (TechnicalConfigurationSchemaRetiredException retired) {
+      errors.println("SOURCE_ANALYSIS_FAILED:TECHNICAL_CONFIGURATION_SCHEMA_RETIRED");
     } catch (SourcePreparationNotReadyException notReady) {
       errors.println("SOURCE_ANALYSIS_FAILED:SOURCE_PREPARATION_NOT_READY");
     } catch (TechnicalUpstreamNotReadyException upstreamNotReady) {
@@ -346,6 +352,10 @@ final class TechnicalAnalysisConfiguredRuntime {
         }
       }
       return new Configuration(preparationRunId, paths, missing, configuration);
+    }
+
+    private boolean isFourOperationConfiguration() {
+      return FOUR_OPERATION_CONFIG_SCHEMA.equals(document.path("schemaVersion").asText());
     }
 
     /**
@@ -434,45 +444,223 @@ final class TechnicalAnalysisConfiguredRuntime {
       }
     }
 
+    /** Executes the v3 frontend branch without opening Java, Maven, or persistence tooling. */
+    private int executeCollectFrontend(
+        Invocation invocation,
+        ReadySourcePreparation readySource,
+        PrintWriter output,
+        Supplier<FrontendSyntaxTool> injectedFrontendSyntaxToolSupplier) {
+      if (!isFourOperationConfiguration()) {
+        throw new TechnicalArgumentsException();
+      }
+      try (RunStoreHandle store = RunStoreBootstrap.open(storage.runStore())) {
+        CanonicalJsonCodec json = new CanonicalJsonCodec();
+        CanonicalArtifactPolicyRegistry policies =
+            SourceAnalysisExecution.loadPolicies(storage.artifactPolicyRegistry(), json);
+        TechnicalFrontendConfig frontend = technicalFrontendConfig(readySource.sourceTexts());
+        Supplier<FrontendSyntaxTool> syntaxToolSupplier =
+            frontend.enabled()
+                ? injectedFrontendSyntaxToolSupplier == null
+                    ? () -> openFrontendSyntaxTool(frontend)
+                    : injectedFrontendSyntaxToolSupplier
+                : null;
+        AnalysisRunRequest request =
+            collectFrontendRequest(readySource, policies.reference(), json, frontend);
+        RepositoryAnalysisRunCoordinator coordinator =
+            RepositoryAnalysisRunCoordinator.configured(
+                execution ->
+                    executeCollectFrontendRun(
+                        execution, store, policies, json, frontend, syntaxToolSupplier));
+        LocalRepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store, coordinator);
+        AnalysisRunReference queued = selectCollectFrontendRun(invocation, request, store, agent);
+        AnalysisRunReference completed =
+            agent.executeStep(
+                new AnalysisStepExecutionRequest(
+                    queued.runId(), AnalysisExecutionIntent.COLLECT_FRONTEND, null, null));
+        TechnicalRunOutput technical =
+            RunStoreBootstrap.reopenAnalysisRunOutput(store, completed.runId())
+                .orElseThrow(TechnicalExecutionNotConnectedException::new)
+                .technicalOutput();
+        if (technical == null
+            || technical.operation() != AnalysisRunRequest.TechnicalOperation.COLLECT_FRONTEND) {
+          throw new TechnicalExecutionNotConnectedException();
+        }
+        writeFrontendEnvelope(output, completed, technical, frontend.enabled(), json);
+        output.flush();
+        return 0;
+      }
+    }
+
+    private AnalysisRunRequest collectFrontendRequest(
+        ReadySourcePreparation readySource,
+        ArtifactPolicyRegistryReference policyReference,
+        CanonicalJsonCodec json,
+        TechnicalFrontendConfig frontend) {
+      ObjectNode profile = JsonNodeFactory.instance.objectNode();
+      profile.put("schemaVersion", FOUR_OPERATION_CONFIG_SCHEMA);
+      profile.put("operation", AnalysisRunRequest.TechnicalOperation.COLLECT_FRONTEND.name());
+      profile.put("frontendEnabled", frontend.enabled());
+      appendFrontendProfile(profile, frontend);
+      ObjectNode budget = JsonNodeFactory.instance.objectNode();
+      budget.put("frontendHttpDiscovery", frontend.enabled());
+      ObjectNode schema = JsonNodeFactory.instance.objectNode();
+      schema.put("schemaVersion", FOUR_OPERATION_CONFIG_SCHEMA);
+      schema.put("module", "frontend-http-index-v2");
+      ObjectNode toolchain = JsonNodeFactory.instance.objectNode();
+      toolchain.put("mode", frontend.enabled() ? "node-frontend-syntax" : "disabled");
+      if (frontend.enabled()) {
+        FrontendToolIdentity identity = frontendToolIdentity(frontend);
+        toolchain.put("nodeExecutableDigest", identity.nodeExecutableSha256().value());
+        toolchain.put("syntaxHelperDigest", identity.frameworkHelperSha256().value());
+        toolchain.put("syntaxLockfileDigest", identity.frameworkLockfileSha256().value());
+      }
+      return AnalysisRunRequest.technicalFourOperations(
+          readySource.selectedSourceBasis(),
+          AnalysisRunRequest.TechnicalOperation.COLLECT_FRONTEND,
+          SourceAnalysisExecution.reference("technical-profile", profile, json),
+          SourceAnalysisExecution.reference("technical-resource-budget", budget, json),
+          SourceAnalysisExecution.reference("technical-schema-bundle", schema, json),
+          SourceAnalysisExecution.reference("technical-toolchain", toolchain, json),
+          new ArtifactReference(policyReference.artifactId(), policyReference.sha256()),
+          null,
+          null);
+    }
+
+    private AnalysisRunReference selectCollectFrontendRun(
+        Invocation invocation,
+        AnalysisRunRequest expectedRequest,
+        RunStoreHandle store,
+        LocalRepositoryAnalysisAgent agent) {
+      if (invocation.requestedRunId() == null) {
+        return agent.start(expectedRequest);
+      }
+      return selectExistingQueuedRun(invocation.requestedRunId(), expectedRequest, store);
+    }
+
+    private AnalysisRunReference selectExistingQueuedRun(
+        AnalysisRunId requestedRunId, AnalysisRunRequest expectedRequest, RunStoreHandle store) {
+      try {
+        AnalysisRunReference requested = RunStoreBootstrap.reopenAnalysisRun(store, requestedRunId);
+        if (requested.lifecycleState() != AnalysisRunLifecycleState.QUEUED
+            || !RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, requested.runId())
+                .request()
+                .equals(expectedRequest)) {
+          throw new TechnicalArgumentsException();
+        }
+        return requested;
+      } catch (TechnicalArgumentsException invalid) {
+        throw invalid;
+      } catch (RuntimeException unavailable) {
+        throw new TechnicalArgumentsException();
+      }
+    }
+
+    private AnalysisRunOutput executeCollectFrontendRun(
+        AnalysisStepExecutionRequest execution,
+        RunStoreHandle store,
+        CanonicalArtifactPolicyRegistry policies,
+        CanonicalJsonCodec json,
+        TechnicalFrontendConfig frontend,
+        Supplier<FrontendSyntaxTool> syntaxToolSupplier) {
+      if (execution.intent() != AnalysisExecutionIntent.COLLECT_FRONTEND
+          || execution.upstreamRunId() != null
+          || execution.exactMaterialId() != null) {
+        throw new IllegalArgumentException(
+            "technical collect-frontend execution intent is invalid");
+      }
+      AnalysisRunRequest persisted =
+          RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, execution.runId()).request();
+      if (persisted.requestKind() != AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS
+          || persisted.technicalAnalysisInputs().wireVersion()
+              != AnalysisRunRequest.TechnicalWireVersion.V5
+          || persisted.technicalAnalysisInputs().operation()
+              != AnalysisRunRequest.TechnicalOperation.COLLECT_FRONTEND) {
+        throw new IllegalArgumentException(
+            "queued run is not a collect-frontend technical request");
+      }
+      ReadySourcePreparation source = reopenSavedSourcePreparationReady();
+      AnalysisRunRequest expected =
+          collectFrontendRequest(source, policies.reference(), json, frontend);
+      if (!persisted.selectedSourceBasis().equals(source.selectedSourceBasis())
+          || !persisted.equals(expected)) {
+        throw new TechnicalArgumentsException();
+      }
+      ArtifactControls controls = technicalControls(persisted);
+      FileSystemCanonicalModuleArtifactStore modules =
+          new FileSystemCanonicalModuleArtifactStore(store, json, policies, TECHNICAL_STORE_LIMITS);
+      FrontendHttpIndex index;
+      if (!frontend.enabled()) {
+        index = FrontendHttpIndex.disabledIndex();
+      } else {
+        FrontendSyntaxTool syntaxTool =
+            Objects.requireNonNull(syntaxToolSupplier, "enabled frontend syntax tool supplier")
+                .get();
+        FrontendHttpIndex discovered =
+            new FrontendHttpDiscoverer(
+                    Objects.requireNonNull(syntaxTool, "enabled frontend syntax tool"))
+                .discover(
+                    new FrontendHttpDiscoveryRequest(
+                        source.sourceTexts(), frontend.configuration(), List.of(), false));
+        index =
+            new FrontendHttpIndex(
+                discovered.files(),
+                discovered.requests(),
+                List.of(),
+                discovered.diagnostics(),
+                discovered.status(),
+                frontend.configurationFiles(),
+                discovered.supportingSourceUnits());
+      }
+      AnalysisStepModuleAddress address =
+          new AnalysisStepModuleAddress(
+              execution.runId(),
+              AnalysisStepKey.APPLICATION_DISCOVERY,
+              6,
+              "frontend-http-discovery");
+      ModulePublicationReference publication =
+          new FrontendHttpIndexModulePublisher(modules)
+              .publishV2(address, persisted.selectedSourceBasis(), controls, index);
+      new FrontendHttpIndexModulePublisher(modules)
+          .reopenV2(publication, execution.runId(), persisted.selectedSourceBasis(), controls);
+      return AnalysisRunOutput.technical(
+          TechnicalRunOutput.fourOperations(
+              AnalysisRunRequest.TechnicalOperation.COLLECT_FRONTEND,
+              execution.runId(),
+              persisted.selectedSourceBasis(),
+              null,
+              TechnicalInspectionStatus.CHECKS_COMPLETE,
+              TechnicalContinuationStatus.READY,
+              null,
+              publication,
+              null,
+              null,
+              null,
+              null,
+              List.of()));
+    }
+
     /**
-     * Enters the sole run-agent path after external compilation-input admission. A ready
-     * environment opens one JDT session and publishes R1 through the technical producer seams; a
-     * blocked environment is saved as the canonical module-five readiness report before FAILED.
+     * Enters the R2 backend run-agent path after external compilation-input admission. A ready
+     * environment opens one JDT session and publishes the backend technical seams; a blocked
+     * environment is saved as the canonical module-five readiness report before FAILED.
      */
     private int executeCollectCode(
         Invocation invocation,
         ReadySourcePreparation readySource,
         PrintWriter output,
-        Function<JavaCompilationEnvironment, JavaCodeSession> sessionOpener,
-        Supplier<FrontendSyntaxTool> injectedFrontendSyntaxToolSupplier) {
+        Function<JavaCompilationEnvironment, JavaCodeSession> sessionOpener) {
       try (RunStoreHandle store = RunStoreBootstrap.open(storage.runStore())) {
         CanonicalJsonCodec json = new CanonicalJsonCodec();
         CanonicalArtifactPolicyRegistry policies =
             SourceAnalysisExecution.loadPolicies(storage.artifactPolicyRegistry(), json);
         TechnicalJavaConfig javaConfiguration = technicalJavaConfig();
-        TechnicalFrontendConfig frontendConfiguration =
-            technicalFrontendConfig(readySource.sourceTexts());
-        Supplier<FrontendSyntaxTool> frontendSyntaxToolSupplier =
-            frontendConfiguration.enabled()
-                ? injectedFrontendSyntaxToolSupplier == null
-                    ? () -> openFrontendSyntaxTool(frontendConfiguration)
-                    : injectedFrontendSyntaxToolSupplier
-                : null;
         AnalysisRunRequest request =
-            collectCodeRequest(
-                readySource, policies.reference(), json, javaConfiguration, frontendConfiguration);
+            collectCodeRequest(readySource, policies.reference(), json, javaConfiguration);
         RepositoryAnalysisRunCoordinator coordinator =
             RepositoryAnalysisRunCoordinator.configured(
                 execution ->
                     executeCollectCodeRun(
-                        execution,
-                        store,
-                        policies,
-                        json,
-                        javaConfiguration,
-                        frontendConfiguration,
-                        sessionOpener,
-                        frontendSyntaxToolSupplier));
+                        execution, store, policies, json, javaConfiguration, sessionOpener));
         LocalRepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store, coordinator);
         AnalysisRunReference queued = selectCollectCodeRun(invocation, request, store, agent);
         AnalysisRunReference completed;
@@ -492,7 +680,7 @@ final class TechnicalAnalysisConfiguredRuntime {
         }
         TechnicalRunOutput technical = saved.technicalOutput();
         if (technical.continuationStatus() == TechnicalContinuationStatus.BLOCKED) {
-          writeBlockedCollectCodeEnvelope(output, completed, technical, json);
+          writeBlockedTechnicalEnvelope(output, completed, technical, json);
           output.flush();
           return 3;
         }
@@ -508,9 +696,9 @@ final class TechnicalAnalysisConfiguredRuntime {
     }
 
     /**
-     * Reuses a finished R1 exactly once to produce R2 persistence material. This command opens no
-     * Java session or frontend syntax tool: both are R1-only producers whose saved outputs are
-     * freshly reopened below.
+     * Reuses a finished R2 backend run exactly once to produce R3 persistence material. This
+     * command opens no Java session or frontend syntax tool: R1 frontend and R2 backend
+     * publications are independently saved inputs to later work.
      */
     private int executeAnalyzePersistence(
         Invocation invocation, ReadySourcePreparation readySource, PrintWriter output) {
@@ -552,9 +740,7 @@ final class TechnicalAnalysisConfiguredRuntime {
     }
 
     /**
-     * Reuses the exact finished R0/R1/R2 chain to produce R3 reading material. This path starts
-     * neither JDT nor Node and does not reparse persistence resources: it only reopens their saved
-     * canonical views before the existing packet organizer runs.
+     * Reopens the named R3 persistence and independent R1 frontend inputs without starting tools.
      */
     private int executeAssembleMaterials(
         Invocation invocation, ReadySourcePreparation readySource, PrintWriter output) {
@@ -562,16 +748,17 @@ final class TechnicalAnalysisConfiguredRuntime {
         CanonicalJsonCodec json = new CanonicalJsonCodec();
         CanonicalArtifactPolicyRegistry policies =
             SourceAnalysisExecution.loadPolicies(storage.artifactPolicyRegistry(), json);
-        CodeReadingMaterialProfile profile = readingMaterialProfile();
         ReadyMaterialUpstream upstream =
             reopenMaterialUpstream(
-                store, invocation.upstreamRunId(), readySource.selectedSourceBasis());
+                store,
+                invocation.upstreamRunId(),
+                invocation.frontendRunId(),
+                readySource.selectedSourceBasis());
         AnalysisRunRequest request =
-            assembleMaterialsRequest(readySource, upstream, profile, policies.reference(), json);
+            assembleMaterialsRequest(readySource, upstream, policies.reference(), json);
         RepositoryAnalysisRunCoordinator coordinator =
             RepositoryAnalysisRunCoordinator.configured(
-                execution ->
-                    executeAssembleMaterialsRun(execution, store, policies, json, profile));
+                execution -> executeAssembleMaterialsRun(execution, store, policies, json));
         LocalRepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store, coordinator);
         AnalysisRunReference queued = selectAssembleMaterialsRun(invocation, request, store, agent);
         AnalysisRunReference completed =
@@ -583,8 +770,15 @@ final class TechnicalAnalysisConfiguredRuntime {
                 .orElseThrow(TechnicalExecutionNotConnectedException::new);
         if (saved.technicalOutput() == null
             || saved.technicalOutput().operation()
-                != AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS
-            || saved.technicalOutput().continuationStatus() != TechnicalContinuationStatus.READY) {
+                != AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS) {
+          throw new TechnicalExecutionNotConnectedException();
+        }
+        if (saved.technicalOutput().continuationStatus() == TechnicalContinuationStatus.BLOCKED) {
+          writeBlockedTechnicalEnvelope(output, completed, saved.technicalOutput(), json);
+          output.flush();
+          return 3;
+        }
+        if (saved.technicalOutput().continuationStatus() != TechnicalContinuationStatus.READY) {
           throw new TechnicalExecutionNotConnectedException();
         }
         writeReadyCollectCodeEnvelope(output, completed, saved.technicalOutput(), json);
@@ -596,34 +790,63 @@ final class TechnicalAnalysisConfiguredRuntime {
     private AnalysisRunRequest assembleMaterialsRequest(
         ReadySourcePreparation readySource,
         ReadyMaterialUpstream upstream,
-        CodeReadingMaterialProfile profile,
         ArtifactPolicyRegistryReference policyReference,
         CanonicalJsonCodec json) {
       ObjectNode configured = JsonNodeFactory.instance.objectNode();
-      configured.put("schemaVersion", CONFIG_SCHEMA);
+      configured.put("schemaVersion", FOUR_OPERATION_CONFIG_SCHEMA);
       configured.put("operation", AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS.name());
       configured.put(
           "upstreamPersistenceRunId",
           upstream.r2Technical().persistence().address().runId().value());
-      configured.put("payloadSchema", "code-reading-material-set-v1");
+      FrontendMaterialUpstream frontend = upstream.frontend();
+      if (frontend == null) {
+        throw new TechnicalUpstreamNotReadyException();
+      }
+      configured.put("frontendRunId", frontend.owner().value());
+      ArrayNode mappings = configured.putArray("httpMappings");
+      for (FrontendHttpAddressMapping mapping : evidenceHttpMappings()) {
+        ObjectNode item = mappings.addObject();
+        item.put("clientRef", mapping.clientRef());
+        putNullableText(item, "requestOrigin", mapping.requestOrigin());
+        putNullableText(item, "requestPathPrefix", mapping.requestPathPrefix());
+        item.put("backendApplicationRef", mapping.backendApplicationRef());
+        putNullableText(item, "backendContextPath", mapping.backendContextPath());
+        putNullableText(item, "stripPrefix", mapping.stripPrefix());
+        putNullableText(item, "addPrefix", mapping.addPrefix());
+        item.put("basis", mapping.basis());
+      }
+      configured.put("payloadSchema", "entry-evidence-v1");
       ObjectNode budget = JsonNodeFactory.instance.objectNode();
-      budget.put("maxPacketUtf8Bytes", profile.maxPacketUtf8Bytes());
-      budget.put("maxEntriesPerPacket", profile.maxEntriesPerPacket());
+      EntryEvidenceProfile evidenceProfile = entryEvidenceProfile();
+      budget.put("maxEntryUtf8Bytes", evidenceProfile.maxEntryUtf8Bytes());
+      budget.put("maxPublicationUtf8Bytes", evidenceProfile.maxPublicationUtf8Bytes());
+      budget.put("maxEntries", evidenceProfile.maxEntries());
       ObjectNode schema = JsonNodeFactory.instance.objectNode();
-      schema.put("schemaVersion", CONFIG_SCHEMA);
-      schema.put("module", "code-reading-material-set-v1");
+      schema.put("schemaVersion", FOUR_OPERATION_CONFIG_SCHEMA);
+      schema.put("module", "entry-evidence-v1");
       ObjectNode toolchain = JsonNodeFactory.instance.objectNode();
       toolchain.put("mode", "saved-java-and-persistence-material");
-      return AnalysisRunRequest.technical(
+      ArtifactReference technicalProfile =
+          SourceAnalysisExecution.reference("technical-profile", configured, json);
+      ArtifactReference resourceBudget =
+          SourceAnalysisExecution.reference("technical-resource-budget", budget, json);
+      ArtifactReference schemaBundle =
+          SourceAnalysisExecution.reference("technical-schema-bundle", schema, json);
+      ArtifactReference toolchainRef =
+          SourceAnalysisExecution.reference("technical-toolchain", toolchain, json);
+      ArtifactReference policy =
+          new ArtifactReference(policyReference.artifactId(), policyReference.sha256());
+      return AnalysisRunRequest.technicalFourOperations(
           readySource.selectedSourceBasis(),
-          new AnalysisRunRequest.TechnicalAnalysisInputs(
-              AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS,
-              SourceAnalysisExecution.reference("technical-profile", configured, json),
-              SourceAnalysisExecution.reference("technical-resource-budget", budget, json),
-              SourceAnalysisExecution.reference("technical-schema-bundle", schema, json),
-              SourceAnalysisExecution.reference("technical-toolchain", toolchain, json),
-              new ArtifactReference(policyReference.artifactId(), policyReference.sha256()),
-              upstream.r2Technical().persistence()));
+          AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS,
+          technicalProfile,
+          resourceBudget,
+          schemaBundle,
+          toolchainRef,
+          policy,
+          upstream.r2Technical().persistence(),
+          frontend.publication(),
+          evidenceProfile);
     }
 
     private AnalysisRunReference selectAssembleMaterialsRun(
@@ -657,8 +880,7 @@ final class TechnicalAnalysisConfiguredRuntime {
         AnalysisStepExecutionRequest execution,
         RunStoreHandle store,
         CanonicalArtifactPolicyRegistry policies,
-        CanonicalJsonCodec json,
-        CodeReadingMaterialProfile profile) {
+        CanonicalJsonCodec json) {
       if (execution.intent() != AnalysisExecutionIntent.ASSEMBLE_MATERIALS
           || execution.upstreamRunId() != null
           || execution.exactMaterialId() != null) {
@@ -668,6 +890,8 @@ final class TechnicalAnalysisConfiguredRuntime {
       AnalysisRunRequest persisted =
           RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, execution.runId()).request();
       if (persisted.requestKind() != AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS
+          || persisted.technicalAnalysisInputs().wireVersion()
+              != AnalysisRunRequest.TechnicalWireVersion.V5
           || persisted.technicalAnalysisInputs().operation()
               != AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS) {
         throw new IllegalArgumentException("queued run is not an assemble-materials request");
@@ -677,110 +901,245 @@ final class TechnicalAnalysisConfiguredRuntime {
           reopenMaterialUpstream(
               store,
               persisted.technicalAnalysisInputs().upstreamPublication().address().runId(),
+              persisted.technicalAnalysisInputs().frontendPublication().address().runId(),
               source.selectedSourceBasis());
       if (!persisted.selectedSourceBasis().equals(source.selectedSourceBasis())
           || !persisted
               .technicalAnalysisInputs()
               .upstreamPublication()
-              .equals(upstream.r2Technical().persistence())) {
+              .equals(upstream.r2Technical().persistence())
+          || !persisted
+              .technicalAnalysisInputs()
+              .frontendPublication()
+              .equals(upstream.frontend().publication())) {
         throw new TechnicalUpstreamNotReadyException();
       }
       AnalysisRunRequest expected =
-          assembleMaterialsRequest(source, upstream, profile, policies.reference(), json);
+          assembleMaterialsRequest(source, upstream, policies.reference(), json);
       if (!persisted.equals(expected)) {
         throw new TechnicalArgumentsException();
       }
+      return executeEntryEvidenceMaterialsRun(
+          execution, store, policies, source, upstream, persisted, json);
+    }
 
+    /**
+     * Connects only the v3 R4 producer to saved R0/R1/R2/R3 inputs. This branch deliberately does
+     * not call the retained packet builder or initialize a parser/tool session.
+     */
+    private AnalysisRunOutput executeEntryEvidenceMaterialsRun(
+        AnalysisStepExecutionRequest execution,
+        RunStoreHandle store,
+        CanonicalArtifactPolicyRegistry policies,
+        ReadySourcePreparation source,
+        ReadyMaterialUpstream upstream,
+        AnalysisRunRequest persisted,
+        CanonicalJsonCodec json) {
+      EntryEvidenceProfile profile = persisted.technicalAnalysisInputs().entryEvidenceProfile();
+      ArtifactStoreLimits limits = entryEvidenceStoreLimits(profile);
       FileSystemCanonicalModuleArtifactStore modules =
-          new FileSystemCanonicalModuleArtifactStore(store, json, policies, TECHNICAL_STORE_LIMITS);
+          new FileSystemCanonicalModuleArtifactStore(store, json, policies, limits);
       FileSystemCanonicalAnalysisStepArtifactStore steps =
-          new FileSystemCanonicalAnalysisStepArtifactStore(
-              store, json, policies, TECHNICAL_STORE_LIMITS);
+          new FileSystemCanonicalAnalysisStepArtifactStore(store, json, policies, limits);
       FileSystemCanonicalAnalysisStepArtifactStore sourceSteps =
           sourcePreparationAnalysisStepStore(store, json);
       VerifiedSourceInventoryReference r0Source =
           new VerifiedSourceInventoryReference(source.savedSourcePreparation().reportReference());
-      ArtifactControls r1Controls = technicalControls(upstream.r1Request());
-      ArtifactControls r2Controls = technicalControls(upstream.r2Request());
-      ArtifactControls r3Controls = technicalControls(persisted);
-      ApplicationDiscoveryReference r1Discovery =
+      ArtifactControls backendControls = technicalControls(upstream.r1Request());
+      ArtifactControls persistenceControls = technicalControls(upstream.r2Request());
+      ArtifactControls frontendControls = upstream.frontend().controls();
+      ArtifactControls r4Controls = technicalControls(persisted);
+      ApplicationDiscoveryReference discovery =
           new ApplicationDiscoveryReference(upstream.r1Technical().applicationDiscovery());
-      ProgramGraphsReference r1Navigation =
+      ProgramGraphsReference navigation =
           new ProgramGraphsReference(upstream.r1Technical().navigation());
-      JavaCodeIndex javaIndex = new JavaCodeIndexReader(steps).reopen(r1Navigation);
-      PersistenceMaterialIndex persistence =
+      AnalysisStepPublicationReference persistence = upstream.r2Technical().persistence();
+      ModulePublicationReference frontend = upstream.frontend().publication();
+
+      SourcePreparationReader preparations = sourcePreparationReader(store);
+      PreparedVerifiedSourceTextReader sourceReader =
+          new PreparedVerifiedSourceTextReader(
+              preparations, new PreparedSourceArchive(storage.preparedSourceArchive()));
+      JavaCodeIndex javaIndex = new JavaCodeIndexReader(steps).reopen(navigation);
+      PersistenceMaterialIndex persistenceIndex =
           new PersistenceMaterialReader(steps, sourceSteps)
-              .reopenTechnical(
-                  upstream.r2Technical().persistence(),
+              .reopenTechnicalV3(
+                  persistence,
                   upstream.r2Run().runId(),
                   r0Source,
-                  r1Discovery,
-                  r1Navigation,
-                  r1Controls,
-                  r2Controls);
+                  discovery,
+                  navigation,
+                  backendControls,
+                  persistenceControls);
       FrontendHttpIndex frontendIndex =
           new FrontendHttpIndexModulePublisher(modules)
-              .reopen(
-                  upstream.r1Technical().frontendIndex(),
-                  upstream.r1Technical().applicationDiscovery().address().runId(),
+              .reopenV2(
+                  frontend,
+                  upstream.frontend().owner(),
                   source.selectedSourceBasis(),
-                  r1Controls);
-      FrontendSourceUnits projectedFrontendSourceUnits =
-          projectFrontendSourceUnits(
-              r0Source,
-              upstream.r1Technical().frontendIndex(),
-              frontendIndex,
-              source.sourceTexts());
-      CodeReadingMaterialSet materials =
-          new DefaultCodeReadingMaterialBuilder()
-              .build(
-                  new CodeReadingMaterialRequest(
-                      r0Source,
-                      r1Navigation,
-                      upstream.r2Technical().persistence(),
-                      javaIndex,
-                      persistence,
-                      profile,
-                      frontendIndex,
-                      projectedFrontendSourceUnits));
-      AnalysisStepPublicationReference publication =
-          new CodeReadingMaterialPublisher(modules, steps, sourceSteps)
-              .publishTechnical(
-                  execution.runId(),
-                  r0Source,
-                  r1Discovery,
-                  r1Navigation,
-                  upstream.r2Technical().persistence(),
-                  r1Controls,
-                  r2Controls,
-                  r3Controls,
-                  materials);
-      new CodeReadingMaterialReader(modules, steps, sourceSteps)
-          .reopenTechnical(
-              publication,
-              execution.runId(),
-              source.selectedSourceBasis(),
-              r1Discovery,
-              r1Navigation,
-              upstream.r2Technical().persistence(),
-              r1Controls,
-              r2Controls,
-              r3Controls);
+                  frontendControls);
+      FrontendSourceUnits frontendUnits =
+          projectFrontendSourceUnits(r0Source, frontend, frontendIndex, source.sourceTexts());
+      List<EntryEvidenceHttpMapping> mappings =
+          evidenceHttpMappings().stream()
+              .map(
+                  mapping ->
+                      new EntryEvidenceHttpMapping(
+                          mapping.clientRef(),
+                          mapping.requestOrigin(),
+                          mapping.requestPathPrefix(),
+                          mapping.backendApplicationRef(),
+                          mapping.backendContextPath(),
+                          mapping.stripPrefix(),
+                          mapping.addPrefix(),
+                          mapping.basis()))
+              .toList();
+      List<org.sourceanalysis.app.analysis.discovery.HttpEntryPoint> entries =
+          new ProgramGraphsExecution(sourceReader, modules, steps, sourceSteps)
+              .reopenTechnicalHttpEntries(r0Source, discovery, backendControls);
+      EntryEvidenceSet evidence;
+      try {
+        evidence =
+            new EntryEvidenceAssembler()
+                .assemble(
+                    new EntryEvidenceRequest(
+                        r0Source,
+                        discovery,
+                        navigation,
+                        persistence,
+                        frontend,
+                        entries,
+                        javaIndex,
+                        persistenceIndex,
+                        frontendIndex,
+                        frontendUnits,
+                        mappings,
+                        profile));
+      } catch (EntryEvidenceAssembler.EntryLimitExceededException capacity) {
+        return blockedEntryEvidenceOutput(
+            execution.runId(),
+            persisted,
+            upstream,
+            "ENTRY_EVIDENCE_ENTRY_COUNT_LIMIT_EXCEEDED",
+            "entries",
+            capacity.limit(),
+            capacity.actual(),
+            json);
+      }
+      try {
+        AnalysisStepPublicationReference publication =
+            new EntryEvidencePublisher(modules, steps, sourceSteps)
+                .publishTechnicalV3(
+                    execution.runId(),
+                    r0Source,
+                    persisted.selectedSourceBasis(),
+                    discovery,
+                    navigation,
+                    persistence,
+                    frontend,
+                    frontendControls,
+                    backendControls,
+                    persistenceControls,
+                    r4Controls,
+                    evidence);
+        new EntryEvidenceReader(modules, steps).reopen(publication);
+        return AnalysisRunOutput.technical(
+            TechnicalRunOutput.fourOperations(
+                AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS,
+                execution.runId(),
+                persisted.selectedSourceBasis(),
+                persistence,
+                TechnicalInspectionStatus.CHECKS_COMPLETE,
+                TechnicalContinuationStatus.READY,
+                upstream.r1Technical().readinessReport(),
+                frontend,
+                discovery.publication(),
+                navigation.publication(),
+                persistence,
+                publication,
+                List.of()));
+      } catch (EntryEvidencePublisher.CapacityExceededException capacity) {
+        return blockedEntryEvidenceOutput(
+            execution.runId(),
+            persisted,
+            upstream,
+            capacity.code(),
+            capacity.subject(),
+            capacity.limit(),
+            capacity.actual(),
+            json);
+      }
+    }
+
+    /** Records a named evidence-capacity failure without writing a false Step05 receipt. */
+    private static AnalysisRunOutput blockedEntryEvidenceOutput(
+        AnalysisRunId runId,
+        AnalysisRunRequest request,
+        ReadyMaterialUpstream upstream,
+        String code,
+        String subject,
+        long limit,
+        long actual,
+        CanonicalJsonCodec json) {
+      ObjectNode detail = JsonNodeFactory.instance.objectNode();
+      detail.put("code", code);
+      detail.put("subject", subject);
+      detail.put("limit", limit);
+      detail.put("actual", actual);
+      detail.put("operation", AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS.name());
+      TechnicalProblemReference problem =
+          new TechnicalProblemReference(
+              code, SourceAnalysisExecution.reference("technical-problem", detail, json));
       return AnalysisRunOutput.technical(
-          new TechnicalRunOutput(
+          TechnicalRunOutput.fourOperations(
               AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS,
-              execution.runId(),
-              persisted.selectedSourceBasis(),
+              runId,
+              request.selectedSourceBasis(),
               upstream.r2Technical().persistence(),
               TechnicalInspectionStatus.CHECKS_COMPLETE,
-              TechnicalContinuationStatus.READY,
+              TechnicalContinuationStatus.BLOCKED,
               upstream.r1Technical().readinessReport(),
-              upstream.r1Technical().frontendIndex(),
+              upstream.frontend().publication(),
               upstream.r1Technical().applicationDiscovery(),
               upstream.r1Technical().navigation(),
               upstream.r2Technical().persistence(),
-              publication,
-              List.of()));
+              null,
+              List.of(problem)));
+    }
+
+    /**
+     * Persists the exact R1/R3/R2 admission chain without pretending that the historical packet
+     * publisher is the pending entry-evidence publisher. The latter owns the Step05 v3 payload and
+     * is intentionally connected in its own work unit.
+     */
+    private static AnalysisRunOutput blockedAssembleMaterialsOutput(
+        AnalysisRunId runId,
+        AnalysisRunRequest request,
+        ReadyMaterialUpstream upstream,
+        CanonicalJsonCodec json) {
+      ObjectNode detail = JsonNodeFactory.instance.objectNode();
+      detail.put("code", "ENTRY_EVIDENCE_PUBLISHER_NOT_CONNECTED");
+      detail.put("operation", AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS.name());
+      detail.put("schema", "entry-evidence-v1");
+      TechnicalProblemReference problem =
+          new TechnicalProblemReference(
+              "ENTRY_EVIDENCE_PUBLISHER_NOT_CONNECTED",
+              SourceAnalysisExecution.reference("technical-problem", detail, json));
+      return AnalysisRunOutput.technical(
+          TechnicalRunOutput.fourOperations(
+              AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS,
+              runId,
+              request.selectedSourceBasis(),
+              upstream.r2Technical().persistence(),
+              TechnicalInspectionStatus.CHECKS_COMPLETE,
+              TechnicalContinuationStatus.BLOCKED,
+              upstream.r1Technical().readinessReport(),
+              upstream.frontend().publication(),
+              upstream.r1Technical().applicationDiscovery(),
+              upstream.r1Technical().navigation(),
+              upstream.r2Technical().persistence(),
+              null,
+              List.of(problem)));
     }
 
     /**
@@ -806,35 +1165,77 @@ final class TechnicalAnalysisConfiguredRuntime {
       Map<String, FrontendSourceUnits.Unit> units = new LinkedHashMap<>();
       for (var request : frontendIndex.requests()) {
         for (FrontendWrapperCall wrapper : request.wrapperPath()) {
-          VerifiedSourceTextDocument document = documents.get(wrapper.sourcePath());
-          if (document == null || !document.sha256().value().equals(wrapper.sourceSha256())) {
-            throw new IllegalArgumentException("frontend wrapper source is not exact R0 text");
-          }
           if (!contains(wrapper.sourceUnitRange(), wrapper.callRange())) {
             throw new IllegalArgumentException("frontend wrapper call is outside its source unit");
           }
-          String source = new String(document.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8);
-          SourceRange range = wrapper.sourceUnitRange();
-          long end = (long) range.startOffsetUtf16() + range.lengthUtf16();
-          if (end > source.length()) {
-            throw new IllegalArgumentException("frontend source unit range is outside R0 text");
-          }
-          String identity = frontendSourceUnitIdentity(wrapper);
-          FrontendSourceUnits.Unit unit =
-              new FrontendSourceUnits.Unit(
-                  identity,
-                  wrapper.sourcePath(),
-                  wrapper.sourceSha256(),
-                  range,
-                  wrapper.sourceUnitKind(),
-                  source.substring(range.startOffsetUtf16(), (int) end));
-          FrontendSourceUnits.Unit previous = units.putIfAbsent(identity, unit);
-          if (previous != null && !previous.equals(unit)) {
-            throw new IllegalArgumentException("frontend source unit identity is inconsistent");
-          }
+          addFrontendSourceUnit(
+              units,
+              documents,
+              wrapper.sourcePath(),
+              wrapper.sourceSha256(),
+              wrapper.sourceUnitRange(),
+              wrapper.sourceUnitKind());
         }
+        request
+            .supportingSourceUnits()
+            .forEach(
+                supporting ->
+                    addFrontendSourceUnit(
+                        units,
+                        documents,
+                        supporting.sourcePath(),
+                        supporting.sourceSha256(),
+                        supporting.sourceUnitRange(),
+                        supporting.sourceUnitKind()));
       }
-      return new FrontendSourceUnits(r0Source, frontendPublication, List.copyOf(units.values()));
+      frontendIndex
+          .supportingSourceUnits()
+          .forEach(
+              supporting ->
+                  addFrontendSourceUnit(
+                      units,
+                      documents,
+                      supporting.sourcePath(),
+                      supporting.sourceSha256(),
+                      supporting.sourceUnitRange(),
+                      supporting.sourceUnitKind()));
+      return new FrontendSourceUnits(
+          r0Source,
+          frontendPublication,
+          units.values().stream()
+              .sorted(java.util.Comparator.comparing(FrontendSourceUnits.Unit::sourceUnitId))
+              .toList());
+    }
+
+    private static void addFrontendSourceUnit(
+        Map<String, FrontendSourceUnits.Unit> units,
+        Map<String, VerifiedSourceTextDocument> documents,
+        String path,
+        String sourceSha256,
+        SourceRange range,
+        FrontendWrapperCall.SourceUnitKind kind) {
+      VerifiedSourceTextDocument document = documents.get(path);
+      if (document == null || !document.sha256().value().equals(sourceSha256)) {
+        throw new IllegalArgumentException("frontend source unit is not exact R0 text");
+      }
+      String source = new String(document.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8);
+      long end = (long) range.startOffsetUtf16() + range.lengthUtf16();
+      if (range.startOffsetUtf16() < 0 || end > source.length()) {
+        throw new IllegalArgumentException("frontend source unit range is outside R0 text");
+      }
+      String identity = frontendSourceUnitIdentity(path, sourceSha256, range, kind);
+      FrontendSourceUnits.Unit unit =
+          new FrontendSourceUnits.Unit(
+              identity,
+              path,
+              sourceSha256,
+              range,
+              kind,
+              source.substring(range.startOffsetUtf16(), (int) end));
+      FrontendSourceUnits.Unit previous = units.putIfAbsent(identity, unit);
+      if (previous != null && !previous.equals(unit)) {
+        throw new IllegalArgumentException("frontend source unit identity is inconsistent");
+      }
     }
 
     private static boolean contains(SourceRange enclosing, SourceRange nested) {
@@ -843,17 +1244,20 @@ final class TechnicalAnalysisConfiguredRuntime {
       return enclosing.startOffsetUtf16() <= nested.startOffsetUtf16() && enclosingEnd >= nestedEnd;
     }
 
-    private static String frontendSourceUnitIdentity(FrontendWrapperCall wrapper) {
-      SourceRange range = wrapper.sourceUnitRange();
-      return wrapper.sourcePath()
+    private static String frontendSourceUnitIdentity(
+        String path,
+        String sourceSha256,
+        SourceRange range,
+        FrontendWrapperCall.SourceUnitKind kind) {
+      return path
           + "@"
-          + wrapper.sourceSha256()
+          + sourceSha256
           + ":"
           + range.startOffsetUtf16()
           + ":"
           + range.lengthUtf16()
           + ":"
-          + wrapper.sourceUnitKind().name();
+          + kind.name();
     }
 
     private AnalysisRunRequest analyzePersistenceRequest(
@@ -863,7 +1267,7 @@ final class TechnicalAnalysisConfiguredRuntime {
         ArtifactPolicyRegistryReference policyReference,
         CanonicalJsonCodec json) {
       ObjectNode profile = JsonNodeFactory.instance.objectNode();
-      profile.put("schemaVersion", CONFIG_SCHEMA);
+      profile.put("schemaVersion", FOUR_OPERATION_CONFIG_SCHEMA);
       profile.put("operation", AnalysisRunRequest.TechnicalOperation.ANALYZE_PERSISTENCE.name());
       ArrayNode plugins = profile.putArray("plugins");
       persistence
@@ -879,24 +1283,34 @@ final class TechnicalAnalysisConfiguredRuntime {
       ObjectNode budget = JsonNodeFactory.instance.objectNode();
       budget.put("persistenceResourceParsing", persistence.enabled());
       ObjectNode schema = JsonNodeFactory.instance.objectNode();
-      schema.put("schemaVersion", CONFIG_SCHEMA);
-      schema.put("module", "persistence-material-index-v1");
+      schema.put("schemaVersion", FOUR_OPERATION_CONFIG_SCHEMA);
+      schema.put("module", "persistence-material-index-v2");
       ObjectNode toolchain = JsonNodeFactory.instance.objectNode();
       toolchain.put("mode", persistence.enabled() ? "mybatis-jsqlparser" : "disabled");
       if (persistence.enabled()) {
         toolchain.put("mybatis", "3.5.19");
         toolchain.put("jsqlparser", "5.3");
       }
-      return AnalysisRunRequest.technical(
+      ArtifactReference technicalProfile =
+          SourceAnalysisExecution.reference("technical-profile", profile, json);
+      ArtifactReference resourceBudget =
+          SourceAnalysisExecution.reference("technical-resource-budget", budget, json);
+      ArtifactReference schemaBundle =
+          SourceAnalysisExecution.reference("technical-schema-bundle", schema, json);
+      ArtifactReference toolchainRef =
+          SourceAnalysisExecution.reference("technical-toolchain", toolchain, json);
+      ArtifactReference policy =
+          new ArtifactReference(policyReference.artifactId(), policyReference.sha256());
+      return AnalysisRunRequest.technicalFourOperations(
           readySource.selectedSourceBasis(),
-          new AnalysisRunRequest.TechnicalAnalysisInputs(
-              AnalysisRunRequest.TechnicalOperation.ANALYZE_PERSISTENCE,
-              SourceAnalysisExecution.reference("technical-profile", profile, json),
-              SourceAnalysisExecution.reference("technical-resource-budget", budget, json),
-              SourceAnalysisExecution.reference("technical-schema-bundle", schema, json),
-              SourceAnalysisExecution.reference("technical-toolchain", toolchain, json),
-              new ArtifactReference(policyReference.artifactId(), policyReference.sha256()),
-              upstream.technical().navigation()));
+          AnalysisRunRequest.TechnicalOperation.ANALYZE_PERSISTENCE,
+          technicalProfile,
+          resourceBudget,
+          schemaBundle,
+          toolchainRef,
+          policy,
+          upstream.technical().navigation(),
+          null);
     }
 
     private AnalysisRunReference selectAnalyzePersistenceRun(
@@ -941,6 +1355,8 @@ final class TechnicalAnalysisConfiguredRuntime {
       AnalysisRunRequest persisted =
           RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, execution.runId()).request();
       if (persisted.requestKind() != AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS
+          || persisted.technicalAnalysisInputs().wireVersion()
+              != AnalysisRunRequest.TechnicalWireVersion.V5
           || persisted.technicalAnalysisInputs().operation()
               != AnalysisRunRequest.TechnicalOperation.ANALYZE_PERSISTENCE) {
         throw new IllegalArgumentException("queued run is not an analyze-persistence request");
@@ -997,26 +1413,20 @@ final class TechnicalAnalysisConfiguredRuntime {
                       source.sourceTexts(),
                       mapperCatalog,
                       persistence));
+      PersistenceMaterialPublisher publisher =
+          new PersistenceMaterialPublisher(modules, steps, sourceSteps);
+      ApplicationDiscoveryReference discovery =
+          new ApplicationDiscoveryReference(upstream.technical().applicationDiscovery());
+      ProgramGraphsReference navigation =
+          new ProgramGraphsReference(upstream.technical().navigation());
       var publication =
-          new PersistenceMaterialPublisher(modules, steps, sourceSteps)
-              .publishTechnical(
-                  execution.runId(),
-                  r0Source,
-                  new ApplicationDiscoveryReference(upstream.technical().applicationDiscovery()),
-                  r1Controls,
-                  r2Controls,
-                  index);
-      new PersistenceMaterialReader(steps, sourceSteps)
-          .reopenTechnical(
-              publication,
-              execution.runId(),
-              r0Source,
-              new ApplicationDiscoveryReference(upstream.technical().applicationDiscovery()),
-              new ProgramGraphsReference(upstream.technical().navigation()),
-              r1Controls,
-              r2Controls);
+          publisher.publishTechnicalV3(
+              execution.runId(), r0Source, discovery, r1Controls, r2Controls, index);
+      PersistenceMaterialReader reader = new PersistenceMaterialReader(steps, sourceSteps);
+      reader.reopenTechnicalV3(
+          publication, execution.runId(), r0Source, discovery, navigation, r1Controls, r2Controls);
       return AnalysisRunOutput.technical(
-          new TechnicalRunOutput(
+          TechnicalRunOutput.fourOperations(
               AnalysisRunRequest.TechnicalOperation.ANALYZE_PERSISTENCE,
               execution.runId(),
               persisted.selectedSourceBasis(),
@@ -1024,7 +1434,7 @@ final class TechnicalAnalysisConfiguredRuntime {
               TechnicalInspectionStatus.CHECKS_COMPLETE,
               TechnicalContinuationStatus.READY,
               upstream.technical().readinessReport(),
-              upstream.technical().frontendIndex(),
+              null,
               upstream.technical().applicationDiscovery(),
               upstream.technical().navigation(),
               publication,
@@ -1077,13 +1487,11 @@ final class TechnicalAnalysisConfiguredRuntime {
         AnalysisRunReference queued, AnalysisRunRequest expectedRequest, RunStoreHandle store) {
       ReadySourcePreparation source = reopenSavedSourcePreparationReady();
       TechnicalJavaConfig javaConfiguration = technicalJavaConfig();
-      TechnicalFrontendConfig frontendConfiguration = technicalFrontendConfig(source.sourceTexts());
       CanonicalJsonCodec json = new CanonicalJsonCodec();
       JavaCompilationInputRecord input =
           javaCompilationInputRecord(source, javaConfiguration, json);
       ArtifactReference currentToolchain =
-          technicalToolchainReference(
-              javaConfiguration, frontendToolIdentity(frontendConfiguration), input, json);
+          technicalToolchainReferenceV3(javaConfiguration, input, json);
       if (!expectedRequest.technicalAnalysisInputs().toolchainRef().equals(currentToolchain)) {
         throw new TechnicalArgumentsException();
       }
@@ -1115,9 +1523,7 @@ final class TechnicalAnalysisConfiguredRuntime {
         CanonicalArtifactPolicyRegistry policies,
         CanonicalJsonCodec json,
         TechnicalJavaConfig javaConfiguration,
-        TechnicalFrontendConfig frontendConfiguration,
-        Function<JavaCompilationEnvironment, JavaCodeSession> sessionOpener,
-        Supplier<FrontendSyntaxTool> frontendSyntaxToolSupplier) {
+        Function<JavaCompilationEnvironment, JavaCodeSession> sessionOpener) {
       if (execution.intent() != AnalysisExecutionIntent.COLLECT_CODE
           || execution.upstreamRunId() != null
           || execution.exactMaterialId() != null) {
@@ -1126,6 +1532,8 @@ final class TechnicalAnalysisConfiguredRuntime {
       AnalysisRunRequest persisted =
           RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, execution.runId()).request();
       if (persisted.requestKind() != AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS
+          || persisted.technicalAnalysisInputs().wireVersion()
+              != AnalysisRunRequest.TechnicalWireVersion.V5
           || persisted.technicalAnalysisInputs().operation()
               != AnalysisRunRequest.TechnicalOperation.COLLECT_CODE) {
         throw new IllegalArgumentException("queued run is not a collect-code technical request");
@@ -1189,8 +1597,7 @@ final class TechnicalAnalysisConfiguredRuntime {
             store);
       }
       if (!sidecar.orElseThrow().equals(currentInput.canonicalJson())
-          || !sameJavaAnalysisBasis(
-              persisted, reopened, javaConfiguration, frontendConfiguration, currentInput, json)) {
+          || !sameJavaAnalysisBasis(persisted, javaConfiguration, currentInput, json)) {
         return blockedCollectCodeOutput(
             execution.runId(),
             persisted,
@@ -1207,16 +1614,7 @@ final class TechnicalAnalysisConfiguredRuntime {
             Objects.requireNonNull(
                 sessionOpener.apply(readiness.environment()), "opened Java code session")) {
           return readyCollectCodeOutput(
-              execution.runId(),
-              persisted,
-              reopened,
-              readiness,
-              ignored,
-              frontendConfiguration,
-              frontendSyntaxToolSupplier,
-              policies,
-              json,
-              store);
+              execution.runId(), persisted, reopened, readiness, ignored, policies, json, store);
         }
       }
       return blockedCollectCodeOutput(
@@ -1227,50 +1625,28 @@ final class TechnicalAnalysisConfiguredRuntime {
         ReadySourcePreparation readySource,
         org.sourceanalysis.app.artifact.ArtifactPolicyRegistryReference policyReference,
         CanonicalJsonCodec json,
-        TechnicalJavaConfig javaConfiguration,
-        TechnicalFrontendConfig frontend) {
-      return collectCodeRequest(
-          readySource,
-          policyReference,
-          json,
-          javaConfiguration,
-          frontend,
-          frontendToolIdentity(frontend));
-    }
-
-    /** Test-only identity injection leaves framework-owned production paths outside YAML. */
-    private AnalysisRunRequest collectCodeRequest(
-        ReadySourcePreparation readySource,
-        org.sourceanalysis.app.artifact.ArtifactPolicyRegistryReference policyReference,
-        CanonicalJsonCodec json,
-        TechnicalJavaConfig javaConfiguration,
-        TechnicalFrontendConfig frontend,
-        FrontendToolIdentity frontendToolIdentity) {
-      if (frontend.enabled() != (frontendToolIdentity != null)) {
-        throw new IllegalArgumentException(
-            "frontend tool identity does not match frontend enablement");
-      }
+        TechnicalJavaConfig javaConfiguration) {
       ObjectNode profile = JsonNodeFactory.instance.objectNode();
-      profile.put("schemaVersion", CONFIG_SCHEMA);
+      profile.put("schemaVersion", FOUR_OPERATION_CONFIG_SCHEMA);
       profile.put("operation", AnalysisRunRequest.TechnicalOperation.COLLECT_CODE.name());
-      profile.put("frontendEnabled", frontend.enabled());
-      appendFrontendProfile(profile, frontend);
       ObjectNode budget = JsonNodeFactory.instance.objectNode();
       budget.put("externalCompilationInputValidation", true);
       ObjectNode schema = JsonNodeFactory.instance.objectNode();
-      schema.put("schemaVersion", CONFIG_SCHEMA);
+      schema.put("schemaVersion", FOUR_OPERATION_CONFIG_SCHEMA);
       schema.put("module", "java-analysis-readiness");
-      return AnalysisRunRequest.technical(
+      return AnalysisRunRequest.technicalFourOperations(
           readySource.selectedSourceBasis(),
-          new AnalysisRunRequest.TechnicalAnalysisInputs(
-              AnalysisRunRequest.TechnicalOperation.COLLECT_CODE,
-              SourceAnalysisExecution.reference("technical-profile", profile, json),
-              SourceAnalysisExecution.reference("technical-resource-budget", budget, json),
-              SourceAnalysisExecution.reference("technical-schema-bundle", schema, json),
-              technicalToolchainReference(
-                  readySource, javaConfiguration, frontendToolIdentity, json),
-              new ArtifactReference(policyReference.artifactId(), policyReference.sha256()),
-              readySource.selectedSourceBasis().preparedSource().publication()));
+          AnalysisRunRequest.TechnicalOperation.COLLECT_CODE,
+          SourceAnalysisExecution.reference("technical-profile", profile, json),
+          SourceAnalysisExecution.reference("technical-resource-budget", budget, json),
+          SourceAnalysisExecution.reference("technical-schema-bundle", schema, json),
+          technicalToolchainReferenceV3(
+              javaConfiguration,
+              javaCompilationInputRecord(readySource, javaConfiguration, json),
+              json),
+          new ArtifactReference(policyReference.artifactId(), policyReference.sha256()),
+          readySource.selectedSourceBasis().preparedSource().publication(),
+          null);
     }
 
     /** Appends static frontend controls and selected opaque R0 configuration-source identities. */
@@ -1336,21 +1712,12 @@ final class TechnicalAnalysisConfiguredRuntime {
           .value();
     }
 
-    private static ArtifactReference technicalToolchainReference(
-        ReadySourcePreparation readySource,
+    /**
+     * Binds the queued v3 Java handoff without requiring optional JDT tooling to be installed
+     * before the module-five readiness result can be persisted.
+     */
+    private static ArtifactReference technicalToolchainReferenceV3(
         TechnicalJavaConfig configuration,
-        FrontendToolIdentity frontendToolIdentity,
-        CanonicalJsonCodec json) {
-      return technicalToolchainReference(
-          configuration,
-          frontendToolIdentity,
-          javaCompilationInputRecord(readySource, configuration, json),
-          json);
-    }
-
-    private static ArtifactReference technicalToolchainReference(
-        TechnicalJavaConfig configuration,
-        FrontendToolIdentity frontendToolIdentity,
         JavaCompilationInputRecord compilationInput,
         CanonicalJsonCodec json) {
       ObjectNode toolchain = JsonNodeFactory.instance.objectNode();
@@ -1363,7 +1730,8 @@ final class TechnicalAnalysisConfiguredRuntime {
         toolchain.putNull("jdtDistributionDigest");
       } else {
         toolchain.put(
-            "jdtDistributionDigest", jdtDistributionDigest(configuration.jdtInstallation()));
+            "jdtDistributionDigest",
+            observedJdtDistributionDigest(configuration.jdtInstallation()));
       }
       if (configuration.toolJavaHome() == null) {
         toolchain.putNull("toolJavaReleaseDigest");
@@ -1371,27 +1739,14 @@ final class TechnicalAnalysisConfiguredRuntime {
       } else {
         toolchain.put(
             "toolJavaReleaseDigest",
-            fileDigest(
-                configuration.toolJavaHome().resolve("release"),
-                "configured JDT tool Java release is unavailable"));
+            observedFileDigest(configuration.toolJavaHome().resolve("release")));
         toolchain.put(
             "toolJavaLauncherDigest",
-            fileDigest(
-                configuration.toolJavaHome().resolve("bin").resolve("java"),
-                "configured JDT tool Java launcher is unavailable"));
+            observedFileDigest(configuration.toolJavaHome().resolve("bin").resolve("java")));
       }
-      if (frontendToolIdentity == null) {
-        toolchain.putNull("frontendNodeExecutableDigest");
-        toolchain.putNull("frontendSyntaxHelperDigest");
-        toolchain.putNull("frontendSyntaxLockfileDigest");
-      } else {
-        toolchain.put(
-            "frontendNodeExecutableDigest", frontendToolIdentity.nodeExecutableSha256().value());
-        toolchain.put(
-            "frontendSyntaxHelperDigest", frontendToolIdentity.frameworkHelperSha256().value());
-        toolchain.put(
-            "frontendSyntaxLockfileDigest", frontendToolIdentity.frameworkLockfileSha256().value());
-      }
+      toolchain.putNull("frontendNodeExecutableDigest");
+      toolchain.putNull("frontendSyntaxHelperDigest");
+      toolchain.putNull("frontendSyntaxLockfileDigest");
       return SourceAnalysisExecution.reference("technical-toolchain", toolchain, json);
     }
 
@@ -1403,18 +1758,14 @@ final class TechnicalAnalysisConfiguredRuntime {
 
     private static boolean sameJavaAnalysisBasis(
         AnalysisRunRequest persisted,
-        ReadySourcePreparation readySource,
         TechnicalJavaConfig configuration,
-        TechnicalFrontendConfig frontend,
         JavaCompilationInputRecord compilationInput,
         CanonicalJsonCodec json) {
       try {
         return persisted
             .technicalAnalysisInputs()
             .toolchainRef()
-            .equals(
-                technicalToolchainReference(
-                    configuration, frontendToolIdentity(frontend), compilationInput, json));
+            .equals(technicalToolchainReferenceV3(configuration, compilationInput, json));
       } catch (RuntimeException unavailable) {
         return false;
       }
@@ -1646,6 +1997,14 @@ final class TechnicalAnalysisConfiguredRuntime {
       }
     }
 
+    private static String observedJdtDistributionDigest(Path installation) {
+      try {
+        return jdtDistributionDigest(installation);
+      } catch (RuntimeException unavailable) {
+        return "UNAVAILABLE";
+      }
+    }
+
     private JavaReadinessPreparation.V2Request javaReadinessRequest(
         ReadySourcePreparation readySource, TechnicalJavaConfig javaConfiguration) {
       return new JavaReadinessPreparation.V2Request(
@@ -1695,9 +2054,9 @@ final class TechnicalAnalysisConfiguredRuntime {
           SourceAnalysisExecution.optionalAbsolutePath(java, "toolJavaHome"));
     }
 
-    private void requireV2CompilationInputForCollect() {
-      if (!CONFIG_SCHEMA.equals(SourceAnalysisExecution.requiredText(document, "schemaVersion"))) {
-        throw new TechnicalV2CompilationInputRequiredException();
+    private void requireFourOperationConfigurationForProduction() {
+      if (!isFourOperationConfiguration()) {
+        throw new TechnicalConfigurationSchemaRetiredException();
       }
     }
 
@@ -1718,12 +2077,31 @@ final class TechnicalAnalysisConfiguredRuntime {
       return new PersistenceConfiguration(result);
     }
 
-    /** Parses the closed R3 packet bounds without opening source or running an analyzer. */
-    private CodeReadingMaterialProfile readingMaterialProfile() {
-      ObjectNode materials = object(document, "readingMaterials");
-      return new CodeReadingMaterialProfile(
-          positiveLong(materials, "maxPacketUtf8Bytes"),
-          positiveInt(materials, "maxEntriesPerPacket"));
+    /** Reads the v3 entry-evidence budget without converting it into a legacy packet profile. */
+    private EntryEvidenceProfile entryEvidenceProfile() {
+      ObjectNode evidence = object(document, "evidence");
+      return new EntryEvidenceProfile(
+          positiveLong(evidence, "maxEntryUtf8Bytes"),
+          positiveLong(evidence, "maxPublicationUtf8Bytes"),
+          positiveInt(evidence, "maxEntries"));
+    }
+
+    /**
+     * Derives the sole variable-file store budget from the v3 evidence configuration. Historical
+     * R1--R3 and packet R4 publications continue to use {@link #TECHNICAL_STORE_LIMITS}.
+     */
+    private static ArtifactStoreLimits entryEvidenceStoreLimits(EntryEvidenceProfile profile) {
+      Objects.requireNonNull(profile, "entry-evidence profile");
+      int payloadFiles = Math.addExact(profile.maxEntries(), 2);
+      return new ArtifactStoreLimits(
+          payloadFiles,
+          profile.maxPublicationUtf8Bytes(),
+          profile.maxPublicationUtf8Bytes(),
+          Math.max(TECHNICAL_STORE_LIMITS.maxDirectoryEntries(), Math.addExact(payloadFiles, 8)));
+    }
+
+    private List<FrontendHttpAddressMapping> evidenceHttpMappings() {
+      return httpMappings(object(document, "evidence"));
     }
 
     private static long positiveLong(ObjectNode parent, String field) {
@@ -1778,7 +2156,7 @@ final class TechnicalAnalysisConfiguredRuntime {
           new FrontendHttpConfiguration(
               requiredTextList(frontend, "sourceRoots"),
               requiredTextMap(frontend, "aliases"),
-              httpMappings(frontend)),
+              List.of()),
           List.copyOf(configurationFiles.values()));
     }
 
@@ -1919,7 +2297,7 @@ final class TechnicalAnalysisConfiguredRuntime {
                   canonicalGapReferences(problems),
                   blockedReadinessPayloads(address, readiness, policies, json)));
       TechnicalRunOutput technical =
-          new TechnicalRunOutput(
+          TechnicalRunOutput.fourOperations(
               AnalysisRunRequest.TechnicalOperation.COLLECT_CODE,
               runId,
               persisted.selectedSourceBasis(),
@@ -1937,9 +2315,9 @@ final class TechnicalAnalysisConfiguredRuntime {
     }
 
     /**
-     * Publishes the R1-ready module and the two technical producer branches after one admitted JDT
-     * session is open. The public readiness payload contains only source-relative and digest
-     * information; configured local JAR/JDK locations remain private to the current run.
+     * Publishes the R2-ready module and backend technical producers after one admitted JDT session
+     * is open. The public readiness payload contains only source-relative and digest information;
+     * configured local JAR/JDK locations remain private to the current run.
      */
     private AnalysisRunOutput readyCollectCodeOutput(
         AnalysisRunId runId,
@@ -1947,8 +2325,6 @@ final class TechnicalAnalysisConfiguredRuntime {
         ReadySourcePreparation readySource,
         JavaReadinessPreparation.Result readiness,
         JavaCodeSession session,
-        TechnicalFrontendConfig frontendConfiguration,
-        Supplier<FrontendSyntaxTool> frontendSyntaxToolSupplier,
         CanonicalArtifactPolicyRegistry policies,
         CanonicalJsonCodec json,
         RunStoreHandle store) {
@@ -1993,43 +2369,12 @@ final class TechnicalAnalysisConfiguredRuntime {
                       r0Source,
                       DiscoveryProfile.standard()),
                   controls);
-      AnalysisStepModuleAddress frontendAddress =
-          new AnalysisStepModuleAddress(
-              runId, AnalysisStepKey.APPLICATION_DISCOVERY, 6, "frontend-http-discovery");
-      FrontendHttpIndex frontendIndex;
-      if (!frontendConfiguration.enabled()) {
-        frontendIndex = FrontendHttpIndex.disabledIndex();
-      } else {
-        FrontendSyntaxTool syntaxTool =
-            Objects.requireNonNull(
-                    frontendSyntaxToolSupplier, "enabled frontend syntax tool supplier")
-                .get();
-        FrontendHttpIndex discovered =
-            new FrontendHttpDiscoverer(
-                    Objects.requireNonNull(syntaxTool, "enabled frontend syntax tool"))
-                .discover(
-                    new FrontendHttpDiscoveryRequest(
-                        readySource.sourceTexts(),
-                        frontendConfiguration.configuration(),
-                        applicationDiscovery.entries().entries(),
-                        true));
-        frontendIndex =
-            new FrontendHttpIndex(
-                discovered.files(),
-                discovered.requests(),
-                discovered.entryLinks(),
-                discovered.diagnostics(),
-                discovered.status(),
-                frontendConfiguration.configurationFiles());
-      }
-      var frontend =
-          new FrontendHttpIndexModulePublisher(modules)
-              .publish(frontendAddress, persisted.selectedSourceBasis(), controls, frontendIndex);
+      ProgramGraphsExecution programGraphs =
+          new ProgramGraphsExecution(sourceReader, modules, steps, sourceSteps);
       ProgramGraphsReference navigation =
-          new ProgramGraphsExecution(sourceReader, modules, steps, sourceSteps)
-              .executeTechnical(r0Source, applicationDiscovery, session, controls);
+          programGraphs.executeTechnicalV3(r0Source, applicationDiscovery, session, controls);
       return AnalysisRunOutput.technical(
-          new TechnicalRunOutput(
+          TechnicalRunOutput.fourOperations(
               AnalysisRunRequest.TechnicalOperation.COLLECT_CODE,
               runId,
               persisted.selectedSourceBasis(),
@@ -2037,7 +2382,7 @@ final class TechnicalAnalysisConfiguredRuntime {
               TechnicalInspectionStatus.CHECKS_COMPLETE,
               TechnicalContinuationStatus.READY,
               readinessReport.reference(),
-              frontend,
+              null,
               applicationDiscovery.publication().publication(),
               navigation.publication(),
               null,
@@ -2211,7 +2556,7 @@ final class TechnicalAnalysisConfiguredRuntime {
           json.encodeCanonical(envelope));
     }
 
-    private static void writeBlockedCollectCodeEnvelope(
+    private static void writeBlockedTechnicalEnvelope(
         PrintWriter output,
         AnalysisRunReference completed,
         TechnicalRunOutput technical,
@@ -2219,14 +2564,37 @@ final class TechnicalAnalysisConfiguredRuntime {
       ObjectNode envelope = JsonNodeFactory.instance.objectNode();
       envelope.put("runId", completed.runId().value());
       envelope.put("operation", technical.operation().name());
-      envelope.put("resultStatus", "NEEDS_USER_DECISION");
+      boolean implementationIncomplete =
+          technical.problems().stream()
+              .anyMatch(problem -> "ENTRY_EVIDENCE_PUBLISHER_NOT_CONNECTED".equals(problem.code()));
+      boolean entryEvidenceBlocked =
+          technical.problems().stream()
+              .anyMatch(problem -> problem.code().startsWith("ENTRY_EVIDENCE_"));
+      envelope.put(
+          "resultStatus",
+          implementationIncomplete
+              ? "IMPLEMENTATION_INCOMPLETE"
+              : entryEvidenceBlocked ? "BLOCKED" : "NEEDS_USER_DECISION");
       envelope.put("continuationStatus", technical.continuationStatus().name());
       ArrayNode available = envelope.putArray("availableOutputs");
-      technical.availableOutputs().forEach(value -> available.add(value.name()));
+      if (!hidesAvailableOutputs(technical)) {
+        technical.availableOutputs().forEach(value -> available.add(value.name()));
+      }
       ArrayNode problems = envelope.putArray("problems");
       technical.problems().forEach(problem -> problems.addObject().put("code", problem.code()));
       output.println(
           new String(json.encodeCanonical(envelope).copyToByteArray(), StandardCharsets.UTF_8));
+    }
+
+    /**
+     * A BLOCKED R4 retains upstream references solely for strict source/owner verification. They
+     * are not artifacts produced by the failed R4 and therefore are intentionally absent from its
+     * public envelope and inspect output.
+     */
+    private static boolean hidesAvailableOutputs(TechnicalRunOutput technical) {
+      return technical.wireVersion() == AnalysisRunRequest.TechnicalWireVersion.V5
+          && technical.operation() == AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS
+          && technical.continuationStatus() == TechnicalContinuationStatus.BLOCKED;
     }
 
     private static void writeReadyCollectCodeEnvelope(
@@ -2239,6 +2607,28 @@ final class TechnicalAnalysisConfiguredRuntime {
       envelope.put("operation", technical.operation().name());
       envelope.put("resultStatus", "COMPLETED");
       envelope.put("continuationStatus", technical.continuationStatus().name());
+      ArrayNode available = envelope.putArray("availableOutputs");
+      technical.availableOutputs().forEach(value -> available.add(value.name()));
+      output.println(
+          new String(json.encodeCanonical(envelope).copyToByteArray(), StandardCharsets.UTF_8));
+    }
+
+    private static void writeFrontendEnvelope(
+        PrintWriter output,
+        AnalysisRunReference completed,
+        TechnicalRunOutput technical,
+        boolean frontendEnabled,
+        CanonicalJsonCodec json) {
+      ObjectNode envelope = JsonNodeFactory.instance.objectNode();
+      envelope.put("runId", completed.runId().value());
+      envelope.put("operation", technical.operation().name());
+      envelope.put("resultStatus", "COMPLETED");
+      envelope.put("continuationStatus", technical.continuationStatus().name());
+      envelope.put(
+          "frontendStatus",
+          technical.frontendIndex() == null
+              ? "UNAVAILABLE"
+              : frontendEnabled ? "ENABLED" : "DISABLED");
       ArrayNode available = envelope.putArray("availableOutputs");
       technical.availableOutputs().forEach(value -> available.add(value.name()));
       output.println(
@@ -2274,6 +2664,14 @@ final class TechnicalAnalysisConfiguredRuntime {
             output,
             selectedSourceBasis,
             expectedUpstreamOperation(invocation.operation()));
+        if ("assemble-materials".equals(invocation.operation())) {
+          FrontendMaterialUpstream frontend =
+              reopenFrontendMaterialUpstream(
+                  store, invocation.frontendRunId(), selectedSourceBasis);
+          if (frontend.owner().equals(invocation.upstreamRunId())) {
+            throw new TechnicalUpstreamNotReadyException();
+          }
+        }
       } catch (TechnicalUpstreamNotReadyException unavailable) {
         throw unavailable;
       } catch (RuntimeException unavailable) {
@@ -2299,10 +2697,9 @@ final class TechnicalAnalysisConfiguredRuntime {
           || !output.technicalOutput().outputRunId().equals(upstreamRunId)
           || !request.selectedSourceBasis().equals(selectedSourceBasis)
           || !output.technicalOutput().selectedSourceBasis().equals(request.selectedSourceBasis())
-          || !output
-              .technicalOutput()
-              .upstreamPublication()
-              .equals(request.technicalAnalysisInputs().upstreamPublication())) {
+          || !Objects.equals(
+              output.technicalOutput().upstreamPublication(),
+              request.technicalAnalysisInputs().upstreamPublication())) {
         throw new TechnicalUpstreamNotReadyException();
       }
       CanonicalJsonCodec json = new CanonicalJsonCodec();
@@ -2316,27 +2713,58 @@ final class TechnicalAnalysisConfiguredRuntime {
                   policies.reference().artifactId(), policies.reference().sha256()))) {
         throw new TechnicalUpstreamNotReadyException();
       }
+      ArtifactStoreLimits limits =
+          expectedOperation == AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS
+                  && request.technicalAnalysisInputs().wireVersion()
+                      == AnalysisRunRequest.TechnicalWireVersion.V5
+              ? entryEvidenceStoreLimits(request.technicalAnalysisInputs().entryEvidenceProfile())
+              : TECHNICAL_STORE_LIMITS;
       FileSystemCanonicalModuleArtifactStore modules =
-          new FileSystemCanonicalModuleArtifactStore(store, json, policies, TECHNICAL_STORE_LIMITS);
+          new FileSystemCanonicalModuleArtifactStore(store, json, policies, limits);
       FileSystemCanonicalAnalysisStepArtifactStore steps =
-          new FileSystemCanonicalAnalysisStepArtifactStore(
-              store, json, policies, TECHNICAL_STORE_LIMITS);
-      modules.reopen(output.technicalOutput().readinessReport());
-      modules.reopen(output.technicalOutput().frontendIndex());
-      steps.reopen(output.technicalOutput().applicationDiscovery());
-      steps.reopen(output.technicalOutput().navigation());
+          new FileSystemCanonicalAnalysisStepArtifactStore(store, json, policies, limits);
+      TechnicalRunOutput technical = output.technicalOutput();
+      if (expectedOperation == AnalysisRunRequest.TechnicalOperation.COLLECT_FRONTEND) {
+        if (request.technicalAnalysisInputs().wireVersion()
+                != AnalysisRunRequest.TechnicalWireVersion.V5
+            || technical.frontendIndex() == null) {
+          throw new TechnicalUpstreamNotReadyException();
+        }
+        new FrontendHttpIndexModulePublisher(modules)
+            .reopenV2(
+                technical.frontendIndex(),
+                upstreamRunId,
+                selectedSourceBasis,
+                technicalControls(request));
+        return;
+      }
+      modules.reopen(technical.readinessReport());
+      steps.reopen(technical.applicationDiscovery());
+      steps.reopen(technical.navigation());
       if (expectedOperation == AnalysisRunRequest.TechnicalOperation.ANALYZE_PERSISTENCE) {
-        steps.reopen(output.technicalOutput().persistence());
+        steps.reopen(technical.persistence());
       } else if (expectedOperation == AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS) {
-        steps.reopen(output.technicalOutput().persistence());
-        steps.reopen(output.technicalOutput().readingMaterials());
+        if (request.technicalAnalysisInputs().wireVersion()
+            == AnalysisRunRequest.TechnicalWireVersion.V5) {
+          reopenFrontendMaterialUpstream(
+              store, technical.frontendIndex().address().runId(), selectedSourceBasis);
+        } else {
+          modules.reopen(technical.frontendIndex());
+        }
+        steps.reopen(technical.persistence());
+        if (request.technicalAnalysisInputs().wireVersion()
+            == AnalysisRunRequest.TechnicalWireVersion.V5) {
+          new EntryEvidenceReader(modules, steps).reopen(technical.readingMaterials());
+        } else {
+          steps.reopen(technical.readingMaterials());
+        }
       }
     }
 
     /**
-     * Reopens the exact finished R1 source, receipt, and retained technical publications before an
-     * R2 request is formed or executed. This path never consults the R0 source through the
-     * technical policy registry.
+     * Reopens the exact finished R2 backend source, receipt, and retained technical publications
+     * before an R3 request is formed or executed. This path never consults the R0 source through
+     * the technical policy registry.
      */
     private ReadyPersistenceUpstream reopenPersistenceUpstream(
         RunStoreHandle store, AnalysisRunId r1RunId, SelectedSourceBasis selectedSourceBasis) {
@@ -2361,10 +2789,15 @@ final class TechnicalAnalysisConfiguredRuntime {
             selectedSourceBasis,
             AnalysisRunRequest.TechnicalOperation.COLLECT_CODE);
         TechnicalRunOutput technical = output.technicalOutput();
+        boolean fourOperationBackend =
+            request.technicalAnalysisInputs().wireVersion()
+                == AnalysisRunRequest.TechnicalWireVersion.V5;
         if (technical == null
             || technical.continuationStatus() != TechnicalContinuationStatus.READY
             || technical.readinessReport() == null
-            || technical.frontendIndex() == null
+            || (fourOperationBackend
+                ? technical.frontendIndex() != null
+                : technical.frontendIndex() == null)
             || technical.applicationDiscovery() == null
             || technical.navigation() == null
             || technical.persistence() != null
@@ -2382,9 +2815,9 @@ final class TechnicalAnalysisConfiguredRuntime {
     }
 
     /**
-     * Reopens the exact completed R2 and its R1 predecessor before an R3 request is formed or
-     * executed. R2 has no authority to replace R0/R1 identity, so every retained R1 publication is
-     * compared before material organization begins.
+     * Reopens the exact completed R3 persistence output and its R2 backend predecessor before an R4
+     * request is formed or executed. R3 has no authority to replace R0/R2 identity, so every
+     * retained backend publication is compared before entry-evidence assembly begins.
      */
     private ReadyMaterialUpstream reopenMaterialUpstream(
         RunStoreHandle store, AnalysisRunId r2RunId, SelectedSourceBasis selectedSourceBasis) {
@@ -2409,10 +2842,15 @@ final class TechnicalAnalysisConfiguredRuntime {
             selectedSourceBasis,
             AnalysisRunRequest.TechnicalOperation.ANALYZE_PERSISTENCE);
         TechnicalRunOutput r2Technical = r2Output.technicalOutput();
+        boolean fourOperationPersistence =
+            r2Request.technicalAnalysisInputs().wireVersion()
+                == AnalysisRunRequest.TechnicalWireVersion.V5;
         if (r2Technical == null
             || r2Technical.continuationStatus() != TechnicalContinuationStatus.READY
             || r2Technical.readinessReport() == null
-            || r2Technical.frontendIndex() == null
+            || (fourOperationPersistence
+                ? r2Technical.frontendIndex() != null
+                : r2Technical.frontendIndex() == null)
             || r2Technical.applicationDiscovery() == null
             || r2Technical.navigation() == null
             || r2Technical.persistence() == null
@@ -2428,12 +2866,96 @@ final class TechnicalAnalysisConfiguredRuntime {
                 .upstreamPublication()
                 .equals(r1.technical().navigation())
             || !r2Technical.readinessReport().equals(r1.technical().readinessReport())
-            || !r2Technical.frontendIndex().equals(r1.technical().frontendIndex())
+            || (!fourOperationPersistence
+                && !r2Technical.frontendIndex().equals(r1.technical().frontendIndex()))
             || !r2Technical.applicationDiscovery().equals(r1.technical().applicationDiscovery())
             || !r2Technical.navigation().equals(r1.technical().navigation())) {
           throw new TechnicalUpstreamNotReadyException();
         }
-        return new ReadyMaterialUpstream(r1, r2Run, r2Request, r2Technical);
+        FrontendMaterialUpstream legacyFrontend =
+            fourOperationPersistence
+                ? null
+                : new FrontendMaterialUpstream(
+                    r1.run().runId(),
+                    technicalControls(r1.request()),
+                    r1.technical().frontendIndex());
+        return new ReadyMaterialUpstream(r1, r2Run, r2Request, r2Technical, legacyFrontend);
+      } catch (TechnicalUpstreamNotReadyException unavailable) {
+        throw unavailable;
+      } catch (RuntimeException unavailable) {
+        throw new TechnicalUpstreamNotReadyException();
+      }
+    }
+
+    /**
+     * Reopens R3 and an independently-owned R1 frontend result for the v3 two-branch assembly
+     * request. The backend lineage is reachable only from R3; the explicit frontend run cannot
+     * impersonate it merely by sharing the same source basis.
+     */
+    private ReadyMaterialUpstream reopenMaterialUpstream(
+        RunStoreHandle store,
+        AnalysisRunId persistenceRunId,
+        AnalysisRunId frontendRunId,
+        SelectedSourceBasis selectedSourceBasis) {
+      ReadyMaterialUpstream persistence =
+          reopenMaterialUpstream(store, persistenceRunId, selectedSourceBasis);
+      if (persistence.r2Request().technicalAnalysisInputs().wireVersion()
+              != AnalysisRunRequest.TechnicalWireVersion.V5
+          || frontendRunId == null) {
+        throw new TechnicalUpstreamNotReadyException();
+      }
+      FrontendMaterialUpstream frontend =
+          reopenFrontendMaterialUpstream(store, frontendRunId, selectedSourceBasis);
+      if (frontend.owner().equals(persistence.r1().run().runId())
+          || frontend.owner().equals(persistence.r2Run().runId())) {
+        throw new TechnicalUpstreamNotReadyException();
+      }
+      return new ReadyMaterialUpstream(
+          persistence.r1(),
+          persistence.r2Run(),
+          persistence.r2Request(),
+          persistence.r2Technical(),
+          frontend);
+    }
+
+    /** Reopens an R1 frontend index through its own v5 controls, owner, policy, and R0 basis. */
+    private FrontendMaterialUpstream reopenFrontendMaterialUpstream(
+        RunStoreHandle store,
+        AnalysisRunId frontendRunId,
+        SelectedSourceBasis selectedSourceBasis) {
+      if (frontendRunId == null) {
+        throw new TechnicalUpstreamNotReadyException();
+      }
+      try {
+        AnalysisRunReference run = RunStoreBootstrap.reopenAnalysisRun(store, frontendRunId);
+        if (run.lifecycleState() != AnalysisRunLifecycleState.FINISHED) {
+          throw new TechnicalUpstreamNotReadyException();
+        }
+        AnalysisRunRequest request =
+            RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, frontendRunId).request();
+        AnalysisRunOutput output =
+            RunStoreBootstrap.reopenAnalysisRunOutput(store, frontendRunId)
+                .orElseThrow(TechnicalUpstreamNotReadyException::new);
+        requireInstalledTechnicalUpstream(
+            store,
+            frontendRunId,
+            request,
+            output,
+            selectedSourceBasis,
+            AnalysisRunRequest.TechnicalOperation.COLLECT_FRONTEND);
+        TechnicalRunOutput technical = output.technicalOutput();
+        if (technical == null
+            || technical.continuationStatus() != TechnicalContinuationStatus.READY
+            || technical.frontendIndex() == null
+            || technical.readinessReport() != null
+            || technical.applicationDiscovery() != null
+            || technical.navigation() != null
+            || technical.persistence() != null
+            || technical.readingMaterials() != null) {
+          throw new TechnicalUpstreamNotReadyException();
+        }
+        return new FrontendMaterialUpstream(
+            frontendRunId, technicalControls(request), technical.frontendIndex());
       } catch (TechnicalUpstreamNotReadyException unavailable) {
         throw unavailable;
       } catch (RuntimeException unavailable) {
@@ -2465,10 +2987,19 @@ final class TechnicalAnalysisConfiguredRuntime {
         output.printf(
             "lifecycle=%s%n", observation.inspection().analysisRun().lifecycleState().name());
         output.printf("continuationStatus=%s%n", observation.output().continuationStatus().name());
-        observation
-            .output()
-            .availableOutputs()
-            .forEach(key -> output.printf("availableOutput=%s%n", key.name()));
+        if (!hidesAvailableOutputs(observation.output())) {
+          observation
+              .output()
+              .availableOutputs()
+              .forEach(key -> output.printf("availableOutput=%s%n", key.name()));
+        } else {
+          // R4 produced no terminal artifact. Keep the saved, typed capacity/source problem
+          // observable without advertising the retained upstream publications as R4 output.
+          observation
+              .output()
+              .problems()
+              .forEach(problem -> output.printf("problem=%s%n", problem.code()));
+        }
       }
     }
 
@@ -2488,11 +3019,19 @@ final class TechnicalAnalysisConfiguredRuntime {
                 technicalStores,
                 invocation.requestedRunId(),
                 selectedSource.selectedSourceBasis());
+        if (hidesAvailableOutputs(observation.output())) {
+          throw new TechnicalArgumentsException();
+        }
         if (invocation.artifactFormat() != null) {
           exportR3MaterialsMarkdown(
               invocation, selectedSource, store, technicalStores, observation, output);
           return;
         }
+        AnalysisRunRequest completedRequest =
+            RunStoreBootstrap.reopenPersistedAnalysisRunRequest(
+                    store, observation.inspection().analysisRun().runId())
+                .request();
+        TechnicalStores artifactStores = technicalStores(store, completedRequest);
         ArtifactView artifact =
             new LocalRepositoryAnalysisAgent(
                     store,
@@ -2500,11 +3039,12 @@ final class TechnicalAnalysisConfiguredRuntime {
                     null,
                     null,
                     new TechnicalCheckpointArtifactReader(
-                        technicalStores.modules(), technicalStores.steps()))
+                        artifactStores.modules(), artifactStores.steps()))
                 .artifact(
                     ArtifactQuery.technical(
                         observation.inspection().analysisRun().runId().value(),
                         invocation.technicalArtifactQueryKey(),
+                        invocation.entryId(),
                         invocation.maxBytes()));
         output.print(artifact.contentUtf8());
       }
@@ -2672,6 +3212,74 @@ final class TechnicalAnalysisConfiguredRuntime {
     }
 
     /**
+     * Reopens a capacity-blocked V5 R4 result without inventing a Step05 receipt. The exact R0,
+     * independent R1 frontend, R2 backend, and R3 persistence chain remains mandatory; only the
+     * absent terminal entry-evidence publication distinguishes this observer from a completed R4.
+     */
+    private TechnicalObservation reopenBlockedEntryEvidenceObservation(
+        RunStoreHandle store,
+        TechnicalStores currentTechnicalStores,
+        AnalysisRunId runId,
+        SelectedSourceBasis selectedSourceBasis) {
+      try {
+        RunInspection inspection = new LocalRepositoryAnalysisAgent(store).inspect(runId.value());
+        if (inspection.analysisRun().lifecycleState() != AnalysisRunLifecycleState.FAILED) {
+          throw new TechnicalArgumentsException();
+        }
+        AnalysisRunRequest request =
+            RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, runId).request();
+        AnalysisRunRequest.TechnicalAnalysisInputs inputs = request.technicalAnalysisInputs();
+        if (request.requestKind() != AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS
+            || inputs.wireVersion() != AnalysisRunRequest.TechnicalWireVersion.V5
+            || inputs.operation() != AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS
+            || inputs.entryEvidenceProfile() == null
+            || !request.selectedSourceBasis().equals(selectedSourceBasis)
+            || inputs.upstreamPublication() == null
+            || inputs.frontendPublication() == null
+            || !inputs
+                .artifactPolicyRegistryRef()
+                .equals(currentTechnicalStores.policyReference())) {
+          throw new TechnicalArgumentsException();
+        }
+        ReadyMaterialUpstream upstream =
+            reopenMaterialUpstream(
+                store,
+                inputs.upstreamPublication().address().runId(),
+                inputs.frontendPublication().address().runId(),
+                selectedSourceBasis);
+        AnalysisRunOutput output = inspection.output();
+        if (output == null || output.technicalOutput() == null) {
+          throw new TechnicalArgumentsException();
+        }
+        TechnicalRunOutput technical = output.technicalOutput();
+        if (technical.wireVersion() != AnalysisRunRequest.TechnicalWireVersion.V5
+            || technical.operation() != AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS
+            || !technical.outputRunId().equals(runId)
+            || !technical.selectedSourceBasis().equals(selectedSourceBasis)
+            || !technical.upstreamPublication().equals(upstream.r2Technical().persistence())
+            || !inputs.upstreamPublication().equals(upstream.r2Technical().persistence())
+            || !inputs.frontendPublication().equals(upstream.frontend().publication())
+            || technical.continuationStatus() != TechnicalContinuationStatus.BLOCKED
+            || technical.readingMaterials() != null
+            || technical.problems().isEmpty()
+            || !Objects.equals(
+                technical.readinessReport(), upstream.r1Technical().readinessReport())
+            || !Objects.equals(technical.frontendIndex(), upstream.frontend().publication())
+            || !Objects.equals(
+                technical.applicationDiscovery(), upstream.r1Technical().applicationDiscovery())
+            || !Objects.equals(technical.navigation(), upstream.r1Technical().navigation())
+            || !Objects.equals(technical.persistence(), upstream.r2Technical().persistence())) {
+          throw new TechnicalArgumentsException();
+        }
+        return new TechnicalObservation(inspection, technical);
+      } catch (TechnicalArgumentsException invalid) {
+        throw invalid;
+      } catch (RuntimeException unavailable) {
+        throw new TechnicalArgumentsException();
+      }
+    }
+
+    /**
      * Chooses a saved observation branch only after checking its lifecycle. Failed runs retain the
      * existing BLOCKED-R1 observer; FINISHED technical runs use the separate complete-lineage
      * observer below. Neither branch opens a JDT or frontend tool.
@@ -2689,17 +3297,42 @@ final class TechnicalAnalysisConfiguredRuntime {
       }
       return switch (run.lifecycleState()) {
         case FAILED ->
-            reopenBlockedCollectObservation(store, technicalStores, runId, selectedSourceBasis);
+            reopenFailedTechnicalObservation(store, technicalStores, runId, selectedSourceBasis);
         case FINISHED ->
             reopenCompletedTechnicalObservation(store, technicalStores, runId, selectedSourceBasis);
         default -> throw new TechnicalArgumentsException();
       };
     }
 
+    private TechnicalObservation reopenFailedTechnicalObservation(
+        RunStoreHandle store,
+        TechnicalStores technicalStores,
+        AnalysisRunId runId,
+        SelectedSourceBasis selectedSourceBasis) {
+      try {
+        AnalysisRunRequest request =
+            RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, runId).request();
+        if (request.requestKind() == AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS
+            && request.technicalAnalysisInputs().wireVersion()
+                == AnalysisRunRequest.TechnicalWireVersion.V5
+            && request.technicalAnalysisInputs().operation()
+                == AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS) {
+          return reopenBlockedEntryEvidenceObservation(
+              store, technicalStores, runId, selectedSourceBasis);
+        }
+        return reopenBlockedCollectObservation(store, technicalStores, runId, selectedSourceBasis);
+      } catch (TechnicalArgumentsException invalid) {
+        throw invalid;
+      } catch (RuntimeException unavailable) {
+        throw new TechnicalArgumentsException();
+      }
+    }
+
     /**
-     * Reopens a completed R1, R2, or R3 through its exact saved technical lineage before it is
-     * inspectable or artifact-queryable. This is deliberately distinct from the failed BLOCKED-R1
-     * observer so a completed result cannot be accepted merely because it has an output record.
+     * Reopens a completed V5 R1, R2, R3, or R4 result (or its retained V4 historical counterpart)
+     * through exact saved technical lineage before it is inspectable or artifact-queryable. This is
+     * deliberately distinct from the failed blocked-run observer so a result cannot be accepted
+     * merely because it has an output record.
      */
     private TechnicalObservation reopenCompletedTechnicalObservation(
         RunStoreHandle store,
@@ -2724,6 +3357,8 @@ final class TechnicalAnalysisConfiguredRuntime {
         requireInstalledTechnicalUpstream(
             store, runId, request, output, selectedSourceBasis, technical.operation());
         switch (technical.operation()) {
+          case COLLECT_FRONTEND ->
+              reopenFrontendMaterialUpstream(store, runId, selectedSourceBasis);
           case COLLECT_CODE -> requireCompletedR1(store, runId, selectedSourceBasis);
           case ANALYZE_PERSISTENCE -> requireCompletedR2(store, runId, selectedSourceBasis);
           case ASSEMBLE_MATERIALS ->
@@ -2759,9 +3394,18 @@ final class TechnicalAnalysisConfiguredRuntime {
         AnalysisRunRequest r3Request,
         TechnicalRunOutput r3Technical,
         SelectedSourceBasis selectedSourceBasis) {
+      boolean fourOperationRequest =
+          r3Request.technicalAnalysisInputs().wireVersion()
+              == AnalysisRunRequest.TechnicalWireVersion.V5;
       ReadyMaterialUpstream r2 =
-          reopenMaterialUpstream(
-              store, r3Technical.persistence().address().runId(), selectedSourceBasis);
+          fourOperationRequest
+              ? reopenMaterialUpstream(
+                  store,
+                  r3Technical.persistence().address().runId(),
+                  r3Request.technicalAnalysisInputs().frontendPublication().address().runId(),
+                  selectedSourceBasis)
+              : reopenMaterialUpstream(
+                  store, r3Technical.persistence().address().runId(), selectedSourceBasis);
       TechnicalRunOutput r2Technical = r2.r2Technical();
       if (!r2.r2Run().runId().equals(r3Technical.persistence().address().runId())
           || r3Request.technicalAnalysisInputs().operation()
@@ -2772,7 +3416,9 @@ final class TechnicalAnalysisConfiguredRuntime {
               .equals(r2Technical.persistence())
           || !r3Technical.upstreamPublication().equals(r2Technical.persistence())
           || !r3Technical.readinessReport().equals(r2Technical.readinessReport())
-          || !r3Technical.frontendIndex().equals(r2Technical.frontendIndex())
+          || (fourOperationRequest
+              ? !r3Technical.frontendIndex().equals(r2.frontend().publication())
+              : !r3Technical.frontendIndex().equals(r2Technical.frontendIndex()))
           || !r3Technical.applicationDiscovery().equals(r2Technical.applicationDiscovery())
           || !r3Technical.navigation().equals(r2Technical.navigation())
           || !r3Technical.persistence().equals(r2Technical.persistence())
@@ -2783,14 +3429,31 @@ final class TechnicalAnalysisConfiguredRuntime {
     }
 
     private TechnicalStores technicalStores(RunStoreHandle store) {
+      return technicalStores(store, null);
+    }
+
+    /**
+     * Opens the narrow R4 variable-file budget from the saved request, never from the current
+     * configuration. All other technical reads keep the historical fixed store limits.
+     */
+    private TechnicalStores technicalStores(RunStoreHandle store, AnalysisRunRequest savedRequest) {
       CanonicalJsonCodec json = new CanonicalJsonCodec();
       CanonicalArtifactPolicyRegistry policies =
           SourceAnalysisExecution.loadPolicies(storage.artifactPolicyRegistry(), json);
+      ArtifactStoreLimits limits =
+          savedRequest != null
+                  && savedRequest.requestKind() == AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS
+                  && savedRequest.technicalAnalysisInputs().wireVersion()
+                      == AnalysisRunRequest.TechnicalWireVersion.V5
+                  && savedRequest.technicalAnalysisInputs().operation()
+                      == AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS
+              ? entryEvidenceStoreLimits(
+                  savedRequest.technicalAnalysisInputs().entryEvidenceProfile())
+              : TECHNICAL_STORE_LIMITS;
       return new TechnicalStores(
           new ArtifactReference(policies.reference().artifactId(), policies.reference().sha256()),
-          new FileSystemCanonicalModuleArtifactStore(store, json, policies, TECHNICAL_STORE_LIMITS),
-          new FileSystemCanonicalAnalysisStepArtifactStore(
-              store, json, policies, TECHNICAL_STORE_LIMITS));
+          new FileSystemCanonicalModuleArtifactStore(store, json, policies, limits),
+          new FileSystemCanonicalAnalysisStepArtifactStore(store, json, policies, limits));
     }
 
     /**
@@ -2816,6 +3479,8 @@ final class TechnicalAnalysisConfiguredRuntime {
         if (request.requestKind() != AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS
             || request.technicalAnalysisInputs().operation() != operationFor(invocation.operation())
             || !request.selectedSourceBasis().equals(selectedSourceBasis)
+            || request.technicalAnalysisInputs().wireVersion()
+                != AnalysisRunRequest.TechnicalWireVersion.V5
             || (request.technicalAnalysisInputs().operation()
                     == AnalysisRunRequest.TechnicalOperation.COLLECT_CODE
                 && !request
@@ -2870,7 +3535,8 @@ final class TechnicalAnalysisConfiguredRuntime {
         ReadyPersistenceUpstream r1,
         AnalysisRunReference r2Run,
         AnalysisRunRequest r2Request,
-        TechnicalRunOutput r2Technical) {
+        TechnicalRunOutput r2Technical,
+        FrontendMaterialUpstream frontend) {
 
       private ReadyMaterialUpstream {
         Objects.requireNonNull(r1, "R1 upstream");
@@ -2885,6 +3551,20 @@ final class TechnicalAnalysisConfiguredRuntime {
 
       private TechnicalRunOutput r1Technical() {
         return r1.technical();
+      }
+    }
+
+    /** The independent R1 frontend branch retained for a v3 R4 request. */
+    private record FrontendMaterialUpstream(
+        AnalysisRunId owner, ArtifactControls controls, ModulePublicationReference publication) {
+
+      private FrontendMaterialUpstream {
+        Objects.requireNonNull(owner, "R1 frontend owner");
+        Objects.requireNonNull(controls, "R1 frontend controls");
+        Objects.requireNonNull(publication, "R1 frontend publication");
+        if (!owner.equals(publication.address().runId())) {
+          throw new IllegalArgumentException("R1 frontend publication owner is invalid");
+        }
       }
     }
 
@@ -3018,9 +3698,10 @@ final class TechnicalAnalysisConfiguredRuntime {
 
   private static List<String> requiredOperationSections(String operation) {
     return switch (operation) {
-      case "collect-code" -> List.of("java", "frontend");
+      case "collect-frontend" -> List.of("frontend");
+      case "collect-code" -> List.of("java");
       case "analyze-persistence" -> List.of("persistence");
-      case "assemble-materials" -> List.of("readingMaterials");
+      case "assemble-materials" -> List.of("evidence");
       case "inspect", "artifact" -> List.of();
       default -> throw new TechnicalArgumentsException();
     };
@@ -3030,7 +3711,9 @@ final class TechnicalAnalysisConfiguredRuntime {
       String operation,
       AnalysisRunId requestedRunId,
       AnalysisRunId upstreamRunId,
+      AnalysisRunId frontendRunId,
       TechnicalArtifactQueryKey technicalArtifactQueryKey,
+      String entryId,
       Integer maxBytes,
       String artifactFormat,
       Path artifactOutput) {
@@ -3044,15 +3727,17 @@ final class TechnicalAnalysisConfiguredRuntime {
       }
       String upstreamOption =
           switch (operation) {
-            case "collect-code" -> null;
+            case "collect-frontend", "collect-code" -> null;
             case "analyze-persistence" -> "--code-run";
             case "assemble-materials" -> "--persistence-run";
             case "inspect", "artifact" -> null;
             default -> throw new TechnicalArgumentsException();
           };
       String upstreamValue = null;
+      String frontendRunValue = null;
       String requestedRunValue = null;
       String technicalArtifactKeyValue = null;
+      String entryIdValue = null;
       String maxBytesValue = null;
       String artifactFormatValue = null;
       String artifactOutputValue = null;
@@ -3071,10 +3756,18 @@ final class TechnicalAnalysisConfiguredRuntime {
           requestedRunValue = value;
         } else if (name.equals(upstreamOption) && upstreamValue == null) {
           upstreamValue = value;
+        } else if ("assemble-materials".equals(operation)
+            && "--frontend-run".equals(name)
+            && frontendRunValue == null) {
+          frontendRunValue = value;
         } else if ("artifact".equals(operation)
             && "--key".equals(name)
             && technicalArtifactKeyValue == null) {
           technicalArtifactKeyValue = value;
+        } else if ("artifact".equals(operation)
+            && "--entry-id".equals(name)
+            && entryIdValue == null) {
+          entryIdValue = value;
         } else if ("artifact".equals(operation)
             && "--max-bytes".equals(name)
             && maxBytesValue == null) {
@@ -3091,37 +3784,46 @@ final class TechnicalAnalysisConfiguredRuntime {
           throw new TechnicalArgumentsException();
         }
       }
-      if (upstreamOption != null && upstreamValue == null) {
-        throw new TechnicalArgumentsException();
-      }
-      if ("inspect".equals(operation) && requestedRunValue == null) {
-        throw new TechnicalArgumentsException();
-      }
-      if ("artifact".equals(operation)
-          && (requestedRunValue == null
-              || technicalArtifactKeyValue == null
-              || maxBytesValue == null)) {
-        throw new TechnicalArgumentsException();
-      }
       TechnicalArtifactQueryKey technicalArtifactKey =
           technicalArtifactKeyValue == null
               ? null
               : parseTechnicalArtifactKey(technicalArtifactKeyValue);
-      if ((artifactFormatValue == null) != (artifactOutputValue == null)
-          || (artifactFormatValue != null
-              && (!"markdown".equals(artifactFormatValue)
-                  || technicalArtifactKey
-                      != TechnicalArtifactQueryKey.CODE_READING_MATERIALS_V2))) {
-        throw new TechnicalArgumentsException();
-      }
       return new Invocation(
           operation,
           requestedRunValue == null ? null : parseRunId(requestedRunValue),
           upstreamValue == null ? null : parseRunId(upstreamValue),
+          frontendRunValue == null ? null : parseRunId(frontendRunValue),
           technicalArtifactKey,
+          entryIdValue,
           maxBytesValue == null ? null : parsePositiveInt(maxBytesValue),
           artifactFormatValue,
           artifactOutputValue == null ? null : parseArtifactOutput(artifactOutputValue));
+    }
+
+    private void requireRequiredOptions() {
+      if (("analyze-persistence".equals(operation) && upstreamRunId == null)
+          || ("assemble-materials".equals(operation)
+              && (upstreamRunId == null || frontendRunId == null))
+          || ("inspect".equals(operation) && requestedRunId == null)
+          || ("artifact".equals(operation)
+              && (requestedRunId == null
+                  || technicalArtifactQueryKey == null
+                  || maxBytes == null))) {
+        throw new TechnicalArgumentsException();
+      }
+      if ((technicalArtifactQueryKey == TechnicalArtifactQueryKey.ENTRY_EVIDENCE
+              && !isEntryId(entryId))
+          || (technicalArtifactQueryKey != TechnicalArtifactQueryKey.ENTRY_EVIDENCE
+              && entryId != null)) {
+        throw new TechnicalArgumentsException();
+      }
+      if ((artifactFormat == null) != (artifactOutput == null)
+          || (artifactFormat != null
+              && (!"markdown".equals(artifactFormat)
+                  || technicalArtifactQueryKey
+                      != TechnicalArtifactQueryKey.CODE_READING_MATERIALS_V2))) {
+        throw new TechnicalArgumentsException();
+      }
     }
 
     private static AnalysisRunId parseRunId(String value) {
@@ -3152,6 +3854,10 @@ final class TechnicalAnalysisConfiguredRuntime {
       }
     }
 
+    private static boolean isEntryId(String value) {
+      return value != null && value.matches("entry:[0-9a-f]{64}");
+    }
+
     private static Path parseArtifactOutput(String value) {
       try {
         return SourceAnalysisExecution.argumentPath(value);
@@ -3163,6 +3869,7 @@ final class TechnicalAnalysisConfiguredRuntime {
 
   private static AnalysisRunRequest.TechnicalOperation operationFor(String operation) {
     return switch (operation) {
+      case "collect-frontend" -> AnalysisRunRequest.TechnicalOperation.COLLECT_FRONTEND;
       case "collect-code" -> AnalysisRunRequest.TechnicalOperation.COLLECT_CODE;
       case "analyze-persistence" -> AnalysisRunRequest.TechnicalOperation.ANALYZE_PERSISTENCE;
       case "assemble-materials" -> AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS;
@@ -3210,9 +3917,9 @@ final class TechnicalAnalysisConfiguredRuntime {
     }
   }
 
-  private static final class TechnicalV2CompilationInputRequiredException extends RuntimeException {
+  private static final class TechnicalConfigurationSchemaRetiredException extends RuntimeException {
 
-    private TechnicalV2CompilationInputRequiredException() {
+    private TechnicalConfigurationSchemaRetiredException() {
       super(null, null, false, false);
     }
   }

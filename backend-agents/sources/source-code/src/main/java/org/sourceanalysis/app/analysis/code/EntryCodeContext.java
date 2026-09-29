@@ -222,7 +222,8 @@ public record EntryCodeContext(
       boolean deferred,
       List<CallTarget> targets,
       String resolution,
-      String resolutionDetail) {
+      String resolutionDetail,
+      List<CallObservation> observations) {
 
     public CallSite {
       callKey = required(callKey, "call key");
@@ -258,7 +259,18 @@ public record EntryCodeContext(
             "call enclosing control indexes must be distinct and nonnegative");
       }
       targets = immutableDistinct(targets, "call targets", CallTarget::identity);
-      if (!Set.of("LOCATED", "CANDIDATES", "UNRESOLVED").contains(resolution)) {
+      observations =
+          observations == null
+              ? List.of()
+              : immutableDistinct(observations, "call observations", CallObservation::identity);
+      if (!Set.of(
+              "LOCATED",
+              "CANDIDATES",
+              "UNRESOLVED",
+              "EXTERNAL",
+              "QUERY_FAILED",
+              "NAVIGATION_CONFLICT")
+          .contains(resolution)) {
         throw new IllegalArgumentException("call resolution is unsupported");
       }
       if ("LOCATED".equals(resolution) && targets.size() != 1) {
@@ -268,9 +280,46 @@ public record EntryCodeContext(
           && (resolutionDetail == null || resolutionDetail.isBlank())) {
         throw new IllegalArgumentException("non-located call resolution needs detail");
       }
-      if ("UNRESOLVED".equals(resolution) && !targets.isEmpty()) {
-        throw new IllegalArgumentException("unresolved call resolution cannot carry targets");
+      if (("UNRESOLVED".equals(resolution) || "EXTERNAL".equals(resolution))
+          && !targets.isEmpty()) {
+        throw new IllegalArgumentException(
+            "unresolved or external call resolution cannot carry targets");
       }
+    }
+
+    /**
+     * Compatibility constructor for the existing v2 in-memory call model. The v2 publisher omits
+     * observations from its closed CALL wire; v3 publishes them beside the legacy call shape.
+     */
+    public CallSite(
+        String callKey,
+        String callerMethodKey,
+        String kind,
+        SourceRange site,
+        SourceRange navigationSite,
+        String expression,
+        String receiverExpression,
+        List<ActualArgument> actualArguments,
+        List<Integer> enclosingControlIndexes,
+        boolean deferred,
+        List<CallTarget> targets,
+        String resolution,
+        String resolutionDetail) {
+      this(
+          callKey,
+          callerMethodKey,
+          kind,
+          site,
+          navigationSite,
+          expression,
+          receiverExpression,
+          actualArguments,
+          enclosingControlIndexes,
+          deferred,
+          targets,
+          resolution,
+          resolutionDetail,
+          List.of());
     }
 
     /** Compatibility constructor for the pre-Task-1.2 typed test seam. */
@@ -295,7 +344,126 @@ public record EntryCodeContext(
           "METHOD_REFERENCE".equals(kind) || "CONSTRUCTOR_REFERENCE".equals(kind),
           targets,
           targets.size() == 1 ? "LOCATED" : targets.isEmpty() ? "UNRESOLVED" : "CANDIDATES",
-          targets.size() == 1 ? null : "navigation has not produced one unique declaration");
+          targets.size() == 1 ? null : "navigation has not produced one unique declaration",
+          List.of());
+    }
+  }
+
+  /**
+   * Evidence that is intentionally not a confirmed repository call edge. It keeps Core binding,
+   * language-server location, and query-failure facts attached to the physical {@link CallSite}
+   * without letting a consumer expand them as customer source.
+   */
+  public record CallObservation(
+      String code,
+      String operation,
+      String uriKind,
+      SourceRange sourceRange,
+      String association,
+      String declarationKey,
+      String declaringTypeKey,
+      String typeOrigin,
+      String displayIdentity,
+      String detail) {
+
+    public CallObservation {
+      code = required(code, "call observation code");
+      operation = required(operation, "call observation operation");
+      uriKind = required(uriKind, "call observation URI kind");
+      sourceRange = Objects.requireNonNull(sourceRange, "call observation source range");
+      if (!Set.of("CONFIRMED", "UNCONFIRMED", "FAILED").contains(association)) {
+        throw new IllegalArgumentException("call observation association is unsupported");
+      }
+      if (declarationKey != null && declarationKey.isBlank()) {
+        throw new IllegalArgumentException("call observation declaration key cannot be blank");
+      }
+      if (declaringTypeKey != null && declaringTypeKey.isBlank()) {
+        throw new IllegalArgumentException("call observation declaring type key cannot be blank");
+      }
+      if (typeOrigin != null && typeOrigin.isBlank()) {
+        throw new IllegalArgumentException("call observation type origin cannot be blank");
+      }
+      if (displayIdentity != null && displayIdentity.isBlank()) {
+        throw new IllegalArgumentException("call observation display identity cannot be blank");
+      }
+      detail = required(detail, "call observation detail");
+      if (externalCode(code)
+          && !trustedExternalIdentity(
+              code,
+              operation,
+              uriKind,
+              association,
+              declarationKey,
+              declaringTypeKey,
+              typeOrigin,
+              displayIdentity)) {
+        throw new IllegalArgumentException(
+            "external call observation requires a confirmed binary Core or language-server identity");
+      }
+    }
+
+    /** A confirmed external method identity, never a repository target. */
+    public boolean externalIdentity() {
+      return externalCode(code);
+    }
+
+    /**
+     * Checks evidence shape, rather than trusting an external-looking code. Core observations carry
+     * declaration/type keys; a language-server observation carries its identified binary symbol.
+     * Neither an unconfirmed source candidate nor a recovered/source binding may claim the normal
+     * external boundary.
+     */
+    public boolean trustedExternalIdentity() {
+      return trustedExternalIdentity(
+          code,
+          operation,
+          uriKind,
+          association,
+          declarationKey,
+          declaringTypeKey,
+          typeOrigin,
+          displayIdentity);
+    }
+
+    private static boolean trustedExternalIdentity(
+        String code,
+        String operation,
+        String uriKind,
+        String association,
+        String declarationKey,
+        String declaringTypeKey,
+        String typeOrigin,
+        String displayIdentity) {
+      if (!externalCode(code)
+          || !"CONFIRMED".equals(association)
+          || !"BINARY".equals(uriKind)
+          || !"BINARY".equals(typeOrigin)) {
+        return false;
+      }
+      if ("EXTERNAL_BINARY_BINDING".equals(code)) {
+        return "JDT_CORE_BINDING".equals(operation)
+            && declarationKey != null
+            && declaringTypeKey != null
+            && displayIdentity != null;
+      }
+      return "JDT_LANGUAGE_SERVER".equals(operation) && displayIdentity != null;
+    }
+
+    private static boolean externalCode(String code) {
+      return "EXTERNAL_BINARY_BINDING".equals(code) || "EXTERNAL_BINARY_LOCATION".equals(code);
+    }
+
+    private String identity() {
+      return String.join(
+          "|",
+          code,
+          operation,
+          uriKind,
+          Integer.toString(sourceRange.startOffsetUtf16()),
+          Integer.toString(sourceRange.lengthUtf16()),
+          association,
+          declarationKey == null ? "" : declarationKey,
+          displayIdentity == null ? "" : displayIdentity);
     }
   }
 

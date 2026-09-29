@@ -346,6 +346,10 @@ public final class NodeFrontendSyntaxTool implements FrontendSyntaxTool {
     for (JsonNode node : array(payload, "wrapperPath")) {
       wrappers.add(readWrapper(object(node), documents));
     }
+    List<FrontendSupportingSourceUnit> supportingSourceUnits = new ArrayList<>();
+    for (JsonNode node : optionalArray(payload, "supportingSourceUnits")) {
+      supportingSourceUnits.add(readSupportingSourceUnit(object(node), documents));
+    }
     List<FrontendArgumentBinding> bindings = new ArrayList<>();
     for (JsonNode node : array(payload, "argumentBindings")) {
       bindings.add(readBinding(object(node)));
@@ -361,6 +365,7 @@ public final class NodeFrontendSyntaxTool implements FrontendSyntaxTool {
         nullableText(payload, "resolvedPath"),
         null,
         wrappers,
+        supportingSourceUnits,
         bindings,
         nullableText(payload, "diagnosticCode"),
         nullableText(payload, "baseUrlExpression"),
@@ -386,6 +391,24 @@ public final class NodeFrontendSyntaxTool implements FrontendSyntaxTool {
         sourceUnitKind,
         requiredText(payload, "fromUnit"),
         requiredText(payload, "toUnit"));
+  }
+
+  private static FrontendSupportingSourceUnit readSupportingSourceUnit(
+      ObjectNode payload, Map<String, SourceDocument> documents) {
+    String path = requiredText(payload, "sourcePath");
+    SourceDocument document = sourceDocument(documents, path, requiredText(payload, "sourceHash"));
+    FrontendWrapperCall.SourceUnitKind sourceUnitKind;
+    try {
+      sourceUnitKind =
+          FrontendWrapperCall.SourceUnitKind.valueOf(requiredText(payload, "sourceUnitKind"));
+    } catch (IllegalArgumentException invalid) {
+      throw protocolInvalid();
+    }
+    return new FrontendSupportingSourceUnit(
+        path,
+        document.sourceHash(),
+        range(object(payload.get("sourceUnitRange")), document),
+        sourceUnitKind);
   }
 
   private static FrontendArgumentBinding readBinding(ObjectNode payload) {
@@ -459,6 +482,17 @@ public final class NodeFrontendSyntaxTool implements FrontendSyntaxTool {
   private static ArrayNode array(ObjectNode object, String field) {
     JsonNode node = object.get(field);
     if (node == null || !node.isArray()) {
+      throw protocolInvalid();
+    }
+    return (ArrayNode) node;
+  }
+
+  private static ArrayNode optionalArray(ObjectNode object, String field) {
+    JsonNode node = object.get(field);
+    if (node == null) {
+      return JsonNodeFactory.instance.arrayNode();
+    }
+    if (!node.isArray()) {
       throw protocolInvalid();
     }
     return (ArrayNode) node;

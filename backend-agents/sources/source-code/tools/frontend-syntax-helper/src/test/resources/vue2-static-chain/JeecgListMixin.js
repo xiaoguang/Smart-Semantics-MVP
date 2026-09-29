@@ -8,5 +8,8 @@ export const JeecgListMixin = {
         this.dataSource = response.data
       })
     },
+    getQueryParams() {
+      return { pageNo: 1 }
+    },
   },
 }

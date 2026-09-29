@@ -37,6 +37,15 @@ final class AtomicCanonicalPublicationEngine {
   private static final String MODULE_ARTIFACT_ID_DOMAIN = "canonical-module-artifact-id-v1";
   private static final String MODULE_ARTIFACT_ROOT_DOMAIN = "canonical-module-artifact-root-v1";
   private static final String MODULE_RECEIPT_ID_DOMAIN = "canonical-module-receipt-id-v1";
+  private static final String ENTRY_EVIDENCE_TYPE = "ENTRY_EVIDENCE";
+  private static final String ENTRY_EVIDENCE_SCHEMA = "entry-evidence-v1";
+  private static final String ENTRY_EVIDENCE_INDEX_TYPE = "ENTRY_EVIDENCE_INDEX";
+  private static final String ENTRY_EVIDENCE_INDEX_SCHEMA = "entry-evidence-index-v1";
+  private static final String FRONTEND_EVIDENCE_COVERAGE_TYPE = "FRONTEND_EVIDENCE_COVERAGE";
+  private static final String FRONTEND_EVIDENCE_COVERAGE_SCHEMA = "frontend-evidence-coverage-v1";
+  private static final String ENTRY_EVIDENCE_INDEX_FILE = "entry-evidence-index.json";
+  private static final String FRONTEND_EVIDENCE_COVERAGE_FILE = "frontend-coverage.jsonl";
+  private static final String ENTRY_EVIDENCE_FILE_PLACEHOLDER = "<entry-evidence-file>";
   private static final ObjectMapper JSON = new ObjectMapper();
   private static final Comparator<String> UTF8_ORDER =
       AtomicCanonicalPublicationEngine::compareUtf8;
@@ -169,6 +178,7 @@ final class AtomicCanonicalPublicationEngine {
       descriptors.sort(Comparator.comparing(ArtifactDescriptor::fileName, UTF8_ORDER));
       requireUniqueFileNamesAndArtifactIds(descriptors);
       requireExpectedPayloadSet(request.address(), request.moduleVersion(), descriptors, true);
+      requireEntryEvidencePayloadSet(request.address(), request.payloads());
       if (descriptors.size() + 1 > limits.maxDirectoryEntries()) {
         throw invalidInstall();
       }
@@ -236,7 +246,9 @@ final class AtomicCanonicalPublicationEngine {
       throw invalidInstall();
     }
     ModuleArtifactContract contract = moduleArtifactContract(payload);
-    if (!contract.fileName().equals(payload.fileName())
+    if (!(isEntryEvidencePayload(payload)
+            ? isEntryEvidenceFileName(payload.fileName())
+            : contract.fileName().equals(payload.fileName()))
         || (!contract.addressFor(request.address().runId()).equals(request.address())
             && !isJavaCodeIndexGraphEnhancement(request.address(), payload))) {
       throw invalidInstall();
@@ -260,6 +272,9 @@ final class AtomicCanonicalPublicationEngine {
           validateStandaloneJsonArtifact(payload, parseCanonicalPayload(payload), policy);
       case CANONICAL_JSONL -> validateCanonicalJsonlArtifact(payload, policy);
       case RAW_UTF8 -> validateRawUtf8Artifact(payload, policy);
+    }
+    if (isEntryEvidencePayload(payload)) {
+      requireEntryEvidenceFileIdentity(payload);
     }
     return new ArtifactDescriptor(
         payload.fileName(),
@@ -453,6 +468,19 @@ final class AtomicCanonicalPublicationEngine {
       List<ArtifactDescriptor> descriptors =
           payloads.stream().map(VerifiedCanonicalPayload::descriptor).toList();
       requireExpectedPayloadSet(receipt.address(), receipt.moduleVersion(), descriptors, false);
+      requireEntryEvidencePayloadSet(
+          receipt.address(),
+          payloads.stream()
+              .map(
+                  payload ->
+                      new CanonicalModulePayload(
+                          payload.descriptor().fileName(),
+                          payload.descriptor().artifactType(),
+                          payload.descriptor().schemaVersion(),
+                          payload.descriptor().artifactId(),
+                          payload.descriptor().mediaType(),
+                          payload.canonicalUtf8()))
+              .toList());
       if (!moduleArtifactRoot(descriptors).equals(receipt.moduleArtifactRoot())) {
         throw invalidPublication();
       }
@@ -1144,7 +1172,7 @@ final class AtomicCanonicalPublicationEngine {
                         : null;
                 case 4 ->
                     "persistence-analysis".equals(analysisStepAddress.moduleKey())
-                        ? List.of("persistence-material-index.jsonl")
+                        ? persistenceMaterialPublicationFiles(moduleVersion, descriptors)
                         : null;
                 default -> null;
               };
@@ -1168,9 +1196,14 @@ final class AtomicCanonicalPublicationEngine {
                             "flow-slices.json")
                         : null;
                 case 4 ->
-                    "code-reading-materials".equals(analysisStepAddress.moduleKey())
-                        ? List.of("code-reading-materials.jsonl")
-                        : null;
+                    switch (analysisStepAddress.moduleKey()) {
+                      case "code-reading-materials" -> List.of("code-reading-materials.jsonl");
+                      case "entry-evidence" ->
+                          "v3".equals(moduleVersion)
+                              ? entryEvidencePublicationFiles(descriptors)
+                              : null;
+                      default -> null;
+                    };
                 default -> null;
               };
           case FLOW_INTERPRETATION ->
@@ -1315,6 +1348,130 @@ final class AtomicCanonicalPublicationEngine {
             "graph-gaps.jsonl",
             "graph-index.json",
             "java-code-index.jsonl");
+  }
+
+  private static List<String> persistenceMaterialPublicationFiles(
+      String moduleVersion, List<ArtifactDescriptor> descriptors) {
+    String expectedSchema =
+        switch (moduleVersion) {
+          case "v1", "v2" -> "persistence-material-index-v1";
+          case "v3" -> "persistence-material-index-v2";
+          default -> null;
+        };
+    if (expectedSchema == null
+        || descriptors.size() != 1
+        || !"persistence-material-index.jsonl".equals(descriptors.get(0).fileName())
+        || !"PERSISTENCE_MATERIAL_INDEX".equals(descriptors.get(0).artifactType())
+        || !expectedSchema.equals(descriptors.get(0).schemaVersion())) {
+      return null;
+    }
+    return List.of("persistence-material-index.jsonl");
+  }
+
+  private static List<String> entryEvidencePublicationFiles(List<ArtifactDescriptor> descriptors) {
+    List<String> names = descriptors.stream().map(ArtifactDescriptor::fileName).toList();
+    List<String> entryFiles =
+        names.stream().filter(AtomicCanonicalPublicationEngine::isEntryEvidenceFileName).toList();
+    List<String> expected = new ArrayList<>(entryFiles);
+    expected.add(ENTRY_EVIDENCE_INDEX_FILE);
+    expected.add(FRONTEND_EVIDENCE_COVERAGE_FILE);
+    expected.sort(UTF8_ORDER);
+    return names.equals(expected) ? expected : null;
+  }
+
+  private void requireEntryEvidencePayloadSet(
+      ModulePublicationAddress address, List<CanonicalModulePayload> payloads) {
+    if (!isEntryEvidenceAddress(address)) {
+      return;
+    }
+    ObjectNode index = null;
+    List<String> entryIds = new ArrayList<>();
+    for (CanonicalModulePayload payload : payloads) {
+      if (ENTRY_EVIDENCE_TYPE.equals(payload.artifactType())) {
+        String entryId = entryEvidenceId(entryEvidenceDocument(payload));
+        if (!entryIds.add(entryId)) {
+          throw new IllegalArgumentException("entry-evidence IDs must be unique");
+        }
+      } else if (ENTRY_EVIDENCE_INDEX_TYPE.equals(payload.artifactType())) {
+        if (index != null) {
+          throw new IllegalArgumentException("entry-evidence index must be unique");
+        }
+        index = entryEvidenceDocument(payload);
+      }
+    }
+    if (index == null) {
+      throw new IllegalArgumentException("entry-evidence payload set is incomplete");
+    }
+    List<String> indexedEntryIds = new ArrayList<>();
+    JsonNode entriesNode = index.get("entries");
+    if (!(entriesNode instanceof ArrayNode entries)) {
+      throw new IllegalArgumentException("entry-evidence index entries are required");
+    }
+    String previous = null;
+    for (JsonNode value : entries) {
+      if (!(value instanceof ObjectNode entry)) {
+        throw new IllegalArgumentException("entry-evidence index entry is invalid");
+      }
+      String entryId = entryEvidenceId(entry);
+      JsonNode file = entry.get("file");
+      if (file == null
+          || !file.isTextual()
+          || !entryEvidenceFileName(entryId).equals(file.textValue())
+          || (previous != null && UTF8_ORDER.compare(previous, entryId) >= 0)) {
+        throw new IllegalArgumentException("entry-evidence index entry identity is invalid");
+      }
+      indexedEntryIds.add(entryId);
+      previous = entryId;
+    }
+    List<String> orderedEntryIds = entryIds.stream().sorted(UTF8_ORDER).toList();
+    if (!indexedEntryIds.equals(orderedEntryIds)) {
+      throw new IllegalArgumentException("entry-evidence index does not close entry files");
+    }
+  }
+
+  private void requireEntryEvidenceFileIdentity(CanonicalModulePayload payload) {
+    String entryId = entryEvidenceId(entryEvidenceDocument(payload));
+    if (!entryEvidenceFileName(entryId).equals(payload.fileName())) {
+      throw new IllegalArgumentException("entry-evidence file does not match its entry ID");
+    }
+  }
+
+  private ObjectNode entryEvidenceDocument(CanonicalModulePayload payload) {
+    JsonNode parsed = canonicalJson.parseCanonical(payload.canonicalUtf8());
+    if (!(parsed instanceof ObjectNode document)) {
+      throw new IllegalArgumentException("entry-evidence payload must be a JSON object");
+    }
+    return document;
+  }
+
+  private static String entryEvidenceId(ObjectNode document) {
+    JsonNode entryId = document.get("entryId");
+    if (entryId == null
+        || !entryId.isTextual()
+        || !entryId.textValue().matches("entry:[0-9a-f]{64}")) {
+      throw new IllegalArgumentException("entry-evidence entry ID is invalid");
+    }
+    return entryId.textValue();
+  }
+
+  private static boolean isEntryEvidenceAddress(ModulePublicationAddress address) {
+    return address instanceof AnalysisStepModuleAddress module
+        && module.analysisStepKey() == AnalysisStepKey.BUSINESS_FLOWS
+        && module.moduleNumber() == 4
+        && "entry-evidence".equals(module.moduleKey());
+  }
+
+  private static boolean isEntryEvidencePayload(CanonicalModulePayload payload) {
+    return ENTRY_EVIDENCE_TYPE.equals(payload.artifactType())
+        && ENTRY_EVIDENCE_SCHEMA.equals(payload.schemaVersion());
+  }
+
+  private static boolean isEntryEvidenceFileName(String fileName) {
+    return fileName != null && fileName.matches("entry-[0-9a-f]{64}\\.json");
+  }
+
+  private static String entryEvidenceFileName(String entryId) {
+    return "entry-" + entryId.substring("entry:".length()) + ".json";
   }
 
   private static boolean isJavaCodeIndexGraphEnhancement(
@@ -1619,6 +1776,51 @@ final class AtomicCanonicalPublicationEngine {
     };
   }
 
+  private static ModuleArtifactContract businessFlowMaterialArtifactContract(
+      CanonicalModulePayload payload) {
+    String schemaVersion = payload.schemaVersion();
+    return switch (payload.artifactType()) {
+      case "CODE_READING_MATERIAL_SET" ->
+          schemaVersion.equals("code-reading-material-set-v1")
+                  || schemaVersion.equals("code-reading-material-set-v2")
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.BUSINESS_FLOWS,
+                  4,
+                  "code-reading-materials",
+                  "code-reading-materials.jsonl",
+                  CanonicalEnvelopeKind.CANONICAL_JSONL)
+              : null;
+      case ENTRY_EVIDENCE_TYPE ->
+          schemaVersion.equals(ENTRY_EVIDENCE_SCHEMA)
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.BUSINESS_FLOWS,
+                  4,
+                  "entry-evidence",
+                  ENTRY_EVIDENCE_FILE_PLACEHOLDER,
+                  CanonicalEnvelopeKind.STANDALONE_JSON)
+              : null;
+      case ENTRY_EVIDENCE_INDEX_TYPE ->
+          schemaVersion.equals(ENTRY_EVIDENCE_INDEX_SCHEMA)
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.BUSINESS_FLOWS,
+                  4,
+                  "entry-evidence",
+                  ENTRY_EVIDENCE_INDEX_FILE,
+                  CanonicalEnvelopeKind.STANDALONE_JSON)
+              : null;
+      case FRONTEND_EVIDENCE_COVERAGE_TYPE ->
+          schemaVersion.equals(FRONTEND_EVIDENCE_COVERAGE_SCHEMA)
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.BUSINESS_FLOWS,
+                  4,
+                  "entry-evidence",
+                  FRONTEND_EVIDENCE_COVERAGE_FILE,
+                  CanonicalEnvelopeKind.CANONICAL_JSONL)
+              : null;
+      default -> null;
+    };
+  }
+
   private static ModuleArtifactContract moduleArtifactContract(CanonicalModulePayload payload) {
     ModuleArtifactContract businessProcessContract = businessProcessArtifactContract(payload);
     if (businessProcessContract != null) {
@@ -1632,6 +1834,11 @@ final class AtomicCanonicalPublicationEngine {
         verifiedSourceInventoryArtifactContract(payload);
     if (verifiedSourceInventoryContract != null) {
       return verifiedSourceInventoryContract;
+    }
+    ModuleArtifactContract businessFlowMaterialContract =
+        businessFlowMaterialArtifactContract(payload);
+    if (businessFlowMaterialContract != null) {
+      return businessFlowMaterialContract;
     }
     if ("APPLICATION_DISCOVERY_JAVA_COMPILATION_ENVIRONMENT".equals(payload.artifactType())
         && "java-compilation-environment-v1".equals(payload.schemaVersion())) {
@@ -1652,7 +1859,8 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("APPLICATION_DISCOVERY_FRONTEND_HTTP_INDEX".equals(payload.artifactType())
-        && "frontend-http-index-v1".equals(payload.schemaVersion())) {
+        && ("frontend-http-index-v1".equals(payload.schemaVersion())
+            || "frontend-http-index-v2".equals(payload.schemaVersion()))) {
       return new ModuleArtifactContract(
           AnalysisStepKey.APPLICATION_DISCOVERY,
           6,
@@ -1832,7 +2040,8 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.STANDALONE_JSON);
     }
     if ("PROGRAM_GRAPHS_JAVA_CODE_INDEX".equals(payload.artifactType())
-        && "java-code-index-v2".equals(payload.schemaVersion())) {
+        && ("java-code-index-v2".equals(payload.schemaVersion())
+            || "java-code-index-v3".equals(payload.schemaVersion()))) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROGRAM_GRAPHS,
           7,
@@ -1848,24 +2057,6 @@ final class AtomicCanonicalPublicationEngine {
           "flow-compiler",
           "flow-compilation.json",
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
-    }
-    if ("CODE_READING_MATERIAL_SET".equals(payload.artifactType())
-        && "code-reading-material-set-v1".equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.BUSINESS_FLOWS,
-          4,
-          "code-reading-materials",
-          "code-reading-materials.jsonl",
-          CanonicalEnvelopeKind.CANONICAL_JSONL);
-    }
-    if ("CODE_READING_MATERIAL_SET".equals(payload.artifactType())
-        && "code-reading-material-set-v2".equals(payload.schemaVersion())) {
-      return new ModuleArtifactContract(
-          AnalysisStepKey.BUSINESS_FLOWS,
-          4,
-          "code-reading-materials",
-          "code-reading-materials.jsonl",
-          CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     if ("BUSINESS_FLOWS_CAPSULE_PROJECTION".equals(payload.artifactType())
         && "business-flows-capsule-projection-v11".equals(payload.schemaVersion())) {
@@ -1976,7 +2167,8 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.MODULE_ARTIFACT_JSON);
     }
     if ("PERSISTENCE_MATERIAL_INDEX".equals(payload.artifactType())
-        && "persistence-material-index-v1".equals(payload.schemaVersion())) {
+        && ("persistence-material-index-v1".equals(payload.schemaVersion())
+            || "persistence-material-index-v2".equals(payload.schemaVersion()))) {
       return new ModuleArtifactContract(
           AnalysisStepKey.PROVEN_CODE_FACTS,
           4,

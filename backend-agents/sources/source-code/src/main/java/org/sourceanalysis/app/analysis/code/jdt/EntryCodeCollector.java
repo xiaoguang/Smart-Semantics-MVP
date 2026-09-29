@@ -138,20 +138,33 @@ final class EntryCodeCollector {
         JdtNavigationResolver.ResolvedCall resolution = byCall.get(call.localId());
         List<ResolvedTarget> targets = new ArrayList<>();
         if (resolution != null) {
+          List<UnadmittedTarget> unadmitted = new ArrayList<>();
           for (JdtNavigationResolver.Candidate candidate : resolution.candidates()) {
             MethodInfo target = index.methodAt(candidate.sourcePath(), candidate.selectionRange());
-            targets.add(new ResolvedTarget(candidate, target));
-            if (target != null
+            unadmitted.add(new UnadmittedTarget(candidate, target));
+          }
+          for (JdtNavigationResolver.Candidate observation : resolution.observations()) {
+            MethodInfo target =
+                index.methodAt(observation.sourcePath(), observation.selectionRange());
+            unadmitted.add(new UnadmittedTarget(observation, target));
+          }
+          for (UnadmittedTarget candidate : unadmitted) {
+            CandidateAdmission admission = admission(call, resolution, candidate, unadmitted);
+            ResolvedTarget target =
+                new ResolvedTarget(candidate.candidate(), candidate.method(), admission);
+            targets.add(target);
+            if (target.method() != null
+                && target.admission().expandable()
                 && next.depth() < budget.maxDepth()
-                && !included.containsKey(target.methodKey())) {
-              pending.addLast(new PendingMethod(target, next.depth() + 1));
+                && !included.containsKey(target.method().methodKey())) {
+              pending.addLast(new PendingMethod(target.method(), next.depth() + 1));
             }
           }
-          if (!resolution.diagnostics().isEmpty()) {
+          if (requiresLimitation(resolution)) {
             limitations.add(
                 new EntryCodeContext.Limitation(
                     resolution.status(),
-                    String.join("; ", resolution.diagnostics()),
+                    resolutionDetail(resolution, "JDT navigation requires review"),
                     List.of(method.methodKey()),
                     List.of(callKey(method.sourcePath(), call.sourceRange()))));
           }
@@ -444,13 +457,24 @@ final class EntryCodeCollector {
   private EntryCodeContext.CallSite callSite(
       RawCall raw, Set<String> includedKeys, List<EntryCodeContext.Limitation> limitations) {
     String key = callKey(raw.caller().sourcePath(), raw.call().sourceRange());
+    String resolverStatus = raw.resolution() == null ? "UNRESOLVED" : raw.resolution().status();
     Map<String, EntryCodeContext.CallTarget> targetsByIdentity = new LinkedHashMap<>();
     for (ResolvedTarget resolved : raw.targets()) {
       MethodInfo target = resolved.method();
-      boolean included = target != null && includedKeys.contains(target.methodKey());
+      boolean admitted = resolved.admission().expandable();
+      boolean included = admitted && target != null && includedKeys.contains(target.methodKey());
       String expansion;
       String reason;
-      if (included && target.declaration().bodyPresent()) {
+      if (!admitted) {
+        expansion = "NOT_EXPANDED";
+        reason = resolved.admission().reason();
+        limitations.add(
+            new EntryCodeContext.Limitation(
+                reason,
+                "JDT retained an unconfirmed call target: " + resolved.candidate().displayName(),
+                List.of(raw.caller().methodKey()),
+                List.of(key)));
+      } else if (included && target.declaration().bodyPresent()) {
         expansion = "BODY_INCLUDED";
         reason = null;
       } else if (included) {
@@ -459,7 +483,9 @@ final class EntryCodeCollector {
       } else {
         expansion = "NOT_EXPANDED";
         reason =
-            target == null ? "TARGET_LOCATION_IS_NOT_A_CALLABLE_DECLARATION" : "COLLECTION_LIMIT";
+            target == null
+                ? "TARGET_LOCATION_IS_NOT_A_CALLABLE_DECLARATION"
+                : nonExpansionReason(resolverStatus);
       }
       List<EntryCodeContext.ArgumentAssociation> associations =
           included ? associations(raw.call(), target.declaration()) : List.of();
@@ -479,25 +505,39 @@ final class EntryCodeCollector {
       targetsByIdentity.merge(identity, candidate, EntryCodeCollector::mergeTarget);
     }
     List<EntryCodeContext.CallTarget> targets = List.copyOf(targetsByIdentity.values());
+    List<EntryCodeContext.CallObservation> observations = callObservations(raw, targets);
+    boolean hasUnadmittedTarget =
+        raw.targets().stream().anyMatch(target -> !target.admission().expandable());
     String resolution;
     String detail;
-    if (targets.isEmpty()) {
+    if ("QUERY_FAILED".equals(resolverStatus)) {
+      resolution = "QUERY_FAILED";
+      detail = resolutionDetail(raw.resolution(), "JDT navigation query did not complete");
+    } else if ("NAVIGATION_CONFLICT".equals(resolverStatus)) {
+      resolution = "NAVIGATION_CONFLICT";
+      detail = resolutionDetail(raw.resolution(), "JDT navigation produced conflicting candidates");
+    } else if ("EXTERNAL".equals(resolverStatus)
+        || resolvedBinaryOutsideSnapshot(raw.call(), targets)) {
+      resolution = "EXTERNAL";
+      detail =
+          resolvedBinaryOutsideSnapshot(raw.call(), targets)
+              ? "JDT Core resolved binary declaration " + raw.call().binding().displayIdentity()
+              : resolutionDetail(raw.resolution(), "JDT confirmed a binary target outside R0");
+    } else if (targets.isEmpty()) {
       resolution = "UNRESOLVED";
       detail = "JDT returned no repository callable target";
       limitations.add(
           new EntryCodeContext.Limitation(
               "UNRESOLVED_CALL", detail, List.of(raw.caller().methodKey()), List.of(key)));
-    } else if (targets.size() == 1
-        && raw.resolution() != null
-        && "LOCATED".equals(raw.resolution().status())) {
+    } else if (targets.size() == 1 && "LOCATED".equals(resolverStatus) && !hasUnadmittedTarget) {
       resolution = "LOCATED";
       detail = null;
+    } else if ("LOCATED".equals(resolverStatus) && hasUnadmittedTarget) {
+      resolution = "NAVIGATION_CONFLICT";
+      detail = "JDT located an unconfirmed repository target";
     } else {
       resolution = "CANDIDATES";
-      detail =
-          raw.resolution() != null && "NAVIGATION_CONFLICT".equals(raw.resolution().status())
-              ? "NAVIGATION_CONFLICT"
-              : "JDT returned multiple or non-unique target candidates";
+      detail = "JDT returned multiple or non-unique target candidates";
     }
     List<Integer> enclosingControls =
         raw.caller().response().controls().stream()
@@ -524,7 +564,224 @@ final class EntryCodeCollector {
         raw.call().deferred(),
         targets,
         resolution,
-        detail);
+        detail,
+        observations);
+  }
+
+  private static List<EntryCodeContext.CallObservation> callObservations(
+      RawCall raw, List<EntryCodeContext.CallTarget> targets) {
+    List<EntryCodeContext.CallObservation> observations = new ArrayList<>();
+    JdtSyntaxProtocol.SourceRange navigationRange = raw.call().navigationRange();
+    SourceRange observationRange =
+        navigationRange == null
+            ? sourceRange(raw.call().sourceRange())
+            : sourceRange(navigationRange);
+    if (resolvedBinaryOutsideSnapshot(raw.call(), targets)) {
+      JdtSyntaxProtocol.BindingObservation binding = raw.call().binding();
+      observations.add(
+          new EntryCodeContext.CallObservation(
+              "EXTERNAL_BINARY_BINDING",
+              "JDT_CORE_BINDING",
+              "BINARY",
+              observationRange,
+              "CONFIRMED",
+              binding.declarationKey(),
+              binding.declaringTypeKey(),
+              binding.typeOrigin(),
+              binding.displayIdentity(),
+              "JDT Core resolved a non-recovered binary method binding outside R0"));
+    }
+    for (ResolvedTarget target : raw.targets()) {
+      String reason = target.admission().reason();
+      if (!unconfirmedReason(reason)) {
+        continue;
+      }
+      JdtNavigationResolver.Candidate candidate = target.candidate();
+      boolean queryFailure = "QUERY_FAILED_NOT_EXPANDED".equals(reason);
+      observations.add(
+          new EntryCodeContext.CallObservation(
+              observationCode(reason),
+              candidate.navigationKinds().get(0),
+              "REPOSITORY_SOURCE",
+              sourceRange(candidate.selectionRange()),
+              queryFailure ? "FAILED" : "UNCONFIRMED",
+              null,
+              null,
+              null,
+              candidate.displayName(),
+              reason));
+    }
+    if (raw.resolution() == null) {
+      return List.copyOf(observations);
+    }
+    if ("QUERY_FAILED".equals(raw.resolution().status())) {
+      raw.resolution()
+          .diagnostics()
+          .forEach(
+              diagnostic ->
+                  observations.add(
+                      new EntryCodeContext.CallObservation(
+                          "JDT_QUERY_FAILED",
+                          "JDT_LANGUAGE_SERVER",
+                          "UNKNOWN",
+                          observationRange,
+                          "FAILED",
+                          null,
+                          null,
+                          null,
+                          null,
+                          diagnostic)));
+    }
+    return List.copyOf(observations);
+  }
+
+  private static boolean unconfirmedReason(String reason) {
+    return reason != null
+        && Set.of(
+                "NAVIGATION_CONFLICT_NOT_EXPANDED",
+                "QUERY_FAILED_NOT_EXPANDED",
+                "TARGET_LOCATION_IS_NOT_A_CALLABLE_DECLARATION",
+                "BINDING_DECLARATION_MISMATCH",
+                "BINDING_UNAVAILABLE_NOT_EXPANDED",
+                "BINDING_UNSUPPORTED_CALL_KIND_NOT_EXPANDED")
+            .contains(reason);
+  }
+
+  private static String observationCode(String reason) {
+    return switch (reason) {
+      case "QUERY_FAILED_NOT_EXPANDED" -> "QUERY_FAILED_PARTIAL_LOCATION";
+      case "BINDING_DECLARATION_MISMATCH",
+          "BINDING_UNAVAILABLE_NOT_EXPANDED",
+          "BINDING_UNSUPPORTED_CALL_KIND_NOT_EXPANDED" ->
+          "UNCONFIRMED_BINDING_LOCATION";
+      case "TARGET_LOCATION_IS_NOT_A_CALLABLE_DECLARATION" -> "UNCONFIRMED_TARGET_LOCATION";
+      default -> "UNCONFIRMED_NAVIGATION_LOCATION";
+    };
+  }
+
+  /**
+   * A Core method binding is enough to identify a binary edge even when the language server does
+   * not return a navigable binary URI. It deliberately requires Core's non-recovered identity and
+   * never infers an external edge from an empty navigation result alone.
+   */
+  private static boolean resolvedBinaryOutsideSnapshot(
+      JdtSyntaxProtocol.CallSiteView call, List<EntryCodeContext.CallTarget> targets) {
+    JdtSyntaxProtocol.BindingObservation binding = call.binding();
+    return targets.isEmpty()
+        && binding.state() == JdtSyntaxProtocol.BindingState.RESOLVED
+        && "BINARY".equals(binding.typeOrigin());
+  }
+
+  private static String resolutionDetail(
+      JdtNavigationResolver.ResolvedCall resolution, String fallback) {
+    if (resolution == null || resolution.diagnostics().isEmpty()) {
+      return fallback;
+    }
+    return String.join("; ", resolution.diagnostics());
+  }
+
+  private static CandidateAdmission admission(
+      JdtSyntaxProtocol.CallSiteView call,
+      JdtNavigationResolver.ResolvedCall resolution,
+      UnadmittedTarget candidate,
+      List<UnadmittedTarget> allTargets) {
+    if (candidate.candidate().association()
+        == JdtNavigationResolver.CandidateAssociation.UNCONFIRMED) {
+      return CandidateAdmission.notExpanded("NAVIGATION_CONFLICT_NOT_EXPANDED");
+    }
+    if ("QUERY_FAILED".equals(resolution.status())) {
+      return CandidateAdmission.notExpanded("QUERY_FAILED_NOT_EXPANDED");
+    }
+    if ("NAVIGATION_CONFLICT".equals(resolution.status()) && resolution.observations().isEmpty()) {
+      return CandidateAdmission.notExpanded("NAVIGATION_CONFLICT_NOT_EXPANDED");
+    }
+    if (candidate.method() == null) {
+      return CandidateAdmission.notExpanded("TARGET_LOCATION_IS_NOT_A_CALLABLE_DECLARATION");
+    }
+    if (!hasBindingEvidence(call, allTargets)) {
+      return CandidateAdmission.confirmed();
+    }
+    JdtSyntaxProtocol.BindingState state = call.binding().state();
+    if (state == JdtSyntaxProtocol.BindingState.RESOLVED) {
+      if (hasDirectBindingMatch(call, allTargets)) {
+        if (candidate.candidate().roles().contains("IMPLEMENTATION")) {
+          return CandidateAdmission.confirmed();
+        }
+        return sameBinding(call.binding(), candidate.method().declaration().binding())
+            ? CandidateAdmission.confirmed()
+            : CandidateAdmission.notExpanded("BINDING_DECLARATION_MISMATCH");
+      }
+      return CandidateAdmission.notExpanded("BINDING_DECLARATION_MISMATCH");
+    }
+    if (state == JdtSyntaxProtocol.BindingState.ABSENT
+        || state == JdtSyntaxProtocol.BindingState.RECOVERED) {
+      return isUniqueExactDefinition(candidate, allTargets)
+          ? CandidateAdmission.confirmed()
+          : CandidateAdmission.notExpanded("BINDING_UNAVAILABLE_NOT_EXPANDED");
+    }
+    return CandidateAdmission.notExpanded("BINDING_UNSUPPORTED_CALL_KIND_NOT_EXPANDED");
+  }
+
+  private static boolean hasBindingEvidence(
+      JdtSyntaxProtocol.CallSiteView call, List<UnadmittedTarget> targets) {
+    return call.binding().state() != JdtSyntaxProtocol.BindingState.ABSENT
+        || targets.stream()
+            .map(UnadmittedTarget::method)
+            .filter(Objects::nonNull)
+            .map(MethodInfo::declaration)
+            .map(JdtSyntaxProtocol.Declaration::binding)
+            .anyMatch(binding -> binding.state() != JdtSyntaxProtocol.BindingState.ABSENT);
+  }
+
+  private static boolean hasDirectBindingMatch(
+      JdtSyntaxProtocol.CallSiteView call, List<UnadmittedTarget> targets) {
+    return targets.stream()
+        .filter(
+            target ->
+                target.candidate().association()
+                    == JdtNavigationResolver.CandidateAssociation.CONFIRMED)
+        .filter(target -> target.candidate().roles().contains("DECLARATION"))
+        .map(UnadmittedTarget::method)
+        .filter(Objects::nonNull)
+        .map(MethodInfo::declaration)
+        .map(JdtSyntaxProtocol.Declaration::binding)
+        .anyMatch(binding -> sameBinding(call.binding(), binding));
+  }
+
+  private static boolean isUniqueExactDefinition(
+      UnadmittedTarget candidate, List<UnadmittedTarget> targets) {
+    List<UnadmittedTarget> definitions =
+        targets.stream()
+            .filter(
+                target ->
+                    target.candidate().association()
+                        == JdtNavigationResolver.CandidateAssociation.CONFIRMED)
+            .filter(target -> target.candidate().roles().contains("DECLARATION"))
+            .filter(target -> target.candidate().navigationKinds().contains("DEFINITION"))
+            .filter(target -> target.method() != null)
+            .toList();
+    return definitions.size() == 1 && definitions.get(0).equals(candidate);
+  }
+
+  private static boolean sameBinding(
+      JdtSyntaxProtocol.BindingObservation call, JdtSyntaxProtocol.BindingObservation declaration) {
+    return call.state() == JdtSyntaxProtocol.BindingState.RESOLVED
+        && declaration.state() == JdtSyntaxProtocol.BindingState.RESOLVED
+        && call.declarationKey().equals(declaration.declarationKey());
+  }
+
+  private static String nonExpansionReason(String resolverStatus) {
+    return switch (resolverStatus) {
+      case "QUERY_FAILED" -> "QUERY_FAILED_NOT_EXPANDED";
+      case "NAVIGATION_CONFLICT" -> "NAVIGATION_CONFLICT_NOT_EXPANDED";
+      default -> "COLLECTION_LIMIT";
+    };
+  }
+
+  private static boolean requiresLimitation(JdtNavigationResolver.ResolvedCall resolution) {
+    return !"EXTERNAL".equals(resolution.status())
+        && (!resolution.diagnostics().isEmpty()
+            || Set.of("NAVIGATION_CONFLICT", "QUERY_FAILED").contains(resolution.status()));
   }
 
   private static EntryCodeContext.CallTarget mergeTarget(
@@ -922,7 +1179,21 @@ final class EntryCodeCollector {
 
   private record PendingMethod(MethodInfo method, int depth) {}
 
-  private record ResolvedTarget(JdtNavigationResolver.Candidate candidate, MethodInfo method) {}
+  private record UnadmittedTarget(JdtNavigationResolver.Candidate candidate, MethodInfo method) {}
+
+  private record CandidateAdmission(boolean expandable, String reason) {
+
+    private static CandidateAdmission confirmed() {
+      return new CandidateAdmission(true, null);
+    }
+
+    private static CandidateAdmission notExpanded(String reason) {
+      return new CandidateAdmission(false, reason);
+    }
+  }
+
+  private record ResolvedTarget(
+      JdtNavigationResolver.Candidate candidate, MethodInfo method, CandidateAdmission admission) {}
 
   private record RawCall(
       MethodInfo caller,

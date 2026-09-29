@@ -1,6 +1,6 @@
 # 按入口组装最终技术证据
 
-状态：2026-09-29新目标详细设计，尚未实施。既有v1/v2阅读包及读取器已实现；新设计改为每个后端entryId一份自包含JSON，不以12入口/Markdown字节数合包。当前旧R3有47包、339入口处置、51前端处置；新角色R4不能与旧R3混用。
+状态：2026-09-29实施中。既有v1/v2阅读包及读取器保留；新R4的每后端entryId一份自包含JSON，已通过正式CLI／Agent／存储的同源离线fixture发布和重开，不以12入口/Markdown字节数合包。固定源码新R1、R2、R3均已保存并严格重开；R4已生成339份入口文件和51条前端请求处置，但最终可移植源码位置修正仍在复验，不能宣布全量证据验收通过。旧R3的47包、339入口处置、51前端处置只描述历史结果，不能与新R4混用。
 
 固定key仍为business-flows，目录仍为steps/05-business-flows；owner为analysis.material，不新增Flow/Fact/Proof或业务推理。完整字段、文件和容量合同唯一归属[入口证据详细设计](../modules/technical-analysis/entry-evidence.md)，命令与版本归[运行合同](../modules/technical-analysis/cli-and-runtime.md)。
 
@@ -15,7 +15,7 @@ source-analysis --config <technical-v3.yaml> assemble-materials
 
 R1是独立前端索引；R3是持久化运行，其中保存准确后端R2的Step02/03引用；R0是三者相同的来源及排除版本。不能额外传一个不同R2，也不能寻找最近成功结果。
 
-运行组合根重开并核验上述输入，按前端保存范围从R0恢复完整source units。Builder只接收已验证不可变对象：前端请求/单元、后端入口/Java索引、持久化索引及明确组装配置；不接收parser、Provider或任意客户目录。沿现有CodeReadingMaterialBuilder/publisher/reader修改，不创建平行运行系统。
+运行组合根重开并核验上述输入，按前端保存范围从R0恢复完整source units。新 `EntryEvidenceAssembler` 只接收已验证不可变对象：前端请求/单元、后端入口/Java索引、持久化索引及明确组装配置；不接收parser、Provider或任意客户目录。它使用现有运行与canonical store，不创建平行运行系统。旧 `CodeReadingMaterialReader` 保留为历史读取器；旧Builder生产代码已退出。
 
 ## 2. 内部依次做什么
 
@@ -61,7 +61,7 @@ frontend-coverage.jsonl
 | 原子store只接受固定单文件、默认64payload | 为新producer增加manifest约束的变长文件集合及预算；非任意路径通配 |
 | reader按选择引用恢复上游正文 | 新入口文件自包含；读取器验证已保存集合，不重新组装 |
 
-这不是恢复旧Flow/Capsule编译器。CodeReadingMaterialSet/Request需升级或在同模块内部以EntryEvidenceSet明确区分新格式，不能让新入口JSON与旧Packet共用无版本分支后随意丢字段。精确类型名是实现细节，行为合同和版本不可省略。
+这不是恢复旧Flow/Capsule编译器。新生产使用 `EntryEvidenceSet`、`EntryEvidencePublisher` 和 `EntryEvidenceReader`；旧Packet由原Reader按历史版本读取。两个格式不共用无版本分支，也不把旧字段默认为新格式字段。
 
 ## 5. 异常与完整性
 
@@ -86,4 +86,4 @@ frontend-coverage.jsonl
 
 历史2026-09-18后端材料为325包/326入口、1个导航缺口，后来用于418条Activity；保留[历史验收](../supplements/jdt-persistence-reading-materials-delivery.md)。
 2026-09-28技术v2旧R3为47包/339入口/51前端处置，采购查询材料已保存，2条前端请求容量未选，Java准确性尚未通过，见[固定源码验收](../supplements/technical-analysis-fixed-source-acceptance.md)。
-2026-09-29的新四命令/逐入口JSON是本页待实施目标。不得用前两次结果替代新格式与准确性验收。
+2026-09-29的新四命令/逐入口JSON已通过同源离线fixture的正式CLI、Agent、存储、重开测试；首次固定源码R2在339入口导航循环后发布失败，修正后新的R2、R3和R4已完成。R4首次发布仍含JDT临时工作区绝对URI，后续投影又将大量已知源码位置标为未确认；最终修正及全量准确性验收尚未完成。不得用已结束但有缺陷的运行或fixture替代最终验收，进度以[本轮验收记录](../supplements/technical-entry-evidence-acceptance-20260929.md)为准。

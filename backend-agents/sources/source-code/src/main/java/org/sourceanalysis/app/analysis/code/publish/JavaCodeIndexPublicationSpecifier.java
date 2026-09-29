@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import org.sourceanalysis.app.analysis.code.EntryCodeContext;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
@@ -47,7 +48,13 @@ public final class JavaCodeIndexPublicationSpecifier {
 
   public static final String FILE_NAME = "java-code-index.jsonl";
   public static final String ARTIFACT_TYPE = "PROGRAM_GRAPHS_JAVA_CODE_INDEX";
+
+  /** Historical payloads retain their original closed call-resolution vocabulary. */
   public static final String SCHEMA_VERSION = "java-code-index-v2";
+
+  /** New technical index semantics include explicit external/query-failure call outcomes. */
+  public static final String TECHNICAL_SCHEMA_VERSION = "java-code-index-v3";
+
   private static final String MODULE_VERSION = "v1";
   private static final String PREPARED_RESULT_FILE = "source-preparation-result.json";
   private static final String PREPARED_RESULT_TYPE = "SOURCE_PREPARATION_RESULT";
@@ -86,14 +93,15 @@ public final class JavaCodeIndexPublicationSpecifier {
       ApplicationDiscoveryReference discovery,
       ArtifactControls controls,
       JavaCodeIndex index) {
-    return publish(source, discovery, controls, index, false, null);
+    return publish(source, discovery, controls, index, false, null, SCHEMA_VERSION, MODULE_VERSION);
   }
 
   /**
-   * Installs the technical R1 Step03 producer with exact R0 source provenance.
+   * Installs the established cross-policy technical Step03 producer with exact R0 provenance.
    *
-   * <p>The historical producer remains v1 and retains its same-run guard. Technical v3 is the only
-   * producer allowed to bind an R1 application-discovery receipt to a distinct R0 source.
+   * <p>This producer intentionally retains the {@value #SCHEMA_VERSION} payload contract. Existing
+   * technical v2 runs and policy registries must not be made to opt into new call-resolution terms
+   * merely because a newer producer is present.
    */
   public ProgramGraphsReference publishTechnical(
       VerifiedSourceInventoryReference source,
@@ -101,7 +109,31 @@ public final class JavaCodeIndexPublicationSpecifier {
       ArtifactControls controls,
       JavaCodeIndex index,
       ArtifactReference r0VerifiedSnapshot) {
-    return publish(source, discovery, controls, index, true, r0VerifiedSnapshot);
+    return publish(
+        source, discovery, controls, index, true, r0VerifiedSnapshot, SCHEMA_VERSION, "v3");
+  }
+
+  /**
+   * Installs the opt-in four-operation Java index with explicit external/query-failure outcomes.
+   *
+   * <p>Only request-v5/config-v3 collection calls this producer. Its distinct schema and module
+   * producer version prevent a v2 receipt from being silently reinterpreted as a v3 index.
+   */
+  public ProgramGraphsReference publishTechnicalV3(
+      VerifiedSourceInventoryReference source,
+      ApplicationDiscoveryReference discovery,
+      ArtifactControls controls,
+      JavaCodeIndex index,
+      ArtifactReference r0VerifiedSnapshot) {
+    return publish(
+        source,
+        discovery,
+        controls,
+        index,
+        true,
+        r0VerifiedSnapshot,
+        TECHNICAL_SCHEMA_VERSION,
+        "v4");
   }
 
   private ProgramGraphsReference publish(
@@ -110,7 +142,9 @@ public final class JavaCodeIndexPublicationSpecifier {
       ArtifactControls controls,
       JavaCodeIndex index,
       boolean technical,
-      ArtifactReference r0VerifiedSnapshot) {
+      ArtifactReference r0VerifiedSnapshot,
+      String schemaVersion,
+      String moduleVersion) {
     try {
       Objects.requireNonNull(source, "verified source inventory");
       Objects.requireNonNull(discovery, "application discovery");
@@ -135,7 +169,7 @@ public final class JavaCodeIndexPublicationSpecifier {
       }
       requireEntryDenominator(discoveryStep, index);
 
-      CanonicalModulePayload payload = indexPayload(index);
+      CanonicalModulePayload payload = indexPayload(index, schemaVersion);
       AnalysisStepModuleAddress address =
           new AnalysisStepModuleAddress(
               discoveryStep.reference().address().runId(),
@@ -161,13 +195,7 @@ public final class JavaCodeIndexPublicationSpecifier {
       var module =
           modules.install(
               new ModuleInstallRequest(
-                  address,
-                  technical ? "v3" : MODULE_VERSION,
-                  upstream,
-                  controls,
-                  status,
-                  gaps,
-                  modulePayloads));
+                  address, moduleVersion, upstream, controls, status, gaps, modulePayloads));
       List<CanonicalAnalysisStepPayload> stepPayloads =
           modulePayloads.stream().map(JavaCodeIndexPublicationSpecifier::stepPayload).toList();
       var step =
@@ -240,12 +268,15 @@ public final class JavaCodeIndexPublicationSpecifier {
     return preparedResults.get(0);
   }
 
-  private CanonicalModulePayload indexPayload(JavaCodeIndex index) {
-    List<IndexRecord> records = records(index);
+  private CanonicalModulePayload indexPayload(JavaCodeIndex index, String schemaVersion) {
+    if (SCHEMA_VERSION.equals(schemaVersion)) {
+      requireLegacyCallResolutions(index);
+    }
+    List<IndexRecord> records = records(index, schemaVersion);
     StringBuilder content = new StringBuilder();
     for (IndexRecord record : records) {
       ObjectNode line = JsonNodeFactory.instance.objectNode();
-      line.put("schemaVersion", SCHEMA_VERSION);
+      line.put("schemaVersion", schemaVersion);
       line.put("recordType", record.type());
       line.put("key", record.key());
       line.set("payload", record.payload());
@@ -257,7 +288,7 @@ public final class JavaCodeIndexPublicationSpecifier {
         ImmutableBytes.copyOf(content.toString().getBytes(StandardCharsets.UTF_8));
     String prefix =
         modules
-            .resolveArtifactPolicy(new ArtifactPolicyKey(ARTIFACT_TYPE, SCHEMA_VERSION))
+            .resolveArtifactPolicy(new ArtifactPolicyKey(ARTIFACT_TYPE, schemaVersion))
             .artifactIdPrefix();
     ArtifactId id =
         ArtifactId.parse(
@@ -266,19 +297,33 @@ public final class JavaCodeIndexPublicationSpecifier {
                 + sha256(
                     concatenate(
                         frame("canonical-jsonl-artifact-id-v1"),
-                        frame(SCHEMA_VERSION),
+                        frame(schemaVersion),
                         frame(ARTIFACT_TYPE),
                         frame(bytes.copyToByteArray()))));
     return new CanonicalModulePayload(
         FILE_NAME,
         ARTIFACT_TYPE,
-        SCHEMA_VERSION,
+        schemaVersion,
         id,
         CanonicalMediaType.APPLICATION_X_NDJSON,
         bytes);
   }
 
-  private static List<IndexRecord> records(JavaCodeIndex index) {
+  private static void requireLegacyCallResolutions(JavaCodeIndex index) {
+    boolean containsNewSemantics =
+        index.entries().stream()
+            .filter(entry -> entry.context() != null)
+            .flatMap(entry -> entry.context().calls().stream())
+            .anyMatch(
+                call ->
+                    !List.of("LOCATED", "CANDIDATES", "UNRESOLVED").contains(call.resolution())
+                        || !call.observations().isEmpty());
+    if (containsNewSemantics) {
+      throw invalid();
+    }
+  }
+
+  private static List<IndexRecord> records(JavaCodeIndex index, String schemaVersion) {
     List<IndexRecord> records = new ArrayList<>();
     ObjectNode engine = JsonNodeFactory.instance.objectNode();
     engine.set("descriptor", MAPPER.valueToTree(index.engine()));
@@ -309,7 +354,7 @@ public final class JavaCodeIndexPublicationSpecifier {
           .forEach(
               value -> {
                 requireSamePhysicalCall(syntaxByPhysicalCallKey, value);
-                records.add(entryCall(entry.seed().entryId(), value));
+                records.add(entryCall(entry.seed().entryId(), value, schemaVersion));
               });
     }
     for (JavaDeclarationCatalog.MethodDeclarationView declaration : index.catalog().methods()) {
@@ -342,11 +387,87 @@ public final class JavaCodeIndexPublicationSpecifier {
     return List.copyOf(records);
   }
 
-  private static IndexRecord entryCall(String entryId, EntryCodeContext.CallSite call) {
+  private static IndexRecord entryCall(
+      String entryId, EntryCodeContext.CallSite call, String schemaVersion) {
     ObjectNode payload = JsonNodeFactory.instance.objectNode();
     payload.put("entryId", entryId);
-    payload.set("call", MAPPER.valueToTree(call));
+    EntryCodeContext.CallSite serializable =
+        TECHNICAL_SCHEMA_VERSION.equals(schemaVersion) ? v3Call(call) : call;
+    ObjectNode wire = MAPPER.valueToTree(serializable);
+    if (SCHEMA_VERSION.equals(schemaVersion)) {
+      wire.remove("observations");
+    }
+    payload.set("call", wire);
     return new IndexRecord("CALL", entryCallKey(entryId, call.callKey()), payload);
+  }
+
+  /**
+   * The v3 CALL wire reserves {@code targets} for expandable, confirmed repository edges. A
+   * navigation/query observation is retained in its own structured list instead of masquerading as
+   * a connection to a customer declaration. Budget-limited confirmed edges are deliberately left
+   * alone.
+   */
+  private static EntryCodeContext.CallSite v3Call(EntryCodeContext.CallSite call) {
+    List<EntryCodeContext.CallTarget> retained =
+        call.targets().stream().filter(target -> !unconfirmedTarget(target)).toList();
+    if (retained.size() != call.targets().size()) {
+      for (EntryCodeContext.CallTarget removed : call.targets()) {
+        if (unconfirmedTarget(removed)
+            && call.observations().stream()
+                .noneMatch(observation -> preserves(removed, observation))) {
+          throw invalidMissingObservation(call, removed);
+        }
+      }
+    }
+    String resolution = call.resolution();
+    String resolutionDetail = call.resolutionDetail();
+    if ("LOCATED".equals(resolution) && retained.isEmpty()) {
+      resolution = "NAVIGATION_CONFLICT";
+      resolutionDetail = "v3 publication retained no confirmed repository target";
+    }
+    return new EntryCodeContext.CallSite(
+        call.callKey(),
+        call.callerMethodKey(),
+        call.kind(),
+        call.site(),
+        call.navigationSite(),
+        call.expression(),
+        call.receiverExpression(),
+        call.actualArguments(),
+        call.enclosingControlIndexes(),
+        call.deferred(),
+        retained,
+        resolution,
+        resolutionDetail,
+        call.observations());
+  }
+
+  private static boolean unconfirmedTarget(EntryCodeContext.CallTarget target) {
+    return target.reason() != null
+        && Set.of(
+                "NAVIGATION_CONFLICT_NOT_EXPANDED",
+                "QUERY_FAILED_NOT_EXPANDED",
+                "TARGET_LOCATION_IS_NOT_A_CALLABLE_DECLARATION",
+                "BINDING_DECLARATION_MISMATCH",
+                "BINDING_UNAVAILABLE_NOT_EXPANDED",
+                "BINDING_UNSUPPORTED_CALL_KIND_NOT_EXPANDED")
+            .contains(target.reason());
+  }
+
+  private static boolean preserves(
+      EntryCodeContext.CallTarget target, EntryCodeContext.CallObservation observation) {
+    return target.displayName().equals(observation.displayIdentity())
+        && target.reason().equals(observation.detail())
+        && !observation.externalIdentity();
+  }
+
+  /** Keeps the public invalid-index code stable while identifying the lost v3 diagnostic edge. */
+  private static IllegalArgumentException invalidMissingObservation(
+      EntryCodeContext.CallSite call, EntryCodeContext.CallTarget target) {
+    return invalid(
+        new IllegalArgumentException(
+            "missing v3 call observation callKey=%s reason=%s"
+                .formatted(call.callKey(), target.reason())));
   }
 
   private static void requireSamePhysicalCall(

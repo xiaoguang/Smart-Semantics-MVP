@@ -25,6 +25,7 @@ import net.sf.jsqlparser.statement.delete.Delete;
 import net.sf.jsqlparser.statement.insert.Insert;
 import net.sf.jsqlparser.statement.select.FromItem;
 import net.sf.jsqlparser.statement.select.Join;
+import net.sf.jsqlparser.statement.select.OrderByElement;
 import net.sf.jsqlparser.statement.select.ParenthesedSelect;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
@@ -912,6 +913,7 @@ public final class DefaultPersistenceAnalyzer implements PersistenceAnalyzer {
           children.add(node("SET_OPERATOR", operator, Map.of("operator", operator), List.of()));
         }
       }
+      addOrderByNode(children, setOperationList.getOrderByElements());
       return node("SET_OPERATION", null, Map.of(), children);
     }
 
@@ -957,9 +959,42 @@ public final class DefaultPersistenceAnalyzer implements PersistenceAnalyzer {
                 Map.of(),
                 List.of(expressionNode(select.getHaving()))));
       }
+      addOrderByNode(children, select.getOrderByElements());
       Map<String, String> attributes =
           select.getDistinct() == null ? Map.of() : Map.of("distinct", "true");
       return node("SELECT", null, attributes, children);
+    }
+
+    private static void addOrderByNode(
+        List<PersistenceMaterialIndex.SqlAstNode> target, List<OrderByElement> elements) {
+      if (elements == null || elements.isEmpty()) {
+        return;
+      }
+      target.add(
+          node(
+              "ORDER_BY",
+              null,
+              Map.of(),
+              elements.stream().map(AstProjectionVisitor::orderByElementNode).toList()));
+    }
+
+    private static PersistenceMaterialIndex.SqlAstNode orderByElementNode(OrderByElement element) {
+      if (element == null || element.getExpression() == null) {
+        throw new IllegalArgumentException("SQL ORDER BY element is incomplete");
+      }
+      Map<String, String> attributes = new LinkedHashMap<>();
+      if (element.isAscDescPresent()) {
+        attributes.put("direction", element.isAsc() ? "ASC" : "DESC");
+      }
+      if (element.getNullOrdering() != null) {
+        attributes.put("nullOrdering", element.getNullOrdering().name());
+      }
+      Expression expression = element.getExpression();
+      return node(
+          "ORDER_ITEM",
+          expression.toString(),
+          Map.copyOf(attributes),
+          List.of(expressionNode(expression)));
     }
 
     private static PersistenceMaterialIndex.SqlAstNode projectionNode(SelectItem<?> item) {

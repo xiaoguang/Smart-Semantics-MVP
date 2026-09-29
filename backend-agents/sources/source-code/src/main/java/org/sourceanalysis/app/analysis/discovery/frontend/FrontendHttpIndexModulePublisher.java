@@ -48,7 +48,9 @@ public final class FrontendHttpIndexModulePublisher {
   public static final String FILE_NAME = "frontend-http-index.jsonl";
   public static final String ARTIFACT_TYPE = "APPLICATION_DISCOVERY_FRONTEND_HTTP_INDEX";
   public static final String SCHEMA_VERSION = "frontend-http-index-v1";
+  public static final String V2_SCHEMA_VERSION = "frontend-http-index-v2";
   private static final String MODULE_VERSION = "v1";
+  private static final String V2_MODULE_VERSION = "v2";
   private static final Set<String> RECORD_TYPES =
       Set.of(
           "HEADER",
@@ -76,20 +78,59 @@ public final class FrontendHttpIndexModulePublisher {
       SelectedSourceBasis r0Basis,
       ArtifactControls r1Controls,
       FrontendHttpIndex index) {
+    return publish(
+        module6R1, r0Basis, r1Controls, index, SCHEMA_VERSION, MODULE_VERSION, true, false);
+  }
+
+  /** Installs the independent R1 index without v1's backend-derived {@code ENTRY_LINK} records. */
+  public ModulePublicationReference publishV2(
+      AnalysisStepModuleAddress module6R1,
+      SelectedSourceBasis r0Basis,
+      ArtifactControls r1Controls,
+      FrontendHttpIndex index) {
+    return publish(
+        module6R1, r0Basis, r1Controls, index, V2_SCHEMA_VERSION, V2_MODULE_VERSION, false, true);
+  }
+
+  private ModulePublicationReference publish(
+      AnalysisStepModuleAddress module6R1,
+      SelectedSourceBasis r0Basis,
+      ArtifactControls r1Controls,
+      FrontendHttpIndex index,
+      String schemaVersion,
+      String moduleVersion,
+      boolean includeEntryLinks,
+      boolean includeSupportingSourceUnits) {
     try {
       requireDestination(module6R1);
       Objects.requireNonNull(r0Basis, "R0 source basis");
       Objects.requireNonNull(r1Controls, "R1 artifact controls");
       Objects.requireNonNull(index, "frontend HTTP index");
-      CanonicalModulePayload payload = payload(module6R1, r0Basis, r1Controls, index);
-      if (!parse(payload.canonicalUtf8(), module6R1, r0Basis, r1Controls).equals(index)) {
+      CanonicalModulePayload payload =
+          payload(
+              module6R1,
+              r0Basis,
+              r1Controls,
+              index,
+              schemaVersion,
+              includeEntryLinks,
+              includeSupportingSourceUnits);
+      if (!parse(
+              payload.canonicalUtf8(),
+              module6R1,
+              r0Basis,
+              r1Controls,
+              schemaVersion,
+              includeEntryLinks,
+              includeSupportingSourceUnits)
+          .equals(includeEntryLinks ? index : withoutEntryLinks(index))) {
         throw invalid();
       }
       var installed =
           modules.install(
               new ModuleInstallRequest(
                   module6R1,
-                  MODULE_VERSION,
+                  moduleVersion,
                   upstream(r0Basis, r1Controls),
                   r1Controls,
                   ModuleCompletionStatus.SUCCEEDED,
@@ -112,6 +153,43 @@ public final class FrontendHttpIndexModulePublisher {
       AnalysisRunId expectedR1,
       SelectedSourceBasis expectedR0Basis,
       ArtifactControls expectedR1Controls) {
+    return reopen(
+        reference,
+        expectedR1,
+        expectedR0Basis,
+        expectedR1Controls,
+        SCHEMA_VERSION,
+        MODULE_VERSION,
+        true,
+        false);
+  }
+
+  /** Reopens only the independent v2 index; it never synthesizes historical entry links. */
+  public FrontendHttpIndex reopenV2(
+      ModulePublicationReference reference,
+      AnalysisRunId expectedR1,
+      SelectedSourceBasis expectedR0Basis,
+      ArtifactControls expectedR1Controls) {
+    return reopen(
+        reference,
+        expectedR1,
+        expectedR0Basis,
+        expectedR1Controls,
+        V2_SCHEMA_VERSION,
+        V2_MODULE_VERSION,
+        false,
+        true);
+  }
+
+  private FrontendHttpIndex reopen(
+      ModulePublicationReference reference,
+      AnalysisRunId expectedR1,
+      SelectedSourceBasis expectedR0Basis,
+      ArtifactControls expectedR1Controls,
+      String schemaVersion,
+      String moduleVersion,
+      boolean includeEntryLinks,
+      boolean includeSupportingSourceUnits) {
     try {
       Objects.requireNonNull(reference, "frontend HTTP index publication");
       Objects.requireNonNull(expectedR1, "expected R1 run");
@@ -127,7 +205,7 @@ public final class FrontendHttpIndexModulePublisher {
       ReopenedModulePublication reopened = modules.reopen(reference);
       if (!reopened.reference().equals(reference)
           || !reopened.receipt().address().equals(address)
-          || !MODULE_VERSION.equals(reopened.receipt().moduleVersion())
+          || !moduleVersion.equals(reopened.receipt().moduleVersion())
           || !reopened.receipt().controls().equals(expectedR1Controls)
           || reopened.receipt().status() != ModuleCompletionStatus.SUCCEEDED
           || !reopened.receipt().gapRefs().isEmpty()
@@ -137,8 +215,15 @@ public final class FrontendHttpIndexModulePublisher {
               .equals(upstream(expectedR0Basis, expectedR1Controls))) {
         throw invalid();
       }
-      VerifiedCanonicalPayload payload = onlyPayload(reopened);
-      return parse(payload.canonicalUtf8(), address, expectedR0Basis, expectedR1Controls);
+      VerifiedCanonicalPayload payload = onlyPayload(reopened, schemaVersion);
+      return parse(
+          payload.canonicalUtf8(),
+          address,
+          expectedR0Basis,
+          expectedR1Controls,
+          schemaVersion,
+          includeEntryLinks,
+          includeSupportingSourceUnits);
     } catch (FrontendHttpDiscoveryException failure) {
       throw failure;
     } catch (RuntimeException failure) {
@@ -150,11 +235,15 @@ public final class FrontendHttpIndexModulePublisher {
       AnalysisStepModuleAddress address,
       SelectedSourceBasis basis,
       ArtifactControls controls,
-      FrontendHttpIndex index) {
+      FrontendHttpIndex index,
+      String schemaVersion,
+      boolean includeEntryLinks,
+      boolean includeSupportingSourceUnits) {
     StringBuilder content = new StringBuilder();
-    for (RecordLine record : records(address, basis, controls, index)) {
+    for (RecordLine record :
+        records(address, basis, controls, index, includeEntryLinks, includeSupportingSourceUnits)) {
       ObjectNode line = MAPPER.createObjectNode();
-      line.put("schemaVersion", SCHEMA_VERSION);
+      line.put("schemaVersion", schemaVersion);
       line.put("recordType", record.type());
       line.put("key", record.key());
       line.set("payload", record.payload());
@@ -167,7 +256,7 @@ public final class FrontendHttpIndexModulePublisher {
         ImmutableBytes.copyOf(content.toString().getBytes(StandardCharsets.UTF_8));
     String prefix =
         modules
-            .resolveArtifactPolicy(new ArtifactPolicyKey(ARTIFACT_TYPE, SCHEMA_VERSION))
+            .resolveArtifactPolicy(new ArtifactPolicyKey(ARTIFACT_TYPE, schemaVersion))
             .artifactIdPrefix();
     ArtifactId id =
         ArtifactId.parse(
@@ -176,13 +265,13 @@ public final class FrontendHttpIndexModulePublisher {
                 + sha256(
                     concatenate(
                         frame("canonical-jsonl-artifact-id-v1"),
-                        frame(SCHEMA_VERSION),
+                        frame(schemaVersion),
                         frame(ARTIFACT_TYPE),
                         frame(bytes.copyToByteArray()))));
     return new CanonicalModulePayload(
         FILE_NAME,
         ARTIFACT_TYPE,
-        SCHEMA_VERSION,
+        schemaVersion,
         id,
         CanonicalMediaType.APPLICATION_X_NDJSON,
         bytes);
@@ -192,8 +281,10 @@ public final class FrontendHttpIndexModulePublisher {
       AnalysisStepModuleAddress address,
       SelectedSourceBasis basis,
       ArtifactControls controls,
-      FrontendHttpIndex index) {
-    validateIndex(index);
+      FrontendHttpIndex index,
+      boolean includeEntryLinks,
+      boolean includeSupportingSourceUnits) {
+    validateIndex(index, includeEntryLinks, includeSupportingSourceUnits);
     List<RecordLine> records = new ArrayList<>();
     ObjectNode header = MAPPER.createObjectNode();
     header.set("moduleAddress", addressNode(address));
@@ -208,7 +299,7 @@ public final class FrontendHttpIndexModulePublisher {
     for (FrontendConfigurationFileRecord file : index.configurationFiles()) {
       records.add(new RecordLine("CONFIGURATION_FILE", file.path(), MAPPER.valueToTree(file)));
     }
-    for (SourceUnit unit : sourceUnits(index)) {
+    for (SourceUnit unit : sourceUnits(index, includeSupportingSourceUnits)) {
       records.add(new RecordLine("SOURCE_UNIT", unit.key(), unit.node()));
     }
     for (ComponentUse use : componentUses(index)) {
@@ -217,8 +308,10 @@ public final class FrontendHttpIndexModulePublisher {
     for (FrontendHttpRequestRecord request : index.requests()) {
       records.add(new RecordLine("HTTP_REQUEST", request.requestId(), MAPPER.valueToTree(request)));
     }
-    for (FrontendEntryLinkRecord link : index.entryLinks()) {
-      records.add(new RecordLine("ENTRY_LINK", link.requestId(), MAPPER.valueToTree(link)));
+    if (includeEntryLinks) {
+      for (FrontendEntryLinkRecord link : index.entryLinks()) {
+        records.add(new RecordLine("ENTRY_LINK", link.requestId(), MAPPER.valueToTree(link)));
+      }
     }
     for (int indexPosition = 0; indexPosition < index.diagnostics().size(); indexPosition++) {
       records.add(
@@ -234,8 +327,11 @@ public final class FrontendHttpIndexModulePublisher {
       ImmutableBytes bytes,
       AnalysisStepModuleAddress expectedAddress,
       SelectedSourceBasis expectedBasis,
-      ArtifactControls expectedControls) {
-    List<RecordLine> lines = lines(bytes);
+      ArtifactControls expectedControls,
+      String schemaVersion,
+      boolean includeEntryLinks,
+      boolean includeSupportingSourceUnits) {
+    List<RecordLine> lines = lines(bytes, schemaVersion, includeEntryLinks);
     RecordLine header = only(lines, "HEADER");
     requireHeader(header.payload(), expectedAddress, expectedBasis, expectedControls);
     List<FrontendSourceFileDisposition> files =
@@ -244,18 +340,28 @@ public final class FrontendHttpIndexModulePublisher {
         typed(lines, "CONFIGURATION_FILE", FrontendConfigurationFileRecord.class);
     List<FrontendHttpRequestRecord> requests =
         typed(lines, "HTTP_REQUEST", FrontendHttpRequestRecord.class);
-    List<FrontendEntryLinkRecord> links = typed(lines, "ENTRY_LINK", FrontendEntryLinkRecord.class);
+    List<FrontendEntryLinkRecord> links =
+        includeEntryLinks ? typed(lines, "ENTRY_LINK", FrontendEntryLinkRecord.class) : List.of();
     List<FrontendDiagnosticRecord> diagnostics =
         typed(lines, "DIAGNOSTIC", FrontendDiagnosticRecord.class);
+    List<FrontendSupportingSourceUnit> supportingSourceUnits =
+        supportingSourceUnits(lines, requests, includeSupportingSourceUnits);
     FrontendHttpIndex result =
         new FrontendHttpIndex(
-            files, requests, links, diagnostics, status(header.payload()), configurationFiles);
-    validateIndex(result);
-    requireDerivedRecords(lines, result);
+            files,
+            requests,
+            links,
+            diagnostics,
+            status(header.payload()),
+            configurationFiles,
+            supportingSourceUnits);
+    validateIndex(result, includeEntryLinks, includeSupportingSourceUnits);
+    requireDerivedRecords(lines, result, includeSupportingSourceUnits);
     return result;
   }
 
-  private List<RecordLine> lines(ImmutableBytes bytes) {
+  private List<RecordLine> lines(
+      ImmutableBytes bytes, String schemaVersion, boolean includeEntryLinks) {
     String content = strictUtf8(bytes.copyToByteArray());
     if (content.isEmpty() || !content.endsWith("\n")) {
       throw invalid();
@@ -276,8 +382,8 @@ public final class FrontendHttpIndexModulePublisher {
       requireFields(line, Set.of("schemaVersion", "recordType", "key", "payload"));
       String type = text(line, "recordType");
       String key = text(line, "key");
-      if (!SCHEMA_VERSION.equals(text(line, "schemaVersion"))
-          || !RECORD_TYPES.contains(type)
+      if (!schemaVersion.equals(text(line, "schemaVersion"))
+          || !recordTypes(includeEntryLinks).contains(type)
           || !(line.get("payload") instanceof ObjectNode payload)
           || !identities.add(type + "\u0000" + key)) {
         throw invalid();
@@ -308,11 +414,12 @@ public final class FrontendHttpIndexModulePublisher {
     }
   }
 
-  private static void requireDerivedRecords(List<RecordLine> lines, FrontendHttpIndex index) {
+  private static void requireDerivedRecords(
+      List<RecordLine> lines, FrontendHttpIndex index, boolean includeSupportingSourceUnits) {
     List<RecordLine> actualUnits =
         lines.stream().filter(line -> line.type().equals("SOURCE_UNIT")).toList();
     List<RecordLine> expectedUnits =
-        sourceUnits(index).stream()
+        sourceUnits(index, includeSupportingSourceUnits).stream()
             .map(unit -> new RecordLine("SOURCE_UNIT", unit.key(), unit.node()))
             .toList();
     List<RecordLine> actualUses =
@@ -326,7 +433,8 @@ public final class FrontendHttpIndexModulePublisher {
     }
   }
 
-  private static void validateIndex(FrontendHttpIndex index) {
+  private static void validateIndex(
+      FrontendHttpIndex index, boolean includeEntryLinks, boolean includeSupportingSourceUnits) {
     Map<String, String> files = new HashMap<>();
     for (FrontendSourceFileDisposition file : index.files()) {
       if (files.put(file.path(), file.sourceSha256()) != null) {
@@ -363,8 +471,23 @@ public final class FrontendHttpIndexModulePublisher {
         throw invalid();
       }
     }
-    if (!linkRequestIds.equals(requestIds)) {
+    if ((includeEntryLinks && !linkRequestIds.equals(requestIds))
+        || (!includeEntryLinks && !linkRequestIds.isEmpty())) {
       throw invalid();
+    }
+    if (!includeSupportingSourceUnits && !index.supportingSourceUnits().isEmpty()) {
+      throw invalid();
+    }
+    Map<String, SourceUnit> wrapperUnits = sourceUnitMap(index.requests());
+    Set<String> supportingUnitKeys = new HashSet<>();
+    for (FrontendSupportingSourceUnit supportingUnit : index.supportingSourceUnits()) {
+      if (!supportingUnit.sourceSha256().equals(files.get(supportingUnit.sourcePath()))) {
+        throw invalid();
+      }
+      SourceUnit sourceUnit = SourceUnit.from(supportingUnit);
+      if (!supportingUnitKeys.add(sourceUnit.key()) || wrapperUnits.containsKey(sourceUnit.key())) {
+        throw invalid();
+      }
     }
     for (FrontendDiagnosticRecord diagnostic : index.diagnostics()) {
       if (!diagnostic.sourceSha256().equals(sources.get(diagnostic.sourcePath()))
@@ -374,9 +497,24 @@ public final class FrontendHttpIndexModulePublisher {
     }
   }
 
-  private static List<SourceUnit> sourceUnits(FrontendHttpIndex index) {
+  private static List<SourceUnit> sourceUnits(
+      FrontendHttpIndex index, boolean includeSupportingSourceUnits) {
+    Map<String, SourceUnit> units = sourceUnitMap(index.requests());
+    if (includeSupportingSourceUnits) {
+      for (FrontendSupportingSourceUnit supportingUnit : index.supportingSourceUnits()) {
+        SourceUnit unit = SourceUnit.from(supportingUnit);
+        SourceUnit previous = units.putIfAbsent(unit.key(), unit);
+        if (previous != null && !previous.equals(unit)) {
+          throw invalid();
+        }
+      }
+    }
+    return List.copyOf(units.values());
+  }
+
+  private static Map<String, SourceUnit> sourceUnitMap(List<FrontendHttpRequestRecord> requests) {
     Map<String, SourceUnit> units = new LinkedHashMap<>();
-    for (FrontendHttpRequestRecord request : index.requests()) {
+    for (FrontendHttpRequestRecord request : requests) {
       for (FrontendWrapperCall wrapper : request.wrapperPath()) {
         SourceUnit unit = SourceUnit.from(wrapper);
         SourceUnit previous = units.putIfAbsent(unit.key(), unit);
@@ -385,7 +523,53 @@ public final class FrontendHttpIndexModulePublisher {
         }
       }
     }
-    return List.copyOf(units.values());
+    return units;
+  }
+
+  private static List<FrontendSupportingSourceUnit> supportingSourceUnits(
+      List<RecordLine> lines,
+      List<FrontendHttpRequestRecord> requests,
+      boolean includeSupportingSourceUnits) {
+    Map<String, SourceUnit> wrapperUnits = sourceUnitMap(requests);
+    Map<String, FrontendSupportingSourceUnit> supportingUnits = new LinkedHashMap<>();
+    for (RecordLine line : lines) {
+      if (!line.type().equals("SOURCE_UNIT")) {
+        continue;
+      }
+      FrontendSupportingSourceUnit supportingUnit = readSupportingSourceUnit(line.payload());
+      SourceUnit sourceUnit = SourceUnit.from(supportingUnit);
+      if (!line.key().equals(sourceUnit.key())) {
+        throw invalid();
+      }
+      SourceUnit wrapper = wrapperUnits.get(sourceUnit.key());
+      if (wrapper != null) {
+        if (!wrapper.equals(sourceUnit)) {
+          throw invalid();
+        }
+        continue;
+      }
+      if (!includeSupportingSourceUnits
+          || supportingUnits.putIfAbsent(sourceUnit.key(), supportingUnit) != null) {
+        throw invalid();
+      }
+    }
+    return List.copyOf(supportingUnits.values());
+  }
+
+  private static FrontendSupportingSourceUnit readSupportingSourceUnit(ObjectNode payload) {
+    requireFields(
+        payload, Set.of("sourcePath", "sourceSha256", "sourceUnitRange", "sourceUnitKind"));
+    FrontendWrapperCall.SourceUnitKind kind;
+    try {
+      kind = FrontendWrapperCall.SourceUnitKind.valueOf(text(payload, "sourceUnitKind"));
+    } catch (IllegalArgumentException invalidKind) {
+      throw invalid();
+    }
+    return new FrontendSupportingSourceUnit(
+        text(payload, "sourcePath"),
+        text(payload, "sourceSha256"),
+        convert(payload.get("sourceUnitRange"), SourceRange.class),
+        kind);
   }
 
   private static List<ComponentUse> componentUses(FrontendHttpIndex index) {
@@ -435,14 +619,15 @@ public final class FrontendHttpIndexModulePublisher {
     }
   }
 
-  private static VerifiedCanonicalPayload onlyPayload(ReopenedModulePublication reopened) {
+  private static VerifiedCanonicalPayload onlyPayload(
+      ReopenedModulePublication reopened, String schemaVersion) {
     if (reopened.payloads().size() != 1) {
       throw invalid();
     }
     VerifiedCanonicalPayload payload = reopened.payloads().get(0);
     if (!FILE_NAME.equals(payload.descriptor().fileName())
         || !ARTIFACT_TYPE.equals(payload.descriptor().artifactType())
-        || !SCHEMA_VERSION.equals(payload.descriptor().schemaVersion())
+        || !schemaVersion.equals(payload.descriptor().schemaVersion())
         || payload.descriptor().mediaType() != CanonicalMediaType.APPLICATION_X_NDJSON) {
       throw invalid();
     }
@@ -567,6 +752,26 @@ public final class FrontendHttpIndexModulePublisher {
     }
   }
 
+  private static Set<String> recordTypes(boolean includeEntryLinks) {
+    if (includeEntryLinks) {
+      return RECORD_TYPES;
+    }
+    Set<String> types = new HashSet<>(RECORD_TYPES);
+    types.remove("ENTRY_LINK");
+    return Set.copyOf(types);
+  }
+
+  private static FrontendHttpIndex withoutEntryLinks(FrontendHttpIndex index) {
+    return new FrontendHttpIndex(
+        index.files(),
+        index.requests(),
+        List.of(),
+        index.diagnostics(),
+        index.status(),
+        index.configurationFiles(),
+        index.supportingSourceUnits());
+  }
+
   private static void requireFields(ObjectNode node, Set<String> expected) {
     Set<String> actual = new HashSet<>();
     node.fieldNames().forEachRemaining(actual::add);
@@ -657,6 +862,26 @@ public final class FrontendHttpIndexModulePublisher {
               + range.lengthUtf16()
               + ":"
               + wrapper.sourceUnitKind().name();
+      return new SourceUnit(key, payload);
+    }
+
+    private static SourceUnit from(FrontendSupportingSourceUnit supportingUnit) {
+      ObjectNode payload = MAPPER.createObjectNode();
+      payload.put("sourcePath", supportingUnit.sourcePath());
+      payload.put("sourceSha256", supportingUnit.sourceSha256());
+      payload.set("sourceUnitRange", MAPPER.valueToTree(supportingUnit.sourceUnitRange()));
+      payload.put("sourceUnitKind", supportingUnit.sourceUnitKind().name());
+      SourceRange range = supportingUnit.sourceUnitRange();
+      String key =
+          supportingUnit.sourcePath()
+              + "@"
+              + supportingUnit.sourceSha256()
+              + ":"
+              + range.startOffsetUtf16()
+              + ":"
+              + range.lengthUtf16()
+              + ":"
+              + supportingUnit.sourceUnitKind().name();
       return new SourceUnit(key, payload);
     }
   }

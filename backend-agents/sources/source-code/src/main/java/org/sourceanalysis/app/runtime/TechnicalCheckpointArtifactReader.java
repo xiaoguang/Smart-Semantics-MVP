@@ -5,6 +5,8 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
+import org.sourceanalysis.app.analysis.material.publish.EntryEvidencePublisher;
+import org.sourceanalysis.app.analysis.material.publish.EntryEvidenceReader;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
@@ -33,6 +35,16 @@ public final class TechnicalCheckpointArtifactReader implements CompletedTechnic
       AnalysisRunOutput output,
       TechnicalArtifactQueryKey technicalArtifactQueryKey,
       int maxBytes) {
+    return read(runId, output, technicalArtifactQueryKey, null, maxBytes);
+  }
+
+  @Override
+  public ArtifactView read(
+      AnalysisRunId runId,
+      AnalysisRunOutput output,
+      TechnicalArtifactQueryKey technicalArtifactQueryKey,
+      String entryId,
+      int maxBytes) {
     if (runId == null
         || output == null
         || technicalArtifactQueryKey == null
@@ -41,12 +53,39 @@ public final class TechnicalCheckpointArtifactReader implements CompletedTechnic
       throw invalid();
     }
     TechnicalRunOutput technical = output.technicalOutput();
+    boolean entryEvidence = isEntryEvidence(technicalArtifactQueryKey);
+    if ((technicalArtifactQueryKey == TechnicalArtifactQueryKey.ENTRY_EVIDENCE
+            && (entryId == null || !entryId.matches("entry:[0-9a-f]{64}")))
+        || (technicalArtifactQueryKey != TechnicalArtifactQueryKey.ENTRY_EVIDENCE
+            && entryId != null)) {
+      throw invalid();
+    }
+    if (entryEvidence
+        && (technical.wireVersion() != AnalysisRunRequest.TechnicalWireVersion.V5
+            || technical.operation() != AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS
+            || technical.readingMaterials() == null)) {
+      throw invalid();
+    }
+    EntryEvidenceReader.EntryDocument selectedEntry =
+        technicalArtifactQueryKey == TechnicalArtifactQueryKey.ENTRY_EVIDENCE
+            ? new EntryEvidenceReader(modules, analysisSteps)
+                .read(technical.readingMaterials(), entryId)
+            : null;
+    if (entryEvidence && selectedEntry == null) {
+      // Index and coverage queries still fresh-reopen the complete closure before exposing one
+      // member, rather than trusting a filename from the command line.
+      new EntryEvidenceReader(modules, analysisSteps).reopen(technical.readingMaterials());
+    }
     List<VerifiedCanonicalPayload> payloads = payloads(technical, technicalArtifactQueryKey);
+    String requiredFile =
+        selectedEntry == null
+            ? technicalArtifactQueryKey.fileName()
+            : EntryEvidencePublisher.entryFileName(selectedEntry.entryId());
     VerifiedCanonicalPayload payload =
         payloads.stream()
             .filter(
                 candidate ->
-                    candidate.descriptor().fileName().equals(technicalArtifactQueryKey.fileName())
+                    candidate.descriptor().fileName().equals(requiredFile)
                         && candidate
                             .descriptor()
                             .artifactType()
@@ -60,6 +99,9 @@ public final class TechnicalCheckpointArtifactReader implements CompletedTechnic
                   throw invalid();
                 })
             .orElseThrow(TechnicalCheckpointArtifactReader::invalid);
+    if (selectedEntry != null && !selectedEntry.canonicalJson().equals(payload.canonicalUtf8())) {
+      throw invalid();
+    }
     if (payload.canonicalUtf8().size() > maxBytes) {
       throw new IllegalStateException("TECHNICAL_ARTIFACT_QUERY_BUDGET_EXCEEDED");
     }
@@ -94,6 +136,12 @@ public final class TechnicalCheckpointArtifactReader implements CompletedTechnic
       case READING_MATERIALS ->
           stepPayloads(technical.readingMaterials(), AnalysisStepKey.BUSINESS_FLOWS);
     };
+  }
+
+  private static boolean isEntryEvidence(TechnicalArtifactQueryKey key) {
+    return key == TechnicalArtifactQueryKey.ENTRY_EVIDENCE_INDEX
+        || key == TechnicalArtifactQueryKey.ENTRY_EVIDENCE
+        || key == TechnicalArtifactQueryKey.FRONTEND_EVIDENCE_COVERAGE;
   }
 
   private List<VerifiedCanonicalPayload> modulePayloads(

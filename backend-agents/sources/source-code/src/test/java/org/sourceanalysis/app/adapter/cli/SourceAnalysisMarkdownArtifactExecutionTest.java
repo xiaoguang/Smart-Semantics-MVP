@@ -28,8 +28,8 @@ import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReferenc
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialMarkdown;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialProfile;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
-import org.sourceanalysis.app.analysis.material.publish.CodeReadingMaterialPublisher;
 import org.sourceanalysis.app.analysis.material.publish.CodeReadingMaterialReader;
+import org.sourceanalysis.app.analysis.material.publish.HistoricalCodeReadingMaterialFixture;
 import org.sourceanalysis.app.analysis.persistence.PersistenceConfiguration;
 import org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex;
 import org.sourceanalysis.app.analysis.persistence.publish.PersistenceMaterialPublisher;
@@ -152,8 +152,8 @@ class SourceAnalysisMarkdownArtifactExecutionTest {
         CodeReadingMaterialSet materials =
             materialSet(javaIndex, source, navigation, persistencePublication);
         AnalysisStepPublicationReference materialPublication =
-            new CodeReadingMaterialPublisher(modules, steps)
-                .publish(discovery, fixture.artifactControls(), materials);
+            HistoricalCodeReadingMaterialFixture.installV1(
+                modules, steps, discovery, fixture.artifactControls(), materials);
 
         int jsonlBytes =
             steps.reopen(materialPublication).semanticPayloads().get(0).canonicalUtf8().size();
