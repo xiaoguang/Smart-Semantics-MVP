@@ -1,6 +1,6 @@
 # 四命令按入口证据：固定源码验收记录
 
-状态：2026-09-29 工程与固定源码技术验收通过，Git/PR收口中；运行时地址、全量逐边准确性及长等待根因仍有限制。本页按实际运行身份记录独立R1/R2/R3/R4、JDT具名复核及历次修正，不把早期有缺陷的完成运行当作最终结果。历史前后端合并的三命令验收见[旧结果](technical-analysis-fixed-source-acceptance.md)，不把旧运行改名为新运行。
+状态：2026-09-29 工程与固定源码技术验收通过，已由[PR #33](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/33)合入 `main`；运行时地址、全量逐边准确性及长等待根因仍有限制。本页按实际运行身份记录独立R1/R2/R3/R4、JDT具名复核及历次修正，不把早期有缺陷的完成运行当作最终结果。历史前后端合并的三命令验收见[旧结果](technical-analysis-fixed-source-acceptance.md)，不把旧运行改名为新运行。
 
 ## 固定输入与边界
 
@@ -22,7 +22,7 @@
 | 首次新 R4 `assemble-materials` | `analysis-run:6c23ab2237c766655c52b0dfeab834c696da82878e7ef5c459da7a8e31f3c1ff`，正式 CLI `COMPLETED/READY` | 339个入口目录项、339份入口JSON、51条前端请求覆盖；采购查询候选文件包含四个实参、第五个`NOT_PASSED`、`getQueryParams`完整第130–144行、Mapper XML动态条件及SQL AST的`ORDER_BY` | 当前51条前端请求均因运行时baseURL未确认而为`UNRESOLVED_REQUEST`候选，不能宣称部署连通；当前入口JSON仍泄露JDT临时工作区绝对URI，须修复并新建R4后验收 |
 | 可移植位置复验 R4 | `analysis-run:279d270cce438c25f4e1d94b491bb6add1fd941ff309a159d42ddda69a528040`，正式CLI完成 | 入口目录339条、入口文件339份、前端覆盖51条；临时绝对URI已不出现在结构化观察/限制的抽查字段 | 由于JDT真实URI还含一段生成的项目目录，该版有135,243处已知源码位置被误投影为`UNCONFIRMED_JDT_WORKSPACE_SOURCE_IDENTITY`，不能作为最终证据 |
 | 生成项目段修复后 R4 | `analysis-run:f911696acc427e76d6161b3f5ae9dedd36f35f3de881360337bbcd82012a4d88`，正式CLI `COMPLETED/READY`且`inspect`严格重开为`FINISHED/READY` | 339份入口文件、51条前端覆盖；入口文件扫描中上述未确认标记为0，JDT临时工作区绝对URI为0；具名观察已恢复为相对路径和行列位置 | 仍需完成独立代码审查发现项、最终artifact查询及质量检查；此运行是位置修正的实测，不先宣称整项验收完成 |
-| 完整来源身份及覆盖格式修正后 R4 | `analysis-run:020fa267a6f4d86e4f054d14d23d63a5809512a8e22646df7fe9dbc1e1821256`，正式CLI `COMPLETED/READY`且`inspect`严格重开为`FINISHED/READY` | 索引339条、顶层入口文件339份、前端覆盖51条；目录和具名入口均保存`PREPARED_V1`、准确R0引用、源码版本及`effectiveScopeDigest`；入口文件中未确认位置标记0处、JDT临时绝对URI文件0份。采购候选仍含四个实参、未传第五参数、`getQueryParams`第130–144行、动态XML和SQL排序结构。正式`artifact`分别查询目录、该入口和前端覆盖，均退出0并返回预期版本、339条入口、该入口身份和51条覆盖 | 定向回归、静态质量与PR仍需完成；运行时baseURL未知，不能把候选关系写成已确认部署链 |
+| 完整来源身份及覆盖格式修正后 R4 | `analysis-run:020fa267a6f4d86e4f054d14d23d63a5809512a8e22646df7fe9dbc1e1821256`，正式CLI `COMPLETED/READY`且`inspect`严格重开为`FINISHED/READY` | 索引339条、顶层入口文件339份、前端覆盖51条；目录和具名入口均保存`PREPARED_V1`、准确R0引用、源码版本及`effectiveScopeDigest`；入口文件中未确认位置标记0处、JDT临时绝对URI文件0份。采购候选仍含四个实参、未传第五参数、`getQueryParams`第130–144行、动态XML和SQL排序结构。正式`artifact`分别查询目录、该入口和前端覆盖，均退出0并返回预期版本、339条入口、该入口身份和51条覆盖 | 这是最终R4之前的中间运行；运行时baseURL未知，不能把候选关系写成已确认部署链 |
 | 最终前端 R1 | `analysis-run:fcbd79f8f14f28c5c14aea1d98b9c415458b02cd4cbf407b58b06145cc951bf4`，正式 `collect-frontend` 为 `COMPLETED/READY` | 同源重新采集后，完整方法单元范围包含页面 `onSearchLinkApply()`、子组件 `purchaseShow(...)`、mixin `loadData(...)` 及 `getQueryParams()` 的方法名与正文；前端定向测试19项通过。它只保存前端事实，不提前绑定后端入口 | 运行时 baseURL 仍未确定，不能从静态路径声称真实部署连通 |
 | 最终按入口 R4 | `analysis-run:9138a4bb7d49e05bdacdb3983adb327d54b9f51f2de98e313bbaaaf9f160c4fe`，正式 `assemble-materials` 为 `COMPLETED/READY`，正式 `inspect` 严格重开为 `FINISHED/READY` | 复用原 R2/R3，索引339条、入口文件339份，6条 `ASSEMBLED`、333条 `ASSEMBLED_WITH_LIMITATIONS`；前端覆盖51条。目录、具名采购查询入口、前端覆盖三类正式 `artifact` 查询均退出0；完整 `PREPARED_V1` 来源身份保留，入口文件中临时 JDT URI 与误投影标记扫描均为0份。具名入口正文实际含上述四段完整方法声明、四个已传参数、第五个未传参数及 XML/SQL 限制 | 51条前端请求仍为 `UNRESOLVED_REQUEST` 候选；长等待根因、其它入口逐边准确性和固定源码的业务多实现案例未证实 |
 
