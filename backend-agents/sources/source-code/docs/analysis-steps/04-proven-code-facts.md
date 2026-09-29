@@ -1,6 +1,6 @@
 # 持久化材料补全
 
-> 2026-09-29：既有独立持久化命令已在固定源码保存573条statement。新四操作设计中本命令为R3，消费准确后端R2，不需要前端R1；算法主体复用，本轮仅补SQL排序投影及新Java索引接线。新合同尚未实施。[运行合同](../modules/technical-analysis/cli-and-runtime.md)。
+> 2026-09-29实施中：旧独立持久化命令已在固定源码保存573条statement；新R3消费准确后端R2，不需要前端R1。SQL排序投影、新Java索引来源及R3独立发布／重开已通过直接测试，固定客户源码和全量运行仍未验收。[运行合同](../modules/technical-analysis/cli-and-runtime.md)。
 
 > [总体设计](../DESIGN.md)；固定 key：`proven-code-facts`，目录：`steps/04-proven-code-facts/`。当前 owner 是 `analysis.persistence`。旧 Fact/Proof/accounting 为严格历史读取；新生产只发布可选持久化材料。
 
@@ -79,9 +79,9 @@ Step05按 Java 调用关联引用选取资源、语句、绑定和SQL结构，�
 
 直接测试覆盖：插件关闭零工具、@Param与多参数、重复namespace/databaseId、跨文件include/resultMap继承、动态条件/列值保持、静态与部分SQL、标准DOCTYPE安全拒绝、保存重开和缺依赖保留。不同领域fixture不得要求修改Java词表。只跑直接覆盖测试。
 
-## 7. 本轮SQL排序投影修正（目标，待实施）
+## 7. 本轮SQL排序投影修正（代码及定向测试已接通，固定源码待验收）
 
-已核实JSqlParser 5.3能返回SELECT的排序项；当前 `plainSelectNode` 未调用其排序getter，导致analysisCopy里的ORDER BY未进入保存AST。这是我们的投影遗漏，不是客户SQL缺失，也不要求更换SQL parser。[固定5.3官方Select源码](https://github.com/JSQLParser/JSqlParser/blob/jsqlparser-5.3/src/main/java/net/sf/jsqlparser/statement/select/Select.java)提供getOrderByElements；其它核查见[工具依据](../supplements/mybatis-dynamic-sql-parser-tools-research.md)。
+已核实JSqlParser 5.3能返回SELECT的排序项；旧版 `plainSelectNode` 未调用其排序getter，导致analysisCopy里的ORDER BY未进入保存AST。本轮已接入已有AST的排序项投影，并通过直接测试；固定源码R3的真实发布、重开和R4最终入口JSON仍待核验。这是我们的投影遗漏，不是客户SQL缺失，也不要求更换SQL parser。[固定5.3官方Select源码](https://github.com/JSQLParser/JSqlParser/blob/jsqlparser-5.3/src/main/java/net/sf/jsqlparser/statement/select/Select.java)提供getOrderByElements；其它核查见[工具依据](../supplements/mybatis-dynamic-sql-parser-tools-research.md)。
 
 最小修改：
 
@@ -100,4 +100,4 @@ Step05按 Java 调用关联引用选取资源、语句、绑定和SQL结构，�
 
 固定仓库启用结果为61份XML、573条语句、572条Java绑定、573份SQL分析，其中187 PARSED、162 PARTIAL、224 UNSUPPORTED；同一索引关闭插件时所有明细为0且没有再次JDT。来源为[2026-09-18交付核验](../supplements/jdt-persistence-reading-materials-delivery.md)。
 
-Step05→Activity的后端/XML投影已另行实现并保存418条新Activity，具体范围与限制由[Step06](06-flow-interpretation.md)维护；该历史事实不等于新增前端材料已被消费。本轮保留这些已实现能力，仅实施上节明确增量及新运行接线；不重做持久化算法、不运行Step06。当前主设计文档更新本身不授权执行。
+Step05→Activity的后端/XML投影曾另行实现并保存418条新Activity，具体范围与限制由[Step06](06-flow-interpretation.md)维护；该历史事实不等于新增前端材料已被消费。本轮代码和直接测试已覆盖上节排序增量及新R3接线，仍须用固定源码真实验收；不重做持久化算法、不运行Step06。

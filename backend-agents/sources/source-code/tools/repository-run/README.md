@@ -9,14 +9,18 @@ Source preparation does not start downstream technical analysis, model login, or
 
 The implemented technical commands are documented in the
 [technical CLI design](../../docs/modules/technical-analysis/cli-and-runtime.md):
-`collect-code` (Step02/03), `analyze-persistence` (Step04), and `assemble-materials`
-(Step05). Their READY fixture path saves and reopens R1/R2/R3; fixed customer-source Maven/JDT/Vue acceptance remains outstanding. The legacy `plan-materials`/`materials-only` producer is retired and rejected before configuration loading; historical saved outputs remain readable.
+`collect-frontend` (independent frontend R1), `collect-code` (backend R2),
+`analyze-persistence` (R3), and `assemble-materials` (per-entry evidence R4).
+Their READY fixture path saves and reopens all four runs. Fixed-source frontend
+R1 and narrow JDT calls have been checked; the full backend-to-SQL and per-entry
+fixed-source acceptance is still in progress. The legacy `plan-materials`/
+`materials-only` producer is retired and rejected before configuration loading;
+historical saved outputs remain readable.
 
-`technical-analysis-artifact-policy-set-v1.json` is the new complete technical-policy
-example: it retains the full controlled JDT policy set and adds the three exact module-5/6
-keys for Java compilation environment, Java readiness, and the frontend HTTP index. The
-historical `jdt-artifact-policy-set-v1.json` remains byte-for-byte unchanged so saved
-receipts retain their original registry identity.
+`technical-analysis-artifact-policy-set-v2.json` is the current four-operation
+technical policy, including bounded per-entry evidence files. The v1 technical
+policy and historical `jdt-artifact-policy-set-v1.json` remain for their saved
+receipts; do not replace their registry identities in old configurations.
 
 The approved handoff requires official Maven `dependency:build-classpath` and
 `help:effective-pom` outputs for the same module/build selection. The user runs
@@ -28,11 +32,11 @@ actual JDK, and returns the environment or specific missing/unsupported inputs.
 It does not evaluate POM inheritance/profiles/BOM, download dependencies, or
 launch Maven. Agents must not assemble a semantic compilation-input JSON.
 
-**Migration status:** `technical-analysis-config-v2` directly names the official
-Maven-output files; [technical-analysis.example.yaml](technical-analysis.example.yaml)
-shows the current contract. New `collect-code` requires that v2 input. Historical v1
-records remain readable only through their historical observation/artifact paths; do
-not manually fill a v1 JSON record to start new technical collection. The target YAML,
+**Migration status:** `technical-analysis-config-v3` directly names the official
+Maven-output files for backend R2; [technical-analysis.example.yaml](technical-analysis.example.yaml)
+shows the current four-operation contract. New technical production accepts only v3.
+Historical v1/v2 records remain readable through their original observation/artifact
+paths; do not manually fill an old semantic JSON record to start new collection. The target YAML,
 historical-read boundary, and remaining fixed-source acceptance are defined in the
 [CLI design](../../docs/modules/technical-analysis/cli-and-runtime.md#2-技术配置与外部编译输入)
 and [dependency handoff](../../docs/modules/technical-analysis/dependency-preparation.md).
@@ -40,8 +44,10 @@ These consumption checks do not prove that the customer project compiles or auth
 a Maven run.
 
 `source-analysis` is the only supported process entry point. Source preparation reads
-`source-preparation-config-v1`; existing analysis commands read the applicable
-`repository-run-config-v2/v3`, while v4 source selection is being connected to real consumers. All paths are absolute. The launcher delegates work to the same
+`source-preparation-config-v1`; current technical operations read
+`technical-analysis-config-v3`. Historical business/material operations have their
+own versioned repository-run configurations and do not implicitly consume new R4
+entry evidence. All configured paths are absolute. The launcher delegates work to the same
 `RepositoryAnalysisAgent` and persisted run coordinator used by the Java API.
 
 The removed `RepositoryRunMain` and `generate` route are not compatibility entry
@@ -51,29 +57,27 @@ producer has retired.
 
 ## Configuration
 
-The new Step 01–05 reading-material route is implemented and locally verified. Its policy file is
+The earlier packet-based Step 01–05 reading-material route is retained as a historical
+artifact format, not the new four-operation producer. Its policy file is
 [reading-materials-artifact-policy-set-v1.json](reading-materials-artifact-policy-set-v1.json):
 it contains the existing source/discovery/navigation contracts and the new persistence
 and reading-material contracts, with no Fact/Flow/Capsule or model-output contracts.
-Do not replace the older policy file in saved configurations; those bytes remain part
-of historical runs. The new route requires JDT, optional
-`sourceAnalysis.persistence.plugins`, and `technical.readingMaterials` with
-`maxPacketUtf8Bytes` and `maxEntriesPerPacket`. Its configuration and internal
-03→04→05 chain, shared XML view, configured command arguments and state codec are
-covered by direct tests and the 469-test clean quality build. Fixed-repository CLI
-acceptance finished with 325 packets and 326 coverage records, including one explicit
-navigation failure; retirement cleanup is complete. See the
+Do not replace that policy file in saved configurations; those bytes remain part
+of historical runs. The old route used JDT, optional
+`sourceAnalysis.persistence.plugins`, and `technical.readingMaterials` packet limits.
+Its fixed-repository CLI acceptance finished with 325 packets and 326 coverage
+records, including one explicit navigation failure. That result is historical,
+not a new per-entry-evidence run. See the
 [delivery verification](../../docs/supplements/jdt-persistence-reading-materials-delivery.md)
-for measured results and limitations. This route does not run Activity or business models.
+for measured results and limitations.
 
-For this technical-only route, copy
-[reading-materials.template.json](reading-materials.template.json) into an ignored
-workspace. Replace its paths, repository identity and fixed commit, and supply any
-already-approved local dependency JARs in `technical.approvedClasspath`. The template
-contains no model configuration or credentials. Set persistence `plugins` to `[]`
-or omit `persistence` to keep Java-only material. The packet byte limit admits whole
-source units; excluded units are recorded, not silently truncated. The example limits
-are configurable, not a promise that every repository fits them.
+For current technical collection, copy the
+[four-operation YAML example](technical-analysis.example.yaml) to an ignored workspace,
+replace its absolute placeholders and use the exact prepared-source version. Official
+Maven exports are needed only for backend R2. The new evidence limits count actual
+JSON bytes; they do not combine neighboring entries into packets. The old
+[reading-materials.template.json](reading-materials.template.json) describes the
+historical packet route and must not be used for new four-operation production.
 
 The [earlier model-run template](jdt-luna-repository-run.template.json) describes saved
 legacy-material/model configurations, not the new Step05 material contract. Copy it to an ignored
@@ -81,11 +85,9 @@ workspace and replace every absolute-path placeholder. Never put a credential in
 file. Model authentication is named by environment variable, for example
 `SOURCE_ANALYSIS_PRO_HOME` for an existing ChatGPT login context.
 
-Current reading-material execution requires `sourceAnalysis.javaEngine: jdt`: it starts
-the configured JDT LS/tool JVM and provides repository navigation. JavaParser is
-retired from production, not retained as an alternative for
-this route. Historical configuration decoding is separate from permission to start
-a new analysis; an old `javaparser` value does not trigger a fallback to JDT.
+Current backend R2 uses the configured JDT LS/tool JVM and externally supplied
+Maven output. JavaParser is retired from production, not a fallback. Historical
+configuration decoding is separate from permission to start a new analysis.
 
 `sourceAnalysis.modelJobs` is the only model configuration. Global and per-provider
 concurrency, routes, model identity, timeout, and authentication references are all in
@@ -161,15 +163,21 @@ requires an exact queued request match; stopped runs are never reactivated.
 
 ### Technical materials
 
-Use a technical-analysis configuration and the three independent operations:
+Use a `technical-analysis-config-v3` configuration and the four independent operations:
 
 ```bash
+source-analysis --config /absolute/technical.yaml collect-frontend
 source-analysis --config /absolute/technical.yaml collect-code
-source-analysis --config /absolute/technical.yaml analyze-persistence --code-run 'analysis-run:<R1>'
-source-analysis --config /absolute/technical.yaml assemble-materials --persistence-run 'analysis-run:<R2>'
+source-analysis --config /absolute/technical.yaml analyze-persistence --code-run 'analysis-run:<R2>'
+source-analysis --config /absolute/technical.yaml assemble-materials --frontend-run 'analysis-run:<R1>' --persistence-run 'analysis-run:<R3>'
 ```
 
-They respectively save R1 Step02/03, R2 Step04, and R3 Step05. They reopen exact saved upstreams; R2/R3 do not start JDT or Node. `plan-materials` and its `materials-only` implementation are not supported commands. Historical `READING_MATERIALS_ONLY` outputs remain available to their strict readers and queries.
+R1 saves frontend requests without matching a Controller; R2 saves backend Step02/03;
+R3 saves Step04 XML/SQL; R4 matches saved requests and publishes one JSON per backend
+entry plus frontend coverage. R3/R4 reopen exact saved upstreams without restarting
+JDT or Node. `plan-materials` and its `materials-only` implementation are not supported
+commands. Historical `READING_MATERIALS_ONLY` outputs remain available to strict readers
+and queries.
 
 Export a verified older material-state file without rescanning:
 
@@ -180,15 +188,18 @@ Export a verified older material-state file without rescanning:
 
 The destination must not already contain different bytes. Export verifies the original
 configuration and checkpoint and never runs JDT, the material builder, or a model.
-This command is the historical M10/state-v3 export; it does not convert new Step05
-materials into Activity input. New Step05 materials have their own direct Activity
-reader and do not require this export.
+This command is the historical M10/state-v3 export; it does not convert either
+packet-based Step05 material or new R4 per-entry evidence into Activity input.
+The packet-based Step05 format has its existing direct Activity reader; the new
+R4 format does not yet have one.
 
 ### Explain Activities
 
-With either a historical M10 batch or the new Step05 reading-material state, execute
-the saved packages. Step05 execution reopens the existing material checkpoint; it does
-not run JDT or the material builder again:
+The following Activity operation applies to its existing historical M10 and packet-based
+Step05 material contracts. **It does not consume the new R4 per-entry JSON.** New R4
+must be rejected before model initialization until Activity consumption is separately
+designed and implemented. Historical Step05 execution reopens its existing checkpoint;
+it does not run JDT or the material builder again:
 
 ```bash
 "${SOURCE_ANALYSIS[@]}" execute-step \
@@ -236,7 +247,7 @@ The current Step07 publisher installs:
 This command does not invoke the retired singleton process route or Step08. `render()` is
 therefore intentionally not ready for a process-only run.
 
-For the new Step05 Activity source, the process request validates the entire saved
+For the packet-based Step05 Activity source, the process request validates the entire saved
 Activity scope before starting a provider. A stopped Activity run is not necessarily
 complete: `inspect` and the M11 coverage must show every required packet scope complete.
 The fixed 2026-09-17 corpus currently has 14 incomplete packets, so it must not be

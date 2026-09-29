@@ -793,11 +793,7 @@ final class JdtLanguageServerClient implements AutoCloseable, JdtNavigationResol
       } catch (RuntimeException failure) {
         CodeEngineException finalFailure = finalQueryFailure(operationDescription, failure);
         appendExchange(
-            key,
-            request,
-            null,
-            finalFailure,
-            elapsedNanos(startedAtNanos, System.nanoTime()));
+            key, request, null, finalFailure, elapsedNanos(startedAtNanos, System.nanoTime()));
         navigationCache.put(key, CachedNavigationQuery.failure(finalFailure));
         throw finalFailure;
       }
@@ -827,9 +823,7 @@ final class JdtLanguageServerClient implements AutoCloseable, JdtNavigationResol
     NavigationQueryCompletion completion;
     try {
       completion =
-          pending
-              .completion()
-              .get(configuration.queryTimeout().toMillis(), TimeUnit.MILLISECONDS);
+          pending.completion().get(configuration.queryTimeout().toMillis(), TimeUnit.MILLISECONDS);
     } catch (InterruptedException interrupted) {
       Thread.currentThread().interrupt();
       CodeEngineException waitFailure =
@@ -839,7 +833,8 @@ final class JdtLanguageServerClient implements AutoCloseable, JdtNavigationResol
       appendWaitInterrupted(key, pending, waitFailure);
       throw waitFailure;
     } catch (TimeoutException timeout) {
-      CodeEngineException waitFailure = queryFailed("JDT could not " + operationDescription, timeout);
+      CodeEngineException waitFailure =
+          queryFailed("JDT could not " + operationDescription, timeout);
       appendWaitTimeout(key, pending, waitFailure);
       throw waitFailure;
     } catch (ExecutionException completionFailure) {
@@ -949,7 +944,10 @@ final class JdtLanguageServerClient implements AutoCloseable, JdtNavigationResol
   }
 
   private void appendWaitFailure(
-      String kind, NavigationQueryKey key, PendingNavigationQuery pending, CodeEngineException failure) {
+      String kind,
+      NavigationQueryKey key,
+      PendingNavigationQuery pending,
+      CodeEngineException failure) {
     var record = JSON.createObjectNode();
     record.put("kind", kind);
     record.put("queryKey", key.display());

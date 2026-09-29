@@ -33,6 +33,7 @@ import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.ExpressionMethodReference;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.ForStatement;
+import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IfStatement;
 import org.eclipse.jdt.core.dom.ImportDeclaration;
@@ -313,7 +314,8 @@ public final class JdtSyntaxReader {
               returnType,
               node.getName(),
               node,
-              node.getBody() != null));
+              node.getBody() != null,
+              binding(node.resolveBinding())));
       callables.push(new CallableState(id, false));
       return true;
     }
@@ -508,31 +510,66 @@ public final class JdtSyntaxReader {
 
     @Override
     public boolean visit(MethodInvocation node) {
-      addCall("METHOD", node, node.getName(), node.getExpression(), node.arguments(), false);
+      addCall(
+          "METHOD",
+          node,
+          node.getName(),
+          node.getExpression(),
+          node.arguments(),
+          false,
+          node.resolveMethodBinding());
       return true;
     }
 
     @Override
     public boolean visit(SuperMethodInvocation node) {
-      addCall("SUPER_METHOD", node, node.getName(), null, node.arguments(), false);
+      addCall(
+          "SUPER_METHOD",
+          node,
+          node.getName(),
+          null,
+          node.arguments(),
+          false,
+          node.resolveMethodBinding());
       return true;
     }
 
     @Override
     public boolean visit(ClassInstanceCreation node) {
-      addCall("CONSTRUCTOR", node, node.getType(), node.getExpression(), node.arguments(), false);
+      addCall(
+          "CONSTRUCTOR",
+          node,
+          node.getType(),
+          node.getExpression(),
+          node.arguments(),
+          false,
+          node.resolveConstructorBinding());
       return true;
     }
 
     @Override
     public boolean visit(ConstructorInvocation node) {
-      addCall("THIS_CONSTRUCTOR", node, node, null, node.arguments(), false);
+      addCall(
+          "THIS_CONSTRUCTOR",
+          node,
+          node,
+          null,
+          node.arguments(),
+          false,
+          node.resolveConstructorBinding());
       return true;
     }
 
     @Override
     public boolean visit(SuperConstructorInvocation node) {
-      addCall("SUPER_CONSTRUCTOR", node, node, node.getExpression(), node.arguments(), false);
+      addCall(
+          "SUPER_CONSTRUCTOR",
+          node,
+          node,
+          node.getExpression(),
+          node.arguments(),
+          false,
+          node.resolveConstructorBinding());
       return true;
     }
 
@@ -562,7 +599,7 @@ public final class JdtSyntaxReader {
 
     private void addReference(
         String kind, MethodReference node, ASTNode navigation, ASTNode receiver) {
-      addCall(kind, node, navigation, receiver, List.of(), true);
+      addCall(kind, node, navigation, receiver, List.of(), true, node.resolveMethodBinding());
     }
 
     private void addCall(
@@ -571,7 +608,8 @@ public final class JdtSyntaxReader {
         ASTNode navigation,
         ASTNode receiver,
         List<?> arguments,
-        boolean deferred) {
+        boolean deferred,
+        IMethodBinding methodBinding) {
       if (callables.isEmpty()) {
         return;
       }
@@ -586,7 +624,8 @@ public final class JdtSyntaxReader {
               text(node),
               receiver == null ? null : text(receiver),
               actuals,
-              deferred || callables.peek().deferred));
+              deferred || callables.peek().deferred,
+              binding(methodBinding)));
     }
 
     @Override
@@ -779,6 +818,38 @@ public final class JdtSyntaxReader {
         ASTNode navigation,
         ASTNode node,
         boolean bodyPresent) {
+      return declaration(
+          localId,
+          kind,
+          name,
+          declaringType,
+          enclosing,
+          signature,
+          modifiers,
+          annotations,
+          parameters,
+          returnType,
+          navigation,
+          node,
+          bodyPresent,
+          unsupportedBinding());
+    }
+
+    private JdtSyntaxProtocol.Declaration declaration(
+        String localId,
+        String kind,
+        String name,
+        String declaringType,
+        String enclosing,
+        String signature,
+        List<String> modifiers,
+        List<String> annotations,
+        List<JdtSyntaxProtocol.ParameterView> parameters,
+        String returnType,
+        ASTNode navigation,
+        ASTNode node,
+        boolean bodyPresent,
+        JdtSyntaxProtocol.BindingObservation binding) {
       return new JdtSyntaxProtocol.Declaration(
           localId,
           kind,
@@ -793,7 +864,56 @@ public final class JdtSyntaxReader {
           navigation == null ? null : range(navigation),
           range(node),
           text(node),
-          bodyPresent);
+          bodyPresent,
+          binding);
+    }
+
+    private static JdtSyntaxProtocol.BindingObservation binding(IMethodBinding binding) {
+      if (binding == null) {
+        return JdtSyntaxProtocol.BindingObservation.absent();
+      }
+      if (binding.isRecovered()) {
+        return recoveredBinding();
+      }
+      IMethodBinding declaration = binding.getMethodDeclaration();
+      if (declaration == null || declaration.isRecovered()) {
+        return recoveredBinding();
+      }
+      ITypeBinding declaringType = declaration.getDeclaringClass();
+      if (declaringType == null || declaringType.isRecovered()) {
+        return recoveredBinding();
+      }
+      ITypeBinding typeDeclaration = declaringType.getTypeDeclaration();
+      if (typeDeclaration == null || typeDeclaration.isRecovered()) {
+        return recoveredBinding();
+      }
+      String declarationKey = declaration.getKey();
+      String declaringTypeKey = typeDeclaration.getKey();
+      String typeName = typeDeclaration.getQualifiedName();
+      String methodName = declaration.getName();
+      if (blank(declarationKey) || blank(declaringTypeKey) || blank(typeName) || blank(methodName)) {
+        return JdtSyntaxProtocol.BindingObservation.absent();
+      }
+      return new JdtSyntaxProtocol.BindingObservation(
+          JdtSyntaxProtocol.BindingState.RESOLVED,
+          declarationKey,
+          declaringTypeKey,
+          typeDeclaration.isFromSource() ? "SOURCE" : "BINARY",
+          typeName + "#" + methodName);
+    }
+
+    private static JdtSyntaxProtocol.BindingObservation recoveredBinding() {
+      return new JdtSyntaxProtocol.BindingObservation(
+          JdtSyntaxProtocol.BindingState.RECOVERED, null, null, null, null);
+    }
+
+    private static JdtSyntaxProtocol.BindingObservation unsupportedBinding() {
+      return new JdtSyntaxProtocol.BindingObservation(
+          JdtSyntaxProtocol.BindingState.UNSUPPORTED_CALL_KIND, null, null, null, null);
+    }
+
+    private static boolean blank(String value) {
+      return value == null || value.isBlank();
     }
 
     private String signature(MethodDeclaration node) {

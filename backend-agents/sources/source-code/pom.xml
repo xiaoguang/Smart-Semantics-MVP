@@ -373,6 +373,7 @@
                         <configuration>
                             <skipITs>${skipITs}</skipITs>
                             <includes>
+                                <include>**/JdtFixedSourceNavigationIT.java</include>
                                 <include>**/JdtRealSourceCollectionIT.java</include>
                                 <include>**/JdtProjectSettingsReadbackIT.java</include>
                                 <include>**/JdtSyntaxHelperRealIT.java</include>

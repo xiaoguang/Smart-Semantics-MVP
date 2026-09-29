@@ -19,6 +19,7 @@ public record FrontendRequestObservation(
     String resolvedPath,
     String requestOrigin,
     List<FrontendWrapperCall> wrapperPath,
+    List<FrontendSupportingSourceUnit> supportingSourceUnits,
     List<FrontendArgumentBinding> argumentBindings,
     String diagnosticCode,
     String baseUrlExpression,
@@ -41,6 +42,41 @@ public record FrontendRequestObservation(
     }
     Objects.requireNonNull(callRange, "request call range");
     wrapperPath = List.copyOf(wrapperPath);
+    supportingSourceUnits = List.copyOf(supportingSourceUnits);
     argumentBindings = List.copyOf(argumentBindings);
+  }
+
+  /** Retains syntax-tool fixtures that predate explicitly projected supporting source units. */
+  public FrontendRequestObservation(
+      String requestId,
+      String pagePath,
+      String sourceSha256,
+      String instanceKey,
+      SourceRange callRange,
+      String httpMethod,
+      String rawUrlExpression,
+      String resolvedPath,
+      String requestOrigin,
+      List<FrontendWrapperCall> wrapperPath,
+      List<FrontendArgumentBinding> argumentBindings,
+      String diagnosticCode,
+      String baseUrlExpression,
+      String baseUrlStaticFallback) {
+    this(
+        requestId,
+        pagePath,
+        sourceSha256,
+        instanceKey,
+        callRange,
+        httpMethod,
+        rawUrlExpression,
+        resolvedPath,
+        requestOrigin,
+        wrapperPath,
+        List.of(),
+        argumentBindings,
+        diagnosticCode,
+        baseUrlExpression,
+        baseUrlStaticFallback);
   }
 }

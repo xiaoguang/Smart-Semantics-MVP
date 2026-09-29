@@ -39,8 +39,8 @@ import org.sourceanalysis.app.analysis.interpretation.activity.ReviewedActivity;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.knowledge.ProcessDiscoveryRequest;
 import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
-import org.sourceanalysis.app.analysis.material.publish.CodeReadingMaterialPublisher;
 import org.sourceanalysis.app.analysis.material.publish.CodeReadingMaterialReader;
+import org.sourceanalysis.app.analysis.material.publish.HistoricalCodeReadingMaterialFixture;
 import org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex;
 import org.sourceanalysis.app.analysis.persistence.publish.PersistenceMaterialPublisher;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
@@ -189,8 +189,8 @@ class SourceAnalysisReuseOnlyReplayTest {
               navigation,
               persistenceCheckpoint);
       materialCheckpoint =
-          new CodeReadingMaterialPublisher(sourceModules, sourceSteps)
-              .publish(discovery, controls, materials);
+          HistoricalCodeReadingMaterialFixture.installV1(
+              sourceModules, sourceSteps, discovery, controls, materials);
       RepositoryRunStateV4.write(
           configuration.stateFile(), materialCheckpoint, materials, configuration.canonicalJson());
       RepositoryRunStateV4.SavedState saved =

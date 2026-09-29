@@ -194,7 +194,7 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
       throw new IllegalStateException("ANALYSIS_RUN_ARTIFACT_NOT_READY");
     }
     return technicalArtifactReader.read(
-        runId, output, query.technicalArtifactQueryKey(), query.maxBytes());
+        runId, output, query.technicalArtifactQueryKey(), query.entryId(), query.maxBytes());
   }
 
   @Override

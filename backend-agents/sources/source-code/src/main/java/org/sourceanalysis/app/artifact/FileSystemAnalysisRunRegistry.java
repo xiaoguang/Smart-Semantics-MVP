@@ -25,6 +25,7 @@ import java.util.Optional;
 import java.util.Set;
 import org.sourceanalysis.app.analysis.inventory.PreparedSourceReference;
 import org.sourceanalysis.app.analysis.inventory.SourcePreparationReadiness;
+import org.sourceanalysis.app.analysis.material.EntryEvidenceProfile;
 import org.sourceanalysis.app.capture.localgit.SourceRegistrationReference;
 import org.sourceanalysis.app.runtime.AnalysisRunLifecycleState;
 import org.sourceanalysis.app.runtime.AnalysisRunOutput;
@@ -46,6 +47,7 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   private static final String REQUEST_SCHEMA_V2 = "analysis-run-request-v2";
   private static final String REQUEST_SCHEMA_V3 = "analysis-run-request-v3";
   private static final String REQUEST_SCHEMA_V4 = "analysis-run-request-v4";
+  private static final String REQUEST_SCHEMA_V5 = "analysis-run-request-v5";
   private static final String STATE_SCHEMA = "analysis-run-state-v1";
   private static final String RUN_DIRECTORY = "analysis-runs";
   private static final String REQUEST_FILE = "run-request.json";
@@ -59,6 +61,7 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   private static final String OUTPUT_SCHEMA_V6 = "analysis-run-output-v6";
   private static final String OUTPUT_SCHEMA_V7 = "analysis-run-output-v7";
   private static final String OUTPUT_SCHEMA_V8 = "analysis-run-output-v8";
+  private static final String OUTPUT_SCHEMA_V9 = "analysis-run-output-v9";
   private static final String MATERIALS_ONLY_OUTPUT = "MATERIALS_ONLY";
   private static final String READING_MATERIALS_ONLY_OUTPUT = "READING_MATERIALS_ONLY";
   private static final String STEP05_ACTIVITIES_OUTPUT = "STEP05_ACTIVITIES";
@@ -112,6 +115,8 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
           "sourcePreparationRequestRef");
   private static final Set<String> REQUEST_V4_TECHNICAL_ANALYSIS_FIELDS =
       Set.of("requestKind", "schemaVersion", "selectedSourceBasis", "technicalAnalysisInputs");
+  private static final Set<String> REQUEST_V5_TECHNICAL_ANALYSIS_FIELDS =
+      Set.of("requestKind", "schemaVersion", "selectedSourceBasis", "technicalAnalysisInputs");
   private static final Set<String> TECHNICAL_ANALYSIS_INPUT_FIELDS =
       Set.of(
           "artifactPolicyRegistryRef",
@@ -121,6 +126,16 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
           "technicalProfileRef",
           "toolchainRef",
           "upstreamPublication");
+  private static final Set<String> TECHNICAL_ANALYSIS_V5_COMMON_FIELDS =
+      Set.of(
+          "artifactPolicyRegistryRef",
+          "operation",
+          "resourceBudgetRef",
+          "schemaBundleRef",
+          "technicalProfileRef",
+          "toolchainRef");
+  private static final Set<String> ENTRY_EVIDENCE_PROFILE_FIELDS =
+      Set.of("maxEntries", "maxEntryUtf8Bytes", "maxPublicationUtf8Bytes");
   private static final Set<String> SELECTED_SOURCE_BASIS_FIELDS =
       Set.of("effectiveScopeDigest", "kind", "legacyCapture", "preparedSource", "snapshotId");
   private static final Set<String> PREPARED_SOURCE_FIELDS =
@@ -519,6 +534,9 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
 
   private static ObjectNode technicalAnalysisRequestJson(AnalysisRunRequest request) {
     AnalysisRunRequest.TechnicalAnalysisInputs inputs = request.technicalAnalysisInputs();
+    if (inputs.wireVersion() == AnalysisRunRequest.TechnicalWireVersion.V5) {
+      return technicalAnalysisV5RequestJson(request, inputs);
+    }
     ObjectNode value = JsonNodeFactory.instance.objectNode();
     value.put("schemaVersion", REQUEST_SCHEMA_V4);
     value.put("requestKind", AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS.name());
@@ -532,6 +550,41 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     reference(technical.putObject("artifactPolicyRegistryRef"), inputs.artifactPolicyRegistryRef());
     analysisStepPublication(
         technical.putObject("upstreamPublication"), inputs.upstreamPublication());
+    return value;
+  }
+
+  private static ObjectNode technicalAnalysisV5RequestJson(
+      AnalysisRunRequest request, AnalysisRunRequest.TechnicalAnalysisInputs inputs) {
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    value.put("schemaVersion", REQUEST_SCHEMA_V5);
+    value.put("requestKind", AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS.name());
+    selectedSourceBasis(value.putObject("selectedSourceBasis"), request.selectedSourceBasis());
+    ObjectNode technical = value.putObject("technicalAnalysisInputs");
+    technical.put("operation", inputs.operation().name());
+    reference(technical.putObject("technicalProfileRef"), inputs.technicalProfileRef());
+    reference(technical.putObject("resourceBudgetRef"), inputs.resourceBudgetRef());
+    reference(technical.putObject("schemaBundleRef"), inputs.schemaBundleRef());
+    reference(technical.putObject("toolchainRef"), inputs.toolchainRef());
+    reference(technical.putObject("artifactPolicyRegistryRef"), inputs.artifactPolicyRegistryRef());
+    switch (inputs.operation()) {
+      case COLLECT_FRONTEND -> {
+        // R0 is carried by selectedSourceBasis; it is intentionally not duplicated as a faux step
+        // receipt.
+      }
+      case COLLECT_CODE ->
+          analysisStepPublication(
+              technical.putObject("sourcePublication"), inputs.upstreamPublication());
+      case ANALYZE_PERSISTENCE ->
+          analysisStepPublication(
+              technical.putObject("codePublication"), inputs.upstreamPublication());
+      case ASSEMBLE_MATERIALS -> {
+        modulePublication(technical.putObject("frontendPublication"), inputs.frontendPublication());
+        analysisStepPublication(
+            technical.putObject("persistencePublication"), inputs.upstreamPublication());
+        entryEvidenceProfile(
+            technical.putObject("entryEvidenceProfile"), inputs.entryEvidenceProfile());
+      }
+    }
     return value;
   }
 
@@ -575,7 +628,11 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   private static ObjectNode technicalOutputJson(AnalysisRunId runId, AnalysisRunOutput output) {
     TechnicalRunOutput technical = output.technicalOutput();
     ObjectNode value = JsonNodeFactory.instance.objectNode();
-    value.put("schemaVersion", OUTPUT_SCHEMA_V8);
+    value.put(
+        "schemaVersion",
+        technical.wireVersion() == AnalysisRunRequest.TechnicalWireVersion.V5
+            ? OUTPUT_SCHEMA_V9
+            : OUTPUT_SCHEMA_V8);
     value.put("runId", runId.value());
     value.put("sourceRunId", output.sourceRunId().value());
     value.put("outputKind", TECHNICAL_OUTPUT);
@@ -583,8 +640,13 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     detail.put("operation", technical.operation().name());
     detail.put("outputRunId", technical.outputRunId().value());
     selectedSourceBasis(detail.putObject("selectedSourceBasis"), technical.selectedSourceBasis());
-    analysisStepCheckpoint(
-        detail.putObject("upstreamPublication"), technical.upstreamPublication());
+    if (technical.wireVersion() == AnalysisRunRequest.TechnicalWireVersion.V5) {
+      nullableAnalysisStepPublication(
+          detail, "upstreamPublication", technical.upstreamPublication());
+    } else {
+      analysisStepCheckpoint(
+          detail.putObject("upstreamPublication"), technical.upstreamPublication());
+    }
     detail.put("inspectionStatus", technical.inspectionStatus().name());
     detail.put("continuationStatus", technical.continuationStatus().name());
     nullableTechnicalModulePublication(detail, "readinessReport", technical.readinessReport());
@@ -674,7 +736,10 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   private AnalysisRunOutput outputFromJson(AnalysisRunId runId, ObjectNode value) {
     String schemaVersion = requiredText(value, "schemaVersion");
     if (OUTPUT_SCHEMA_V8.equals(schemaVersion)) {
-      return technicalOutputFromJson(runId, value);
+      return technicalOutputFromJson(runId, value, AnalysisRunRequest.TechnicalWireVersion.V4);
+    }
+    if (OUTPUT_SCHEMA_V9.equals(schemaVersion)) {
+      return technicalOutputFromJson(runId, value, AnalysisRunRequest.TechnicalWireVersion.V5);
     }
     if (OUTPUT_SCHEMA_V7.equals(schemaVersion)) {
       return SOURCE_PREPARATION_OUTPUT.equals(requiredText(value, "outputKind"))
@@ -726,7 +791,8 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     return output;
   }
 
-  private static AnalysisRunOutput technicalOutputFromJson(AnalysisRunId runId, ObjectNode value) {
+  private static AnalysisRunOutput technicalOutputFromJson(
+      AnalysisRunId runId, ObjectNode value, AnalysisRunRequest.TechnicalWireVersion wireVersion) {
     requireFields(value, TECHNICAL_OUTPUT_FIELDS);
     if (!runId.value().equals(requiredText(value, "runId"))
         || !TECHNICAL_OUTPUT.equals(requiredText(value, "outputKind"))) {
@@ -740,11 +806,14 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     try {
       TechnicalRunOutput technical =
           new TechnicalRunOutput(
+              wireVersion,
               AnalysisRunRequest.TechnicalOperation.valueOf(
                   requiredText(technicalNode, "operation")),
               AnalysisRunId.parse(requiredText(technicalNode, "outputRunId")),
               selectedSourceBasis(technicalNode.path("selectedSourceBasis")),
-              analysisStepCheckpointFromWire(technicalNode.path("upstreamPublication")),
+              wireVersion == AnalysisRunRequest.TechnicalWireVersion.V5
+                  ? nullableAnalysisStepPublication(technicalNode.path("upstreamPublication"))
+                  : analysisStepCheckpointFromWire(technicalNode.path("upstreamPublication")),
               TechnicalInspectionStatus.valueOf(requiredText(technicalNode, "inspectionStatus")),
               TechnicalContinuationStatus.valueOf(
                   requiredText(technicalNode, "continuationStatus")),
@@ -899,10 +968,16 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
               .equals(
                   technical.selectedSourceBasis().preparedSource().publication().address().runId())
           && technical.selectedSourceBasis().equals(request.selectedSourceBasis())
+          && technical.wireVersion() == request.technicalAnalysisInputs().wireVersion()
           && technical.operation() == request.technicalAnalysisInputs().operation()
-          && technical
-              .upstreamPublication()
-              .equals(request.technicalAnalysisInputs().upstreamPublication());
+          && Objects.equals(
+              technical.upstreamPublication(),
+              request.technicalAnalysisInputs().upstreamPublication())
+          && (technical.wireVersion() != AnalysisRunRequest.TechnicalWireVersion.V5
+              || technical.operation() != AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS
+              || technical
+                  .frontendIndex()
+                  .equals(request.technicalAnalysisInputs().frontendPublication()));
     }
     if (output.sourcePreparationCheckpoint() != null) {
       return request.requestKind() == AnalysisRunRequest.RequestKind.SOURCE_PREPARATION
@@ -1037,6 +1112,31 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     return value.isNull() ? null : analysisStepCheckpointFromWire(value);
   }
 
+  private static void modulePublication(ObjectNode value, ModulePublicationReference reference) {
+    if (reference == null) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    if (!(reference.address() instanceof AnalysisStepModuleAddress address)) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    ObjectNode addressValue = value.putObject("address");
+    addressValue.put("runId", address.runId().value());
+    addressValue.put("analysisStepKey", address.analysisStepKey().wireValue());
+    addressValue.put("moduleNumber", address.moduleNumber());
+    addressValue.put("moduleKey", address.moduleKey());
+    value.put("moduleArtifactRoot", reference.moduleArtifactRoot().value());
+    value.put("moduleReceiptId", reference.moduleReceiptId().value());
+    value.put("moduleReceiptSha256", reference.moduleReceiptSha256().value());
+  }
+
+  private static ModulePublicationReference modulePublication(JsonNode value) {
+    ModulePublicationReference reference = nullableTechnicalModulePublication(value);
+    if (reference == null) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    return reference;
+  }
+
   private static void nullableTechnicalModulePublication(
       ObjectNode parent, String field, ModulePublicationReference reference) {
     if (reference == null) {
@@ -1143,6 +1243,9 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     if (REQUEST_SCHEMA_V4.equals(schemaVersion)) {
       return technicalAnalysisRequestFromJson(value);
     }
+    if (REQUEST_SCHEMA_V5.equals(schemaVersion)) {
+      return technicalAnalysisV5RequestFromJson(value);
+    }
     if (!REQUEST_SCHEMA_V3.equals(schemaVersion)) {
       throw failure("ANALYSIS_RUN_STORE_INVALID", null);
     }
@@ -1200,6 +1303,66 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
               artifactReference(inputs.path("toolchainRef")),
               artifactReference(inputs.path("artifactPolicyRegistryRef")),
               analysisStepPublication(inputs.path("upstreamPublication"))));
+    } catch (RunRegistryException failure) {
+      throw failure;
+    } catch (RuntimeException invalid) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", invalid);
+    }
+  }
+
+  private static AnalysisRunRequest technicalAnalysisV5RequestFromJson(ObjectNode value) {
+    requireFields(value, REQUEST_V5_TECHNICAL_ANALYSIS_FIELDS);
+    if (!AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS
+        .name()
+        .equals(requiredText(value, "requestKind"))) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    JsonNode inputsValue = value.path("technicalAnalysisInputs");
+    if (!(inputsValue instanceof ObjectNode inputs)) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    try {
+      AnalysisRunRequest.TechnicalOperation operation =
+          AnalysisRunRequest.TechnicalOperation.valueOf(requiredText(inputs, "operation"));
+      Set<String> expected = new java.util.HashSet<>(TECHNICAL_ANALYSIS_V5_COMMON_FIELDS);
+      AnalysisStepPublicationReference upstream = null;
+      ModulePublicationReference frontend = null;
+      switch (operation) {
+        case COLLECT_FRONTEND -> {
+          // R0 is the selected source basis.
+        }
+        case COLLECT_CODE -> {
+          expected.add("sourcePublication");
+          upstream = analysisStepPublication(inputs.path("sourcePublication"));
+        }
+        case ANALYZE_PERSISTENCE -> {
+          expected.add("codePublication");
+          upstream = analysisStepPublication(inputs.path("codePublication"));
+        }
+        case ASSEMBLE_MATERIALS -> {
+          expected.add("frontendPublication");
+          expected.add("persistencePublication");
+          expected.add("entryEvidenceProfile");
+          frontend = modulePublication(inputs.path("frontendPublication"));
+          upstream = analysisStepPublication(inputs.path("persistencePublication"));
+        }
+      }
+      requireFields(inputs, expected);
+      EntryEvidenceProfile entryEvidenceProfile =
+          operation == AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS
+              ? entryEvidenceProfile(inputs.path("entryEvidenceProfile"))
+              : null;
+      return AnalysisRunRequest.technicalFourOperations(
+          selectedSourceBasis(value.path("selectedSourceBasis")),
+          operation,
+          artifactReference(inputs.path("technicalProfileRef")),
+          artifactReference(inputs.path("resourceBudgetRef")),
+          artifactReference(inputs.path("schemaBundleRef")),
+          artifactReference(inputs.path("toolchainRef")),
+          artifactReference(inputs.path("artifactPolicyRegistryRef")),
+          upstream,
+          frontend,
+          entryEvidenceProfile);
     } catch (RunRegistryException failure) {
       throw failure;
     } catch (RuntimeException invalid) {
@@ -1366,6 +1529,30 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
         Sha256Digest.parse(requiredText(object, "analysisStepReceiptSha256")));
   }
 
+  private static void entryEvidenceProfile(ObjectNode value, EntryEvidenceProfile profile) {
+    if (profile == null) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    value.put("maxEntryUtf8Bytes", profile.maxEntryUtf8Bytes());
+    value.put("maxPublicationUtf8Bytes", profile.maxPublicationUtf8Bytes());
+    value.put("maxEntries", profile.maxEntries());
+  }
+
+  private static EntryEvidenceProfile entryEvidenceProfile(JsonNode value) {
+    if (!(value instanceof ObjectNode profile)) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    requireFields(profile, ENTRY_EVIDENCE_PROFILE_FIELDS);
+    try {
+      return new EntryEvidenceProfile(
+          positiveLong(profile, "maxEntryUtf8Bytes"),
+          positiveLong(profile, "maxPublicationUtf8Bytes"),
+          positiveInt(profile, "maxEntries"));
+    } catch (RuntimeException invalid) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", invalid);
+    }
+  }
+
   private static void policyReference(ObjectNode value, ArtifactPolicyRegistryReference reference) {
     value.put("artifactId", reference.artifactId().value());
     value.put("sha256", reference.sha256().value());
@@ -1488,6 +1675,22 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
       throw failure("ANALYSIS_RUN_STORE_INVALID", null);
     }
     return node.textValue();
+  }
+
+  private static long positiveLong(ObjectNode value, String field) {
+    JsonNode node = value.path(field);
+    if (!node.isIntegralNumber() || !node.canConvertToLong() || node.longValue() < 1L) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    return node.longValue();
+  }
+
+  private static int positiveInt(ObjectNode value, String field) {
+    JsonNode node = value.path(field);
+    if (!node.isIntegralNumber() || !node.canConvertToInt() || node.intValue() < 1) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    return node.intValue();
   }
 
   private String randomHex() {

@@ -1,6 +1,6 @@
 # 四个技术操作：配置、输入输出、保存与 Skill
 
-状态：2026-09-29详细设计，**本页新版本和四命令尚未实施**。当前已实现的是config-v2、request-v4、output-v8及合并前后端的旧collect-code→持久化→组包三命令；固定源码已经保存和重开，但调用准确性未通过。这里替代旧三命令目标，不改写其历史结果。
+状态：2026-09-29 工程实现与固定源码技术验收已完成，提交收口中。config-v3、request-v5、output-v9及四个独立技术操作已接入正式CLI、Agent、registry和canonical store，并通过同源离线直接回归。最终R4从准确R1/R3及其R2生成339份按入口JSON，严格重开与目录、具名入口、前端覆盖三类正式查询均通过；早期R4的绝对JDT路径及相对位置投影缺陷不用于最终交付。容量阻断没有成功receipt。历史config-v1/v2、request-v4、output-v8继续按原字节形状严格读取，旧结果不改写。静态匹配不能证明运行时地址或全量调用边都准确。
 
 ## 1. 唯一程序与四个独立操作
 
@@ -27,7 +27,7 @@ R1和R2无相互先后要求；R3不引用R1；R4必须同时绑定两个分支�
 
 ### 2.1 目标配置v3
 
-以下是目标字段形状，路径和资源上限须由实际配置给出，不能直接把占位符拿去执行：
+以下是目标字段形状；可复制的[共享配置示例](../../../tools/repository-run/technical-analysis.example.yaml)已同步为v3。路径和资源上限须由实际配置给出，不能直接把占位符拿去执行：
 
 ```yaml
 schemaVersion: technical-analysis-config-v3
@@ -37,7 +37,7 @@ storage:
   root: /absolute/analysis-store
   preparedSourceArchive: /absolute/prepared-source-archive
   sourcePreparationPolicyRegistry: /absolute/source-preparation-policy.json
-  artifactPolicyRegistry: /absolute/technical-policy.json
+  artifactPolicyRegistry: /absolute/technical-analysis-artifact-policy-set-v2.json
 frontend:
   enabled: true
   nodeExecutable: /absolute/node
@@ -66,18 +66,25 @@ evidence:
 ```
 
 - R0是唯一预期来源及排除版本；同源验证来自reader，不让Agent另填摘要。
-- java.compilationInput沿用已实现v2子对象语义。源码根、编译级别及支持的直接模块关系从官方effective-POM提取，不让Agent补写JSON。私有java-compilation-input-v2保持。
+- java.compilationInput沿用已实现v2子对象语义。源码根、编译级别及支持的直接模块关系从官方effective-POM提取，不让Agent补写JSON。私有java-compilation-input-v2保持；即使R2因外部输入不可用而保存BLOCKED报告，排队身份仍绑定模块内容、原始Maven输出、目标JDK与编译设置。缺少project POM和缺少effective POM以不同、带准确外部文件路径的诊断说明。
 - Maven由用户或获准Agent运行；Java不调用Maven、不下载、不重新求值POM。
 - frontend配置没有后端run或entry清单。Java配置没有前端tool指纹；前端失败不使独立后端操作失败。
 - 原frontend.httpMappings迁到evidence.httpMappings，因为关联现在属于R4；R1仍保存已知/未知baseURL与原始配置来源。不能仅移动字段却继续在R1匹配。
 - 删除新执行的readingMaterials.maxEntriesPerPacket/maxPacketUtf8Bytes。新evidence上限只限制实际JSON资源，不决定业务分组、不按Markdown计量。
 - 必需配置按操作校验：R1只需source/storage/frontend；R2只需source/storage/java；R3只需source/storage/persistence；R4只需source/storage/evidence。无关分支可以缺省；存在时仍要求语法合法，但不读取路径、不初始化工具、不进入该操作指纹。
-- frontend.enabled=false时R1保存DISABLED索引，不要求Node。R4仍接收准确的该R1，不能用省略--frontend-run暗示关闭。
+- frontend.enabled=false时R1保存DISABLED索引，不要求Node。已启用R1只保存前端文件、请求和完整source-unit投影；它不保存旧v1的`ENTRY_LINK`，也不因后端未运行而写入`BACKEND_DISCOVERY_NOT_RUN`链接。R4仍接收准确的该R1，不能用省略--frontend-run暗示关闭。
 - R3插件关闭仍产出准确DISABLED结果；R4保留“未分析持久化”，不把空SQL当成功解析。
 
 ### 2.2 输入身份与旧配置
 
-四操作的新执行仅接受v3。v1手填编译语义和v2前后端合并配置只保留对应历史观察，不静默迁移QUEUED请求、不补默认前端运行。Agent可按设计改写一份新配置，但不能改旧运行。
+四操作的新执行仅接受v3。v1手填编译语义和v2前后端合并配置只保留对应历史观察，不静默迁移QUEUED请求、不补默认前端运行。`TechnicalAnalysisConfiguredRuntime` 在inspect/artifact分流后、启动任何来源或技术producer前拒绝非v3配置；`LocalRepositoryAnalysisAgent`仍是无配置schema的存储／执行公共边界，保留用于历史request-v4/output-v8的严格重开，而不是第二个受支持的新生产入口。Agent可按设计改写一份新配置，但不能改旧运行。
+
+运行器不再保留config-v2的collect-code内嵌前端、持久化v1或Packet组装生产分支。旧 Packet 的
+`CodeReadingMaterialBuilder`／`DefaultCodeReadingMaterialBuilder`／`CodeReadingMaterialRequest`
+及写入方法已删除；`CodeReadingMaterialReader`、`CodeReadingMaterialSet`、
+`CodeReadingMaterialProfile`、旧schema／producer身份、Markdown导出和严格v1/v2解码仍保留。历史
+config-v2只在inspect/artifact的严格读取链中使用：旧request-v4/output-v8、Packet、Markdown导出及其
+版本化reader仍按原合同重开，不能借由新CLI重新执行。
 
 每个操作只绑定实际消费的语义输入：
 
@@ -101,17 +108,21 @@ evidence:
 
 配置文件路径、凭据、工具物理位置留在配置/私有层；公共请求使用既有逻辑ID和typed refs，不增加公共Path。
 
-output-v9调整TechnicalRunOutput的owner规则，不再要求frontendIndex与readiness/discovery/navigation同一run。分别核对frontendOwner、backendOwner、persistenceOwner、outputOwner及操作应有/不得有的产物。仅删除旧requireSame不足以实现来源安全。
+R4 的 request-v5 持久记录本次实际的入口证据容量参数（`EntryEvidenceProfile` 的三个具体数值），并与资源配置引用一同绑定。已结束 R4 的 `inspect/artifact` 和上游重开只使用这个保存值确定 canonical store 限额；不能再从当前 YAML 取限额，因为用户修改或移走配置后，历史产物仍须可读。其它 v5 技术操作没有 R4 容量字段；历史 v4 按原格式读取。直接CLI回归覆盖了缩小或移除当前 `evidence` section 后的重开。
+
+output-v9调整TechnicalRunOutput的owner规则，不再要求frontendIndex与readiness/discovery/navigation同一run。分别核对frontendOwner、backendOwner、persistenceOwner、outputOwner及操作应有/不得有的产物：R3 persistence owner不得等于backend owner，R4 frontend/persistence owner均不得冒充backend owner。仅删除旧requireSame不足以实现来源安全。
 
 ### 3.1 每个命令内部步骤
 
-**R1：**重开R0 → 校验前端范围/工具 → 一次投影冻结源码给固定helper → parser及有限关联到HTTP请求 → 保存FILE、SOURCE_UNIT、请求、参数及局限 → 正式module6 → 登记输出。无后端ID也能成功；语法不支持按文件记范围，工具协议损坏停止。
+**R1：**重开R0 → 校验前端范围/工具 → 一次投影冻结源码给固定helper → parser及有限关联到HTTP请求 → 保存FILE、SOURCE_UNIT、请求、参数及局限 → 正式module6 → 登记输出。v2 对实际静态本地调用可同时保存 caller wrapper 与被调完整 supporting unit（如 `loadData`→`getQueryParams`），两者范围/来源分别严格核验；不执行JS。无后端ID也能成功；语法不支持按文件记范围，工具协议损坏停止。
 
 **R2：**重开R0 → 读取官方Maven输出并绑定实际环境 → 保存就绪报告 → 同一JDT环境/session发现后端入口、Mapper线索 → 现有调用收集＋批准的逐调用绑定修正 → 保存Step02/03 → 登记输出并关闭工具。known环境错误阻断，diagnosticCoverage未确认披露后继续。完全不调用FrontendHttpDiscoverer/Node。
 
-**R3：**重开R2 request/output/Step02/03并核同R0 → 从R0读取XML → 现有PersistenceAnalyzer（含排序投影修正）→ 保存Step04 → 重开校验并登记。无R1输入，不能保留“frontendIndex非空”的旧守卫。
+当前D2生产接线仅由request-v5/config-v3 R2选择`java-code-index-v3`/module v4；已存在的技术v2路径仍严格写`java-code-index-v2`/module v3。hierarchy `fromRange`必须落在同一AST调用site内才可成为该调用的候选；确认的`jdt://contents/`目标记为`EXTERNAL`，`JDT_QUERY_FAILED`保留已得到的候选但不展开为正文/SQL边，并形成入口限制。`EXTERNAL`是正常边界而不是缺口。旧`java-code-index-v2`及其三种历史状态仍由独立严格reader读取。D2 resolver的6项直接合同和v2 publication的8项回归已GREEN；这不是客户源码/JDT全量准确性验收。
 
-**R4：**重开R1和R3 → 沿R3取得准确R2 → 同源/版本/owner检查 → 根据已保存范围水化前端单元 → 已有method/path匹配逻辑移到组装 → 按entryId组织全部已取得方法/调用/XML/SQL/前端 → 资源检查 → 发布入口文件/索引/前端覆盖 → 重开和登记。不解析原文推导新关系。
+**R3：**重开R2 request/output/Step02/03并核同R0 → 从R0读取XML → 现有PersistenceAnalyzer（含排序投影修正）→ 保存Step04 → 重开校验并登记。`PlainSelect`与`SetOperationList`的 `ORDER_BY` 都直接来自 JSqlParser AST，保留表达式、明确方向与`NULLS_FIRST`/`NULLS_LAST`，不再解析SQL文本。无R1输入，不能保留“frontendIndex非空”的旧守卫。
+
+**R4：**重开R1和R3 → 沿R3取得准确R2 → 同源/版本/owner检查 → 根据已保存范围水化前端单元 → 已有method/path匹配逻辑移到组装 → 按entryId组织全部已取得方法/调用/XML/SQL/前端 → 资源检查 → 发布入口文件/索引/前端覆盖 → 重开和登记。不解析原文推导新关系。新版 `entry-evidence-v1` producer及R0→R1/R2→R3→R4 CLI、历史重开、index查询和固定源码339个入口的全量组装均已验证；具体运行、具名调用复核和限制见[验收记录](../../supplements/technical-entry-evidence-acceptance-20260929.md)。不能把历史Packet作为新版R4成功输出，也不能把静态候选当成实际部署连通。资源超限返回具名BLOCKED且没有成功receipt。旧配置拒绝新生产、新v3必需参数、历史读取及直接受影响的回归均已定向验证。
 
 ### 3.2 生命周期与用户可见结果
 
@@ -119,6 +130,7 @@ output-v9调整TechnicalRunOutput的owner规则，不再要求frontendIndex与re
 
 - 所需产物安装完成可以FINISHED并带限制，不表示每个入口均完整。
 - 阻断/工具失败运行仍可inspect/artifact查询**实际已安装**的报告。没有receipt的临时文件不列为正式输出。
+- R4因容量、来源或保存前检查而BLOCKED时仍可inspect其已核验的R0/R1/R2/R3来源及具名问题；它没有Step05 receipt，inspect不列`availableOutput`，artifact明确拒绝，不能把上游publication伪装为R4产物。
 - 前端与后端独立，R1工具失败不会抹掉已完成R2；但R4不拿损坏/不完整publication拼成成功集合。
 - 局部受支持格式未知、Java入口失败、SQL部分解析必须进入覆盖；不能因为某个入口失败缩小分母。
 - R0损坏/排除冲突、wrong owner、错上游、存储损坏阻断，不让Agent确认后绕过。
@@ -138,7 +150,7 @@ output-v9调整TechnicalRunOutput的owner规则，不再要求frontendIndex与re
 | R3 | Step04 persistence-material-index.jsonl |
 | R4 | Step05 module4及步骤publication：entry-evidence-index.json、entry-<完整entryIdhex>.json、frontend-coverage.jsonl |
 
-R0仍由source-preparation policy/archive重开；R1–R4由technical policy处理。技术范围更大不能改变R0历史策略。各producer使用当前destinationRunId；同源不等于同owner。
+R0仍由source-preparation policy/archive重开；R1–R4由technical policy处理。v3新运行使用`tools/repository-run/technical-analysis-artifact-policy-set-v2.json`，它在保留v1全部规则的基础上加入`frontend-http-index-v2`、技术Java索引`java-code-index-v3`、持久化索引`persistence-material-index-v2`及入口证据三种文件规则。历史`technical-analysis-artifact-policy-set-v1.json`和历史JDT policy均不修改，历史结果以其原controls/policy hash重开。技术范围更大不能改变R0历史策略。各producer使用当前destinationRunId；同源不等于同owner。
 
 检查链：
 1. 配置绑定R0必须与各保存输入相同，含有效排除，不从材料反推预期值。
@@ -152,16 +164,18 @@ R0仍由source-preparation policy/archive重开；R1–R4由technical policy处�
 
 artifact增加ENTRY_EVIDENCE_INDEX、ENTRY_EVIDENCE（必须准确entryId）、FRONTEND_EVIDENCE_COVERAGE版本化查询；旧CODE_READING_MATERIALS(_V2)仅读原schema。FRONTEND_HTTP_INDEX也按请求版本明确读v1/v2，不把无ENTRY_LINK的v2伪装成v1。query不启动任何工具/Provider。
 
+`inspect.availableOutputs`列出的名称必须是该已保存运行在`artifact --key`中实际可读的版本化键。新前端v2、Java索引v3、持久化v2不能继续广告相应旧schema键；历史v4/v8仍列旧键。R0→R1/R2→R3→R4正式CLI的版本化名称直接回归已通过1/0/0；固定源码四命令也已独立运行并严格重开。
+
 ## 5. 版本与兼容
 
 以下均为目标新写版本，实施时producer、reader、policy、直接fixture同批更新，不修改旧文件：
 
 | 合同 | 当前已实现 | 本轮新写 |
 | --- | --- | --- |
-| 技术配置 | v2（v1历史） | v3，独立前端/后端及evidence配置 |
-| 公共请求 / 运行输出 | v4 / v8 | v5 / v9，四意图及R4两个分支 |
+| 技术配置 | v2（v1历史） | v3已接入；R1–R4已在固定源码上真实执行，最终R4位置投影待复验 |
+| 公共请求 / 运行输出 | v4 / v8 | v5 / v9已接入；四意图及R4双分支已由真实运行验证，完整内容准确性另验 |
 | 私有编译输入 / 环境 / 就绪 | v2 / v1 / v1 | 保持，前端从后端owner规则中移出 |
-| 前端索引 / producer | v1 / v1（含ENTRY_LINK） | v2 / v2（无后端匹配） |
+| 前端索引 / producer | v1 / v1（含ENTRY_LINK） | v2 / v2已接入（无后端匹配、无ENTRY_LINK） |
 | Step02 publisher / capability / entry行 | v4 / v2 / v3 | v5 / v2 / v3（后端运行不再要求frontend；capability正文格式不变） |
 | Core helper协议 | v3 | v4，真实逐调用绑定投影；不是新增解析器 |
 | Java索引 Schema / 技术 module producer | v2 / v3 | v3 / v4，绑定及外部/未知/失败分类 |

@@ -1,6 +1,6 @@
 # JDT引擎：各子模块详细设计
 
-> [总设计](README.md) / [统一字段](contracts-and-configuration.md)。本页负责“怎么得到代码”，不负责业务解释。所有子模块产品模型调用为0。C2逐模块classpath/目标平台接线、真实LS回读、双模块catalog与跨模块collect已由直接测试验证；旧正式三命令也已在固定源码保存Step02/03结果。接线和直接测试通过不等于固定源码调用准确性通过，现存嵌套调用错边及局部查询失败仍见[固定源码验收](../../supplements/technical-analysis-fixed-source-acceptance.md)。下文新增的逐调用绑定归属、外部边界分类是**已批准的设计目标，尚未实现或真实验收**。官方Maven导出由用户或获明确授权的Agent执行，Java只消费结果，见[Step02交接](../technical-analysis/dependency-preparation.md)。
+> [总设计](README.md) / [统一字段](contracts-and-configuration.md)。本页负责“怎么得到代码”，不负责业务解释。所有子模块产品模型调用为0。C2逐模块classpath/目标平台接线、真实LS回读、双模块catalog与跨模块collect已由直接测试验证；旧正式三命令也已在固定源码保存Step02/03结果。逐调用绑定归属、外部边界与查询失败的窄修正已有直接测试和新 Java 索引 v3 发布／重开测试；**固定客户源码的具名错边尚未用本轮四命令重验**，不能把测试通过写成真实准确性通过。旧结果与局部查询失败见[固定源码验收](../../supplements/technical-analysis-fixed-source-acceptance.md)。官方Maven导出由用户或获明确授权的Agent执行，Java只消费结果，见[Step02交接](../technical-analysis/dependency-preparation.md)。
 
 ## 1. JdtProjectSession：把完整固定仓库交给一个索引
 
@@ -172,7 +172,9 @@ Luna须测试显式全名、通配import、同名自定义注解、源码组合�
 
 一条调用若已有确认的仓库目标而另一个必需查询失败，仍显式记录`QUERY_FAILED`与局部候选，不宣称候选集合完整。仅确认的仓库边可入Collector队列；工具位置、binding或fromRange不足以确立所有权的候选只作观察，不成为Step04/05的Mapper/SQL连接。`EXTERNAL`不等于项目源码查不到；二者由工具证据区分。这是**现有JDT模块的关联和状态投影规则**，不是另一个Java解释器或通用调用裁决器。查询失败的私有原始交换仍按现行日志保存，公开CALL仅保存稳定代码与安全细节，不泄露绝对路径。
 
-实施字段只放在既有seam：Core v4 的`CallSiteView`/`Declaration`加`bindingObservation={state,declarationKey,declaringTypeKey,typeOrigin,displayIdentity}`（不可得字段为null）；Resolver对每个LS位置留`{operation,uriKind,sourceRange,association=CONFIRMED|UNCONFIRMED|CONFLICT}`观察，并返回确认的静态声明、可能实现、外部身份或失败。index v3的CALL保留原`targets`供**可展开**仓库边，另加外部身份、未确认位置及操作失败的值投影；`resolution`新增`EXTERNAL`、`QUERY_FAILED`，原`UNRESOLVED`只表达正常查询后仍未定位。现有`CallTarget.expansion=EXTERNAL`可沿用，但目标必须有可核对的工具身份，不能仅有displayName。publisher/reader检查状态与字段组合，Step04/05只沿确认的仓库target连接Mapper/SQL，不从未确认观察或外部标记合成客户声明。对方法owner的outgoing查询失败时，其所辖调用共同记录该操作失败；精确逐点查询仍可取得局部观察，但不能把它们合并成完整候选集。只捕获可归属的`JDT_QUERY_FAILED`，协议损坏/来源漂移等共享fatal不降为逐调用状态。
+实施字段只放在既有seam：Core v4 的`CallSiteView`/`Declaration`加`bindingObservation={state,declarationKey,declaringTypeKey,typeOrigin,displayIdentity}`（不可得字段为null）；Resolver对每个LS位置留`{operation,uriKind,sourceRange,association=CONFIRMED|UNCONFIRMED|CONFLICT}`观察，并返回确认的静态声明、可能实现、外部身份或失败。index v3的CALL保留原`targets`供**确认的仓库调用边**；外部身份、未确认位置及操作失败放在同一调用键下的结构化观察，`resolution`新增`EXTERNAL`、`QUERY_FAILED`，原`UNRESOLVED`只表达正常查询后仍未定位。Collector内存可以暂留`NOT_EXPANDED`的未确认诊断候选；v3发布时必须把它移入观察，而不能作为正式CALL target。相反，已经确认、仅因收集预算而`NOT_EXPANDED`的仓库边仍属target，不得一概删除。`EXTERNAL`的`targets`必须为空：现有`CallSite`构造合同禁止把库方法伪装成仓库目标；工具确认的方法身份与来源由观察保存，不能只留URI或从调用字符串猜名称。publisher/reader检查状态与字段组合，Step04/05只沿确认的仓库target连接Mapper/SQL，不从未确认观察或外部标记合成客户声明。对方法owner的outgoing查询失败时，其所辖调用共同记录该操作失败；精确逐点查询仍可取得局部观察，但不能把它们合并成完整候选集。只捕获可归属的`JDT_QUERY_FAILED`，协议损坏/来源漂移等共享fatal不降为逐调用状态。
+
+正式记录的具体位置是`CALL.payload.call.observations`；`CALL.payload.call.targets`只存确认的仓库边。v2 writer明确省略`observations`，v2 reader要求该字段缺失并重建空列表；v3 writer必须写数组，v3 reader必须验证它存在且结构合法。不能通过缺字段默认空列表猜测版本。
 
 目标实施使Core私有协议`jdt-syntax-v3→v4`、Step03新发布`java-code-index-v2→v3`、技术Step03 module producer `v3→v4`（与四CLI设计的版本矩阵一致）；新读写器严格校验新字段及状态，现存index v2只由历史读法读取，绝不回填绑定或重写历史错边。Step02环境/readiness v1、目标JDK/`diagnosticCoverage`、已修好的同key RPC缓存语义均不变。独立版本和确切lineage由[技术运行合同](../technical-analysis/cli-and-runtime.md)持有。
 

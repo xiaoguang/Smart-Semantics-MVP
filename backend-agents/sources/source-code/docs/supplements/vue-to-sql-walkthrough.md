@@ -119,7 +119,7 @@ public TableDataInfo getList(@RequestParam(value = Constants.SEARCH, required = 
 
 新 `assemble-materials --frontend-run R1 --persistence-run R3` 先核同一 R0、有效排除和 R3→R2 的准确 lineage；此时用 R1 请求及 R2 后端入口作匹配，再选择完整 Vue/Java/XML 单元，零 parser/JDT/业务 LLM。R4 按每个真实 entryId 发布一个完整 `entry-<entryIdhex>.json`，外加 `entry-evidence-index.json` 与保存全部请求（包括无匹配）的 `frontend-coverage.jsonl`，不能把 12 个入口塞入一个共用 packet 才可读。旧同运行 [PACKET:215][packet215] 是 **v1 后端包**：本入口 282 方法、713 调用、17 XML Resource、19 statement/SQL 引用、299 packet 内 SourceRef、1,060,223 UTF-8 字节，未选单元 0；旧 [ENTRY_COVERAGE:541][coverage541] 为 `COLLECTED_WITH_LIMITATIONS`。这些数字属于旧运行，不是新 R4 预算。
 
-旧 v1 JSONL 存 `methodKeys/callKeys/persistence/sourceReferences/unselectedUnits/limitations` 等引用，完整 Method 与 Resource 在旧 Step03/04；短 ref 只能连同所属 publication/packet 解释。历史旧技术 R3 则已保存并重开 Step05 v2，前端索引沿旧 R1 `ENTRY_LINK` 选单元。本例旧 R3 把上述物理请求标为 `SELECTED`，但共享 mixin 的 `getQueryParams` 完整函数 115–143 行未被作为独立 SOURCE_UNIT 选入；新 R1 必须补足并由 R4 恢复。新 R4 的容量超限是运行失败，不沿用旧包的逐单元削减策略。[Step05 合同](../analysis-steps/05-business-flows.md)
+旧 v1 JSONL 存 `methodKeys/callKeys/persistence/sourceReferences/unselectedUnits/limitations` 等引用，完整 Method 与 Resource 在旧 Step03/04；短 ref 只能连同所属 publication/packet 解释。历史旧技术 R3 则已保存并重开 Step05 v2，前端索引沿旧 R1 `ENTRY_LINK` 选单元。本例旧 R3 把上述物理请求标为 `SELECTED`，但共享 mixin 的 `getQueryParams` 完整函数 130–144 行未被作为独立 SOURCE_UNIT 选入；修复后的新 R1 已补足，R4恢复尚待真实验收。新 R4 的容量超限是运行失败，不沿用旧包的逐单元削减策略。[Step05 合同](../analysis-steps/05-business-flows.md)
 
 R4 对每个后端入口各写一个自含 JSON；未匹配请求留在独立全仓覆盖，不能塞进某个 `entryId`。唯一匹配的页面实例进确定 `requestUses`；多候选分别出现在候选入口的 `candidateRequestUses`，附全候选 ID，不能当确定调用者或推导该入口 SQL。每入口 JSON 保留完整已收集前端/Java/Mapper/XML、来源和上游限制；无页面或未收集代码也有明确空范围，正式 `DISABLED` 前端 R1 则标“前端未分析”，不能当作省略上游。索引按 entryId 指向平铺文件，字节数/摘要只由 canonical receipt descriptor 核验；任一入口或整体容量超限，R4 失败且不发布成功集合，不截断、不写伪完整 stub。旧 Step06/07 未适配时明确拒绝新版本。
 
@@ -145,7 +145,7 @@ R4 对每个后端入口各写一个自含 JSON；未匹配请求留在独立全
 
 ## 未完成与未证明
 
-- 四个新阶段及独立 `frontend-http-index-v2`、R4 matcher、单入口 JSON 尚未实现；历史旧 R1/R2/R3 的行与 ID 不代表新结果。新 R1 仍需补 `getQueryParams` 完整源码单元，R4 需保留全仓未匹配请求。
+- 四个独立命令、`frontend-http-index-v2`、R4 matcher 和单入口 JSON 已在同源离线fixture中接通，但固定源码验收未完成。第一次真实新R1虽然保存了请求里的 `getQueryParams` 源码单元引用，运行器却漏传辅助单元，使正式`SOURCE_UNIT`缺少完整函数；须修复后新建R1并重开核对。第一次真实新R2在339入口导航后发布失败，没有可供R3/R4使用的Java索引。历史旧R1/R2/R3的行与ID不能代替这次新结果；R4仍须验证全仓未匹配请求被保留。
 - 本例没有抓包或应用执行证据。历史 `MATCHED_UNIQUE` 只核 route/method；运行时 `_CONFIG`、网关、最终 SQL、用户权限、返回行和提交/状态变化都未证明。
 - 同一共享组件还有其它请求：点击列表编号会调用 `findBillDetailByNumber`[对话框详情][link267]；选中后 `loadDetailData` 用所选 `headerId`、`mpList=''`、`linkType=this.showType` 请求 `GET /depotItem/getDetailList`[明细请求][link347]。选明细后 `@ok` 才回填采购订单的 `linkApply` 和 `linkId`[确定回调][link295]、[订单回填][order424]。这些分支未逐个走到 SQL，不得借本例的主列表 SQL 代表它们。
 - [PurchaseInModal.vue:459–461][in459] 使用 `show('其它','采购订单','供应商','1,3')`，令共享组件 `showType='basic'`[共享组件 show][link222]；它与采购订单的 `purchaseShow('其它','请购单','客户','1,3')` 不是同一个前端使用上下文。需以此、多候选后端、动态 URL、不同 `this.url` 和排除来源验收不误连。

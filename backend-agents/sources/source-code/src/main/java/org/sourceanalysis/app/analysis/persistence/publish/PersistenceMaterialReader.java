@@ -35,8 +35,9 @@ public final class PersistenceMaterialReader {
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final Set<String> RECORD_TYPES =
       Set.of("HEADER", "RESOURCE", "STATEMENT", "JAVA_BINDING", "SQL_ANALYSIS", "DIAGNOSTIC");
-  private static final Set<String> PRODUCERS =
+  private static final Set<String> LEGACY_PRODUCERS =
       Set.of("persistence-analysis-v1", "persistence-analysis-v2");
+  private static final Set<String> TECHNICAL_V3_PRODUCERS = Set.of("persistence-analysis-v3");
   private final CanonicalAnalysisStepArtifactStore steps;
   private final CanonicalAnalysisStepArtifactStore sourceSteps;
   private final CanonicalJsonCodec json = new CanonicalJsonCodec();
@@ -76,7 +77,8 @@ public final class PersistenceMaterialReader {
           || payload.descriptor().mediaType() != CanonicalMediaType.APPLICATION_X_NDJSON) {
         throw invalid();
       }
-      return parse(payload.canonicalUtf8());
+      return parse(
+          payload.canonicalUtf8(), PersistenceMaterialPublisher.SCHEMA_VERSION, LEGACY_PRODUCERS);
     } catch (RuntimeException failure) {
       if (failure instanceof IllegalArgumentException
           && "PERSISTENCE_MATERIAL_INDEX_INVALID".equals(failure.getMessage())) {
@@ -156,8 +158,128 @@ public final class PersistenceMaterialReader {
     }
   }
 
-  private PersistenceMaterialIndex parse(ImmutableBytes bytes) {
-    List<Line> lines = lines(bytes);
+  /** Reopens only the v3 technical producer, whose persisted persistence index is schema v2. */
+  public PersistenceMaterialIndex reopenTechnicalV3(
+      AnalysisStepPublicationReference reference,
+      AnalysisRunId expectedR2,
+      VerifiedSourceInventoryReference expectedR0,
+      ApplicationDiscoveryReference expectedR1Discovery,
+      ProgramGraphsReference expectedR1Navigation,
+      ArtifactControls r1Controls,
+      ArtifactControls r2Controls) {
+    try {
+      Objects.requireNonNull(reference, "persistence publication");
+      Objects.requireNonNull(expectedR2, "R2 run ID");
+      Objects.requireNonNull(expectedR0, "R0 source");
+      Objects.requireNonNull(expectedR1Discovery, "R1 discovery");
+      Objects.requireNonNull(expectedR1Navigation, "R1 navigation");
+      Objects.requireNonNull(r1Controls, "R1 controls");
+      Objects.requireNonNull(r2Controls, "R2 controls");
+      ReopenedAnalysisStepPublication source = sourceSteps.reopen(expectedR0.publication());
+      ReopenedAnalysisStepPublication discovery = steps.reopen(expectedR1Discovery.publication());
+      ReopenedAnalysisStepPublication navigation = steps.reopen(expectedR1Navigation.publication());
+      ReopenedAnalysisStepPublication persistence = steps.reopen(reference);
+      requireTechnicalPredecessors(
+          reference,
+          expectedR2,
+          source,
+          expectedR0,
+          discovery,
+          expectedR1Discovery,
+          navigation,
+          expectedR1Navigation,
+          persistence,
+          r1Controls,
+          r2Controls);
+      return reopen(
+          reference,
+          persistence,
+          PersistenceMaterialPublisher.TECHNICAL_SCHEMA_VERSION,
+          TECHNICAL_V3_PRODUCERS);
+    } catch (RuntimeException failure) {
+      if (failure instanceof IllegalArgumentException
+          && "PERSISTENCE_MATERIAL_INDEX_INVALID".equals(failure.getMessage())) {
+        throw failure;
+      }
+      throw invalid(failure);
+    }
+  }
+
+  private static void requireTechnicalPredecessors(
+      AnalysisStepPublicationReference reference,
+      AnalysisRunId expectedR2,
+      ReopenedAnalysisStepPublication source,
+      VerifiedSourceInventoryReference expectedR0,
+      ReopenedAnalysisStepPublication discovery,
+      ApplicationDiscoveryReference expectedR1Discovery,
+      ReopenedAnalysisStepPublication navigation,
+      ProgramGraphsReference expectedR1Navigation,
+      ReopenedAnalysisStepPublication persistence,
+      ArtifactControls r1Controls,
+      ArtifactControls r2Controls) {
+    if (!source.reference().equals(expectedR0.publication())
+        || source.reference().address().analysisStepKey()
+            != AnalysisStepKey.VERIFIED_SOURCE_INVENTORY
+        || !discovery.reference().equals(expectedR1Discovery.publication())
+        || discovery.reference().address().analysisStepKey()
+            != AnalysisStepKey.APPLICATION_DISCOVERY
+        || !navigation.reference().equals(expectedR1Navigation.publication())
+        || navigation.reference().address().analysisStepKey() != AnalysisStepKey.PROGRAM_GRAPHS
+        || !persistence.reference().equals(reference)
+        || !reference.address().runId().equals(expectedR2)
+        || !persistence.receipt().controls().equals(r2Controls)
+        || !discovery.receipt().controls().equals(r1Controls)
+        || !navigation.receipt().controls().equals(r1Controls)
+        || source.reference().address().runId().equals(discovery.reference().address().runId())
+        || !discovery.reference().address().runId().equals(navigation.reference().address().runId())
+        || expectedR2.equals(source.reference().address().runId())
+        || expectedR2.equals(discovery.reference().address().runId())
+        || !discovery.receipt().upstreamAnalysisStepReferences().equals(List.of(source.reference()))
+        || !navigation
+            .receipt()
+            .upstreamAnalysisStepReferences()
+            .equals(List.of(source.reference(), discovery.reference()))
+        || !persistence
+            .receipt()
+            .upstreamAnalysisStepReferences()
+            .equals(List.of(source.reference(), discovery.reference(), navigation.reference()))) {
+      throw invalid();
+    }
+  }
+
+  private PersistenceMaterialIndex reopen(
+      AnalysisStepPublicationReference reference,
+      ReopenedAnalysisStepPublication step,
+      String expectedSchemaVersion,
+      Set<String> expectedProducers) {
+    try {
+      Objects.requireNonNull(reference, "persistence publication");
+      Objects.requireNonNull(step, "reopened persistence publication");
+      if (!step.reference().equals(reference)
+          || reference.address().analysisStepKey() != AnalysisStepKey.PROVEN_CODE_FACTS
+          || step.semanticPayloads().size() != 1) {
+        throw invalid();
+      }
+      VerifiedCanonicalPayload payload = step.semanticPayloads().get(0);
+      if (!PersistenceMaterialPublisher.FILE_NAME.equals(payload.descriptor().fileName())
+          || !PersistenceMaterialPublisher.ARTIFACT_TYPE.equals(payload.descriptor().artifactType())
+          || !expectedSchemaVersion.equals(payload.descriptor().schemaVersion())
+          || payload.descriptor().mediaType() != CanonicalMediaType.APPLICATION_X_NDJSON) {
+        throw invalid();
+      }
+      return parse(payload.canonicalUtf8(), expectedSchemaVersion, expectedProducers);
+    } catch (RuntimeException failure) {
+      if (failure instanceof IllegalArgumentException
+          && "PERSISTENCE_MATERIAL_INDEX_INVALID".equals(failure.getMessage())) {
+        throw failure;
+      }
+      throw invalid(failure);
+    }
+  }
+
+  private PersistenceMaterialIndex parse(
+      ImmutableBytes bytes, String expectedSchemaVersion, Set<String> expectedProducers) {
+    List<Line> lines = lines(bytes, expectedSchemaVersion);
     Line headerLine = only(lines, "HEADER");
     if (!"header".equals(headerLine.key())) {
       throw invalid();
@@ -165,7 +287,7 @@ public final class PersistenceMaterialReader {
     ObjectNode header = headerLine.payload();
     requireFields(
         header, Set.of("producer", "status", "sourceSnapshotId", "navigationPublication", "tools"));
-    if (!PRODUCERS.contains(text(header, "producer"))) {
+    if (!expectedProducers.contains(text(header, "producer"))) {
       throw invalid();
     }
     PersistenceMaterialIndex.Status status;
@@ -218,7 +340,7 @@ public final class PersistenceMaterialReader {
         indexHeader, resources, statements, bindings, sqlAnalyses, diagnostics);
   }
 
-  private List<Line> lines(ImmutableBytes bytes) {
+  private List<Line> lines(ImmutableBytes bytes, String expectedSchemaVersion) {
     String content = new String(bytes.copyToByteArray(), StandardCharsets.UTF_8);
     if (content.isEmpty() || !content.endsWith("\n")) {
       throw invalid();
@@ -237,7 +359,7 @@ public final class PersistenceMaterialReader {
       requireFields(line, Set.of("schemaVersion", "recordType", "key", "payload"));
       String type = text(line, "recordType");
       String key = text(line, "key");
-      if (!PersistenceMaterialPublisher.SCHEMA_VERSION.equals(text(line, "schemaVersion"))
+      if (!expectedSchemaVersion.equals(text(line, "schemaVersion"))
           || !RECORD_TYPES.contains(type)
           || !(line.get("payload") instanceof ObjectNode payload)
           || !identities.add(type + "\u0000" + key)) {

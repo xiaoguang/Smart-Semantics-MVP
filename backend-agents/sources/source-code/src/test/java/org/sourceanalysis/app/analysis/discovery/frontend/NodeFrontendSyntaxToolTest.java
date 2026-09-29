@@ -121,6 +121,108 @@ class NodeFrontendSyntaxToolTest {
   }
 
   @Test
+  void actualHelperRetainsGetQueryParamsAsARequiredSourceUnitInTheRequestChain()
+      throws IOException {
+    VerifiedSourceTextSet sources = sourceTexts(helperFixtureDocuments());
+
+    FrontendSyntaxScan scan =
+        tool(FRAMEWORK_HELPER, DEFAULT_TIMEOUT, MAX_STDOUT_BYTES)
+            .scan(
+                new FrontendSyntaxInput(sources),
+                new FrontendHttpConfiguration(
+                    List.of("frontend"), Map.of("@", "frontend"), List.of()));
+
+    assertThat(scan.requestObservations())
+        .anySatisfy(
+            observation ->
+                assertThat(observation.wrapperPath())
+                    .extracting(FrontendWrapperCall::toUnit)
+                    .contains("JeecgListMixin#getQueryParams"));
+  }
+
+  @Test
+  void actualHelperPublishesGetQueryParamsDeclarationForV2IndexReopen() throws IOException {
+    VerifiedSourceTextSet sources = sourceTexts(helperFixtureDocuments());
+
+    FrontendSyntaxScan scan =
+        tool(FRAMEWORK_HELPER, DEFAULT_TIMEOUT, MAX_STDOUT_BYTES)
+            .scan(
+                new FrontendSyntaxInput(sources),
+                new FrontendHttpConfiguration(
+                    List.of("frontend"), Map.of("@", "frontend"), List.of()));
+
+    FrontendRequestObservation observation =
+        scan.requestObservations().stream()
+            .filter(request -> request.resolvedPath().equals("/orders/history"))
+            .findFirst()
+            .orElseThrow();
+    FrontendSupportingSourceUnit supporting =
+        observation.supportingSourceUnits().stream()
+            .filter(unit -> unit.sourcePath().equals("frontend/mixins/JeecgListMixin.js"))
+            .findFirst()
+            .orElseThrow();
+    VerifiedSourceTextDocument mixin = source(sources, supporting.sourcePath());
+    String mixinText = new String(mixin.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8);
+
+    assertThat(supporting.sourceSha256()).isEqualTo(mixin.sha256().value());
+    assertThat(supporting.sourceUnitKind()).isEqualTo(FrontendWrapperCall.SourceUnitKind.FUNCTION);
+    assertThat(supporting.sourceUnitRange().startOffsetUtf16()).isGreaterThan(0);
+    assertThat(supporting.sourceUnitRange().lengthUtf16()).isLessThan(mixinText.length());
+    String declaration =
+        mixinText.substring(
+            supporting.sourceUnitRange().startOffsetUtf16(),
+            supporting.sourceUnitRange().startOffsetUtf16()
+                + supporting.sourceUnitRange().lengthUtf16());
+    assertThat(declaration).contains("getQueryParams()", "return { pageNo: 1 }");
+  }
+
+  @Test
+  void actualHelperSourceUnitRangesIncludePageChildAndMixinMethodDeclarations() throws IOException {
+    VerifiedSourceTextSet sources = sourceTexts(helperFixtureDocuments());
+
+    FrontendSyntaxScan scan =
+        tool(FRAMEWORK_HELPER, DEFAULT_TIMEOUT, MAX_STDOUT_BYTES)
+            .scan(
+                new FrontendSyntaxInput(sources),
+                new FrontendHttpConfiguration(
+                    List.of("frontend"), Map.of("@", "frontend"), List.of()));
+
+    FrontendRequestObservation observation =
+        scan.requestObservations().stream()
+            .filter(
+                request ->
+                    request
+                        .instanceKey()
+                        .equals("frontend/pages/PurchaseOrderModal.vue#linkBillList"))
+            .findFirst()
+            .orElseThrow();
+    FrontendWrapperCall pageMethod =
+        observation.wrapperPath().stream()
+            .filter(wrapper -> wrapper.fromUnit().endsWith("#onSearchLinkApply"))
+            .findFirst()
+            .orElseThrow();
+    FrontendWrapperCall childMethod =
+        observation.wrapperPath().stream()
+            .filter(wrapper -> wrapper.fromUnit().endsWith("#purchaseShow"))
+            .findFirst()
+            .orElseThrow();
+    FrontendWrapperCall mixinMethod =
+        observation.wrapperPath().stream()
+            .filter(
+                wrapper ->
+                    wrapper.sourcePath().endsWith("/JeecgListMixin.js")
+                        && wrapper.fromUnit().endsWith("#loadData"))
+            .findFirst()
+            .orElseThrow();
+
+    assertThat(sourceUnitText(sources, pageMethod))
+        .contains("onSearchLinkApply()", "purchaseShow(");
+    assertThat(sourceUnitText(sources, childMethod)).contains("purchaseShow(", "this.loadData(1)");
+    assertThat(sourceUnitText(sources, mixinMethod))
+        .contains("loadData(", "getQueryParams", "getAction(");
+  }
+
+  @Test
   void reportsNonzeroAndMissingExecutableAsToolFailures(@TempDir Path temporary)
       throws IOException {
     VerifiedSourceTextSet sources = minimalInput();
@@ -318,6 +420,13 @@ class NodeFrontendSyntaxToolTest {
         .filter(document -> document.path().equals(path))
         .findFirst()
         .orElseThrow();
+  }
+
+  private static String sourceUnitText(VerifiedSourceTextSet sources, FrontendWrapperCall wrapper) {
+    VerifiedSourceTextDocument document = source(sources, wrapper.sourcePath());
+    String text = new String(document.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8);
+    SourceRange range = wrapper.sourceUnitRange();
+    return text.substring(range.startOffsetUtf16(), range.startOffsetUtf16() + range.lengthUtf16());
   }
 
   private static void assertContains(SourceRange outer, SourceRange inner) {

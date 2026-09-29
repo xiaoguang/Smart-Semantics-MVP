@@ -181,6 +181,49 @@ class JavaCompilationInputReaderTest {
   }
 
   @Test
+  void identifiesTheMissingEffectivePomRoleAndPathInTheSavedProblem() throws Exception {
+    VerifiedSourceTextSet sourceTexts = sourceTexts();
+    SelectedSourceBasis selectedSource = selectedSourceBasis(sourceTexts.snapshotId());
+    Path classpath = writeClasspath("missing-effective-pom.classpath", writeJar("dependency.jar"));
+    ObjectNode module =
+        moduleWithEvaluatedSettings(
+            "modules/common", "modules/common/src/main/java", classpath, "8", "8");
+    Path effectivePom = Path.of(module.path("effectivePomFile").asText());
+    Files.delete(effectivePom);
+
+    Object result =
+        read(writeCompilationInput(selectedSource, List.of(module)), selectedSource, sourceTexts);
+
+    assertThat(access(result, "status").toString()).isEqualTo("BLOCKED");
+    assertThat(problemDetails(result))
+        .anySatisfy(
+            detail ->
+                assertThat(detail)
+                    .containsIgnoringCase("effective pom")
+                    .contains(effectivePom.getFileName().toString()));
+  }
+
+  @Test
+  void identifiesTheMissingProjectPomRoleAndPathInTheSavedProblem() throws Exception {
+    VerifiedSourceTextSet sourceTexts = sourceTexts();
+    SelectedSourceBasis selectedSource = selectedSourceBasis(sourceTexts.snapshotId());
+    Path classpath = writeClasspath("missing-project-pom.classpath", writeJar("dependency.jar"));
+    ObjectNode module =
+        moduleWithEvaluatedSettings(
+            "modules/common", "modules/common/src/main/java", classpath, "8", "8");
+    Path projectPom = Path.of(module.path("mavenProjectDirectory").asText()).resolve("pom.xml");
+    Files.delete(projectPom);
+
+    Object result =
+        read(writeCompilationInput(selectedSource, List.of(module)), selectedSource, sourceTexts);
+
+    assertThat(access(result, "status").toString()).isEqualTo("BLOCKED");
+    assertThat(problemDetails(result))
+        .anySatisfy(
+            detail -> assertThat(detail).containsIgnoringCase("project pom").contains("pom.xml"));
+  }
+
+  @Test
   void acceptsMavenEvaluatedProjectSettingsThatMatchTheExternalModuleDeclaration()
       throws Exception {
     VerifiedSourceTextSet sourceTexts = sourceTexts();

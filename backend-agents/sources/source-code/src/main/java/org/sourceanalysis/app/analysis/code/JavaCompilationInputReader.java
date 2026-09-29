@@ -404,13 +404,13 @@ final class JavaCompilationInputReader {
 
   private static byte[] readV2MavenProjectSettingsFile(Path file, String label) throws IOException {
     if (!Files.isRegularFile(file)) {
-      throw new IllegalArgumentException("the named Maven " + label + " is unavailable");
+      throw new IllegalArgumentException("the named Maven " + label + " is unavailable: " + file);
     }
     try {
       return Files.readAllBytes(file);
     } catch (IOException unavailable) {
       throw new IllegalArgumentException(
-          "the named Maven " + label + " cannot be read", unavailable);
+          "the named Maven " + label + " cannot be read: " + file, unavailable);
     }
   }
 
@@ -428,13 +428,13 @@ final class JavaCompilationInputReader {
     }
     try {
       Path projectDirectory = absoluteDirectory(text(module, "mavenProjectDirectory"));
-      byte[] projectPom = readRegularFile(projectDirectory.resolve("pom.xml"));
+      byte[] projectPom = readRegularFile(projectDirectory.resolve("pom.xml"), "project POM");
       if (!buildFile.sha256().equals(sha256(projectPom))) {
         throw new IllegalArgumentException("the Maven project POM is not the named R0 build file");
       }
 
       Path effectivePomFile = absolutePath(text(module, "effectivePomFile"));
-      byte[] effectivePom = readRegularFile(effectivePomFile);
+      byte[] effectivePom = readRegularFile(effectivePomFile, "effective POM");
       if (!text(module, "effectivePomSha256").equals(sha256(effectivePom))) {
         throw new IllegalArgumentException("the Maven effective POM digest does not match");
       }
@@ -703,9 +703,9 @@ final class JavaCompilationInputReader {
     return directory;
   }
 
-  private static byte[] readRegularFile(Path file) throws IOException {
+  private static byte[] readRegularFile(Path file, String label) throws IOException {
     if (!Files.isRegularFile(file)) {
-      throw new IllegalArgumentException("a required Maven project-settings file is unavailable");
+      throw new IllegalArgumentException("the named Maven " + label + " is unavailable: " + file);
     }
     return Files.readAllBytes(file);
   }

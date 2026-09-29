@@ -216,6 +216,155 @@ class PersistenceMaterialPublicationTest {
     }
   }
 
+  @Test
+  void publishesAndReopensPartialDynamicXmlWithOrderByEvidence(@TempDir Path temporary) {
+    try (ProgramGraphsPublicFixture fixture =
+        createJavaIndexFixture(temporary.resolve("fixture"))) {
+      ProgramGraphsReference navigation = navigation(fixture);
+      VerifiedSourceTextSet source = fixture.sourceReader().reopen(fixture.sourceInventory());
+      String rawXml =
+          "<select id=\"dynamicOrdered\">\n"
+              + "  SELECT id, status FROM orders\n"
+              + "  <where><if test=\"status != null\"><![CDATA[AND status = #{status}]]></if></where>\n"
+              + "  ORDER BY created_at DESC NULLS LAST\n"
+              + "</select>\n";
+      PersistenceMaterialIndex.XmlNode xmlSubtree =
+          new PersistenceMaterialIndex.XmlNode(
+              PersistenceMaterialIndex.XmlNodeKind.ELEMENT,
+              "select",
+              Map.of("id", "dynamicOrdered"),
+              null,
+              List.of(
+                  new PersistenceMaterialIndex.XmlNode(
+                      PersistenceMaterialIndex.XmlNodeKind.ELEMENT,
+                      "where",
+                      Map.of(),
+                      null,
+                      List.of(
+                          new PersistenceMaterialIndex.XmlNode(
+                              PersistenceMaterialIndex.XmlNodeKind.ELEMENT,
+                              "if",
+                              Map.of("test", "status != null"),
+                              null,
+                              List.of(
+                                  new PersistenceMaterialIndex.XmlNode(
+                                      PersistenceMaterialIndex.XmlNodeKind.CDATA,
+                                      null,
+                                      Map.of(),
+                                      "AND status = #{status}",
+                                      List.of()))))),
+                  new PersistenceMaterialIndex.XmlNode(
+                      PersistenceMaterialIndex.XmlNodeKind.TEXT,
+                      null,
+                      Map.of(),
+                      " ORDER BY created_at DESC NULLS LAST ",
+                      List.of())));
+      PersistenceMaterialIndex.Resource resource =
+          new PersistenceMaterialIndex.Resource(XML_PATH, MAPPER_NAMESPACE, rawXml, List.of());
+      PersistenceMaterialIndex.Statement statement =
+          new PersistenceMaterialIndex.Statement(
+              "statement:com.example.OrderMapper:dynamicOrdered",
+              XML_PATH,
+              MAPPER_NAMESPACE,
+              "dynamicOrdered",
+              "select",
+              null,
+              xmlSubtree,
+              List.of());
+      PersistenceMaterialIndex.SqlAstNode orderBy =
+          new SqlAstNode(
+              "ORDER_BY",
+              null,
+              Map.of(),
+              List.of(
+                  new SqlAstNode(
+                      "ORDER_ITEM",
+                      "created_at",
+                      Map.of("direction", "DESC", "nullOrdering", "LAST"),
+                      List.of(new SqlAstNode("EXPRESSION", "created_at", Map.of(), List.of())))));
+      PersistenceMaterialIndex.SqlAstNode select =
+          new SqlAstNode(
+              "SELECT",
+              null,
+              Map.of(),
+              List.of(new SqlAstNode("TABLE", "orders", Map.of(), List.of()), orderBy));
+      PersistenceMaterialIndex.SqlAnalysis sql =
+          new PersistenceMaterialIndex.SqlAnalysis(
+              statement.statementRef(),
+              "SELECT id, status FROM orders ORDER BY created_at DESC NULLS LAST",
+              List.of(),
+              select,
+              SqlStatus.PARTIAL,
+              "dynamic XML branches were retained without executing them");
+      PersistenceMaterialIndex.ParameterBinding parameter =
+          new PersistenceMaterialIndex.ParameterBinding(
+              0, "status", "String", List.of(), List.of("status"), List.of());
+      PersistenceMaterialIndex.JavaBinding binding =
+          new PersistenceMaterialIndex.JavaBinding(
+              MAPPER_NAMESPACE,
+              "method:dynamic-ordered",
+              "void dynamicOrdered(java.lang.String)",
+              "EXACT",
+              List.of(parameter),
+              List.of(new PersistenceMaterialIndex.StatementRef(statement.statementRef(), null)),
+              List.of());
+      PersistenceMaterialIndex enabled =
+          new PersistenceMaterialIndex(
+              new PersistenceMaterialIndex.Header(
+                  PersistenceMaterialIndex.Status.ENABLED,
+                  source.snapshotId(),
+                  navigation,
+                  List.of(new PersistenceMaterialIndex.Tool("jsqlparser", "5.3"))),
+              List.of(resource),
+              List.of(statement),
+              List.of(binding),
+              List.of(sql),
+              List.of());
+
+      PersistenceMaterialPublisher publisher =
+          new PersistenceMaterialPublisher(fixture.moduleArtifacts(), fixture.stepArtifacts());
+      var publication =
+          publisher.publish(
+              fixture.sourceInventory(),
+              fixture.applicationDiscovery(),
+              fixture.artifactControls(),
+              enabled);
+      PersistenceMaterialIndex reopened =
+          new PersistenceMaterialReader(fixture.stepArtifacts()).reopen(publication);
+
+      assertThat(reopened).isEqualTo(enabled);
+      assertThat(reopened.resources())
+          .singleElement()
+          .satisfies(value -> assertThat(value.rawSource()).isEqualTo(rawXml));
+      assertThat(reopened.statements())
+          .singleElement()
+          .satisfies(value -> assertThat(value.xmlSubtree()).isEqualTo(xmlSubtree));
+      assertThat(reopened.sqlAnalyses())
+          .singleElement()
+          .satisfies(
+              value -> {
+                assertThat(value.status()).isEqualTo(SqlStatus.PARTIAL);
+                assertThat(value.reason()).contains("dynamic");
+                assertThat(value.ast()).isEqualTo(select);
+                assertThat(value.ast().children())
+                    .anySatisfy(
+                        child -> {
+                          assertThat(child.kind()).isEqualTo("ORDER_BY");
+                          assertThat(child.children())
+                              .singleElement()
+                              .satisfies(
+                                  order -> {
+                                    assertThat(order.value()).isEqualTo("created_at");
+                                    assertThat(order.attributes())
+                                        .containsEntry("direction", "DESC");
+                                    assertThat(order.attributes())
+                                        .containsEntry("nullOrdering", "LAST");
+                                  });
+                        });
+              });
+    }
+  }
+
   private static ProgramGraphsPublicFixture createJavaIndexFixture(Path root) {
     return ProgramGraphsPublicFixture.createForJavaCodeIndex(root);
   }

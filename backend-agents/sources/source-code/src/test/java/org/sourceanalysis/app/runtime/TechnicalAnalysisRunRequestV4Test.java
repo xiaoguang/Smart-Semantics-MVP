@@ -177,6 +177,9 @@ class TechnicalAnalysisRunRequestV4Test {
       AnalysisRunRequest.TechnicalOperation operation, AnalysisStepPublicationReference upstream) {
     char identity =
         switch (operation) {
+          case COLLECT_FRONTEND ->
+              throw new IllegalArgumentException(
+                  "COLLECT_FRONTEND is not supported by the historical v4 fixture");
           case COLLECT_CODE -> '1';
           case ANALYZE_PERSISTENCE -> '2';
           case ASSEMBLE_MATERIALS -> '3';

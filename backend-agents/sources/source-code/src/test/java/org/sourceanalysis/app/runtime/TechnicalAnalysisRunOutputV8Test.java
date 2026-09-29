@@ -3,6 +3,7 @@ package org.sourceanalysis.app.runtime;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sourceanalysis.app.analysis.inventory.PreparedSourceReference;
 import org.sourceanalysis.app.analysis.inventory.SourcePreparationReadiness;
+import org.sourceanalysis.app.analysis.material.EntryEvidenceProfile;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepArtifactRoot;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
@@ -197,7 +199,7 @@ class TechnicalAnalysisRunOutputV8Test {
     AnalysisStepPublicationReference persistence =
         publication(r2, AnalysisStepKey.PROVEN_CODE_FACTS, '2');
     ModulePublicationReference readiness = modulePublication(r1, 5, "java-analysis-readiness", '3');
-    ModulePublicationReference frontend = modulePublication(r1, 6, "frontend-http-discovery", '4');
+    ModulePublicationReference frontend = modulePublication(r1, 6, "frontend-http-discovery", '5');
     AnalysisStepPublicationReference applicationDiscovery =
         publication(r1, AnalysisStepKey.APPLICATION_DISCOVERY, '5');
 
@@ -251,6 +253,80 @@ class TechnicalAnalysisRunOutputV8Test {
                     List.of()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("TECHNICAL_RUN_OUTPUT_INVALID");
+  }
+
+  @Test
+  void blockedMaterialsCapacityFailureIsSerializableWithoutPublisherPlaceholder() throws Exception {
+    Path storeRoot = temporaryDirectory.resolve("technical-output-v9-capacity-store");
+    Files.createDirectory(storeRoot);
+    AnalysisStepPublicationReference step01 = sourcePreparationPublication('a');
+    SelectedSourceBasis basis = preparedBasis(step01);
+    AnalysisRunId r1 = runId('b');
+    AnalysisRunId r2 = runId('c');
+    AnalysisRunId r3 = runId('d');
+    AnalysisStepPublicationReference applicationDiscovery =
+        publication(r2, AnalysisStepKey.APPLICATION_DISCOVERY, '1');
+    AnalysisStepPublicationReference navigation =
+        publication(r2, AnalysisStepKey.PROGRAM_GRAPHS, '2');
+    AnalysisStepPublicationReference persistence =
+        publication(r3, AnalysisStepKey.PROVEN_CODE_FACTS, '3');
+    ModulePublicationReference readiness = modulePublication(r2, 5, "java-analysis-readiness", '4');
+    ModulePublicationReference frontend = modulePublication(r1, 6, "frontend-http-discovery", '4');
+    TechnicalProblemReference capacity =
+        new TechnicalProblemReference(
+            "ENTRY_EVIDENCE_ENTRY_LIMIT_EXCEEDED", reference("capacity", '6'));
+
+    EntryEvidenceProfile profile = new EntryEvidenceProfile(65_536L, 1_048_576L, 64);
+    AnalysisRunRequest request =
+        AnalysisRunRequest.technicalFourOperations(
+            basis,
+            AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS,
+            reference("technical-profile", '7'),
+            reference("resource-budget", '8'),
+            reference("schema-bundle", '9'),
+            reference("toolchain", 'a'),
+            reference("artifact-policy-registry", 'b'),
+            persistence,
+            frontend,
+            profile);
+
+    AnalysisRunReference queued;
+    try (RunStoreHandle store = RunStoreBootstrap.openForTest(storeRoot)) {
+      queued = RunStoreBootstrap.queueAnalysisRun(store, request);
+      RunStoreBootstrap.transitionAnalysisRun(
+          store,
+          queued.runId(),
+          AnalysisRunLifecycleState.QUEUED,
+          AnalysisRunLifecycleState.RUNNING);
+      TechnicalRunOutput blocked =
+          assertDoesNotThrow(
+              () ->
+                  TechnicalRunOutput.fourOperations(
+                      AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS,
+                      queued.runId(),
+                      basis,
+                      persistence,
+                      TechnicalInspectionStatus.CHECKS_INCOMPLETE,
+                      TechnicalContinuationStatus.BLOCKED,
+                      readiness,
+                      frontend,
+                      applicationDiscovery,
+                      navigation,
+                      persistence,
+                      null,
+                      List.of(capacity)));
+      AnalysisRunOutput expected = AnalysisRunOutput.technical(blocked);
+      RunStoreBootstrap.recordAnalysisRunOutput(store, queued.runId(), expected);
+    }
+
+    try (RunStoreHandle store = RunStoreBootstrap.open(storeRoot)) {
+      AnalysisRunOutput reopened =
+          RunStoreBootstrap.reopenAnalysisRunOutput(store, queued.runId()).orElseThrow();
+      assertThat(reopened.technicalOutput().continuationStatus())
+          .isEqualTo(TechnicalContinuationStatus.BLOCKED);
+      assertThat(reopened.technicalOutput().readingMaterials()).isNull();
+      assertThat(reopened.technicalOutput().problems()).containsExactly(capacity);
+    }
   }
 
   @Test

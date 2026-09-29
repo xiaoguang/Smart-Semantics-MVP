@@ -1,22 +1,22 @@
 # Copy this file outside the source tree and replace every /absolute/... placeholder.
 # Use the exact preparation run and each module's same-source official Maven outputs.
-# This command does not invoke Maven or any business model.
-schemaVersion: technical-analysis-config-v2
+# The four technical commands do not invoke Maven or any business model.
+schemaVersion: technical-analysis-config-v3
 source:
   preparationRunId: analysis-run:replace-with-the-complete-run-id
 storage:
   root: /absolute/path/to/analysis/store
   preparedSourceArchive: /absolute/path/to/prepared-source-archive
   sourcePreparationPolicyRegistry: /absolute/path/to/source-code/tools/repository-run/source-preparation-artifact-policy-set-v1.json
-  artifactPolicyRegistry: /absolute/path/to/source-code/tools/repository-run/technical-analysis-artifact-policy-set-v1.json
+  artifactPolicyRegistry: /absolute/path/to/source-code/tools/repository-run/technical-analysis-artifact-policy-set-v2.json
 java:
   compilationInput:
     projectDirectory: /absolute/path/to/fixed-source-copy
     modules:
-      - modulePath: jshERP-boot
-        classpathFile: /absolute/path/to/export/jshERP-boot.compile.classpath
+      - modulePath: module-a
+        classpathFile: /absolute/path/to/export/module-a.compile.classpath
         classpathSeparator: ":"
-        effectivePomFile: /absolute/path/to/export/jshERP-boot.effective-pom.xml
+        effectivePomFile: /absolute/path/to/export/module-a.effective-pom.xml
         targetJavaHome: /absolute/path/to/target-jdk
   jdtInstallation: /absolute/path/to/jdt-ls
   toolJavaHome: /absolute/path/to/tool-jdk
@@ -26,9 +26,12 @@ frontend:
   sourceRoots: [web/src, web/public]
   configurationFiles: []
   aliases: {}
-  httpMappings: []
 persistence:
   plugins: [mybatis]
-readingMaterials:
-  maxPacketUtf8Bytes: 5242880
-  maxEntriesPerPacket: 12
+evidence:
+  # Leave mappings empty if deployment address/configuration has not been confirmed.
+  # R4 then keeps the path candidate and the unknown baseURL condition instead of inventing a link.
+  httpMappings: []
+  maxEntryUtf8Bytes: 16777216
+  maxPublicationUtf8Bytes: 536870912
+  maxEntries: 1000

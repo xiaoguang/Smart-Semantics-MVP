@@ -52,6 +52,14 @@
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet$EntryCoverage"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet$Packet"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet$PersistenceSelection"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.EntryEvidenceSet"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.EntryEvidenceSet$Header"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.EntryEvidenceSet$Entry"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.EntryEvidenceSet$Frontend"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.EntryEvidenceSet$RequestUse"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.EntryEvidenceSet$Java"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.EntryEvidenceSet$Persistence"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.EntryEvidenceSet$FrontendCoverage"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex$Header"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex$JavaBinding"/></Match>

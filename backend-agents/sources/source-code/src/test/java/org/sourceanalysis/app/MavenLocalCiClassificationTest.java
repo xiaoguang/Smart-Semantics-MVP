@@ -27,6 +27,8 @@ class MavenLocalCiClassificationTest {
           "JdtRealSourceCollectionTest.java");
   private static final Path REAL_COLLECTION_IT =
       REAL_COLLECTION_TEST.resolveSibling("JdtRealSourceCollectionIT.java");
+  private static final Path FIXED_SOURCE_IT =
+      REAL_COLLECTION_TEST.resolveSibling("JdtFixedSourceNavigationIT.java");
   private static final Path REAL_HELPER_IT =
       REAL_COLLECTION_TEST.resolveSibling("JdtSyntaxHelperRealIT.java");
   private static final Path REAL_SETTINGS_IT =
@@ -60,6 +62,7 @@ class MavenLocalCiClassificationTest {
     assertThat(childText(first(failsafe, "configuration"), "skipITs")).isEqualTo("${skipITs}");
     assertThat(descendantTexts(failsafe, "include"))
         .containsExactlyInAnyOrder(
+            "**/JdtFixedSourceNavigationIT.java",
             "**/JdtRealSourceCollectionIT.java",
             "**/JdtProjectSettingsReadbackIT.java",
             "**/JdtSyntaxHelperRealIT.java");
@@ -71,6 +74,7 @@ class MavenLocalCiClassificationTest {
         .as("the real frozen-source test must not be a Surefire *Test")
         .isFalse();
     assertThat(Files.isRegularFile(REAL_COLLECTION_IT)).isTrue();
+    assertThat(Files.isRegularFile(FIXED_SOURCE_IT)).isTrue();
     assertThat(Files.isRegularFile(REAL_SETTINGS_IT)).isTrue();
     assertThat(Files.isRegularFile(REAL_HELPER_IT)).isTrue();
   }

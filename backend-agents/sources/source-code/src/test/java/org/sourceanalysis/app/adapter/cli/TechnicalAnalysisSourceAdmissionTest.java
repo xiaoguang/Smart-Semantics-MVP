@@ -43,30 +43,23 @@ import org.sourceanalysis.app.analysis.code.EntryCodeContext;
 import org.sourceanalysis.app.analysis.code.EntrySeed;
 import org.sourceanalysis.app.analysis.code.JavaCodeSession;
 import org.sourceanalysis.app.analysis.code.JavaCompilationEnvironment;
-import org.sourceanalysis.app.analysis.code.JavaCompilationModuleEnvironment;
 import org.sourceanalysis.app.analysis.code.JavaDeclarationCatalog;
 import org.sourceanalysis.app.analysis.code.JavaReadinessPreparation;
 import org.sourceanalysis.app.analysis.code.SourceRange;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndex;
 import org.sourceanalysis.app.analysis.code.publish.JavaCodeIndexReader;
 import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
-import org.sourceanalysis.app.analysis.discovery.frontend.FrontendEntryLinkRecord;
-import org.sourceanalysis.app.analysis.discovery.frontend.FrontendHttpIndex;
-import org.sourceanalysis.app.analysis.discovery.frontend.FrontendHttpIndexModulePublisher;
 import org.sourceanalysis.app.analysis.discovery.frontend.FrontendRequestObservation;
 import org.sourceanalysis.app.analysis.discovery.frontend.FrontendSourceFileDisposition;
-import org.sourceanalysis.app.analysis.discovery.frontend.FrontendSourceUnits;
 import org.sourceanalysis.app.analysis.discovery.frontend.FrontendSyntaxScan;
 import org.sourceanalysis.app.analysis.discovery.frontend.FrontendSyntaxTool;
 import org.sourceanalysis.app.analysis.discovery.frontend.FrontendToolIdentity;
 import org.sourceanalysis.app.analysis.discovery.frontend.FrontendWrapperCall;
 import org.sourceanalysis.app.analysis.discovery.frontend.NodeFrontendSyntaxTool;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
+import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextDocument;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceTextSet;
-import org.sourceanalysis.app.analysis.material.CodeReadingMaterialMarkdown;
-import org.sourceanalysis.app.analysis.material.CodeReadingMaterialSet;
-import org.sourceanalysis.app.analysis.material.publish.CodeReadingMaterialReader;
 import org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex;
 import org.sourceanalysis.app.analysis.persistence.publish.PersistenceMaterialReader;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
@@ -114,7 +107,6 @@ import org.sourceanalysis.app.runtime.RepositoryAnalysisRunCoordinator;
 import org.sourceanalysis.app.runtime.SelectedSourceBasis;
 import org.sourceanalysis.app.runtime.TechnicalContinuationStatus;
 import org.sourceanalysis.app.runtime.TechnicalInspectionStatus;
-import org.sourceanalysis.app.runtime.TechnicalOutputArtifactKey;
 import org.sourceanalysis.app.runtime.TechnicalProblemReference;
 import org.sourceanalysis.app.runtime.TechnicalRunOutput;
 
@@ -127,6 +119,9 @@ class TechnicalAnalysisSourceAdmissionTest {
           .toAbsolutePath();
   private static final Path BASE_TECHNICAL_POLICY_SET =
       Path.of("tools/repository-run/jdt-artifact-policy-set-v1.json").toAbsolutePath();
+  private static final Path V3_TECHNICAL_POLICY_SET =
+      Path.of("tools/repository-run/technical-analysis-artifact-policy-set-v2.json")
+          .toAbsolutePath();
 
   @TempDir Path temporaryDirectory;
 
@@ -167,7 +162,7 @@ class TechnicalAnalysisSourceAdmissionTest {
     Path resolverTool = temporaryDirectory.resolve("fixed-dependency-helper");
     writeMarkerScript(resolverTool, "resolver", launchMarkers);
 
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     Path technicalConfig =
         writeV2ExternalCollectTechnicalConfig(
             preparationRunId,
@@ -180,6 +175,7 @@ class TechnicalAnalysisSourceAdmissionTest {
             physicalRoot.resolve("unready-target-jdk"),
             jdtInstallation,
             technicalPolicySet);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
 
     CliResult collect = execute(technicalConfig, "collect-code");
     String publicResult = collect.stdout() + collect.stderr();
@@ -237,7 +233,7 @@ class TechnicalAnalysisSourceAdmissionTest {
     Path resolverTool = temporaryDirectory.resolve("wrong-archive-resolver");
     writeMarkerScript(resolverTool, "resolver", launchMarkers);
 
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     Path technicalConfig =
         writeV2ExternalCollectTechnicalConfig(
             runA,
@@ -250,6 +246,7 @@ class TechnicalAnalysisSourceAdmissionTest {
             physicalRoot.resolve("wrong-archive-target-jdk"),
             jdtInstallation,
             technicalPolicySet);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
     CliResult collect = execute(technicalConfig, "collect-code");
     String publicResult = collect.stdout() + collect.stderr();
     Map<String, String> storeAfterTechnicalAttempt = storeSnapshot(runStore);
@@ -493,7 +490,7 @@ class TechnicalAnalysisSourceAdmissionTest {
     assertThat(JSON.readTree(prepared.stdout()).path("readiness").asText()).isEqualTo("READY");
     assertIndependentlyReopenableReadyR0(preparationConfig, sourcePreparationRunId);
 
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     AnalysisRunId collectRunId;
     AnalysisRunRequest.TechnicalOperation collectOperation =
         AnalysisRunRequest.TechnicalOperation.COLLECT_CODE;
@@ -759,7 +756,7 @@ class TechnicalAnalysisSourceAdmissionTest {
     Path effectivePomFile = Path.of(module.path("effectivePomFile").asText());
     Files.writeString(effectivePomFile, "<project><broken></project>\n", StandardCharsets.UTF_8);
 
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     Path launchMarkers = physicalRoot.resolve("blocked-plugin-unexpected-tool-starts.log");
     Path jdtInstallation = physicalRoot.resolve("blocked-plugin-jdt-installation");
     writeMarkerScript(jdtInstallation.resolve("bin/jdtls"), "jdt", launchMarkers);
@@ -775,6 +772,7 @@ class TechnicalAnalysisSourceAdmissionTest {
             Path.of(module.path("targetJdkHome").asText()),
             jdtInstallation,
             technicalPolicySet);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
 
     CliResult result = execute(technicalConfig, "collect-code");
     SoftAssertions softly = new SoftAssertions();
@@ -937,7 +935,7 @@ class TechnicalAnalysisSourceAdmissionTest {
     assertIndependentlyReopenableReadyR0(preparationConfig, preparationRunId);
 
     Path targetJdkHome = writeFixtureJava8Home(physicalRoot.resolve("target-platform-jdk8"));
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     ExternalCompilationInputFixture compilationInput =
         writeValidExternalCompilationInput(
             physicalRoot, sourceRoot, selectedSourceBasis(runStore, preparationRunId));
@@ -955,6 +953,7 @@ class TechnicalAnalysisSourceAdmissionTest {
             targetJdkHome,
             physicalRoot.resolve("target-platform-jdt"),
             technicalPolicySet);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
 
     JavaReadinessPreparation.V2Request readinessRequest =
         v2ReadinessRequestFromConfiguredRuntime(technicalConfig);
@@ -1006,7 +1005,7 @@ class TechnicalAnalysisSourceAdmissionTest {
     String preparationRunId = preparedEnvelope.path("runId").asText();
     assertIndependentlyReopenableReadyR0(preparationConfig, preparationRunId);
 
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     ExternalCompilationInputFixture compilationInput =
         writeValidExternalCompilationInput(
             physicalRoot, sourceRoot, selectedSourceBasis(runStore, preparationRunId));
@@ -1027,6 +1026,7 @@ class TechnicalAnalysisSourceAdmissionTest {
             compilationInput.compilationInput(),
             jdtInstallation,
             technicalPolicySet);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
 
     CliResult collected = execute(technicalConfig, "collect-code");
     assertThat(collected.exitCode()).withFailMessage("stderr=%s", collected.stderr()).isEqualTo(3);
@@ -1107,7 +1107,7 @@ class TechnicalAnalysisSourceAdmissionTest {
     String preparationRunId = preparedEnvelope.path("runId").asText();
     assertIndependentlyReopenableReadyR0(preparationConfig, preparationRunId);
 
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     Path unavailableTargetHome = physicalRoot.resolve("absent-target-jdk-home").toAbsolutePath();
     assertThat(unavailableTargetHome).doesNotExist();
     ExternalCompilationInputFixture compilationInput =
@@ -1129,6 +1129,7 @@ class TechnicalAnalysisSourceAdmissionTest {
             compilationInput.compilationInput(),
             jdtInstallation,
             technicalPolicySet);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
 
     CliResult collected = execute(technicalConfig, "collect-code");
     JsonNode envelope = null;
@@ -1223,7 +1224,7 @@ class TechnicalAnalysisSourceAdmissionTest {
   }
 
   @Test
-  void v2CollectCodePersistsBlockedR1WhenConfiguredEffectivePomIsMissing() throws Exception {
+  void v3CollectCodePersistsBlockedR1WhenConfiguredEffectivePomIsMissing() throws Exception {
     Assumptions.assumeTrue(
         Files.getFileStore(temporaryDirectory).supportsFileAttributeView("posix"),
         "test-owned tool launch markers require POSIX executable files");
@@ -1259,7 +1260,7 @@ class TechnicalAnalysisSourceAdmissionTest {
     Path missingEffectivePom = physicalRoot.resolve("missing-effective-pom.xml");
     assertThat(missingEffectivePom).doesNotExist();
 
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     Path launchMarkers = physicalRoot.resolve("v2-missing-pom-tool-starts.log");
     Path jdtInstallation = physicalRoot.resolve("v2-missing-pom-jdt-installation");
     writeMarkerScript(jdtInstallation.resolve("bin/jdtls"), "jdt", launchMarkers);
@@ -1275,6 +1276,7 @@ class TechnicalAnalysisSourceAdmissionTest {
             targetJavaHome,
             jdtInstallation,
             technicalPolicySet);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
 
     CliResult collected = execute(technicalConfig, "collect-code");
 
@@ -1324,68 +1326,9 @@ class TechnicalAnalysisSourceAdmissionTest {
 
   @Test
   void v1CollectCodeIsRejectedWhileHistoricalR1InspectAndArtifactRemainReadable() throws Exception {
-    Assumptions.assumeTrue(
-        Files.getFileStore(temporaryDirectory).supportsFileAttributeView("posix"),
-        "test-owned tool launch markers require POSIX executable files");
-
-    Path physicalRoot = temporaryDirectory.toRealPath();
-    Path sourceRoot = Files.createDirectory(physicalRoot.resolve("v1-history-source"));
-    writeReadySource(sourceRoot, "V1History");
-    Path preparationWorkspace =
-        Files.createDirectory(physicalRoot.resolve("v1-history-preparations"));
-    Path runStore = Files.createDirectory(physicalRoot.resolve("v1-history-store"));
-    Path preparationConfig =
-        writeSourcePreparationConfig(
-            "v1-history-source-preparation.yaml", sourceRoot, preparationWorkspace, runStore);
-
-    CliResult prepared = execute(preparationConfig, "prepare-source", "--format", "json");
-    assertThat(prepared.exitCode()).withFailMessage("stage=%s", prepared.stderr()).isZero();
-    String preparationRunId = JSON.readTree(prepared.stdout()).path("runId").asText();
-    assertIndependentlyReopenableReadyR0(preparationConfig, preparationRunId);
-
-    Path dependencyJar = physicalRoot.resolve("v1-history-dependency.jar");
-    writeFixtureJar(dependencyJar, (byte) 1);
-    Path classpathFile = physicalRoot.resolve("v1-history.classpath");
-    Files.writeString(
-        classpathFile,
-        dependencyJar.toAbsolutePath().normalize().toString(),
-        StandardCharsets.UTF_8);
-    Path targetJavaHome = writeFixtureJava8Home(physicalRoot.resolve("v1-history-target-jdk"));
-    Path missingEffectivePom = physicalRoot.resolve("v1-history-missing-effective-pom.xml");
-    Path technicalPolicySet = writeTechnicalPolicySet();
-    Path jdtInstallation = physicalRoot.resolve("v1-history-jdt");
-    writeMarkerScript(
-        jdtInstallation.resolve("bin/jdtls"),
-        "jdt",
-        physicalRoot.resolve("v1-history-tool-starts.log"));
-    Path v2Config =
-        writeV2ExternalCollectTechnicalConfig(
-            preparationRunId,
-            runStore,
-            preparationWorkspace.resolve("prepared-source-archive"),
-            sourceRoot,
-            ".",
-            classpathFile,
-            missingEffectivePom,
-            targetJavaHome,
-            jdtInstallation,
-            technicalPolicySet);
-
-    CliResult blocked = execute(v2Config, "collect-code");
-    assertThat(blocked.exitCode()).isEqualTo(3);
-    JsonNode blockedEnvelope = JSON.readTree(blocked.stdout());
-    String historicalRunId = blockedEnvelope.path("runId").asText();
-    assertThat(historicalRunId).matches("analysis-run:[0-9a-f]{64}");
-    assertThat(blockedEnvelope.path("continuationStatus").asText()).isEqualTo("BLOCKED");
-
-    Path v1Config =
-        writeExternalCollectTechnicalConfig(
-            preparationRunId,
-            runStore,
-            preparationWorkspace.resolve("prepared-source-archive"),
-            writeDeferredCompilationInput("v1-history-deferred-input.json"),
-            jdtInstallation,
-            technicalPolicySet);
+    BlockedR1Fixture fixture = createBlockedR1Fixture();
+    String historicalRunId = fixture.runId();
+    Path v1Config = fixture.technicalConfig();
     CliResult inspected = execute(v1Config, "inspect", "--run", historicalRunId);
     CliResult artifact =
         execute(
@@ -1403,12 +1346,12 @@ class TechnicalAnalysisSourceAdmissionTest {
     assertThat(artifact.exitCode()).isZero();
     assertThat(artifact.stdout()).contains("JAVA_COMPILATION_INPUT_PROJECT_SETTINGS_UNVERIFIED");
 
-    Map<String, String> beforeRejectedCollect = storeSnapshot(runStore);
+    Map<String, String> beforeRejectedCollect = storeSnapshot(fixture.runStore());
     CliResult rejectedCollect = execute(v1Config, "collect-code");
-    Map<String, String> afterRejectedCollect = storeSnapshot(runStore);
+    Map<String, String> afterRejectedCollect = storeSnapshot(fixture.runStore());
     assertThat(rejectedCollect.exitCode()).isEqualTo(2);
     assertThat(rejectedCollect.stdout()).isEmpty();
-    assertThat(rejectedCollect.stderr()).contains("TECHNICAL_V2_COMPILATION_INPUT_REQUIRED");
+    assertThat(rejectedCollect.stderr()).contains("TECHNICAL_CONFIGURATION_SCHEMA_RETIRED");
     assertThat(afterRejectedCollect).isEqualTo(beforeRejectedCollect);
   }
 
@@ -1509,7 +1452,7 @@ class TechnicalAnalysisSourceAdmissionTest {
     writeMarkerScript(nodeExecutable, "node", launchMarkers);
     Path resolverTool = physicalRoot.resolve("collect-fixed-resolver");
     writeMarkerScript(resolverTool, "resolver", launchMarkers);
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     ExternalCompilationInputFixture compilationInput =
         writeValidExternalCompilationInput(
             physicalRoot, sourceRoot, selectedSourceBasis(runStore, preparationRunId));
@@ -1521,6 +1464,7 @@ class TechnicalAnalysisSourceAdmissionTest {
             compilationInput.compilationInput(),
             jdtInstallation,
             technicalPolicySet);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
     Map<String, String> storeBeforeAttempt = storeSnapshot(runStore);
 
     CliResult result = execute(technicalConfig, "collect-code");
@@ -1587,7 +1531,7 @@ class TechnicalAnalysisSourceAdmissionTest {
     Path launchMarkers = physicalRoot.resolve("named-run-unexpected-tool-starts.log");
     Path jdtInstallation = physicalRoot.resolve("named-run-jdt-installation");
     writeMarkerScript(jdtInstallation.resolve("bin/jdtls"), "jdt", launchMarkers);
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     ExternalCompilationInputFixture compilationInput =
         writeValidExternalCompilationInput(
             physicalRoot, sourceRoot, selectedSourceBasis(runStore, preparationRunId));
@@ -1599,11 +1543,12 @@ class TechnicalAnalysisSourceAdmissionTest {
             compilationInput.compilationInput(),
             jdtInstallation,
             technicalPolicySet);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
 
     AnalysisRunReference queuedRun;
     AnalysisRunRequest queuedRequest;
     try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      queuedRequest = collectRequestFromConfiguredRuntime(technicalConfig);
+      queuedRequest = collectCodeRequestV3FromConfiguredRuntime(technicalConfig);
       queuedRun = queueConfiguredCollectCodeRun(technicalConfig, store, queuedRequest);
       assertThat(
               RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, queuedRun.runId())
@@ -1675,7 +1620,7 @@ class TechnicalAnalysisSourceAdmissionTest {
     Path launchMarkers = physicalRoot.resolve("fingerprint-unexpected-tool-starts.log");
     Path jdtInstallation = physicalRoot.resolve("fingerprint-jdt-installation");
     writeMarkerScript(jdtInstallation.resolve("bin/jdtls"), "jdt", launchMarkers);
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     ExternalCompilationInputFixture compilationInput =
         writeValidExternalCompilationInput(
             physicalRoot, sourceRoot, selectedSourceBasis(runStore, preparationRunId));
@@ -1687,8 +1632,9 @@ class TechnicalAnalysisSourceAdmissionTest {
             compilationInput.compilationInput(),
             jdtInstallation,
             technicalPolicySet);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
     AnalysisRunRequest requestMatchingCurrentConfig =
-        collectRequestFromConfiguredRuntime(technicalConfig);
+        collectCodeRequestV3FromConfiguredRuntime(technicalConfig);
 
     AnalysisRunReference queuedRun;
     AnalysisRunRequest mismatchedRequest;
@@ -1786,8 +1732,9 @@ class TechnicalAnalysisSourceAdmissionTest {
             preparationWorkspace.resolve("prepared-source-archive"),
             compilationInput.compilationInput(),
             jdtInstallation,
-            writeTechnicalPolicySet());
-    AnalysisRunRequest queuedRequest = collectRequestFromConfiguredRuntime(technicalConfig);
+            V3_TECHNICAL_POLICY_SET);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
+    AnalysisRunRequest queuedRequest = collectCodeRequestV3FromConfiguredRuntime(technicalConfig);
     AnalysisRunReference queuedRun;
     try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
       queuedRun = queueConfiguredCollectCodeRun(technicalConfig, store, queuedRequest);
@@ -1796,7 +1743,7 @@ class TechnicalAnalysisSourceAdmissionTest {
 
     Files.writeString(jdtLauncher, "fixture launcher bytes revision two\n", StandardCharsets.UTF_8);
     AnalysisRunRequest requestAfterToolchainChange =
-        collectRequestFromConfiguredRuntime(technicalConfig);
+        collectCodeRequestV3FromConfiguredRuntime(technicalConfig);
     byte[] compilationInputAfter = Files.readAllBytes(compilationInput.compilationInput());
     Map<String, String> storeBeforeAttempt = storeSnapshot(runStore);
     ByteArrayOutputStream outputBytes = new ByteArrayOutputStream();
@@ -1890,9 +1837,10 @@ class TechnicalAnalysisSourceAdmissionTest {
             preparationWorkspace.resolve("prepared-source-archive"),
             compilationInput.compilationInput(),
             jdtInstallation,
-            writeTechnicalPolicySet(),
+            V3_TECHNICAL_POLICY_SET,
             toolJavaHome);
-    AnalysisRunRequest queuedRequest = collectRequestFromConfiguredRuntime(technicalConfig);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
+    AnalysisRunRequest queuedRequest = collectCodeRequestV3FromConfiguredRuntime(technicalConfig);
     AnalysisRunReference queuedRun;
     try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
       queuedRun = queueConfiguredCollectCodeRun(technicalConfig, store, queuedRequest);
@@ -1901,14 +1849,14 @@ class TechnicalAnalysisSourceAdmissionTest {
 
     Files.writeString(toolJavaRelease, "JAVA_VERSION=\"21.0.1\"\n", StandardCharsets.UTF_8);
     AnalysisRunRequest requestAfterReleaseChange =
-        collectRequestFromConfiguredRuntime(technicalConfig);
+        collectCodeRequestV3FromConfiguredRuntime(technicalConfig);
     Files.writeString(toolJavaRelease, initialRelease, StandardCharsets.UTF_8);
     Files.writeString(
         toolJavaLauncher,
         "fixture tool Java launcher revision two; never execute\n",
         StandardCharsets.UTF_8);
     AnalysisRunRequest requestAfterLauncherChange =
-        collectRequestFromConfiguredRuntime(technicalConfig);
+        collectCodeRequestV3FromConfiguredRuntime(technicalConfig);
     byte[] compilationInputAfter = Files.readAllBytes(compilationInput.compilationInput());
     Map<String, String> storeBeforeAttempt = storeSnapshot(runStore);
     ByteArrayOutputStream outputBytes = new ByteArrayOutputStream();
@@ -2012,7 +1960,7 @@ class TechnicalAnalysisSourceAdmissionTest {
     Files.createDirectories(platformArchive.getParent());
     writeFixtureJar(platformArchive, (byte) 1);
 
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     FakeToolchainIdentityFixture fakeToolchain =
         writeFakeToolchainIdentityFixture(physicalRoot.resolve("java8-platform-toolchain"));
     Path technicalConfig =
@@ -2028,7 +1976,8 @@ class TechnicalAnalysisSourceAdmissionTest {
             fakeToolchain.jdtInstallation(),
             technicalPolicySet,
             fakeToolchain.toolJavaHome());
-    AnalysisRunRequest queuedRequest = collectRequestFromConfiguredRuntime(technicalConfig);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
+    AnalysisRunRequest queuedRequest = collectCodeRequestV3FromConfiguredRuntime(technicalConfig);
     assertThat(
             new JavaReadinessPreparation()
                 .prepare(v2ReadinessRequestFromConfiguredRuntime(technicalConfig))
@@ -2063,8 +2012,30 @@ class TechnicalAnalysisSourceAdmissionTest {
       assertThat(saved.technicalOutput()).isNotNull();
       assertThat(saved.technicalOutput().continuationStatus())
           .isEqualTo(TechnicalContinuationStatus.BLOCKED);
-      assertThat(saved.technicalOutput().problems())
-          .extracting(TechnicalProblemReference::code)
+      assertThat(saved.technicalOutput().readinessReport()).isNotNull();
+      CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+      CanonicalArtifactPolicyRegistry policies =
+          SourceAnalysisTestPolicyRegistry.load(technicalPolicySet, canonicalJson);
+      CanonicalModuleArtifactStore modules =
+          new FileSystemCanonicalModuleArtifactStore(
+              store,
+              canonicalJson,
+              policies,
+              new ArtifactStoreLimits(64, 64L * 1024L * 1024L, 256L * 1024L * 1024L, 4_096));
+      var readinessPublication = modules.reopen(saved.technicalOutput().readinessReport());
+      assertThat(readinessPublication.receipt().status())
+          .isEqualTo(ModuleCompletionStatus.SUCCEEDED_WITH_GAPS);
+      assertThat(readinessPublication.receipt().gapRefs()).doesNotHaveDuplicates();
+      String readinessJson =
+          readinessPublication.payloads().stream()
+              .filter(
+                  payload -> payload.descriptor().fileName().equals("java-analysis-readiness.json"))
+              .findFirst()
+              .map(
+                  payload ->
+                      new String(payload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8))
+              .orElseThrow();
+      assertThat(JSON.readTree(readinessJson).path("problems").findValuesAsText("code"))
           .containsExactly("JAVA_COMPILATION_INPUT_CHANGED");
     }
     assertThat(sessionOpenCount).as("JDT session opener must not run").hasValue(0);
@@ -2113,12 +2084,12 @@ class TechnicalAnalysisSourceAdmissionTest {
     V2OfficialCompilationOutputs official =
         writeV2OfficialCompilationOutputs(physicalRoot, sourceRoot);
     Path jrtFsJar = official.targetJavaHome().resolve("lib/jrt-fs.jar");
-    Path modules = official.targetJavaHome().resolve("lib/modules");
+    Path modulesImage = official.targetJavaHome().resolve("lib/modules");
     Files.createDirectories(jrtFsJar.getParent());
     writeFixtureJar(jrtFsJar, (byte) 1);
-    Files.write(modules, new byte[] {1});
+    Files.write(modulesImage, new byte[] {1});
 
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     FakeToolchainIdentityFixture fakeToolchain =
         writeFakeToolchainIdentityFixture(physicalRoot.resolve("java17-platform-toolchain"));
     Path technicalConfig =
@@ -2134,7 +2105,8 @@ class TechnicalAnalysisSourceAdmissionTest {
             fakeToolchain.jdtInstallation(),
             technicalPolicySet,
             fakeToolchain.toolJavaHome());
-    AnalysisRunRequest queuedRequest = collectRequestFromConfiguredRuntime(technicalConfig);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
+    AnalysisRunRequest queuedRequest = collectCodeRequestV3FromConfiguredRuntime(technicalConfig);
     assertThat(
             new JavaReadinessPreparation()
                 .prepare(v2ReadinessRequestFromConfiguredRuntime(technicalConfig))
@@ -2169,25 +2141,48 @@ class TechnicalAnalysisSourceAdmissionTest {
       assertThat(saved.technicalOutput()).isNotNull();
       assertThat(saved.technicalOutput().continuationStatus())
           .isEqualTo(TechnicalContinuationStatus.BLOCKED);
-      assertThat(saved.technicalOutput().problems())
-          .extracting(TechnicalProblemReference::code)
+      assertThat(saved.technicalOutput().readinessReport()).isNotNull();
+      CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+      CanonicalArtifactPolicyRegistry policies =
+          SourceAnalysisTestPolicyRegistry.load(technicalPolicySet, canonicalJson);
+      CanonicalModuleArtifactStore modules =
+          new FileSystemCanonicalModuleArtifactStore(
+              store,
+              canonicalJson,
+              policies,
+              new ArtifactStoreLimits(64, 64L * 1024L * 1024L, 256L * 1024L * 1024L, 4_096));
+      var readinessPublication = modules.reopen(saved.technicalOutput().readinessReport());
+      assertThat(readinessPublication.receipt().status())
+          .isEqualTo(ModuleCompletionStatus.SUCCEEDED_WITH_GAPS);
+      assertThat(readinessPublication.receipt().gapRefs()).doesNotHaveDuplicates();
+      String readinessJson =
+          readinessPublication.payloads().stream()
+              .filter(
+                  payload -> payload.descriptor().fileName().equals("java-analysis-readiness.json"))
+              .findFirst()
+              .map(
+                  payload ->
+                      new String(payload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8))
+              .orElseThrow();
+      assertThat(JSON.readTree(readinessJson).path("problems").findValuesAsText("code"))
           .containsExactly("JAVA_COMPILATION_INPUT_CHANGED");
     }
     assertThat(sessionOpenCount).as("JDT session opener must not run").hasValue(0);
   }
 
   @Test
-  void readyCollectCodePersistsR1FrontendAndStep02Step03ThroughTheAgent() throws Exception {
+  void v3AnalyzePersistenceConsumesSavedBackendRunWithoutJdtOrNodeAndR4ReopensEvidence()
+      throws Exception {
     Path physicalRoot = temporaryDirectory.toRealPath();
-    Path sourceRoot = Files.createDirectory(physicalRoot.resolve("ready-r1-source"));
-    writeReadySource(sourceRoot, "ReadyR1");
+    Path sourceRoot = Files.createDirectory(physicalRoot.resolve("v3-r3-source"));
+    writeReadySource(sourceRoot, "V3R3");
     Files.writeString(
         sourceRoot.resolve("pom.xml"),
         """
         <project xmlns="http://maven.apache.org/POM/4.0.0">
           <modelVersion>4.0.0</modelVersion>
           <groupId>fixture.technical</groupId>
-          <artifactId>ready-r1-source</artifactId>
+          <artifactId>v3-r3-source</artifactId>
           <version>1.0</version>
           <dependencies>
             <dependency>
@@ -2199,541 +2194,8 @@ class TechnicalAnalysisSourceAdmissionTest {
         </project>
         """,
         StandardCharsets.UTF_8);
-    Path preparationWorkspace =
-        Files.createDirectory(physicalRoot.resolve("ready-r1-preparations"));
-    Path runStore = Files.createDirectory(physicalRoot.resolve("ready-r1-store"));
-    Path preparationConfig =
-        writeSourcePreparationConfig(
-            "ready-r1-source-preparation.yaml", sourceRoot, preparationWorkspace, runStore);
-
-    CliResult prepared = execute(preparationConfig, "prepare-source", "--format", "json");
-    assertThat(prepared.exitCode()).withFailMessage("stage=%s", prepared.stderr()).isZero();
-    String preparationRunId = JSON.readTree(prepared.stdout()).path("runId").asText();
-    String sourceVersion =
-        assertIndependentlyReopenableReadyR0(preparationConfig, preparationRunId);
-
-    ExternalCompilationInputFixture compilationInput =
-        writeValidExternalCompilationInput(
-            physicalRoot, sourceRoot, selectedSourceBasis(runStore, preparationRunId));
-    Path technicalPolicySet = writeTechnicalPolicySet();
-    FakeToolchainIdentityFixture fakeToolchain =
-        writeFakeToolchainIdentityFixture(physicalRoot.resolve("ready-r1-fake-toolchain"));
-    Path technicalConfig =
-        writeV2ExternalCollectTechnicalConfigFromInput(
-            preparationRunId,
-            runStore,
-            preparationWorkspace.resolve("prepared-source-archive"),
-            compilationInput.compilationInput(),
-            fakeToolchain.jdtInstallation(),
-            technicalPolicySet,
-            fakeToolchain.toolJavaHome());
-    AnalysisRunRequest queuedRequest = collectRequestFromConfiguredRuntime(technicalConfig);
-    assertThat(
-            new JavaReadinessPreparation()
-                .prepare(v2ReadinessRequestFromConfiguredRuntime(technicalConfig))
-                .status())
-        .isEqualTo(JavaReadinessPreparation.Status.READY);
-    assertThat(queuedRequest.selectedSourceBasis().snapshotId().value()).isEqualTo(sourceVersion);
-
-    AnalysisRunReference queuedRun;
-    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      queuedRun = queueConfiguredCollectCodeRun(technicalConfig, store, queuedRequest);
-    }
-    assertThat(queuedRun.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.QUEUED);
-
-    ByteArrayOutputStream outputBytes = new ByteArrayOutputStream();
-    ByteArrayOutputStream errorBytes = new ByteArrayOutputStream();
-    AtomicInteger sessionOpenCount = new AtomicInteger();
-    AtomicInteger frontendToolSupplierCalls = new AtomicInteger();
-    int exitCode =
-        TechnicalAnalysisConfiguredRuntime.execute(
-            technicalConfig,
-            "collect-code",
-            List.of("--run", queuedRun.runId().value()),
-            new PrintWriter(outputBytes, true, StandardCharsets.UTF_8),
-            new PrintWriter(errorBytes, true, StandardCharsets.UTF_8),
-            environment -> {
-              sessionOpenCount.incrementAndGet();
-              assertThat(environment.sourceSnapshotId()).isEqualTo(sourceVersion);
-              return emptyCatalogSession(environment);
-            },
-            () -> {
-              frontendToolSupplierCalls.incrementAndGet();
-              throw new AssertionError("disabled frontend must not request a syntax tool");
-            });
-
-    assertThat(exitCode).withFailMessage("stdout=%s stderr=%s", outputBytes, errorBytes).isZero();
-    assertThat(errorBytes.toString(StandardCharsets.UTF_8)).isEmpty();
-    assertThat(outputBytes.toString(StandardCharsets.UTF_8)).contains(queuedRun.runId().value());
-    assertThat(sessionOpenCount).hasValue(1);
-    assertThat(frontendToolSupplierCalls).hasValue(0);
-    assertThat(Files.readString(fakeToolchain.jdtLauncher()))
-        .isEqualTo("test-only JDT launcher identity; never execute\n");
-    assertThat(Files.readString(fakeToolchain.jdtPluginMarker()))
-        .isEqualTo("test-only JDT distribution identity; never execute\n");
-    assertThat(Files.readString(fakeToolchain.toolJavaLauncher()))
-        .isEqualTo("test-only tool-Java launcher identity; never execute\n");
-    assertThat(Files.readString(fakeToolchain.toolJavaRelease()))
-        .isEqualTo("JAVA_VERSION=\"17.0.1\"\n");
-
-    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      LocalRepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store);
-      var inspection = agent.inspect(queuedRun.runId().value());
-      assertThat(inspection.analysisRun().lifecycleState())
-          .isEqualTo(AnalysisRunLifecycleState.FINISHED);
-      assertThat(inspection.output())
-          .isEqualTo(
-              RunStoreBootstrap.reopenAnalysisRunOutput(store, queuedRun.runId()).orElseThrow());
-
-      AnalysisRunOutput saved = inspection.output();
-      assertThat(saved).isNotNull();
-      assertThat(saved.sourceRunId())
-          .isEqualTo(
-              queuedRequest.selectedSourceBasis().preparedSource().publication().address().runId());
-      TechnicalRunOutput technical = saved.technicalOutput();
-      assertThat(technical).isNotNull();
-      assertThat(technical.outputRunId()).isEqualTo(queuedRun.runId());
-      assertThat(technical.outputRunId()).isNotEqualTo(saved.sourceRunId());
-      assertThat(technical.selectedSourceBasis()).isEqualTo(queuedRequest.selectedSourceBasis());
-      assertThat(technical.upstreamPublication())
-          .isEqualTo(queuedRequest.technicalAnalysisInputs().upstreamPublication());
-      assertThat(technical.continuationStatus())
-          .isIn(
-              TechnicalContinuationStatus.READY,
-              TechnicalContinuationStatus.READY_WITH_LIMITATIONS);
-      assertThat(technical.inspectionStatus()).isEqualTo(TechnicalInspectionStatus.CHECKS_COMPLETE);
-      assertThat(technical.readinessReport()).isNotNull();
-      assertThat(technical.frontendIndex()).isNotNull();
-      assertThat(technical.applicationDiscovery()).isNotNull();
-      assertThat(technical.navigation()).isNotNull();
-      assertThat(technical.persistence()).isNull();
-      assertThat(technical.readingMaterials()).isNull();
-      assertThat(technical.availableOutputs())
-          .containsExactly(
-              TechnicalOutputArtifactKey.JAVA_ANALYSIS_READINESS,
-              TechnicalOutputArtifactKey.FRONTEND_HTTP_INDEX,
-              TechnicalOutputArtifactKey.APPLICATION_DISCOVERY,
-              TechnicalOutputArtifactKey.JAVA_CODE_INDEX);
-      assertThat(technical.readinessReport().address())
-          .isInstanceOfSatisfying(
-              AnalysisStepModuleAddress.class,
-              address -> assertThat(address.runId()).isEqualTo(queuedRun.runId()));
-      assertThat(technical.frontendIndex().address())
-          .isInstanceOfSatisfying(
-              AnalysisStepModuleAddress.class,
-              address -> assertThat(address.runId()).isEqualTo(queuedRun.runId()));
-      assertThat(technical.applicationDiscovery().address().runId()).isEqualTo(queuedRun.runId());
-      assertThat(technical.navigation().address().runId()).isEqualTo(queuedRun.runId());
-
-      CanonicalJsonCodec json = new CanonicalJsonCodec();
-      CanonicalArtifactPolicyRegistry policies =
-          SourceAnalysisTestPolicyRegistry.load(technicalPolicySet, json);
-      ArtifactStoreLimits limits =
-          new ArtifactStoreLimits(64, 64L * 1024L * 1024L, 256L * 1024L * 1024L, 4_096);
-      CanonicalModuleArtifactStore modules =
-          new FileSystemCanonicalModuleArtifactStore(store, json, policies, limits);
-      CanonicalAnalysisStepArtifactStore steps =
-          new FileSystemCanonicalAnalysisStepArtifactStore(store, json, policies, limits);
-      AnalysisRunRequest.TechnicalAnalysisInputs inputs = queuedRequest.technicalAnalysisInputs();
-      ArtifactControls controls =
-          new ArtifactControls(
-              inputs.toolchainRef().sha256(),
-              inputs.technicalProfileRef().sha256(),
-              inputs.schemaBundleRef().sha256(),
-              null,
-              new ArtifactPolicyRegistryReference(
-                  inputs.artifactPolicyRegistryRef().artifactId(),
-                  inputs.artifactPolicyRegistryRef().sha256()));
-      FrontendHttpIndex frontend =
-          new FrontendHttpIndexModulePublisher(modules)
-              .reopen(
-                  technical.frontendIndex(),
-                  queuedRun.runId(),
-                  queuedRequest.selectedSourceBasis(),
-                  controls);
-      assertThat(frontend.status()).isEqualTo(FrontendHttpIndex.Status.DISABLED);
-      assertThat(frontend.files()).isEmpty();
-      assertThat(frontend.requests()).isEmpty();
-      assertThat(frontend.entryLinks()).isEmpty();
-      assertThat(frontend.diagnostics()).isEmpty();
-
-      var applicationDiscovery = steps.reopen(technical.applicationDiscovery());
-      assertThat(applicationDiscovery.semanticPayloads())
-          .extracting(payload -> payload.descriptor().fileName())
-          .contains("entry-points.jsonl");
-      String entryPoints =
-          applicationDiscovery.semanticPayloads().stream()
-              .filter(payload -> payload.descriptor().fileName().equals("entry-points.jsonl"))
-              .findFirst()
-              .map(
-                  payload ->
-                      new String(payload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8))
-              .orElseThrow();
-      assertThat(entryPoints).isBlank();
-      var javaIndex =
-          new JavaCodeIndexReader(steps).reopen(new ProgramGraphsReference(technical.navigation()));
-      assertThat(javaIndex.snapshotId()).isEqualTo(sourceVersion);
-      assertThat(javaIndex.catalog().files()).contains("src/main/java/fixture/Entry.java");
-      assertThat(javaIndex.entries()).isEmpty();
-    }
-  }
-
-  @Test
-  void v2ReadyCollectCodeDerivesEnvironmentFromOfficialOutputsAndPersistsR1() throws Exception {
-    Path physicalRoot = temporaryDirectory.toRealPath();
-    Path sourceRoot = Files.createDirectory(physicalRoot.resolve("v2-ready-source"));
-    writeReadySource(sourceRoot, "V2Ready");
     Files.writeString(
-        sourceRoot.resolve("pom.xml"),
-        """
-        <project xmlns="http://maven.apache.org/POM/4.0.0">
-          <modelVersion>4.0.0</modelVersion>
-          <groupId>fixture.technical</groupId>
-          <artifactId>source-v2ready</artifactId>
-          <version>1.0</version>
-          <dependencies>
-            <dependency>
-              <groupId>org.springframework</groupId>
-              <artifactId>spring-webmvc</artifactId>
-              <version>6.1.8</version>
-            </dependency>
-          </dependencies>
-        </project>
-        """,
-        StandardCharsets.UTF_8);
-    Path preparationWorkspace =
-        Files.createDirectory(physicalRoot.resolve("v2-ready-preparations"));
-    Path runStore = Files.createDirectory(physicalRoot.resolve("v2-ready-store"));
-    Path preparationConfig =
-        writeSourcePreparationConfig(
-            "v2-ready-source-preparation.yaml", sourceRoot, preparationWorkspace, runStore);
-
-    CliResult prepared = execute(preparationConfig, "prepare-source", "--format", "json");
-    assertThat(prepared.exitCode()).withFailMessage("stage=%s", prepared.stderr()).isZero();
-    String preparationRunId = JSON.readTree(prepared.stdout()).path("runId").asText();
-    String sourceVersion =
-        assertIndependentlyReopenableReadyR0(preparationConfig, preparationRunId);
-
-    V2OfficialCompilationOutputs official =
-        writeV2OfficialCompilationOutputs(physicalRoot, sourceRoot);
-    Path technicalPolicySet = writeTechnicalPolicySet();
-    FakeToolchainIdentityFixture fakeToolchain =
-        writeFakeToolchainIdentityFixture(physicalRoot.resolve("v2-ready-fake-toolchain"));
-    Path technicalConfig =
-        writeV2ExternalCollectTechnicalConfig(
-            preparationRunId,
-            runStore,
-            preparationWorkspace.resolve("prepared-source-archive"),
-            sourceRoot,
-            ".",
-            official.classpathFile(),
-            official.effectivePomFile(),
-            official.targetJavaHome(),
-            fakeToolchain.jdtInstallation(),
-            technicalPolicySet,
-            fakeToolchain.toolJavaHome());
-
-    AnalysisRunRequest queuedRequest = collectRequestFromConfiguredRuntime(technicalConfig);
-    JavaReadinessPreparation.Result readiness =
-        new JavaReadinessPreparation()
-            .prepare(v2ReadinessRequestFromConfiguredRuntime(technicalConfig));
-    assertThat(readiness.status()).isEqualTo(JavaReadinessPreparation.Status.READY);
-    assertThat(queuedRequest.selectedSourceBasis().snapshotId().value()).isEqualTo(sourceVersion);
-
-    AnalysisRunReference queuedRun;
-    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      queuedRun = queueConfiguredCollectCodeRun(technicalConfig, store, queuedRequest);
-    }
-    assertThat(queuedRun.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.QUEUED);
-
-    ByteArrayOutputStream outputBytes = new ByteArrayOutputStream();
-    ByteArrayOutputStream errorBytes = new ByteArrayOutputStream();
-    AtomicInteger sessionOpenCount = new AtomicInteger();
-    AtomicInteger frontendToolSupplierCalls = new AtomicInteger();
-    int exitCode =
-        TechnicalAnalysisConfiguredRuntime.execute(
-            technicalConfig,
-            "collect-code",
-            List.of("--run", queuedRun.runId().value()),
-            new PrintWriter(outputBytes, true, StandardCharsets.UTF_8),
-            new PrintWriter(errorBytes, true, StandardCharsets.UTF_8),
-            environment -> {
-              sessionOpenCount.incrementAndGet();
-              assertThat(environment.sourceSnapshotId()).isEqualTo(sourceVersion);
-              JavaCompilationModuleEnvironment module = environment.modules().get(0);
-              assertThat(module.modulePath()).isEqualTo(".");
-              assertThat(module.project().sourceRoots()).containsExactly("src/main/java");
-              assertThat(module.compilationTarget().release()).isEqualTo("17");
-              return emptyCatalogSession(environment);
-            },
-            () -> {
-              frontendToolSupplierCalls.incrementAndGet();
-              throw new AssertionError("disabled frontend must not request a syntax tool");
-            });
-
-    assertThat(exitCode).withFailMessage("stdout=%s stderr=%s", outputBytes, errorBytes).isZero();
-    assertThat(errorBytes.toString(StandardCharsets.UTF_8)).isEmpty();
-    assertThat(outputBytes.toString(StandardCharsets.UTF_8)).contains(queuedRun.runId().value());
-    assertThat(sessionOpenCount).hasValue(1);
-    assertThat(frontendToolSupplierCalls).hasValue(0);
-
-    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      AnalysisRunReference inspected =
-          RunStoreBootstrap.reopenAnalysisRun(store, queuedRun.runId());
-      AnalysisRunOutput saved =
-          RunStoreBootstrap.reopenAnalysisRunOutput(store, queuedRun.runId()).orElseThrow();
-      assertThat(inspected.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.FINISHED);
-      assertThat(saved.technicalOutput()).isNotNull();
-      assertThat(saved.technicalOutput().continuationStatus())
-          .isIn(
-              TechnicalContinuationStatus.READY,
-              TechnicalContinuationStatus.READY_WITH_LIMITATIONS);
-      assertThat(saved.technicalOutput().readinessReport()).isNotNull();
-      assertThat(saved.technicalOutput().applicationDiscovery()).isNotNull();
-      assertThat(saved.technicalOutput().navigation()).isNotNull();
-    }
-  }
-
-  @Test
-  void analyzePersistencePublishesR2Step04FromExactR1WithoutJdtOrNode() throws Exception {
-    Path physicalRoot = temporaryDirectory.toRealPath();
-    Path sourceRootA = Files.createDirectory(physicalRoot.resolve("r2-source-a"));
-    writeReadySource(sourceRootA, "R2SourceA");
-    Files.writeString(
-        sourceRootA.resolve("pom.xml"),
-        """
-        <project xmlns="http://maven.apache.org/POM/4.0.0">
-          <modelVersion>4.0.0</modelVersion>
-          <groupId>fixture.technical</groupId>
-          <artifactId>r2-source-a</artifactId>
-          <version>1.0</version>
-          <dependencies>
-            <dependency>
-              <groupId>org.springframework</groupId>
-              <artifactId>spring-webmvc</artifactId>
-              <version>6.1.8</version>
-            </dependency>
-          </dependencies>
-        </project>
-        """,
-        StandardCharsets.UTF_8);
-    Path workspaceA = Files.createDirectory(physicalRoot.resolve("r2-preparations-a"));
-    Path runStore = Files.createDirectory(physicalRoot.resolve("r2-analysis-store"));
-    Path preparationConfigA =
-        writeSourcePreparationConfig(
-            "r2-source-preparation-a.yaml", sourceRootA, workspaceA, runStore);
-    CliResult preparedA = execute(preparationConfigA, "prepare-source", "--format", "json");
-    assertThat(preparedA.exitCode()).withFailMessage("stage=%s", preparedA.stderr()).isZero();
-    String preparationRunA = JSON.readTree(preparedA.stdout()).path("runId").asText();
-    String sourceVersionA =
-        assertIndependentlyReopenableReadyR0(preparationConfigA, preparationRunA);
-
-    ExternalCompilationInputFixture compilationInput =
-        writeValidExternalCompilationInput(
-            physicalRoot, sourceRootA, selectedSourceBasis(runStore, preparationRunA));
-    FakeToolchainIdentityFixture fakeToolchain =
-        writeFakeToolchainIdentityFixture(physicalRoot.resolve("r2-fake-toolchain"));
-    Path technicalPolicySet = writeTechnicalPolicySet();
-    Path collectConfig =
-        writeV2ExternalCollectTechnicalConfigFromInput(
-            preparationRunA,
-            runStore,
-            workspaceA.resolve("prepared-source-archive"),
-            compilationInput.compilationInput(),
-            fakeToolchain.jdtInstallation(),
-            technicalPolicySet,
-            fakeToolchain.toolJavaHome());
-    AnalysisRunRequest queuedRequest = collectRequestFromConfiguredRuntime(collectConfig);
-    AnalysisRunReference r1;
-    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      r1 = queueConfiguredCollectCodeRun(collectConfig, store, queuedRequest);
-    }
-
-    AtomicInteger javaSessionOpens = new AtomicInteger();
-    AtomicInteger frontendToolRequests = new AtomicInteger();
-    ByteArrayOutputStream collectOut = new ByteArrayOutputStream();
-    ByteArrayOutputStream collectErr = new ByteArrayOutputStream();
-    int collectExit =
-        TechnicalAnalysisConfiguredRuntime.execute(
-            collectConfig,
-            "collect-code",
-            List.of("--run", r1.runId().value()),
-            new PrintWriter(collectOut, true, StandardCharsets.UTF_8),
-            new PrintWriter(collectErr, true, StandardCharsets.UTF_8),
-            environment -> {
-              javaSessionOpens.incrementAndGet();
-              assertThat(environment.sourceSnapshotId()).isEqualTo(sourceVersionA);
-              return emptyCatalogSession(environment);
-            },
-            () -> {
-              frontendToolRequests.incrementAndGet();
-              throw new AssertionError("disabled frontend must not request a syntax tool");
-            });
-    assertThat(collectExit).withFailMessage("stdout=%s stderr=%s", collectOut, collectErr).isZero();
-    assertThat(javaSessionOpens).hasValue(1);
-    assertThat(frontendToolRequests).hasValue(0);
-
-    AnalysisRunOutput r1Output;
-    TechnicalRunOutput r1Technical;
-    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      assertThat(RunStoreBootstrap.reopenAnalysisRun(store, r1.runId()).lifecycleState())
-          .isEqualTo(AnalysisRunLifecycleState.FINISHED);
-      r1Output = RunStoreBootstrap.reopenAnalysisRunOutput(store, r1.runId()).orElseThrow();
-      r1Technical = r1Output.technicalOutput();
-      assertThat(r1Technical.operation())
-          .isEqualTo(AnalysisRunRequest.TechnicalOperation.COLLECT_CODE);
-      assertThat(r1Technical.selectedSourceBasis()).isEqualTo(queuedRequest.selectedSourceBasis());
-      assertThat(r1Technical.outputRunId()).isEqualTo(r1.runId());
-      assertThat(r1Technical.navigation()).isNotNull();
-      assertThat(r1Technical.applicationDiscovery()).isNotNull();
-      assertThat(r1Technical.persistence()).isNull();
-    }
-
-    Path persistenceConfigA =
-        writePersistenceOnlyTechnicalConfig(
-            preparationRunA,
-            runStore,
-            workspaceA.resolve("prepared-source-archive"),
-            technicalPolicySet);
-    ByteArrayOutputStream persistenceOut = new ByteArrayOutputStream();
-    ByteArrayOutputStream persistenceErr = new ByteArrayOutputStream();
-    int persistenceExit =
-        TechnicalAnalysisConfiguredRuntime.execute(
-            persistenceConfigA,
-            "analyze-persistence",
-            List.of("--code-run", r1.runId().value()),
-            new PrintWriter(persistenceOut, true, StandardCharsets.UTF_8),
-            new PrintWriter(persistenceErr, true, StandardCharsets.UTF_8),
-            environment -> {
-              javaSessionOpens.incrementAndGet();
-              throw new AssertionError("R2 must reopen Step03 and must not initialize JDT");
-            },
-            () -> {
-              frontendToolRequests.incrementAndGet();
-              throw new AssertionError("R2 must reuse saved frontend output without Node");
-            });
-    assertThat(persistenceExit)
-        .withFailMessage("stdout=%s stderr=%s", persistenceOut, persistenceErr)
-        .isZero();
-    assertThat(persistenceErr.toString(StandardCharsets.UTF_8)).isEmpty();
-    assertThat(javaSessionOpens).hasValue(1);
-    assertThat(frontendToolRequests).hasValue(0);
-
-    JsonNode r2Envelope = JSON.readTree(persistenceOut.toString(StandardCharsets.UTF_8));
-    assertThat(r2Envelope.path("operation").asText()).isEqualTo("ANALYZE_PERSISTENCE");
-    assertThat(r2Envelope.path("resultStatus").asText()).isEqualTo("COMPLETED");
-    AnalysisRunId r2RunId = AnalysisRunId.parse(r2Envelope.path("runId").asText());
-    AnalysisRunId r0RunId =
-        queuedRequest.selectedSourceBasis().preparedSource().publication().address().runId();
-    assertThat(r2RunId).isNotEqualTo(r1.runId()).isNotEqualTo(r0RunId);
-
-    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      LocalRepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store);
-      var r2Inspection = agent.inspect(r2RunId.value());
-      assertThat(r2Inspection.analysisRun().lifecycleState())
-          .isEqualTo(AnalysisRunLifecycleState.FINISHED);
-      AnalysisRunOutput r2Output = r2Inspection.output();
-      assertThat(r2Output).isNotNull();
-      assertThat(r2Output.sourceRunId()).isEqualTo(r0RunId);
-      assertThat(r2Output.selectedSourceBasis()).isEqualTo(queuedRequest.selectedSourceBasis());
-
-      TechnicalRunOutput r2Technical = r2Output.technicalOutput();
-      assertThat(r2Technical).isNotNull();
-      assertThat(r2Technical.operation())
-          .isEqualTo(AnalysisRunRequest.TechnicalOperation.ANALYZE_PERSISTENCE);
-      assertThat(r2Technical.outputRunId()).isEqualTo(r2RunId);
-      assertThat(r2Technical.upstreamPublication()).isEqualTo(r1Technical.navigation());
-      assertThat(r2Technical.readinessReport()).isEqualTo(r1Technical.readinessReport());
-      assertThat(r2Technical.frontendIndex()).isEqualTo(r1Technical.frontendIndex());
-      assertThat(r2Technical.applicationDiscovery()).isEqualTo(r1Technical.applicationDiscovery());
-      assertThat(r2Technical.navigation()).isEqualTo(r1Technical.navigation());
-      assertThat(r2Technical.persistence()).isNotNull();
-      assertThat(r2Technical.persistence().address().runId()).isEqualTo(r2RunId);
-      assertThat(r2Technical.persistence().address().analysisStepKey())
-          .isEqualTo(AnalysisStepKey.PROVEN_CODE_FACTS);
-      assertThat(r2Technical.readingMaterials()).isNull();
-      assertThat(r2Technical.availableOutputs())
-          .containsExactly(
-              TechnicalOutputArtifactKey.JAVA_ANALYSIS_READINESS,
-              TechnicalOutputArtifactKey.FRONTEND_HTTP_INDEX,
-              TechnicalOutputArtifactKey.APPLICATION_DISCOVERY,
-              TechnicalOutputArtifactKey.JAVA_CODE_INDEX,
-              TechnicalOutputArtifactKey.PERSISTENCE_MATERIAL_INDEX);
-
-      CanonicalJsonCodec json = new CanonicalJsonCodec();
-      CanonicalArtifactPolicyRegistry policies =
-          SourceAnalysisTestPolicyRegistry.load(technicalPolicySet, json);
-      ArtifactStoreLimits limits =
-          new ArtifactStoreLimits(64, 64L * 1024L * 1024L, 256L * 1024L * 1024L, 4_096);
-      CanonicalAnalysisStepArtifactStore steps =
-          new FileSystemCanonicalAnalysisStepArtifactStore(store, json, policies, limits);
-      PersistenceMaterialIndex persistenceIndex =
-          new PersistenceMaterialReader(steps).reopen(r2Technical.persistence());
-      assertThat(persistenceIndex.header().sourceSnapshotId()).isEqualTo(sourceVersionA);
-      assertThat(persistenceIndex.header().navigationPublication())
-          .isEqualTo(new ProgramGraphsReference(r1Technical.navigation()));
-      assertThat(persistenceIndex.header().status())
-          .isEqualTo(PersistenceMaterialIndex.Status.ENABLED);
-      assertThat(persistenceIndex.resources()).isEmpty();
-      assertThat(persistenceIndex.statements()).isEmpty();
-      assertThat(persistenceIndex.bindings()).isEmpty();
-      assertThat(persistenceIndex.sqlAnalyses()).isEmpty();
-    }
-
-    Path sourceRootB = Files.createDirectory(physicalRoot.resolve("r2-source-b"));
-    writeReadySource(sourceRootB, "R2SourceB");
-    Path workspaceB = Files.createDirectory(physicalRoot.resolve("r2-preparations-b"));
-    Path preparationConfigB =
-        writeSourcePreparationConfig(
-            "r2-source-preparation-b.yaml", sourceRootB, workspaceB, runStore);
-    CliResult preparedB = execute(preparationConfigB, "prepare-source", "--format", "json");
-    assertThat(preparedB.exitCode()).withFailMessage("stage=%s", preparedB.stderr()).isZero();
-    String preparationRunB = JSON.readTree(preparedB.stdout()).path("runId").asText();
-    assertThat(AnalysisRunId.parse(preparationRunB)).isNotEqualTo(r0RunId);
-
-    Path persistenceConfigB =
-        writePersistenceOnlyTechnicalConfig(
-            preparationRunB,
-            runStore,
-            workspaceB.resolve("prepared-source-archive"),
-            technicalPolicySet);
-    Map<String, String> beforeMismatchedBasis = storeSnapshot(runStore);
-    ByteArrayOutputStream mismatchOut = new ByteArrayOutputStream();
-    ByteArrayOutputStream mismatchErr = new ByteArrayOutputStream();
-    int mismatchExit =
-        TechnicalAnalysisConfiguredRuntime.execute(
-            persistenceConfigB,
-            "analyze-persistence",
-            List.of("--code-run", r1.runId().value()),
-            new PrintWriter(mismatchOut, true, StandardCharsets.UTF_8),
-            new PrintWriter(mismatchErr, true, StandardCharsets.UTF_8),
-            environment -> {
-              javaSessionOpens.incrementAndGet();
-              throw new AssertionError("mismatched R0 must fail before JDT");
-            },
-            () -> {
-              frontendToolRequests.incrementAndGet();
-              throw new AssertionError("mismatched R0 must fail before Node");
-            });
-    assertThat(mismatchExit).isEqualTo(2);
-    assertThat(mismatchErr.toString(StandardCharsets.UTF_8))
-        .contains("TECHNICAL_UPSTREAM_NOT_READY")
-        .doesNotContain("TECHNICAL_CONFIGURATION_INVALID", "TECHNICAL_EXECUTION_NOT_CONNECTED");
-    assertThat(mismatchOut.toString(StandardCharsets.UTF_8)).isEmpty();
-    assertThat(storeSnapshot(runStore)).isEqualTo(beforeMismatchedBasis);
-    assertThat(javaSessionOpens).hasValue(1);
-    assertThat(frontendToolRequests).hasValue(0);
-  }
-
-  @Test
-  void assembleMaterialsPublishesR3FromExactR0R1R2WithoutTools() throws Exception {
-    Assumptions.assumeTrue(
-        Files.getFileStore(temporaryDirectory).supportsFileAttributeView("posix"),
-        "test-owned tool launch markers require POSIX executable files");
-    Path physicalRoot = temporaryDirectory.toRealPath();
-    Path sourceRoot = Files.createDirectory(physicalRoot.resolve("r3-source"));
-    writeReadySource(sourceRoot, "R3Source");
-    String controllerServiceSource =
+        sourceRoot.resolve("src/main/java/fixture/Entry.java"),
         """
         package fixture;
 
@@ -2744,16 +2206,13 @@ class TechnicalAnalysisSourceAdmissionTest {
         final class Controller {
           private final OrderService orderService = new OrderService();
           @GetMapping("/list")
-          public String list() { return orderService.list(); }
+          public String list() { return wrapper.wrap(String.valueOf(orderService.list())); }
         }
 
         final class OrderService {
           String list() { return "ok"; }
         }
-        """;
-    Files.writeString(
-        sourceRoot.resolve("src/main/java/fixture/Entry.java"),
-        controllerServiceSource,
+        """,
         StandardCharsets.UTF_8);
     Files.writeString(
         sourceRoot.resolve("src/main/java/fixture/OrderMapper.java"),
@@ -2765,70 +2224,25 @@ class TechnicalAnalysisSourceAdmissionTest {
         }
         """,
         StandardCharsets.UTF_8);
-    Files.createDirectories(sourceRoot.resolve("src/main/resources/fixture"));
-    Files.writeString(
-        sourceRoot.resolve("src/main/resources/fixture/OrderMapper.xml"),
-        """
-        <?xml version="1.0" encoding="UTF-8" ?>
-        <mapper namespace="fixture.OrderMapper">
-          <select id="selectOrders" resultType="string">
-            SELECT id, name FROM orders
-          </select>
-        </mapper>
-        """,
-        StandardCharsets.UTF_8);
-    String frontendSource =
-        """
-        <template><button @click="load">load</button></template>
-        <script>
-        export default {
-          name: "OrdersPage",
-          methods: {
-            load() { return this.$http.get('/orders/list'); /* FULL_FRONTEND_FUNCTION_END */ }
-          }
-        };
-        </script>
-        """;
-    String frontendPagePath = "web/src/pages/Orders.vue";
-    Path frontendPage = sourceRoot.resolve(frontendPagePath);
-    Files.createDirectories(frontendPage.getParent());
-    Files.writeString(frontendPage, frontendSource, StandardCharsets.UTF_8);
-    Files.writeString(
-        sourceRoot.resolve("pom.xml"),
-        """
-        <project xmlns="http://maven.apache.org/POM/4.0.0">
-          <modelVersion>4.0.0</modelVersion>
-          <groupId>fixture.technical</groupId>
-          <artifactId>r3-source</artifactId>
-          <version>1.0</version>
-          <dependencies>
-            <dependency>
-              <groupId>org.springframework</groupId>
-              <artifactId>spring-webmvc</artifactId>
-              <version>6.1.8</version>
-            </dependency>
-          </dependencies>
-        </project>
-        """,
-        StandardCharsets.UTF_8);
-    Path preparationWorkspace = Files.createDirectory(physicalRoot.resolve("r3-preparations"));
-    Path runStore = Files.createDirectory(physicalRoot.resolve("r3-analysis-store"));
+    Path preparationWorkspace = Files.createDirectory(physicalRoot.resolve("v3-r3-preparations"));
+    Path runStore = Files.createDirectory(physicalRoot.resolve("v3-r3-store"));
     Path preparationConfig =
         writeSourcePreparationConfig(
-            "r3-source-preparation.yaml", sourceRoot, preparationWorkspace, runStore);
+            "v3-r3-source-preparation.yaml", sourceRoot, preparationWorkspace, runStore);
     CliResult prepared = execute(preparationConfig, "prepare-source", "--format", "json");
     assertThat(prepared.exitCode()).withFailMessage("stage=%s", prepared.stderr()).isZero();
     String preparationRunId = JSON.readTree(prepared.stdout()).path("runId").asText();
     String sourceVersion =
         assertIndependentlyReopenableReadyR0(preparationConfig, preparationRunId);
-    SelectedSourceBasis sourceBasis = selectedSourceBasis(runStore, preparationRunId);
-    AnalysisRunId r0RunId = sourceBasis.preparedSource().publication().address().runId();
 
     ExternalCompilationInputFixture compilationInput =
-        writeValidExternalCompilationInput(physicalRoot, sourceRoot, sourceBasis);
+        writeValidExternalCompilationInput(
+            physicalRoot, sourceRoot, selectedSourceBasis(runStore, preparationRunId));
     FakeToolchainIdentityFixture fakeToolchain =
-        writeFakeToolchainIdentityFixture(physicalRoot.resolve("r3-fake-toolchain"));
-    Path technicalPolicySet = writeTechnicalPolicySet();
+        writeFakeToolchainIdentityFixture(physicalRoot.resolve("v3-r3-toolchain"));
+    Path technicalPolicySet =
+        Path.of("tools/repository-run/technical-analysis-artifact-policy-set-v2.json")
+            .toAbsolutePath();
     Path collectConfig =
         writeV2ExternalCollectTechnicalConfigFromInput(
             preparationRunId,
@@ -2838,73 +2252,40 @@ class TechnicalAnalysisSourceAdmissionTest {
             fakeToolchain.jdtInstallation(),
             technicalPolicySet,
             fakeToolchain.toolJavaHome());
-    Path nodeLaunchMarker = physicalRoot.resolve("r3-node-launched.marker");
-    Path nodeExecutable = physicalRoot.resolve("r3-node");
-    writeMarkerScript(nodeExecutable, "node", nodeLaunchMarker);
-    writeEnabledFrontendSettings(
-        collectConfig,
-        nodeExecutable,
-        "web/src",
-        "@/",
-        "web/src/",
-        "fixture-ui",
-        "https://api.example.test",
-        "/jshERP-boot",
-        "",
-        List.of());
-    AnalysisRunRequest r1Request = collectRequestFromConfiguredRuntime(collectConfig);
-    AnalysisRunReference r1;
-    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      r1 = queueConfiguredCollectCodeRun(collectConfig, store, r1Request);
-    }
+    upgradeTechnicalConfigSchema(collectConfig, "technical-analysis-config-v3");
 
     AtomicInteger javaSessionOpens = new AtomicInteger();
-    AtomicInteger frontendToolRequests = new AtomicInteger();
-    AtomicReference<VerifiedSourceTextDocument> r0FrontendPage = new AtomicReference<>();
     List<EntrySeed> collectedSeeds = new ArrayList<>();
+    String entrySource =
+        Files.readString(
+            sourceRoot.resolve("src/main/java/fixture/Entry.java"), StandardCharsets.UTF_8);
     ByteArrayOutputStream collectOut = new ByteArrayOutputStream();
     ByteArrayOutputStream collectErr = new ByteArrayOutputStream();
     int collectExit =
         TechnicalAnalysisConfiguredRuntime.execute(
             collectConfig,
             "collect-code",
-            List.of("--run", r1.runId().value()),
+            List.of(),
             new PrintWriter(collectOut, true, StandardCharsets.UTF_8),
             new PrintWriter(collectErr, true, StandardCharsets.UTF_8),
             environment -> {
               javaSessionOpens.incrementAndGet();
               assertThat(environment.sourceSnapshotId()).isEqualTo(sourceVersion);
               return controllerServiceSession(
-                  environment,
-                  "src/main/java/fixture/Entry.java",
-                  controllerServiceSource,
-                  collectedSeeds);
+                  environment, "src/main/java/fixture/Entry.java", entrySource, collectedSeeds);
             },
             () -> {
-              frontendToolRequests.incrementAndGet();
-              return controllerServiceFrontendTool(r0FrontendPage);
+              throw new AssertionError("v3 collect-code must not initialize Node");
             });
     assertThat(collectExit).withFailMessage("stdout=%s stderr=%s", collectOut, collectErr).isZero();
+    JsonNode collectEnvelope = JSON.readTree(collectOut.toString(StandardCharsets.UTF_8));
+    assertThat(collectEnvelope.path("operation").asText()).isEqualTo("COLLECT_CODE");
+    assertThat(collectEnvelope.path("resultStatus").asText()).isEqualTo("COMPLETED");
+    assertThat(availableOutputNames(collectEnvelope))
+        .containsExactly("JAVA_ANALYSIS_READINESS", "APPLICATION_DISCOVERY", "JAVA_CODE_INDEX_V3");
+    AnalysisRunId backendRun = AnalysisRunId.parse(collectEnvelope.path("runId").asText());
     assertThat(javaSessionOpens).hasValue(1);
-    assertThat(frontendToolRequests).hasValue(1);
-    assertThat(Files.exists(nodeLaunchMarker)).isFalse();
-    assertThat(collectedSeeds)
-        .singleElement()
-        .satisfies(seed -> assertThat(seed.methodKey()).isEqualTo("method:controller-list"));
-
-    AnalysisRunOutput r1Output;
-    TechnicalRunOutput r1Technical;
-    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      assertThat(RunStoreBootstrap.reopenAnalysisRun(store, r1.runId()).lifecycleState())
-          .isEqualTo(AnalysisRunLifecycleState.FINISHED);
-      r1Output = RunStoreBootstrap.reopenAnalysisRunOutput(store, r1.runId()).orElseThrow();
-      r1Technical = r1Output.technicalOutput();
-      assertThat(r1Output.sourceRunId()).isEqualTo(r0RunId);
-      assertThat(r1Technical.outputRunId()).isEqualTo(r1.runId());
-      assertThat(r1Technical.selectedSourceBasis()).isEqualTo(sourceBasis);
-      assertThat(r1Technical.navigation()).isNotNull();
-      assertThat(r1Technical.persistence()).isNull();
-    }
+    assertThat(collectedSeeds).hasSize(1);
 
     Path persistenceConfig =
         writePersistenceOnlyTechnicalConfig(
@@ -2918,41 +2299,47 @@ class TechnicalAnalysisSourceAdmissionTest {
         TechnicalAnalysisConfiguredRuntime.execute(
             persistenceConfig,
             "analyze-persistence",
-            List.of("--code-run", r1.runId().value()),
+            List.of("--code-run", backendRun.value()),
             new PrintWriter(persistenceOut, true, StandardCharsets.UTF_8),
             new PrintWriter(persistenceErr, true, StandardCharsets.UTF_8),
             environment -> {
-              javaSessionOpens.incrementAndGet();
-              throw new AssertionError("R2 must not initialize JDT");
+              throw new AssertionError("v3 R3 must reopen R2 and never initialize JDT");
             },
             () -> {
-              frontendToolRequests.incrementAndGet();
-              throw new AssertionError("R2 must not start Node");
+              throw new AssertionError("v3 R3 must reopen R2 and never initialize Node");
             });
     assertThat(persistenceExit)
         .withFailMessage("stdout=%s stderr=%s", persistenceOut, persistenceErr)
         .isZero();
-    JsonNode r2Envelope = JSON.readTree(persistenceOut.toString(StandardCharsets.UTF_8));
-    AnalysisRunId r2RunId = AnalysisRunId.parse(r2Envelope.path("runId").asText());
-    assertThat(r2Envelope.path("operation").asText()).isEqualTo("ANALYZE_PERSISTENCE");
-    assertThat(r2RunId).isNotEqualTo(r1.runId()).isNotEqualTo(r0RunId);
+    assertThat(persistenceErr.toString(StandardCharsets.UTF_8)).isEmpty();
+    JsonNode persistenceEnvelope = JSON.readTree(persistenceOut.toString(StandardCharsets.UTF_8));
+    assertThat(persistenceEnvelope.path("operation").asText()).isEqualTo("ANALYZE_PERSISTENCE");
+    assertThat(persistenceEnvelope.path("resultStatus").asText()).isEqualTo("COMPLETED");
+    // R3 consumes the saved R2 backend material only; the frontend index is a required R4
+    // double-upstream input and must not be advertised by the persistence run itself.
+    assertThat(availableOutputNames(persistenceEnvelope))
+        .containsExactly(
+            "JAVA_ANALYSIS_READINESS",
+            "APPLICATION_DISCOVERY",
+            "JAVA_CODE_INDEX_V3",
+            "PERSISTENCE_MATERIAL_INDEX_V2");
+    AnalysisRunId persistenceRun = AnalysisRunId.parse(persistenceEnvelope.path("runId").asText());
+    assertThat(persistenceRun).isNotEqualTo(backendRun);
 
-    AnalysisRunOutput r2Output;
-    TechnicalRunOutput r2Technical;
-    PersistenceMaterialIndex r2PersistenceIndex;
     try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      LocalRepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store);
-      var inspection = agent.inspect(r2RunId.value());
-      assertThat(inspection.analysisRun().lifecycleState())
-          .isEqualTo(AnalysisRunLifecycleState.FINISHED);
-      r2Output = inspection.output();
-      r2Technical = r2Output.technicalOutput();
-      assertThat(r2Technical.outputRunId()).isEqualTo(r2RunId);
-      assertThat(r2Technical.selectedSourceBasis()).isEqualTo(sourceBasis);
-      assertThat(r2Technical.upstreamPublication()).isEqualTo(r1Technical.navigation());
-      assertThat(r2Technical.navigation()).isEqualTo(r1Technical.navigation());
-      assertThat(r2Technical.persistence().address().runId()).isEqualTo(r2RunId);
-
+      AnalysisRunOutput output =
+          RunStoreBootstrap.reopenAnalysisRunOutput(store, persistenceRun).orElseThrow();
+      AnalysisRunOutput sourceOutput =
+          RunStoreBootstrap.reopenAnalysisRunOutput(store, AnalysisRunId.parse(preparationRunId))
+              .orElseThrow();
+      assertThat(sourceOutput.sourcePreparationCheckpoint()).isNotNull();
+      assertThat(output.sourceRunId()).isEqualTo(AnalysisRunId.parse(preparationRunId));
+      TechnicalRunOutput technical = output.technicalOutput();
+      assertThat(technical.operation())
+          .isEqualTo(AnalysisRunRequest.TechnicalOperation.ANALYZE_PERSISTENCE);
+      assertThat(technical.upstreamPublication()).isNotNull();
+      assertThat(technical.persistence()).isNotNull();
+      assertThat(technical.persistence().address().runId()).isEqualTo(persistenceRun);
       CanonicalJsonCodec json = new CanonicalJsonCodec();
       CanonicalArtifactPolicyRegistry policies =
           SourceAnalysisTestPolicyRegistry.load(technicalPolicySet, json);
@@ -2960,407 +2347,555 @@ class TechnicalAnalysisSourceAdmissionTest {
           new ArtifactStoreLimits(64, 64L * 1024L * 1024L, 256L * 1024L * 1024L, 4_096);
       CanonicalAnalysisStepArtifactStore steps =
           new FileSystemCanonicalAnalysisStepArtifactStore(store, json, policies, limits);
-      r2PersistenceIndex = new PersistenceMaterialReader(steps).reopen(r2Technical.persistence());
-      assertThat(r2PersistenceIndex.resources())
-          .anySatisfy(
-              resource -> {
-                assertThat(resource.resourcePath())
-                    .isEqualTo("src/main/resources/fixture/OrderMapper.xml");
-                assertThat(resource.rawSource()).contains("SELECT id, name FROM orders");
+      CanonicalModuleArtifactStore modules =
+          new FileSystemCanonicalModuleArtifactStore(store, json, policies, limits);
+      var javaPublication = steps.reopen(technical.navigation());
+      String javaPayload =
+          javaPublication.semanticPayloads().stream()
+              .filter(payload -> payload.descriptor().fileName().equals("java-code-index.jsonl"))
+              .findFirst()
+              .map(
+                  payload ->
+                      new String(payload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8))
+              .orElseThrow();
+      JsonNode externalCallRecord = null;
+      JsonNode hierarchyCallRecord = null;
+      JsonNode confirmedBudgetCallRecord = null;
+      JsonNode bindingMismatchCallRecord = null;
+      for (String line : javaPayload.strip().split("\\R")) {
+        JsonNode record = JSON.readTree(line);
+        if (!"CALL".equals(record.path("recordType").asText())) {
+          continue;
+        }
+        JsonNode call = record.path("payload").path("call");
+        if ("String.valueOf(orderService.list())".equals(call.path("expression").asText())) {
+          externalCallRecord = call;
+        }
+        if ("wrapper.wrap(String.valueOf(orderService.list()))"
+            .equals(call.path("expression").asText())) {
+          hierarchyCallRecord = call;
+        }
+        if ("orderMapper.selectOrders()".equals(call.path("expression").asText())) {
+          confirmedBudgetCallRecord = call;
+        }
+        if ("call:controller-binding-mismatch".equals(call.path("callKey").asText())) {
+          bindingMismatchCallRecord = call;
+        }
+      }
+      assertThat(externalCallRecord).isNotNull();
+      assertThat(externalCallRecord.path("resolution").asText()).isEqualTo("EXTERNAL");
+      assertThat(externalCallRecord.path("targets").isArray()).isTrue();
+      assertThat(externalCallRecord.path("targets").size()).isZero();
+      assertThat(externalCallRecord.path("observations").isArray()).isTrue();
+      assertThat(externalCallRecord.path("observations").toString())
+          .contains("java.lang.String.valueOf");
+      assertThat(hierarchyCallRecord).isNotNull();
+      assertThat(hierarchyCallRecord.path("resolution").asText()).isEqualTo("NAVIGATION_CONFLICT");
+      assertThat(hierarchyCallRecord.path("targets").isArray()).isTrue();
+      assertThat(hierarchyCallRecord.path("targets").size()).isZero();
+      assertThat(hierarchyCallRecord.path("observations").isArray()).isTrue();
+      assertThat(hierarchyCallRecord.path("observations").toString())
+          .contains(
+              "CALL_HIERARCHY",
+              "UNCONFIRMED_NAVIGATION_LOCATION",
+              "NAVIGATION_CONFLICT_NOT_EXPANDED");
+      assertThat(confirmedBudgetCallRecord).isNotNull();
+      assertThat(confirmedBudgetCallRecord.path("targets").isArray()).isTrue();
+      assertThat(confirmedBudgetCallRecord.path("targets").toString())
+          .contains("method:mapper-select-orders", "NOT_EXPANDED", "COLLECTION_LIMIT");
+      assertThat(confirmedBudgetCallRecord.path("observations").isArray()).isTrue();
+      assertThat(confirmedBudgetCallRecord.path("observations").size()).isZero();
+      assertThat(bindingMismatchCallRecord).isNotNull();
+      assertThat(bindingMismatchCallRecord.path("targets").isArray()).isTrue();
+      assertThat(bindingMismatchCallRecord.path("targets").size()).isZero();
+      assertThat(bindingMismatchCallRecord.path("observations").isArray()).isTrue();
+      assertThat(bindingMismatchCallRecord.path("observations").toString())
+          .contains("UNCONFIRMED_BINDING_LOCATION", "BINDING_DECLARATION_MISMATCH");
+      JavaCodeIndex reopenedJavaIndex =
+          new JavaCodeIndexReader(steps).reopen(new ProgramGraphsReference(technical.navigation()));
+      List<EntryCodeContext.CallSite> reopenedCalls =
+          reopenedJavaIndex.entries().stream()
+              .flatMap(
+                  entry ->
+                      entry.context() == null
+                          ? Stream.<EntryCodeContext.CallSite>empty()
+                          : entry.context().calls().stream())
+              .toList();
+      assertThat(reopenedCalls)
+          .filteredOn(call -> "String.valueOf(orderService.list())".equals(call.expression()))
+          .singleElement()
+          .satisfies(
+              call -> {
+                assertThat(call.resolution()).isEqualTo("EXTERNAL");
+                assertThat(call.targets()).isEmpty();
               });
-      assertThat(r2PersistenceIndex.statements())
-          .anySatisfy(
-              statement -> {
-                assertThat(statement.statementId()).isEqualTo("selectOrders");
-                assertThat(statement.statementKind()).isEqualTo("select");
+      assertThat(reopenedCalls)
+          .filteredOn(
+              call -> "wrapper.wrap(String.valueOf(orderService.list()))".equals(call.expression()))
+          .singleElement()
+          .satisfies(
+              call -> {
+                assertThat(call.resolution()).isEqualTo("NAVIGATION_CONFLICT");
+                assertThat(call.targets()).isEmpty();
+                assertThat(call.observations())
+                    .extracting(EntryCodeContext.CallObservation::code)
+                    .contains("UNCONFIRMED_NAVIGATION_LOCATION");
+                assertThat(call.observations())
+                    .extracting(EntryCodeContext.CallObservation::detail)
+                    .contains("NAVIGATION_CONFLICT_NOT_EXPANDED");
               });
-      assertThat(r2PersistenceIndex.sqlAnalyses())
-          .anySatisfy(
-              analysis ->
-                  assertThat(analysis.analysisCopy()).contains("SELECT id, name FROM orders"));
-    }
-    assertThat(javaSessionOpens).hasValue(1);
-    assertThat(frontendToolRequests).hasValue(1);
+      assertThat(reopenedCalls)
+          .filteredOn(call -> "orderMapper.selectOrders()".equals(call.expression()))
+          .singleElement()
+          .satisfies(
+              call -> {
+                assertThat(call.targets())
+                    .singleElement()
+                    .satisfies(
+                        target -> {
+                          assertThat(target.methodKey()).isEqualTo("method:mapper-select-orders");
+                          assertThat(target.expansion()).isEqualTo("NOT_EXPANDED");
+                          assertThat(target.reason()).isEqualTo("COLLECTION_LIMIT");
+                        });
+                assertThat(call.observations()).isEmpty();
+              });
+      assertThat(reopenedCalls)
+          .filteredOn(call -> "call:controller-binding-mismatch".equals(call.callKey()))
+          .singleElement()
+          .satisfies(
+              call -> {
+                assertThat(call.targets()).isEmpty();
+                assertThat(call.observations())
+                    .extracting(EntryCodeContext.CallObservation::code)
+                    .contains("UNCONFIRMED_BINDING_LOCATION");
+                assertThat(call.observations())
+                    .extracting(EntryCodeContext.CallObservation::detail)
+                    .contains("BINDING_DECLARATION_MISMATCH");
+              });
+      var persistencePublication = steps.reopen(technical.persistence());
+      assertThat(persistencePublication.semanticPayloads()).hasSize(1);
+      assertThat(persistencePublication.semanticPayloads().get(0).descriptor().schemaVersion())
+          .isEqualTo("persistence-material-index-v2");
+      var persistenceModule =
+          modules.reopen(
+              ((AnalysisStepPublisherModuleProvenance)
+                      persistencePublication.receipt().publicationProvenance())
+                  .publisherSpecificationModuleReference());
+      assertThat(persistenceModule.receipt().moduleVersion()).isEqualTo("v3");
+      AnalysisStepModuleAddress persistenceModuleAddress =
+          (AnalysisStepModuleAddress) persistenceModule.reference().address();
+      assertThat(persistenceModuleAddress.analysisStepKey())
+          .isEqualTo(AnalysisStepKey.PROVEN_CODE_FACTS);
+      assertThat(persistenceModuleAddress.moduleNumber()).isEqualTo(4);
+      assertThat(persistenceModuleAddress.moduleKey()).isEqualTo("persistence-analysis");
+      String persistencePayload =
+          new String(
+              persistenceModule.payloads().get(0).canonicalUtf8().copyToByteArray(),
+              StandardCharsets.UTF_8);
+      assertThat(persistencePayload).contains("\"producer\":\"persistence-analysis-v3\"");
+      PersistenceMaterialReader historicalReader = new PersistenceMaterialReader(steps);
+      assertThatThrownBy(() -> historicalReader.reopen(technical.persistence()))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("PERSISTENCE_MATERIAL_INDEX_INVALID");
 
-    Path readingMaterialsConfig =
-        writeReadingMaterialsOnlyTechnicalConfig(
-            preparationRunId,
-            runStore,
-            preparationWorkspace.resolve("prepared-source-archive"),
-            technicalPolicySet);
-    Files.writeString(
-        readingMaterialsConfig,
-        Files.readString(readingMaterialsConfig, StandardCharsets.UTF_8)
-            .replace("maxPacketUtf8Bytes: 4096", "maxPacketUtf8Bytes: 16384"),
-        StandardCharsets.UTF_8);
-    ByteArrayOutputStream materialsOut = new ByteArrayOutputStream();
-    ByteArrayOutputStream materialsErr = new ByteArrayOutputStream();
-    int materialsExit =
-        TechnicalAnalysisConfiguredRuntime.execute(
-            readingMaterialsConfig,
-            "assemble-materials",
-            List.of("--persistence-run", r2RunId.value()),
-            new PrintWriter(materialsOut, true, StandardCharsets.UTF_8),
-            new PrintWriter(materialsErr, true, StandardCharsets.UTF_8),
-            environment -> {
-              javaSessionOpens.incrementAndGet();
-              throw new AssertionError("R3 must reopen saved navigation without JDT");
-            },
-            () -> {
-              frontendToolRequests.incrementAndGet();
-              throw new AssertionError("R3 must reopen saved frontend output without Node");
-            });
-    assertThat(materialsExit)
-        .withFailMessage("stdout=%s stderr=%s", materialsOut, materialsErr)
-        .isZero();
-    assertThat(materialsErr.toString(StandardCharsets.UTF_8)).isEmpty();
-    assertThat(javaSessionOpens).hasValue(1);
-    assertThat(frontendToolRequests).hasValue(1);
-
-    JsonNode r3Envelope = JSON.readTree(materialsOut.toString(StandardCharsets.UTF_8));
-    assertThat(r3Envelope.path("operation").asText()).isEqualTo("ASSEMBLE_MATERIALS");
-    assertThat(r3Envelope.path("resultStatus").asText()).isEqualTo("COMPLETED");
-    AnalysisRunId r3RunId = AnalysisRunId.parse(r3Envelope.path("runId").asText());
-    assertThat(r3RunId).isNotEqualTo(r2RunId).isNotEqualTo(r1.runId()).isNotEqualTo(r0RunId);
-
-    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      LocalRepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store);
-      var r3Inspection = agent.inspect(r3RunId.value());
-      assertThat(r3Inspection.analysisRun().lifecycleState())
-          .isEqualTo(AnalysisRunLifecycleState.FINISHED);
-      AnalysisRunOutput r3Output = r3Inspection.output();
-      assertThat(r3Output).isNotNull();
-      assertThat(r3Output.sourceRunId()).isEqualTo(r0RunId);
-      assertThat(r3Output.selectedSourceBasis()).isEqualTo(sourceBasis);
-
-      TechnicalRunOutput r3Technical = r3Output.technicalOutput();
-      assertThat(r3Technical).isNotNull();
-      assertThat(r3Technical.operation())
-          .isEqualTo(AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS);
-      assertThat(r3Technical.outputRunId()).isEqualTo(r3RunId);
-      assertThat(r3Technical.upstreamPublication()).isEqualTo(r2Technical.persistence());
-      assertThat(r3Technical.readinessReport()).isEqualTo(r1Technical.readinessReport());
-      assertThat(r3Technical.frontendIndex()).isEqualTo(r1Technical.frontendIndex());
-      assertThat(r3Technical.applicationDiscovery()).isEqualTo(r1Technical.applicationDiscovery());
-      assertThat(r3Technical.navigation()).isEqualTo(r1Technical.navigation());
-      assertThat(r3Technical.persistence()).isEqualTo(r2Technical.persistence());
-      assertThat(r3Technical.readingMaterials()).isNotNull();
-      assertThat(r3Technical.readingMaterials().address().runId()).isEqualTo(r3RunId);
-      assertThat(r3Technical.readingMaterials().address().analysisStepKey())
-          .isEqualTo(AnalysisStepKey.BUSINESS_FLOWS);
-      assertThat(r3Technical.availableOutputs())
-          .containsExactly(
-              TechnicalOutputArtifactKey.JAVA_ANALYSIS_READINESS,
-              TechnicalOutputArtifactKey.FRONTEND_HTTP_INDEX,
-              TechnicalOutputArtifactKey.APPLICATION_DISCOVERY,
-              TechnicalOutputArtifactKey.JAVA_CODE_INDEX,
-              TechnicalOutputArtifactKey.PERSISTENCE_MATERIAL_INDEX,
-              TechnicalOutputArtifactKey.CODE_READING_MATERIALS);
-
-      CanonicalJsonCodec json = new CanonicalJsonCodec();
-      CanonicalArtifactPolicyRegistry policies =
-          SourceAnalysisTestPolicyRegistry.load(technicalPolicySet, json);
-      ArtifactStoreLimits limits =
-          new ArtifactStoreLimits(64, 64L * 1024L * 1024L, 256L * 1024L * 1024L, 4_096);
-      CanonicalAnalysisStepArtifactStore steps =
-          new FileSystemCanonicalAnalysisStepArtifactStore(store, json, policies, limits);
-      AnalysisRunRequest r2Request =
-          RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, r2RunId).request();
-      AnalysisRunRequest r3Request =
-          RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, r3RunId).request();
-      ArtifactControls r1Controls = artifactControls(r1Request);
-      ArtifactControls r2Controls = artifactControls(r2Request);
-      ArtifactControls r3Controls = artifactControls(r3Request);
+      AnalysisRunRequest backendRequest =
+          RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, backendRun).request();
+      AnalysisRunRequest persistenceRequest =
+          RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, persistenceRun).request();
+      ArtifactControls r1Controls = artifactControls(backendRequest);
+      ArtifactControls r2Controls = artifactControls(persistenceRequest);
       CanonicalArtifactPolicyRegistry sourcePolicies =
           SourceAnalysisTestPolicyRegistry.load(SOURCE_PREPARATION_POLICY_SET, json);
       CanonicalAnalysisStepArtifactStore sourceSteps =
           new FileSystemCanonicalAnalysisStepArtifactStore(store, json, sourcePolicies, limits);
-      CanonicalModuleArtifactStore modules =
-          new FileSystemCanonicalModuleArtifactStore(store, json, policies, limits);
-      CodeReadingMaterialReader strictMaterialReader =
-          new CodeReadingMaterialReader(modules, steps, sourceSteps);
-      CodeReadingMaterialSet readingMaterials =
-          strictMaterialReader.reopenTechnical(
-              r3Technical.readingMaterials(),
-              r3RunId,
-              sourceBasis,
-              new ApplicationDiscoveryReference(r1Technical.applicationDiscovery()),
-              new ProgramGraphsReference(r1Technical.navigation()),
-              r2Technical.persistence(),
-              r1Controls,
-              r2Controls,
-              r3Controls);
-      assertThat(readingMaterials.header().sourceInventory().publication())
-          .isEqualTo(sourceBasis.preparedSource().publication());
-      assertThat(readingMaterials.header().frontendPublication())
-          .isEqualTo(r1Technical.frontendIndex());
-      assertThat(readingMaterials.header().navigationPublication())
-          .isEqualTo(new ProgramGraphsReference(r1Technical.navigation()));
-      assertThat(readingMaterials.header().persistencePublication())
-          .isEqualTo(r2Technical.persistence());
-      assertThat(readingMaterials.header().sourceSnapshotId()).isEqualTo(sourceVersion);
-      SelectedSourceBasis wrongR0Basis =
-          new SelectedSourceBasis(
-              SelectedSourceBasis.Kind.PREPARED_V1,
-              sourceBasis.preparedSource(),
-              null,
-              sourceBasis.snapshotId(),
-              digest('e'));
-      assertThatThrownBy(
-              () ->
-                  strictMaterialReader.reopenTechnical(
-                      r3Technical.readingMaterials(),
-                      r3RunId,
-                      wrongR0Basis,
-                      new ApplicationDiscoveryReference(r1Technical.applicationDiscovery()),
-                      new ProgramGraphsReference(r1Technical.navigation()),
-                      r2Technical.persistence(),
-                      r1Controls,
-                      r2Controls,
-                      r3Controls))
-          .isInstanceOf(IllegalArgumentException.class)
-          .hasMessage("CODE_READING_MATERIAL_SET_INVALID");
-      assertThat(readingMaterials.packets())
-          .singleElement()
-          .satisfies(
-              packet -> {
-                assertThat(packet.entries())
-                    .singleElement()
-                    .satisfies(
-                        entry -> assertThat(entry.methodKey()).isEqualTo("method:controller-list"));
-                assertThat(packet.frontendSelection().requestUses())
-                    .singleElement()
-                    .satisfies(
-                        use -> {
-                          assertThat(use.entryId()).isEqualTo(packet.entries().get(0).entryId());
-                          assertThat(use.requestId()).isEqualTo("request:orders-list");
-                          assertThat(use.instanceKey()).isEqualTo("OrdersPage");
-                          assertThat(use.request().resolvedPath()).isEqualTo("/orders/list");
-                          assertThat(use.entryLink().resolution())
-                              .isEqualTo(FrontendEntryLinkRecord.Resolution.MATCHED_UNIQUE);
-                        });
-              });
-      CodeReadingMaterialSet.Packet packet = readingMaterials.packets().get(0);
-      assertThat(readingMaterials.coverage())
-          .singleElement()
-          .satisfies(
-              coverage -> {
-                assertThat(coverage.entryId()).isEqualTo(packet.entries().get(0).entryId());
-                assertThat(coverage.packetIds()).containsExactly(packet.packetId());
-                assertThat(coverage.status())
-                    .isEqualTo(CodeReadingMaterialSet.CoverageStatus.COLLECTED);
-              });
-      assertThat(readingMaterials.frontendCoverage())
-          .singleElement()
-          .satisfies(
-              coverage ->
-                  assertThat(coverage.status())
-                      .isEqualTo(CodeReadingMaterialSet.FrontendCoverage.Status.SELECTED));
-
-      FrontendHttpIndexModulePublisher frontendPublisher =
-          new FrontendHttpIndexModulePublisher(modules);
-      FrontendHttpIndex frontend =
-          frontendPublisher.reopen(
-              r1Technical.frontendIndex(), r1.runId(), sourceBasis, r1Controls);
-      assertThat(frontend.status()).isEqualTo(FrontendHttpIndex.Status.ENABLED);
-      assertThat(frontend.files())
-          .anySatisfy(file -> assertThat(file.path()).isEqualTo(frontendPagePath));
-      assertThat(frontend.requests())
-          .singleElement()
-          .satisfies(
-              request -> {
-                assertThat(request.pagePath()).isEqualTo(frontendPagePath);
-                assertThat(request.instanceKey()).isEqualTo("OrdersPage");
-                assertThat(request.httpMethod()).isEqualTo("GET");
-                assertThat(request.resolvedPath()).isEqualTo("/orders/list");
-                assertThat(request.wrapperPath())
-                    .singleElement()
-                    .satisfies(
-                        wrapper -> {
-                          assertThat(wrapper.sourcePath()).isEqualTo(frontendPagePath);
-                          assertThat(wrapper.sourceSha256())
-                              .isEqualTo(r0FrontendPage.get().sha256().value());
-                          assertThat(wrapper.sourceUnitKind())
-                              .isEqualTo(FrontendWrapperCall.SourceUnitKind.FUNCTION);
-                          assertThat(wrapper.sourceUnitRange().startOffsetUtf16())
-                              .isLessThanOrEqualTo(wrapper.callRange().startOffsetUtf16());
-                          assertThat(
-                                  wrapper.sourceUnitRange().startOffsetUtf16()
-                                      + wrapper.sourceUnitRange().lengthUtf16())
-                              .isGreaterThanOrEqualTo(
-                                  wrapper.callRange().startOffsetUtf16()
-                                      + wrapper.callRange().lengthUtf16());
-                        });
-              });
-      JavaCodeIndex reopenedJavaIndex =
-          new JavaCodeIndexReader(steps)
-              .reopen(new ProgramGraphsReference(r1Technical.navigation()));
-      String entryId =
-          reopenedJavaIndex.entries().stream()
-              .filter(entry -> entry.seed().methodKey().equals("method:controller-list"))
-              .map(entry -> entry.seed().entryId())
-              .findFirst()
-              .orElseThrow();
-      assertThat(frontend.entryLinks())
-          .singleElement()
-          .satisfies(
-              link -> {
-                assertThat(link.requestId()).isEqualTo("request:orders-list");
-                assertThat(link.resolution())
-                    .isEqualTo(FrontendEntryLinkRecord.Resolution.MATCHED_UNIQUE);
-                assertThat(link.entryIds()).containsExactly(ArtifactId.parse(entryId));
-              });
-      VerifiedSourceTextDocument pageFromR0 = r0FrontendPage.get();
-      assertThat(pageFromR0).isNotNull();
-      String r0PageText =
-          new String(pageFromR0.rawUtf8().copyToByteArray(), StandardCharsets.UTF_8);
-      CodeReadingMaterialSet.FrontendRequestUse use =
-          packet.frontendSelection().requestUses().get(0);
-      FrontendSourceUnits.Unit selectedUnit =
-          packet.frontendSelection().sourceUnits().stream()
-              .filter(unit -> unit.sourceUnitId().equals(use.sourceUnitId()))
-              .findFirst()
-              .orElseThrow();
-      FrontendWrapperCall pageWrapper = frontend.requests().get(0).wrapperPath().get(0);
-      int unitStart = pageWrapper.sourceUnitRange().startOffsetUtf16();
-      int unitEnd = unitStart + pageWrapper.sourceUnitRange().lengthUtf16();
-      assertThat(selectedUnit.path()).isEqualTo(pageFromR0.path());
-      assertThat(selectedUnit.sourceSha256()).isEqualTo(pageFromR0.sha256().value());
-      assertThat(selectedUnit.sourceUnitRange()).isEqualTo(pageWrapper.sourceUnitRange());
-      assertThat(selectedUnit.sourceUnitKind())
-          .isEqualTo(FrontendWrapperCall.SourceUnitKind.FUNCTION);
-      assertThat(selectedUnit.text()).isEqualTo(r0PageText.substring(unitStart, unitEnd));
-      assertThat(selectedUnit.text()).contains("FULL_FRONTEND_FUNCTION_END");
-      assertThat(CodeReadingMaterialMarkdown.renderPacket(packet)).contains(selectedUnit.text());
-
-      assertThat(new PersistenceMaterialReader(steps).reopen(r3Technical.persistence()))
-          .isEqualTo(r2PersistenceIndex);
+      PersistenceMaterialIndex reopened =
+          new PersistenceMaterialReader(steps, sourceSteps)
+              .reopenTechnicalV3(
+                  technical.persistence(),
+                  persistenceRun,
+                  new VerifiedSourceInventoryReference(sourceOutput.sourcePreparationCheckpoint()),
+                  new ApplicationDiscoveryReference(technical.applicationDiscovery()),
+                  new ProgramGraphsReference(technical.navigation()),
+                  r1Controls,
+                  r2Controls);
+      assertThat(reopened.header().sourceSnapshotId()).isEqualTo(sourceVersion);
     }
 
-    Map<String, String> beforeWrongPredecessor = storeSnapshot(runStore);
-    ByteArrayOutputStream wrongPredecessorOut = new ByteArrayOutputStream();
-    ByteArrayOutputStream wrongPredecessorErr = new ByteArrayOutputStream();
-    int wrongPredecessorExit =
+    ByteArrayOutputStream frontendOut = new ByteArrayOutputStream();
+    ByteArrayOutputStream frontendErr = new ByteArrayOutputStream();
+    int frontendExit =
         TechnicalAnalysisConfiguredRuntime.execute(
-            readingMaterialsConfig,
-            "assemble-materials",
-            List.of("--persistence-run", r1.runId().value()),
-            new PrintWriter(wrongPredecessorOut, true, StandardCharsets.UTF_8),
-            new PrintWriter(wrongPredecessorErr, true, StandardCharsets.UTF_8),
+            collectConfig,
+            "collect-frontend",
+            List.of(),
+            new PrintWriter(frontendOut, true, StandardCharsets.UTF_8),
+            new PrintWriter(frontendErr, true, StandardCharsets.UTF_8),
             environment -> {
-              javaSessionOpens.incrementAndGet();
-              throw new AssertionError("wrong predecessor must fail before JDT");
+              throw new AssertionError("disabled R1 frontend must not initialize JDT");
             },
             () -> {
-              frontendToolRequests.incrementAndGet();
-              throw new AssertionError("wrong predecessor must fail before Node");
+              throw new AssertionError("disabled R1 frontend must not start Node");
             });
-    assertThat(wrongPredecessorExit).isEqualTo(2);
-    assertThat(wrongPredecessorErr.toString(StandardCharsets.UTF_8))
-        .contains("TECHNICAL_UPSTREAM_NOT_READY")
-        .doesNotContain("TECHNICAL_CONFIGURATION_INVALID", "TECHNICAL_EXECUTION_NOT_CONNECTED");
-    assertThat(wrongPredecessorOut.toString(StandardCharsets.UTF_8)).isEmpty();
-    assertThat(storeSnapshot(runStore)).isEqualTo(beforeWrongPredecessor);
-    assertThat(javaSessionOpens).hasValue(1);
-    assertThat(frontendToolRequests).hasValue(1);
-
-    Map<String, String> beforeCompletedQueries = storeSnapshot(runStore);
-    for (AnalysisRunId completedRun : List.of(r1.runId(), r2RunId, r3RunId)) {
-      CliResult inspected =
-          executeConfiguredQueryWithoutTools(
-              readingMaterialsConfig,
-              "inspect",
-              completedRun.value(),
-              null,
-              javaSessionOpens,
-              frontendToolRequests);
-      assertThat(inspected.exitCode())
-          .withFailMessage("inspect run=%s stderr=%s", completedRun, inspected.stderr())
-          .isZero();
-      assertThat(inspected.stderr()).isEmpty();
-      assertThat(inspected.stdout())
-          .contains(
-              "runId=" + completedRun.value(), "lifecycle=FINISHED", "continuationStatus=READY");
-    }
-    CliResult r1FrontendArtifact =
-        executeConfiguredQueryWithoutTools(
-            readingMaterialsConfig,
-            "artifact",
-            r1.runId().value(),
-            "FRONTEND_HTTP_INDEX",
-            javaSessionOpens,
-            frontendToolRequests);
-    assertThat(r1FrontendArtifact.exitCode())
-        .withFailMessage("R1 artifact stderr=%s", r1FrontendArtifact.stderr())
+    assertThat(frontendExit)
+        .withFailMessage("stdout=%s stderr=%s", frontendOut, frontendErr)
         .isZero();
-    assertThat(r1FrontendArtifact.stderr()).isEmpty();
-    assertThat(r1FrontendArtifact.stdout())
-        .contains("frontend-http-index-v1", "request:orders-list");
+    JsonNode frontendEnvelope = JSON.readTree(frontendOut.toString(StandardCharsets.UTF_8));
+    assertThat(frontendEnvelope.path("operation").asText()).isEqualTo("COLLECT_FRONTEND");
+    assertThat(frontendEnvelope.path("resultStatus").asText()).isEqualTo("COMPLETED");
+    assertThat(availableOutputNames(frontendEnvelope)).containsExactly("FRONTEND_HTTP_INDEX_V2");
+    AnalysisRunId frontendRun = AnalysisRunId.parse(frontendEnvelope.path("runId").asText());
+    assertThat(frontendRun).isNotEqualTo(backendRun).isNotEqualTo(persistenceRun);
 
-    CliResult r2PersistenceArtifact =
-        executeConfiguredQueryWithoutTools(
-            readingMaterialsConfig,
-            "artifact",
-            r2RunId.value(),
-            "PERSISTENCE_MATERIAL_INDEX",
-            javaSessionOpens,
-            frontendToolRequests);
-    assertThat(r2PersistenceArtifact.exitCode())
-        .withFailMessage("R2 artifact stderr=%s", r2PersistenceArtifact.stderr())
-        .isZero();
-    assertThat(r2PersistenceArtifact.stderr()).isEmpty();
-    assertThat(r2PersistenceArtifact.stdout()).contains("persistence-material-index-v1");
-
-    CliResult r3MaterialsArtifact =
-        executeConfiguredQueryWithoutTools(
-            readingMaterialsConfig,
-            "artifact",
-            r3RunId.value(),
-            "CODE_READING_MATERIALS_V2",
-            javaSessionOpens,
-            frontendToolRequests);
-    assertThat(r3MaterialsArtifact.exitCode())
-        .withFailMessage("R3 artifact stderr=%s", r3MaterialsArtifact.stderr())
-        .isZero();
-    assertThat(r3MaterialsArtifact.stderr()).isEmpty();
-    assertThat(r3MaterialsArtifact.stdout())
-        .contains(
-            "code-reading-material-set-v2",
-            "request:orders-list",
-            "OrdersPage",
-            "FULL_FRONTEND_FUNCTION_END");
-    Path markdownOutput = physicalRoot.resolve("r3-code-reading-materials.md");
-    CliResult renderedMarkdown =
+    CliResult frontendV2Artifact =
         execute(
-            readingMaterialsConfig,
+            collectConfig,
             "artifact",
             "--run",
-            r3RunId.value(),
+            frontendRun.value(),
             "--key",
-            "CODE_READING_MATERIALS_V2",
+            "FRONTEND_HTTP_INDEX_V2",
             "--max-bytes",
-            "65536",
-            "--format",
-            "markdown",
-            "--output",
-            markdownOutput.toString());
-    assertThat(renderedMarkdown.exitCode())
+            "65536");
+    assertThat(frontendV2Artifact.exitCode())
         .withFailMessage(
-            "markdown stdout=%s stderr=%s", renderedMarkdown.stdout(), renderedMarkdown.stderr())
+            "frontend v2 artifact must match its advertised output: stdout=%s stderr=%s",
+            frontendV2Artifact.stdout(), frontendV2Artifact.stderr())
         .isZero();
-    assertThat(renderedMarkdown.stderr()).isEmpty();
-    assertThat(renderedMarkdown.stdout()).contains("artifactOutput=" + markdownOutput);
-    assertThat(Files.readString(markdownOutput, StandardCharsets.UTF_8))
+    assertThat(frontendV2Artifact.stdout()).contains("frontend-http-index-v2");
+
+    CliResult javaV3Artifact =
+        execute(
+            collectConfig,
+            "artifact",
+            "--run",
+            backendRun.value(),
+            "--key",
+            "JAVA_CODE_INDEX_V3",
+            "--max-bytes",
+            "65536");
+    assertThat(javaV3Artifact.exitCode())
+        .withFailMessage(
+            "Java index v3 artifact must match its advertised output: stdout=%s stderr=%s",
+            javaV3Artifact.stdout(), javaV3Artifact.stderr())
+        .isZero();
+    assertThat(javaV3Artifact.stdout()).contains("java-code-index-v3");
+
+    CliResult persistenceV2Artifact =
+        execute(
+            persistenceConfig,
+            "artifact",
+            "--run",
+            persistenceRun.value(),
+            "--key",
+            "PERSISTENCE_MATERIAL_INDEX_V2",
+            "--max-bytes",
+            "65536");
+    assertThat(persistenceV2Artifact.exitCode())
+        .withFailMessage(
+            "persistence v2 artifact must match its advertised output: stdout=%s stderr=%s",
+            persistenceV2Artifact.stdout(), persistenceV2Artifact.stderr())
+        .isZero();
+    assertThat(persistenceV2Artifact.stdout()).contains("persistence-material-index-v2");
+
+    Path assembleConfig = temporaryDirectory.resolve("v3-r4-assemble.yaml");
+    Files.writeString(
+        assembleConfig,
+        """
+        schemaVersion: technical-analysis-config-v3
+        source:
+          preparationRunId: %s
+        storage:
+          root: %s
+          preparedSourceArchive: %s
+          sourcePreparationPolicyRegistry: %s
+          artifactPolicyRegistry: %s
+        evidence:
+          httpMappings: []
+          maxEntryUtf8Bytes: 65536
+          maxPublicationUtf8Bytes: 1048576
+          maxEntries: 64
+        """
+            .formatted(
+                preparationRunId,
+                yamlQuoted(runStore),
+                yamlQuoted(preparationWorkspace.resolve("prepared-source-archive")),
+                yamlQuoted(SOURCE_PREPARATION_POLICY_SET),
+                yamlQuoted(technicalPolicySet)),
+        StandardCharsets.UTF_8);
+    ByteArrayOutputStream assembleOut = new ByteArrayOutputStream();
+    ByteArrayOutputStream assembleErr = new ByteArrayOutputStream();
+    int assembleExit =
+        TechnicalAnalysisConfiguredRuntime.execute(
+            assembleConfig,
+            "assemble-materials",
+            List.of(
+                "--persistence-run", persistenceRun.value(), "--frontend-run", frontendRun.value()),
+            new PrintWriter(assembleOut, true, StandardCharsets.UTF_8),
+            new PrintWriter(assembleErr, true, StandardCharsets.UTF_8),
+            environment -> {
+              throw new AssertionError("R4 must reopen saved R1/R2 material without JDT");
+            },
+            () -> {
+              throw new AssertionError("R4 must reopen disabled frontend material without Node");
+            });
+    assertThat(assembleExit)
+        .withFailMessage("stdout=%s stderr=%s", assembleOut, assembleErr)
+        .isZero();
+    assertThat(assembleErr.toString(StandardCharsets.UTF_8)).isEmpty();
+    JsonNode assembleEnvelope = JSON.readTree(assembleOut.toString(StandardCharsets.UTF_8));
+    assertThat(assembleEnvelope.path("operation").asText()).isEqualTo("ASSEMBLE_MATERIALS");
+    assertThat(assembleEnvelope.path("resultStatus").asText()).isEqualTo("COMPLETED");
+    assertThat(assembleEnvelope.path("continuationStatus").asText()).isEqualTo("READY");
+    assertThat(availableOutputNames(assembleEnvelope))
+        .containsExactly(
+            "JAVA_ANALYSIS_READINESS",
+            "FRONTEND_HTTP_INDEX_V2",
+            "APPLICATION_DISCOVERY",
+            "JAVA_CODE_INDEX_V3",
+            "PERSISTENCE_MATERIAL_INDEX_V2",
+            "ENTRY_EVIDENCE_INDEX",
+            "ENTRY_EVIDENCE",
+            "FRONTEND_EVIDENCE_COVERAGE");
+    AnalysisRunId r4Run = AnalysisRunId.parse(assembleEnvelope.path("runId").asText());
+
+    CliResult inspected = execute(assembleConfig, "inspect", "--run", r4Run.value());
+    assertThat(inspected.exitCode())
+        .withFailMessage("stdout=%s stderr=%s", inspected.stdout(), inspected.stderr())
+        .isZero();
+    assertThat(inspected.stdout())
+        .contains("runId=" + r4Run.value(), "lifecycle=FINISHED", "continuationStatus=READY");
+    CliResult indexArtifact =
+        execute(
+            assembleConfig,
+            "artifact",
+            "--run",
+            r4Run.value(),
+            "--key",
+            "ENTRY_EVIDENCE_INDEX",
+            "--max-bytes",
+            "65536");
+    assertThat(indexArtifact.exitCode())
+        .withFailMessage("stdout=%s stderr=%s", indexArtifact.stdout(), indexArtifact.stderr())
+        .isZero();
+    assertThat(indexArtifact.stdout())
+        .contains("entry-evidence-index-v1", collectedSeeds.get(0).entryId());
+    String entryId =
+        JSON.readTree(indexArtifact.stdout()).path("entries").get(0).path("entryId").asText();
+    assertThat(entryId).isEqualTo(collectedSeeds.get(0).entryId());
+    CliResult entryArtifact =
+        execute(
+            assembleConfig,
+            "artifact",
+            "--run",
+            r4Run.value(),
+            "--key",
+            "ENTRY_EVIDENCE",
+            "--entry-id",
+            entryId,
+            "--max-bytes",
+            "65536");
+    assertThat(entryArtifact.exitCode())
+        .withFailMessage("stdout=%s stderr=%s", entryArtifact.stdout(), entryArtifact.stderr())
+        .isZero();
+    assertThat(entryArtifact.stdout()).contains("entry-evidence-v1", entryId);
+
+    CliResult missingEntryId =
+        execute(
+            assembleConfig,
+            "artifact",
+            "--run",
+            r4Run.value(),
+            "--key",
+            "ENTRY_EVIDENCE",
+            "--max-bytes",
+            "65536");
+    assertThat(missingEntryId.exitCode()).isNotZero();
+    assertThat(missingEntryId.stdout()).isEmpty();
+
+    CliResult unknownEntryId =
+        execute(
+            assembleConfig,
+            "artifact",
+            "--run",
+            r4Run.value(),
+            "--key",
+            "ENTRY_EVIDENCE",
+            "--entry-id",
+            "entry:" + "f".repeat(64),
+            "--max-bytes",
+            "65536");
+    assertThat(unknownEntryId.exitCode()).isNotZero();
+    assertThat(unknownEntryId.stdout()).isEmpty();
+
+    CliResult pathEntryId =
+        execute(
+            assembleConfig,
+            "artifact",
+            "--run",
+            r4Run.value(),
+            "--key",
+            "ENTRY_EVIDENCE",
+            "--entry-id",
+            "../entry-" + entryId.substring("entry:".length()) + ".json",
+            "--max-bytes",
+            "65536");
+    assertThat(pathEntryId.exitCode()).isNotZero();
+    assertThat(pathEntryId.stdout()).isEmpty();
+
+    CliResult coverageArtifact =
+        execute(
+            assembleConfig,
+            "artifact",
+            "--run",
+            r4Run.value(),
+            "--key",
+            "FRONTEND_EVIDENCE_COVERAGE",
+            "--max-bytes",
+            "65536");
+    assertThat(coverageArtifact.exitCode())
+        .withFailMessage(
+            "stdout=%s stderr=%s", coverageArtifact.stdout(), coverageArtifact.stderr())
+        .isZero();
+    assertThat(coverageArtifact.stdout()).contains("frontend-evidence-coverage-v1");
+
+    Path changedQueryConfig = temporaryDirectory.resolve("v3-r4-query-with-smaller-budget.yaml");
+    Files.writeString(
+        changedQueryConfig,
+        Files.readString(assembleConfig, StandardCharsets.UTF_8)
+            .replace("maxEntryUtf8Bytes: 65536", "maxEntryUtf8Bytes: 1")
+            .replace("maxPublicationUtf8Bytes: 1048576", "maxPublicationUtf8Bytes: 1")
+            .replace("maxEntries: 64", "maxEntries: 1"),
+        StandardCharsets.UTF_8);
+    CliResult reopenedWithChangedProfile =
+        execute(changedQueryConfig, "inspect", "--run", r4Run.value());
+    assertThat(reopenedWithChangedProfile.exitCode())
+        .withFailMessage(
+            "saved R4 query must use its persisted profile; stdout=%s stderr=%s",
+            reopenedWithChangedProfile.stdout(), reopenedWithChangedProfile.stderr())
+        .isZero();
+    CliResult artifactWithChangedProfile =
+        execute(
+            changedQueryConfig,
+            "artifact",
+            "--run",
+            r4Run.value(),
+            "--key",
+            "ENTRY_EVIDENCE_INDEX",
+            "--max-bytes",
+            "65536");
+    assertThat(artifactWithChangedProfile.exitCode())
+        .withFailMessage(
+            "saved R4 artifact must use its persisted profile; stdout=%s stderr=%s",
+            artifactWithChangedProfile.stdout(), artifactWithChangedProfile.stderr())
+        .isZero();
+    assertThat(artifactWithChangedProfile.stdout()).contains("entry-evidence-index-v1");
+
+    Path missingEvidenceQueryConfig =
+        temporaryDirectory.resolve("v3-r4-query-without-evidence.yaml");
+    String configuredWithEvidence = Files.readString(assembleConfig, StandardCharsets.UTF_8);
+    int evidenceStart = configuredWithEvidence.indexOf("evidence:\n");
+    assertThat(evidenceStart).isGreaterThanOrEqualTo(0);
+    Files.writeString(
+        missingEvidenceQueryConfig,
+        configuredWithEvidence.substring(0, evidenceStart),
+        StandardCharsets.UTF_8);
+    CliResult reopenedWithoutCurrentProfile =
+        execute(missingEvidenceQueryConfig, "inspect", "--run", r4Run.value());
+    assertThat(reopenedWithoutCurrentProfile.exitCode())
+        .withFailMessage(
+            "saved R4 inspect must not require current evidence config; stdout=%s stderr=%s",
+            reopenedWithoutCurrentProfile.stdout(), reopenedWithoutCurrentProfile.stderr())
+        .isZero();
+
+    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
+      AnalysisRunOutput r4Output =
+          RunStoreBootstrap.reopenAnalysisRunOutput(store, r4Run).orElseThrow();
+      AnalysisRunRequest r4Request =
+          RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, r4Run).request();
+      assertThat(r4Request.technicalAnalysisInputs().entryEvidenceProfile().maxEntryUtf8Bytes())
+          .isEqualTo(65_536L);
+      assertThat(
+              r4Request.technicalAnalysisInputs().entryEvidenceProfile().maxPublicationUtf8Bytes())
+          .isEqualTo(1_048_576L);
+      assertThat(r4Request.technicalAnalysisInputs().entryEvidenceProfile().maxEntries())
+          .isEqualTo(64);
+      assertThat(r4Output.sourceRunId()).isEqualTo(AnalysisRunId.parse(preparationRunId));
+      assertThat(r4Output.technicalOutput().readingMaterials()).isNotNull();
+      assertThat(r4Output.technicalOutput().frontendIndex()).isNotNull();
+      assertThat(r4Output.technicalOutput().persistence()).isNotNull();
+    }
+
+    // A capacity-blocked V5 R4 is still a saved, inspectable observation.  The one-entry fixture
+    // uses the byte limit so the producer is reached without inventing a second backend entry;
+    // importantly, no Step05 receipt is written for this run.
+    Path capacityConfig = temporaryDirectory.resolve("v3-r4-capacity.yaml");
+    Files.writeString(
+        capacityConfig,
+        Files.readString(assembleConfig, StandardCharsets.UTF_8)
+            .replace("maxEntryUtf8Bytes: 65536", "maxEntryUtf8Bytes: 1"),
+        StandardCharsets.UTF_8);
+    ByteArrayOutputStream capacityOut = new ByteArrayOutputStream();
+    ByteArrayOutputStream capacityErr = new ByteArrayOutputStream();
+    int capacityExit =
+        TechnicalAnalysisConfiguredRuntime.execute(
+            capacityConfig,
+            "assemble-materials",
+            List.of(
+                "--persistence-run", persistenceRun.value(), "--frontend-run", frontendRun.value()),
+            new PrintWriter(capacityOut, true, StandardCharsets.UTF_8),
+            new PrintWriter(capacityErr, true, StandardCharsets.UTF_8),
+            environment -> {
+              throw new AssertionError("capacity R4 must reopen saved R1/R2 material without JDT");
+            },
+            () -> {
+              throw new AssertionError(
+                  "capacity R4 must reopen saved frontend material without Node");
+            });
+    JsonNode capacityEnvelope = JSON.readTree(capacityOut.toString(StandardCharsets.UTF_8));
+    assertThat(capacityExit)
+        .withFailMessage("stdout=%s stderr=%s", capacityOut, capacityErr)
+        .isEqualTo(3);
+    assertThat(capacityErr.toString(StandardCharsets.UTF_8)).isEmpty();
+    assertThat(capacityEnvelope.path("resultStatus").asText()).isEqualTo("BLOCKED");
+    assertThat(capacityEnvelope.path("continuationStatus").asText()).isEqualTo("BLOCKED");
+    assertThat(capacityEnvelope.path("availableOutputs").isArray()).isTrue();
+    assertThat(capacityEnvelope.path("availableOutputs").size()).isZero();
+    assertThat(capacityEnvelope.path("problems").findValuesAsText("code"))
+        .containsExactly("ENTRY_EVIDENCE_ENTRY_BYTE_LIMIT_EXCEEDED");
+    AnalysisRunId capacityRun = AnalysisRunId.parse(capacityEnvelope.path("runId").asText());
+    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
+      AnalysisRunReference saved = RunStoreBootstrap.reopenAnalysisRun(store, capacityRun);
+      assertThat(saved.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.FAILED);
+      AnalysisRunOutput output =
+          RunStoreBootstrap.reopenAnalysisRunOutput(store, capacityRun).orElseThrow();
+      assertThat(output.technicalOutput().continuationStatus())
+          .isEqualTo(TechnicalContinuationStatus.BLOCKED);
+      assertThat(output.technicalOutput().readingMaterials()).isNull();
+      assertThat(output.technicalOutput().problems())
+          .extracting(TechnicalProblemReference::code)
+          .containsExactly("ENTRY_EVIDENCE_ENTRY_BYTE_LIMIT_EXCEEDED");
+    }
+
+    CliResult blockedInspect = execute(capacityConfig, "inspect", "--run", capacityRun.value());
+    assertThat(blockedInspect.exitCode())
+        .withFailMessage("stdout=%s stderr=%s", blockedInspect.stdout(), blockedInspect.stderr())
+        .isZero();
+    assertThat(blockedInspect.stdout())
         .contains(
-            "request:orders-list",
-            "src/main/resources/fixture/OrderMapper.xml",
-            "SELECT id, name FROM orders",
-            "### Mapper XML",
-            "### SQL analysis copies");
-    assertThat(storeSnapshot(runStore)).isEqualTo(beforeCompletedQueries);
-    assertThat(javaSessionOpens).hasValue(1);
-    assertThat(frontendToolRequests).hasValue(1);
-    assertThat(Files.exists(nodeLaunchMarker)).isFalse();
+            capacityRun.value(), "FAILED", "BLOCKED", "ENTRY_EVIDENCE_ENTRY_BYTE_LIMIT_EXCEEDED");
+    assertThat(blockedInspect.stdout()).doesNotContain("availableOutput=");
+    CliResult blockedArtifact =
+        execute(
+            capacityConfig,
+            "artifact",
+            "--run",
+            capacityRun.value(),
+            "--key",
+            "ENTRY_EVIDENCE_INDEX",
+            "--max-bytes",
+            "65536");
+    assertThat(blockedArtifact.exitCode()).isNotZero();
+    assertThat(blockedArtifact.stdout()).isEmpty();
   }
 
   @Test
@@ -3467,8 +3002,9 @@ class TechnicalAnalysisSourceAdmissionTest {
             preparationWorkspace.resolve("prepared-source-archive"),
             compilationInput.compilationInput(),
             fakeToolchain.jdtInstallation(),
-            writeTechnicalPolicySet(),
+            V3_TECHNICAL_POLICY_SET,
             fakeToolchain.toolJavaHome());
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
     Path launchMarkers =
         physicalRoot.resolve("frontend-config-identity-unexpected-tool-starts.log");
     Path nodeExecutable = physicalRoot.resolve("frontend-config-identity-node");
@@ -3485,7 +3021,7 @@ class TechnicalAnalysisSourceAdmissionTest {
         "/jshERP-boot",
         "/jshERP-boot",
         List.of("vue.config.js"));
-    AnalysisRunRequest queuedRequest = collectRequestFromConfiguredRuntime(technicalConfig);
+    AnalysisRunRequest queuedRequest = collectFrontendRequestFromConfiguredRuntime(technicalConfig);
     AnalysisRunRequest.TechnicalAnalysisInputs queuedInputs =
         queuedRequest.technicalAnalysisInputs();
     assertThat(queuedRequest.selectedSourceBasis().snapshotId().value()).isEqualTo(sourceVersion);
@@ -3503,7 +3039,7 @@ class TechnicalAnalysisSourceAdmissionTest {
         "/jshERP-boot",
         List.of("vue.config.js", "public/index.html"));
     AnalysisRunRequest requestAfterConfigurationChange =
-        collectRequestFromConfiguredRuntime(technicalConfig);
+        collectFrontendRequestFromConfiguredRuntime(technicalConfig);
     assertThat(requestAfterConfigurationChange.selectedSourceBasis())
         .isEqualTo(queuedRequest.selectedSourceBasis());
     assertThat(requestAfterConfigurationChange.technicalAnalysisInputs().toolchainRef())
@@ -3516,7 +3052,7 @@ class TechnicalAnalysisSourceAdmissionTest {
 
     AnalysisRunReference queuedRun;
     try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      queuedRun = queueConfiguredCollectCodeRun(technicalConfig, store, queuedRequest);
+      queuedRun = queueConfiguredCollectFrontendRun(technicalConfig, store, queuedRequest);
     }
     assertThat(queuedRun.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.QUEUED);
     Map<String, String> storeBeforeAttempt = storeSnapshot(runStore);
@@ -3527,13 +3063,16 @@ class TechnicalAnalysisSourceAdmissionTest {
     int exitCode =
         TechnicalAnalysisConfiguredRuntime.execute(
             technicalConfig,
-            "collect-code",
+            "collect-frontend",
             List.of("--run", queuedRun.runId().value()),
             new PrintWriter(outputBytes, true, StandardCharsets.UTF_8),
             new PrintWriter(errorBytes, true, StandardCharsets.UTF_8),
             environment -> {
               sessionOpenCount.incrementAndGet();
               return emptyCatalogSession(environment);
+            },
+            () -> {
+              throw new AssertionError("frontend syntax tool must not start before admission");
             });
     Map<String, String> storeAfterAttempt = storeSnapshot(runStore);
 
@@ -3636,8 +3175,9 @@ class TechnicalAnalysisSourceAdmissionTest {
             preparationWorkspace.resolve("prepared-source-archive"),
             compilationInput.compilationInput(),
             fakeToolchain.jdtInstallation(),
-            writeTechnicalPolicySet(),
+            V3_TECHNICAL_POLICY_SET,
             fakeToolchain.toolJavaHome());
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
     Path launchMarkers = physicalRoot.resolve("frontend-node-identity-tool-starts.log");
     Path nodeExecutable = physicalRoot.resolve("frontend-node-identity-node");
     writeMarkerScript(nodeExecutable, "node-before-change", launchMarkers);
@@ -3652,14 +3192,14 @@ class TechnicalAnalysisSourceAdmissionTest {
         "/jshERP-boot",
         "/jshERP-boot");
 
-    AnalysisRunRequest queuedRequest = collectRequestFromConfiguredRuntime(technicalConfig);
+    AnalysisRunRequest queuedRequest = collectFrontendRequestFromConfiguredRuntime(technicalConfig);
     AnalysisRunRequest.TechnicalAnalysisInputs queuedInputs =
         queuedRequest.technicalAnalysisInputs();
     assertThat(queuedRequest.selectedSourceBasis().snapshotId().value()).isEqualTo(sourceVersion);
 
     AnalysisRunReference queuedRun;
     try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      queuedRun = queueConfiguredCollectCodeRun(technicalConfig, store, queuedRequest);
+      queuedRun = queueConfiguredCollectFrontendRun(technicalConfig, store, queuedRequest);
     }
     assertThat(queuedRun.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.QUEUED);
 
@@ -3674,7 +3214,7 @@ class TechnicalAnalysisSourceAdmissionTest {
         .isNotEqualTo(sha256Hex(nodeBytesBefore));
 
     AnalysisRunRequest requestAfterNodeChange =
-        collectRequestFromConfiguredRuntime(technicalConfig);
+        collectFrontendRequestFromConfiguredRuntime(technicalConfig);
     assertThat(requestAfterNodeChange.selectedSourceBasis())
         .isEqualTo(queuedRequest.selectedSourceBasis());
     assertThat(requestAfterNodeChange.technicalAnalysisInputs().toolchainRef())
@@ -3693,13 +3233,16 @@ class TechnicalAnalysisSourceAdmissionTest {
     int exitCode =
         TechnicalAnalysisConfiguredRuntime.execute(
             technicalConfig,
-            "collect-code",
+            "collect-frontend",
             List.of("--run", queuedRun.runId().value()),
             new PrintWriter(outputBytes, true, StandardCharsets.UTF_8),
             new PrintWriter(errorBytes, true, StandardCharsets.UTF_8),
             environment -> {
               sessionOpenCount.incrementAndGet();
               return emptyCatalogSession(environment);
+            },
+            () -> {
+              throw new AssertionError("frontend syntax tool must not start before admission");
             });
     Map<String, String> storeAfterAttempt = storeSnapshot(runStore);
 
@@ -3790,8 +3333,9 @@ class TechnicalAnalysisSourceAdmissionTest {
             preparationWorkspace.resolve("prepared-source-archive"),
             compilationInput.compilationInput(),
             fakeToolchain.jdtInstallation(),
-            writeTechnicalPolicySet(),
+            V3_TECHNICAL_POLICY_SET,
             fakeToolchain.toolJavaHome());
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
     Path nodeExecutable = physicalRoot.resolve("frontend-tool-content-node");
     Files.writeString(
         nodeExecutable, "test-owned Node bytes; never execute\n", StandardCharsets.UTF_8);
@@ -3809,60 +3353,56 @@ class TechnicalAnalysisSourceAdmissionTest {
     Path frameworkHelper = Path.of("tools/frontend-syntax-helper/main.cjs").toAbsolutePath();
     Path frameworkLockfile =
         Path.of("tools/frontend-syntax-helper/package-lock.json").toAbsolutePath();
-    Path helperCopy = physicalRoot.resolve("frontend-tool-content-main-copy.cjs");
-    Path lockfileCopy = physicalRoot.resolve("frontend-tool-content-lock-copy.json");
+    Path frameworkHome = physicalRoot.resolve("frontend-tool-content-framework");
+    Path helperCopy = frameworkHome.resolve("tools/frontend-syntax-helper/main.cjs");
+    Path lockfileCopy = frameworkHome.resolve("tools/frontend-syntax-helper/package-lock.json");
+    Files.createDirectories(helperCopy.getParent());
     Files.copy(frameworkHelper, helperCopy);
     Files.copy(frameworkLockfile, lockfileCopy);
-    byte[] originalHelper = Files.readAllBytes(helperCopy);
-    byte[] originalLockfile = Files.readAllBytes(lockfileCopy);
+    String previousFrameworkHome = System.getProperty("sourceanalysis.framework.home");
+    try {
+      // The production request seam reads the framework-owned helper/lockfile through this
+      // explicit test home, allowing the v3 frontend run to observe content identity changes.
+      System.setProperty("sourceanalysis.framework.home", frameworkHome.toString());
+      AnalysisRunRequest fixedPathRequest =
+          collectFrontendRequestFromConfiguredRuntime(technicalConfig);
+      byte[] originalHelper = Files.readAllBytes(helperCopy);
+      byte[] originalLockfile = Files.readAllBytes(lockfileCopy);
 
-    AnalysisRunRequest fixedPathRequest = collectRequestFromConfiguredRuntime(technicalConfig);
-    FrontendToolIdentity copiedFrameworkIdentity =
-        FrontendToolIdentity.fromFiles(nodeExecutable, helperCopy, lockfileCopy);
-    AnalysisRunRequest copiedIdentityRequest =
-        collectRequestFromConfiguredRuntime(technicalConfig, copiedFrameworkIdentity);
-    assertThat(copiedIdentityRequest.selectedSourceBasis())
-        .isEqualTo(fixedPathRequest.selectedSourceBasis());
-    assertThat(copiedIdentityRequest.technicalAnalysisInputs().toolchainRef())
-        .isEqualTo(fixedPathRequest.technicalAnalysisInputs().toolchainRef());
-    assertThat(copiedIdentityRequest.technicalAnalysisInputs().technicalProfileRef())
-        .isEqualTo(fixedPathRequest.technicalAnalysisInputs().technicalProfileRef());
+      Files.writeString(
+          helperCopy,
+          "\n// changed helper identity fixture\n",
+          StandardCharsets.UTF_8,
+          java.nio.file.StandardOpenOption.APPEND);
+      AnalysisRunRequest changedHelperRequest =
+          collectFrontendRequestFromConfiguredRuntime(technicalConfig);
+      assertThat(changedHelperRequest.technicalAnalysisInputs().toolchainRef())
+          .isNotEqualTo(fixedPathRequest.technicalAnalysisInputs().toolchainRef());
+      assertThat(changedHelperRequest.technicalAnalysisInputs().technicalProfileRef())
+          .isEqualTo(fixedPathRequest.technicalAnalysisInputs().technicalProfileRef());
 
-    Files.write(helperCopy, originalHelper);
-    Files.writeString(
-        helperCopy,
-        "\n// changed helper identity fixture\n",
-        StandardCharsets.UTF_8,
-        java.nio.file.StandardOpenOption.APPEND);
-    FrontendToolIdentity changedHelperIdentity =
-        FrontendToolIdentity.fromFiles(nodeExecutable, helperCopy, lockfileCopy);
-    AnalysisRunRequest changedHelperRequest =
-        collectRequestFromConfiguredRuntime(technicalConfig, changedHelperIdentity);
-    assertThat(changedHelperRequest.technicalAnalysisInputs().toolchainRef())
-        .isNotEqualTo(fixedPathRequest.technicalAnalysisInputs().toolchainRef());
-    assertThat(changedHelperRequest.technicalAnalysisInputs().technicalProfileRef())
-        .isEqualTo(fixedPathRequest.technicalAnalysisInputs().technicalProfileRef());
+      Files.write(helperCopy, originalHelper);
+      Files.writeString(
+          lockfileCopy, "\n", StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.APPEND);
+      AnalysisRunRequest changedLockfileRequest =
+          collectFrontendRequestFromConfiguredRuntime(technicalConfig);
+      assertThat(changedLockfileRequest.technicalAnalysisInputs().toolchainRef())
+          .isNotEqualTo(fixedPathRequest.technicalAnalysisInputs().toolchainRef());
+      assertThat(changedLockfileRequest.technicalAnalysisInputs().technicalProfileRef())
+          .isEqualTo(fixedPathRequest.technicalAnalysisInputs().technicalProfileRef());
 
-    Files.write(helperCopy, originalHelper);
-    Files.write(lockfileCopy, originalLockfile);
-    Files.writeString(
-        lockfileCopy, "\n", StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.APPEND);
-    FrontendToolIdentity changedLockfileIdentity =
-        FrontendToolIdentity.fromFiles(nodeExecutable, helperCopy, lockfileCopy);
-    AnalysisRunRequest changedLockfileRequest =
-        collectRequestFromConfiguredRuntime(technicalConfig, changedLockfileIdentity);
-    assertThat(changedLockfileRequest.technicalAnalysisInputs().toolchainRef())
-        .isNotEqualTo(fixedPathRequest.technicalAnalysisInputs().toolchainRef());
-    assertThat(changedLockfileRequest.technicalAnalysisInputs().technicalProfileRef())
-        .isEqualTo(fixedPathRequest.technicalAnalysisInputs().technicalProfileRef());
-
-    String savedRequestInputs = JSON.writeValueAsString(fixedPathRequest.technicalAnalysisInputs());
-    assertThat(savedRequestInputs)
-        .doesNotContain(
-            frameworkHelper.toString(),
-            frameworkLockfile.toString(),
-            helperCopy.toString(),
-            lockfileCopy.toString());
+      String savedRequestInputs =
+          JSON.writeValueAsString(fixedPathRequest.technicalAnalysisInputs());
+      assertThat(savedRequestInputs)
+          .doesNotContain(
+              frameworkHome.toString(), frameworkHelper.toString(), frameworkLockfile.toString());
+    } finally {
+      if (previousFrameworkHome == null) {
+        System.clearProperty("sourceanalysis.framework.home");
+      } else {
+        System.setProperty("sourceanalysis.framework.home", previousFrameworkHome);
+      }
+    }
   }
 
   @Test
@@ -3942,8 +3482,9 @@ class TechnicalAnalysisSourceAdmissionTest {
             preparationWorkspace.resolve("prepared-source-archive"),
             compilationInput.compilationInput(),
             fakeToolchain.jdtInstallation(),
-            writeTechnicalPolicySet(),
+            V3_TECHNICAL_POLICY_SET,
             fakeToolchain.toolJavaHome());
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
     Path launchMarkers = physicalRoot.resolve("frontend-identity-unexpected-tool-starts.log");
     Path nodeExecutable = physicalRoot.resolve("frontend-identity-node");
     writeMarkerScript(nodeExecutable, "node", launchMarkers);
@@ -3958,7 +3499,7 @@ class TechnicalAnalysisSourceAdmissionTest {
         "https://api.example.test",
         "/jshERP-boot",
         "/jshERP-boot");
-    AnalysisRunRequest queuedRequest = collectRequestFromConfiguredRuntime(technicalConfig);
+    AnalysisRunRequest queuedRequest = collectFrontendRequestFromConfiguredRuntime(technicalConfig);
     assertThat(queuedRequest.selectedSourceBasis().snapshotId().value()).isEqualTo(sourceVersion);
     AnalysisRunRequest.TechnicalAnalysisInputs queuedInputs =
         queuedRequest.technicalAnalysisInputs();
@@ -3974,7 +3515,7 @@ class TechnicalAnalysisSourceAdmissionTest {
         "/jshERP-boot",
         "/jshERP-boot");
     AnalysisRunRequest requestAfterRootChange =
-        collectRequestFromConfiguredRuntime(technicalConfig);
+        collectFrontendRequestFromConfiguredRuntime(technicalConfig);
     assertThat(requestAfterRootChange.technicalAnalysisInputs().technicalProfileRef())
         .isNotEqualTo(queuedInputs.technicalProfileRef());
 
@@ -3989,7 +3530,7 @@ class TechnicalAnalysisSourceAdmissionTest {
         "/jshERP-boot",
         "/jshERP-boot");
     AnalysisRunRequest requestAfterAliasChange =
-        collectRequestFromConfiguredRuntime(technicalConfig);
+        collectFrontendRequestFromConfiguredRuntime(technicalConfig);
     assertThat(requestAfterAliasChange.technicalAnalysisInputs().technicalProfileRef())
         .isNotEqualTo(queuedInputs.technicalProfileRef());
 
@@ -4004,9 +3545,11 @@ class TechnicalAnalysisSourceAdmissionTest {
         "/api-v2",
         "/boot-v2");
     AnalysisRunRequest requestAfterMappingChange =
-        collectRequestFromConfiguredRuntime(technicalConfig);
+        collectFrontendRequestFromConfiguredRuntime(technicalConfig);
+    // HTTP address mappings belong to the later R4 assembly profile; they are not part of the
+    // independent R1 frontend technical identity.
     assertThat(requestAfterMappingChange.technicalAnalysisInputs().technicalProfileRef())
-        .isNotEqualTo(queuedInputs.technicalProfileRef());
+        .isEqualTo(queuedInputs.technicalProfileRef());
 
     writeEnabledFrontendSettings(
         technicalConfig,
@@ -4019,7 +3562,7 @@ class TechnicalAnalysisSourceAdmissionTest {
         "/api-v2",
         "/boot-v2");
     AnalysisRunRequest requestAfterFrontendChange =
-        collectRequestFromConfiguredRuntime(technicalConfig);
+        collectFrontendRequestFromConfiguredRuntime(technicalConfig);
     assertThat(requestAfterFrontendChange.selectedSourceBasis())
         .isEqualTo(queuedRequest.selectedSourceBasis());
     assertThat(requestAfterFrontendChange.technicalAnalysisInputs().toolchainRef())
@@ -4030,7 +3573,7 @@ class TechnicalAnalysisSourceAdmissionTest {
 
     AnalysisRunReference queuedRun;
     try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      queuedRun = queueConfiguredCollectCodeRun(technicalConfig, store, queuedRequest);
+      queuedRun = queueConfiguredCollectFrontendRun(technicalConfig, store, queuedRequest);
     }
     assertThat(queuedRun.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.QUEUED);
     Map<String, String> storeBeforeAttempt = storeSnapshot(runStore);
@@ -4041,13 +3584,16 @@ class TechnicalAnalysisSourceAdmissionTest {
     int exitCode =
         TechnicalAnalysisConfiguredRuntime.execute(
             technicalConfig,
-            "collect-code",
+            "collect-frontend",
             List.of("--run", queuedRun.runId().value()),
             new PrintWriter(outputBytes, true, StandardCharsets.UTF_8),
             new PrintWriter(errorBytes, true, StandardCharsets.UTF_8),
             environment -> {
               sessionOpenCount.incrementAndGet();
               return emptyCatalogSession(environment);
+            },
+            () -> {
+              throw new AssertionError("frontend syntax tool must not start before admission");
             });
     Map<String, String> storeAfterAttempt = storeSnapshot(runStore);
 
@@ -4082,276 +3628,14 @@ class TechnicalAnalysisSourceAdmissionTest {
   }
 
   @Test
-  void readyCollectCodePersistsEnabledFrontendLinkAndControllerServiceInStep03() throws Exception {
-    Path physicalRoot = temporaryDirectory.toRealPath();
-    Path sourceRoot = Files.createDirectory(physicalRoot.resolve("controller-service-r1-source"));
-    writeReadySource(sourceRoot, "ControllerService");
-    String controllerServiceSource =
-        """
-        package fixture;
-
-        import org.springframework.web.bind.annotation.GetMapping;
-        import org.springframework.web.bind.annotation.RequestMapping;
-
-        @RequestMapping("/orders")
-        final class Controller {
-          private final OrderService orderService = new OrderService();
-          @GetMapping("/list")
-          public String list() { return orderService.list(); }
-        }
-
-        final class OrderService {
-          String list() { return "ok"; }
-        }
-        """;
-    Files.writeString(
-        sourceRoot.resolve("src/main/java/fixture/Entry.java"),
-        controllerServiceSource,
-        StandardCharsets.UTF_8);
-    String frontendSource =
-        """
-        <template><button @click="load">load</button></template>
-        <script>
-        export default {
-          name: "OrdersPage",
-          methods: {
-            load() { return this.$http.get('/orders/list'); }
-          }
-        };
-        </script>
-        """;
-    String frontendPagePath = "web/src/pages/Orders.vue";
-    Path frontendPage = sourceRoot.resolve(frontendPagePath);
-    Files.createDirectories(frontendPage.getParent());
-    Files.writeString(frontendPage, frontendSource, StandardCharsets.UTF_8);
-    Files.writeString(
-        sourceRoot.resolve("pom.xml"),
-        """
-        <project xmlns="http://maven.apache.org/POM/4.0.0">
-          <modelVersion>4.0.0</modelVersion>
-          <groupId>fixture.technical</groupId>
-          <artifactId>controller-service-r1</artifactId>
-          <version>1.0</version>
-          <dependencies>
-            <dependency>
-              <groupId>org.springframework.boot</groupId>
-              <artifactId>spring-boot-starter-web</artifactId>
-              <version>3.2.0</version>
-            </dependency>
-          </dependencies>
-        </project>
-        """,
-        StandardCharsets.UTF_8);
-
-    Path preparationWorkspace =
-        Files.createDirectory(physicalRoot.resolve("controller-service-r1-preparations"));
-    Path runStore = Files.createDirectory(physicalRoot.resolve("controller-service-r1-store"));
-    Path preparationConfig =
-        writeSourcePreparationConfig(
-            "controller-service-r1-source-preparation.yaml",
-            sourceRoot,
-            preparationWorkspace,
-            runStore);
-    CliResult prepared = execute(preparationConfig, "prepare-source", "--format", "json");
-    assertThat(prepared.exitCode()).withFailMessage("stage=%s", prepared.stderr()).isZero();
-    String preparationRunId = JSON.readTree(prepared.stdout()).path("runId").asText();
-    String sourceVersion =
-        assertIndependentlyReopenableReadyR0(preparationConfig, preparationRunId);
-
-    ExternalCompilationInputFixture compilationInput =
-        writeValidExternalCompilationInput(
-            physicalRoot, sourceRoot, selectedSourceBasis(runStore, preparationRunId));
-    Path jdtInstallation = physicalRoot.resolve("controller-service-r1-jdt");
-    Path jdtLauncher = jdtInstallation.resolve("bin/jdtls");
-    Files.createDirectories(jdtLauncher.getParent());
-    Files.writeString(jdtLauncher, "fixture JDT launcher; never execute\n", StandardCharsets.UTF_8);
-    Path toolJavaHome = physicalRoot.resolve("controller-service-r1-tool-java");
-    Path toolJavaLauncher = toolJavaHome.resolve("bin/java");
-    Files.createDirectories(toolJavaLauncher.getParent());
-    Files.writeString(
-        toolJavaLauncher, "fixture tool Java launcher; never execute\n", StandardCharsets.UTF_8);
-    Files.writeString(
-        toolJavaHome.resolve("release"), "JAVA_VERSION=\"17.0.1\"\n", StandardCharsets.UTF_8);
-    Path technicalPolicySet = writeTechnicalPolicySet();
-    Path technicalConfig =
-        writeV2ExternalCollectTechnicalConfigFromInput(
-            preparationRunId,
-            runStore,
-            preparationWorkspace.resolve("prepared-source-archive"),
-            compilationInput.compilationInput(),
-            jdtInstallation,
-            technicalPolicySet,
-            toolJavaHome);
-    Path nodeLaunchMarker = physicalRoot.resolve("controller-service-r1-node-launched.marker");
-    Path nodeExecutable = physicalRoot.resolve("controller-service-r1-node");
-    writeMarkerScript(nodeExecutable, "node", nodeLaunchMarker);
-    writeEnabledFrontendSettings(
-        technicalConfig,
-        nodeExecutable,
-        "web/src",
-        "@/",
-        "web/src/",
-        "fixture-ui",
-        "https://api.example.test",
-        "/jshERP-boot",
-        "",
-        List.of());
-    AnalysisRunRequest queuedRequest = collectRequestFromConfiguredRuntime(technicalConfig);
-    assertThat(queuedRequest.selectedSourceBasis().snapshotId().value()).isEqualTo(sourceVersion);
-    AnalysisRunReference queuedRun;
-    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      queuedRun = queueConfiguredCollectCodeRun(technicalConfig, store, queuedRequest);
-    }
-
-    List<EntrySeed> collectedSeeds = new ArrayList<>();
-    AtomicInteger sessionOpenCount = new AtomicInteger();
-    AtomicInteger frontendToolSupplierCalls = new AtomicInteger();
-    ByteArrayOutputStream outputBytes = new ByteArrayOutputStream();
-    ByteArrayOutputStream errorBytes = new ByteArrayOutputStream();
-    int exitCode =
-        TechnicalAnalysisConfiguredRuntime.execute(
-            technicalConfig,
-            "collect-code",
-            List.of("--run", queuedRun.runId().value()),
-            new PrintWriter(outputBytes, true, StandardCharsets.UTF_8),
-            new PrintWriter(errorBytes, true, StandardCharsets.UTF_8),
-            environment -> {
-              sessionOpenCount.incrementAndGet();
-              return controllerServiceSession(
-                  environment,
-                  "src/main/java/fixture/Entry.java",
-                  controllerServiceSource,
-                  collectedSeeds);
-            },
-            () -> {
-              frontendToolSupplierCalls.incrementAndGet();
-              return controllerServiceFrontendTool();
-            });
-
-    assertThat(exitCode).withFailMessage("stdout=%s stderr=%s", outputBytes, errorBytes).isZero();
-    assertThat(errorBytes.toString(StandardCharsets.UTF_8)).isEmpty();
-    assertThat(sessionOpenCount).hasValue(1);
-    assertThat(frontendToolSupplierCalls).hasValue(1);
-    assertThat(Files.exists(nodeLaunchMarker)).isFalse();
-    assertThat(collectedSeeds)
-        .singleElement()
-        .satisfies(seed -> assertThat(seed.methodKey()).isEqualTo("method:controller-list"));
-
-    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      LocalRepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store);
-      var inspection = agent.inspect(queuedRun.runId().value());
-      assertThat(inspection.analysisRun().lifecycleState())
-          .isEqualTo(AnalysisRunLifecycleState.FINISHED);
-      AnalysisRunOutput saved = inspection.output();
-      assertThat(saved).isNotNull();
-      assertThat(saved.sourceRunId())
-          .isEqualTo(
-              queuedRequest.selectedSourceBasis().preparedSource().publication().address().runId());
-      TechnicalRunOutput technical = saved.technicalOutput();
-      assertThat(technical).isNotNull();
-      assertThat(technical.outputRunId()).isEqualTo(queuedRun.runId());
-      assertThat(technical.navigation()).isNotNull();
-      assertThat(technical.applicationDiscovery()).isNotNull();
-
-      CanonicalJsonCodec json = new CanonicalJsonCodec();
-      CanonicalArtifactPolicyRegistry policies =
-          SourceAnalysisTestPolicyRegistry.load(technicalPolicySet, json);
-      ArtifactStoreLimits limits =
-          new ArtifactStoreLimits(64, 64L * 1024L * 1024L, 256L * 1024L * 1024L, 4_096);
-      CanonicalAnalysisStepArtifactStore steps =
-          new FileSystemCanonicalAnalysisStepArtifactStore(store, json, policies, limits);
-      String entryPoints =
-          steps.reopen(technical.applicationDiscovery()).semanticPayloads().stream()
-              .filter(payload -> payload.descriptor().fileName().equals("entry-points.jsonl"))
-              .findFirst()
-              .map(
-                  payload ->
-                      new String(payload.canonicalUtf8().copyToByteArray(), StandardCharsets.UTF_8))
-              .orElseThrow();
-      JsonNode discoveredEntry = JSON.readTree(entryPoints.strip());
-      String discoveredEntryId = discoveredEntry.path("entryId").asText();
-      assertThat(discoveredEntryId).isNotBlank();
-      assertThat(discoveredEntry.path("methodKey").asText()).isEqualTo("method:controller-list");
-      assertThat(discoveredEntry.path("route").asText()).isEqualTo("/orders/list");
-
-      FrontendHttpIndex frontend =
-          new FrontendHttpIndexModulePublisher(
-                  new FileSystemCanonicalModuleArtifactStore(store, json, policies, limits))
-              .reopen(
-                  technical.frontendIndex(),
-                  queuedRun.runId(),
-                  queuedRequest.selectedSourceBasis(),
-                  new ArtifactControls(
-                      queuedRequest.technicalAnalysisInputs().toolchainRef().sha256(),
-                      queuedRequest.technicalAnalysisInputs().technicalProfileRef().sha256(),
-                      queuedRequest.technicalAnalysisInputs().schemaBundleRef().sha256(),
-                      null,
-                      new org.sourceanalysis.app.artifact.ArtifactPolicyRegistryReference(
-                          queuedRequest
-                              .technicalAnalysisInputs()
-                              .artifactPolicyRegistryRef()
-                              .artifactId(),
-                          queuedRequest
-                              .technicalAnalysisInputs()
-                              .artifactPolicyRegistryRef()
-                              .sha256())));
-      assertThat(frontend.status()).isEqualTo(FrontendHttpIndex.Status.ENABLED);
-      assertThat(frontend.requests())
-          .singleElement()
-          .satisfies(
-              request -> {
-                assertThat(request.pagePath()).isEqualTo(frontendPagePath);
-                assertThat(request.resolvedPath()).isEqualTo("/orders/list");
-                assertThat(request.instanceKey()).isEqualTo("OrdersPage");
-              });
-      assertThat(frontend.entryLinks())
-          .singleElement()
-          .satisfies(
-              link -> {
-                assertThat(link.resolution())
-                    .isEqualTo(FrontendEntryLinkRecord.Resolution.MATCHED_UNIQUE);
-                assertThat(link.entryIds())
-                    .extracting(ArtifactId::value)
-                    .containsExactly(discoveredEntryId);
-              });
-
-      JavaCodeIndex javaIndex =
-          new JavaCodeIndexReader(steps).reopen(new ProgramGraphsReference(technical.navigation()));
-      assertThat(javaIndex.snapshotId()).isEqualTo(sourceVersion);
-      assertThat(javaIndex.entries())
-          .singleElement()
-          .satisfies(
-              entry -> {
-                assertThat(entry.collectionStatus()).isEqualTo("COLLECTED");
-                assertThat(entry.seed().methodKey()).isEqualTo("method:controller-list");
-                assertThat(entry.context().methods())
-                    .extracting(EntryCodeContext.MethodCode::methodKey)
-                    .containsExactlyInAnyOrder("method:controller-list", "method:service-list");
-                assertThat(entry.context().calls())
-                    .singleElement()
-                    .satisfies(
-                        call -> {
-                          assertThat(call.expression()).isEqualTo("orderService.list()");
-                          assertThat(call.targets())
-                              .singleElement()
-                              .satisfies(
-                                  target ->
-                                      assertThat(target.methodKey())
-                                          .isEqualTo("method:service-list"));
-                        });
-              });
-    }
-  }
-
-  @Test
-  void readyCollectCodePreservesStep02WhenFrontendToolRuntimeFails() throws Exception {
+  void v3FrontendFailureDoesNotMutateSavedBackendRun() throws Exception {
     Assumptions.assumeTrue(
         Files.getFileStore(temporaryDirectory).supportsFileAttributeView("posix"),
         "test-owned frontend process requires POSIX executable files");
 
     Path physicalRoot = temporaryDirectory.toRealPath();
-    Path sourceRoot = Files.createDirectory(physicalRoot.resolve("frontend-tool-failure-source"));
-    writeReadySource(sourceRoot, "FrontendToolFailure");
+    Path sourceRoot = Files.createDirectory(physicalRoot.resolve("v3-frontend-failure-source"));
+    writeReadySource(sourceRoot, "V3FrontendFailure");
     String controllerServiceSource =
         """
         package fixture;
@@ -4380,7 +3664,7 @@ class TechnicalAnalysisSourceAdmissionTest {
         <project xmlns="http://maven.apache.org/POM/4.0.0">
           <modelVersion>4.0.0</modelVersion>
           <groupId>fixture.technical</groupId>
-          <artifactId>frontend-tool-failure</artifactId>
+          <artifactId>v3-frontend-failure</artifactId>
           <version>1.0</version>
           <dependencies>
             <dependency>
@@ -4400,25 +3684,25 @@ class TechnicalAnalysisSourceAdmissionTest {
         StandardCharsets.UTF_8);
 
     Path preparationWorkspace =
-        Files.createDirectory(physicalRoot.resolve("frontend-tool-failure-preparations"));
-    Path runStore = Files.createDirectory(physicalRoot.resolve("frontend-tool-failure-store"));
+        Files.createDirectory(physicalRoot.resolve("v3-frontend-failure-preparations"));
+    Path runStore = Files.createDirectory(physicalRoot.resolve("v3-frontend-failure-store"));
     Path preparationConfig =
         writeSourcePreparationConfig(
-            "frontend-tool-failure-source-preparation.yaml",
+            "v3-frontend-failure-source-preparation.yaml",
             sourceRoot,
             preparationWorkspace,
             runStore);
     CliResult prepared = execute(preparationConfig, "prepare-source", "--format", "json");
     assertThat(prepared.exitCode()).withFailMessage("stage=%s", prepared.stderr()).isZero();
     String preparationRunId = JSON.readTree(prepared.stdout()).path("runId").asText();
-    assertIndependentlyReopenableReadyR0(preparationConfig, preparationRunId);
+    String sourceVersion =
+        assertIndependentlyReopenableReadyR0(preparationConfig, preparationRunId);
 
     ExternalCompilationInputFixture compilationInput =
         writeValidExternalCompilationInput(
             physicalRoot, sourceRoot, selectedSourceBasis(runStore, preparationRunId));
     FakeToolchainIdentityFixture fakeToolchain =
-        writeFakeToolchainIdentityFixture(physicalRoot.resolve("frontend-tool-failure-jdt"));
-    Path technicalPolicySet = writeTechnicalPolicySet();
+        writeFakeToolchainIdentityFixture(physicalRoot.resolve("v3-frontend-failure-jdt"));
     Path technicalConfig =
         writeV2ExternalCollectTechnicalConfigFromInput(
             preparationRunId,
@@ -4426,10 +3710,47 @@ class TechnicalAnalysisSourceAdmissionTest {
             preparationWorkspace.resolve("prepared-source-archive"),
             compilationInput.compilationInput(),
             fakeToolchain.jdtInstallation(),
-            technicalPolicySet,
+            V3_TECHNICAL_POLICY_SET,
             fakeToolchain.toolJavaHome());
-    Path nodeExecutable = physicalRoot.resolve("frontend-tool-failure-node");
-    Path nodeMarker = physicalRoot.resolve("frontend-tool-failure-node.marker");
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
+
+    String entrySource =
+        Files.readString(
+            sourceRoot.resolve("src/main/java/fixture/Entry.java"), StandardCharsets.UTF_8);
+    List<EntrySeed> collectedSeeds = new ArrayList<>();
+    AtomicInteger javaSessionOpens = new AtomicInteger();
+    ByteArrayOutputStream backendOut = new ByteArrayOutputStream();
+    ByteArrayOutputStream backendErr = new ByteArrayOutputStream();
+    int backendExit =
+        TechnicalAnalysisConfiguredRuntime.execute(
+            technicalConfig,
+            "collect-code",
+            List.of(),
+            new PrintWriter(backendOut, true, StandardCharsets.UTF_8),
+            new PrintWriter(backendErr, true, StandardCharsets.UTF_8),
+            environment -> {
+              javaSessionOpens.incrementAndGet();
+              assertThat(environment.sourceSnapshotId()).isEqualTo(sourceVersion);
+              return controllerServiceSession(
+                  environment, "src/main/java/fixture/Entry.java", entrySource, collectedSeeds);
+            },
+            () -> {
+              throw new AssertionError("R2 backend collection must not initialize Node");
+            });
+    assertThat(backendExit).withFailMessage("stdout=%s stderr=%s", backendOut, backendErr).isZero();
+    assertThat(backendErr.toString(StandardCharsets.UTF_8)).isEmpty();
+    JsonNode backendEnvelope = JSON.readTree(backendOut.toString(StandardCharsets.UTF_8));
+    assertThat(backendEnvelope.path("operation").asText()).isEqualTo("COLLECT_CODE");
+    assertThat(backendEnvelope.path("resultStatus").asText()).isEqualTo("COMPLETED");
+    assertThat(availableOutputNames(backendEnvelope))
+        .containsExactly("JAVA_ANALYSIS_READINESS", "APPLICATION_DISCOVERY", "JAVA_CODE_INDEX_V3");
+    AnalysisRunId backendRun = AnalysisRunId.parse(backendEnvelope.path("runId").asText());
+    assertThat(javaSessionOpens).hasValue(1);
+    assertThat(collectedSeeds).hasSize(1);
+    Map<String, String> backendFiles = storeSnapshot(runStore);
+
+    Path nodeExecutable = physicalRoot.resolve("v3-frontend-failure-node");
+    Path nodeMarker = physicalRoot.resolve("v3-frontend-failure-node.marker");
     writeFailingMarkerScript(nodeExecutable, "frontend-node", nodeMarker, 23);
     writeEnabledFrontendSettings(
         technicalConfig,
@@ -4443,32 +3764,18 @@ class TechnicalAnalysisSourceAdmissionTest {
         "",
         List.of());
 
-    AnalysisRunRequest queuedRequest = collectRequestFromConfiguredRuntime(technicalConfig);
-    AnalysisRunReference queuedRun;
-    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      queuedRun = queueConfiguredCollectCodeRun(technicalConfig, store, queuedRequest);
-    }
-    assertThat(queuedRun.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.QUEUED);
-
-    List<EntrySeed> collectedSeeds = new ArrayList<>();
-    AtomicInteger sessionOpenCount = new AtomicInteger();
     AtomicInteger frontendToolSupplierCalls = new AtomicInteger();
-    ByteArrayOutputStream outputBytes = new ByteArrayOutputStream();
-    ByteArrayOutputStream errorBytes = new ByteArrayOutputStream();
-    int exitCode =
+    ByteArrayOutputStream frontendOut = new ByteArrayOutputStream();
+    ByteArrayOutputStream frontendErr = new ByteArrayOutputStream();
+    int frontendExit =
         TechnicalAnalysisConfiguredRuntime.execute(
             technicalConfig,
-            "collect-code",
-            List.of("--run", queuedRun.runId().value()),
-            new PrintWriter(outputBytes, true, StandardCharsets.UTF_8),
-            new PrintWriter(errorBytes, true, StandardCharsets.UTF_8),
+            "collect-frontend",
+            List.of(),
+            new PrintWriter(frontendOut, true, StandardCharsets.UTF_8),
+            new PrintWriter(frontendErr, true, StandardCharsets.UTF_8),
             environment -> {
-              sessionOpenCount.incrementAndGet();
-              return controllerServiceSession(
-                  environment,
-                  "src/main/java/fixture/Entry.java",
-                  controllerServiceSource,
-                  collectedSeeds);
+              throw new AssertionError("R1 frontend collection must not initialize JDT");
             },
             () -> {
               frontendToolSupplierCalls.incrementAndGet();
@@ -4478,35 +3785,27 @@ class TechnicalAnalysisSourceAdmissionTest {
                   Duration.ofSeconds(5),
                   65_536);
             });
-
-    String error = errorBytes.toString(StandardCharsets.UTF_8);
-    Map<String, String> savedFiles = storeSnapshot(runStore);
-    assertThat(exitCode).isEqualTo(4);
-    assertThat(error)
+    assertThat(frontendExit)
+        .withFailMessage("stdout=%s stderr=%s", frontendOut, frontendErr)
+        .isEqualTo(4);
+    assertThat(frontendOut.toString(StandardCharsets.UTF_8)).isEmpty();
+    assertThat(frontendErr.toString(StandardCharsets.UTF_8))
         .contains("SOURCE_ANALYSIS_FAILED:FRONTEND_SYNTAX_TOOL_FAILED")
         .doesNotContain("TECHNICAL_CONFIGURATION_INVALID", physicalRoot.toString());
-    assertThat(outputBytes.toString(StandardCharsets.UTF_8)).isEmpty();
-    assertThat(sessionOpenCount).hasValue(1);
     assertThat(frontendToolSupplierCalls).hasValue(1);
     assertThat(Files.readString(nodeMarker, StandardCharsets.UTF_8)).isEqualTo("frontend-node\n");
-    assertThat(collectedSeeds).isEmpty();
-    assertThat(savedFiles.keySet())
-        .anyMatch(path -> path.endsWith("/modules/05-java-analysis-readiness/module-receipt.json"));
-    String entryPointsPath =
-        savedFiles.keySet().stream()
-            .filter(path -> path.endsWith("/02-application-discovery/entry-points.jsonl"))
-            .findFirst()
-            .orElseThrow();
-    JsonNode savedEntry =
-        JSON.readTree(
-            Files.readString(runStore.resolve(entryPointsPath), StandardCharsets.UTF_8).strip());
-    assertThat(savedEntry.path("route").asText()).isEqualTo("/orders/list");
-    assertThat(savedFiles.keySet())
-        .anyMatch(
-            path -> path.endsWith("/02-application-discovery/application-discovery-receipt.json"));
+
+    Map<String, String> filesAfterFrontendFailure = storeSnapshot(runStore);
+    assertThat(filesAfterFrontendFailure).containsAllEntriesOf(backendFiles);
     try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      assertThat(RunStoreBootstrap.reopenAnalysisRun(store, queuedRun.runId()).lifecycleState())
-          .isEqualTo(AnalysisRunLifecycleState.FAILED);
+      AnalysisRunReference savedBackend = RunStoreBootstrap.reopenAnalysisRun(store, backendRun);
+      assertThat(savedBackend.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.FINISHED);
+      AnalysisRunOutput savedOutput =
+          RunStoreBootstrap.reopenAnalysisRunOutput(store, backendRun).orElseThrow();
+      assertThat(savedOutput.technicalOutput()).isNotNull();
+      assertThat(savedOutput.technicalOutput().applicationDiscovery()).isNotNull();
+      assertThat(savedOutput.technicalOutput().navigation()).isNotNull();
+      assertThat(savedOutput.sourceRunId()).isEqualTo(AnalysisRunId.parse(preparationRunId));
     }
   }
 
@@ -4536,7 +3835,7 @@ class TechnicalAnalysisSourceAdmissionTest {
     assertThat(JSON.readTree(prepared.stdout()).path("readiness").asText()).isEqualTo("READY");
     assertIndependentlyReopenableReadyR0(preparationConfig, preparationRunId);
 
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     Path launchMarkers = physicalRoot.resolve("compilation-input-unexpected-tool-starts.log");
     Path jdtInstallation = physicalRoot.resolve("compilation-input-jdt");
     writeMarkerScript(jdtInstallation.resolve("bin/jdtls"), "jdt", launchMarkers);
@@ -4571,7 +3870,8 @@ class TechnicalAnalysisSourceAdmissionTest {
             targetJavaHome,
             jdtInstallation,
             technicalPolicySet);
-    AnalysisRunRequest queuedRequest = collectRequestFromConfiguredRuntime(technicalConfig);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
+    AnalysisRunRequest queuedRequest = collectCodeRequestV3FromConfiguredRuntime(technicalConfig);
     assertThat(
             new JavaReadinessPreparation()
                 .prepare(v2ReadinessRequestFromConfiguredRuntime(technicalConfig))
@@ -4634,8 +3934,8 @@ class TechnicalAnalysisSourceAdmissionTest {
   }
 
   @Test
-  void v2CollectCodePersistsPrivateCompilationInputSidecarBeforeExecution() throws Exception {
-    V2QueuedCompilationFixture fixture = queueV2CompilationFixture("v2-sidecar-create");
+  void collectCodePersistsPrivateCompilationInputSidecarBeforeExecution() throws Exception {
+    QueuedCompilationFixture fixture = queueCompilationFixture("sidecar-create");
     Path sidecar = privateCompilationInputSidecar(fixture.runStore(), fixture.queuedRun());
 
     assertThat(sidecar).isRegularFile();
@@ -4681,9 +3981,8 @@ class TechnicalAnalysisSourceAdmissionTest {
   }
 
   @Test
-  void v2QueuedCollectRunWithMissingPrivateCompilationInputSidecarBlocksBeforeJdt()
-      throws Exception {
-    V2QueuedCompilationFixture fixture = queueV2CompilationFixture("v2-sidecar-missing");
+  void queuedCollectRunWithMissingPrivateCompilationInputSidecarBlocksBeforeJdt() throws Exception {
+    QueuedCompilationFixture fixture = queueCompilationFixture("sidecar-missing");
     Path sidecar = privateCompilationInputSidecar(fixture.runStore(), fixture.queuedRun());
     Files.deleteIfExists(sidecar);
     AtomicInteger sessionOpenCount = new AtomicInteger();
@@ -4718,9 +4017,8 @@ class TechnicalAnalysisSourceAdmissionTest {
   }
 
   @Test
-  void v2QueuedCollectRunWithCorruptPrivateCompilationInputSidecarBlocksBeforeJdt()
-      throws Exception {
-    V2QueuedCompilationFixture fixture = queueV2CompilationFixture("v2-sidecar-corrupt");
+  void queuedCollectRunWithCorruptPrivateCompilationInputSidecarBlocksBeforeJdt() throws Exception {
+    QueuedCompilationFixture fixture = queueCompilationFixture("sidecar-corrupt");
     Path sidecar = privateCompilationInputSidecar(fixture.runStore(), fixture.queuedRun());
     Files.writeString(sidecar, "{\"schemaVersion\":\"not-v2\"}\n", StandardCharsets.UTF_8);
     AtomicInteger sessionOpenCount = new AtomicInteger();
@@ -4757,7 +4055,7 @@ class TechnicalAnalysisSourceAdmissionTest {
   @Test
   void collectCodeReadinessDisclosesUnconfirmedDiagnosticCoverageWithoutCompletionProof()
       throws Exception {
-    V2QueuedCompilationFixture fixture = queueV2CompilationFixture("v2-diagnostic-coverage");
+    QueuedCompilationFixture fixture = queueCompilationFixture("diagnostic-coverage");
 
     try (RunStoreHandle store = RunStoreBootstrap.open(fixture.runStore())) {
       LocalRepositoryAnalysisAgent agent =
@@ -4840,7 +4138,7 @@ class TechnicalAnalysisSourceAdmissionTest {
         writeV2OfficialCompilationOutputs(physicalRoot, sourceRoot);
     Files.writeString(
         official.effectivePomFile(), "<project><broken></project>first\n", StandardCharsets.UTF_8);
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     FakeToolchainIdentityFixture fakeToolchain =
         writeFakeToolchainIdentityFixture(physicalRoot.resolve("v2-blocked-pom-change-toolchain"));
     Path technicalConfig =
@@ -4856,7 +4154,8 @@ class TechnicalAnalysisSourceAdmissionTest {
             fakeToolchain.jdtInstallation(),
             technicalPolicySet,
             fakeToolchain.toolJavaHome());
-    AnalysisRunRequest queuedRequest = collectRequestFromConfiguredRuntime(technicalConfig);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
+    AnalysisRunRequest queuedRequest = collectCodeRequestV3FromConfiguredRuntime(technicalConfig);
     assertThat(
             new JavaReadinessPreparation()
                     .prepare(v2ReadinessRequestFromConfiguredRuntime(technicalConfig))
@@ -4903,11 +4202,11 @@ class TechnicalAnalysisSourceAdmissionTest {
   }
 
   @Test
-  void v2CollectCodeWithMissingProjectDirectoryPersistsBlockedR1() throws Exception {
-    V2QueuedCompilationFixture fixture = queueV2CompilationFixture("v2-missing-project-directory");
+  void collectCodeWithMissingProjectDirectoryPersistsBlockedR1() throws Exception {
+    QueuedCompilationFixture fixture = queueCompilationFixture("missing-project-directory");
     Path technicalConfig = fixture.technicalConfig();
     Path missingProjectDirectory =
-        fixture.sourceRoot().resolveSibling("v2-missing-project-directory-unavailable");
+        fixture.sourceRoot().resolveSibling("missing-project-directory-unavailable");
     String withUnavailableProjectDirectory =
         Files.readString(technicalConfig, StandardCharsets.UTF_8)
             .replaceFirst(
@@ -4971,11 +4270,11 @@ class TechnicalAnalysisSourceAdmissionTest {
   }
 
   @Test
-  void completedV2R1RunsR2AndR3AfterExternalMavenOutputsAreRemoved() throws Exception {
-    V2QueuedCompilationFixture fixture = queueV2CompilationFixture("v2-saved-r1-reuse");
+  void v3SavedBackendRunRunsPersistenceAfterExternalMavenOutputsAreRemoved() throws Exception {
+    V3QueuedCompilationFixture fixture = queueV3CompilationFixture("v3-saved-backend-reuse");
     AtomicInteger javaSessionOpens = new AtomicInteger();
     AtomicInteger frontendToolRequests = new AtomicInteger();
-    AnalysisRunReference r1;
+    AnalysisRunReference backendRun;
 
     try (RunStoreHandle store = RunStoreBootstrap.open(fixture.runStore())) {
       LocalRepositoryAnalysisAgent agent =
@@ -4986,11 +4285,11 @@ class TechnicalAnalysisSourceAdmissionTest {
                 javaSessionOpens.incrementAndGet();
                 return emptyCatalogSession(environment);
               });
-      r1 =
+      backendRun =
           agent.executeStep(
               new AnalysisStepExecutionRequest(
                   fixture.queuedRun().runId(), AnalysisExecutionIntent.COLLECT_CODE, null, null));
-      assertThat(r1.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.FINISHED);
+      assertThat(backendRun.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.FINISHED);
     }
     assertThat(javaSessionOpens).hasValue(1);
 
@@ -5010,45 +4309,28 @@ class TechnicalAnalysisSourceAdmissionTest {
             persistenceConfig,
             "analyze-persistence",
             "--code-run",
-            r1.runId().value(),
+            backendRun.runId().value(),
             javaSessionOpens,
             frontendToolRequests);
     assertThat(persistence.exitCode())
         .withFailMessage("stdout=%s stderr=%s", persistence.stdout(), persistence.stderr())
         .isZero();
     assertThat(persistence.stderr()).isEmpty();
-    JsonNode r2Envelope = JSON.readTree(persistence.stdout());
-    assertThat(r2Envelope.path("operation").asText()).isEqualTo("ANALYZE_PERSISTENCE");
-    assertThat(r2Envelope.path("resultStatus").asText()).isEqualTo("COMPLETED");
-    AnalysisRunId r2 = AnalysisRunId.parse(r2Envelope.path("runId").asText());
-
-    Path materialsConfig =
-        writeReadingMaterialsOnlyTechnicalConfig(
-            fixture.preparationRunId(),
-            fixture.runStore(),
-            fixture.preparedSourceArchive(),
-            fixture.technicalPolicySet());
-    CliResult materials =
-        executeConfiguredWithoutTools(
-            materialsConfig,
-            "assemble-materials",
-            "--persistence-run",
-            r2.value(),
-            javaSessionOpens,
-            frontendToolRequests);
-    assertThat(materials.exitCode())
-        .withFailMessage("stdout=%s stderr=%s", materials.stdout(), materials.stderr())
-        .isZero();
-    assertThat(materials.stderr()).isEmpty();
-    JsonNode r3Envelope = JSON.readTree(materials.stdout());
-    assertThat(r3Envelope.path("operation").asText()).isEqualTo("ASSEMBLE_MATERIALS");
-    assertThat(r3Envelope.path("resultStatus").asText()).isEqualTo("COMPLETED");
+    JsonNode envelope = JSON.readTree(persistence.stdout());
+    assertThat(envelope.path("operation").asText()).isEqualTo("ANALYZE_PERSISTENCE");
+    assertThat(envelope.path("resultStatus").asText()).isEqualTo("COMPLETED");
+    assertThat(availableOutputNames(envelope))
+        .contains(
+            "JAVA_ANALYSIS_READINESS",
+            "APPLICATION_DISCOVERY",
+            "JAVA_CODE_INDEX_V3",
+            "PERSISTENCE_MATERIAL_INDEX_V2");
     assertThat(javaSessionOpens).hasValue(1);
     assertThat(frontendToolRequests).hasValue(0);
   }
 
   @Test
-  void v2QueuedCollectRunWithChangedOfficialJarPersistsBlockBeforeTools() throws Exception {
+  void v3QueuedCollectRunWithChangedOfficialJarPersistsBlockBeforeTools() throws Exception {
     Assumptions.assumeTrue(
         Files.getFileStore(temporaryDirectory).supportsFileAttributeView("posix"),
         "test-owned tool launch markers require POSIX executable files");
@@ -5089,7 +4371,7 @@ class TechnicalAnalysisSourceAdmissionTest {
 
     V2OfficialCompilationOutputs official =
         writeV2OfficialCompilationOutputs(physicalRoot, sourceRoot);
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     Path launchMarkers = physicalRoot.resolve("v2-input-change-unexpected-tool-starts.log");
     FakeToolchainIdentityFixture fakeToolchain =
         writeFakeToolchainIdentityFixture(physicalRoot.resolve("v2-input-change-toolchain"));
@@ -5106,7 +4388,8 @@ class TechnicalAnalysisSourceAdmissionTest {
             fakeToolchain.jdtInstallation(),
             technicalPolicySet,
             fakeToolchain.toolJavaHome());
-    AnalysisRunRequest queuedRequest = collectRequestFromConfiguredRuntime(technicalConfig);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
+    AnalysisRunRequest queuedRequest = collectCodeRequestV3FromConfiguredRuntime(technicalConfig);
     assertThat(
             new JavaReadinessPreparation()
                 .prepare(v2ReadinessRequestFromConfiguredRuntime(technicalConfig))
@@ -5184,7 +4467,8 @@ class TechnicalAnalysisSourceAdmissionTest {
             official.effectivePomFile(),
             official.targetJavaHome(),
             jdtInstallation,
-            writeTechnicalPolicySet());
+            V3_TECHNICAL_POLICY_SET);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
     Map<String, String> storeBeforeAttempt = storeSnapshot(runStore);
 
     CliResult result = execute(technicalConfig, "collect-code", "--run", completedPreparationRunId);
@@ -5286,7 +4570,8 @@ class TechnicalAnalysisSourceAdmissionTest {
             officialA.effectivePomFile(),
             officialA.targetJavaHome(),
             jdtInstallation,
-            writeTechnicalPolicySet());
+            V3_TECHNICAL_POLICY_SET);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
     Map<String, String> storeBeforeAttempt = storeSnapshot(runStore);
 
     CliResult result =
@@ -5459,51 +4744,6 @@ class TechnicalAnalysisSourceAdmissionTest {
         });
   }
 
-  @Test
-  void assembleMaterialsAcceptsOnlyReadingMaterialsConfigAndPreservesPersistenceRun()
-      throws Exception {
-    Path physicalRoot = temporaryDirectory.toRealPath();
-    Path sourceRoot = Files.createDirectory(physicalRoot.resolve("materials-source"));
-    writeReadySource(sourceRoot, "Materials");
-    Path preparationWorkspace =
-        Files.createDirectory(physicalRoot.resolve("materials-preparations"));
-    Path runStore = Files.createDirectory(physicalRoot.resolve("materials-analysis-store"));
-    Path preparationConfig =
-        writeSourcePreparationConfig(
-            "materials-source-preparation.yaml", sourceRoot, preparationWorkspace, runStore);
-
-    CliResult prepared = execute(preparationConfig, "prepare-source", "--format", "json");
-    assertThat(prepared.exitCode()).withFailMessage("stage=%s", prepared.stderr()).isZero();
-    JsonNode preparedEnvelope = JSON.readTree(prepared.stdout());
-    assertThat(preparedEnvelope.path("readiness").asText()).isEqualTo("READY");
-    String preparationRunId = preparedEnvelope.path("runId").asText();
-    assertIndependentlyReopenableReadyR0(preparationConfig, preparationRunId);
-
-    String absentPersistenceRunId = "analysis-run:" + "0".repeat(64);
-    assertThat(absentPersistenceRunId).isNotEqualTo(preparationRunId);
-    Path technicalConfig =
-        writeReadingMaterialsOnlyTechnicalConfig(
-            preparationRunId, runStore, preparationWorkspace.resolve("prepared-source-archive"));
-    Map<String, String> storeBeforeAttempt = storeSnapshot(runStore);
-
-    CliResult result =
-        execute(technicalConfig, "assemble-materials", "--persistence-run", absentPersistenceRunId);
-    String publicResult = result.stdout() + result.stderr();
-    Map<String, String> storeAfterAttempt = storeSnapshot(runStore);
-
-    assertSoftly(
-        softly -> {
-          softly.assertThat(result.exitCode()).isEqualTo(2);
-          softly
-              .assertThat(publicResult)
-              .contains("TECHNICAL_UPSTREAM_NOT_READY")
-              .doesNotContain(
-                  "TECHNICAL_CONFIGURATION_INVALID", "TECHNICAL_EXECUTION_NOT_CONNECTED");
-          softly.assertThat(result.stdout()).isEmpty();
-          softly.assertThat(storeAfterAttempt).isEqualTo(storeBeforeAttempt);
-        });
-  }
-
   private Path writeSourcePreparationConfig(
       Path sourceRoot, Path preparationWorkspace, Path runStore) throws IOException {
     return writeSourcePreparationConfig(
@@ -5666,7 +4906,7 @@ class TechnicalAnalysisSourceAdmissionTest {
   private Path writePersistenceOnlyTechnicalConfig(
       String preparationRunId, Path runStore, Path preparedSourceArchive) throws IOException {
     return writePersistenceOnlyTechnicalConfig(
-        preparationRunId, runStore, preparedSourceArchive, BASE_TECHNICAL_POLICY_SET);
+        preparationRunId, runStore, preparedSourceArchive, V3_TECHNICAL_POLICY_SET);
   }
 
   private Path writePersistenceOnlyTechnicalConfig(
@@ -5675,7 +4915,7 @@ class TechnicalAnalysisSourceAdmissionTest {
     Path config = temporaryDirectory.resolve("technical-persistence-only.yaml");
     String yaml =
         """
-        schemaVersion: technical-analysis-config-v1
+        schemaVersion: technical-analysis-config-v3
         source:
           preparationRunId: %s
         storage:
@@ -5694,6 +4934,18 @@ class TechnicalAnalysisSourceAdmissionTest {
                 yamlQuoted(technicalPolicySet));
     Files.writeString(config, yaml, StandardCharsets.UTF_8);
     return config.toAbsolutePath();
+  }
+
+  private static void upgradeTechnicalConfigSchema(Path config, String schemaVersion)
+      throws IOException {
+    String text = Files.readString(config, StandardCharsets.UTF_8);
+    String upgraded =
+        text.replaceFirst(
+            "schemaVersion: technical-analysis-config-v[12]", "schemaVersion: " + schemaVersion);
+    if (upgraded.equals(text)) {
+      throw new IOException("technical config fixture did not contain a versioned schema");
+    }
+    Files.writeString(config, upgraded, StandardCharsets.UTF_8);
   }
 
   private Path writeCollectOnlyTechnicalConfig(
@@ -5738,22 +4990,6 @@ class TechnicalAnalysisSourceAdmissionTest {
             SourceAnalysisExecution.reference("technical-toolchain", toolchain, json),
             matching.artifactPolicyRegistryRef(),
             matching.upstreamPublication()));
-  }
-
-  private Path writeBlockedCollectTechnicalConfig(
-      String preparationRunId,
-      Path runStore,
-      Path preparedSourceArchive,
-      Path jdtInstallation,
-      Path technicalPolicySet)
-      throws IOException {
-    return writeExternalCollectTechnicalConfig(
-        preparationRunId,
-        runStore,
-        preparedSourceArchive,
-        writeDeferredCompilationInput("deferred-blocked-compilation-input.json"),
-        jdtInstallation,
-        technicalPolicySet);
   }
 
   private Path writeDeferredCompilationInput(String fileName) throws IOException {
@@ -5810,70 +5046,6 @@ class TechnicalAnalysisSourceAdmissionTest {
         invokePrivate(buildReadinessRequest, configuration, readySource, javaConfiguration);
   }
 
-  private static AnalysisRunRequest collectRequestFromConfiguredRuntime(Path technicalConfig)
-      throws Exception {
-    return collectRequestFromConfiguredRuntime(technicalConfig, null);
-  }
-
-  private static AnalysisRunRequest collectRequestFromConfiguredRuntime(
-      Path technicalConfig, FrontendToolIdentity frontendToolIdentity) throws Exception {
-    Class<?> runtime = TechnicalAnalysisConfiguredRuntime.class;
-    Class<?> configurationType = Class.forName(runtime.getName() + "$Configuration");
-    Method load = configurationType.getDeclaredMethod("load", Path.class, String.class);
-    load.setAccessible(true);
-    Object configuration = invokePrivate(load, null, technicalConfig, "collect-code");
-
-    Class<?> readySourceType = Class.forName(runtime.getName() + "$ReadySourcePreparation");
-    Method reopen = configurationType.getDeclaredMethod("reopenSavedSourcePreparationReady");
-    reopen.setAccessible(true);
-    Object readySource = invokePrivate(reopen, configuration);
-    Method javaConfigurationMethod = configurationType.getDeclaredMethod("technicalJavaConfig");
-    javaConfigurationMethod.setAccessible(true);
-    Object javaConfiguration = invokePrivate(javaConfigurationMethod, configuration);
-    Method sourceTextsMethod = readySourceType.getDeclaredMethod("sourceTexts");
-    sourceTextsMethod.setAccessible(true);
-    VerifiedSourceTextSet sourceTexts =
-        (VerifiedSourceTextSet) invokePrivate(sourceTextsMethod, readySource);
-    Method frontendConfigurationMethod =
-        configurationType.getDeclaredMethod("technicalFrontendConfig", VerifiedSourceTextSet.class);
-    frontendConfigurationMethod.setAccessible(true);
-    Object frontendConfiguration =
-        invokePrivate(frontendConfigurationMethod, configuration, sourceTexts);
-
-    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
-    ObjectNode document = SourceAnalysisExecution.readConfiguration(technicalConfig, canonicalJson);
-    Path configuredPolicyPath =
-        Path.of(document.path("storage").path("artifactPolicyRegistry").asText());
-    CanonicalArtifactPolicyRegistry policies =
-        SourceAnalysisExecution.loadPolicies(configuredPolicyPath, canonicalJson);
-    Method collectRequestMethod =
-        java.util.Arrays.stream(configurationType.getDeclaredMethods())
-            .filter(method -> method.getName().equals("collectCodeRequest"))
-            .filter(method -> method.getParameterCount() == (frontendToolIdentity == null ? 5 : 6))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("configured collect request seam is missing"));
-    collectRequestMethod.setAccessible(true);
-    Object[] requestArguments =
-        frontendToolIdentity == null
-            ? new Object[] {
-              readySource,
-              policies.reference(),
-              canonicalJson,
-              javaConfiguration,
-              frontendConfiguration
-            }
-            : new Object[] {
-              readySource,
-              policies.reference(),
-              canonicalJson,
-              javaConfiguration,
-              frontendConfiguration,
-              frontendToolIdentity
-            };
-    return (AnalysisRunRequest)
-        invokePrivate(collectRequestMethod, configuration, requestArguments);
-  }
-
   private static LocalRepositoryAnalysisAgent configuredTechnicalAgent(
       Path technicalConfig, RunStoreHandle store) throws Exception {
     return configuredTechnicalAgent(
@@ -5923,18 +5095,23 @@ class TechnicalAnalysisSourceAdmissionTest {
         RepositoryAnalysisRunCoordinator.configured(
             request -> {
               try {
+                Object[] arguments =
+                    executeCollectCodeRun.getParameterCount() == 6
+                        ? new Object[] {
+                          request, store, policies, canonicalJson, javaConfiguration, sessionOpener
+                        }
+                        : new Object[] {
+                          request,
+                          store,
+                          policies,
+                          canonicalJson,
+                          javaConfiguration,
+                          frontendConfiguration,
+                          sessionOpener,
+                          (Object) null
+                        };
                 return (AnalysisRunOutput)
-                    invokePrivate(
-                        executeCollectCodeRun,
-                        configuration,
-                        request,
-                        store,
-                        policies,
-                        canonicalJson,
-                        javaConfiguration,
-                        frontendConfiguration,
-                        sessionOpener,
-                        (Object) null);
+                    invokePrivate(executeCollectCodeRun, configuration, arguments);
               } catch (Exception failure) {
                 throw new IllegalStateException(
                     "configured collect-code execution failed", failure);
@@ -5943,7 +5120,7 @@ class TechnicalAnalysisSourceAdmissionTest {
     return new LocalRepositoryAnalysisAgent(store, coordinator);
   }
 
-  private V2QueuedCompilationFixture queueV2CompilationFixture(String name) throws Exception {
+  private QueuedCompilationFixture queueCompilationFixture(String name) throws Exception {
     Path physicalRoot = temporaryDirectory.toRealPath();
     Path sourceRoot = Files.createDirectory(physicalRoot.resolve(name + "-source"));
     writeReadySource(sourceRoot, name.replace('-', '_'));
@@ -5980,7 +5157,7 @@ class TechnicalAnalysisSourceAdmissionTest {
 
     V2OfficialCompilationOutputs official =
         writeV2OfficialCompilationOutputs(physicalRoot, sourceRoot);
-    Path technicalPolicySet = writeTechnicalPolicySet();
+    Path technicalPolicySet = V3_TECHNICAL_POLICY_SET;
     FakeToolchainIdentityFixture fakeToolchain =
         writeFakeToolchainIdentityFixture(physicalRoot.resolve(name + "-toolchain"));
     Path technicalConfig =
@@ -5996,7 +5173,8 @@ class TechnicalAnalysisSourceAdmissionTest {
             fakeToolchain.jdtInstallation(),
             technicalPolicySet,
             fakeToolchain.toolJavaHome());
-    AnalysisRunRequest request = collectRequestFromConfiguredRuntime(technicalConfig);
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
+    AnalysisRunRequest request = collectCodeRequestV3FromConfiguredRuntime(technicalConfig);
     assertThat(
             new JavaReadinessPreparation()
                 .prepare(v2ReadinessRequestFromConfiguredRuntime(technicalConfig))
@@ -6008,12 +5186,90 @@ class TechnicalAnalysisSourceAdmissionTest {
       queuedRun = queueConfiguredCollectCodeRun(technicalConfig, store, request);
     }
     assertThat(queuedRun.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.QUEUED);
-    return new V2QueuedCompilationFixture(
+    return new QueuedCompilationFixture(
         sourceRoot,
         runStore,
         technicalConfig,
         preparationWorkspace.resolve("prepared-source-archive"),
         technicalPolicySet,
+        preparationRunId,
+        sourceVersion,
+        selectedSourceBasis(runStore, preparationRunId),
+        official,
+        queuedRun);
+  }
+
+  private V3QueuedCompilationFixture queueV3CompilationFixture(String name) throws Exception {
+    Path physicalRoot = temporaryDirectory.toRealPath();
+    Path sourceRoot = Files.createDirectory(physicalRoot.resolve(name + "-source"));
+    writeReadySource(sourceRoot, name.replace('-', '_'));
+    Files.writeString(
+        sourceRoot.resolve("pom.xml"),
+        """
+        <project xmlns="http://maven.apache.org/POM/4.0.0">
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>fixture.technical</groupId>
+          <artifactId>%s</artifactId>
+          <version>1.0</version>
+          <dependencies>
+            <dependency>
+              <groupId>org.springframework</groupId>
+              <artifactId>spring-webmvc</artifactId>
+              <version>6.1.8</version>
+            </dependency>
+          </dependencies>
+        </project>
+        """
+            .formatted(name),
+        StandardCharsets.UTF_8);
+    Path preparationWorkspace = Files.createDirectory(physicalRoot.resolve(name + "-preparations"));
+    Path runStore = Files.createDirectory(physicalRoot.resolve(name + "-store"));
+    Path preparationConfig =
+        writeSourcePreparationConfig(
+            name + "-source-preparation.yaml", sourceRoot, preparationWorkspace, runStore);
+
+    CliResult prepared = execute(preparationConfig, "prepare-source", "--format", "json");
+    assertThat(prepared.exitCode()).withFailMessage("stage=%s", prepared.stderr()).isZero();
+    String preparationRunId = JSON.readTree(prepared.stdout()).path("runId").asText();
+    String sourceVersion =
+        assertIndependentlyReopenableReadyR0(preparationConfig, preparationRunId);
+
+    V2OfficialCompilationOutputs official =
+        writeV2OfficialCompilationOutputs(physicalRoot, sourceRoot);
+    FakeToolchainIdentityFixture fakeToolchain =
+        writeFakeToolchainIdentityFixture(physicalRoot.resolve(name + "-toolchain"));
+    Path technicalConfig =
+        writeV2ExternalCollectTechnicalConfig(
+            preparationRunId,
+            runStore,
+            preparationWorkspace.resolve("prepared-source-archive"),
+            sourceRoot,
+            ".",
+            official.classpathFile(),
+            official.effectivePomFile(),
+            official.targetJavaHome(),
+            fakeToolchain.jdtInstallation(),
+            V3_TECHNICAL_POLICY_SET,
+            fakeToolchain.toolJavaHome());
+    upgradeTechnicalConfigSchema(technicalConfig, "technical-analysis-config-v3");
+    AnalysisRunRequest request = collectCodeRequestV3FromConfiguredRuntime(technicalConfig);
+    assertThat(
+            new JavaReadinessPreparation()
+                .prepare(v2ReadinessRequestFromConfiguredRuntime(technicalConfig))
+                .status())
+        .isEqualTo(JavaReadinessPreparation.Status.READY);
+
+    AnalysisRunReference queuedRun;
+    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
+      queuedRun = queueConfiguredCollectCodeRun(technicalConfig, store, request);
+    }
+    assertThat(queuedRun.lifecycleState()).isEqualTo(AnalysisRunLifecycleState.QUEUED);
+    return new V3QueuedCompilationFixture(
+        sourceRoot,
+        runStore,
+        technicalConfig,
+        preparationWorkspace.resolve("prepared-source-archive"),
+        V3_TECHNICAL_POLICY_SET,
         preparationRunId,
         sourceVersion,
         selectedSourceBasis(runStore, preparationRunId),
@@ -6048,6 +5304,117 @@ class TechnicalAnalysisSourceAdmissionTest {
             request,
             store,
             new LocalRepositoryAnalysisAgent(store));
+  }
+
+  private static AnalysisRunReference queueConfiguredCollectFrontendRun(
+      Path technicalConfig, RunStoreHandle store, AnalysisRunRequest request) throws Exception {
+    Class<?> runtime = TechnicalAnalysisConfiguredRuntime.class;
+    Class<?> configurationType = Class.forName(runtime.getName() + "$Configuration");
+    Method load = configurationType.getDeclaredMethod("load", Path.class, String.class);
+    load.setAccessible(true);
+    Object configuration = invokePrivate(load, null, technicalConfig, "collect-frontend");
+    Class<?> invocationType = Class.forName(runtime.getName() + "$Invocation");
+    Method parse = invocationType.getDeclaredMethod("parse", String.class, List.class);
+    parse.setAccessible(true);
+    Object invocation = invokePrivate(parse, null, "collect-frontend", List.of());
+    Method select =
+        configurationType.getDeclaredMethod(
+            "selectCollectFrontendRun",
+            invocationType,
+            AnalysisRunRequest.class,
+            RunStoreHandle.class,
+            LocalRepositoryAnalysisAgent.class);
+    select.setAccessible(true);
+    return (AnalysisRunReference)
+        invokePrivate(
+            select,
+            configuration,
+            invocation,
+            request,
+            store,
+            new LocalRepositoryAnalysisAgent(store));
+  }
+
+  private static AnalysisRunRequest collectFrontendRequestFromConfiguredRuntime(
+      Path technicalConfig) throws Exception {
+    Class<?> runtime = TechnicalAnalysisConfiguredRuntime.class;
+    Class<?> configurationType = Class.forName(runtime.getName() + "$Configuration");
+    Method load = configurationType.getDeclaredMethod("load", Path.class, String.class);
+    load.setAccessible(true);
+    Object configuration = invokePrivate(load, null, technicalConfig, "collect-frontend");
+    Class<?> readySourceType = Class.forName(runtime.getName() + "$ReadySourcePreparation");
+    Method reopen = configurationType.getDeclaredMethod("reopenSavedSourcePreparationReady");
+    reopen.setAccessible(true);
+    Object readySource = invokePrivate(reopen, configuration);
+    Method sourceTextsMethod = readySourceType.getDeclaredMethod("sourceTexts");
+    sourceTextsMethod.setAccessible(true);
+    VerifiedSourceTextSet sourceTexts =
+        (VerifiedSourceTextSet) invokePrivate(sourceTextsMethod, readySource);
+    Method frontendConfigurationMethod =
+        configurationType.getDeclaredMethod("technicalFrontendConfig", VerifiedSourceTextSet.class);
+    frontendConfigurationMethod.setAccessible(true);
+    Object frontendConfiguration =
+        invokePrivate(frontendConfigurationMethod, configuration, sourceTexts);
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    ObjectNode document = SourceAnalysisExecution.readConfiguration(technicalConfig, canonicalJson);
+    Path configuredPolicyPath =
+        Path.of(document.path("storage").path("artifactPolicyRegistry").asText());
+    CanonicalArtifactPolicyRegistry policies =
+        SourceAnalysisExecution.loadPolicies(configuredPolicyPath, canonicalJson);
+    Method collectRequestMethod =
+        configurationType.getDeclaredMethod(
+            "collectFrontendRequest",
+            readySourceType,
+            ArtifactPolicyRegistryReference.class,
+            CanonicalJsonCodec.class,
+            frontendConfiguration.getClass());
+    collectRequestMethod.setAccessible(true);
+    return (AnalysisRunRequest)
+        invokePrivate(
+            collectRequestMethod,
+            configuration,
+            readySource,
+            policies.reference(),
+            canonicalJson,
+            frontendConfiguration);
+  }
+
+  private static AnalysisRunRequest collectCodeRequestV3FromConfiguredRuntime(Path technicalConfig)
+      throws Exception {
+    Class<?> runtime = TechnicalAnalysisConfiguredRuntime.class;
+    Class<?> configurationType = Class.forName(runtime.getName() + "$Configuration");
+    Method load = configurationType.getDeclaredMethod("load", Path.class, String.class);
+    load.setAccessible(true);
+    Object configuration = invokePrivate(load, null, technicalConfig, "collect-code");
+    Class<?> readySourceType = Class.forName(runtime.getName() + "$ReadySourcePreparation");
+    Method reopen = configurationType.getDeclaredMethod("reopenSavedSourcePreparationReady");
+    reopen.setAccessible(true);
+    Object readySource = invokePrivate(reopen, configuration);
+    Method javaConfigurationMethod = configurationType.getDeclaredMethod("technicalJavaConfig");
+    javaConfigurationMethod.setAccessible(true);
+    Object javaConfiguration = invokePrivate(javaConfigurationMethod, configuration);
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    ObjectNode document = SourceAnalysisExecution.readConfiguration(technicalConfig, canonicalJson);
+    Path configuredPolicyPath =
+        Path.of(document.path("storage").path("artifactPolicyRegistry").asText());
+    CanonicalArtifactPolicyRegistry policies =
+        SourceAnalysisExecution.loadPolicies(configuredPolicyPath, canonicalJson);
+    Method collectRequestMethod =
+        configurationType.getDeclaredMethod(
+            "collectCodeRequest",
+            readySourceType,
+            ArtifactPolicyRegistryReference.class,
+            CanonicalJsonCodec.class,
+            javaConfiguration.getClass());
+    collectRequestMethod.setAccessible(true);
+    return (AnalysisRunRequest)
+        invokePrivate(
+            collectRequestMethod,
+            configuration,
+            readySource,
+            policies.reference(),
+            canonicalJson,
+            javaConfiguration);
   }
 
   private static Path privateCompilationInputSidecar(Path runStore, AnalysisRunReference run) {
@@ -6521,6 +5888,127 @@ class TechnicalAnalysisSourceAdmissionTest {
         List<EntryCodeContext.MethodCode> collectedMethods =
             new ArrayList<>(List.of(controllerMethod, serviceMethod));
         List<EntryCodeContext.CallSite> collectedCalls = new ArrayList<>(List.of(call));
+        String externalExpression = "String.valueOf(orderService.list())";
+        int externalStart = source.indexOf("String.valueOf");
+        SourceRange externalRange =
+            externalStart < 0
+                ? null
+                : sourceRange(source, externalStart, externalStart + externalExpression.length());
+        if (externalStart >= 0) {
+          collectedCalls.add(
+              new EntryCodeContext.CallSite(
+                  "call:controller-to-jdk-binary",
+                  controllerMethodKey,
+                  "METHOD",
+                  externalRange,
+                  externalRange,
+                  externalExpression,
+                  "String",
+                  List.of(new EntryCodeContext.ActualArgument(0, "orderService.list()")),
+                  List.of(),
+                  false,
+                  List.of(),
+                  "EXTERNAL",
+                  "JDT Core resolved binary declaration java.lang.String.valueOf",
+                  List.of(
+                      new EntryCodeContext.CallObservation(
+                          "EXTERNAL_BINARY_BINDING",
+                          "JDT_CORE_BINDING",
+                          "BINARY",
+                          externalRange,
+                          "CONFIRMED",
+                          "java.base/java.lang.String.valueOf(java.lang.String)",
+                          "java.lang.String",
+                          "BINARY",
+                          "java.lang.String.valueOf",
+                          "JDT Core resolved binary declaration java.lang.String.valueOf"))));
+        }
+        int hierarchyStart = source.indexOf("wrapper.wrap");
+        if (hierarchyStart >= 0) {
+          String hierarchyExpression = "wrapper.wrap(String.valueOf(orderService.list()))";
+          SourceRange hierarchyRange =
+              sourceRange(source, hierarchyStart, hierarchyStart + hierarchyExpression.length());
+          EntryCodeContext.CallTarget unconfirmedHierarchy =
+              new EntryCodeContext.CallTarget(
+                  null,
+                  List.of("DECLARATION"),
+                  "wrapper.wrap",
+                  List.of("CALL_HIERARCHY"),
+                  "NOT_EXPANDED",
+                  "NAVIGATION_CONFLICT_NOT_EXPANDED",
+                  List.of());
+          collectedCalls.add(
+              new EntryCodeContext.CallSite(
+                  "call:controller-unconfirmed-hierarchy",
+                  controllerMethodKey,
+                  "METHOD",
+                  hierarchyRange,
+                  hierarchyRange,
+                  hierarchyExpression,
+                  "wrapper",
+                  List.of(
+                      new EntryCodeContext.ActualArgument(
+                          0, "String.valueOf(orderService.list())")),
+                  List.of(),
+                  false,
+                  List.of(unconfirmedHierarchy),
+                  "NAVIGATION_CONFLICT",
+                  "CALL_SITE_ASSOCIATION_UNCONFIRMED:wrapper.wrap",
+                  List.of(
+                      new EntryCodeContext.CallObservation(
+                          "UNCONFIRMED_NAVIGATION_LOCATION",
+                          "CALL_HIERARCHY",
+                          "SOURCE",
+                          hierarchyRange,
+                          "UNCONFIRMED",
+                          null,
+                          null,
+                          "SOURCE",
+                          "wrapper.wrap",
+                          "NAVIGATION_CONFLICT_NOT_EXPANDED"))));
+        }
+        if (externalStart >= 0) {
+          // This candidate has a Core/JDT binding that disagrees with the repository declaration.
+          // V3 must retain the diagnostic observation but must not publish it as an expandable
+          // edge.
+          EntryCodeContext.CallObservation mismatchObservation =
+              new EntryCodeContext.CallObservation(
+                  "UNCONFIRMED_BINDING_LOCATION",
+                  "JDT_DEFINITION",
+                  "SOURCE",
+                  externalRange,
+                  "UNCONFIRMED",
+                  null,
+                  null,
+                  "SOURCE",
+                  "fixture.WrongService.list",
+                  "BINDING_DECLARATION_MISMATCH");
+          EntryCodeContext.CallTarget mismatchTarget =
+              new EntryCodeContext.CallTarget(
+                  null,
+                  List.of("IMPLEMENTATION"),
+                  "fixture.WrongService.list",
+                  List.of("ENGINE_BINDING"),
+                  "NOT_EXPANDED",
+                  "BINDING_DECLARATION_MISMATCH",
+                  List.of());
+          collectedCalls.add(
+              new EntryCodeContext.CallSite(
+                  "call:controller-binding-mismatch",
+                  controllerMethodKey,
+                  "METHOD",
+                  externalRange,
+                  externalRange,
+                  "orderService.list()",
+                  "orderService",
+                  List.of(),
+                  List.of(),
+                  false,
+                  List.of(mismatchTarget),
+                  "NAVIGATION_CONFLICT",
+                  "BINDING_DECLARATION_MISMATCH:fixture.WrongService.list",
+                  List.of(mismatchObservation)));
+        }
         if (hasMapper) {
           EntryCodeContext.MethodCode mapperMethod =
               new EntryCodeContext.MethodCode(
@@ -6538,8 +6026,10 @@ class TechnicalAnalysisSourceAdmissionTest {
                   List.of("DECLARATION"),
                   "fixture.OrderMapper.selectOrders",
                   List.of("DEFINITION"),
-                  "DECLARATION_ONLY",
-                  "TARGET_DECLARATION_HAS_NO_BODY",
+                  // A confirmed repository edge can be budget-limited. V3 must retain this
+                  // target in CALL.targets; only unconfirmed navigation observations move out.
+                  "NOT_EXPANDED",
+                  "COLLECTION_LIMIT",
                   List.of());
           EntryCodeContext.CallSite mapperCall =
               new EntryCodeContext.CallSite(
@@ -6990,79 +6480,109 @@ class TechnicalAnalysisSourceAdmissionTest {
     Path launchMarkers = physicalRoot.resolve("query-blocked-unexpected-tool-starts.log");
     Path jdtInstallation = physicalRoot.resolve("query-blocked-jdt-installation");
     writeMarkerScript(jdtInstallation.resolve("bin/jdtls"), "jdt", launchMarkers);
-    V2OfficialCompilationOutputs official =
-        writeV2OfficialCompilationOutputs(physicalRoot, sourceRoot);
-    Files.writeString(
-        official.effectivePomFile(), "<project><broken></project>\n", StandardCharsets.UTF_8);
+    Path deferredCompilationInput =
+        writeDeferredCompilationInput("query-blocked-deferred-compilation-input.json");
+    String r1RunId;
+    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
+      AnalysisRunOutput sourceOutput =
+          RunStoreBootstrap.reopenAnalysisRunOutput(store, AnalysisRunId.parse(preparationRunId))
+              .orElseThrow();
+      AnalysisStepPublicationReference sourceStep01 = sourceOutput.sourcePreparationCheckpoint();
+      assertThat(sourceStep01).isNotNull();
+
+      CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+      CanonicalArtifactPolicyRegistry policies =
+          SourceAnalysisTestPolicyRegistry.load(technicalPolicySet, canonicalJson);
+      ArtifactStoreLimits limits =
+          new ArtifactStoreLimits(64, 64L * 1024L * 1024L, 256L * 1024L * 1024L, 4_096);
+      CanonicalModuleArtifactStore modules =
+          new FileSystemCanonicalModuleArtifactStore(store, canonicalJson, policies, limits);
+      AnalysisRunRequest request =
+          AnalysisRunRequest.technical(
+              sourceOutput.selectedSourceBasis(),
+              new AnalysisRunRequest.TechnicalAnalysisInputs(
+                  AnalysisRunRequest.TechnicalOperation.COLLECT_CODE,
+                  technicalReference("technical-profile", 'a'),
+                  technicalReference("resource-budget", 'b'),
+                  technicalReference("schema-bundle", 'c'),
+                  technicalReference("toolchain", 'd'),
+                  new ArtifactReference(
+                      policies.reference().artifactId(), policies.reference().sha256()),
+                  sourceStep01));
+      AnalysisRunReference queued = RunStoreBootstrap.queueAnalysisRun(store, request);
+      AnalysisRunId runId = queued.runId();
+      r1RunId = runId.value();
+      RunStoreBootstrap.transitionAnalysisRun(
+          store, runId, AnalysisRunLifecycleState.QUEUED, AnalysisRunLifecycleState.RUNNING);
+
+      List<CanonicalModulePayload> readinessPayloads =
+          List.of(
+              standalonePayload(
+                  canonicalJson,
+                  "java-analysis-readiness.json",
+                  "APPLICATION_DISCOVERY_JAVA_ANALYSIS_READINESS",
+                  "java-analysis-readiness-v1",
+                  "java-analysis-readiness",
+                  "{\"readiness\":\"BLOCKED\",\"problems\":[{\"code\":\"JAVA_COMPILATION_INPUT_PROJECT_SETTINGS_UNVERIFIED\",\"detail\":\"Maven evaluated project settings but the effective POM could not be verified\"}]}"),
+              standalonePayload(
+                  canonicalJson,
+                  "java-compilation-environment.json",
+                  "APPLICATION_DISCOVERY_JAVA_COMPILATION_ENVIRONMENT",
+                  "java-compilation-environment-v1",
+                  "java-compilation-environment",
+                  "{\"targetJdkVersion\":\"17\"}"));
+      ArtifactControls controls = artifactControls(request);
+      ModulePublicationReference readiness =
+          installPublisherModule(
+                  modules,
+                  runId,
+                  AnalysisStepKey.APPLICATION_DISCOVERY,
+                  5,
+                  "java-analysis-readiness",
+                  controls,
+                  readinessPayloads)
+              .reference();
+      TechnicalRunOutput blocked =
+          new TechnicalRunOutput(
+              AnalysisRunRequest.TechnicalOperation.COLLECT_CODE,
+              runId,
+              sourceOutput.selectedSourceBasis(),
+              sourceStep01,
+              TechnicalInspectionStatus.CHECKS_COMPLETE,
+              TechnicalContinuationStatus.BLOCKED,
+              readiness,
+              null,
+              null,
+              null,
+              null,
+              null,
+              List.of(
+                  new TechnicalProblemReference(
+                      "JAVA_COMPILATION_INPUT_PROJECT_SETTINGS_UNVERIFIED",
+                      technicalReference("java-analysis-readiness-problem", 'f'))));
+      RunStoreBootstrap.recordAnalysisRunOutput(store, runId, AnalysisRunOutput.technical(blocked));
+      RunStoreBootstrap.transitionAnalysisRun(
+          store, runId, AnalysisRunLifecycleState.RUNNING, AnalysisRunLifecycleState.FAILED);
+      assertThat(RunStoreBootstrap.reopenAnalysisRun(store, runId).lifecycleState())
+          .isEqualTo(AnalysisRunLifecycleState.FAILED);
+      assertThat(
+              RunStoreBootstrap.reopenAnalysisRunOutput(store, runId)
+                  .orElseThrow()
+                  .technicalOutput())
+          .isEqualTo(blocked);
+    }
     Path technicalConfig =
-        writeV2ExternalCollectTechnicalConfig(
+        writeExternalCollectTechnicalConfig(
             preparationRunId,
             runStore,
             preparationWorkspace.resolve("prepared-source-archive"),
-            sourceRoot,
-            ".",
-            official.classpathFile(),
-            official.effectivePomFile(),
-            official.targetJavaHome(),
+            deferredCompilationInput,
             jdtInstallation,
             technicalPolicySet);
-
-    CliResult collected = execute(technicalConfig, "collect-code");
-    assertThat(collected.exitCode()).withFailMessage("stage=%s", collected.stderr()).isEqualTo(3);
-    JsonNode blockedEnvelope = JSON.readTree(collected.stdout());
-    String r1RunId = blockedEnvelope.path("runId").asText();
-    assertThat(r1RunId).matches("analysis-run:[0-9a-f]{64}");
-    assertThat(blockedEnvelope.path("operation").asText()).isEqualTo("COLLECT_CODE");
-    assertThat(blockedEnvelope.path("continuationStatus").asText()).isEqualTo("BLOCKED");
-    assertThat(blockedEnvelope.path("availableOutputs").toString())
-        .contains("JAVA_ANALYSIS_READINESS");
     assertThat(Files.exists(pluginMarker)).isFalse();
     assertThat(Files.exists(launchMarkers)).isFalse();
-    try (RunStoreHandle store = RunStoreBootstrap.open(runStore)) {
-      AnalysisRunId runId = AnalysisRunId.parse(r1RunId);
-      assertThat(RunStoreBootstrap.reopenAnalysisRun(store, runId).lifecycleState())
-          .isEqualTo(AnalysisRunLifecycleState.FAILED);
-      AnalysisRunOutput output =
-          RunStoreBootstrap.reopenAnalysisRunOutput(store, runId).orElseThrow();
-      assertThat(output.technicalOutput()).isNotNull();
-      assertThat(output.technicalOutput().readinessReport()).isNotNull();
-    }
     return new BlockedR1Fixture(
         physicalRoot, runStore, technicalConfig, r1RunId, pluginMarker, launchMarkers);
-  }
-
-  private Path writeReadingMaterialsOnlyTechnicalConfig(
-      String preparationRunId, Path runStore, Path preparedSourceArchive) throws IOException {
-    return writeReadingMaterialsOnlyTechnicalConfig(
-        preparationRunId, runStore, preparedSourceArchive, BASE_TECHNICAL_POLICY_SET);
-  }
-
-  private Path writeReadingMaterialsOnlyTechnicalConfig(
-      String preparationRunId, Path runStore, Path preparedSourceArchive, Path technicalPolicySet)
-      throws IOException {
-    Path config = temporaryDirectory.resolve("technical-reading-materials-only.yaml");
-    String yaml =
-        """
-        schemaVersion: technical-analysis-config-v1
-        source:
-          preparationRunId: %s
-        storage:
-          root: %s
-          preparedSourceArchive: %s
-          sourcePreparationPolicyRegistry: %s
-          artifactPolicyRegistry: %s
-        readingMaterials:
-          maxPacketUtf8Bytes: 4096
-          maxEntriesPerPacket: 100
-        """
-            .formatted(
-                preparationRunId,
-                yamlQuoted(runStore),
-                yamlQuoted(preparedSourceArchive),
-                yamlQuoted(SOURCE_PREPARATION_POLICY_SET),
-                yamlQuoted(technicalPolicySet));
-    Files.writeString(config, yaml, StandardCharsets.UTF_8);
-    return config.toAbsolutePath();
   }
 
   private Path writeTechnicalPolicySet() throws IOException {
@@ -7482,6 +7002,12 @@ class TechnicalAnalysisSourceAdmissionTest {
         errorBytes.toString(StandardCharsets.UTF_8));
   }
 
+  private static List<String> availableOutputNames(JsonNode envelope) {
+    List<String> names = new ArrayList<>();
+    envelope.path("availableOutputs").forEach(value -> names.add(value.asText()));
+    return names;
+  }
+
   private static CliResult executeConfiguredQueryWithoutTools(
       Path configuration,
       String command,
@@ -7554,7 +7080,19 @@ class TechnicalAnalysisSourceAdmissionTest {
   private record ExternalCompilationInputFixture(
       Path compilationInput, Path dependencyJar, Path targetJdkRelease) {}
 
-  private record V2QueuedCompilationFixture(
+  private record QueuedCompilationFixture(
+      Path sourceRoot,
+      Path runStore,
+      Path technicalConfig,
+      Path preparedSourceArchive,
+      Path technicalPolicySet,
+      String preparationRunId,
+      String sourceVersion,
+      SelectedSourceBasis selectedSourceBasis,
+      V2OfficialCompilationOutputs official,
+      AnalysisRunReference queuedRun) {}
+
+  private record V3QueuedCompilationFixture(
       Path sourceRoot,
       Path runStore,
       Path technicalConfig,

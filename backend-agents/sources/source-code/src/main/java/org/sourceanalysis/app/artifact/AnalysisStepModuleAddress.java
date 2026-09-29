@@ -75,7 +75,13 @@ public record AnalysisStepModuleAddress(
         analysisStepKey == AnalysisStepKey.REPOSITORY_KNOWLEDGE
             && moduleNumber == 1
             && "process-explainer".equals(moduleKey);
-    if (!moduleKey.equals(registeredModuleKey) && !readableLegacyProcessCheckpoint) {
+    boolean entryEvidenceProducer =
+        analysisStepKey == AnalysisStepKey.BUSINESS_FLOWS
+            && moduleNumber == 4
+            && "entry-evidence".equals(moduleKey);
+    if (!moduleKey.equals(registeredModuleKey)
+        && !readableLegacyProcessCheckpoint
+        && !entryEvidenceProducer) {
       throw new IllegalArgumentException(
           "module number and key must match the registered analysis module");
     }

@@ -129,6 +129,14 @@ function methodsOf(options) {
   )
 }
 
+function methodProperty(options, name) {
+  const methods = propertyNamed(options, 'methods')
+  if (!methods || methods.value.type !== 'ObjectExpression') return null
+  return methods.value.properties.find(
+    (property) => propertyName(property) === name && property.value && property.value.body,
+  ) || null
+}
+
 function staticDataListUrl(options) {
   const data = propertyNamed(options, 'data')
   if (!data || !data.value || !data.value.body) return null
@@ -283,7 +291,12 @@ function mixinMethodTarget(componentFile, methodName, filesByPath) {
     const mixinFile = filesByPath.get(imported.targetPath)
     const mixinOptions = mixinFile && declaredExport(mixinFile, imported.importedName)
     const method = mixinOptions?.type === 'ObjectExpression' ? methodsOf(mixinOptions).get(methodName) : null
-    if (method) candidates.push({ mixinFile, method, methodName })
+    const sourceUnit = mixinOptions?.type === 'ObjectExpression'
+      ? methodProperty(mixinOptions, methodName)
+      : null
+    if (method && sourceUnit) {
+      candidates.push({ mixinFile, mixinOptions, method, sourceUnit, methodName, mixinUnitName: entry.name })
+    }
   }
   return candidates.length === 1 ? candidates[0] : null
 }
@@ -335,7 +348,7 @@ function axiosBaseUrl(requestFile, exportedAxiosName) {
   }
 }
 
-function getActionPipeline(mixinFile, mixinMethod, filesByPath) {
+function getActionPipeline(mixinFile, mixinOptions, mixinMethod, filesByPath) {
   const candidates = []
   for (const call of callsInFunction(mixinMethod)) {
     if (call.callee.type !== 'Identifier' || call.callee.name !== 'getAction' || call.arguments.length < 1) continue
@@ -369,6 +382,7 @@ function getActionPipeline(mixinFile, mixinMethod, filesByPath) {
         base,
         httpMethod: httpMethod.toUpperCase(),
         rawUrlExpression: sourceTextAt(mixinFile, call.arguments[0]),
+        supportingQueryParamCalls: supportingQueryParamCalls(mixinOptions, mixinMethod),
       })
     }
   }
@@ -391,6 +405,23 @@ function segment(file, node, sourceUnit, sourceUnitKind, fromUnit, toUnit) {
   }
 }
 
+function supportingSourceUnit(file, sourceUnit, sourceUnitKind) {
+  return {
+    sourcePath: file.path,
+    sourceHash: file.sourceHash,
+    sourceUnitRange: sourceRange(sourceUnit),
+    sourceUnitKind,
+  }
+}
+
+function supportingQueryParamCalls(mixinOptions, mixinMethod) {
+  const targetProperty = methodProperty(mixinOptions, 'getQueryParams')
+  if (!targetProperty) return []
+  return callsInFunction(mixinMethod)
+    .filter((call) => memberPath(call.callee) === 'this.getQueryParams')
+    .map((call) => ({ call, target: targetProperty }))
+}
+
 function argumentBindings(call, parameters, sourceFile) {
   return parameters.map((parameter, parameterIndex) => {
     const argument = call.arguments[parameterIndex]
@@ -405,11 +436,11 @@ function argumentBindings(call, parameters, sourceFile) {
   })
 }
 
-function requestObservation({ page, instanceKey, pageCall, pageMethodName, pageMethod, urlOwner, loadCall, loadOwner, loadMethodName, loadMethod, pipeline, bindings }) {
+function requestObservation({ page, instanceKey, pageCall, pageMethodName, pageSourceUnit, urlOwner, loadCall, loadOwner, loadMethodName, loadSourceUnit, pipeline, bindings }) {
   const pageSegment = segment(
     page,
     pageCall,
-    pageMethod,
+    pageSourceUnit,
     'FUNCTION',
     unitId(page, pageMethodName),
     unitId(loadOwner, loadMethodName),
@@ -421,7 +452,7 @@ function requestObservation({ page, instanceKey, pageCall, pageMethodName, pageM
           segment(
             loadOwner,
             loadCall,
-            loadMethod,
+            loadSourceUnit,
             'FUNCTION',
             unitId(loadOwner, loadMethodName),
             unitId(pipeline.mixinFile, pipeline.mixinMethodName),
@@ -441,10 +472,20 @@ function requestObservation({ page, instanceKey, pageCall, pageMethodName, pageM
     wrapperPath: [
       pageSegment,
       ...loadSegment,
+      ...pipeline.supportingQueryParamCalls.map(({ call }) =>
+        segment(
+          pipeline.mixinFile,
+          call,
+          pipeline.mixinMethodSourceUnit,
+          'FUNCTION',
+          unitId(pipeline.mixinFile, pipeline.mixinMethodName),
+          `${pipeline.mixinUnitName}#getQueryParams`,
+        ),
+      ),
       segment(
         pipeline.mixinFile,
         pipeline.getActionCall,
-        pipeline.mixinMethod,
+        pipeline.mixinMethodSourceUnit,
         'FUNCTION',
         unitId(pipeline.mixinFile, pipeline.mixinMethodName),
         unitId(pipeline.manageFile, 'getAction'),
@@ -466,12 +507,16 @@ function requestObservation({ page, instanceKey, pageCall, pageMethodName, pageM
         'axios',
       ),
     ],
+    supportingSourceUnits: pipeline.supportingQueryParamCalls.map(({ target }) =>
+      supportingSourceUnit(pipeline.mixinFile, target, 'FUNCTION'),
+    ),
     argumentBindings: bindings,
   }
 }
 
 function childRequestChains(page, children, filesByPath) {
-  const pageMethods = methodsOf(defaultExportObject(page))
+  const pageOptions = defaultExportObject(page)
+  const pageMethods = methodsOf(pageOptions)
   const observations = []
   for (const childUse of children) {
     const childOptions = defaultExportObject(childUse.child)
@@ -483,28 +528,36 @@ function childRequestChains(page, children, filesByPath) {
         if (!callPath?.startsWith(prefix)) continue
         const childMethodName = callPath.slice(prefix.length)
         const childMethod = childMethods.get(childMethodName)
-        if (!childMethod) continue
+        const childSourceUnit = methodProperty(childOptions, childMethodName)
+        if (!childMethod || !childSourceUnit) continue
         for (const loadCall of callsInFunction(childMethod)) {
           const loadPath = memberPath(loadCall.callee)
           if (!loadPath?.startsWith('this.')) continue
           const loadMethodName = loadPath.slice('this.'.length)
           const mixinTarget = mixinMethodTarget(childUse.child, loadMethodName, filesByPath)
           if (!mixinTarget || !staticDataListUrl(childOptions)) continue
-          const pipeline = getActionPipeline(mixinTarget.mixinFile, mixinTarget.method, filesByPath)
+          const pipeline = getActionPipeline(
+            mixinTarget.mixinFile,
+            mixinTarget.mixinOptions,
+            mixinTarget.method,
+            filesByPath,
+          )
           if (!pipeline) continue
           pipeline.mixinMethodName = mixinTarget.methodName
+          pipeline.mixinUnitName = mixinTarget.mixinUnitName
+          pipeline.mixinMethodSourceUnit = mixinTarget.sourceUnit
           observations.push(
             requestObservation({
               page,
               instanceKey: `${page.path}#${childUse.ref}`,
               pageCall,
               pageMethodName,
-              pageMethod,
+              pageSourceUnit: methodProperty(pageOptions, pageMethodName),
               urlOwner: childUse.child,
               loadCall,
               loadOwner: childUse.child,
               loadMethodName: childMethodName,
-              loadMethod: childMethod,
+              loadSourceUnit: childSourceUnit,
               pipeline,
               bindings: argumentBindings(pageCall, childMethod.params, page),
             }),
@@ -528,21 +581,28 @@ function directPageRequestChains(page, filesByPath) {
       const mixinMethodName = methodPath.slice('this.'.length)
       const mixinTarget = mixinMethodTarget(page, mixinMethodName, filesByPath)
       if (!mixinTarget) continue
-      const pipeline = getActionPipeline(mixinTarget.mixinFile, mixinTarget.method, filesByPath)
+      const pipeline = getActionPipeline(
+        mixinTarget.mixinFile,
+        mixinTarget.mixinOptions,
+        mixinTarget.method,
+        filesByPath,
+      )
       if (!pipeline) continue
       pipeline.mixinMethodName = mixinTarget.methodName
+      pipeline.mixinUnitName = mixinTarget.mixinUnitName
+      pipeline.mixinMethodSourceUnit = mixinTarget.sourceUnit
       observations.push(
         requestObservation({
           page,
           instanceKey: `${page.path}#default`,
           pageCall,
           pageMethodName,
-          pageMethod,
+          pageSourceUnit: methodProperty(options, pageMethodName),
           urlOwner: page,
           loadCall: pageCall,
           loadOwner: page,
           loadMethodName: mixinMethodName,
-          loadMethod: pageMethod,
+          loadSourceUnit: methodProperty(options, pageMethodName),
           pipeline,
           bindings: [],
         }),

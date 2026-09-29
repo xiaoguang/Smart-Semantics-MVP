@@ -1,6 +1,6 @@
 # Java 代码导航
 
-> 2026-09-26旧接线目标：本步骤与Step02组成合并`collect-code`并共用session。2026-09-29已批准的四独立命令目标将后端`collect-code`命名为R2；除来源/保存归属外，明确纳入**现有JDT模块内的逐调用错边修正和外部边界分类**。这是尚未实现的目标，不重开发通用导航/多态裁决、Fact/Proof。 [详细接线](../modules/technical-analysis/cli-and-runtime.md)、[JDT内部合同](../modules/java-code-engines/jdt-engine.md#3-jdtnavigationresolver让jdt决定调用连接谁)。
+> 2026-09-29实施中：本步骤与Step02在只负责后端的`collect-code`（R2）中共用JDT会话，前端另由R1采集。逐调用绑定归属、外部边界和查询失败的窄修正已有直接测试，新Java索引v3的fixture发布／重开也已验证；固定客户源码的具名错边定向测试通过，但全量R2在339入口导航循环后发布失败，没有可验收的Step03索引，不能宣称全量准确性通过。不重开发通用导航/多态裁决、Fact/Proof。[详细接线](../modules/technical-analysis/cli-and-runtime.md)、[JDT内部合同](../modules/java-code-engines/jdt-engine.md#3-jdtnavigationresolver让jdt决定调用连接谁)。
 
 > [总体设计](../DESIGN.md)；固定 key：`program-graphs`，目录：`steps/03-program-graphs/`。本页拥有当前 JDT 导航的职责和验收。历史图算法已退出新生产；保留其历史读取，不要求新运行制造图、Fact 或 Proof。
 

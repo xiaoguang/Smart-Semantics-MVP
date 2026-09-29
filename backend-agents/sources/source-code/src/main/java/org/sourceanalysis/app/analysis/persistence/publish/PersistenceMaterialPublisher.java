@@ -44,10 +44,13 @@ public final class PersistenceMaterialPublisher {
   public static final String FILE_NAME = "persistence-material-index.jsonl";
   public static final String ARTIFACT_TYPE = "PERSISTENCE_MATERIAL_INDEX";
   public static final String SCHEMA_VERSION = "persistence-material-index-v1";
+  public static final String TECHNICAL_SCHEMA_VERSION = "persistence-material-index-v2";
   private static final String MODULE_VERSION = "v1";
   private static final String PRODUCER = "persistence-analysis-v1";
   private static final String TECHNICAL_MODULE_VERSION = "v2";
   private static final String TECHNICAL_PRODUCER = "persistence-analysis-v2";
+  private static final String TECHNICAL_V3_MODULE_VERSION = "v3";
+  private static final String TECHNICAL_V3_PRODUCER = "persistence-analysis-v3";
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final Comparator<String> UTF8_ORDER = PersistenceMaterialPublisher::compareUtf8;
 
@@ -99,7 +102,7 @@ public final class PersistenceMaterialPublisher {
               AnalysisStepKey.PROVEN_CODE_FACTS,
               4,
               "persistence-analysis");
-      CanonicalModulePayload payload = indexPayload(index, PRODUCER);
+      CanonicalModulePayload payload = indexPayload(index, PRODUCER, SCHEMA_VERSION);
       List<ArtifactReference> upstream =
           upstreamPayloadReferences(sourceStep, discoveryStep, navigationStep);
       var module =
@@ -156,6 +159,48 @@ public final class PersistenceMaterialPublisher {
       ArtifactControls r1Controls,
       ArtifactControls r2Controls,
       PersistenceMaterialIndex index) {
+    return publishTechnicalVersioned(
+        destinationRunId,
+        source,
+        discovery,
+        r1Controls,
+        r2Controls,
+        index,
+        TECHNICAL_MODULE_VERSION,
+        TECHNICAL_PRODUCER,
+        SCHEMA_VERSION);
+  }
+
+  /** Installs the v3 technical producer, whose persisted index schema is v2. */
+  public AnalysisStepPublicationReference publishTechnicalV3(
+      org.sourceanalysis.app.artifact.AnalysisRunId destinationRunId,
+      VerifiedSourceInventoryReference source,
+      ApplicationDiscoveryReference discovery,
+      ArtifactControls r1Controls,
+      ArtifactControls r2Controls,
+      PersistenceMaterialIndex index) {
+    return publishTechnicalVersioned(
+        destinationRunId,
+        source,
+        discovery,
+        r1Controls,
+        r2Controls,
+        index,
+        TECHNICAL_V3_MODULE_VERSION,
+        TECHNICAL_V3_PRODUCER,
+        TECHNICAL_SCHEMA_VERSION);
+  }
+
+  private AnalysisStepPublicationReference publishTechnicalVersioned(
+      org.sourceanalysis.app.artifact.AnalysisRunId destinationRunId,
+      VerifiedSourceInventoryReference source,
+      ApplicationDiscoveryReference discovery,
+      ArtifactControls r1Controls,
+      ArtifactControls r2Controls,
+      PersistenceMaterialIndex index,
+      String moduleVersion,
+      String producer,
+      String schemaVersion) {
     try {
       Objects.requireNonNull(destinationRunId, "R2 destination run ID");
       Objects.requireNonNull(source, "verified source inventory");
@@ -178,14 +223,14 @@ public final class PersistenceMaterialPublisher {
       AnalysisStepModuleAddress address =
           new AnalysisStepModuleAddress(
               destinationRunId, AnalysisStepKey.PROVEN_CODE_FACTS, 4, "persistence-analysis");
-      CanonicalModulePayload payload = indexPayload(index, TECHNICAL_PRODUCER);
+      CanonicalModulePayload payload = indexPayload(index, producer, schemaVersion);
       List<ArtifactReference> upstream =
           upstreamPayloadReferences(sourceStep, discoveryStep, navigationStep);
       var module =
           modules.install(
               new ModuleInstallRequest(
                   address,
-                  TECHNICAL_MODULE_VERSION,
+                  moduleVersion,
                   upstream,
                   r2Controls,
                   ModuleCompletionStatus.SUCCEEDED,
@@ -279,11 +324,12 @@ public final class PersistenceMaterialPublisher {
     return reopened;
   }
 
-  private CanonicalModulePayload indexPayload(PersistenceMaterialIndex index, String producer) {
+  private CanonicalModulePayload indexPayload(
+      PersistenceMaterialIndex index, String producer, String schemaVersion) {
     StringBuilder content = new StringBuilder();
     for (IndexRecord record : records(index, producer)) {
       ObjectNode line = JsonNodeFactory.instance.objectNode();
-      line.put("schemaVersion", SCHEMA_VERSION);
+      line.put("schemaVersion", schemaVersion);
       line.put("recordType", record.type());
       line.put("key", record.key());
       line.set("payload", record.payload());
@@ -297,7 +343,7 @@ public final class PersistenceMaterialPublisher {
         ImmutableBytes.copyOf(content.toString().getBytes(StandardCharsets.UTF_8));
     String prefix =
         modules
-            .resolveArtifactPolicy(new ArtifactPolicyKey(ARTIFACT_TYPE, SCHEMA_VERSION))
+            .resolveArtifactPolicy(new ArtifactPolicyKey(ARTIFACT_TYPE, schemaVersion))
             .artifactIdPrefix();
     ArtifactId artifactId =
         ArtifactId.parse(
@@ -306,13 +352,13 @@ public final class PersistenceMaterialPublisher {
                 + sha256(
                     concatenate(
                         frame("canonical-jsonl-artifact-id-v1"),
-                        frame(SCHEMA_VERSION),
+                        frame(schemaVersion),
                         frame(ARTIFACT_TYPE),
                         frame(bytes.copyToByteArray()))));
     return new CanonicalModulePayload(
         FILE_NAME,
         ARTIFACT_TYPE,
-        SCHEMA_VERSION,
+        schemaVersion,
         artifactId,
         CanonicalMediaType.APPLICATION_X_NDJSON,
         bytes);

@@ -9,7 +9,8 @@ public record FrontendHttpIndex(
     List<FrontendEntryLinkRecord> entryLinks,
     List<FrontendDiagnosticRecord> diagnostics,
     Status status,
-    List<FrontendConfigurationFileRecord> configurationFiles) {
+    List<FrontendConfigurationFileRecord> configurationFiles,
+    List<FrontendSupportingSourceUnit> supportingSourceUnits) {
 
   /** Distinguishes an enabled scan with no requests from an explicitly disabled frontend scope. */
   public enum Status {
@@ -38,12 +39,24 @@ public record FrontendHttpIndex(
     this(files, requests, entryLinks, diagnostics, status, List.of());
   }
 
+  /** Retains indexes written before v2 admitted explicit supporting source units. */
+  public FrontendHttpIndex(
+      List<FrontendSourceFileDisposition> files,
+      List<FrontendHttpRequestRecord> requests,
+      List<FrontendEntryLinkRecord> entryLinks,
+      List<FrontendDiagnosticRecord> diagnostics,
+      Status status,
+      List<FrontendConfigurationFileRecord> configurationFiles) {
+    this(files, requests, entryLinks, diagnostics, status, configurationFiles, List.of());
+  }
+
   public FrontendHttpIndex {
     files = List.copyOf(files);
     requests = List.copyOf(requests);
     entryLinks = List.copyOf(entryLinks);
     diagnostics = List.copyOf(diagnostics);
     configurationFiles = List.copyOf(configurationFiles);
+    supportingSourceUnits = List.copyOf(supportingSourceUnits);
     if (status == null) {
       throw new IllegalArgumentException("frontend HTTP index status");
     }

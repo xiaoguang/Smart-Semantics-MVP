@@ -50,6 +50,8 @@ public final class FrontendHttpDiscoverer {
     List<FrontendHttpRequestRecord> requests = new ArrayList<>();
     List<FrontendEntryLinkRecord> entryLinks = new ArrayList<>();
     List<FrontendDiagnosticRecord> diagnostics = new ArrayList<>();
+    Map<SupportingUnitIdentity, FrontendSupportingSourceUnit> supportingSourceUnits =
+        new HashMap<>();
     for (FrontendDiagnosticRecord diagnostic : scan.diagnostics()) {
       validateSourceIdentity(documents, diagnostic.sourcePath(), diagnostic.sourceSha256());
       diagnostics.add(diagnostic);
@@ -65,6 +67,19 @@ public final class FrontendHttpDiscoverer {
             documents, wrapper.sourcePath(), wrapper.sourceSha256(), wrapper.sourceUnitRange());
         requireContains(wrapper.sourceUnitRange(), wrapper.callRange());
       }
+      for (FrontendSupportingSourceUnit supportingUnit : observation.supportingSourceUnits()) {
+        validateSourceIdentity(
+            documents,
+            supportingUnit.sourcePath(),
+            supportingUnit.sourceSha256(),
+            supportingUnit.sourceUnitRange());
+        SupportingUnitIdentity identity = SupportingUnitIdentity.from(supportingUnit);
+        FrontendSupportingSourceUnit previous =
+            supportingSourceUnits.putIfAbsent(identity, supportingUnit);
+        if (previous != null && !previous.equals(supportingUnit)) {
+          throw new FrontendHttpDiscoveryException("SOURCE_OBSERVATION_SOURCE_MISMATCH");
+        }
+      }
       requests.add(project(observation));
       entryLinks.add(link(observation, request));
       if (observation.diagnosticCode() != null) {
@@ -76,7 +91,19 @@ public final class FrontendHttpDiscoverer {
                 observation.requestId()));
       }
     }
-    return new FrontendHttpIndex(files, requests, entryLinks, diagnostics);
+    List<FrontendSupportingSourceUnit> sortedSupportingUnits =
+        supportingSourceUnits.entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .map(Map.Entry::getValue)
+            .toList();
+    return new FrontendHttpIndex(
+        files,
+        requests,
+        entryLinks,
+        diagnostics,
+        FrontendHttpIndex.Status.ENABLED,
+        List.of(),
+        sortedSupportingUnits);
   }
 
   private static Map<String, VerifiedSourceTextDocument> documentsByPath(
@@ -196,6 +223,7 @@ public final class FrontendHttpDiscoverer {
         observation.resolvedPath(),
         observation.requestOrigin(),
         observation.wrapperPath(),
+        observation.supportingSourceUnits(),
         observation.argumentBindings(),
         observation.baseUrlExpression(),
         observation.baseUrlStaticFallback());
@@ -235,5 +263,44 @@ public final class FrontendHttpDiscoverer {
   private static boolean acceptsExactMethod(HttpMethodCondition condition, String method) {
     return condition.kind() == HttpMethodCondition.Kind.EXPLICIT
         && condition.methods().contains(method);
+  }
+
+  private record SupportingUnitIdentity(
+      String sourcePath,
+      String sourceSha256,
+      int startOffsetUtf16,
+      int lengthUtf16,
+      FrontendWrapperCall.SourceUnitKind sourceUnitKind)
+      implements Comparable<SupportingUnitIdentity> {
+
+    private static SupportingUnitIdentity from(FrontendSupportingSourceUnit unit) {
+      return new SupportingUnitIdentity(
+          unit.sourcePath(),
+          unit.sourceSha256(),
+          unit.sourceUnitRange().startOffsetUtf16(),
+          unit.sourceUnitRange().lengthUtf16(),
+          unit.sourceUnitKind());
+    }
+
+    @Override
+    public int compareTo(SupportingUnitIdentity other) {
+      int compared = sourcePath.compareTo(other.sourcePath);
+      if (compared != 0) {
+        return compared;
+      }
+      compared = sourceSha256.compareTo(other.sourceSha256);
+      if (compared != 0) {
+        return compared;
+      }
+      compared = Integer.compare(startOffsetUtf16, other.startOffsetUtf16);
+      if (compared != 0) {
+        return compared;
+      }
+      compared = Integer.compare(lengthUtf16, other.lengthUtf16);
+      if (compared != 0) {
+        return compared;
+      }
+      return sourceUnitKind.compareTo(other.sourceUnitKind);
+    }
   }
 }
