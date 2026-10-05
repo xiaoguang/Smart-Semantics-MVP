@@ -17,10 +17,15 @@ fixed-source acceptance is still in progress. The legacy `plan-materials`/
 `materials-only` producer is retired and rejected before configuration loading;
 historical saved outputs remain readable.
 
-`technical-analysis-artifact-policy-set-v2.json` is the current four-operation
-technical policy, including bounded per-entry evidence files. The v1 technical
-policy and historical `jdt-artifact-policy-set-v1.json` remain for their saved
-receipts; do not replace their registry identities in old configurations.
+`technical-analysis-artifact-policy-set-v3.json` is the current four-operation
+technical policy. It adds the versioned R1 `frontend-http-index-v3` and R4
+entry-evidence-v2 policy families without changing
+`technical-analysis-artifact-policy-set-v2.json`; that v2 file remains the exact
+historical registry for saved receipts. A configuration may list that file under
+`storage.upstreamArtifactPolicyRegistries`, but a saved run reopens only after a
+candidate's complete registry ID and digest equal its saved reference—never as a
+latest-policy fallback. The v1 technical policy and historical
+`jdt-artifact-policy-set-v1.json` likewise retain their saved identities.
 
 The approved handoff requires official Maven `dependency:build-classpath` and
 `help:effective-pom` outputs for the same module/build selection. The user runs
@@ -192,6 +197,49 @@ This command is the historical M10/state-v3 export; it does not convert either
 packet-based Step05 material or new R4 per-entry evidence into Activity input.
 The packet-based Step05 format has its existing direct Activity reader; the new
 R4 format does not yet have one.
+
+### Formal ontology recognition
+
+Copy [ontology.example.yaml](ontology.example.yaml) and the neutral
+[ontology-scope.example.json](ontology-scope.example.json) outside this source tree. Replace every
+absolute storage/policy placeholder in the YAML. The scope example is deliberately not an answer or
+a saved selection: replace its `E1`/`U1` values with the exact aliases from the chosen O0 corpus
+before using it. Its single OBJECT task demonstrates the closed `ontology-scope-v1` shape only.
+
+The optional `modelJobs` declaration keeps the three independent routes `survey`, `extract`, and
+`relate` on a named ChatGPT/Codex subscription provider. It names an environment variable but never
+contains a credential. `reading.maxRequests` is an actual per-O1/O2-run dispatch allowance; it is
+separate from the account authorization required before a provider is initialized and does not carry
+over to another run. O0 preparation and O3 publication dispatch zero model requests.
+
+With an absolute copied configuration, the four formal operations are:
+
+```bash
+source-analysis --config /absolute/ontology.yaml prepare-ontology --evidence-run 'analysis-run:<R4>'
+source-analysis --config /absolute/ontology.yaml identify-ontology --corpus-run 'analysis-run:<O0>' --scope /absolute/ontology-scope.json
+source-analysis --config /absolute/ontology.yaml relate-ontology --selection /absolute/identification-selection.json
+source-analysis --config /absolute/ontology.yaml publish-ontology --selection /absolute/publication-selection.json
+```
+
+`prepare-ontology` reopens the exact saved R4/R0 material and saves an O0 corpus. `identify-ontology`
+uses a scope bound to that corpus; `relate-ontology` and `publish-ontology` use strict selections of
+the saved same-corpus O1/O2 results. New selections are operation-specific
+`ontology-selection-v2` inputs, not Prompt text or business definitions. Use the
+[relation example](ontology-relate-selection.example.json) with explicit per-question
+`objectSources`, and the [publication example](ontology-publish-selection.example.json) with the
+complete explicit O1/O2 upstream lists. A PARTIAL stage is not silently discarded: only its complete
+reviewed tasks may be consumed, while all declared rejected and unprocessed obligations remain in
+coverage. Historical v1 results retain their original reader and are not rewritten. Inspect a saved run and read
+only a closed public artifact key with the existing commands:
+
+```bash
+source-analysis --config /absolute/ontology.yaml inspect --run 'analysis-run:<O0-or-later>'
+source-analysis --config /absolute/ontology.yaml artifact --run 'analysis-run:<O0-or-later>' --key ONTOLOGY_CORPUS --max-bytes 1048576
+```
+
+These commands do not create a second executor, rescan source, or substitute old packet/PoC JSON.
+Their actual result, coverage, and available public keys must be read from `inspect`; an exit code or
+run ID alone is not proof of a completed ontology publication.
 
 ### Explain Activities
 

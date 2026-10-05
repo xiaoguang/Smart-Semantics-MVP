@@ -20,7 +20,9 @@ start 创建 path-free QUEUED run；executeStep 按明确意图经已配置内�
 
 源码准备已通过这五个方法接入PREPARE_SOURCE意图、准备请求分支和output/query key；不增加第二个Agent。字段、轻量配置以及新来源选择以[CLI合同§5](../modules/source-preparation/cli-and-skill.md#5-运行组装及公共接口)和[数据合同](../modules/source-preparation/contracts-and-storage.md)为准。准备分支不要求尚未产生的sourceRegistration或伪Prompt；下列旧v2字段继续严格历史读取，不约束新版准备请求。
 
-原三个技术操作已通过上述Agent保存固定源码结果，当前request v4/output v8。2026-09-29目标增加独立collect-frontend并将匹配放到assemble-materials，形成四操作、request v5/output v9及准确双分支上游，见[技术CLI详细合同](../modules/technical-analysis/cli-and-runtime.md)。新拆分尚未实施，不要求模型配置、不新增Agent方法；validate/trace仍不属于本次实现范围。
+当前四技术操作已通过上述Agent保存固定源码结果；request v5/output v9和准确双分支上游已实现，见[技术CLI合同](../modules/technical-analysis/cli-and-runtime.md)与[最终验收](../supplements/technical-entry-evidence-acceptance-20260929.md)。原三操作v4/v8为历史。技术操作不要求模型配置，未增加Agent方法。
+
+新Ontology属于[总体设计](../DESIGN.md#3-总体接力与分支)独立请求分支，已接通限定工程测试；真实样例尚待验。已新增ONTOLOGY、四执行意图和request v6/output v10，不借旧ANALYSIS的candidateRound、knowledgeCheckpoint或BusinessOutputArtifactKey。存储按repository-knowledge注册独立module2–5，本体输入只新R4+同R0，不做旧分析兼容。精确owner为[本体合同§11](../modules/ontology-recognition/contracts.md#11-版本安装和输入边界)，实施差距见[计划](../plans/ontology-recognition-implementation-plan.md)。下文旧v2/业务checkpoint合同只约束既有路径，不成为本体新输入要求。
 
 完整目标仍保留 validate、trace 两个操作名，未来接入同一 Agent，不是第二 public seam：
 

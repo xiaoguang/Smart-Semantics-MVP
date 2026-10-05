@@ -1,0 +1,4 @@
+Return one closed `ontology-typed-candidate-v3` or `ontology-typed-review-v3` RELATE response.
+Use only the frozen readingPacket and reviewedCatalog. Links and identityDecisions reference actual
+reviewed B object keys. Missing endpoints stay unresolved; only SAME_OBJECT may select an existing
+canonical endpoint. Do not create objects, executable rules, or unstated mechanisms.

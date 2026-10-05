@@ -52,7 +52,12 @@ public record AnalysisStepModuleAddress(
           AnalysisStepKey.FLOW_INTERPRETATION,
           Map.of(10, "business-material-builder", 11, "activity-explainer"),
           AnalysisStepKey.REPOSITORY_KNOWLEDGE,
-          Map.of(1, "business-process-publisher"),
+          Map.of(
+              1, "business-process-publisher",
+              2, "ontology-corpus",
+              3, "ontology-identification",
+              4, "ontology-relations",
+              5, "ontology-publisher"),
           AnalysisStepKey.NINE_SECTION_DOCUMENT,
           Map.of(1, "business-report-publisher"));
 

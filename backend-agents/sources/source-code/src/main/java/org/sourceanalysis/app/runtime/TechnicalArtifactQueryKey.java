@@ -22,6 +22,11 @@ public enum TechnicalArtifactQueryKey {
       "frontend-http-index.jsonl",
       "APPLICATION_DISCOVERY_FRONTEND_HTTP_INDEX",
       "frontend-http-index-v2"),
+  FRONTEND_HTTP_INDEX_V3(
+      PublicationSource.FRONTEND_INDEX,
+      "frontend-http-index.jsonl",
+      "APPLICATION_DISCOVERY_FRONTEND_HTTP_INDEX",
+      "frontend-http-index-v3"),
   APPLICATION_PROFILE(
       PublicationSource.APPLICATION_DISCOVERY,
       "application-profile.json",
@@ -78,11 +83,23 @@ public enum TechnicalArtifactQueryKey {
       "ENTRY_EVIDENCE_INDEX",
       "entry-evidence-index-v1"),
   ENTRY_EVIDENCE(PublicationSource.READING_MATERIALS, null, "ENTRY_EVIDENCE", "entry-evidence-v1"),
+  ENTRY_EVIDENCE_INDEX_V2(
+      PublicationSource.READING_MATERIALS,
+      "entry-evidence-index.json",
+      "ENTRY_EVIDENCE_INDEX",
+      "entry-evidence-index-v2"),
+  ENTRY_EVIDENCE_V2(
+      PublicationSource.READING_MATERIALS, null, "ENTRY_EVIDENCE", "entry-evidence-v2"),
   FRONTEND_EVIDENCE_COVERAGE(
       PublicationSource.READING_MATERIALS,
       "frontend-coverage.jsonl",
       "FRONTEND_EVIDENCE_COVERAGE",
-      "frontend-evidence-coverage-v1");
+      "frontend-evidence-coverage-v1"),
+  FRONTEND_EVIDENCE_COVERAGE_V2(
+      PublicationSource.READING_MATERIALS,
+      "frontend-coverage.jsonl",
+      "FRONTEND_EVIDENCE_COVERAGE",
+      "frontend-evidence-coverage-v2");
 
   private final PublicationSource publicationSource;
   private final String fileName;

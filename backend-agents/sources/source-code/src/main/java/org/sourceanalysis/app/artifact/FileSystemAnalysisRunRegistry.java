@@ -32,6 +32,7 @@ import org.sourceanalysis.app.runtime.AnalysisRunOutput;
 import org.sourceanalysis.app.runtime.AnalysisRunReference;
 import org.sourceanalysis.app.runtime.AnalysisRunRequest;
 import org.sourceanalysis.app.runtime.AnalysisRunRequestReference;
+import org.sourceanalysis.app.runtime.OntologyRunOutput;
 import org.sourceanalysis.app.runtime.PersistedAnalysisRunRequest;
 import org.sourceanalysis.app.runtime.ReaderCandidateRound;
 import org.sourceanalysis.app.runtime.SelectedSourceBasis;
@@ -48,6 +49,7 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   private static final String REQUEST_SCHEMA_V3 = "analysis-run-request-v3";
   private static final String REQUEST_SCHEMA_V4 = "analysis-run-request-v4";
   private static final String REQUEST_SCHEMA_V5 = "analysis-run-request-v5";
+  private static final String REQUEST_SCHEMA_V6 = "analysis-run-request-v6";
   private static final String STATE_SCHEMA = "analysis-run-state-v1";
   private static final String RUN_DIRECTORY = "analysis-runs";
   private static final String REQUEST_FILE = "run-request.json";
@@ -62,6 +64,7 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   private static final String OUTPUT_SCHEMA_V7 = "analysis-run-output-v7";
   private static final String OUTPUT_SCHEMA_V8 = "analysis-run-output-v8";
   private static final String OUTPUT_SCHEMA_V9 = "analysis-run-output-v9";
+  private static final String OUTPUT_SCHEMA_V10 = "analysis-run-output-v10";
   private static final String MATERIALS_ONLY_OUTPUT = "MATERIALS_ONLY";
   private static final String READING_MATERIALS_ONLY_OUTPUT = "READING_MATERIALS_ONLY";
   private static final String STEP05_ACTIVITIES_OUTPUT = "STEP05_ACTIVITIES";
@@ -70,6 +73,7 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   private static final String COMPLETE_REPORT_OUTPUT = "COMPLETE_REPORT";
   private static final String SOURCE_PREPARATION_OUTPUT = "SOURCE_PREPARATION";
   private static final String TECHNICAL_OUTPUT = "TECHNICAL";
+  private static final String ONTOLOGY_OUTPUT = "ONTOLOGY";
   private static final Set<String> REQUEST_V2_FIELDS =
       Set.of(
           "approvedFindingRefs",
@@ -117,6 +121,8 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
       Set.of("requestKind", "schemaVersion", "selectedSourceBasis", "technicalAnalysisInputs");
   private static final Set<String> REQUEST_V5_TECHNICAL_ANALYSIS_FIELDS =
       Set.of("requestKind", "schemaVersion", "selectedSourceBasis", "technicalAnalysisInputs");
+  private static final Set<String> REQUEST_V6_ONTOLOGY_FIELDS =
+      Set.of("requestKind", "schemaVersion", "selectedSourceBasis", "ontologyInputs");
   private static final Set<String> TECHNICAL_ANALYSIS_INPUT_FIELDS =
       Set.of(
           "artifactPolicyRegistryRef",
@@ -134,6 +140,22 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
           "schemaBundleRef",
           "technicalProfileRef",
           "toolchainRef");
+  private static final Set<String> ONTOLOGY_INPUT_FIELDS =
+      Set.of(
+          "operation",
+          "evidencePublication",
+          "ontologyProfileRef",
+          "resourceBudgetRef",
+          "schemaBundleRef",
+          "toolchainRef",
+          "artifactPolicyRegistryRef",
+          "promptBundleRef",
+          "modelBindingRef",
+          "ontologyScopeRef",
+          "ontologySelectionRef",
+          "corpusPublication",
+          "identificationPublications",
+          "relationPublications");
   private static final Set<String> ENTRY_EVIDENCE_PROFILE_FIELDS =
       Set.of("maxEntries", "maxEntryUtf8Bytes", "maxPublicationUtf8Bytes");
   private static final Set<String> SELECTED_SOURCE_BASIS_FIELDS =
@@ -185,6 +207,16 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
           "sourcePreparationReadiness");
   private static final Set<String> TECHNICAL_OUTPUT_FIELDS =
       Set.of("outputKind", "runId", "schemaVersion", "sourceRunId", "technicalOutput");
+  private static final Set<String> ONTOLOGY_OUTPUT_FIELDS =
+      Set.of("outputKind", "runId", "schemaVersion", "sourceRunId", "ontologyOutput");
+  private static final Set<String> ONTOLOGY_RUN_OUTPUT_FIELDS =
+      Set.of(
+          "operation",
+          "outputRunId",
+          "status",
+          "selectedSourceBasis",
+          "evidencePublication",
+          "ontologyPublication");
   private static final Set<String> TECHNICAL_RUN_OUTPUT_FIELDS =
       Set.of(
           "applicationDiscovery",
@@ -499,6 +531,9 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     if (request.requestKind() == AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS) {
       return technicalAnalysisRequestJson(request);
     }
+    if (request.requestKind() == AnalysisRunRequest.RequestKind.ONTOLOGY) {
+      return ontologyRequestJson(request);
+    }
     ObjectNode value = JsonNodeFactory.instance.objectNode();
     value.put("schemaVersion", REQUEST_SCHEMA_V3);
     value.put("requestKind", request.requestKind().name());
@@ -550,6 +585,32 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     reference(technical.putObject("artifactPolicyRegistryRef"), inputs.artifactPolicyRegistryRef());
     analysisStepPublication(
         technical.putObject("upstreamPublication"), inputs.upstreamPublication());
+    return value;
+  }
+
+  private static ObjectNode ontologyRequestJson(AnalysisRunRequest request) {
+    AnalysisRunRequest.OntologyInputs inputs = request.ontologyInputs();
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    value.put("schemaVersion", REQUEST_SCHEMA_V6);
+    value.put("requestKind", AnalysisRunRequest.RequestKind.ONTOLOGY.name());
+    selectedSourceBasis(value.putObject("selectedSourceBasis"), request.selectedSourceBasis());
+    ObjectNode ontology = value.putObject("ontologyInputs");
+    ontology.put("operation", inputs.operation().name());
+    analysisStepPublication(
+        ontology.putObject("evidencePublication"), inputs.evidencePublication());
+    reference(ontology.putObject("ontologyProfileRef"), inputs.ontologyProfileRef());
+    reference(ontology.putObject("resourceBudgetRef"), inputs.resourceBudgetRef());
+    reference(ontology.putObject("schemaBundleRef"), inputs.schemaBundleRef());
+    reference(ontology.putObject("toolchainRef"), inputs.toolchainRef());
+    reference(ontology.putObject("artifactPolicyRegistryRef"), inputs.artifactPolicyRegistryRef());
+    nullableReference(ontology, "promptBundleRef", inputs.promptBundleRef());
+    nullableReference(ontology, "modelBindingRef", inputs.modelBindingRef());
+    nullableReference(ontology, "ontologyScopeRef", inputs.ontologyScopeRef());
+    nullableReference(ontology, "ontologySelectionRef", inputs.ontologySelectionRef());
+    nullableModulePublication(ontology, "corpusPublication", inputs.corpusPublication());
+    modulePublications(
+        ontology.putArray("identificationPublications"), inputs.identificationPublications());
+    modulePublications(ontology.putArray("relationPublications"), inputs.relationPublications());
     return value;
   }
 
@@ -611,6 +672,9 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
   }
 
   private ObjectNode outputJson(AnalysisRunId runId, AnalysisRunOutput output) {
+    if (output.ontologyOutput() != null) {
+      return ontologyOutputJson(runId, output);
+    }
     if (output.technicalOutput() != null) {
       return technicalOutputJson(runId, output);
     }
@@ -622,6 +686,24 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
       value.put("schemaVersion", OUTPUT_SCHEMA_V7);
       selectedSourceBasis(value.putObject("selectedSourceBasis"), output.selectedSourceBasis());
     }
+    return value;
+  }
+
+  private static ObjectNode ontologyOutputJson(AnalysisRunId runId, AnalysisRunOutput output) {
+    OntologyRunOutput ontology = output.ontologyOutput();
+    ObjectNode value = JsonNodeFactory.instance.objectNode();
+    value.put("schemaVersion", OUTPUT_SCHEMA_V10);
+    value.put("runId", runId.value());
+    value.put("sourceRunId", output.sourceRunId().value());
+    value.put("outputKind", ONTOLOGY_OUTPUT);
+    ObjectNode detail = value.putObject("ontologyOutput");
+    detail.put("operation", ontology.operation().name());
+    detail.put("outputRunId", ontology.outputRunId().value());
+    detail.put("status", ontology.status().name());
+    selectedSourceBasis(detail.putObject("selectedSourceBasis"), ontology.selectedSourceBasis());
+    analysisStepPublication(
+        detail.putObject("evidencePublication"), ontology.evidencePublication());
+    modulePublication(detail.putObject("ontologyPublication"), ontology.ontologyPublication());
     return value;
   }
 
@@ -735,6 +817,9 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
 
   private AnalysisRunOutput outputFromJson(AnalysisRunId runId, ObjectNode value) {
     String schemaVersion = requiredText(value, "schemaVersion");
+    if (OUTPUT_SCHEMA_V10.equals(schemaVersion)) {
+      return ontologyOutputFromJson(runId, value);
+    }
     if (OUTPUT_SCHEMA_V8.equals(schemaVersion)) {
       return technicalOutputFromJson(runId, value, AnalysisRunRequest.TechnicalWireVersion.V4);
     }
@@ -789,6 +874,41 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
       throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
     }
     return output;
+  }
+
+  private static AnalysisRunOutput ontologyOutputFromJson(AnalysisRunId runId, ObjectNode value) {
+    requireFields(value, ONTOLOGY_OUTPUT_FIELDS);
+    if (!runId.value().equals(requiredText(value, "runId"))
+        || !ONTOLOGY_OUTPUT.equals(requiredText(value, "outputKind"))) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    JsonNode ontologyValue = value.path("ontologyOutput");
+    if (!(ontologyValue instanceof ObjectNode ontologyNode)) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+    }
+    requireFields(ontologyNode, ONTOLOGY_RUN_OUTPUT_FIELDS);
+    try {
+      OntologyRunOutput ontology =
+          new OntologyRunOutput(
+              AnalysisRunRequest.OntologyOperation.valueOf(requiredText(ontologyNode, "operation")),
+              AnalysisRunId.parse(requiredText(ontologyNode, "outputRunId")),
+              OntologyRunOutput.Status.valueOf(requiredText(ontologyNode, "status")),
+              selectedSourceBasis(ontologyNode.path("selectedSourceBasis")),
+              analysisStepPublication(ontologyNode.path("evidencePublication")),
+              modulePublication(ontologyNode.path("ontologyPublication")));
+      if (!runId.equals(ontology.outputRunId())) {
+        throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+      }
+      AnalysisRunOutput output = AnalysisRunOutput.ontology(ontology);
+      if (!output.sourceRunId().value().equals(requiredText(value, "sourceRunId"))) {
+        throw failure("ANALYSIS_RUN_OUTPUT_INVALID", null);
+      }
+      return output;
+    } catch (RunRegistryException failure) {
+      throw failure;
+    } catch (RuntimeException invalid) {
+      throw failure("ANALYSIS_RUN_OUTPUT_INVALID", invalid);
+    }
   }
 
   private static AnalysisRunOutput technicalOutputFromJson(
@@ -959,6 +1079,18 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
 
   private static boolean outputMatchesRequest(
       AnalysisRunId runId, AnalysisRunRequest request, AnalysisRunOutput output) {
+    if (output.ontologyOutput() != null) {
+      OntologyRunOutput ontology = output.ontologyOutput();
+      return request.requestKind() == AnalysisRunRequest.RequestKind.ONTOLOGY
+          && runId.equals(ontology.outputRunId())
+          && output
+              .sourceRunId()
+              .equals(
+                  ontology.selectedSourceBasis().preparedSource().publication().address().runId())
+          && ontology.selectedSourceBasis().equals(request.selectedSourceBasis())
+          && ontology.operation() == request.ontologyInputs().operation()
+          && ontology.evidencePublication().equals(request.ontologyInputs().evidencePublication());
+    }
     if (output.technicalOutput() != null) {
       TechnicalRunOutput technical = output.technicalOutput();
       return request.requestKind() == AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS
@@ -1137,6 +1269,37 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     return reference;
   }
 
+  private static void nullableModulePublication(
+      ObjectNode parent, String field, ModulePublicationReference reference) {
+    if (reference == null) {
+      parent.putNull(field);
+    } else {
+      modulePublication(parent.putObject(field), reference);
+    }
+  }
+
+  private static ModulePublicationReference nullableModulePublication(JsonNode value) {
+    return value.isNull() ? null : modulePublication(value);
+  }
+
+  private static void modulePublications(
+      ArrayNode values, List<ModulePublicationReference> publications) {
+    for (ModulePublicationReference publication : publications) {
+      modulePublication(values.addObject(), publication);
+    }
+  }
+
+  private static List<ModulePublicationReference> modulePublications(JsonNode values) {
+    if (!values.isArray()) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    List<ModulePublicationReference> publications = new ArrayList<>();
+    for (JsonNode value : values) {
+      publications.add(modulePublication(value));
+    }
+    return List.copyOf(publications);
+  }
+
   private static void nullableTechnicalModulePublication(
       ObjectNode parent, String field, ModulePublicationReference reference) {
     if (reference == null) {
@@ -1246,6 +1409,9 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
     if (REQUEST_SCHEMA_V5.equals(schemaVersion)) {
       return technicalAnalysisV5RequestFromJson(value);
     }
+    if (REQUEST_SCHEMA_V6.equals(schemaVersion)) {
+      return ontologyRequestFromJson(value);
+    }
     if (!REQUEST_SCHEMA_V3.equals(schemaVersion)) {
       throw failure("ANALYSIS_RUN_STORE_INVALID", null);
     }
@@ -1278,6 +1444,43 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
           approvedFindings(value.path("approvedFindingRefs")));
     }
     throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+  }
+
+  private static AnalysisRunRequest ontologyRequestFromJson(ObjectNode value) {
+    requireFields(value, REQUEST_V6_ONTOLOGY_FIELDS);
+    if (!AnalysisRunRequest.RequestKind.ONTOLOGY
+        .name()
+        .equals(requiredText(value, "requestKind"))) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    JsonNode inputsValue = value.path("ontologyInputs");
+    if (!(inputsValue instanceof ObjectNode inputs)) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", null);
+    }
+    requireFields(inputs, ONTOLOGY_INPUT_FIELDS);
+    try {
+      return AnalysisRunRequest.ontology(
+          selectedSourceBasis(value.path("selectedSourceBasis")),
+          new AnalysisRunRequest.OntologyInputs(
+              AnalysisRunRequest.OntologyOperation.valueOf(requiredText(inputs, "operation")),
+              analysisStepPublication(inputs.path("evidencePublication")),
+              artifactReference(inputs.path("ontologyProfileRef")),
+              artifactReference(inputs.path("resourceBudgetRef")),
+              artifactReference(inputs.path("schemaBundleRef")),
+              artifactReference(inputs.path("toolchainRef")),
+              artifactReference(inputs.path("artifactPolicyRegistryRef")),
+              nullableArtifactReference(inputs.path("promptBundleRef")),
+              nullableArtifactReference(inputs.path("modelBindingRef")),
+              nullableArtifactReference(inputs.path("ontologyScopeRef")),
+              nullableArtifactReference(inputs.path("ontologySelectionRef")),
+              nullableModulePublication(inputs.path("corpusPublication")),
+              modulePublications(inputs.path("identificationPublications")),
+              modulePublications(inputs.path("relationPublications"))));
+    } catch (RunRegistryException failure) {
+      throw failure;
+    } catch (RuntimeException invalid) {
+      throw failure("ANALYSIS_RUN_STORE_INVALID", invalid);
+    }
   }
 
   private static AnalysisRunRequest technicalAnalysisRequestFromJson(ObjectNode value) {
@@ -1642,6 +1845,7 @@ final class FileSystemAnalysisRunRegistry implements AnalysisRunRegistry {
                   : "analysis-run-request-id-v3";
           case SOURCE_PREPARATION -> "analysis-run-request-id-v3";
           case TECHNICAL_ANALYSIS -> "analysis-run-request-id-v4";
+          case ONTOLOGY -> "analysis-run-request-id-v6";
         };
     return new AnalysisRunRequestReference(
         ArtifactId.parse("run-request:" + sha256(frame(framing), frame(requestBytes))),

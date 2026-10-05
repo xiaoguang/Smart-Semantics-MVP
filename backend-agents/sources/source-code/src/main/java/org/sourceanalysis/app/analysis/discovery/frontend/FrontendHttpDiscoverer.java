@@ -47,6 +47,8 @@ public final class FrontendHttpDiscoverer {
     List<FrontendSourceFileDisposition> files = validateFileDispositions(request, scan, documents);
     List<FrontendRequestObservation> observations =
         scan.requestObservations().stream().sorted(OBSERVATION_ORDER).toList();
+    List<FrontendPageContext> pageContexts =
+        validatePageContexts(scan.pageContexts(), observations, documents);
     List<FrontendHttpRequestRecord> requests = new ArrayList<>();
     List<FrontendEntryLinkRecord> entryLinks = new ArrayList<>();
     List<FrontendDiagnosticRecord> diagnostics = new ArrayList<>();
@@ -103,7 +105,42 @@ public final class FrontendHttpDiscoverer {
         diagnostics,
         FrontendHttpIndex.Status.ENABLED,
         List.of(),
-        sortedSupportingUnits);
+        sortedSupportingUnits,
+        pageContexts);
+  }
+
+  private static List<FrontendPageContext> validatePageContexts(
+      List<FrontendPageContext> supplied,
+      List<FrontendRequestObservation> observations,
+      Map<String, VerifiedSourceTextDocument> documents) {
+    Map<String, FrontendRequestObservation> requests = new HashMap<>();
+    for (FrontendRequestObservation observation : observations) {
+      if (requests.put(observation.requestId(), observation) != null) {
+        throw new FrontendHttpDiscoveryException("FRONTEND_PAGE_CONTEXT_INVALID");
+      }
+    }
+    Map<String, FrontendPageContext> contexts = new HashMap<>();
+    for (FrontendPageContext context : supplied) {
+      validateSourceIdentity(documents, context.pagePath(), context.sourceSha256());
+      if (contexts.put(context.contextId(), context) != null) {
+        throw new FrontendHttpDiscoveryException("FRONTEND_PAGE_CONTEXT_INVALID");
+      }
+      for (FrontendPageSourceUnit unit : context.sourceUnits()) {
+        validateSourceIdentity(
+            documents, unit.sourcePath(), unit.sourceSha256(), unit.sourceUnitRange());
+      }
+      for (String requestId : context.requestIds()) {
+        FrontendRequestObservation request = requests.get(requestId);
+        if (request == null
+            || !context.pagePath().equals(request.pagePath())
+            || !context.sourceSha256().equals(request.sourceSha256())) {
+          throw new FrontendHttpDiscoveryException("FRONTEND_PAGE_CONTEXT_INVALID");
+        }
+      }
+    }
+    return contexts.values().stream()
+        .sorted(Comparator.comparing(FrontendPageContext::contextId))
+        .toList();
   }
 
   private static Map<String, VerifiedSourceTextDocument> documentsByPath(

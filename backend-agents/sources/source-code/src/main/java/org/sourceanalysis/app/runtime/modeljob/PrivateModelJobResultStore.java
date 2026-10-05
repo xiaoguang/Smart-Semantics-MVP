@@ -733,7 +733,8 @@ public final class PrivateModelJobResultStore {
   }
 
   private static void requireAttemptRecordName(String recordName) {
-    if (!Set.of("request", "started", "response", "validation", "outcome").contains(recordName)) {
+    if (!Set.of("request", "started", "response", "validation", "outcome", "state")
+        .contains(recordName)) {
       throw new IllegalArgumentException("model job stage record name is invalid");
     }
   }

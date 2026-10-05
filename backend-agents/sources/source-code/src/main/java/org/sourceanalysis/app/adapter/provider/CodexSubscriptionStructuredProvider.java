@@ -9,6 +9,11 @@ import org.sourceanalysis.app.artifact.ImmutableBytes;
 /** Uses the logged-in local Codex Subscription only for one bounded structured response. */
 public final class CodexSubscriptionStructuredProvider implements StructuredModelProvider {
 
+  // Private model records are capped at 32 MiB. Retaining at most 16 MiB leaves room for the
+  // base64 envelope and the rest of the bounded formal outcome without pretending a truncated
+  // response is complete.
+  private static final int FORMAL_PRIVATE_FAILURE_OUTPUT_MAX_BYTES = 16 * 1024 * 1024;
+
   private final CodexSubscriptionProfile profile;
   private final CodexSubscriptionCommand command;
   private final CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
@@ -29,10 +34,22 @@ public final class CodexSubscriptionStructuredProvider implements StructuredMode
   public StructuredModelResponse generate(StructuredModelRequest request) {
     Objects.requireNonNull(request, "structured model request");
     String prompt = prompt(request);
-    ImmutableBytes actualResponse = command.execute(profile, prompt, request.outputJsonSchema());
+    ImmutableBytes actualResponse =
+        request.requestedMaxOutputTokens() == null
+            ? command.execute(profile, prompt, request.outputJsonSchema())
+            : command.execute(
+                profile,
+                prompt,
+                request.outputJsonSchema(),
+                FORMAL_PRIVATE_FAILURE_OUTPUT_MAX_BYTES);
     if (actualResponse.size() > request.maxOutputBytes()) {
       throw new StructuredModelProviderFailure(
-          "RESPONSE_BUDGET_EXCEEDED", true, true, "CODEX_SUBSCRIPTION_RESPONSE_TOO_LARGE", null);
+          "RESPONSE_BUDGET_EXCEEDED",
+          true,
+          true,
+          "CODEX_SUBSCRIPTION_RESPONSE_TOO_LARGE",
+          null,
+          formalFailureOutput(request, actualResponse));
     }
     ImmutableBytes canonicalResponse;
     try {
@@ -44,12 +61,35 @@ public final class CodexSubscriptionStructuredProvider implements StructuredMode
           true,
           "CODEX_SUBSCRIPTION_RESPONSE_INVALID_JSON",
           invalidJson,
-          actualResponse);
+          invalidJsonFailureOutput(request, actualResponse));
     }
     return new StructuredModelResponse(
         canonicalResponse,
         new ModelRuntimeIdentityV1(
             "codex_subscription", profile.model(), profile.reasoningEffort(), "read-only"));
+  }
+
+  /**
+   * Only the explicit formal ontology request profile opts into private evidence preservation.
+   * Legacy six-field response-budget requests retain their historical null failure output, and
+   * oversized bytes are never truncated into an apparently complete record.
+   */
+  private static ImmutableBytes formalFailureOutput(
+      StructuredModelRequest request, ImmutableBytes actualResponse) {
+    if (request.requestedMaxOutputTokens() == null
+        || actualResponse.size() > FORMAL_PRIVATE_FAILURE_OUTPUT_MAX_BYTES) {
+      return null;
+    }
+    return actualResponse;
+  }
+
+  private static ImmutableBytes invalidJsonFailureOutput(
+      StructuredModelRequest request, ImmutableBytes actualResponse) {
+    // INVALID_JSON already retained raw output for legacy callers. Keep that established behavior
+    // intact while applying the formal profile's private-record bound to its new typed requests.
+    return request.requestedMaxOutputTokens() == null
+        ? actualResponse
+        : formalFailureOutput(request, actualResponse);
   }
 
   private static String prompt(StructuredModelRequest request) {

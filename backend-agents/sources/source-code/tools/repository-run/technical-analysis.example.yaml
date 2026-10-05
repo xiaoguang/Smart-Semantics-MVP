@@ -8,7 +8,12 @@ storage:
   root: /absolute/path/to/analysis/store
   preparedSourceArchive: /absolute/path/to/prepared-source-archive
   sourcePreparationPolicyRegistry: /absolute/path/to/source-code/tools/repository-run/source-preparation-artifact-policy-set-v1.json
-  artifactPolicyRegistry: /absolute/path/to/source-code/tools/repository-run/technical-analysis-artifact-policy-set-v2.json
+  # New R1-v3/R4-v2 installation uses this registry.
+  artifactPolicyRegistry: /absolute/path/to/source-code/tools/repository-run/technical-analysis-artifact-policy-set-v3.json
+  # Optional, explicit historical registries. A saved run reopens only when one file's complete
+  # artifact-policy-registry ID and digest equal its saved reference; this is not a latest fallback.
+  upstreamArtifactPolicyRegistries:
+    - /absolute/path/to/source-code/tools/repository-run/technical-analysis-artifact-policy-set-v2.json
 java:
   compilationInput:
     projectDirectory: /absolute/path/to/fixed-source-copy

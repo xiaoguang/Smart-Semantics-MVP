@@ -1,12 +1,12 @@
 # 按入口组装最终技术证据
 
-状态：2026-09-29实施中。既有v1/v2阅读包及读取器保留；新R4的每后端entryId一份自包含JSON，已通过正式CLI／Agent／存储的同源离线fixture发布和重开，不以12入口/Markdown字节数合包。固定源码新R1、R2、R3均已保存并严格重开；R4已生成339份入口文件和51条前端请求处置，但最终可移植源码位置修正仍在复验，不能宣布全量证据验收通过。旧R3的47包、339入口处置、51前端处置只描述历史结果，不能与新R4混用。
+状态：2026-09-29工程与固定源码技术交付已完成，详见[最终验收](../supplements/technical-entry-evidence-acceptance-20260929.md)。新R4每后端entryId一份自包含JSON，正式CLI／Agent／存储发布、重开、可移植源码位置和artifact查询已验证；最终339份入口文件、51条前端请求处置。运行时地址、全量逐边准确性和长等待根因仍有限制，不以技术交付声称它们都已解决。旧47包属于历史，不覆盖当前R4。
 
 固定key仍为business-flows，目录仍为steps/05-business-flows；owner为analysis.material，不新增Flow/Fact/Proof或业务推理。完整字段、文件和容量合同唯一归属[入口证据详细设计](../modules/technical-analysis/entry-evidence.md)，命令与版本归[运行合同](../modules/technical-analysis/cli-and-runtime.md)。
 
 ## 1. 输入
 
-目标命令：
+当前命令：
 
 ```text
 source-analysis --config <technical-v3.yaml> assemble-materials
@@ -43,7 +43,8 @@ frontend-coverage.jsonl
 
 - **技术消费者**从总索引查entryId并读该JSON，不必手工连五份上游文件，也不解析Markdown。
 - **artifact/inspect**按准确R4和版本查询，未安装结果不返回虚构路径；按需技术Markdown不再是默认主数据。
-- **Activity/Step07**尚未适配本格式；模型初始化前明确拒绝。此前418条Activity消费的是另一份历史Step05 v1，不得把“旧版可消费”说成“新版已接通”。
+- **新Ontology分支（待实现）**只直接消费新R4及同R0原文，不接旧分析。详见[设计](../modules/ontology-recognition/README.md)和[实施计划](../plans/ontology-recognition-implementation-plan.md)。
+- **旧Activity/Process路由**未适配本格式；模型初始化前明确拒绝。此前418条Activity消费的是历史Step05 v1，不得把旧版消费说成R4接通；本体不补这项兼容。
 - **历史reader**继续按准确v1/v2重开旧Packet、旧Markdown和上游，不重写旧选择、ID或覆盖。
 
 自包含意味着本文件保存已声明范围的完整正文；不是工具已经证明每个Vue入口都能连到SQL。不经过SQL的后端入口、未匹配页面、正常外部边界和工具未知均合法存在，但状态必须区分。
@@ -86,4 +87,4 @@ frontend-coverage.jsonl
 
 历史2026-09-18后端材料为325包/326入口、1个导航缺口，后来用于418条Activity；保留[历史验收](../supplements/jdt-persistence-reading-materials-delivery.md)。
 2026-09-28技术v2旧R3为47包/339入口/51前端处置，采购查询材料已保存，2条前端请求容量未选，Java准确性尚未通过，见[固定源码验收](../supplements/technical-analysis-fixed-source-acceptance.md)。
-2026-09-29的新四命令/逐入口JSON已通过同源离线fixture的正式CLI、Agent、存储、重开测试；首次固定源码R2在339入口导航循环后发布失败，修正后新的R2、R3和R4已完成。R4首次发布仍含JDT临时工作区绝对URI，后续投影又将大量已知源码位置标为未确认；最终修正及全量准确性验收尚未完成。不得用已结束但有缺陷的运行或fixture替代最终验收，进度以[本轮验收记录](../supplements/technical-entry-evidence-acceptance-20260929.md)为准。
+2026-09-29最终四命令及R4已按[最终验收](../supplements/technical-entry-evidence-acceptance-20260929.md)交付。此前曾出现R2发布失败、R4绝对URI及位置投影问题，属于已记录的中间失败，不能仍写成当前未完成；也不能删除这些历史失败。具名准确性检查和技术交付通过，不等于全量每条调用关系均获语义证明。新本体consumer及其自动选材/语义验收尚未实施。

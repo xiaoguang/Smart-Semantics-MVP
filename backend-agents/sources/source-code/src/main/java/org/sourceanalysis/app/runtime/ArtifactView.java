@@ -8,6 +8,7 @@ public record ArtifactView(
     AnalysisRunId runId,
     BusinessOutputArtifactKey businessOutputArtifactKey,
     TechnicalArtifactQueryKey technicalArtifactQueryKey,
+    OntologyArtifactQueryKey ontologyArtifactQueryKey,
     ArtifactReference immutableReference,
     String schemaVersion,
     String mediaType,
@@ -21,9 +22,31 @@ public record ArtifactView(
         || mediaType == null
         || mediaType.isBlank()
         || contentUtf8 == null
-        || (businessOutputArtifactKey == null) == (technicalArtifactQueryKey == null)) {
+        || selectedBranches(
+                businessOutputArtifactKey, technicalArtifactQueryKey, ontologyArtifactQueryKey)
+            != 1) {
       throw new IllegalArgumentException("artifact view is invalid");
     }
+  }
+
+  /** Preserves callers compiled against the business/technical seven-component wire shape. */
+  public ArtifactView(
+      AnalysisRunId runId,
+      BusinessOutputArtifactKey businessOutputArtifactKey,
+      TechnicalArtifactQueryKey technicalArtifactQueryKey,
+      ArtifactReference immutableReference,
+      String schemaVersion,
+      String mediaType,
+      String contentUtf8) {
+    this(
+        runId,
+        businessOutputArtifactKey,
+        technicalArtifactQueryKey,
+        null,
+        immutableReference,
+        schemaVersion,
+        mediaType,
+        contentUtf8);
   }
 
   /** Preserves the historical business-view construction contract. */
@@ -37,6 +60,7 @@ public record ArtifactView(
     this(
         runId,
         businessOutputArtifactKey,
+        null,
         null,
         immutableReference,
         schemaVersion,
@@ -56,9 +80,36 @@ public record ArtifactView(
         runId,
         null,
         technicalArtifactQueryKey,
+        null,
         immutableReference,
         schemaVersion,
         mediaType,
         contentUtf8);
+  }
+
+  /** Creates the mutually exclusive ontology-view branch. */
+  public static ArtifactView ontology(
+      AnalysisRunId runId,
+      OntologyArtifactQueryKey ontologyArtifactQueryKey,
+      ArtifactReference immutableReference,
+      String schemaVersion,
+      String mediaType,
+      String contentUtf8) {
+    return new ArtifactView(
+        runId,
+        null,
+        null,
+        ontologyArtifactQueryKey,
+        immutableReference,
+        schemaVersion,
+        mediaType,
+        contentUtf8);
+  }
+
+  private static int selectedBranches(
+      BusinessOutputArtifactKey business,
+      TechnicalArtifactQueryKey technical,
+      OntologyArtifactQueryKey ontology) {
+    return (business == null ? 0 : 1) + (technical == null ? 0 : 1) + (ontology == null ? 0 : 1);
   }
 }

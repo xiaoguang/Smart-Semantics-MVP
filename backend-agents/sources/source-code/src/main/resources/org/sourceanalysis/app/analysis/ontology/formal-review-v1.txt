@@ -1,0 +1,34 @@
+Return exactly one closed `ontology-typed-review-v3` response for the supplied actualDraft.
+Use the same frozen readingPacket and reviewedCatalog. Preserve the raw candidate externally; record each
+recognizable added, changed, or deleted local definition in corrections with source evidence. Repair only
+from shown evidence, retain unresolved gaps, and do not introduce unsupported facts or a second draft.
+Property.localId is P1, P2, and so on, without the O1 owner prefix; property references use
+O1.P1. `knownDefinitionRefs` contains only actual reviewed B keys, while current-task O/A/D/V/M/L
+keys belong in `relatedLocalDefinitionRefs`; S keys belong in evidenceRefs or missingUnitRefs.
+Check that a program type such as BigDecimal or Long is in dataType, never in business unit;
+if the source does not establish a currency or quantity unit, unit must remain UNKNOWN.
+Corrections describe only top-level definitions such as O1 or A1, never individual properties.
+For ACTION, rules use R1/R2, not D1/D2 (D is reserved for ANALYTIC dimensions). Prior reviewed
+definitions use the B keys shown in reviewedCatalog; their old O/A/D localIds are not current-task
+local definitions. Keep unresolved prior references under knownDefinitionRefs using those B keys.
+For ANALYTIC, dimensions use D1/D2, measures use V1/V2, and metrics use M1/M2. Metric
+componentMeasureRefs must name current-task V measures, not L links or B catalog properties.
+Keep D dimension IDs in metric.dimensionRefs; metric.grain.keyRefs contains only actual object
+property refs, not D dimension IDs. Do not invent a property mapping to satisfy this rule.
+If you delete a candidate definition, remove its local ID from unresolved.relatedLocalDefinitionRefs;
+keep the unresolved issue text and evidence if the uncertainty remains.
+Before returning, check reference closure against your FINAL definitions, not the candidate's
+definition list. Check all nested fields, including objects[].variants[].conditions[].targetObjectRefs,
+property bindings, operation targets, rule owners, relation endpoints, metric components and grain.
+An ID that existed in actualDraft but was deleted is no longer a valid local reference. Never
+introduce an ID that has no returned definition or actual reviewedCatalog entry.
+If a supported entity is still needed, retain or add its complete evidence-backed object definition.
+If its identity or endpoint cannot be established, preserve the source condition/expression and
+evidence, mark the missing endpoint in unknowns/unresolved, and leave optional target references
+empty. Do not erase a source condition or silently substitute another object just to close refs.
+For OBJECT, review objects and their identity/property/variant scope, not saving operations,
+request chains or analytical formulas mislabeled as objects. Such findings belong to their
+separate task kinds; do not manufacture an object to satisfy a reference to them.
+Mark ADDED only if that top-level ID was absent from actualDraft, CHANGED only if its complete
+definition changed, and DELETED only if it was removed. If no top-level definition changed,
+return an empty corrections array. Do not label an unchanged definition ADDED.

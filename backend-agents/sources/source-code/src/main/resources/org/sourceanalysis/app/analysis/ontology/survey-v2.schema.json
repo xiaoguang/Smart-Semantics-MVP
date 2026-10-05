@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "systemHypotheses", "questions", "unresolved"],
+  "$defs": {
+    "viewRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["viewId", "ref"],
+      "properties": {
+        "viewId": {"type": "string", "minLength": 1},
+        "ref": {"type": "string", "minLength": 1}
+      }
+    }
+  },
+  "properties": {
+    "schemaVersion": {"const": "ontology-survey-v2"},
+    "systemHypotheses": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["type", "observedEntryRefs", "uncertainty"],
+        "properties": {
+          "type": {"type": "string", "minLength": 1},
+          "observedEntryRefs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/viewRef"}},
+          "uncertainty": {"type": "string"}
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["questionId", "question", "candidateEntryRefs", "clueRefs", "searchTerms"],
+        "properties": {
+          "questionId": {"type": "string", "pattern": "^Q[0-9]+$"},
+          "question": {"type": "string", "minLength": 1},
+          "candidateEntryRefs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/viewRef"}},
+          "clueRefs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/viewRef"}},
+          "searchTerms": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "unresolved": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  }
+}

@@ -20,6 +20,8 @@ import org.sourceanalysis.app.analysis.discovery.HttpMethodCondition;
 import org.sourceanalysis.app.analysis.discovery.frontend.FrontendEntryLinkRecord;
 import org.sourceanalysis.app.analysis.discovery.frontend.FrontendHttpIndex;
 import org.sourceanalysis.app.analysis.discovery.frontend.FrontendHttpRequestRecord;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendPageContext;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendPageSourceUnit;
 import org.sourceanalysis.app.analysis.discovery.frontend.FrontendSourceUnits;
 import org.sourceanalysis.app.analysis.discovery.frontend.FrontendSupportingSourceUnit;
 import org.sourceanalysis.app.analysis.discovery.frontend.FrontendWrapperCall;
@@ -95,7 +97,8 @@ public final class EntryEvidenceAssembler {
             request.frontendIndex().diagnostics(),
             request.profile()),
         result,
-        frontend.coverage());
+        frontend.coverage(),
+        frontend.pageContextCoverage());
   }
 
   private static void requireInputClosure(EntryEvidenceRequest request) {
@@ -111,6 +114,7 @@ public final class EntryEvidenceAssembler {
     if (request.frontendIndex().status() == FrontendHttpIndex.Status.DISABLED
         && (!request.frontendIndex().requests().isEmpty()
             || !request.frontendIndex().supportingSourceUnits().isEmpty()
+            || !request.frontendIndex().pageContexts().isEmpty()
             || !request.frontendSourceUnits().units().isEmpty())) {
       throw new IllegalArgumentException("ENTRY_EVIDENCE_DISABLED_FRONTEND_IS_NOT_EMPTY");
     }
@@ -685,11 +689,21 @@ public final class EntryEvidenceAssembler {
       List<HttpEntryPoint> entries,
       List<EntryEvidenceHttpMapping> mappings) {
     Map<String, FrontendSelection> selections = new LinkedHashMap<>();
+    Map<String, FrontendPageContext> pageContextsById = new LinkedHashMap<>();
+    for (FrontendPageContext context : index.pageContexts()) {
+      if (pageContextsById.putIfAbsent(context.contextId(), context) != null) {
+        throw new IllegalArgumentException("ENTRY_EVIDENCE_DUPLICATE_PAGE_CONTEXT");
+      }
+    }
     for (HttpEntryPoint entry : entries) {
       selections.put(
           entry.entryId().value(),
           new FrontendSelection(
-              new ArrayList<>(), new ArrayList<>(), new LinkedHashMap<>(), new ArrayList<>()));
+              new ArrayList<>(),
+              new ArrayList<>(),
+              new LinkedHashMap<>(),
+              new LinkedHashMap<>(),
+              new ArrayList<>()));
     }
     if (index.status() == FrontendHttpIndex.Status.DISABLED) {
       for (FrontendSelection selection : selections.values()) {
@@ -702,7 +716,9 @@ public final class EntryEvidenceAssembler {
                     "frontend discovery was explicitly disabled for this R1"));
       }
       return new FrontendDisposition(
-          finalizeSelections(selections, EntryEvidenceSet.FrontendStatus.DISABLED), List.of());
+          finalizeSelections(selections, EntryEvidenceSet.FrontendStatus.DISABLED),
+          List.of(),
+          List.of());
     }
 
     List<EntryEvidenceSet.FrontendCoverage> coverage = new ArrayList<>();
@@ -718,15 +734,22 @@ public final class EntryEvidenceAssembler {
           units.reason() == null ? match.reason() : joinReasons(match.reason(), units.reason());
       List<String> sourceUnitIds =
           units.units().stream().map(FrontendSourceUnits.Unit::sourceUnitId).toList();
+      List<String> pageContextIds =
+          index.pageContexts().stream()
+              .filter(context -> context.requestIds().contains(request.requestId()))
+              .map(FrontendPageContext::contextId)
+              .sorted(UTF8_ORDER)
+              .toList();
       EntryEvidenceSet.RequestUse use =
           new EntryEvidenceSet.RequestUse(
-              request, match.resolution(), candidateIds, sourceUnitIds, reason);
+              request, match.resolution(), candidateIds, sourceUnitIds, pageContextIds, reason);
       List<String> included = new ArrayList<>();
       if (match.resolution() == FrontendEntryLinkRecord.Resolution.MATCHED_UNIQUE
           && reason == null) {
         String entryId = candidateIds.get(0);
         FrontendSelection selection = selections.get(entryId);
         selection.uses().add(use);
+        addPageContexts(selection, pageContextIds, pageContextsById, sourceUnits);
         units.units().forEach(unit -> selection.units().putIfAbsent(unit.sourceUnitId(), unit));
         included.add(entryId);
       } else if (match.resolution() == FrontendEntryLinkRecord.Resolution.MATCHED_MULTIPLE
@@ -735,6 +758,7 @@ public final class EntryEvidenceAssembler {
         for (String entryId : candidateIds) {
           FrontendSelection selection = selections.get(entryId);
           selection.candidateUses().add(use);
+          addPageContexts(selection, pageContextIds, pageContextsById, sourceUnits);
           units.units().forEach(unit -> selection.units().putIfAbsent(unit.sourceUnitId(), unit));
           selection
               .limitations()
@@ -749,6 +773,7 @@ public final class EntryEvidenceAssembler {
         String entryId = candidateIds.get(0);
         FrontendSelection selection = selections.get(entryId);
         selection.candidateUses().add(use);
+        addPageContexts(selection, pageContextIds, pageContextsById, sourceUnits);
         units.units().forEach(unit -> selection.units().putIfAbsent(unit.sourceUnitId(), unit));
         selection
             .limitations()
@@ -764,9 +789,66 @@ public final class EntryEvidenceAssembler {
               candidateIds,
               included,
               units.units(),
+              pageContextIds,
               reason));
     }
-    return new FrontendDisposition(finalizeSelections(selections, null), List.copyOf(coverage));
+    return new FrontendDisposition(
+        finalizeSelections(selections, null),
+        List.copyOf(coverage),
+        pageContextCoverage(index, sourceUnits, selections));
+  }
+
+  private static List<EntryEvidenceSet.FrontendPageContextCoverage> pageContextCoverage(
+      FrontendHttpIndex index,
+      FrontendSourceUnits sourceUnits,
+      Map<String, FrontendSelection> selections) {
+    return index.pageContexts().stream()
+        .sorted(Comparator.comparing(FrontendPageContext::contextId, UTF8_ORDER))
+        .map(
+            context -> {
+              List<FrontendSourceUnits.Unit> units = pageContextSourceUnits(context, sourceUnits);
+              List<String> includedEntryIds =
+                  selections.entrySet().stream()
+                      .filter(
+                          entry -> entry.getValue().pageContexts().containsKey(context.contextId()))
+                      .map(Map.Entry::getKey)
+                      .sorted(UTF8_ORDER)
+                      .toList();
+              boolean requestMembership = !context.requestIds().isEmpty();
+              return new EntryEvidenceSet.FrontendPageContextCoverage(
+                  context.contextId(),
+                  context,
+                  units,
+                  includedEntryIds,
+                  requestMembership
+                      ? EntryEvidenceSet.FrontendPageContextCoverage.Disposition.REQUEST_MEMBERSHIP
+                      : EntryEvidenceSet.FrontendPageContextCoverage.Disposition
+                          .NO_REQUEST_MEMBERSHIP,
+                  requestMembership ? null : "no saved HTTP request member");
+            })
+        .toList();
+  }
+
+  private static List<FrontendSourceUnits.Unit> pageContextSourceUnits(
+      FrontendPageContext context, FrontendSourceUnits available) {
+    Map<String, FrontendSourceUnits.Unit> units = new LinkedHashMap<>();
+    for (FrontendPageSourceUnit contextUnit : context.sourceUnits()) {
+      FrontendSourceUnits.Unit unit =
+          uniqueExact(
+              available.units(),
+              contextUnit.sourcePath(),
+              contextUnit.sourceSha256(),
+              contextUnit.sourceUnitRange(),
+              contextUnit.sourceUnitKind());
+      if (unit == null) {
+        throw new IllegalArgumentException(
+            "ENTRY_EVIDENCE_PAGE_CONTEXT_SOURCE_UNIT_UNAVAILABLE: " + context.contextId());
+      }
+      units.putIfAbsent(unit.sourceUnitId(), unit);
+    }
+    return units.values().stream()
+        .sorted(Comparator.comparing(FrontendSourceUnits.Unit::sourceUnitId, UTF8_ORDER))
+        .toList();
   }
 
   private static Map<String, FrontendSelection> finalizeSelections(
@@ -775,6 +857,30 @@ public final class EntryEvidenceAssembler {
       selection.forcedStatus = forced;
     }
     return selections;
+  }
+
+  private static void addPageContexts(
+      FrontendSelection selection,
+      List<String> contextIds,
+      Map<String, FrontendPageContext> pageContextsById,
+      FrontendSourceUnits sourceUnits) {
+    for (String contextId : contextIds) {
+      FrontendPageContext context = pageContextsById.get(contextId);
+      if (context == null) {
+        throw new IllegalArgumentException("ENTRY_EVIDENCE_PAGE_CONTEXT_MISSING");
+      }
+      FrontendPageContext prior = selection.pageContexts().putIfAbsent(contextId, context);
+      if (prior != null && !prior.equals(context)) {
+        throw new IllegalArgumentException("ENTRY_EVIDENCE_PAGE_CONTEXT_CONFLICT");
+      }
+      for (FrontendSourceUnits.Unit unit : pageContextSourceUnits(context, sourceUnits)) {
+        FrontendSourceUnits.Unit previous =
+            selection.units().putIfAbsent(unit.sourceUnitId(), unit);
+        if (previous != null && !previous.equals(unit)) {
+          throw new IllegalArgumentException("ENTRY_EVIDENCE_PAGE_CONTEXT_UNIT_CONFLICT");
+        }
+      }
+    }
   }
 
   private static Match match(
@@ -818,7 +924,8 @@ public final class EntryEvidenceAssembler {
       return new Match(
           FrontendEntryLinkRecord.Resolution.UNRESOLVED_REQUEST,
           candidates,
-          "the saved HTTP entry has params, headers, or consumes conditions not represented by the request observation");
+          "the saved HTTP entry has params, headers, or consumes conditions not represented by the"
+              + " request observation");
     }
     return new Match(FrontendEntryLinkRecord.Resolution.MATCHED_UNIQUE, candidates, null);
   }
@@ -831,7 +938,8 @@ public final class EntryEvidenceAssembler {
       if (request.baseUrlExpression() != null) {
         return new MappedPath(
             request.resolvedPath(),
-            "the saved request has a runtime base URL expression and no explicit HTTP address mapping");
+            "the saved request has a runtime base URL expression and no explicit HTTP address"
+                + " mapping");
       }
       return new MappedPath(request.resolvedPath(), null);
     }
@@ -1024,6 +1132,7 @@ public final class EntryEvidenceAssembler {
     private final List<EntryEvidenceSet.RequestUse> uses;
     private final List<EntryEvidenceSet.RequestUse> candidateUses;
     private final Map<String, FrontendSourceUnits.Unit> units;
+    private final Map<String, FrontendPageContext> pageContexts;
     private final List<EntryEvidenceSet.Limitation> limitations;
     private EntryEvidenceSet.FrontendStatus forcedStatus;
 
@@ -1031,10 +1140,12 @@ public final class EntryEvidenceAssembler {
         List<EntryEvidenceSet.RequestUse> uses,
         List<EntryEvidenceSet.RequestUse> candidateUses,
         Map<String, FrontendSourceUnits.Unit> units,
+        Map<String, FrontendPageContext> pageContexts,
         List<EntryEvidenceSet.Limitation> limitations) {
       this.uses = uses;
       this.candidateUses = candidateUses;
       this.units = units;
+      this.pageContexts = pageContexts;
       this.limitations = limitations;
     }
 
@@ -1048,6 +1159,10 @@ public final class EntryEvidenceAssembler {
 
     private Map<String, FrontendSourceUnits.Unit> units() {
       return units;
+    }
+
+    private Map<String, FrontendPageContext> pageContexts() {
+      return pageContexts;
     }
 
     private List<EntryEvidenceSet.Limitation> limitations() {
@@ -1069,10 +1184,15 @@ public final class EntryEvidenceAssembler {
           List.copyOf(candidateUses),
           units.values().stream()
               .sorted(Comparator.comparing(FrontendSourceUnits.Unit::sourceUnitId, UTF8_ORDER))
+              .toList(),
+          pageContexts.values().stream()
+              .sorted(Comparator.comparing(FrontendPageContext::contextId, UTF8_ORDER))
               .toList());
     }
   }
 
   private record FrontendDisposition(
-      Map<String, FrontendSelection> byEntry, List<EntryEvidenceSet.FrontendCoverage> coverage) {}
+      Map<String, FrontendSelection> byEntry,
+      List<EntryEvidenceSet.FrontendCoverage> coverage,
+      List<EntryEvidenceSet.FrontendPageContextCoverage> pageContextCoverage) {}
 }

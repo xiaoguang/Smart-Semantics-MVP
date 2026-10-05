@@ -26,7 +26,7 @@ public final class StructuredModelProviderFailure extends IllegalStateException 
     this(reasonCode, requestStarted, requestEnded, message, cause, null);
   }
 
-  /** Carries only an actual, bounded model response, never CLI stderr or credentials. */
+  /** Carries bounded private failure output, which may be a response or CLI diagnostic. */
   public StructuredModelProviderFailure(
       String reasonCode,
       boolean requestStarted,

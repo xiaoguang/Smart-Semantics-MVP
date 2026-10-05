@@ -52,7 +52,10 @@ public final class OpenAiResponsesStructuredProvider implements StructuredModelP
               .reasoning(
                   Reasoning.builder().effort(ReasoningEffort.of(profile.reasoningEffort())).build())
               .input(prompt(request))
-              .maxOutputTokens(request.maxOutputBytes())
+              .maxOutputTokens(
+                  request.requestedMaxOutputTokens() == null
+                      ? request.maxOutputBytes()
+                      : request.requestedMaxOutputTokens())
               .store(false)
               .text(responseTextConfiguration(request.outputJsonSchema()))
               .build();

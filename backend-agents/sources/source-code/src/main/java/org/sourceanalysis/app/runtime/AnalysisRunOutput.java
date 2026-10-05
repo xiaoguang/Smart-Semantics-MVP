@@ -21,10 +21,25 @@ public record AnalysisRunOutput(
     AnalysisStepPublicationReference sourcePreparationCheckpoint,
     SourcePreparationReadiness sourcePreparationReadiness,
     SelectedSourceBasis selectedSourceBasis,
-    TechnicalRunOutput technicalOutput) {
+    TechnicalRunOutput technicalOutput,
+    OntologyRunOutput ontologyOutput) {
 
   public AnalysisRunOutput {
-    if (technicalOutput != null) {
+    if (ontologyOutput != null) {
+      requireOntologyOutput(
+          sourceRunId,
+          businessMaterialCheckpoint,
+          activityCheckpoint,
+          knowledgeCheckpoint,
+          reportCheckpoint,
+          readingMaterialCheckpoint,
+          activityBatchComplete,
+          sourcePreparationCheckpoint,
+          sourcePreparationReadiness,
+          selectedSourceBasis,
+          technicalOutput,
+          ontologyOutput);
+    } else if (technicalOutput != null) {
       requireTechnicalOutput(
           sourceRunId,
           businessMaterialCheckpoint,
@@ -64,6 +79,34 @@ public record AnalysisRunOutput(
           readingMaterialCheckpoint,
           activityBatchComplete);
     }
+  }
+
+  /** Preserves the previous eleven-field construction surface while adding ontology output. */
+  public AnalysisRunOutput(
+      AnalysisRunId sourceRunId,
+      ModulePublicationReference businessMaterialCheckpoint,
+      ModulePublicationReference activityCheckpoint,
+      ModulePublicationReference knowledgeCheckpoint,
+      ModulePublicationReference reportCheckpoint,
+      AnalysisStepPublicationReference readingMaterialCheckpoint,
+      boolean activityBatchComplete,
+      AnalysisStepPublicationReference sourcePreparationCheckpoint,
+      SourcePreparationReadiness sourcePreparationReadiness,
+      SelectedSourceBasis selectedSourceBasis,
+      TechnicalRunOutput technicalOutput) {
+    this(
+        sourceRunId,
+        businessMaterialCheckpoint,
+        activityCheckpoint,
+        knowledgeCheckpoint,
+        reportCheckpoint,
+        readingMaterialCheckpoint,
+        activityBatchComplete,
+        sourcePreparationCheckpoint,
+        sourcePreparationReadiness,
+        selectedSourceBasis,
+        technicalOutput,
+        null);
   }
 
   /** Preserves the pre-v8 complete constructor shape for historical callers and readers. */
@@ -359,6 +402,24 @@ public record AnalysisRunOutput(
         technicalOutput);
   }
 
+  /** Wraps one ontology result without reusing historical business-process checkpoints. */
+  public static AnalysisRunOutput ontology(OntologyRunOutput ontologyOutput) {
+    Objects.requireNonNull(ontologyOutput, "ontology output");
+    return new AnalysisRunOutput(
+        ontologyOutput.selectedSourceBasis().preparedSource().publication().address().runId(),
+        null,
+        null,
+        null,
+        null,
+        null,
+        false,
+        null,
+        null,
+        ontologyOutput.selectedSourceBasis(),
+        null,
+        ontologyOutput);
+  }
+
   /** Returns whether this finished run contains a review-approved business report. */
   public boolean hasCompletedReport() {
     return reportCheckpoint != null;
@@ -422,6 +483,42 @@ public record AnalysisRunOutput(
                 .address()
                 .runId())) {
       throw new IllegalArgumentException("TECHNICAL_RUN_OUTPUT_INVALID");
+    }
+  }
+
+  private static void requireOntologyOutput(
+      AnalysisRunId sourceRunId,
+      ModulePublicationReference businessMaterialCheckpoint,
+      ModulePublicationReference activityCheckpoint,
+      ModulePublicationReference knowledgeCheckpoint,
+      ModulePublicationReference reportCheckpoint,
+      AnalysisStepPublicationReference readingMaterialCheckpoint,
+      boolean activityBatchComplete,
+      AnalysisStepPublicationReference sourcePreparationCheckpoint,
+      SourcePreparationReadiness sourcePreparationReadiness,
+      SelectedSourceBasis selectedSourceBasis,
+      TechnicalRunOutput technicalOutput,
+      OntologyRunOutput ontologyOutput) {
+    if (sourceRunId == null
+        || businessMaterialCheckpoint != null
+        || activityCheckpoint != null
+        || knowledgeCheckpoint != null
+        || reportCheckpoint != null
+        || readingMaterialCheckpoint != null
+        || activityBatchComplete
+        || sourcePreparationCheckpoint != null
+        || sourcePreparationReadiness != null
+        || technicalOutput != null
+        || selectedSourceBasis == null
+        || !selectedSourceBasis.equals(ontologyOutput.selectedSourceBasis())
+        || !sourceRunId.equals(
+            ontologyOutput
+                .selectedSourceBasis()
+                .preparedSource()
+                .publication()
+                .address()
+                .runId())) {
+      throw new IllegalArgumentException("ONTOLOGY_RUN_OUTPUT_INVALID");
     }
   }
 

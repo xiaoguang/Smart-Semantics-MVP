@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "questionId", "retainedRefs", "readRequests", "queries", "literalSearches", "unresolved", "decision"],
+  "$defs": {
+    "viewRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["viewId", "ref"],
+      "properties": {
+        "viewId": {"type": "string", "minLength": 1},
+        "ref": {"type": "string", "minLength": 1}
+      }
+    }
+  },
+  "properties": {
+    "schemaVersion": {"const": "ontology-reading-v2"},
+    "questionId": {"type": "string", "pattern": "^Q[0-9]+$"},
+    "retainedRefs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/viewRef"}},
+    "readRequests": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["unitRef", "purpose"],
+        "properties": {"unitRef": {"$ref": "#/$defs/viewRef"}, "purpose": {"type": "string", "minLength": 1}}
+      }
+    },
+    "queries": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["kind", "keyRef", "offset", "limit", "purpose"],
+        "properties": {
+          "kind": {"enum": ["ENTRY_UNITS", "METHOD_USES", "STATEMENT_USES", "TABLE_STATEMENTS", "COLUMN_STATEMENTS"]},
+          "keyRef": {"$ref": "#/$defs/viewRef"},
+          "offset": {"type": "integer", "minimum": 0},
+          "limit": {"type": "integer", "minimum": 1},
+          "purpose": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "literalSearches": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["query", "offset", "limit", "purpose"],
+        "properties": {
+          "query": {"type": "string", "minLength": 1},
+          "offset": {"type": "integer", "minimum": 0},
+          "limit": {"type": "integer", "minimum": 1},
+          "purpose": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "unresolved": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "decision": {"enum": ["READY_TO_EXTRACT", "NEEDS_MORE_MATERIAL", "UNRESOLVED"]}
+  }
+}

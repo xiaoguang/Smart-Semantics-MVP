@@ -172,7 +172,8 @@ Toolchain foundation必须提交project-tracked `.mvn/toolchains.xml`，不得�
 5. PMD必须使用project-tracked JDK 17 Toolchain；仅设置`targetJdk`不足以避免PMD在较新的Maven shell JDK上解析不兼容的class file。该插件支持独立`jdkToolchain`配置，优先于通用Toolchains选择。[官方PMD Toolchains说明](https://maven.apache.org/plugins/maven-pmd-plugin/examples/targetJdk.html)
 6. Enforcer 检 dependency convergence/构建环境；Dependency Plugin 检 declared/used；CycloneDX 描述清单；OWASP 在获批 feed 上做漏洞匹配。四者不互相代替。
 7. Spotless 是唯一 Java formatter。PMD/Checkstyle 不承担排版；本计划不新增 Checkstyle，避免与 google-java-format 和 PMD 重复。
-8. SpotBugs 4.10 无法识别部分 Java 17 compact-record constructor 已对 `List`/`Map` 进行排序与 `copyOf` 的不可变值语义。`config/spotbugs-exclude.xml` 只列出已经以该方式规范化集合字段的具体 record 类型和 `EI_EXPOSE_REP` 一项；不使用 package-wide 或 detector-wide 排除。其他 bug pattern（尤其 null、资源和控制流）仍必须修复后才能通过质量门。
+8. SpotBugs 4.10 无法识别部分 Java 17 compact-record constructor 已对 `List`/`Map` 进行排序与 `copyOf` 的不可变值语义。`config/spotbugs-exclude.xml` 只列出已经以该方式规范化集合字段的具体 record 类型和 `EI_EXPOSE_REP` 一项；另有逐字段的同run journal service注入和逐accessor的已验证Corpus读视图例外，均明确其共享边界和惰性缓存事实。不得使用package-wide或detector-wide排除，也不得将这些例外扩展到新的服务或Corpus引用。其他 bug pattern（尤其 null、资源和控制流）仍必须修复后才能通过质量门。
+9. 超过既定类/方法复杂度阈值时，先抽取现有协议的一段完整投影或写入职责，再保留原有排序、canonical字节、版本分派和错误类型；不得通过提高阈值、SpotBugs/PMD抑制或引入通用状态平台规避。抽取后的直接合同测试仍需覆盖原wire和历史分派。
 
 ## 4. 通用文件标准：成熟工具优先，领域算法自有
 

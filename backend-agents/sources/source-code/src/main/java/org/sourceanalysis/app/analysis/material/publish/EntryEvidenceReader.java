@@ -9,12 +9,16 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
 import org.sourceanalysis.app.artifact.AnalysisStepPublisherModuleProvenance;
+import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.CanonicalAnalysisStepArtifactStore;
 import org.sourceanalysis.app.artifact.CanonicalJsonCodec;
 import org.sourceanalysis.app.artifact.CanonicalMediaType;
@@ -23,6 +27,7 @@ import org.sourceanalysis.app.artifact.ImmutableBytes;
 import org.sourceanalysis.app.artifact.ReopenedAnalysisStepPublication;
 import org.sourceanalysis.app.artifact.ReopenedModulePublication;
 import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
+import org.sourceanalysis.app.runtime.SelectedSourceBasis;
 
 /**
  * Path-free reader for the new Step05 directory.
@@ -35,6 +40,20 @@ import org.sourceanalysis.app.artifact.VerifiedCanonicalPayload;
 public final class EntryEvidenceReader {
 
   private static final Comparator<String> UTF8_ORDER = EntryEvidenceReader::compareUtf8;
+  private static final ReaderProfile V1 =
+      new ReaderProfile(
+          EntryEvidencePublisher.MODULE_VERSION,
+          EntryEvidencePublisher.PRODUCER,
+          EntryEvidencePublisher.ENTRY_SCHEMA,
+          EntryEvidencePublisher.INDEX_SCHEMA,
+          EntryEvidencePublisher.COVERAGE_SCHEMA);
+  private static final ReaderProfile V2 =
+      new ReaderProfile(
+          EntryEvidencePublisher.V2_MODULE_VERSION,
+          EntryEvidencePublisher.V2_PRODUCER,
+          EntryEvidencePublisher.V2_ENTRY_SCHEMA,
+          EntryEvidencePublisher.V2_INDEX_SCHEMA,
+          EntryEvidencePublisher.V2_COVERAGE_SCHEMA);
   private final CanonicalModuleArtifactStore modules;
   private final CanonicalAnalysisStepArtifactStore steps;
   private final CanonicalJsonCodec json = new CanonicalJsonCodec();
@@ -47,7 +66,15 @@ public final class EntryEvidenceReader {
 
   /** Reads exactly one installed entry document using its complete canonical entry ID. */
   public EntryDocument read(AnalysisStepPublicationReference reference, String entryId) {
-    Directory directory = reopen(reference);
+    return read(reopen(reference), entryId);
+  }
+
+  /** Reads exactly one additive v2 entry document using its complete canonical entry ID. */
+  public EntryDocument readV2(AnalysisStepPublicationReference reference, String entryId) {
+    return read(reopenV2(reference), entryId);
+  }
+
+  private static EntryDocument read(Directory directory, String entryId) {
     if (entryId == null || !entryId.matches("entry:[0-9a-f]{64}")) {
       throw invalid();
     }
@@ -59,6 +86,49 @@ public final class EntryEvidenceReader {
 
   /** Reopens and validates every installed directory member without touching a caller path. */
   public Directory reopen(AnalysisStepPublicationReference reference) {
+    return reopen(reference, V1);
+  }
+
+  /** Reopens the additive v2 directory without weakening the historical v1 reader. */
+  public Directory reopenV2(AnalysisStepPublicationReference reference) {
+    return reopen(reference, V2);
+  }
+
+  /**
+   * Reopens v2 with its exact R4 owner, prepared R0 basis, and controls. This is intentionally a
+   * strict expected-input overload; it does not substitute a newer policy registry or compare a
+   * receipt to itself.
+   */
+  public Directory reopenV2(
+      AnalysisStepPublicationReference reference,
+      AnalysisRunId expectedOwner,
+      SelectedSourceBasis expectedSourceBasis,
+      ArtifactControls expectedControls) {
+    try {
+      Objects.requireNonNull(reference, "entry-evidence publication");
+      Objects.requireNonNull(expectedOwner, "expected R4 owner");
+      Objects.requireNonNull(expectedSourceBasis, "expected selected source basis");
+      Objects.requireNonNull(expectedControls, "expected R4 controls");
+      Directory directory = reopenV2(reference);
+      ReopenedAnalysisStepPublication step = steps.reopen(reference);
+      ObjectNode index = object(json.parseCanonical(directory.indexCanonicalJson()));
+      ObjectNode header = object(index.get("header"));
+      if (!reference.address().runId().equals(expectedOwner)
+          || !step.receipt().controls().equals(expectedControls)
+          || !matchesSelectedSourceBasis(header, expectedSourceBasis)) {
+        throw invalid();
+      }
+      return directory;
+    } catch (RuntimeException failure) {
+      if (failure instanceof IllegalArgumentException
+          && "ENTRY_EVIDENCE_READER_INVALID".equals(failure.getMessage())) {
+        throw failure;
+      }
+      throw invalid(failure);
+    }
+  }
+
+  private Directory reopen(AnalysisStepPublicationReference reference, ReaderProfile profile) {
     try {
       Objects.requireNonNull(reference, "entry-evidence publication");
       ReopenedAnalysisStepPublication step = steps.reopen(reference);
@@ -76,7 +146,7 @@ public final class EntryEvidenceReader {
           || address.analysisStepKey() != AnalysisStepKey.BUSINESS_FLOWS
           || address.moduleNumber() != 4
           || !EntryEvidencePublisher.MODULE_KEY.equals(address.moduleKey())
-          || !EntryEvidencePublisher.MODULE_VERSION.equals(module.receipt().moduleVersion())
+          || !profile.moduleVersion().equals(module.receipt().moduleVersion())
           || !module.receipt().controls().equals(step.receipt().controls())) {
         throw invalid();
       }
@@ -90,25 +160,30 @@ public final class EntryEvidenceReader {
           index,
           EntryEvidencePublisher.INDEX_FILE,
           EntryEvidencePublisher.INDEX_TYPE,
-          EntryEvidencePublisher.INDEX_SCHEMA,
+          profile.indexSchema(),
           CanonicalMediaType.APPLICATION_JSON);
       requireDescriptor(
           coverage,
           EntryEvidencePublisher.COVERAGE_FILE,
           EntryEvidencePublisher.COVERAGE_TYPE,
-          EntryEvidencePublisher.COVERAGE_SCHEMA,
+          profile.coverageSchema(),
           CanonicalMediaType.APPLICATION_X_NDJSON);
       ObjectNode indexDocument = object(json.parseCanonical(index.canonicalUtf8()));
-      requireText(indexDocument, "schemaVersion", EntryEvidencePublisher.INDEX_SCHEMA);
-      requireText(indexDocument, "producer", EntryEvidencePublisher.PRODUCER);
+      requireText(indexDocument, "schemaVersion", profile.indexSchema());
+      requireText(indexDocument, "producer", profile.producer());
       ObjectNode header = object(indexDocument.get("header"));
       boolean selectedBasisWire = header.has("sourceBasis");
       if (selectedBasisWire && !validSelectedSourceBasis(header)) {
         throw invalid();
       }
+      if (profile == V2 && v2PageContextCount(header) < 0) {
+        throw invalid();
+      }
       ArrayNode entries = array(indexDocument.get("entries"));
       List<EntryDocument> documents = new ArrayList<>();
       Set<String> entryIds = new HashSet<>();
+      Map<String, ObjectNode> pageContextsById = new LinkedHashMap<>();
+      Map<String, Set<String>> includedEntriesByContext = new LinkedHashMap<>();
       String previous = null;
       for (JsonNode item : entries) {
         ObjectNode indexed = object(item);
@@ -130,18 +205,21 @@ public final class EntryEvidenceReader {
             entry,
             file,
             EntryEvidencePublisher.ENTRY_TYPE,
-            EntryEvidencePublisher.ENTRY_SCHEMA,
+            profile.entrySchema(),
             CanonicalMediaType.APPLICATION_JSON);
         ObjectNode document = object(json.parseCanonical(entry.canonicalUtf8()));
         if (!entryId.equals(text(document, "entryId"))
-            || !EntryEvidencePublisher.ENTRY_SCHEMA.equals(text(document, "schemaVersion"))
-            || !EntryEvidencePublisher.PRODUCER.equals(text(document, "producer"))
+            || !profile.entrySchema().equals(text(document, "schemaVersion"))
+            || !profile.producer().equals(text(document, "producer"))
             || !header.equals(object(document.get("header")))
             || !sameEntryLineage(document, header, selectedBasisWire)
             || !validHttpEntry(document, entryId)) {
           throw invalid();
         }
         requireSourceReferences(document);
+        if (profile == V2) {
+          collectV2EntryPageContexts(document, entryId, pageContextsById, includedEntriesByContext);
+        }
         documents.add(new EntryDocument(entryId, entry.canonicalUtf8()));
         previous = entryId;
       }
@@ -154,7 +232,13 @@ public final class EntryEvidenceReader {
       if (actualEntryPayloads != documents.size()) {
         throw invalid();
       }
-      requireCoverage(coverage.canonicalUtf8(), header, entryIds);
+      requireCoverage(
+          coverage.canonicalUtf8(),
+          header,
+          entryIds,
+          profile,
+          pageContextsById,
+          includedEntriesByContext);
       return new Directory(index.canonicalUtf8(), coverage.canonicalUtf8(), documents);
     } catch (RuntimeException failure) {
       if (failure instanceof IllegalArgumentException
@@ -252,25 +336,44 @@ public final class EntryEvidenceReader {
   }
 
   private void requireCoverage(
-      ImmutableBytes coverageBytes, ObjectNode expectedHeader, Set<String> entryIds) {
+      ImmutableBytes coverageBytes,
+      ObjectNode expectedHeader,
+      Set<String> entryIds,
+      ReaderProfile profile,
+      Map<String, ObjectNode> pageContextsById,
+      Map<String, Set<String>> includedEntriesByContext) {
     String content = strictUtf8(coverageBytes);
     String[] lines = content.split("\\n", -1);
     if (lines.length < 2 || !lines[lines.length - 1].isEmpty()) {
       throw invalid();
     }
     Set<String> requestIds = new HashSet<>();
+    Set<String> pageContextIds = new HashSet<>();
+    Map<String, Set<String>> pageContextsByRequest = new LinkedHashMap<>();
+    Map<String, Set<String>> requestIdsByPageContext = new LinkedHashMap<>();
     for (int index = 0; index < lines.length - 1; index++) {
       if (lines[index].isEmpty()) throw invalid();
       ObjectNode line =
           object(
               json.parseCanonical(
                   ImmutableBytes.copyOf(lines[index].getBytes(StandardCharsets.UTF_8))));
-      requireText(line, "schemaVersion", EntryEvidencePublisher.COVERAGE_SCHEMA);
+      requireText(line, "schemaVersion", profile.coverageSchema());
       String type = text(line, "recordType");
       if (index == 0) {
         if (!"HEADER".equals(type)
-            || !EntryEvidencePublisher.PRODUCER.equals(text(line, "producer"))
+            || !profile.producer().equals(text(line, "producer"))
             || !expectedHeader.equals(object(line.get("header")))) {
+          throw invalid();
+        }
+        continue;
+      }
+      if (profile == V2 && "PAGE_CONTEXT_COVERAGE".equals(type)) {
+        PageContextMembership membership =
+            requireV2PageContextCoverage(
+                object(line.get("payload")), entryIds, pageContextsById, includedEntriesByContext);
+        if (!pageContextIds.add(membership.contextId())
+            || requestIdsByPageContext.putIfAbsent(membership.contextId(), membership.requestIds())
+                != null) {
           throw invalid();
         }
         continue;
@@ -284,6 +387,10 @@ public final class EntryEvidenceReader {
       Set<String> included =
           requireCoverageEntryIds(array(payload.get("includedEntryIds")), entryIds);
       if (!candidates.containsAll(included)) throw invalid();
+      if (profile == V2) {
+        pageContextsByRequest.put(requestId, requireV2CoverageContext(payload, requestId));
+        continue;
+      }
       boolean uniquelyIncluded = "MATCHED_UNIQUE".equals(resolution) && included.size() == 1;
       if (uniquelyIncluded) {
         if (payload.has("request")
@@ -301,6 +408,219 @@ public final class EntryEvidenceReader {
           throw invalid();
         }
       }
+    }
+    if (profile == V2
+        && (pageContextIds.size() != v2PageContextCount(expectedHeader)
+            || !pageContextIds.containsAll(pageContextsById.keySet())
+            || !hasExactV2RequestContextMembership(
+                requestIds, pageContextsByRequest, requestIdsByPageContext))) {
+      throw invalid();
+    }
+  }
+
+  private static Set<String> requireV2CoverageContext(ObjectNode payload, String requestId) {
+    ObjectNode request = object(payload.get("request"));
+    if (!requestId.equals(text(request, "requestId"))
+        || !(payload.get("units") instanceof ArrayNode)) {
+      throw invalid();
+    }
+    Set<String> contextIds = new HashSet<>();
+    for (JsonNode contextId : array(payload.get("pageContexts"))) {
+      if (!contextId.isTextual()
+          || contextId.textValue().isBlank()
+          || !contextIds.add(contextId.textValue())) {
+        throw invalid();
+      }
+    }
+    return Set.copyOf(contextIds);
+  }
+
+  private static void collectV2EntryPageContexts(
+      ObjectNode document,
+      String entryId,
+      Map<String, ObjectNode> pageContextsById,
+      Map<String, Set<String>> includedEntriesByContext) {
+    ObjectNode frontend = object(document.get("frontend"));
+    Set<String> localContextIds = new HashSet<>();
+    for (JsonNode value : array(frontend.get("pageContexts"))) {
+      ObjectNode context = object(value);
+      String contextId = text(context, "contextId");
+      if (!localContextIds.add(contextId)) {
+        throw invalid();
+      }
+      ObjectNode prior = pageContextsById.putIfAbsent(contextId, context);
+      if (prior != null && !prior.equals(context)) {
+        throw invalid();
+      }
+      includedEntriesByContext.computeIfAbsent(contextId, ignored -> new HashSet<>()).add(entryId);
+    }
+    if (!localContextIds.equals(contextIdsUsedByEntry(frontend))) {
+      throw invalid();
+    }
+  }
+
+  private static Set<String> contextIdsUsedByEntry(ObjectNode frontend) {
+    Set<String> contextIds = new HashSet<>();
+    for (String field : List.of("requestUses", "candidateRequestUses")) {
+      for (JsonNode value : array(frontend.get(field))) {
+        ObjectNode use = object(value);
+        text(object(use.get("request")), "requestId");
+        contextIds.addAll(distinctText(array(use.get("pageContexts"))));
+      }
+    }
+    return Set.copyOf(contextIds);
+  }
+
+  private static PageContextMembership requireV2PageContextCoverage(
+      ObjectNode payload,
+      Set<String> entryIds,
+      Map<String, ObjectNode> pageContextsById,
+      Map<String, Set<String>> includedEntriesByContext) {
+    String contextId = text(payload, "contextId");
+    ObjectNode context = object(payload.get("context"));
+    if (!contextId.equals(text(context, "contextId"))) {
+      throw invalid();
+    }
+    ObjectNode expectedContext = pageContextsById.get(contextId);
+    if (expectedContext != null && !expectedContext.equals(context)) {
+      throw invalid();
+    }
+    Set<String> requestIds = distinctText(array(context.get("requestIds")));
+    ArrayNode contextUnits = array(context.get("sourceUnits"));
+    ArrayNode units = array(payload.get("units"));
+    requireV2ContextUnits(contextUnits, units);
+    Set<String> included =
+        requireCoverageEntryIds(array(payload.get("includedEntryIds")), entryIds);
+    Set<String> expectedIncluded = includedEntriesByContext.getOrDefault(contextId, Set.of());
+    if (!included.equals(expectedIncluded)) {
+      throw invalid();
+    }
+    String disposition = text(payload, "disposition");
+    JsonNode reason = payload.get("reason");
+    if ("REQUEST_MEMBERSHIP".equals(disposition)) {
+      if (requestIds.isEmpty()) {
+        throw invalid();
+      }
+    } else if ("NO_REQUEST_MEMBERSHIP".equals(disposition)) {
+      if (!requestIds.isEmpty()
+          || !included.isEmpty()
+          || reason == null
+          || !reason.isTextual()
+          || reason.textValue().isBlank()) {
+        throw invalid();
+      }
+    } else {
+      throw invalid();
+    }
+    return new PageContextMembership(contextId, requestIds);
+  }
+
+  private static boolean hasExactV2RequestContextMembership(
+      Set<String> requestIds,
+      Map<String, Set<String>> pageContextsByRequest,
+      Map<String, Set<String>> requestIdsByPageContext) {
+    for (Map.Entry<String, Set<String>> context : requestIdsByPageContext.entrySet()) {
+      for (String requestId : context.getValue()) {
+        if (!requestIds.contains(requestId)
+            || !pageContextsByRequest
+                .getOrDefault(requestId, Set.of())
+                .contains(context.getKey())) {
+          return false;
+        }
+      }
+    }
+    for (String requestId : requestIds) {
+      Set<String> expected = new HashSet<>();
+      for (Map.Entry<String, Set<String>> context : requestIdsByPageContext.entrySet()) {
+        if (context.getValue().contains(requestId)) {
+          expected.add(context.getKey());
+        }
+      }
+      if (!pageContextsByRequest.getOrDefault(requestId, Set.of()).equals(expected)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private static void requireV2ContextUnits(ArrayNode contextUnits, ArrayNode units) {
+    if (contextUnits.size() != units.size()) {
+      throw invalid();
+    }
+    Set<String> contextKeys = new HashSet<>();
+    Set<String> unitIds = new HashSet<>();
+    for (JsonNode unitValue : units) {
+      ObjectNode unit = object(unitValue);
+      if (!unitIds.add(text(unit, "sourceUnitId"))
+          || !text(unit, "sourceSha256").matches("[0-9a-f]{64}")
+          || text(unit, "path").startsWith("/")
+          || text(unit, "path").contains("..")
+          || text(unit, "text").length() != rangeLength(object(unit.get("sourceUnitRange")))) {
+        throw invalid();
+      }
+    }
+    for (JsonNode contextUnitValue : contextUnits) {
+      ObjectNode contextUnit = object(contextUnitValue);
+      String key = pageContextUnitKey(contextUnit);
+      if (!contextKeys.add(key)) {
+        throw invalid();
+      }
+      long matches =
+          java.util.stream.StreamSupport.stream(units.spliterator(), false)
+              .map(EntryEvidenceReader::object)
+              .filter(unit -> pageContextUnitKey(unit).equals(key))
+              .count();
+      if (matches != 1) {
+        throw invalid();
+      }
+    }
+  }
+
+  private static String pageContextUnitKey(ObjectNode unit) {
+    return text(unit, unit.has("sourcePath") ? "sourcePath" : "path")
+        + "\u0000"
+        + text(unit, "sourceSha256")
+        + "\u0000"
+        + rangeStart(object(unit.get("sourceUnitRange")))
+        + "\u0000"
+        + rangeLength(object(unit.get("sourceUnitRange")))
+        + "\u0000"
+        + text(unit, "sourceUnitKind");
+  }
+
+  private static int rangeStart(ObjectNode range) {
+    return nonNegativeInt(range.get("startOffsetUtf16"));
+  }
+
+  private static int rangeLength(ObjectNode range) {
+    return nonNegativeInt(range.get("lengthUtf16"));
+  }
+
+  private static int nonNegativeInt(JsonNode value) {
+    if (value == null
+        || !value.isIntegralNumber()
+        || !value.canConvertToInt()
+        || value.intValue() < 0) {
+      throw invalid();
+    }
+    return value.intValue();
+  }
+
+  private static Set<String> distinctText(ArrayNode values) {
+    Set<String> result = new HashSet<>();
+    for (JsonNode value : values) {
+      if (!value.isTextual() || value.textValue().isBlank() || !result.add(value.textValue())) {
+        throw invalid();
+      }
+    }
+    return Set.copyOf(result);
+  }
+
+  private static int v2PageContextCount(ObjectNode header) {
+    try {
+      return nonNegativeInt(header.get("frontendPageContextCount"));
+    } catch (RuntimeException malformed) {
+      return -1;
     }
   }
 
@@ -351,6 +671,61 @@ public final class EntryEvidenceReader {
         && same(values, "navigationPublication", header, "navigationPublication")
         && same(values, "persistencePublication", header, "persistencePublication")
         && same(values, "frontendPublication", header, "frontendPublication");
+  }
+
+  private static boolean matchesSelectedSourceBasis(
+      ObjectNode header, SelectedSourceBasis expected) {
+    if (expected.kind() != SelectedSourceBasis.Kind.PREPARED_V1
+        || !validSelectedSourceBasis(header)) {
+      return false;
+    }
+    try {
+      ObjectNode actual = object(header.get("sourceBasis"));
+      ObjectNode prepared = object(actual.get("preparedSource"));
+      var expectedPrepared = expected.preparedSource();
+      return "PREPARED_V1".equals(text(actual, "kind"))
+          && expected.snapshotId().value().equals(text(actual, "snapshotId"))
+          && expected.effectiveScopeDigest().value().equals(text(actual, "effectiveScopeDigest"))
+          && expectedPrepared.sourceVersionId().value().equals(text(prepared, "sourceVersionId"))
+          && matchesPublication(object(prepared.get("publication")), expectedPrepared.publication())
+          && matchesArtifactReference(
+              object(prepared.get("schemaBundleRef")), expectedPrepared.schemaBundleRef())
+          && expectedPrepared
+              .artifactPolicyRegistryRef()
+              .artifactId()
+              .value()
+              .equals(text(object(prepared.get("artifactPolicyRegistryRef")), "artifactId"))
+          && expectedPrepared
+              .artifactPolicyRegistryRef()
+              .sha256()
+              .value()
+              .equals(text(object(prepared.get("artifactPolicyRegistryRef")), "sha256"));
+    } catch (RuntimeException malformed) {
+      return false;
+    }
+  }
+
+  private static boolean matchesPublication(
+      ObjectNode actual,
+      org.sourceanalysis.app.artifact.AnalysisStepPublicationReference expected) {
+    ObjectNode address = object(actual.get("address"));
+    return expected.address().runId().value().equals(text(address, "runId"))
+        && expected.address().analysisStepKey().wireValue().equals(text(address, "analysisStepKey"))
+        && expected
+            .analysisStepArtifactRoot()
+            .value()
+            .equals(text(actual, "analysisStepArtifactRoot"))
+        && expected.analysisStepReceiptId().value().equals(text(actual, "analysisStepReceiptId"))
+        && expected
+            .analysisStepReceiptSha256()
+            .value()
+            .equals(text(actual, "analysisStepReceiptSha256"));
+  }
+
+  private static boolean matchesArtifactReference(
+      ObjectNode actual, org.sourceanalysis.app.artifact.ArtifactReference expected) {
+    return expected.artifactId().value().equals(text(actual, "artifactId"))
+        && expected.sha256().value().equals(text(actual, "sha256"));
   }
 
   /**
@@ -561,4 +936,13 @@ public final class EntryEvidenceReader {
     return java.util.Arrays.compareUnsigned(
         first.getBytes(StandardCharsets.UTF_8), second.getBytes(StandardCharsets.UTF_8));
   }
+
+  private record ReaderProfile(
+      String moduleVersion,
+      String producer,
+      String entrySchema,
+      String indexSchema,
+      String coverageSchema) {}
+
+  private record PageContextMembership(String contextId, Set<String> requestIds) {}
 }

@@ -1,10 +1,10 @@
-# Source Code Analysis Agent：从源码到仓库业务过程
+# Source Code Analysis Agent：技术证据与仓库语义
 
 ## 1. 目标与当前状态
 
-从明确冻结的Java/Spring/MyBatis仓库解释：有哪些业务活动和过程，每一步为何发生、输入什么、受什么条件约束、改变什么、何时拒绝、怎样衔接，以及哪些关系仍不确定。正式业务出口是 `business-processes.md`，附结构化目录、覆盖与来源。材料完整性、业务覆盖和语义质量分别判断。
+从明确固定的源码取得技术证据，再由用户选择语义分析分支。当前技术出口是按后端入口组织的 R4 JSON；本次设计的语义出口是 `ontology.json`，识别对象、身份、属性、跨入口联系、操作/规则、维度和指标。旧 Activity→业务过程分支仍存在，其出口是 `business-processes.md`，但不是新本体的上游。材料完整性、业务覆盖和语义质量分别判断。
 
-main的Step01–05已完成JDT-only导航、可选持久化材料、统一阅读包及保存/重开；固定来源有325包、326入口处置和1个导航失败，见[取材交付](supplements/jdt-persistence-reading-materials-delivery.md)。实现分支 `codex/step05-activity-full-generation` 的 `51b6625` 已接通新Step05→Activity及正式Step07入口，真实保存418条新Activity；旧326条保持原样。当前工作树还有未验证的审查修复，不能把分支能力或运行结束等同于已合入main、范围完整或全仓业务质量通过。
+历史后端 Packet 批次有325包、326入口处置和1个导航失败，见[当时取材交付](supplements/jdt-persistence-reading-materials-delivery.md)；在该格式上曾生成418条Activity，旧326条保持原样。这些数字不是当前R4证据规模，也不表示全仓业务质量通过。当前技术事实是四命令生成的339份入口证据及51条前端请求处置，见第2节。
 
 当前收尾详细设计见[端到端业务交付](end-to-end-business-delivery-design.md)。范围完成性、历史结果接续、同入口切片关系、局部引用及 WRITE 职责已有实现和直接测试；真实端到端业务过程仍须按“先样例、用户确认、再全仓”的边界验收，不能用程序通过代替业务质量通过。
 
@@ -12,11 +12,13 @@ Step07系统认识、聚焦选材、一次候选阅读检查、DRAFT→WRITE→�
 
 Step08只保留历史reader/query/renderer，本轮不设计或恢复新九章生成器。八个固定步骤、semantic key、运行目录与唯一公共RepositoryAnalysisAgent方法集合不变。
 
+新证据的[本体识别](modules/ontology-recognition/README.md)是本总体设计的独立分支。用户已明确：**新分支只对接新R4证据及其同源R0，不兼容旧分析输入/结果**。不读取M10、旧Packet、326/418条Activity、过程目录、旧模型稿件或九章，不设计迁移、双写和自动转换。公共Agent、运行登记、canonical存储和Provider可复用；历史内容不删除。2026-10-02辅助两联系PoC已验证：薄Java零模型准备27个完整单元，4次Luna/high请求得到有限对象/关系/操作与两金额计算；选择清单人工，维度为空，部分前端材料为实验补充，不能宣称自主选材或正式R4全链通过。正式四CLI、typed运行、publication及查询已接通并通过限定工程测试；最终静态质量已通过，三个真实模型样例尚待验收，实际派发0。当前详细目标见[材料组织](modules/ontology-recognition/material-preparation.md)、[透明工作流](modules/ontology-recognition/workflow-and-prompts.md)和[实现差距](modules/ontology-recognition/implementation-delta.md)；旧实验门禁状态见[实施状态](plans/ontology-recognition-implementation-plan.md)。
+
 源码接入见[源码准备详细设计](analysis-steps/01-verified-source-inventory.md)及[实施计划](plans/source-preparation-implementation-plan.md)：普通目录/固定Git逐项读取、结构化问题、四文件发布与严格重开、具名刷新/排除、新准备路径移除行索引、独立 CLI 和 Skill 已实现并通过直接测试。准备版公共源码 reader 只暴露有效范围；真实发布/重开fixture证明排除的Java/XML不进入`VerifiedJavaProject`、`PersistenceAnalysisRequest`或`MapperXmlResourceView`。新执行先核对配置绑定、保存的 request/output 与重新打开的来源；历史 Step05/M10 材料的实际 LEGACY 来源由其引用的 Step01 publication 只读元数据投影，不为来源检查读取源码 blob。M10重开还核对receipt上游引用与state业务流publication的实际payload引用。选择 `PREPARED_SOURCE` 时，旧 Step05/M10 材料因缺准备版来源及有效排除的材料级证明而拒绝复用。本轮最终直接相关测试168/168、质量BUILD SUCCESS（Spotless 630 files clean，SpotBugs/PMD均0）；资源上限停止枚举后的恢复仅允许NEW全范围，3项新增测试通过，计划按本轮范围收口。以上源码准备计划当时未运行客户JDT或产品模型。其后技术计划已从准备版来源保存新技术结果，见下段；跨版本增量复用仍为backlog。
 
 ## 2. 文档权威与内部层次
 
-前五步技术设计的权威入口为[技术分析详细设计](modules/technical-analysis/README.md)。当前已完成外部Maven文件交接及原三个技术命令固定源码运行；旧47包/339入口/51前端请求是实际结果，但调用准确性未通过。2026-09-29目标为四个独立操作：collect-frontend、collect-code、analyze-persistence、assemble-materials。前后端独立，组装时匹配并按entryId交付完整JSON；新增职责尚未实施。同步修正已知调用归属、外部边界、前端必要单元及SQL排序，不重写Maven/Java/JS/SQL分析器。详见[依次修改设计](plans/technical-analysis-cli-and-vue-cleanup-design.md)、[入口证据](modules/technical-analysis/entry-evidence.md)和[采购查询例子](supplements/vue-to-sql-walkthrough.md)。本轮止于技术材料，不依赖Step07，也不运行业务模型。
+前五步技术设计的权威入口为[技术分析详细设计](modules/technical-analysis/README.md)。四个独立操作collect-frontend、collect-code、analyze-persistence、assemble-materials已经实现并完成固定源码技术交付；最终R4有339份入口JSON及51条前端请求处置。已知调用归属、外部边界、前端必要单元和SQL排序经过定向验证；运行时地址、全量逐边语义和长等待根因仍有明确限制。旧47包和当时7个失败是历史三命令状态，不覆盖新结果。详见[最终验收](supplements/technical-entry-evidence-acceptance-20260929.md)、[入口证据](modules/technical-analysis/entry-evidence.md)及[修改设计](plans/technical-analysis-cli-and-vue-cleanup-design.md)。技术交付止于Step05、零业务模型；R4尚未接入旧Activity/Step07。
 
 Maven用官方 `dependency:build-classpath` 给依赖路径，用 `help:effective-pom` 给本次选择下已求值的项目配置。用户执行或明确授权Agent执行；Agent读退出状态/日志，交输出文件位置和明确的模块/JDK选择，**不手填源码根、编译版本、模块边或私有语义JSON**。Java只读取已有具体字段、绑定R0并核验实际环境，不求值原/父POM、Profile/BOM，不解析或下载依赖，不调用Maven。该协议适用于OpenClaw、Trae等运行器，不能依靠Codex临时补全；Skill负责操作与沟通，Java负责确定性处理。Maven可能加载扩展，不能声称天然零客户代码执行。缺输出或已知JAR/JDK/来源/项目问题阻断；通过后可导航并披露诊断覆盖未确认，不证明编译正确，不自建Maven管理或全文件诊断证明系统。旧 `plan-materials` 已退役，见[依赖详细设计](modules/technical-analysis/dependency-preparation.md)。
 
@@ -26,7 +28,8 @@ Maven用官方 `dependency:build-classpath` 给依赖路径，用 `help:effectiv
 | --- | --- | --- |
 | 源码准备、完整入口 | [源码准备](analysis-steps/01-verified-source-inventory.md)、[准备Modules](modules/source-preparation/README.md)、[Step02](analysis-steps/02-application-discovery.md) | 有效源码范围、问题和固定字节；后续发现入口 |
 | JDT/持久化/入口材料 | [Step03](analysis-steps/03-program-graphs.md)、[Step04](analysis-steps/04-proven-code-facts.md)、[Step05](analysis-steps/05-business-flows.md) | 已保存完整方法/调用/候选/XML/SQL |
-| 技术操作接力、环境、前端关联 | [技术Modules](modules/technical-analysis/README.md) | 目标：四个独立操作、准确双分支来源、页面请求匹配与按入口完整JSON |
+| 技术操作接力、环境、前端关联 | [技术Modules](modules/technical-analysis/README.md) | 已实现：四操作、准确双分支来源、静态请求匹配与按入口JSON，保留未确认范围 |
+| 新证据→本体分支 | [Ontology Modules](modules/ontology-recognition/README.md)、[实现差距](modules/ontology-recognition/implementation-delta.md) | 正式四操作、Agent/store/发布/查询及typed审阅通过限定工程回归；新R4/O0保存查询与最终静态质量通过。三个真实样例待验，真实自主选材和全仓覆盖未证明，无旧分析兼容 |
 | 新材料→Activity | [Step06](analysis-steps/06-flow-interpretation.md)、[Activity Modules](modules/activity-explanation/README.md) | 完整ReviewedActivity、来源与覆盖 |
 | 目录、过程与发布 | [Step07](analysis-steps/07-repository-knowledge.md)、[业务过程Modules](modules/business-process-discovery/README.md) | 完整过程、归并、五文件 |
 | 并发、Provider、阶段尝试、新批次 | [model-job-execution](modules/model-job-execution.md) | 绑定、保存和明确终态 |
@@ -36,20 +39,63 @@ Maven用官方 `dependency:build-classpath` 给依赖路径，用 `help:effectiv
 
 Step03–05的analysis.code/persistence/material、Step06投影/阅读协调与Step07内部职责均藏在既有步骤内，不按表格行数增加公共方法、分析步骤或固定产物数量目标。JavaParser、严格图/Fact/Proof/Flow/Capsule/M10 producer退出新生产；精确历史读者保留。CONTEXT只定义业务概念。
 
-## 3. 八步接力
+## 3. 总体接力与分支
+
+```text
+源码准备 R0
+  ├─ collect-frontend R1 ──────────────────┐
+  └─ collect-code R2 → analyze-persistence R3
+                                          ↓
+                              assemble-materials R4
+                                          ↓
+                       新 Ontology 分支（工程已接通，真实样例待验）
+                        O0 准备资料，零模型
+                         → O1 调查/识别/原文审阅
+                         → O2 跨入口关联/原文审阅
+                         → O3 确定性发布，零模型
+                                          ↓
+               对象、身份、属性、联系、操作、规则、维度、指标
+
+旧已保存 Packet/M10 → Activity → Business Process
+（独立既有分支；不向 O0–O3 输入内容，不为本体补兼容）
+```
+
+R0–R4是技术操作角色，O0–O3是本体操作角色；不是新增九个分析步骤。八个semantic key保留，本体操作使用 `repository-knowledge` 下独立执行意图和独立publication。用户可只准备资料、只识别指定范围、只关联或只发布；Skill不能因上一操作成功便擅自扩大模型范围。
+
+新分支只接受版本明确的 `entry-evidence-index`／`entry-evidence`／`frontend-evidence-coverage` v1或v2家族及其真实receipt，且来源为准备版 `PREPARED_V1`；按各自准确Schema、producer和保存owner读取，不补字段转换旧文件。同R0可选补读只读有效原文，含DDL或项目说明；不是从旧分析补结论。版本、排除范围或receipt不符时在Provider初始化前拒绝。新输出采用本体v1合同；不把旧processResult换个名字当本体。
+
+### 3.1 八个固定步骤中的职责
 
 | 步骤 | 程序责任 | 模型责任 | 下一消费者 |
 | --- | --- | --- | --- |
 | 源码准备（内部01 verified-source-inventory） | 已实现：接入并保存源码、逐文件核验、明确排除/问题/版本；新路径不建立行索引 | 无 | 公共源码视图及新执行来源检查 |
-| 02 application-discovery | 目标拆运行：独立前端保存请求/单元；后端读既有Maven输出并发现Spring入口/Mapper候选 | 无；外部Agent只操作工具和解释报告 | 前端供05；后端同会话供03，入口清单供05匹配 |
-| 03 program-graphs | JDT LS/Core→共享METHOD、入口自有CALL；目标修正绑定归属及外部/未知/失败分类 | 无 | 04可选补全、05材料 |
+| 02 application-discovery | 独立前端保存请求/单元；后端读已有Maven输出并发现Spring入口/Mapper候选 | 无；外部Agent只操作工具和解释报告 | 前端供05；后端同会话供03，入口清单供05匹配 |
+| 03 program-graphs | JDT LS/Core→共享METHOD、入口自有CALL；逐调用绑定归属及外部/未知/失败分类 | 无 | 04可选补全、05材料 |
 | 04 proven-code-facts | 官方MyBatis部件/JSqlParser→XML/statement、SQL状态与限制 | 无 | 05按调用关联 |
-| 05 business-flows | 当前Packet保存前后端；目标R4匹配请求后按entryId保存完整Java/XML/SQL/前端JSON及覆盖 | 无 | 旧v1供06；新入口证据先完成技术消费，未适配业务消费者提前拒绝 |
+| 05 business-flows | R4匹配请求后按entryId保存完整已收集Java/XML/SQL/前端JSON及覆盖；历史Packet保持可读 | 无 | R4供技术查询及正式本体consumer；不接旧分析兼容。旧Packet另供既有06 |
 | 06 flow-interpretation | 校验/无损去重投影、实际读取、调度、来源/覆盖 | 小包解释；大包阅读/语义分解；每范围DRAFT+完整REVIEW | 07完整Activity |
-| 07 repository-knowledge | 目录/取材/封包/保存/归并/发布 | 系统认识、事实/写作/核对、关系裁决 | 业务读者 |
+| 07 repository-knowledge（既有步骤执行） | 目录/取材/保存/归并/过程发布 | 系统认识、事实DRAFT/WRITE/RULE_REVIEW、归并 | business-processes.md；不是本体前置 |
 | 08 nine-section-document | 严格读取历史报告与来源、确定性排版 | 无新调用 | 历史读者 |
 
-## 4. 已有Step05 v1怎样成为模型输入
+### 3.2 新本体分支的责任与实现差距
+
+O0–O3另属平行本体操作族，不在上表增加一个必经编号步骤。它们仅复用repository-knowledge这个存储key的新module槽位，运行意图、typed输入/输出、查询和业务算法独立；不执行上表第07行。
+
+五个内部职责为Corpus/MaterialPreparation、Recognition、Linker、Validator、Publisher；不得为五个名字先造五套框架。Java以零模型调用组织完整原文、紧凑上下文、技术邻居、来源映射及成本；模型判断业务含义；Validator只检查结构/来源/范围；Publisher不再调模型改写。选中入口、待读范围、已读历史和当前正文分别保存，移出正文不得删除尚未读的另一端导航。
+
+四个正式命令为 `prepare-ontology`、`identify-ontology`、`relate-ontology`、`publish-ontology`，沿唯一CLI及既有Agent/store接通。现有四技术命令及 `prepare-source` 不重做。识别/关联采用EXTRACT或RELATE→完整原文REVIEW，无WRITE、无旧过程归并。每次请求只处理具名问题及完整必要单元；输入/REVIEW超容量如实失败或保留未知，不截断。限定工程通过不等于客户模型样例通过。
+
+当前正式Corpus、阅读状态、typed提取/审阅、私有保存、确定性组装、四CLI及公开查询已接通，复用R4/R0读者与StructuredModelProvider。scripted DISCOVERY/QUESTION＋MODEL及有限DDL已通过正式Agent/store直接测试；客户新旧R4→O0均已安装、查询。辅助PoC与正式工程测试分别记录，自动选材两批的旧失败不因此改写。真实三例对象/关系/维度/指标质量及全仓覆盖尚未验证，产品模型派发0；当前十步计划工程完成0–8，最终静态质量已通过，真实样例和交付仍待完成。实际可读且有界的结构错误稿及通用诊断已能进入同一次预定REVIEW，不增加自动修稿调用；来源损坏、无法读取、容量或保存失败不靠模型绕过。
+
+共同线索反查、真实`statementRefs`读回及已读方法作为合法查询键已进入正式阅读与保存接线，并通过直接工程测试。共同方法/语句/表只是待查技术邻居，不是业务关系；模型须核对标识产生、传递、保存及使用两端。具体读取状态、紧凑投影和实际成本由[材料设计](modules/ontology-recognition/material-preparation.md)拥有；不增加新解析器、图平台或宿主Agent代写/导入路线。
+
+同R0的DDL按配置可选进入O0，保存独立schema-evidence及覆盖，不新增必经技术R命令；最新辅助PoC没有使用DDL。证据读者/O0提前提供作用域内稳定短别名，内部entryId/hash不替换，原文包仍有局部S引用；不改写历史R4。类型化JSON为主格式，三元组只是可选关系视图。
+
+Skill驱动Java正式操作并读取真实结果；用户可改业务Prompt与沟通Prompt、配置已有输入/模型/容量/范围。Prompt不能改Schema、有效范围或来源规则；需要新组织算法时是明确代码扩展，不能依赖当前Codex记忆临时补证。CLI必须可查询实际材料、来源映射、输入、Prompt、模型原稿和修正，不是黑盒。框架材料验收、模型质量与业务覆盖分层；自主选材成功不再作为证明机械准备可行的唯一前提，但仍是独立未通过项。后续实施须依本轮设计另行安排，不继承已耗尽的实验授权。
+
+首版不搭图数据库/向量库、语义证明系统、规则执行器、指标引擎或Foundry部署；不自研DDL恢复器、Maven管理、JavaScript求值器或全文件诊断证明。小样不默认扩大到全仓，详细改动顺序见[implementation-delta](modules/ontology-recognition/implementation-delta.md)。
+
+## 4. 既有Activity分支：Step05 v1怎样成为模型输入
 
 本节只描述现有后端Packet消费，不表示已保存技术v2或本次目标入口证据已经接入模型。新技术材料的读取、查询及未适配业务入口拒绝规则见[技术接线合同](modules/technical-analysis/cli-and-runtime.md)。
 
@@ -75,9 +121,9 @@ ActivityExplainer是唯一局部业务解释者；投影器/阅读协调器不�
 
 新Activity重试政策不扩展到Step07。Step07仍无自动重试：fatal停止新派发，已开始且前置合法的job排空并保存，不归并/正式发布。显式新批次只复用完整匹配的三阶段过程，不能续接孤立DRAFT/WRITE。来源材料不因模型失败重新生成。
 
-## 6. Activity怎样成为Business Process
+## 6. 既有过程分支：Activity怎样成为Business Process
 
-Step07内部仍只有BusinessProcessDiscovery.discover与BusinessProcessPublisher.publish两个深Interface。Discovery隐藏FrozenAnalysisCorpus、RepositoryBusinessCataloger、ProcessMaterialAssembler、CandidateProcessReconstructor和RepositoryProcessConsolidator；Publisher验证封闭结果、来源receipt并确定性发布，不重新解释业务。
+既有Step07过程分支内部有BusinessProcessDiscovery.discover与BusinessProcessPublisher.publish两个深Interface。它们不拥有新本体分支。Discovery隐藏FrozenAnalysisCorpus、RepositoryBusinessCataloger、ProcessMaterialAssembler、CandidateProcessReconstructor和RepositoryProcessConsolidator；Publisher验证封闭结果、来源receipt并确定性发布，不重新解释业务。
 
 FrozenAnalysisCorpus按已绑定运行的准确材料引用和Activity自身来源字段选择：旧Activity重开历史M10，新Activity重开Step05 publication。现有coverage-v3没有materialSource对象；新Activity行的materialId即packetId，另存materialSource字符串、sliceKey、originalSourceRefs。不得按文件形状猜类型、把新SQL补到旧326条Activity上。局部S编号必须经其来源映射才可汇总。
 
@@ -95,7 +141,7 @@ DRAFT解释事实；WRITE只见完整实际DRAFT；最终RULE_REVIEW同时见完
 
 源码准备和业务正文合同本轮不变。版本的唯一精确矩阵由[技术运行合同](modules/technical-analysis/cli-and-runtime.md#5-版本与兼容)维护，区分payload schema与module producer版本，不在主设计重复一份容易过时的版本表。
 
-当前是技术配置v2、请求v4/输出v8、前后端同旧R1。目标配置v3、请求v5/输出v9支持独立R1前端、R2后端、R3持久化、R4入口证据；源码始终属于R0。Core绑定协议和Java/持久化/材料producer同步升级，新字段不回填历史。
+当前技术生产使用配置v3、请求v5/输出v9，支持独立R1前端、R2后端、R3持久化、R4入口证据；源码属于R0。Core绑定协议和Java/持久化/材料producer已同步，新字段不回填历史。本体已新增ontology-config-v1、请求v6／输出v10的独立分支和typed refs；共享registry保留已有分派，不让本体consumer承接旧分析。精确本体版本及模块槽位见[本体合同](modules/ontology-recognition/contracts.md#11-版本安装和输入边界)。
 
 technicalOutput保存准确typed refs，不能用一个sourceRunId混指四种owner。R4必须核对两分支相同准备版来源和有效排除，以及R3准确引用的R2；旧同运行规则按其历史版本读取。已有Activity/过程的checkpoint、modelBatchId、内容和指纹不改；新材料尚未适配则在Provider初始化前拒绝。业务精确字段继续由[集成合同](modules/activity-explanation/integration-contracts.md)维护。
 

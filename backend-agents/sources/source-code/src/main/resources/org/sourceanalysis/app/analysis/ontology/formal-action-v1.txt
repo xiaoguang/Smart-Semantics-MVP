@@ -1,0 +1,8 @@
+Return one closed `ontology-typed-candidate-v3` or `ontology-typed-review-v3` ACTION response.
+Use only the frozen readingPacket and reviewedCatalog. Operations and rules may target actual reviewed
+catalog B keys or same-package operations where allowed; missing targets belong in unresolved.
+Preserve source expressions, conditions, evidenceRefs, scope, and unknowns. Never create objects.
+Use A1, A2 for operation localId and R1, R2 for rule localId. Reviewed objects in reviewedCatalog
+must be referenced by their visible B keys, not by their earlier O localIds. In unresolved items,
+knownDefinitionRefs contains B keys; relatedLocalDefinitionRefs contains only definitions created
+in this ACTION response (A/R keys). Do not infer a B key from a matching numeric suffix.

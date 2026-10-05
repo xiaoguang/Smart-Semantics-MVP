@@ -39,10 +39,14 @@ final class AtomicCanonicalPublicationEngine {
   private static final String MODULE_RECEIPT_ID_DOMAIN = "canonical-module-receipt-id-v1";
   private static final String ENTRY_EVIDENCE_TYPE = "ENTRY_EVIDENCE";
   private static final String ENTRY_EVIDENCE_SCHEMA = "entry-evidence-v1";
+  private static final String ENTRY_EVIDENCE_V2_SCHEMA = "entry-evidence-v2";
   private static final String ENTRY_EVIDENCE_INDEX_TYPE = "ENTRY_EVIDENCE_INDEX";
   private static final String ENTRY_EVIDENCE_INDEX_SCHEMA = "entry-evidence-index-v1";
+  private static final String ENTRY_EVIDENCE_INDEX_V2_SCHEMA = "entry-evidence-index-v2";
   private static final String FRONTEND_EVIDENCE_COVERAGE_TYPE = "FRONTEND_EVIDENCE_COVERAGE";
   private static final String FRONTEND_EVIDENCE_COVERAGE_SCHEMA = "frontend-evidence-coverage-v1";
+  private static final String FRONTEND_EVIDENCE_COVERAGE_V2_SCHEMA =
+      "frontend-evidence-coverage-v2";
   private static final String ENTRY_EVIDENCE_INDEX_FILE = "entry-evidence-index.json";
   private static final String FRONTEND_EVIDENCE_COVERAGE_FILE = "frontend-coverage.jsonl";
   private static final String ENTRY_EVIDENCE_FILE_PLACEHOLDER = "<entry-evidence-file>";
@@ -1113,7 +1117,7 @@ final class AtomicCanonicalPublicationEngine {
                         : null;
                 case 6 ->
                     "frontend-http-discovery".equals(analysisStepAddress.moduleKey())
-                        ? List.of("frontend-http-index.jsonl")
+                        ? frontendHttpIndexPublicationFiles(moduleVersion, descriptors)
                         : null;
                 default -> null;
               };
@@ -1199,9 +1203,7 @@ final class AtomicCanonicalPublicationEngine {
                     switch (analysisStepAddress.moduleKey()) {
                       case "code-reading-materials" -> List.of("code-reading-materials.jsonl");
                       case "entry-evidence" ->
-                          "v3".equals(moduleVersion)
-                              ? entryEvidencePublicationFiles(descriptors)
-                              : null;
+                          entryEvidencePublicationFiles(moduleVersion, descriptors);
                       default -> null;
                     };
                 default -> null;
@@ -1219,17 +1221,44 @@ final class AtomicCanonicalPublicationEngine {
                 default -> null;
               };
           case REPOSITORY_KNOWLEDGE ->
-              analysisStepAddress.moduleNumber() != 1
-                  ? null
-                  : switch (analysisStepAddress.moduleKey()) {
-                    case "business-process-publisher" -> businessProcessPublisherFiles(descriptors);
-                    case "process-explainer" ->
-                        List.of(
-                            "business-processes.jsonl",
-                            "process-coverage.json",
-                            "repository-business-knowledge.json");
-                    default -> null;
-                  };
+              switch (analysisStepAddress.moduleNumber()) {
+                case 1 ->
+                    switch (analysisStepAddress.moduleKey()) {
+                      case "business-process-publisher" ->
+                          businessProcessPublisherFiles(descriptors);
+                      case "process-explainer" ->
+                          List.of(
+                              "business-processes.jsonl",
+                              "process-coverage.json",
+                              "repository-business-knowledge.json");
+                      default -> null;
+                    };
+                case 2 ->
+                    "ontology-corpus".equals(analysisStepAddress.moduleKey())
+                            && "v1".equals(moduleVersion)
+                        ? ontologyCorpusFiles(descriptors)
+                        : null;
+                case 3 ->
+                    "ontology-identification".equals(analysisStepAddress.moduleKey())
+                            && "v1".equals(moduleVersion)
+                        ? List.of("ontology-identification.json")
+                        : null;
+                case 4 ->
+                    "ontology-relations".equals(analysisStepAddress.moduleKey())
+                            && "v1".equals(moduleVersion)
+                        ? List.of("ontology-relations.json")
+                        : null;
+                case 5 ->
+                    "ontology-publisher".equals(analysisStepAddress.moduleKey())
+                            && "v1".equals(moduleVersion)
+                        ? List.of(
+                            "ontology-coverage.json",
+                            "ontology-review.json",
+                            "ontology-sources.jsonl",
+                            "ontology.json")
+                        : null;
+                default -> null;
+              };
           case NINE_SECTION_DOCUMENT ->
               "business-report-publisher".equals(analysisStepAddress.moduleKey())
                       && analysisStepAddress.moduleNumber() == 1
@@ -1261,6 +1290,32 @@ final class AtomicCanonicalPublicationEngine {
               "source-preparation-result.json");
       default -> null;
     };
+  }
+
+  /** O0 is closed to the historical one-file payload or the configured corpus/schema pair. */
+  private static List<String> ontologyCorpusFiles(List<ArtifactDescriptor> descriptors) {
+    List<String> one = List.of("ontology-corpus.json");
+    List<String> two = List.of("ontology-corpus.json", "schema-evidence.json");
+    List<String> names = descriptors.stream().map(ArtifactDescriptor::fileName).toList();
+    if (!names.equals(one) && !names.equals(two)) {
+      return null;
+    }
+    for (ArtifactDescriptor descriptor : descriptors) {
+      boolean valid =
+          switch (descriptor.fileName()) {
+            case "ontology-corpus.json" ->
+                "ONTOLOGY_CORPUS".equals(descriptor.artifactType())
+                    && "ontology-corpus-v1".equals(descriptor.schemaVersion());
+            case "schema-evidence.json" ->
+                "SCHEMA_EVIDENCE".equals(descriptor.artifactType())
+                    && "schema-evidence-v1".equals(descriptor.schemaVersion());
+            default -> false;
+          };
+      if (!valid) {
+        return null;
+      }
+    }
+    return names;
   }
 
   private static List<String> factPublicationFiles(List<ArtifactDescriptor> descriptors) {
@@ -1368,7 +1423,44 @@ final class AtomicCanonicalPublicationEngine {
     return List.of("persistence-material-index.jsonl");
   }
 
-  private static List<String> entryEvidencePublicationFiles(List<ArtifactDescriptor> descriptors) {
+  private static List<String> frontendHttpIndexPublicationFiles(
+      String moduleVersion, List<ArtifactDescriptor> descriptors) {
+    String expectedSchema =
+        switch (moduleVersion) {
+          case "v1" -> "frontend-http-index-v1";
+          case "v2" -> "frontend-http-index-v2";
+          case "v3" -> "frontend-http-index-v3";
+          default -> null;
+        };
+    if (expectedSchema == null
+        || descriptors.size() != 1
+        || !"frontend-http-index.jsonl".equals(descriptors.get(0).fileName())
+        || !"APPLICATION_DISCOVERY_FRONTEND_HTTP_INDEX".equals(descriptors.get(0).artifactType())
+        || !expectedSchema.equals(descriptors.get(0).schemaVersion())) {
+      return null;
+    }
+    return List.of("frontend-http-index.jsonl");
+  }
+
+  private static List<String> entryEvidencePublicationFiles(
+      String moduleVersion, List<ArtifactDescriptor> descriptors) {
+    EntryEvidenceSchemas schemas =
+        switch (moduleVersion) {
+          case "v3" ->
+              new EntryEvidenceSchemas(
+                  ENTRY_EVIDENCE_SCHEMA,
+                  ENTRY_EVIDENCE_INDEX_SCHEMA,
+                  FRONTEND_EVIDENCE_COVERAGE_SCHEMA);
+          case "v4" ->
+              new EntryEvidenceSchemas(
+                  ENTRY_EVIDENCE_V2_SCHEMA,
+                  ENTRY_EVIDENCE_INDEX_V2_SCHEMA,
+                  FRONTEND_EVIDENCE_COVERAGE_V2_SCHEMA);
+          default -> null;
+        };
+    if (schemas == null) {
+      return null;
+    }
     List<String> names = descriptors.stream().map(ArtifactDescriptor::fileName).toList();
     List<String> entryFiles =
         names.stream().filter(AtomicCanonicalPublicationEngine::isEntryEvidenceFileName).toList();
@@ -1376,7 +1468,28 @@ final class AtomicCanonicalPublicationEngine {
     expected.add(ENTRY_EVIDENCE_INDEX_FILE);
     expected.add(FRONTEND_EVIDENCE_COVERAGE_FILE);
     expected.sort(UTF8_ORDER);
-    return names.equals(expected) ? expected : null;
+    if (!names.equals(expected)) {
+      return null;
+    }
+    for (ArtifactDescriptor descriptor : descriptors) {
+      boolean valid =
+          switch (descriptor.artifactType()) {
+            case ENTRY_EVIDENCE_TYPE ->
+                isEntryEvidenceFileName(descriptor.fileName())
+                    && schemas.entrySchema().equals(descriptor.schemaVersion());
+            case ENTRY_EVIDENCE_INDEX_TYPE ->
+                ENTRY_EVIDENCE_INDEX_FILE.equals(descriptor.fileName())
+                    && schemas.indexSchema().equals(descriptor.schemaVersion());
+            case FRONTEND_EVIDENCE_COVERAGE_TYPE ->
+                FRONTEND_EVIDENCE_COVERAGE_FILE.equals(descriptor.fileName())
+                    && schemas.coverageSchema().equals(descriptor.schemaVersion());
+            default -> false;
+          };
+      if (!valid) {
+        return null;
+      }
+    }
+    return expected;
   }
 
   private void requireEntryEvidencePayloadSet(
@@ -1463,8 +1576,12 @@ final class AtomicCanonicalPublicationEngine {
 
   private static boolean isEntryEvidencePayload(CanonicalModulePayload payload) {
     return ENTRY_EVIDENCE_TYPE.equals(payload.artifactType())
-        && ENTRY_EVIDENCE_SCHEMA.equals(payload.schemaVersion());
+        && (ENTRY_EVIDENCE_SCHEMA.equals(payload.schemaVersion())
+            || ENTRY_EVIDENCE_V2_SCHEMA.equals(payload.schemaVersion()));
   }
+
+  private record EntryEvidenceSchemas(
+      String entrySchema, String indexSchema, String coverageSchema) {}
 
   private static boolean isEntryEvidenceFileName(String fileName) {
     return fileName != null && fileName.matches("entry-[0-9a-f]{64}\\.json");
@@ -1791,7 +1908,8 @@ final class AtomicCanonicalPublicationEngine {
                   CanonicalEnvelopeKind.CANONICAL_JSONL)
               : null;
       case ENTRY_EVIDENCE_TYPE ->
-          schemaVersion.equals(ENTRY_EVIDENCE_SCHEMA)
+          (schemaVersion.equals(ENTRY_EVIDENCE_SCHEMA)
+                  || schemaVersion.equals(ENTRY_EVIDENCE_V2_SCHEMA))
               ? new ModuleArtifactContract(
                   AnalysisStepKey.BUSINESS_FLOWS,
                   4,
@@ -1800,7 +1918,8 @@ final class AtomicCanonicalPublicationEngine {
                   CanonicalEnvelopeKind.STANDALONE_JSON)
               : null;
       case ENTRY_EVIDENCE_INDEX_TYPE ->
-          schemaVersion.equals(ENTRY_EVIDENCE_INDEX_SCHEMA)
+          (schemaVersion.equals(ENTRY_EVIDENCE_INDEX_SCHEMA)
+                  || schemaVersion.equals(ENTRY_EVIDENCE_INDEX_V2_SCHEMA))
               ? new ModuleArtifactContract(
                   AnalysisStepKey.BUSINESS_FLOWS,
                   4,
@@ -1809,7 +1928,8 @@ final class AtomicCanonicalPublicationEngine {
                   CanonicalEnvelopeKind.STANDALONE_JSON)
               : null;
       case FRONTEND_EVIDENCE_COVERAGE_TYPE ->
-          schemaVersion.equals(FRONTEND_EVIDENCE_COVERAGE_SCHEMA)
+          (schemaVersion.equals(FRONTEND_EVIDENCE_COVERAGE_SCHEMA)
+                  || schemaVersion.equals(FRONTEND_EVIDENCE_COVERAGE_V2_SCHEMA))
               ? new ModuleArtifactContract(
                   AnalysisStepKey.BUSINESS_FLOWS,
                   4,
@@ -1822,6 +1942,10 @@ final class AtomicCanonicalPublicationEngine {
   }
 
   private static ModuleArtifactContract moduleArtifactContract(CanonicalModulePayload payload) {
+    ModuleArtifactContract ontologyContract = ontologyArtifactContract(payload);
+    if (ontologyContract != null) {
+      return ontologyContract;
+    }
     ModuleArtifactContract businessProcessContract = businessProcessArtifactContract(payload);
     if (businessProcessContract != null) {
       return businessProcessContract;
@@ -1860,7 +1984,8 @@ final class AtomicCanonicalPublicationEngine {
     }
     if ("APPLICATION_DISCOVERY_FRONTEND_HTTP_INDEX".equals(payload.artifactType())
         && ("frontend-http-index-v1".equals(payload.schemaVersion())
-            || "frontend-http-index-v2".equals(payload.schemaVersion()))) {
+            || "frontend-http-index-v2".equals(payload.schemaVersion())
+            || "frontend-http-index-v3".equals(payload.schemaVersion()))) {
       return new ModuleArtifactContract(
           AnalysisStepKey.APPLICATION_DISCOVERY,
           6,
@@ -2248,6 +2373,85 @@ final class AtomicCanonicalPublicationEngine {
           CanonicalEnvelopeKind.CANONICAL_JSONL);
     }
     return null;
+  }
+
+  private static ModuleArtifactContract ontologyArtifactContract(CanonicalModulePayload payload) {
+    return switch (payload.artifactType()) {
+      case "ONTOLOGY_CORPUS" ->
+          "ontology-corpus-v1".equals(payload.schemaVersion())
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+                  2,
+                  "ontology-corpus",
+                  "ontology-corpus.json",
+                  CanonicalEnvelopeKind.STANDALONE_JSON)
+              : null;
+      case "SCHEMA_EVIDENCE" ->
+          "schema-evidence-v1".equals(payload.schemaVersion())
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+                  2,
+                  "ontology-corpus",
+                  "schema-evidence.json",
+                  CanonicalEnvelopeKind.STANDALONE_JSON)
+              : null;
+      case "ONTOLOGY_IDENTIFICATION" ->
+          Set.of("ontology-identification-v1", "ontology-identification-v2")
+                  .contains(payload.schemaVersion())
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+                  3,
+                  "ontology-identification",
+                  "ontology-identification.json",
+                  CanonicalEnvelopeKind.STANDALONE_JSON)
+              : null;
+      case "ONTOLOGY_RELATIONS" ->
+          Set.of("ontology-relations-v1", "ontology-relations-v2").contains(payload.schemaVersion())
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+                  4,
+                  "ontology-relations",
+                  "ontology-relations.json",
+                  CanonicalEnvelopeKind.STANDALONE_JSON)
+              : null;
+      case "ONTOLOGY" ->
+          "ontology-v1".equals(payload.schemaVersion())
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+                  5,
+                  "ontology-publisher",
+                  "ontology.json",
+                  CanonicalEnvelopeKind.STANDALONE_JSON)
+              : null;
+      case "ONTOLOGY_COVERAGE" ->
+          Set.of("ontology-coverage-v1", "ontology-coverage-v2").contains(payload.schemaVersion())
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+                  5,
+                  "ontology-publisher",
+                  "ontology-coverage.json",
+                  CanonicalEnvelopeKind.STANDALONE_JSON)
+              : null;
+      case "ONTOLOGY_SOURCE_INDEX" ->
+          "ontology-source-v1".equals(payload.schemaVersion())
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+                  5,
+                  "ontology-publisher",
+                  "ontology-sources.jsonl",
+                  CanonicalEnvelopeKind.CANONICAL_JSONL)
+              : null;
+      case "ONTOLOGY_REVIEW" ->
+          Set.of("ontology-review-v1", "ontology-review-v2").contains(payload.schemaVersion())
+              ? new ModuleArtifactContract(
+                  AnalysisStepKey.REPOSITORY_KNOWLEDGE,
+                  5,
+                  "ontology-publisher",
+                  "ontology-review.json",
+                  CanonicalEnvelopeKind.STANDALONE_JSON)
+              : null;
+      default -> null;
+    };
   }
 
   private static ModuleArtifactContract businessProcessArtifactContract(

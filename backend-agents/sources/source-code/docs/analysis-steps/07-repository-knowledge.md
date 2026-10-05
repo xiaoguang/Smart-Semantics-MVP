@@ -1,6 +1,14 @@
-# 仓库业务过程
+# 仓库语义：本体分支与既有业务过程分支
 
-> 固定key：repository-knowledge；目录：steps/07-repository-knowledge/。详细职责见[业务过程Modules](../modules/business-process-discovery/README.md)，当前/目标边界见[主设计](../DESIGN.md)。
+> 固定key：repository-knowledge；目录：steps/07-repository-knowledge/。新分支由[本体Modules](../modules/ontology-recognition/README.md)拥有；既有过程分支由[业务过程Modules](../modules/business-process-discovery/README.md)拥有。二者不共用内容合同，不增加公共Agent方法。
+
+## 0. 同存储key的独立本体操作族（非本步骤执行）
+
+新本体操作族只接受新R4及同R0原文，未实现；它复用本key下独立module2–5的存储地址，**不执行本文既有Step07过程算法**。详细接力/合同唯一归[本体Modules](../modules/ontology-recognition/README.md)，不在这里复制流程。
+
+该分支不读取旧Activity、M10、Packet、过程目录/稿件或九章；不兼容、不迁移、不双写旧分析格式。它复用公共Agent、运行登记、canonical存储和Provider底座，不调用BusinessProcessDiscovery/Publisher，不借processResult存本体。对象/身份/关系/操作/规则/维度/指标的完整合同由本体Modules维护，执行差距由[实施计划](../plans/ontology-recognition-implementation-plan.md)维护。
+
+以下第1–5节只描述**既有业务过程分支**及其历史/所属设计状态，不是本体实现任务或输入要求。不因新分支删除已有结果；也不把既有双来源读者当本体必须支持的兼容路线。
 
 ## 1. 目的与输入
 

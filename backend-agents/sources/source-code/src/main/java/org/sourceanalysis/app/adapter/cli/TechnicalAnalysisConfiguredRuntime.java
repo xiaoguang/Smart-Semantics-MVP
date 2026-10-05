@@ -85,6 +85,7 @@ import org.sourceanalysis.app.artifact.AnalysisStepKey;
 import org.sourceanalysis.app.artifact.AnalysisStepModuleAddress;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationAddress;
 import org.sourceanalysis.app.artifact.AnalysisStepPublicationReference;
+import org.sourceanalysis.app.artifact.AnalysisStepPublisherModuleProvenance;
 import org.sourceanalysis.app.artifact.ArtifactControls;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.artifact.ArtifactPolicyKey;
@@ -152,6 +153,16 @@ final class TechnicalAnalysisConfiguredRuntime {
       List.of("collect-frontend", "collect-code", "analyze-persistence", "assemble-materials");
 
   private TechnicalAnalysisConfiguredRuntime() {}
+
+  /** Reuses the saved v3 entry-evidence capacity when another local reader admits that exact R4. */
+  static ArtifactStoreLimits entryEvidenceStoreLimits(EntryEvidenceProfile profile) {
+    return Configuration.entryEvidenceStoreLimits(profile);
+  }
+
+  /** Reopens the original R1--R3 technical publications under their producing byte limit. */
+  static ArtifactStoreLimits technicalPublicationStoreLimits() {
+    return TECHNICAL_STORE_LIMITS;
+  }
 
   static boolean handles(Path configurationPath) {
     try {
@@ -331,19 +342,21 @@ final class TechnicalAnalysisConfiguredRuntime {
           AnalysisRunId.parse(SourceAnalysisExecution.requiredText(source, "preparationRunId"));
 
       ObjectNode storage = object(configuration, "storage");
-      SourceAnalysisExecution.requireFields(
+      SourceAnalysisExecution.requireFieldsAllowingOptional(
           storage,
           Set.of(
               "root",
               "preparedSourceArchive",
               "sourcePreparationPolicyRegistry",
-              "artifactPolicyRegistry"));
+              "artifactPolicyRegistry"),
+          Set.of("upstreamArtifactPolicyRegistries"));
       Storage paths =
           new Storage(
               absolute(storage, "root"),
               absolute(storage, "preparedSourceArchive"),
               absolute(storage, "sourcePreparationPolicyRegistry"),
-              absolute(storage, "artifactPolicyRegistry"));
+              absolute(storage, "artifactPolicyRegistry"),
+              optionalPolicyRegistryPaths(storage));
 
       List<String> missing = new ArrayList<>();
       for (String field : requiredOperationSections(operation)) {
@@ -352,6 +365,34 @@ final class TechnicalAnalysisConfiguredRuntime {
         }
       }
       return new Configuration(preparationRunId, paths, missing, configuration);
+    }
+
+    /**
+     * Lists only explicitly configured historical policy files. Each file must later prove the full
+     * policy ID and digest saved with a run; the list is never a current-policy fallback.
+     */
+    private static List<Path> optionalPolicyRegistryPaths(ObjectNode storage) {
+      JsonNode configured = storage.get("upstreamArtifactPolicyRegistries");
+      if (configured == null) {
+        return List.of();
+      }
+      if (!(configured instanceof ArrayNode paths)) {
+        throw new IllegalArgumentException("upstream artifact policy registries are invalid");
+      }
+      List<Path> result = new ArrayList<>(paths.size());
+      for (JsonNode value : paths) {
+        if (!value.isTextual() || value.textValue().isBlank()) {
+          throw new IllegalArgumentException("upstream artifact policy registries are invalid");
+        }
+        Path path =
+            SourceAnalysisExecution.absolutePath(
+                value.textValue(), "upstreamArtifactPolicyRegistries");
+        if (result.contains(path)) {
+          throw new IllegalArgumentException("upstream artifact policy registries are invalid");
+        }
+        result.add(path);
+      }
+      return List.copyOf(result);
     }
 
     private boolean isFourOperationConfiguration() {
@@ -505,7 +546,7 @@ final class TechnicalAnalysisConfiguredRuntime {
       budget.put("frontendHttpDiscovery", frontend.enabled());
       ObjectNode schema = JsonNodeFactory.instance.objectNode();
       schema.put("schemaVersion", FOUR_OPERATION_CONFIG_SCHEMA);
-      schema.put("module", "frontend-http-index-v2");
+      schema.put("module", "frontend-http-index-v3");
       ObjectNode toolchain = JsonNodeFactory.instance.objectNode();
       toolchain.put("mode", frontend.enabled() ? "node-frontend-syntax" : "disabled");
       if (frontend.enabled()) {
@@ -609,7 +650,8 @@ final class TechnicalAnalysisConfiguredRuntime {
                 discovered.diagnostics(),
                 discovered.status(),
                 frontend.configurationFiles(),
-                discovered.supportingSourceUnits());
+                discovered.supportingSourceUnits(),
+                discovered.pageContexts());
       }
       AnalysisStepModuleAddress address =
           new AnalysisStepModuleAddress(
@@ -619,9 +661,9 @@ final class TechnicalAnalysisConfiguredRuntime {
               "frontend-http-discovery");
       ModulePublicationReference publication =
           new FrontendHttpIndexModulePublisher(modules)
-              .publishV2(address, persisted.selectedSourceBasis(), controls, index);
+              .publishV3(address, persisted.selectedSourceBasis(), controls, index);
       new FrontendHttpIndexModulePublisher(modules)
-          .reopenV2(publication, execution.runId(), persisted.selectedSourceBasis(), controls);
+          .reopenV3(publication, execution.runId(), persisted.selectedSourceBasis(), controls);
       return AnalysisRunOutput.technical(
           TechnicalRunOutput.fourOperations(
               AnalysisRunRequest.TechnicalOperation.COLLECT_FRONTEND,
@@ -815,7 +857,7 @@ final class TechnicalAnalysisConfiguredRuntime {
         putNullableText(item, "addPrefix", mapping.addPrefix());
         item.put("basis", mapping.basis());
       }
-      configured.put("payloadSchema", "entry-evidence-v1");
+      configured.put("payloadSchema", "entry-evidence-v2");
       ObjectNode budget = JsonNodeFactory.instance.objectNode();
       EntryEvidenceProfile evidenceProfile = entryEvidenceProfile();
       budget.put("maxEntryUtf8Bytes", evidenceProfile.maxEntryUtf8Bytes());
@@ -823,7 +865,7 @@ final class TechnicalAnalysisConfiguredRuntime {
       budget.put("maxEntries", evidenceProfile.maxEntries());
       ObjectNode schema = JsonNodeFactory.instance.objectNode();
       schema.put("schemaVersion", FOUR_OPERATION_CONFIG_SCHEMA);
-      schema.put("module", "entry-evidence-v1");
+      schema.put("module", "entry-evidence-v2");
       ObjectNode toolchain = JsonNodeFactory.instance.objectNode();
       toolchain.put("mode", "saved-java-and-persistence-material");
       ArtifactReference technicalProfile =
@@ -943,6 +985,8 @@ final class TechnicalAnalysisConfiguredRuntime {
           new FileSystemCanonicalAnalysisStepArtifactStore(store, json, policies, limits);
       FileSystemCanonicalAnalysisStepArtifactStore sourceSteps =
           sourcePreparationAnalysisStepStore(store, json);
+      TechnicalStores backendStores = technicalStores(store, upstream.r1Request());
+      TechnicalStores persistenceStores = technicalStores(store, upstream.r2Request());
       VerifiedSourceInventoryReference r0Source =
           new VerifiedSourceInventoryReference(source.savedSourcePreparation().reportReference());
       ArtifactControls backendControls = technicalControls(upstream.r1Request());
@@ -960,9 +1004,10 @@ final class TechnicalAnalysisConfiguredRuntime {
       PreparedVerifiedSourceTextReader sourceReader =
           new PreparedVerifiedSourceTextReader(
               preparations, new PreparedSourceArchive(storage.preparedSourceArchive()));
-      JavaCodeIndex javaIndex = new JavaCodeIndexReader(steps).reopen(navigation);
+      JavaCodeIndex javaIndex = new JavaCodeIndexReader(backendStores.steps()).reopen(navigation);
       PersistenceMaterialIndex persistenceIndex =
-          new PersistenceMaterialReader(steps, sourceSteps)
+          new PersistenceMaterialReader(
+                  persistenceStores.steps(), backendStores.steps(), sourceSteps)
               .reopenTechnicalV3(
                   persistence,
                   upstream.r2Run().runId(),
@@ -973,7 +1018,7 @@ final class TechnicalAnalysisConfiguredRuntime {
                   persistenceControls);
       FrontendHttpIndex frontendIndex =
           new FrontendHttpIndexModulePublisher(modules)
-              .reopenV2(
+              .reopenV3(
                   frontend,
                   upstream.frontend().owner(),
                   source.selectedSourceBasis(),
@@ -995,7 +1040,8 @@ final class TechnicalAnalysisConfiguredRuntime {
                           mapping.basis()))
               .toList();
       List<org.sourceanalysis.app.analysis.discovery.HttpEntryPoint> entries =
-          new ProgramGraphsExecution(sourceReader, modules, steps, sourceSteps)
+          new ProgramGraphsExecution(
+                  sourceReader, backendStores.modules(), backendStores.steps(), sourceSteps)
               .reopenTechnicalHttpEntries(r0Source, discovery, backendControls);
       EntryEvidenceSet evidence;
       try {
@@ -1028,8 +1074,9 @@ final class TechnicalAnalysisConfiguredRuntime {
       }
       try {
         AnalysisStepPublicationReference publication =
-            new EntryEvidencePublisher(modules, steps, sourceSteps)
-                .publishTechnicalV3(
+            new EntryEvidencePublisher(
+                    modules, steps, sourceSteps, backendStores.steps(), persistenceStores.steps())
+                .publishTechnicalV4(
                     execution.runId(),
                     r0Source,
                     persisted.selectedSourceBasis(),
@@ -1042,7 +1089,7 @@ final class TechnicalAnalysisConfiguredRuntime {
                     persistenceControls,
                     r4Controls,
                     evidence);
-        new EntryEvidenceReader(modules, steps).reopen(publication);
+        new EntryEvidenceReader(modules, steps).reopenV2(publication);
         return AnalysisRunOutput.technical(
             TechnicalRunOutput.fourOperations(
                 AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS,
@@ -1199,6 +1246,21 @@ final class TechnicalAnalysisConfiguredRuntime {
                       supporting.sourceSha256(),
                       supporting.sourceUnitRange(),
                       supporting.sourceUnitKind()));
+      frontendIndex
+          .pageContexts()
+          .forEach(
+              context ->
+                  context
+                      .sourceUnits()
+                      .forEach(
+                          sourceUnit ->
+                              addFrontendSourceUnit(
+                                  units,
+                                  documents,
+                                  sourceUnit.sourcePath(),
+                                  sourceUnit.sourceSha256(),
+                                  sourceUnit.sourceUnitRange(),
+                                  sourceUnit.sourceUnitKind())));
       return new FrontendSourceUnits(
           r0Source,
           frontendPublication,
@@ -1591,7 +1653,8 @@ final class TechnicalAnalysisConfiguredRuntime {
             persisted,
             blockedReadiness(
                 "JAVA_COMPILATION_INPUT_CHANGED",
-                "external compilation input or its effective environment changed after this run was queued"),
+                "external compilation input or its effective environment changed after this run was"
+                    + " queued"),
             policies,
             json,
             store);
@@ -1603,7 +1666,8 @@ final class TechnicalAnalysisConfiguredRuntime {
             persisted,
             blockedReadiness(
                 "JAVA_COMPILATION_INPUT_CHANGED",
-                "external compilation input or its effective environment changed after this run was queued"),
+                "external compilation input or its effective environment changed after this run was"
+                    + " queued"),
             policies,
             json,
             store);
@@ -2018,7 +2082,8 @@ final class TechnicalAnalysisConfiguredRuntime {
       ObjectNode java = object(document, "java");
       if (java.has("dependencyPreparation")) {
         throw new IllegalArgumentException(
-            "technical AUTO_MAVEN dependency configuration is unsupported; use java.compilationInput");
+            "technical AUTO_MAVEN dependency configuration is unsupported; use"
+                + " java.compilationInput");
       }
       SourceAnalysisExecution.requireFieldsAllowingOptional(
           java, Set.of("compilationInput"), Set.of("jdtInstallation", "toolJavaHome"));
@@ -2090,7 +2155,7 @@ final class TechnicalAnalysisConfiguredRuntime {
      * Derives the sole variable-file store budget from the v3 evidence configuration. Historical
      * R1--R3 and packet R4 publications continue to use {@link #TECHNICAL_STORE_LIMITS}.
      */
-    private static ArtifactStoreLimits entryEvidenceStoreLimits(EntryEvidenceProfile profile) {
+    static ArtifactStoreLimits entryEvidenceStoreLimits(EntryEvidenceProfile profile) {
       Objects.requireNonNull(profile, "entry-evidence profile");
       int payloadFiles = Math.addExact(profile.maxEntries(), 2);
       return new ArtifactStoreLimits(
@@ -2702,27 +2767,9 @@ final class TechnicalAnalysisConfiguredRuntime {
               request.technicalAnalysisInputs().upstreamPublication())) {
         throw new TechnicalUpstreamNotReadyException();
       }
-      CanonicalJsonCodec json = new CanonicalJsonCodec();
-      CanonicalArtifactPolicyRegistry policies =
-          SourceAnalysisExecution.loadPolicies(storage.artifactPolicyRegistry(), json);
-      if (!request
-          .technicalAnalysisInputs()
-          .artifactPolicyRegistryRef()
-          .equals(
-              new ArtifactReference(
-                  policies.reference().artifactId(), policies.reference().sha256()))) {
-        throw new TechnicalUpstreamNotReadyException();
-      }
-      ArtifactStoreLimits limits =
-          expectedOperation == AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS
-                  && request.technicalAnalysisInputs().wireVersion()
-                      == AnalysisRunRequest.TechnicalWireVersion.V5
-              ? entryEvidenceStoreLimits(request.technicalAnalysisInputs().entryEvidenceProfile())
-              : TECHNICAL_STORE_LIMITS;
-      FileSystemCanonicalModuleArtifactStore modules =
-          new FileSystemCanonicalModuleArtifactStore(store, json, policies, limits);
-      FileSystemCanonicalAnalysisStepArtifactStore steps =
-          new FileSystemCanonicalAnalysisStepArtifactStore(store, json, policies, limits);
+      TechnicalStores ownStores = technicalStores(store, request);
+      FileSystemCanonicalModuleArtifactStore modules = ownStores.modules();
+      FileSystemCanonicalAnalysisStepArtifactStore steps = ownStores.steps();
       TechnicalRunOutput technical = output.technicalOutput();
       if (expectedOperation == AnalysisRunRequest.TechnicalOperation.COLLECT_FRONTEND) {
         if (request.technicalAnalysisInputs().wireVersion()
@@ -2730,35 +2777,100 @@ final class TechnicalAnalysisConfiguredRuntime {
             || technical.frontendIndex() == null) {
           throw new TechnicalUpstreamNotReadyException();
         }
-        new FrontendHttpIndexModulePublisher(modules)
-            .reopenV2(
-                technical.frontendIndex(),
-                upstreamRunId,
-                selectedSourceBasis,
-                technicalControls(request));
+        reopenVersionedFrontendIndex(
+            modules,
+            technical.frontendIndex(),
+            upstreamRunId,
+            selectedSourceBasis,
+            technicalControls(request));
         return;
       }
-      modules.reopen(technical.readinessReport());
-      steps.reopen(technical.applicationDiscovery());
-      steps.reopen(technical.navigation());
+      reopenOwnedModule(store, technical.readinessReport());
+      reopenOwnedStep(store, technical.applicationDiscovery());
+      reopenOwnedStep(store, technical.navigation());
       if (expectedOperation == AnalysisRunRequest.TechnicalOperation.ANALYZE_PERSISTENCE) {
-        steps.reopen(technical.persistence());
+        reopenOwnedStep(store, technical.persistence());
       } else if (expectedOperation == AnalysisRunRequest.TechnicalOperation.ASSEMBLE_MATERIALS) {
         if (request.technicalAnalysisInputs().wireVersion()
             == AnalysisRunRequest.TechnicalWireVersion.V5) {
           reopenFrontendMaterialUpstream(
               store, technical.frontendIndex().address().runId(), selectedSourceBasis);
         } else {
-          modules.reopen(technical.frontendIndex());
+          reopenOwnedModule(store, technical.frontendIndex());
         }
-        steps.reopen(technical.persistence());
+        reopenOwnedStep(store, technical.persistence());
         if (request.technicalAnalysisInputs().wireVersion()
             == AnalysisRunRequest.TechnicalWireVersion.V5) {
-          new EntryEvidenceReader(modules, steps).reopen(technical.readingMaterials());
+          EntryEvidenceReader reader = new EntryEvidenceReader(modules, steps);
+          var reopened = steps.reopen(technical.readingMaterials());
+          if (!(reopened.receipt().publicationProvenance()
+              instanceof AnalysisStepPublisherModuleProvenance provenance)) {
+            throw new TechnicalUpstreamNotReadyException();
+          }
+          String moduleVersion =
+              modules
+                  .reopen(provenance.publisherSpecificationModuleReference())
+                  .receipt()
+                  .moduleVersion();
+          if ("v3".equals(moduleVersion)) {
+            reader.reopen(technical.readingMaterials());
+          } else if ("v4".equals(moduleVersion)) {
+            reader.reopenV2(technical.readingMaterials());
+          } else {
+            throw new TechnicalUpstreamNotReadyException();
+          }
         } else {
           steps.reopen(technical.readingMaterials());
         }
       }
+    }
+
+    /**
+     * Reopens only one explicitly configured policy document whose full identity equals the saved
+     * run reference. The current registry participates only by that same exact match.
+     */
+    private CanonicalArtifactPolicyRegistry exactSavedTechnicalPolicies(
+        ArtifactReference savedReference, CanonicalJsonCodec json) {
+      List<Path> configured = new ArrayList<>();
+      configured.add(storage.artifactPolicyRegistry());
+      configured.addAll(storage.upstreamArtifactPolicyRegistries());
+      CanonicalArtifactPolicyRegistry matched = null;
+      for (Path path : configured) {
+        CanonicalArtifactPolicyRegistry candidate =
+            SourceAnalysisExecution.loadPolicies(path, json);
+        ArtifactReference candidateReference =
+            new ArtifactReference(
+                candidate.reference().artifactId(), candidate.reference().sha256());
+        if (!savedReference.equals(candidateReference)) {
+          continue;
+        }
+        if (matched != null) {
+          throw new TechnicalUpstreamNotReadyException();
+        }
+        matched = candidate;
+      }
+      if (matched == null) {
+        throw new TechnicalUpstreamNotReadyException();
+      }
+      return matched;
+    }
+
+    /** Reopens the saved R1 format without treating a module-v2 receipt as a module-v3 receipt. */
+    private static FrontendHttpIndex reopenVersionedFrontendIndex(
+        FileSystemCanonicalModuleArtifactStore modules,
+        ModulePublicationReference reference,
+        AnalysisRunId owner,
+        SelectedSourceBasis sourceBasis,
+        ArtifactControls controls) {
+      FrontendHttpIndexModulePublisher publisher = new FrontendHttpIndexModulePublisher(modules);
+      String moduleVersion = modules.reopen(reference).receipt().moduleVersion();
+      if ("v2".equals(moduleVersion)) {
+        return publisher.reopenV2(reference, owner, sourceBasis, controls);
+      }
+      if ("v3".equals(moduleVersion)) {
+        return publisher.reopenV3(reference, owner, sourceBasis, controls);
+      }
+      throw new TechnicalUpstreamNotReadyException();
     }
 
     /**
@@ -2976,7 +3088,10 @@ final class TechnicalAnalysisConfiguredRuntime {
       }
       ReadySourcePreparation selectedSource = reopenSavedSourcePreparationReady();
       try (RunStoreHandle store = RunStoreBootstrap.open(storage.runStore())) {
-        TechnicalStores technicalStores = technicalStores(store);
+        AnalysisRunRequest savedRequest =
+            RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, invocation.requestedRunId())
+                .request();
+        TechnicalStores technicalStores = technicalStores(store, savedRequest);
         TechnicalObservation observation =
             reopenInspectableTechnicalObservation(
                 store,
@@ -2988,10 +3103,8 @@ final class TechnicalAnalysisConfiguredRuntime {
             "lifecycle=%s%n", observation.inspection().analysisRun().lifecycleState().name());
         output.printf("continuationStatus=%s%n", observation.output().continuationStatus().name());
         if (!hidesAvailableOutputs(observation.output())) {
-          observation
-              .output()
-              .availableOutputs()
-              .forEach(key -> output.printf("availableOutput=%s%n", key.name()));
+          inspectableOutputKeys(store, observation.output())
+              .forEach(key -> output.printf("availableOutput=%s%n", key));
         } else {
           // R4 produced no terminal artifact. Keep the saved, typed capacity/source problem
           // observable without advertising the retained upstream publications as R4 output.
@@ -3012,7 +3125,10 @@ final class TechnicalAnalysisConfiguredRuntime {
       }
       ReadySourcePreparation selectedSource = reopenSavedSourcePreparationReady();
       try (RunStoreHandle store = RunStoreBootstrap.open(storage.runStore())) {
-        TechnicalStores technicalStores = technicalStores(store);
+        AnalysisRunRequest savedRequest =
+            RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, invocation.requestedRunId())
+                .request();
+        TechnicalStores technicalStores = technicalStores(store, savedRequest);
         TechnicalObservation observation =
             reopenInspectableTechnicalObservation(
                 store,
@@ -3027,11 +3143,9 @@ final class TechnicalAnalysisConfiguredRuntime {
               invocation, selectedSource, store, technicalStores, observation, output);
           return;
         }
-        AnalysisRunRequest completedRequest =
-            RunStoreBootstrap.reopenPersistedAnalysisRunRequest(
-                    store, observation.inspection().analysisRun().runId())
-                .request();
-        TechnicalStores artifactStores = technicalStores(store, completedRequest);
+        TechnicalStores artifactStores =
+            technicalStoresForArtifact(
+                store, observation.output(), invocation.technicalArtifactQueryKey());
         ArtifactView artifact =
             new LocalRepositoryAnalysisAgent(
                     store,
@@ -3428,10 +3542,6 @@ final class TechnicalAnalysisConfiguredRuntime {
       }
     }
 
-    private TechnicalStores technicalStores(RunStoreHandle store) {
-      return technicalStores(store, null);
-    }
-
     /**
      * Opens the narrow R4 variable-file budget from the saved request, never from the current
      * configuration. All other technical reads keep the historical fixed store limits.
@@ -3439,7 +3549,10 @@ final class TechnicalAnalysisConfiguredRuntime {
     private TechnicalStores technicalStores(RunStoreHandle store, AnalysisRunRequest savedRequest) {
       CanonicalJsonCodec json = new CanonicalJsonCodec();
       CanonicalArtifactPolicyRegistry policies =
-          SourceAnalysisExecution.loadPolicies(storage.artifactPolicyRegistry(), json);
+          savedRequest == null
+              ? SourceAnalysisExecution.loadPolicies(storage.artifactPolicyRegistry(), json)
+              : exactSavedTechnicalPolicies(
+                  savedRequest.technicalAnalysisInputs().artifactPolicyRegistryRef(), json);
       ArtifactStoreLimits limits =
           savedRequest != null
                   && savedRequest.requestKind() == AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS
@@ -3454,6 +3567,111 @@ final class TechnicalAnalysisConfiguredRuntime {
           new ArtifactReference(policies.reference().artifactId(), policies.reference().sha256()),
           new FileSystemCanonicalModuleArtifactStore(store, json, policies, limits),
           new FileSystemCanonicalAnalysisStepArtifactStore(store, json, policies, limits));
+    }
+
+    /**
+     * Reopens a referenced publication through the policy and capacity controls of its real owner.
+     */
+    private TechnicalStores technicalStoresForOwner(RunStoreHandle store, AnalysisRunId owner) {
+      AnalysisRunRequest request =
+          RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, owner).request();
+      if (request.requestKind() != AnalysisRunRequest.RequestKind.TECHNICAL_ANALYSIS) {
+        throw new TechnicalUpstreamNotReadyException();
+      }
+      return technicalStores(store, request);
+    }
+
+    private void reopenOwnedModule(RunStoreHandle store, ModulePublicationReference reference) {
+      if (reference == null || reference.address() == null) {
+        throw new TechnicalUpstreamNotReadyException();
+      }
+      technicalStoresForOwner(store, reference.address().runId()).modules().reopen(reference);
+    }
+
+    private void reopenOwnedStep(RunStoreHandle store, AnalysisStepPublicationReference reference) {
+      if (reference == null || reference.address() == null) {
+        throw new TechnicalUpstreamNotReadyException();
+      }
+      technicalStoresForOwner(store, reference.address().runId()).steps().reopen(reference);
+    }
+
+    /** Returns the one store allowed to read a public payload: the source publication's owner. */
+    private TechnicalStores technicalStoresForArtifact(
+        RunStoreHandle store, TechnicalRunOutput output, TechnicalArtifactQueryKey key) {
+      if (output == null || key == null) {
+        throw new TechnicalArgumentsException();
+      }
+      AnalysisRunId owner =
+          switch (key) {
+            case JAVA_COMPILATION_ENVIRONMENT, JAVA_ANALYSIS_READINESS ->
+                output.readinessReport().address().runId();
+            case FRONTEND_HTTP_INDEX, FRONTEND_HTTP_INDEX_V2, FRONTEND_HTTP_INDEX_V3 ->
+                output.frontendIndex().address().runId();
+            case APPLICATION_PROFILE, ENTRY_POINTS, MAPPER_CATALOG, CAPABILITY_REPORT ->
+                output.applicationDiscovery().address().runId();
+            case JAVA_CODE_INDEX, JAVA_CODE_INDEX_V3 -> output.navigation().address().runId();
+            case PERSISTENCE_MATERIAL_INDEX, PERSISTENCE_MATERIAL_INDEX_V2 ->
+                output.persistence().address().runId();
+            case CODE_READING_MATERIALS,
+                CODE_READING_MATERIALS_V2,
+                ENTRY_EVIDENCE_INDEX,
+                ENTRY_EVIDENCE,
+                ENTRY_EVIDENCE_INDEX_V2,
+                ENTRY_EVIDENCE_V2,
+                FRONTEND_EVIDENCE_COVERAGE,
+                FRONTEND_EVIDENCE_COVERAGE_V2 ->
+                output.readingMaterials().address().runId();
+          };
+      return technicalStoresForOwner(store, owner);
+    }
+
+    /**
+     * Projects configured-query names from exact reopened publication formats, without changing the
+     * historical serialized TechnicalRunOutput list or its fingerprints.
+     */
+    private List<String> inspectableOutputKeys(RunStoreHandle store, TechnicalRunOutput output) {
+      List<String> keys =
+          new ArrayList<>(output.availableOutputs().stream().map(Enum::name).toList());
+      if (output.frontendIndex() != null
+          && "v3"
+              .equals(
+                  technicalStoresForOwner(store, output.frontendIndex().address().runId())
+                      .modules()
+                      .reopen(output.frontendIndex())
+                      .receipt()
+                      .moduleVersion())) {
+        keys.remove("FRONTEND_HTTP_INDEX_V2");
+        keys.remove("FRONTEND_HTTP_INDEX");
+        keys.add("FRONTEND_HTTP_INDEX_V3");
+      }
+      if (output.readingMaterials() != null && entryEvidenceV2(store, output.readingMaterials())) {
+        keys.remove("ENTRY_EVIDENCE_INDEX");
+        keys.remove("ENTRY_EVIDENCE");
+        keys.remove("FRONTEND_EVIDENCE_COVERAGE");
+        keys.add("ENTRY_EVIDENCE_INDEX_V2");
+        keys.add("ENTRY_EVIDENCE_V2");
+        keys.add("FRONTEND_EVIDENCE_COVERAGE_V2");
+      }
+      return List.copyOf(keys);
+    }
+
+    private boolean entryEvidenceV2(
+        RunStoreHandle store, AnalysisStepPublicationReference readingMaterials) {
+      TechnicalStores readingStores =
+          technicalStoresForOwner(store, readingMaterials.address().runId());
+      var reopened = readingStores.steps().reopen(readingMaterials);
+      if (!(reopened.receipt().publicationProvenance()
+          instanceof AnalysisStepPublisherModuleProvenance provenance)) {
+        throw new TechnicalArgumentsException();
+      }
+      ModulePublicationReference specification = provenance.publisherSpecificationModuleReference();
+      return "v4"
+          .equals(
+              technicalStoresForOwner(store, specification.address().runId())
+                  .modules()
+                  .reopen(specification)
+                  .receipt()
+                  .moduleVersion());
     }
 
     /**
@@ -3631,13 +3849,19 @@ final class TechnicalAnalysisConfiguredRuntime {
       Path runStore,
       Path preparedSourceArchive,
       Path sourcePreparationPolicyRegistry,
-      Path artifactPolicyRegistry) {
+      Path artifactPolicyRegistry,
+      List<Path> upstreamArtifactPolicyRegistries) {
 
     private Storage {
       Objects.requireNonNull(runStore, "run store");
       Objects.requireNonNull(preparedSourceArchive, "prepared source archive");
       Objects.requireNonNull(sourcePreparationPolicyRegistry, "source preparation policy registry");
       Objects.requireNonNull(artifactPolicyRegistry, "technical artifact policy registry");
+      upstreamArtifactPolicyRegistries = List.copyOf(upstreamArtifactPolicyRegistries);
+      if (upstreamArtifactPolicyRegistries.contains(artifactPolicyRegistry)) {
+        throw new IllegalArgumentException(
+            "current technical policy cannot be an upstream mapping");
+      }
     }
   }
 
@@ -3811,10 +4035,8 @@ final class TechnicalAnalysisConfiguredRuntime {
                   || maxBytes == null))) {
         throw new TechnicalArgumentsException();
       }
-      if ((technicalArtifactQueryKey == TechnicalArtifactQueryKey.ENTRY_EVIDENCE
-              && !isEntryId(entryId))
-          || (technicalArtifactQueryKey != TechnicalArtifactQueryKey.ENTRY_EVIDENCE
-              && entryId != null)) {
+      if ((requiresEntryId(technicalArtifactQueryKey) && !isEntryId(entryId))
+          || (!requiresEntryId(technicalArtifactQueryKey) && entryId != null)) {
         throw new TechnicalArgumentsException();
       }
       if ((artifactFormat == null) != (artifactOutput == null)
@@ -3832,6 +4054,11 @@ final class TechnicalAnalysisConfiguredRuntime {
       } catch (IllegalArgumentException invalid) {
         throw new TechnicalArgumentsException();
       }
+    }
+
+    private static boolean requiresEntryId(TechnicalArtifactQueryKey key) {
+      return key == TechnicalArtifactQueryKey.ENTRY_EVIDENCE
+          || key == TechnicalArtifactQueryKey.ENTRY_EVIDENCE_V2;
     }
 
     private static TechnicalArtifactQueryKey parseTechnicalArtifactKey(String value) {

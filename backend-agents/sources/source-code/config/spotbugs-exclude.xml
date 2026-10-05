@@ -60,6 +60,7 @@
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.EntryEvidenceSet$Java"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.EntryEvidenceSet$Persistence"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.EntryEvidenceSet$FrontendCoverage"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.material.EntryEvidenceSet$FrontendPageContextCoverage"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex$Header"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex$JavaBinding"/></Match>
@@ -69,6 +70,33 @@
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex$SqlAstNode"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex$Statement"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.persistence.PersistenceMaterialIndex$XmlNode"/></Match>
+  <!--
+    These formal/frontend records defensively copy their collection inputs, or retain only the
+    immutable OntologyReadingPacket. SpotBugs does not infer those record-value contracts, so
+    each exclusion remains limited to the observed accessor pattern and exact verified type.
+  -->
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.discovery.frontend.FrontendPageContext"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.discovery.frontend.FrontendPageObservation"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyReadingCoordinator$FormalResult"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP2"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyReadingCoordinator$FormalResult"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyReadingCoordinator$Result"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP2"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyReadingCoordinator$Result"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyScopedAssembler$ReviewedTask"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP2"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyScopedAssembler$ReviewedTask"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyTypedTaskRunner$FormalResult"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyTypedTaskRunner$FormalTask"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.runtime.AnalysisRunRequest$OntologyInputs"/></Match>
+  <!--
+    These are exact run-owned service/view references, not mutable input data. The three runners
+    must write one configured OntologyJobResultStore for their shared run. FormalVisibleScope
+    exposes the same verified corpus read view; its sole non-final member is the lazy reopen cache
+    for its already saved source inventory, while all evidence/identity-changing operations return
+    a new Corpus. Keep the exception pinned to this field or accessor and detector.
+  -->
+  <Match><Bug pattern="EI_EXPOSE_REP2"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyDecisionRunner"/><Field name="store"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP2"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyTaskRunner"/><Field name="store"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP2"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyTypedTaskRunner"/><Field name="store"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyReadingCoordinator$FormalVisibleScope"/><Method name="corpus"/></Match>
   <!--
     This is the one deliberate mutable value: a secure, source-bound DOM is shared only by the
     run-owned MapperXmlResourceView. Its consumers treat it as read-only and clone before MyBatis

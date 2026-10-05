@@ -8,6 +8,8 @@
 
 技术采集与组装零业务LLM调用，不解释“采购→入库→付款”的业务生命周期；不执行客户应用、JS、动态MyBatis/OGNL或数据库。保存静态关系和完整原文，不承诺所有运行时分支都被静态证明。
 
+本体语义识别是[总体设计](../../DESIGN.md#3-总体接力与分支)的新分支，owner为[本体Modules](../ontology-recognition/README.md)，差距见[实施计划](../../plans/ontology-recognition-implementation-plan.md)。只消费新R4与同R0可选原文/DDL，不要求重跑技术链，也不兼容旧Activity/过程输入。表/HTTP请求不直接升为对象/Action；当前尚无本体生产实现。
+
 ## 2. 目标运行关系
 
 ```text

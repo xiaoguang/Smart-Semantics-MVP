@@ -22,13 +22,15 @@ public record AnalysisRunRequest(
     AnalysisInputs analysisInputs,
     SourcePreparationInputs sourcePreparationInputs,
     TechnicalAnalysisInputs technicalAnalysisInputs,
-    SelectedSourceBasis selectedSourceBasis) {
+    SelectedSourceBasis selectedSourceBasis,
+    OntologyInputs ontologyInputs) {
 
   /** The mutually exclusive persisted request branches. */
   public enum RequestKind {
     ANALYSIS,
     SOURCE_PREPARATION,
-    TECHNICAL_ANALYSIS
+    TECHNICAL_ANALYSIS,
+    ONTOLOGY
   }
 
   /** The four and only four separately persisted technical operations. */
@@ -45,6 +47,99 @@ public record AnalysisRunRequest(
   public enum TechnicalWireVersion {
     V4,
     V5
+  }
+
+  /** The four independently persisted formal ontology operations. */
+  public enum OntologyOperation {
+    PREPARE_ONTOLOGY,
+    IDENTIFY_ONTOLOGY,
+    RELATE_ONTOLOGY,
+    PUBLISH_ONTOLOGY
+  }
+
+  /**
+   * Immutable inputs for one formal ontology operation.
+   *
+   * <p>These references establish the typed request shape only. The ontology stage reader later
+   * reopens the exact R4 receipt and payload to admit the supported evidence family, its prepared
+   * source, and its effective exclusions before any Provider initialization.
+   */
+  public record OntologyInputs(
+      OntologyOperation operation,
+      AnalysisStepPublicationReference evidencePublication,
+      ArtifactReference ontologyProfileRef,
+      ArtifactReference resourceBudgetRef,
+      ArtifactReference schemaBundleRef,
+      ArtifactReference toolchainRef,
+      ArtifactReference artifactPolicyRegistryRef,
+      ArtifactReference promptBundleRef,
+      ArtifactReference modelBindingRef,
+      ArtifactReference ontologyScopeRef,
+      ArtifactReference ontologySelectionRef,
+      ModulePublicationReference corpusPublication,
+      List<ModulePublicationReference> identificationPublications,
+      List<ModulePublicationReference> relationPublications) {
+
+    public OntologyInputs {
+      Objects.requireNonNull(operation, "ontology operation");
+      requireOntologyEvidence(evidencePublication);
+      require(ontologyProfileRef, "ontology profile");
+      require(resourceBudgetRef, "ontology resource budget");
+      require(schemaBundleRef, "ontology schema bundle");
+      require(toolchainRef, "ontology toolchain");
+      require(artifactPolicyRegistryRef, "ontology artifact policy registry");
+      identificationPublications = immutableSelectedPublications(identificationPublications);
+      relationPublications = immutableSelectedPublications(relationPublications);
+      switch (operation) {
+        case PREPARE_ONTOLOGY -> {
+          if (promptBundleRef != null
+              || modelBindingRef != null
+              || ontologyScopeRef != null
+              || ontologySelectionRef != null
+              || corpusPublication != null
+              || !identificationPublications.isEmpty()
+              || !relationPublications.isEmpty()) {
+            throw new IllegalArgumentException("ONTOLOGY_OPERATION_INPUTS_INVALID");
+          }
+        }
+        case IDENTIFY_ONTOLOGY -> {
+          if (promptBundleRef == null
+              || modelBindingRef == null
+              || ontologyScopeRef == null
+              || ontologySelectionRef != null
+              || !isOntologyModule(corpusPublication, 2, "ontology-corpus")
+              || !identificationPublications.isEmpty()
+              || !relationPublications.isEmpty()) {
+            throw new IllegalArgumentException("ONTOLOGY_OPERATION_INPUTS_INVALID");
+          }
+        }
+        case RELATE_ONTOLOGY -> {
+          if (promptBundleRef == null
+              || modelBindingRef == null
+              || ontologyScopeRef == null
+              || ontologySelectionRef == null
+              || !isOntologyModule(corpusPublication, 2, "ontology-corpus")
+              || identificationPublications.isEmpty()
+              || !allOntologyModules(identificationPublications, 3, "ontology-identification")
+              || !relationPublications.isEmpty()) {
+            throw new IllegalArgumentException("ONTOLOGY_OPERATION_INPUTS_INVALID");
+          }
+        }
+        case PUBLISH_ONTOLOGY -> {
+          if (promptBundleRef != null
+              || modelBindingRef != null
+              || ontologyScopeRef == null
+              || ontologySelectionRef == null
+              || !isOntologyModule(corpusPublication, 2, "ontology-corpus")
+              || identificationPublications.isEmpty()
+              || !allOntologyModules(identificationPublications, 3, "ontology-identification")
+              || relationPublications.isEmpty()
+              || !allOntologyModules(relationPublications, 4, "ontology-relations")) {
+            throw new IllegalArgumentException("ONTOLOGY_OPERATION_INPUTS_INVALID");
+          }
+        }
+      }
+    }
   }
 
   /** The analysis-only immutable inputs, retaining the historical v2 construction shape. */
@@ -238,7 +333,8 @@ public record AnalysisRunRequest(
       case ANALYSIS -> {
         if (analysisInputs == null
             || sourcePreparationInputs != null
-            || technicalAnalysisInputs != null) {
+            || technicalAnalysisInputs != null
+            || ontologyInputs != null) {
           throw new IllegalArgumentException("analysis run request branch is invalid");
         }
         if (selectedSourceBasis == null && analysisInputs.sourceRegistrationId() == null) {
@@ -254,7 +350,8 @@ public record AnalysisRunRequest(
         if (analysisInputs != null
             || sourcePreparationInputs == null
             || technicalAnalysisInputs != null
-            || selectedSourceBasis != null) {
+            || selectedSourceBasis != null
+            || ontologyInputs != null) {
           throw new IllegalArgumentException("source preparation request branch is invalid");
         }
       }
@@ -262,6 +359,7 @@ public record AnalysisRunRequest(
         if (analysisInputs != null
             || sourcePreparationInputs != null
             || technicalAnalysisInputs == null
+            || ontologyInputs != null
             || selectedSourceBasis == null
             || selectedSourceBasis.kind() != SelectedSourceBasis.Kind.PREPARED_V1
             || (technicalAnalysisInputs.operation() == TechnicalOperation.COLLECT_CODE
@@ -273,7 +371,33 @@ public record AnalysisRunRequest(
           throw new IllegalArgumentException("TECHNICAL_ANALYSIS_UPSTREAM_PUBLICATION_INVALID");
         }
       }
+      case ONTOLOGY -> {
+        if (analysisInputs != null
+            || sourcePreparationInputs != null
+            || technicalAnalysisInputs != null
+            || ontologyInputs == null
+            || selectedSourceBasis == null
+            || selectedSourceBasis.kind() != SelectedSourceBasis.Kind.PREPARED_V1) {
+          throw new IllegalArgumentException("ONTOLOGY_OPERATION_INPUTS_INVALID");
+        }
+      }
     }
+  }
+
+  /** Preserves the previous five-field construction surface while adding the ontology branch. */
+  public AnalysisRunRequest(
+      RequestKind requestKind,
+      AnalysisInputs analysisInputs,
+      SourcePreparationInputs sourcePreparationInputs,
+      TechnicalAnalysisInputs technicalAnalysisInputs,
+      SelectedSourceBasis selectedSourceBasis) {
+    this(
+        requestKind,
+        analysisInputs,
+        sourcePreparationInputs,
+        technicalAnalysisInputs,
+        selectedSourceBasis,
+        null);
   }
 
   /** Preserves the public v2 construction contract for legacy callers and strict v2 persistence. */
@@ -376,6 +500,13 @@ public record AnalysisRunRequest(
       SelectedSourceBasis selectedSourceBasis, TechnicalAnalysisInputs technicalAnalysisInputs) {
     return new AnalysisRunRequest(
         RequestKind.TECHNICAL_ANALYSIS, null, null, technicalAnalysisInputs, selectedSourceBasis);
+  }
+
+  /** Creates one formal ontology request without repurposing an historical checkpoint branch. */
+  public static AnalysisRunRequest ontology(
+      SelectedSourceBasis selectedSourceBasis, OntologyInputs ontologyInputs) {
+    return new AnalysisRunRequest(
+        RequestKind.ONTOLOGY, null, null, null, selectedSourceBasis, ontologyInputs);
   }
 
   /** Creates one v5 request for the split frontend/backend technical operation family. */
@@ -482,6 +613,7 @@ public record AnalysisRunRequest(
       case ANALYSIS -> analysisInputs().artifactPolicyRegistryRef();
       case SOURCE_PREPARATION -> sourcePreparationInputs().artifactPolicyRegistryRef();
       case TECHNICAL_ANALYSIS -> technicalAnalysisInputs().artifactPolicyRegistryRef();
+      case ONTOLOGY -> ontologyInputs().artifactPolicyRegistryRef();
     };
   }
 
@@ -546,6 +678,48 @@ public record AnalysisRunRequest(
         && address.analysisStepKey() == AnalysisStepKey.APPLICATION_DISCOVERY
         && address.moduleNumber() == 6
         && "frontend-http-discovery".equals(address.moduleKey());
+  }
+
+  private static void requireOntologyEvidence(AnalysisStepPublicationReference publication) {
+    if (publication == null
+        || publication.address() == null
+        || publication.analysisStepArtifactRoot() == null
+        || publication.analysisStepReceiptId() == null
+        || publication.analysisStepReceiptSha256() == null
+        || publication.address().analysisStepKey() != AnalysisStepKey.BUSINESS_FLOWS) {
+      throw new IllegalArgumentException("ONTOLOGY_EVIDENCE_PUBLICATION_INVALID");
+    }
+  }
+
+  private static List<ModulePublicationReference> immutableSelectedPublications(
+      List<ModulePublicationReference> publications) {
+    if (publications == null) {
+      throw new IllegalArgumentException("ONTOLOGY_SELECTED_PUBLICATIONS_INVALID");
+    }
+    List<ModulePublicationReference> immutable = List.copyOf(publications);
+    if (immutable.stream().anyMatch(Objects::isNull)
+        || new java.util.HashSet<>(immutable).size() != immutable.size()) {
+      throw new IllegalArgumentException("ONTOLOGY_SELECTED_PUBLICATIONS_INVALID");
+    }
+    return immutable;
+  }
+
+  private static boolean allOntologyModules(
+      List<ModulePublicationReference> publications, int number, String key) {
+    return publications.stream()
+        .allMatch(publication -> isOntologyModule(publication, number, key));
+  }
+
+  private static boolean isOntologyModule(
+      ModulePublicationReference publication, int number, String key) {
+    return publication != null
+        && publication.address() instanceof AnalysisStepModuleAddress address
+        && address.analysisStepKey() == AnalysisStepKey.REPOSITORY_KNOWLEDGE
+        && address.moduleNumber() == number
+        && key.equals(address.moduleKey())
+        && publication.moduleArtifactRoot() != null
+        && publication.moduleReceiptId() != null
+        && publication.moduleReceiptSha256() != null;
   }
 
   private static void require(ArtifactReference reference, String label) {
