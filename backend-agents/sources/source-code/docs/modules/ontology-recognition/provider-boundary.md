@@ -1,6 +1,6 @@
 # 本体请求的输出边界
 
-状态：2026-10-05，formal typed-v3、SDK字节/token适配、整次期限、局部失败及私有响应保存均已限定验收。实际O1/O2共18请求，8任务已审、1采购关系拒绝，O3有效四文件可查询。最后的正式响应读取大小/期限已直接RED→GREEN；20项直接组合及最终质量6695通过，旧三参数/MD路径保持原行为。订阅输出token仍NOT_ENFORCED_BY_ADAPTER；不承诺远端取消或模型零错误。实际证据与成本见[验收记录](../../supplements/ontology-formal-acceptance-20261003.md)。
+状态：业务联系优先正式工程、骨架发布和跨运行财务/统计细化已完成，最终129项直接回归及同代码质量通过；四文件重开字节一致。**业务覆盖、小窗口及浏览器呈现验收仍部分未通过/未验**，不宣称完整采购主链、全仓自主发现或跨项目同等质量。当前实际运行、材料成本、结果及剩余义务由[正式验收](../../supplements/ontology-business-link-formal-acceptance-20261005.md)统一维护；[前序稳定性18请求](../../supplements/ontology-formal-acceptance-20261003.md)仍属原版本，旧MD及历史文件不变。本轮通过原[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)交付。
 
 ## 已核对的能力
 
@@ -18,6 +18,10 @@
 新行为只适用于本体请求分支。`StructuredModelRequest`保留六参数构造和旧请求的六字段序列化；formal typed-v3以可空的ontology专用`requestedMaxOutputTokens`携带声明，并在私有formal journal保存它。旧请求不新增字段、不重算指纹、不改变原有Provider参数传递。本页描述的限制不阻碍零模型的材料准备、存储或查询；真实运行前必须在预检报告中展示。
 
 ## 初始化前检查与实际审阅输入
+
+本体的完整本地校验Schema与实际Provider Schema分开保存。官方Structured Outputs只支持JSON Schema子集：不支持`allOf/if/then`，分支使用`anyOf`；完整本地Schema仍负责条件与互斥验证。[官方支持范围](https://developers.openai.com/api/docs/guides/structured-outputs)
+
+2026-10-05正式业务联系验收发现，既有`OntologyProviderSchema`只去除`uniqueItems`，没有处理formal-reading-v1/v2内的上述组合，首次请求在生成内容前收到明确HTTP400 `invalid_json_schema`。已实现的修复限定在既有本体投影器的拷贝：移除条件组合、将动作分支`oneOf`转为`anyOf`；不改本地Schema、原文、Prompt或模型，也不扩大成通用Schema转换系统。EXCLUDED_FROM_TASK须非空单元、动作形状及准确引用仍由原本地校验拒绝。实际新Schema参与任务身份，历史请求与失败观察不改写；直接RED后，10项受影响测试GREEN，实际Provider验收仍需独立核验。重开及实际请求结果由本轮[验收记录](../../supplements/ontology-business-link-formal-acceptance-20261005.md)维护，不把离线GREEN解释为新请求已经成功。
 
 正式typed runner必须提供不创建Provider的输入准备接口，返回实际EXTRACT请求及其准确任务身份。运行时先核对来源、冻结包、已审目录和这个完整封套，再初始化模型适配器；不能用一个空Provider占位，或另写一套近似投影来宣称检查通过。
 

@@ -43,6 +43,15 @@ final class OntologyTypedDefinitionValidator {
    * packet and reviewed catalog below rather than guessed from text.
    */
   ImmutableBytes forKind(OntologyTaskRunner.TaskKind kind, boolean review) {
+    return formalSchema(kind, review, false);
+  }
+
+  ImmutableBytes forKindV4(OntologyTaskRunner.TaskKind kind, boolean review) {
+    return formalSchema(kind, review, true);
+  }
+
+  private ImmutableBytes formalSchema(
+      OntologyTaskRunner.TaskKind kind, boolean review, boolean v4) {
     if (kind == null) {
       throw new IllegalArgumentException("ONTOLOGY_FORMAL_TASK_KIND_INVALID");
     }
@@ -56,6 +65,9 @@ final class OntologyTypedDefinitionValidator {
     required.add("definitions");
     required.add("unresolved");
     required.add("corrections");
+    if (v4) {
+      required.add("clueDispositions");
+    }
     if (kind == OntologyTaskRunner.TaskKind.RELATE) {
       required.add("identityDecisions");
     }
@@ -63,7 +75,11 @@ final class OntologyTypedDefinitionValidator {
     properties
         .putObject("schemaVersion")
         .put("type", "string")
-        .put("const", review ? "ontology-typed-review-v3" : "ontology-typed-candidate-v3");
+        .put(
+            "const",
+            v4
+                ? (review ? "ontology-typed-review-v4" : "ontology-typed-candidate-v4")
+                : (review ? "ontology-typed-review-v3" : "ontology-typed-candidate-v3"));
     properties.putObject("taskKind").put("type", "string").put("const", kind.name());
     ObjectNode definitions = properties.putObject("definitions");
     definitions.put("type", "object");
@@ -74,7 +90,7 @@ final class OntologyTypedDefinitionValidator {
       definitionRequired.add(field);
       ObjectNode array = definitionProperties.putObject(field);
       array.put("type", "array");
-      array.set("items", formalDefinitionSchema(field));
+      array.set("items", formalDefinitionSchema(field, v4));
     }
     ObjectNode unresolved = properties.putObject("unresolved");
     unresolved.put("type", "array");
@@ -87,13 +103,25 @@ final class OntologyTypedDefinitionValidator {
       decisions.put("type", "array");
       decisions.set("items", identityDecisionSchema());
     }
+    if (v4) {
+      ObjectNode dispositions = properties.putObject("clueDispositions");
+      dispositions.put("type", "array");
+      dispositions.set("items", clueDispositionSchema());
+      if (kind != OntologyTaskRunner.TaskKind.RELATE) {
+        dispositions.put("maxItems", 0);
+      }
+    }
     return json.encodeCanonical(root);
   }
 
-  private ObjectNode formalDefinitionSchema(String field) {
+  private ObjectNode formalDefinitionSchema(String field, boolean v4) {
     ObjectNode value = commonDefinitionSchema();
     switch (field) {
       case "objects" -> {
+        if (v4) {
+          property(
+              value, "displayRole", enumStrings("MAIN", "SUPPORT", "TECHNICAL_OR_UNKNOWN"), true);
+        }
         property(value, "identities", array(identitySchema()), true);
         property(value, "properties", array(propertySchema()), true);
         property(value, "backing", array(sourceBindingSchema()), true);
@@ -381,6 +409,19 @@ final class OntologyTypedDefinitionValidator {
     return value;
   }
 
+  private ObjectNode clueDispositionSchema() {
+    ObjectNode value = closedObject();
+    property(value, "clueRef", string(), true);
+    property(
+        value,
+        "outcome",
+        enumStrings("LINK_SUPPORTED", "NOT_A_BUSINESS_LINK", "NEEDS_MORE_MATERIAL"),
+        true);
+    property(value, "linkRefs", array(string()), true);
+    property(value, "reason", string(), true);
+    return value;
+  }
+
   private ObjectNode closedObject() {
     ObjectNode value = mapper.createObjectNode();
     value.put("type", "object");
@@ -448,6 +489,37 @@ final class OntologyTypedDefinitionValidator {
         document, kind, false, packet, reviewedCatalog, visibleEntryRefs, questionId, false, null);
   }
 
+  FormalValidation inspectFormalCandidateV4(
+      ImmutableBytes response,
+      OntologyTaskRunner.TaskKind kind,
+      OntologyReadingPacket packet,
+      FormalCatalogInventory reviewedCatalog,
+      Set<String> visibleEntryRefs,
+      Set<String> visibleClueRefs,
+      String questionId) {
+    Objects.requireNonNull(visibleClueRefs, "visible ontology clues");
+    if (response == null || response.size() < 1) {
+      throw new IllegalArgumentException("ONTOLOGY_FORMAL_CANDIDATE_UNREADABLE");
+    }
+    JsonNode document = json.parseStrictJson(response);
+    if (!(document instanceof ObjectNode)
+        || !kind.name().equals(document.path("taskKind").asText())) {
+      throw new IllegalArgumentException("ONTOLOGY_FORMAL_CANDIDATE_TASK_UNIDENTIFIABLE");
+    }
+    return validateFormal(
+        document,
+        kind,
+        false,
+        packet,
+        reviewedCatalog,
+        visibleEntryRefs,
+        questionId,
+        false,
+        null,
+        true,
+        visibleClueRefs);
+  }
+
   JsonNode validateFormalReview(
       ImmutableBytes response,
       OntologyTaskRunner.TaskKind kind,
@@ -459,6 +531,31 @@ final class OntologyTypedDefinitionValidator {
     FormalValidation validation =
         inspectFormalReview(
             response, kind, packet, reviewedCatalog, visibleEntryRefs, questionId, draft);
+    if (!validation.diagnostics().isEmpty()) {
+      throw new IllegalArgumentException("ONTOLOGY_FORMAL_RESPONSE_INVALID");
+    }
+    return validation.document();
+  }
+
+  JsonNode validateFormalReviewV4(
+      ImmutableBytes response,
+      OntologyTaskRunner.TaskKind kind,
+      OntologyReadingPacket packet,
+      FormalCatalogInventory reviewedCatalog,
+      Set<String> visibleEntryRefs,
+      Set<String> visibleClueRefs,
+      String questionId,
+      JsonNode draft) {
+    FormalValidation validation =
+        inspectFormalReviewV4(
+            response,
+            kind,
+            packet,
+            reviewedCatalog,
+            visibleEntryRefs,
+            visibleClueRefs,
+            questionId,
+            draft);
     if (!validation.diagnostics().isEmpty()) {
       throw new IllegalArgumentException("ONTOLOGY_FORMAL_RESPONSE_INVALID");
     }
@@ -481,6 +578,34 @@ final class OntologyTypedDefinitionValidator {
         document, kind, true, packet, reviewedCatalog, visibleEntryRefs, questionId, false, draft);
   }
 
+  FormalValidation inspectFormalReviewV4(
+      ImmutableBytes response,
+      OntologyTaskRunner.TaskKind kind,
+      OntologyReadingPacket packet,
+      FormalCatalogInventory reviewedCatalog,
+      Set<String> visibleEntryRefs,
+      Set<String> visibleClueRefs,
+      String questionId,
+      JsonNode draft) {
+    Objects.requireNonNull(visibleClueRefs, "visible ontology clues");
+    if (response == null || response.size() < 1) {
+      throw new IllegalArgumentException("ONTOLOGY_FORMAL_RESPONSE_INVALID");
+    }
+    JsonNode document = json.parseStrictJson(response);
+    return validateFormal(
+        document,
+        kind,
+        true,
+        packet,
+        reviewedCatalog,
+        visibleEntryRefs,
+        questionId,
+        false,
+        draft,
+        true,
+        visibleClueRefs);
+  }
+
   private FormalValidation validateFormal(
       JsonNode document,
       OntologyTaskRunner.TaskKind kind,
@@ -491,24 +616,61 @@ final class OntologyTypedDefinitionValidator {
       String questionId,
       boolean strict,
       JsonNode draft) {
+    return validateFormal(
+        document,
+        kind,
+        review,
+        packet,
+        reviewedCatalog,
+        visibleEntryRefs,
+        questionId,
+        strict,
+        draft,
+        false,
+        Set.of());
+  }
+
+  private FormalValidation validateFormal(
+      JsonNode document,
+      OntologyTaskRunner.TaskKind kind,
+      boolean review,
+      OntologyReadingPacket packet,
+      FormalCatalogInventory reviewedCatalog,
+      Set<String> visibleEntryRefs,
+      String questionId,
+      boolean strict,
+      JsonNode draft,
+      boolean v4,
+      Set<String> visibleClueRefs) {
     List<OntologyTypedTaskRunner.FormalDiagnostic> diagnostics = new ArrayList<>();
     Schema schema =
         SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
-            .getSchema(json.parseCanonical(forKind(kind, review)));
+            .getSchema(json.parseCanonical(v4 ? forKindV4(kind, review) : forKind(kind, review)));
     schema
         .validate(document)
         .forEach(
-            error ->
-                diagnostics.add(
-                    new OntologyTypedTaskRunner.FormalDiagnostic(
-                        "SCHEMA", error.getInstanceLocation().toString(), error.getMessage())));
+            error -> {
+              String path = error.getInstanceLocation().toString();
+              diagnostics.add(
+                  new OntologyTypedTaskRunner.FormalDiagnostic(
+                      "SCHEMA", v4 && path.isBlank() ? "$" : path, error.getMessage()));
+            });
     if (!(document instanceof ObjectNode root)) {
       diagnostics.add(
           new OntologyTypedTaskRunner.FormalDiagnostic(
               "ROOT", "$", "Formal response root must be an object."));
     } else {
       validateFormalReferences(
-          root, kind, packet, reviewedCatalog, visibleEntryRefs, questionId, diagnostics, draft);
+          root,
+          kind,
+          packet,
+          reviewedCatalog,
+          visibleEntryRefs,
+          questionId,
+          diagnostics,
+          draft,
+          v4,
+          visibleClueRefs);
     }
     if (strict && !diagnostics.isEmpty()) {
       throw new IllegalArgumentException("ONTOLOGY_FORMAL_RESPONSE_INVALID");
@@ -524,7 +686,9 @@ final class OntologyTypedDefinitionValidator {
       Set<String> visibleEntryRefs,
       String questionId,
       List<OntologyTypedTaskRunner.FormalDiagnostic> diagnostics,
-      JsonNode draft) {
+      JsonNode draft,
+      boolean v4,
+      Set<String> visibleClueRefs) {
     LocalDefinitions local = localDefinitions(root, diagnostics);
     validateFormalEvidence(root, "$", packet, diagnostics);
     root.path("definitions")
@@ -564,6 +728,10 @@ final class OntologyTypedDefinitionValidator {
     validateTypedValues(root, "$", diagnostics);
     if (kind == OntologyTaskRunner.TaskKind.RELATE) {
       validateIdentityDecisions(root.path("identityDecisions"), reviewedCatalog, diagnostics);
+    }
+    if (v4) {
+      validateClueDispositions(
+          root.path("clueDispositions"), kind, local, visibleClueRefs, diagnostics);
     }
   }
 
@@ -855,6 +1023,75 @@ final class OntologyTypedDefinitionValidator {
         diagnostics.add(
             diagnostic(
                 "IDENTITY_DECISION", path, "Only SAME_OBJECT may have a canonical reference."));
+      }
+    }
+  }
+
+  private void validateClueDispositions(
+      JsonNode dispositions,
+      OntologyTaskRunner.TaskKind kind,
+      LocalDefinitions local,
+      Set<String> visibleClueRefs,
+      List<OntologyTypedTaskRunner.FormalDiagnostic> diagnostics) {
+    if (!dispositions.isArray()) {
+      diagnostics.add(
+          diagnostic(
+              "CLUE_DISPOSITION", "$.clueDispositions", "Clue dispositions must be an array."));
+      return;
+    }
+    if (kind != OntologyTaskRunner.TaskKind.RELATE && !dispositions.isEmpty()) {
+      diagnostics.add(
+          diagnostic(
+              "CLUE_DISPOSITION",
+              "$.clueDispositions",
+              "Only RELATE tasks can dispose of navigation clues."));
+      return;
+    }
+    Set<String> seenClues = new HashSet<>();
+    int index = 0;
+    for (JsonNode disposition : dispositions) {
+      String path = "$.clueDispositions[" + index++ + "]";
+      String clueRef = disposition.path("clueRef").asText();
+      if (!visibleClueRefs.contains(clueRef) || !seenClues.add(clueRef)) {
+        diagnostics.add(
+            diagnostic(
+                "CLUE_REFERENCE",
+                path + ".clueRef",
+                "Clue reference is not uniquely visible in this task: " + clueRef));
+      }
+      String outcome = disposition.path("outcome").asText();
+      JsonNode linkRefs = disposition.path("linkRefs");
+      if (!linkRefs.isArray()) {
+        diagnostics.add(
+            diagnostic("LINK_REFERENCE", path + ".linkRefs", "Link references must be an array."));
+        continue;
+      }
+      if ("LINK_SUPPORTED".equals(outcome)) {
+        if (linkRefs.isEmpty()) {
+          diagnostics.add(
+              diagnostic(
+                  "LINK_REFERENCE", path + ".linkRefs", "A supported clue needs a returned link."));
+        }
+        Set<String> seenLinks = new HashSet<>();
+        for (JsonNode ref : linkRefs) {
+          String linkRef = ref.asText();
+          if (!local.refsOfType("links").contains(linkRef) || !seenLinks.add(linkRef)) {
+            diagnostics.add(
+                diagnostic(
+                    "LINK_REFERENCE",
+                    path + ".linkRefs",
+                    "Link reference is not a unique link returned by this task: " + linkRef));
+          }
+        }
+      } else if ("NOT_A_BUSINESS_LINK".equals(outcome) || "NEEDS_MORE_MATERIAL".equals(outcome)) {
+        if (!linkRefs.isEmpty()) {
+          diagnostics.add(
+              diagnostic("LINK_REFERENCE", path + ".linkRefs", "This outcome cannot cite a link."));
+        }
+        if (disposition.path("reason").asText().isBlank()) {
+          diagnostics.add(
+              diagnostic("CLUE_DISPOSITION", path + ".reason", "This outcome needs a reason."));
+        }
       }
     }
   }

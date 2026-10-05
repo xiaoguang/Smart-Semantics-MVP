@@ -70,7 +70,9 @@ final class OntologyFormalReadingReviewRegressionsTest {
                 coordinator(corpus, overlapProvider, 1, 2, 100_000)
                     .completeFormal(
                         OntologyScopeReader.read(contradictory, corpus), "Q1", "T_OBJECT"))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(OntologyDecisionRunner.FormalReadingModelOutputFailure.class)
+        .hasMessage("ONTOLOGY_READING_RESPONSE_INVALID")
+        .hasCauseInstanceOf(IllegalArgumentException.class);
 
     JsonNode noOpRemoval =
         readingScope(firstEntry, firstClue, activeUnit, secondEntry, secondUnread);
@@ -86,7 +88,9 @@ final class OntologyFormalReadingReviewRegressionsTest {
                 coordinator(corpus, unselectedProvider, 1, 2, 100_000)
                     .completeFormal(
                         OntologyScopeReader.read(noOpRemoval, corpus), "Q1", "T_OBJECT"))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(OntologyDecisionRunner.FormalReadingModelOutputFailure.class)
+        .hasMessage("ONTOLOGY_READING_RESPONSE_INVALID")
+        .hasCauseInstanceOf(IllegalArgumentException.class);
   }
 
   @Test

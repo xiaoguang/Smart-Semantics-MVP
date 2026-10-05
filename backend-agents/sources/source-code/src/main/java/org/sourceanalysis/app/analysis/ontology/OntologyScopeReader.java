@@ -11,23 +11,36 @@ import java.util.Set;
 public final class OntologyScopeReader {
   private static final Set<String> ROOT_FIELDS =
       Set.of("schemaVersion", "mode", "selectionMode", "questions");
+  private static final Set<String> ROOT_FIELDS_V2 =
+      Set.of("schemaVersion", "mode", "selectionMode", "purpose", "questions");
   private static final Set<String> QUESTION_FIELDS =
       Set.of("questionId", "question", "entryRefs", "clueRefs", "tasks");
+  private static final Set<String> QUESTION_FIELDS_V2 =
+      Set.of("questionId", "question", "entryRefs", "clueRefs", "tasks", "objectSources");
   private static final Set<String> TASK_FIELDS =
       Set.of("taskId", "taskKind", "readingMode", "unitUses", "requiredUnitUses");
   private static final Set<String> UNIT_USE_FIELDS = Set.of("unitRef", "entryRef");
+  private static final Set<String> OBJECT_SOURCE_FIELDS = Set.of("identificationRun", "questionId");
 
   private OntologyScopeReader() {}
 
   public static Scope read(JsonNode document, OntologyEvidenceCorpus corpus) {
     Objects.requireNonNull(corpus, "ontology corpus");
     requireObject(document, "ONTOLOGY_SCOPE_INVALID");
-    requireFields(
-        document, ROOT_FIELDS, "ONTOLOGY_SCOPE_UNKNOWN_FIELD", "ONTOLOGY_SCOPE_REQUIRED_FIELD");
-    if (!"ontology-scope-v1"
-        .equals(requiredText(document, "schemaVersion", "ONTOLOGY_SCOPE_INVALID"))) {
+    String schemaVersion = requiredText(document, "schemaVersion", "ONTOLOGY_SCOPE_INVALID");
+    boolean v2 = "ontology-scope-v2".equals(schemaVersion);
+    if (!v2 && !"ontology-scope-v1".equals(schemaVersion)) {
       throw failure("ONTOLOGY_SCOPE_INVALID");
     }
+    requireFields(
+        document,
+        v2 ? ROOT_FIELDS_V2 : ROOT_FIELDS,
+        "ONTOLOGY_SCOPE_UNKNOWN_FIELD",
+        "ONTOLOGY_SCOPE_REQUIRED_FIELD");
+    Purpose purpose =
+        v2
+            ? enumValue(Purpose.class, requiredText(document, "purpose", "ONTOLOGY_SCOPE_INVALID"))
+            : null;
     Mode mode = enumValue(Mode.class, requiredText(document, "mode", "ONTOLOGY_SCOPE_INVALID"));
     SelectionMode selectionMode =
         enumValue(
@@ -46,27 +59,36 @@ public final class OntologyScopeReader {
     Set<String> questionIds = new HashSet<>();
     Set<String> taskIds = new HashSet<>();
     for (JsonNode rawQuestion : rawQuestions) {
-      Question question = question(rawQuestion, corpus, taskIds);
+      Question question = question(rawQuestion, corpus, taskIds, v2, purpose);
       if (!questionIds.add(question.questionId())) {
         throw failure("ONTOLOGY_SCOPE_QUESTION_DUPLICATE");
       }
       questions.add(question);
     }
-    return new Scope(mode, selectionMode, questions);
+    return new Scope(schemaVersion, mode, selectionMode, purpose, questions);
   }
 
   private static Question question(
-      JsonNode rawQuestion, OntologyEvidenceCorpus corpus, Set<String> taskIds) {
+      JsonNode rawQuestion,
+      OntologyEvidenceCorpus corpus,
+      Set<String> taskIds,
+      boolean v2,
+      Purpose purpose) {
     requireObject(rawQuestion, "ONTOLOGY_SCOPE_QUESTION_INVALID");
     requireFields(
         rawQuestion,
-        QUESTION_FIELDS,
+        v2 ? QUESTION_FIELDS_V2 : QUESTION_FIELDS,
         "ONTOLOGY_SCOPE_QUESTION_UNKNOWN_FIELD",
         "ONTOLOGY_SCOPE_QUESTION_REQUIRED_FIELD");
     String questionId = requiredText(rawQuestion, "questionId", "ONTOLOGY_SCOPE_QUESTION_INVALID");
     String question = requiredText(rawQuestion, "question", "ONTOLOGY_SCOPE_QUESTION_INVALID");
     List<String> entryRefs = entryRefs(rawQuestion.get("entryRefs"), corpus);
     List<String> clueRefs = clueRefs(rawQuestion.get("clueRefs"), corpus);
+    List<ObjectSource> objectSources =
+        v2 ? objectSources(rawQuestion.get("objectSources")) : List.of();
+    if (purpose == Purpose.SKELETON && !objectSources.isEmpty()) {
+      throw failure("ONTOLOGY_SCOPE_OBJECT_SOURCE_INVALID");
+    }
     JsonNode rawTasks = rawQuestion.get("tasks");
     if (!rawTasks.isArray() || rawTasks.isEmpty()) {
       throw failure("ONTOLOGY_SCOPE_TASK_REQUIRED");
@@ -86,12 +108,46 @@ public final class OntologyScopeReader {
           && firstDependent < 0) {
         firstDependent = index;
       }
+      if (purpose == Purpose.SKELETON && task.taskKind() != TaskKind.OBJECT) {
+        throw failure("ONTOLOGY_SCOPE_SKELETON_TASK_INVALID");
+      }
       tasks.add(task);
     }
-    if (firstDependent >= 0 && (firstObject < 0 || firstObject > firstDependent)) {
+    if (firstDependent >= 0
+        && (firstObject < 0 || firstObject > firstDependent)
+        && objectSources.isEmpty()) {
       throw failure("ONTOLOGY_SCOPE_OBJECT_DEPENDENCY_MISSING");
     }
-    return new Question(questionId, question, entryRefs, clueRefs, tasks);
+    return new Question(questionId, question, entryRefs, clueRefs, tasks, objectSources);
+  }
+
+  private static List<ObjectSource> objectSources(JsonNode rawSources) {
+    if (rawSources == null || !rawSources.isArray()) {
+      throw failure("ONTOLOGY_SCOPE_OBJECT_SOURCE_INVALID");
+    }
+    List<ObjectSource> sources = new ArrayList<>();
+    Set<ObjectSource> unique = new HashSet<>();
+    for (JsonNode rawSource : rawSources) {
+      requireObject(rawSource, "ONTOLOGY_SCOPE_OBJECT_SOURCE_INVALID");
+      requireFields(
+          rawSource,
+          OBJECT_SOURCE_FIELDS,
+          "ONTOLOGY_SCOPE_OBJECT_SOURCE_UNKNOWN_FIELD",
+          "ONTOLOGY_SCOPE_OBJECT_SOURCE_REQUIRED_FIELD");
+      String run =
+          requiredText(rawSource, "identificationRun", "ONTOLOGY_SCOPE_OBJECT_SOURCE_INVALID");
+      String questionId =
+          requiredText(rawSource, "questionId", "ONTOLOGY_SCOPE_OBJECT_SOURCE_INVALID");
+      if (!run.matches("analysis-run:[0-9a-f]{64}")) {
+        throw failure("ONTOLOGY_SCOPE_OBJECT_SOURCE_INVALID");
+      }
+      ObjectSource source = new ObjectSource(run, questionId);
+      if (!unique.add(source)) {
+        throw failure("ONTOLOGY_SCOPE_OBJECT_SOURCE_DUPLICATE");
+      }
+      sources.add(source);
+    }
+    return List.copyOf(sources);
   }
 
   private static Task task(JsonNode rawTask, OntologyEvidenceCorpus corpus) {
@@ -255,6 +311,11 @@ public final class OntologyScopeReader {
     DISCOVERY
   }
 
+  public enum Purpose {
+    SKELETON,
+    ENRICHMENT
+  }
+
   public enum SelectionMode {
     EXPLICIT,
     MODEL
@@ -271,9 +332,26 @@ public final class OntologyScopeReader {
     MODEL
   }
 
-  public record Scope(Mode mode, SelectionMode selectionMode, List<Question> questions) {
+  public record Scope(
+      String schemaVersion,
+      Mode mode,
+      SelectionMode selectionMode,
+      Purpose purpose,
+      List<Question> questions) {
     public Scope {
+      if (!"ontology-scope-v1".equals(schemaVersion)
+          && !"ontology-scope-v2".equals(schemaVersion)) {
+        throw new IllegalArgumentException("ontology scope schema version");
+      }
+      if (("ontology-scope-v1".equals(schemaVersion) && purpose != null)
+          || ("ontology-scope-v2".equals(schemaVersion) && purpose == null)) {
+        throw new IllegalArgumentException("ontology scope purpose");
+      }
       questions = List.copyOf(questions);
+    }
+
+    public Scope(Mode mode, SelectionMode selectionMode, List<Question> questions) {
+      this("ontology-scope-v1", mode, selectionMode, null, questions);
     }
   }
 
@@ -282,13 +360,26 @@ public final class OntologyScopeReader {
       String question,
       List<String> entryRefs,
       List<String> clueRefs,
-      List<Task> tasks) {
+      List<Task> tasks,
+      List<ObjectSource> objectSources) {
     public Question {
       entryRefs = List.copyOf(entryRefs);
       clueRefs = List.copyOf(clueRefs);
       tasks = List.copyOf(tasks);
+      objectSources = List.copyOf(objectSources);
+    }
+
+    public Question(
+        String questionId,
+        String question,
+        List<String> entryRefs,
+        List<String> clueRefs,
+        List<Task> tasks) {
+      this(questionId, question, entryRefs, clueRefs, tasks, List.of());
     }
   }
+
+  public record ObjectSource(String identificationRun, String questionId) {}
 
   public record Task(
       String taskId,

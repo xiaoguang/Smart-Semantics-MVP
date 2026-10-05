@@ -8,20 +8,103 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.sourceanalysis.app.analysis.ontology.OntologyJobResultStore;
 import org.sourceanalysis.app.runtime.AnalysisRunRequest;
 
-/** Projects verified v2 ontology task outcomes into the existing operation observation wire. */
+/** Projects verified v2/v3 ontology task outcomes into the existing operation observation wire. */
 final class OntologyOperationObservationV2 {
   private OntologyOperationObservationV2() {}
 
+  static void writeObserved(
+      ObjectNode observation,
+      ArrayNode problems,
+      List<JsonNode> taskOutcomes,
+      String runId,
+      AnalysisRunRequest.OntologyOperation operation,
+      OntologyJobResultStore.RuntimeObservation runtime,
+      String missingRuntimeProblemCode) {
+    observation.put("schemaVersion", "ontology-operation-observation-v2");
+    List<JsonNode> declaredOutcomes =
+        OntologyOperationObservationV2.uniqueTaskOutcomes(taskOutcomes, runId);
+    ArrayNode outcomeNodes = observation.putArray("taskOutcomes");
+    declaredOutcomes.forEach(outcomeNodes::add);
+    Set<String> problemIdentities = new LinkedHashSet<>();
+    for (JsonNode outcome : declaredOutcomes) {
+      if ("REVIEWED".equals(outcome.path("status").asText())) {
+        continue;
+      }
+      JsonNode reason = outcome.path("reason");
+      JsonNode reasonStage = reason.get("stage");
+      if (!reason.isObject()
+          || reason.path("code").asText().isBlank()
+          || reason.path("category").asText().isBlank()
+          || (reasonStage != null
+              && !reasonStage.isNull()
+              && (!reasonStage.isTextual() || reasonStage.textValue().isBlank()))) {
+        throw new IllegalArgumentException("ONTOLOGY_RUNTIME_OBSERVATION_INVALID");
+      }
+      OntologyOperationObservationV2.appendProblem(
+          problems,
+          problemIdentities,
+          reason.path("code").asText(),
+          reason.path("category").asText(),
+          outcome.path("runId").isTextual() ? outcome.path("runId").asText() : runId,
+          outcome.path("questionId").asText(),
+          outcome.path("taskId").asText(),
+          reasonStage == null || reasonStage.isNull() ? null : reasonStage.textValue());
+    }
+    String runtimeProblemCode = runtime == null ? missingRuntimeProblemCode : runtime.problemCode();
+    if (runtimeProblemCode != null) {
+      String runtimeTaskId = runtime == null ? null : runtime.taskId();
+      String runtimeStage = runtime == null ? null : runtime.stage();
+      if (!OntologyOperationObservationV2.containsDeclaredOutcomeProblem(
+          declaredOutcomes, runId, runtimeTaskId, runtimeProblemCode, runtimeStage)) {
+        OntologyOperationObservationV2.appendProblem(
+            problems,
+            problemIdentities,
+            runtimeProblemCode,
+            runtime == null || runtime.problemCategory() == null
+                ? "ASSEMBLY".equals(runtimeStage) ? "ASSEMBLY" : "UNKNOWN"
+                : runtime.problemCategory(),
+            runId,
+            null,
+            runtimeTaskId,
+            runtimeStage);
+      }
+    }
+    OntologyOperationObservationV2.writeNextActions(
+        observation, declaredOutcomes, runId, operation);
+    ObjectNode counts = observation.putObject("modelRequestCounts");
+    if (runtime == null || !runtime.isV2()) {
+      if (operation == AnalysisRunRequest.OntologyOperation.PUBLISH_ONTOLOGY) {
+        counts.put("reservedAttempts", 0);
+        counts.put("confirmedStarted", 0);
+        counts.put("confirmedEnded", 0);
+        counts.put("outcomeUnknown", 0);
+      } else {
+        counts.putNull("reservedAttempts");
+        counts.putNull("confirmedStarted");
+        counts.putNull("confirmedEnded");
+        counts.putNull("outcomeUnknown");
+      }
+    } else {
+      counts.put("reservedAttempts", runtime.reservedAttempts());
+      counts.put("confirmedStarted", runtime.confirmedStarted());
+      counts.put("confirmedEnded", runtime.confirmedEnded());
+      counts.put("outcomeUnknown", runtime.outcomeUnknown());
+    }
+  }
+
   static boolean isTaskOutcomePayload(String artifactType, String schemaVersion) {
     return ("ONTOLOGY_IDENTIFICATION".equals(artifactType)
-            && "ontology-identification-v2".equals(schemaVersion))
+            && Set.of("ontology-identification-v2", "ontology-identification-v3")
+                .contains(schemaVersion))
         || ("ONTOLOGY_RELATIONS".equals(artifactType)
-            && "ontology-relations-v2".equals(schemaVersion))
+            && Set.of("ontology-relations-v2", "ontology-relations-v3").contains(schemaVersion))
         || ("ONTOLOGY_COVERAGE".equals(artifactType)
-            && "ontology-coverage-v2".equals(schemaVersion))
-        || ("ONTOLOGY_REVIEW".equals(artifactType) && "ontology-review-v2".equals(schemaVersion));
+            && Set.of("ontology-coverage-v2", "ontology-coverage-v3").contains(schemaVersion))
+        || ("ONTOLOGY_REVIEW".equals(artifactType)
+            && Set.of("ontology-review-v2", "ontology-review-v3").contains(schemaVersion));
   }
 
   static boolean isTaskOutcomePayloadArtifact(String artifactType) {

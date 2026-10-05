@@ -938,7 +938,7 @@ final class AtomicAnalysisStepPublicationEngine {
           switch (publisher.moduleNumber()) {
             case 2 -> {
               if (!"ontology-corpus".equals(publisher.moduleKey())
-                  || !"v1".equals(publisherModuleVersion)) {
+                  || !Set.of("v1", "v2").contains(publisherModuleVersion)) {
                 throw invalidInstall();
               }
               yield new StepContract(
@@ -951,7 +951,7 @@ final class AtomicAnalysisStepPublicationEngine {
             }
             case 3 -> {
               if (!"ontology-identification".equals(publisher.moduleKey())
-                  || !"v1".equals(publisherModuleVersion)) {
+                  || !Set.of("v1", "v3").contains(publisherModuleVersion)) {
                 throw invalidInstall();
               }
               yield new StepContract(
@@ -962,7 +962,7 @@ final class AtomicAnalysisStepPublicationEngine {
             }
             case 4 -> {
               if (!"ontology-relations".equals(publisher.moduleKey())
-                  || !"v1".equals(publisherModuleVersion)) {
+                  || !Set.of("v1", "v3").contains(publisherModuleVersion)) {
                 throw invalidInstall();
               }
               yield new StepContract(
@@ -973,7 +973,7 @@ final class AtomicAnalysisStepPublicationEngine {
             }
             case 5 -> {
               if (!"ontology-publisher".equals(publisher.moduleKey())
-                  || !"v1".equals(publisherModuleVersion)) {
+                  || !Set.of("v1", "v3").contains(publisherModuleVersion)) {
                 throw invalidInstall();
               }
               yield new StepContract(

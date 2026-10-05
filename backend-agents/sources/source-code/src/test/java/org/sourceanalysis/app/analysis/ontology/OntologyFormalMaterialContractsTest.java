@@ -31,12 +31,238 @@ import org.sourceanalysis.app.artifact.ImmutableBytes;
 class OntologyFormalMaterialContractsTest {
   private static final String FIRST = "entry:" + "0".repeat(64);
   private static final String SECOND = "entry:" + "1".repeat(64);
+  private static final String THIRD = "entry:" + "2".repeat(64);
   private static final String SHARED_METHOD = "method:shared";
   private static final String CALLER_METHOD = "method:caller";
   private static final String TARGET_METHOD = "method:target";
   private static final String SECOND_TARGET_METHOD = "method:target-implementation";
   private final CanonicalJsonCodec json = new CanonicalJsonCodec();
   private final ObjectMapper mapper = new ObjectMapper();
+
+  @Test
+  void formalV5CarriesSelectedClueMeaningAndRestoresItsExactMapping() throws Exception {
+    OntologyEvidenceCorpus corpus = repeatedCallCorpus(false).withBusinessLinkNavigation();
+    OntologyReadingPacket packet =
+        OntologyReadingPacket.formalV5(corpus, repeatedCallSelection(), 500_000);
+    String clue = corpus.aliases().clueRef(ClueKind.METHOD, "method:first-reader");
+    OntologyReadingPacket contextual = packet.withVisibleClues(corpus, List.of(clue));
+    JsonNode model = json.parseCanonical(contextual.modelInput());
+    assertThat(model.path("visibleClues").get(0).path("ref").asText()).isEqualTo(clue);
+    assertThat(model.path("visibleClues").get(0).path("kind").asText()).isEqualTo("METHOD");
+    assertThat(model.path("visibleClues").get(0).path("value").asText())
+        .isEqualTo(corpus.aliases().clue(clue).keyDisplay());
+    assertThat(model.path("units"))
+        .isEqualTo(json.parseCanonical(packet.modelInput()).path("units"));
+    assertThat(contextual.packetId()).isNotEqualTo(packet.packetId());
+    assertThat(packet.withVisibleClues(corpus, List.of(clue, clue)))
+        .extracting(OntologyReadingPacket::packetId)
+        .isEqualTo(contextual.packetId());
+  }
+
+  @Test
+  void formalV5StoresSharedCallRowsOnceButKeepsEveryEntryUse() {
+    OntologyEvidenceCorpus corpus = repeatedCallCorpus(false);
+    List<UnitHandle> selected = repeatedCallSelection();
+    OntologyReadingPacket historical = OntologyReadingPacket.formalV4(corpus, selected, 500_000);
+    OntologyReadingPacket compact = OntologyReadingPacket.formalV5(corpus, selected, 500_000);
+    JsonNode oldModel = json.parseCanonical(historical.modelInput());
+    JsonNode model = json.parseCanonical(compact.modelInput());
+
+    assertThat(model.path("schemaVersion").asText()).isEqualTo("ontology-model-reading-v5");
+    assertThat(compact.callContextEncoding()).isEqualTo("EXACT_ROWS_WITH_USES_V1");
+    assertThat(model.has("callContext")).isFalse();
+    assertThat(model.path("callRows")).hasSize(5);
+    assertThat(model.path("callUses")).hasSize(10);
+    assertThat(textValues(model.path("callUses"), "entryRef"))
+        .containsExactlyInAnyOrder("E1", "E1", "E1", "E1", "E1", "E2", "E2", "E2", "E2", "E2");
+    assertThat(model.path("units")).isEqualTo(oldModel.path("units"));
+    assertThat(model.path("callEvidence")).isEqualTo(oldModel.path("callEvidence"));
+    ArrayNode restored = OntologyModelProjection.decodeCallRows(model);
+    assertThat(restored).hasSize(oldModel.path("callContext").size());
+    for (int index = 0; index < restored.size(); index++) {
+      ObjectNode context = (ObjectNode) restored.get(index);
+      assertThat(context.remove("entryRef").asText()).isEqualTo(index < 5 ? "E1" : "E2");
+      assertThat(context).isEqualTo(oldModel.path("callContext").get(index));
+    }
+    assertThat(compact.cost().modelInputBytes()).isLessThan(historical.cost().modelInputBytes());
+    assertThat(compact.packetId()).isNotEqualTo(historical.packetId());
+    assertThat(json.parseCanonical(historical.modelInput()).path("schemaVersion").asText())
+        .isEqualTo("ontology-model-reading-v4");
+  }
+
+  @Test
+  void formalV5NeverMergesDifferentArgumentsAtTheSamePhysicalSite() {
+    OntologyReadingPacket packet =
+        OntologyReadingPacket.formalV5(repeatedCallCorpus(true), repeatedCallSelection(), 500_000);
+    JsonNode model = json.parseCanonical(packet.modelInput());
+    assertThat(model.path("callRows")).hasSize(6);
+    assertThat(model.path("callUses")).hasSize(10);
+    assertThat(model.toString()).contains("otherRecordId");
+  }
+
+  @Test
+  void formalV5DecoderRejectsDanglingRowsAndReorderedUseOrdinals() {
+    OntologyReadingPacket packet =
+        OntologyReadingPacket.formalV5(repeatedCallCorpus(false), repeatedCallSelection(), 500_000);
+    ObjectNode model = (ObjectNode) json.parseCanonical(packet.modelInput());
+    ((ObjectNode) model.path("callUses").get(0)).put("rowRef", "C999");
+    assertThatThrownBy(() -> OntologyModelProjection.decodeCallRows(model))
+        .hasMessage("ONTOLOGY_CALL_USES_INVALID");
+    ObjectNode reordered = (ObjectNode) json.parseCanonical(packet.modelInput());
+    ((ObjectNode) reordered.path("callUses").get(1)).put("ordinal", 0);
+    assertThatThrownBy(() -> OntologyModelProjection.decodeCallRows(reordered))
+        .hasMessage("ONTOLOGY_CALL_USES_INVALID");
+  }
+
+  @Test
+  void formalV5RestoresEverySelectedTargetForAPolymorphicCall() {
+    OntologyEvidenceCorpus corpus = sameEntryMultipleTargetsCorpus();
+    UnitHandle caller = new UnitHandle(FIRST, UnitKind.JAVA_METHOD, CALLER_METHOD);
+    UnitHandle target = new UnitHandle(FIRST, UnitKind.JAVA_METHOD, TARGET_METHOD);
+    UnitHandle implementation = new UnitHandle(FIRST, UnitKind.JAVA_METHOD, SECOND_TARGET_METHOD);
+    OntologyReadingPacket historical =
+        OntologyReadingPacket.formalV4(corpus, List.of(caller, target, implementation), 500_000);
+    OntologyReadingPacket compact =
+        OntologyReadingPacket.formalV5(corpus, List.of(caller, target, implementation), 500_000);
+    JsonNode historicalModel = json.parseCanonical(historical.modelInput());
+    JsonNode compactModel = json.parseCanonical(compact.modelInput());
+    ArrayNode restored = OntologyModelProjection.decodeCallRows(compactModel);
+    String historicalCallerRef = localRef(historical, caller);
+    String compactCallerRef = localRef(compact, caller);
+    JsonNode expected =
+        StreamSupport.stream(historicalModel.path("callContext").spliterator(), false)
+            .filter(
+                context ->
+                    historicalCallerRef.equals(context.path("fromRef").asText())
+                        && context.path("selectedTargets").size() == 2)
+            .findFirst()
+            .orElseThrow();
+    JsonNode actual =
+        StreamSupport.stream(restored.spliterator(), false)
+            .filter(
+                context ->
+                    compactCallerRef.equals(context.path("fromRef").asText())
+                        && context.path("selectedTargets").size() == 2)
+            .findFirst()
+            .orElseThrow();
+
+    assertThat(textValues(actual.path("selectedTargets"), "targetRef"))
+        .containsExactly(localRef(compact, target), localRef(compact, implementation));
+    assertThat(actual.path("selectedTargets")).isEqualTo(expected.path("selectedTargets"));
+  }
+
+  @Test
+  void formalV5KeepsSamePositionCallsSeparateWhenTheirStateOrCandidateSetDiffers()
+      throws Exception {
+    OntologyEvidenceCorpus corpus = samePhysicalCallVariantsCorpus();
+    UnitHandle firstCaller = new UnitHandle(FIRST, UnitKind.JAVA_METHOD, CALLER_METHOD);
+    UnitHandle secondCaller = new UnitHandle(SECOND, UnitKind.JAVA_METHOD, CALLER_METHOD);
+    UnitHandle thirdCaller = new UnitHandle(THIRD, UnitKind.JAVA_METHOD, CALLER_METHOD);
+    List<UnitHandle> selected =
+        List.of(
+            firstCaller,
+            new UnitHandle(FIRST, UnitKind.JAVA_METHOD, TARGET_METHOD),
+            new UnitHandle(FIRST, UnitKind.JAVA_METHOD, SECOND_TARGET_METHOD),
+            secondCaller,
+            new UnitHandle(SECOND, UnitKind.JAVA_METHOD, TARGET_METHOD),
+            new UnitHandle(SECOND, UnitKind.JAVA_METHOD, SECOND_TARGET_METHOD),
+            thirdCaller,
+            new UnitHandle(THIRD, UnitKind.JAVA_METHOD, TARGET_METHOD),
+            new UnitHandle(THIRD, UnitKind.JAVA_METHOD, SECOND_TARGET_METHOD));
+
+    JsonNode firstSavedCall = corpus.read(FIRST, UnitKind.JAVA_CALL, "call:normal-00").content();
+    JsonNode secondSavedCall = corpus.read(SECOND, UnitKind.JAVA_CALL, "call:normal-00").content();
+    JsonNode thirdSavedCall = corpus.read(THIRD, UnitKind.JAVA_CALL, "call:normal-00").content();
+    assertThat(secondSavedCall.path("site")).isEqualTo(firstSavedCall.path("site"));
+    assertThat(thirdSavedCall.path("site")).isEqualTo(firstSavedCall.path("site"));
+    assertThat(secondSavedCall.path("actualArguments"))
+        .isEqualTo(firstSavedCall.path("actualArguments"));
+    assertThat(thirdSavedCall.path("actualArguments"))
+        .isEqualTo(firstSavedCall.path("actualArguments"));
+    assertThat(textValues(firstSavedCall.path("actualArguments"), "expression"))
+        .containsExactly("customerId");
+    assertThat(firstSavedCall.path("resolution").asText()).isEqualTo("LOCATED");
+    assertThat(secondSavedCall.path("resolution").asText()).isEqualTo("CANDIDATES");
+    assertThat(thirdSavedCall.path("resolution").asText()).isEqualTo("CANDIDATES");
+
+    OntologyReadingPacket historical = OntologyReadingPacket.formalV4(corpus, selected, 500_000);
+    OntologyReadingPacket compact = OntologyReadingPacket.formalV5(corpus, selected, 500_000);
+    JsonNode historicalModel = json.parseCanonical(historical.modelInput());
+    JsonNode compactModel = json.parseCanonical(compact.modelInput());
+    ArrayNode restored = OntologyModelProjection.decodeCallRows(compactModel);
+    assertThat(restored).hasSize(historicalModel.path("callContext").size());
+    for (int index = 0; index < restored.size(); index++) {
+      ObjectNode context = (ObjectNode) restored.get(index).deepCopy();
+      context.remove("entryRef");
+      assertThat(context).isEqualTo(historicalModel.path("callContext").get(index));
+    }
+
+    Map<String, JsonNode> rowsByRef = new LinkedHashMap<>();
+    for (JsonNode row : compactModel.path("callRows")) {
+      rowsByRef.put(row.path("ref").asText(), row);
+    }
+    Map<String, String> entryRefs =
+        Map.of(
+            FIRST, corpus.aliases().entryRef(FIRST),
+            SECOND, corpus.aliases().entryRef(SECOND),
+            THIRD, corpus.aliases().entryRef(THIRD));
+    Map<String, String> callUsesByEntry = new LinkedHashMap<>();
+    String firstCallerRef = localRef(compact, firstCaller);
+    for (JsonNode use : compactModel.path("callUses")) {
+      String entryId =
+          entryRefs.entrySet().stream()
+              .filter(entry -> entry.getValue().equals(use.path("entryRef").asText()))
+              .map(Map.Entry::getKey)
+              .findFirst()
+              .orElse(null);
+      if (entryId == null || !firstCallerRef.equals(use.path("fromRef").asText())) {
+        continue;
+      }
+      JsonNode row = rowsByRef.get(use.path("rowRef").asText());
+      if (row != null && samePhysicalSite(row.path("site"), firstSavedCall.path("site"))) {
+        callUsesByEntry.put(entryId, use.path("rowRef").asText());
+      }
+    }
+    assertThat(callUsesByEntry.keySet()).containsExactlyInAnyOrder(FIRST, SECOND, THIRD);
+    assertThat(new HashSet<>(callUsesByEntry.values())).hasSize(3);
+    assertThat(rowsByRef.get(callUsesByEntry.get(FIRST)).path("resolution").asText())
+        .isEqualTo("LOCATED");
+    assertThat(rowsByRef.get(callUsesByEntry.get(SECOND)).path("resolution").asText())
+        .isEqualTo("CANDIDATES");
+    assertThat(rowsByRef.get(callUsesByEntry.get(THIRD)).path("resolution").asText())
+        .isEqualTo("CANDIDATES");
+    assertThat(callEvidenceTargetNames(compactModel, rowsByRef.get(callUsesByEntry.get(SECOND))))
+        .containsExactly("candidate-alpha", "candidate-beta");
+    assertThat(callEvidenceTargetNames(compactModel, rowsByRef.get(callUsesByEntry.get(THIRD))))
+        .containsExactly("candidate-alpha", "candidate-gamma");
+  }
+
+  private List<String> textValues(JsonNode rows, String field) {
+    return StreamSupport.stream(rows.spliterator(), false)
+        .map(row -> row.path(field).asText())
+        .toList();
+  }
+
+  private List<UnitHandle> repeatedCallSelection() {
+    return List.of(
+        new UnitHandle(FIRST, UnitKind.JAVA_METHOD, "method:first-reader"),
+        new UnitHandle(FIRST, UnitKind.JAVA_METHOD, "method:first-target"),
+        new UnitHandle(SECOND, UnitKind.JAVA_METHOD, "method:first-reader"),
+        new UnitHandle(SECOND, UnitKind.JAVA_METHOD, "method:first-target"));
+  }
+
+  private OntologyEvidenceCorpus repeatedCallCorpus(boolean differentArguments) {
+    EntryEvidenceReader.EntryDocument first = denseCallEntry(FIRST, "first", false);
+    ObjectNode second = (ObjectNode) json.parseCanonical(first.canonicalJson());
+    second.put("entryId", SECOND);
+    ((ObjectNode) second.path("entry")).put("route", "/neutral/second-use");
+    if (differentArguments) {
+      ((ObjectNode) second.path("java").path("calls").get(0).path("actualArguments").get(0))
+          .put("expression", "otherRecordId");
+    }
+    return verifiedCorpus(
+        first, new EntryEvidenceReader.EntryDocument(SECOND, json.encodeCanonical(second)));
+  }
 
   @Test
   void corpusAliasesAreStableAcrossPagesAndUnitEnumerationOrder() {
@@ -1328,6 +1554,12 @@ class OntologyFormalMaterialContractsTest {
   }
 
   private OntologyEvidenceCorpus sameEntryMultipleTargetsCorpus() {
+    return verifiedCorpus(
+        new EntryEvidenceReader.EntryDocument(
+            FIRST, json.encodeCanonical(sameEntryMultipleTargetsEntry())));
+  }
+
+  private ObjectNode sameEntryMultipleTargetsEntry() {
     ObjectNode first =
         (ObjectNode)
             json.parseCanonical(
@@ -1361,8 +1593,82 @@ class OntologyFormalMaterialContractsTest {
     ObjectNode association = (ObjectNode) secondTarget.path("argumentAssociations").get(0);
     association.put("formalOrdinal", 0);
     association.put("kind", "POSITIONAL");
+    return first;
+  }
+
+  private OntologyEvidenceCorpus samePhysicalCallVariantsCorpus() {
+    ObjectNode first = sameEntryMultipleTargetsEntry();
+    ObjectNode second = first.deepCopy();
+    second.put("entryId", SECOND);
+    ObjectNode third = first.deepCopy();
+    third.put("entryId", THIRD);
+    makeCandidateCall(second, "candidate-alpha", "candidate-beta");
+    makeCandidateCall(third, "candidate-alpha", "candidate-gamma");
     return verifiedCorpus(
-        new EntryEvidenceReader.EntryDocument(FIRST, json.encodeCanonical(first)));
+        new EntryEvidenceReader.EntryDocument(FIRST, json.encodeCanonical(first)),
+        new EntryEvidenceReader.EntryDocument(SECOND, json.encodeCanonical(second)),
+        new EntryEvidenceReader.EntryDocument(THIRD, json.encodeCanonical(third)));
+  }
+
+  private void makeCandidateCall(ObjectNode entry, String firstCandidate, String secondCandidate) {
+    ObjectNode candidateCall = null;
+    for (JsonNode call : entry.path("java").path("calls")) {
+      if ("call:normal-00".equals(call.path("callKey").asText())) {
+        candidateCall = (ObjectNode) call;
+        break;
+      }
+    }
+    if (candidateCall == null) {
+      throw new AssertionError("fixture candidate call is absent");
+    }
+    candidateCall.put("resolution", "CANDIDATES");
+    candidateCall.put("resolutionDetail", "The saved call has multiple possible targets.");
+    ArrayNode targets = candidateCall.putArray("targets");
+    for (String displayName : List.of(firstCandidate, secondCandidate)) {
+      ObjectNode target = targets.addObject();
+      target.putNull("methodKey");
+      target.put("displayName", displayName);
+      target.putArray("roles").add("DECLARATION");
+      target.putArray("navigationKinds").add("CALL_HIERARCHY");
+      target.put("expansion", "NOT_EXPANDED");
+      target.put("reason", "The saved call remains a candidate for review.");
+      target.putArray("argumentAssociations");
+    }
+    ArrayNode observations = candidateCall.putArray("observations");
+    ObjectNode observation = observations.addObject();
+    observation.put("code", "CANDIDATES");
+    observation.put("operation", "JDT_LANGUAGE_SERVER");
+    observation.put("uriKind", "SOURCE");
+    observation.set("sourceRange", candidateCall.path("site").deepCopy());
+    observation.put("association", "UNCONFIRMED");
+    observation.put("detail", "Two saved candidate targets remain unresolved.");
+    observation.put("declarationKey", "candidate-target");
+    observation.put("declaringTypeKey", "com.example.OrderService");
+    observation.put("displayIdentity", "candidate-targets");
+    observation.put("typeOrigin", "SOURCE");
+  }
+
+  private boolean samePhysicalSite(JsonNode rowSite, JsonNode savedSite) {
+    return rowSite.isArray()
+        && rowSite.size() == 4
+        && rowSite.get(0).asInt() == savedSite.path("startOffsetUtf16").asInt()
+        && rowSite.get(1).asInt() == savedSite.path("lengthUtf16").asInt()
+        && rowSite.get(2).asInt() == savedSite.path("startLine").asInt()
+        && rowSite.get(3).asInt() == savedSite.path("endLine").asInt();
+  }
+
+  private List<String> callEvidenceTargetNames(JsonNode model, JsonNode row) {
+    List<String> names = new ArrayList<>();
+    for (JsonNode ref : row.path("targetRefs")) {
+      names.add(
+          model
+              .path("callEvidence")
+              .path("targets")
+              .path(ref.asText())
+              .path("displayName")
+              .asText());
+    }
+    return List.copyOf(names);
   }
 
   private void configureCall(

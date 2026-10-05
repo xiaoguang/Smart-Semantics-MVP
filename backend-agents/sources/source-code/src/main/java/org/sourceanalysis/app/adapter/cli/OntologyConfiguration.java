@@ -37,7 +37,8 @@ record OntologyConfiguration(
     List<Path> schemaSources,
     Map<String, String> prompts,
     ModelDeclarations models,
-    ImmutableBytes canonicalConfiguration) {
+    ImmutableBytes canonicalConfiguration,
+    Set<String> explicitPromptOverrides) {
 
   private static final String SCHEMA = "ontology-config-v1";
   private static final String PROMPT_ROOT = "/org/sourceanalysis/app/analysis/ontology/";
@@ -51,6 +52,8 @@ record OntologyConfiguration(
     reading = Objects.requireNonNull(reading, "ontology reading limits");
     schemaSources = List.copyOf(Objects.requireNonNull(schemaSources, "ontology schema sources"));
     prompts = Map.copyOf(Objects.requireNonNull(prompts, "ontology prompts"));
+    explicitPromptOverrides =
+        Set.copyOf(Objects.requireNonNull(explicitPromptOverrides, "ontology prompt overrides"));
     canonicalConfiguration =
         Objects.requireNonNull(canonicalConfiguration, "ontology canonical configuration");
   }
@@ -70,10 +73,13 @@ record OntologyConfiguration(
     Reading reading = Reading.load(object(document, "reading"));
     List<Path> schemaSources =
         document.has("schemaSources") ? schemaSources(document.get("schemaSources")) : List.of();
-    Map<String, String> prompts =
+    ObjectNode configuredPrompts =
         document.has("prompts")
-            ? prompts(object(document, "prompts"))
-            : prompts(JsonNodeFactory.instance.objectNode());
+            ? object(document, "prompts")
+            : JsonNodeFactory.instance.objectNode();
+    Map<String, String> prompts = prompts(configuredPrompts);
+    Set<String> explicitPromptOverrides = new LinkedHashSet<>();
+    configuredPrompts.fieldNames().forEachRemaining(explicitPromptOverrides::add);
     ModelDeclarations models =
         document.has("modelJobs") ? ModelDeclarations.load(object(document, "modelJobs")) : null;
     ObjectNode normalized = normalized(storage, reading, schemaSources, prompts, models);
@@ -83,7 +89,28 @@ record OntologyConfiguration(
         schemaSources,
         prompts,
         models,
-        canonicalJson.encodeCanonical(normalized));
+        canonicalJson.encodeCanonical(normalized),
+        explicitPromptOverrides);
+  }
+
+  /** Selects the new frozen Prompt defaults after the caller admits the exact v3 policy set. */
+  OntologyConfiguration forTypedV4() {
+    Map<String, String> selected = new LinkedHashMap<>(prompts);
+    for (String key : PROMPT_KEYS) {
+      if (!explicitPromptOverrides.contains(key)) {
+        selected.put(key, defaultPrompt(key, "v2"));
+      }
+    }
+    CanonicalJsonCodec canonicalJson = new CanonicalJsonCodec();
+    return new OntologyConfiguration(
+        storage,
+        reading,
+        schemaSources,
+        selected,
+        models,
+        canonicalJson.encodeCanonical(
+            normalized(storage, reading, schemaSources, selected, models)),
+        explicitPromptOverrides);
   }
 
   /**
@@ -173,7 +200,11 @@ record OntologyConfiguration(
   }
 
   private static String defaultPrompt(String key) {
-    String resource = PROMPT_ROOT + "formal-" + key + "-v1.txt";
+    return defaultPrompt(key, "v1");
+  }
+
+  private static String defaultPrompt(String key, String version) {
+    String resource = PROMPT_ROOT + "formal-" + key + "-" + version + ".txt";
     try (InputStream input = OntologyConfiguration.class.getResourceAsStream(resource)) {
       if (input == null) {
         throw failure("CONFIGURATION_INVALID");

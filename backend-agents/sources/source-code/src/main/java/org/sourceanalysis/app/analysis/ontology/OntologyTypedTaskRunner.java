@@ -26,6 +26,8 @@ import org.sourceanalysis.app.artifact.ImmutableBytes;
 public final class OntologyTypedTaskRunner {
   public static final String LEGACY_TASK_DEPENDENCY_RULE_VERSION = "legacy";
   public static final String O1_TASK_DEPENDENCY_RULE_VERSION = "ontology-task-dependency-v1";
+  public static final String O1_EXTERNAL_TASK_DEPENDENCY_RULE_VERSION =
+      "ontology-task-dependency-v2";
   public static final String O2_TASK_DEPENDENCY_RULE_VERSION = "ontology-object-sources-v1";
   private final StructuredModelProvider provider;
   private final int maxRequestBytes;
@@ -163,8 +165,8 @@ public final class OntologyTypedTaskRunner {
   public static PreparedFormalTask prepareFormal(FormalTask task) {
     requireFormalTask(task);
     FormalCatalog catalog = formalCatalog(task);
-    ImmutableBytes extractSchema = FORMAL_VALIDATOR.forKind(task.kind(), false);
-    ImmutableBytes reviewSchema = FORMAL_VALIDATOR.forKind(task.kind(), true);
+    ImmutableBytes extractSchema = formalSchema(task, false);
+    ImmutableBytes reviewSchema = formalSchema(task, true);
     String jobKey = formalJobKey(task, catalog, extractSchema, reviewSchema);
     ObjectNode input = formalInput(task, catalog);
     StructuredModelRequest request =
@@ -183,8 +185,8 @@ public final class OntologyTypedTaskRunner {
     FormalTask task = prepared.task();
     String jobKey = prepared.jobKey();
     FormalCatalog catalog = formalCatalog(task);
-    ImmutableBytes expectedExtractSchema = FORMAL_VALIDATOR.forKind(task.kind(), false);
-    ImmutableBytes expectedReviewSchema = FORMAL_VALIDATOR.forKind(task.kind(), true);
+    ImmutableBytes expectedExtractSchema = formalSchema(task, false);
+    ImmutableBytes expectedReviewSchema = formalSchema(task, true);
     String expectedJobKey =
         formalJobKey(task, catalog, expectedExtractSchema, expectedReviewSchema);
     if (!jobKey.equals(expectedJobKey)
@@ -215,13 +217,22 @@ public final class OntologyTypedTaskRunner {
       activeStage = "EXTRACT_VALIDATION";
       requireFormalJsonResponse(extractResponse.responseJson(), activeStage);
       OntologyTypedDefinitionValidator.FormalValidation candidate =
-          FORMAL_VALIDATOR.inspectFormalCandidate(
-              extractResponse.responseJson(),
-              task.kind(),
-              task.packet(),
-              catalog.inventory(),
-              visibleEntryRefs(task.packet()),
-              task.questionId());
+          isV4(task)
+              ? FORMAL_VALIDATOR.inspectFormalCandidateV4(
+                  extractResponse.responseJson(),
+                  task.kind(),
+                  task.packet(),
+                  catalog.inventory(),
+                  visibleEntryRefs(task.packet()),
+                  Set.copyOf(task.visibleClueRefs()),
+                  task.questionId())
+              : FORMAL_VALIDATOR.inspectFormalCandidate(
+                  extractResponse.responseJson(),
+                  task.kind(),
+                  task.packet(),
+                  catalog.inventory(),
+                  visibleEntryRefs(task.packet()),
+                  task.questionId());
       store.formalValidation(
           jobKey,
           "extract",
@@ -250,14 +261,24 @@ public final class OntologyTypedTaskRunner {
               candidate.document(),
               FORMAL_JSON.parseCanonical(catalog.privateMapping()));
       OntologyTypedDefinitionValidator.FormalValidation reviewValidation =
-          FORMAL_VALIDATOR.inspectFormalReview(
-              normalizedReview.canonical(),
-              task.kind(),
-              task.packet(),
-              catalog.inventory(),
-              visibleEntryRefs(task.packet()),
-              task.questionId(),
-              candidate.document());
+          isV4(task)
+              ? FORMAL_VALIDATOR.inspectFormalReviewV4(
+                  normalizedReview.canonical(),
+                  task.kind(),
+                  task.packet(),
+                  catalog.inventory(),
+                  visibleEntryRefs(task.packet()),
+                  Set.copyOf(task.visibleClueRefs()),
+                  task.questionId(),
+                  candidate.document())
+              : FORMAL_VALIDATOR.inspectFormalReview(
+                  normalizedReview.canonical(),
+                  task.kind(),
+                  task.packet(),
+                  catalog.inventory(),
+                  visibleEntryRefs(task.packet()),
+                  task.questionId(),
+                  candidate.document());
       store.formalValidation(
           jobKey,
           "review",
@@ -314,11 +335,17 @@ public final class OntologyTypedTaskRunner {
   public static String formalJobKey(FormalTask task) {
     requireFormalTask(task);
     FormalCatalog catalog = formalCatalog(task);
-    return formalJobKey(
-        task,
-        catalog,
-        FORMAL_VALIDATOR.forKind(task.kind(), false),
-        FORMAL_VALIDATOR.forKind(task.kind(), true));
+    return formalJobKey(task, catalog, formalSchema(task, false), formalSchema(task, true));
+  }
+
+  private static ImmutableBytes formalSchema(FormalTask task, boolean review) {
+    return isV4(task)
+        ? FORMAL_VALIDATOR.forKindV4(task.kind(), review)
+        : FORMAL_VALIDATOR.forKind(task.kind(), review);
+  }
+
+  static boolean isV4(FormalTask task) {
+    return "ontology-model-reading-v5".equals(task.packet().modelProjectionVersion());
   }
 
   static StructuredModelRequest formalReviewRequest(
@@ -346,7 +373,8 @@ public final class OntologyTypedTaskRunner {
     return new FormalIdentity(
         task.binding().corpusIdentity(),
         formalProducingTaskId(task, jobKey),
-        "review-v3-" + OntologyReadingPacket.sha256(review.copyToByteArray()));
+        (isV4(task) ? "review-v4-" : "review-v3-")
+            + OntologyReadingPacket.sha256(review.copyToByteArray()));
   }
 
   /**
@@ -372,7 +400,7 @@ public final class OntologyTypedTaskRunner {
       ImmutableBytes extractSchema,
       ImmutableBytes reviewSchema) {
     ObjectNode identity = FORMAL_MAPPER.createObjectNode();
-    identity.put("profile", "ontology-typed-formal-v3");
+    identity.put("profile", isV4(task) ? "ontology-typed-formal-v4" : "ontology-typed-formal-v3");
     identity.put("reviewNormalization", OntologyFormalReviewNormalizer.PROFILE);
     ObjectNode binding = identity.putObject("binding");
     binding.put("corpusIdentity", task.binding().corpusIdentity());
@@ -381,6 +409,10 @@ public final class OntologyTypedTaskRunner {
     identity.put("taskId", task.taskId());
     identity.put("taskKind", task.kind().name());
     identity.put("question", task.question());
+    if (isV4(task)) {
+      ArrayNode clues = identity.putArray("visibleClueRefs");
+      task.visibleClueRefs().forEach(clues::add);
+    }
     if (!LEGACY_TASK_DEPENDENCY_RULE_VERSION.equals(task.taskDependencyRuleVersion())) {
       identity.put("taskDependencyRuleVersion", task.taskDependencyRuleVersion());
     }
@@ -421,20 +453,32 @@ public final class OntologyTypedTaskRunner {
       }
       JsonNode review = FORMAL_JSON.parseCanonical(prior.review());
       String actualReviewVersion =
-          "review-v3-"
+          (isV4(task) ? "review-v4-" : "review-v3-")
               + OntologyReadingPacket.sha256(FORMAL_JSON.encodeCanonical(review).copyToByteArray());
       if (!actualReviewVersion.equals(prior.identity().reviewVersion())) {
         throw new IllegalArgumentException("ONTOLOGY_FORMAL_PRIOR_INVALID");
       }
       try {
-        FORMAL_VALIDATOR.validateFormalReview(
-            prior.review(),
-            prior.kind(),
-            prior.packet(),
-            FORMAL_VALIDATOR.catalogInventory(prior.catalogMapping()),
-            visibleEntryRefs(prior.packet()),
-            prior.questionId(),
-            FORMAL_JSON.parseStrictJson(prior.rawCandidate()));
+        if (isV4(task)) {
+          FORMAL_VALIDATOR.validateFormalReviewV4(
+              prior.review(),
+              prior.kind(),
+              prior.packet(),
+              FORMAL_VALIDATOR.catalogInventory(prior.catalogMapping()),
+              visibleEntryRefs(prior.packet()),
+              Set.copyOf(prior.visibleClueRefs()),
+              prior.questionId(),
+              FORMAL_JSON.parseStrictJson(prior.rawCandidate()));
+        } else {
+          FORMAL_VALIDATOR.validateFormalReview(
+              prior.review(),
+              prior.kind(),
+              prior.packet(),
+              FORMAL_VALIDATOR.catalogInventory(prior.catalogMapping()),
+              visibleEntryRefs(prior.packet()),
+              prior.questionId(),
+              FORMAL_JSON.parseStrictJson(prior.rawCandidate()));
+        }
       } catch (RuntimeException invalid) {
         throw new IllegalArgumentException("ONTOLOGY_FORMAL_PRIOR_INVALID", invalid);
       }
@@ -514,12 +558,18 @@ public final class OntologyTypedTaskRunner {
 
   private static ObjectNode formalInput(FormalTask task, FormalCatalog catalog) {
     ObjectNode input = FORMAL_MAPPER.createObjectNode();
-    input.put("schemaVersion", "ontology-typed-formal-input-v3");
+    input.put(
+        "schemaVersion",
+        isV4(task) ? "ontology-typed-formal-input-v4" : "ontology-typed-formal-input-v3");
     input.put("questionId", task.questionId());
     input.put("taskKind", task.kind().name());
     input.put("question", task.question());
     input.set("readingPacket", FORMAL_JSON.parseCanonical(task.packet().modelInput()));
     input.set("reviewedCatalog", FORMAL_JSON.parseCanonical(catalog.visibleMapping()));
+    if (isV4(task)) {
+      ArrayNode clues = input.putArray("visibleClueRefs");
+      task.visibleClueRefs().forEach(clues::add);
+    }
     return input;
   }
 
@@ -979,7 +1029,8 @@ public final class OntologyTypedTaskRunner {
       FormalLimits limits,
       FormalModelDeclaration model,
       String taskDependencyRuleVersion,
-      String taskDependencyFingerprint) {
+      String taskDependencyFingerprint,
+      List<String> visibleClueRefs) {
     public FormalTask {
       binding = Objects.requireNonNull(binding, "formal corpus binding");
       requiredFormalText(questionId, "formal question ID");
@@ -992,16 +1043,57 @@ public final class OntologyTypedTaskRunner {
       prompts = Objects.requireNonNull(prompts, "formal prompts");
       limits = Objects.requireNonNull(limits, "formal limits");
       model = Objects.requireNonNull(model, "formal model");
+      visibleClueRefs =
+          List.copyOf(Objects.requireNonNull(visibleClueRefs, "formal visible clue references"));
+      if (visibleClueRefs.size() != Set.copyOf(visibleClueRefs).size()
+          || visibleClueRefs.stream().anyMatch(ref -> !ref.matches("K[1-9][0-9]*"))) {
+        throw new IllegalArgumentException("ONTOLOGY_FORMAL_CLUE_REFERENCE_INVALID");
+      }
+      boolean v4 = "ontology-model-reading-v5".equals(packet.modelProjectionVersion());
+      if (!v4 && !visibleClueRefs.isEmpty()) {
+        throw new IllegalArgumentException("ONTOLOGY_FORMAL_CLUE_REFERENCE_INVALID");
+      }
       if (!LEGACY_TASK_DEPENDENCY_RULE_VERSION.equals(taskDependencyRuleVersion)
           && !O1_TASK_DEPENDENCY_RULE_VERSION.equals(taskDependencyRuleVersion)
+          && !O1_EXTERNAL_TASK_DEPENDENCY_RULE_VERSION.equals(taskDependencyRuleVersion)
           && !O2_TASK_DEPENDENCY_RULE_VERSION.equals(taskDependencyRuleVersion)) {
         throw new IllegalArgumentException("ONTOLOGY_FORMAL_DEPENDENCY_RULE_INVALID");
       }
-      if (O2_TASK_DEPENDENCY_RULE_VERSION.equals(taskDependencyRuleVersion)) {
+      if (O2_TASK_DEPENDENCY_RULE_VERSION.equals(taskDependencyRuleVersion)
+          || O1_EXTERNAL_TASK_DEPENDENCY_RULE_VERSION.equals(taskDependencyRuleVersion)) {
         requiredFormalText(taskDependencyFingerprint, "formal task dependency fingerprint");
       } else if (taskDependencyFingerprint != null) {
         throw new IllegalArgumentException("ONTOLOGY_FORMAL_DEPENDENCY_RULE_INVALID");
       }
+    }
+
+    public FormalTask(
+        FormalCorpusBinding binding,
+        String questionId,
+        String taskId,
+        OntologyTaskRunner.TaskKind kind,
+        String question,
+        OntologyReadingPacket packet,
+        List<FormalResult> priorReviewedResults,
+        FormalPromptSnapshot prompts,
+        FormalLimits limits,
+        FormalModelDeclaration model,
+        String taskDependencyRuleVersion,
+        String taskDependencyFingerprint) {
+      this(
+          binding,
+          questionId,
+          taskId,
+          kind,
+          question,
+          packet,
+          priorReviewedResults,
+          prompts,
+          limits,
+          model,
+          taskDependencyRuleVersion,
+          taskDependencyFingerprint,
+          List.of());
     }
 
     public FormalTask(
@@ -1104,6 +1196,7 @@ public final class OntologyTypedTaskRunner {
     private final String questionId;
     private final OntologyTaskRunner.TaskKind kind;
     private final OntologyReadingPacket packet;
+    private final List<String> visibleClueRefs;
     private final ImmutableBytes rawCandidate;
     private final ImmutableBytes review;
     private final List<FormalDiagnostic> diagnostics;
@@ -1117,6 +1210,7 @@ public final class OntologyTypedTaskRunner {
         String questionId,
         OntologyTaskRunner.TaskKind kind,
         OntologyReadingPacket packet,
+        List<String> visibleClueRefs,
         ImmutableBytes rawCandidate,
         ImmutableBytes review,
         List<FormalDiagnostic> diagnostics,
@@ -1129,6 +1223,8 @@ public final class OntologyTypedTaskRunner {
       this.questionId = questionId;
       this.kind = Objects.requireNonNull(kind, "formal result kind");
       this.packet = Objects.requireNonNull(packet, "formal result packet");
+      this.visibleClueRefs =
+          List.copyOf(Objects.requireNonNull(visibleClueRefs, "formal result visible clues"));
       this.rawCandidate = Objects.requireNonNull(rawCandidate, "formal raw candidate");
       this.review = Objects.requireNonNull(review, "formal review");
       this.diagnostics = List.copyOf(Objects.requireNonNull(diagnostics, "formal diagnostics"));
@@ -1145,6 +1241,7 @@ public final class OntologyTypedTaskRunner {
         String questionId,
         OntologyTaskRunner.TaskKind kind,
         OntologyReadingPacket packet,
+        List<String> visibleClueRefs,
         ImmutableBytes rawCandidate,
         ImmutableBytes review,
         List<FormalDiagnostic> diagnostics,
@@ -1156,6 +1253,7 @@ public final class OntologyTypedTaskRunner {
           questionId,
           kind,
           packet,
+          visibleClueRefs,
           rawCandidate,
           review,
           diagnostics,
@@ -1179,6 +1277,10 @@ public final class OntologyTypedTaskRunner {
 
     public OntologyReadingPacket packet() {
       return packet;
+    }
+
+    public List<String> visibleClueRefs() {
+      return visibleClueRefs;
     }
 
     public ImmutableBytes rawCandidate() {

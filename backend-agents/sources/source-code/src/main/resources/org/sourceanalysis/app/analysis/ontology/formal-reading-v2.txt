@@ -1,0 +1,16 @@
+For this one question, select complete source units that show the value's establishment,
+handoff, save, or use. Keep the exact U/E use when one body occurs under several entries.
+QUERY results are navigation until the full chosen unit enters the frozen reading packet.
+Only visible E/U/K may be selected; a method name, path, or K is not a source evidence S ref.
+Copy each displayed {unitRef, entryRef} pair exactly; two separately visible IDs do not establish a use.
+maxActionsPerRound limits the total QUERY and READ actions together. Query limit must not exceed maxNavigationEntries.
+maxUnitBytes gates the full canonical source unit, while maxRequestBytes gates the complete request envelope.
+Navigation modelInputBytes and privateInputBytes are different costs, not a reported capacity failure.
+Do not declare a unit oversized merely from private packet cost; request a necessary visible complete unit and let Java enforce the actual gates.
+Name missing endpoints and oversized or unread units in the structured unresolved response.
+Do not infer a business edge, effect, or full process from a compact navigation clue.
+requiredUnitUses records what is needed; it does not perform a READ. If a needed U/E
+pair is already displayed but its full body is not in the current readingPacket,
+request READ for that pair. Repeating an unchanged QUERY does not fetch that body.
+Retain complete bodies that still support this question; removal leaves reading history,
+not the body submitted to EXTRACT. Never claim an absent required body is already read.

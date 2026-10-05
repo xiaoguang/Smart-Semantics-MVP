@@ -1,23 +1,25 @@
 # 范围清单与正式阅读状态
 
-状态：计划第4步的严格Reader与私有正式阅读状态机已通过直接scripted合同及历史阅读回归；正式CLI、receipt准确重开及其22项直接runtime合同也已通过。首个财务OBJECT已真实派发2次并保存失败报告，其余真实样例未完成；不能把零模型准备测试误写成当前全程零模型。历史PoC的viewId决策格式只读保留，不静默升级。
+状态：业务联系优先正式工程、骨架发布和跨运行财务/统计细化已完成，最终129项直接回归及同代码质量通过；四文件重开字节一致。**业务覆盖、小窗口及浏览器呈现验收仍部分未通过/未验**，不宣称完整采购主链、全仓自主发现或跨项目同等质量。当前实际运行、材料成本、结果及剩余义务由[正式验收](../../supplements/ontology-business-link-formal-acceptance-20261005.md)统一维护；[前序稳定性18请求](../../supplements/ontology-formal-acceptance-20261003.md)仍属原版本，旧MD及历史文件不变。本轮通过原[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)交付。
 
 当前薄实现将scope/selection解析公开为窄输入边界，并在既有coordinator/decision/private-store上保存`ontology-decision-result-v4`与`ontology-formal-reading-state-v1`。后者保留实际派发的visibleScope、查询观察、五个状态集合、结构化未解/收窄处置和同一冻结包；它不是公共Reader/Publisher，也不替代已接线的Task 7 receipt、配置和CLI准入。公开`FormalState`构造器的八个列表防御性复制合同已经实际RED/GREEN；未用SpotBugs排除代替该复制。
 
 ## 1. 清单不是业务答案
 
-identify-ontology的`ontology-scope-v1`明确一次局部执行的普通问题、任务和材料选择性质。它不包含对象、关系、规则或指标定义。调用者只能选择真实O0的E/U/K；不能给程序写一份“正确本体”作为输入。
+identify-ontology的范围清单明确一次局部执行的普通问题、任务和材料选择性质。它不包含对象、关系、规则或指标定义。调用者只能选择真实O0的E/U/K；不能给程序写一份“正确本体”作为输入。历史`ontology-scope-v1`按原字段严格读取；新增`ontology-scope-v2`也按自己的完整字段严格读取，不能借缺字段推断或升级旧清单。
 
-固定顶层为`schemaVersion / mode / selectionMode / questions`：
+v1固定顶层为`schemaVersion / mode / selectionMode / questions`；v2另必需`purpose`，只准`SKELETON / ENRICHMENT`：
 
 - mode为QUESTION或DISCOVERY；本次三样例使用QUESTION。
 - selectionMode为EXPLICIT或MODEL，记录材料由谁选，不能把显式选择宣称自主成功。
-- QUESTION中questions非空，每项为`questionId / question / entryRefs / clueRefs / tasks`。questionId在本清单内唯一，question是非空普通问题；entryRefs和clueRefs来自准确Corpus。DISCOVERY中questions为空，由有界调查产生新的实际问题及处置，不用硬编码业务种子。
+- QUESTION中questions非空；v1每项为`questionId / question / entryRefs / clueRefs / tasks`，v2另必需`objectSources[]`。questionId在本清单内唯一，question是非空普通问题；entryRefs和clueRefs来自准确Corpus。DISCOVERY中questions为空，由有界调查产生新的实际问题及处置，不用硬编码业务种子。
 - tasks每项为`taskId / taskKind / readingMode / unitUses / requiredUnitUses`。taskId在本次执行内唯一；taskKind只准OBJECT/ACTION/ANALYTIC，RELATE在O2。readingMode为EXPLICIT或MODEL。
 - 单元用途统一为`{unitRef, entryRef}`，必须是同Corpus中实际允许的U/E组合。一个U可在不同E中使用；不从同一正文猜同一用途。
 - EXPLICIT直接由Java取得unitUses、检查requiredUnitUses并冻结；不为已明确选择再调用阅读模型。MODEL以unitUses作为初始正文，持续保留entryRefs/clueRefs并执行有界阅读。初始正文可以为空。
 
-同问题至少有一个OBJECT任务，且先审对象再处理该问题的ACTION/ANALYTIC；不允许配置绕过已审对象依赖。任务可以没有对象/指标结论，但必须有实际处置。材料清单按完整用途身份去重及稳定排序；不因文件位置变化改变内容身份。
+v1的ACTION/ANALYTIC仍须由同题排在前面的OBJECT任务提供依赖。v2的SKELETON仅允许OBJECT任务且`objectSources`为空；ENRICHMENT允许OBJECT/ACTION/ANALYTIC，后两类必须有同题此前OBJECT或非空外部对象来源。每个来源只有准确的`identificationRun / questionId`，运行ID须为完整`analysis-run:`键，同一来源对不得重复。Reader仅检查清单的形状和本Corpus内E/U/K；来源是否同Corpus、已结束且全部OBJECT已审，由运行器在Provider前恢复和核验。已声明objectSources是本题全部任务的依赖，包括OBJECT细化；源问题真实存在但未声明OBJECT时，保存具名依赖失败且零派发。不存在的源问题、损坏来源或错Corpus仍在准入阶段拒绝，不伪造任务或源对象。有效的源对象目录及依赖指纹也进入OBJECT细化，最终身份统一仍必须另经已审SAME_OBJECT。任务可以没有对象/指标结论，但必须有实际处置。材料清单按完整用途身份去重及稳定排序；不因文件位置变化改变内容身份。
+
+scope-v2的DISCOVERY也保留原purpose：优先级请求明确携带purpose；SKELETON的实际响应Schema只允许一项OBJECT，运行器再核对选择范围。它不静默丢弃模型额外建议的ACTION/ANALYTIC来冒充成功；非法建议保留原响应与阻断报告，不派发类型化任务。生成的实际工作scope继续使用v2及原purpose。旧策略、旧Corpus下scope-v1的优先级输入、Schema和Prompt保持原样。scope-v1若明确使用新Corpus和producer-v3，则使用新投影及新默认Prompt，形成新任务身份；不能将其解释为旧任务的无条件复用。
 
 ## 2. 关联和发布清单
 
@@ -59,6 +61,7 @@ reading-response-v3固定为`decision / entrySelection / clueSelection / retaine
 - requiredUnitUses是追加申报，不因为未出现在下一轮响应中就清空。unresolved具名问题及缺项，保留实际范围。
 - 正式unresolved每项固定为`{reason, disposition, unitUses}`：reason非空，disposition为UNRESOLVED或EXCLUDED_FROM_TASK，unitUses为准确U/E用途数组。一般问题可用UNRESOLVED且unitUses为空；EXCLUDED_FROM_TASK必须具名至少一个用途。只有实际展示的用途及已申报必要用途可被处分，不能靠中文提到一个编号就清除义务。处分记录始终保存；该用途不再阻止其余已读材料冻结，但不写入readHistory，不改称已读或原题全范围完成。显式移出入口时，受影响的必要用途以同一个移出理由记为EXCLUDED_FROM_TASK，不能无声消失。
 - actions是同一数组，每项QUERY或READ；总数不能超过maxActionsPerRound。QUERY含queryKind、合法keyRef、offset/limit，或LITERAL_SEARCH的query文本；READ含合法unitRef/entryRef。不得让Schema允许8项而执行只收2项。
+  新业务阅读输入v4同时提供实际maxUnitBytes/maxRequestBytes；每次从模板复制的校验Schema写入配置动作maxItems及查询limit.maximum，Provider投影与本地验证使用这同一份实例，实际Schema参与请求身份。模板和历史v3输入不改写。提示词要求复制完整U/E配对，不能将两个分别可见的编号拼成未展示用途；导航成本不是程序已经判定超限。
 - 查询只开放ENTRY_UNITS、METHOD_USES、STATEMENT_USES、TABLE_STATEMENTS、COLUMN_STATEMENTS、LITERAL_SEARCH。U/E/K类别按查询矩阵检查，变体不能任取第一个；METHOD_USES也可使用当前active的JAVA_METHOD U，STATEMENT_USES也可使用当前active的XML_STATEMENT U，并以该准确U/E用途的原身份查询，不能从模型文本猜键。结果显示实际总数/页/用途和成本，不是业务摘要。
 - 本轮可见allowlist由Java生成，范围和轮次由请求绑定；模型不回填viewId、哈希或来源身份。未展示的U/K不可直接引用。
 
@@ -66,7 +69,7 @@ READY必须有非空当前完整正文、没有本轮未执行动作，且已申
 
 模型输入分别提供实际展示的导航和当前已选择集合。导航含准确方法/语句/表列或前端单元的原有技术标签、共同项、用途及以实际一用途formal packet测得的成本；不能只给E/U/K编号让模型猜，也不把私有canonical记录大小标成模型成本。每个入口卡保留按kind的`total/shown/unread`线索disclosure及无AST SQL分析数；卡片仍只展示有界线索。查询观察保留query、总数、offset/limit及该页完整返回项，字面搜索实际命中同样可再读取；ENTRY_UNITS结果只携带其准确U/E用途对应的既有K，并只将这些返回K和实际entryRef加入下一轮displayed allowlist，因此页外命中可被显式选择或继续查询而任意未展示编号仍被拒绝。新的查询观察本身是有状态进展；完全相同的重复查询不会借此绕过no-progress。当前已选入口不会因正文移出而丢失。maxActionsPerRound只限制响应动作，maxNavigationEntries独立限制导航页，二者不得借用同一参数。正式questionId只要求清单内唯一非空，不强制继承实验Q数字命名。
 
-执行结果没有进展时保存具体状态并结束，不重复调用直到凑齐次数。QUERY/READ在当前Corpus执行；没有shell、网络或客户代码执行。
+执行结果没有进展时保存具体状态并结束，不重复调用直到凑齐次数。QUERY/READ在当前Corpus执行；没有shell、网络或客户代码执行。调查或优先级的正常模型响应若不符合实际Schema，保留原响应和准确`MODEL_OUTPUT`原因及`SURVEY/PRIORITIZE`阶段；优先级拒绝仍保留已提出问题的延后处置，不能写成未知工具故障或继续派发类型化任务。
 
 ## 5. 冻结和检查
 

@@ -142,10 +142,21 @@ public final class OntologyScopedAssembler {
    * This is a pure four-file boundary: installation and receipt validation remain later owners.
    */
   public FormalAssembly assembleFormal(FormalInput input) {
+    return assembleFormal(input, null);
+  }
+
+  /** Separate business-link publication family; the legacy formal entry keeps its v1 bytes. */
+  public FormalAssembly assembleFormalV2(BusinessFormalInput input) {
+    Objects.requireNonNull(input, "business formal input");
+    return assembleFormal(input.formalInput(), input);
+  }
+
+  private FormalAssembly assembleFormal(FormalInput input, BusinessFormalInput business) {
     if (input == null) {
       throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_INPUT_INVALID");
     }
-    List<FormalReview> reviews = formalReviews(input);
+    List<FormalReview> reviews = formalReviews(input, business != null);
+    if (business != null) verifyBusinessObligations(input, reviews, business.obligations());
     Map<DefinitionKey, FormalDefinition> definitions = new TreeMap<>();
     Map<DefinitionKey, String> globals = new TreeMap<>();
     Map<PropertyKey, String> properties = new TreeMap<>();
@@ -214,7 +225,7 @@ public final class OntologyScopedAssembler {
     }
     ObjectMapper mapper = new ObjectMapper();
     ObjectNode ontology = mapper.createObjectNode();
-    ontology.put("schemaVersion", "ontology-v1");
+    ontology.put("schemaVersion", business == null ? "ontology-v1" : "ontology-v2");
     ontology.put("publicationStatus", "DRAFT_REVIEWABLE");
     ObjectNode source = ontology.putObject("source");
     source.put("corpusIdentity", input.binding().corpusIdentity());
@@ -270,7 +281,8 @@ public final class OntologyScopedAssembler {
     }
     List<AssemblyIssue> issues = canonicalIssues(reviews, definitions, globals);
     ImmutableBytes review =
-        reviewDocument(reviews, definitions, globals, properties, canonical, sources, issues);
+        reviewDocument(
+            reviews, definitions, globals, properties, canonical, sources, issues, business);
     JsonNode reviewedUnresolved = json.parseCanonical(review).path("unresolved");
     for (int index = 0; index < reviewedUnresolved.size(); index++) {
       JsonNode item = reviewedUnresolved.get(index);
@@ -288,11 +300,12 @@ public final class OntologyScopedAssembler {
                 .thenComparing(row -> row.path("path").asText()))
         .forEach(unknowns::add);
     ImmutableBytes sourceIndex = sourceIndex(sources);
-    ImmutableBytes coverage = coverageDocument(input.coverage(), reviews, issues);
+    ImmutableBytes coverage =
+        coverageDocument(input.coverage(), reviews, issues, business, globals);
     return new FormalAssembly(json.encodeCanonical(ontology), coverage, sourceIndex, review);
   }
 
-  private List<FormalReview> formalReviews(FormalInput input) {
+  private List<FormalReview> formalReviews(FormalInput input, boolean business) {
     List<FormalReview> reviews = new ArrayList<>();
     Set<DefinitionKey> resultIdentities = new HashSet<>();
     for (OntologyTypedTaskRunner.FormalResult result : input.results()) {
@@ -305,9 +318,13 @@ public final class OntologyScopedAssembler {
       }
       JsonNode document = json.parseCanonical(result.review());
       String actualReviewVersion =
-          "review-v3-"
+          (business ? "review-v4-" : "review-v3-")
               + OntologyReadingPacket.sha256(json.encodeCanonical(document).copyToByteArray());
-      if (!actualReviewVersion.equals(result.identity().reviewVersion())) {
+      if (!actualReviewVersion.equals(result.identity().reviewVersion())
+          || business
+              && (!"ontology-typed-review-v4".equals(document.path("schemaVersion").asText())
+                  || !"ontology-model-reading-v5".equals(result.packet().modelProjectionVersion())
+                  || !document.path("clueDispositions").isArray())) {
         throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_INPUT_INVALID");
       }
       DefinitionKey resultKey = new DefinitionKey(result.identity(), "__result__");
@@ -318,6 +335,55 @@ public final class OntologyScopedAssembler {
     }
     reviews.sort(Comparator.comparing(review -> review.result().identity().producingTaskId()));
     return List.copyOf(reviews);
+  }
+
+  private static void verifyBusinessObligations(
+      FormalInput input, List<FormalReview> reviews, List<BusinessTaskObligation> obligations) {
+    Map<OntologyTypedTaskRunner.FormalIdentity, FormalReview> reviewed = new HashMap<>();
+    reviews.forEach(review -> reviewed.put(review.result().identity(), review));
+    Set<TaskDisposition> coverageTasks = new HashSet<>(input.coverage().taskDispositions());
+    Set<TaskDisposition> represented = new HashSet<>();
+    Set<String> ownerTasks = new HashSet<>();
+    for (BusinessTaskObligation obligation : obligations) {
+      TaskDisposition task = obligation.disposition();
+      String ownerKey =
+          obligation.ownerRunId() + "\u0000" + obligation.questionId() + "\u0000" + task.taskId();
+      if (!ownerTasks.add(ownerKey)
+          || !coverageTasks.contains(task)
+          || obligation.selectedClueRefs().size()
+              != Set.copyOf(obligation.selectedClueRefs()).size()
+          || obligation.selectedClueRefs().stream().anyMatch(ref -> !ref.matches("K[1-9][0-9]*"))) {
+        throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_INPUT_INVALID");
+      }
+      represented.add(task);
+      if (task.status() == TaskDispositionStatus.REVIEWED) {
+        FormalReview actual = reviewed.get(task.reviewedResultIdentity());
+        if (actual == null
+            || obligation.failureReason() != null
+            || !task.producingTaskId().equals(actual.result().identity().producingTaskId())
+            || !obligation.questionId().equals(actual.result().questionId())
+            || obligation.kind() != actual.result().kind()
+            || !obligation.selectedClueRefs().equals(actual.result().visibleClueRefs())
+            || !obligation.kind().name().equals(actual.document().path("taskKind").asText())) {
+          throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_INPUT_INVALID");
+        }
+      } else if (task.reviewedResultIdentity() != null || obligation.failureReason() == null) {
+        throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_INPUT_INVALID");
+      }
+    }
+    if (!represented.equals(coverageTasks)) {
+      throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_INPUT_INVALID");
+    }
+    for (FormalReview review : reviews) {
+      if (review.result().kind() == OntologyTaskRunner.TaskKind.OBJECT) {
+        for (JsonNode object : review.document().path("definitions").path("objects")) {
+          if (!Set.of("MAIN", "SUPPORT", "TECHNICAL_OR_UNKNOWN")
+              .contains(object.path("displayRole").asText())) {
+            throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_INPUT_INVALID");
+          }
+        }
+      }
+    }
   }
 
   private Map<String, DefinitionKey> catalog(ImmutableBytes catalogMapping) {
@@ -728,14 +794,17 @@ public final class OntologyScopedAssembler {
       Map<PropertyKey, String> properties,
       Map<DefinitionKey, String> canonical,
       Map<String, ObjectNode> sources,
-      List<AssemblyIssue> issues) {
+      List<AssemblyIssue> issues,
+      BusinessFormalInput business) {
     ObjectNode review = new ObjectMapper().createObjectNode();
-    review.put("schemaVersion", "ontology-review-v1");
+    review.put("schemaVersion", business == null ? "ontology-review-v1" : "ontology-review-v3");
     review.put("publicationStatus", "DRAFT_REVIEWABLE");
     review.put("humanAcceptanceStatus", "NOT_REVIEWED");
     ArrayNode taskResults = review.putArray("taskResults");
     ArrayNode decisions = review.putArray("identityDecisions");
     ArrayNode unresolved = review.putArray("unresolved");
+    List<BusinessClueRow> clueRows =
+        business == null ? List.of() : businessClueRows(business, reviews, globals);
     for (FormalReview item : reviews) {
       ObjectNode task = taskResults.addObject();
       task.put("corpusIdentity", item.result().identity().corpusIdentity());
@@ -750,6 +819,13 @@ public final class OntologyScopedAssembler {
       task.set(
           "reviewRuntimeIdentity",
           new ObjectMapper().valueToTree(item.result().reviewRuntimeIdentity()));
+      if (business != null) {
+        ArrayNode reviewedClues = task.putArray("clueDispositions");
+        clueRows.stream()
+            .filter(row -> item.result().identity().equals(row.identity()))
+            .map(BusinessClueRow::row)
+            .forEach(row -> reviewedClues.add(row.deepCopy()));
+      }
       FormalDefinition reviewOwner =
           new FormalDefinition(
               new DefinitionKey(item.result().identity(), "__review__"),
@@ -806,8 +882,135 @@ public final class OntologyScopedAssembler {
     document.put("reviewVersion", review.result().identity().reviewVersion());
   }
 
+  private static void addRecognitionLayers(
+      ObjectNode coverage, List<BusinessTaskObligation> obligations) {
+    ArrayNode layers = coverage.putArray("recognitionLayers");
+    for (String layer : List.of("OBJECT", "RELATION", "ACTION", "ANALYTIC")) {
+      List<BusinessTaskObligation> requested =
+          obligations.stream()
+              .filter(item -> businessLayer(item.kind()).equals(layer))
+              .sorted(
+                  Comparator.comparing(BusinessTaskObligation::ownerRunId)
+                      .thenComparing(BusinessTaskObligation::questionId)
+                      .thenComparing(item -> item.disposition().taskId()))
+              .toList();
+      ObjectNode row = layers.addObject();
+      row.put("layer", layer);
+      row.put(
+          "status",
+          requested.isEmpty()
+              ? "NOT_REQUESTED"
+              : requested.stream()
+                      .allMatch(
+                          item -> item.disposition().status() == TaskDispositionStatus.REVIEWED)
+                  ? "COMPLETE_FOR_DECLARED_SCOPE"
+                  : "INCOMPLETE");
+      ArrayNode refs = row.putArray("taskRefs");
+      for (BusinessTaskObligation item : requested) {
+        ObjectNode ref = refs.addObject();
+        ref.put("runId", item.ownerRunId());
+        ref.put("questionId", item.questionId());
+        ref.put("taskId", item.disposition().taskId());
+      }
+    }
+  }
+
+  private static String businessLayer(OntologyTaskRunner.TaskKind kind) {
+    return switch (kind) {
+      case OBJECT -> "OBJECT";
+      case RELATE -> "RELATION";
+      case ACTION -> "ACTION";
+      case ANALYTIC -> "ANALYTIC";
+    };
+  }
+
+  private static List<BusinessClueRow> businessClueRows(
+      BusinessFormalInput business,
+      List<FormalReview> reviews,
+      Map<DefinitionKey, String> globals) {
+    Map<OntologyTypedTaskRunner.FormalIdentity, FormalReview> byIdentity = new HashMap<>();
+    reviews.forEach(review -> byIdentity.put(review.result().identity(), review));
+    List<BusinessClueRow> rows = new ArrayList<>();
+    List<BusinessTaskObligation> ordered =
+        business.obligations().stream()
+            .sorted(
+                Comparator.comparing(BusinessTaskObligation::ownerRunId)
+                    .thenComparing(BusinessTaskObligation::questionId)
+                    .thenComparing(item -> item.disposition().taskId()))
+            .toList();
+    for (BusinessTaskObligation obligation : ordered) {
+      if (obligation.kind() != OntologyTaskRunner.TaskKind.RELATE) continue;
+      FormalReview reviewed =
+          obligation.disposition().status() == TaskDispositionStatus.REVIEWED
+              ? byIdentity.get(obligation.disposition().reviewedResultIdentity())
+              : null;
+      Map<String, JsonNode> addressed = new HashMap<>();
+      Set<String> localLinks = new HashSet<>();
+      if (reviewed != null) {
+        reviewed
+            .document()
+            .path("definitions")
+            .path("links")
+            .forEach(link -> localLinks.add(link.path("localId").asText()));
+        for (JsonNode disposition : reviewed.document().path("clueDispositions")) {
+          String clue = disposition.path("clueRef").asText();
+          if (!obligation.selectedClueRefs().contains(clue)
+              || addressed.putIfAbsent(clue, disposition) != null) {
+            throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_INPUT_INVALID");
+          }
+        }
+      }
+      for (String clue : obligation.selectedClueRefs().stream().sorted().toList()) {
+        ObjectNode row = new ObjectMapper().createObjectNode();
+        row.put("runId", obligation.ownerRunId());
+        row.put("questionId", obligation.questionId());
+        row.put("taskId", obligation.disposition().taskId());
+        row.put("clueRef", clue);
+        ArrayNode linkRefs = row.putArray("linkRefs");
+        JsonNode model = addressed.get(clue);
+        if (model == null) {
+          row.put(
+              "outcome",
+              reviewed == null ? obligation.disposition().status().name() : "MODEL_NOT_ADDRESSED");
+          row.put(
+              "reason",
+              reviewed == null ? obligation.failureReason().code() : "MODEL_NOT_ADDRESSED");
+        } else {
+          String outcome = model.path("outcome").asText();
+          JsonNode modelLinks = model.path("linkRefs");
+          String reason = model.path("reason").asText();
+          if (!modelLinks.isArray()
+              || !Set.of("LINK_SUPPORTED", "NOT_A_BUSINESS_LINK", "NEEDS_MORE_MATERIAL")
+                  .contains(outcome)
+              || ("LINK_SUPPORTED".equals(outcome) && modelLinks.isEmpty())
+              || (!"LINK_SUPPORTED".equals(outcome)
+                  && (!modelLinks.isEmpty() || reason.isBlank()))) {
+            throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_INPUT_INVALID");
+          }
+          Set<String> mapped = new HashSet<>();
+          for (JsonNode link : modelLinks) {
+            String localId = link.asText();
+            String global = globals.get(new DefinitionKey(reviewed.result().identity(), localId));
+            if (!localLinks.contains(localId) || global == null || !mapped.add(global)) {
+              throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_REFERENCE_UNRESOLVED");
+            }
+            linkRefs.add(global);
+          }
+          row.put("outcome", outcome);
+          row.put("reason", reason);
+        }
+        rows.add(new BusinessClueRow(reviewed == null ? null : reviewed.result().identity(), row));
+      }
+    }
+    return List.copyOf(rows);
+  }
+
   private ImmutableBytes coverageDocument(
-      ScopedCoverage coverage, List<FormalReview> reviews, List<AssemblyIssue> issues) {
+      ScopedCoverage coverage,
+      List<FormalReview> reviews,
+      List<AssemblyIssue> issues,
+      BusinessFormalInput business,
+      Map<DefinitionKey, String> globals) {
     Map<String, OntologyTypedTaskRunner.FormalIdentity> actual = new TreeMap<>();
     reviews.forEach(
         review -> {
@@ -817,7 +1020,7 @@ public final class OntologyScopedAssembler {
     Set<String> reviewed = new TreeSet<>();
     boolean incomplete = !issues.isEmpty();
     ObjectNode output = new ObjectMapper().createObjectNode();
-    output.put("schemaVersion", "ontology-coverage-v1");
+    output.put("schemaVersion", business == null ? "ontology-coverage-v1" : "ontology-coverage-v3");
     ObjectNode denominators = output.putObject("inputDenominators");
     denominators.put("entries", coverage.inputDenominators().entries());
     denominators.put("frontendRequests", coverage.inputDenominators().frontendRequests());
@@ -877,6 +1080,13 @@ public final class OntologyScopedAssembler {
         "coverageStatus",
         incomplete ? "INCOMPLETE" : unaccountedInput ? "UNDETERMINED" : "COMPLETE");
     output.put("semanticExhaustiveness", "UNDETERMINED");
+    if (business != null) {
+      addRecognitionLayers(output, business.obligations());
+      ArrayNode clues = output.putArray("clueDispositions");
+      businessClueRows(business, reviews, globals).stream()
+          .map(BusinessClueRow::row)
+          .forEach(row -> clues.add(row.deepCopy()));
+    }
     return json.encodeCanonical(output);
   }
 
@@ -1112,6 +1322,31 @@ public final class OntologyScopedAssembler {
     }
   }
 
+  public record BusinessFormalInput(
+      FormalInput formalInput, List<BusinessTaskObligation> obligations) {
+    public BusinessFormalInput {
+      formalInput = Objects.requireNonNull(formalInput, "business formal input");
+      obligations = List.copyOf(Objects.requireNonNull(obligations, "business task obligations"));
+    }
+  }
+
+  public record BusinessTaskObligation(
+      String ownerRunId,
+      String questionId,
+      OntologyTaskRunner.TaskKind kind,
+      TaskDisposition disposition,
+      List<String> selectedClueRefs,
+      OntologyTaskOutcome.FailureReason failureReason) {
+    public BusinessTaskObligation {
+      requireAssemblyText(ownerRunId, "business task owner run ID");
+      requireAssemblyText(questionId, "business task question ID");
+      kind = Objects.requireNonNull(kind, "business task kind");
+      disposition = Objects.requireNonNull(disposition, "business task disposition");
+      selectedClueRefs =
+          List.copyOf(Objects.requireNonNull(selectedClueRefs, "selected clue references"));
+    }
+  }
+
   public record FormalAssembly(
       ImmutableBytes ontology,
       ImmutableBytes coverage,
@@ -1209,6 +1444,8 @@ public final class OntologyScopedAssembler {
       OntologyTypedTaskRunner.FormalResult result,
       JsonNode document,
       Map<String, DefinitionKey> catalog) {}
+
+  private record BusinessClueRow(OntologyTypedTaskRunner.FormalIdentity identity, ObjectNode row) {}
 
   private record FormalDefinition(
       DefinitionKey key, String field, ObjectNode value, FormalReview review) {}

@@ -6,12 +6,13 @@ storage:
   preparedSourceArchive: /absolute/path/to/prepared-source-archive
   sourcePreparationPolicyRegistry: /absolute/path/to/source-code/tools/repository-run/source-preparation-artifact-policy-set-v1.json
   evidencePolicyRegistry: /absolute/path/to/source-code/tools/repository-run/technical-analysis-artifact-policy-set-v3.json
-  ontologyPolicyRegistry: /absolute/path/to/source-code/tools/repository-run/ontology-artifact-policy-set-v2.json
+  ontologyPolicyRegistry: /absolute/path/to/source-code/tools/repository-run/ontology-artifact-policy-set-v3.json
   # List exact historical ontology or technical owners needed by selected saved runs.
   # R2 and R4 can have different owners; list R2's original registry when O0 needs it.
   # Missing/duplicate matching owner identities are refused; do not edit their saved registries.
   upstreamArtifactPolicyRegistries:
     - /absolute/path/to/source-code/tools/repository-run/ontology-artifact-policy-set-v1.json
+    - /absolute/path/to/source-code/tools/repository-run/ontology-artifact-policy-set-v2.json
 reading:
   maxUnitBytes: 1048576
   maxRequestBytes: 1048576

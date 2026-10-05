@@ -180,6 +180,18 @@ public final class OntologyDecisionRunner {
       int maxQuestions,
       int maxTaskKindsPerQuestion,
       FormalDecisionMaterial material) {
+    return prepareFormalPrioritize(
+        corpus, questions, maxQuestions, maxTaskKindsPerQuestion, material, null);
+  }
+
+  /** A v2 purpose is explicit input; the historical envelope remains byte-identical without it. */
+  public PreparedDecision prepareFormalPrioritize(
+      OntologyEvidenceCorpus corpus,
+      List<FormalSurveyQuestion> questions,
+      int maxQuestions,
+      int maxTaskKindsPerQuestion,
+      FormalDecisionMaterial material,
+      OntologyScopeReader.Purpose purpose) {
     Objects.requireNonNull(corpus, "ontology corpus");
     Objects.requireNonNull(questions, "formal survey questions");
     Objects.requireNonNull(material, "formal prioritize material");
@@ -190,6 +202,7 @@ public final class OntologyDecisionRunner {
     input.put("schemaVersion", "ontology-prioritize-input-v4");
     input.put("maxQuestions", maxQuestions);
     input.put("maxTaskKindsPerQuestion", maxTaskKindsPerQuestion);
+    if (purpose != null) input.put("purpose", purpose.name());
     ArrayNode values = input.putArray("questions");
     for (FormalSurveyQuestion question : questions) {
       ObjectNode value = values.addObject();
@@ -200,11 +213,21 @@ public final class OntologyDecisionRunner {
       ArrayNode clues = value.putArray("clueRefs");
       question.clueRefs().forEach(clues::add);
     }
+    ImmutableBytes validationSchema = material.validationSchema();
+    if (purpose == OntologyScopeReader.Purpose.SKELETON) {
+      ObjectNode schema = (ObjectNode) json.parseCanonical(validationSchema);
+      ObjectNode taskKinds =
+          (ObjectNode) schema.path("$defs").path("selected").path("properties").path("taskKinds");
+      taskKinds.put("minItems", 1);
+      taskKinds.put("maxItems", 1);
+      ((ObjectNode) taskKinds.path("items")).putArray("enum").add("OBJECT");
+      validationSchema = json.encodeCanonical(schema);
+    }
     return prepare(
         "FORMAL_PRIORITIZE",
         input,
         material.prompt(),
-        material.validationSchema(),
+        validationSchema,
         "ontology-prioritize-response-v4",
         formalSourceBasis(corpus),
         material.requestedMaxOutputTokens());
@@ -238,13 +261,15 @@ public final class OntologyDecisionRunner {
             prepared.jobKey(), prepared.kind().toLowerCase(java.util.Locale.ROOT), response);
       }
       if (response.responseJson().size() > maxOutputBytes) {
-        throw new DecisionModelOutputFailure("RESPONSE_BUDGET_EXCEEDED", null);
+        throw new DecisionModelOutputFailure(
+            "RESPONSE_BUDGET_EXCEEDED", formalDecisionStage(prepared.kind()), null);
       }
       JsonNode output;
       try {
         output = json.parseStrictJson(response.responseJson());
       } catch (IllegalArgumentException invalidJson) {
-        throw new DecisionModelOutputFailure("INVALID_JSON", invalidJson);
+        throw new DecisionModelOutputFailure(
+            "INVALID_JSON", formalDecisionStage(prepared.kind()), invalidJson);
       }
       Schema compiled =
           SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
@@ -253,7 +278,8 @@ public final class OntologyDecisionRunner {
           || !prepared
               .expectedOutputSchemaVersion()
               .equals(output.path("schemaVersion").asText())) {
-        throw new DecisionModelOutputFailure("ONTOLOGY_DECISION_INVALID", null);
+        throw new DecisionModelOutputFailure(
+            "ONTOLOGY_DECISION_INVALID", formalDecisionStage(prepared.kind()), null);
       }
       return new Decision(
           prepared.kind(),
@@ -322,6 +348,16 @@ public final class OntologyDecisionRunner {
     return formalReadingMaterial(prompt, null);
   }
 
+  public static FormalReadingMaterial formalReadingMaterialV4(
+      String prompt, Integer requestedMaxOutputTokens) {
+    return new FormalReadingMaterial(
+        prompt,
+        ImmutableBytes.copyOf(
+            resource("formal-reading-v2.schema.json").getBytes(StandardCharsets.UTF_8)),
+        null,
+        requestedMaxOutputTokens);
+  }
+
   /** Uses the formal-reading schema and the configured output-token limit for a formal run. */
   public static FormalReadingMaterial formalReadingMaterial(
       String prompt, Integer requestedMaxOutputTokens) {
@@ -347,11 +383,13 @@ public final class OntologyDecisionRunner {
   FormalDecision formalReadingCheck(
       String questionId,
       String question,
-      OntologyScopeReader.Task task,
+      OntologyReadingCoordinator.FormalTask task,
       OntologyReadingCoordinator.FormalVisibleScope visible,
       List<OntologyReadingCoordinator.FormalUnitUse> activeUnits,
       int maxActionsPerRound,
       int maxNavigationEntries,
+      int maxUnitBytes,
+      int maxReadingRequestBytes,
       int remainingReadingDecisions,
       OntologyReadingPacket activePacket) {
     if (questionId == null
@@ -363,11 +401,15 @@ public final class OntologyDecisionRunner {
         || activeUnits == null
         || maxActionsPerRound < 1
         || maxNavigationEntries < 1
+        || maxUnitBytes < 1
+        || maxReadingRequestBytes < 1
         || remainingReadingDecisions < 1) {
       throw new IllegalArgumentException("ONTOLOGY_READING_INPUT_INVALID");
     }
     ObjectNode input = mapper.createObjectNode();
-    input.put("schemaVersion", "ontology-reading-input-v3");
+    boolean businessLinks = visible.corpus().usesBusinessLinkNavigation();
+    input.put(
+        "schemaVersion", businessLinks ? "ontology-reading-input-v4" : "ontology-reading-input-v3");
     input.put("questionId", questionId);
     input.put("question", question);
     input.put("taskId", task.taskId());
@@ -376,12 +418,20 @@ public final class OntologyDecisionRunner {
     input.put("maxActionsPerRound", maxActionsPerRound);
     input.put("maxNavigationEntries", maxNavigationEntries);
     input.put("remainingReadingDecisions", remainingReadingDecisions);
+    if (businessLinks) {
+      input.put("maxUnitBytes", maxUnitBytes);
+      input.put("maxRequestBytes", maxReadingRequestBytes);
+    }
     input.set("visibleScope", visibleDocument(visible, activeUnits));
     if (activePacket == null) {
       input.putNull("readingPacket");
     } else {
       input.set("readingPacket", json.parseCanonical(activePacket.modelInput()));
     }
+    ImmutableBytes validationSchema =
+        businessLinks
+            ? boundedFormalReadingSchema(maxActionsPerRound, maxNavigationEntries)
+            : formalReadingMaterial.validationSchema();
     Decision result;
     try {
       result =
@@ -389,8 +439,8 @@ public final class OntologyDecisionRunner {
               "FORMAL_READING",
               input,
               formalReadingMaterial.prompt(),
-              formalReadingMaterial.validationSchema(),
-              "reading-response-v3",
+              validationSchema,
+              businessLinks ? "reading-response-v4" : "reading-response-v3",
               formalSourceBasis(visible.corpus()),
               formalReadingMaterial.requestedMaxOutputTokens());
     } catch (DecisionModelOutputFailure invalidResponse) {
@@ -416,8 +466,18 @@ public final class OntologyDecisionRunner {
           visible.corpus().sourceIdentity(),
           formalSourceBasis(visible.corpus()));
     }
-    return new FormalDecision(
-        result, formalReadingMaterial.prompt(), formalReadingMaterial.validationSchema());
+    return new FormalDecision(result, formalReadingMaterial.prompt(), validationSchema);
+  }
+
+  private ImmutableBytes boundedFormalReadingSchema(int maxActions, int maxNavigation) {
+    ObjectNode schema =
+        (ObjectNode) json.parseCanonical(formalReadingMaterial.validationSchema()).deepCopy();
+    ((ObjectNode) schema.path("properties").path("actions")).put("maxItems", maxActions);
+    for (String action : List.of("query", "literalSearch")) {
+      ((ObjectNode) schema.path("$defs").path(action).path("properties").path("limit"))
+          .put("maximum", maxNavigation);
+    }
+    return json.encodeCanonical(schema);
   }
 
   private static FormalReadingModelOutputFailure formalReadingModelOutputFailure(
@@ -575,7 +635,10 @@ public final class OntologyDecisionRunner {
         costs.computeIfAbsent(
             use,
             ignored ->
-                OntologyReadingPacket.formal(corpus, List.of(handle), Integer.MAX_VALUE).cost());
+                (corpus.usesBusinessLinkNavigation()
+                        ? OntologyReadingPacket.formalV5(corpus, List.of(handle), Integer.MAX_VALUE)
+                        : OntologyReadingPacket.formal(corpus, List.of(handle), Integer.MAX_VALUE))
+                    .cost());
     ObjectNode measured = document.putObject("formalPacketCost");
     measured.put("fullSourceBytes", cost.fullSourceBytes());
     measured.put("modelInputBytes", cost.modelInputBytes());
@@ -1162,14 +1225,17 @@ public final class OntologyDecisionRunner {
           result.unresolved(),
           result.issueCode(),
           result.frozenPacket(),
-          json.parseCanonical(decision.decision().input()).path("visibleScope"));
+          json.parseCanonical(decision.decision().input()).path("visibleScope"),
+          "ontology-reading-input-v4"
+              .equals(
+                  json.parseCanonical(decision.decision().input()).path("schemaVersion").asText()));
     }
   }
 
   /** Persists a formal state that ended before a validated model decision existed. */
   void saveFormalReadingObservation(
-      OntologyScopeReader.Question question,
-      OntologyScopeReader.Task task,
+      OntologyReadingCoordinator.FormalQuestion question,
+      OntologyReadingCoordinator.FormalTask task,
       OntologyEvidenceCorpus corpus,
       OntologyReadingCoordinator.FormalResult result,
       OntologyReadingPacket material,
@@ -1225,7 +1291,8 @@ public final class OntologyDecisionRunner {
         visibleScope,
         identity,
         sourceBasis,
-        failure);
+        failure,
+        corpus.usesBusinessLinkNavigation());
   }
 
   private static Set<OntologyNavigationView.ViewRef> questionNavigationReferences(
@@ -1367,20 +1434,30 @@ public final class OntologyDecisionRunner {
       ModelRuntimeIdentityV1 runtimeIdentity) {}
 
   /** A normal Provider response failed only the exact decision-output contract. */
-  private static final class DecisionModelOutputFailure extends RuntimeException {
+  public static final class DecisionModelOutputFailure extends RuntimeException {
     private final String code;
+    private final String stage;
 
-    private DecisionModelOutputFailure(String code, Throwable cause) {
+    private DecisionModelOutputFailure(String code, String stage, Throwable cause) {
       super(code, cause);
       if (code == null || code.isBlank()) {
         throw new IllegalArgumentException("ONTOLOGY_DECISION_FAILURE_CODE_INVALID");
       }
       this.code = code;
+      this.stage = stage;
     }
 
-    private String code() {
+    public String code() {
       return code;
     }
+
+    public String stage() {
+      return stage;
+    }
+  }
+
+  private static String formalDecisionStage(String kind) {
+    return kind.startsWith("FORMAL_") ? kind.substring("FORMAL_".length()) : kind;
   }
 
   /**

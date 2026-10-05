@@ -180,12 +180,15 @@ class OntologyConfigurationTest {
         .isEqualTo(
             Path.of(
                 "/absolute/path/to/source-code/tools/repository-run/"
-                    + "ontology-artifact-policy-set-v2.json"));
+                    + "ontology-artifact-policy-set-v3.json"));
     assertThat(configuration.storage().upstreamArtifactPolicyRegistries())
         .containsExactly(
             Path.of(
                 "/absolute/path/to/source-code/tools/repository-run/"
-                    + "ontology-artifact-policy-set-v1.json"));
+                    + "ontology-artifact-policy-set-v1.json"),
+            Path.of(
+                "/absolute/path/to/source-code/tools/repository-run/"
+                    + "ontology-artifact-policy-set-v2.json"));
     assertThat(configuration.models()).isNotNull();
     assertThat(configuration.models().routing()).containsOnlyKeys("survey", "extract", "relate");
     assertThat(configuration.models().routing().get("survey")).containsExactly("luna");

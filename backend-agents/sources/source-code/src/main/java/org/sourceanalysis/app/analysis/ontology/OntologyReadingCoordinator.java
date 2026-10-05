@@ -28,6 +28,7 @@ public final class OntologyReadingCoordinator {
   private final int maxFormalRequestBytes;
   private final int maxFormalNavigationEntries;
   private final boolean formalV4;
+  private FormalState observedFormalState;
   private final CanonicalJsonCodec json = new CanonicalJsonCodec();
 
   public OntologyReadingCoordinator(
@@ -418,6 +419,40 @@ public final class OntologyReadingCoordinator {
             .filter(candidate -> taskId.equals(candidate.taskId()))
             .findFirst()
             .orElseThrow(() -> new IllegalArgumentException("ONTOLOGY_READING_TASK_UNKNOWN"));
+    return completeFormal(
+        new FormalQuestion(
+            question.questionId(), question.question(), question.entryRefs(), question.clueRefs()),
+        new FormalTask(
+            task.taskId(),
+            OntologyTaskRunner.TaskKind.valueOf(task.taskKind().name()),
+            task.readingMode(),
+            task.unitUses(),
+            task.requiredUnitUses()));
+  }
+
+  /** Uses the same bounded reading protocol for an exact O2 question, without posing as OBJECT. */
+  public FormalResult completeFormal(OntologySelectionReader.Question question) {
+    Objects.requireNonNull(question, "formal relation question");
+    return completeFormal(
+        new FormalQuestion(
+            question.questionId(), question.question(), question.entryRefs(), question.clueRefs()),
+        new FormalTask(
+            question.taskId(),
+            OntologyTaskRunner.TaskKind.RELATE,
+            question.readingMode(),
+            question.unitUses(),
+            question.requiredUnitUses()));
+  }
+
+  /**
+   * Actual state observed in this coordinator's current synchronous task, including failed reads.
+   */
+  public FormalState observedFormalState() {
+    return observedFormalState;
+  }
+
+  private FormalResult completeFormal(FormalQuestion question, FormalTask task) {
+    observedFormalState = null;
     FormalRun formalRun = new FormalRun(question, task);
     LinkedHashSet<String> selectedEntries =
         new LinkedHashSet<>(new TreeSet<>(question.entryRefs()));
@@ -496,6 +531,16 @@ public final class OntologyReadingCoordinator {
                   queryObservations)
               .withActive(active)
               .withRequired(required);
+      observedFormalState =
+          new FormalState(
+              selectedEntries,
+              selectedClues,
+              discovered,
+              readHistory,
+              active,
+              required,
+              dispositions,
+              queryObservations);
       OntologyDecisionRunner.FormalDecision decision;
       try {
         decision =
@@ -507,6 +552,8 @@ public final class OntologyReadingCoordinator {
                 List.copyOf(active),
                 maxPageItems,
                 maxFormalNavigationEntries,
+                maxFormalUnitBytes,
+                maxFormalRequestBytes,
                 maxRounds - round,
                 activePacket);
       } catch (StructuredModelProviderFailure failure) {
@@ -614,6 +661,16 @@ public final class OntologyReadingCoordinator {
         }
       }
       LinkedHashSet<FormalUnitUse> nextActive = new LinkedHashSet<>(response.retainedUnitUses());
+      observedFormalState =
+          new FormalState(
+              selectedEntries,
+              selectedClues,
+              discovered,
+              readHistory,
+              nextActive,
+              required,
+              dispositions,
+              queryObservations);
       boolean discoveredChanged = false;
       for (FormalAction action : response.actions()) {
         if (action instanceof FormalQuery query) {
@@ -1010,6 +1067,7 @@ public final class OntologyReadingCoordinator {
             frozen,
             frozen,
             envelope);
+    observedFormalState = result.state();
     decisions.saveFormalReadingState(decision, result);
     return result;
   }
@@ -1023,6 +1081,9 @@ public final class OntologyReadingCoordinator {
       UnitHandle canonical = corpus.aliases().unit(use.unitRef());
       String entryId = corpus.aliases().entry(use.entryRef()).entryId();
       handles.add(new UnitHandle(entryId, canonical.kind(), canonical.originalId()));
+    }
+    if (corpus.usesBusinessLinkNavigation()) {
+      return OntologyReadingPacket.formalV5(corpus, handles, maxFormalUnitBytes);
     }
     return formalV4
         ? OntologyReadingPacket.formalV4(corpus, handles, maxFormalUnitBytes)
@@ -1046,6 +1107,10 @@ public final class OntologyReadingCoordinator {
     } else if ("COLUMN_STATEMENTS".equals(query.queryKind())) {
       page =
           corpus.columnStatements(
+              aliases.clue(query.keyRef()).lookupKey(), query.offset(), query.limit());
+    } else if ("CONTROL_USES".equals(query.queryKind())) {
+      page =
+          corpus.controlUses(
               aliases.clue(query.keyRef()).lookupKey(), query.offset(), query.limit());
     } else {
       SearchResult result = corpus.searchLiteral(query.literal(), query.offset(), query.limit());
@@ -1178,7 +1243,9 @@ public final class OntologyReadingCoordinator {
             "requiredUnitUses",
             "actions",
             "unresolved"));
-    if (!"reading-response-v3".equals(response.path("schemaVersion").asText())) {
+    String expectedVersion =
+        corpus.usesBusinessLinkNavigation() ? "reading-response-v4" : "reading-response-v3";
+    if (!expectedVersion.equals(response.path("schemaVersion").asText())) {
       throw new IllegalArgumentException("ONTOLOGY_READING_RESPONSE_INVALID");
     }
     String decision = response.path("decision").asText();
@@ -1387,6 +1454,12 @@ public final class OntologyReadingCoordinator {
             requireClue(corpus, visible, keyRef, OntologyEvidenceCorpus.ClueKind.TABLE);
         case "COLUMN_STATEMENTS" ->
             requireClue(corpus, visible, keyRef, OntologyEvidenceCorpus.ClueKind.COLUMN);
+        case "CONTROL_USES" -> {
+          if (!corpus.usesBusinessLinkNavigation()) {
+            throw new IllegalArgumentException("ONTOLOGY_READING_QUERY_INVALID");
+          }
+          requireClue(corpus, visible, keyRef, OntologyEvidenceCorpus.ClueKind.CONTROL_REFERENCE);
+        }
         default -> throw new IllegalArgumentException("ONTOLOGY_READING_QUERY_INVALID");
       }
     } catch (IllegalArgumentException invalid) {
@@ -1805,7 +1878,27 @@ public final class OntologyReadingCoordinator {
 
   private record FormalRead(FormalUnitUse unitUse) implements FormalAction {}
 
-  private record FormalRun(OntologyScopeReader.Question question, OntologyScopeReader.Task task) {}
+  static record FormalQuestion(
+      String questionId, String question, List<String> entryRefs, List<String> clueRefs) {
+    FormalQuestion {
+      entryRefs = List.copyOf(entryRefs);
+      clueRefs = List.copyOf(clueRefs);
+    }
+  }
+
+  static record FormalTask(
+      String taskId,
+      OntologyTaskRunner.TaskKind taskKind,
+      OntologyScopeReader.ReadingMode readingMode,
+      List<OntologyScopeReader.UnitUse> unitUses,
+      List<OntologyScopeReader.UnitUse> requiredUnitUses) {
+    FormalTask {
+      unitUses = List.copyOf(unitUses);
+      requiredUnitUses = List.copyOf(requiredUnitUses);
+    }
+  }
+
+  private record FormalRun(FormalQuestion question, FormalTask task) {}
 
   static record ValidatedFormalResponse(
       String decision,

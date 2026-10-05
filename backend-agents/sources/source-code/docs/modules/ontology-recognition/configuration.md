@@ -1,12 +1,14 @@
 # 本体独立配置：加载、绑定及操作边界
 
-状态：2026-10-05，固定客户O0–O3已通过正式命令有限结束、保存和查询。O1六任务REVIEWED；O2财务和统计REVIEWED、采购关系因最终scope错误REJECTED；O3部分发布四文件，九项声明义务保留为八REVIEWED/一REJECTED，覆盖INCOMPLETE。18份真实请求的完整原文、用途、限制、同题目录及同包审阅已核对；模型遗漏和错误单列，不由Java补业务答案。最后复审两项框架缺陷均已RED→GREEN：8129直接回归20项全绿；最终质量6695通过（767文件格式清洁、SpotBugs零发现/错误、PMD通过，UT/IT跳过）。实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)，不将模型拒绝和残余误读改写成业务成功。准确完整ID、实际成本和结果见[验收记录](../../supplements/ontology-formal-acceptance-20261003.md)，剩余动作见[稳定性计划](../../plans/ontology-stability-implementation-plan.md)。不宣称自主全仓、任意小窗口兼容或模型零错误；旧MD路径和历史结果保持原状。
+状态：业务联系优先正式工程、骨架发布和跨运行财务/统计细化已完成，最终129项直接回归及同代码质量通过；四文件重开字节一致。**业务覆盖、小窗口及浏览器呈现验收仍部分未通过/未验**，不宣称完整采购主链、全仓自主发现或跨项目同等质量。当前实际运行、材料成本、结果及剩余义务由[正式验收](../../supplements/ontology-business-link-formal-acceptance-20261005.md)统一维护；[前序稳定性18请求](../../supplements/ontology-formal-acceptance-20261003.md)仍属原版本，旧MD及历史文件不变。本轮通过原[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)交付。
 
 `OntologyConfiguration`严格读取`ontology-config-v1`、快照有效UTF-8 Prompt文本和非凭据Provider声明，并复用Provider声明校验，不读取认证环境或构造Provider。Task 5的formal typed-v3入口消费调用者提供的不可变OBJECT/ACTION/ANALYTIC/RELATE/REVIEW Prompt和独立字节/token限制快照；它不重新按资源路径读取Prompt。默认 Prompt 是本体专属 formal 资源，不复用实验 v1/v2 或旧 Activity/Process Prompt。正式运行时已有显式O0–O3和独立extract/relate路由的定向结果；实际适配器token能力、DISCOVERY路径、完整准入和失败观察仍须各自验收，不能由配置读取测试代替。
 
 ## 1. 配置输入
 
 `ontology-config-v1`使用独立YAML。准确R4/O0和选择清单来自命令参数，不隐式寻找最新运行。配置只包括以下字段：
+
+业务联系优先的新配置示例采用`ontology-artifact-policy-set-v3.json`，为O0显式选择Corpus-v2/投影规则v3和新typed-v4默认Prompt；旧策略与旧结果仍按原owner读取。配置字段不变，不凭scope-v2或相同R4给历史任务升级身份。完整骨架及细化范围示例为`tools/repository-run/ontology-skeleton-scope-v2.example.json`和`ontology-enrichment-scope-v2.example.json`，示例编号须替换为准确保存值；objectSources按选定题恢复全部已审OBJECT，不是对象名称匹配或单对象模糊选择。
 
 | 字段 | 内容和检查 |
 | --- | --- |
@@ -41,19 +43,21 @@
 
 O0保存的准备控制用于重开其材料约定和内容身份；O1/O2实际派发采用各自本次配置的请求字节、响应字节、输出token和运行请求次数上限。上游较宽的上限不覆盖当前阶段较窄的限制。每个运行单独计数，其全部依赖任务共享该运行额度；额度耗尽后保留成功任务，并登记剩余任务未执行，不自动启动新批次。模型窗口未得到实测时仍记录未知，不因通过字节检查而宣布支持某个模型窗口。
 
+新business Corpus-v2路径的阅读轮数、动作数、导航页和完整单元门禁也使用当前O1/O2配置，EXPLICIT预检与MODEL执行一致；O0原控制/内容身份不改写。旧projection-v1/v2执行沿原控制规则，不用新规则重解释历史请求。实际新运行曾发现O0较宽导航覆盖当前较窄配置；直接RED已确认，窄接线修复须通过回归后再计完成。
+
 只有用户当前明确授予跨运行总额度时，宿主Agent才按该边界汇总准确O1/O2的实际观察；Java没有跨运行授权计数器，新运行也不能自行续期硬额度。v2分别记录预留、确认开始、确认结束和远端未知，`modelRequestsDispatched`不证明远端是否完成；未知不得当作零或安全重发依据。用户已授权有限配置内同范围程序缺陷修复时，不恢复被撤回的旧PoC累计额度阻断。范围、来源、模型或账户扩大仍需相应选择。查询及合法O0/O3不消耗模型额度。
 
-范围、选材和发布清单使用`ontology-scope-v1`及新执行的`ontology-selection-v2`：保存问题、任务、EXPLICIT/MODEL选择性质及准确Corpus内E/U/K引用；跨运行选择保存完整运行ID并重开准确模块。清单不能包含人工对象、关系或指标答案，不能把旧PoC结果作为已审上游。完整定义字段由模型任务合同规定，不由配置代写。历史selection-v1继续按原合同读取，不猜objectSources、不修改旧记录。
+当前业务联系路径的范围使用`ontology-scope-v2`，历史scope-v1仍严格读取；新执行选材/发布采用`ontology-selection-v2`：保存问题、任务、EXPLICIT/MODEL选择性质及准确Corpus内E/U/K引用；跨运行选择保存完整运行ID并重开准确模块。清单不能包含人工对象、关系或指标答案，不能把旧PoC结果作为已审上游。完整定义字段由模型任务合同规定，不由配置代写。历史selection-v1继续按原合同读取，不猜objectSources、不修改旧记录；非空旧关系选单不能配合新生产策略启动。
 
-scope字段保持v1，同题ACTION/ANALYTIC只依赖此前全部OBJECT。selection-v2的RELATE问题显式选择`objectSources.identificationRun/questionId`；PUBLISH显式O1集合必须包含每个所选O2的实际上游，不能要求独立O2拥有完全相等的全表。派发计数、PARTIAL及nextActions由[contracts§11.6](contracts.md)拥有，配置读取通过不替代这些运行验收。
+历史scope-v1的同题ACTION/ANALYTIC仍只依赖此前全部OBJECT。scope-v2的ENRICHMENT另可显式选择已审骨架的`objectSources.identificationRun/questionId`，每题只恢复其真实对象目录。selection-v2的RELATE也显式选择这个来源对；PUBLISH显式O1集合必须包含每个所选O2和细化O1的实际上游，不能要求独立O2拥有完全相等的全表。派发计数、PARTIAL及nextActions由[contracts§11.6](contracts.md)拥有，配置读取通过不替代这些运行验收。
 
 ### 3.1 可复制示例的边界
 
-`tools/repository-run/ontology.example.yaml`选择本次v2本体policy，并示出显式历史owner列表。源码和技术policy仍应填所选R0/R4的真实owner，不是因为示例文件存在就认定匹配。示例不会认证或执行模型。
+`tools/repository-run/ontology.example.yaml`选择当前v3本体policy，并显式列出历史v1/v2 owner。源码和技术policy仍应填所选R0/R4的真实owner，不是因为示例文件存在就认定匹配。示例不会认证或执行模型。
 
 `ontology-scope.example.json`、`ontology-relate-selection.example.json`和`ontology-publish-selection.example.json`只演示准确字段，不是客户材料或运行结果。运行ID中全0/全1/全2十六进制值及E1/U1/Q1均为占位符；必须用实际返回的O0/O1/O2和准确Corpus、保存问题中的引用替换。RELATE示例的根identificationRuns与objectSources必须同步替换；PUBLISH示例必须列全每个选中O2的实际O1上游。不能按对象名寻找近似运行，不能把模板中的数字当模型已审答案。
 
-新材料规则不增加配置字段：新v2 policy的O0写明确的`ontology-model-projection-v2`，历史O0按其保存规则读取。新规则及冻结包/模型v4已有直接验证；固定客户新O0已经保存。具体版本合同见[材料准备§9.2](material-preparation.md)，真实三例的请求成本仍需按实际请求记录核验。
+新材料规则不增加配置字段：当前v3 policy的O0写Corpus-v2与`ontology-model-projection-v3`，使用冻结包/模型v5；历史v2 policy的O0仍按原`ontology-model-projection-v2`及材料v4读取，不升级旧记录。新规则已有直接验证，固定客户新O0已正式保存；真实局部业务联系的成本和质量另按实际请求核验。具体版本合同见[材料准备§9.3](material-preparation.md)。
 
 ## 4. 直接验收
 

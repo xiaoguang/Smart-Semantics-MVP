@@ -19,6 +19,11 @@ final class OntologyProviderSchema {
   private static void removeUnsupportedKeywords(JsonNode node) {
     if (node instanceof ObjectNode object) {
       object.remove("uniqueItems");
+      // Conditional refinements remain enforced by the unchanged local validation schema.
+      object.remove(java.util.List.of("allOf", "if", "then", "else"));
+      if (object.has("oneOf")) {
+        object.set("anyOf", object.remove("oneOf"));
+      }
       if (!object.has("type") && (object.has("const") || object.has("enum"))) {
         JsonNode values = object.has("const") ? object.path("const") : object.path("enum");
         boolean stringsOnly =

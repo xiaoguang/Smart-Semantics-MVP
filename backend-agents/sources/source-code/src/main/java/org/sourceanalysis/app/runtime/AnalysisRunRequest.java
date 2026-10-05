@@ -108,7 +108,7 @@ public record AnalysisRunRequest(
               || ontologyScopeRef == null
               || ontologySelectionRef != null
               || !isOntologyModule(corpusPublication, 2, "ontology-corpus")
-              || !identificationPublications.isEmpty()
+              || !allOntologyModules(identificationPublications, 3, "ontology-identification")
               || !relationPublications.isEmpty()) {
             throw new IllegalArgumentException("ONTOLOGY_OPERATION_INPUTS_INVALID");
           }

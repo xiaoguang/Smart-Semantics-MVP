@@ -103,6 +103,8 @@ class OntologyFormalRuntimeContractsTest {
       Path.of("tools/repository-run/ontology-artifact-policy-set-v1.json").toAbsolutePath();
   private static final Path ONTOLOGY_POLICY_SET_V2 =
       Path.of("tools/repository-run/ontology-artifact-policy-set-v2.json").toAbsolutePath();
+  private static final Path ONTOLOGY_POLICY_SET_V3 =
+      Path.of("tools/repository-run/ontology-artifact-policy-set-v3.json").toAbsolutePath();
   private static final String JAVA_PATH = "src/main/java/fixture/RecordHandler.java";
   private static final String JAVA_SOURCE =
       "package fixture;\n"
@@ -864,6 +866,1516 @@ class OntologyFormalRuntimeContractsTest {
     assertThat(containsText(review, ExplicitTypedPipelineScript.RELATION_UNRESOLVED_ID)).isTrue();
     assertThat(providerFactories).hasValue(factoriesAfterO2);
     assertThat(script.requests).hasSize(8);
+  }
+
+  @Test
+  void businessLinkV3RuntimeCarriesScopeV2SkeletonThroughRelationsAndFourFilePublisher()
+      throws Exception {
+    TechnicalFixture fixture = prepareRealR4("business-link-v3-runtime-chain");
+    ConfiguredTypedPipeline configured =
+        writeBusinessLinkTypedPipelineConfigurationV3(
+            "ontology-business-link-v3-runtime.yaml", fixture);
+    AtomicInteger providerFactories = new AtomicInteger();
+    List<StructuredModelRequest> requests = new ArrayList<>();
+    Function<OntologyTypedTaskRunner.FormalModelDeclaration, StructuredModelProvider>
+        providerFactory =
+            declaration -> {
+              providerFactories.incrementAndGet();
+              ModelRuntimeIdentityV1 identity = declaration.expectedRuntimeIdentity();
+              return request -> {
+                requests.add(request);
+                JsonNode input = ExplicitTypedPipelineScript.input(request);
+                String kind = input.path("taskKind").asText();
+                boolean review = request.taskKind().contains("REVIEW");
+                String responseSchema =
+                    review ? "ontology-typed-review-v4" : "ontology-typed-candidate-v4";
+                JsonNode outputSchema = CANONICAL.parseCanonical(request.outputJsonSchema());
+                assertThat(
+                        outputSchema
+                            .path("properties")
+                            .path("schemaVersion")
+                            .path("const")
+                            .asText())
+                    .isEqualTo(responseSchema);
+                List<String> required = new ArrayList<>();
+                outputSchema.path("required").forEach(value -> required.add(value.asText()));
+                assertThat(required).contains("clueDispositions");
+                ImmutableBytes response =
+                    switch (kind) {
+                      case "OBJECT" -> {
+                        List<String> objectRequired = new ArrayList<>();
+                        outputSchema
+                            .path("properties")
+                            .path("definitions")
+                            .path("properties")
+                            .path("objects")
+                            .path("items")
+                            .path("required")
+                            .forEach(value -> objectRequired.add(value.asText()));
+                        assertThat(objectRequired).contains("displayRole");
+                        yield businessLinkFormalObjectResponseV4(
+                            responseSchema, input.path("questionId").asText(), "E1");
+                      }
+                      case "RELATE" ->
+                          businessLinkFormalUnresolvedRelateResponseV4(
+                              responseSchema,
+                              ExplicitTypedPipelineScript.catalogRef(input, "objects"));
+                      default ->
+                          throw new AssertionError("unexpected skeleton pipeline task " + kind);
+                    };
+                JsonNode responseDocument = CANONICAL.parseCanonical(response);
+                assertThat(responseDocument.path("clueDispositions").isArray()).isTrue();
+                if ("OBJECT".equals(kind)) {
+                  assertThat(
+                          responseDocument
+                              .path("definitions")
+                              .path("objects")
+                              .get(0)
+                              .path("displayRole")
+                              .asText())
+                      .isEqualTo("MAIN");
+                }
+                return new StructuredModelResponse(response, identity);
+              };
+            };
+
+    CliResult prepared =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "prepare-ontology",
+            "--evidence-run",
+            fixture.r4RunId());
+    assertThat(prepared.exitCode()).withFailMessage(cliDiagnostics(prepared)).isZero();
+    String o0RunId = runId(prepared);
+    CliResult corpusResult = artifact(configured.path(), o0RunId, "ONTOLOGY_CORPUS");
+    assertArtifactAvailable(corpusResult);
+    assertThat(JSON.readTree(corpusResult.stdout()).path("schemaVersion").asText())
+        .isEqualTo("ontology-corpus-v2");
+    Path scope =
+        writeBusinessLinkSkeletonScopeV2(
+            temporaryDirectory.resolve("business-link-skeleton-scope-v2.json"));
+    ImmutableBytes scopeBytes = ImmutableBytes.copyOf(Files.readAllBytes(scope));
+    JsonNode scopeSnapshot = CANONICAL.parseCanonical(scopeBytes);
+
+    CliResult identified =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "identify-ontology",
+            "--corpus-run",
+            o0RunId,
+            "--scope",
+            scope.toString());
+    assertThat(identified.exitCode()).withFailMessage(cliDiagnostics(identified)).isZero();
+    String o1RunId = runId(identified);
+    JsonNode identification =
+        JSON.readTree(artifact(configured.path(), o1RunId, "ONTOLOGY_IDENTIFICATION").stdout());
+    assertThat(identification.path("schemaVersion").asText())
+        .isEqualTo("ontology-identification-v3");
+    assertThat(identification.path("scope")).isEqualTo(scopeSnapshot);
+    JsonNode skeletonTaskRecord = findTaskRecord(identification, "object-skeleton");
+    assertThat(skeletonTaskRecord.path("status").asText()).isEqualTo("REVIEWED");
+    String skeletonProducingTaskId = skeletonTaskRecord.path("producingTaskId").asText();
+    assertThat(skeletonProducingTaskId).isNotBlank();
+    CliResult skeletonTaskResult =
+        executePublic(
+            configured.path(),
+            "artifact",
+            "--run",
+            o1RunId,
+            "--key",
+            "ONTOLOGY_TASK_RECORD",
+            "--task-id",
+            skeletonProducingTaskId,
+            "--max-bytes",
+            "524288");
+    assertArtifactAvailable(skeletonTaskResult);
+    JsonNode skeletonTask = JSON.readTree(skeletonTaskResult.stdout());
+    assertThat(skeletonTask.path("completion").path("status").asText()).isEqualTo("REVIEWED");
+    String skeletonReviewBase64 =
+        skeletonTask.path("review").path("response").path("rawResponseBase64").asText();
+    assertThat(skeletonReviewBase64).isNotBlank();
+    JsonNode skeletonReview = JSON.readTree(Base64.getDecoder().decode(skeletonReviewBase64));
+    assertThat(
+            skeletonReview.path("definitions").path("objects").get(0).path("displayRole").asText())
+        .isEqualTo("MAIN");
+
+    Path relateSelection =
+        writeRelateSelectionV2(
+            temporaryDirectory.resolve("business-link-skeleton-relate-v2.json"),
+            o0RunId,
+            List.of(o1RunId),
+            new SelectedRelateQuestion(
+                "Q_RELATE", "relation-task", List.of(new ObjectSource(o1RunId, "Q_SKELETON"))));
+    CliResult related =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "relate-ontology",
+            "--selection",
+            relateSelection.toString());
+    assertThat(related.exitCode()).withFailMessage(cliDiagnostics(related)).isIn(0, 2);
+    assertThat(related.stdout()).isNotBlank();
+    String o2RunId = runId(related);
+    JsonNode relations =
+        JSON.readTree(artifact(configured.path(), o2RunId, "ONTOLOGY_RELATIONS").stdout());
+    assertThat(relations.path("schemaVersion").asText()).isEqualTo("ontology-relations-v3");
+    assertThat(relations.path("selection").path("schemaVersion").asText())
+        .isEqualTo("ontology-selection-v2");
+    assertThat(relations.path("taskOutcomes").get(0).path("status").asText()).isEqualTo("REVIEWED");
+
+    Path publishSelection =
+        writePublishSelectionV2(
+            temporaryDirectory.resolve("business-link-skeleton-publish-v2.json"),
+            o0RunId,
+            List.of(o1RunId),
+            List.of(o2RunId));
+    int providerFactoriesBeforePublish = providerFactories.get();
+    CliResult published =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "publish-ontology",
+            "--selection",
+            publishSelection.toString());
+    assertThat(published.exitCode()).withFailMessage(cliDiagnostics(published)).isIn(0, 2);
+    assertThat(published.stdout()).isNotBlank();
+    String o3RunId = runId(published);
+    assertThat(providerFactories).hasValue(providerFactoriesBeforePublish);
+    CliResult inspected = executePublic(configured.path(), "inspect", "--run", o3RunId);
+    assertThat(inspected.exitCode()).withFailMessage(cliDiagnostics(inspected)).isZero();
+
+    List<String> publicKeys = availablePublicArtifactKeys(configured.path(), o3RunId);
+    assertThat(publicKeys)
+        .containsExactlyInAnyOrder(
+            "ONTOLOGY", "ONTOLOGY_COVERAGE", "ONTOLOGY_REVIEW", "ONTOLOGY_SOURCE_INDEX");
+    JsonNode ontology = JSON.readTree(artifact(configured.path(), o3RunId, "ONTOLOGY").stdout());
+    JsonNode coverage =
+        JSON.readTree(artifact(configured.path(), o3RunId, "ONTOLOGY_COVERAGE").stdout());
+    JsonNode review =
+        JSON.readTree(artifact(configured.path(), o3RunId, "ONTOLOGY_REVIEW").stdout());
+    assertThat(ontology.path("schemaVersion").asText()).isEqualTo("ontology-v2");
+    assertThat(coverage.path("schemaVersion").asText()).isEqualTo("ontology-coverage-v3");
+    assertThat(review.path("schemaVersion").asText()).isEqualTo("ontology-review-v3");
+
+    int providerFactoriesBeforeOverview = providerFactories.get();
+    CliResult businessOverview =
+        executePublic(
+            configured.path(),
+            "artifact",
+            "--run",
+            o3RunId,
+            "--key",
+            "ONTOLOGY_BUSINESS_OVERVIEW",
+            "--max-bytes",
+            "5242880");
+    assertThat(businessOverview.exitCode())
+        .withFailMessage(cliDiagnostics(businessOverview))
+        .isZero();
+    assertThat(businessOverview.stdout())
+        .startsWith("<!doctype html>")
+        .contains("<pre class=\"mermaid\" id=\"ontology-business-graph\">")
+        .contains("<script src=\"data:text/javascript;base64,")
+        .contains("mermaid.run({querySelector: '#ontology-business-graph'});")
+        .doesNotContain("<script src=\"https://", "<script src=\"http://");
+
+    CliResult oversizedBusinessOverview =
+        executePublic(
+            configured.path(),
+            "artifact",
+            "--run",
+            o3RunId,
+            "--key",
+            "ONTOLOGY_BUSINESS_OVERVIEW",
+            "--max-bytes",
+            "1");
+    assertThat(oversizedBusinessOverview.exitCode()).isNotZero();
+    assertThat(oversizedBusinessOverview.stdout()).isEmpty();
+    assertThat(oversizedBusinessOverview.stderr()).contains("ONTOLOGY_ARTIFACT_TOO_LARGE");
+    assertThat(providerFactories).hasValue(providerFactoriesBeforeOverview);
+
+    ReopenedModulePublication o0Module =
+        reopenedOntologyModule(fixture.runStore(), o0RunId, ONTOLOGY_POLICY_SET_V3);
+    ReopenedModulePublication o1Module =
+        reopenedOntologyModule(fixture.runStore(), o1RunId, ONTOLOGY_POLICY_SET_V3);
+    ReopenedModulePublication o2Module =
+        reopenedOntologyModule(fixture.runStore(), o2RunId, ONTOLOGY_POLICY_SET_V3);
+    ReopenedModulePublication o3Module =
+        reopenedOntologyModule(fixture.runStore(), o3RunId, ONTOLOGY_POLICY_SET_V3);
+    assertThat(o0Module.payloads())
+        .extracting(payload -> payload.descriptor().schemaVersion())
+        .containsExactly("ontology-corpus-v2");
+    assertThat(o1Module.payloads())
+        .extracting(payload -> payload.descriptor().schemaVersion())
+        .containsExactly("ontology-identification-v3");
+    assertThat(o2Module.payloads())
+        .extracting(payload -> payload.descriptor().schemaVersion())
+        .containsExactly("ontology-relations-v3");
+    assertThat(o3Module.payloads())
+        .extracting(payload -> payload.descriptor().fileName())
+        .containsExactly(
+            "ontology-coverage.json",
+            "ontology-review.json",
+            "ontology-sources.jsonl",
+            "ontology.json");
+    assertThat(o3Module.payloads())
+        .extracting(payload -> payload.descriptor().schemaVersion())
+        .containsExactly(
+            "ontology-coverage-v3", "ontology-review-v3", "ontology-source-v1", "ontology-v2");
+    assertThat(o1Module.receipt().upstreamArtifacts())
+        .containsAll(modulePayloadReferences(o0Module));
+    assertThat(o2Module.receipt().upstreamArtifacts())
+        .containsExactlyInAnyOrderElementsOf(modulePayloadReferences(o1Module));
+    List<ArtifactReference> expectedO3Upstreams =
+        new ArrayList<>(modulePayloadReferences(o1Module));
+    expectedO3Upstreams.addAll(modulePayloadReferences(o2Module));
+    assertThat(o3Module.receipt().upstreamArtifacts())
+        .containsExactlyInAnyOrderElementsOf(expectedO3Upstreams);
+    assertThat(requests)
+        .extracting(request -> ExplicitTypedPipelineScript.input(request).path("taskKind").asText())
+        .containsExactly("OBJECT", "OBJECT", "RELATE", "RELATE");
+  }
+
+  @Test
+  void modelReadingRelateSelectionUsesReviewedObjectsAndPersistsActualMaterial() throws Exception {
+    TechnicalFixture fixture = prepareRealR4("business-link-model-reading-relate");
+    ConfiguredTypedPipeline configured =
+        writeBusinessLinkTypedPipelineConfigurationV3(
+            "ontology-business-link-model-reading-relate.yaml", fixture);
+    String configurationText = Files.readString(configured.path(), StandardCharsets.UTF_8);
+    assertThat(configurationText).contains("maxRequests: 8");
+    Files.writeString(
+        configured.path(),
+        configurationText.replace("maxRequests: 8", "maxRequests: 4"),
+        StandardCharsets.UTF_8);
+    assertThat(Files.readString(configured.path(), StandardCharsets.UTF_8))
+        .contains("maxRequests: 4");
+
+    AtomicInteger providerFactories = new AtomicInteger();
+    AtomicInteger readingRounds = new AtomicInteger();
+    AtomicReference<String> readUnitRef = new AtomicReference<>();
+    AtomicReference<String> expectedMethodRef = new AtomicReference<>();
+    AtomicReference<String> selectedClueRef = new AtomicReference<>();
+    AtomicReference<String> selectedClueMeaning = new AtomicReference<>();
+    List<StructuredModelRequest> relateRequests = new ArrayList<>();
+    Function<OntologyTypedTaskRunner.FormalModelDeclaration, StructuredModelProvider>
+        providerFactory =
+            declaration -> {
+              providerFactories.incrementAndGet();
+              ModelRuntimeIdentityV1 identity = declaration.expectedRuntimeIdentity();
+              return request -> {
+                JsonNode input = ExplicitTypedPipelineScript.input(request);
+                String schemaVersion = input.path("schemaVersion").asText();
+                if ("ontology-reading-input-v4".equals(schemaVersion)) {
+                  relateRequests.add(request);
+                  assertThat(input.path("taskKind").asText()).isEqualTo("RELATE");
+                  assertThat(input.path("readingMode").asText()).isEqualTo("MODEL");
+                  assertThat(input.path("questionId").asText()).isEqualTo("Q_RELATE");
+                  int round = readingRounds.incrementAndGet();
+                  if (round == 1) {
+                    JsonNode navigation = input.path("visibleScope").path("navigation");
+                    JsonNode selectedEntry = null;
+                    for (JsonNode candidate : navigation) {
+                      if ("E1".equals(candidate.path("entryRef").asText())) {
+                        selectedEntry = candidate;
+                        break;
+                      }
+                    }
+                    assertThat(selectedEntry).isNotNull();
+                    JsonNode visibleClues = selectedEntry.path("clues");
+                    assertThat(visibleClues.size()).isGreaterThan(0);
+                    selectedClueRef.set(visibleClues.get(0).path("clueRef").asText());
+                    selectedClueMeaning.set(visibleClues.get(0).path("keyDisplay").asText());
+                    assertThat(selectedClueRef.get()).matches("K[1-9][0-9]*");
+                    assertThat(selectedClueMeaning.get()).isNotBlank();
+
+                    JsonNode available = input.path("visibleScope").path("availableUnitUses");
+                    boolean selectedMethodAvailable = false;
+                    for (JsonNode use : available) {
+                      if (expectedMethodRef.get().equals(use.path("unitRef").asText())
+                          && "E1".equals(use.path("entryRef").asText())) {
+                        selectedMethodAvailable = true;
+                      }
+                    }
+                    assertThat(available.size()).isGreaterThan(0);
+                    assertThat(selectedMethodAvailable).isTrue();
+                    readUnitRef.set(expectedMethodRef.get());
+                    return new StructuredModelResponse(
+                        businessLinkModelReadingResponseV4(
+                            "NEEDS_MORE_MATERIAL",
+                            readUnitRef.get(),
+                            "E1",
+                            selectedClueRef.get(),
+                            false),
+                        identity);
+                  }
+                  assertThat(round).isEqualTo(2);
+                  assertThat(stringValues(input.path("visibleScope").path("selectedEntryRefs")))
+                      .containsExactly("E1");
+                  assertThat(stringValues(input.path("visibleScope").path("selectedClueRefs")))
+                      .contains(selectedClueRef.get());
+                  assertThat(input.path("visibleScope").path("activeUnitUses").toString())
+                      .contains(readUnitRef.get(), "E1");
+                  assertThat(containsText(input.path("readingPacket"), "public String list()"))
+                      .isTrue();
+                  assertThat(containsText(input.path("readingPacket"), "return \"neutral\""))
+                      .isTrue();
+                  return new StructuredModelResponse(
+                      businessLinkModelReadingResponseV4(
+                          "READY_TO_EXTRACT", readUnitRef.get(), "E1", null, true),
+                      identity);
+                }
+                if ("ontology-typed-formal-input-v4".equals(schemaVersion)
+                    && "RELATE".equals(input.path("taskKind").asText())) {
+                  relateRequests.add(request);
+                  assertThat(input.path("questionId").asText()).isEqualTo("Q_RELATE");
+                  assertThat(input.path("taskKind").asText()).isEqualTo("RELATE");
+                  assertThat(stringValues(input.path("visibleClueRefs")))
+                      .containsExactly(selectedClueRef.get());
+                  JsonNode packet = input.path("readingPacket");
+                  assertThat(packet.path("visibleClues").size()).isEqualTo(1);
+                  JsonNode packetClue = packet.path("visibleClues").get(0);
+                  assertThat(packetClue.path("ref").asText()).isEqualTo(selectedClueRef.get());
+                  assertThat(packetClue.path("value").asText())
+                      .isEqualTo(selectedClueMeaning.get());
+                  assertThat(containsText(packet, "public String list() { return \"neutral\"; }"))
+                      .isTrue();
+                  JsonNode reviewedObject =
+                      ExplicitTypedPipelineScript.catalogEntry(input, "objects");
+                  assertThat(reviewedObject.path("definition").path("displayRole").asText())
+                      .isEqualTo("MAIN");
+                  assertThat(reviewedObject.path("definition").path("name").asText())
+                      .isEqualTo("Neutral source-backed record");
+                  boolean review = request.taskKind().contains("REVIEW");
+                  String responseSchema =
+                      review ? "ontology-typed-review-v4" : "ontology-typed-candidate-v4";
+                  String objectRef = reviewedObject.path("catalogRef").asText();
+                  return new StructuredModelResponse(
+                      businessLinkRelateResponseWithClueDispositionV4(
+                          responseSchema, objectRef, selectedClueRef.get()),
+                      identity);
+                }
+                assertThat(input.path("taskKind").asText()).isEqualTo("OBJECT");
+                String responseSchema =
+                    request.taskKind().contains("REVIEW")
+                        ? "ontology-typed-review-v4"
+                        : "ontology-typed-candidate-v4";
+                return new StructuredModelResponse(
+                    businessLinkFormalObjectResponseV4(
+                        responseSchema, input.path("questionId").asText(), "E1"),
+                    identity);
+              };
+            };
+
+    CliResult prepared =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "prepare-ontology",
+            "--evidence-run",
+            fixture.r4RunId());
+    assertThat(prepared.exitCode()).withFailMessage(cliDiagnostics(prepared)).isZero();
+    String o0RunId = runId(prepared);
+    JsonNode corpus =
+        JSON.readTree(artifact(configured.path(), o0RunId, "ONTOLOGY_CORPUS").stdout());
+    assertThat(corpus.path("schemaVersion").asText()).isEqualTo("ontology-corpus-v2");
+    String entryRef = entryRef(corpus);
+    String methodRef = unitRef(corpus, "JAVA_METHOD", "method:neutral-list");
+    assertThat(entryRef).isEqualTo("E1");
+    expectedMethodRef.set(methodRef);
+
+    Path skeletonScope =
+        writeBusinessLinkSkeletonScopeV2(
+            temporaryDirectory.resolve("business-link-model-read-skeleton-scope.json"));
+    CliResult identified =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "identify-ontology",
+            "--corpus-run",
+            o0RunId,
+            "--scope",
+            skeletonScope.toString());
+    assertThat(identified.exitCode()).withFailMessage(cliDiagnostics(identified)).isZero();
+    String o1RunId = runId(identified);
+    JsonNode identification =
+        JSON.readTree(artifact(configured.path(), o1RunId, "ONTOLOGY_IDENTIFICATION").stdout());
+    JsonNode skeletonRecord = findTaskRecord(identification, "object-skeleton");
+    assertThat(skeletonRecord.path("status").asText()).isEqualTo("REVIEWED");
+    String skeletonProducingTaskId = skeletonRecord.path("producingTaskId").asText();
+    CliResult skeletonObservationResult =
+        executePublic(
+            configured.path(),
+            "artifact",
+            "--run",
+            o1RunId,
+            "--key",
+            "ONTOLOGY_TASK_RECORD",
+            "--task-id",
+            skeletonProducingTaskId,
+            "--max-bytes",
+            "524288");
+    assertArtifactAvailable(skeletonObservationResult);
+    JsonNode skeletonObservation = JSON.readTree(skeletonObservationResult.stdout());
+    String skeletonReviewBase64 =
+        skeletonObservation.path("review").path("response").path("rawResponseBase64").asText();
+    JsonNode actualReviewedObject =
+        JSON.readTree(Base64.getDecoder().decode(skeletonReviewBase64))
+            .path("definitions")
+            .path("objects")
+            .get(0);
+    assertThat(actualReviewedObject.path("displayRole").asText()).isEqualTo("MAIN");
+
+    Path relateSelection =
+        writeBusinessLinkModelReadRelateSelectionV2(
+            temporaryDirectory.resolve("business-link-model-read-relate-selection.json"),
+            o0RunId,
+            o1RunId,
+            entryRef);
+    CliResult related =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "relate-ontology",
+            "--selection",
+            relateSelection.toString());
+    assertThat(related.exitCode()).withFailMessage(cliDiagnostics(related)).isZero();
+    String o2RunId = runId(related);
+    JsonNode o2Observation =
+        assertCommandAndInspectionAgree(related, configured.path(), "RELATE_ONTOLOGY", o2RunId, 4);
+    assertThat(o2Observation.path("modelRequestsDispatched").asInt()).isEqualTo(4);
+    assertThat(readingRounds).hasValue(2);
+    assertThat(relateRequests).hasSize(4);
+    JsonNode relations =
+        JSON.readTree(artifact(configured.path(), o2RunId, "ONTOLOGY_RELATIONS").stdout());
+    assertThat(relations.path("status").asText()).isEqualTo("REVIEWED");
+    JsonNode savedQuestion = relations.path("selection").path("questions").get(0);
+    assertThat(savedQuestion.path("readingMode").asText()).isEqualTo("MODEL");
+    assertThat(savedQuestion.path("unitUses").size()).isZero();
+    JsonNode readingSelection = relations.path("readingSelections").get(0);
+    assertThat(readingSelection.path("taskId").asText()).isEqualTo("model-relate-task");
+    assertThat(readingSelection.path("questionId").asText()).isEqualTo("Q_RELATE");
+    assertThat(readingSelection.path("status").asText()).isEqualTo("READY");
+    assertThat(stringValues(readingSelection.path("selectedEntries"))).containsExactly(entryRef);
+    assertThat(stringValues(readingSelection.path("selectedClues")))
+        .containsExactly(selectedClueRef.get());
+
+    JsonNode relateTaskRecord = findTaskRecord(relations, "model-relate-task");
+    assertThat(relateTaskRecord.path("status").asText()).isEqualTo("REVIEWED");
+    String relateProducingTaskId = relateTaskRecord.path("producingTaskId").asText();
+    CliResult relateObservationResult =
+        executePublic(
+            configured.path(),
+            "artifact",
+            "--run",
+            o2RunId,
+            "--key",
+            "ONTOLOGY_TASK_RECORD",
+            "--task-id",
+            relateProducingTaskId,
+            "--max-bytes",
+            "524288");
+    assertArtifactAvailable(relateObservationResult);
+    JsonNode relateObservation = JSON.readTree(relateObservationResult.stdout());
+    JsonNode extractRequest =
+        JSON.readTree(relateRequests.get(2).untrustedInputJson().copyToByteArray());
+    JsonNode reviewRequest =
+        JSON.readTree(relateRequests.get(3).untrustedInputJson().copyToByteArray());
+    assertSavedFormalRequest(
+        relateObservation.path("extract").path("request"), relateRequests.get(2));
+    assertSavedFormalRequest(
+        relateObservation.path("review").path("request"), relateRequests.get(3));
+    assertThat(extractRequest.path("readingPacket")).isEqualTo(reviewRequest.path("readingPacket"));
+    assertThat(extractRequest.path("reviewedCatalog"))
+        .isEqualTo(reviewRequest.path("reviewedCatalog"));
+    assertThat(
+            extractRequest
+                .path("reviewedCatalog")
+                .path("entries")
+                .get(0)
+                .path("definition")
+                .path("name")
+                .asText())
+        .isEqualTo(actualReviewedObject.path("name").asText());
+    assertThat(providerFactories.get()).isGreaterThan(0);
+    Path publicationSelection =
+        writePublishSelectionV2(
+            temporaryDirectory.resolve("business-link-model-read-publication.json"),
+            o0RunId,
+            List.of(o1RunId),
+            List.of(o2RunId));
+    int factoriesBeforePublication = providerFactories.get();
+    CliResult publication =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "publish-ontology",
+            "--selection",
+            publicationSelection.toString());
+    assertThat(publication.exitCode()).withFailMessage(cliDiagnostics(publication)).isZero();
+    assertThat(providerFactories).hasValue(factoriesBeforePublication);
+    assertThat(relateRequests).hasSize(4);
+    CliResult publishedCoverage =
+        artifact(configured.path(), runId(publication), "ONTOLOGY_COVERAGE");
+    assertArtifactAvailable(publishedCoverage);
+    assertThat(JSON.readTree(publishedCoverage.stdout()).path("clueDispositions").toString())
+        .contains(selectedClueRef.get());
+  }
+
+  @Test
+  void newBusinessLinkModelO1UsesCurrentPhaseReadingBoundsNotSavedCorpusBounds() throws Exception {
+    TechnicalFixture fixture = prepareRealR4("business-link-current-phase-reading-bounds");
+    ConfiguredTypedPipeline preparationConfiguration =
+        writeBusinessLinkTypedPipelineConfigurationV3(
+            "ontology-business-link-current-phase-preparation.yaml", fixture);
+    AtomicInteger providerFactories = new AtomicInteger();
+    AtomicInteger readingRounds = new AtomicInteger();
+    AtomicReference<String> selectedUnitRef = new AtomicReference<>();
+    AtomicReference<String> selectedEntryRef = new AtomicReference<>();
+    List<StructuredModelRequest> requests = new ArrayList<>();
+    Function<OntologyTypedTaskRunner.FormalModelDeclaration, StructuredModelProvider>
+        providerFactory =
+            declaration -> {
+              providerFactories.incrementAndGet();
+              ModelRuntimeIdentityV1 identity = declaration.expectedRuntimeIdentity();
+              return request -> {
+                requests.add(request);
+                JsonNode input = ExplicitTypedPipelineScript.input(request);
+                if ("ontology-reading-input-v4".equals(input.path("schemaVersion").asText())) {
+                  assertThat(input.path("taskKind").asText()).isEqualTo("OBJECT");
+                  int round = readingRounds.incrementAndGet();
+                  if (round == 1) {
+                    JsonNode availableUses = input.path("visibleScope").path("availableUnitUses");
+                    assertThat(availableUses.isArray()).isTrue();
+                    assertThat(availableUses.size()).isGreaterThan(0);
+                    selectedUnitRef.set(availableUses.get(0).path("unitRef").asText());
+                    selectedEntryRef.set(availableUses.get(0).path("entryRef").asText());
+                    assertThat(selectedUnitRef.get()).matches("U[1-9][0-9]*");
+                    assertThat(selectedEntryRef.get()).isEqualTo("E1");
+                    return new StructuredModelResponse(
+                        businessLinkModelReadingResponseV4(
+                            "NEEDS_MORE_MATERIAL",
+                            selectedUnitRef.get(),
+                            selectedEntryRef.get(),
+                            null,
+                            false),
+                        identity);
+                  }
+                  assertThat(round).isEqualTo(2);
+                  return new StructuredModelResponse(
+                      businessLinkModelReadingResponseV4(
+                          "READY_TO_EXTRACT",
+                          selectedUnitRef.get(),
+                          selectedEntryRef.get(),
+                          null,
+                          true),
+                      identity);
+                }
+                assertThat(input.path("schemaVersion").asText())
+                    .isEqualTo("ontology-typed-formal-input-v4");
+                assertThat(input.path("taskKind").asText()).isEqualTo("OBJECT");
+                String responseSchema =
+                    request.taskKind().contains("REVIEW")
+                        ? "ontology-typed-review-v4"
+                        : "ontology-typed-candidate-v4";
+                return new StructuredModelResponse(
+                    businessLinkFormalObjectResponseV4(
+                        responseSchema, input.path("questionId").asText(), selectedEntryRef.get()),
+                    identity);
+              };
+            };
+
+    CliResult prepared =
+        executeWithFactory(
+            preparationConfiguration.path(),
+            providerFactory,
+            "prepare-ontology",
+            "--evidence-run",
+            fixture.r4RunId());
+    assertThat(prepared.exitCode()).withFailMessage(cliDiagnostics(prepared)).isZero();
+    String o0RunId = runId(prepared);
+    CliResult o0BeforeResult =
+        artifact(preparationConfiguration.path(), o0RunId, "ONTOLOGY_CORPUS");
+    assertArtifactAvailable(o0BeforeResult);
+    JsonNode o0Before = JSON.readTree(o0BeforeResult.stdout());
+    assertThat(o0Before.path("preparationControls").path("maxActionsPerRound").asInt())
+        .isEqualTo(4);
+    assertThat(o0Before.path("preparationControls").path("maxNavigationEntries").asInt())
+        .isEqualTo(8);
+    String originalCorpusIdentity = o0Before.path("corpusIdentity").asText();
+    assertThat(originalCorpusIdentity).isNotBlank();
+    assertThat(providerFactories).hasValue(0);
+
+    ConfiguredTypedPipeline currentConfiguration =
+        writeBusinessLinkTypedPipelineConfigurationV3(
+            "ontology-business-link-current-phase-identification.yaml", fixture);
+    String narrowedConfiguration =
+        Files.readString(currentConfiguration.path(), StandardCharsets.UTF_8);
+    assertThat(narrowedConfiguration).contains("maxActionsPerRound: 4", "maxNavigationEntries: 8");
+    narrowedConfiguration =
+        narrowedConfiguration
+            .replace("maxActionsPerRound: 4", "maxActionsPerRound: 1")
+            .replace("maxNavigationEntries: 8", "maxNavigationEntries: 2");
+    Files.writeString(currentConfiguration.path(), narrowedConfiguration, StandardCharsets.UTF_8);
+
+    Path modelScope =
+        writeBusinessLinkModelSkeletonScopeV2(
+            temporaryDirectory.resolve("business-link-current-phase-model-skeleton.json"));
+    CliResult identified =
+        executeWithFactory(
+            currentConfiguration.path(),
+            providerFactory,
+            "identify-ontology",
+            "--corpus-run",
+            o0RunId,
+            "--scope",
+            modelScope.toString());
+    assertThat(identified.exitCode()).withFailMessage(cliDiagnostics(identified)).isZero();
+    assertThat(readingRounds).hasValue(2);
+
+    StructuredModelRequest firstReadingRequest =
+        requests.stream()
+            .filter(
+                request ->
+                    "ontology-reading-input-v4"
+                        .equals(
+                            ExplicitTypedPipelineScript.input(request)
+                                .path("schemaVersion")
+                                .asText()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("O1 did not dispatch its v4 reading request"));
+    JsonNode actualInput = ExplicitTypedPipelineScript.input(firstReadingRequest);
+    assertThat(actualInput.path("maxActionsPerRound").asInt()).isEqualTo(1);
+    assertThat(actualInput.path("maxNavigationEntries").asInt()).isEqualTo(2);
+    JsonNode actualProviderSchema =
+        CANONICAL.parseCanonical(firstReadingRequest.outputJsonSchema());
+    assertThat(actualProviderSchema.path("properties").path("actions").path("maxItems").asInt())
+        .isEqualTo(1);
+    assertThat(
+            actualProviderSchema
+                .path("$defs")
+                .path("query")
+                .path("properties")
+                .path("limit")
+                .path("maximum")
+                .asInt())
+        .isEqualTo(2);
+    assertThat(
+            actualProviderSchema
+                .path("$defs")
+                .path("literalSearch")
+                .path("properties")
+                .path("limit")
+                .path("maximum")
+                .asInt())
+        .isEqualTo(2);
+
+    CliResult o0AfterResult = artifact(currentConfiguration.path(), o0RunId, "ONTOLOGY_CORPUS");
+    assertArtifactAvailable(o0AfterResult);
+    JsonNode o0After = JSON.readTree(o0AfterResult.stdout());
+    assertThat(o0After.path("corpusIdentity").asText()).isEqualTo(originalCorpusIdentity);
+    assertThat(o0After.path("preparationControls")).isEqualTo(o0Before.path("preparationControls"));
+    assertThat(o0AfterResult.stdout()).isEqualTo(o0BeforeResult.stdout());
+  }
+
+  @Test
+  void relationReadingSelectionsRejectAnotherKnownClueForExplicitOrUnstartedTasks()
+      throws Exception {
+    TechnicalFixture fixture = prepareRealR4("business-link-reading-selections-owner");
+    OntologyEvidenceCorpus corpus = reopenedPreparedOntologyEvidenceCorpus(fixture);
+    String entryId = corpus.navigation(0, 1).entries().get(0).entryId();
+    String entryRef = corpus.aliases().entryRef(entryId);
+    String clueRef =
+        corpus.entryClues(entryId, Integer.MAX_VALUE).clues().stream()
+            .map(clue -> corpus.aliases().clueRef(clue.kind(), clue.lookupKey()))
+            .findFirst()
+            .orElseThrow();
+    ObjectNode document = JSON.createObjectNode();
+    ObjectNode question = document.putObject("selection").putArray("questions").addObject();
+    question.put("questionId", "Q_EXPLICIT");
+    question.put("taskId", "T_EXPLICIT");
+    question.put("readingMode", "EXPLICIT");
+    question.putArray("entryRefs").add(entryRef);
+    question.putArray("clueRefs");
+    ObjectNode reading = document.putArray("readingSelections").addObject();
+    reading.put("questionId", "Q_EXPLICIT");
+    reading.put("taskId", "T_EXPLICIT");
+    reading.put("status", "READY");
+    reading.put("issueCode", "");
+    reading.putArray("selectedEntries").add(entryRef);
+    reading.putArray("selectedClues");
+    assertThat(OntologyRelationReadingSelections.read(document, corpus)).containsKey("T_EXPLICIT");
+    reading.withArray("selectedClues").add(clueRef);
+    org.assertj.core.api.Assertions.assertThatThrownBy(
+            () -> OntologyRelationReadingSelections.read(document, corpus))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("ONTOLOGY_SELECTED_RUN_INVALID");
+    question.put("readingMode", "MODEL");
+    assertThat(OntologyRelationReadingSelections.read(document, corpus)).containsKey("T_EXPLICIT");
+    reading.put("status", "NOT_STARTED");
+    org.assertj.core.api.Assertions.assertThatThrownBy(
+            () -> OntologyRelationReadingSelections.read(document, corpus))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("ONTOLOGY_SELECTED_RUN_INVALID");
+  }
+
+  @Test
+  void reviewedRelationReadingCluesMustEqualTheFrozenTaskSelection() {
+    ObjectNode actualReading = JSON.createObjectNode();
+    actualReading.put("status", "READY");
+    actualReading.putArray("selectedClues").add("K1");
+    OntologyRelationReadingSelections.requireReviewedClues(actualReading, List.of("K1"));
+    actualReading.withArray("selectedClues").add("K2");
+    org.assertj.core.api.Assertions.assertThatThrownBy(
+            () ->
+                OntologyRelationReadingSelections.requireReviewedClues(
+                    actualReading, List.of("K1")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("ONTOLOGY_SELECTED_RUN_INVALID");
+    actualReading.withArray("selectedClues").removeAll();
+    actualReading.withArray("selectedClues").add("K1");
+    actualReading.put("status", "FAILED");
+    org.assertj.core.api.Assertions.assertThatThrownBy(
+            () ->
+                OntologyRelationReadingSelections.requireReviewedClues(
+                    actualReading, List.of("K1")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("ONTOLOGY_SELECTED_RUN_INVALID");
+  }
+
+  @Test
+  void modelReadingFailureKeepsSelectedClueInO3DispositionDenominator() throws Exception {
+    TechnicalFixture fixture = prepareRealR4("business-link-model-reading-failure-clue");
+    ConfiguredTypedPipeline configured =
+        writeBusinessLinkTypedPipelineConfigurationV3(
+            "ontology-business-link-model-reading-failure-clue.yaml", fixture);
+    String configurationText = Files.readString(configured.path(), StandardCharsets.UTF_8);
+    assertThat(configurationText).contains("maxRequests: 8");
+    Files.writeString(
+        configured.path(),
+        configurationText.replace("maxRequests: 8", "maxRequests: 4"),
+        StandardCharsets.UTF_8);
+
+    AtomicInteger readingRounds = new AtomicInteger();
+    AtomicInteger providerFactories = new AtomicInteger();
+    AtomicReference<String> methodRef = new AtomicReference<>();
+    AtomicReference<String> clueRef = new AtomicReference<>();
+    List<StructuredModelRequest> o2Requests = new ArrayList<>();
+    Function<OntologyTypedTaskRunner.FormalModelDeclaration, StructuredModelProvider>
+        providerFactory =
+            declaration -> {
+              providerFactories.incrementAndGet();
+              ModelRuntimeIdentityV1 identity = declaration.expectedRuntimeIdentity();
+              return request -> {
+                JsonNode input = ExplicitTypedPipelineScript.input(request);
+                String schemaVersion = input.path("schemaVersion").asText();
+                if ("ontology-reading-input-v4".equals(schemaVersion)) {
+                  o2Requests.add(request);
+                  assertThat(input.path("taskKind").asText()).isEqualTo("RELATE");
+                  assertThat(input.path("readingMode").asText()).isEqualTo("MODEL");
+                  assertThat(input.path("questionId").asText()).isEqualTo("Q_MODEL_PARTIAL");
+                  int round = readingRounds.incrementAndGet();
+                  if (round == 1) {
+                    JsonNode selectedEntry = null;
+                    for (JsonNode candidate : input.path("visibleScope").path("navigation")) {
+                      if ("E1".equals(candidate.path("entryRef").asText())) {
+                        selectedEntry = candidate;
+                        break;
+                      }
+                    }
+                    assertThat(selectedEntry).isNotNull();
+                    assertThat(selectedEntry.path("clues").size()).isGreaterThan(0);
+                    clueRef.set(selectedEntry.path("clues").get(0).path("clueRef").asText());
+                    assertThat(clueRef.get()).matches("K[1-9][0-9]*");
+                    boolean methodIsAvailable = false;
+                    for (JsonNode use : input.path("visibleScope").path("availableUnitUses")) {
+                      if (methodRef.get().equals(use.path("unitRef").asText())
+                          && "E1".equals(use.path("entryRef").asText())) {
+                        methodIsAvailable = true;
+                      }
+                    }
+                    assertThat(methodIsAvailable).isTrue();
+                    return new StructuredModelResponse(
+                        businessLinkModelReadingResponseV4(
+                            "NEEDS_MORE_MATERIAL", methodRef.get(), "E1", clueRef.get(), false),
+                        identity);
+                  }
+                  assertThat(round).isEqualTo(2);
+                  assertThat(stringValues(input.path("visibleScope").path("selectedClueRefs")))
+                      .containsExactly(clueRef.get());
+                  assertThat(containsText(input.path("readingPacket"), "public String list()"))
+                      .isTrue();
+                  return new StructuredModelResponse(
+                      businessLinkModelReadingResponseV4(
+                          "NEEDS_MORE_MATERIAL", methodRef.get(), "E1", null, true),
+                      identity);
+                }
+                if ("ontology-typed-formal-input-v4".equals(schemaVersion)
+                    && "RELATE".equals(input.path("taskKind").asText())) {
+                  o2Requests.add(request);
+                  assertThat(input.path("questionId").asText()).isEqualTo("Q_EXPLICIT_RELATE");
+                  assertThat(input.path("visibleClueRefs").size()).isZero();
+                  assertThat(containsText(input.path("readingPacket"), "public String list()"))
+                      .isTrue();
+                  String responseSchema =
+                      request.taskKind().contains("REVIEW")
+                          ? "ontology-typed-review-v4"
+                          : "ontology-typed-candidate-v4";
+                  String objectRef = ExplicitTypedPipelineScript.catalogRef(input, "objects");
+                  return new StructuredModelResponse(
+                      businessLinkFormalUnresolvedRelateResponseV4(responseSchema, objectRef),
+                      identity);
+                }
+                assertThat(input.path("schemaVersion").asText())
+                    .isEqualTo("ontology-typed-formal-input-v4");
+                assertThat(input.path("taskKind").asText()).isEqualTo("OBJECT");
+                String responseSchema =
+                    request.taskKind().contains("REVIEW")
+                        ? "ontology-typed-review-v4"
+                        : "ontology-typed-candidate-v4";
+                return new StructuredModelResponse(
+                    businessLinkFormalObjectResponseV4(
+                        responseSchema, input.path("questionId").asText(), "E1"),
+                    identity);
+              };
+            };
+
+    CliResult prepared =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "prepare-ontology",
+            "--evidence-run",
+            fixture.r4RunId());
+    assertThat(prepared.exitCode()).withFailMessage(cliDiagnostics(prepared)).isZero();
+    String o0RunId = runId(prepared);
+    JsonNode corpus =
+        JSON.readTree(artifact(configured.path(), o0RunId, "ONTOLOGY_CORPUS").stdout());
+    String entryRef = entryRef(corpus);
+    assertThat(entryRef).isEqualTo("E1");
+    methodRef.set(unitRef(corpus, "JAVA_METHOD", "method:neutral-list"));
+
+    Path skeletonScope =
+        writeBusinessLinkSkeletonScopeV2(
+            temporaryDirectory.resolve("business-link-model-failure-skeleton-scope.json"));
+    CliResult identified =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "identify-ontology",
+            "--corpus-run",
+            o0RunId,
+            "--scope",
+            skeletonScope.toString());
+    assertThat(identified.exitCode()).withFailMessage(cliDiagnostics(identified)).isZero();
+    String o1RunId = runId(identified);
+    Path relateSelection =
+        writeBusinessLinkModelFailureAndExplicitRelateSelectionV2(
+            temporaryDirectory.resolve("business-link-model-failure-two-relates.json"),
+            o0RunId,
+            o1RunId,
+            entryRef,
+            methodRef.get());
+    CliResult related =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "relate-ontology",
+            "--selection",
+            relateSelection.toString());
+    assertThat(related.exitCode()).withFailMessage(cliDiagnostics(related)).isIn(0, 2);
+    String o2RunId = runId(related);
+    JsonNode o2Observation =
+        assertCommandAndInspectionAgree(related, configured.path(), "RELATE_ONTOLOGY", o2RunId, 4);
+    assertThat(o2Observation.path("modelRequestsDispatched").asInt()).isEqualTo(4);
+    assertThat(readingRounds).hasValue(2);
+    assertThat(o2Requests).hasSize(4);
+    JsonNode relations =
+        JSON.readTree(artifact(configured.path(), o2RunId, "ONTOLOGY_RELATIONS").stdout());
+    assertThat(relations.path("status").asText()).isEqualTo("PARTIAL");
+    JsonNode failedReading = null;
+    for (JsonNode selection : relations.path("readingSelections")) {
+      if ("model-relate-partial".equals(selection.path("taskId").asText())) {
+        failedReading = selection;
+        break;
+      }
+    }
+    assertThat(failedReading).isNotNull();
+    assertThat(failedReading.path("questionId").asText()).isEqualTo("Q_MODEL_PARTIAL");
+    assertThat(failedReading.path("status").asText()).isEqualTo("INCOMPLETE");
+    assertThat(failedReading.path("issueCode").asText()).isEqualTo("ONTOLOGY_READING_NO_PROGRESS");
+    assertThat(stringValues(failedReading.path("selectedEntries"))).containsExactly(entryRef);
+    assertThat(stringValues(failedReading.path("selectedClues"))).containsExactly(clueRef.get());
+
+    Path publishSelection =
+        writePublishSelectionV2(
+            temporaryDirectory.resolve("business-link-model-failure-publish-v2.json"),
+            o0RunId,
+            List.of(o1RunId),
+            List.of(o2RunId));
+    int providerFactoriesBeforePublish = providerFactories.get();
+    int requestsBeforePublish = o2Requests.size();
+    CliResult published =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "publish-ontology",
+            "--selection",
+            publishSelection.toString());
+    assertThat(published.exitCode()).withFailMessage(cliDiagnostics(published)).isIn(0, 2);
+    String o3RunId = runId(published);
+    assertThat(providerFactories).hasValue(providerFactoriesBeforePublish);
+    assertThat(o2Requests).hasSize(requestsBeforePublish);
+    CliResult businessCoverageResult = artifact(configured.path(), o3RunId, "ONTOLOGY_COVERAGE");
+    assertArtifactAvailable(businessCoverageResult);
+    JsonNode businessCoverage = JSON.readTree(businessCoverageResult.stdout());
+    JsonNode failedClueDisposition = null;
+    for (JsonNode disposition : businessCoverage.path("clueDispositions")) {
+      if ("model-relate-partial".equals(disposition.path("taskId").asText())
+          && clueRef.get().equals(disposition.path("clueRef").asText())) {
+        failedClueDisposition = disposition;
+        break;
+      }
+    }
+    assertThat(failedClueDisposition).isNotNull();
+    assertThat(failedClueDisposition.path("outcome").asText()).isEqualTo("UNPROCESSED");
+  }
+
+  @Test
+  void scopeV2EnrichmentUsesItsReviewedSkeletonAndPublishRequiresTheExternalIdentification()
+      throws Exception {
+    TechnicalFixture fixture = prepareRealR4("business-link-enrichment-external-identification");
+    ConfiguredTypedPipeline configured =
+        writeBusinessLinkTypedPipelineConfigurationV3(
+            "ontology-business-link-enrichment-external.yaml", fixture);
+    AtomicInteger providerFactories = new AtomicInteger();
+    List<StructuredModelRequest> requests = new ArrayList<>();
+    AtomicReference<String> externalObjectCatalogRef = new AtomicReference<>();
+    Function<OntologyTypedTaskRunner.FormalModelDeclaration, StructuredModelProvider>
+        providerFactory =
+            declaration -> {
+              providerFactories.incrementAndGet();
+              ModelRuntimeIdentityV1 identity = declaration.expectedRuntimeIdentity();
+              return request -> {
+                requests.add(request);
+                JsonNode input = ExplicitTypedPipelineScript.input(request);
+                String kind = input.path("taskKind").asText();
+                boolean review = request.taskKind().contains("REVIEW");
+                String responseSchema =
+                    review ? "ontology-typed-review-v4" : "ontology-typed-candidate-v4";
+                assertThat(input.path("schemaVersion").asText())
+                    .isEqualTo("ontology-typed-formal-input-v4");
+                assertThat(
+                        CANONICAL
+                            .parseCanonical(request.outputJsonSchema())
+                            .path("properties")
+                            .path("schemaVersion")
+                            .path("const")
+                            .asText())
+                    .isEqualTo(responseSchema);
+                JsonNode visibleEntries = input.path("reviewedCatalog").path("entries");
+                ImmutableBytes response;
+                if ("OBJECT".equals(kind)) {
+                  assertThat(visibleEntries).isEmpty();
+                  String questionId = input.path("questionId").asText();
+                  response =
+                      businessLinkFormalObjectResponseV4(
+                          responseSchema,
+                          questionId,
+                          "E1",
+                          "Q_RELATION_OBJECT".equals(questionId)
+                              ? "Neutral independent relation endpoint"
+                              : "Neutral source-backed record",
+                          "A neutral source-backed record shape for " + questionId + ".");
+                } else if ("ACTION".equals(kind) || "ANALYTIC".equals(kind)) {
+                  assertThat(visibleEntries).hasSize(1);
+                  JsonNode visibleObject = visibleEntries.get(0);
+                  assertThat(visibleObject.path("definitionType").asText()).isEqualTo("objects");
+                  assertThat(visibleObject.path("definition").path("displayRole").asText())
+                      .isEqualTo("MAIN");
+                  String objectRef = visibleObject.path("catalogRef").asText();
+                  assertThat(objectRef).matches("B[1-9][0-9]*");
+                  String previous = externalObjectCatalogRef.get();
+                  if (previous == null) {
+                    externalObjectCatalogRef.set(objectRef);
+                  } else {
+                    assertThat(objectRef).isEqualTo(previous);
+                  }
+                  String questionId = input.path("questionId").asText();
+                  response =
+                      "ACTION".equals(kind)
+                          ? businessLinkFormalActionResponseV4(
+                              responseSchema, questionId, "E1", objectRef)
+                          : businessLinkFormalAnalyticResponseV4(
+                              responseSchema,
+                              questionId,
+                              "E1",
+                              objectRef,
+                              visibleObject.path("propertyRefs").get(0).asText());
+                } else if ("RELATE".equals(kind)) {
+                  assertThat(visibleEntries).hasSize(1);
+                  response =
+                      businessLinkFormalUnresolvedRelateResponseV4(
+                          responseSchema, visibleEntries.get(0).path("catalogRef").asText());
+                } else {
+                  throw new AssertionError("unexpected business-link task kind " + kind);
+                }
+                JsonNode responseDocument = CANONICAL.parseCanonical(response);
+                assertThat(responseDocument.path("clueDispositions").isArray()).isTrue();
+                return new StructuredModelResponse(response, identity);
+              };
+            };
+
+    CliResult prepared =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "prepare-ontology",
+            "--evidence-run",
+            fixture.r4RunId());
+    assertThat(prepared.exitCode()).withFailMessage(cliDiagnostics(prepared)).isZero();
+    String o0RunId = runId(prepared);
+    assertThat(requests).isEmpty();
+
+    Path skeletonScope =
+        writeBusinessLinkSkeletonScopeV2(
+            temporaryDirectory.resolve("business-link-enrichment-skeleton-scope.json"));
+    CliResult skeletonIdentified =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "identify-ontology",
+            "--corpus-run",
+            o0RunId,
+            "--scope",
+            skeletonScope.toString());
+    assertThat(skeletonIdentified.exitCode())
+        .withFailMessage(cliDiagnostics(skeletonIdentified))
+        .isZero();
+    String skeletonO1RunId = runId(skeletonIdentified);
+    ReopenedModulePublication skeletonO1 =
+        reopenedOntologyModule(fixture.runStore(), skeletonO1RunId, ONTOLOGY_POLICY_SET_V3);
+
+    Path enrichmentScope =
+        writeBusinessLinkEnrichmentScopeV2(
+            temporaryDirectory.resolve("business-link-enrichment-scope-v2.json"), skeletonO1RunId);
+    int requestsBeforeEnrichment = requests.size();
+    CliResult enriched =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "identify-ontology",
+            "--corpus-run",
+            o0RunId,
+            "--scope",
+            enrichmentScope.toString());
+    assertThat(enriched.exitCode()).withFailMessage(cliDiagnostics(enriched)).isZero();
+    String enrichmentO1RunId = runId(enriched);
+    assertThat(requests.subList(requestsBeforeEnrichment, requests.size()))
+        .extracting(
+            request -> {
+              JsonNode input = ExplicitTypedPipelineScript.input(request);
+              return input.path("questionId").asText()
+                  + "/"
+                  + input.path("taskKind").asText()
+                  + "/"
+                  + (request.taskKind().contains("REVIEW") ? "REVIEW" : "EXTRACT");
+            })
+        .containsExactly(
+            "Q_ENRICHMENT/ACTION/EXTRACT",
+            "Q_ENRICHMENT/ACTION/REVIEW",
+            "Q_ENRICHMENT/ANALYTIC/EXTRACT",
+            "Q_ENRICHMENT/ANALYTIC/REVIEW");
+    assertThat(externalObjectCatalogRef.get()).isNotBlank();
+
+    CliResult enrichmentIdentificationResult =
+        artifact(configured.path(), enrichmentO1RunId, "ONTOLOGY_IDENTIFICATION");
+    assertArtifactAvailable(enrichmentIdentificationResult);
+    JsonNode enrichmentIdentification = JSON.readTree(enrichmentIdentificationResult.stdout());
+    JsonNode actionTaskRecord = findTaskRecord(enrichmentIdentification, "action-enrichment");
+    assertThat(actionTaskRecord.path("status").asText()).isEqualTo("REVIEWED");
+    String actionProducingTaskId = actionTaskRecord.path("producingTaskId").asText();
+    assertThat(actionProducingTaskId).isNotBlank();
+
+    CliResult actionTaskResult =
+        executePublic(
+            configured.path(),
+            "artifact",
+            "--run",
+            enrichmentO1RunId,
+            "--key",
+            "ONTOLOGY_TASK_RECORD",
+            "--task-id",
+            actionProducingTaskId,
+            "--max-bytes",
+            "524288");
+    assertArtifactAvailable(actionTaskResult);
+    JsonNode actionTask = JSON.readTree(actionTaskResult.stdout());
+    assertThat(actionTask.path("completion").path("status").asText()).isEqualTo("REVIEWED");
+    String actionReviewBase64 =
+        actionTask.path("review").path("response").path("rawResponseBase64").asText();
+    assertThat(actionReviewBase64).isNotBlank();
+    JsonNode actionReview = JSON.readTree(Base64.getDecoder().decode(actionReviewBase64));
+    assertThat(
+            stringValues(
+                actionReview
+                    .path("definitions")
+                    .path("operations")
+                    .get(0)
+                    .path("targetObjectRefs")))
+        .containsExactly(externalObjectCatalogRef.get());
+
+    ReopenedModulePublication enrichmentO1 =
+        reopenedOntologyModule(fixture.runStore(), enrichmentO1RunId, ONTOLOGY_POLICY_SET_V3);
+    try (RunStoreHandle store = RunStoreBootstrap.open(fixture.runStore())) {
+      var persistedEnrichment =
+          RunStoreBootstrap.reopenPersistedAnalysisRunRequest(
+              store, AnalysisRunId.parse(enrichmentO1RunId));
+      assertThat(persistedEnrichment.request().ontologyInputs().identificationPublications())
+          .containsExactly(skeletonO1.reference());
+      JsonNode persistedRequest = CANONICAL.parseCanonical(persistedEnrichment.canonicalJson());
+      JsonNode identification =
+          JSON.readTree(
+              artifact(configured.path(), enrichmentO1RunId, "ONTOLOGY_IDENTIFICATION").stdout());
+      assertThat(identification.path("semanticUpstreams").path("identificationPublications"))
+          .isEqualTo(persistedRequest.path("ontologyInputs").path("identificationPublications"));
+    }
+
+    Path independentObjectScope =
+        writeBusinessLinkStandaloneSkeletonScopeV2(
+            temporaryDirectory.resolve("business-link-enrichment-independent-skeleton.json"));
+    CliResult independentObjectIdentified =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "identify-ontology",
+            "--corpus-run",
+            o0RunId,
+            "--scope",
+            independentObjectScope.toString());
+    assertThat(independentObjectIdentified.exitCode())
+        .withFailMessage(cliDiagnostics(independentObjectIdentified))
+        .isZero();
+    String independentO1RunId = runId(independentObjectIdentified);
+    ReopenedModulePublication independentO1 =
+        reopenedOntologyModule(fixture.runStore(), independentO1RunId, ONTOLOGY_POLICY_SET_V3);
+
+    Path relationSelection =
+        writeRelateSelectionV2(
+            temporaryDirectory.resolve("business-link-enrichment-independent-relation.json"),
+            o0RunId,
+            List.of(independentO1RunId),
+            new SelectedRelateQuestion(
+                "Q_RELATION_OBJECT",
+                "relation-to-independent-object",
+                List.of(new ObjectSource(independentO1RunId, "Q_RELATION_OBJECT"))));
+    CliResult related =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "relate-ontology",
+            "--selection",
+            relationSelection.toString());
+    assertThat(related.exitCode()).withFailMessage(cliDiagnostics(related)).isZero();
+    String o2RunId = runId(related);
+    ReopenedModulePublication o2 =
+        reopenedOntologyModule(fixture.runStore(), o2RunId, ONTOLOGY_POLICY_SET_V3);
+    try (RunStoreHandle store = RunStoreBootstrap.open(fixture.runStore())) {
+      var persistedO2 =
+          RunStoreBootstrap.reopenPersistedAnalysisRunRequest(store, AnalysisRunId.parse(o2RunId));
+      assertThat(persistedO2.request().ontologyInputs().identificationPublications())
+          .containsExactly(independentO1.reference());
+    }
+
+    Path missingExternalSelection =
+        writePublishSelectionV2(
+            temporaryDirectory.resolve("business-link-enrichment-publish-missing-external.json"),
+            o0RunId,
+            List.of(enrichmentO1RunId, independentO1RunId),
+            List.of(o2RunId));
+    int providerFactoriesBeforeMissingExternal = providerFactories.get();
+    int requestsBeforeMissingExternal = requests.size();
+    CliResult missingExternal =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "publish-ontology",
+            "--selection",
+            missingExternalSelection.toString());
+    assertThat(missingExternal.exitCode()).isNotZero();
+    assertThat(missingExternal.stdout()).isEmpty();
+    assertThat(missingExternal.stderr()).contains("ONTOLOGY_SELECTED_RUN_INVALID");
+    assertThat(providerFactories).hasValue(providerFactoriesBeforeMissingExternal);
+    assertThat(requests).hasSize(requestsBeforeMissingExternal);
+
+    Path completeExternalSelection =
+        writePublishSelectionV2(
+            temporaryDirectory.resolve("business-link-enrichment-publish-complete-union.json"),
+            o0RunId,
+            List.of(skeletonO1RunId, enrichmentO1RunId, independentO1RunId),
+            List.of(o2RunId));
+    CliResult published =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "publish-ontology",
+            "--selection",
+            completeExternalSelection.toString());
+    assertThat(published.exitCode()).withFailMessage(cliDiagnostics(published)).isZero();
+    String o3RunId = runId(published);
+    assertThat(requests).hasSize(requestsBeforeMissingExternal);
+    ReopenedModulePublication o3 =
+        reopenedOntologyModule(fixture.runStore(), o3RunId, ONTOLOGY_POLICY_SET_V3);
+    assertThat(o3.receipt().upstreamArtifacts())
+        .containsAll(modulePayloadReferences(skeletonO1))
+        .containsAll(modulePayloadReferences(enrichmentO1))
+        .containsAll(modulePayloadReferences(independentO1))
+        .containsAll(modulePayloadReferences(o2));
+  }
+
+  @Test
+  void
+      enrichmentSourceQuestionWithoutObjectsIsSavedAsDependencyFailureButUnknownQuestionIsRejected()
+          throws Exception {
+    BusinessLinkRuntimeFixture runtime = prepareBusinessLinkRuntime("enrichment-source-no-object");
+    Path skeletonScope =
+        writeBusinessLinkSkeletonScopeV2(
+            temporaryDirectory.resolve("enrichment-source-no-object-skeleton.json"));
+    CliResult skeleton = identifyBusinessLink(runtime, skeletonScope);
+    assertThat(skeleton.exitCode()).withFailMessage(cliDiagnostics(skeleton)).isZero();
+    String skeletonRunId = runId(skeleton);
+
+    Path actionAndAnalyticScope =
+        writeBusinessLinkEnrichmentScopeV2(
+            temporaryDirectory.resolve("enrichment-source-no-object-action-analytic.json"),
+            skeletonRunId);
+    CliResult actionAndAnalytic = identifyBusinessLink(runtime, actionAndAnalyticScope);
+    assertThat(actionAndAnalytic.exitCode())
+        .withFailMessage(cliDiagnostics(actionAndAnalytic))
+        .isZero();
+    String sourceRunId = runId(actionAndAnalytic);
+    JsonNode sourceIdentification =
+        JSON.readTree(
+            artifact(runtime.configured().path(), sourceRunId, "ONTOLOGY_IDENTIFICATION").stdout());
+    assertThat(arrayValues(sourceIdentification.path("taskOutcomes")))
+        .extracting(
+            outcome ->
+                outcome.path("questionId").asText() + "/" + outcome.path("taskKind").asText())
+        .containsExactly("Q_ENRICHMENT/ACTION", "Q_ENRICHMENT/ANALYTIC");
+
+    Path dependentScope =
+        writeBusinessLinkQuestionScopeV2ForTasks(
+            temporaryDirectory.resolve("enrichment-source-no-object-dependent.json"),
+            "ENRICHMENT",
+            "Q_DEPENDENT_ENRICHMENT",
+            List.of(new ObjectSource(sourceRunId, "Q_ENRICHMENT")),
+            List.of(new ScopedTask("dependent-action", "ACTION")));
+    int callsBeforeDependency = runtime.requests().size();
+    int factoriesBeforeDependency = runtime.providerFactories().get();
+    CliResult dependent = identifyBusinessLink(runtime, dependentScope);
+    assertThat(dependent.exitCode()).withFailMessage(cliDiagnostics(dependent)).isIn(0, 2);
+    assertThat(dependent.stdout()).isNotBlank();
+    String dependentRunId = runId(dependent);
+    JsonNode dependentIdentification =
+        JSON.readTree(
+            artifact(runtime.configured().path(), dependentRunId, "ONTOLOGY_IDENTIFICATION")
+                .stdout());
+    JsonNode unprocessed = findTaskOutcome(dependentIdentification, "dependent-action");
+    assertThat(unprocessed.path("questionId").asText()).isEqualTo("Q_DEPENDENT_ENRICHMENT");
+    assertThat(unprocessed.path("status").asText()).isEqualTo("UNPROCESSED");
+    assertThat(unprocessed.path("reason").path("code").asText())
+        .isEqualTo("DEPENDENCY_NOT_REVIEWED");
+    assertThat(unprocessed.path("reason").path("category").asText()).isEqualTo("DEPENDENCY");
+    assertThat(unprocessed.path("producingTaskId").isNull()).isTrue();
+    assertThat(unprocessed.path("jobKey").isNull()).isTrue();
+    assertThat(runtime.requests()).hasSize(callsBeforeDependency);
+    assertThat(runtime.providerFactories()).hasValue(factoriesBeforeDependency);
+
+    Path unknownQuestionScope =
+        writeBusinessLinkQuestionScopeV2ForTasks(
+            temporaryDirectory.resolve("enrichment-source-no-object-unknown-question.json"),
+            "ENRICHMENT",
+            "Q_UNKNOWN_DEPENDENCY_SOURCE",
+            List.of(new ObjectSource(sourceRunId, "Q_NOT_IN_SAVED_SCOPE")),
+            List.of(new ScopedTask("unknown-source-action", "ACTION")));
+    CliResult unknownQuestion = identifyBusinessLink(runtime, unknownQuestionScope);
+    assertThat(unknownQuestion.exitCode()).isNotZero();
+    assertThat(unknownQuestion.stdout()).isEmpty();
+    assertThat(unknownQuestion.stderr()).contains("ONTOLOGY_OBJECT_SOURCE_INVALID");
+    assertThat(runtime.requests()).hasSize(callsBeforeDependency);
+    assertThat(runtime.providerFactories()).hasValue(factoriesBeforeDependency);
+  }
+
+  @Test
+  void enrichmentWithLocalObjectIsBlockedWhenItsExternalObjectReviewWasRejected() throws Exception {
+    BusinessLinkRuntimeFixture runtime =
+        prepareBusinessLinkRuntime("enrichment-rejected-object-source");
+    runtime.rejectedObjectReviewQuestion().set("Q_REJECTED_SOURCE");
+    Path rejectedSourceScope =
+        writeBusinessLinkQuestionScopeV2ForTasks(
+            temporaryDirectory.resolve("enrichment-rejected-object-source-scope.json"),
+            "SKELETON",
+            "Q_REJECTED_SOURCE",
+            List.of(),
+            List.of(new ScopedTask("rejected-source-object", "OBJECT")));
+    CliResult rejectedSource = identifyBusinessLink(runtime, rejectedSourceScope);
+    assertThat(rejectedSource.exitCode())
+        .withFailMessage(cliDiagnostics(rejectedSource))
+        .isIn(0, 2);
+    String rejectedSourceRunId = runId(rejectedSource);
+    JsonNode rejectedIdentification =
+        JSON.readTree(
+            artifact(runtime.configured().path(), rejectedSourceRunId, "ONTOLOGY_IDENTIFICATION")
+                .stdout());
+    JsonNode rejectedObject = findTaskOutcome(rejectedIdentification, "rejected-source-object");
+    assertThat(rejectedObject.path("status").asText()).isEqualTo("REJECTED");
+    assertThat(rejectedObject.path("reason").path("category").asText()).isEqualTo("MODEL_OUTPUT");
+
+    Path localObjectScope =
+        writeBusinessLinkQuestionScopeV2ForTasks(
+            temporaryDirectory.resolve("enrichment-rejected-object-source-local-object.json"),
+            "ENRICHMENT",
+            "Q_LOCAL_OBJECT_BLOCKED",
+            List.of(new ObjectSource(rejectedSourceRunId, "Q_REJECTED_SOURCE")),
+            List.of(new ScopedTask("local-object-blocked", "OBJECT")));
+    int callsBeforeBlockedObject = runtime.requests().size();
+    int factoriesBeforeBlockedObject = runtime.providerFactories().get();
+    CliResult blocked = identifyBusinessLink(runtime, localObjectScope);
+    assertThat(blocked.exitCode()).withFailMessage(cliDiagnostics(blocked)).isIn(0, 2);
+    assertThat(blocked.stdout()).isNotBlank();
+    String blockedRunId = runId(blocked);
+    JsonNode blockedIdentification =
+        JSON.readTree(
+            artifact(runtime.configured().path(), blockedRunId, "ONTOLOGY_IDENTIFICATION")
+                .stdout());
+    JsonNode blockedObject = findTaskOutcome(blockedIdentification, "local-object-blocked");
+    assertThat(blockedObject.path("questionId").asText()).isEqualTo("Q_LOCAL_OBJECT_BLOCKED");
+    assertThat(blockedObject.path("status").asText()).isEqualTo("UNPROCESSED");
+    assertThat(blockedObject.path("reason").path("code").asText())
+        .isEqualTo("DEPENDENCY_NOT_REVIEWED");
+    assertThat(blockedObject.path("reason").path("category").asText()).isEqualTo("DEPENDENCY");
+    assertThat(arrayValues(blockedObject.path("dependencyTaskRefs")))
+        .extracting(
+            dependency ->
+                dependency.path("runId").asText()
+                    + "/"
+                    + dependency.path("questionId").asText()
+                    + "/"
+                    + dependency.path("taskId").asText())
+        .containsExactly(rejectedSourceRunId + "/Q_REJECTED_SOURCE/rejected-source-object");
+    assertThat(runtime.requests()).hasSize(callsBeforeBlockedObject);
+    assertThat(runtime.providerFactories()).hasValue(factoriesBeforeBlockedObject);
+  }
+
+  @Test
+  void enrichmentObjectRefinementReceivesExactExternalCatalogAndPersistsItsDependencyIdentity()
+      throws Exception {
+    BusinessLinkRuntimeFixture runtime = prepareBusinessLinkRuntime("enrichment-object-refinement");
+    Path skeletonScope =
+        writeBusinessLinkSkeletonScopeV2(
+            temporaryDirectory.resolve("enrichment-object-refinement-skeleton.json"));
+    CliResult skeleton = identifyBusinessLink(runtime, skeletonScope);
+    assertThat(skeleton.exitCode()).withFailMessage(cliDiagnostics(skeleton)).isZero();
+    String skeletonRunId = runId(skeleton);
+    ReopenedModulePublication sourcePublication =
+        reopenedOntologyModule(
+            runtime.technicalFixture().runStore(), skeletonRunId, ONTOLOGY_POLICY_SET_V3);
+    JsonNode sourceIdentification =
+        JSON.readTree(
+            artifact(runtime.configured().path(), skeletonRunId, "ONTOLOGY_IDENTIFICATION")
+                .stdout());
+    JsonNode sourceObjectOutcome = findTaskOutcome(sourceIdentification, "object-skeleton");
+    assertThat(sourceObjectOutcome.path("status").asText()).isEqualTo("REVIEWED");
+
+    Path localObjectScope =
+        writeBusinessLinkQuestionScopeV2ForTasks(
+            temporaryDirectory.resolve("enrichment-object-refinement-local-object.json"),
+            "ENRICHMENT",
+            "Q_LOCAL_OBJECT_REFINEMENT",
+            List.of(new ObjectSource(skeletonRunId, "Q_SKELETON")),
+            List.of(new ScopedTask("local-refinement-object", "OBJECT")));
+    CliResult refined = identifyBusinessLink(runtime, localObjectScope);
+    assertThat(refined.exitCode()).withFailMessage(cliDiagnostics(refined)).isIn(0, 2);
+    String refinedRunId = runId(refined);
+    JsonNode refinedIdentification =
+        JSON.readTree(
+            artifact(runtime.configured().path(), refinedRunId, "ONTOLOGY_IDENTIFICATION")
+                .stdout());
+    JsonNode localObjectOutcome = findTaskOutcome(refinedIdentification, "local-refinement-object");
+    assertThat(localObjectOutcome.path("status").asText()).isEqualTo("REVIEWED");
+    assertThat(arrayValues(localObjectOutcome.path("dependencyTaskRefs")))
+        .extracting(
+            dependency ->
+                dependency.path("runId").asText()
+                    + "/"
+                    + dependency.path("questionId").asText()
+                    + "/"
+                    + dependency.path("taskId").asText())
+        .containsExactly(skeletonRunId + "/Q_SKELETON/object-skeleton");
+
+    List<StructuredModelRequest> refinementRequests =
+        runtime.requests().stream()
+            .filter(
+                request ->
+                    "Q_LOCAL_OBJECT_REFINEMENT"
+                        .equals(
+                            ExplicitTypedPipelineScript.input(request).path("questionId").asText()))
+            .toList();
+    assertThat(refinementRequests).hasSize(2);
+    JsonNode extractInput = ExplicitTypedPipelineScript.input(refinementRequests.get(0));
+    JsonNode reviewInput = ExplicitTypedPipelineScript.input(refinementRequests.get(1));
+    JsonNode externalCatalogEntries = extractInput.path("reviewedCatalog").path("entries");
+    assertThat(externalCatalogEntries).hasSize(1);
+    assertThat(reviewInput.path("reviewedCatalog")).isEqualTo(extractInput.path("reviewedCatalog"));
+    JsonNode externalCatalogObject = externalCatalogEntries.get(0);
+    assertThat(externalCatalogObject.path("definitionType").asText()).isEqualTo("objects");
+    assertThat(externalCatalogObject.path("definition").path("localId").asText()).isEqualTo("O1");
+    assertThat(externalCatalogObject.path("definition").path("scope").path("questionRef").asText())
+        .isEqualTo("Q_SKELETON");
+
+    JsonNode sourceTaskObservation =
+        queryTaskObservation(
+            runtime.configured().path(),
+            skeletonRunId,
+            sourceObjectOutcome.path("producingTaskId").asText());
+    JsonNode sourceIdentity = sourceTaskObservation.path("completion").path("identity");
+    JsonNode localTaskObservation =
+        queryTaskObservation(
+            runtime.configured().path(),
+            refinedRunId,
+            localObjectOutcome.path("producingTaskId").asText());
+    JsonNode localCompletion = localTaskObservation.path("completion");
+    assertThat(localCompletion.path("taskDependencyRuleVersion").asText())
+        .isEqualTo("ontology-task-dependency-v2");
+    assertThat(localCompletion.path("taskDependencyFingerprint").asText()).isNotBlank();
+    JsonNode savedExternalCatalog = localCompletion.path("catalogMapping").path("entries");
+    assertThat(savedExternalCatalog).hasSize(1);
+    assertThat(savedExternalCatalog.get(0).path("identity").path("corpusIdentity").asText())
+        .isEqualTo(sourceIdentity.path("corpusIdentity").asText());
+    assertThat(savedExternalCatalog.get(0).path("identity").path("producingTaskId").asText())
+        .isEqualTo(sourceIdentity.path("producingTaskId").asText());
+    assertThat(savedExternalCatalog.get(0).path("identity").path("reviewVersion").asText())
+        .isEqualTo(sourceIdentity.path("reviewVersion").asText());
+    assertThat(savedExternalCatalog.get(0).path("identity").path("localId").asText())
+        .isEqualTo("O1");
+    JsonNode localReview = localCompletion.path("review");
+    assertThat(localReview.path("definitions").path("objects")).hasSize(1);
+    assertThat(localReview.path("definitions").path("objects").get(0).path("localId").asText())
+        .isEqualTo("O1");
+    assertThat(localCompletion.path("identity").path("producingTaskId").asText())
+        .isNotEqualTo(sourceIdentity.path("producingTaskId").asText());
+
+    try (RunStoreHandle store = RunStoreBootstrap.open(runtime.technicalFixture().runStore())) {
+      var persisted =
+          RunStoreBootstrap.reopenPersistedAnalysisRunRequest(
+              store, AnalysisRunId.parse(refinedRunId));
+      assertThat(persisted.request().ontologyInputs().identificationPublications())
+          .containsExactly(sourcePublication.reference());
+      JsonNode persistedRequest = CANONICAL.parseCanonical(persisted.canonicalJson());
+      assertThat(refinedIdentification.path("semanticUpstreams").path("identificationPublications"))
+          .isEqualTo(persistedRequest.path("ontologyInputs").path("identificationPublications"));
+    }
   }
 
   @Test
@@ -2835,6 +4347,26 @@ class OntologyFormalRuntimeContractsTest {
 
     ConfiguredTypedPipeline v2Configuration =
         writeTypedPipelineConfigurationV2("historical-v1-identification-consumer-v2.yaml", fixture);
+    Path activeV1RelationSelection =
+        writeRelateSelection(
+            temporaryDirectory.resolve("historical-v1-identification-active-relate-v1.json"),
+            o0RunId,
+            o1RunId);
+    int factoriesBeforeActiveV1 = providerFactories.get();
+    int requestsBeforeActiveV1 = script.requests.size();
+    CliResult activeV1Refused =
+        executeWithFactory(
+            v2Configuration.path(),
+            providerFactory,
+            "relate-ontology",
+            "--selection",
+            activeV1RelationSelection.toString());
+    assertThat(activeV1Refused.exitCode()).isNotZero();
+    assertThat(activeV1Refused.stdout()).isEmpty();
+    assertThat(activeV1Refused.stderr()).contains("ONTOLOGY_SELECTION_VERSION_INVALID");
+    assertThat(providerFactories).hasValue(factoriesBeforeActiveV1);
+    assertThat(script.requests).hasSize(requestsBeforeActiveV1);
+
     Path v1RelationSelection =
         writeSelection(
             temporaryDirectory.resolve("historical-v1-identification-relate-v1.json"),
@@ -2947,6 +4479,91 @@ class OntologyFormalRuntimeContractsTest {
     assertThat(duplicateRegistry.stdout()).isEmpty();
     assertThat(duplicateRegistry.stderr()).contains("ONTOLOGY");
     assertThat(providerFactories).hasValue(factoriesBeforeO2);
+  }
+
+  @Test
+  void v3ProducerRejectsHistoricalV1CorpusBeforeModelProviderDispatch() throws Exception {
+    TechnicalFixture fixture = prepareRealR4("v3-producer-historical-v1-corpus-rejection");
+    ConfiguredTypedPipeline v1Configuration =
+        writeTypedPipelineConfiguration("historical-v1-corpus-owner.yaml", fixture);
+    Function<OntologyTypedTaskRunner.FormalModelDeclaration, StructuredModelProvider>
+        unusedProvider =
+            declaration -> {
+              throw new AssertionError("O0 preparation must not initialize a model Provider");
+            };
+    CliResult prepared =
+        executeWithFactory(
+            v1Configuration.path(),
+            unusedProvider,
+            "prepare-ontology",
+            "--evidence-run",
+            fixture.r4RunId());
+    assertThat(prepared.exitCode()).withFailMessage(cliDiagnostics(prepared)).isZero();
+    String o0RunId = runId(prepared);
+    JsonNode historicalCorpus =
+        JSON.readTree(artifact(v1Configuration.path(), o0RunId, "ONTOLOGY_CORPUS").stdout());
+    assertThat(historicalCorpus.path("schemaVersion").asText()).isEqualTo("ontology-corpus-v1");
+    ReopenedModulePublication historicalO0 = reopenedOntologyModule(fixture.runStore(), o0RunId);
+    assertThat(historicalO0.receipt().controls().artifactPolicyRegistryRef())
+        .isEqualTo(
+            SourceAnalysisExecution.loadPolicies(ONTOLOGY_POLICY_SET, CANONICAL).reference());
+
+    ConfiguredTypedPipeline v3Configuration =
+        writeBusinessLinkTypedPipelineConfigurationV3(
+            "business-link-v3-historical-corpus-consumer.yaml", fixture);
+    String v3Yaml = Files.readString(v3Configuration.path(), StandardCharsets.UTF_8);
+    String activeRegistryAndReading =
+        "  ontologyPolicyRegistry: " + yaml(ONTOLOGY_POLICY_SET_V3) + "\nreading:";
+    String v3WithHistoricalOwner =
+        v3Yaml.replace(
+            activeRegistryAndReading,
+            "  ontologyPolicyRegistry: "
+                + yaml(ONTOLOGY_POLICY_SET_V3)
+                + "\n  upstreamArtifactPolicyRegistries:\n    - "
+                + yaml(ONTOLOGY_POLICY_SET)
+                + "\nreading:");
+    assertThat(v3WithHistoricalOwner).isNotEqualTo(v3Yaml);
+    Files.writeString(v3Configuration.path(), v3WithHistoricalOwner, StandardCharsets.UTF_8);
+
+    String entryRef = entryRef(historicalCorpus);
+    String unitRef = unitRef(historicalCorpus, "JAVA_METHOD", "method:neutral-list");
+    Path modelScope =
+        writeSingleUnitObjectScope(
+            temporaryDirectory.resolve("v3-historical-v1-model-scope.json"),
+            "Q1",
+            "historical-model-object",
+            entryRef,
+            unitRef,
+            "MODEL");
+    AtomicInteger providerFactories = new AtomicInteger();
+    AtomicInteger providerCalls = new AtomicInteger();
+    Function<OntologyTypedTaskRunner.FormalModelDeclaration, StructuredModelProvider>
+        providerFactory =
+            declaration -> {
+              providerFactories.incrementAndGet();
+              return request -> {
+                providerCalls.incrementAndGet();
+                throw new IllegalStateException("HISTORICAL_CORPUS_REACHED_PROVIDER");
+              };
+            };
+
+    CliResult refused =
+        executeWithFactory(
+            v3Configuration.path(),
+            providerFactory,
+            "identify-ontology",
+            "--corpus-run",
+            o0RunId,
+            "--scope",
+            modelScope.toString());
+
+    assertThat(refused.stderr())
+        .withFailMessage(cliDiagnostics(refused))
+        .contains("ONTOLOGY_CORPUS_VERSION_INVALID");
+    assertThat(refused.exitCode()).isNotZero();
+    assertThat(refused.stdout()).isEmpty();
+    assertThat(providerFactories).hasValue(0);
+    assertThat(providerCalls).hasValue(0);
   }
 
   @Test
@@ -5712,6 +7329,10 @@ class OntologyFormalRuntimeContractsTest {
         .isEqualTo("ontology-reading-input-v3");
     assertThat(secondReadingInput.path("schemaVersion").asText())
         .isEqualTo("ontology-reading-input-v3");
+    assertThat(firstReadingInput.has("maxUnitBytes")).isFalse();
+    assertThat(firstReadingInput.has("maxRequestBytes")).isFalse();
+    assertThat(secondReadingInput.has("maxUnitBytes")).isFalse();
+    assertThat(secondReadingInput.has("maxRequestBytes")).isFalse();
     assertThat(containsText(firstReadingInput, "return \"neutral\"")).isFalse();
     assertThat(containsText(secondReadingInput, "return \"neutral\"")).isTrue();
     assertThat(script.shortRefs(secondReadingInput, "U[1-9][0-9]*")).contains(script.readUnitRef);
@@ -5991,6 +7612,106 @@ class OntologyFormalRuntimeContractsTest {
     assertThat(taskIndex.path("taskRecords")).isEmpty();
     assertThat(providerFactories.get()).isEqualTo(factoriesAfterFailure);
     assertThat(script.requests).hasSize(2);
+  }
+
+  @Test
+  void businessLinkSkeletonDiscoveryKeepsPurposeAndRejectsPrioritizedAction() throws Exception {
+    TechnicalFixture fixture = prepareRealR4("business-link-skeleton-discovery");
+    ConfiguredDiscovery configured =
+        writeBusinessLinkDiscoveryConfigurationV3(
+            "ontology-business-link-skeleton-discovery.yaml", fixture);
+    Path scope =
+        writeBusinessLinkSkeletonDiscoveryScopeV2(
+            temporaryDirectory.resolve("business-link-skeleton-discovery-scope-v2.json"));
+    CliResult prepared =
+        executePublic(configured.path(), "prepare-ontology", "--evidence-run", fixture.r4RunId());
+    assertThat(prepared.exitCode()).withFailMessage(cliDiagnostics(prepared)).isZero();
+    String o0RunId = runId(prepared);
+    CliResult corpus = artifact(configured.path(), o0RunId, "ONTOLOGY_CORPUS");
+    assertArtifactAvailable(corpus);
+    assertThat(JSON.readTree(corpus.stdout()).path("schemaVersion").asText())
+        .isEqualTo("ontology-corpus-v2");
+
+    FormalDiscoveryScript objectOnly =
+        new FormalDiscoveryScript(configured.prompts(), false, true, false);
+    Function<OntologyTypedTaskRunner.FormalModelDeclaration, StructuredModelProvider>
+        objectOnlyFactory =
+            declaration -> objectOnly.provider(declaration.expectedRuntimeIdentity());
+    CliResult identified =
+        executeWithFactory(
+            configured.path(),
+            objectOnlyFactory,
+            "identify-ontology",
+            "--corpus-run",
+            o0RunId,
+            "--scope",
+            scope.toString());
+    assertThat(identified.exitCode()).withFailMessage(cliDiagnostics(identified)).isZero();
+    assertThat(objectOnly.requests).hasSize(6);
+    JsonNode priorityInput = objectOnly.inputAt(1);
+    assertThat(priorityInput.path("purpose").asText()).isEqualTo("SKELETON");
+    JsonNode prioritySchema =
+        CANONICAL.parseCanonical(objectOnly.requests.get(1).outputJsonSchema());
+    JsonNode taskKindsSchema =
+        prioritySchema.path("$defs").path("selected").path("properties").path("taskKinds");
+    List<String> allowedTaskKinds = new ArrayList<>();
+    taskKindsSchema
+        .path("items")
+        .path("enum")
+        .forEach(value -> allowedTaskKinds.add(value.asText()));
+    assertThat(allowedTaskKinds).containsExactly("OBJECT");
+    assertThat(taskKindsSchema.path("maxItems").asInt()).isEqualTo(1);
+    assertThat(
+            objectOnly.requests.stream()
+                .map(StructuredModelRequest::taskKind)
+                .noneMatch(kind -> kind.contains("ACTION") || kind.contains("ANALYTIC")))
+        .isTrue();
+    String o1RunId = runId(identified);
+    CliResult identificationArtifact =
+        artifact(configured.path(), o1RunId, "ONTOLOGY_IDENTIFICATION");
+    assertArtifactAvailable(identificationArtifact);
+    JsonNode identification = JSON.readTree(identificationArtifact.stdout());
+    assertThat(identification.path("scope").path("schemaVersion").asText())
+        .isEqualTo("ontology-scope-v2");
+    assertThat(identification.path("scope").path("purpose").asText()).isEqualTo("SKELETON");
+    JsonNode selectedQuestions = identification.path("selectedQuestions");
+    assertThat(selectedQuestions).hasSize(1);
+    assertThat(selectedQuestions.get(0).path("tasks")).hasSize(1);
+    assertThat(selectedQuestions.get(0).path("tasks").get(0).path("taskKind").asText())
+        .isEqualTo("OBJECT");
+    assertThat(identification.path("taskOutcomes").get(0).path("status").asText())
+        .isEqualTo("REVIEWED");
+
+    FormalDiscoveryScript actionPriority =
+        new FormalDiscoveryScript(configured.prompts(), false, true, true);
+    Function<OntologyTypedTaskRunner.FormalModelDeclaration, StructuredModelProvider>
+        actionPriorityFactory =
+            declaration -> actionPriority.provider(declaration.expectedRuntimeIdentity());
+    CliResult refused =
+        executeWithFactory(
+            configured.path(),
+            actionPriorityFactory,
+            "identify-ontology",
+            "--corpus-run",
+            o0RunId,
+            "--scope",
+            scope.toString());
+    assertThat(refused.exitCode()).isNotZero();
+    assertThat(refused.stderr()).isEmpty();
+    String refusedRunId = runId(refused);
+    JsonNode refusalReport =
+        assertCommandAndInspectionAgree(
+            refused, configured.path(), "IDENTIFY_ONTOLOGY", refusedRunId, 2);
+    assertThat(arrayValues(refusalReport.path("problems")))
+        .anySatisfy(
+            problem -> {
+              assertThat(problem.path("code").asText()).isEqualTo("ONTOLOGY_DECISION_INVALID");
+              assertThat(problem.path("category").asText()).isEqualTo("MODEL_OUTPUT");
+              assertThat(problem.path("stage").asText()).isEqualTo("PRIORITIZE");
+            });
+    assertThat(actionPriority.requests).hasSize(2);
+    assertThat(actionPriority.requests.get(0).taskKind()).contains("SURVEY");
+    assertThat(actionPriority.requests.get(1).taskKind()).contains("PRIORITIZE");
   }
 
   @Test
@@ -6766,6 +8487,11 @@ class OntologyFormalRuntimeContractsTest {
   }
 
   private static ImmutableBytes formalPrioritizeResponse(String questionRef) {
+    return formalPrioritizeResponse(questionRef, List.of("OBJECT"));
+  }
+
+  private static ImmutableBytes formalPrioritizeResponse(
+      String questionRef, List<String> taskKinds) {
     ObjectNode response = JSON.createObjectNode();
     response.put("schemaVersion", "ontology-prioritize-response-v4");
     ObjectNode selected = response.putArray("selectedQuestions").addObject();
@@ -6774,8 +8500,69 @@ class OntologyFormalRuntimeContractsTest {
         "specificQuestion", "What record-shaped value is supported by this selected source?");
     selected.put("selectionReason", "The bounded source page contains one readable entry.");
     selected.putArray("currentUnknowns");
-    selected.putArray("taskKinds").add("OBJECT");
+    ArrayNode selectedTaskKinds = selected.putArray("taskKinds");
+    taskKinds.forEach(selectedTaskKinds::add);
     response.putArray("deferredQuestions");
+    response.putArray("unresolved");
+    return CANONICAL.encodeCanonical(response);
+  }
+
+  private static ImmutableBytes businessLinkFormalReadingResponseV4(
+      String decision, String unitRef, String entryRef, boolean read) {
+    ObjectNode response = JSON.createObjectNode();
+    response.put("schemaVersion", "reading-response-v4");
+    response.put("decision", decision);
+    response.putObject("entrySelection").putArray("addRefs");
+    ((ObjectNode) response.path("entrySelection")).putArray("remove");
+    response.putObject("clueSelection").putArray("addRefs");
+    ((ObjectNode) response.path("clueSelection")).putArray("remove");
+    ArrayNode retained = response.putArray("retainedUnitUses");
+    if (read) {
+      ObjectNode use = retained.addObject();
+      use.put("unitRef", unitRef);
+      use.put("entryRef", entryRef);
+    }
+    response.putArray("requiredUnitUses");
+    ArrayNode actions = response.putArray("actions");
+    if (!read) {
+      ObjectNode action = actions.addObject();
+      action.put("kind", "READ");
+      action.put("unitRef", unitRef);
+      action.put("entryRef", entryRef);
+    }
+    response.putArray("unresolved");
+    return CANONICAL.encodeCanonical(response);
+  }
+
+  private static ImmutableBytes businessLinkModelReadingResponseV4(
+      String decision, String unitRef, String entryRef, String clueRef, boolean read) {
+    ObjectNode response = JSON.createObjectNode();
+    response.put("schemaVersion", "reading-response-v4");
+    response.put("decision", decision);
+    ObjectNode entrySelection = response.putObject("entrySelection");
+    entrySelection.putArray("addRefs");
+    entrySelection.putArray("remove");
+    ObjectNode clueSelection = response.putObject("clueSelection");
+    if (clueRef == null) {
+      clueSelection.putArray("addRefs");
+    } else {
+      clueSelection.putArray("addRefs").add(clueRef);
+    }
+    clueSelection.putArray("remove");
+    ArrayNode retained = response.putArray("retainedUnitUses");
+    if (read) {
+      ObjectNode use = retained.addObject();
+      use.put("unitRef", unitRef);
+      use.put("entryRef", entryRef);
+    }
+    response.putArray("requiredUnitUses");
+    ArrayNode actions = response.putArray("actions");
+    if (!read) {
+      ObjectNode action = actions.addObject();
+      action.put("kind", "READ");
+      action.put("unitRef", unitRef);
+      action.put("entryRef", entryRef);
+    }
     response.putArray("unresolved");
     return CANONICAL.encodeCanonical(response);
   }
@@ -6859,6 +8646,57 @@ class OntologyFormalRuntimeContractsTest {
     identityUnknown.putArray("missingUnitRefs");
     object.put("definitionCompleteness", "PARTIAL");
     return typedTaskResponse(schemaVersion, "OBJECT", definitions, JSON.createArrayNode());
+  }
+
+  private static ImmutableBytes businessLinkFormalObjectResponseV4(
+      String schemaVersion, String questionRef, String entryRef) {
+    return businessLinkFormalObjectResponseV4(
+        schemaVersion,
+        questionRef,
+        entryRef,
+        "Neutral source-backed record",
+        "A neutral record-shaped value visible in the selected method.");
+  }
+
+  private static ImmutableBytes businessLinkFormalObjectResponseV4(
+      String schemaVersion,
+      String questionRef,
+      String entryRef,
+      String objectName,
+      String objectDefinition) {
+    ObjectNode response =
+        (ObjectNode)
+            CANONICAL.parseCanonical(
+                formalTaskObjectResponse(
+                    schemaVersion, questionRef, entryRef, objectName, objectDefinition));
+    ((ObjectNode) response.path("definitions").path("objects").get(0)).put("displayRole", "MAIN");
+    response.putArray("clueDispositions");
+    return CANONICAL.encodeCanonical(response);
+  }
+
+  private static ImmutableBytes businessLinkFormalActionResponseV4(
+      String schemaVersion, String questionRef, String entryRef, String objectRef) {
+    ObjectNode response =
+        (ObjectNode)
+            CANONICAL.parseCanonical(
+                formalTaskActionResponse(schemaVersion, questionRef, entryRef, objectRef));
+    response.putArray("clueDispositions");
+    return CANONICAL.encodeCanonical(response);
+  }
+
+  private static ImmutableBytes businessLinkFormalAnalyticResponseV4(
+      String schemaVersion,
+      String questionRef,
+      String entryRef,
+      String objectRef,
+      String propertyRef) {
+    ObjectNode response =
+        (ObjectNode)
+            CANONICAL.parseCanonical(
+                formalTaskAnalyticResponse(
+                    schemaVersion, questionRef, entryRef, objectRef, propertyRef));
+    response.putArray("clueDispositions");
+    return CANONICAL.encodeCanonical(response);
   }
 
   private static ImmutableBytes formalTaskObjectResponseWithDanglingReference(
@@ -7081,6 +8919,29 @@ class OntologyFormalRuntimeContractsTest {
           "could not build neutral unresolved RELATE response", invalidFixture);
     }
     response.putArray("identityDecisions");
+    return CANONICAL.encodeCanonical(response);
+  }
+
+  private static ImmutableBytes businessLinkFormalUnresolvedRelateResponseV4(
+      String schemaVersion, String objectRef) {
+    ObjectNode response =
+        (ObjectNode)
+            CANONICAL.parseCanonical(formalTaskUnresolvedRelateResponse(schemaVersion, objectRef));
+    response.putArray("clueDispositions");
+    return CANONICAL.encodeCanonical(response);
+  }
+
+  private static ImmutableBytes businessLinkRelateResponseWithClueDispositionV4(
+      String schemaVersion, String objectRef, String clueRef) {
+    ObjectNode response =
+        (ObjectNode)
+            CANONICAL.parseCanonical(
+                businessLinkFormalUnresolvedRelateResponseV4(schemaVersion, objectRef));
+    ObjectNode disposition = response.putArray("clueDispositions").addObject();
+    disposition.put("clueRef", clueRef);
+    disposition.put("outcome", "NOT_A_BUSINESS_LINK");
+    disposition.putArray("linkRefs");
+    disposition.put("reason", "The selected source does not support a business link.");
     return CANONICAL.encodeCanonical(response);
   }
 
@@ -8424,6 +10285,16 @@ class OntologyFormalRuntimeContractsTest {
     return writeJson(path, root);
   }
 
+  private Path writeBusinessLinkSkeletonDiscoveryScopeV2(Path path) throws Exception {
+    ObjectNode root = JSON.createObjectNode();
+    root.put("schemaVersion", "ontology-scope-v2");
+    root.put("purpose", "SKELETON");
+    root.put("mode", "DISCOVERY");
+    root.put("selectionMode", "MODEL");
+    root.putArray("questions");
+    return writeJson(path, root);
+  }
+
   private ConfiguredTypedPipeline writeTypedPipelineConfiguration(
       String name, TechnicalFixture fixture) throws Exception {
     Path configuration = writeOntologyConfig(name, fixture, fixture.archive(), null, true);
@@ -8471,6 +10342,31 @@ class OntologyFormalRuntimeContractsTest {
                 + "\nreading:");
     assertThat(v2Configuration).contains("upstreamArtifactPolicyRegistries");
     Files.writeString(configured.path(), v2Configuration, StandardCharsets.UTF_8);
+    return configured;
+  }
+
+  private ConfiguredTypedPipeline writeBusinessLinkTypedPipelineConfigurationV3(
+      String name, TechnicalFixture fixture) throws Exception {
+    ConfiguredTypedPipeline configured = writeTypedPipelineConfiguration(name, fixture);
+    String source = Files.readString(configured.path(), StandardCharsets.UTF_8);
+    assertThat(source).contains(yaml(ONTOLOGY_POLICY_SET));
+    String v3Configuration =
+        source.replace(yaml(ONTOLOGY_POLICY_SET), yaml(ONTOLOGY_POLICY_SET_V3));
+    assertThat(v3Configuration).isNotEqualTo(source).contains(yaml(ONTOLOGY_POLICY_SET_V3));
+    Files.writeString(configured.path(), v3Configuration, StandardCharsets.UTF_8);
+    return configured;
+  }
+
+  private ConfiguredDiscovery writeBusinessLinkDiscoveryConfigurationV3(
+      String name, TechnicalFixture fixture) throws Exception {
+    ConfiguredDiscovery configured =
+        writeFormalDiscoveryConfiguration(name, fixture, fixture.archive(), 524288);
+    String source = Files.readString(configured.path(), StandardCharsets.UTF_8);
+    assertThat(source).contains(yaml(ONTOLOGY_POLICY_SET));
+    String v3Configuration =
+        source.replace(yaml(ONTOLOGY_POLICY_SET), yaml(ONTOLOGY_POLICY_SET_V3));
+    assertThat(v3Configuration).isNotEqualTo(source).contains(yaml(ONTOLOGY_POLICY_SET_V3));
+    Files.writeString(configured.path(), v3Configuration, StandardCharsets.UTF_8);
     return configured;
   }
 
@@ -8853,6 +10749,228 @@ class OntologyFormalRuntimeContractsTest {
     return writeJson(path, root);
   }
 
+  private Path writeBusinessLinkSkeletonScopeV2(Path path) throws Exception {
+    ObjectNode root = JSON.createObjectNode();
+    root.put("schemaVersion", "ontology-scope-v2");
+    root.put("mode", "QUESTION");
+    root.put("selectionMode", "EXPLICIT");
+    root.put("purpose", "SKELETON");
+    ObjectNode question = root.putArray("questions").addObject();
+    question.put("questionId", "Q_SKELETON");
+    question.put("question", "Describe only the selected neutral source-backed object shape.");
+    question.putArray("entryRefs").add("E1");
+    question.putArray("clueRefs");
+    question.putArray("objectSources");
+    ObjectNode task = question.putArray("tasks").addObject();
+    task.put("taskId", "object-skeleton");
+    task.put("taskKind", "OBJECT");
+    task.put("readingMode", "EXPLICIT");
+    unitUses(task.putArray("unitUses"));
+    unitUses(task.putArray("requiredUnitUses"));
+    return writeJson(path, root);
+  }
+
+  private Path writeBusinessLinkModelSkeletonScopeV2(Path path) throws Exception {
+    ObjectNode root = JSON.createObjectNode();
+    root.put("schemaVersion", "ontology-scope-v2");
+    root.put("mode", "QUESTION");
+    root.put("selectionMode", "EXPLICIT");
+    root.put("purpose", "SKELETON");
+    ObjectNode question = root.putArray("questions").addObject();
+    question.put("questionId", "Q_MODEL_SKELETON");
+    question.put("question", "Describe the selected source-backed object shape.");
+    question.putArray("entryRefs").add("E1");
+    question.putArray("clueRefs");
+    question.putArray("objectSources");
+    ObjectNode task = question.putArray("tasks").addObject();
+    task.put("taskId", "model-object-skeleton");
+    task.put("taskKind", "OBJECT");
+    task.put("readingMode", "MODEL");
+    task.putArray("unitUses");
+    task.putArray("requiredUnitUses");
+    return writeJson(path, root);
+  }
+
+  private Path writeBusinessLinkEnrichmentScopeV2(Path path, String skeletonIdentificationRun)
+      throws Exception {
+    ObjectNode root = JSON.createObjectNode();
+    root.put("schemaVersion", "ontology-scope-v2");
+    root.put("mode", "QUESTION");
+    root.put("selectionMode", "EXPLICIT");
+    root.put("purpose", "ENRICHMENT");
+    ObjectNode question = root.putArray("questions").addObject();
+    question.put("questionId", "Q_ENRICHMENT");
+    question.put(
+        "question", "Describe only the selected actions and analytics for the reviewed object.");
+    question.putArray("entryRefs").add("E1");
+    question.putArray("clueRefs");
+    ObjectNode objectSource = question.putArray("objectSources").addObject();
+    objectSource.put("identificationRun", skeletonIdentificationRun);
+    objectSource.put("questionId", "Q_SKELETON");
+    addBusinessLinkTask(question, "action-enrichment", "ACTION");
+    addBusinessLinkTask(question, "analytic-enrichment", "ANALYTIC");
+    return writeJson(path, root);
+  }
+
+  private BusinessLinkRuntimeFixture prepareBusinessLinkRuntime(String fixtureName)
+      throws Exception {
+    TechnicalFixture fixture = prepareRealR4(fixtureName);
+    ConfiguredTypedPipeline configured =
+        writeBusinessLinkTypedPipelineConfigurationV3(
+            "ontology-" + fixtureName + "-v3.yaml", fixture);
+    AtomicInteger providerFactories = new AtomicInteger();
+    List<StructuredModelRequest> requests = new ArrayList<>();
+    AtomicReference<String> rejectedObjectReviewQuestion = new AtomicReference<>();
+    Function<OntologyTypedTaskRunner.FormalModelDeclaration, StructuredModelProvider>
+        providerFactory =
+            declaration -> {
+              providerFactories.incrementAndGet();
+              ModelRuntimeIdentityV1 identity = declaration.expectedRuntimeIdentity();
+              return request -> {
+                requests.add(request);
+                JsonNode input = ExplicitTypedPipelineScript.input(request);
+                String questionId = input.path("questionId").asText();
+                String taskKind = input.path("taskKind").asText();
+                boolean review = request.taskKind().contains("REVIEW");
+                String responseSchema =
+                    review ? "ontology-typed-review-v4" : "ontology-typed-candidate-v4";
+                ImmutableBytes response;
+                if ("OBJECT".equals(taskKind)) {
+                  response = businessLinkFormalObjectResponseV4(responseSchema, questionId, "E1");
+                  if (review && questionId.equals(rejectedObjectReviewQuestion.get())) {
+                    ObjectNode invalidReview = (ObjectNode) CANONICAL.parseCanonical(response);
+                    ((ObjectNode) invalidReview.path("definitions").path("objects").get(0))
+                        .put("displayRole", "AUTO_PROMOTED");
+                    response = CANONICAL.encodeCanonical(invalidReview);
+                  }
+                } else if ("ACTION".equals(taskKind) || "ANALYTIC".equals(taskKind)) {
+                  JsonNode visibleEntries = input.path("reviewedCatalog").path("entries");
+                  String objectRef = visibleEntries.path(0).path("catalogRef").asText();
+                  if ("ACTION".equals(taskKind)) {
+                    response =
+                        businessLinkFormalActionResponseV4(
+                            responseSchema, questionId, "E1", objectRef);
+                  } else {
+                    String propertyRef =
+                        visibleEntries.path(0).path("propertyRefs").path(0).asText();
+                    response =
+                        businessLinkFormalAnalyticResponseV4(
+                            responseSchema, questionId, "E1", objectRef, propertyRef);
+                  }
+                } else {
+                  throw new AssertionError("unexpected business-link task kind " + taskKind);
+                }
+                return new StructuredModelResponse(response, identity);
+              };
+            };
+    CliResult prepared =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "prepare-ontology",
+            "--evidence-run",
+            fixture.r4RunId());
+    assertThat(prepared.exitCode()).withFailMessage(cliDiagnostics(prepared)).isZero();
+    assertThat(providerFactories).hasValue(0);
+    assertThat(requests).isEmpty();
+    return new BusinessLinkRuntimeFixture(
+        fixture,
+        configured,
+        runId(prepared),
+        providerFactories,
+        requests,
+        rejectedObjectReviewQuestion,
+        providerFactory);
+  }
+
+  private CliResult identifyBusinessLink(BusinessLinkRuntimeFixture runtime, Path scope) {
+    return executeWithFactory(
+        runtime.configured().path(),
+        runtime.providerFactory(),
+        "identify-ontology",
+        "--corpus-run",
+        runtime.corpusRunId(),
+        "--scope",
+        scope.toString());
+  }
+
+  private Path writeBusinessLinkQuestionScopeV2ForTasks(
+      Path path,
+      String purpose,
+      String questionId,
+      List<ObjectSource> objectSources,
+      List<ScopedTask> tasks)
+      throws Exception {
+    ObjectNode root = JSON.createObjectNode();
+    root.put("schemaVersion", "ontology-scope-v2");
+    root.put("mode", "QUESTION");
+    root.put("selectionMode", "EXPLICIT");
+    root.put("purpose", purpose);
+    ObjectNode question = root.putArray("questions").addObject();
+    question.put("questionId", questionId);
+    question.put("question", "Describe only the neutral source-backed content selected here.");
+    question.putArray("entryRefs").add("E1");
+    question.putArray("clueRefs");
+    ArrayNode sources = question.putArray("objectSources");
+    for (ObjectSource source : objectSources) {
+      ObjectNode row = sources.addObject();
+      row.put("identificationRun", source.identificationRun());
+      row.put("questionId", source.questionId());
+    }
+    for (ScopedTask task : tasks) {
+      addBusinessLinkTask(question, task.taskId(), task.taskKind());
+    }
+    return writeJson(path, root);
+  }
+
+  private JsonNode queryTaskObservation(Path configuration, String runId, String producingTaskId)
+      throws Exception {
+    CliResult observation =
+        executePublic(
+            configuration,
+            "artifact",
+            "--run",
+            runId,
+            "--key",
+            "ONTOLOGY_TASK_RECORD",
+            "--task-id",
+            producingTaskId,
+            "--max-bytes",
+            "524288");
+    assertArtifactAvailable(observation);
+    return JSON.readTree(observation.stdout());
+  }
+
+  private Path writeBusinessLinkStandaloneSkeletonScopeV2(Path path) throws Exception {
+    ObjectNode root = JSON.createObjectNode();
+    root.put("schemaVersion", "ontology-scope-v2");
+    root.put("mode", "QUESTION");
+    root.put("selectionMode", "EXPLICIT");
+    root.put("purpose", "SKELETON");
+    ObjectNode question = root.putArray("questions").addObject();
+    question.put("questionId", "Q_RELATION_OBJECT");
+    question.put("question", "Describe this independent selected relation endpoint.");
+    question.putArray("entryRefs").add("E1");
+    question.putArray("clueRefs");
+    question.putArray("objectSources");
+    ObjectNode task = question.putArray("tasks").addObject();
+    task.put("taskId", "independent-relation-object");
+    task.put("taskKind", "OBJECT");
+    task.put("readingMode", "EXPLICIT");
+    unitUses(task.putArray("unitUses"));
+    unitUses(task.putArray("requiredUnitUses"));
+    return writeJson(path, root);
+  }
+
+  private static void addBusinessLinkTask(ObjectNode question, String taskId, String taskKind) {
+    ObjectNode task = question.withArray("tasks").addObject();
+    task.put("taskId", taskId);
+    task.put("taskKind", taskKind);
+    task.put("readingMode", "EXPLICIT");
+    unitUses(task.putArray("unitUses"));
+    unitUses(task.putArray("requiredUnitUses"));
+  }
+
   private Path writeExplicitTypedTaskScope(Path path) throws Exception {
     ObjectNode root = JSON.createObjectNode();
     root.put("schemaVersion", "ontology-scope-v1");
@@ -9066,6 +11184,74 @@ class OntologyFormalRuntimeContractsTest {
     return writeJson(path, root);
   }
 
+  private Path writeBusinessLinkModelReadRelateSelectionV2(
+      Path path, String corpusRun, String identificationRun, String selectedEntryRef)
+      throws Exception {
+    ObjectNode root = JSON.createObjectNode();
+    root.put("schemaVersion", "ontology-selection-v2");
+    root.put("operation", "RELATE");
+    root.put("corpusRun", corpusRun);
+    root.putArray("identificationRuns").add(identificationRun);
+    ObjectNode question = root.putArray("questions").addObject();
+    question.put("questionId", "Q_RELATE");
+    question.put("question", "Determine whether the selected evidence supports a relation.");
+    question.put("taskId", "model-relate-task");
+    question.put("readingMode", "MODEL");
+    question.putArray("entryRefs").add(selectedEntryRef);
+    question.putArray("clueRefs");
+    question.putArray("unitUses");
+    question.putArray("requiredUnitUses");
+    ObjectNode objectSource = question.putArray("objectSources").addObject();
+    objectSource.put("identificationRun", identificationRun);
+    objectSource.put("questionId", "Q_SKELETON");
+    return writeJson(path, root);
+  }
+
+  private Path writeBusinessLinkModelFailureAndExplicitRelateSelectionV2(
+      Path path,
+      String corpusRun,
+      String identificationRun,
+      String selectedEntryRef,
+      String selectedUnitRef)
+      throws Exception {
+    ObjectNode root = JSON.createObjectNode();
+    root.put("schemaVersion", "ontology-selection-v2");
+    root.put("operation", "RELATE");
+    root.put("corpusRun", corpusRun);
+    root.putArray("identificationRuns").add(identificationRun);
+    ArrayNode questions = root.putArray("questions");
+    ObjectNode modelQuestion = questions.addObject();
+    modelQuestion.put("questionId", "Q_MODEL_PARTIAL");
+    modelQuestion.put("question", "Read the selected evidence before deciding its relation.");
+    modelQuestion.put("taskId", "model-relate-partial");
+    modelQuestion.put("readingMode", "MODEL");
+    modelQuestion.putArray("entryRefs").add(selectedEntryRef);
+    modelQuestion.putArray("clueRefs");
+    modelQuestion.putArray("unitUses");
+    modelQuestion.putArray("requiredUnitUses");
+    ObjectNode modelObjectSource = modelQuestion.putArray("objectSources").addObject();
+    modelObjectSource.put("identificationRun", identificationRun);
+    modelObjectSource.put("questionId", "Q_SKELETON");
+
+    ObjectNode explicitQuestion = questions.addObject();
+    explicitQuestion.put("questionId", "Q_EXPLICIT_RELATE");
+    explicitQuestion.put("question", "Check the explicitly selected evidence for a relation.");
+    explicitQuestion.put("taskId", "explicit-relate-task");
+    explicitQuestion.put("readingMode", "EXPLICIT");
+    explicitQuestion.putArray("entryRefs").add(selectedEntryRef);
+    explicitQuestion.putArray("clueRefs");
+    ObjectNode activeUse = explicitQuestion.putArray("unitUses").addObject();
+    activeUse.put("unitRef", selectedUnitRef);
+    activeUse.put("entryRef", selectedEntryRef);
+    ObjectNode requiredUse = explicitQuestion.putArray("requiredUnitUses").addObject();
+    requiredUse.put("unitRef", selectedUnitRef);
+    requiredUse.put("entryRef", selectedEntryRef);
+    ObjectNode explicitObjectSource = explicitQuestion.putArray("objectSources").addObject();
+    explicitObjectSource.put("identificationRun", identificationRun);
+    explicitObjectSource.put("questionId", "Q_SKELETON");
+    return writeJson(path, root);
+  }
+
   private Path writePublishSelectionV2(
       Path path, String corpusRun, List<String> identificationRuns, List<String> relationRuns)
       throws Exception {
@@ -9221,6 +11407,15 @@ class OntologyFormalRuntimeContractsTest {
           providerFactory,
       String... command) {
     return invoke(config, command, providerFactory);
+  }
+
+  private static String cliDiagnostics(CliResult result) {
+    return "exitCode: "
+        + result.exitCode()
+        + "\nstdout:\n"
+        + result.stdout()
+        + "\nstderr:\n"
+        + result.stderr();
   }
 
   private static CliResult invoke(
@@ -9640,6 +11835,13 @@ class OntologyFormalRuntimeContractsTest {
       }
     }
     throw new AssertionError("missing actual task record " + taskId);
+  }
+
+  private static JsonNode findTaskOutcome(JsonNode document, String taskId) {
+    return arrayValues(document.path("taskOutcomes")).stream()
+        .filter(outcome -> taskId.equals(outcome.path("taskId").asText()))
+        .findFirst()
+        .orElseThrow(() -> new AssertionError("missing task outcome " + taskId));
   }
 
   private static JsonNode findReviewTask(JsonNode review, String producingTaskId) {
@@ -10117,6 +12319,16 @@ class OntologyFormalRuntimeContractsTest {
 
   private record ConfiguredTypedPipeline(Path path, Map<String, String> prompts) {}
 
+  private record BusinessLinkRuntimeFixture(
+      TechnicalFixture technicalFixture,
+      ConfiguredTypedPipeline configured,
+      String corpusRunId,
+      AtomicInteger providerFactories,
+      List<StructuredModelRequest> requests,
+      AtomicReference<String> rejectedObjectReviewQuestion,
+      Function<OntologyTypedTaskRunner.FormalModelDeclaration, StructuredModelProvider>
+          providerFactory) {}
+
   private record ScopedQuestion(String questionId, List<ScopedTask> tasks) {}
 
   private record ScopedTask(String taskId, String taskKind) {}
@@ -10328,6 +12540,8 @@ class OntologyFormalRuntimeContractsTest {
   private static final class FormalDiscoveryScript {
     private final Map<String, String> prompts;
     private final boolean rejectUnknownPriority;
+    private final boolean businessLinkV4;
+    private final boolean prioritizeAction;
     private final List<StructuredModelRequest> requests = new ArrayList<>();
     private final Set<String> availableQuestionRefs = new LinkedHashSet<>();
     private final String invalidPriorityRef = "Q999";
@@ -10338,8 +12552,18 @@ class OntologyFormalRuntimeContractsTest {
     private int readingRounds;
 
     private FormalDiscoveryScript(Map<String, String> prompts, boolean rejectUnknownPriority) {
+      this(prompts, rejectUnknownPriority, false, false);
+    }
+
+    private FormalDiscoveryScript(
+        Map<String, String> prompts,
+        boolean rejectUnknownPriority,
+        boolean businessLinkV4,
+        boolean prioritizeAction) {
       this.prompts = prompts;
       this.rejectUnknownPriority = rejectUnknownPriority;
+      this.businessLinkV4 = businessLinkV4;
+      this.prioritizeAction = prioritizeAction;
     }
 
     private StructuredModelProvider provider(ModelRuntimeIdentityV1 identity) {
@@ -10367,9 +12591,13 @@ class OntologyFormalRuntimeContractsTest {
           assertThat(matchingTextValues(input, "K[1-9][0-9]*")).contains(clueRef);
           assertThat(containsText(input, "return \"neutral\"")).isFalse();
           String selectedRef = rejectUnknownPriority ? invalidPriorityRef : questionRef;
-          return new StructuredModelResponse(formalPrioritizeResponse(selectedRef), identity);
+          return new StructuredModelResponse(
+              formalPrioritizeResponse(
+                  selectedRef, prioritizeAction ? List.of("OBJECT", "ACTION") : List.of("OBJECT")),
+              identity);
         }
-        if ("ontology-reading-input-v3".equals(schemaVersion)) {
+        if ("ontology-reading-input-v3".equals(schemaVersion)
+            || (businessLinkV4 && "ontology-reading-input-v4".equals(schemaVersion))) {
           assertThat(request.systemInstructions()).isEqualTo(prompts.get("reading"));
           readingRounds++;
           if (readingRounds == 1) {
@@ -10383,14 +12611,66 @@ class OntologyFormalRuntimeContractsTest {
               }
             }
             assertThat(readUnitRef).matches("U[1-9][0-9]*");
+            if (businessLinkV4) {
+              return new StructuredModelResponse(
+                  businessLinkFormalReadingResponseV4(
+                      "NEEDS_MORE_MATERIAL", readUnitRef, entryRef, false),
+                  identity);
+            }
             return new StructuredModelResponse(
                 formalReadingResponse("NEEDS_MORE_MATERIAL", readUnitRef, entryRef, false),
                 identity);
           }
           assertThat(readingRounds).isEqualTo(2);
           assertThat(containsText(input, "return \"neutral\"")).isTrue();
+          if (businessLinkV4) {
+            return new StructuredModelResponse(
+                businessLinkFormalReadingResponseV4(
+                    "READY_TO_EXTRACT", readUnitRef, entryRef, true),
+                identity);
+          }
           return new StructuredModelResponse(
               formalReadingResponse("READY_TO_EXTRACT", readUnitRef, entryRef, true), identity);
+        }
+        if (businessLinkV4 && request.taskKind().contains("EXTRACT")) {
+          String taskKind = input.path("taskKind").asText();
+          String currentQuestion = input.path("questionId").asText();
+          String currentEntry = firstMatchingRef(input, "E[1-9][0-9]*");
+          if ("ACTION".equals(taskKind)) {
+            assertThat(request.systemInstructions()).isEqualTo(prompts.get("action"));
+            return new StructuredModelResponse(
+                businessLinkFormalActionResponseV4(
+                    "ontology-typed-candidate-v4",
+                    currentQuestion,
+                    currentEntry,
+                    ExplicitTypedPipelineScript.catalogRef(input, "objects")),
+                identity);
+          }
+          assertThat(request.systemInstructions()).isEqualTo(prompts.get("object"));
+          return new StructuredModelResponse(
+              businessLinkFormalObjectResponseV4(
+                  "ontology-typed-candidate-v4", currentQuestion, currentEntry),
+              identity);
+        }
+        if (businessLinkV4 && request.taskKind().contains("REVIEW")) {
+          String taskKind = input.path("taskKind").asText();
+          String currentQuestion = input.path("questionId").asText();
+          String currentEntry = firstMatchingRef(input, "E[1-9][0-9]*");
+          if ("ACTION".equals(taskKind)) {
+            assertThat(request.systemInstructions()).isEqualTo(prompts.get("action"));
+            return new StructuredModelResponse(
+                businessLinkFormalActionResponseV4(
+                    "ontology-typed-review-v4",
+                    currentQuestion,
+                    currentEntry,
+                    ExplicitTypedPipelineScript.catalogRef(input, "objects")),
+                identity);
+          }
+          assertThat(request.systemInstructions()).isEqualTo(prompts.get("review"));
+          return new StructuredModelResponse(
+              businessLinkFormalObjectResponseV4(
+                  "ontology-typed-review-v4", currentQuestion, currentEntry),
+              identity);
         }
         if (request.taskKind().contains("EXTRACT")) {
           assertThat(request.systemInstructions()).isEqualTo(prompts.get("object"));

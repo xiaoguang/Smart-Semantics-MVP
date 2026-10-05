@@ -419,6 +419,12 @@ O1/O2的阶段payload在根级`taskRecords[]`保存**实际已准备任务**的�
 
 **选单与依赖。** O1继续采用scope-v1字段，ACTION/ANALYTIC的前置为同题排在它之前的全部OBJECT任务；规则版本单独进入任务匹配，不把其它题累计结果加入目录。O2/O3新执行采用`ontology-selection-v2`。根级字段沿用v1对应operation字段；RELATE问题在原字段上增加必需非空`objectSources`，每项仅`identificationRun / questionId`，准确run须在根级identificationRuns中，同一来源对不得重复。QUESTION的实际问题范围来自保存scope.questions；DISCOVERY来自保存selectedQuestions及其taskOutcomes，不能读取原始空scope.questions或从activeUnits反推。缺实际范围即依赖不可恢复。Java恢复准确OBJECT任务并要求全部REVIEWED；首次查找用`(identificationRun, producingTaskId)`，而保存O2目录重开必须同时匹配完整`(corpusIdentity, producingTaskId, reviewVersion)`及该O2原selection的准确来源owner范围。相同producingTaskId但不同owner/reviewVersion不可互相覆盖或任取；同完整身份且相同保存结果可作为同一正式输入复用。其它ACTION/ANALYTIC失败保留覆盖但不自动阻断RELATE。来源对及真实对象任务/定义身份参与冻结/指纹，模型不能填写长身份替代。PUBLISH的v2字段形状保持v1的corpusRun/identificationRuns/relationRuns，继承全部所选上游义务，不按成功列表缩小分母。v1历史严格读取，不猜依赖升级。
 
+**新执行与历史选单。** 新策略写relations-v2/v3时，非空RELATE范围必须使用selection-v2；selection-v1在Provider初始化前以`ONTOLOGY_SELECTION_VERSION_INVALID`拒绝，不能自动猜出对象来源和新版依赖。旧策略下selection-v1的执行和历史查询保持原行为。兼容查询流程若明确声明零关系问题，可保留原selection-v1快照并写真实空`taskOutcomes`；这不表示任何非空关系范围已经完成，也不转换历史文件。
+
+**业务联系阶段的实际选材。** 新`ontology-relations-v3`另含`readingSelections`数组，每个声明问题恰一条，字段为`questionId / taskId / status / issueCode / selectedEntries / selectedClues`。status为`NOT_STARTED / READY / INCOMPLETE / UNRESOLVED / FAILED`，issueCode为真实阅读原因或空字符串；E/K必须属于准确Corpus，不重复。初始selection按请求内容保持原字节身份，不能改成模型最后选择；实际阅读选择单独保存。MODEL通过同一正式阅读协议传入真实RELATE种类，阅读与提取/审阅共用运行预算。未准备型任务没有虚构typed job，但其实际选择仍可保存；O3按实际选择保留未完成K分母。旧relations-v1/v2不补该字段，按原选择和保存规则读取。
+
+重开时，EXPLICIT与NOT_STARTED的实际E/K必须逐项等于原声明清单；不能加入Corpus中存在却未被该题选择的线索。MODEL允许通过已保存的阅读过程扩大/调整选择，不能仅与初始空清单比较。已审RELATE结果的`selectedClues`必须与该任务冻结身份中的`visibleClueRefs`准确相等，状态必须READY；O3不接受另外一份题的选单替代它。未形成typed任务的失败选单仅是受安装receipt保护的实际阅读观察/覆盖分母，不因此成为已审关系证据。
+
 **阶段输出。** O1采用`ontology-identification-v2`，O2采用`ontology-relations-v2`，相应模块producer为v2；既有来源、语义上游、scope/selection、已审定义及taskRecords保留，新根级字段为`taskOutcomes`。它列完整实际声明/选中任务而非仅实际job，按声明顺序保存：
 
 | taskOutcomes字段 | 类型/含义 |
@@ -454,6 +460,44 @@ modelRequestCounts字段为`reservedAttempts / confirmedStarted / confirmedEnded
 正常CLI结束必须把保存事实登记到终态，不等待用户修改Prompt。若O1/O2已保存局部任务失败、随后canonical公共安装本身失败，任务原稿、reason和成员记录仍按其实际终态保留可查；但运行级最终观察必须以artifact store的实际稳定code记录`STORAGE / INSTALL`、空taskId和无receipt，不能用较早的MODEL_OUTPUT等任务问题覆盖它。共享保存失败可没有公共output，但仍报告实际私有可查内容，不能虚构receipt。进程外部强制中断只能报告最后真实记录，不承诺一定有最终报告。细节及Provider整次deadline由[隔离设计§8](evidence-stability-and-failure-isolation.md#8-进程有界结束不是只捕获一次异常)规定。
 
 这些新版本已同步producer、Reader、Schema、artifact policy、runtime、安装与直接fixture；定向GREEN、最终质量和三个局部样例的有限结束/材料/查询均已核验，实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)。不将结构或材料通过称作所有业务定义正确。允许已有公共request-v6/output-v10绑定新payload的精确引用，不借此整体改旧版本；若字段形状实际新增到持久wire，则只升级本体分支，必须先更新该明确合同。旧待执行请求不静默套用新规则。
+
+### 11.7 业务骨架优先、外部对象依赖与材料v5（正式接线，真实验收待完成）
+
+行为owner为[业务联系优先详细设计](business-link-first-design.md)。本节合同已同步ScopeReader、typed validator/runner、材料、producer/Reader/policy、正式运行和发布查询，scripted直接测试已有结果，真实局部验收尚未开始。准确完成边界见[正式验收状态](../../supplements/ontology-business-link-formal-acceptance-20261005.md)。11.6保留历史规则和验收事实。不得仅通过Prompt新增字段。
+
+**Scope。** 新路径写`ontology-scope-v2`：在v1根字段上增加必需`purpose`，只允许`SKELETON / ENRICHMENT`；每个Question增加必需数组`objectSources`，每项仅`identificationRun / questionId`。SKELETON只允许OBJECT任务，所有objectSources为空。ENRICHMENT允许OBJECT/ACTION/ANALYTIC；后两类依赖本题此前全部OBJECT和显式外部对象来源，至少具备一种。每个外部来源对唯一，指向已结束的准确O1，不能自引用；同Corpus、原请求/receipt/完整review身份均须核对，恢复该题全部实际OBJECT且要求全部REVIEWED。来源题无OBJECT或任一OBJECT拒绝/未处理即DEPENDENCY失败、零派发，其它ACTION/ANALYTIC失败不自动否定已审OBJECT。QUESTION读scope.questions，DISCOVERY读保存selectedQuestions，不从正文范围反推。
+
+ScopeReader现按版本严格读取上述字段形状、任务类型和本题/外部来源至少一项的静态约束；跨运行的完成状态、同Corpus与完整review身份只能在runtime依赖解析时核验，不能视作Reader已证明。scope-v2直接测试8项已通过；旧v1仍按旧字段闭合读取。
+
+实际依赖定义仍用完整`corpusIdentity / producingTaskId / reviewVersion`及owner定位，私有目录重映射为本任务B键；不能直接拼不同运行的B1。不增加裸对象名选单或任务依赖DSL。同源但不是同Corpus也不放行；外部对象目录和实际Prompt/材料一起参与新任务匹配。scope-v1历史原样读，不自动变成SKELETON。
+
+**阶段和发布上游。** O1写identification-v3/producer-v3，保存实际scope-v2、外部对象来源及全部taskOutcomes。O2继续采用现有selection-v2形状，其阶段升级relations-v3/producer-v3承载新typed结果及线索处置。O3保留明确selection集合；不仅包含每个O2的原O1来源，也必须包含所选细化O1实际引用的所有外部O1。沿这些已经声明的准确引用做有限闭包核验；缺上游拒绝，循环/自引用拒绝，不自动补入或重算。不同题同名对象不合并，只有完整已审SAME_OBJECT及无冲突的结构映射可统一。
+
+**Corpus与材料。** O0写ontology-corpus-v2/producer-v2，明确projectionRuleVersion=ontology-model-projection-v3；K扩展CONTROL_REFERENCE，B保留已审对象目录用途。冻结包/model-reading-v5采用EXACT_ROWS_WITH_USES_V1：callRows为精确非用途共同记录，callUses保留入口、调用者、同入口目标及原顺序；固定site列顺序、CT/CO及完整逐位置限制按[材料§9.3](material-preparation.md)维护。候选或状态不同不合并，解码须与当前已选投影逐字段一致。新增前端单元→上下文反查使用实际物理身份，不重新解析源码。私有decision-result-v5/formal-reading-state-v2与reading-input/response-v4保存新编码、成本及选中K处置，旧协议不暗改。
+
+业务阅读input-v4包含配置实际maxUnitBytes/maxRequestBytes；动作及查询数量在每次复制的Schema中分别绑定maxActionsPerRound与maxNavigationEntries。保存和身份比较使用这份实际Schema，不仅保存无上限的模板。历史input-v3及原Schema仍按原合同读取；私有完整包字节不当成模型输入成本，也不由模型自行断言Java已经拒绝容量。
+
+新业务producer-v3执行O1/O2/O3只接受保存projection-v3的Corpus-v2，不能因配置列出旧owner策略就把旧Corpus带入新Prompt/类型化协议。版本不符在Provider前返回ONTOLOGY_CORPUS_VERSION_INVALID；查询历史及原v1/v2生产路径不升级。新的phase reading限额来自本阶段明确配置，O0保存控制继续按原值核验，不用新配置改写上游身份。
+
+**Typed与线索处置。** candidate/review-v4沿用v3业务定义，加Object.displayRole，枚举`MAIN / SUPPORT / TECHNICAL_OR_UNKNOWN`；由模型审阅，不由Java据类名默认MAIN。新增根级`clueDispositions`数组，RELATE项固定`clueRef / outcome / linkRefs / reason`，K须属于本任务实际展示范围；outcome枚举`LINK_SUPPORTED / NOT_A_BUSINESS_LINK / NEEDS_MORE_MATERIAL`。LINK_SUPPORTED的linkRefs非空且引用本次返回Link，其它两类为空且reason非空。非RELATE数组为空。缺少处置的已选K程序标MODEL_NOT_ADDRESSED；未派发者按真实失败原因记录。K不是evidenceRef，业务依据仍只用本包实际S。未知K、悬空Link和角色枚举错误与其它坏引用一样进入一次REVIEW/最终严格拒绝，Java不补语义结果。
+
+typed-v4校验入口显式接收实际可见`visibleClueRefs`，只在`ontology-model-reading-v5`的formal任务中选择；旧v3方法、构造和保存格式不升级。新任务结果使用`ontology-formal-typed-job-result-v3`并准确保存可见K，旧结果仍按v2读取。新Prompt资源为独立v2文件，只有策略内容精确声明identification-v3时才可在请求创建前选用，显式prompt覆写仍优先；这一步的runtime调用不由配置类自行猜策略路径。
+
+**覆盖和视图。** ontology-v2保存displayRole，Publisher producer-v3写coverage-v3/review-v3，source-v1形状不变。coverage-v3增加`recognitionLayers[]`，每项`layer / status / taskRefs`；layer仅OBJECT/RELATION/ACTION/ANALYTIC，taskRefs使用原owner的runId/questionId/taskId。未请求层为NOT_REQUESTED且taskRefs为空；请求层按全部实际声明义务标COMPLETE_FOR_DECLARED_SCOPE或INCOMPLETE，不以成功任务列表缩小分母。局部骨架闭合不是全仓本体COMPLETE。视图只渲染正式四文件，实线表示本次模型审阅的CONFIRMED，不表示机器证明；未知可见、支撑对象可分层，过滤视图不能删除原目录。
+
+纯组装已新增`assembleFormalV2(BusinessFormalInput)`，由调用者显式提供每个owner/question/task的种类、实际选中K、保存任务处置及失败原因；旧`assembleFormal(FormalInput)`仍产旧v1四文件。新路径只在已审RELATE的实际K上汇总模型返回处置，漏答标`MODEL_NOT_ADDRESSED`；未执行K用实际任务状态/失败code，OBJECT等任务即使看过K也不产关系处置。`coverage-v3`新增`clueDispositions[]`，每项`runId / questionId / taskId / clueRef / outcome / linkRefs / reason`；LINK_SUPPORTED的本地L映射为该已审任务的全局Link，不能跨任务拼接或从K本身生成边。`review-v3.taskResults[].clueDispositions`保留相应已审任务的归属；四文件确定性字节的发布、policy及离线视图接线由其各自生产边界验证。
+
+独立`OntologyBusinessOverviewRenderer`只消费上述四文件，严格要求ontology-v2/coverage-v3/review-v3及source-v1行；MAIN为主图层，SUPPORT、TECHNICAL_OR_UNKNOWN和孤立对象仍列出。只有已审CONFIRMED且无该边已知组装冲突/unknowns的联系画实线，其余虚线，箭头按已审端点与全部mechanism描述，不从K推边；各mechanism完整结构另列于详情。图标签用Mermaid quoted label的十进制实体逐码点保留标点、比较条件和任意长度，不截断或改写事实；HTML列定义、实际sourceRef/短号及coverage/review限制并转义不可信文本。Mermaid 11.12.0从framework本地资源以base64脚本嵌入，strict安全级别、禁HTML标签、无CDN。它是四文件确定性投影，不是第五份公开真相或用户源代码读取；断网浏览器效果仍须另验。
+
+配置保持ontology-config-v1；公共本体request-v6/output-v10继续绑定准确版本化引用，不改变旧MD/技术分支及其请求指纹。生产者、Schema、读取器、policy、私有任务身份、查询及fixture须同批更新；未知版本拒绝，不用字段存在猜新旧。完整版本目标见[版本表](business-link-first-design.md#14-合同及版本修订)。本文写完不是机器合同已实现；小窗口与跨项目质量仍需具名验收。
+
+新IDENTIFY请求的`identificationPublications`保存scope-v2实际外部OBJECT来源的精确模块引用；历史IDENTIFY该数组仍为空，旧序列化和指纹不增加字段。新O1安装的上游是准确O0加实际外部O1，阶段正文的semanticUpstreams与保存请求一致。重开按原owner、Corpus、问题、任务和审阅版本恢复目录；只对声明的外部对象来源开放，不能用待检查结果反推预期来源。PUBLISH必须显式包含细化O1所依赖的全部O1，不能由程序静默补入。scripted正式运行测试已核对这些来源和缺失上游拒绝；不将工程验证称作客户模型细化成功。
+
+新`ontology-artifact-policy-set-v3.json`同时列出必要历史版本及准确新版本，按现有Registry的type/schema严格排序。生产者版本与payload家族对应检查在模块、步骤两层执行；当前策略不能改写旧产物保存的策略身份。操作观察读取明确v2/v3的taskOutcomes；未识别版本不默认解释为完整成功。
+
+真实任务查询继续使用该运行`taskRecords[].producingTaskId`，不是scope里的局部taskId。任务观察对准确的typed-job-result-v2/v3均报告已审终态，保留原候选和审阅字节；新版已审结果不能被误报成PREPARED。外部OBJECT细化O1只保存本次任务及准确外部依赖，不在私有阶段凭空组装一份缺少对象端点的本体；最终O3须明确选择这些对象的真实O1后才能组装。
+
+新执行的Corpus生产版本准入由已有`OntologySavedTaskContract`校验，运行器只提交明确的生产者/Corpus家族判定；不改变历史查询或新旧任务分派。此职责拆分不改变拒绝码，也不提高静态复杂度阈值。
 
 ## 12. 程序能够和不能够检查什么
 

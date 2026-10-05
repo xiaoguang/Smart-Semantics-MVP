@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "ontology-scope-v2",
+  "purpose": "SKELETON",
+  "mode": "QUESTION",
+  "selectionMode": "EXPLICIT",
+  "questions": [
+    {
+      "questionId": "business-objects",
+      "question": "Which business objects are supported by the selected evidence, and what do they represent? Preserve unsupported identity details as unknown.",
+      "entryRefs": ["E1"],
+      "clueRefs": [],
+      "objectSources": [],
+      "tasks": [
+        {
+          "taskId": "objects",
+          "taskKind": "OBJECT",
+          "readingMode": "MODEL",
+          "unitUses": [],
+          "requiredUnitUses": []
+        }
+      ]
+    }
+  ]
+}

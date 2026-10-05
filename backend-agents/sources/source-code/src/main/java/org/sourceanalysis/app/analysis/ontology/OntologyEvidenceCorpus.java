@@ -47,8 +47,11 @@ public final class OntologyEvidenceCorpus {
   private final Map<String, List<String>> statementVariantsByReference;
   private final Map<String, List<UnitHandle>> statementsByTable;
   private final Map<String, List<UnitHandle>> statementsByColumn;
+  private final Map<String, List<UnitHandle>> controlsByExpression;
+  private final boolean businessLinkNavigation;
   private final Map<UnitHandle, EvidenceUnit> evidenceByUse;
   private final Map<String, FrontendCoverageRequest> frontendCoverageByRequest;
+  private final Map<String, JsonNode> frontendContextCoverage;
   private final int frontendRequestCount;
   private final int schemaSourceCount;
   private final Statistics statistics;
@@ -56,6 +59,7 @@ public final class OntologyEvidenceCorpus {
   private VerifiedSourceTextSet preparedSource;
 
   private OntologyEvidenceCorpus(EntryEvidenceReader.Directory directory) {
+    businessLinkNavigation = false;
     sourceIdentity =
         "entry-evidence-index:"
             + OntologyReadingPacket.sha256(directory.indexCanonicalJson().copyToByteArray());
@@ -69,6 +73,7 @@ public final class OntologyEvidenceCorpus {
     FrontendCoverageIndex frontendCoverage =
         frontendCoverageByRequest(directory.frontendCoverageCanonicalJsonl());
     frontendCoverageByRequest = frontendCoverage.requestsWithPageContext();
+    frontendContextCoverage = savedPageContexts(directory.frontendCoverageCanonicalJsonl());
     frontendRequestCount = frontendCoverage.requestCount();
     schemaSourceCount = 0;
     Map<String, EntryEvidenceReader.EntryDocument> byId = new LinkedHashMap<>();
@@ -173,6 +178,7 @@ public final class OntologyEvidenceCorpus {
     statementsByTable = freeze(tables);
     statementsByColumn = freeze(columns);
     evidenceByUse = Map.copyOf(parsedEvidence);
+    controlsByExpression = controlIndex(evidenceByUse);
     statistics = new Statistics(unitUses, uniqueUnits.size(), largestUnitBytes);
     aliases = AliasCatalog.create(this);
   }
@@ -183,6 +189,23 @@ public final class OntologyEvidenceCorpus {
       Map<String, List<UnitHandle>> augmentedUnitsByEntry,
       Map<UnitHandle, EvidenceUnit> augmentedEvidenceByUse,
       int selectedSchemaSourceCount) {
+    this(
+        base,
+        augmentedSourceIdentity,
+        augmentedUnitsByEntry,
+        augmentedEvidenceByUse,
+        selectedSchemaSourceCount,
+        base.businessLinkNavigation);
+  }
+
+  private OntologyEvidenceCorpus(
+      OntologyEvidenceCorpus base,
+      String augmentedSourceIdentity,
+      Map<String, List<UnitHandle>> augmentedUnitsByEntry,
+      Map<UnitHandle, EvidenceUnit> augmentedEvidenceByUse,
+      int selectedSchemaSourceCount,
+      boolean businessLinkNavigation) {
+    this.businessLinkNavigation = businessLinkNavigation;
     sourceIdentity = augmentedSourceIdentity;
     sourceInventoryWire = base.sourceInventoryWire;
     sourceSnapshotId = base.sourceSnapshotId;
@@ -195,7 +218,9 @@ public final class OntologyEvidenceCorpus {
     statementsByTable = base.statementsByTable;
     statementsByColumn = base.statementsByColumn;
     evidenceByUse = Map.copyOf(augmentedEvidenceByUse);
+    controlsByExpression = controlIndex(evidenceByUse);
     frontendCoverageByRequest = base.frontendCoverageByRequest;
+    frontendContextCoverage = base.frontendContextCoverage;
     frontendRequestCount = base.frontendRequestCount;
     schemaSourceCount = selectedSchemaSourceCount;
     Set<String> unique = new HashSet<>();
@@ -1134,6 +1159,184 @@ public final class OntologyEvidenceCorpus {
     return aliases;
   }
 
+  /** Separate navigation rules for new business-link Corpus publications. */
+  public OntologyEvidenceCorpus withBusinessLinkNavigation() {
+    if (businessLinkNavigation) {
+      return this;
+    }
+    Map<String, List<UnitHandle>> augmentedUnits = new LinkedHashMap<>();
+    Map<UnitHandle, EvidenceUnit> augmentedEvidence = new LinkedHashMap<>(evidenceByUse);
+    unitsByEntry.forEach(
+        (entryId, handles) -> {
+          LinkedHashSet<UnitHandle> selected = new LinkedHashSet<>(handles);
+          List<EvidenceUnit> frontendSources =
+              handles.stream()
+                  .filter(handle -> handle.kind() == UnitKind.FRONTEND_UNIT)
+                  .map(evidenceByUse::get)
+                  .toList();
+          for (JsonNode payload : frontendContextCoverage.values()) {
+            JsonNode context = payload.path("context");
+            boolean related = false;
+            for (JsonNode declaredSource : context.path("sourceUnits")) {
+              if (frontendSources.stream()
+                  .anyMatch(unit -> sameFrontendPhysicalUnit(declaredSource, unit.content()))) {
+                related = true;
+                break;
+              }
+            }
+            if (!related) {
+              continue;
+            }
+            // A physical-source candidate is not a proven HTTP match. Its original context,
+            // request IDs and saved coverage association remain unchanged in the model packet.
+            EvidenceUnit basis = frontendSources.get(0);
+            addContextEvidence(
+                entryId,
+                UnitKind.FRONTEND_PAGE_CONTEXT,
+                context.path("contextId").asText(),
+                context,
+                basis,
+                selected,
+                augmentedEvidence);
+            for (JsonNode source : payload.path("units")) {
+              if (!hasCompleteFrontendText(source)) {
+                throw new IllegalArgumentException("ONTOLOGY_PAGE_CONTEXT_SOURCE_UNIT_MISSING");
+              }
+              addContextEvidence(
+                  entryId,
+                  UnitKind.FRONTEND_UNIT,
+                  source.path("sourceUnitId").asText(),
+                  source,
+                  basis,
+                  selected,
+                  augmentedEvidence);
+            }
+          }
+          augmentedUnits.put(entryId, List.copyOf(selected));
+        });
+    return new OntologyEvidenceCorpus(
+        this, sourceIdentity, augmentedUnits, augmentedEvidence, schemaSourceCount, true);
+  }
+
+  /** Explicit new navigation family; historical Corpus instances remain false. */
+  public boolean usesBusinessLinkNavigation() {
+    return businessLinkNavigation;
+  }
+
+  public UnitPage controlUses(String expression, int offset, int limit) {
+    if (!businessLinkNavigation) {
+      throw new IllegalArgumentException("ONTOLOGY_NAVIGATION_RANGE_INVALID");
+    }
+    return unitPage(controlsByExpression, expression, offset, limit);
+  }
+
+  private void addContextEvidence(
+      String entryId,
+      UnitKind kind,
+      String id,
+      JsonNode content,
+      EvidenceUnit basis,
+      Set<UnitHandle> selected,
+      Map<UnitHandle, EvidenceUnit> evidence) {
+    if (id.isBlank()) {
+      throw new IllegalArgumentException("ONTOLOGY_PAGE_CONTEXT_SOURCE_UNIT_MISSING");
+    }
+    UnitHandle handle = new UnitHandle(entryId, kind, id);
+    EvidenceUnit addition =
+        new EvidenceUnit(
+            entryId,
+            kind,
+            id,
+            json.encodeCanonical(content),
+            basis.limitationCounts(),
+            basis.entryDescriptor());
+    EvidenceUnit previous = evidence.putIfAbsent(handle, addition);
+    if (previous != null && !previous.canonicalJson().equals(addition.canonicalJson())) {
+      throw new IllegalArgumentException("ONTOLOGY_PAGE_CONTEXT_SOURCE_UNIT_CONFLICT");
+    }
+    selected.add(handle);
+  }
+
+  private Map<String, JsonNode> savedPageContexts(ImmutableBytes coverage) {
+    Map<String, JsonNode> contexts = new TreeMap<>();
+    for (String line :
+        new String(coverage.copyToByteArray(), StandardCharsets.UTF_8).split("\\n")) {
+      if (line.isBlank()) {
+        continue;
+      }
+      JsonNode record =
+          json.parseCanonical(ImmutableBytes.copyOf(line.getBytes(StandardCharsets.UTF_8)));
+      if ("PAGE_CONTEXT_COVERAGE".equals(record.path("recordType").asText())) {
+        JsonNode payload = record.path("payload");
+        String id = payload.path("contextId").asText();
+        if (id.isBlank()
+            || !id.equals(payload.path("context").path("contextId").asText())
+            || !payload.path("units").isArray()
+            || contexts.putIfAbsent(id, payload) != null) {
+          throw new IllegalArgumentException("ONTOLOGY_PAGE_CONTEXT_SOURCE_UNIT_CONFLICT");
+        }
+      }
+    }
+    return Map.copyOf(contexts);
+  }
+
+  /** Exact entry-local page contexts using this physical frontend source unit. */
+  public List<UnitHandle> frontendPageContexts(UnitHandle source) {
+    Objects.requireNonNull(source, "frontend source unit");
+    if (source.kind() != UnitKind.FRONTEND_UNIT || !evidenceByUse.containsKey(source)) {
+      return List.of();
+    }
+    JsonNode physical = evidenceByUse.get(source).content();
+    List<UnitHandle> result = new ArrayList<>();
+    for (UnitHandle handle : unitsByEntry.getOrDefault(source.entryId(), List.of())) {
+      if (handle.kind() != UnitKind.FRONTEND_PAGE_CONTEXT) {
+        continue;
+      }
+      JsonNode context = evidenceByUse.get(handle).content();
+      for (JsonNode contextUnit : context.path("sourceUnits")) {
+        if (validFrontendContextUnitIdentity(contextUnit)
+            && sameFrontendPhysicalUnit(contextUnit, physical)) {
+          result.add(handle);
+          break;
+        }
+      }
+    }
+    result.sort(AliasCatalog.unitHandleOrder());
+    return List.copyOf(result);
+  }
+
+  private List<ClueKind> navigationClueKinds() {
+    return Arrays.stream(ClueKind.values())
+        .filter(kind -> businessLinkNavigation || kind != ClueKind.CONTROL_REFERENCE)
+        .toList();
+  }
+
+  private static Map<String, List<UnitHandle>> controlIndex(
+      Map<UnitHandle, EvidenceUnit> evidence) {
+    Map<String, LinkedHashSet<UnitHandle>> controls = new LinkedHashMap<>();
+    evidence.forEach(
+        (handle, unit) -> {
+          if (handle.kind() == UnitKind.JAVA_METHOD) {
+            for (JsonNode control : unit.content().path("controls")) {
+              String expression = savedControlExpression(control);
+              if (expression != null) {
+                add(controls, expression, handle);
+              }
+            }
+          }
+        });
+    return freeze(controls);
+  }
+
+  private static String savedControlExpression(JsonNode control) {
+    if (!Set.of("IF", "SWITCH", "LOOP").contains(control.path("kind").asText())
+        || !control.path("expression").isTextual()) {
+      return null;
+    }
+    String expression = control.path("expression").asText().trim();
+    return expression.isEmpty() ? null : expression;
+  }
+
   public UnitPage methodUses(String methodKey, int offset, int limit) {
     return unitPage(methodsByIdentity, methodKey, offset, limit);
   }
@@ -1172,7 +1375,7 @@ public final class OntologyEvidenceCorpus {
     }
     JsonNode entry = json.parseCanonical(documents.get(entryId).canonicalJson());
     Map<ClueKind, LinkedHashMap<String, NavigationClue>> byKind = new LinkedHashMap<>();
-    for (ClueKind kind : ClueKind.values()) {
+    for (ClueKind kind : navigationClueKinds()) {
       byKind.put(kind, new LinkedHashMap<>());
     }
     for (JsonNode method : entry.path("java").path("methods")) {
@@ -1188,6 +1391,23 @@ public final class OntologyEvidenceCorpus {
               new UnitHandle(entryId, UnitKind.JAVA_METHOD, methodKey),
               methodsByIdentity.getOrDefault(methodKey, List.of()).size(),
               json.encodeCanonical(method).size()));
+      if (businessLinkNavigation) {
+        for (JsonNode control : method.path("controls")) {
+          String expression = savedControlExpression(control);
+          if (expression != null) {
+            addClue(
+                byKind.get(ClueKind.CONTROL_REFERENCE),
+                expression,
+                new NavigationClue(
+                    ClueKind.CONTROL_REFERENCE,
+                    expression,
+                    expression,
+                    new UnitHandle(entryId, UnitKind.JAVA_METHOD, methodKey),
+                    controlsByExpression.getOrDefault(expression, List.of()).size(),
+                    json.encodeCanonical(method).size()));
+          }
+        }
+      }
     }
     for (JsonNode statement : entry.path("persistence").path("statements")) {
       String statementRef = originalId(statement, UnitKind.XML_STATEMENT);
@@ -1222,7 +1442,7 @@ public final class OntologyEvidenceCorpus {
     }
     List<NavigationClue> shown = new ArrayList<>();
     Map<ClueKind, ClueDisclosure> disclosure = new LinkedHashMap<>();
-    for (ClueKind kind : ClueKind.values()) {
+    for (ClueKind kind : navigationClueKinds()) {
       List<NavigationClue> clues =
           byKind.get(kind).values().stream()
               .sorted(java.util.Comparator.comparing(NavigationClue::lookupKey))
@@ -1467,7 +1687,6 @@ public final class OntologyEvidenceCorpus {
     }
     JsonNode context =
         read(contextHandle.entryId(), contextHandle.kind(), contextHandle.originalId()).content();
-    JsonNode entry = json.parseCanonical(document.canonicalJson());
     List<FrontendContextSource> result = new ArrayList<>();
     for (JsonNode contextUnit : context.path("sourceUnits")) {
       String unitRef = contextUnit.path("unitRef").asText();
@@ -1475,7 +1694,11 @@ public final class OntologyEvidenceCorpus {
         throw new IllegalArgumentException("ONTOLOGY_PAGE_CONTEXT_SOURCE_UNIT_MISSING");
       }
       List<JsonNode> matches = new ArrayList<>();
-      for (JsonNode entryUnit : entry.path("frontend").path("units")) {
+      for (UnitHandle available : unitsByEntry.getOrDefault(contextHandle.entryId(), List.of())) {
+        if (available.kind() != UnitKind.FRONTEND_UNIT) {
+          continue;
+        }
+        JsonNode entryUnit = evidenceByUse.get(available).content();
         if (sameFrontendPhysicalUnit(contextUnit, entryUnit)) {
           matches.add(entryUnit);
         }
@@ -1799,6 +2022,7 @@ public final class OntologyEvidenceCorpus {
       case METHOD -> uses = methodsByIdentity.getOrDefault(lookupKey, List.of());
       case TABLE -> uses = statementsByTable.getOrDefault(lookupKey, List.of());
       case COLUMN -> uses = statementsByColumn.getOrDefault(lookupKey, List.of());
+      case CONTROL_REFERENCE -> uses = controlsByExpression.getOrDefault(lookupKey, List.of());
       case STATEMENT -> {
         uses = new ArrayList<>();
         for (List<UnitHandle> entryUnits : unitsByEntry.values()) {
@@ -2336,7 +2560,8 @@ public final class OntologyEvidenceCorpus {
     METHOD,
     STATEMENT,
     TABLE,
-    COLUMN
+    COLUMN,
+    CONTROL_REFERENCE
   }
 
   public record NavigationClue(

@@ -5,6 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.networknt.schema.Schema;
+import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.SpecificationVersion;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
@@ -15,6 +20,7 @@ import org.sourceanalysis.app.artifact.ImmutableBytes;
 
 final class OntologyProviderSchemaTest {
   private final CanonicalJsonCodec json = new CanonicalJsonCodec();
+  private final ObjectMapper mapper = new ObjectMapper();
 
   @Test
   void everyOntologyOutputSchemaHasExplicitProviderTypesWithoutLosingLocalConstraints() {
@@ -47,6 +53,89 @@ final class OntologyProviderSchemaTest {
       }
       assertTypes(provider, file);
     }
+  }
+
+  @Test
+  void formalReadingV2ProviderProjectionUsesSupportedCompositionWithoutChangingLocalSchema() {
+    ImmutableBytes validationSchema = formalReadingV2Schema();
+    JsonNode localBeforeProjection = json.parseCanonical(validationSchema);
+
+    JsonNode provider = json.parseCanonical(OntologyProviderSchema.from(validationSchema));
+
+    assertTrue(localBeforeProjection.path("$defs").path("unresolved").has("allOf"));
+    assertTrue(localBeforeProjection.path("properties").path("actions").path("items").has("oneOf"));
+    assertFalse(containsKeyword(provider, "allOf"));
+    assertFalse(containsKeyword(provider, "if"));
+    assertFalse(containsKeyword(provider, "then"));
+    assertFalse(containsKeyword(provider, "oneOf"));
+    assertTrue(provider.path("properties").path("actions").path("items").path("anyOf").isArray());
+    assertEquals(3, provider.path("properties").path("actions").path("items").path("anyOf").size());
+    assertEquals(localBeforeProjection, json.parseCanonical(validationSchema));
+  }
+
+  @Test
+  void originalFormalReadingV2SchemaStillRejectsEmptyExclusionAndInvalidAction() {
+    Schema localSchema =
+        SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
+            .getSchema(json.parseCanonical(formalReadingV2Schema()));
+    ObjectNode emptyExclusion = validReadingResponse();
+    emptyExclusion
+        .putArray("unresolved")
+        .addObject()
+        .put("reason", "The task cannot establish this source.")
+        .put("disposition", "EXCLUDED_FROM_TASK")
+        .putArray("unitUses");
+    ObjectNode invalidAction = validReadingResponse();
+    invalidAction.withArray("actions").addObject().put("kind", "READ").put("unitRef", "U1");
+
+    assertFalse(localSchema.validate(emptyExclusion).isEmpty());
+    assertFalse(localSchema.validate(invalidAction).isEmpty());
+  }
+
+  private ImmutableBytes formalReadingV2Schema() {
+    return json.canonicalizeStrictJson(
+        ImmutableBytes.copyOf(
+            OntologyTaskRunner.resource("formal-reading-v2.schema.json")
+                .getBytes(StandardCharsets.UTF_8)));
+  }
+
+  private ObjectNode validReadingResponse() {
+    ObjectNode response = mapper.createObjectNode();
+    response.put("schemaVersion", "reading-response-v4");
+    response.put("decision", "NEEDS_MORE_MATERIAL");
+    selection(response.putObject("entrySelection"));
+    selection(response.putObject("clueSelection"));
+    response.putArray("retainedUnitUses");
+    response.putArray("requiredUnitUses");
+    response.putArray("actions");
+    response.putArray("unresolved");
+    return response;
+  }
+
+  private static void selection(ObjectNode selection) {
+    selection.putArray("addRefs");
+    selection.putArray("remove");
+  }
+
+  private static boolean containsKeyword(JsonNode schema, String keyword) {
+    if (schema.isObject()) {
+      if (schema.has(keyword)) {
+        return true;
+      }
+      var children = schema.elements();
+      while (children.hasNext()) {
+        if (containsKeyword(children.next(), keyword)) {
+          return true;
+        }
+      }
+    } else if (schema.isArray()) {
+      for (JsonNode child : schema) {
+        if (containsKeyword(child, keyword)) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   private static void assertTypes(JsonNode schema, String file) {

@@ -1,0 +1,6 @@
+Return the closed ontology-typed-candidate-v4 ACTION shape; REVIEW uses review-v4.
+Refine operations for the selected reviewed B objects: actual target, conditions, rejection,
+effect, and whether the code is a query rather than a mutation. Keep exact source expressions
+and unknowns. Do not infer a complete lifecycle, invent an object, or claim a runtime result.
+Use A operation and R rule local IDs; object refs are only actual reviewed B keys.
+Use packet S for evidenceRefs, not K/C/CT/CO. Non-RELATE clueDispositions is [].

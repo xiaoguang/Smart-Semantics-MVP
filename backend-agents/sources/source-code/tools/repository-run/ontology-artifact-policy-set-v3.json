@@ -1,0 +1,167 @@
+{
+  "schemaVersion": "artifact-policy-registry-policy-set-v1",
+  "policies": [
+    {
+      "artifactType": "ONTOLOGY",
+      "schemaVersion": "ontology-v1",
+      "artifactIdPrefix": "ontology",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "ONTOLOGY",
+      "schemaVersion": "ontology-v2",
+      "artifactIdPrefix": "ontology",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "ONTOLOGY_CORPUS",
+      "schemaVersion": "ontology-corpus-v1",
+      "artifactIdPrefix": "ontology-corpus",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "ONTOLOGY_CORPUS",
+      "schemaVersion": "ontology-corpus-v2",
+      "artifactIdPrefix": "ontology-corpus",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "ONTOLOGY_COVERAGE",
+      "schemaVersion": "ontology-coverage-v1",
+      "artifactIdPrefix": "ontology-coverage",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "ONTOLOGY_COVERAGE",
+      "schemaVersion": "ontology-coverage-v2",
+      "artifactIdPrefix": "ontology-coverage",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "ONTOLOGY_COVERAGE",
+      "schemaVersion": "ontology-coverage-v3",
+      "artifactIdPrefix": "ontology-coverage",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "ONTOLOGY_IDENTIFICATION",
+      "schemaVersion": "ontology-identification-v1",
+      "artifactIdPrefix": "ontology-identification",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "ONTOLOGY_IDENTIFICATION",
+      "schemaVersion": "ontology-identification-v2",
+      "artifactIdPrefix": "ontology-identification",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "ONTOLOGY_IDENTIFICATION",
+      "schemaVersion": "ontology-identification-v3",
+      "artifactIdPrefix": "ontology-identification",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "ONTOLOGY_RELATIONS",
+      "schemaVersion": "ontology-relations-v1",
+      "artifactIdPrefix": "ontology-relations",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "ONTOLOGY_RELATIONS",
+      "schemaVersion": "ontology-relations-v2",
+      "artifactIdPrefix": "ontology-relations",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "ONTOLOGY_RELATIONS",
+      "schemaVersion": "ontology-relations-v3",
+      "artifactIdPrefix": "ontology-relations",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "ONTOLOGY_REVIEW",
+      "schemaVersion": "ontology-review-v1",
+      "artifactIdPrefix": "ontology-review",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "ONTOLOGY_REVIEW",
+      "schemaVersion": "ontology-review-v2",
+      "artifactIdPrefix": "ontology-review",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "ONTOLOGY_REVIEW",
+      "schemaVersion": "ontology-review-v3",
+      "artifactIdPrefix": "ontology-review",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "ONTOLOGY_SOURCE_INDEX",
+      "schemaVersion": "ontology-source-v1",
+      "artifactIdPrefix": "ontology-sources",
+      "mediaType": "application/x-ndjson",
+      "envelopeKind": "CANONICAL_JSONL",
+      "emptyJsonlAllowed": true,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    },
+    {
+      "artifactType": "SCHEMA_EVIDENCE",
+      "schemaVersion": "schema-evidence-v1",
+      "artifactIdPrefix": "schema-evidence",
+      "mediaType": "application/json",
+      "envelopeKind": "STANDALONE_JSON",
+      "emptyJsonlAllowed": false,
+      "publicContentExposure": "PATH_FREE_COMPLETE_UTF8"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+Return the closed ontology-typed-candidate-v4 ANALYTIC shape; REVIEW uses review-v4.
+For each actual calculation separate identity attributes, filter dimensions, grouping
+dimensions, measures, and combined metrics. Preserve grain, expression, units, time scope,
+post-processing, and unknowns from the selected source. A document ID is not automatically
+a business dimension; a numeric field is not automatically a measure or KPI. Do not
+invent aggregation or executable metric behavior. Use D/V/M IDs and actual reviewed B
+objects or current-task component refs as the schema requires. Evidence is packet S only;
+non-RELATE clueDispositions is [].

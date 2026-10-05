@@ -1,6 +1,6 @@
 # 本体识别：Skill、CLI、模型提示词与可观察工作流
 
-状态：2026-10-05，固定客户O0–O3已通过正式命令有限结束、保存和查询。O1六任务REVIEWED；O2财务和统计REVIEWED、采购关系因最终scope错误REJECTED；O3部分发布四文件，九项声明义务保留为八REVIEWED/一REJECTED，覆盖INCOMPLETE。18份真实请求的完整原文、用途、限制、同题目录及同包审阅已核对；模型遗漏和错误单列，不由Java补业务答案。最后复审两项框架缺陷均已RED→GREEN：8129直接回归20项全绿；最终质量6695通过（767文件格式清洁、SpotBugs零发现/错误、PMD通过，UT/IT跳过）。实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)，不将模型拒绝和残余误读改写成业务成功。准确完整ID、实际成本和结果见[验收记录](../../supplements/ontology-formal-acceptance-20261003.md)，剩余动作见[稳定性计划](../../plans/ontology-stability-implementation-plan.md)。不宣称自主全仓、任意小窗口兼容或模型零错误；旧MD路径和历史结果保持原状。
+状态：业务联系优先正式工程、骨架发布和跨运行财务/统计细化已完成，最终129项直接回归及同代码质量通过；四文件重开字节一致。**业务覆盖、小窗口及浏览器呈现验收仍部分未通过/未验**，不宣称完整采购主链、全仓自主发现或跨项目同等质量。当前实际运行、材料成本、结果及剩余义务由[正式验收](../../supplements/ontology-business-link-formal-acceptance-20261005.md)统一维护；[前序稳定性18请求](../../supplements/ontology-formal-acceptance-20261003.md)仍属原版本，旧MD及历史文件不变。本轮通过原[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)交付。
 
 ## 1. 推荐方案与可修改面
 
@@ -17,6 +17,8 @@
 Prompt不能修改Schema、短号映射、来源/排除检查、投影算法或保存合同。改变这些机制须明确进入开发扩展，不由宿主Agent临时补脚本/字段/结果。Java结构检查不能保证模型一定遵守语义指令。
 
 ## 2. 四个操作，六个处理环节
+
+最新顺序由[业务联系优先详细设计](business-link-first-design.md#5-总流程和四个命令)维护：O0→O1最小对象→O2具体联系→O3业务骨架，再以新O1细化操作/分析和必要的新O2、新O3扩展。scope-v2、外部已审对象绑定、新四文件及其正式保存链已有scripted定向结果；离线总览查询、DISCOVERY范围约束和真实局部验收仍在集成验证，不将这些目标当成客户验收完成。旧格式继续按准确历史合同读取。
 
 以下四个命令已注册并通过限定正式运行测试，包括scripted QUESTION＋MODEL阅读和有限DDL。当前紧凑材料、隔离和查询已有直接回归，格式、SpotBugs及PMD检查通过；客户三例O0–O3与18份实际请求已核验，采购关系局部拒绝仍完整返回；不能将这项限定验收说成所有模式或模型语义正确：
 
@@ -82,7 +84,7 @@ QUESTION由用户给普通业务问题，不要求正确Controller/字段；DISC
 - SURVEY输入版本为`ontology-survey-input-v3`，响应为`ontology-survey-response-v3`。输入只含当前有界导航、实际E/K短键、具体共同项、展示/未展示范围及容量上限；完整来源映射留程序侧。响应必需`schemaVersion / systemHypotheses / questions / unresolved`。hypothesis字段为`type / observedEntryRefs / uncertainty`；question字段为`questionId / question / candidateEntryRefs / clueRefs / searchTerms`。questionId是本次响应内唯一的Q短键；E/K只能引用本次实际展示的正确类别，字符串不是已确认业务结论。数组允许为空，未知明确保存。
 - Java按已保存调查的确定顺序为每条实际问题分配汇总范围内唯一的`questionRef`（Q短键），保存其原始响应局部questionId、实际调查jobKey/页归属、问题全文及E/K映射。不同页的Q1不合并；页/任务长身份不要求模型抄写。重排模型响应不能把一个短键解释成另一问题；映射内容参与输入身份。
 - PRIORITIZE输入版本为`ontology-prioritize-input-v4`，响应为`ontology-prioritize-response-v4`。输入仅含上述实际问题的`questionRef / question / candidateEntryRefs / clueRefs`、实际不确定性及有限选择/调用边界，不再重复完整导航或源码。响应必需`schemaVersion / selectedQuestions / deferredQuestions / unresolved`。选中项字段为`questionRef / specificQuestion / selectionReason / currentUnknowns / taskKinds`；延期项为`questionRef / reason`。选题可以收窄问法，但不得重写、增加或丢失原问题的候选E/K集合；该集合由Java从准确questionRef恢复，而不是让模型再次抄写。
-- taskKinds只允许OBJECT、ACTION、ANALYTIC；每个实际选中问题必须先有OBJECT，另外两类按需要选，不强制齐全。RELATE仅由O2执行。Java生成唯一任务标签，转换为现有严格Scope/Question/Task，不引入第二套范围语言。MODEL任务从空正文开始，候选入口持续可见；已审对象按已有依赖规则传给后续任务。
+- 历史profile的taskKinds允许OBJECT、ACTION、ANALYTIC；每个实际选中问题先有OBJECT，另外两类按需要选，不强制齐全。RELATE仅由O2执行。Java生成唯一任务标签，转换为现有严格Scope/Question/Task，不引入第二套范围语言。MODEL任务从空正文开始，候选入口持续可见；已审对象按准确依赖传给后续任务。scope-v2的SKELETON调查仅允许OBJECT，关系交给O2；ENRICHMENT按本题或外部已审对象依赖执行所需操作/分析任务，不沿用旧profile混写。该分派已有直接正式运行回归，实际自主调查质量另验。
 - 重复或不属于本次输入的Q/E/K、错误类别及非法任务顺序直接拒绝；不靠同名、上一页、模糊匹配或宿主Agent补值。未在选中/延期数组出现的实际问题由程序记录`NOT_SELECTED_WITHIN_DECLARED_LIMIT`，不当作处理成功。调查或选题返回空结果只表示本次未提出或未选中任务，不能声明全仓本体已识别。
 - 上限来自既有maxNavigationEntries、maxRequestBytes、maxOutputBytes和剩余maxRequests；每个实际请求计入同一有限额度。它们限制派发和封套，不保证全部题完成。需要的后续请求没有额度时保留UNPROCESSED，不自动追加额度或减去失败请求。Java保存页覆盖、问题选择及真实阅读分别的处置；只准备导航或正文不计为模型已读。
 
@@ -111,7 +113,9 @@ Java检查已申报必要单元是否真正入模，不能自己保证语义充�
 
 按scope只运行需要的任务；先OBJECT，其他任务独立阅读，不硬并全部材料。下游获得已审定义及来源索引，相关关系/规则的REVIEW仍须实际原文。
 
-**已接线并通过限定测试的依赖语义：** O1的ACTION/ANALYTIC只依赖同题排在它之前的全部OBJECT，不使用其它题的累计对象目录冒充前置成功；缺依赖者UNPROCESSED/DEPENDENCY_NOT_REVIEWED、零派发。ACTION失败不阻断只依赖OBJECT的ANALYTIC，也不阻断其它问题。O2用新版selection的明确objectSources恢复对象任务；QUESTION范围已验证，DISCOVERY保存问题分派仍需专项回归。准确字段与版本见[contracts§11.6](contracts.md#116-本次新增目标稳定证据与单任务隔离待实施)。不增加通用DAG或另一执行框架。
+**最新正式顺序：** SKELETON只完成最小OBJECT及审阅，先接O2/O3生成业务图；身份完整性、基数及所有状态规则不是显示已有联系的前提。ENRICHMENT的ACTION/ANALYTIC可以引用同题前置OBJECT或准确外部O1问题的已审对象。两种来源均已接通配置、任务身份、恢复及O3上游闭包的scripted正式测试；不能把其它题累计目录当作捷径。真实骨架及后续细化结果按[正式验收状态](../../supplements/ontology-business-link-formal-acceptance-20261005.md)单独报告。
+
+**已接线并通过限定测试的依赖语义：** O1的ACTION/ANALYTIC只依赖同题排在它之前的全部OBJECT，不使用其它题的累计对象目录冒充前置成功；缺依赖者UNPROCESSED/DEPENDENCY_NOT_REVIEWED、零派发。ACTION失败不阻断只依赖OBJECT的ANALYTIC，也不阻断其它问题。O2用新版selection的明确objectSources恢复对象任务；QUESTION范围已验证，DISCOVERY保存问题分派已有scripted回归，真实自主选材质量另验。准确字段与版本见[contracts§11.6](contracts.md#116-稳定证据与单任务隔离已接线限定验收中)。不增加通用DAG或另一执行框架。
 
 ANALYTIC同包候选的V/D/M可以互相依赖，但在完整REVIEW及组件校验通过前都不供其它任务使用。最终删除组件须同步修正指标或移到unresolved，不必额外增加模型阶段。ACTION规则的owner也可以是同包Operation。正式typed-v3只向模型投影B/B.P短键和机械重映射后的结构引用；完整Corpus/任务/review身份仅保留在私有catalog映射和journal。字段形状与unresolved/identityDecisions的准确位置由[contracts§7](contracts.md#71-正式任务字段可组装不让程序再读中文补结构)唯一维护。
 
@@ -210,7 +214,7 @@ CLI必须结束并返回完整taskOutcomes、已保存部分和未执行原因�
 | 模型/业务 | 明确问题的实际定义/规则质量、原文核对及残余错误 | 任意弱模型必答对或自动纠错 |
 | 覆盖/可移植性 | 已发现对象和任务有处置、CLI/Skill共享说明可执行 | 穷尽全部业务、所有模型/宿主已适配 |
 
-两题辅助PoC已支持材料/局部联系方向；选材人工，维度为空，两金额定义不是完整指标体系。正式CLI、DDL全dump、全局对象统一、自主全仓和任意小窗口未证明。
+两题辅助PoC已支持材料/局部联系方向；选材人工，维度为空，两金额定义不是完整指标体系。正式CLI已有三个局部样例的限定验收，不能继续记作未接通；DDL全dump、全局对象统一、自主全仓和任意小窗口未证明。2026-10-05增量实验支持分支查漏及可逆编码，但两题封套仍约140–166KiB、PAGE_CONTEXT未验收，不能冒称新的正式路径通过。
 
 正式实现先以真实保存片段及非ERP fixture离线跑稳材料、状态、Prompt、错误稿REVIEW、ID和保存查询，再按有限真实范围验收；不继续用产品模型修实验驱动。框架不追求模型零错，也不把漏材料归给模型。
 
@@ -218,6 +222,13 @@ CLI必须结束并返回完整taskOutcomes、已保存部分和未执行原因�
 
 纳入backlog26紧凑投影/真实成本/范围保持，27前端选择回调/保存单元正式保留，28弱模型及可纠正性硬约束；同时设计早期短号、可配置业务/沟通Prompt、可选DDL证据、typed端点/指标合同、正式CLI/查询。
 
+以上前序限定工程已有对应验收，不重做。[backlog32](../../supplements/implementation-lessons-and-followups.md#32-业务联系优先与已审对象细化接线)新增的共同项/分支导航、精确调用行/用途去重、页面上下文反查、骨架/细化依赖及图查询已有生产接线和直接验证；真实局部业务图尚未验收，本项不关闭。旧生产合同与新版本分别读取。
+
 延期全仓发现验收、旧Activity适配、完整采购生命周期、动态SQL执行/实例采集、Foundry部署、跨版本增量复用、通用解释器/图平台。27仅补已有parser支持模式，不借本体设计扩大JS能力。
 
 改动清单与旧计划门禁调整见[implementation-delta](implementation-delta.md)。本页维护已批准方案及当前实施边界；它不授予模型调用许可。三个正式样例已有本次收尾范围的授权；先完成离线贯通，再以每运行有限配置执行，不继承旧PoC累计预算反复阻断同范围程序修复。扩大来源、模型或业务范围仍须另行确认。
+## 13. 实际机械引用与显式冻结
+
+新通用Prompt明确：当前所有scope.questionRef取本次input.questionId；只有reviewedCatalog.entries是此前已审定义，其对象引用取catalogRef及完整propertyRefs，其definition.localId是历史值。actualDraft及本次返回的新定义使用当前任务局部编号，不要求先存在于reviewedCatalog；OBJECT目录为空是正常情形。当前属性引用为O1.P1形式；没有身份依据时保留对象并记录PARTIAL与identities未知，不能因为此前目录为空删掉有原文支持的新对象。未解决项的knownDefinitionRefs承载B引用，relatedLocalDefinitionRefs只承载本任务返回的定义，不互换。OBJECT保留源码分支确实区分的业务种类，不因同表/实体类折叠；不支持的身份和规则仍未知。
+
+阅读中的requiredUnitUses声明需要哪些单元，不执行读取；已显示但缺正文的单元须READ，同样的QUERY不是读取。MODEL选材失败不能称为成功。可把保存的实际模型选单交Java进行EXPLICIT冻结；这不是宿主补写原文或业务答案，但必须披露没有验证新的自主选材。原始失败、实际选单与新运行分别保留。

@@ -1,6 +1,6 @@
 # 实验到正式本体框架：详细改动与验收对应
 
-状态：2026-10-05，固定客户O0–O3已通过正式命令有限结束、保存和查询。O1六任务REVIEWED；O2财务和统计REVIEWED、采购关系因最终scope错误REJECTED；O3部分发布四文件，九项声明义务保留为八REVIEWED/一REJECTED，覆盖INCOMPLETE。18份真实请求的完整原文、用途、限制、同题目录及同包审阅已核对；模型遗漏和错误单列，不由Java补业务答案。最后复审两项框架缺陷均已RED→GREEN：8129直接回归20项全绿；最终质量6695通过（767文件格式清洁、SpotBugs零发现/错误、PMD通过，UT/IT跳过）。实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)，不将模型拒绝和残余误读改写成业务成功。准确完整ID、实际成本和结果见[验收记录](../../supplements/ontology-formal-acceptance-20261003.md)，剩余动作见[稳定性计划](../../plans/ontology-stability-implementation-plan.md)。不宣称自主全仓、任意小窗口兼容或模型零错误；旧MD路径和历史结果保持原状。
+状态：本轮业务联系优先工程接线、真实骨架、财务/统计跨运行细化及四文件重开已完成，129项直接回归及同代码质量通过。**实际业务覆盖和小窗口验收部分通过**，未识别完整采购主链、未证明任意小窗口；浏览器布局未验。准确运行、139次单元出现/20份请求正文核验、成本、9步实现—测试对应和新增/保留清单见[正式验收](../../supplements/ontology-business-link-formal-acceptance-20261005.md)。以下A–H及表中18请求等明确属于[前序稳定性实施](../../supplements/ontology-formal-acceptance-20261003.md)的保留记录；当前新增范围由[业务联系设计](business-link-first-design.md)拥有，不拿旧结果代替新模型验收。通过现有[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)交付；旧MD、历史和前序暂存实验保持。
 
 ## 1. 当前实现可用到哪里
 
@@ -171,3 +171,29 @@ inspect/artifact开放真实材料/选择/Prompt/原稿/REVIEW/映射/失败查�
 | 稳定证据、局部隔离、依赖与有限结束 | H的现有runtime/Provider/store接线 | `OntologyFormalRuntimeContractsTest`限定新增selectors；Provider叶层13项直接测试 | 正式提取/审阅、依赖、Provider边界、阅读坏响应局部隔离、完整处置查询、O3多上游及冲突不安装已定向通过；辅助原文/未确认限制实际入模和有界超限响应私有保存也已通过。v4、安全下一动作、具体组装诊断及独立owner的相同结果值比较均有直接GREEN；O2上限报告及三例18份实际请求/四文件已核对；最后两项边界20项GREEN、最终质量6695通过；实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35) |
 
 旧MD分析/Prompt/Schema/渲染/历史请求与结果不属于这些新生产职责。共享接口只加本体分支，最终需直接隔离回归及原保护清单核对；不能凭代码文件存在关闭backlog或把有限fixture称为全仓本体识别。
+
+## 7. 最新业务联系优先修订：按依赖顺序实施的差距
+
+详细owner为[business-link-first-design](business-link-first-design.md)，准确新字段见[contracts§11.7](contracts.md)。当前**实施中，尚未通过真实局部验收**；不重算上表已经通过的失败隔离、正式命令和前端生产修复；旧实验代码不原样注册为生产路线。合同与材料直接测试、骨架四文件和跨运行细化的scripted正式运行已取得结果；自主调查范围、无损图、最终质量及客户模型结果分别验收，不混为一个完成状态。
+
+| 顺序 | 前序可复用基线 | 本轮目标接线（当前工程状态见正式验收记录） | 可检查的完成依据 |
+| --- | --- | --- | --- |
+| 1. 先固定新合同 | 已有配置、scope-v1、typed-v3、coverage-v2及完整版本读取 | scope-v2的purpose/objectSources，typed-v4的displayRole/clueDispositions，Corpus-v2、材料v5、阶段/发布v3；同步producer/reader/policy/fixture | 历史文件原版可读；新字段不能被旧Schema宽松接受；错误版本在Provider前拒绝 |
+| 2. 技术线索与页面用途 | Corpus已有方法/Mapper/表/字段、完整单元及context→source物理匹配 | 从保存controls形成CONTROL_REFERENCE类K，新增完整前端单元→上下文反向匹配和直接邻居；不重跑parser | 同名不等于同身份，改名/non-ERP fixture通过；两页面共享源码不串参数，未匹配上下文准确保留 |
+| 3. 跨入口材料去重 | v4已筛选必要调用、保存CT/CO字典及逐位置限制；薄编码已测减少23.9% | 精确callRows/callUses分离、固定列、真实增量成本；不附全部私有调用、不截源码 | 解码与所选投影逐字段/原顺序相等；不同候选不合并；EXTRACT/REVIEW同包，大小按同材料比较 |
+| 4. 骨架与细化接线 | O1当前只有同题同run前置对象；O2已有准确外部对象来源，O3已有O2上游子集核验 | O1外部已审对象目录及依赖身份；骨架仅OBJECT→O2→早期O3；细化O1/O2→新O3；验证新增O1上游闭包 | 未审对象零派发；O3漏外部O1拒绝；多次发布保留历史、无裸B1串源和同名自动合并 |
+| 5. Prompt、覆盖与图 | 现有一次REVIEW、完整处置和查询可复用 | 通用单联系Prompt、已选K的明确处置、层级NOT_REQUESTED/实际分母、业务图及准确反查 | 不给采购链答案；图显示实际对象和具体机制，不只交定义数；未请求指标不制造失败，也不说全部识别 |
+| 6. 直接及真实验收 | 两个薄实验有实际原文/响应；正式Provider/store已有底座 | 零模型闭环先验机械部分，再有限真实同路径验证；旧MD保护核对 | 明确材料是否全交、模型遗漏/误读另列；小窗口写实际模型/容量/计数，不凭字节减少宣称通过 |
+
+### 准确的删除、保留与不扩大边界
+
+- 保留四命令、来源读取、R2辅助声明补读、一次审阅、任务局部失败、Provider期限、canonical store和历史查询；不是再写一套调度框架。
+- 保存任务形状/声明范围的机械校验收拢到`OntologySavedTaskContract`；运行观察投影收拢到已有`OntologyOperationObservationV2`；运行器仍负责准入和执行。分拆不修改历史wire、失败含义或业务判断，也不提高静态质量阈值。
+- 新生产投影退出重复的跨入口调用正文，但完整私有记录仍保留，callUses不得消失。只有生产消费者和历史依赖核对后，才删除被新代码替换且确无消费者的便利投影；不清理旧MD模式。
+- 不合并业务对象、不新增行业规则、不新增全入口相似度/向量平台，不运行Maven/JDT或客户应用。DDL仍可选现有O0路径，不新增R5/数据库实例。
+- 薄实验当时没有验证新读PAGE_CONTEXT；当前consumer反向接线已有直接工程验证，不将已经关闭的R1/R4生产缺口重新说成未修复。薄实验两题约140–166KiB；新正式模型请求成本及指定窗口适配尚无结果。
+- 复查发现并修正O2原执行器忽略`readingMode=MODEL`、只按`unitUses`冻结的问题。正式RELATE现复用已有阅读协调器，阅读与提取/审阅共用预算；两条直接Agent/store测试验证实际选读成功及失败后K分母仍保存。新relations-v3用`readingSelections`分别保存原请求与实际E/K选择，历史v1/v2不补字段。重开还核对显式/未开始任务的原选单，以及已审MODEL任务冻结的K；不得人工填入正确原文代替实际选材。
+- 当前新consumer已从entry-local保存索引恢复精确页面上下文及完整正文；反查、不同页面实例和缺失/冲突源的直接测试通过。恢复时不再重复解析一份未使用的原入口JSON。此结论是工程测试，不是新真实模型选材或业务判断通过。
+- 先图后细化只降低问题范围，不保证模型必定找齐所有联系。跨项目机械约束由fixture验；跨真实项目质量须独立结果，不能根据管伊佳单例承诺相同质量。
+
+完成后应逐项用代码、直接测试、真实请求和产物对应本表；只写文档或增加字段不能关闭[backlog32](../../supplements/implementation-lessons-and-followups.md#32-业务联系优先与已审对象细化接线)。本次已启动的准确执行范围见[实施计划](../../plans/business-link-first-implementation-plan.md)与[执行记录](../../../progress/business-link-first-execution.md)，模型运行仍按用户授权范围进行。

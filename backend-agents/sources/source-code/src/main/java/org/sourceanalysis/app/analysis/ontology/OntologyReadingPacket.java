@@ -47,6 +47,7 @@ public final class OntologyReadingPacket {
   private final List<FormalCallSite> formalCallSites;
   private final List<FormalContextSource> formalContextSources;
   private final List<FormalContextRequest> formalContextRequests;
+  private final ImmutableBytes visibleClues;
   private final PacketCost cost;
 
   private OntologyReadingPacket(
@@ -61,6 +62,34 @@ public final class OntologyReadingPacket {
       List<FormalCallSite> formalCallSites,
       List<FormalContextSource> formalContextSources,
       List<FormalContextRequest> formalContextRequests) {
+    this(
+        sourceIdentity,
+        units,
+        entryLimitations,
+        entryDescriptors,
+        format,
+        evidenceUnitRefs,
+        entryRefs,
+        localRefsByUse,
+        formalCallSites,
+        formalContextSources,
+        formalContextRequests,
+        JSON.encodeCanonical(new ObjectMapper().createArrayNode()));
+  }
+
+  private OntologyReadingPacket(
+      String sourceIdentity,
+      List<PackedUnit> units,
+      Map<String, Map<String, Integer>> entryLimitations,
+      Map<String, EntryDescriptor> entryDescriptors,
+      PacketFormat format,
+      Map<String, String> evidenceUnitRefs,
+      Map<String, String> entryRefs,
+      Map<UnitHandle, String> localRefsByUse,
+      List<FormalCallSite> formalCallSites,
+      List<FormalContextSource> formalContextSources,
+      List<FormalContextRequest> formalContextRequests,
+      ImmutableBytes visibleClues) {
     this.sourceIdentity = sourceIdentity;
     this.units = List.copyOf(units);
     this.entryLimitations = Map.copyOf(entryLimitations);
@@ -72,6 +101,7 @@ public final class OntologyReadingPacket {
     this.formalCallSites = List.copyOf(formalCallSites);
     this.formalContextSources = List.copyOf(formalContextSources);
     this.formalContextRequests = List.copyOf(formalContextRequests);
+    this.visibleClues = Objects.requireNonNull(visibleClues, "visible clue context");
     Map<String, PackedUnit> local = new LinkedHashMap<>();
     for (PackedUnit unit : units) {
       if (local.putIfAbsent(unit.localRef(), unit) != null) {
@@ -91,6 +121,44 @@ public final class OntologyReadingPacket {
                 .filter(unit -> unit.kind() == UnitKind.JAVA_CALL)
                 .mapToInt(unit -> unit.canonicalJson().size())
                 .sum());
+  }
+
+  /** Attaches actual selected K meanings; short K identifiers alone are not model evidence. */
+  public OntologyReadingPacket withVisibleClues(OntologyEvidenceCorpus corpus, List<String> refs) {
+    if (format != PacketFormat.FORMAL_V5 || !sourceIdentity.equals(corpus.sourceIdentity())) {
+      throw new IllegalArgumentException("ONTOLOGY_FORMAL_CLUE_REFERENCE_INVALID");
+    }
+    ArrayNode context = new ObjectMapper().createArrayNode();
+    for (String ref : new TreeSet<>(refs)) {
+      var clue = corpus.aliases().clue(ref);
+      ObjectNode item = context.addObject();
+      item.put("ref", ref);
+      item.put("kind", clue.kind().name());
+      item.put("value", clue.keyDisplay());
+      item.put("totalUses", clue.totalUses());
+      ArrayNode uses = item.putArray("selectedUses");
+      for (UnitHandle use : corpus.aliases().clueUses(ref)) {
+        String localRef = localRefsByUse.get(use);
+        if (localRef != null) {
+          ObjectNode row = uses.addObject();
+          row.put("sourceRef", localRef);
+          row.put("entryRef", corpus.aliases().entryRef(use.entryId()));
+        }
+      }
+    }
+    return new OntologyReadingPacket(
+        sourceIdentity,
+        units,
+        entryLimitations,
+        entryDescriptors,
+        format,
+        evidenceUnitRefs,
+        entryRefs,
+        localRefsByUse,
+        formalCallSites,
+        formalContextSources,
+        formalContextRequests,
+        JSON.encodeCanonical(context));
   }
 
   public static OntologyReadingPacket of(String sourceIdentity, List<EvidenceUnit> selected) {
@@ -176,11 +244,32 @@ public final class OntologyReadingPacket {
     return formal(corpus, selected, maxUnitUtf8Bytes, PacketFormat.FORMAL_V4);
   }
 
+  /** New-format packet with exact shared call rows and independently retained entry uses. */
+  public static OntologyReadingPacket formalV5(
+      OntologyEvidenceCorpus corpus, List<UnitHandle> selected, int maxUnitUtf8Bytes) {
+    return formal(corpus, selected, maxUnitUtf8Bytes, PacketFormat.FORMAL_V5);
+  }
+
   private static OntologyReadingPacket formal(
       OntologyEvidenceCorpus corpus,
       List<UnitHandle> selected,
       int maxUnitUtf8Bytes,
       PacketFormat format) {
+    return formal(corpus, selected, maxUnitUtf8Bytes, format, true);
+  }
+
+  /** Replays an already frozen v5 set, without expanding its automatically added source units. */
+  static OntologyReadingPacket restoreFormalV5(
+      OntologyEvidenceCorpus corpus, List<UnitHandle> frozen, int maxUnitUtf8Bytes) {
+    return formal(corpus, frozen, maxUnitUtf8Bytes, PacketFormat.FORMAL_V5, false);
+  }
+
+  private static OntologyReadingPacket formal(
+      OntologyEvidenceCorpus corpus,
+      List<UnitHandle> selected,
+      int maxUnitUtf8Bytes,
+      PacketFormat format,
+      boolean expandSourceContexts) {
     if (corpus == null || selected == null || selected.isEmpty() || maxUnitUtf8Bytes < 1) {
       throw new IllegalArgumentException("ONTOLOGY_READING_PACKET_EMPTY");
     }
@@ -192,6 +281,16 @@ public final class OntologyReadingPacket {
       // Preserve the established selected-handle failure before resolving page dependencies.
       aliases.unitRef(handle);
       expanded.add(handle);
+      if (format == PacketFormat.FORMAL_V5
+          && expandSourceContexts
+          && handle.kind() == UnitKind.FRONTEND_UNIT) {
+        for (UnitHandle context : corpus.frontendPageContexts(handle)) {
+          expanded.add(context);
+          List<FrontendContextSource> required = corpus.frontendContextSources(context);
+          contextSources.put(context, required);
+          required.forEach(source -> expanded.add(source.unit()));
+        }
+      }
       if (handle.kind() == UnitKind.FRONTEND_PAGE_CONTEXT) {
         List<FrontendContextSource> required = corpus.frontendContextSources(handle);
         contextSources.put(handle, required);
@@ -325,7 +424,7 @@ public final class OntologyReadingPacket {
     if (!format.isFormal()) {
       throw new IllegalStateException("ONTOLOGY_FORMAL_PACKET_REQUIRED");
     }
-    return "EXACT_ATOMS_V1";
+    return format == PacketFormat.FORMAL_V5 ? "EXACT_ROWS_WITH_USES_V1" : "EXACT_ATOMS_V1";
   }
 
   public List<PackedUnit> units() {
@@ -375,6 +474,9 @@ public final class OntologyReadingPacket {
     ObjectNode root = mapper.createObjectNode();
     if (format.isFormal()) {
       root.put("schemaVersion", format.privateSchemaVersion());
+    }
+    if (format == PacketFormat.FORMAL_V5) {
+      root.set("visibleClues", JSON.parseCanonical(visibleClues));
     }
     root.put("sourceIdentity", sourceIdentity);
     ArrayNode content = root.putArray("units");
@@ -449,11 +551,19 @@ public final class OntologyReadingPacket {
     ObjectMapper mapper = new ObjectMapper();
     ObjectNode root = mapper.createObjectNode();
     root.put("schemaVersion", format.modelSchemaVersion());
+    if (format == PacketFormat.FORMAL_V5) {
+      root.set("visibleClues", JSON.parseCanonical(visibleClues));
+    }
     if (format.isFormal()) {
-      root.put("callContextEncoding", "EXACT_ATOMS_V1");
+      root.put("callContextEncoding", callContextEncoding());
       root.put(
           "callEvidenceInstruction",
-          "targetRefs resolve in callEvidence.targets and observationRefs resolve in"
+          (format == PacketFormat.FORMAL_V5
+                  ? "callUses in ordinal order reference callRows by rowRef (C); site columns are"
+                      + " startOffsetUtf16,lengthUtf16,startLine,endLine. Each use keeps its entry,"
+                      + " caller and selected targets. "
+                  : "")
+              + "targetRefs resolve in callEvidence.targets and observationRefs resolve in"
               + " callEvidence.observations; CT and CO are packet-local lookup keys for call"
               + " metadata only, not source citations, evidence references, object identifiers, or"
               + " ontology definitions.");
@@ -463,6 +573,9 @@ public final class OntologyReadingPacket {
     writeModelUnits(root, visibleEntryRefs);
     if (format.isFormal()) {
       writeFormalCallEvidence(root);
+      if (format == PacketFormat.FORMAL_V5) {
+        writeSharedCallRows(root);
+      }
     }
     return root;
   }
@@ -530,7 +643,7 @@ public final class OntologyReadingPacket {
             unit.content(),
             contextSourceRefs(unit.localRef()),
             contextRequestRefs(unit.localRef()))
-        : format == PacketFormat.FORMAL_V4
+        : format == PacketFormat.FORMAL_V4 || format == PacketFormat.FORMAL_V5
             ? OntologyModelProjection.projectFormalV4(
                 unit.kind(),
                 unit.content(),
@@ -548,7 +661,7 @@ public final class OntologyReadingPacket {
       String callRef = localRefsByUse.get(call.call());
       if (callerRef == null
           || !(requiresObservationContext(call.status())
-              || (format == PacketFormat.FORMAL_V4 && callRef != null))) {
+              || (hasV4CallDetails() && callRef != null))) {
         continue;
       }
       JsonNode canonicalCall = JSON.parseCanonical(call.canonicalCall());
@@ -579,7 +692,7 @@ public final class OntologyReadingPacket {
       String selectedCallRef = localRefsByUse.get(call.call());
       boolean callDetailsVisible =
           requiresObservationContext(call.status())
-              || (format == PacketFormat.FORMAL_V4 && selectedCallRef != null);
+              || (hasV4CallDetails() && selectedCallRef != null);
       if (selectedCallRef != null) {
         item.put("callRef", selectedCallRef);
       }
@@ -621,7 +734,7 @@ public final class OntologyReadingPacket {
       if (target.has("roles")) {
         selectedTargetNode.set("roles", target.path("roles").deepCopy());
       }
-      if (format == PacketFormat.FORMAL_V4) {
+      if (hasV4CallDetails()) {
         if (target.has("displayName")) {
           selectedTargetNode.set("displayName", target.path("displayName").deepCopy());
         }
@@ -648,9 +761,75 @@ public final class OntologyReadingPacket {
   }
 
   private JsonNode projectedCallTargets(JsonNode canonicalCall) {
-    return format == PacketFormat.FORMAL_V4
+    return hasV4CallDetails()
         ? OntologyModelProjection.projectCallTargetsV4(canonicalCall.path("targets"))
         : OntologyModelProjection.projectCallTargets(canonicalCall.path("targets"));
+  }
+
+  private boolean hasV4CallDetails() {
+    return format == PacketFormat.FORMAL_V4 || format == PacketFormat.FORMAL_V5;
+  }
+
+  /**
+   * Share only exact call facts from the same physical caller and full saved observation. S/E
+   * references and original traversal order stay in uses; semantic facts are never unioned.
+   */
+  private void writeSharedCallRows(ObjectNode root) {
+    JsonNode contexts = root.remove("callContext");
+    ArrayNode rows = root.putArray("callRows");
+    ArrayNode uses = root.putArray("callUses");
+    Map<ImmutableBytes, String> rowRefs = new LinkedHashMap<>();
+    int contextIndex = 0;
+    for (FormalCallSite call : formalCallSites) {
+      String callerRef = localRefsByUse.get(call.caller());
+      if (callerRef == null) {
+        continue;
+      }
+      ObjectNode row = ((ObjectNode) contexts.get(contextIndex)).deepCopy();
+      ObjectNode use = uses.addObject();
+      use.put("ordinal", contextIndex++);
+      use.put("entryRef", entryRefs.get(call.caller().entryId()));
+      use.set("fromRef", row.remove("fromRef"));
+      if (row.has("callRef")) {
+        use.set("callRef", row.remove("callRef"));
+      }
+      if (row.has("selectedTargets")) {
+        ArrayNode targetUses = use.putArray("selectedTargetRefs");
+        for (JsonNode target : row.path("selectedTargets")) {
+          targetUses.add(((ObjectNode) target).remove("targetRef"));
+        }
+      }
+      JsonNode site = row.path("site");
+      ArrayNode compactSite = row.putArray("site");
+      for (String field : List.of("startOffsetUtf16", "lengthUtf16", "startLine", "endLine")) {
+        compactSite.add(site.path(field).deepCopy());
+      }
+      ObjectNode identity = new ObjectMapper().createObjectNode();
+      identity.put("callerUnit", evidenceUnitRefs.get(callerRef));
+      ObjectNode savedCall = ((ObjectNode) JSON.parseCanonical(call.canonicalCall())).deepCopy();
+      savedCall.remove("callKey");
+      identity.set("savedCall", savedCall);
+      ArrayNode selectedIdentities = identity.putArray("selectedTargetUnits");
+      for (UnitHandle target : call.selectedTargets()) {
+        String targetRef = localRefsByUse.get(target);
+        if (targetRef != null) {
+          selectedIdentities.add(evidenceUnitRefs.get(targetRef));
+        }
+      }
+      identity.set("row", row);
+      ImmutableBytes key = JSON.encodeCanonical(identity);
+      String rowRef = rowRefs.get(key);
+      if (rowRef == null) {
+        rowRef = "C" + (rowRefs.size() + 1);
+        rowRefs.put(key, rowRef);
+        row.put("ref", rowRef);
+        rows.add(row);
+      }
+      use.put("rowRef", rowRef);
+    }
+    if (contextIndex != contexts.size()) {
+      throw new IllegalStateException("ONTOLOGY_CALL_USE_MAPPING_INVALID");
+    }
   }
 
   private static void collectCallEvidenceAtoms(
@@ -862,16 +1041,18 @@ public final class OntologyReadingPacket {
   private enum PacketFormat {
     LEGACY_V2,
     FORMAL_V3,
-    FORMAL_V4;
+    FORMAL_V4,
+    FORMAL_V5;
 
     private boolean isFormal() {
-      return this == FORMAL_V3 || this == FORMAL_V4;
+      return this != LEGACY_V2;
     }
 
     private String privateSchemaVersion() {
       return switch (this) {
         case FORMAL_V3 -> "ontology-reading-packet-v3";
         case FORMAL_V4 -> "ontology-reading-packet-v4";
+        case FORMAL_V5 -> "ontology-reading-packet-v5";
         case LEGACY_V2 -> throw new IllegalStateException("ONTOLOGY_FORMAL_PACKET_REQUIRED");
       };
     }
@@ -881,6 +1062,7 @@ public final class OntologyReadingPacket {
         case LEGACY_V2 -> "ontology-model-reading-v2";
         case FORMAL_V3 -> "ontology-model-reading-v3";
         case FORMAL_V4 -> "ontology-model-reading-v4";
+        case FORMAL_V5 -> "ontology-model-reading-v5";
       };
     }
   }

@@ -13,6 +13,73 @@ final class OntologyModelProjection {
 
   private OntologyModelProjection() {}
 
+  /** Reconstructs the ordered selected call projection, not omitted private call records. */
+  static ArrayNode decodeCallRows(JsonNode model) {
+    if (!"ontology-model-reading-v5".equals(model.path("schemaVersion").asText())
+        || !"EXACT_ROWS_WITH_USES_V1".equals(model.path("callContextEncoding").asText())
+        || !model.path("callRows").isArray()
+        || !model.path("callUses").isArray()) {
+      throw new IllegalArgumentException("ONTOLOGY_CALL_ROWS_INVALID");
+    }
+    Map<String, JsonNode> rows = new java.util.LinkedHashMap<>();
+    for (JsonNode row : model.path("callRows")) {
+      String ref = row.path("ref").asText();
+      if (!row.isObject()
+          || !ref.matches("C[1-9][0-9]*")
+          || rows.putIfAbsent(ref, row) != null
+          || !row.path("site").isArray()
+          || row.path("site").size() != 4) {
+        throw new IllegalArgumentException("ONTOLOGY_CALL_ROWS_INVALID");
+      }
+      for (JsonNode coordinate : row.path("site")) {
+        if (!coordinate.isIntegralNumber()) {
+          throw new IllegalArgumentException("ONTOLOGY_CALL_ROWS_INVALID");
+        }
+      }
+    }
+    ArrayNode decoded = MAPPER.createArrayNode();
+    for (JsonNode use : model.path("callUses")) {
+      JsonNode row = rows.get(use.path("rowRef").asText());
+      if (row == null
+          || !use.path("ordinal").isIntegralNumber()
+          || use.path("ordinal").asInt(-1) != decoded.size()
+          || !use.path("entryRef").asText().matches("E[1-9][0-9]*")
+          || !use.path("fromRef").asText().matches("S[1-9][0-9]*")) {
+        throw new IllegalArgumentException("ONTOLOGY_CALL_USES_INVALID");
+      }
+      ObjectNode item = ((ObjectNode) row).deepCopy();
+      item.remove("ref");
+      item.set("entryRef", use.path("entryRef").deepCopy());
+      item.set("fromRef", use.path("fromRef").deepCopy());
+      if (use.has("callRef")) {
+        item.set("callRef", use.path("callRef").deepCopy());
+      }
+      JsonNode site = item.path("site");
+      ObjectNode expandedSite = item.putObject("site");
+      String[] fields = {"startOffsetUtf16", "lengthUtf16", "startLine", "endLine"};
+      for (int index = 0; index < fields.length; index++) {
+        expandedSite.set(fields[index], site.get(index).deepCopy());
+      }
+      if (item.has("selectedTargets")) {
+        JsonNode targetUses = use.path("selectedTargetRefs");
+        if (!targetUses.isArray() || targetUses.size() != item.path("selectedTargets").size()) {
+          throw new IllegalArgumentException("ONTOLOGY_CALL_USES_INVALID");
+        }
+        for (int index = 0; index < targetUses.size(); index++) {
+          if (!targetUses.get(index).asText().matches("S[1-9][0-9]*")) {
+            throw new IllegalArgumentException("ONTOLOGY_CALL_USES_INVALID");
+          }
+          ((ObjectNode) item.path("selectedTargets").get(index))
+              .set("targetRef", targetUses.get(index).deepCopy());
+        }
+      } else if (use.has("selectedTargetRefs")) {
+        throw new IllegalArgumentException("ONTOLOGY_CALL_USES_INVALID");
+      }
+      decoded.add(item);
+    }
+    return decoded;
+  }
+
   static JsonNode project(UnitKind kind, JsonNode source) {
     ObjectNode visible = MAPPER.createObjectNode();
     switch (kind) {

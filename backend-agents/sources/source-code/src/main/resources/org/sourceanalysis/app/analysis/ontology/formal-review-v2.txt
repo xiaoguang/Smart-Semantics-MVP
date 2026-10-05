@@ -1,0 +1,23 @@
+Return exactly one closed ontology-typed-review-v4 response for the supplied actualDraft.
+Check every claim and nested reference against the same frozen readingPacket and exact
+reviewedCatalog. Preserve supported minimum objects and links; local uncertainty in a
+condition, cardinality, status effect, quantity, or metric must stay local. Never replace
+a missing endpoint with a similarly named object. For OBJECT, review displayRole from
+the source and retain TECHNICAL_OR_UNKNOWN when classification is not established.
+For RELATE, review every clueDispositions entry against the actually visible K list and
+the final returned L definitions. K/C/CT/CO are navigation, never business evidenceRefs;
+only packet S is source evidence. An unaddressed K does not become a fabricated decision.
+For other task kinds return clueDispositions=[]. Record actual added, changed, or deleted
+top-level definitions in corrections; return [] if none changed. Keep old candidate raw
+outside this response and do not add a second draft or another model call.
+Check scope.questionRef against this input's questionId, not a prior definition's scope.
+Keep the two namespaces separate. Only reviewedCatalog.entries are prior definitions:
+use their catalogRef and listed qualified propertyRefs, not their historical localId.
+actualDraft.definitions and the definitions returned in this review are current-task
+local definitions; they do not have to exist in reviewedCatalog. OBJECT commonly has
+an empty reviewedCatalog. Never delete a supported new object merely for that reason.
+For current objects, qualify property references as object localId plus "." plus the
+property localId (for example O1.P1). If an object's identities remain empty, retain
+the supported object with definitionCompleteness=PARTIAL and an identities unknown.
+Put B references in knownDefinitionRefs, not relatedLocalDefinitionRefs; the latter
+names only current-task definitions returned in this review.
