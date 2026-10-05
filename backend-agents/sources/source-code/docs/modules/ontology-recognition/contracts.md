@@ -1,6 +1,6 @@
 # 本体识别：定义与机器合同
 
-状态：2026-10-05，正式机器合同、typed-v3、v2阶段/覆盖/查询及v4冻结材料已接通并经过直接验证；固定客户O0–O3已经有限结束、保存和查询。O1六已审，O2两已审/一拒绝，O3四文件部分发布保留全部九项义务。最后正式响应读取及未执行owner聚合两项边界已有20项直接回归和最终质量6695通过；实现PR正在交付。实际输入、模型质量和完整运行ID由[验收记录](../../supplements/ontology-formal-acceptance-20261003.md)维护；结构合法不表示业务零错误。旧格式严格读取，历史Activity/Process Schema不改变。
+状态：2026-10-05，正式机器合同、typed-v3、v2阶段/覆盖/查询及v4冻结材料已接通并经过直接验证；固定客户O0–O3已经有限结束、保存和查询。O1六已审，O2两已审/一拒绝，O3四文件部分发布保留全部九项义务。最后正式响应读取及未执行owner聚合两项边界已有20项直接回归和最终质量6695通过；实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)。实际输入、模型质量和完整运行ID由[验收记录](../../supplements/ontology-formal-acceptance-20261003.md)维护；结构合法不表示业务零错误。旧格式严格读取，历史Activity/Process Schema不改变。
 
 ## 1. 五类结论，不混为一份散文
 
@@ -453,7 +453,7 @@ modelRequestCounts字段为`reservedAttempts / confirmedStarted / confirmedEnded
 
 正常CLI结束必须把保存事实登记到终态，不等待用户修改Prompt。若O1/O2已保存局部任务失败、随后canonical公共安装本身失败，任务原稿、reason和成员记录仍按其实际终态保留可查；但运行级最终观察必须以artifact store的实际稳定code记录`STORAGE / INSTALL`、空taskId和无receipt，不能用较早的MODEL_OUTPUT等任务问题覆盖它。共享保存失败可没有公共output，但仍报告实际私有可查内容，不能虚构receipt。进程外部强制中断只能报告最后真实记录，不承诺一定有最终报告。细节及Provider整次deadline由[隔离设计§8](evidence-stability-and-failure-isolation.md#8-进程有界结束不是只捕获一次异常)规定。
 
-这些新版本已同步producer、Reader、Schema、artifact policy、runtime、安装与直接fixture；定向GREEN、最终质量和三个局部样例的有限结束/材料/查询均已核验，实现PR正在交付。不将结构或材料通过称作所有业务定义正确。允许已有公共request-v6/output-v10绑定新payload的精确引用，不借此整体改旧版本；若字段形状实际新增到持久wire，则只升级本体分支，必须先更新该明确合同。旧待执行请求不静默套用新规则。
+这些新版本已同步producer、Reader、Schema、artifact policy、runtime、安装与直接fixture；定向GREEN、最终质量和三个局部样例的有限结束/材料/查询均已核验，实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)。不将结构或材料通过称作所有业务定义正确。允许已有公共request-v6/output-v10绑定新payload的精确引用，不借此整体改旧版本；若字段形状实际新增到持久wire，则只升级本体分支，必须先更新该明确合同。旧待执行请求不静默套用新规则。
 
 ## 12. 程序能够和不能够检查什么
 

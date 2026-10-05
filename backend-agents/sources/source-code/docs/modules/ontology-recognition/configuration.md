@@ -1,6 +1,6 @@
 # 本体独立配置：加载、绑定及操作边界
 
-状态：2026-10-05，固定客户O0–O3已通过正式命令有限结束、保存和查询。O1六任务REVIEWED；O2财务和统计REVIEWED、采购关系因最终scope错误REJECTED；O3部分发布四文件，九项声明义务保留为八REVIEWED/一REJECTED，覆盖INCOMPLETE。18份真实请求的完整原文、用途、限制、同题目录及同包审阅已核对；模型遗漏和错误单列，不由Java补业务答案。最后复审两项框架缺陷均已RED→GREEN：8129直接回归20项全绿；最终质量6695通过（767文件格式清洁、SpotBugs零发现/错误、PMD通过，UT/IT跳过）。实现PR正在交付，不将模型拒绝和残余误读改写成业务成功。准确完整ID、实际成本和结果见[验收记录](../../supplements/ontology-formal-acceptance-20261003.md)，剩余动作见[稳定性计划](../../plans/ontology-stability-implementation-plan.md)。不宣称自主全仓、任意小窗口兼容或模型零错误；旧MD路径和历史结果保持原状。
+状态：2026-10-05，固定客户O0–O3已通过正式命令有限结束、保存和查询。O1六任务REVIEWED；O2财务和统计REVIEWED、采购关系因最终scope错误REJECTED；O3部分发布四文件，九项声明义务保留为八REVIEWED/一REJECTED，覆盖INCOMPLETE。18份真实请求的完整原文、用途、限制、同题目录及同包审阅已核对；模型遗漏和错误单列，不由Java补业务答案。最后复审两项框架缺陷均已RED→GREEN：8129直接回归20项全绿；最终质量6695通过（767文件格式清洁、SpotBugs零发现/错误、PMD通过，UT/IT跳过）。实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)，不将模型拒绝和残余误读改写成业务成功。准确完整ID、实际成本和结果见[验收记录](../../supplements/ontology-formal-acceptance-20261003.md)，剩余动作见[稳定性计划](../../plans/ontology-stability-implementation-plan.md)。不宣称自主全仓、任意小窗口兼容或模型零错误；旧MD路径和历史结果保持原状。
 
 `OntologyConfiguration`严格读取`ontology-config-v1`、快照有效UTF-8 Prompt文本和非凭据Provider声明，并复用Provider声明校验，不读取认证环境或构造Provider。Task 5的formal typed-v3入口消费调用者提供的不可变OBJECT/ACTION/ANALYTIC/RELATE/REVIEW Prompt和独立字节/token限制快照；它不重新按资源路径读取Prompt。默认 Prompt 是本体专属 formal 资源，不复用实验 v1/v2 或旧 Activity/Process Prompt。正式运行时已有显式O0–O3和独立extract/relate路由的定向结果；实际适配器token能力、DISCOVERY路径、完整准入和失败观察仍须各自验收，不能由配置读取测试代替。
 

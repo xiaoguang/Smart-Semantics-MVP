@@ -1,6 +1,6 @@
 # 本体识别：Skill、CLI、模型提示词与可观察工作流
 
-状态：2026-10-05，固定客户O0–O3已通过正式命令有限结束、保存和查询。O1六任务REVIEWED；O2财务和统计REVIEWED、采购关系因最终scope错误REJECTED；O3部分发布四文件，九项声明义务保留为八REVIEWED/一REJECTED，覆盖INCOMPLETE。18份真实请求的完整原文、用途、限制、同题目录及同包审阅已核对；模型遗漏和错误单列，不由Java补业务答案。最后复审两项框架缺陷均已RED→GREEN：8129直接回归20项全绿；最终质量6695通过（767文件格式清洁、SpotBugs零发现/错误、PMD通过，UT/IT跳过）。实现PR正在交付，不将模型拒绝和残余误读改写成业务成功。准确完整ID、实际成本和结果见[验收记录](../../supplements/ontology-formal-acceptance-20261003.md)，剩余动作见[稳定性计划](../../plans/ontology-stability-implementation-plan.md)。不宣称自主全仓、任意小窗口兼容或模型零错误；旧MD路径和历史结果保持原状。
+状态：2026-10-05，固定客户O0–O3已通过正式命令有限结束、保存和查询。O1六任务REVIEWED；O2财务和统计REVIEWED、采购关系因最终scope错误REJECTED；O3部分发布四文件，九项声明义务保留为八REVIEWED/一REJECTED，覆盖INCOMPLETE。18份真实请求的完整原文、用途、限制、同题目录及同包审阅已核对；模型遗漏和错误单列，不由Java补业务答案。最后复审两项框架缺陷均已RED→GREEN：8129直接回归20项全绿；最终质量6695通过（767文件格式清洁、SpotBugs零发现/错误、PMD通过，UT/IT跳过）。实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)，不将模型拒绝和残余误读改写成业务成功。准确完整ID、实际成本和结果见[验收记录](../../supplements/ontology-formal-acceptance-20261003.md)，剩余动作见[稳定性计划](../../plans/ontology-stability-implementation-plan.md)。不宣称自主全仓、任意小窗口兼容或模型零错误；旧MD路径和历史结果保持原状。
 
 ## 1. 推荐方案与可修改面
 

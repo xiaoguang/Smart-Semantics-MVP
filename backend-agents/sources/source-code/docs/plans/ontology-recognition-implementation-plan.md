@@ -1,6 +1,6 @@
 # R4 证据到本体：正式实施计划
 
-状态：2026-10-03，用户已批准实施，严格工程完成第0–8步（9/10）；剩余第9步真实样例、验收和交付。密集调用投影及实际任务身份修复已通过两项产品RED→21项直接GREEN、限定独立审查及实际三例重测。显式O0–O3、scripted DISCOVERY/QUESTION＋MODEL、有限DDL和SDK已有直接工程回归，新R4/O0规模准入、保存和查询已验证。最终静态质量命令exit0，三个客户模型样例尚未执行；既有PoC不是生产验收。当前实际数量见[验收记录](../supplements/ontology-formal-acceptance-20261003.md)。本页拥有执行安排，机器字段由docs/modules/ontology-recognition/contracts.md拥有。
+状态：2026-10-05，原十步正式路径经[九步稳定性收尾](ontology-stability-implementation-plan.md)完成本轮限定框架/材料验收并提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)，尚未合入main。三个客户局部样例已正式O0–O3执行：18请求、九义务八已审/一采购关系拒绝、四文件INCOMPLETE有效部分保存及重开。34个完整Java正文与同R0逐字/摘要核对，所有实际EXTRACT/REVIEW同包同题目录；最后20项直接回归与质量6695通过。模型残余误读、真实自主选材、全仓及任意小窗口支持均单列，不以工程通过宣称业务零错误。准确实际结果见[验收记录](../supplements/ontology-formal-acceptance-20261003.md)；机器字段由本体contracts.md拥有。
 
 ## 全局约束
 

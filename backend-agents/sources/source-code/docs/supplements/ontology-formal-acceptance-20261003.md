@@ -1,6 +1,6 @@
 # 正式本体框架验收：当前已验证范围
 
-状态：2026-10-05，三个局部样例的正式O0–O3、证据审阅、失败隔离与有效部分发布已验收。最终两项框架缺陷已直接RED→GREEN，20项回归和最终质量6695通过；最后代码的inspect及四产物查询均exit0、字节与安装文件完全一致。实现PR正在交付。九声明义务八REVIEWED、一采购关系REJECTED，覆盖INCOMPLETE；模型残余错误不由Java补写。依据[正式实施计划](../plans/ontology-recognition-implementation-plan.md)及[九步收尾计划](../plans/ontology-stability-implementation-plan.md)。本页区分工程、实际材料和模型质量，不以模拟响应或旧PoC替代正式客户样例。
+状态：2026-10-05，三个局部样例的正式O0–O3、证据审阅、失败隔离与有效部分发布已验收。最终两项框架缺陷已直接RED→GREEN，20项回归和最终质量6695通过；最后代码的inspect及四产物查询均exit0、字节与安装文件完全一致。实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)。九声明义务八REVIEWED、一采购关系REJECTED，覆盖INCOMPLETE；模型残余错误不由Java补写。依据[正式实施计划](../plans/ontology-recognition-implementation-plan.md)及[九步收尾计划](../plans/ontology-stability-implementation-plan.md)。本页区分工程、实际材料和模型质量，不以模拟响应或旧PoC替代正式客户样例。
 
 ## 输入与保护
 
@@ -10,7 +10,7 @@
 - 准确复用持久化R3：`analysis-run:bea6ae4a70d24c5dd5ae6ea819bf88e4e07500f9f4eae8f78fc0d6d21d40fb9a`。
 - 旧MD分析代码/Prompt/Schema/渲染、历史R0/R4、326及418条Activity和`more-findings.md`在原保护清单中。最新逐项核对790个文件：无变化、无缺失；没有重新生成保护基线。
 
-本轮不重跑客户源码的JDT、后端/SQL取证或旧业务生成；直接测试中的中性技术fixture不算客户重取证。补读/替换单元丢失原入口限制的确定性缺陷已经直接RED→GREEN：75743预期NAVIGATION_CONFLICT=2而实际为空，窄修后12376共11项通过，准确限制继承且矛盾仍拒绝。修复后质量84337及发现消费者专项后的质量15890均exit0；790保护文件无变化/缺失。此前失败尝试未注册O1或派发模型，不为它补运行ID或回执。修复后的O0 `analysis-run:0785b1a0dd08b49b15a3f7f2d41c9264989777cd2dc601ea8e84bc40ba3005df`已经正式保存和查询；本轮O1 `analysis-run:7f43387b34357f8be530bfc065be032e7f9b36316b9917b2ab7af1c7d476ca4f`为FINISHED/COMPLETED，六任务均REVIEWED，实际12/12/12/0请求观察。O2 `analysis-run:c267ff0d9f75146eab5cc25926ab9f74fc52b1576d0a5c7b16cbe17964095a35`已PARTIAL/FAILED结束：财务及统计关系已审、采购关系最终scope.questionRef不属于当前关系题而被局部拒绝，6次请求确认开始并结束。O3 `analysis-run:3886bb564e8d29acd433765feea09bd4aa0755eadcd40f10fe2ed13faa55269e`已PARTIAL/FAILED保存四文件，九义务八已审一拒绝；公开四文件与来源索引已实际重开。最后两项框架边界经直接RED→GREEN、最终质量及零模型重开完成，实现PR正在交付。第7步发现模式O2-v2实际消费者专项已通过，不能以O1发现测试代替。调用次数用于审计/成本；不自动换模型、扩大全仓，模型非法结果不由宿主改编号或范围补成功。
+本轮不重跑客户源码的JDT、后端/SQL取证或旧业务生成；直接测试中的中性技术fixture不算客户重取证。补读/替换单元丢失原入口限制的确定性缺陷已经直接RED→GREEN：75743预期NAVIGATION_CONFLICT=2而实际为空，窄修后12376共11项通过，准确限制继承且矛盾仍拒绝。修复后质量84337及发现消费者专项后的质量15890均exit0；790保护文件无变化/缺失。此前失败尝试未注册O1或派发模型，不为它补运行ID或回执。修复后的O0 `analysis-run:0785b1a0dd08b49b15a3f7f2d41c9264989777cd2dc601ea8e84bc40ba3005df`已经正式保存和查询；本轮O1 `analysis-run:7f43387b34357f8be530bfc065be032e7f9b36316b9917b2ab7af1c7d476ca4f`为FINISHED/COMPLETED，六任务均REVIEWED，实际12/12/12/0请求观察。O2 `analysis-run:c267ff0d9f75146eab5cc25926ab9f74fc52b1576d0a5c7b16cbe17964095a35`已PARTIAL/FAILED结束：财务及统计关系已审、采购关系最终scope.questionRef不属于当前关系题而被局部拒绝，6次请求确认开始并结束。O3 `analysis-run:3886bb564e8d29acd433765feea09bd4aa0755eadcd40f10fe2ed13faa55269e`已PARTIAL/FAILED保存四文件，九义务八已审一拒绝；公开四文件与来源索引已实际重开。最后两项框架边界经直接RED→GREEN、最终质量及零模型重开完成，实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)。第7步发现模式O2-v2实际消费者专项已通过，不能以O1发现测试代替。调用次数用于审计/成本；不自动换模型、扩大全仓，模型非法结果不由宿主改编号或范围补成功。
 
 本轮的**首要审阅对象是模型实际收到的证据**，不是模型是否足够聪明。每个需要核验的结论先列必要的建立端、使用端、条件、后处理及限制，再用保存的EXTRACT/REVIEW请求核对完整原文和用途是否真正入模，并确认两次请求使用同一冻结阅读包。证据缺失或来源映射错误归为框架材料问题；证据齐全但模型遗漏、误读归为模型质量；合法材料下反复无法产生可校验结构归为输出合同可用性问题。三者不得互相替代。此标准只针对本次具名问题，不以有限样例证明全仓材料穷尽。
 
@@ -173,6 +173,6 @@ Root重新运行同一零Provider正式Java预检，exit0。以下调用上下�
 
 同源R0补读现在已经接入新的正式v2 O0路径：从R4准确上游重开原owner的R2完整声明，用同源R0恢复正文，保存新Corpus规则及别名。2026-10-04定向测试已证明选中的辅助方法完整正文实际进入EXTRACT和REVIEW，未选哨兵正文不进入，原未确认调用及定位限制仍可见；旧v1 O0字节和元数据表达不变。这是scripted正式请求边界的工程结果，**固定客户三个样例尚未使用这份新材料完成真实模型验收**。v4紧凑表达及最终查询收尾仍在实施，不以宿主Agent直接读文件替代材料交接。
 
-上述旧批次曾未完成统计合法定义及跨入口发布；当前六个O1和三个O2任务已执行，O3保留采购关系拒绝并发布有效部分，准确结论以前节为准。最后边界修复与最终质量已完成，实现PR正在交付。真实请求数继续记录，但不是单独停止理由。三例仅验证具名局部范围；自动选材与全仓本体仍未验收。
+上述旧批次曾未完成统计合法定义及跨入口发布；当前六个O1和三个O2任务已执行，O3保留采购关系拒绝并发布有效部分，准确结论以前节为准。最后边界修复与最终质量已完成，实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)。真实请求数继续记录，但不是单独停止理由。三例仅验证具名局部范围；自动选材与全仓本体仍未验收。
 
 可选DDL有限保存/重开/消费、共享Skill有限前向检查和便携配置加载已通过直接工程检查，不列作尚未实施；但不宣称固定客户DDL、任意宿主或客户模型质量已实测。

@@ -1,6 +1,6 @@
 # 实验到正式本体框架：详细改动与验收对应
 
-状态：2026-10-05，固定客户O0–O3已通过正式命令有限结束、保存和查询。O1六任务REVIEWED；O2财务和统计REVIEWED、采购关系因最终scope错误REJECTED；O3部分发布四文件，九项声明义务保留为八REVIEWED/一REJECTED，覆盖INCOMPLETE。18份真实请求的完整原文、用途、限制、同题目录及同包审阅已核对；模型遗漏和错误单列，不由Java补业务答案。最后复审两项框架缺陷均已RED→GREEN：8129直接回归20项全绿；最终质量6695通过（767文件格式清洁、SpotBugs零发现/错误、PMD通过，UT/IT跳过）。实现PR正在交付，不将模型拒绝和残余误读改写成业务成功。准确完整ID、实际成本和结果见[验收记录](../../supplements/ontology-formal-acceptance-20261003.md)，剩余动作见[稳定性计划](../../plans/ontology-stability-implementation-plan.md)。不宣称自主全仓、任意小窗口兼容或模型零错误；旧MD路径和历史结果保持原状。
+状态：2026-10-05，固定客户O0–O3已通过正式命令有限结束、保存和查询。O1六任务REVIEWED；O2财务和统计REVIEWED、采购关系因最终scope错误REJECTED；O3部分发布四文件，九项声明义务保留为八REVIEWED/一REJECTED，覆盖INCOMPLETE。18份真实请求的完整原文、用途、限制、同题目录及同包审阅已核对；模型遗漏和错误单列，不由Java补业务答案。最后复审两项框架缺陷均已RED→GREEN：8129直接回归20项全绿；最终质量6695通过（767文件格式清洁、SpotBugs零发现/错误、PMD通过，UT/IT跳过）。实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)，不将模型拒绝和残余误读改写成业务成功。准确完整ID、实际成本和结果见[验收记录](../../supplements/ontology-formal-acceptance-20261003.md)，剩余动作见[稳定性计划](../../plans/ontology-stability-implementation-plan.md)。不宣称自主全仓、任意小窗口兼容或模型零错误；旧MD路径和历史结果保持原状。
 
 ## 1. 当前实现可用到哪里
 
@@ -13,7 +13,7 @@
 | 辅助两联系Java投影/assembler | Java17实际运行、零准备模型、完整选中原文、重复运行相同 | 使用人工清单和实验前端补充；不是正式CLI、不是严格纯R4的自主选材 |
 | Provider/任务池/私有保存 | 实际Prompt、请求、原稿、审阅、诊断及观察可查询；实际18请求全部确认开始/结束，无未知，无自动第三轮 | 订阅适配器输出token上限未强制；正式响应大小/期限已修复并回归；最终质量通过，远端取消不在承诺内 |
 | R4/四技术命令 | 新前端v3/R4 v2合同、准确历史owner及公共查询通过；339入口、91请求、14页面上下文；采购完整选择回调和保存原文进入真实O1/O2 | 旧材料不改写；前端静态关联不是运行时因果证明，本轮不重跑取证 |
-| SourceAnalysisCli/Agent/registry/canonical store/Skill | 四个正式本体命令实际完成O0→O1→O2→O3；失败范围与有效四文件均可inspect/artifact查询；O0/O3/查询零模型 | 两项边界修复后质量通过；最终交付核对与PR正在完成；未安装所有宿主Agent，不声称任意宿主实测 |
+| SourceAnalysisCli/Agent/registry/canonical store/Skill | 四个正式本体命令实际完成O0→O1→O2→O3；失败范围与有效四文件均可inspect/artifact查询；O0/O3/查询零模型 | 两项边界修复后质量通过；最终交付核对通过，实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)；未安装所有宿主Agent，不声称任意宿主实测 |
 
 实际证据规模是固定R4的339入口，最近辅助PoC的27单元及4调用；这些数字是当前验收输入，不进入通用规则/提示词。
 
@@ -33,7 +33,7 @@
 
 **完成证据**：选择清单相同则零模型准备相同；所有选中完整源码可反查；高调用方法不附全部私有记录；歧义/未知仍定位；选中未读查询端不丢。完整阅读/提取/审阅封套均测量，而非只比较包JSON。
 
-**已接通的同源补读与剩余验收**：新O0规则通过准确R4上游恢复R2声明目录，再从同R0读取完整边界。已登记来源与唯一的保存候选进入现有Corpus；只有选定单元进入模型。直接测试已查看EXTRACT/REVIEW中的完整辅助正文、入口用途及未确认观察，旧规则仍按原格式读取。`SOURCE_REFERENCE`不再只有元数据，但这不等于任意路径读取能力。固定客户新O1曾因同入口原单元与补读单元的限制不一致在准备阶段拒绝并阻止派发；现在替换单元保留原限制、新增单元继承经核对的同入口限制，11项直接回归通过。当前O1和O2已经正式有限结束，18份实际封套均核对；统计helper在EXTRACT/REVIEW中逐字匹配同R0，并保留原NAVIGATION_CONFLICT。不得由宿主Agent粘贴正文代替。补读不重跑JDT，也不把未确认调用候选升级为确定关系。v4紧凑投影已有无损直接GREEN；模型遗漏和拒绝与材料缺项分别记录；最后工程边界和PR仍在收尾。
+**已接通的同源补读与剩余验收**：新O0规则通过准确R4上游恢复R2声明目录，再从同R0读取完整边界。已登记来源与唯一的保存候选进入现有Corpus；只有选定单元进入模型。直接测试已查看EXTRACT/REVIEW中的完整辅助正文、入口用途及未确认观察，旧规则仍按原格式读取。`SOURCE_REFERENCE`不再只有元数据，但这不等于任意路径读取能力。固定客户新O1曾因同入口原单元与补读单元的限制不一致在准备阶段拒绝并阻止派发；现在替换单元保留原限制、新增单元继承经核对的同入口限制，11项直接回归通过。当前O1和O2已经正式有限结束，18份实际封套均核对；统计helper在EXTRACT/REVIEW中逐字匹配同R0，并保留原NAVIGATION_CONFLICT。不得由宿主Agent粘贴正文代替。补读不重跑JDT，也不把未确认调用候选升级为确定关系。v4紧凑投影已有无损直接GREEN；模型遗漏和拒绝与材料缺项分别记录；最后工程边界及质量检查已通过，实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)。
 
 ### C. 必要前端材料补齐（backlog27）
 
@@ -168,6 +168,6 @@ inspect/artifact开放真实材料/选择/Prompt/原稿/REVIEW/映射/失败查�
 | 四操作、真实安装、查询及额度 | `OntologyAnalysisConfiguredRuntime`、现有Agent/registry/canonical store、本体query keys | 正式runtime21项、technical runtime10项及SDK6项 | 第7步工程边界通过；Agent/store真实，外部模型使用scripted，不冒称客户模型质量 |
 | 可选DDL与宿主Skill | 明确同R0/schemaSources，现有JSqlParser及同一个Skill的本体reference | 正式runtime21项全部通过，含真实R0/SQL fixture的DDL保存、消费及来源闭合；Skill有限前向检查 | 有限DDL/Skill及第8步最终质量、保护核对通过；不宣称固定客户dump全部解析或任意宿主实测 |
 | 三个局部样例 | 固定新R4/R0→正式O0→显式O1/O2→O3 | 客户源码及已授权Luna/high真实18请求 | 六个O1已审；财务/统计关系已审，采购关系因scope错误拒绝；四文件部分发布，覆盖九义务八已审一拒绝。证据核验通过，模型残余错误/未知不补写 |
-| 稳定证据、局部隔离、依赖与有限结束 | H的现有runtime/Provider/store接线 | `OntologyFormalRuntimeContractsTest`限定新增selectors；Provider叶层13项直接测试 | 正式提取/审阅、依赖、Provider边界、阅读坏响应局部隔离、完整处置查询、O3多上游及冲突不安装已定向通过；辅助原文/未确认限制实际入模和有界超限响应私有保存也已通过。v4、安全下一动作、具体组装诊断及独立owner的相同结果值比较均有直接GREEN；O2上限报告及三例18份实际请求/四文件已核对；最后两项边界20项GREEN、最终质量6695通过；实现PR正在交付 |
+| 稳定证据、局部隔离、依赖与有限结束 | H的现有runtime/Provider/store接线 | `OntologyFormalRuntimeContractsTest`限定新增selectors；Provider叶层13项直接测试 | 正式提取/审阅、依赖、Provider边界、阅读坏响应局部隔离、完整处置查询、O3多上游及冲突不安装已定向通过；辅助原文/未确认限制实际入模和有界超限响应私有保存也已通过。v4、安全下一动作、具体组装诊断及独立owner的相同结果值比较均有直接GREEN；O2上限报告及三例18份实际请求/四文件已核对；最后两项边界20项GREEN、最终质量6695通过；实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35) |
 
 旧MD分析/Prompt/Schema/渲染/历史请求与结果不属于这些新生产职责。共享接口只加本体分支，最终需直接隔离回归及原保护清单核对；不能凭代码文件存在关闭backlog或把有限fixture称为全仓本体识别。
