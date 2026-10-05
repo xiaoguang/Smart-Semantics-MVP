@@ -72,7 +72,7 @@ more-findings.md SHA59b8381e7e81e3105ed6c6a8d93ce1dbea0247735bf1e6227d8f842b0d1d
 
 ## Exact next action
 
-Finish selective feature commit and normal push to existing PR35;verify remote head andpreserved staging. Hand off actual businessHTML/fourfiles/current acceptance gaps. No additional modeldispatch/technicalrecapture is planned under this closeout. If resuming unmet capacity/autonomous coverage, agree a concrete adjustment from the current saved evidence, not an unbounded correction loop.
+Feature commit75fa3915407460222162d17085bc80c75c1e2a7d contains exactly70 current-feature paths;normalpush andexistingPR35title/body update succeeded,remotePRhead verified.12priorstagedpaths remain unchanged;no run data or local configs committed. Delivery documentation is finalized separately. Hand off actual businessHTML/fourfiles/current acceptance gaps. No additional modeldispatch/technicalrecapture is planned under this closeout. Unmet capacity/autonomous coverage remains an explicit backlog obligation,not an unbounded correction loop.
 
 ## Cleanup boundary
 

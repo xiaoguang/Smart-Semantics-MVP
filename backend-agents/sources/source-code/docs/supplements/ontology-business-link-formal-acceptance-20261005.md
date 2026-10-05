@@ -2,7 +2,7 @@
 
 状态：正式工程路径、四文件安装/重开和有限真实样例已经完成；**业务覆盖与小窗口目标仅部分通过**。最终129项新增/直接回归全绿，同代码静态质量通过。实际图和财务/统计细化已保存，不宣称完整采购生命周期、自主全仓发现或跨项目同等模型质量。
 
-拥有设计为[业务联系优先设计](../modules/ontology-recognition/business-link-first-design.md)，执行范围为[九步计划](../plans/business-link-first-implementation-plan.md)。工程交付使用现有PR35；运行材料保留在忽略的本地store，不进入提交。
+拥有设计为[业务联系优先设计](../modules/ontology-recognition/business-link-first-design.md)，执行范围为[九步计划](../plans/business-link-first-implementation-plan.md)。工程提交75fa3915407460222162d17085bc80c75c1e2a7d包含70个具名本轮文件，已正常推送并更新现有[PR35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)，远端head核对一致；不强推、不合入main。12前序暂存文件保持；运行材料保留在忽略的本地store，不进入提交。
 
 ## 1. 固定输入与正式运行链
 
