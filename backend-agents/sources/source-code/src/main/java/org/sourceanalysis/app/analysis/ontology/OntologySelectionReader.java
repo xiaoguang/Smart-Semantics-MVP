@@ -42,7 +42,8 @@ public final class OntologySelectionReader {
     requireObject(document, "ONTOLOGY_SELECTION_INVALID");
     String schemaVersion = requiredText(document, "schemaVersion");
     boolean v2 = "ontology-selection-v2".equals(schemaVersion);
-    if (!v2 && !"ontology-selection-v1".equals(schemaVersion)) {
+    boolean v3 = "ontology-selection-v3".equals(schemaVersion);
+    if (!v2 && !v3 && !"ontology-selection-v1".equals(schemaVersion)) {
       throw failure("ONTOLOGY_SELECTION_INVALID");
     }
     Operation operation;
@@ -61,13 +62,14 @@ public final class OntologySelectionReader {
     }
     if (operation == Operation.PUBLISH) {
       List<String> relationRuns = runIds(document.get("relationRuns"), selectedRuns);
-      if (relationRuns.isEmpty()) {
+      if (!v3 && relationRuns.isEmpty()) {
         throw failure("ONTOLOGY_SELECTION_RELATION_REQUIRED");
       }
       return new Selection(
           schemaVersion, operation, corpusRun, identificationRuns, relationRuns, List.of());
     }
-    List<Question> questions = questions(document.get("questions"), corpus, identificationRuns, v2);
+    List<Question> questions =
+        questions(document.get("questions"), corpus, identificationRuns, v2 || v3, v3);
     return new Selection(
         schemaVersion, operation, corpusRun, identificationRuns, List.of(), questions);
   }
@@ -76,7 +78,8 @@ public final class OntologySelectionReader {
       JsonNode rawQuestions,
       OntologyEvidenceCorpus corpus,
       List<String> identificationRuns,
-      boolean v2) {
+      boolean v2,
+      boolean v3) {
     if (rawQuestions == null || !rawQuestions.isArray()) {
       throw failure("ONTOLOGY_SELECTION_QUESTIONS_INVALID");
     }
@@ -95,6 +98,9 @@ public final class OntologySelectionReader {
       try {
         readingMode =
             OntologyScopeReader.ReadingMode.valueOf(requiredText(rawQuestion, "readingMode"));
+        if (readingMode == OntologyScopeReader.ReadingMode.TECHNICAL_BUNDLE) {
+          throw failure("ONTOLOGY_SELECTION_READING_MODE_INVALID");
+        }
       } catch (IllegalArgumentException invalid) {
         throw failure("ONTOLOGY_SELECTION_READING_MODE_INVALID");
       }
@@ -109,14 +115,14 @@ public final class OntologySelectionReader {
               OntologyScopeReader.unitUses(rawQuestion.get("unitUses"), corpus),
               OntologyScopeReader.unitUses(rawQuestion.get("requiredUnitUses"), corpus),
               v2
-                  ? objectSources(rawQuestion.get("objectSources"), identificationRuns)
+                  ? objectSources(rawQuestion.get("objectSources"), identificationRuns, v3)
                   : List.of()));
     }
     return List.copyOf(questions);
   }
 
   private static List<ObjectSource> objectSources(
-      JsonNode rawSources, List<String> identificationRuns) {
+      JsonNode rawSources, List<String> identificationRuns, boolean v3) {
     if (rawSources == null || !rawSources.isArray() || rawSources.size() == 0) {
       throw failure("ONTOLOGY_SELECTION_OBJECT_SOURCES_REQUIRED");
     }
@@ -124,14 +130,26 @@ public final class OntologySelectionReader {
     Set<String> unique = new HashSet<>();
     for (JsonNode rawSource : rawSources) {
       requireObject(rawSource, "ONTOLOGY_SELECTION_OBJECT_SOURCE_INVALID");
-      requireFields(rawSource, Set.of("identificationRun", "questionId"));
+      requireFields(
+          rawSource,
+          v3
+              ? Set.of("identificationRun", "questionId", "taskIds")
+              : Set.of("identificationRun", "questionId"));
       String identificationRun = runId(requiredText(rawSource, "identificationRun"));
       String questionId = requiredText(rawSource, "questionId");
       if (!identificationRuns.contains(identificationRun)
           || !unique.add(identificationRun + "\u0000" + questionId)) {
         throw failure("ONTOLOGY_SELECTION_OBJECT_SOURCE_INVALID");
       }
-      sources.add(new ObjectSource(identificationRun, questionId));
+      List<String> taskIds = List.of();
+      if (v3) {
+        try {
+          taskIds = OntologyScopeReader.taskIds(rawSource.get("taskIds"));
+        } catch (IllegalArgumentException invalid) {
+          throw failure("ONTOLOGY_SELECTION_OBJECT_SOURCE_INVALID");
+        }
+      }
+      sources.add(new ObjectSource(identificationRun, questionId, taskIds));
     }
     return List.copyOf(sources);
   }
@@ -245,7 +263,8 @@ public final class OntologySelectionReader {
       List<Question> questions) {
     public Selection {
       if (!"ontology-selection-v1".equals(schemaVersion)
-          && !"ontology-selection-v2".equals(schemaVersion)) {
+          && !"ontology-selection-v2".equals(schemaVersion)
+          && !"ontology-selection-v3".equals(schemaVersion)) {
         throw new IllegalArgumentException("ontology selection schema version");
       }
       identificationRuns = List.copyOf(identificationRuns);
@@ -255,6 +274,10 @@ public final class OntologySelectionReader {
 
     public boolean isV2() {
       return "ontology-selection-v2".equals(schemaVersion);
+    }
+
+    public boolean usesTaskOutcomes() {
+      return isV2() || "ontology-selection-v3".equals(schemaVersion);
     }
   }
 
@@ -278,7 +301,7 @@ public final class OntologySelectionReader {
   }
 
   /** Exact saved O1 question source for one v2 relation task; it is not name-based matching. */
-  public record ObjectSource(String identificationRun, String questionId) {
+  public record ObjectSource(String identificationRun, String questionId, List<String> taskIds) {
     public ObjectSource {
       if (identificationRun == null || identificationRun.isBlank()) {
         throw new IllegalArgumentException("ontology object source run");
@@ -286,6 +309,11 @@ public final class OntologySelectionReader {
       if (questionId == null || questionId.isBlank()) {
         throw new IllegalArgumentException("ontology object source question");
       }
+      taskIds = List.copyOf(taskIds);
+    }
+
+    public ObjectSource(String identificationRun, String questionId) {
+      this(identificationRun, questionId, List.of());
     }
   }
 }

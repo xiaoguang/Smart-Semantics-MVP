@@ -160,6 +160,12 @@ final class OntologyAnalysisConfiguredRuntime {
           "ONTOLOGY_IDENTIFICATION")) {
         configuration = configuration.forTypedV4();
       }
+      if (usesOntologyPayloadV4(
+          SourceAnalysisExecution.loadPolicies(
+              configuration.storage().ontologyPolicyRegistry(), new CanonicalJsonCodec()),
+          "ONTOLOGY_IDENTIFICATION")) {
+        configuration = configuration.forJointLinks();
+      }
       return switch (invocation.operation()) {
         case "prepare-ontology" -> prepare(configuration, invocation, output);
         case "identify-ontology" -> identify(configuration, invocation, output, providerFactory);
@@ -267,8 +273,14 @@ final class OntologyAnalysisConfiguredRuntime {
       ObjectNode scopeSnapshot = readCanonical(invocation.scope(), json);
       OntologyScopeReader.Scope scope =
           OntologyScopeReader.read(scopeSnapshot, savedCorpus.admitted().corpus());
-      if ("ontology-scope-v2".equals(scope.schemaVersion()) && !usesFormalPacketV5(savedCorpus)) {
+      if (("ontology-scope-v2".equals(scope.schemaVersion())
+              || "ontology-scope-v3".equals(scope.schemaVersion()))
+          && !usesFormalPacketV5(savedCorpus)) {
         throw new IllegalArgumentException("ONTOLOGY_SCOPE_CORPUS_VERSION_INVALID");
+      }
+      if ("ontology-scope-v3".equals(scope.schemaVersion())
+          && !usesOntologyPayloadV4(ontologyPolicies, "ONTOLOGY_IDENTIFICATION")) {
+        throw new IllegalArgumentException("ONTOLOGY_SCOPE_PRODUCTION_VERSION_INVALID");
       }
       List<String> externalRunIds = scopeObjectRuns(scope);
       List<org.sourceanalysis.app.artifact.ModulePublicationReference> externalPublications =
@@ -713,7 +725,8 @@ final class OntologyAnalysisConfiguredRuntime {
           }
           throw new IllegalArgumentException(reading.issueCode());
         }
-        if (task.taskKind() != OntologyScopeReader.TaskKind.OBJECT) {
+        if (task.taskKind() != OntologyScopeReader.TaskKind.OBJECT
+            && task.taskKind() != OntologyScopeReader.TaskKind.LINK) {
           continue;
         }
         OntologyTypedTaskRunner.prepareFormal(
@@ -728,7 +741,7 @@ final class OntologyAnalysisConfiguredRuntime {
                 List.of(),
                 new OntologyTypedTaskRunner.FormalPromptSnapshot(
                     promptFor(configuration, task.taskKind()),
-                    configuration.prompts().get("review")),
+                    reviewPromptFor(configuration, task.taskKind())),
                 new OntologyTypedTaskRunner.FormalLimits(
                     configuration.reading().maxRequestBytes(),
                     configuration.reading().maxOutputBytes(),
@@ -770,10 +783,14 @@ final class OntologyAnalysisConfiguredRuntime {
           SourceAnalysisExecution.loadPolicies(
               configuration.storage().ontologyPolicyRegistry(), json);
       if (usesOntologyPayloadV2(policies, "ONTOLOGY_RELATIONS")
-          && !selection.isV2()
+          && !selection.usesTaskOutcomes()
           && !selection.questions().isEmpty()) {
         throw new IllegalArgumentException("ONTOLOGY_SELECTION_VERSION_INVALID");
       }
+      OntologySavedTaskContract.requireSelectionProductionVersion(
+          selection.schemaVersion(),
+          usesOntologyPayloadV4(policies, "ONTOLOGY_RELATIONS"),
+          usesOntologyPayloadV4(policies, "ONTOLOGY_IDENTIFICATION"));
       OntologySavedTaskContract.requireCorpusProductionVersion(
           usesOntologyPayloadV3(policies, "ONTOLOGY_IDENTIFICATION"),
           usesFormalPacketV5(savedCorpus));
@@ -790,7 +807,9 @@ final class OntologyAnalysisConfiguredRuntime {
               .map(SelectedFormalResult::result)
               .filter(result -> result.kind() == OntologyTaskRunner.TaskKind.OBJECT)
               .toList();
-      if (!selection.questions().isEmpty() && !selection.isV2() && reviewedObjects.isEmpty()) {
+      if (!selection.questions().isEmpty()
+          && !selection.usesTaskOutcomes()
+          && reviewedObjects.isEmpty()) {
         throw new IllegalArgumentException("ONTOLOGY_SELECTED_OBJECT_REQUIRED");
       }
       ModelBinding model =
@@ -879,6 +898,10 @@ final class OntologyAnalysisConfiguredRuntime {
       CanonicalArtifactPolicyRegistry policies =
           SourceAnalysisExecution.loadPolicies(
               configuration.storage().ontologyPolicyRegistry(), json);
+      OntologySavedTaskContract.requireSelectionProductionVersion(
+          selection.schemaVersion(),
+          usesOntologyPayloadV4(policies, "ONTOLOGY_COVERAGE"),
+          usesOntologyPayloadV4(policies, "ONTOLOGY_REVIEW"));
       OntologySavedTaskContract.requireCorpusProductionVersion(
           usesOntologyPayloadV3(policies, "ONTOLOGY_IDENTIFICATION"),
           usesFormalPacketV5(savedCorpus));
@@ -901,7 +924,7 @@ final class OntologyAnalysisConfiguredRuntime {
               identifications,
               selectedIdentifications,
               selection.relationRuns(),
-              selection.isV2());
+              selection.usesTaskOutcomes());
       List<SelectedFormalResult> selected = new ArrayList<>(selectedIdentifications.results());
       selected.addAll(selectedRelations.results());
       List<SelectedTaskOutcome> selectedTaskOutcomes =
@@ -950,7 +973,7 @@ final class OntologyAnalysisConfiguredRuntime {
                       selectionSnapshot,
                       assemblyInput,
                       businessInput,
-                      selection.isV2(),
+                      selection.usesTaskOutcomes(),
                       selectedTaskOutcomes));
       LocalRepositoryAnalysisAgent agent = new LocalRepositoryAnalysisAgent(store, coordinator);
       AnalysisRunReference queued = agent.start(request);
@@ -1203,7 +1226,8 @@ final class OntologyAnalysisConfiguredRuntime {
         Set.of(
             "ontology-identification-v1",
             "ontology-identification-v2",
-            "ontology-identification-v3"),
+            "ontology-identification-v3",
+            "ontology-identification-v4"),
         "scope",
         corpus);
   }
@@ -1221,7 +1245,11 @@ final class OntologyAnalysisConfiguredRuntime {
         publication,
         "ontology-relations.json",
         "ONTOLOGY_RELATIONS",
-        Set.of("ontology-relations-v1", "ontology-relations-v2", "ontology-relations-v3"),
+        Set.of(
+            "ontology-relations-v1",
+            "ontology-relations-v2",
+            "ontology-relations-v3",
+            "ontology-relations-v4"),
         "selection",
         corpus);
   }
@@ -1257,7 +1285,10 @@ final class OntologyAnalysisConfiguredRuntime {
             .orElseThrow(() -> new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID"));
     JsonNode document = json.parseCanonical(membership.canonicalUtf8());
     String schemaVersion = membership.descriptor().schemaVersion();
-    boolean v2 = schemaVersion.endsWith("-v2") || schemaVersion.endsWith("-v3");
+    boolean v2 =
+        schemaVersion.endsWith("-v2")
+            || schemaVersion.endsWith("-v3")
+            || schemaVersion.endsWith("-v4");
     if (!schemaVersions.contains(schemaVersion)
         || !schemaVersion.equals(document.path("schemaVersion").asText())
         || !document.path("taskRecords").isArray()
@@ -1277,7 +1308,10 @@ final class OntologyAnalysisConfiguredRuntime {
       if (taskId.isBlank()
           || producingTaskId.isBlank()
           || jobKey.isBlank()
-          || !Set.of("OBJECT", "ACTION", "ANALYTIC", "RELATE").contains(taskKind)
+          || !(schemaVersion.endsWith("-v4")
+                  ? Set.of("OBJECT", "ACTION", "ANALYTIC", "RELATE", "LINK")
+                  : Set.of("OBJECT", "ACTION", "ANALYTIC", "RELATE"))
+              .contains(taskKind)
           || (!"REVIEWED".equals(status)
               && !"REJECTED".equals(status)
               && (!v2 || !"UNPROCESSED".equals(status)))
@@ -1293,9 +1327,13 @@ final class OntologyAnalysisConfiguredRuntime {
       }
     }
     Map<String, JsonNode> taskOutcomes =
-        v2 ? requireV2TaskOutcomes(document.path("taskOutcomes"), taskRecords) : Map.of();
+        v2
+            ? requireV2TaskOutcomes(
+                document.path("taskOutcomes"), taskRecords, schemaVersion.endsWith("-v4"))
+            : Map.of();
     if (v2 && "scope".equals(manifestField)) {
-      requireV2IdentificationTaskRange(document, corpus, taskOutcomes);
+      requireV2IdentificationTaskRange(
+          document, corpus, taskOutcomes, schemaVersion.endsWith("-v4"));
     }
     List<OntologyScopedAssembler.TaskDisposition> dispositions = new ArrayList<>();
     Set<String> dispositionTasks = new HashSet<>();
@@ -1353,7 +1391,7 @@ final class OntologyAnalysisConfiguredRuntime {
         dispositions,
         taskOutcomes,
         document.path(manifestField).deepCopy(),
-        "ontology-relations-v3".equals(schemaVersion)
+        Set.of("ontology-relations-v3", "ontology-relations-v4").contains(schemaVersion)
             ? OntologyRelationReadingSelections.read(document, corpus)
             : Map.of());
   }
@@ -1636,7 +1674,8 @@ final class OntologyAnalysisConfiguredRuntime {
     } catch (IllegalArgumentException invalid) {
       throw new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID", invalid);
     }
-    if (selection.operation() != OntologySelectionReader.Operation.RELATE || !selection.isV2()) {
+    if (selection.operation() != OntologySelectionReader.Operation.RELATE
+        || !selection.usesTaskOutcomes()) {
       throw new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID");
     }
     Map<String, List<OntologySelectionReader.ObjectSource>> sources = new LinkedHashMap<>();
@@ -1687,7 +1726,11 @@ final class OntologyAnalysisConfiguredRuntime {
             outcome ->
                 source.identificationRun().equals(outcome.runId())
                     && source.questionId().equals(outcome.outcome().path("questionId").asText())
-                    && "OBJECT".equals(outcome.outcome().path("taskKind").asText())
+                    && (source.taskIds().isEmpty()
+                        ? "OBJECT".equals(outcome.outcome().path("taskKind").asText())
+                        : source.taskIds().contains(outcome.taskId())
+                            && Set.of("OBJECT", "LINK")
+                                .contains(outcome.outcome().path("taskKind").asText()))
                     && "REVIEWED".equals(outcome.outcome().path("status").asText())
                     && producingTaskId.equals(outcome.outcome().path("producingTaskId").asText()));
   }
@@ -2316,7 +2359,8 @@ final class OntologyAnalysisConfiguredRuntime {
             withClueContext(savedCorpus, reading.frozenPacket(), reading.state().selectedClues()),
             objectCatalog,
             new OntologyTypedTaskRunner.FormalPromptSnapshot(
-                promptFor(configuration, task.taskKind()), configuration.prompts().get("review")),
+                promptFor(configuration, task.taskKind()),
+                reviewPromptFor(configuration, task.taskKind())),
             new OntologyTypedTaskRunner.FormalLimits(
                 configuration.reading().maxRequestBytes(),
                 configuration.reading().maxOutputBytes(),
@@ -2398,7 +2442,7 @@ final class OntologyAnalysisConfiguredRuntime {
     OntologyTaskOutcome.FailureReason problemFailure = null;
     String currentTaskId = null;
     String currentStage = null;
-    boolean outcomeContractV2 = selection.isV2();
+    boolean outcomeContractV2 = selection.usesTaskOutcomes();
     List<OntologyTaskOutcome> outcomes = new ArrayList<>();
     OntologyRelationReadingSelections readingSelections =
         new OntologyRelationReadingSelections(selection.questions());
@@ -2684,11 +2728,11 @@ final class OntologyAnalysisConfiguredRuntime {
       List<OntologyTypedTaskRunner.PreparedFormalTask> prepared,
       List<OntologyTypedTaskRunner.FormalResult> completed,
       String problemCode) {
-    boolean outcomeContractV2 = selection.isV2();
+    boolean outcomeContractV2 = selection.usesTaskOutcomes();
     ObjectNode relations = JsonNodeFactory.instance.objectNode();
     String relationSchemaVersion = stageSchemaVersion(policies, "ONTOLOGY_RELATIONS");
     relations.put("schemaVersion", relationSchemaVersion);
-    if ("ontology-relations-v3".equals(relationSchemaVersion)) {
+    if (Set.of("ontology-relations-v3", "ontology-relations-v4").contains(relationSchemaVersion)) {
       relations.set("readingSelections", readingSelections.document());
     }
     relations.set("selection", selectionSnapshot.deepCopy());
@@ -2820,20 +2864,33 @@ final class OntologyAnalysisConfiguredRuntime {
           "ASSEMBLY");
       throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_DEFINITION_CONFLICT");
     }
-    review.put(
-        "typedReviewSchemaVersion",
-        businessInput == null ? "ontology-typed-review-v3" : "ontology-typed-review-v4");
+    if (usesOntologyPayloadV4(policies, "ONTOLOGY_REVIEW")) {
+      ArrayNode actualSchemas = review.putArray("taskReviewSchemaVersions");
+      assemblyInput.results().stream()
+          .map(result -> json.parseCanonical(result.review()).path("schemaVersion").asText())
+          .distinct()
+          .sorted()
+          .forEach(actualSchemas::add);
+    } else {
+      review.put(
+          "typedReviewSchemaVersion",
+          businessInput == null ? "ontology-typed-review-v3" : "ontology-typed-review-v4");
+    }
     review.set("selection", selectionSnapshot.deepCopy());
     copySemanticUpstreams(review, persisted);
     ObjectNode coverage = (ObjectNode) json.parseCanonical(assembly.coverage());
     String coverageSchemaVersion =
-        businessInput != null
-            ? "ontology-coverage-v3"
-            : selectionV2 ? "ontology-coverage-v2" : "ontology-coverage-v1";
+        usesOntologyPayloadV4(policies, "ONTOLOGY_COVERAGE")
+            ? "ontology-coverage-v4"
+            : businessInput != null
+                ? "ontology-coverage-v3"
+                : selectionV2 ? "ontology-coverage-v2" : "ontology-coverage-v1";
     String reviewSchemaVersion =
-        businessInput != null
-            ? "ontology-review-v3"
-            : selectionV2 ? "ontology-review-v2" : "ontology-review-v1";
+        usesOntologyPayloadV4(policies, "ONTOLOGY_REVIEW")
+            ? "ontology-review-v4"
+            : businessInput != null
+                ? "ontology-review-v3"
+                : selectionV2 ? "ontology-review-v2" : "ontology-review-v1";
     if (selectionV2) {
       coverage.put("schemaVersion", coverageSchemaVersion);
       review.put("schemaVersion", reviewSchemaVersion);
@@ -2962,7 +3019,8 @@ final class OntologyAnalysisConfiguredRuntime {
               OntologyDecisionRunner.formalPrioritizeMaterial(
                   configuration.prompts().get("prioritize"),
                   configuration.reading().maxOutputTokens()),
-              requestedScope.purpose());
+              requestedScope.purpose(),
+              "ontology-scope-v3".equals(requestedScope.schemaVersion()));
       OntologyDecisionRunner.Decision priority = runner.execute(preparedPriority);
       PrioritySelection selected = prioritySelection(questions, priority, requestedScope.purpose());
       runner.saveFormalDecision("prioritize", preparedPriority, priority, corpus);
@@ -3069,79 +3127,22 @@ final class OntologyAnalysisConfiguredRuntime {
       List<DiscoveryQuestion> questions,
       OntologyDecisionRunner.Decision priority,
       OntologyScopeReader.Purpose purpose) {
-    CanonicalJsonCodec json = new CanonicalJsonCodec();
-    JsonNode output = json.parseCanonical(priority.output());
-    Map<String, DiscoveryQuestion> byRef = new LinkedHashMap<>();
-    questions.forEach(question -> byRef.put(question.questionRef(), question));
-    Set<String> handled = new LinkedHashSet<>();
-    List<OntologyScopeReader.Question> selected = new ArrayList<>();
-    List<String> refs = new ArrayList<>();
-    for (JsonNode item : output.path("selectedQuestions")) {
-      DiscoveryQuestion question = byRef.get(item.path("questionRef").asText());
-      if (question == null || !handled.add(question.questionRef())) {
-        throw new IllegalArgumentException("ONTOLOGY_PRIORITIZE_REFERENCE_UNKNOWN");
-      }
-      if (!item.path("taskKinds").isArray() || item.path("taskKinds").isEmpty()) {
-        throw new IllegalArgumentException("ONTOLOGY_PRIORITIZE_TASK_INVALID");
-      }
-      List<OntologyScopeReader.Task> tasks = new ArrayList<>();
-      Set<String> taskKinds = new LinkedHashSet<>();
-      for (JsonNode kind : item.path("taskKinds")) {
-        if (!kind.isTextual()
-            || !Set.of("OBJECT", "ACTION", "ANALYTIC").contains(kind.asText())
-            || !taskKinds.add(kind.asText())) {
-          throw new IllegalArgumentException("ONTOLOGY_PRIORITIZE_TASK_INVALID");
-        }
-      }
-      if (!taskKinds.contains("OBJECT")) {
-        throw new IllegalArgumentException("ONTOLOGY_PRIORITIZE_OBJECT_REQUIRED");
-      }
-      if (purpose == OntologyScopeReader.Purpose.SKELETON && !taskKinds.equals(Set.of("OBJECT"))) {
-        throw new IllegalArgumentException("ONTOLOGY_SCOPE_SKELETON_TASK_INVALID");
-      }
-      for (String kind : List.of("OBJECT", "ACTION", "ANALYTIC")) {
-        if (taskKinds.contains(kind)) {
-          tasks.add(
-              new OntologyScopeReader.Task(
-                  "discovery-"
-                      + question.questionRef()
-                      + "-"
-                      + kind.toLowerCase(java.util.Locale.ROOT),
-                  OntologyScopeReader.TaskKind.valueOf(kind),
-                  OntologyScopeReader.ReadingMode.MODEL,
-                  List.of(),
-                  List.of()));
-        }
-      }
-      String specificQuestion = item.path("specificQuestion").asText();
-      if (specificQuestion.isBlank()) {
-        throw new IllegalArgumentException("ONTOLOGY_PRIORITIZE_REFERENCE_UNKNOWN");
-      }
-      selected.add(
-          new OntologyScopeReader.Question(
-              question.questionRef(),
-              specificQuestion,
-              question.entryRefs(),
-              question.clueRefs(),
-              tasks));
-      refs.add(question.questionRef());
-    }
-    List<DeferredQuestion> deferred = new ArrayList<>();
-    for (JsonNode item : output.path("deferredQuestions")) {
-      DiscoveryQuestion question = byRef.get(item.path("questionRef").asText());
-      String reason = item.path("reason").asText();
-      if (question == null || reason.isBlank() || !handled.add(question.questionRef())) {
-        throw new IllegalArgumentException("ONTOLOGY_PRIORITIZE_REFERENCE_UNKNOWN");
-      }
-      deferred.add(new DeferredQuestion(question.questionRef(), reason));
-    }
-    for (DiscoveryQuestion question : questions) {
-      if (handled.add(question.questionRef())) {
-        deferred.add(
-            new DeferredQuestion(question.questionRef(), "NOT_SELECTED_WITHIN_DECLARED_LIMIT"));
-      }
-    }
-    return new PrioritySelection(List.copyOf(selected), List.copyOf(refs), List.copyOf(deferred));
+    OntologyPrioritySelection.Result result =
+        OntologyPrioritySelection.select(
+            questions.stream()
+                .map(
+                    question ->
+                        new OntologyPrioritySelection.QuestionInput(
+                            question.questionRef(), question.entryRefs(), question.clueRefs()))
+                .toList(),
+            priority,
+            purpose);
+    return new PrioritySelection(
+        result.questions(),
+        result.questionRefs(),
+        result.deferredQuestions().stream()
+            .map(question -> new DeferredQuestion(question.questionRef(), question.reason()))
+            .toList());
   }
 
   private static ObjectNode discoveryDocument(
@@ -3464,6 +3465,14 @@ final class OntologyAnalysisConfiguredRuntime {
         row.put("taskId", task.taskId());
         row.put("taskKind", task.taskKind().name());
         row.put("readingMode", task.readingMode().name());
+        if ("ontology-scope-v3".equals(scope.schemaVersion())) {
+          row.set(
+              "anchorRefs",
+              JsonNodeFactory.instance
+                  .arrayNode()
+                  .addAll(
+                      task.anchorRefs().stream().map(JsonNodeFactory.instance::textNode).toList()));
+        }
         ArrayNode uses = row.putArray("unitUses");
         ArrayNode required = row.putArray("requiredUnitUses");
         OntologyTypedTaskRunner.PreparedFormalTask preparedTask = preparedByTask.get(task.taskId());
@@ -3527,11 +3536,18 @@ final class OntologyAnalysisConfiguredRuntime {
     return hasOntologyPolicy(policies, type, artifactTypeVersionV2(type).replace("-v2", "-v3"));
   }
 
+  private static boolean usesOntologyPayloadV4(
+      CanonicalArtifactPolicyRegistry policies, String type) {
+    return hasOntologyPolicy(policies, type, artifactTypeVersionV2(type).replace("-v2", "-v4"));
+  }
+
   private static String stageSchemaVersion(CanonicalArtifactPolicyRegistry policies, String type) {
     String v2 = artifactTypeVersionV2(type);
-    return usesOntologyPayloadV3(policies, type)
-        ? v2.replace("-v2", "-v3")
-        : usesOntologyPayloadV2(policies, type) ? v2 : v2.replace("-v2", "-v1");
+    return usesOntologyPayloadV4(policies, type)
+        ? v2.replace("-v2", "-v4")
+        : usesOntologyPayloadV3(policies, type)
+            ? v2.replace("-v2", "-v3")
+            : usesOntologyPayloadV2(policies, type) ? v2 : v2.replace("-v2", "-v1");
   }
 
   private static String artifactTypeVersionV2(String artifactType) {
@@ -3583,7 +3599,8 @@ final class OntologyAnalysisConfiguredRuntime {
       AnalysisRunId runId,
       List<OntologyTaskOutcome> earlierQuestionOutcomes,
       OntologyScopeReader.TaskKind taskKind) {
-    if (taskKind == OntologyScopeReader.TaskKind.OBJECT) {
+    if (taskKind == OntologyScopeReader.TaskKind.OBJECT
+        || taskKind == OntologyScopeReader.TaskKind.LINK) {
       return List.of();
     }
     return earlierQuestionOutcomes.stream()
@@ -3942,7 +3959,7 @@ final class OntologyAnalysisConfiguredRuntime {
             .map(
                 source ->
                     new OntologySelectionReader.ObjectSource(
-                        source.identificationRun(), source.questionId()))
+                        source.identificationRun(), source.questionId(), source.taskIds()))
             .toList(),
         selected);
   }
@@ -3966,8 +3983,32 @@ final class OntologyAnalysisConfiguredRuntime {
               .toList();
       List<SelectedTaskOutcome> sourceOutcomes =
           questionOutcomes.stream()
-              .filter(outcome -> "OBJECT".equals(outcome.outcome().path("taskKind").asText()))
+              .filter(
+                  outcome ->
+                      source.taskIds().isEmpty()
+                          ? "OBJECT".equals(outcome.outcome().path("taskKind").asText())
+                          : source.taskIds().contains(outcome.taskId()))
               .toList();
+      if (!source.taskIds().isEmpty()
+          && (sourceOutcomes.size() != source.taskIds().size()
+              || sourceOutcomes.stream()
+                  .anyMatch(
+                      outcome ->
+                          !Set.of("OBJECT", "LINK")
+                              .contains(outcome.outcome().path("taskKind").asText())))) {
+        return new RelationTaskInput(
+            List.of(),
+            List.of(),
+            null,
+            new OntologyTaskOutcome.FailureReason(
+                "OBJECT_SOURCE_TASK_INVALID",
+                OntologyTaskOutcome.Category.SOURCE,
+                "SOURCE",
+                null,
+                source.identificationRun() + ":" + source.questionId(),
+                List.of(),
+                List.of()));
+      }
       if (sourceOutcomes.isEmpty()) {
         boolean missingQuestion = questionOutcomes.isEmpty();
         return new RelationTaskInput(
@@ -4006,7 +4047,9 @@ final class OntologyAnalysisConfiguredRuntime {
       OntologyTypedTaskRunner.FormalResult reviewed =
           reviewedByOwnerProducer.get(
               new SelectedFormalResultKey(sourceObject.outcome().runId(), producingTaskId));
-      if (reviewed == null || reviewed.kind() != OntologyTaskRunner.TaskKind.OBJECT) {
+      if (reviewed == null
+          || (reviewed.kind() != OntologyTaskRunner.TaskKind.OBJECT
+              && reviewed.kind() != OntologyTaskRunner.TaskKind.LINK)) {
         return new RelationTaskInput(
             List.of(),
             frozenDependencies,
@@ -4511,6 +4554,15 @@ final class OntologyAnalysisConfiguredRuntime {
   }
 
   private static String producerVersion(String moduleKey, List<CanonicalModulePayload> payloads) {
+    if (payloads.stream()
+        .anyMatch(
+            payload ->
+                Set.of(
+                        "ontology-identification-v4",
+                        "ontology-relations-v4",
+                        "ontology-coverage-v4",
+                        "ontology-review-v4")
+                    .contains(payload.schemaVersion()))) return "v4";
     boolean current =
         payloads.stream()
             .anyMatch(
@@ -4688,6 +4740,13 @@ final class OntologyAnalysisConfiguredRuntime {
   private static String promptFor(
       OntologyConfiguration configuration, OntologyScopeReader.TaskKind taskKind) {
     return configuration.prompts().get(taskKind.name().toLowerCase(java.util.Locale.ROOT));
+  }
+
+  private static String reviewPromptFor(
+      OntologyConfiguration configuration, OntologyScopeReader.TaskKind taskKind) {
+    return configuration
+        .prompts()
+        .get(taskKind == OntologyScopeReader.TaskKind.LINK ? "linkReview" : "review");
   }
 
   private static ModelBinding modelBinding(
@@ -5078,7 +5137,10 @@ final class OntologyAnalysisConfiguredRuntime {
                 : "ontology-relations-v2";
         for (VerifiedCanonicalPayload payload : publication.payloads()) {
           if (expectedType.equals(payload.descriptor().artifactType())
-              && Set.of(expectedV2Schema, expectedV2Schema.replace("-v2", "-v3"))
+              && Set.of(
+                      expectedV2Schema,
+                      expectedV2Schema.replace("-v2", "-v3"),
+                      expectedV2Schema.replace("-v2", "-v4"))
                   .contains(payload.descriptor().schemaVersion())) {
             JsonNode document = json.parseCanonical(payload.canonicalUtf8());
             if (!document.path("taskOutcomes").isArray()) {
@@ -5241,12 +5303,16 @@ final class OntologyAnalysisConfiguredRuntime {
 
   private static ImmutableBytes overviewPayload(
       ReopenedModulePublication publication, String type, String file, String schema) {
+    Set<String> schemas =
+        Set.of("ontology-coverage-v3", "ontology-review-v3").contains(schema)
+            ? Set.of(schema, schema.replace("-v3", "-v4"))
+            : Set.of(schema);
     return publication.payloads().stream()
         .filter(
             payload ->
                 type.equals(payload.descriptor().artifactType())
                     && file.equals(payload.descriptor().fileName())
-                    && schema.equals(payload.descriptor().schemaVersion()))
+                    && schemas.contains(payload.descriptor().schemaVersion()))
         .reduce(
             (first, second) -> {
               throw new IllegalArgumentException("ONTOLOGY_ARTIFACT_AMBIGUOUS");
@@ -5286,6 +5352,7 @@ final class OntologyAnalysisConfiguredRuntime {
     ArrayNode available = observation.putArray("availableArtifactKeys");
     List<JsonNode> taskOutcomes = new ArrayList<>();
     boolean payloadObservationV2 = false;
+    boolean payloadObservationV3 = false;
     if (saved != null && saved.ontologyOutput() != null) {
       CanonicalArtifactPolicyRegistry policies =
           exactSavedOntologyPolicies(
@@ -5320,6 +5387,13 @@ final class OntologyAnalysisConfiguredRuntime {
           throw new IllegalArgumentException("ONTOLOGY_RUNTIME_OBSERVATION_INVALID");
         }
         payloadObservationV2 = true;
+        payloadObservationV3 |=
+            Set.of(
+                    "ontology-identification-v4",
+                    "ontology-relations-v4",
+                    "ontology-coverage-v4",
+                    "ontology-review-v4")
+                .contains(schemaVersion);
         document.path("taskOutcomes").forEach(outcome -> taskOutcomes.add(outcome.deepCopy()));
       }
     }
@@ -5361,6 +5435,8 @@ final class OntologyAnalysisConfiguredRuntime {
           operation,
           runtime,
           missingRuntimeProblemCode);
+      if (payloadObservationV3)
+        observation.put("schemaVersion", "ontology-operation-observation-v3");
     } else {
       String runtimeProblemCode =
           runtime == null ? missingRuntimeProblemCode : runtime.problemCode();

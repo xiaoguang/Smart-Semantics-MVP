@@ -50,8 +50,13 @@ public final class OntologyBusinessOverviewRenderer {
     JsonNode coverageDocument = json.parseCanonical(coverage);
     JsonNode reviewDocument = json.parseCanonical(review);
     if (!"ontology-v2".equals(ontologyDocument.path("schemaVersion").asText())
-        || !"ontology-coverage-v3".equals(coverageDocument.path("schemaVersion").asText())
-        || !"ontology-review-v3".equals(reviewDocument.path("schemaVersion").asText())
+        || !(Set.of("v3", "v4").stream()
+            .anyMatch(
+                version ->
+                    ("ontology-coverage-" + version)
+                            .equals(coverageDocument.path("schemaVersion").asText())
+                        && ("ontology-review-" + version)
+                            .equals(reviewDocument.path("schemaVersion").asText())))
         || !ontologyDocument.path("objectTypes").isArray()
         || !ontologyDocument.path("linkTypes").isArray()) {
       throw invalid();
@@ -98,7 +103,7 @@ public final class OntologyBusinessOverviewRenderer {
         .append(Base64.getEncoder().encodeToString(bundle.copyToByteArray()))
         .append("\"></script>")
         .append(
-            "<script>mermaid.initialize({securityLevel: 'strict', htmlLabels: false, startOnLoad: false});")
+            "<script>mermaid.initialize({securityLevel: 'strict', htmlLabels: true, startOnLoad: false});")
         .append("mermaid.run({querySelector: '#ontology-business-graph'});</script>")
         .append("</body></html>");
     return html.toString();

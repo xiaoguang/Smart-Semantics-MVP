@@ -97,14 +97,20 @@ final class OntologyOperationObservationV2 {
 
   static boolean isTaskOutcomePayload(String artifactType, String schemaVersion) {
     return ("ONTOLOGY_IDENTIFICATION".equals(artifactType)
-            && Set.of("ontology-identification-v2", "ontology-identification-v3")
+            && Set.of(
+                    "ontology-identification-v2",
+                    "ontology-identification-v3",
+                    "ontology-identification-v4")
                 .contains(schemaVersion))
         || ("ONTOLOGY_RELATIONS".equals(artifactType)
-            && Set.of("ontology-relations-v2", "ontology-relations-v3").contains(schemaVersion))
+            && Set.of("ontology-relations-v2", "ontology-relations-v3", "ontology-relations-v4")
+                .contains(schemaVersion))
         || ("ONTOLOGY_COVERAGE".equals(artifactType)
-            && Set.of("ontology-coverage-v2", "ontology-coverage-v3").contains(schemaVersion))
+            && Set.of("ontology-coverage-v2", "ontology-coverage-v3", "ontology-coverage-v4")
+                .contains(schemaVersion))
         || ("ONTOLOGY_REVIEW".equals(artifactType)
-            && Set.of("ontology-review-v2", "ontology-review-v3").contains(schemaVersion));
+            && Set.of("ontology-review-v2", "ontology-review-v3", "ontology-review-v4")
+                .contains(schemaVersion));
   }
 
   static boolean isTaskOutcomePayloadArtifact(String artifactType) {

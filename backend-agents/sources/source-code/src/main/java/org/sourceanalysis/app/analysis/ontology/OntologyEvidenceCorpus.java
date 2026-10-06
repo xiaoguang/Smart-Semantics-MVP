@@ -1677,6 +1677,11 @@ public final class OntologyEvidenceCorpus {
    * than a coverage row or another entry's matching file.
    */
   List<FrontendContextSource> frontendContextSources(UnitHandle contextHandle) {
+    return frontendContextSources(contextHandle, handle -> evidenceByUse.get(handle).content());
+  }
+
+  List<FrontendContextSource> frontendContextSources(
+      UnitHandle contextHandle, java.util.function.Function<UnitHandle, JsonNode> contentReader) {
     Objects.requireNonNull(contextHandle, "frontend context handle");
     if (contextHandle.kind() != UnitKind.FRONTEND_PAGE_CONTEXT) {
       throw new IllegalArgumentException("ONTOLOGY_PAGE_CONTEXT_SOURCE_UNIT_INVALID");
@@ -1688,6 +1693,7 @@ public final class OntologyEvidenceCorpus {
     JsonNode context =
         read(contextHandle.entryId(), contextHandle.kind(), contextHandle.originalId()).content();
     List<FrontendContextSource> result = new ArrayList<>();
+    Map<UnitHandle, JsonNode> parsedFrontendUnits = new LinkedHashMap<>();
     for (JsonNode contextUnit : context.path("sourceUnits")) {
       String unitRef = contextUnit.path("unitRef").asText();
       if (unitRef.isBlank() || !validFrontendContextUnitIdentity(contextUnit)) {
@@ -1698,7 +1704,7 @@ public final class OntologyEvidenceCorpus {
         if (available.kind() != UnitKind.FRONTEND_UNIT) {
           continue;
         }
-        JsonNode entryUnit = evidenceByUse.get(available).content();
+        JsonNode entryUnit = parsedFrontendUnits.computeIfAbsent(available, contentReader);
         if (sameFrontendPhysicalUnit(contextUnit, entryUnit)) {
           matches.add(entryUnit);
         }
@@ -1928,6 +1934,52 @@ public final class OntologyEvidenceCorpus {
       throw new IllegalArgumentException("ONTOLOGY_SEARCH_INVALID");
     }
     return new SearchResult(offset, limit, total, shown);
+  }
+
+  /** Request-local batch scan with the same per-query ordering and paging as literal search. */
+  Map<String, SearchResult> searchLiteralBatch(Set<String> queries, int offset, int limit) {
+    if (queries == null || offset < 0 || limit < 1) {
+      throw new IllegalArgumentException("ONTOLOGY_SEARCH_INVALID");
+    }
+    Map<String, Integer> totals = new LinkedHashMap<>();
+    Map<String, List<SearchMatch>> shown = new LinkedHashMap<>();
+    for (String query : queries) {
+      if (query == null || query.isBlank()) {
+        throw new IllegalArgumentException("ONTOLOGY_SEARCH_INVALID");
+      }
+      totals.put(query, 0);
+      shown.put(query, new ArrayList<>());
+    }
+    if (queries.isEmpty()) return Map.of();
+    for (EntrySummary summary : navigation) {
+      JsonNode entry = json.parseCanonical(documents.get(summary.entryId()).canonicalJson());
+      for (UnitKind kind : UnitKind.values()) {
+        for (JsonNode item : array(entry, kind)) {
+          String text = searchableText(kind, item);
+          for (String query : totals.keySet()) {
+            int foundAt = text.indexOf(query);
+            if (foundAt < 0) continue;
+            int total = totals.compute(query, (ignored, count) -> count + 1);
+            List<SearchMatch> matches = shown.get(query);
+            if (total > offset && matches.size() < limit) {
+              int start = Math.max(0, foundAt - 80);
+              int end = Math.min(text.length(), foundAt + query.length() + 80);
+              matches.add(
+                  new SearchMatch(
+                      summary.entryId(), kind, unitId(item, kind), text.substring(start, end)));
+            }
+          }
+        }
+      }
+    }
+    Map<String, SearchResult> results = new LinkedHashMap<>();
+    for (var total : totals.entrySet()) {
+      if (offset > total.getValue()) throw new IllegalArgumentException("ONTOLOGY_SEARCH_INVALID");
+      results.put(
+          total.getKey(),
+          new SearchResult(offset, limit, total.getValue(), shown.get(total.getKey())));
+    }
+    return java.util.Collections.unmodifiableMap(results);
   }
 
   /** The existing first-page convenience remains an explicit offset-zero request. */

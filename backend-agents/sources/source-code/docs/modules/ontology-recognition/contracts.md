@@ -65,7 +65,7 @@ Property ID只在所属Object语义范围唯一。相同status字段用于不同
 
 Link字段：
 
-- endpoints：当前任务输入中已有的已审Object键；对象身份可以PARTIAL，但该对象定义本身必须真实存在。缺端点则放顶层unresolved，不生成带悬空端点的Link，不用对象名伪装ID。
+- endpoints：现行RELATE引用输入中真实已审Object键；下一版LINK引用同次REVIEW最终返回的精确objectKey，由Java映射局部ID。对象身份可PARTIAL，但端点定义必须真实存在；缺端点放unresolved，不生成悬空Link。联合任务不会被之前缺失的对象目录锁死，也不允许Java按名称猜端点。
 - mechanism：保存的字段对应/赋值/读取/连接依据及实际sourceRefs。不得只有“两个对象相关”的自然语言。
 - applicability：对象变体、非空条件、删除/租户/状态等已知限制。
 - cardinality：declared、codeImplied或unknown及其依据。SQL JOIN本身不证明基数。
@@ -196,6 +196,8 @@ corrections按定义ID保存变更/删除/新增及理由、相关原文refs。�
 Operation.parameters使用Parameter，preconditions/rejections使用SemanticItem，effects使用Effect，entryUses使用EntryUse。Rule.applicability使用SemanticItem数组，condition使用SemanticItem，consequence使用Effect。Relation.mechanism/conditions、Dimension.joinPath、Measure.filters/postProcessing均使用SemanticItem数组。Measure.expression、Metric.expression使用Expression；grain/inputGrain使用Grain。Measure.aggregation为非空的原聚合说明或null；Metric.timeWindows是SemanticItem数组，另保存implementationStatus（IMPLEMENTATION/ANALYTIC_EXTENSION）与definitionCompleteness；executionReadiness固定NOT_EXECUTABLE。
 
 共同scope固定为questionRef、entryUseRefs、variants（非空用途说明字符串数组，可空）。unknowns和unresolved仍使用7.1已有形状。corrections固定为targetLocalId、changeKind（ADDED/CHANGED/DELETED）、reason、evidenceRefs；目标必须在实际原稿或最终稿中存在，不能写无对应项的笼统纠正。原稿没有可识别localId的损坏片段只在原稿和程序诊断中保留，不能为了DELETED纠正项编造一个原ID；最终新定义仍须ADDED纠正。结构错误草稿不先满足最终Schema，才能进入原定REVIEW；最终完整定义及合法引用依然严格检查。本文第8节是概念节选，不是完整正式Schema夹具；正式Expression引用统一使用bindings，不再另设componentRefs来重复组件数组。
+
+联合LINK使用独立的`ontology-link-review-v1`合同：其`corrections`是文本数组，不是上述typed任务的结构差异对象数组。发布器按实际任务类型保留LINK修正文本，归属由外层taskResults的完整审阅身份表达；不从文本提取或改写业务定义，也不把字符串强制转换为typed修正对象。旧typed修正项继续执行原引用映射和身份记录。
 
 ### 7.4 发布时统一身份，不销毁原定义
 
@@ -461,9 +463,9 @@ modelRequestCounts字段为`reservedAttempts / confirmedStarted / confirmedEnded
 
 这些新版本已同步producer、Reader、Schema、artifact policy、runtime、安装与直接fixture；定向GREEN、最终质量和三个局部样例的有限结束/材料/查询均已核验，实现已提交[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)。不将结构或材料通过称作所有业务定义正确。允许已有公共request-v6/output-v10绑定新payload的精确引用，不借此整体改旧版本；若字段形状实际新增到持久wire，则只升级本体分支，必须先更新该明确合同。旧待执行请求不静默套用新规则。
 
-### 11.7 业务骨架优先、外部对象依赖与材料v5（正式接线，真实验收待完成）
+### 11.7 业务骨架优先、外部对象依赖与材料v5（现行已交付合同）
 
-行为owner为[业务联系优先详细设计](business-link-first-design.md)。本节合同已同步ScopeReader、typed validator/runner、材料、producer/Reader/policy、正式运行和发布查询，scripted直接测试已有结果，真实局部验收尚未开始。准确完成边界见[正式验收状态](../../supplements/ontology-business-link-formal-acceptance-20261005.md)。11.6保留历史规则和验收事实。不得仅通过Prompt新增字段。
+本节保持scope-v2/typed-v4/material-v5历史合同，原局部验收的遗漏和容量结论见[正式验收](../../supplements/ontology-business-link-formal-acceptance-20261005.md)。新联合任务由[连贯材料详细设计§9、§12](coherent-link-material-design.md#9-link对象和联系一起返回)拥有：scope-v3、LINK独立响应、材料v6及阶段/发布v4已通过正式Agent/store的scripted保存、重开、直接发布、总览查询和准确任务对象传递测试；DISCOVERY/PRIORITIZE新旧接线、直接回归及静态质量检查已通过，真实图及容量验收仍在实施。不得把上述机械测试说成采购业务关系已识别；11.6/11.7的旧字段和读取语义不因新设计改变。
 
 **Scope。** 新路径写`ontology-scope-v2`：在v1根字段上增加必需`purpose`，只允许`SKELETON / ENRICHMENT`；每个Question增加必需数组`objectSources`，每项仅`identificationRun / questionId`。SKELETON只允许OBJECT任务，所有objectSources为空。ENRICHMENT允许OBJECT/ACTION/ANALYTIC；后两类依赖本题此前全部OBJECT和显式外部对象来源，至少具备一种。每个外部来源对唯一，指向已结束的准确O1，不能自引用；同Corpus、原请求/receipt/完整review身份均须核对，恢复该题全部实际OBJECT且要求全部REVIEWED。来源题无OBJECT或任一OBJECT拒绝/未处理即DEPENDENCY失败、零派发，其它ACTION/ANALYTIC失败不自动否定已审OBJECT。QUESTION读scope.questions，DISCOVERY读保存selectedQuestions，不从正文范围反推。
 
@@ -498,6 +500,12 @@ typed-v4校验入口显式接收实际可见`visibleClueRefs`，只在`ontology-
 真实任务查询继续使用该运行`taskRecords[].producingTaskId`，不是scope里的局部taskId。任务观察对准确的typed-job-result-v2/v3均报告已审终态，保留原候选和审阅字节；新版已审结果不能被误报成PREPARED。外部OBJECT细化O1只保存本次任务及准确外部依赖，不在私有阶段凭空组装一份缺少对象端点的本体；最终O3须明确选择这些对象的真实O1后才能组装。
 
 新执行的Corpus生产版本准入由已有`OntologySavedTaskContract`校验，运行器只提交明确的生产者/Corpus家族判定；不改变历史查询或新旧任务分派。此职责拆分不改变拒绝码，也不提高静态复杂度阈值。
+
+### 11.8 连贯材料与联合LINK（正式接线，真实验收未完成）
+
+新增字段/版本的唯一owner为[coherent-link-material-design§9、§12](coherent-link-material-design.md#9-link对象和联系一起返回)，不在本节复制第二份Schema。LINK在identify-ontology中联合返回对象和联系，以精确局部objectKey和本次最终links数组引用表示，不借旧OBJECT目录猜端点。Java按声明引用字段固定投影到现有ontology-v2；原稿、最终稿、分配映射和结构差异保留。
+
+新scope/selection-v3以taskIds准确恢复已审OBJECT或LINK；材料v6保存技术展开及真实未读范围；O1/O2/发布v4保存完整处置，LINK同时属于OBJECT和RELATION层。O0仍为corpus-v2/producer-v2，不为消费规则新增来源格式；新ruleVersion进入包/任务身份。旧11.7合同及原MD wire不改。新家族的生产者、Reader、policy-v4、查询和scripted正式运行fixture已接通；真实业务准确性及容量验收尚未完成，不能把结构/存储通过当作业务验收通过。发布审阅记录以taskReviewSchemaVersions列出实际原始审阅Schema；联合LINK为ontology-link-review-v1，不冒称旧typed-v4原稿。
 
 ## 12. 程序能够和不能够检查什么
 

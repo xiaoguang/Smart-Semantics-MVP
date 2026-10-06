@@ -1240,17 +1240,17 @@ final class AtomicCanonicalPublicationEngine {
                         : null;
                 case 3 ->
                     "ontology-identification".equals(analysisStepAddress.moduleKey())
-                            && Set.of("v1", "v3").contains(moduleVersion)
+                            && Set.of("v1", "v3", "v4").contains(moduleVersion)
                         ? ontologyStageFiles(moduleVersion, "ontology-identification", descriptors)
                         : null;
                 case 4 ->
                     "ontology-relations".equals(analysisStepAddress.moduleKey())
-                            && Set.of("v1", "v3").contains(moduleVersion)
+                            && Set.of("v1", "v3", "v4").contains(moduleVersion)
                         ? ontologyStageFiles(moduleVersion, "ontology-relations", descriptors)
                         : null;
                 case 5 ->
                     "ontology-publisher".equals(analysisStepAddress.moduleKey())
-                            && Set.of("v1", "v3").contains(moduleVersion)
+                            && Set.of("v1", "v3", "v4").contains(moduleVersion)
                         ? ontologyPublisherFiles(moduleVersion, descriptors)
                         : null;
                 default -> null;
@@ -1319,7 +1319,9 @@ final class AtomicCanonicalPublicationEngine {
       String moduleVersion, String stage, List<ArtifactDescriptor> descriptors) {
     List<String> names = List.of(stage + ".json");
     Set<String> schemas =
-        "v3".equals(moduleVersion) ? Set.of(stage + "-v3") : Set.of(stage + "-v1", stage + "-v2");
+        Set.of("v3", "v4").contains(moduleVersion)
+            ? Set.of(stage + "-" + moduleVersion)
+            : Set.of(stage + "-v1", stage + "-v2");
     return descriptors.size() == 1 && schemas.contains(descriptors.get(0).schemaVersion())
         ? names
         : null;
@@ -1333,18 +1335,18 @@ final class AtomicCanonicalPublicationEngine {
             "ontology-review.json",
             "ontology-sources.jsonl",
             "ontology.json");
-    boolean current = "v3".equals(moduleVersion);
+    boolean current = Set.of("v3", "v4").contains(moduleVersion);
     for (ArtifactDescriptor descriptor : descriptors) {
       Set<String> schemas =
           switch (descriptor.fileName()) {
             case "ontology.json" -> Set.of(current ? "ontology-v2" : "ontology-v1");
             case "ontology-coverage.json" ->
                 current
-                    ? Set.of("ontology-coverage-v3")
+                    ? Set.of("ontology-coverage-" + moduleVersion)
                     : Set.of("ontology-coverage-v1", "ontology-coverage-v2");
             case "ontology-review.json" ->
                 current
-                    ? Set.of("ontology-review-v3")
+                    ? Set.of("ontology-review-" + moduleVersion)
                     : Set.of("ontology-review-v1", "ontology-review-v2");
             case "ontology-sources.jsonl" -> Set.of("ontology-source-v1");
             default -> Set.of();
@@ -2437,7 +2439,8 @@ final class AtomicCanonicalPublicationEngine {
           Set.of(
                       "ontology-identification-v1",
                       "ontology-identification-v2",
-                      "ontology-identification-v3")
+                      "ontology-identification-v3",
+                      "ontology-identification-v4")
                   .contains(payload.schemaVersion())
               ? new ModuleArtifactContract(
                   AnalysisStepKey.REPOSITORY_KNOWLEDGE,
@@ -2447,7 +2450,11 @@ final class AtomicCanonicalPublicationEngine {
                   CanonicalEnvelopeKind.STANDALONE_JSON)
               : null;
       case "ONTOLOGY_RELATIONS" ->
-          Set.of("ontology-relations-v1", "ontology-relations-v2", "ontology-relations-v3")
+          Set.of(
+                      "ontology-relations-v1",
+                      "ontology-relations-v2",
+                      "ontology-relations-v3",
+                      "ontology-relations-v4")
                   .contains(payload.schemaVersion())
               ? new ModuleArtifactContract(
                   AnalysisStepKey.REPOSITORY_KNOWLEDGE,
@@ -2466,7 +2473,11 @@ final class AtomicCanonicalPublicationEngine {
                   CanonicalEnvelopeKind.STANDALONE_JSON)
               : null;
       case "ONTOLOGY_COVERAGE" ->
-          Set.of("ontology-coverage-v1", "ontology-coverage-v2", "ontology-coverage-v3")
+          Set.of(
+                      "ontology-coverage-v1",
+                      "ontology-coverage-v2",
+                      "ontology-coverage-v3",
+                      "ontology-coverage-v4")
                   .contains(payload.schemaVersion())
               ? new ModuleArtifactContract(
                   AnalysisStepKey.REPOSITORY_KNOWLEDGE,
@@ -2485,7 +2496,11 @@ final class AtomicCanonicalPublicationEngine {
                   CanonicalEnvelopeKind.CANONICAL_JSONL)
               : null;
       case "ONTOLOGY_REVIEW" ->
-          Set.of("ontology-review-v1", "ontology-review-v2", "ontology-review-v3")
+          Set.of(
+                      "ontology-review-v1",
+                      "ontology-review-v2",
+                      "ontology-review-v3",
+                      "ontology-review-v4")
                   .contains(payload.schemaVersion())
               ? new ModuleArtifactContract(
                   AnalysisStepKey.REPOSITORY_KNOWLEDGE,

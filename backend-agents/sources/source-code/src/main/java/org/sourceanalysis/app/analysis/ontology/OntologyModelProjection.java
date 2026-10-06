@@ -13,12 +13,31 @@ final class OntologyModelProjection {
 
   private OntologyModelProjection() {}
 
+  static void projectUnreadCandidates(ObjectNode model, JsonNode source) {
+    OntologyUnreadCandidateProjection.encode(model, source);
+  }
+
+  static ArrayNode decodeUnreadCandidates(JsonNode model, JsonNode privateDirectory) {
+    return OntologyUnreadCandidateProjection.decode(model, privateDirectory);
+  }
+
+  static void internFrontendObservations(ObjectNode model) {
+    OntologyFrontendObservationProjection.encode(model);
+  }
+
+  static ObjectNode decodeFrontendObservations(JsonNode model) {
+    return OntologyFrontendObservationProjection.decode(model);
+  }
+
   /** Reconstructs the ordered selected call projection, not omitted private call records. */
   static ArrayNode decodeCallRows(JsonNode model) {
-    if (!"ontology-model-reading-v5".equals(model.path("schemaVersion").asText())
-        || !"EXACT_ROWS_WITH_USES_V1".equals(model.path("callContextEncoding").asText())
-        || !model.path("callRows").isArray()
-        || !model.path("callUses").isArray()) {
+    boolean v5 =
+        "ontology-model-reading-v5".equals(model.path("schemaVersion").asText())
+            && "EXACT_ROWS_WITH_USES_V1".equals(model.path("callContextEncoding").asText());
+    boolean v6 =
+        "ontology-model-reading-v6".equals(model.path("schemaVersion").asText())
+            && "EXACT_LINK_BUNDLE_V1".equals(model.path("callContextEncoding").asText());
+    if (!(v5 || v6) || !model.path("callRows").isArray() || !model.path("callUses").isArray()) {
       throw new IllegalArgumentException("ONTOLOGY_CALL_ROWS_INVALID");
     }
     Map<String, JsonNode> rows = new java.util.LinkedHashMap<>();

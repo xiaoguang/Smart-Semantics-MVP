@@ -78,6 +78,22 @@ class OntologyFormalMaterialContractsTest {
     assertThat(model.path("units")).isEqualTo(oldModel.path("units"));
     assertThat(model.path("callEvidence")).isEqualTo(oldModel.path("callEvidence"));
     ArrayNode restored = OntologyModelProjection.decodeCallRows(model);
+    ObjectNode bundleDecision = new ObjectMapper().createObjectNode();
+    bundleDecision.put("ruleVersion", "link-bundle-rule-v1");
+    bundleDecision.put("anchorRef", "K1");
+    bundleDecision.put("selectionOrigin", "EXPLICIT");
+    bundleDecision.putArray("unreadCandidates");
+    bundleDecision.putArray("requiredButUnread");
+    bundleDecision.putArray("seedUses");
+    bundleDecision.putArray("derivedUses");
+    bundleDecision.putArray("derivedEntries");
+    bundleDecision.putArray("groups");
+    bundleDecision.putObject("cost");
+    OntologyReadingPacket jointPacket =
+        OntologyReadingPacket.formalV6(corpus, selected, 500_000, bundleDecision);
+    assertThat(
+            OntologyModelProjection.decodeCallRows(json.parseCanonical(jointPacket.modelInput())))
+        .isEqualTo(restored);
     assertThat(restored).hasSize(oldModel.path("callContext").size());
     for (int index = 0; index < restored.size(); index++) {
       ObjectNode context = (ObjectNode) restored.get(index);

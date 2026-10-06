@@ -1,6 +1,6 @@
 # 实验到正式本体框架：详细改动与验收对应
 
-状态：本轮业务联系优先工程接线、真实骨架、财务/统计跨运行细化及四文件重开已完成，129项直接回归及同代码质量通过。**实际业务覆盖和小窗口验收部分通过**，未识别完整采购主链、未证明任意小窗口；浏览器布局未验。准确运行、139次单元出现/20份请求正文核验、成本、9步实现—测试对应和新增/保留清单见[正式验收](../../supplements/ontology-business-link-formal-acceptance-20261005.md)。以下A–H及表中18请求等明确属于[前序稳定性实施](../../supplements/ontology-formal-acceptance-20261003.md)的保留记录；当前新增范围由[业务联系设计](business-link-first-design.md)拥有，不拿旧结果代替新模型验收。通过现有[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)交付；旧MD、历史和前序暂存实验保持。
+状态：最新连贯LINK工程、有限真实运行及四文件/离线SVG验收已经执行，准确结果见[连贯验收](../../supplements/coherent-link-20261005-acceptance.md)。采购来源编号骨架及正确入库建立端有新正式记录；小窗口、调拨及统计剩余质量、图简洁度未全面通过。129项回归、790保护文件等只属于[前版有限验收](../../supplements/ontology-business-link-formal-acceptance-20261005.md)；以下A–H及18请求也明确属于[前序稳定性实施](../../supplements/ontology-formal-acceptance-20261003.md)，不能替代最新实际结果。当前增量由§8及连贯材料设计拥有，通过现有PR35交付；旧MD、历史和原暂存实验保持。
 
 ## 1. 当前实现可用到哪里
 
@@ -174,7 +174,7 @@ inspect/artifact开放真实材料/选择/Prompt/原稿/REVIEW/映射/失败查�
 
 ## 7. 最新业务联系优先修订：按依赖顺序实施的差距
 
-详细owner为[business-link-first-design](business-link-first-design.md)，准确新字段见[contracts§11.7](contracts.md)。当前**实施中，尚未通过真实局部验收**；不重算上表已经通过的失败隔离、正式命令和前端生产修复；旧实验代码不原样注册为生产路线。合同与材料直接测试、骨架四文件和跨运行细化的scripted正式运行已取得结果；自主调查范围、无损图、最终质量及客户模型结果分别验收，不混为一个完成状态。
+本节是已经交付的scope-v2/typed-v4/material-v5修订，准确现行字段见[contracts§11.7](contracts.md)。直接回归和真实局部运行已经结束，但完整采购链及容量目标仍未通过，见正式验收。本节不再列为尚未开始的工程；下一修订的实际差距由§8维护。此前失败隔离、四命令、前端生产及已有无损编码继续复用，不重算为新开发。
 
 | 顺序 | 前序可复用基线 | 本轮目标接线（当前工程状态见正式验收记录） | 可检查的完成依据 |
 | --- | --- | --- | --- |
@@ -196,4 +196,23 @@ inspect/artifact开放真实材料/选择/Prompt/原稿/REVIEW/映射/失败查�
 - 当前新consumer已从entry-local保存索引恢复精确页面上下文及完整正文；反查、不同页面实例和缺失/冲突源的直接测试通过。恢复时不再重复解析一份未使用的原入口JSON。此结论是工程测试，不是新真实模型选材或业务判断通过。
 - 先图后细化只降低问题范围，不保证模型必定找齐所有联系。跨项目机械约束由fixture验；跨真实项目质量须独立结果，不能根据管伊佳单例承诺相同质量。
 
-完成后应逐项用代码、直接测试、真实请求和产物对应本表；只写文档或增加字段不能关闭[backlog32](../../supplements/implementation-lessons-and-followups.md#32-业务联系优先与已审对象细化接线)。本次已启动的准确执行范围见[实施计划](../../plans/business-link-first-implementation-plan.md)与[执行记录](../../../progress/business-link-first-execution.md)，模型运行仍按用户授权范围进行。
+本节准确交付见[正式验收](../../supplements/ontology-business-link-formal-acceptance-20261005.md)；只写文档或增加字段不能关闭[backlog32](../../supplements/implementation-lessons-and-followups.md#32-业务联系优先与已审对象细化接线)。已有实施计划与执行记录属于原版本，不能被当成下列新LINK已完成的依据。
+
+## 8. 连贯材料与联合LINK修订：工程接线与剩余验收
+
+详细owner为[coherent-link-material-design](coherent-link-material-design.md)。正式scope/selection-v3、LINK两稿、任务级对象来源、精确读取与producer/policy、四命令及查询已经接通；不需重新开发原v5的失败隔离。最新有限验收形成采购三对象的来源编号联系，并用新O2核对正确入库建立端；旧错误来源引用保留历史、不人工改稿。当前差距转为小窗口、模型分类/引用质量、自主选材和总图简洁度，见[验收记录](../../supplements/coherent-link-20261005-acceptance.md)。工程与正式发布通过不证明完整生命周期、全仓发现或跨项目同等质量。
+
+| 依赖顺序 | 当前可复用 | 必须修改的内容 | 完成证据 |
+| --- | --- | --- | --- |
+| 1. 合同与身份 | 四命令、request-v6/output-v10、原Corpus-v2、现有版本分派 | scope-v3、selection-v3、LINK响应v1、私有typed-result/catalog-v4、阶段/发布v4、观察/策略；准确objectSources.taskIds | producer/Reader/policy/fixture同步；旧任务/MD指纹不变，未知版本Provider前拒绝 |
+| 2. 连贯包 | Corpus倒排、精确搜索、完整单元、PAGE_CONTEXT反查、v5固定行与字典 | TECHNICAL_BUNDLE、bundleDecision、单跳技术分组、用途/观察精确共享、packet/model-v6及完整成本 | 不人工补材料；同选择正文/用途/限制可逆；高扇出/容量阻断不截尾、不伪造已读 |
+| 3. 联合提取/审阅 | 一次实际REVIEW、结构检查、局部隔离和Provider期限 | LINK同包返回对象/联系、精确key映射、固定定义投影；全部嵌套引用严检 | 删除端点仍引用则局部拒绝；正确两端不因旧对象目录缺失被先删边；实际原稿/映射重开 |
+| 4. 对象来源与发布 | 原O2目录、SAME_OBJECT、显式闭包、四文件与图 | 已审LINK可作为精确对象来源；单LINK直接O3；跨任务统一仍经O2；OBJECT/RELATION双层义务 | 同名不自动合并；缺源/冲突拒绝；失败分母和未请求细节保留；图来源闭合 |
+| 5. Skill/查询 | 现有宿主说明及artifact查询 | 新任务、准确成本、未读/失败与下一动作；不强制空O2 | 另一宿主只凭说明/产物即可使用；非零退出查询报告，不补源码或导入人工答案 |
+| 6. 验收 | 既有薄实验和直接测试底座 | 先零模型完整贯穿，再有限同路径真实来源联系和细化；具名容量检查 | 图、来源和完整封套实际交付；机械、语义、容量分别报告，不用定义数替代达标 |
+
+保持原O0保存形状和别名，不新增R4取证、DDL、解析器或Maven/JDT调用。新LINK方法不是临时实验CLI；纳入原identify-ontology和真实Agent/store。不要把现有v5已经通过的解码和失败隔离重做一遍，只增加新投影/任务的直接覆盖。
+
+正式采购骨架验收需要三个实际区分的对象、两条来源引用和跨任务同一订单的已审对应。模型只识别一条时按实际交付，不从图片补齐。已选原文完整入模后模型误读属于模型质量；漏交、串实例或运行不结束属于框架缺陷。现有实验约120KiB完整请求尚未证明小窗口，容量不合格不得靠加上限/换模型掩盖。
+
+当前补充工程：LINK文本corrections独立组装，strict离线图标签正确显示编码标点；ANALYTIC/REVIEW明确D/V/M及已审度量B，不改模型编号。请求内批量字面搜索及一次页面匹配内惰性解析不改变原文选择，K1342/K2072四份输出逐字等价；直接回归及quality-12（01:34）通过。明确对象对应、财务细化及正确PurchaseIn建立端核对已正式保存；最终零模型O3保存32份对象定义/28联系/7操作/3规则/6维度/2度量/3指标，9项已审和2项拒绝均保留。四文件重开及离线SVG通过。调拨、统计分类与未知定位、小窗口、总图简洁度仍有未通过项，具体见验收记录，不能按定义数量认定语义全面达标。

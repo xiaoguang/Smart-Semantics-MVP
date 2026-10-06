@@ -20,6 +20,7 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.HexFormat;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -105,6 +106,8 @@ class OntologyFormalRuntimeContractsTest {
       Path.of("tools/repository-run/ontology-artifact-policy-set-v2.json").toAbsolutePath();
   private static final Path ONTOLOGY_POLICY_SET_V3 =
       Path.of("tools/repository-run/ontology-artifact-policy-set-v3.json").toAbsolutePath();
+  private static final Path ONTOLOGY_POLICY_SET_V4 =
+      Path.of("tools/repository-run/ontology-artifact-policy-set-v4.json").toAbsolutePath();
   private static final String JAVA_PATH = "src/main/java/fixture/RecordHandler.java";
   private static final String JAVA_SOURCE =
       "package fixture;\n"
@@ -2132,6 +2135,372 @@ class OntologyFormalRuntimeContractsTest {
         .containsAll(modulePayloadReferences(enrichmentO1))
         .containsAll(modulePayloadReferences(independentO1))
         .containsAll(modulePayloadReferences(o2));
+  }
+
+  @Test
+  void scopeV3EnrichmentUsesOnlyObjectsFromTheExplicitlySelectedLinkTask() throws Exception {
+    TechnicalFixture fixture = prepareRealR4("business-link-scope-v3-exact-task-source");
+    ConfiguredTypedPipeline configured =
+        writeBusinessLinkTypedPipelineConfigurationV4(
+            "ontology-business-link-scope-v3-exact-task-source.yaml", fixture);
+    OntologyConfiguration loadedConfiguration =
+        OntologyConfiguration.load(configured.path()).forTypedV4().forJointLinks();
+    assertThat(loadedConfiguration.prompts()).containsKeys("link", "linkReview");
+    AtomicInteger providerFactories = new AtomicInteger();
+    AtomicInteger linkCandidates = new AtomicInteger();
+    List<StructuredModelRequest> requests = new ArrayList<>();
+    Function<OntologyTypedTaskRunner.FormalModelDeclaration, StructuredModelProvider>
+        providerFactory =
+            declaration -> {
+              providerFactories.incrementAndGet();
+              ModelRuntimeIdentityV1 identity = declaration.expectedRuntimeIdentity();
+              return request -> {
+                requests.add(request);
+                JsonNode input = ExplicitTypedPipelineScript.input(request);
+                String kind = input.path("taskKind").asText();
+                boolean review = request.taskKind().contains("REVIEW");
+                ImmutableBytes response;
+                if ("LINK".equals(kind)) {
+                  if (review) {
+                    ObjectNode reviewed = (ObjectNode) input.path("actualDraft").deepCopy();
+                    reviewed.put("schemaVersion", "ontology-link-review-v1");
+                    response = CANONICAL.encodeCanonical(reviewed);
+                  } else {
+                    String source =
+                        linkCandidates.incrementAndGet() == 1 ? "unselected" : "selected";
+                    response =
+                        businessLinkRuntimeJointResponse(
+                            "ontology-link-candidate-v1", input, source);
+                  }
+                } else if ("ACTION".equals(kind)) {
+                  JsonNode entries = input.path("reviewedCatalog").path("entries");
+                  assertThat(entries).hasSize(2);
+                  assertThat(entries)
+                      .allSatisfy(
+                          entry ->
+                              assertThat(entry.path("definitionType").asText())
+                                  .isEqualTo("objects"));
+                  assertThat(entries)
+                      .extracting(entry -> entry.path("definition").path("name").asText())
+                      .containsExactlyInAnyOrder("selected-source", "selected-target");
+                  response =
+                      businessLinkFormalActionResponseV4(
+                          review ? "ontology-typed-review-v4" : "ontology-typed-candidate-v4",
+                          input.path("questionId").asText(),
+                          "E1",
+                          entries.get(0).path("catalogRef").asText());
+                } else if ("RELATE".equals(kind)) {
+                  JsonNode entries = input.path("reviewedCatalog").path("entries");
+                  assertThat(entries).hasSize(2);
+                  assertThat(entries)
+                      .extracting(entry -> entry.path("definitionType").asText())
+                      .containsOnly("objects");
+                  assertThat(entries)
+                      .extracting(entry -> entry.path("definition").path("name").asText())
+                      .containsExactlyInAnyOrder("selected-source", "selected-target");
+                  List<String> objectRefs =
+                      arrayValues(entries).stream()
+                          .map(entry -> entry.path("catalogRef").asText())
+                          .toList();
+                  response =
+                      businessLinkFormalUnresolvedRelateResponseV4(
+                          review ? "ontology-typed-review-v4" : "ontology-typed-candidate-v4",
+                          objectRefs);
+                } else {
+                  throw new AssertionError("unexpected scope-v3 source-selection task " + kind);
+                }
+                return new StructuredModelResponse(response, identity);
+              };
+            };
+
+    CliResult prepared =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "prepare-ontology",
+            "--evidence-run",
+            fixture.r4RunId());
+    assertThat(prepared.exitCode()).withFailMessage(cliDiagnostics(prepared)).isZero();
+    String corpusRunId = runId(prepared);
+    assertThat(requests).isEmpty();
+
+    Path sourceScope =
+        writeBusinessLinkTwoLinkScopeV3(
+            temporaryDirectory.resolve("business-link-two-link-source-scope-v3.json"));
+    CliResult sourceIdentified =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "identify-ontology",
+            "--corpus-run",
+            corpusRunId,
+            "--scope",
+            sourceScope.toString());
+    assertThat(sourceIdentified.exitCode())
+        .withFailMessage(cliDiagnostics(sourceIdentified))
+        .isZero();
+    String sourceRunId = runId(sourceIdentified);
+    assertThat(requests)
+        .extracting(StructuredModelRequest::taskKind)
+        .containsExactly(
+            "ONTOLOGY_FORMAL_LINK_EXTRACT",
+            "ONTOLOGY_FORMAL_LINK_REVIEW",
+            "ONTOLOGY_FORMAL_LINK_EXTRACT",
+            "ONTOLOGY_FORMAL_LINK_REVIEW");
+
+    Path publishSelection =
+        writePublishSelectionV3(
+            temporaryDirectory.resolve("business-link-direct-publish-selection-v3.json"),
+            corpusRunId,
+            List.of(sourceRunId));
+    JsonNode savedSelection = JSON.readTree(Files.readAllBytes(publishSelection));
+    assertThat(savedSelection.path("schemaVersion").asText()).isEqualTo("ontology-selection-v3");
+    assertThat(savedSelection.path("relationRuns")).isEmpty();
+    int requestsBeforePublish = requests.size();
+    CliResult published =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "publish-ontology",
+            "--selection",
+            publishSelection.toString());
+    assertThat(published.exitCode()).withFailMessage(cliDiagnostics(published)).isZero();
+    String publishedRunId = runId(published);
+    assertThat(requests).hasSize(requestsBeforePublish);
+    JsonNode ontology =
+        JSON.readTree(artifact(configured.path(), publishedRunId, "ONTOLOGY").stdout());
+    assertThat(ontology.path("objectTypes")).hasSize(4);
+    assertThat(ontology.path("linkTypes")).hasSize(2);
+    assertThat(ontology.path("operations")).isEmpty();
+    JsonNode coverage =
+        JSON.readTree(artifact(configured.path(), publishedRunId, "ONTOLOGY_COVERAGE").stdout());
+    JsonNode review =
+        JSON.readTree(artifact(configured.path(), publishedRunId, "ONTOLOGY_REVIEW").stdout());
+    assertThat(coverage.path("schemaVersion").asText()).isEqualTo("ontology-coverage-v4");
+    assertThat(review.path("schemaVersion").asText()).isEqualTo("ontology-review-v4");
+    assertThat(review.path("taskReviewSchemaVersions"))
+        .containsExactly(JSON.getNodeFactory().textNode("ontology-link-review-v1"));
+    assertThat(review.has("typedReviewSchemaVersion")).isFalse();
+    ReopenedModulePublication publishedModule =
+        reopenedOntologyModule(fixture.runStore(), publishedRunId, ONTOLOGY_POLICY_SET_V4);
+    assertThat(publishedModule.payloads())
+        .extracting(payload -> payload.descriptor().schemaVersion())
+        .containsExactlyInAnyOrder(
+            "ontology-v2", "ontology-source-v1", "ontology-coverage-v4", "ontology-review-v4");
+    assertThat(
+            reopenedOntologyModule(fixture.runStore(), sourceRunId, ONTOLOGY_POLICY_SET_V4)
+                .payloads())
+        .extracting(payload -> payload.descriptor().schemaVersion())
+        .containsExactly("ontology-identification-v4");
+    CliResult overview =
+        executePublic(
+            configured.path(),
+            "artifact",
+            "--run",
+            publishedRunId,
+            "--key",
+            "ONTOLOGY_BUSINESS_OVERVIEW",
+            "--max-bytes",
+            "5242880");
+    assertThat(overview.exitCode()).withFailMessage(cliDiagnostics(overview)).isZero();
+    assertThat(overview.stdout()).startsWith("<!doctype html>").contains("ontology-business-graph");
+    assertThat(requests).hasSize(requestsBeforePublish);
+
+    Path enrichmentScope =
+        writeBusinessLinkEnrichmentScopeV3ForTask(
+            temporaryDirectory.resolve("business-link-selected-link-enrichment-v3.json"),
+            sourceRunId,
+            "Q_LINK_SOURCE",
+            "link-task-b");
+    int requestsBeforeEnrichment = requests.size();
+    CliResult enriched =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "identify-ontology",
+            "--corpus-run",
+            corpusRunId,
+            "--scope",
+            enrichmentScope.toString());
+    assertThat(enriched.exitCode()).withFailMessage(cliDiagnostics(enriched)).isZero();
+    String enrichedRunId = runId(enriched);
+    assertThat(requests.subList(requestsBeforeEnrichment, requests.size()))
+        .extracting(
+            request -> {
+              JsonNode input = ExplicitTypedPipelineScript.input(request);
+              return input.path("taskKind").asText()
+                  + "/"
+                  + (request.taskKind().contains("REVIEW") ? "REVIEW" : "EXTRACT");
+            })
+        .containsExactly("ACTION/EXTRACT", "ACTION/REVIEW");
+    for (StructuredModelRequest request :
+        requests.subList(requestsBeforeEnrichment, requests.size())) {
+      JsonNode entries =
+          ExplicitTypedPipelineScript.input(request).path("reviewedCatalog").path("entries");
+      assertThat(entries)
+          .extracting(entry -> entry.path("definition").path("name").asText())
+          .containsExactlyInAnyOrder("selected-source", "selected-target");
+      assertThat(entries)
+          .extracting(entry -> entry.path("definitionType").asText())
+          .containsOnly("objects");
+    }
+
+    int requestsBeforeRejectedSources = requests.size();
+    Path missingTaskScope =
+        writeBusinessLinkEnrichmentScopeV3ForTask(
+            temporaryDirectory.resolve("business-link-missing-task-source-v3.json"),
+            sourceRunId,
+            "Q_LINK_SOURCE",
+            "missing-link-task");
+    CliResult missingTask =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "identify-ontology",
+            "--corpus-run",
+            corpusRunId,
+            "--scope",
+            missingTaskScope.toString());
+    assertThat(missingTask.exitCode()).withFailMessage(cliDiagnostics(missingTask)).isNotZero();
+    assertThat(requests).hasSize(requestsBeforeRejectedSources);
+
+    Path actionTaskScope =
+        writeBusinessLinkEnrichmentScopeV3ForTask(
+            temporaryDirectory.resolve("business-link-action-task-source-v3.json"),
+            enrichedRunId,
+            "Q_LINK_CONSUMER",
+            "action-after-selected-link");
+    CliResult actionTask =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "identify-ontology",
+            "--corpus-run",
+            corpusRunId,
+            "--scope",
+            actionTaskScope.toString());
+    assertThat(actionTask.exitCode()).withFailMessage(cliDiagnostics(actionTask)).isNotZero();
+    assertThat(requests).hasSize(requestsBeforeRejectedSources);
+
+    CliResult sourceIdentificationResult =
+        artifact(configured.path(), sourceRunId, "ONTOLOGY_IDENTIFICATION");
+    assertArtifactAvailable(sourceIdentificationResult);
+    JsonNode sourceIdentification = JSON.readTree(sourceIdentificationResult.stdout());
+    JsonNode selectedLinkTask = findTaskRecord(sourceIdentification, "link-task-b");
+    assertThat(selectedLinkTask.path("status").asText()).isEqualTo("REVIEWED");
+    String selectedLinkProducingTaskId = selectedLinkTask.path("producingTaskId").asText();
+    assertThat(selectedLinkProducingTaskId).isNotBlank();
+    JsonNode savedSelectedLink =
+        queryTaskObservation(configured.path(), sourceRunId, selectedLinkProducingTaskId);
+    assertThat(
+            savedSelectedLink.path("completion").path("identity").path("producingTaskId").asText())
+        .isEqualTo(selectedLinkProducingTaskId);
+    assertThat(savedSelectedLink.path("completion").path("review").path("schemaVersion").asText())
+        .isEqualTo("ontology-link-review-v1");
+
+    Path relationSelection =
+        writeBusinessLinkRelateSelectionV3ForTask(
+            temporaryDirectory.resolve("business-link-selected-link-relate-v3.json"),
+            corpusRunId,
+            sourceRunId,
+            "Q_LINK_SOURCE",
+            "link-task-b");
+    JsonNode savedRelationSelection = JSON.readTree(Files.readAllBytes(relationSelection));
+    assertThat(savedRelationSelection.path("schemaVersion").asText())
+        .isEqualTo("ontology-selection-v3");
+    assertThat(
+            savedRelationSelection
+                .path("questions")
+                .get(0)
+                .path("objectSources")
+                .get(0)
+                .path("taskIds"))
+        .containsExactly(JSON.getNodeFactory().textNode("link-task-b"));
+    int requestsBeforeRelate = requests.size();
+    CliResult related =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "relate-ontology",
+            "--selection",
+            relationSelection.toString());
+    assertThat(related.exitCode()).withFailMessage(cliDiagnostics(related)).isZero();
+    String relationRunId = runId(related);
+    assertThat(requests.subList(requestsBeforeRelate, requests.size()))
+        .extracting(
+            request -> {
+              JsonNode input = ExplicitTypedPipelineScript.input(request);
+              return input.path("taskKind").asText()
+                  + "/"
+                  + (request.taskKind().contains("REVIEW") ? "REVIEW" : "EXTRACT");
+            })
+        .containsExactly("RELATE/EXTRACT", "RELATE/REVIEW");
+    int factoriesAfterRelate = providerFactories.get();
+
+    CliResult relationResult = artifact(configured.path(), relationRunId, "ONTOLOGY_RELATIONS");
+    assertArtifactAvailable(relationResult);
+    JsonNode relations = JSON.readTree(relationResult.stdout());
+    assertThat(relations.path("selection").path("schemaVersion").asText())
+        .isEqualTo("ontology-selection-v3");
+    JsonNode savedObjectSource =
+        relations.path("selection").path("questions").get(0).path("objectSources").get(0);
+    assertThat(savedObjectSource.path("identificationRun").asText()).isEqualTo(sourceRunId);
+    assertThat(savedObjectSource.path("questionId").asText()).isEqualTo("Q_LINK_SOURCE");
+    assertThat(savedObjectSource.path("taskIds"))
+        .containsExactly(JSON.getNodeFactory().textNode("link-task-b"));
+    JsonNode relationTask = findTaskRecord(relations, "relate-selected-link");
+    assertThat(relationTask.path("status").asText()).isEqualTo("REVIEWED");
+    String relationProducingTaskId = relationTask.path("producingTaskId").asText();
+    assertThat(relationProducingTaskId).isNotBlank();
+    JsonNode savedRelation =
+        queryTaskObservation(configured.path(), relationRunId, relationProducingTaskId);
+    assertThat(savedRelation.path("completion").path("identity").path("producingTaskId").asText())
+        .isEqualTo(relationProducingTaskId);
+    assertThat(savedRelation.path("completion").path("status").asText()).isEqualTo("REVIEWED");
+    ReopenedModulePublication relationModule =
+        reopenedOntologyModule(fixture.runStore(), relationRunId, ONTOLOGY_POLICY_SET_V4);
+    assertThat(relationModule.payloads())
+        .extracting(payload -> payload.descriptor().schemaVersion())
+        .contains("ontology-relations-v4");
+
+    Path relationPublishSelection =
+        writePublishSelectionV3WithRelations(
+            temporaryDirectory.resolve("business-link-selected-link-relate-publish-v3.json"),
+            corpusRunId,
+            List.of(sourceRunId),
+            List.of(relationRunId));
+    JsonNode savedRelationPublishSelection =
+        JSON.readTree(Files.readAllBytes(relationPublishSelection));
+    assertThat(savedRelationPublishSelection.path("relationRuns"))
+        .containsExactly(JSON.getNodeFactory().textNode(relationRunId));
+    int requestsBeforeRelationPublish = requests.size();
+    CliResult relationPublished =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "publish-ontology",
+            "--selection",
+            relationPublishSelection.toString());
+    assertThat(relationPublished.exitCode())
+        .withFailMessage(cliDiagnostics(relationPublished))
+        .isZero();
+    String relationPublishedRunId = runId(relationPublished);
+    assertThat(requests).hasSize(requestsBeforeRelationPublish);
+    assertThat(providerFactories).hasValue(factoriesAfterRelate);
+    ReopenedModulePublication relationPublishedModule =
+        reopenedOntologyModule(fixture.runStore(), relationPublishedRunId, ONTOLOGY_POLICY_SET_V4);
+    assertThat(relationPublishedModule.receipt().upstreamArtifacts())
+        .containsAll(modulePayloadReferences(relationModule));
+    CliResult relationPublishedReviewResult =
+        artifact(configured.path(), relationPublishedRunId, "ONTOLOGY_REVIEW");
+    assertArtifactAvailable(relationPublishedReviewResult);
+    JsonNode relationPublishedReview = JSON.readTree(relationPublishedReviewResult.stdout());
+    assertThat(relationPublishedReview.path("selection").path("relationRuns"))
+        .containsExactly(JSON.getNodeFactory().textNode(relationRunId));
+    assertThat(relationPublishedReview.path("taskReviewSchemaVersions"))
+        .contains(
+            JSON.getNodeFactory().textNode("ontology-link-review-v1"),
+            JSON.getNodeFactory().textNode("ontology-typed-review-v4"));
   }
 
   @Test
@@ -8674,6 +9043,93 @@ class OntologyFormalRuntimeContractsTest {
     return CANONICAL.encodeCanonical(response);
   }
 
+  private static ImmutableBytes businessLinkRuntimeJointResponse(
+      String schemaVersion, JsonNode input, String namePrefix) {
+    String questionRef = input.path("questionId").asText();
+    JsonNode firstUnit = input.path("readingPacket").path("units").get(0);
+    String sourceRef = firstUnit.path("ref").asText();
+    String entryRef = firstUnit.path("entryUses").get(0).asText();
+    String fromKey = namePrefix + "-source";
+    String toKey = namePrefix + "-target";
+    ObjectNode response = JSON.createObjectNode();
+    response.put("schemaVersion", schemaVersion);
+    response.put("taskKind", "LINK");
+    response
+        .putArray("objects")
+        .add(runtimeLinkObject(questionRef, entryRef, sourceRef, fromKey))
+        .add(runtimeLinkObject(questionRef, entryRef, sourceRef, toKey));
+    ObjectNode link = response.putArray("links").addObject();
+    link.put("fromKey", fromKey);
+    link.put("toKey", toKey);
+    link.put("name", "Record reference");
+    link.put("definition", "One selected record refers to another through a source value.");
+    link.put("certainty", "INFERRED");
+    link.set("scope", runtimeLinkScope(questionRef, entryRef));
+    ObjectNode mechanism = link.putArray("mechanism").addObject();
+    mechanism.put("description", "The source passes a record-reference value.");
+    ObjectNode expression = mechanism.putObject("expression");
+    expression.put("language", "JAVA");
+    expression.put("text", "sourceRecordCode");
+    ObjectNode binding = expression.putArray("bindings").addObject();
+    binding.put("symbol", "sourceRecordCode");
+    binding.put("definitionRef", fromKey);
+    binding.putNull("propertyRef");
+    expression.putArray("evidenceRefs").add(sourceRef);
+    mechanism.putArray("targetObjectRefs").add(toKey);
+    mechanism.putArray("sourceBindings");
+    mechanism.putArray("evidenceRefs").add(sourceRef);
+    mechanism.putArray("unknowns");
+    link.putArray("conditions");
+    ObjectNode cardinality = link.putObject("cardinality");
+    cardinality.put("basis", "UNKNOWN");
+    cardinality.put("value", "UNKNOWN");
+    cardinality.putArray("evidenceRefs");
+    cardinality.putArray("unknowns");
+    link.putArray("evidenceRefs").add(sourceRef);
+    link.putArray("unknowns");
+    ObjectNode disposition = response.putArray("clueDispositions").addObject();
+    disposition.put("clueRef", input.path("visibleClueRefs").get(0).asText());
+    disposition.put("outcome", "LINK_SUPPORTED");
+    disposition.putArray("linkIndexes").add(0);
+    disposition.put("reason", "The selected source supports this candidate relation.");
+    response.putArray("unresolved");
+    response.putArray("corrections");
+    return CANONICAL.encodeCanonical(response);
+  }
+
+  private static ObjectNode runtimeLinkObject(
+      String questionRef, String entryRef, String sourceRef, String objectKey) {
+    ObjectNode object = JSON.createObjectNode();
+    object.put("objectKey", objectKey);
+    object.put("name", objectKey);
+    object.put("definition", "A record endpoint visible in the selected technical source.");
+    object.put("displayRole", "TECHNICAL_OR_UNKNOWN");
+    object.put("certainty", "INFERRED");
+    object.set("scope", runtimeLinkScope(questionRef, entryRef));
+    ObjectNode backing = object.putArray("backing").addObject();
+    backing.put("kind", "JAVA_MEMBER");
+    backing.put("owner", "example.RecordHandler");
+    backing.put("name", "sourceRecordCode");
+    backing.putNull("expression");
+    backing.putArray("evidenceRefs").add(sourceRef);
+    backing.putArray("unknowns");
+    object.putArray("variants");
+    object.putArray("evidenceRefs").add(sourceRef);
+    ObjectNode unknown = object.putArray("unknowns").addObject();
+    unknown.put("field", "identity");
+    unknown.put("reason", "Identity was not investigated by the LINK skeleton task.");
+    unknown.putArray("missingUnitRefs");
+    return object;
+  }
+
+  private static ObjectNode runtimeLinkScope(String questionRef, String entryRef) {
+    ObjectNode scope = JSON.createObjectNode();
+    scope.put("questionRef", questionRef);
+    scope.putArray("entryUseRefs").add(entryRef);
+    scope.putArray("variants");
+    return scope;
+  }
+
   private static ImmutableBytes businessLinkFormalActionResponseV4(
       String schemaVersion, String questionRef, String entryRef, String objectRef) {
     ObjectNode response =
@@ -8927,6 +9383,15 @@ class OntologyFormalRuntimeContractsTest {
     ObjectNode response =
         (ObjectNode)
             CANONICAL.parseCanonical(formalTaskUnresolvedRelateResponse(schemaVersion, objectRef));
+    response.putArray("clueDispositions");
+    return CANONICAL.encodeCanonical(response);
+  }
+
+  private static ImmutableBytes businessLinkFormalUnresolvedRelateResponseV4(
+      String schemaVersion, List<String> objectRefs) {
+    ObjectNode response =
+        (ObjectNode)
+            CANONICAL.parseCanonical(formalTaskUnresolvedRelateResponse(schemaVersion, objectRefs));
     response.putArray("clueDispositions");
     return CANONICAL.encodeCanonical(response);
   }
@@ -10357,6 +10822,27 @@ class OntologyFormalRuntimeContractsTest {
     return configured;
   }
 
+  private ConfiguredTypedPipeline writeBusinessLinkTypedPipelineConfigurationV4(
+      String name, TechnicalFixture fixture) throws Exception {
+    ConfiguredTypedPipeline configured = writeTypedPipelineConfiguration(name, fixture);
+    String source = Files.readString(configured.path(), StandardCharsets.UTF_8);
+    assertThat(source).contains(yaml(ONTOLOGY_POLICY_SET));
+    String v4Configuration =
+        source.replace(yaml(ONTOLOGY_POLICY_SET), yaml(ONTOLOGY_POLICY_SET_V4));
+    assertThat(v4Configuration).isNotEqualTo(source).contains(yaml(ONTOLOGY_POLICY_SET_V4));
+    Path linkPrompt = temporaryDirectory.resolve(name + "-link.txt");
+    String linkPromptText =
+        "Neutral LINK prompt: cite only the supplied technical source and preserve unknowns.";
+    Files.writeString(linkPrompt, linkPromptText, StandardCharsets.UTF_8);
+    v4Configuration =
+        v4Configuration.replace("prompts:\n", "prompts:\n  link: " + yaml(linkPrompt) + "\n");
+    assertThat(v4Configuration).contains("  link: " + yaml(linkPrompt));
+    Files.writeString(configured.path(), v4Configuration, StandardCharsets.UTF_8);
+    Map<String, String> prompts = new LinkedHashMap<>(configured.prompts());
+    prompts.put("link", linkPromptText);
+    return new ConfiguredTypedPipeline(configured.path(), Map.copyOf(prompts));
+  }
+
   private ConfiguredDiscovery writeBusinessLinkDiscoveryConfigurationV3(
       String name, TechnicalFixture fixture) throws Exception {
     ConfiguredDiscovery configured =
@@ -10767,6 +11253,66 @@ class OntologyFormalRuntimeContractsTest {
     task.put("readingMode", "EXPLICIT");
     unitUses(task.putArray("unitUses"));
     unitUses(task.putArray("requiredUnitUses"));
+    return writeJson(path, root);
+  }
+
+  private Path writeBusinessLinkTwoLinkScopeV3(Path path) throws Exception {
+    ObjectNode root = JSON.createObjectNode();
+    root.put("schemaVersion", "ontology-scope-v3");
+    root.put("mode", "QUESTION");
+    root.put("selectionMode", "EXPLICIT");
+    root.put("purpose", "SKELETON");
+    ObjectNode question = root.putArray("questions").addObject();
+    question.put("questionId", "Q_LINK_SOURCE");
+    question.put(
+        "question", "Describe only source-backed record links and their endpoint objects.");
+    question.putArray("entryRefs").add("E1");
+    question.putArray("clueRefs").add("K1");
+    question.putArray("objectSources");
+    ArrayNode tasks = question.putArray("tasks");
+    for (String taskId : List.of("link-task-a", "link-task-b")) {
+      ObjectNode task = tasks.addObject();
+      task.put("taskId", taskId);
+      task.put("taskKind", "LINK");
+      task.put("readingMode", "TECHNICAL_BUNDLE");
+      task.putArray("anchorRefs").add("K1");
+      addUse(task.putArray("unitUses"), "U1", "E1");
+      addUse(task.putArray("requiredUnitUses"), "U1", "E1");
+    }
+    return writeJson(path, root);
+  }
+
+  private Path writeBusinessLinkEnrichmentScopeV3ForTask(
+      Path path, String sourceRunId, String sourceTaskId) throws Exception {
+    return writeBusinessLinkEnrichmentScopeV3ForTask(
+        path, sourceRunId, "Q_LINK_SOURCE", sourceTaskId);
+  }
+
+  private Path writeBusinessLinkEnrichmentScopeV3ForTask(
+      Path path, String sourceRunId, String sourceQuestionId, String sourceTaskId)
+      throws Exception {
+    ObjectNode root = JSON.createObjectNode();
+    root.put("schemaVersion", "ontology-scope-v3");
+    root.put("mode", "QUESTION");
+    root.put("selectionMode", "EXPLICIT");
+    root.put("purpose", "ENRICHMENT");
+    ObjectNode question = root.putArray("questions").addObject();
+    question.put("questionId", "Q_LINK_CONSUMER");
+    question.put(
+        "question", "Describe only an action supported by the selected object definitions.");
+    question.putArray("entryRefs").add("E1");
+    question.putArray("clueRefs");
+    ObjectNode source = question.putArray("objectSources").addObject();
+    source.put("identificationRun", sourceRunId);
+    source.put("questionId", sourceQuestionId);
+    source.putArray("taskIds").add(sourceTaskId);
+    ObjectNode task = question.putArray("tasks").addObject();
+    task.put("taskId", "action-after-selected-link");
+    task.put("taskKind", "ACTION");
+    task.put("readingMode", "EXPLICIT");
+    task.putArray("anchorRefs");
+    addUse(task.putArray("unitUses"), "U1", "E1");
+    addUse(task.putArray("requiredUnitUses"), "U1", "E1");
     return writeJson(path, root);
   }
 
@@ -11257,6 +11803,60 @@ class OntologyFormalRuntimeContractsTest {
       throws Exception {
     ObjectNode root = JSON.createObjectNode();
     root.put("schemaVersion", "ontology-selection-v2");
+    root.put("operation", "PUBLISH");
+    root.put("corpusRun", corpusRun);
+    ArrayNode identifications = root.putArray("identificationRuns");
+    identificationRuns.forEach(identifications::add);
+    ArrayNode relations = root.putArray("relationRuns");
+    relationRuns.forEach(relations::add);
+    return writeJson(path, root);
+  }
+
+  private Path writePublishSelectionV3(Path path, String corpusRun, List<String> identificationRuns)
+      throws Exception {
+    ObjectNode root = JSON.createObjectNode();
+    root.put("schemaVersion", "ontology-selection-v3");
+    root.put("operation", "PUBLISH");
+    root.put("corpusRun", corpusRun);
+    ArrayNode identifications = root.putArray("identificationRuns");
+    identificationRuns.forEach(identifications::add);
+    root.putArray("relationRuns");
+    return writeJson(path, root);
+  }
+
+  private Path writeBusinessLinkRelateSelectionV3ForTask(
+      Path path,
+      String corpusRun,
+      String identificationRun,
+      String sourceQuestionId,
+      String sourceTaskId)
+      throws Exception {
+    ObjectNode root = JSON.createObjectNode();
+    root.put("schemaVersion", "ontology-selection-v3");
+    root.put("operation", "RELATE");
+    root.put("corpusRun", corpusRun);
+    root.putArray("identificationRuns").add(identificationRun);
+    ObjectNode question = root.putArray("questions").addObject();
+    question.put("questionId", "Q_LINK_RELATION");
+    question.put("question", "Relate only the explicitly selected LINK objects.");
+    question.put("taskId", "relate-selected-link");
+    question.put("readingMode", "EXPLICIT");
+    question.putArray("entryRefs").add("E1");
+    question.putArray("clueRefs");
+    unitUses(question.putArray("unitUses"));
+    unitUses(question.putArray("requiredUnitUses"));
+    ObjectNode objectSource = question.putArray("objectSources").addObject();
+    objectSource.put("identificationRun", identificationRun);
+    objectSource.put("questionId", sourceQuestionId);
+    objectSource.putArray("taskIds").add(sourceTaskId);
+    return writeJson(path, root);
+  }
+
+  private Path writePublishSelectionV3WithRelations(
+      Path path, String corpusRun, List<String> identificationRuns, List<String> relationRuns)
+      throws Exception {
+    ObjectNode root = JSON.createObjectNode();
+    root.put("schemaVersion", "ontology-selection-v3");
     root.put("operation", "PUBLISH");
     root.put("corpusRun", corpusRun);
     ArrayNode identifications = root.putArray("identificationRuns");

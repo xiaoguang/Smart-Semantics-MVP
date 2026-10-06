@@ -192,6 +192,19 @@ public final class OntologyDecisionRunner {
       int maxTaskKindsPerQuestion,
       FormalDecisionMaterial material,
       OntologyScopeReader.Purpose purpose) {
+    return prepareFormalPrioritize(
+        corpus, questions, maxQuestions, maxTaskKindsPerQuestion, material, purpose, false);
+  }
+
+  /** The explicit joint-link family never changes historical priority envelopes. */
+  public PreparedDecision prepareFormalPrioritize(
+      OntologyEvidenceCorpus corpus,
+      List<FormalSurveyQuestion> questions,
+      int maxQuestions,
+      int maxTaskKindsPerQuestion,
+      FormalDecisionMaterial material,
+      OntologyScopeReader.Purpose purpose,
+      boolean jointLinkFamily) {
     Objects.requireNonNull(corpus, "ontology corpus");
     Objects.requireNonNull(questions, "formal survey questions");
     Objects.requireNonNull(material, "formal prioritize material");
@@ -199,7 +212,9 @@ public final class OntologyDecisionRunner {
       throw new IllegalArgumentException("ONTOLOGY_PRIORITIZE_INPUT_INVALID");
     }
     ObjectNode input = mapper.createObjectNode();
-    input.put("schemaVersion", "ontology-prioritize-input-v4");
+    input.put(
+        "schemaVersion",
+        jointLinkFamily ? "ontology-prioritize-input-v5" : "ontology-prioritize-input-v4");
     input.put("maxQuestions", maxQuestions);
     input.put("maxTaskKindsPerQuestion", maxTaskKindsPerQuestion);
     if (purpose != null) input.put("purpose", purpose.name());
@@ -212,9 +227,35 @@ public final class OntologyDecisionRunner {
       question.candidateEntryRefs().forEach(entries::add);
       ArrayNode clues = value.putArray("clueRefs");
       question.clueRefs().forEach(clues::add);
+      if (jointLinkFamily) {
+        ArrayNode anchors = value.putArray("linkAnchorRefs");
+        for (String ref : question.clueRefs()) {
+          corpus.aliases().clue(ref);
+          anchors.add(ref);
+        }
+      }
     }
     ImmutableBytes validationSchema = material.validationSchema();
-    if (purpose == OntologyScopeReader.Purpose.SKELETON) {
+    if (jointLinkFamily) {
+      ObjectNode schema = (ObjectNode) json.parseCanonical(validationSchema).deepCopy();
+      ((ObjectNode) schema.path("properties").path("schemaVersion"))
+          .put("const", "ontology-prioritize-response-v5");
+      ObjectNode selected = (ObjectNode) schema.path("$defs").path("selected");
+      ((ArrayNode) selected.path("required")).add("linkAnchorRefs");
+      ObjectNode properties = (ObjectNode) selected.path("properties");
+      ObjectNode anchors = properties.putObject("linkAnchorRefs");
+      anchors
+          .put("type", "array")
+          .put("uniqueItems", true)
+          .put("maxItems", maxTaskKindsPerQuestion);
+      anchors.putObject("items").put("type", "string").put("pattern", "^K[1-9][0-9]*$");
+      ObjectNode taskKinds = (ObjectNode) properties.path("taskKinds");
+      taskKinds.put("minItems", 1).put("maxItems", maxTaskKindsPerQuestion);
+      ArrayNode kinds = ((ObjectNode) taskKinds.path("items")).putArray("enum").add("OBJECT");
+      if (purpose == OntologyScopeReader.Purpose.SKELETON) kinds.add("LINK");
+      else kinds.add("ACTION").add("ANALYTIC");
+      validationSchema = json.encodeCanonical(schema);
+    } else if (purpose == OntologyScopeReader.Purpose.SKELETON) {
       ObjectNode schema = (ObjectNode) json.parseCanonical(validationSchema);
       ObjectNode taskKinds =
           (ObjectNode) schema.path("$defs").path("selected").path("properties").path("taskKinds");
@@ -228,7 +269,7 @@ public final class OntologyDecisionRunner {
         input,
         material.prompt(),
         validationSchema,
-        "ontology-prioritize-response-v4",
+        jointLinkFamily ? "ontology-prioritize-response-v5" : "ontology-prioritize-response-v4",
         formalSourceBasis(corpus),
         material.requestedMaxOutputTokens());
   }
@@ -1261,6 +1302,9 @@ public final class OntologyDecisionRunner {
     identity.set("state", mapper.valueToTree(result.state()));
     identity.put("status", result.status().name());
     identity.put("issueCode", result.issueCode());
+    if (result.bundleDecision() != null) {
+      identity.set("bundleDecision", result.bundleDecision());
+    }
     if (material == null) {
       identity.putNull("readingPacket");
     } else {

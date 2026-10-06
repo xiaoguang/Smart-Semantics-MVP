@@ -13,14 +13,16 @@ public enum OntologyArtifactQueryKey {
       "ontology-identification-v1",
       false,
       "ontology-identification-v2",
-      "ontology-identification-v3"),
+      "ontology-identification-v3",
+      "ontology-identification-v4"),
   ONTOLOGY_RELATIONS(
       "ontology-relations.json",
       "ONTOLOGY_RELATIONS",
       "ontology-relations-v1",
       false,
       "ontology-relations-v2",
-      "ontology-relations-v3"),
+      "ontology-relations-v3",
+      "ontology-relations-v4"),
   ONTOLOGY("ontology.json", "ONTOLOGY", "ontology-v1", false, "ontology-v2"),
   ONTOLOGY_COVERAGE(
       "ontology-coverage.json",
@@ -28,7 +30,8 @@ public enum OntologyArtifactQueryKey {
       "ontology-coverage-v1",
       false,
       "ontology-coverage-v2",
-      "ontology-coverage-v3"),
+      "ontology-coverage-v3",
+      "ontology-coverage-v4"),
   ONTOLOGY_SOURCE_INDEX(
       "ontology-sources.jsonl", "ONTOLOGY_SOURCE_INDEX", "ontology-source-v1", false),
   ONTOLOGY_REVIEW(
@@ -37,7 +40,8 @@ public enum OntologyArtifactQueryKey {
       "ontology-review-v1",
       false,
       "ontology-review-v2",
-      "ontology-review-v3"),
+      "ontology-review-v3",
+      "ontology-review-v4"),
   ONTOLOGY_BUSINESS_OVERVIEW(null, null, "ontology-business-overview-v1", false),
   ONTOLOGY_ASSEMBLY_DIAGNOSTIC(null, null, "ontology-assembly-diagnostic-v1", false),
   ONTOLOGY_TASK_INDEX(null, null, "ontology-task-index-v1", false),

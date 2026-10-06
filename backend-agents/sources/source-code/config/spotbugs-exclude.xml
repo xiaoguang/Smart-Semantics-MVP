@@ -81,6 +81,12 @@
   <Match><Bug pattern="EI_EXPOSE_REP2"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyReadingCoordinator$FormalResult"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyReadingCoordinator$Result"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP2"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyReadingCoordinator$Result"/></Match>
+  <!-- The LINK result shares the immutable frozen packet: immutable byte values and copied
+       collections; content()/decision() parse fresh detached JSON. The packet-reference
+       mutation regression verifies that source, decision and model bytes cannot change.
+       Keep both exceptions limited to this one field/accessor, not the whole class. -->
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyCoherentLinkBundle$Result"/><Method name="packet"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP2"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyCoherentLinkBundle$Result"/><Field name="packet"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyScopedAssembler$ReviewedTask"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP2"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyScopedAssembler$ReviewedTask"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyTypedTaskRunner$FormalResult"/></Match>

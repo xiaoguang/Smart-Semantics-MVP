@@ -49,6 +49,7 @@ public final class OntologyReadingPacket {
   private final List<FormalContextRequest> formalContextRequests;
   private final ImmutableBytes visibleClues;
   private final PacketCost cost;
+  private final ImmutableBytes bundleDecision;
 
   private OntologyReadingPacket(
       String sourceIdentity,
@@ -90,6 +91,36 @@ public final class OntologyReadingPacket {
       List<FormalContextSource> formalContextSources,
       List<FormalContextRequest> formalContextRequests,
       ImmutableBytes visibleClues) {
+    this(
+        sourceIdentity,
+        units,
+        entryLimitations,
+        entryDescriptors,
+        format,
+        evidenceUnitRefs,
+        entryRefs,
+        localRefsByUse,
+        formalCallSites,
+        formalContextSources,
+        formalContextRequests,
+        visibleClues,
+        null);
+  }
+
+  private OntologyReadingPacket(
+      String sourceIdentity,
+      List<PackedUnit> units,
+      Map<String, Map<String, Integer>> entryLimitations,
+      Map<String, EntryDescriptor> entryDescriptors,
+      PacketFormat format,
+      Map<String, String> evidenceUnitRefs,
+      Map<String, String> entryRefs,
+      Map<UnitHandle, String> localRefsByUse,
+      List<FormalCallSite> formalCallSites,
+      List<FormalContextSource> formalContextSources,
+      List<FormalContextRequest> formalContextRequests,
+      ImmutableBytes visibleClues,
+      ImmutableBytes bundleDecision) {
     this.sourceIdentity = sourceIdentity;
     this.units = List.copyOf(units);
     this.entryLimitations = Map.copyOf(entryLimitations);
@@ -102,6 +133,7 @@ public final class OntologyReadingPacket {
     this.formalContextSources = List.copyOf(formalContextSources);
     this.formalContextRequests = List.copyOf(formalContextRequests);
     this.visibleClues = Objects.requireNonNull(visibleClues, "visible clue context");
+    this.bundleDecision = bundleDecision;
     Map<String, PackedUnit> local = new LinkedHashMap<>();
     for (PackedUnit unit : units) {
       if (local.putIfAbsent(unit.localRef(), unit) != null) {
@@ -114,7 +146,13 @@ public final class OntologyReadingPacket {
     modelInput = JSON.encodeCanonical(modelDocument());
     cost =
         new PacketCost(
-            this.units.stream().mapToInt(unit -> unit.canonicalJson().size()).sum(),
+            this.units.stream()
+                .mapToInt(
+                    unit ->
+                        format == PacketFormat.FORMAL_V6
+                            ? fullBodyBytes(unit.kind(), unit.content())
+                            : unit.canonicalJson().size())
+                .sum(),
             modelInput.size(),
             canonicalInput.size(),
             this.units.stream()
@@ -125,7 +163,8 @@ public final class OntologyReadingPacket {
 
   /** Attaches actual selected K meanings; short K identifiers alone are not model evidence. */
   public OntologyReadingPacket withVisibleClues(OntologyEvidenceCorpus corpus, List<String> refs) {
-    if (format != PacketFormat.FORMAL_V5 || !sourceIdentity.equals(corpus.sourceIdentity())) {
+    if ((format != PacketFormat.FORMAL_V5 && format != PacketFormat.FORMAL_V6)
+        || !sourceIdentity.equals(corpus.sourceIdentity())) {
       throw new IllegalArgumentException("ONTOLOGY_FORMAL_CLUE_REFERENCE_INVALID");
     }
     ArrayNode context = new ObjectMapper().createArrayNode();
@@ -158,7 +197,8 @@ public final class OntologyReadingPacket {
         formalCallSites,
         formalContextSources,
         formalContextRequests,
-        JSON.encodeCanonical(context));
+        JSON.encodeCanonical(context),
+        bundleDecision);
   }
 
   public static OntologyReadingPacket of(String sourceIdentity, List<EvidenceUnit> selected) {
@@ -250,6 +290,168 @@ public final class OntologyReadingPacket {
     return formal(corpus, selected, maxUnitUtf8Bytes, PacketFormat.FORMAL_V5);
   }
 
+  /** Freezes the already selected technical bundle; it does not invent a selection or replay it. */
+  public static OntologyReadingPacket formalV6(
+      OntologyEvidenceCorpus corpus,
+      List<UnitHandle> selected,
+      int maxUnitUtf8Bytes,
+      JsonNode bundleDecision) {
+    return formalV6(corpus, selected, maxUnitUtf8Bytes, bundleDecision, true);
+  }
+
+  static OntologyReadingPacket restoreFormalV6(
+      OntologyEvidenceCorpus corpus,
+      List<UnitHandle> selected,
+      int maxUnitUtf8Bytes,
+      JsonNode bundleDecision) {
+    return formalV6(corpus, selected, maxUnitUtf8Bytes, bundleDecision, false);
+  }
+
+  private static OntologyReadingPacket formalV6(
+      OntologyEvidenceCorpus corpus,
+      List<UnitHandle> selected,
+      int maxUnitUtf8Bytes,
+      JsonNode bundleDecision,
+      boolean expandSourceContexts) {
+    if (bundleDecision == null
+        || !bundleDecision.isObject()
+        || !"link-bundle-rule-v1".equals(bundleDecision.path("ruleVersion").asText())
+        || !bundleDecision.path("anchorRef").asText().matches("K[1-9][0-9]*")
+        || !Set.of("EXPLICIT", "MODEL").contains(bundleDecision.path("selectionOrigin").asText())
+        || !bundleDecision.path("cost").isObject()) {
+      throw new IllegalArgumentException("ONTOLOGY_LINK_BUNDLE_DECISION_INVALID");
+    }
+    Set<String> decisionFields =
+        Set.of(
+            "ruleVersion",
+            "anchorRef",
+            "selectionOrigin",
+            "seedUses",
+            "derivedUses",
+            "derivedEntries",
+            "groups",
+            "requiredButUnread",
+            "unreadCandidates",
+            "cost");
+    Set<String> actualFields = new LinkedHashSet<>();
+    bundleDecision.fieldNames().forEachRemaining(actualFields::add);
+    if (!actualFields.equals(decisionFields)) {
+      throw new IllegalArgumentException("ONTOLOGY_LINK_BUNDLE_DECISION_INVALID");
+    }
+    for (String field :
+        List.of(
+            "seedUses",
+            "derivedUses",
+            "derivedEntries",
+            "groups",
+            "requiredButUnread",
+            "unreadCandidates")) {
+      if (!bundleDecision.path(field).isArray()) {
+        throw new IllegalArgumentException("ONTOLOGY_LINK_BUNDLE_DECISION_INVALID");
+      }
+    }
+    validateBundleGroups(bundleDecision);
+    OntologyReadingPacket packet =
+        formal(corpus, selected, maxUnitUtf8Bytes, PacketFormat.FORMAL_V6, expandSourceContexts);
+    return new OntologyReadingPacket(
+        packet.sourceIdentity,
+        packet.units,
+        packet.entryLimitations,
+        packet.entryDescriptors,
+        packet.format,
+        packet.evidenceUnitRefs,
+        packet.entryRefs,
+        packet.localRefsByUse,
+        packet.formalCallSites,
+        packet.formalContextSources,
+        packet.formalContextRequests,
+        packet.visibleClues,
+        JSON.encodeCanonical(bundleDecision));
+  }
+
+  private static void validateBundleGroups(JsonNode decision) {
+    int ordinal = 0;
+    Set<String> groupFields =
+        Set.of(
+            "groupRef",
+            "matchKind",
+            "technicalRefs",
+            "unitUses",
+            "pageInstanceRef",
+            "unitBytes",
+            "projectedIncrementBytes",
+            "outcome",
+            "issueCode");
+    for (JsonNode group : decision.path("groups")) {
+      Set<String> actual = new LinkedHashSet<>();
+      group.fieldNames().forEachRemaining(actual::add);
+      if (!group.isObject()
+          || !actual.equals(groupFields)
+          || !("G" + (++ordinal)).equals(group.path("groupRef").asText())
+          || !Set.of("PAGE_CONTEXT", "ANCHOR_SOURCE", "LEXICAL_MATCH", "STRUCTURED_REFERENCE")
+              .contains(group.path("matchKind").asText())
+          || !Set.of("INCLUDED", "UNAVAILABLE", "CAPACITY_BLOCKED")
+              .contains(group.path("outcome").asText())
+          || !group.path("technicalRefs").isArray()
+          || group.path("technicalRefs").size() != 1
+          || !decision.path("anchorRef").equals(group.path("technicalRefs").get(0))
+          || !group.path("unitUses").isArray()
+          || !group.path("projectedIncrementBytes").canConvertToInt()
+          || !group.path("projectedIncrementBytes").isIntegralNumber()
+          || group.path("projectedIncrementBytes").asInt() < 0
+          || !(group.path("pageInstanceRef").isNull() || group.path("pageInstanceRef").isTextual())
+          || !(group.path("unitBytes").isNull()
+              || (group.path("unitBytes").isIntegralNumber()
+                  && group.path("unitBytes").canConvertToInt()
+                  && group.path("unitBytes").asInt() >= 0))) {
+        throw new IllegalArgumentException("ONTOLOGY_LINK_BUNDLE_DECISION_INVALID");
+      }
+      boolean included = "INCLUDED".equals(group.path("outcome").asText());
+      if (included
+          ? (!group.path("issueCode").isNull()
+              || group.path("unitUses").isEmpty()
+              || group.path("unitBytes").isNull())
+          : (!group.path("issueCode").isTextual() || group.path("issueCode").asText().isBlank())) {
+        throw new IllegalArgumentException("ONTOLOGY_LINK_BUNDLE_DECISION_INVALID");
+      }
+      for (JsonNode use : group.path("unitUses")) {
+        if (!use.isObject()
+            || use.size() != 2
+            || !use.path("unitRef").asText().matches("U[1-9][0-9]*")
+            || !use.path("entryRef").asText().matches("E[1-9][0-9]*")) {
+          throw new IllegalArgumentException("ONTOLOGY_LINK_BUNDLE_DECISION_INVALID");
+        }
+      }
+    }
+    for (var fields = decision.path("cost").fields(); fields.hasNext(); ) {
+      var field = fields.next();
+      if (!Set.of("sourceBytes", "projectionBytes").contains(field.getKey())
+          || !field.getValue().isIntegralNumber()
+          || !field.getValue().canConvertToInt()
+          || field.getValue().asInt() < 0) {
+        throw new IllegalArgumentException("ONTOLOGY_LINK_BUNDLE_DECISION_INVALID");
+      }
+    }
+  }
+
+  static int fullBodyBytes(UnitKind kind, JsonNode source) {
+    String text =
+        switch (kind) {
+          case JAVA_METHOD -> source.path("source").path("text").asText();
+          case FRONTEND_UNIT -> source.path("text").asText();
+          case XML_STATEMENT ->
+              source.path("xmlSubtree").isTextual()
+                  ? source.path("xmlSubtree").asText()
+                  : source.path("xmlSubtree").toString();
+          case XML_RESOURCE -> source.path("rawSource").asText();
+          case SQL_ANALYSIS -> source.path("analysisCopy").asText();
+          case SOURCE_REFERENCE -> source.path("sourceText").asText();
+          case SCHEMA_SOURCE -> source.path("sourceText").asText();
+          default -> "";
+        };
+    return text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+  }
+
   private static OntologyReadingPacket formal(
       OntologyEvidenceCorpus corpus,
       List<UnitHandle> selected,
@@ -281,7 +483,7 @@ public final class OntologyReadingPacket {
       // Preserve the established selected-handle failure before resolving page dependencies.
       aliases.unitRef(handle);
       expanded.add(handle);
-      if (format == PacketFormat.FORMAL_V5
+      if ((format == PacketFormat.FORMAL_V5 || format == PacketFormat.FORMAL_V6)
           && expandSourceContexts
           && handle.kind() == UnitKind.FRONTEND_UNIT) {
         for (UnitHandle context : corpus.frontendPageContexts(handle)) {
@@ -306,7 +508,10 @@ public final class OntologyReadingPacket {
       String evidenceRef = aliases.unitRef(handle);
       String entryRef = aliases.entryRef(handle.entryId());
       EvidenceUnit evidence = aliases.read(evidenceRef, entryRef);
-      if (evidence.canonicalJson().size() > maxUnitUtf8Bytes) {
+      if ((format == PacketFormat.FORMAL_V6
+              ? fullBodyBytes(evidence.kind(), evidence.content())
+              : evidence.canonicalJson().size())
+          > maxUnitUtf8Bytes) {
         throw new IllegalArgumentException("ONTOLOGY_UNIT_TOO_LARGE");
       }
       evidenceByUse.put(handle, evidence);
@@ -424,7 +629,9 @@ public final class OntologyReadingPacket {
     if (!format.isFormal()) {
       throw new IllegalStateException("ONTOLOGY_FORMAL_PACKET_REQUIRED");
     }
-    return format == PacketFormat.FORMAL_V5 ? "EXACT_ROWS_WITH_USES_V1" : "EXACT_ATOMS_V1";
+    return format == PacketFormat.FORMAL_V6
+        ? "EXACT_LINK_BUNDLE_V1"
+        : format == PacketFormat.FORMAL_V5 ? "EXACT_ROWS_WITH_USES_V1" : "EXACT_ATOMS_V1";
   }
 
   public List<PackedUnit> units() {
@@ -475,8 +682,11 @@ public final class OntologyReadingPacket {
     if (format.isFormal()) {
       root.put("schemaVersion", format.privateSchemaVersion());
     }
-    if (format == PacketFormat.FORMAL_V5) {
+    if (format == PacketFormat.FORMAL_V5 || format == PacketFormat.FORMAL_V6) {
       root.set("visibleClues", JSON.parseCanonical(visibleClues));
+    }
+    if (format == PacketFormat.FORMAL_V6 && bundleDecision != null) {
+      root.set("bundleDecision", JSON.parseCanonical(bundleDecision));
     }
     root.put("sourceIdentity", sourceIdentity);
     ArrayNode content = root.putArray("units");
@@ -551,14 +761,19 @@ public final class OntologyReadingPacket {
     ObjectMapper mapper = new ObjectMapper();
     ObjectNode root = mapper.createObjectNode();
     root.put("schemaVersion", format.modelSchemaVersion());
-    if (format == PacketFormat.FORMAL_V5) {
+    if (format == PacketFormat.FORMAL_V6 && bundleDecision != null) {
+      JsonNode decision = JSON.parseCanonical(bundleDecision);
+      OntologyModelProjection.projectUnreadCandidates(root, decision.path("unreadCandidates"));
+      root.set("requiredButUnread", decision.path("requiredButUnread").deepCopy());
+    }
+    if (format == PacketFormat.FORMAL_V5 || format == PacketFormat.FORMAL_V6) {
       root.set("visibleClues", JSON.parseCanonical(visibleClues));
     }
     if (format.isFormal()) {
       root.put("callContextEncoding", callContextEncoding());
       root.put(
           "callEvidenceInstruction",
-          (format == PacketFormat.FORMAL_V5
+          (format == PacketFormat.FORMAL_V5 || format == PacketFormat.FORMAL_V6
                   ? "callUses in ordinal order reference callRows by rowRef (C); site columns are"
                       + " startOffsetUtf16,lengthUtf16,startLine,endLine. Each use keeps its entry,"
                       + " caller and selected targets. "
@@ -573,10 +788,11 @@ public final class OntologyReadingPacket {
     writeModelUnits(root, visibleEntryRefs);
     if (format.isFormal()) {
       writeFormalCallEvidence(root);
-      if (format == PacketFormat.FORMAL_V5) {
+      if (format == PacketFormat.FORMAL_V5 || format == PacketFormat.FORMAL_V6) {
         writeSharedCallRows(root);
       }
     }
+    if (format == PacketFormat.FORMAL_V6) OntologyModelProjection.internFrontendObservations(root);
     return root;
   }
 
@@ -637,6 +853,20 @@ public final class OntologyReadingPacket {
   }
 
   private JsonNode modelUnitContent(PackedUnit unit) {
+    if (format == PacketFormat.FORMAL_V6) {
+      ObjectNode result =
+          (ObjectNode)
+              OntologyModelProjection.projectFormalV4(
+                  unit.kind(),
+                  unit.content(),
+                  contextSourceRefs(unit.localRef()),
+                  contextRequestRefs(unit.localRef()),
+                  hasVisibleFormalCallContext(unit.localRef()));
+      if (unit.kind() == UnitKind.JAVA_METHOD) {
+        result.remove(List.of("signature", "returnTypeText", "controls", "exits", "annotations"));
+      }
+      return result;
+    }
     return format == PacketFormat.FORMAL_V3
         ? OntologyModelProjection.projectFormal(
             unit.kind(),
@@ -767,7 +997,9 @@ public final class OntologyReadingPacket {
   }
 
   private boolean hasV4CallDetails() {
-    return format == PacketFormat.FORMAL_V4 || format == PacketFormat.FORMAL_V5;
+    return format == PacketFormat.FORMAL_V4
+        || format == PacketFormat.FORMAL_V5
+        || format == PacketFormat.FORMAL_V6;
   }
 
   /**
@@ -1042,7 +1274,8 @@ public final class OntologyReadingPacket {
     LEGACY_V2,
     FORMAL_V3,
     FORMAL_V4,
-    FORMAL_V5;
+    FORMAL_V5,
+    FORMAL_V6;
 
     private boolean isFormal() {
       return this != LEGACY_V2;
@@ -1053,6 +1286,7 @@ public final class OntologyReadingPacket {
         case FORMAL_V3 -> "ontology-reading-packet-v3";
         case FORMAL_V4 -> "ontology-reading-packet-v4";
         case FORMAL_V5 -> "ontology-reading-packet-v5";
+        case FORMAL_V6 -> "ontology-reading-packet-v6";
         case LEGACY_V2 -> throw new IllegalStateException("ONTOLOGY_FORMAL_PACKET_REQUIRED");
       };
     }
@@ -1063,6 +1297,7 @@ public final class OntologyReadingPacket {
         case FORMAL_V3 -> "ontology-model-reading-v3";
         case FORMAL_V4 -> "ontology-model-reading-v4";
         case FORMAL_V5 -> "ontology-model-reading-v5";
+        case FORMAL_V6 -> "ontology-model-reading-v6";
       };
     }
   }

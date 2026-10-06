@@ -419,6 +419,14 @@ public final class OntologyReadingCoordinator {
             .filter(candidate -> taskId.equals(candidate.taskId()))
             .findFirst()
             .orElseThrow(() -> new IllegalArgumentException("ONTOLOGY_READING_TASK_UNKNOWN"));
+    if (task.taskKind() == OntologyScopeReader.TaskKind.LINK) {
+      return completeCoherentFormal(
+          question,
+          task,
+          scope.mode() == OntologyScopeReader.Mode.DISCOVERY
+              ? OntologyScopeReader.SelectionMode.MODEL
+              : OntologyScopeReader.SelectionMode.EXPLICIT);
+    }
     return completeFormal(
         new FormalQuestion(
             question.questionId(), question.question(), question.entryRefs(), question.clueRefs()),
@@ -428,6 +436,75 @@ public final class OntologyReadingCoordinator {
             task.readingMode(),
             task.unitUses(),
             task.requiredUnitUses()));
+  }
+
+  /** LINK preparation is mechanical, not a fabricated model reading decision. */
+  private FormalResult completeCoherentFormal(
+      OntologyScopeReader.Question question,
+      OntologyScopeReader.Task task,
+      OntologyScopeReader.SelectionMode selectionMode) {
+    observedFormalState = null;
+    OntologyCoherentLinkBundle.Result bundle =
+        OntologyCoherentLinkBundle.prepare(
+            corpus, question, task, maxFormalUnitBytes, maxFormalRequestBytes, selectionMode);
+    JsonNode decision = bundle.decision();
+    Set<String> entries = new LinkedHashSet<>(question.entryRefs());
+    decision.path("derivedEntries").forEach(ref -> entries.add(ref.asText()));
+    Set<FormalUnitUse> active = new LinkedHashSet<>();
+    if (bundle.packet() != null) {
+      for (OntologyReadingPacket.PackedUnit unit : bundle.packet().units()) {
+        for (String entryRef : bundle.packet().entryRefs(unit.localRef())) {
+          active.add(FormalUnitUse.of(bundle.packet().evidenceUnitRef(unit.localRef()), entryRef));
+        }
+      }
+    }
+    Set<FormalUnitUse> unread = new LinkedHashSet<>();
+    decision
+        .path("requiredButUnread")
+        .forEach(
+            use -> {
+              if (use.has("unitRef")) {
+                unread.add(
+                    FormalUnitUse.of(use.path("unitRef").asText(), use.path("entryRef").asText()));
+              }
+            });
+    FormalState state =
+        new FormalState(
+            entries,
+            Set.copyOf(task.anchorRefs()),
+            Set.of(),
+            List.of(),
+            active,
+            unread,
+            List.of(),
+            List.of());
+    FormalResult result =
+        new FormalResult(
+            bundle.packet() == null ? Status.INCOMPLETE : Status.READY,
+            state,
+            List.of(),
+            bundle.issueCode() == null ? "" : bundle.issueCode(),
+            bundle.packet(),
+            bundle.packet(),
+            bundle.packet(),
+            new FreezeEnvelope("technical-bundle-v1", null, null, 0),
+            bundle.decisionDocument());
+    observedFormalState = state;
+    decisions.saveFormalReadingObservation(
+        new FormalQuestion(
+            question.questionId(), question.question(), question.entryRefs(), question.clueRefs()),
+        new FormalTask(
+            task.taskId(),
+            OntologyTaskRunner.TaskKind.LINK,
+            task.readingMode(),
+            task.unitUses(),
+            task.requiredUnitUses()),
+        corpus,
+        result,
+        bundle.packet(),
+        null,
+        null);
+    return result;
   }
 
   /** Uses the same bounded reading protocol for an exact O2 question, without posing as OBJECT. */
@@ -1861,7 +1938,35 @@ public final class OntologyReadingCoordinator {
       OntologyReadingPacket frozenPacket,
       OntologyReadingPacket extractPacket,
       OntologyReadingPacket reviewPacket,
-      FreezeEnvelope freezeEnvelope) {
+      FreezeEnvelope freezeEnvelope,
+      org.sourceanalysis.app.artifact.ImmutableBytes bundleDecisionDocument) {
+    public FormalResult(
+        Status status,
+        FormalState state,
+        List<String> unresolved,
+        String issueCode,
+        OntologyReadingPacket frozenPacket,
+        OntologyReadingPacket extractPacket,
+        OntologyReadingPacket reviewPacket,
+        FreezeEnvelope freezeEnvelope) {
+      this(
+          status,
+          state,
+          unresolved,
+          issueCode,
+          frozenPacket,
+          extractPacket,
+          reviewPacket,
+          freezeEnvelope,
+          null);
+    }
+
+    public JsonNode bundleDecision() {
+      return bundleDecisionDocument == null
+          ? null
+          : new CanonicalJsonCodec().parseCanonical(bundleDecisionDocument);
+    }
+
     public FormalResult {
       unresolved = List.copyOf(unresolved);
     }

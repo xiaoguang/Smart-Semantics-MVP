@@ -1,6 +1,8 @@
 # 先连接业务再完善本体的详细设计
 
-状态：2026-10-05，**正式工程及局部骨架/细化交付完成，业务覆盖、小窗口和浏览器呈现验收仍部分未通过/未验**。新合同、控制/页面反查、材料v5、准确跨运行对象和四文件/离线图已有129项直接回归及同代码质量依据。最终实际产出及20份请求成本由[正式验收](../../supplements/ontology-business-link-formal-acceptance-20261005.md)维护，接续状态由[执行记录](../../../progress/business-link-first-execution.md)维护。既有四命令及底座复用；实验与失败记录不改写成正式成功。
+状态：本文保存业务联系优先的总体职责；最新联合LINK增量由[连贯材料设计](coherent-link-material-design.md)拥有，当前结果由[连贯验收](../../supplements/coherent-link-20261005-acceptance.md)维护。正式工程、采购来源编号骨架、财务/统计细化及四文件/离线SVG已有结果；模型质量、小窗口和总图简洁度未全面通过。129项门禁及20份请求成本属于[前版有限验收](../../supplements/ontology-business-link-formal-acceptance-20261005.md)，不当成新联合路径验收。四命令及底座复用，历史实验和失败记录不改写。
+
+**下一版目标已修订，待实施：**[连贯材料与对象—联系联合识别](coherent-link-material-design.md)拥有新增LINK任务、Java技术扩展、紧凑投影及新合同。正式旧流程的“OBJECT目录缺端点→RELATE审阅删边”已有实际失败；薄联合实验补出订单引用请购单，但不代表完整采购链或小窗口通过。本文保留已交付能力，下列骨架顺序按新目标修正；§14为现行保存合同，新版本以新详细设计§12为准。
 
 ## 1. 要交付的结果
 
@@ -54,14 +56,14 @@ Java能确定“哪些保存记录相同、哪些方法/表/字段被共同使�
 
 ```text
 prepare-ontology：O0，准备资料、技术导航和可选DDL，零模型
-identify-ontology：O1，按当前小题识别对象，或细化操作/分析定义
+identify-ontology：O1，新LINK联合识别骨架对象和具体联系；或按范围细化
 relate-ontology：O2，按准确已审对象核对联系与身份
 publish-ontology：O3，发布明确所选已审结果，零模型
 ```
 
 **执行次序分两段，而不是要求每题先填完所有类型：**
 
-1. 骨架段：O0 → O1最小对象 → O2具体联系 → O3对象关系总览。
+1. 新骨架段：O0 → O1 LINK（同包对象与联系、一次审阅）→ 必要的O2跨任务身份/新增联系 → O3对象关系总览。单个已审LINK可直接发布，不强制空O2。
 2. 细化段：按已有图和技术邻居选择下一处实现 → 新O1操作/分析或对象细化 → 必要的新O2身份/关系审阅 → 新O3扩展总览。
 
 每次调用有新运行ID。多个O1/O2可属于同一Corpus，O3明确选择它们的准确集合。早期O3已发布的图保持不变；细化产生新图，不能覆盖旧发布或让旧结果自动变成新版。
@@ -113,9 +115,7 @@ O0保存原有Corpus及可逆别名，增加版本化的线索投影规则。调
 
 ### 7.2 Java取得两端候选
 
-先从所选K取得实际用法、完整种子方法；沿已保存方法、Mapper、表列、页面单元倒排取得直接邻居；执行选出的字面搜索。候选目录显示每个U/E的完整读取成本及具体共同项，模型从中选择实际完整单元。
-
-同一字面词命中多个不相关页面时，不能全部附入，也不能让Java根据业务名称暗选正确页面。目录保留冲突/变体；模型选单，Java验证身份后读回。
+新LINK从所选真实K取得完整种子及直接技术引用，由Java按[连贯包算法](coherent-link-material-design.md#6-java连贯材料算法)展开准确前端命中和页面实例，保存纳入/未纳入及成本。无需每次让模型重新粗选全部原文。纯字面重合仍只是候选；Java不按业务名暗选页面。多实例直接匹配能容纳则分别保留；高扇出/超限报告，不能静默取第一个。
 
 联系材料按已有事实区分以下角色，角色由选择或模型判断，Java不靠关键词自动裁决：
 
@@ -134,7 +134,7 @@ O0保存原有Corpus及可逆别名，增加版本化的线索投影规则。调
 
 ### 7.4 有界扩展及漏项处置
 
-O2审阅后可以提出待核查邻居。Java从实际使用的技术键取得一跳候选，再提出下一小题；每一轮仍需模型选题/原文，不无限递归自动塞材料。轮次沿用既有阅读上限，所有请求沿用同一运行派发上限及状态观察，不新建通用DAG或任务队列。
+新LINK先由Java作一跳技术扩展；后续模型可提出未读实现，按新任务明确取得，不无限递归。现行O2的有界MODEL阅读仍可查询/选择候选，沿用既有轮次、派发上限和状态观察，不新建DAG或任务队列。不能强制新LINK为每个已匹配单元再调用一次阅读模型。
 
 已选K必须有“已审支持联系、不是业务联系、需要补读、模型未处理、容量未执行”等明确处置。Java只能对照键集合记录遗漏，不能替模型解释分支。如果必要单元未入模，保存准确缺口；轮次结束不清空它。只处置选中线索，不宣称审完全部源码分支。
 
@@ -200,13 +200,13 @@ R4/R0及保存技术记录不修改。完整选中Java方法、Vue函数/模板�
 
 ### 9.1 第一阶段的对象不是空标签
 
-O1的OBJECT业务字段沿用现有typed-v3定义，不新增一套轻量对象语言；本次新增展示角色后整体响应按§14写typed-v4。最小对象有业务名称、含义、读取范围、源码映射/变体及来源。身份已有依据就保存；没有依据则 `identities=[]`、`definitionCompleteness=PARTIAL`，按已有合同记录 `unknowns.field="identities"`。
+现行OBJECT沿用typed-v4完整定义；下一版LINK使用精简联合响应并固定映射到相同本体结构，不另建运行框架。最小对象仍有名称、含义、适用范围、映射/变体和来源；LINK未调查身份/属性时明确未调查及PARTIAL，不能把subType条件当唯一身份。字段及固定投影由[联合任务设计§9](coherent-link-material-design.md#9-link对象和联系一起返回)拥有。
 
 不能把SystemConfig、Java事务类或表名自动当主业务对象。模型可以识别配置/权限等支撑对象，但主要图只显示模型已审选出的主对象；支撑对象另层展示，且总对象目录不能被展示过滤删除。若主对象无法语义区分，则保持待确认，不使用用户参考图命名。
 
 ### 9.2 联系先确认机制，不等待所有规则
 
-O2 RELATE接收准确O1已审对象小目录和当前冻结原文。定义仍用既有 `fromObjectRef / toObjectRef / mechanism / conditions / cardinality / unknowns`；端点只来自真实目录，不允许用中文名称代替对象引用。
+新骨架由O1 LINK在同一冻结包、同一次提取/审阅中返回实际端点对象与联系；最终端点须在本任务objects中存在，Java按精确局部键编号，不猜对象。O2 RELATE仍用于跨任务身份与另查联系，接收准确已审OBJECT/LINK小目录和原文，端点来自真实目录。旧RELATE读到新端点不能自行改已结束OBJECT；新骨架不再受这个分离合同阻挡。联合响应及固定投影见[详细设计§9](coherent-link-material-design.md#9-link对象和联系一起返回)。
 
 `readingMode=MODEL`必须复用正式阅读协调器，实际阅读输入的taskKind为RELATE，不能忽略选择方式而把初始空unitUses当作已完成材料，也不能伪装成OBJECT来复用提示。阅读、提取、审阅共享同一运行预算；EXPLICIT仍使用明确选单。原selection是请求快照，不因模型改变选择而改写。relations-v3另存每题`readingSelections`，记录准确questionId/taskId、实际selectedEntries/selectedClues、阅读status/issueCode；未启动者记录NOT_STARTED及原选单范围。O3对未完成关系任务继承实际已选K，不能只读初始clueRefs缩小分母。完整轮次、导航和正文仍由既有私有阅读记录保存，不建设第二套状态库。
 
@@ -224,9 +224,9 @@ O2 RELATE接收准确O1已审对象小目录和当前冻结原文。定义仍用
 
 ### 9.4 实际需要补的跨运行依赖
 
-scope-v1保留原本题依赖规则。新scope-v2已接通准确外部对象来源：同题声明的`objectSources`约束该题所有任务，包括OBJECT细化；有效已审目录进入实际EXTRACT/REVIEW及任务身份。已有来源题没有OBJECT时保存DEPENDENCY处置，不存在的题仍为来源准入错误；任一声明OBJECT未审通过时零Provider派发。新O1可以只使用明确选中的已审骨架对象执行ACTION/ANALYTIC，不从其它题累计对象猜依赖。
+scope-v1/v2保留各自原依赖规则。新scope-v3待接线：SKELETON的LINK采用TECHNICAL_BUNDLE、一个真实anchorRef；ENRICHMENT显式恢复已审OBJECT或LINK任务。objectSources增加taskIds，不再只按问题恢复全部OBJECT；已审目录、实际依赖和来源参与身份，不取其它题累计结果。准确字段、失败边界及版本由[新合同](coherent-link-material-design.md#12-版本与正式接线清单)拥有。
 
-新执行scope-v2增加root `purpose`：SKELETON或ENRICHMENT；每题增加必需数组 `objectSources`。每项只含 `identificationRun / questionId`，与现有O2对象来源形状相同；程序恢复该题全部已声明OBJECT任务及其准确producingTaskId/reviewVersion/完整定义。不新增模型填写长定义ID的选择语言。保持现有questions/tasks/readingMode/unitUses；不新增公共命令或一般依赖DSL。
+以下是现行scope-v2的保存/读取规则，不是新LINK规则：root `purpose`为SKELETON或ENRICHMENT；每题有必需数组 `objectSources`。每项只含 `identificationRun / questionId`，程序恢复该题全部OBJECT及准确任务身份。新执行目标改用上述v3的显式taskIds；旧v2不补字段、不改解释。
 
 - SKELETON允许OBJECT任务，不声明ACTION/ANALYTIC，objectSources为空。细节未知不导致最小对象任务失效。
 - ENRICHMENT允许OBJECT或ACTION/ANALYTIC。后两类必须有本题已审OBJECT或合法objectSources；两类来源都实际选择时取明确并集，重复完整任务机械去重，不因同名对象合并。
@@ -259,12 +259,13 @@ O2沿用selection-v2的objectSources及准确上游规则。O3同时核验O2原O
 | 调查/选题 | 哪个具体共同项值得核查；下一端在哪里；哪些项尚未处置 | 不列行业必有对象，不先排完整业务流程 |
 | 读取 | 为当前一处交接选择完整建立/保存/使用单元；列缺端和超限项 | 不把路径、片段命中或导航当已读正文 |
 | OBJECT骨架 | 本次实现操作哪些业务对象；最小含义、变体、映射和已知身份；不足留未知 | 不做全部操作、统计规则或表到对象的一对一转换 |
+| LINK骨架（待接线） | 在同一包定义实际端点对象与一处交接；核验最终端点、来源、条件和未知 | 不先受旧泛化对象目录限制，不补完整行业链 |
 | RELATE | 已审两端怎样通过编号、字段、保存或查询联系；只确认原文支持的机制 | 不从共同方法/表补先后、基数、库存或付款效果 |
 | ACTION | 对所选对象做什么；具体条件、拒绝、效果及查询性质 | 不要求识别全生命周期 |
 | ANALYTIC | 此计算的粒度、组成量、表达式、过滤、维度和后处理分别是什么 | 不将身份属性/普通数值自动当维度/KPI |
 | REVIEW | 同原文逐项核对实际首稿；检查全部嵌套引用；有依据的骨架保留，细节不足局部标未知 | 不把一次审阅当所有模型的纠错保证，不追加WRITE |
 
-REVIEW必须收到同一冻结原文、实际候选及本任务准确对象目录，不收用户参考图或人工标准答案。可读、有界的结构坏稿仍只进入原定一次REVIEW；最终坏引用拒绝。若缺对象端点，可提出后续OBJECT问题，不能由Java猜一个现有对象替代。
+REVIEW必须收到同一冻结原文、实际候选和对应Schema，不收参考图或标准答案。LINK在本次最终对象集合核对端点；O2另收到准确已审对象目录。可读有界坏稿只进入原定一次REVIEW，最终坏引用拒绝。材料确实缺端点实现时记未读/未知，不由Java猜对象或把泛化单据强当请购。
 
 框架提示明确：源码文字是数据；技术K/C/CT/CO不能用于最终evidenceRefs；只有本包实际S可引用。ID字段只填合法键，解释放语义字段。模型返回空关系/空指标可以合法结束，coverage不得改为全部识别成功。
 
@@ -282,7 +283,7 @@ REVIEW必须收到同一冻结原文、实际候选及本任务准确对象目�
 - 点选对象/关系可查具体定义、范围、实际S映射、完整原文、真实EXTRACT/REVIEW和修正；所有文件位置沿原权限及相对源码路径规则。
 - 布局可以调用成熟Mermaid/既有renderer，不开发自动语义排图系统；先产完整结构及简单图，复杂交互不是本轮核心。
 
-展示角色字段为 `displayRole`，只允许MAIN/SUPPORT/TECHNICAL_OR_UNKNOWN，由OBJECT审阅明确输出，Java不从类名判；用于渲染，不改变对象存在与否。角色字段新增须独立typed-v4及ontology-v2保存，不能塞进旧Schema未声明字段。无法分类为TECHNICAL_OR_UNKNOWN并可见，不默认MAIN；未审分类不得由renderer补成MAIN。
+展示角色字段为 `displayRole`，只允许MAIN/SUPPORT/TECHNICAL_OR_UNKNOWN，由现行OBJECT或新LINK审阅明确输出，Java不从类名判；用于渲染，不改变对象存在与否。现行typed-v4/ontology-v2及新联合响应分别准确保存，不能塞进旧Schema未声明字段。无法分类为TECHNICAL_OR_UNKNOWN并可见，不默认MAIN；未审分类不得由renderer补成MAIN。
 
 对应已有inspect/artifact增加只读导航及单任务投影查询，不新增公开Agent方法。准备、查询、重渲染和O3零模型；已完成结果读取不依赖Maven临时文件、JDK或客户当前目录。
 
@@ -303,7 +304,7 @@ REVIEW必须收到同一冻结原文、实际候选及本任务准确对象目�
 
 CLI不等待用户修改Prompt而长期RUNNING。每次运行返回完整任务处置、实际安装文件及支持的nextActions；原范围不完整与允许零模型部分发布分开。调用上限控制有界执行，不把历史实验累计额度当同范围缺陷修复的永久阻断。
 
-## 14. 合同及版本修订
+## 14. 现行已交付合同及版本
 
 下表是**本轮已接通的新执行合同**，生产、Reader、Schema、策略及直接fixture同步通过。历史格式仍严格按原版本读取；不改旧记录，不用缺字段猜版本。只有发生形状变化的边界升级，公共本体request-v6/output-v10仍以准确版本化材料引用绑定，不整体修改旧技术/MD wire。
 
@@ -373,7 +374,7 @@ CLI不等待用户修改Prompt而长期RUNNING。每次运行返回完整任务�
 
 当前正式接线包括控制K、精确调用/用途去重、页面反查、scope-v2及全部任务的外部OBJECT依赖、骨架/细化覆盖、四文件/图查询、正式Prompt及准确版本分派。129项直接测试、同代码质量及真实有限O0→O1→O2→O3已完成；最终19对象/22联系及财务/统计细化正式保存重开。实际模型未识别分立请购/订单/入库对象，来源关系接续选单没有Vue单元；不能把泛化来源编号联系写成完整采购链。
 
-已经测量：相同选定内容调用编码与生产解码展开的完整封套节省0.4%–21.3%，139次单元出现/20份实际请求正文核验差异0；完整封套约77–329KiB，无可靠token计数。仍未证明小窗口、自主关系选材、全部业务发现、完整采购生命周期或跨项目质量。实际浏览器SVG布局未验，工具拒绝后未绕行。不得因机器终态COMPLETE抹去semanticExhaustiveness=UNDETERMINED。
+前版本材料测量保留：相同选定内容调用编码与展开封套节省0.4%–21.3%，139次单元出现/20份请求正文差异0，封套约77–329KiB；当时浏览器布局未验。最新联合路径已有四文件重开和离线SVG结果，准确成本及原文对照由连贯验收维护。仍未证明任意小窗口、自主全仓发现、完整生命周期或跨项目质量，不因机器终态或图生成抹去UNDETERMINED。
 
 本设计没有需要用户先补业务答案的步骤，也没有未定的大型基础能力。单联系必要完整原文如果始终装不下，应报告并讨论该联系范围，而不是偷偷把设计改为模型摘要或强模型依赖。
 
@@ -388,4 +389,4 @@ CLI不等待用户修改Prompt而长期RUNNING。每次运行返回完整任务�
 - Semantica已提供LLM本体生成模块，可作为研究对照；不为此把已有正式Provider/引用与Action/指标合同换成另一条文本生成路线。[官方生成器源码](https://github.com/semantica-agi/semantica/blob/main/semantica/ontology/llm_generator.py)
 - SQL能力继续消费项目已经使用JSqlParser保存的有限投影，不重跑技术SQL分析；可选DDL按既有O0明确配置路径运行，不增加方言恢复器。[官方用法](https://jsqlparser.github.io/JSqlParser/usage.html)
 
-工具选择不意味着模型质量保证。更全面的既有比较见[工具研究](../../supplements/ontology-tools-research-20260929.md)。本文拥有业务联系优先的目标顺序与新增接线；材料具体编码属于material-preparation，机器字段属于contracts，旧路径保持原合同。implementation-delta及backlog记录尚未生产实现的修改面，不将本文写完当作功能完成。
+工具选择不意味着模型质量保证。更全面的既有比较见[工具研究](../../supplements/ontology-tools-research-20260929.md)。本文维护业务联系优先总体原则和现行交付；下一版LINK行为与合同由[连贯材料详细设计](coherent-link-material-design.md)唯一维护，material-preparation/contracts保留明确现行规则并引用新owner。implementation-delta及backlog维护实际差距，不将设计写完当作功能完成。

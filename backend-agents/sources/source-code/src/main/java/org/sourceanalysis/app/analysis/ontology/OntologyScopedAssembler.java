@@ -317,15 +317,34 @@ public final class OntologyScopedAssembler {
         throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_INPUT_INVALID");
       }
       JsonNode document = json.parseCanonical(result.review());
+      boolean jointLink = result.kind() == OntologyTaskRunner.TaskKind.LINK;
       String actualReviewVersion =
-          (business ? "review-v4-" : "review-v3-")
+          (jointLink ? "review-link-v1-" : business ? "review-v4-" : "review-v3-")
               + OntologyReadingPacket.sha256(json.encodeCanonical(document).copyToByteArray());
       if (!actualReviewVersion.equals(result.identity().reviewVersion())
+          || jointLink && !business
           || business
-              && (!"ontology-typed-review-v4".equals(document.path("schemaVersion").asText())
-                  || !"ontology-model-reading-v5".equals(result.packet().modelProjectionVersion())
+              && (!(jointLink ? "ontology-link-review-v1" : "ontology-typed-review-v4")
+                      .equals(document.path("schemaVersion").asText())
+                  || !(jointLink ? "ontology-model-reading-v6" : "ontology-model-reading-v5")
+                      .equals(result.packet().modelProjectionVersion())
                   || !document.path("clueDispositions").isArray())) {
         throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_INPUT_INVALID");
+      }
+      if (jointLink) {
+        validator.validateLink(
+            document,
+            true,
+            result.packet(),
+            result.questionId(),
+            result.packet().units().stream()
+                .flatMap(unit -> result.packet().entryRefs(unit.localRef()).stream())
+                .collect(java.util.stream.Collectors.toSet()),
+            Set.copyOf(result.visibleClueRefs()));
+        ObjectNode projected = (ObjectNode) result.definitionDocument().deepCopy();
+        projected.put("taskKind", "LINK");
+        projected.put("questionId", result.questionId());
+        document = projected;
       }
       DefinitionKey resultKey = new DefinitionKey(result.identity(), "__result__");
       if (!resultIdentities.add(resultKey)) {
@@ -375,7 +394,8 @@ public final class OntologyScopedAssembler {
       throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_INPUT_INVALID");
     }
     for (FormalReview review : reviews) {
-      if (review.result().kind() == OntologyTaskRunner.TaskKind.OBJECT) {
+      if (review.result().kind() == OntologyTaskRunner.TaskKind.OBJECT
+          || review.result().kind() == OntologyTaskRunner.TaskKind.LINK) {
         for (JsonNode object : review.document().path("definitions").path("objects")) {
           if (!Set.of("MAIN", "SUPPORT", "TECHNICAL_OR_UNKNOWN")
               .contains(object.path("displayRole").asText())) {
@@ -388,7 +408,8 @@ public final class OntologyScopedAssembler {
 
   private Map<String, DefinitionKey> catalog(ImmutableBytes catalogMapping) {
     JsonNode document = json.parseCanonical(catalogMapping);
-    if (!"ontology-reviewed-catalog-v3".equals(document.path("schemaVersion").asText())) {
+    if (!Set.of("ontology-reviewed-catalog-v3", "ontology-reviewed-catalog-v4")
+        .contains(document.path("schemaVersion").asText())) {
       throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_INPUT_INVALID");
     }
     Map<String, DefinitionKey> result = new LinkedHashMap<>();
@@ -496,20 +517,14 @@ public final class OntologyScopedAssembler {
           if (visited.add(other)) queue.add(other);
         }
       }
-      Set<String> choices = new TreeSet<>();
+      Set<DefinitionKey> choices = new TreeSet<>();
       Set<String> producing = new TreeSet<>();
       for (IdentityDecision decision : componentDecisions) {
-        choices.add(
-            decision.canonical().identity().producingTaskId()
-                + "\u0000"
-                + decision.canonical().localId());
+        choices.add(decision.canonical());
         producing.add(decision.producingTaskId());
       }
-      Map<String, String> globals = new HashMap<>();
-      for (DefinitionKey object : objects)
-        globals.put(
-            object.identity().producingTaskId() + "\u0000" + object.localId(),
-            globalId("objects", object));
+      Map<DefinitionKey, String> globals = new HashMap<>();
+      for (DefinitionKey object : objects) globals.put(object, globalId("objects", object));
       components.add(
           new AssemblyComponent(
               objects,
@@ -834,6 +849,13 @@ public final class OntologyScopedAssembler {
               item);
       ArrayNode corrections = task.putArray("corrections");
       for (JsonNode correction : item.document().path("corrections")) {
+        if (item.result().kind() == OntologyTaskRunner.TaskKind.LINK) {
+          if (!correction.isTextual()) {
+            throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_INPUT_INVALID");
+          }
+          corrections.add(correction.deepCopy());
+          continue;
+        }
         ObjectNode mapped = (ObjectNode) correction.deepCopy();
         mapFormalNode(mapped, reviewOwner, definitions, globals, properties, canonical, sources);
         reviewIdentity(mapped, item);
@@ -888,7 +910,11 @@ public final class OntologyScopedAssembler {
     for (String layer : List.of("OBJECT", "RELATION", "ACTION", "ANALYTIC")) {
       List<BusinessTaskObligation> requested =
           obligations.stream()
-              .filter(item -> businessLayer(item.kind()).equals(layer))
+              .filter(
+                  item ->
+                      businessLayer(item.kind()).equals(layer)
+                          || item.kind() == OntologyTaskRunner.TaskKind.LINK
+                              && List.of("OBJECT", "RELATION").contains(layer))
               .sorted(
                   Comparator.comparing(BusinessTaskObligation::ownerRunId)
                       .thenComparing(BusinessTaskObligation::questionId)
@@ -919,6 +945,7 @@ public final class OntologyScopedAssembler {
     return switch (kind) {
       case OBJECT -> "OBJECT";
       case RELATE -> "RELATION";
+      case LINK -> "LINK";
       case ACTION -> "ACTION";
       case ANALYTIC -> "ANALYTIC";
     };
@@ -939,7 +966,8 @@ public final class OntologyScopedAssembler {
                     .thenComparing(item -> item.disposition().taskId()))
             .toList();
     for (BusinessTaskObligation obligation : ordered) {
-      if (obligation.kind() != OntologyTaskRunner.TaskKind.RELATE) continue;
+      if (obligation.kind() != OntologyTaskRunner.TaskKind.RELATE
+          && obligation.kind() != OntologyTaskRunner.TaskKind.LINK) continue;
       FormalReview reviewed =
           obligation.disposition().status() == TaskDispositionStatus.REVIEWED
               ? byIdentity.get(obligation.disposition().reviewedResultIdentity())

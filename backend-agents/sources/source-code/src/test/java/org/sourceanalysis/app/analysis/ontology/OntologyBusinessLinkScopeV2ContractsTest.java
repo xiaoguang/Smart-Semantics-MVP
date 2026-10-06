@@ -20,6 +20,98 @@ final class OntologyBusinessLinkScopeV2ContractsTest {
   private final CanonicalJsonCodec json = new CanonicalJsonCodec();
 
   @Test
+  void scopeV3AdmitsJointLinkWithAnExactTechnicalAnchor() {
+    ObjectNode document = linkScope();
+    OntologyScopeReader.Scope scope = OntologyScopeReader.read(document, corpus());
+    assertThat(scope.schemaVersion()).isEqualTo("ontology-scope-v3");
+    assertThat(scope.questions().get(0).tasks().get(0).taskKind().name()).isEqualTo("LINK");
+    assertThat(scope.questions().get(0).tasks().get(0).readingMode().name())
+        .isEqualTo("TECHNICAL_BUNDLE");
+  }
+
+  @Test
+  void linkRequiresExactlyOneValidQuestionAnchor() {
+    ObjectNode document = linkScope();
+    ((ObjectNode) document.path("questions").get(0).path("tasks").get(0))
+        .withArray("anchorRefs")
+        .removeAll();
+    assertThatThrownBy(() -> OntologyScopeReader.read(document, corpus()))
+        .hasMessage("ONTOLOGY_SCOPE_LINK_ANCHOR_INVALID");
+    ((ObjectNode) document.path("questions").get(0).path("tasks").get(0))
+        .withArray("anchorRefs")
+        .add("K999999");
+    assertThatThrownBy(() -> OntologyScopeReader.read(document, corpus()))
+        .hasMessage("ONTOLOGY_SCOPE_CLUE_REF_INVALID");
+  }
+
+  @Test
+  void enrichmentCannotRunJointLink() {
+    ObjectNode document = linkScope();
+    document.put("purpose", "ENRICHMENT");
+    assertThatThrownBy(() -> OntologyScopeReader.read(document, corpus()))
+        .hasMessage("ONTOLOGY_SCOPE_LINK_TASK_INVALID");
+  }
+
+  @Test
+  void historicalScopeCannotAcquireLinkByChangingOnlyTaskKind() {
+    ObjectNode document = linkScope();
+    document.put("schemaVersion", "ontology-scope-v2");
+    ((ObjectNode) document.path("questions").get(0).path("tasks").get(0)).remove("anchorRefs");
+    assertThatThrownBy(() -> OntologyScopeReader.read(document, corpus()))
+        .hasMessage("ONTOLOGY_SCOPE_TASK_KIND_INVALID");
+  }
+
+  private ObjectNode linkScope() {
+    ObjectNode link = task("T_LINK", "LINK");
+    link.put("readingMode", "TECHNICAL_BUNDLE");
+    link.putArray("anchorRefs").add("K1");
+    ObjectNode document = scopeV2("SKELETON", List.of(link), List.of());
+    document.put("schemaVersion", "ontology-scope-v3");
+    return document;
+  }
+
+  @Test
+  void scopeV3ExternalObjectsRequireExactTaskSelection() {
+    ObjectNode action = task("T_ACTION", "ACTION");
+    action.putArray("anchorRefs");
+    ObjectNode document = scopeV2("ENRICHMENT", List.of(action), List.of());
+    document.put("schemaVersion", "ontology-scope-v3");
+    ObjectNode question = (ObjectNode) document.path("questions").get(0);
+    addExternalObjectSource(question);
+    assertThatThrownBy(() -> OntologyScopeReader.read(document, corpus()))
+        .hasMessage("ONTOLOGY_SCOPE_OBJECT_SOURCE_REQUIRED_FIELD");
+    ObjectNode source = (ObjectNode) question.path("objectSources").get(0);
+    source.putArray("taskIds").add("T_LINK");
+    assertThat(OntologyScopeReader.read(document, corpus()).questions().get(0).objectSources())
+        .hasSize(1);
+    assertThat(
+            OntologyScopeReader.read(document, corpus())
+                .questions()
+                .get(0)
+                .objectSources()
+                .get(0)
+                .taskIds())
+        .containsExactly("T_LINK");
+    source.withArray("taskIds").removeAll();
+    assertThatThrownBy(() -> OntologyScopeReader.read(document, corpus()))
+        .hasMessage("ONTOLOGY_SCOPE_OBJECT_SOURCE_INVALID");
+  }
+
+  @Test
+  void newPublicationCanSelectJointLinkWithoutManufacturingARelationRun() {
+    ObjectNode selection = mapper.createObjectNode();
+    selection.put("schemaVersion", "ontology-selection-v3");
+    selection.put("operation", "PUBLISH");
+    selection.put("corpusRun", "analysis-run:" + "2".repeat(64));
+    selection.putArray("identificationRuns").add(EXTERNAL_IDENTIFICATION_RUN);
+    selection.putArray("relationRuns");
+    assertThat(OntologySelectionReader.read(selection, corpus()).relationRuns()).isEmpty();
+    selection.put("schemaVersion", "ontology-selection-v2");
+    assertThatThrownBy(() -> OntologySelectionReader.read(selection, corpus()))
+        .hasMessage("ONTOLOGY_SELECTION_RELATION_REQUIRED");
+  }
+
+  @Test
   void scopeV2AdmitsObjectOnlySkeleton() {
     OntologyEvidenceCorpus corpus = corpus();
     ObjectNode document = scopeV2("SKELETON", List.of(task("T_OBJECT", "OBJECT")), List.of());

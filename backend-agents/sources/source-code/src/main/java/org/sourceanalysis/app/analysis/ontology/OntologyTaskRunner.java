@@ -48,6 +48,8 @@ public final class OntologyTaskRunner {
 
   public Result run(TaskKind kind, String question, OntologyReadingPacket packet) {
     Objects.requireNonNull(kind, "ontology task kind");
+    if (kind == TaskKind.LINK)
+      throw new IllegalArgumentException("ONTOLOGY_LINK_FORMAL_PROFILE_REQUIRED");
     Objects.requireNonNull(packet, "ontology reading packet");
     if (question == null || question.isBlank()) {
       throw new IllegalArgumentException("ONTOLOGY_QUESTION_INVALID");
@@ -203,7 +205,8 @@ public final class OntologyTaskRunner {
     OBJECT("object-extract-v1.txt"),
     ACTION("action-extract-v1.txt"),
     ANALYTIC("analytic-extract-v1.txt"),
-    RELATE("relate-v1.txt");
+    RELATE("relate-v1.txt"),
+    LINK("link-extract-v1.txt");
 
     private final String promptFile;
 

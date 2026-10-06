@@ -21,3 +21,9 @@ property localId (for example O1.P1). If an object's identities remain empty, re
 the supported object with definitionCompleteness=PARTIAL and an identities unknown.
 Put B references in knownDefinitionRefs, not relatedLocalDefinitionRefs; the latter
 names only current-task definitions returned in this review.
+For ANALYTIC, dimensions use D1/D2, measures use V1/V2, and metrics use M1/M2.
+Metric componentMeasureRefs must name the current-task V measures actually returned
+in this final review or an actual reviewedCatalog measure B, never an M metric or
+a historical localId. Preserve valid prior-measure references without duplicating them.
+Check these prefixes and all component refs after additions,
+changes, or deletions; do not swap measures with metrics or silently omit conditions.

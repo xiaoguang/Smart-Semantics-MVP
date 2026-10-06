@@ -12,6 +12,14 @@ import org.sourceanalysis.app.analysis.ontology.OntologyScopeReader;
 final class OntologySavedTaskContract {
   private OntologySavedTaskContract() {}
 
+  static void requireSelectionProductionVersion(
+      String selectionVersion, boolean primaryCurrentProducer, boolean companionCurrentProducer) {
+    if ("ontology-selection-v3".equals(selectionVersion)
+        && !(primaryCurrentProducer && companionCurrentProducer)) {
+      throw new IllegalArgumentException("ONTOLOGY_SELECTION_PRODUCTION_VERSION_INVALID");
+    }
+  }
+
   static void requireCorpusProductionVersion(boolean currentProducer, boolean currentCorpus) {
     if (currentProducer != currentCorpus) {
       throw new IllegalArgumentException("ONTOLOGY_CORPUS_VERSION_INVALID");
@@ -20,6 +28,14 @@ final class OntologySavedTaskContract {
 
   static void requireV2IdentificationTaskRange(
       JsonNode document, OntologyEvidenceCorpus corpus, Map<String, JsonNode> taskOutcomes) {
+    requireV2IdentificationTaskRange(document, corpus, taskOutcomes, false);
+  }
+
+  static void requireV2IdentificationTaskRange(
+      JsonNode document,
+      OntologyEvidenceCorpus corpus,
+      Map<String, JsonNode> taskOutcomes,
+      boolean jointLinkFamily) {
     if (corpus == null) {
       throw new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID");
     }
@@ -39,10 +55,42 @@ final class OntologySavedTaskContract {
         }
         for (JsonNode task : tasks) {
           requireExactFields(
-              task, Set.of("taskId", "taskKind", "readingMode", "unitUses", "requiredUnitUses"));
+              task,
+              jointLinkFamily
+                  ? Set.of(
+                      "taskId",
+                      "taskKind",
+                      "readingMode",
+                      "unitUses",
+                      "requiredUnitUses",
+                      "anchorRefs")
+                  : Set.of("taskId", "taskKind", "readingMode", "unitUses", "requiredUnitUses"));
           String taskId = requiredText(task, "taskId");
           String taskKind = requiredText(task, "taskKind");
-          if (!Set.of("OBJECT", "ACTION", "ANALYTIC").contains(taskKind)
+          if (jointLinkFamily) {
+            JsonNode anchors = task.path("anchorRefs");
+            if (!anchors.isArray()
+                || ("LINK".equals(taskKind)
+                    ? anchors.size() != 1
+                        || !"TECHNICAL_BUNDLE".equals(requiredText(task, "readingMode"))
+                    : !anchors.isEmpty())) {
+              throw new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID");
+            }
+            for (JsonNode anchor : anchors) {
+              if (!anchor.isTextual()) {
+                throw new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID");
+              }
+              boolean declaredAnchor = false;
+              for (JsonNode clue : question.path("clueRefs")) declaredAnchor |= anchor.equals(clue);
+              if (!declaredAnchor)
+                throw new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID");
+              corpus.aliases().clue(anchor.asText());
+            }
+          }
+          if (!(jointLinkFamily
+                      ? Set.of("OBJECT", "ACTION", "ANALYTIC", "LINK")
+                      : Set.of("OBJECT", "ACTION", "ANALYTIC"))
+                  .contains(taskKind)
               || declared.putIfAbsent(new RangeTaskKey(questionId, taskId), taskKind) != null) {
             throw new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID");
           }
@@ -82,6 +130,11 @@ final class OntologySavedTaskContract {
 
   static Map<String, JsonNode> requireV2TaskOutcomes(
       JsonNode outcomes, Map<String, TaskRecord> taskRecords) {
+    return requireV2TaskOutcomes(outcomes, taskRecords, false);
+  }
+
+  static Map<String, JsonNode> requireV2TaskOutcomes(
+      JsonNode outcomes, Map<String, TaskRecord> taskRecords, boolean jointLinkFamily) {
     Set<String> declared = new HashSet<>();
     Set<String> actual = new HashSet<>();
     Map<String, JsonNode> saved = new LinkedHashMap<>();
@@ -104,7 +157,10 @@ final class OntologySavedTaskContract {
       }
       String kind = requiredText(outcome, "taskKind");
       String status = requiredText(outcome, "status");
-      if (!Set.of("OBJECT", "ACTION", "ANALYTIC", "RELATE").contains(kind)
+      if (!(jointLinkFamily
+                  ? Set.of("OBJECT", "ACTION", "ANALYTIC", "RELATE", "LINK")
+                  : Set.of("OBJECT", "ACTION", "ANALYTIC", "RELATE"))
+              .contains(kind)
           || !Set.of("REVIEWED", "REJECTED", "UNPROCESSED").contains(status)) {
         throw new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID");
       }

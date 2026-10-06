@@ -6,6 +6,8 @@
 
 ## 1. 清单不是业务答案
 
+本节v1/v2是现行兼容规则。下一版新执行采用[scope-v3详细合同](coherent-link-material-design.md#12-版本与正式接线清单)：SKELETON增加LINK；readingMode为TECHNICAL_BUNDLE时由Java从一个真实anchorRef展开连贯材料，不制造模型阅读历史。外部对象来源的taskIds精确选择已审OBJECT/LINK。原scope-v1/v2不升级，旧五类MODEL阅读状态和协议继续按原版本保存。
+
 identify-ontology的范围清单明确一次局部执行的普通问题、任务和材料选择性质。它不包含对象、关系、规则或指标定义。调用者只能选择真实O0的E/U/K；不能给程序写一份“正确本体”作为输入。历史`ontology-scope-v1`按原字段严格读取；新增`ontology-scope-v2`也按自己的完整字段严格读取，不能借缺字段推断或升级旧清单。
 
 v1固定顶层为`schemaVersion / mode / selectionMode / questions`；v2另必需`purpose`，只准`SKELETON / ENRICHMENT`：
@@ -72,6 +74,8 @@ READY必须有非空当前完整正文、没有本轮未执行动作，且已申
 执行结果没有进展时保存具体状态并结束，不重复调用直到凑齐次数。QUERY/READ在当前Corpus执行；没有shell、网络或客户代码执行。调查或优先级的正常模型响应若不符合实际Schema，保留原响应和准确`MODEL_OUTPUT`原因及`SURVEY/PRIORITIZE`阶段；优先级拒绝仍保留已提出问题的延后处置，不能写成未知工具故障或继续派发类型化任务。
 
 ## 5. 冻结和检查
+
+新LINK使用材料v6；展开目录、选择来源、未纳入/容量处置、同包原文和实际成本参与身份，准确字段由[连贯材料设计](coherent-link-material-design.md#6-java连贯材料算法)拥有。TECHNICAL_BUNDLE准备结果按任务保存，不派发阅读模型或编造QUERY/READ；歧义候选留未读，必要的新选择形成明确新任务。未经实际读取的来源不能进入evidenceRefs。
 
 冻结包使用正式v3投影，保存S→U/E→完整原身份、完整选定原文、必要调用观察、未读范围和实际配置/Prompt/Schema身份。EXTRACT与原定REVIEW使用同一冻结正文；之后要补材料须新任务，不能让旧稿凭空获得新依据。
 

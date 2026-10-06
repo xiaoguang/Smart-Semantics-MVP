@@ -37,6 +37,271 @@ final class OntologyTypedDefinitionValidator {
   private final CanonicalJsonCodec json = new CanonicalJsonCodec();
   private final ObjectMapper mapper = new ObjectMapper();
 
+  ImmutableBytes linkSchema(boolean review) {
+    ObjectNode root = closedObject();
+    root.put("$schema", "https://json-schema.org/draft/2020-12/schema");
+    property(
+        root,
+        "schemaVersion",
+        constString(review ? "ontology-link-review-v1" : "ontology-link-candidate-v1"),
+        true);
+    property(root, "taskKind", constString("LINK"), true);
+    ObjectNode object = linkCommonSchema();
+    property(object, "objectKey", string().put("minLength", 1), true);
+    property(object, "displayRole", enumStrings("MAIN", "SUPPORT", "TECHNICAL_OR_UNKNOWN"), true);
+    property(object, "backing", array(sourceBindingSchema()), true);
+    property(object, "variants", array(variantSchema()), true);
+    ObjectNode link = linkCommonSchema();
+    property(link, "fromKey", string(), true);
+    property(link, "toKey", string(), true);
+    property(link, "mechanism", array(semanticItemSchema()), true);
+    property(link, "conditions", array(semanticItemSchema()), true);
+    property(link, "cardinality", cardinalitySchema(), true);
+    ObjectNode disposition = closedObject();
+    property(disposition, "clueRef", string(), true);
+    property(
+        disposition,
+        "outcome",
+        enumStrings("LINK_SUPPORTED", "NOT_A_BUSINESS_LINK", "NEEDS_MORE_MATERIAL"),
+        true);
+    property(
+        disposition,
+        "linkIndexes",
+        array(mapper.createObjectNode().put("type", "integer").put("minimum", 0)),
+        true);
+    property(disposition, "reason", string().put("minLength", 1), true);
+    property(root, "objects", array(object), true);
+    property(root, "links", array(link), true);
+    property(root, "clueDispositions", array(disposition), true);
+    property(root, "unresolved", array(unknownSchema()), true);
+    ObjectNode corrections = array(string());
+    if (!review) corrections.put("maxItems", 0);
+    property(root, "corrections", corrections, true);
+    restrictLinkPropertyReferences(root);
+    return json.encodeCanonical(root);
+  }
+
+  private void restrictLinkPropertyReferences(JsonNode schema) {
+    if (schema.isObject()) {
+      JsonNode properties = schema.path("properties");
+      if (properties.has("propertyRef")) {
+        ((ObjectNode) properties).set("propertyRef", mapper.createObjectNode().put("type", "null"));
+      }
+    }
+    for (JsonNode child : schema) restrictLinkPropertyReferences(child);
+  }
+
+  private ObjectNode linkCommonSchema() {
+    ObjectNode value = commonDefinitionSchema();
+    ((ObjectNode) value.path("properties")).remove(List.of("localId", "origin"));
+    ArrayNode required = value.putArray("required");
+    for (String field :
+        List.of("name", "definition", "certainty", "scope", "evidenceRefs", "unknowns"))
+      required.add(field);
+    return value;
+  }
+
+  JsonNode validateLink(
+      JsonNode response,
+      boolean review,
+      OntologyReadingPacket packet,
+      String questionRef,
+      Set<String> entryRefs,
+      Set<String> clueRefs) {
+    Schema schema =
+        SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
+            .getSchema(json.parseCanonical(linkSchema(review)));
+    if (!schema.validate(response).isEmpty()) throw invalidLink();
+    Set<String> keys = new HashSet<>();
+    for (JsonNode object : response.path("objects")) {
+      String key = object.path("objectKey").asText();
+      if (key.isBlank() || !keys.add(key)) throw invalidLink();
+    }
+    for (JsonNode link : response.path("links")) {
+      if (!keys.contains(link.path("fromKey").asText())
+          || !keys.contains(link.path("toKey").asText())) throw invalidLink();
+    }
+    validateLinkReferences(response, keys, packet, questionRef, entryRefs);
+    Set<String> disposed = new HashSet<>();
+    for (JsonNode disposition : response.path("clueDispositions")) {
+      if (!clueRefs.contains(disposition.path("clueRef").asText())
+          || !disposed.add(disposition.path("clueRef").asText())
+          || disposition.path("reason").asText().isBlank()) throw invalidLink();
+      boolean supported = "LINK_SUPPORTED".equals(disposition.path("outcome").asText());
+      if (supported == disposition.path("linkIndexes").isEmpty()) throw invalidLink();
+      Set<Integer> indexes = new HashSet<>();
+      for (JsonNode index : disposition.path("linkIndexes")) {
+        if (!index.canConvertToInt()
+            || index.asInt() < 0
+            || index.asInt() >= response.path("links").size()
+            || !indexes.add(index.asInt())) throw invalidLink();
+      }
+    }
+    return response.deepCopy();
+  }
+
+  private void validateLinkReferences(
+      JsonNode node,
+      Set<String> keys,
+      OntologyReadingPacket packet,
+      String questionRef,
+      Set<String> entryRefs) {
+    if (node.isArray()) {
+      for (JsonNode item : node) validateLinkReferences(item, keys, packet, questionRef, entryRefs);
+    } else if (node.isObject()) {
+      for (Map.Entry<String, JsonNode> field : node.properties()) {
+        JsonNode value = field.getValue();
+        switch (field.getKey()) {
+          case "targetObjectRefs" -> {
+            for (JsonNode ref : value) if (!keys.contains(ref.asText())) throw invalidLink();
+          }
+          case "definitionRef" -> {
+            if (!value.isNull() && !keys.contains(value.asText())) throw invalidLink();
+          }
+          case "propertyRef" -> {
+            if (!value.isNull()) throw invalidLink();
+          }
+          case "evidenceRefs" -> {
+            for (JsonNode ref : value) {
+              try {
+                packet.resolve(ref.asText());
+              } catch (RuntimeException invalid) {
+                throw invalidLink();
+              }
+            }
+          }
+          case "scope" -> {
+            if (!questionRef.equals(value.path("questionRef").asText())) throw invalidLink();
+            for (JsonNode ref : value.path("entryUseRefs"))
+              if (!entryRefs.contains(ref.asText())) throw invalidLink();
+          }
+          case "missingUnitRefs" -> {
+            // Only explicitly displayed unread candidates may be cited, never arbitrary Corpus U.
+            for (JsonNode ref : value) {
+              boolean found = false;
+              for (JsonNode candidate :
+                  json.parseCanonical(packet.modelInput()).path("unreadCandidates")) {
+                if (ref.asText().equals(candidate.path("unitRef").asText())) found = true;
+              }
+              if (!found) throw invalidLink();
+            }
+          }
+          default -> validateLinkReferences(value, keys, packet, questionRef, entryRefs);
+        }
+      }
+    }
+  }
+
+  private static IllegalArgumentException invalidLink() {
+    return new IllegalArgumentException("ONTOLOGY_LINK_RESPONSE_INVALID");
+  }
+
+  FormalValidation inspectLink(
+      ImmutableBytes raw,
+      boolean review,
+      OntologyReadingPacket packet,
+      String questionRef,
+      Set<String> entryRefs,
+      Set<String> clueRefs) {
+    JsonNode document = json.parseStrictJson(raw);
+    try {
+      return new FormalValidation(
+          validateLink(document, review, packet, questionRef, entryRefs, clueRefs), List.of());
+    } catch (IllegalArgumentException invalid) {
+      return new FormalValidation(
+          document.deepCopy(),
+          List.of(
+              diagnostic(
+                  "ONTOLOGY_LINK_RESPONSE_INVALID",
+                  "$",
+                  "Joint LINK schema or exact references are invalid.")));
+    }
+  }
+
+  JsonNode projectLink(JsonNode validReview) {
+    ObjectNode result = mapper.createObjectNode();
+    ObjectNode definitions = result.putObject("definitions");
+    ArrayNode objects = definitions.putArray("objects");
+    ArrayNode links = definitions.putArray("links");
+    ObjectNode objectMap = result.putObject("objectKeyMap");
+    ObjectNode linkMap = result.putObject("linkIndexMap");
+    List<JsonNode> sortedObjects = new ArrayList<>();
+    validReview.path("objects").forEach(sortedObjects::add);
+    sortedObjects.sort(
+        (a, b) -> compareLinkBytes(a.path("objectKey").asText(), b.path("objectKey").asText()));
+    for (JsonNode original : sortedObjects) {
+      ObjectNode object = original.deepCopy();
+      String id = "O" + (objects.size() + 1);
+      objectMap.put(object.path("objectKey").asText(), id);
+      object.remove("objectKey");
+      object.put("localId", id);
+      object.put("origin", "IMPLEMENTATION");
+      object.put("definitionCompleteness", "PARTIAL");
+      object.putArray("identities");
+      object.putArray("properties");
+      ObjectNode unknown = ((ArrayNode) object.path("unknowns")).addObject();
+      unknown.put("field", "identities/properties");
+      unknown.put(
+          "reason",
+          "Unique identities and properties were not investigated by this skeleton task.");
+      unknown.putArray("missingUnitRefs");
+      objects.add(object);
+    }
+    List<Integer> sortedIndexes = new ArrayList<>();
+    for (int i = 0; i < validReview.path("links").size(); i++) sortedIndexes.add(i);
+    sortedIndexes.sort(
+        (a, b) ->
+            java.util.Arrays.compareUnsigned(
+                json.encodeCanonical(validReview.path("links").get(a)).copyToByteArray(),
+                json.encodeCanonical(validReview.path("links").get(b)).copyToByteArray()));
+    for (int index : sortedIndexes) {
+      ObjectNode link = validReview.path("links").get(index).deepCopy();
+      String id = "L" + (links.size() + 1);
+      linkMap.put(Integer.toString(index), id);
+      link.put("fromObjectRef", objectMap.path(link.path("fromKey").asText()).asText());
+      link.put("toObjectRef", objectMap.path(link.path("toKey").asText()).asText());
+      link.remove(List.of("fromKey", "toKey"));
+      link.put("localId", id);
+      link.put("origin", "IMPLEMENTATION");
+      links.add(link);
+    }
+    mapLinkObjectRefs(definitions, objectMap);
+    ArrayNode dispositions = result.putArray("clueDispositions");
+    for (JsonNode original : validReview.path("clueDispositions")) {
+      ObjectNode disposition = original.deepCopy();
+      ArrayNode refs = disposition.putArray("linkRefs");
+      for (JsonNode index : original.path("linkIndexes"))
+        refs.add(linkMap.path(index.asText()).asText());
+      disposition.remove("linkIndexes");
+      dispositions.add(disposition);
+    }
+    result.set("unresolved", validReview.path("unresolved").deepCopy());
+    result.set("corrections", validReview.path("corrections").deepCopy());
+    return result;
+  }
+
+  private static int compareLinkBytes(String left, String right) {
+    return java.util.Arrays.compareUnsigned(
+        left.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+        right.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+  }
+
+  private void mapLinkObjectRefs(JsonNode node, ObjectNode mapping) {
+    if (node.isArray()) {
+      for (JsonNode item : node) mapLinkObjectRefs(item, mapping);
+    } else if (node instanceof ObjectNode object) {
+      for (Map.Entry<String, JsonNode> field : List.copyOf(object.properties())) {
+        if ("definitionRef".equals(field.getKey()) && !field.getValue().isNull()) {
+          object.put(field.getKey(), mapping.path(field.getValue().asText()).asText());
+        } else if ("targetObjectRefs".equals(field.getKey())) {
+          JsonNode originalRefs = field.getValue();
+          ArrayNode refs = object.putArray(field.getKey());
+          for (JsonNode ref : originalRefs) refs.add(mapping.path(ref.asText()).asText());
+        } else mapLinkObjectRefs(field.getValue(), mapping);
+      }
+    }
+  }
+
   /**
    * Formal typed-v3 schema for one task kind and stage. It deliberately has a closed root and
    * closed task-owned definition container; reference closure is checked against the actual frozen
@@ -1305,7 +1570,8 @@ final class OntologyTypedDefinitionValidator {
   FormalCatalogInventory catalogInventory(ImmutableBytes mapping) {
     JsonNode document = json.parseCanonical(mapping);
     if (!document.isObject()
-        || !"ontology-reviewed-catalog-v3".equals(document.path("schemaVersion").asText())) {
+        || !Set.of("ontology-reviewed-catalog-v3", "ontology-reviewed-catalog-v4")
+            .contains(document.path("schemaVersion").asText())) {
       throw new IllegalArgumentException("ONTOLOGY_FORMAL_PRIOR_INVALID");
     }
     Map<String, String> types = new HashMap<>();
@@ -1402,6 +1668,7 @@ final class OntologyTypedDefinitionValidator {
       case ACTION -> List.of("operations", "rules");
       case ANALYTIC -> List.of("dimensions", "measures", "metrics");
       case RELATE -> List.of("links");
+      case LINK -> throw new IllegalArgumentException("ONTOLOGY_LINK_FORMAL_PROFILE_REQUIRED");
     };
   }
 
@@ -1462,6 +1729,7 @@ final class OntologyTypedDefinitionValidator {
           case OBJECT -> "objects";
           case ACTION -> "operations";
           case RELATE -> "links";
+          case LINK -> throw new IllegalArgumentException("ONTOLOGY_LINK_FORMAL_PROFILE_REQUIRED");
           case ANALYTIC -> "dimensions,measures,metrics";
         };
     Set<String> ids = new HashSet<>();

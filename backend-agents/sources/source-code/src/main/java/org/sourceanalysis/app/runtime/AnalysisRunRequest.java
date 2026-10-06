@@ -133,7 +133,6 @@ public record AnalysisRunRequest(
               || !isOntologyModule(corpusPublication, 2, "ontology-corpus")
               || identificationPublications.isEmpty()
               || !allOntologyModules(identificationPublications, 3, "ontology-identification")
-              || relationPublications.isEmpty()
               || !allOntologyModules(relationPublications, 4, "ontology-relations")) {
             throw new IllegalArgumentException("ONTOLOGY_OPERATION_INPUTS_INVALID");
           }

@@ -19,8 +19,12 @@ public final class OntologyScopeReader {
       Set.of("questionId", "question", "entryRefs", "clueRefs", "tasks", "objectSources");
   private static final Set<String> TASK_FIELDS =
       Set.of("taskId", "taskKind", "readingMode", "unitUses", "requiredUnitUses");
+  private static final Set<String> TASK_FIELDS_V3 =
+      Set.of("taskId", "taskKind", "readingMode", "unitUses", "requiredUnitUses", "anchorRefs");
   private static final Set<String> UNIT_USE_FIELDS = Set.of("unitRef", "entryRef");
   private static final Set<String> OBJECT_SOURCE_FIELDS = Set.of("identificationRun", "questionId");
+  private static final Set<String> OBJECT_SOURCE_FIELDS_V3 =
+      Set.of("identificationRun", "questionId", "taskIds");
 
   private OntologyScopeReader() {}
 
@@ -29,16 +33,17 @@ public final class OntologyScopeReader {
     requireObject(document, "ONTOLOGY_SCOPE_INVALID");
     String schemaVersion = requiredText(document, "schemaVersion", "ONTOLOGY_SCOPE_INVALID");
     boolean v2 = "ontology-scope-v2".equals(schemaVersion);
-    if (!v2 && !"ontology-scope-v1".equals(schemaVersion)) {
+    boolean v3 = "ontology-scope-v3".equals(schemaVersion);
+    if (!v2 && !v3 && !"ontology-scope-v1".equals(schemaVersion)) {
       throw failure("ONTOLOGY_SCOPE_INVALID");
     }
     requireFields(
         document,
-        v2 ? ROOT_FIELDS_V2 : ROOT_FIELDS,
+        v2 || v3 ? ROOT_FIELDS_V2 : ROOT_FIELDS,
         "ONTOLOGY_SCOPE_UNKNOWN_FIELD",
         "ONTOLOGY_SCOPE_REQUIRED_FIELD");
     Purpose purpose =
-        v2
+        v2 || v3
             ? enumValue(Purpose.class, requiredText(document, "purpose", "ONTOLOGY_SCOPE_INVALID"))
             : null;
     Mode mode = enumValue(Mode.class, requiredText(document, "mode", "ONTOLOGY_SCOPE_INVALID"));
@@ -59,7 +64,7 @@ public final class OntologyScopeReader {
     Set<String> questionIds = new HashSet<>();
     Set<String> taskIds = new HashSet<>();
     for (JsonNode rawQuestion : rawQuestions) {
-      Question question = question(rawQuestion, corpus, taskIds, v2, purpose);
+      Question question = question(rawQuestion, corpus, taskIds, v2 || v3, v3, purpose);
       if (!questionIds.add(question.questionId())) {
         throw failure("ONTOLOGY_SCOPE_QUESTION_DUPLICATE");
       }
@@ -73,6 +78,7 @@ public final class OntologyScopeReader {
       OntologyEvidenceCorpus corpus,
       Set<String> taskIds,
       boolean v2,
+      boolean v3,
       Purpose purpose) {
     requireObject(rawQuestion, "ONTOLOGY_SCOPE_QUESTION_INVALID");
     requireFields(
@@ -85,7 +91,7 @@ public final class OntologyScopeReader {
     List<String> entryRefs = entryRefs(rawQuestion.get("entryRefs"), corpus);
     List<String> clueRefs = clueRefs(rawQuestion.get("clueRefs"), corpus);
     List<ObjectSource> objectSources =
-        v2 ? objectSources(rawQuestion.get("objectSources")) : List.of();
+        v2 ? objectSources(rawQuestion.get("objectSources"), v3) : List.of();
     if (purpose == Purpose.SKELETON && !objectSources.isEmpty()) {
       throw failure("ONTOLOGY_SCOPE_OBJECT_SOURCE_INVALID");
     }
@@ -97,7 +103,7 @@ public final class OntologyScopeReader {
     int firstObject = -1;
     int firstDependent = -1;
     for (int index = 0; index < rawTasks.size(); index++) {
-      Task task = task(rawTasks.get(index), corpus);
+      Task task = task(rawTasks.get(index), corpus, v3);
       if (!taskIds.add(task.taskId())) {
         throw failure("ONTOLOGY_SCOPE_TASK_DUPLICATE");
       }
@@ -108,7 +114,13 @@ public final class OntologyScopeReader {
           && firstDependent < 0) {
         firstDependent = index;
       }
-      if (purpose == Purpose.SKELETON && task.taskKind() != TaskKind.OBJECT) {
+      if (task.taskKind() == TaskKind.LINK
+          && (purpose != Purpose.SKELETON || !clueRefs.containsAll(task.anchorRefs()))) {
+        throw failure("ONTOLOGY_SCOPE_LINK_TASK_INVALID");
+      }
+      if (purpose == Purpose.SKELETON
+          && task.taskKind() != TaskKind.OBJECT
+          && task.taskKind() != TaskKind.LINK) {
         throw failure("ONTOLOGY_SCOPE_SKELETON_TASK_INVALID");
       }
       tasks.add(task);
@@ -121,17 +133,17 @@ public final class OntologyScopeReader {
     return new Question(questionId, question, entryRefs, clueRefs, tasks, objectSources);
   }
 
-  private static List<ObjectSource> objectSources(JsonNode rawSources) {
+  private static List<ObjectSource> objectSources(JsonNode rawSources, boolean v3) {
     if (rawSources == null || !rawSources.isArray()) {
       throw failure("ONTOLOGY_SCOPE_OBJECT_SOURCE_INVALID");
     }
     List<ObjectSource> sources = new ArrayList<>();
-    Set<ObjectSource> unique = new HashSet<>();
+    Set<String> unique = new HashSet<>();
     for (JsonNode rawSource : rawSources) {
       requireObject(rawSource, "ONTOLOGY_SCOPE_OBJECT_SOURCE_INVALID");
       requireFields(
           rawSource,
-          OBJECT_SOURCE_FIELDS,
+          v3 ? OBJECT_SOURCE_FIELDS_V3 : OBJECT_SOURCE_FIELDS,
           "ONTOLOGY_SCOPE_OBJECT_SOURCE_UNKNOWN_FIELD",
           "ONTOLOGY_SCOPE_OBJECT_SOURCE_REQUIRED_FIELD");
       String run =
@@ -141,8 +153,9 @@ public final class OntologyScopeReader {
       if (!run.matches("analysis-run:[0-9a-f]{64}")) {
         throw failure("ONTOLOGY_SCOPE_OBJECT_SOURCE_INVALID");
       }
-      ObjectSource source = new ObjectSource(run, questionId);
-      if (!unique.add(source)) {
+      ObjectSource source =
+          new ObjectSource(run, questionId, v3 ? taskIds(rawSource.get("taskIds")) : List.of());
+      if (!unique.add(run + "\u0000" + questionId)) {
         throw failure("ONTOLOGY_SCOPE_OBJECT_SOURCE_DUPLICATE");
       }
       sources.add(source);
@@ -150,29 +163,56 @@ public final class OntologyScopeReader {
     return List.copyOf(sources);
   }
 
-  private static Task task(JsonNode rawTask, OntologyEvidenceCorpus corpus) {
+  static List<String> taskIds(JsonNode rawTaskIds) {
+    if (rawTaskIds == null || !rawTaskIds.isArray() || rawTaskIds.isEmpty()) {
+      throw failure("ONTOLOGY_SCOPE_OBJECT_SOURCE_INVALID");
+    }
+    List<String> values = new ArrayList<>();
+    Set<String> unique = new HashSet<>();
+    for (JsonNode taskId : rawTaskIds) {
+      if (!taskId.isTextual() || taskId.asText().isBlank() || !unique.add(taskId.asText())) {
+        throw failure("ONTOLOGY_SCOPE_OBJECT_SOURCE_INVALID");
+      }
+      values.add(taskId.asText());
+    }
+    return List.copyOf(values);
+  }
+
+  private static Task task(JsonNode rawTask, OntologyEvidenceCorpus corpus, boolean v3) {
     requireObject(rawTask, "ONTOLOGY_SCOPE_TASK_INVALID");
     requireFields(
         rawTask,
-        TASK_FIELDS,
+        v3 ? TASK_FIELDS_V3 : TASK_FIELDS,
         "ONTOLOGY_SCOPE_TASK_UNKNOWN_FIELD",
         "ONTOLOGY_SCOPE_TASK_REQUIRED_FIELD");
     String taskId = requiredText(rawTask, "taskId", "ONTOLOGY_SCOPE_TASK_INVALID");
     TaskKind taskKind;
     try {
       taskKind = TaskKind.valueOf(requiredText(rawTask, "taskKind", "ONTOLOGY_SCOPE_TASK_INVALID"));
+      if (!v3 && taskKind == TaskKind.LINK) {
+        throw failure("ONTOLOGY_SCOPE_TASK_KIND_INVALID");
+      }
     } catch (IllegalArgumentException invalid) {
       throw failure("ONTOLOGY_SCOPE_TASK_KIND_INVALID");
     }
     ReadingMode readingMode =
         enumValue(
             ReadingMode.class, requiredText(rawTask, "readingMode", "ONTOLOGY_SCOPE_TASK_INVALID"));
+    List<String> anchorRefs = v3 ? clueRefs(rawTask.get("anchorRefs"), corpus) : List.of();
+    if (taskKind == TaskKind.LINK) {
+      if (anchorRefs.size() != 1 || readingMode != ReadingMode.TECHNICAL_BUNDLE) {
+        throw failure("ONTOLOGY_SCOPE_LINK_ANCHOR_INVALID");
+      }
+    } else if (!anchorRefs.isEmpty() || readingMode == ReadingMode.TECHNICAL_BUNDLE) {
+      throw failure("ONTOLOGY_SCOPE_LINK_TASK_INVALID");
+    }
     return new Task(
         taskId,
         taskKind,
         readingMode,
         unitUses(rawTask.get("unitUses"), corpus),
-        unitUses(rawTask.get("requiredUnitUses"), corpus));
+        unitUses(rawTask.get("requiredUnitUses"), corpus),
+        anchorRefs);
   }
 
   static List<UnitUse> unitUses(JsonNode rawUses, OntologyEvidenceCorpus corpus) {
@@ -324,12 +364,14 @@ public final class OntologyScopeReader {
   public enum TaskKind {
     OBJECT,
     ACTION,
-    ANALYTIC
+    ANALYTIC,
+    LINK
   }
 
   public enum ReadingMode {
     EXPLICIT,
-    MODEL
+    MODEL,
+    TECHNICAL_BUNDLE
   }
 
   public record Scope(
@@ -340,11 +382,12 @@ public final class OntologyScopeReader {
       List<Question> questions) {
     public Scope {
       if (!"ontology-scope-v1".equals(schemaVersion)
-          && !"ontology-scope-v2".equals(schemaVersion)) {
+          && !"ontology-scope-v2".equals(schemaVersion)
+          && !"ontology-scope-v3".equals(schemaVersion)) {
         throw new IllegalArgumentException("ontology scope schema version");
       }
       if (("ontology-scope-v1".equals(schemaVersion) && purpose != null)
-          || ("ontology-scope-v2".equals(schemaVersion) && purpose == null)) {
+          || (!"ontology-scope-v1".equals(schemaVersion) && purpose == null)) {
         throw new IllegalArgumentException("ontology scope purpose");
       }
       questions = List.copyOf(questions);
@@ -379,17 +422,36 @@ public final class OntologyScopeReader {
     }
   }
 
-  public record ObjectSource(String identificationRun, String questionId) {}
+  public record ObjectSource(String identificationRun, String questionId, List<String> taskIds) {
+    public ObjectSource {
+      taskIds = List.copyOf(taskIds);
+    }
+
+    public ObjectSource(String identificationRun, String questionId) {
+      this(identificationRun, questionId, List.of());
+    }
+  }
 
   public record Task(
       String taskId,
       TaskKind taskKind,
       ReadingMode readingMode,
       List<UnitUse> unitUses,
-      List<UnitUse> requiredUnitUses) {
+      List<UnitUse> requiredUnitUses,
+      List<String> anchorRefs) {
     public Task {
       unitUses = List.copyOf(unitUses);
       requiredUnitUses = List.copyOf(requiredUnitUses);
+      anchorRefs = List.copyOf(anchorRefs);
+    }
+
+    public Task(
+        String taskId,
+        TaskKind taskKind,
+        ReadingMode readingMode,
+        List<UnitUse> unitUses,
+        List<UnitUse> requiredUnitUses) {
+      this(taskId, taskKind, readingMode, unitUses, requiredUnitUses, List.of());
     }
   }
 

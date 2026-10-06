@@ -46,6 +46,7 @@ record OntologyConfiguration(
       List.of(
           "survey", "prioritize", "reading", "object", "action", "analytic", "relate", "review");
   private static final List<String> ROUTES = List.of("survey", "extract", "relate");
+  private static final List<String> LINK_PROMPT_KEYS = List.of("link", "linkReview");
 
   OntologyConfiguration {
     storage = Objects.requireNonNull(storage, "ontology storage");
@@ -110,6 +111,25 @@ record OntologyConfiguration(
         models,
         canonicalJson.encodeCanonical(
             normalized(storage, reading, schemaSources, selected, models)),
+        explicitPromptOverrides);
+  }
+
+  /** New defaults participate only in the explicitly admitted joint-link production family. */
+  OntologyConfiguration forJointLinks() {
+    Map<String, String> selected = new LinkedHashMap<>(prompts);
+    selected.putIfAbsent("link", defaultPrompt("link"));
+    selected.putIfAbsent("linkReview", defaultPrompt("link-review"));
+    if (!explicitPromptOverrides.contains("prioritize")) {
+      selected.put("prioritize", defaultPrompt("prioritize", "v3"));
+    }
+    return new OntologyConfiguration(
+        storage,
+        reading,
+        schemaSources,
+        selected,
+        models,
+        new CanonicalJsonCodec()
+            .encodeCanonical(normalized(storage, reading, schemaSources, selected, models)),
         explicitPromptOverrides);
   }
 
@@ -186,7 +206,9 @@ record OntologyConfiguration(
   private static Map<String, String> prompts(ObjectNode configured) {
     Set<String> actual = new LinkedHashSet<>();
     configured.fieldNames().forEachRemaining(actual::add);
-    if (!PROMPT_KEYS.containsAll(actual)) {
+    Set<String> allowed = new LinkedHashSet<>(PROMPT_KEYS);
+    allowed.addAll(LINK_PROMPT_KEYS);
+    if (!allowed.containsAll(actual)) {
       throw failure("CONFIGURATION_INVALID");
     }
     Map<String, String> values = new LinkedHashMap<>();
@@ -265,6 +287,9 @@ record OntologyConfiguration(
     schemaSources.stream().map(Path::toString).sorted().forEach(schemaSourcesNode::add);
     ObjectNode promptsNode = document.putObject("prompts");
     PROMPT_KEYS.forEach(key -> promptsNode.put(key, prompts.get(key)));
+    LINK_PROMPT_KEYS.stream()
+        .filter(prompts::containsKey)
+        .forEach(key -> promptsNode.put(key, prompts.get(key)));
     if (models != null) {
       document.set("modelJobs", models.normalized());
     }

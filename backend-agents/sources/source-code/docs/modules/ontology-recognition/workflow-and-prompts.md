@@ -18,7 +18,7 @@ Prompt不能修改Schema、短号映射、来源/排除检查、投影算法或�
 
 ## 2. 四个操作，六个处理环节
 
-最新顺序由[业务联系优先详细设计](business-link-first-design.md#5-总流程和四个命令)维护：O0→O1最小对象→O2具体联系→O3业务骨架，再以新O1细化操作/分析和必要的新O2、新O3扩展。scope-v2、外部已审对象绑定、新四文件及其正式保存链已有scripted定向结果；离线总览查询、DISCOVERY范围约束和真实局部验收仍在集成验证，不将这些目标当成客户验收完成。旧格式继续按准确历史合同读取。
+联合路径由[连贯材料与联合LINK设计](coherent-link-material-design.md#4-四命令如何使用新路径)维护：O0→O1联合对象/联系→必要的O2跨题身份→O3业务骨架，再以新O1细化操作/分析。联合LINK已完成scripted正式Agent、存储、直接发布及业务图查询贯穿；真实业务联系与容量验收尚未完成。旧OBJECT→RELATE结果按其原合同读取，不能作为新路径已验收的证据。
 
 以下四个命令已注册并通过限定正式运行测试，包括scripted QUESTION＋MODEL阅读和有限DDL。当前紧凑材料、隔离和查询已有直接回归，格式、SpotBugs及PMD检查通过；客户三例O0–O3与18份实际请求已核验，采购关系局部拒绝仍完整返回；不能将这项限定验收说成所有模式或模型语义正确：
 
@@ -36,8 +36,8 @@ source-analysis --config /absolute/ontology.yaml publish-ontology --selection /a
 ```text
 R4 + 可选同R0 DDL
  → O0：①读取/索引/短号/可选结构声明，零模型
- → O1：②认识系统与选题 → ③选读/封包 → ④提取/原文审阅
- → O2：⑤跨入口/跨题身份与关系提取/原文审阅
+ → O1：②认识系统与选锚点 → ③Java连贯封包 → ④LINK联合提取/同包审阅
+ → O2：⑤需要时跨任务身份与新增联系/原文审阅（局部LINK可直接O3）
  → O3：⑥确定性校验、保存、查询，零模型
 ```
 
@@ -68,6 +68,10 @@ O0/O3及查询不要求模型登录。O1/O2先检查来源、范围、预算再�
 **下游**：调查、取材、关联和来源追溯。来源损坏/不符阻断；动态SQL、地址未知、缺helper等保留。按清单准确准备不等于自动知道业务必需材料，详见[材料合同](material-preparation.md)。
 
 ## 5. O1识别：问题、阅读、定义与审阅
+
+### 新骨架的LINK分支（已接线，真实验收待完成）
+
+新scope-v3的LINK先由Java按真实K作TECHNICAL_BUNDLE展开、冻结和完整成本检查；模型在一个小任务返回对象及联系，原定REVIEW检查同一包和最终端点集合。对象key由模型明确声明，内部O/L号由Java确定分配；完整响应和映射均保存。Prompt询问当前实现建立了什么联系，不提供采购链。联合Schema、嵌套引用、坏稿隔离和固定投影见[详细设计§9–11](coherent-link-material-design.md#9-link对象和联系一起返回)。下列单独OBJECT/有界MODEL阅读规则保留供其明确版本及细化任务使用，不再要求LINK必须先经历它们。
 
 ### 5.1 合法起点
 
@@ -228,6 +232,8 @@ CLI必须结束并返回完整taskOutcomes、已保存部分和未执行原因�
 
 改动清单与旧计划门禁调整见[implementation-delta](implementation-delta.md)。本页维护已批准方案及当前实施边界；它不授予模型调用许可。三个正式样例已有本次收尾范围的授权；先完成离线贯通，再以每运行有限配置执行，不继承旧PoC累计预算反复阻断同范围程序修复。扩大来源、模型或业务范围仍须另行确认。
 ## 13. 实际机械引用与显式冻结
+
+ANALYTIC的提取及审阅Prompt明确同一编号合同：维度为D1/D2，组成度量为V1/V2，组合指标为M1/M2；指标的componentMeasureRefs引用最终响应实际返回的V度量，或已审目录中真实的度量B，不能引用M指标或历史localId。合法跨任务引用保留，不要求重复造度量。审阅新增、删改后再次检查全部引用。Java仍严格验证，不改写模型原稿或猜测编号对应。这项指令减少机械抄写负担，不保证模型必然遵守；最终非法结果隔离为当前任务失败。
 
 新通用Prompt明确：当前所有scope.questionRef取本次input.questionId；只有reviewedCatalog.entries是此前已审定义，其对象引用取catalogRef及完整propertyRefs，其definition.localId是历史值。actualDraft及本次返回的新定义使用当前任务局部编号，不要求先存在于reviewedCatalog；OBJECT目录为空是正常情形。当前属性引用为O1.P1形式；没有身份依据时保留对象并记录PARTIAL与identities未知，不能因为此前目录为空删掉有原文支持的新对象。未解决项的knownDefinitionRefs承载B引用，relatedLocalDefinitionRefs只承载本任务返回的定义，不互换。OBJECT保留源码分支确实区分的业务种类，不因同表/实体类折叠；不支持的身份和规则仍未知。
 

@@ -238,11 +238,33 @@ public final class OntologyJobResultStore {
       List<OntologyFormalReviewNormalizer.Event> normalizationEvents,
       List<OntologyTypedTaskRunner.FormalDiagnostic> diagnostics,
       ModelRuntimeIdentityV1 runtimeIdentity) {
+    formalValidation(
+        jobKey,
+        stage,
+        disposition,
+        raw,
+        canonical,
+        normalizationEvents,
+        diagnostics,
+        runtimeIdentity,
+        OntologyFormalReviewNormalizer.PROFILE);
+  }
+
+  void formalValidation(
+      String jobKey,
+      String stage,
+      String disposition,
+      ImmutableBytes raw,
+      ImmutableBytes canonical,
+      List<OntologyFormalReviewNormalizer.Event> normalizationEvents,
+      List<OntologyTypedTaskRunner.FormalDiagnostic> diagnostics,
+      ModelRuntimeIdentityV1 runtimeIdentity,
+      String normalizationProfile) {
     ObjectNode record = base(jobKey, formalStage(stage), "ontology-formal-typed-validation-v2");
     record.put("disposition", disposition);
     record.put("rawResponseBase64", Base64.getEncoder().encodeToString(raw.copyToByteArray()));
     if (canonical != null) {
-      record.put("normalizationProfile", OntologyFormalReviewNormalizer.PROFILE);
+      record.put("normalizationProfile", normalizationProfile);
       record.put(
           "canonicalResponseBase64",
           Base64.getEncoder().encodeToString(canonical.copyToByteArray()));
@@ -273,18 +295,13 @@ public final class OntologyJobResultStore {
       ModelRuntimeIdentityV1 extractRuntime,
       ModelRuntimeIdentityV1 reviewRuntime) {
     ObjectNode record =
-        base(
-            jobKey,
-            "ontology-formal-typed",
-            OntologyTypedTaskRunner.isV4(task)
-                ? "ontology-formal-typed-job-result-v3"
-                : "ontology-formal-typed-job-result-v2");
+        base(jobKey, "ontology-formal-typed", OntologyTypedTaskRunner.resultSchema(task));
     record.put("status", OntologyTypedTaskRunner.FormalStatus.REVIEWED.name());
     record.put("kind", task.kind().name());
     record.put("questionId", task.questionId());
     record.put("taskId", task.taskId());
     record.put("question", task.question());
-    if (OntologyTypedTaskRunner.isV4(task)) {
+    if (OntologyTypedTaskRunner.isV4(task) || OntologyTypedTaskRunner.isLink(task)) {
       ArrayNode clues = record.putArray("visibleClueRefs");
       task.visibleClueRefs().forEach(clues::add);
     }
@@ -304,6 +321,9 @@ public final class OntologyJobResultStore {
     record.put(
         "rawCandidateBase64", Base64.getEncoder().encodeToString(rawCandidate.copyToByteArray()));
     record.set("review", json.parseCanonical(review));
+    if (OntologyTypedTaskRunner.isLink(task)) {
+      record.set("definitionDocument", typedValidator.projectLink(json.parseCanonical(review)));
+    }
     record.set("diagnostics", mapper.valueToTree(List.copyOf(diagnostics)));
     record.set("catalogMapping", json.parseCanonical(catalogMapping));
     ObjectNode identityDocument = record.putObject("identity");
@@ -447,7 +467,8 @@ public final class OntologyJobResultStore {
       String jobKey, String producingTaskId) {
     ObjectNode record = formalCompletedRecord(jobKey, producingTaskId);
     JsonNode catalog = record.path("catalogMapping");
-    if (!"ontology-reviewed-catalog-v3".equals(catalog.path("schemaVersion").asText())
+    if (!Set.of("ontology-reviewed-catalog-v3", "ontology-reviewed-catalog-v4")
+            .contains(catalog.path("schemaVersion").asText())
         || !catalog.path("entries").isArray()) {
       throw new IllegalArgumentException("ONTOLOGY_FORMAL_JOB_RESULT_INVALID");
     }
@@ -511,7 +532,10 @@ public final class OntologyJobResultStore {
         privateStore
             .readReviewedResult(jobKey)
             .orElseThrow(() -> new IllegalArgumentException("ONTOLOGY_FORMAL_JOB_RESULT_INVALID"));
-    if (!Set.of("ontology-formal-typed-job-result-v2", "ontology-formal-typed-job-result-v3")
+    if (!Set.of(
+                "ontology-formal-typed-job-result-v2",
+                "ontology-formal-typed-job-result-v3",
+                "ontology-formal-typed-job-result-v4")
             .contains(record.path("schemaVersion").asText())
         || !runId.value().equals(record.path("runId").asText())
         || !"ontology".equals(record.path("phase").asText())
@@ -572,7 +596,8 @@ public final class OntologyJobResultStore {
 
   private static List<String> savedVisibleClueRefs(ObjectNode record) {
     boolean v4 =
-        "ontology-formal-typed-job-result-v3".equals(record.path("schemaVersion").asText());
+        Set.of("ontology-formal-typed-job-result-v3", "ontology-formal-typed-job-result-v4")
+            .contains(record.path("schemaVersion").asText());
     JsonNode clues = record.get("visibleClueRefs");
     if (!v4) {
       if (clues != null) {
@@ -632,7 +657,8 @@ public final class OntologyJobResultStore {
     String packetSchemaVersion = savedPacket.path("schemaVersion").asText();
     if (!("ontology-reading-packet-v3".equals(packetSchemaVersion)
             || "ontology-reading-packet-v4".equals(packetSchemaVersion)
-            || "ontology-reading-packet-v5".equals(packetSchemaVersion))
+            || "ontology-reading-packet-v5".equals(packetSchemaVersion)
+            || "ontology-reading-packet-v6".equals(packetSchemaVersion))
         || !corpus.sourceIdentity().equals(savedPacket.path("sourceIdentity").asText())
         || !savedPacket.path("units").isArray()) {
       throw new IllegalArgumentException("ONTOLOGY_FORMAL_JOB_RESULT_INVALID");
@@ -666,15 +692,22 @@ public final class OntologyJobResultStore {
       }
     }
     OntologyReadingPacket restored =
-        "ontology-reading-packet-v5".equals(packetSchemaVersion)
-            ? OntologyReadingPacket.restoreFormalV5(
-                corpus, new ArrayList<>(selected.values()), Integer.MAX_VALUE)
-            : "ontology-reading-packet-v4".equals(packetSchemaVersion)
-                ? OntologyReadingPacket.formalV4(
+        "ontology-reading-packet-v6".equals(packetSchemaVersion)
+            ? OntologyReadingPacket.restoreFormalV6(
+                corpus,
+                new ArrayList<>(selected.values()),
+                Integer.MAX_VALUE,
+                savedPacket.path("bundleDecision"))
+            : "ontology-reading-packet-v5".equals(packetSchemaVersion)
+                ? OntologyReadingPacket.restoreFormalV5(
                     corpus, new ArrayList<>(selected.values()), Integer.MAX_VALUE)
-                : OntologyReadingPacket.formal(
-                    corpus, new ArrayList<>(selected.values()), Integer.MAX_VALUE);
-    if ("ontology-reading-packet-v5".equals(packetSchemaVersion)) {
+                : "ontology-reading-packet-v4".equals(packetSchemaVersion)
+                    ? OntologyReadingPacket.formalV4(
+                        corpus, new ArrayList<>(selected.values()), Integer.MAX_VALUE)
+                    : OntologyReadingPacket.formal(
+                        corpus, new ArrayList<>(selected.values()), Integer.MAX_VALUE);
+    if (Set.of("ontology-reading-packet-v5", "ontology-reading-packet-v6")
+        .contains(packetSchemaVersion)) {
       if (!savedPacket.path("visibleClues").isArray()) {
         throw new IllegalArgumentException("ONTOLOGY_FORMAL_JOB_RESULT_INVALID");
       }
@@ -764,7 +797,10 @@ public final class OntologyJobResultStore {
     ObjectNode completed = privateStore.readReviewedResult(jobKey).orElse(null);
     ObjectNode failed = privateStore.readTerminalFailure(jobKey).orElse(null);
     if (completed != null
-        && Set.of("ontology-formal-typed-job-result-v2", "ontology-formal-typed-job-result-v3")
+        && Set.of(
+                "ontology-formal-typed-job-result-v2",
+                "ontology-formal-typed-job-result-v3",
+                "ontology-formal-typed-job-result-v4")
             .contains(completed.path("schemaVersion").asText())) {
       observation.put("status", "REVIEWED");
       observation.set("completion", completed.deepCopy());
@@ -1181,7 +1217,13 @@ public final class OntologyJobResultStore {
       JsonNode validated,
       ModelRuntimeIdentityV1 identity,
       JsonNode sourceBasis) {
-    ObjectNode record = base(jobKey, stage, "ontology-decision-result-v3");
+    ObjectNode record =
+        base(
+            jobKey,
+            stage,
+            "ontology-prioritize-input-v5".equals(input.path("schemaVersion").asText())
+                ? "ontology-decision-result-v6"
+                : "ontology-decision-result-v3");
     record.set("input", input);
     record.set("validatedResponse", validated);
     record.set("sourceBasis", sourceBasis);
@@ -1585,9 +1627,7 @@ public final class OntologyJobResultStore {
         .readReviewedResult(jobKey)
         .map(
             record -> {
-              if (!(OntologyTypedTaskRunner.isV4(task)
-                          ? "ontology-formal-typed-job-result-v3"
-                          : "ontology-formal-typed-job-result-v2")
+              if (!OntologyTypedTaskRunner.resultSchema(task)
                       .equals(record.path("schemaVersion").asText())
                   || !runId.value().equals(record.path("runId").asText())
                   || !"ontology-formal-typed".equals(record.path("stage").asText())
@@ -1640,17 +1680,30 @@ public final class OntologyJobResultStore {
               OntologyTypedDefinitionValidator.FormalCatalogInventory catalog =
                   typedValidator.catalogInventory(prepared.catalogMapping());
               OntologyTypedDefinitionValidator.FormalValidation candidate =
-                  OntologyTypedTaskRunner.isV4(task)
-                      ? typedValidator.inspectFormalCandidateV4(
+                  OntologyTypedTaskRunner.isLink(task)
+                      ? typedValidator.inspectLink(
                           raw,
-                          task.kind(),
+                          false,
                           task.packet(),
-                          catalog,
+                          task.questionId(),
                           entryRefs,
-                          Set.copyOf(task.visibleClueRefs()),
-                          task.questionId())
-                      : typedValidator.inspectFormalCandidate(
-                          raw, task.kind(), task.packet(), catalog, entryRefs, task.questionId());
+                          Set.copyOf(task.visibleClueRefs()))
+                      : OntologyTypedTaskRunner.isV4(task)
+                          ? typedValidator.inspectFormalCandidateV4(
+                              raw,
+                              task.kind(),
+                              task.packet(),
+                              catalog,
+                              entryRefs,
+                              Set.copyOf(task.visibleClueRefs()),
+                              task.questionId())
+                          : typedValidator.inspectFormalCandidate(
+                              raw,
+                              task.kind(),
+                              task.packet(),
+                              catalog,
+                              entryRefs,
+                              task.questionId());
               if (!candidate.diagnostics().equals(diagnostics)) {
                 throw new IllegalArgumentException("ONTOLOGY_FORMAL_JOB_STAGE_MISMATCH");
               }
@@ -1664,6 +1717,12 @@ public final class OntologyJobResultStore {
               String normalizationProfile = reviewValidation.path("normalizationProfile").asText();
               OntologyFormalReviewNormalizer.Result normalizedReview =
                   switch (normalizationProfile) {
+                    case OntologyTypedTaskRunner.JOINT_LINK_PROFILE -> {
+                      if (!OntologyTypedTaskRunner.isLink(task))
+                        throw new IllegalArgumentException("ONTOLOGY_FORMAL_JOB_STAGE_MISMATCH");
+                      yield new OntologyFormalReviewNormalizer.Result(
+                          json.encodeCanonical(json.parseStrictJson(reviewRaw)), List.of());
+                    }
                     case OntologyFormalReviewNormalizer.LEGACY_PROFILE ->
                         OntologyFormalReviewNormalizer.normalizeLegacy(
                             reviewRaw, candidate.document());
@@ -1690,7 +1749,10 @@ public final class OntologyJobResultStore {
                     default ->
                         throw new IllegalArgumentException("ONTOLOGY_FORMAL_JOB_STAGE_MISMATCH");
                   };
-              if (!(OntologyFormalReviewNormalizer.PROFILE.equals(normalizationProfile)
+              if (OntologyTypedTaskRunner.isLink(task)
+                      != OntologyTypedTaskRunner.JOINT_LINK_PROFILE.equals(normalizationProfile)
+                  || !(OntologyTypedTaskRunner.JOINT_LINK_PROFILE.equals(normalizationProfile)
+                      || OntologyFormalReviewNormalizer.PROFILE.equals(normalizationProfile)
                       || OntologyFormalReviewNormalizer.V4_PROFILE.equals(normalizationProfile)
                       || OntologyFormalReviewNormalizer.V3_PROFILE.equals(normalizationProfile)
                       || OntologyFormalReviewNormalizer.V2_PROFILE.equals(normalizationProfile)
@@ -1704,25 +1766,39 @@ public final class OntologyJobResultStore {
                 throw new IllegalArgumentException("ONTOLOGY_FORMAL_JOB_STAGE_MISMATCH");
               }
               JsonNode validatedReview =
-                  OntologyTypedTaskRunner.isV4(task)
-                      ? typedValidator.validateFormalReviewV4(
-                          normalizedReview.canonical(),
-                          task.kind(),
+                  OntologyTypedTaskRunner.isLink(task)
+                      ? typedValidator.validateLink(
+                          json.parseCanonical(normalizedReview.canonical()),
+                          true,
                           task.packet(),
-                          catalog,
-                          entryRefs,
-                          Set.copyOf(task.visibleClueRefs()),
                           task.questionId(),
-                          candidate.document())
-                      : typedValidator.validateFormalReview(
-                          normalizedReview.canonical(),
-                          task.kind(),
-                          task.packet(),
-                          catalog,
                           entryRefs,
-                          task.questionId(),
-                          candidate.document());
+                          Set.copyOf(task.visibleClueRefs()))
+                      : OntologyTypedTaskRunner.isV4(task)
+                          ? typedValidator.validateFormalReviewV4(
+                              normalizedReview.canonical(),
+                              task.kind(),
+                              task.packet(),
+                              catalog,
+                              entryRefs,
+                              Set.copyOf(task.visibleClueRefs()),
+                              task.questionId(),
+                              candidate.document())
+                          : typedValidator.validateFormalReview(
+                              normalizedReview.canonical(),
+                              task.kind(),
+                              task.packet(),
+                              catalog,
+                              entryRefs,
+                              task.questionId(),
+                              candidate.document());
               if (!validatedReview.equals(review)) {
+                throw new IllegalArgumentException("ONTOLOGY_FORMAL_JOB_STAGE_MISMATCH");
+              }
+              if (OntologyTypedTaskRunner.isLink(task)
+                  && !typedValidator
+                      .projectLink(validatedReview)
+                      .equals(record.path("definitionDocument"))) {
                 throw new IllegalArgumentException("ONTOLOGY_FORMAL_JOB_STAGE_MISMATCH");
               }
               StructuredModelRequest expectedReviewRequest =

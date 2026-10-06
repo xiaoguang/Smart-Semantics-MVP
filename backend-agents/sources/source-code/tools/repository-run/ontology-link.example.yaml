@@ -1,0 +1,42 @@
+# Copy outside customer source; replace all paths and provider credentials/location.
+# Uses the LINK v4 publication family; existing ontology.example.yaml remains historical v3.
+schemaVersion: ontology-config-v1
+storage:
+  root: /absolute/path/to/run-store
+  preparedSourceArchive: /absolute/path/to/prepared-source-archive
+  sourcePreparationPolicyRegistry: /absolute/path/to/source-preparation-artifact-policy-set-v1.json
+  evidencePolicyRegistry: /absolute/path/to/technical-analysis-artifact-policy-set-v3.json
+  ontologyPolicyRegistry: /absolute/path/to/ontology-artifact-policy-set-v4.json
+  upstreamArtifactPolicyRegistries:
+    - /absolute/path/to/ontology-artifact-policy-set-v3.json
+    - /absolute/path/to/technical-analysis-artifact-policy-set-v2.json
+reading:
+  maxUnitBytes: 1048576
+  maxRequestBytes: 1048576
+  maxOutputBytes: 65536
+  maxOutputTokens: 4096
+  maxRequests: 12
+  maxReadingRounds: 4
+  maxActionsPerRound: 8
+  maxNavigationEntries: 16
+# Supported independent overrides include link and linkReview; their actual bytes bind tasks.
+# A LINK bundle is Java-prepared; it does not use multi-round reading to change its material.
+# prompts:
+#   link: /absolute/path/to/link.prompt.txt
+#   linkReview: /absolute/path/to/link-review.prompt.txt
+modelJobs:
+  maxConcurrentJobs: 1
+  providers:
+    luna:
+      kind: codexSubscription
+      executable: /absolute/path/to/codex
+      quotaScope: example-ontology-chatgpt-account
+      model: gpt-5.6-luna
+      reasoningEffort: high
+      auth:
+        mode: chatgpt
+        codexHomeEnv: ONTOLOGY_CODEX_HOME
+  routing:
+    survey: [luna]
+    extract: [luna]
+    relate: [luna]

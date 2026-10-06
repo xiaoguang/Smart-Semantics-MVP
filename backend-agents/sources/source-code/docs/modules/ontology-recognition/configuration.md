@@ -8,7 +8,7 @@
 
 `ontology-config-v1`使用独立YAML。准确R4/O0和选择清单来自命令参数，不隐式寻找最新运行。配置只包括以下字段：
 
-业务联系优先的新配置示例采用`ontology-artifact-policy-set-v3.json`，为O0显式选择Corpus-v2/投影规则v3和新typed-v4默认Prompt；旧策略与旧结果仍按原owner读取。配置字段不变，不凭scope-v2或相同R4给历史任务升级身份。完整骨架及细化范围示例为`tools/repository-run/ontology-skeleton-scope-v2.example.json`和`ontology-enrichment-scope-v2.example.json`，示例编号须替换为准确保存值；objectSources按选定题恢复全部已审OBJECT，不是对象名称匹配或单对象模糊选择。
+联合对象—联系路径使用`tools/repository-run/ontology-link.example.yaml`和`ontology-artifact-policy-set-v4.json`；配置Schema仍为`ontology-config-v1`。该路径写Corpus-v2、冻结包/模型v6及O1/O2阶段v4，采用scope-v3和selection-v3。旧v3策略、scope-v2及typed-v4路径按准确owner继续读取，不自动升级历史任务。新路径已有scripted正式运行、安装、重开、发布及查询测试，真实业务质量和容量验收尚未完成。
 
 | 字段 | 内容和检查 |
 | --- | --- |
@@ -16,7 +16,7 @@
 | storage | root、preparedSourceArchive、sourcePreparationPolicyRegistry、evidencePolicyRegistry、ontologyPolicyRegistry；可选upstreamArtifactPolicyRegistries。均为明确的绝对路径；后者是需重开的历史本体或技术上游owner策略的显式、无重复路径列表 |
 | reading | maxUnitBytes、maxRequestBytes、maxOutputBytes、maxOutputTokens、maxRequests、maxReadingRounds、maxActionsPerRound、maxNavigationEntries；均为正整数，分别执行，不互换单位 |
 | schemaSources（可选） | 同R0的源码相对路径数组；不接受宿主绝对路径、重复项或越界路径；为空不解析DDL |
-| prompts（可选） | survey、prioritize、reading、object、action、analytic、relate、review的UTF-8文件覆盖，填写绝对文件路径；未知键拒绝。未覆盖键使用本体自有正式资源，不使用旧Activity/Process Prompt |
+| prompts（可选） | survey、prioritize、reading、object、action、analytic、relate、review，以及联合任务专用link、linkReview的UTF-8文件覆盖，填写绝对文件路径；未知键拒绝。未覆盖键使用本体自有正式资源，不使用旧Activity/Process Prompt |
 | modelJobs（可选） | maxConcurrentJobs、providers、routing；routing准确为survey/extract/relate三个键，使用现有Provider配置加载器，不要求旧activity/processGroup/repositorySummary/report路由 |
 
 `modelJobs`可以省略，以便O0、O3和查询零模型运行。O1/O2确需派发请求时才要求对应路由及Provider。QUESTION的MODEL阅读使用O1既有extract路由及reading Prompt/限制，不额外要求survey；DISCOVERY的调查、选题和MODEL阅读使用survey路由，两者已分别通过正式scripted运行回归。每一任务的REVIEW保持其提取/关联绑定；多个绑定用于明确任务分配，不是失败回退。默认不自动重试。配置缺失不会触发旧业务路径。真实选材质量未获证明。
@@ -47,7 +47,9 @@ O0保存的准备控制用于重开其材料约定和内容身份；O1/O2实际�
 
 只有用户当前明确授予跨运行总额度时，宿主Agent才按该边界汇总准确O1/O2的实际观察；Java没有跨运行授权计数器，新运行也不能自行续期硬额度。v2分别记录预留、确认开始、确认结束和远端未知，`modelRequestsDispatched`不证明远端是否完成；未知不得当作零或安全重发依据。用户已授权有限配置内同范围程序缺陷修复时，不恢复被撤回的旧PoC累计额度阻断。范围、来源、模型或账户扩大仍需相应选择。查询及合法O0/O3不消耗模型额度。
 
-当前业务联系路径的范围使用`ontology-scope-v2`，历史scope-v1仍严格读取；新执行选材/发布采用`ontology-selection-v2`：保存问题、任务、EXPLICIT/MODEL选择性质及准确Corpus内E/U/K引用；跨运行选择保存完整运行ID并重开准确模块。清单不能包含人工对象、关系或指标答案，不能把旧PoC结果作为已审上游。完整定义字段由模型任务合同规定，不由配置代写。历史selection-v1继续按原合同读取，不猜objectSources、不修改旧记录；非空旧关系选单不能配合新生产策略启动。
+联合路径使用`ontology-scope-v3`和`ontology-selection-v3`；旧scope-v1/v2、selection-v1/v2按明确版本严格读取。清单保存问题、任务、EXPLICIT/MODEL选择性质及准确Corpus内E/U/K引用；跨运行选择保存完整运行ID并重开准确模块。清单不能包含人工对象、关系或指标答案，不能把旧PoC结果作为已审上游。LINK任务只在SKELETON中使用TECHNICAL_BUNDLE及一个真实K锚点。新selection-v3允许已审LINK的O1直接发布、relationRuns为空；旧selection-v1/v2仍保留原有非空O2规则。
+
+新scope-v3/selection-v3的`objectSources`以`identificationRun/questionId/taskIds`选择准确已审OBJECT或LINK对象目录；taskIds是范围中的局部任务编号，不是查询用producingTaskId。PUBLISH仍选择完整O1/O2阶段，不按taskIds过滤发布结果，且必须显式包含实际依赖的全部O1。示例见`ontology-link-scope-v3.example.json`、`ontology-link-publish-selection-v3.example.json`及`ontology-link-enrichment-scope-v3.example.json`。所有运行、E/K编号均须替换为保存结果，不按名字猜测。
 
 历史scope-v1的同题ACTION/ANALYTIC仍只依赖此前全部OBJECT。scope-v2的ENRICHMENT另可显式选择已审骨架的`objectSources.identificationRun/questionId`，每题只恢复其真实对象目录。selection-v2的RELATE也显式选择这个来源对；PUBLISH显式O1集合必须包含每个所选O2和细化O1的实际上游，不能要求独立O2拥有完全相等的全表。派发计数、PARTIAL及nextActions由[contracts§11.6](contracts.md)拥有，配置读取通过不替代这些运行验收。
 

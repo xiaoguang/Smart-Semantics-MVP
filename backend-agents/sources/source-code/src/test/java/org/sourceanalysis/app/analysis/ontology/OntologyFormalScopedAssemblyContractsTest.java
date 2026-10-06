@@ -155,6 +155,85 @@ final class OntologyFormalScopedAssemblyContractsTest {
   }
 
   @Test
+  void sameTaskDifferentReviewVersionsKeepTheChosenCanonicalObject() {
+    OntologyEvidenceCorpus corpus =
+        fixtures.corpus(
+            "assembly-distinct-review-versions",
+            List.of(
+                "public String readRecord() { return record; }",
+                "public String compareRecords() { return compared; }"));
+    Completed first =
+        reviewedObject(corpus, 0, "Q-record", "task-record", "First review", "recordField");
+    String entryRef = corpus.aliases().entryRef(first.use().entryId());
+    ImmutableBytes secondCandidate =
+        objectResponse(
+            "ontology-typed-candidate-v3", "Q-record", entryRef, "Second review", "recordField");
+    ImmutableBytes secondReview =
+        objectResponse(
+            "ontology-typed-review-v3", "Q-record", entryRef, "Second review", "recordField");
+    OntologyJobResultStore secondStore = fixtures.store(journal.resolve("second-review-version"));
+    OntologyTypedTaskRunner secondRunner =
+        fixtures.runner(
+            new OntologyFormalTypedTaskContractsTest.ScriptedProvider(
+                secondCandidate, secondReview),
+            secondStore);
+    OntologyTypedTaskRunner.FormalResult secondResult = secondRunner.runFormal(first.task());
+    Completed second = new Completed(first.task(), secondResult, first.use());
+
+    assertThat(first.result().identity().producingTaskId())
+        .isEqualTo(second.result().identity().producingTaskId());
+    assertThat(first.result().identity().reviewVersion())
+        .isNotEqualTo(second.result().identity().reviewVersion());
+    Completed earlier =
+        first
+                    .result()
+                    .identity()
+                    .reviewVersion()
+                    .compareTo(second.result().identity().reviewVersion())
+                < 0
+            ? first
+            : second;
+    Completed later = earlier == first ? second : first;
+    Completed relation =
+        reviewedRelateDecision(
+            corpus,
+            1,
+            "Q-correspondence",
+            "task-correspondence",
+            List.of(first, second),
+            "SAME_OBJECT",
+            "B1");
+    List<OntologyScopedAssembler.TaskDisposition> dispositions =
+        List.of(first, second, relation).stream()
+            .map(
+                completed ->
+                    new OntologyScopedAssembler.TaskDisposition(
+                        completed.task().taskId(),
+                        completed.result().identity().producingTaskId(),
+                        OntologyScopedAssembler.TaskDispositionStatus.REVIEWED,
+                        "The exact reviewed result is selected.",
+                        completed.result().identity()))
+            .toList();
+    OntologyScopedAssembler.FormalAssembly assembly =
+        new OntologyScopedAssembler()
+            .assembleFormal(
+                new OntologyScopedAssembler.FormalInput(
+                    first.task().binding(),
+                    List.of(first.result(), second.result(), relation.result()),
+                    new OntologyScopedAssembler.ScopedCoverage(
+                        new OntologyScopedAssembler.InputDenominators(2, 0, 0),
+                        List.of(),
+                        dispositions)));
+    JsonNode ontology = fixtures.json.parseCanonical(assembly.ontology());
+    JsonNode chosen = objectNamed(ontology, earlier == first ? "First review" : "Second review");
+    JsonNode other = objectNamed(ontology, later == first ? "First review" : "Second review");
+    assertThat(chosen.path("canonicalObjectRef").asText())
+        .isEqualTo(chosen.path("globalId").asText());
+    assertThat(other.path("canonicalObjectRef").asText())
+        .isEqualTo(chosen.path("globalId").asText());
+  }
+
+  @Test
   void assemblyRejectsReviewedRelationWhenRequiredPriorObjectResultWasOmitted() {
     OntologyEvidenceCorpus corpus =
         fixtures.corpus(

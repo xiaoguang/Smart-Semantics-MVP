@@ -35,7 +35,9 @@ final class OntologyBusinessOverviewRendererTest {
             "src=\"data:text/javascript;base64,"
                 + Base64.getEncoder().encodeToString(unsafeBundle)
                 + "\"");
-    assertThat(html).contains("securityLevel: 'strict'", "htmlLabels: false", "startOnLoad: false");
+    // Mermaid 11.12 SVG text mode leaves our numeric label entities visible as literal text.
+    // Its strict HTML label mode decodes them without creating elements from encoded label data.
+    assertThat(html).contains("securityLevel: 'strict'", "htmlLabels: true", "startOnLoad: false");
     assertThat(html).doesNotContain("cdn.jsdelivr", "unpkg.com", "<script>alert(1)</script>");
     assertThat(html).contains("&lt;script&gt;alert(1)&lt;/script&gt;");
     assertThat(html).contains("ontology-source:fixture", "src/OrderService.java", "S1");
