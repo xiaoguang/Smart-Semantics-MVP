@@ -128,4 +128,4 @@ Deferred minor：局部图用已审关系name作短标签，而不是自动生�
 
 四正式命令保持原名；无新分析CLI。新增默认Prompt、policy-v5及selection-v4示例，代码／测试／设计／同一Skill同批交付。原PoC代码、运行数据、本机配置、凭据和其他progress不混入提交。旧MD、Activity、过程、九章及原R0/R4未修改；不得自动合入main。
 
-本体仍标DRAFT_REVIEWABLE，指标NOT_EXECUTABLE；backlog32和28的长期小窗口约束不整体关闭。实际材料、来源映射、模型请求、原稿、审阅、四文件、公开HTML和截图仅保存于ignored验收目录，不进入提交。98份有效保护摘要全部一致；清单中14个非摘要标题另行排除，不把格式警告视作缺失文件。原12份暂存PoC补丁SHA256仍为040d0633ede7dfeaf437427bcf122623424c6956670792442e2b704e11fb42ee，未改写。交付分支采用现有[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)，不自动合入main；本轮只选择相关实现／测试／设计／Skill路径，原PoC和无关进度不参与提交。
+本体仍标DRAFT_REVIEWABLE，指标NOT_EXECUTABLE；backlog32和28的长期小窗口约束不整体关闭。实际材料、来源映射、模型请求、原稿、审阅、四文件、公开HTML和截图仅保存于ignored验收目录，不进入提交。98份有效保护摘要全部一致；清单中14个非摘要标题另行排除，不把格式警告视作缺失文件。原12份暂存PoC补丁SHA256仍为040d0633ede7dfeaf437427bcf122623424c6956670792442e2b704e11fb42ee，提交后复核未变。实现提交c389badd5001d91eb24ad1aca1752788e3ac12e1只包含56个相关实现／测试／设计／Skill文件，通过现有[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)交付，不强推、不自动合入main。原PoC和无关进度未参与提交。仅本计划的临时ledger在裁决、验收和剩余项转入本文及backlog后删除；其他计划progress、全部来源及模型记录保留。
