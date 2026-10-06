@@ -87,6 +87,11 @@
        Keep both exceptions limited to this one field/accessor, not the whole class. -->
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyCoherentLinkBundle$Result"/><Method name="packet"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP2"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyCoherentLinkBundle$Result"/><Field name="packet"/></Match>
+  <!-- TYPE preparation shares that same immutable packet. Its direct source-preparation test
+       mutates detached JSON/bytes and rejects mutation of unit/use lists, then verifies frozen
+       input, model projection and binding stay identical. Limit suppression to this reference. -->
+  <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyObjectTypeCorrespondence$Prepared"/><Method name="packet"/></Match>
+  <Match><Bug pattern="EI_EXPOSE_REP2"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyObjectTypeCorrespondence$Prepared"/><Field name="packet"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyScopedAssembler$ReviewedTask"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP2"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyScopedAssembler$ReviewedTask"/></Match>
   <Match><Bug pattern="EI_EXPOSE_REP"/><Class name="org.sourceanalysis.app.analysis.ontology.OntologyTypedTaskRunner$FormalResult"/></Match>

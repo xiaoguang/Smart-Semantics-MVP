@@ -1240,17 +1240,17 @@ final class AtomicCanonicalPublicationEngine {
                         : null;
                 case 3 ->
                     "ontology-identification".equals(analysisStepAddress.moduleKey())
-                            && Set.of("v1", "v3", "v4").contains(moduleVersion)
+                            && Set.of("v1", "v3", "v4", "v5").contains(moduleVersion)
                         ? ontologyStageFiles(moduleVersion, "ontology-identification", descriptors)
                         : null;
                 case 4 ->
                     "ontology-relations".equals(analysisStepAddress.moduleKey())
-                            && Set.of("v1", "v3", "v4").contains(moduleVersion)
+                            && Set.of("v1", "v3", "v4", "v5").contains(moduleVersion)
                         ? ontologyStageFiles(moduleVersion, "ontology-relations", descriptors)
                         : null;
                 case 5 ->
                     "ontology-publisher".equals(analysisStepAddress.moduleKey())
-                            && Set.of("v1", "v3", "v4").contains(moduleVersion)
+                            && Set.of("v1", "v3", "v4", "v5").contains(moduleVersion)
                         ? ontologyPublisherFiles(moduleVersion, descriptors)
                         : null;
                 default -> null;
@@ -1319,7 +1319,7 @@ final class AtomicCanonicalPublicationEngine {
       String moduleVersion, String stage, List<ArtifactDescriptor> descriptors) {
     List<String> names = List.of(stage + ".json");
     Set<String> schemas =
-        Set.of("v3", "v4").contains(moduleVersion)
+        Set.of("v3", "v4", "v5").contains(moduleVersion)
             ? Set.of(stage + "-" + moduleVersion)
             : Set.of(stage + "-v1", stage + "-v2");
     return descriptors.size() == 1 && schemas.contains(descriptors.get(0).schemaVersion())
@@ -1335,7 +1335,7 @@ final class AtomicCanonicalPublicationEngine {
             "ontology-review.json",
             "ontology-sources.jsonl",
             "ontology.json");
-    boolean current = Set.of("v3", "v4").contains(moduleVersion);
+    boolean current = Set.of("v3", "v4", "v5").contains(moduleVersion);
     for (ArtifactDescriptor descriptor : descriptors) {
       Set<String> schemas =
           switch (descriptor.fileName()) {
@@ -2440,7 +2440,8 @@ final class AtomicCanonicalPublicationEngine {
                       "ontology-identification-v1",
                       "ontology-identification-v2",
                       "ontology-identification-v3",
-                      "ontology-identification-v4")
+                      "ontology-identification-v4",
+                      "ontology-identification-v5")
                   .contains(payload.schemaVersion())
               ? new ModuleArtifactContract(
                   AnalysisStepKey.REPOSITORY_KNOWLEDGE,
@@ -2454,7 +2455,8 @@ final class AtomicCanonicalPublicationEngine {
                       "ontology-relations-v1",
                       "ontology-relations-v2",
                       "ontology-relations-v3",
-                      "ontology-relations-v4")
+                      "ontology-relations-v4",
+                      "ontology-relations-v5")
                   .contains(payload.schemaVersion())
               ? new ModuleArtifactContract(
                   AnalysisStepKey.REPOSITORY_KNOWLEDGE,
@@ -2477,7 +2479,8 @@ final class AtomicCanonicalPublicationEngine {
                       "ontology-coverage-v1",
                       "ontology-coverage-v2",
                       "ontology-coverage-v3",
-                      "ontology-coverage-v4")
+                      "ontology-coverage-v4",
+                      "ontology-coverage-v5")
                   .contains(payload.schemaVersion())
               ? new ModuleArtifactContract(
                   AnalysisStepKey.REPOSITORY_KNOWLEDGE,
@@ -2500,7 +2503,8 @@ final class AtomicCanonicalPublicationEngine {
                       "ontology-review-v1",
                       "ontology-review-v2",
                       "ontology-review-v3",
-                      "ontology-review-v4")
+                      "ontology-review-v4",
+                      "ontology-review-v5")
                   .contains(payload.schemaVersion())
               ? new ModuleArtifactContract(
                   AnalysisStepKey.REPOSITORY_KNOWLEDGE,

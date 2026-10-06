@@ -2397,6 +2397,10 @@ public final class OntologyEvidenceCorpus {
 
   /** Compact call information derived from a selected method without exposing a call as a link. */
   List<FormalCallSite> formalCallSites(Set<UnitHandle> selected) {
+    return formalCallSites(selected, false);
+  }
+
+  List<FormalCallSite> formalCallSites(Set<UnitHandle> selected, boolean retainUnselected) {
     List<FormalCallSite> result = new ArrayList<>();
     for (UnitHandle method :
         selected.stream().filter(handle -> handle.kind() == UnitKind.JAVA_METHOD).toList()) {
@@ -2413,7 +2417,8 @@ public final class OntologyEvidenceCorpus {
             new UnitHandle(method.entryId(), UnitKind.JAVA_CALL, unitId(call, UnitKind.JAVA_CALL));
         List<UnitHandle> selectedTargets = selectedLocatedTargets(call, method.entryId(), selected);
         boolean selectedCall = selected.contains(callHandle);
-        if (!selectedCall
+        if (!retainUnselected
+            && !selectedCall
             && selectedTargets.isEmpty()
             && !CallSiteStatus.requiresLocationDetail(status)) {
           continue;

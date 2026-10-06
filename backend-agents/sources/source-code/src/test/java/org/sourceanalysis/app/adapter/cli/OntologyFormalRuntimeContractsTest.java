@@ -108,6 +108,8 @@ class OntologyFormalRuntimeContractsTest {
       Path.of("tools/repository-run/ontology-artifact-policy-set-v3.json").toAbsolutePath();
   private static final Path ONTOLOGY_POLICY_SET_V4 =
       Path.of("tools/repository-run/ontology-artifact-policy-set-v4.json").toAbsolutePath();
+  private static final Path ONTOLOGY_POLICY_SET_V5 =
+      Path.of("tools/repository-run/ontology-artifact-policy-set-v5.json").toAbsolutePath();
   private static final String JAVA_PATH = "src/main/java/fixture/RecordHandler.java";
   private static final String JAVA_SOURCE =
       "package fixture;\n"
@@ -9622,6 +9624,867 @@ class OntologyFormalRuntimeContractsTest {
       }
     }
     return false;
+  }
+
+  @Test
+  void policyV5CliRunsLeanLinksTypeComparisonAndFourFilePublication() throws Exception {
+    TechnicalFixture fixture = prepareRealR4("lean-link-type-correspondence-v5-cli");
+    ConfiguredTypedPipeline configured =
+        writeBusinessLinkTypedPipelineConfigurationV5(
+            "ontology-lean-link-type-correspondence-v5.yaml", fixture);
+    List<StructuredModelRequest> requests = new ArrayList<>();
+    List<JsonNode> typeInputs = new ArrayList<>();
+    AtomicInteger linkExtracts = new AtomicInteger();
+    AtomicInteger typeExtracts = new AtomicInteger();
+    AtomicInteger typeReviews = new AtomicInteger();
+    Function<OntologyTypedTaskRunner.FormalModelDeclaration, StructuredModelProvider>
+        providerFactory =
+            declaration -> {
+              ModelRuntimeIdentityV1 identity = declaration.expectedRuntimeIdentity();
+              return request -> {
+                requests.add(request);
+                JsonNode input = ExplicitTypedPipelineScript.input(request);
+                String taskKind = input.path("taskKind").asText();
+                boolean review = request.taskKind().contains("REVIEW");
+                ImmutableBytes response;
+                if ("LINK".equals(taskKind)) {
+                  assertThat(requestSchemaVersion(request))
+                      .isEqualTo(review ? "ontology-link-review-v2" : "ontology-link-candidate-v2");
+                  if (review) {
+                    ObjectNode reviewed = (ObjectNode) input.path("actualDraft").deepCopy();
+                    assertThat(reviewed.path("schemaVersion").asText())
+                        .isEqualTo("ontology-link-candidate-v2");
+                    reviewed.put("schemaVersion", "ontology-link-review-v2");
+                    response = CANONICAL.encodeCanonical(reviewed);
+                  } else {
+                    int sequence = linkExtracts.incrementAndGet();
+                    response =
+                        leanRuntimeLinkResponse(
+                            "ontology-link-candidate-v2", input, Integer.toString(sequence));
+                  }
+                } else if ("TYPE_COMPARE".equals(taskKind)) {
+                  assertThat(requestSchemaVersion(request))
+                      .isEqualTo(
+                          review
+                              ? "ontology-object-type-review-v1"
+                              : "ontology-object-type-candidate-v1");
+                  assertThat(input.path("readingPacket").path("schemaVersion").asText())
+                      .isEqualTo("ontology-model-reading-v7");
+                  assertThat(input.path("reviewedCatalog").path("entries").size()).isEqualTo(2);
+                  typeInputs.add(input.deepCopy());
+                  if (review) {
+                    int sequence = typeReviews.incrementAndGet();
+                    ObjectNode reviewed = (ObjectNode) input.path("actualDraft").deepCopy();
+                    assertCurrentTypeEvidence(input, reviewed);
+                    reviewed.put(
+                        "schemaVersion",
+                        sequence == 2
+                            ? "ontology-object-type-review-invalid"
+                            : "ontology-object-type-review-v1");
+                    response = CANONICAL.encodeCanonical(reviewed);
+                  } else {
+                    int sequence = typeExtracts.incrementAndGet();
+                    ObjectNode candidate =
+                        (ObjectNode)
+                            CANONICAL.parseCanonical(
+                                typeCompareRuntimeResponse(
+                                    input, sequence == 3 ? "DISTINCT" : "SAME_OBJECT_TYPE"));
+                    assertCurrentTypeEvidence(input, candidate);
+                    if (sequence == 1) {
+                      // A bad candidate is local to this generated pair; later pairs still run.
+                      candidate.put("schemaVersion", "ontology-object-type-candidate-invalid");
+                    }
+                    response = CANONICAL.encodeCanonical(candidate);
+                  }
+                } else {
+                  throw new AssertionError("unexpected v5 correspondence task " + taskKind);
+                }
+                return new StructuredModelResponse(response, identity);
+              };
+            };
+
+    CliResult prepared =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "prepare-ontology",
+            "--evidence-run",
+            fixture.r4RunId());
+    assertThat(prepared.exitCode()).withFailMessage(cliDiagnostics(prepared)).isZero();
+    String corpusRunId = runId(prepared);
+    assertThat(requests).isEmpty();
+    assertThat(Files.readString(configured.path(), StandardCharsets.UTF_8))
+        .contains(yaml(ONTOLOGY_POLICY_SET_V5));
+
+    Path linkScope =
+        writeBusinessLinkThreeLinkScopeV3(
+            temporaryDirectory.resolve("lean-link-type-source-scope-v3.json"));
+    CliResult identified =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "identify-ontology",
+            "--corpus-run",
+            corpusRunId,
+            "--scope",
+            linkScope.toString());
+    assertThat(identified.exitCode()).withFailMessage(cliDiagnostics(identified)).isZero();
+    String identificationRunId = runId(identified);
+    JsonNode identification =
+        JSON.readTree(
+            artifact(configured.path(), identificationRunId, "ONTOLOGY_IDENTIFICATION").stdout());
+    assertThat(identification.path("schemaVersion").asText())
+        .isEqualTo("ontology-identification-v5");
+    assertThat(arrayValues(identification.path("taskRecords")))
+        .extracting(row -> row.path("status").asText())
+        .containsExactly("REVIEWED", "REVIEWED", "REVIEWED");
+    assertThat(requests)
+        .extracting(StructuredModelRequest::taskKind)
+        .containsExactly(
+            "ONTOLOGY_FORMAL_LINK_EXTRACT",
+            "ONTOLOGY_FORMAL_LINK_REVIEW",
+            "ONTOLOGY_FORMAL_LINK_EXTRACT",
+            "ONTOLOGY_FORMAL_LINK_REVIEW",
+            "ONTOLOGY_FORMAL_LINK_EXTRACT",
+            "ONTOLOGY_FORMAL_LINK_REVIEW");
+
+    Path compareSelection =
+        writeObjectTypeCorrespondenceSelectionV4(
+            temporaryDirectory.resolve("lean-link-type-selection-v4.json"),
+            corpusRunId,
+            identificationRunId,
+            List.of("link-task-a", "link-task-b", "link-task-c"));
+    JsonNode selected = JSON.readTree(Files.readAllBytes(compareSelection));
+    assertThat(selected.path("schemaVersion").asText()).isEqualTo("ontology-selection-v4");
+    assertThat(selected.path("relationProfile").asText()).isEqualTo("OBJECT_TYPE_CORRESPONDENCE");
+    int typeRequestStart = requests.size();
+    CliResult related =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "relate-ontology",
+            "--selection",
+            compareSelection.toString());
+    assertThat(related.exitCode()).withFailMessage(cliDiagnostics(related)).isIn(0, 2);
+    String relationRunId = runId(related);
+    JsonNode relations =
+        JSON.readTree(artifact(configured.path(), relationRunId, "ONTOLOGY_RELATIONS").stdout());
+    assertThat(relations.path("schemaVersion").asText()).isEqualTo("ontology-relations-v5");
+    assertThat(relations.path("relationProfile").asText()).isEqualTo("OBJECT_TYPE_CORRESPONDENCE");
+    assertThat(relations.path("effectiveSelection").path("relationProfile").asText())
+        .isEqualTo("OBJECT_TYPE_CORRESPONDENCE");
+    assertThat(relations.path("typeCandidates").isArray()).isTrue();
+    List<JsonNode> candidates = arrayValues(relations.path("typeCandidates"));
+    assertThat(candidates).hasSize(12);
+    assertThat(candidates).extracting(row -> row.path("pairRef").asText()).doesNotHaveDuplicates();
+    assertThat(candidates).extracting(row -> row.path("taskId").asText()).doesNotHaveDuplicates();
+    List<JsonNode> typeTaskRecords = arrayValues(relations.path("taskRecords"));
+    assertThat(typeTaskRecords.size()).isBetween(3, 4);
+    assertThat(typeTaskRecords.subList(0, 3))
+        .extracting(row -> row.path("status").asText())
+        .containsExactly("REVIEWED", "REJECTED", "REVIEWED");
+    if (typeTaskRecords.size() == 4) {
+      assertThat(typeTaskRecords.get(3).path("status").asText()).isEqualTo("UNPROCESSED");
+    }
+    assertThat(typeTaskRecords)
+        .extracting(row -> row.path("taskId").asText())
+        .containsExactlyElementsOf(
+            candidates.subList(0, typeTaskRecords.size()).stream()
+                .map(row -> row.path("taskId").asText())
+                .toList());
+    List<JsonNode> comparisonOutcomes = arrayValues(relations.path("taskOutcomes"));
+    assertThat(comparisonOutcomes).hasSize(12);
+    assertThat(comparisonOutcomes.subList(0, 3))
+        .extracting(row -> row.path("status").asText())
+        .containsExactly("REVIEWED", "REJECTED", "REVIEWED");
+    assertThat(comparisonOutcomes.subList(3, 12))
+        .allSatisfy(row -> assertThat(row.path("status").asText()).isEqualTo("UNPROCESSED"));
+    List<StructuredModelRequest> comparisonRequests =
+        requests.subList(typeRequestStart, requests.size());
+    assertThat(comparisonRequests)
+        .extracting(StructuredModelRequest::taskKind)
+        .containsExactly(
+            "ONTOLOGY_FORMAL_TYPE_COMPARE_EXTRACT",
+            "ONTOLOGY_FORMAL_TYPE_COMPARE_REVIEW",
+            "ONTOLOGY_FORMAL_TYPE_COMPARE_EXTRACT",
+            "ONTOLOGY_FORMAL_TYPE_COMPARE_REVIEW",
+            "ONTOLOGY_FORMAL_TYPE_COMPARE_EXTRACT",
+            "ONTOLOGY_FORMAL_TYPE_COMPARE_REVIEW");
+    assertThat(typeInputs).hasSize(6);
+    assertThat(comparisonRequests)
+        .extracting(StructuredModelRequest::taskId)
+        .doesNotHaveDuplicates();
+    assertThat(relations.path("status").asText()).isEqualTo("PARTIAL");
+
+    JsonNode successfulTask =
+        typeTaskRecords.stream()
+            .filter(row -> "REVIEWED".equals(row.path("status").asText()))
+            .findFirst()
+            .orElseThrow();
+    JsonNode typeObservation =
+        queryTaskObservation(
+            configured.path(), relationRunId, successfulTask.path("producingTaskId").asText());
+    assertThat(typeObservation.path("schemaVersion").asText())
+        .isEqualTo("ontology-task-observation-v2");
+    JsonNode savedTypeResult = typeObservation.path("completion");
+    assertThat(savedTypeResult.path("schemaVersion").asText())
+        .isEqualTo("ontology-formal-typed-job-result-v5");
+    assertThat(savedTypeResult.path("privateReadingPacket").path("schemaVersion").asText())
+        .isEqualTo("ontology-reading-packet-v7");
+    assertThat(savedTypeResult.path("review").path("schemaVersion").asText())
+        .isEqualTo("ontology-object-type-review-v1");
+    JsonNode typeProjection = savedTypeResult.path("definitionDocument");
+    assertThat(typeProjection.path("definitions").path("objects").isEmpty()).isTrue();
+    assertThat(typeProjection.path("definitions").path("links").isEmpty()).isTrue();
+    assertThat(typeProjection.path("identityDecisions")).hasSize(1);
+    assertThat(typeProjection.path("identityDecisions").get(0).path("leftRef").asText())
+        .isEqualTo("B1");
+    assertThat(typeProjection.path("identityDecisions").get(0).path("rightRef").asText())
+        .isEqualTo("B2");
+    Set<String> savedPacketRefs = new LinkedHashSet<>();
+    savedTypeResult
+        .path("privateReadingPacket")
+        .path("units")
+        .forEach(unit -> savedPacketRefs.add(unit.path("localRef").asText()));
+    assertThat(savedPacketRefs).isNotEmpty();
+    for (String side : List.of("left", "right")) {
+      List<String> refs =
+          arrayValues(savedTypeResult.path("comparisonBinding").path(side).path("sourceRefs"))
+              .stream()
+              .map(JsonNode::asText)
+              .toList();
+      assertThat(refs).isNotEmpty();
+      assertThat(savedPacketRefs).containsAll(refs);
+    }
+
+    Path emptySelection =
+        writeObjectTypeCorrespondenceSelectionV4(
+            temporaryDirectory.resolve("lean-link-type-empty-selection-v4.json"),
+            corpusRunId,
+            identificationRunId,
+            List.of("link-task-a"));
+    int requestsBeforeEmptySelection = requests.size();
+    CliResult emptyRelated =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "relate-ontology",
+            "--selection",
+            emptySelection.toString());
+    assertThat(emptyRelated.exitCode()).withFailMessage(cliDiagnostics(emptyRelated)).isIn(0, 2);
+    String emptyRelationRunId = runId(emptyRelated);
+    JsonNode emptyRelations =
+        JSON.readTree(
+            artifact(configured.path(), emptyRelationRunId, "ONTOLOGY_RELATIONS").stdout());
+    assertThat(emptyRelations.path("typeCandidates").isArray()).isTrue();
+    assertThat(emptyRelations.path("typeCandidates").isEmpty()).isTrue();
+    assertThat(containsText(emptyRelations, "NO_TYPE_CANDIDATES")).isTrue();
+    assertThat(requests).hasSize(requestsBeforeEmptySelection);
+
+    Path capacityConfiguration = temporaryDirectory.resolve("lean-type-capacity-v5.yaml");
+    String capacityYaml =
+        Files.readString(configured.path(), StandardCharsets.UTF_8)
+            .replace("maxUnitBytes: 1048576", "maxUnitBytes: 1");
+    assertThat(capacityYaml).contains("maxUnitBytes: 1");
+    Files.writeString(capacityConfiguration, capacityYaml, StandardCharsets.UTF_8);
+    CliResult capacityRelated =
+        executeWithFactory(
+            capacityConfiguration,
+            providerFactory,
+            "relate-ontology",
+            "--selection",
+            compareSelection.toString());
+    assertThat(capacityRelated.exitCode()).isEqualTo(2);
+    JsonNode capacityRelations =
+        JSON.readTree(
+            artifact(capacityConfiguration, runId(capacityRelated), "ONTOLOGY_RELATIONS").stdout());
+    assertThat(capacityRelations.path("preparationFailures")).hasSize(12);
+    assertThat(capacityRelations.path("taskRecords")).isEmpty();
+    assertThat(capacityRelations.path("taskOutcomes")).hasSize(12);
+    JsonNode capacityTaskIndex =
+        JSON.readTree(
+            artifact(capacityConfiguration, runId(capacityRelated), "ONTOLOGY_TASK_INDEX")
+                .stdout());
+    assertThat(capacityTaskIndex.path("schemaVersion").asText())
+        .isEqualTo("ontology-task-index-v2");
+    assertThat(capacityTaskIndex.path("taskOutcomes"))
+        .isEqualTo(capacityRelations.path("taskOutcomes"));
+    assertThat(requests).hasSize(requestsBeforeEmptySelection);
+    for (JsonNode failure : capacityRelations.path("preparationFailures")) {
+      assertThat(candidates.stream().map(candidate -> candidate.path("taskId").asText()).toList())
+          .contains(failure.path("taskId").asText());
+      assertThat(failure.path("capacity").path("boundary").asText())
+          .isEqualTo("COMPLETE_UNIT_BODY");
+      assertThat(failure.path("capacity").path("limitBytes").asLong()).isEqualTo(1);
+      assertThat(failure.path("capacity").path("measuredBytes").asLong()).isGreaterThan(1);
+    }
+
+    Path publishSelection =
+        writePublishSelectionV4WithRelations(
+            temporaryDirectory.resolve("lean-link-type-publish-v4.json"),
+            corpusRunId,
+            List.of(identificationRunId),
+            List.of(relationRunId, emptyRelationRunId));
+    int requestsBeforePublish = requests.size();
+    CliResult published =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "publish-ontology",
+            "--selection",
+            publishSelection.toString());
+    assertThat(published.exitCode()).withFailMessage(cliDiagnostics(published)).isIn(0, 2);
+    String publishedRunId = runId(published);
+    assertThat(requests).hasSize(requestsBeforePublish);
+    assertThat(availablePublicArtifactKeys(configured.path(), publishedRunId))
+        .containsExactlyInAnyOrder(
+            "ONTOLOGY", "ONTOLOGY_COVERAGE", "ONTOLOGY_REVIEW", "ONTOLOGY_SOURCE_INDEX");
+    JsonNode ontology =
+        JSON.readTree(artifact(configured.path(), publishedRunId, "ONTOLOGY").stdout());
+    JsonNode coverage =
+        JSON.readTree(artifact(configured.path(), publishedRunId, "ONTOLOGY_COVERAGE").stdout());
+    JsonNode review =
+        JSON.readTree(artifact(configured.path(), publishedRunId, "ONTOLOGY_REVIEW").stdout());
+    assertThat(ontology.path("schemaVersion").asText()).isEqualTo("ontology-v2");
+    assertThat(coverage.path("schemaVersion").asText()).isEqualTo("ontology-coverage-v5");
+    assertThat(review.path("schemaVersion").asText()).isEqualTo("ontology-review-v5");
+    ReopenedModulePublication o0Module =
+        reopenedOntologyModule(fixture.runStore(), corpusRunId, ONTOLOGY_POLICY_SET_V5);
+    ReopenedModulePublication o1Module =
+        reopenedOntologyModule(fixture.runStore(), identificationRunId, ONTOLOGY_POLICY_SET_V5);
+    ReopenedModulePublication o2Module =
+        reopenedOntologyModule(fixture.runStore(), relationRunId, ONTOLOGY_POLICY_SET_V5);
+    ReopenedModulePublication o3Module =
+        reopenedOntologyModule(fixture.runStore(), publishedRunId, ONTOLOGY_POLICY_SET_V5);
+    assertThat(o0Module.payloads())
+        .extracting(payload -> payload.descriptor().schemaVersion())
+        .containsExactly("ontology-corpus-v2");
+    assertThat(o1Module.payloads())
+        .extracting(payload -> payload.descriptor().schemaVersion())
+        .containsExactly("ontology-identification-v5");
+    assertThat(o2Module.payloads())
+        .extracting(payload -> payload.descriptor().schemaVersion())
+        .containsExactly("ontology-relations-v5");
+    assertThat(o3Module.payloads())
+        .extracting(payload -> payload.descriptor().fileName())
+        .containsExactlyInAnyOrder(
+            "ontology-coverage.json",
+            "ontology-review.json",
+            "ontology-sources.jsonl",
+            "ontology.json");
+    assertThat(o3Module.payloads())
+        .extracting(payload -> payload.descriptor().schemaVersion())
+        .containsExactlyInAnyOrder(
+            "ontology-coverage-v5", "ontology-review-v5", "ontology-source-v1", "ontology-v2");
+    assertThat(o3Module.receipt().upstreamArtifacts())
+        .containsAll(modulePayloadReferences(o1Module))
+        .containsAll(modulePayloadReferences(o2Module));
+    Set<String> typeCandidateTaskIds =
+        candidates.stream()
+            .map(row -> row.path("taskId").asText())
+            .collect(java.util.stream.Collectors.toSet());
+    List<JsonNode> publishedTypeOutcomes =
+        arrayValues(review.path("taskOutcomes")).stream()
+            .filter(row -> typeCandidateTaskIds.contains(row.path("taskId").asText()))
+            .toList();
+    assertThat(publishedTypeOutcomes).hasSize(12);
+    assertThat(publishedTypeOutcomes)
+        .filteredOn(row -> "UNPROCESSED".equals(row.path("status").asText()))
+        .hasSize(9);
+    CliResult overview =
+        executePublic(
+            configured.path(),
+            "artifact",
+            "--run",
+            publishedRunId,
+            "--key",
+            "ONTOLOGY_BUSINESS_OVERVIEW",
+            "--max-bytes",
+            "5242880");
+    assertThat(overview.exitCode()).withFailMessage(cliDiagnostics(overview)).isZero();
+    assertThat(overview.stdout()).startsWith("<!doctype html>").contains("ontology-business-graph");
+  }
+
+  @Test
+  void policyV5ReviewedLinkObjectsFeedActionAndAnalyticAsExactExternalSources() throws Exception {
+    TechnicalFixture fixture = prepareRealR4("lean-link-v5-action-analytic-consumer");
+    ConfiguredTypedPipeline configured =
+        writeBusinessLinkTypedPipelineConfigurationV5(
+            "ontology-lean-link-v5-action-analytic-consumer.yaml", fixture);
+    List<StructuredModelRequest> requests = new ArrayList<>();
+    AtomicInteger linkExtracts = new AtomicInteger();
+    AtomicReference<Set<JsonNode>> selectedLinkDefinitions = new AtomicReference<>(Set.of());
+    Function<OntologyTypedTaskRunner.FormalModelDeclaration, StructuredModelProvider>
+        providerFactory =
+            declaration -> {
+              ModelRuntimeIdentityV1 identity = declaration.expectedRuntimeIdentity();
+              return request -> {
+                requests.add(request);
+                JsonNode input = ExplicitTypedPipelineScript.input(request);
+                String taskKind = input.path("taskKind").asText();
+                boolean review = request.taskKind().contains("REVIEW");
+                ImmutableBytes response;
+                if ("LINK".equals(taskKind)) {
+                  assertThat(requestSchemaVersion(request))
+                      .isEqualTo(review ? "ontology-link-review-v2" : "ontology-link-candidate-v2");
+                  assertThat(input.path("readingPacket").path("schemaVersion").asText())
+                      .isEqualTo("ontology-model-reading-v7");
+                  if (review) {
+                    ObjectNode reviewed = (ObjectNode) input.path("actualDraft").deepCopy();
+                    reviewed.put("schemaVersion", "ontology-link-review-v2");
+                    response = CANONICAL.encodeCanonical(reviewed);
+                  } else {
+                    response =
+                        leanRuntimeLinkResponse(
+                            "ontology-link-candidate-v2",
+                            input,
+                            Integer.toString(linkExtracts.incrementAndGet()));
+                  }
+                } else if ("ACTION".equals(taskKind) || "ANALYTIC".equals(taskKind)) {
+                  assertThat(input.path("questionId").asText()).isEqualTo("Q_LINK_CONSUMER");
+                  assertThat(input.path("readingPacket").path("schemaVersion").asText())
+                      .isEqualTo("ontology-model-reading-v5");
+                  assertThat(requestSchemaVersion(request))
+                      .isEqualTo(
+                          review ? "ontology-typed-review-v4" : "ontology-typed-candidate-v4");
+                  JsonNode entries = input.path("reviewedCatalog").path("entries");
+                  assertThat(entries).hasSize(2);
+                  assertThat(entries)
+                      .extracting(row -> row.path("definitionType").asText())
+                      .containsOnly("objects");
+                  Set<JsonNode> receivedDefinitions =
+                      arrayValues(entries).stream()
+                          .map(row -> row.path("definition"))
+                          .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+                  Set<JsonNode> expectedDefinitions =
+                      selectedLinkDefinitions.get().stream()
+                          .map(
+                              definition -> {
+                                ObjectNode projected = (ObjectNode) definition.deepCopy();
+                                projected.remove("evidenceRefs");
+                                return (JsonNode) projected;
+                              })
+                          .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+                  assertThat(receivedDefinitions)
+                      .containsExactlyInAnyOrderElementsOf(expectedDefinitions);
+                  assertThat(entries)
+                      .allSatisfy(
+                          row -> {
+                            assertThat(row.path("propertyRefs").isArray()).isTrue();
+                            assertThat(row.path("propertyRefs").isEmpty()).isTrue();
+                          });
+                  if (review) {
+                    ObjectNode reviewed = (ObjectNode) input.path("actualDraft").deepCopy();
+                    reviewed.put("schemaVersion", "ontology-typed-review-v4");
+                    response = CANONICAL.encodeCanonical(reviewed);
+                  } else if ("ACTION".equals(taskKind)) {
+                    response =
+                        businessLinkFormalActionResponseV4(
+                            "ontology-typed-candidate-v4",
+                            input.path("questionId").asText(),
+                            "E1",
+                            entries.get(0).path("catalogRef").asText());
+                  } else {
+                    ObjectNode definitions = JSON.createObjectNode();
+                    definitions.putArray("dimensions");
+                    definitions.putArray("measures");
+                    definitions.putArray("metrics");
+                    ArrayNode unresolved = JSON.createArrayNode();
+                    ObjectNode limitation = unresolved.addObject();
+                    limitation.put("issueId", "ANALYTIC_PROPERTY_SCOPE_NOT_INVESTIGATED");
+                    limitation.put("proposedKind", "ANALYTIC");
+                    limitation.put(
+                        "description",
+                        "The selected LINK skeleton did not investigate object properties or analytic grain.");
+                    limitation
+                        .putArray("knownDefinitionRefs")
+                        .add(entries.get(0).path("catalogRef").asText());
+                    limitation.putArray("relatedLocalDefinitionRefs");
+                    ObjectNode requirement = limitation.putArray("missingRequirements").addObject();
+                    requirement.put("field", "property and grain evidence");
+                    requirement.put(
+                        "reason",
+                        "The reviewed LINK object explicitly retains properties as uninvestigated.");
+                    requirement.putArray("unitRefs");
+                    limitation
+                        .putArray("evidenceRefs")
+                        .add(input.path("readingPacket").path("units").get(0).path("ref").asText());
+                    ObjectNode candidate =
+                        (ObjectNode)
+                            CANONICAL.parseCanonical(
+                                typedTaskResponse(
+                                    "ontology-typed-candidate-v4",
+                                    "ANALYTIC",
+                                    definitions,
+                                    unresolved));
+                    candidate.putArray("clueDispositions");
+                    response = CANONICAL.encodeCanonical(candidate);
+                  }
+                } else {
+                  throw new AssertionError("unexpected policy-v5 consumer task " + taskKind);
+                }
+                return new StructuredModelResponse(response, identity);
+              };
+            };
+
+    CliResult prepared =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "prepare-ontology",
+            "--evidence-run",
+            fixture.r4RunId());
+    assertThat(prepared.exitCode()).withFailMessage(cliDiagnostics(prepared)).isZero();
+    String corpusRunId = runId(prepared);
+
+    Path linkScope =
+        writeBusinessLinkTwoLinkScopeV3(
+            temporaryDirectory.resolve("lean-link-v5-action-analytic-source-scope.json"));
+    CliResult identifiedLink =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "identify-ontology",
+            "--corpus-run",
+            corpusRunId,
+            "--scope",
+            linkScope.toString());
+    assertThat(identifiedLink.exitCode()).withFailMessage(cliDiagnostics(identifiedLink)).isZero();
+    String linkRunId = runId(identifiedLink);
+    JsonNode linkIdentification =
+        JSON.readTree(artifact(configured.path(), linkRunId, "ONTOLOGY_IDENTIFICATION").stdout());
+    JsonNode selectedLinkTask = findTaskRecord(linkIdentification, "link-task-a");
+    assertThat(selectedLinkTask.path("status").asText()).isEqualTo("REVIEWED");
+    JsonNode linkCompletion =
+        queryTaskObservation(
+                configured.path(), linkRunId, selectedLinkTask.path("producingTaskId").asText())
+            .path("completion");
+    assertThat(linkCompletion.path("schemaVersion").asText())
+        .isEqualTo("ontology-formal-typed-job-result-v5");
+    assertThat(linkCompletion.path("review").path("schemaVersion").asText())
+        .isEqualTo("ontology-link-review-v2");
+    assertThat(linkCompletion.path("privateReadingPacket").path("schemaVersion").asText())
+        .isEqualTo("ontology-reading-packet-v7");
+    Set<JsonNode> sourceDefinitions =
+        arrayValues(linkCompletion.path("definitionDocument").path("definitions").path("objects"))
+            .stream()
+            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    assertThat(sourceDefinitions).hasSize(2);
+    assertThat(sourceDefinitions)
+        .extracting(definition -> definition.path("name").asText())
+        .containsExactlyInAnyOrder("Customer", "Auxiliary 1");
+    selectedLinkDefinitions.set(sourceDefinitions);
+    JsonNode sourceIdentity = linkCompletion.path("identity");
+
+    ObjectNode enrichmentScope = JSON.createObjectNode();
+    enrichmentScope.put("schemaVersion", "ontology-scope-v3");
+    enrichmentScope.put("mode", "QUESTION");
+    enrichmentScope.put("selectionMode", "EXPLICIT");
+    enrichmentScope.put("purpose", "ENRICHMENT");
+    ObjectNode question = enrichmentScope.putArray("questions").addObject();
+    question.put("questionId", "Q_LINK_CONSUMER");
+    question.put(
+        "question",
+        "Describe only source-supported actions and analytic limits for these objects.");
+    question.putArray("entryRefs").add("E1");
+    question.putArray("clueRefs");
+    ObjectNode source = question.putArray("objectSources").addObject();
+    source.put("identificationRun", linkRunId);
+    source.put("questionId", "Q_LINK_SOURCE");
+    source.putArray("taskIds").add("link-task-a");
+    ArrayNode enrichmentTasks = question.putArray("tasks");
+    for (String kind : List.of("ACTION", "ANALYTIC")) {
+      ObjectNode task = enrichmentTasks.addObject();
+      task.put("taskId", "consumer-" + kind.toLowerCase());
+      task.put("taskKind", kind);
+      task.put("readingMode", "EXPLICIT");
+      task.putArray("anchorRefs");
+      addUse(task.putArray("unitUses"), "U1", "E1");
+      addUse(task.putArray("requiredUnitUses"), "U1", "E1");
+    }
+    Path enrichmentPath =
+        writeJson(
+            temporaryDirectory.resolve("lean-link-v5-action-analytic-enrichment-scope.json"),
+            enrichmentScope);
+    int requestsBeforeEnrichment = requests.size();
+    CliResult enriched =
+        executeWithFactory(
+            configured.path(),
+            providerFactory,
+            "identify-ontology",
+            "--corpus-run",
+            corpusRunId,
+            "--scope",
+            enrichmentPath.toString());
+    assertThat(enriched.exitCode()).withFailMessage(cliDiagnostics(enriched)).isZero();
+    String enrichmentRunId = runId(enriched);
+    assertThat(requests.subList(requestsBeforeEnrichment, requests.size()))
+        .extracting(StructuredModelRequest::taskKind)
+        .containsExactly(
+            "ONTOLOGY_FORMAL_ACTION_EXTRACT",
+            "ONTOLOGY_FORMAL_ACTION_REVIEW",
+            "ONTOLOGY_FORMAL_ANALYTIC_EXTRACT",
+            "ONTOLOGY_FORMAL_ANALYTIC_REVIEW");
+    JsonNode enrichment =
+        JSON.readTree(
+            artifact(configured.path(), enrichmentRunId, "ONTOLOGY_IDENTIFICATION").stdout());
+    assertThat(enrichment.path("schemaVersion").asText()).isEqualTo("ontology-identification-v5");
+    assertThat(arrayValues(enrichment.path("taskRecords")))
+        .extracting(row -> row.path("taskId").asText() + "/" + row.path("status").asText())
+        .containsExactly("consumer-action/REVIEWED", "consumer-analytic/REVIEWED");
+
+    for (String taskId : List.of("consumer-action", "consumer-analytic")) {
+      JsonNode taskRecord = findTaskRecord(enrichment, taskId);
+      JsonNode completion =
+          queryTaskObservation(
+                  configured.path(), enrichmentRunId, taskRecord.path("producingTaskId").asText())
+              .path("completion");
+      assertThat(completion.path("schemaVersion").asText())
+          .isEqualTo("ontology-formal-typed-job-result-v3");
+      assertThat(completion.path("review").path("schemaVersion").asText())
+          .isEqualTo("ontology-typed-review-v4");
+      assertThat(completion.path("privateReadingPacket").path("schemaVersion").asText())
+          .isEqualTo("ontology-reading-packet-v5");
+      assertThat(completion.path("catalogMapping").path("schemaVersion").asText())
+          .isEqualTo("ontology-reviewed-catalog-v4");
+      JsonNode catalogEntries = completion.path("catalogMapping").path("entries");
+      assertThat(catalogEntries).hasSize(2);
+      assertThat(catalogEntries)
+          .allSatisfy(
+              entry -> {
+                assertThat(entry.path("identity").path("corpusIdentity").asText())
+                    .isEqualTo(sourceIdentity.path("corpusIdentity").asText());
+                assertThat(entry.path("identity").path("producingTaskId").asText())
+                    .isEqualTo(sourceIdentity.path("producingTaskId").asText());
+                assertThat(entry.path("identity").path("reviewVersion").asText())
+                    .isEqualTo(sourceIdentity.path("reviewVersion").asText());
+              });
+      assertThat(arrayValues(catalogEntries))
+          .extracting(entry -> entry.path("identity").path("localId").asText())
+          .containsExactlyInAnyOrderElementsOf(
+              sourceDefinitions.stream()
+                  .map(definition -> definition.path("localId").asText())
+                  .toList());
+    }
+  }
+
+  private ConfiguredTypedPipeline writeBusinessLinkTypedPipelineConfigurationV5(
+      String name, TechnicalFixture fixture) throws Exception {
+    ConfiguredTypedPipeline configured =
+        writeBusinessLinkTypedPipelineConfigurationV4(name, fixture);
+    String original = Files.readString(configured.path(), StandardCharsets.UTF_8);
+    assertThat(original).contains(yaml(ONTOLOGY_POLICY_SET_V4));
+    String v5 =
+        original
+            .replace(yaml(ONTOLOGY_POLICY_SET_V4), yaml(ONTOLOGY_POLICY_SET_V5))
+            .replace("maxRequests: 8", "maxRequests: 6");
+    assertThat(v5).isNotEqualTo(original).contains(yaml(ONTOLOGY_POLICY_SET_V5));
+    assertThat(v5).contains("maxRequests: 6");
+    Files.writeString(configured.path(), v5, StandardCharsets.UTF_8);
+    return configured;
+  }
+
+  private Path writeBusinessLinkThreeLinkScopeV3(Path path) throws Exception {
+    ObjectNode root = JSON.createObjectNode();
+    root.put("schemaVersion", "ontology-scope-v3");
+    root.put("mode", "QUESTION");
+    root.put("selectionMode", "EXPLICIT");
+    root.put("purpose", "SKELETON");
+    ObjectNode question = root.putArray("questions").addObject();
+    question.put("questionId", "Q_LINK_SOURCE");
+    question.put("question", "Describe only the source-backed record endpoints and links.");
+    question.putArray("entryRefs").add("E1");
+    question.putArray("clueRefs").add("K1");
+    question.putArray("objectSources");
+    ArrayNode tasks = question.putArray("tasks");
+    for (String taskId : List.of("link-task-a", "link-task-b", "link-task-c")) {
+      ObjectNode task = tasks.addObject();
+      task.put("taskId", taskId);
+      task.put("taskKind", "LINK");
+      task.put("readingMode", "TECHNICAL_BUNDLE");
+      task.putArray("anchorRefs").add("K1");
+      addUse(task.putArray("unitUses"), "U1", "E1");
+      addUse(task.putArray("requiredUnitUses"), "U1", "E1");
+    }
+    return writeJson(path, root);
+  }
+
+  private Path writeObjectTypeCorrespondenceSelectionV4(
+      Path path, String corpusRun, String identificationRun, List<String> sourceTaskIds)
+      throws Exception {
+    ObjectNode root = JSON.createObjectNode();
+    root.put("schemaVersion", "ontology-selection-v4");
+    root.put("operation", "RELATE");
+    root.put("relationProfile", "OBJECT_TYPE_CORRESPONDENCE");
+    root.put("corpusRun", corpusRun);
+    root.putArray("identificationRuns").add(identificationRun);
+    ObjectNode question = root.putArray("questions").addObject();
+    question.put("questionId", "Q_TYPE_COMPARE");
+    question.put("question", "Compare only the selected reviewed object definitions.");
+    question.put("taskId", "compare-candidates");
+    question.put("readingMode", "TECHNICAL_BUNDLE");
+    question.putArray("entryRefs");
+    question.putArray("clueRefs");
+    question.putArray("unitUses");
+    question.putArray("requiredUnitUses");
+    ObjectNode source = question.putArray("objectSources").addObject();
+    source.put("identificationRun", identificationRun);
+    source.put("questionId", "Q_LINK_SOURCE");
+    ArrayNode taskIds = source.putArray("taskIds");
+    sourceTaskIds.forEach(taskIds::add);
+    return writeJson(path, root);
+  }
+
+  private Path writePublishSelectionV4WithRelations(
+      Path path, String corpusRun, List<String> identificationRuns, List<String> relationRuns)
+      throws Exception {
+    ObjectNode root = JSON.createObjectNode();
+    root.put("schemaVersion", "ontology-selection-v4");
+    root.put("operation", "PUBLISH");
+    root.put("corpusRun", corpusRun);
+    ArrayNode identifications = root.putArray("identificationRuns");
+    identificationRuns.forEach(identifications::add);
+    ArrayNode relations = root.putArray("relationRuns");
+    relationRuns.forEach(relations::add);
+    return writeJson(path, root);
+  }
+
+  private String requestSchemaVersion(StructuredModelRequest request) {
+    return CANONICAL
+        .parseCanonical(request.outputJsonSchema())
+        .path("properties")
+        .path("schemaVersion")
+        .path("const")
+        .asText();
+  }
+
+  private ImmutableBytes leanRuntimeLinkResponse(
+      String schemaVersion, JsonNode input, String suffix) {
+    String questionId = input.path("questionId").asText();
+    JsonNode source = input.path("readingPacket").path("units").get(0);
+    String sourceRef = source.path("ref").asText();
+    String entryRef = source.path("entryUses").get(0).asText();
+    String customerKey = "customer";
+    String auxiliaryKey = "auxiliary-" + suffix;
+    ObjectNode response = JSON.createObjectNode();
+    response.put("schemaVersion", schemaVersion);
+    response.put("taskKind", "LINK");
+    response
+        .putArray("objects")
+        .add(leanRuntimeLinkObject(questionId, entryRef, sourceRef, customerKey, "Customer"))
+        .add(
+            leanRuntimeLinkObject(
+                questionId, entryRef, sourceRef, auxiliaryKey, "Auxiliary " + suffix));
+    ObjectNode link = response.putArray("links").addObject();
+    link.put("fromKey", customerKey);
+    link.put("toKey", auxiliaryKey);
+    link.put("name", "selected record reference");
+    link.put("definition", "The selected source passes a value between record endpoints.");
+    link.put("certainty", "INFERRED");
+    link.set("scope", leanRuntimeLinkScope(questionId, entryRef));
+    ObjectNode mechanism = link.putObject("mechanism");
+    mechanism.put("text", "The source passes the selected record key.");
+    mechanism.putArray("objectKeys").add(auxiliaryKey);
+    mechanism.putArray("evidenceRefs").add(sourceRef);
+    ObjectNode condition = link.putArray("conditions").addObject();
+    condition.put("text", "The operation uses the key only in this selected path.");
+    condition.putArray("objectKeys").add(customerKey);
+    condition.putArray("evidenceRefs").add(sourceRef);
+    condition.putArray("unknowns");
+    link.putArray("evidenceRefs").add(sourceRef);
+    ObjectNode unknown = link.putArray("unknowns").addObject();
+    unknown.put("field", "cardinality");
+    unknown.put("reason", "Relationship multiplicity was not investigated.");
+    unknown.putArray("missingUnitRefs");
+    ObjectNode disposition = response.putArray("clueDispositions").addObject();
+    disposition.put("clueRef", input.path("visibleClueRefs").get(0).asText());
+    disposition.put("outcome", "LINK_SUPPORTED");
+    disposition.putArray("linkIndexes").add(0);
+    disposition.put("reason", "The selected source supports this local link.");
+    response.putArray("unresolved");
+    response.putArray("corrections");
+    return CANONICAL.encodeCanonical(response);
+  }
+
+  private ObjectNode leanRuntimeLinkObject(
+      String questionId, String entryRef, String sourceRef, String objectKey, String name) {
+    ObjectNode object = JSON.createObjectNode();
+    object.put("objectKey", objectKey);
+    object.put("name", name);
+    object.put("definition", name + " is a record endpoint visible in the selected method.");
+    object.put("displayRole", "TECHNICAL_OR_UNKNOWN");
+    object.put("certainty", "INFERRED");
+    object.set("scope", leanRuntimeLinkScope(questionId, entryRef));
+    object.putArray("backing");
+    object.putArray("variants");
+    object.putArray("evidenceRefs").add(sourceRef);
+    ArrayNode unknowns = object.putArray("unknowns");
+    for (String field : List.of("identities", "properties")) {
+      ObjectNode unknown = unknowns.addObject();
+      unknown.put("field", field);
+      unknown.put("reason", "This field was not investigated by the LINK task.");
+      unknown.putArray("missingUnitRefs");
+    }
+    return object;
+  }
+
+  private ObjectNode leanRuntimeLinkScope(String questionId, String entryRef) {
+    ObjectNode scope = JSON.createObjectNode();
+    scope.put("questionRef", questionId);
+    scope.putArray("entryUseRefs").add(entryRef);
+    scope.putArray("variants");
+    return scope;
+  }
+
+  private ImmutableBytes typeCompareRuntimeResponse(JsonNode input, String decisionKind) {
+    ObjectNode response = JSON.createObjectNode();
+    response.put("schemaVersion", "ontology-object-type-candidate-v1");
+    response.put("taskKind", "TYPE_COMPARE");
+    response.put("comparisonScope", "SELECTED_OBJECT_DEFINITIONS");
+    ObjectNode decision = response.putObject("decision");
+    decision.put("kind", decisionKind);
+    decision.put("explanation", "The selected reviewed definitions support this comparison.");
+    decision.putArray("conditions");
+    ArrayNode citations = decision.putArray("evidenceRefs");
+    for (String catalogRef : List.of("B1", "B2")) {
+      JsonNode entry = catalogEntryByRef(input, catalogRef);
+      assertThat(entry.path("sourceRefs").isArray()).isTrue();
+      assertThat(entry.path("sourceRefs").isEmpty()).isFalse();
+      citations.add(entry.path("sourceRefs").get(0).asText());
+    }
+    decision.putArray("unknowns");
+    response.putArray("corrections");
+    return CANONICAL.encodeCanonical(response);
+  }
+
+  private void assertCurrentTypeEvidence(JsonNode input, JsonNode response) {
+    Set<String> packetRefs = new LinkedHashSet<>();
+    input
+        .path("readingPacket")
+        .path("units")
+        .forEach(unit -> packetRefs.add(unit.path("ref").asText()));
+    assertThat(packetRefs).isNotEmpty();
+    Set<String> leftRefs = textValues(catalogEntryByRef(input, "B1").path("sourceRefs"));
+    Set<String> rightRefs = textValues(catalogEntryByRef(input, "B2").path("sourceRefs"));
+    assertThat(leftRefs).isNotEmpty();
+    assertThat(rightRefs).isNotEmpty();
+    assertThat(packetRefs).containsAll(leftRefs).containsAll(rightRefs);
+    Set<String> cited = textValues(response.path("decision").path("evidenceRefs"));
+    assertThat(cited).containsAnyElementsOf(leftRefs).containsAnyElementsOf(rightRefs);
+    assertThat(packetRefs).containsAll(cited);
+  }
+
+  private JsonNode catalogEntryByRef(JsonNode input, String catalogRef) {
+    for (JsonNode entry : input.path("reviewedCatalog").path("entries")) {
+      if (catalogRef.equals(entry.path("catalogRef").asText())) return entry;
+    }
+    throw new AssertionError("missing selected object catalog entry " + catalogRef);
+  }
+
+  private Set<String> textValues(JsonNode array) {
+    Set<String> result = new LinkedHashSet<>();
+    array.forEach(value -> result.add(value.asText()));
+    return result;
   }
 
   private TechnicalFixture prepareRealR4(String name) throws Exception {

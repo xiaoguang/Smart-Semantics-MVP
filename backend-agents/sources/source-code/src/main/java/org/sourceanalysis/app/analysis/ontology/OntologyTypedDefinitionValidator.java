@@ -37,13 +37,111 @@ final class OntologyTypedDefinitionValidator {
   private final CanonicalJsonCodec json = new CanonicalJsonCodec();
   private final ObjectMapper mapper = new ObjectMapper();
 
-  ImmutableBytes linkSchema(boolean review) {
+  enum LinkProfile {
+    LEGACY_V1,
+    LEAN_V2
+  }
+
+  ImmutableBytes objectTypeSchema(boolean review) {
     ObjectNode root = closedObject();
     root.put("$schema", "https://json-schema.org/draft/2020-12/schema");
     property(
         root,
         "schemaVersion",
-        constString(review ? "ontology-link-review-v1" : "ontology-link-candidate-v1"),
+        constString(
+            review ? "ontology-object-type-review-v1" : "ontology-object-type-candidate-v1"),
+        true);
+    property(root, "taskKind", constString("TYPE_COMPARE"), true);
+    property(root, "comparisonScope", constString("SELECTED_OBJECT_DEFINITIONS"), true);
+    ObjectNode decision = closedObject();
+    property(decision, "kind", enumStrings("SAME_OBJECT_TYPE", "DISTINCT", "UNRESOLVED"), true);
+    property(decision, "explanation", string().put("minLength", 1), true);
+    property(decision, "conditions", array(leanLinkItemSchema(true)), true);
+    property(decision, "evidenceRefs", array(string()), true);
+    property(decision, "unknowns", array(unknownSchema()), true);
+    property(root, "decision", decision, true);
+    ObjectNode corrections = array(string());
+    if (!review) corrections.put("maxItems", 0);
+    property(root, "corrections", corrections, true);
+    return json.encodeCanonical(root);
+  }
+
+  JsonNode validateObjectType(
+      JsonNode response,
+      boolean review,
+      OntologyReadingPacket packet,
+      Set<String> leftSources,
+      Set<String> rightSources) {
+    try {
+      Schema schema =
+          SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
+              .getSchema(json.parseCanonical(objectTypeSchema(review)));
+      if (!schema.validate(response).isEmpty()) throw invalidObjectType();
+      validateLinkReferences(response, Set.of("B1", "B2"), packet, "", Set.of());
+      Set<String> cited = new HashSet<>();
+      collectObjectTypeCitations(response.path("decision"), cited);
+      for (String ref : cited) {
+        packet.resolve(ref);
+        if (!leftSources.contains(ref) && !rightSources.contains(ref)) throw invalidObjectType();
+      }
+      if ("UNRESOLVED".equals(response.path("decision").path("kind").asText())) {
+        if (response.path("decision").path("unknowns").isEmpty()) throw invalidObjectType();
+      } else if (java.util.Collections.disjoint(cited, leftSources)
+          || java.util.Collections.disjoint(cited, rightSources)) throw invalidObjectType();
+      return response.deepCopy();
+    } catch (RuntimeException invalid) {
+      throw invalidObjectType();
+    }
+  }
+
+  private void collectObjectTypeCitations(JsonNode node, Set<String> cited) {
+    if (node.isObject()) {
+      for (var field : node.properties()) {
+        if ("evidenceRefs".equals(field.getKey()))
+          field.getValue().forEach(ref -> cited.add(ref.asText()));
+        else collectObjectTypeCitations(field.getValue(), cited);
+      }
+    } else if (node.isArray()) node.forEach(item -> collectObjectTypeCitations(item, cited));
+  }
+
+  FormalValidation inspectObjectType(
+      ImmutableBytes raw,
+      boolean review,
+      OntologyReadingPacket packet,
+      Set<String> leftSources,
+      Set<String> rightSources) {
+    JsonNode document = json.parseStrictJson(raw);
+    try {
+      return new FormalValidation(
+          validateObjectType(document, review, packet, leftSources, rightSources), List.of());
+    } catch (IllegalArgumentException invalid) {
+      return new FormalValidation(
+          document.deepCopy(),
+          List.of(
+              diagnostic(
+                  "ONTOLOGY_OBJECT_TYPE_RESPONSE_INVALID",
+                  "$",
+                  "Bound pair, actual two-sided citations or compact response is invalid.")));
+    }
+  }
+
+  private static IllegalArgumentException invalidObjectType() {
+    return new IllegalArgumentException("ONTOLOGY_OBJECT_TYPE_RESPONSE_INVALID");
+  }
+
+  ImmutableBytes linkSchema(boolean review) {
+    return linkSchema(LinkProfile.LEGACY_V1, review);
+  }
+
+  ImmutableBytes linkSchema(LinkProfile profile, boolean review) {
+    ObjectNode root = closedObject();
+    root.put("$schema", "https://json-schema.org/draft/2020-12/schema");
+    property(
+        root,
+        "schemaVersion",
+        constString(
+            (review ? "ontology-link-review-v" : "ontology-link-candidate-v")
+                + (profile == LinkProfile.LEAN_V2 ? "2" : "1")),
         true);
     property(root, "taskKind", constString("LINK"), true);
     ObjectNode object = linkCommonSchema();
@@ -54,9 +152,14 @@ final class OntologyTypedDefinitionValidator {
     ObjectNode link = linkCommonSchema();
     property(link, "fromKey", string(), true);
     property(link, "toKey", string(), true);
-    property(link, "mechanism", array(semanticItemSchema()), true);
-    property(link, "conditions", array(semanticItemSchema()), true);
-    property(link, "cardinality", cardinalitySchema(), true);
+    if (profile == LinkProfile.LEAN_V2) {
+      property(link, "mechanism", leanLinkItemSchema(false), true);
+      property(link, "conditions", array(leanLinkItemSchema(true)), true);
+    } else {
+      property(link, "mechanism", array(semanticItemSchema()), true);
+      property(link, "conditions", array(semanticItemSchema()), true);
+      property(link, "cardinality", cardinalitySchema(), true);
+    }
     ObjectNode disposition = closedObject();
     property(disposition, "clueRef", string(), true);
     property(
@@ -79,6 +182,15 @@ final class OntologyTypedDefinitionValidator {
     property(root, "corrections", corrections, true);
     restrictLinkPropertyReferences(root);
     return json.encodeCanonical(root);
+  }
+
+  private ObjectNode leanLinkItemSchema(boolean condition) {
+    ObjectNode item = closedObject();
+    property(item, "text", string(), true);
+    property(item, "objectKeys", array(string()), true);
+    property(item, "evidenceRefs", array(string()), true);
+    if (condition) property(item, "unknowns", array(unknownSchema()), true);
+    return item;
   }
 
   private void restrictLinkPropertyReferences(JsonNode schema) {
@@ -108,9 +220,21 @@ final class OntologyTypedDefinitionValidator {
       String questionRef,
       Set<String> entryRefs,
       Set<String> clueRefs) {
+    return validateLink(
+        response, LinkProfile.LEGACY_V1, review, packet, questionRef, entryRefs, clueRefs);
+  }
+
+  JsonNode validateLink(
+      JsonNode response,
+      LinkProfile profile,
+      boolean review,
+      OntologyReadingPacket packet,
+      String questionRef,
+      Set<String> entryRefs,
+      Set<String> clueRefs) {
     Schema schema =
         SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
-            .getSchema(json.parseCanonical(linkSchema(review)));
+            .getSchema(json.parseCanonical(linkSchema(profile, review)));
     if (!schema.validate(response).isEmpty()) throw invalidLink();
     Set<String> keys = new HashSet<>();
     for (JsonNode object : response.path("objects")) {
@@ -152,7 +276,7 @@ final class OntologyTypedDefinitionValidator {
       for (Map.Entry<String, JsonNode> field : node.properties()) {
         JsonNode value = field.getValue();
         switch (field.getKey()) {
-          case "targetObjectRefs" -> {
+          case "targetObjectRefs", "objectKeys" -> {
             for (JsonNode ref : value) if (!keys.contains(ref.asText())) throw invalidLink();
           }
           case "definitionRef" -> {
@@ -203,10 +327,23 @@ final class OntologyTypedDefinitionValidator {
       String questionRef,
       Set<String> entryRefs,
       Set<String> clueRefs) {
+    return inspectLink(
+        raw, LinkProfile.LEGACY_V1, review, packet, questionRef, entryRefs, clueRefs);
+  }
+
+  FormalValidation inspectLink(
+      ImmutableBytes raw,
+      LinkProfile profile,
+      boolean review,
+      OntologyReadingPacket packet,
+      String questionRef,
+      Set<String> entryRefs,
+      Set<String> clueRefs) {
     JsonNode document = json.parseStrictJson(raw);
     try {
       return new FormalValidation(
-          validateLink(document, review, packet, questionRef, entryRefs, clueRefs), List.of());
+          validateLink(document, profile, review, packet, questionRef, entryRefs, clueRefs),
+          List.of());
     } catch (IllegalArgumentException invalid) {
       return new FormalValidation(
           document.deepCopy(),
@@ -219,6 +356,10 @@ final class OntologyTypedDefinitionValidator {
   }
 
   JsonNode projectLink(JsonNode validReview) {
+    return projectLink(validReview, LinkProfile.LEGACY_V1);
+  }
+
+  JsonNode projectLink(JsonNode validReview, LinkProfile profile) {
     ObjectNode result = mapper.createObjectNode();
     ObjectNode definitions = result.putObject("definitions");
     ArrayNode objects = definitions.putArray("objects");
@@ -256,6 +397,21 @@ final class OntologyTypedDefinitionValidator {
                 json.encodeCanonical(validReview.path("links").get(b)).copyToByteArray()));
     for (int index : sortedIndexes) {
       ObjectNode link = validReview.path("links").get(index).deepCopy();
+      if (profile == LinkProfile.LEAN_V2) {
+        link.putArray("mechanism")
+            .add(leanSemanticItem(validReview.path("links").get(index).path("mechanism")));
+        ArrayNode conditions = link.putArray("conditions");
+        for (JsonNode condition : validReview.path("links").get(index).path("conditions"))
+          conditions.add(leanSemanticItem(condition));
+        ObjectNode cardinality = link.putObject("cardinality");
+        cardinality.put("basis", "UNKNOWN");
+        cardinality.put("value", "UNKNOWN");
+        cardinality.putArray("evidenceRefs");
+        addLinkUnknown(
+            cardinality.putArray("unknowns"),
+            "cardinality",
+            "Cardinality was not investigated by this skeleton task.");
+      }
       String id = "L" + (links.size() + 1);
       linkMap.put(Integer.toString(index), id);
       link.put("fromObjectRef", objectMap.path(link.path("fromKey").asText()).asText());
@@ -278,6 +434,27 @@ final class OntologyTypedDefinitionValidator {
     result.set("unresolved", validReview.path("unresolved").deepCopy());
     result.set("corrections", validReview.path("corrections").deepCopy());
     return result;
+  }
+
+  private ObjectNode leanSemanticItem(JsonNode original) {
+    ObjectNode item = mapper.createObjectNode();
+    item.put("description", original.path("text").asText());
+    item.putNull("expression");
+    item.set("targetObjectRefs", original.path("objectKeys").deepCopy());
+    item.putArray("sourceBindings");
+    item.set("evidenceRefs", original.path("evidenceRefs").deepCopy());
+    ArrayNode unknowns = item.putArray("unknowns");
+    for (JsonNode unknown : original.path("unknowns")) unknowns.add(unknown.deepCopy());
+    addLinkUnknown(
+        unknowns, "sourceBindings", "Structured bindings were not investigated by this profile.");
+    return item;
+  }
+
+  private void addLinkUnknown(ArrayNode unknowns, String field, String reason) {
+    ObjectNode unknown = unknowns.addObject();
+    unknown.put("field", field);
+    unknown.put("reason", reason);
+    unknown.putArray("missingUnitRefs");
   }
 
   private static int compareLinkBytes(String left, String right) {
@@ -1570,7 +1747,10 @@ final class OntologyTypedDefinitionValidator {
   FormalCatalogInventory catalogInventory(ImmutableBytes mapping) {
     JsonNode document = json.parseCanonical(mapping);
     if (!document.isObject()
-        || !Set.of("ontology-reviewed-catalog-v3", "ontology-reviewed-catalog-v4")
+        || !Set.of(
+                "ontology-reviewed-catalog-v3",
+                "ontology-reviewed-catalog-v4",
+                "ontology-reviewed-catalog-v5")
             .contains(document.path("schemaVersion").asText())) {
       throw new IllegalArgumentException("ONTOLOGY_FORMAL_PRIOR_INVALID");
     }

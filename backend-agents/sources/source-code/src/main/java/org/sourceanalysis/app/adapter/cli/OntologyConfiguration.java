@@ -133,6 +133,36 @@ record OntologyConfiguration(
         explicitPromptOverrides);
   }
 
+  OntologyConfiguration forLeanLinks() {
+    Map<String, String> selected = new LinkedHashMap<>(forJointLinks().prompts());
+    if (!explicitPromptOverrides.contains("link"))
+      selected.put("link", defaultPrompt("link", "v2"));
+    if (!explicitPromptOverrides.contains("linkReview"))
+      selected.put("linkReview", defaultPrompt("link-review", "v2"));
+    return withPrompts(selected);
+  }
+
+  OntologyConfiguration forObjectTypeCorrespondence() {
+    Map<String, String> selected = new LinkedHashMap<>(prompts);
+    if (!explicitPromptOverrides.contains("relate"))
+      selected.put("relate", defaultPrompt("object-type", "v1"));
+    if (!explicitPromptOverrides.contains("review"))
+      selected.put("review", defaultPrompt("object-type-review", "v1"));
+    return withPrompts(selected);
+  }
+
+  private OntologyConfiguration withPrompts(Map<String, String> selected) {
+    return new OntologyConfiguration(
+        storage,
+        reading,
+        schemaSources,
+        selected,
+        models,
+        new CanonicalJsonCodec()
+            .encodeCanonical(normalized(storage, reading, schemaSources, selected, models)),
+        explicitPromptOverrides);
+  }
+
   /**
    * Loads the immutable storage declarations needed to inspect already-saved ontology runs.
    *

@@ -50,7 +50,7 @@ public final class OntologyBusinessOverviewRenderer {
     JsonNode coverageDocument = json.parseCanonical(coverage);
     JsonNode reviewDocument = json.parseCanonical(review);
     if (!"ontology-v2".equals(ontologyDocument.path("schemaVersion").asText())
-        || !(Set.of("v3", "v4").stream()
+        || !(Set.of("v3", "v4", "v5").stream()
             .anyMatch(
                 version ->
                     ("ontology-coverage-" + version)
@@ -74,6 +74,21 @@ public final class OntologyBusinessOverviewRenderer {
             .filter(object -> canonicalRef(object).equals(object.path("globalId").asText()))
             .toList();
     String graph = graph(graphObjects, links, nodeIds, reviewDocument);
+    boolean localView = "ontology-review-v5".equals(reviewDocument.path("schemaVersion").asText());
+    List<List<JsonNode>> localCandidates =
+        localView
+            ? localLinkCandidates(ontologyDocument, links, nodeIds, reviewDocument)
+            : List.of();
+    List<JsonNode> localLinks = localCandidates.isEmpty() ? List.of() : localCandidates.get(0);
+    Set<String> localNodeIds = new HashSet<>();
+    for (JsonNode link : localLinks) {
+      localNodeIds.add(nodeIds.get(link.path("fromObjectRef").asText()));
+      localNodeIds.add(nodeIds.get(link.path("toObjectRef").asText()));
+    }
+    List<JsonNode> localObjects =
+        graphObjects.stream()
+            .filter(object -> localNodeIds.contains(nodeIds.get(object.path("globalId").asText())))
+            .toList();
     StringBuilder html = new StringBuilder(4096);
     html.append("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">")
         .append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">")
@@ -85,10 +100,45 @@ public final class OntologyBusinessOverviewRenderer {
         .append("details{border-bottom:1px solid #d9e1e8;padding:.6rem 0}summary{cursor:pointer}")
         .append("code,pre{white-space:pre-wrap;overflow-wrap:anywhere}li{margin:.25rem 0}")
         .append("</style></head><body><h1>业务本体概览</h1>")
-        .append("<p class=\"note\">仅投影已发布四文件；模型审阅不等于人工验收，实线也不表示机器证明正确。</p>")
-        .append("<pre class=\"mermaid\" id=\"ontology-business-graph\">")
-        .append(escapeHtml(graph))
-        .append("</pre>");
+        .append("<p class=\"note\">仅投影已发布四文件；模型审阅不等于人工验收，实线也不表示机器证明正确。箭头是原关系引用方向，不是办理顺序。</p>");
+    if (localView) {
+      html.append("<h2>局部业务联系</h2><p>局部图：")
+          .append(localObjects.size())
+          .append("个对象、")
+          .append(localLinks.size())
+          .append("条已有联系</p>");
+      html.append("<details><summary>局部视图候选：")
+          .append(localCandidates.size())
+          .append("</summary><ol>");
+      for (List<JsonNode> candidate : localCandidates) {
+        html.append("<li>");
+        for (JsonNode link : candidate) {
+          html.append("<code>")
+              .append(escapeHtml(link.path("globalId").asText()))
+              .append("</code> ")
+              .append(escapeHtml(link.path("name").asText()))
+              .append("；");
+        }
+        html.append("</li>");
+      }
+      html.append("</ol></details>");
+      if (localLinks.isEmpty()) html.append("<p>没有经过已审类型对应节点的跨段连续两边。</p>");
+      html.append("<pre class=\"mermaid\" id=\"ontology-business-graph\">")
+          .append(escapeHtml(localGraph(localObjects, localLinks, nodeIds, reviewDocument)))
+          .append("</pre>");
+      html.append("<details><summary>完整图：")
+          .append(graphObjects.size())
+          .append("个对象、")
+          .append(links.size())
+          .append("条联系；包含其余分支及孤立对象</summary>")
+          .append("<pre class=\"mermaid\" id=\"ontology-all-graph\">")
+          .append(escapeHtml(graph))
+          .append("</pre></details>");
+    } else {
+      html.append("<pre class=\"mermaid\" id=\"ontology-business-graph\">")
+          .append(escapeHtml(graph))
+          .append("</pre>");
+    }
     appendDefinitions(html, "对象", objects, sources);
     appendDefinitions(html, "关系", links, sources);
     for (String field : List.of("operations", "rules", "dimensions", "measures", "metrics")) {
@@ -104,9 +154,81 @@ public final class OntologyBusinessOverviewRenderer {
         .append("\"></script>")
         .append(
             "<script>mermaid.initialize({securityLevel: 'strict', htmlLabels: true, startOnLoad: false});")
-        .append("mermaid.run({querySelector: '#ontology-business-graph'});</script>")
+        .append("mermaid.run({querySelector: '.mermaid'});</script>")
         .append("</body></html>");
     return html.toString();
+  }
+
+  /** Selects, never invents, a directed cross-task pair through a reviewed type-equivalent node. */
+  private static List<List<JsonNode>> localLinkCandidates(
+      JsonNode ontology, List<JsonNode> links, Map<String, String> nodeIds, JsonNode review) {
+    List<List<JsonNode>> candidates = new ArrayList<>();
+    Set<String> middleNodes = new HashSet<>();
+    for (JsonNode decision : review.path("identityDecisions")) {
+      if ("SAME_OBJECT_TYPE_NOT_INSTANCE_IDENTITY"
+          .equals(decision.path("equivalenceSemantics").asText())) {
+        String middle = nodeIds.get(decision.path("resolvedCanonicalObjectRef").asText());
+        if (middle != null) middleNodes.add(middle);
+      }
+    }
+    Map<String, String> producers = new LinkedHashMap<>();
+    for (JsonNode index : ontology.path("definitionIndex"))
+      producers.put(index.path("globalId").asText(), index.path("producingTaskId").asText());
+    for (JsonNode first : links)
+      for (JsonNode second : links) {
+        String from = nodeIds.get(first.path("fromObjectRef").asText());
+        String middle = nodeIds.get(first.path("toObjectRef").asText());
+        String next = nodeIds.get(second.path("fromObjectRef").asText());
+        String to = nodeIds.get(second.path("toObjectRef").asText());
+        String firstTask = producers.get(first.path("globalId").asText());
+        String secondTask = producers.get(second.path("globalId").asText());
+        if (middle != null
+            && middle.equals(next)
+            && middleNodes.contains(middle)
+            && from != null
+            && to != null
+            && !from.equals(middle)
+            && !to.equals(middle)
+            && !from.equals(to)
+            && firstTask != null
+            && !firstTask.isBlank()
+            && secondTask != null
+            && !secondTask.isBlank()
+            && !firstTask.equals(secondTask)) candidates.add(List.of(first, second));
+      }
+    return List.copyOf(candidates);
+  }
+
+  private static String localGraph(
+      List<JsonNode> objects, List<JsonNode> links, Map<String, String> nodeIds, JsonNode review) {
+    StringBuilder graph = new StringBuilder("flowchart TB\n");
+    for (JsonNode object : objects)
+      graph
+          .append("  ")
+          .append(nodeIds.get(object.path("globalId").asText()))
+          .append("[\"")
+          .append(graphLabel(object.path("name").asText()))
+          .append("\"]\n");
+    Set<String> disputed = new HashSet<>();
+    for (JsonNode issue : review.path("assemblyIssues"))
+      issue.path("definitionRefs").forEach(ref -> disputed.add(ref.asText()));
+    for (JsonNode link : links) {
+      boolean solid =
+          "CONFIRMED".equals(link.path("certainty").asText())
+              && !disputed.contains(link.path("globalId").asText());
+      String label = link.path("name").asText();
+      if (label.isBlank()) label = "机制待确认";
+      graph
+          .append("  ")
+          .append(nodeIds.get(link.path("fromObjectRef").asText()))
+          .append(solid ? " -->" : " -.->")
+          .append("|\"")
+          .append(graphLabel(label))
+          .append("\"| ")
+          .append(nodeIds.get(link.path("toObjectRef").asText()))
+          .append("\n");
+    }
+    return graph.toString();
   }
 
   private static ImmutableBytes bundledMermaid() {

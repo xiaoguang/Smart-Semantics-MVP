@@ -47,13 +47,13 @@ final class OntologyCoherentPublicationFamilyContractsTest {
       String v4 = key.schemaVersion().replace("-v1", "-v4");
       assertThat(key.acceptsSchemaVersion(v4)).as(key.name()).isTrue();
       assertThat(key.acceptsSchemaVersion(key.schemaVersion())).isTrue();
-      assertThat(key.acceptsSchemaVersion(v4.replace("-v4", "-v5"))).isFalse();
+      assertThat(key.acceptsSchemaVersion(v4.replace("-v4", "-v6"))).isFalse();
       assertThat(OntologyOperationObservationV2.isTaskOutcomePayload(key.artifactType(), v4))
           .as(key.name() + " complete task outcome admission")
           .isTrue();
       assertThat(
               OntologyOperationObservationV2.isTaskOutcomePayload(
-                  key.artifactType(), v4.replace("-v4", "-v5")))
+                  key.artifactType(), v4.replace("-v4", "-v6")))
           .isFalse();
     }
   }

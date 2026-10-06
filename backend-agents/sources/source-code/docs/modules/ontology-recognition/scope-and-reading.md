@@ -1,12 +1,14 @@
 # 范围清单与正式阅读状态
 
-状态：业务联系优先正式工程、骨架发布和跨运行财务/统计细化已完成，最终129项直接回归及同代码质量通过；四文件重开字节一致。**业务覆盖、小窗口及浏览器呈现验收仍部分未通过/未验**，不宣称完整采购主链、全仓自主发现或跨项目同等质量。当前实际运行、材料成本、结果及剩余义务由[正式验收](../../supplements/ontology-business-link-formal-acceptance-20261005.md)统一维护；[前序稳定性18请求](../../supplements/ontology-formal-acceptance-20261003.md)仍属原版本，旧MD及历史文件不变。本轮通过原[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)交付。
+状态：现有四命令、失败隔离、LINK-v1／v6材料、跨运行对象来源与四文件发布已有工程及有限真实结果，当前事实见[连贯路径验收](../../supplements/coherent-link-20261005-acceptance.md)。[前序129项／业务总览](../../supplements/ontology-business-link-formal-acceptance-20261005.md)和[稳定性18请求](../../supplements/ontology-formal-acceptance-20261003.md)保持各自原版本记录。新的精简材料／专用类型对应设计待实施；不宣称小窗口、完整生命周期、全仓自主发现或跨项目同等质量，旧MD及历史产物不变。
 
 当前薄实现将scope/selection解析公开为窄输入边界，并在既有coordinator/decision/private-store上保存`ontology-decision-result-v4`与`ontology-formal-reading-state-v1`。后者保留实际派发的visibleScope、查询观察、五个状态集合、结构化未解/收窄处置和同一冻结包；它不是公共Reader/Publisher，也不替代已接线的Task 7 receipt、配置和CLI准入。公开`FormalState`构造器的八个列表防御性复制合同已经实际RED/GREEN；未用SpotBugs排除代替该复制。
 
 ## 1. 清单不是业务答案
 
-本节v1/v2是现行兼容规则。下一版新执行采用[scope-v3详细合同](coherent-link-material-design.md#12-版本与正式接线清单)：SKELETON增加LINK；readingMode为TECHNICAL_BUNDLE时由Java从一个真实anchorRef展开连贯材料，不制造模型阅读历史。外部对象来源的taskIds精确选择已审OBJECT/LINK。原scope-v1/v2不升级，旧五类MODEL阅读状态和协议继续按原版本保存。
+本节v1/v2是历史兼容规则；当前联合路径已经采用[scope-v3详细合同](coherent-link-material-design.md#12-版本与正式接线清单)：SKELETON增加LINK；readingMode为TECHNICAL_BUNDLE时由Java从一个真实anchorRef展开连贯材料，不制造模型阅读历史。外部对象来源的taskIds精确选择已审OBJECT/LINK。原scope-v1/v2不升级，旧五类MODEL阅读状态和协议继续按原版本保存。
+
+待实施[精简及类型对应设计§17](coherent-link-material-design.md#17-精简材料与跨段类型对应的正式设计)保持scope-v3和原MODEL状态；新selection-v4明确GENERAL_RELATE／OBJECT_TYPE_CORRESPONDENCE。只有新的类型对应profile允许O2使用TECHNICAL_BUNDLE，旧selection-v3的禁止规则不放宽。候选由准确已审对象来源产生，一对一题、两端有限完整材料，未读和未执行分母保存；不增加ReAct循环或第五个CLI。
 
 identify-ontology的范围清单明确一次局部执行的普通问题、任务和材料选择性质。它不包含对象、关系、规则或指标定义。调用者只能选择真实O0的E/U/K；不能给程序写一份“正确本体”作为输入。历史`ontology-scope-v1`按原字段严格读取；新增`ontology-scope-v2`也按自己的完整字段严格读取，不能借缺字段推断或升级旧清单。
 

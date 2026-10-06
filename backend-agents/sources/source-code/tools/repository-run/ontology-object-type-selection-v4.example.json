@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "ontology-selection-v4",
+  "operation": "RELATE",
+  "relationProfile": "OBJECT_TYPE_CORRESPONDENCE",
+  "corpusRun": "analysis-run:0000000000000000000000000000000000000000000000000000000000000000",
+  "identificationRuns": [
+    "analysis-run:1111111111111111111111111111111111111111111111111111111111111111",
+    "analysis-run:2222222222222222222222222222222222222222222222222222222222222222"
+  ],
+  "questions": [
+    {
+      "questionId": "Q-type",
+      "question": "Do the selected reviewed definitions describe the same business object type over their full declared scope? Use the actual implementation on both sides; do not assume instance identity.",
+      "taskId": "compare-selected-types",
+      "readingMode": "TECHNICAL_BUNDLE",
+      "entryRefs": [],
+      "clueRefs": [],
+      "unitUses": [],
+      "requiredUnitUses": [],
+      "objectSources": [
+        {
+          "identificationRun": "analysis-run:1111111111111111111111111111111111111111111111111111111111111111",
+          "questionId": "Q-left",
+          "taskIds": ["link-left"]
+        },
+        {
+          "identificationRun": "analysis-run:2222222222222222222222222222222222222222222222222222222222222222",
+          "questionId": "Q-right",
+          "taskIds": ["link-right"]
+        }
+      ]
+    }
+  ]
+}

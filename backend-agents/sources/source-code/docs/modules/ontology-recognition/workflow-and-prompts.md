@@ -1,6 +1,6 @@
 # 本体识别：Skill、CLI、模型提示词与可观察工作流
 
-状态：业务联系优先正式工程、骨架发布和跨运行财务/统计细化已完成，最终129项直接回归及同代码质量通过；四文件重开字节一致。**业务覆盖、小窗口及浏览器呈现验收仍部分未通过/未验**，不宣称完整采购主链、全仓自主发现或跨项目同等质量。当前实际运行、材料成本、结果及剩余义务由[正式验收](../../supplements/ontology-business-link-formal-acceptance-20261005.md)统一维护；[前序稳定性18请求](../../supplements/ontology-formal-acceptance-20261003.md)仍属原版本，旧MD及历史文件不变。本轮通过原[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)交付。
+状态：新的packet/model-v7、LINK-v2、专用类型对应和局部图已接入四命令，44项直接测试及静态质量检查通过；有限真实结果见[当前验收](../../supplements/ontology-lean-type-formal-20261006-acceptance.md)。历史LINK-v1／v6结果见[原连贯路径](../../supplements/coherent-link-20261005-acceptance.md)，[前序129项／业务总览](../../supplements/ontology-business-link-formal-acceptance-20261005.md)和[稳定性18请求](../../supplements/ontology-formal-acceptance-20261003.md)保持各自原版本。工程通过不宣称小窗口、完整生命周期、全仓自主发现或跨项目同等质量；旧MD及历史产物不变。
 
 ## 1. 推荐方案与可修改面
 
@@ -16,9 +16,13 @@
 
 Prompt不能修改Schema、短号映射、来源/排除检查、投影算法或保存合同。改变这些机制须明确进入开发扩展，不由宿主Agent临时补脚本/字段/结果。Java结构检查不能保证模型一定遵守语义指令。
 
+LINK-v2默认要求以当前锚点为范围；实际实现明确区分并连接的业务种类分别作为端点，不能仅因共用技术存储类就隐藏为自关联，也不能把普通状态拆成对象。提取和审阅均明确：所有嵌套引用用最终objectKey而非名称，linkIndexes按最终数组重新计算零基序号，missingUnitRefs只引用展示的未读U、不能引用已读S；没有具体U时保留空数组并说明未知。此为通用Prompt约束，不含客户业务答案，不保证模型不再出错。实际草稿和最终非法稿均保存；一次REVIEW后仍非法则局部拒绝，不自动第三轮。
+
 ## 2. 四个操作，六个处理环节
 
-联合路径由[连贯材料与联合LINK设计](coherent-link-material-design.md#4-四命令如何使用新路径)维护：O0→O1联合对象/联系→必要的O2跨题身份→O3业务骨架，再以新O1细化操作/分析。联合LINK已完成scripted正式Agent、存储、直接发布及业务图查询贯穿；真实业务联系与容量验收尚未完成。旧OBJECT→RELATE结果按其原合同读取，不能作为新路径已验收的证据。
+联合路径由[连贯材料与联合LINK设计](coherent-link-material-design.md#4-四命令如何使用新路径)维护：O0→O1联合对象/联系→必要的O2跨题类型对应→O3业务骨架，再以新O1细化操作/分析。联合LINK已有正式Agent、存储、直接发布、业务图查询和有限真实结果；模型质量及小窗口结论仍部分未通过。旧OBJECT→RELATE结果按其原合同读取，不能作为新路径已验收的证据。
+
+成功薄实验的正式接线目标见[§17](coherent-link-material-design.md#17-精简材料与跨段类型对应的正式设计)。Skill仍只调用四命令：选定锚点后Java准备精简完整包；需要跨题贯通时使用明确的OBJECT_TYPE_CORRESPONDENCE选择文件，先核对类型，再零模型发布局部图。GENERAL_RELATE及细化路径不替换。非零退出仍查询保存处置；不能由宿主Agent补源码、合并同名节点、修模型JSON或重新绘制缺失箭头。类型相同不等于同一笔记录；精简材料和新响应家族尚未生产验收，不能宣称任意小窗口或自动全仓发现。
 
 以下四个命令已注册并通过限定正式运行测试，包括scripted QUESTION＋MODEL阅读和有限DDL。当前紧凑材料、隔离和查询已有直接回归，格式、SpotBugs及PMD检查通过；客户三例O0–O3与18份实际请求已核验，采购关系局部拒绝仍完整返回；不能将这项限定验收说成所有模式或模型语义正确：
 

@@ -1,8 +1,10 @@
 # 总体设计分支：新入口证据到业务本体
 
+当前正式接续：packet/model-v7、LINK-v2、专用类型对应及局部图已经接入同一四命令，通过44项直接测试及静态质量检查；固定来源的有限正式链路验收已结束，见[本轮记录](../../supplements/ontology-lean-type-formal-20261006-acceptance.md)。新O3保存12份对象定义／11个canonical类型／11条联系，局部主图以已审类型对应连接采购入库单→采购订单→请购单；四文件公开重开与安装字节相同，离线主图3节点／2边、浏览器错误0。实际请求仍约215–523KiB，小窗口未通过；只核验两条来源编号联系，不是全仓或完整生命周期。合同由[连贯材料设计§17](coherent-link-material-design.md#17-精简材料与跨段类型对应的正式设计)拥有，实现对应见[implementation-delta§9](implementation-delta.md#9-成功薄实验的正式接线差距)。复用现有LINK、对象来源和发布底座，不重写本体框架；下面历史正式结果仍属于v6／LINK-v1，不替代新版本的语义验收。
+
 当前实现与业务验收分开：正式新结果已经保存采购入库单→采购订单→请购单的来源编号骨架，聚焦建立端核对使用正确PurchaseIn原文；这不是完整采购生命周期。联合骨架采用[连贯材料与联合LINK详细设计](coherent-link-material-design.md)：Java围绕真实技术锚点取得连贯原文，同题识别对象和联系，再以已审对应统一跨题身份。新正式结果、实际输入、失败和容量结论见[连贯路径验收](../../supplements/coherent-link-20261005-acceptance.md)，不以结构合法或图有箭头代替业务质量。
 
-状态：工程、正式保存/重开和离线图接线通过；最新O3保存32份对象定义（29个canonical对象引用）、28联系、7操作、3规则、6维度、2度量和3指标。9项已审、2项拒绝保留，结果PARTIAL、覆盖INCOMPLETE；调拨拒绝、统计分类瑕疵、小窗口及总图简洁度未全部通过。最终quality-12和14项解析复用直接回归通过，固定两包四份输出逐字不变，98份本轮旧MD保护摘要不变。相关改动通过现有[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)交付，运行数据及原暂存PoC排除。前版19对象/22联系结果见[前版有限验收](../../supplements/ontology-business-link-formal-acceptance-20261005.md)，不混称最新结果；不宣称全仓自主识别、跨项目同等质量或已经合入main。
+前版状态（v6／LINK-v1）：工程、正式保存/重开和离线图接线通过；该版O3保存32份对象定义（29个canonical对象引用）、28联系、7操作、3规则、6维度、2度量和3指标。9项已审、2项拒绝保留，结果PARTIAL、覆盖INCOMPLETE；调拨拒绝、统计分类瑕疵、小窗口及总图简洁度未全部通过。该版quality-12和14项解析复用直接回归通过，固定两包四份输出逐字不变，98份旧MD保护摘要不变。相关改动通过现有[PR #35](https://github.com/xiaoguang/Smart-Semantics-MVP/pull/35)交付，运行数据及原暂存PoC排除。更早19对象/22联系结果见[前版有限验收](../../supplements/ontology-business-link-formal-acceptance-20261005.md)，不混称本轮结果；不宣称全仓自主识别、跨项目同等质量或已经合入main。
 
 ## 1. 先讲结论：本次设计解决什么
 

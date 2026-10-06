@@ -204,6 +204,63 @@ final class OntologyBusinessOverviewRendererTest {
         .replace("&amp;", "&");
   }
 
+  @Test
+  void v5LocalViewUsesOnlyExistingCrossTaskEdgesThroughReviewedTypeEquivalence() {
+    ObjectNode document = (ObjectNode) json.parseCanonical(ontology());
+    ArrayNode index = document.putArray("definitionIndex");
+    index
+        .addObject()
+        .put("globalId", "ontology-link:confirmed")
+        .put("producingTaskId", "segment-a");
+    index.addObject().put("globalId", "ontology-link:inferred").put("producingTaskId", "segment-b");
+    ((ObjectNode) document.path("linkTypes").get(0))
+        .withArray("mechanism")
+        .addObject()
+        .put("description", "很长的建立条件只显示在详情");
+    ObjectNode coverage = (ObjectNode) json.parseCanonical(coverage());
+    coverage.put("schemaVersion", "ontology-coverage-v5");
+    ObjectNode review = (ObjectNode) json.parseCanonical(review());
+    review.put("schemaVersion", "ontology-review-v5");
+    review
+        .putArray("identityDecisions")
+        .addObject()
+        .put("equivalenceSemantics", "SAME_OBJECT_TYPE_NOT_INSTANCE_IDENTITY")
+        .put("resolvedCanonicalObjectRef", "ontology-object:customer");
+
+    String html =
+        new OntologyBusinessOverviewRenderer(() -> bytes("offline-bundle"))
+            .render(
+                json.encodeCanonical(document),
+                json.encodeCanonical(coverage),
+                sourceIndex(),
+                json.encodeCanonical(review));
+    String local = graphSource(html);
+    assertThat(local).contains("flowchart TB", "保存引用", "推断对应");
+    assertThat(local).doesNotContain("很长的建立条件", "subgraph");
+    assertThat(local.lines().filter(line -> line.contains("[\"")).count()).isEqualTo(3);
+    assertThat(local.lines().filter(line -> line.contains("|\"")).count()).isEqualTo(2);
+    assertThat(html).contains("局部图：3个对象、2条已有联系", "完整图：3个对象、2条联系", "ontology-all-graph", "局部视图候选：1");
+    assertThat(html).contains("很长的建立条件只显示在详情", "SAME_OBJECT_TYPE_NOT_INSTANCE_IDENTITY");
+  }
+
+  @Test
+  void v5DoesNotInventContinuityWithoutReviewedTypeCorrespondence() {
+    ObjectNode coverage = (ObjectNode) json.parseCanonical(coverage());
+    coverage.put("schemaVersion", "ontology-coverage-v5");
+    ObjectNode review = (ObjectNode) json.parseCanonical(review());
+    review.put("schemaVersion", "ontology-review-v5");
+    String html =
+        new OntologyBusinessOverviewRenderer(() -> bytes("offline-bundle"))
+            .render(
+                ontology(),
+                json.encodeCanonical(coverage),
+                sourceIndex(),
+                json.encodeCanonical(review));
+
+    assertThat(html).contains("没有经过已审类型对应节点的跨段连续两边", "完整图：3个对象、2条联系", "孤立对象");
+    assertThat(graphSource(html)).doesNotContain(" -->", " -.->");
+  }
+
   private static String decodeMermaidEntities(String graph) {
     Matcher matcher = Pattern.compile("#([0-9]+);").matcher(graph);
     StringBuffer decoded = new StringBuffer();

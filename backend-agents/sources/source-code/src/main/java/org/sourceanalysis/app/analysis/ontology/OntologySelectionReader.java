@@ -11,6 +11,14 @@ import java.util.Set;
 public final class OntologySelectionReader {
   private static final Set<String> RELATE_FIELDS =
       Set.of("schemaVersion", "operation", "corpusRun", "identificationRuns", "questions");
+  private static final Set<String> RELATE_FIELDS_V4 =
+      Set.of(
+          "schemaVersion",
+          "operation",
+          "corpusRun",
+          "identificationRuns",
+          "questions",
+          "relationProfile");
   private static final Set<String> PUBLISH_FIELDS =
       Set.of("schemaVersion", "operation", "corpusRun", "identificationRuns", "relationRuns");
   private static final Set<String> QUESTION_FIELDS =
@@ -43,7 +51,8 @@ public final class OntologySelectionReader {
     String schemaVersion = requiredText(document, "schemaVersion");
     boolean v2 = "ontology-selection-v2".equals(schemaVersion);
     boolean v3 = "ontology-selection-v3".equals(schemaVersion);
-    if (!v2 && !v3 && !"ontology-selection-v1".equals(schemaVersion)) {
+    boolean v4 = "ontology-selection-v4".equals(schemaVersion);
+    if (!v2 && !v3 && !v4 && !"ontology-selection-v1".equals(schemaVersion)) {
       throw failure("ONTOLOGY_SELECTION_INVALID");
     }
     Operation operation;
@@ -52,7 +61,18 @@ public final class OntologySelectionReader {
     } catch (IllegalArgumentException invalid) {
       throw failure("ONTOLOGY_SELECTION_OPERATION_INVALID");
     }
-    requireFields(document, operation == Operation.RELATE ? RELATE_FIELDS : PUBLISH_FIELDS);
+    requireFields(
+        document,
+        operation == Operation.RELATE ? (v4 ? RELATE_FIELDS_V4 : RELATE_FIELDS) : PUBLISH_FIELDS);
+    RelationProfile profile = RelationProfile.GENERAL_RELATE;
+    if (v4 && operation == Operation.RELATE) {
+      String profileText = requiredText(document, "relationProfile");
+      try {
+        profile = RelationProfile.valueOf(profileText);
+      } catch (IllegalArgumentException invalid) {
+        throw failure("ONTOLOGY_SELECTION_RELATION_PROFILE_INVALID");
+      }
+    }
     String corpusRun = runId(requiredText(document, "corpusRun"));
     Set<String> selectedRuns = new HashSet<>();
     selectedRuns.add(corpusRun);
@@ -62,16 +82,28 @@ public final class OntologySelectionReader {
     }
     if (operation == Operation.PUBLISH) {
       List<String> relationRuns = runIds(document.get("relationRuns"), selectedRuns);
-      if (!v3 && relationRuns.isEmpty()) {
+      if (!v3 && !v4 && relationRuns.isEmpty()) {
         throw failure("ONTOLOGY_SELECTION_RELATION_REQUIRED");
       }
       return new Selection(
-          schemaVersion, operation, corpusRun, identificationRuns, relationRuns, List.of());
+          schemaVersion,
+          operation,
+          corpusRun,
+          identificationRuns,
+          relationRuns,
+          List.of(),
+          profile);
     }
     List<Question> questions =
-        questions(document.get("questions"), corpus, identificationRuns, v2 || v3, v3);
+        questions(
+            document.get("questions"),
+            corpus,
+            identificationRuns,
+            v2 || v3 || v4,
+            v3 || v4,
+            profile);
     return new Selection(
-        schemaVersion, operation, corpusRun, identificationRuns, List.of(), questions);
+        schemaVersion, operation, corpusRun, identificationRuns, List.of(), questions, profile);
   }
 
   private static List<Question> questions(
@@ -79,7 +111,8 @@ public final class OntologySelectionReader {
       OntologyEvidenceCorpus corpus,
       List<String> identificationRuns,
       boolean v2,
-      boolean v3) {
+      boolean v3,
+      RelationProfile profile) {
     if (rawQuestions == null || !rawQuestions.isArray()) {
       throw failure("ONTOLOGY_SELECTION_QUESTIONS_INVALID");
     }
@@ -98,7 +131,9 @@ public final class OntologySelectionReader {
       try {
         readingMode =
             OntologyScopeReader.ReadingMode.valueOf(requiredText(rawQuestion, "readingMode"));
-        if (readingMode == OntologyScopeReader.ReadingMode.TECHNICAL_BUNDLE) {
+        if (profile == RelationProfile.OBJECT_TYPE_CORRESPONDENCE
+            ? readingMode != OntologyScopeReader.ReadingMode.TECHNICAL_BUNDLE
+            : readingMode == OntologyScopeReader.ReadingMode.TECHNICAL_BUNDLE) {
           throw failure("ONTOLOGY_SELECTION_READING_MODE_INVALID");
         }
       } catch (IllegalArgumentException invalid) {
@@ -254,22 +289,30 @@ public final class OntologySelectionReader {
     PUBLISH
   }
 
+  public enum RelationProfile {
+    GENERAL_RELATE,
+    OBJECT_TYPE_CORRESPONDENCE
+  }
+
   public record Selection(
       String schemaVersion,
       Operation operation,
       String corpusRun,
       List<String> identificationRuns,
       List<String> relationRuns,
-      List<Question> questions) {
+      List<Question> questions,
+      RelationProfile relationProfile) {
     public Selection {
       if (!"ontology-selection-v1".equals(schemaVersion)
           && !"ontology-selection-v2".equals(schemaVersion)
-          && !"ontology-selection-v3".equals(schemaVersion)) {
+          && !"ontology-selection-v3".equals(schemaVersion)
+          && !"ontology-selection-v4".equals(schemaVersion)) {
         throw new IllegalArgumentException("ontology selection schema version");
       }
       identificationRuns = List.copyOf(identificationRuns);
       relationRuns = List.copyOf(relationRuns);
       questions = List.copyOf(questions);
+      Objects.requireNonNull(relationProfile, "ontology relation profile");
     }
 
     public boolean isV2() {
@@ -277,7 +320,9 @@ public final class OntologySelectionReader {
     }
 
     public boolean usesTaskOutcomes() {
-      return isV2() || "ontology-selection-v3".equals(schemaVersion);
+      return isV2()
+          || "ontology-selection-v3".equals(schemaVersion)
+          || "ontology-selection-v4".equals(schemaVersion);
     }
   }
 

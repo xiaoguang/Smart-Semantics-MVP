@@ -1,0 +1,46 @@
+# Template only: use actual installed policies, saved owners, paths and model authorization.
+# No customer build, Maven, JDT or technical re-collection is part of ontology execution.
+schemaVersion: ontology-config-v1
+storage:
+  root: /absolute/path/to/run-store
+  preparedSourceArchive: /absolute/path/to/prepared-source-archive
+  sourcePreparationPolicyRegistry: /absolute/path/to/source-preparation-artifact-policy-set-v1.json
+  evidencePolicyRegistry: /absolute/path/to/technical-analysis-artifact-policy-set-v3.json
+  ontologyPolicyRegistry: /absolute/path/to/ontology-artifact-policy-set-v5.json
+  upstreamArtifactPolicyRegistries:
+    - /absolute/path/to/ontology-artifact-policy-set-v4.json
+    - /absolute/path/to/ontology-artifact-policy-set-v3.json
+    - /absolute/path/to/technical-analysis-artifact-policy-set-v2.json
+reading:
+  maxUnitBytes: 1048576
+  maxRequestBytes: 1048576
+  maxOutputBytes: 65536
+  maxOutputTokens: 4096
+  maxRequests: 12
+  maxReadingRounds: 4
+  maxActionsPerRound: 8
+  maxNavigationEntries: 16
+# Explicit prompt overrides replace the defaults for the selected profile.
+# link/linkReview: LINK v2; relate/review: TYPE v1 only for OBJECT_TYPE_CORRESPONDENCE.
+# GENERAL_RELATE retains its original default prompts.
+# prompts:
+#   link: /absolute/path/to/link.prompt.txt
+#   linkReview: /absolute/path/to/link-review.prompt.txt
+#   relate: /absolute/path/to/type-compare.prompt.txt
+#   review: /absolute/path/to/type-compare-review.prompt.txt
+modelJobs:
+  maxConcurrentJobs: 1
+  providers:
+    luna:
+      kind: codexSubscription
+      executable: /absolute/path/to/codex
+      quotaScope: example-ontology-chatgpt-account
+      model: gpt-5.6-luna
+      reasoningEffort: high
+      auth:
+        mode: chatgpt
+        codexHomeEnv: ONTOLOGY_CODEX_HOME
+  routing:
+    survey: [luna]
+    extract: [luna]
+    relate: [luna]

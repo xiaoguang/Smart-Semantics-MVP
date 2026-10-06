@@ -58,7 +58,14 @@ final class OntologyRelationReadingSelections {
     JsonNode raw = document.path("readingSelections");
     if (!raw.isArray()) throw new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID");
     Map<String, JsonNode> declared = new LinkedHashMap<>();
-    for (JsonNode question : document.path("selection").path("questions")) {
+    boolean typeComparison =
+        "ontology-relations-v5".equals(document.path("schemaVersion").asText())
+            && "OBJECT_TYPE_CORRESPONDENCE".equals(document.path("relationProfile").asText());
+    JsonNode selected =
+        typeComparison ? document.path("effectiveSelection") : document.path("selection");
+    if (typeComparison)
+      org.sourceanalysis.app.analysis.ontology.OntologySelectionReader.read(selected, corpus);
+    for (JsonNode question : selected.path("questions")) {
       if (declared.putIfAbsent(OntologySavedTaskContract.requiredText(question, "taskId"), question)
           != null) throw new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID");
     }

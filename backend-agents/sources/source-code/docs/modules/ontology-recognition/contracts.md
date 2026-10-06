@@ -4,6 +4,14 @@
 
 ## 1. 五类结论，不混为一份散文
 
+新LINK-v2的独立Schema及机械映射已加入：mechanism只含text/objectKeys/evidenceRefs，conditions另含unknowns；最终对象、端点、条件引用均须闭合。固定投影不解析中文，身份／属性／基数保持未调查。前端观察的精确字典允许v6/v7投影，旧v6编码不变。正式任务保存、重开及全链离线直接验证已通过；真实语义与容量仍以本轮实际验收记录为准。
+
+专用类型响应使用object-type-candidate/review-v1：只比较请求绑定的一对B1/B2；SAME_OBJECT_TYPE和DISTINCT必须引用两端实际入模S，UNRESOLVED须有具体unknowns。此检查证明来源引用完整，不证明模型解释正确；不能根据名称或表重合直接统一。
+
+正式runner按冻结材料明确分派：v7 LINK使用candidate/review-v2、catalog/result-v5及独立review-link-v2身份；v6仍使用原v1/result-v4。私有保存同时保留原生响应与固定definitionDocument，恢复重算映射并核对实际EXTRACT/REVIEW，不用新映射改写历史。直接保存/重开与历史v6回归已通过。
+
+精简类型对应生产接线正在实施，功能规范为[连贯材料§17](coherent-link-material-design.md#17-精简材料与跨段类型对应的正式设计)。`OntologySelectionReader`新增明确的selection-v4：RELATE必填relationProfile，类型对应只接受TECHNICAL_BUNDLE，GENERAL_RELATE仍不接受该模式；PUBLISH不含profile，可只选择已有LINK。旧v1–v3字段和准入保持原状。查询及任务处置识别增加准确v5、仍拒绝未知v6；selection-v4禁止老或混合生产家族。Reader准入不等于新O2、发布及存储全链已经接通；当前验证结果见本轮执行记录。
+
 | 类型 | 要回答的问题 | 最小定义，不足时保留什么 |
 | --- | --- | --- |
 | Object Type | 系统操作的是什么，同一个对象如何再次找到 | 名称/含义、身份、存储/程序映射、业务变体条件、属性；缺身份保留候选而非部署就绪类型 |
@@ -501,13 +509,29 @@ typed-v4校验入口显式接收实际可见`visibleClueRefs`，只在`ontology-
 
 新执行的Corpus生产版本准入由已有`OntologySavedTaskContract`校验，运行器只提交明确的生产者/Corpus家族判定；不改变历史查询或新旧任务分派。此职责拆分不改变拒绝码，也不提高静态复杂度阈值。
 
-### 11.8 连贯材料与联合LINK（正式接线，真实验收未完成）
+### 11.8 连贯材料与联合LINK（已接线，有限真实结果与未通过项分开）
 
 新增字段/版本的唯一owner为[coherent-link-material-design§9、§12](coherent-link-material-design.md#9-link对象和联系一起返回)，不在本节复制第二份Schema。LINK在identify-ontology中联合返回对象和联系，以精确局部objectKey和本次最终links数组引用表示，不借旧OBJECT目录猜端点。Java按声明引用字段固定投影到现有ontology-v2；原稿、最终稿、分配映射和结构差异保留。
 
-新scope/selection-v3以taskIds准确恢复已审OBJECT或LINK；材料v6保存技术展开及真实未读范围；O1/O2/发布v4保存完整处置，LINK同时属于OBJECT和RELATION层。O0仍为corpus-v2/producer-v2，不为消费规则新增来源格式；新ruleVersion进入包/任务身份。旧11.7合同及原MD wire不改。新家族的生产者、Reader、policy-v4、查询和scripted正式运行fixture已接通；真实业务准确性及容量验收尚未完成，不能把结构/存储通过当作业务验收通过。发布审阅记录以taskReviewSchemaVersions列出实际原始审阅Schema；联合LINK为ontology-link-review-v1，不冒称旧typed-v4原稿。
+新scope/selection-v3以taskIds准确恢复已审OBJECT或LINK；材料v6保存技术展开及真实未读范围；O1/O2/发布v4保存完整处置，LINK同时属于OBJECT和RELATION层。O0仍为corpus-v2/producer-v2，不为消费规则新增来源格式；新ruleVersion进入包/任务身份。旧11.7合同及原MD wire不改。新家族的生产者、Reader、policy-v4、查询、正式运行fixture和有限真实结果已接通；准确结果及模型／容量未通过项见[正式验收](../../supplements/coherent-link-20261005-acceptance.md)，不能把结构/存储通过当作业务全面验收通过。发布审阅记录以taskReviewSchemaVersions列出实际原始审阅Schema；联合LINK为ontology-link-review-v1，不冒称旧typed-v4原稿。
+
+### 11.9 精简输入与专用对象类型对应（接线及离线验证通过，有限真实验收另列）
+
+唯一owner为[连贯材料设计§17](coherent-link-material-design.md#17-精简材料与跨段类型对应的正式设计)，字段与版本由其§17.4–17.6、§17.9规定，本节不复制第二份Schema。新包v7、LINK-v2、selection-v4的明确profile、专用TYPE_COMPARE、阶段／发布v5和准确审阅映射属于新执行；本体ontology-v2、source-v1、公开request-v6/output-v10和原scope-v3保持。
+
+SAME_OBJECT_TYPE只在所选定义范围内统一对象类型，规范化到已有组装器时保存`equivalenceSemantics=SAME_OBJECT_TYPE_NOT_INSTANCE_IDENTITY`、原响应及两端完整身份；不改变历史SAME_OBJECT。名称／表重合只作候选，不授权合并，DISTINCT不代表业务无关。新策略、producer、Reader、模块／步骤安装和查询须同交付；旧排队请求／原v6包不自动升级，不通过字段存在猜版本。不同Corpus同R4也不放松正式准入；PoC适配器不成为第二条生产路径。
+
+当前窄组件`OntologyObjectTypeCorrespondence`从已审对象的准确引用建立稳定候选，优先读取实际引用前端及其一跳页面用途，没有前端时使用对应后端完整材料。两端来源映射保存于私有`ontology-object-type-binding-v1`；本次S与上游仅存在的引用分开。正式runner内部仍用RELATE，但模型任务明确TYPE_COMPARE，native candidate/review-v1、`review-type-v1`和准确comparisonBinding参与任务身份。LINK-v7/v2、TYPE_COMPARE的私有保存重开、历史v6/v1读取、策略v5的正式Agent→模块及步骤安装→O3四文件→overview查询，以及LINK对象供既有ACTION/ANALYTIC使用，已通过44项直接测试（`lean-formal-all-green17.log`）；这不是客户源码的真实语义验收。
+
+类型比较使用`object-type-material-rule-v1`：准确pairRef、EXPLICIT、空LINK分组；普通已审OBJECT可以没有K，不能制造LINK锚点。LINK仍要求`link-bundle-rule-v2`准确K。O2保存原selection及准确effectiveSelection、全部typeCandidates/taskOutcomes；每个实际候选派发前保留一次提取与审阅的两请求额度，额度不足只记录未准备处置，不生成jobKey。局部v5图列出全部候选视图及完整图分母，默认只选择一组已存跨任务连续两边；没有则明确为空。
+
+v5阶段另保存`preparationFailures`，以questionId/taskId对应完整处置，记录容量边界、实测UTF-8字节、上限及封套分项（当前输入、Prompt、适配Schema、输出预留）。来源不足没有容量值；未准备没有jobKey。Reader校验保存的身份、原因与成本算术，不通过重跑模型恢复失败信息。字段及责任由§17.8拥有，历史阶段不补字段。精简投影不把未选普通LOCATED调用变成限制行；其完整私有记录和未入模计数保留，真正不确定／失败／外部位置仍可见。
 
 ## 12. 程序能够和不能够检查什么
+
+v5任务索引读取完整`taskOutcomes`，包括未派发候选，不能回退为只列已保存任务的v1索引。类型候选展开归窄组件`OntologyObjectTypeCorrespondence`，运行器提供已核验的准确来源；失败身份及容量的严格读取归已有`OntologySavedTaskContract`。此分工不修改旧版任务语义、预算或质量阈值。
+
+类型准备结果共享不可变冻结包，不复制材料以规避静态检查。`Prepared.packet` 的两条 SpotBugs 例外仅限该字段及 accessor，与已有 LINK 结果规则一致；直接测试确认修改返回的 JSON／字节副本不能改变冻结输入、模型投影或绑定，单元及用途列表不能修改。没有对整个类型或探测器关闭检查。
 
 能够：Schema/类型/引用存在、模型allowlist、来源/排除版本、实际输入身份、候选/入口处置不遗漏、已审映射引用不悬空、容量/保存/稳定排序。
 

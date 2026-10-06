@@ -63,6 +63,8 @@ O0保存的准备控制用于重开其材料约定和内容身份；O1/O2实际�
 
 ## 4. 直接验收
 
+精简LINK/类型对应显式使用 [ontology-lean-link-v5.example.yaml](../../../tools/repository-run/ontology-lean-link-v5.example.yaml) 的策略v5；原v4示例不改成新格式。scope仍v3；O2选择v4必须声明GENERAL_RELATE或OBJECT_TYPE_CORRESPONDENCE，后者只允许TECHNICAL_BUNDLE，模型仅比较一对已审定义。具体模板为 [TYPE selection-v4](../../../tools/repository-run/ontology-object-type-selection-v4.example.json) 与 [PUBLISH selection-v4](../../../tools/repository-run/ontology-lean-publish-selection-v4.example.json)。TYPE不要求K，不要求调用者填写对象编号或材料正文；实际对象对和两端S由程序生成。每对至少预留原定EXTRACT/REVIEW两次；有限运行剩余不足两次时保存UNPROCESSED及完整候选，不准备假job，也不自动续跑。配置容量是实际字节限额及独立输出token选择，不等于证明4k/8k窗口可用。
+
 - 无modelJobs的配置可加载并用于O0/O3；加载过程不读取认证环境、不验证登录、不创建Provider。
 - 模型路由只接受本体三个键；缺项/未知Provider/重复分配按配置问题报告，不回退旧路由。
 - 不同配置文件位置但相同实际Prompt文本有明确内容身份；同一路径内容变化使绑定变化。

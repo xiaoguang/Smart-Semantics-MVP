@@ -49,6 +49,27 @@ public final class OntologyCoherentLinkBundle {
       int maxUnitBytes,
       int maxRequestBytes,
       OntologyScopeReader.SelectionMode selectionMode) {
+    return prepare(corpus, question, task, maxUnitBytes, maxRequestBytes, selectionMode, false);
+  }
+
+  public static Result prepareLean(
+      OntologyEvidenceCorpus corpus,
+      OntologyScopeReader.Question question,
+      OntologyScopeReader.Task task,
+      int maxUnitBytes,
+      int maxRequestBytes,
+      OntologyScopeReader.SelectionMode selectionMode) {
+    return prepare(corpus, question, task, maxUnitBytes, maxRequestBytes, selectionMode, true);
+  }
+
+  private static Result prepare(
+      OntologyEvidenceCorpus corpus,
+      OntologyScopeReader.Question question,
+      OntologyScopeReader.Task task,
+      int maxUnitBytes,
+      int maxRequestBytes,
+      OntologyScopeReader.SelectionMode selectionMode,
+      boolean lean) {
     if (selectionMode == null)
       throw new IllegalArgumentException("ONTOLOGY_LINK_BUNDLE_INPUT_INVALID");
     if (task.taskKind() != OntologyScopeReader.TaskKind.LINK
@@ -102,7 +123,7 @@ public final class OntologyCoherentLinkBundle {
     }
 
     ObjectNode decision = MAPPER.createObjectNode();
-    decision.put("ruleVersion", "link-bundle-rule-v1");
+    decision.put("ruleVersion", lean ? "link-bundle-rule-v2" : "link-bundle-rule-v1");
     decision.put("anchorRef", anchorRef);
     decision.put("selectionOrigin", selectionMode.name());
     writeUses(decision.putArray("seedUses"), seeds, corpus);
@@ -172,8 +193,7 @@ public final class OntologyCoherentLinkBundle {
         if (handle.kind() == UnitKind.FRONTEND_PAGE_CONTEXT)
           corpus.frontendContextSources(handle).forEach(source -> prefix.add(source.unit()));
       int projectionBytes =
-          OntologyReadingPacket.restoreFormalV6(
-                  corpus, prefix.stream().sorted(ORDER).toList(), Integer.MAX_VALUE, decision)
+          packet(corpus, prefix.stream().sorted(ORDER).toList(), Integer.MAX_VALUE, decision, lean)
               .withVisibleClues(corpus, task.anchorRefs())
               .modelInput()
               .size();
@@ -193,8 +213,7 @@ public final class OntologyCoherentLinkBundle {
       group.put("projectedIncrementBytes", 0);
     }
     OntologyReadingPacket candidate =
-        OntologyReadingPacket.restoreFormalV6(
-                corpus, selected.stream().sorted(ORDER).toList(), Integer.MAX_VALUE, decision)
+        packet(corpus, selected.stream().sorted(ORDER).toList(), Integer.MAX_VALUE, decision, lean)
             .withVisibleClues(corpus, task.anchorRefs());
     cost.put("sourceBytes", candidate.cost().fullSourceBytes());
     cost.put("projectionBytes", candidate.modelInput().size());
@@ -208,10 +227,20 @@ public final class OntologyCoherentLinkBundle {
       return new Result(null, JSON.encodeCanonical(decision), "LINK_BUNDLE_TOO_LARGE");
     }
     OntologyReadingPacket frozen =
-        OntologyReadingPacket.restoreFormalV6(
-                corpus, selected.stream().sorted(ORDER).toList(), maxUnitBytes, decision)
+        packet(corpus, selected.stream().sorted(ORDER).toList(), maxUnitBytes, decision, lean)
             .withVisibleClues(corpus, task.anchorRefs());
     return new Result(frozen, JSON.encodeCanonical(decision), null);
+  }
+
+  private static OntologyReadingPacket packet(
+      OntologyEvidenceCorpus corpus,
+      List<UnitHandle> units,
+      int maxUnitBytes,
+      JsonNode decision,
+      boolean lean) {
+    return lean
+        ? OntologyReadingPacket.restoreFormalV7(corpus, units, maxUnitBytes, decision)
+        : OntologyReadingPacket.restoreFormalV6(corpus, units, maxUnitBytes, decision);
   }
 
   private static Set<UnitHandle> uses(

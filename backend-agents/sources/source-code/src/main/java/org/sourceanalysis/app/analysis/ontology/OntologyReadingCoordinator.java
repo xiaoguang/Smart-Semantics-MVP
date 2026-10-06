@@ -406,6 +406,11 @@ public final class OntologyReadingCoordinator {
    */
   public FormalResult completeFormal(
       OntologyScopeReader.Scope scope, String questionId, String taskId) {
+    return completeFormal(scope, questionId, taskId, false);
+  }
+
+  public FormalResult completeFormal(
+      OntologyScopeReader.Scope scope, String questionId, String taskId, boolean lean) {
     if (scope == null || questionId == null || taskId == null) {
       throw new IllegalArgumentException("ONTOLOGY_READING_INPUT_INVALID");
     }
@@ -425,7 +430,8 @@ public final class OntologyReadingCoordinator {
           task,
           scope.mode() == OntologyScopeReader.Mode.DISCOVERY
               ? OntologyScopeReader.SelectionMode.MODEL
-              : OntologyScopeReader.SelectionMode.EXPLICIT);
+              : OntologyScopeReader.SelectionMode.EXPLICIT,
+          lean);
     }
     return completeFormal(
         new FormalQuestion(
@@ -442,11 +448,15 @@ public final class OntologyReadingCoordinator {
   private FormalResult completeCoherentFormal(
       OntologyScopeReader.Question question,
       OntologyScopeReader.Task task,
-      OntologyScopeReader.SelectionMode selectionMode) {
+      OntologyScopeReader.SelectionMode selectionMode,
+      boolean lean) {
     observedFormalState = null;
     OntologyCoherentLinkBundle.Result bundle =
-        OntologyCoherentLinkBundle.prepare(
-            corpus, question, task, maxFormalUnitBytes, maxFormalRequestBytes, selectionMode);
+        lean
+            ? OntologyCoherentLinkBundle.prepareLean(
+                corpus, question, task, maxFormalUnitBytes, maxFormalRequestBytes, selectionMode)
+            : OntologyCoherentLinkBundle.prepare(
+                corpus, question, task, maxFormalUnitBytes, maxFormalRequestBytes, selectionMode);
     JsonNode decision = bundle.decision();
     Set<String> entries = new LinkedHashSet<>(question.entryRefs());
     decision.path("derivedEntries").forEach(ref -> entries.add(ref.asText()));

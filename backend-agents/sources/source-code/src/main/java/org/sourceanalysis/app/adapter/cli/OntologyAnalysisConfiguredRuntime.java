@@ -1,11 +1,19 @@
 package org.sourceanalysis.app.adapter.cli;
 
+import static org.sourceanalysis.app.adapter.cli.OntologySavedTaskContract.recordPreparationFailure;
+import static org.sourceanalysis.app.adapter.cli.OntologySavedTaskContract.rejectedRelationOutcome;
+import static org.sourceanalysis.app.adapter.cli.OntologySavedTaskContract.relationTaskDispositions;
+import static org.sourceanalysis.app.adapter.cli.OntologySavedTaskContract.requirePreparationFailures;
 import static org.sourceanalysis.app.adapter.cli.OntologySavedTaskContract.requireV2IdentificationTaskRange;
-import static org.sourceanalysis.app.adapter.cli.OntologySavedTaskContract.requireV2TaskOutcomeReason;
 import static org.sourceanalysis.app.adapter.cli.OntologySavedTaskContract.requireV2TaskOutcomes;
 import static org.sourceanalysis.app.adapter.cli.OntologySavedTaskContract.requiredText;
+import static org.sourceanalysis.app.adapter.cli.OntologySavedTaskContract.reviewedRelationOutcome;
+import static org.sourceanalysis.app.adapter.cli.OntologySavedTaskContract.savedTaskFailureReason;
+import static org.sourceanalysis.app.adapter.cli.OntologySavedTaskContract.taskOutcomeDispositionReason;
+import static org.sourceanalysis.app.adapter.cli.OntologySavedTaskContract.unprocessedRelationOutcome;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -45,6 +53,7 @@ import org.sourceanalysis.app.analysis.ontology.OntologyCallBudgetProvider;
 import org.sourceanalysis.app.analysis.ontology.OntologyDecisionRunner;
 import org.sourceanalysis.app.analysis.ontology.OntologyEvidenceCorpus;
 import org.sourceanalysis.app.analysis.ontology.OntologyJobResultStore;
+import org.sourceanalysis.app.analysis.ontology.OntologyObjectTypeCorrespondence;
 import org.sourceanalysis.app.analysis.ontology.OntologyReadingCoordinator;
 import org.sourceanalysis.app.analysis.ontology.OntologyReadingPacket;
 import org.sourceanalysis.app.analysis.ontology.OntologySchemaEvidence;
@@ -166,6 +175,16 @@ final class OntologyAnalysisConfiguredRuntime {
           "ONTOLOGY_IDENTIFICATION")) {
         configuration = configuration.forJointLinks();
       }
+      if (usesOntologyPayloadV5(
+          SourceAnalysisExecution.loadPolicies(
+              configuration.storage().ontologyPolicyRegistry(), new CanonicalJsonCodec()),
+          "ONTOLOGY_IDENTIFICATION")) configuration = configuration.forLeanLinks();
+      if ("relate-ontology".equals(invocation.operation())
+          && "OBJECT_TYPE_CORRESPONDENCE"
+              .equals(
+                  readCanonical(invocation.selection(), new CanonicalJsonCodec())
+                      .path("relationProfile")
+                      .asText())) configuration = configuration.forObjectTypeCorrespondence();
       return switch (invocation.operation()) {
         case "prepare-ontology" -> prepare(configuration, invocation, output);
         case "identify-ontology" -> identify(configuration, invocation, output, providerFactory);
@@ -321,7 +340,8 @@ final class OntologyAnalysisConfiguredRuntime {
           savedCorpus,
           scope,
           model,
-          usesOntologyPayloadV2(ontologyPolicies, "ONTOLOGY_IDENTIFICATION"));
+          usesOntologyPayloadV2(ontologyPolicies, "ONTOLOGY_IDENTIFICATION"),
+          usesOntologyPayloadV5(ontologyPolicies, "ONTOLOGY_IDENTIFICATION"));
       AnalysisRunRequest request =
           identifyRequest(
               configuration,
@@ -677,7 +697,8 @@ final class OntologyAnalysisConfiguredRuntime {
       SavedCorpus savedCorpus,
       OntologyScopeReader.Scope scope,
       ModelBinding model,
-      boolean taskOutcomeV2) {
+      boolean taskOutcomeV2,
+      boolean lean) {
     OntologyConfiguration.Reading activeReading = phaseReading(configuration, savedCorpus);
     if (scope.mode() == OntologyScopeReader.Mode.DISCOVERY) {
       new OntologyDecisionRunner(
@@ -716,7 +737,7 @@ final class OntologyAnalysisConfiguredRuntime {
                 activeReading.maxNavigationEntries(),
                 usesFormalPacketV4(savedCorpus));
         OntologyReadingCoordinator.FormalResult reading =
-            coordinator.completeFormal(scope, question.questionId(), task.taskId());
+            coordinator.completeFormal(scope, question.questionId(), task.taskId(), lean);
         if (reading.frozenPacket() == null) {
           if (taskOutcomeV2) {
             // The v2 runner records this reading/material disposition per declared task after
@@ -789,8 +810,12 @@ final class OntologyAnalysisConfiguredRuntime {
       }
       OntologySavedTaskContract.requireSelectionProductionVersion(
           selection.schemaVersion(),
-          usesOntologyPayloadV4(policies, "ONTOLOGY_RELATIONS"),
-          usesOntologyPayloadV4(policies, "ONTOLOGY_IDENTIFICATION"));
+          selection.schemaVersion().equals("ontology-selection-v4")
+              ? usesOntologyPayloadV5(policies, "ONTOLOGY_RELATIONS")
+              : usesOntologyPayloadV4(policies, "ONTOLOGY_RELATIONS"),
+          selection.schemaVersion().equals("ontology-selection-v4")
+              ? usesOntologyPayloadV5(policies, "ONTOLOGY_IDENTIFICATION")
+              : usesOntologyPayloadV4(policies, "ONTOLOGY_IDENTIFICATION"));
       OntologySavedTaskContract.requireCorpusProductionVersion(
           usesOntologyPayloadV3(policies, "ONTOLOGY_IDENTIFICATION"),
           usesFormalPacketV5(savedCorpus));
@@ -900,8 +925,12 @@ final class OntologyAnalysisConfiguredRuntime {
               configuration.storage().ontologyPolicyRegistry(), json);
       OntologySavedTaskContract.requireSelectionProductionVersion(
           selection.schemaVersion(),
-          usesOntologyPayloadV4(policies, "ONTOLOGY_COVERAGE"),
-          usesOntologyPayloadV4(policies, "ONTOLOGY_REVIEW"));
+          selection.schemaVersion().equals("ontology-selection-v4")
+              ? usesOntologyPayloadV5(policies, "ONTOLOGY_COVERAGE")
+              : usesOntologyPayloadV4(policies, "ONTOLOGY_COVERAGE"),
+          selection.schemaVersion().equals("ontology-selection-v4")
+              ? usesOntologyPayloadV5(policies, "ONTOLOGY_REVIEW")
+              : usesOntologyPayloadV4(policies, "ONTOLOGY_REVIEW"));
       OntologySavedTaskContract.requireCorpusProductionVersion(
           usesOntologyPayloadV3(policies, "ONTOLOGY_IDENTIFICATION"),
           usesFormalPacketV5(savedCorpus));
@@ -1227,7 +1256,8 @@ final class OntologyAnalysisConfiguredRuntime {
             "ontology-identification-v1",
             "ontology-identification-v2",
             "ontology-identification-v3",
-            "ontology-identification-v4"),
+            "ontology-identification-v4",
+            "ontology-identification-v5"),
         "scope",
         corpus);
   }
@@ -1249,7 +1279,8 @@ final class OntologyAnalysisConfiguredRuntime {
             "ontology-relations-v1",
             "ontology-relations-v2",
             "ontology-relations-v3",
-            "ontology-relations-v4"),
+            "ontology-relations-v4",
+            "ontology-relations-v5"),
         "selection",
         corpus);
   }
@@ -1288,7 +1319,8 @@ final class OntologyAnalysisConfiguredRuntime {
     boolean v2 =
         schemaVersion.endsWith("-v2")
             || schemaVersion.endsWith("-v3")
-            || schemaVersion.endsWith("-v4");
+            || schemaVersion.endsWith("-v4")
+            || schemaVersion.endsWith("-v5");
     if (!schemaVersions.contains(schemaVersion)
         || !schemaVersion.equals(document.path("schemaVersion").asText())
         || !document.path("taskRecords").isArray()
@@ -1308,7 +1340,7 @@ final class OntologyAnalysisConfiguredRuntime {
       if (taskId.isBlank()
           || producingTaskId.isBlank()
           || jobKey.isBlank()
-          || !(schemaVersion.endsWith("-v4")
+          || !((schemaVersion.endsWith("-v4") || schemaVersion.endsWith("-v5"))
                   ? Set.of("OBJECT", "ACTION", "ANALYTIC", "RELATE", "LINK")
                   : Set.of("OBJECT", "ACTION", "ANALYTIC", "RELATE"))
               .contains(taskKind)
@@ -1329,11 +1361,17 @@ final class OntologyAnalysisConfiguredRuntime {
     Map<String, JsonNode> taskOutcomes =
         v2
             ? requireV2TaskOutcomes(
-                document.path("taskOutcomes"), taskRecords, schemaVersion.endsWith("-v4"))
+                document.path("taskOutcomes"),
+                taskRecords,
+                schemaVersion.endsWith("-v4") || schemaVersion.endsWith("-v5"))
             : Map.of();
+    requirePreparationFailures(document, taskOutcomes, schemaVersion);
     if (v2 && "scope".equals(manifestField)) {
       requireV2IdentificationTaskRange(
-          document, corpus, taskOutcomes, schemaVersion.endsWith("-v4"));
+          document,
+          corpus,
+          taskOutcomes,
+          schemaVersion.endsWith("-v4") || schemaVersion.endsWith("-v5"));
     }
     List<OntologyScopedAssembler.TaskDisposition> dispositions = new ArrayList<>();
     Set<String> dispositionTasks = new HashSet<>();
@@ -1391,9 +1429,14 @@ final class OntologyAnalysisConfiguredRuntime {
         dispositions,
         taskOutcomes,
         document.path(manifestField).deepCopy(),
-        Set.of("ontology-relations-v3", "ontology-relations-v4").contains(schemaVersion)
+        Set.of("ontology-relations-v3", "ontology-relations-v4", "ontology-relations-v5")
+                .contains(schemaVersion)
             ? OntologyRelationReadingSelections.read(document, corpus)
-            : Map.of());
+            : Map.of(),
+        document.has("effectiveSelection")
+            ? document.path("effectiveSelection").deepCopy()
+            : document.path(manifestField).deepCopy(),
+        document.path("typeCandidates").deepCopy());
   }
 
   private static void requireStagePayloadClosure(
@@ -1565,8 +1608,19 @@ final class OntologyAnalysisConfiguredRuntime {
               admitted.corpus());
       Map<String, List<OntologySelectionReader.ObjectSource>> sourcesByRelationTask =
           v2Selection
-              ? selectedObjectSourcesByRelationTask(memberships.stageSnapshot(), admitted.corpus())
+              ? selectedObjectSourcesByRelationTask(
+                  memberships.effectiveSnapshot(), admitted.corpus())
               : Map.of();
+      if ("OBJECT_TYPE_CORRESPONDENCE"
+          .equals(memberships.stageSnapshot().path("relationProfile").asText())) {
+        TypeComparisonPlan expected =
+            typeComparisonPlan(
+                OntologySelectionReader.read(memberships.stageSnapshot(), admitted.corpus()),
+                selectedIdentifications);
+        if (!selectionDocument(expected.selection()).equals(memberships.effectiveSnapshot())
+            || !expected.rows().equals(memberships.typeCandidates()))
+          throw new IllegalArgumentException("ONTOLOGY_OBJECT_TYPE_CANDIDATE_INVALID");
+      }
       OntologyJobResultStore jobs =
           new OntologyJobResultStore(ontologyJournal(configuration), selectedRunId);
       for (String producingTaskId : memberships.reviewed().keySet().stream().sorted().toList()) {
@@ -2058,6 +2112,7 @@ final class OntologyAnalysisConfiguredRuntime {
     List<OntologyTypedTaskRunner.PreparedFormalTask> prepared = new java.util.ArrayList<>();
     List<OntologyTypedTaskRunner.FormalResult> completed = new java.util.ArrayList<>();
     List<OntologyTaskOutcome> outcomes = new ArrayList<>();
+    ArrayNode preparationFailures = JsonNodeFactory.instance.arrayNode();
     Map<String, OntologyTypedTaskRunner.FormalResult> reviewedByTaskId = new LinkedHashMap<>();
     boolean outcomeContractV2 = usesOntologyPayloadV2(ontologyPolicies, "ONTOLOGY_IDENTIFICATION");
     OntologyCallBudgetProvider.RunBudget budget =
@@ -2152,7 +2207,11 @@ final class OntologyAnalysisConfiguredRuntime {
                 identificationCoordinator(
                     configuration, savedCorpus, task, discovery, questionModelReading);
             OntologyReadingCoordinator.FormalResult reading =
-                coordinator.completeFormal(workingScope, question.questionId(), task.taskId());
+                coordinator.completeFormal(
+                    workingScope,
+                    question.questionId(),
+                    task.taskId(),
+                    usesOntologyPayloadV5(ontologyPolicies, "ONTOLOGY_IDENTIFICATION"));
             if (reading.frozenPacket() == null) {
               if (outcomeContractV2) {
                 OntologyTaskOutcome.FailureReason materialFailure =
@@ -2207,6 +2266,19 @@ final class OntologyAnalysisConfiguredRuntime {
           } catch (OntologyDecisionRunner.FormalReadingModelOutputFailure localFailure) {
             OntologyTaskOutcome outcome =
                 unprocessedOutcome(question, task, dependencies, localFailure.reason());
+            outcomes.add(outcome);
+            questionOutcomes.add(outcome);
+            if (problemCode == null) {
+              problemCode = localFailure.reason().code();
+              problemStage = localFailure.reason().stage();
+              problemTaskId = task.taskId();
+              problemFailure = localFailure.reason();
+            }
+          } catch (OntologyTypedTaskRunner.FormalPreparationFailure localFailure) {
+            recordPreparationFailure(
+                preparationFailures, question.questionId(), task.taskId(), localFailure);
+            OntologyTaskOutcome outcome =
+                unprocessedOutcome(question, task, item, dependencies, localFailure.reason());
             outcomes.add(outcome);
             questionOutcomes.add(outcome);
             if (problemCode == null) {
@@ -2288,6 +2360,7 @@ final class OntologyAnalysisConfiguredRuntime {
               completed,
               prepared,
               outcomes,
+              preparationFailures,
               status);
       if (problemFailure == null) {
         jobs.recordFormalRuntimeObservation(
@@ -2405,6 +2478,44 @@ final class OntologyAnalysisConfiguredRuntime {
         usesFormalPacketV4(savedCorpus));
   }
 
+  private record TypeComparisonPlan(
+      OntologySelectionReader.Selection selection,
+      Map<String, OntologyObjectTypeCorrespondence.Candidate> candidates,
+      ArrayNode rows) {}
+
+  private static TypeComparisonPlan typeComparisonPlan(
+      OntologySelectionReader.Selection selection, SelectedFormalStage selected) {
+    var plan =
+        OntologyObjectTypeCorrespondence.plan(
+            selection,
+            parent -> {
+              RelationTaskInput input = relationTaskInput(parent, selected);
+              if (input.failure() != null) return null;
+              return selected.results().stream()
+                  .filter(
+                      item ->
+                          input.catalog().stream()
+                              .anyMatch(
+                                  result -> result.identity().equals(item.result().identity())))
+                  .map(
+                      item ->
+                          new OntologyObjectTypeCorrespondence.ReviewedObjects(
+                              item.runId(), item.result()))
+                  .toList();
+            });
+    return new TypeComparisonPlan(
+        plan.selection(),
+        plan.candidates(),
+        (ArrayNode) new CanonicalJsonCodec().parseCanonical(plan.rows()));
+  }
+
+  private static ObjectNode selectionDocument(OntologySelectionReader.Selection selection) {
+    ObjectNode result = new ObjectMapper().valueToTree(selection);
+    result.remove("relationRuns");
+    result.remove("v2");
+    return result;
+  }
+
   private static AnalysisRunOutput executeRelate(
       AnalysisStepExecutionRequest execution,
       RunStoreHandle store,
@@ -2430,20 +2541,20 @@ final class OntologyAnalysisConfiguredRuntime {
     }
     requireSelectionSnapshot(selectionSnapshot, persisted);
     AdmittedEvidence admitted = savedCorpus.admitted();
+    TypeComparisonPlan typePlan = typeComparisonPlan(selection, selectedIdentifications);
+    selection = typePlan.selection();
     OntologyJobResultStore jobs =
         new OntologyJobResultStore(ontologyJournal(configuration), execution.runId());
     List<OntologyTypedTaskRunner.PreparedFormalTask> prepared = new ArrayList<>();
     List<OntologyTypedTaskRunner.FormalResult> completed = new ArrayList<>();
     OntologyCallBudgetProvider.RunBudget budget =
         new OntologyCallBudgetProvider.RunBudget(configuration.reading().maxRequests());
-    String problemCode = null;
-    String problemTaskId = null;
-    String problemStage = null;
-    OntologyTaskOutcome.FailureReason problemFailure = null;
+    OntologySavedTaskContract.Problem problem = OntologySavedTaskContract.Problem.none();
     String currentTaskId = null;
     String currentStage = null;
     boolean outcomeContractV2 = selection.usesTaskOutcomes();
     List<OntologyTaskOutcome> outcomes = new ArrayList<>();
+    ArrayNode preparationFailures = JsonNodeFactory.instance.arrayNode();
     OntologyRelationReadingSelections readingSelections =
         new OntologyRelationReadingSelections(selection.questions());
     List<OntologyTypedTaskRunner.FormalResult> reviewedObjects =
@@ -2463,16 +2574,24 @@ final class OntologyAnalysisConfiguredRuntime {
         for (OntologySelectionReader.Question question : selection.questions()) {
           currentTaskId = question.taskId();
           RelationTaskInput input = relationTaskInput(question, selectedIdentifications);
-          if (input.failure() != null) {
+          OntologyTaskOutcome.FailureReason preparationFailure = input.failure();
+          if (preparationFailure == null
+              && selection.relationProfile()
+                  == OntologySelectionReader.RelationProfile.OBJECT_TYPE_CORRESPONDENCE) {
+            preparationFailure =
+                OntologyObjectTypeCorrespondence.preparationFailure(
+                    typePlan.candidates().containsKey(question.taskId()), budget.dispatchedCalls(),
+                    configuration.reading().maxRequests(), input.dependencies());
+          }
+          if (preparationFailure != null) {
             OntologyTaskOutcome outcome =
-                unprocessedRelationOutcome(question, null, input.dependencies(), input.failure());
+                unprocessedRelationOutcome(
+                    question, null, input.dependencies(), preparationFailure);
             outcomes.add(outcome);
-            if (problemCode == null) {
-              problemCode = input.failure().code();
-              problemTaskId = question.taskId();
-              problemStage = input.failure().stage();
-              problemFailure = input.failure();
-            }
+            problem = problem.first(question.taskId(), preparationFailure);
+            if ("NO_TYPE_CANDIDATES".equals(preparationFailure.code()))
+              readingSelections.observe(
+                  question.taskId(), null, "INCOMPLETE", preparationFailure.code());
             continue;
           }
           OntologyTypedTaskRunner.PreparedFormalTask item = null;
@@ -2482,8 +2601,21 @@ final class OntologyAnalysisConfiguredRuntime {
           try {
             currentStage = "READING";
             OntologyReadingPacket packet;
+            ImmutableBytes comparisonBinding = null;
             List<String> visibleClues = question.clueRefs();
-            if (question.readingMode() == OntologyScopeReader.ReadingMode.MODEL) {
+            if (typePlan.candidates().containsKey(question.taskId())) {
+              var comparison =
+                  OntologyObjectTypeCorrespondence.prepare(
+                      admitted.corpus(),
+                      typePlan.candidates().get(question.taskId()),
+                      question.unitUses(),
+                      question.requiredUnitUses(),
+                      configuration.reading().maxUnitBytes());
+              packet = comparison.packet();
+              comparisonBinding = comparison.binding();
+              readingSelections.observe(question.taskId(), null, "READY", "");
+              readingObserved = true;
+            } else if (question.readingMode() == OntologyScopeReader.ReadingMode.MODEL) {
               coordinator =
                   relationCoordinator(
                       configuration,
@@ -2504,12 +2636,7 @@ final class OntologyAnalysisConfiguredRuntime {
                 outcomes.add(
                     unprocessedRelationOutcome(
                         question, null, input.dependencies(), materialFailure));
-                if (problemCode == null) {
-                  problemCode = materialFailure.code();
-                  problemTaskId = question.taskId();
-                  problemStage = materialFailure.stage();
-                  problemFailure = materialFailure;
-                }
+                problem = problem.first(question.taskId(), materialFailure);
                 continue;
               }
               visibleClues = reading.state().selectedClues();
@@ -2539,7 +2666,8 @@ final class OntologyAnalysisConfiguredRuntime {
                     model.declaration(),
                     OntologyTypedTaskRunner.O2_TASK_DEPENDENCY_RULE_VERSION,
                     input.dependencyFingerprint(),
-                    usesFormalPacketV5(savedCorpus) ? visibleClues : List.of());
+                    usesFormalPacketV5(savedCorpus) ? visibleClues : List.of(),
+                    comparisonBinding);
             item = OntologyTypedTaskRunner.prepareFormal(task);
             prepared.add(item);
             currentStage = "MEMBERSHIP";
@@ -2561,12 +2689,15 @@ final class OntologyAnalysisConfiguredRuntime {
             outcomes.add(
                 unprocessedRelationOutcome(
                     question, null, input.dependencies(), localFailure.reason()));
-            if (problemCode == null) {
-              problemCode = localFailure.reason().code();
-              problemTaskId = question.taskId();
-              problemStage = localFailure.reason().stage();
-              problemFailure = localFailure.reason();
-            }
+            problem = problem.first(question.taskId(), localFailure.reason());
+          } catch (OntologyTypedTaskRunner.FormalPreparationFailure localFailure) {
+            recordPreparationFailure(
+                preparationFailures, question.questionId(), question.taskId(), localFailure);
+            readingFailureCode = localFailure.reason().code();
+            outcomes.add(
+                unprocessedRelationOutcome(
+                    question, item, input.dependencies(), localFailure.reason()));
+            problem = problem.first(question.taskId(), localFailure.reason());
           } catch (OntologyTypedTaskRunner.FormalTaskFailure localFailure) {
             if (item == null) {
               throw localFailure;
@@ -2574,21 +2705,15 @@ final class OntologyAnalysisConfiguredRuntime {
             outcomes.add(
                 rejectedRelationOutcome(
                     question, item, input.dependencies(), localFailure.reason()));
-            if (problemCode == null) {
-              problemCode = localFailure.reason().code();
-              problemTaskId = question.taskId();
-              problemStage = localFailure.reason().stage();
-              problemFailure = localFailure.reason();
-            }
+            problem = problem.first(question.taskId(), localFailure.reason());
           } catch (RuntimeException failure) {
             sharedFailure = sharedFailureReason(failure, currentStage, input.dependencies());
             readingFailureCode = sharedFailure.code();
             outcomes.add(
                 unprocessedRelationOutcome(question, item, input.dependencies(), sharedFailure));
-            problemCode = sharedFailure.code();
-            problemTaskId = question.taskId();
-            problemStage = currentStage;
-            problemFailure = sharedFailure;
+            problem =
+                new OntologySavedTaskContract.Problem(
+                    sharedFailure.code(), question.taskId(), currentStage, sharedFailure);
             break;
           } finally {
             if (!readingObserved) {
@@ -2646,14 +2771,16 @@ final class OntologyAnalysisConfiguredRuntime {
             completed.add(runner.runFormal(item));
           }
         } catch (OntologyTypedTaskRunner.FormalTaskFailure localFailure) {
-          problemCode = localFailure.reason().code();
-          problemStage = localFailure.reason().stage();
-          problemTaskId = currentTaskId;
-          problemFailure = localFailure.reason();
+          problem =
+              new OntologySavedTaskContract.Problem(
+                  localFailure.reason().code(),
+                  currentTaskId,
+                  localFailure.reason().stage(),
+                  localFailure.reason());
         } catch (RuntimeException failure) {
-          problemCode = publicFailureCode(failure);
-          problemStage = currentStage;
-          problemTaskId = currentTaskId;
+          problem =
+              new OntologySavedTaskContract.Problem(
+                  publicFailureCode(failure), currentTaskId, currentStage, null);
         }
       }
     }
@@ -2667,8 +2794,16 @@ final class OntologyAnalysisConfiguredRuntime {
             outcomes,
             prepared,
             completed,
-            problemCode);
+            problem.code());
+    if (selection.relationProfile()
+        == OntologySelectionReader.RelationProfile.OBJECT_TYPE_CORRESPONDENCE) {
+      relations.set("typeCandidates", typePlan.rows());
+      relations.put("relationProfile", selection.relationProfile().name());
+      relations.set("effectiveSelection", selectionDocument(selection));
+    }
     String relationSchemaVersion = relations.path("schemaVersion").asText();
+    if (relationSchemaVersion.endsWith("-v5"))
+      relations.set("preparationFailures", preparationFailures);
     try {
       InstalledPublication installed =
           install(
@@ -2692,14 +2827,15 @@ final class OntologyAnalysisConfiguredRuntime {
                       policies,
                       new CanonicalJsonCodec())));
       OntologyRunOutput.Status status =
-          problemCode == null
+          problem.code() == null
               ? OntologyRunOutput.Status.COMPLETED
               : OntologyRunOutput.Status.PARTIAL;
-      if (problemFailure == null) {
+      if (problem.reason() == null) {
         jobs.recordFormalRuntimeObservation(
-            budget.runtimeCounts(), problemCode, problemTaskId, problemStage);
+            budget.runtimeCounts(), problem.code(), problem.taskId(), problem.stage());
       } else {
-        jobs.recordFormalRuntimeObservation(budget.runtimeCounts(), problemFailure, problemTaskId);
+        jobs.recordFormalRuntimeObservation(
+            budget.runtimeCounts(), problem.reason(), problem.taskId());
       }
       return AnalysisRunOutput.ontology(
           new OntologyRunOutput(
@@ -2732,7 +2868,8 @@ final class OntologyAnalysisConfiguredRuntime {
     ObjectNode relations = JsonNodeFactory.instance.objectNode();
     String relationSchemaVersion = stageSchemaVersion(policies, "ONTOLOGY_RELATIONS");
     relations.put("schemaVersion", relationSchemaVersion);
-    if (Set.of("ontology-relations-v3", "ontology-relations-v4").contains(relationSchemaVersion)) {
+    if (Set.of("ontology-relations-v3", "ontology-relations-v4", "ontology-relations-v5")
+        .contains(relationSchemaVersion)) {
       relations.set("readingSelections", readingSelections.document());
     }
     relations.set("selection", selectionSnapshot.deepCopy());
@@ -2880,17 +3017,21 @@ final class OntologyAnalysisConfiguredRuntime {
     copySemanticUpstreams(review, persisted);
     ObjectNode coverage = (ObjectNode) json.parseCanonical(assembly.coverage());
     String coverageSchemaVersion =
-        usesOntologyPayloadV4(policies, "ONTOLOGY_COVERAGE")
-            ? "ontology-coverage-v4"
-            : businessInput != null
-                ? "ontology-coverage-v3"
-                : selectionV2 ? "ontology-coverage-v2" : "ontology-coverage-v1";
+        usesOntologyPayloadV5(policies, "ONTOLOGY_COVERAGE")
+            ? "ontology-coverage-v5"
+            : usesOntologyPayloadV4(policies, "ONTOLOGY_COVERAGE")
+                ? "ontology-coverage-v4"
+                : businessInput != null
+                    ? "ontology-coverage-v3"
+                    : selectionV2 ? "ontology-coverage-v2" : "ontology-coverage-v1";
     String reviewSchemaVersion =
-        usesOntologyPayloadV4(policies, "ONTOLOGY_REVIEW")
-            ? "ontology-review-v4"
-            : businessInput != null
-                ? "ontology-review-v3"
-                : selectionV2 ? "ontology-review-v2" : "ontology-review-v1";
+        usesOntologyPayloadV5(policies, "ONTOLOGY_REVIEW")
+            ? "ontology-review-v5"
+            : usesOntologyPayloadV4(policies, "ONTOLOGY_REVIEW")
+                ? "ontology-review-v4"
+                : businessInput != null
+                    ? "ontology-review-v3"
+                    : selectionV2 ? "ontology-review-v2" : "ontology-review-v1";
     if (selectionV2) {
       coverage.put("schemaVersion", coverageSchemaVersion);
       review.put("schemaVersion", reviewSchemaVersion);
@@ -3323,31 +3464,6 @@ final class OntologyAnalysisConfiguredRuntime {
     return new OntologyScopedAssembler.BusinessFormalInput(input, obligations);
   }
 
-  private static OntologyTaskOutcome.FailureReason savedTaskFailureReason(JsonNode reason) {
-    if (reason.isNull()) return null;
-    requireV2TaskOutcomeReason(reason);
-    List<String> expected = new ArrayList<>();
-    reason.path("expectedRefs").forEach(ref -> expected.add(ref.asText()));
-    List<OntologyTaskOutcome.TaskReference> dependencies = new ArrayList<>();
-    reason
-        .path("dependencyTaskRefs")
-        .forEach(
-            ref ->
-                dependencies.add(
-                    new OntologyTaskOutcome.TaskReference(
-                        ref.path("runId").asText(),
-                        ref.path("questionId").asText(),
-                        ref.path("taskId").asText())));
-    return new OntologyTaskOutcome.FailureReason(
-        reason.path("code").asText(),
-        OntologyTaskOutcome.Category.valueOf(reason.path("category").asText()),
-        reason.path("stage").isNull() ? null : reason.path("stage").asText(),
-        reason.path("jsonPointer").isNull() ? null : reason.path("jsonPointer").asText(),
-        reason.path("offendingRef").isNull() ? null : reason.path("offendingRef").asText(),
-        expected,
-        dependencies);
-  }
-
   private static AnalysisRunOutput identifyOutput(
       RunStoreHandle store,
       OntologyConfiguration.Storage storage,
@@ -3362,12 +3478,14 @@ final class OntologyAnalysisConfiguredRuntime {
       List<OntologyTypedTaskRunner.FormalResult> completed,
       List<OntologyTypedTaskRunner.PreparedFormalTask> prepared,
       List<OntologyTaskOutcome> outcomes,
+      ArrayNode preparationFailures,
       OntologyRunOutput.Status status) {
     AdmittedEvidence admitted = savedCorpus.admitted();
     boolean outcomeContractV2 = usesOntologyPayloadV2(policies, "ONTOLOGY_IDENTIFICATION");
     String schemaVersion = stageSchemaVersion(policies, "ONTOLOGY_IDENTIFICATION");
     ObjectNode document = JsonNodeFactory.instance.objectNode();
     document.put("schemaVersion", schemaVersion);
+    if (schemaVersion.endsWith("-v5")) document.set("preparationFailures", preparationFailures);
     document.put("status", status.name());
     document.set("scope", scopeSnapshot.deepCopy());
     copySemanticUpstreams(document, persisted);
@@ -3533,21 +3651,30 @@ final class OntologyAnalysisConfiguredRuntime {
 
   private static boolean usesOntologyPayloadV3(
       CanonicalArtifactPolicyRegistry policies, String type) {
-    return hasOntologyPolicy(policies, type, artifactTypeVersionV2(type).replace("-v2", "-v3"));
+    return usesOntologyPayloadV5(policies, type)
+        || hasOntologyPolicy(policies, type, artifactTypeVersionV2(type).replace("-v2", "-v3"));
   }
 
   private static boolean usesOntologyPayloadV4(
       CanonicalArtifactPolicyRegistry policies, String type) {
-    return hasOntologyPolicy(policies, type, artifactTypeVersionV2(type).replace("-v2", "-v4"));
+    return usesOntologyPayloadV5(policies, type)
+        || hasOntologyPolicy(policies, type, artifactTypeVersionV2(type).replace("-v2", "-v4"));
+  }
+
+  private static boolean usesOntologyPayloadV5(
+      CanonicalArtifactPolicyRegistry policies, String type) {
+    return hasOntologyPolicy(policies, type, artifactTypeVersionV2(type).replace("-v2", "-v5"));
   }
 
   private static String stageSchemaVersion(CanonicalArtifactPolicyRegistry policies, String type) {
     String v2 = artifactTypeVersionV2(type);
-    return usesOntologyPayloadV4(policies, type)
-        ? v2.replace("-v2", "-v4")
-        : usesOntologyPayloadV3(policies, type)
-            ? v2.replace("-v2", "-v3")
-            : usesOntologyPayloadV2(policies, type) ? v2 : v2.replace("-v2", "-v1");
+    return usesOntologyPayloadV5(policies, type)
+        ? v2.replace("-v2", "-v5")
+        : usesOntologyPayloadV4(policies, type)
+            ? v2.replace("-v2", "-v4")
+            : usesOntologyPayloadV3(policies, type)
+                ? v2.replace("-v2", "-v3")
+                : usesOntologyPayloadV2(policies, type) ? v2 : v2.replace("-v2", "-v1");
   }
 
   private static String artifactTypeVersionV2(String artifactType) {
@@ -3923,12 +4050,6 @@ final class OntologyAnalysisConfiguredRuntime {
     }
   }
 
-  private static String taskOutcomeDispositionReason(OntologyTaskOutcome outcome) {
-    return outcome.reason() == null
-        ? "The exact extract and review pair was saved and reopened."
-        : outcome.reason().code();
-  }
-
   private static DeclaredTaskKey outcomeKey(String questionId, String taskId) {
     return new DeclaredTaskKey(questionId, taskId);
   }
@@ -4101,53 +4222,6 @@ final class OntologyAnalysisConfiguredRuntime {
         + sha256(json.encodeCanonical(frozen).copyToByteArray());
   }
 
-  private static OntologyTaskOutcome reviewedRelationOutcome(
-      OntologySelectionReader.Question question,
-      OntologyTypedTaskRunner.PreparedFormalTask prepared,
-      List<OntologyTaskOutcome.TaskReference> dependencies) {
-    return new OntologyTaskOutcome(
-        question.questionId(),
-        question.taskId(),
-        OntologyTaskRunner.TaskKind.RELATE,
-        OntologyTaskOutcome.Status.REVIEWED,
-        OntologyTypedTaskRunner.formalProducingTaskId(prepared),
-        prepared.jobKey(),
-        dependencies,
-        null);
-  }
-
-  private static OntologyTaskOutcome rejectedRelationOutcome(
-      OntologySelectionReader.Question question,
-      OntologyTypedTaskRunner.PreparedFormalTask prepared,
-      List<OntologyTaskOutcome.TaskReference> dependencies,
-      OntologyTaskOutcome.FailureReason reason) {
-    return new OntologyTaskOutcome(
-        question.questionId(),
-        question.taskId(),
-        OntologyTaskRunner.TaskKind.RELATE,
-        OntologyTaskOutcome.Status.REJECTED,
-        OntologyTypedTaskRunner.formalProducingTaskId(prepared),
-        prepared.jobKey(),
-        dependencies,
-        reason);
-  }
-
-  private static OntologyTaskOutcome unprocessedRelationOutcome(
-      OntologySelectionReader.Question question,
-      OntologyTypedTaskRunner.PreparedFormalTask prepared,
-      List<OntologyTaskOutcome.TaskReference> dependencies,
-      OntologyTaskOutcome.FailureReason reason) {
-    return new OntologyTaskOutcome(
-        question.questionId(),
-        question.taskId(),
-        OntologyTaskRunner.TaskKind.RELATE,
-        OntologyTaskOutcome.Status.UNPROCESSED,
-        prepared == null ? null : OntologyTypedTaskRunner.formalProducingTaskId(prepared),
-        prepared == null ? null : prepared.jobKey(),
-        dependencies,
-        reason);
-  }
-
   private static void appendUnprocessedRelationOutcomes(
       OntologySelectionReader.Selection selection,
       SelectedFormalStage selectedIdentifications,
@@ -4169,33 +4243,6 @@ final class OntologyAnalysisConfiguredRuntime {
     }
   }
 
-  private static List<OntologyScopedAssembler.TaskDisposition> relationTaskDispositions(
-      OntologySelectionReader.Selection selection, List<OntologyTaskOutcome> outcomes) {
-    Map<String, OntologyTaskOutcome> byTaskId = new LinkedHashMap<>();
-    for (OntologyTaskOutcome outcome : outcomes) {
-      if (outcome.taskKind() != OntologyTaskRunner.TaskKind.RELATE
-          || byTaskId.putIfAbsent(outcome.taskId(), outcome) != null) {
-        throw new IllegalArgumentException("ONTOLOGY_TASK_OUTCOME_INVALID");
-      }
-    }
-    List<OntologyScopedAssembler.TaskDisposition> dispositions = new ArrayList<>();
-    for (OntologySelectionReader.Question question : selection.questions()) {
-      OntologyTaskOutcome outcome = byTaskId.get(question.taskId());
-      if (outcome == null || !question.questionId().equals(outcome.questionId())) {
-        throw new IllegalArgumentException("ONTOLOGY_TASK_OUTCOME_INVALID");
-      }
-      dispositions.add(
-          new OntologyScopedAssembler.TaskDisposition(
-              question.taskId(),
-              outcome.status() == OntologyTaskOutcome.Status.UNPROCESSED
-                  ? null
-                  : outcome.producingTaskId(),
-              OntologyScopedAssembler.TaskDispositionStatus.valueOf(outcome.status().name()),
-              taskOutcomeDispositionReason(outcome)));
-    }
-    return List.copyOf(dispositions);
-  }
-
   private record RelationTaskInput(
       List<OntologyTypedTaskRunner.FormalResult> catalog,
       List<OntologyTaskOutcome.TaskReference> dependencies,
@@ -4204,50 +4251,6 @@ final class OntologyAnalysisConfiguredRuntime {
 
   private record RelationSourceObject(
       OntologySelectionReader.ObjectSource source, SelectedTaskOutcome outcome) {}
-
-  private static List<OntologyScopedAssembler.TaskDisposition> relationTaskDispositions(
-      OntologySelectionReader.Selection selection,
-      List<OntologyTypedTaskRunner.PreparedFormalTask> prepared,
-      List<OntologyTypedTaskRunner.FormalResult> completed) {
-    Map<String, OntologyTypedTaskRunner.PreparedFormalTask> preparedByTask = new LinkedHashMap<>();
-    for (OntologyTypedTaskRunner.PreparedFormalTask task : prepared) {
-      if (preparedByTask.putIfAbsent(task.task().taskId(), task) != null) {
-        throw new IllegalArgumentException("ONTOLOGY_SELECTION_REFERENCE_INVALID");
-      }
-    }
-    Set<String> reviewed = new HashSet<>();
-    for (OntologyTypedTaskRunner.FormalResult result : completed) {
-      reviewed.add(result.identity().producingTaskId());
-    }
-    List<OntologyScopedAssembler.TaskDisposition> dispositions = new ArrayList<>();
-    for (OntologySelectionReader.Question question : selection.questions()) {
-      OntologyTypedTaskRunner.PreparedFormalTask task = preparedByTask.get(question.taskId());
-      if (task == null) {
-        dispositions.add(
-            new OntologyScopedAssembler.TaskDisposition(
-                question.taskId(),
-                null,
-                OntologyScopedAssembler.TaskDispositionStatus.UNPROCESSED,
-                "No immutable relation task was prepared after the saved runtime stopped before"
-                    + " this selected question."));
-        continue;
-      }
-      String producingTaskId = OntologyTypedTaskRunner.formalProducingTaskId(task);
-      boolean wasReviewed = reviewed.contains(producingTaskId);
-      dispositions.add(
-          new OntologyScopedAssembler.TaskDisposition(
-              question.taskId(),
-              producingTaskId,
-              wasReviewed
-                  ? OntologyScopedAssembler.TaskDispositionStatus.REVIEWED
-                  : OntologyScopedAssembler.TaskDispositionStatus.REJECTED,
-              wasReviewed
-                  ? "The exact saved relation extract and review pair was reopened."
-                  : "The prepared relation task did not reach a reviewed result in the saved"
-                      + " runtime."));
-    }
-    return List.copyOf(dispositions);
-  }
 
   private static OntologyRunOutput.Status publicationStatus(ObjectNode coverage) {
     return switch (coverage.path("coverageStatus").asText()) {
@@ -4554,6 +4557,15 @@ final class OntologyAnalysisConfiguredRuntime {
   }
 
   private static String producerVersion(String moduleKey, List<CanonicalModulePayload> payloads) {
+    if (payloads.stream()
+        .anyMatch(
+            payload ->
+                Set.of(
+                        "ontology-identification-v5",
+                        "ontology-relations-v5",
+                        "ontology-coverage-v5",
+                        "ontology-review-v5")
+                    .contains(payload.schemaVersion()))) return "v5";
     if (payloads.stream()
         .anyMatch(
             payload ->
@@ -5140,7 +5152,8 @@ final class OntologyAnalysisConfiguredRuntime {
               && Set.of(
                       expectedV2Schema,
                       expectedV2Schema.replace("-v2", "-v3"),
-                      expectedV2Schema.replace("-v2", "-v4"))
+                      expectedV2Schema.replace("-v2", "-v4"),
+                      expectedV2Schema.replace("-v2", "-v5"))
                   .contains(payload.descriptor().schemaVersion())) {
             JsonNode document = json.parseCanonical(payload.canonicalUtf8());
             if (!document.path("taskOutcomes").isArray()) {
@@ -5305,7 +5318,7 @@ final class OntologyAnalysisConfiguredRuntime {
       ReopenedModulePublication publication, String type, String file, String schema) {
     Set<String> schemas =
         Set.of("ontology-coverage-v3", "ontology-review-v3").contains(schema)
-            ? Set.of(schema, schema.replace("-v3", "-v4"))
+            ? Set.of(schema, schema.replace("-v3", "-v4"), schema.replace("-v3", "-v5"))
             : Set.of(schema);
     return publication.payloads().stream()
         .filter(
@@ -5353,6 +5366,7 @@ final class OntologyAnalysisConfiguredRuntime {
     List<JsonNode> taskOutcomes = new ArrayList<>();
     boolean payloadObservationV2 = false;
     boolean payloadObservationV3 = false;
+    boolean payloadObservationV4 = false;
     if (saved != null && saved.ontologyOutput() != null) {
       CanonicalArtifactPolicyRegistry policies =
           exactSavedOntologyPolicies(
@@ -5387,6 +5401,13 @@ final class OntologyAnalysisConfiguredRuntime {
           throw new IllegalArgumentException("ONTOLOGY_RUNTIME_OBSERVATION_INVALID");
         }
         payloadObservationV2 = true;
+        payloadObservationV4 |=
+            Set.of(
+                    "ontology-identification-v5",
+                    "ontology-relations-v5",
+                    "ontology-coverage-v5",
+                    "ontology-review-v5")
+                .contains(schemaVersion);
         payloadObservationV3 |=
             Set.of(
                     "ontology-identification-v4",
@@ -5435,7 +5456,9 @@ final class OntologyAnalysisConfiguredRuntime {
           operation,
           runtime,
           missingRuntimeProblemCode);
-      if (payloadObservationV3)
+      if (payloadObservationV4)
+        observation.put("schemaVersion", "ontology-operation-observation-v4");
+      else if (payloadObservationV3)
         observation.put("schemaVersion", "ontology-operation-observation-v3");
     } else {
       String runtimeProblemCode =
@@ -5562,7 +5585,9 @@ final class OntologyAnalysisConfiguredRuntime {
       List<OntologyScopedAssembler.TaskDisposition> dispositions,
       Map<String, JsonNode> taskOutcomes,
       JsonNode stageSnapshot,
-      Map<String, JsonNode> readingSelections) {
+      Map<String, JsonNode> readingSelections,
+      JsonNode effectiveSnapshot,
+      JsonNode typeCandidates) {
     private FormalStageMembership {
       reviewed = Map.copyOf(reviewed);
       dispositions = List.copyOf(dispositions);

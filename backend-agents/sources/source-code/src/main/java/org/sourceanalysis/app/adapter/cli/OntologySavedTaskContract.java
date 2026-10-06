@@ -1,20 +1,248 @@
 package org.sourceanalysis.app.adapter.cli;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.sourceanalysis.app.analysis.ontology.OntologyEvidenceCorpus;
 import org.sourceanalysis.app.analysis.ontology.OntologyScopeReader;
+import org.sourceanalysis.app.analysis.ontology.OntologyScopedAssembler;
+import org.sourceanalysis.app.analysis.ontology.OntologySelectionReader;
+import org.sourceanalysis.app.analysis.ontology.OntologyTaskOutcome;
+import org.sourceanalysis.app.analysis.ontology.OntologyTaskRunner;
+import org.sourceanalysis.app.analysis.ontology.OntologyTypedTaskRunner;
 
 /** Strict saved-task shape and declared-range checks; no Provider or business interpretation. */
 final class OntologySavedTaskContract {
   private OntologySavedTaskContract() {}
 
+  static String taskOutcomeDispositionReason(OntologyTaskOutcome outcome) {
+    return outcome.reason() == null
+        ? "The exact extract and review pair was saved and reopened."
+        : outcome.reason().code();
+  }
+
+  static OntologyTaskOutcome reviewedRelationOutcome(
+      OntologySelectionReader.Question question,
+      OntologyTypedTaskRunner.PreparedFormalTask prepared,
+      List<OntologyTaskOutcome.TaskReference> dependencies) {
+    return new OntologyTaskOutcome(
+        question.questionId(),
+        question.taskId(),
+        OntologyTaskRunner.TaskKind.RELATE,
+        OntologyTaskOutcome.Status.REVIEWED,
+        OntologyTypedTaskRunner.formalProducingTaskId(prepared),
+        prepared.jobKey(),
+        dependencies,
+        null);
+  }
+
+  static OntologyTaskOutcome rejectedRelationOutcome(
+      OntologySelectionReader.Question question,
+      OntologyTypedTaskRunner.PreparedFormalTask prepared,
+      List<OntologyTaskOutcome.TaskReference> dependencies,
+      OntologyTaskOutcome.FailureReason reason) {
+    return new OntologyTaskOutcome(
+        question.questionId(),
+        question.taskId(),
+        OntologyTaskRunner.TaskKind.RELATE,
+        OntologyTaskOutcome.Status.REJECTED,
+        OntologyTypedTaskRunner.formalProducingTaskId(prepared),
+        prepared.jobKey(),
+        dependencies,
+        reason);
+  }
+
+  static OntologyTaskOutcome unprocessedRelationOutcome(
+      OntologySelectionReader.Question question,
+      OntologyTypedTaskRunner.PreparedFormalTask prepared,
+      List<OntologyTaskOutcome.TaskReference> dependencies,
+      OntologyTaskOutcome.FailureReason reason) {
+    return new OntologyTaskOutcome(
+        question.questionId(),
+        question.taskId(),
+        OntologyTaskRunner.TaskKind.RELATE,
+        OntologyTaskOutcome.Status.UNPROCESSED,
+        prepared == null ? null : OntologyTypedTaskRunner.formalProducingTaskId(prepared),
+        prepared == null ? null : prepared.jobKey(),
+        dependencies,
+        reason);
+  }
+
+  static List<OntologyScopedAssembler.TaskDisposition> relationTaskDispositions(
+      OntologySelectionReader.Selection selection, List<OntologyTaskOutcome> outcomes) {
+    Map<String, OntologyTaskOutcome> byTaskId = new LinkedHashMap<>();
+    for (OntologyTaskOutcome outcome : outcomes) {
+      if (outcome.taskKind() != OntologyTaskRunner.TaskKind.RELATE
+          || byTaskId.putIfAbsent(outcome.taskId(), outcome) != null) {
+        throw new IllegalArgumentException("ONTOLOGY_TASK_OUTCOME_INVALID");
+      }
+    }
+    List<OntologyScopedAssembler.TaskDisposition> dispositions = new ArrayList<>();
+    for (OntologySelectionReader.Question question : selection.questions()) {
+      OntologyTaskOutcome outcome = byTaskId.get(question.taskId());
+      if (outcome == null || !question.questionId().equals(outcome.questionId())) {
+        throw new IllegalArgumentException("ONTOLOGY_TASK_OUTCOME_INVALID");
+      }
+      dispositions.add(
+          new OntologyScopedAssembler.TaskDisposition(
+              question.taskId(),
+              outcome.status() == OntologyTaskOutcome.Status.UNPROCESSED
+                  ? null
+                  : outcome.producingTaskId(),
+              OntologyScopedAssembler.TaskDispositionStatus.valueOf(outcome.status().name()),
+              taskOutcomeDispositionReason(outcome)));
+    }
+    return List.copyOf(dispositions);
+  }
+
+  static List<OntologyScopedAssembler.TaskDisposition> relationTaskDispositions(
+      OntologySelectionReader.Selection selection,
+      List<OntologyTypedTaskRunner.PreparedFormalTask> prepared,
+      List<OntologyTypedTaskRunner.FormalResult> completed) {
+    Map<String, OntologyTypedTaskRunner.PreparedFormalTask> preparedByTask = new LinkedHashMap<>();
+    for (OntologyTypedTaskRunner.PreparedFormalTask task : prepared) {
+      if (preparedByTask.putIfAbsent(task.task().taskId(), task) != null) {
+        throw new IllegalArgumentException("ONTOLOGY_SELECTION_REFERENCE_INVALID");
+      }
+    }
+    Set<String> reviewed = new HashSet<>();
+    for (OntologyTypedTaskRunner.FormalResult result : completed) {
+      reviewed.add(result.identity().producingTaskId());
+    }
+    List<OntologyScopedAssembler.TaskDisposition> dispositions = new ArrayList<>();
+    for (OntologySelectionReader.Question question : selection.questions()) {
+      OntologyTypedTaskRunner.PreparedFormalTask task = preparedByTask.get(question.taskId());
+      if (task == null) {
+        dispositions.add(
+            new OntologyScopedAssembler.TaskDisposition(
+                question.taskId(),
+                null,
+                OntologyScopedAssembler.TaskDispositionStatus.UNPROCESSED,
+                "No immutable relation task was prepared after the saved runtime stopped before"
+                    + " this selected question."));
+        continue;
+      }
+      String producingTaskId = OntologyTypedTaskRunner.formalProducingTaskId(task);
+      boolean wasReviewed = reviewed.contains(producingTaskId);
+      dispositions.add(
+          new OntologyScopedAssembler.TaskDisposition(
+              question.taskId(),
+              producingTaskId,
+              wasReviewed
+                  ? OntologyScopedAssembler.TaskDispositionStatus.REVIEWED
+                  : OntologyScopedAssembler.TaskDispositionStatus.REJECTED,
+              wasReviewed
+                  ? "The exact saved relation extract and review pair was reopened."
+                  : "The prepared relation task did not reach a reviewed result in the saved"
+                      + " runtime."));
+    }
+    return List.copyOf(dispositions);
+  }
+
+  record Problem(
+      String code, String taskId, String stage, OntologyTaskOutcome.FailureReason reason) {
+    static Problem none() {
+      return new Problem(null, null, null, null);
+    }
+
+    Problem first(String taskId, OntologyTaskOutcome.FailureReason reason) {
+      return code != null ? this : new Problem(reason.code(), taskId, reason.stage(), reason);
+    }
+  }
+
+  static OntologyTaskOutcome.FailureReason savedTaskFailureReason(JsonNode reason) {
+    if (reason.isNull()) return null;
+    requireV2TaskOutcomeReason(reason);
+    List<String> expected = new ArrayList<>();
+    reason.path("expectedRefs").forEach(ref -> expected.add(ref.asText()));
+    List<OntologyTaskOutcome.TaskReference> dependencies = new ArrayList<>();
+    reason
+        .path("dependencyTaskRefs")
+        .forEach(
+            ref ->
+                dependencies.add(
+                    new OntologyTaskOutcome.TaskReference(
+                        ref.path("runId").asText(),
+                        ref.path("questionId").asText(),
+                        ref.path("taskId").asText())));
+    return new OntologyTaskOutcome.FailureReason(
+        reason.path("code").asText(),
+        OntologyTaskOutcome.Category.valueOf(reason.path("category").asText()),
+        reason.path("stage").isNull() ? null : reason.path("stage").asText(),
+        reason.path("jsonPointer").isNull() ? null : reason.path("jsonPointer").asText(),
+        reason.path("offendingRef").isNull() ? null : reason.path("offendingRef").asText(),
+        expected,
+        dependencies);
+  }
+
+  static void requirePreparationFailures(
+      JsonNode document, Map<String, JsonNode> outcomes, String schemaVersion) {
+    if (!document.has("preparationFailures")) return;
+    JsonNode failures = document.path("preparationFailures");
+    if (!schemaVersion.endsWith("-v5") || !failures.isArray())
+      throw new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID");
+    Set<String> seen = new HashSet<>();
+    for (JsonNode failure : failures) {
+      JsonNode outcome = outcomes.get(failure.path("taskId").asText());
+      if (failure.size() != 6
+          || outcome == null
+          || !seen.add(failure.path("taskId").asText())
+          || !outcome.path("questionId").equals(failure.path("questionId"))
+          || !outcome.path("reason").path("code").equals(failure.path("issueCode"))
+          || !outcome.path("reason").path("stage").equals(failure.path("stage"))
+          || !outcome.path("reason").path("offendingRef").equals(failure.path("offendingRef")))
+        throw new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID");
+      JsonNode capacity = failure.path("capacity");
+      if ("ONTOLOGY_OBJECT_TYPE_SOURCE_UNAVAILABLE".equals(failure.path("issueCode").asText())) {
+        if (!capacity.isNull()) throw new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID");
+        continue;
+      }
+      boolean request = "REQUEST_ENVELOPE".equals(capacity.path("boundary").asText());
+      if (!capacity.isObject()
+          || capacity.size() != (request ? 7 : 3)
+          || (!request && !"COMPLETE_UNIT_BODY".equals(capacity.path("boundary").asText()))
+          || !capacity.path("measuredBytes").isIntegralNumber()
+          || !capacity.path("limitBytes").isIntegralNumber()
+          || capacity.path("limitBytes").asLong() <= 0
+          || capacity.path("measuredBytes").asLong() <= capacity.path("limitBytes").asLong())
+        throw new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID");
+      if (request) {
+        long measured = 0;
+        for (String field :
+            List.of("inputBytes", "promptBytes", "schemaBytes", "outputReserveBytes")) {
+          if (!capacity.path(field).isIntegralNumber() || capacity.path(field).asLong() < 0)
+            throw new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID");
+          measured = Math.addExact(measured, capacity.path(field).asLong());
+        }
+        if (measured != capacity.path("measuredBytes").asLong())
+          throw new IllegalArgumentException("ONTOLOGY_SELECTED_RUN_INVALID");
+      }
+    }
+  }
+
+  static void recordPreparationFailure(
+      ArrayNode rows,
+      String questionId,
+      String taskId,
+      OntologyTypedTaskRunner.FormalPreparationFailure failure) {
+    ObjectNode row = rows.addObject();
+    row.put("questionId", questionId);
+    row.put("taskId", taskId);
+    row.put("issueCode", failure.reason().code());
+    row.put("stage", failure.reason().stage());
+    row.put("offendingRef", failure.reason().offendingRef());
+    row.set("capacity", failure.capacityObservation());
+  }
+
   static void requireSelectionProductionVersion(
       String selectionVersion, boolean primaryCurrentProducer, boolean companionCurrentProducer) {
-    if ("ontology-selection-v3".equals(selectionVersion)
+    if (Set.of("ontology-selection-v3", "ontology-selection-v4").contains(selectionVersion)
         && !(primaryCurrentProducer && companionCurrentProducer)) {
       throw new IllegalArgumentException("ONTOLOGY_SELECTION_PRODUCTION_VERSION_INVALID");
     }

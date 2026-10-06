@@ -15,7 +15,9 @@ final class OntologyFrontendObservationProjection {
   private OntologyFrontendObservationProjection() {}
 
   static void encode(ObjectNode model) {
-    require("ontology-model-reading-v6".equals(model.path("schemaVersion").asText()));
+    require(
+        Set.of("ontology-model-reading-v6", "ontology-model-reading-v7")
+            .contains(model.path("schemaVersion").asText()));
     model.put("frontendObservationEncoding", ENCODING);
     model.put(
         "frontendObservationInstruction",

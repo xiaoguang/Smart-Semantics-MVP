@@ -100,16 +100,29 @@ final class OntologyOperationObservationV2 {
             && Set.of(
                     "ontology-identification-v2",
                     "ontology-identification-v3",
-                    "ontology-identification-v4")
+                    "ontology-identification-v4",
+                    "ontology-identification-v5")
                 .contains(schemaVersion))
         || ("ONTOLOGY_RELATIONS".equals(artifactType)
-            && Set.of("ontology-relations-v2", "ontology-relations-v3", "ontology-relations-v4")
+            && Set.of(
+                    "ontology-relations-v2",
+                    "ontology-relations-v3",
+                    "ontology-relations-v4",
+                    "ontology-relations-v5")
                 .contains(schemaVersion))
         || ("ONTOLOGY_COVERAGE".equals(artifactType)
-            && Set.of("ontology-coverage-v2", "ontology-coverage-v3", "ontology-coverage-v4")
+            && Set.of(
+                    "ontology-coverage-v2",
+                    "ontology-coverage-v3",
+                    "ontology-coverage-v4",
+                    "ontology-coverage-v5")
                 .contains(schemaVersion))
         || ("ONTOLOGY_REVIEW".equals(artifactType)
-            && Set.of("ontology-review-v2", "ontology-review-v3", "ontology-review-v4")
+            && Set.of(
+                    "ontology-review-v2",
+                    "ontology-review-v3",
+                    "ontology-review-v4",
+                    "ontology-review-v5")
                 .contains(schemaVersion));
   }
 

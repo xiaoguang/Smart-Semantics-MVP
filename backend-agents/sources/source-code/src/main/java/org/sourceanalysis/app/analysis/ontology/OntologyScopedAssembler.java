@@ -318,22 +318,39 @@ public final class OntologyScopedAssembler {
       }
       JsonNode document = json.parseCanonical(result.review());
       boolean jointLink = result.kind() == OntologyTaskRunner.TaskKind.LINK;
+      boolean leanLink =
+          jointLink && "ontology-link-review-v2".equals(document.path("schemaVersion").asText());
+      boolean typeComparison =
+          "ontology-object-type-review-v1".equals(document.path("schemaVersion").asText());
       String actualReviewVersion =
-          (jointLink ? "review-link-v1-" : business ? "review-v4-" : "review-v3-")
+          (typeComparison
+                  ? "review-type-v1-"
+                  : jointLink
+                      ? (leanLink ? "review-link-v2-" : "review-link-v1-")
+                      : business ? "review-v4-" : "review-v3-")
               + OntologyReadingPacket.sha256(json.encodeCanonical(document).copyToByteArray());
       if (!actualReviewVersion.equals(result.identity().reviewVersion())
           || jointLink && !business
           || business
-              && (!(jointLink ? "ontology-link-review-v1" : "ontology-typed-review-v4")
+              && (!(typeComparison
+                          ? "ontology-object-type-review-v1"
+                          : jointLink
+                              ? (leanLink ? "ontology-link-review-v2" : "ontology-link-review-v1")
+                              : "ontology-typed-review-v4")
                       .equals(document.path("schemaVersion").asText())
-                  || !(jointLink ? "ontology-model-reading-v6" : "ontology-model-reading-v5")
+                  || !(leanLink || typeComparison
+                          ? "ontology-model-reading-v7"
+                          : jointLink ? "ontology-model-reading-v6" : "ontology-model-reading-v5")
                       .equals(result.packet().modelProjectionVersion())
-                  || !document.path("clueDispositions").isArray())) {
+                  || (!typeComparison && !document.path("clueDispositions").isArray()))) {
         throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_INPUT_INVALID");
       }
       if (jointLink) {
         validator.validateLink(
             document,
+            leanLink
+                ? OntologyTypedDefinitionValidator.LinkProfile.LEAN_V2
+                : OntologyTypedDefinitionValidator.LinkProfile.LEGACY_V1,
             true,
             result.packet(),
             result.questionId(),
@@ -343,6 +360,17 @@ public final class OntologyScopedAssembler {
             Set.copyOf(result.visibleClueRefs()));
         ObjectNode projected = (ObjectNode) result.definitionDocument().deepCopy();
         projected.put("taskKind", "LINK");
+        projected.put("questionId", result.questionId());
+        document = projected;
+      }
+      if (typeComparison) {
+        JsonNode binding = json.parseCanonical(result.catalogMapping()).path("comparisonBinding");
+        Set<String> left = new LinkedHashSet<>();
+        Set<String> right = new LinkedHashSet<>();
+        binding.path("left").path("sourceRefs").forEach(ref -> left.add(ref.asText()));
+        binding.path("right").path("sourceRefs").forEach(ref -> right.add(ref.asText()));
+        validator.validateObjectType(document, true, result.packet(), left, right);
+        ObjectNode projected = (ObjectNode) result.definitionDocument().deepCopy();
         projected.put("questionId", result.questionId());
         document = projected;
       }
@@ -408,7 +436,10 @@ public final class OntologyScopedAssembler {
 
   private Map<String, DefinitionKey> catalog(ImmutableBytes catalogMapping) {
     JsonNode document = json.parseCanonical(catalogMapping);
-    if (!Set.of("ontology-reviewed-catalog-v3", "ontology-reviewed-catalog-v4")
+    if (!Set.of(
+            "ontology-reviewed-catalog-v3",
+            "ontology-reviewed-catalog-v4",
+            "ontology-reviewed-catalog-v5")
         .contains(document.path("schemaVersion").asText())) {
       throw new IllegalArgumentException("ONTOLOGY_ASSEMBLY_INPUT_INVALID");
     }
@@ -826,6 +857,14 @@ public final class OntologyScopedAssembler {
       task.put("producingTaskId", item.result().identity().producingTaskId());
       task.put("reviewVersion", item.result().identity().reviewVersion());
       task.put("taskKind", item.result().kind().name());
+      JsonNode nativeReview = json.parseCanonical(item.result().review());
+      if ("ontology-object-type-review-v1".equals(nativeReview.path("schemaVersion").asText())) {
+        task.put("relationProfile", "OBJECT_TYPE_CORRESPONDENCE");
+        task.set("typeCorrespondence", nativeReview.deepCopy());
+        task.set(
+            "comparisonBinding",
+            json.parseCanonical(item.result().catalogMapping()).path("comparisonBinding"));
+      }
       task.put("extractRuntime", item.result().extractRuntimeIdentity().model());
       task.put("reviewRuntime", item.result().reviewRuntimeIdentity().model());
       task.set(
@@ -865,6 +904,8 @@ public final class OntologyScopedAssembler {
         ObjectNode mapped = (ObjectNode) decision.deepCopy();
         mapFormalNode(mapped, reviewOwner, definitions, globals, properties, canonical, sources);
         reviewIdentity(mapped, item);
+        if ("ontology-object-type-review-v1".equals(nativeReview.path("schemaVersion").asText()))
+          mapped.put("equivalenceSemantics", "SAME_OBJECT_TYPE_NOT_INSTANCE_IDENTITY");
         if ("SAME_OBJECT".equals(decision.path("kind").asText())) {
           DefinitionKey selected =
               resolveDefinition(decision.path("canonicalRef").asText(), item, definitions);

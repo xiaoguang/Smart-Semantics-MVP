@@ -37,7 +37,12 @@ final class OntologyModelProjection {
     boolean v6 =
         "ontology-model-reading-v6".equals(model.path("schemaVersion").asText())
             && "EXACT_LINK_BUNDLE_V1".equals(model.path("callContextEncoding").asText());
-    if (!(v5 || v6) || !model.path("callRows").isArray() || !model.path("callUses").isArray()) {
+    boolean v7 =
+        "ontology-model-reading-v7".equals(model.path("schemaVersion").asText())
+            && "EXACT_LEAN_LINK_BUNDLE_V2".equals(model.path("callContextEncoding").asText());
+    if (!(v5 || v6 || v7)
+        || !model.path("callRows").isArray()
+        || !model.path("callUses").isArray()) {
       throw new IllegalArgumentException("ONTOLOGY_CALL_ROWS_INVALID");
     }
     Map<String, JsonNode> rows = new java.util.LinkedHashMap<>();

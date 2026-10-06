@@ -951,7 +951,7 @@ final class AtomicAnalysisStepPublicationEngine {
             }
             case 3 -> {
               if (!"ontology-identification".equals(publisher.moduleKey())
-                  || !Set.of("v1", "v3", "v4").contains(publisherModuleVersion)) {
+                  || !Set.of("v1", "v3", "v4", "v5").contains(publisherModuleVersion)) {
                 throw invalidInstall();
               }
               yield new StepContract(
@@ -962,7 +962,7 @@ final class AtomicAnalysisStepPublicationEngine {
             }
             case 4 -> {
               if (!"ontology-relations".equals(publisher.moduleKey())
-                  || !Set.of("v1", "v3", "v4").contains(publisherModuleVersion)) {
+                  || !Set.of("v1", "v3", "v4", "v5").contains(publisherModuleVersion)) {
                 throw invalidInstall();
               }
               yield new StepContract(
@@ -973,7 +973,7 @@ final class AtomicAnalysisStepPublicationEngine {
             }
             case 5 -> {
               if (!"ontology-publisher".equals(publisher.moduleKey())
-                  || !Set.of("v1", "v3", "v4").contains(publisherModuleVersion)) {
+                  || !Set.of("v1", "v3", "v4", "v5").contains(publisherModuleVersion)) {
                 throw invalidInstall();
               }
               yield new StepContract(
